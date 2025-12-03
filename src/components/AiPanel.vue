@@ -140,7 +140,7 @@ const sendMessage = async () => {
 
   try {
     let firstChunk = true
-    // 使用流式响应
+    // 使用流式响应，传入 tabId 作为 requestId 支持多终端同时请求
     window.electronAPI.ai.chatStream(
       [
         {
@@ -166,7 +166,9 @@ const sendMessage = async () => {
       error => {
         terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${error}`)
         terminalStore.setAiLoading(tabId, false)
-      }
+      },
+      undefined,  // profileId
+      tabId       // requestId - 使用 tabId 区分不同终端的请求
     )
   } catch (error) {
     terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${error}`)
@@ -227,7 +229,9 @@ const explainCommand = async (command: string) => {
     error => {
       terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${error}`)
       terminalStore.setAiLoading(tabId, false)
-    }
+    },
+    undefined,
+    tabId
   )
 }
 
@@ -291,7 +295,9 @@ const generateCommand = async (description: string) => {
     error => {
       terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${error}`)
       terminalStore.setAiLoading(tabId, false)
-    }
+    },
+    undefined,
+    tabId
   )
 }
 
@@ -304,8 +310,9 @@ const clearMessages = () => {
 
 // 停止生成
 const stopGeneration = async () => {
-  await window.electronAPI.ai.abort()
   if (currentTabId.value) {
+    // 传入 tabId 只中止当前终端的请求，不影响其他终端
+    await window.electronAPI.ai.abort(currentTabId.value)
     terminalStore.setAiLoading(currentTabId.value, false)
   }
 }
@@ -370,7 +377,9 @@ const diagnoseError = async () => {
     err => {
       terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${err}`)
       terminalStore.setAiLoading(tabId, false)
-    }
+    },
+    undefined,
+    tabId
   )
 }
 
@@ -428,7 +437,9 @@ const analyzeSelection = async () => {
     err => {
       terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${err}`)
       terminalStore.setAiLoading(tabId, false)
-    }
+    },
+    undefined,
+    tabId
   )
 }
 
@@ -485,7 +496,9 @@ const analyzeTerminalContent = async (text: string) => {
     err => {
       terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${err}`)
       terminalStore.setAiLoading(tabId, false)
-    }
+    },
+    undefined,
+    tabId
   )
 }
 

@@ -1,9 +1,10 @@
-import { app, BrowserWindow, ipcMain, shell, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, Menu, dialog } from 'electron'
 import { join } from 'path'
 import { PtyService } from './services/pty.service'
 import { SshService } from './services/ssh.service'
 import { AiService } from './services/ai.service'
 import { ConfigService } from './services/config.service'
+import { XshellImportService } from './services/xshell-import.service'
 
 // 禁用 GPU 加速可能导致的问题（可选）
 // app.disableHardwareAcceleration()
@@ -32,6 +33,7 @@ const ptyService = new PtyService()
 const sshService = new SshService()
 const aiService = new AiService()
 const configService = new ConfigService()
+const xshellImportService = new XshellImportService()
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -160,8 +162,9 @@ ipcMain.handle('ai:chat', async (_event, messages, profileId?: string) => {
   return aiService.chat(messages, profileId)
 })
 
-ipcMain.handle('ai:chatStream', async (event, messages, profileId?: string) => {
-  const streamId = Date.now().toString()
+ipcMain.handle('ai:chatStream', async (event, messages, profileId?: string, requestId?: string) => {
+  // 使用传入的 requestId 或生成新的 streamId
+  const streamId = requestId || Date.now().toString()
   aiService.chatStream(
     messages,
     (chunk: string) => {
@@ -179,13 +182,14 @@ ipcMain.handle('ai:chatStream', async (event, messages, profileId?: string) => {
         event.sender.send(`ai:stream:${streamId}`, { error })
       }
     },
-    profileId
+    profileId,
+    streamId  // 传递 requestId 给 AI 服务
   )
   return streamId
 })
 
-ipcMain.handle('ai:abort', async () => {
-  aiService.abort()
+ipcMain.handle('ai:abort', async (_event, requestId?: string) => {
+  aiService.abort(requestId)
 })
 
 // 配置相关
@@ -234,5 +238,44 @@ ipcMain.handle('config:getTheme', async () => {
 
 ipcMain.handle('config:setTheme', async (_event, theme: string) => {
   configService.setTheme(theme)
+})
+
+// Xshell 导入相关
+ipcMain.handle('xshell:selectFiles', async () => {
+  const result = await dialog.showOpenDialog({
+    title: '选择 Xshell 会话文件',
+    filters: [
+      { name: 'Xshell 会话文件', extensions: ['xsh'] },
+      { name: '所有文件', extensions: ['*'] }
+    ],
+    properties: ['openFile', 'multiSelections']
+  })
+  
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true, filePaths: [] }
+  }
+  
+  return { canceled: false, filePaths: result.filePaths }
+})
+
+ipcMain.handle('xshell:selectDirectory', async () => {
+  const result = await dialog.showOpenDialog({
+    title: '选择 Xshell 会话目录',
+    properties: ['openDirectory']
+  })
+  
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true, dirPath: '' }
+  }
+  
+  return { canceled: false, dirPath: result.filePaths[0] }
+})
+
+ipcMain.handle('xshell:importFiles', async (_event, filePaths: string[]) => {
+  return xshellImportService.importFiles(filePaths)
+})
+
+ipcMain.handle('xshell:importDirectory', async (_event, dirPath: string) => {
+  return xshellImportService.importFromDirectory(dirPath)
 })
 

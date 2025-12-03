@@ -18,19 +18,27 @@ export interface AiProfile {
 
 export class AiService {
   private configService: ConfigService
-  private currentAbortController: AbortController | null = null
+  // 使用 Map 存储多个请求的 AbortController，支持多个终端同时请求
+  private abortControllers: Map<string, AbortController> = new Map()
 
   constructor() {
     this.configService = new ConfigService()
   }
 
   /**
-   * 中止当前请求
+   * 中止指定请求，如果不传 requestId 则中止所有请求
    */
-  abort(): void {
-    if (this.currentAbortController) {
-      this.currentAbortController.abort()
-      this.currentAbortController = null
+  abort(requestId?: string): void {
+    if (requestId) {
+      const controller = this.abortControllers.get(requestId)
+      if (controller) {
+        controller.abort()
+        this.abortControllers.delete(requestId)
+      }
+    } else {
+      // 中止所有请求
+      this.abortControllers.forEach(controller => controller.abort())
+      this.abortControllers.clear()
     }
   }
 
@@ -124,17 +132,16 @@ export class AiService {
 
   /**
    * 发送聊天请求（流式）
+   * @param requestId 请求 ID，用于支持多个终端同时请求
    */
   async chatStream(
     messages: AiMessage[],
     onChunk: (chunk: string) => void,
     onDone: () => void,
     onError: (error: string) => void,
-    profileId?: string
+    profileId?: string,
+    requestId?: string
   ): Promise<void> {
-    // 中止之前的请求
-    this.abort()
-    
     const profile = await this.getCurrentProfile(profileId)
     if (!profile) {
       onError('未配置 AI 模型，请先在设置中添加 AI 配置')
@@ -154,15 +161,17 @@ export class AiService {
       Authorization: `Bearer ${profile.apiKey}`
     }
 
-    // 创建 AbortController
-    this.currentAbortController = new AbortController()
+    // 创建 AbortController，使用 requestId 或生成一个唯一 ID
+    const reqId = requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    const abortController = new AbortController()
+    this.abortControllers.set(reqId, abortController)
 
     try {
       const response = await fetch(profile.apiUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestBody),
-        signal: this.currentAbortController.signal
+        signal: abortController.signal
       })
 
       if (!response.ok) {
@@ -222,7 +231,8 @@ export class AiService {
         onError('AI 请求失败: 未知错误')
       }
     } finally {
-      this.currentAbortController = null
+      // 清理 AbortController
+      this.abortControllers.delete(reqId)
     }
   }
 

@@ -47,6 +47,22 @@ export interface SshSession {
   group?: string
 }
 
+export interface XshellSession {
+  name: string
+  host: string
+  port: number
+  username: string
+  password?: string
+  privateKeyPath?: string
+  group?: string
+}
+
+export interface ImportResult {
+  success: boolean
+  sessions: XshellSession[]
+  errors: string[]
+}
+
 // 暴露给渲染进程的 API
 const electronAPI = {
   // PTY 操作
@@ -92,9 +108,10 @@ const electronAPI = {
       onChunk: (chunk: string) => void,
       onDone: () => void,
       onError: (error: string) => void,
-      profileId?: string
+      profileId?: string,
+      requestId?: string  // 支持传入请求 ID，用于支持多个终端同时请求
     ) => {
-      ipcRenderer.invoke('ai:chatStream', messages, profileId).then((streamId: string) => {
+      ipcRenderer.invoke('ai:chatStream', messages, profileId, requestId).then((streamId: string) => {
         const handler = (
           _event: Electron.IpcRendererEvent,
           data: { chunk?: string; done?: boolean; error?: string }
@@ -114,7 +131,7 @@ const electronAPI = {
         ipcRenderer.on(`ai:stream:${streamId}`, handler)
       })
     },
-    abort: () => ipcRenderer.invoke('ai:abort')
+    abort: (requestId?: string) => ipcRenderer.invoke('ai:abort', requestId)
   },
 
   // 配置操作
@@ -139,6 +156,14 @@ const electronAPI = {
     // 主题
     getTheme: () => ipcRenderer.invoke('config:getTheme'),
     setTheme: (theme: string) => ipcRenderer.invoke('config:setTheme', theme)
+  },
+
+  // Xshell 导入操作
+  xshell: {
+    selectFiles: () => ipcRenderer.invoke('xshell:selectFiles') as Promise<{ canceled: boolean; filePaths: string[] }>,
+    selectDirectory: () => ipcRenderer.invoke('xshell:selectDirectory') as Promise<{ canceled: boolean; dirPath: string }>,
+    importFiles: (filePaths: string[]) => ipcRenderer.invoke('xshell:importFiles', filePaths) as Promise<ImportResult>,
+    importDirectory: (dirPath: string) => ipcRenderer.invoke('xshell:importDirectory', dirPath) as Promise<ImportResult>
   }
 }
 

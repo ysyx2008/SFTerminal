@@ -8,13 +8,27 @@ const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
 
 const showNewSession = ref(false)
+const showImportMenu = ref(false)
 const nameInputRef = ref<HTMLInputElement | null>(null)
 
 // ESC 关闭弹窗
 const handleKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape' && showNewSession.value) {
-    showNewSession.value = false
-    resetForm()
+  if (e.key === 'Escape') {
+    if (showNewSession.value) {
+      showNewSession.value = false
+      resetForm()
+    }
+    if (showImportMenu.value) {
+      showImportMenu.value = false
+    }
+  }
+}
+
+// 点击外部关闭导入菜单
+const handleClickOutside = (e: MouseEvent) => {
+  const target = e.target as HTMLElement
+  if (!target.closest('.import-dropdown')) {
+    showImportMenu.value = false
   }
 }
 
@@ -27,8 +41,19 @@ watch(showNewSession, (isOpen) => {
   }
 })
 
+// 监听导入菜单状态
+watch(showImportMenu, (isOpen) => {
+  if (isOpen) {
+    document.addEventListener('click', handleClickOutside)
+    document.addEventListener('keydown', handleKeydown)
+  } else {
+    document.removeEventListener('click', handleClickOutside)
+  }
+})
+
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('click', handleClickOutside)
 })
 const editingSession = ref<SshSession | null>(null)
 const searchText = ref('')
@@ -150,6 +175,58 @@ const connectSession = async (session: SshSession) => {
 const createLocalTerminal = () => {
   terminalStore.createTab('local')
 }
+
+// 导入 Xshell 会话文件
+const importXshellFiles = async () => {
+  showImportMenu.value = false
+  const result = await window.electronAPI.xshell.selectFiles()
+  if (result.canceled) return
+  
+  const importResult = await window.electronAPI.xshell.importFiles(result.filePaths)
+  await handleImportResult(importResult)
+}
+
+// 导入 Xshell 会话目录
+const importXshellDirectory = async () => {
+  showImportMenu.value = false
+  const result = await window.electronAPI.xshell.selectDirectory()
+  if (result.canceled) return
+  
+  const importResult = await window.electronAPI.xshell.importDirectory(result.dirPath)
+  await handleImportResult(importResult)
+}
+
+// 处理导入结果
+const handleImportResult = async (importResult: { success: boolean; sessions: any[]; errors: string[] }) => {
+  if (!importResult.success && importResult.sessions.length === 0) {
+    alert(`导入失败：${importResult.errors.join('\n')}`)
+    return
+  }
+  
+  // 将导入的会话添加到列表
+  let importedCount = 0
+  for (const session of importResult.sessions) {
+    await configStore.addSshSession({
+      id: uuidv4(),
+      name: session.name,
+      host: session.host,
+      port: session.port,
+      username: session.username,
+      authType: session.privateKeyPath ? 'privateKey' : 'password',
+      password: session.password,
+      privateKeyPath: session.privateKeyPath,
+      group: session.group
+    })
+    importedCount++
+  }
+  
+  // 显示结果
+  let message = `成功导入 ${importedCount} 个会话`
+  if (importResult.errors.length > 0) {
+    message += `\n\n以下文件导入失败：\n${importResult.errors.join('\n')}`
+  }
+  alert(message)
+}
 </script>
 
 <template>
@@ -169,6 +246,31 @@ const createLocalTerminal = () => {
         </svg>
         新建
       </button>
+      <div class="import-dropdown">
+        <button class="btn btn-sm" @click="showImportMenu = !showImportMenu">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          导入
+        </button>
+        <div v-if="showImportMenu" class="import-menu" @click.stop>
+          <button class="import-menu-item" @click="importXshellFiles">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+            </svg>
+            导入 Xshell 文件...
+          </button>
+          <button class="import-menu-item" @click="importXshellDirectory">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            </svg>
+            导入 Xshell 目录...
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- 快速操作 -->
@@ -321,6 +423,48 @@ const createLocalTerminal = () => {
 
 .search-input {
   flex: 1;
+}
+
+/* 导入下拉菜单 */
+.import-dropdown {
+  position: relative;
+}
+
+.import-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 180px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.import-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.import-menu-item:hover {
+  background: var(--bg-surface);
+}
+
+.import-menu-item svg {
+  color: var(--text-muted);
 }
 
 .quick-connect {
