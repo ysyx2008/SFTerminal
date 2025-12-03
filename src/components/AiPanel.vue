@@ -297,6 +297,12 @@ const clearMessages = () => {
   }
 }
 
+// 停止生成
+const stopGeneration = async () => {
+  await window.electronAPI.ai.abort()
+  isLoading.value = false
+}
+
 // 诊断错误
 const diagnoseError = async () => {
   const error = lastError.value
@@ -721,9 +727,22 @@ const quickActions = [
           rows="2"
           @keydown.enter.exact.prevent="sendMessage"
         ></textarea>
+        <!-- 停止按钮 -->
         <button
+          v-if="isLoading"
+          class="btn btn-danger stop-btn"
+          @click="stopGeneration"
+          title="停止生成"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="6" width="12" height="12" rx="2"/>
+          </svg>
+        </button>
+        <!-- 发送按钮 -->
+        <button
+          v-else
           class="btn btn-primary send-btn"
-          :disabled="!inputText.trim() || isLoading"
+          :disabled="!inputText.trim()"
           @click="sendMessage"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1299,6 +1318,28 @@ const quickActions = [
 .send-btn {
   align-self: flex-end;
   padding: 10px 16px;
+}
+
+.stop-btn {
+  align-self: flex-end;
+  padding: 10px 16px;
+  background: var(--accent-error, #f44336);
+  border-color: var(--accent-error, #f44336);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.stop-btn:hover {
+  background: #d32f2f;
+  border-color: #d32f2f;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 </style>
 

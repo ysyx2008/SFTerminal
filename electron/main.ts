@@ -165,17 +165,27 @@ ipcMain.handle('ai:chatStream', async (event, messages, profileId?: string) => {
   aiService.chatStream(
     messages,
     (chunk: string) => {
-      event.sender.send(`ai:stream:${streamId}`, { chunk })
+      if (!event.sender.isDestroyed()) {
+        event.sender.send(`ai:stream:${streamId}`, { chunk })
+      }
     },
     () => {
-      event.sender.send(`ai:stream:${streamId}`, { done: true })
+      if (!event.sender.isDestroyed()) {
+        event.sender.send(`ai:stream:${streamId}`, { done: true })
+      }
     },
     (error: string) => {
-      event.sender.send(`ai:stream:${streamId}`, { error })
+      if (!event.sender.isDestroyed()) {
+        event.sender.send(`ai:stream:${streamId}`, { error })
+      }
     },
     profileId
   )
   return streamId
+})
+
+ipcMain.handle('ai:abort', async () => {
+  aiService.abort()
 })
 
 // 配置相关

@@ -113,7 +113,8 @@ const electronAPI = {
         }
         ipcRenderer.on(`ai:stream:${streamId}`, handler)
       })
-    }
+    },
+    abort: () => ipcRenderer.invoke('ai:abort')
   },
 
   // 配置操作

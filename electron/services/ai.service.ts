@@ -18,9 +18,20 @@ export interface AiProfile {
 
 export class AiService {
   private configService: ConfigService
+  private currentAbortController: AbortController | null = null
 
   constructor() {
     this.configService = new ConfigService()
+  }
+
+  /**
+   * 中止当前请求
+   */
+  abort(): void {
+    if (this.currentAbortController) {
+      this.currentAbortController.abort()
+      this.currentAbortController = null
+    }
   }
 
   /**
@@ -121,6 +132,9 @@ export class AiService {
     onError: (error: string) => void,
     profileId?: string
   ): Promise<void> {
+    // 中止之前的请求
+    this.abort()
+    
     const profile = await this.getCurrentProfile(profileId)
     if (!profile) {
       onError('未配置 AI 模型，请先在设置中添加 AI 配置')
@@ -140,11 +154,15 @@ export class AiService {
       Authorization: `Bearer ${profile.apiKey}`
     }
 
+    // 创建 AbortController
+    this.currentAbortController = new AbortController()
+
     try {
       const response = await fetch(profile.apiUrl, {
         method: 'POST',
         headers,
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
+        signal: this.currentAbortController.signal
       })
 
       if (!response.ok) {
@@ -193,11 +211,18 @@ export class AiService {
 
       onDone()
     } catch (error) {
+      // 如果是中止请求，不算错误
+      if (error instanceof Error && error.name === 'AbortError') {
+        onDone()
+        return
+      }
       if (error instanceof Error) {
         onError(`AI 请求失败: ${error.message}`)
       } else {
         onError('AI 请求失败: 未知错误')
       }
+    } finally {
+      this.currentAbortController = null
     }
   }
 
