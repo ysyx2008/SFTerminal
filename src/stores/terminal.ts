@@ -52,6 +52,9 @@ export const useTerminalStore = defineStore('terminal', () => {
   const splitLayout = ref<SplitPane | null>(null)
   // 待发送到 AI 分析的文本
   const pendingAiText = ref<string>('')
+  // 终端计数器（用于生成唯一标题）
+  const localTerminalCounter = ref(0)
+  const sshTerminalCounters = ref<Record<string, number>>({})
 
   // 计算属性
   const activeTab = computed(() => tabs.value.find(t => t.id === activeTabId.value))
@@ -217,9 +220,24 @@ export const useTerminalStore = defineStore('terminal', () => {
     sshConfig?: { host: string; port: number; username: string; password?: string; privateKey?: string }
   ): Promise<string> {
     const id = uuidv4()
+    
+    // 生成唯一标题
+    let title: string
+    if (type === 'local') {
+      localTerminalCounter.value++
+      title = `本地终端 ${localTerminalCounter.value}`
+    } else if (sshConfig) {
+      const sshKey = `${sshConfig.username}@${sshConfig.host}`
+      sshTerminalCounters.value[sshKey] = (sshTerminalCounters.value[sshKey] || 0) + 1
+      const count = sshTerminalCounters.value[sshKey]
+      title = count > 1 ? `${sshKey} (${count})` : sshKey
+    } else {
+      title = 'SSH 终端'
+    }
+    
     const tab: TerminalTab = {
       id,
-      title: type === 'local' ? '本地终端' : `${sshConfig?.username}@${sshConfig?.host}`,
+      title,
       type,
       isConnected: false,
       isLoading: true
@@ -365,6 +383,18 @@ export const useTerminalStore = defineStore('terminal', () => {
     console.log('Split terminal:', direction)
   }
 
+  /**
+   * 重新排序标签页（用于拖拽）
+   */
+  function reorderTabs(fromIndex: number, toIndex: number): void {
+    if (fromIndex === toIndex) return
+    if (fromIndex < 0 || fromIndex >= tabs.value.length) return
+    if (toIndex < 0 || toIndex >= tabs.value.length) return
+    
+    const [movedTab] = tabs.value.splice(fromIndex, 1)
+    tabs.value.splice(toIndex, 0, movedTab)
+  }
+
   return {
     tabs,
     activeTabId,
@@ -385,7 +415,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     getRecentOutput,
     writeToTerminal,
     resizeTerminal,
-    splitTerminal
+    splitTerminal,
+    reorderTabs
   }
 })
 

@@ -1,7 +1,12 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useTerminalStore } from '../stores/terminal'
 
 const terminalStore = useTerminalStore()
+
+// 拖拽状态
+const dragIndex = ref<number | null>(null)
+const dragOverIndex = ref<number | null>(null)
 
 const handleNewTab = () => {
   terminalStore.createTab('local')
@@ -11,17 +16,66 @@ const handleCloseTab = (tabId: string, event: MouseEvent) => {
   event.stopPropagation()
   terminalStore.closeTab(tabId)
 }
+
+// 拖拽开始
+const handleDragStart = (index: number, event: DragEvent) => {
+  dragIndex.value = index
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', index.toString())
+  }
+}
+
+// 拖拽经过
+const handleDragOver = (index: number, event: DragEvent) => {
+  event.preventDefault()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move'
+  }
+  dragOverIndex.value = index
+}
+
+// 拖拽离开
+const handleDragLeave = () => {
+  dragOverIndex.value = null
+}
+
+// 放置
+const handleDrop = (toIndex: number, event: DragEvent) => {
+  event.preventDefault()
+  if (dragIndex.value !== null && dragIndex.value !== toIndex) {
+    terminalStore.reorderTabs(dragIndex.value, toIndex)
+  }
+  dragIndex.value = null
+  dragOverIndex.value = null
+}
+
+// 拖拽结束
+const handleDragEnd = () => {
+  dragIndex.value = null
+  dragOverIndex.value = null
+}
 </script>
 
 <template>
   <div class="tab-bar">
     <div class="tabs-container">
       <div
-        v-for="tab in terminalStore.tabs"
+        v-for="(tab, index) in terminalStore.tabs"
         :key="tab.id"
         class="tab"
-        :class="{ active: tab.id === terminalStore.activeTabId }"
+        :class="{ 
+          active: tab.id === terminalStore.activeTabId,
+          dragging: dragIndex === index,
+          'drag-over': dragOverIndex === index && dragIndex !== index
+        }"
+        draggable="true"
         @click="terminalStore.setActiveTab(tab.id)"
+        @dragstart="handleDragStart(index, $event)"
+        @dragover="handleDragOver(index, $event)"
+        @dragleave="handleDragLeave"
+        @drop="handleDrop(index, $event)"
+        @dragend="handleDragEnd"
       >
         <span class="tab-icon">
           <svg v-if="tab.type === 'local'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -90,8 +144,9 @@ const handleCloseTab = (tabId: string, event: MouseEvent) => {
   max-width: 180px;
   background: var(--bg-tertiary);
   border-radius: 6px 6px 0 0;
-  cursor: pointer;
+  cursor: grab;
   transition: all 0.2s ease;
+  user-select: none;
 }
 
 .tab:hover {
@@ -100,6 +155,16 @@ const handleCloseTab = (tabId: string, event: MouseEvent) => {
 
 .tab.active {
   background: var(--bg-primary);
+}
+
+.tab.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+.tab.drag-over {
+  border-left: 2px solid var(--accent-primary);
+  margin-left: -2px;
 }
 
 .tab-icon {
