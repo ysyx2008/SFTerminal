@@ -29,6 +29,15 @@ let isDisposed = false
 let isPasting = false
 let keyDownHandler: ((event: KeyboardEvent) => void) | null = null
 
+// 右键菜单状态
+const contextMenu = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  hasSelection: false,
+  selectedText: ''
+})
+
 // 初始化终端
 onMounted(async () => {
   if (!terminalRef.value) return
@@ -230,6 +239,60 @@ watch(
   }
 )
 
+// 右键菜单处理
+const handleContextMenu = (event: MouseEvent) => {
+  event.preventDefault()
+  
+  const selection = terminal?.getSelection() || ''
+  contextMenu.value = {
+    visible: true,
+    x: event.clientX,
+    y: event.clientY,
+    hasSelection: selection.length > 0,
+    selectedText: selection
+  }
+}
+
+const hideContextMenu = () => {
+  contextMenu.value.visible = false
+}
+
+const menuCopy = async () => {
+  if (contextMenu.value.selectedText) {
+    await navigator.clipboard.writeText(contextMenu.value.selectedText)
+  }
+  hideContextMenu()
+}
+
+const menuPaste = async () => {
+  try {
+    const text = await navigator.clipboard.readText()
+    if (text) {
+      terminalStore.writeToTerminal(props.tabId, text)
+    }
+  } catch (e) {
+    // 忽略错误
+  }
+  hideContextMenu()
+}
+
+const menuSendToAi = () => {
+  if (contextMenu.value.selectedText) {
+    terminalStore.sendToAi(contextMenu.value.selectedText)
+  }
+  hideContextMenu()
+}
+
+const menuClear = () => {
+  terminal?.clear()
+  hideContextMenu()
+}
+
+// 点击其他地方关闭菜单
+const handleGlobalClick = () => {
+  hideContextMenu()
+}
+
 // 暴露方法供外部调用
 defineExpose({
   focus: () => terminal?.focus(),
@@ -239,7 +302,56 @@ defineExpose({
 </script>
 
 <template>
-  <div ref="terminalRef" class="terminal"></div>
+  <div 
+    ref="terminalRef" 
+    class="terminal" 
+    @contextmenu="handleContextMenu"
+    @click="hideContextMenu"
+  ></div>
+  
+  <!-- 右键菜单 -->
+  <Teleport to="body">
+    <div 
+      v-if="contextMenu.visible" 
+      class="context-menu"
+      :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+      @click.stop
+    >
+      <div 
+        class="menu-item"
+        :class="{ disabled: !contextMenu.hasSelection }"
+        @click="contextMenu.hasSelection && menuSendToAi()"
+      >
+        <span class="menu-icon">🤖</span>
+        <span>发送到 AI 分析</span>
+      </div>
+      <div class="menu-divider"></div>
+      <div 
+        class="menu-item" 
+        :class="{ disabled: !contextMenu.hasSelection }"
+        @click="contextMenu.hasSelection && menuCopy()"
+      >
+        <span class="menu-icon">📋</span>
+        <span>复制</span>
+        <span class="shortcut">Ctrl+C</span>
+      </div>
+      <div class="menu-item" @click="menuPaste()">
+        <span class="menu-icon">📄</span>
+        <span>粘贴</span>
+        <span class="shortcut">Ctrl+V</span>
+      </div>
+      <div class="menu-divider"></div>
+      <div class="menu-item" @click="menuClear()">
+        <span class="menu-icon">🗑️</span>
+        <span>清屏</span>
+      </div>
+    </div>
+    <div 
+      v-if="contextMenu.visible" 
+      class="context-menu-overlay" 
+      @click="hideContextMenu"
+    ></div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -259,6 +371,65 @@ defineExpose({
 
 .terminal :deep(.xterm-screen) {
   height: 100%;
+}
+
+/* 右键菜单遮罩层 */
+.context-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+}
+
+/* 右键菜单 */
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 180px;
+  background: var(--bg-secondary, #2d2d30);
+  border: 1px solid var(--border-color, #404040);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  color: var(--text-primary, #e0e0e0);
+  transition: background-color 0.15s;
+}
+
+.menu-item:hover:not(.disabled) {
+  background: var(--bg-hover, #094771);
+}
+
+.menu-item.disabled {
+  color: var(--text-disabled, #6e6e6e);
+  cursor: not-allowed;
+}
+
+.menu-icon {
+  width: 20px;
+  margin-right: 8px;
+  font-size: 14px;
+}
+
+.shortcut {
+  margin-left: auto;
+  color: var(--text-secondary, #888);
+  font-size: 11px;
+}
+
+.menu-divider {
+  height: 1px;
+  background: var(--border-color, #404040);
+  margin: 4px 0;
 }
 </style>
 

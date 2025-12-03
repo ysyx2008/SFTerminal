@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, inject } from 'vue'
+import { ref, computed, nextTick, inject, watch } from 'vue'
 import { marked } from 'marked'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
@@ -49,6 +49,14 @@ const lastError = computed(() => {
 // 检查是否有可发送的终端内容
 const hasTerminalContext = computed(() => {
   return !!terminalSelectedText.value || !!lastError.value
+})
+
+// 监听右键菜单发送到 AI 的文本
+watch(() => terminalStore.pendingAiText, (text) => {
+  if (text) {
+    analyzeTerminalContent(text)
+    terminalStore.clearPendingAiText()
+  }
 })
 
 // 生成系统信息的提示词
@@ -380,6 +388,62 @@ const analyzeSelection = async () => {
         content: `你是一个专业的运维工程师助手。${osContext}用户会给你一段终端输出，请用中文分析这段内容，解释其含义，如果有错误请提供解决方案。`
       },
       { role: 'user', content: `请分析这段终端输出：\n\`\`\`\n${selection}\n\`\`\`` }
+    ],
+    chunk => {
+      if (firstChunk) {
+        messages.value[messageIndex].content = chunk
+        firstChunk = false
+      } else {
+        messages.value[messageIndex].content += chunk
+      }
+      scrollToBottom()
+    },
+    () => {
+      isLoading.value = false
+      scrollToBottom()
+    },
+    err => {
+      messages.value[messageIndex].content = `错误: ${err}`
+      isLoading.value = false
+    }
+  )
+}
+
+// 分析从右键菜单发来的终端内容
+const analyzeTerminalContent = async (text: string) => {
+  if (!text || isLoading.value) return
+
+  const userMessage: ChatMessage = {
+    id: Date.now().toString(),
+    role: 'user',
+    content: `请帮我分析这段终端内容：\n\`\`\`\n${text}\n\`\`\``,
+    timestamp: new Date()
+  }
+  messages.value.push(userMessage)
+  isLoading.value = true
+  await scrollToBottom()
+
+  const assistantMessage: ChatMessage = {
+    id: (Date.now() + 1).toString(),
+    role: 'assistant',
+    content: '分析中...',
+    timestamp: new Date()
+  }
+  messages.value.push(assistantMessage)
+  const messageIndex = messages.value.length - 1
+  await scrollToBottom()
+
+  const info = currentSystemInfo.value
+  const osContext = info ? `当前用户使用的是 ${info.os === 'windows' ? 'Windows' : info.os === 'macos' ? 'macOS' : 'Linux'} 系统，Shell 类型是 ${info.shell}。` : ''
+
+  let firstChunk = true
+  window.electronAPI.ai.chatStream(
+    [
+      {
+        role: 'system',
+        content: `你是一个专业的运维工程师助手。${osContext}用户会给你一段终端内容，请用中文分析这段内容，解释其含义，如果有错误请提供解决方案。`
+      },
+      { role: 'user', content: `请分析这段终端内容：\n\`\`\`\n${text}\n\`\`\`` }
     ],
     chunk => {
       if (firstChunk) {

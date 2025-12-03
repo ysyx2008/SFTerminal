@@ -50,6 +50,8 @@ export const useTerminalStore = defineStore('terminal', () => {
   const tabs = ref<TerminalTab[]>([])
   const activeTabId = ref<string>('')
   const splitLayout = ref<SplitPane | null>(null)
+  // 待发送到 AI 分析的文本
+  const pendingAiText = ref<string>('')
 
   // 计算属性
   const activeTab = computed(() => tabs.value.find(t => t.id === activeTabId.value))
@@ -182,6 +184,20 @@ export const useTerminalStore = defineStore('terminal', () => {
     if (tab) {
       tab.selectedText = text
     }
+  }
+
+  /**
+   * 发送文本到 AI 分析
+   */
+  function sendToAi(text: string): void {
+    pendingAiText.value = text
+  }
+
+  /**
+   * 清除待发送的 AI 文本
+   */
+  function clearPendingAiText(): void {
+    pendingAiText.value = ''
   }
 
   /**
@@ -355,6 +371,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     activeTab,
     tabCount,
     splitLayout,
+    pendingAiText,
     createTab,
     closeTab,
     setActiveTab,
@@ -363,6 +380,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     appendOutput,
     clearError,
     updateSelectedText,
+    sendToAi,
+    clearPendingAiText,
     getRecentOutput,
     writeToTerminal,
     resizeTerminal,
