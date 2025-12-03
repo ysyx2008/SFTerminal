@@ -235,41 +235,35 @@ const renderMarkdown = (text: string): string => {
       .replace(/'/g, '&#039;')
   }
   
-  // 先保存代码块，用占位符替换
+  // 先提取代码块，用占位符替换
   const codeBlocks: string[] = []
   let result = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
     const language = lang || 'text'
     const trimmedCode = code.trim()
     // 对代码内容做base64编码避免onclick中的特殊字符问题
-    const encodedCode = btoa(unescape(encodeURIComponent(trimmedCode)))
-    const placeholder = `___CODE_BLOCK_${codeBlocks.length}___`
-    codeBlocks.push(`<div class="code-block">
-      <div class="code-header">
-        <span>${language}</span>
-        <button class="code-copy-btn" onclick="copyCode('${encodedCode}')" title="复制代码">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-          </svg>
-        </button>
-      </div>
-      <pre><code>${escapeHtml(trimmedCode)}</code></pre>
-    </div>`)
+    let encodedCode = ''
+    try {
+      encodedCode = btoa(unescape(encodeURIComponent(trimmedCode)))
+    } catch (e) {
+      encodedCode = ''
+    }
+    const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`
+    codeBlocks.push(`<div class="code-block"><div class="code-header"><span>${escapeHtml(language)}</span>${encodedCode ? `<button class="code-copy-btn" onclick="copyCode('${encodedCode}')" title="复制代码"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : ''}</div><pre><code>${escapeHtml(trimmedCode)}</code></pre></div>`)
     return placeholder
   })
   
-  // 转义剩余文本
+  // 转义剩余文本的 HTML
   result = escapeHtml(result)
   
   // 处理行内代码 `code`
   result = result.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
   
-  // 处理换行
+  // 处理换行（只对非代码块内容）
   result = result.replace(/\n/g, '<br>')
   
   // 还原代码块
   codeBlocks.forEach((block, index) => {
-    result = result.replace(`___CODE_BLOCK_${index}___`, block)
+    result = result.replace(`__CODE_BLOCK_${index}__`, block)
   })
   
   return result

@@ -26,6 +26,7 @@ let searchAddon: SearchAddon | null = null
 let unsubscribe: (() => void) | null = null
 let resizeObserver: ResizeObserver | null = null
 let isDisposed = false
+let pasteHandler: ((event: ClipboardEvent) => void) | null = null
 
 // 初始化终端
 onMounted(async () => {
@@ -80,6 +81,46 @@ onMounted(async () => {
     terminalStore.writeToTerminal(props.tabId, data)
   })
 
+  // 处理 Ctrl+V 粘贴
+  terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+    // Ctrl+V 或 Cmd+V 粘贴
+    if ((event.ctrlKey || event.metaKey) && event.key === 'v' && event.type === 'keydown') {
+      // 手动从剪贴板读取并粘贴
+      navigator.clipboard.readText().then(text => {
+        if (text && terminal && !isDisposed) {
+          terminalStore.writeToTerminal(props.tabId, text)
+        }
+      }).catch(err => {
+        console.error('读取剪贴板失败:', err)
+      })
+      return false // 阻止默认行为
+    }
+    // Ctrl+C 复制选中内容
+    if ((event.ctrlKey || event.metaKey) && event.key === 'c' && event.type === 'keydown') {
+      const selection = terminal.getSelection()
+      if (selection) {
+        navigator.clipboard.writeText(selection)
+        return false // 阻止默认行为（不发送 SIGINT）
+      }
+      // 没有选中内容时，让 Ctrl+C 发送到终端（作为中断信号）
+      return true
+    }
+    return true
+  })
+
+  // 监听 DOM 粘贴事件（右键粘贴等）
+  pasteHandler = async (event: ClipboardEvent) => {
+    event.preventDefault()
+    const text = event.clipboardData?.getData('text')
+    if (text && terminal && !isDisposed) {
+      terminalStore.writeToTerminal(props.tabId, text)
+    }
+  }
+  
+  if (terminalRef.value) {
+    terminalRef.value.addEventListener('paste', pasteHandler)
+  }
+
   // 订阅后端数据
   if (props.type === 'local') {
     unsubscribe = window.electronAPI.pty.onData(props.ptyId, (data: string) => {
@@ -127,6 +168,10 @@ onUnmounted(() => {
   if (resizeObserver) {
     resizeObserver.disconnect()
     resizeObserver = null
+  }
+  if (pasteHandler && terminalRef.value) {
+    terminalRef.value.removeEventListener('paste', pasteHandler)
+    pasteHandler = null
   }
   if (terminal) {
     terminal.dispose()

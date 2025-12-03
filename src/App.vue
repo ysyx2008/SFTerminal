@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, provide } from 'vue'
+import { ref, onMounted, onUnmounted, provide } from 'vue'
 import { useTerminalStore } from './stores/terminal'
 import { useConfigStore } from './stores/config'
 import TabBar from './components/TabBar.vue'
@@ -15,6 +15,12 @@ const showSidebar = ref(false)
 const showAiPanel = ref(false)
 const showSettings = ref(false)
 const sidebarTab = ref<'sessions' | 'history'>('sessions')
+
+// AI 面板宽度
+const aiPanelWidth = ref(360)
+const isResizing = ref(false)
+const MIN_AI_WIDTH = 280
+const MAX_AI_WIDTH = 600
 
 // 提供给子组件
 provide('showSettings', () => {
@@ -38,6 +44,40 @@ const toggleSidebar = () => {
 const toggleAiPanel = () => {
   showAiPanel.value = !showAiPanel.value
 }
+
+// AI 面板拖拽调整宽度
+const startResize = (e: MouseEvent) => {
+  isResizing.value = true
+  document.addEventListener('mousemove', handleResize)
+  document.addEventListener('mouseup', stopResize)
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+}
+
+const handleResize = (e: MouseEvent) => {
+  if (!isResizing.value) return
+  
+  // 计算新宽度（从右边缘到鼠标位置）
+  const newWidth = window.innerWidth - e.clientX
+  
+  // 限制宽度范围
+  if (newWidth >= MIN_AI_WIDTH && newWidth <= MAX_AI_WIDTH) {
+    aiPanelWidth.value = newWidth
+  }
+}
+
+const stopResize = () => {
+  isResizing.value = false
+  document.removeEventListener('mousemove', handleResize)
+  document.removeEventListener('mouseup', stopResize)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+}
+
+onUnmounted(() => {
+  document.removeEventListener('mousemove', handleResize)
+  document.removeEventListener('mouseup', stopResize)
+})
 </script>
 
 <template>
@@ -109,9 +149,16 @@ const toggleAiPanel = () => {
       </main>
 
       <!-- AI 面板 -->
-      <aside v-show="showAiPanel" class="ai-sidebar">
-        <AiPanel @close="showAiPanel = false" />
-      </aside>
+      <template v-if="showAiPanel">
+        <div 
+          class="resize-handle" 
+          @mousedown="startResize"
+          :class="{ resizing: isResizing }"
+        ></div>
+        <aside class="ai-sidebar" :style="{ width: aiPanelWidth + 'px' }">
+          <AiPanel @close="showAiPanel = false" />
+        </aside>
+      </template>
     </div>
 
     <!-- 设置弹窗 -->
@@ -219,11 +266,27 @@ const toggleAiPanel = () => {
 
 /* AI 侧边栏 */
 .ai-sidebar {
-  width: 360px;
+  min-width: 280px;
+  max-width: 600px;
   background: var(--bg-secondary);
   border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
+}
+
+/* 拖拽调整宽度手柄 */
+.resize-handle {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.resize-handle:hover,
+.resize-handle.resizing {
+  background: var(--accent-primary);
 }
 
 /* 空提示 */
