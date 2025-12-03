@@ -72,30 +72,52 @@ export const useTerminalStore = defineStore('terminal', () => {
   /**
    * 检测本地系统信息
    */
-  function detectLocalSystemInfo(): SystemInfo {
+  function detectLocalSystemInfo(shellPath?: string): SystemInfo {
     const platform = navigator.platform.toLowerCase()
     
+    // 根据 shell 路径判断 shell 类型
+    const detectShellType = (path?: string): ShellType => {
+      if (!path) return 'unknown'
+      const lowerPath = path.toLowerCase()
+      if (lowerPath.includes('powershell')) return 'powershell'
+      if (lowerPath.includes('cmd')) return 'cmd'
+      if (lowerPath.includes('bash')) return 'bash'
+      if (lowerPath.includes('zsh')) return 'zsh'
+      if (lowerPath.includes('sh')) return 'sh'
+      return 'unknown'
+    }
+    
     if (platform.includes('win')) {
-      // Windows 系统，COMSPEC 环境变量默认指向 cmd.exe
+      const shell = shellPath ? detectShellType(shellPath) : 'cmd'
+      const shellNames: Record<ShellType, string> = {
+        powershell: 'PowerShell',
+        cmd: 'CMD 命令提示符',
+        bash: 'Bash',
+        zsh: 'Zsh',
+        sh: 'Shell',
+        unknown: '终端'
+      }
       return {
         os: 'windows',
-        shell: 'cmd',
-        shellPath: 'cmd.exe',
-        description: 'Windows CMD 命令提示符'
+        shell,
+        shellPath: shellPath || 'cmd.exe',
+        description: `Windows ${shellNames[shell]}`
       }
     } else if (platform.includes('mac')) {
+      const shell = shellPath ? detectShellType(shellPath) : 'zsh'
       return {
         os: 'macos',
-        shell: 'zsh',
-        shellPath: '/bin/zsh',
-        description: 'macOS Zsh 终端'
+        shell,
+        shellPath: shellPath || '/bin/zsh',
+        description: `macOS ${shell === 'zsh' ? 'Zsh' : shell} 终端`
       }
     } else if (platform.includes('linux')) {
+      const shell = shellPath ? detectShellType(shellPath) : 'bash'
       return {
         os: 'linux',
-        shell: 'bash',
-        shellPath: '/bin/bash',
-        description: 'Linux Bash 终端'
+        shell,
+        shellPath: shellPath || '/bin/bash',
+        description: `Linux ${shell === 'bash' ? 'Bash' : shell} 终端`
       }
     }
     
@@ -226,7 +248,8 @@ export const useTerminalStore = defineStore('terminal', () => {
    */
   async function createTab(
     type: 'local' | 'ssh',
-    sshConfig?: { host: string; port: number; username: string; password?: string; privateKey?: string }
+    sshConfig?: { host: string; port: number; username: string; password?: string; privateKey?: string },
+    shell?: string  // 本地终端可指定 shell (cmd/powershell/bash 等)
   ): Promise<string> {
     const id = uuidv4()
     
@@ -234,7 +257,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     let title: string
     if (type === 'local') {
       localTerminalCounter.value++
-      title = `本地终端 ${localTerminalCounter.value}`
+      const shellName = shell ? (shell.includes('powershell') ? 'PowerShell' : shell.includes('cmd') ? 'CMD' : shell.split(/[/\\]/).pop()) : ''
+      title = shellName ? `${shellName} ${localTerminalCounter.value}` : `本地终端 ${localTerminalCounter.value}`
     } else if (sshConfig) {
       const sshKey = `${sshConfig.username}@${sshConfig.host}`
       sshTerminalCounters.value[sshKey] = (sshTerminalCounters.value[sshKey] || 0) + 1
@@ -271,12 +295,13 @@ export const useTerminalStore = defineStore('terminal', () => {
       if (type === 'local') {
         const ptyId = await window.electronAPI.pty.create({
           cols: 80,
-          rows: 24
+          rows: 24,
+          shell: shell
         })
         reactiveTab.ptyId = ptyId
         reactiveTab.isConnected = true
         // 检测本地系统信息
-        reactiveTab.systemInfo = detectLocalSystemInfo()
+        reactiveTab.systemInfo = detectLocalSystemInfo(shell)
       } else if (type === 'ssh' && sshConfig) {
         const sshId = await window.electronAPI.ssh.connect({
           host: sshConfig.host,

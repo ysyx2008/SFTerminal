@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useTerminalStore } from '../stores/terminal'
 
 const terminalStore = useTerminalStore()
@@ -8,8 +8,51 @@ const terminalStore = useTerminalStore()
 const dragIndex = ref<number | null>(null)
 const dragOverIndex = ref<number | null>(null)
 
-const handleNewTab = () => {
-  terminalStore.createTab('local')
+// 新建终端下拉菜单
+const showNewMenu = ref(false)
+const dropdownRef = ref<HTMLElement | null>(null)
+const menuPosition = ref({ top: '0px', left: '0px' })
+
+// 检测操作系统
+const isWindows = computed(() => navigator.platform.toLowerCase().includes('win'))
+
+// Shell 选项
+const shellOptions = computed(() => {
+  if (isWindows.value) {
+    return [
+      { label: 'PowerShell', value: 'powershell.exe', icon: '⚡' },
+      { label: 'CMD', value: 'cmd.exe', icon: '📟' },
+      { label: 'Git Bash', value: 'C:\\Program Files\\Git\\bin\\bash.exe', icon: '🐱' }
+    ]
+  } else {
+    return [
+      { label: 'Bash', value: '/bin/bash', icon: '🐚' },
+      { label: 'Zsh', value: '/bin/zsh', icon: '🔮' },
+      { label: 'Fish', value: '/usr/bin/fish', icon: '🐟' }
+    ]
+  }
+})
+
+const handleNewTab = (shell?: string) => {
+  terminalStore.createTab('local', undefined, shell)
+  showNewMenu.value = false
+}
+
+const toggleNewMenu = (event: MouseEvent) => {
+  if (!showNewMenu.value) {
+    // 计算菜单位置
+    const button = event.currentTarget as HTMLElement
+    const rect = button.getBoundingClientRect()
+    menuPosition.value = {
+      top: `${rect.bottom + 4}px`,
+      left: `${rect.right - 150}px`  // 150 是菜单宽度
+    }
+  }
+  showNewMenu.value = !showNewMenu.value
+}
+
+const hideNewMenu = () => {
+  showNewMenu.value = false
 }
 
 const handleCloseTab = (tabId: string, event: MouseEvent) => {
@@ -106,12 +149,37 @@ const handleDragEnd = () => {
         </button>
       </div>
     </div>
-    <button class="btn-new-tab" @click="handleNewTab" data-tooltip="新建标签页">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="12" y1="5" x2="12" y2="19"/>
-        <line x1="5" y1="12" x2="19" y2="12"/>
-      </svg>
-    </button>
+    <!-- 新建终端按钮（带下拉菜单） -->
+    <div class="new-tab-wrapper">
+      <button class="btn-new-tab" @click="handleNewTab()" data-tooltip="新建终端">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"/>
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+      </button>
+      <button class="btn-new-tab-dropdown" @click="toggleNewMenu" data-tooltip="选择 Shell">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+      
+    </div>
+    
+    <!-- Shell 选择菜单（使用 Teleport 避免 overflow 裁剪） -->
+    <Teleport to="body">
+      <div v-if="showNewMenu" class="shell-menu-overlay" @click="hideNewMenu"></div>
+      <div v-if="showNewMenu" class="shell-menu" :style="menuPosition">
+        <div 
+          v-for="option in shellOptions" 
+          :key="option.value"
+          class="shell-menu-item"
+          @click="handleNewTab(option.value)"
+        >
+          <span class="shell-icon">{{ option.icon }}</span>
+          <span>{{ option.label }}</span>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -249,16 +317,21 @@ const handleDragEnd = () => {
   }
 }
 
+.new-tab-wrapper {
+  position: relative;
+  display: flex;
+}
+
 .btn-new-tab {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
+  width: 24px;
   height: 28px;
   padding: 0;
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-radius: 6px 0 0 6px;
   color: var(--text-muted);
   cursor: pointer;
   transition: all 0.2s ease;
@@ -267,6 +340,66 @@ const handleDragEnd = () => {
 .btn-new-tab:hover {
   background: var(--bg-surface);
   color: var(--text-primary);
+}
+
+.btn-new-tab-dropdown {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border-color);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-new-tab-dropdown:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.shell-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+}
+
+.shell-menu {
+  position: fixed;
+  min-width: 150px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1001;
+  overflow: hidden;
+}
+
+.shell-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.shell-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.shell-icon {
+  font-size: 14px;
 }
 </style>
 
