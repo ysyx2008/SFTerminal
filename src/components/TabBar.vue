@@ -155,6 +155,20 @@ const handleDragEnd = () => {
 
 .tab.active {
   background: var(--bg-primary);
+  border-bottom: 2px solid var(--accent-primary);
+  box-shadow: 0 -2px 8px rgba(0, 150, 255, 0.15);
+  position: relative;
+}
+
+.tab.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent-primary);
+  border-radius: 2px 2px 0 0;
 }
 
 .tab.dragging {
@@ -188,6 +202,7 @@ const handleDragEnd = () => {
 
 .tab.active .tab-title {
   color: var(--text-primary);
+  font-weight: 600;
 }
 
 .tab-close {
