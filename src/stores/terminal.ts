@@ -12,6 +12,13 @@ export interface SystemInfo {
   description: string
 }
 
+export interface AiMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: Date
+}
+
 export interface TerminalTab {
   id: string
   title: string
@@ -34,6 +41,8 @@ export interface TerminalTab {
   }
   // 当前选中的文本
   selectedText?: string
+  // AI 对话历史（每个终端独立）
+  aiMessages?: AiMessage[]
 }
 
 export interface SplitPane {
@@ -395,6 +404,50 @@ export const useTerminalStore = defineStore('terminal', () => {
     tabs.value.splice(toIndex, 0, movedTab)
   }
 
+  // ==================== AI 消息管理 ====================
+
+  /**
+   * 获取当前终端的 AI 消息
+   */
+  function getAiMessages(tabId: string): AiMessage[] {
+    const tab = tabs.value.find(t => t.id === tabId)
+    return tab?.aiMessages || []
+  }
+
+  /**
+   * 添加 AI 消息
+   */
+  function addAiMessage(tabId: string, message: AiMessage): number {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab) return -1
+    
+    if (!tab.aiMessages) {
+      tab.aiMessages = []
+    }
+    tab.aiMessages.push(message)
+    return tab.aiMessages.length - 1
+  }
+
+  /**
+   * 更新 AI 消息内容
+   */
+  function updateAiMessage(tabId: string, index: number, content: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (tab?.aiMessages && tab.aiMessages[index]) {
+      tab.aiMessages[index].content = content
+    }
+  }
+
+  /**
+   * 清空 AI 消息
+   */
+  function clearAiMessages(tabId: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (tab) {
+      tab.aiMessages = []
+    }
+  }
+
   return {
     tabs,
     activeTabId,
@@ -416,7 +469,11 @@ export const useTerminalStore = defineStore('terminal', () => {
     writeToTerminal,
     resizeTerminal,
     splitTerminal,
-    reorderTabs
+    reorderTabs,
+    getAiMessages,
+    addAiMessage,
+    updateAiMessage,
+    clearAiMessages
   }
 })
 

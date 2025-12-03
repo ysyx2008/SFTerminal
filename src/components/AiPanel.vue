@@ -12,18 +12,21 @@ const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
 const showSettings = inject<() => void>('showSettings')
 
-interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  timestamp: Date
-}
+import type { AiMessage } from '../stores/terminal'
 
-const messages = ref<ChatMessage[]>([])
 const inputText = ref('')
 const isLoading = ref(false)
 const messagesRef = ref<HTMLDivElement | null>(null)
 const selectedText = ref('')
+
+// 当前终端的 AI 消息（每个终端独立）
+const messages = computed(() => {
+  const activeTab = terminalStore.activeTab
+  return activeTab?.aiMessages || []
+})
+
+// 当前终端 ID
+const currentTabId = computed(() => terminalStore.activeTabId)
 
 const hasAiConfig = computed(() => configStore.hasAiConfig)
 
@@ -95,30 +98,30 @@ const scrollToBottom = async () => {
 
 // 发送消息
 const sendMessage = async () => {
-  if (!inputText.value.trim() || isLoading.value) return
+  if (!inputText.value.trim() || isLoading.value || !currentTabId.value) return
 
-  const userMessage: ChatMessage = {
+  const tabId = currentTabId.value
+  const userMessage: AiMessage = {
     id: Date.now().toString(),
     role: 'user',
     content: inputText.value,
     timestamp: new Date()
   }
 
-  messages.value.push(userMessage)
+  terminalStore.addAiMessage(tabId, userMessage)
   const prompt = inputText.value
   inputText.value = ''
   isLoading.value = true
   await scrollToBottom()
 
   // 创建 AI 响应占位
-  const assistantMessage: ChatMessage = {
+  const assistantMessage: AiMessage = {
     id: (Date.now() + 1).toString(),
     role: 'assistant',
     content: '思考中...',
     timestamp: new Date()
   }
-  messages.value.push(assistantMessage)
-  const messageIndex = messages.value.length - 1
+  const messageIndex = terminalStore.addAiMessage(tabId, assistantMessage)
   await scrollToBottom()
 
   try {
@@ -133,11 +136,12 @@ const sendMessage = async () => {
         { role: 'user', content: prompt }
       ],
       chunk => {
+        const currentContent = terminalStore.getAiMessages(tabId)[messageIndex]?.content || ''
         if (firstChunk) {
-          messages.value[messageIndex].content = chunk
+          terminalStore.updateAiMessage(tabId, messageIndex, chunk)
           firstChunk = false
         } else {
-          messages.value[messageIndex].content += chunk
+          terminalStore.updateAiMessage(tabId, messageIndex, currentContent + chunk)
         }
         scrollToBottom()
       },
@@ -146,39 +150,38 @@ const sendMessage = async () => {
         scrollToBottom()
       },
       error => {
-        messages.value[messageIndex].content = `错误: ${error}`
+        terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${error}`)
         isLoading.value = false
       }
     )
   } catch (error) {
-    messages.value[messageIndex].content = `错误: ${error}`
+    terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${error}`)
     isLoading.value = false
   }
 }
 
 // 解释命令
 const explainCommand = async (command: string) => {
-  if (isLoading.value) return
+  if (isLoading.value || !currentTabId.value) return
 
-  const userMessage: ChatMessage = {
+  const tabId = currentTabId.value
+  const userMessage: AiMessage = {
     id: Date.now().toString(),
     role: 'user',
-    content: `请解释这个命令：\`${command}\``
-  ,
+    content: `请解释这个命令：\`${command}\``,
     timestamp: new Date()
   }
-  messages.value.push(userMessage)
+  terminalStore.addAiMessage(tabId, userMessage)
   isLoading.value = true
   await scrollToBottom()
 
-  const assistantMessage: ChatMessage = {
+  const assistantMessage: AiMessage = {
     id: (Date.now() + 1).toString(),
     role: 'assistant',
     content: '分析中...',
     timestamp: new Date()
   }
-  messages.value.push(assistantMessage)
-  const messageIndex = messages.value.length - 1
+  const messageIndex = terminalStore.addAiMessage(tabId, assistantMessage)
   await scrollToBottom()
 
   let firstChunk = true
@@ -194,11 +197,12 @@ const explainCommand = async (command: string) => {
       { role: 'user', content: `请解释这个命令：\n\`\`\`\n${command}\n\`\`\`` }
     ],
     chunk => {
+      const currentContent = terminalStore.getAiMessages(tabId)[messageIndex]?.content || ''
       if (firstChunk) {
-        messages.value[messageIndex].content = chunk
+        terminalStore.updateAiMessage(tabId, messageIndex, chunk)
         firstChunk = false
       } else {
-        messages.value[messageIndex].content += chunk
+        terminalStore.updateAiMessage(tabId, messageIndex, currentContent + chunk)
       }
       scrollToBottom()
     },
@@ -207,7 +211,7 @@ const explainCommand = async (command: string) => {
       scrollToBottom()
     },
     error => {
-      messages.value[messageIndex].content = `错误: ${error}`
+      terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${error}`)
       isLoading.value = false
     }
   )
@@ -215,26 +219,26 @@ const explainCommand = async (command: string) => {
 
 // 生成命令
 const generateCommand = async (description: string) => {
-  if (isLoading.value) return
+  if (isLoading.value || !currentTabId.value) return
 
-  const userMessage: ChatMessage = {
+  const tabId = currentTabId.value
+  const userMessage: AiMessage = {
     id: Date.now().toString(),
     role: 'user',
     content: description,
     timestamp: new Date()
   }
-  messages.value.push(userMessage)
+  terminalStore.addAiMessage(tabId, userMessage)
   isLoading.value = true
   await scrollToBottom()
 
-  const assistantMessage: ChatMessage = {
+  const assistantMessage: AiMessage = {
     id: (Date.now() + 1).toString(),
     role: 'assistant',
     content: '生成中...',
     timestamp: new Date()
   }
-  messages.value.push(assistantMessage)
-  const messageIndex = messages.value.length - 1
+  const messageIndex = terminalStore.addAiMessage(tabId, assistantMessage)
   await scrollToBottom()
 
   let firstChunk = true
@@ -257,11 +261,12 @@ const generateCommand = async (description: string) => {
       { role: 'user', content: description }
     ],
     chunk => {
+      const currentContent = terminalStore.getAiMessages(tabId)[messageIndex]?.content || ''
       if (firstChunk) {
-        messages.value[messageIndex].content = chunk
+        terminalStore.updateAiMessage(tabId, messageIndex, chunk)
         firstChunk = false
       } else {
-        messages.value[messageIndex].content += chunk
+        terminalStore.updateAiMessage(tabId, messageIndex, currentContent + chunk)
       }
       scrollToBottom()
     },
@@ -270,7 +275,7 @@ const generateCommand = async (description: string) => {
       scrollToBottom()
     },
     error => {
-      messages.value[messageIndex].content = `错误: ${error}`
+      terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${error}`)
       isLoading.value = false
     }
   )
@@ -278,38 +283,40 @@ const generateCommand = async (description: string) => {
 
 // 清空对话
 const clearMessages = () => {
-  messages.value = []
+  if (currentTabId.value) {
+    terminalStore.clearAiMessages(currentTabId.value)
+  }
 }
 
 // 诊断错误
 const diagnoseError = async () => {
   const error = lastError.value
-  if (!error || isLoading.value) return
+  if (!error || isLoading.value || !currentTabId.value) return
 
+  const tabId = currentTabId.value
+  
   // 清除错误提示
   if (terminalStore.activeTab) {
     terminalStore.clearError(terminalStore.activeTab.id)
   }
 
-  const userMessage: ChatMessage = {
+  const userMessage: AiMessage = {
     id: Date.now().toString(),
     role: 'user',
-    content: `请帮我分析这个错误：\n\`\`\`\n${error.content}\n\`\`\``
-  ,
+    content: `请帮我分析这个错误：\n\`\`\`\n${error.content}\n\`\`\``,
     timestamp: new Date()
   }
-  messages.value.push(userMessage)
+  terminalStore.addAiMessage(tabId, userMessage)
   isLoading.value = true
   await scrollToBottom()
 
-  const assistantMessage: ChatMessage = {
+  const assistantMessage: AiMessage = {
     id: (Date.now() + 1).toString(),
     role: 'assistant',
     content: '诊断中...',
     timestamp: new Date()
   }
-  messages.value.push(assistantMessage)
-  const messageIndex = messages.value.length - 1
+  const messageIndex = terminalStore.addAiMessage(tabId, assistantMessage)
   await scrollToBottom()
 
   const info = currentSystemInfo.value
@@ -325,11 +332,12 @@ const diagnoseError = async () => {
       { role: 'user', content: `请分析这个错误并提供解决方案：\n\`\`\`\n${error.content}\n\`\`\`` }
     ],
     chunk => {
+      const currentContent = terminalStore.getAiMessages(tabId)[messageIndex]?.content || ''
       if (firstChunk) {
-        messages.value[messageIndex].content = chunk
+        terminalStore.updateAiMessage(tabId, messageIndex, chunk)
         firstChunk = false
       } else {
-        messages.value[messageIndex].content += chunk
+        terminalStore.updateAiMessage(tabId, messageIndex, currentContent + chunk)
       }
       scrollToBottom()
     },
@@ -338,7 +346,7 @@ const diagnoseError = async () => {
       scrollToBottom()
     },
     err => {
-      messages.value[messageIndex].content = `错误: ${err}`
+      terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${err}`)
       isLoading.value = false
     }
   )
@@ -347,27 +355,26 @@ const diagnoseError = async () => {
 // 分析选中的终端内容
 const analyzeSelection = async () => {
   const selection = terminalSelectedText.value
-  if (!selection || isLoading.value) return
+  if (!selection || isLoading.value || !currentTabId.value) return
 
-  const userMessage: ChatMessage = {
+  const tabId = currentTabId.value
+  const userMessage: AiMessage = {
     id: Date.now().toString(),
     role: 'user',
-    content: `请帮我分析这段终端输出：\n\`\`\`\n${selection}\n\`\`\``
-  ,
+    content: `请帮我分析这段终端输出：\n\`\`\`\n${selection}\n\`\`\``,
     timestamp: new Date()
   }
-  messages.value.push(userMessage)
+  terminalStore.addAiMessage(tabId, userMessage)
   isLoading.value = true
   await scrollToBottom()
 
-  const assistantMessage: ChatMessage = {
+  const assistantMessage: AiMessage = {
     id: (Date.now() + 1).toString(),
     role: 'assistant',
     content: '分析中...',
     timestamp: new Date()
   }
-  messages.value.push(assistantMessage)
-  const messageIndex = messages.value.length - 1
+  const messageIndex = terminalStore.addAiMessage(tabId, assistantMessage)
   await scrollToBottom()
 
   const info = currentSystemInfo.value
@@ -383,11 +390,12 @@ const analyzeSelection = async () => {
       { role: 'user', content: `请分析这段终端输出：\n\`\`\`\n${selection}\n\`\`\`` }
     ],
     chunk => {
+      const currentContent = terminalStore.getAiMessages(tabId)[messageIndex]?.content || ''
       if (firstChunk) {
-        messages.value[messageIndex].content = chunk
+        terminalStore.updateAiMessage(tabId, messageIndex, chunk)
         firstChunk = false
       } else {
-        messages.value[messageIndex].content += chunk
+        terminalStore.updateAiMessage(tabId, messageIndex, currentContent + chunk)
       }
       scrollToBottom()
     },
@@ -396,7 +404,7 @@ const analyzeSelection = async () => {
       scrollToBottom()
     },
     err => {
-      messages.value[messageIndex].content = `错误: ${err}`
+      terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${err}`)
       isLoading.value = false
     }
   )
@@ -404,26 +412,26 @@ const analyzeSelection = async () => {
 
 // 分析从右键菜单发来的终端内容
 const analyzeTerminalContent = async (text: string) => {
-  if (!text || isLoading.value) return
+  if (!text || isLoading.value || !currentTabId.value) return
 
-  const userMessage: ChatMessage = {
+  const tabId = currentTabId.value
+  const userMessage: AiMessage = {
     id: Date.now().toString(),
     role: 'user',
     content: `请帮我分析这段终端内容：\n\`\`\`\n${text}\n\`\`\``,
     timestamp: new Date()
   }
-  messages.value.push(userMessage)
+  terminalStore.addAiMessage(tabId, userMessage)
   isLoading.value = true
   await scrollToBottom()
 
-  const assistantMessage: ChatMessage = {
+  const assistantMessage: AiMessage = {
     id: (Date.now() + 1).toString(),
     role: 'assistant',
     content: '分析中...',
     timestamp: new Date()
   }
-  messages.value.push(assistantMessage)
-  const messageIndex = messages.value.length - 1
+  const messageIndex = terminalStore.addAiMessage(tabId, assistantMessage)
   await scrollToBottom()
 
   const info = currentSystemInfo.value
@@ -439,11 +447,12 @@ const analyzeTerminalContent = async (text: string) => {
       { role: 'user', content: `请分析这段终端内容：\n\`\`\`\n${text}\n\`\`\`` }
     ],
     chunk => {
+      const currentContent = terminalStore.getAiMessages(tabId)[messageIndex]?.content || ''
       if (firstChunk) {
-        messages.value[messageIndex].content = chunk
+        terminalStore.updateAiMessage(tabId, messageIndex, chunk)
         firstChunk = false
       } else {
-        messages.value[messageIndex].content += chunk
+        terminalStore.updateAiMessage(tabId, messageIndex, currentContent + chunk)
       }
       scrollToBottom()
     },
@@ -452,7 +461,7 @@ const analyzeTerminalContent = async (text: string) => {
       scrollToBottom()
     },
     err => {
-      messages.value[messageIndex].content = `错误: ${err}`
+      terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${err}`)
       isLoading.value = false
     }
   )
