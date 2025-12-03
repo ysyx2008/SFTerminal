@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, provide } from 'vue'
+import { ref, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useTerminalStore } from './stores/terminal'
 import { useConfigStore } from './stores/config'
 import TabBar from './components/TabBar.vue'
@@ -44,6 +44,13 @@ const toggleSidebar = () => {
 const toggleAiPanel = () => {
   showAiPanel.value = !showAiPanel.value
 }
+
+// 监听右键菜单发送到 AI 的请求，自动打开 AI 面板
+watch(() => terminalStore.pendingAiText, (text) => {
+  if (text) {
+    showAiPanel.value = true
+  }
+})
 
 // AI 面板拖拽调整宽度
 const startResize = (e: MouseEvent) => {

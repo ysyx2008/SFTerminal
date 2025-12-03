@@ -255,6 +255,10 @@ const handleContextMenu = (event: MouseEvent) => {
 
 const hideContextMenu = () => {
   contextMenu.value.visible = false
+  // 让终端重新获得焦点
+  nextTick(() => {
+    terminal?.focus()
+  })
 }
 
 const menuCopy = async () => {

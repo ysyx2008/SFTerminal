@@ -51,13 +51,6 @@ const hasTerminalContext = computed(() => {
   return !!terminalSelectedText.value || !!lastError.value
 })
 
-// 监听右键菜单发送到 AI 的文本
-watch(() => terminalStore.pendingAiText, (text) => {
-  if (text) {
-    analyzeTerminalContent(text)
-    terminalStore.clearPendingAiText()
-  }
-})
 
 // 生成系统信息的提示词
 const getSystemPrompt = () => {
@@ -464,6 +457,14 @@ const analyzeTerminalContent = async (text: string) => {
     }
   )
 }
+
+// 监听右键菜单发送到 AI 的文本
+watch(() => terminalStore.pendingAiText, (text) => {
+  if (text) {
+    analyzeTerminalContent(text)
+    terminalStore.clearPendingAiText()
+  }
+}, { immediate: true })
 
 // 复制消息
 const copyMessage = async (content: string) => {
