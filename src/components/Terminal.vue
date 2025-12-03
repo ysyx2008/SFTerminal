@@ -25,6 +25,7 @@ let fitAddon: FitAddon | null = null
 let searchAddon: SearchAddon | null = null
 let unsubscribe: (() => void) | null = null
 let resizeObserver: ResizeObserver | null = null
+let isDisposed = false
 
 // 初始化终端
 onMounted(async () => {
@@ -82,11 +83,23 @@ onMounted(async () => {
   // 订阅后端数据
   if (props.type === 'local') {
     unsubscribe = window.electronAPI.pty.onData(props.ptyId, (data: string) => {
-      terminal?.write(data)
+      if (!isDisposed && terminal) {
+        try {
+          terminal.write(data)
+        } catch (e) {
+          // 忽略写入错误
+        }
+      }
     })
   } else {
     unsubscribe = window.electronAPI.ssh.onData(props.ptyId, (data: string) => {
-      terminal?.write(data)
+      if (!isDisposed && terminal) {
+        try {
+          terminal.write(data)
+        } catch (e) {
+          // 忽略写入错误
+        }
+      }
     })
   }
 
@@ -104,15 +117,23 @@ onMounted(async () => {
 
 // 清理
 onUnmounted(() => {
+  // 先标记为已销毁，防止后续回调执行
+  isDisposed = true
+  
   if (unsubscribe) {
     unsubscribe()
+    unsubscribe = null
   }
   if (resizeObserver) {
     resizeObserver.disconnect()
+    resizeObserver = null
   }
   if (terminal) {
     terminal.dispose()
+    terminal = null
   }
+  fitAddon = null
+  searchAddon = null
 })
 
 // 当标签页激活时，重新适配大小并聚焦

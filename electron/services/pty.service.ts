@@ -13,6 +13,7 @@ export interface PtyOptions {
 interface PtyInstance {
   pty: pty.IPty
   dataCallbacks: ((data: string) => void)[]
+  disposed: boolean
 }
 
 export class PtyService {
@@ -58,12 +59,21 @@ export class PtyService {
 
     const instance: PtyInstance = {
       pty: ptyProcess,
-      dataCallbacks: []
+      dataCallbacks: [],
+      disposed: false
     }
 
     // 监听数据输出
     ptyProcess.onData((data: string) => {
-      instance.dataCallbacks.forEach(callback => callback(data))
+      // 如果已销毁，不再触发回调
+      if (instance.disposed) return
+      instance.dataCallbacks.forEach(callback => {
+        try {
+          callback(data)
+        } catch (e) {
+          // 忽略回调错误（如 EPIPE）
+        }
+      })
     })
 
     // 监听退出
@@ -112,7 +122,14 @@ export class PtyService {
   dispose(id: string): void {
     const instance = this.instances.get(id)
     if (instance) {
-      instance.pty.kill()
+      // 标记为已销毁，防止后续回调触发
+      instance.disposed = true
+      instance.dataCallbacks = []
+      try {
+        instance.pty.kill()
+      } catch (e) {
+        // 忽略 kill 时的错误
+      }
       this.instances.delete(id)
     }
   }
@@ -122,7 +139,13 @@ export class PtyService {
    */
   disposeAll(): void {
     this.instances.forEach((instance, id) => {
-      instance.pty.kill()
+      instance.disposed = true
+      instance.dataCallbacks = []
+      try {
+        instance.pty.kill()
+      } catch (e) {
+        // 忽略 kill 时的错误
+      }
       this.instances.delete(id)
     })
   }

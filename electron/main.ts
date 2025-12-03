@@ -8,6 +8,23 @@ import { ConfigService } from './services/config.service'
 // 禁用 GPU 加速可能导致的问题（可选）
 // app.disableHardwareAcceleration()
 
+// 捕获未处理的异常，防止 EPIPE 等错误导致崩溃
+process.on('uncaughtException', (error) => {
+  // 忽略 EPIPE 错误（管道关闭时的正常错误）
+  if (error.message?.includes('EPIPE') || error.message?.includes('read EPIPE')) {
+    return
+  }
+  console.error('Uncaught exception:', error)
+})
+
+process.on('unhandledRejection', (reason) => {
+  // 忽略 EPIPE 相关的 Promise 拒绝
+  if (String(reason).includes('EPIPE')) {
+    return
+  }
+  console.error('Unhandled rejection:', reason)
+})
+
 let mainWindow: BrowserWindow | null = null
 
 // 服务实例
@@ -96,7 +113,13 @@ ipcMain.handle('pty:dispose', async (_event, id: string) => {
 // PTY 数据输出 - 转发到渲染进程
 ipcMain.on('pty:subscribe', (event, id: string) => {
   ptyService.onData(id, (data: string) => {
-    event.sender.send(`pty:data:${id}`, data)
+    try {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send(`pty:data:${id}`, data)
+      }
+    } catch (e) {
+      // 忽略发送错误（窗口可能已关闭）
+    }
   })
 })
 
@@ -119,7 +142,13 @@ ipcMain.handle('ssh:disconnect', async (_event, id: string) => {
 
 ipcMain.on('ssh:subscribe', (event, id: string) => {
   sshService.onData(id, (data: string) => {
-    event.sender.send(`ssh:data:${id}`, data)
+    try {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send(`ssh:data:${id}`, data)
+      }
+    } catch (e) {
+      // 忽略发送错误（窗口可能已关闭）
+    }
   })
 })
 
