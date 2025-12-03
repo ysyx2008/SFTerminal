@@ -26,6 +26,48 @@ const selectedText = ref('')
 
 const hasAiConfig = computed(() => configStore.hasAiConfig)
 
+// 获取当前终端的系统信息
+const currentSystemInfo = computed(() => {
+  const activeTab = terminalStore.activeTab
+  if (activeTab?.systemInfo) {
+    return activeTab.systemInfo
+  }
+  return null
+})
+
+// 生成系统信息的提示词
+const getSystemPrompt = () => {
+  const info = currentSystemInfo.value
+  let systemContext = ''
+  
+  if (info) {
+    const osNames: Record<string, string> = {
+      windows: 'Windows',
+      linux: 'Linux',
+      macos: 'macOS',
+      unknown: '未知操作系统'
+    }
+    const shellNames: Record<string, string> = {
+      powershell: 'PowerShell',
+      cmd: 'CMD (命令提示符)',
+      bash: 'Bash',
+      zsh: 'Zsh',
+      sh: 'Shell',
+      unknown: '未知 Shell'
+    }
+    
+    systemContext = `当前用户使用的是 ${osNames[info.os]} 系统，Shell 类型是 ${shellNames[info.shell]}。`
+    if (info.description) {
+      systemContext += ` (${info.description})`
+    }
+    systemContext += ' 请根据这个环境给出准确的命令和建议。'
+  } else {
+    systemContext = `当前操作系统平台: ${navigator.platform}。`
+  }
+  
+  return `你是旗鱼终端的 AI 助手，专门帮助运维人员解决命令行相关问题。${systemContext} 请用中文回答，回答要简洁实用。`
+}
+
 // 滚动到底部
 const scrollToBottom = async () => {
   await nextTick()
@@ -69,8 +111,7 @@ const sendMessage = async () => {
       [
         {
           role: 'system',
-          content:
-            '你是旗鱼终端的 AI 助手，专门帮助运维人员解决命令行相关问题。请用中文回答，回答要简洁实用。'
+          content: getSystemPrompt()
         },
         { role: 'user', content: prompt }
       ],
@@ -124,12 +165,14 @@ const explainCommand = async (command: string) => {
   await scrollToBottom()
 
   let firstChunk = true
+  const info = currentSystemInfo.value
+  const osContext = info ? `当前用户使用的是 ${info.os === 'windows' ? 'Windows' : info.os === 'macos' ? 'macOS' : 'Linux'} 系统，Shell 类型是 ${info.shell}。` : ''
+  
   window.electronAPI.ai.chatStream(
     [
       {
         role: 'system',
-        content:
-          '你是一个专业的 Linux/Unix 系统管理员助手。用户会给你一个命令，请用中文简洁地解释这个命令的作用、参数含义，以及可能的注意事项。'
+        content: `你是一个专业的系统管理员助手。${osContext}用户会给你一个命令，请用中文简洁地解释这个命令的作用、参数含义，以及可能的注意事项。`
       },
       { role: 'user', content: `请解释这个命令：\n\`\`\`\n${command}\n\`\`\`` }
     ],
@@ -178,11 +221,21 @@ const generateCommand = async (description: string) => {
   await scrollToBottom()
 
   let firstChunk = true
+  const info = currentSystemInfo.value
+  let systemContext = ''
+  if (info) {
+    const osNames: Record<string, string> = { windows: 'Windows', linux: 'Linux', macos: 'macOS', unknown: '未知' }
+    const shellNames: Record<string, string> = { powershell: 'PowerShell', cmd: 'CMD', bash: 'Bash', zsh: 'Zsh', sh: 'Shell', unknown: '未知' }
+    systemContext = `当前操作系统是 ${osNames[info.os]}，Shell 类型是 ${shellNames[info.shell]}。请生成适合该环境的命令。`
+  } else {
+    systemContext = `当前操作系统平台: ${navigator.platform}。`
+  }
+  
   window.electronAPI.ai.chatStream(
     [
       {
         role: 'system',
-        content: `你是一个专业的命令行助手。用户会用自然语言描述他想做的事情，请生成对应的命令并简要解释。当前操作系统是 ${navigator.platform}。`
+        content: `你是一个专业的命令行助手。${systemContext} 用户会用自然语言描述他想做的事情，请生成对应的命令并简要解释。`
       },
       { role: 'user', content: description }
     ],
@@ -322,6 +375,15 @@ const quickActions = [
     </div>
 
     <template v-else>
+      <!-- 系统环境信息 -->
+      <div v-if="currentSystemInfo" class="system-info-bar">
+        <span class="system-icon">💻</span>
+        <span class="system-text">
+          {{ currentSystemInfo.os === 'windows' ? 'Windows' : currentSystemInfo.os === 'macos' ? 'macOS' : 'Linux' }}
+          · {{ currentSystemInfo.shell === 'powershell' ? 'PowerShell' : currentSystemInfo.shell === 'cmd' ? 'CMD' : currentSystemInfo.shell === 'bash' ? 'Bash' : currentSystemInfo.shell === 'zsh' ? 'Zsh' : currentSystemInfo.shell }}
+        </span>
+      </div>
+
       <!-- 快捷操作 -->
       <div class="quick-actions">
         <button
@@ -431,6 +493,25 @@ const quickActions = [
   padding: 20px;
   color: var(--text-muted);
   text-align: center;
+}
+
+.system-info-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.system-icon {
+  font-size: 12px;
+}
+
+.system-text {
+  font-family: var(--font-mono);
 }
 
 .quick-actions {

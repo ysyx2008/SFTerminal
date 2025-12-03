@@ -2,6 +2,16 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 
+export type ShellType = 'powershell' | 'cmd' | 'bash' | 'zsh' | 'sh' | 'unknown'
+export type OSType = 'windows' | 'linux' | 'macos' | 'unknown'
+
+export interface SystemInfo {
+  os: OSType
+  shell: ShellType
+  shellPath?: string
+  description: string
+}
+
 export interface TerminalTab {
   id: string
   title: string
@@ -12,6 +22,7 @@ export interface TerminalTab {
     port: number
     username: string
   }
+  systemInfo?: SystemInfo
   isConnected: boolean
   isLoading: boolean
 }
@@ -34,6 +45,56 @@ export const useTerminalStore = defineStore('terminal', () => {
   // 计算属性
   const activeTab = computed(() => tabs.value.find(t => t.id === activeTabId.value))
   const tabCount = computed(() => tabs.value.length)
+
+  /**
+   * 检测本地系统信息
+   */
+  function detectLocalSystemInfo(): SystemInfo {
+    const platform = navigator.platform.toLowerCase()
+    
+    if (platform.includes('win')) {
+      // Windows 系统，COMSPEC 环境变量默认指向 cmd.exe
+      return {
+        os: 'windows',
+        shell: 'cmd',
+        shellPath: 'cmd.exe',
+        description: 'Windows CMD 命令提示符'
+      }
+    } else if (platform.includes('mac')) {
+      return {
+        os: 'macos',
+        shell: 'zsh',
+        shellPath: '/bin/zsh',
+        description: 'macOS Zsh 终端'
+      }
+    } else if (platform.includes('linux')) {
+      return {
+        os: 'linux',
+        shell: 'bash',
+        shellPath: '/bin/bash',
+        description: 'Linux Bash 终端'
+      }
+    }
+    
+    return {
+      os: 'unknown',
+      shell: 'unknown',
+      description: '未知终端类型'
+    }
+  }
+
+  /**
+   * 更新终端系统信息
+   */
+  function updateSystemInfo(tabId: string, systemInfo: Partial<SystemInfo>): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (tab) {
+      tab.systemInfo = {
+        ...tab.systemInfo,
+        ...systemInfo
+      } as SystemInfo
+    }
+  }
 
   /**
    * 创建新标签页
@@ -74,6 +135,8 @@ export const useTerminalStore = defineStore('terminal', () => {
         })
         reactiveTab.ptyId = ptyId
         reactiveTab.isConnected = true
+        // 检测本地系统信息
+        reactiveTab.systemInfo = detectLocalSystemInfo()
       } else if (type === 'ssh' && sshConfig) {
         const sshId = await window.electronAPI.ssh.connect({
           host: sshConfig.host,
@@ -86,6 +149,12 @@ export const useTerminalStore = defineStore('terminal', () => {
         })
         reactiveTab.ptyId = sshId
         reactiveTab.isConnected = true
+        // SSH 连接默认假设是 Linux/Unix 系统
+        reactiveTab.systemInfo = {
+          os: 'linux',
+          shell: 'bash',
+          description: `SSH 连接: ${sshConfig.username}@${sshConfig.host}`
+        }
       }
     } catch (error) {
       console.error('Failed to create terminal:', error)
@@ -193,6 +262,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     closeTab,
     setActiveTab,
     updateTabTitle,
+    updateSystemInfo,
     writeToTerminal,
     resizeTerminal,
     splitTerminal
