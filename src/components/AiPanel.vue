@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, inject } from 'vue'
+import { marked } from 'marked'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 
@@ -274,52 +275,52 @@ const copyMessage = async (content: string) => {
   }
 }
 
+// 配置 marked 渲染器
+const renderer = new marked.Renderer()
+
+// 自定义代码块渲染（添加复制按钮）
+renderer.code = (code: string, language?: string) => {
+  const lang = language || 'text'
+  let encodedCode = ''
+  try {
+    encodedCode = btoa(unescape(encodeURIComponent(code)))
+  } catch (e) {
+    encodedCode = ''
+  }
+  
+  const copyBtn = encodedCode 
+    ? `<button class="code-copy-btn" onclick="copyCode('${encodedCode}')" title="复制代码"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>`
+    : ''
+  
+  return `<div class="code-block"><div class="code-header"><span>${lang}</span>${copyBtn}</div><pre><code>${code}</code></pre></div>`
+}
+
+// 自定义行内代码渲染
+renderer.codespan = (code: string) => {
+  return `<code class="inline-code">${code}</code>`
+}
+
+// 配置 marked
+marked.setOptions({
+  renderer,
+  breaks: true,  // 支持换行
+  gfm: true      // 支持 GitHub 风格 Markdown
+})
+
 // 渲染 Markdown 格式
 const renderMarkdown = (text: string): string => {
   if (!text) return ''
   
-  // 转义 HTML 特殊字符
-  const escapeHtml = (str: string) => {
-    return str
+  try {
+    return marked.parse(text) as string
+  } catch (e) {
+    // 如果解析失败，返回转义后的纯文本
+    return text
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;')
+      .replace(/\n/g, '<br>')
   }
-  
-  // 先提取代码块，用占位符替换
-  const codeBlocks: string[] = []
-  let result = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
-    const language = lang || 'text'
-    const trimmedCode = code.trim()
-    // 对代码内容做base64编码避免onclick中的特殊字符问题
-    let encodedCode = ''
-    try {
-      encodedCode = btoa(unescape(encodeURIComponent(trimmedCode)))
-    } catch (e) {
-      encodedCode = ''
-    }
-    const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`
-    codeBlocks.push(`<div class="code-block"><div class="code-header"><span>${escapeHtml(language)}</span>${encodedCode ? `<button class="code-copy-btn" onclick="copyCode('${encodedCode}')" title="复制代码"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : ''}</div><pre><code>${escapeHtml(trimmedCode)}</code></pre></div>`)
-    return placeholder
-  })
-  
-  // 转义剩余文本的 HTML
-  result = escapeHtml(result)
-  
-  // 处理行内代码 `code`
-  result = result.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
-  
-  // 处理换行（只对非代码块内容）
-  result = result.replace(/\n/g, '<br>')
-  
-  // 还原代码块
-  codeBlocks.forEach((block, index) => {
-    result = result.replace(`__CODE_BLOCK_${index}__`, block)
-  })
-  
-  return result
 }
 
 // 暴露到window对象供HTML中的onclick使用
@@ -694,6 +695,111 @@ const quickActions = [
   border: 1px solid var(--border-color);
   border-radius: 3px;
   color: var(--accent-primary);
+}
+
+/* Markdown 样式 */
+.markdown-content {
+  line-height: 1.6;
+}
+
+.markdown-content p {
+  margin: 0 0 8px;
+}
+
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content strong {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.markdown-content em {
+  font-style: italic;
+}
+
+.markdown-content h1,
+.markdown-content h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 12px 0 8px;
+  color: var(--text-primary);
+}
+
+.markdown-content h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 10px 0 6px;
+  color: var(--text-primary);
+}
+
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 8px 0 4px;
+  color: var(--text-primary);
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.markdown-content li {
+  margin: 4px 0;
+}
+
+.markdown-content ul li {
+  list-style-type: disc;
+}
+
+.markdown-content ol li {
+  list-style-type: decimal;
+}
+
+.markdown-content blockquote {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent-primary);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.markdown-content a {
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+.markdown-content a:hover {
+  text-decoration: underline;
+}
+
+.markdown-content hr {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 12px 0;
+}
+
+.markdown-content table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  width: 100%;
+}
+
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid var(--border-color);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.markdown-content th {
+  background: var(--bg-tertiary);
+  font-weight: 600;
 }
 
 .copy-btn {
