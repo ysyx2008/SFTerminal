@@ -493,7 +493,11 @@ renderer.code = (code: string, language?: string) => {
     ? `<button class="code-copy-btn" onclick="copyCode('${encodedCode}')" title="复制代码"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>`
     : ''
   
-  return `<div class="code-block"><div class="code-header"><span>${lang}</span>${copyBtn}</div><pre><code>${code}</code></pre></div>`
+  const sendBtn = encodedCode
+    ? `<button class="code-send-btn" onclick="sendCodeToTerminal('${encodedCode}')" title="发送到终端"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg></button>`
+    : ''
+  
+  return `<div class="code-block"><div class="code-header"><span>${lang}</span><div class="code-actions">${sendBtn}${copyBtn}</div></div><pre><code>${code}</code></pre></div>`
 }
 
 // 自定义行内代码渲染
@@ -531,6 +535,20 @@ const renderMarkdown = (text: string): string => {
     await navigator.clipboard.writeText(code)
   } catch (error) {
     console.error('复制代码失败:', error)
+  }
+}
+
+// 发送代码到终端
+;(window as any).sendCodeToTerminal = async (encodedCode: string) => {
+  try {
+    const code = decodeURIComponent(escape(atob(encodedCode)))
+    const activeTab = terminalStore.activeTab
+    if (activeTab?.ptyId) {
+      // 发送代码到终端（不自动添加回车，让用户确认后再执行）
+      await terminalStore.writeToTerminal(activeTab.id, code)
+    }
+  } catch (error) {
+    console.error('发送到终端失败:', error)
   }
 }
 
@@ -1017,7 +1035,13 @@ const quickActions = [
   letter-spacing: 0.5px;
 }
 
-.markdown-content :deep(.code-copy-btn) {
+.markdown-content :deep(.code-actions) {
+  display: flex;
+  gap: 6px;
+}
+
+.markdown-content :deep(.code-copy-btn),
+.markdown-content :deep(.code-send-btn) {
   padding: 4px 8px;
   font-size: 11px;
   color: #565f89;
@@ -1034,6 +1058,12 @@ const quickActions = [
   color: #7aa2f7;
   background: rgba(122, 162, 247, 0.15);
   border-color: #7aa2f7;
+}
+
+.markdown-content :deep(.code-send-btn:hover) {
+  color: #9ece6a;
+  background: rgba(158, 206, 106, 0.15);
+  border-color: #9ece6a;
 }
 
 .markdown-content :deep(.code-block pre) {

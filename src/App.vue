@@ -16,10 +16,10 @@ const showAiPanel = ref(false)
 const showSettings = ref(false)
 
 // AI 面板宽度
-const aiPanelWidth = ref(360)
+const aiPanelWidth = ref(420)
 const isResizing = ref(false)
-const MIN_AI_WIDTH = 280
-const MAX_AI_WIDTH = 600
+const MIN_AI_WIDTH = 300
+const MAX_AI_WIDTH = 800
 
 // 提供给子组件
 provide('showSettings', () => {
