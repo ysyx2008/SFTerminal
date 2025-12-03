@@ -524,24 +524,35 @@ const copyMessage = async (content: string) => {
 const renderer = new marked.Renderer()
 
 // 自定义代码块渲染（添加复制按钮）
-renderer.code = (code: string, language?: string) => {
-  const lang = language || 'text'
-  let encodedCode = ''
-  try {
-    encodedCode = btoa(unescape(encodeURIComponent(code)))
-  } catch (e) {
-    encodedCode = ''
+// 使用 data 属性标记，通过事件委托处理点击，解决流式输出时按钮不可用的问题
+// 兼容 marked 不同版本的 API
+renderer.code = (codeOrToken: string | { text: string; lang?: string }, language?: string) => {
+  // 兼容新旧版本 marked API
+  let code: string
+  let lang: string
+  
+  if (typeof codeOrToken === 'object' && codeOrToken !== null) {
+    // 新版本 marked，参数是 token 对象
+    code = codeOrToken.text || ''
+    lang = codeOrToken.lang || 'text'
+  } else {
+    // 旧版本 marked，参数是分散的
+    code = codeOrToken as string
+    lang = language || 'text'
   }
   
-  const copyBtn = encodedCode 
-    ? `<button class="code-copy-btn" onclick="copyCode('${encodedCode}')" title="复制代码"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>`
-    : ''
+  // 转义 HTML 特殊字符用于显示
+  const escapedCode = code
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
   
-  const sendBtn = encodedCode
-    ? `<button class="code-send-btn" onclick="sendCodeToTerminal('${encodedCode}')" title="发送到终端"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg></button>`
-    : ''
+  // 始终渲染按钮，通过事件委托在点击时获取代码内容
+  const copyBtn = `<button class="code-copy-btn" data-action="copy" title="复制代码"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>`
   
-  return `<div class="code-block"><div class="code-header"><span>${lang}</span><div class="code-actions">${sendBtn}${copyBtn}</div></div><pre><code>${code}</code></pre></div>`
+  const sendBtn = `<button class="code-send-btn" data-action="send" title="发送到终端"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg></button>`
+  
+  return `<div class="code-block"><div class="code-header"><span>${lang}</span><div class="code-actions">${sendBtn}${copyBtn}</div></div><pre><code>${escapedCode}</code></pre></div>`
 }
 
 // 自定义行内代码渲染
@@ -572,31 +583,69 @@ const renderMarkdown = (text: string): string => {
   }
 }
 
-// 暴露到window对象供HTML中的onclick使用
-;(window as any).copyCode = async (encodedCode: string) => {
-  try {
-    const code = decodeURIComponent(escape(atob(encodedCode)))
-    await navigator.clipboard.writeText(code)
-  } catch (error) {
-    console.error('复制代码失败:', error)
+// 从代码块中提取代码内容（反转义 HTML）
+const getCodeFromBlock = (button: HTMLElement): string => {
+  const codeBlock = button.closest('.code-block')
+  const codeElement = codeBlock?.querySelector('pre code')
+  if (!codeElement) return ''
+  
+  // 获取文本内容（自动反转义 HTML 实体）
+  return codeElement.textContent || ''
+}
+
+// 事件委托处理代码块按钮点击
+const handleCodeBlockClick = async (event: MouseEvent) => {
+  const target = event.target as HTMLElement
+  
+  // 调试：显示点击的元素
+  console.log('点击元素:', target.tagName, target.className)
+  
+  // 查找带有 data-action 属性的按钮（可能点击的是 SVG 或其子元素）
+  const button = target.closest('.code-copy-btn, .code-send-btn') as HTMLElement
+  if (!button) {
+    console.log('未找到按钮元素')
+    return
+  }
+  
+  console.log('找到按钮:', button.className, 'data-action:', button.dataset.action)
+  
+  const action = button.dataset.action
+  const code = getCodeFromBlock(button)
+  
+  console.log('Code block action:', action, 'Code length:', code.length)
+  
+  if (!code) {
+    console.warn('未能获取代码内容')
+    return
+  }
+  
+  if (action === 'copy') {
+    try {
+      await navigator.clipboard.writeText(code)
+      console.log('代码已复制')
+    } catch (error) {
+      console.error('复制代码失败:', error)
+    }
+  } else if (action === 'send') {
+    try {
+      const activeTab = terminalStore.activeTab
+      console.log('Active tab:', activeTab?.id, 'ptyId:', activeTab?.ptyId)
+      if (activeTab?.ptyId) {
+        // 发送代码到终端（不自动添加回车，让用户确认后再执行）
+        await terminalStore.writeToTerminal(activeTab.id, code)
+        // 自动让终端获得焦点，方便用户按回车执行
+        terminalStore.focusTerminal(activeTab.id)
+        console.log('代码已发送到终端')
+      } else {
+        console.warn('没有活动的终端')
+      }
+    } catch (error) {
+      console.error('发送到终端失败:', error)
+    }
   }
 }
 
-// 发送代码到终端
-;(window as any).sendCodeToTerminal = async (encodedCode: string) => {
-  try {
-    const code = decodeURIComponent(escape(atob(encodedCode)))
-    const activeTab = terminalStore.activeTab
-    if (activeTab?.ptyId) {
-      // 发送代码到终端（不自动添加回车，让用户确认后再执行）
-      await terminalStore.writeToTerminal(activeTab.id, code)
-      // 自动让终端获得焦点，方便用户按回车执行
-      terminalStore.focusTerminal(activeTab.id)
-    }
-  } catch (error) {
-    console.error('发送到终端失败:', error)
-  }
-}
+// 事件监听通过模板 @click 绑定到 messagesRef
 
 // 快捷操作
 const quickActions = [
@@ -705,7 +754,7 @@ const quickActions = [
       </div>
 
       <!-- 消息列表 -->
-      <div ref="messagesRef" class="ai-messages">
+      <div ref="messagesRef" class="ai-messages" @click="handleCodeBlockClick">
         <div v-if="messages.length === 0" class="ai-welcome">
           <p>你好！我是旗鱼终端的 AI 助手。</p>
           <p>我可以帮你：</p>
@@ -1144,6 +1193,12 @@ const quickActions = [
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
+}
+
+/* 确保 SVG 不拦截点击事件 */
+.markdown-content :deep(.code-copy-btn svg),
+.markdown-content :deep(.code-send-btn svg) {
+  pointer-events: none;
 }
 
 .markdown-content :deep(.code-copy-btn:hover) {
