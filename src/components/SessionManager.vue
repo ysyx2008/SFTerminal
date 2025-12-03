@@ -85,7 +85,7 @@ const filteredSessions = computed(() => {
 
 // 按组分类的会话
 const groupedSessions = computed(() => {
-  const groups: Record<string, SshSession[]> = { '默认': [] }
+  const groups: Record<string, SshSession[]> = {}
   filteredSessions.value.forEach(session => {
     const group = session.group || '默认'
     if (!groups[group]) {
@@ -237,7 +237,7 @@ const handleImportResult = async (importResult: { success: boolean; sessions: an
         v-model="searchText"
         type="text"
         class="input search-input"
-        placeholder="搜索会话..."
+        placeholder="搜索主机..."
       />
       <button class="btn btn-primary btn-sm" @click="openNewSession">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -336,8 +336,14 @@ const handleImportResult = async (importResult: { success: boolean; sessions: an
         </div>
       </template>
       <div v-else class="empty-sessions">
-        <p>暂无保存的会话</p>
-        <p class="tip">点击"新建"添加 SSH 会话</p>
+        <template v-if="searchText">
+          <p>未找到匹配的主机</p>
+          <p class="tip">尝试其他关键词</p>
+        </template>
+        <template v-else>
+          <p>暂无保存的会话</p>
+          <p class="tip">点击"新建"添加 SSH 会话</p>
+        </template>
       </div>
     </div>
 
@@ -423,6 +429,13 @@ const handleImportResult = async (importResult: { success: boolean; sessions: an
 
 .search-input {
   flex: 1;
+}
+
+/* 工具栏按钮统一样式 */
+.session-toolbar .btn {
+  height: 32px;
+  min-width: fit-content;
+  white-space: nowrap;
 }
 
 /* 导入下拉菜单 */
