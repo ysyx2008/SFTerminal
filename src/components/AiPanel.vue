@@ -739,34 +739,48 @@ const runAgent = async () => {
   const userMessage: AiMessage = {
     id: Date.now().toString(),
     role: 'user',
-    content: `[Agent 任务] ${message}`,
+    content: message,
     timestamp: new Date()
   }
   terminalStore.addAiMessage(tabId, userMessage)
   await scrollToBottom()
 
-  // 清空之前的 Agent 状态
+  // 清空之前的 Agent 步骤（保留对话历史）
   terminalStore.clearAgentState(tabId)
 
+  // 获取历史对话用于 Agent 记忆
+  const historyMessages = terminalStore.getAiMessages(tabId)
+    .filter(msg => !msg.content.includes('中...'))
+    .map(msg => ({
+      role: msg.role as 'user' | 'assistant',
+      content: msg.content
+    }))
+
   try {
-    // 调用 Agent API
+    // 调用 Agent API，传递历史对话
     const result = await window.electronAPI.agent.run(
       context.ptyId,
       message,
-      context as { ptyId: string; terminalOutput: string[]; systemInfo: { os: string; shell: string } }
+      {
+        ...context,
+        historyMessages  // 添加历史对话
+      } as { ptyId: string; terminalOutput: string[]; systemInfo: { os: string; shell: string }; historyMessages?: { role: string; content: string }[] }
     )
+
+    // 清除 Agent 步骤显示（任务完成后）
+    terminalStore.clearAgentState(tabId)
 
     if (!result.success) {
       // 添加错误消息
       const errorMessage: AiMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `Agent 执行失败: ${result.error}`,
+        content: `❌ Agent 执行失败: ${result.error}`,
         timestamp: new Date()
       }
       terminalStore.addAiMessage(tabId, errorMessage)
     } else if (result.result) {
-      // 添加完成消息
+      // 添加完成消息（带总结标记）
       const completeMessage: AiMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -777,10 +791,11 @@ const runAgent = async () => {
     }
   } catch (error) {
     console.error('Agent 运行失败:', error)
+    terminalStore.clearAgentState(tabId)
     const errorMessage: AiMessage = {
       id: (Date.now() + 1).toString(),
       role: 'assistant',
-      content: `Agent 运行出错: ${error instanceof Error ? error.message : '未知错误'}`,
+      content: `❌ Agent 运行出错: ${error instanceof Error ? error.message : '未知错误'}`,
       timestamp: new Date()
     }
     terminalStore.addAiMessage(tabId, errorMessage)

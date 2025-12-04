@@ -84,6 +84,7 @@ export interface AgentContext {
     os: string
     shell: string
   }
+  historyMessages?: { role: string; content: string }[]
 }
 
 export interface AgentConfig {

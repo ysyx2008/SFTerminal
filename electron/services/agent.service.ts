@@ -35,6 +35,7 @@ export interface AgentContext {
     os: string
     shell: string
   }
+  historyMessages?: { role: string; content: string }[]  // 历史对话记录
 }
 
 // 工具执行结果
@@ -559,6 +560,22 @@ export class AgentService {
     // 构建系统提示
     const systemPrompt = this.buildSystemPrompt(context)
     run.messages.push({ role: 'system', content: systemPrompt })
+
+    // 添加历史对话（保持 Agent 记忆）
+    if (context.historyMessages && context.historyMessages.length > 0) {
+      // 只保留最近的对话历史，避免超出上下文限制
+      const recentHistory = context.historyMessages.slice(-10)
+      for (const msg of recentHistory) {
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          run.messages.push({ 
+            role: msg.role as 'user' | 'assistant', 
+            content: msg.content 
+          })
+        }
+      }
+    }
+
+    // 添加当前用户消息
     run.messages.push({ role: 'user', content: userMessage })
 
     // 添加开始步骤
