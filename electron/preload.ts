@@ -414,6 +414,21 @@ const electronAPI = {
     // 检查是否需要探测
     needsProbe: (hostId: string) => ipcRenderer.invoke('hostProfile:needsProbe', hostId) as Promise<boolean>,
 
+    // 后台探测本地主机（不在终端显示）
+    probeLocal: () => ipcRenderer.invoke('hostProfile:probeLocal') as Promise<{
+      hostId: string
+      hostname: string
+      username: string
+      os: string
+      osVersion: string
+      shell: string
+      packageManager?: string
+      installedTools: string[]
+      notes: string[]
+      lastProbed: number
+      lastUpdated: number
+    }>,
+
     // 生成主机上下文
     generateContext: (hostId: string) => ipcRenderer.invoke('hostProfile:generateContext', hostId) as Promise<string>
   }

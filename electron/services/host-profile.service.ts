@@ -1,6 +1,10 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { app } from 'electron'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+
+const execAsync = promisify(exec)
 
 // ==================== 类型定义 ====================
 
@@ -388,6 +392,118 @@ export class HostProfileService {
     // 如果超过 24 小时没有探测，建议重新探测
     const hoursSinceProbe = (Date.now() - profile.lastProbed) / (1000 * 60 * 60)
     return hoursSinceProbe > 24
+  }
+
+  /**
+   * 后台探测本地主机信息（不在终端显示）
+   */
+  async probeLocal(): Promise<ProbeResult> {
+    const result: ProbeResult = {}
+    
+    try {
+      // 探测主机名
+      const { stdout: hostname } = await execAsync('hostname')
+      result.hostname = hostname.trim()
+    } catch { /* ignore */ }
+
+    try {
+      // 探测用户名
+      const { stdout: username } = await execAsync('whoami')
+      result.username = username.trim()
+    } catch { /* ignore */ }
+
+    try {
+      // 探测系统类型
+      const { stdout: uname } = await execAsync('uname -s')
+      const os = uname.trim().toLowerCase()
+      if (os.includes('darwin')) result.os = 'macos'
+      else if (os.includes('linux')) result.os = 'linux'
+      else result.os = os
+    } catch { /* ignore */ }
+
+    try {
+      // 探测 Shell
+      const shell = process.env.SHELL || ''
+      if (shell.includes('zsh')) result.shell = 'zsh'
+      else if (shell.includes('bash')) result.shell = 'bash'
+      else if (shell.includes('fish')) result.shell = 'fish'
+      else if (shell) result.shell = path.basename(shell)
+    } catch { /* ignore */ }
+
+    try {
+      // 探测系统版本 (macOS)
+      const { stdout: swVers } = await execAsync('sw_vers 2>/dev/null || echo ""')
+      if (swVers.includes('ProductName')) {
+        const nameMatch = swVers.match(/ProductName:\s*(.+)/)
+        const verMatch = swVers.match(/ProductVersion:\s*(.+)/)
+        if (nameMatch) {
+          result.osVersion = `${nameMatch[1].trim()} ${verMatch?.[1]?.trim() || ''}`.trim()
+        }
+      }
+    } catch { /* ignore */ }
+
+    if (!result.osVersion) {
+      try {
+        // 探测系统版本 (Linux)
+        const { stdout: osRelease } = await execAsync('cat /etc/os-release 2>/dev/null | head -3 || echo ""')
+        const nameMatch = osRelease.match(/NAME="?([^"\n]+)"?/)
+        const verMatch = osRelease.match(/VERSION="?([^"\n]+)"?/)
+        if (nameMatch) {
+          result.osVersion = `${nameMatch[1]} ${verMatch?.[1] || ''}`.trim()
+        }
+      } catch { /* ignore */ }
+    }
+
+    try {
+      // 探测包管理器
+      const pmChecks = [
+        { cmd: 'command -v brew', name: 'brew' },
+        { cmd: 'command -v apt', name: 'apt' },
+        { cmd: 'command -v yum', name: 'yum' },
+        { cmd: 'command -v dnf', name: 'dnf' },
+        { cmd: 'command -v pacman', name: 'pacman' }
+      ]
+      for (const pm of pmChecks) {
+        try {
+          await execAsync(pm.cmd)
+          result.packageManager = pm.name
+          break
+        } catch { /* not found */ }
+      }
+    } catch { /* ignore */ }
+
+    try {
+      // 探测已安装工具
+      const tools: string[] = []
+      const toolChecks = ['git', 'docker', 'python3', 'node', 'nginx', 'vim', 'nano']
+      for (const tool of toolChecks) {
+        try {
+          await execAsync(`command -v ${tool}`)
+          tools.push(tool)
+        } catch { /* not found */ }
+      }
+      if (tools.length > 0) {
+        result.installedTools = tools
+      }
+    } catch { /* ignore */ }
+
+    try {
+      // 主目录
+      result.homeDir = process.env.HOME || undefined
+    } catch { /* ignore */ }
+
+    return result
+  }
+
+  /**
+   * 执行本地探测并更新档案
+   */
+  async probeAndUpdateLocal(): Promise<HostProfile> {
+    const probeResult = await this.probeLocal()
+    return this.updateProfile('local', {
+      ...probeResult,
+      lastProbed: Date.now()
+    })
   }
 }
 

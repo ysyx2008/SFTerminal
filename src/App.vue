@@ -19,8 +19,8 @@ const showSettings = ref(false)
 const aiPanelWidth = ref(420)
 const isResizing = ref(false)
 const MIN_AI_WIDTH = 300
-// 最大宽度为窗口宽度的一半
-const getMaxAiWidth = () => Math.max(600, Math.floor(window.innerWidth / 2))
+// 最大宽度为窗口宽度减去最小终端宽度（200px）
+const getMaxAiWidth = () => window.innerWidth - 200
 
 // 提供给子组件
 provide('showSettings', () => {

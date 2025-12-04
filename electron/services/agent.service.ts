@@ -210,13 +210,13 @@ export class AgentService {
         type: 'function',
         function: {
           name: 'remember_info',
-          description: '记住重要信息供以后参考。当你发现有价值的信息时使用（如配置文件位置、服务状态、系统特点等）。这些信息会被保存到主机档案中，在未来的交互中作为参考。',
+          description: `记住重要的**静态**信息供以后参考。适合记住的：配置文件路径、日志目录、自定义脚本位置、特殊的系统配置等不易变化的信息。不要记住的：端口监听状态、进程列表、磁盘使用率、内存占用等动态变化的运行时信息。`,
           parameters: {
             type: 'object',
             properties: {
               info: {
                 type: 'string',
-                description: '要记住的信息（简洁描述，如"nginx 配置在 /etc/nginx/"）'
+                description: '要记住的静态信息（如"nginx 配置在 /etc/nginx/conf.d/"、"项目日志在 /var/log/myapp/"）'
               }
             },
             required: ['info']

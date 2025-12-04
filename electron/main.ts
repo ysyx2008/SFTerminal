@@ -489,6 +489,11 @@ ipcMain.handle('hostProfile:needsProbe', async (_event, hostId: string) => {
   return hostProfileService.needsProbe(hostId)
 })
 
+// 后台探测本地主机（不在终端显示）
+ipcMain.handle('hostProfile:probeLocal', async () => {
+  return hostProfileService.probeAndUpdateLocal()
+})
+
 // 生成主机上下文（用于 System Prompt）
 ipcMain.handle('hostProfile:generateContext', async (_event, hostId: string) => {
   return hostProfileService.generateHostContext(hostId)
