@@ -21,7 +21,21 @@ const messagesRef = ref<HTMLDivElement | null>(null)
 const agentMode = ref(true)
 const strictMode = ref(true)       // 严格模式（默认开启）
 const commandTimeout = ref(10)     // 命令超时时间（秒），默认 10 秒
-const stepsCollapsed = ref(false)  // 步骤是否折叠
+const collapsedTaskIds = ref<Set<string>>(new Set())  // 已折叠的任务 ID
+
+// 切换任务步骤折叠状态
+const toggleStepsCollapse = (taskId: string) => {
+  if (collapsedTaskIds.value.has(taskId)) {
+    collapsedTaskIds.value.delete(taskId)
+  } else {
+    collapsedTaskIds.value.add(taskId)
+  }
+}
+
+// 检查任务是否折叠
+const isStepsCollapsed = (taskId: string) => {
+  return collapsedTaskIds.value.has(taskId)
+}
 
 // 清理事件监听的函数
 let cleanupStepListener: (() => void) | null = null
@@ -54,23 +68,63 @@ const isAgentRunning = computed(() => {
   return agentState.value?.isRunning || false
 })
 
-const agentSteps = computed(() => {
-  let steps = agentState.value?.steps || []
+// 按任务分组的步骤（每个任务包含：用户任务 + 步骤块 + 最终结果）
+interface AgentTaskGroup {
+  id: string
+  userTask: string
+  steps: AgentStep[]
+  finalResult?: string
+  isCurrentTask: boolean
+}
+
+const agentTaskGroups = computed((): AgentTaskGroup[] => {
+  const allSteps = agentState.value?.steps || []
+  const groups: AgentTaskGroup[] = []
+  let currentGroup: AgentTaskGroup | null = null
   
-  // 过滤掉 confirm 类型的步骤（确认对话框单独显示）
-  // 保留 user_task 和 final_result 类型
-  steps = steps.filter(step => step.type !== 'confirm')
-  
-  // 如果最后一个 message 和 final_result 内容相同，移除 message 避免重复
-  if (steps.length >= 2) {
-    const lastStep = steps[steps.length - 1]
-    const secondLast = steps[steps.length - 2]
-    if (lastStep.type === 'final_result' && secondLast.type === 'message' && secondLast.content === lastStep.content) {
-      steps = [...steps.slice(0, -2), lastStep]
+  for (const step of allSteps) {
+    if (step.type === 'user_task') {
+      // 开始新任务
+      currentGroup = {
+        id: step.id,
+        userTask: step.content,
+        steps: [],
+        isCurrentTask: false
+      }
+      groups.push(currentGroup)
+    } else if (step.type === 'final_result') {
+      // 结束当前任务
+      if (currentGroup) {
+        currentGroup.finalResult = step.content
+        currentGroup = null
+      }
+    } else if (step.type !== 'confirm') {
+      // 添加到当前任务的步骤
+      if (currentGroup) {
+        currentGroup.steps.push(step)
+      }
     }
   }
   
-  return steps
+  // 标记最后一个未完成的任务为当前任务
+  if (groups.length > 0) {
+    const lastGroup = groups[groups.length - 1]
+    if (!lastGroup.finalResult) {
+      lastGroup.isCurrentTask = true
+    }
+  }
+  
+  // 去除步骤中与 finalResult 重复的最后一个 message
+  for (const group of groups) {
+    if (group.finalResult && group.steps.length > 0) {
+      const lastStep = group.steps[group.steps.length - 1]
+      if (lastStep.type === 'message' && lastStep.content === group.finalResult) {
+        group.steps = group.steps.slice(0, -1)
+      }
+    }
+  }
+  
+  return groups
 })
 
 const pendingConfirm = computed(() => {
@@ -1259,40 +1313,55 @@ onUnmounted(() => {
           </div>
         </template>
 
-        <!-- Agent 执行步骤（包含用户任务和最终结果） -->
-        <template v-if="agentMode && agentSteps.length > 0">
-          <template v-for="step in agentSteps" :key="step.id">
-            <!-- 用户任务：独立消息块 -->
-            <div v-if="step.type === 'user_task'" class="message user">
+        <!-- Agent 任务列表（每个任务：用户任务 + 步骤块 + 最终结果） -->
+        <template v-if="agentMode && agentTaskGroups.length > 0">
+          <template v-for="group in agentTaskGroups" :key="group.id">
+            <!-- 用户任务 -->
+            <div class="message user">
               <div class="message-wrapper">
                 <div class="message-content">
-                  <span>{{ step.content }}</span>
+                  <span>{{ group.userTask }}</span>
                 </div>
               </div>
             </div>
             
-            <!-- 最终结果：独立消息块 -->
-            <div v-else-if="step.type === 'final_result'" class="message assistant">
-              <div class="message-wrapper">
-                <div class="message-content">
-                  <div class="markdown-content" v-html="renderMarkdown(step.content)"></div>
-                </div>
-              </div>
-            </div>
-            
-            <!-- 其他步骤：紧凑显示 -->
-            <div v-else class="message assistant agent-step-message">
-              <div class="message-wrapper">
-                <div class="message-content agent-step-content-inline" :class="[step.type, getRiskClass(step.riskLevel), { 'step-rejected': step.content.includes('拒绝') }]">
-                  <span class="step-icon">{{ getStepIcon(step.type) }}</span>
-                  <div class="step-content">
-                    <div class="step-text" :class="{ 'step-analysis': step.type === 'message' }">
-                      {{ step.content }}
-                    </div>
-                    <div v-if="step.toolResult && step.toolResult !== '已拒绝'" class="step-result">
-                      <pre>{{ step.toolResult }}</pre>
+            <!-- 执行步骤（折叠块） -->
+            <div v-if="group.steps.length > 0" class="message assistant">
+              <div class="message-wrapper agent-steps-wrapper">
+                <div class="message-content agent-steps-content">
+                  <div class="agent-steps-header-inline" @click="toggleStepsCollapse(group.id)">
+                    <span>🤖 {{ group.isCurrentTask && isAgentRunning ? 'Agent 执行中' : 'Agent 执行记录' }}</span>
+                    <span v-if="group.isCurrentTask && isAgentRunning" class="agent-running-dot"></span>
+                    <span class="steps-count">{{ group.steps.length }} 步</span>
+                    <span class="collapse-icon" :class="{ collapsed: isStepsCollapsed(group.id) }">▼</span>
+                  </div>
+                  <div v-show="!isStepsCollapsed(group.id)" class="agent-steps-body">
+                    <div 
+                      v-for="step in group.steps" 
+                      :key="step.id" 
+                      class="agent-step-inline"
+                      :class="[step.type, getRiskClass(step.riskLevel), { 'step-rejected': step.content.includes('拒绝') }]"
+                    >
+                      <span class="step-icon">{{ getStepIcon(step.type) }}</span>
+                      <div class="step-content">
+                        <div class="step-text" :class="{ 'step-analysis': step.type === 'message' }">
+                          {{ step.content }}
+                        </div>
+                        <div v-if="step.toolResult && step.toolResult !== '已拒绝'" class="step-result">
+                          <pre>{{ step.toolResult }}</pre>
+                        </div>
+                      </div>
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 最终结果 -->
+            <div v-if="group.finalResult" class="message assistant">
+              <div class="message-wrapper">
+                <div class="message-content">
+                  <div class="markdown-content" v-html="renderMarkdown(group.finalResult)"></div>
                 </div>
               </div>
             </div>
