@@ -37,6 +37,7 @@ export interface AgentContext {
     os: string
     shell: string
   }
+  hostId?: string  // 主机档案 ID
   historyMessages?: { role: string; content: string }[]  // 历史对话记录
 }
 
@@ -73,6 +74,7 @@ export class AgentService {
   private aiService: AiService
   private commandExecutor: CommandExecutorService
   private ptyService: PtyService
+  private hostProfileService?: { generateHostContext: (hostId: string) => string }
   private runs: Map<string, AgentRun> = new Map()
 
   // 事件回调
@@ -91,9 +93,14 @@ export class AgentService {
     strictMode: false           // 默认关闭严格模式
   }
 
-  constructor(aiService: AiService, ptyService: PtyService) {
+  constructor(
+    aiService: AiService, 
+    ptyService: PtyService,
+    hostProfileService?: { generateHostContext: (hostId: string) => string }
+  ) {
     this.aiService = aiService
     this.ptyService = ptyService
+    this.hostProfileService = hostProfileService
     this.commandExecutor = new CommandExecutorService()
   }
 
@@ -690,14 +697,24 @@ export class AgentService {
    * 构建系统提示
    */
   private buildSystemPrompt(context: AgentContext): string {
-    const osInfo = context.systemInfo.os || 'unknown'
-    const shellInfo = context.systemInfo.shell || 'unknown'
+    // 尝试获取主机档案上下文
+    let hostContext = ''
+    if (context.hostId && this.hostProfileService) {
+      hostContext = this.hostProfileService.generateHostContext(context.hostId)
+    }
+    
+    // 如果没有主机档案，使用基本信息
+    if (!hostContext) {
+      const osInfo = context.systemInfo.os || 'unknown'
+      const shellInfo = context.systemInfo.shell || 'unknown'
+      hostContext = `## 主机信息
+- 操作系统: ${osInfo}
+- Shell: ${shellInfo}`
+    }
 
     return `你是旗鱼终端的 AI Agent 助手。你可以帮助用户在终端中执行任务。
 
-## 环境信息
-- 操作系统: ${osInfo}
-- Shell: ${shellInfo}
+${hostContext}
 
 ## 可用工具
 - execute_command: 在终端执行命令
@@ -711,6 +728,7 @@ export class AgentService {
 3. **说明下一步原因**：在执行下一个命令前，解释为什么需要这个命令
 4. 分步执行复杂任务，每步执行后检查结果
 5. 遇到错误时分析原因并提供解决方案
+6. **记住重要发现**：如果发现重要的配置文件位置、服务状态等信息，在总结中提及
 
 ## 输出格式示例
 用户：查看磁盘空间

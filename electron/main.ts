@@ -7,6 +7,7 @@ import { ConfigService } from './services/config.service'
 import { XshellImportService } from './services/xshell-import.service'
 import { AgentService, AgentStep, PendingConfirmation, AgentContext } from './services/agent.service'
 import { HistoryService, ChatRecord, AgentRecord } from './services/history.service'
+import { HostProfileService, HostProfile } from './services/host-profile.service'
 
 // 禁用 GPU 加速可能导致的问题（可选）
 // app.disableHardwareAcceleration()
@@ -36,7 +37,8 @@ const sshService = new SshService()
 const aiService = new AiService()
 const configService = new ConfigService()
 const xshellImportService = new XshellImportService()
-const agentService = new AgentService(aiService, ptyService)
+const hostProfileService = new HostProfileService()
+const agentService = new AgentService(aiService, ptyService, hostProfileService)
 const historyService = new HistoryService()
 
 function createWindow() {
@@ -428,5 +430,58 @@ ipcMain.handle('history:cleanup', async (_event, daysToKeep: number) => {
 ipcMain.handle('history:openDataFolder', async () => {
   const dataPath = historyService.getDataPath()
   shell.openPath(dataPath)
+})
+
+// ==================== 主机档案相关 ====================
+
+// 获取主机档案
+ipcMain.handle('hostProfile:get', async (_event, hostId: string) => {
+  return hostProfileService.getProfile(hostId)
+})
+
+// 获取所有主机档案
+ipcMain.handle('hostProfile:getAll', async () => {
+  return hostProfileService.getAllProfiles()
+})
+
+// 更新主机档案
+ipcMain.handle('hostProfile:update', async (_event, hostId: string, updates: Partial<HostProfile>) => {
+  return hostProfileService.updateProfile(hostId, updates)
+})
+
+// 添加笔记
+ipcMain.handle('hostProfile:addNote', async (_event, hostId: string, note: string) => {
+  hostProfileService.addNote(hostId, note)
+})
+
+// 删除主机档案
+ipcMain.handle('hostProfile:delete', async (_event, hostId: string) => {
+  hostProfileService.deleteProfile(hostId)
+})
+
+// 获取探测命令
+ipcMain.handle('hostProfile:getProbeCommands', async (_event, os: string) => {
+  return hostProfileService.getProbeCommands(os)
+})
+
+// 解析探测结果
+ipcMain.handle('hostProfile:parseProbeOutput', async (_event, output: string, hostId?: string) => {
+  const existingProfile = hostId ? hostProfileService.getProfile(hostId) : null
+  return hostProfileService.parseProbeOutput(output, existingProfile)
+})
+
+// 生成主机 ID
+ipcMain.handle('hostProfile:generateHostId', async (_event, type: 'local' | 'ssh', sshHost?: string, sshUser?: string) => {
+  return hostProfileService.generateHostId(type, sshHost, sshUser)
+})
+
+// 检查是否需要探测
+ipcMain.handle('hostProfile:needsProbe', async (_event, hostId: string) => {
+  return hostProfileService.needsProbe(hostId)
+})
+
+// 生成主机上下文（用于 System Prompt）
+ipcMain.handle('hostProfile:generateContext', async (_event, hostId: string) => {
+  return hostProfileService.generateHostContext(hostId)
 })
 

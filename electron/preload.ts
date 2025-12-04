@@ -357,6 +357,54 @@ const electronAPI = {
 
     // 在文件管理器中打开数据目录
     openDataFolder: () => ipcRenderer.invoke('history:openDataFolder')
+  },
+
+  // 主机档案操作
+  hostProfile: {
+    // 获取主机档案
+    get: (hostId: string) => ipcRenderer.invoke('hostProfile:get', hostId) as Promise<{
+      hostId: string
+      hostname: string
+      username: string
+      os: string
+      osVersion: string
+      shell: string
+      packageManager?: string
+      installedTools: string[]
+      homeDir?: string
+      currentDir?: string
+      notes: string[]
+      lastProbed: number
+      lastUpdated: number
+    } | null>,
+
+    // 获取所有主机档案
+    getAll: () => ipcRenderer.invoke('hostProfile:getAll'),
+
+    // 更新主机档案
+    update: (hostId: string, updates: object) => ipcRenderer.invoke('hostProfile:update', hostId, updates),
+
+    // 添加笔记
+    addNote: (hostId: string, note: string) => ipcRenderer.invoke('hostProfile:addNote', hostId, note),
+
+    // 删除主机档案
+    delete: (hostId: string) => ipcRenderer.invoke('hostProfile:delete', hostId),
+
+    // 获取探测命令
+    getProbeCommands: (os: string) => ipcRenderer.invoke('hostProfile:getProbeCommands', os) as Promise<string[]>,
+
+    // 解析探测结果
+    parseProbeOutput: (output: string, hostId?: string) => ipcRenderer.invoke('hostProfile:parseProbeOutput', output, hostId),
+
+    // 生成主机 ID
+    generateHostId: (type: 'local' | 'ssh', sshHost?: string, sshUser?: string) => 
+      ipcRenderer.invoke('hostProfile:generateHostId', type, sshHost, sshUser) as Promise<string>,
+
+    // 检查是否需要探测
+    needsProbe: (hostId: string) => ipcRenderer.invoke('hostProfile:needsProbe', hostId) as Promise<boolean>,
+
+    // 生成主机上下文
+    generateContext: (hostId: string) => ipcRenderer.invoke('hostProfile:generateContext', hostId) as Promise<string>
   }
 }
 
