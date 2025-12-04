@@ -79,7 +79,14 @@ export class AgentService {
   private hostProfileService?: { 
     generateHostContext: (hostId: string) => string
     addNote: (hostId: string, note: string) => void
-    getProfile: (hostId: string) => { os?: string; osVersion?: string; shell?: string } | null
+    getProfile: (hostId: string) => { 
+      os?: string
+      osVersion?: string
+      shell?: string
+      hostname?: string
+      installedTools?: string[]
+      notes?: string[]
+    } | null
   }
   private runs: Map<string, AgentRun> = new Map()
 
@@ -106,7 +113,14 @@ export class AgentService {
     hostProfileService?: { 
       generateHostContext: (hostId: string) => string
       addNote: (hostId: string, note: string) => void
-      getProfile: (hostId: string) => { os?: string; osVersion?: string; shell?: string } | null
+      getProfile: (hostId: string) => { 
+        os?: string
+        osVersion?: string
+        shell?: string
+        hostname?: string
+        installedTools?: string[]
+        notes?: string[]
+      } | null
     }
   ) {
     this.aiService = aiService
@@ -847,25 +861,35 @@ export class AgentService {
    * 构建系统提示
    */
   private buildSystemPrompt(context: AgentContext): string {
-    // 尝试获取主机档案上下文
-    let hostContext = ''
-    let osType = context.systemInfo.os || 'unknown'
+    // 优先使用 context.systemInfo（来自当前终端 tab，是准确的）
+    const osType = context.systemInfo.os || 'unknown'
+    const shellType = context.systemInfo.shell || 'unknown'
     
-    if (context.hostId && this.hostProfileService) {
-      hostContext = this.hostProfileService.generateHostContext(context.hostId)
-      // 从主机档案获取操作系统类型
-      const profile = this.hostProfileService.getProfile(context.hostId)
-      if (profile?.os) {
-        osType = profile.os
-      }
-    }
-    
-    // 如果没有主机档案，使用基本信息
-    if (!hostContext) {
-      const shellInfo = context.systemInfo.shell || 'unknown'
-      hostContext = `## 主机信息
+    // 构建主机信息：始终使用当前终端的系统信息
+    let hostContext = `## 主机信息
 - 操作系统: ${osType}
-- Shell: ${shellInfo}`
+- Shell: ${shellType}`
+    
+    // 如果有主机档案，补充额外信息（但不覆盖系统类型）
+    if (context.hostId && this.hostProfileService) {
+      const profile = this.hostProfileService.getProfile(context.hostId)
+      if (profile) {
+        if (profile.hostname) {
+          hostContext = `## 主机信息
+- 主机名: ${profile.hostname}
+- 操作系统: ${osType}
+- Shell: ${shellType}`
+        }
+        if (profile.installedTools && profile.installedTools.length > 0) {
+          hostContext += `\n- 已安装工具: ${profile.installedTools.join(', ')}`
+        }
+        if (profile.notes && profile.notes.length > 0) {
+          hostContext += '\n\n## 已知信息（来自历史交互）'
+          for (const note of profile.notes.slice(-10)) {
+            hostContext += `\n- ${note}`
+          }
+        }
+      }
     }
 
     // 根据操作系统类型选择示例命令
