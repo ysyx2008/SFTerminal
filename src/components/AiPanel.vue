@@ -52,6 +52,17 @@ const messages = computed(() => {
 // 当前终端 ID
 const currentTabId = computed(() => terminalStore.activeTabId)
 
+// 获取当前终端信息（用于历史记录）
+const getTerminalInfo = () => {
+  const activeTab = terminalStore.activeTab
+  if (!activeTab) return null
+  return {
+    terminalId: activeTab.id,
+    terminalType: activeTab.type as 'local' | 'ssh',
+    sshHost: activeTab.sshConfig?.host
+  }
+}
+
 // 当前终端的 AI 加载状态（每个终端独立）
 const isLoading = computed(() => {
   const activeTab = terminalStore.activeTab
@@ -359,6 +370,28 @@ const sendMessage = async () => {
       () => {
         terminalStore.setAiLoading(tabId, false)
         scrollToBottom()
+        
+        // 保存聊天记录
+        const terminalInfo = getTerminalInfo()
+        if (terminalInfo) {
+          const finalContent = terminalStore.getAiMessages(tabId)[messageIndex]?.content || ''
+          window.electronAPI.history.saveChatRecords([
+            {
+              id: userMessage.id,
+              timestamp: userMessage.timestamp.getTime(),
+              ...terminalInfo,
+              role: 'user',
+              content: userMessage.content
+            },
+            {
+              id: assistantMessage.id,
+              timestamp: Date.now(),
+              ...terminalInfo,
+              role: 'assistant',
+              content: finalContent
+            }
+          ])
+        }
       },
       error => {
         terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${error}`)
@@ -870,12 +903,51 @@ const toggleAgentMode = () => {
   }
 }
 
+// 保存 Agent 记录到历史
+const saveAgentRecord = (
+  tabId: string,
+  userTask: string,
+  startTime: number,
+  status: 'completed' | 'failed' | 'aborted',
+  finalResult?: string
+) => {
+  const terminalInfo = getTerminalInfo()
+  if (!terminalInfo) return
+  
+  const steps = agentState.value?.steps || []
+  // 过滤掉 user_task 和 final_result 类型，只保留执行步骤
+  const executionSteps = steps
+    .filter(s => s.type !== 'user_task' && s.type !== 'final_result')
+    .map(s => ({
+      id: s.id,
+      type: s.type,
+      content: s.content,
+      toolName: s.toolName,
+      toolArgs: s.toolArgs,
+      toolResult: s.toolResult,
+      riskLevel: s.riskLevel,
+      timestamp: s.timestamp
+    }))
+  
+  window.electronAPI.history.saveAgentRecord({
+    id: `agent_${startTime}`,
+    timestamp: startTime,
+    ...terminalInfo,
+    userTask,
+    steps: executionSteps,
+    finalResult,
+    duration: Date.now() - startTime,
+    status
+  })
+}
+
 // 运行 Agent
 const runAgent = async () => {
   if (!inputText.value.trim() || isAgentRunning.value || !currentTabId.value) return
 
   const tabId = currentTabId.value
   const message = inputText.value
+  const startTime = Date.now()  // 记录开始时间
   inputText.value = ''
 
   // 获取 Agent 上下文
@@ -940,6 +1012,9 @@ const runAgent = async () => {
       })
       terminalStore.setAgentFinalResult(tabId, finalContent)
     }
+    
+    // 保存 Agent 记录
+    saveAgentRecord(tabId, message, startTime, result.success ? 'completed' : 'failed', finalContent)
   } catch (error) {
     console.error('Agent 运行失败:', error)
     terminalStore.setAgentRunning(tabId, false)
@@ -951,6 +1026,9 @@ const runAgent = async () => {
       timestamp: Date.now()
     })
     terminalStore.setAgentFinalResult(tabId, errorContent)
+    
+    // 保存失败的 Agent 记录
+    saveAgentRecord(tabId, message, startTime, 'failed', errorContent)
   }
 
   await scrollToBottom()
