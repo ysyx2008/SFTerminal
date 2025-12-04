@@ -59,7 +59,7 @@ const message = ref<{ type: 'success' | 'error'; text: string } | null>(null)
 
 // ========== 历史记录查看 ==========
 const showHistoryViewer = ref(false)
-const historyTab = ref<'chat' | 'agent'>('chat')
+const historyTab = ref<'chat' | 'agent'>('agent')
 const historyLoading = ref(false)
 const chatRecords = ref<ChatRecord[]>([])
 const agentRecords = ref<AgentRecord[]>([])
@@ -540,16 +540,16 @@ onMounted(() => {
             <!-- 标签切换 -->
             <div class="tab-switcher">
               <button 
-                :class="['tab-btn', { active: historyTab === 'chat' }]"
-                @click="switchHistoryTab('chat')"
-              >
-                💬 聊天记录
-              </button>
-              <button 
                 :class="['tab-btn', { active: historyTab === 'agent' }]"
                 @click="switchHistoryTab('agent')"
               >
                 🤖 Agent 任务
+              </button>
+              <button 
+                :class="['tab-btn', { active: historyTab === 'chat' }]"
+                @click="switchHistoryTab('chat')"
+              >
+                💬 聊天记录
               </button>
             </div>
             
@@ -590,35 +590,8 @@ onMounted(() => {
               加载中...
             </div>
             
-            <!-- 聊天记录 -->
-            <div v-else-if="historyTab === 'chat'" class="chat-history">
-              <div v-if="groupedChatRecords.length === 0" class="empty-state">
-                暂无聊天记录
-              </div>
-              <div v-else>
-                <div v-for="group in groupedChatRecords" :key="group.date" class="date-group">
-                  <div class="date-header">{{ group.date }}</div>
-                  <div class="chat-list">
-                    <div 
-                      v-for="record in group.records" 
-                      :key="record.id"
-                      :class="['chat-item', record.role]"
-                    >
-                      <div class="chat-meta">
-                        <span class="chat-role">{{ record.role === 'user' ? '👤 用户' : '🤖 AI' }}</span>
-                        <span class="chat-time">{{ formatTime(record.timestamp) }}</span>
-                        <span v-if="record.sshHost" class="chat-host">🖥️ {{ record.sshHost }}</span>
-                        <span v-else class="chat-host">💻 本地</span>
-                      </div>
-                      <div class="chat-content" v-html="renderMarkdown(record.content)"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
             <!-- Agent 记录 -->
-            <div v-else class="agent-history">
+            <div v-else-if="historyTab === 'agent'" class="agent-history">
               <div v-if="filteredAgentRecords.length === 0" class="empty-state">
                 暂无 Agent 任务记录
               </div>
@@ -646,12 +619,6 @@ onMounted(() => {
                   
                   <!-- 展开的详情 -->
                   <div v-if="expandedAgentIds.has(record.id)" class="agent-details">
-                    <!-- 最终结果 -->
-                    <div v-if="record.finalResult" class="final-result">
-                      <div class="result-label">📋 最终结果</div>
-                      <div class="result-content" v-html="renderMarkdown(record.finalResult)"></div>
-                    </div>
-                    
                     <!-- 步骤列表 -->
                     <div class="steps-list">
                       <div class="steps-label">📝 执行步骤 ({{ record.steps.length }})</div>
@@ -675,6 +642,39 @@ onMounted(() => {
                         </div>
                       </div>
                     </div>
+                    
+                    <!-- 最终结果（在步骤下方） -->
+                    <div v-if="record.finalResult" class="final-result">
+                      <div class="result-label">📋 最终结果</div>
+                      <div class="result-content" v-html="renderMarkdown(record.finalResult)"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 聊天记录 -->
+            <div v-else class="chat-history">
+              <div v-if="groupedChatRecords.length === 0" class="empty-state">
+                暂无聊天记录
+              </div>
+              <div v-else>
+                <div v-for="group in groupedChatRecords" :key="group.date" class="date-group">
+                  <div class="date-header">{{ group.date }}</div>
+                  <div class="chat-list">
+                    <div 
+                      v-for="record in group.records" 
+                      :key="record.id"
+                      :class="['chat-item', record.role]"
+                    >
+                      <div class="chat-meta">
+                        <span class="chat-role">{{ record.role === 'user' ? '👤 用户' : '🤖 AI' }}</span>
+                        <span class="chat-time">{{ formatTime(record.timestamp) }}</span>
+                        <span v-if="record.sshHost" class="chat-host">🖥️ {{ record.sshHost }}</span>
+                        <span v-else class="chat-host">💻 本地</span>
+                      </div>
+                      <div class="chat-content" v-html="renderMarkdown(record.content)"></div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -683,11 +683,11 @@ onMounted(() => {
           
           <!-- 统计信息 -->
           <div class="history-footer">
-            <span v-if="historyTab === 'chat'">
-              共 {{ filteredChatRecords.length }} 条记录
+            <span v-if="historyTab === 'agent'">
+              共 {{ filteredAgentRecords.length }} 个任务
             </span>
             <span v-else>
-              共 {{ filteredAgentRecords.length }} 个任务
+              共 {{ filteredChatRecords.length }} 条记录
             </span>
           </div>
         </div>
@@ -1045,6 +1045,8 @@ onMounted(() => {
   overflow-y: auto;
   padding: 16px 20px;
   min-height: 300px;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .loading-state {
@@ -1128,6 +1130,9 @@ onMounted(() => {
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-primary);
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 .chat-content :deep(p) {
@@ -1216,6 +1221,8 @@ onMounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .agent-meta {
@@ -1240,10 +1247,11 @@ onMounted(() => {
 }
 
 .final-result {
-  margin-bottom: 16px;
+  margin-top: 16px;
   padding: 12px;
   background: var(--bg-tertiary);
   border-radius: 6px;
+  border-left: 3px solid #10b981;
 }
 
 .result-label {
@@ -1257,6 +1265,9 @@ onMounted(() => {
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-primary);
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 .result-content :deep(p) {
@@ -1326,6 +1337,9 @@ onMounted(() => {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 .step-args {
@@ -1341,6 +1355,9 @@ onMounted(() => {
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--text-secondary);
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 .step-result {
@@ -1356,6 +1373,9 @@ onMounted(() => {
   max-height: 200px;
   margin: 0;
   color: var(--text-secondary);
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 /* 底部统计 */

@@ -921,13 +921,14 @@ const saveAgentRecord = (
       type: s.type,
       content: s.content,
       toolName: s.toolName,
-      toolArgs: s.toolArgs,
+      toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,
       toolResult: s.toolResult,
       riskLevel: s.riskLevel,
       timestamp: s.timestamp
     }))
   
-  window.electronAPI.history.saveAgentRecord({
+  // 使用 JSON.parse(JSON.stringify()) 确保移除所有 Vue Proxy，避免 IPC 序列化错误
+  const record = JSON.parse(JSON.stringify({
     id: `agent_${startTime}`,
     timestamp: startTime,
     ...terminalInfo,
@@ -936,6 +937,10 @@ const saveAgentRecord = (
     finalResult,
     duration: Date.now() - startTime,
     status
+  }))
+  
+  window.electronAPI.history.saveAgentRecord(record).catch(err => {
+    console.error('保存 Agent 历史记录失败:', err)
   })
 }
 
