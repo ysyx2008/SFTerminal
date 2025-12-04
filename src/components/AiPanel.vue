@@ -18,7 +18,7 @@ const inputText = ref('')
 const messagesRef = ref<HTMLDivElement | null>(null)
 
 // Agent 模式状态
-const agentMode = ref(false)
+const agentMode = ref(true)
 const strictMode = ref(true)       // 严格模式（默认开启）
 const stepsCollapsed = ref(false)  // 步骤是否折叠
 
@@ -161,7 +161,7 @@ const contextStats = computed(() => {
     // System prompt 约 300 tokens
     totalTokens += 300
     
-    const msgs = messages.value.filter(msg => !msg.content.includes('中...'))
+  const msgs = messages.value.filter(msg => !msg.content.includes('中...'))
     messageCount = msgs.length
     
     for (const msg of msgs) {
@@ -1037,28 +1037,28 @@ onUnmounted(() => {
       <div class="mode-switcher">
         <button 
           class="mode-btn" 
-          :class="{ active: !agentMode }"
-          @click="agentMode = false"
-        >
-          💬 对话
-        </button>
-        <button 
-          class="mode-btn" 
           :class="{ active: agentMode }"
           @click="agentMode = true"
         >
           🤖 Agent
+        </button>
+        <button 
+          class="mode-btn" 
+          :class="{ active: !agentMode }"
+          @click="agentMode = false"
+        >
+          💬 对话
         </button>
       </div>
 
       <!-- 系统环境信息 + 严格模式开关 -->
       <div class="system-info-bar">
         <div v-if="currentSystemInfo" class="system-info-left">
-          <span class="system-icon">💻</span>
-          <span class="system-text">
-            {{ currentSystemInfo.os === 'windows' ? 'Windows' : currentSystemInfo.os === 'macos' ? 'macOS' : 'Linux' }}
-            · {{ currentSystemInfo.shell === 'powershell' ? 'PowerShell' : currentSystemInfo.shell === 'cmd' ? 'CMD' : currentSystemInfo.shell === 'bash' ? 'Bash' : currentSystemInfo.shell === 'zsh' ? 'Zsh' : currentSystemInfo.shell }}
-          </span>
+        <span class="system-icon">💻</span>
+        <span class="system-text">
+          {{ currentSystemInfo.os === 'windows' ? 'Windows' : currentSystemInfo.os === 'macos' ? 'macOS' : 'Linux' }}
+          · {{ currentSystemInfo.shell === 'powershell' ? 'PowerShell' : currentSystemInfo.shell === 'cmd' ? 'CMD' : currentSystemInfo.shell === 'bash' ? 'Bash' : currentSystemInfo.shell === 'zsh' ? 'Zsh' : currentSystemInfo.shell }}
+        </span>
         </div>
         <!-- 严格模式开关（Agent 模式下显示，执行中也可切换） -->
         <div v-if="agentMode" class="strict-mode-toggle" @click.stop="strictMode = !strictMode" :title="strictMode ? '严格模式：每个命令都需确认' : '宽松模式：仅危险命令需确认'">
@@ -1165,28 +1165,28 @@ onUnmounted(() => {
         </div>
         <!-- 普通对话模式的消息 -->
         <template v-if="!agentMode">
-          <div
-            v-for="msg in messages"
-            :key="msg.id"
-            class="message"
-            :class="msg.role"
-          >
-            <div class="message-wrapper">
-              <div class="message-content">
-                <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content)" class="markdown-content"></div>
-                <span v-else>{{ msg.content }}</span>
-              </div>
-              <button
-                v-if="msg.role === 'assistant' && msg.content && !msg.content.includes('中...')"
-                class="copy-btn"
-                @click="copyMessage(msg.content)"
-                title="复制"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                </svg>
-              </button>
+        <div
+          v-for="msg in messages"
+          :key="msg.id"
+          class="message"
+          :class="msg.role"
+        >
+          <div class="message-wrapper">
+            <div class="message-content">
+              <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content)" class="markdown-content"></div>
+              <span v-else>{{ msg.content }}</span>
+            </div>
+            <button
+              v-if="msg.role === 'assistant' && msg.content && !msg.content.includes('中...')"
+              class="copy-btn"
+              @click="copyMessage(msg.content)"
+              title="复制"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </button>
             </div>
           </div>
         </template>
