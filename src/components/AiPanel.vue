@@ -1157,10 +1157,12 @@ onUnmounted(() => {
             <li>所有命令都在终端执行，你可以看到完整输入输出</li>
           </ul>
 
-          <p class="welcome-section-title">⚠️ 安全提示</p>
+          <p class="welcome-section-title">⚠️ 注意事项</p>
           <ul>
             <li>危险命令（如删除、修改系统文件）始终需要确认</li>
             <li>你可以随时点击「停止」中止 Agent 执行</li>
+            <li><strong>不适合</strong>长时间运行的命令（如大型编译、数据迁移）</li>
+            <li><strong>不适合</strong>循环/交互式命令（如 <code>watch</code>、<code>top</code>、<code>tail -f</code>、<code>vim</code>）</li>
           </ul>
         </div>
         <!-- 普通对话模式的消息 -->
