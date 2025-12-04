@@ -1036,21 +1036,23 @@ onUnmounted(() => {
           🤖 Agent
         </button>
       </div>
-      <!-- 严格模式开关（Agent 模式下显示） -->
-      <div v-if="agentMode" class="strict-mode-toggle" @click="strictMode = !strictMode">
-        <span class="toggle-label">严格</span>
-        <span class="toggle-switch" :class="{ active: strictMode }">
-          <span class="toggle-dot"></span>
-        </span>
-      </div>
 
-      <!-- 系统环境信息 -->
-      <div v-if="currentSystemInfo" class="system-info-bar">
-        <span class="system-icon">💻</span>
-        <span class="system-text">
-          {{ currentSystemInfo.os === 'windows' ? 'Windows' : currentSystemInfo.os === 'macos' ? 'macOS' : 'Linux' }}
-          · {{ currentSystemInfo.shell === 'powershell' ? 'PowerShell' : currentSystemInfo.shell === 'cmd' ? 'CMD' : currentSystemInfo.shell === 'bash' ? 'Bash' : currentSystemInfo.shell === 'zsh' ? 'Zsh' : currentSystemInfo.shell }}
-        </span>
+      <!-- 系统环境信息 + 严格模式开关 -->
+      <div class="system-info-bar">
+        <div v-if="currentSystemInfo" class="system-info-left">
+          <span class="system-icon">💻</span>
+          <span class="system-text">
+            {{ currentSystemInfo.os === 'windows' ? 'Windows' : currentSystemInfo.os === 'macos' ? 'macOS' : 'Linux' }}
+            · {{ currentSystemInfo.shell === 'powershell' ? 'PowerShell' : currentSystemInfo.shell === 'cmd' ? 'CMD' : currentSystemInfo.shell === 'bash' ? 'Bash' : currentSystemInfo.shell === 'zsh' ? 'Zsh' : currentSystemInfo.shell }}
+          </span>
+        </div>
+        <!-- 严格模式开关（Agent 模式下显示） -->
+        <div v-if="agentMode" class="strict-mode-toggle" @click.stop="strictMode = !strictMode">
+          <span class="toggle-label">严格</span>
+          <span class="toggle-switch" :class="{ active: strictMode }">
+            <span class="toggle-dot"></span>
+          </span>
+        </div>
       </div>
 
       <!-- 错误诊断提示（Agent 执行时隐藏） -->
@@ -1379,12 +1381,18 @@ onUnmounted(() => {
 .system-info-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.system-info-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .system-icon {
@@ -2033,15 +2041,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
   cursor: pointer;
   user-select: none;
-  border-radius: 6px;
-  transition: background 0.2s;
-}
-
-.strict-mode-toggle:hover {
-  background: var(--bg-tertiary);
 }
 
 .toggle-label {
