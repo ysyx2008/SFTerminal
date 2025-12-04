@@ -557,8 +557,10 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 设置 Agent 运行状态
    */
   function setAgentRunning(tabId: string, isRunning: boolean, agentId?: string, userTask?: string): void {
-    const tab = tabs.value.find(t => t.id === tabId)
-    if (!tab) return
+    const tabIndex = tabs.value.findIndex(t => t.id === tabId)
+    if (tabIndex === -1) return
+
+    const tab = tabs.value[tabIndex]
 
     if (!tab.agentState) {
       tab.agentState = {
@@ -568,16 +570,17 @@ export const useTerminalStore = defineStore('terminal', () => {
       }
     }
 
-    tab.agentState.isRunning = isRunning
-    if (agentId) {
-      tab.agentState.agentId = agentId
+    // 创建新的 agentState 对象以确保响应式更新
+    tab.agentState = {
+      ...tab.agentState,
+      isRunning,
+      ...(agentId !== undefined && { agentId }),
+      ...(userTask !== undefined && { userTask }),
+      ...(!isRunning && { pendingConfirm: undefined })
     }
-    if (userTask) {
-      tab.agentState.userTask = userTask
-    }
-    if (!isRunning) {
-      tab.agentState.pendingConfirm = undefined
-    }
+
+    // 强制触发数组更新
+    tabs.value = [...tabs.value]
   }
 
   /**
