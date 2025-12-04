@@ -198,6 +198,26 @@ export class HostProfileService {
   }
 
   /**
+   * 获取所有档案（用于导出）
+   */
+  getAllProfiles(): HostProfile[] {
+    return Array.from(this.profiles.values())
+  }
+
+  /**
+   * 导入档案（用于数据恢复）
+   */
+  importProfiles(profiles: HostProfile[]): void {
+    for (const profile of profiles) {
+      // 合并而不是覆盖：保留较新的数据
+      const existing = this.profiles.get(profile.hostId)
+      if (!existing || (profile.lastUpdated || 0) > (existing.lastUpdated || 0)) {
+        this.saveProfile(profile)
+      }
+    }
+  }
+
+  /**
    * 生成探测命令
    */
   getProbeCommands(os: string = 'linux'): string[] {

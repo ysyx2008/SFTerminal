@@ -38,6 +38,22 @@ export interface AgentRecord {
   status: 'completed' | 'failed' | 'aborted'
 }
 
+export interface HostProfileData {
+  hostId: string
+  hostname: string
+  username: string
+  os: string
+  osVersion?: string
+  shell: string
+  packageManager?: string
+  installedTools: string[]
+  homeDir?: string
+  currentDir?: string
+  notes: string[]
+  lastProbed?: number
+  lastUpdated?: number
+}
+
 export interface ExportData {
   version: string
   exportTime: number
@@ -46,6 +62,7 @@ export interface ExportData {
     chat: ChatRecord[]
     agent: AgentRecord[]
   }
+  hostProfiles?: HostProfileData[]
 }
 
 // ==================== 历史记录服务 ====================
@@ -231,7 +248,7 @@ export class HistoryService {
   /**
    * 导出所有数据
    */
-  exportData(configData: object): ExportData {
+  exportData(configData: object, hostProfiles?: HostProfileData[]): ExportData {
     return {
       version: '1.0',
       exportTime: Date.now(),
@@ -239,14 +256,15 @@ export class HistoryService {
       history: {
         chat: this.getChatRecords(),
         agent: this.getAgentRecords()
-      }
+      },
+      hostProfiles
     }
   }
 
   /**
    * 导入数据
    */
-  importData(data: ExportData): { success: boolean; error?: string } {
+  importData(data: ExportData): { success: boolean; error?: string; hostProfiles?: HostProfileData[] } {
     try {
       // 验证版本
       if (!data.version || !data.exportTime) {
@@ -265,7 +283,8 @@ export class HistoryService {
         }
       }
 
-      return { success: true }
+      // 返回主机档案，让调用者处理
+      return { success: true, hostProfiles: data.hostProfiles }
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : '导入失败' }
     }
