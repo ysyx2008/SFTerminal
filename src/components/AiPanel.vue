@@ -71,6 +71,10 @@ const agentFinalResult = computed(() => {
   return agentState.value?.finalResult
 })
 
+const agentUserTask = computed(() => {
+  return agentState.value?.userTask
+})
+
 const hasAiConfig = computed(() => configStore.hasAiConfig)
 
 // AI 配置列表和当前选中的配置
@@ -756,29 +760,19 @@ const runAgent = async () => {
     return
   }
 
-  // 添加用户消息到 AI 对话
-  const userMessage: AiMessage = {
-    id: Date.now().toString(),
-    role: 'user',
-    content: message,
-    timestamp: new Date()
-  }
-  terminalStore.addAiMessage(tabId, userMessage)
+  // 清空之前的 Agent 状态，开始新任务
+  terminalStore.clearAgentState(tabId)
   await scrollToBottom()
 
-  // 清空之前的 Agent 步骤（保留对话历史）
-  terminalStore.clearAgentState(tabId)
+  // Agent 模式独立，不使用 aiMessages 的历史
+  // 每次任务都是独立的上下文
+  const historyMessages: { role: 'user' | 'assistant'; content: string }[] = []
 
-  // 获取历史对话用于 Agent 记忆
-  const historyMessages = terminalStore.getAiMessages(tabId)
-    .filter(msg => !msg.content.includes('中...'))
-    .map(msg => ({
-      role: msg.role as 'user' | 'assistant',
-      content: msg.content
-    }))
+  // 设置 Agent 状态：正在运行 + 用户任务
+  terminalStore.setAgentRunning(tabId, true, undefined, message)
 
   try {
-    // 调用 Agent API，传递历史对话
+    // 调用 Agent API
     const result = await window.electronAPI.agent.run(
       context.ptyId,
       message,
@@ -1078,7 +1072,7 @@ onUnmounted(() => {
             <li>我会根据你的系统环境生成合适的命令</li>
           </ul>
         </div>
-        <div v-if="messages.length === 0 && agentMode && agentSteps.length === 0" class="ai-welcome">
+        <div v-if="agentMode && !agentUserTask" class="ai-welcome">
           <p>🤖 Agent 模式已启用</p>
           <p class="welcome-section-title">💡 什么是 Agent 模式？</p>
           <p class="welcome-desc">Agent 可以自主执行命令来完成你的任务，你可以看到完整的执行过程。</p>
@@ -1098,32 +1092,44 @@ onUnmounted(() => {
             <li>所有命令都在终端中可见执行</li>
           </ul>
         </div>
-        <div
-          v-for="msg in messages"
-          :key="msg.id"
-          class="message"
-          :class="msg.role"
-        >
+        <!-- 普通对话模式的消息 -->
+        <template v-if="!agentMode">
+          <div
+            v-for="msg in messages"
+            :key="msg.id"
+            class="message"
+            :class="msg.role"
+          >
+            <div class="message-wrapper">
+              <div class="message-content">
+                <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content)" class="markdown-content"></div>
+                <span v-else>{{ msg.content }}</span>
+              </div>
+              <button
+                v-if="msg.role === 'assistant' && msg.content && !msg.content.includes('中...')"
+                class="copy-btn"
+                @click="copyMessage(msg.content)"
+                title="复制"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <!-- Agent 模式：用户任务 -->
+        <div v-if="agentMode && agentUserTask" class="message user">
           <div class="message-wrapper">
             <div class="message-content">
-              <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content)" class="markdown-content"></div>
-              <span v-else>{{ msg.content }}</span>
+              <span>{{ agentUserTask }}</span>
             </div>
-            <button
-              v-if="msg.role === 'assistant' && msg.content && !msg.content.includes('中...')"
-              class="copy-btn"
-              @click="copyMessage(msg.content)"
-              title="复制"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-              </svg>
-            </button>
           </div>
         </div>
 
-        <!-- Agent 执行步骤（融入对话流） -->
+        <!-- Agent 执行步骤 -->
         <div v-if="agentMode && agentSteps.length > 0" class="message assistant">
           <div class="message-wrapper agent-steps-wrapper">
             <div class="message-content agent-steps-content">

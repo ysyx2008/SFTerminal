@@ -44,9 +44,10 @@ export interface PendingConfirmation {
 export interface AgentState {
   isRunning: boolean
   agentId?: string
+  userTask?: string      // 用户任务描述
   steps: AgentStep[]
   pendingConfirm?: PendingConfirmation
-  finalResult?: string  // Agent 完成后的最终回复
+  finalResult?: string   // Agent 完成后的最终回复
 }
 
 export interface TerminalTab {
@@ -546,7 +547,7 @@ export const useTerminalStore = defineStore('terminal', () => {
   /**
    * 设置 Agent 运行状态
    */
-  function setAgentRunning(tabId: string, isRunning: boolean, agentId?: string): void {
+  function setAgentRunning(tabId: string, isRunning: boolean, agentId?: string, userTask?: string): void {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab) return
 
@@ -560,6 +561,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     tab.agentState.isRunning = isRunning
     if (agentId) {
       tab.agentState.agentId = agentId
+    }
+    if (userTask) {
+      tab.agentState.userTask = userTask
     }
     if (!isRunning) {
       tab.agentState.pendingConfirm = undefined
