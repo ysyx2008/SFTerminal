@@ -71,7 +71,12 @@ export class PtyService {
       ...process.env,
       ...options.env,
       TERM: 'xterm-256color',
-      COLORTERM: 'truecolor'
+      COLORTERM: 'truecolor',
+      // macOS: 让 ls 等命令显示颜色
+      CLICOLOR: '1',
+      CLICOLOR_FORCE: '1',
+      // Linux: 让 ls 等命令显示颜色
+      LS_COLORS: process.env.LS_COLORS || 'di=1;34:ln=1;36:so=1;35:pi=33:ex=1;32:bd=1;33:cd=1;33:su=1;31:sg=1;31:tw=1;34:ow=1;34'
     } as Record<string, string>
 
     // 创建 PTY

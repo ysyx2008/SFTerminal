@@ -1087,7 +1087,7 @@ ${recentInteractions.join('\n\n')}
 - 临时目录或缓存
 
 ### 输出格式
-最多 5 条，每条一行：
+最多 10 条，每条一行：
 - 项目配置在 /home/user/myapp/config/
 - 应用日志在 /data/logs/myapp/
 
