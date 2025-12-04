@@ -13,7 +13,8 @@ const formData = ref<Partial<AiProfile>>({
   apiUrl: '',
   apiKey: '',
   model: '',
-  proxy: ''
+  proxy: '',
+  contextLength: 8000
 })
 
 const profiles = computed(() => configStore.aiProfiles)
@@ -25,7 +26,8 @@ const resetForm = () => {
     apiUrl: '',
     apiKey: '',
     model: '',
-    proxy: ''
+    proxy: '',
+    contextLength: 8000
   }
   editingProfile.value = null
 }
@@ -204,6 +206,13 @@ const applyTemplate = (template: typeof templates[0]) => {
           <label class="form-label">模型名称 *</label>
           <input v-model="formData.model" type="text" class="input" placeholder="例如：qwen-72b, gpt-3.5-turbo" />
         </div>
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label class="form-label">上下文长度（tokens）</label>
+            <input v-model.number="formData.contextLength" type="number" class="input" placeholder="8000" />
+            <span class="form-hint">常见值：GPT-3.5(4K/16K)、GPT-4(8K/128K)、Claude(200K)、Qwen(32K)</span>
+          </div>
+        </div>
         <div class="form-group">
           <label class="form-label">代理地址（可选）</label>
           <input v-model="formData.proxy" type="text" class="input" placeholder="http://proxy:3128 或 socks5://proxy:1080" />
@@ -370,6 +379,22 @@ const applyTemplate = (template: typeof templates[0]) => {
 
 .form-body {
   padding: 16px;
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.form-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 .form-footer {

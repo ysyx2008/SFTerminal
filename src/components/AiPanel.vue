@@ -73,12 +73,15 @@ const contextStats = computed(() => {
   // 加上 system prompt 的估算（约 200 tokens）
   const totalTokens = estimatedTokens + 200
   
+  // 从当前 AI 配置获取上下文长度，默认 8000
+  const maxTokens = activeAiProfile.value?.contextLength || 8000
+  
   return {
     messageCount: msgs.length,
     charCount: totalChars,
     tokenEstimate: totalTokens,
-    // 假设上下文窗口为 8K tokens（可根据模型调整）
-    percentage: Math.min(100, Math.round((totalTokens / 8000) * 100))
+    maxTokens,
+    percentage: Math.min(100, Math.round((totalTokens / maxTokens) * 100))
   }
 })
 
@@ -832,11 +835,9 @@ const quickActions = [
       <div v-if="messages.length > 0" class="context-stats">
         <div class="context-info">
           <span class="context-label">上下文</span>
-          <span class="context-value">{{ contextStats.messageCount }} 条消息</span>
-          <span class="context-separator">·</span>
-          <span class="context-value">~{{ contextStats.tokenEstimate.toLocaleString() }} tokens</span>
+          <span class="context-value">~{{ contextStats.tokenEstimate.toLocaleString() }} / {{ (contextStats.maxTokens / 1000).toFixed(0) }}K</span>
         </div>
-        <div class="context-bar">
+        <div class="context-bar" :title="`${contextStats.percentage}% 已使用`">
           <div 
             class="context-bar-fill" 
             :style="{ width: contextStats.percentage + '%' }"
