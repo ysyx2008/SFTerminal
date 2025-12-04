@@ -55,13 +55,16 @@ const isAgentRunning = computed(() => {
 
 const agentSteps = computed(() => {
   const steps = agentState.value?.steps || []
-  // 显示所有步骤，包括 AI 的分析过程
-  // thinking: 初始分析
-  // message: AI 的分析和计划说明
-  // tool_call: 工具调用
-  // tool_result: 执行结果
-  // error: 错误
-  // confirm: 等待确认
+  const finalResult = agentState.value?.finalResult
+  
+  // 如果有 finalResult，过滤掉最后一个相同内容的 message（避免重复显示总结）
+  if (finalResult && steps.length > 0) {
+    const lastStep = steps[steps.length - 1]
+    if (lastStep.type === 'message' && lastStep.content === finalResult) {
+      return steps.slice(0, -1)
+    }
+  }
+  
   return steps
 })
 
