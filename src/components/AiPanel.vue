@@ -450,6 +450,9 @@ const diagnoseError = async () => {
 
   const tabId = currentTabId.value
   
+  // 切换到对话模式
+  agentMode.value = false
+  
   // 清除错误提示
   if (terminalStore.activeTab) {
     terminalStore.clearError(terminalStore.activeTab.id)
@@ -513,6 +516,9 @@ const diagnoseError = async () => {
 const analyzeSelection = async () => {
   const selection = terminalSelectedText.value
   if (!selection || isLoading.value || !currentTabId.value) return
+
+  // 切换到对话模式
+  agentMode.value = false
 
   const tabId = currentTabId.value
   const userMessage: AiMessage = {
