@@ -752,12 +752,24 @@ const quickActions = [
       <!-- 消息列表 -->
       <div ref="messagesRef" class="ai-messages" @click="handleCodeBlockClick">
         <div v-if="messages.length === 0" class="ai-welcome">
-          <p>你好！我是旗鱼终端的 AI 助手。</p>
-          <p>我可以帮你：</p>
+          <p>👋 你好！我是旗鱼终端的 AI 助手。</p>
+          <p class="welcome-section-title">💬 直接对话</p>
+          <p class="welcome-desc">在下方输入框输入任何问题，我会尽力帮你解答。</p>
+          
+          <p class="welcome-section-title">🚀 快捷功能</p>
           <ul>
-            <li>解释命令的作用</li>
-            <li>诊断错误并提供解决方案</li>
-            <li>根据描述生成命令</li>
+            <li><strong>解释命令</strong> - 选中终端内容后，点击上方「解释命令」</li>
+            <li><strong>错误诊断</strong> - 终端出错时自动提示，点击「AI 诊断」</li>
+            <li><strong>生成命令</strong> - 用自然语言描述需求，如「查找大于100M的文件」</li>
+            <li><strong>分析输出</strong> - 选中终端内容后，自动显示「AI 分析」按钮</li>
+          </ul>
+
+          <p class="welcome-section-title">✨ 使用技巧</p>
+          <ul>
+            <li>终端右键菜单可「发送到 AI 分析」</li>
+            <li>AI 回复中的代码块可一键发送到终端</li>
+            <li>每个终端标签页有独立的对话记录</li>
+            <li>我会根据你的系统环境生成合适的命令</li>
           </ul>
         </div>
         <div
@@ -1075,14 +1087,38 @@ const quickActions = [
 
 .ai-welcome {
   padding: 16px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.6;
 }
 
+.ai-welcome .welcome-section-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: 14px;
+  margin-bottom: 6px;
+}
+
+.ai-welcome .welcome-desc {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
 .ai-welcome ul {
-  margin-top: 8px;
-  padding-left: 20px;
+  margin: 6px 0 8px;
+  padding-left: 18px;
+}
+
+.ai-welcome li {
+  margin: 4px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.ai-welcome li strong {
+  color: var(--accent-primary);
+  font-weight: 500;
 }
 
 .message {
