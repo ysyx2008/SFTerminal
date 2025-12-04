@@ -16,7 +16,6 @@ import type { AiMessage } from '../stores/terminal'
 
 const inputText = ref('')
 const messagesRef = ref<HTMLDivElement | null>(null)
-const selectedText = ref('')
 
 // 当前终端的 AI 消息（每个终端独立）
 const messages = computed(() => {
@@ -677,7 +676,7 @@ const handleCodeBlockClick = async (event: MouseEvent) => {
 
 // 快捷操作
 const quickActions = [
-  { label: '解释命令', icon: '💡', action: () => explainCommand(selectedText.value || 'ls -la') },
+  { label: '解释命令', icon: '💡', action: () => explainCommand(terminalSelectedText.value || 'ls -la') },
   { label: '查找文件', icon: '🔍', action: () => generateCommand('查找当前目录下所有的日志文件') },
   { label: '查看进程', icon: '📊', action: () => generateCommand('查看占用内存最多的前10个进程') },
   { label: '磁盘空间', icon: '💾', action: () => generateCommand('查看磁盘空间使用情况') }
@@ -790,7 +789,7 @@ const quickActions = [
           
           <p class="welcome-section-title">🚀 快捷功能</p>
           <ul>
-            <li><strong>解释命令</strong> - 选中终端内容后，点击上方「解释命令」</li>
+            <li><strong>解释命令</strong> - 选中终端内容后点击按钮解释，或直接点击查看示例</li>
             <li><strong>错误诊断</strong> - 终端出错时自动提示，点击「AI 诊断」</li>
             <li><strong>生成命令</strong> - 用自然语言描述需求，如「查找大于100M的文件」</li>
             <li><strong>分析输出</strong> - 选中终端内容后，自动显示「AI 分析」按钮</li>
