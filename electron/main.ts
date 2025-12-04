@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, shell, Menu, dialog } from 'electron'
-import { join } from 'path'
+import path, { join } from 'path'
 import { PtyService } from './services/pty.service'
 import { SshService } from './services/ssh.service'
 import { AiService } from './services/ai.service'
@@ -418,7 +418,7 @@ ipcMain.handle('history:exportData', async () => {
   return historyService.exportData(configData, hostProfiles)
 })
 
-// 导入数据
+// 导入数据（单文件）
 ipcMain.handle('history:importData', async (_event, data: { version: string; exportTime: number; config: object; history: { chat: ChatRecord[]; agent: AgentRecord[] }; hostProfiles?: unknown[] }) => {
   // 先导入历史记录
   const historyResult = historyService.importData(data)
@@ -434,6 +434,96 @@ ipcMain.handle('history:importData', async (_event, data: { version: string; exp
   // 导入配置（需要用户确认是否覆盖）
   // 这里只返回成功，配置的导入由前端单独处理
   return { success: true, configIncluded: !!data.config, hostProfilesImported: historyResult.hostProfiles?.length || 0 }
+})
+
+// 导出到文件夹
+ipcMain.handle('history:exportToFolder', async (_event, options?: { includeSshPasswords?: boolean; includeApiKeys?: boolean }) => {
+  const { dialog } = await import('electron')
+  
+  // 选择导出目录
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    title: '选择导出目录',
+    properties: ['openDirectory', 'createDirectory'],
+    buttonLabel: '导出到此目录'
+  })
+  
+  if (result.canceled || !result.filePaths[0]) {
+    return { success: false, canceled: true }
+  }
+  
+  // 创建子目录
+  const exportDir = path.join(result.filePaths[0], `sfterm-backup-${new Date().toISOString().split('T')[0]}`)
+  
+  const configData = configService.getAll()
+  const hostProfiles = hostProfileService.getAllProfiles()
+  
+  return historyService.exportToFolder(exportDir, configData, hostProfiles, options)
+})
+
+// 从文件夹导入
+ipcMain.handle('history:importFromFolder', async () => {
+  const { dialog } = await import('electron')
+  
+  // 选择导入目录
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    title: '选择备份文件夹',
+    properties: ['openDirectory'],
+    buttonLabel: '导入此目录'
+  })
+  
+  if (result.canceled || !result.filePaths[0]) {
+    return { success: false, canceled: true }
+  }
+  
+  const importResult = historyService.importFromFolder(result.filePaths[0])
+  
+  if (importResult.success) {
+    // 导入主机档案
+    if (importResult.hostProfiles && importResult.hostProfiles.length > 0) {
+      hostProfileService.importProfiles(importResult.hostProfiles as HostProfile[])
+    }
+    
+    // 应用配置（合并而非覆盖）
+    if (importResult.config) {
+      const currentConfig = configService.getAll()
+      
+      // SSH 会话：合并（按 ID 去重）
+      if (importResult.config.sshSessions) {
+        const existingSessions = currentConfig.sshSessions || []
+        const newSessions = importResult.config.sshSessions as Array<{ id: string; [key: string]: unknown }>
+        const mergedSessions = [...existingSessions]
+        for (const session of newSessions) {
+          if (!mergedSessions.some(s => s.id === session.id)) {
+            mergedSessions.push(session as typeof existingSessions[0])
+          }
+        }
+        configService.set('sshSessions', mergedSessions)
+      }
+      
+      // AI Profiles：合并（按 ID 去重）
+      if (importResult.config.aiProfiles) {
+        const existingProfiles = currentConfig.aiProfiles || []
+        const newProfiles = importResult.config.aiProfiles as Array<{ id: string; [key: string]: unknown }>
+        const mergedProfiles = [...existingProfiles]
+        for (const profile of newProfiles) {
+          if (!mergedProfiles.some(p => p.id === profile.id)) {
+            mergedProfiles.push(profile as typeof existingProfiles[0])
+          }
+        }
+        configService.set('aiProfiles', mergedProfiles)
+      }
+      
+      // 其他设置：如果当前为默认值则覆盖
+      if (importResult.config.theme) {
+        configService.set('theme', importResult.config.theme as string)
+      }
+      if (importResult.config.terminalSettings) {
+        configService.set('terminalSettings', importResult.config.terminalSettings as typeof currentConfig.terminalSettings)
+      }
+    }
+  }
+  
+  return importResult
 })
 
 // 清理旧记录

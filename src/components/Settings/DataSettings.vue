@@ -47,13 +47,38 @@ const openDataFolder = async () => {
   }
 }
 
-// 导出数据
-const exportData = async () => {
+// 导出选项
+const exportOptions = ref({
+  includeSshPasswords: false,
+  includeApiKeys: false
+})
+
+// 导出到文件夹
+const exportToFolder = async () => {
+  isExporting.value = true
+  try {
+    const result = await window.electronAPI.history.exportToFolder(exportOptions.value)
+    
+    if (result.canceled) {
+      // 用户取消
+    } else if (result.success) {
+      showMessage('success', `已导出 ${result.files?.length || 0} 个文件`)
+    } else {
+      showMessage('error', result.error || '导出失败')
+    }
+  } catch (e) {
+    showMessage('error', `导出失败: ${e}`)
+  } finally {
+    isExporting.value = false
+  }
+}
+
+// 导出单文件（旧方式，保留兼容）
+const exportSingleFile = async () => {
   isExporting.value = true
   try {
     const data = await window.electronAPI.history.exportData()
     
-    // 创建下载链接
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -72,8 +97,29 @@ const exportData = async () => {
   }
 }
 
-// 导入数据
-const importData = async () => {
+// 从文件夹导入
+const importFromFolder = async () => {
+  isImporting.value = true
+  try {
+    const result = await window.electronAPI.history.importFromFolder()
+    
+    if (result.canceled) {
+      // 用户取消
+    } else if (result.success) {
+      showMessage('success', `已导入: ${result.imported?.join(', ') || '无'}`)
+      await loadStorageStats()
+    } else {
+      showMessage('error', result.error || '导入失败')
+    }
+  } catch (e) {
+    showMessage('error', `导入失败: ${e}`)
+  } finally {
+    isImporting.value = false
+  }
+}
+
+// 导入单文件（旧方式，保留兼容）
+const importSingleFile = async () => {
   const input = document.createElement('input')
   input.type = 'file'
   input.accept = '.json'
@@ -186,15 +232,38 @@ onMounted(() => {
     <!-- 导出/导入 -->
     <div class="section">
       <h4>备份与恢复</h4>
+      
+      <!-- 导出选项 -->
+      <div class="export-options">
+        <label class="checkbox-label">
+          <input type="checkbox" v-model="exportOptions.includeSshPasswords">
+          <span>包含 SSH 密码</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" v-model="exportOptions.includeApiKeys">
+          <span>包含 API Key</span>
+        </label>
+      </div>
+      
       <div class="actions">
-        <button class="btn btn-primary" @click="exportData" :disabled="isExporting">
-          {{ isExporting ? '导出中...' : '📤 导出全部数据' }}
+        <button class="btn btn-primary" @click="exportToFolder" :disabled="isExporting">
+          {{ isExporting ? '导出中...' : '📂 导出到文件夹' }}
         </button>
-        <button class="btn" @click="importData" :disabled="isImporting">
-          {{ isImporting ? '导入中...' : '📥 导入备份' }}
+        <button class="btn" @click="importFromFolder" :disabled="isImporting">
+          {{ isImporting ? '导入中...' : '📂 从文件夹导入' }}
         </button>
       </div>
-      <p class="hint">导出包含所有配置和历史记录，可用于迁移或备份</p>
+      <p class="hint">导出为独立文件，可选择性分享给他人</p>
+      
+      <div class="actions" style="margin-top: 8px;">
+        <button class="btn btn-sm btn-outline" @click="exportSingleFile" :disabled="isExporting">
+          📄 导出单文件
+        </button>
+        <button class="btn btn-sm btn-outline" @click="importSingleFile" :disabled="isImporting">
+          📄 导入单文件
+        </button>
+      </div>
+      <p class="hint">单文件适合完整备份，包含所有数据</p>
     </div>
     
     <!-- 清理 -->
@@ -366,6 +435,27 @@ onMounted(() => {
 
 .btn-danger:hover:not(:disabled) {
   background: rgba(239, 68, 68, 0.1);
+}
+
+.export-options {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
 }
 </style>
 

@@ -366,6 +366,23 @@ const electronAPI = {
       agentDeleted: number
     }>,
 
+    // 导出到文件夹
+    exportToFolder: (options?: { includeSshPasswords?: boolean; includeApiKeys?: boolean }) => 
+      ipcRenderer.invoke('history:exportToFolder', options) as Promise<{
+        success: boolean
+        canceled?: boolean
+        files?: string[]
+        error?: string
+      }>,
+
+    // 从文件夹导入
+    importFromFolder: () => ipcRenderer.invoke('history:importFromFolder') as Promise<{
+      success: boolean
+      canceled?: boolean
+      imported?: string[]
+      error?: string
+    }>,
+
     // 在文件管理器中打开数据目录
     openDataFolder: () => ipcRenderer.invoke('history:openDataFolder')
   },
