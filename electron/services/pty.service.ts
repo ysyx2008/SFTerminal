@@ -377,13 +377,13 @@ export class PtyService {
 
   /**
    * 在终端执行命令并收集输出
-   * 通过检测 shell 提示符来判断命令完成
+   * 使用 OSC 133 Shell Integration 标记精确检测命令完成
    */
   executeInTerminal(
     id: string, 
     command: string, 
     timeout: number = 30000
-  ): Promise<{ output: string; duration: number }> {
+  ): Promise<{ output: string; duration: number; exitCode?: number }> {
     return new Promise((resolve) => {
       const instance = this.instances.get(id)
       if (!instance) {
@@ -395,20 +395,23 @@ export class PtyService {
       let output = ''
       let timeoutTimer: NodeJS.Timeout | null = null
       let resolved = false
-      let commandSent = false
+      let exitCode: number | undefined
 
-      // 常见的 shell 提示符模式
-      // $ 或 # 结尾（bash, zsh）
-      // > 结尾（PowerShell, cmd）
-      // 或者包含 ❯ ➜ » 等特殊字符
+      // 生成唯一标记 ID
+      const markerId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      
+      // OSC 133 序列（FinalTerm/iTerm2/VS Code 标准）
+      // C = 命令开始执行
+      // D = 命令执行完成，后面跟退出码
+      const OSC_START = `\x1b]133;C;id=${markerId}\x07`
+      const OSC_END_PATTERN = new RegExp(`\x1b\\]133;D;(\\d+);id=${markerId}\x07`)
+      
+      // 备用：提示符检测（如果 OSC 不工作）
       const promptPatterns = [
-        /[$#>❯➜»]\s*$/,           // 行尾提示符
-        /\n[^\n]*[$#>❯➜»]\s*$/,   // 新行提示符
-        /\r\n[^\r\n]*>\s*$/,       // Windows 风格
+        /[$#%>❯➜»⟩›]\s*$/,
+        /\n[^\n]*[$#%>❯➜»⟩›]\s*$/,
       ]
-
       const isPrompt = (text: string): boolean => {
-        // 检查最后一段是否像提示符
         const lastLine = text.split(/[\r\n]/).filter(l => l.trim()).pop() || ''
         return promptPatterns.some(p => p.test(lastLine) || p.test(text.slice(-50)))
       }
@@ -426,14 +429,25 @@ export class PtyService {
         resolved = true
         cleanup()
         
-        // 清理输出：移除命令本身和最后的提示符
+        // 清理输出
         let cleanOutput = output
-        // 移除第一行（命令回显）
+        
+        // 移除 OSC 序列
+        cleanOutput = cleanOutput.replace(/\x1b\]133;[^;]*;[^\x07]*\x07/g, '')
+        cleanOutput = cleanOutput.replace(/\x1b\]133;[^\x07]*\x07/g, '')
+        
+        // 移除命令回显（第一行）
         const lines = cleanOutput.split(/\r?\n/)
-        if (lines.length > 1 && lines[0].includes(command.slice(0, 20))) {
-          lines.shift()
+        if (lines.length > 0) {
+          // 查找并移除包含原始命令的行
+          const cmdStart = command.slice(0, Math.min(20, command.length))
+          const cmdIdx = lines.findIndex(l => l.includes(cmdStart))
+          if (cmdIdx !== -1 && cmdIdx < 3) {
+            lines.splice(0, cmdIdx + 1)
+          }
         }
-        // 移除最后的空行或提示符行
+        
+        // 移除尾部空行和提示符
         while (lines.length > 0 && (lines[lines.length - 1].trim() === '' || isPrompt(lines[lines.length - 1]))) {
           lines.pop()
         }
@@ -441,22 +455,36 @@ export class PtyService {
         
         resolve({
           output: cleanOutput.trim(),
-          duration: Date.now() - startTime
+          duration: Date.now() - startTime,
+          exitCode
         })
       }
+
+      let commandStarted = false
+      let lastOutputTime = Date.now()
 
       // 输出处理器
       const outputHandler = (data: string) => {
         output += data
+        lastOutputTime = Date.now()
         
-        // 命令发送后，检测提示符表示命令完成
-        if (commandSent && isPrompt(output)) {
-          // 等待一小段时间确认没有更多输出
+        // 检测 OSC 133 D 序列（命令完成）
+        const match = output.match(OSC_END_PATTERN)
+        if (match) {
+          exitCode = parseInt(match[1], 10)
+          // 稍等一下确保所有输出都收到
+          setTimeout(finish, 50)
+          return
+        }
+        
+        // 备用：检测提示符（如果 shell 不支持 OSC 133）
+        if (commandStarted && isPrompt(output)) {
           setTimeout(() => {
-            if (isPrompt(output)) {
+            // 如果 200ms 内没有新输出且仍然是提示符，认为命令完成
+            if (Date.now() - lastOutputTime >= 150 && isPrompt(output)) {
               finish()
             }
-          }, 100)
+          }, 200)
         }
       }
 
@@ -471,13 +499,17 @@ export class PtyService {
         }
       }, timeout)
 
-      // 发送命令（添加换行符执行）
-      instance.pty.write(command + '\n')
+      // 构建带 OSC 标记的命令
+      // 使用 printf 输出 OSC 序列，兼容性更好
+      const wrappedCommand = `printf '${OSC_START.replace(/'/g, "'\\''")}' 2>/dev/null; ${command}; __exit_code=$?; printf '\x1b]133;D;%d;id=${markerId}\x07' $__exit_code 2>/dev/null; exit $__exit_code 2>/dev/null || true`
       
-      // 标记命令已发送，开始检测提示符
+      // 发送命令
+      instance.pty.write(wrappedCommand + '\n')
+      
+      // 标记命令已开始
       setTimeout(() => {
-        commandSent = true
-      }, 50)  // 短暂延迟，避免误检测命令回显
+        commandStarted = true
+      }, 100)
     })
   }
 
