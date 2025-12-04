@@ -996,8 +996,8 @@ onUnmounted(() => {
         </span>
       </div>
 
-      <!-- 错误诊断提示 -->
-      <div v-if="lastError" class="error-alert">
+      <!-- 错误诊断提示（Agent 执行时隐藏） -->
+      <div v-if="lastError && !isAgentRunning" class="error-alert">
         <div class="error-alert-icon">⚠️</div>
         <div class="error-alert-content">
           <div class="error-alert-title">检测到错误</div>
@@ -1014,8 +1014,8 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <!-- 终端选中内容提示 -->
-      <div v-if="terminalSelectedText && !lastError" class="selection-alert">
+      <!-- 终端选中内容提示（Agent 执行时隐藏） -->
+      <div v-if="terminalSelectedText && !lastError && !isAgentRunning" class="selection-alert">
         <div class="selection-alert-icon">📋</div>
         <div class="selection-alert-content">
           <div class="selection-alert-title">已选中终端内容</div>
@@ -1026,8 +1026,8 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <!-- 快捷操作 -->
-      <div class="quick-actions">
+      <!-- 快捷操作（Agent 执行时隐藏） -->
+      <div v-if="!agentMode || (!isAgentRunning && agentSteps.length === 0)" class="quick-actions">
         <button
           v-for="action in quickActions"
           :key="action.label"
