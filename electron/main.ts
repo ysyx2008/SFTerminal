@@ -6,6 +6,7 @@ import { AiService } from './services/ai.service'
 import { ConfigService } from './services/config.service'
 import { XshellImportService } from './services/xshell-import.service'
 import { AgentService, AgentStep, PendingConfirmation, AgentContext } from './services/agent.service'
+import { HistoryService, ChatRecord, AgentRecord } from './services/history.service'
 
 // 禁用 GPU 加速可能导致的问题（可选）
 // app.disableHardwareAcceleration()
@@ -36,6 +37,7 @@ const aiService = new AiService()
 const configService = new ConfigService()
 const xshellImportService = new XshellImportService()
 const agentService = new AgentService(aiService, ptyService)
+const historyService = new HistoryService()
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -359,5 +361,72 @@ ipcMain.handle('agent:getStatus', async (_event, agentId: string) => {
 // 清理 Agent 运行记录
 ipcMain.handle('agent:cleanup', async (_event, agentId: string) => {
   agentService.cleanup(agentId)
+})
+
+// ==================== 历史记录相关 ====================
+
+// 保存聊天记录
+ipcMain.handle('history:saveChatRecord', async (_event, record: ChatRecord) => {
+  historyService.saveChatRecord(record)
+})
+
+// 批量保存聊天记录
+ipcMain.handle('history:saveChatRecords', async (_event, records: ChatRecord[]) => {
+  historyService.saveChatRecords(records)
+})
+
+// 获取聊天记录
+ipcMain.handle('history:getChatRecords', async (_event, startDate?: string, endDate?: string) => {
+  return historyService.getChatRecords(startDate, endDate)
+})
+
+// 保存 Agent 记录
+ipcMain.handle('history:saveAgentRecord', async (_event, record: AgentRecord) => {
+  historyService.saveAgentRecord(record)
+})
+
+// 获取 Agent 记录
+ipcMain.handle('history:getAgentRecords', async (_event, startDate?: string, endDate?: string) => {
+  return historyService.getAgentRecords(startDate, endDate)
+})
+
+// 获取数据目录路径
+ipcMain.handle('history:getDataPath', async () => {
+  return historyService.getDataPath()
+})
+
+// 获取存储统计
+ipcMain.handle('history:getStorageStats', async () => {
+  return historyService.getStorageStats()
+})
+
+// 导出数据
+ipcMain.handle('history:exportData', async () => {
+  const configData = configService.getAll()
+  return historyService.exportData(configData)
+})
+
+// 导入数据
+ipcMain.handle('history:importData', async (_event, data: { version: string; exportTime: number; config: object; history: { chat: ChatRecord[]; agent: AgentRecord[] } }) => {
+  // 先导入历史记录
+  const historyResult = historyService.importData(data)
+  if (!historyResult.success) {
+    return historyResult
+  }
+
+  // 导入配置（需要用户确认是否覆盖）
+  // 这里只返回成功，配置的导入由前端单独处理
+  return { success: true, configIncluded: !!data.config }
+})
+
+// 清理旧记录
+ipcMain.handle('history:cleanup', async (_event, daysToKeep: number) => {
+  return historyService.cleanupOldRecords(daysToKeep)
+})
+
+// 在文件管理器中打开数据目录
+ipcMain.handle('history:openDataFolder', async () => {
+  const dataPath = historyService.getDataPath()
+  shell.openPath(dataPath)
 })
 

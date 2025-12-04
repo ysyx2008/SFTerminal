@@ -270,6 +270,93 @@ const electronAPI = {
         ipcRenderer.removeListener('agent:error', handler)
       }
     }
+  },
+
+  // 历史记录操作
+  history: {
+    // 保存聊天记录
+    saveChatRecord: (record: {
+      id: string
+      timestamp: number
+      terminalId: string
+      terminalType: 'local' | 'ssh'
+      sshHost?: string
+      role: 'user' | 'assistant'
+      content: string
+    }) => ipcRenderer.invoke('history:saveChatRecord', record),
+
+    // 批量保存聊天记录
+    saveChatRecords: (records: Array<{
+      id: string
+      timestamp: number
+      terminalId: string
+      terminalType: 'local' | 'ssh'
+      sshHost?: string
+      role: 'user' | 'assistant'
+      content: string
+    }>) => ipcRenderer.invoke('history:saveChatRecords', records),
+
+    // 获取聊天记录
+    getChatRecords: (startDate?: string, endDate?: string) => 
+      ipcRenderer.invoke('history:getChatRecords', startDate, endDate),
+
+    // 保存 Agent 记录
+    saveAgentRecord: (record: {
+      id: string
+      timestamp: number
+      terminalId: string
+      terminalType: 'local' | 'ssh'
+      sshHost?: string
+      userTask: string
+      steps: Array<{
+        id: string
+        type: string
+        content: string
+        toolName?: string
+        toolArgs?: Record<string, unknown>
+        toolResult?: string
+        riskLevel?: string
+        timestamp: number
+      }>
+      finalResult?: string
+      duration: number
+      status: 'completed' | 'failed' | 'aborted'
+    }) => ipcRenderer.invoke('history:saveAgentRecord', record),
+
+    // 获取 Agent 记录
+    getAgentRecords: (startDate?: string, endDate?: string) => 
+      ipcRenderer.invoke('history:getAgentRecords', startDate, endDate),
+
+    // 获取数据目录路径
+    getDataPath: () => ipcRenderer.invoke('history:getDataPath') as Promise<string>,
+
+    // 获取存储统计
+    getStorageStats: () => ipcRenderer.invoke('history:getStorageStats') as Promise<{
+      chatFiles: number
+      agentFiles: number
+      totalSize: number
+      oldestRecord?: string
+      newestRecord?: string
+    }>,
+
+    // 导出数据
+    exportData: () => ipcRenderer.invoke('history:exportData'),
+
+    // 导入数据
+    importData: (data: object) => ipcRenderer.invoke('history:importData', data) as Promise<{
+      success: boolean
+      error?: string
+      configIncluded?: boolean
+    }>,
+
+    // 清理旧记录
+    cleanup: (daysToKeep: number) => ipcRenderer.invoke('history:cleanup', daysToKeep) as Promise<{
+      chatDeleted: number
+      agentDeleted: number
+    }>,
+
+    // 在文件管理器中打开数据目录
+    openDataFolder: () => ipcRenderer.invoke('history:openDataFolder')
   }
 }
 
