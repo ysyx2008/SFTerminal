@@ -350,66 +350,34 @@ export class AgentService {
           }
         }
 
-        // 严格模式：确认后在终端执行（用户可见）
-        // 普通模式：后台静默执行
-        if (config.strictMode) {
-          try {
-            // 在终端执行命令（用户可以看到输入和输出）
-            const result = await this.ptyService.executeInTerminal(
-              ptyId,
-              command,
-              config.commandTimeout
-            )
-
-            this.addStep(agentId, {
-              type: 'tool_result',
-              content: `命令执行完成 (耗时: ${result.duration}ms)`,
-              toolName: name,
-              toolResult: result.output
-            })
-
-            return {
-              success: true,
-              output: result.output
-            }
-          } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : '命令执行失败'
-            this.addStep(agentId, {
-              type: 'tool_result',
-              content: `命令执行失败: ${errorMsg}`,
-              toolName: name,
-              toolResult: errorMsg
-            })
-            return { success: false, output: '', error: errorMsg }
-          }
-        }
-
-        // 普通模式：后台静默执行
+        // 在终端执行命令（用户可以看到输入和输出）
+        // 严格模式和宽松模式都在终端执行，区别只是确认机制
         try {
-          const result: CommandResult = await this.commandExecutor.execute(
+          const result = await this.ptyService.executeInTerminal(
+            ptyId,
             command,
-            undefined,  // 使用默认工作目录
             config.commandTimeout
           )
 
-          const stepContent = result.aborted 
-            ? `命令执行超时或被中止` 
-            : `命令执行完成 (退出码: ${result.exitCode}, 耗时: ${result.duration}ms)`
-
           this.addStep(agentId, {
             type: 'tool_result',
-            content: stepContent,
+            content: `命令执行完成 (耗时: ${result.duration}ms)`,
             toolName: name,
             toolResult: result.output
           })
 
           return {
-            success: result.exitCode === 0 && !result.aborted,
-            output: result.output || '(无输出)',
-            error: result.aborted ? '命令执行超时' : undefined
+            success: true,
+            output: result.output
           }
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : '执行失败'
+          const errorMsg = error instanceof Error ? error.message : '命令执行失败'
+          this.addStep(agentId, {
+            type: 'tool_result',
+            content: `命令执行失败: ${errorMsg}`,
+            toolName: name,
+            toolResult: errorMsg
+          })
           return { success: false, output: '', error: errorMsg }
         }
       }
