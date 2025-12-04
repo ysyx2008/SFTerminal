@@ -941,6 +941,21 @@ const saveAgentRecord = (
   })
 }
 
+// 获取当前终端的主机 ID
+const getHostId = async (): Promise<string> => {
+  const activeTab = terminalStore.activeTab
+  if (!activeTab) return 'local'
+  
+  if (activeTab.type === 'ssh' && activeTab.sshConfig) {
+    return await window.electronAPI.hostProfile.generateHostId(
+      'ssh',
+      activeTab.sshConfig.host,
+      activeTab.sshConfig.username
+    )
+  }
+  return 'local'
+}
+
 // 运行 Agent
 const runAgent = async () => {
   if (!inputText.value.trim() || isAgentRunning.value || !currentTabId.value) return
@@ -956,6 +971,9 @@ const runAgent = async () => {
     console.error('无法获取终端上下文')
     return
   }
+
+  // 获取主机 ID
+  const hostId = await getHostId()
 
   // 准备新任务（保留之前的步骤）
   terminalStore.clearAgentState(tabId, true)
@@ -987,8 +1005,9 @@ const runAgent = async () => {
       message,
       {
         ...context,
+        hostId,  // 主机档案 ID
         historyMessages  // 添加历史对话
-      } as { ptyId: string; terminalOutput: string[]; systemInfo: { os: string; shell: string }; historyMessages?: { role: string; content: string }[] },
+      } as { ptyId: string; terminalOutput: string[]; systemInfo: { os: string; shell: string }; hostId?: string; historyMessages?: { role: string; content: string }[] },
       { strictMode: strictMode.value, commandTimeout: commandTimeout.value * 1000 }  // 传递配置（超时时间转为毫秒）
     )
 
