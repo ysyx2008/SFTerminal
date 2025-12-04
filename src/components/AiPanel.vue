@@ -1039,53 +1039,6 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <!-- Agent 步骤显示 -->
-      <div v-if="agentMode && agentSteps.length > 0" class="agent-steps">
-        <div class="agent-steps-header">
-          <span>🤖 Agent 执行步骤</span>
-          <span v-if="isAgentRunning" class="agent-running-indicator">执行中...</span>
-        </div>
-        <div class="agent-steps-list">
-          <div 
-            v-for="step in agentSteps" 
-            :key="step.id" 
-            class="agent-step"
-            :class="[step.type, getRiskClass(step.riskLevel)]"
-          >
-            <span class="step-icon">{{ getStepIcon(step.type) }}</span>
-            <div class="step-content">
-              <div class="step-text">{{ step.content }}</div>
-              <div v-if="step.toolResult" class="step-result">
-                <pre>{{ step.toolResult }}</pre>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Agent 确认对话框 -->
-      <div v-if="pendingConfirm" class="agent-confirm">
-        <div class="confirm-header">
-          <span class="confirm-icon">⚠️</span>
-          <span class="confirm-title">需要确认</span>
-          <span class="confirm-risk" :class="getRiskClass(pendingConfirm.riskLevel)">
-            {{ pendingConfirm.riskLevel === 'dangerous' ? '高风险' : '中风险' }}
-          </span>
-        </div>
-        <div class="confirm-content">
-          <div class="confirm-tool">{{ pendingConfirm.toolName }}</div>
-          <pre class="confirm-args">{{ JSON.stringify(pendingConfirm.toolArgs, null, 2) }}</pre>
-        </div>
-        <div class="confirm-actions">
-          <button class="btn btn-danger btn-sm" @click="confirmToolCall(false)">
-            拒绝
-          </button>
-          <button class="btn btn-primary btn-sm" @click="confirmToolCall(true)">
-            允许执行
-          </button>
-        </div>
-      </div>
-
       <!-- 消息列表 -->
       <div ref="messagesRef" class="ai-messages" @click="handleCodeBlockClick">
         <div v-if="messages.length === 0 && !agentMode" class="ai-welcome">
@@ -1151,6 +1104,59 @@ onUnmounted(() => {
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
               </svg>
             </button>
+          </div>
+        </div>
+
+        <!-- Agent 执行步骤（融入对话流） -->
+        <div v-if="agentMode && agentSteps.length > 0" class="message assistant">
+          <div class="message-wrapper agent-steps-wrapper">
+            <div class="message-content agent-steps-content">
+              <div class="agent-steps-header-inline">
+                <span>🤖 Agent 执行中</span>
+                <span v-if="isAgentRunning" class="agent-running-dot"></span>
+              </div>
+              <div 
+                v-for="step in agentSteps" 
+                :key="step.id" 
+                class="agent-step-inline"
+                :class="[step.type, getRiskClass(step.riskLevel)]"
+              >
+                <span class="step-icon">{{ getStepIcon(step.type) }}</span>
+                <div class="step-content">
+                  <div class="step-text">{{ step.content }}</div>
+                  <div v-if="step.toolResult" class="step-result">
+                    <pre>{{ step.toolResult }}</pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Agent 确认对话框（融入对话流） -->
+        <div v-if="pendingConfirm" class="message assistant">
+          <div class="message-wrapper">
+            <div class="message-content agent-confirm-inline">
+              <div class="confirm-header-inline">
+                <span class="confirm-icon">⚠️</span>
+                <span class="confirm-title">需要确认</span>
+                <span class="confirm-risk-badge" :class="getRiskClass(pendingConfirm.riskLevel)">
+                  {{ pendingConfirm.riskLevel === 'dangerous' ? '高风险' : '中风险' }}
+                </span>
+              </div>
+              <div class="confirm-detail">
+                <div class="confirm-tool-name">{{ pendingConfirm.toolName }}</div>
+                <pre class="confirm-args-inline">{{ JSON.stringify(pendingConfirm.toolArgs, null, 2) }}</pre>
+              </div>
+              <div class="confirm-actions-inline">
+                <button class="btn btn-sm btn-outline-danger" @click="confirmToolCall(false)">
+                  拒绝
+                </button>
+                <button class="btn btn-sm btn-primary" @click="confirmToolCall(true)">
+                  允许执行
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1922,45 +1928,52 @@ onUnmounted(() => {
   border-color: var(--accent-primary);
 }
 
-/* Agent 步骤 */
-.agent-steps {
-  border-bottom: 1px solid var(--border-color);
-  max-height: 200px;
-  overflow-y: auto;
+/* Agent 步骤（融入对话） */
+.agent-steps-wrapper {
+  max-width: 95% !important;
 }
 
-.agent-steps-header {
+.agent-steps-content {
+  padding: 12px 14px !important;
+}
+
+.agent-steps-header-inline {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  font-size: 12px;
+  gap: 8px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
+  color: var(--accent-primary);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--border-color);
 }
 
-.agent-running-indicator {
-  color: var(--accent-primary);
-  animation: pulse 1.5s ease-in-out infinite;
+.agent-running-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--accent-primary);
+  border-radius: 50%;
+  animation: pulse-dot 1.5s ease-in-out infinite;
 }
 
-.agent-steps-list {
-  padding: 8px 12px;
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
 }
 
-.agent-step {
+.agent-step-inline {
   display: flex;
   gap: 8px;
-  padding: 6px 0;
+  padding: 8px 0;
   font-size: 12px;
   color: var(--text-secondary);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.agent-step:last-child {
+.agent-step-inline:last-child {
   border-bottom: none;
+  padding-bottom: 0;
 }
 
 .step-icon {
@@ -1975,16 +1988,17 @@ onUnmounted(() => {
 
 .step-text {
   word-break: break-word;
+  line-height: 1.4;
 }
 
 .step-result {
-  margin-top: 4px;
-  padding: 6px 8px;
-  background: var(--bg-tertiary);
-  border-radius: 4px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
   font-family: var(--font-mono);
   font-size: 11px;
-  max-height: 100px;
+  max-height: 120px;
   overflow-y: auto;
 }
 
@@ -1992,56 +2006,63 @@ onUnmounted(() => {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-all;
+  color: var(--text-muted);
 }
 
-.agent-step.tool_call {
+.agent-step-inline.tool_call {
   color: var(--accent-primary);
 }
 
-.agent-step.error {
+.agent-step-inline.tool_call .step-text {
+  color: var(--text-primary);
+}
+
+.agent-step-inline.error {
   color: var(--accent-error, #f44336);
 }
 
-.agent-step.confirm {
-  color: var(--accent-warning, #f59e0b);
+.agent-step-inline.message {
+  color: var(--text-primary);
 }
 
 /* 风险等级颜色 */
 .risk-safe {
   border-left: 3px solid #10b981;
-  padding-left: 8px;
+  padding-left: 10px;
+  margin-left: -2px;
 }
 
 .risk-moderate {
   border-left: 3px solid #f59e0b;
-  padding-left: 8px;
+  padding-left: 10px;
+  margin-left: -2px;
 }
 
 .risk-dangerous {
   border-left: 3px solid #ef4444;
-  padding-left: 8px;
+  padding-left: 10px;
+  margin-left: -2px;
 }
 
 .risk-blocked {
   border-left: 3px solid #6b7280;
-  padding-left: 8px;
+  padding-left: 10px;
+  margin-left: -2px;
   opacity: 0.6;
 }
 
-/* Agent 确认对话框 */
-.agent-confirm {
-  margin: 12px;
-  padding: 12px;
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  border-radius: 8px;
+/* Agent 确认对话框（融入对话） */
+.agent-confirm-inline {
+  padding: 14px !important;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.05)) !important;
+  border: 1px solid rgba(245, 158, 11, 0.3) !important;
 }
 
-.confirm-header {
+.confirm-header-inline {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .confirm-icon {
@@ -2054,54 +2075,63 @@ onUnmounted(() => {
   color: var(--text-primary);
 }
 
-.confirm-risk {
-  padding: 2px 6px;
+.confirm-risk-badge {
+  padding: 3px 8px;
   font-size: 10px;
-  font-weight: 500;
-  border-radius: 4px;
+  font-weight: 600;
+  border-radius: 10px;
   margin-left: auto;
 }
 
-.confirm-risk.risk-dangerous {
+.confirm-risk-badge.risk-dangerous {
   background: rgba(239, 68, 68, 0.2);
   color: #ef4444;
-  border: none;
 }
 
-.confirm-risk.risk-moderate {
+.confirm-risk-badge.risk-moderate {
   background: rgba(245, 158, 11, 0.2);
   color: #f59e0b;
-  border: none;
 }
 
-.confirm-content {
+.confirm-detail {
   margin-bottom: 12px;
 }
 
-.confirm-tool {
+.confirm-tool-name {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--accent-primary);
   margin-bottom: 6px;
 }
 
-.confirm-args {
-  padding: 8px;
-  background: var(--bg-tertiary);
-  border-radius: 4px;
+.confirm-args-inline {
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   margin: 0;
-  max-height: 80px;
+  max-height: 100px;
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
+  color: var(--text-primary);
 }
 
-.confirm-actions {
+.confirm-actions-inline {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   justify-content: flex-end;
+}
+
+.btn-outline-danger {
+  background: transparent;
+  border: 1px solid #ef4444;
+  color: #ef4444;
+}
+
+.btn-outline-danger:hover {
+  background: rgba(239, 68, 68, 0.1);
 }
 
 /* 成功按钮样式 */

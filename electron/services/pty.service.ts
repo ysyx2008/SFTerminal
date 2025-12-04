@@ -189,21 +189,26 @@ export class PtyService {
 
   /**
    * 构建带标记的命令
-   * 使用暗淡颜色使标记不那么显眼，同时方便解析
+   * 使用不可见的方式添加标记：
+   * 1. 先执行实际命令（用户看到的）
+   * 2. 使用 ANSI 转义序列隐藏标记输出
    */
   private buildWrappedCommand(command: string, markerId: string): string {
     const startMarker = `${this.MARKER_PREFIX}S:${markerId}${this.MARKER_SUFFIX}`
-    const endMarker = `${this.MARKER_PREFIX}E:${markerId}:$?${this.MARKER_SUFFIX}`
+    const endMarker = `${this.MARKER_PREFIX}E:${markerId}`
     
-    // 根据 shell 类型构建命令
-    // 对于 bash/zsh，使用 $'\e[2m' 语法显示暗淡颜色
-    // 暂时简化处理，不使用颜色以确保兼容性
+    // 使用 ANSI 隐藏序列：\x1b[8m 隐藏文本，\x1b[28m 取消隐藏
+    // 或者使用极暗的颜色 \x1b[2m (dim) + \x1b[30m (black)
+    const hide = '\\x1b[2m\\x1b[30m'
+    const show = '\\x1b[0m'
+    
     if (process.platform === 'win32') {
-      // PowerShell
-      return `echo '${startMarker}'; ${command}; echo '${this.MARKER_PREFIX}E:${markerId}:'$LASTEXITCODE'${this.MARKER_SUFFIX}'\r`
+      // PowerShell - 暂时保持原样
+      return `echo '${startMarker}'; ${command}; echo '${endMarker}:'$LASTEXITCODE'${this.MARKER_SUFFIX}'\r`
     } else {
-      // Bash/Zsh
-      return `echo '${startMarker}' && ${command}; echo '${this.MARKER_PREFIX}E:${markerId}:'$?'${this.MARKER_SUFFIX}'\n`
+      // Bash/Zsh - 使用 printf 输出隐藏的标记
+      // 先输出隐藏的开始标记，然后执行命令，最后输出隐藏的结束标记
+      return `printf '${hide}${startMarker}${show}\\n' && ${command}; printf '${hide}${endMarker}:'$?'${this.MARKER_SUFFIX}${show}\\n'\n`
     }
   }
 
