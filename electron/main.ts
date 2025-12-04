@@ -42,12 +42,20 @@ const agentService = new AgentService(aiService, ptyService, hostProfileService)
 const historyService = new HistoryService()
 
 function createWindow() {
+  // 根据平台选择图标
+  const iconPath = process.platform === 'darwin'
+    ? join(__dirname, '../resources/icon.icns')
+    : process.platform === 'win32'
+      ? join(__dirname, '../resources/icon.ico')
+      : join(__dirname, '../resources/icon.png')
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
     minHeight: 600,
     title: '旗鱼终端',
+    icon: iconPath,
     frame: true,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
