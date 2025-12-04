@@ -138,7 +138,15 @@ const contextStats = computed(() => {
     // System prompt 约 800 tokens（包含工具定义）
     totalTokens += 800
     
-    // 用户任务
+    // 历史任务
+    const history = agentState.value?.history || []
+    for (const item of history) {
+      totalTokens += estimateTokens(item.userTask)
+      totalTokens += estimateTokens(item.finalResult)
+      messageCount += 2  // 每个历史任务算 2 条消息
+    }
+    
+    // 当前用户任务
     if (agentUserTask.value) {
       totalTokens += estimateTokens(agentUserTask.value)
       messageCount++
@@ -427,11 +435,11 @@ const generateCommand = async (description: string) => {
   )
 }
 
-// 清空对话（包括 Agent 状态）
+// 清空对话（包括 Agent 状态和历史）
 const clearMessages = () => {
   if (currentTabId.value) {
     terminalStore.clearAiMessages(currentTabId.value)
-    terminalStore.clearAgentState(currentTabId.value)
+    terminalStore.clearAgentState(currentTabId.value, false)  // 不保留历史
   }
 }
 
@@ -814,13 +822,17 @@ const runAgent = async () => {
     return
   }
 
-  // 清空之前的 Agent 状态，开始新任务
-  terminalStore.clearAgentState(tabId)
+  // 清空之前的 Agent 状态，开始新任务（保留历史）
+  terminalStore.clearAgentState(tabId, true)
   await scrollToBottom()
 
-  // Agent 模式独立，不使用 aiMessages 的历史
-  // 每次任务都是独立的上下文
+  // 从 Agent 历史中构建上下文消息
+  const agentHistory = agentState.value?.history || []
   const historyMessages: { role: 'user' | 'assistant'; content: string }[] = []
+  for (const item of agentHistory) {
+    historyMessages.push({ role: 'user', content: item.userTask })
+    historyMessages.push({ role: 'assistant', content: item.finalResult })
+  }
 
   // 设置 Agent 状态：正在运行 + 用户任务
   terminalStore.setAgentRunning(tabId, true, undefined, message)

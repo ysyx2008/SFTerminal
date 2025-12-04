@@ -41,6 +41,13 @@ export interface PendingConfirmation {
   riskLevel: RiskLevel
 }
 
+// Agent 历史任务记录
+export interface AgentHistoryItem {
+  userTask: string        // 用户任务描述
+  finalResult: string     // Agent 完成后的回复
+  timestamp: number       // 时间戳
+}
+
 export interface AgentState {
   isRunning: boolean
   agentId?: string
@@ -48,6 +55,7 @@ export interface AgentState {
   steps: AgentStep[]
   pendingConfirm?: PendingConfirmation
   finalResult?: string   // Agent 完成后的最终回复
+  history: AgentHistoryItem[]  // 历史任务记录
 }
 
 export interface TerminalTab {
@@ -554,7 +562,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     if (!tab.agentState) {
       tab.agentState = {
         isRunning: false,
-        steps: []
+        steps: [],
+        history: []
       }
     }
 
@@ -580,7 +589,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     if (!tab.agentState) {
       tab.agentState = {
         isRunning: false,
-        steps: []
+        steps: [],
+        history: []
       }
     }
 
@@ -598,14 +608,30 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
-   * 清空 Agent 状态
+   * 清空 Agent 当前任务状态（保留历史）
    */
-  function clearAgentState(tabId: string): void {
+  function clearAgentState(tabId: string, preserveHistory: boolean = true): void {
     const tab = tabs.value.find(t => t.id === tabId)
     if (tab) {
+      const existingHistory = preserveHistory ? (tab.agentState?.history || []) : []
+      
+      // 如果有已完成的任务，保存到历史
+      if (preserveHistory && tab.agentState?.userTask && tab.agentState?.finalResult) {
+        existingHistory.push({
+          userTask: tab.agentState.userTask,
+          finalResult: tab.agentState.finalResult,
+          timestamp: Date.now()
+        })
+        // 只保留最近 10 条历史
+        while (existingHistory.length > 10) {
+          existingHistory.shift()
+        }
+      }
+      
       tab.agentState = {
         isRunning: false,
-        steps: []
+        steps: [],
+        history: existingHistory
       }
     }
   }
