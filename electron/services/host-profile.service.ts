@@ -1,5 +1,6 @@
 import * as fs from 'fs'
 import * as path from 'path'
+import * as os from 'os'
 import { app } from 'electron'
 import { exec } from 'child_process'
 import { promisify } from 'util'
@@ -420,19 +421,26 @@ export class HostProfileService {
    */
   async probeLocal(): Promise<ProbeResult> {
     const result: ProbeResult = {}
-    const isWindows = process.platform === 'win32'
+    // 使用多种方式检测 Windows
+    const isWindows = process.platform === 'win32' || os.platform() === 'win32' || os.type() === 'Windows_NT'
+    
+    console.log('[HostProfile] 探测本地主机, platform:', process.platform, 'os.platform:', os.platform(), 'os.type:', os.type(), 'isWindows:', isWindows)
     
     try {
       // 探测主机名（Windows 和 Unix 都支持 hostname 命令）
       const { stdout: hostname } = await execAsync('hostname')
       result.hostname = hostname.trim()
-    } catch { /* ignore */ }
+    } catch (e) { 
+      console.log('[HostProfile] hostname 探测失败:', e)
+    }
 
     try {
       // 探测用户名（Windows 和 Unix 都支持 whoami 命令）
       const { stdout: username } = await execAsync('whoami')
       result.username = username.trim()
-    } catch { /* ignore */ }
+    } catch (e) { 
+      console.log('[HostProfile] whoami 探测失败:', e)
+    }
 
     if (isWindows) {
       // Windows 系统探测
@@ -442,20 +450,23 @@ export class HostProfileService {
         // 探测 Windows 版本
         const { stdout: ver } = await execAsync('ver')
         result.osVersion = ver.trim()
-      } catch { /* ignore */ }
+      } catch (e) { 
+        console.log('[HostProfile] ver 探测失败:', e)
+      }
 
-      try {
-        // 探测 Shell（通过环境变量判断）
-        const comspec = process.env.COMSPEC || ''
-        if (comspec.toLowerCase().includes('cmd.exe')) {
-          result.shell = 'cmd'
-        }
-        // 检查是否在 PowerShell 中
-        const psVersion = process.env.PSModulePath
-        if (psVersion) {
-          result.shell = 'powershell'
-        }
-      } catch { /* ignore */ }
+      // 探测 Shell（通过环境变量判断）- 不需要 try-catch，这里不会抛异常
+      const comspec = process.env.COMSPEC || ''
+      if (comspec.toLowerCase().includes('cmd.exe')) {
+        result.shell = 'cmd'
+      }
+      // 检查是否有 PowerShell 环境变量
+      if (process.env.PSModulePath) {
+        result.shell = 'powershell'
+      }
+      // 如果还没设置，默认 cmd
+      if (!result.shell) {
+        result.shell = 'cmd'
+      }
 
       try {
         // 探测已安装工具 (Windows)
@@ -472,20 +483,20 @@ export class HostProfileService {
         }
       } catch { /* ignore */ }
 
-      try {
-        // Windows 主目录
-        result.homeDir = process.env.USERPROFILE || undefined
-      } catch { /* ignore */ }
+      // Windows 主目录
+      result.homeDir = process.env.USERPROFILE || os.homedir() || undefined
+      
+      console.log('[HostProfile] Windows 探测结果:', result)
 
     } else {
       // Unix/Linux/macOS 系统探测
       try {
         // 探测系统类型
         const { stdout: uname } = await execAsync('uname -s')
-        const os = uname.trim().toLowerCase()
-        if (os.includes('darwin')) result.os = 'macos'
-        else if (os.includes('linux')) result.os = 'linux'
-        else result.os = os
+        const osName = uname.trim().toLowerCase()
+        if (osName.includes('darwin')) result.os = 'macos'
+        else if (osName.includes('linux')) result.os = 'linux'
+        else result.os = osName
       } catch { /* ignore */ }
 
       try {
@@ -556,10 +567,13 @@ export class HostProfileService {
 
       try {
         // 主目录
-        result.homeDir = process.env.HOME || undefined
+        result.homeDir = process.env.HOME || os.homedir() || undefined
       } catch { /* ignore */ }
+      
+      console.log('[HostProfile] Unix 探测结果:', result)
     }
 
+    console.log('[HostProfile] 最终探测结果:', result)
     return result
   }
 
@@ -568,10 +582,13 @@ export class HostProfileService {
    */
   async probeAndUpdateLocal(): Promise<HostProfile> {
     const probeResult = await this.probeLocal()
-    return this.updateProfile('local', {
+    console.log('[HostProfile] probeAndUpdateLocal 探测结果:', probeResult)
+    const profile = this.updateProfile('local', {
       ...probeResult,
       lastProbed: Date.now()
     })
+    console.log('[HostProfile] probeAndUpdateLocal 更新后档案:', profile)
+    return profile
   }
 }
 
