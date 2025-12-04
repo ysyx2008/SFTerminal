@@ -141,7 +141,6 @@ const sendMessage = async () => {
   }
 
   terminalStore.addAiMessage(tabId, userMessage)
-  const prompt = inputText.value
   inputText.value = ''
   terminalStore.setAiLoading(tabId, true)
   await scrollToBottom()
