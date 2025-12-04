@@ -68,13 +68,17 @@ interface AgentRun {
   aborted: boolean
   pendingConfirmation?: PendingConfirmation
   config: AgentConfig
+  context: AgentContext  // 运行上下文
 }
 
 export class AgentService {
   private aiService: AiService
   private commandExecutor: CommandExecutorService
   private ptyService: PtyService
-  private hostProfileService?: { generateHostContext: (hostId: string) => string }
+  private hostProfileService?: { 
+    generateHostContext: (hostId: string) => string
+    addNote: (hostId: string, note: string) => void
+  }
   private runs: Map<string, AgentRun> = new Map()
 
   // 事件回调
@@ -96,7 +100,10 @@ export class AgentService {
   constructor(
     aiService: AiService, 
     ptyService: PtyService,
-    hostProfileService?: { generateHostContext: (hostId: string) => string }
+    hostProfileService?: { 
+      generateHostContext: (hostId: string) => string
+      addNote: (hostId: string, note: string) => void 
+    }
   ) {
     this.aiService = aiService
     this.ptyService = ptyService
@@ -192,6 +199,23 @@ export class AgentService {
               }
             },
             required: ['path', 'content']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'remember_info',
+          description: '记住重要信息供以后参考。当你发现有价值的信息时使用（如配置文件位置、服务状态、系统特点等）。这些信息会被保存到主机档案中，在未来的交互中作为参考。',
+          parameters: {
+            type: 'object',
+            properties: {
+              info: {
+                type: 'string',
+                description: '要记住的信息（简洁描述，如"nginx 配置在 /etc/nginx/"）'
+              }
+            },
+            required: ['info']
           }
         }
       }
@@ -480,6 +504,35 @@ export class AgentService {
         }
       }
 
+      case 'remember_info': {
+        const info = args.info as string
+        if (!info) {
+          return { success: false, output: '', error: '信息不能为空' }
+        }
+
+        this.addStep(agentId, {
+          type: 'tool_call',
+          content: `记住信息: ${info}`,
+          toolName: name,
+          toolArgs: args,
+          riskLevel: 'safe'
+        })
+
+        // 保存到主机档案
+        const run = this.runs.get(agentId)
+        if (run?.context.hostId && this.hostProfileService) {
+          this.hostProfileService.addNote(run.context.hostId, info)
+        }
+
+        this.addStep(agentId, {
+          type: 'tool_result',
+          content: `已记住: ${info}`,
+          toolName: name
+        })
+
+        return { success: true, output: `信息已保存到主机档案` }
+      }
+
       default:
         return { success: false, output: '', error: `未知工具: ${name}` }
     }
@@ -575,7 +628,8 @@ export class AgentService {
       steps: [],
       isRunning: true,
       aborted: false,
-      config: fullConfig
+      config: fullConfig,
+      context  // 保存上下文供工具使用
     }
     this.runs.set(agentId, run)
 
@@ -721,6 +775,7 @@ ${hostContext}
 - get_terminal_context: 获取终端最近的输出
 - read_file: 读取文件内容
 - write_file: 写入文件
+- remember_info: 记住重要信息供以后参考
 
 ## 工作原则（重要！）
 1. **先分析，再执行**：在调用任何工具前，先用文字说明你的分析和计划
@@ -728,7 +783,7 @@ ${hostContext}
 3. **说明下一步原因**：在执行下一个命令前，解释为什么需要这个命令
 4. 分步执行复杂任务，每步执行后检查结果
 5. 遇到错误时分析原因并提供解决方案
-6. **记住重要发现**：如果发现重要的配置文件位置、服务状态等信息，在总结中提及
+6. **主动记忆**：发现重要信息时（如配置文件位置、服务端口、日志路径等），使用 remember_info 保存，以便未来参考
 
 ## 输出格式示例
 用户：查看磁盘空间

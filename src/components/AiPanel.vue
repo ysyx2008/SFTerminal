@@ -941,6 +941,28 @@ const saveAgentRecord = (
   })
 }
 
+// ==================== 主机档案 ====================
+
+// 主机档案类型
+interface HostProfile {
+  hostId: string
+  hostname: string
+  username: string
+  os: string
+  osVersion: string
+  shell: string
+  packageManager?: string
+  installedTools: string[]
+  notes: string[]
+  lastProbed: number
+  lastUpdated: number
+}
+
+// 当前主机档案
+const currentHostProfile = ref<HostProfile | null>(null)
+const isLoadingProfile = ref(false)
+const isProbing = ref(false)
+
 // 获取当前终端的主机 ID
 const getHostId = async (): Promise<string> => {
   const activeTab = terminalStore.activeTab
@@ -954,6 +976,79 @@ const getHostId = async (): Promise<string> => {
     )
   }
   return 'local'
+}
+
+// 加载当前主机档案
+const loadHostProfile = async () => {
+  isLoadingProfile.value = true
+  try {
+    const hostId = await getHostId()
+    currentHostProfile.value = await window.electronAPI.hostProfile.get(hostId)
+  } catch (e) {
+    console.error('[HostProfile] 加载失败:', e)
+  } finally {
+    isLoadingProfile.value = false
+  }
+}
+
+// 手动刷新主机档案
+const refreshHostProfile = async () => {
+  const activeTab = terminalStore.activeTab
+  if (!activeTab?.ptyId || isProbing.value) return
+  
+  isProbing.value = true
+  try {
+    const hostId = await getHostId()
+    await probeHostProfile(hostId, activeTab.ptyId)
+    // 重新加载档案
+    currentHostProfile.value = await window.electronAPI.hostProfile.get(hostId)
+  } catch (e) {
+    console.error('[HostProfile] 刷新失败:', e)
+  } finally {
+    isProbing.value = false
+  }
+}
+
+// 探测主机信息
+const probeHostProfile = async (hostId: string, ptyId: string): Promise<void> => {
+  try {
+    // 检查是否需要探测
+    const needsProbe = await window.electronAPI.hostProfile.needsProbe(hostId)
+    if (!needsProbe) return
+
+    // 获取当前系统类型
+    const activeTab = terminalStore.activeTab
+    const os = activeTab?.systemInfo?.os || 'linux'
+    
+    // 获取探测命令
+    const commands = await window.electronAPI.hostProfile.getProbeCommands(os)
+    
+    // 组合成一个命令（用分号分隔）
+    const probeCommand = commands.join('; ')
+    
+    // 在终端执行探测命令
+    const result = await window.electronAPI.pty.write(ptyId, probeCommand + '\n')
+    
+    // 等待一小段时间让命令执行
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    
+    // 获取终端输出
+    const output = (terminalStore.activeTab?.outputBuffer || []).join('\n')
+    
+    // 解析探测结果
+    const probeResult = await window.electronAPI.hostProfile.parseProbeOutput(output, hostId)
+    
+    // 更新主机档案
+    if (Object.keys(probeResult).length > 0) {
+      await window.electronAPI.hostProfile.update(hostId, {
+        ...probeResult,
+        lastProbed: Date.now()
+      })
+      console.log(`[HostProfile] 已更新主机档案: ${hostId}`, probeResult)
+    }
+  } catch (e) {
+    console.error('[HostProfile] 探测失败:', e)
+  }
 }
 
 // 运行 Agent
@@ -974,6 +1069,11 @@ const runAgent = async () => {
 
   // 获取主机 ID
   const hostId = await getHostId()
+
+  // 首次运行时自动探测主机信息（后台执行，不阻塞）
+  probeHostProfile(hostId, context.ptyId).catch(e => {
+    console.warn('[Agent] 主机探测失败:', e)
+  })
 
   // 准备新任务（保留之前的步骤）
   terminalStore.clearAgentState(tabId, true)
@@ -1183,10 +1283,17 @@ const handleSend = () => {
 // 生命周期
 onMounted(() => {
   setupAgentListeners()
+  // 加载主机档案
+  loadHostProfile()
 })
 
 onUnmounted(() => {
   cleanupAgentListeners()
+})
+
+// 监听终端切换，重新加载主机档案
+watch(() => terminalStore.activeTabId, () => {
+  loadHostProfile()
 })
 </script>
 
@@ -1354,6 +1461,54 @@ onUnmounted(() => {
         </div>
         <div v-if="agentMode && !agentUserTask" class="ai-welcome">
           <p>🤖 Agent 模式已启用</p>
+          
+          <!-- 主机档案信息 -->
+          <div class="host-profile-section">
+            <p class="welcome-section-title">
+              🖥️ 主机信息
+              <button 
+                class="refresh-profile-btn" 
+                @click="refreshHostProfile" 
+                :disabled="isProbing"
+                :title="isProbing ? '探测中...' : '刷新主机信息'"
+              >
+                <span :class="{ spinning: isProbing }">🔄</span>
+              </button>
+            </p>
+            <div v-if="currentHostProfile" class="host-profile-info">
+              <div class="profile-row">
+                <span class="profile-label">主机:</span>
+                <span class="profile-value">{{ currentHostProfile.hostname || '未知' }}</span>
+                <span v-if="currentHostProfile.username" class="profile-value-secondary">@ {{ currentHostProfile.username }}</span>
+              </div>
+              <div v-if="currentHostProfile.osVersion || currentHostProfile.os" class="profile-row">
+                <span class="profile-label">系统:</span>
+                <span class="profile-value">{{ currentHostProfile.osVersion || currentHostProfile.os }}</span>
+              </div>
+              <div v-if="currentHostProfile.shell" class="profile-row">
+                <span class="profile-label">Shell:</span>
+                <span class="profile-value">{{ currentHostProfile.shell }}</span>
+                <span v-if="currentHostProfile.packageManager" class="profile-value-secondary">| {{ currentHostProfile.packageManager }}</span>
+              </div>
+              <div v-if="currentHostProfile.installedTools?.length" class="profile-row">
+                <span class="profile-label">工具:</span>
+                <span class="profile-value tools-list">{{ currentHostProfile.installedTools.join(', ') }}</span>
+              </div>
+              <div v-if="currentHostProfile.notes?.length" class="profile-notes">
+                <span class="profile-label">📝 已知信息:</span>
+                <ul>
+                  <li v-for="(note, idx) in currentHostProfile.notes.slice(-5)" :key="idx">{{ note }}</li>
+                </ul>
+              </div>
+            </div>
+            <div v-else-if="isLoadingProfile" class="host-profile-loading">
+              加载中...
+            </div>
+            <div v-else class="host-profile-empty">
+              <span>尚未探测，点击刷新按钮探测主机信息</span>
+            </div>
+          </div>
+
           <p class="welcome-section-title">💡 什么是 Agent 模式？</p>
           <p class="welcome-desc">Agent 可以自主执行命令来完成你的任务，你可以看到完整的执行过程。</p>
           
@@ -1878,12 +2033,119 @@ onUnmounted(() => {
   color: var(--text-primary);
   margin-top: 14px;
   margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .ai-welcome .welcome-desc {
   color: var(--text-muted);
   font-size: 12px;
   margin-bottom: 4px;
+}
+
+/* 主机档案区域 */
+.host-profile-section {
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 8px 0 16px 0;
+  border: 1px solid var(--border-color);
+}
+
+.host-profile-section .welcome-section-title {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.refresh-profile-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.refresh-profile-btn:hover:not(:disabled) {
+  background: var(--bg-surface);
+}
+
+.refresh-profile-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.refresh-profile-btn .spinning {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.host-profile-info {
+  font-size: 12px;
+}
+
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+.profile-label {
+  color: var(--text-secondary);
+  min-width: 40px;
+}
+
+.profile-value {
+  color: var(--text-primary);
+}
+
+.profile-value-secondary {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.profile-value.tools-list {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent-primary);
+}
+
+.profile-notes {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.profile-notes .profile-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.profile-notes ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.profile-notes li {
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 2px 0;
+}
+
+.host-profile-loading,
+.host-profile-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
 }
 
 .ai-welcome ul {
