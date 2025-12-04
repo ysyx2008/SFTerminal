@@ -346,6 +346,13 @@ export class AgentService {
           // 等待用户确认
           const approved = await this.waitForConfirmation(agentId, toolCall.id, name, args, riskLevel)
           if (!approved) {
+            // 添加拒绝步骤
+            this.addStep(agentId, {
+              type: 'tool_result',
+              content: '⛔ 用户拒绝执行此命令',
+              toolName: name,
+              toolResult: '已拒绝'
+            })
             return { success: false, output: '', error: '用户拒绝执行该命令' }
           }
         }

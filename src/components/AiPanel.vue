@@ -54,8 +54,11 @@ const isAgentRunning = computed(() => {
 })
 
 const agentSteps = computed(() => {
-  const steps = agentState.value?.steps || []
+  let steps = agentState.value?.steps || []
   const finalResult = agentState.value?.finalResult
+  
+  // 过滤掉 confirm 类型的步骤（确认对话框单独显示，不需要在步骤列表中显示）
+  steps = steps.filter(step => step.type !== 'confirm')
   
   // 如果有 finalResult，过滤掉最后一个相同内容的 message（避免重复显示总结）
   if (finalResult && steps.length > 0) {
@@ -423,10 +426,11 @@ const generateCommand = async (description: string) => {
   )
 }
 
-// 清空对话
+// 清空对话（包括 Agent 状态）
 const clearMessages = () => {
   if (currentTabId.value) {
     terminalStore.clearAiMessages(currentTabId.value)
+    terminalStore.clearAgentState(currentTabId.value)
   }
 }
 
@@ -1205,14 +1209,14 @@ onUnmounted(() => {
                   v-for="step in agentSteps" 
                   :key="step.id" 
                   class="agent-step-inline"
-                  :class="[step.type, getRiskClass(step.riskLevel)]"
+                  :class="[step.type, getRiskClass(step.riskLevel), { 'step-rejected': step.content.includes('拒绝') }]"
                 >
                   <span class="step-icon">{{ getStepIcon(step.type) }}</span>
                   <div class="step-content">
                     <div class="step-text" :class="{ 'step-analysis': step.type === 'message' }">
                       {{ step.content }}
                     </div>
-                    <div v-if="step.toolResult" class="step-result">
+                    <div v-if="step.toolResult && step.toolResult !== '已拒绝'" class="step-result">
                       <pre>{{ step.toolResult }}</pre>
                     </div>
                   </div>
@@ -2269,6 +2273,13 @@ onUnmounted(() => {
 
 .risk-blocked {
   border-left: 3px solid #6b7280;
+  padding-left: 10px;
+}
+
+/* 拒绝执行的步骤 */
+.step-rejected {
+  opacity: 0.6;
+  border-left: 3px solid #ef4444 !important;
   padding-left: 10px;
   margin-left: -2px;
   opacity: 0.6;
