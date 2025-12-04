@@ -63,6 +63,25 @@ const lastError = computed(() => {
   return terminalStore.activeTab?.lastError
 })
 
+// 计算上下文使用情况
+const contextStats = computed(() => {
+  const msgs = messages.value.filter(msg => !msg.content.includes('中...'))
+  const totalChars = msgs.reduce((sum, msg) => sum + msg.content.length, 0)
+  // 粗略估算 token 数：中文约 1-2 字符/token，英文约 4 字符/token
+  // 这里用 2 作为平均值
+  const estimatedTokens = Math.ceil(totalChars / 2)
+  // 加上 system prompt 的估算（约 200 tokens）
+  const totalTokens = estimatedTokens + 200
+  
+  return {
+    messageCount: msgs.length,
+    charCount: totalChars,
+    tokenEstimate: totalTokens,
+    // 假设上下文窗口为 8K tokens（可根据模型调整）
+    percentage: Math.min(100, Math.round((totalTokens / 8000) * 100))
+  }
+})
+
 
 
 // 生成系统信息的提示词
@@ -809,6 +828,26 @@ const quickActions = [
         </div>
       </div>
 
+      <!-- 上下文使用情况 -->
+      <div v-if="messages.length > 0" class="context-stats">
+        <div class="context-info">
+          <span class="context-label">上下文</span>
+          <span class="context-value">{{ contextStats.messageCount }} 条消息</span>
+          <span class="context-separator">·</span>
+          <span class="context-value">~{{ contextStats.tokenEstimate.toLocaleString() }} tokens</span>
+        </div>
+        <div class="context-bar">
+          <div 
+            class="context-bar-fill" 
+            :style="{ width: contextStats.percentage + '%' }"
+            :class="{ 
+              'warning': contextStats.percentage > 60, 
+              'danger': contextStats.percentage > 85 
+            }"
+          ></div>
+        </div>
+      </div>
+
       <!-- 输入区域 -->
       <div class="ai-input">
         <textarea
@@ -1094,6 +1133,56 @@ const quickActions = [
   overflow-y: auto;
   padding: 12px;
   user-select: text;
+}
+
+/* 上下文使用情况 */
+.context-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-color);
+  font-size: 11px;
+}
+
+.context-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.context-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.context-separator {
+  opacity: 0.5;
+}
+
+.context-bar {
+  width: 60px;
+  height: 4px;
+  background: var(--bg-surface);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.context-bar-fill {
+  height: 100%;
+  background: var(--accent-primary);
+  border-radius: 2px;
+  transition: width 0.3s ease, background 0.3s ease;
+}
+
+.context-bar-fill.warning {
+  background: var(--accent-warning, #f59e0b);
+}
+
+.context-bar-fill.danger {
+  background: var(--accent-error, #ef4444);
 }
 
 .ai-welcome {
