@@ -19,6 +19,7 @@ const messagesRef = ref<HTMLDivElement | null>(null)
 
 // Agent 模式状态
 const agentMode = ref(false)
+const stepsCollapsed = ref(false)  // 步骤是否折叠
 
 // 清理事件监听的函数
 let cleanupStepListener: (() => void) | null = null
@@ -767,8 +768,8 @@ const runAgent = async () => {
       } as { ptyId: string; terminalOutput: string[]; systemInfo: { os: string; shell: string }; historyMessages?: { role: string; content: string }[] }
     )
 
-    // 清除 Agent 步骤显示（任务完成后）
-    terminalStore.clearAgentState(tabId)
+    // 标记 Agent 已完成（保留步骤显示供回顾）
+    terminalStore.setAgentRunning(tabId, false)
 
     if (!result.success) {
       // 添加错误消息
@@ -791,7 +792,7 @@ const runAgent = async () => {
     }
   } catch (error) {
     console.error('Agent 运行失败:', error)
-    terminalStore.clearAgentState(tabId)
+    terminalStore.setAgentRunning(tabId, false)
     const errorMessage: AiMessage = {
       id: (Date.now() + 1).toString(),
       role: 'assistant',
@@ -1126,21 +1127,25 @@ onUnmounted(() => {
         <div v-if="agentMode && agentSteps.length > 0" class="message assistant">
           <div class="message-wrapper agent-steps-wrapper">
             <div class="message-content agent-steps-content">
-              <div class="agent-steps-header-inline">
-                <span>🤖 Agent 执行中</span>
+              <div class="agent-steps-header-inline" @click="stepsCollapsed = !stepsCollapsed">
+                <span>🤖 {{ isAgentRunning ? 'Agent 执行中' : 'Agent 执行记录' }}</span>
                 <span v-if="isAgentRunning" class="agent-running-dot"></span>
+                <span class="steps-count">{{ agentSteps.length }} 步</span>
+                <span class="collapse-icon" :class="{ collapsed: stepsCollapsed }">▼</span>
               </div>
-              <div 
-                v-for="step in agentSteps" 
-                :key="step.id" 
-                class="agent-step-inline"
-                :class="[step.type, getRiskClass(step.riskLevel)]"
-              >
-                <span class="step-icon">{{ getStepIcon(step.type) }}</span>
-                <div class="step-content">
-                  <div class="step-text">{{ step.content }}</div>
-                  <div v-if="step.toolResult" class="step-result">
-                    <pre>{{ step.toolResult }}</pre>
+              <div v-show="!stepsCollapsed" class="agent-steps-body">
+                <div 
+                  v-for="step in agentSteps" 
+                  :key="step.id" 
+                  class="agent-step-inline"
+                  :class="[step.type, getRiskClass(step.riskLevel)]"
+                >
+                  <span class="step-icon">{{ getStepIcon(step.type) }}</span>
+                  <div class="step-content">
+                    <div class="step-text">{{ step.content }}</div>
+                    <div v-if="step.toolResult" class="step-result">
+                      <pre>{{ step.toolResult }}</pre>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1959,9 +1964,35 @@ onUnmounted(() => {
   font-size: 13px;
   font-weight: 600;
   color: var(--accent-primary);
-  margin-bottom: 10px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  user-select: none;
+}
+
+.agent-steps-header-inline:hover {
+  opacity: 0.8;
+}
+
+.steps-count {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.collapse-icon {
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.collapse-icon.collapsed {
+  transform: rotate(-90deg);
+}
+
+.agent-steps-body {
+  margin-top: 10px;
 }
 
 .agent-running-dot {
