@@ -377,13 +377,13 @@ export class PtyService {
 
   /**
    * 在终端执行命令并收集输出
-   * 使用 OSC 133 Shell Integration 标记精确检测命令完成
+   * 通过检测 shell 提示符来判断命令完成
    */
   executeInTerminal(
     id: string, 
     command: string, 
     timeout: number = 30000
-  ): Promise<{ output: string; duration: number; exitCode?: number }> {
+  ): Promise<{ output: string; duration: number }> {
     return new Promise((resolve) => {
       const instance = this.instances.get(id)
       if (!instance) {
@@ -396,29 +396,24 @@ export class PtyService {
       let output = ''
       let timeoutTimer: NodeJS.Timeout | null = null
       let resolved = false
-      let exitCode: number | undefined
+      let commandStarted = false
+      let lastOutputTime = Date.now()
+      let checkTimer: NodeJS.Timeout | null = null
 
-      // 生成唯一标记 ID
-      const markerId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-      
-      // OSC 133 序列（FinalTerm/iTerm2/VS Code 标准）
-      // C = 命令开始执行
-      // D = 命令执行完成，后面跟退出码
-      const OSC_START = `\x1b]133;C;id=${markerId}\x07`
-      const OSC_END_PATTERN = new RegExp(`\x1b\\]133;D;(\\d+);id=${markerId}\x07`)
-      
-      // 备用：提示符检测（如果 OSC 不工作）
+      // 常见的 shell 提示符模式
       const promptPatterns = [
         /[$#%>❯➜»⟩›]\s*$/,
         /\n[^\n]*[$#%>❯➜»⟩›]\s*$/,
       ]
+      
       const isPrompt = (text: string): boolean => {
         const lastLine = text.split(/[\r\n]/).filter(l => l.trim()).pop() || ''
-        return promptPatterns.some(p => p.test(lastLine) || p.test(text.slice(-50)))
+        return promptPatterns.some(p => p.test(lastLine) || p.test(text.slice(-80)))
       }
 
       const cleanup = () => {
         if (timeoutTimer) clearTimeout(timeoutTimer)
+        if (checkTimer) clearTimeout(checkTimer)
         const idx = instance.dataCallbacks.indexOf(outputHandler)
         if (idx !== -1) {
           instance.dataCallbacks.splice(idx, 1)
@@ -432,60 +427,57 @@ export class PtyService {
         
         // 清理输出
         let cleanOutput = output
-        
-        // 移除 OSC 序列
-        cleanOutput = cleanOutput.replace(/\x1b\]133;[^;]*;[^\x07]*\x07/g, '')
-        cleanOutput = cleanOutput.replace(/\x1b\]133;[^\x07]*\x07/g, '')
-        
-        // 移除命令回显（第一行）
         const lines = cleanOutput.split(/\r?\n/)
+        
+        // 移除命令回显（第一行通常包含命令）
         if (lines.length > 0) {
-          // 查找并移除包含原始命令的行
-          const cmdStart = command.slice(0, Math.min(20, command.length))
+          const cmdStart = command.slice(0, Math.min(15, command.length))
           const cmdIdx = lines.findIndex(l => l.includes(cmdStart))
-          if (cmdIdx !== -1 && cmdIdx < 3) {
+          if (cmdIdx !== -1 && cmdIdx < 2) {
             lines.splice(0, cmdIdx + 1)
           }
         }
         
         // 移除尾部空行和提示符
-        while (lines.length > 0 && (lines[lines.length - 1].trim() === '' || isPrompt(lines[lines.length - 1]))) {
-          lines.pop()
+        while (lines.length > 0) {
+          const lastLine = lines[lines.length - 1]
+          if (lastLine.trim() === '' || isPrompt(lastLine)) {
+            lines.pop()
+          } else {
+            break
+          }
         }
-        cleanOutput = lines.join('\n')
         
         resolve({
-          output: cleanOutput.trim(),
-          duration: Date.now() - startTime,
-          exitCode
+          output: lines.join('\n').trim(),
+          duration: Date.now() - startTime
         })
       }
 
-      let commandStarted = false
-      let lastOutputTime = Date.now()
+      // 定期检查是否完成（更可靠的方式）
+      const scheduleCheck = () => {
+        if (checkTimer) clearTimeout(checkTimer)
+        checkTimer = setTimeout(() => {
+          if (resolved) return
+          
+          // 检查条件：命令已开始 + 有输出停止一段时间 + 最后是提示符
+          const silenceTime = Date.now() - lastOutputTime
+          if (commandStarted && silenceTime >= 300 && isPrompt(output)) {
+            finish()
+          } else if (commandStarted && silenceTime < 300) {
+            // 继续检查
+            scheduleCheck()
+          }
+        }, 100)
+      }
 
       // 输出处理器
       const outputHandler = (data: string) => {
         output += data
         lastOutputTime = Date.now()
         
-        // 检测 OSC 133 D 序列（命令完成）
-        const match = output.match(OSC_END_PATTERN)
-        if (match) {
-          exitCode = parseInt(match[1], 10)
-          // 稍等一下确保所有输出都收到
-          setTimeout(finish, 50)
-          return
-        }
-        
-        // 备用：检测提示符（如果 shell 不支持 OSC 133）
-        if (commandStarted && isPrompt(output)) {
-          setTimeout(() => {
-            // 如果 200ms 内没有新输出且仍然是提示符，认为命令完成
-            if (Date.now() - lastOutputTime >= 150 && isPrompt(output)) {
-              finish()
-            }
-          }, 200)
+        if (commandStarted) {
+          scheduleCheck()
         }
       }
 
@@ -500,18 +492,14 @@ export class PtyService {
         }
       }, timeout)
 
-      // 构建带 OSC 标记的命令
-      // 使用 printf 输出 OSC 序列，兼容性更好
-      // 注意：不能使用 exit，否则会退出 shell
-      const wrappedCommand = `printf '${OSC_START.replace(/'/g, "'\\''")}' 2>/dev/null; ${command}; __ec=$?; printf '\x1b]133;D;%d;id=${markerId}\x07' $__ec 2>/dev/null`
+      // 直接发送命令（不包装）
+      instance.pty.write(command + '\n')
       
-      // 发送命令
-      instance.pty.write(wrappedCommand + '\n')
-      
-      // 标记命令已开始
+      // 标记命令已开始，延迟一点避免误检测命令回显
       setTimeout(() => {
         commandStarted = true
-      }, 100)
+        scheduleCheck()
+      }, 150)
     })
   }
 
