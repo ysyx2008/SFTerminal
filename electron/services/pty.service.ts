@@ -400,15 +400,36 @@ export class PtyService {
       let lastOutputTime = Date.now()
       let checkTimer: NodeJS.Timeout | null = null
 
-      // 常见的 shell 提示符模式
+      // 去除 ANSI 转义序列
+      const stripAnsi = (str: string): string => {
+        // eslint-disable-next-line no-control-regex
+        return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+                  .replace(/\x1b\][^\x07]*\x07/g, '')  // OSC 序列
+                  .replace(/\x1b[PX^_][^\x1b]*\x1b\\/g, '')  // DCS/PM/APC 序列
+      }
+      
+      // 常见的 shell 提示符模式（更宽松）
       const promptPatterns = [
-        /[$#%>❯➜»⟩›]\s*$/,
-        /\n[^\n]*[$#%>❯➜»⟩›]\s*$/,
+        /[$#%>❯➜»⟩›]\s*$/,                    // 常见结束符
+        /[$#%>❯➜»⟩›]\s*\n?$/,                 // 可能有换行
+        /\w+@[\w.-]+[^$#%]*[$#%]\s*$/,        // user@host 格式
+        /\[\w+@[\w.-]+[^\]]*\]\s*[$#%]\s*$/,  // [user@host path]$ 格式
+        /\w+\s*[$#%>❯➜»⟩›]\s*$/,             // 简单的 user$ 格式
       ]
       
       const isPrompt = (text: string): boolean => {
-        const lastLine = text.split(/[\r\n]/).filter(l => l.trim()).pop() || ''
-        return promptPatterns.some(p => p.test(lastLine) || p.test(text.slice(-80)))
+        // 去除 ANSI 后检测
+        const cleanText = stripAnsi(text)
+        const lines = cleanText.split(/[\r\n]/).filter(l => l.trim())
+        const lastLine = lines[lines.length - 1] || ''
+        const last80 = cleanText.slice(-80)
+        
+        const matched = promptPatterns.some(p => p.test(lastLine) || p.test(last80))
+        // 调试日志
+        if (matched) {
+          console.log(`[PtyService] 检测到提示符: "${lastLine.slice(-30)}"`)
+        }
+        return matched
       }
 
       const cleanup = () => {
@@ -462,10 +483,11 @@ export class PtyService {
           
           // 检查条件：命令已开始 + 有输出停止一段时间 + 最后是提示符
           const silenceTime = Date.now() - lastOutputTime
-          if (commandStarted && silenceTime >= 300 && isPrompt(output)) {
+          if (commandStarted && silenceTime >= 200 && isPrompt(output)) {
+            // 检测到提示符，命令完成
             finish()
-          } else if (commandStarted && silenceTime < 300) {
-            // 继续检查
+          } else if (commandStarted) {
+            // 继续检查（无论是否静默）
             scheduleCheck()
           }
         }, 100)
