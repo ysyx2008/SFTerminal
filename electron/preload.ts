@@ -63,6 +63,45 @@ export interface ImportResult {
   errors: string[]
 }
 
+// Agent 相关类型
+export type RiskLevel = 'safe' | 'moderate' | 'dangerous' | 'blocked'
+
+export interface AgentStep {
+  id: string
+  type: 'thinking' | 'tool_call' | 'tool_result' | 'message' | 'error' | 'confirm'
+  content: string
+  toolName?: string
+  toolArgs?: Record<string, unknown>
+  toolResult?: string
+  riskLevel?: RiskLevel
+  timestamp: number
+}
+
+export interface AgentContext {
+  ptyId: string
+  terminalOutput: string[]
+  systemInfo: {
+    os: string
+    shell: string
+  }
+}
+
+export interface AgentConfig {
+  enabled?: boolean
+  maxSteps?: number
+  commandTimeout?: number
+  autoExecuteSafe?: boolean
+  autoExecuteModerate?: boolean
+}
+
+export interface PendingConfirmation {
+  agentId: string
+  toolCallId: string
+  toolName: string
+  toolArgs: Record<string, unknown>
+  riskLevel: RiskLevel
+}
+
 // 暴露给渲染进程的 API
 const electronAPI = {
   // PTY 操作
@@ -164,6 +203,71 @@ const electronAPI = {
     selectDirectory: () => ipcRenderer.invoke('xshell:selectDirectory') as Promise<{ canceled: boolean; dirPath: string }>,
     importFiles: (filePaths: string[]) => ipcRenderer.invoke('xshell:importFiles', filePaths) as Promise<ImportResult>,
     importDirectory: (dirPath: string) => ipcRenderer.invoke('xshell:importDirectory', dirPath) as Promise<ImportResult>
+  },
+
+  // Agent 操作
+  agent: {
+    // 运行 Agent
+    run: (
+      ptyId: string,
+      message: string,
+      context: AgentContext,
+      config?: AgentConfig,
+      profileId?: string
+    ) => ipcRenderer.invoke('agent:run', { ptyId, message, context, config, profileId }) as Promise<{ success: boolean; result?: string; error?: string }>,
+
+    // 中止 Agent
+    abort: (agentId: string) => ipcRenderer.invoke('agent:abort', agentId) as Promise<boolean>,
+
+    // 确认工具调用
+    confirm: (
+      agentId: string,
+      toolCallId: string,
+      approved: boolean,
+      modifiedArgs?: Record<string, unknown>
+    ) => ipcRenderer.invoke('agent:confirm', { agentId, toolCallId, approved, modifiedArgs }) as Promise<boolean>,
+
+    // 获取 Agent 状态
+    getStatus: (agentId: string) => ipcRenderer.invoke('agent:getStatus', agentId),
+
+    // 清理 Agent 运行记录
+    cleanup: (agentId: string) => ipcRenderer.invoke('agent:cleanup', agentId),
+
+    // 监听 Agent 步骤更新
+    onStep: (callback: (data: { agentId: string; step: AgentStep }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string; step: AgentStep }) => callback(data)
+      ipcRenderer.on('agent:step', handler)
+      return () => {
+        ipcRenderer.removeListener('agent:step', handler)
+      }
+    },
+
+    // 监听需要确认的工具调用
+    onNeedConfirm: (callback: (data: PendingConfirmation) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: PendingConfirmation) => callback(data)
+      ipcRenderer.on('agent:needConfirm', handler)
+      return () => {
+        ipcRenderer.removeListener('agent:needConfirm', handler)
+      }
+    },
+
+    // 监听 Agent 完成
+    onComplete: (callback: (data: { agentId: string; result: string }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string; result: string }) => callback(data)
+      ipcRenderer.on('agent:complete', handler)
+      return () => {
+        ipcRenderer.removeListener('agent:complete', handler)
+      }
+    },
+
+    // 监听 Agent 错误
+    onError: (callback: (data: { agentId: string; error: string }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string; error: string }) => callback(data)
+      ipcRenderer.on('agent:error', handler)
+      return () => {
+        ipcRenderer.removeListener('agent:error', handler)
+      }
+    }
   }
 }
 

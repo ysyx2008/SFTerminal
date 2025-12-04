@@ -19,6 +19,35 @@ export interface AiMessage {
   timestamp: Date
 }
 
+// Agent 相关类型
+export type RiskLevel = 'safe' | 'moderate' | 'dangerous' | 'blocked'
+
+export interface AgentStep {
+  id: string
+  type: 'thinking' | 'tool_call' | 'tool_result' | 'message' | 'error' | 'confirm'
+  content: string
+  toolName?: string
+  toolArgs?: Record<string, unknown>
+  toolResult?: string
+  riskLevel?: RiskLevel
+  timestamp: number
+}
+
+export interface PendingConfirmation {
+  agentId: string
+  toolCallId: string
+  toolName: string
+  toolArgs: Record<string, unknown>
+  riskLevel: RiskLevel
+}
+
+export interface AgentState {
+  isRunning: boolean
+  agentId?: string
+  steps: AgentStep[]
+  pendingConfirm?: PendingConfirmation
+}
+
 export interface TerminalTab {
   id: string
   title: string
@@ -45,6 +74,8 @@ export interface TerminalTab {
   aiMessages?: AiMessage[]
   // AI 是否正在生成回复
   aiLoading?: boolean
+  // Agent 状态（每个终端独立）
+  agentState?: AgentState
 }
 
 export interface SplitPane {
@@ -501,6 +532,96 @@ export const useTerminalStore = defineStore('terminal', () => {
     pendingFocusTabId.value = ''
   }
 
+  // ==================== Agent 状态管理 ====================
+
+  /**
+   * 获取当前终端的 Agent 状态
+   */
+  function getAgentState(tabId: string): AgentState | undefined {
+    const tab = tabs.value.find(t => t.id === tabId)
+    return tab?.agentState
+  }
+
+  /**
+   * 设置 Agent 运行状态
+   */
+  function setAgentRunning(tabId: string, isRunning: boolean, agentId?: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab) return
+
+    if (!tab.agentState) {
+      tab.agentState = {
+        isRunning: false,
+        steps: []
+      }
+    }
+
+    tab.agentState.isRunning = isRunning
+    if (agentId) {
+      tab.agentState.agentId = agentId
+    }
+    if (!isRunning) {
+      tab.agentState.pendingConfirm = undefined
+    }
+  }
+
+  /**
+   * 添加 Agent 执行步骤
+   */
+  function addAgentStep(tabId: string, step: AgentStep): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab) return
+
+    if (!tab.agentState) {
+      tab.agentState = {
+        isRunning: false,
+        steps: []
+      }
+    }
+
+    tab.agentState.steps.push(step)
+  }
+
+  /**
+   * 设置待确认的工具调用
+   */
+  function setAgentPendingConfirm(tabId: string, confirmation: PendingConfirmation | undefined): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab?.agentState) return
+
+    tab.agentState.pendingConfirm = confirmation
+  }
+
+  /**
+   * 清空 Agent 状态
+   */
+  function clearAgentState(tabId: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (tab) {
+      tab.agentState = {
+        isRunning: false,
+        steps: []
+      }
+    }
+  }
+
+  /**
+   * 获取 Agent 上下文（用于发送给后端）
+   */
+  function getAgentContext(tabId: string) {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab) return null
+
+    return {
+      ptyId: tab.ptyId || '',
+      terminalOutput: tab.outputBuffer || [],
+      systemInfo: {
+        os: tab.systemInfo?.os || 'unknown',
+        shell: tab.systemInfo?.shell || 'unknown'
+      }
+    }
+  }
+
   return {
     tabs,
     activeTabId,
@@ -530,7 +651,14 @@ export const useTerminalStore = defineStore('terminal', () => {
     clearAiMessages,
     setAiLoading,
     focusTerminal,
-    clearPendingFocus
+    clearPendingFocus,
+    // Agent 状态管理
+    getAgentState,
+    setAgentRunning,
+    addAgentStep,
+    setAgentPendingConfirm,
+    clearAgentState,
+    getAgentContext
   }
 })
 

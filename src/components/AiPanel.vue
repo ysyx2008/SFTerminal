@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, inject, watch } from 'vue'
+import { ref, computed, nextTick, inject, watch, onMounted, onUnmounted } from 'vue'
 import { marked } from 'marked'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
@@ -12,10 +12,19 @@ const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
 const showSettings = inject<() => void>('showSettings')
 
-import type { AiMessage } from '../stores/terminal'
+import type { AiMessage, AgentStep, PendingConfirmation } from '../stores/terminal'
 
 const inputText = ref('')
 const messagesRef = ref<HTMLDivElement | null>(null)
+
+// Agent 模式状态
+const agentMode = ref(false)
+
+// 清理事件监听的函数
+let cleanupStepListener: (() => void) | null = null
+let cleanupConfirmListener: (() => void) | null = null
+let cleanupCompleteListener: (() => void) | null = null
+let cleanupErrorListener: (() => void) | null = null
 
 // 当前终端的 AI 消息（每个终端独立）
 const messages = computed(() => {
@@ -30,6 +39,24 @@ const currentTabId = computed(() => terminalStore.activeTabId)
 const isLoading = computed(() => {
   const activeTab = terminalStore.activeTab
   return activeTab?.aiLoading || false
+})
+
+// Agent 状态
+const agentState = computed(() => {
+  const activeTab = terminalStore.activeTab
+  return activeTab?.agentState
+})
+
+const isAgentRunning = computed(() => {
+  return agentState.value?.isRunning || false
+})
+
+const agentSteps = computed(() => {
+  return agentState.value?.steps || []
+})
+
+const pendingConfirm = computed(() => {
+  return agentState.value?.pendingConfirm
 })
 
 const hasAiConfig = computed(() => configStore.hasAiConfig)
@@ -681,6 +708,220 @@ const quickActions = [
   { label: '查看进程', icon: '📊', action: () => generateCommand('查看占用内存最多的前10个进程') },
   { label: '磁盘空间', icon: '💾', action: () => generateCommand('查看磁盘空间使用情况') }
 ]
+
+// ==================== Agent 模式功能 ====================
+
+// 切换 Agent 模式
+const toggleAgentMode = () => {
+  agentMode.value = !agentMode.value
+  // 切换模式时清空 Agent 状态
+  if (currentTabId.value) {
+    terminalStore.clearAgentState(currentTabId.value)
+  }
+}
+
+// 运行 Agent
+const runAgent = async () => {
+  if (!inputText.value.trim() || isAgentRunning.value || !currentTabId.value) return
+
+  const tabId = currentTabId.value
+  const message = inputText.value
+  inputText.value = ''
+
+  // 获取 Agent 上下文
+  const context = terminalStore.getAgentContext(tabId)
+  if (!context || !context.ptyId) {
+    console.error('无法获取终端上下文')
+    return
+  }
+
+  // 添加用户消息到 AI 对话
+  const userMessage: AiMessage = {
+    id: Date.now().toString(),
+    role: 'user',
+    content: `[Agent 任务] ${message}`,
+    timestamp: new Date()
+  }
+  terminalStore.addAiMessage(tabId, userMessage)
+  await scrollToBottom()
+
+  // 清空之前的 Agent 状态
+  terminalStore.clearAgentState(tabId)
+
+  try {
+    // 调用 Agent API
+    const result = await window.electronAPI.agent.run(
+      context.ptyId,
+      message,
+      context as { ptyId: string; terminalOutput: string[]; systemInfo: { os: string; shell: string } }
+    )
+
+    if (!result.success) {
+      // 添加错误消息
+      const errorMessage: AiMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `Agent 执行失败: ${result.error}`,
+        timestamp: new Date()
+      }
+      terminalStore.addAiMessage(tabId, errorMessage)
+    } else if (result.result) {
+      // 添加完成消息
+      const completeMessage: AiMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: result.result,
+        timestamp: new Date()
+      }
+      terminalStore.addAiMessage(tabId, completeMessage)
+    }
+  } catch (error) {
+    console.error('Agent 运行失败:', error)
+    const errorMessage: AiMessage = {
+      id: (Date.now() + 1).toString(),
+      role: 'assistant',
+      content: `Agent 运行出错: ${error instanceof Error ? error.message : '未知错误'}`,
+      timestamp: new Date()
+    }
+    terminalStore.addAiMessage(tabId, errorMessage)
+  }
+
+  await scrollToBottom()
+}
+
+// 中止 Agent
+const abortAgent = async () => {
+  const agentId = agentState.value?.agentId
+  if (!agentId) return
+
+  try {
+    await window.electronAPI.agent.abort(agentId)
+  } catch (error) {
+    console.error('中止 Agent 失败:', error)
+  }
+}
+
+// 确认工具调用
+const confirmToolCall = async (approved: boolean) => {
+  const confirm = pendingConfirm.value
+  if (!confirm) return
+
+  try {
+    await window.electronAPI.agent.confirm(
+      confirm.agentId,
+      confirm.toolCallId,
+      approved
+    )
+    // 清除待确认状态
+    if (currentTabId.value) {
+      terminalStore.setAgentPendingConfirm(currentTabId.value, undefined)
+    }
+  } catch (error) {
+    console.error('确认工具调用失败:', error)
+  }
+}
+
+// 获取步骤类型的图标
+const getStepIcon = (type: AgentStep['type']): string => {
+  switch (type) {
+    case 'thinking': return '🤔'
+    case 'tool_call': return '🔧'
+    case 'tool_result': return '📋'
+    case 'message': return '💬'
+    case 'error': return '❌'
+    case 'confirm': return '⚠️'
+    default: return '•'
+  }
+}
+
+// 获取风险等级的颜色类
+const getRiskClass = (riskLevel?: string): string => {
+  switch (riskLevel) {
+    case 'safe': return 'risk-safe'
+    case 'moderate': return 'risk-moderate'
+    case 'dangerous': return 'risk-dangerous'
+    case 'blocked': return 'risk-blocked'
+    default: return ''
+  }
+}
+
+// 设置 Agent 事件监听
+const setupAgentListeners = () => {
+  // 监听步骤更新
+  cleanupStepListener = window.electronAPI.agent.onStep((data) => {
+    if (currentTabId.value) {
+      terminalStore.addAgentStep(currentTabId.value, data.step)
+      terminalStore.setAgentRunning(currentTabId.value, true, data.agentId)
+      scrollToBottom()
+    }
+  })
+
+  // 监听需要确认
+  cleanupConfirmListener = window.electronAPI.agent.onNeedConfirm((data) => {
+    if (currentTabId.value) {
+      terminalStore.setAgentPendingConfirm(currentTabId.value, data)
+      scrollToBottom()
+    }
+  })
+
+  // 监听完成
+  cleanupCompleteListener = window.electronAPI.agent.onComplete((data) => {
+    if (currentTabId.value) {
+      terminalStore.setAgentRunning(currentTabId.value, false)
+    }
+  })
+
+  // 监听错误
+  cleanupErrorListener = window.electronAPI.agent.onError((data) => {
+    if (currentTabId.value) {
+      terminalStore.setAgentRunning(currentTabId.value, false)
+      terminalStore.addAgentStep(currentTabId.value, {
+        id: `error_${Date.now()}`,
+        type: 'error',
+        content: data.error,
+        timestamp: Date.now()
+      })
+    }
+  })
+}
+
+// 清理 Agent 事件监听
+const cleanupAgentListeners = () => {
+  if (cleanupStepListener) {
+    cleanupStepListener()
+    cleanupStepListener = null
+  }
+  if (cleanupConfirmListener) {
+    cleanupConfirmListener()
+    cleanupConfirmListener = null
+  }
+  if (cleanupCompleteListener) {
+    cleanupCompleteListener()
+    cleanupCompleteListener = null
+  }
+  if (cleanupErrorListener) {
+    cleanupErrorListener()
+    cleanupErrorListener = null
+  }
+}
+
+// 发送消息（根据模式选择普通对话或 Agent）
+const handleSend = () => {
+  if (agentMode.value) {
+    runAgent()
+  } else {
+    sendMessage()
+  }
+}
+
+// 生命周期
+onMounted(() => {
+  setupAgentListeners()
+})
+
+onUnmounted(() => {
+  cleanupAgentListeners()
+})
 </script>
 
 <template>
@@ -728,6 +969,24 @@ const quickActions = [
     </div>
 
     <template v-else>
+      <!-- 模式切换 -->
+      <div class="mode-switcher">
+        <button 
+          class="mode-btn" 
+          :class="{ active: !agentMode }"
+          @click="agentMode = false"
+        >
+          💬 对话
+        </button>
+        <button 
+          class="mode-btn" 
+          :class="{ active: agentMode }"
+          @click="agentMode = true"
+        >
+          🤖 Agent
+        </button>
+      </div>
+
       <!-- 系统环境信息 -->
       <div v-if="currentSystemInfo" class="system-info-bar">
         <span class="system-icon">💻</span>
@@ -780,9 +1039,56 @@ const quickActions = [
         </button>
       </div>
 
+      <!-- Agent 步骤显示 -->
+      <div v-if="agentMode && agentSteps.length > 0" class="agent-steps">
+        <div class="agent-steps-header">
+          <span>🤖 Agent 执行步骤</span>
+          <span v-if="isAgentRunning" class="agent-running-indicator">执行中...</span>
+        </div>
+        <div class="agent-steps-list">
+          <div 
+            v-for="step in agentSteps" 
+            :key="step.id" 
+            class="agent-step"
+            :class="[step.type, getRiskClass(step.riskLevel)]"
+          >
+            <span class="step-icon">{{ getStepIcon(step.type) }}</span>
+            <div class="step-content">
+              <div class="step-text">{{ step.content }}</div>
+              <div v-if="step.toolResult" class="step-result">
+                <pre>{{ step.toolResult }}</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Agent 确认对话框 -->
+      <div v-if="pendingConfirm" class="agent-confirm">
+        <div class="confirm-header">
+          <span class="confirm-icon">⚠️</span>
+          <span class="confirm-title">需要确认</span>
+          <span class="confirm-risk" :class="getRiskClass(pendingConfirm.riskLevel)">
+            {{ pendingConfirm.riskLevel === 'dangerous' ? '高风险' : '中风险' }}
+          </span>
+        </div>
+        <div class="confirm-content">
+          <div class="confirm-tool">{{ pendingConfirm.toolName }}</div>
+          <pre class="confirm-args">{{ JSON.stringify(pendingConfirm.toolArgs, null, 2) }}</pre>
+        </div>
+        <div class="confirm-actions">
+          <button class="btn btn-danger btn-sm" @click="confirmToolCall(false)">
+            拒绝
+          </button>
+          <button class="btn btn-primary btn-sm" @click="confirmToolCall(true)">
+            允许执行
+          </button>
+        </div>
+      </div>
+
       <!-- 消息列表 -->
       <div ref="messagesRef" class="ai-messages" @click="handleCodeBlockClick">
-        <div v-if="messages.length === 0" class="ai-welcome">
+        <div v-if="messages.length === 0 && !agentMode" class="ai-welcome">
           <p>👋 你好！我是旗鱼终端的 AI 助手。</p>
           <p class="welcome-section-title">💬 直接对话</p>
           <p class="welcome-desc">在下方输入框输入任何问题，我会尽力帮你解答。</p>
@@ -801,6 +1107,26 @@ const quickActions = [
             <li>AI 回复中的代码块可一键发送到终端</li>
             <li>每个终端标签页有独立的对话记录</li>
             <li>我会根据你的系统环境生成合适的命令</li>
+          </ul>
+        </div>
+        <div v-if="messages.length === 0 && agentMode && agentSteps.length === 0" class="ai-welcome">
+          <p>🤖 Agent 模式已启用</p>
+          <p class="welcome-section-title">💡 什么是 Agent 模式？</p>
+          <p class="welcome-desc">Agent 可以自主执行命令来完成你的任务，你可以看到完整的执行过程。</p>
+          
+          <p class="welcome-section-title">🎯 使用示例</p>
+          <ul>
+            <li>「查看服务器磁盘空间，如果超过80%就清理日志」</li>
+            <li>「检查 nginx 服务状态，如果没运行就启动它」</li>
+            <li>「找出占用内存最多的进程并显示详情」</li>
+            <li>「在当前目录创建一个 backup 文件夹并备份所有配置文件」</li>
+          </ul>
+
+          <p class="welcome-section-title">⚠️ 安全提示</p>
+          <ul>
+            <li>危险命令（如删除、修改系统文件）会请求确认</li>
+            <li>你可以随时点击「停止」中止 Agent 执行</li>
+            <li>所有命令都在终端中可见执行</li>
           </ul>
         </div>
         <div
@@ -851,13 +1177,13 @@ const quickActions = [
       <div class="ai-input">
         <textarea
           v-model="inputText"
-          placeholder="输入问题或描述你想要的命令..."
+          :placeholder="agentMode ? '描述你想让 Agent 完成的任务...' : '输入问题或描述你想要的命令...'"
           rows="2"
-          @keydown.enter.exact.prevent="sendMessage"
+          @keydown.enter.exact.prevent="handleSend"
         ></textarea>
-        <!-- 停止按钮 -->
+        <!-- 停止按钮 (普通对话模式) -->
         <button
-          v-if="isLoading"
+          v-if="isLoading && !agentMode"
           class="btn btn-danger stop-btn"
           @click="stopGeneration"
           title="停止生成"
@@ -866,12 +1192,24 @@ const quickActions = [
             <rect x="6" y="6" width="12" height="12" rx="2"/>
           </svg>
         </button>
+        <!-- 停止按钮 (Agent 模式) -->
+        <button
+          v-else-if="isAgentRunning"
+          class="btn btn-danger stop-btn"
+          @click="abortAgent"
+          title="停止 Agent"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="6" width="12" height="12" rx="2"/>
+          </svg>
+        </button>
         <!-- 发送按钮 -->
         <button
           v-else
-          class="btn btn-primary send-btn"
+          class="btn send-btn"
+          :class="agentMode ? 'btn-success' : 'btn-primary'"
           :disabled="!inputText.trim()"
-          @click="sendMessage"
+          @click="handleSend"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="22" y1="2" x2="11" y2="13"/>
@@ -1548,6 +1886,234 @@ const quickActions = [
   50% {
     opacity: 0.7;
   }
+}
+
+/* ==================== Agent 模式样式 ==================== */
+
+/* 模式切换 */
+.mode-switcher {
+  display: flex;
+  padding: 8px 12px;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mode-btn:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.mode-btn.active {
+  background: var(--accent-primary);
+  color: #fff;
+  border-color: var(--accent-primary);
+}
+
+/* Agent 步骤 */
+.agent-steps {
+  border-bottom: 1px solid var(--border-color);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.agent-steps-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.agent-running-indicator {
+  color: var(--accent-primary);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.agent-steps-list {
+  padding: 8px 12px;
+}
+
+.agent-step {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.agent-step:last-child {
+  border-bottom: none;
+}
+
+.step-icon {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.step-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.step-text {
+  word-break: break-word;
+}
+
+.step-result {
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.step-result pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.agent-step.tool_call {
+  color: var(--accent-primary);
+}
+
+.agent-step.error {
+  color: var(--accent-error, #f44336);
+}
+
+.agent-step.confirm {
+  color: var(--accent-warning, #f59e0b);
+}
+
+/* 风险等级颜色 */
+.risk-safe {
+  border-left: 3px solid #10b981;
+  padding-left: 8px;
+}
+
+.risk-moderate {
+  border-left: 3px solid #f59e0b;
+  padding-left: 8px;
+}
+
+.risk-dangerous {
+  border-left: 3px solid #ef4444;
+  padding-left: 8px;
+}
+
+.risk-blocked {
+  border-left: 3px solid #6b7280;
+  padding-left: 8px;
+  opacity: 0.6;
+}
+
+/* Agent 确认对话框 */
+.agent-confirm {
+  margin: 12px;
+  padding: 12px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px;
+}
+
+.confirm-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.confirm-icon {
+  font-size: 18px;
+}
+
+.confirm-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.confirm-risk {
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  border-radius: 4px;
+  margin-left: auto;
+}
+
+.confirm-risk.risk-dangerous {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: none;
+}
+
+.confirm-risk.risk-moderate {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+  border: none;
+}
+
+.confirm-content {
+  margin-bottom: 12px;
+}
+
+.confirm-tool {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.confirm-args {
+  padding: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin: 0;
+  max-height: 80px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* 成功按钮样式 */
+.btn-success {
+  background: #10b981;
+  border-color: #10b981;
+  color: #fff;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: #059669;
+  border-color: #059669;
 }
 </style>
 

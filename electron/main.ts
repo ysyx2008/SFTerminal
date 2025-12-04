@@ -5,6 +5,7 @@ import { SshService } from './services/ssh.service'
 import { AiService } from './services/ai.service'
 import { ConfigService } from './services/config.service'
 import { XshellImportService } from './services/xshell-import.service'
+import { AgentService, AgentStep, PendingConfirmation, AgentContext } from './services/agent.service'
 
 // 禁用 GPU 加速可能导致的问题（可选）
 // app.disableHardwareAcceleration()
@@ -34,6 +35,7 @@ const sshService = new SshService()
 const aiService = new AiService()
 const configService = new ConfigService()
 const xshellImportService = new XshellImportService()
+const agentService = new AgentService(aiService, ptyService)
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -277,5 +279,81 @@ ipcMain.handle('xshell:importFiles', async (_event, filePaths: string[]) => {
 
 ipcMain.handle('xshell:importDirectory', async (_event, dirPath: string) => {
   return xshellImportService.importFromDirectory(dirPath)
+})
+
+// ==================== Agent 相关 ====================
+
+// 运行 Agent
+ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, profileId }: {
+  ptyId: string
+  message: string
+  context: AgentContext
+  config?: object
+  profileId?: string
+}) => {
+  // 设置事件回调，将 Agent 事件转发到渲染进程
+  agentService.setCallbacks({
+    onStep: (agentId: string, step: AgentStep) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('agent:step', { agentId, step })
+      }
+    },
+    onNeedConfirm: (confirmation: PendingConfirmation) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('agent:needConfirm', {
+          agentId: confirmation.agentId,
+          toolCallId: confirmation.toolCallId,
+          toolName: confirmation.toolName,
+          toolArgs: confirmation.toolArgs,
+          riskLevel: confirmation.riskLevel
+        })
+      }
+    },
+    onComplete: (agentId: string, result: string) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('agent:complete', { agentId, result })
+      }
+    },
+    onError: (agentId: string, error: string) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('agent:error', { agentId, error })
+      }
+    }
+  })
+
+  try {
+    const result = await agentService.run(ptyId, message, context, config, profileId)
+    return { success: true, result }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '未知错误' 
+    }
+  }
+})
+
+// 中止 Agent
+ipcMain.handle('agent:abort', async (_event, agentId: string) => {
+  return agentService.abort(agentId)
+})
+
+// 确认工具调用
+ipcMain.handle('agent:confirm', async (_event, { agentId, toolCallId, approved, modifiedArgs }: {
+  agentId: string
+  toolCallId: string
+  approved: boolean
+  modifiedArgs?: Record<string, unknown>
+}) => {
+  return agentService.confirmToolCall(agentId, toolCallId, approved, modifiedArgs)
+})
+
+// 获取 Agent 状态
+ipcMain.handle('agent:getStatus', async (_event, agentId: string) => {
+  return agentService.getRunStatus(agentId)
+})
+
+// 清理 Agent 运行记录
+ipcMain.handle('agent:cleanup', async (_event, agentId: string) => {
+  agentService.cleanup(agentId)
 })
 

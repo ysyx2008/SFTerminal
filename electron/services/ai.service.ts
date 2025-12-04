@@ -5,8 +5,43 @@ import * as https from 'https'
 import * as http from 'http'
 
 export interface AiMessage {
-  role: 'system' | 'user' | 'assistant'
+  role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
+  tool_call_id?: string  // 用于 tool 角色的消息
+  tool_calls?: ToolCall[]  // 用于 assistant 角色的工具调用
+}
+
+// Tool Calling 相关类型
+export interface ToolDefinition {
+  type: 'function'
+  function: {
+    name: string
+    description: string
+    parameters: {
+      type: 'object'
+      properties: Record<string, {
+        type: string
+        description: string
+        enum?: string[]
+      }>
+      required?: string[]
+    }
+  }
+}
+
+export interface ToolCall {
+  id: string
+  type: 'function'
+  function: {
+    name: string
+    arguments: string  // JSON 字符串
+  }
+}
+
+export interface ChatWithToolsResult {
+  content?: string
+  tool_calls?: ToolCall[]
+  finish_reason?: 'stop' | 'tool_calls' | 'length'
 }
 
 export interface AiProfile {
@@ -298,6 +333,85 @@ export class AiService {
       } else {
         onError('AI 请求失败: 未知错误')
       }
+    }
+  }
+
+  /**
+   * 发送带工具调用的聊天请求（非流式）
+   * 用于 Agent 模式，支持 function calling
+   */
+  async chatWithTools(
+    messages: AiMessage[],
+    tools: ToolDefinition[],
+    profileId?: string
+  ): Promise<ChatWithToolsResult> {
+    const profile = await this.getCurrentProfile(profileId)
+    if (!profile) {
+      throw new Error('未配置 AI 模型，请先在设置中添加 AI 配置')
+    }
+
+    // 转换消息格式，处理 tool_calls
+    const formattedMessages = messages.map(msg => {
+      if (msg.role === 'tool') {
+        return {
+          role: 'tool' as const,
+          content: msg.content,
+          tool_call_id: msg.tool_call_id
+        }
+      }
+      if (msg.role === 'assistant' && msg.tool_calls) {
+        return {
+          role: 'assistant' as const,
+          content: msg.content || null,
+          tool_calls: msg.tool_calls
+        }
+      }
+      return {
+        role: msg.role,
+        content: msg.content
+      }
+    })
+
+    const requestBody = {
+      model: profile.model,
+      messages: formattedMessages,
+      tools: tools.length > 0 ? tools : undefined,
+      tool_choice: tools.length > 0 ? 'auto' : undefined,
+      temperature: 0.7,
+      max_tokens: 4096
+    }
+
+    try {
+      const data = await this.makeRequest<{
+        choices?: {
+          message?: {
+            content?: string | null
+            tool_calls?: ToolCall[]
+          }
+          finish_reason?: string
+        }[]
+        error?: { message?: string }
+      }>(profile, requestBody)
+
+      if (data.error) {
+        throw new Error(`AI API 错误: ${data.error.message}`)
+      }
+
+      const choice = data.choices?.[0]
+      if (!choice) {
+        throw new Error('AI 返回结果为空')
+      }
+
+      return {
+        content: choice.message?.content || undefined,
+        tool_calls: choice.message?.tool_calls,
+        finish_reason: choice.finish_reason as ChatWithToolsResult['finish_reason']
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`AI 请求失败: ${error.message}`)
+      }
+      throw error
     }
   }
 

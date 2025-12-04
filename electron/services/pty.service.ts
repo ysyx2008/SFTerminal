@@ -10,14 +10,38 @@ export interface PtyOptions {
   env?: Record<string, string>
 }
 
+export interface CommandResult {
+  output: string
+  exitCode: number
+  duration: number
+  aborted?: boolean
+}
+
 interface PtyInstance {
   pty: pty.IPty
   dataCallbacks: ((data: string) => void)[]
   disposed: boolean
 }
 
+// 用于追踪正在执行的命令
+interface PendingCommand {
+  markerId: string
+  resolve: (result: CommandResult) => void
+  reject: (error: Error) => void
+  startTime: number
+  output: string
+  collecting: boolean
+  timeoutId?: NodeJS.Timeout
+}
+
 export class PtyService {
   private instances: Map<string, PtyInstance> = new Map()
+  // 追踪正在执行的命令（按 ptyId 分组）
+  private pendingCommands: Map<string, PendingCommand> = new Map()
+
+  // 标记前缀，使用特殊 Unicode 字符降低冲突概率
+  private readonly MARKER_PREFIX = '⟦AGENT:'
+  private readonly MARKER_SUFFIX = '⟧'
 
   /**
    * 获取默认 Shell
@@ -148,6 +172,202 @@ export class PtyService {
       }
       this.instances.delete(id)
     })
+    // 清理所有待执行命令
+    this.pendingCommands.forEach((cmd) => {
+      if (cmd.timeoutId) clearTimeout(cmd.timeoutId)
+      cmd.reject(new Error('PTY disposed'))
+    })
+    this.pendingCommands.clear()
+  }
+
+  /**
+   * 生成唯一标记 ID
+   */
+  private generateMarkerId(): string {
+    return Math.random().toString(36).substring(2, 10)
+  }
+
+  /**
+   * 构建带标记的命令
+   * 使用暗淡颜色使标记不那么显眼，同时方便解析
+   */
+  private buildWrappedCommand(command: string, markerId: string): string {
+    const startMarker = `${this.MARKER_PREFIX}S:${markerId}${this.MARKER_SUFFIX}`
+    const endMarker = `${this.MARKER_PREFIX}E:${markerId}:$?${this.MARKER_SUFFIX}`
+    
+    // 根据 shell 类型构建命令
+    // 对于 bash/zsh，使用 $'\e[2m' 语法显示暗淡颜色
+    // 暂时简化处理，不使用颜色以确保兼容性
+    if (process.platform === 'win32') {
+      // PowerShell
+      return `echo '${startMarker}'; ${command}; echo '${this.MARKER_PREFIX}E:${markerId}:'$LASTEXITCODE'${this.MARKER_SUFFIX}'\r`
+    } else {
+      // Bash/Zsh
+      return `echo '${startMarker}' && ${command}; echo '${this.MARKER_PREFIX}E:${markerId}:'$?'${this.MARKER_SUFFIX}'\n`
+    }
+  }
+
+  /**
+   * 在当前终端会话中执行命令并等待结果
+   * @param id PTY 实例 ID
+   * @param command 要执行的命令
+   * @param timeout 超时时间（毫秒），默认 30000
+   */
+  executeCommand(id: string, command: string, timeout: number = 30000): Promise<CommandResult> {
+    const instance = this.instances.get(id)
+    if (!instance) {
+      return Promise.reject(new Error(`PTY instance ${id} not found`))
+    }
+
+    const markerId = this.generateMarkerId()
+    const wrappedCommand = this.buildWrappedCommand(command, markerId)
+    const startTime = Date.now()
+
+    return new Promise((resolve, reject) => {
+      // 创建待执行命令记录
+      const pendingCmd: PendingCommand = {
+        markerId,
+        resolve,
+        reject,
+        startTime,
+        output: '',
+        collecting: false
+      }
+
+      // 设置超时
+      pendingCmd.timeoutId = setTimeout(() => {
+        this.pendingCommands.delete(id)
+        resolve({
+          output: pendingCmd.output,
+          exitCode: -1,
+          duration: Date.now() - startTime,
+          aborted: true
+        })
+      }, timeout)
+
+      // 注册命令
+      this.pendingCommands.set(id, pendingCmd)
+
+      // 注册输出处理器
+      const outputHandler = (data: string) => {
+        this.handleCommandOutput(id, data)
+      }
+      
+      // 添加临时回调用于处理命令输出
+      instance.dataCallbacks.push(outputHandler)
+
+      // 发送命令
+      instance.pty.write(wrappedCommand)
+    })
+  }
+
+  /**
+   * 处理命令输出，检测标记并收集输出
+   */
+  private handleCommandOutput(ptyId: string, data: string): void {
+    const pendingCmd = this.pendingCommands.get(ptyId)
+    if (!pendingCmd) return
+
+    const startPattern = `${this.MARKER_PREFIX}S:${pendingCmd.markerId}${this.MARKER_SUFFIX}`
+    const endPattern = new RegExp(
+      `${this.escapeRegExp(this.MARKER_PREFIX)}E:${pendingCmd.markerId}:(\\d+)${this.escapeRegExp(this.MARKER_SUFFIX)}`
+    )
+
+    // 累积数据
+    pendingCmd.output += data
+
+    // 检查是否开始收集
+    if (!pendingCmd.collecting) {
+      const startIdx = pendingCmd.output.indexOf(startPattern)
+      if (startIdx !== -1) {
+        pendingCmd.collecting = true
+        // 移除开始标记之前的内容（包括标记本身）
+        pendingCmd.output = pendingCmd.output.substring(startIdx + startPattern.length)
+      }
+    }
+
+    // 检查是否结束
+    if (pendingCmd.collecting) {
+      const match = pendingCmd.output.match(endPattern)
+      if (match) {
+        const exitCode = parseInt(match[1], 10)
+        // 移除结束标记及其后的内容
+        const endIdx = pendingCmd.output.indexOf(match[0])
+        const output = pendingCmd.output.substring(0, endIdx)
+
+        // 清理
+        if (pendingCmd.timeoutId) {
+          clearTimeout(pendingCmd.timeoutId)
+        }
+        this.pendingCommands.delete(ptyId)
+
+        // 清理输出中的换行符和多余空白
+        const cleanOutput = this.cleanOutput(output)
+
+        // 返回结果
+        pendingCmd.resolve({
+          output: cleanOutput,
+          exitCode,
+          duration: Date.now() - pendingCmd.startTime
+        })
+      }
+    }
+  }
+
+  /**
+   * 清理命令输出
+   */
+  private cleanOutput(output: string): string {
+    return output
+      // 移除 ANSI 转义序列
+      .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+      // 移除回车符
+      .replace(/\r/g, '')
+      // 移除开头和结尾的空白行
+      .trim()
+  }
+
+  /**
+   * 转义正则表达式特殊字符
+   */
+  private escapeRegExp(string: string): string {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+
+  /**
+   * 中止正在执行的命令
+   */
+  abortCommand(id: string): boolean {
+    const pendingCmd = this.pendingCommands.get(id)
+    if (!pendingCmd) return false
+
+    if (pendingCmd.timeoutId) {
+      clearTimeout(pendingCmd.timeoutId)
+    }
+
+    this.pendingCommands.delete(id)
+
+    pendingCmd.resolve({
+      output: pendingCmd.output,
+      exitCode: -1,
+      duration: Date.now() - pendingCmd.startTime,
+      aborted: true
+    })
+
+    // 发送 Ctrl+C 中止当前命令
+    const instance = this.instances.get(id)
+    if (instance) {
+      instance.pty.write('\x03')
+    }
+
+    return true
+  }
+
+  /**
+   * 检查是否有命令正在执行
+   */
+  isCommandPending(id: string): boolean {
+    return this.pendingCommands.has(id)
   }
 }
 
