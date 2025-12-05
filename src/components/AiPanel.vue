@@ -160,6 +160,24 @@ const clearMessages = () => {
   clearUploadedDocs()
 }
 
+// ==================== 确认框辅助函数 ====================
+
+// 格式化确认参数显示（简化显示）
+const formatConfirmArgs = (confirm: typeof pendingConfirm.value) => {
+  if (!confirm) return ''
+  const args = confirm.toolArgs
+  // 对于命令执行，只显示命令本身
+  if (args.command) {
+    return args.command as string
+  }
+  // 对于文件操作，显示路径
+  if (args.path) {
+    return args.path as string
+  }
+  // 其他情况显示 JSON
+  return JSON.stringify(args, null, 2)
+}
+
 // ==================== 发送消息 ====================
 
 // 发送消息（根据模式选择普通对话或 Agent）
@@ -612,7 +630,7 @@ onMounted(() => {
               </div>
               <div class="confirm-detail">
                 <div class="confirm-tool-name">{{ pendingConfirm.toolName }}</div>
-                <pre class="confirm-args-inline">{{ JSON.stringify(pendingConfirm.toolArgs, null, 2) }}</pre>
+                <pre class="confirm-args-inline">{{ formatConfirmArgs(pendingConfirm) }}</pre>
               </div>
               <div class="confirm-actions-inline">
                 <button class="btn btn-sm btn-outline-danger" @click="confirmToolCall(false)">
