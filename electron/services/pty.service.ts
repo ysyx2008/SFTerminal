@@ -612,15 +612,14 @@ export class PtyService {
    */
   private async getTerminalStatusMacOS(shellPid: number): Promise<TerminalStatus> {
     try {
-      // 获取 shell 的所有子进程
-      const { stdout } = await execAsync(
-        `ps -o pid=,stat=,comm= -p ${shellPid} && ps -o pid=,stat=,comm= --ppid ${shellPid} 2>/dev/null || ps -o pid=,stat=,comm= -g ${shellPid} 2>/dev/null`,
+      // 获取 shell 进程状态
+      const { stdout: shellOutput } = await execAsync(
+        `ps -o pid=,stat=,comm= -p ${shellPid}`,
         { timeout: 2000 }
       )
 
-      const lines = stdout.trim().split('\n').filter((l: string) => l.trim())
-      
-      if (lines.length === 0) {
+      const shellLine = shellOutput.trim()
+      if (!shellLine) {
         return {
           isIdle: true,
           shellPid,
@@ -628,28 +627,62 @@ export class PtyService {
         }
       }
 
-      // 解析第一行（shell 进程本身）
-      const shellLine = lines[0].trim().split(/\s+/)
-      const shellStat = shellLine[1] || ''
-      const shellComm = shellLine[2] || 'shell'
+      const shellParts = shellLine.split(/\s+/)
+      const shellStat = shellParts[1] || ''
+      const shellComm = shellParts[2] || 'shell'
+
+      // 使用 pgrep 获取子进程（macOS 不支持 ps --ppid）
+      let childPids: number[] = []
+      try {
+        const { stdout: pgrepOutput } = await execAsync(
+          `pgrep -P ${shellPid}`,
+          { timeout: 2000 }
+        )
+        childPids = pgrepOutput.trim().split('\n')
+          .map(p => parseInt(p.trim()))
+          .filter(p => !isNaN(p))
+      } catch {
+        // pgrep 没有找到子进程时返回非零退出码，这是正常的
+        childPids = []
+      }
 
       // 检查是否有子进程（正在执行的命令）
-      if (lines.length > 1) {
-        const childLine = lines[1].trim().split(/\s+/)
-        const childPid = parseInt(childLine[0])
-        const childStat = childLine[1] || ''
-        const childComm = childLine[2] || 'unknown'
+      if (childPids.length > 0) {
+        // 获取第一个子进程的详细信息
+        try {
+          const { stdout: childOutput } = await execAsync(
+            `ps -o pid=,stat=,comm= -p ${childPids[0]}`,
+            { timeout: 2000 }
+          )
+          const childLine = childOutput.trim()
+          if (childLine) {
+            const childParts = childLine.split(/\s+/)
+            const childPid = parseInt(childParts[0])
+            const childStat = childParts[1] || ''
+            const childComm = childParts[2] || 'unknown'
+            
+            return {
+              isIdle: false,
+              foregroundProcess: childComm,
+              foregroundPid: childPid,
+              shellPid,
+              stateDescription: `正在执行: ${childComm} (PID: ${childPid}, 状态: ${childStat})`
+            }
+          }
+        } catch {
+          // 忽略获取子进程详情的错误
+        }
         
         return {
           isIdle: false,
-          foregroundProcess: childComm,
-          foregroundPid: childPid,
+          foregroundPid: childPids[0],
           shellPid,
-          stateDescription: `正在执行: ${childComm} (PID: ${childPid}, 状态: ${childStat})`
+          stateDescription: `正在执行子进程 (PID: ${childPids[0]})`
         }
       }
 
       // 没有子进程，检查 shell 状态
+      // S = sleeping (可中断睡眠), + = 前台进程组
       const isIdle = shellStat.includes('S') && shellStat.includes('+')
       
       return {
