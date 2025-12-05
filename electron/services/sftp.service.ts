@@ -1,0 +1,431 @@
+import SftpClient from 'ssh2-sftp-client'
+import * as fs from 'fs'
+import * as path from 'path'
+import { EventEmitter } from 'events'
+
+export interface SftpConfig {
+  host: string
+  port: number
+  username: string
+  password?: string
+  privateKey?: string | Buffer
+  privateKeyPath?: string
+  passphrase?: string
+}
+
+export interface SftpFileInfo {
+  name: string
+  path: string
+  size: number
+  modifyTime: number
+  accessTime: number
+  isDirectory: boolean
+  isSymlink: boolean
+  permissions: {
+    user: string
+    group: string
+    other: string
+  }
+  owner: number
+  group: number
+}
+
+export interface TransferProgress {
+  transferId: string
+  filename: string
+  localPath: string
+  remotePath: string
+  direction: 'upload' | 'download'
+  totalBytes: number
+  transferredBytes: number
+  percent: number
+  status: 'pending' | 'transferring' | 'completed' | 'failed' | 'cancelled'
+  error?: string
+  startTime: number
+}
+
+export interface TransferTask {
+  id: string
+  sessionId: string
+  localPath: string
+  remotePath: string
+  direction: 'upload' | 'download'
+  status: 'pending' | 'transferring' | 'completed' | 'failed' | 'cancelled'
+  error?: string
+}
+
+export class SftpService extends EventEmitter {
+  private sessions: Map<string, SftpClient> = new Map()
+  private transfers: Map<string, TransferProgress> = new Map()
+
+  /**
+   * 创建 SFTP 连接
+   */
+  async connect(sessionId: string, config: SftpConfig): Promise<void> {
+    // 如果已存在连接，先关闭
+    if (this.sessions.has(sessionId)) {
+      await this.disconnect(sessionId)
+    }
+
+    const sftp = new SftpClient()
+
+    // 准备私钥
+    let privateKey: string | Buffer | undefined = config.privateKey
+    if (!privateKey && config.privateKeyPath) {
+      try {
+        privateKey = fs.readFileSync(config.privateKeyPath)
+      } catch (err) {
+        throw new Error(`无法读取私钥文件: ${config.privateKeyPath}`)
+      }
+    }
+
+    const connectConfig: SftpClient.ConnectOptions = {
+      host: config.host,
+      port: config.port,
+      username: config.username,
+      readyTimeout: 30000,
+      retries: 2,
+      retry_factor: 2,
+      retry_minTimeout: 2000
+    }
+
+    if (privateKey) {
+      connectConfig.privateKey = privateKey
+      if (config.passphrase) {
+        connectConfig.passphrase = config.passphrase
+      }
+    } else if (config.password) {
+      connectConfig.password = config.password
+    }
+
+    await sftp.connect(connectConfig)
+    this.sessions.set(sessionId, sftp)
+  }
+
+  /**
+   * 断开 SFTP 连接
+   */
+  async disconnect(sessionId: string): Promise<void> {
+    const sftp = this.sessions.get(sessionId)
+    if (sftp) {
+      try {
+        await sftp.end()
+      } catch (e) {
+        // 忽略关闭错误
+      }
+      this.sessions.delete(sessionId)
+    }
+  }
+
+  /**
+   * 断开所有连接
+   */
+  async disconnectAll(): Promise<void> {
+    const promises = Array.from(this.sessions.keys()).map(id => this.disconnect(id))
+    await Promise.all(promises)
+  }
+
+  /**
+   * 检查连接是否存在
+   */
+  hasSession(sessionId: string): boolean {
+    return this.sessions.has(sessionId)
+  }
+
+  /**
+   * 列出目录内容
+   */
+  async list(sessionId: string, remotePath: string): Promise<SftpFileInfo[]> {
+    const sftp = this.sessions.get(sessionId)
+    if (!sftp) throw new Error('SFTP 会话不存在')
+
+    const list = await sftp.list(remotePath)
+
+    return list.map(item => ({
+      name: item.name,
+      path: path.posix.join(remotePath, item.name),
+      size: item.size,
+      modifyTime: item.modifyTime,
+      accessTime: item.accessTime,
+      isDirectory: item.type === 'd',
+      isSymlink: item.type === 'l',
+      permissions: {
+        user: this.formatPermission((item.rights?.user as string) || ''),
+        group: this.formatPermission((item.rights?.group as string) || ''),
+        other: this.formatPermission((item.rights?.other as string) || '')
+      },
+      owner: item.owner,
+      group: item.group
+    })).sort((a, b) => {
+      // 目录在前
+      if (a.isDirectory && !b.isDirectory) return -1
+      if (!a.isDirectory && b.isDirectory) return 1
+      return a.name.localeCompare(b.name)
+    })
+  }
+
+  /**
+   * 获取当前工作目录
+   */
+  async pwd(sessionId: string): Promise<string> {
+    const sftp = this.sessions.get(sessionId)
+    if (!sftp) throw new Error('SFTP 会话不存在')
+    return sftp.cwd()
+  }
+
+  /**
+   * 获取文件/目录信息
+   */
+  async stat(sessionId: string, remotePath: string): Promise<SftpClient.FileStats | null> {
+    const sftp = this.sessions.get(sessionId)
+    if (!sftp) throw new Error('SFTP 会话不存在')
+
+    try {
+      return await sftp.stat(remotePath)
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * 检查路径是否存在
+   */
+  async exists(sessionId: string, remotePath: string): Promise<false | 'd' | '-' | 'l'> {
+    const sftp = this.sessions.get(sessionId)
+    if (!sftp) throw new Error('SFTP 会话不存在')
+    return sftp.exists(remotePath)
+  }
+
+  /**
+   * 上传文件
+   */
+  async upload(
+    sessionId: string,
+    localPath: string,
+    remotePath: string,
+    transferId: string
+  ): Promise<void> {
+    const sftp = this.sessions.get(sessionId)
+    if (!sftp) throw new Error('SFTP 会话不存在')
+
+    const stats = fs.statSync(localPath)
+    const totalBytes = stats.size
+
+    const progress: TransferProgress = {
+      transferId,
+      filename: path.basename(localPath),
+      localPath,
+      remotePath,
+      direction: 'upload',
+      totalBytes,
+      transferredBytes: 0,
+      percent: 0,
+      status: 'transferring',
+      startTime: Date.now()
+    }
+    this.transfers.set(transferId, progress)
+    this.emit('transfer-start', { ...progress })
+
+    try {
+      await sftp.put(localPath, remotePath, {
+        step: (transferred: number, _chunk: number, total: number) => {
+          progress.transferredBytes = transferred
+          progress.percent = total > 0 ? Math.round((transferred / total) * 100) : 0
+          this.emit('transfer-progress', { ...progress })
+        }
+      })
+
+      progress.status = 'completed'
+      progress.percent = 100
+      progress.transferredBytes = totalBytes
+      this.emit('transfer-complete', { ...progress })
+    } catch (err) {
+      progress.status = 'failed'
+      progress.error = err instanceof Error ? err.message : '上传失败'
+      this.emit('transfer-error', { ...progress })
+      throw err
+    } finally {
+      this.transfers.delete(transferId)
+    }
+  }
+
+  /**
+   * 下载文件
+   */
+  async download(
+    sessionId: string,
+    remotePath: string,
+    localPath: string,
+    transferId: string
+  ): Promise<void> {
+    const sftp = this.sessions.get(sessionId)
+    if (!sftp) throw new Error('SFTP 会话不存在')
+
+    // 获取远程文件大小
+    const stats = await sftp.stat(remotePath)
+    const totalBytes = stats.size
+
+    const progress: TransferProgress = {
+      transferId,
+      filename: path.basename(remotePath),
+      localPath,
+      remotePath,
+      direction: 'download',
+      totalBytes,
+      transferredBytes: 0,
+      percent: 0,
+      status: 'transferring',
+      startTime: Date.now()
+    }
+    this.transfers.set(transferId, progress)
+    this.emit('transfer-start', { ...progress })
+
+    try {
+      // 确保本地目录存在
+      const localDir = path.dirname(localPath)
+      if (!fs.existsSync(localDir)) {
+        fs.mkdirSync(localDir, { recursive: true })
+      }
+
+      await sftp.get(remotePath, localPath, {
+        step: (transferred: number, _chunk: number, total: number) => {
+          progress.transferredBytes = transferred
+          progress.percent = total > 0 ? Math.round((transferred / total) * 100) : 0
+          this.emit('transfer-progress', { ...progress })
+        }
+      })
+
+      progress.status = 'completed'
+      progress.percent = 100
+      progress.transferredBytes = totalBytes
+      this.emit('transfer-complete', { ...progress })
+    } catch (err) {
+      progress.status = 'failed'
+      progress.error = err instanceof Error ? err.message : '下载失败'
+      this.emit('transfer-error', { ...progress })
+      throw err
+    } finally {
+      this.transfers.delete(transferId)
+    }
+  }
+
+  /**
+   * 上传目录（递归）
+   */
+  async uploadDir(
+    sessionId: string,
+    localDir: string,
+    remoteDir: string
+  ): Promise<void> {
+    const sftp = this.sessions.get(sessionId)
+    if (!sftp) throw new Error('SFTP 会话不存在')
+    await sftp.uploadDir(localDir, remoteDir)
+  }
+
+  /**
+   * 下载目录（递归）
+   */
+  async downloadDir(
+    sessionId: string,
+    remoteDir: string,
+    localDir: string
+  ): Promise<void> {
+    const sftp = this.sessions.get(sessionId)
+    if (!sftp) throw new Error('SFTP 会话不存在')
+    await sftp.downloadDir(remoteDir, localDir)
+  }
+
+  /**
+   * 创建目录
+   */
+  async mkdir(sessionId: string, remotePath: string, recursive = true): Promise<void> {
+    const sftp = this.sessions.get(sessionId)
+    if (!sftp) throw new Error('SFTP 会话不存在')
+    await sftp.mkdir(remotePath, recursive)
+  }
+
+  /**
+   * 删除文件
+   */
+  async delete(sessionId: string, remotePath: string): Promise<void> {
+    const sftp = this.sessions.get(sessionId)
+    if (!sftp) throw new Error('SFTP 会话不存在')
+    await sftp.delete(remotePath)
+  }
+
+  /**
+   * 删除目录
+   */
+  async rmdir(sessionId: string, remotePath: string, recursive = true): Promise<void> {
+    const sftp = this.sessions.get(sessionId)
+    if (!sftp) throw new Error('SFTP 会话不存在')
+    await sftp.rmdir(remotePath, recursive)
+  }
+
+  /**
+   * 重命名/移动
+   */
+  async rename(sessionId: string, oldPath: string, newPath: string): Promise<void> {
+    const sftp = this.sessions.get(sessionId)
+    if (!sftp) throw new Error('SFTP 会话不存在')
+    await sftp.rename(oldPath, newPath)
+  }
+
+  /**
+   * 修改权限
+   */
+  async chmod(sessionId: string, remotePath: string, mode: string | number): Promise<void> {
+    const sftp = this.sessions.get(sessionId)
+    if (!sftp) throw new Error('SFTP 会话不存在')
+    await sftp.chmod(remotePath, mode)
+  }
+
+  /**
+   * 获取实时大小（通过 stat）
+   */
+  async getSize(sessionId: string, remotePath: string): Promise<number> {
+    const sftp = this.sessions.get(sessionId)
+    if (!sftp) throw new Error('SFTP 会话不存在')
+    const stats = await sftp.stat(remotePath)
+    return stats.size
+  }
+
+  /**
+   * 读取文本文件内容
+   */
+  async readFile(sessionId: string, remotePath: string): Promise<string> {
+    const sftp = this.sessions.get(sessionId)
+    if (!sftp) throw new Error('SFTP 会话不存在')
+    const buffer = await sftp.get(remotePath) as Buffer
+    return buffer.toString('utf-8')
+  }
+
+  /**
+   * 写入文本文件
+   */
+  async writeFile(sessionId: string, remotePath: string, content: string): Promise<void> {
+    const sftp = this.sessions.get(sessionId)
+    if (!sftp) throw new Error('SFTP 会话不存在')
+    const buffer = Buffer.from(content, 'utf-8')
+    await sftp.put(buffer, remotePath)
+  }
+
+  /**
+   * 获取当前传输状态
+   */
+  getTransfers(): TransferProgress[] {
+    return Array.from(this.transfers.values())
+  }
+
+  /**
+   * 格式化权限字符串
+   */
+  private formatPermission(perm: string): string {
+    if (!perm) return '---'
+    let result = ''
+    result += perm.includes('r') ? 'r' : '-'
+    result += perm.includes('w') ? 'w' : '-'
+    result += perm.includes('x') ? 'x' : '-'
+    return result
+  }
+}

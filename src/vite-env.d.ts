@@ -334,6 +334,182 @@ interface Window {
       probeSsh: (sshId: string, hostId: string) => Promise<HostProfile | null>
       generateContext: (hostId: string) => Promise<string>
     }
+    // SFTP 操作
+    sftp: {
+      connect: (sessionId: string, config: {
+        host: string
+        port: number
+        username: string
+        password?: string
+        privateKey?: string | Buffer
+        privateKeyPath?: string
+        passphrase?: string
+      }) => Promise<{ success: boolean; error?: string }>
+      disconnect: (sessionId: string) => Promise<void>
+      hasSession: (sessionId: string) => Promise<boolean>
+      list: (sessionId: string, remotePath: string) => Promise<{
+        success: boolean
+        data?: Array<{
+          name: string
+          path: string
+          size: number
+          modifyTime: number
+          accessTime: number
+          isDirectory: boolean
+          isSymlink: boolean
+          permissions: {
+            user: string
+            group: string
+            other: string
+          }
+          owner: number
+          group: number
+        }>
+        error?: string
+      }>
+      pwd: (sessionId: string) => Promise<{
+        success: boolean
+        data?: string
+        error?: string
+      }>
+      exists: (sessionId: string, remotePath: string) => Promise<{
+        success: boolean
+        data?: false | 'd' | '-' | 'l'
+        error?: string
+      }>
+      stat: (sessionId: string, remotePath: string) => Promise<{
+        success: boolean
+        data?: object
+        error?: string
+      }>
+      upload: (sessionId: string, localPath: string, remotePath: string, transferId: string) => Promise<{
+        success: boolean
+        error?: string
+      }>
+      download: (sessionId: string, remotePath: string, localPath: string, transferId: string) => Promise<{
+        success: boolean
+        error?: string
+      }>
+      uploadDir: (sessionId: string, localDir: string, remoteDir: string) => Promise<{
+        success: boolean
+        error?: string
+      }>
+      downloadDir: (sessionId: string, remoteDir: string, localDir: string) => Promise<{
+        success: boolean
+        error?: string
+      }>
+      mkdir: (sessionId: string, remotePath: string) => Promise<{
+        success: boolean
+        error?: string
+      }>
+      delete: (sessionId: string, remotePath: string) => Promise<{
+        success: boolean
+        error?: string
+      }>
+      rmdir: (sessionId: string, remotePath: string) => Promise<{
+        success: boolean
+        error?: string
+      }>
+      rename: (sessionId: string, oldPath: string, newPath: string) => Promise<{
+        success: boolean
+        error?: string
+      }>
+      chmod: (sessionId: string, remotePath: string, mode: string | number) => Promise<{
+        success: boolean
+        error?: string
+      }>
+      readFile: (sessionId: string, remotePath: string) => Promise<{
+        success: boolean
+        data?: string
+        error?: string
+      }>
+      writeFile: (sessionId: string, remotePath: string, content: string) => Promise<{
+        success: boolean
+        error?: string
+      }>
+      getTransfers: () => Promise<Array<{
+        transferId: string
+        filename: string
+        localPath: string
+        remotePath: string
+        direction: 'upload' | 'download'
+        totalBytes: number
+        transferredBytes: number
+        percent: number
+        status: 'pending' | 'transferring' | 'completed' | 'failed' | 'cancelled'
+        error?: string
+        startTime: number
+      }>>
+      selectLocalFiles: () => Promise<{
+        canceled: boolean
+        files: Array<{
+          name: string
+          path: string
+          size: number
+          isDirectory: boolean
+        }>
+      }>
+      selectLocalDirectory: (options?: { title?: string; forSave?: boolean }) => Promise<{
+        canceled: boolean
+        path: string
+      }>
+      selectSavePath: (defaultName: string) => Promise<{
+        canceled: boolean
+        path: string
+      }>
+      onTransferStart: (callback: (progress: {
+        transferId: string
+        filename: string
+        localPath: string
+        remotePath: string
+        direction: 'upload' | 'download'
+        totalBytes: number
+        transferredBytes: number
+        percent: number
+        status: 'pending' | 'transferring' | 'completed' | 'failed' | 'cancelled'
+        error?: string
+        startTime: number
+      }) => void) => () => void
+      onTransferProgress: (callback: (progress: {
+        transferId: string
+        filename: string
+        localPath: string
+        remotePath: string
+        direction: 'upload' | 'download'
+        totalBytes: number
+        transferredBytes: number
+        percent: number
+        status: 'pending' | 'transferring' | 'completed' | 'failed' | 'cancelled'
+        error?: string
+        startTime: number
+      }) => void) => () => void
+      onTransferComplete: (callback: (progress: {
+        transferId: string
+        filename: string
+        localPath: string
+        remotePath: string
+        direction: 'upload' | 'download'
+        totalBytes: number
+        transferredBytes: number
+        percent: number
+        status: 'pending' | 'transferring' | 'completed' | 'failed' | 'cancelled'
+        error?: string
+        startTime: number
+      }) => void) => () => void
+      onTransferError: (callback: (progress: {
+        transferId: string
+        filename: string
+        localPath: string
+        remotePath: string
+        direction: 'upload' | 'download'
+        totalBytes: number
+        transferredBytes: number
+        percent: number
+        status: 'pending' | 'transferring' | 'completed' | 'failed' | 'cancelled'
+        error?: string
+        startTime: number
+      }) => void) => () => void
+    }
     // 文档解析操作
     document: {
       selectFiles: () => Promise<{

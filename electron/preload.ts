@@ -63,6 +63,48 @@ export interface ImportResult {
   errors: string[]
 }
 
+// SFTP 相关类型
+export interface SftpConfig {
+  host: string
+  port: number
+  username: string
+  password?: string
+  privateKey?: string | Buffer
+  privateKeyPath?: string
+  passphrase?: string
+}
+
+export interface SftpFileInfo {
+  name: string
+  path: string
+  size: number
+  modifyTime: number
+  accessTime: number
+  isDirectory: boolean
+  isSymlink: boolean
+  permissions: {
+    user: string
+    group: string
+    other: string
+  }
+  owner: number
+  group: number
+}
+
+export interface TransferProgress {
+  transferId: string
+  filename: string
+  localPath: string
+  remotePath: string
+  direction: 'upload' | 'download'
+  totalBytes: number
+  transferredBytes: number
+  percent: number
+  status: 'pending' | 'transferring' | 'completed' | 'failed' | 'cancelled'
+  error?: string
+  startTime: number
+}
+
 // Agent 相关类型
 export type RiskLevel = 'safe' | 'moderate' | 'dangerous' | 'blocked'
 
@@ -560,6 +602,197 @@ const electronAPI = {
       description: string
       available: boolean
     }>>
+  },
+
+  // SFTP 操作
+  sftp: {
+    // 连接
+    connect: (sessionId: string, config: SftpConfig) =>
+      ipcRenderer.invoke('sftp:connect', sessionId, config) as Promise<{ success: boolean; error?: string }>,
+
+    // 断开连接
+    disconnect: (sessionId: string) =>
+      ipcRenderer.invoke('sftp:disconnect', sessionId),
+
+    // 检查连接
+    hasSession: (sessionId: string) =>
+      ipcRenderer.invoke('sftp:hasSession', sessionId) as Promise<boolean>,
+
+    // 列出目录
+    list: (sessionId: string, remotePath: string) =>
+      ipcRenderer.invoke('sftp:list', sessionId, remotePath) as Promise<{
+        success: boolean
+        data?: SftpFileInfo[]
+        error?: string
+      }>,
+
+    // 获取当前工作目录
+    pwd: (sessionId: string) =>
+      ipcRenderer.invoke('sftp:pwd', sessionId) as Promise<{
+        success: boolean
+        data?: string
+        error?: string
+      }>,
+
+    // 检查路径是否存在
+    exists: (sessionId: string, remotePath: string) =>
+      ipcRenderer.invoke('sftp:exists', sessionId, remotePath) as Promise<{
+        success: boolean
+        data?: false | 'd' | '-' | 'l'
+        error?: string
+      }>,
+
+    // 获取文件信息
+    stat: (sessionId: string, remotePath: string) =>
+      ipcRenderer.invoke('sftp:stat', sessionId, remotePath) as Promise<{
+        success: boolean
+        data?: object
+        error?: string
+      }>,
+
+    // 上传文件
+    upload: (sessionId: string, localPath: string, remotePath: string, transferId: string) =>
+      ipcRenderer.invoke('sftp:upload', sessionId, localPath, remotePath, transferId) as Promise<{
+        success: boolean
+        error?: string
+      }>,
+
+    // 下载文件
+    download: (sessionId: string, remotePath: string, localPath: string, transferId: string) =>
+      ipcRenderer.invoke('sftp:download', sessionId, remotePath, localPath, transferId) as Promise<{
+        success: boolean
+        error?: string
+      }>,
+
+    // 上传目录
+    uploadDir: (sessionId: string, localDir: string, remoteDir: string) =>
+      ipcRenderer.invoke('sftp:uploadDir', sessionId, localDir, remoteDir) as Promise<{
+        success: boolean
+        error?: string
+      }>,
+
+    // 下载目录
+    downloadDir: (sessionId: string, remoteDir: string, localDir: string) =>
+      ipcRenderer.invoke('sftp:downloadDir', sessionId, remoteDir, localDir) as Promise<{
+        success: boolean
+        error?: string
+      }>,
+
+    // 创建目录
+    mkdir: (sessionId: string, remotePath: string) =>
+      ipcRenderer.invoke('sftp:mkdir', sessionId, remotePath) as Promise<{
+        success: boolean
+        error?: string
+      }>,
+
+    // 删除文件
+    delete: (sessionId: string, remotePath: string) =>
+      ipcRenderer.invoke('sftp:delete', sessionId, remotePath) as Promise<{
+        success: boolean
+        error?: string
+      }>,
+
+    // 删除目录
+    rmdir: (sessionId: string, remotePath: string) =>
+      ipcRenderer.invoke('sftp:rmdir', sessionId, remotePath) as Promise<{
+        success: boolean
+        error?: string
+      }>,
+
+    // 重命名/移动
+    rename: (sessionId: string, oldPath: string, newPath: string) =>
+      ipcRenderer.invoke('sftp:rename', sessionId, oldPath, newPath) as Promise<{
+        success: boolean
+        error?: string
+      }>,
+
+    // 修改权限
+    chmod: (sessionId: string, remotePath: string, mode: string | number) =>
+      ipcRenderer.invoke('sftp:chmod', sessionId, remotePath, mode) as Promise<{
+        success: boolean
+        error?: string
+      }>,
+
+    // 读取文本文件
+    readFile: (sessionId: string, remotePath: string) =>
+      ipcRenderer.invoke('sftp:readFile', sessionId, remotePath) as Promise<{
+        success: boolean
+        data?: string
+        error?: string
+      }>,
+
+    // 写入文本文件
+    writeFile: (sessionId: string, remotePath: string, content: string) =>
+      ipcRenderer.invoke('sftp:writeFile', sessionId, remotePath, content) as Promise<{
+        success: boolean
+        error?: string
+      }>,
+
+    // 获取传输列表
+    getTransfers: () =>
+      ipcRenderer.invoke('sftp:getTransfers') as Promise<TransferProgress[]>,
+
+    // 选择本地文件
+    selectLocalFiles: () =>
+      ipcRenderer.invoke('sftp:selectLocalFiles') as Promise<{
+        canceled: boolean
+        files: Array<{
+          name: string
+          path: string
+          size: number
+          isDirectory: boolean
+        }>
+      }>,
+
+    // 选择本地目录
+    selectLocalDirectory: (options?: { title?: string; forSave?: boolean }) =>
+      ipcRenderer.invoke('sftp:selectLocalDirectory', options) as Promise<{
+        canceled: boolean
+        path: string
+      }>,
+
+    // 选择保存路径
+    selectSavePath: (defaultName: string) =>
+      ipcRenderer.invoke('sftp:selectSavePath', defaultName) as Promise<{
+        canceled: boolean
+        path: string
+      }>,
+
+    // 监听传输开始
+    onTransferStart: (callback: (progress: TransferProgress) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, progress: TransferProgress) => callback(progress)
+      ipcRenderer.on('sftp:transfer-start', handler)
+      return () => {
+        ipcRenderer.removeListener('sftp:transfer-start', handler)
+      }
+    },
+
+    // 监听传输进度
+    onTransferProgress: (callback: (progress: TransferProgress) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, progress: TransferProgress) => callback(progress)
+      ipcRenderer.on('sftp:transfer-progress', handler)
+      return () => {
+        ipcRenderer.removeListener('sftp:transfer-progress', handler)
+      }
+    },
+
+    // 监听传输完成
+    onTransferComplete: (callback: (progress: TransferProgress) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, progress: TransferProgress) => callback(progress)
+      ipcRenderer.on('sftp:transfer-complete', handler)
+      return () => {
+        ipcRenderer.removeListener('sftp:transfer-complete', handler)
+      }
+    },
+
+    // 监听传输错误
+    onTransferError: (callback: (progress: TransferProgress) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, progress: TransferProgress) => callback(progress)
+      ipcRenderer.on('sftp:transfer-error', handler)
+      return () => {
+        ipcRenderer.removeListener('sftp:transfer-error', handler)
+      }
+    }
   }
 }
 

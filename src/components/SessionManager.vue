@@ -7,6 +7,10 @@ import { v4 as uuidv4 } from 'uuid'
 const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
 
+const emit = defineEmits<{
+  openSftp: [session: SshSession]
+}>()
+
 const showNewSession = ref(false)
 const showImportMenu = ref(false)
 const nameInputRef = ref<HTMLInputElement | null>(null)
@@ -171,6 +175,11 @@ const connectSession = async (session: SshSession) => {
   })
 }
 
+// 打开 SFTP 文件管理
+const openSftp = (session: SshSession) => {
+  emit('openSftp', session)
+}
+
 // 创建本地终端
 const createLocalTerminal = () => {
   terminalStore.createTab('local')
@@ -317,6 +326,11 @@ const handleImportResult = async (importResult: { success: boolean; sessions: an
               <button class="btn-icon btn-sm" @click.stop="connectSession(session)" title="连接">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+              </button>
+              <button class="btn-icon btn-sm" @click.stop="openSftp(session)" title="文件管理">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                 </svg>
               </button>
               <button class="btn-icon btn-sm" @click.stop="openEditSession(session)" title="编辑">

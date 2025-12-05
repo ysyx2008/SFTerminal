@@ -10,6 +10,7 @@ import { AgentService, AgentStep, PendingConfirmation, AgentContext } from './se
 import { HistoryService, ChatRecord, AgentRecord } from './services/history.service'
 import { HostProfileService, HostProfile } from './services/host-profile.service'
 import { getDocumentParserService, UploadedFile, ParseOptions, ParsedDocument } from './services/document-parser.service'
+import { SftpService, SftpConfig } from './services/sftp.service'
 
 // 禁用 GPU 加速可能导致的问题（可选）
 // app.disableHardwareAcceleration()
@@ -43,6 +44,7 @@ const hostProfileService = new HostProfileService()
 const agentService = new AgentService(aiService, ptyService, hostProfileService)
 const historyService = new HistoryService()
 const documentParserService = getDocumentParserService()
+const sftpService = new SftpService()
 
 function createWindow() {
   // 根据平台选择图标
@@ -104,9 +106,10 @@ app.whenReady().then(() => {
 
 // 所有窗口关闭时退出应用（Windows & Linux）
 app.on('window-all-closed', () => {
-  // 清理所有 PTY 和 SSH 连接
+  // 清理所有 PTY、SSH 和 SFTP 连接
   ptyService.disposeAll()
   sshService.disposeAll()
+  sftpService.disconnectAll()
 
   if (process.platform !== 'darwin') {
     app.quit()
@@ -713,5 +716,304 @@ ipcMain.handle('document:checkCapabilities', async () => {
 // 获取支持的文件类型
 ipcMain.handle('document:getSupportedTypes', async () => {
   return documentParserService.getSupportedTypes()
+})
+
+// ==================== SFTP 相关 ====================
+
+// SFTP 传输进度事件转发
+sftpService.on('transfer-start', (progress) => {
+  mainWindow?.webContents.send('sftp:transfer-start', progress)
+})
+sftpService.on('transfer-progress', (progress) => {
+  mainWindow?.webContents.send('sftp:transfer-progress', progress)
+})
+sftpService.on('transfer-complete', (progress) => {
+  mainWindow?.webContents.send('sftp:transfer-complete', progress)
+})
+sftpService.on('transfer-error', (progress) => {
+  mainWindow?.webContents.send('sftp:transfer-error', progress)
+})
+
+// 连接 SFTP
+ipcMain.handle('sftp:connect', async (_event, sessionId: string, config: SftpConfig) => {
+  try {
+    await sftpService.connect(sessionId, config)
+    return { success: true }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '连接失败' 
+    }
+  }
+})
+
+// 断开 SFTP 连接
+ipcMain.handle('sftp:disconnect', async (_event, sessionId: string) => {
+  await sftpService.disconnect(sessionId)
+})
+
+// 检查连接是否存在
+ipcMain.handle('sftp:hasSession', async (_event, sessionId: string) => {
+  return sftpService.hasSession(sessionId)
+})
+
+// 列出目录内容
+ipcMain.handle('sftp:list', async (_event, sessionId: string, remotePath: string) => {
+  try {
+    const list = await sftpService.list(sessionId, remotePath)
+    return { success: true, data: list }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '列出目录失败' 
+    }
+  }
+})
+
+// 获取当前工作目录
+ipcMain.handle('sftp:pwd', async (_event, sessionId: string) => {
+  try {
+    const cwd = await sftpService.pwd(sessionId)
+    return { success: true, data: cwd }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '获取工作目录失败' 
+    }
+  }
+})
+
+// 检查路径是否存在
+ipcMain.handle('sftp:exists', async (_event, sessionId: string, remotePath: string) => {
+  try {
+    const result = await sftpService.exists(sessionId, remotePath)
+    return { success: true, data: result }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '检查路径失败' 
+    }
+  }
+})
+
+// 获取文件/目录信息
+ipcMain.handle('sftp:stat', async (_event, sessionId: string, remotePath: string) => {
+  try {
+    const stats = await sftpService.stat(sessionId, remotePath)
+    return { success: true, data: stats }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '获取文件信息失败' 
+    }
+  }
+})
+
+// 上传文件
+ipcMain.handle('sftp:upload', async (_event, sessionId: string, localPath: string, remotePath: string, transferId: string) => {
+  try {
+    await sftpService.upload(sessionId, localPath, remotePath, transferId)
+    return { success: true }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '上传失败' 
+    }
+  }
+})
+
+// 下载文件
+ipcMain.handle('sftp:download', async (_event, sessionId: string, remotePath: string, localPath: string, transferId: string) => {
+  try {
+    await sftpService.download(sessionId, remotePath, localPath, transferId)
+    return { success: true }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '下载失败' 
+    }
+  }
+})
+
+// 上传目录
+ipcMain.handle('sftp:uploadDir', async (_event, sessionId: string, localDir: string, remoteDir: string) => {
+  try {
+    await sftpService.uploadDir(sessionId, localDir, remoteDir)
+    return { success: true }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '上传目录失败' 
+    }
+  }
+})
+
+// 下载目录
+ipcMain.handle('sftp:downloadDir', async (_event, sessionId: string, remoteDir: string, localDir: string) => {
+  try {
+    await sftpService.downloadDir(sessionId, remoteDir, localDir)
+    return { success: true }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '下载目录失败' 
+    }
+  }
+})
+
+// 创建目录
+ipcMain.handle('sftp:mkdir', async (_event, sessionId: string, remotePath: string) => {
+  try {
+    await sftpService.mkdir(sessionId, remotePath)
+    return { success: true }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '创建目录失败' 
+    }
+  }
+})
+
+// 删除文件
+ipcMain.handle('sftp:delete', async (_event, sessionId: string, remotePath: string) => {
+  try {
+    await sftpService.delete(sessionId, remotePath)
+    return { success: true }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '删除文件失败' 
+    }
+  }
+})
+
+// 删除目录
+ipcMain.handle('sftp:rmdir', async (_event, sessionId: string, remotePath: string) => {
+  try {
+    await sftpService.rmdir(sessionId, remotePath)
+    return { success: true }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '删除目录失败' 
+    }
+  }
+})
+
+// 重命名/移动
+ipcMain.handle('sftp:rename', async (_event, sessionId: string, oldPath: string, newPath: string) => {
+  try {
+    await sftpService.rename(sessionId, oldPath, newPath)
+    return { success: true }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '重命名失败' 
+    }
+  }
+})
+
+// 修改权限
+ipcMain.handle('sftp:chmod', async (_event, sessionId: string, remotePath: string, mode: string | number) => {
+  try {
+    await sftpService.chmod(sessionId, remotePath, mode)
+    return { success: true }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '修改权限失败' 
+    }
+  }
+})
+
+// 读取文本文件
+ipcMain.handle('sftp:readFile', async (_event, sessionId: string, remotePath: string) => {
+  try {
+    const content = await sftpService.readFile(sessionId, remotePath)
+    return { success: true, data: content }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '读取文件失败' 
+    }
+  }
+})
+
+// 写入文本文件
+ipcMain.handle('sftp:writeFile', async (_event, sessionId: string, remotePath: string, content: string) => {
+  try {
+    await sftpService.writeFile(sessionId, remotePath, content)
+    return { success: true }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : '写入文件失败' 
+    }
+  }
+})
+
+// 获取当前传输列表
+ipcMain.handle('sftp:getTransfers', async () => {
+  return sftpService.getTransfers()
+})
+
+// 选择本地文件（用于上传）
+ipcMain.handle('sftp:selectLocalFiles', async () => {
+  const result = await dialog.showOpenDialog({
+    title: '选择要上传的文件',
+    properties: ['openFile', 'multiSelections']
+  })
+  
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true, files: [] }
+  }
+  
+  const files = result.filePaths.map(filePath => {
+    const stats = fs.statSync(filePath)
+    return {
+      name: path.basename(filePath),
+      path: filePath,
+      size: stats.size,
+      isDirectory: stats.isDirectory()
+    }
+  })
+  
+  return { canceled: false, files }
+})
+
+// 选择本地目录（用于上传或保存下载）
+ipcMain.handle('sftp:selectLocalDirectory', async (_event, options?: { title?: string; forSave?: boolean }) => {
+  const dialogOptions: Electron.OpenDialogOptions = {
+    title: options?.title || '选择目录',
+    properties: ['openDirectory']
+  }
+  
+  // macOS 上允许创建新目录
+  if (process.platform === 'darwin') {
+    dialogOptions.properties!.push('createDirectory')
+  }
+  
+  const result = await dialog.showOpenDialog(dialogOptions)
+  
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true, path: '' }
+  }
+  
+  return { canceled: false, path: result.filePaths[0] }
+})
+
+// 选择保存文件路径
+ipcMain.handle('sftp:selectSavePath', async (_event, defaultName: string) => {
+  const result = await dialog.showSaveDialog({
+    title: '保存文件',
+    defaultPath: defaultName,
+    properties: ['createDirectory', 'showOverwriteConfirmation']
+  })
+  
+  if (result.canceled || !result.filePath) {
+    return { canceled: true, path: '' }
+  }
+  
+  return { canceled: false, path: result.filePath }
 })
 

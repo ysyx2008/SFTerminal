@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useTerminalStore } from './stores/terminal'
-import { useConfigStore } from './stores/config'
+import { useConfigStore, type SshSession } from './stores/config'
 import TabBar from './components/TabBar.vue'
 import TerminalContainer from './components/TerminalContainer.vue'
 import AiPanel from './components/AiPanel.vue'
 import SessionManager from './components/SessionManager.vue'
 import SettingsModal from './components/Settings/SettingsModal.vue'
+import FileExplorer from './components/FileExplorer/FileExplorer.vue'
+import type { SftpConnectionConfig } from './composables/useSftp'
 
 const terminalStore = useTerminalStore()
 const configStore = useConfigStore()
@@ -14,6 +16,8 @@ const configStore = useConfigStore()
 const showSidebar = ref(false)
 const showAiPanel = ref(true)
 const showSettings = ref(false)
+const showFileExplorer = ref(false)
+const sftpConfig = ref<SftpConnectionConfig | null>(null)
 
 // AI 面板宽度
 const aiPanelWidth = ref(420)
@@ -43,6 +47,25 @@ const toggleSidebar = () => {
 // 切换 AI 面板
 const toggleAiPanel = () => {
   showAiPanel.value = !showAiPanel.value
+}
+
+// 打开 SFTP 文件管理器
+const openSftp = (session: SshSession) => {
+  sftpConfig.value = {
+    host: session.host,
+    port: session.port,
+    username: session.username,
+    password: session.password,
+    privateKeyPath: session.privateKeyPath,
+    passphrase: session.passphrase
+  }
+  showFileExplorer.value = true
+}
+
+// 关闭 SFTP 文件管理器
+const closeSftp = () => {
+  showFileExplorer.value = false
+  sftpConfig.value = null
 }
 
 // 监听右键菜单发送到 AI 的请求，自动打开 AI 面板
@@ -137,7 +160,7 @@ onUnmounted(() => {
           </button>
         </div>
         <div class="sidebar-content">
-          <SessionManager />
+          <SessionManager @open-sftp="openSftp" />
         </div>
       </aside>
 
@@ -161,6 +184,13 @@ onUnmounted(() => {
 
     <!-- 设置弹窗 -->
     <SettingsModal v-if="showSettings" @close="showSettings = false" />
+
+    <!-- SFTP 文件管理器弹窗 -->
+    <FileExplorer
+      v-if="showFileExplorer && sftpConfig"
+      :config="sftpConfig"
+      @close="closeSftp"
+    />
   </div>
 </template>
 
