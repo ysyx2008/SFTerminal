@@ -229,6 +229,7 @@ export class AiService {
 
   /**
    * 发送聊天请求（流式，支持代理）
+   * 支持 think 模型（如 DeepSeek-R1）的 reasoning_content 字段
    * @param requestId 请求 ID，用于支持多个终端同时请求
    */
   async chatStream(
@@ -279,6 +280,9 @@ export class AiService {
         options.agent = this.getProxyAgent(profile.proxy)
       }
 
+      let hasReasoningOutput = false  // 标记是否已输出思考内容
+      let hasContentOutput = false    // 标记是否已输出正常内容
+
       const req = httpModule.request(options, (res) => {
         if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
           let errorData = ''
@@ -319,11 +323,27 @@ export class AiService {
 
               try {
                 const parsed = JSON.parse(data) as {
-                  choices?: { delta?: { content?: string } }[]
+                  choices?: { delta?: { content?: string; reasoning_content?: string } }[]
                 }
-                const content = parsed.choices?.[0]?.delta?.content
-                if (content) {
-                  onChunk(content)
+                const delta = parsed.choices?.[0]?.delta
+                
+                // 处理 think 模型的 reasoning_content（思考过程）
+                if (delta?.reasoning_content) {
+                  if (!hasReasoningOutput) {
+                    hasReasoningOutput = true
+                    onChunk('🤔 **思考中...**\n\n')
+                  }
+                  onChunk(delta.reasoning_content)
+                }
+                
+                // 处理正常的 content
+                if (delta?.content) {
+                  // 如果之前有思考过程，现在开始输出最终内容，添加分隔
+                  if (hasReasoningOutput && !hasContentOutput) {
+                    hasContentOutput = true
+                    onChunk('\n\n---\n\n**回复：**\n\n')
+                  }
+                  onChunk(delta.content)
                 }
               } catch {
                 // 忽略解析错误
@@ -473,6 +493,7 @@ export class AiService {
   /**
    * 带工具的聊天（流式）
    * 用于 Agent 模式，支持 function calling 和流式输出
+   * 支持 think 模型（如 DeepSeek-R1）的 reasoning_content 字段
    */
   async chatWithToolsStream(
     messages: AiMessage[],
@@ -542,10 +563,22 @@ export class AiService {
       }
 
       let content = ''
+      let reasoningContent = ''  // 用于收集 think 模型的思考内容
       let toolCalls: ToolCall[] = []
       let finishReason: string | undefined
+      let hasReasoningOutput = false  // 标记是否已输出思考内容的开始标记
 
       const req = httpModule.request(options, (res) => {
+        // 处理 HTTP 错误
+        if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
+          let errorData = ''
+          res.on('data', (chunk) => { errorData += chunk })
+          res.on('end', () => {
+            onError(`AI API 请求失败: ${res.statusCode} - ${errorData}`)
+          })
+          return
+        }
+
         let buffer = ''
 
         res.on('data', (chunk: Buffer) => {
@@ -557,8 +590,10 @@ export class AiService {
             if (line.startsWith('data: ')) {
               const data = line.slice(6).trim()
               if (data === '[DONE]') {
+                // 如果有思考内容但没有最终内容，把思考内容作为最终内容
+                const finalContent = content || (reasoningContent ? `【思考过程】\n${reasoningContent}` : undefined)
                 onDone({
-                  content: content || undefined,
+                  content: finalContent,
                   tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
                   finish_reason: finishReason as ChatWithToolsResult['finish_reason']
                 })
@@ -574,7 +609,25 @@ export class AiService {
                   finishReason = reason
                 }
 
+                // 处理 think 模型的 reasoning_content（思考过程）
+                // DeepSeek-R1 等模型会返回 reasoning_content 字段
+                if (delta?.reasoning_content) {
+                  // 第一次收到 reasoning_content 时，输出开始标记
+                  if (!hasReasoningOutput) {
+                    hasReasoningOutput = true
+                    onChunk('🤔 ')
+                  }
+                  reasoningContent += delta.reasoning_content
+                  // 不直接输出完整的思考过程，太长了
+                  // 只在开始时显示一个思考指示
+                }
+
+                // 处理正常的 content（最终回复）
                 if (delta?.content) {
+                  // 如果之前有思考过程，现在开始输出最终内容，添加分隔
+                  if (hasReasoningOutput && content === '') {
+                    onChunk('\n\n')
+                  }
                   content += delta.content
                   onChunk(delta.content)
                 }
@@ -593,6 +646,12 @@ export class AiService {
                         }
                       }
                     } else {
+                      if (tc.id) {
+                        toolCalls[index].id = tc.id
+                      }
+                      if (tc.function?.name) {
+                        toolCalls[index].function.name = tc.function.name
+                      }
                       if (tc.function?.arguments) {
                         toolCalls[index].function.arguments += tc.function.arguments
                       }
@@ -611,8 +670,10 @@ export class AiService {
           if (toolCalls.length > 0) {
             onToolCall(toolCalls)
           }
+          // 如果有思考内容但没有最终内容，把思考内容作为最终内容
+          const finalContent = content || (reasoningContent ? `【思考过程】\n${reasoningContent}` : undefined)
           onDone({
-            content: content || undefined,
+            content: finalContent,
             tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
             finish_reason: finishReason as ChatWithToolsResult['finish_reason']
           })
