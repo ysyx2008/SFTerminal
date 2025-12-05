@@ -7,7 +7,7 @@ dist-electron/
 release/
 electron-cache/
 
-asset/
+assets/
 
 # Editor
 .vscode/*
