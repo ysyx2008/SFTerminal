@@ -371,6 +371,14 @@ export class AgentService {
 
       // 完成
       run.isRunning = false
+
+      // 检查是否是用户主动中止
+      if (run.aborted) {
+        console.log('[Agent] run was aborted by user')
+        // 用户中止时抛出错误，让前端知道是中止而非正常完成
+        throw new Error('用户中止了 Agent 执行')
+      }
+
       const finalMessage = lastResponse?.content || '任务完成'
 
       console.log('[Agent] run completed normally, calling onCompleteCallback')
@@ -386,13 +394,23 @@ export class AgentService {
       const errorMsg = error instanceof Error ? error.message : '未知错误'
       console.log('[Agent] caught error:', errorMsg)
       
-      // 如果是 aborted 错误，且已经有有效的响应内容，视为正常完成
-      const isAbortedError = errorMsg.toLowerCase().includes('aborted') || errorMsg.includes('中止')
+      // 检查是否是用户主动中止
+      const isUserAborted = errorMsg === '用户中止了 Agent 执行' || run.aborted
+      
+      if (isUserAborted) {
+        // 用户主动中止，直接抛出错误，不视为成功
+        // 注意：不调用 onErrorCallback，因为 abort() 方法已经添加了错误步骤
+        console.log('[Agent] user aborted, throwing error without callback')
+        throw error
+      }
+      
+      // 如果是 AI 请求被中止但已经有有效的响应内容，视为正常完成
+      const isAiAbortedError = errorMsg.toLowerCase().includes('aborted')
       const hasValidResponse = lastResponse && lastResponse.content && lastResponse.content.length > 10
       
-      if (isAbortedError && hasValidResponse) {
+      if (isAiAbortedError && hasValidResponse) {
         // 已经有有效响应，视为正常完成
-        console.log('[Agent] aborted error with valid response, treating as success')
+        console.log('[Agent] AI request aborted but has valid response, treating as success')
         const finalMessage = lastResponse!.content || '任务完成'
         
         if (this.onCompleteCallback) {

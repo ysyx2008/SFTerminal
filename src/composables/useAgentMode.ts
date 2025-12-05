@@ -304,17 +304,29 @@ export function useAgentMode(
       })
     } catch (error) {
       console.error('Agent 运行失败:', error)
-      finalContent = `❌ Agent 运行出错: ${error instanceof Error ? error.message : '未知错误'}`
-      terminalStore.addAgentStep(tabId, {
-        id: `final_result_${Date.now()}`,
-        type: 'final_result',
-        content: finalContent,
-        timestamp: Date.now()
-      })
-      terminalStore.setAgentFinalResult(tabId, finalContent)
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
       
-      // 保存失败的 Agent 记录
-      saveAgentRecord(tabId, message, startTime, 'failed', finalContent)
+      // 检查是否是用户主动中止
+      const isAborted = errorMessage.includes('用户中止') || errorMessage.includes('aborted')
+      
+      if (isAborted) {
+        // 用户主动中止，不添加 final_result 步骤（后端已经添加了 error 步骤）
+        // 只保存记录
+        saveAgentRecord(tabId, message, startTime, 'aborted', '用户中止了 Agent 执行')
+      } else {
+        // 其他错误，添加 final_result 步骤
+        finalContent = `❌ Agent 运行出错: ${errorMessage}`
+        terminalStore.addAgentStep(tabId, {
+          id: `final_result_${Date.now()}`,
+          type: 'final_result',
+          content: finalContent,
+          timestamp: Date.now()
+        })
+        terminalStore.setAgentFinalResult(tabId, finalContent)
+        
+        // 保存失败的 Agent 记录
+        saveAgentRecord(tabId, message, startTime, 'failed', finalContent)
+      }
     } finally {
       // 无论成功还是失败，都确保重置 Agent 运行状态
       console.log('[Agent] finally block executing, resetting isRunning for tabId:', tabId)
