@@ -18,6 +18,7 @@
 ### 终端功能
 - 🖥️ **跨平台支持**：Windows、macOS、Linux 全平台覆盖
 - 🔐 **SSH 管理**：支持密码和私钥认证，会话分组管理
+- 📁 **SFTP 文件管理**：可视化文件浏览器，支持上传/下载/预览/编辑
 - 📥 **Xshell 导入**：一键导入 Xshell 会话配置，快速迁移
 - 🎨 **丰富主题**：内置多款精美配色方案
 - ⚡ **高性能**：基于 xterm.js，流畅的终端体验
@@ -152,6 +153,7 @@ Agent 模式需要 AI 模型支持 **Function Calling**（工具调用）能力�
 │       ├── ai.service.ts     # AI API 对话
 │       ├── pty.service.ts    # 本地终端
 │       ├── ssh.service.ts    # SSH 连接
+│       ├── sftp.service.ts   # SFTP 文件传输
 │       ├── host-profile.service.ts   # 主机档案
 │       ├── document-parser.service.ts # 文档解析
 │       ├── history.service.ts    # 历史记录
@@ -163,10 +165,17 @@ Agent 模式需要 AI 模型支持 **Function Calling**（工具调用）能力�
 │   │   ├── Terminal.vue      # 终端组件
 │   │   ├── SessionManager.vue    # 会话管理
 │   │   ├── AgentConfirmDialog.vue # Agent 确认对话框
+│   │   ├── FileExplorer/     # SFTP 文件浏览器
+│   │   │   ├── FileExplorer.vue  # 主组件
+│   │   │   ├── FileList.vue      # 文件列表
+│   │   │   ├── PathBreadcrumb.vue # 路径导航
+│   │   │   ├── FileContextMenu.vue # 右键菜单
+│   │   │   └── TransferQueue.vue  # 传输队列
 │   │   └── Settings/         # 设置组件
 │   ├── composables/          # 组合式函数
 │   │   ├── useAgentMode.ts   # Agent 模式逻辑
 │   │   ├── useAiChat.ts      # AI 对话逻辑
+│   │   ├── useSftp.ts        # SFTP 操作逻辑
 │   │   ├── useHostProfile.ts # 主机档案管理
 │   │   ├── useDocumentUpload.ts  # 文档上传
 │   │   ├── useContextStats.ts    # 上下文统计
@@ -191,6 +200,21 @@ Agent 模式需要 AI 模型支持 **Function Calling**（工具调用）能力�
 | Ctrl+F | 搜索 |
 
 ## 版本历史
+
+### v2.2.0
+- 📁 **SFTP 文件管理**：全新可视化文件浏览器
+  - 支持文件/目录的上传、下载、删除、重命名
+  - 实时传输进度显示
+  - 文本文件在线预览
+  - 路径导航和历史记录
+  - 右键菜单快捷操作
+
+### v2.1.0
+- 🔍 **终端状态检测**：智能判断命令是否执行完成
+- 💡 **Tips 提示**：新增操作提示信息
+- 🛡️ **严格模式优化**：修复自动修正命令的确认逻辑
+- 🧹 **输出清理**：使用 strip-ansi 库统一处理 ANSI 转义序列
+- ⏹️ **Agent 中止优化**：增强中止处理逻辑
 
 ### v2.0.0
 - 🚀 全新 AI Agent 模式，支持自动化任务执行
