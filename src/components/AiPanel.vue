@@ -36,7 +36,9 @@ const messagesRef = ref<HTMLDivElement | null>(null)
 const {
   uploadedDocs,
   isUploadingDocs,
+  isDraggingOver,
   selectAndUploadDocs,
+  handleDroppedFiles,
   removeUploadedDoc,
   clearUploadedDocs,
   formatFileSize,
@@ -184,6 +186,52 @@ const handleAnalyzeSelection = () => {
   analyzeSelection(agentMode)
 }
 
+// ==================== 拖放处理 ====================
+
+// 拖放进入
+const handleDragEnter = (e: DragEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
+  // 检查是否有文件
+  if (e.dataTransfer?.types.includes('Files')) {
+    isDraggingOver.value = true
+  }
+}
+
+// 拖放悬停
+const handleDragOver = (e: DragEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = 'copy'
+  }
+}
+
+// 拖放离开
+const handleDragLeave = (e: DragEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
+  // 检查是否真的离开了容器（而不是进入子元素）
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const x = e.clientX
+  const y = e.clientY
+  if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+    isDraggingOver.value = false
+  }
+}
+
+// 拖放放下
+const handleDrop = async (e: DragEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
+  isDraggingOver.value = false
+  
+  const files = e.dataTransfer?.files
+  if (files && files.length > 0) {
+    await handleDroppedFiles(files)
+  }
+}
+
 // ==================== 生命周期 ====================
 
 onMounted(() => {
@@ -193,7 +241,26 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="ai-panel">
+  <div 
+    class="ai-panel"
+    @dragenter="handleDragEnter"
+    @dragover="handleDragOver"
+    @dragleave="handleDragLeave"
+    @drop="handleDrop"
+  >
+    <!-- 拖放提示覆盖层 -->
+    <div v-if="isDraggingOver" class="drop-overlay">
+      <div class="drop-content">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <p>释放以上传文档</p>
+        <span class="drop-hint">支持 PDF、Word、文本等格式</span>
+      </div>
+    </div>
+
     <div class="ai-header">
       <h3>AI 助手</h3>
       <div class="ai-header-actions">
@@ -663,6 +730,71 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  position: relative;
+}
+
+/* 拖放覆盖层 */
+.drop-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 150, 255, 0.15);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px dashed var(--accent-primary);
+  border-radius: 8px;
+  animation: dropOverlayFadeIn 0.2s ease;
+}
+
+@keyframes dropOverlayFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.drop-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--accent-primary);
+  text-align: center;
+  padding: 24px;
+  background: var(--bg-primary);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.drop-content svg {
+  animation: dropIconBounce 0.5s ease infinite alternate;
+}
+
+@keyframes dropIconBounce {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-8px);
+  }
+}
+
+.drop-content p {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.drop-hint {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .ai-header {
