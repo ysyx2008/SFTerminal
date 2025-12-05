@@ -12,13 +12,13 @@ export function getAgentTools(): ToolDefinition[] {
       type: 'function',
       function: {
         name: 'execute_command',
-        description: '在当前终端执行 shell 命令。命令会在用户可见的终端中执行，用户可以看到完整的执行过程。',
+        description: '在当前终端执行 shell 命令。注意：不支持交互式命令（如vim/top/watch/tail -f），这些命令会被自动拒绝。',
         parameters: {
           type: 'object',
           properties: {
             command: {
               type: 'string',
-              description: '要执行的 shell 命令'
+              description: '要执行的 shell 命令（不能是交互式命令）'
             }
           },
           required: ['command']
@@ -29,7 +29,7 @@ export function getAgentTools(): ToolDefinition[] {
       type: 'function',
       function: {
         name: 'get_terminal_context',
-        description: '获取终端最近的输出内容，用于了解当前终端状态和之前命令的执行结果。',
+        description: '获取终端最近的输出内容，用于了解当前终端状态和之前命令的执行结果。如果之前的命令超时或失败，可以调用此工具查看终端当前的实际输出。',
         parameters: {
           type: 'object',
           properties: {
@@ -38,6 +38,24 @@ export function getAgentTools(): ToolDefinition[] {
               description: '要获取的行数，默认 50'
             }
           }
+        }
+      }
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'send_control_key',
+        description: '向终端发送控制键，用于中断当前运行的命令或程序。当检测到命令卡住、超时、或需要退出交互式程序时使用。',
+        parameters: {
+          type: 'object',
+          properties: {
+            key: {
+              type: 'string',
+              enum: ['ctrl+c', 'ctrl+d', 'ctrl+z', 'enter', 'q'],
+              description: 'ctrl+c: 中断当前命令; ctrl+d: 发送EOF/退出; ctrl+z: 暂停到后台; enter: 发送回车; q: 发送q键(退出less/more等)'
+            }
+          },
+          required: ['key']
         }
       }
     },

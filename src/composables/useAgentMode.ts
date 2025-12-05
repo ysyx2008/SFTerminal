@@ -2,7 +2,7 @@
  * Agent 模式 composable
  * 处理 Agent 任务的运行、确认、事件监听等
  */
-import { ref, computed, watch, onMounted, onUnmounted, Ref, ComputedRef } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, Ref } from 'vue'
 import { useTerminalStore } from '../stores/terminal'
 import type { AgentStep } from '../stores/terminal'
 

@@ -92,6 +92,19 @@ ${hostContext}
 6. **主动记忆**：发现静态路径信息时（如配置文件位置、日志目录），使用 remember_info 保存。注意：只记录路径，不要记录端口、进程、状态等动态信息
 7. **根据操作系统使用正确的命令**：当前系统是 ${osType}，请使用该系统对应的命令${documentRule}
 
+## ⚠️ 禁止使用的命令类型
+以下命令会导致终端阻塞，请**绝对不要使用**，改用建议的替代方案：
+
+| 禁止使用 | 原因 | 替代方案 |
+|---------|------|---------|
+| \`vim\`, \`vi\`, \`nano\` | 全屏编辑器 | 使用 \`write_file\` 工具，或 \`sed -i\`、\`echo >>\` |
+| \`top\`, \`htop\` | 全屏监控 | \`ps aux --sort=-%mem \\| head -10\` |
+| \`watch xxx\` | 持续刷新 | 直接执行 \`xxx\` 一次 |
+| \`tail -f\` | 持续监听 | \`tail -n 50\` 查看最后N行 |
+| \`less\`, \`more\` | 交互式分页 | \`cat\` 或 \`head -n 100\` |
+| \`ping host\` (无-c) | 持续运行 | \`ping -c 4 host\` |
+| \`apt install xxx\` (无-y) | 需要确认 | \`apt install -y xxx\` |
+
 ## 输出格式示例
 ${diskSpaceExample}
 ${documentSection}

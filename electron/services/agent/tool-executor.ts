@@ -13,7 +13,7 @@ import type {
   PendingConfirmation,
   HostProfileServiceInterface 
 } from './types'
-import { assessCommandRisk } from './risk-assessor'
+import { assessCommandRisk, detectInteractiveCommand } from './risk-assessor'
 
 // 工具执行器配置
 export interface ToolExecutorConfig {
@@ -61,6 +61,9 @@ export async function executeTool(
     case 'get_terminal_context':
       return getTerminalContext(args, terminalOutput, executor)
 
+    case 'send_control_key':
+      return sendControlKey(ptyId, args, executor)
+
     case 'read_file':
       return readFile(args, executor)
 
@@ -88,6 +91,32 @@ async function executeCommand(
   const command = args.command as string
   if (!command) {
     return { success: false, output: '', error: '命令不能为空' }
+  }
+
+  // 检测交互式命令
+  const interactiveInfo = detectInteractiveCommand(command)
+  if (interactiveInfo.isInteractive) {
+    executor.addStep({
+      type: 'tool_call',
+      content: `⚠️ 检测到交互式命令: ${command}`,
+      toolName: 'execute_command',
+      toolArgs: { command },
+      riskLevel: 'dangerous'
+    })
+    
+    const errorMsg = `无法执行: ${interactiveInfo.reason}\n建议: ${interactiveInfo.alternative}`
+    executor.addStep({
+      type: 'tool_result',
+      content: `🚫 ${errorMsg}`,
+      toolName: 'execute_command',
+      toolResult: errorMsg
+    })
+    
+    return { 
+      success: false, 
+      output: '', 
+      error: errorMsg
+    }
   }
 
   // 评估风险
@@ -146,6 +175,22 @@ async function executeCommand(
       config.commandTimeout
     )
 
+    // 检测是否超时（可能是命令卡住了）
+    const isTimeout = result.output.includes('[命令执行超时]')
+    if (isTimeout) {
+      executor.addStep({
+        type: 'tool_result',
+        content: `⏱️ 命令执行超时 (${config.commandTimeout / 1000}秒)，可能是命令需要更长时间或正在等待输入`,
+        toolName: 'execute_command',
+        toolResult: result.output
+      })
+      return {
+        success: false,
+        output: result.output,
+        error: `命令执行超时。可能原因：1) 命令需要更长时间；2) 命令正在等待用户输入；3) 命令是持续运行的程序。请检查终端状态。`
+      }
+    }
+
     executor.addStep({
       type: 'tool_result',
       content: `命令执行完成 (耗时: ${result.duration}ms)`,
@@ -188,6 +233,65 @@ function getTerminalContext(
   })
 
   return { success: true, output: output || '(终端输出为空)' }
+}
+
+/**
+ * 发送控制键到终端
+ */
+async function sendControlKey(
+  ptyId: string,
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  const key = args.key as string
+  if (!key) {
+    return { success: false, output: '', error: '必须指定要发送的控制键' }
+  }
+
+  // 控制键映射
+  const keyMap: Record<string, string> = {
+    'ctrl+c': '\x03',   // ETX - 中断
+    'ctrl+d': '\x04',   // EOT - 文件结束
+    'ctrl+z': '\x1a',   // SUB - 暂停
+    'enter': '\r',      // 回车
+    'q': 'q'            // 字母q (退出less/more)
+  }
+
+  const keySequence = keyMap[key.toLowerCase()]
+  if (!keySequence) {
+    return { success: false, output: '', error: `不支持的控制键: ${key}` }
+  }
+
+  executor.addStep({
+    type: 'tool_call',
+    content: `发送控制键: ${key}`,
+    toolName: 'send_control_key',
+    toolArgs: { key },
+    riskLevel: 'safe'
+  })
+
+  try {
+    // 直接写入 PTY
+    executor.ptyService.write(ptyId, keySequence)
+    
+    // 等待一小段时间让终端响应
+    await new Promise(resolve => setTimeout(resolve, 300))
+
+    executor.addStep({
+      type: 'tool_result',
+      content: `已发送 ${key}`,
+      toolName: 'send_control_key',
+      toolResult: '控制键已发送'
+    })
+
+    return { 
+      success: true, 
+      output: `已发送 ${key}。请使用 get_terminal_context 查看终端当前状态。`
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : '发送失败'
+    return { success: false, output: '', error: errorMsg }
+  }
 }
 
 /**
