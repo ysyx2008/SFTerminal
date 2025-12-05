@@ -8,7 +8,6 @@ import { XshellImportService } from './services/xshell-import.service'
 import { AgentService, AgentStep, PendingConfirmation, AgentContext } from './services/agent.service'
 import { HistoryService, ChatRecord, AgentRecord } from './services/history.service'
 import { HostProfileService, HostProfile } from './services/host-profile.service'
-import { getSpeechService, SpeechConfig, SpeechResult } from './services/speech.service'
 
 // 禁用 GPU 加速可能导致的问题（可选）
 // app.disableHardwareAcceleration()
@@ -648,66 +647,5 @@ ipcMain.handle('hostProfile:probeSsh', async (_event, sshId: string, hostId: str
     console.error('[SSH Probe] 探测失败:', error)
     return null
   }
-})
-
-// ==================== 语音识别相关 ====================
-
-// 获取语音服务实例
-const speechService = getSpeechService()
-
-// 设置语音服务事件转发
-speechService.on('partialResult', (result: SpeechResult) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('speech:partialResult', result)
-  }
-})
-
-speechService.on('stateChange', (state: string) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('speech:stateChange', state)
-  }
-})
-
-speechService.on('error', (error: string) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('speech:error', error)
-  }
-})
-
-// 获取语音识别配置
-ipcMain.handle('speech:getConfig', async () => {
-  return speechService.getConfig()
-})
-
-// 设置语音识别配置
-ipcMain.handle('speech:setConfig', async (_event, config: Partial<SpeechConfig>) => {
-  speechService.setConfig(config)
-})
-
-// 检查本地模型是否可用
-ipcMain.handle('speech:checkLocalModel', async () => {
-  return speechService.checkLocalModelAvailable()
-})
-
-// 获取当前状态
-ipcMain.handle('speech:getState', async () => {
-  return speechService.getState()
-})
-
-// 开始录音
-ipcMain.handle('speech:startRecording', async () => {
-  return speechService.startRecording()
-})
-
-// 停止录音
-ipcMain.handle('speech:stopRecording', async () => {
-  return speechService.stopRecording()
-})
-
-// 接收来自渲染进程的音频数据
-ipcMain.on('speech:audioData', (_event, audioData: number[]) => {
-  // 将数组转换为 Float32Array
-  const float32Array = new Float32Array(audioData)
-  speechService.receiveAudioData(float32Array)
 })
 

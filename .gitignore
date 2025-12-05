@@ -33,10 +33,3 @@ Thumbs.db
 # TypeScript
 *.tsbuildinfo
 
-# Speech models (too large for Git, download separately)
-resources/models/speech/*.onnx
-resources/models/speech/*.model
-resources/models/speech/*.vocab
-resources/models/speech/*.txt
-resources/models/speech/test_wavs/
-

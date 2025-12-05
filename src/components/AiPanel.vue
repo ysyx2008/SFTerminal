@@ -23,21 +23,6 @@ const strictMode = ref(true)       // 严格模式（默认开启）
 const commandTimeout = ref(10)     // 命令超时时间（秒），默认 10 秒
 const collapsedTaskIds = ref<Set<string>>(new Set())  // 已折叠的任务 ID
 
-// 语音输入状态
-const speechState = ref<'idle' | 'recording' | 'processing'>('idle')
-const speechPartialText = ref('')  // 实时识别的部分文本
-const speechError = ref('')        // 语音识别错误
-
-// 语音事件监听清理函数
-let cleanupSpeechPartialListener: (() => void) | null = null
-let cleanupSpeechStateListener: (() => void) | null = null
-let cleanupSpeechErrorListener: (() => void) | null = null
-
-// Web Audio API 录音相关
-let audioContext: AudioContext | null = null
-let mediaStream: MediaStream | null = null
-let audioWorkletNode: AudioWorkletNode | ScriptProcessorNode | null = null
-
 // 切换任务步骤折叠状态
 const toggleStepsCollapse = (taskId: string) => {
   if (collapsedTaskIds.value.has(taskId)) {
@@ -1415,159 +1400,15 @@ const handleSend = () => {
   }
 }
 
-// ==================== 语音输入功能 ====================
-
-// 设置语音事件监听
-const setupSpeechListeners = () => {
-  // 监听部分识别结果
-  cleanupSpeechPartialListener = window.electronAPI.speech.onPartialResult((result) => {
-    speechPartialText.value = result.text
-    // 实时更新输入框
-    if (result.text) {
-      inputText.value = result.text
-    }
-  })
-
-  // 监听状态变化
-  cleanupSpeechStateListener = window.electronAPI.speech.onStateChange((state) => {
-    speechState.value = state
-  })
-
-  // 监听错误
-  cleanupSpeechErrorListener = window.electronAPI.speech.onError((error) => {
-    speechError.value = error
-    console.error('[Speech] Error:', error)
-  })
-}
-
-// 清理语音事件监听
-const cleanupSpeechListeners = () => {
-  // 停止录音
-  stopWebAudioRecording()
-  
-  if (cleanupSpeechPartialListener) {
-    cleanupSpeechPartialListener()
-    cleanupSpeechPartialListener = null
-  }
-  if (cleanupSpeechStateListener) {
-    cleanupSpeechStateListener()
-    cleanupSpeechStateListener = null
-  }
-  if (cleanupSpeechErrorListener) {
-    cleanupSpeechErrorListener()
-    cleanupSpeechErrorListener = null
-  }
-}
-
-// 开始 Web Audio 录音
-const startWebAudioRecording = async (): Promise<boolean> => {
-  try {
-    // 获取麦克风权限
-    mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        sampleRate: 16000,
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true
-      }
-    })
-
-    // 创建 AudioContext
-    audioContext = new AudioContext({ sampleRate: 16000 })
-    const source = audioContext.createMediaStreamSource(mediaStream)
-
-    // 使用 ScriptProcessorNode（兼容性更好）
-    const bufferSize = 4096
-    const processor = audioContext.createScriptProcessor(bufferSize, 1, 1)
-    
-    processor.onaudioprocess = (e) => {
-      const inputData = e.inputBuffer.getChannelData(0)
-      // 发送音频数据到主进程
-      window.electronAPI.speech.sendAudioData(Array.from(inputData))
-    }
-
-    source.connect(processor)
-    processor.connect(audioContext.destination)
-    audioWorkletNode = processor
-
-    console.log('[Speech] Web Audio recording started')
-    return true
-  } catch (e) {
-    console.error('[Speech] Failed to start Web Audio recording:', e)
-    return false
-  }
-}
-
-// 停止 Web Audio 录音
-const stopWebAudioRecording = () => {
-  if (audioWorkletNode) {
-    audioWorkletNode.disconnect()
-    audioWorkletNode = null
-  }
-  if (audioContext) {
-    audioContext.close()
-    audioContext = null
-  }
-  if (mediaStream) {
-    mediaStream.getTracks().forEach(track => track.stop())
-    mediaStream = null
-  }
-  console.log('[Speech] Web Audio recording stopped')
-}
-
-// 开始/停止语音输入
-const toggleSpeechInput = async () => {
-  if (speechState.value === 'idle') {
-    // 开始录音
-    speechError.value = ''
-    speechPartialText.value = ''
-    
-    // 先通知主进程准备接收音频
-    const success = await window.electronAPI.speech.startRecording()
-    if (!success) {
-      speechError.value = '无法启动语音识别，请检查配置'
-      return
-    }
-    
-    // 启动 Web Audio 录音
-    const audioSuccess = await startWebAudioRecording()
-    if (!audioSuccess) {
-      speechError.value = '无法访问麦克风，请检查权限'
-      await window.electronAPI.speech.stopRecording()
-      return
-    }
-    
-    speechState.value = 'recording'
-  } else if (speechState.value === 'recording') {
-    // 停止 Web Audio 录音
-    stopWebAudioRecording()
-    
-    // 停止主进程的录音并获取结果
-    speechState.value = 'processing'
-    const result = await window.electronAPI.speech.stopRecording()
-    if (result && result.text) {
-      inputText.value = result.text
-    }
-    speechPartialText.value = ''
-    speechState.value = 'idle'
-  }
-}
-
-// 是否正在录音
-const isRecording = computed(() => speechState.value === 'recording')
-const isProcessing = computed(() => speechState.value === 'processing')
-
 // 生命周期
 onMounted(() => {
   setupAgentListeners()
-  setupSpeechListeners()
   // 加载主机档案
   loadHostProfile()
 })
 
 onUnmounted(() => {
   cleanupAgentListeners()
-  cleanupSpeechListeners()
 })
 
 // 监听终端切换，重新加载主机档案
@@ -1947,37 +1788,12 @@ watch(() => terminalStore.activeTabId, () => {
 
       <!-- 输入区域 -->
       <div class="ai-input">
-        <div class="input-wrapper">
-          <textarea
-            v-model="inputText"
-            :placeholder="isRecording ? '正在录音，请说话...' : (agentMode ? '描述你想让 Agent 完成的任务...' : '输入问题或描述你想要的命令...')"
-            rows="2"
-            :class="{ 'recording': isRecording }"
-            @keydown.enter.exact.prevent="handleSend"
-          ></textarea>
-          <!-- 麦克风按钮 -->
-          <button
-            class="mic-btn"
-            :class="{ 'recording': isRecording, 'processing': isProcessing }"
-            :disabled="isProcessing"
-            @click="toggleSpeechInput"
-            :title="isRecording ? '点击停止录音' : (isProcessing ? '处理中...' : '点击开始语音输入')"
-          >
-            <svg v-if="!isRecording && !isProcessing" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              <line x1="12" y1="19" x2="12" y2="23"/>
-              <line x1="8" y1="23" x2="16" y2="23"/>
-            </svg>
-            <svg v-else-if="isRecording" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="6" y="6" width="12" height="12" rx="2"/>
-            </svg>
-            <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
-              <circle cx="12" cy="12" r="10"/>
-              <path d="M12 6v6l4 2"/>
-            </svg>
-          </button>
-        </div>
+        <textarea
+          v-model="inputText"
+          :placeholder="agentMode ? '描述你想让 Agent 完成的任务...' : '输入问题或描述你想要的命令...'"
+          rows="2"
+          @keydown.enter.exact.prevent="handleSend"
+        ></textarea>
         <!-- 停止按钮 (普通对话模式) -->
         <button
           v-if="isLoading && !agentMode"
@@ -2773,16 +2589,9 @@ watch(() => terminalStore.activeTabId, () => {
   border-top: 1px solid var(--border-color);
 }
 
-.input-wrapper {
-  flex: 1;
-  position: relative;
-  display: flex;
-  align-items: stretch;
-}
-
 .ai-input textarea {
   flex: 1;
-  padding: 10px 40px 10px 12px;
+  padding: 10px 12px;
   font-size: 13px;
   font-family: inherit;
   color: var(--text-primary);
@@ -2791,83 +2600,10 @@ watch(() => terminalStore.activeTabId, () => {
   border-radius: 8px;
   resize: none;
   outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .ai-input textarea:focus {
   border-color: var(--accent-primary);
-}
-
-.ai-input textarea.recording {
-  border-color: #ef4444;
-  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
-  animation: recording-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes recording-pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
-  }
-  50% {
-    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.3);
-  }
-}
-
-/* 麦克风按钮 */
-.mic-btn {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  color: var(--text-muted);
-  transition: all 0.2s ease;
-}
-
-.mic-btn:hover:not(:disabled) {
-  background: var(--bg-surface);
-  color: var(--accent-primary);
-}
-
-.mic-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.mic-btn.recording {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
-  animation: mic-pulse 1s ease-in-out infinite;
-}
-
-@keyframes mic-pulse {
-  0%, 100% {
-    transform: translateY(-50%) scale(1);
-  }
-  50% {
-    transform: translateY(-50%) scale(1.1);
-  }
-}
-
-.mic-btn.processing {
-  color: var(--accent-primary);
-}
-
-.mic-btn .spin {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
 }
 
 .send-btn {

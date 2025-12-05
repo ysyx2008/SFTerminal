@@ -31,13 +31,6 @@ export interface TerminalSettings {
   scrollback: number
 }
 
-export interface SpeechSettings {
-  mode: 'local' | 'openai-whisper' | 'funasr'
-  whisperApiUrl?: string
-  whisperApiKey?: string
-  funasrWsUrl?: string
-}
-
 interface StoreSchema {
   aiProfiles: AiProfile[]
   activeAiProfile: string
@@ -48,7 +41,6 @@ interface StoreSchema {
     enabled: boolean
     url: string
   }
-  speechSettings: SpeechSettings
 }
 
 const defaultConfig: StoreSchema = {
@@ -66,9 +58,6 @@ const defaultConfig: StoreSchema = {
   proxySettings: {
     enabled: false,
     url: ''
-  },
-  speechSettings: {
-    mode: 'local'
   }
 }
 
@@ -269,22 +258,6 @@ export class ConfigService {
    */
   setProxySettings(settings: { enabled: boolean; url: string }): void {
     this.store.set('proxySettings', settings)
-  }
-
-  // ==================== 语音设置 ====================
-
-  /**
-   * 获取语音设置
-   */
-  getSpeechSettings(): SpeechSettings {
-    return this.store.get('speechSettings') || defaultConfig.speechSettings
-  }
-
-  /**
-   * 设置语音设置
-   */
-  setSpeechSettings(settings: SpeechSettings): void {
-    this.store.set('speechSettings', settings)
   }
 }
 

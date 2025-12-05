@@ -14,23 +14,8 @@ files:
   - node_modules/@homebridge/node-pty-prebuilt-multiarch/**/*
   - node_modules/ssh2/**/*
   - node_modules/electron-store/**/*
-  - node_modules/sherpa-onnx-node/**/*
-  - node_modules/sherpa-onnx-win-x64/**/*
-  - node_modules/ws/**/*
-  - node_modules/bufferutil/**/*
-  - node_modules/utf-8-validate/**/*
 asarUnpack:
   - node_modules/@homebridge/node-pty-prebuilt-multiarch/**/*
-  - node_modules/sherpa-onnx-node/**/*
-  - node_modules/sherpa-onnx-win-x64/**/*
-  - node_modules/bufferutil/**/*
-  - node_modules/utf-8-validate/**/*
-# 语音识别模型
-extraResources:
-  - from: "resources/models/speech"
-    to: "models/speech"
-    filter:
-      - "**/*"
 win:
   icon: resources/icon.ico
   target:

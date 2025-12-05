@@ -14,16 +14,7 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              external: [
-                'node-pty', 
-                'ssh2', 
-                'electron-store',
-                'sherpa-onnx-node',
-                'sherpa-onnx-win-x64',
-                'ws',
-                'bufferutil',
-                'utf-8-validate'
-              ]
+              external: ['node-pty', 'ssh2', 'electron-store']
             }
           }
         }
