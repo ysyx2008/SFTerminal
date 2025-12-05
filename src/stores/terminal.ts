@@ -296,20 +296,10 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
-   * 去除 ANSI 转义序列和控制字符
-   * 使用 strip-ansi 库 + 额外处理残留序列
+   * 去除 ANSI 转义序列
    */
   function stripAnsi(str: string): string {
     return stripAnsiLib(str)
-      // 移除残留的 CSI 序列（ESC 字符可能已被移除的情况）
-      // 匹配 [数字;数字...字母] 格式，如 [1m, [0m, [27m, [?2004h, [K 等
-      .replace(/\[[\d;?]*[a-zA-Z]/g, '')
-      // 移除 zsh 反显的 % 符号 (通常出现在命令结束后)
-      .replace(/^%\s*$/gm, '')
-      // 控制字符（保留换行、回车和制表符）
-      .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
-      // 清理多余的空行
-      .replace(/\n{3,}/g, '\n\n')
   }
 
   /**
