@@ -52,7 +52,7 @@ export function useDocumentUpload(currentTabId: Ref<string | null> | ComputedRef
       // 解析文档
       const parsedDocs = await documentAPI.parseMultiple(files)
       
-      // 追加模式：新上传的文档追加到列表末尾
+      // 追加模式：新上传的文档追加到现有列表
       terminalStore.addUploadedDocs(tabId, parsedDocs)
       
       // 显示解析结果摘要
@@ -104,7 +104,7 @@ export function useDocumentUpload(currentTabId: Ref<string | null> | ComputedRef
       const documentAPI = (window.electronAPI as { document: typeof window.electronAPI.document }).document
       const parsedDocs = await documentAPI.parseMultiple(fileInfos)
       
-      // 追加模式：新上传的文档追加到列表末尾
+      // 追加模式：新上传的文档追加到现有列表
       terminalStore.addUploadedDocs(tabId, parsedDocs)
       
       // 显示解析结果摘要

@@ -411,20 +411,15 @@ export class DocumentParserService {
 
   /**
    * 将解析结果格式化为 AI 上下文
-   * 文档按上传顺序排列，最后上传的文档排在最后
+   * 这一批文档是用户本次上传的，代表最新的参考资料
    */
   formatAsContext(docs: ParsedDocument[]): string {
     if (docs.length === 0) return ''
 
     const parts: string[] = []
     
-    // 多文档时添加重要提示
-    if (docs.length > 1) {
-      parts.push('=== 用户上传的参考文档 ===\n')
-      parts.push('【重要提示】用户上传了多个文档。如果文档内容存在冲突或更新关系，请**优先参考最后上传的文档**（即文档编号最大的），因为它代表用户最新提供的信息。\n\n')
-    } else {
-      parts.push('=== 用户上传的参考文档（内容已包含在下方，请直接阅读，无需使用工具读取）===\n')
-    }
+    parts.push('=== 用户上传的参考文档 ===\n')
+    parts.push('【重要说明】以下是用户**本次上传**的参考文档，代表用户当前需要你参考的最新资料。请以这些文档内容为准进行回答，无需使用工具读取这些文档。\n\n')
     
     for (let i = 0; i < docs.length; i++) {
       const doc = docs[i]
