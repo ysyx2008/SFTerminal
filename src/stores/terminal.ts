@@ -546,6 +546,14 @@ export const useTerminalStore = defineStore('terminal', () => {
   // ==================== Agent 状态管理 ====================
 
   /**
+   * 根据 agentId 查找对应的终端 ID
+   */
+  function findTabIdByAgentId(agentId: string): string | undefined {
+    const tab = tabs.value.find(t => t.agentState?.agentId === agentId)
+    return tab?.id
+  }
+
+  /**
    * 获取当前终端的 Agent 状态
    */
   function getAgentState(tabId: string): AgentState | undefined {
@@ -557,8 +565,12 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 设置 Agent 运行状态
    */
   function setAgentRunning(tabId: string, isRunning: boolean, agentId?: string, userTask?: string): void {
+    console.log('[Store] setAgentRunning called:', { tabId, isRunning, agentId })
     const tabIndex = tabs.value.findIndex(t => t.id === tabId)
-    if (tabIndex === -1) return
+    if (tabIndex === -1) {
+      console.warn('[Store] setAgentRunning: tab not found for tabId:', tabId)
+      return
+    }
 
     const tab = tabs.value[tabIndex]
 
@@ -581,6 +593,33 @@ export const useTerminalStore = defineStore('terminal', () => {
 
     // 强制触发数组更新
     tabs.value = [...tabs.value]
+    console.log('[Store] setAgentRunning completed, new isRunning:', tab.agentState.isRunning)
+  }
+
+  /**
+   * 只设置 Agent ID，不改变运行状态
+   * 用于在接收步骤事件时关联 agentId 和 tabId
+   */
+  function setAgentId(tabId: string, agentId: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab) return
+
+    if (!tab.agentState) {
+      tab.agentState = {
+        isRunning: false,
+        steps: [],
+        history: []
+      }
+    }
+
+    // 只更新 agentId，不改变其他状态
+    if (tab.agentState.agentId !== agentId) {
+      tab.agentState = {
+        ...tab.agentState,
+        agentId
+      }
+      tabs.value = [...tabs.value]
+    }
   }
 
   /**
@@ -711,8 +750,10 @@ export const useTerminalStore = defineStore('terminal', () => {
     focusTerminal,
     clearPendingFocus,
     // Agent 状态管理
+    findTabIdByAgentId,
     getAgentState,
     setAgentRunning,
+    setAgentId,
     addAgentStep,
     setAgentPendingConfirm,
     clearAgentState,

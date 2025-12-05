@@ -841,16 +841,36 @@ export class AgentService {
       run.isRunning = false
       const finalMessage = lastResponse?.content || '任务完成'
 
+      console.log('[Agent] run completed normally, calling onCompleteCallback')
       if (this.onCompleteCallback) {
         this.onCompleteCallback(agentId, finalMessage)
       }
 
+      console.log('[Agent] returning finalMessage')
       return finalMessage
 
     } catch (error) {
       run.isRunning = false
       const errorMsg = error instanceof Error ? error.message : '未知错误'
+      console.log('[Agent] caught error:', errorMsg)
       
+      // 如果是 aborted 错误，且已经有有效的响应内容，视为正常完成
+      const isAbortedError = errorMsg.toLowerCase().includes('aborted') || errorMsg.includes('中止')
+      const hasValidResponse = lastResponse && lastResponse.content && lastResponse.content.length > 10
+      
+      if (isAbortedError && hasValidResponse) {
+        // 已经有有效响应，视为正常完成
+        console.log('[Agent] aborted error with valid response, treating as success')
+        const finalMessage = lastResponse!.content || '任务完成'
+        
+        if (this.onCompleteCallback) {
+          this.onCompleteCallback(agentId, finalMessage)
+        }
+        
+        return finalMessage
+      }
+      
+      console.log('[Agent] error is not recoverable, adding error step')
       this.addStep(agentId, {
         type: 'error',
         content: `执行出错: ${errorMsg}`

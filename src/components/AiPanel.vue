@@ -1308,9 +1308,12 @@ const runAgent = async () => {
   // 设置 Agent 状态：正在运行 + 用户任务
   terminalStore.setAgentRunning(tabId, true, undefined, message)
 
+  let result: { success: boolean; result?: string; error?: string } | null = null
+  let finalContent = ''
+  
   try {
     // 调用 Agent API，传递配置
-    const result = await window.electronAPI.agent.run(
+    result = await window.electronAPI.agent.run(
       context.ptyId,
       message,
       {
@@ -1322,11 +1325,7 @@ const runAgent = async () => {
       { strictMode: strictMode.value, commandTimeout: commandTimeout.value * 1000 }  // 传递配置（超时时间转为毫秒）
     )
 
-    // 标记 Agent 已完成
-    terminalStore.setAgentRunning(tabId, false)
-
     // 添加最终结果到步骤中
-    let finalContent = ''
     if (!result.success) {
       finalContent = `❌ Agent 执行失败: ${result.error}`
     } else if (result.result) {
@@ -1352,18 +1351,22 @@ const runAgent = async () => {
     })
   } catch (error) {
     console.error('Agent 运行失败:', error)
-    terminalStore.setAgentRunning(tabId, false)
-    const errorContent = `❌ Agent 运行出错: ${error instanceof Error ? error.message : '未知错误'}`
+    finalContent = `❌ Agent 运行出错: ${error instanceof Error ? error.message : '未知错误'}`
     terminalStore.addAgentStep(tabId, {
       id: `final_result_${Date.now()}`,
       type: 'final_result',
-      content: errorContent,
+      content: finalContent,
       timestamp: Date.now()
     })
-    terminalStore.setAgentFinalResult(tabId, errorContent)
+    terminalStore.setAgentFinalResult(tabId, finalContent)
     
     // 保存失败的 Agent 记录
-    saveAgentRecord(tabId, message, startTime, 'failed', errorContent)
+    saveAgentRecord(tabId, message, startTime, 'failed', finalContent)
+  } finally {
+    // 无论成功还是失败，都确保重置 Agent 运行状态
+    console.log('[Agent] finally block executing, resetting isRunning for tabId:', tabId)
+    terminalStore.setAgentRunning(tabId, false)
+    console.log('[Agent] setAgentRunning called, current agentState:', terminalStore.getAgentState(tabId))
   }
 
   await scrollToBottom()
@@ -1431,33 +1434,40 @@ const getRiskClass = (riskLevel?: string): string => {
 const setupAgentListeners = () => {
   // 监听步骤更新
   cleanupStepListener = window.electronAPI.agent.onStep((data) => {
-    if (currentTabId.value) {
-      terminalStore.addAgentStep(currentTabId.value, data.step)
-      terminalStore.setAgentRunning(currentTabId.value, true, data.agentId)
+    // 优先使用 agentId 查找对应的终端，如果找不到则使用当前终端
+    const tabId = terminalStore.findTabIdByAgentId(data.agentId) || currentTabId.value
+    if (tabId) {
+      terminalStore.addAgentStep(tabId, data.step)
+      // 只设置 agentId 用于关联，不改变 isRunning 状态
+      // 因为 IPC 事件可能在 runAgent 的 finally 块之后到达
+      terminalStore.setAgentId(tabId, data.agentId)
       scrollToBottom()
     }
   })
 
   // 监听需要确认
   cleanupConfirmListener = window.electronAPI.agent.onNeedConfirm((data) => {
-    if (currentTabId.value) {
-      terminalStore.setAgentPendingConfirm(currentTabId.value, data)
+    const tabId = terminalStore.findTabIdByAgentId(data.agentId) || currentTabId.value
+    if (tabId) {
+      terminalStore.setAgentPendingConfirm(tabId, data)
       scrollToBottom()
     }
   })
 
   // 监听完成
-  cleanupCompleteListener = window.electronAPI.agent.onComplete((_data) => {
-    if (currentTabId.value) {
-      terminalStore.setAgentRunning(currentTabId.value, false)
+  cleanupCompleteListener = window.electronAPI.agent.onComplete((data) => {
+    const tabId = terminalStore.findTabIdByAgentId(data.agentId) || currentTabId.value
+    if (tabId) {
+      terminalStore.setAgentRunning(tabId, false)
     }
   })
 
   // 监听错误
   cleanupErrorListener = window.electronAPI.agent.onError((data) => {
-    if (currentTabId.value) {
-      terminalStore.setAgentRunning(currentTabId.value, false)
-      terminalStore.addAgentStep(currentTabId.value, {
+    const tabId = terminalStore.findTabIdByAgentId(data.agentId) || currentTabId.value
+    if (tabId) {
+      terminalStore.setAgentRunning(tabId, false)
+      terminalStore.addAgentStep(tabId, {
         id: `error_${Date.now()}`,
         type: 'error',
         content: data.error,
