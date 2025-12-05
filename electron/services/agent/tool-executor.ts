@@ -122,31 +122,11 @@ async function executeCommand(
 
   // 策略2: 自动修正命令（如添加 -y、-c 参数）
   if (handling.strategy === 'auto_fix' && handling.fixedCommand) {
-    executor.addStep({
-      type: 'tool_call',
-      content: `🔧 自动修正: ${command} → ${handling.fixedCommand}`,
-      toolName: 'execute_command',
-      toolArgs: { original: command, fixed: handling.fixedCommand },
-      riskLevel: 'safe'
-    })
     command = handling.fixedCommand
   }
 
   // 评估风险
   const riskLevel = assessCommandRisk(command)
-
-  // 添加工具调用步骤（如果不是自动修正的情况）
-  if (handling.strategy !== 'auto_fix') {
-    executor.addStep({
-      type: 'tool_call',
-      content: handling.strategy === 'timed_execution' 
-        ? `⏱️ ${command} (${handling.hint})` 
-        : `执行命令: ${command}`,
-      toolName: 'execute_command',
-      toolArgs: { command },
-      riskLevel
-    })
-  }
 
   // 检查是否被安全策略阻止
   if (riskLevel === 'blocked') {
@@ -166,6 +146,17 @@ async function executeCommand(
       (riskLevel === 'safe' && !config.autoExecuteSafe)
     )
   )
+
+  // 添加工具调用步骤（统一显示最终要执行的命令）
+  executor.addStep({
+    type: 'tool_call',
+    content: handling.strategy === 'timed_execution'
+      ? `⏱️ ${command} (${handling.hint})`
+      : `执行命令: ${command}`,
+    toolName: 'execute_command',
+    toolArgs: { command },
+    riskLevel
+  })
 
   if (needConfirm) {
     const approved = await executor.waitForConfirmation(
