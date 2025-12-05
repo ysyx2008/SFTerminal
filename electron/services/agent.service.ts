@@ -923,8 +923,11 @@ export class AgentService {
 
     // 文档上下文
     let documentSection = ''
+    let documentRule = ''
     if (context.documentContext) {
       documentSection = `\n\n${context.documentContext}`
+      documentRule = `
+8. **关于用户上传的文档**：如果用户上传了文档，文档内容已经包含在本对话的上下文末尾（标记为"用户上传的参考文档"），请直接阅读和引用这些内容，**不要使用 read_file 工具去读取上传的文档**`
     }
 
     return `你是旗鱼终端的 AI Agent 助手。你可以帮助用户在终端中执行任务。
@@ -934,7 +937,7 @@ ${hostContext}
 ## 可用工具
 - execute_command: 在终端执行命令
 - get_terminal_context: 获取终端最近的输出
-- read_file: 读取文件内容
+- read_file: 读取服务器上的文件内容（注意：不是用于读取用户上传的文档）
 - write_file: 写入文件
 - remember_info: 记住重要信息供以后参考
 
@@ -945,7 +948,7 @@ ${hostContext}
 4. 分步执行复杂任务，每步执行后检查结果
 5. 遇到错误时分析原因并提供解决方案
 6. **主动记忆**：发现静态路径信息时（如配置文件位置、日志目录），使用 remember_info 保存。注意：只记录路径，不要记录端口、进程、状态等动态信息
-7. **根据操作系统使用正确的命令**：当前系统是 ${osType}，请使用该系统对应的命令
+7. **根据操作系统使用正确的命令**：当前系统是 ${osType}，请使用该系统对应的命令${documentRule}
 
 ## 输出格式示例
 ${diskSpaceExample}

@@ -393,7 +393,7 @@ export class DocumentParserService {
 
     const parts: string[] = []
     
-    parts.push('=== 用户上传的参考文档 ===\n')
+    parts.push('=== 用户上传的参考文档（内容已包含在下方，请直接阅读，无需使用工具读取）===\n')
     
     for (let i = 0; i < docs.length; i++) {
       const doc = docs[i]
