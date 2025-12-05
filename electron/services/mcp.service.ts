@@ -86,6 +86,8 @@ interface McpConnection {
 
 export class McpService extends EventEmitter {
   private connections: Map<string, McpConnection> = new Map()
+  // 存储工具名称映射：生成的名称 -> { serverId, toolName }
+  private toolNameMap: Map<string, { serverId: string; toolName: string }> = new Map()
 
   constructor() {
     super()
@@ -111,33 +113,18 @@ export class McpService extends EventEmitter {
           throw new Error('stdio 模式需要指定 command')
         }
 
-        // 创建子进程
-        childProcess = spawn(config.command, config.args || [], {
-          env: { ...process.env, ...config.env },
-          cwd: config.cwd,
-          stdio: ['pipe', 'pipe', 'pipe']
-        })
+        // 合并环境变量
+        const mergedEnv = { ...process.env, ...config.env }
+        
+        console.log(`[MCP] Starting ${config.name} with command: ${config.command}`)
+        console.log(`[MCP] Args: ${JSON.stringify(config.args)}`)
+        console.log(`[MCP] Custom env keys: ${Object.keys(config.env || {}).join(', ') || 'none'}`)
 
-        // 监听子进程错误
-        childProcess.on('error', (err) => {
-          console.error(`[MCP] Process error for ${config.name}:`, err)
-          this.handleDisconnect(config.id, err.message)
-        })
-
-        childProcess.on('exit', (code) => {
-          console.log(`[MCP] Process exited for ${config.name} with code ${code}`)
-          this.handleDisconnect(config.id, `进程退出，代码: ${code}`)
-        })
-
-        // 捕获 stderr 用于调试
-        childProcess.stderr?.on('data', (data) => {
-          console.error(`[MCP] ${config.name} stderr:`, data.toString())
-        })
-
+        // StdioClientTransport 会自动创建和管理子进程
         transport = new StdioClientTransport({
           command: config.command,
           args: config.args,
-          env: { ...process.env, ...config.env },
+          env: mergedEnv,
           cwd: config.cwd
         })
       } else if (config.transport === 'sse') {
@@ -343,29 +330,70 @@ export class McpService extends EventEmitter {
   }
 
   /**
+   * 生成符合长度限制的工具名称（OpenAI 限制 64 字符）
+   */
+  private generateToolName(serverId: string, toolName: string): string {
+    const MAX_LENGTH = 64
+    const prefix = 'mcp_'
+    const separator = '_'
+    
+    // 完整名称
+    const fullName = `${prefix}${serverId}${separator}${toolName}`
+    
+    if (fullName.length <= MAX_LENGTH) {
+      return fullName
+    }
+    
+    // 需要截断：保留前缀和 serverId 的前几个字符，尽量保留完整的 toolName
+    // 格式: mcp_[serverId截断]_[toolName截断]
+    const availableLength = MAX_LENGTH - prefix.length - separator.length
+    
+    // serverId 最多用 16 个字符，剩余给 toolName
+    const maxServerIdLength = Math.min(16, serverId.length)
+    const truncatedServerId = serverId.substring(0, maxServerIdLength)
+    const maxToolNameLength = availableLength - truncatedServerId.length
+    const truncatedToolName = toolName.substring(0, maxToolNameLength)
+    
+    return `${prefix}${truncatedServerId}${separator}${truncatedToolName}`
+  }
+
+  /**
    * 将 MCP 工具转换为 AI 工具定义格式
    */
   getToolDefinitions(): ToolDefinition[] {
-    return this.getAllTools().map(tool => ({
-      type: 'function' as const,
-      function: {
-        name: `mcp_${tool.serverId}_${tool.name}`,
-        description: `[MCP: ${tool.serverName}] ${tool.description}`,
-        parameters: {
-          type: 'object' as const,
-          properties: Object.fromEntries(
-            Object.entries(tool.inputSchema.properties || {}).map(([key, value]) => [
-              key,
-              {
-                type: (value as { type?: string }).type || 'string',
-                description: (value as { description?: string }).description || ''
-              }
-            ])
-          ),
-          required: tool.inputSchema.required
+    // 清空并重建映射表
+    this.toolNameMap.clear()
+    
+    return this.getAllTools().map(tool => {
+      const generatedName = this.generateToolName(tool.serverId, tool.name)
+      
+      // 保存映射关系，以便后续解析
+      this.toolNameMap.set(generatedName, {
+        serverId: tool.serverId,
+        toolName: tool.name
+      })
+      
+      return {
+        type: 'function' as const,
+        function: {
+          name: generatedName,
+          description: `[MCP: ${tool.serverName}] ${tool.description}`,
+          parameters: {
+            type: 'object' as const,
+            properties: Object.fromEntries(
+              Object.entries(tool.inputSchema.properties || {}).map(([key, value]) => [
+                key,
+                {
+                  type: (value as { type?: string }).type || 'string',
+                  description: (value as { description?: string }).description || ''
+                }
+              ])
+            ),
+            required: tool.inputSchema.required
+          }
         }
       }
-    }))
+    })
   }
 
   /**
@@ -546,13 +574,20 @@ export class McpService extends EventEmitter {
 
   /**
    * 解析 MCP 工具调用名称
-   * 格式: mcp_{serverId}_{toolName}
+   * 优先从映射表查找，支持截断后的名称
    */
   parseToolCallName(fullName: string): { serverId: string; toolName: string } | null {
     if (!fullName.startsWith('mcp_')) {
       return null
     }
 
+    // 优先从映射表查找（支持截断后的名称）
+    const mapped = this.toolNameMap.get(fullName)
+    if (mapped) {
+      return mapped
+    }
+
+    // 回退到原有的解析逻辑（兼容未截断的情况）
     const parts = fullName.substring(4).split('_')
     if (parts.length < 2) {
       return null

@@ -94,7 +94,7 @@ const templates = [
     transport: 'stdio' as const,
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-github'],
-    env: { GITHUB_PERSONAL_ACCESS_TOKEN: '' }
+    env: { GITHUB_PERSONAL_ACCESS_TOKEN: '<在此填入你的GitHub Token>' }
   },
   {
     name: 'PostgreSQL',
@@ -550,7 +550,8 @@ onUnmounted(() => {
           </div>
           <div class="form-group">
             <label class="form-label">环境变量 (KEY=VALUE 格式，每行一个)</label>
-            <textarea v-model="envText" class="input textarea" placeholder="API_KEY=xxx&#10;DEBUG=true" rows="2"></textarea>
+            <textarea v-model="envText" class="input textarea" placeholder="GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxxx&#10;API_KEY=sk-xxxx" rows="2"></textarea>
+            <span class="form-hint">GitHub Token 需要有 repo 权限；其他 API Key 请参考对应服务文档</span>
           </div>
           <div class="form-group">
             <label class="form-label">工作目录</label>
