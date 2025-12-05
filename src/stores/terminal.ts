@@ -59,6 +59,18 @@ export interface AgentState {
   history: AgentHistoryItem[]  // 历史任务记录
 }
 
+// 上传的文档类型
+export interface ParsedDocument {
+  filename: string
+  fileType: string
+  content: string
+  fileSize: number
+  parseTime: number
+  pageCount?: number
+  metadata?: Record<string, string>
+  error?: string
+}
+
 export interface TerminalTab {
   id: string
   title: string
@@ -87,6 +99,8 @@ export interface TerminalTab {
   aiLoading?: boolean
   // Agent 状态（每个终端独立）
   agentState?: AgentState
+  // 上传的文档（每个终端独立）
+  uploadedDocs?: ParsedDocument[]
 }
 
 export interface SplitPane {
@@ -719,6 +733,59 @@ export const useTerminalStore = defineStore('terminal', () => {
     }))
   }
 
+  // ==================== 文档管理 ====================
+
+  /**
+   * 获取终端的上传文档
+   */
+  function getUploadedDocs(tabId: string): ParsedDocument[] {
+    const tab = tabs.value.find(t => t.id === tabId)
+    return tab?.uploadedDocs || []
+  }
+
+  /**
+   * 设置终端的上传文档（替换模式，不是追加）
+   */
+  function setUploadedDocs(tabId: string, docs: ParsedDocument[]): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (tab) {
+      tab.uploadedDocs = docs
+    }
+  }
+
+  /**
+   * 添加文档到终端（追加到现有列表）
+   */
+  function addUploadedDocs(tabId: string, docs: ParsedDocument[]): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (tab) {
+      if (!tab.uploadedDocs) {
+        tab.uploadedDocs = []
+      }
+      tab.uploadedDocs = [...tab.uploadedDocs, ...docs]
+    }
+  }
+
+  /**
+   * 移除终端的指定文档
+   */
+  function removeUploadedDoc(tabId: string, index: number): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (tab?.uploadedDocs) {
+      tab.uploadedDocs.splice(index, 1)
+    }
+  }
+
+  /**
+   * 清空终端的所有文档
+   */
+  function clearUploadedDocs(tabId: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (tab) {
+      tab.uploadedDocs = []
+    }
+  }
+
   return {
     tabs,
     activeTabId,
@@ -758,7 +825,13 @@ export const useTerminalStore = defineStore('terminal', () => {
     setAgentPendingConfirm,
     clearAgentState,
     setAgentFinalResult,
-    getAgentContext
+    getAgentContext,
+    // 文档管理
+    getUploadedDocs,
+    setUploadedDocs,
+    addUploadedDocs,
+    removeUploadedDoc,
+    clearUploadedDocs
   }
 })
 

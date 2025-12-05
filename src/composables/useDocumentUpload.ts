@@ -1,31 +1,30 @@
 /**
  * 文档上传 composable
  * 处理文档选择、解析和管理
+ * 每个终端独立管理自己的文档
  */
-import { ref } from 'vue'
+import { ref, computed, type Ref, type ComputedRef } from 'vue'
+import { useTerminalStore, type ParsedDocument } from '../stores/terminal'
 
-// 文档类型定义
-export interface ParsedDocument {
-  filename: string
-  fileType: string
-  content: string
-  fileSize: number
-  parseTime: number
-  pageCount?: number
-  metadata?: Record<string, string>
-  error?: string
-}
+// 重新导出类型供外部使用
+export type { ParsedDocument }
 
 // 支持的文件扩展名
 const SUPPORTED_EXTENSIONS = ['.pdf', '.doc', '.docx', '.txt', '.md', '.json', '.xml', '.csv', '.html', '.htm']
 
-export function useDocumentUpload() {
-  // 已上传的文档列表
-  const uploadedDocs = ref<ParsedDocument[]>([])
-  // 上传中状态
+export function useDocumentUpload(currentTabId: Ref<string | null> | ComputedRef<string | null>) {
+  const terminalStore = useTerminalStore()
+  
+  // 上传中状态（全局状态，因为同一时间只能上传一次）
   const isUploadingDocs = ref(false)
   // 拖放悬停状态
   const isDraggingOver = ref(false)
+
+  // 当前终端的已上传文档列表（computed，自动响应终端切换）
+  const uploadedDocs = computed(() => {
+    if (!currentTabId.value) return []
+    return terminalStore.getUploadedDocs(currentTabId.value)
+  })
 
   // 检查文件是否支持
   const isSupportedFile = (filename: string): boolean => {
@@ -33,9 +32,11 @@ export function useDocumentUpload() {
     return SUPPORTED_EXTENSIONS.includes(ext)
   }
 
-  // 选择并上传文档
+  // 选择并上传文档（替换模式：新文档替换旧文档）
   const selectAndUploadDocs = async () => {
-    if (isUploadingDocs.value) return
+    if (isUploadingDocs.value || !currentTabId.value) return
+    
+    const tabId = currentTabId.value
     
     try {
       isUploadingDocs.value = true
@@ -51,8 +52,8 @@ export function useDocumentUpload() {
       // 解析文档
       const parsedDocs = await documentAPI.parseMultiple(files)
       
-      // 添加到已上传列表（追加而非替换）
-      uploadedDocs.value = [...uploadedDocs.value, ...parsedDocs]
+      // 替换模式：新上传的文档替换旧文档
+      terminalStore.setUploadedDocs(tabId, parsedDocs)
       
       // 显示解析结果摘要
       const successCount = parsedDocs.filter((d: ParsedDocument) => !d.error).length
@@ -68,9 +69,11 @@ export function useDocumentUpload() {
     }
   }
 
-  // 处理拖放的文件
+  // 处理拖放的文件（替换模式）
   const handleDroppedFiles = async (files: FileList | File[]) => {
-    if (isUploadingDocs.value) return
+    if (isUploadingDocs.value || !currentTabId.value) return
+    
+    const tabId = currentTabId.value
     
     // 过滤支持的文件并构造文件信息对象
     const fileInfos: Array<{ name: string; path: string; size: number; mimeType?: string }> = []
@@ -101,8 +104,8 @@ export function useDocumentUpload() {
       const documentAPI = (window.electronAPI as { document: typeof window.electronAPI.document }).document
       const parsedDocs = await documentAPI.parseMultiple(fileInfos)
       
-      // 添加到已上传列表
-      uploadedDocs.value = [...uploadedDocs.value, ...parsedDocs]
+      // 替换模式：新上传的文档替换旧文档
+      terminalStore.setUploadedDocs(tabId, parsedDocs)
       
       // 显示解析结果摘要
       const successCount = parsedDocs.filter((d: ParsedDocument) => !d.error).length
@@ -120,12 +123,14 @@ export function useDocumentUpload() {
 
   // 移除已上传的文档
   const removeUploadedDoc = (index: number) => {
-    uploadedDocs.value.splice(index, 1)
+    if (!currentTabId.value) return
+    terminalStore.removeUploadedDoc(currentTabId.value, index)
   }
 
   // 清空所有上传的文档
   const clearUploadedDocs = () => {
-    uploadedDocs.value = []
+    if (!currentTabId.value) return
+    terminalStore.clearUploadedDocs(currentTabId.value)
   }
 
   // 格式化文件大小

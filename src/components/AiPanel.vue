@@ -32,7 +32,10 @@ const messagesRef = ref<HTMLDivElement | null>(null)
 
 // ==================== 初始化 Composables ====================
 
-// 文档上传
+// 当前终端 ID（先从 store 获取，供 useDocumentUpload 使用）
+const currentTabId = computed(() => terminalStore.activeTabId)
+
+// 文档上传（传入 currentTabId，每个终端独立管理文档）
 const {
   uploadedDocs,
   isUploadingDocs,
@@ -43,7 +46,7 @@ const {
   clearUploadedDocs,
   formatFileSize,
   getDocumentContext
-} = useDocumentUpload()
+} = useDocumentUpload(currentTabId)
 
 // Markdown 渲染
 const {
@@ -52,11 +55,10 @@ const {
   copyMessage
 } = useMarkdown()
 
-// AI 对话
+// AI 对话（注意：这里的 currentTabId 来自上面定义的 computed）
 const {
   inputText,
   messages,
-  currentTabId,
   isLoading,
   currentSystemInfo,
   terminalSelectedText,
