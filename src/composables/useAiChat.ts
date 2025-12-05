@@ -6,12 +6,20 @@ import { ref, computed, nextTick, Ref } from 'vue'
 import { useTerminalStore } from '../stores/terminal'
 import type { AiMessage } from '../stores/terminal'
 
+// 判断用户是否在底部附近的阈值（像素）
+const SCROLL_THRESHOLD = 100
+
 export function useAiChat(
   getDocumentContext: () => Promise<string>,
   messagesRef: Ref<HTMLDivElement | null>
 ) {
   const terminalStore = useTerminalStore()
   const inputText = ref('')
+  
+  // 是否有新消息（用户不在底部时显示提示）
+  const hasNewMessage = ref(false)
+  // 用户是否在底部附近
+  const isUserNearBottom = ref(true)
 
   // 当前终端的 AI 消息（每个终端独立）
   const messages = computed(() => {
@@ -58,11 +66,43 @@ export function useAiChat(
     return terminalStore.activeTab?.lastError
   })
 
-  // 滚动到底部
+  // 检查用户是否在底部附近
+  const checkIsNearBottom = () => {
+    if (!messagesRef.value) return true
+    const { scrollTop, scrollHeight, clientHeight } = messagesRef.value
+    return scrollHeight - scrollTop - clientHeight < SCROLL_THRESHOLD
+  }
+
+  // 更新用户滚动位置状态（由组件的 scroll 事件调用）
+  const updateScrollPosition = () => {
+    const nearBottom = checkIsNearBottom()
+    isUserNearBottom.value = nearBottom
+    // 如果用户滚动到底部，清除新消息提示
+    if (nearBottom) {
+      hasNewMessage.value = false
+    }
+  }
+
+  // 强制滚动到底部（用户主动点击时调用）
   const scrollToBottom = async () => {
     await nextTick()
     if (messagesRef.value) {
       messagesRef.value.scrollTop = messagesRef.value.scrollHeight
+    }
+    hasNewMessage.value = false
+    isUserNearBottom.value = true
+  }
+
+  // 智能滚动：只有用户在底部附近时才自动滚动
+  const scrollToBottomIfNeeded = async () => {
+    await nextTick()
+    if (isUserNearBottom.value) {
+      if (messagesRef.value) {
+        messagesRef.value.scrollTop = messagesRef.value.scrollHeight
+      }
+    } else {
+      // 用户在上方查看历史，显示新消息提示
+      hasNewMessage.value = true
     }
   }
 
@@ -114,6 +154,7 @@ export function useAiChat(
     terminalStore.addAiMessage(tabId, userMessage)
     inputText.value = ''
     terminalStore.setAiLoading(tabId, true)
+    // 发送消息时强制滚动到底部
     await scrollToBottom()
 
     // 创建 AI 响应占位
@@ -165,11 +206,12 @@ export function useAiChat(
           } else {
             terminalStore.updateAiMessage(tabId, messageIndex, currentContent + chunk)
           }
-          scrollToBottom()
+          // 流式响应时使用智能滚动，不打断用户查看历史
+          scrollToBottomIfNeeded()
         },
         () => {
           terminalStore.setAiLoading(tabId, false)
-          scrollToBottom()
+          scrollToBottomIfNeeded()
           
           // 保存聊天记录
           const terminalInfo = getTerminalInfo()
@@ -250,11 +292,11 @@ export function useAiChat(
         } else {
           terminalStore.updateAiMessage(tabId, messageIndex, currentContent + chunk)
         }
-        scrollToBottom()
+        scrollToBottomIfNeeded()
       },
       () => {
         terminalStore.setAiLoading(tabId, false)
-        scrollToBottom()
+        scrollToBottomIfNeeded()
       },
       error => {
         terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${error}`)
@@ -316,11 +358,11 @@ export function useAiChat(
         } else {
           terminalStore.updateAiMessage(tabId, messageIndex, currentContent + chunk)
         }
-        scrollToBottom()
+        scrollToBottomIfNeeded()
       },
       () => {
         terminalStore.setAiLoading(tabId, false)
-        scrollToBottom()
+        scrollToBottomIfNeeded()
       },
       error => {
         terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${error}`)
@@ -394,11 +436,11 @@ export function useAiChat(
         } else {
           terminalStore.updateAiMessage(tabId, messageIndex, currentContent + chunk)
         }
-        scrollToBottom()
+        scrollToBottomIfNeeded()
       },
       () => {
         terminalStore.setAiLoading(tabId, false)
-        scrollToBottom()
+        scrollToBottomIfNeeded()
       },
       err => {
         terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${err}`)
@@ -457,11 +499,11 @@ export function useAiChat(
         } else {
           terminalStore.updateAiMessage(tabId, messageIndex, currentContent + chunk)
         }
-        scrollToBottom()
+        scrollToBottomIfNeeded()
       },
       () => {
         terminalStore.setAiLoading(tabId, false)
-        scrollToBottom()
+        scrollToBottomIfNeeded()
       },
       err => {
         terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${err}`)
@@ -516,11 +558,11 @@ export function useAiChat(
         } else {
           terminalStore.updateAiMessage(tabId, messageIndex, currentContent + chunk)
         }
-        scrollToBottom()
+        scrollToBottomIfNeeded()
       },
       () => {
         terminalStore.setAiLoading(tabId, false)
-        scrollToBottom()
+        scrollToBottomIfNeeded()
       },
       err => {
         terminalStore.updateAiMessage(tabId, messageIndex, `错误: ${err}`)
@@ -547,7 +589,13 @@ export function useAiChat(
     currentSystemInfo,
     terminalSelectedText,
     lastError,
+    // 滚动相关
+    hasNewMessage,
+    isUserNearBottom,
+    updateScrollPosition,
     scrollToBottom,
+    scrollToBottomIfNeeded,
+    // 其他方法
     getTerminalInfo,
     sendMessage,
     explainCommand,

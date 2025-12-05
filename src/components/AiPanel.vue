@@ -63,7 +63,12 @@ const {
   currentSystemInfo,
   terminalSelectedText,
   lastError,
+  // 滚动相关
+  hasNewMessage,
+  updateScrollPosition,
   scrollToBottom,
+  scrollToBottomIfNeeded,
+  // 其他方法
   getTerminalInfo,
   sendMessage,
   explainCommand,
@@ -114,6 +119,7 @@ const {
 } = useAgentMode(
   inputText,
   scrollToBottom,
+  scrollToBottomIfNeeded,
   getDocumentContext,
   getHostId,
   autoProbeHostProfile,
@@ -401,7 +407,7 @@ onMounted(() => {
       </div>
 
       <!-- 消息列表 -->
-      <div ref="messagesRef" class="ai-messages" @click="handleCodeBlockClick">
+      <div ref="messagesRef" class="ai-messages" @click="handleCodeBlockClick" @scroll="updateScrollPosition">
         <div v-if="messages.length === 0 && !agentMode" class="ai-welcome">
           <p>👋 你好！我是旗鱼终端的 AI 助手。</p>
           <p class="welcome-section-title">💬 直接对话</p>
@@ -618,6 +624,14 @@ onMounted(() => {
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- 新消息指示器 -->
+        <div v-if="hasNewMessage" class="new-message-indicator" @click="scrollToBottom">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+          <span>新消息</span>
         </div>
       </div>
 
@@ -1057,6 +1071,52 @@ onMounted(() => {
   overflow-y: auto;
   padding: 12px;
   user-select: text;
+  position: relative;
+}
+
+/* 新消息指示器 */
+.new-message-indicator {
+  position: sticky;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--accent-primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 20px;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0, 150, 255, 0.4);
+  transition: all 0.2s ease;
+  animation: bounceIn 0.3s ease;
+  z-index: 10;
+  width: fit-content;
+  margin: 0 auto;
+}
+
+.new-message-indicator:hover {
+  background: var(--accent-primary-hover, #0080ff);
+  transform: translateX(-50%) scale(1.05);
+  box-shadow: 0 4px 16px rgba(0, 150, 255, 0.5);
+}
+
+.new-message-indicator:active {
+  transform: translateX(-50%) scale(0.98);
+}
+
+@keyframes bounceIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
 /* 上下文使用情况 */

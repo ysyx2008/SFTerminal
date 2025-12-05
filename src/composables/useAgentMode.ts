@@ -34,7 +34,8 @@ interface AgentState {
 
 export function useAgentMode(
   inputText: Ref<string>,
-  scrollToBottom: () => Promise<void>,
+  scrollToBottom: () => Promise<void>,           // 强制滚动（用户发送时）
+  scrollToBottomIfNeeded: () => Promise<void>,   // 智能滚动（收到新内容时）
   getDocumentContext: () => Promise<string>,
   getHostId: () => Promise<string>,
   autoProbeHostProfile: () => Promise<void>,
@@ -321,7 +322,8 @@ export function useAgentMode(
       console.log('[Agent] setAgentRunning called, current agentState:', terminalStore.getAgentState(tabId))
     }
 
-    await scrollToBottom()
+    // 完成后使用智能滚动
+    await scrollToBottomIfNeeded()
   }
 
   // 中止 Agent
@@ -393,7 +395,8 @@ export function useAgentMode(
         // 只设置 agentId 用于关联，不改变 isRunning 状态
         // 因为 IPC 事件可能在 runAgent 的 finally 块之后到达
         terminalStore.setAgentId(tabId, data.agentId)
-        scrollToBottom()
+        // 使用智能滚动，不打断用户查看历史
+        scrollToBottomIfNeeded()
       }
     })
 
@@ -402,6 +405,7 @@ export function useAgentMode(
       const tabId = terminalStore.findTabIdByAgentId(data.agentId) || currentTabId.value
       if (tabId) {
         terminalStore.setAgentPendingConfirm(tabId, data)
+        // 需要确认时强制滚动，确保用户看到确认框
         scrollToBottom()
       }
     })
