@@ -569,18 +569,24 @@ export const useTerminalStore = defineStore('terminal', () => {
         history: []
       }
     }
-
+    
     // 创建新的 agentState 对象以确保响应式更新
-    tab.agentState = {
+    const newAgentState = {
       ...tab.agentState,
       isRunning,
       ...(agentId !== undefined && { agentId }),
       ...(userTask !== undefined && { userTask }),
       ...(!isRunning && { pendingConfirm: undefined })
     }
-
-    // 强制触发数组更新
-    tabs.value = [...tabs.value]
+    
+    // 直接替换整个 tab 对象以确保响应式
+    tabs.value[tabIndex] = {
+      ...tab,
+      agentState: newAgentState
+    }
+    
+    // 触发 ref 更新
+    tabs.value = tabs.value.slice()
   }
 
   /**

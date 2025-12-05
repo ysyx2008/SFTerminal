@@ -544,6 +544,7 @@ export class AiService {
       let content = ''
       let toolCalls: ToolCall[] = []
       let finishReason: string | undefined
+      let isDone = false  // 防止 onDone 被调用多次
 
       const req = httpModule.request(options, (res) => {
         let buffer = ''
@@ -557,11 +558,14 @@ export class AiService {
             if (line.startsWith('data: ')) {
               const data = line.slice(6).trim()
               if (data === '[DONE]') {
-                onDone({
-                  content: content || undefined,
-                  tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-                  finish_reason: finishReason as ChatWithToolsResult['finish_reason']
-                })
+                if (!isDone) {
+                  isDone = true
+                  onDone({
+                    content: content || undefined,
+                    tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+                    finish_reason: finishReason as ChatWithToolsResult['finish_reason']
+                  })
+                }
                 return
               }
 
@@ -611,20 +615,30 @@ export class AiService {
           if (toolCalls.length > 0) {
             onToolCall(toolCalls)
           }
-          onDone({
-            content: content || undefined,
-            tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-            finish_reason: finishReason as ChatWithToolsResult['finish_reason']
-          })
+          // 只有在没有收到 [DONE] 时才调用 onDone（某些 API 可能不发送 [DONE]）
+          if (!isDone) {
+            isDone = true
+            onDone({
+              content: content || undefined,
+              tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+              finish_reason: finishReason as ChatWithToolsResult['finish_reason']
+            })
+          }
         })
 
         res.on('error', (err) => {
-          onError(`请求错误: ${err.message}`)
+          if (!isDone) {
+            isDone = true
+            onError(`请求错误: ${err.message}`)
+          }
         })
       })
 
       req.on('error', (err) => {
-        onError(`请求失败: ${err.message}`)
+        if (!isDone) {
+          isDone = true
+          onError(`请求失败: ${err.message}`)
+        }
       })
 
       req.write(JSON.stringify(requestBody))
