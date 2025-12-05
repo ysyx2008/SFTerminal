@@ -539,8 +539,8 @@ export class PtyService {
         }
       }, timeout)
 
-      // 直接发送命令（不包装）
-      instance.pty.write(command + '\n')
+      // 直接发送命令（使用 \r 触发执行，这在 PTY 中是标准的回车符）
+      instance.pty.write(command + '\r')
       
       // 标记命令已开始，延迟一点避免误检测命令回显
       setTimeout(() => {

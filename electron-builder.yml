@@ -3,6 +3,11 @@ productName: 旗鱼终端
 directories:
   buildResources: resources
   output: release
+# 构建加速配置
+electronDownload:
+  cache: ./electron-cache
+buildDependenciesFromSource: false
+nodeGypRebuild: false
 files:
   - dist
   - dist-electron

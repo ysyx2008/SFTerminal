@@ -1,6 +1,6 @@
 {
   "name": "qiyu-terminal",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "旗鱼终端 - AI 驱动的跨平台终端",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -9,6 +9,10 @@
     "build:win": "vue-tsc --noEmit && vite build && electron-builder --win",
     "build:mac": "vue-tsc --noEmit && vite build && electron-builder --mac",
     "build:linux": "vue-tsc --noEmit && vite build && electron-builder --linux",
+    "build:win:fast": "vite build && electron-builder --win",
+    "build:mac:fast": "vite build && electron-builder --mac",
+    "build:linux:fast": "vite build && electron-builder --linux",
+    "typecheck": "vue-tsc --noEmit",
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx --fix",
     "format": "prettier --write src/"

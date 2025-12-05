@@ -178,5 +178,67 @@ export class SshService {
       this.instances.delete(id)
     })
   }
+
+  /**
+   * 执行探测命令获取主机信息
+   * 通过执行一个组合命令来探测远程主机的操作系统类型
+   */
+  async probe(id: string, timeout: number = 5000): Promise<string> {
+    const instance = this.instances.get(id)
+    if (!instance?.stream) {
+      throw new Error('SSH connection not found or stream not available')
+    }
+
+    return new Promise((resolve) => {
+      let output = ''
+      let resolved = false
+      
+      // 生成一个唯一的结束标记
+      const endMarker = `__PROBE_END_${Date.now()}__`
+      
+      // 探测命令：先尝试检测是Windows还是Unix系统
+      // Windows 会有 %OS% 变量，Unix 系统会有 uname
+      const probeCommand = `echo "---PROBE_START---" && (uname -s 2>/dev/null || echo %OS%) && echo "${endMarker}"\n`
+      
+      const dataHandler = (data: string) => {
+        output += data
+        // 检查是否收到结束标记
+        if (output.includes(endMarker)) {
+          resolved = true
+          // 移除这个临时处理器
+          const idx = instance.dataCallbacks.indexOf(dataHandler)
+          if (idx > -1) {
+            instance.dataCallbacks.splice(idx, 1)
+          }
+          resolve(output)
+        }
+      }
+      
+      // 添加临时数据处理器
+      instance.dataCallbacks.push(dataHandler)
+      
+      // 发送探测命令
+      instance.stream.write(probeCommand)
+      
+      // 超时处理
+      setTimeout(() => {
+        if (!resolved) {
+          const idx = instance.dataCallbacks.indexOf(dataHandler)
+          if (idx > -1) {
+            instance.dataCallbacks.splice(idx, 1)
+          }
+          resolve(output || 'timeout')
+        }
+      }, timeout)
+    })
+  }
+
+  /**
+   * 获取 SSH 连接信息
+   */
+  getConfig(id: string): SshConfig | null {
+    const instance = this.instances.get(id)
+    return instance?.config || null
+  }
 }
 

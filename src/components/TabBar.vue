@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useTerminalStore } from '../stores/terminal'
 
 const terminalStore = useTerminalStore()
@@ -11,6 +11,11 @@ const dragOverIndex = ref<number | null>(null)
 // 新建终端下拉菜单
 const showNewMenu = ref(false)
 const menuPosition = ref({ top: '0px', left: '0px' })
+
+// 滚动相关
+const tabsContainerRef = ref<HTMLElement | null>(null)
+const canScrollLeft = ref(false)
+const canScrollRight = ref(false)
 
 // 检测操作系统
 const isWindows = computed(() => navigator.platform.toLowerCase().includes('win'))
@@ -30,6 +35,71 @@ const shellOptions = computed(() => {
       { label: 'Fish', value: '/usr/bin/fish', icon: '🐟' }
     ]
   }
+})
+
+// 检查滚动状态
+const checkScrollState = () => {
+  const container = tabsContainerRef.value
+  if (!container) return
+  
+  canScrollLeft.value = container.scrollLeft > 0
+  canScrollRight.value = container.scrollLeft < container.scrollWidth - container.clientWidth - 1
+}
+
+// 滚动到指定方向
+const scroll = (direction: 'left' | 'right') => {
+  const container = tabsContainerRef.value
+  if (!container) return
+  
+  const scrollAmount = 200
+  container.scrollBy({
+    left: direction === 'left' ? -scrollAmount : scrollAmount,
+    behavior: 'smooth'
+  })
+}
+
+// 滚动到当前激活的 tab
+const scrollToActiveTab = () => {
+  nextTick(() => {
+    const container = tabsContainerRef.value
+    if (!container) return
+    
+    const activeTab = container.querySelector('.tab.active') as HTMLElement
+    if (!activeTab) return
+    
+    const containerRect = container.getBoundingClientRect()
+    const tabRect = activeTab.getBoundingClientRect()
+    
+    // 如果 tab 不在可见范围内，滚动到可见
+    if (tabRect.left < containerRect.left) {
+      container.scrollBy({
+        left: tabRect.left - containerRect.left - 10,
+        behavior: 'smooth'
+      })
+    } else if (tabRect.right > containerRect.right) {
+      container.scrollBy({
+        left: tabRect.right - containerRect.right + 10,
+        behavior: 'smooth'
+      })
+    }
+  })
+}
+
+// 监听 tab 变化和激活状态变化
+watch(() => terminalStore.tabs.length, () => {
+  nextTick(checkScrollState)
+})
+
+watch(() => terminalStore.activeTabId, () => {
+  scrollToActiveTab()
+})
+
+onMounted(() => {
+  checkScrollState()
+  // 监听滚动事件
+  tabsContainerRef.value?.addEventListener('scroll', checkScrollState)
+  // 监听窗口大小变化
+  window.addEventListener('resize', checkScrollState)
 })
 
 const handleNewTab = (shell?: string) => {
@@ -101,7 +171,19 @@ const handleDragEnd = () => {
 
 <template>
   <div class="tab-bar">
-    <div class="tabs-container">
+    <!-- 左滚动按钮 -->
+    <button 
+      v-show="canScrollLeft" 
+      class="scroll-btn scroll-left" 
+      @click="scroll('left')"
+      title="向左滚动"
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+    </button>
+    
+    <div ref="tabsContainerRef" class="tabs-container" @scroll="checkScrollState">
       <div
         v-for="(tab, index) in terminalStore.tabs"
         :key="tab.id"
@@ -148,6 +230,19 @@ const handleDragEnd = () => {
         </button>
       </div>
     </div>
+    
+    <!-- 右滚动按钮 -->
+    <button 
+      v-show="canScrollRight" 
+      class="scroll-btn scroll-right" 
+      @click="scroll('right')"
+      title="向右滚动"
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="9 18 15 12 9 6"/>
+      </svg>
+    </button>
+    
     <!-- 新建终端按钮（带下拉菜单） -->
     <div class="new-tab-wrapper">
       <button class="btn-new-tab" @click="handleNewTab()" data-tooltip="新建终端">
@@ -186,9 +281,37 @@ const handleDragEnd = () => {
 .tab-bar {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   max-width: 100%;
   overflow: hidden;
+}
+
+.scroll-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 28px;
+  padding: 0;
+  background: var(--bg-tertiary);
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.scroll-btn:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.scroll-left {
+  border-radius: 4px 0 0 4px;
+}
+
+.scroll-right {
+  border-radius: 0 4px 4px 0;
 }
 
 .tabs-container {
@@ -196,6 +319,8 @@ const handleDragEnd = () => {
   gap: 2px;
   overflow-x: auto;
   scrollbar-width: none;
+  flex: 1;
+  min-width: 0;
 }
 
 .tabs-container::-webkit-scrollbar {
@@ -214,6 +339,7 @@ const handleDragEnd = () => {
   cursor: grab;
   transition: all 0.2s ease;
   user-select: none;
+  flex-shrink: 0;
 }
 
 .tab:hover {
@@ -319,6 +445,7 @@ const handleDragEnd = () => {
 .new-tab-wrapper {
   position: relative;
   display: flex;
+  flex-shrink: 0;
 }
 
 .btn-new-tab {
@@ -401,4 +528,3 @@ const handleDragEnd = () => {
   font-size: 14px;
 }
 </style>
-

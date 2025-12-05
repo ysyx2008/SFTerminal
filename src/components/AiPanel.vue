@@ -12,7 +12,7 @@ const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
 const showSettings = inject<() => void>('showSettings')
 
-import type { AiMessage, AgentStep, PendingConfirmation } from '../stores/terminal'
+import type { AiMessage, AgentStep } from '../stores/terminal'
 
 const inputText = ref('')
 const messagesRef = ref<HTMLDivElement | null>(null)
@@ -158,17 +158,8 @@ const pendingConfirm = computed(() => {
   return agentState.value?.pendingConfirm
 })
 
-const agentFinalResult = computed(() => {
-  return agentState.value?.finalResult
-})
-
 const agentUserTask = computed(() => {
   return agentState.value?.userTask
-})
-
-// Agent 历史任务记录
-const agentHistory = computed(() => {
-  return agentState.value?.history || []
 })
 
 const hasAiConfig = computed(() => configStore.hasAiConfig)
@@ -910,18 +901,9 @@ const quickActions = [
 
 // ==================== Agent 模式功能 ====================
 
-// 切换 Agent 模式
-const toggleAgentMode = () => {
-  agentMode.value = !agentMode.value
-  // 切换模式时清空 Agent 状态
-  if (currentTabId.value) {
-    terminalStore.clearAgentState(currentTabId.value)
-  }
-}
-
 // 保存 Agent 记录到历史
 const saveAgentRecord = (
-  tabId: string,
+  _tabId: string,
   userTask: string,
   startTime: number,
   status: 'completed' | 'failed' | 'aborted',
@@ -939,13 +921,14 @@ const saveAgentRecord = (
       type: s.type,
       content: s.content,
       toolName: s.toolName,
-      toolArgs: s.toolArgs,
+      toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,
       toolResult: s.toolResult,
       riskLevel: s.riskLevel,
       timestamp: s.timestamp
     }))
   
-  window.electronAPI.history.saveAgentRecord({
+  // 使用 JSON.parse(JSON.stringify()) 确保移除所有 Vue Proxy，避免 IPC 序列化错误
+  const record = JSON.parse(JSON.stringify({
     id: `agent_${startTime}`,
     timestamp: startTime,
     ...terminalInfo,
@@ -954,6 +937,10 @@ const saveAgentRecord = (
     finalResult,
     duration: Date.now() - startTime,
     status
+  }))
+  
+  window.electronAPI.history.saveAgentRecord(record).catch(err => {
+    console.error('保存 Agent 历史记录失败:', err)
   })
 }
 
@@ -1163,8 +1150,17 @@ const autoProbeHostProfile = async (): Promise<void> => {
       const profile = await window.electronAPI.hostProfile.probeLocal()
       currentHostProfile.value = profile
       console.log('[HostProfile] 自动探测完成:', profile)
+    } else {
+      // SSH 主机：通过 SSH 连接探测
+      const activeTab = terminalStore.activeTab
+      if (activeTab?.type === 'ssh' && activeTab.ptyId) {
+        const profile = await window.electronAPI.hostProfile.probeSsh(activeTab.ptyId, hostId)
+        if (profile) {
+          currentHostProfile.value = profile
+          console.log('[HostProfile] SSH 自动探测完成:', profile)
+        }
+      }
     }
-    // SSH 主机的自动探测暂不实现
   } catch (e) {
     console.error('[HostProfile] 自动探测失败:', e)
   }
@@ -1355,7 +1351,7 @@ const setupAgentListeners = () => {
   })
 
   // 监听完成
-  cleanupCompleteListener = window.electronAPI.agent.onComplete((data) => {
+  cleanupCompleteListener = window.electronAPI.agent.onComplete((_data) => {
     if (currentTabId.value) {
       terminalStore.setAgentRunning(currentTabId.value, false)
     }

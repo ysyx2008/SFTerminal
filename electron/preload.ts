@@ -447,7 +447,24 @@ const electronAPI = {
     }>,
 
     // 生成主机上下文
-    generateContext: (hostId: string) => ipcRenderer.invoke('hostProfile:generateContext', hostId) as Promise<string>
+    generateContext: (hostId: string) => ipcRenderer.invoke('hostProfile:generateContext', hostId) as Promise<string>,
+    
+    // SSH 主机探测
+    probeSsh: (sshId: string, hostId: string) => ipcRenderer.invoke('hostProfile:probeSsh', sshId, hostId) as Promise<{
+      hostId: string
+      hostname: string
+      username: string
+      os: string
+      osVersion: string
+      shell: string
+      packageManager?: string
+      installedTools: string[]
+      homeDir?: string
+      currentDir?: string
+      notes: string[]
+      lastProbed: number
+      lastUpdated: number
+    } | null>
   }
 }
 

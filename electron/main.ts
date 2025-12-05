@@ -446,44 +446,63 @@ ipcMain.handle('history:importData', async (_event, data: { version: string; exp
 
 // 导出到文件夹
 ipcMain.handle('history:exportToFolder', async (_event, options?: { includeSshPasswords?: boolean; includeApiKeys?: boolean }) => {
-  const { dialog } = await import('electron')
-  
-  // 选择导出目录
-  const result = await dialog.showOpenDialog(mainWindow!, {
-    title: '选择导出目录',
-    properties: ['openDirectory', 'createDirectory'],
-    buttonLabel: '导出到此目录'
-  })
-  
-  if (result.canceled || !result.filePaths[0]) {
-    return { success: false, canceled: true }
+  try {
+    // 检查 mainWindow 是否存在
+    if (!mainWindow) {
+      return { success: false, error: '窗口未就绪' }
+    }
+    
+    // 选择导出目录 - createDirectory 仅在 macOS 上有效
+    const dialogOptions: Electron.OpenDialogOptions = {
+      title: '选择导出目录',
+      properties: ['openDirectory'],
+      buttonLabel: '导出到此目录'
+    }
+    
+    // macOS 上添加 createDirectory 选项
+    if (process.platform === 'darwin') {
+      dialogOptions.properties!.push('createDirectory')
+    }
+    
+    const result = await dialog.showOpenDialog(mainWindow, dialogOptions)
+    
+    if (result.canceled || !result.filePaths[0]) {
+      return { success: false, canceled: true }
+    }
+    
+    // 创建子目录
+    const exportDir = path.join(result.filePaths[0], `sfterm-backup-${new Date().toISOString().split('T')[0]}`)
+    
+    const configData = configService.getAll()
+    const hostProfiles = hostProfileService.getAllProfiles()
+    
+    return historyService.exportToFolder(exportDir, configData, hostProfiles, options)
+  } catch (error) {
+    console.error('导出到文件夹失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : '导出失败' }
   }
-  
-  // 创建子目录
-  const exportDir = path.join(result.filePaths[0], `sfterm-backup-${new Date().toISOString().split('T')[0]}`)
-  
-  const configData = configService.getAll()
-  const hostProfiles = hostProfileService.getAllProfiles()
-  
-  return historyService.exportToFolder(exportDir, configData, hostProfiles, options)
 })
 
 // 从文件夹导入
 ipcMain.handle('history:importFromFolder', async () => {
-  const { dialog } = await import('electron')
-  
-  // 选择导入目录
-  const result = await dialog.showOpenDialog(mainWindow!, {
-    title: '选择备份文件夹',
-    properties: ['openDirectory'],
-    buttonLabel: '导入此目录'
-  })
-  
-  if (result.canceled || !result.filePaths[0]) {
-    return { success: false, canceled: true }
-  }
-  
-  const importResult = historyService.importFromFolder(result.filePaths[0])
+  try {
+    // 检查 mainWindow 是否存在
+    if (!mainWindow) {
+      return { success: false, error: '窗口未就绪' }
+    }
+    
+    // 选择导入目录
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择备份文件夹',
+      properties: ['openDirectory'],
+      buttonLabel: '导入此目录'
+    })
+    
+    if (result.canceled || !result.filePaths[0]) {
+      return { success: false, canceled: true }
+    }
+    
+    const importResult = historyService.importFromFolder(result.filePaths[0])
   
   if (importResult.success) {
     // 导入主机档案
@@ -532,6 +551,10 @@ ipcMain.handle('history:importFromFolder', async () => {
   }
   
   return importResult
+  } catch (error) {
+    console.error('从文件夹导入失败:', error)
+    return { success: false, imported: [], error: error instanceof Error ? error.message : '导入失败' }
+  }
 })
 
 // 清理旧记录
@@ -601,5 +624,28 @@ ipcMain.handle('hostProfile:probeLocal', async () => {
 // 生成主机上下文（用于 System Prompt）
 ipcMain.handle('hostProfile:generateContext', async (_event, hostId: string) => {
   return hostProfileService.generateHostContext(hostId)
+})
+
+// SSH 主机探测
+ipcMain.handle('hostProfile:probeSsh', async (_event, sshId: string, hostId: string) => {
+  try {
+    // 通过 SSH 执行探测命令
+    const probeOutput = await sshService.probe(sshId)
+    
+    // 解析探测结果
+    const existingProfile = hostProfileService.getProfile(hostId)
+    const probeResult = hostProfileService.parseProbeOutput(probeOutput, existingProfile)
+    
+    // 更新档案
+    const updatedProfile = hostProfileService.updateProfile(hostId, {
+      ...probeResult,
+      lastProbed: Date.now()
+    })
+    
+    return updatedProfile
+  } catch (error) {
+    console.error('[SSH Probe] 探测失败:', error)
+    return null
+  }
 })
 
