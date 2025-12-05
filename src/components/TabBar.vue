@@ -222,6 +222,7 @@ const handleDragEnd = () => {
           v-else
           class="tab-close"
           @click="handleCloseTab(tab.id, $event)"
+          title="关闭标签"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"/>
@@ -245,13 +246,13 @@ const handleDragEnd = () => {
     
     <!-- 新建终端按钮（带下拉菜单） -->
     <div class="new-tab-wrapper">
-      <button class="btn-new-tab" @click="handleNewTab()" data-tooltip="新建终端">
+      <button class="btn-new-tab" @click="handleNewTab()" title="新建终端">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="12" y1="5" x2="12" y2="19"/>
           <line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
       </button>
-      <button class="btn-new-tab-dropdown" @click="toggleNewMenu" data-tooltip="选择 Shell">
+      <button class="btn-new-tab-dropdown" @click="toggleNewMenu" title="选择 Shell">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="6 9 12 15 18 9"/>
         </svg>
