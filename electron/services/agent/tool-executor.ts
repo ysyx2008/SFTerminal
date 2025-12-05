@@ -13,7 +13,7 @@ import type {
   PendingConfirmation,
   HostProfileServiceInterface 
 } from './types'
-import { assessCommandRisk, detectInteractiveCommand } from './risk-assessor'
+import { assessCommandRisk, analyzeCommand } from './risk-assessor'
 
 // 工具执行器配置
 export interface ToolExecutorConfig {
@@ -88,50 +88,64 @@ async function executeCommand(
   config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
-  const command = args.command as string
+  let command = args.command as string
   if (!command) {
     return { success: false, output: '', error: '命令不能为空' }
   }
 
-  // 检测交互式命令
-  const interactiveInfo = detectInteractiveCommand(command)
-  if (interactiveInfo.isInteractive) {
+  // 分析命令，获取处理策略
+  const handling = analyzeCommand(command)
+
+  // 策略1: 禁止执行（如 vim/nano 等全屏编辑器）
+  if (handling.strategy === 'block') {
     executor.addStep({
       type: 'tool_call',
-      content: `⚠️ 检测到交互式命令: ${command}`,
+      content: `🚫 ${command}`,
       toolName: 'execute_command',
       toolArgs: { command },
-      riskLevel: 'dangerous'
+      riskLevel: 'blocked'
     })
     
-    const errorMsg = `无法执行: ${interactiveInfo.reason}\n建议: ${interactiveInfo.alternative}`
+    const errorMsg = `无法执行: ${handling.reason}。${handling.hint}`
     executor.addStep({
       type: 'tool_result',
-      content: `🚫 ${errorMsg}`,
+      content: errorMsg,
       toolName: 'execute_command',
       toolResult: errorMsg
     })
     
-    return { 
-      success: false, 
-      output: '', 
-      error: errorMsg
-    }
+    return { success: false, output: '', error: errorMsg }
+  }
+
+  // 策略2: 自动修正命令（如添加 -y、-c 参数）
+  if (handling.strategy === 'auto_fix' && handling.fixedCommand) {
+    executor.addStep({
+      type: 'tool_call',
+      content: `🔧 自动修正: ${command} → ${handling.fixedCommand}`,
+      toolName: 'execute_command',
+      toolArgs: { original: command, fixed: handling.fixedCommand },
+      riskLevel: 'safe'
+    })
+    command = handling.fixedCommand
   }
 
   // 评估风险
   const riskLevel = assessCommandRisk(command)
 
-  // 添加工具调用步骤
-  executor.addStep({
-    type: 'tool_call',
-    content: `执行命令: ${command}`,
-    toolName: 'execute_command',
-    toolArgs: { command },
-    riskLevel
-  })
+  // 添加工具调用步骤（如果不是自动修正的情况）
+  if (handling.strategy !== 'auto_fix') {
+    executor.addStep({
+      type: 'tool_call',
+      content: handling.strategy === 'timed_execution' 
+        ? `⏱️ ${command} (${handling.hint})` 
+        : `执行命令: ${command}`,
+      toolName: 'execute_command',
+      toolArgs: { command },
+      riskLevel
+    })
+  }
 
-  // 检查是否被阻止
+  // 检查是否被安全策略阻止
   if (riskLevel === 'blocked') {
     return { 
       success: false, 
@@ -142,21 +156,22 @@ async function executeCommand(
 
   // 严格模式：所有命令都需要确认
   // 普通模式：根据风险级别决定
-  const needConfirm = config.strictMode ||
+  // 自动修正和限时执行的命令不需要额外确认（已经是安全的处理方式）
+  const needConfirm = handling.strategy === 'allow' && (
+    config.strictMode ||
     (riskLevel === 'dangerous') ||
     (riskLevel === 'moderate' && !config.autoExecuteModerate) ||
     (riskLevel === 'safe' && !config.autoExecuteSafe)
+  )
 
   if (needConfirm) {
-    // 等待用户确认
     const approved = await executor.waitForConfirmation(
       toolCallId, 
       'execute_command', 
-      args, 
+      { command }, 
       riskLevel
     )
     if (!approved) {
-      // 添加拒绝步骤
       executor.addStep({
         type: 'tool_result',
         content: '⛔ 用户拒绝执行此命令',
@@ -167,7 +182,18 @@ async function executeCommand(
     }
   }
 
-  // 在终端执行命令
+  // 策略3: 限时执行（如 top、tail -f）
+  if (handling.strategy === 'timed_execution') {
+    return executeTimedCommand(
+      ptyId, 
+      command, 
+      handling.suggestedTimeout || 5000,
+      handling.timeoutAction || 'ctrl_c',
+      executor
+    )
+  }
+
+  // 正常执行命令
   try {
     const result = await executor.ptyService.executeInTerminal(
       ptyId,
@@ -175,19 +201,19 @@ async function executeCommand(
       config.commandTimeout
     )
 
-    // 检测是否超时（可能是命令卡住了）
+    // 检测是否超时
     const isTimeout = result.output.includes('[命令执行超时]')
     if (isTimeout) {
       executor.addStep({
         type: 'tool_result',
-        content: `⏱️ 命令执行超时 (${config.commandTimeout / 1000}秒)，可能是命令需要更长时间或正在等待输入`,
+        content: `⏱️ 命令执行超时 (${config.commandTimeout / 1000}秒)`,
         toolName: 'execute_command',
         toolResult: result.output
       })
       return {
         success: false,
         output: result.output,
-        error: `命令执行超时。可能原因：1) 命令需要更长时间；2) 命令正在等待用户输入；3) 命令是持续运行的程序。请检查终端状态。`
+        error: `命令执行超时。可能原因：1) 命令需要更长时间；2) 命令正在等待用户输入；3) 命令是持续运行的程序。可以使用 send_control_key 发送 Ctrl+C 中断，或用 get_terminal_context 查看当前状态。`
       }
     }
 
@@ -198,10 +224,7 @@ async function executeCommand(
       toolResult: result.output
     })
 
-    return {
-      success: true,
-      output: result.output
-    }
+    return { success: true, output: result.output }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : '命令执行失败'
     executor.addStep({
@@ -210,6 +233,57 @@ async function executeCommand(
       toolName: 'execute_command',
       toolResult: errorMsg
     })
+    return { success: false, output: '', error: errorMsg }
+  }
+}
+
+/**
+ * 执行限时命令（用于 top、tail -f 等持续运行的命令）
+ */
+async function executeTimedCommand(
+  ptyId: string,
+  command: string,
+  timeout: number,
+  exitAction: 'ctrl_c' | 'ctrl_d' | 'q',
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  try {
+    // 发送命令
+    executor.ptyService.write(ptyId, command + '\r')
+    
+    // 等待指定时间收集输出
+    await new Promise(resolve => setTimeout(resolve, timeout))
+    
+    // 发送退出信号
+    const exitKeys: Record<string, string> = {
+      'ctrl_c': '\x03',
+      'ctrl_d': '\x04',
+      'q': 'q'
+    }
+    executor.ptyService.write(ptyId, exitKeys[exitAction])
+    
+    // 等待程序退出
+    await new Promise(resolve => setTimeout(resolve, 500))
+    
+    // 如果是 q，可能还需要回车或者 Ctrl+C
+    if (exitAction === 'q') {
+      executor.ptyService.write(ptyId, '\r')
+      await new Promise(resolve => setTimeout(resolve, 200))
+    }
+
+    executor.addStep({
+      type: 'tool_result',
+      content: `✓ 命令已执行 ${timeout/1000} 秒后自动退出`,
+      toolName: 'execute_command',
+      toolResult: `命令运行了 ${timeout/1000} 秒，请使用 get_terminal_context 查看输出`
+    })
+
+    return { 
+      success: true, 
+      output: `命令已执行 ${timeout/1000} 秒后自动退出。请使用 get_terminal_context 工具查看终端输出。`
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : '命令执行失败'
     return { success: false, output: '', error: errorMsg }
   }
 }

@@ -20,8 +20,8 @@ import type {
 } from './types'
 import { DEFAULT_AGENT_CONFIG } from './types'
 import { getAgentTools } from './tools'
-import { assessCommandRisk, detectInteractiveCommand } from './risk-assessor'
-import type { InteractiveCommandInfo } from './risk-assessor'
+import { assessCommandRisk, analyzeCommand } from './risk-assessor'
+import type { CommandHandlingInfo } from './risk-assessor'
 import { executeTool, ToolExecutorConfig } from './tool-executor'
 import { buildSystemPrompt } from './prompt-builder'
 
@@ -33,9 +33,9 @@ export type {
   ToolResult,
   PendingConfirmation,
   RiskLevel,
-  InteractiveCommandInfo
+  CommandHandlingInfo
 }
-export { assessCommandRisk, detectInteractiveCommand }
+export { assessCommandRisk, analyzeCommand }
 
 export class AgentService {
   private aiService: AiService
