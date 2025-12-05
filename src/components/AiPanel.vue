@@ -669,59 +669,61 @@ onMounted(() => {
 
       <!-- 输入区域 -->
       <div class="ai-input">
-        <!-- 上传按钮 -->
-        <button 
-          class="btn btn-icon upload-btn" 
-          @click="selectAndUploadDocs" 
-          :disabled="isUploadingDocs"
-          title="上传文档 (PDF/Word/文本)"
-        >
-          <svg v-if="!isUploadingDocs" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-          </svg>
-          <span v-else class="upload-spinner"></span>
-        </button>
-        <textarea
-          v-model="inputText"
-          :placeholder="agentMode ? '描述你想让 Agent 完成的任务...' : '输入问题或描述你想要的命令...'"
-          rows="2"
-          @keydown.enter.exact.prevent="handleSend"
-        ></textarea>
-        <!-- 停止按钮 (普通对话模式) -->
-        <button
-          v-if="isLoading && !agentMode"
-          class="btn btn-danger stop-btn"
-          @click="stopGeneration"
-          title="停止生成"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="6" y="6" width="12" height="12" rx="2"/>
-          </svg>
-        </button>
-        <!-- 停止按钮 (Agent 模式) -->
-        <button
-          v-else-if="isAgentRunning"
-          class="btn btn-danger stop-btn"
-          @click="abortAgent"
-          title="停止 Agent"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="6" y="6" width="12" height="12" rx="2"/>
-          </svg>
-        </button>
-        <!-- 发送按钮 -->
-        <button
-          v-else
-          class="btn send-btn"
-          :class="agentMode ? 'btn-success' : 'btn-primary'"
-          :disabled="!inputText.trim()"
-          @click="handleSend"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="22" y1="2" x2="11" y2="13"/>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-          </svg>
-        </button>
+        <div class="input-container">
+          <!-- 上传按钮 -->
+          <button 
+            class="upload-btn" 
+            @click="selectAndUploadDocs" 
+            :disabled="isUploadingDocs"
+            title="上传文档 (PDF/Word/文本)"
+          >
+            <svg v-if="!isUploadingDocs" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+            </svg>
+            <span v-else class="upload-spinner"></span>
+          </button>
+          <textarea
+            v-model="inputText"
+            :placeholder="agentMode ? '描述你想让 Agent 完成的任务...' : '输入问题或描述你想要的命令...'"
+            rows="1"
+            @keydown.enter.exact.prevent="handleSend"
+          ></textarea>
+          <!-- 停止按钮 (普通对话模式) -->
+          <button
+            v-if="isLoading && !agentMode"
+            class="btn btn-danger stop-btn"
+            @click="stopGeneration"
+            title="停止生成"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12" rx="2"/>
+            </svg>
+          </button>
+          <!-- 停止按钮 (Agent 模式) -->
+          <button
+            v-else-if="isAgentRunning"
+            class="btn btn-danger stop-btn"
+            @click="abortAgent"
+            title="停止 Agent"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12" rx="2"/>
+            </svg>
+          </button>
+          <!-- 发送按钮 -->
+          <button
+            v-else
+            class="send-btn"
+            :class="{ 'send-btn-agent': agentMode }"
+            :disabled="!inputText.trim()"
+            @click="handleSend"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"/>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </template>
   </div>
@@ -1716,31 +1718,56 @@ onMounted(() => {
 
 .ai-input {
   display: flex;
-  gap: 8px;
-  padding: 12px;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 12px 14px 14px;
   border-top: 1px solid var(--border-color);
+  background: linear-gradient(180deg, var(--bg-tertiary) 0%, var(--bg-primary) 100%);
+}
+
+/* 输入框容器 - 包含输入框和按钮的统一容器 */
+.input-container {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 8px 10px 8px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.input-container:focus-within {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(100, 150, 255, 0.15), 0 4px 12px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 /* 上传按钮 */
 .upload-btn {
-  align-self: flex-end;
-  padding: 10px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  border-radius: 8px;
+  flex-shrink: 0;
+  padding: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  border-radius: 10px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .upload-btn:hover:not(:disabled) {
-  background: var(--bg-surface);
-  border-color: var(--accent-primary);
+  background: rgba(100, 150, 255, 0.12);
   color: var(--accent-primary);
+  transform: scale(1.08);
+}
+
+.upload-btn:active:not(:disabled) {
+  transform: scale(0.95);
 }
 
 .upload-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
@@ -1748,45 +1775,102 @@ onMounted(() => {
   display: inline-block;
   width: 16px;
   height: 16px;
-  border: 2px solid var(--text-muted);
+  border: 2px solid rgba(100, 150, 255, 0.2);
   border-top-color: var(--accent-primary);
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: spin 0.8s linear infinite;
 }
 
 .ai-input textarea {
   flex: 1;
-  padding: 10px 12px;
-  font-size: 13px;
+  padding: 6px 4px;
+  font-size: 14px;
   font-family: inherit;
   color: var(--text-primary);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  background: transparent;
+  border: none;
   resize: none;
   outline: none;
+  line-height: 1.5;
+  min-height: 24px;
+  max-height: 120px;
 }
 
-.ai-input textarea:focus {
-  border-color: var(--accent-primary);
+.ai-input textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.ai-input textarea:focus::placeholder {
+  opacity: 0.5;
 }
 
 .send-btn {
-  align-self: flex-end;
-  padding: 10px 16px;
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #6b8cff 0%, #5a7bff 50%, #4f6ef7 100%);
+  border: none;
+  box-shadow: 0 2px 8px rgba(90, 123, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.send-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(90, 123, 255, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  background: linear-gradient(135deg, #7d9aff 0%, #6b8cff 50%, #5a7bff 100%);
+}
+
+.send-btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+  box-shadow: 0 2px 4px rgba(90, 123, 255, 0.3);
+}
+
+.send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.send-btn-agent {
+  background: linear-gradient(135deg, #34d399 0%, #10b981 50%, #059669 100%);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.send-btn-agent:hover:not(:disabled) {
+  background: linear-gradient(135deg, #4ade80 0%, #34d399 50%, #10b981 100%);
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .stop-btn {
-  align-self: flex-end;
-  padding: 10px 16px;
-  background: var(--accent-error, #f44336);
-  border-color: var(--accent-error, #f44336);
-  animation: pulse 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f87171 0%, #ef4444 50%, #dc2626 100%);
+  border: none;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  animation: pulse-glow 1.5s ease-in-out infinite;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .stop-btn:hover {
-  background: #d32f2f;
-  border-color: #d32f2f;
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, #fca5a5 0%, #f87171 50%, #ef4444 100%);
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.5);
+}
+
+.stop-btn:active {
+  transform: translateY(0) scale(0.97);
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+  50% {
+    box-shadow: 0 2px 16px rgba(239, 68, 68, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
 }
 
 @keyframes pulse {
