@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import AiSettings from './AiSettings.vue'
 import ThemeSettings from './ThemeSettings.vue'
 import TerminalSettings from './TerminalSettings.vue'
 import DataSettings from './DataSettings.vue'
 import McpSettings from './McpSettings.vue'
+
+// Props
+const props = defineProps<{
+  initialTab?: string
+}>()
 
 const emit = defineEmits<{
   close: []
@@ -12,6 +17,13 @@ const emit = defineEmits<{
 
 type SettingsTab = 'ai' | 'mcp' | 'theme' | 'terminal' | 'data' | 'about'
 const activeTab = ref<SettingsTab>('ai')
+
+// 初始化时设置初始 tab
+onMounted(() => {
+  if (props.initialTab && ['ai', 'mcp', 'theme', 'terminal', 'data', 'about'].includes(props.initialTab)) {
+    activeTab.value = props.initialTab as SettingsTab
+  }
+})
 
 const tabs = [
   { id: 'ai' as const, label: 'AI 配置', icon: '🤖' },

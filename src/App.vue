@@ -8,6 +8,7 @@ import AiPanel from './components/AiPanel.vue'
 import SessionManager from './components/SessionManager.vue'
 import SettingsModal from './components/Settings/SettingsModal.vue'
 import FileExplorer from './components/FileExplorer/FileExplorer.vue'
+import McpStatusPopover from './components/McpStatusPopover.vue'
 import type { SftpConnectionConfig } from './composables/useSftp'
 
 const terminalStore = useTerminalStore()
@@ -16,6 +17,7 @@ const configStore = useConfigStore()
 const showSidebar = ref(false)
 const showAiPanel = ref(true)
 const showSettings = ref(false)
+const settingsInitialTab = ref<string | undefined>(undefined)
 const showFileExplorer = ref(false)
 const sftpConfig = ref<SftpConnectionConfig | null>(null)
 
@@ -90,6 +92,18 @@ watch(() => terminalStore.pendingAiText, (text) => {
   }
 })
 
+// 打开 MCP 设置
+const openMcpSettings = () => {
+  settingsInitialTab.value = 'mcp'
+  showSettings.value = true
+}
+
+// 关闭设置弹窗
+const closeSettings = () => {
+  showSettings.value = false
+  settingsInitialTab.value = undefined
+}
+
 // AI 面板拖拽调整宽度
 const startResize = (_e: MouseEvent) => {
   isResizing.value = true
@@ -152,6 +166,7 @@ onUnmounted(() => {
             <circle cx="16.5" cy="14.5" r="1.5"/>
           </svg>
         </button>
+        <McpStatusPopover @open-settings="openMcpSettings" />
         <button class="btn-icon" @click="showSettings = true" title="设置">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3"/>
@@ -198,7 +213,11 @@ onUnmounted(() => {
     </div>
 
     <!-- 设置弹窗 -->
-    <SettingsModal v-if="showSettings" @close="showSettings = false" />
+    <SettingsModal 
+      v-if="showSettings" 
+      :initial-tab="settingsInitialTab"
+      @close="closeSettings" 
+    />
 
     <!-- SFTP 文件管理器弹窗 -->
     <FileExplorer
