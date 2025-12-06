@@ -37,6 +37,21 @@ onMounted(async () => {
 
   // 创建初始终端标签页
   await terminalStore.createTab('local')
+
+  // 自动连接启用的 MCP 服务器
+  try {
+    const results = await window.electronAPI.mcp.connectEnabledServers()
+    const connected = results.filter(r => r.success).length
+    const failed = results.filter(r => !r.success)
+    if (connected > 0) {
+      console.log(`[MCP] 自动连接了 ${connected} 个服务器`)
+    }
+    if (failed.length > 0) {
+      console.warn('[MCP] 部分服务器连接失败:', failed)
+    }
+  } catch (error) {
+    console.error('[MCP] 自动连接服务器失败:', error)
+  }
 })
 
 // 切换侧边栏

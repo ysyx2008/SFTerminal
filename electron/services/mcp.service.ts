@@ -257,8 +257,13 @@ export class McpService extends EventEmitter {
         description: resource.description,
         mimeType: resource.mimeType
       }))
-    } catch (error) {
-      console.error(`[MCP] Failed to fetch resources from ${config.name}:`, error)
+    } catch (error: unknown) {
+      // MCP error -32601 表示服务器不支持此方法，静默处理
+      if (error && typeof error === 'object' && 'code' in error && error.code === -32601) {
+        console.log(`[MCP] ${config.name} 不支持 resources/list 方法`)
+      } else {
+        console.warn(`[MCP] 从 ${config.name} 获取资源列表失败:`, error instanceof Error ? error.message : error)
+      }
       return []
     }
   }
@@ -276,8 +281,13 @@ export class McpService extends EventEmitter {
         description: prompt.description,
         arguments: prompt.arguments
       }))
-    } catch (error) {
-      console.error(`[MCP] Failed to fetch prompts from ${config.name}:`, error)
+    } catch (error: unknown) {
+      // MCP error -32601 表示服务器不支持此方法，静默处理
+      if (error && typeof error === 'object' && 'code' in error && error.code === -32601) {
+        console.log(`[MCP] ${config.name} 不支持 prompts/list 方法`)
+      } else {
+        console.warn(`[MCP] 从 ${config.name} 获取提示模板失败:`, error instanceof Error ? error.message : error)
+      }
       return []
     }
   }
@@ -331,30 +341,30 @@ export class McpService extends EventEmitter {
 
   /**
    * 生成符合长度限制的工具名称（OpenAI 限制 64 字符）
+   * 工具名称只能包含字母、数字、下划线和连字符
    */
   private generateToolName(serverId: string, toolName: string): string {
     const MAX_LENGTH = 64
     const prefix = 'mcp_'
     const separator = '_'
     
-    // 完整名称
-    const fullName = `${prefix}${serverId}${separator}${toolName}`
+    // 清理 serverId 和 toolName，只保留合法字符（字母、数字、下划线、连字符）
+    const cleanServerId = serverId.replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 12)
+    const cleanToolName = toolName.replace(/[^a-zA-Z0-9_-]/g, '')
     
-    if (fullName.length <= MAX_LENGTH) {
-      return fullName
+    // 计算可用长度
+    const availableForToolName = MAX_LENGTH - prefix.length - cleanServerId.length - separator.length
+    const truncatedToolName = cleanToolName.substring(0, availableForToolName)
+    
+    const result = `${prefix}${cleanServerId}${separator}${truncatedToolName}`
+    
+    // 最终安全检查
+    if (result.length > MAX_LENGTH) {
+      console.warn(`[MCP] 工具名称截断: ${result.length} -> ${MAX_LENGTH}`)
+      return result.substring(0, MAX_LENGTH)
     }
     
-    // 需要截断：保留前缀和 serverId 的前几个字符，尽量保留完整的 toolName
-    // 格式: mcp_[serverId截断]_[toolName截断]
-    const availableLength = MAX_LENGTH - prefix.length - separator.length
-    
-    // serverId 最多用 16 个字符，剩余给 toolName
-    const maxServerIdLength = Math.min(16, serverId.length)
-    const truncatedServerId = serverId.substring(0, maxServerIdLength)
-    const maxToolNameLength = availableLength - truncatedServerId.length
-    const truncatedToolName = toolName.substring(0, maxToolNameLength)
-    
-    return `${prefix}${truncatedServerId}${separator}${truncatedToolName}`
+    return result
   }
 
   /**
