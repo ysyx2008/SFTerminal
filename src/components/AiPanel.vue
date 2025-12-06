@@ -101,6 +101,7 @@ const {
   agentMode,
   strictMode,
   commandTimeout,
+  pendingSupplements,
   agentState,
   isAgentRunning,
   pendingConfirm,
@@ -626,6 +627,26 @@ onMounted(() => {
               </div>
             </div>
           </template>
+        </template>
+
+        <!-- 等待处理的补充消息 -->
+        <template v-if="isAgentRunning && pendingSupplements.length > 0">
+          <div 
+            v-for="(supplement, idx) in pendingSupplements" 
+            :key="`pending_${idx}`" 
+            class="message assistant"
+          >
+            <div class="message-wrapper">
+              <div class="message-content pending-supplement">
+                <div class="pending-supplement-header">
+                  <span class="pending-icon">💡</span>
+                  <span class="pending-label">补充信息（等待处理）</span>
+                  <span class="pending-spinner"></span>
+                </div>
+                <div class="pending-supplement-content">{{ supplement }}</div>
+              </div>
+            </div>
+          </div>
         </template>
 
         <!-- Agent 确认对话框（融入对话流） -->
@@ -2421,6 +2442,45 @@ onMounted(() => {
 
 .agent-step-inline.user_supplement .step-icon {
   color: #f59e0b;
+}
+
+/* 等待处理的补充消息 */
+.pending-supplement {
+  background: rgba(245, 158, 11, 0.08) !important;
+  border: 1px dashed rgba(245, 158, 11, 0.4) !important;
+  border-radius: 8px !important;
+}
+
+.pending-supplement-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.pending-icon {
+  font-size: 14px;
+}
+
+.pending-label {
+  color: #f59e0b;
+  font-weight: 500;
+}
+
+.pending-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(245, 158, 11, 0.2);
+  border-top-color: #f59e0b;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.pending-supplement-content {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 /* 风险等级颜色 */
