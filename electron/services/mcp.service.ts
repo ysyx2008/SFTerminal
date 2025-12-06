@@ -140,7 +140,7 @@ export class McpService extends EventEmitter {
       // 创建 MCP 客户端
       const client = new Client({
         name: 'qiyu-terminal',
-        version: '2.1.0'
+        version: '3.0.0'
       }, {
         capabilities: {
           tools: {},
