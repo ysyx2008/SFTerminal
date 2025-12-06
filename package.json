@@ -61,6 +61,6 @@
     "vite-plugin-electron-renderer": "^0.14.5",
     "vue-tsc": "^2.0.6"
   },
-  "author": "旗鱼终端团队",
-  "license": "MIT"
+  "author": "旗鱼",
+  "license": "AGPL-3.0-or-later"
 }
