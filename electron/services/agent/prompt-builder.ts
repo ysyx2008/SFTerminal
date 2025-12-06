@@ -112,7 +112,9 @@ export function buildSystemPrompt(
 ): string {
   // MBTI 风格提示
   const mbtiStyle = getMbtiStylePrompt(mbtiType ?? null)
-  const styleSection = mbtiStyle ? `\n\n## 你的风格\n${mbtiStyle}\n` : ''
+  const styleSection = mbtiStyle 
+    ? `\n\n## 你的风格（重要！）\n${mbtiStyle}\n\n**注意：请始终保持上述风格回复，即使历史对话中的风格有所不同。**\n` 
+    : ''
   // 优先使用 context.systemInfo（来自当前终端 tab，是准确的）
   const osType = context.systemInfo.os || 'unknown'
   const shellType = context.systemInfo.shell || 'unknown'
