@@ -351,6 +351,10 @@ const electronAPI = {
     updateConfig: (agentId: string, config: { strictMode?: boolean; commandTimeout?: number }) =>
       ipcRenderer.invoke('agent:updateConfig', agentId, config) as Promise<boolean>,
 
+    // 添加用户补充消息（Agent 执行过程中）
+    addMessage: (agentId: string, message: string) =>
+      ipcRenderer.invoke('agent:addMessage', agentId, message) as Promise<boolean>,
+
     // 监听 Agent 步骤更新
     onStep: (callback: (data: { agentId: string; step: AgentStep }) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string; step: AgentStep }) => callback(data)

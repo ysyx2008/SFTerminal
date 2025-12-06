@@ -731,7 +731,7 @@ onMounted(() => {
           </button>
           <textarea
             v-model="inputText"
-            :placeholder="agentMode ? '描述你想让 Agent 完成的任务...' : '输入问题或描述你想要的命令...'"
+            :placeholder="isAgentRunning ? '输入补充信息（将在下一步生效）...' : (agentMode ? '描述你想让 Agent 完成的任务...' : '输入问题或描述你想要的命令...')"
             rows="1"
             @keydown.enter.exact.prevent="handleSend"
           ></textarea>
@@ -746,17 +746,30 @@ onMounted(() => {
               <rect x="6" y="6" width="12" height="12" rx="2"/>
             </svg>
           </button>
-          <!-- 停止按钮 (Agent 模式) -->
-          <button
-            v-else-if="isAgentRunning"
-            class="btn btn-danger stop-btn"
-            @click="abortAgent"
-            title="停止 Agent"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="6" y="6" width="12" height="12" rx="2"/>
-            </svg>
-          </button>
+          <!-- Agent 运行中：停止按钮 + 补充消息发送按钮 -->
+          <template v-else-if="isAgentRunning">
+            <button
+              class="send-btn send-btn-supplement"
+              :disabled="!inputText.trim()"
+              title="发送补充信息 (Enter)"
+              @click="handleSend"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="16"/>
+                <line x1="8" y1="12" x2="16" y2="12"/>
+              </svg>
+            </button>
+            <button
+              class="btn btn-danger stop-btn"
+              @click="abortAgent"
+              title="停止 Agent"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" rx="2"/>
+              </svg>
+            </button>
+          </template>
           <!-- 发送按钮 -->
           <button
             v-else
@@ -1937,6 +1950,16 @@ onMounted(() => {
   box-shadow: 0 4px 16px rgba(16, 185, 129, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
+.send-btn-supplement {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%);
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.send-btn-supplement:hover:not(:disabled) {
+  background: linear-gradient(135deg, #fcd34d 0%, #fbbf24 50%, #f59e0b 100%);
+  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
 .stop-btn {
   flex-shrink: 0;
   padding: 10px 14px;
@@ -2387,6 +2410,19 @@ onMounted(() => {
 
 .agent-step-inline.message {
   color: var(--text-primary);
+}
+
+.agent-step-inline.user_supplement {
+  background: rgba(245, 158, 11, 0.1);
+  border-left: 3px solid #f59e0b;
+  padding-left: 10px;
+  margin-left: -2px;
+  border-radius: 4px;
+  color: var(--text-primary);
+}
+
+.agent-step-inline.user_supplement .step-icon {
+  color: #f59e0b;
 }
 
 /* 风险等级颜色 */

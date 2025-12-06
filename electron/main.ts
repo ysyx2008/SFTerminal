@@ -414,6 +414,11 @@ ipcMain.handle('agent:updateConfig', async (_event, agentId: string, config: { s
   return agentService.updateConfig(agentId, config)
 })
 
+// 添加用户补充消息（Agent 执行过程中）
+ipcMain.handle('agent:addMessage', async (_event, agentId: string, message: string) => {
+  return agentService.addUserMessage(agentId, message)
+})
+
 // ==================== 历史记录相关 ====================
 
 // 保存聊天记录

@@ -238,6 +238,7 @@ export class AgentService {
       steps: [],
       isRunning: true,
       aborted: false,
+      pendingUserMessages: [],  // 用户补充消息队列
       config: fullConfig,
       context  // 保存上下文供工具使用
     }
@@ -290,6 +291,16 @@ export class AgentService {
       // Agent 执行循环
       while (stepCount < fullConfig.maxSteps && run.isRunning && !run.aborted) {
         stepCount++
+
+        // 处理用户补充消息（如果有）
+        if (run.pendingUserMessages.length > 0) {
+          const supplementMsg = run.pendingUserMessages.join('\n')
+          run.messages.push({ 
+            role: 'user', 
+            content: `[用户补充信息]\n${supplementMsg}` 
+          })
+          run.pendingUserMessages = []
+        }
 
         // 创建流式消息步骤
         const streamStepId = this.generateId()
@@ -504,6 +515,26 @@ export class AgentService {
 
     // 合并配置
     run.config = { ...run.config, ...config }
+    return true
+  }
+
+  /**
+   * 添加用户补充消息（在 Agent 执行过程中）
+   * 消息会在下一轮 AI 请求时被包含
+   */
+  addUserMessage(agentId: string, message: string): boolean {
+    const run = this.runs.get(agentId)
+    if (!run || !run.isRunning) return false
+
+    // 添加到待处理队列
+    run.pendingUserMessages.push(message)
+
+    // 添加步骤通知前端
+    this.addStep(agentId, {
+      type: 'user_supplement',
+      content: message
+    })
+
     return true
   }
 

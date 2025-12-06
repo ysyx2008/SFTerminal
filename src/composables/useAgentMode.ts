@@ -211,12 +211,31 @@ export function useAgentMode(
     })
   }
 
-  // 运行 Agent
+  // 运行 Agent 或发送补充消息
   const runAgent = async () => {
-    if (!inputText.value.trim() || isAgentRunning.value || !currentTabId.value) return
+    if (!inputText.value.trim() || !currentTabId.value) return
 
     const tabId = currentTabId.value
     const message = inputText.value
+
+    // 如果 Agent 正在运行，发送补充消息而不是启动新任务
+    if (isAgentRunning.value && agentState.value?.agentId) {
+      inputText.value = ''
+      
+      // 添加补充消息到步骤显示
+      terminalStore.addAgentStep(tabId, {
+        id: `supplement_${Date.now()}`,
+        type: 'user_supplement',
+        content: message,
+        timestamp: Date.now()
+      })
+      
+      // 发送到后端
+      await window.electronAPI.agent.addMessage(agentState.value.agentId, message)
+      await scrollToBottomIfNeeded()
+      return
+    }
+
     const startTime = Date.now()  // 记录开始时间
     inputText.value = ''
 
@@ -381,6 +400,7 @@ export function useAgentMode(
       case 'confirm': return '⚠️'
       case 'user_task': return '👤'
       case 'final_result': return '✅'
+      case 'user_supplement': return '💡'
       default: return '•'
     }
   }

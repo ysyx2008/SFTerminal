@@ -18,7 +18,7 @@ export type RiskLevel = 'safe' | 'moderate' | 'dangerous' | 'blocked'
 // Agent 执行步骤
 export interface AgentStep {
   id: string
-  type: 'thinking' | 'tool_call' | 'tool_result' | 'message' | 'error' | 'confirm' | 'streaming'
+  type: 'thinking' | 'tool_call' | 'tool_result' | 'message' | 'error' | 'confirm' | 'streaming' | 'user_supplement'
   content: string
   toolName?: string
   toolArgs?: Record<string, unknown>
@@ -67,6 +67,7 @@ export interface AgentRun {
   isRunning: boolean
   aborted: boolean
   pendingConfirmation?: PendingConfirmation
+  pendingUserMessages: string[]  // 用户补充消息队列
   config: AgentConfig
   context: AgentContext  // 运行上下文
 }
