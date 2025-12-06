@@ -32,9 +32,17 @@
   - `send_control_key` - 发送控制键（Ctrl+C/D/Z 等），处理卡住的命令
   - `read_file` / `write_file` - 文件读写操作
   - `remember_info` - 记住关键信息，跨会话记忆
+- 🔌 **MCP 扩展**：支持 Model Context Protocol，可接入外部工具和资源
 - ⚠️ **严格模式**：危险命令执行前需要用户确认，默认开启
 - ⏱️ **命令超时控制**：可配置命令执行超时时间，避免长时间等待
 - 📜 **任务历史**：记录每次 Agent 任务的执行过程和结果
+
+### MCP 扩展能力
+- 🔗 **协议支持**：完整支持 Model Context Protocol (MCP) 标准
+- 🚀 **多种传输**：支持 stdio 和 SSE 两种传输模式
+- 🧩 **能力聚合**：自动聚合多个 MCP 服务器的工具、资源和提示模板
+- 📦 **预设模板**：内置 Filesystem、GitHub、PostgreSQL 等常用 MCP 服务器配置模板
+- 🎛️ **可视化管理**：图形化界面配置和管理 MCP 服务器连接
 
 ### AI 对话能力
 - 💬 **智能对话**：命令解释、错误诊断、自然语言生成命令，流式响应实时输出
@@ -122,6 +130,43 @@ Agent 模式需要 AI 模型支持 **Function Calling**（工具调用）能力�
 - 通义千问 qwen-plus / qwen-max
 - DeepSeek
 
+## MCP 配置
+
+MCP (Model Context Protocol) 允许扩展 Agent 的能力，接入外部工具和资源。
+
+### 添加 MCP 服务器
+
+在设置中的「MCP 服务」页面添加配置：
+
+**stdio 模式**（本地进程）：
+```json
+{
+  "name": "文件系统",
+  "transport": "stdio",
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"],
+  "env": {}
+}
+```
+
+**SSE 模式**（远程服务）：
+```json
+{
+  "name": "远程服务",
+  "transport": "sse",
+  "url": "http://localhost:8080/sse"
+}
+```
+
+### 常用 MCP 服务器
+
+- **Filesystem**：本地文件读写操作
+- **GitHub**：GitHub 仓库操作（需要 Token）
+- **PostgreSQL**：数据库查询操作
+- **Brave Search**：网页搜索能力
+
+更多 MCP 服务器请参考：[MCP Servers](https://github.com/modelcontextprotocol/servers)
+
 ## Xshell 会话导入
 
 支持从 Xshell 导入已有的会话配置：
@@ -156,6 +201,7 @@ Agent 模式需要 AI 模型支持 **Function Calling**（工具调用）能力�
 │       ├── sftp.service.ts   # SFTP 文件传输
 │       ├── host-profile.service.ts   # 主机档案
 │       ├── document-parser.service.ts # 文档解析
+│       ├── mcp.service.ts        # MCP 客户端服务
 │       ├── history.service.ts    # 历史记录
 │       ├── config.service.ts     # 配置管理
 │       └── xshell-import.service.ts  # Xshell 导入
@@ -200,6 +246,14 @@ Agent 模式需要 AI 模型支持 **Function Calling**（工具调用）能力�
 | Ctrl+F | 搜索 |
 
 ## 版本历史
+
+### v3.0.0
+- 🔌 **MCP 协议支持**：全新 Model Context Protocol 扩展能力
+  - 支持连接外部 MCP 服务器，扩展 Agent 工具集
+  - 支持 stdio 和 SSE 两种传输模式
+  - 自动聚合多服务器的工具、资源和提示模板
+  - 内置 Filesystem、GitHub、PostgreSQL 等预设模板
+  - 可视化 MCP 服务器配置和管理界面
 
 ### v2.2.0
 - 📁 **SFTP 文件管理**：全新可视化文件浏览器
