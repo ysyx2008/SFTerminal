@@ -548,16 +548,17 @@ const deleteGroup = async (groupName: string) => {
     <!-- 会话列表 -->
     <div class="session-list">
       <template v-if="Object.keys(groupedSessions).length > 0">
-        <div
-          v-for="(groupData, groupName) in groupedSessions"
-          :key="groupName"
-          class="session-group"
-          :class="{ 'drag-over': dragOverGroupName === groupName }"
-          @dragover="handleDragOverGroup(groupName as string, $event)"
-          @dragleave="handleDragLeaveGroup"
-          @drop="handleDropToGroup(groupName as string, $event)"
-        >
-          <div class="group-header" v-if="groupData.sessions.length > 0 || groupData.group">
+        <TransitionGroup name="list-fade" tag="div" class="session-groups-container">
+          <div
+            v-for="(groupData, groupName) in groupedSessions"
+            :key="groupName"
+            class="session-group"
+            :class="{ 'drag-over': dragOverGroupName === groupName }"
+            @dragover="handleDragOverGroup(groupName as string, $event)"
+            @dragleave="handleDragLeaveGroup"
+            @drop="handleDropToGroup(groupName as string, $event)"
+          >
+            <div class="group-header" v-if="groupData.sessions.length > 0 || groupData.group">
             <div class="group-header-left">
               <span>{{ groupName }}</span>
               <span v-if="groupData.group?.jumpHost" class="jump-host-badge" title="跳板机">
@@ -625,6 +626,7 @@ const deleteGroup = async (groupName: string) => {
             </div>
           </div>
         </div>
+        </TransitionGroup>
       </template>
       <div v-else class="empty-sessions">
         <template v-if="searchText">
@@ -639,8 +641,10 @@ const deleteGroup = async (groupName: string) => {
     </div>
 
     <!-- 新建/编辑会话弹窗 -->
-    <div v-if="showNewSession" class="modal-overlay" @click.self="showNewSession = false">
-      <div class="modal session-modal">
+    <Transition name="overlay">
+      <div v-if="showNewSession" class="modal-overlay" @click.self="showNewSession = false">
+        <Transition name="modal" appear>
+          <div class="modal session-modal">
         <div class="modal-header">
           <h3>{{ editingSession ? '编辑主机' : '新建主机' }}</h3>
           <button class="btn-icon" @click="showNewSession = false" title="关闭">
@@ -705,12 +709,16 @@ const deleteGroup = async (groupName: string) => {
           <button class="btn" @click="showNewSession = false">取消</button>
           <button class="btn btn-primary" @click="saveSession">保存</button>
         </div>
+          </div>
+        </Transition>
       </div>
-    </div>
+    </Transition>
 
     <!-- 分组编辑弹窗 -->
-    <div v-if="showGroupEditor" class="modal-overlay" @click.self="showGroupEditor = false">
-      <div class="modal session-modal">
+    <Transition name="overlay">
+      <div v-if="showGroupEditor" class="modal-overlay" @click.self="showGroupEditor = false">
+        <Transition name="modal" appear>
+          <div class="modal session-modal">
         <div class="modal-header">
           <h3>{{ editingGroup ? '编辑分组' : (groupFormData.name ? '配置分组' : '新建分组') }}</h3>
           <button class="btn-icon" @click="showGroupEditor = false" title="关闭">
@@ -785,8 +793,10 @@ const deleteGroup = async (groupName: string) => {
           <button class="btn" @click="showGroupEditor = false">取消</button>
           <button class="btn btn-primary" @click="saveGroup">保存</button>
         </div>
+          </div>
+        </Transition>
       </div>
-    </div>
+    </Transition>
   </div>
 </template>
 
@@ -831,9 +841,22 @@ const deleteGroup = async (groupName: string) => {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   z-index: 100;
   overflow: hidden;
+  animation: menuSlideDown 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: top left;
+}
+
+@keyframes menuSlideDown {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .new-menu-item {
@@ -873,9 +896,11 @@ const deleteGroup = async (groupName: string) => {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   z-index: 100;
   overflow: hidden;
+  animation: menuSlideDown 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: top right;
 }
 
 .import-menu-item {
@@ -1014,19 +1039,44 @@ const deleteGroup = async (groupName: string) => {
   background: var(--bg-tertiary);
   border-radius: 6px;
   cursor: grab;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: sessionItemIn 0.3s ease backwards;
 }
+
+@keyframes sessionItemIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 交错动画延迟 */
+.session-item:nth-child(1) { animation-delay: 0ms; }
+.session-item:nth-child(2) { animation-delay: 30ms; }
+.session-item:nth-child(3) { animation-delay: 60ms; }
+.session-item:nth-child(4) { animation-delay: 90ms; }
+.session-item:nth-child(5) { animation-delay: 120ms; }
+.session-item:nth-child(n+6) { animation-delay: 150ms; }
 
 .session-item:hover {
   background: var(--bg-surface);
+  transform: translateX(4px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .session-item:active {
   cursor: grabbing;
+  transform: scale(0.98);
 }
 
 .session-item.dragging {
   opacity: 0.5;
+  transform: scale(1.02);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
 }
 
 .session-icon {
@@ -1080,6 +1130,8 @@ const deleteGroup = async (groupName: string) => {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1093,6 +1145,46 @@ const deleteGroup = async (groupName: string) => {
   border-radius: 12px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
   overflow: hidden;
+}
+
+/* 弹窗动画 */
+.overlay-enter-active,
+.overlay-leave-active {
+  transition: opacity 0.25s ease;
+}
+
+.overlay-enter-from,
+.overlay-leave-to {
+  opacity: 0;
+}
+
+.modal-enter-active {
+  animation: modalSpringIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.modal-leave-active {
+  animation: modalOut 0.2s ease-out;
+}
+
+@keyframes modalSpringIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(20px);
+  }
+  60% {
+    transform: scale(1.02) translateY(-5px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes modalOut {
+  to {
+    opacity: 0;
+    transform: scale(0.9);
+  }
 }
 
 .modal-header {

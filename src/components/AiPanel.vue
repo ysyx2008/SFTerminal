@@ -1151,13 +1151,36 @@ onMounted(() => {
   border: 1px solid var(--border-color);
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: quickActionIn 0.3s ease backwards;
+}
+
+.quick-action-btn:nth-child(1) { animation-delay: 0ms; }
+.quick-action-btn:nth-child(2) { animation-delay: 50ms; }
+.quick-action-btn:nth-child(3) { animation-delay: 100ms; }
+.quick-action-btn:nth-child(4) { animation-delay: 150ms; }
+
+@keyframes quickActionIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .quick-action-btn:hover {
   background: var(--bg-surface);
   color: var(--text-primary);
   border-color: var(--accent-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.quick-action-btn:active {
+  transform: translateY(0) scale(0.98);
 }
 
 .action-icon {
@@ -1427,16 +1450,52 @@ onMounted(() => {
 
 .message {
   margin-bottom: 12px;
+  animation: messageSlideIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .message.user {
   display: flex;
   justify-content: flex-end;
+  animation: messageSlideInRight 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes messageSlideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .message.assistant {
   display: flex;
   justify-content: flex-start;
+  animation: messageSlideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes messageSlideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .message-wrapper {
@@ -2074,18 +2133,39 @@ onMounted(() => {
   border: 1px solid var(--border-color);
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.mode-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
 
 .mode-btn:hover {
   background: var(--bg-surface);
   color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+.mode-btn:hover::before {
+  opacity: 1;
+}
+
+.mode-btn:active {
+  transform: translateY(0) scale(0.98);
 }
 
 .mode-btn.active {
   background: var(--accent-primary);
   color: #fff;
   border-color: var(--accent-primary);
+  box-shadow: 0 2px 8px rgba(137, 180, 250, 0.3);
 }
 
 /* Agent 设置区域 */

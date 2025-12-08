@@ -58,8 +58,9 @@ const restartSetup = async () => {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')">
-    <div class="settings-modal">
+  <Transition name="overlay" appear>
+    <div class="modal-overlay" @click.self="emit('close')">
+      <div class="settings-modal">
       <div class="settings-header">
         <h2>{{ t('settings.title') }}</h2>
         <button class="btn-icon" @click="emit('close')" :title="t('settings.closeSettings')">
@@ -114,7 +115,8 @@ const restartSetup = async () => {
         </div>
       </div>
     </div>
-  </div>
+    </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -122,11 +124,12 @@ const restartSetup = async () => {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  animation: fadeIn 0.2s ease;
 }
 
 .settings-modal {
@@ -140,7 +143,42 @@ const restartSetup = async () => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: slideIn 0.2s ease;
+  animation: modalSpringIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* iOS 风格弹窗动画 */
+@keyframes modalSpringIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(20px);
+  }
+  50% {
+    transform: scale(1.02) translateY(-5px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Transition 动画 */
+.overlay-enter-active {
+  transition: all 0.3s ease;
+}
+
+.overlay-leave-active {
+  transition: all 0.2s ease;
+}
+
+.overlay-enter-from,
+.overlay-leave-to {
+  opacity: 0;
+}
+
+.overlay-enter-from .settings-modal,
+.overlay-leave-to .settings-modal {
+  transform: scale(0.9);
+  opacity: 0;
 }
 
 .settings-header {
@@ -181,18 +219,44 @@ const restartSetup = async () => {
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   text-align: left;
+  position: relative;
+  overflow: hidden;
+}
+
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  background: var(--accent-primary);
+  transform: scaleY(0);
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  border-radius: 0 2px 2px 0;
 }
 
 .nav-item:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+  transform: translateX(2px);
+}
+
+.nav-item:active {
+  transform: translateX(2px) scale(0.98);
 }
 
 .nav-item.active {
   background: var(--accent-primary);
   color: var(--bg-primary);
+  transform: translateX(0);
+}
+
+.nav-item.active::before {
+  transform: scaleY(1);
+  background: var(--bg-primary);
 }
 
 .nav-icon {
@@ -289,20 +353,30 @@ const restartSetup = async () => {
   font-size: 12px;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+/* 设置内容切换动画 */
+.settings-content > * {
+  animation: contentFadeIn 0.25s ease;
 }
 
-@keyframes slideIn {
+@keyframes contentFadeIn {
   from {
-    transform: translateY(-20px);
     opacity: 0;
+    transform: translateY(8px);
   }
   to {
-    transform: translateY(0);
     opacity: 1;
+    transform: translateY(0);
   }
+}
+
+/* 关于页面 logo 动画 */
+.about-logo {
+  animation: logoFloat 3s ease-in-out infinite;
+}
+
+@keyframes logoFloat {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(5deg); }
 }
 </style>
 

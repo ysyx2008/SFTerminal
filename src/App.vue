@@ -208,20 +208,22 @@ onUnmounted(() => {
     <!-- 主体内容 -->
     <div class="app-body">
       <!-- 左侧边栏 - 主机管理 -->
-      <aside v-show="showSidebar" class="sidebar">
-        <div class="sidebar-header">
-          <span>{{ t('header.hostManager') }}</span>
-          <button class="btn-icon btn-sm" @click="showSidebar = false" :title="t('header.closeSidebar')">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-        </div>
-        <div class="sidebar-content">
-          <SessionManager @open-sftp="openSftp" />
-        </div>
-      </aside>
+      <Transition name="slide-left">
+        <aside v-if="showSidebar" class="sidebar">
+          <div class="sidebar-header">
+            <span>{{ t('header.hostManager') }}</span>
+            <button class="btn-icon btn-sm" @click="showSidebar = false" :title="t('header.closeSidebar')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+          <div class="sidebar-content">
+            <SessionManager @open-sftp="openSftp" />
+          </div>
+        </aside>
+      </Transition>
 
       <!-- 终端区域 -->
       <main class="terminal-area">
@@ -229,38 +231,46 @@ onUnmounted(() => {
       </main>
 
       <!-- AI 面板 -->
-      <template v-if="showAiPanel">
-        <div 
-          class="resize-handle" 
-          @mousedown="startResize"
-          :class="{ resizing: isResizing }"
-        ></div>
-        <aside class="ai-sidebar" :style="{ width: aiPanelWidth + 'px' }">
-          <AiPanel @close="showAiPanel = false" />
-        </aside>
-      </template>
+      <Transition name="slide-right">
+        <div v-if="showAiPanel" class="ai-panel-wrapper">
+          <div 
+            class="resize-handle" 
+            @mousedown="startResize"
+            :class="{ resizing: isResizing }"
+          ></div>
+          <aside class="ai-sidebar" :style="{ width: aiPanelWidth + 'px' }">
+            <AiPanel @close="showAiPanel = false" />
+          </aside>
+        </div>
+      </Transition>
     </div>
 
     <!-- 设置弹窗 -->
-    <SettingsModal 
-      v-if="showSettings" 
-      :initial-tab="settingsInitialTab"
-      @close="closeSettings"
-      @restart-setup="restartSetup"
-    />
+    <Transition name="modal">
+      <SettingsModal 
+        v-if="showSettings" 
+        :initial-tab="settingsInitialTab"
+        @close="closeSettings"
+        @restart-setup="restartSetup"
+      />
+    </Transition>
 
     <!-- SFTP 文件管理器弹窗 -->
-    <FileExplorer
-      v-if="showFileExplorer && sftpConfig"
-      :config="sftpConfig"
-      @close="closeSftp"
-    />
+    <Transition name="modal">
+      <FileExplorer
+        v-if="showFileExplorer && sftpConfig"
+        :config="sftpConfig"
+        @close="closeSftp"
+      />
+    </Transition>
 
     <!-- 首次启动引导向导 -->
-    <SetupWizard
-      v-if="showSetupWizard"
-      @complete="onSetupComplete"
-    />
+    <Transition name="scale">
+      <SetupWizard
+        v-if="showSetupWizard"
+        @complete="onSetupComplete"
+      />
+    </Transition>
   </div>
 </template>
 
@@ -347,6 +357,12 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+/* AI 面板包装器 */
+.ai-panel-wrapper {
+  display: flex;
+  flex-shrink: 0;
+}
+
 /* AI 侧边栏 */
 .ai-sidebar {
   min-width: 280px;
@@ -370,6 +386,15 @@ onUnmounted(() => {
 .resize-handle:hover,
 .resize-handle.resizing {
   background: var(--accent-primary);
+}
+
+/* 侧边栏动画优化 */
+.sidebar {
+  will-change: transform;
+}
+
+.ai-panel-wrapper {
+  will-change: transform;
 }
 
 </style>

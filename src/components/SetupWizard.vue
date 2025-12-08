@@ -735,17 +735,17 @@ onMounted(async () => {
 }
 
 .step-panel {
-  animation: fadeIn 0.3s ease;
+  animation: stepSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-@keyframes fadeIn {
+@keyframes stepSlideIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateX(30px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateX(0);
   }
 }
 
@@ -800,6 +800,30 @@ onMounted(async () => {
   background: var(--bg-tertiary);
   border-radius: 12px;
   border: 1px solid var(--border-color);
+  animation: featureItemIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  transition: all 0.25s ease;
+}
+
+.feature-item:nth-child(1) { animation-delay: 0.1s; }
+.feature-item:nth-child(2) { animation-delay: 0.2s; }
+.feature-item:nth-child(3) { animation-delay: 0.3s; }
+.feature-item:nth-child(4) { animation-delay: 0.4s; }
+
+@keyframes featureItemIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.feature-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  border-color: var(--accent-primary);
 }
 
 .feature-icon {
@@ -937,13 +961,36 @@ onMounted(async () => {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   text-align: left;
+  animation: templateCardIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+}
+
+.template-card:nth-child(1) { animation-delay: 0.05s; }
+.template-card:nth-child(2) { animation-delay: 0.1s; }
+.template-card:nth-child(3) { animation-delay: 0.15s; }
+.template-card:nth-child(4) { animation-delay: 0.2s; }
+
+@keyframes templateCardIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .template-card:hover {
   border-color: var(--accent-primary);
   background: var(--bg-hover);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.template-card:active {
+  transform: translateY(0) scale(0.98);
 }
 
 .template-name {

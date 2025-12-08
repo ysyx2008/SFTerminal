@@ -340,20 +340,38 @@ const handleDragEnd = () => {
   background: var(--bg-tertiary);
   border-radius: 6px 6px 0 0;
   cursor: grab;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   user-select: none;
   flex-shrink: 0;
+  animation: tabSlideIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes tabSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .tab:hover {
   background: var(--bg-surface);
+  transform: translateY(-1px);
+}
+
+.tab:active {
+  transform: translateY(0) scale(0.98);
 }
 
 .tab.active {
   background: var(--bg-primary);
   border-bottom: 2px solid var(--accent-primary);
-  box-shadow: 0 -2px 8px rgba(0, 150, 255, 0.15);
+  box-shadow: 0 -2px 12px rgba(137, 180, 250, 0.2);
   position: relative;
+  transform: translateY(0);
 }
 
 .tab.active::before {
@@ -365,6 +383,16 @@ const handleDragEnd = () => {
   height: 2px;
   background: var(--accent-primary);
   border-radius: 2px 2px 0 0;
+  animation: tabIndicator 0.3s ease;
+}
+
+@keyframes tabIndicator {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }
 
 .tab.dragging {
@@ -507,9 +535,22 @@ const handleDragEnd = () => {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   z-index: 1001;
   overflow: hidden;
+  animation: menuPopIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: top right;
+}
+
+@keyframes menuPopIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .shell-menu-item {

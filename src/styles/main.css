@@ -193,14 +193,12 @@ html, body {
   visibility: visible;
 }
 
-/* 动画 */
+/* ==================== 动画效果 ==================== */
+
+/* 基础关键帧 */
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes slideIn {
@@ -214,6 +212,83 @@ html, body {
   }
 }
 
+/* iOS 风格弹簧缩放动画 */
+@keyframes scaleSpringIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes scaleSpringOut {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+/* 菜单弹出动画 */
+@keyframes menuPopIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.95) translateY(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes menuPopOut {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.95) translateY(-4px);
+  }
+}
+
+/* 微妙的浮动效果 */
+@keyframes subtleFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+/* 脉冲效果 */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* 旋转加载 */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 摇晃效果 */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+/* ==================== Vue Transition 类 ==================== */
+
+/* 淡入淡出 */
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s ease;
@@ -224,14 +299,269 @@ html, body {
   opacity: 0;
 }
 
-.slide-enter-active,
-.slide-leave-active {
-  transition: all 0.2s ease;
+/* 快速淡入淡出 */
+.fade-fast-enter-active,
+.fade-fast-leave-active {
+  transition: opacity 0.15s ease;
 }
 
-.slide-enter-from,
-.slide-leave-to {
-  transform: translateX(20px);
+.fade-fast-enter-from,
+.fade-fast-leave-to {
   opacity: 0;
+}
+
+/* 从左滑入 */
+.slide-left-enter-active {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.slide-left-leave-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-left-enter-from {
+  transform: translateX(-100%);
+  opacity: 0;
+}
+
+.slide-left-leave-to {
+  transform: translateX(-100%);
+  opacity: 0;
+}
+
+/* 从右滑入 */
+.slide-right-enter-active {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.slide-right-leave-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-right-enter-from {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
+.slide-right-leave-to {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
+/* 从上滑入 */
+.slide-down-enter-active {
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.slide-down-leave-active {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-down-enter-from {
+  transform: translateY(-10px);
+  opacity: 0;
+}
+
+.slide-down-leave-to {
+  transform: translateY(-10px);
+  opacity: 0;
+}
+
+/* 从下滑入 */
+.slide-up-enter-active {
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.slide-up-leave-active {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-up-enter-from {
+  transform: translateY(10px);
+  opacity: 0;
+}
+
+.slide-up-leave-to {
+  transform: translateY(10px);
+  opacity: 0;
+}
+
+/* 弹窗弹簧缩放 - iOS 风格 */
+.modal-enter-active {
+  animation: scaleSpringIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.modal-leave-active {
+  animation: scaleSpringOut 0.2s ease-out;
+}
+
+/* 弹窗背景遮罩 */
+.overlay-enter-active,
+.overlay-leave-active {
+  transition: opacity 0.25s ease;
+}
+
+.overlay-enter-from,
+.overlay-leave-to {
+  opacity: 0;
+}
+
+/* 菜单弹出 */
+.menu-enter-active {
+  animation: menuPopIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.menu-leave-active {
+  animation: menuPopOut 0.15s ease-out;
+}
+
+/* 缩放弹入 */
+.scale-enter-active {
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.scale-leave-active {
+  transition: all 0.2s ease-out;
+}
+
+.scale-enter-from {
+  transform: scale(0.9);
+  opacity: 0;
+}
+
+.scale-leave-to {
+  transform: scale(0.9);
+  opacity: 0;
+}
+
+/* 列表项交错动画 */
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.3s ease;
+}
+
+.list-enter-from {
+  opacity: 0;
+  transform: translateX(-15px);
+}
+
+.list-leave-to {
+  opacity: 0;
+  transform: translateX(15px);
+}
+
+.list-move {
+  transition: transform 0.3s ease;
+}
+
+/* 列表淡入 */
+.list-fade-enter-active,
+.list-fade-leave-active {
+  transition: all 0.25s ease;
+}
+
+.list-fade-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.list-fade-leave-to {
+  opacity: 0;
+}
+
+.list-fade-move {
+  transition: transform 0.25s ease;
+}
+
+/* ==================== 交互效果 ==================== */
+
+/* 按钮点击效果 */
+.btn,
+.btn-icon,
+.quick-btn,
+.nav-item,
+.tab,
+.session-item {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn:active,
+.btn-icon:active {
+  transform: scale(0.95);
+}
+
+.btn-primary:active {
+  transform: scale(0.97);
+}
+
+/* 悬浮时微妙上浮效果 */
+.session-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.session-item:active {
+  transform: translateY(0) scale(0.99);
+}
+
+/* 标签页激活动画 */
+.tab.active {
+  animation: subtleFloat 2s ease-in-out infinite;
+  animation-play-state: paused;
+}
+
+/* 输入框聚焦效果 */
+.input {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+}
+
+.input:focus {
+  box-shadow: 0 0 0 3px rgba(137, 180, 250, 0.15);
+}
+
+/* 选择框悬浮效果 */
+.select {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.select:focus {
+  box-shadow: 0 0 0 3px rgba(137, 180, 250, 0.15);
+}
+
+/* 加载状态脉冲 */
+.loading {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* 成功状态闪烁 */
+@keyframes successFlash {
+  0% { background: var(--accent-success); }
+  100% { background: transparent; }
+}
+
+.success-flash {
+  animation: successFlash 0.5s ease-out;
+}
+
+/* 错误抖动 */
+.error-shake {
+  animation: shake 0.3s ease-in-out;
+}
+
+/* ==================== 滚动条动画 ==================== */
+::-webkit-scrollbar-thumb {
+  transition: background 0.2s ease;
+}
+
+/* ==================== 工具提示动画 ==================== */
+[data-tooltip]::after {
+  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform: translateX(-50%) translateY(4px);
+}
+
+[data-tooltip]:hover::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
 }
 
