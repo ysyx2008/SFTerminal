@@ -1,5 +1,5 @@
-appId: com.qiyu.terminal
-productName: 旗鱼终端
+appId: com.liaoyuan.terminal
+productName: 燎元智能终端
 directories:
   buildResources: resources
   output: release
@@ -34,7 +34,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: 旗鱼终端
+  shortcutName: 燎元智能终端
 mac:
   icon: resources/icon.icns
   target:

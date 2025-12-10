@@ -1,7 +1,7 @@
 {
-  "name": "qiyu-terminal",
-  "version": "5.6.3",
-  "description": "旗鱼终端 - AI 驱动的跨平台终端",
+  "name": "liaoyuan-terminal",
+  "version": "1.0.0",
+  "description": "燎元智能终端 - AI 驱动的跨平台终端",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
