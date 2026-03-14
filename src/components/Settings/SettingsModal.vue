@@ -58,7 +58,7 @@ const copyQQGroup = async () => {
   } catch { /* ignore */ }
 }
 
-// 平台检测 - macOS 上隐藏自动更新功能（签名问题）
+// 平台检测 - macOS 上仅支持检查更新 + 手动下载（无公证签名，不支持自动更新）
 const isMac = computed(() => navigator.platform.toLowerCase().includes('mac'))
 
 // 品牌信息
@@ -536,8 +536,8 @@ const onQrImageError = (event: Event) => {
             <h3>{{ brandName }}</h3>
             <p class="version">{{ t('common.version') }} {{ oemConfig.brand.version || appVersion }}</p>
             
-            <!-- 更新检测区域 - macOS 上隐藏（签名问题导致更新失败） -->
-            <div v-if="!isMac" class="update-section">
+            <!-- 更新检测区域 -->
+            <div class="update-section">
               <!-- 检查更新按钮 -->
               <button 
                 v-if="updateStatus.status === 'idle' || updateStatus.status === 'not-available' || updateStatus.status === 'error'"
@@ -559,30 +559,42 @@ const onQrImageError = (event: Event) => {
                   <span class="update-icon">🎉</span>
                   <span>{{ t('about.newVersionAvailable', { version: updateStatus.info?.version }) }}</span>
                 </div>
-                <!-- 下载源选择 -->
-                <div v-if="updateStatus.sources" class="source-selector">
-                  <span class="source-label">{{ t('about.downloadSource') }}</span>
-                  <div class="source-options">
-                    <button
-                      v-for="src in (['github', 'oss'] as const)"
-                      :key="src"
-                      class="source-option"
-                      :class="{ active: updateStatus.sources.current === src, recommended: updateStatus.sources.recommended === src }"
-                      @click="switchSource(src)"
-                    >
-                      <span class="source-name">{{ sourceLabel(src) }}</span>
-                      <span class="source-latency">{{ formatLatency(updateStatus.sources.latency[src]) }}</span>
-                      <span v-if="updateStatus.sources.recommended === src" class="source-badge">{{ t('about.sourceRecommended') }}</span>
-                    </button>
+                <!-- macOS：前往下载页手动更新 -->
+                <template v-if="isMac">
+                  <a 
+                    href="https://github.com/ysyx2008/SailFish/releases/latest" 
+                    target="_blank"
+                    class="btn btn-primary update-btn"
+                  >
+                    🔗 {{ t('about.goToDownload') }}
+                  </a>
+                </template>
+                <!-- Windows/Linux：自动下载 + 安装 -->
+                <template v-else>
+                  <div v-if="updateStatus.sources" class="source-selector">
+                    <span class="source-label">{{ t('about.downloadSource') }}</span>
+                    <div class="source-options">
+                      <button
+                        v-for="src in (['github', 'oss'] as const)"
+                        :key="src"
+                        class="source-option"
+                        :class="{ active: updateStatus.sources.current === src, recommended: updateStatus.sources.recommended === src }"
+                        @click="switchSource(src)"
+                      >
+                        <span class="source-name">{{ sourceLabel(src) }}</span>
+                        <span class="source-latency">{{ formatLatency(updateStatus.sources.latency[src]) }}</span>
+                        <span v-if="updateStatus.sources.recommended === src" class="source-badge">{{ t('about.sourceRecommended') }}</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <button class="btn btn-primary update-btn" @click="downloadUpdate">
-                  ⬇️ {{ t('about.downloadUpdate') }}
-                </button>
+                  <button class="btn btn-primary update-btn" @click="downloadUpdate">
+                    ⬇️ {{ t('about.downloadUpdate') }}
+                  </button>
+                </template>
               </div>
               
-              <!-- 下载中状态 -->
-              <div v-else-if="updateStatus.status === 'downloading'" class="update-status downloading">
+              <!-- 下载中状态（仅非 macOS） -->
+              <div v-else-if="!isMac && updateStatus.status === 'downloading'" class="update-status downloading">
                 <div class="update-info">
                   <span>{{ t('about.downloadingUpdate') }}</span>
                   <span class="download-percent">{{ updateStatus.progress?.percent.toFixed(1) }}%</span>
@@ -596,8 +608,8 @@ const onQrImageError = (event: Event) => {
                 </div>
               </div>
               
-              <!-- 下载完成，等待安装 -->
-              <div v-else-if="updateStatus.status === 'downloaded'" class="update-status downloaded">
+              <!-- 下载完成，等待安装（仅非 macOS） -->
+              <div v-else-if="!isMac && updateStatus.status === 'downloaded'" class="update-status downloaded">
                 <div class="update-info">
                   <span class="update-icon">✅</span>
                   <span>{{ t('about.updateReady', { version: updateStatus.info?.version }) }}</span>

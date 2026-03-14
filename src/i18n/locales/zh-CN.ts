@@ -346,6 +346,7 @@ export default {
     installAndRestart: '安装并重启',
     upToDate: '当前已是最新版本',
     updateError: '检查更新失败',
+    goToDownload: '前往下载',
     downloadSource: '下载源',
     sourceRecommended: '推荐',
     sourceUnreachable: '不可达',

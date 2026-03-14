@@ -346,6 +346,7 @@ export default {
     installAndRestart: 'Install and Restart',
     upToDate: 'You are up to date',
     updateError: 'Failed to check for updates',
+    goToDownload: 'Go to Download',
     downloadSource: 'Download Source',
     sourceRecommended: 'Best',
     sourceUnreachable: 'N/A',
