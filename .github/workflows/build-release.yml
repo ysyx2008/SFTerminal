@@ -232,6 +232,20 @@ jobs:
           # Windows
           $OSSUTIL cp artifacts/windows-release/latest.yml ${BUCKET}/releases/latest.yml -f
           $OSSUTIL cp artifacts/windows-release/SailFish-Setup-${VERSION}.exe ${BUCKET}/releases/SailFish-Setup-${VERSION}.exe -f
+          $OSSUTIL cp artifacts/windows-release/SailFish-Setup-${VERSION}.exe.blockmap ${BUCKET}/releases/SailFish-Setup-${VERSION}.exe.blockmap -f
+          # macOS
+          if [ -f artifacts/macos-release/latest-mac.yml ]; then
+            $OSSUTIL cp artifacts/macos-release/latest-mac.yml ${BUCKET}/releases/latest-mac.yml -f
+            for f in artifacts/macos-release/SailFish-${VERSION}*.dmg; do
+              [ -f "$f" ] && $OSSUTIL cp "$f" ${BUCKET}/releases/$(basename "$f") -f
+            done
+            for f in artifacts/macos-release/SailFish-${VERSION}*.zip; do
+              [ -f "$f" ] && $OSSUTIL cp "$f" ${BUCKET}/releases/$(basename "$f") -f
+            done
+            for f in artifacts/macos-release/*.blockmap; do
+              [ -f "$f" ] && $OSSUTIL cp "$f" ${BUCKET}/releases/$(basename "$f") -f
+            done
+          fi
           # Linux
           if [ -f artifacts/linux-release/latest-linux.yml ]; then
             $OSSUTIL cp artifacts/linux-release/latest-linux.yml ${BUCKET}/releases/latest-linux.yml -f
