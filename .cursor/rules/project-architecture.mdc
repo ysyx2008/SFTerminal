@@ -143,7 +143,9 @@ SailFish/
 - **完整消息记录**：每次 `run` 通过 `taskMessageLog`（append-only）记录完整 API 对话，与可压缩的 `run.messages`（工作窗口）分离
 - **后端直接存盘**：`finalizeRun` 时 Agent 直接调 `HistoryService.saveAgentRecord` 保存 `AgentRecord`（含 `steps` + `messages`），前端不参与保存
 - **增量检查点**：每完成一轮工具调用后自动写盘，防止程序意外退出丢失记录
-- **跨会话恢复**：App 重启后，前端从 HistoryService 加载历史步骤用于 UI 渲染，只传 `sessionId` 给后端；后端通过 `HistoryService.getAgentRecordById` 自行加载完整 messages 和 steps 恢复 TaskMemory
+- **跨会话恢复（两条路径）**：
+  - **终端 Agent**：前端保存 sessionId，重启后传给后端，`restoreFromHistory` 按 sessionId 精确加载旧 session 的完整状态（TaskMemory + steps + messages）
+  - **命名 Agent（Companion 等）**：IM 不传 sessionId，重启后生成新 sessionId 无法匹配旧记录。`restoreFromHistory` 的 fallback 路径从 HistoryService 加载最近 3 条 AgentRecord，提取最近 5 个任务填入 TaskMemory（仅恢复工作记忆，不恢复 session 状态）。之后由 ContextBuilder 的 L0-L4 压缩管线正常处理上下文注入
 - **生命周期**：终端关闭时 `cleanupAgent` 销毁 Agent 实例；"清空对话"时 `resetSession` 只重置会话状态和 TaskMemory，保留实例
 
 ### 关切系统（Watch / Sensor Loop）

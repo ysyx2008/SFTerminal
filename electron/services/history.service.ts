@@ -283,6 +283,26 @@ export class HistoryService {
   }
 
   /**
+   * 获取最近的 N 条 Agent 记录（从最新日期文件倒序读取，收够即停）
+   */
+  getRecentAgentRecords(limit: number = 5): AgentRecord[] {
+    const files = fs.readdirSync(this.agentDir).filter(f => f.endsWith('.json')).sort().reverse()
+    const results: AgentRecord[] = []
+
+    for (const file of files) {
+      if (results.length >= limit) break
+      const filePath = path.join(this.agentDir, file)
+      const records = this.readAgentRecords(filePath)
+      for (let i = records.length - 1; i >= 0; i--) {
+        results.push(records[i])
+        if (results.length >= limit) break
+      }
+    }
+
+    return results
+  }
+
+  /**
    * 关键字搜索 Agent 历史记录
    * 搜索范围：userTask、finalResult、以及过程中用户追加的消息（user_task / user_supplement steps）
    */

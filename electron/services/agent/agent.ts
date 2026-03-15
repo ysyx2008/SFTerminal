@@ -464,9 +464,21 @@ export abstract class Agent {
     if (!historyService || !this._sessionId) return
     
     const record = historyService.getAgentRecordById(this._sessionId)
-    if (!record) return
-    
-    // 从 messages 恢复 TaskMemory（按 user 消息分割为独立任务）
+    if (record) {
+      this.restoreFromSessionRecord(record)
+      return
+    }
+
+    // Fallback：sessionId 匹配不到记录（典型场景：App 重启后命名 Agent 生成了新 sessionId）
+    // 从最近的历史记录中提取任务，恢复工作记忆（仅填充 TaskMemory，不恢复 session 状态）
+    this.restoreRecentTaskMemory(historyService)
+  }
+
+  /**
+   * 从精确匹配的 session 记录恢复完整状态（TaskMemory + session 追踪）
+   * 场景：前端传回旧 sessionId，恢复之前的完整会话
+   */
+  private restoreFromSessionRecord(record: AgentRecord): void {
     if (record.messages && record.messages.length > 0) {
       const tasks = this.splitMessagesIntoTasks(record.messages as AiMessage[])
       for (const task of tasks) {
@@ -479,9 +491,8 @@ export abstract class Agent {
           task.messages
         )
       }
-      log.info(`Restored TaskMemory from HistoryService: ${tasks.length} tasks (from messages)`)
+      log.info(`Restored TaskMemory from session record: ${tasks.length} tasks (from messages)`)
     } else if (record.steps && record.steps.length > 0) {
-      // 降级：旧记录没有 messages，从 steps 重建基本 TaskMemory
       const tasks = this.splitStepsIntoTasks(record.steps)
       for (const task of tasks) {
         this.taskMemory.saveTask(
@@ -492,10 +503,9 @@ export abstract class Agent {
           task.finalResult
         )
       }
-      log.info(`Restored TaskMemory from HistoryService: ${tasks.length} tasks (from steps, no messages)`)
+      log.info(`Restored TaskMemory from session record: ${tasks.length} tasks (from steps, no messages)`)
     }
     
-    // 恢复 _sessionSteps（避免后续保存时覆盖旧步骤）
     if (record.steps && record.steps.length > 0 && this._sessionSteps.length === 0) {
       this._sessionSteps = record.steps.map(s => ({
         id: s.id,
@@ -511,10 +521,45 @@ export abstract class Agent {
       }))
     }
     
-    // 恢复 _sessionMessages
     if (record.messages && record.messages.length > 0 && this._sessionMessages.length === 0) {
       this._sessionMessages = (record.messages as AiMessage[]).map(m => ({ ...m }))
     }
+  }
+
+  /**
+   * 从最近历史记录恢复工作记忆（仅 TaskMemory，不恢复 session 状态）
+   * 场景：App 重启后 Companion 等命名 Agent 的首次 run，提取最近 5 个任务作为工作记忆
+   */
+  private restoreRecentTaskMemory(historyService: { getRecentAgentRecords(limit: number): AgentRecord[] }): void {
+    const MAX_RECENT_TASKS = 5
+    const MAX_RECENT_RECORDS = 3
+    const recentRecords = historyService.getRecentAgentRecords(MAX_RECENT_RECORDS)
+    if (recentRecords.length === 0) return
+
+    const allTasks: Array<{ id: string; userTask: string; finalResult: string; messages?: AiMessage[]; steps?: AgentStep[] }> = []
+
+    for (const rec of recentRecords) {
+      if (rec.messages && rec.messages.length > 0) {
+        const tasks = this.splitMessagesIntoTasks(rec.messages as AiMessage[])
+        allTasks.push(...tasks)
+      } else if (rec.steps && rec.steps.length > 0) {
+        const tasks = this.splitStepsIntoTasks(rec.steps)
+        allTasks.push(...tasks)
+      }
+    }
+
+    if (allTasks.length === 0) return
+
+    const recentTasks = allTasks.slice(-MAX_RECENT_TASKS)
+    for (const task of recentTasks) {
+      if (task.messages) {
+        this.taskMemory.saveTask(task.id, task.userTask, [], 'success', task.finalResult, task.messages as AiMessage[])
+      } else {
+        this.taskMemory.saveTask(task.id, task.userTask, task.steps as AgentStep[] || [], 'success', task.finalResult)
+      }
+    }
+
+    log.info(`Restored ${recentTasks.length} recent tasks from history (fallback, from ${recentRecords.length} records)`)
   }
   
   /**
