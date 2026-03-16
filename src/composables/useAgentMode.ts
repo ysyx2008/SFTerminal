@@ -45,6 +45,7 @@ export interface VirtualItem {
   step?: AgentStep
   content?: string
   size: number
+  isFirstStep?: boolean
 }
 
 export function useAgentMode(
@@ -436,13 +437,14 @@ export function useAgentMode(
       }
 
       if (group.isCurrentTask && isAgentRunning.value && group.steps.length === 0) {
-        items.push({ id: `loading_${group.id}`, type: 'agent_loading', size: 50 })
+        items.push({ id: `loading_${group.id}`, type: 'agent_loading', group, size: 50 })
       }
 
       if (group.steps.length > 0) {
-        for (const step of group.steps) {
+        for (let i = 0; i < group.steps.length; i++) {
+          const step = group.steps[i]
           const size = step.type === 'message' ? 80 : step.type === 'asking' ? 120 : 40
-          items.push({ id: step.id, type: 'step', step, group, size })
+          items.push({ id: step.id, type: 'step', step, group, size, isFirstStep: i === 0 })
         }
 
         if (group.isCurrentTask && isAgentRunning.value && !pendingConfirm.value && !isStreamingOutput(group)) {

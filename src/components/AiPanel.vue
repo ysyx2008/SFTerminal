@@ -1527,7 +1527,7 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <!-- Agent 初始加载 -->
+              <!-- Agent 初始加载（无步骤时） -->
               <div v-else-if="item.type === 'agent_loading'" class="message assistant">
                 <div class="message-wrapper">
                   <div class="message-content agent-initial-loading">
@@ -1540,7 +1540,7 @@ onUnmounted(() => {
               </div>
 
               <!-- 单个步骤 -->
-              <div v-else-if="item.type === 'step'" class="agent-step-virtual">
+              <div v-else-if="item.type === 'step'" class="agent-step-virtual" :class="{ 'first-step': item.isFirstStep }">
                 <div 
                   class="agent-step-inline"
                   :class="[item.step!.type, getRiskClass(item.step!.riskLevel), { 'step-rejected': item.step!.content.includes('拒绝') }]"
@@ -2493,6 +2493,31 @@ onUnmounted(() => {
   padding: 0 14px 4px;
   margin-left: 20px;
   border-left: 2px solid rgba(255, 255, 255, 0.06);
+}
+
+.standalone-mode .agent-step-virtual {
+  margin-left: 48px;
+}
+
+.standalone-mode .agent-step-virtual.first-step {
+  position: relative;
+  padding-top: 4px;
+}
+
+.standalone-mode .agent-step-virtual.first-step::before {
+  content: '';
+  position: absolute;
+  left: -48px;
+  top: 4px;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background-image: var(--assistant-avatar);
+  background-size: 68%;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 /* Agent 执行模式 - 宽松模式绿色内阴影（仅左右两边） */
@@ -4124,6 +4149,7 @@ onUnmounted(() => {
   margin-top: 10px;
 }
 
+
 /* AI 思考中指示器 */
 .agent-thinking-indicator {
   display: flex;
@@ -4170,6 +4196,10 @@ onUnmounted(() => {
 }
 
 /* Agent 最终回复 - 美化样式 */
+.message.assistant:has(.agent-final-wrapper) {
+  padding-top: 8px;
+}
+
 .agent-final-wrapper {
   background: transparent !important;
 }
