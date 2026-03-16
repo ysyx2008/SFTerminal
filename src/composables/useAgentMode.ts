@@ -13,6 +13,16 @@ import { createLogger } from '../utils/logger'
 
 const log = createLogger('Agent')
 
+function getLocalSystemInfo() {
+  const platform = navigator.platform.toLowerCase()
+  if (platform.includes('win')) {
+    return { os: 'windows', shell: 'powershell', description: '' }
+  } else if (platform.includes('mac')) {
+    return { os: 'macos', shell: 'zsh', description: '' }
+  }
+  return { os: 'linux', shell: 'bash', description: '' }
+}
+
 const SCROLL_THRESHOLD = 100
 const SCROLL_THROTTLE_MS = 1000
 
@@ -514,8 +524,8 @@ export function useAgentMode(
     inputText.value = ''
 
     // 获取 Agent 上下文
-    const context = isAssistantMode 
-      ? { terminalOutput: [] as string[], systemInfo: { os: 'macos', shell: 'zsh', description: '' } } as any
+    const context = isAssistantMode
+      ? { terminalOutput: [] as string[], systemInfo: getLocalSystemInfo() } as any
       : terminalStore.getAgentContext(tabId)
     if (!isAssistantMode && (!context || !context.ptyId)) {
       log.error('无法获取终端上下文')

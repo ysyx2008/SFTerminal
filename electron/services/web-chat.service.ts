@@ -13,7 +13,7 @@
  */
 
 import * as os from 'os'
-import { getDefaultShell } from '../utils/platform'
+import { getDefaultShell, getLocalOS } from '../utils/platform'
 import { v4 as uuidv4 } from 'uuid'
 import type { ExecutionMode, RemoteChannel } from '@shared/types'
 import { createLogger } from '../utils/logger'
@@ -192,7 +192,7 @@ export class WebChatService {
     // 后端直驱 Agent
     const context = {
       terminalOutput: [] as string[],
-      systemInfo: { os: process.platform, shell: getDefaultShell() },
+      systemInfo: { os: getLocalOS(), shell: getDefaultShell() },
       terminalType: 'assistant' as const,
       cwd: os.homedir(),
       remoteChannel: remoteChannelValue

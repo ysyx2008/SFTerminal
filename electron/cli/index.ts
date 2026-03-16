@@ -9,7 +9,7 @@ import { AiService } from '../services/ai.service'
 import { HistoryService } from '../services/history.service'
 import { HostProfileService } from '../services/host-profile.service'
 import { initLogging } from '../utils/logger'
-import { getDefaultShell } from '../utils/platform'
+import { getDefaultShell, getLocalOS } from '../utils/platform'
 
 // ==================== Helpers ====================
 
@@ -875,7 +875,7 @@ async function agentRun(args: string[]): Promise<void> {
     ptyId,
     terminalOutput: [],
     systemInfo: {
-      os: process.platform,
+      os: getLocalOS(),
       shell: getDefaultShell()
     },
     terminalType: 'local' as const

@@ -18,7 +18,7 @@ import type { ConfigService, SshSession } from './config.service'
 import type { AgentService } from './agent'
 import type { AgentContext, AgentCallbacks, AgentStep } from './agent/types'
 import { createLogger } from '../utils/logger'
-import { getDefaultShell } from '../utils/platform'
+import { getDefaultShell, getLocalOS } from '../utils/platform'
 
 const log = createLogger('Scheduler')
 
@@ -465,7 +465,7 @@ export class SchedulerService {
         ptyId,
         terminalOutput: [],
         systemInfo: {
-          os: process.platform,
+          os: getLocalOS(),
           shell: getDefaultShell()
         },
         terminalType: task.target.type === 'ssh' ? 'ssh' : 'local'
