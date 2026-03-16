@@ -30,7 +30,7 @@ export interface AgentTaskGroup {
 
 export interface VirtualItem {
   id: string
-  type: 'user_task' | 'agent_loading' | 'steps_header' | 'step' | 'thinking_indicator' | 'final_result' | 'proactive_message' | 'pending_supplement' | 'confirm'
+  type: 'user_task' | 'agent_loading' | 'step' | 'thinking_indicator' | 'final_result' | 'proactive_message' | 'pending_supplement' | 'confirm'
   group?: AgentTaskGroup
   step?: AgentStep
   content?: string
@@ -430,17 +430,13 @@ export function useAgentMode(
       }
 
       if (group.steps.length > 0) {
-        items.push({ id: `header_${group.id}`, type: 'steps_header', group, size: 44 })
+        for (const step of group.steps) {
+          const size = step.type === 'message' ? 80 : step.type === 'asking' ? 120 : 40
+          items.push({ id: step.id, type: 'step', step, group, size })
+        }
 
-        if (!isStepsCollapsed(group.id)) {
-          for (const step of group.steps) {
-            const size = step.type === 'message' ? 80 : step.type === 'asking' ? 120 : 40
-            items.push({ id: step.id, type: 'step', step, group, size })
-          }
-
-          if (group.isCurrentTask && isAgentRunning.value && !pendingConfirm.value && !isStreamingOutput(group)) {
-            items.push({ id: `thinking_${group.id}`, type: 'thinking_indicator', size: 50 })
-          }
+        if (group.isCurrentTask && isAgentRunning.value && !pendingConfirm.value && !isStreamingOutput(group)) {
+          items.push({ id: `thinking_${group.id}`, type: 'thinking_indicator', size: 50 })
         }
       }
 

@@ -182,8 +182,6 @@ const {
   currentPlan,
   agentTaskGroups,
   flattenedItems,
-  toggleStepsCollapse,
-  isStepsCollapsed,
   runAgent,
   abortAgent,
   confirmToolCall,
@@ -1091,7 +1089,6 @@ const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
   }
   if (item.type === 'final_result' && item.group) return [item.group.finalResult]
   if (item.type === 'proactive_message' && item.group) return [item.group.finalResult]
-  if (item.type === 'steps_header' && item.group) return [item.group.steps.length, isStepsCollapsed(item.group.id)]
   return []
 }
 
@@ -1542,20 +1539,6 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <!-- 步骤折叠头 -->
-              <div v-else-if="item.type === 'steps_header'" class="message assistant">
-                <div class="message-wrapper agent-steps-wrapper">
-                  <div class="message-content agent-steps-content">
-                    <div class="agent-steps-header-inline" @click="toggleStepsCollapse(item.group!.id)">
-                      <span>🤖 {{ item.group!.isCurrentTask && isAgentRunning ? t('ai.agentRunning') : t('ai.agentHistory') }}</span>
-                      <span v-if="item.group!.isCurrentTask && isAgentRunning" class="agent-running-dot"></span>
-                      <span class="steps-count">{{ item.group!.steps.length }} {{ t('ai.steps') }}</span>
-                      <span class="collapse-icon" :class="{ collapsed: isStepsCollapsed(item.group!.id) }">▼</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
               <!-- 单个步骤 -->
               <div v-else-if="item.type === 'step'" class="agent-step-virtual">
                 <div 
@@ -1617,9 +1600,7 @@ onUnmounted(() => {
                         <AgentPlanView :plan="item.step!.plan" :compact="false" />
                       </div>
                     </div>
-                    <div v-else class="step-text">
-                      {{ item.step!.content }}
-                    </div>
+                    <div v-else class="step-text markdown-content" v-html="renderMarkdown(item.step!.content)"></div>
                     <div v-if="item.step!.type === 'user_supplement' && item.step!.attachments && item.step!.attachments.length > 0" class="message-attachments">
                       <span
                         v-for="(file, fileIdx) in item.step!.attachments"
@@ -2509,7 +2490,7 @@ onUnmounted(() => {
 }
 
 .agent-step-virtual {
-  padding: 0 14px;
+  padding: 0 14px 4px;
   margin-left: 20px;
   border-left: 2px solid rgba(255, 255, 255, 0.06);
 }
@@ -3055,7 +3036,7 @@ onUnmounted(() => {
 }
 
 .message {
-  margin-bottom: 12px;
+  padding-bottom: 12px;
   animation: messageEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -4193,7 +4174,7 @@ onUnmounted(() => {
   background: transparent !important;
 }
 
-.agent-final-content {
+.message.assistant .agent-final-content {
   background: rgba(255, 255, 255, 0.03);
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
