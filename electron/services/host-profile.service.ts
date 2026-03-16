@@ -465,6 +465,9 @@ export class HostProfileService {
     if (profile.packageManager) {
       lines.push(`- 包管理器: ${profile.packageManager}`)
     }
+    if (profile.homeDir) {
+      lines.push(`- 主目录: ${profile.homeDir}`)
+    }
     if (profile.installedTools.length > 0) {
       lines.push(`- 已安装工具: ${profile.installedTools.join(', ')}`)
     }

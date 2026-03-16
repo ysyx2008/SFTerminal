@@ -398,11 +398,18 @@ export class PromptBuilder {
   }
 
   private buildHostEnvironment(): string {
+    const hostId = this.context.hostId || 'local'
+    const profile = this.hostProfileService
+      ? this.hostProfileService.getProfile(hostId)
+      : null
+
     if (this.isAssistant) {
       const lines: string[] = [
         `- 操作系统: ${this.osType}`,
         `- Shell: ${this.shellType}`,
       ]
+      if (profile?.username) lines.push(`- 当前用户: ${profile.username}`)
+      if (profile?.homeDir) lines.push(`- 用户主目录: ${profile.homeDir}`)
       return `# 运行环境\n\n${lines.join('\n')}`
     }
 
@@ -410,16 +417,19 @@ export class PromptBuilder {
       `- **终端类型**: ${this.isSshTerminal ? '🌐 SSH 远程终端' : '💻 本地终端'}`
     ]
 
-    const profile = this.context.hostId && this.hostProfileService
-      ? this.hostProfileService.getProfile(this.context.hostId)
-      : null
     if (profile?.hostname) {
       lines.push(`- 主机名: ${profile.hostname}`)
+    }
+    if (profile?.username) {
+      lines.push(`- 当前用户: ${profile.username}`)
     }
 
     lines.push(`- 操作系统: ${this.osType}`)
     lines.push(`- Shell: ${this.shellType}`)
 
+    if (profile?.homeDir) {
+      lines.push(`- 用户主目录: ${profile.homeDir}`)
+    }
     if (profile?.installedTools && profile.installedTools.length > 0) {
       lines.push(`- 已安装工具: ${profile.installedTools.join(', ')}`)
     }

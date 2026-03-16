@@ -176,6 +176,8 @@ export interface HostProfileServiceInterface {
     osVersion?: string
     shell?: string
     hostname?: string
+    username?: string
+    homeDir?: string
     installedTools?: string[]
     notes?: string[]
   } | null
