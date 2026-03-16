@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X } from 'lucide-vue-next'
 import { useConfigStore } from '../../stores/config'
@@ -319,12 +319,23 @@ let unsubscribeUpdater: (() => void) | null = null
 
 // Steam 版仅保留 theme/terminal/data/language/about，其它 initialTab 均 fallback 到 theme
 const STEAM_TABS: SettingsTab[] = ['theme', 'terminal', 'shortcuts', 'data', 'language', 'about']
-// 初始化时设置初始 tab 和获取版本号
-onMounted(async () => {
-  if (props.initialTab && ['ai', 'aiRules', 'mcp', 'skills', 'knowledge', 'email', 'calendar', 'im', 'gateway', 'theme', 'terminal', 'shortcuts', 'data', 'language', 'about'].includes(props.initialTab)) {
-    const tab = props.initialTab as SettingsTab
+const ALL_TABS: SettingsTab[] = ['ai', 'aiRules', 'mcp', 'skills', 'knowledge', 'email', 'calendar', 'im', 'gateway', 'theme', 'terminal', 'shortcuts', 'data', 'language', 'about']
+
+const applyInitialTab = (tabName?: string) => {
+  if (tabName && ALL_TABS.includes(tabName as SettingsTab)) {
+    const tab = tabName as SettingsTab
     activeTab.value = isSteamBuild && !STEAM_TABS.includes(tab) ? 'theme' : tab
   }
+}
+
+// 设置已打开时，外部通过菜单切换 tab（如"关于"），需要响应 prop 变化
+watch(() => props.initialTab, (newTab) => {
+  applyInitialTab(newTab)
+})
+
+// 初始化时设置初始 tab 和获取版本号
+onMounted(async () => {
+  applyInitialTab(props.initialTab)
   // 获取应用版本号
   appVersion.value = await window.electronAPI.app.getVersion()
   

@@ -598,6 +598,17 @@ const restartSetup = async () => {
 
 // 处理菜单命令
 const handleMenuCommand = async (command: string) => {
+  // 需要主界面可见的命令，先关闭设置面板
+  const requiresMainView = [
+    'newLocalTerminal', 'newAssistantTab', 'newSshConnection',
+    'openFileManager', 'importXshell', 'closeTab',
+    'toggleSidebar', 'toggleAiPanel',
+    'clearTerminal', 'find', 'selectAll', 'batchCommand'
+  ]
+  if (showSettings.value && requiresMainView.includes(command)) {
+    closeSettings()
+  }
+
   switch (command) {
     case 'newLocalTerminal':
       terminalStore.createTab('local')
@@ -609,13 +620,10 @@ const handleMenuCommand = async (command: string) => {
       showSidebar.value = true
       break
     case 'openFileManager':
-      // 通过自定义事件通知终端组件打开文件管理器（复用右键菜单逻辑）
       window.dispatchEvent(new CustomEvent('menu:open-file-manager'))
       break
     case 'importXshell':
-      // 打开侧边栏并触发导入对话框
       showSidebar.value = true
-      // 延迟触发导入事件，确保侧边栏已打开
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('menu:import-xshell'))
       }, 100)
@@ -645,25 +653,20 @@ const handleMenuCommand = async (command: string) => {
     case 'checkUpdate':
       settingsInitialTab.value = 'about'
       showSettings.value = true
-      // 延迟触发更新检查
       setTimeout(() => {
         window.electronAPI.updater.checkForUpdates()
       }, 500)
       break
     case 'clearTerminal':
-      // 通过自定义事件通知终端组件清屏
       window.dispatchEvent(new CustomEvent('menu:clear-terminal'))
       break
     case 'find':
-      // 通过自定义事件通知终端组件打开查找
       window.dispatchEvent(new CustomEvent('menu:find'))
       break
     case 'selectAll':
-      // 通过自定义事件通知终端组件全选
       window.dispatchEvent(new CustomEvent('menu:select-all'))
       break
     case 'batchCommand':
-      // 触发批量命令面板（通过自定义事件）
       window.dispatchEvent(new CustomEvent('toggle-batch-panel'))
       break
     case 'openAiDebugConsole':
