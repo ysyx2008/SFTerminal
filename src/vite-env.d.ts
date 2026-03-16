@@ -18,6 +18,13 @@ declare module '*.vue' {
   export default component
 }
 
+declare module 'vue-virtual-scroller' {
+  import type { DefineComponent } from 'vue'
+  export const DynamicScroller: DefineComponent<any, any, any>
+  export const DynamicScrollerItem: DefineComponent<any, any, any>
+  export const RecycleScroller: DefineComponent<any, any, any>
+}
+
 // 共享类型（从 @shared/types 导入，保持全局可用）
 type TerminalType = import('@shared/types').TerminalType
 type ExecutionMode = import('@shared/types').ExecutionMode

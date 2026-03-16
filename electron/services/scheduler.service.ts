@@ -602,12 +602,9 @@ export class SchedulerService {
       this.store.updateTaskNextRun(task.id, nextRun)
 
       // 设置定时器
-      const timer = setTimeout(() => {
-        this.timers.delete(task.id)
+      this.setSafeTimer(task.id, nextRun, () => {
         this.executeTask(task)
-      }, delay)
-
-      this.timers.set(task.id, timer)
+      })
 
       const nextRunDate = new Date(nextRun)
       log.info(`任务已调度: ${task.name}, 下次执行: ${nextRunDate.toLocaleString()}`)
@@ -683,6 +680,24 @@ export class SchedulerService {
       this.timers.delete(taskId)
     }
     this.store.updateTaskNextRun(taskId, undefined)
+  }
+
+  /** setTimeout 安全封装：delay 超过 2^31-1 时分段等待，避免 Node.js TimeoutOverflowWarning */
+  private setSafeTimer(timerKey: string, targetTime: number, callback: () => void): void {
+    const delay = targetTime - Date.now()
+    if (delay <= 0) {
+      callback()
+      return
+    }
+    const timer = setTimeout(() => {
+      this.timers.delete(timerKey)
+      if (delay > 0x7FFFFFFF) {
+        this.setSafeTimer(timerKey, targetTime, callback)
+      } else {
+        callback()
+      }
+    }, Math.min(delay, 0x7FFFFFFF))
+    this.timers.set(timerKey, timer)
   }
 
   /**

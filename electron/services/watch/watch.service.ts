@@ -1052,17 +1052,13 @@ export class WatchService {
 
       this.store.updateNextRun(watchId, nextRun)
 
-      const timer = setTimeout(() => {
-        this.timers.delete(timerKey)
+      this.setSafeTimer(timerKey, nextRun, () => {
         this.emitTimerEvent(watchId, 'cron')
-        // 重新调度下一次
         const watch = this.store.get(watchId)
         if (watch?.enabled && this.isRunning) {
           this.scheduleCron(watchId, expression)
         }
-      }, delay)
-
-      this.timers.set(timerKey, timer)
+      })
     } catch (err) {
       log.error(`Failed to schedule cron for ${watchId}:`, err)
     }
@@ -1076,16 +1072,30 @@ export class WatchService {
     const nextRun = Date.now() + ms
     this.store.updateNextRun(watchId, nextRun)
 
-    const timer = setTimeout(() => {
-      this.timers.delete(timerKey)
+    this.setSafeTimer(timerKey, nextRun, () => {
       this.emitTimerEvent(watchId, 'interval')
-      // 重新调度
       const watch = this.store.get(watchId)
       if (watch?.enabled && this.isRunning) {
         this.scheduleInterval(watchId, seconds)
       }
-    }, ms)
+    })
+  }
 
+  /** setTimeout 安全封装：delay 超过 2^31-1 时分段等待，避免 Node.js TimeoutOverflowWarning */
+  private setSafeTimer(timerKey: string, targetTime: number, callback: () => void): void {
+    const delay = targetTime - Date.now()
+    if (delay <= 0) {
+      callback()
+      return
+    }
+    const timer = setTimeout(() => {
+      this.timers.delete(timerKey)
+      if (delay > 0x7FFFFFFF) {
+        this.setSafeTimer(timerKey, targetTime, callback)
+      } else {
+        callback()
+      }
+    }, Math.min(delay, 0x7FFFFFFF))
     this.timers.set(timerKey, timer)
   }
 

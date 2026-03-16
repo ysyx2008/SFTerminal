@@ -91,6 +91,7 @@
     "uuid": "^9.0.1",
     "vue": "^3.4.21",
     "vue-i18n": "^9.14.5",
+    "vue-virtual-scroller": "^2.0.0-beta.8",
     "word-extractor": "^1.0.4"
   },
   "devDependencies": {

@@ -85,6 +85,9 @@ const wrapBareFilePaths = (html: string): string => {
   }).join('')
 }
 
+const MARKDOWN_CACHE_MAX = 500
+const markdownCache = new Map<string, string>()
+
 export function useMarkdown() {
   const terminalStore = useTerminalStore()
 
@@ -171,23 +174,30 @@ export function useMarkdown() {
     gfm: true      // 支持 GitHub 风格 Markdown
   })
 
-  // 渲染 Markdown 格式
   const renderMarkdown = (text: string): string => {
     if (!text) return ''
-    
+
+    const cached = markdownCache.get(text)
+    if (cached) return cached
+
+    let html: string
     try {
-      let html = marked.parse(text) as string
-      // 后处理：将文本中的裸文件路径转为可点击链接
+      html = marked.parse(text) as string
       html = wrapBareFilePaths(html)
-      return html
     } catch (e) {
-      // 如果解析失败，返回转义后的纯文本
-      return text
+      html = text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/\n/g, '<br>')
     }
+
+    if (markdownCache.size >= MARKDOWN_CACHE_MAX) {
+      const oldest = markdownCache.keys().next().value!
+      markdownCache.delete(oldest)
+    }
+    markdownCache.set(text, html)
+    return html
   }
 
   // 从代码块中提取代码内容（反转义 HTML）

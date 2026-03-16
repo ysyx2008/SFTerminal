@@ -28,6 +28,15 @@ export interface AgentTaskGroup {
   isOnboarding?: boolean
 }
 
+export interface VirtualItem {
+  id: string
+  type: 'user_task' | 'agent_loading' | 'steps_header' | 'step' | 'thinking_indicator' | 'final_result' | 'proactive_message' | 'pending_supplement' | 'confirm'
+  group?: AgentTaskGroup
+  step?: AgentStep
+  content?: string
+  size: number
+}
+
 export function useAgentMode(
   messagesRef: Ref<HTMLDivElement | null>,
   getDocumentContext: () => Promise<string>,
@@ -387,6 +396,70 @@ export function useAgentMode(
     }
     
     return groups
+  })
+
+  const isStreamingOutput = (group: AgentTaskGroup): boolean => {
+    if (group.steps.length === 0) return false
+    const lastStep = group.steps[group.steps.length - 1]
+    if (lastStep.type === 'message' && (lastStep.isStreaming || lastStep.content.length > 0)) {
+      return true
+    }
+    if (lastStep.type === 'waiting' || lastStep.type === 'asking' || lastStep.type === 'waiting_password') {
+      return true
+    }
+    return false
+  }
+
+  const flattenedItems = computed((): VirtualItem[] => {
+    const items: VirtualItem[] = []
+
+    for (const group of agentTaskGroups.value) {
+      if (group.isProactive) {
+        if (group.finalResult) {
+          items.push({ id: `proactive_${group.id}`, type: 'proactive_message', group, size: 80 })
+        }
+        continue
+      }
+
+      if (!group.isOnboarding) {
+        items.push({ id: `user_${group.id}`, type: 'user_task', group, size: 60 })
+      }
+
+      if (group.isCurrentTask && isAgentRunning.value && group.steps.length === 0) {
+        items.push({ id: `loading_${group.id}`, type: 'agent_loading', size: 50 })
+      }
+
+      if (group.steps.length > 0) {
+        items.push({ id: `header_${group.id}`, type: 'steps_header', group, size: 44 })
+
+        if (!isStepsCollapsed(group.id)) {
+          for (const step of group.steps) {
+            const size = step.type === 'message' ? 80 : step.type === 'asking' ? 120 : 40
+            items.push({ id: step.id, type: 'step', step, group, size })
+          }
+
+          if (group.isCurrentTask && isAgentRunning.value && !pendingConfirm.value && !isStreamingOutput(group)) {
+            items.push({ id: `thinking_${group.id}`, type: 'thinking_indicator', size: 50 })
+          }
+        }
+      }
+
+      if (group.finalResult) {
+        items.push({ id: `final_${group.id}`, type: 'final_result', group, size: 80 })
+      }
+    }
+
+    if (isAgentRunning.value) {
+      for (let i = 0; i < pendingSupplements.value.length; i++) {
+        items.push({ id: `supplement_${i}`, type: 'pending_supplement', content: pendingSupplements.value[i], size: 60 })
+      }
+    }
+
+    if (pendingConfirm.value) {
+      items.push({ id: '__confirm__', type: 'confirm', size: 150 })
+    }
+
+    return items
   })
 
   // 保存当前会话（供外部调用，如清空对话时）
@@ -951,6 +1024,8 @@ export function useAgentMode(
     agentUserTask,
     currentPlan,
     agentTaskGroups,
+    flattenedItems,
+    isStreamingOutput,
     toggleStepsCollapse,
     isStepsCollapsed,
     runAgent,

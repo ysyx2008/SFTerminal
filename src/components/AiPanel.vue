@@ -7,6 +7,8 @@
 import { ref, computed, watch, inject, onMounted, onUnmounted, toRef, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Upload, Trash2, X, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2 } from 'lucide-vue-next'
+import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
+import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import AgentPlanView from './AgentPlanView.vue'
@@ -59,6 +61,7 @@ const handleClose = () => {
 
 // Refs
 const messagesRef = ref<HTMLDivElement | null>(null)
+const scrollerRef = ref<InstanceType<typeof DynamicScroller> | null>(null)
 
 // 统一附件选择（图片 + 文档，自动按类型分流）
 const isAttaching = computed(() => isUploadingDocs.value || isProcessingImage.value)
@@ -178,6 +181,7 @@ const {
   agentUserTask,
   currentPlan,
   agentTaskGroups,
+  flattenedItems,
   toggleStepsCollapse,
   isStepsCollapsed,
   runAgent,
@@ -531,21 +535,6 @@ const formatConfirmArgs = (confirm: typeof pendingConfirm.value) => {
   return JSON.stringify(args, null, 2)
 }
 
-// 检查任务组是否正在流式输出或等待中（不需要显示"AI 正在思考中"）
-const isStreamingOutput = (group: typeof agentTaskGroups.value[0]) => {
-  if (group.steps.length === 0) return false
-  const lastStep = group.steps[group.steps.length - 1]
-  // 如果最后一个步骤是 message 类型且正在流式输出，或者最后一个步骤是 message 类型且有内容
-  // 说明 AI 已经开始返回内容了，不需要显示"思考中"
-  if (lastStep.type === 'message' && (lastStep.isStreaming || lastStep.content.length > 0)) {
-    return true
-  }
-  // 如果最后一个步骤是 waiting、asking 或 waiting_password 类型，也不需要显示"思考中"
-  if (lastStep.type === 'waiting' || lastStep.type === 'asking' || lastStep.type === 'waiting_password') {
-    return true
-  }
-  return false
-}
 
 // ==================== 发送消息 ====================
 
@@ -1076,6 +1065,36 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
 // ==================== 生命周期 ====================
 
+// Wire DynamicScroller's $el to messagesRef so useAgentMode scroll logic works
+watch(scrollerRef, (scroller, oldScroller) => {
+  const oldEl = oldScroller?.$el as HTMLElement | undefined
+  if (oldEl) {
+    oldEl.removeEventListener('scroll', updateScrollPosition)
+    oldEl.removeEventListener('click', handleCodeBlockClick)
+  }
+  const el = scroller?.$el as HTMLDivElement | undefined
+  messagesRef.value = el ?? null
+  if (el) {
+    el.addEventListener('scroll', updateScrollPosition, { passive: true })
+    el.addEventListener('click', handleCodeBlockClick)
+  }
+}, { flush: 'post' })
+
+const getPreviewHints = (attachments?: { totalPages?: number; previewPages?: number; filename: string }[]) => {
+  if (!attachments) return []
+  return attachments.filter(a => a.totalPages && a.previewPages && a.totalPages! > a.previewPages!)
+}
+
+const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
+  if (item.type === 'step' && item.step) {
+    return [item.step.content, item.step.toolResult, item.step.isStreaming, item.step.images?.length]
+  }
+  if (item.type === 'final_result' && item.group) return [item.group.finalResult]
+  if (item.type === 'proactive_message' && item.group) return [item.group.finalResult]
+  if (item.type === 'steps_header' && item.group) return [item.group.steps.length, isStepsCollapsed(item.group.id)]
+  return []
+}
+
 onMounted(() => {
   isMounted.value = true
   loadHostProfile()
@@ -1095,6 +1114,11 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handlePTTKeyDown)
   document.removeEventListener('keyup', handlePTTKeyUp)
   window.removeEventListener('blur', handlePTTWindowBlur)
+  const el = scrollerRef.value?.$el as HTMLElement | undefined
+  if (el) {
+    el.removeEventListener('scroll', updateScrollPosition)
+    el.removeEventListener('click', handleCodeBlockClick)
+  }
 })
 </script>
 
@@ -1336,379 +1360,370 @@ onUnmounted(() => {
         />
       </div>
 
-      <!-- 消息列表 -->
-      <div ref="messagesRef" class="ai-messages" :class="{ 'standalone-mode': isStandaloneAssistant }" :style="isStandaloneAssistant ? { '--assistant-avatar': `url(${sailfishLogo})` } : undefined" @click="handleCodeBlockClick" @scroll="updateScrollPosition">
-        <!-- 欢迎页（无任务且无历史对话时显示） -->
-        <div v-if="!agentUserTask && agentTaskGroups.length === 0" class="ai-welcome">
-          <p>🤖 {{ t('ai.agentWelcome.enabled') }}</p>
+      <!-- 消息列表（虚拟滚动） -->
+      <div class="ai-messages-wrapper">
+        <DynamicScroller
+          ref="scrollerRef"
+          :items="flattenedItems"
+          :min-item-size="36"
+          :buffer="800"
+          key-field="id"
+          class="ai-messages"
+          :class="{ 'standalone-mode': isStandaloneAssistant }"
+          :style="isStandaloneAssistant ? { '--assistant-avatar': `url(${sailfishLogo})` } : undefined"
+        >
+          <template #before>
+            <!-- 欢迎页（无任务且无历史对话时显示） -->
+            <div v-if="!agentUserTask && agentTaskGroups.length === 0" class="ai-welcome">
+              <p>🤖 {{ t('ai.agentWelcome.enabled') }}</p>
 
-          <p class="welcome-section-title">💡 {{ t('ai.agentWelcome.whatIsAgent') }}</p>
-          <p class="welcome-desc">{{ t('ai.agentWelcome.agentDesc') }}</p>
-          
-          <p class="welcome-section-title">🎯 {{ t('ai.agentWelcome.examples') }}</p>
-          <ul>
-            <li>{{ t('ai.agentWelcome.example1') }}</li>
-            <li>{{ t('ai.agentWelcome.example2') }}</li>
-            <li>{{ t('ai.agentWelcome.example3') }}</li>
-            <li>{{ t('ai.agentWelcome.example4') }}</li>
-          </ul>
+              <p class="welcome-section-title">💡 {{ t('ai.agentWelcome.whatIsAgent') }}</p>
+              <p class="welcome-desc">{{ t('ai.agentWelcome.agentDesc') }}</p>
+              
+              <p class="welcome-section-title">🎯 {{ t('ai.agentWelcome.examples') }}</p>
+              <ul>
+                <li>{{ t('ai.agentWelcome.example1') }}</li>
+                <li>{{ t('ai.agentWelcome.example2') }}</li>
+                <li>{{ t('ai.agentWelcome.example3') }}</li>
+                <li>{{ t('ai.agentWelcome.example4') }}</li>
+              </ul>
 
-          <p class="welcome-section-title">
-            <template v-if="executionMode === 'free'">🔥 {{ t('ai.agentWelcome.freeMode') }} <span class="strict-badge free">{{ t('ai.agentWelcome.freeModeOn') }}</span></template>
-            <template v-else-if="executionMode === 'strict'">🔒 {{ t('ai.agentWelcome.strictMode') }} <span class="strict-badge">{{ t('ai.agentWelcome.strictModeOn') }}</span></template>
-            <template v-else>🔓 {{ t('ai.agentWelcome.relaxedMode') }} <span class="strict-badge relaxed">{{ t('ai.agentWelcome.relaxedModeOn') }}</span></template>
-          </p>
-          <ul>
-            <li v-if="executionMode === 'free'"><strong class="warning-text">{{ t('ai.agentWelcome.freeModeDesc1') }}</strong></li>
-            <li v-if="executionMode === 'free'">{{ t('ai.agentWelcome.freeModeDesc2') }}</li>
-            <li v-if="executionMode === 'strict'"><strong>{{ t('ai.agentWelcome.strictModeDesc1') }}</strong></li>
-            <li v-if="executionMode === 'strict'">{{ t('ai.agentWelcome.strictModeDesc2') }}</li>
-            <li v-if="executionMode === 'relaxed'"><strong>{{ t('ai.agentWelcome.relaxedModeDesc1') }}</strong></li>
-            <li v-if="executionMode === 'relaxed'">{{ t('ai.agentWelcome.relaxedModeDesc2') }}</li>
-            <li>{{ t('ai.agentWelcome.allCommandsVisible') }}</li>
-          </ul>
+              <p class="welcome-section-title">
+                <template v-if="executionMode === 'free'">🔥 {{ t('ai.agentWelcome.freeMode') }} <span class="strict-badge free">{{ t('ai.agentWelcome.freeModeOn') }}</span></template>
+                <template v-else-if="executionMode === 'strict'">🔒 {{ t('ai.agentWelcome.strictMode') }} <span class="strict-badge">{{ t('ai.agentWelcome.strictModeOn') }}</span></template>
+                <template v-else>🔓 {{ t('ai.agentWelcome.relaxedMode') }} <span class="strict-badge relaxed">{{ t('ai.agentWelcome.relaxedModeOn') }}</span></template>
+              </p>
+              <ul>
+                <li v-if="executionMode === 'free'"><strong class="warning-text">{{ t('ai.agentWelcome.freeModeDesc1') }}</strong></li>
+                <li v-if="executionMode === 'free'">{{ t('ai.agentWelcome.freeModeDesc2') }}</li>
+                <li v-if="executionMode === 'strict'"><strong>{{ t('ai.agentWelcome.strictModeDesc1') }}</strong></li>
+                <li v-if="executionMode === 'strict'">{{ t('ai.agentWelcome.strictModeDesc2') }}</li>
+                <li v-if="executionMode === 'relaxed'"><strong>{{ t('ai.agentWelcome.relaxedModeDesc1') }}</strong></li>
+                <li v-if="executionMode === 'relaxed'">{{ t('ai.agentWelcome.relaxedModeDesc2') }}</li>
+                <li>{{ t('ai.agentWelcome.allCommandsVisible') }}</li>
+              </ul>
 
-          <p class="welcome-section-title">⚠️ {{ t('ai.agentWelcome.cautions') }}</p>
-          <ul>
-            <li>{{ t('ai.agentWelcome.caution1') }}</li>
-            <li>{{ t('ai.agentWelcome.caution2') }}</li>
-          </ul>
+              <p class="welcome-section-title">⚠️ {{ t('ai.agentWelcome.cautions') }}</p>
+              <ul>
+                <li>{{ t('ai.agentWelcome.caution1') }}</li>
+                <li>{{ t('ai.agentWelcome.caution2') }}</li>
+              </ul>
 
-          <!-- 最近对话历史 -->
-          <div class="recent-history-section">
-            <p class="welcome-section-title">📜 {{ t('ai.agentWelcome.recentHistory') }}</p>
-            
-            <div v-if="isLoadingHistory" class="history-loading">
-              {{ t('ai.agentWelcome.historyLoading') }}
-            </div>
-            
-            <div v-else-if="recentHistory.length === 0" class="history-empty">
-              {{ t('ai.agentWelcome.noRecentHistory') }}
-            </div>
-            
-            <div v-else class="history-list">
-              <div 
-                v-for="record in recentHistory" 
-                :key="record.id" 
-                class="history-card"
-                @click="handleLoadHistory(record)"
-              >
-                <span class="history-status-icon" :class="record.status">
-                  {{ record.status === 'completed' ? '✓' : record.status === 'failed' ? '✗' : '!' }}
-                </span>
-                <span class="history-task">{{ truncateText(record.userTask, 50) }}</span>
-                <span class="history-meta">
-                  <span v-if="record.terminalType === 'ssh'" class="history-ssh">{{ record.sshHost }}</span>
-                  <span class="history-time">{{ formatHistoryTime(record.timestamp) }}</span>
-                </span>
-              </div>
-            </div>
-            
-            <button 
-              v-if="recentHistory.length > 0" 
-              class="view-more-btn"
-              @click="openHistoryModal"
-            >
-              {{ t('ai.agentWelcome.viewMoreHistory') }}
-            </button>
-          </div>
-        </div>
-
-        <!-- 历史对话弹窗 -->
-        <div v-if="showHistoryModal" class="history-modal-overlay" @click.self="closeHistoryModal">
-          <div class="history-modal">
-            <div class="history-modal-header">
-              <h3>📜 {{ t('ai.agentWelcome.recentHistory') }}</h3>
-              <button class="history-modal-close" @click="closeHistoryModal">×</button>
-            </div>
-            <div class="history-modal-body">
-              <div v-if="isLoadingAllHistory" class="history-loading">
-                {{ t('ai.agentWelcome.historyLoading') }}
-              </div>
-              <div v-else-if="allHistory.length === 0" class="history-empty">
-                {{ t('ai.agentWelcome.noRecentHistory') }}
-              </div>
-              <div v-else class="history-modal-list">
-                <div 
-                  v-for="record in allHistory" 
-                  :key="record.id" 
-                  class="history-card"
-                  @click="handleLoadHistory(record)"
-                >
-                  <span class="history-status-icon" :class="record.status">
-                    {{ record.status === 'completed' ? '✓' : record.status === 'failed' ? '✗' : '!' }}
-                  </span>
-                  <span class="history-task">{{ truncateText(record.userTask, 80) }}</span>
-                  <span class="history-meta">
-                    <span v-if="record.terminalType === 'ssh'" class="history-ssh">{{ record.sshHost }}</span>
-                    <span class="history-time">{{ formatHistoryTime(record.timestamp) }}</span>
-                  </span>
+              <!-- 最近对话历史 -->
+              <div class="recent-history-section">
+                <p class="welcome-section-title">📜 {{ t('ai.agentWelcome.recentHistory') }}</p>
+                
+                <div v-if="isLoadingHistory" class="history-loading">
+                  {{ t('ai.agentWelcome.historyLoading') }}
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- Agent 任务列表（每个任务：用户任务 + 步骤块 + 最终结果） -->
-        <template v-if="agentTaskGroups.length > 0">
-          <template v-for="group in agentTaskGroups" :key="group.id">
-            <!-- Agent 主动消息：只显示一条干净的 AI 气泡 -->
-            <template v-if="group.isProactive">
-              <div v-if="group.finalResult" class="message assistant">
-                <div class="message-wrapper">
-                  <div class="message-content markdown-content" v-html="renderMarkdown(group.finalResult)"></div>
+                
+                <div v-else-if="recentHistory.length === 0" class="history-empty">
+                  {{ t('ai.agentWelcome.noRecentHistory') }}
                 </div>
-              </div>
-            </template>
-
-            <!-- 普通任务：用户任务 + 步骤 + 最终结果 -->
-            <template v-else>
-            <!-- 用户任务（诞生引导时隐藏用户气泡，Agent 先说话） -->
-            <div v-if="!group.isOnboarding" class="message user">
-              <div class="message-wrapper">
-                <div class="message-content">
-                  <span>{{ group.userTask }}</span>
-                  <!-- 用户消息附带的图片 -->
-                  <div v-if="group.images && group.images.length > 0" class="message-images">
-                    <img 
-                      v-for="(imgUrl, imgIdx) in group.images" 
-                      :key="imgIdx" 
-                      :src="imgUrl" 
-                      class="message-image" 
-                      @click="openImagePreview(imgUrl)"
-                    />
+                
+                <div v-else class="history-list">
+                  <div 
+                    v-for="record in recentHistory" 
+                    :key="record.id" 
+                    class="history-card"
+                    @click="handleLoadHistory(record)"
+                  >
+                    <span class="history-status-icon" :class="record.status">
+                      {{ record.status === 'completed' ? '✓' : record.status === 'failed' ? '✗' : '!' }}
+                    </span>
+                    <span class="history-task">{{ truncateText(record.userTask, 50) }}</span>
+                    <span class="history-meta">
+                      <span v-if="record.terminalType === 'ssh'" class="history-ssh">{{ record.sshHost }}</span>
+                      <span class="history-time">{{ formatHistoryTime(record.timestamp) }}</span>
+                    </span>
                   </div>
-                  <!-- PDF 预览页数提示 -->
-                  <template v-if="group.attachments">
+                </div>
+                
+                <button 
+                  v-if="recentHistory.length > 0" 
+                  class="view-more-btn"
+                  @click="openHistoryModal"
+                >
+                  {{ t('ai.agentWelcome.viewMoreHistory') }}
+                </button>
+              </div>
+            </div>
+
+            <!-- 历史对话弹窗 -->
+            <div v-if="showHistoryModal" class="history-modal-overlay" @click.self="closeHistoryModal">
+              <div class="history-modal">
+                <div class="history-modal-header">
+                  <h3>📜 {{ t('ai.agentWelcome.recentHistory') }}</h3>
+                  <button class="history-modal-close" @click="closeHistoryModal">×</button>
+                </div>
+                <div class="history-modal-body">
+                  <div v-if="isLoadingAllHistory" class="history-loading">
+                    {{ t('ai.agentWelcome.historyLoading') }}
+                  </div>
+                  <div v-else-if="allHistory.length === 0" class="history-empty">
+                    {{ t('ai.agentWelcome.noRecentHistory') }}
+                  </div>
+                  <div v-else class="history-modal-list">
                     <div 
-                      v-for="hint in group.attachments.filter(a => a.totalPages && a.previewPages && a.totalPages > a.previewPages)"
+                      v-for="record in allHistory" 
+                      :key="record.id" 
+                      class="history-card"
+                      @click="handleLoadHistory(record)"
+                    >
+                      <span class="history-status-icon" :class="record.status">
+                        {{ record.status === 'completed' ? '✓' : record.status === 'failed' ? '✗' : '!' }}
+                      </span>
+                      <span class="history-task">{{ truncateText(record.userTask, 80) }}</span>
+                      <span class="history-meta">
+                        <span v-if="record.terminalType === 'ssh'" class="history-ssh">{{ record.sshHost }}</span>
+                        <span class="history-time">{{ formatHistoryTime(record.timestamp) }}</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <template #default="{ item, index, active }">
+            <DynamicScrollerItem :item="item" :active="active" :data-index="index" :size-dependencies="getItemSizeDeps(item)">
+
+              <!-- 主动消息 -->
+              <div v-if="item.type === 'proactive_message'" class="message assistant">
+                <div class="message-wrapper">
+                  <div class="message-content markdown-content" v-html="renderMarkdown(item.group!.finalResult!)"></div>
+                </div>
+              </div>
+
+              <!-- 用户任务 -->
+              <div v-else-if="item.type === 'user_task'" class="message user">
+                <div class="message-wrapper">
+                  <div class="message-content">
+                    <span>{{ item.group!.userTask }}</span>
+                    <div v-if="item.group!.images && item.group!.images.length > 0" class="message-images">
+                      <img 
+                        v-for="(imgUrl, imgIdx) in item.group!.images" 
+                        :key="imgIdx" 
+                        :src="imgUrl" 
+                        class="message-image" 
+                        @click="openImagePreview(imgUrl)"
+                      />
+                    </div>
+                    <div 
+                      v-for="hint in getPreviewHints(item.group!.attachments)"
                       :key="hint.filename"
                       class="image-preview-hint"
                     >
                       仅预览前 {{ hint.previewPages }} 页（共 {{ hint.totalPages }} 页）
                     </div>
-                  </template>
-                  <!-- 用户消息附带的文件 -->
-                  <div v-if="group.attachments && group.attachments.length > 0" class="message-attachments">
-                    <span 
-                      v-for="(file, fileIdx) in group.attachments" 
-                      :key="fileIdx" 
-                      class="attachment-chip"
-                    >
-                      <span class="attachment-name">📎 {{ file.filename }}</span>
-                      <span class="attachment-size">{{ formatFileSize(file.fileSize) }}</span>
-                    </span>
+                    <div v-if="item.group!.attachments && item.group!.attachments.length > 0" class="message-attachments">
+                      <span 
+                        v-for="(file, fileIdx) in item.group!.attachments" 
+                        :key="fileIdx" 
+                        class="attachment-chip"
+                      >
+                        <span class="attachment-name">📎 {{ file.filename }}</span>
+                        <span class="attachment-size">{{ formatFileSize(file.fileSize) }}</span>
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-            
-            <!-- Agent 初始加载提示（刚启动还没有步骤时） -->
-            <div v-if="group.isCurrentTask && isAgentRunning && group.steps.length === 0" class="message assistant">
-              <div class="message-wrapper">
-                <div class="message-content agent-initial-loading">
-                  <div class="agent-thinking-indicator">
-                    <span class="thinking-spinner"></span>
-                    <span class="thinking-text">{{ t('ai.agentStarting') }}</span>
+
+              <!-- Agent 初始加载 -->
+              <div v-else-if="item.type === 'agent_loading'" class="message assistant">
+                <div class="message-wrapper">
+                  <div class="message-content agent-initial-loading">
+                    <div class="agent-thinking-indicator">
+                      <span class="thinking-spinner"></span>
+                      <span class="thinking-text">{{ t('ai.agentStarting') }}</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-            
-            <!-- 执行步骤（折叠块） -->
-            <div v-if="group.steps.length > 0" class="message assistant">
-              <div class="message-wrapper agent-steps-wrapper">
-                <div class="message-content agent-steps-content">
-                  <div class="agent-steps-header-inline" @click="toggleStepsCollapse(group.id)">
-                    <span>🤖 {{ group.isCurrentTask && isAgentRunning ? t('ai.agentRunning') : t('ai.agentHistory') }}</span>
-                    <span v-if="group.isCurrentTask && isAgentRunning" class="agent-running-dot"></span>
-                    <span class="steps-count">{{ group.steps.length }} {{ t('ai.steps') }}</span>
-                    <span class="collapse-icon" :class="{ collapsed: isStepsCollapsed(group.id) }">▼</span>
+
+              <!-- 步骤折叠头 -->
+              <div v-else-if="item.type === 'steps_header'" class="message assistant">
+                <div class="message-wrapper agent-steps-wrapper">
+                  <div class="message-content agent-steps-content">
+                    <div class="agent-steps-header-inline" @click="toggleStepsCollapse(item.group!.id)">
+                      <span>🤖 {{ item.group!.isCurrentTask && isAgentRunning ? t('ai.agentRunning') : t('ai.agentHistory') }}</span>
+                      <span v-if="item.group!.isCurrentTask && isAgentRunning" class="agent-running-dot"></span>
+                      <span class="steps-count">{{ item.group!.steps.length }} {{ t('ai.steps') }}</span>
+                      <span class="collapse-icon" :class="{ collapsed: isStepsCollapsed(item.group!.id) }">▼</span>
+                    </div>
                   </div>
-                  <div v-show="!isStepsCollapsed(group.id)" class="agent-steps-body">
+                </div>
+              </div>
+
+              <!-- 单个步骤 -->
+              <div v-else-if="item.type === 'step'" class="agent-step-virtual">
+                <div 
+                  class="agent-step-inline"
+                  :class="[item.step!.type, getRiskClass(item.step!.riskLevel), { 'step-rejected': item.step!.content.includes('拒绝') }]"
+                >
+                  <span class="step-icon">{{ getStepIcon(item.step!.type) }}</span>
+                  <div class="step-content">
                     <div 
-                      v-for="step in group.steps" 
-                      :key="step.id" 
-                      class="agent-step-inline"
-                      :class="[step.type, getRiskClass(step.riskLevel), { 'step-rejected': step.content.includes('拒绝') }]"
-                    >
-                      <span class="step-icon">{{ getStepIcon(step.type) }}</span>
-                      <div class="step-content">
-                        <div 
-                          v-if="step.type === 'message'" 
-                          class="step-text step-analysis markdown-content"
-                          :class="{ 'is-streaming': step.isStreaming }"
-                          v-html="renderMarkdown(step.content)"
-                        ></div>
-                        <!-- 提问类型特殊渲染：显示问题、选项按钮、状态 -->
-                        <div v-else-if="step.type === 'asking'" class="step-text asking-content">
-                          <div class="asking-question">{{ step.content }}</div>
-                          <!-- 默认值提示 -->
-                          <div v-if="step.toolArgs?.default_value" class="asking-default">
-                            <span class="default-label">{{ t('ai.askingDefault') }}</span>{{ step.toolArgs.default_value }}
-                            <span v-if="step.toolResult?.includes('⏳')" class="default-hint">{{ t('ai.askingDefaultHint') }}</span>
-                          </div>
-                          <!-- 可点击的选项按钮 -->
-                          <div v-if="step.toolArgs?.options && (step.toolArgs.options as string[]).length > 0" class="asking-options">
-                            <button 
-                              v-for="(opt, idx) in (step.toolArgs.options as string[]).slice(0, 10)" 
-                              :key="idx"
-                              class="asking-option-btn"
-                              :class="{ 
-                                'selected': step.toolResult?.includes(opt) || getSelectedOptions(step.id).includes(opt),
-                                'clicking': clickingOption === opt && step.toolResult?.includes('⏳') && !step.toolArgs?.allow_multiple
-                              }"
-                              :disabled="!isAgentRunning || step.toolResult?.includes('✅') || step.toolResult?.includes('⏰') || step.toolResult?.includes('🛑')"
-                              @click="handleOptionClick(step.id, opt, !!step.toolArgs?.allow_multiple)"
-                            >
-                              <span class="option-label">{{ String.fromCharCode(65 + idx) }}</span>
-                              {{ opt }}
-                            </button>
-                            <!-- 多选确认按钮 -->
-                            <button 
-                              v-if="step.toolArgs?.allow_multiple && step.toolResult?.includes('⏳')"
-                              class="asking-confirm-btn"
-                              :disabled="getSelectedOptions(step.id).length === 0"
-                              @click="confirmMultiSelect(step.id)"
-                            >
-                              {{ t('ai.confirmMultiSelect') }} ({{ getSelectedOptions(step.id).length }})
-                            </button>
-                          </div>
-                          <!-- 状态显示：等待、超时、取消时显示完整状态；已完成时不重复显示选中的选项 -->
-                          <div v-if="step.toolResult && !step.toolResult.includes('✅')" class="asking-status" :class="{ 
-                            'status-waiting': step.toolResult.includes('⏳'),
-                            'status-timeout': step.toolResult.includes('⏰'),
-                            'status-cancelled': step.toolResult.includes('🛑')
-                          }">
-                            {{ step.toolResult }}
-                          </div>
-                        </div>
-                        <!-- 计划类型特殊渲染：可展开查看计划详情 -->
-                        <div v-else-if="step.type === 'plan_created' || step.type === 'plan_updated' || step.type === 'plan_archived'" class="step-text plan-step-content">
-                          <div class="plan-step-header" @click="togglePlanExpand(step.id)">
-                            <span class="plan-step-text">{{ step.content }}</span>
-                            <span class="plan-expand-icon" :class="{ expanded: expandedPlanSteps.has(step.id) }">▶</span>
-                          </div>
-                          <!-- 展开的计划详情 -->
-                          <div v-if="expandedPlanSteps.has(step.id) && step.plan" class="plan-step-details">
-                            <AgentPlanView :plan="step.plan" :compact="false" />
-                          </div>
-                        </div>
-                        <div v-else class="step-text">
-                          {{ step.content }}
-                        </div>
-                        <div v-if="step.type === 'user_supplement' && step.attachments && step.attachments.length > 0" class="message-attachments">
-                          <span
-                            v-for="(file, fileIdx) in step.attachments"
-                            :key="fileIdx"
-                            class="attachment-chip"
-                          >
-                            <span class="attachment-name">📎 {{ file.filename }}</span>
-                            <span class="attachment-size">{{ formatFileSize(file.fileSize) }}</span>
-                          </span>
-                        </div>
-                        <div v-if="step.toolResult && step.toolResult !== '已拒绝' && step.toolResult !== step.content && step.type !== 'asking'" class="step-result">
-                          <pre>{{ step.toolResult }}</pre>
-                        </div>
-                        <!-- 步骤中的图片（如 read_file 读取的图片） -->
-                        <div v-if="step.images && step.images.length > 0" class="step-images">
-                          <img
-                            v-for="(imgUrl, imgIdx) in step.images"
-                            :key="imgIdx"
-                            :src="imgUrl"
-                            :alt="step.toolResult || `image ${imgIdx + 1}`"
-                            class="step-image"
-                            @click="openImagePreview(imgUrl)"
-                          />
-                        </div>
+                      v-if="item.step!.type === 'message'" 
+                      class="step-text step-analysis markdown-content"
+                      :class="{ 'is-streaming': item.step!.isStreaming }"
+                      v-html="renderMarkdown(item.step!.content)"
+                    ></div>
+                    <div v-else-if="item.step!.type === 'asking'" class="step-text asking-content">
+                      <div class="asking-question">{{ item.step!.content }}</div>
+                      <div v-if="item.step!.toolArgs?.default_value" class="asking-default">
+                        <span class="default-label">{{ t('ai.askingDefault') }}</span>{{ item.step!.toolArgs.default_value }}
+                        <span v-if="item.step!.toolResult?.includes('⏳')" class="default-hint">{{ t('ai.askingDefaultHint') }}</span>
+                      </div>
+                      <div v-if="item.step!.toolArgs?.options && (item.step!.toolArgs.options as string[]).length > 0" class="asking-options">
+                        <button 
+                          v-for="(opt, optIdx) in (item.step!.toolArgs.options as string[]).slice(0, 10)" 
+                          :key="optIdx"
+                          class="asking-option-btn"
+                          :class="{ 
+                            'selected': item.step!.toolResult?.includes(opt) || getSelectedOptions(item.step!.id).includes(opt),
+                            'clicking': clickingOption === opt && item.step!.toolResult?.includes('⏳') && !item.step!.toolArgs?.allow_multiple
+                          }"
+                          :disabled="!isAgentRunning || item.step!.toolResult?.includes('✅') || item.step!.toolResult?.includes('⏰') || item.step!.toolResult?.includes('🛑')"
+                          @click="handleOptionClick(item.step!.id, opt, !!item.step!.toolArgs?.allow_multiple)"
+                        >
+                          <span class="option-label">{{ String.fromCharCode(65 + optIdx) }}</span>
+                          {{ opt }}
+                        </button>
+                        <button 
+                          v-if="item.step!.toolArgs?.allow_multiple && item.step!.toolResult?.includes('⏳')"
+                          class="asking-confirm-btn"
+                          :disabled="getSelectedOptions(item.step!.id).length === 0"
+                          @click="confirmMultiSelect(item.step!.id)"
+                        >
+                          {{ t('ai.confirmMultiSelect') }} ({{ getSelectedOptions(item.step!.id).length }})
+                        </button>
+                      </div>
+                      <div v-if="item.step!.toolResult && !item.step!.toolResult.includes('✅')" class="asking-status" :class="{ 
+                        'status-waiting': item.step!.toolResult.includes('⏳'),
+                        'status-timeout': item.step!.toolResult.includes('⏰'),
+                        'status-cancelled': item.step!.toolResult.includes('🛑')
+                      }">
+                        {{ item.step!.toolResult }}
                       </div>
                     </div>
-                    <!-- AI 思考中指示器（当 Agent 运行中且没有流式输出时显示） -->
-                    <div 
-                      v-if="group.isCurrentTask && isAgentRunning && !pendingConfirm && !isStreamingOutput(group)"
-                      class="agent-thinking-indicator"
-                    >
-                      <span class="thinking-spinner"></span>
-                      <span class="thinking-text">{{ t('ai.preparing') }}</span>
+                    <div v-else-if="item.step!.type === 'plan_created' || item.step!.type === 'plan_updated' || item.step!.type === 'plan_archived'" class="step-text plan-step-content">
+                      <div class="plan-step-header" @click="togglePlanExpand(item.step!.id)">
+                        <span class="plan-step-text">{{ item.step!.content }}</span>
+                        <span class="plan-expand-icon" :class="{ expanded: expandedPlanSteps.has(item.step!.id) }">▶</span>
+                      </div>
+                      <div v-if="expandedPlanSteps.has(item.step!.id) && item.step!.plan" class="plan-step-details">
+                        <AgentPlanView :plan="item.step!.plan" :compact="false" />
+                      </div>
+                    </div>
+                    <div v-else class="step-text">
+                      {{ item.step!.content }}
+                    </div>
+                    <div v-if="item.step!.type === 'user_supplement' && item.step!.attachments && item.step!.attachments.length > 0" class="message-attachments">
+                      <span
+                        v-for="(file, fileIdx) in item.step!.attachments"
+                        :key="fileIdx"
+                        class="attachment-chip"
+                      >
+                        <span class="attachment-name">📎 {{ file.filename }}</span>
+                        <span class="attachment-size">{{ formatFileSize(file.fileSize) }}</span>
+                      </span>
+                    </div>
+                    <div v-if="item.step!.toolResult && item.step!.toolResult !== '已拒绝' && item.step!.toolResult !== item.step!.content && item.step!.type !== 'asking'" class="step-result">
+                      <pre>{{ item.step!.toolResult }}</pre>
+                    </div>
+                    <div v-if="item.step!.images && item.step!.images.length > 0" class="step-images">
+                      <img
+                        v-for="(imgUrl, imgIdx) in item.step!.images"
+                        :key="imgIdx"
+                        :src="imgUrl"
+                        :alt="item.step!.toolResult || `image ${imgIdx + 1}`"
+                        class="step-image"
+                        @click="openImagePreview(imgUrl)"
+                      />
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-            
-            <!-- 最终结果 -->
-            <div v-if="group.finalResult" class="message assistant">
-              <div class="message-wrapper agent-final-wrapper">
-                <div class="message-content agent-final-content" :class="{ 'is-error': group.finalResult.startsWith('❌'), 'is-aborted': group.finalResult.startsWith('⚠️') }">
-                  <div class="agent-final-header">
-                    <span class="final-icon">{{ group.finalResult.startsWith('❌') ? '❌' : group.finalResult.startsWith('⚠️') ? '⚠️' : '✅' }}</span>
-                    <span class="final-title">{{ group.finalResult.startsWith('❌') ? t('ai.taskFailed') : group.finalResult.startsWith('⚠️') ? t('ai.taskAborted') : t('ai.taskComplete') }}</span>
+
+              <!-- 思考中指示器 -->
+              <div v-else-if="item.type === 'thinking_indicator'" class="agent-step-virtual">
+                <div class="agent-thinking-indicator">
+                  <span class="thinking-spinner"></span>
+                  <span class="thinking-text">{{ t('ai.preparing') }}</span>
+                </div>
+              </div>
+
+              <!-- 最终结果 -->
+              <div v-else-if="item.type === 'final_result'" class="message assistant">
+                <div class="message-wrapper agent-final-wrapper">
+                  <div class="message-content agent-final-content" :class="{ 'is-error': item.group!.finalResult!.startsWith('❌'), 'is-aborted': item.group!.finalResult!.startsWith('⚠️') }">
+                    <div class="agent-final-header">
+                      <span class="final-icon">{{ item.group!.finalResult!.startsWith('❌') ? '❌' : item.group!.finalResult!.startsWith('⚠️') ? '⚠️' : '✅' }}</span>
+                      <span class="final-title">{{ item.group!.finalResult!.startsWith('❌') ? t('ai.taskFailed') : item.group!.finalResult!.startsWith('⚠️') ? t('ai.taskAborted') : t('ai.taskComplete') }}</span>
+                    </div>
+                    <div class="agent-final-body markdown-content" v-html="renderMarkdown(item.group!.finalResult!.replace(/^[❌✅⚠️]\s*(Agent\s*(执行失败|运行出错)[:\s]*)?/, ''))"></div>
                   </div>
-                  <div class="agent-final-body markdown-content" v-html="renderMarkdown(group.finalResult.replace(/^[❌✅⚠️]\s*(Agent\s*(执行失败|运行出错)[:\s]*)?/, ''))"></div>
                 </div>
               </div>
-            </div>
-            </template>
+
+              <!-- 等待处理的补充消息 -->
+              <div v-else-if="item.type === 'pending_supplement'" class="message assistant">
+                <div class="message-wrapper">
+                  <div class="message-content pending-supplement">
+                    <div class="pending-supplement-header">
+                      <span class="pending-icon">💡</span>
+                      <span class="pending-label">{{ t('ai.supplementInfo') }}（{{ t('ai.pendingProcess') }}）</span>
+                      <span class="pending-spinner"></span>
+                    </div>
+                    <div class="pending-supplement-content">{{ item.content }}</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 确认对话框 -->
+              <div v-else-if="item.type === 'confirm' && pendingConfirm" class="message assistant">
+                <div class="message-wrapper">
+                  <div class="message-content agent-confirm-inline" :class="getRiskClass(pendingConfirm.riskLevel)">
+                    <div class="confirm-header-inline">
+                      <span class="confirm-icon">{{ pendingConfirm.riskLevel === 'dangerous' ? '🔴' : (pendingConfirm.riskLevel === 'moderate' ? '🟡' : '🟢') }}</span>
+                      <span class="confirm-title">{{ t('ai.needConfirm') }}</span>
+                      <span class="confirm-risk-badge" :class="getRiskClass(pendingConfirm.riskLevel)">
+                        {{ pendingConfirm.riskLevel === 'dangerous' ? t('ai.highRisk') : (pendingConfirm.riskLevel === 'moderate' ? t('ai.mediumRisk') : t('ai.lowRisk')) }}
+                      </span>
+                    </div>
+                    <div class="confirm-detail">
+                      <div class="confirm-tool-name">{{ getToolDisplayName(pendingConfirm.toolName) }}</div>
+                      <pre class="confirm-args-inline">{{ formatConfirmArgs(pendingConfirm) }}</pre>
+                    </div>
+                    <div class="confirm-actions-inline">
+                      <button class="btn btn-sm btn-outline-secondary" @click="confirmToolCall(false)">
+                        {{ t('ai.reject') }}
+                      </button>
+                      <button 
+                        class="btn btn-sm" 
+                        :class="pendingConfirm.riskLevel === 'dangerous' ? 'btn-outline-danger' : (pendingConfirm.riskLevel === 'moderate' ? 'btn-outline-warning' : 'btn-outline-success')"
+                        @click="confirmToolCall(true, true)"
+                        :title="t('ai.alwaysAllowHint')"
+                      >
+                        {{ t('ai.alwaysAllow') }}
+                      </button>
+                      <button 
+                        class="btn btn-sm" 
+                        :class="pendingConfirm.riskLevel === 'dangerous' ? 'btn-danger' : (pendingConfirm.riskLevel === 'moderate' ? 'btn-warning' : 'btn-success')"
+                        @click="confirmToolCall(true)"
+                      >
+                        {{ t('ai.allowExecute') }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </DynamicScrollerItem>
           </template>
-        </template>
-
-        <!-- 等待处理的补充消息 -->
-        <template v-if="isAgentRunning && pendingSupplements.length > 0">
-          <div 
-            v-for="(supplement, idx) in pendingSupplements" 
-            :key="`pending_${idx}`" 
-            class="message assistant"
-          >
-            <div class="message-wrapper">
-              <div class="message-content pending-supplement">
-                <div class="pending-supplement-header">
-                  <span class="pending-icon">💡</span>
-                  <span class="pending-label">{{ t('ai.supplementInfo') }}（{{ t('ai.pendingProcess') }}）</span>
-                  <span class="pending-spinner"></span>
-                </div>
-                <div class="pending-supplement-content">{{ supplement }}</div>
-              </div>
-            </div>
-          </div>
-        </template>
-
-        <!-- Agent 确认对话框（融入对话流） -->
-        <div v-if="pendingConfirm" class="message assistant">
-          <div class="message-wrapper">
-            <div class="message-content agent-confirm-inline" :class="getRiskClass(pendingConfirm.riskLevel)">
-              <div class="confirm-header-inline">
-                <span class="confirm-icon">{{ pendingConfirm.riskLevel === 'dangerous' ? '🔴' : (pendingConfirm.riskLevel === 'moderate' ? '🟡' : '🟢') }}</span>
-                <span class="confirm-title">{{ t('ai.needConfirm') }}</span>
-                <span class="confirm-risk-badge" :class="getRiskClass(pendingConfirm.riskLevel)">
-                  {{ pendingConfirm.riskLevel === 'dangerous' ? t('ai.highRisk') : (pendingConfirm.riskLevel === 'moderate' ? t('ai.mediumRisk') : t('ai.lowRisk')) }}
-                </span>
-              </div>
-              <div class="confirm-detail">
-                <div class="confirm-tool-name">{{ getToolDisplayName(pendingConfirm.toolName) }}</div>
-                <pre class="confirm-args-inline">{{ formatConfirmArgs(pendingConfirm) }}</pre>
-              </div>
-              <div class="confirm-actions-inline">
-                <button class="btn btn-sm btn-outline-secondary" @click="confirmToolCall(false)">
-                  {{ t('ai.reject') }}
-                </button>
-                <button 
-                  class="btn btn-sm" 
-                  :class="pendingConfirm.riskLevel === 'dangerous' ? 'btn-outline-danger' : (pendingConfirm.riskLevel === 'moderate' ? 'btn-outline-warning' : 'btn-outline-success')"
-                  @click="confirmToolCall(true, true)"
-                  :title="t('ai.alwaysAllowHint')"
-                >
-                  {{ t('ai.alwaysAllow') }}
-                </button>
-                <button 
-                  class="btn btn-sm" 
-                  :class="pendingConfirm.riskLevel === 'dangerous' ? 'btn-danger' : (pendingConfirm.riskLevel === 'moderate' ? 'btn-warning' : 'btn-success')"
-                  @click="confirmToolCall(true)"
-                >
-                  {{ t('ai.allowExecute') }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        </DynamicScroller>
 
         <!-- 新消息指示器 -->
         <div v-if="hasNewMessage" class="new-message-indicator" @click="scrollToBottom" :title="t('ai.newMessage')">
@@ -2477,15 +2492,26 @@ onUnmounted(() => {
   z-index: 10;
 }
 
-.ai-messages {
+.ai-messages-wrapper {
   flex: 1;
-  overflow-y: auto;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ai-messages {
+  height: 100% !important;
   padding: 12px;
   user-select: text;
   position: relative;
-  /* 启用滚动锚定，防止内容变化时滚动位置跳动 */
   overflow-anchor: auto;
   transition: box-shadow 0.3s ease;
+}
+
+.agent-step-virtual {
+  padding: 0 14px;
+  margin-left: 20px;
+  border-left: 2px solid rgba(255, 255, 255, 0.06);
 }
 
 /* Agent 执行模式 - 宽松模式绿色内阴影（仅左右两边） */
@@ -2518,7 +2544,7 @@ onUnmounted(() => {
 
 /* 新消息指示器 */
 .new-message-indicator {
-  position: sticky;
+  position: absolute;
   bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
