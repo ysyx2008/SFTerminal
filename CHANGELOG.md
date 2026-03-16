@@ -2,7 +2,23 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.20.1 (2026-03-14) (Latest)
+## v10.20.2 (2026-03-16) (Latest)
+
+Performance and stability release: introduces virtual scrolling for smoother AI panel rendering and adds macOS update checking, alongside several bug fixes for OS detection, remote sessions, and Agent memory recovery.
+
+### Improvements
+- ⚡ **Virtual Scrolling**: Integrated vue-virtual-scroller for AI panel to significantly improve rendering performance with long conversation histories
+- 🔄 **macOS Update Checking**: macOS now supports checking for updates and guides users to download manually
+
+### Bug Fixes
+- 🔧 Fixed OS detection incorrectly identifying Windows as macOS
+- 🔧 Fixed remote sessions not automatically fetching local user info (username, home directory)
+- 🔧 Fixed virtual scroll list display issues including avatar alignment in Agent steps
+- 🔧 Fixed Companion Agent not restoring recent task memory after restart
+- 🔧 Fixed menu command handling when settings panel is open
+- 🔧 Fixed macOS auto-update file upload to OSS in CI pipeline
+
+## v10.20.1 (2026-03-14)
 
 Overhauls the Watch awaken history UI with date grouping, pagination, and full conversation detail view, plus several reliability fixes for Agent file tools and sensor startup.
 
