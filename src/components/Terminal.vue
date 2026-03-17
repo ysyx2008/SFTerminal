@@ -36,6 +36,10 @@ const props = defineProps<{
   isActive: boolean
 }>()
 
+const emit = defineEmits<{
+  sendToAi: [text: string]
+}>()
+
 const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
 
@@ -730,7 +734,7 @@ const menuPaste = async () => {
 
 const menuSendToAi = () => {
   if (contextMenu.value.selectedText) {
-    terminalStore.sendToAi(contextMenu.value.selectedText)
+    emit('sendToAi', contextMenu.value.selectedText)
   }
   hideContextMenu()
 }

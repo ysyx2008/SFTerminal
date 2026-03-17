@@ -748,19 +748,16 @@ const handleSend = async () => {
   runAgent()
 }
 
-// ==================== 右键菜单监听 ====================
+// ==================== 对外暴露的方法 ====================
 
-// 监听右键菜单发送到 AI 的文本（通过 Agent 执行分析）
-watch(() => terminalStore.pendingAiText, (text) => {
-  if (text) {
-    // 设置输入文本为分析提示
-    inputText.value = `${t('ai.analyzeContentPrompt')}\n\`\`\`\n${text}\n\`\`\``
-    // 通过 Agent 执行分析
-    runAgent()
-    terminalStore.clearPendingAiText()
-  }
-}, { immediate: true })
+function analyzeText(text: string) {
+  inputText.value = `${t('ai.analyzeContentPrompt')}\n\`\`\`\n${text}\n\`\`\``
+  runAgent()
+}
 
+defineExpose({ analyzeText })
+
+// ==================== 定时任务 / 远程任务监听 ====================
 // 监听定时任务 / 远程任务：当有 pendingSchedulerTask 时自动执行
 // 触发时机：tab 切换到当前实例、或新的 pending task 被写入当前 tab
 // 需要等待终端就绪（ptyId 已分配），否则 runAgent 会因 context.ptyId 为空而静默退出

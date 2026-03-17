@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, provide, watch, nextTick, type ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Server, Bot, Settings, X, Loader2, Heart, AlertCircle } from 'lucide-vue-next'
 import { useTerminalStore } from './stores/terminal'
@@ -65,6 +65,17 @@ const pendingInstallSkillId = ref<string | undefined>(undefined)
 const showFileExplorer = ref(false)
 const sftpConfig = ref<SftpConnectionConfig | null>(null)
 const showSetupWizard = ref(false)
+
+// 每个终端 tab 对应的 AiPanel 实例引用（tabId -> AiPanel instance）
+const aiPanelRefs = ref<Record<string, ComponentPublicInstance | null>>({})
+
+function handleSendToAi(tabId: string, text: string) {
+  showAiPanel.value = true
+  nextTick(() => {
+    const panel = aiPanelRefs.value[tabId] as any
+    panel?.analyzeText(text)
+  })
+}
 
 async function onAwakenClose() {
   showAwaken.value = false
@@ -560,13 +571,6 @@ const closeSftp = () => {
   sftpConfig.value = null
 }
 
-// 监听右键菜单发送到 AI 的请求，自动打开 AI 面板
-watch(() => terminalStore.pendingAiText, (text) => {
-  if (text) {
-    showAiPanel.value = true
-  }
-})
-
 // 有新的 Agent 任务时确保 AI 面板可见
 watch(() => Object.keys(terminalStore.pendingSchedulerTasks).length, (count) => {
   if (count > 0) {
@@ -803,6 +807,7 @@ onUnmounted(() => {
                 :pty-id="tab.ptyId"
                 :type="(tab.type as 'local' | 'ssh')"
                 :is-active="tab.id === terminalStore.activeTabId"
+                @send-to-ai="(text: string) => handleSendToAi(tab.id, text)"
               />
               <div v-else-if="tab.isLoading" class="terminal-loading">
                 <div class="loading-spinner"></div>
@@ -828,6 +833,7 @@ onUnmounted(() => {
                 :style="{ width: aiPanelWidth + 'px' }"
               >
                 <AiPanel
+                  :ref="(el: any) => { aiPanelRefs[tab.id] = el }"
                   :tab-id="tab.id"
                   :visible="tab.id === terminalStore.activeTabId && showAiPanel"
                   @close="showAiPanel = false"

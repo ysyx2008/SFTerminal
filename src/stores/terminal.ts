@@ -129,8 +129,7 @@ export const useTerminalStore = defineStore('terminal', () => {
   const tabs = ref<TerminalTab[]>([])
   const activeTabId = ref<string>('')
   const splitLayout = ref<SplitPane | null>(null)
-  // 待发送到 AI 分析的文本
-  const pendingAiText = ref<string>('')
+  
   // 终端计数器（用于生成唯一标题）
   const localTerminalCounter = ref(0)
   const sshTerminalCounters = ref<Record<string, number>>({})
@@ -301,19 +300,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
   }
 
-  /**
-   * 发送文本到 AI 分析
-   */
-  function sendToAi(text: string): void {
-    pendingAiText.value = text
-  }
-
-  /**
-   * 清除待发送的 AI 文本
-   */
-  function clearPendingAiText(): void {
-    pendingAiText.value = ''
-  }
+  
 
 
   /**
@@ -1418,7 +1405,6 @@ export const useTerminalStore = defineStore('terminal', () => {
     activeTab,
     tabCount,
     splitLayout,
-    pendingAiText,
     pendingFocusTabId,
     createTab,
     createAssistantTab,
@@ -1435,8 +1421,6 @@ export const useTerminalStore = defineStore('terminal', () => {
     appendOutput,
     clearError,
     updateSelectedText,
-    sendToAi,
-    clearPendingAiText,
     getRecentOutput,
     writeToTerminal,
     resizeTerminal,
