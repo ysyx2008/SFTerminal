@@ -23,7 +23,7 @@ description: Automates SailFish release workflow: fix build/type errors, update 
    - 含新功能 / 新模块 → 建议 `minor`
    - 仅修复、优化、文档 → 建议 `patch`
    确认后，读取 `package.json` 的 `version`，按 semver 推算出下一版本号（如 8.19.4 → patch 为 8.19.5，minor 为 8.20.0）。
-2. **修复构建、检查与测试**：确保 `npm run check`、`npm run build:check`、`npm run test:run`、`bash electron/cli/test-cli.sh --no-ai` 全部通过。
+2. **修复构建、检查与测试**：运行 `npm run verify`（并行执行类型检查、lint、构建、单元测试、CLI 回归测试），确保全部通过。
 3. **更新更新日志**：用**上一步算出的版本号**在 `CHANGELOG.md` 与 `CHANGELOG_CN.md` 中写入本版本条目（见下文格式）。
 4. **检查 README 和网站是否需要更新**：对于 `minor` 或 `major` 版本，对比自上次发版以来的提交，检查以下文档是否需要同步更新（如新增功能/通道/文档链接等），若需要则一并修改：
    - `README.md` 和 `README_CN.md`（功能列表、描述、文档链接）
@@ -37,11 +37,12 @@ description: Automates SailFish release workflow: fix build/type errors, update 
 
 **不要**用关键词匹配来"猜"错误类型，必须依据实际命令输出定位问题。
 
-1. 运行检查、构建和测试，收集真实错误输出：
-   - `npm run check` — 类型检查 + 静态检查
-   - `npm run build:check` — 生产构建预检（`vue-tsc --noEmit && vite build --mode production`）
-   - `npm run test:run` — 单元测试
-   - `bash electron/cli/test-cli.sh --no-ai` — CLI 回归测试（参见 `.cursor/rules/cli-testing.mdc`）
+1. 运行 `npm run verify` 一次性并行执行所有检查，收集真实错误输出：
+   - 类型检查（`vue-tsc --noEmit`）
+   - 静态检查（`eslint`）
+   - 生产构建预检（`vite build --mode production`）
+   - 单元测试（`vitest run`）
+   - CLI 回归测试（`test-cli.sh --no-ai`，参见 `.cursor/rules/cli-testing.mdc`）
 
 2. 根据终端或 IDE 报错信息修复：
    - TypeScript/`vue-tsc`：按文件与行号修类型或实现。
@@ -118,8 +119,9 @@ git log v<当前版本>..HEAD --oneline
 
 1. 检查分支为 develop 或 main、工作区干净。
 2. `git pull --ff-only`、`git fetch --tags`。
-3. 运行 `npm run build:check`、`npm run test:run`。
-4. 保存当前分支状态（不切换分支，避免 npm 在错误分支上重复 bump）。
+3. 保存当前分支状态（不切换分支，避免 npm 在错误分支上重复 bump）。
+
+> 注意：preversion 不再重复运行验证。完整的代码验证（`npm run verify`）在发版流程步骤 2 已执行，之后只改文档不改代码，无需再跑。
 
 **postversion**（`scripts/postversion.js`）会：
 
@@ -132,10 +134,7 @@ git log v<当前版本>..HEAD --oneline
 
 ## 快速检查清单
 
-- [ ] `npm run check` 通过
-- [ ] `npm run build:check` 通过
-- [ ] `npm run test:run` 通过
-- [ ] `bash electron/cli/test-cli.sh --no-ai` 通过
+- [ ] `npm run verify` 通过（类型检查 + lint + 构建 + 单元测试 + CLI 回归，并行执行）
 - [ ] `CHANGELOG.md` 与 `CHANGELOG_CN.md` 已更新且版本号、日期、条目一致
 - [ ] （minor/major）检查 `README.md`、`README_CN.md` 和 `website/src/i18n/translations.ts` 是否需要同步更新
 - [ ] 更新日志及文档变更已提交

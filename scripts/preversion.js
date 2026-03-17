@@ -3,15 +3,15 @@
 /**
  * npm version 的 preversion 钩子
  * 
- * 职责：仅做发版前检查，不切换分支。
- * 分支合并与推送由 postversion 负责。
+ * 职责：仅做发版前 git 安全检查，不切换分支。
+ * 完整的代码验证（typecheck/lint/build/test）由 `npm run verify` 在发版流程前期执行，
+ * 此处不再重复运行，避免浪费时间。
  * 
  * 流程:
  * 1. 检查是否在 develop 或 main 分支
  * 2. 确保工作区干净
  * 3. 拉取最新代码
- * 4. 运行编译检查和单元测试
- * 5. 保存当前分支状态供 postversion 使用
+ * 4. 保存当前分支状态供 postversion 使用
  */
 
 const { execSync } = require('child_process');
@@ -123,15 +123,13 @@ async function main() {
 
   log('\n即将执行以下操作:', 'cyan');
   log('  1. 拉取最新代码');
-  log('  2. 运行编译检查');
-  log('  3. 运行单元测试');
-  log('  4. 更新版本号并创建 tag');
+  log('  2. 更新版本号并创建 tag');
   if (currentBranch === 'develop') {
-    log('  5. 合并 develop 到 main');
-    log('  6. 推送 main 和 tag');
-    log('  7. 推送 develop');
+    log('  3. 合并 develop 到 main');
+    log('  4. 推送 main 和 tag');
+    log('  5. 推送 develop');
   } else {
-    log('  5. 推送 main 和 tag');
+    log('  3. 推送 main 和 tag');
   }
 
   const shouldContinue = await confirm('\n确认继续?');
@@ -147,14 +145,6 @@ async function main() {
     exec('git pull --ff-only');
     exec('git fetch --tags');
     success('代码已更新');
-
-    log('\n运行编译检查...', 'cyan');
-    exec('npm run build:check');
-    success('编译检查通过');
-
-    log('\n运行单元测试...', 'cyan');
-    exec('npm run test:run');
-    success('单元测试通过');
 
     saveState({ originalBranch: currentBranch });
 
