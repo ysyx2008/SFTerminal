@@ -82,8 +82,17 @@ export function analyzeCommand(command: string): CommandHandlingInfo {
     }
   }
   
-  // ping（没有 -c 参数的）
-  if (/\bping\s+/.test(cmdLower) && !/\s-c\s*\d+/.test(cmd)) {
+  // PowerShell: Get-Content -Wait（等效于 tail -f）
+  if (/\bget-content\b.*-wait\b/.test(cmdLower)) {
+    return {
+      strategy: 'fire_and_forget',
+      reason: t('risk.tail_continuous'),
+      hint: t('risk.fire_and_forget_hint', { key: 'ctrl+c' })
+    }
+  }
+  
+  // ping（没有计数参数的 — Linux: -c, Windows: -n）
+  if (/\bping\s+/.test(cmdLower) && !/\s-c\s*\d+/.test(cmd) && !/\s-n\s+\d+/.test(cmd)) {
     return {
       strategy: 'fire_and_forget',
       reason: t('risk.ping_continuous'),
@@ -324,6 +333,7 @@ export function assessCommandRisk(command: string): RiskLevel {
 
   // 黑名单 - 直接拒绝
   const blocked = [
+    // Unix
     /rm\s+(-[rf]+\s+)*\/(?:\s|$)/,    // rm -rf /
     /rm\s+(-[rf]+\s+)*\/\*/,           // rm -rf /*
     /:\(\)\{.*:\|:.*\}/,               // fork bomb
@@ -333,6 +343,14 @@ export function assessCommandRisk(command: string): RiskLevel {
     /chmod\s+777\s+\//,                 // chmod 777 /
     /chown\s+.*\s+\//,                  // chown /
     />\s*\/etc\/(passwd|shadow|sudoers)/, // 清空系统关键文件
+    // Windows CMD: rd/rmdir /s 删除驱动器根目录（用 lookahead 处理参数任意顺序）
+    /\b(rd|rmdir)\b(?=.*\/s\b)(?=.*\b[a-z]:\\["']?(?:\s|$))/,
+    // Windows CMD: del /s 删除驱动器根目录所有文件
+    /\bdel\b(?=.*\/s\b)(?=.*\b[a-z]:\\\*)/,
+    // Windows CMD: format 格式化驱动器
+    /\bformat\s+[a-z]:/,
+    // PowerShell: Remove-Item 递归删除驱动器根目录
+    /\bremove-item\b(?=.*-recurse)(?=.*\b[a-z]:\\["']?(?:\s|$))/,
   ]
   if (blocked.some(p => p.test(cmd))) return 'blocked'
 
@@ -344,6 +362,7 @@ export function assessCommandRisk(command: string): RiskLevel {
 
   // 高危 - 需要确认
   const dangerous = [
+    // Unix
     /\brm\s+(-[rf]+\s+)*/,             // rm 命令
     /\bkill\s+(-9\s+)?/,               // kill 命令
     /\bkillall\b/,                      // killall
@@ -363,11 +382,32 @@ export function assessCommandRisk(command: string): RiskLevel {
     />\s*\/var\//,                      // 重定向到 /var
     /\bcurl\s+.*\|\s*(ba)?sh/,          // curl ... | bash (远程代码执行)
     /\bwget\s+.*-O\s*-?\s*\|\s*(ba)?sh/, // wget -O- | sh (远程代码执行)
+    // Windows CMD
+    /\b(rd|rmdir)\b.*\/s\b/,           // rd /s (递归删除目录)
+    /\b(del|erase)\s+/,                // del / erase (删除文件)
+    /\btaskkill\s+/,                    // taskkill (终止进程)
+    /\bnet\s+stop\s+/,                 // net stop (停止服务)
+    /\bsc\s+(stop|delete)\s+/,         // sc stop/delete (服务管理)
+    /\breg\s+delete\s+/,               // reg delete (删除注册表)
+    /\bicacls\s+/,                      // icacls (修改权限)
+    /\btakeown\s+/,                     // takeown (获取所有权)
+    /\bchoco\s+uninstall/,             // choco uninstall
+    /\bwinget\s+uninstall/,            // winget uninstall
+    // Windows PowerShell
+    /\bremove-item\s+/,                // Remove-Item
+    /\bstop-process\b/,                // Stop-Process
+    /\bstop-computer\b/,               // Stop-Computer
+    /\brestart-computer\b/,            // Restart-Computer
+    /\bstop-service\s+/,               // Stop-Service
+    /\brestart-service\s+/,            // Restart-Service
+    /\bremove-service\s+/,             // Remove-Service
+    /\bclear-content\s+/,              // Clear-Content
   ]
   if (dangerous.some(p => p.test(cmd))) return 'dangerous'
 
   // 中危 - 显示但可自动执行
   const moderate = [
+    // Unix
     /\bmv\s+/,                          // mv
     /\bcp\s+/,                          // cp
     /\bmkdir\s+/,                       // mkdir
@@ -381,6 +421,26 @@ export function assessCommandRisk(command: string): RiskLevel {
     /\bpip\s+install/,                  // pip install
     /\bgit\s+(pull|push|commit)/,       // git 修改操作
     /[^>]>\s*(?!\/dev\/null|&)[^>]/,    // 重定向覆盖文件（排除 >>、>/dev/null、>&）
+    // Windows CMD
+    /\bmove\s+/,                        // move
+    /\bcopy\s+/,                        // copy
+    /\bxcopy\s+/,                       // xcopy
+    /\brobocopy\s+/,                    // robocopy
+    /\bren\s+/,                         // ren (重命名)
+    /\bmd\s+/,                          // md (创建目录)
+    /\bnet\s+start\s+/,                // net start (启动服务)
+    /\bsc\s+(start|config)\s+/,        // sc start/config
+    /\breg\s+add\s+/,                  // reg add (添加注册表)
+    /\bchoco\s+install/,               // choco install
+    /\bwinget\s+install/,              // winget install
+    // Windows PowerShell
+    /\bmove-item\s+/,                  // Move-Item
+    /\bcopy-item\s+/,                  // Copy-Item
+    /\bnew-item\s+/,                   // New-Item
+    /\brename-item\s+/,               // Rename-Item
+    /\bstart-service\s+/,             // Start-Service
+    /\binstall-module\s+/,            // Install-Module
+    /\binstall-package\s+/,           // Install-Package
   ]
   if (moderate.some(p => p.test(cmd))) return 'moderate'
 
