@@ -971,6 +971,7 @@ export default {
     stopRecording: '松开停止录音',
     transcribing: '正在识别...',
     speechError: '语音识别失败：{error}',
+    noAudioDevice: '未检测到麦克风，语音输入已禁用',
     clearConfirmTitle: '停止助手并清空对话',
     clearConfirmDesc: '助手正在执行任务中，清空对话将会：',
     clearConfirmWarning1: '立即中止当前正在执行的操作',

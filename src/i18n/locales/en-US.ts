@@ -971,6 +971,7 @@ export default {
     stopRecording: 'Release to stop recording',
     transcribing: 'Transcribing...',
     speechError: 'Speech recognition failed: {error}',
+    noAudioDevice: 'No microphone detected, voice input disabled',
     clearConfirmTitle: 'Stop Agent and Clear Chat',
     clearConfirmDesc: 'Agent is currently executing a task. Clearing the chat will:',
     clearConfirmWarning1: 'Immediately abort the current operation',

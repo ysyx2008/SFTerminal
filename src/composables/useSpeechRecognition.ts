@@ -51,6 +51,7 @@ export function useSpeechRecognition() {
   const isTranscribing = ref(false)
   const isInitializing = ref(false)
   const isModelReady = ref(false)
+  const audioAvailable = ref(true)
   const error = ref<string | null>(null)
   const lastResult = ref<TranscriptionResult | null>(null)
 
@@ -61,8 +62,27 @@ export function useSpeechRecognition() {
   let startAborted = false
 
   // 计算属性
-  const canRecord = computed(() => isModelReady.value && !isRecording.value && !isTranscribing.value)
+  const canRecord = computed(() => audioAvailable.value && isModelReady.value && !isRecording.value && !isTranscribing.value)
   const isProcessing = computed(() => isRecording.value || isTranscribing.value || isInitializing.value)
+
+  /**
+   * 检测系统是否有可用的音频输入设备
+   */
+  async function checkAudioDevices(): Promise<boolean> {
+    try {
+      if (!navigator.mediaDevices?.enumerateDevices) {
+        audioAvailable.value = false
+        return false
+      }
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      const hasInput = devices.some(d => d.kind === 'audioinput')
+      audioAvailable.value = hasInput
+      return hasInput
+    } catch {
+      audioAvailable.value = false
+      return false
+    }
+  }
 
   /**
    * 检查并初始化语音识别服务
@@ -294,12 +314,14 @@ export function useSpeechRecognition() {
     isTranscribing,
     isInitializing,
     isModelReady,
+    audioAvailable,
     isProcessing,
     canRecord,
     error,
     lastResult,
 
     // 方法
+    checkAudioDevices,
     checkAndInitialize,
     startRecording,
     stopRecording,

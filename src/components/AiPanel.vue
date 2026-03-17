@@ -253,7 +253,9 @@ const {
   isRecording,
   isTranscribing,
   isInitializing: isSpeechInitializing,
+  audioAvailable,
   error: speechError,
+  checkAudioDevices,
   checkAndInitialize: initSpeech,
   startRecording,
   stopRecording,
@@ -323,7 +325,7 @@ function hasOtherModifiers(event: KeyboardEvent, pttKey: string): boolean {
 
 const handlePTTKeyDown = (event: KeyboardEvent) => {
   const pttKey = configStore.keyboardShortcuts.voiceInput
-  if (!pttKey || !props.visible || terminalStore.activeTabId !== currentTabId.value) return
+  if (!pttKey || !audioAvailable.value || !props.visible || terminalStore.activeTabId !== currentTabId.value) return
 
   if (event.key !== pttKey) {
     if (isPushToTalk.value || pttStartTimer) {
@@ -1122,7 +1124,13 @@ onMounted(() => {
   window.addEventListener('blur', handlePTTWindowBlur)
 
   if (configStore.keyboardShortcuts.voiceInput) {
-    initSpeech()
+    checkAudioDevices().then(available => {
+      if (available) {
+        initSpeech()
+      } else {
+        toast.warning(t('ai.noAudioDevice'))
+      }
+    })
   }
 })
 
@@ -1869,13 +1877,13 @@ onUnmounted(() => {
           <button
             v-if="!isLoading || isAgentRunning"
             class="voice-btn"
-            :class="{ 'recording': isRecording, 'transcribing': isTranscribing, 'ptt': isPushToTalk }"
-            :disabled="isTranscribing || isSpeechInitializing"
-            :title="isRecording ? t('ai.stopRecording') : (isTranscribing ? t('ai.transcribing') : t('ai.startRecording'))"
+            :class="{ 'recording': isRecording, 'transcribing': isTranscribing, 'ptt': isPushToTalk, 'unavailable': !audioAvailable }"
+            :disabled="!audioAvailable || isTranscribing || isSpeechInitializing"
+            :title="!audioAvailable ? t('ai.noAudioDevice') : isRecording ? t('ai.stopRecording') : (isTranscribing ? t('ai.transcribing') : t('ai.startRecording'))"
             @click="handleRecordClick"
           >
             <Loader2 v-if="isTranscribing || isSpeechInitializing" :size="18" class="spin" />
-            <MicOff v-else-if="isRecording" :size="18" />
+            <MicOff v-else-if="isRecording || !audioAvailable" :size="18" />
             <Mic v-else :size="18" />
           </button>
           <!-- 停止按钮 (AI 响应中，非 Agent 运行时) -->
