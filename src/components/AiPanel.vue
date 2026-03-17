@@ -289,11 +289,20 @@ const handleRecordClick = async () => {
 // Push-to-Talk：按住配置的按键说话，松开后延迟停止录音（避免末尾语音丢失）
 const isPushToTalk = ref(false)
 let pttStopTimer: ReturnType<typeof setTimeout> | null = null
+let pttStartTimer: ReturnType<typeof setTimeout> | null = null
+const PTT_HOLD_THRESHOLD = 300
 
 const clearPTTStopTimer = () => {
   if (pttStopTimer) {
     clearTimeout(pttStopTimer)
     pttStopTimer = null
+  }
+}
+
+const clearPTTStartTimer = () => {
+  if (pttStartTimer) {
+    clearTimeout(pttStartTimer)
+    pttStartTimer = null
   }
 }
 
@@ -317,7 +326,8 @@ const handlePTTKeyDown = (event: KeyboardEvent) => {
   if (!pttKey || !props.visible || terminalStore.activeTabId !== currentTabId.value) return
 
   if (event.key !== pttKey) {
-    if (isPushToTalk.value) {
+    if (isPushToTalk.value || pttStartTimer) {
+      clearPTTStartTimer()
       clearPTTStopTimer()
       isPushToTalk.value = false
       cancelRecording()
@@ -330,10 +340,16 @@ const handlePTTKeyDown = (event: KeyboardEvent) => {
     clearPTTStopTimer()
     return
   }
+  if (pttStartTimer) return
   if (isRecording.value || isTranscribing.value || isSpeechInitializing.value) return
 
   isPushToTalk.value = true
-  startRecording()
+  pttStartTimer = setTimeout(() => {
+    pttStartTimer = null
+    if (isPushToTalk.value) {
+      startRecording()
+    }
+  }, PTT_HOLD_THRESHOLD)
 }
 
 const finishPTTRecording = async () => {
@@ -352,12 +368,20 @@ const finishPTTRecording = async () => {
 const handlePTTKeyUp = (event: KeyboardEvent) => {
   const pttKey = configStore.keyboardShortcuts.voiceInput
   if (event.key !== pttKey || !isPushToTalk.value) return
+
+  if (pttStartTimer) {
+    clearPTTStartTimer()
+    isPushToTalk.value = false
+    return
+  }
+
   clearPTTStopTimer()
   pttStopTimer = setTimeout(finishPTTRecording, 200)
 }
 
 const handlePTTWindowBlur = () => {
-  if (isPushToTalk.value) {
+  if (isPushToTalk.value || pttStartTimer) {
+    clearPTTStartTimer()
     clearPTTStopTimer()
     isPushToTalk.value = false
     cancelRecording()
