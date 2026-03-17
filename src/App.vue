@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, provide, watch, nextTick, type ComponentPublicInstance } from 'vue'
+import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Server, Bot, Settings, X, Loader2, Heart, AlertCircle } from 'lucide-vue-next'
+import { Server, Bot, Settings, X, Loader2, Heart } from 'lucide-vue-next'
 import { useTerminalStore } from './stores/terminal'
 import { useConfigStore, type SshSession } from './stores/config'
 import TabBar from './components/TabBar.vue'
 import AiPanel from './components/AiPanel.vue'
-import Terminal from './components/Terminal.vue'
+import TerminalTabView from './components/TerminalTabView.vue'
 import SessionManager from './components/SessionManager.vue'
 import SettingsModal from './components/Settings/SettingsModal.vue'
 import FileExplorer from './components/FileExplorer/FileExplorer.vue'
@@ -44,8 +44,6 @@ const steamAppTitle = computed(() => {
 const { show: showConfirmDialog, options: confirmOptions, handleConfirm, handleCancel, handleClose } = useConfirm()
 
 const showSidebar = ref(false)
-// Steam 版默认不显示 AI 面板，且面板区域不渲染
-const showAiPanel = ref(isSteamBuild ? false : true)
 const showSettings = ref(false)
 const showSmartPatrol = ref(false)
 const showAwaken = ref(false)
@@ -66,16 +64,8 @@ const showFileExplorer = ref(false)
 const sftpConfig = ref<SftpConnectionConfig | null>(null)
 const showSetupWizard = ref(false)
 
-// 每个终端 tab 对应的 AiPanel 实例引用（tabId -> AiPanel instance）
-const aiPanelRefs = ref<Record<string, ComponentPublicInstance | null>>({})
-
-function handleSendToAi(tabId: string, text: string) {
-  showAiPanel.value = true
-  nextTick(() => {
-    const panel = aiPanelRefs.value[tabId] as any
-    panel?.analyzeText(text)
-  })
-}
+// 每个终端 tab 对应的 TerminalTabView 实例引用（tabId -> instance）
+const tabViewRefs = ref<Record<string, InstanceType<typeof TerminalTabView> | null>>({})
 
 async function onAwakenClose() {
   showAwaken.value = false
@@ -83,13 +73,6 @@ async function onAwakenClose() {
     isAwakened.value = !!(await window.electronAPI.config.get('agentAwakened'))
   } catch { /* ignore */ }
 }
-
-// AI 面板宽度
-const aiPanelWidth = ref(420)
-const isResizing = ref(false)
-const MIN_AI_WIDTH = 300
-// 最大宽度为窗口宽度减去最小终端宽度（200px）
-const getMaxAiWidth = () => window.innerWidth - 200
 
 // 提供给子组件
 provide('showSettings', () => {
@@ -247,8 +230,8 @@ onMounted(async () => {
         }
       }
       
-      // 打开 AI 面板确保可见
-      showAiPanel.value = true
+      // 打开新 tab 的 AI 面板确保可见（createTabWithExistingPty 会激活新 tab）
+      ensureAiPanel()
       
       log.debug(`[Scheduler] 定时任务开始: ${data.taskName}, 已创建终端 tab，等待 AiPanel 执行`)
     }
@@ -257,8 +240,8 @@ onMounted(async () => {
   // 监听深链调起：从官网技能示例等外部来源触发 Agent 任务
   cleanupRunTask = window.electronAPI.app.onRunTask((task: string) => {
     log.debug(`[DeepLink] 收到外部任务: ${task.substring(0, 80)}...`)
-    showAiPanel.value = true
     terminalStore.createTabWithTask(task)
+    ensureAiPanel()
   })
 
   // 监听深链调起：从官网一键安装技能
@@ -535,7 +518,7 @@ const onSetupComplete = async () => {
   showSetupWizard.value = false
   // 向导完成后初始化应用并打开 AI 面板（触发诞生对话）
   await initializeApp()
-  showAiPanel.value = true
+  ensureAiPanel()
 }
 
 // 切换侧边栏
@@ -543,13 +526,21 @@ const toggleSidebar = () => {
   showSidebar.value = !showSidebar.value
 }
 
-// 切换 AI 面板
+// 获取当前活跃终端 tab 的 TerminalTabView 实例
+function getActiveTabView() {
+  return tabViewRefs.value[terminalStore.activeTabId] as InstanceType<typeof TerminalTabView> | null
+}
+
+// 切换当前 tab 的 AI 面板
 const toggleAiPanel = () => {
-  showAiPanel.value = !showAiPanel.value
-  // 隐藏 AI 面板时让终端获得焦点
-  if (!showAiPanel.value && terminalStore.activeTabId) {
-    terminalStore.focusTerminal()
-  }
+  getActiveTabView()?.toggleAiPanel()
+}
+
+// 确保指定 tab 的 AI 面板可见
+function ensureAiPanel(tabId?: string) {
+  const id = tabId || terminalStore.activeTabId
+  const view = tabViewRefs.value[id] as InstanceType<typeof TerminalTabView> | null
+  view?.ensureAiPanel()
 }
 
 // 打开 SFTP 文件管理器（模态框模式）
@@ -571,10 +562,10 @@ const closeSftp = () => {
   sftpConfig.value = null
 }
 
-// 有新的 Agent 任务时确保 AI 面板可见
-watch(() => Object.keys(terminalStore.pendingSchedulerTasks).length, (count) => {
-  if (count > 0) {
-    showAiPanel.value = true
+// 有新的 Agent 任务时确保对应 tab 的 AI 面板可见
+watch(() => Object.keys(terminalStore.pendingSchedulerTasks), (tabIds) => {
+  for (const tabId of tabIds) {
+    ensureAiPanel(tabId)
   }
 })
 
@@ -679,40 +670,8 @@ const handleMenuCommand = async (command: string) => {
   }
 }
 
-// AI 面板拖拽调整宽度
-const startResize = (_e: MouseEvent) => {
-  isResizing.value = true
-  document.addEventListener('mousemove', handleResize)
-  document.addEventListener('mouseup', stopResize)
-  document.body.style.cursor = 'col-resize'
-  document.body.style.userSelect = 'none'
-}
-
-const handleResize = (e: MouseEvent) => {
-  if (!isResizing.value) return
-  
-  // 计算新宽度（从右边缘到鼠标位置）
-  const newWidth = window.innerWidth - e.clientX
-  
-  // 限制宽度范围（最大为窗口一半）
-  const maxWidth = getMaxAiWidth()
-  if (newWidth >= MIN_AI_WIDTH && newWidth <= maxWidth) {
-    aiPanelWidth.value = newWidth
-  }
-}
-
-const stopResize = () => {
-  isResizing.value = false
-  document.removeEventListener('mousemove', handleResize)
-  document.removeEventListener('mouseup', stopResize)
-  document.body.style.cursor = ''
-  document.body.style.userSelect = ''
-}
-
 onUnmounted(() => {
   document.removeEventListener('keydown', handleGlobalKeydown)
-  document.removeEventListener('mousemove', handleResize)
-  document.removeEventListener('mouseup', stopResize)
   // 清理监听器
   cleanupTerminalCountListener?.()
   cleanupKnowledgeUpgrading?.()
@@ -732,7 +691,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-container" :class="{ 'sidebar-open': showSidebar, 'ai-open': showAiPanel }" :data-ui-theme="currentUiTheme" :data-color-scheme="currentColorScheme">
+  <div class="app-container" :class="{ 'sidebar-open': showSidebar }" :data-ui-theme="currentUiTheme" :data-color-scheme="currentColorScheme">
     <!-- 顶部工具栏 -->
     <header class="app-header">
       <div class="header-left">
@@ -799,48 +758,14 @@ onUnmounted(() => {
             />
           </div>
           <!-- ===== 终端 Tab (local / ssh) ===== -->
-          <div v-else v-show="tab.id === terminalStore.activeTabId" class="tab-view terminal-tab">
-            <div class="terminal-main">
-              <Terminal
-                v-if="tab.ptyId"
-                :tab-id="tab.id"
-                :pty-id="tab.ptyId"
-                :type="(tab.type as 'local' | 'ssh')"
-                :is-active="tab.id === terminalStore.activeTabId"
-                @send-to-ai="(text: string) => handleSendToAi(tab.id, text)"
-              />
-              <div v-else-if="tab.isLoading" class="terminal-loading">
-                <div class="loading-spinner"></div>
-                <span>{{ tab.loadingMessage || t('terminal.connecting') }}</span>
-              </div>
-              <div v-else class="terminal-error">
-                <AlertCircle :size="48" />
-                <span class="error-title">{{ t('terminal.connectionFailed') }}</span>
-                <span v-if="tab.connectionError" class="error-detail">{{ tab.connectionError }}</span>
-                <button class="btn btn-sm" @click="terminalStore.closeTab(tab.id)">{{ t('common.close') }}</button>
-              </div>
-            </div>
-            <template v-if="!isSteamBuild">
-              <div
-                v-show="showAiPanel"
-                class="resize-handle"
-                @mousedown="startResize"
-                :class="{ resizing: isResizing }"
-              ></div>
-              <div
-                v-show="showAiPanel"
-                class="tab-ai-sidebar"
-                :style="{ width: aiPanelWidth + 'px' }"
-              >
-                <AiPanel
-                  :ref="(el: any) => { aiPanelRefs[tab.id] = el }"
-                  :tab-id="tab.id"
-                  :visible="tab.id === terminalStore.activeTabId && showAiPanel"
-                  @close="showAiPanel = false"
-                />
-              </div>
-            </template>
-          </div>
+          <TerminalTabView
+            v-else
+            v-show="tab.id === terminalStore.activeTabId"
+            :ref="(el: any) => { tabViewRefs[tab.id] = el }"
+            :tab="tab"
+            :is-active="tab.id === terminalStore.activeTabId"
+            class="tab-view"
+          />
         </template>
       </main>
     </div>
@@ -1072,126 +997,6 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
-.terminal-tab {
-  display: flex;
-  flex-direction: row;
-}
-
-.terminal-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* 终端 Tab 内的 AI 侧栏 */
-.tab-ai-sidebar {
-  min-width: 280px;
-  background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
-  border-left: 1px solid var(--border-color);
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  position: relative;
-}
-
-.tab-ai-sidebar::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: 1px;
-  background: linear-gradient(180deg, transparent, rgba(var(--accent-secondary-rgb, 116, 199, 236), 0.15), transparent);
-  pointer-events: none;
-}
-
-/* 终端 loading / error 状态 */
-.terminal-loading,
-.terminal-error {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  color: var(--text-muted);
-}
-
-.loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid var(--bg-surface);
-  border-top-color: var(--accent-primary);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.terminal-error svg {
-  color: var(--accent-error);
-  opacity: 0.8;
-}
-
-.terminal-error .error-title {
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.terminal-error .error-detail {
-  font-size: 13px;
-  color: var(--text-secondary);
-  max-width: 400px;
-  text-align: center;
-  line-height: 1.5;
-  padding: 8px 16px;
-  background: var(--bg-surface);
-  border-radius: 6px;
-  border: 1px solid var(--border-primary);
-}
-
-/* 拖拽调整宽度手柄 */
-.resize-handle {
-  width: 5px;
-  cursor: col-resize;
-  background: transparent;
-  transition: all 0.25s ease;
-  flex-shrink: 0;
-  position: relative;
-}
-
-.resize-handle::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 3px;
-  height: 40px;
-  background: var(--border-color);
-  border-radius: 2px;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.resize-handle:hover::after,
-.resize-handle.resizing::after {
-  opacity: 1;
-}
-
-.resize-handle:hover,
-.resize-handle.resizing {
-  background: linear-gradient(180deg, transparent, rgba(var(--accent-rgb, 137, 180, 250), 0.3), transparent);
-}
-
-.resize-handle.resizing::after {
-  background: var(--accent-primary);
-  box-shadow: 0 0 10px var(--accent-primary);
-}
 
 /* 知识库升级进度条 */
 .knowledge-upgrade-bar {
