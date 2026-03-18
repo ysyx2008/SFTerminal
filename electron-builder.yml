@@ -33,6 +33,8 @@ asarUnpack:
   - node_modules/sherpa-onnx-darwin-*/**/*
   - node_modules/sherpa-onnx-linux-*/**/*
   - node_modules/sherpa-onnx-win-*/**/*
+  - node_modules/onnxruntime-node/**/*
+  - "**/onnxruntime-node/**/*"
   - dist-electron/services/speech/**/*
 # 启用最大压缩率以减小安装包大小（会增加打包时间）
 # compression: maximum
@@ -85,6 +87,7 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: 旗鱼
+  include: resources/nsis/vcredist-install.nsh
   # 多语言安装程序
   installerLanguages:
     - en_US
