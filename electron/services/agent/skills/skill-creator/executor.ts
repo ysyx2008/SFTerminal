@@ -12,9 +12,6 @@ import type { ToolResult, ToolExecutorConfig, AgentConfig } from '../../tools/ty
 
 const log = createLogger('skill-creator')
 
-/** 已通过 skill_preview 审查的技能标识（skill_id 或本地路径），安装时校验 */
-const previewedSkills = new Set<string>()
-
 /**
  * 执行用户技能创建工具
  */
@@ -568,12 +565,6 @@ async function skillPreview(args: Record<string, unknown>): Promise<ToolResult> 
       ? `skill_install_local("${skillId}")`
       : `skill_market_install("${skill.id || skillId}", "${source}")`
 
-    // 记录已审查，供后续安装时校验
-    previewedSkills.add(skillId)
-    if (result.skill?.id && result.skill.id !== skillId) {
-      previewedSkills.add(result.skill.id)
-    }
-
     return {
       success: true,
       output: `## ${t('scan.preview_title')}: ${skill.name || skillId}
@@ -635,6 +626,69 @@ function formatLowRiskNote(scan: import('../../../skill-market.service').Securit
 }
 
 /**
+ * 附属文件用户确认流程（共用于 marketInstall 和 installLocal）
+ * 返回 null 表示用户已批准，返回 ToolResult 表示被拒绝
+ */
+async function confirmScriptInstall(
+  skillId: string,
+  preview: import('../../../skill-market.service').SkillPreviewResult,
+  toolName: string,
+  toolArgs: Record<string, unknown>,
+  toolCallId: string,
+  executor: ToolExecutorConfig
+): Promise<ToolResult | null> {
+  log.info(`Skill ${skillId} contains ${preview.files!.length} extra files, requesting confirmation`)
+
+  const scanNote = formatScanNote(preview.scan)
+  executor.addStep({
+    type: 'tool_call',
+    content: `${t('scan.market_skill_has_files', { id: skillId, count: preview.files!.length })}${scanNote}\n${t('scan.evidence')}: ${preview.files!.join(', ')}`,
+    toolName,
+    toolArgs: { ...toolArgs, files: preview.files, scan_warnings: preview.scan?.warnings.length || 0 },
+    riskLevel: 'dangerous'
+  })
+
+  const approved = await executor.waitForConfirmation(
+    toolCallId, toolName,
+    { ...toolArgs, files: preview.files, scan_warnings: preview.scan?.warnings.length || 0 },
+    'dangerous'
+  )
+  if (!approved) {
+    log.info(`User rejected install of skill: ${skillId}`)
+    executor.addStep({
+      type: 'tool_result',
+      content: t('scan.user_rejected', { id: skillId }),
+      toolName,
+      toolResult: t('scan.user_cancelled')
+    })
+    return { success: false, output: '', error: t('scan.user_cancelled') }
+  }
+  log.info(`User approved install of skill: ${skillId}`)
+  return null
+}
+
+/**
+ * 格式化安装完成的输出（含扫描摘要，供 AI 审阅已安装的内容）
+ */
+function formatInstallOutput(
+  skillId: string,
+  preview: import('../../../skill-market.service').SkillPreviewResult,
+  hasExtraFiles: boolean | undefined,
+  overwriteNote = ''
+): string {
+  const warningNote = formatLowRiskNote(preview.scan)
+  const filesNote = hasExtraFiles && preview.files
+    ? '\n\n' + t('scan.files_installed', { count: preview.files.length, files: preview.files.join(', ') })
+    : ''
+
+  const contentSummary = preview.content
+    ? `\n\n<installed_skill_content>\n${preview.content.length > 3000 ? preview.content.slice(0, 3000) + '\n...' : preview.content}\n</installed_skill_content>`
+    : ''
+
+  return `${t('scan.installed_local', { id: skillId })}${overwriteNote}${warningNote}${filesNote}${contentSummary}\n\n使用 \`load_user_skill("${skillId}")\` 加载此技能。`
+}
+
+/**
  * 从技能市场安装技能
  */
 async function marketInstall(
@@ -649,35 +703,11 @@ async function marketInstall(
     return { success: false, output: '', error: t('scan.id_required') }
   }
 
-  // 硬性检查：必须先 preview
-  if (!previewedSkills.has(skillId)) {
-    return { success: false, output: '', error: t('scan.preview_required', { id: skillId, source }) }
-  }
-
   try {
     const service = getMarketService()
 
-    if (source === 'sailfish') {
-      const result = await service.installSkill(skillId)
-      if (!result.success) {
-        return { success: false, output: '', error: result.error || '安装失败' }
-      }
-
-      executor.addStep({
-        type: 'tool_result',
-        content: `✅ 已安装技能: ${skillId}`,
-        toolName: 'skill_market_install',
-        toolResult: `SailFish 技能 ${skillId} 已安装`
-      })
-
-      return {
-        success: true,
-        output: `✅ 已安装 SailFish 官方技能: ${skillId}\n\n使用 \`load_user_skill("${skillId}")\` 加载此技能。`
-      }
-    }
-
-    // ClawHub 技能：先预览做安全扫描
-    const preview = await service.previewSkill(skillId, 'clawhub')
+    // 内置预览 + 安全扫描（所有来源统一走此流程）
+    const preview = await service.previewSkill(skillId, source)
     if (!preview.success || !preview.content) {
       return { success: false, output: '', error: preview.error || t('scan.preview_failed') }
     }
@@ -685,71 +715,37 @@ async function marketInstall(
     const blockResult = checkBlockedWarnings(preview.scan, skillId)
     if (blockResult) return blockResult
 
-    // 带脚本/附属文件的技能包需要用户确认
+    // 带脚本/附属文件 → 用户确认
     const hasScripts = preview.files && preview.files.length > 0
     if (hasScripts) {
-      log.info(`Skill ${skillId} contains ${preview.files!.length} files, requesting confirmation`)
-
-      const scanNote = formatScanNote(preview.scan)
-
-      executor.addStep({
-        type: 'tool_call',
-        content: `${t('scan.market_skill_has_files', { id: skillId, count: preview.files!.length })}${scanNote}\n${t('scan.evidence')}: ${preview.files!.join(', ')}`,
-        toolName: 'skill_market_install',
-        toolArgs: {
-          skill_id: skillId,
-          source,
-          files: preview.files,
-          scan_warnings: preview.scan?.warnings.length || 0,
-        },
-        riskLevel: 'dangerous'
-      })
-
-      const approved = await executor.waitForConfirmation(
-        toolCallId,
-        'skill_market_install',
-        {
-          skill_id: skillId,
-          source,
-          files: preview.files,
-          scan_warnings: preview.scan?.warnings.length || 0,
-        },
-        'dangerous'
+      const confirmResult = await confirmScriptInstall(
+        skillId, preview, 'skill_market_install', { skill_id: skillId, source },
+        toolCallId, executor
       )
-      if (!approved) {
-        log.info(`User rejected install of script-containing skill: ${skillId}`)
-        executor.addStep({
-          type: 'tool_result',
-          content: t('scan.user_rejected', { id: skillId }),
-          toolName: 'skill_market_install',
-          toolResult: t('scan.user_cancelled')
-        })
-        return { success: false, output: '', error: t('scan.user_cancelled') }
-      }
-      log.info(`User approved install of script-containing skill: ${skillId}`)
+      if (confirmResult) return confirmResult
     }
 
-    // 下载 ZIP 并解压安装（包含所有附属文件）
-    const result = await service.installClawHubSkill(skillId)
-    if (!result.success) {
-      return { success: false, output: '', error: result.error || t('scan.preview_failed') }
+    // 执行安装
+    let installResult
+    if (source === 'clawhub') {
+      installResult = await service.installClawHubSkill(skillId)
+    } else {
+      installResult = await service.installSkill(skillId)
+    }
+    if (!installResult.success) {
+      return { success: false, output: '', error: installResult.error || t('scan.preview_failed') }
     }
 
     executor.addStep({
       type: 'tool_result',
       content: t('scan.installed_market', { id: skillId }),
       toolName: 'skill_market_install',
-      toolResult: `ClawHub ${skillId}${hasScripts ? ` (${preview.files!.length} files)` : ''}`
+      toolResult: `${source} ${skillId}${hasScripts ? ` (${preview.files!.length} files)` : ''}`
     })
-
-    const warningNote = formatLowRiskNote(preview.scan)
-    const filesNote = hasScripts
-      ? '\n\n' + t('scan.files_installed', { count: preview.files!.length, files: preview.files!.join(', ') })
-      : ''
 
     return {
       success: true,
-      output: `${t('scan.installed_market', { id: skillId })}${warningNote}${filesNote}\n\n使用 \`load_user_skill("${skillId}")\` 加载此技能。`
+      output: formatInstallOutput(skillId, preview, hasScripts)
     }
   } catch (error) {
     return {
@@ -773,16 +769,13 @@ async function installLocal(
     return { success: false, output: '', error: t('scan.id_required') }
   }
 
-  // 硬性检查：必须先 preview（用路径或 skill_id 匹配）
   let skillId = (args.skill_id as string)?.trim().toLowerCase()
-  if (!previewedSkills.has(sourcePath) && !(skillId && previewedSkills.has(skillId))) {
-    return { success: false, output: '', error: t('scan.preview_required', { id: sourcePath, source: 'local' }) }
-  }
 
   try {
     const service = getMarketService()
-    const preview = service.previewLocalSkill(sourcePath)
 
+    // 内置预览 + 安全扫描
+    const preview = service.previewLocalSkill(sourcePath)
     if (!preview.success || !preview.content || !preview.filesMap) {
       return { success: false, output: '', error: preview.error || t('scan.preview_failed') }
     }
@@ -800,72 +793,34 @@ async function installLocal(
     const blockResult = checkBlockedWarnings(preview.scan, skillId)
     if (blockResult) return blockResult
 
-    // 附属文件需要用户确认
+    // 附属文件 → 用户确认
     const hasExtraFiles = preview.files && preview.files.length > 0
     if (hasExtraFiles) {
-      log.info(`Local skill ${skillId} contains ${preview.files!.length} extra files, requesting confirmation`)
-
-      const scanNote = formatScanNote(preview.scan)
-
-      executor.addStep({
-        type: 'tool_call',
-        content: `${t('scan.local_skill_has_files', { id: skillId, count: preview.files!.length })}${scanNote}\n${t('scan.source')}: ${sourcePath}`,
-        toolName: 'skill_install_local',
-        toolArgs: {
-          skill_id: skillId,
-          source_path: sourcePath,
-          files: preview.files,
-          scan_warnings: preview.scan?.warnings.length || 0,
-        },
-        riskLevel: 'dangerous'
-      })
-
-      const approved = await executor.waitForConfirmation(
-        toolCallId,
-        'skill_install_local',
-        {
-          skill_id: skillId,
-          source_path: sourcePath,
-          files: preview.files,
-          scan_warnings: preview.scan?.warnings.length || 0,
-        },
-        'dangerous'
+      const confirmResult = await confirmScriptInstall(
+        skillId, preview, 'skill_install_local',
+        { skill_id: skillId, source_path: sourcePath },
+        toolCallId, executor
       )
-      if (!approved) {
-        log.info(`User rejected local install of skill: ${skillId}`)
-        executor.addStep({
-          type: 'tool_result',
-          content: t('scan.user_rejected', { id: skillId }),
-          toolName: 'skill_install_local',
-          toolResult: t('scan.user_cancelled')
-        })
-        return { success: false, output: '', error: t('scan.user_cancelled') }
-      }
-      log.info(`User approved local install of skill: ${skillId}`)
+      if (confirmResult) return confirmResult
     }
 
+    // 执行安装
     const result = service.installLocalSkillFiles(skillId, preview.filesMap)
     if (!result.success) {
       return { success: false, output: '', error: result.error || t('scan.preview_failed') }
     }
 
-    const totalFiles = Object.keys(preview.filesMap).length
     const overwriteNote = result.overwritten ? t('scan.overwritten') : ''
     executor.addStep({
       type: 'tool_result',
       content: `${t('scan.installed_local', { id: skillId })}${overwriteNote}`,
       toolName: 'skill_install_local',
-      toolResult: `${skillId} (${totalFiles} files)${overwriteNote}`
+      toolResult: `${skillId} (${Object.keys(preview.filesMap).length} files)${overwriteNote}`
     })
-
-    const warningNote = formatLowRiskNote(preview.scan)
-    const filesNote = hasExtraFiles
-      ? '\n\n' + t('scan.files_installed', { count: preview.files!.length, files: preview.files!.join(', ') })
-      : ''
 
     return {
       success: true,
-      output: `${t('scan.installed_local', { id: skillId })}${overwriteNote}${warningNote}${filesNote}\n\n使用 \`load_user_skill("${skillId}")\` 加载此技能。`
+      output: formatInstallOutput(skillId, preview, hasExtraFiles, overwriteNote)
     }
   } catch (error) {
     return {
