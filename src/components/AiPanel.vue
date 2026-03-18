@@ -1462,7 +1462,7 @@ onUnmounted(() => {
                     <span class="history-task">{{ truncateText(record.userTask, 50) }}</span>
                     <span class="history-meta">
                       <span v-if="record.terminalType === 'ssh'" class="history-ssh">{{ record.sshHost }}</span>
-                      <span class="history-time">{{ formatHistoryTime(record.timestamp) }}</span>
+                      <span class="history-time">{{ formatHistoryTime(record.timestamp + record.duration) }}</span>
                     </span>
                   </div>
                 </div>
@@ -1504,7 +1504,7 @@ onUnmounted(() => {
                       <span class="history-task">{{ truncateText(record.userTask, 80) }}</span>
                       <span class="history-meta">
                         <span v-if="record.terminalType === 'ssh'" class="history-ssh">{{ record.sshHost }}</span>
-                        <span class="history-time">{{ formatHistoryTime(record.timestamp) }}</span>
+                        <span class="history-time">{{ formatHistoryTime(record.timestamp + record.duration) }}</span>
                       </span>
                     </div>
                     <button

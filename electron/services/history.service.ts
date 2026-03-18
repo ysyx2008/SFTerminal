@@ -22,6 +22,18 @@ export interface ChatRecord {
   content: string
 }
 
+/** 索引条目：每条 AgentRecord 的轻量摘要，用于排序和过滤，避免读取完整日期文件 */
+interface AgentIndexEntry {
+  id: string
+  timestamp: number
+  duration: number
+  dateStr: string
+  userTask: string
+  terminalType: TerminalType
+  sshHost?: string
+  status: 'completed' | 'failed' | 'aborted'
+}
+
 export interface SearchAgentRecordsOptions {
   keyword?: string
   limit?: number
@@ -57,6 +69,7 @@ export class HistoryService {
   private historyDir: string
   private chatDir: string
   private agentDir: string
+  private _indexCache: AgentIndexEntry[] | null = null
 
   constructor() {
     // 获取用户数据目录
@@ -67,6 +80,10 @@ export class HistoryService {
 
     // 确保目录存在
     this.ensureDirectories()
+  }
+
+  private get indexPath(): string {
+    return path.join(this.historyDir, 'agent-index.json')
   }
 
   /**
@@ -161,6 +178,80 @@ export class HistoryService {
     return this.readJsonFile<AgentRecord>(filePath).map(normalizeAgentRecord)
   }
 
+  // ==================== Agent 索引管理 ====================
+
+  private getIndex(): AgentIndexEntry[] {
+    if (this._indexCache) return this._indexCache
+
+    try {
+      if (fs.existsSync(this.indexPath)) {
+        const content = fs.readFileSync(this.indexPath, 'utf-8')
+        this._indexCache = JSON.parse(content) as AgentIndexEntry[]
+        return this._indexCache
+      }
+    } catch (e) {
+      log.warn('读取 Agent 索引失败，将重建:', e)
+    }
+
+    return this.rebuildIndex()
+  }
+
+  private writeIndex(entries: AgentIndexEntry[]): void {
+    this._indexCache = entries
+    try {
+      fs.writeFileSync(this.indexPath, JSON.stringify(entries), 'utf-8')
+    } catch (e) {
+      log.error('写入 Agent 索引失败:', e)
+    }
+  }
+
+  /** 从所有日期文件重建索引（首次升级或索引损坏时触发） */
+  private rebuildIndex(): AgentIndexEntry[] {
+    const files = fs.readdirSync(this.agentDir).filter(f => f.endsWith('.json')).sort()
+    const entries: AgentIndexEntry[] = []
+
+    for (const file of files) {
+      const dateStr = file.replace('.json', '')
+      const filePath = path.join(this.agentDir, file)
+      const records = this.readAgentRecords(filePath)
+      for (const r of records) {
+        entries.push(this.toIndexEntry(r, dateStr))
+      }
+    }
+
+    this.writeIndex(entries)
+    log.info(`Agent 索引已重建，共 ${entries.length} 条记录`)
+    return entries
+  }
+
+  private toIndexEntry(record: AgentRecord, dateStr: string): AgentIndexEntry {
+    return {
+      id: record.id,
+      timestamp: record.timestamp,
+      duration: record.duration,
+      dateStr,
+      userTask: record.userTask,
+      terminalType: record.terminalType,
+      sshHost: record.sshHost,
+      status: record.status,
+    }
+  }
+
+  private updateIndexEntry(record: AgentRecord): void {
+    const entries = this.getIndex()
+    const dateStr = this.getDateString(record.timestamp)
+    const entry = this.toIndexEntry(record, dateStr)
+
+    const idx = entries.findIndex(e => e.id === record.id)
+    if (idx !== -1) {
+      entries[idx] = entry
+    } else {
+      entries.push(entry)
+    }
+
+    this.writeIndex(entries)
+  }
+
   /**
    * 写入 JSON 文件
    */
@@ -239,14 +330,13 @@ export class HistoryService {
     // 查找是否存在相同 id 的记录
     const existingIndex = records.findIndex(r => r.id === record.id)
     if (existingIndex !== -1) {
-      // 更新已有记录
       records[existingIndex] = record
     } else {
-      // 追加新记录
       records.push(record)
     }
     
     this.writeJsonFile(filePath, records)
+    this.updateIndexEntry(record)
   }
 
   /**
@@ -283,24 +373,38 @@ export class HistoryService {
   }
 
   /**
-   * 获取最近的 N 条 Agent 记录（从最新日期文件倒序读取，收够即停）
+   * 获取最近的 N 条 Agent 记录，按最后更新时间（timestamp + duration）倒序排列。
+   * 基于轻量级索引选出 top N，再只读取必要的日期文件获取完整记录。
    */
   getRecentAgentRecords(limit: number = 5, filter?: (r: AgentRecord) => boolean): AgentRecord[] {
-    const files = fs.readdirSync(this.agentDir).filter(f => f.endsWith('.json')).sort().reverse()
+    const index = this.getIndex()
+
+    // 索引条目包含 filter 所需字段（userTask 等），用 cast 适配现有签名
+    let candidates = filter
+      ? index.filter(e => filter(e as unknown as AgentRecord))
+      : index
+
+    candidates = candidates
+      .sort((a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration))
+      .slice(0, limit)
+
+    if (candidates.length === 0) return []
+
+    // 按 dateStr 分组，最小化文件读取次数
+    const neededIds = new Set(candidates.map(e => e.id))
+    const dateStrs = new Set(candidates.map(e => e.dateStr))
     const results: AgentRecord[] = []
 
-    for (const file of files) {
-      if (results.length >= limit) break
-      const filePath = path.join(this.agentDir, file)
+    for (const dateStr of dateStrs) {
+      const filePath = this.getAgentFilePath(dateStr)
+      if (!fs.existsSync(filePath)) continue
       const records = this.readAgentRecords(filePath)
-      for (let i = records.length - 1; i >= 0; i--) {
-        if (filter && !filter(records[i])) continue
-        results.push(records[i])
-        if (results.length >= limit) break
+      for (const r of records) {
+        if (neededIds.has(r.id)) results.push(r)
       }
     }
 
-    return results
+    return results.sort((a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration))
   }
 
   /**
@@ -703,6 +807,10 @@ export class HistoryService {
           agentDeleted++
         }
       }
+    }
+
+    if (chatDeleted > 0 || agentDeleted > 0) {
+      this.rebuildIndex()
     }
 
     return { chatDeleted, agentDeleted }

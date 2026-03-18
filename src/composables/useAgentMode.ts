@@ -915,7 +915,7 @@ export function useAgentMode(
     isLoadingHistory.value = true
     try {
       const records = await window.electronAPI.history.getRecentAgentRecords(5, true) as AgentRecord[]
-      recentHistory.value = records.sort((a, b) => b.timestamp - a.timestamp)
+      recentHistory.value = records.sort((a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration))
     } catch (e) {
       log.error('加载历史记录失败:', e)
     } finally {
@@ -931,7 +931,7 @@ export function useAgentMode(
       const currentCount = reset ? 0 : allHistory.value.length
       const fetchSize = currentCount + HISTORY_PAGE_SIZE
       const records = await window.electronAPI.history.getRecentAgentRecords(fetchSize, true) as AgentRecord[]
-      const sorted = records.sort((a, b) => b.timestamp - a.timestamp)
+      const sorted = records.sort((a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration))
       allHistory.value = sorted
       hasMoreHistory.value = records.length >= fetchSize
     } catch (e) {
