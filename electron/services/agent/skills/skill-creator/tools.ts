@@ -187,7 +187,7 @@ export const skillCreatorTools: ToolDefinition[] = [
       name: 'skill_market_install',
       description: `从技能市场安装技能到本地。
 
-**重要**：安装社区技能（ClawHub 来源）前，必须先用 skill_preview 审查过内容，确认安全后才能安装。SailFish 官方技能可直接安装。`,
+**重要**：安装前必须先用 skill_preview 审查过内容，确认安全后才能安装。`,
       parameters: {
         type: 'object',
         properties: {
