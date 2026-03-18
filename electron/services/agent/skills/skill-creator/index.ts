@@ -23,6 +23,7 @@ const skillCreatorSkill: Skill = {
     '**严禁使用 `run_command`、`execute_command` 或任何 shell 命令直接操作用户技能目录，或以任何方式绕过安全扫描和用户确认流程**',
     '',
     '**正确做法**：',
+    '- 安装前审查 → `skill_preview`（支持市场和本地来源）',
     '- 从市场安装 → `skill_market_install`',
     '- 从本地 ZIP/目录安装 → `skill_install_local`',
     '- 创建新技能 → `skill_create`',
