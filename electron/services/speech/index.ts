@@ -83,7 +83,7 @@ function getSherpaLibPath(): string {
 let _resolvedNativePaths: { unpackedNM: string; sherpaLib: string } | null = null
 
 function hasNonAscii(s: string): boolean {
-  return /[^\x00-\x7F]/.test(s)
+  return /[^\x20-\x7E]/.test(s)
 }
 
 function getAsciiSafeBaseDir(): string | null {
