@@ -4,6 +4,7 @@
  */
 import * as path from 'path'
 import * as fs from 'fs'
+import * as os from 'os'
 import { app, utilityProcess, UtilityProcess } from 'electron'
 import { createLogger } from '../../utils/logger'
 
@@ -74,6 +75,82 @@ function getSherpaLibPath(): string {
   return path.join(getUnpackedNodeModules(), pkg)
 }
 
+// ── Windows Unicode 路径兼容 ──────────────────────────────────
+// Windows 原生 DLL 加载器在路径含非 ASCII 字符时可能失败（ERROR_MOD_NOT_FOUND）。
+// 当检测到这种情况，创建 NTFS junction 从 ASCII 安全路径指向真实目录，
+// junction 零拷贝、不需要管理员权限。
+
+let _resolvedNativePaths: { unpackedNM: string; sherpaLib: string } | null = null
+
+function hasNonAscii(s: string): boolean {
+  return /[^\x00-\x7F]/.test(s)
+}
+
+function getAsciiSafeBaseDir(): string | null {
+  for (const dir of [process.env.PROGRAMDATA, os.tmpdir(), `${process.env.SystemDrive || 'C:'}\\`]) {
+    if (dir && !hasNonAscii(dir)) return dir
+  }
+  return null
+}
+
+function ensureAsciiJunction(targetDir: string, tag: string): string {
+  if (process.platform !== 'win32' || !hasNonAscii(targetDir) || !fs.existsSync(targetDir)) {
+    return targetDir
+  }
+
+  const baseDir = getAsciiSafeBaseDir()
+  if (!baseDir) {
+    log.warn('No ASCII-safe base directory found, using original path')
+    return targetDir
+  }
+
+  const junctionPath = path.join(baseDir, 'SailFish', 'native-cache', tag)
+
+  try {
+    const stat = fs.lstatSync(junctionPath)
+    if (stat.isSymbolicLink()) {
+      const target = fs.readlinkSync(junctionPath)
+      if (path.resolve(target) === path.resolve(targetDir)) {
+        return junctionPath
+      }
+    }
+    fs.rmSync(junctionPath, { recursive: true, force: true })
+  } catch {
+    // doesn't exist yet
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(junctionPath), { recursive: true })
+    fs.symlinkSync(targetDir, junctionPath, 'junction')
+    log.info('Created junction: %s → %s', junctionPath, targetDir)
+    return junctionPath
+  } catch (err) {
+    log.warn('Failed to create junction:', err)
+    return targetDir
+  }
+}
+
+function resolveNativePaths(): { unpackedNM: string; sherpaLib: string } {
+  if (_resolvedNativePaths) return _resolvedNativePaths
+
+  const rawNM = getUnpackedNodeModules()
+  const unpackedNM = ensureAsciiJunction(rawNM, 'node_modules')
+
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+  const platformPkg: Record<string, string> = {
+    darwin: `sherpa-onnx-darwin-${arch}`,
+    win32: `sherpa-onnx-win-${arch}`,
+    linux: `sherpa-onnx-linux-${arch}`,
+  }
+  const pkg = platformPkg[process.platform] || `sherpa-onnx-${process.platform}-${arch}`
+  const sherpaLib = path.join(unpackedNM, pkg)
+
+  _resolvedNativePaths = { unpackedNM, sherpaLib }
+  return _resolvedNativePaths
+}
+
+// ── 模型与状态 ────────────────────────────────────────────────
+
 /**
  * 检查模型是否可用
  */
@@ -136,8 +213,7 @@ function startWorker(): void {
   }
 
   const env = { ...process.env }
-  const unpackedNM = getUnpackedNodeModules()
-  const sherpaLib = getSherpaLibPath()
+  const { unpackedNM, sherpaLib } = resolveNativePaths()
 
   // 1) NODE_PATH — 确保 utilityProcess 的 require 能找到 unpacked 的 node_modules
   env.NODE_PATH = unpackedNM
