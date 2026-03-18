@@ -12,6 +12,9 @@ import type { ToolResult, ToolExecutorConfig, AgentConfig } from '../../tools/ty
 
 const log = createLogger('skill-creator')
 
+/** 已通过 skill_preview 审查的技能标识（skill_id 或本地路径），安装时校验 */
+const previewedSkills = new Set<string>()
+
 /**
  * 执行用户技能创建工具
  */
@@ -565,6 +568,12 @@ async function skillPreview(args: Record<string, unknown>): Promise<ToolResult> 
       ? `skill_install_local("${skillId}")`
       : `skill_market_install("${skill.id || skillId}", "${source}")`
 
+    // 记录已审查，供后续安装时校验
+    previewedSkills.add(skillId)
+    if (result.skill?.id && result.skill.id !== skillId) {
+      previewedSkills.add(result.skill.id)
+    }
+
     return {
       success: true,
       output: `## ${t('scan.preview_title')}: ${skill.name || skillId}
@@ -637,7 +646,12 @@ async function marketInstall(
   const source = (args.source as SkillSource) || 'sailfish'
 
   if (!skillId) {
-    return { success: false, output: '', error: '技能 ID 不能为空' }
+    return { success: false, output: '', error: t('scan.id_required') }
+  }
+
+  // 硬性检查：必须先 preview
+  if (!previewedSkills.has(skillId)) {
+    return { success: false, output: '', error: t('scan.preview_required', { id: skillId, source }) }
   }
 
   try {
@@ -759,7 +773,11 @@ async function installLocal(
     return { success: false, output: '', error: t('scan.id_required') }
   }
 
+  // 硬性检查：必须先 preview（用路径或 skill_id 匹配）
   let skillId = (args.skill_id as string)?.trim().toLowerCase()
+  if (!previewedSkills.has(sourcePath) && !(skillId && previewedSkills.has(skillId))) {
+    return { success: false, output: '', error: t('scan.preview_required', { id: sourcePath, source: 'local' }) }
+  }
 
   try {
     const service = getMarketService()
