@@ -31,8 +31,8 @@ export const migrationV2: Migration = {
     }
 
     if (!knowledgeService || !hostProfileService) {
-      log.warn('KnowledgeService or HostProfileService not available, deferring migration')
-      throw new Error('Required services not available for host notes migration')
+      log.warn('KnowledgeService or HostProfileService not available, skipping (notes preserved in host profiles)')
+      return
     }
 
     const profiles = hostProfileService.getAllProfiles()
