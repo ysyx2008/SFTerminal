@@ -690,6 +690,161 @@ export class SkillMarketService {
     }
   }
 
+  // ==================== 本地安装 ====================
+
+  /**
+   * 预览本地技能包（ZIP 或目录），执行安全扫描但不安装
+   */
+  previewLocalSkill(localPath: string): SkillPreviewResult & { filesMap?: Record<string, string> } {
+    const resolved = path.resolve(localPath)
+    if (!fs.existsSync(resolved)) {
+      return { success: false, error: `Path not found: ${resolved}` }
+    }
+
+    try {
+      let files: Record<string, string>
+      let meta: Record<string, unknown> | undefined
+
+      const stat = fs.statSync(resolved)
+      if (stat.isFile() && resolved.endsWith('.zip')) {
+        const zipBuffer = fs.readFileSync(resolved)
+        if (zipBuffer.length > SkillMarketService.MAX_SKILL_SIZE) {
+          return { success: false, error: `Package too large (${(zipBuffer.length / 1024).toFixed(0)}KB, max 1MB)` }
+        }
+        const extracted = this.extractClawHubZip(zipBuffer)
+        files = extracted.files
+        meta = extracted.meta
+      } else if (stat.isDirectory()) {
+        files = this.readDirectoryFiles(resolved)
+      } else {
+        return { success: false, error: 'Source must be a .zip file or a directory' }
+      }
+
+      if (!files['SKILL.md']) {
+        return { success: false, error: 'Package does not contain SKILL.md' }
+      }
+
+      const allContent = Object.values(files).join('\n\n')
+      if (allContent.length > SkillMarketService.MAX_SKILL_SIZE) {
+        return { success: false, error: `Total content too large (${(allContent.length / 1024).toFixed(0)}KB, max 1MB)` }
+      }
+
+      const scan = scanSkillContent(allContent)
+
+      const PREVIEW_EXCLUDED = new Set(['SKILL.md', '_meta.json', 'clawhub.meta.json'])
+      const extraFiles = Object.keys(files).filter(f => !PREVIEW_EXCLUDED.has(f))
+
+      const skillId = path.basename(resolved, '.zip')
+      const skill: MarketSkill = {
+        id: skillId,
+        name: skillId,
+        description: '',
+        version: (meta?.version as string) || '1.0.0',
+        author: (meta?.ownerId as string) || 'local',
+        source: 'clawhub',
+        url: resolved,
+      }
+
+      const fileList = Object.keys(files)
+      const skillMd = files['SKILL.md']
+      const contentPreview = fileList.length === 1
+        ? skillMd
+        : `${skillMd}\n\n---\n附属文件 (${fileList.length - 1}): ${fileList.filter(f => f !== 'SKILL.md').join(', ')}`
+
+      return { success: true, skill, content: contentPreview, scan, files: extraFiles, filesMap: files }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error'
+      return { success: false, error: msg }
+    }
+  }
+
+  /**
+   * 从文件映射安装技能到本地（previewLocalSkill 审查通过后调用）
+   */
+  installLocalSkillFiles(skillId: string, filesMap: Record<string, string>): SkillOperationResult & { overwritten?: boolean } {
+    if (!validateSkillId(skillId)) {
+      return { success: false, error: `Invalid skill ID: "${skillId}"` }
+    }
+
+    try {
+      const skillsDir = this.userSkillService.getSkillsDir()
+      const skillDir = path.join(skillsDir, skillId)
+      assertInsideDir(skillsDir, skillDir)
+
+      const overwritten = fs.existsSync(skillDir)
+      if (!fs.existsSync(skillDir)) {
+        fs.mkdirSync(skillDir, { recursive: true })
+      }
+
+      for (const [fileName, content] of Object.entries(filesMap)) {
+        const targetPath = path.join(skillDir, fileName)
+        assertInsideDir(skillDir, targetPath)
+        const dir = path.dirname(targetPath)
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true })
+        }
+        const tmpPath = targetPath + '.tmp'
+        fs.writeFileSync(tmpPath, content, 'utf-8')
+        fs.renameSync(tmpPath, targetPath)
+      }
+
+      this.userSkillService.refresh()
+      log.info(`Installed local skill: ${skillId} (${Object.keys(filesMap).length} files)${overwritten ? ' [overwritten]' : ''}`)
+      return { success: true, overwritten }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error'
+      log.error(`Failed to install local skill ${skillId}:`, error)
+      return { success: false, error: msg }
+    }
+  }
+
+  private static readonly MAX_SINGLE_FILE_SIZE = 256 * 1024 // 256KB per file
+  private static readonly MAX_DIR_DEPTH = 10
+  private static readonly BINARY_EXTENSIONS = new Set([
+    '.png', '.jpg', '.jpeg', '.gif', '.ico', '.bmp', '.webp', '.svg',
+    '.woff', '.woff2', '.ttf', '.eot', '.otf',
+    '.zip', '.tar', '.gz', '.bz2', '.7z', '.rar',
+    '.exe', '.dll', '.so', '.dylib', '.bin',
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx',
+    '.mp3', '.mp4', '.wav', '.avi', '.mov',
+    '.pyc', '.pyo', '.class', '.o', '.obj',
+  ])
+
+  /**
+   * 递归读取目录下所有文本文件
+   */
+  private readDirectoryFiles(dirPath: string, prefix = '', depth = 0): Record<string, string> {
+    if (depth > SkillMarketService.MAX_DIR_DEPTH) return {}
+
+    const files: Record<string, string> = {}
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true })
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue
+      const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name
+      const fullPath = path.join(dirPath, entry.name)
+      if (entry.isDirectory()) {
+        Object.assign(files, this.readDirectoryFiles(fullPath, relativePath, depth + 1))
+      } else if (entry.isFile()) {
+        const ext = path.extname(entry.name).toLowerCase()
+        if (SkillMarketService.BINARY_EXTENSIONS.has(ext)) {
+          log.debug(`Skipped binary file: ${fullPath}`)
+          continue
+        }
+        try {
+          const stat = fs.statSync(fullPath)
+          if (stat.size > SkillMarketService.MAX_SINGLE_FILE_SIZE) {
+            log.debug(`Skipped large file (${(stat.size / 1024).toFixed(0)}KB): ${fullPath}`)
+            continue
+          }
+          files[relativePath] = fs.readFileSync(fullPath, 'utf-8')
+        } catch {
+          log.debug(`Skipped unreadable file: ${fullPath}`)
+        }
+      }
+    }
+    return files
+  }
+
   /**
    * 从已下载的内容安装技能（Agent 审查通过后调用）
    */

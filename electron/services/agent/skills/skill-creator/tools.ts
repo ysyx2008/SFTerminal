@@ -202,5 +202,38 @@ export const skillCreatorTools: ToolDefinition[] = [
         required: ['skill_id', 'source']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'skill_install_local',
+      description: `从本地路径安装技能（ZIP 文件或目录）。
+
+**使用场景**：
+- 用户提供了本地 ZIP 技能包或包含 SKILL.md 的目录
+- 从本地文件系统安装技能（非市场来源）
+
+此工具会自动：
+1. 读取并验证技能包内容（必须包含 SKILL.md）
+2. 对所有文件执行静态安全扫描
+3. 如有附属文件（脚本等），要求用户确认
+4. 安全检查通过后才安装到技能目录
+
+⛔ **这是从本地路径安装技能的唯一正确方式**。严禁使用 run_command 或任何 shell 命令直接操作技能目录来安装技能。`,
+      parameters: {
+        type: 'object',
+        properties: {
+          source_path: {
+            type: 'string',
+            description: '本地路径，可以是 .zip 文件路径或包含 SKILL.md 的目录路径'
+          },
+          skill_id: {
+            type: 'string',
+            description: '技能 ID（可选，默认从路径名推导）。只允许小写字母、数字、连字符。'
+          }
+        },
+        required: ['source_path']
+      }
+    }
   }
 ]

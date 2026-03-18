@@ -39,6 +39,8 @@ export async function executeSkillCreatorTool(
       return marketPreview(args)
     case 'skill_market_install':
       return marketInstall(args, toolCallId, executor)
+    case 'skill_install_local':
+      return installLocal(args, toolCallId, executor)
     default:
       return { success: false, output: '', error: `未知的技能管理工具: ${toolName}` }
   }
@@ -706,6 +708,134 @@ async function marketInstall(
       success: false,
       output: '',
       error: `安装失败: ${error instanceof Error ? error.message : String(error)}`
+    }
+  }
+}
+
+/**
+ * 从本地路径安装技能（ZIP 或目录）
+ */
+async function installLocal(
+  args: Record<string, unknown>,
+  toolCallId: string,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  const sourcePath = (args.source_path as string)?.trim()
+  if (!sourcePath) {
+    return { success: false, output: '', error: '本地路径不能为空' }
+  }
+
+  let skillId = (args.skill_id as string)?.trim().toLowerCase()
+
+  try {
+    const service = getMarketService()
+    const preview = service.previewLocalSkill(sourcePath)
+
+    if (!preview.success || !preview.content || !preview.filesMap) {
+      return { success: false, output: '', error: preview.error || '读取本地技能包失败' }
+    }
+
+    if (!skillId) {
+      skillId = preview.skill?.id || path.basename(sourcePath, '.zip')
+    }
+    skillId = skillId.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+    if (!skillId) {
+      return { success: false, output: '', error: '无法推导技能 ID，请通过 skill_id 参数指定' }
+    }
+
+    log.info(`Local skill install: ${skillId} from ${sourcePath}`)
+
+    // 安全扫描：高风险直接拒绝
+    const BLOCKED_TYPES = new Set(['prompt_override', 'data_exfil', 'script_risk'])
+    if (preview.scan && !preview.scan.safe) {
+      const blocked = preview.scan.warnings.filter(w => BLOCKED_TYPES.has(w.type))
+      if (blocked.length > 0) {
+        log.warn(`Blocked local install of ${skillId}: ${blocked.map(w => w.type).join(', ')}`)
+        return {
+          success: false,
+          output: '',
+          error: `安全扫描发现高风险问题，拒绝安装:\n${blocked.map(w => `- ${w.description}: ${w.evidence}`).join('\n')}`
+        }
+      }
+    }
+
+    // 附属文件需要用户确认
+    const hasExtraFiles = preview.files && preview.files.length > 0
+    if (hasExtraFiles) {
+      log.info(`Local skill ${skillId} contains ${preview.files!.length} extra files, requesting confirmation`)
+
+      const scanNote = preview.scan?.warnings.length
+        ? `\n安全扫描: ⚠️ ${preview.scan.warnings.length} 个告警\n${preview.scan.warnings.map(w => `  - ${w.description}`).join('\n')}`
+        : '\n安全扫描: ✅ 通过'
+
+      executor.addStep({
+        type: 'tool_call',
+        content: `⚠️ 本地技能 ${skillId} 包含 ${preview.files!.length} 个附属文件（可能含可执行脚本）${scanNote}\n文件: ${preview.files!.join(', ')}\n来源: ${sourcePath}`,
+        toolName: 'skill_install_local',
+        toolArgs: {
+          skill_id: skillId,
+          source_path: sourcePath,
+          files: preview.files,
+          scan_warnings: preview.scan?.warnings.length || 0,
+        },
+        riskLevel: 'dangerous'
+      })
+
+      const approved = await executor.waitForConfirmation(
+        toolCallId,
+        'skill_install_local',
+        {
+          skill_id: skillId,
+          source_path: sourcePath,
+          files: preview.files,
+          scan_warnings: preview.scan?.warnings.length || 0,
+        },
+        'dangerous'
+      )
+      if (!approved) {
+        log.info(`User rejected local install of skill: ${skillId}`)
+        executor.addStep({
+          type: 'tool_result',
+          content: `⛔ 用户拒绝安装本地技能: ${skillId}`,
+          toolName: 'skill_install_local',
+          toolResult: '用户取消安装'
+        })
+        return { success: false, output: '', error: '用户取消了安装' }
+      }
+      log.info(`User approved local install of skill: ${skillId}`)
+    }
+
+    const result = service.installLocalSkillFiles(skillId, preview.filesMap)
+    if (!result.success) {
+      return { success: false, output: '', error: result.error || '安装失败' }
+    }
+
+    const totalFiles = Object.keys(preview.filesMap).length
+    const overwriteNote = result.overwritten ? '（已覆盖旧版本）' : ''
+    executor.addStep({
+      type: 'tool_result',
+      content: `✅ 已从本地安装技能: ${skillId}${overwriteNote}`,
+      toolName: 'skill_install_local',
+      toolResult: `本地技能 ${skillId} 已安装 (${totalFiles} 个文件)${overwriteNote}`
+    })
+
+    const warningNote = preview.scan && preview.scan.warnings.length > 0
+      ? `\n\n⚠️ 安全扫描发现 ${preview.scan.warnings.length} 个低风险告警，但不影响安装。`
+      : ''
+
+    const filesNote = hasExtraFiles
+      ? `\n\n📦 已安装 ${preview.files!.length} 个附属文件: ${preview.files!.join(', ')}`
+      : ''
+
+    return {
+      success: true,
+      output: `✅ 已从本地安装技能: ${skillId}${overwriteNote}${warningNote}${filesNote}\n\n使用 \`load_user_skill("${skillId}")\` 加载此技能。`
+    }
+  } catch (error) {
+    return {
+      success: false,
+      output: '',
+      error: `本地安装失败: ${error instanceof Error ? error.message : String(error)}`
     }
   }
 }
