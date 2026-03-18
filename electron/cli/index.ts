@@ -1089,6 +1089,7 @@ async function skillList(): Promise<void> {
     id: s.id,
     name: s.name,
     enabled: s.enabled ? '✓' : '',
+    files: s.files?.length || 0,
     description: (s.description || '').substring(0, 50)
   }))
   printTable(rows)

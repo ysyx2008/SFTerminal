@@ -69,7 +69,7 @@ export interface SkillOperationResult {
 
 /** 安全扫描告警 */
 export interface SecurityWarning {
-  type: 'hidden_content' | 'sensitive_path' | 'data_exfil' | 'prompt_override' | 'encoding_obfuscation'
+  type: 'hidden_content' | 'sensitive_path' | 'data_exfil' | 'prompt_override' | 'encoding_obfuscation' | 'script_risk'
   description: string
   evidence: string
 }
@@ -86,6 +86,8 @@ export interface SkillPreviewResult {
   skill?: MarketSkill
   content?: string
   scan?: SecurityScanResult
+  /** 技能包内的文件列表（不含 SKILL.md 和元数据） */
+  files?: string[]
   error?: string
 }
 
@@ -191,6 +193,31 @@ export function scanSkillContent(content: string): SecurityScanResult {
         evidence: match[0]
       })
     }
+  }
+
+  // 5. 脚本安全风险：可执行代码中的高危模式
+  const scriptRiskPatterns: Array<{ pattern: RegExp; desc: string }> = [
+    // 读取环境变量后外发
+    { pattern: /os\.environ\[.*\].*(?:requests|urllib|http|socket)/s, desc: 'Reads env vars and makes network requests' },
+    { pattern: /process\.env\[.*\].*(?:fetch|http|net\.|axios)/s, desc: 'Reads env vars and makes network requests' },
+    // 反弹 shell / 远程代码执行
+    { pattern: /\beval\s*\(\s*(?:requests|urllib|fetch|http)/i, desc: 'Remote code execution via eval + network' },
+    { pattern: /\bexec\s*\(\s*(?:requests|urllib|fetch|http)/i, desc: 'Remote code execution via exec + network' },
+    // 递归删除根目录或用户目录
+    { pattern: /rm\s+-rf\s+[/~]\s/i, desc: 'Recursive deletion of root or home directory' },
+    { pattern: /shutil\.rmtree\s*\(\s*['"][/~]/i, desc: 'Recursive deletion of root or home directory' },
+    // 禁用安全设置
+    { pattern: /verify\s*=\s*False/i, desc: 'SSL verification disabled' },
+    { pattern: /rejectUnauthorized\s*:\s*false/i, desc: 'SSL verification disabled' },
+  ]
+  for (const { pattern, desc } of scriptRiskPatterns) {
+    if (pattern.test(content)) {
+      warnings.push({ type: 'script_risk', description: desc, evidence: pattern.source.slice(0, 80) })
+    }
+  }
+
+  if (warnings.length > 0) {
+    log.warn(`Security scan found ${warnings.length} warning(s): ${warnings.map(w => w.type).join(', ')}`)
   }
 
   return {
@@ -596,7 +623,10 @@ export class SkillMarketService {
       url: downloadUrl,
     }
 
-    return { success: true, skill, content: contentPreview, scan }
+    const PREVIEW_EXCLUDED = new Set(['SKILL.md', '_meta.json'])
+    const extraFiles = fileList.filter(f => !PREVIEW_EXCLUDED.has(f))
+
+    return { success: true, skill, content: contentPreview, scan, files: extraFiles }
   }
 
   /**

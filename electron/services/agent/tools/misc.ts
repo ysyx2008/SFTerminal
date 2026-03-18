@@ -667,7 +667,28 @@ export async function loadUserSkillTool(
     return { success: false, output: '', error: errorMsg }
   }
 
-  const output = `## ${skill.name}\n\n${skill.description ? `> ${skill.description}\n\n` : ''}${content}`
+  const sections: string[] = []
+  sections.push(`## ${skill.name}`)
+  if (skill.description) sections.push(`\n> ${skill.description}`)
+
+  // 附属文件和运行环境信息（ClawHub 兼容技能包）
+  const hasFiles = skill.files && skill.files.length > 0
+  if (hasFiles || skill.requires) {
+    sections.push('\n### Skill Bundle Info')
+    sections.push(`- **baseDir**: \`${skill.baseDir}\``)
+    if (skill.requires?.bins?.length) {
+      sections.push(`- **requires**: ${skill.requires.bins.map(b => `\`${b}\``).join(', ')}`)
+    }
+    if (skill.requires?.env?.length) {
+      sections.push(`- **env vars**: ${skill.requires.env.map(e => `\`${e}\``).join(', ')}`)
+    }
+    if (hasFiles) {
+      sections.push(`- **files** (${skill.files!.length}): ${skill.files!.join(', ')}`)
+    }
+  }
+
+  sections.push(`\n${content}`)
+  const output = sections.join('\n')
   
   executor.addStep({
     type: 'tool_result',

@@ -6,7 +6,10 @@ import * as path from 'path'
 import { getUserSkillService } from '../../../user-skill.service'
 import { getSkillMarketService, type SkillSource } from '../../../skill-market.service'
 import { getConfigService } from '../../../config.service'
+import { createLogger } from '../../../../utils/logger'
 import type { ToolResult, ToolExecutorConfig, AgentConfig } from '../../tools/types'
+
+const log = createLogger('skill-creator')
 
 /**
  * 执行用户技能创建工具
@@ -35,7 +38,7 @@ export async function executeSkillCreatorTool(
     case 'skill_market_preview':
       return marketPreview(args)
     case 'skill_market_install':
-      return marketInstall(args, executor)
+      return marketInstall(args, toolCallId, executor)
     default:
       return { success: false, output: '', error: `未知的技能管理工具: ${toolName}` }
   }
@@ -132,7 +135,8 @@ async function createSkill(
     // 刷新技能缓存
     userSkillService.refresh()
 
-    // 添加执行步骤
+    log.info(`Created skill: ${skillId} (${name}) at ${skillFilePath}`)
+
     executor.addStep({
       type: 'tool_result',
       content: `✅ 技能创建成功: ${name}`,
@@ -243,6 +247,8 @@ async function deleteSkill(
     // 刷新缓存
     userSkillService.refresh()
 
+    log.info(`Deleted skill: ${skillId} (${skillName})`)
+
     executor.addStep({
       type: 'tool_result',
       content: `✅ 已删除技能: ${skillName}`,
@@ -255,6 +261,7 @@ async function deleteSkill(
       output: `✅ 已删除技能：${skillName} (${skillId})`
     }
   } catch (error) {
+    log.error(`Failed to delete skill ${skillId}:`, error)
     return {
       success: false,
       output: '',
@@ -571,6 +578,7 @@ ${contentPreview}
  */
 async function marketInstall(
   args: Record<string, unknown>,
+  toolCallId: string,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
   const skillId = (args.skill_id as string)?.trim()
@@ -608,17 +616,64 @@ async function marketInstall(
       return { success: false, output: '', error: preview.error || '下载失败' }
     }
 
+    // 安全扫描：高风险直接拒绝
+    const BLOCKED_TYPES = new Set(['prompt_override', 'data_exfil', 'script_risk'])
     if (preview.scan && !preview.scan.safe) {
-      const dangerousTypes = preview.scan.warnings.filter(w =>
-        w.type === 'prompt_override' || w.type === 'data_exfil'
-      )
-      if (dangerousTypes.length > 0) {
+      const blocked = preview.scan.warnings.filter(w => BLOCKED_TYPES.has(w.type))
+      if (blocked.length > 0) {
+        log.warn(`Blocked install of ${skillId}: ${blocked.map(w => w.type).join(', ')}`)
         return {
           success: false,
           output: '',
-          error: `安全扫描发现高风险问题，拒绝安装:\n${dangerousTypes.map(w => `- ${w.description}: ${w.evidence}`).join('\n')}`
+          error: `安全扫描发现高风险问题，拒绝安装:\n${blocked.map(w => `- ${w.description}: ${w.evidence}`).join('\n')}`
         }
       }
+    }
+
+    // 带脚本/附属文件的技能包需要用户确认
+    const hasScripts = preview.files && preview.files.length > 0
+    if (hasScripts) {
+      log.info(`Skill ${skillId} contains ${preview.files!.length} files, requesting confirmation`)
+
+      const scanNote = preview.scan?.warnings.length
+        ? `\n安全扫描: ⚠️ ${preview.scan.warnings.length} 个告警\n${preview.scan.warnings.map(w => `  - ${w.description}`).join('\n')}`
+        : '\n安全扫描: ✅ 通过'
+
+      executor.addStep({
+        type: 'tool_call',
+        content: `⚠️ 技能 ${skillId} 包含 ${preview.files!.length} 个附属文件（可能含可执行脚本）${scanNote}\n文件: ${preview.files!.join(', ')}`,
+        toolName: 'skill_market_install',
+        toolArgs: {
+          skill_id: skillId,
+          source,
+          files: preview.files,
+          scan_warnings: preview.scan?.warnings.length || 0,
+        },
+        riskLevel: 'dangerous'
+      })
+
+      const approved = await executor.waitForConfirmation(
+        toolCallId,
+        'skill_market_install',
+        {
+          skill_id: skillId,
+          source,
+          files: preview.files,
+          scan_warnings: preview.scan?.warnings.length || 0,
+        },
+        'dangerous'
+      )
+      if (!approved) {
+        log.info(`User rejected install of script-containing skill: ${skillId}`)
+        executor.addStep({
+          type: 'tool_result',
+          content: `⛔ 用户拒绝安装带脚本的技能: ${skillId}`,
+          toolName: 'skill_market_install',
+          toolResult: '用户取消安装'
+        })
+        return { success: false, output: '', error: '用户取消了安装' }
+      }
+      log.info(`User approved install of script-containing skill: ${skillId}`)
     }
 
     // 下载 ZIP 并解压安装（包含所有附属文件）
@@ -631,16 +686,20 @@ async function marketInstall(
       type: 'tool_result',
       content: `✅ 已安装 ClawHub 技能: ${skillId}`,
       toolName: 'skill_market_install',
-      toolResult: `ClawHub 技能 ${skillId} 已安装`
+      toolResult: `ClawHub 技能 ${skillId} 已安装${hasScripts ? ` (含 ${preview.files!.length} 个附属文件)` : ''}`
     })
 
     const warningNote = preview.scan && preview.scan.warnings.length > 0
       ? `\n\n⚠️ 安全扫描发现 ${preview.scan.warnings.length} 个低风险告警，但不影响安装。`
       : ''
 
+    const filesNote = hasScripts
+      ? `\n\n📦 已安装 ${preview.files!.length} 个附属文件: ${preview.files!.join(', ')}`
+      : ''
+
     return {
       success: true,
-      output: `✅ 已安装 ClawHub 社区技能: ${skillId}${warningNote}\n\n使用 \`load_user_skill("${skillId}")\` 加载此技能。`
+      output: `✅ 已安装 ClawHub 社区技能: ${skillId}${warningNote}${filesNote}\n\n使用 \`load_user_skill("${skillId}")\` 加载此技能。`
     }
   } catch (error) {
     return {

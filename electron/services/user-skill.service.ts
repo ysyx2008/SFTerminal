@@ -9,6 +9,14 @@ import { createLogger } from '../utils/logger'
 
 const log = createLogger('UserSkill')
 
+/** ClawHub 兼容的运行环境声明 */
+export interface SkillRequires {
+  /** 需要的可执行文件（如 ["uv"], ["node", "npx"]） */
+  bins?: string[]
+  /** 需要的环境变量（如 ["API_KEY"]） */
+  env?: string[]
+}
+
 /**
  * 用户技能定义
  */
@@ -27,6 +35,8 @@ export interface UserSkill {
   content: string
   /** 文件路径 */
   filePath: string
+  /** 技能目录路径（目录形式为目录本身，文件形式为所在目录） */
+  baseDir: string
   /** 最后修改时间 */
   lastModified: number
   /** 技能来源 */
@@ -35,6 +45,12 @@ export interface UserSkill {
   author?: string
   /** 权限声明 */
   permissions?: string[]
+  /** 技能命令列表（ClawHub 兼容，如 ["/stock - Analyze a stock"]） */
+  commands?: string[]
+  /** 运行环境要求（ClawHub 兼容） */
+  requires?: SkillRequires
+  /** 技能目录下的附属文件（相对路径，不含 SKILL.md 和元数据文件） */
+  files?: string[]
 }
 
 /**
@@ -48,6 +64,8 @@ interface SkillFrontmatter {
   author?: string
   source?: string
   permissions?: string[]
+  commands?: string[]
+  metadata?: Record<string, unknown>
 }
 
 /**
@@ -107,13 +125,15 @@ export class UserSkillService {
     const lines = yamlStr.split('\n')
 
     let currentKey = ''
+    const listKeys = new Set(['permissions', 'commands'])
 
     for (const line of lines) {
       // YAML 列表项（  - value）
       const listItemMatch = line.match(/^\s+-\s+(.+)$/)
-      if (listItemMatch && currentKey === 'permissions') {
-        if (!frontmatter.permissions) frontmatter.permissions = []
-        frontmatter.permissions.push(listItemMatch[1].trim())
+      if (listItemMatch && listKeys.has(currentKey)) {
+        const listField = currentKey as 'permissions' | 'commands'
+        if (!frontmatter[listField]) frontmatter[listField] = []
+        frontmatter[listField]!.push(listItemMatch[1].trim())
         continue
       }
 
@@ -149,11 +169,15 @@ export class UserSkillService {
             frontmatter.source = value
             break
           case 'permissions':
-            // 内联列表 permissions: [network, shell]
+          case 'commands':
             if (value.startsWith('[') && value.endsWith(']')) {
-              frontmatter.permissions = value.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean)
+              frontmatter[key] = value.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean)
             }
-            // 否则等待后续 - item 行
+            break
+          case 'metadata':
+            if (value) {
+              try { frontmatter.metadata = JSON.parse(value) } catch { /* ignore */ }
+            }
             break
         }
       }
@@ -218,6 +242,8 @@ export class UserSkillService {
       const stats = fs.statSync(filePath)
       const { frontmatter, body } = this.parseFrontmatter(content)
 
+      const baseDir = path.dirname(filePath)
+
       const skill: UserSkill = {
         id,
         name: frontmatter.name || id,
@@ -226,14 +252,30 @@ export class UserSkillService {
         enabled: frontmatter.enabled !== false,
         content: body.trim(),
         filePath,
+        baseDir,
         lastModified: stats.mtimeMs,
         author: frontmatter.author,
         permissions: frontmatter.permissions,
+        commands: frontmatter.commands,
       }
 
+      // 从 metadata.clawdbot.requires 提取运行环境要求
+      if (frontmatter.metadata) {
+        const clawdbot = (frontmatter.metadata as Record<string, unknown>).clawdbot as Record<string, unknown> | undefined
+        if (clawdbot?.requires) {
+          const req = clawdbot.requires as Record<string, unknown>
+          skill.requires = {
+            bins: Array.isArray(req.bins) ? req.bins : undefined,
+            env: Array.isArray(req.env) ? req.env : undefined,
+          }
+        }
+      }
+
+      // 扫描技能目录下的附属文件
+      skill.files = this.listSkillFiles(baseDir, filePath)
+
       // 检查 clawhub.meta.json 获取来源信息
-      const dir = path.dirname(filePath)
-      const metaPath = path.join(dir, 'clawhub.meta.json')
+      const metaPath = path.join(baseDir, 'clawhub.meta.json')
       if (fs.existsSync(metaPath)) {
         try {
           const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
@@ -252,6 +294,37 @@ export class UserSkillService {
       log.error(`Error parsing skill file ${filePath}:`, error)
       return null
     }
+  }
+
+  /**
+   * 列出技能目录下的附属文件（相对路径）
+   * 排除 SKILL.md、元数据文件和隐藏文件
+   */
+  private listSkillFiles(baseDir: string, skillFilePath: string): string[] {
+    const EXCLUDED = new Set(['SKILL.md', 'clawhub.meta.json', '_meta.json', '.DS_Store'])
+    const files: string[] = []
+
+    const walk = (dir: string, prefix: string) => {
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true })
+        for (const entry of entries) {
+          if (entry.name.startsWith('.')) continue
+          const rel = prefix ? `${prefix}/${entry.name}` : entry.name
+          if (entry.isDirectory()) {
+            walk(path.join(dir, entry.name), rel)
+          } else if (!EXCLUDED.has(entry.name) || prefix) {
+            files.push(rel)
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    // 目录形式的技能才扫描附属文件；单 .md 文件形式没有附属文件
+    if (path.basename(skillFilePath) === 'SKILL.md') {
+      walk(baseDir, '')
+    }
+
+    return files
   }
 
   /**
@@ -279,7 +352,7 @@ export class UserSkillService {
   }
 
   /**
-   * 获取技能完整内容
+   * 获取技能完整内容（已替换 {baseDir} 占位符）
    */
   getSkillContent(skillId: string): string | null {
     const skill = this.getSkill(skillId)
@@ -287,15 +360,22 @@ export class UserSkillService {
       return null
     }
 
-    // 重新读取文件以确保内容是最新的
     try {
       const content = fs.readFileSync(skill.filePath, 'utf-8')
       const { body } = this.parseFrontmatter(content)
-      return body.trim()
+      return this.resolveBaseDir(body.trim(), skill.baseDir)
     } catch (error) {
       log.error('Error reading skill content:', error)
-      return skill.content
+      return this.resolveBaseDir(skill.content, skill.baseDir)
     }
+  }
+
+  /**
+   * 替换内容中的 {baseDir} 占位符为实际路径（ClawHub 兼容）
+   */
+  private resolveBaseDir(content: string, baseDir: string): string {
+    if (!content.includes('{baseDir}')) return content
+    return content.replace(/\{baseDir\}/g, baseDir)
   }
 
   /**
@@ -362,8 +442,20 @@ export class UserSkillService {
       return ''
     }
 
-    const skillIds = enabledSkills.map(s => `\`${s.id}\``).join('、')
-    return `# 用户技能\n\n有 ${enabledSkills.length} 个用户技能可用（${skillIds}），详见 \`load_user_skill\` 工具。收到任务后先判断是否有相关技能，有则先加载再执行。`
+    const lines: string[] = [`# 用户技能\n\n有 ${enabledSkills.length} 个用户技能可用，详见 \`load_user_skill\` 工具。收到任务后先判断是否有相关技能，有则先加载再执行。\n`]
+
+    for (const s of enabledSkills) {
+      const hasScripts = s.files && s.files.length > 0
+      let entry = `- \`${s.id}\`: ${s.name}`
+      if (s.description) entry += ` — ${s.description}`
+      if (hasScripts) entry += ' 📦'
+      if (s.commands && s.commands.length > 0) {
+        entry += `\n  命令: ${s.commands.join(', ')}`
+      }
+      lines.push(entry)
+    }
+
+    return lines.join('\n')
   }
 
   /**
