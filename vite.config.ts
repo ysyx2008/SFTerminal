@@ -52,6 +52,15 @@ if (isSteamBuild) {
   console.log('[vite] Steam build: __STEAM_BUILD__=true')
 }
 export default defineConfig({
+  server: {
+    warmup: {
+      clientFiles: [
+        './src/components/AiPanel.vue',
+        './src/composables/useAgentMode.ts',
+        './src/composables/useMarkdown.ts',
+      ]
+    }
+  },
   define: {
     __STEAM_BUILD__: isSteamBuild
   },
@@ -158,7 +167,8 @@ export default defineConfig({
   },
   // 优化依赖
   optimizeDeps: {
-    exclude: ['@xenova/transformers']  // 让 transformers.js 在 worker 中正确加载
+    exclude: ['@xenova/transformers'],  // 让 transformers.js 在 worker 中正确加载
+    include: ['vue-virtual-scroller', 'vue-resize', 'vue-observe-visibility']
   }
 })
 

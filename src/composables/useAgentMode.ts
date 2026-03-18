@@ -906,20 +906,16 @@ export function useAgentMode(
   const showHistoryModal = ref(false)
   const allHistory = ref<AgentRecord[]>([])
   const isLoadingAllHistory = ref(false)
-
-  const isWakeupRecord = (r: AgentRecord) =>
-    r.userTask.startsWith('[当前时间：') && r.userTask.includes('触发事件')
+  const HISTORY_PAGE_SIZE = 20
+  const hasMoreHistory = ref(true)
 
   // 加载近期历史（最近 5 条，用于欢迎页）
   const loadRecentHistory = async () => {
     if (isLoadingHistory.value) return
     isLoadingHistory.value = true
     try {
-      const records = await window.electronAPI.history.getAgentRecords() as AgentRecord[]
-      recentHistory.value = records
-        .filter(r => !isWakeupRecord(r))
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 5)
+      const records = await window.electronAPI.history.getRecentAgentRecords(5, true) as AgentRecord[]
+      recentHistory.value = records.sort((a, b) => b.timestamp - a.timestamp)
     } catch (e) {
       log.error('加载历史记录失败:', e)
     } finally {
@@ -927,31 +923,37 @@ export function useAgentMode(
     }
   }
 
-  // 加载全部历史（用于弹窗）
-  const loadAllHistory = async () => {
+  // 分页加载历史（用于弹窗）
+  const loadAllHistory = async (reset = true) => {
     if (isLoadingAllHistory.value) return
     isLoadingAllHistory.value = true
     try {
-      const records = await window.electronAPI.history.getAgentRecords() as AgentRecord[]
-      allHistory.value = records
-        .filter(r => !isWakeupRecord(r))
-        .sort((a, b) => b.timestamp - a.timestamp)
+      const currentCount = reset ? 0 : allHistory.value.length
+      const fetchSize = currentCount + HISTORY_PAGE_SIZE
+      const records = await window.electronAPI.history.getRecentAgentRecords(fetchSize, true) as AgentRecord[]
+      const sorted = records.sort((a, b) => b.timestamp - a.timestamp)
+      allHistory.value = sorted
+      hasMoreHistory.value = records.length >= fetchSize
     } catch (e) {
-      log.error('加载全部历史记录失败:', e)
+      log.error('加载历史记录失败:', e)
     } finally {
       isLoadingAllHistory.value = false
     }
   }
 
+  const loadMoreHistory = () => loadAllHistory(false)
+
   // 打开历史弹窗
   const openHistoryModal = async () => {
     showHistoryModal.value = true
-    await loadAllHistory()
+    await loadAllHistory(true)
   }
 
   // 关闭历史弹窗
   const closeHistoryModal = () => {
     showHistoryModal.value = false
+    allHistory.value = []
+    hasMoreHistory.value = true
   }
 
   // 加载历史记录到当前会话
@@ -996,9 +998,7 @@ export function useAgentMode(
   // 生命周期
   onMounted(() => {
     setupAgentListeners()
-    // 加载近期历史（用于欢迎页展示）
     loadRecentHistory()
-    // 远程 tab 从 IM 配置加载执行模式
     loadRemoteExecutionMode()
   })
 
@@ -1048,8 +1048,10 @@ export function useAgentMode(
     showHistoryModal,
     allHistory,
     isLoadingAllHistory,
+    hasMoreHistory,
     loadRecentHistory,
     loadAllHistory,
+    loadMoreHistory,
     openHistoryModal,
     closeHistoryModal,
     loadHistoryRecord,

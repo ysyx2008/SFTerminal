@@ -353,116 +353,82 @@ export const useConfigStore = defineStore('config', () => {
    */
   async function loadConfig(): Promise<void> {
     try {
-      // 加载 AI 配置
-      const profiles = await window.electronAPI.config.getAiProfiles()
+      const [
+        profiles, activeId, sessions, groups,
+        theme, uiThemeValue, mbti, debugMode,
+        completed, onboarded, lang, sponsorStatus,
+        sortBy, defaultOrder, rules, personalityText,
+        savedAgentName, savedLogLevel, savedTerminalSettings,
+        accounts, savedShortcuts, savedAutoVision, calAccounts,
+      ] = await Promise.all([
+        window.electronAPI.config.getAiProfiles(),
+        window.electronAPI.config.getActiveAiProfile(),
+        window.electronAPI.config.getSshSessions(),
+        window.electronAPI.config.getSessionGroups(),
+        window.electronAPI.config.getTheme(),
+        window.electronAPI.config.getUiTheme(),
+        window.electronAPI.config.getAgentMbti(),
+        window.electronAPI.config.getAgentDebugMode(),
+        window.electronAPI.config.getSetupCompleted(),
+        window.electronAPI.config.getAgentOnboardingCompleted(),
+        window.electronAPI.config.getLanguage(),
+        window.electronAPI.config.getSponsorStatus(),
+        window.electronAPI.config.getSessionSortBy(),
+        window.electronAPI.config.getDefaultGroupSortOrder(),
+        window.electronAPI.config.getAiRules(),
+        window.electronAPI.config.getAgentPersonalityText(),
+        window.electronAPI.config.getAgentName(),
+        window.electronAPI.config.get('logLevel') as Promise<string | undefined>,
+        window.electronAPI.config.get('terminalSettings'),
+        window.electronAPI.config.get('emailAccounts') as Promise<EmailAccount[] | undefined>,
+        window.electronAPI.config.get('keyboardShortcuts') as Promise<Partial<KeyboardShortcuts> | null | undefined>,
+        window.electronAPI.config.get('autoVisionModel') as Promise<boolean | undefined>,
+        window.electronAPI.config.get('calendarAccounts') as Promise<CalendarAccount[] | undefined>,
+      ])
+
+      // 批量赋值
       aiProfiles.value = profiles || []
-
-      const activeId = await window.electronAPI.config.getActiveAiProfile()
       activeAiProfileId.value = activeId || ''
-
-      // 加载 SSH 会话
-      const sessions = await window.electronAPI.config.getSshSessions()
       sshSessions.value = sessions || []
-
-      // 加载会话分组
-      const groups = await window.electronAPI.config.getSessionGroups()
       sessionGroups.value = groups || []
-
-      // 加载主题
-      const theme = await window.electronAPI.config.getTheme()
       currentTheme.value = theme || 'one-dark'
-
-      // 加载 UI 主题
-      const uiThemeValue = await window.electronAPI.config.getUiTheme()
       uiTheme.value = uiThemeValue || 'blue'
-
-      // 加载 Agent MBTI
-      const mbti = await window.electronAPI.config.getAgentMbti()
       agentMbti.value = mbti as AgentMbtiType
-
-      // 加载 Agent 调试模式
-      const debugMode = await window.electronAPI.config.getAgentDebugMode()
       agentDebugMode.value = debugMode || false
-
-      // 加载首次设置状态
-      const completed = await window.electronAPI.config.getSetupCompleted()
       setupCompleted.value = completed || false
-
-      // 加载 Agent 引导状态
-      const onboarded = await window.electronAPI.config.getAgentOnboardingCompleted()
       agentOnboardingCompleted.value = onboarded || false
-
-      // 加载语言设置
-      const lang = await window.electronAPI.config.getLanguage()
       if (lang) {
         language.value = lang as LocaleType
         setLocale(lang as LocaleType)
       }
-
-      // 加载赞助状态
-      const sponsorStatus = await window.electronAPI.config.getSponsorStatus()
       isSponsor.value = sponsorStatus || false
-
-      // 加载排序设置
-      const sortBy = await window.electronAPI.config.getSessionSortBy()
       sessionSortBy.value = (sortBy as SessionSortBy) || 'custom'
-
-      // 加载默认分组排序位置
-      const defaultOrder = await window.electronAPI.config.getDefaultGroupSortOrder()
       defaultGroupSortOrder.value = defaultOrder ?? -1
-
-      // 加载 AI Rules
-      const rules = await window.electronAPI.config.getAiRules()
       aiRules.value = rules || ''
-
-      // 加载 Agent 个性描述
-      const personalityText = await window.electronAPI.config.getAgentPersonalityText()
       agentPersonalityText.value = personalityText || ''
-
-      // 加载 AI 名字
-      const savedAgentName = await window.electronAPI.config.getAgentName()
       agentName.value = savedAgentName || ''
-
-      // 加载日志级别
-      const savedLogLevel = await window.electronAPI.config.get('logLevel') as string | undefined
       if (savedLogLevel != null && savedLogLevel !== '') {
         logLevel.value = savedLogLevel as LogLevel
         setFrontendLogLevel(savedLogLevel as LogLevel)
       }
-
-      // 加载终端设置
-      const savedTerminalSettings = await window.electronAPI.config.get('terminalSettings')
       if (savedTerminalSettings) {
-        // 合并保存的设置（保留默认值作为fallback）
         terminalSettings.value = { ...terminalSettings.value, ...savedTerminalSettings }
       }
-
-      // 加载邮箱账户
-      const accounts = await window.electronAPI.config.get('emailAccounts') as EmailAccount[] | undefined
       emailAccounts.value = accounts || []
-      // 同步到后端 email skill（转换为普通对象避免序列化错误）
-      if (emailAccounts.value.length > 0) {
-        const plainAccounts = JSON.parse(JSON.stringify(emailAccounts.value))
-        await window.electronAPI.email.syncAccounts(plainAccounts)
-      }
-
-      // 加载快捷键设置
-      const savedShortcuts = await window.electronAPI.config.get('keyboardShortcuts') as Partial<KeyboardShortcuts> | null | undefined
       if (savedShortcuts && typeof savedShortcuts === 'object') {
         keyboardShortcuts.value = { ...DEFAULT_KEYBOARD_SHORTCUTS, ...savedShortcuts }
       }
-
-      // 加载自动视觉模型设置
-      const savedAutoVision = await window.electronAPI.config.get('autoVisionModel') as boolean | undefined
       autoVisionModel.value = savedAutoVision ?? true
-
-      // 加载日历账户
-      const calAccounts = await window.electronAPI.config.get('calendarAccounts') as CalendarAccount[] | undefined
       calendarAccounts.value = calAccounts || []
-      // 同步到后端 calendar skill
+
+      // 后端同步（不阻塞主流程）
+      if (emailAccounts.value.length > 0) {
+        const plainAccounts = JSON.parse(JSON.stringify(emailAccounts.value))
+        window.electronAPI.email.syncAccounts(plainAccounts).catch(() => {})
+      }
       if (calendarAccounts.value.length > 0 && window.electronAPI.calendar) {
         const plainCalAccounts = JSON.parse(JSON.stringify(calendarAccounts.value))
-        await window.electronAPI.calendar.syncAccounts(plainCalAccounts)
+        window.electronAPI.calendar.syncAccounts(plainCalAccounts).catch(() => {})
       }
     } catch (error) {
       console.error('Failed to load config:', error)

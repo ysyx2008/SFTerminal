@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onUnmounted, defineAsyncComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AlertCircle } from 'lucide-vue-next'
 import { useTerminalStore } from '../stores/terminal'
 import type { TerminalTab } from '../stores/terminal'
 import Terminal from './Terminal.vue'
-import AiPanel from './AiPanel.vue'
+
+const AiPanel = defineAsyncComponent(() => import('./AiPanel.vue'))
 
 const { t } = useI18n()
 const terminalStore = useTerminalStore()
@@ -19,6 +20,8 @@ const props = defineProps<{
 // ==================== AI 面板状态（每个 tab 独立） ====================
 
 const showAiPanel = ref(isSteamBuild ? false : true)
+// 延迟挂载：仅当 tab 激活时才挂载 AiPanel，挂载后不再销毁
+const aiPanelMounted = ref(false)
 const aiPanelWidth = ref(420)
 const isResizing = ref(false)
 const MIN_AI_WIDTH = 300
@@ -27,13 +30,19 @@ const getMaxAiWidth = () => window.innerWidth - 200
 // AiPanel 实例引用
 const aiPanelRef = ref<InstanceType<typeof AiPanel> | null>(null)
 
+watch(() => props.isActive, (active) => {
+  if (active && !aiPanelMounted.value) {
+    aiPanelMounted.value = true
+  }
+}, { immediate: true })
+
 // ==================== Terminal → AiPanel 通信 ====================
 
 function handleSendToAi(text: string) {
   showAiPanel.value = true
-  // nextTick 不需要：Vue 在同一 tick 内 v-show 切换后 ref 已可用
-  // 因为 AiPanel 始终挂载（v-show 不销毁），ref 一直存在
-  aiPanelRef.value?.analyzeText(text)
+  nextTick(() => {
+    aiPanelRef.value?.analyzeText(text)
+  })
 }
 
 // ==================== AI 面板宽度拖拽 ====================
@@ -108,7 +117,7 @@ defineExpose({ toggleAiPanel, ensureAiPanel, showAiPanel })
         <button class="btn btn-sm" @click="terminalStore.closeTab(tab.id)">{{ t('common.close') }}</button>
       </div>
     </div>
-    <template v-if="!isSteamBuild">
+    <template v-if="!isSteamBuild && aiPanelMounted">
       <div
         v-show="showAiPanel"
         class="resize-handle"

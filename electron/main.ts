@@ -2929,6 +2929,13 @@ ipcMain.handle('history:getAgentRecords', async (_event, startDate?: string, end
   return historyService.getAgentRecords(startDate, endDate)
 })
 
+ipcMain.handle('history:getRecentAgentRecords', async (_event, limit?: number, excludeWakeup?: boolean) => {
+  const filter = excludeWakeup
+    ? (r: AgentRecord) => !(r.userTask.startsWith('[当前时间：') && r.userTask.includes('触发事件'))
+    : undefined
+  return historyService.getRecentAgentRecords(limit ?? 5, filter)
+})
+
 // 按 ID 获取单条 Agent 记录（用于 Watch 执行详情查看）
 ipcMain.handle('history:getAgentRecordById', async (_event, id: string) => {
   return historyService.getAgentRecordById(id)

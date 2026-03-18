@@ -714,6 +714,18 @@ interface Window {
         status: 'completed' | 'failed' | 'aborted'
         duration: number
       }>>
+      getRecentAgentRecords: (limit?: number, excludeWakeup?: boolean) => Promise<Array<{
+        id: string
+        timestamp: number
+        terminalId: string
+        terminalType: 'local' | 'ssh'
+        sshHost?: string
+        userTask: string
+        steps: AgentStep[]
+        finalResult: string
+        status: 'completed' | 'failed' | 'aborted'
+        duration: number
+      }>>
       getAgentRecordById: (id: string) => Promise<{
         id: string
         timestamp: number

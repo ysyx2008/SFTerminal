@@ -285,7 +285,7 @@ export class HistoryService {
   /**
    * 获取最近的 N 条 Agent 记录（从最新日期文件倒序读取，收够即停）
    */
-  getRecentAgentRecords(limit: number = 5): AgentRecord[] {
+  getRecentAgentRecords(limit: number = 5, filter?: (r: AgentRecord) => boolean): AgentRecord[] {
     const files = fs.readdirSync(this.agentDir).filter(f => f.endsWith('.json')).sort().reverse()
     const results: AgentRecord[] = []
 
@@ -294,6 +294,7 @@ export class HistoryService {
       const filePath = path.join(this.agentDir, file)
       const records = this.readAgentRecords(filePath)
       for (let i = records.length - 1; i >= 0; i--) {
+        if (filter && !filter(records[i])) continue
         results.push(records[i])
         if (results.length >= limit) break
       }

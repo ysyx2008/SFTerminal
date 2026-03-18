@@ -194,6 +194,8 @@ const {
   showHistoryModal,
   allHistory,
   isLoadingAllHistory,
+  hasMoreHistory,
+  loadMoreHistory,
   openHistoryModal,
   closeHistoryModal,
   loadHistoryRecord,
@@ -1505,6 +1507,14 @@ onUnmounted(() => {
                         <span class="history-time">{{ formatHistoryTime(record.timestamp) }}</span>
                       </span>
                     </div>
+                    <button
+                      v-if="hasMoreHistory"
+                      class="history-load-more"
+                      :disabled="isLoadingAllHistory"
+                      @click="loadMoreHistory"
+                    >
+                      {{ isLoadingAllHistory ? t('ai.agentWelcome.historyLoading') : t('ai.agentWelcome.loadMore', '加载更多...') }}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -2869,6 +2879,30 @@ onUnmounted(() => {
 
 .history-card:active {
   transform: translateX(2px) scale(0.99);
+}
+
+.history-load-more {
+  width: 100%;
+  padding: 10px;
+  margin-top: 4px;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.history-load-more:hover:not(:disabled) {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-color: var(--accent-primary);
+}
+
+.history-load-more:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .history-status-icon {
