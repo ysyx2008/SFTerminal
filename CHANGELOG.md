@@ -2,7 +2,32 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.20.2 (2026-03-16) (Latest)
+## v10.21.0 (2026-03-19) (Latest)
+
+Introduces local skill installation and scripted skill pack support, overhauls the skill security pipeline with mandatory preview auditing, and brings Windows compatibility improvements alongside performance optimizations.
+
+### New Features
+- 🛠️ **Local Skill Installation**: New `skill_install_local` tool ensures all locally installed skills go through the security audit pipeline
+- 📦 **Scripted Skill Packs**: Support for ClawHub-compatible skill packages containing executable scripts
+
+### Improvements
+- 🔒 **Skill Security Overhaul**: Unified `skill_preview` audit for all skill sources, security scan integrated into install flow, hard-block on unpreviewed skill installations
+- 🎙️ **Microphone Detection**: Auto-detect microphone at startup; disable voice input when no device is available
+- 🪟 **Windows Speech Compatibility**: Unicode path support for speech recognition models on Windows
+- 🧩 **UI Component Refactoring**: Extracted `TerminalTabView` component with AI panel state scoped to individual tabs; context menu "Send to AI" uses direct component communication
+- ⚡ **Startup & Interaction Performance**: Multiple optimizations for faster startup and smoother interaction
+- 🛡️ **Windows Command Risk Assessment**: Added risk evaluation coverage for CMD and PowerShell commands
+
+### Bug Fixes
+- 🔧 Fixed AI vision routing when conversation history contains user images; now detects image-input API errors
+- 🔧 Raised PDF render size limit from 50MB to 1GB
+- 🔧 Fixed skill install result summary not syncing to UI display
+- 🔧 Fixed recent conversations sorted by start time instead of last update time
+- 🔧 Fixed Windows native module loading failures (onnxruntime / sherpa-onnx)
+- 🔧 Fixed short Ctrl press incorrectly triggering voice recognition
+- 🔧 Fixed migration v2 blocking subsequent migrations when KnowledgeService is unavailable
+
+## v10.20.2 (2026-03-16)
 
 Performance and stability release: introduces virtual scrolling for smoother AI panel rendering and adds macOS update checking, alongside several bug fixes for OS detection, remote sessions, and Agent memory recovery.
 
