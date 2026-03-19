@@ -906,7 +906,6 @@ const translations = {
     'scan.overwritten': '（已覆盖旧版本）',
     'scan.low_risk_note': '⚠️ 安全扫描发现 {count} 个低风险告警，但不影响安装。',
     'scan.files_installed': '📦 已安装 {count} 个附属文件: {files}',
-    'scan.preview_required': '安装前必须先调用 skill_preview 审查技能内容。请先执行: skill_preview(skill_id="{id}", source="{source}")',
 
     // 时间格式
     'time.minutes_seconds': '{minutes}分{seconds}秒',
@@ -2180,7 +2179,6 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'scan.overwritten': ' (overwritten)',
     'scan.low_risk_note': '⚠️ Security scan found {count} low-risk warning(s), not blocking installation.',
     'scan.files_installed': '📦 Installed {count} extra file(s): {files}',
-    'scan.preview_required': 'Must call skill_preview before installing. Please run: skill_preview(skill_id="{id}", source="{source}")',
 
     // Time format
     'time.minutes_seconds': '{minutes}m{seconds}s',

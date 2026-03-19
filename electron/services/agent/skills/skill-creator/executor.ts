@@ -736,17 +736,16 @@ async function marketInstall(
       return { success: false, output: '', error: installResult.error || t('scan.preview_failed') }
     }
 
+    const installOutput = formatInstallOutput(skillId, preview, hasScripts)
+
     executor.addStep({
       type: 'tool_result',
       content: t('scan.installed_market', { id: skillId }),
       toolName: 'skill_market_install',
-      toolResult: `${source} ${skillId}${hasScripts ? ` (${preview.files!.length} files)` : ''}`
+      toolResult: installOutput
     })
 
-    return {
-      success: true,
-      output: formatInstallOutput(skillId, preview, hasScripts)
-    }
+    return { success: true, output: installOutput }
   } catch (error) {
     return {
       success: false,
@@ -811,17 +810,16 @@ async function installLocal(
     }
 
     const overwriteNote = result.overwritten ? t('scan.overwritten') : ''
+    const installOutput = formatInstallOutput(skillId, preview, hasExtraFiles, overwriteNote)
+
     executor.addStep({
       type: 'tool_result',
       content: `${t('scan.installed_local', { id: skillId })}${overwriteNote}`,
       toolName: 'skill_install_local',
-      toolResult: `${skillId} (${Object.keys(preview.filesMap).length} files)${overwriteNote}`
+      toolResult: installOutput
     })
 
-    return {
-      success: true,
-      output: formatInstallOutput(skillId, preview, hasExtraFiles, overwriteNote)
-    }
+    return { success: true, output: installOutput }
   } catch (error) {
     return {
       success: false,
