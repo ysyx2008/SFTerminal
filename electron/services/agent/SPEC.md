@@ -124,7 +124,7 @@ run(message, context, options)
 | feishu | 飞书集成（OAuth） |
 | watch | 关切管理 |
 | config | Agent 配置 |
-| skill-creator | 用户技能创建 |
+| skill-manager | 用户技能管理与市场 |
 
 注册入口：`skills/index.ts`，技能定义接口见 `skills/types.ts` 中的 `Skill`。
 
