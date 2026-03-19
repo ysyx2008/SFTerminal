@@ -1407,16 +1407,12 @@ export abstract class Agent {
   // ==================== 受保护方法：AI 交互 ====================
   
   /**
-   * 检测消息列表中是否有未被 assistant 处理过的新图片
-   * 从末尾往前遍历：遇到 assistant 消息即停止，遇到图片即返回 true
+   * 本次请求是否会在 API 消息体中带有多模态图片（与 AiService.formatMessageForApi 一致：仅 user 消息的 images）
+   * 注意：不能只检查「最新一轮 user 是否带图」。历史 user 消息里的 images 仍会原样发给 API，
+   * 若主模型不支持视觉却未切换到关联视觉模型，会报错（例如火山 deepseek「Model do not support image input」）。
    */
-  private hasUnseenImages(messages: AiMessage[]): boolean {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i]
-      if (msg.role === 'assistant') break
-      if (msg.images && msg.images.length > 0) return true
-    }
-    return false
+  private conversationContainsImages(messages: AiMessage[]): boolean {
+    return messages.some(m => m.role === 'user' && m.images && m.images.length > 0)
   }
   
   /**
@@ -1424,7 +1420,7 @@ export abstract class Agent {
    * 当满足以下条件时自动切换到视觉模型：
    * 1. autoVisionModel 全局开关已启用
    * 2. 当前主模型配置了 visionProfileId
-   * 3. 消息中有未处理的新图片
+   * 3. 整条 messages 中仍有带 images 的 user 消息（formatMessageForApi 会一并发出）
    */
   private resolveEffectiveProfileId(run: AgentRun): string | undefined {
     const configService = this.services.configService
@@ -1433,7 +1429,7 @@ export abstract class Agent {
     const autoVision = configService.get('autoVisionModel')
     if (!autoVision) return this.profileId
     
-    if (!this.hasUnseenImages(run.messages)) return this.profileId
+    if (!this.conversationContainsImages(run.messages)) return this.profileId
     
     // 获取当前主模型的 profile
     const profiles = configService.getAiProfiles()

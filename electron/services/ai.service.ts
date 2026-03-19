@@ -157,19 +157,35 @@ export interface AiProfile {
 }
 
 /**
- * 检测 API 错误是否因为不支持 image_url（视觉/多模态）
- * 精确匹配：错误消息明确提及 image_url 相关问题
+ * 检测 API 错误是否因为不支持多模态/视觉输入
+ * - 部分网关会明确写 image_url / content 类型
+ * - 火山方舟等返回「Model do not support image input」不含 image_url 字样，也需识别以便降级重试
  */
 function isVisionNotSupportedError(errorMsg: string): boolean {
   const lower = errorMsg.toLowerCase()
-  return lower.includes('image_url') && (
+  if (lower.includes('image_url') && (
     lower.includes('unknown variant') ||
     lower.includes('not supported') ||
     lower.includes('invalid type') ||
     lower.includes('invalid_type') ||
     lower.includes('expected `text`') ||
     lower.includes("expected 'text'")
-  )
+  )) {
+    return true
+  }
+  if (
+    (lower.includes('not support') && lower.includes('image')) ||
+    (lower.includes('does not support') && lower.includes('image')) ||
+    (lower.includes('unsupported') && lower.includes('image')) ||
+    (lower.includes('image input') && (
+      lower.includes('not support') ||
+      lower.includes('unsupported') ||
+      lower.includes('do not support')
+    ))
+  ) {
+    return true
+  }
+  return false
 }
 
 /**
@@ -191,10 +207,10 @@ function isGenericParamErrorWithImages(errorMsg: string): boolean {
 }
 
 /**
- * 检测消息列表中是否包含图片
+ * 检测消息列表中是否包含会发往 API 的多模态图片（与 formatMessageForApi 一致，仅 user 角色）
  */
 function messagesContainImages(messages: AiMessage[]): boolean {
-  return messages.some(m => m.images && m.images.length > 0)
+  return messages.some(m => m.role === 'user' && m.images && m.images.length > 0)
 }
 
 /**
