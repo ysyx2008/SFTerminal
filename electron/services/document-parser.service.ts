@@ -939,7 +939,7 @@ export class DocumentParserService {
 
   private static readonly PDF_POINTS_PER_INCH = 72
   private static readonly MAX_RENDER_PAGES = 10
-  private static readonly MAX_PDF_FILE_SIZE = 50 * 1024 * 1024 // 50MB
+  private static readonly MAX_PDF_FILE_SIZE = 1000 * 1024 * 1024 // 1GB
 
   /**
    * 将 PDF 指定页面渲染为 JPEG 图片
