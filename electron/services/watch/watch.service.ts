@@ -1414,6 +1414,8 @@ export class WatchService {
     { type: 'im_connected' },
     { type: 'app_lifecycle' },
     { type: 'milestone' },
+    { type: 'email' },
+    { type: 'calendar' },
   ]
 
   /** 确保内置「唤醒」关切存在（觉醒模式开启时调用），幂等 */
@@ -1443,13 +1445,22 @@ export class WatchService {
           needsUpdate = true
         }
 
+        const existingTypes = new Set((existing.triggers || []).map(t => t.type))
+        const needsTriggerUpdate = WatchService.WAKEUP_TRIGGERS.some(t => !existingTypes.has(t.type))
+
         if (needsUpdate) {
           this.store.update(WatchService.WAKEUP_ID, {
             prompt: WatchService.DEFAULT_HEARTBEAT_TEMPLATE,
             triggers: WatchService.WAKEUP_TRIGGERS,
             updatedAt: Date.now()
           })
-          log.info('唤醒关切已迁移（支持生命周期与里程碑事件）')
+          log.info('唤醒关切已迁移（模板 + 触发器）')
+        } else if (needsTriggerUpdate) {
+          this.store.update(WatchService.WAKEUP_ID, {
+            triggers: WatchService.WAKEUP_TRIGGERS,
+            updatedAt: Date.now()
+          })
+          log.info('唤醒关切触发器已更新（新增 email/calendar）')
         }
         return true
       }
