@@ -652,6 +652,9 @@ const handleMenuCommand = async (command: string) => {
         window.electronAPI.updater.checkForUpdates()
       }, 500)
       break
+    case 'restartAndUpdate':
+      window.electronAPI.updater.quitAndInstall()
+      break
     case 'clearTerminal':
       window.dispatchEvent(new CustomEvent('menu:clear-terminal'))
       break

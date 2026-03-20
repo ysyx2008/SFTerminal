@@ -1686,6 +1686,7 @@ autoUpdater.on('checking-for-update', () => {
   log.info('AutoUpdater: 正在检查更新...')
   updateStatus = { status: 'checking' }
   mainWindow?.webContents.send('updater:status-changed', updateStatus)
+  menuService.setUpdateStatus('checking')
 })
 
 autoUpdater.on('update-available', (info) => {
@@ -1707,12 +1708,14 @@ autoUpdater.on('update-available', (info) => {
     })
   }
   mainWindow?.webContents.send('updater:status-changed', updateStatus)
+  menuService.setUpdateStatus('available')
 })
 
 autoUpdater.on('update-not-available', () => {
   log.info('AutoUpdater: 当前已是最新版本')
   updateStatus = { status: 'not-available' }
   mainWindow?.webContents.send('updater:status-changed', updateStatus)
+  menuService.setUpdateStatus('not-available')
 })
 
 autoUpdater.on('download-progress', (progress) => {
@@ -1727,6 +1730,7 @@ autoUpdater.on('download-progress', (progress) => {
     }
   }
   mainWindow?.webContents.send('updater:status-changed', updateStatus)
+  menuService.setUpdateStatus('downloading')
 })
 
 autoUpdater.on('update-downloaded', (info) => {
@@ -1740,6 +1744,7 @@ autoUpdater.on('update-downloaded', (info) => {
     }
   }
   mainWindow?.webContents.send('updater:status-changed', updateStatus)
+  menuService.setUpdateStatus('downloaded')
 })
 
 autoUpdater.on('error', (error) => {
@@ -1749,6 +1754,7 @@ autoUpdater.on('error', (error) => {
     error: error.message || '未知错误'
   }
   mainWindow?.webContents.send('updater:status-changed', updateStatus)
+  menuService.setUpdateStatus('error')
 })
 
 // 检查更新（含测速选源）
@@ -1758,9 +1764,11 @@ ipcMain.handle('updater:checkForUpdates', async () => {
       log.info('AutoUpdater: 开发模式，模拟检查更新')
       updateStatus = { status: 'checking' }
       mainWindow?.webContents.send('updater:status-changed', updateStatus)
+      menuService.setUpdateStatus('checking')
       await new Promise(resolve => setTimeout(resolve, 1500))
       updateStatus = { status: 'not-available' }
       mainWindow?.webContents.send('updater:status-changed', updateStatus)
+      menuService.setUpdateStatus('not-available')
       return { success: true, status: updateStatus }
     }
 

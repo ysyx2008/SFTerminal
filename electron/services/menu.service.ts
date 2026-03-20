@@ -72,7 +72,9 @@ const menuI18n = {
     reportIssue: '报告问题',
     github: 'GitHub',
     qqGroup: 'QQ 交流群 (1078041072)',
-    website: '官方网站'
+    website: '官方网站',
+    restartToUpdate: '重启并更新',
+    downloadingUpdate: '正在下载更新…',
   },
   'en-US': {
     // App menu (macOS)
@@ -133,7 +135,9 @@ const menuI18n = {
     reportIssue: 'Report Issue',
     github: 'GitHub',
     qqGroup: 'QQ Group (1078041072)',
-    website: 'Website'
+    website: 'Website',
+    restartToUpdate: 'Restart to Update',
+    downloadingUpdate: 'Downloading Update…',
   }
 }
 
@@ -141,11 +145,14 @@ type MenuKey = keyof typeof menuI18n['zh-CN']
 
 const IS_STEAM_BUILD = process.env.VITE_STEAM_BUILD === 'true'
 
+export type MenuUpdateStatus = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
+
 export class MenuService {
   private language: 'zh-CN' | 'en-US' = 'zh-CN'
   private mainWindow: BrowserWindow | null = null
   private shortcuts: KeyboardShortcuts = { ...DEFAULT_KEYBOARD_SHORTCUTS }
   private hasTerminal = false
+  private _updateStatus: MenuUpdateStatus = 'idle'
 
   /**
    * 获取翻译文本
@@ -194,11 +201,6 @@ export class MenuService {
         {
           label: this.t('about'),
           click: () => this.sendCommand('showAbout')
-        },
-        { type: 'separator' },
-        {
-          label: this.t('checkUpdate'),
-          click: () => this.sendCommand('checkUpdate')
         },
         { type: 'separator' },
         {
@@ -500,6 +502,32 @@ export class MenuService {
       )
     }
 
+    // 检查更新 / 重启并更新
+    // macOS 无签名公证，不支持自动下载安装，统一走设置页面手动下载
+    submenu.push({ type: 'separator' })
+    if (process.platform === 'darwin') {
+      submenu.push({
+        label: this.t('checkUpdate'),
+        click: () => this.sendCommand('checkUpdate')
+      })
+    } else if (this._updateStatus === 'downloaded') {
+      submenu.push({
+        label: this.t('restartToUpdate'),
+        click: () => this.sendCommand('restartAndUpdate')
+      })
+    } else if (this._updateStatus === 'downloading') {
+      submenu.push({
+        label: this.t('downloadingUpdate'),
+        enabled: false,
+      })
+    } else {
+      submenu.push({
+        label: this.t('checkUpdate'),
+        enabled: this._updateStatus !== 'checking',
+        click: () => this.sendCommand('checkUpdate')
+      })
+    }
+
     return {
       label: this.t('help'),
       role: 'help',
@@ -528,6 +556,16 @@ export class MenuService {
     )
 
     return Menu.buildFromTemplate(template)
+  }
+
+  /**
+   * 设置更新状态（影响帮助菜单中检查更新/重启更新的显示）
+   */
+  setUpdateStatus(status: MenuUpdateStatus): void {
+    if (this._updateStatus !== status) {
+      this._updateStatus = status
+      this.applyMenu()
+    }
   }
 
   /**
