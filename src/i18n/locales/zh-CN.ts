@@ -1219,6 +1219,9 @@ export default {
       jumpHostInherit: '继承分组配置',
       jumpHostCustom: '自定义配置',
       jumpHostDisable: '禁用跳板机',
+      jumpHostInheritInfo: '将使用分组「{group}」的跳板机 {host}',
+      jumpHostNoInherit: '当前分组未配置跳板机，将直连',
+      jumpHostCustomHint: '支持 JumpServer 等堡垒机，端口通常为 2222',
       encoding: '字符编码',
       encodingHint: '远程服务器使用的字符编码，默认 UTF-8',
       encodings: {

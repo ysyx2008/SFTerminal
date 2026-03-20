@@ -1219,6 +1219,9 @@ export default {
       jumpHostInherit: 'Inherit from Group',
       jumpHostCustom: 'Custom',
       jumpHostDisable: 'Disable Jump Host',
+      jumpHostInheritInfo: 'Will use jump host {host} from group "{group}"',
+      jumpHostNoInherit: 'No jump host configured in current group, will connect directly',
+      jumpHostCustomHint: 'Compatible with JumpServer and other bastion hosts (port usually 2222)',
       encoding: 'Character Encoding',
       encodingHint: 'Character encoding used by remote server, default UTF-8',
       encodings: {

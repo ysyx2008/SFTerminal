@@ -114,7 +114,7 @@ const deleteGroup = () => {
               />
               <span>{{ t('session.form.jumpHostEnable') }}</span>
             </label>
-            <span class="form-section-hint">{{ t('session.form.jumpHostHint') }}</span>
+            <span class="form-section-hint">{{ t('session.form.jumpHostHint') }} {{ t('session.form.jumpHostCustomHint') }}</span>
           </div>
           
           <template v-if="formData.jumpHost">
