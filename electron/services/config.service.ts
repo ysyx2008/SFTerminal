@@ -217,6 +217,12 @@ interface StoreSchema {
   keyboardShortcuts: KeyboardShortcuts  // 自定义快捷键
   autoVisionModel: boolean  // 自动使用视觉模型：遇到图片时自动切换到关联的视觉模型
   schemaVersion: number  // 数据 schema 版本号，用于迁移框架追踪已执行的 migration
+  // 堡垒机（JumpServer）集成
+  bastionUrl: string              // JumpServer 地址
+  bastionUsername: string         // JumpServer 用户名
+  bastionPassword: string         // JumpServer 密码
+  bastionAutoJumpHost: boolean    // 自动将 JumpServer 配置为同步组的跳板机
+  bastionJumpHostPort: number     // JumpServer SSH 端口（KoKo），默认 2222
 }
 
 const defaultConfig: StoreSchema = {
@@ -290,7 +296,12 @@ const defaultConfig: StoreSchema = {
   bondLastCalculatedAt: 0,
   keyboardShortcuts: { ...DEFAULT_KEYBOARD_SHORTCUTS },
   autoVisionModel: true,
-  schemaVersion: 0
+  schemaVersion: 0,
+  bastionUrl: '',
+  bastionUsername: '',
+  bastionPassword: '',
+  bastionAutoJumpHost: true,
+  bastionJumpHostPort: 2222
 }
 
 export class ConfigService {

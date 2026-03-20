@@ -18,6 +18,7 @@ import CalendarSettings from './CalendarSettings.vue'
 import SkillSettings from './SkillSettings.vue'
 import GatewaySettings from './GatewaySettings.vue'
 import IMSettings from './IMSettings.vue'
+import BastionSettings from './BastionSettings.vue'
 import ShortcutSettings from './ShortcutSettings.vue'
 import sailfishLogo from '../../../resources/logo.png'
 
@@ -36,7 +37,7 @@ const emit = defineEmits<{
 
 const configStore = useConfigStore()
 
-type SettingsTab = 'ai' | 'aiRules' | 'mcp' | 'skills' | 'knowledge' | 'email' | 'calendar' | 'im' | 'gateway' | 'theme' | 'terminal' | 'shortcuts' | 'data' | 'language' | 'about'
+type SettingsTab = 'ai' | 'aiRules' | 'mcp' | 'skills' | 'knowledge' | 'email' | 'calendar' | 'im' | 'bastion' | 'gateway' | 'theme' | 'terminal' | 'shortcuts' | 'data' | 'language' | 'about'
 // Steam 版不展示 AI 配置标签，默认选中「主题」；非 Steam 版默认「AI 模型配置」（__STEAM_BUILD__ 由 vite define 注入）
 const isSteamBuild = __STEAM_BUILD__
 const activeTab = ref<SettingsTab>(isSteamBuild ? 'theme' : 'ai')
@@ -410,7 +411,8 @@ const tabGroups = computed(() => {
         { id: 'im' as const, label: t('settings.tabs.im'), icon: '💬' },
         { id: 'gateway' as const, label: t('settings.tabs.gateway'), icon: '🌐' },
         { id: 'email' as const, label: t('settings.tabs.email'), icon: '📧' },
-        { id: 'calendar' as const, label: t('settings.tabs.calendar'), icon: '📅' }
+        { id: 'calendar' as const, label: t('settings.tabs.calendar'), icon: '📅' },
+        { id: 'bastion' as const, label: t('settings.tabs.bastion'), icon: '🛡️' }
       ]
     },
     {
@@ -546,6 +548,7 @@ const onQrImageError = (event: Event) => {
           <EmailSettings v-else-if="activeTab === 'email'" />
           <CalendarSettings v-else-if="activeTab === 'calendar'" />
           <IMSettings v-else-if="activeTab === 'im'" @close="emit('close')" />
+          <BastionSettings v-else-if="activeTab === 'bastion'" />
           <GatewaySettings v-else-if="activeTab === 'gateway'" />
           <ThemeSettings v-else-if="activeTab === 'theme'" />
           <TerminalSettings v-else-if="activeTab === 'terminal'" />

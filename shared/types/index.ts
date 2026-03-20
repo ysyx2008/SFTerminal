@@ -1,4 +1,5 @@
 export * from './agent'
+export * from './bastion'
 export * from './bond'
 export * from './history'
 export * from './host'

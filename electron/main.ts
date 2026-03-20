@@ -293,6 +293,7 @@ import type { CreateWatchParams } from './services/watch/types'
 import { getWebChatService } from './services/web-chat.service'
 import { getMigrationRunner, createBackup } from './migrations'
 import { getGatewayService, type GatewayConfig } from './services/gateway.service'
+import { BastionService } from './services/bastion.service'
 import { getIMService } from './services/im/im.service'
 import type { DingTalkConfig, FeishuConfig, SlackConfig, TelegramConfig, WeComConfig } from './services/im/types'
 import { getWorkspacePath } from './services/agent/tools/file'
@@ -2859,6 +2860,36 @@ ipcMain.handle('web-chat:setExecutionMode', async (_event, mode: ExecutionMode) 
 
 ipcMain.handle('im:sendNotification', async (_event, text: string, options?: { markdown?: boolean; title?: string }) => {
   return await imService.sendNotification(text, options)
+})
+
+// ==================== 堡垒机（JumpServer）集成 ====================
+
+const bastionService = new BastionService(configService)
+
+const getBastionConfig = () => ({
+  url: (configService.get('bastionUrl') as string) || '',
+  username: (configService.get('bastionUsername') as string) || '',
+  password: (configService.get('bastionPassword') as string) || '',
+  autoJumpHost: configService.get('bastionAutoJumpHost') ?? true,
+  jumpHostPort: configService.get('bastionJumpHostPort') || 2222
+})
+
+ipcMain.handle('bastion:getConfig', async () => getBastionConfig())
+
+ipcMain.handle('bastion:saveConfig', async (_event, config: { url: string; username: string; password: string; autoJumpHost: boolean; jumpHostPort: number }) => {
+  configService.set('bastionUrl', config.url)
+  configService.set('bastionUsername', config.username)
+  configService.set('bastionPassword', config.password)
+  configService.set('bastionAutoJumpHost', config.autoJumpHost)
+  configService.set('bastionJumpHostPort', config.jumpHostPort)
+})
+
+ipcMain.handle('bastion:testConnection', async (_event, config: { url: string; username: string; password: string }) => {
+  return bastionService.testConnection({ ...config, autoJumpHost: true, jumpHostPort: 2222 })
+})
+
+ipcMain.handle('bastion:syncAssets', async () => {
+  return bastionService.syncAssets(getBastionConfig())
 })
 
 // ==================== 智能巡检协调器相关 ====================

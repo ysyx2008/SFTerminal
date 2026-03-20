@@ -7,6 +7,7 @@ import { useTerminalStore } from '../stores/terminal'
 import { v4 as uuidv4 } from 'uuid'
 import SessionEditDialog from './SessionEditDialog.vue'
 import GroupEditDialog from './GroupEditDialog.vue'
+import SshCredentialDialog from './SshCredentialDialog.vue'
 import { useSessionList } from '../composables/useSessionList'
 import { useSessionDragDrop } from '../composables/useSessionDragDrop'
 
@@ -27,6 +28,7 @@ const showImportMenu = ref(false)
 const showSortMenu = ref(false)
 const editingSession = ref<SshSession | null>(null)
 const editingGroup = ref<SessionGroup | null>(null)
+const credentialSession = ref<SshSession | null>(null)
 const searchText = ref('')
 const collapsedGroups = ref<Set<string>>(new Set())
 
@@ -113,14 +115,38 @@ const deleteSession = async (session: SshSession) => {
 }
 
 const connectSession = async (session: SshSession) => {
+  const needsCredentials = !session.username || (!session.password && !session.privateKeyPath)
+  if (needsCredentials) {
+    credentialSession.value = session
+    return
+  }
+  await doConnect(session)
+}
+
+const doConnect = async (session: SshSession, overrideCredentials?: { username: string; password: string }) => {
   await configStore.updateSessionLastUsed(session.id)
   const jumpHost = configStore.getEffectiveJumpHost(session)
   await terminalStore.createTab('ssh', {
     host: session.host, port: session.port,
-    username: session.username, password: session.password,
+    username: overrideCredentials?.username || session.username,
+    password: overrideCredentials?.password || session.password,
     privateKeyPath: session.privateKeyPath, passphrase: session.passphrase,
     jumpHost, encoding: session.encoding || 'utf-8', sessionId: session.id
   })
+}
+
+const handleCredentialConnect = async (credentials: { username: string; password: string; save: boolean }) => {
+  const session = credentialSession.value
+  if (!session) return
+  credentialSession.value = null
+
+  if (credentials.save) {
+    const updated = { ...session, username: credentials.username, password: credentials.password }
+    await configStore.updateSshSession(updated)
+    await doConnect(updated)
+  } else {
+    await doConnect(session, credentials)
+  }
 }
 
 const _openSftp = (session: SshSession) => { emit('openSftp', session) }
@@ -400,6 +426,13 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
       @save="handleSaveGroup"
       @delete="handleDeleteGroup"
       @close="closeGroupDialog"
+    />
+
+    <SshCredentialDialog
+      v-if="credentialSession"
+      :session="credentialSession"
+      @connect="handleCredentialConnect"
+      @cancel="credentialSession = null"
     />
   </div>
 </template>

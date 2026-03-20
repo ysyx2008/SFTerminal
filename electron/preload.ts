@@ -2718,6 +2718,18 @@ const electronAPI = {
     return () => ipcRenderer.removeListener('aiDebug:message', handler)
   },
 
+  // 堡垒机（JumpServer）集成
+  bastion: {
+    getConfig: () =>
+      ipcRenderer.invoke('bastion:getConfig') as Promise<{ url: string; username: string; password: string; autoJumpHost: boolean; jumpHostPort: number }>,
+    saveConfig: (config: { url: string; username: string; password: string; autoJumpHost: boolean; jumpHostPort: number }) =>
+      ipcRenderer.invoke('bastion:saveConfig', config) as Promise<void>,
+    testConnection: (config: { url: string; username: string; password: string }) =>
+      ipcRenderer.invoke('bastion:testConnection', config) as Promise<{ success: boolean; message: string; assetCount?: number }>,
+    syncAssets: () =>
+      ipcRenderer.invoke('bastion:syncAssets') as Promise<{ success: boolean; error?: string; added: number; updated: number; removed: number; total: number; groupId: string; groupName: string }>,
+  },
+
   // Gateway 远程访问
   gateway: {
     start: (config: { enabled: boolean; port: number; apiToken: string; host: string }) =>
