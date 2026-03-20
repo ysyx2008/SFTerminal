@@ -2,7 +2,18 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.22.0 (2026-03-20) (Latest)
+## v10.23.0 (2026-03-20) (Latest)
+
+Adds automatic update checking on startup and via Help menu, with seamless restart-to-update support, and fixes Watch wakeup triggers for email and calendar events.
+
+### New Features
+- 🔄 **Automatic Update Checking**: App now checks for updates on startup and periodically in the background
+- 📋 **Help Menu Update Entry**: Added "Check for Updates" to the Help menu with restart-to-update support
+
+### Bug Fixes
+- 🔧 Fixed Watch wakeup not triggering for email and calendar events
+
+## v10.22.0 (2026-03-20)
 
 Adds user-configurable heartbeat wake-up prompts via a `HEARTBEAT.md` identity file, with support for `{{TIME}}` and `{{EVENTS}}` template variables.
 
