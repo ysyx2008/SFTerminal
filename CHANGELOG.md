@@ -2,7 +2,17 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.21.0 (2026-03-19) (Latest)
+## v10.22.0 (2026-03-20) (Latest)
+
+Adds user-configurable heartbeat wake-up prompts via a `HEARTBEAT.md` identity file, with support for `{{TIME}}` and `{{EVENTS}}` template variables.
+
+### New Features
+- 💓 **Configurable Heartbeat Prompt**: Heartbeat wake-up prompt can now be customized via a `HEARTBEAT.md` file, with `{{TIME}}` and `{{EVENTS}}` template variables for dynamic context injection
+
+### Improvements
+- 📖 **Feishu Setup Guide**: Added `card.action.trigger` callback subscription step to Feishu configuration guide
+
+## v10.21.0 (2026-03-19)
 
 Introduces local skill installation and scripted skill pack support, overhauls the skill security pipeline with mandatory preview auditing, and brings Windows compatibility improvements alongside performance optimizations.
 
