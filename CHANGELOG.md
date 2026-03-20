@@ -2,7 +2,15 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.23.0 (2026-03-20) (Latest)
+## v10.23.1 (2026-03-20) (Latest)
+
+Adds per-session jump host configuration UI to the SSH session editor and comprehensive server management documentation.
+
+### Improvements
+- 🔒 **Per-Session Jump Host UI**: SSH session editor now includes jump host configuration with inherit/custom/disable modes and bastion host hint text
+- 📖 **Server Documentation**: Added guides for SSH connections & jump host setup, SFTP file transfer, and multi-server management
+
+## v10.23.0 (2026-03-20)
 
 Adds automatic update checking on startup and via Help menu, per-session jump host configuration compatible with JumpServer and other bastion hosts, and fixes Watch wakeup triggers for email and calendar events.
 
