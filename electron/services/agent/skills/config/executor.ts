@@ -94,7 +94,8 @@ const CONFIG_REGISTRY: ConfigMeta[] = [
 
   // Readonly
   { key: 'aiProfiles', label: 'AI 模型配置', category: 'agent', type: 'array', readonly: true },
-  { key: 'sshSessions', label: 'SSH 会话', category: 'agent', type: 'array', readonly: true },
+  { key: 'sshSessions', label: 'SSH 会话', category: 'agent', type: 'array' },
+  { key: 'sessionGroups', label: '会话分组', category: 'agent', type: 'array' },
   { key: 'mcpServers', label: 'MCP 服务器', category: 'mcp', type: 'array' },
 ]
 
