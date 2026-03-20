@@ -2611,6 +2611,8 @@ const electronAPI = {
       ipcRenderer.invoke('watch:getTemplateCategories'),
     createFromTemplate: (templateId: string, options?: Record<string, unknown>) =>
       ipcRenderer.invoke('watch:createFromTemplate', templateId, options),
+    resetHeartbeat: () =>
+      ipcRenderer.invoke('watch:resetHeartbeat') as Promise<boolean>,
     onTaskStarted: (callback: (data: { watchId: string; ptyId?: string; watchName?: string }) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown) => {
         if (data && typeof data === 'object' && 'watchId' in data) {

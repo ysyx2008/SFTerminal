@@ -671,26 +671,36 @@ export class WatchService {
     // 用户可见消息必须通过 talk_to_user 发送，最终文本回复仅用于内部记录
     parts.push('[通知用户时，必须调用 talk_to_user 工具发送消息。最终文本回复仅作为内部日志，不会作为通知正文。]')
 
-    // 唤醒 Watch：TODO.md 每次注入（提醒机制核心），CONTACTS.md 按需读取
+    // 唤醒 Watch：从 HEARTBEAT.md 读取模板，解析变量后注入
     if (watch.id === WatchService.WAKEUP_ID) {
-      const todoContent = this.readWorkspaceFile('TODO.md')
-      if (todoContent) {
-        parts.push(`[你的待办事项（来自 workspace/TODO.md）：\n${todoContent}\n]`)
-      }
-      const hasContacts = fs.existsSync(path.join(getWorkspacePath(), 'CONTACTS.md'))
-      if (hasContacts) {
-        parts.push(`[你的工作空间中有 CONTACTS.md，需要时可读取。]`)
-      }
-      const activityDigest = this.buildRecentActivityDigest()
-      if (activityDigest) {
-        parts.push(activityDigest)
-      }
+      const template = this.readWorkspaceFile(WatchService.HEARTBEAT_FILENAME)
+        || WatchService.DEFAULT_HEARTBEAT_TEMPLATE
+      parts.push(this.resolveHeartbeatVariables(template))
+    } else {
+      parts.push(watch.prompt)
     }
 
-    // 原始 prompt
-    parts.push(watch.prompt)
-
     return parts.join('\n')
+  }
+
+  /** 解析心跳模板中的 {{TODO}} / {{ACTIVITY}} / {{CONTACTS}} 变量 */
+  private resolveHeartbeatVariables(template: string): string {
+    let result = template
+
+    const todoContent = this.readWorkspaceFile('TODO.md')
+    result = result.replace('{{TODO}}', todoContent
+      ? `[你的待办事项（来自 TODO.md）：\n${todoContent}\n]`
+      : '')
+
+    const activityDigest = this.buildRecentActivityDigest()
+    result = result.replace('{{ACTIVITY}}', activityDigest || '')
+
+    const hasContacts = fs.existsSync(path.join(getWorkspacePath(), 'CONTACTS.md'))
+    result = result.replace('{{CONTACTS}}', hasContacts
+      ? '[你的工作空间中有 CONTACTS.md，需要时可读取。]'
+      : '')
+
+    return result.replace(/\n{3,}/g, '\n\n').trim()
   }
 
   private static readonly WORKSPACE_FILE_MAX_CHARS = 8000
@@ -1358,8 +1368,13 @@ export class WatchService {
   /** @deprecated 旧 ID，仅用于迁移清理 */
   private static readonly LEGACY_PATROL_ID = '__daily_patrol__'
 
-  /** 唤醒关切的 prompt */
-  private static readonly WAKEUP_PROMPT = `你刚被唤醒。上方的「触发事件」是传感器已采集的最新数据。
+  private static readonly HEARTBEAT_FILENAME = 'HEARTBEAT.md'
+
+  /**
+   * 默认心跳模板，包含 {{TODO}} / {{ACTIVITY}} / {{CONTACTS}} 三个模板变量。
+   * 运行时由 resolveHeartbeatVariables() 替换为实际数据；删除变量则不注入对应信息。
+   */
+  static readonly DEFAULT_HEARTBEAT_TEMPLATE = `你刚被唤醒。上方的「触发事件」是传感器已采集的最新数据。
 用户看不到你的常规输出，只有通过 talk_to_user 工具发送的消息才能送达用户。
 有话想说就调用 talk_to_user，没有值得打扰用户的事就直接结束。
 
@@ -1368,6 +1383,7 @@ export class WatchService {
 - 注意当前时间：人类一般在 23:00–07:00 之间睡觉。在这个时段，除非有异常或紧急事件，直接结束，不要打扰用户休息。如果你的记忆中有该用户的具体作息习惯，以实际习惯为准。
 - 「一切正常」「系统运行平稳」这类信息没有通知价值——沉默本身就代表一切正常。
 
+{{TODO}}
 待办事项：
 - 如果上方注入了待办事项（TODO.md），根据每条任务的创建日期和截止时间判断是否需要提醒。
 - 判断逻辑：考虑任务的总时间跨度（从创建到截止），已过去的比例越大越需要提醒。短期任务（几天内）临近截止时提醒；长期任务（数周到数月）在剩余约 1/3 时间时就应该开始提醒。已逾期的任务务必提醒。
@@ -1381,8 +1397,11 @@ export class WatchService {
 - 里程碑：值得庆祝的时刻，用真诚而有个性的方式表达。
 - 其他事件：有值得通知的就说，没有就直接结束。
 
+{{ACTIVITY}}
 用户近况：
 - 上方可能注入了用户最近的对话活动摘要，包括任务内容和完成状态。这是你了解用户近况的窗口，怎么利用由你自己决定。
+
+{{CONTACTS}}
 
 风格要求：
 - 结合你的个性设定，像真人朋友一样自然交流，短句优先，一两句话即可。
@@ -1406,6 +1425,8 @@ export class WatchService {
         log.info('旧版日常检查已清理')
       }
 
+      this.ensureHeartbeatFile()
+
       const existing = this.store.get(WatchService.WAKEUP_ID)
       if (existing) {
         let needsUpdate = false
@@ -1422,7 +1443,7 @@ export class WatchService {
 
         if (needsUpdate) {
           this.store.update(WatchService.WAKEUP_ID, {
-            prompt: WatchService.WAKEUP_PROMPT,
+            prompt: WatchService.DEFAULT_HEARTBEAT_TEMPLATE,
             triggers: WatchService.WAKEUP_TRIGGERS,
             updatedAt: Date.now()
           })
@@ -1437,7 +1458,7 @@ export class WatchService {
         description: '觉醒模式下的定时唤醒，AI 自主决定醒来后做什么',
         enabled: true,
         triggers: WatchService.WAKEUP_TRIGGERS,
-        prompt: WatchService.WAKEUP_PROMPT,
+        prompt: WatchService.DEFAULT_HEARTBEAT_TEMPLATE,
         execution: { type: 'local' },
         output: { type: 'desktop' },
         priority: 'normal',
@@ -1458,6 +1479,38 @@ export class WatchService {
       return true
     } catch (e) {
       log.error('ensureWakeup 异常:', e)
+      return false
+    }
+  }
+
+  /** 确保 HEARTBEAT.md 存在，不存在则写入默认模板 */
+  private ensureHeartbeatFile(): void {
+    try {
+      const workspace = getWorkspacePath()
+      const filePath = path.join(workspace, WatchService.HEARTBEAT_FILENAME)
+      if (fs.existsSync(filePath)) return
+      fs.mkdirSync(workspace, { recursive: true })
+      fs.writeFileSync(filePath, WatchService.DEFAULT_HEARTBEAT_TEMPLATE, 'utf-8')
+      log.info('HEARTBEAT.md 已创建（默认模板）')
+    } catch (e) {
+      log.warn('创建 HEARTBEAT.md 失败:', e)
+    }
+  }
+
+  /** 重置 HEARTBEAT.md 为默认模板（供 UI 调用） */
+  resetHeartbeatFile(): boolean {
+    try {
+      const workspace = getWorkspacePath()
+      fs.mkdirSync(workspace, { recursive: true })
+      fs.writeFileSync(
+        path.join(workspace, WatchService.HEARTBEAT_FILENAME),
+        WatchService.DEFAULT_HEARTBEAT_TEMPLATE,
+        'utf-8'
+      )
+      log.info('HEARTBEAT.md 已重置为默认模板')
+      return true
+    } catch (e) {
+      log.warn('重置 HEARTBEAT.md 失败:', e)
       return false
     }
   }

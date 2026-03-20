@@ -5,7 +5,7 @@ import { useConfigStore, type AgentMbtiType } from '../stores/config'
 import {
   X, Play, Trash2, Eye, RefreshCw, History,
   Clock, Heart, Globe, Zap, FolderOpen, Calendar, Mail,
-  LayoutTemplate, Plus, Sparkles, Pencil, Fingerprint, UserRound
+  LayoutTemplate, Plus, Sparkles, Pencil, Fingerprint, UserRound, HeartPulse
 } from 'lucide-vue-next'
 
 const { t } = useI18n()
@@ -32,8 +32,8 @@ interface WatchTemplateInfo {
 
 // ==================== Navigation ====================
 
-type NavTab = 'watches' | 'templates' | 'sensors' | 'history' | 'personality' | 'identity' | 'userProfile'
-const VALID_TABS: NavTab[] = ['watches', 'templates', 'sensors', 'history', 'personality', 'identity', 'userProfile']
+type NavTab = 'watches' | 'templates' | 'sensors' | 'history' | 'personality' | 'identity' | 'userProfile' | 'heartbeat'
+const VALID_TABS: NavTab[] = ['watches', 'templates', 'sensors', 'history', 'personality', 'identity', 'userProfile', 'heartbeat']
 const activeTab = ref<NavTab>(
   props.initialTab && VALID_TABS.includes(props.initialTab as NavTab) ? props.initialTab as NavTab : 'watches'
 )
@@ -43,6 +43,7 @@ function switchTab(tab: NavTab, onSwitch?: () => void) {
     { from: 'personality', dirty: personalityDirty.value, reset: resetPersonalityText },
     { from: 'identity', dirty: identityDirty.value, reset: resetIdentityText },
     { from: 'userProfile', dirty: userProfileDirty.value, reset: resetUserProfileText },
+    { from: 'heartbeat', dirty: heartbeatDirty.value, reset: resetHeartbeatText },
   ]
   for (const check of dirtyChecks) {
     if (activeTab.value === check.from && tab !== check.from && check.dirty) {
@@ -108,6 +109,12 @@ const userProfileOriginal = ref('')
 const userProfileSaving = ref(false)
 const userProfileError = ref('')
 const userProfileDirty = computed(() => userProfileText.value !== userProfileOriginal.value)
+
+const heartbeatText = ref('')
+const heartbeatOriginal = ref('')
+const heartbeatSaving = ref(false)
+const heartbeatError = ref('')
+const heartbeatDirty = computed(() => heartbeatText.value !== heartbeatOriginal.value)
 
 // ==================== Utilities ====================
 
@@ -710,6 +717,41 @@ function resetUserProfileText() {
   userProfileError.value = ''
 }
 
+async function loadHeartbeatText() {
+  heartbeatText.value = await window.electronAPI.config.readIdentityFile('HEARTBEAT.md') || ''
+  heartbeatOriginal.value = heartbeatText.value
+}
+
+async function saveHeartbeatText() {
+  if (!heartbeatDirty.value) return
+  heartbeatSaving.value = true
+  heartbeatError.value = ''
+  try {
+    await window.electronAPI.config.writeIdentityFile('HEARTBEAT.md', heartbeatText.value)
+    heartbeatOriginal.value = heartbeatText.value
+  } catch (e) {
+    console.error('保存心跳指令失败:', e)
+    heartbeatError.value = t('awaken.heartbeatSaveFailed')
+  } finally {
+    heartbeatSaving.value = false
+  }
+}
+
+function resetHeartbeatText() {
+  heartbeatText.value = heartbeatOriginal.value
+  heartbeatError.value = ''
+}
+
+async function resetHeartbeatToDefault() {
+  if (!confirm(t('awaken.heartbeatResetConfirm'))) return
+  try {
+    await window.electronAPI.watch.resetHeartbeat()
+    await loadHeartbeatText()
+  } catch (e) {
+    console.error('重置心跳指令失败:', e)
+  }
+}
+
 function requestClose() {
   if (personalityDirty.value && !confirm(t('awaken.personalityUnsavedConfirm'))) {
     return
@@ -734,6 +776,7 @@ onMounted(async () => {
   loadPersonalitySettings()
   loadIdentityText()
   loadUserProfileText()
+  loadHeartbeatText()
   loadTemplates()
   refreshTimer = setInterval(loadWatchData, 5 * 60 * 1000)
 
@@ -876,6 +919,10 @@ onUnmounted(() => {
             <button class="nav-item" :class="{ active: activeTab === 'userProfile' }" @click="switchTab('userProfile')">
               <UserRound :size="16" />
               <span>{{ t('awaken.userProfileNav') }}</span>
+            </button>
+            <button class="nav-item" :class="{ active: activeTab === 'heartbeat' }" @click="switchTab('heartbeat')">
+              <HeartPulse :size="16" />
+              <span>{{ t('awaken.heartbeatNav') }}</span>
             </button>
           </div>
           <div class="nav-group">
@@ -1029,6 +1076,39 @@ onUnmounted(() => {
                   </div>
                 </div>
                 <div v-if="userProfileError" class="personality-error">{{ userProfileError }}</div>
+              </div>
+            </div>
+          </template>
+
+          <!-- ===================== 心跳指令 (HEARTBEAT.md) ===================== -->
+          <template v-if="activeTab === 'heartbeat'">
+            <div class="content-page personality-page">
+              <div class="personality-content">
+                <div class="personality-header">
+                  <h3>{{ t('awaken.heartbeatTitle') }}</h3>
+                </div>
+                <p class="personality-hint">{{ t('awaken.heartbeatHint') }}</p>
+                <textarea
+                  v-model="heartbeatText"
+                  class="personality-textarea heartbeat-textarea"
+                  :placeholder="t('awaken.heartbeatPlaceholder')"
+                  spellcheck="false"
+                />
+                <div class="personality-footer">
+                  <span class="personality-length">{{ heartbeatText.length }} {{ t('awaken.personalityChars') }}</span>
+                  <div class="personality-buttons">
+                    <button class="btn btn-sm" @click="resetHeartbeatToDefault">
+                      {{ t('awaken.heartbeatResetDefault') }}
+                    </button>
+                    <button class="btn btn-sm" @click="resetHeartbeatText" :disabled="!heartbeatDirty || heartbeatSaving">
+                      {{ t('common.reset') }}
+                    </button>
+                    <button class="btn btn-primary btn-sm" @click="saveHeartbeatText" :disabled="!heartbeatDirty || heartbeatSaving">
+                      {{ heartbeatSaving ? t('common.saving') : t('common.save') }}
+                    </button>
+                  </div>
+                </div>
+                <div v-if="heartbeatError" class="personality-error">{{ heartbeatError }}</div>
               </div>
             </div>
           </template>
@@ -1783,6 +1863,12 @@ onUnmounted(() => {
 .soul-page .personality-textarea {
   flex: none;
   height: 240px;
+}
+
+.heartbeat-textarea {
+  min-height: 320px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .personality-content {

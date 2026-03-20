@@ -2346,6 +2346,10 @@ ipcMain.handle('watch:createFromTemplate', async (_event, templateId: string, op
   return watchService.createFromTemplate(templateId, options)
 })
 
+ipcMain.handle('watch:resetHeartbeat', async () => {
+  return watchService.resetHeartbeatFile()
+})
+
 // Xshell 导入相关
 ipcMain.handle('xshell:selectFiles', async () => {
   const result = await dialog.showOpenDialog({

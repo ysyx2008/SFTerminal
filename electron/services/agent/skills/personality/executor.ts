@@ -6,7 +6,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { getConfigService } from '../../../config.service'
-import { getMbtiStylePrompt, readIdentityFile, readSoulFile, readUserFile } from '../../prompt-builder'
+import { getMbtiStylePrompt, readIdentityFile, readSoulFile, readUserFile, readHeartbeatFile } from '../../prompt-builder'
 import { t } from '../../i18n'
 import { notifyFrontendConfigChanged } from '../config/executor'
 import { getWorkspacePath } from '../../tools/file'
@@ -107,6 +107,13 @@ function getPersonality(executor: ToolExecutorConfig): ToolResult {
     sections.push(`### 用户画像（USER.md）\n${userContent}`)
   } else {
     sections.push(`### 用户画像\n${t('personality.not_set')}`)
+  }
+
+  const heartbeatContent = readHeartbeatFile()
+  if (heartbeatContent) {
+    sections.push(`### 心跳唤醒指令（HEARTBEAT.md）\n${heartbeatContent}`)
+  } else {
+    sections.push(`### 心跳唤醒指令\n使用内置默认（可在 agent-workspace/HEARTBEAT.md 中自定义）`)
   }
 
   const output = `## 当前个性配置\n\n${sections.join('\n\n')}`

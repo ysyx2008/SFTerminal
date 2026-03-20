@@ -18,6 +18,7 @@ import { t } from './i18n'
 const log = createLogger('PromptBuilder')
 const IDENTITY_FILENAME = 'IDENTITY.md'
 const SOUL_FILENAME = 'SOUL.md'
+const HEARTBEAT_FILENAME = 'HEARTBEAT.md'
 
 function readWorkspaceFile(filename: string): string {
   try {
@@ -50,6 +51,13 @@ export function readSoulFile(): string {
  */
 export function readUserFile(): string {
   return readWorkspaceFile('USER.md')
+}
+
+/**
+ * 从 agent-workspace/HEARTBEAT.md 读取自定义心跳唤醒指令
+ */
+export function readHeartbeatFile(): string {
+  return readWorkspaceFile(HEARTBEAT_FILENAME)
 }
 
 /**
