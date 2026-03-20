@@ -174,6 +174,7 @@ interface StoreSchema {
   aiRules: string  // 用户自定义的 AI 规则/指令
   agentPersonalityText: string  // 用户自定义个性描述（在 MBTI 基础上追加）
   agentName: string             // AI 名字（默认旗鱼，用户可自定义）
+  autoCheckUpdate: boolean   // 启动时自动检查更新
   gatewayAutoStart: boolean  // Gateway 远程访问自动启动
   gatewayPort: number        // Gateway 端口
   gatewayHost: string        // Gateway 监听地址
@@ -250,6 +251,7 @@ const defaultConfig: StoreSchema = {
   aiRules: '',
   agentPersonalityText: '',
   agentName: '',
+  autoCheckUpdate: true,
   gatewayAutoStart: false,
   gatewayPort: 3721,
   gatewayHost: '0.0.0.0',

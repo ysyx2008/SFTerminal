@@ -347,6 +347,8 @@ export default {
     installAndRestart: '安装并重启',
     upToDate: '当前已是最新版本',
     updateError: '检查更新失败',
+    autoCheckUpdate: '自动检查更新',
+    autoCheckUpdateHint: '启动时自动检查是否有新版本',
     goToDownload: '前往下载',
     downloadSource: '下载源',
     sourceRecommended: '推荐',

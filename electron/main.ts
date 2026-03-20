@@ -1130,6 +1130,9 @@ app.whenReady().then(async () => {
     log.error('后端服务初始化失败:', e)
   })
 
+  // 启动自动检查更新
+  scheduleAutoUpdateCheck()
+
   // 处理缓存的深链 URL 队列（窗口就绪前收到的）
   mainWindow?.webContents.once('dom-ready', () => {
     if (pendingDeepLinkUrls.length > 0) {
@@ -1757,7 +1760,27 @@ autoUpdater.on('error', (error) => {
   menuService.setUpdateStatus('error')
 })
 
-// 检查更新（含测速选源）
+// 检查更新核心逻辑（含测速选源），供 IPC handler 和自动检查共用
+async function performUpdateCheck(): Promise<{ success: boolean; updateInfo?: any; error?: string }> {
+  if (!app.isPackaged) {
+    log.info('AutoUpdater: 开发模式，跳过检查')
+    return { success: true }
+  }
+
+  updateStatus = { status: 'checking' }
+  mainWindow?.webContents.send('updater:status-changed', updateStatus)
+  menuService.setUpdateStatus('checking')
+
+  const speedResult = await selectFastestSource()
+  lastSpeedTestResult = speedResult
+  currentUpdateSource = speedResult.recommended
+  applyUpdateSource(currentUpdateSource)
+
+  const result = await autoUpdater.checkForUpdates()
+  return { success: true, updateInfo: result?.updateInfo }
+}
+
+// IPC: 手动检查更新
 ipcMain.handle('updater:checkForUpdates', async () => {
   try {
     if (!app.isPackaged) {
@@ -1771,22 +1794,48 @@ ipcMain.handle('updater:checkForUpdates', async () => {
       menuService.setUpdateStatus('not-available')
       return { success: true, status: updateStatus }
     }
-
-    updateStatus = { status: 'checking' }
-    mainWindow?.webContents.send('updater:status-changed', updateStatus)
-
-    const speedResult = await selectFastestSource()
-    lastSpeedTestResult = speedResult
-    currentUpdateSource = speedResult.recommended
-    applyUpdateSource(currentUpdateSource)
-
-    const result = await autoUpdater.checkForUpdates()
-    return { success: true, updateInfo: result?.updateInfo }
+    return await performUpdateCheck()
   } catch (error) {
     log.error('AutoUpdater: 检查更新失败:', error)
     return { success: false, error: error instanceof Error ? error.message : '检查更新失败' }
   }
 })
+
+// 自动检查更新：启动后延迟检查 + 每 12 小时定期检查
+const AUTO_CHECK_DELAY_MS = 60_000
+const AUTO_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000
+
+function scheduleAutoUpdateCheck() {
+  if (IS_STEAM_BUILD || !app.isPackaged) return
+
+  const enabled = configService?.get('autoCheckUpdate') ?? true
+  if (!enabled) {
+    log.info('AutoUpdater: 自动检查更新已禁用')
+    return
+  }
+
+  setTimeout(async () => {
+    try {
+      log.info('AutoUpdater: 启动后自动检查更新')
+      await performUpdateCheck()
+    } catch (error) {
+      log.warn('AutoUpdater: 自动检查更新失败:', error)
+    }
+  }, AUTO_CHECK_DELAY_MS)
+
+  setInterval(async () => {
+    const stillEnabled = configService?.get('autoCheckUpdate') ?? true
+    if (!stillEnabled) return
+    if (updateStatus.status === 'downloading' || updateStatus.status === 'downloaded') return
+
+    try {
+      log.info('AutoUpdater: 定期自动检查更新')
+      await performUpdateCheck()
+    } catch (error) {
+      log.warn('AutoUpdater: 定期检查更新失败:', error)
+    }
+  }, AUTO_CHECK_INTERVAL_MS)
+}
 
 // 切换更新源（用户手动选择）
 ipcMain.handle('updater:setSource', async (_event, source: UpdateSource) => {

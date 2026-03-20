@@ -45,6 +45,7 @@ const showConfirmDialog = ref(false)
 
 // 更新相关状态
 const updateStatus = ref<UpdateStatusInfo>({ status: 'idle' })
+const autoCheckUpdate = ref(true)
 const showUnlockAnimation = ref(false)
 const showBadgeWithAnimation = ref(false)
 const aboutContentRef = ref<HTMLElement | null>(null)
@@ -289,6 +290,13 @@ const installUpdate = async () => {
   await window.electronAPI.updater.quitAndInstall()
 }
 
+// 切换自动检查更新
+const toggleAutoCheckUpdate = async (event: Event) => {
+  const checked = (event.target as HTMLInputElement).checked
+  autoCheckUpdate.value = checked
+  await window.electronAPI.config.set('autoCheckUpdate', checked)
+}
+
 // 格式化文件大小
 const formatBytes = (bytes: number): string => {
   if (bytes === 0) return '0 B'
@@ -349,6 +357,10 @@ onMounted(async () => {
   
   // 获取当前更新状态
   updateStatus.value = await window.electronAPI.updater.getStatus()
+
+  // 获取自动检查更新配置
+  const savedAutoCheck = await window.electronAPI.config.get('autoCheckUpdate') as boolean | undefined
+  autoCheckUpdate.value = savedAutoCheck ?? true
   
   // 聚焦到模态框容器使其可接收键盘事件
   await nextTick()
@@ -639,6 +651,12 @@ const onQrImageError = (event: Event) => {
               <div v-if="updateStatus.status === 'error'" class="update-hint error">
                 ⚠️ {{ updateStatus.error || t('about.updateError') }}
               </div>
+
+              <!-- 自动检查更新开关 -->
+              <label class="auto-check-toggle">
+                <input type="checkbox" :checked="autoCheckUpdate" @change="toggleAutoCheckUpdate" />
+                <span>{{ t('about.autoCheckUpdate') }}</span>
+              </label>
             </div>
             
             <p class="description">
@@ -911,6 +929,21 @@ const onQrImageError = (event: Event) => {
   flex-direction: column;
   align-items: center;
   gap: 8px;
+}
+
+.auto-check-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.auto-check-toggle input[type="checkbox"] {
+  cursor: pointer;
 }
 
 .update-btn {

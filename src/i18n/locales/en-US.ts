@@ -347,6 +347,8 @@ export default {
     installAndRestart: 'Install and Restart',
     upToDate: 'You are up to date',
     updateError: 'Failed to check for updates',
+    autoCheckUpdate: 'Auto Check for Updates',
+    autoCheckUpdateHint: 'Automatically check for new versions on startup',
     goToDownload: 'Go to Download',
     downloadSource: 'Download Source',
     sourceRecommended: 'Best',
