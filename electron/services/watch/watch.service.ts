@@ -679,36 +679,31 @@ export class WatchService {
   private resolveHeartbeatVariables(template: string, watch: WatchDefinition, event: SensorEvent): string {
     let result = template
 
-    // 构建各变量的值
     const timeValue = `[当前时间：${new Date().toLocaleString()}]`
 
     const eventLines = this.formatEventLines(event)
     let eventsValue = ''
     if (eventLines.length) {
-      eventsValue = `触发事件：\n${eventLines.join('\n')}`
+      eventsValue = `# 触发事件\n${eventLines.join('\n')}`
       if (eventLines.length > 1) {
-        eventsValue += '\n[如果这些事件都不值得通知用户，直接回复 "NO_ACTION" 即可。这些事件会被丢弃，下次再看。]'
+        eventsValue += '\n[这些事件都不值得通知用户的话，直接回复 "NO_ACTION"，事件会被丢弃，下次再看。]'
       }
     }
 
     const todoContent = this.readWorkspaceFile('TODO.md')
     const todoValue = todoContent
-      ? `[你的待办事项（来自 TODO.md）：\n${todoContent}\n]`
+      ? `# 待办事项\n${todoContent}`
       : ''
 
-    const activityValue = this.buildRecentActivityDigest() || ''
-
-    const hasContacts = fs.existsSync(path.join(getWorkspacePath(), 'CONTACTS.md'))
-    const contactsValue = hasContacts
-      ? '[你的工作空间中有 CONTACTS.md，需要时可读取。]'
+    const activityDigest = this.buildRecentActivityDigest()
+    const activityValue = activityDigest
+      ? `# 用户近况\n${activityDigest}`
       : ''
 
-    // 替换所有变量
     result = result.replace('{{TIME}}', timeValue)
     result = result.replace('{{EVENTS}}', eventsValue)
     result = result.replace('{{TODO}}', todoValue)
     result = result.replace('{{ACTIVITY}}', activityValue)
-    result = result.replace('{{CONTACTS}}', contactsValue)
 
     return result.replace(/\n{3,}/g, '\n\n').trim()
   }
@@ -735,7 +730,7 @@ export class WatchService {
       if (userRecords.length === 0) return null
 
       const recent = userRecords.slice(-WatchService.DIGEST_MAX_RECORDS)
-      const lines: string[] = ['[用户最近的对话活动：']
+      const lines: string[] = []
 
       for (const r of recent) {
         const time = new Date(r.timestamp).toLocaleString('zh-CN', {
@@ -753,10 +748,9 @@ export class WatchService {
         lines.push(line)
       }
 
-      if (userRecords.length > WatchService.DIGEST_MAX_RECORDS) {
+      if (userRecords.length > recent.length) {
         lines.push(`(仅显示最近 ${recent.length} 条，共 ${userRecords.length} 条)`)
       }
-      lines.push('注意：以上是用户与其他 Agent 的对话摘要。你可以据此了解用户近况，在合适时自然地关心或跟进。不要机械地逐条回应。]')
 
       return lines.join('\n')
     } catch (e) {
@@ -1381,44 +1375,39 @@ export class WatchService {
   private static readonly HEARTBEAT_FILENAME = 'HEARTBEAT.md'
 
   /**
-   * 默认心跳模板，包含 {{TODO}} / {{ACTIVITY}} / {{CONTACTS}} 三个模板变量。
+   * 默认心跳模板，包含 4 个模板变量：{{TIME}} / {{EVENTS}} / {{TODO}} / {{ACTIVITY}}。
    * 运行时由 resolveHeartbeatVariables() 替换为实际数据；删除变量则不注入对应信息。
    */
   static readonly DEFAULT_HEARTBEAT_TEMPLATE = `{{TIME}}
 {{EVENTS}}
-
-你刚被唤醒。上方的「触发事件」是传感器已采集的最新数据。
-用户看不到你的常规输出，只有通过 talk_to_user 工具发送的消息才能送达用户。
-有话想说就调用 talk_to_user，没有值得打扰用户的事就直接结束。
-
-沉默优先原则：
-- 查看对话历史：如果上次唤醒到现在没有新事件（只是例行检查），且距上次唤醒不到 6 小时，大概率应该直接结束。偶尔（比如数小时才一次）可以简短打个招呼，但不要每次都说话。
-- 注意当前时间：人类一般在 23:00–07:00 之间睡觉。在这个时段，除非有异常或紧急事件，直接结束，不要打扰用户休息。如果你的记忆中有该用户的具体作息习惯，以实际习惯为准。
-- 「一切正常」「系统运行平稳」这类信息没有通知价值——沉默本身就代表一切正常。
-
 {{TODO}}
-待办事项：
-- 如果上方注入了待办事项（TODO.md），根据每条任务的创建日期和截止时间判断是否需要提醒。
-- 判断逻辑：考虑任务的总时间跨度（从创建到截止），已过去的比例越大越需要提醒。短期任务（几天内）临近截止时提醒；长期任务（数周到数月）在剩余约 1/3 时间时就应该开始提醒。已逾期的任务务必提醒。
-- 有需要提醒的待办时，在打招呼或通知中自然地提及，不要像机器人一样列清单。
-- 顺便清理已完成较久的条目，保持文件精简。
-- 没有 TODO.md 或无需提醒的待办，则忽略此项。
-
-事件处理指南：
-- IM 上线：用户刚通过 IM 连上你。根据时间段、距上次的间隔、最近聊过的话题，自然地打招呼——可以问近况、分享一个发现、接着上次的话题聊，每次换个角度。
-- 应用启动：根据当天时间和陪伴天数决定是否问好。
-- 里程碑：值得庆祝的时刻，用真诚而有个性的方式表达。
-- 其他事件：有值得通知的就说，没有就直接结束。
-
 {{ACTIVITY}}
-用户近况：
-- 上方可能注入了用户最近的对话活动摘要，包括任务内容和完成状态。这是你了解用户近况的窗口，怎么利用由你自己决定。
 
-{{CONTACTS}}
+---
 
-风格要求：
-- 结合你的个性设定，像真人朋友一样自然交流，短句优先，一两句话即可。
-- 对话历史中能看到你之前说过的话——如果没有新的有价值信息，直接结束比换个角度重复更好。`
+你刚被唤醒。用户看不到你的常规输出——只有通过 talk_to_user 发送的消息才能送达。
+
+# 决策原则
+
+沉默优先。有值得说的就调用 talk_to_user，没有就直接结束。
+
+- 上次唤醒至今没有新事件，且间隔不到 6 小时——直接结束。偶尔可以简短打招呼，但不要每次都说。
+- 23:00–07:00 是睡眠时段，除非紧急事件，不要打扰。你了解用户具体作息的，以实际习惯为准。
+- 「一切正常」没有通知价值——沉默本身就代表正常。
+- 对话历史中能看到你之前说过的话——没有新信息时，沉默比换角度重复更好。
+
+# 事件响应
+
+- **IM 上线**：根据时间、间隔、最近话题，自然地打招呼——问近况、分享发现、接着上次聊，每次换个角度。
+- **应用启动**：根据时间和陪伴天数决定是否问好。
+- **里程碑**：值得庆祝的时刻，真诚而有个性地表达。
+- **待办到期**：根据创建日期和截止时间判断——短期任务临近截止时提醒，长期任务剩余约 1/3 时间时开始提醒，已逾期务必提醒。自然地在对话中提及，不要列清单。顺便清理已完成的条目。
+- **用户近况**：活动摘要是你了解用户动态的窗口，怎么利用由你决定。
+- **其他事件**：有通知价值就说，没有就结束。
+
+# 风格
+
+结合你的个性设定，像真人朋友一样自然交流。短句优先，一两句话即可。`
 
   private static readonly WAKEUP_TRIGGERS: WatchTrigger[] = [
     { type: 'heartbeat' },
@@ -1450,7 +1439,7 @@ export class WatchService {
             this.store.updateState(WatchService.WAKEUP_ID, rest)
           }
           needsUpdate = true
-        } else if (!existing.prompt?.includes('里程碑') || !existing.prompt?.includes('总时间跨度')) {
+        } else if (!existing.prompt?.includes('# 决策原则')) {
           needsUpdate = true
         }
 
