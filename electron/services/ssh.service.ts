@@ -168,7 +168,7 @@ export class SshService {
           (err, stream) => {
             if (err) {
               client.end()
-              reject(err)
+              reject(new Error(err.message || String(err)))
               return
             }
 
@@ -202,14 +202,10 @@ export class SshService {
 
       client.on('error', err => {
         log.error(`${id} error:`, err)
-        // 触发断开连接事件
         this.emitDisconnect({ id, reason: 'error', error: err })
         this.instances.delete(id)
-        // 使用错误解析工具提供更友好的错误信息
         const friendlyMessage = getSshErrorMessage(err)
-        const enhancedError = new Error(friendlyMessage)
-        ;(enhancedError as Error & { originalError?: Error }).originalError = err
-        reject(enhancedError)
+        reject(new Error(friendlyMessage))
       })
 
       client.on('close', () => {

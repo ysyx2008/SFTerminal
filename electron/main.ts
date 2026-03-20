@@ -1254,7 +1254,11 @@ ipcMain.on('pty:subscribe', (event, id: string) => {
 
 // SSH 相关
 ipcMain.handle('ssh:connect', async (_event, config) => {
-  return sshService.connect(config)
+  try {
+    return await sshService.connect(config)
+  } catch (err) {
+    throw new Error(err instanceof Error ? err.message : String(err))
+  }
 })
 
 ipcMain.handle('ssh:write', async (_event, id: string, data: string) => {
