@@ -77,8 +77,8 @@ export const translations = {
         },
         {
           title: '终端与服务器管理',
-          description: '内置专业终端和 SSH 客户端，支持 SFTP 可视化文件管理、批量服务器操作、Xshell 会话导入，满足运维刚需。',
-          highlights: ['SSH / SFTP', '批量操作', '企业级安全'],
+          description: '内置专业终端和 SSH 客户端，支持 SFTP 可视化文件管理、批量服务器操作、Xshell 会话导入、JumpServer 堡垒机资产同步，满足运维刚需。',
+          highlights: ['SSH / SFTP', '堡垒机集成', '企业级安全'],
         },
       ],
     },
@@ -886,8 +886,8 @@ export const translations = {
         },
         {
           title: 'Terminal & Server Management',
-          description: 'Built-in professional terminal and SSH client with visual SFTP file management, batch server operations, and Xshell session import for ops needs.',
-          highlights: ['SSH / SFTP', 'Batch Operations', 'Enterprise Security'],
+          description: 'Built-in professional terminal and SSH client with visual SFTP file management, batch server operations, Xshell session import, and JumpServer bastion host sync for ops needs.',
+          highlights: ['SSH / SFTP', 'Bastion Host', 'Enterprise Security'],
         },
       ],
     },

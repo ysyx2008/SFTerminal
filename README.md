@@ -55,7 +55,7 @@
 | 🐦 **Feishu (Lark)** | Read/write Bitable, Docs, Sheets, Calendar, Tasks, Drive; OAuth lets Agent operate on behalf of the user |
 | 📌 **DingTalk** | Calendar events, to-do tasks, attendance records, contacts, approval workflows, Bitable, DingDisk, and Wiki |
 | 💼 **WeCom** | Calendar management, approval processes, check-in records, contact directory, meetings, WeDrive, and documents |
-| 🖥️ **SSH/SFTP** | Full remote connection and file management |
+| 🖥️ **SSH/SFTP** | Full remote connection and file management with JumpServer bastion host sync |
 | 📁 **File Manager** | Dual-pane file manager for local & remote |
 | 📚 **Knowledge Base** | Local RAG with L3 conversation vector search for long-term memory, completely offline |
 | 🔌 **MCP Extension** | Connect external tools via Model Context Protocol |

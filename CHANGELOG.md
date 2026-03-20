@@ -2,7 +2,19 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.23.1 (2026-03-20) (Latest)
+## v10.24.0 (2026-03-20) (Latest)
+
+Adds JumpServer bastion host integration for syncing SSH assets directly from your JumpServer instance, with secure credential management and one-click asset sync.
+
+### New Features
+- 🏰 **JumpServer Bastion Host Integration**: New "Bastion Host" settings tab under Integration for syncing SSH assets from JumpServer, with test connection, one-click sync, optional auto-configured jump host, and secure credential storage
+- 🔑 **SSH Credential Dialog**: Prompts for credentials when connecting to sessions that lack stored passwords or keys
+
+### Improvements
+- 🤖 **Agent Session Group Support**: Agent's config skill can now edit SSH sessions and manage session groups
+- 🪄 Updated skills tab icon in settings
+
+## v10.23.1 (2026-03-20)
 
 Adds per-session jump host configuration UI to the SSH session editor and comprehensive server management documentation.
 
