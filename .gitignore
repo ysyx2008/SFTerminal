@@ -9,7 +9,7 @@ electron-cache/
 steam/
 
 # Server (private, not open source)
-server/
+/server/
 
 # Editor
 .vscode/*

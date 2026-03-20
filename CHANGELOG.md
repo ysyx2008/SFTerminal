@@ -4,11 +4,12 @@ All notable changes to SailFish will be documented in this file.
 
 ## v10.23.0 (2026-03-20) (Latest)
 
-Adds automatic update checking on startup and via Help menu, with seamless restart-to-update support, and fixes Watch wakeup triggers for email and calendar events.
+Adds automatic update checking on startup and via Help menu, per-session jump host configuration compatible with JumpServer and other bastion hosts, and fixes Watch wakeup triggers for email and calendar events.
 
 ### New Features
 - 🔄 **Automatic Update Checking**: App now checks for updates on startup and periodically in the background
 - 📋 **Help Menu Update Entry**: Added "Check for Updates" to the Help menu with restart-to-update support
+- 🔒 **Per-Session Jump Host**: SSH session editor now supports jump host configuration with inherit/custom/disable modes, compatible with JumpServer and other bastion hosts
 
 ### Bug Fixes
 - 🔧 Fixed Watch wakeup not triggering for email and calendar events
