@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, toRaw } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onErrorCaptured, watch, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useConfigStore, type AgentMbtiType } from '../stores/config'
 import {
@@ -770,13 +770,18 @@ const handleKeydown = (e: KeyboardEvent) => {
   if (e.key === 'Escape') requestClose()
 }
 
+onErrorCaptured((err, _instance, info) => {
+  console.error('[Awaken] Error captured:', err, 'info:', info)
+  return false
+})
+
 onMounted(async () => {
   document.addEventListener('keydown', handleKeydown, true)
   await Promise.all([loadWatchData().catch(() => {}), loadAwakenSettings()])
   loadPersonalitySettings()
   loadIdentityText()
   loadUserProfileText()
-  loadHeartbeatText()
+  loadHeartbeatText().catch(e => console.error('[Awaken] loadHeartbeatText failed:', e))
   loadTemplates()
   refreshTimer = setInterval(loadWatchData, 5 * 60 * 1000)
 
