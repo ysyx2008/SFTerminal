@@ -855,6 +855,7 @@ function cancelFreeMode() {
             <li>{{ t('settings.im.guideFeishuStep5') }}</li>
             <li>{{ t('settings.im.guideFeishuStep6') }}</li>
             <li>{{ t('settings.im.guideFeishuStep7') }}</li>
+            <li>{{ t('settings.im.guideFeishuStep8') }}</li>
           </ol>
         </div>
 
