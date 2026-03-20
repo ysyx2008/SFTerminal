@@ -2017,6 +2017,7 @@ interface Window {
       getTemplates: () => Promise<Array<{ id: string; name: string; nameEn: string; description: string; descriptionEn: string; category: string; icon: string }>>
       getTemplateCategories: () => Promise<string[]>
       createFromTemplate: (templateId: string, options?: Record<string, unknown>) => Promise<WatchDefinition | null>
+      resetHeartbeat: () => Promise<boolean>
       onTaskStarted?: (callback: (data: { watchId: string; ptyId?: string; watchName?: string; executionType?: string }) => void) => () => void
       onTaskCompleted?: (callback: (data: { watchId: string; result?: { success: boolean; skipped?: boolean; error?: string } }) => void) => () => void
       onEnsureTab: (callback: (data: { agentId: string }) => void) => () => void
