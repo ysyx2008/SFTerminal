@@ -304,7 +304,7 @@ import {
 import { getServerConfig } from './services/agent/skills/email/session'
 import { setEmailAccounts } from './services/agent/skills/email/executor'
 import { setCalendarAccounts } from './services/agent/skills/calendar/executor'
-import { readIdentityFile, readSoulFile, readUserFile } from './services/agent/prompt-builder'
+import { readIdentityFile, readSoulFile, readUserFile, readHeartbeatFile } from './services/agent/prompt-builder'
 
 // 禁用 GPU 加速可能导致的问题（可选）
 // app.disableHardwareAcceleration()
@@ -2072,12 +2072,13 @@ ipcMain.handle('config:setAgentPersonalityText', async (_event, text: string) =>
   configService.setAgentPersonalityText(text)
 })
 
-// Agent 身份文件（IDENTITY.md / SOUL.md / USER.md）
+// Agent 身份文件（IDENTITY.md / SOUL.md / USER.md / HEARTBEAT.md）
 ipcMain.handle('agent:readIdentityFile', async (_event, filename: string) => {
   switch (filename) {
     case 'IDENTITY.md': return readIdentityFile()
     case 'SOUL.md': return readSoulFile()
     case 'USER.md': return readUserFile()
+    case 'HEARTBEAT.md': return readHeartbeatFile()
     default: return ''
   }
 })
