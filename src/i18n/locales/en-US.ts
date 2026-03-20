@@ -2147,7 +2147,7 @@ export default {
     userProfilePlaceholder: 'Call me Yu. Backend dev, part-time ops firefighter.\nKeep it short and to the point — I zone out when there\'s too much fluff.\nI like clean code. Over-engineering annoys me. So does no design at all.\nOvertime is the norm, so efficiency matters. No fancy stuff, just get it done.',
     heartbeatTitle: 'Heartbeat Prompt',
     heartbeatNav: 'Heartbeat',
-    heartbeatHint: 'Instructions sent to the Agent on each heartbeat wake-up. Supports {{TODO}}, {{ACTIVITY}}, {{CONTACTS}} template variables that are replaced with actual data at runtime; remove a variable to skip injecting that data',
+    heartbeatHint: 'Instructions sent to the Agent on each heartbeat wake-up. Template variables: {{TIME}} current time, {{EVENTS}} trigger events, {{TODO}} todos, {{ACTIVITY}} recent activity, {{CONTACTS}} contacts. Remove a variable to skip that data',
     heartbeatPlaceholder: 'Heartbeat wake-up instructions...',
     heartbeatSaveFailed: 'Save failed, please try again',
     heartbeatResetDefault: 'Reset to Default',

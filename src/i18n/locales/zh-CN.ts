@@ -2163,7 +2163,7 @@ export default {
     userProfilePlaceholder: '叫老余就行，后端开发，偶尔客串运维。\n平时说话简短，问到点子上就好，废话多了会烦。\n写代码追求干净，讨厌过度设计，也讨厌没设计。\n加班是常态，所以效率很重要，别给我整花活。',
     heartbeatTitle: '心跳指令',
     heartbeatNav: '心跳',
-    heartbeatHint: '每次心跳唤醒时发送给 Agent 的行为指引。支持 {{TODO}}、{{ACTIVITY}}、{{CONTACTS}} 模板变量，运行时自动替换为实际数据；删除变量则不注入对应信息',
+    heartbeatHint: '每次心跳唤醒时发送给 Agent 的行为指引。支持模板变量：{{TIME}} 当前时间、{{EVENTS}} 触发事件、{{TODO}} 待办事项、{{ACTIVITY}} 近期活动、{{CONTACTS}} 联系人。删除变量则不注入对应信息',
     heartbeatPlaceholder: '心跳唤醒指令...',
     heartbeatSaveFailed: '保存失败，请重试',
     heartbeatResetDefault: '恢复默认',

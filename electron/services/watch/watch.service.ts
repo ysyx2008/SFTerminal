@@ -639,9 +639,16 @@ export class WatchService {
   // ==================== Prompt 构建 ====================
 
   private buildEnhancedPrompt(watch: WatchDefinition, event: SensorEvent): string {
+    // 唤醒 Watch：所有内容由 HEARTBEAT.md 模板控制
+    if (watch.id === WatchService.WAKEUP_ID) {
+      const template = this.readWorkspaceFile(WatchService.HEARTBEAT_FILENAME)
+        || WatchService.DEFAULT_HEARTBEAT_TEMPLATE
+      return this.resolveHeartbeatVariables(template, watch, event)
+    }
+
+    // 其他 Watch：保持原有逻辑
     const parts: string[] = []
 
-    // 事件上下文：统一格式化，Agent 只需要知道"发生了什么"
     parts.push(`[当前时间：${new Date().toLocaleString()}]`)
 
     const eventLines = this.formatEventLines(event)
@@ -652,53 +659,56 @@ export class WatchService {
       }
     }
 
-    // Watch 自身状态（工作流延续）
     const hasState = watch.state && Object.keys(watch.state).length > 0
     if (hasState) {
       parts.push(`[当前 Watch 状态：${JSON.stringify(watch.state).substring(0, 500)}]`)
-    }
-
-    // 状态管理提示：有状态时告知可通过工具更新
-    if (hasState) {
       parts.push('[需要更新状态时，调用 watch_state_update 工具。]')
     }
 
-    // 技能提示
     if (watch.skills && watch.skills.length > 0) {
       parts.push(`[预加载技能：${watch.skills.join(', ')}]`)
     }
 
-    // 用户可见消息必须通过 talk_to_user 发送，最终文本回复仅用于内部记录
     parts.push('[通知用户时，必须调用 talk_to_user 工具发送消息。最终文本回复仅作为内部日志，不会作为通知正文。]')
-
-    // 唤醒 Watch：从 HEARTBEAT.md 读取模板，解析变量后注入
-    if (watch.id === WatchService.WAKEUP_ID) {
-      const template = this.readWorkspaceFile(WatchService.HEARTBEAT_FILENAME)
-        || WatchService.DEFAULT_HEARTBEAT_TEMPLATE
-      parts.push(this.resolveHeartbeatVariables(template))
-    } else {
-      parts.push(watch.prompt)
-    }
+    parts.push(watch.prompt)
 
     return parts.join('\n')
   }
 
-  /** 解析心跳模板中的 {{TODO}} / {{ACTIVITY}} / {{CONTACTS}} 变量 */
-  private resolveHeartbeatVariables(template: string): string {
+  /** 解析心跳模板变量，缺失的必要变量自动追加到开头 */
+  private resolveHeartbeatVariables(template: string, watch: WatchDefinition, event: SensorEvent): string {
     let result = template
 
-    const todoContent = this.readWorkspaceFile('TODO.md')
-    result = result.replace('{{TODO}}', todoContent
-      ? `[你的待办事项（来自 TODO.md）：\n${todoContent}\n]`
-      : '')
+    // 构建各变量的值
+    const timeValue = `[当前时间：${new Date().toLocaleString()}]`
 
-    const activityDigest = this.buildRecentActivityDigest()
-    result = result.replace('{{ACTIVITY}}', activityDigest || '')
+    const eventLines = this.formatEventLines(event)
+    let eventsValue = ''
+    if (eventLines.length) {
+      eventsValue = `触发事件：\n${eventLines.join('\n')}`
+      if (eventLines.length > 1) {
+        eventsValue += '\n[如果这些事件都不值得通知用户，直接回复 "NO_ACTION" 即可。这些事件会被丢弃，下次再看。]'
+      }
+    }
+
+    const todoContent = this.readWorkspaceFile('TODO.md')
+    const todoValue = todoContent
+      ? `[你的待办事项（来自 TODO.md）：\n${todoContent}\n]`
+      : ''
+
+    const activityValue = this.buildRecentActivityDigest() || ''
 
     const hasContacts = fs.existsSync(path.join(getWorkspacePath(), 'CONTACTS.md'))
-    result = result.replace('{{CONTACTS}}', hasContacts
+    const contactsValue = hasContacts
       ? '[你的工作空间中有 CONTACTS.md，需要时可读取。]'
-      : '')
+      : ''
+
+    // 替换所有变量
+    result = result.replace('{{TIME}}', timeValue)
+    result = result.replace('{{EVENTS}}', eventsValue)
+    result = result.replace('{{TODO}}', todoValue)
+    result = result.replace('{{ACTIVITY}}', activityValue)
+    result = result.replace('{{CONTACTS}}', contactsValue)
 
     return result.replace(/\n{3,}/g, '\n\n').trim()
   }
@@ -1374,7 +1384,10 @@ export class WatchService {
    * 默认心跳模板，包含 {{TODO}} / {{ACTIVITY}} / {{CONTACTS}} 三个模板变量。
    * 运行时由 resolveHeartbeatVariables() 替换为实际数据；删除变量则不注入对应信息。
    */
-  static readonly DEFAULT_HEARTBEAT_TEMPLATE = `你刚被唤醒。上方的「触发事件」是传感器已采集的最新数据。
+  static readonly DEFAULT_HEARTBEAT_TEMPLATE = `{{TIME}}
+{{EVENTS}}
+
+你刚被唤醒。上方的「触发事件」是传感器已采集的最新数据。
 用户看不到你的常规输出，只有通过 talk_to_user 工具发送的消息才能送达用户。
 有话想说就调用 talk_to_user，没有值得打扰用户的事就直接结束。
 
