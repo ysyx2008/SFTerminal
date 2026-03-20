@@ -2,7 +2,14 @@
 
 本文件记录旗鱼（SailFish）的所有重要更新。
 
-## v10.24.0 (2026-03-20)（最新版本）
+## v10.24.1 (2026-03-20)（最新版本）
+
+修复通过跳板机连接 SSH 时报 "An object could not be cloned" 的问题，原因是 ssh2 的错误对象无法通过 Electron IPC 序列化。
+
+### 问题修复
+- 🔌 **跳板机连接报错修复**：修复通过跳板机连接时显示 "An object could not be cloned" 而非实际 SSH 错误信息的问题，确保只有可序列化的纯 Error 对象通过 IPC 传递
+
+## v10.24.0 (2026-03-20)
 
 新增 JumpServer 堡垒机集成，支持从 JumpServer 一键同步 SSH 资产到旗鱼，安全存储凭证并自动配置跳板机。
 

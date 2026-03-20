@@ -2,7 +2,14 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.24.0 (2026-03-20) (Latest)
+## v10.24.1 (2026-03-20) (Latest)
+
+Fixes SSH connection via jump host failing with "An object could not be cloned" due to non-serializable error objects crossing the Electron IPC boundary.
+
+### Bug Fixes
+- 🔌 **SSH Jump Host Connection Error**: Fixed connection via jump host showing "An object could not be cloned" instead of the actual SSH error message, caused by non-serializable ssh2 error objects being passed through Electron IPC
+
+## v10.24.0 (2026-03-20)
 
 Adds JumpServer bastion host integration for syncing SSH assets directly from your JumpServer instance, with secure credential management and one-click asset sync.
 
