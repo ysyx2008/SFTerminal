@@ -195,6 +195,8 @@ export default {
       autoJumpHost: '自动配置跳板机',
       autoJumpHostHint: '同步时自动将 JumpServer 设为会话分组的跳板机，连接目标服务器时经由堡垒机中转',
       jumpHostPort: 'JumpServer SSH 端口',
+      ignoreSsl: '忽略 SSL 证书错误',
+      ignoreSslHint: '如果 JumpServer 使用自签名证书，开启此选项以跳过证书验证',
       testConnection: '测试连接',
       testing: '测试中...',
       syncAssets: '同步资产',

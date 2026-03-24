@@ -28,7 +28,18 @@ interface JumpServerAuthResponse {
 export class BastionService {
   constructor(private configService: ConfigService) {}
 
+  private withTlsOverride<T>(ignoreSsl: boolean, fn: () => Promise<T>): Promise<T> {
+    if (!ignoreSsl) return fn()
+    const prev = process.env.NODE_TLS_REJECT_UNAUTHORIZED
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+    return fn().finally(() => {
+      if (prev === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
+      else process.env.NODE_TLS_REJECT_UNAUTHORIZED = prev
+    })
+  }
+
   async testConnection(config: BastionConfig): Promise<{ success: boolean; message: string; assetCount?: number }> {
+    return this.withTlsOverride(config.rejectUnauthorized === false, async () => {
     try {
       const token = await this.authenticate(config.url, config.username, config.password)
       const firstPage = await this.fetchAssetsPage(config.url, token, 1, 0)
@@ -43,9 +54,11 @@ export class BastionService {
       log.error('Test connection failed:', msg)
       return { success: false, message: msg }
     }
+    })
   }
 
   async syncAssets(config: BastionConfig): Promise<BastionSyncResult> {
+    return this.withTlsOverride(config.rejectUnauthorized === false, async () => {
     try {
       const token = await this.authenticate(config.url, config.username, config.password)
 
@@ -122,6 +135,7 @@ export class BastionService {
       log.error('Sync failed:', msg)
       return { success: false, error: msg, added: 0, updated: 0, removed: 0, total: 0, groupId: '', groupName: '' }
     }
+    })
   }
 
   private async authenticate(baseUrl: string, username: string, password: string): Promise<string> {
@@ -213,9 +227,17 @@ export class BastionService {
 
   private formatError(error: any): string {
     if (error?.name === 'AbortError') return '连接超时'
-    if (error?.cause?.code === 'ECONNREFUSED') return '连接被拒绝，请检查地址'
-    if (error?.cause?.code === 'ENOTFOUND') return 'DNS 解析失败，请检查地址'
+    const causeCode = error?.cause?.code
+    const causeMsg = error?.cause?.message || ''
+    if (causeCode === 'ECONNREFUSED') return '连接被拒绝，请检查地址'
+    if (causeCode === 'ENOTFOUND') return 'DNS 解析失败，请检查地址'
+    if (causeCode === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' || causeCode === 'SELF_SIGNED_CERT_IN_CHAIN' ||
+        causeCode === 'DEPTH_ZERO_SELF_SIGNED_CERT' || causeCode === 'ERR_TLS_CERT_ALTNAME_INVALID' ||
+        causeMsg.includes('self-signed') || /certificate.*verif/i.test(causeMsg)) {
+      return 'SSL 证书验证失败（可能是自签名证书），请在下方开启「忽略 SSL 证书错误」'
+    }
     const msg = error?.message || String(error)
+    if (msg.includes('fetch failed')) return `连接失败：${causeMsg || causeCode || '请检查地址是否正确'}`
     if (msg.includes('401')) return '认证失败，请检查用户名和密码'
     if (msg.includes('403')) return '权限不足'
     return msg

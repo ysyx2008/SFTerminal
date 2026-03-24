@@ -223,6 +223,7 @@ interface StoreSchema {
   bastionPassword: string         // JumpServer 密码
   bastionAutoJumpHost: boolean    // 自动将 JumpServer 配置为同步组的跳板机
   bastionJumpHostPort: number     // JumpServer SSH 端口（KoKo），默认 2222
+  bastionRejectUnauthorized: boolean  // 是否验证 SSL 证书（默认 true）
 }
 
 const defaultConfig: StoreSchema = {
@@ -301,7 +302,8 @@ const defaultConfig: StoreSchema = {
   bastionUsername: '',
   bastionPassword: '',
   bastionAutoJumpHost: true,
-  bastionJumpHostPort: 2222
+  bastionJumpHostPort: 2222,
+  bastionRejectUnauthorized: true
 }
 
 export class ConfigService {

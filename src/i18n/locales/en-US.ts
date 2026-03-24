@@ -195,6 +195,8 @@ export default {
       autoJumpHost: 'Auto-configure jump host',
       autoJumpHostHint: 'Automatically set JumpServer as the jump host for synced sessions, routing connections through the bastion',
       jumpHostPort: 'JumpServer SSH port',
+      ignoreSsl: 'Ignore SSL certificate errors',
+      ignoreSslHint: 'Enable this if JumpServer uses a self-signed certificate',
       testConnection: 'Test Connection',
       testing: 'Testing...',
       syncAssets: 'Sync Assets',

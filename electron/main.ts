@@ -2875,20 +2875,22 @@ const getBastionConfig = () => ({
   username: (configService.get('bastionUsername') as string) || '',
   password: (configService.get('bastionPassword') as string) || '',
   autoJumpHost: configService.get('bastionAutoJumpHost') ?? true,
-  jumpHostPort: configService.get('bastionJumpHostPort') || 2222
+  jumpHostPort: configService.get('bastionJumpHostPort') || 2222,
+  rejectUnauthorized: configService.get('bastionRejectUnauthorized') ?? true
 })
 
 ipcMain.handle('bastion:getConfig', async () => getBastionConfig())
 
-ipcMain.handle('bastion:saveConfig', async (_event, config: { url: string; username: string; password: string; autoJumpHost: boolean; jumpHostPort: number }) => {
+ipcMain.handle('bastion:saveConfig', async (_event, config: { url: string; username: string; password: string; autoJumpHost: boolean; jumpHostPort: number; rejectUnauthorized: boolean }) => {
   configService.set('bastionUrl', config.url)
   configService.set('bastionUsername', config.username)
   configService.set('bastionPassword', config.password)
   configService.set('bastionAutoJumpHost', config.autoJumpHost)
   configService.set('bastionJumpHostPort', config.jumpHostPort)
+  configService.set('bastionRejectUnauthorized', config.rejectUnauthorized)
 })
 
-ipcMain.handle('bastion:testConnection', async (_event, config: { url: string; username: string; password: string }) => {
+ipcMain.handle('bastion:testConnection', async (_event, config: { url: string; username: string; password: string; rejectUnauthorized: boolean }) => {
   return bastionService.testConnection({ ...config, autoJumpHost: true, jumpHostPort: 2222 })
 })
 

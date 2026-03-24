@@ -1962,9 +1962,9 @@ interface Window {
 
     // 堡垒机（JumpServer）集成
     bastion: {
-      getConfig: () => Promise<{ url: string; username: string; password: string; autoJumpHost: boolean; jumpHostPort: number }>
-      saveConfig: (config: { url: string; username: string; password: string; autoJumpHost: boolean; jumpHostPort: number }) => Promise<void>
-      testConnection: (config: { url: string; username: string; password: string }) => Promise<{ success: boolean; message: string; assetCount?: number }>
+      getConfig: () => Promise<{ url: string; username: string; password: string; autoJumpHost: boolean; jumpHostPort: number; rejectUnauthorized: boolean }>
+      saveConfig: (config: { url: string; username: string; password: string; autoJumpHost: boolean; jumpHostPort: number; rejectUnauthorized: boolean }) => Promise<void>
+      testConnection: (config: { url: string; username: string; password: string; rejectUnauthorized: boolean }) => Promise<{ success: boolean; message: string; assetCount?: number }>
       syncAssets: () => Promise<{ success: boolean; error?: string; added: number; updated: number; removed: number; total: number; groupId: string; groupName: string }>
     }
 

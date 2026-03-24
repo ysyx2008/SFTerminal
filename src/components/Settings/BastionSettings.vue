@@ -12,6 +12,7 @@ const username = ref('')
 const password = ref('')
 const autoJumpHost = ref(true)
 const jumpHostPort = ref(2222)
+const rejectUnauthorized = ref(true)
 
 const isTesting = ref(false)
 const isSyncing = ref(false)
@@ -34,6 +35,7 @@ onMounted(async () => {
     password.value = config.password
     autoJumpHost.value = config.autoJumpHost
     jumpHostPort.value = config.jumpHostPort
+    rejectUnauthorized.value = config.rejectUnauthorized
   } catch {
     // ignore
   }
@@ -45,7 +47,8 @@ async function saveConfig() {
     username: username.value.trim(),
     password: password.value,
     autoJumpHost: autoJumpHost.value,
-    jumpHostPort: jumpHostPort.value
+    jumpHostPort: jumpHostPort.value,
+    rejectUnauthorized: rejectUnauthorized.value
   })
 }
 
@@ -60,7 +63,8 @@ async function testConnection() {
     const result = await window.electronAPI.bastion.testConnection({
       url: url.value.trim(),
       username: username.value.trim(),
-      password: password.value
+      password: password.value,
+      rejectUnauthorized: rejectUnauthorized.value
     })
     testResult.value = result
   } catch (e: any) {
@@ -140,7 +144,7 @@ async function syncAssets() {
       </div>
     </div>
 
-    <!-- 跳板机选项 -->
+    <!-- 选项 -->
     <div class="option-card">
       <div class="setting-row">
         <div class="setting-text">
@@ -163,6 +167,16 @@ async function syncAssets() {
             <span class="toggle-slider"></span>
           </label>
         </div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-text">
+          <label class="form-label">{{ t('settings.bastion.ignoreSsl') }}</label>
+          <p class="setting-desc">{{ t('settings.bastion.ignoreSslHint') }}</p>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" :checked="!rejectUnauthorized" @change="rejectUnauthorized = !($event.target as HTMLInputElement).checked" />
+          <span class="toggle-slider"></span>
+        </label>
       </div>
     </div>
 

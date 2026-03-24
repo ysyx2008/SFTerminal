@@ -4,6 +4,7 @@ export interface BastionConfig {
   password: string
   autoJumpHost: boolean
   jumpHostPort: number
+  rejectUnauthorized: boolean
 }
 
 export interface BastionSyncResult {

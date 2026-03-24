@@ -2721,10 +2721,10 @@ const electronAPI = {
   // 堡垒机（JumpServer）集成
   bastion: {
     getConfig: () =>
-      ipcRenderer.invoke('bastion:getConfig') as Promise<{ url: string; username: string; password: string; autoJumpHost: boolean; jumpHostPort: number }>,
-    saveConfig: (config: { url: string; username: string; password: string; autoJumpHost: boolean; jumpHostPort: number }) =>
+      ipcRenderer.invoke('bastion:getConfig') as Promise<{ url: string; username: string; password: string; autoJumpHost: boolean; jumpHostPort: number; rejectUnauthorized: boolean }>,
+    saveConfig: (config: { url: string; username: string; password: string; autoJumpHost: boolean; jumpHostPort: number; rejectUnauthorized: boolean }) =>
       ipcRenderer.invoke('bastion:saveConfig', config) as Promise<void>,
-    testConnection: (config: { url: string; username: string; password: string }) =>
+    testConnection: (config: { url: string; username: string; password: string; rejectUnauthorized: boolean }) =>
       ipcRenderer.invoke('bastion:testConnection', config) as Promise<{ success: boolean; message: string; assetCount?: number }>,
     syncAssets: () =>
       ipcRenderer.invoke('bastion:syncAssets') as Promise<{ success: boolean; error?: string; added: number; updated: number; removed: number; total: number; groupId: string; groupName: string }>,
