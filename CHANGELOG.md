@@ -2,7 +2,18 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.24.1 (2026-03-20) (Latest)
+## v10.25.0 (2026-03-24) (Latest)
+
+Adds a Windows portable ZIP build for legacy environments, implements email attachment downloads in the Agent email skill, and improves JumpServer bastion TLS handling with an optional SSL verification bypass.
+
+### New Features
+- 📦 **Windows Portable ZIP**: Releases now include a zip artifact alongside NSIS for environments where the installer fails (e.g. some Windows Server 2016 builds); CI uploads and syncs the zip like other artifacts
+- 📎 **Email Attachment Download**: Implemented `email_download_attachment` so mail attachments can be saved locally with clearer errors and predictable paths across local and SSH terminals
+
+### Improvements
+- 🔒 **Bastion TLS / SSL**: Optional "ignore SSL certificate errors" for JumpServer integration; unified TLS override for bastion HTTP requests; narrower SSL error detection in `formatError` to reduce false positives
+
+## v10.24.1 (2026-03-20)
 
 Fixes SSH connection via jump host failing with "An object could not be cloned" due to non-serializable error objects crossing the Electron IPC boundary.
 

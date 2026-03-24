@@ -81,7 +81,7 @@
 
 ### Download
 
-Get the latest release from [GitHub Releases](https://github.com/ysyx2008/SailFish/releases) or [Official Website](http://www.sfterm.com/en/).
+Get the latest release from [GitHub Releases](https://github.com/ysyx2008/SailFish/releases) or [Official Website](http://www.sfterm.com/en/). On Windows, releases include a **portable ZIP** in addition to the NSIS installer—use the ZIP if the installer fails on older systems (e.g. some Windows Server 2016 builds).
 
 ### Development
 

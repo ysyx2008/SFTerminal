@@ -81,7 +81,7 @@
 
 ### 下载安装
 
-从 [GitHub Releases](https://github.com/ysyx2008/SailFish/releases) 或 [官方网站](http://www.sfterm.com/) 下载最新版本。
+从 [GitHub Releases](https://github.com/ysyx2008/SailFish/releases) 或 [官方网站](http://www.sfterm.com/) 下载最新版本。Windows 除 NSIS 安装包外还提供 **ZIP 便携版**；若安装程序提示无法运行（如部分 Windows Server 2016 环境），可选用 ZIP 解压后运行。
 
 ### 开发调试
 
