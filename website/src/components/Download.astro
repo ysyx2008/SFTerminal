@@ -54,6 +54,7 @@ const DOWNLOAD_SOURCES = {
       'mac-arm64': `SailFish-${version}-arm64.dmg`,
       'mac-x64': `SailFish-${version}.dmg`,
       'win-x64': `SailFish-Setup-${version}.exe`,
+      'win-x64-zip': `SailFish-${version}-x64.zip`,
       'linux-appimage': `SailFish-${version}.AppImage`,
       'linux-deb': `SFTerm_${version}_amd64.deb`,
     }
@@ -65,6 +66,7 @@ const DOWNLOAD_SOURCES = {
       'mac-arm64': 'SailFish-arm64.dmg',
       'mac-x64': 'SailFish-x64.dmg',
       'win-x64': 'SailFish-Setup.exe',
+      'win-x64-zip': 'SailFish-x64.zip',
       'linux-appimage': 'SailFish.AppImage',
       'linux-deb': 'SailFish.deb',
     }
@@ -94,7 +96,8 @@ const downloads = [
     </svg>`,
     description: t.download.platforms.Windows.description,
     variants: [
-      { name: t.download.platforms.Windows.variants.installer64, fileKey: 'win-x64' }
+      { name: t.download.platforms.Windows.variants.installer64, fileKey: 'win-x64' },
+      { name: t.download.platforms.Windows.variants.portable64, fileKey: 'win-x64-zip' }
     ]
   },
   {

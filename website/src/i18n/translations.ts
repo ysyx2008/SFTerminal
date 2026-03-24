@@ -171,6 +171,7 @@ export const translations = {
           description: '支持 Win 10/11, Server 2016+',
           variants: {
             installer64: '64 位安装包',
+            portable64: '64 位便携版 (ZIP)',
           },
         },
         Linux: {
@@ -980,6 +981,7 @@ export const translations = {
           description: 'Supports Win 10/11, Server 2016+',
           variants: {
             installer64: '64-bit Installer',
+            portable64: '64-bit Portable (ZIP)',
           },
         },
         Linux: {
