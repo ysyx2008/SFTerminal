@@ -72,8 +72,9 @@ win:
     - target: nsis
       arch:
         - x64
-  # 自定义文件名格式，避免空格导致 GitHub Release 上传问题
-  artifactName: ${productName}-Setup-${version}.${ext}
+    - target: zip
+      arch:
+        - x64
   # Everything 便携版（仅 Windows）- 用于快速文件搜索
   extraResources:
     - from: "resources/everything"
@@ -82,6 +83,7 @@ win:
         - "**/*.exe"
         - "**/*.dll"
 nsis:
+  artifactName: ${productName}-Setup-${version}.${ext}
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true

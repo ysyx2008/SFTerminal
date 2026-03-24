@@ -47,6 +47,7 @@ jobs:
           name: windows-release
           path: |
             release/*.exe
+            release/*.zip
             release/latest.yml
             release/*.blockmap
           if-no-files-found: error
@@ -158,7 +159,7 @@ jobs:
             ## 安装说明
 
             ### Windows
-            下载 `.exe` 文件，双击安装即可。
+            下载 `.exe` 文件，双击安装即可。如安装程序无法运行（如 Windows Server 2016），可下载 `.zip` 免安装包，解压后直接运行。
 
             ### macOS
             下载 `.dmg` 文件，打开后将应用拖入 Applications 文件夹。
@@ -221,6 +222,9 @@ jobs:
           # 官网下载用（固定文件名，不带版本号）
           # Windows
           $OSSUTIL cp artifacts/windows-release/SailFish-Setup-${VERSION}.exe ${BUCKET}/SailFish-Setup.exe -f
+          if [ -f "artifacts/windows-release/SailFish-${VERSION}-x64.zip" ]; then
+            $OSSUTIL cp "artifacts/windows-release/SailFish-${VERSION}-x64.zip" ${BUCKET}/SailFish-x64.zip -f
+          fi
           # macOS
           $OSSUTIL cp artifacts/macos-release/SailFish-${VERSION}-arm64.dmg ${BUCKET}/SailFish-arm64.dmg -f
           $OSSUTIL cp artifacts/macos-release/SailFish-${VERSION}.dmg ${BUCKET}/SailFish-x64.dmg -f
@@ -233,6 +237,9 @@ jobs:
           $OSSUTIL cp artifacts/windows-release/latest.yml ${BUCKET}/releases/latest.yml -f
           $OSSUTIL cp artifacts/windows-release/SailFish-Setup-${VERSION}.exe ${BUCKET}/releases/SailFish-Setup-${VERSION}.exe -f
           $OSSUTIL cp artifacts/windows-release/SailFish-Setup-${VERSION}.exe.blockmap ${BUCKET}/releases/SailFish-Setup-${VERSION}.exe.blockmap -f
+          if [ -f "artifacts/windows-release/SailFish-${VERSION}-x64.zip" ]; then
+            $OSSUTIL cp "artifacts/windows-release/SailFish-${VERSION}-x64.zip" ${BUCKET}/releases/SailFish-${VERSION}-x64.zip -f
+          fi
           # macOS
           if [ -f artifacts/macos-release/latest-mac.yml ]; then
             $OSSUTIL cp artifacts/macos-release/latest-mac.yml ${BUCKET}/releases/latest-mac.yml -f
