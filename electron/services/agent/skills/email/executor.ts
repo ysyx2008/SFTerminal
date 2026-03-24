@@ -3,6 +3,7 @@
  */
 
 import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 import { createLogger } from '../../../../utils/logger'
 import type { ToolResult, AgentConfig } from '../../types'
@@ -19,6 +20,7 @@ import {
   getServerConfig,
   getAllSessions
 } from './session'
+import { getTerminalStateService } from '../../../terminal-state.service'
 
 // 动态导入的模块
 let ImapFlow: typeof import('imapflow').ImapFlow
@@ -99,6 +101,8 @@ export async function executeEmailTool(
       return await emailList(args, executor)
     case 'email_read':
       return await emailRead(args, executor)
+    case 'email_download_attachment':
+      return await emailDownloadAttachment(ptyId, args, executor)
     case 'email_search':
       return await emailSearch(args, executor)
     case 'email_send':
@@ -438,6 +442,102 @@ async function emailRead(
 }
 
 /**
+ * 下载附件
+ */
+async function emailDownloadAttachment(
+  ptyId: string,
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  const folder = (args.folder as string) || 'INBOX'
+  const uid = args.uid as number
+  const attachmentIndex = args.attachment_index as number
+  const saveDirArg = args.save_dir as string | undefined
+
+  if (!uid) {
+    return { success: false, output: '', error: t('email.uid_required') }
+  }
+
+  if (!attachmentIndex || attachmentIndex < 1) {
+    return { success: false, output: '', error: t('email.attachment_index_required') }
+  }
+
+  const session = getFirstOpenSession()
+  if (!session || !session.imapClient) {
+    return { success: false, output: '', error: t('email.not_connected') }
+  }
+
+  if (!session.imapClient.usable) {
+    await closeSession(session.accountId)
+    return {
+      success: false,
+      output: '',
+      error: t('email.connection_lost') + ' ' + t('email.please_reconnect')
+    }
+  }
+
+  try {
+    const lock = await session.imapClient.getMailboxLock(folder)
+    try {
+      const message = await session.imapClient.fetchOne(String(uid), {
+        source: true,
+        uid: true
+      }, { uid: true })
+
+      if (!message || !message.source) {
+        return { success: false, output: '', error: t('email.message_not_found', { uid }) }
+      }
+
+      const parsed = await simpleParser(message.source)
+      const attachments = parsed.attachments || []
+
+      if (attachments.length === 0) {
+        return { success: false, output: '', error: t('email.no_attachments') }
+      }
+
+      const attachment = attachments[attachmentIndex - 1]
+      if (!attachment) {
+        return {
+          success: false,
+          output: '',
+          error: t('email.attachment_index_out_of_range', {
+            index: attachmentIndex,
+            count: attachments.length
+          })
+        }
+      }
+
+      const saveDir = resolveAttachmentSaveDir(ptyId, executor, saveDirArg)
+      fs.mkdirSync(saveDir, { recursive: true })
+
+      const attachmentName = getAttachmentFilename(attachment.filename, attachmentIndex)
+      const savePath = ensureUniqueFilePath(path.join(saveDir, attachmentName))
+      const content = await attachmentContentToBuffer(attachment.content)
+      fs.writeFileSync(savePath, content)
+
+      const output = t('email.attachment_downloaded', {
+        filename: path.basename(savePath),
+        path: savePath
+      })
+
+      executor.addStep({
+        type: 'tool_result',
+        content: `📎 ${path.basename(savePath)}`,
+        toolName: 'email_download_attachment',
+        toolResult: output
+      })
+
+      return { success: true, output }
+    } finally {
+      lock.release()
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : t('email.attachment_download_failed')
+    return { success: false, output: '', error: errorMsg }
+  }
+}
+
+/**
  * 搜索邮件
  */
 async function emailSearch(
@@ -765,6 +865,99 @@ function _isSessionValid(session: ReturnType<typeof getSession>): boolean {
 function _truncateOutput(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text
   return text.slice(0, maxLength) + '\n\n... (' + t('email.output_truncated') + ')'
+}
+
+/**
+ * 将附件内容转换为 Buffer
+ */
+async function attachmentContentToBuffer(content: unknown): Promise<Buffer> {
+  if (Buffer.isBuffer(content)) {
+    return content
+  }
+
+  if (content && typeof (content as NodeJS.ReadableStream)[Symbol.asyncIterator] === 'function') {
+    const chunks: Buffer[] = []
+    for await (const chunk of content as AsyncIterable<Buffer | string>) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+    }
+    return Buffer.concat(chunks)
+  }
+
+  throw new Error(t('email.attachment_content_unavailable'))
+}
+
+/**
+ * 解析附件保存目录
+ */
+function resolveAttachmentSaveDir(
+  ptyId: string,
+  executor: ToolExecutorConfig,
+  saveDir?: string
+): string {
+  if (saveDir) {
+    return resolvePathFromTerminal(ptyId, executor, saveDir)
+  }
+
+  return path.join(os.homedir(), 'Downloads', 'email-attachments')
+}
+
+/**
+ * 解析路径。仅本地终端使用 cwd 解析相对路径，SSH 终端回退到本地家目录。
+ */
+function resolvePathFromTerminal(
+  ptyId: string,
+  executor: ToolExecutorConfig,
+  filePath: string
+): string {
+  if (path.isAbsolute(filePath)) {
+    return filePath
+  }
+
+  const terminalType = executor.terminalService.getTerminalType(ptyId)
+  if (terminalType === 'local') {
+    const cwd = getTerminalCwd(ptyId)
+    if (cwd) {
+      return path.resolve(cwd, filePath)
+    }
+  }
+
+  return path.resolve(os.homedir(), filePath)
+}
+
+/**
+ * 获取终端当前目录
+ */
+function getTerminalCwd(ptyId: string): string | undefined {
+  const terminalStateService = getTerminalStateService()
+  return terminalStateService.getCwd(ptyId)
+}
+
+/**
+ * 生成附件文件名
+ */
+function getAttachmentFilename(filename: string | undefined, attachmentIndex: number): string {
+  const safeName = filename ? path.basename(filename) : ''
+  return safeName || `attachment-${attachmentIndex}`
+}
+
+/**
+ * 避免覆盖现有文件
+ */
+function ensureUniqueFilePath(filePath: string): string {
+  if (!fs.existsSync(filePath)) {
+    return filePath
+  }
+
+  const parsed = path.parse(filePath)
+  let counter = 1
+  let nextPath = path.join(parsed.dir, `${parsed.name} (${counter})${parsed.ext}`)
+
+  while (fs.existsSync(nextPath)) {
+    counter += 1
+    nextPath = path.join(parsed.dir, `${parsed.name} (${counter})${parsed.ext}`)
+  }
+
+  return nextPath
 }
 
 /**

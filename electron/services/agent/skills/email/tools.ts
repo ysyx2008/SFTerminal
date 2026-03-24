@@ -94,6 +94,45 @@ export const emailTools: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'email_download_attachment',
+      description: `下载邮件附件到本地文件系统。
+
+**使用方式**：
+1. 先用 email_read 查看邮件附件列表
+2. 根据附件列表中的序号指定 attachment_index
+3. 可选指定 save_dir 作为保存目录；不指定时默认保存到本机 Downloads/email-attachments
+
+**路径规则**：
+- 绝对路径会直接使用
+- 相对路径在本地终端下相对当前 cwd 解析
+- SSH 终端下的相对路径会回退到本机用户目录`,
+      parameters: {
+        type: 'object',
+        properties: {
+          folder: {
+            type: 'string',
+            description: '邮件所在文件夹（默认 INBOX）'
+          },
+          uid: {
+            type: 'number',
+            description: '邮件 UID（从 email_list 获取）'
+          },
+          attachment_index: {
+            type: 'number',
+            description: '附件序号（从 1 开始，对应 email_read 返回的附件列表）'
+          },
+          save_dir: {
+            type: 'string',
+            description: '附件保存目录（可选，支持相对路径）'
+          }
+        },
+        required: ['uid', 'attachment_index']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'email_search',
       description: `搜索邮件。
 
