@@ -2278,29 +2278,7 @@ export abstract class Agent {
       return sum + tokens
     }, 0)
     
-    return messageTokens + this.estimateToolsTokens()
-  }
-
-  /** 缓存的工具列表 token 估算值（工具列表在会话内不变，避免重复计算） */
-  private _toolsTokensCache?: number
-
-  private estimateToolsTokens(): number {
-    if (this._toolsTokensCache !== undefined) return this._toolsTokensCache
-
-    try {
-      const tools = this.getAvailableTools()
-      let tokens = 0
-      for (const tool of tools) {
-        const fn = tool.function
-        tokens += this.estimateTokens(fn.name) + this.estimateTokens(fn.description)
-        tokens += this.estimateTokens(JSON.stringify(fn.parameters))
-        tokens += 10  // 结构开销（type, required 等固定 token）
-      }
-      this._toolsTokensCache = tokens
-      return tokens
-    } catch {
-      return 4000
-    }
+    return messageTokens + 4000
   }
   
   /** 上下文管理功能激活阈值（用量百分比） */
@@ -2322,16 +2300,20 @@ export abstract class Agent {
    */
   private updateContextPressure(run: AgentRun): void {
     const contextLength = this.getContextLength()
-    const totalTokens = this._lastPromptTokens || this.estimateTotalTokens(run.messages)
+    // 优先用 API 返回的精确值，无精确值时用估算值（仅用于内部上下文管理决策）
+    const hasRealData = this._lastPromptTokens !== undefined
+    const totalTokens = hasRealData ? this._lastPromptTokens! : this.estimateTotalTokens(run.messages)
     const usagePercent = Math.round((totalTokens / contextLength) * 100)
     const remaining = Math.max(0, contextLength - totalTokens)
 
-    // 将 token 数更新到最近的 step，供前端上下文统计显示
-    const steps = this.currentRun?.steps
-    if (steps && steps.length > 0) {
-      const lastStep = steps[steps.length - 1]
-      lastStep.contextTokens = totalTokens
-      this.callbacks?.onStep?.(this.currentRun?.id || '', lastStep)
+    // 仅当有 API 返回的精确数据时才推送到前端，避免不准确的估算值误导用户
+    if (hasRealData) {
+      const steps = this.currentRun?.steps
+      if (steps && steps.length > 0) {
+        const lastStep = steps[steps.length - 1]
+        lastStep.contextTokens = totalTokens
+        this.callbacks?.onStep?.(this.currentRun?.id || '', lastStep)
+      }
     }
 
     // 统计当前任务的消息数（user 消息之后的消息）
