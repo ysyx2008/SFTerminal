@@ -15,9 +15,10 @@ export type {
   AgentStep,
   PendingConfirmation,
   AttachmentInfo,
+  TokenUsage,
 } from '@shared/types'
 
-import type { TerminalType, ExecutionMode, RemoteChannel, PendingConfirmation, AgentStep, AgentPlan, AttachmentInfo } from '@shared/types'
+import type { TerminalType, ExecutionMode, RemoteChannel, PendingConfirmation, AgentStep, AgentPlan, AttachmentInfo, TokenUsage } from '@shared/types'
 
 // Agent 配置
 export interface AgentConfig {
@@ -165,6 +166,8 @@ export interface AgentRun {
     summary: string                                   // AI 提供的摘要
     timestamp: number
   }>
+  // 本次 run 累计的 token 用量（由 LLM provider 返回的精确值）
+  tokenUsage?: TokenUsage
 }
 
 // 主机档案服务接口

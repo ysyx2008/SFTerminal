@@ -14,6 +14,13 @@ export type RemoteChannel = 'desktop' | 'web' | 'dingtalk' | 'feishu' | 'slack' 
 
 export type RiskLevel = 'safe' | 'moderate' | 'dangerous' | 'blocked'
 
+/** API 调用的 token 用量（由 LLM provider 返回的精确值） */
+export interface TokenUsage {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+}
+
 export type PlanStepStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped'
 
 export interface StepProgress {

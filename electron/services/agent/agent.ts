@@ -114,6 +114,12 @@ export abstract class Agent {
   private _terminalMeta?: { terminalType: TerminalType; sshHost?: string }
   /** 是否正在从 HistoryService 恢复（防止并发竞态） */
   private _isRestoring = false
+
+  /** 会话内累积的 token 用量（跨多次 run 汇总） */
+  private _sessionTokenUsage?: import('@shared/types').TokenUsage
+
+  /** 最近一次 API 调用返回的 prompt_tokens（用于精确的上下文压力估算） */
+  private _lastPromptTokens?: number
   
   // ==================== 构造函数 ====================
   
@@ -737,6 +743,16 @@ export abstract class Agent {
     
     // 累积 API 消息
     this._sessionMessages.push(...run.taskMessageLog)
+
+    // 累积 token 用量
+    if (run.tokenUsage) {
+      if (!this._sessionTokenUsage) {
+        this._sessionTokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+      }
+      this._sessionTokenUsage.prompt_tokens += run.tokenUsage.prompt_tokens
+      this._sessionTokenUsage.completion_tokens += run.tokenUsage.completion_tokens
+      this._sessionTokenUsage.total_tokens += run.tokenUsage.total_tokens
+    }
   }
   
   /**
@@ -785,7 +801,8 @@ export abstract class Agent {
       messages: this._sessionMessages.map(m => JSON.parse(JSON.stringify(m))),
       finalResult: lastFinalResult?.content,
       duration: Date.now() - this._sessionStartTime,
-      status
+      status,
+      tokenUsage: this._sessionTokenUsage
     }
     
     try {
@@ -826,6 +843,16 @@ export abstract class Agent {
     
     const firstUserTask = this._sessionSteps.find(s => s.type === 'user_task') || { content: run.originalUserRequest }
     
+    // 合并 session 和当前 run 的 token 用量
+    let checkpointTokenUsage = this._sessionTokenUsage
+    if (run.tokenUsage) {
+      checkpointTokenUsage = {
+        prompt_tokens: (checkpointTokenUsage?.prompt_tokens || 0) + run.tokenUsage.prompt_tokens,
+        completion_tokens: (checkpointTokenUsage?.completion_tokens || 0) + run.tokenUsage.completion_tokens,
+        total_tokens: (checkpointTokenUsage?.total_tokens || 0) + run.tokenUsage.total_tokens
+      }
+    }
+
     const record: AgentRecord = {
       id: this._sessionId,
       timestamp: this._sessionStartTime,
@@ -836,7 +863,8 @@ export abstract class Agent {
       steps: checkpointSteps,
       messages: checkpointMessages.map(m => JSON.parse(JSON.stringify(m))),
       duration: Date.now() - this._sessionStartTime,
-      status: 'completed'  // 检查点视为进行中但有效的记录
+      status: 'completed',  // 检查点视为进行中但有效的记录
+      tokenUsage: checkpointTokenUsage
     }
     
     try {
@@ -854,6 +882,8 @@ export abstract class Agent {
     this._sessionStartTime = undefined
     this._sessionSteps = []
     this._sessionMessages = []
+    this._sessionTokenUsage = undefined
+    this._lastPromptTokens = undefined
     this._terminalMeta = undefined
     this.taskMemory.clear()
   }
@@ -868,6 +898,8 @@ export abstract class Agent {
     this._sessionStartTime = undefined
     this._sessionSteps = []
     this._sessionMessages = []
+    this._sessionTokenUsage = undefined
+    this._lastPromptTokens = undefined
   }
 
   
@@ -1539,6 +1571,18 @@ export abstract class Agent {
             this.removeStep(toolProgressStepId)
             toolProgressStepCreated = false
           }
+
+          // 累积 token usage（由 LLM provider 返回的精确值）
+          if (result.usage) {
+            if (!run.tokenUsage) {
+              run.tokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+            }
+            run.tokenUsage.prompt_tokens += result.usage.prompt_tokens
+            run.tokenUsage.completion_tokens += result.usage.completion_tokens
+            run.tokenUsage.total_tokens += result.usage.total_tokens
+            this._lastPromptTokens = result.usage.prompt_tokens
+          }
+
           let finalContent = streamContent.replace(/<details open>/g, '<details>')
           if (finalContent.includes('<details>') && !finalContent.includes('</details>')) {
             finalContent += '\n\n</blockquote>\n</details>'
@@ -2251,11 +2295,11 @@ export abstract class Agent {
    */
   private updateContextPressure(run: AgentRun): void {
     const contextLength = this.getContextLength()
-    const totalTokens = this.estimateTotalTokens(run.messages)
+    const totalTokens = this._lastPromptTokens || this.estimateTotalTokens(run.messages)
     const usagePercent = Math.round((totalTokens / contextLength) * 100)
     const remaining = Math.max(0, contextLength - totalTokens)
 
-    // 将估算的 token 数更新到最近的 step，供前端上下文统计显示
+    // 将 token 数更新到最近的 step，供前端上下文统计显示
     const steps = this.currentRun?.steps
     if (steps && steps.length > 0) {
       const lastStep = steps[steps.length - 1]

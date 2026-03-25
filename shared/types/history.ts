@@ -2,7 +2,7 @@
  * 历史记录共享类型定义
  */
 
-import type { TerminalType } from './agent'
+import type { TerminalType, TokenUsage } from './agent'
 
 export interface AgentStepRecord {
   id: string
@@ -29,4 +29,5 @@ export interface AgentRecord {
   finalResult?: string
   duration: number
   status: 'completed' | 'failed' | 'aborted'
+  tokenUsage?: TokenUsage
 }

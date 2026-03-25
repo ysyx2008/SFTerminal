@@ -138,6 +138,7 @@ export interface ChatWithToolsResult {
   tool_calls?: ToolCall[]
   finish_reason?: 'stop' | 'tool_calls' | 'length'
   reasoning_content?: string  // think 模型的思考内容
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
 }
 
 export type { AiModelType } from './config.service'
@@ -465,6 +466,7 @@ interface AnthropicStreamDelta {
   tool_calls?: Array<{ index: number; id?: string; function?: { name?: string; arguments?: string } }>
   finish_reason?: string
   done?: boolean
+  usage?: { input_tokens?: number; output_tokens?: number }
 }
 
 function parseAnthropicStreamEvent(data: string): AnthropicStreamDelta | null {
@@ -498,15 +500,24 @@ function parseAnthropicStreamEvent(data: string): AnthropicStreamDelta | null {
         if (d?.type === 'thinking_delta') return { reasoning_content: d.thinking as string }
         return null
       }
+      case 'message_start': {
+        const msg = json.message as Record<string, unknown>
+        const u = msg?.usage as Record<string, number> | undefined
+        if (u?.input_tokens) return { usage: { input_tokens: u.input_tokens } }
+        return null
+      }
       case 'message_delta': {
         const d = json.delta as Record<string, unknown>
         const sr = d?.stop_reason as string
+        const u = json.usage as Record<string, number> | undefined
+        const result: AnthropicStreamDelta = {}
         if (sr) {
-          return {
-            finish_reason: sr === 'tool_use' ? 'tool_calls' : sr === 'max_tokens' ? 'length' : 'stop'
-          }
+          result.finish_reason = sr === 'tool_use' ? 'tool_calls' : sr === 'max_tokens' ? 'length' : 'stop'
         }
-        return null
+        if (u?.output_tokens) {
+          result.usage = { output_tokens: u.output_tokens }
+        }
+        return (result.finish_reason || result.usage) ? result : null
       }
       case 'message_stop':
         return { done: true }
@@ -996,6 +1007,7 @@ export class AiService {
           finish_reason?: string
         }[]
         error?: { message?: string; code?: string; type?: string }
+        usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
       }
 
       try {
@@ -1035,7 +1047,8 @@ export class AiService {
       return {
         content: choice.message?.content || undefined,
         tool_calls: choice.message?.tool_calls,
-        finish_reason: choice.finish_reason as ChatWithToolsResult['finish_reason']
+        finish_reason: choice.finish_reason as ChatWithToolsResult['finish_reason'],
+        usage: data.usage
       }
     }
 
@@ -1133,6 +1146,7 @@ export class AiService {
     let reasoningContent = ''  // 用于收集 think 模型的思考内容
     let toolCalls: ToolCall[] = []
     let finishReason: string | undefined
+    let streamUsage: ChatWithToolsResult['usage'] | undefined
     // reasoning 输出状态（需跨重试可见，以便重试前关闭未闭合的 <details> 块）
     let hasReasoningOutput = false
     let hasContentOutput = false
@@ -1156,6 +1170,7 @@ export class AiService {
       reasoningContent = ''
       toolCalls = []
       finishReason = undefined
+      streamUsage = undefined
       req = undefined
       hasReasoningOutput = false
       hasContentOutput = false
@@ -1190,7 +1205,7 @@ export class AiService {
 
     const rebuildRequestBody = () => {
       const fmtMsgs = messages.map(msg => formatMessageForApi(msg, stripImages))
-      return {
+      const body: Record<string, unknown> = {
         model: profile.model,
         messages: fmtMsgs,
         tools: tools.length > 0 ? tools : undefined,
@@ -1199,6 +1214,10 @@ export class AiService {
         max_tokens: profile.maxOutputTokens || 8192,
         stream: true
       }
+      if (!isAnthropic) {
+        body.stream_options = { include_usage: true }
+      }
+      return body
     }
 
     let requestBody = rebuildRequestBody()
@@ -1365,6 +1384,12 @@ export class AiService {
                 isDone = !!event.done
                 delta = event
                 reason = event.finish_reason
+                if (event.usage) {
+                  if (!streamUsage) streamUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+                  if (event.usage.input_tokens) streamUsage.prompt_tokens = event.usage.input_tokens
+                  if (event.usage.output_tokens) streamUsage.completion_tokens = event.usage.output_tokens
+                  streamUsage.total_tokens = streamUsage.prompt_tokens + streamUsage.completion_tokens
+                }
               } else {
                 if (data === '[DONE]') {
                   isDone = true
@@ -1373,6 +1398,13 @@ export class AiService {
                     const json = JSON.parse(data)
                     delta = json.choices?.[0]?.delta
                     reason = json.choices?.[0]?.finish_reason
+                    if (json.usage) {
+                      streamUsage = {
+                        prompt_tokens: json.usage.prompt_tokens ?? 0,
+                        completion_tokens: json.usage.completion_tokens ?? 0,
+                        total_tokens: json.usage.total_tokens ?? 0
+                      }
+                    }
                   } catch { continue }
                 }
               }
@@ -1388,7 +1420,8 @@ export class AiService {
                   content: finalContent,
                   tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
                   finish_reason: finishReason as ChatWithToolsResult['finish_reason'],
-                  reasoning_content: reasoningContent || undefined
+                  reasoning_content: reasoningContent || undefined,
+                  usage: streamUsage
                 }))
                 return
               }
@@ -1466,13 +1499,15 @@ export class AiService {
 
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
           const toolNames = toolCalls.map(tc => tc.function.name).join(', ')
-          log.info(`Request done: model=${profile.model}, duration=${elapsed}s, finish=${finishReason || 'end'}, tools=[${toolNames}], contentLen=${(finalContent || '').length}`)
+          const usageStr = streamUsage ? `, tokens=${streamUsage.prompt_tokens}+${streamUsage.completion_tokens}=${streamUsage.total_tokens}` : ''
+          log.info(`Request done: model=${profile.model}, duration=${elapsed}s, finish=${finishReason || 'end'}, tools=[${toolNames}], contentLen=${(finalContent || '').length}${usageStr}`)
 
           // AI Debug: 记录响应完成（包含工具调用）
           getAiDebugService().logResponseDone(reqId, {
             response: finalContent,
             reasoningContent: reasoningContent || undefined,
             finishReason,
+            usage: streamUsage,
             toolCalls: toolCalls.length > 0 ? toolCalls.map(tc => ({
               id: tc.id,
               name: tc.function.name,
@@ -1487,7 +1522,8 @@ export class AiService {
             content: finalContent,
             tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
             finish_reason: finishReason as ChatWithToolsResult['finish_reason'],
-            reasoning_content: reasoningContent || undefined
+            reasoning_content: reasoningContent || undefined,
+            usage: streamUsage
           }))
         })
 
