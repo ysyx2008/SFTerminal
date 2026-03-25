@@ -1785,7 +1785,7 @@ onUnmounted(() => {
       <div class="ai-input">
         <!-- 上下文使用量迷你指示器 -->
         <div 
-          v-if="agentTaskGroups.length > 0 || agentUserTask" 
+          v-if="contextStats.tokenEstimate > 0" 
           class="context-mini"
         >
           <div 
@@ -1797,7 +1797,7 @@ onUnmounted(() => {
             :style="{ width: contextStats.percentage + '%' }"
           ></div>
           <span class="context-mini-tip">
-            {{ t('ai.context') }}: ~{{ contextStats.tokenEstimate.toLocaleString() }} / {{ (contextStats.maxTokens / 1000).toFixed(0) }}K ({{ contextStats.percentage }}%)
+            {{ t('ai.context') }}: {{ contextStats.tokenEstimate.toLocaleString() }} / {{ (contextStats.maxTokens / 1000).toFixed(0) }}K ({{ contextStats.percentage }}%)
           </span>
         </div>
         <!-- 图片预览区域 -->

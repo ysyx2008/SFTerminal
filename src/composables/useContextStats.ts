@@ -70,24 +70,7 @@ export function useContextStats(
       }
     }
     
-    // 如果后端没有返回（兼容旧版本），使用简单估算
-    if (totalTokens === 0) {
-      // System prompt + 工具定义
-      totalTokens = 600
-      
-      // 当前用户任务
-      if (agentUserTask.value) {
-        totalTokens += estimateTokens(agentUserTask.value) + 3
-      }
-      
-      // 当前步骤的简单估算
-      for (const step of allSteps) {
-        totalTokens += estimateTokens(step.content || '') + 5
-        if (step.toolResult) {
-          totalTokens += estimateTokens(step.toolResult) + 5
-        }
-      }
-    }
+    // 后端未返回精确数据时不估算，等待 API 响应后的真实值
     
     messageCount = allSteps.length
     
