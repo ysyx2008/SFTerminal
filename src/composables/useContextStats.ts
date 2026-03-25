@@ -36,7 +36,7 @@ export interface ContextStatsResult {
 
 export function useContextStats(
   agentState: ComputedRef<AgentState | undefined>,
-  agentUserTask: ComputedRef<string | undefined>,
+  _agentUserTask: ComputedRef<string | undefined>,
   activeAiProfile: ComputedRef<AiProfile | null | undefined>
 ) {
   // 估算文本的 token 数量
