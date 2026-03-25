@@ -120,6 +120,8 @@ export abstract class Agent {
 
   /** 最近一次 API 调用返回的 prompt_tokens（用于精确的上下文压力估算） */
   private _lastPromptTokens?: number
+  /** 最近一次 API 调用计算出的缓存命中率（0-100），用于跨步骤保持显示 */
+  private _lastCacheHitRate?: number
   
   // ==================== 构造函数 ====================
   
@@ -744,7 +746,7 @@ export abstract class Agent {
     // 累积 API 消息
     this._sessionMessages.push(...run.taskMessageLog)
 
-    // 累积 token 用量
+    // 累积 token 用量（含缓存统计）
     if (run.tokenUsage) {
       if (!this._sessionTokenUsage) {
         this._sessionTokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
@@ -752,6 +754,12 @@ export abstract class Agent {
       this._sessionTokenUsage.prompt_tokens += run.tokenUsage.prompt_tokens
       this._sessionTokenUsage.completion_tokens += run.tokenUsage.completion_tokens
       this._sessionTokenUsage.total_tokens += run.tokenUsage.total_tokens
+      if (run.tokenUsage.cache_hit_tokens !== undefined) {
+        this._sessionTokenUsage.cache_hit_tokens = (this._sessionTokenUsage.cache_hit_tokens || 0) + run.tokenUsage.cache_hit_tokens
+      }
+      if (run.tokenUsage.cache_miss_tokens !== undefined) {
+        this._sessionTokenUsage.cache_miss_tokens = (this._sessionTokenUsage.cache_miss_tokens || 0) + run.tokenUsage.cache_miss_tokens
+      }
     }
   }
   
@@ -843,13 +851,19 @@ export abstract class Agent {
     
     const firstUserTask = this._sessionSteps.find(s => s.type === 'user_task') || { content: run.originalUserRequest }
     
-    // 合并 session 和当前 run 的 token 用量
+    // 合并 session 和当前 run 的 token 用量（含缓存统计）
     let checkpointTokenUsage = this._sessionTokenUsage
     if (run.tokenUsage) {
       checkpointTokenUsage = {
         prompt_tokens: (checkpointTokenUsage?.prompt_tokens || 0) + run.tokenUsage.prompt_tokens,
         completion_tokens: (checkpointTokenUsage?.completion_tokens || 0) + run.tokenUsage.completion_tokens,
-        total_tokens: (checkpointTokenUsage?.total_tokens || 0) + run.tokenUsage.total_tokens
+        total_tokens: (checkpointTokenUsage?.total_tokens || 0) + run.tokenUsage.total_tokens,
+        ...(run.tokenUsage.cache_hit_tokens !== undefined || checkpointTokenUsage?.cache_hit_tokens !== undefined
+          ? { cache_hit_tokens: (checkpointTokenUsage?.cache_hit_tokens || 0) + (run.tokenUsage.cache_hit_tokens || 0) }
+          : {}),
+        ...(run.tokenUsage.cache_miss_tokens !== undefined || checkpointTokenUsage?.cache_miss_tokens !== undefined
+          ? { cache_miss_tokens: (checkpointTokenUsage?.cache_miss_tokens || 0) + (run.tokenUsage.cache_miss_tokens || 0) }
+          : {})
       }
     }
 
@@ -884,6 +898,7 @@ export abstract class Agent {
     this._sessionMessages = []
     this._sessionTokenUsage = undefined
     this._lastPromptTokens = undefined
+    this._lastCacheHitRate = undefined
     this._terminalMeta = undefined
     this.taskMemory.clear()
   }
@@ -900,6 +915,7 @@ export abstract class Agent {
     this._sessionMessages = []
     this._sessionTokenUsage = undefined
     this._lastPromptTokens = undefined
+    this._lastCacheHitRate = undefined
   }
 
   
@@ -1580,26 +1596,16 @@ export abstract class Agent {
             run.tokenUsage.prompt_tokens += result.usage.prompt_tokens
             run.tokenUsage.completion_tokens += result.usage.completion_tokens
             run.tokenUsage.total_tokens += result.usage.total_tokens
-            if (result.usage.cache_hit_tokens) {
+            if (result.usage.cache_hit_tokens !== undefined) {
               run.tokenUsage.cache_hit_tokens = (run.tokenUsage.cache_hit_tokens || 0) + result.usage.cache_hit_tokens
             }
-            if (result.usage.cache_miss_tokens) {
+            if (result.usage.cache_miss_tokens !== undefined) {
               run.tokenUsage.cache_miss_tokens = (run.tokenUsage.cache_miss_tokens || 0) + result.usage.cache_miss_tokens
             }
             this._lastPromptTokens = result.usage.prompt_tokens
-
-            // 立即将真实数据推送到前端
-            const steps = this.currentRun?.steps
-            if (steps && steps.length > 0) {
-              const lastStep = steps[steps.length - 1]
-              lastStep.contextTokens = result.usage.prompt_tokens
-              if (result.usage.cache_hit_tokens !== undefined && result.usage.prompt_tokens > 0) {
-                lastStep.cacheHitRate = Math.round(result.usage.cache_hit_tokens / result.usage.prompt_tokens * 100)
-              }
-              this.callbacks?.onStep?.(this.currentRun?.id || '', lastStep)
-            }
           }
 
+          // 先定稿流式步骤
           let finalContent = streamContent.replace(/<details open>/g, '<details>')
           if (finalContent.includes('<details>') && !finalContent.includes('</details>')) {
             finalContent += '\n\n</blockquote>\n</details>'
@@ -1623,6 +1629,34 @@ export abstract class Agent {
               content: finalContent,
               isStreaming: false
             })
+            streamStepCreated = true
+          }
+
+          // 在步骤定稿后推送 contextTokens（避免设置到即将被删除的临时步骤上）
+          if (result.usage) {
+            const steps = this.currentRun?.steps
+            if (steps && steps.length > 0) {
+              // 优先选择已定稿的流式步骤，否则选最近的非临时步骤（跳过 initialStep）
+              let targetStep = streamStepCreated
+                ? steps.find(s => s.id === streamStepId)
+                : undefined
+              if (!targetStep) {
+                for (let i = steps.length - 1; i >= 0; i--) {
+                  if (steps[i].id !== run.initialStepId) { targetStep = steps[i]; break }
+                }
+              }
+              if (targetStep) {
+                targetStep.contextTokens = result.usage.prompt_tokens
+                const cacheTotal = (result.usage.cache_hit_tokens || 0) + (result.usage.cache_miss_tokens || 0)
+                if (cacheTotal > 0 && result.usage.prompt_tokens > 0) {
+                  targetStep.cacheHitRate = Math.round((result.usage.cache_hit_tokens || 0) / result.usage.prompt_tokens * 100)
+                  this._lastCacheHitRate = targetStep.cacheHitRate
+                } else {
+                  this._lastCacheHitRate = undefined
+                }
+                this.callbacks?.onStep?.(this.currentRun?.id || '', targetStep)
+              }
+            }
           }
           resolve(result)
         },
@@ -2321,6 +2355,9 @@ export abstract class Agent {
       if (steps && steps.length > 0) {
         const lastStep = steps[steps.length - 1]
         lastStep.contextTokens = totalTokens
+        if (this._lastCacheHitRate !== undefined) {
+          lastStep.cacheHitRate = this._lastCacheHitRate
+        }
         this.callbacks?.onStep?.(this.currentRun?.id || '', lastStep)
       }
     }

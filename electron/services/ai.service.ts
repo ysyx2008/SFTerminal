@@ -274,20 +274,25 @@ function formatMessageForApi(msg: AiMessage, stripImages = false): Record<string
 /**
  * 从 API 返回的 usage 对象中提取缓存统计信息
  * 各家格式不同，统一归一化为 cache_hit_tokens / cache_miss_tokens
+ * 
+ * 部分代理（如火山引擎）可能同时返回多种格式，优先取有实际数据的
  */
 function extractCacheStats(rawUsage: Record<string, unknown>): { cache_hit_tokens?: number; cache_miss_tokens?: number } {
+  type CacheResult = { cache_hit_tokens: number; cache_miss_tokens: number }
+  const candidates: CacheResult[] = []
+
   // DeepSeek: prompt_cache_hit_tokens / prompt_cache_miss_tokens
   const dsHit = rawUsage.prompt_cache_hit_tokens as number | undefined
   const dsMiss = rawUsage.prompt_cache_miss_tokens as number | undefined
   if (dsHit !== undefined || dsMiss !== undefined) {
-    return { cache_hit_tokens: dsHit || 0, cache_miss_tokens: dsMiss || 0 }
+    candidates.push({ cache_hit_tokens: dsHit ?? 0, cache_miss_tokens: dsMiss ?? 0 })
   }
 
   // Anthropic: cache_read_input_tokens / cache_creation_input_tokens
   const anthropicRead = rawUsage.cache_read_input_tokens as number | undefined
   const anthropicCreate = rawUsage.cache_creation_input_tokens as number | undefined
   if (anthropicRead !== undefined || anthropicCreate !== undefined) {
-    return { cache_hit_tokens: anthropicRead || 0, cache_miss_tokens: anthropicCreate || 0 }
+    candidates.push({ cache_hit_tokens: anthropicRead ?? 0, cache_miss_tokens: anthropicCreate ?? 0 })
   }
 
   // OpenAI: prompt_tokens_details.cached_tokens
@@ -295,10 +300,12 @@ function extractCacheStats(rawUsage: Record<string, unknown>): { cache_hit_token
   if (details?.cached_tokens !== undefined) {
     const cached = details.cached_tokens as number
     const total = (rawUsage.prompt_tokens as number) || 0
-    return { cache_hit_tokens: cached, cache_miss_tokens: Math.max(0, total - cached) }
+    candidates.push({ cache_hit_tokens: cached, cache_miss_tokens: Math.max(0, total - cached) })
   }
 
-  return {}
+  if (candidates.length === 0) return {}
+  // 多个候选时优先取有实际数据（cache_hit > 0 或 cache_miss > 0）的
+  return candidates.find(c => c.cache_hit_tokens > 0 || c.cache_miss_tokens > 0) || candidates[0]
 }
 
 // === Anthropic Native API Adapter ===
@@ -515,11 +522,12 @@ function convertFromAnthropicResponse(resp: Record<string, unknown>): Record<str
   const finishReason = stopReason === 'tool_use' ? 'tool_calls'
     : stopReason === 'max_tokens' ? 'length' : 'stop'
 
-  const rawUsage = resp.usage as Record<string, number> | undefined
+  const rawUsage = resp.usage as Record<string, unknown> | undefined
   const usage = rawUsage ? {
-    prompt_tokens: rawUsage.input_tokens ?? 0,
-    completion_tokens: rawUsage.output_tokens ?? 0,
-    total_tokens: (rawUsage.input_tokens ?? 0) + (rawUsage.output_tokens ?? 0)
+    prompt_tokens: (rawUsage.input_tokens as number) ?? 0,
+    completion_tokens: (rawUsage.output_tokens as number) ?? 0,
+    total_tokens: ((rawUsage.input_tokens as number) ?? 0) + ((rawUsage.output_tokens as number) ?? 0),
+    ...extractCacheStats(rawUsage)
   } : undefined
 
   return { choices: [{ message, finish_reason: finishReason }], usage }
@@ -1110,11 +1118,18 @@ export class AiService {
       const toolNames = choice.message?.tool_calls?.map(tc => tc.function.name).join(', ') || ''
       log.info(`ChatWithTools done: model=${profile.model}, duration=${elapsed}s, finish=${choice.finish_reason}, tools=[${toolNames}]`)
 
+      const normalizedUsage = data.usage ? {
+        prompt_tokens: data.usage.prompt_tokens ?? 0,
+        completion_tokens: data.usage.completion_tokens ?? 0,
+        total_tokens: data.usage.total_tokens ?? 0,
+        ...extractCacheStats(data.usage)
+      } : undefined
+
       return {
         content: choice.message?.content || undefined,
         tool_calls: choice.message?.tool_calls,
         finish_reason: choice.finish_reason as ChatWithToolsResult['finish_reason'],
-        usage: data.usage
+        usage: normalizedUsage
       }
     }
 
@@ -1470,11 +1485,17 @@ export class AiService {
                     delta = json.choices?.[0]?.delta
                     reason = json.choices?.[0]?.finish_reason
                     if (json.usage) {
+                      const cacheStats = extractCacheStats(json.usage)
                       streamUsage = {
                         prompt_tokens: json.usage.prompt_tokens ?? 0,
                         completion_tokens: json.usage.completion_tokens ?? 0,
                         total_tokens: json.usage.total_tokens ?? 0,
-                        ...extractCacheStats(json.usage)
+                        ...cacheStats
+                      }
+                      const extraKeys = Object.keys(json.usage).filter(k => !['prompt_tokens', 'completion_tokens', 'total_tokens'].includes(k))
+                      if (extraKeys.length > 0) {
+                        const extraData = Object.fromEntries(extraKeys.map(k => [k, json.usage[k]]))
+                        log.info(`Stream usage details: ${JSON.stringify(extraData)}`)
                       }
                     }
                   } catch { continue }
@@ -1572,9 +1593,9 @@ export class AiService {
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
           const toolNames = toolCalls.map(tc => tc.function.name).join(', ')
           let usageStr = streamUsage ? `, tokens=${streamUsage.prompt_tokens}+${streamUsage.completion_tokens}=${streamUsage.total_tokens}` : ''
-          if (streamUsage?.cache_hit_tokens) {
+          if (streamUsage?.cache_hit_tokens !== undefined) {
             const hitRate = streamUsage.prompt_tokens > 0 ? Math.round(streamUsage.cache_hit_tokens / streamUsage.prompt_tokens * 100) : 0
-            usageStr += `, cache_hit=${streamUsage.cache_hit_tokens}(${hitRate}%)`
+            usageStr += `, cache=${streamUsage.cache_hit_tokens}/${streamUsage.cache_miss_tokens ?? '?'}(${hitRate}%hit)`
           }
           log.info(`Request done: model=${profile.model}, duration=${elapsed}s, finish=${finishReason || 'end'}, tools=[${toolNames}], contentLen=${(finalContent || '').length}${usageStr}`)
 
