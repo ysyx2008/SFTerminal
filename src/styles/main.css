@@ -436,6 +436,7 @@ html, body {
   background: transparent;
   border: none;
   border-radius: 8px;
+  color: inherit;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
