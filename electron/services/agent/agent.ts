@@ -2264,10 +2264,7 @@ export abstract class Agent {
    * 估算消息列表的总 token 数量
    */
   private estimateTotalTokens(messages: AiMessage[]): number {
-    // 每条消息有固定开销（role token、边界标记等），约 4 tokens
     const MESSAGE_OVERHEAD = 4
-    // 工具定义（函数名、描述、参数 schema）的固定开销，约 3000-5000 tokens
-    const TOOLS_OVERHEAD = 4000
     
     const messageTokens = messages.reduce((sum, msg) => {
       let tokens = this.estimateTokens(msg.content) + MESSAGE_OVERHEAD
@@ -2281,7 +2278,29 @@ export abstract class Agent {
       return sum + tokens
     }, 0)
     
-    return messageTokens + TOOLS_OVERHEAD
+    return messageTokens + this.estimateToolsTokens()
+  }
+
+  /** 缓存的工具列表 token 估算值（工具列表在会话内不变，避免重复计算） */
+  private _toolsTokensCache?: number
+
+  private estimateToolsTokens(): number {
+    if (this._toolsTokensCache !== undefined) return this._toolsTokensCache
+
+    try {
+      const tools = this.getAvailableTools()
+      let tokens = 0
+      for (const tool of tools) {
+        const fn = tool.function
+        tokens += this.estimateTokens(fn.name) + this.estimateTokens(fn.description)
+        tokens += this.estimateTokens(JSON.stringify(fn.parameters))
+        tokens += 10  // 结构开销（type, required 等固定 token）
+      }
+      this._toolsTokensCache = tokens
+      return tokens
+    } catch {
+      return 4000
+    }
   }
   
   /** 上下文管理功能激活阈值（用量百分比） */
