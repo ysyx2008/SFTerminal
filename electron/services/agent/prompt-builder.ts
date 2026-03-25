@@ -269,11 +269,13 @@ export class PromptBuilder {
       this.buildKnowledgeContext(),
       getUserSkillService().buildSkillsSummary(),
       this.buildTaskMemorySection(),
-      // 缓存分隔符：以上为稳定内容（任务内不变），以下为动态内容（每次请求可能变化）
-      // Anthropic 适配器按此标记拆分系统提示，对稳定部分启用 cache_control
-      // DeepSeek/OpenAI 的自动前缀缓存天然匹配到此标记之前的公共前缀
-      CACHE_BREAK_MARKER,
-      this.buildDynamicContext(),
+      // [缓存优化] 以下动态内容已禁用，以最大化 DeepSeek/OpenAI/Anthropic 的前缀缓存命中率。
+      // 系统提示词中的任何动态内容（当前时间、token 用量）都会破坏整个前缀缓存，
+      // 导致系统提示 + 历史消息（可能数万 tokens）全部缓存未命中。
+      // AI 需要时间时可通过执行 date 命令获取；上下文压力由 85% 警告消息兜底。
+      // 如需恢复：取消注释下面两行，并取消 agent.ts updateContextPressure 中的系统提示词注入。
+      // CACHE_BREAK_MARKER,
+      // this.buildDynamicContext(),
     )
 
     return sections.filter(Boolean).join('\n\n')

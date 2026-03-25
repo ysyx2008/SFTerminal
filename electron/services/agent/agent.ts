@@ -2284,9 +2284,9 @@ export abstract class Agent {
   /** 上下文管理功能激活阈值（用量百分比） */
   private static readonly CONTEXT_MGMT_THRESHOLD = 50
 
-  /** 动态章节的标题（用于在系统提示词中按 markdown 章节定位和替换） */
-  private static readonly CONTEXT_MGMT_HEADING = '\n\n## 运行环境'
-  private static readonly CONTEXT_STATUS_HEADING = '\n\n## 上下文状态'
+  // [缓存优化] 动态章节标题已禁用，见 updateContextPressure 中的注释
+  // private static readonly CONTEXT_MGMT_HEADING = '\n\n## 运行环境'
+  // private static readonly CONTEXT_STATUS_HEADING = '\n\n## 上下文状态'
 
   /**
    * 更新上下文压力状态：注入上下文状态 + 渐进式提醒
@@ -2316,54 +2316,43 @@ export abstract class Agent {
       }
     }
 
-    // 统计当前任务的消息数（user 消息之后的消息）
-    let taskMessageCount = 0
-    for (let i = run.messages.length - 1; i >= 0; i--) {
-      if (run.messages[i].role === 'user') break
-      taskMessageCount++
-    }
-
     // 超过阈值时激活上下文管理功能（一旦激活不会关闭，因为压缩后用量可能降低）
     if (!this.contextManagementEnabled && usagePercent >= Agent.CONTEXT_MGMT_THRESHOLD) {
       this.contextManagementEnabled = true
     }
 
-    // 构建上下文状态章节
-    const statusLines = [
-      '## 上下文状态',
-      `- 上下文窗口：${contextLength.toLocaleString()} tokens`,
-      `- 当前用量：~${totalTokens.toLocaleString()} tokens（${usagePercent}%）`,
-      `- 剩余容量：~${remaining.toLocaleString()} tokens`,
-      `- 当前任务消息数：${taskMessageCount}`,
-    ]
-
-    // 渐进式提醒
-    if (usagePercent >= 85) {
-      statusLines.push(`- ⚠️ 警告：上下文用量已达危险水平，请立即调用 compress_context 压缩较早的对话，否则下次请求可能因超出模型上下文限制而失败。`)
-    } else if (usagePercent >= 70) {
-      statusLines.push(`- 建议：上下文空间开始紧张，考虑调用 compress_context 压缩较早的对话以释放空间。`)
-    }
-
-    // 按 markdown 章节标题定位并替换动态尾部
-    if (run.messages.length > 0 && run.messages[0].role === 'system') {
-      const systemContent = run.messages[0].content || ''
-
-      // 找到最早的动态章节位置（运行环境 或 上下文状态），从该位置截断
-      const mgmtIdx = systemContent.indexOf(Agent.CONTEXT_MGMT_HEADING)
-      const statusIdx = systemContent.indexOf(Agent.CONTEXT_STATUS_HEADING)
-      const cutPoints = [mgmtIdx, statusIdx].filter(i => i !== -1)
-      const cutPoint = cutPoints.length > 0 ? Math.min(...cutPoints) : -1
-
-      let content = cutPoint !== -1 ? systemContent.substring(0, cutPoint) : systemContent
-
-      // 上下文管理章节（超过阈值时追加）
-      if (this.contextManagementEnabled) {
-        content += PromptBuilder.buildContextManagementSection()
-        content += '\n\n' + statusLines.join('\n')
-      }
-
-      run.messages[0].content = content
-    }
+    // [缓存优化] 以下「上下文状态注入系统提示词」已禁用。
+    // 每轮 ReAct 循环中 token 用量数字都会变化，注入到系统提示词会破坏
+    // DeepSeek/OpenAI/Anthropic 的前缀缓存（系统提示在所有历史消息之前，
+    // 一旦变化会导致后续数万 tokens 的历史消息全部缓存未命中）。
+    // 上下文压力由 85% 警告消息（注入到 messages 末尾）兜底。
+    // 如需恢复：取消以下注释，并取消 prompt-builder.ts build() 中的 CACHE_BREAK_MARKER。
+    //
+    // const statusLines = [
+    //   '## 上下文状态',
+    //   `- 上下文窗口：${contextLength.toLocaleString()} tokens`,
+    //   `- 当前用量：~${totalTokens.toLocaleString()} tokens（${usagePercent}%）`,
+    //   `- 剩余容量：~${remaining.toLocaleString()} tokens`,
+    //   `- 当前任务消息数：${taskMessageCount}`,
+    // ]
+    // if (usagePercent >= 85) {
+    //   statusLines.push(`- ⚠️ 警告：...`)
+    // } else if (usagePercent >= 70) {
+    //   statusLines.push(`- 建议：...`)
+    // }
+    // if (run.messages.length > 0 && run.messages[0].role === 'system') {
+    //   const systemContent = run.messages[0].content || ''
+    //   const mgmtIdx = systemContent.indexOf(Agent.CONTEXT_MGMT_HEADING)
+    //   const statusIdx = systemContent.indexOf(Agent.CONTEXT_STATUS_HEADING)
+    //   const cutPoints = [mgmtIdx, statusIdx].filter(i => i !== -1)
+    //   const cutPoint = cutPoints.length > 0 ? Math.min(...cutPoints) : -1
+    //   let content = cutPoint !== -1 ? systemContent.substring(0, cutPoint) : systemContent
+    //   if (this.contextManagementEnabled) {
+    //     content += PromptBuilder.buildContextManagementSection()
+    //     content += '\n\n' + statusLines.join('\n')
+    //   }
+    //   run.messages[0].content = content
+    // }
 
     // 85%+ 额外注入警告消息（避免重复注入）
     if (usagePercent >= 85) {
