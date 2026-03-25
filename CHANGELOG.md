@@ -2,7 +2,25 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.25.0 (2026-03-24) (Latest)
+## v10.26.0 (2026-03-25) (Latest)
+
+Dramatically reduces AI API costs through prompt caching optimization across DeepSeek, OpenAI, and Anthropic — input token costs drop by 70–90% for typical Agent tasks. Also adds precise token usage tracking from API responses and a new Token Usage Statistics panel in Settings.
+
+### New Features
+- 📊 **Token Usage Statistics**: New panel in Settings > Data showing total, today, 7-day, and 30-day token usage breakdown with daily detail view
+- 📈 **Precise Token Tracking**: Token usage is now extracted directly from LLM API responses instead of heuristic estimation, with cache hit/miss statistics logged per request
+
+### Improvements
+- 💰 **Prompt Caching Optimization**: System prompt sections reordered by cache-friendliness (stable globals → per-terminal → per-task) to maximize prefix cache sharing across concurrent agents and ReAct loops; dynamic content (current time, context usage) removed from system prompt to avoid cache invalidation
+- 🔧 **Anthropic Explicit Caching**: Added `cache_control` markers and beta header for Anthropic's prompt caching API, enabling cache hits on system prompt and tool definitions
+- ⚡ **Context Pressure Bar Accuracy**: Pressure bar now shows only precise API-reported values; refreshes immediately after each API response instead of with a one-step delay
+- ✏️ **Tool Renaming**: `write_local_file` → `write_text_file`, `write_remote_file` → `write_remote_text_file` for clearer semantics
+- 🌐 **Website**: Added Windows portable ZIP download option on the download page
+
+### Bug Fixes
+- 🔌 **Bastion HTTP Error Handling**: Simplified error handling to use response headers instead of reading body, fixing edge cases with non-JSON error responses
+
+## v10.25.0 (2026-03-24)
 
 Adds a Windows portable ZIP build for legacy environments, implements email attachment downloads in the Agent email skill, and improves JumpServer bastion TLS handling with an optional SSL verification bypass.
 
