@@ -1160,11 +1160,11 @@ const electronAPI = {
 
     // 获取 Token 用量统计
     getTokenUsageStats: () => ipcRenderer.invoke('history:getTokenUsageStats') as Promise<{
-      total: { prompt_tokens: number; completion_tokens: number; total_tokens: number; taskCount: number }
-      today: { prompt_tokens: number; completion_tokens: number; total_tokens: number; taskCount: number }
-      last7Days: { prompt_tokens: number; completion_tokens: number; total_tokens: number; taskCount: number }
-      last30Days: { prompt_tokens: number; completion_tokens: number; total_tokens: number; taskCount: number }
-      daily: Array<{ date: string; prompt_tokens: number; completion_tokens: number; total_tokens: number; taskCount: number }>
+      total: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cache_hit_tokens: number; cache_miss_tokens: number; taskCount: number }
+      today: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cache_hit_tokens: number; cache_miss_tokens: number; taskCount: number }
+      last7Days: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cache_hit_tokens: number; cache_miss_tokens: number; taskCount: number }
+      last30Days: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cache_hit_tokens: number; cache_miss_tokens: number; taskCount: number }
+      daily: Array<{ date: string; prompt_tokens: number; completion_tokens: number; total_tokens: number; cache_hit_tokens: number; cache_miss_tokens: number; taskCount: number }>
     }>,
 
     // 清理旧记录

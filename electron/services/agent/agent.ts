@@ -1580,13 +1580,22 @@ export abstract class Agent {
             run.tokenUsage.prompt_tokens += result.usage.prompt_tokens
             run.tokenUsage.completion_tokens += result.usage.completion_tokens
             run.tokenUsage.total_tokens += result.usage.total_tokens
+            if (result.usage.cache_hit_tokens) {
+              run.tokenUsage.cache_hit_tokens = (run.tokenUsage.cache_hit_tokens || 0) + result.usage.cache_hit_tokens
+            }
+            if (result.usage.cache_miss_tokens) {
+              run.tokenUsage.cache_miss_tokens = (run.tokenUsage.cache_miss_tokens || 0) + result.usage.cache_miss_tokens
+            }
             this._lastPromptTokens = result.usage.prompt_tokens
 
-            // 立即将真实 prompt_tokens 推送到前端，避免显示延迟一步
+            // 立即将真实数据推送到前端
             const steps = this.currentRun?.steps
             if (steps && steps.length > 0) {
               const lastStep = steps[steps.length - 1]
               lastStep.contextTokens = result.usage.prompt_tokens
+              if (result.usage.cache_hit_tokens !== undefined && result.usage.prompt_tokens > 0) {
+                lastStep.cacheHitRate = Math.round(result.usage.cache_hit_tokens / result.usage.prompt_tokens * 100)
+              }
               this.callbacks?.onStep?.(this.currentRun?.id || '', lastStep)
             }
           }

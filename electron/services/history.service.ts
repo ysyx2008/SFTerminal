@@ -40,6 +40,8 @@ export interface TokenUsagePeriodStats {
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number
+  cache_hit_tokens: number
+  cache_miss_tokens: number
   taskCount: number
 }
 
@@ -585,7 +587,8 @@ export class HistoryService {
     const day30Ago = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).getTime()
 
     const emptyPeriod = (): TokenUsagePeriodStats => ({
-      prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, taskCount: 0
+      prompt_tokens: 0, completion_tokens: 0, total_tokens: 0,
+      cache_hit_tokens: 0, cache_miss_tokens: 0, taskCount: 0
     })
 
     const total = emptyPeriod()
@@ -602,6 +605,8 @@ export class HistoryService {
         target.prompt_tokens += usage.prompt_tokens
         target.completion_tokens += usage.completion_tokens
         target.total_tokens += usage.total_tokens
+        target.cache_hit_tokens += usage.cache_hit_tokens || 0
+        target.cache_miss_tokens += usage.cache_miss_tokens || 0
         target.taskCount++
       }
 

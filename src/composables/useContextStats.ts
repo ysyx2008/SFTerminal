@@ -32,6 +32,8 @@ export interface ContextStatsResult {
   tokenEstimate: number
   maxTokens: number
   percentage: number
+  /** 最近一次 API 调用的缓存命中率（0-100），undefined 表示无数据 */
+  cacheHitRate?: number
 }
 
 export function useContextStats(
@@ -62,15 +64,16 @@ export function useContextStats(
     // Agent 模式：优先使用后端返回的 contextTokens
     const allSteps = agentState.value?.steps || []
     
-    // 从最新的步骤中获取后端计算的 contextTokens
+    // 从最新的步骤中获取后端返回的 contextTokens 和 cacheHitRate
+    let cacheHitRate: number | undefined
     for (let i = allSteps.length - 1; i >= 0; i--) {
-      if (allSteps[i].contextTokens !== undefined) {
-        totalTokens = allSteps[i].contextTokens!
+      const step = allSteps[i]
+      if (step.contextTokens !== undefined) {
+        totalTokens = step.contextTokens!
+        cacheHitRate = step.cacheHitRate
         break
       }
     }
-    
-    // 后端未返回精确数据时不估算，等待 API 响应后的真实值
     
     messageCount = allSteps.length
     
@@ -80,7 +83,8 @@ export function useContextStats(
       messageCount,
       tokenEstimate: totalTokens,
       maxTokens,
-      percentage: Math.min(100, Math.round((totalTokens / maxTokens) * 100))
+      percentage: Math.min(100, Math.round((totalTokens / maxTokens) * 100)),
+      cacheHitRate
     }
   })
 

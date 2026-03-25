@@ -1797,7 +1797,7 @@ onUnmounted(() => {
             :style="{ width: contextStats.percentage + '%' }"
           ></div>
           <span class="context-mini-tip">
-            {{ t('ai.context') }}: {{ contextStats.tokenEstimate.toLocaleString() }} / {{ (contextStats.maxTokens / 1000).toFixed(0) }}K ({{ contextStats.percentage }}%)
+            {{ t('ai.context') }}: {{ contextStats.tokenEstimate.toLocaleString() }} / {{ (contextStats.maxTokens / 1000).toFixed(0) }}K ({{ contextStats.percentage }}%)<template v-if="contextStats.cacheHitRate !== undefined"> · Cache {{ contextStats.cacheHitRate }}%</template>
           </span>
         </div>
         <!-- 图片预览区域 -->

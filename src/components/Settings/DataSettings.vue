@@ -178,6 +178,8 @@ interface TokenPeriodStats {
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number
+  cache_hit_tokens: number
+  cache_miss_tokens: number
   taskCount: number
 }
 
@@ -209,6 +211,12 @@ const formatTokenCount = (count: number): string => {
 const hasTokenData = computed(() => {
   return tokenUsageStats.value && tokenUsageStats.value.total.total_tokens > 0
 })
+
+const getCacheHitRate = (stats: TokenPeriodStats): number | null => {
+  if (stats.cache_hit_tokens === 0 && stats.cache_miss_tokens === 0) return null
+  if (stats.prompt_tokens === 0) return null
+  return Math.round(stats.cache_hit_tokens / stats.prompt_tokens * 100)
+}
 
 // 加载存储统计
 const loadStorageStats = async () => {
@@ -369,48 +377,21 @@ onUnmounted(() => {
       <div v-if="tokenUsageStats && hasTokenData" class="token-usage-section">
         <!-- 时段卡片 -->
         <div class="token-period-grid">
-          <div class="token-period-card">
+          <div v-for="period in [
+            { key: 'today', data: tokenUsageStats.today, iconClass: 'today' },
+            { key: 'last7Days', data: tokenUsageStats.last7Days, iconClass: 'week' },
+            { key: 'last30Days', data: tokenUsageStats.last30Days, iconClass: 'month' },
+            { key: 'total', data: tokenUsageStats.total, iconClass: 'total' },
+          ]" :key="period.key" :class="['token-period-card', { total: period.key === 'total' }]">
             <div class="token-period-header">
-              <span class="token-period-label">{{ t('dataSettings.tokenToday') }}</span>
-              <Zap :size="14" class="token-period-icon today" />
+              <span class="token-period-label">{{ t(`dataSettings.token${period.key.charAt(0).toUpperCase() + period.key.slice(1)}`) }}</span>
+              <component :is="period.key === 'total' ? Coins : Zap" :size="14" :class="['token-period-icon', period.iconClass]" />
             </div>
-            <div class="token-period-value">{{ formatTokenCount(tokenUsageStats.today.total_tokens) }}</div>
+            <div class="token-period-value">{{ formatTokenCount(period.data.total_tokens) }}</div>
             <div class="token-period-detail">
-              <span class="token-in"><ArrowUpRight :size="10" /> {{ formatTokenCount(tokenUsageStats.today.prompt_tokens) }}</span>
-              <span class="token-out"><ArrowDownLeft :size="10" /> {{ formatTokenCount(tokenUsageStats.today.completion_tokens) }}</span>
-            </div>
-          </div>
-          <div class="token-period-card">
-            <div class="token-period-header">
-              <span class="token-period-label">{{ t('dataSettings.tokenLast7Days') }}</span>
-              <Zap :size="14" class="token-period-icon week" />
-            </div>
-            <div class="token-period-value">{{ formatTokenCount(tokenUsageStats.last7Days.total_tokens) }}</div>
-            <div class="token-period-detail">
-              <span class="token-in"><ArrowUpRight :size="10" /> {{ formatTokenCount(tokenUsageStats.last7Days.prompt_tokens) }}</span>
-              <span class="token-out"><ArrowDownLeft :size="10" /> {{ formatTokenCount(tokenUsageStats.last7Days.completion_tokens) }}</span>
-            </div>
-          </div>
-          <div class="token-period-card">
-            <div class="token-period-header">
-              <span class="token-period-label">{{ t('dataSettings.tokenLast30Days') }}</span>
-              <Zap :size="14" class="token-period-icon month" />
-            </div>
-            <div class="token-period-value">{{ formatTokenCount(tokenUsageStats.last30Days.total_tokens) }}</div>
-            <div class="token-period-detail">
-              <span class="token-in"><ArrowUpRight :size="10" /> {{ formatTokenCount(tokenUsageStats.last30Days.prompt_tokens) }}</span>
-              <span class="token-out"><ArrowDownLeft :size="10" /> {{ formatTokenCount(tokenUsageStats.last30Days.completion_tokens) }}</span>
-            </div>
-          </div>
-          <div class="token-period-card total">
-            <div class="token-period-header">
-              <span class="token-period-label">{{ t('dataSettings.tokenTotal') }}</span>
-              <Coins :size="14" class="token-period-icon total" />
-            </div>
-            <div class="token-period-value">{{ formatTokenCount(tokenUsageStats.total.total_tokens) }}</div>
-            <div class="token-period-detail">
-              <span class="token-in"><ArrowUpRight :size="10" /> {{ formatTokenCount(tokenUsageStats.total.prompt_tokens) }}</span>
-              <span class="token-out"><ArrowDownLeft :size="10" /> {{ formatTokenCount(tokenUsageStats.total.completion_tokens) }}</span>
+              <span class="token-in"><ArrowUpRight :size="10" /> {{ formatTokenCount(period.data.prompt_tokens) }}</span>
+              <span class="token-out"><ArrowDownLeft :size="10" /> {{ formatTokenCount(period.data.completion_tokens) }}</span>
+              <span v-if="getCacheHitRate(period.data) !== null" class="token-cache">Cache {{ getCacheHitRate(period.data) }}%</span>
             </div>
           </div>
         </div>
@@ -432,6 +413,7 @@ onUnmounted(() => {
                     <th class="num">{{ t('dataSettings.tokenInput') }}</th>
                     <th class="num">{{ t('dataSettings.tokenOutput') }}</th>
                     <th class="num">{{ t('dataSettings.tokenTotalCol') }}</th>
+                    <th class="num">Cache</th>
                     <th class="num">{{ t('dataSettings.tokenTaskCount') }}</th>
                   </tr>
                 </thead>
@@ -441,6 +423,7 @@ onUnmounted(() => {
                     <td class="num">{{ formatTokenCount(day.prompt_tokens) }}</td>
                     <td class="num">{{ formatTokenCount(day.completion_tokens) }}</td>
                     <td class="num total-cell">{{ formatTokenCount(day.total_tokens) }}</td>
+                    <td class="num cache-cell">{{ getCacheHitRate(day) !== null ? getCacheHitRate(day) + '%' : '-' }}</td>
                     <td class="num">{{ day.taskCount }}</td>
                   </tr>
                 </tbody>
@@ -1119,6 +1102,12 @@ onUnmounted(() => {
   color: var(--text-muted);
 }
 
+.token-cache {
+  font-size: 10px;
+  color: #10b981;
+  margin-left: auto;
+}
+
 .token-empty {
   display: flex;
   flex-direction: column;
@@ -1174,6 +1163,10 @@ onUnmounted(() => {
 
 .token-daily-table td.total-cell {
   font-weight: 600;
+}
+
+.token-daily-table td.cache-cell {
+  color: #10b981;
 }
 
 .token-daily-table tbody tr:hover {

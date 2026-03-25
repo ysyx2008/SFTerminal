@@ -19,6 +19,8 @@ export interface TokenUsage {
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number
+  cache_hit_tokens?: number
+  cache_miss_tokens?: number
 }
 
 export type PlanStepStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped'
@@ -82,6 +84,8 @@ export interface AgentStep {
   plan?: AgentPlan
   progress?: StepProgress
   contextTokens?: number
+  /** 本次 API 调用的缓存命中率（0-100），由后端计算后推送 */
+  cacheHitRate?: number
 }
 
 /**
