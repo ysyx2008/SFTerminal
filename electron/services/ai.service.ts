@@ -133,12 +133,21 @@ export interface ToolCall {
   }
 }
 
+export interface TokenUsageInfo {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  // 缓存统计（各家字段不同，统一归一化）
+  cache_hit_tokens?: number   // 缓存命中的输入 token 数
+  cache_miss_tokens?: number  // 缓存未命中的输入 token 数
+}
+
 export interface ChatWithToolsResult {
   content?: string
   tool_calls?: ToolCall[]
   finish_reason?: 'stop' | 'tool_calls' | 'length'
   reasoning_content?: string  // think 模型的思考内容
-  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+  usage?: TokenUsageInfo
 }
 
 export type { AiModelType } from './config.service'
@@ -262,6 +271,36 @@ function formatMessageForApi(msg: AiMessage, stripImages = false): Record<string
   }
 }
 
+/**
+ * 从 API 返回的 usage 对象中提取缓存统计信息
+ * 各家格式不同，统一归一化为 cache_hit_tokens / cache_miss_tokens
+ */
+function extractCacheStats(rawUsage: Record<string, unknown>): { cache_hit_tokens?: number; cache_miss_tokens?: number } {
+  // DeepSeek: prompt_cache_hit_tokens / prompt_cache_miss_tokens
+  const dsHit = rawUsage.prompt_cache_hit_tokens as number | undefined
+  const dsMiss = rawUsage.prompt_cache_miss_tokens as number | undefined
+  if (dsHit !== undefined || dsMiss !== undefined) {
+    return { cache_hit_tokens: dsHit || 0, cache_miss_tokens: dsMiss || 0 }
+  }
+
+  // Anthropic: cache_read_input_tokens / cache_creation_input_tokens
+  const anthropicRead = rawUsage.cache_read_input_tokens as number | undefined
+  const anthropicCreate = rawUsage.cache_creation_input_tokens as number | undefined
+  if (anthropicRead !== undefined || anthropicCreate !== undefined) {
+    return { cache_hit_tokens: anthropicRead || 0, cache_miss_tokens: anthropicCreate || 0 }
+  }
+
+  // OpenAI: prompt_tokens_details.cached_tokens
+  const details = rawUsage.prompt_tokens_details as Record<string, unknown> | undefined
+  if (details?.cached_tokens !== undefined) {
+    const cached = details.cached_tokens as number
+    const total = (rawUsage.prompt_tokens as number) || 0
+    return { cache_hit_tokens: cached, cache_miss_tokens: Math.max(0, total - cached) }
+  }
+
+  return {}
+}
+
 // === Anthropic Native API Adapter ===
 
 function isAnthropicApi(profile: { apiUrl: string; apiFormat?: string }): boolean {
@@ -286,7 +325,8 @@ function getRequestHeaders(profile: AiProfile): Record<string, string> {
     return {
       'Content-Type': 'application/json',
       'x-api-key': profile.apiKey,
-      'anthropic-version': '2023-06-01'
+      'anthropic-version': '2023-06-01',
+      'anthropic-beta': 'prompt-caching-2024-07-31'
     }
   }
   return {
@@ -388,17 +428,42 @@ function convertToAnthropicBody(body: Record<string, unknown>): Record<string, u
     max_tokens: body.max_tokens || 4096,
     messages
   }
-  if (system) result.system = system
+  if (system) {
+    // Anthropic prompt caching: 将系统提示拆分为稳定部分（缓存）和动态部分
+    // 缓存断点 1/4：系统提示的稳定前缀
+    const CACHE_BREAK = '<!-- CACHE_BREAK -->'
+    const breakIdx = system.indexOf(CACHE_BREAK)
+    if (breakIdx !== -1) {
+      const stablePart = system.substring(0, breakIdx).trim()
+      const dynamicPart = system.substring(breakIdx + CACHE_BREAK.length).trim()
+      const blocks: Array<Record<string, unknown>> = []
+      if (stablePart) {
+        blocks.push({ type: 'text', text: stablePart, cache_control: { type: 'ephemeral' } })
+      }
+      if (dynamicPart) {
+        blocks.push({ type: 'text', text: dynamicPart })
+      }
+      result.system = blocks
+    } else {
+      // 没有分隔符时，整个系统提示标记为缓存
+      result.system = [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }]
+    }
+  }
   if (body.temperature !== undefined) result.temperature = body.temperature
   if (body.stream) result.stream = true
 
   const tools = body.tools as ToolDefinition[] | undefined
   if (tools && tools.length > 0) {
-    result.tools = tools.map(td => ({
+    const anthropicTools = tools.map(td => ({
       name: td.function.name,
       description: td.function.description,
       input_schema: td.function.parameters
     }))
+    // 缓存断点 2/4：工具定义列表（会话内稳定不变）
+    if (anthropicTools.length > 0) {
+      (anthropicTools[anthropicTools.length - 1] as Record<string, unknown>).cache_control = { type: 'ephemeral' }
+    }
+    result.tools = anthropicTools
     if (body.tool_choice === 'auto') {
       result.tool_choice = { type: 'auto' }
     } else if (body.tool_choice === 'none') {
@@ -467,6 +532,7 @@ interface AnthropicStreamDelta {
   finish_reason?: string
   done?: boolean
   usage?: { input_tokens?: number; output_tokens?: number }
+  rawUsage?: Record<string, unknown>
 }
 
 function parseAnthropicStreamEvent(data: string): AnthropicStreamDelta | null {
@@ -502,8 +568,8 @@ function parseAnthropicStreamEvent(data: string): AnthropicStreamDelta | null {
       }
       case 'message_start': {
         const msg = json.message as Record<string, unknown>
-        const u = msg?.usage as Record<string, number> | undefined
-        if (u?.input_tokens) return { usage: { input_tokens: u.input_tokens } }
+        const u = msg?.usage as Record<string, unknown> | undefined
+        if (u?.input_tokens) return { usage: { input_tokens: u.input_tokens as number }, rawUsage: u }
         return null
       }
       case 'message_delta': {
@@ -1389,6 +1455,11 @@ export class AiService {
                   if (event.usage.input_tokens) streamUsage.prompt_tokens = event.usage.input_tokens
                   if (event.usage.output_tokens) streamUsage.completion_tokens = event.usage.output_tokens
                   streamUsage.total_tokens = streamUsage.prompt_tokens + streamUsage.completion_tokens
+                  if (event.rawUsage) {
+                    const cacheStats = extractCacheStats(event.rawUsage)
+                    if (cacheStats.cache_hit_tokens !== undefined) streamUsage.cache_hit_tokens = cacheStats.cache_hit_tokens
+                    if (cacheStats.cache_miss_tokens !== undefined) streamUsage.cache_miss_tokens = cacheStats.cache_miss_tokens
+                  }
                 }
               } else {
                 if (data === '[DONE]') {
@@ -1402,7 +1473,8 @@ export class AiService {
                       streamUsage = {
                         prompt_tokens: json.usage.prompt_tokens ?? 0,
                         completion_tokens: json.usage.completion_tokens ?? 0,
-                        total_tokens: json.usage.total_tokens ?? 0
+                        total_tokens: json.usage.total_tokens ?? 0,
+                        ...extractCacheStats(json.usage)
                       }
                     }
                   } catch { continue }
@@ -1499,7 +1571,11 @@ export class AiService {
 
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
           const toolNames = toolCalls.map(tc => tc.function.name).join(', ')
-          const usageStr = streamUsage ? `, tokens=${streamUsage.prompt_tokens}+${streamUsage.completion_tokens}=${streamUsage.total_tokens}` : ''
+          let usageStr = streamUsage ? `, tokens=${streamUsage.prompt_tokens}+${streamUsage.completion_tokens}=${streamUsage.total_tokens}` : ''
+          if (streamUsage?.cache_hit_tokens) {
+            const hitRate = streamUsage.prompt_tokens > 0 ? Math.round(streamUsage.cache_hit_tokens / streamUsage.prompt_tokens * 100) : 0
+            usageStr += `, cache_hit=${streamUsage.cache_hit_tokens}(${hitRate}%)`
+          }
           log.info(`Request done: model=${profile.model}, duration=${elapsed}s, finish=${finishReason || 'end'}, tools=[${toolNames}], contentLen=${(finalContent || '').length}${usageStr}`)
 
           // AI Debug: 记录响应完成（包含工具调用）

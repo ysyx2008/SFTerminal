@@ -18,6 +18,13 @@ import { t } from './i18n'
 const log = createLogger('PromptBuilder')
 const IDENTITY_FILENAME = 'IDENTITY.md'
 const SOUL_FILENAME = 'SOUL.md'
+
+/**
+ * 缓存分隔符：分隔系统提示词中的稳定内容和动态内容
+ * - Anthropic 适配器按此标记拆分，对稳定部分启用 prompt caching
+ * - DeepSeek/OpenAI 自动前缀缓存天然匹配到此标记之前的公共前缀
+ */
+export const CACHE_BREAK_MARKER = '<!-- CACHE_BREAK -->'
 const HEARTBEAT_FILENAME = 'HEARTBEAT.md'
 
 function readWorkspaceFile(filename: string): string {
@@ -262,6 +269,11 @@ export class PromptBuilder {
       this.buildKnowledgeContext(),
       getUserSkillService().buildSkillsSummary(),
       this.buildTaskMemorySection(),
+      // 缓存分隔符：以上为稳定内容（任务内不变），以下为动态内容（每次请求可能变化）
+      // Anthropic 适配器按此标记拆分系统提示，对稳定部分启用 cache_control
+      // DeepSeek/OpenAI 的自动前缀缓存天然匹配到此标记之前的公共前缀
+      CACHE_BREAK_MARKER,
+      this.buildDynamicContext(),
     )
 
     return sections.filter(Boolean).join('\n\n')
@@ -339,6 +351,31 @@ export class PromptBuilder {
 
   private buildIdentitySection(): string {
     const displayName = this.agentName?.trim() || '旗鱼（SailFish）AI Agent'
+    const cwdLine = this.context.cwd
+      ? this.isAssistant
+        ? `命令默认执行目录：${this.context.cwd}`
+        : `当前工作目录：${this.context.cwd}（系统实时获取，无需执行 pwd 验证）`
+      : '当前工作目录：未成功获取'
+
+    const identity = readIdentityFile()
+    const lines = [
+      `你是${displayName}，一个能帮助用户完成各类任务的智能助手。`,
+      cwdLine,
+    ]
+    if (identity) {
+      lines.push('', identity)
+    }
+    return lines.join('\n')
+  }
+
+  /**
+   * 动态上下文（放在系统提示词末尾，避免破坏前缀缓存）
+   *
+   * DeepSeek/OpenAI 的自动前缀缓存按 token 序列匹配公共前缀，
+   * 任何动态内容（如当前时间）如果出现在前面，会导致后续所有
+   * 稳定内容的缓存全部失效。将动态内容集中到末尾可最大化缓存命中。
+   */
+  private buildDynamicContext(): string {
     const now = new Date()
     const currentTime = now.toLocaleString('zh-CN', {
       year: 'numeric',
@@ -349,22 +386,7 @@ export class PromptBuilder {
       minute: '2-digit',
       hour12: false
     })
-    const cwdLine = this.context.cwd
-      ? this.isAssistant
-        ? `命令默认执行目录：${this.context.cwd}`
-        : `当前工作目录：${this.context.cwd}（系统实时获取，无需执行 pwd 验证）`
-      : '当前工作目录：未成功获取'
-
-    const identity = readIdentityFile()
-    const lines = [
-      `你是${displayName}，一个能帮助用户完成各类任务的智能助手。`,
-      `当前时间：${currentTime}`,
-      cwdLine,
-    ]
-    if (identity) {
-      lines.push('', identity)
-    }
-    return lines.join('\n')
+    return `当前时间：${currentTime}`
   }
 
   private buildSoulSection(): string {
