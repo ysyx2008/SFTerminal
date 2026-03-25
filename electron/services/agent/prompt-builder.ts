@@ -243,6 +243,13 @@ export class PromptBuilder {
   build(): string {
     this.computeDerivedState()
 
+    // [缓存优化] sections 按缓存友好度分三层排列，最大化前缀缓存共享：
+    //   Tier 1 — 全局稳定：所有终端/Agent 共享（身份、规则、技能列表）
+    //   Tier 2 — 终端级：同一终端内稳定（主机环境、CWD、IM 通道）
+    //   Tier 3 — 任务级：同一任务 ReAct 循环内稳定（知识、历史、Watch）
+    // 同 API Key 下多个 Agent 并发时，Tier 1 的公共前缀可被所有请求共享缓存。
+
+    // ── Tier 1: 全局稳定 ──
     const sections = [
       this.buildLanguageRule(),
       this.buildIdentitySection(),
@@ -258,20 +265,22 @@ export class PromptBuilder {
 
     sections.push(
       this.buildUserRulesSection(),
-      this.buildHostEnvironment(),
       this.buildWorkspaceRule(),
+      this.buildCoreRules(),
+      getUserSkillService().buildSkillsSummary(),
+
+      // ── Tier 2: 终端/主机级 ──
+      this.buildHostEnvironment(),
+      this.buildRemoteChannelContext(),
+
+      // ── Tier 3: 任务级 ──
       this.buildKnowledgeDocSection(),
       this.buildConversationHistorySection(),
-      this.buildRemoteChannelContext(),
       this.buildWatchListSection(),
       this.buildSkillsContentSection(),
-      this.buildCoreRules(),
       this.buildKnowledgeContext(),
-      getUserSkillService().buildSkillsSummary(),
       this.buildTaskMemorySection(),
-      // [缓存优化] 以下动态内容已禁用，以最大化 DeepSeek/OpenAI/Anthropic 的前缀缓存命中率。
-      // 系统提示词中的任何动态内容（当前时间、token 用量）都会破坏整个前缀缓存，
-      // 导致系统提示 + 历史消息（可能数万 tokens）全部缓存未命中。
+      // [缓存优化] 动态内容（当前时间、token 用量）已禁用。
       // AI 需要时间时可通过执行 date 命令获取；上下文压力由 85% 警告消息兜底。
       // 如需恢复：取消注释下面两行，并取消 agent.ts updateContextPressure 中的系统提示词注入。
       // CACHE_BREAK_MARKER,
@@ -353,16 +362,9 @@ export class PromptBuilder {
 
   private buildIdentitySection(): string {
     const displayName = this.agentName?.trim() || '旗鱼（SailFish）AI Agent'
-    const cwdLine = this.context.cwd
-      ? this.isAssistant
-        ? `命令默认执行目录：${this.context.cwd}`
-        : `当前工作目录：${this.context.cwd}（系统实时获取，无需执行 pwd 验证）`
-      : '当前工作目录：未成功获取'
-
     const identity = readIdentityFile()
     const lines = [
       `你是${displayName}，一个能帮助用户完成各类任务的智能助手。`,
-      cwdLine,
     ]
     if (identity) {
       lines.push('', identity)
@@ -435,6 +437,12 @@ export class PromptBuilder {
       ? this.hostProfileService.getProfile(hostId)
       : null
 
+    const cwdLine = this.context.cwd
+      ? this.isAssistant
+        ? `命令默认执行目录：${this.context.cwd}`
+        : `当前工作目录：${this.context.cwd}（系统实时获取，无需执行 pwd 验证）`
+      : '当前工作目录：未成功获取'
+
     if (this.isAssistant) {
       const lines: string[] = [
         `- 操作系统: ${this.osType}`,
@@ -442,6 +450,7 @@ export class PromptBuilder {
       ]
       if (profile?.username) lines.push(`- 当前用户: ${profile.username}`)
       if (profile?.homeDir) lines.push(`- 用户主目录: ${profile.homeDir}`)
+      lines.push(`- ${cwdLine}`)
       return `# 运行环境\n\n${lines.join('\n')}`
     }
 
@@ -465,6 +474,7 @@ export class PromptBuilder {
     if (profile?.installedTools && profile.installedTools.length > 0) {
       lines.push(`- 已安装工具: ${profile.installedTools.join(', ')}`)
     }
+    lines.push(`- ${cwdLine}`)
 
     return `# 主机环境（命令必须匹配）\n\n${lines.join('\n')}`
   }
