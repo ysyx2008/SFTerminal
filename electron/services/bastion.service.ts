@@ -183,10 +183,7 @@ export class BastionService {
         signal: controller.signal,
         headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }
       })
-      if (!resp.ok) {
-        const body = await resp.text().catch(() => '')
-        throw new Error(`HTTP ${resp.status}: ${body || resp.statusText}`)
-      }
+      if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`)
       return await resp.json() as T
     } finally {
       clearTimeout(timer)
@@ -203,10 +200,7 @@ export class BastionService {
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify(body)
       })
-      if (!resp.ok) {
-        const text = await resp.text().catch(() => '')
-        throw new Error(`HTTP ${resp.status}: ${text || resp.statusText}`)
-      }
+      if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`)
       return await resp.json() as T
     } finally {
       clearTimeout(timer)
@@ -238,6 +232,7 @@ export class BastionService {
     }
     const msg = error?.message || String(error)
     if (msg.includes('fetch failed')) return `连接失败：${causeMsg || causeCode || '请检查地址是否正确'}`
+    if (msg.includes('HTTP 404')) return 'API 路径不存在（404），请检查地址是否包含完整路径（如 https://host/jumpserver）'
     if (msg.includes('401')) return '认证失败，请检查用户名和密码'
     if (msg.includes('403')) return '权限不足'
     return msg
