@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
-import { Bot, HardDrive, CalendarRange, FolderOpen, History, Download, Upload, Trash2, Clock, AlertTriangle, Search, X, ChevronDown, ChevronRight, ExternalLink, Monitor, Server } from 'lucide-vue-next'
+import { Bot, HardDrive, CalendarRange, FolderOpen, History, Download, Upload, Trash2, Clock, AlertTriangle, Search, X, ChevronDown, ChevronRight, ExternalLink, Monitor, Server, Coins, ArrowUpRight, ArrowDownLeft, Zap } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const isSteamBuild = __STEAM_BUILD__
@@ -173,6 +173,43 @@ const getStatusText = (status: string) => {
   }
 }
 
+// ========== Token 用量统计 ==========
+interface TokenPeriodStats {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  taskCount: number
+}
+
+interface TokenUsageStatsData {
+  total: TokenPeriodStats
+  today: TokenPeriodStats
+  last7Days: TokenPeriodStats
+  last30Days: TokenPeriodStats
+  daily: Array<{ date: string } & TokenPeriodStats>
+}
+
+const tokenUsageStats = ref<TokenUsageStatsData | null>(null)
+const showDailyDetail = ref(false)
+
+const loadTokenUsageStats = async () => {
+  try {
+    tokenUsageStats.value = await window.electronAPI.history.getTokenUsageStats()
+  } catch (e) {
+    console.error('Failed to load token usage stats:', e)
+  }
+}
+
+const formatTokenCount = (count: number): string => {
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`
+  return count.toString()
+}
+
+const hasTokenData = computed(() => {
+  return tokenUsageStats.value && tokenUsageStats.value.total.total_tokens > 0
+})
+
 // 加载存储统计
 const loadStorageStats = async () => {
   try {
@@ -302,7 +339,7 @@ watch(showHistoryViewer, async (isOpen) => {
 
 onMounted(() => {
   loadStorageStats()
-  // 使用捕获阶段，确保在父组件之前处理事件
+  loadTokenUsageStats()
   document.addEventListener('keydown', handleKeydown, true)
 })
 
@@ -322,6 +359,106 @@ onUnmounted(() => {
       </div>
     </Transition>
     
+    <!-- Token 用量统计 -->
+    <div v-if="!isSteamBuild" class="section">
+      <div class="section-header">
+        <Coins :size="15" class="section-icon" />
+        <h4>{{ t('dataSettings.tokenUsage') }}</h4>
+      </div>
+      
+      <div v-if="tokenUsageStats && hasTokenData" class="token-usage-section">
+        <!-- 时段卡片 -->
+        <div class="token-period-grid">
+          <div class="token-period-card">
+            <div class="token-period-header">
+              <span class="token-period-label">{{ t('dataSettings.tokenToday') }}</span>
+              <Zap :size="14" class="token-period-icon today" />
+            </div>
+            <div class="token-period-value">{{ formatTokenCount(tokenUsageStats.today.total_tokens) }}</div>
+            <div class="token-period-detail">
+              <span class="token-in"><ArrowUpRight :size="10" /> {{ formatTokenCount(tokenUsageStats.today.prompt_tokens) }}</span>
+              <span class="token-out"><ArrowDownLeft :size="10" /> {{ formatTokenCount(tokenUsageStats.today.completion_tokens) }}</span>
+            </div>
+          </div>
+          <div class="token-period-card">
+            <div class="token-period-header">
+              <span class="token-period-label">{{ t('dataSettings.tokenLast7Days') }}</span>
+              <Zap :size="14" class="token-period-icon week" />
+            </div>
+            <div class="token-period-value">{{ formatTokenCount(tokenUsageStats.last7Days.total_tokens) }}</div>
+            <div class="token-period-detail">
+              <span class="token-in"><ArrowUpRight :size="10" /> {{ formatTokenCount(tokenUsageStats.last7Days.prompt_tokens) }}</span>
+              <span class="token-out"><ArrowDownLeft :size="10" /> {{ formatTokenCount(tokenUsageStats.last7Days.completion_tokens) }}</span>
+            </div>
+          </div>
+          <div class="token-period-card">
+            <div class="token-period-header">
+              <span class="token-period-label">{{ t('dataSettings.tokenLast30Days') }}</span>
+              <Zap :size="14" class="token-period-icon month" />
+            </div>
+            <div class="token-period-value">{{ formatTokenCount(tokenUsageStats.last30Days.total_tokens) }}</div>
+            <div class="token-period-detail">
+              <span class="token-in"><ArrowUpRight :size="10" /> {{ formatTokenCount(tokenUsageStats.last30Days.prompt_tokens) }}</span>
+              <span class="token-out"><ArrowDownLeft :size="10" /> {{ formatTokenCount(tokenUsageStats.last30Days.completion_tokens) }}</span>
+            </div>
+          </div>
+          <div class="token-period-card total">
+            <div class="token-period-header">
+              <span class="token-period-label">{{ t('dataSettings.tokenTotal') }}</span>
+              <Coins :size="14" class="token-period-icon total" />
+            </div>
+            <div class="token-period-value">{{ formatTokenCount(tokenUsageStats.total.total_tokens) }}</div>
+            <div class="token-period-detail">
+              <span class="token-in"><ArrowUpRight :size="10" /> {{ formatTokenCount(tokenUsageStats.total.prompt_tokens) }}</span>
+              <span class="token-out"><ArrowDownLeft :size="10" /> {{ formatTokenCount(tokenUsageStats.total.completion_tokens) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 每日明细（可折叠） -->
+        <div v-if="tokenUsageStats.daily.length > 0" class="token-daily-section">
+          <button class="btn btn-ghost token-daily-toggle" @click="showDailyDetail = !showDailyDetail">
+            <ChevronDown v-if="showDailyDetail" :size="14" />
+            <ChevronRight v-else :size="14" />
+            {{ t('dataSettings.tokenDailyDetail') }}
+          </button>
+          
+          <Transition name="slide">
+            <div v-if="showDailyDetail" class="token-daily-table-wrap">
+              <table class="token-daily-table">
+                <thead>
+                  <tr>
+                    <th>{{ t('dataSettings.tokenDate') }}</th>
+                    <th class="num">{{ t('dataSettings.tokenInput') }}</th>
+                    <th class="num">{{ t('dataSettings.tokenOutput') }}</th>
+                    <th class="num">{{ t('dataSettings.tokenTotalCol') }}</th>
+                    <th class="num">{{ t('dataSettings.tokenTaskCount') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="day in tokenUsageStats.daily" :key="day.date">
+                    <td>{{ day.date }}</td>
+                    <td class="num">{{ formatTokenCount(day.prompt_tokens) }}</td>
+                    <td class="num">{{ formatTokenCount(day.completion_tokens) }}</td>
+                    <td class="num total-cell">{{ formatTokenCount(day.total_tokens) }}</td>
+                    <td class="num">{{ day.taskCount }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </Transition>
+        </div>
+      </div>
+      
+      <div v-else-if="tokenUsageStats" class="token-empty">
+        <Coins :size="24" class="empty-icon" />
+        <span>{{ t('dataSettings.tokenNoData') }}</span>
+      </div>
+      <div v-else class="loading">{{ t('dataSettings.loading') }}</div>
+      
+      <p class="hint">{{ t('dataSettings.tokenUsageHint') }}</p>
+    </div>
+
     <!-- 存储统计 -->
     <div class="section">
       <div class="section-header">
@@ -904,9 +1041,167 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
+/* Token usage */
+.token-usage-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.token-period-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.token-period-card {
+  padding: 14px;
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+  border: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+
+.token-period-card:hover {
+  border-color: var(--border-color);
+}
+
+.token-period-card.total {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.06), rgba(168, 85, 247, 0.06));
+}
+
+.token-period-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.token-period-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.token-period-icon {
+  opacity: 0.5;
+}
+.token-period-icon.today { color: #10b981; }
+.token-period-icon.week { color: #3b82f6; }
+.token-period-icon.month { color: #f59e0b; }
+.token-period-icon.total { color: #a855f7; }
+
+.token-period-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+  margin-bottom: 6px;
+}
+
+.token-period-detail {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+}
+
+.token-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-muted);
+}
+
+.token-out {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-muted);
+}
+
+.token-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.token-daily-section {
+  margin-top: 4px;
+}
+
+.token-daily-toggle {
+  width: 100%;
+  justify-content: center;
+  min-height: 30px;
+  font-size: 12px;
+}
+
+.token-daily-table-wrap {
+  margin-top: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.token-daily-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.token-daily-table th {
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 11px;
+}
+
+.token-daily-table th.num,
+.token-daily-table td.num {
+  text-align: right;
+}
+
+.token-daily-table td {
+  padding: 7px 10px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.token-daily-table td.total-cell {
+  font-weight: 600;
+}
+
+.token-daily-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.token-daily-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.slide-enter-active,
+.slide-leave-active {
+  transition: all 0.25s ease;
+  max-height: 400px;
+}
+.slide-enter-from,
+.slide-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+
 @media (max-width: 900px) {
   .stats-grid {
     grid-template-columns: 1fr;
+  }
+
+  .token-period-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .actions .btn,

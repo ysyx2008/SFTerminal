@@ -9,7 +9,7 @@ const log = createLogger('History')
 // ==================== 类型定义 ====================
 
 // 从共享类型导入并重新导出
-import type { TerminalType, AgentStepRecord, AgentRecord } from '@shared/types'
+import type { TerminalType, AgentStepRecord, AgentRecord, TokenUsage } from '@shared/types'
 export type { AgentStepRecord, AgentRecord } from '@shared/types'
 
 export interface ChatRecord {
@@ -32,6 +32,24 @@ interface AgentIndexEntry {
   terminalType: TerminalType
   sshHost?: string
   status: 'completed' | 'failed' | 'aborted'
+  tokenUsage?: TokenUsage
+}
+
+/** Token 用量统计时段数据 */
+export interface TokenUsagePeriodStats {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  taskCount: number
+}
+
+/** Token 用量统计结果 */
+export interface TokenUsageStatsResult {
+  total: TokenUsagePeriodStats
+  today: TokenUsagePeriodStats
+  last7Days: TokenUsagePeriodStats
+  last30Days: TokenUsagePeriodStats
+  daily: Array<{ date: string } & TokenUsagePeriodStats>
 }
 
 export interface SearchAgentRecordsOptions {
@@ -225,7 +243,7 @@ export class HistoryService {
   }
 
   private toIndexEntry(record: AgentRecord, dateStr: string): AgentIndexEntry {
-    return {
+    const entry: AgentIndexEntry = {
       id: record.id,
       timestamp: record.timestamp,
       duration: record.duration,
@@ -235,6 +253,10 @@ export class HistoryService {
       sshHost: record.sshHost,
       status: record.status,
     }
+    if (record.tokenUsage) {
+      entry.tokenUsage = record.tokenUsage
+    }
+    return entry
   }
 
   private updateIndexEntry(record: AgentRecord): void {
@@ -548,6 +570,66 @@ export class HistoryService {
       return undefined
     }
     return date.getTime()
+  }
+
+  // ==================== Token 用量统计 ====================
+
+  /**
+   * 从索引聚合 Token 用量统计（纯内存操作，零磁盘 IO）
+   */
+  getTokenUsageStats(): TokenUsageStatsResult {
+    const index = this.getIndex()
+    const now = new Date()
+    const todayStr = this.getDateString()
+    const day7Ago = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).getTime()
+    const day30Ago = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).getTime()
+
+    const emptyPeriod = (): TokenUsagePeriodStats => ({
+      prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, taskCount: 0
+    })
+
+    const total = emptyPeriod()
+    const today = emptyPeriod()
+    const last7Days = emptyPeriod()
+    const last30Days = emptyPeriod()
+    const dailyMap = new Map<string, TokenUsagePeriodStats>()
+
+    for (const entry of index) {
+      const usage = entry.tokenUsage
+      if (!usage) continue
+
+      const addTo = (target: TokenUsagePeriodStats) => {
+        target.prompt_tokens += usage.prompt_tokens
+        target.completion_tokens += usage.completion_tokens
+        target.total_tokens += usage.total_tokens
+        target.taskCount++
+      }
+
+      addTo(total)
+
+      if (entry.dateStr === todayStr) {
+        addTo(today)
+      }
+      if (entry.timestamp >= day7Ago) {
+        addTo(last7Days)
+      }
+      if (entry.timestamp >= day30Ago) {
+        addTo(last30Days)
+
+        // 按日聚合（仅近 30 天）
+        if (!dailyMap.has(entry.dateStr)) {
+          dailyMap.set(entry.dateStr, emptyPeriod())
+        }
+        const dayStats = dailyMap.get(entry.dateStr)!
+        addTo(dayStats)
+      }
+    }
+
+    const daily = Array.from(dailyMap.entries())
+      .map(([date, stats]) => ({ date, ...stats }))
+      .sort((a, b) => b.date.localeCompare(a.date))
+
+    return { total, today, last7Days, last30Days, daily }
   }
 
   // ==================== 导出/导入 ====================

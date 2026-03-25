@@ -3050,6 +3050,11 @@ ipcMain.handle('history:getStorageStats', async () => {
   return historyService.getStorageStats()
 })
 
+// 获取 Token 用量统计
+ipcMain.handle('history:getTokenUsageStats', async () => {
+  return historyService.getTokenUsageStats()
+})
+
 // 导出到文件夹
 ipcMain.handle('history:exportToFolder', async (_event, options?: { includeSshPasswords?: boolean; includeApiKeys?: boolean }) => {
   try {

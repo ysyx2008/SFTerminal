@@ -1158,6 +1158,15 @@ const electronAPI = {
       newestRecord?: string
     }>,
 
+    // 获取 Token 用量统计
+    getTokenUsageStats: () => ipcRenderer.invoke('history:getTokenUsageStats') as Promise<{
+      total: { prompt_tokens: number; completion_tokens: number; total_tokens: number; taskCount: number }
+      today: { prompt_tokens: number; completion_tokens: number; total_tokens: number; taskCount: number }
+      last7Days: { prompt_tokens: number; completion_tokens: number; total_tokens: number; taskCount: number }
+      last30Days: { prompt_tokens: number; completion_tokens: number; total_tokens: number; taskCount: number }
+      daily: Array<{ date: string; prompt_tokens: number; completion_tokens: number; total_tokens: number; taskCount: number }>
+    }>,
+
     // 清理旧记录
     cleanup: (daysToKeep: number) => ipcRenderer.invoke('history:cleanup', daysToKeep) as Promise<{
       chatDeleted: number
