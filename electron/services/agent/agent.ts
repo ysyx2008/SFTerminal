@@ -1581,6 +1581,14 @@ export abstract class Agent {
             run.tokenUsage.completion_tokens += result.usage.completion_tokens
             run.tokenUsage.total_tokens += result.usage.total_tokens
             this._lastPromptTokens = result.usage.prompt_tokens
+
+            // 立即将真实 prompt_tokens 推送到前端，避免显示延迟一步
+            const steps = this.currentRun?.steps
+            if (steps && steps.length > 0) {
+              const lastStep = steps[steps.length - 1]
+              lastStep.contextTokens = result.usage.prompt_tokens
+              this.callbacks?.onStep?.(this.currentRun?.id || '', lastStep)
+            }
           }
 
           let finalContent = streamContent.replace(/<details open>/g, '<details>')
