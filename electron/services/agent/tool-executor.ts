@@ -50,8 +50,8 @@ export {
   fileSearch,
   readFile,
   editFile,
-  writeLocalFile,
-  writeRemoteFile
+  writeTextFile,
+  writeRemoteTextFile
 } from './tools/index'
 
 // 知识库

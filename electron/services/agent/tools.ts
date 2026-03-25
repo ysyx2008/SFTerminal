@@ -182,7 +182,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       type: 'function',
       function: {
         name: 'edit_file',
-        description: `查找替换修改本地文件（修改首选工具）。使用前必须先 read_file 查看文件，old_text 必须从 read_file 输出中精确复制（不含行号前缀）。old_text 必须在文件中唯一匹配，匹配多处时提供更多上下文使其唯一。创建新文件请用 write_local_file。`,
+        description: `查找替换修改本地文件（修改首选工具）。使用前必须先 read_file 查看文件，old_text 必须从 read_file 输出中精确复制（不含行号前缀）。old_text 必须在文件中唯一匹配，匹配多处时提供更多上下文使其唯一。创建新文件请用 write_text_file。`,
         parameters: {
           type: 'object',
           properties: {
@@ -211,8 +211,8 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
     {
       type: 'function',
       function: {
-        name: 'write_local_file',
-        description: `写入或创建本地纯文本文件。部分修改请优先用 edit_file。大文件分段写入（先 create 再 append）。禁止创建 Office 文档。重要文件请先备份。`,
+        name: 'write_text_file',
+        description: `写入或创建本地纯文本文件。部分修改请优先用 edit_file。大文件分段写入（先 create 再 append）。重要文件请先备份。`,
         parameters: {
           type: 'object',
           properties: {
@@ -244,8 +244,8 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
     {
       type: 'function',
       function: {
-        name: 'write_remote_file',
-        description: `通过 SFTP 写入远程文件。大文件分段写入（先 create 再 append）。路径不支持 ~。局部修改请用命令行 sed/awk。`,
+        name: 'write_remote_text_file',
+        description: `通过 SFTP 写入远程纯文本文件。大文件分段写入（先 create 再 append）。路径不支持 ~。局部修改请用命令行 sed/awk。`,
         parameters: {
           type: 'object',
           properties: {

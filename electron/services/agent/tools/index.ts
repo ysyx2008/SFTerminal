@@ -18,7 +18,7 @@ import { normalizeToolArgs } from './utils'
 import { executeCommand } from './command'
 import { executeCommandDirect } from './exec'
 import { getTerminalContext, checkTerminalStatus, sendControlKey, sendInput } from './terminal'
-import { fileSearch, readFile, editFile, writeLocalFile, writeRemoteFile } from './file'
+import { fileSearch, readFile, editFile, writeTextFile, writeRemoteTextFile } from './file'
 import { rememberInfo, searchKnowledge, getKnowledgeDoc } from './knowledge'
 import { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 import { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
@@ -32,7 +32,7 @@ export type { ToolExecutorConfig, AgentConfig, ToolResult, ErrorCategory } from 
 export { executeCommand } from './command'
 export { executeCommandDirect } from './exec'
 export { getTerminalContext, checkTerminalStatus, sendControlKey, sendInput } from './terminal'
-export { fileSearch, readFile, editFile, writeLocalFile, writeRemoteFile, getWorkspacePath, isInWorkspace } from './file'
+export { fileSearch, readFile, editFile, writeTextFile, writeRemoteTextFile, getWorkspacePath, isInWorkspace } from './file'
 export { rememberInfo, searchKnowledge, getKnowledgeDoc } from './knowledge'
 export { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 export { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
@@ -130,11 +130,11 @@ export async function executeTool(
     case 'edit_file':
       return editFile(id, args, toolCall.id, config, executor)
 
-    case 'write_local_file':
-      return writeLocalFile(id, args, toolCall.id, config, executor)
+    case 'write_text_file':
+      return writeTextFile(id, args, toolCall.id, config, executor)
 
-    case 'write_remote_file':
-      return writeRemoteFile(id, args, toolCall.id, config, executor)
+    case 'write_remote_text_file':
+      return writeRemoteTextFile(id, args, toolCall.id, config, executor)
 
     case 'remember_info':
       return await rememberInfo(args, config, executor)

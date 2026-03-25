@@ -213,8 +213,8 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
 |---------|---------|---------|
 | `read_file` | 读取文件内容（支持 PDF/Word） | 本地 |
 | `edit_file` | 精确编辑文件（查找替换） | 本地 |
-| `write_local_file` | 创建/覆盖/追加本地文件 | 本地 |
-| `write_remote_file` | 通过 SFTP 写入远程文件 | SSH |
+| `write_text_file` | 创建/覆盖/追加本地纯文本文件 | 本地 |
+| `write_remote_text_file` | 通过 SFTP 写入远程纯文本文件 | SSH |
 | `file_search` | 快速搜索文件（Spotlight/Everything） | 本地 |
 
 #### 知识库类
@@ -438,9 +438,9 @@ export function analyzeCommand(command: string): CommandHandlingInfo {
 
   // ==================== 完全禁止的命令 ====================
   const blockedCommands = {
-    'vim': '请使用 write_local_file 工具',
-    'vi': '请使用 write_local_file 工具',
-    'nano': '请使用 write_local_file 工具',
+    'vim': '请使用 write_text_file 工具',
+    'vi': '请使用 write_text_file 工具',
+    'nano': '请使用 write_text_file 工具',
     'tmux': '不支持终端复用器',
     'screen': '不支持终端复用器',
   }
@@ -729,7 +729,7 @@ export function calculateBudget(contextLength: number): ContextBudget {
 │  核心工具：                       技能工具：                │
 │  - execute_command               - Excel: excel_*          │
 │  - read_file                     - Email: email_*          │
-│  - write_local_file             - Browser: browser_*       │
+│  - write_text_file              - Browser: browser_*       │
 │  - ...                          - Word: word_*             │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘

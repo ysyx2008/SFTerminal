@@ -11,7 +11,7 @@ tools/
 ├── utils.ts        # 通用工具函数 (错误处理、重试、截断等)
 ├── command.ts      # 命令执行 (execute_command, sudo, 限时执行等)
 ├── terminal.ts     # 终端操作 (get_terminal_context, check_terminal_status 等)
-├── file.ts         # 文件操作 (read_file, write_local_file, edit_file 等)
+├── file.ts         # 文件操作 (read_file, write_text_file, edit_file 等)
 ├── knowledge.ts    # 知识库 (remember_info, search_knowledge 等)
 ├── plan.ts         # 计划/待办 (create_plan, update_plan, clear_plan)
 ├── memory.ts       # 任务记忆 (recall_task, deep_recall)
@@ -36,8 +36,8 @@ tools/
 
 ### 文件操作 (file.ts)
 - `read_file` - 读取文件（支持部分读取、文档解析）
-- `write_local_file` - 写入本地文件（多种模式）
-- `write_remote_file` - 通过 SFTP 写入远程文件
+- `write_text_file` - 写入本地纯文本文件（多种模式）
+- `write_remote_text_file` - 通过 SFTP 写入远程纯文本文件
 - `edit_file` - 精确编辑文件（查找替换）
 - `file_search` - 本地文件搜索
 

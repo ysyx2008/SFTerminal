@@ -1260,7 +1260,7 @@ export async function editFile(
 /**
  * 写入本地文件
  */
-export async function writeLocalFile(
+export async function writeTextFile(
   ptyId: string,
   args: Record<string, unknown>,
   toolCallId: string,
@@ -1331,7 +1331,7 @@ export async function writeLocalFile(
     executor.addStep({
       type: 'tool_result',
       content: `⚠️ ${t('file.office_extension_converted', { original, converted: path.basename(filePath) })}`,
-      toolName: 'write_local_file'
+      toolName: 'write_text_file'
     })
   }
 
@@ -1365,7 +1365,7 @@ export async function writeLocalFile(
   executor.addStep({
     type: 'tool_call',
     content: operationDesc,
-    toolName: 'write_local_file',
+    toolName: 'write_text_file',
     toolArgs: { 
       path: filePath, 
       mode,
@@ -1382,7 +1382,7 @@ export async function writeLocalFile(
   if (!inWorkspace && !isSafeWrite && (isDangerousOverwrite || config.executionMode === 'strict')) {
     const approved = await executor.waitForConfirmation(
       toolCallId, 
-      'write_local_file', 
+      'write_text_file', 
       args, 
       isDangerousOverwrite ? 'dangerous' : 'moderate'
     )
@@ -1400,7 +1400,7 @@ export async function writeLocalFile(
     const progressStep = executor.addStep({
       type: 'tool_result',
       content: `⏳ ${t('file.writing_progress')}（${contentSizeKB} KB）`,
-      toolName: 'write_local_file',
+      toolName: 'write_text_file',
       isStreaming: true
     })
     progressStepId = progressStep.id
@@ -1428,7 +1428,7 @@ export async function writeLocalFile(
           executor.addStep({
             type: 'tool_result',
             content: `❌ ${errorMsg}`,
-            toolName: 'write_local_file'
+            toolName: 'write_text_file'
           })
           return { success: false, output: '', error: errorMsg }
         }
@@ -1456,7 +1456,7 @@ export async function writeLocalFile(
           executor.addStep({
             type: 'tool_result',
             content: `❌ ${errorMsg}`,
-            toolName: 'write_local_file'
+            toolName: 'write_text_file'
           })
           return { success: false, output: '', error: errorMsg }
         }
@@ -1475,7 +1475,7 @@ export async function writeLocalFile(
           executor.addStep({
             type: 'tool_result',
             content: `❌ ${errorMsg}`,
-            toolName: 'write_local_file'
+            toolName: 'write_text_file'
           })
           return { success: false, output: '', error: errorMsg }
         }
@@ -1487,7 +1487,7 @@ export async function writeLocalFile(
           executor.addStep({
             type: 'tool_result',
             content: `❌ ${errorMsg}`,
-            toolName: 'write_local_file'
+            toolName: 'write_text_file'
           })
           return { success: false, output: '', error: errorMsg }
         }
@@ -1505,7 +1505,7 @@ export async function writeLocalFile(
           executor.addStep({
             type: 'tool_result',
             content: `❌ ${errorMsg}`,
-            toolName: 'write_local_file'
+            toolName: 'write_text_file'
           })
           return { success: false, output: '', error: errorMsg }
         }
@@ -1531,14 +1531,14 @@ export async function writeLocalFile(
       executor.updateStep(progressStepId, {
         type: 'tool_result',
         content: `✅ ${resultMsg}`,
-        toolName: 'write_local_file',
+        toolName: 'write_text_file',
         isStreaming: false
       })
     } else {
       executor.addStep({
         type: 'tool_result',
         content: resultMsg,
-        toolName: 'write_local_file'
+        toolName: 'write_text_file'
       })
     }
     return { success: true, output: resultMsg }
@@ -1551,7 +1551,7 @@ export async function writeLocalFile(
       executor.updateStep(progressStepId, {
         type: 'tool_result',
         content: `❌ ${t('file.write_failed')}: ${errorMsg}`,
-        toolName: 'write_local_file',
+        toolName: 'write_text_file',
         toolResult: `${errorMsg}\n\n💡 ${suggestion}`,
         isStreaming: false
       })
@@ -1559,7 +1559,7 @@ export async function writeLocalFile(
       executor.addStep({
         type: 'tool_result',
         content: `${t('file.write_failed')}: ${errorMsg}`,
-        toolName: 'write_local_file',
+        toolName: 'write_text_file',
         toolResult: `${errorMsg}\n\n💡 ${suggestion}`
       })
     }
@@ -1570,7 +1570,7 @@ export async function writeLocalFile(
 /**
  * 写入远程文件（通过 SFTP）
  */
-export async function writeRemoteFile(
+export async function writeRemoteTextFile(
   ptyId: string,
   args: Record<string, unknown>,
   toolCallId: string,
@@ -1647,7 +1647,7 @@ async function writeFileViaSftp(
   executor.addStep({
     type: 'tool_call',
     content: operationDesc,
-    toolName: 'write_remote_file',
+    toolName: 'write_remote_text_file',
     toolArgs: { 
       path: filePath, 
       mode,
@@ -1659,7 +1659,7 @@ async function writeFileViaSftp(
   if (mode === 'overwrite' || config.executionMode === 'strict') {
     const approved = await executor.waitForConfirmation(
       toolCallId, 
-      'write_remote_file', 
+      'write_remote_text_file', 
       { path: filePath, mode, content }, 
       mode === 'overwrite' ? 'dangerous' : 'moderate'
     )
@@ -1677,7 +1677,7 @@ async function writeFileViaSftp(
       executor.addStep({
         type: 'tool_result',
         content: t('file.establishing_sftp'),
-        toolName: 'write_remote_file',
+        toolName: 'write_remote_text_file',
         isStreaming: true
       })
 
@@ -1708,7 +1708,7 @@ async function writeFileViaSftp(
         executor.addStep({
           type: 'tool_result',
           content: `❌ ${errorMsg}`,
-          toolName: 'write_remote_file'
+          toolName: 'write_remote_text_file'
         })
         return { success: false, output: '', error: errorMsg }
       }
@@ -1735,7 +1735,7 @@ async function writeFileViaSftp(
     executor.addStep({
       type: 'tool_result',
       content: resultMsg,
-      toolName: 'write_remote_file'
+      toolName: 'write_remote_text_file'
     })
 
     return { success: true, output: resultMsg }
@@ -1747,7 +1747,7 @@ async function writeFileViaSftp(
     executor.addStep({
       type: 'tool_result',
       content: `${t('file.remote_write_failed')}: ${errorMsg}`,
-      toolName: 'write_remote_file',
+      toolName: 'write_remote_text_file',
       toolResult: errorMsg
     })
 

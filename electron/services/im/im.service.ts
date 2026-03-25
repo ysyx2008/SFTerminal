@@ -88,7 +88,7 @@ export interface IMLastContact {
 /** 工具 → 图标 */
 const TOOL_ICONS: Record<string, string> = {
   execute_command: '🔧', exec: '🔧', read_file: '📄', edit_file: '✏️',
-  write_local_file: '📝', write_remote_file: '📝', file_search: '🔍',
+  write_text_file: '📝', write_remote_text_file: '📝', file_search: '🔍',
   search_knowledge: '📚', get_knowledge_doc: '📚',
   recall: '🧠', recall_task: '🧠', deep_recall: '🧠', wait: '⏳',
   plan: '📋', create_plan: '📋', update_plan: '📋', clear_plan: '📋',
@@ -107,8 +107,8 @@ const TOOL_I18N_MAP: Record<string, Parameters<typeof t>[0]> = {
   send_input: 'tool.send_input',
   read_file: 'tool.read_file',
   edit_file: 'file.edit',
-  write_local_file: 'tool.write_file',
-  write_remote_file: 'tool.write_file',
+  write_text_file: 'tool.write_file',
+  write_remote_text_file: 'tool.write_file',
   file_search: 'file.searching',
   remember_info: 'tool.remember_info',
   search_knowledge: 'tool.search_knowledge',

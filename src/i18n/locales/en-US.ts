@@ -1126,8 +1126,8 @@ export default {
       exec: 'Run Command',
       read_file: 'Read File',
       write_file: 'Write File',
-      write_local_file: 'Write Local File',
-      write_remote_file: 'Write Remote File',
+      write_text_file: 'Write Text File',
+      write_remote_text_file: 'Write Remote Text File',
       edit_file: 'Edit File',
       get_terminal_context: 'Get Terminal Context'
     },
