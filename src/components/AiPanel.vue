@@ -438,6 +438,12 @@ const {
   computed(() => activeAiProfile.value)
 )
 
+const cacheBarWidth = computed(() => {
+  const { percentage, cacheHitRate } = contextStats.value
+  if (cacheHitRate === undefined || cacheHitRate <= 0) return 0
+  return Math.round(cacheHitRate / 100 * percentage * 100) / 100
+})
+
 // ==================== 配置相关 ====================
 
 const hasAiConfig = computed(() => configStore.hasAiConfig)
@@ -1788,12 +1794,21 @@ onUnmounted(() => {
           v-if="contextStats.tokenEstimate > 0" 
           class="context-mini"
         >
+          <template v-if="cacheBarWidth > 0">
+            <div 
+              class="context-mini-bar cached"
+              :style="{ width: cacheBarWidth + '%' }"
+            ></div>
+            <div 
+              class="context-mini-bar"
+              :class="{ 'warning': contextStats.percentage > 60, 'danger': contextStats.percentage > 85 }"
+              :style="{ left: cacheBarWidth + '%', width: (contextStats.percentage - cacheBarWidth) + '%' }"
+            ></div>
+          </template>
           <div 
+            v-else
             class="context-mini-bar"
-            :class="{ 
-              'warning': contextStats.percentage > 60, 
-              'danger': contextStats.percentage > 85 
-            }"
+            :class="{ 'warning': contextStats.percentage > 60, 'danger': contextStats.percentage > 85 }"
             :style="{ width: contextStats.percentage + '%' }"
           ></div>
           <span class="context-mini-tip">
@@ -2660,7 +2675,11 @@ onUnmounted(() => {
   height: 2px;
   background: var(--accent-primary);
   border-radius: 1px;
-  transition: width 0.3s ease, background 0.3s ease;
+  transition: width 0.3s ease, left 0.3s ease, background 0.3s ease;
+}
+
+.context-mini-bar.cached {
+  background: #2dd4bf;
 }
 
 .context-mini-bar.warning {

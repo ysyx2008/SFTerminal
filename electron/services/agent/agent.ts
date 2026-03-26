@@ -191,6 +191,9 @@ export abstract class Agent {
     if (options?.profileId) {
       this.profileId = options.profileId
     }
+
+    // 清除上一轮 run 的缓存显示数据，避免跨 run 显示旧值（加载历史、切换模型等场景）
+    this._lastCacheHitRate = undefined
     
     const run = this.initializeRun(message, context, options)
     const taskPreview = message.length > 80 ? message.slice(0, 80) + '...' : message
