@@ -127,7 +127,9 @@ const handleGlobalKeydown = (event: KeyboardEvent) => {
     return
   }
 
+  // 侧栏 ESC 关闭需让路给上层模态（如主机凭证弹窗），否则会与全局 listener 顺序叠加导致侧栏被误关
   if (event.key === 'Escape' && showSidebar.value) {
+    if (document.querySelector('.credential-overlay')) return
     showSidebar.value = false
     return
   }

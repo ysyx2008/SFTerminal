@@ -37,17 +37,20 @@ function handleKeydown(e: KeyboardEvent) {
     e.preventDefault()
     handleConnect()
   } else if (e.key === 'Escape') {
+    // 捕获阶段优先处理并阻断传播，避免 App.vue 全局 ESC 同时关闭主机管理侧栏
     e.preventDefault()
+    e.stopPropagation()
+    e.stopImmediatePropagation()
     emit('cancel')
   }
 }
 
 onMounted(() => {
-  document.addEventListener('keydown', handleKeydown)
+  document.addEventListener('keydown', handleKeydown, true)
 })
 
 onUnmounted(() => {
-  document.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('keydown', handleKeydown, true)
 })
 </script>
 
