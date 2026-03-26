@@ -2,7 +2,23 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.26.1 (2026-03-26) (Latest)
+## v10.26.2 (2026-03-26) (Latest)
+
+Fixes JumpServer bastion host SSH connectivity issues (v2/v3 API compatibility, Koko shell fallback, keyboard-interactive auth) and improves SSH error diagnostics.
+
+### Bug Fixes
+- 🔧 **JumpServer v2/v3 Compatibility**: Bastion service now supports both JumpServer v2 and v3 API formats, with auto-detection of asset API paths and flexible protocol parsing
+- 🔀 **Koko Shell Fallback**: When port forwarding is disabled on the jump host, automatically falls back to JumpServer's direct shell mode via Koko SSH proxy
+- 🔑 **Keyboard-Interactive Auth**: Jump host connections now support keyboard-interactive authentication for environments requiring it
+- 🛡️ **SSH Handshake Error**: Added dedicated `handshake_failed` error type for cases where TCP connects but SSH protocol negotiation fails
+- 🚪 **Bastion Credential Skip**: JumpServer sessions no longer prompt for target host credentials since authentication is handled by the bastion host
+- 🐛 **Proxy Object Serialization**: Fixed Vue reactive proxy objects not being properly serialized when passed to SSH IPC calls
+
+### Improvements
+- ⚡ **Agent Context Tool Threshold**: Raised context management tool registration threshold from 50% to 85%, reducing unnecessary tool overhead in normal conversations
+- 🖼️ **SSH Credential Dialog**: ESC key in the SSH credential dialog no longer simultaneously closes the host management sidebar
+
+## v10.26.1 (2026-03-26)
 
 Adds cache hit rate visualization to the conversation panel, statistics panel, and context progress bar, making prompt caching savings visible at a glance.
 
