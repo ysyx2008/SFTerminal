@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, toRaw } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import stripAnsiLib from 'strip-ansi'
 import i18n from '../i18n'
@@ -422,7 +422,7 @@ export const useTerminalStore = defineStore('terminal', () => {
           password: sshConfig.password,
           privateKeyPath: sshConfig.privateKeyPath,  // 私钥文件路径
           passphrase: sshConfig.passphrase,  // 私钥密码
-          jumpHost: sshConfig.jumpHost,  // 传递跳板机配置
+          jumpHost: sshConfig.jumpHost ? toRaw(sshConfig.jumpHost) : undefined,
           encoding: sshConfig.encoding,  // 传递编码配置
           cols: 80,
           rows: 24
@@ -701,7 +701,7 @@ export const useTerminalStore = defineStore('terminal', () => {
         password: session.password,
         privateKeyPath: session.privateKeyPath,  // 私钥文件路径
         passphrase: session.passphrase,  // 私钥密码
-        jumpHost,
+        jumpHost: jumpHost ? toRaw(jumpHost) : undefined,
         encoding: session.encoding || 'utf-8',
         cols: 80,
         rows: 24

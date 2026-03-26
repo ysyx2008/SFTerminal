@@ -7,12 +7,19 @@ const log = createLogger('Bastion')
 
 interface JumpServerAsset {
   id: string
-  name: string
-  address: string
-  platform: { name: string }
-  protocols: Array<{ name: string; port: number }>
-  category: string
-  type: string
+  // v3 fields
+  name?: string
+  address?: string
+  protocols?: Array<{ name: string; port: number } | string>
+  platform?: { name: string }
+  category?: string
+  type?: string
+  // v2 fields
+  hostname?: string
+  ip?: string
+  protocol?: string
+  port?: number
+  // common
   comment?: string
   is_active: boolean
   org_name?: string
@@ -24,6 +31,8 @@ interface JumpServerAuthResponse {
   date_expired?: string
   user?: { id: string; name: string; username: string }
 }
+
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
 export class BastionService {
   constructor(private configService: ConfigService) {}
@@ -42,7 +51,10 @@ export class BastionService {
     return this.withTlsOverride(config.rejectUnauthorized === false, async () => {
     try {
       const token = await this.authenticate(config.url, config.username, config.password)
-      const firstPage = await this.fetchAssetsPage(config.url, token, 1, 0)
+      const firstPage = await this.fetchAssetsPage(config.url, token, 10, 0)
+      if (firstPage.results?.length > 0) {
+        log.info('Sample asset structure:', JSON.stringify(firstPage.results[0], null, 2))
+      }
       const sshCount = this.countSshAssets(firstPage.results)
       const totalHint = firstPage.count !== undefined
         ? `（共 ${firstPage.count} 个资产，其中 ${sshCount} 个支持 SSH）`
@@ -63,7 +75,7 @@ export class BastionService {
       const token = await this.authenticate(config.url, config.username, config.password)
 
       const allAssets = await this.fetchAllAssets(config.url, token)
-      const sshAssets = allAssets.filter(a => a.is_active && a.protocols?.some(p => p.name === 'ssh'))
+      const sshAssets = allAssets.filter(a => this.isSshAsset(a))
 
       if (sshAssets.length === 0) {
         return { success: true, added: 0, updated: 0, removed: 0, total: 0, groupId: '', groupName: '' }
@@ -97,20 +109,22 @@ export class BastionService {
       let updated = 0
 
       for (const asset of sshAssets) {
-        const sshProto = asset.protocols.find(p => p.name === 'ssh')
-        const port = sshProto?.port || 22
+        const addr = this.getAssetAddress(asset)
+        const port = this.getAssetSshPort(asset)
+        const name = this.getAssetName(asset)
+        if (!addr) continue
 
-        const existing = groupSessions.find(s => s.host === asset.address)
+        const existing = groupSessions.find(s => s.host === addr)
 
         if (existing) {
-          existing.name = asset.name
+          existing.name = name
           existing.port = port
           updated++
         } else {
           const newSession: SshSession = {
             id: uuidv4(),
-            name: asset.name,
-            host: asset.address,
+            name,
+            host: addr,
             port,
             username: '',
             authType: 'password',
@@ -122,7 +136,7 @@ export class BastionService {
         }
       }
 
-      const assetAddresses = new Set(sshAssets.map(a => a.address))
+      const assetAddresses = new Set(sshAssets.map(a => this.getAssetAddress(a)))
       const removed = groupSessions.filter(s => !assetAddresses.has(s.host)).length
 
       this.configService.set('sessionGroups', groups)
@@ -140,6 +154,7 @@ export class BastionService {
 
   private async authenticate(baseUrl: string, username: string, password: string): Promise<string> {
     const url = `${this.normalizeUrl(baseUrl)}/api/v1/authentication/auth/`
+    log.info('Authenticating:', url)
     const resp = await this.httpPost<JumpServerAuthResponse>(url, { username, password })
     if (!resp.token) {
       throw new Error('认证失败：未返回 token（可能需要 MFA 验证）')
@@ -147,9 +162,33 @@ export class BastionService {
     return resp.token
   }
 
+  private assetsApiPath = ''
+
   private async fetchAssetsPage(baseUrl: string, token: string, limit: number, offset: number): Promise<{ count?: number; results: JumpServerAsset[] }> {
-    const url = `${this.normalizeUrl(baseUrl)}/api/v1/perms/users/self/assets/?limit=${limit}&offset=${offset}`
-    return this.httpGet(url, token)
+    const base = this.normalizeUrl(baseUrl)
+    const qs = `?limit=${limit}&offset=${offset}`
+
+    if (this.assetsApiPath) {
+      return this.httpGet(`${base}${this.assetsApiPath}${qs}`, token)
+    }
+
+    const candidates = [
+      '/api/v1/perms/users/assets/',
+      '/api/v1/perms/users/self/assets/',
+    ]
+    let lastError: Error | undefined
+    for (const path of candidates) {
+      try {
+        const result = await this.httpGet<{ count?: number; results: JumpServerAsset[] }>(`${base}${path}${qs}`, token)
+        this.assetsApiPath = path
+        log.info('Using assets API path:', path)
+        return result
+      } catch (e: any) {
+        lastError = e
+        if (!e.message?.includes('HTTP 404')) throw e
+      }
+    }
+    throw lastError!
   }
 
   private async fetchAllAssets(baseUrl: string, token: string): Promise<JumpServerAsset[]> {
@@ -171,8 +210,39 @@ export class BastionService {
     return all
   }
 
+  private parseSshProtocol(a: JumpServerAsset): { found: boolean; port: number } {
+    if (a.protocols) {
+      for (const p of a.protocols) {
+        if (typeof p === 'string') {
+          const [name, port] = p.split('/')
+          if (name === 'ssh') return { found: true, port: parseInt(port) || 22 }
+        } else if (p.name === 'ssh') {
+          return { found: true, port: p.port || 22 }
+        }
+      }
+    }
+    if (a.protocol === 'ssh') return { found: true, port: a.port || 22 }
+    return { found: false, port: 22 }
+  }
+
+  private isSshAsset(a: JumpServerAsset): boolean {
+    return a.is_active && this.parseSshProtocol(a).found
+  }
+
+  private getAssetName(a: JumpServerAsset): string {
+    return a.name || a.hostname || a.address || a.ip || a.id
+  }
+
+  private getAssetAddress(a: JumpServerAsset): string {
+    return a.address || a.ip || ''
+  }
+
+  private getAssetSshPort(a: JumpServerAsset): number {
+    return this.parseSshProtocol(a).port
+  }
+
   private countSshAssets(assets: JumpServerAsset[]): number {
-    return assets.filter(a => a.is_active && a.protocols?.some(p => p.name === 'ssh')).length
+    return assets.filter(a => this.isSshAsset(a)).length
   }
 
   private async httpGet<T>(url: string, token: string): Promise<T> {
@@ -181,9 +251,9 @@ export class BastionService {
     try {
       const resp = await fetch(url, {
         signal: controller.signal,
-        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }
+        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json', 'User-Agent': UA }
       })
-      if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`)
+      if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText} [${url}]`)
       return await resp.json() as T
     } finally {
       clearTimeout(timer)
@@ -197,10 +267,10 @@ export class BastionService {
       const resp = await fetch(url, {
         method: 'POST',
         signal: controller.signal,
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': UA },
         body: JSON.stringify(body)
       })
-      if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`)
+      if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText} [${url}]`)
       return await resp.json() as T
     } finally {
       clearTimeout(timer)
@@ -232,7 +302,11 @@ export class BastionService {
     }
     const msg = error?.message || String(error)
     if (msg.includes('fetch failed')) return `连接失败：${causeMsg || causeCode || '请检查地址是否正确'}`
-    if (msg.includes('HTTP 404')) return 'API 路径不存在（404），请检查地址是否包含完整路径（如 https://host/jumpserver）'
+    if (msg.includes('HTTP 404')) {
+      const urlMatch = msg.match(/\[(.+?)\]/)
+      const hint = urlMatch ? `\n请求地址：${urlMatch[1]}` : ''
+      return `API 路径不存在（404），请检查 JumpServer 地址是否正确${hint}`
+    }
     if (msg.includes('401')) return '认证失败，请检查用户名和密码'
     if (msg.includes('403')) return '权限不足'
     return msg

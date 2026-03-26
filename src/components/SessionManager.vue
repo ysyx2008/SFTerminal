@@ -115,6 +115,12 @@ const deleteSession = async (session: SshSession) => {
 }
 
 const connectSession = async (session: SshSession) => {
+  // JumpServer 会话由堡垒机处理认证，不需要目标主机凭据
+  const jumpHost = configStore.getEffectiveJumpHost(session)
+  if (jumpHost) {
+    await doConnect(session)
+    return
+  }
   const needsCredentials = !session.username || (!session.password && !session.privateKeyPath)
   if (needsCredentials) {
     credentialSession.value = session

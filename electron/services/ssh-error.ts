@@ -12,6 +12,7 @@ export type SshErrorType =
   | 'host_unreachable'   // 主机不可达
   | 'network_error'      // 网络错误
   | 'key_error'          // 密钥格式错误
+  | 'handshake_failed'   // SSH 握手失败（连接已建立但协议握手未完成）
   | 'unknown'            // 未知错误
 
 // 错误信息映射（中文）
@@ -23,6 +24,7 @@ export const SSH_ERROR_MESSAGES_ZH: Record<SshErrorType, string> = {
   host_unreachable: '主机不可达：无法连接到目标主机，请检查网络连接',
   network_error: '网络错误：网络连接异常，请检查网络设置',
   key_error: '密钥错误：私钥格式不正确或密钥密码错误',
+  handshake_failed: 'SSH 握手失败：TCP 连接成功但 SSH 服务未响应，请确认目标端口运行的是 SSH 服务',
   unknown: '连接失败'
 }
 
@@ -35,6 +37,7 @@ export const SSH_ERROR_MESSAGES_EN: Record<SshErrorType, string> = {
   host_unreachable: 'Host unreachable: Unable to connect to target host, please check network connection',
   network_error: 'Network error: Network connection exception, please check network settings',
   key_error: 'Key error: Invalid private key format or incorrect passphrase',
+  handshake_failed: 'SSH handshake failed: TCP connected but SSH service did not respond, please verify the target port is running an SSH service',
   unknown: 'Connection failed'
 }
 
@@ -76,6 +79,15 @@ export function parseSshError(error: Error | string): SshErrorType {
     return 'key_error'
   }
   
+  // SSH 握手失败（TCP 连接成功但 SSH 协议层失败）
+  if (
+    messageLower.includes('connection lost before handshake') ||
+    messageLower.includes('handshake failed') ||
+    (messageLower.includes('protocol') && messageLower.includes('mismatch'))
+  ) {
+    return 'handshake_failed'
+  }
+
   // 连接超时
   if (
     messageLower.includes('timed out') ||

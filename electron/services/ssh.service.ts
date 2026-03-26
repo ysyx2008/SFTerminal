@@ -224,11 +224,11 @@ export class SshService {
    */
   private async connectViaJumpHost(id: string, config: SshConfig): Promise<string> {
     const jumpHost = config.jumpHost!
-    
+    log.info(`Connecting via jump host: ${jumpHost.username}@${jumpHost.host}:${jumpHost.port} -> ${config.username}@${config.host}:${config.port}`)
+
     return new Promise((resolve, reject) => {
       const jumpClient = new Client()
 
-      // 准备跳板机私钥
       let jumpPrivateKey: string | Buffer | undefined
       if (jumpHost.authType === 'privateKey' && jumpHost.privateKeyPath) {
         try {
@@ -239,22 +239,14 @@ export class SshService {
         }
       }
 
-      // 跳板机连接配置
-      const jumpConnectConfig: {
-        host: string
-        port: number
-        username: string
-        password?: string
-        privateKey?: string | Buffer
-        passphrase?: string
-        readyTimeout: number
-        keepaliveInterval: number
-      } = {
+      const jumpConnectConfig: Record<string, unknown> = {
         host: jumpHost.host,
         port: jumpHost.port,
         username: jumpHost.username,
         readyTimeout: 30000,
-        keepaliveInterval: 10000
+        keepaliveInterval: 10000,
+        tryKeyboard: true,
+        debug: (msg: string) => log.debug(`[jump-ssh] ${msg}`)
       }
 
       if (jumpPrivateKey) {
@@ -266,10 +258,13 @@ export class SshService {
         jumpConnectConfig.password = jumpHost.password
       }
 
+      jumpClient.on('keyboard-interactive', (_name, _instructions, _instructionsLang, _prompts, finish) => {
+        finish([jumpHost.password || ''])
+      })
+
       jumpClient.on('ready', () => {
         log.info(`Jump host connected: ${jumpHost.username}@${jumpHost.host}`)
-        
-        // 通过跳板机建立到目标服务器的隧道
+
         jumpClient.forwardOut(
           '127.0.0.1',
           0,
@@ -277,6 +272,21 @@ export class SshService {
           config.port,
           async (err, stream) => {
             if (err) {
+              const isForwardingDisabled = err.message.includes('port forwarding') ||
+                err.message.includes('administratively prohibited')
+
+              if (isForwardingDisabled) {
+                log.warn(`Port forwarding not supported, falling back to JumpServer direct shell mode`)
+                jumpClient.end()
+                try {
+                  const result = await this.connectViaJumpServerShell(id, config)
+                  resolve(result)
+                } catch (shellErr) {
+                  reject(shellErr)
+                }
+                return
+              }
+
               log.error(`Forward failed:`, err)
               jumpClient.end()
               reject(new Error(`通过跳板机建立隧道失败: ${err.message}`))
@@ -284,15 +294,13 @@ export class SshService {
             }
 
             try {
-              // 在隧道上建立到目标服务器的 SSH 连接
               await this.directConnect(id, config, stream as unknown as NodeJS.ReadableStream)
-              
-              // 保存跳板机客户端引用，以便断开时一起清理
+
               const instance = this.instances.get(id)
               if (instance) {
                 instance.jumpClient = jumpClient
               }
-              
+
               resolve(id)
             } catch (connectErr) {
               jumpClient.end()
@@ -304,17 +312,14 @@ export class SshService {
 
       jumpClient.on('error', err => {
         log.error(`Jump host error:`, err)
-        // 使用错误解析工具提供更友好的错误信息
         const friendlyMessage = getSshErrorMessage(err)
         reject(new Error(`连接跳板机失败: ${friendlyMessage}`))
       })
 
       jumpClient.on('close', () => {
         log.info(`Jump host connection closed`)
-        // 跳板机关闭时，也关闭目标连接
         const instance = this.instances.get(id)
         if (instance) {
-          // 触发断开连接事件
           this.emitDisconnect({ id, reason: 'jump_host_closed' })
           instance.client.end()
           this.instances.delete(id)
@@ -322,6 +327,127 @@ export class SshService {
       })
 
       jumpClient.connect(jumpConnectConfig)
+    })
+  }
+
+  /**
+   * JumpServer 直连模式：通过 Koko SSH 代理的 shell 直接连接目标资产
+   * 使用 JumpServer 的直连用户名格式: {js_user}#{target_ip} 或 {js_user}#{target_ip}#{account}
+   */
+  private async connectViaJumpServerShell(id: string, config: SshConfig): Promise<string> {
+    const jumpHost = config.jumpHost!
+
+    // 使用 JumpServer 用户名连接 Koko，通过交互式 shell 访问目标资产
+    const directUsername = jumpHost.username
+    log.info(`JumpServer shell mode: ${directUsername}@${jumpHost.host}:${jumpHost.port} (target: ${config.host})`)
+
+    return new Promise((resolve, reject) => {
+      const client = new Client()
+      const encoding = config.encoding || 'utf-8'
+
+      const connectConfig: Record<string, unknown> = {
+        host: jumpHost.host,
+        port: jumpHost.port,
+        username: directUsername,
+        readyTimeout: 30000,
+        keepaliveInterval: 10000,
+        tryKeyboard: true,
+        debug: (msg: string) => log.debug(`[jump-shell] ${msg}`)
+      }
+
+      let jumpPrivateKey: string | Buffer | undefined
+      if (jumpHost.authType === 'privateKey' && jumpHost.privateKeyPath) {
+        try {
+          jumpPrivateKey = fs.readFileSync(jumpHost.privateKeyPath)
+        } catch (err) {
+          reject(new Error(`无法读取跳板机私钥文件: ${jumpHost.privateKeyPath}`))
+          return
+        }
+      }
+
+      if (jumpPrivateKey) {
+        connectConfig.privateKey = jumpPrivateKey
+        if (jumpHost.passphrase) {
+          connectConfig.passphrase = jumpHost.passphrase
+        }
+      } else if (jumpHost.password) {
+        connectConfig.password = jumpHost.password
+      }
+
+      client.on('keyboard-interactive', (_name, _instructions, _instructionsLang, _prompts, finish) => {
+        finish([jumpHost.password || ''])
+      })
+
+      client.on('ready', () => {
+        log.info(`JumpServer direct shell connected: ${directUsername}@${jumpHost.host}`)
+
+        client.shell(
+          { term: 'xterm-256color', cols: config.cols || 80, rows: config.rows || 24 },
+          (err, stream) => {
+            if (err) {
+              client.end()
+              reject(new Error(`打开 JumpServer Shell 失败: ${err.message}`))
+              return
+            }
+
+            const instance: SshInstance = {
+              client,
+              stream,
+              dataCallbacks: [],
+              config,
+              encoding
+            }
+
+            stream.on('data', (data: Buffer) => {
+              let str: string
+              if (encoding === 'utf-8') {
+                str = data.toString('utf-8')
+              } else {
+                str = iconv.decode(data, encoding)
+              }
+              instance.dataCallbacks.forEach(callback => callback(str))
+            })
+
+            stream.on('close', () => {
+              log.info(`${id} JumpServer shell closed`)
+              this.emitDisconnect({ id, reason: 'stream_closed' })
+              client.end()
+            })
+
+            this.instances.set(id, instance)
+
+            // Koko 就绪后自动发送目标 IP，触发资产搜索/直连
+            if (config.host) {
+              const sendTarget = () => stream.write(`${config.host}\r`)
+              // 监听首次数据到达（Koko 菜单已渲染），再发送目标 IP
+              const onFirstData = () => {
+                stream.removeListener('data', onFirstData)
+                setTimeout(sendTarget, 300)
+              }
+              stream.on('data', onFirstData)
+            }
+
+            resolve(id)
+          }
+        )
+      })
+
+      client.on('error', err => {
+        log.error(`JumpServer direct shell error:`, err)
+        const friendlyMessage = getSshErrorMessage(err)
+        reject(new Error(`连接 JumpServer 失败: ${friendlyMessage}`))
+      })
+
+      client.on('close', () => {
+        log.info(`JumpServer direct shell connection closed`)
+        const instance = this.instances.get(id)
+        if (instance) {
+          this.emitDisconnect({ id, reason: 'closed' })
+          this.instances.delete(id)
+        }
+      })
+
+      client.connect(connectConfig)
     })
   }
 
