@@ -2327,8 +2327,10 @@ export abstract class Agent {
     return messageTokens + 4000
   }
   
-  /** 上下文管理功能激活阈值（用量百分比） */
-  private static readonly CONTEXT_MGMT_THRESHOLD = 50
+  /** 上下文管理功能激活阈值（用量百分比）
+   *  与 85% 警告消息对齐：到了需要警告的时候才注册 compress_context 等工具，
+   *  避免过早注册导致工具列表变化破坏前缀缓存。 */
+  private static readonly CONTEXT_MGMT_THRESHOLD = 85
 
   // [缓存优化] 动态章节标题已禁用，见 updateContextPressure 中的注释
   // private static readonly CONTEXT_MGMT_HEADING = '\n\n## 运行环境'
@@ -2338,10 +2340,8 @@ export abstract class Agent {
    * 更新上下文压力状态：注入上下文状态 + 渐进式提醒
    * 
    * 设计原则：程序只提供信息，所有压缩决策由 AI 做。
-   * - < 50%: 不注入任何上下文信息（节省 token）
-   * - >= 50%: 注入上下文状态 + 管理章节 + 注册管理工具
-   * - 70%-85%: 追加压缩建议
-   * - 85%+: 注入警告消息到 run.messages
+   * - < 85%: 不干预（最大化前缀缓存命中）
+   * - >= 85%: 注册上下文管理工具（compress_context 等）+ 注入警告消息到 messages 末尾
    * - API 自然报错: 最终兜底
    */
   private updateContextPressure(run: AgentRun): void {
