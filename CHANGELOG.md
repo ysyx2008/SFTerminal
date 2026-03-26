@@ -2,7 +2,19 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.26.0 (2026-03-25) (Latest)
+## v10.26.1 (2026-03-26) (Latest)
+
+Adds cache hit rate visualization to the conversation panel, statistics panel, and context progress bar, making prompt caching savings visible at a glance.
+
+### New Features
+- 📊 **Cache Hit Rate Display**: Conversation panel and Token Usage Statistics now show cache hit rate percentages for each period
+- 🎨 **Context Bar Cache Visualization**: Context progress bar uses color segments to show cached vs uncached token proportions
+
+### Bug Fixes
+- 🎨 **Dark Theme Icon Visibility**: Fixed `.btn-icon` buttons being invisible in dark themes
+- 📊 **Cache Stats Flickering**: Fixed cache hit rate display briefly appearing then disappearing, and cache statistics data being lost between views
+
+## v10.26.0 (2026-03-25)
 
 Dramatically reduces AI API costs through prompt caching optimization across DeepSeek, OpenAI, and Anthropic — input token costs drop by 70–90% for typical Agent tasks. Also adds precise token usage tracking from API responses and a new Token Usage Statistics panel in Settings.
 

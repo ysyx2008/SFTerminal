@@ -770,11 +770,11 @@ interface Window {
       }) => Promise<{ success: boolean; imported?: { chat: number; agent: number; config: boolean }; error?: string }>
       cleanup: (days: number) => Promise<{ success: boolean; chatDeleted?: number; agentDeleted?: number; error?: string }>
       getTokenUsageStats: () => Promise<{
-        total: { prompt_tokens: number; completion_tokens: number; total_tokens: number; taskCount: number }
-        today: { prompt_tokens: number; completion_tokens: number; total_tokens: number; taskCount: number }
-        last7Days: { prompt_tokens: number; completion_tokens: number; total_tokens: number; taskCount: number }
-        last30Days: { prompt_tokens: number; completion_tokens: number; total_tokens: number; taskCount: number }
-        daily: Array<{ date: string; prompt_tokens: number; completion_tokens: number; total_tokens: number; taskCount: number }>
+        total: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cache_hit_tokens: number; cache_miss_tokens: number; taskCount: number }
+        today: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cache_hit_tokens: number; cache_miss_tokens: number; taskCount: number }
+        last7Days: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cache_hit_tokens: number; cache_miss_tokens: number; taskCount: number }
+        last30Days: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cache_hit_tokens: number; cache_miss_tokens: number; taskCount: number }
+        daily: Array<{ date: string; prompt_tokens: number; completion_tokens: number; total_tokens: number; cache_hit_tokens: number; cache_miss_tokens: number; taskCount: number }>
       }>
     }
     // 主机档案操作
