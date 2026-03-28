@@ -1413,10 +1413,16 @@ onUnmounted(() => {
               <p>🤖 {{ t('ai.agentWelcome.enabled') }}</p>
 
               <p class="welcome-section-title">💡 {{ t('ai.agentWelcome.whatIsAgent') }}</p>
-              <p class="welcome-desc">{{ t('ai.agentWelcome.agentDesc') }}</p>
+              <p class="welcome-desc">{{ isStandaloneAssistant ? t('ai.agentWelcome.standaloneDesc') : t('ai.agentWelcome.agentDesc') }}</p>
               
               <p class="welcome-section-title">🎯 {{ t('ai.agentWelcome.examples') }}</p>
-              <ul>
+              <ul v-if="isStandaloneAssistant">
+                <li>{{ t('ai.agentWelcome.standaloneExample1') }}</li>
+                <li>{{ t('ai.agentWelcome.standaloneExample2') }}</li>
+                <li>{{ t('ai.agentWelcome.standaloneExample3') }}</li>
+                <li>{{ t('ai.agentWelcome.standaloneExample4') }}</li>
+              </ul>
+              <ul v-else>
                 <li>{{ t('ai.agentWelcome.example1') }}</li>
                 <li>{{ t('ai.agentWelcome.example2') }}</li>
                 <li>{{ t('ai.agentWelcome.example3') }}</li>
@@ -1435,11 +1441,15 @@ onUnmounted(() => {
                 <li v-if="executionMode === 'strict'">{{ t('ai.agentWelcome.strictModeDesc2') }}</li>
                 <li v-if="executionMode === 'relaxed'"><strong>{{ t('ai.agentWelcome.relaxedModeDesc1') }}</strong></li>
                 <li v-if="executionMode === 'relaxed'">{{ t('ai.agentWelcome.relaxedModeDesc2') }}</li>
-                <li>{{ t('ai.agentWelcome.allCommandsVisible') }}</li>
+                <li>{{ isStandaloneAssistant ? t('ai.agentWelcome.standaloneAllCommandsVisible') : t('ai.agentWelcome.allCommandsVisible') }}</li>
               </ul>
 
               <p class="welcome-section-title">⚠️ {{ t('ai.agentWelcome.cautions') }}</p>
-              <ul>
+              <ul v-if="isStandaloneAssistant">
+                <li>{{ t('ai.agentWelcome.standaloneCaution1') }}</li>
+                <li>{{ t('ai.agentWelcome.standaloneCaution2') }}</li>
+              </ul>
+              <ul v-else>
                 <li>{{ t('ai.agentWelcome.caution1') }}</li>
                 <li>{{ t('ai.agentWelcome.caution2') }}</li>
               </ul>
