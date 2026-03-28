@@ -29,6 +29,7 @@ const getMaxAiWidth = () => window.innerWidth - 200
 
 // AiPanel 实例引用
 const aiPanelRef = ref<InstanceType<typeof AiPanel> | null>(null)
+const containerRef = ref<HTMLElement | null>(null)
 
 watch(() => props.isActive, (active) => {
   if (active && !aiPanelMounted.value) {
@@ -57,7 +58,8 @@ const startResize = (_e: MouseEvent) => {
 
 const handleResize = (e: MouseEvent) => {
   if (!isResizing.value) return
-  const newWidth = window.innerWidth - e.clientX
+  const containerLeft = containerRef.value?.getBoundingClientRect().left ?? 0
+  const newWidth = e.clientX - containerLeft
   const maxWidth = getMaxAiWidth()
   if (newWidth >= MIN_AI_WIDTH && newWidth <= maxWidth) {
     aiPanelWidth.value = newWidth
@@ -96,7 +98,27 @@ defineExpose({ toggleAiPanel, ensureAiPanel, showAiPanel })
 </script>
 
 <template>
-  <div class="terminal-tab">
+  <div ref="containerRef" class="terminal-tab">
+    <template v-if="!isSteamBuild && aiPanelMounted">
+      <div
+        v-show="showAiPanel"
+        class="tab-ai-sidebar"
+        :style="{ width: aiPanelWidth + 'px' }"
+      >
+        <AiPanel
+          ref="aiPanelRef"
+          :tab-id="tab.id"
+          :visible="aiPanelVisible"
+          @close="showAiPanel = false"
+        />
+      </div>
+      <div
+        v-show="showAiPanel"
+        class="resize-handle"
+        @mousedown="startResize"
+        :class="{ resizing: isResizing }"
+      ></div>
+    </template>
     <div class="terminal-main">
       <Terminal
         v-if="tab.ptyId"
@@ -117,26 +139,6 @@ defineExpose({ toggleAiPanel, ensureAiPanel, showAiPanel })
         <button class="btn btn-sm" @click="terminalStore.closeTab(tab.id)">{{ t('common.close') }}</button>
       </div>
     </div>
-    <template v-if="!isSteamBuild && aiPanelMounted">
-      <div
-        v-show="showAiPanel"
-        class="resize-handle"
-        @mousedown="startResize"
-        :class="{ resizing: isResizing }"
-      ></div>
-      <div
-        v-show="showAiPanel"
-        class="tab-ai-sidebar"
-        :style="{ width: aiPanelWidth + 'px' }"
-      >
-        <AiPanel
-          ref="aiPanelRef"
-          :tab-id="tab.id"
-          :visible="aiPanelVisible"
-          @close="showAiPanel = false"
-        />
-      </div>
-    </template>
   </div>
 </template>
 
@@ -155,11 +157,11 @@ defineExpose({ toggleAiPanel, ensureAiPanel, showAiPanel })
   overflow: hidden;
 }
 
-/* 终端 Tab 内的 AI 侧栏 */
+/* 终端 Tab 内的 AI 侧栏（左侧） */
 .tab-ai-sidebar {
   min-width: 280px;
   background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
-  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -170,7 +172,7 @@ defineExpose({ toggleAiPanel, ensureAiPanel, showAiPanel })
   content: '';
   position: absolute;
   top: 0;
-  left: 0;
+  right: 0;
   bottom: 0;
   width: 1px;
   background: linear-gradient(180deg, transparent, rgba(var(--accent-secondary-rgb, 116, 199, 236), 0.15), transparent);
