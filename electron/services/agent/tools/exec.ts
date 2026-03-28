@@ -7,7 +7,7 @@
  * - 同步等待命令完成（非交互式）
  * - 不支持 sudo、续行检测等终端特有交互
  */
-import { exec } from 'child_process'
+import { exec, execFile } from 'child_process'
 import { t } from '../i18n'
 import { assessCommandRisk, analyzeCommand } from '../risk-assessor'
 import { truncateFromEnd } from './utils'
@@ -116,11 +116,11 @@ export async function executeCommandDirect(
   }
 
   return new Promise<ToolResult>((resolve) => {
-    exec(command, { cwd, timeout, maxBuffer: MAX_BUFFER, shell: getDefaultShell() }, (error, stdout, stderr) => {
+    const execCallback = (error: Error | null, stdout: string, stderr: string) => {
       const combined = [stdout, stderr].filter(Boolean).join('\n').trim()
       const exitCode = error?.code ?? (error ? 1 : 0)
 
-      if (error && (error as NodeJS.ErrnoException).signal === 'SIGTERM') {
+      if (error && ((error as NodeJS.ErrnoException).signal === 'SIGTERM' || (error as any).killed)) {
         const output = truncateFromEnd(combined, 4000)
         executor.addStep({
           type: 'tool_result',
@@ -157,6 +157,14 @@ export async function executeCommandDirect(
       } else {
         resolve({ success: true, output: finalOutput })
       }
-    })
+    }
+
+    const shell = getDefaultShell()
+    const opts = { cwd, timeout, maxBuffer: MAX_BUFFER }
+    if (process.platform === 'win32') {
+      exec(command, { ...opts, shell }, execCallback)
+    } else {
+      execFile(shell, ['-l', '-c', command], opts, execCallback)
+    }
   })
 }

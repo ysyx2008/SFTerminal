@@ -175,9 +175,12 @@ function addCommonPaths(): void {
 }
 
 /**
- * 异步获取用户 shell 的完整 PATH
+ * 异步获取用户 login shell 的完整环境变量
+ * 
+ * Electron 从 Finder/Dock 启动时 process.env 不含 shell 配置文件中的变量，
+ * 通过启动一个 login interactive shell 执行 env 命令来捕获完整环境。
  */
-async function fixPathAsync(): Promise<void> {
+async function fixShellEnvAsync(): Promise<void> {
   if (process.platform === 'win32') {
     pathReady = true
     pathReadyResolve?.()
@@ -190,48 +193,88 @@ async function fixPathAsync(): Promise<void> {
     const execAsync = promisify(exec)
     
     const userShell = process.env.SHELL || '/bin/zsh'
+    const marker = `__SAILFISH_ENV_${Date.now()}__`
     
-    // 异步获取完整 PATH（使用 -l 而非 -l -i，更快）
+    // -l -i: login + interactive, 确保 .zprofile 和 .zshrc 都被 source
+    const { stdout } = await execAsync(
+      `${userShell} -l -i -c 'echo ${marker}START; env; echo ${marker}END'`,
+      { timeout: 5000, maxBuffer: 2 * 1024 * 1024, env: { ...process.env, HOME: process.env.HOME } }
+    )
+    
+    const startTag = `${marker}START\n`
+    const endTag = `\n${marker}END`
+    const startIdx = stdout.indexOf(startTag)
+    const endIdx = stdout.lastIndexOf(endTag)
+    
+    if (startIdx >= 0 && endIdx > startIdx) {
+      const envSection = stdout.substring(startIdx + startTag.length, endIdx)
+      const skipKeys = new Set([
+        '_', 'SHLVL', 'PWD', 'OLDPWD',
+        'TERM_SESSION_ID', 'TERM_PROGRAM', 'TERM_PROGRAM_VERSION',
+      ])
+      let count = 0
+      for (const line of envSection.split('\n')) {
+        const eqIdx = line.indexOf('=')
+        if (eqIdx <= 0) continue
+        const key = line.substring(0, eqIdx)
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || skipKeys.has(key)) continue
+        const value = line.substring(eqIdx + 1)
+        if (process.env[key] !== value) {
+          process.env[key] = value
+          count++
+        }
+      }
+      log.info(`fixShellEnv: merged ${count} env vars from login shell`)
+    } else {
+      log.warn('fixShellEnv: markers not found, falling back to PATH-only')
+      await fixPathOnly(execAsync, userShell)
+    }
+  } catch (error) {
+    log.warn('fixShellEnv: failed, falling back to PATH-only:', error)
+    await fixPathFallback()
+  } finally {
+    pathReady = true
+    pathReadyResolve?.()
+    mainWindow?.webContents.send('path:ready')
+  }
+}
+
+async function fixPathOnly(
+  execAsync: (cmd: string, opts?: object) => Promise<{ stdout: string }>,
+  userShell: string
+): Promise<void> {
+  try {
     const { stdout } = await execAsync(`${userShell} -l -c 'echo -n $PATH'`, {
-      timeout: 3000,  // 减少超时时间
+      timeout: 3000,
       env: { ...process.env, HOME: process.env.HOME }
     })
-    
     const shellPath = stdout.trim()
     if (shellPath && shellPath !== process.env.PATH) {
       const currentPaths = (process.env.PATH || '').split(':')
       const shellPaths = shellPath.split(':')
-      const allPaths = Array.from(new Set([...shellPaths, ...currentPaths]))
-      process.env.PATH = allPaths.join(':')
+      process.env.PATH = Array.from(new Set([...shellPaths, ...currentPaths])).join(':')
     }
-  } catch (error) {
-    // 异步获取失败不影响，因为已经有常见路径了
-    log.warn('fixPath: 异步获取 PATH 失败，使用预设路径:', error)
-    
-    // 尝试展开 nvm 路径（可能之前没添加）
-    try {
-      const homeDir = process.env.HOME || ''
-      const nvmBase = `${homeDir}/.nvm/versions/node`
-      if (fs.existsSync(nvmBase)) {
-        const versions = fs.readdirSync(nvmBase)
-        const nvmPaths = versions
-          .map(v => `${nvmBase}/${v}/bin`)
-          .filter(p => fs.existsSync(p))
-        
-        if (nvmPaths.length > 0) {
-          const currentPaths = (process.env.PATH || '').split(':')
-          const allPaths = Array.from(new Set([...nvmPaths, ...currentPaths]))
-          process.env.PATH = allPaths.join(':')
-        }
+  } catch {
+    await fixPathFallback()
+  }
+}
+
+async function fixPathFallback(): Promise<void> {
+  try {
+    const homeDir = process.env.HOME || ''
+    const nvmBase = `${homeDir}/.nvm/versions/node`
+    if (fs.existsSync(nvmBase)) {
+      const versions = fs.readdirSync(nvmBase)
+      const nvmPaths = versions
+        .map(v => `${nvmBase}/${v}/bin`)
+        .filter(p => fs.existsSync(p))
+      if (nvmPaths.length > 0) {
+        const currentPaths = (process.env.PATH || '').split(':')
+        process.env.PATH = Array.from(new Set([...nvmPaths, ...currentPaths])).join(':')
       }
-    } catch {
-      // 忽略
     }
-  } finally {
-    pathReady = true
-    pathReadyResolve?.()
-    // 通知前端 PATH 已就绪
-    mainWindow?.webContents.send('path:ready')
+  } catch {
+    // ignore
   }
 }
 
@@ -253,8 +296,8 @@ function isPathReady(): boolean {
 // 立即添加常见路径（不阻塞）
 addCommonPaths()
 
-// 异步获取完整 PATH（后台执行）
-fixPathAsync()
+// 异步获取 shell 完整环境变量（后台执行）
+fixShellEnvAsync()
 import { PtyService } from './services/pty.service'
 import { SshService } from './services/ssh.service'
 import { AiService } from './services/ai.service'
