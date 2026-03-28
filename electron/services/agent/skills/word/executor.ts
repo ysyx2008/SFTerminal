@@ -87,15 +87,25 @@ async function generatePreviewHtml(filePath: string): Promise<string> {
   if (!session) return ''
 
   if (session.zip && session.documentXml) {
+    // 将修改后的 XML 写回 zip 副本，用 mammoth 转 HTML 保留格式
     try {
-      const paragraphs = getParagraphs(session.documentXml)
-      return paragraphs.map(p => {
-        const text = p.text.trim()
-        return text ? `<p>${escapeHtml(text)}</p>` : ''
-      }).filter(Boolean).join('\n')
+      const JSZip = (await import('jszip')).default
+      const rawBuf = await session.zip.generateAsync({ type: 'nodebuffer' })
+      const cloned = await JSZip.loadAsync(rawBuf)
+      cloned.file('word/document.xml', session.documentXml)
+      const outBuf = await cloned.generateAsync({ type: 'nodebuffer' })
+      const mammoth = await import('mammoth')
+      const result = await mammoth.convertToHtml({ buffer: outBuf })
+      return result.value
     } catch (e) {
-      log.warn('Failed to generate preview from XML:', e)
-      return ''
+      log.warn('Failed to generate mammoth preview, falling back to text:', e)
+      try {
+        const paragraphs = getParagraphs(session.documentXml)
+        return paragraphs.map(p => {
+          const text = p.text.trim()
+          return text ? `<p>${escapeHtml(text)}</p>` : ''
+        }).filter(Boolean).join('\n')
+      } catch { return '' }
     }
   } else {
     return sectionsToHtml(session.sections)

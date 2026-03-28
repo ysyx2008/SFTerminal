@@ -3,7 +3,7 @@
  * Canvas DocumentRenderer
  *
  * 渲染 Word 文档的 HTML 预览（由 mammoth.js 转换）。
- * 只读展示，内容通过 canvas store 的 content 字段获取。
+ * 白纸效果模拟 Word 文档版式。
  */
 import { computed } from 'vue'
 import { useCanvasStore } from '../../stores/canvas'
@@ -18,7 +18,9 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
 
 <template>
   <div class="document-renderer">
-    <div class="document-content" v-html="content"></div>
+    <div class="document-page">
+      <div class="document-content" v-html="content"></div>
+    </div>
   </div>
 </template>
 
@@ -28,55 +30,69 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--bg-primary, #1e1e1e);
-  padding: 16px 20px;
+  background: #2a2a2a;
+  padding: 20px 16px;
+}
+
+/* 白纸容器 */
+.document-page {
+  max-width: 680px;
+  margin: 0 auto;
+  background: #fff;
+  border-radius: 3px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  padding: 48px 56px;
+  min-height: 200px;
 }
 
 .document-content {
-  max-width: 700px;
-  margin: 0 auto;
-  color: var(--text-primary, #e0e0e0);
+  color: #1a1a1a;
+  font-family: 'Songti SC', 'SimSun', 'Times New Roman', serif;
   font-size: 14px;
-  line-height: 1.7;
+  line-height: 1.8;
   word-wrap: break-word;
 }
 
 /* mammoth 输出的 HTML 元素样式 */
 .document-content :deep(h1) {
-  font-size: 1.6em;
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  font-size: 22px;
   font-weight: 700;
-  margin: 1.2em 0 0.6em;
-  color: var(--text-primary, #fff);
-  border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-  padding-bottom: 0.3em;
+  margin: 1em 0 0.5em;
+  color: #000;
+  text-align: center;
 }
 
 .document-content :deep(h2) {
-  font-size: 1.35em;
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  font-size: 18px;
   font-weight: 600;
-  margin: 1em 0 0.5em;
-  color: var(--text-primary, #fff);
+  margin: 0.8em 0 0.4em;
+  color: #111;
 }
 
 .document-content :deep(h3) {
-  font-size: 1.15em;
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  font-size: 15px;
   font-weight: 600;
-  margin: 0.8em 0 0.4em;
-  color: var(--text-primary, #fff);
+  margin: 0.6em 0 0.3em;
+  color: #222;
 }
 
 .document-content :deep(p) {
-  margin: 0.5em 0;
+  margin: 0.4em 0;
+  text-indent: 2em;
 }
 
 .document-content :deep(ul),
 .document-content :deep(ol) {
-  padding-left: 1.5em;
-  margin: 0.5em 0;
+  padding-left: 2em;
+  margin: 0.4em 0;
 }
 
 .document-content :deep(li) {
-  margin: 0.2em 0;
+  margin: 0.15em 0;
+  text-indent: 0;
 }
 
 .document-content :deep(table) {
@@ -88,45 +104,59 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
 
 .document-content :deep(th),
 .document-content :deep(td) {
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
-  padding: 6px 10px;
+  border: 1px solid #bbb;
+  padding: 5px 8px;
   text-align: left;
+  text-indent: 0;
 }
 
 .document-content :deep(th) {
-  background: var(--bg-secondary, #252525);
+  background: #f2f2f2;
   font-weight: 600;
+  color: #111;
 }
 
-.document-content :deep(strong) {
-  font-weight: 600;
-  color: var(--text-primary, #fff);
+.document-content :deep(strong),
+.document-content :deep(b) {
+  font-weight: 700;
+  color: #000;
 }
 
-.document-content :deep(em) {
+.document-content :deep(em),
+.document-content :deep(i) {
   font-style: italic;
 }
 
-.document-content :deep(a) {
-  color: var(--accent-color, #4a9eff);
-  text-decoration: none;
+.document-content :deep(u) {
+  text-decoration: underline;
 }
 
-.document-content :deep(a:hover) {
+.document-content :deep(a) {
+  color: #0563C1;
   text-decoration: underline;
 }
 
 .document-content :deep(img) {
   max-width: 100%;
   height: auto;
-  border-radius: 4px;
   margin: 0.5em 0;
 }
 
 .document-content :deep(blockquote) {
-  border-left: 3px solid var(--accent-color, #4a9eff);
+  border-left: 3px solid #ccc;
   padding-left: 12px;
   margin: 0.5em 0;
-  color: var(--text-secondary, #aaa);
+  color: #555;
+}
+
+.document-content :deep(hr) {
+  border: none;
+  border-top: 1px dashed #ccc;
+  margin: 1.5em 0;
+}
+
+.document-content :deep(sup) {
+  font-size: 0.75em;
+  color: #666;
 }
 </style>
