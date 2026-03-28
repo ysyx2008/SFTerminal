@@ -178,12 +178,14 @@ function generateExcelPreviewHtml(filePath: string, activeSheet?: string): strin
 
   const parts: string[] = []
 
+  // Sheet 标签栏放到表格之后（底部），和 Excel 一致
+  let sheetTabsHtml = ''
   if (worksheets.length > 1) {
     const tabs = worksheets.map(ws => {
       const isActive = activeSheet ? ws.name === activeSheet : ws === worksheets[0]
       return `<span class="sheet-tab${isActive ? ' active' : ''}">${escapeHtml(ws.name)}</span>`
     }).join('')
-    parts.push(`<div class="sheet-tabs">${tabs}</div>`)
+    sheetTabsHtml = `<div class="sheet-tabs">${tabs}</div>`
   }
 
   const targetSheet = activeSheet
@@ -246,6 +248,10 @@ function generateExcelPreviewHtml(filePath: string, activeSheet?: string): strin
 
   if (targetSheet.rowCount > maxRows || targetSheet.columnCount > maxCols) {
     parts.push(`<p style="color: #888; font-size: 11px; margin-top: 4px;">显示 ${maxRows}/${targetSheet.rowCount} 行, ${maxCols}/${targetSheet.columnCount} 列</p>`)
+  }
+
+  if (sheetTabsHtml) {
+    parts.push(sheetTabsHtml)
   }
 
   return parts.join('\n')

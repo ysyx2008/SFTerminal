@@ -2,8 +2,7 @@
 /**
  * Canvas SpreadsheetRenderer
  *
- * 渲染 Excel 表格的 HTML 预览。
- * 后端将 ExcelJS 工作表数据转为 HTML table 推送到 canvas store。
+ * 渲染 Excel 表格的 HTML 预览，仿 Excel 白底绿色主题。
  */
 import { computed } from 'vue'
 import { useCanvasStore } from '../../stores/canvas'
@@ -27,63 +26,73 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
   width: 100%;
   height: 100%;
   overflow: auto;
-  background: var(--bg-primary, #1e1e1e);
+  background: #f3f3f3;
 }
 
 .spreadsheet-content {
-  padding: 8px;
+  padding: 0;
   min-width: max-content;
 }
 
 .spreadsheet-content :deep(table) {
   border-collapse: collapse;
   font-size: 12px;
-  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  font-family: 'Calibri', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
   white-space: nowrap;
+  background: #fff;
 }
 
 .spreadsheet-content :deep(th),
 .spreadsheet-content :deep(td) {
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
-  padding: 4px 8px;
+  border: 1px solid #d4d4d4;
+  padding: 3px 6px;
   text-align: left;
-  min-width: 60px;
+  min-width: 64px;
   max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;
+  height: 20px;
 }
 
 /* 行号列 */
 .spreadsheet-content :deep(th.row-header),
 .spreadsheet-content :deep(td.row-header) {
-  background: var(--bg-tertiary, #2a2a2a);
-  color: var(--text-secondary, #888);
+  background: #f8f8f8;
+  color: #555;
   text-align: center;
-  min-width: 40px;
-  max-width: 40px;
+  min-width: 36px;
+  max-width: 50px;
   font-weight: 400;
+  font-size: 11px;
+  border-color: #d4d4d4;
   position: sticky;
   left: 0;
   z-index: 1;
 }
 
-/* 列头 */
+/* 列头 (A, B, C...) */
 .spreadsheet-content :deep(th) {
-  background: var(--bg-secondary, #252525);
-  color: var(--text-secondary, #aaa);
+  background: #f8f8f8;
+  color: #555;
   font-weight: 500;
+  font-size: 11px;
+  text-align: center;
+  border-color: #d4d4d4;
   position: sticky;
   top: 0;
   z-index: 2;
 }
 
-/* 左上角单元格 */
+/* 左上角 */
 .spreadsheet-content :deep(th.corner) {
   z-index: 3;
+  background: #f0f0f0;
 }
 
+/* 数据单元格 */
 .spreadsheet-content :deep(td) {
-  color: var(--text-primary, #e0e0e0);
+  color: #1a1a1a;
+  background: #fff;
 }
 
 /* 数字右对齐 */
@@ -92,25 +101,41 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
   font-variant-numeric: tabular-nums;
 }
 
-/* 工作表标签 */
+/* 工作表标签栏 */
 .spreadsheet-content :deep(.sheet-tabs) {
   display: flex;
-  gap: 1px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  gap: 0;
+  padding: 0 4px;
+  background: #e8e8e8;
+  border-top: 1px solid #d4d4d4;
+  position: sticky;
+  bottom: 0;
 }
 
 .spreadsheet-content :deep(.sheet-tab) {
-  padding: 4px 12px;
+  padding: 5px 14px;
   font-size: 11px;
-  color: var(--text-secondary, #aaa);
-  background: var(--bg-secondary, #252525);
-  border-radius: 4px 4px 0 0;
+  font-family: 'Calibri', 'Segoe UI', Arial, sans-serif;
+  color: #555;
+  background: #e0e0e0;
+  border: 1px solid #d4d4d4;
+  border-bottom: none;
+  border-radius: 0 0 0 0;
+  margin-top: 2px;
+  cursor: default;
 }
 
 .spreadsheet-content :deep(.sheet-tab.active) {
-  color: var(--text-primary, #fff);
-  background: var(--bg-primary, #1e1e1e);
-  border-bottom: 2px solid var(--accent-color, #4a9eff);
+  color: #1a1a1a;
+  background: #fff;
+  font-weight: 500;
+  border-bottom: 1px solid #fff;
+  margin-bottom: -1px;
+}
+
+/* 截断提示 */
+.spreadsheet-content :deep(p) {
+  margin: 4px 8px;
+  font-family: 'Calibri', Arial, sans-serif;
 }
 </style>
