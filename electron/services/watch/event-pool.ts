@@ -41,12 +41,18 @@ export class EventPool {
   private maxPoolSize: number
 
   private downstream: EventHandler
+  private afterDrainCallback: (() => void) | null = null
 
   constructor(downstream: EventHandler, config?: EventPoolConfig) {
     this.downstream = downstream
     this.drainIntervalMs = config?.drainIntervalMs ?? DEFAULT_DRAIN_INTERVAL_MS
     this.quietHours = config?.quietHours ?? null
     this.maxPoolSize = config?.maxPoolSize ?? DEFAULT_MAX_POOL_SIZE
+  }
+
+  /** 注册排水成功后的回调（用于持久化传感器状态） */
+  onAfterDrain(cb: () => void): void {
+    this.afterDrainCallback = cb
   }
 
   /** 接管 EventBus：订阅事件总线，所有事件经过 EventPool 分流 */
@@ -107,6 +113,7 @@ export class EventPool {
 
     log.info(batch.length ? `Draining ${batch.length} pooled event(s)` : 'Heartbeat: sending empty batch for routine check')
     await this.downstream(batchEvent)
+    this.afterDrainCallback?.()
   }
 
   /** 更新配置 */

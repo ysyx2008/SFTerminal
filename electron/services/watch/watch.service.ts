@@ -125,6 +125,9 @@ export class WatchService {
       drainIntervalMs: (drainMinutes || 15) * 60 * 1000,
       quietHours
     })
+    this.eventPool.onAfterDrain(() => {
+      this.config?.sensorService.email.saveState()
+    })
     this.eventPool.attach(eventBus)
 
     // 调度触发器 + 注册传感器 target

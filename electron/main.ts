@@ -982,6 +982,7 @@ app.whenReady().then(async () => {
       }
 
       // 启动传感器前，先把已保存的邮箱/日历账户注入传感器，否则 shouldAutoStart() 会因为 accounts 为空而跳过
+      sensorService.email.setStatePath(app.getPath('userData'))
       try {
         const emailAccounts = (configService.get('emailAccounts' as any) || []) as Array<{
           id: string; email: string; provider: string; imapHost?: string; imapPort?: number; rejectUnauthorized?: boolean

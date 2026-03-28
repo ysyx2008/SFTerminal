@@ -6,14 +6,20 @@
  *
  * 工作流程（每个账户独立）：
  *   1. 连接 IMAP 服务器并选中 INBOX
- *   2. 首次连接时扫描已有未读邮件（最多 50 封），补发事件（payload.catchUp=true）
+ *   2. 从磁盘加载上次已知的 lastSeenUid，仅获取之后到达的新邮件
  *   3. 进入 IDLE 模式，等待服务器推送新邮件通知
  *   4. 收到新邮件时，获取邮件头信息，匹配 Watch 过滤规则
  *   5. 匹配成功则产生 email 事件投入 EventBus
  *   6. 连接断开时自动重连（指数退避），重连后补漏断线期间到达的邮件
+ *
+ * 状态持久化：
+ *   - 每个账户的 lastSeenUid 持久化到 {userData}/email-sensor-state.json
+ *   - 重启后从磁盘恢复，只处理上次之后的新邮件，避免旧未读邮件重复上报
  */
 import type { Sensor, SensorEvent, EventBus } from './types'
 import { createLogger } from '../../utils/logger'
+import * as fs from 'fs'
+import * as path from 'path'
 
 const log = createLogger('EmailSensor')
 
@@ -52,7 +58,10 @@ interface AccountConnection {
 const MAX_RECONNECT_DELAY_MS = 5 * 60 * 1000
 const INITIAL_RECONNECT_DELAY_MS = 5 * 1000
 const IDLE_TIMEOUT_MS = 25 * 60 * 1000
-const MAX_UNSEEN_SCAN = 50
+
+interface PersistedState {
+  accounts: Record<string, { lastSeenUid: number }>
+}
 
 let ImapFlowClass: any = null
 
@@ -75,6 +84,8 @@ export class EmailSensor implements Sensor {
   private accounts: EmailAccountInfo[] = []
   private getCredential: EmailCredentialGetter | null = null
   private connections: Map<string, AccountConnection> = new Map()
+  private statePath: string | null = null
+  private persistedUids: Record<string, number> = {}
 
   get running(): boolean {
     return this._running
@@ -89,6 +100,46 @@ export class EmailSensor implements Sensor {
 
   constructor(eventBus: EventBus) {
     this.eventBus = eventBus
+  }
+
+  /** 设置状态持久化路径（应在 start() 前调用） */
+  setStatePath(userDataPath: string): void {
+    this.statePath = path.join(userDataPath, 'email-sensor-state.json')
+    this.loadState()
+  }
+
+  private loadState(): void {
+    if (!this.statePath) return
+    try {
+      if (fs.existsSync(this.statePath)) {
+        const data: PersistedState = JSON.parse(fs.readFileSync(this.statePath, 'utf-8'))
+        this.persistedUids = {}
+        for (const [id, info] of Object.entries(data.accounts || {})) {
+          if (typeof info.lastSeenUid === 'number' && info.lastSeenUid > 0) {
+            this.persistedUids[id] = info.lastSeenUid
+          }
+        }
+        log.info(`Loaded persisted state for ${Object.keys(this.persistedUids).length} account(s)`)
+      }
+    } catch (err) {
+      log.warn('Failed to load persisted state:', err)
+    }
+  }
+
+  /** 将当前 UID 水位持久化到磁盘（由 EventPool 排水成功后调用） */
+  saveState(): void {
+    if (!this.statePath) return
+    try {
+      const state: PersistedState = { accounts: {} }
+      for (const conn of this.connections.values()) {
+        if (conn.lastSeenUid > 0) {
+          state.accounts[conn.account.accountId] = { lastSeenUid: conn.lastSeenUid }
+        }
+      }
+      fs.writeFileSync(this.statePath, JSON.stringify(state, null, 2))
+    } catch (err) {
+      log.warn('Failed to save persisted state:', err)
+    }
   }
 
   /**
@@ -114,6 +165,11 @@ export class EmailSensor implements Sensor {
         await this.startAccount(acct)
       }
     }
+
+    for (const acct of removed) {
+      delete this.persistedUids[acct.accountId]
+    }
+    if (removed.length > 0) this.saveState()
 
     log.info(`Configured ${accounts.length} account(s) (added=${added.length}, removed=${removed.length})`)
   }
@@ -156,6 +212,8 @@ export class EmailSensor implements Sensor {
     if (!this._running) return
     this._running = false
 
+    this.saveState()
+
     const stopTasks = Array.from(this.connections.keys()).map(id => this.stopAccount(id))
     await Promise.all(stopTasks)
 
@@ -182,9 +240,13 @@ export class EmailSensor implements Sensor {
       reconnectTimer: null,
       reconnectDelay: INITIAL_RECONNECT_DELAY_MS,
       idleRefreshTimer: null,
-      lastSeenUid: 0
+      lastSeenUid: this.persistedUids[account.accountId] || 0
     }
     this.connections.set(account.accountId, conn)
+
+    if (conn.lastSeenUid > 0) {
+      log.info(`${account.email}: Restored lastSeenUid=${conn.lastSeenUid} from persisted state`)
+    }
 
     await this.connectAccount(conn)
   }
@@ -272,10 +334,13 @@ export class EmailSensor implements Sensor {
       const lock = await conn.imapClient.getMailboxLock('INBOX')
       try {
         if (conn.lastSeenUid === 0) {
+          // 首次运行（无持久化记录）：从当前最新 UID 开始，不扫描已有未读邮件
           const status = await conn.imapClient.status('INBOX', { uidNext: true })
           conn.lastSeenUid = (status.uidNext || 1) - 1
-          await this.checkUnseenMail(conn)
+          this.saveState()
+          log.info(`${conn.account.email}: First run, starting from UID ${conn.lastSeenUid}`)
         } else {
+          // 有持久化记录或同一会话内重连：只获取上次之后的新邮件
           await this.checkNewMail(conn)
         }
 
@@ -307,31 +372,6 @@ export class EmailSensor implements Sensor {
     }
   }
 
-  /**
-   * 首次连接时扫描 INBOX 中已有的未读邮件，补发事件。
-   * 限制最多处理最近 MAX_UNSEEN_SCAN 封，防止积压大量未读时拖慢启动。
-   */
-  private async checkUnseenMail(conn: AccountConnection): Promise<void> {
-    if (!conn.imapClient?.usable || this.targets.size === 0) return
-
-    try {
-      const unseenSeqs: number[] = await conn.imapClient.search({ seen: false })
-      if (!unseenSeqs?.length) return
-
-      const toScan = unseenSeqs.length > MAX_UNSEEN_SCAN
-        ? unseenSeqs.slice(-MAX_UNSEEN_SCAN)
-        : unseenSeqs
-
-      log.info(`${conn.account.email}: Scanning ${toScan.length} unseen email(s) at startup (total unseen: ${unseenSeqs.length})`)
-
-      for await (const msg of conn.imapClient.fetch(toScan, { envelope: true, uid: true })) {
-        this.emitMailEvents(conn, msg, true)
-      }
-    } catch (err) {
-      log.error(`${conn.account.email}: Check unseen mail error:`, err)
-    }
-  }
-
   private async checkNewMail(conn: AccountConnection): Promise<void> {
     if (!conn.imapClient?.usable) return
 
@@ -342,7 +382,7 @@ export class EmailSensor implements Sensor {
       )) {
         if (msg.uid > conn.lastSeenUid) {
           conn.lastSeenUid = msg.uid
-          this.emitMailEvents(conn, msg, false)
+          this.emitMailEvents(conn, msg)
         }
       }
     } catch (err) {
@@ -350,7 +390,7 @@ export class EmailSensor implements Sensor {
     }
   }
 
-  private emitMailEvents(conn: AccountConnection, msg: any, catchUp: boolean): void {
+  private emitMailEvents(conn: AccountConnection, msg: any): void {
     const from = msg.envelope?.from?.[0]
     const fromAddr = from?.address || ''
     const fromName = from?.name || ''
@@ -370,13 +410,12 @@ export class EmailSensor implements Sensor {
             fromName,
             subject,
             date: msg.envelope?.date?.toISOString(),
-            account: conn.account.email,
-            ...(catchUp && { catchUp: true })
+            account: conn.account.email
           },
           priority: 'normal'
         }
 
-        log.info(`${conn.account.email}: ${catchUp ? 'Unseen' : 'New'} email from ${fromAddr}: ${subject}`)
+        log.info(`${conn.account.email}: New email from ${fromAddr}: ${subject}`)
         this.eventBus.emit(event)
       }
     }
