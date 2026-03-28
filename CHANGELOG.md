@@ -2,7 +2,24 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.26.2 (2026-03-26) (Latest)
+## v10.26.3 (2026-03-28) (Latest)
+
+Moves the AI panel to the left side as the primary interaction area, reinforcing the Agent-first layout. Includes fixes for confirmation dialogs, thinking indicators, Agent tool safety, and email sensor reliability.
+
+### Improvements
+- 🎨 **Agent-First Layout**: AI panel moved from right to left side, establishing the Agent as the primary interaction surface
+
+### Bug Fixes
+- 🛡️ **Exec Tool Hallucination Guard**: Intercepts hallucinated tool calls to prevent the model from misusing `exec` in terminal mode where it should use the terminal instead
+- 🔧 **Companion Exec Environment**: Fixed standalone companion agent's `exec` tool not inheriting the user's shell environment variables
+- 📨 **IM Confirmation Sync**: Confirmation requests from IM remote conversations now sync to the desktop companion tab
+- 📧 **Email Sensor UID Persistence**: Email sensor UID high-water mark is now persisted, preventing duplicate reports of old emails after wake from sleep
+- 💬 **Confirmation Dialog in Virtual Scroll**: Fixed confirmation dialog rendering incomplete within the virtual scroll container
+- 📐 **Confirmation Dialog Alignment**: Confirmation dialog now aligns properly with the step list
+- 🔄 **Thinking Indicator Height**: Thinking indicator height now aligns with steps, eliminating layout jitter on toggle
+- 🎨 **Thinking Indicator Border Radius**: Fixed bottom border radius being clipped on the thinking indicator
+
+## v10.26.2 (2026-03-26)
 
 Fixes JumpServer bastion host SSH connectivity issues (v2/v3 API compatibility, Koko shell fallback, keyboard-interactive auth) and improves SSH error diagnostics.
 
