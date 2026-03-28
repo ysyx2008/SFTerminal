@@ -1765,11 +1765,31 @@ export abstract class Agent {
     toolExecutorConfig: ToolExecutorConfig
   ): Promise<void> {
     if (toolCalls.length === 0) return
+
+    // 防御模型幻觉：校验工具调用是否在当前可用列表中
+    const availableToolNames = new Set(this.getAvailableTools().map(t => t.function.name))
+    const validToolCalls: ToolCall[] = []
+    for (const toolCall of toolCalls) {
+      if (availableToolNames.has(toolCall.function.name)) {
+        validToolCalls.push(toolCall)
+        continue
+      }
+      log.warn(`Rejected hallucinated tool call: ${toolCall.function.name}`)
+      const error = t('error.unknown_tool', { name: toolCall.function.name })
+      this.addStep({ type: 'tool_result', content: `⚠️ ${error}`, toolName: toolCall.function.name, toolResult: error })
+      this.processToolResult(run, toolCall, { success: false, output: '', error }, {})
+    }
+
+    if (validToolCalls.length === 0) {
+      run.executionPhase = 'thinking'
+      run.currentToolName = undefined
+      return
+    }
     
     // 将工具调用分成多个批次，相邻的可并行工具放在同一批次
     const batches: { parallel: boolean; tools: ToolCall[] }[] = []
     
-    for (const toolCall of toolCalls) {
+    for (const toolCall of validToolCalls) {
       const isParallel = this.isParallelizableTool(toolCall.function.name)
       const lastBatch = batches[batches.length - 1]
       
@@ -1787,10 +1807,8 @@ export abstract class Agent {
       if (run.aborted) break
       
       if (batch.parallel && batch.tools.length > 1) {
-        // 并行执行多个可并行工具
         await this.executeToolBatchParallel(run, batch.tools, toolExecutorConfig)
       } else {
-        // 顺序执行（单个可并行工具或不可并行工具）
         for (const toolCall of batch.tools) {
           if (run.aborted) break
           await this.executeToolSingle(run, toolCall, toolExecutorConfig)
@@ -1798,7 +1816,6 @@ export abstract class Agent {
       }
     }
     
-    // 恢复执行阶段
     run.executionPhase = 'thinking'
     run.currentToolName = undefined
   }
