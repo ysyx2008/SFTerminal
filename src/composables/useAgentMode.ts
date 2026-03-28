@@ -464,7 +464,7 @@ export function useAgentMode(
     }
 
     if (pendingConfirm.value) {
-      items.push({ id: '__confirm__', type: 'confirm', size: 150 })
+      items.push({ id: '__confirm__', type: 'confirm', size: 280 })
     }
 
     return items
@@ -800,7 +800,9 @@ export function useAgentMode(
       
       terminalStore.setAgentPendingConfirm(currentTabId.value, data)
       // 需要确认时强制滚动，确保用户看到确认框
+      // 多次滚动：DynamicScroller 测量实际高度需要时间，首次滚动可能基于估算值
       scrollToBottom()
+      setTimeout(() => scrollToBottom(), 150)
     })
 
     // 监听完成
