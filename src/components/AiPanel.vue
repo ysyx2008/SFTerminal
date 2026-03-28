@@ -4231,16 +4231,12 @@ onUnmounted(() => {
 }
 
 
-/* AI 思考中指示器 */
+/* AI 思考中指示器（高度与 .agent-step-inline 一致，避免切换抖动） */
 .agent-thinking-indicator {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
-  margin: 10px 0 4px;
-  background: linear-gradient(135deg, rgba(52, 211, 153, 0.06), rgba(16, 185, 129, 0.06));
-  border-radius: 8px;
-  border: 1px solid rgba(52, 211, 153, 0.12);
+  padding: 8px 0;
 }
 
 .thinking-spinner {

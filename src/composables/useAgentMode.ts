@@ -449,7 +449,7 @@ export function useAgentMode(
         }
 
         if (group.isCurrentTask && isAgentRunning.value && !pendingConfirm.value && !isStreamingOutput(group)) {
-          items.push({ id: `thinking_${group.id}`, type: 'thinking_indicator', size: 50 })
+          items.push({ id: `thinking_${group.id}`, type: 'thinking_indicator', size: 40 })
         }
       }
 
