@@ -18,13 +18,13 @@ description: Automates SailFish release workflow: fix build/type errors, update 
 
 版本号由 `npm version` 产生，而更新日志需在之前提交，因此要**先定发版类型**，再按"即将产生的版本号"写日志，保证一致：
 
-1. **确定发版类型**：先运行 `git log v<当前版本>..HEAD --oneline` 查看自上次发版以来的提交，根据改动内容**主动给出建议**（参考下方规则），让用户确认即可，不要让用户自己判断。
+1. **确定发版类型并预览变更日志**：先运行 `git log v<当前版本>..HEAD --oneline` 查看自上次发版以来的提交，根据改动内容**主动给出建议**（参考下方规则），让用户确认即可，不要让用户自己判断。
    - 含 breaking change / 大规模重构 → 建议 `major`
    - 含新功能 / 新模块 → 建议 `minor`
    - 仅修复、优化、文档 → 建议 `patch`
-   确认后，读取 `package.json` 的 `version`，按 semver 推算出下一版本号（如 8.19.4 → patch 为 8.19.5，minor 为 8.20.0）。
+   确认后，读取 `package.json` 的 `version`，按 semver 推算出下一版本号（如 8.19.4 → patch 为 8.19.5，minor 为 8.20.0）。同时根据提交记录拟定 `CHANGELOG_CN.md` 的完整条目（版本标题、一句话总结、分类列表），一并展示给用户预览确认。**用户确认后**再继续后续步骤。
 2. **修复构建、检查与测试**：运行 `npm run verify`（并行执行类型检查、lint、构建、单元测试、CLI 回归测试），确保全部通过。
-3. **更新更新日志**：用**上一步算出的版本号**在 `CHANGELOG.md` 与 `CHANGELOG_CN.md` 中写入本版本条目（见下文格式）。
+3. **更新更新日志**：用**步骤 1 确认的版本号**在 `CHANGELOG.md` 与 `CHANGELOG_CN.md` 中写入本版本条目（见下文格式），内容以步骤 1 用户确认的中文版为准，英文版对应翻译。
 4. **检查 README 和网站是否需要更新**：对于 `minor` 或 `major` 版本，对比自上次发版以来的提交，检查以下文档是否需要同步更新（如新增功能/通道/文档链接等），若需要则一并修改：
    - `README.md` 和 `README_CN.md`（功能列表、描述、文档链接）
    - `website/src/i18n/translations.ts`（网站功能介绍、Hero 文案等）
@@ -134,6 +134,7 @@ git log v<当前版本>..HEAD --oneline
 
 ## 快速检查清单
 
+- [ ] 中文变更日志已预览并经用户确认
 - [ ] `npm run verify` 通过（类型检查 + lint + 构建 + 单元测试 + CLI 回归，并行执行）
 - [ ] `CHANGELOG.md` 与 `CHANGELOG_CN.md` 已更新且版本号、日期、条目一致
 - [ ] （minor/major）检查 `README.md`、`README_CN.md` 和 `website/src/i18n/translations.ts` 是否需要同步更新
