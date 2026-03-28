@@ -42,3 +42,15 @@ export interface CanvasHighlight {
   range: string
   type: 'added' | 'modified' | 'deleted'
 }
+
+/**
+ * AgentStep 中附带的 Canvas 数据
+ * 搭 agent:step IPC 便车，由前端 canvas store 消费
+ */
+export interface CanvasData {
+  action: 'open' | 'update' | 'close'
+  renderer: CanvasRendererType
+  title?: string
+  /** HTML 内容（Word 文档 / Excel 表格） */
+  content?: string
+}

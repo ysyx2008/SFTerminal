@@ -33,6 +33,7 @@ import {
   FootnoteReferenceRun
 } from 'docx'
 import type { ToolResult, AgentConfig } from '../../types'
+import type { CanvasData } from '@shared/types'
 import type { ToolExecutorConfig } from '../../tool-executor'
 import { t } from '../../i18n'
 import { getTerminalStateService } from '../../../terminal-state.service'
@@ -76,6 +77,107 @@ import { promisify } from 'util'
 const execAsync = promisify(exec)
 
 const log = createLogger('WordExecutor')
+
+/**
+ * 生成 Word 文档预览 HTML（供 Canvas 展示）
+ * 对于新建文档使用 sections 转 HTML，已有文档从段落列表生成
+ */
+async function generatePreviewHtml(filePath: string): Promise<string> {
+  const session = getSession(filePath)
+  if (!session) return ''
+
+  if (session.zip && session.documentXml) {
+    try {
+      const paragraphs = getParagraphs(session.documentXml)
+      return paragraphs.map(p => {
+        const text = p.text.trim()
+        return text ? `<p>${escapeHtml(text)}</p>` : ''
+      }).filter(Boolean).join('\n')
+    } catch (e) {
+      log.warn('Failed to generate preview from XML:', e)
+      return ''
+    }
+  } else {
+    return sectionsToHtml(session.sections)
+  }
+}
+
+/**
+ * 将 SectionContent 数组转为 HTML（用于 Canvas 预览）
+ */
+function sectionsToHtml(sections: SectionContent[]): string {
+  const parts: string[] = []
+
+  for (const section of sections) {
+    switch (section.type) {
+      case 'heading': {
+        const level = Math.min(Math.max(section.level || 1, 1), 6)
+        parts.push(`<h${level}>${escapeHtml(section.content)}</h${level}>`)
+        break
+      }
+      case 'paragraph': {
+        let text = escapeHtml(section.content)
+        if (section.style?.bold) text = `<strong>${text}</strong>`
+        if (section.style?.italic) text = `<em>${text}</em>`
+        parts.push(`<p>${text}</p>`)
+        break
+      }
+      case 'list': {
+        if (section.items) {
+          const items = section.items.map(item => `<li>${escapeHtml(item)}</li>`).join('')
+          parts.push(`<ul>${items}</ul>`)
+        }
+        break
+      }
+      case 'table': {
+        if (section.rows && section.rows.length > 0) {
+          const headerCells = section.rows[0].map(c => `<th>${escapeHtml(c)}</th>`).join('')
+          const header = `<tr>${headerCells}</tr>`
+          const body = section.rows.slice(1).map(row =>
+            `<tr>${row.map(c => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`
+          ).join('')
+          parts.push(`<table>${header}${body}</table>`)
+        }
+        break
+      }
+      case 'image':
+        parts.push(`<p><em>[图片: ${escapeHtml(section.imagePath ? path.basename(section.imagePath) : '图片')}]</em></p>`)
+        break
+      case 'page_break':
+        parts.push('<hr/>')
+        break
+      case 'toc':
+        parts.push('<p><em>[目录]</em></p>')
+        break
+      case 'hyperlink':
+        parts.push(`<p><a href="${escapeHtml(section.url || '')}">${escapeHtml(section.content)}</a></p>`)
+        break
+      case 'bookmark':
+        parts.push(`<p><a name="${escapeHtml(section.bookmarkName || '')}">${escapeHtml(section.content)}</a></p>`)
+        break
+      case 'comment':
+        parts.push(`<p>${escapeHtml(section.content)} <sup title="${escapeHtml(section.commentText || '')}">💬</sup></p>`)
+        break
+      case 'footnote':
+        parts.push(`<p>${escapeHtml(section.content)}<sup>${escapeHtml(section.footnoteText || '')}</sup></p>`)
+        break
+      default:
+        if (section.content) {
+          parts.push(`<p>${escapeHtml(section.content)}</p>`)
+        }
+    }
+  }
+
+  return parts.join('\n')
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
 
 /**
  * 获取或自动创建 XML 编辑会话
@@ -483,7 +585,13 @@ async function wordCreate(
       type: 'tool_result',
       content: output,
       toolName: 'word_create',
-      toolResult: output
+      toolResult: output,
+      canvasData: {
+        action: 'open',
+        renderer: 'document',
+        title: path.basename(filePath),
+        content: '<p><em>(空文档)</em></p>'
+      }
     })
 
     return { success: true, output }
@@ -548,7 +656,13 @@ async function wordOpen(
       type: 'tool_result',
       content: t('word.opened', { path: filePath }),
       toolName: 'word_open',
-      toolResult: truncateFromEnd(output, 500)
+      toolResult: truncateFromEnd(output, 500),
+      canvasData: {
+        action: 'open',
+        renderer: 'document',
+        title: path.basename(filePath),
+        content: html
+      }
     })
 
     return { success: true, output }
@@ -895,13 +1009,20 @@ async function wordAdd(
 
   addContent(filePath, sectionContent)
 
+  const previewHtml = await generatePreviewHtml(filePath)
+
   const output = t('word.content_added', { type: contentType }) + '\n\n💡 ' + t('word.save_reminder')
 
   executor.addStep({
     type: 'tool_result',
     content: output,
     toolName: 'word_add',
-    toolResult: output
+    toolResult: output,
+    canvasData: previewHtml ? {
+      action: 'update',
+      renderer: 'document',
+      content: previewHtml
+    } : undefined
   })
 
   return { success: true, output }
@@ -965,11 +1086,18 @@ async function wordReplace(
       ? t('word.replace_success', { count: totalReplaceCount, find: findText, replace: replaceText })
       : t('word.replace_not_found', { find: findText })
 
+    const previewHtml = totalReplaceCount > 0 ? await generatePreviewHtml(filePath) : ''
+
     executor.addStep({
       type: 'tool_result',
       content: output,
       toolName: 'word_replace',
-      toolResult: output
+      toolResult: output,
+      canvasData: previewHtml ? {
+        action: 'update',
+        renderer: 'document',
+        content: previewHtml
+      } : undefined
     })
 
     return { success: true, output }
@@ -1058,11 +1186,18 @@ async function wordModifyParagraph(
       changes: changes.join('、') 
     })
 
+    const previewHtml = await generatePreviewHtml(filePath)
+
     executor.addStep({
       type: 'tool_result',
       content: output,
       toolName: 'word_modify_paragraph',
-      toolResult: output
+      toolResult: output,
+      canvasData: previewHtml ? {
+        action: 'update',
+        renderer: 'document',
+        content: previewHtml
+      } : undefined
     })
 
     return { success: true, output }
@@ -1129,11 +1264,18 @@ async function wordDeleteParagraph(
       remaining
     })
 
+    const previewHtml = await generatePreviewHtml(filePath)
+
     executor.addStep({
       type: 'tool_result',
       content: output,
       toolName: 'word_delete_paragraph',
-      toolResult: output
+      toolResult: output,
+      canvasData: previewHtml ? {
+        action: 'update',
+        renderer: 'document',
+        content: previewHtml
+      } : undefined
     })
 
     return { success: true, output }
@@ -1268,7 +1410,11 @@ async function wordClose(
     type: 'tool_result',
     content: output,
     toolName: 'word_close',
-    toolResult: output
+    toolResult: output,
+    canvasData: {
+      action: 'close',
+      renderer: 'document'
+    }
   })
 
   return { success: true, output }
@@ -2081,11 +2227,24 @@ async function wordFromMarkdown(
       : (styleConfig?.name || 'simple')
     const output = t('word.created_from_md', { path: filePath, style: styleInfo })
 
+    let canvasData: CanvasData | undefined
+    try {
+      const mammoth = await import('mammoth')
+      const htmlResult = await mammoth.convertToHtml({ path: filePath })
+      canvasData = {
+        action: 'open',
+        renderer: 'document',
+        title: path.basename(filePath),
+        content: htmlResult.value
+      }
+    } catch { /* ignore preview errors */ }
+
     executor.addStep({
       type: 'tool_result',
       content: output,
       toolName: 'word_from_markdown',
-      toolResult: output
+      toolResult: output,
+      canvasData
     })
 
     return { success: true, output }

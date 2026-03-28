@@ -86,6 +86,8 @@ export interface AgentStep {
   contextTokens?: number
   /** 本次 API 调用的缓存命中率（0-100），由后端计算后推送 */
   cacheHitRate?: number
+  /** Canvas 预览数据（仅 UI 消费，不发给 AI） */
+  canvasData?: import('./canvas').CanvasData
 }
 
 /**

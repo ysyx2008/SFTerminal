@@ -6,6 +6,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import type { ToolResult, AgentConfig } from '../../types'
 import type { ToolExecutorConfig } from '../../tool-executor'
+import type { CanvasData } from '@shared/types'
 import { t } from '../../i18n'
 import { getTerminalStateService } from '../../../terminal-state.service'
 import {
@@ -164,6 +165,101 @@ function resolveStyle(styleName?: string): ExcelStyleConfig {
 }
 
 /**
+ * 生成 Excel 工作簿的 HTML 预览（供 Canvas 展示）
+ * 显示当前活动 sheet 或第一个 sheet 的数据
+ */
+function generateExcelPreviewHtml(filePath: string, activeSheet?: string): string {
+  const session = getSession(filePath)
+  if (!session) return ''
+
+  const workbook = session.workbook
+  const worksheets = workbook.worksheets
+  if (worksheets.length === 0) return '<p><em>(空工作簿)</em></p>'
+
+  const parts: string[] = []
+
+  if (worksheets.length > 1) {
+    const tabs = worksheets.map(ws => {
+      const isActive = activeSheet ? ws.name === activeSheet : ws === worksheets[0]
+      return `<span class="sheet-tab${isActive ? ' active' : ''}">${escapeHtml(ws.name)}</span>`
+    }).join('')
+    parts.push(`<div class="sheet-tabs">${tabs}</div>`)
+  }
+
+  const targetSheet = activeSheet
+    ? workbook.getWorksheet(activeSheet) || worksheets[0]
+    : worksheets[0]
+
+  if (!targetSheet || targetSheet.rowCount === 0) {
+    parts.push('<p><em>(空工作表)</em></p>')
+    return parts.join('\n')
+  }
+
+  const maxRows = Math.min(targetSheet.rowCount, 100)
+  const maxCols = Math.min(targetSheet.columnCount, 20)
+
+  // 用 eachRow/eachCell 只读遍历已有数据，避免 getRow/getCell 创建空对象污染 workbook
+  const dataRows: Map<number, Map<number, { val: string; isNum: boolean }>> = new Map()
+  let actualMaxCol = 0
+
+  targetSheet.eachRow({ includeEmpty: false }, (row, rowNum) => {
+    if (rowNum > maxRows) return
+    const cellMap = new Map<number, { val: string; isNum: boolean }>()
+    row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+      if (colNum > maxCols) return
+      cellMap.set(colNum, {
+        val: formatCellValue(cell.value),
+        isNum: typeof cell.value === 'number' ||
+          (typeof cell.value === 'object' && cell.value !== null &&
+           'result' in (cell.value as Record<string, unknown>) &&
+           typeof (cell.value as Record<string, unknown>).result === 'number')
+      })
+      if (colNum > actualMaxCol) actualMaxCol = colNum
+    })
+    dataRows.set(rowNum, cellMap)
+  })
+
+  const colCount = Math.min(actualMaxCol, maxCols) || 1
+  const htmlRows: string[] = []
+
+  const colHeaders = ['<th class="corner"></th>']
+  for (let c = 1; c <= colCount; c++) {
+    colHeaders.push(`<th>${numberToColumnLetter(c)}</th>`)
+  }
+  htmlRows.push(`<tr>${colHeaders.join('')}</tr>`)
+
+  for (let r = 1; r <= maxRows; r++) {
+    const cellMap = dataRows.get(r)
+    const cells = [`<td class="row-header">${r}</td>`]
+    for (let c = 1; c <= colCount; c++) {
+      const data = cellMap?.get(c)
+      if (data) {
+        cells.push(`<td${data.isNum ? ' class="num"' : ''}>${escapeHtml(data.val)}</td>`)
+      } else {
+        cells.push('<td></td>')
+      }
+    }
+    htmlRows.push(`<tr>${cells.join('')}</tr>`)
+  }
+
+  parts.push(`<table>${htmlRows.join('')}</table>`)
+
+  if (targetSheet.rowCount > maxRows || targetSheet.columnCount > maxCols) {
+    parts.push(`<p style="color: #888; font-size: 11px; margin-top: 4px;">显示 ${maxRows}/${targetSheet.rowCount} 行, ${maxCols}/${targetSheet.columnCount} 列</p>`)
+  }
+
+  return parts.join('\n')
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/**
  * 执行 Excel 技能工具
  */
 export async function executeExcelTool(
@@ -267,11 +363,19 @@ async function excelOpen(
       ? t('excel.opened', { path: filePath, sheets: sheets.length }) + '\n\n' + sheets.join('\n')
       : t('excel.created_new', { path: filePath })
 
+    const previewHtml = generateExcelPreviewHtml(filePath)
+
     executor.addStep({
       type: 'tool_result',
       content: output,
       toolName: 'excel_open',
-      toolResult: output
+      toolResult: output,
+      canvasData: {
+        action: 'open',
+        renderer: 'spreadsheet',
+        title: path.basename(filePath),
+        content: previewHtml
+      }
     })
 
     return { success: true, output }
@@ -390,11 +494,18 @@ async function excelRead(
     }
   }
 
+  const previewHtml = generateExcelPreviewHtml(filePath, sheetName)
+
   executor.addStep({
     type: 'tool_result',
     content: `${t('excel.read_success')}: ${sheetName} (${rows.length} ${t('excel.rows')})`,
     toolName: 'excel_read',
-    toolResult: truncateFromEnd(markdown, 500)
+    toolResult: truncateFromEnd(markdown, 500),
+    canvasData: previewHtml ? {
+      action: 'update',
+      renderer: 'spreadsheet',
+      content: previewHtml
+    } : undefined
   })
 
   return { success: true, output: markdown }
@@ -624,11 +735,18 @@ async function excelModify(
 
   const output = results.join('\n') + '\n\n💡 ' + t('excel.save_reminder')
 
+  const previewHtml = generateExcelPreviewHtml(filePath, sheetName)
+
   executor.addStep({
     type: 'tool_result',
     content: output,
     toolName: 'excel_modify',
-    toolResult: output
+    toolResult: output,
+    canvasData: previewHtml ? {
+      action: 'update',
+      renderer: 'spreadsheet',
+      content: previewHtml
+    } : undefined
   })
 
   return { success: true, output }
@@ -757,7 +875,11 @@ async function excelClose(
     type: 'tool_result',
     content: output,
     toolName: 'excel_close',
-    toolResult: output
+    toolResult: output,
+    canvasData: {
+      action: 'close',
+      renderer: 'spreadsheet'
+    }
   })
 
   return { success: true, output }

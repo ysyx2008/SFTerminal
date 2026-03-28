@@ -3,12 +3,13 @@
  * Canvas 预览面板
  *
  * 独立助手右侧的动态预览区域，根据 renderer 类型动态加载对应渲染组件。
- * Phase 1 仅支持 TerminalRenderer。
  */
 import { computed, ref } from 'vue'
-import { X, TerminalSquare } from 'lucide-vue-next'
+import { X, TerminalSquare, FileText, Table2 } from 'lucide-vue-next'
 import { useCanvasStore } from '../../stores/canvas'
 import TerminalRenderer from './TerminalRenderer.vue'
+import DocumentRenderer from './DocumentRenderer.vue'
+import SpreadsheetRenderer from './SpreadsheetRenderer.vue'
 
 const props = defineProps<{
   tabId: string
@@ -28,6 +29,8 @@ function handleClose() {
 const rendererIcon = computed(() => {
   switch (renderer.value) {
     case 'terminal': return TerminalSquare
+    case 'document': return FileText
+    case 'spreadsheet': return Table2
     default: return TerminalSquare
   }
 })
@@ -56,7 +59,14 @@ defineExpose({
         ref="rendererRef"
         :tab-id="tabId"
       />
-      <!-- Phase 2+: 其他 renderer -->
+      <DocumentRenderer
+        v-else-if="renderer === 'document'"
+        :tab-id="tabId"
+      />
+      <SpreadsheetRenderer
+        v-else-if="renderer === 'spreadsheet'"
+        :tab-id="tabId"
+      />
     </div>
   </div>
 </template>

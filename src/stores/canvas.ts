@@ -132,13 +132,29 @@ export const useCanvasStore = defineStore('canvas', () => {
    * 处理 Agent step 事件，自动驱动 Canvas
    * 在 useAgentMode composable 中调用
    * 
-   * 注意：普通 exec 命令不触发 Canvas（结果已在对话中显示）。
-   * Canvas 留给更有价值的场景：终端技能（PTY）、Word/Excel 预览、浏览器截图等。
+   * 两种驱动方式：
+   * 1. canvasData: 后端 executor 主动推送（Word/Excel 等），自动打开/更新/关闭 Canvas
+   * 2. exec 工具: 仅在 Canvas 已打开时追加终端数据
    */
   function handleAgentStep(tabId: string, step: AgentStep) {
+    // 优先处理 canvasData（后端 executor 主动推送）
+    if (step.canvasData) {
+      const { action, renderer, title: canvasTitle, content: canvasContent } = step.canvasData
+      if (action === 'open' && renderer) {
+        open(tabId, renderer, canvasTitle || '')
+        if (canvasContent) {
+          updateContent(tabId, canvasContent)
+        }
+      } else if (action === 'update' && canvasContent) {
+        updateContent(tabId, canvasContent)
+      } else if (action === 'close') {
+        close(tabId)
+      }
+      return
+    }
+
     if (!isVisible(tabId)) return
 
-    // Canvas 已打开时，追加终端数据
     if (step.type === 'tool_call' && step.toolName === 'exec') {
       const command = typeof step.toolArgs?.command === 'string' ? step.toolArgs.command : ''
       if (command) {
@@ -156,11 +172,10 @@ export const useCanvasStore = defineStore('canvas', () => {
 
   /**
    * 处理 Agent 完成事件
+   * 不自动关闭 Canvas —— 关闭由 word_close/excel_close 工具的 canvasData 或用户手动触发
    */
-  function handleAgentComplete(tabId: string) {
-    if (isVisible(tabId)) {
-      close(tabId)
-    }
+  function handleAgentComplete(_tabId: string) {
+    // noop: 保持 Canvas 可见，让用户继续查看预览
   }
 
   /**
@@ -174,6 +189,7 @@ export const useCanvasStore = defineStore('canvas', () => {
   return {
     states,
     splitRatio,
+    getState,
     isVisible,
     getRenderer,
     getTitle,
