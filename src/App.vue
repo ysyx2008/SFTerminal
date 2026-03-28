@@ -4,8 +4,10 @@ import { useI18n } from 'vue-i18n'
 import { Server, Bot, Settings, X, Loader2, Heart } from 'lucide-vue-next'
 import { useTerminalStore } from './stores/terminal'
 import { useConfigStore, type SshSession } from './stores/config'
+import { useCanvasStore } from './stores/canvas'
 import TabBar from './components/TabBar.vue'
 import AiPanel from './components/AiPanel.vue'
+import CanvasPanel from './components/Canvas/CanvasPanel.vue'
 import TerminalTabView from './components/TerminalTabView.vue'
 import SessionManager from './components/SessionManager.vue'
 import SettingsModal from './components/Settings/SettingsModal.vue'
@@ -35,6 +37,7 @@ const knowledgeUpgrading = ref(false)
 const knowledgeUpgradeProgress = ref({ current: 0, total: 0, filename: '' })
 const terminalStore = useTerminalStore()
 const configStore = useConfigStore()
+const canvasStore = useCanvasStore()
 
 // Steam 版使用独立品牌名
 const steamAppTitle = computed(() => {
@@ -66,6 +69,34 @@ const showSetupWizard = ref(false)
 
 // 每个终端 tab 对应的 TerminalTabView 实例引用（tabId -> instance）
 const tabViewRefs = ref<Record<string, InstanceType<typeof TerminalTabView> | null>>({})
+
+// Canvas 分割线拖拽
+function startCanvasResize(e: MouseEvent, _tabId: string) {
+  e.preventDefault()
+  const startX = e.clientX
+  const startRatio = canvasStore.splitRatio
+  const container = (e.target as HTMLElement).parentElement
+  if (!container) return
+  const containerWidth = container.getBoundingClientRect().width
+
+  const onMove = (ev: MouseEvent) => {
+    const delta = ev.clientX - startX
+    const newRatio = Math.max(0.2, Math.min(0.8, startRatio - delta / containerWidth))
+    canvasStore.splitRatio = newRatio
+  }
+
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
 
 async function onAwakenClose() {
   showAwaken.value = false
@@ -757,10 +788,26 @@ onUnmounted(() => {
         <template v-else v-for="tab in terminalStore.tabs" :key="tab.id">
           <!-- ===== 助手 Tab（Steam 版不渲染） ===== -->
           <div v-if="tab.type === 'assistant' && !isSteamBuild" v-show="tab.id === terminalStore.activeTabId" class="tab-view assistant-tab">
-            <AiPanel
-              :tab-id="tab.id"
-              :visible="tab.id === terminalStore.activeTabId"
-            />
+            <div class="assistant-split">
+              <div class="assistant-chat" :style="canvasStore.isVisible(tab.id) ? { flex: `0 0 ${(1 - canvasStore.splitRatio) * 100}%` } : undefined">
+                <AiPanel
+                  :tab-id="tab.id"
+                  :visible="tab.id === terminalStore.activeTabId"
+                />
+              </div>
+              <div
+                v-show="canvasStore.isVisible(tab.id)"
+                class="assistant-divider"
+                @mousedown="startCanvasResize($event, tab.id)"
+              ></div>
+              <div
+                class="assistant-canvas"
+                :class="{ 'canvas-open': canvasStore.isVisible(tab.id) }"
+                :style="canvasStore.isVisible(tab.id) ? { flex: `0 0 ${canvasStore.splitRatio * 100}%` } : undefined"
+              >
+                <CanvasPanel v-if="canvasStore.isVisible(tab.id)" :tab-id="tab.id" />
+              </div>
+            </div>
           </div>
           <!-- ===== 终端 Tab (local / ssh) ===== -->
           <TerminalTabView
@@ -1000,6 +1047,53 @@ onUnmounted(() => {
 .assistant-tab {
   display: flex;
   flex-direction: column;
+}
+
+/* Canvas 分割布局 */
+.assistant-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.assistant-chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 300px;
+  overflow: hidden;
+  transition: flex-basis 0.3s ease;
+}
+
+.assistant-divider {
+  flex-shrink: 0;
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  z-index: 1;
+}
+
+.assistant-divider:hover,
+.assistant-divider:active {
+  background: var(--accent-color, #4a9eff);
+}
+
+.assistant-canvas {
+  display: flex;
+  flex-basis: 0;
+  max-width: 0;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: flex-basis 0.3s ease, max-width 0.3s ease, opacity 0.25s ease;
+}
+
+.assistant-canvas.canvas-open {
+  min-width: 200px;
+  max-width: 100%;
+  opacity: 1;
 }
 
 

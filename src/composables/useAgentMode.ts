@@ -7,6 +7,7 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted, Ref } from 'vue
 import { useI18n } from 'vue-i18n'
 import { useTerminalStore } from '../stores/terminal'
 import { useConfigStore } from '../stores/config'
+import { useCanvasStore } from '../stores/canvas'
 import type { ExecutionMode, AttachmentInfo } from '@shared/types'
 import type { AgentStep, AgentState } from '../stores/terminal'
 import { createLogger } from '../utils/logger'
@@ -67,6 +68,7 @@ export function useAgentMode(
   const { t } = useI18n()
   const terminalStore = useTerminalStore()
   const configStore = useConfigStore()
+  const canvasStore = useCanvasStore()
 
   // 当前终端 ID（使用传入的 tabId，不再依赖 activeTabId）
   const currentTabId = tabId
@@ -104,6 +106,8 @@ export function useAgentMode(
   const currentTab = computed(() => {
     return terminalStore.tabs.find(t => t.id === currentTabId.value)
   })
+
+  const isStandaloneAssistant = computed(() => currentTab.value?.type === 'assistant')
 
   // ==================== 终端状态 ====================
   
@@ -779,6 +783,11 @@ export function useAgentMode(
       
       const tabId = currentTabId.value
       terminalStore.addAgentStep(tabId, data.step)
+
+      // 独立助手模式下，驱动 Canvas 预览面板
+      if (isStandaloneAssistant.value) {
+        canvasStore.handleAgentStep(tabId, data.step)
+      }
       
       // 如果是用户补充消息步骤，从待处理列表中移除
       if (data.step.type === 'user_supplement') {
@@ -826,6 +835,10 @@ export function useAgentMode(
       }
       
       terminalStore.setAgentRunning(currentTabId.value, false)
+      // 通知 Canvas 任务完成
+      if (isStandaloneAssistant.value) {
+        canvasStore.handleAgentComplete(currentTabId.value)
+      }
       // 清空待处理的补充消息
       pendingSupplements.value = []
       
@@ -1019,6 +1032,7 @@ export function useAgentMode(
 
   onUnmounted(() => {
     cleanupAgentListeners()
+    canvasStore.cleanup(currentTabId.value)
   })
 
   return {

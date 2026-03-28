@@ -1,6 +1,7 @@
 export * from './agent'
 export * from './bastion'
 export * from './bond'
+export * from './canvas'
 export * from './history'
 export * from './host'
 export * from './watch'
