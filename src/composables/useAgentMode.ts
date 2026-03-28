@@ -96,6 +96,7 @@ export function useAgentMode(
   // 清理事件监听的函数
   let cleanupStepListener: (() => void) | null = null
   let cleanupConfirmListener: (() => void) | null = null
+  let cleanupConfirmResolvedListener: (() => void) | null = null
   let cleanupCompleteListener: (() => void) | null = null
   let cleanupErrorListener: (() => void) | null = null
 
@@ -805,6 +806,14 @@ export function useAgentMode(
       setTimeout(() => scrollToBottom(), 150)
     })
 
+    // 监听确认已被其他渠道处理（如 IM 端确认后清除桌面确认框）
+    cleanupConfirmResolvedListener = window.electronAPI.agent.onConfirmResolved((data) => {
+      const foundTabId = terminalStore.findTabIdByAgentId(data.agentId)
+      if (foundTabId === currentTabId.value) {
+        terminalStore.setAgentPendingConfirm(currentTabId.value, undefined)
+      }
+    })
+
     // 监听完成
     cleanupCompleteListener = window.electronAPI.agent.onComplete((data: { agentId: string; ptyId?: string; result: string; pendingUserMessages?: string[] }) => {
       // 只处理属于当前 tab 的事件（优先使用 ptyId 匹配）
@@ -864,6 +873,10 @@ export function useAgentMode(
     if (cleanupConfirmListener) {
       cleanupConfirmListener()
       cleanupConfirmListener = null
+    }
+    if (cleanupConfirmResolvedListener) {
+      cleanupConfirmResolvedListener()
+      cleanupConfirmResolvedListener = null
     }
     if (cleanupCompleteListener) {
       cleanupCompleteListener()

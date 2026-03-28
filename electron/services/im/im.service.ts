@@ -750,6 +750,16 @@ export class IMService {
 
     const success = companion.confirmToolCall(undefined, isApproved)
 
+    // 同步清除桌面 companion tab 的确认状态
+    if (success) {
+      const mainWindow = this.deps?.mainWindow
+      if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('agent:confirmResolved', {
+          agentId: AgentService.COMPANION_AGENT_ID
+        })
+      }
+    }
+
     try {
       if (success) {
         await adapter.sendText(replyContext,
@@ -896,6 +906,17 @@ export class IMService {
         },
 
         onNeedConfirm: (confirmation: any) => {
+          // 同步到桌面 companion tab（与 onStep/onComplete/onError 对齐）
+          if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+            mainWindow.webContents.send('agent:needConfirm', {
+              agentId,
+              toolCallId: confirmation.toolCallId,
+              toolName: confirmation.toolName,
+              toolArgs: JSON.parse(JSON.stringify(confirmation.toolArgs)),
+              riskLevel: confirmation.riskLevel
+            })
+          }
+
           const sendConfirm = async () => {
             if (sendProcess) {
               await flushTextBuffer()

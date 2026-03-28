@@ -942,6 +942,15 @@ const electronAPI = {
       }
     },
 
+    // 监听确认已被其他渠道处理（如 IM 端确认后通知桌面清除确认框）
+    onConfirmResolved: (callback: (data: { agentId: string }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string }) => callback(data)
+      ipcRenderer.on('agent:confirmResolved', handler)
+      return () => {
+        ipcRenderer.removeListener('agent:confirmResolved', handler)
+      }
+    },
+
     // 监听 Agent 完成（携带 ptyId 用于可靠匹配 tab，可能附带未处理的用户消息）
     onComplete: (callback: (data: { agentId: string; ptyId?: string; result: string; pendingUserMessages?: string[] }) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string; ptyId?: string; result: string; pendingUserMessages?: string[] }) => callback(data)
