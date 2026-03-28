@@ -2,7 +2,16 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.26.3 (2026-03-28) (Latest)
+## v10.27.0 (2026-03-28) (Latest)
+
+New Canvas preview panel — the standalone assistant now shows live document and spreadsheet previews on the right side as the Agent works, making tool execution fully transparent.
+
+### New Features
+- 🖼️ **Canvas Preview Panel**: Dynamic preview area on the right side of the standalone assistant; automatically displays relevant content as the Agent executes tools, with terminal, document, and spreadsheet renderers
+- 📄 **Word Document Preview**: Live HTML preview of Word documents as the Agent operates on them
+- 📊 **Excel Spreadsheet Preview**: Live spreadsheet content preview as the Agent operates on Excel files
+
+## v10.26.3 (2026-03-28)
 
 Moves the AI panel to the left side as the primary interaction area, reinforcing the Agent-first layout. Includes fixes for confirmation dialogs, thinking indicators, Agent tool safety, and email sensor reliability.
 
