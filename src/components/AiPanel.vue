@@ -1710,40 +1710,38 @@ onUnmounted(() => {
               </div>
 
               <!-- 确认对话框 -->
-              <div v-else-if="item.type === 'confirm' && pendingConfirm" class="message assistant">
-                <div class="message-wrapper">
-                  <div class="message-content agent-confirm-inline" :class="getRiskClass(pendingConfirm.riskLevel)">
-                    <div class="confirm-header-inline">
-                      <span class="confirm-icon">{{ pendingConfirm.riskLevel === 'dangerous' ? '🔴' : (pendingConfirm.riskLevel === 'moderate' ? '🟡' : '🟢') }}</span>
-                      <span class="confirm-title">{{ t('ai.needConfirm') }}</span>
-                      <span class="confirm-risk-badge" :class="getRiskClass(pendingConfirm.riskLevel)">
-                        {{ pendingConfirm.riskLevel === 'dangerous' ? t('ai.highRisk') : (pendingConfirm.riskLevel === 'moderate' ? t('ai.mediumRisk') : t('ai.lowRisk')) }}
-                      </span>
-                    </div>
-                    <div class="confirm-detail">
-                      <div class="confirm-tool-name">{{ getToolDisplayName(pendingConfirm.toolName) }}</div>
-                      <pre class="confirm-args-inline">{{ formatConfirmArgs(pendingConfirm) }}</pre>
-                    </div>
-                    <div class="confirm-actions-inline">
-                      <button class="btn btn-sm btn-outline-secondary" @click="confirmToolCall(false)">
-                        {{ t('ai.reject') }}
-                      </button>
-                      <button 
-                        class="btn btn-sm" 
-                        :class="pendingConfirm.riskLevel === 'dangerous' ? 'btn-outline-danger' : (pendingConfirm.riskLevel === 'moderate' ? 'btn-outline-warning' : 'btn-outline-success')"
-                        @click="confirmToolCall(true, true)"
-                        :title="t('ai.alwaysAllowHint')"
-                      >
-                        {{ t('ai.alwaysAllow') }}
-                      </button>
-                      <button 
-                        class="btn btn-sm" 
-                        :class="pendingConfirm.riskLevel === 'dangerous' ? 'btn-danger' : (pendingConfirm.riskLevel === 'moderate' ? 'btn-warning' : 'btn-success')"
-                        @click="confirmToolCall(true)"
-                      >
-                        {{ t('ai.allowExecute') }}
-                      </button>
-                    </div>
+              <div v-else-if="item.type === 'confirm' && pendingConfirm" class="agent-step-virtual">
+                <div class="agent-confirm-inline" :class="getRiskClass(pendingConfirm.riskLevel)">
+                  <div class="confirm-header-inline">
+                    <span class="confirm-icon">{{ pendingConfirm.riskLevel === 'dangerous' ? '🔴' : (pendingConfirm.riskLevel === 'moderate' ? '🟡' : '🟢') }}</span>
+                    <span class="confirm-title">{{ t('ai.needConfirm') }}</span>
+                    <span class="confirm-risk-badge" :class="getRiskClass(pendingConfirm.riskLevel)">
+                      {{ pendingConfirm.riskLevel === 'dangerous' ? t('ai.highRisk') : (pendingConfirm.riskLevel === 'moderate' ? t('ai.mediumRisk') : t('ai.lowRisk')) }}
+                    </span>
+                  </div>
+                  <div class="confirm-detail">
+                    <div class="confirm-tool-name">{{ getToolDisplayName(pendingConfirm.toolName) }}</div>
+                    <pre class="confirm-args-inline">{{ formatConfirmArgs(pendingConfirm) }}</pre>
+                  </div>
+                  <div class="confirm-actions-inline">
+                    <button class="btn btn-sm btn-outline-secondary" @click="confirmToolCall(false)">
+                      {{ t('ai.reject') }}
+                    </button>
+                    <button 
+                      class="btn btn-sm" 
+                      :class="pendingConfirm.riskLevel === 'dangerous' ? 'btn-outline-danger' : (pendingConfirm.riskLevel === 'moderate' ? 'btn-outline-warning' : 'btn-outline-success')"
+                      @click="confirmToolCall(true, true)"
+                      :title="t('ai.alwaysAllowHint')"
+                    >
+                      {{ t('ai.alwaysAllow') }}
+                    </button>
+                    <button 
+                      class="btn btn-sm" 
+                      :class="pendingConfirm.riskLevel === 'dangerous' ? 'btn-danger' : (pendingConfirm.riskLevel === 'moderate' ? 'btn-warning' : 'btn-success')"
+                      @click="confirmToolCall(true)"
+                    >
+                      {{ t('ai.allowExecute') }}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -4940,8 +4938,8 @@ onUnmounted(() => {
 
 /* Agent 确认对话框（融入对话） */
 .agent-confirm-inline {
-  padding: 14px !important;
-  border-radius: 10px !important;
+  padding: 14px;
+  border-radius: 10px;
 }
 
 /* ===== 高风险 - 红色系 ===== */
