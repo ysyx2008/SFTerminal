@@ -457,11 +457,15 @@ onMounted(async () => {
   // 加载配置
   await configStore.loadConfig()
 
-  // 检查是否完成首次设置
+  // 检查是否完成首次设置（Steam 版跳过引导向导）
   const setupCompleted = await window.electronAPI.config.getSetupCompleted()
   if (!setupCompleted) {
-    showSetupWizard.value = true
-    return // 显示向导，暂不创建终端
+    if (isSteamBuild) {
+      await configStore.setSetupCompleted(true)
+    } else {
+      showSetupWizard.value = true
+      return // 显示向导，暂不创建终端
+    }
   }
 
   // 已完成设置，正常启动

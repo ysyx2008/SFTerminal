@@ -662,7 +662,7 @@ const onQrImageError = (event: Event) => {
               </label>
             </div>
             
-            <p class="description">
+            <p v-if="!isSteamBuild" class="description">
               {{ t('about.description') }}
             </p>
             <div class="about-links">
