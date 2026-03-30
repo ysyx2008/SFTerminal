@@ -87,6 +87,53 @@ export function calculateBudget(contextLength: number): ContextBudget {
   }
 }
 
+// ==================== 消息序列校验 ====================
+
+/**
+ * 修复不完整的 tool_call 序列
+ * 
+ * 场景：checkpoint 在工具执行中途写盘，或 App 在工具执行期间退出，
+ * 导致 assistant 消息含 tool_calls 但缺少对应的 tool result 消息。
+ * 这种残缺序列发给 API 会报错（DeepSeek/OpenAI 均要求严格配对）。
+ */
+function sanitizeToolCallSequence(messages: AiMessage[]): AiMessage[] {
+  const result: AiMessage[] = []
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+    result.push(msg)
+
+    if (msg.role !== 'assistant' || !msg.tool_calls?.length) continue
+
+    const requiredIds = new Set(msg.tool_calls.map(tc => tc.id))
+
+    // 向前扫描直到下一个 assistant 消息，收集所有已有的 tool result
+    // （tool result 之间可能夹杂 user 消息，如工具返回图片时注入的 user 消息）
+    for (let j = i + 1; j < messages.length; j++) {
+      if (messages[j].role === 'assistant') break
+      if (messages[j].role === 'tool' && messages[j].tool_call_id) {
+        requiredIds.delete(messages[j].tool_call_id!)
+      }
+    }
+
+    if (requiredIds.size === 0) continue
+
+    // 找到紧跟 assistant 消息后最后一条 tool 消息的位置，在其后插入补全消息
+    // 这样补全的 tool result 在位置上紧跟已有的 tool result，而非被推到 result 末尾
+    // 注意：此处的 result 数组还未包含后续消息，所以直接 push 即可
+    for (const missingId of requiredIds) {
+      const toolName = msg.tool_calls.find(tc => tc.id === missingId)?.function.name || 'unknown'
+      result.push({
+        role: 'tool',
+        content: `[${toolName}: 执行结果未记录]`,
+        tool_call_id: missingId
+      })
+    }
+  }
+
+  return result
+}
+
 // ==================== 压缩工具 ====================
 
 /**
@@ -203,7 +250,7 @@ function compressTask(
 function getFullMessages(task: TaskMemory): AiMessage[] {
   // 优先使用直接记录的完整 API 对话（无需从 steps 重建）
   if (task.messages && task.messages.length > 0) {
-    return task.messages.map(m => ({ ...m }))
+    return sanitizeToolCallSequence(task.messages.map(m => ({ ...m })))
   }
   
   // Fallback: 从 fullSteps 重建（messages 不可用时的兼容路径）
