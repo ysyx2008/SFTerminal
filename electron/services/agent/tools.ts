@@ -45,7 +45,12 @@ function buildSkillTool(): ToolDefinition {
     type: 'function',
     function: {
       name: 'skill',
-      description: `加载或卸载技能模块。加载后会话内持续有效。涉及相关领域时先加载再执行。\n\n可用技能：${skillsCompact}`,
+      description: `加载或卸载技能管理模块。加载后会话内持续有效。涉及相关领域时先加载再执行。
+
+⚠️ 创建/更新/删除/安装技能 → 必须先 load skill-manager，严禁用 write_text_file 直接写 SKILL.md
+
+可用技能：
+${skillsCompact}`,
       parameters: {
         type: 'object',
         properties: {
