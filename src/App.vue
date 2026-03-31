@@ -198,6 +198,7 @@ let cleanupInstallSkill: (() => void) | null = null
 let cleanupWatchEnsureTab: (() => void) | null = null
 let cleanupWatchProactiveMessage: (() => void) | null = null
 let cleanupWatchActivateMessage: (() => void) | null = null
+let cleanupAgentCompleteForProactive: (() => void) | null = null
 
 
 onMounted(async () => {
@@ -346,6 +347,24 @@ onMounted(async () => {
   // 觉醒主动推送：收到消息先存着，弹通知；用户点击通知后才创建标签页展开对话
   const pendingProactiveMessages: Array<{ agentId: string; message: string; watchName: string; timestamp: number }> = []
 
+  // 将 proactive 消息注入 tab steps 的辅助函数
+  const injectProactiveSteps = (tabId: string, message: string, timestamp?: number) => {
+    const ts = timestamp || Date.now()
+    const uid = `proactive-${ts}-${Math.random().toString(36).substring(2, 6)}`
+    terminalStore.addAgentStep(tabId, {
+      id: `${uid}-task`,
+      type: 'user_task',
+      content: '__proactive__',
+      timestamp: ts
+    })
+    terminalStore.addAgentStep(tabId, {
+      id: `${uid}-result`,
+      type: 'final_result',
+      content: message,
+      timestamp: ts
+    })
+  }
+
   const activateProactiveMessages = (agentId: string) => {
     const messages = pendingProactiveMessages.filter(m => m.agentId === agentId)
     if (messages.length === 0) return
@@ -364,19 +383,7 @@ onMounted(async () => {
 
     if (tab) {
       for (const msg of messages) {
-        const uid = `proactive-${msg.timestamp}-${Math.random().toString(36).substring(2, 6)}`
-        terminalStore.addAgentStep(tab.id, {
-          id: `${uid}-task`,
-          type: 'user_task',
-          content: `__proactive__`,
-          timestamp: msg.timestamp
-        })
-        terminalStore.addAgentStep(tab.id, {
-          id: `${uid}-result`,
-          type: 'final_result',
-          content: msg.message,
-          timestamp: msg.timestamp
-        })
+        injectProactiveSteps(tab.id, msg.message, msg.timestamp)
       }
     }
 
@@ -384,6 +391,28 @@ onMounted(async () => {
     pendingProactiveMessages.splice(0, pendingProactiveMessages.length,
       ...pendingProactiveMessages.filter(m => m.agentId !== agentId))
   }
+
+  // Agent 完成时，将延迟的 proactive 消息注入 tab
+  const flushDeferredProactive = (agentId: string) => {
+    const tab = terminalStore.tabs.find(t => t.agentId === agentId)
+    if (!tab) return
+    const deferred = pendingProactiveMessages.filter(m => m.agentId === agentId)
+    if (deferred.length === 0) return
+    for (const msg of deferred) {
+      injectProactiveSteps(tab.id, msg.message, msg.timestamp)
+    }
+    pendingProactiveMessages.splice(0, pendingProactiveMessages.length,
+      ...pendingProactiveMessages.filter(m => m.agentId !== agentId))
+    terminalStore.clearDeferredProactive(tab.id)
+  }
+
+  // 全局监听 agent 完成事件，刷新延迟的 proactive 消息
+  cleanupAgentCompleteForProactive = window.electronAPI.agent.onComplete((data: { agentId: string }) => {
+    const tab = terminalStore.tabs.find(t => t.agentId === data.agentId)
+    if (tab && terminalStore.hasDeferredProactive(tab.id)) {
+      flushDeferredProactive(data.agentId)
+    }
+  })
 
   cleanupWatchProactiveMessage = window.electronAPI.watch.onProactiveMessage((data) => {
     const preview = data.message.length > 100
@@ -395,25 +424,29 @@ onMounted(async () => {
       || terminalStore.tabs.find(t => t.agentId === '__companion__')
 
     if (tab) {
-      const uid = `proactive-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`
-      terminalStore.addAgentStep(tab.id, {
-        id: `${uid}-task`,
-        type: 'user_task',
-        content: '__proactive__',
-        timestamp: Date.now()
-      })
-      terminalStore.addAgentStep(tab.id, {
-        id: `${uid}-result`,
-        type: 'final_result',
-        content: data.message,
-        timestamp: Date.now()
-      })
       const tabId = tab.id
-      toast.proactive(preview, () => {
-        if (terminalStore.tabs.find(t => t.id === tabId)) {
-          terminalStore.setActiveTab(tabId)
-        }
-      })
+      // Agent 忙时延迟注入，防止用户误回复干扰正在执行的任务
+      if (tab.agentState?.isRunning) {
+        pendingProactiveMessages.push({
+          agentId: data.agentId,
+          message: data.message,
+          watchName: data.watchName,
+          timestamp: Date.now()
+        })
+        terminalStore.markDeferredProactive(tabId)
+        toast.proactive(preview, () => {
+          if (terminalStore.tabs.find(t => t.id === tabId)) {
+            terminalStore.setActiveTab(tabId)
+          }
+        })
+      } else {
+        injectProactiveSteps(tabId, data.message)
+        toast.proactive(preview, () => {
+          if (terminalStore.tabs.find(t => t.id === tabId)) {
+            terminalStore.setActiveTab(tabId)
+          }
+        })
+      }
     } else {
       pendingProactiveMessages.push({
         agentId: data.agentId,
@@ -727,6 +760,7 @@ onUnmounted(() => {
   cleanupWatchEnsureTab?.()
   cleanupWatchProactiveMessage?.()
   cleanupWatchActivateMessage?.()
+  cleanupAgentCompleteForProactive?.()
 })
 </script>
 

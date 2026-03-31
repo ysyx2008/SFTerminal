@@ -77,6 +77,9 @@ export function useAgentMode(
   
   // 输入文本
   const inputText = ref('')
+
+  // 队列化的 proactive 回复：agent 忙且有延迟 proactive 消息时暂存，任务完成后作为新任务启动
+  const queuedProactiveReply = ref<string | null>(null)
   
   // 是否有新消息（用户不在底部时显示提示）
   const hasNewMessage = ref(false)
@@ -495,6 +498,15 @@ export function useAgentMode(
     // 如果 Agent 正在运行，发送补充消息而不是启动新任务
     const agentKey = isAssistantMode ? currentTab.value?.agentId : terminalStore.getAgentContext(tabId)?.ptyId
     if (isAgentRunning.value && agentKey) {
+      // 安全兜底：如果 tab 有延迟的 proactive 通知，用户此时的回复可能是对通知的回应
+      // 队列化等待当前任务完成后再作为新任务启动（由 consumeProactiveContext 自动注入上下文）
+      if (terminalStore.hasDeferredProactive(tabId)) {
+        inputText.value = ''
+        queuedProactiveReply.value = message
+        await scrollToBottom()
+        return
+      }
+
       inputText.value = ''
       
       // 收集附件元信息、文档内容、图片（与新任务路径对齐）
@@ -841,6 +853,18 @@ export function useAgentMode(
       }
       // 清空待处理的补充消息
       pendingSupplements.value = []
+
+      // 队列化的 proactive 回复优先：作为新任务启动（consumeProactiveContext 自动注入 Watch 上下文）
+      if (queuedProactiveReply.value) {
+        const reply = queuedProactiveReply.value
+        queuedProactiveReply.value = null
+        log.info('任务完成，启动队列中的 proactive 回复:', reply)
+        setTimeout(() => {
+          inputText.value = reply
+          runAgent()
+        }, 100)
+        return
+      }
       
       // 如果有未处理的用户消息（用户在 Agent 总结时发送的），自动作为新任务启动
       if (data.pendingUserMessages && data.pendingUserMessages.length > 0) {
@@ -866,8 +890,9 @@ export function useAgentMode(
       }
       
       terminalStore.setAgentRunning(currentTabId.value, false)
-      // 清空待处理的补充消息
+      // 清空待处理状态
       pendingSupplements.value = []
+      queuedProactiveReply.value = null
       terminalStore.addAgentStep(currentTabId.value, {
         id: `error_${Date.now()}`,
         type: 'error',

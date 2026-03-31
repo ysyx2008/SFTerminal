@@ -566,6 +566,9 @@ export const useTerminalStore = defineStore('terminal', () => {
       }
     }
 
+    // 清理延迟的 proactive 状态
+    clearDeferredProactive(tabId)
+
     // 移除标签
     const index = tabs.value.findIndex(t => t.id === tabId)
     tabs.value.splice(index, 1)
@@ -1399,6 +1402,24 @@ export const useTerminalStore = defineStore('terminal', () => {
     return !!tab?.agentState?.pendingConfirm
   }
 
+  // Proactive 消息延迟投递：agent 忙时暂存，完成后再注入 tab
+  const deferredProactiveTabs = ref(new Set<string>())
+
+  function markDeferredProactive(tabId: string): void {
+    deferredProactiveTabs.value = new Set([...deferredProactiveTabs.value, tabId])
+  }
+
+  function hasDeferredProactive(tabId: string): boolean {
+    return deferredProactiveTabs.value.has(tabId)
+  }
+
+  function clearDeferredProactive(tabId: string): void {
+    if (!deferredProactiveTabs.value.has(tabId)) return
+    const next = new Set(deferredProactiveTabs.value)
+    next.delete(tabId)
+    deferredProactiveTabs.value = next
+  }
+
   return {
     tabs,
     activeTabId,
@@ -1474,7 +1495,11 @@ export const useTerminalStore = defineStore('terminal', () => {
     hasContentChanged,
     getNewOutputSinceLastSnapshot,
     updateSnapshotExternalState,
-    hasPendingConfirm
+    hasPendingConfirm,
+    // Proactive 消息延迟投递
+    markDeferredProactive,
+    hasDeferredProactive,
+    clearDeferredProactive
   }
 })
 
