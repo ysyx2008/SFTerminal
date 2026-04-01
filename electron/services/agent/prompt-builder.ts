@@ -559,6 +559,7 @@ export class PromptBuilder {
       this.buildDocumentRule(),
       this.buildKnowledgeRule(),
       this.buildExecutionModeNote(),
+      '**时间感知**：每条用户消息开头的 `[YYYY-MM-DD HH:MM 周X]` 是系统自动注入的发送时间，据此判断当前时间。需要精确到秒时执行 `date` 命令。',
     ].filter(Boolean)
 
     return `# 核心规则\n\n${rules.join('\n\n')}`

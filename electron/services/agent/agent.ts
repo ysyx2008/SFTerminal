@@ -2144,7 +2144,7 @@ export abstract class Agent {
         images: pending.images
       })
       
-      let msgPart = pending.message
+      let msgPart = Agent.formatTimestamp() + pending.message
       if (pending.documentContext) {
         msgPart += '\n\n' + pending.documentContext
       }
