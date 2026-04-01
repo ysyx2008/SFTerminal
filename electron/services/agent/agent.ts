@@ -2157,7 +2157,7 @@ export abstract class Agent {
       combinedText += (combinedText ? '\n' : '') + msgPart
     }
     
-    const userSupplementMsg: AiMessage = { role: 'user', content: combinedText }
+    const userSupplementMsg: AiMessage = { role: 'user', content: Agent.formatTimestamp() + combinedText }
     if (allImages.length > 0) {
       userSupplementMsg.images = allImages
     }
@@ -2590,7 +2590,16 @@ export abstract class Agent {
    */
   private enhanceUserMessage(message: string): string {
     const languageHint = this.getLanguageHint()
-    return languageHint + message
+    return languageHint + Agent.formatTimestamp() + message
+  }
+
+  /** 生成用户消息时间戳前缀，格式如 [2026-03-25 22:30 周二] */
+  static formatTimestamp(): string {
+    const now = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+    const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())} ${weekdays[now.getDay()]}`
+    return `[${ts}] `
   }
 
   private resolveBondContext(): string | undefined {

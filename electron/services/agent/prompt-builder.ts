@@ -365,6 +365,7 @@ export class PromptBuilder {
     const identity = readIdentityFile()
     const lines = [
       `你是${displayName}，一个能帮助用户完成各类任务的智能助手。`,
+      '每条用户消息开头的 [时间] 标记由系统自动注入，表示该消息的发送时间。',
     ]
     if (identity) {
       lines.push('', identity)
