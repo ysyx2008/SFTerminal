@@ -1776,6 +1776,14 @@ autoUpdater.on('update-available', (info) => {
   }
   mainWindow?.webContents.send('updater:status-changed', updateStatus)
   menuService.setUpdateStatus('available')
+
+  // 静默自动更新：自动下载
+  if (configService?.get('autoDownloadUpdate')) {
+    log.info('AutoUpdater: 静默模式，自动开始下载')
+    autoUpdater.downloadUpdate().catch(err => {
+      log.warn('AutoUpdater: 自动下载失败:', err)
+    })
+  }
 })
 
 autoUpdater.on('update-not-available', () => {
@@ -1956,7 +1964,7 @@ ipcMain.handle('updater:quitAndInstall', async () => {
     const version = app.getVersion()
     createBackup(app.getPath('userData'), `pre-update-v${version}`)
 
-    autoUpdater.quitAndInstall(false, true)
+    autoUpdater.quitAndInstall(true, true)
     return { success: true }
   } catch (error) {
     log.error('AutoUpdater: 安装更新失败:', error)

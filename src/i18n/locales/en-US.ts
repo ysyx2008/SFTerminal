@@ -376,6 +376,7 @@ export default {
     updateError: 'Failed to check for updates',
     autoCheckUpdate: 'Auto Check for Updates',
     autoCheckUpdateHint: 'Automatically check for new versions on startup',
+    autoDownloadUpdate: 'Auto Download & Silent Install',
     goToDownload: 'Go to Download',
     downloadSource: 'Download Source',
     sourceRecommended: 'Best',

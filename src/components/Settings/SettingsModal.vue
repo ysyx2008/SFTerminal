@@ -47,6 +47,7 @@ const showConfirmDialog = ref(false)
 // 更新相关状态
 const updateStatus = ref<UpdateStatusInfo>({ status: 'idle' })
 const autoCheckUpdate = ref(true)
+const autoDownloadUpdate = ref(false)
 const showUnlockAnimation = ref(false)
 const showBadgeWithAnimation = ref(false)
 const aboutContentRef = ref<HTMLElement | null>(null)
@@ -296,6 +297,17 @@ const toggleAutoCheckUpdate = async (event: Event) => {
   const checked = (event.target as HTMLInputElement).checked
   autoCheckUpdate.value = checked
   await window.electronAPI.config.set('autoCheckUpdate', checked)
+  if (!checked) {
+    autoDownloadUpdate.value = false
+    await window.electronAPI.config.set('autoDownloadUpdate', false)
+  }
+}
+
+// 切换自动下载更新（静默安装）
+const toggleAutoDownloadUpdate = async (event: Event) => {
+  const checked = (event.target as HTMLInputElement).checked
+  autoDownloadUpdate.value = checked
+  await window.electronAPI.config.set('autoDownloadUpdate', checked)
 }
 
 // 格式化文件大小
@@ -362,6 +374,9 @@ onMounted(async () => {
   // 获取自动检查更新配置
   const savedAutoCheck = await window.electronAPI.config.get('autoCheckUpdate') as boolean | undefined
   autoCheckUpdate.value = savedAutoCheck ?? true
+  
+  const savedAutoDownload = await window.electronAPI.config.get('autoDownloadUpdate') as boolean | undefined
+  autoDownloadUpdate.value = savedAutoDownload ?? false
   
   // 聚焦到模态框容器使其可接收键盘事件
   await nextTick()
@@ -659,6 +674,12 @@ const onQrImageError = (event: Event) => {
               <label class="auto-check-toggle">
                 <input type="checkbox" :checked="autoCheckUpdate" @change="toggleAutoCheckUpdate" />
                 <span>{{ t('about.autoCheckUpdate') }}</span>
+              </label>
+
+              <!-- 自动下载并静默安装开关（仅在自动检查开启 + 非 macOS 时显示） -->
+              <label v-if="autoCheckUpdate && !isMac" class="auto-check-toggle">
+                <input type="checkbox" :checked="autoDownloadUpdate" @change="toggleAutoDownloadUpdate" />
+                <span>{{ t('about.autoDownloadUpdate') }}</span>
               </label>
             </div>
             
