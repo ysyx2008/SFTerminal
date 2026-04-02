@@ -2,7 +2,21 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.27.0 (2026-03-28) (Latest)
+## v10.27.1 (2026-04-02) (Latest)
+
+Fixes Alibaba Cloud OSS auto-update source, Watch interfering with running Agent tasks, history injection API errors, and other issues. Optimizes time injection to improve prompt cache hit rate.
+
+### Improvements
+- ⚡ **Time Injection Optimization**: Current time is now injected into user messages instead of the system prompt, preventing timestamp changes from invalidating prompt cache
+- 🏠 **Companion Welcome Page**: Standalone assistant mode now uses its own examples and descriptions, differentiated from terminal mode
+
+### Bug Fixes
+- 🔄 **OSS Update Source Fix**: Fixed Alibaba Cloud OSS auto-update source missing `latest.yml` metadata files, causing update checks to fail
+- 🛡️ **Watch Non-Interference**: Watch proactive messages no longer interrupt an Agent task that is currently executing
+- 🔧 **History Injection Fix**: Fixed incomplete `tool_call` sequences when injecting historical tasks, which caused API errors
+- 🎮 **Steam Build Settings**: Fixed setup handling and update description visibility issues in Steam builds
+
+## v10.27.0 (2026-03-28)
 
 New Canvas preview panel — the standalone assistant now shows live document and spreadsheet previews on the right side as the Agent works, making tool execution fully transparent.
 

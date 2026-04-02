@@ -218,45 +218,49 @@ jobs:
           VERSION=${{ steps.get_version.outputs.VERSION }}
           OSSUTIL=/tmp/ossutil/ossutil64
           BUCKET=oss://sfterm-download
+          # upload-artifact 会保留仓库内相对路径（如 release/xxx），下载后为 artifacts/<name>/release/...
+          WIN=artifacts/windows-release/release
+          MAC=artifacts/macos-release/release
+          LIN=artifacts/linux-release/release
           
           # 官网下载用（固定文件名，不带版本号）
           # Windows
-          $OSSUTIL cp artifacts/windows-release/SailFish-Setup-${VERSION}.exe ${BUCKET}/SailFish-Setup.exe -f
-          if [ -f "artifacts/windows-release/SailFish-${VERSION}-x64.zip" ]; then
-            $OSSUTIL cp "artifacts/windows-release/SailFish-${VERSION}-x64.zip" ${BUCKET}/SailFish-x64.zip -f
+          $OSSUTIL cp ${WIN}/SailFish-Setup-${VERSION}.exe ${BUCKET}/SailFish-Setup.exe -f
+          if [ -f "${WIN}/SailFish-${VERSION}-x64.zip" ]; then
+            $OSSUTIL cp "${WIN}/SailFish-${VERSION}-x64.zip" ${BUCKET}/SailFish-x64.zip -f
           fi
           # macOS
-          $OSSUTIL cp artifacts/macos-release/SailFish-${VERSION}-arm64.dmg ${BUCKET}/SailFish-arm64.dmg -f
-          $OSSUTIL cp artifacts/macos-release/SailFish-${VERSION}.dmg ${BUCKET}/SailFish-x64.dmg -f
+          $OSSUTIL cp ${MAC}/SailFish-${VERSION}-arm64.dmg ${BUCKET}/SailFish-arm64.dmg -f
+          $OSSUTIL cp ${MAC}/SailFish-${VERSION}.dmg ${BUCKET}/SailFish-x64.dmg -f
           # Linux
-          $OSSUTIL cp artifacts/linux-release/SailFish-${VERSION}.AppImage ${BUCKET}/SailFish.AppImage -f
-          $OSSUTIL cp artifacts/linux-release/SFTerm_${VERSION}_amd64.deb ${BUCKET}/SailFish.deb -f
+          $OSSUTIL cp ${LIN}/SailFish-${VERSION}.AppImage ${BUCKET}/SailFish.AppImage -f
+          $OSSUTIL cp ${LIN}/SFTerm_${VERSION}_amd64.deb ${BUCKET}/SailFish.deb -f
           
           # electron-updater 自动更新用（版本化文件 + 元数据 yml）
           # Windows
-          $OSSUTIL cp artifacts/windows-release/latest.yml ${BUCKET}/releases/latest.yml -f
-          $OSSUTIL cp artifacts/windows-release/SailFish-Setup-${VERSION}.exe ${BUCKET}/releases/SailFish-Setup-${VERSION}.exe -f
-          $OSSUTIL cp artifacts/windows-release/SailFish-Setup-${VERSION}.exe.blockmap ${BUCKET}/releases/SailFish-Setup-${VERSION}.exe.blockmap -f
-          if [ -f "artifacts/windows-release/SailFish-${VERSION}-x64.zip" ]; then
-            $OSSUTIL cp "artifacts/windows-release/SailFish-${VERSION}-x64.zip" ${BUCKET}/releases/SailFish-${VERSION}-x64.zip -f
+          $OSSUTIL cp ${WIN}/latest.yml ${BUCKET}/releases/latest.yml -f
+          $OSSUTIL cp ${WIN}/SailFish-Setup-${VERSION}.exe ${BUCKET}/releases/SailFish-Setup-${VERSION}.exe -f
+          $OSSUTIL cp ${WIN}/SailFish-Setup-${VERSION}.exe.blockmap ${BUCKET}/releases/SailFish-Setup-${VERSION}.exe.blockmap -f
+          if [ -f "${WIN}/SailFish-${VERSION}-x64.zip" ]; then
+            $OSSUTIL cp "${WIN}/SailFish-${VERSION}-x64.zip" ${BUCKET}/releases/SailFish-${VERSION}-x64.zip -f
           fi
           # macOS
-          if [ -f artifacts/macos-release/latest-mac.yml ]; then
-            $OSSUTIL cp artifacts/macos-release/latest-mac.yml ${BUCKET}/releases/latest-mac.yml -f
-            for f in artifacts/macos-release/SailFish-${VERSION}*.dmg; do
+          if [ -f ${MAC}/latest-mac.yml ]; then
+            $OSSUTIL cp ${MAC}/latest-mac.yml ${BUCKET}/releases/latest-mac.yml -f
+            for f in ${MAC}/SailFish-${VERSION}*.dmg; do
               [ -f "$f" ] && $OSSUTIL cp "$f" ${BUCKET}/releases/$(basename "$f") -f
             done
-            for f in artifacts/macos-release/SailFish-${VERSION}*.zip; do
+            for f in ${MAC}/SailFish-${VERSION}*.zip; do
               [ -f "$f" ] && $OSSUTIL cp "$f" ${BUCKET}/releases/$(basename "$f") -f
             done
-            for f in artifacts/macos-release/*.blockmap; do
+            for f in ${MAC}/*.blockmap; do
               [ -f "$f" ] && $OSSUTIL cp "$f" ${BUCKET}/releases/$(basename "$f") -f
             done
           fi
           # Linux
-          if [ -f artifacts/linux-release/latest-linux.yml ]; then
-            $OSSUTIL cp artifacts/linux-release/latest-linux.yml ${BUCKET}/releases/latest-linux.yml -f
-            $OSSUTIL cp artifacts/linux-release/SailFish-${VERSION}.AppImage ${BUCKET}/releases/SailFish-${VERSION}.AppImage -f
+          if [ -f ${LIN}/latest-linux.yml ]; then
+            $OSSUTIL cp ${LIN}/latest-linux.yml ${BUCKET}/releases/latest-linux.yml -f
+            $OSSUTIL cp ${LIN}/SailFish-${VERSION}.AppImage ${BUCKET}/releases/SailFish-${VERSION}.AppImage -f
           fi
           
           echo "✅ All files uploaded to OSS successfully!"
