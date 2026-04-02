@@ -45,13 +45,71 @@ function resampleAudio(input: Float32Array, fromSampleRate: number, toSampleRate
   return output
 }
 
+// 全局共享状态（所有 useSpeechRecognition 实例共用）
+const audioAvailable = ref(true)
+const isModelReady = ref(false)
+let _audioChecked = false
+let _modelInitPromise: Promise<boolean> | null = null
+
+/**
+ * 全局音频设备检测（只执行一次真正的设备枚举）
+ */
+export async function checkAudioDevicesGlobal(): Promise<boolean> {
+  if (_audioChecked) return audioAvailable.value
+  _audioChecked = true
+  try {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      audioAvailable.value = false
+      return false
+    }
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    const hasInput = devices.some(d => d.kind === 'audioinput')
+    audioAvailable.value = hasInput
+    return hasInput
+  } catch {
+    audioAvailable.value = false
+    return false
+  }
+}
+
+/**
+ * 全局语音模型初始化（幂等，多次调用共享同一 Promise）
+ */
+export async function initSpeechGlobal(): Promise<boolean> {
+  if (isModelReady.value) return true
+  if (_modelInitPromise) return _modelInitPromise
+  _modelInitPromise = _doInitSpeech()
+  return _modelInitPromise
+}
+
+async function _doInitSpeech(): Promise<boolean> {
+  try {
+    const modelInfo = await window.electronAPI.speech.getModelInfo()
+    if (!modelInfo.available) return false
+
+    const ready = await window.electronAPI.speech.isReady()
+    if (ready) {
+      isModelReady.value = true
+      return true
+    }
+
+    const result = await window.electronAPI.speech.initialize()
+    if (!result.success) return false
+
+    isModelReady.value = true
+    return true
+  } catch {
+    return false
+  } finally {
+    _modelInitPromise = null
+  }
+}
+
 export function useSpeechRecognition() {
-  // 状态
+  // 实例状态（每个 AiPanel 独立）
   const isRecording = ref(false)
   const isTranscribing = ref(false)
   const isInitializing = ref(false)
-  const isModelReady = ref(false)
-  const audioAvailable = ref(true)
   const error = ref<string | null>(null)
   const lastResult = ref<TranscriptionResult | null>(null)
 
@@ -66,22 +124,10 @@ export function useSpeechRecognition() {
   const isProcessing = computed(() => isRecording.value || isTranscribing.value || isInitializing.value)
 
   /**
-   * 检测系统是否有可用的音频输入设备
+   * 检测系统是否有可用的音频输入设备（委托给全局检测）
    */
   async function checkAudioDevices(): Promise<boolean> {
-    try {
-      if (!navigator.mediaDevices?.enumerateDevices) {
-        audioAvailable.value = false
-        return false
-      }
-      const devices = await navigator.mediaDevices.enumerateDevices()
-      const hasInput = devices.some(d => d.kind === 'audioinput')
-      audioAvailable.value = hasInput
-      return hasInput
-    } catch {
-      audioAvailable.value = false
-      return false
-    }
+    return checkAudioDevicesGlobal()
   }
 
   /**
@@ -89,35 +135,14 @@ export function useSpeechRecognition() {
    */
   async function checkAndInitialize(): Promise<boolean> {
     console.debug('[useSpeechRecognition] checkAndInitialize called')
+    isInitializing.value = true
+    error.value = null
     try {
-      // 检查模型是否可用
-      const modelInfo = await window.electronAPI.speech.getModelInfo()
-      console.debug('[useSpeechRecognition] modelInfo:', modelInfo)
-      if (!modelInfo.available) {
-        error.value = '语音模型未安装'
-        console.debug('[useSpeechRecognition] Model not available')
-        return false
+      const success = await initSpeechGlobal()
+      if (!success) {
+        error.value = '语音模型初始化失败'
       }
-
-      // 检查是否已就绪
-      const ready = await window.electronAPI.speech.isReady()
-      if (ready) {
-        isModelReady.value = true
-        return true
-      }
-
-      // 初始化服务
-      isInitializing.value = true
-      error.value = null
-
-      const result = await window.electronAPI.speech.initialize()
-      if (!result.success) {
-        error.value = result.error || '初始化失败'
-        return false
-      }
-
-      isModelReady.value = true
-      return true
+      return success
     } catch (err) {
       error.value = err instanceof Error ? err.message : '初始化失败'
       return false

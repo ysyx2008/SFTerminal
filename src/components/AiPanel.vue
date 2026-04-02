@@ -257,7 +257,6 @@ const {
   isInitializing: isSpeechInitializing,
   audioAvailable,
   error: speechError,
-  checkAudioDevices,
   checkAndInitialize: initSpeech,
   startRecording,
   stopRecording,
@@ -1132,14 +1131,10 @@ onMounted(() => {
   document.addEventListener('keyup', handlePTTKeyUp)
   window.addEventListener('blur', handlePTTWindowBlur)
 
-  if (configStore.keyboardShortcuts.voiceInput) {
-    checkAudioDevices().then(available => {
-      if (available) {
-        initSpeech()
-      } else {
-        toast.warning(t('ai.noAudioDevice'))
-      }
-    })
+  // 音频设备检测和 toast 已提升到 App.vue 全局执行一次
+  // 这里只需在模型尚未就绪时尝试初始化（幂等，全局共享 Promise）
+  if (configStore.keyboardShortcuts.voiceInput && audioAvailable.value) {
+    initSpeech()
   }
 })
 

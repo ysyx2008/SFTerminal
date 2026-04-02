@@ -21,6 +21,7 @@ import Toast from './components/common/Toast.vue'
 import ConfirmDialog from './components/common/ConfirmDialog.vue'
 import { useConfirm } from './composables/useConfirm'
 import { toast } from './composables/useToast'
+import { checkAudioDevicesGlobal, initSpeechGlobal } from './composables/useSpeechRecognition'
 import type { SftpConnectionConfig } from './composables/useSftp'
 import { uiThemes } from './themes/ui-themes'
 import { createLogger } from './utils/logger'
@@ -532,6 +533,17 @@ const initializeApp = async () => {
     requestIdleCallback(() => connectMcpServers(), { timeout: 3000 })
   } else {
     setTimeout(connectMcpServers, 500)
+  }
+
+  // 全局音频设备检测 + 语音模型预初始化（只执行一次）
+  if (configStore.keyboardShortcuts.voiceInput) {
+    checkAudioDevicesGlobal().then(available => {
+      if (available) {
+        initSpeechGlobal()
+      } else {
+        toast.warning(t('ai.noAudioDevice'))
+      }
+    })
   }
 }
 
