@@ -627,8 +627,16 @@ function showMainWindow() {
   }
 
   if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore()
+    }
     mainWindow.show()
     mainWindow.focus()
+    // Windows 防焦点抢占：短暂置顶确保窗口前台显示
+    if (process.platform === 'win32') {
+      mainWindow.setAlwaysOnTop(true)
+      mainWindow.setAlwaysOnTop(false)
+    }
   } else {
     createWindow()
     setupWindowServices()
@@ -696,13 +704,20 @@ function createWindow() {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      backgroundThrottling: false
     }
   })
 
   // 窗口准备好后立即显示（比 did-finish-load 更早）
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show()
+    // Windows 上 show() 可能仅闪烁任务栏而不前台显示（系统防焦点抢占）
+    // 通过短暂置顶强制前台显示
+    if (process.platform === 'win32') {
+      mainWindow?.setAlwaysOnTop(true)
+      mainWindow?.setAlwaysOnTop(false)
+    }
   })
 
   // 开发环境加载本地服务器
