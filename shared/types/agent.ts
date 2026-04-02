@@ -61,6 +61,8 @@ export interface AgentPlan {
 /** 用户消息附带的文件附件元信息（仅用于 UI 展示，不含文件内容） */
 export interface AttachmentInfo {
   filename: string
+  /** 文件完整路径（供 Agent 直接访问） */
+  filePath?: string
   fileSize: number
   fileType: string
   /** PDF/文档总页数 */

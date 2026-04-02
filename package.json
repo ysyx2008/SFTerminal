@@ -80,7 +80,6 @@
     "node-pty": "^1.0.0",
     "nodemailer": "^7.0.12",
     "pdf-parse": "^2.4.5",
-    "pdf2json": "^4.0.0",
     "pinia": "^2.1.7",
     "playwright-core": "^1.57.0",
     "sherpa-onnx-node": "^1.12.23",

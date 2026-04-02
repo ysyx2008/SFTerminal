@@ -44,6 +44,7 @@ files:
 # 需要解压的文件
 asarUnpack:
   - node_modules/@homebridge/node-pty-prebuilt-multiarch/**/*
+  - dist-electron/services/pdf-worker.js
 
 # 额外资源 - 考虑模型优化
 extraResources:

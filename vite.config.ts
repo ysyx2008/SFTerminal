@@ -46,6 +46,26 @@ function copySpeechWorker() {
   }
 }
 
+// 复制 pdf-worker.js 到 dist-electron/services
+function copyPdfWorker() {
+  return {
+    name: 'copy-pdf-worker',
+    closeBundle() {
+      const srcPath = resolve(__dirname, 'electron/services/pdf-worker.js')
+      const destDir = resolve(__dirname, 'dist-electron/services')
+      const destPath = resolve(destDir, 'pdf-worker.js')
+
+      if (existsSync(srcPath)) {
+        if (!existsSync(destDir)) {
+          mkdirSync(destDir, { recursive: true })
+        }
+        copyFileSync(srcPath, destPath)
+        console.log('[copy-pdf-worker] Copied pdf-worker.js to dist-electron')
+      }
+    }
+  }
+}
+
 // Steam 构建标识：用全局常量注入，dev/build 均生效（不依赖 import.meta.env 在 dev 下的注入）
 const isSteamBuild = process.env.VITE_STEAM_BUILD === 'true'
 if (isSteamBuild) {
@@ -113,7 +133,7 @@ export default defineConfig({
           esbuild: {
             charset: 'utf8'
           },
-          plugins: [copyJiebaWasm(), copySpeechWorker()]
+          plugins: [copyJiebaWasm(), copySpeechWorker(), copyPdfWorker()]
         }
       },
       {

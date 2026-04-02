@@ -621,7 +621,9 @@ export class PromptBuilder {
   private buildDocumentRule(): string {
     if (!this.context.documentContext) return ''
     return [
-      '**用户上传了文档**：文档完整内容在用户消息的 `<sf_uploaded_docs>` 标签内。',
+      '**用户附加了文档**：文档内容在用户消息的 `<sf_uploaded_docs>` 标签内。',
+      '- 解析成功的文档：标签内含完整文本，直接使用即可。',
+      '- 解析失败/超大文件：标签内只有 `path` 和 `error`，请用 `read_file` 或其他工具通过路径读取文件内容。',
     ].join('\n')
   }
 

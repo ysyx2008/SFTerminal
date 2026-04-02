@@ -37,7 +37,6 @@ files:
   # 文档解析 & 知识库相关
   - "!node_modules/pdfjs-dist/**"
   - "!node_modules/pdf-parse/**"
-  - "!node_modules/pdf2json/**"
   - "!node_modules/exceljs/**"
   - "!node_modules/jieba-wasm/**"
   - "!node_modules/js-tiktoken/**"

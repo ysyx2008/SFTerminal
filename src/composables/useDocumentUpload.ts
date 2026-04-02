@@ -143,13 +143,12 @@ export function useDocumentUpload(currentTabId: Ref<string | null> | ComputedRef
   }
 
   // 获取文档上下文（用于发送给 AI）
-  // 有内容的文档注入全文，仅元数据的文档注入路径等信息让 Agent 自行处理
+  // 有内容的文档注入全文；解析失败或超大文件注入路径+错误信息，让 Agent 自行用工具读取
   const getDocumentContext = async (): Promise<string> => {
-    const validDocs = uploadedDocs.value.filter(d => !d.error)
-    if (validDocs.length === 0) return ''
+    if (uploadedDocs.value.length === 0) return ''
     
     // 将 Vue Proxy 对象转换为普通对象，避免 IPC 序列化错误
-    const plainDocs = JSON.parse(JSON.stringify(validDocs))
+    const plainDocs = JSON.parse(JSON.stringify(uploadedDocs.value))
     
     const documentAPI = (window.electronAPI as { document: typeof window.electronAPI.document }).document
     return await documentAPI.formatAsContext(plainDocs)

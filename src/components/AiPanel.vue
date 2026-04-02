@@ -222,6 +222,7 @@ const {
     getAttachments: () => uploadedDocs.value
       .map(d => ({
         filename: d.filename,
+        filePath: d.filePath,
         fileSize: d.fileSize,
         fileType: d.fileType,
         totalPages: d.totalPages || d.pageCount,
@@ -1569,6 +1570,7 @@ onUnmounted(() => {
                         v-for="(file, fileIdx) in item.group!.attachments" 
                         :key="fileIdx" 
                         class="attachment-chip"
+                        :title="file.filePath || file.filename"
                       >
                         <span class="attachment-name">📎 {{ file.filename }}</span>
                         <span class="attachment-size">{{ formatFileSize(file.fileSize) }}</span>
@@ -1657,6 +1659,7 @@ onUnmounted(() => {
                         v-for="(file, fileIdx) in item.step!.attachments"
                         :key="fileIdx"
                         class="attachment-chip"
+                        :title="file.filePath || file.filename"
                       >
                         <span class="attachment-name">📎 {{ file.filename }}</span>
                         <span class="attachment-size">{{ formatFileSize(file.fileSize) }}</span>

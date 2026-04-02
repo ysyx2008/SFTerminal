@@ -5,6 +5,7 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
+import { app, utilityProcess, type UtilityProcess } from 'electron'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('DocumentParser')
@@ -91,11 +92,15 @@ const DEFAULT_OPTIONS: Required<ParseOptions> = {
 }
 
 export class DocumentParserService {
-  private PDFParser: typeof import('pdf2json').default | null = null
   private mammoth: typeof import('mammoth') | null = null
   private WordExtractor: typeof import('word-extractor').default | null = null
   private ExcelJS: typeof import('exceljs') | null = null
   private isInitialized = false
+
+  // PDF worker (utilityProcess) — Electron 环境用子进程隔离 pdfjs-dist
+  private pdfWorker: UtilityProcess | null = null
+  private pdfWorkerCallbacks = new Map<string, { resolve: (v: any) => void; reject: (e: Error) => void }>()
+  private pdfWorkerMsgId = 0
 
   constructor() {
     // 延迟加载解析库
@@ -108,22 +113,12 @@ export class DocumentParserService {
     if (this.isInitialized) return
 
     try {
-      // 动态导入 pdf2json（纯 Node.js 实现，不依赖浏览器 API）
-      const pdf2jsonModule = await import('pdf2json')
-      this.PDFParser = pdf2jsonModule.default
-    } catch (e) {
-      log.warn('pdf2json 未安装，PDF 解析将不可用:', e)
-    }
-
-    try {
-      // 动态导入 mammoth
       this.mammoth = await import('mammoth')
     } catch (e) {
       log.warn('mammoth 未安装，.docx 解析将不可用:', e)
     }
 
     try {
-      // 动态导入 word-extractor（用于 .doc 格式）
       const wordExtractorModule = await import('word-extractor')
       this.WordExtractor = wordExtractorModule.default
     } catch (e) {
@@ -131,7 +126,6 @@ export class DocumentParserService {
     }
 
     try {
-      // 动态导入 exceljs（用于 .xlsx/.xls 格式）
       this.ExcelJS = await import('exceljs')
     } catch (e) {
       log.warn('exceljs 未安装，Excel 解析将不可用:', e)
@@ -282,135 +276,209 @@ export class DocumentParserService {
     return results
   }
 
-  /**
-   * 解析 PDF 文件
-   */
-  private async parsePdf(filePath: string, result: ParsedDocument, opts: Required<ParseOptions>): Promise<void> {
-    if (!this.PDFParser) {
-      throw new Error('PDF 解析库未安装，请运行: npm install pdf2json')
+  // ── PDF worker lifecycle ──────────────────────────────────────
+
+  private getPdfWorkerPath(): string {
+    if (typeof app?.isPackaged === 'boolean' && app.isPackaged) {
+      return path.join(process.resourcesPath, 'app.asar.unpacked', 'dist-electron', 'services', 'pdf-worker.js')
+    }
+    return path.join(process.cwd(), 'electron', 'services', 'pdf-worker.js')
+  }
+
+  private ensurePdfWorker(): UtilityProcess | null {
+    if (this.pdfWorker) return this.pdfWorker
+
+    // CLI shim returns null — fall through to direct parsing
+    const workerPath = this.getPdfWorkerPath()
+    if (!fs.existsSync(workerPath)) {
+      log.warn('PDF worker not found:', workerPath)
+      return null
     }
 
-    // 1) pdf2json 提取文本
-    const pdfData = await new Promise<{ Pages: Array<{ Texts: Array<{ R: Array<{ T: string }> }> }> }>((resolve, reject) => {
-      const pdfParser = new this.PDFParser!(null, true)
-      const timeout = setTimeout(() => {
-        reject(new Error('PDF 解析超时，文件可能过大或格式不支持'))
-      }, 30000)
-      
-      pdfParser.on('pdfParser_dataError', (errData: Error | { parserError: Error }) => {
-        clearTimeout(timeout)
-        const message = 'parserError' in errData ? errData.parserError.message : errData.message
-        reject(new Error(`PDF 解析错误: ${message}`))
-      })
-      
-      pdfParser.on('pdfParser_dataReady', (data: { Pages: Array<{ Texts: Array<{ R: Array<{ T: string }> }> }> }) => {
-        clearTimeout(timeout)
-        resolve(data)
-      })
-      
-      pdfParser.loadPDF(filePath)
+    let proc: UtilityProcess | null = null
+    try {
+      proc = utilityProcess.fork(workerPath, [], { stdio: 'pipe' })
+    } catch {
+      return null
+    }
+    if (!proc) return null
+
+    proc.on('message', (message: { id: string; success: boolean; result?: any; error?: string }) => {
+      const cb = this.pdfWorkerCallbacks.get(message.id)
+      if (!cb) return
+      this.pdfWorkerCallbacks.delete(message.id)
+      if (message.success) {
+        cb.resolve(message.result)
+      } else {
+        cb.reject(new Error(message.error ?? 'PDF worker error'))
+      }
     })
 
-    // 提取文本内容
-    const textContent: string[] = []
-    let pageCount = 0
-    
-    if (pdfData.Pages) {
-      pageCount = pdfData.Pages.length
-      for (const page of pdfData.Pages) {
-        const pageTexts: string[] = []
-        if (page.Texts) {
-          for (const text of page.Texts) {
-            if (text.R) {
-              for (const r of text.R) {
-                if (r.T) {
-                  try {
-                    pageTexts.push(decodeURIComponent(r.T))
-                  } catch {
-                    pageTexts.push(r.T)
-                  }
-                }
-              }
-            }
-          }
+    proc.on('exit', (code) => {
+      if (code !== 0) log.warn('PDF worker exited with code', code)
+      this.pdfWorker = null
+      for (const [id, cb] of this.pdfWorkerCallbacks) {
+        cb.reject(new Error(`PDF worker exited unexpectedly (code ${code})`))
+        this.pdfWorkerCallbacks.delete(id)
+      }
+    })
+
+    this.pdfWorker = proc
+    return proc
+  }
+
+  private sendToPdfWorker<T>(type: string, data: Record<string, unknown>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const worker = this.ensurePdfWorker()
+      if (!worker) {
+        reject(new Error('__NO_WORKER__'))
+        return
+      }
+      const id = `pdf_${++this.pdfWorkerMsgId}`
+      this.pdfWorkerCallbacks.set(id, { resolve, reject })
+
+      worker.postMessage({ type, data, id })
+
+      setTimeout(() => {
+        if (this.pdfWorkerCallbacks.has(id)) {
+          this.pdfWorkerCallbacks.delete(id)
+          reject(new Error('PDF worker response timeout (120s)'))
         }
-        textContent.push(pageTexts.join(' '))
+      }, 120_000)
+    })
+  }
+
+  /**
+   * 关闭 PDF worker（可在服务销毁时调用）
+   */
+  destroyPdfWorker(): void {
+    if (this.pdfWorker) {
+      this.pdfWorker.kill()
+      this.pdfWorker = null
+    }
+  }
+
+  // ── PDF parsing (delegates to worker, falls back to direct in CLI) ──
+
+  private async parsePdf(filePath: string, result: ParsedDocument, opts: Required<ParseOptions>): Promise<void> {
+    let parsed: { content: string; pageCount: number; totalPages: number }
+    try {
+      parsed = await this.sendToPdfWorker('parsePdf', { filePath, maxTextLength: opts.maxTextLength })
+    } catch (err: any) {
+      if (err?.message === '__NO_WORKER__') {
+        parsed = await this.parsePdfDirect(filePath, opts.maxTextLength)
+      } else {
+        throw err
       }
     }
-    
-    result.content = textContent.join('\n\n').trim()
-    result.pageCount = pageCount
+
+    result.content = parsed.content
+    result.pageCount = parsed.pageCount
+    result.totalPages = parsed.totalPages
 
     const PREVIEW_PAGES = 5
     const hasText = result.content.length > 0
 
-    // 2) 无文本 → 扫描件，渲染前 N 页
-    if (!hasText && pageCount > 0) {
-      const pagesToRender = Array.from({ length: Math.min(pageCount, PREVIEW_PAGES) }, (_, i) => i + 1)
+    if (!hasText && parsed.totalPages > 0) {
+      const pagesToRender = Array.from({ length: Math.min(parsed.totalPages, PREVIEW_PAGES) }, (_, i) => i + 1)
       try {
         const renderResult = await this.renderPdfPages(filePath, pagesToRender)
         result.images = renderResult.images
         result.totalPages = renderResult.totalPages
         result.error = undefined
-        log.info(`Scanned PDF detected: ${pageCount} pages, rendered ${renderResult.images.length} preview pages`)
+        log.info(`Scanned PDF detected: ${parsed.totalPages} pages, rendered ${renderResult.images.length} preview pages`)
       } catch (renderErr) {
         log.warn('Failed to render scanned PDF page:', renderErr)
-        result.error = `PDF 共 ${pageCount} 页，但未能提取到文本内容。该文件可能是扫描件或图片型 PDF。`
+        result.error = `PDF 共 ${parsed.totalPages} 页，但未能提取到文本内容。该文件可能是扫描件或图片型 PDF。`
       }
       return
     }
 
-    if (!hasText && pageCount === 0) {
+    if (!hasText && parsed.totalPages === 0) {
       result.error = 'PDF 文件为空或格式不支持'
       return
     }
 
-    // 3) 有文本 + 有视觉模型 → 检测是否含图片，有则额外渲染前 N 页
-    if (hasText && opts.extractImages && pageCount > 0) {
+    if (hasText && opts.extractImages && parsed.totalPages > 0) {
       try {
-        const hasImages = await this.pdfHasImages(filePath, pageCount)
+        const hasImages = await this.pdfHasImages(filePath, parsed.totalPages)
         if (hasImages) {
-          const pagesToRender = Array.from({ length: Math.min(pageCount, PREVIEW_PAGES) }, (_, i) => i + 1)
+          const pagesToRender = Array.from({ length: Math.min(parsed.totalPages, PREVIEW_PAGES) }, (_, i) => i + 1)
           const renderResult = await this.renderPdfPages(filePath, pagesToRender)
           result.images = renderResult.images
           result.totalPages = renderResult.totalPages
-          log.info(`Mixed PDF detected: ${pageCount} pages, has images, rendered ${renderResult.images.length} preview pages`)
+          log.info(`Mixed PDF detected: ${parsed.totalPages} pages, has images, rendered ${renderResult.images.length} preview pages`)
         } else {
-          log.info(`Pure text PDF: ${pageCount} pages, no images detected`)
+          log.info(`Pure text PDF: ${parsed.totalPages} pages, no images detected`)
         }
       } catch (detectErr) {
         log.warn('Failed to detect/render PDF images, using text only:', detectErr)
       }
     }
+
+    if (parsed.pageCount < parsed.totalPages) {
+      log.info(`PDF parsed: ${parsed.pageCount}/${parsed.totalPages} pages extracted`)
+    }
   }
 
-  /**
-   * 扫描 PDF 全部页面，检测是否包含图片操作（OPS.paintImageXObject 等）
-   * 遇到第一个图片操作即提前退出，纯文本 PDF 需扫全部页
-   */
   private async pdfHasImages(filePath: string, pageCount: number): Promise<boolean> {
+    try {
+      return await this.sendToPdfWorker<boolean>('pdfHasImages', { filePath, pageCount })
+    } catch (err: any) {
+      if (err?.message === '__NO_WORKER__') {
+        return this.pdfHasImagesDirect(filePath, pageCount)
+      }
+      throw err
+    }
+  }
+
+  // ── Direct (in-process) fallbacks for CLI mode ──────────────
+
+  private async parsePdfDirect(filePath: string, maxTextLength: number): Promise<{ content: string; pageCount: number; totalPages: number }> {
+    if (!this.pdfjsLib) {
+      this.pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    }
+    const data = new Uint8Array(fs.readFileSync(filePath))
+    const doc = await this.pdfjsLib.getDocument({ data, useSystemFonts: true, isEvalSupported: false }).promise
+    const totalPages = doc.numPages
+    const textContent: string[] = []
+    let totalChars = 0
+    let extractedPages = 0
+
+    try {
+      for (let i = 1; i <= totalPages; i++) {
+        const page = await doc.getPage(i)
+        const content = await page.getTextContent()
+        const pageText = content.items
+          .filter((item): item is { str: string } => 'str' in item)
+          .map(item => item.str)
+          .join(' ')
+          .trim()
+        textContent.push(pageText)
+        extractedPages = i
+        totalChars += pageText.length
+        if (totalChars >= maxTextLength) break
+      }
+    } finally {
+      doc.destroy()
+    }
+    return { content: textContent.join('\n\n').trim(), pageCount: extractedPages, totalPages }
+  }
+
+  private async pdfHasImagesDirect(filePath: string, pageCount: number): Promise<boolean> {
     if (!this.pdfjsLib) {
       this.pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
     }
     const OPS = this.pdfjsLib.OPS
     const IMAGE_OPS = new Set([OPS.paintImageXObject, OPS.paintImageMaskXObject, OPS.paintInlineImageXObject])
-
-    const data = new Uint8Array(await fs.promises.readFile(filePath))
-    const doc = await this.pdfjsLib.getDocument({
-      data,
-      useSystemFonts: true,
-      isEvalSupported: false,
-    }).promise
-
+    const data = new Uint8Array(fs.readFileSync(filePath))
+    const doc = await this.pdfjsLib.getDocument({ data, useSystemFonts: true, isEvalSupported: false }).promise
     try {
       for (let i = 1; i <= pageCount; i++) {
         const page = await doc.getPage(i)
         const ops = await page.getOperatorList()
         for (const fn of ops.fnArray) {
-          if (IMAGE_OPS.has(fn)) {
-            log.info(`PDF image detected on page ${i}/${pageCount}`)
-            return true
-          }
+          if (IMAGE_OPS.has(fn)) return true
         }
       }
       return false
@@ -866,18 +934,22 @@ export class DocumentParserService {
     for (let i = 0; i < docs.length; i++) {
       const doc = docs[i]
       
+      const pathAttr = doc.filePath ? ` path="${doc.filePath}"` : ''
+
       if (doc.error) {
-        const errPath = doc.filePath ? ` path="${doc.filePath}"` : ''
-        parts.push(`<sf_doc name="${doc.filename}"${errPath} error="${doc.error}" />\n`)
+        parts.push(`<sf_doc name="${doc.filename}"${pathAttr} error="${doc.error}">\n`)
+        if (doc.filePath) parts.push(`file_path: ${doc.filePath}\n`)
+        parts.push('</sf_doc>\n')
         continue
       }
       
-      const pathAttr = doc.filePath ? ` path="${doc.filePath}"` : ''
       const pagesAttr = doc.pageCount ? ` pages="${doc.pageCount}"` : ''
       
       if (!doc.content && doc.filePath) {
         const sizeAttr = doc.fileSize ? ` size="${this.formatFileSize(doc.fileSize)}"` : ''
-        parts.push(`<sf_doc name="${doc.filename}"${pathAttr}${sizeAttr} mode="metadata" />\n`)
+        parts.push(`<sf_doc name="${doc.filename}"${pathAttr}${sizeAttr} mode="metadata">\n`)
+        parts.push(`file_path: ${doc.filePath}\n`)
+        parts.push('</sf_doc>\n')
       } else {
         parts.push(`<sf_doc name="${doc.filename}"${pathAttr}${pagesAttr}>\n`)
         parts.push(doc.content)
@@ -899,7 +971,7 @@ export class DocumentParserService {
    */
   getSupportedTypes(): { extension: string; description: string; available: boolean }[] {
     return [
-      { extension: '.pdf', description: 'PDF 文档', available: !!this.PDFParser },
+      { extension: '.pdf', description: 'PDF 文档', available: true },
       { extension: '.docx', description: 'Word 文档 (2007+)', available: !!this.mammoth },
       { extension: '.doc', description: 'Word 文档 (97-2003)', available: !!this.WordExtractor },
       { extension: '.xlsx', description: 'Excel 表格 (2007+)', available: !!this.ExcelJS },
@@ -926,7 +998,7 @@ export class DocumentParserService {
     await this.init()
     
     return {
-      pdf: !!this.PDFParser,
+      pdf: true,
       docx: !!this.mammoth,
       doc: !!this.WordExtractor,
       xlsx: !!this.ExcelJS,
@@ -964,9 +1036,27 @@ export class DocumentParserService {
     }
 
     const pagesToRender = pageNumbers.slice(0, DocumentParserService.MAX_RENDER_PAGES)
-
     const dpi = options?.dpi ?? 200
     const quality = options?.quality ?? 85
+
+    try {
+      return await this.sendToPdfWorker<{ images: string[]; totalPages: number }>('renderPdfPages', {
+        filePath, pageNumbers: pagesToRender, dpi, quality,
+      })
+    } catch (err: any) {
+      if (err?.message === '__NO_WORKER__') {
+        return this.renderPdfPagesDirect(filePath, pagesToRender, dpi, quality)
+      }
+      throw err
+    }
+  }
+
+  private async renderPdfPagesDirect(
+    filePath: string,
+    pagesToRender: number[],
+    dpi: number,
+    quality: number,
+  ): Promise<{ images: string[]; totalPages: number }> {
     const scale = dpi / DocumentParserService.PDF_POINTS_PER_INCH
 
     if (!this.pdfjsLib) {
@@ -976,13 +1066,8 @@ export class DocumentParserService {
       this.napiCanvas = await import('@napi-rs/canvas')
     }
 
-    const data = new Uint8Array(await fs.promises.readFile(filePath))
-    const doc = await this.pdfjsLib.getDocument({
-      data,
-      useSystemFonts: true,
-      isEvalSupported: false,
-    }).promise
-
+    const data = new Uint8Array(fs.readFileSync(filePath))
+    const doc = await this.pdfjsLib.getDocument({ data, useSystemFonts: true, isEvalSupported: false }).promise
     const totalPages = doc.numPages
     const images: string[] = []
     const { createCanvas } = this.napiCanvas
@@ -1007,21 +1092,16 @@ export class DocumentParserService {
         log.warn(`Page ${pageNum} out of range (1-${totalPages}), skipping`)
         continue
       }
-
       const page = await doc.getPage(pageNum)
       const viewport = page.getViewport({ scale })
       const width = Math.floor(viewport.width)
       const height = Math.floor(viewport.height)
-
       const canvas = createCanvas(width, height)
       const ctx = canvas.getContext('2d')
-
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (page as any).render({ canvasContext: ctx, viewport, canvasFactory }).promise
-
       const jpegBuffer = canvas.toBuffer('image/jpeg', quality)
       images.push(`data:image/jpeg;base64,${jpegBuffer.toString('base64')}`)
-
       log.info(`Rendered page ${pageNum}/${totalPages}: ${width}x${height}, ${(jpegBuffer.length / 1024).toFixed(0)}KB`)
     }
 
