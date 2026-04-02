@@ -218,10 +218,9 @@ jobs:
           VERSION=${{ steps.get_version.outputs.VERSION }}
           OSSUTIL=/tmp/ossutil/ossutil64
           BUCKET=oss://sfterm-download
-          # upload-artifact 会保留仓库内相对路径（如 release/xxx），下载后为 artifacts/<name>/release/...
-          WIN=artifacts/windows-release/release
-          MAC=artifacts/macos-release/release
-          LIN=artifacts/linux-release/release
+          WIN=artifacts/windows-release
+          MAC=artifacts/macos-release
+          LIN=artifacts/linux-release
           
           # 官网下载用（固定文件名，不带版本号）
           # Windows
