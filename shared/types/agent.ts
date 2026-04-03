@@ -10,7 +10,7 @@ export type TerminalType = 'local' | 'ssh' | 'assistant'
 export type ExecutionMode = 'strict' | 'relaxed' | 'free'
 
 /** 远程访问渠道 */
-export type RemoteChannel = 'desktop' | 'web' | 'dingtalk' | 'feishu' | 'slack' | 'telegram' | 'wecom'
+export type RemoteChannel = 'desktop' | 'web' | 'dingtalk' | 'feishu' | 'slack' | 'telegram' | 'wecom' | 'wechat'
 
 export type RiskLevel = 'safe' | 'moderate' | 'dangerous' | 'blocked'
 

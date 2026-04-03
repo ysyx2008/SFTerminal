@@ -8,7 +8,7 @@ const { t, locale } = useI18n()
 const terminalStore = useTerminalStore()
 const emit = defineEmits<{ close: [] }>()
 
-type IMPlatformKey = 'dingtalk' | 'feishu' | 'slack' | 'telegram' | 'wecom'
+type IMPlatformKey = 'dingtalk' | 'feishu' | 'slack' | 'telegram' | 'wecom' | 'wechat'
 
 function getDocFileName(platform: IMPlatformKey): string {
   const suffix = locale.value.startsWith('zh') ? '_CN' : ''
@@ -39,6 +39,7 @@ const feishuExpanded = ref(false)
 const slackExpanded = ref(false)
 const telegramExpanded = ref(false)
 const wecomExpanded = ref(false)
+const wechatExpanded = ref(false)
 
 // 钉钉
 const dtClientId = ref('')
@@ -73,12 +74,20 @@ const wcSecret = ref('')
 const wcConnected = ref(false)
 const wcConnecting = ref(false)
 const wcError = ref('')
+// 微信
+const wxConnected = ref(false)
+const wxConnecting = ref(false)
+const wxError = ref('')
+const wxHasToken = ref(false)
+const wxQrcodeUrl = ref('')
+const wxShowQrcode = ref(false)
 // 每平台自动连接
 const dtAutoConnect = ref(false)
 const fsAutoConnect = ref(false)
 const slAutoConnect = ref(false)
 const tgAutoConnect = ref(false)
 const wcAutoConnect = ref(false)
+const wxAutoConnect = ref(false)
 // 执行模式
 const executionMode = ref<ExecutionMode>('relaxed')
 // 发送过程消息
@@ -107,6 +116,13 @@ onMounted(async () => {
     } else if (data.platform === 'wecom') {
       wcConnected.value = data.connected
       if (!data.connected) wcConnecting.value = false
+    } else if (data.platform === 'wechat') {
+      wxConnected.value = data.connected
+      if (!data.connected) wxConnecting.value = false
+      if (data.connected) {
+        wxShowQrcode.value = false
+        wxHasToken.value = true
+      }
     }
   })
 })
@@ -123,6 +139,7 @@ async function loadIMSettings() {
     slConnected.value = status.slack?.connected ?? false
     tgConnected.value = status.telegram?.connected ?? false
     wcConnected.value = status.wecom?.connected ?? false
+    wxConnected.value = status.wechat?.connected ?? false
 
     const config = await window.electronAPI.im.getConfig()
     dtClientId.value = config.dingtalk?.clientId || ''
@@ -139,6 +156,8 @@ async function loadIMSettings() {
     wcBotId.value = config.wecom?.botId || ''
     wcSecret.value = config.wecom?.secret || ''
     wcAutoConnect.value = config.wecom?.autoConnect || false
+    wxHasToken.value = config.wechat?.hasToken || false
+    wxAutoConnect.value = config.wechat?.autoConnect || false
     executionMode.value = config.executionMode || 'relaxed'
     sendProcessMessages.value = config.sendProcessMessages !== false
 
@@ -371,6 +390,64 @@ async function toggleWcAutoConnect() {
     await window.electronAPI.im.setAutoConnect('wecom', wcAutoConnect.value)
   } catch {
     wcAutoConnect.value = !wcAutoConnect.value
+  }
+}
+
+async function wechatLogin() {
+  wxError.value = ''
+  wxConnecting.value = true
+  wxShowQrcode.value = false
+  try {
+    const result = await window.electronAPI.im.wechatLogin()
+    if (result.success && result.qrcodeUrl) {
+      wxQrcodeUrl.value = result.qrcodeUrl
+      wxShowQrcode.value = true
+      wxConnecting.value = false
+    } else {
+      wxError.value = result.error || t('settings.im.connectFailed')
+      wxConnecting.value = false
+    }
+  } catch (e: any) {
+    wxError.value = e.message
+    wxConnecting.value = false
+  }
+}
+
+async function wechatReconnect() {
+  wxError.value = ''
+  wxConnecting.value = true
+  try {
+    const result = await window.electronAPI.im.startWeChat()
+    if (result.success) {
+      wxConnected.value = true
+    } else {
+      wxError.value = result.error || t('settings.im.connectFailed')
+    }
+  } catch (e: any) {
+    wxError.value = e.message
+  } finally {
+    wxConnecting.value = false
+  }
+}
+
+async function wechatDisconnect() {
+  await window.electronAPI.im.stopWeChat()
+  wxConnected.value = false
+}
+
+async function wechatLogout() {
+  await window.electronAPI.im.wechatLogout()
+  wxConnected.value = false
+  wxHasToken.value = false
+  wxAutoConnect.value = false
+  wxShowQrcode.value = false
+}
+
+async function toggleWxAutoConnect() {
+  try {
+    await window.electronAPI.im.setAutoConnect('wechat', wxAutoConnect.value)
+  } catch {
+    wxAutoConnect.value = !wxAutoConnect.value
   }
 }
 
@@ -780,6 +857,68 @@ function cancelFreeMode() {
         </div>
       </div>
 
+      <!-- 微信 -->
+      <div class="im-platform-card" :class="{ expanded: wechatExpanded, connected: wxConnected }">
+        <button class="im-platform-header" @click="wechatExpanded = !wechatExpanded">
+          <span class="im-platform-name">{{ t('settings.im.wechat') }}</span>
+          <span class="im-status-indicator" :class="{ connected: wxConnected, connecting: wxConnecting }">
+            <span class="indicator-dot"></span>
+            {{ wxConnecting ? t('settings.im.connecting') : (wxConnected ? t('settings.im.connected') : t('settings.im.disconnected')) }}
+          </span>
+          <span class="toggle-arrow" :class="{ open: wechatExpanded }">›</span>
+        </button>
+
+        <div v-if="wechatExpanded" class="im-platform-body">
+          <div class="im-hint">
+            <div class="im-hint-header">
+              <p class="hint-summary">{{ t('settings.im.wechatHint') }}</p>
+            </div>
+            <ol class="setup-steps">
+              <li>{{ t('settings.im.wechatStep1') }}</li>
+              <li>{{ t('settings.im.wechatStep2') }}</li>
+              <li>{{ t('settings.im.wechatStep3') }}</li>
+            </ol>
+          </div>
+
+          <!-- 二维码区域 -->
+          <div v-if="wxShowQrcode && wxQrcodeUrl" class="wechat-qrcode-area">
+            <p class="qrcode-hint">{{ t('settings.im.wechatScanHint') }}</p>
+            <div class="qrcode-actions">
+              <a :href="wxQrcodeUrl" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary">
+                {{ t('settings.im.wechatOpenInBrowser') }}
+              </a>
+            </div>
+          </div>
+
+          <div v-if="wxError" class="error-msg">{{ wxError }}</div>
+
+          <div class="im-card-actions">
+            <label v-if="wxHasToken" class="auto-connect-label">
+              <input type="checkbox" v-model="wxAutoConnect" @change="toggleWxAutoConnect" />
+              <span>{{ t('settings.im.autoConnect') }}</span>
+            </label>
+            <template v-if="wxConnected">
+              <button class="btn btn-sm btn-outline-danger" @click="wechatDisconnect">{{ t('settings.im.disconnect') }}</button>
+              <button class="btn btn-sm btn-outline-secondary" @click="wechatLogout">{{ t('settings.im.wechatLogout') }}</button>
+            </template>
+            <template v-else-if="wxHasToken && !wxShowQrcode">
+              <button class="btn btn-sm btn-primary" :disabled="wxConnecting" @click="wechatReconnect">
+                {{ wxConnecting ? t('settings.im.connecting') : t('settings.im.connect') }}
+              </button>
+              <button class="btn btn-sm btn-outline-secondary" @click="wechatLogin" :disabled="wxConnecting">
+                {{ t('settings.im.wechatRescan') }}
+              </button>
+              <button class="btn btn-sm btn-outline-secondary" @click="wechatLogout">{{ t('settings.im.wechatLogout') }}</button>
+            </template>
+            <template v-else>
+              <button class="btn btn-sm btn-primary" :disabled="wxConnecting" @click="wechatLogin">
+                {{ wxConnecting && !wxShowQrcode ? t('settings.im.connecting') : t('settings.im.wechatLoginBtn') }}
+              </button>
+            </template>
+          </div>
+        </div>
+      </div>
+
       <div class="security-note">
         {{ t('settings.im.securityNote') }}
       </div>
@@ -1069,6 +1208,53 @@ function cancelFreeMode() {
 
 .btn-outline-danger:hover:not(:disabled) {
   background: rgba(248, 81, 73, 0.1);
+}
+
+.btn-outline-secondary {
+  background: transparent;
+  border: 1px solid var(--border-color, #444);
+  color: var(--text-secondary, #aaa);
+}
+
+.btn-outline-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-color, #fff);
+}
+
+.wechat-qrcode-area {
+  padding: 12px;
+  margin: 8px 0;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px dashed var(--border-color);
+  text-align: center;
+}
+
+.qrcode-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.qrcode-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-outline-primary {
+  background: transparent;
+  border: 1px solid var(--accent-color, #58a6ff);
+  color: var(--accent-color, #58a6ff);
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.btn-outline-primary:hover {
+  background: rgba(88, 166, 255, 0.1);
 }
 
 .security-note {

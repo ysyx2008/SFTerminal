@@ -338,7 +338,7 @@ import { getMigrationRunner, createBackup } from './migrations'
 import { getGatewayService, type GatewayConfig } from './services/gateway.service'
 import { BastionService } from './services/bastion.service'
 import { getIMService } from './services/im/im.service'
-import type { DingTalkConfig, FeishuConfig, SlackConfig, TelegramConfig, WeComConfig } from './services/im/types'
+import type { DingTalkConfig, FeishuConfig, SlackConfig, TelegramConfig, WeComConfig, WeChatConfig } from './services/im/types'
 import { getWorkspacePath } from './services/agent/tools/file'
 import { getContextKnowledgeService } from './services/knowledge/context-knowledge'
 import {
@@ -1184,6 +1184,19 @@ app.whenReady().then(async () => {
             log.error('IM: WeCom auto-connect failed:', result.error)
           }
         }).catch(e => log.error('IM: WeCom auto-connect error:', e))
+      }
+    }
+    if (configService.get('imWeChatAutoConnect')) {
+      const wxToken = (configService.get('imWeChatToken') as string) || ''
+      const wxBaseUrl = (configService.get('imWeChatBaseUrl') as string) || ''
+      if (wxToken) {
+        imService.startWeChat({ enabled: true, token: wxToken, baseUrl: wxBaseUrl }).then(result => {
+          if (result.success) {
+            log.info('IM: WeChat auto-connect started')
+          } else {
+            log.error('IM: WeChat auto-connect failed:', result.error)
+          }
+        }).catch(e => log.error('IM: WeChat auto-connect error:', e))
       }
     }
   })().catch(e => {
@@ -2864,6 +2877,32 @@ ipcMain.handle('im:stopWeCom', async () => {
   return { success: true }
 })
 
+ipcMain.handle('im:wechatLogin', async () => {
+  return await imService.loginWeChat((creds) => {
+    configService.set('imWeChatToken', creds.token)
+    configService.set('imWeChatBaseUrl', creds.baseUrl)
+  })
+})
+
+ipcMain.handle('im:startWeChat', async () => {
+  const token = (configService.get('imWeChatToken') as string) || ''
+  const baseUrl = (configService.get('imWeChatBaseUrl') as string) || ''
+  return await imService.startWeChat({ enabled: true, token, baseUrl })
+})
+
+ipcMain.handle('im:stopWeChat', async () => {
+  await imService.stopWeChat()
+  return { success: true }
+})
+
+ipcMain.handle('im:wechatLogout', async () => {
+  await imService.stopWeChat()
+  configService.set('imWeChatToken', '')
+  configService.set('imWeChatBaseUrl', '')
+  configService.set('imWeChatAutoConnect', false)
+  return { success: true }
+})
+
 ipcMain.handle('im:getStatus', async () => {
   return imService.getStatus()
 })
@@ -2894,6 +2933,10 @@ ipcMain.handle('im:getConfig', async () => {
       secret: (configService.get('imWeComSecret') as string) || '',
       autoConnect: configService.get('imWeComAutoConnect') || false,
     },
+    wechat: {
+      hasToken: !!(configService.get('imWeChatToken') as string),
+      autoConnect: configService.get('imWeChatAutoConnect') || false,
+    },
     executionMode: (configService.get('imExecutionMode') as string) || 'relaxed',
     sendProcessMessages: configService.get('imSendProcessMessages') !== false,
   }
@@ -2910,6 +2953,8 @@ ipcMain.handle('im:setAutoConnect', async (_event, platform: string, enabled: bo
     configService.set('imTelegramAutoConnect', enabled)
   } else if (platform === 'wecom') {
     configService.set('imWeComAutoConnect', enabled)
+  } else if (platform === 'wechat') {
+    configService.set('imWeChatAutoConnect', enabled)
   }
 })
 

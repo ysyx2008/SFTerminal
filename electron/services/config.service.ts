@@ -197,6 +197,9 @@ interface StoreSchema {
   imSlackAppToken: string         // Slack App-Level Token (xapp-...)
   imTelegramAutoConnect: boolean  // Telegram 自动连接
   imTelegramBotToken: string      // Telegram Bot Token
+  imWeChatAutoConnect: boolean    // 微信自动连接
+  imWeChatToken: string           // 微信 bot token（扫码登录获得）
+  imWeChatBaseUrl: string         // 微信 API base URL
   imExecutionMode: ExecutionMode  // IM Agent 执行模式，默认 relaxed
   imLastContacts: Record<string, unknown> // IM 各平台最近联系人（主动推送使用）
   logLevel: LogLevel  // 日志级别
@@ -281,6 +284,9 @@ const defaultConfig: StoreSchema = {
   imSlackAppToken: '',
   imTelegramAutoConnect: false,
   imTelegramBotToken: '',
+  imWeChatAutoConnect: false,
+  imWeChatToken: '',
+  imWeChatBaseUrl: '',
   imExecutionMode: 'relaxed',
   imLastContacts: {},
   logLevel: 'warn',

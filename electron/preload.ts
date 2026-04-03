@@ -2851,6 +2851,14 @@ const electronAPI = {
       ipcRenderer.invoke('im:startWeCom', config) as Promise<{ success: boolean; error?: string }>,
     stopWeCom: () =>
       ipcRenderer.invoke('im:stopWeCom') as Promise<{ success: boolean }>,
+    wechatLogin: () =>
+      ipcRenderer.invoke('im:wechatLogin') as Promise<{ success: boolean; qrcodeUrl?: string; error?: string }>,
+    startWeChat: () =>
+      ipcRenderer.invoke('im:startWeChat') as Promise<{ success: boolean; error?: string }>,
+    stopWeChat: () =>
+      ipcRenderer.invoke('im:stopWeChat') as Promise<{ success: boolean }>,
+    wechatLogout: () =>
+      ipcRenderer.invoke('im:wechatLogout') as Promise<{ success: boolean }>,
     getStatus: () =>
       ipcRenderer.invoke('im:getStatus') as Promise<{
         dingtalk: { enabled: boolean; connected: boolean }
@@ -2858,6 +2866,7 @@ const electronAPI = {
         slack: { enabled: boolean; connected: boolean }
         telegram: { enabled: boolean; connected: boolean }
         wecom: { enabled: boolean; connected: boolean }
+        wechat: { enabled: boolean; connected: boolean }
       }>,
     getConfig: () =>
       ipcRenderer.invoke('im:getConfig') as Promise<{
@@ -2866,6 +2875,7 @@ const electronAPI = {
         slack: { botToken: string; appToken: string; autoConnect: boolean }
         telegram: { botToken: string; autoConnect: boolean }
         wecom: { botId: string; secret: string; autoConnect: boolean }
+        wechat: { hasToken: boolean; autoConnect: boolean }
         executionMode: ExecutionMode
         sendProcessMessages: boolean
       }>,

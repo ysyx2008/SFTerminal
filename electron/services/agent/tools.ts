@@ -534,6 +534,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
     slack:    { name: 'Slack', fileLimit: '1GB', imageLimit: '1GB' },
     telegram: { name: 'Telegram', fileLimit: '50MB', imageLimit: '10MB' },
     wecom:    { name: '企业微信', fileLimit: '20MB', imageLimit: '20MB' },
+    wechat:   { name: '微信', fileLimit: '20MB', imageLimit: '20MB' },
   }
   const imMeta = options?.remoteChannel ? imPlatformMeta[options.remoteChannel] : undefined
   if (imMeta) {

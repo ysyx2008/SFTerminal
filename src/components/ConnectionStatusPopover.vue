@@ -26,7 +26,7 @@ interface McpServerStatus {
   promptCount: number
 }
 
-type IMPlatform = 'dingtalk' | 'feishu' | 'slack' | 'telegram' | 'wecom'
+type IMPlatform = 'dingtalk' | 'feishu' | 'slack' | 'telegram' | 'wecom' | 'wechat'
 
 interface IMChannelState {
   platform: IMPlatform
@@ -117,6 +117,7 @@ const platformLabels: Record<IMPlatform, () => string> = {
   slack: () => t('settings.im.slack'),
   telegram: () => t('settings.im.telegram'),
   wecom: () => t('settings.im.wecom'),
+  wechat: () => t('settings.im.wechat'),
 }
 
 const loadIMData = async () => {
@@ -131,6 +132,7 @@ const loadIMData = async () => {
     slack: !!(config.slack.botToken && config.slack.appToken),
     telegram: !!config.telegram.botToken,
     wecom: !!(config.wecom.botId && config.wecom.secret),
+    wechat: config.wechat?.hasToken ?? false,
   }
 
   const autoConnectCheck: Record<IMPlatform, boolean> = {
@@ -139,9 +141,10 @@ const loadIMData = async () => {
     slack: config.slack.autoConnect,
     telegram: config.telegram.autoConnect,
     wecom: config.wecom.autoConnect,
+    wechat: config.wechat?.autoConnect ?? false,
   }
 
-  const platforms: IMPlatform[] = ['dingtalk', 'feishu', 'slack', 'telegram', 'wecom']
+  const platforms: IMPlatform[] = ['dingtalk', 'feishu', 'slack', 'telegram', 'wecom', 'wechat']
   imChannels.value = platforms
     .map(p => ({
       platform: p,
@@ -199,6 +202,9 @@ const connectIM = async (channel: IMChannelState) => {
           enabled: true, botId: config.wecom.botId, secret: config.wecom.secret,
         })
         break
+      case 'wechat':
+        result = await window.electronAPI.im.startWeChat()
+        break
       default:
         result = { success: false, error: 'Unknown platform' }
     }
@@ -218,6 +224,7 @@ const disconnectIM = async (channel: IMChannelState) => {
     case 'slack': await window.electronAPI.im.stopSlack(); break
     case 'telegram': await window.electronAPI.im.stopTelegram(); break
     case 'wecom': await window.electronAPI.im.stopWeCom(); break
+    case 'wechat': await window.electronAPI.im.stopWeChat(); break
   }
   await loadIMData()
 }

@@ -26,6 +26,7 @@ import type {
   SlackConfig,
   TelegramConfig,
   WeComConfig,
+  WeChatConfig,
   SendFileResult
 } from './types'
 import { CONFIRM_KEYWORDS, REJECT_KEYWORDS, IM_TEXT_MAX_LENGTH } from './types'
@@ -34,6 +35,7 @@ import { FeishuAdapter } from './feishu-adapter'
 import { SlackAdapter } from './slack-adapter'
 import { TelegramAdapter } from './telegram-adapter'
 import { WeComAdapter } from './wecom-adapter'
+import { WeChatAdapter } from './wechat-adapter'
 import { AgentService } from '../agent'
 import { getConfigService } from '../config.service'
 import { t } from '../agent/i18n'
@@ -69,6 +71,10 @@ export interface IMServiceStatus {
     connected: boolean
   }
   wecom: {
+    enabled: boolean
+    connected: boolean
+  }
+  wechat: {
     enabled: boolean
     connected: boolean
   }
@@ -197,12 +203,14 @@ export class IMService {
   private slackAdapter: SlackAdapter | null = null
   private telegramAdapter: TelegramAdapter | null = null
   private wecomAdapter: WeComAdapter | null = null
+  private wechatAdapter: WeChatAdapter | null = null
   private config: IMServiceConfig = {
     dingtalk: { enabled: false, clientId: '', clientSecret: '' },
     feishu: { enabled: false, appId: '', appSecret: '' },
     slack: { enabled: false, botToken: '', appToken: '' },
     telegram: { enabled: false, botToken: '' },
     wecom: { enabled: false, botId: '', secret: '' },
+    wechat: { enabled: false, token: '', baseUrl: '' },
     executionMode: 'relaxed',
     sessionTimeoutMinutes: 60,
     sendProcessMessages: true,
@@ -538,6 +546,81 @@ export class IMService {
     return this.wecomAdapter?.isConnected() ?? false
   }
 
+  // ==================== 微信管理 ====================
+
+  /**
+   * 发起微信扫码登录。返回 QR 码 URL（前端展示用）。
+   * 登录成功后内部自动启动长轮询，并通过 onConnectionChange 通知前端。
+   * @param onCredentials 登录成功后的回调，外部可用来持久化 token/baseUrl
+   */
+  async loginWeChat(
+    onCredentials?: (creds: { token: string; baseUrl: string }) => void
+  ): Promise<{ success: boolean; qrcodeUrl?: string; error?: string }> {
+    try {
+      await this.stopWeChat()
+
+      this.wechatAdapter = new WeChatAdapter({ enabled: true, token: '', baseUrl: '' })
+      this.wechatAdapter.onMessage = (msg: IMIncomingMessage) => this.handleIncomingMessage(msg)
+      this.wechatAdapter.onConnectionChange = (connected: boolean) => {
+        this.handleConnectionChange('wechat', connected)
+        if (connected && onCredentials) {
+          const creds = this.wechatAdapter!.getCredentials()
+          this.config.wechat = { enabled: true, ...creds }
+          onCredentials(creds)
+        }
+      }
+
+      const result = await this.wechatAdapter.login()
+      log.info('WeChat QR login initiated')
+      return { success: true, qrcodeUrl: result.qrcodeUrl }
+    } catch (err: any) {
+      log.error('WeChat login failed:', err)
+      this.wechatAdapter = null
+      return { success: false, error: err.message || 'Failed to start login' }
+    }
+  }
+
+  /**
+   * 使用已保存的凭证启动微信连接（用于自动连接）
+   */
+  async startWeChat(config: WeChatConfig): Promise<{ success: boolean; error?: string }> {
+    if (!config.token) {
+      return { success: false, error: 'Token is required (please login via QR first)' }
+    }
+
+    try {
+      await this.stopWeChat()
+
+      this.config.wechat = { ...config, enabled: true }
+      this.wechatAdapter = new WeChatAdapter(config)
+
+      this.wechatAdapter.onMessage = (msg: IMIncomingMessage) => this.handleIncomingMessage(msg)
+      this.wechatAdapter.onConnectionChange = (connected: boolean) =>
+        this.handleConnectionChange('wechat', connected)
+
+      await this.wechatAdapter.start()
+      log.info('WeChat started with saved token')
+      return { success: true }
+    } catch (err: any) {
+      log.error('WeChat start failed:', err)
+      this.wechatAdapter = null
+      return { success: false, error: err.message || 'Failed to connect' }
+    }
+  }
+
+  async stopWeChat(): Promise<void> {
+    if (this.wechatAdapter) {
+      await this.wechatAdapter.stop()
+      this.wechatAdapter = null
+      this.config.wechat.enabled = false
+      log.info('WeChat stopped')
+    }
+  }
+
+  isWeChatConnected(): boolean {
+    return this.wechatAdapter?.isConnected() ?? false
+  }
+
   // ==================== 全局操作 ====================
 
   async stopAll(): Promise<void> {
@@ -550,6 +633,7 @@ export class IMService {
     await this.stopSlack()
     await this.stopTelegram()
     await this.stopWeCom()
+    await this.stopWeChat()
   }
 
   getStatus(): IMServiceStatus {
@@ -573,6 +657,10 @@ export class IMService {
       wecom: {
         enabled: this.config.wecom.enabled,
         connected: this.isWeComConnected(),
+      },
+      wechat: {
+        enabled: this.config.wechat.enabled,
+        connected: this.isWeChatConnected(),
       }
     }
   }
@@ -829,7 +917,7 @@ export class IMService {
         terminalOutput: [] as string[],
         systemInfo: { os: getLocalOS(), shell: getDefaultShell() },
         terminalType: 'assistant' as const,
-        remoteChannel: msg.platform as any
+        remoteChannel: msg.platform
       }
 
       await this.deps.agentService.runAssistant(agentId, fullMessage, context, {
@@ -1153,6 +1241,7 @@ export class IMService {
     if (platform === 'slack') return this.slackAdapter
     if (platform === 'telegram') return this.telegramAdapter
     if (platform === 'wecom') return this.wecomAdapter
+    if (platform === 'wechat') return this.wechatAdapter
     return null
   }
 
@@ -1163,7 +1252,7 @@ export class IMService {
       if (!stored || typeof stored !== 'object') return
 
       const parsed: Partial<Record<IMPlatform, IMLastContact>> = {}
-      const platforms: IMPlatform[] = ['dingtalk', 'feishu', 'slack', 'telegram', 'wecom']
+      const platforms: IMPlatform[] = ['dingtalk', 'feishu', 'slack', 'telegram', 'wecom', 'wechat']
       for (const platform of platforms) {
         const raw = stored[platform] as IMLastContact | undefined
         if (this.isValidContact(raw) && !this.isContactExpired(raw)) {
@@ -1181,7 +1270,7 @@ export class IMService {
     try {
       const configService = getConfigService()
       const serializable: Record<string, unknown> = {}
-      const platforms: IMPlatform[] = ['dingtalk', 'feishu', 'slack', 'telegram', 'wecom']
+      const platforms: IMPlatform[] = ['dingtalk', 'feishu', 'slack', 'telegram', 'wecom', 'wechat']
       for (const platform of platforms) {
         const contact = this.contactsByPlatform[platform]
         if (!contact) continue
@@ -1229,7 +1318,7 @@ export class IMService {
   }
 
   private getNotificationTargets(): IMLastContact[] {
-    const connectedPlatforms: IMPlatform[] = ['dingtalk', 'feishu', 'slack', 'telegram', 'wecom']
+    const connectedPlatforms: IMPlatform[] = ['dingtalk', 'feishu', 'slack', 'telegram', 'wecom', 'wechat']
       .filter((platform) => {
         const adapter = this.getAdapter(platform)
         return !!adapter && adapter.isConnected()
@@ -1269,6 +1358,7 @@ export class IMService {
       connected('Slack', this.isSlackConnected()),
       connected('Telegram', this.isTelegramConnected()),
       connected('WeCom', this.isWeComConnected()),
+      connected('WeChat', this.isWeChatConnected()),
     ].join('\n')
   }
 

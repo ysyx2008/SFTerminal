@@ -35,12 +35,19 @@ export interface WeComConfig {
   secret: string        // 长连接专用密钥
 }
 
+export interface WeChatConfig {
+  enabled: boolean
+  token: string         // 扫码登录后获得的 bot_token
+  baseUrl: string       // API base URL（登录时返回，默认 https://ilinkai.weixin.qq.com）
+}
+
 export interface IMServiceConfig {
   dingtalk: DingTalkConfig
   feishu: FeishuConfig
   slack: SlackConfig
   telegram: TelegramConfig
   wecom: WeComConfig
+  wechat: WeChatConfig
   /** Agent 执行模式，默认 relaxed */
   executionMode: ExecutionMode
   /** 空闲会话超时（分钟），默认 60 */
@@ -51,7 +58,7 @@ export interface IMServiceConfig {
 
 // ==================== 适配器接口 ====================
 
-export type IMPlatform = 'dingtalk' | 'feishu' | 'slack' | 'telegram' | 'wecom'
+export type IMPlatform = 'dingtalk' | 'feishu' | 'slack' | 'telegram' | 'wecom' | 'wechat'
 
 /**
  * IM 接收消息中的附件（图片、语音、视频、文件）
@@ -132,6 +139,7 @@ export const IM_FILE_MAX_SIZE_FEISHU = 30 * 1024 * 1024    // 飞书: 30MB
 export const IM_FILE_MAX_SIZE_SLACK = 1 * 1024 * 1024 * 1024  // Slack: 1GB（Free 计划实际 API 限制通常更小，此处为用户侧防御性限制）
 export const IM_FILE_MAX_SIZE_TELEGRAM = 50 * 1024 * 1024  // Telegram: 50MB
 export const IM_FILE_MAX_SIZE_WECOM = 20 * 1024 * 1024    // 企业微信: 20MB
+export const IM_FILE_MAX_SIZE_WECHAT = 20 * 1024 * 1024  // 微信: 20MB
 
 /** 图片上传大小限制（字节） */
 export const IM_IMAGE_MAX_SIZE_FEISHU = 10 * 1024 * 1024   // 飞书: 10MB
