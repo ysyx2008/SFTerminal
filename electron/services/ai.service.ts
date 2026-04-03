@@ -11,7 +11,7 @@ const log = createLogger('AI')
 
 // AI 请求超时配置（毫秒）
 const AI_TIMEOUT = {
-  CONNECT: 15 * 1000,        // 连接超时：15 秒
+  CONNECT: 30 * 1000,        // 连接超时：30 秒（火山引擎等中转服务需要更长连接时间）
   SOCKET_IDLE: 120 * 1000,   // 空闲超时：120 秒（流式请求中数据流中断检测）
   TOTAL: 10 * 60 * 1000      // 总超时：10 分钟（长文本生成可能需要较长时间）
 }
@@ -1646,6 +1646,17 @@ export class AiService {
         })
 
         res.on('error', (err) => {
+          if (abortController.signal.aborted) {
+            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
+            log.debug(`Request aborted: model=${profile.model}, duration=${elapsed}s`)
+            getAiDebugService().logResponseDone(reqId, { finishReason: 'aborted' })
+            complete(() => onDone({
+              content: undefined,
+              tool_calls: undefined,
+              finish_reason: 'stop'
+            }))
+            return
+          }
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
           log.error(`Request failed: model=${profile.model}, duration=${elapsed}s, error=${err.message}`)
           if (!tryRetry(err.message, doRequest)) {
