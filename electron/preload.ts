@@ -2738,7 +2738,8 @@ const electronAPI = {
 
   // Shell 操作
   shell: {
-    openPath: (path: string) => ipcRenderer.invoke('shell:openPath', path) as Promise<string>
+    openPath: (path: string) => ipcRenderer.invoke('shell:openPath', path) as Promise<string>,
+    showItemInFolder: (path: string) => ipcRenderer.invoke('shell:showItemInFolder', path) as Promise<void>
   },
 
   // AI Debug 调试窗口

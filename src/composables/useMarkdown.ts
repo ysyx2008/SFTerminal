@@ -4,6 +4,28 @@
  */
 import { marked } from 'marked'
 import { useTerminalStore } from '../stores/terminal'
+import { toast } from './useToast'
+
+const writeClipboard = async (text: string): Promise<boolean> => {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    // fallback: 动态创建的 DOM 元素中 navigator.clipboard 可能因用户手势丢失而失败
+    try {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.cssText = 'position:fixed;opacity:0;left:-9999px'
+      document.body.appendChild(textarea)
+      textarea.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(textarea)
+      return ok
+    } catch {
+      return false
+    }
+  }
+}
 
 /**
  * 检测文本是否为本地文件路径
@@ -220,16 +242,7 @@ export function useMarkdown() {
       event.preventDefault()
       event.stopPropagation()
       const filePath = filePathEl.dataset.filePath
-      if (filePath && window.electronAPI?.shell?.openPath) {
-        try {
-          const errorMsg = await window.electronAPI.shell.openPath(filePath)
-          if (errorMsg) {
-            console.error('打开文件失败:', errorMsg)
-          }
-        } catch (error) {
-          console.error('打开文件失败:', error)
-        }
-      }
+      if (filePath) openFilePath(filePath)
       return
     }
     
@@ -247,12 +260,7 @@ export function useMarkdown() {
     }
     
     if (action === 'copy') {
-      try {
-        await navigator.clipboard.writeText(code)
-        console.log('代码已复制')
-      } catch (error) {
-        console.error('复制代码失败:', error)
-      }
+      await writeClipboard(code)
     } else if (action === 'send') {
       try {
         const activeTab = terminalStore.activeTab
@@ -272,19 +280,141 @@ export function useMarkdown() {
     }
   }
 
+  // 文件路径右键菜单
+  let activeContextMenu: HTMLElement | null = null
+
+  const removeContextMenu = () => {
+    if (activeContextMenu) {
+      activeContextMenu.remove()
+      activeContextMenu = null
+    }
+  }
+
+  const handleFilePathContextMenu = (event: MouseEvent) => {
+    const target = event.target as HTMLElement
+    const filePathEl = target.closest('[data-file-path]') as HTMLElement
+    if (!filePathEl) return
+
+    const filePath = filePathEl.dataset.filePath
+    if (!filePath) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    removeContextMenu()
+
+    const menu = document.createElement('div')
+    menu.className = 'file-path-context-menu'
+    menu.style.cssText = `
+      position: fixed;
+      left: ${event.clientX}px;
+      top: ${event.clientY}px;
+      min-width: 160px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+      padding: 6px;
+      z-index: 10000;
+      animation: fadeIn 0.1s ease;
+    `
+
+    const items = [
+      { label: '打开文件', icon: 'file', action: () => openFilePath(filePath) },
+      { label: '打开所在文件夹', icon: 'folder', action: () => showInFolder(filePath) },
+      { divider: true },
+      { label: '复制路径', icon: 'copy', action: () => copyPathToClipboard(filePath) }
+    ]
+
+    for (const item of items) {
+      if ('divider' in item && item.divider) {
+        const divider = document.createElement('div')
+        divider.style.cssText = 'height: 1px; background: var(--border-color); margin: 6px 0;'
+        menu.appendChild(divider)
+        continue
+      }
+      const btn = document.createElement('button')
+      btn.style.cssText = `
+        display: flex; align-items: center; gap: 10px; width: 100%;
+        padding: 8px 12px; font-size: 13px; color: var(--text-primary);
+        background: transparent; border: none; border-radius: 4px;
+        cursor: pointer; text-align: left;
+      `
+      btn.textContent = item.label!
+      btn.addEventListener('mouseenter', () => { btn.style.background = 'var(--bg-hover)' })
+      btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent' })
+      btn.addEventListener('click', () => {
+        item.action!()
+        removeContextMenu()
+      })
+      menu.appendChild(btn)
+    }
+
+    document.body.appendChild(menu)
+    activeContextMenu = menu
+
+    // 防止超出视口
+    requestAnimationFrame(() => {
+      const rect = menu.getBoundingClientRect()
+      if (rect.right > window.innerWidth) menu.style.left = `${window.innerWidth - rect.width - 10}px`
+      if (rect.bottom > window.innerHeight) menu.style.top = `${window.innerHeight - rect.height - 10}px`
+    })
+
+    const closeOnClick = (e: MouseEvent) => {
+      if (!menu.contains(e.target as Node)) {
+        removeContextMenu()
+        document.removeEventListener('click', closeOnClick)
+        document.removeEventListener('contextmenu', closeOnClick)
+      }
+    }
+    const closeOnEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        removeContextMenu()
+        document.removeEventListener('keydown', closeOnEsc)
+      }
+    }
+    setTimeout(() => {
+      document.addEventListener('click', closeOnClick)
+      document.addEventListener('contextmenu', closeOnClick)
+      document.addEventListener('keydown', closeOnEsc)
+    }, 0)
+  }
+
+  const openFilePath = async (filePath: string) => {
+    if (!window.electronAPI?.shell?.openPath) return
+    try {
+      const errorMsg = await window.electronAPI.shell.openPath(filePath)
+      if (errorMsg) {
+        toast.error('打开文件失败：文件可能已被删除或移动')
+      }
+    } catch {
+      toast.error('打开文件失败：文件可能已被删除或移动')
+    }
+  }
+
+  const showInFolder = async (filePath: string) => {
+    if (!window.electronAPI?.shell?.showItemInFolder) return
+    try {
+      await window.electronAPI.shell.showItemInFolder(filePath)
+    } catch {
+      toast.error('打开所在文件夹失败')
+    }
+  }
+
+  const copyPathToClipboard = async (filePath: string) => {
+    const ok = await writeClipboard(filePath)
+    if (ok) toast.success('路径已复制')
+    else toast.error('复制路径失败')
+  }
+
   // 复制消息
   const copyMessage = async (content: string) => {
-    try {
-      await navigator.clipboard.writeText(content)
-      // 可以添加一个提示
-    } catch (error) {
-      console.error('复制失败:', error)
-    }
+    await writeClipboard(content)
   }
 
   return {
     renderMarkdown,
     handleCodeBlockClick,
+    handleFilePathContextMenu,
     copyMessage
   }
 }

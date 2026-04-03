@@ -1660,6 +1660,18 @@ ipcMain.handle('shell:openPath', async (_event, path: string) => {
   return shell.openPath(path)
 })
 
+// 在文件管理器中显示文件（文件不存在时 fallback 到打开父目录）
+ipcMain.handle('shell:showItemInFolder', async (_event, fullPath: string) => {
+  if (fs.existsSync(fullPath)) {
+    shell.showItemInFolder(fullPath)
+  } else {
+    const dir = path.dirname(fullPath)
+    if (dir && fs.existsSync(dir)) {
+      await shell.openPath(dir)
+    }
+  }
+})
+
 // PATH 环境变量状态
 ipcMain.handle('path:isReady', async () => {
   return isPathReady()

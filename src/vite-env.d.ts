@@ -1691,6 +1691,7 @@ interface Window {
     // Shell 操作
     shell: {
       openPath: (path: string) => Promise<string>
+      showItemInFolder: (path: string) => Promise<void>
     }
 
     // 语音识别服务

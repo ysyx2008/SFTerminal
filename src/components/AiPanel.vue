@@ -143,7 +143,8 @@ const {
 // Markdown 渲染
 const {
   renderMarkdown,
-  handleCodeBlockClick
+  handleCodeBlockClick,
+  handleFilePathContextMenu
 } = useMarkdown()
 
 // 主机档案
@@ -1100,12 +1101,14 @@ watch(scrollerRef, (scroller, oldScroller) => {
   if (oldEl) {
     oldEl.removeEventListener('scroll', updateScrollPosition)
     oldEl.removeEventListener('click', handleCodeBlockClick)
+    oldEl.removeEventListener('contextmenu', handleFilePathContextMenu)
   }
   const el = scroller?.$el as HTMLDivElement | undefined
   messagesRef.value = el ?? null
   if (el) {
     el.addEventListener('scroll', updateScrollPosition, { passive: true })
     el.addEventListener('click', handleCodeBlockClick)
+    el.addEventListener('contextmenu', handleFilePathContextMenu)
   }
 }, { flush: 'post' })
 
@@ -1149,6 +1152,7 @@ onUnmounted(() => {
   if (el) {
     el.removeEventListener('scroll', updateScrollPosition)
     el.removeEventListener('click', handleCodeBlockClick)
+    el.removeEventListener('contextmenu', handleFilePathContextMenu)
   }
 })
 </script>
