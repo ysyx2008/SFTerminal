@@ -124,6 +124,124 @@ async function enrichHtmlAlignment(html: string, source: string | Buffer): Promi
   }
 }
 
+const CHINESE_DIGITS = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九']
+
+function numberToChinese(n: number): string {
+  if (n <= 0) return '零'
+  if (n < 10) return CHINESE_DIGITS[n]
+  if (n === 10) return '十'
+  if (n < 20) return '十' + CHINESE_DIGITS[n - 10]
+  if (n < 100) {
+    const tens = Math.floor(n / 10)
+    const ones = n % 10
+    return CHINESE_DIGITS[tens] + '十' + (ones > 0 ? CHINESE_DIGITS[ones] : '')
+  }
+  const hundreds = Math.floor(n / 100)
+  const remainder = n % 100
+  let result = CHINESE_DIGITS[hundreds] + '百'
+  if (remainder > 0) {
+    if (remainder < 10) result += '零'
+    result += numberToChinese(remainder)
+  }
+  return result
+}
+
+/**
+ * mammoth 不识别 Word 原生多级编号，预览中标题丢失编号前缀。
+ * 从 numbering.xml + styles.xml 读取编号定义，还原到 HTML heading 中。
+ */
+async function enrichHtmlNumbering(html: string, source: string | Buffer): Promise<string> {
+  try {
+    const buf = typeof source === 'string' ? fs.readFileSync(source) : source
+    const zip = await JSZip.loadAsync(buf)
+
+    const numXml = await zip.file('word/numbering.xml')?.async('string')
+    const stylesXml = await zip.file('word/styles.xml')?.async('string')
+    if (!numXml || !stylesXml) return html
+
+    // Heading 样式 → 编号层级映射
+    const headingMap = new Map<number, { ilvl: number; numId: string }>()
+    for (let h = 1; h <= 6; h++) {
+      const styleBlock = stylesXml.match(
+        new RegExp(`<w:style[^>]*w:styleId="Heading${h}"[\\s\\S]*?</w:style>`)
+      )?.[0]
+      if (!styleBlock) continue
+      const ilvl = styleBlock.match(/<w:ilvl w:val="(\d+)"/)?.[1]
+      const numId = styleBlock.match(/<w:numId w:val="(\d+)"/)?.[1]
+      if (ilvl && numId && numId !== '0') {
+        headingMap.set(h, { ilvl: parseInt(ilvl), numId })
+      }
+    }
+    if (headingMap.size === 0) return html
+
+    // 定位 abstractNum 块
+    const firstNumId = [...headingMap.values()][0].numId
+    const absIdMatch = numXml.match(new RegExp(
+      `<w:num w:numId="${firstNumId}"[^>]*>[\\s\\S]*?<w:abstractNumId w:val="(\\d+)"`
+    ))
+    if (!absIdMatch) return html
+
+    const abstractBlocks = numXml.match(/<w:abstractNum[\s\S]*?<\/w:abstractNum>/g) || []
+    let targetBlock: string | null = null
+    for (const block of abstractBlocks) {
+      if (block.includes(`w:abstractNumId="${absIdMatch[1]}"`)) { targetBlock = block; break }
+    }
+    if (!targetBlock) return html
+
+    // 提取各级编号定义
+    interface LevelDef { format: string; text: string; restart: number | null; bold: boolean }
+    const levels = new Map<number, LevelDef>()
+    const lvlBlocks = targetBlock.match(/<w:lvl[\s\S]*?<\/w:lvl>/g) || []
+    for (const lvl of lvlBlocks) {
+      const ilvlVal = parseInt(lvl.match(/w:ilvl="(\d+)"/)?.[1] || '-1')
+      const format = lvl.match(/<w:numFmt w:val="([^"]+)"/)?.[1] || 'decimal'
+      const text = lvl.match(/<w:lvlText w:val="([^"]*?)"/)?.[1] || ''
+      const restartMatch = lvl.match(/<w:lvlRestart w:val="(\d+)"/)
+      const restart = restartMatch ? parseInt(restartMatch[1]) : null
+      const bold = lvl.includes('<w:b/>') || lvl.includes('<w:b w:val="true"') || lvl.includes('<w:b w:val="1"')
+      levels.set(ilvlVal, { format, text, restart, bold })
+    }
+
+    // 遍历 HTML heading，注入编号前缀
+    const maxIlvl = Math.max(...[...headingMap.values()].map(v => v.ilvl))
+    const counters = new Array(maxIlvl + 1).fill(0)
+
+    return html.replace(/<h([1-6])([^>]*)>([\s\S]*?)<\/h\1>/gi, (full, levelStr, attrs, content) => {
+      const h = parseInt(levelStr)
+      const info = headingMap.get(h)
+      if (!info || attrs.includes('document-title')) return full
+
+      const levelDef = levels.get(info.ilvl)
+      if (!levelDef) return full
+
+      counters[info.ilvl]++
+      for (let i = info.ilvl + 1; i <= maxIlvl; i++) {
+        const child = levels.get(i)
+        if (child && child.restart === 0) continue
+        counters[i] = 0
+      }
+
+      let numText = levelDef.text
+      for (let i = 0; i <= maxIlvl; i++) {
+        const ph = `%${i + 1}`
+        if (numText.includes(ph)) {
+          const fmt = levels.get(i)?.format || 'decimal'
+          const formatted = (fmt === 'chineseCounting' || fmt === 'chineseCountingThousand')
+            ? numberToChinese(counters[i])
+            : String(counters[i])
+          numText = numText.replace(ph, formatted)
+        }
+      }
+
+      const prefix = levelDef.bold ? `<strong>${numText}</strong>` : numText
+      return `<h${levelStr}${attrs}>${prefix}${content}</h${levelStr}>`
+    })
+  } catch (e) {
+    log.warn('enrichHtmlNumbering failed:', e)
+    return html
+  }
+}
+
 /**
  * 生成 Word 文档预览 HTML（供 Canvas 展示）
  * 对于新建文档使用 sections 转 HTML，已有文档从段落列表生成
@@ -141,7 +259,9 @@ async function generatePreviewHtml(filePath: string): Promise<string> {
       const outBuf = await cloned.generateAsync({ type: 'nodebuffer' })
       const mammoth = await import('mammoth')
       const result = await mammoth.convertToHtml({ buffer: outBuf }, MAMMOTH_OPTIONS)
-      return enrichHtmlAlignment(result.value, outBuf)
+      let previewHtml = await enrichHtmlAlignment(result.value, outBuf)
+      previewHtml = await enrichHtmlNumbering(previewHtml, outBuf)
+      return previewHtml
     } catch (e) {
       log.warn('Failed to generate mammoth preview, falling back to text:', e)
       try {
@@ -700,8 +820,9 @@ async function wordOpen(
     // 从 HTML 解析出结构化内容（用于 word_read 等文本操作）
     parseHtmlToSections(html, session.sections)
 
-    // 对齐增强后用于 Canvas 预览
-    const enrichedHtml = await enrichHtmlAlignment(html, filePath)
+    // 对齐 + 编号增强后用于 Canvas 预览
+    let enrichedHtml = await enrichHtmlAlignment(html, filePath)
+    enrichedHtml = await enrichHtmlNumbering(enrichedHtml, filePath)
 
     // 生成内容预览
     const textResult = await mammoth.extractRawText({ path: filePath })
@@ -2422,7 +2543,8 @@ async function wordFromMarkdown(
     try {
       const mammoth = await import('mammoth')
       const htmlResult = await mammoth.convertToHtml({ path: filePath }, MAMMOTH_OPTIONS)
-      const enrichedHtml = await enrichHtmlAlignment(htmlResult.value, filePath)
+      let enrichedHtml = await enrichHtmlAlignment(htmlResult.value, filePath)
+      enrichedHtml = await enrichHtmlNumbering(enrichedHtml, filePath)
       canvasData = {
         action: 'open',
         renderer: 'document',
