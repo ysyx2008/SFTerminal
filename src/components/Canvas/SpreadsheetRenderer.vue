@@ -101,6 +101,42 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
   font-variant-numeric: tabular-nums;
 }
 
+/* 新增 / 修改的单元格：静态蓝色底色 */
+.spreadsheet-content :deep(td.modified) {
+  background-color: #e8f0fe;
+}
+
+/* 即将被删除的行：红色高亮（1 秒） */
+.spreadsheet-content :deep(td.deleting) {
+  background-color: #fee2e2;
+  animation: cell-deleting-flash 1s ease-out;
+}
+
+@keyframes cell-deleting-flash {
+  0% { background-color: #fca5a5; }
+  100% { background-color: #fee2e2; }
+}
+
+/* 删除行后上移填补：从下方滑入 */
+.spreadsheet-content :deep(td.shifted) {
+  animation: cell-slide-up 0.75s ease-out;
+}
+
+@keyframes cell-slide-up {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* 删除列后左移填补：从右侧滑入 */
+.spreadsheet-content :deep(td.shifted-col) {
+  animation: cell-slide-left 0.75s ease-out;
+}
+
+@keyframes cell-slide-left {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
 /* 工作表标签栏 */
 .spreadsheet-content :deep(.sheet-tabs) {
   display: flex;

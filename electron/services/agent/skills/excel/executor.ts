@@ -168,7 +168,16 @@ function resolveStyle(styleName?: string): ExcelStyleConfig {
  * 生成 Excel 工作簿的 HTML 预览（供 Canvas 展示）
  * 显示当前活动 sheet 或第一个 sheet 的数据
  */
-function generateExcelPreviewHtml(filePath: string, activeSheet?: string): string {
+interface PreviewHighlights {
+  modified?: Set<string>
+  deleting?: Set<string>
+  /** 删除行后上移的单元格 */
+  shifted?: Set<string>
+  /** 删除列后左移的单元格 */
+  shiftedCol?: Set<string>
+}
+
+function generateExcelPreviewHtml(filePath: string, activeSheet?: string, highlights?: PreviewHighlights): string {
   const session = getSession(filePath)
   if (!session) return ''
 
@@ -235,10 +244,19 @@ function generateExcelPreviewHtml(filePath: string, activeSheet?: string): strin
     const cells = [`<td class="row-header">${r}</td>`]
     for (let c = 1; c <= colCount; c++) {
       const data = cellMap?.get(c)
+      const key = `${r},${c}`
+      const classes: string[] = []
+      if (data?.isNum) classes.push('num')
+      if (highlights?.deleting?.has(key)) classes.push('deleting')
+      else if (highlights?.shifted?.has(key)) classes.push('shifted')
+      else if (highlights?.shiftedCol?.has(key)) classes.push('shifted-col')
+      else if (highlights?.modified?.has(key)) classes.push('modified')
+      const classAttr = classes.length > 0 ? ` class="${classes.join(' ')}"` : ''
+
       if (data) {
-        cells.push(`<td${data.isNum ? ' class="num"' : ''}>${escapeHtml(data.val)}</td>`)
+        cells.push(`<td${classAttr}>${escapeHtml(data.val)}</td>`)
       } else {
-        cells.push('<td></td>')
+        cells.push(`<td${classAttr}></td>`)
       }
     }
     htmlRows.push(`<tr>${cells.join('')}</tr>`)
@@ -544,6 +562,9 @@ async function excelModify(
 
   const workbook = session.workbook
   const results: string[] = []
+  const modifiedCells = new Set<string>()
+  let shiftedCells: Set<string> | undefined
+  let shiftedColSet: Set<string> | undefined
 
   // 添加新 Sheet
   if (addSheet) {
@@ -595,6 +616,7 @@ async function excelModify(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         cell.value = value as any
       }
+      addCellsFromRef(modifiedCells, cellRef)
       modCount++
     }
     results.push(t('excel.cells_modified', { count: modCount, sheet: sheetName }))
@@ -623,6 +645,7 @@ async function excelModify(
     for (const [ref, styleObj] of entries) {
       const cellStyle = styleObj as ExcelCellStyle
       styleCount += applyStyleToRef(worksheet, ref, cellStyle)
+      addCellsFromRef(modifiedCells, ref, worksheet.rowCount, worksheet.columnCount)
     }
     results.push(t('excel.styles_applied', { count: styleCount, sheet: sheetName }))
     markDirty(filePath)
@@ -634,6 +657,7 @@ async function excelModify(
     const worksheet = workbook.getWorksheet(sheetName)
     if (worksheet) {
       worksheet.mergeCells(mergeCells)
+      addCellsFromRef(modifiedCells, mergeCells)
       results.push(`已合并单元格 ${mergeCells}`)
       markDirty(filePath)
     }
@@ -645,6 +669,7 @@ async function excelModify(
     const worksheet = workbook.getWorksheet(sheetName)
     if (worksheet) {
       worksheet.unMergeCells(unmergeCells)
+      addCellsFromRef(modifiedCells, unmergeCells)
       results.push(`已取消合并 ${unmergeCells}`)
       markDirty(filePath)
     }
@@ -657,12 +682,35 @@ async function excelModify(
     if (worksheet) {
       const count = insertRows.count || 1
       worksheet.spliceRows(insertRows.at, 0, ...Array.from({ length: count }, () => []))
+      const mc = Math.max(worksheet.columnCount, 1)
+      for (let r = insertRows.at; r < insertRows.at + count; r++) {
+        for (let c = 1; c <= mc; c++) modifiedCells.add(`${r},${c}`)
+      }
       results.push(`在第 ${insertRows.at} 行前插入了 ${count} 行`)
       markDirty(filePath)
     }
   }
 
-  // 删除行
+  // 插入列
+  const insertColumns = args.insert_columns as { at: string; count?: number } | undefined
+  if (insertColumns && sheetName) {
+    const worksheet = workbook.getWorksheet(sheetName)
+    if (worksheet) {
+      const atCol = columnLetterToNumber(insertColumns.at)
+      const count = insertColumns.count || 1
+      const mr = Math.max(worksheet.rowCount, 1)
+      worksheet.eachRow({ includeEmpty: true }, (row) => {
+        row.splice(atCol, 0, ...Array.from({ length: count }, () => null))
+      })
+      for (let r = 1; r <= mr; r++) {
+        for (let c = atCol; c < atCol + count; c++) modifiedCells.add(`${r},${c}`)
+      }
+      results.push(`在第 ${insertColumns.at} 列前插入了 ${count} 列`)
+      markDirty(filePath)
+    }
+  }
+
+  // 删除行（先红色高亮待删行 → 等待动画 → 执行删除 → 蓝色高亮上移行）
   const deleteRows = args.delete_rows as { from: number; to: number } | undefined
   if (deleteRows && sheetName) {
     const worksheet = workbook.getWorksheet(sheetName)
@@ -671,8 +719,84 @@ async function excelModify(
         return { success: false, output: '', error: `删除行失败：无效的范围 ${deleteRows.from}-${deleteRows.to}` }
       }
       const count = deleteRows.to - deleteRows.from + 1
+      const mc = Math.max(worksheet.columnCount, 1)
+
+      // Phase 1: 红色高亮即将被删除的行（1 秒展示）
+      const deletingCells = new Set<string>()
+      for (let r = deleteRows.from; r <= deleteRows.to; r++) {
+        for (let c = 1; c <= mc; c++) deletingCells.add(`${r},${c}`)
+      }
+      const preDeleteHtml = generateExcelPreviewHtml(filePath, sheetName, { deleting: deletingCells })
+      if (preDeleteHtml) {
+        executor.addStep({
+          type: 'tool_result',
+          content: '',
+          toolName: 'excel_modify',
+          toolResult: '',
+          canvasData: { action: 'update', renderer: 'spreadsheet', content: preDeleteHtml }
+        })
+        await new Promise(resolve => setTimeout(resolve, 1100))
+      }
+
+      // Phase 2: 执行删除
       worksheet.spliceRows(deleteRows.from, count)
+
+      // Phase 3: 标记上移填补的行（黄色高亮）
+      shiftedCells = new Set<string>()
+      const shiftEnd = Math.min(deleteRows.from + count - 1, worksheet.rowCount)
+      for (let r = deleteRows.from; r <= shiftEnd; r++) {
+        for (let c = 1; c <= mc; c++) shiftedCells.add(`${r},${c}`)
+      }
+
       results.push(`删除了第 ${deleteRows.from}-${deleteRows.to} 行（共 ${count} 行）`)
+      markDirty(filePath)
+    }
+  }
+
+  // 删除列（红色高亮待删列 → 等待动画 → 执行删除 → 右侧列向左滑入）
+  const deleteColumns = args.delete_columns as { from: string; to: string } | undefined
+  if (deleteColumns && sheetName) {
+    const worksheet = workbook.getWorksheet(sheetName)
+    if (worksheet) {
+      const fromCol = columnLetterToNumber(deleteColumns.from)
+      const toCol = columnLetterToNumber(deleteColumns.to)
+      if (fromCol < 1 || toCol < fromCol) {
+        return { success: false, output: '', error: `删除列失败：无效的范围 ${deleteColumns.from}-${deleteColumns.to}` }
+      }
+      const colCount = toCol - fromCol + 1
+      const mr = Math.max(worksheet.rowCount, 1)
+
+      // Phase 1: 红色高亮即将被删除的列（1 秒展示）
+      const deletingCells = new Set<string>()
+      for (let r = 1; r <= mr; r++) {
+        for (let c = fromCol; c <= toCol; c++) deletingCells.add(`${r},${c}`)
+      }
+      const preDeleteHtml = generateExcelPreviewHtml(filePath, sheetName, { deleting: deletingCells })
+      if (preDeleteHtml) {
+        executor.addStep({
+          type: 'tool_result',
+          content: '',
+          toolName: 'excel_modify',
+          toolResult: '',
+          canvasData: { action: 'update', renderer: 'spreadsheet', content: preDeleteHtml }
+        })
+        await new Promise(resolve => setTimeout(resolve, 1100))
+      }
+
+      // Phase 2: 执行删除（逐行删除列区间，从右向左避免索引偏移）
+      worksheet.eachRow({ includeEmpty: true }, (row) => {
+        row.splice(fromCol, colCount)
+      })
+
+      // Phase 3: 标记左移填补的列
+      shiftedColSet = new Set<string>()
+      const newColCount = Math.max(worksheet.columnCount, 1)
+      const shiftEnd = Math.min(fromCol + colCount - 1, newColCount)
+      for (let r = 1; r <= mr; r++) {
+        for (let c = fromCol; c <= shiftEnd; c++) shiftedColSet.add(`${r},${c}`)
+      }
+
+      results.push(`删除了第 ${deleteColumns.from}-${deleteColumns.to} 列（共 ${colCount} 列）`)
       markDirty(filePath)
     }
   }
@@ -683,6 +807,7 @@ async function excelModify(
     const worksheet = workbook.getWorksheet(sheetName)
     if (worksheet) {
       const sortResult = applySortToRange(worksheet, sortArgs)
+      addCellsFromRef(modifiedCells, sortArgs.range)
       results.push(sortResult)
       markDirty(filePath)
     }
@@ -741,7 +866,11 @@ async function excelModify(
 
   const output = results.join('\n') + '\n\n💡 ' + t('excel.save_reminder')
 
-  const previewHtml = generateExcelPreviewHtml(filePath, sheetName)
+  const hl: PreviewHighlights = {}
+  if (modifiedCells.size > 0) hl.modified = modifiedCells
+  if (shiftedCells?.size) hl.shifted = shiftedCells
+  if (shiftedColSet?.size) hl.shiftedCol = shiftedColSet
+  const previewHtml = generateExcelPreviewHtml(filePath, sheetName, Object.keys(hl).length > 0 ? hl : undefined)
 
   executor.addStep({
     type: 'tool_result',
@@ -790,24 +919,28 @@ async function excelSave(
     return { success: true, output }
   }
 
-  // 需要用户确认
+  const fileExists = fs.existsSync(filePath)
+  const riskLevel = fileExists ? 'moderate' : 'safe'
+
   executor.addStep({
     type: 'tool_call',
-    content: t('excel.confirm_save', { path: filePath }),
+    content: t(fileExists ? 'excel.confirm_overwrite_save' : 'excel.confirm_save', { path: filePath }),
     toolName: 'excel_save',
     toolArgs: args,
-    riskLevel: 'moderate'
+    riskLevel
   })
 
-  const approved = await executor.waitForConfirmation(
-    toolCallId,
-    'excel_save',
-    { path: filePath },
-    'moderate'
-  )
+  if (fileExists) {
+    const approved = await executor.waitForConfirmation(
+      toolCallId,
+      'excel_save',
+      { path: filePath },
+      'moderate'
+    )
 
-  if (!approved) {
-    return { success: false, output: '', error: t('excel.user_rejected') }
+    if (!approved) {
+      return { success: false, output: '', error: t('excel.user_rejected') }
+    }
   }
 
   try {
@@ -957,24 +1090,28 @@ async function excelFromMarkdown(
   // 解析样式
   const styleConfig = resolveStyle(styleName)
 
-  // 用户确认
+  const fileExists = fs.existsSync(filePath)
+  const riskLevel = fileExists ? 'moderate' : 'safe'
+
   executor.addStep({
     type: 'tool_call',
-    content: t('excel.confirm_from_md', { path: filePath, sheets: sheets.length }),
+    content: t(fileExists ? 'excel.confirm_overwrite_from_md' : 'excel.confirm_from_md', { path: filePath, sheets: sheets.length }),
     toolName: 'excel_from_markdown',
     toolArgs: { path: filePath, sheets: sheets.length },
-    riskLevel: 'moderate'
+    riskLevel
   })
 
-  const approved = await executor.waitForConfirmation(
-    toolCallId,
-    'excel_from_markdown',
-    { path: filePath },
-    'moderate'
-  )
+  if (fileExists) {
+    const approved = await executor.waitForConfirmation(
+      toolCallId,
+      'excel_from_markdown',
+      { path: filePath },
+      'moderate'
+    )
 
-  if (!approved) {
-    return { success: false, output: '', error: t('excel.user_rejected') }
+    if (!approved) {
+      return { success: false, output: '', error: t('excel.user_rejected') }
+    }
   }
 
   try {
@@ -1734,6 +1871,15 @@ function applyDataValidation(
 /**
  * 应用条件格式
  */
+function getExistingRulesCount(worksheet: import('exceljs').Worksheet, range: string): number {
+  // exceljs 4.x: conditionalFormattings is a plain array but not declared in types
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cfArray = (worksheet as any).conditionalFormattings as Array<{ ref: string; rules: unknown[] }> | undefined
+  if (!cfArray) return 0
+  const existing = cfArray.find(cf => cf.ref === range)
+  return existing ? existing.rules.length : 0
+}
+
 function applyConditionalFormat(
   worksheet: import('exceljs').Worksheet,
   args: {
@@ -1741,7 +1887,7 @@ function applyConditionalFormat(
     value?: unknown; style?: Record<string, unknown>; priority?: number
   }
 ): string {
-  const rules = worksheet.conditionalFormattings.getRules(args.range)
+  const existingCount = getExistingRulesCount(worksheet, args.range)
 
   switch (args.type) {
     case 'highlight': {
@@ -1750,7 +1896,7 @@ function applyConditionalFormat(
       const rule: any = {
         type: 'cellIs',
         operator: args.operator,
-        priority: args.priority || (rules.length + 1),
+        priority: args.priority || (existingCount + 1),
         style: buildConditionalStyle(args.style)
       }
       if (args.operator === 'between' && Array.isArray(args.value)) {
@@ -1762,14 +1908,14 @@ function applyConditionalFormat(
       } else if (args.value !== undefined) {
         rule.formulae = [typeof args.value === 'string' ? args.value : Number(args.value)]
       }
-      worksheet.conditionalFormattings.addRules(args.range, [rule])
+      worksheet.addConditionalFormatting({ ref: args.range, rules: [rule] })
       return `已为 ${args.range} 添加条件格式（${args.operator}）`
     }
     case 'colorScale': {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rule: any = {
         type: 'colorScale',
-        priority: args.priority || (rules.length + 1),
+        priority: args.priority || (existingCount + 1),
         cfvo: [
           { type: 'min' },
           { type: 'max' }
@@ -1779,14 +1925,14 @@ function applyConditionalFormat(
           { argb: 'FF63BE7B' }
         ]
       }
-      worksheet.conditionalFormattings.addRules(args.range, [rule])
+      worksheet.addConditionalFormatting({ ref: args.range, rules: [rule] })
       return `已为 ${args.range} 添加色阶条件格式`
     }
     case 'dataBar': {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rule: any = {
         type: 'dataBar',
-        priority: args.priority || (rules.length + 1),
+        priority: args.priority || (existingCount + 1),
         minLength: 0,
         maxLength: 100,
         cfvo: [
@@ -1795,18 +1941,18 @@ function applyConditionalFormat(
         ],
         color: { argb: 'FF638EC6' }
       }
-      worksheet.conditionalFormattings.addRules(args.range, [rule])
+      worksheet.addConditionalFormatting({ ref: args.range, rules: [rule] })
       return `已为 ${args.range} 添加数据条条件格式`
     }
     case 'duplicates': {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rule: any = {
         type: 'expression',
-        priority: args.priority || (rules.length + 1),
+        priority: args.priority || (existingCount + 1),
         formulae: [`COUNTIF(${args.range},${args.range.split(':')[0]})>1`],
         style: buildConditionalStyle(args.style || { background: 'FFC7CE', color: '9C0006' })
       }
-      worksheet.conditionalFormattings.addRules(args.range, [rule])
+      worksheet.addConditionalFormatting({ ref: args.range, rules: [rule] })
       return `已为 ${args.range} 添加重复值高亮`
     }
     case 'topN': {
@@ -1814,13 +1960,13 @@ function applyConditionalFormat(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rule: any = {
         type: 'top10',
-        priority: args.priority || (rules.length + 1),
+        priority: args.priority || (existingCount + 1),
         rank: n,
         percent: false,
         bottom: false,
         style: buildConditionalStyle(args.style || { background: 'C6EFCE', color: '006100' })
       }
-      worksheet.conditionalFormattings.addRules(args.range, [rule])
+      worksheet.addConditionalFormatting({ ref: args.range, rules: [rule] })
       return `已为 ${args.range} 添加 Top ${n} 条件格式`
     }
     default:
@@ -1935,6 +2081,58 @@ function columnLetterToNumber(letter: string): number {
     result = result * 26 + (letter.toUpperCase().charCodeAt(i) - 64)
   }
   return result
+}
+
+/**
+ * 将单元格引用（A1、A1:C3、A:A、1:3）展开为 row,col 坐标并加入集合
+ */
+function addCellsFromRef(set: Set<string>, ref: string, maxRow?: number, maxCol?: number): void {
+  // 范围 "A1:C3"
+  const rangeMatch = ref.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/i)
+  if (rangeMatch) {
+    const sc = columnLetterToNumber(rangeMatch[1])
+    const sr = parseInt(rangeMatch[2])
+    const ec = columnLetterToNumber(rangeMatch[3])
+    const er = parseInt(rangeMatch[4])
+    for (let r = sr; r <= er; r++) {
+      for (let c = sc; c <= ec; c++) {
+        set.add(`${r},${c}`)
+      }
+    }
+    return
+  }
+
+  // 整列 "A:C"
+  const colMatch = ref.match(/^([A-Z]+):([A-Z]+)$/i)
+  if (colMatch && maxRow) {
+    const sc = columnLetterToNumber(colMatch[1])
+    const ec = columnLetterToNumber(colMatch[2])
+    for (let r = 1; r <= maxRow; r++) {
+      for (let c = sc; c <= ec; c++) {
+        set.add(`${r},${c}`)
+      }
+    }
+    return
+  }
+
+  // 整行 "1:3"
+  const rowMatch = ref.match(/^(\d+):(\d+)$/)
+  if (rowMatch && maxCol) {
+    const sr = parseInt(rowMatch[1])
+    const er = parseInt(rowMatch[2])
+    for (let r = sr; r <= er; r++) {
+      for (let c = 1; c <= maxCol; c++) {
+        set.add(`${r},${c}`)
+      }
+    }
+    return
+  }
+
+  // 单个单元格 "A1"
+  const cellMatch = ref.match(/^([A-Z]+)(\d+)$/i)
+  if (cellMatch) {
+    set.add(`${parseInt(cellMatch[2])},${columnLetterToNumber(cellMatch[1])}`)
+  }
 }
 
 function formatCellValue(value: unknown): string {

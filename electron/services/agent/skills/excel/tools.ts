@@ -265,12 +265,30 @@ export const excelTools: ToolDefinition[] = [
             },
             required: ['at']
           },
+          insert_columns: {
+            type: 'object',
+            description: '插入空列。格式：{"at": "B", "count": 2}。在指定列字母位置之前插入，现有列右移。',
+            properties: {
+              at: { type: 'string', description: '插入位置（列字母，如 "B"）' },
+              count: { type: 'number', description: '插入列数（默认 1）' }
+            },
+            required: ['at']
+          },
           delete_rows: {
             type: 'object',
             description: '删除行。格式：{"from": 起始行号, "to": 结束行号}。删除 from 到 to（含）之间的所有行。',
             properties: {
               from: { type: 'number', description: '起始行号（1-based）' },
               to: { type: 'number', description: '结束行号（1-based，含）' }
+            },
+            required: ['from', 'to']
+          },
+          delete_columns: {
+            type: 'object',
+            description: '删除列。格式：{"from": "B", "to": "D"}。删除 from 到 to（含）之间的所有列，右侧列左移。',
+            properties: {
+              from: { type: 'string', description: '起始列字母（如 "B"）' },
+              to: { type: 'string', description: '结束列字母（如 "D"，含）' }
             },
             required: ['from', 'to']
           },
