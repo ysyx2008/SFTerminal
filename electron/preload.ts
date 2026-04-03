@@ -362,6 +362,8 @@ const electronAPI = {
   window: {
     close: () => ipcRenderer.invoke('window:close'),
     forceQuit: () => ipcRenderer.invoke('window:forceQuit'),
+    // Windows 焦点恢复：请求主进程让 webContents 获得键盘焦点
+    focusWebContents: () => ipcRenderer.send('window:focusWebContents'),
     // 监听主进程请求终端数量
     onRequestTerminalCount: (callback: () => void) => {
       const handler = () => callback()

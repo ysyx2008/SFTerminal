@@ -632,10 +632,13 @@ function showMainWindow() {
     }
     mainWindow.show()
     mainWindow.focus()
-    // Windows 防焦点抢占：短暂置顶确保窗口前台显示
     if (process.platform === 'win32') {
+      // Windows 防焦点抢占：短暂置顶确保窗口前台显示
       mainWindow.setAlwaysOnTop(true)
       mainWindow.setAlwaysOnTop(false)
+      // Windows 上 BrowserWindow.focus() 不一定让 webContents 获得键盘输入
+      // 必须显式调用 webContents.focus() 确保键盘事件路由到渲染进程
+      mainWindow.webContents.focus()
     }
   } else {
     createWindow()
@@ -712,13 +715,24 @@ function createWindow() {
   // 窗口准备好后立即显示（比 did-finish-load 更早）
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show()
-    // Windows 上 show() 可能仅闪烁任务栏而不前台显示（系统防焦点抢占）
-    // 通过短暂置顶强制前台显示
     if (process.platform === 'win32') {
+      // Windows 上 show() 可能仅闪烁任务栏而不前台显示（系统防焦点抢占）
+      // 通过短暂置顶强制前台显示
       mainWindow?.setAlwaysOnTop(true)
       mainWindow?.setAlwaysOnTop(false)
+      mainWindow?.webContents.focus()
     }
   })
+
+  // Windows 上窗口获得焦点时，确保 webContents 也获得键盘输入路由
+  // 防止 setAlwaysOnTop 切换或通知交互后出现"窗口在前台但无法输入"的僵死状态
+  if (process.platform === 'win32') {
+    mainWindow.on('focus', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.focus()
+      }
+    })
+  }
 
   // 开发环境加载本地服务器
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -1650,6 +1664,13 @@ ipcMain.on('window:terminalCountResponse', async (_event, terminalCount: number)
 ipcMain.handle('window:forceQuit', async () => {
   forceQuit = true
   mainWindow?.close()
+})
+
+// Windows 焦点恢复：渲染进程检测到输入元素无法接收键盘事件时，主动请求 webContents 获得焦点
+ipcMain.on('window:focusWebContents', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.focus()
+  }
 })
 
 // ==================== 自动更新 ====================

@@ -787,6 +787,9 @@ export async function messageUser(
             if (!win.isDestroyed()) {
               win.show()
               win.focus()
+              if (process.platform === 'win32') {
+                win.webContents.focus()
+              }
               win.webContents.send('watch:activate-message', { agentId: companionAgentId })
             }
           }

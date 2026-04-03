@@ -206,6 +206,17 @@ onMounted(async () => {
   // 注册全局快捷键
   document.addEventListener('keydown', handleGlobalKeydown)
 
+  // Windows 焦点恢复：用户点击输入元素时确保 webContents 拥有键盘焦点
+  // 修复 Windows 上因 setAlwaysOnTop/通知交互导致的"输入框看似有焦点但无法键入"问题
+  if (navigator.platform === 'Win32') {
+    document.addEventListener('mousedown', (e) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') {
+        window.electronAPI.window.focusWebContents()
+      }
+    }, true)
+  }
+
   // 加载觉醒状态
   try {
     isAwakened.value = !!(await window.electronAPI.config.get('agentAwakened'))

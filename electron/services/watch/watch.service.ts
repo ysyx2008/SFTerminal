@@ -984,6 +984,9 @@ export class WatchService {
         mainWindow.restore()
         mainWindow.show()
         mainWindow.focus()
+        if (process.platform === 'win32') {
+          mainWindow.webContents.focus()
+        }
         this.deliverProactiveMessage(watch, result)
       })
       notification.show()

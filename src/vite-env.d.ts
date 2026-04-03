@@ -134,6 +134,7 @@ interface Window {
     window: {
       close: () => Promise<void>
       forceQuit: () => Promise<void>
+      focusWebContents: () => void
       onRequestTerminalCount: (callback: () => void) => () => void
       responseTerminalCount: (count: number) => void
     }
