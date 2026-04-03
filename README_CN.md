@@ -37,7 +37,7 @@
 | 🔁 重复性操作？ | Agent 自动化执行多步任务 |
 | 🏢 内网环境？ | 支持私有化 AI 模型和代理 |
 | 🛠️ CLI 配置太复杂？ | 图形界面，开箱即用 |
-| 📱 不在电脑旁？ | 通过 Web、钉钉、飞书、企业微信、Slack、Telegram 远程访问 Agent |
+| 📱 不在电脑旁？ | 通过 Web、微信、钉钉、飞书、企业微信、Slack、Telegram 远程访问 Agent |
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-welcome.jpg" width="800" alt="旗鱼">
@@ -51,7 +51,7 @@
 | 🧬 **身份体系** | Agent 人格由 IDENTITY.md、SOUL.md、USER.md 驱动，支持深度人格定制，首次启动自动发起诞生对话 |
 | 🌅 **觉醒模式** | AI 变为主动助手 —— 个性驱动的对话、后台监控、推送通知 |
 | 🧠 **关切与传感器** | 心跳、文件变化、日历、邮件四种传感器触发自动化工作流，支持有状态上下文 |
-| 🌐 **远程 Agent** | 随时随地访问你的 Agent——Web、钉钉、飞书、企业微信、Slack、Telegram |
+| 🌐 **远程 Agent** | 随时随地访问你的 Agent——Web、微信、钉钉、飞书、企业微信、Slack、Telegram |
 | 🐦 **飞书技能** | 读写多维表格、云文档、电子表格、日历、任务、云空间；OAuth 授权让 Agent 以用户身份操作飞书 |
 | 📌 **钉钉技能** | 日历日程、待办任务、考勤打卡、通讯录、审批流程、多维表格、钉盘、知识库 |
 | 💼 **企微技能** | 日历管理、审批流程、打卡记录、通讯录操作、会议、微盘、文档 |

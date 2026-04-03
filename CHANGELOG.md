@@ -2,7 +2,26 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.27.1 (2026-04-02) (Latest)
+## v10.28.0 (2026-04-03) (Latest)
+
+Adds WeChat as a new IM channel and improves system stability and Windows experience.
+
+### New Features
+- 💬 **WeChat Channel**: Integrated WeChat OpenClaw official protocol with QR code login, supporting text, image, video, file, and voice messages
+- 🔄 **Silent Updates**: Auto-updater now supports silent installation, reducing update interruptions
+
+### Improvements
+- 📄 **PDF Parsing Isolation**: PDF parsing moved to a utilityProcess isolate, completely fixing main process crashes
+- 🎙️ **Audio Detection Optimization**: Audio device detection upgraded from per-tab to a single global check, reducing redundant overhead
+- 🔔 **Event Pool Collection Period**: Watch EventPool now has a startup collection period, merging startup-phase events into a single wake
+- 🧠 **Heartbeat History Compression**: Wake heartbeat history is now force-summarized, breaking the talk_to_user positive feedback loop
+
+### Bug Fixes
+- 🖥️ Fixed AI assistant input field unable to receive keyboard focus on Windows
+- 🖥️ Fixed window showing blank screen when restored from tray and not coming to foreground on first launch on Windows
+- 🔧 Fixed onboarding guide not notifying frontend to refresh config after completion, causing repeated triggers
+
+## v10.27.1 (2026-04-02)
 
 Fixes Alibaba Cloud OSS auto-update source, Watch interfering with running Agent tasks, history injection API errors, and other issues. Optimizes time injection to improve prompt cache hit rate.
 

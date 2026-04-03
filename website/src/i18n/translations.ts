@@ -29,7 +29,7 @@ export const translations = {
       titleHighlight: 'AI 驱动',
       titleSuffix: '的智能助手',
       subtitle: '说出你的需求，AI 自主规划执行。',
-      subtitleLine2: '通过桌面端、飞书、钉钉、企业微信、Slack、Telegram 或 Web 随时与 Agent 对话，让 AI 帮你搞定一切。',
+      subtitleLine2: '通过桌面端、微信、飞书、钉钉、企业微信、Slack、Telegram 或 Web 随时与 Agent 对话，让 AI 帮你搞定一切。',
       downloadBtn: '立即下载',
       viewSourceBtn: '查看源码',
       apiNotice: '本软件不内置大模型，需自行配置 API',
@@ -57,8 +57,8 @@ export const translations = {
         },
         {
           title: '多通道接入',
-          description: '不止于桌面端——通过飞书、钉钉、企业微信、Slack、Telegram 机器人或 Web 远程页面随时与 Agent 对话，在手机上也能远程管理服务器、执行任务。',
-          highlights: ['飞书 / 钉钉 / 企业微信', 'Slack / Telegram', 'Web 远程访问'],
+          description: '不止于桌面端——通过微信、飞书、钉钉、企业微信、Slack、Telegram 机器人或 Web 远程页面随时与 Agent 对话，在手机上也能远程管理服务器、执行任务。',
+          highlights: ['微信 / 飞书 / 钉钉', '企业微信 / Slack / Telegram', 'Web 远程访问'],
         },
         {
           title: '丰富的 Agent 技能',
@@ -358,9 +358,10 @@ export const translations = {
       },
       imAccess: {
         title: '多通道远程访问',
-        intro: '旗鱼不只是桌面应用——你可以通过钉钉、飞书、企业微信、Slack、Telegram 机器人或 Web 页面随时与 Agent 对话。在手机上也能远程管理服务器、执行任务、接收通知。',
+        intro: '旗鱼不只是桌面应用——你可以通过微信、钉钉、飞书、企业微信、Slack、Telegram 机器人或 Web 页面随时与 Agent 对话。在手机上也能远程管理服务器、执行任务、接收通知。',
         platforms: '支持的平台',
         platformList: [
+          { name: '微信', config: '扫码登录即可', note: '基于 OpenClaw 官方协议，支持文字/图片/视频/文件/语音' },
           { name: '钉钉', config: '填入 AppKey 和 AppSecret', note: '在钉钉开放平台创建自建应用' },
           { name: '飞书', config: '填入 App ID 和 App Secret', note: '在飞书开放平台创建应用' },
           { name: '企业微信', config: '填入 BotID 和 Secret', note: '在企业微信客户端工作台创建智能机器人，开启长连接模式' },
@@ -839,7 +840,7 @@ export const translations = {
       titleHighlight: 'AI-Powered',
       titleSuffix: ' Smart Assistant',
       subtitle: 'Describe what you need, AI plans and executes autonomously.',
-      subtitleLine2: 'Chat with your Agent via desktop app, Feishu, DingTalk, WeCom, Slack, Telegram, or Web — let AI handle the rest.',
+      subtitleLine2: 'Chat with your Agent via desktop app, WeChat, Feishu, DingTalk, WeCom, Slack, Telegram, or Web — let AI handle the rest.',
       downloadBtn: 'Download Now',
       viewSourceBtn: 'View Source',
       apiNotice: 'This software does not include built-in LLM. You need to configure your own API.',
@@ -867,8 +868,8 @@ export const translations = {
         },
         {
           title: 'Multi-Channel Access',
-          description: 'Beyond the desktop — chat with your Agent via Feishu, DingTalk, WeCom, Slack, and Telegram bots, or through the Web remote interface. Manage servers and run tasks from your phone, anytime.',
-          highlights: ['Feishu / DingTalk / WeCom', 'Slack / Telegram', 'Web Remote Access'],
+          description: 'Beyond the desktop — chat with your Agent via WeChat, Feishu, DingTalk, WeCom, Slack, and Telegram bots, or through the Web remote interface. Manage servers and run tasks from your phone, anytime.',
+          highlights: ['WeChat / Feishu / DingTalk', 'WeCom / Slack / Telegram', 'Web Remote Access'],
         },
         {
           title: 'Rich Agent Skills',
@@ -1168,9 +1169,10 @@ export const translations = {
       },
       imAccess: {
         title: 'Multi-Channel Remote Access',
-        intro: 'SailFish isn\'t just a desktop app — chat with your Agent via DingTalk, Feishu, WeCom, Slack, Telegram bots, or a Web page. Manage servers, run tasks, and receive notifications from your phone.',
+        intro: 'SailFish isn\'t just a desktop app — chat with your Agent via WeChat, DingTalk, Feishu, WeCom, Slack, Telegram bots, or a Web page. Manage servers, run tasks, and receive notifications from your phone.',
         platforms: 'Supported Platforms',
         platformList: [
+          { name: 'WeChat', config: 'Scan QR code to log in', note: 'Via official OpenClaw protocol, supports text/image/video/file/voice' },
           { name: 'DingTalk', config: 'Enter AppKey and AppSecret', note: 'Create an internal app on DingTalk Open Platform' },
           { name: 'Feishu', config: 'Enter App ID and App Secret', note: 'Create an app on Feishu Open Platform' },
           { name: 'WeCom', config: 'Enter BotID and Secret', note: 'Create an AI bot in WeCom client Workbench, enable long-connection mode' },

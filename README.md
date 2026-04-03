@@ -37,7 +37,7 @@
 | 🔁 Repetitive tasks? | Agent automates multi-step operations |
 | 🏢 Intranet restrictions? | Supports private AI models and proxies |
 | 🛠️ CLI config too complex? | GUI-based, ready out of the box |
-| 📱 Away from your desk? | Access Agent remotely via Web, DingTalk, Feishu, WeCom, Slack, or Telegram |
+| 📱 Away from your desk? | Access Agent remotely via Web, WeChat, DingTalk, Feishu, WeCom, Slack, or Telegram |
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-welcome_en.jpg" width="800" alt="SailFish">
@@ -51,7 +51,7 @@
 | 🧬 **Identity System** | Agent personality driven by IDENTITY.md, SOUL.md, USER.md — deep personalization with birth conversation on first launch |
 | 🌅 **Awaken Mode** | AI becomes a proactive assistant — personality-driven conversations, background monitoring, push notifications |
 | 🧠 **Watch & Sensors** | Heartbeat, file-watch, calendar, and email sensors trigger automated workflows with stateful context |
-| 🌐 **Remote Agent** | Access your Agent from anywhere — Web UI, DingTalk, Feishu, WeCom, Slack, or Telegram |
+| 🌐 **Remote Agent** | Access your Agent from anywhere — Web UI, WeChat, DingTalk, Feishu, WeCom, Slack, or Telegram |
 | 🐦 **Feishu (Lark)** | Read/write Bitable, Docs, Sheets, Calendar, Tasks, Drive; OAuth lets Agent operate on behalf of the user |
 | 📌 **DingTalk** | Calendar events, to-do tasks, attendance records, contacts, approval workflows, Bitable, DingDisk, and Wiki |
 | 💼 **WeCom** | Calendar management, approval processes, check-in records, contact directory, meetings, WeDrive, and documents |
