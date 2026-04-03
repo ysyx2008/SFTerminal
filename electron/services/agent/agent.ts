@@ -44,6 +44,7 @@ import { createSkillSession, SkillSession } from './skills'
 import { PromptBuilder } from './prompt-builder'
 import { getAiDebugService } from '../ai-debug.service'
 import { createLogger } from '../../utils/logger'
+import { notifyFrontendConfigChanged } from './skills/config/executor'
 
 const log = createLogger('Agent')
 
@@ -719,6 +720,7 @@ export abstract class Agent {
       )
       if (craftCalled) {
         this.services.configService?.setAgentOnboardingCompleted(true)
+        notifyFrontendConfigChanged()
         log.info('Agent onboarding completed — personality_craft was called')
       }
     }
