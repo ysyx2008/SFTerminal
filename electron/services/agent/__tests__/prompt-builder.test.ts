@@ -334,7 +334,7 @@ describe('PromptBuilder', () => {
       const builder = new PromptBuilder({ context })
       const prompt = builder.build()
       
-      expect(prompt).toContain('用户上传了文档')
+      expect(prompt).toContain('用户附加了文档')
       expect(prompt).toContain('sf_uploaded_docs')
     })
 
@@ -343,7 +343,7 @@ describe('PromptBuilder', () => {
       const builder = new PromptBuilder({ context })
       const prompt = builder.build()
       
-      expect(prompt).not.toContain('用户上传了文档')
+      expect(prompt).not.toContain('用户附加了文档')
     })
   })
 

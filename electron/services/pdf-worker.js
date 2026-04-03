@@ -12,6 +12,7 @@
  * mode instead of spawning a separate worker_thread.
  */
 /* eslint-env node */
+/* global globalThis */
 'use strict'
 
 const fs = require('fs')
@@ -43,14 +44,12 @@ try {
 }
 
 let pdfjsLib = null
-let pdfjsGetDocument = null
 let napiCanvas = null
 
 async function loadPdfjs() {
   if (!pdfjsLib) {
     const mod = await import('pdfjs-dist/legacy/build/pdf.mjs')
     pdfjsLib = mod
-    pdfjsGetDocument = mod.getDocument
 
     // Use destructured named export to ensure we set the right object
     const { GlobalWorkerOptions } = mod
