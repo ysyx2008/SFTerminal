@@ -8,7 +8,7 @@
  * 生命周期事件由 main.ts 通过 notify* 方法触发。
  * 里程碑每小时检查一次，使用持久化计数器避免重复触发，纯数学运算无 I/O 开销。
  */
-import type { Sensor, SensorEvent, EventBus, SensorEventPriority } from './types'
+import type { Sensor, EventBus, SensorEventPriority } from './types'
 import { getConfigService, type ConfigService } from '../config.service'
 import { getBondService } from '../bond.service'
 import { createLogger } from '../../utils/logger'

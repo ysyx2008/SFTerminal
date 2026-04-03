@@ -818,7 +818,7 @@ async function writeBitable(args: DingTalkWriteArgs, executor: ToolExecutorConfi
 // ========================================================================
 
 async function readDrive(args: DingTalkReadArgs, executor: ToolExecutorConfig): Promise<ToolResult> {
-  const { union_id, space_id, file_id, parent_id, limit, cursor } = args
+  const { union_id, space_id, file_id: _file_id, parent_id, limit, cursor } = args
 
   if (!union_id) {
     return { success: false, output: '', error: t('dingtalk.union_id_required' as any, { resource: 'drive' }) }

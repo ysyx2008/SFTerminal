@@ -1,5 +1,20 @@
 import { ref, reactive } from 'vue'
-import type { ConfirmDialogOptions } from '../components/common/ConfirmDialog.vue'
+
+export interface ConfirmDialogOptions {
+  title: string
+  message: string
+  detail?: string
+  confirmText?: string
+  cancelText?: string
+  type?: 'default' | 'danger' | 'warning'
+  showCancel?: boolean
+  fileInfo?: {
+    name?: string
+    size?: string
+    count?: number
+    type?: string
+  }
+}
 
 // 全局状态
 const show = ref(false)

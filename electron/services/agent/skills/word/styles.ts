@@ -523,11 +523,11 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
       },
       multiLevelNumbering: {
         levels: [
-          // Level 0: 章 — "第一章　"、"第二章　"...（段落居中由 Heading1 样式控制）
+          // Level 0: 章 — "第一章"、"第二章"...（段落居中由 Heading1 样式控制）
           { format: 'chineseCounting', text: '第%1章\u3000', alignment: 'left', indent: { left: 0, hanging: 0 }, run: { bold: true } },
-          // Level 1: 节 — "第一节　"、"第二节　"...（段落居中由 Heading2 样式控制）
+          // Level 1: 节 — "第一节"、"第二节"...（段落居中由 Heading2 样式控制）
           { format: 'chineseCounting', text: '第%2节\u3000', alignment: 'left', indent: { left: 0, hanging: 0 }, run: { bold: true } },
-          // Level 2: 条 — "第一条　"、"第二条　"...（跨章连续编号）
+          // Level 2: 条 — "第一条"、"第二条"...（跨章连续编号）
           { format: 'chineseCounting', text: '第%3条\u3000', restart: 0, indent: { firstLine: 480 }, run: { bold: true } },
           // Level 3: 款 — "（一）"、"（二）"...（每条重新开始）
           { format: 'chineseCounting', text: '\uff08%4\uff09', indent: { firstLine: 480 } },
@@ -1289,7 +1289,7 @@ function matchNumberingRule(text: string, style: WordStyleConfig): NumberingRule
 }
 
 /**
- * 去除 Token 列表开头的编号前缀（如"第一章　"、"（一）"），用于 Word 原生编号替换
+ * 去除 Token 列表开头的编号前缀（如"第一章"、"（一）"），用于 Word 原生编号替换
  * 匹配 pattern 及其后的空白字符，从 tokens 文本的开头剥离
  */
 function stripNumberingPrefix(tokens: Token[], pattern: string): Token[] {

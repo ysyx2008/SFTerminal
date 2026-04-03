@@ -316,7 +316,7 @@ import { LocalFsService } from './services/local-fs.service'
 import { McpService } from './services/mcp.service'
 import { getUserSkillService, UserSkill } from './services/user-skill.service'
 import { getBuiltinSkillsForSettings } from './services/agent/skills/registry'
-import { getSkillMarketService, scanSkillContent, type MarketSkill, type MarketSkillItem, type SkillOperationResult, type SkillRegistry, type SkillPreviewResult, type SkillSource } from './services/skill-market.service'
+import { getSkillMarketService, type MarketSkill, type MarketSkillItem, type SkillOperationResult, type SkillRegistry, type SkillPreviewResult, type SkillSource } from './services/skill-market.service'
 import { getKnowledgeService, KnowledgeService } from './services/knowledge'
 import type { KnowledgeSettings, SearchOptions, AddDocumentOptions, ModelTier } from './services/knowledge/types'
 import {

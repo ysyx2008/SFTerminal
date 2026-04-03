@@ -1,3 +1,4 @@
+/* eslint-env node */
 /**
  * OpenClaw SDK Module Resolution Shim
  * 

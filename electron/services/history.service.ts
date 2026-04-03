@@ -9,7 +9,7 @@ const log = createLogger('History')
 // ==================== 类型定义 ====================
 
 // 从共享类型导入并重新导出
-import type { TerminalType, AgentStepRecord, AgentRecord, TokenUsage } from '@shared/types'
+import type { TerminalType, AgentRecord, TokenUsage } from '@shared/types'
 export type { AgentStepRecord, AgentRecord } from '@shared/types'
 
 export interface ChatRecord {

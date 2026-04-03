@@ -2,24 +2,9 @@
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AlertTriangle, AlertCircle, HelpCircle } from 'lucide-vue-next'
+import type { ConfirmDialogOptions } from '../../composables/useConfirm'
 
 const { t } = useI18n()
-
-export interface ConfirmDialogOptions {
-  title: string
-  message: string
-  detail?: string
-  confirmText?: string
-  cancelText?: string
-  type?: 'default' | 'danger' | 'warning'
-  showCancel?: boolean
-  fileInfo?: {
-    name?: string
-    size?: string
-    count?: number
-    type?: string
-  }
-}
 
 const props = withDefaults(defineProps<{
   show: boolean

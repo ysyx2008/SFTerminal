@@ -3,7 +3,7 @@
  * 提供预设样式模板和样式应用功能
  */
 
-import type { Worksheet, Cell, Style as ExcelJSStyle, Fill, Font, Border, Borders, Alignment } from 'exceljs'
+import type { Worksheet, Cell, Fill, Font, Border, Borders, Alignment } from 'exceljs'
 
 /**
  * 边框配置

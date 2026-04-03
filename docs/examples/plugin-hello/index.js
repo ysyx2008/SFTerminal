@@ -1,3 +1,4 @@
+/* eslint-env node */
 /**
  * Hello World 示例插件
  *

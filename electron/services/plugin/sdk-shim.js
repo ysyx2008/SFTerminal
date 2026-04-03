@@ -1,3 +1,4 @@
+/* eslint-env node */
 /**
  * OpenClaw Plugin SDK Shim
  * 
@@ -17,6 +18,7 @@ function defineChannelPluginEntry(entry) {
 }
 
 // createPluginRuntimeStore: 运行时状态存储（no-op shim）
+// eslint-disable-next-line no-unused-vars
 function createPluginRuntimeStore(_pluginId, _defaults) {
   const store = {}
   return {

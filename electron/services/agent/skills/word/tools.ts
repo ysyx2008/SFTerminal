@@ -528,7 +528,7 @@ official/securities/meeting 会自动识别中文编号：一、→黑体 （一
 
 **制度文件格式特别说明**：
 regulation 使用 Word 原生多级列表自动编号（章→节→条→款→项），增删段落时编号自动调整。
-AI 写 Markdown 时仍需写出编号（如"第一章　总则"），转 Word 时会自动替换为 Word 原生编号。
+AI 写 Markdown 时仍需写出编号（如"第一章 总则"），转 Word 时会自动替换为 Word 原生编号。
 编号→Heading 映射：第X章→H1（居中） 第X节→H2（居中） 第X条→H3（缩进） （X）→H4（缩进）
 条的编号跨章连续（不会每章重新从第一条开始），节和款会在上级变化时重新开始。`,
       parameters: {

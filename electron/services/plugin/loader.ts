@@ -18,7 +18,6 @@ import type {
   ChannelRegistration,
   HookEvent,
   HookHandler,
-  HttpRouteEntry,
   RouteHandler
 } from './types'
 import { createLogger } from '../../utils/logger'

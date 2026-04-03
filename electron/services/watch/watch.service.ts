@@ -21,15 +21,14 @@ import type {
   CreateWatchParams,
   WatchTrigger,
   WatchRunRecord,
-  WatchRunStatus,
-  WatchPriority
+  WatchRunStatus
 } from './types'
 
 const log = createLogger('WatchService')
 import { WatchStore, getWatchStore } from './store'
 import type { SensorEvent, EventHandler } from '../sensor/types'
 import { getEventBus } from '../sensor/event-bus'
-import { EventPool, type EventPoolConfig } from './event-pool'
+import { EventPool } from './event-pool'
 import type { PtyService } from '../pty.service'
 import type { SshService, SshConfig } from '../ssh.service'
 import type { ConfigService, SshSession } from '../config.service'
@@ -1443,7 +1442,7 @@ export class WatchService {
 
         if (existing.prompt?.includes('lastWakeDate')) {
           if (existing.state?.lastWakeDate) {
-            const { lastWakeDate, ...rest } = existing.state as Record<string, unknown>
+            const { lastWakeDate: _lastWakeDate, ...rest } = existing.state as Record<string, unknown>
             this.store.updateState(WatchService.WAKEUP_ID, rest)
           }
           needsUpdate = true

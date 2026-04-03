@@ -6,7 +6,6 @@ import * as fs from 'fs'
 import * as path from 'path'
 import type { ToolResult, AgentConfig } from '../../types'
 import type { ToolExecutorConfig } from '../../tool-executor'
-import type { CanvasData } from '@shared/types'
 import { t } from '../../i18n'
 import { getTerminalStateService } from '../../../terminal-state.service'
 import {
@@ -2475,7 +2474,7 @@ async function excelListStyles(
 
   if (customStyles.size > 0) {
     lines.push('\n## 自定义样式\n')
-    for (const [name, style] of customStyles.entries()) {
+    for (const [name, _style] of customStyles.entries()) {
       const isDefault = defaultStyleName === name
       lines.push(`- **${name}**${isDefault ? ' ⭐默认' : ''}`)
     }

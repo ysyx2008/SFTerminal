@@ -9,8 +9,7 @@ import type {
   WatchDefinition,
   WatchRunRecord,
   WatchHistoryRecord,
-  CreateWatchParams,
-  WatchPriority
+  CreateWatchParams
 } from './types'
 
 const log = createLogger('WatchStore')

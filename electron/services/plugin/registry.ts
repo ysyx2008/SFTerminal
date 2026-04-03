@@ -14,8 +14,7 @@ import type {
   ProviderRegistration,
   ChannelRegistration,
   HttpRouteEntry,
-  ToolExecuteResult,
-  HookEvent
+  ToolExecuteResult
 } from './types'
 import { discoverPluginDirs, loadManifest, loadPlugin } from './loader'
 import { HookBus } from './hook-bus'

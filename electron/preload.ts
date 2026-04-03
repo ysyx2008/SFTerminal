@@ -296,7 +296,7 @@ export interface UserSkill {
 }
 
 // Agent 相关类型（从共享类型导入）
-import type { ExecutionMode, RemoteChannel, RiskLevel, AgentStep, PendingConfirmation } from '@shared/types'
+import type { ExecutionMode, RemoteChannel, AgentStep, PendingConfirmation } from '@shared/types'
 export type { ExecutionMode, RemoteChannel, RiskLevel, AgentStep, PendingConfirmation } from '@shared/types'
 
 export interface AgentContext {
