@@ -5,6 +5,7 @@
  * 替代之前 AI pre-check 的角色，更快、更便宜、更可预测。
  *
  * 分流规则：
+ * - 启动收集期（attach 后 15s）：所有事件入池，到期后统一 drain 为一个 batch
  * - 即时事件（high 优先级 / webhook / manual / file_change）：直接转发给 WatchService
  * - 心跳事件：触发排水并投递；池空时也发送空 batch，让唤醒能做例行检查
  * - 其他事件（normal/low 优先级的 email / calendar / cron / interval）：
@@ -25,10 +26,13 @@ export interface EventPoolConfig {
   quietHours?: { start: string; end: string } | null
   /** 池子最大容量，超过时自动排水 */
   maxPoolSize?: number
+  /** 启动收集期（毫秒）：attach 后的这段时间内所有事件入池，到期后统一 drain */
+  startupGraceMs?: number
 }
 
 const DEFAULT_DRAIN_INTERVAL_MS = 15 * 60 * 1000
 const DEFAULT_MAX_POOL_SIZE = 50
+const DEFAULT_STARTUP_GRACE_MS = 15000
 
 export class EventPool {
   private pool: SensorEvent[] = []
@@ -39,15 +43,20 @@ export class EventPool {
   private drainIntervalMs: number
   private quietHours: { start: string; end: string } | null
   private maxPoolSize: number
+  private startupGraceMs: number
 
   private downstream: EventHandler
   private afterDrainCallback: (() => void) | null = null
+  /** 启动收集期：所有事件入池不 passthrough，到期后统一 drain */
+  private inStartupPhase = false
+  private startupTimer: NodeJS.Timeout | null = null
 
   constructor(downstream: EventHandler, config?: EventPoolConfig) {
     this.downstream = downstream
     this.drainIntervalMs = config?.drainIntervalMs ?? DEFAULT_DRAIN_INTERVAL_MS
     this.quietHours = config?.quietHours ?? null
     this.maxPoolSize = config?.maxPoolSize ?? DEFAULT_MAX_POOL_SIZE
+    this.startupGraceMs = config?.startupGraceMs ?? DEFAULT_STARTUP_GRACE_MS
   }
 
   /** 注册排水成功后的回调（用于持久化传感器状态） */
@@ -63,7 +72,8 @@ export class EventPool {
     eventBus.on(this.busHandler)
 
     this.startDrainTimer()
-    log.info(`Attached (drain every ${this.drainIntervalMs / 1000}s, maxPool=${this.maxPoolSize})`)
+    this.startStartupGrace()
+    log.info(`Attached (drain every ${this.drainIntervalMs / 1000}s, maxPool=${this.maxPoolSize}, startupGrace=${this.startupGraceMs / 1000}s)`)
   }
 
   /** 从 EventBus 脱离 */
@@ -73,6 +83,7 @@ export class EventPool {
       this.busHandler = null
     }
     this.stopDrainTimer()
+    this.stopStartupGrace()
     this.pool = []
     this.seenIds.clear()
   }
@@ -137,7 +148,8 @@ export class EventPool {
 
   private async onEvent(event: SensorEvent): Promise<void> {
     if (event.type === 'heartbeat') {
-      await this.drain(true)  // 池空也发送，让唤醒能做例行检查
+      if (this.inStartupPhase) return  // 启动收集期内不响应心跳，等 grace 到期统一 drain
+      await this.drain(true)
       return
     }
 
@@ -151,6 +163,7 @@ export class EventPool {
 
   /** 判断事件是否应该立即通过（不入池） */
   private shouldPassThrough(event: SensorEvent): boolean {
+    if (this.inStartupPhase) return false
     if (event.priority === 'high') return true
     if (event.type === 'webhook') return true
     if (event.type === 'manual') return true
@@ -170,6 +183,25 @@ export class EventPool {
     if (this.pool.length >= this.maxPoolSize) {
       log.info(`Pool full (${this.maxPoolSize}), force draining`)
       this.drain()
+    }
+  }
+
+  private startStartupGrace(): void {
+    if (this.startupGraceMs <= 0) return
+    this.inStartupPhase = true
+    this.startupTimer = setTimeout(async () => {
+      this.inStartupPhase = false
+      this.startupTimer = null
+      log.info(`Startup grace ended, draining ${this.pool.length} collected event(s)`)
+      await this.drain(true)
+    }, this.startupGraceMs)
+  }
+
+  private stopStartupGrace(): void {
+    this.inStartupPhase = false
+    if (this.startupTimer) {
+      clearTimeout(this.startupTimer)
+      this.startupTimer = null
     }
   }
 
