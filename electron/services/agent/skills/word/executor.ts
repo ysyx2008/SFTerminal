@@ -1380,24 +1380,28 @@ async function wordSave(
     return { success: true, output }
   }
 
-  // 需要用户确认
+  const fileExists = fs.existsSync(filePath)
+  const riskLevel = fileExists ? 'moderate' : 'safe'
+
   executor.addStep({
     type: 'tool_call',
     content: t('word.confirm_save', { path: filePath }),
     toolName: 'word_save',
     toolArgs: args,
-    riskLevel: 'moderate'
+    riskLevel
   })
 
-  const approved = await executor.waitForConfirmation(
-    toolCallId,
-    'word_save',
-    { path: filePath },
-    'moderate'
-  )
+  if (fileExists) {
+    const approved = await executor.waitForConfirmation(
+      toolCallId,
+      'word_save',
+      { path: filePath },
+      'moderate'
+    )
 
-  if (!approved) {
-    return { success: false, output: '', error: t('word.user_rejected') }
+    if (!approved) {
+      return { success: false, output: '', error: t('word.user_rejected') }
+    }
   }
 
   try {
@@ -2329,24 +2333,28 @@ async function wordFromMarkdown(
     }
   }
 
-  // 需要用户确认
+  const fileExists = fs.existsSync(filePath)
+  const riskLevel = fileExists ? 'moderate' : 'safe'
+
   executor.addStep({
     type: 'tool_call',
     content: t('word.confirm_create_from_md', { path: filePath }),
     toolName: 'word_from_markdown',
     toolArgs: { path: filePath, style: styleName },
-    riskLevel: 'moderate'
+    riskLevel
   })
 
-  const approved = await executor.waitForConfirmation(
-    toolCallId,
-    'word_from_markdown',
-    { path: filePath },
-    'moderate'
-  )
+  if (fileExists) {
+    const approved = await executor.waitForConfirmation(
+      toolCallId,
+      'word_from_markdown',
+      { path: filePath },
+      'moderate'
+    )
 
-  if (!approved) {
-    return { success: false, output: '', error: t('word.user_rejected') }
+    if (!approved) {
+      return { success: false, output: '', error: t('word.user_rejected') }
+    }
   }
 
   try {
