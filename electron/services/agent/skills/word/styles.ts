@@ -78,6 +78,8 @@ export interface NumberingRule {
     align?: 'left' | 'center' | 'right' | 'justify'
     /** 首行缩进（字符数，0 表示顶格） */
     indent?: number
+    /** 对应的 Word Heading 级别（1-6）。设置后使用文档级别的 Heading 样式，而非内联格式 */
+    headingLevel?: number
   }
 }
 
@@ -397,8 +399,8 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
         6: { font: '仿宋', size: 16, bold: false }
       },
       numberingRules: [
-        { pattern: '^[一二三四五六七八九十]+、', style: { font: '仿宋', size: 16, bold: false, indent: 0 } },
-        { pattern: '^（[一二三四五六七八九十]+）', style: { font: '仿宋', size: 16, bold: false, indent: 0 } },
+        { pattern: '^[一二三四五六七八九十]+、', style: { headingLevel: 1, indent: 0 } },
+        { pattern: '^（[一二三四五六七八九十]+）', style: { headingLevel: 2, indent: 0 } },
         { pattern: '^\\d+[.．]', style: { font: '仿宋', size: 16, bold: false, indent: 0 } },
         { pattern: '^（\\d+）', style: { font: '仿宋', size: 16, bold: false, indent: 0 } }
       ],
@@ -438,8 +440,8 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
         6: { font: '仿宋_GB2312', size: 16, bold: false }
       },
       numberingRules: [
-        { pattern: '^[一二三四五六七八九十]+、', style: { font: '仿宋_GB2312', size: 16, bold: false, indent: 0 } },
-        { pattern: '^（[一二三四五六七八九十]+）', style: { font: '仿宋_GB2312', size: 16, bold: false, indent: 0 } },
+        { pattern: '^[一二三四五六七八九十]+、', style: { headingLevel: 1, indent: 0 } },
+        { pattern: '^（[一二三四五六七八九十]+）', style: { headingLevel: 2, indent: 0 } },
         { pattern: '^\\d+[.．]', style: { font: '仿宋_GB2312', size: 16, bold: false, indent: 0 } },
         { pattern: '^（\\d+）', style: { font: '仿宋_GB2312', size: 16, bold: false, indent: 0 } }
       ],
@@ -479,8 +481,8 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
         6: { font: '仿宋', size: 16, bold: false }
       },
       numberingRules: [
-        { pattern: '^[一二三四五六七八九十]+、', style: { font: '黑体', size: 16, bold: false, indent: 0 } },
-        { pattern: '^（[一二三四五六七八九十]+）', style: { font: '楷体', size: 16, bold: true, indent: 0 } },
+        { pattern: '^[一二三四五六七八九十]+、', style: { headingLevel: 1, indent: 0 } },
+        { pattern: '^（[一二三四五六七八九十]+）', style: { headingLevel: 2, indent: 0 } },
         { pattern: '^\\d+[.．]', style: { font: '仿宋', size: 16, bold: true, indent: 0 } },
         { pattern: '^（\\d+）', style: { font: '仿宋', size: 16, bold: false, indent: 0 } }
       ],
@@ -913,11 +915,19 @@ function tokensToDocxElements(
   return elements
 }
 
+const HEADING_LEVEL_MAP: Record<number, (typeof HeadingLevel)[keyof typeof HeadingLevel]> = {
+  1: HeadingLevel.HEADING_1,
+  2: HeadingLevel.HEADING_2,
+  3: HeadingLevel.HEADING_3,
+  4: HeadingLevel.HEADING_4,
+  5: HeadingLevel.HEADING_5,
+  6: HeadingLevel.HEADING_6
+}
+
 /**
  * 创建文档标题（Word Title 样式）
- * 依赖文档级别的 Title 样式定义；若样式未定义 title，回退到 Heading 1
  */
-function createDocumentTitle(text: string, style: WordStyleConfig): Paragraph {
+function createDocumentTitle(text: string, _style: WordStyleConfig): Paragraph {
   return new Paragraph({
     heading: HeadingLevel.TITLE,
     children: [new TextRun({ text })]
@@ -932,20 +942,8 @@ function createDocumentTitle(text: string, style: WordStyleConfig): Paragraph {
 function createHeading(token: Tokens.Heading, _style: WordStyleConfig): Paragraph {
   const level = token.depth
   
-  const headingMap: Record<number, (typeof HeadingLevel)[keyof typeof HeadingLevel]> = {
-    1: HeadingLevel.HEADING_1,
-    2: HeadingLevel.HEADING_2,
-    3: HeadingLevel.HEADING_3,
-    4: HeadingLevel.HEADING_4,
-    5: HeadingLevel.HEADING_5,
-    6: HeadingLevel.HEADING_6
-  }
-  
-  // 标题的字体、字号、加粗、对齐等均由文档级别的 Heading 样式控制
-  // 此处不设置内联格式，仅传递空的 baseStyle，让 TextRun 继承样式
-  // Markdown 内联格式（如 **加粗**、*斜体*）仍会被正确处理
   return new Paragraph({
-    heading: headingMap[level] || HeadingLevel.HEADING_1,
+    heading: HEADING_LEVEL_MAP[level] || HeadingLevel.HEADING_1,
     children: parseInlineTokens(token.tokens || [], {})
   })
 }
@@ -962,8 +960,17 @@ function createParagraphFromTokens(tokens: Token[], style: WordStyleConfig): Par
   const matchedRule = matchNumberingRule(decodedText, style)
   
   if (matchedRule) {
-    // 编号规则优先，使用规则样式（编号段落需要内联格式覆盖 Normal 样式）
     const ruleStyle = matchedRule.style
+
+    // 指定了 headingLevel → 使用文档级别的 Heading 样式，格式由样式定义控制
+    if (ruleStyle.headingLevel && HEADING_LEVEL_MAP[ruleStyle.headingLevel]) {
+      return new Paragraph({
+        heading: HEADING_LEVEL_MAP[ruleStyle.headingLevel],
+        children: parseInlineTokens(tokens, {})
+      })
+    }
+
+    // 未指定 headingLevel → 使用内联格式覆盖 Normal 样式
     const indentChars = ruleStyle.indent ?? 0
     const charWidthTwips = (ruleStyle.size || style.config.fontSize || 12) * 20
     const indentTwip = indentChars > 0 ? indentChars * charWidthTwips : undefined
@@ -1020,8 +1027,17 @@ function createParagraph(text: string, style: WordStyleConfig): Paragraph {
   const matchedRule = matchNumberingRule(decodedText, style)
   
   if (matchedRule) {
-    // 应用编号规则的样式（编号段落需要内联格式覆盖 Normal 样式）
     const ruleStyle = matchedRule.style
+
+    // 指定了 headingLevel → 使用文档级别的 Heading 样式
+    if (ruleStyle.headingLevel && HEADING_LEVEL_MAP[ruleStyle.headingLevel]) {
+      return new Paragraph({
+        heading: HEADING_LEVEL_MAP[ruleStyle.headingLevel],
+        children: [new TextRun({ text: decodedText })]
+      })
+    }
+
+    // 未指定 headingLevel → 使用内联格式
     const indentChars = ruleStyle.indent ?? 0
     const charWidthTwips = (ruleStyle.size || style.config.fontSize || 12) * 20
     const indentTwip = indentChars > 0 ? indentChars * charWidthTwips : undefined
