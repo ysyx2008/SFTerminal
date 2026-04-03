@@ -82,6 +82,19 @@ export const translations = {
         },
       ],
     },
+    spotlight: {
+      badge: '全新渠道',
+      title: '微信，接入',
+      description: '基于微信 OpenClaw 官方协议，无需公众号或企业认证——扫码登录即可通过微信与你的 AI Agent 1v1 对话。出门在外也能随时给 Agent 发任务、接收结果。',
+      features: [
+        { icon: 'qr', label: '扫码即用', desc: '无需开发者账号，手机扫码登录即可开始' },
+        { icon: 'media', label: '富媒体支持', desc: '文字、图片、视频、文件、语音全类型收发' },
+        { icon: 'auto', label: '自动保活', desc: '断线自动重连，Token 持久化免重复扫码' },
+        { icon: 'notify', label: '随时通知', desc: '觉醒模式下 Agent 主动通过微信推送通知' },
+      ],
+      cta: '查看配置指南',
+      ctaLink: '/zh/guide#wechat-guide',
+    },
     useCases: {
       title: '适用场景',
       subtitle: '无论你是 AI 从业者、运维工程师还是普通用户，旗鱼都能成为你的得力助手',
@@ -929,6 +942,19 @@ export const translations = {
           highlights: ['SSH / SFTP', 'Bastion Host', 'Enterprise Security'],
         },
       ],
+    },
+    spotlight: {
+      badge: 'New Channel',
+      title: 'WeChat, Connected',
+      description: 'Powered by WeChat\'s official OpenClaw protocol — no official account or enterprise certification needed. Scan a QR code to log in and chat with your AI Agent 1-on-1 via WeChat. Send tasks and receive results on the go.',
+      features: [
+        { icon: 'qr', label: 'Scan & Go', desc: 'No developer account needed — scan a QR code to start' },
+        { icon: 'media', label: 'Rich Media', desc: 'Text, image, video, file, and voice — all supported' },
+        { icon: 'auto', label: 'Auto Reconnect', desc: 'Persistent token, auto-reconnect on disconnection' },
+        { icon: 'notify', label: 'Push Notifications', desc: 'Receive Awaken mode alerts directly in WeChat' },
+      ],
+      cta: 'Setup Guide',
+      ctaLink: '/guide#wechat-guide',
     },
     useCases: {
       title: 'Use Cases',

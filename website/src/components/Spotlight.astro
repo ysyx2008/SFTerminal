@@ -1,0 +1,213 @@
+---
+import { useTranslations, type Lang } from '../i18n/utils';
+import { defaultLanguage } from '../i18n/translations';
+
+interface Props {
+  lang?: Lang;
+}
+
+const { lang = defaultLanguage } = Astro.props;
+const t = useTranslations(lang);
+const s = t.spotlight;
+
+const iconMap: Record<string, string> = {
+  qr: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="24" height="24">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z"/>
+    <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM13.5 19.5h.75v.75h-.75v-.75zM19.5 13.5h.75v.75h-.75v-.75zM19.5 19.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75z"/>
+  </svg>`,
+  media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="24" height="24">
+    <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"/>
+  </svg>`,
+  auto: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="24" height="24">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/>
+  </svg>`,
+  notify: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="24" height="24">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"/>
+  </svg>`,
+};
+---
+
+<section class="spotlight">
+  <div class="container">
+    <div class="spotlight-inner">
+      <div class="spotlight-content">
+        <span class="spotlight-badge">{s.badge}</span>
+        <h2 class="spotlight-title">{s.title}</h2>
+        <p class="spotlight-desc">{s.description}</p>
+        <div class="spotlight-features">
+          {s.features.map(f => (
+            <div class="spot-feature">
+              <div class="spot-feature-icon" set:html={iconMap[f.icon]} />
+              <div class="spot-feature-text">
+                <div class="spot-feature-label">{f.label}</div>
+                <div class="spot-feature-desc">{f.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <a href={s.ctaLink} class="spotlight-cta">{s.cta} →</a>
+      </div>
+      <div class="spotlight-visual">
+        <div class="screenshot-frame">
+          <img src="/screenshot-wechat.png" alt="WeChat Integration" loading="lazy" />
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .spotlight {
+    position: relative;
+    padding: var(--spacing-section) 0;
+    background: var(--color-bg-primary);
+    overflow: hidden;
+  }
+
+  .spotlight::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-border), transparent);
+  }
+
+  .spotlight-inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 64px;
+    align-items: center;
+  }
+
+  .spotlight-badge {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    padding: 4px 14px;
+    border-radius: 100px;
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(6, 182, 212, 0.15));
+    color: #22c55e;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    margin-bottom: 20px;
+  }
+
+  .spotlight-title {
+    font-size: 40px;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 16px;
+    background: linear-gradient(135deg, #22c55e, var(--color-accent-primary));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .spotlight-desc {
+    font-size: 16px;
+    line-height: 1.8;
+    color: var(--color-text-secondary);
+    margin-bottom: 32px;
+  }
+
+  .spotlight-features {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .spot-feature {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .spot-feature-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(6, 182, 212, 0.1));
+    color: #22c55e;
+  }
+
+  .spot-feature-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin-bottom: 2px;
+  }
+
+  .spot-feature-desc {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    line-height: 1.5;
+  }
+
+  .spotlight-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #22c55e;
+    transition: opacity 0.2s;
+  }
+
+  .spotlight-cta:hover {
+    opacity: 0.8;
+  }
+
+  .spotlight-visual {
+    display: flex;
+    justify-content: center;
+  }
+
+  .screenshot-frame {
+    position: relative;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    box-shadow:
+      0 20px 60px rgba(0, 0, 0, 0.3),
+      0 0 40px rgba(34, 197, 94, 0.05);
+    max-width: 520px;
+  }
+
+  .screenshot-frame img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  @media (max-width: 960px) {
+    .spotlight-inner {
+      grid-template-columns: 1fr;
+      gap: 40px;
+    }
+
+    .spotlight-title {
+      font-size: 32px;
+    }
+
+    .spotlight-visual {
+      order: -1;
+    }
+
+    .screenshot-frame {
+      max-width: 100%;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .spotlight-features {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
