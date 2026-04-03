@@ -1090,6 +1090,19 @@ type InlineBaseStyle = {
 }
 
 /**
+ * 将含 <br> 的纯文本拆分为 TextRun[]，<br> 转为 Word 换行
+ */
+function textWithBreaks(text: string, style: Record<string, unknown>): TextRun[] {
+  const parts = text.split(/<br\s*\/?>/i)
+  const runs: TextRun[] = []
+  for (let i = 0; i < parts.length; i++) {
+    if (i > 0) runs.push(new TextRun({ break: 1 }))
+    if (parts[i]) runs.push(new TextRun({ text: decodeHtmlEntities(parts[i]), ...style }))
+  }
+  return runs
+}
+
+/**
  * 解析内联 tokens（加粗、斜体、链接等）
  */
 function parseInlineTokens(
@@ -1132,8 +1145,19 @@ function parseInlineTokens(
         }))
         break
         
+      case 'br':
+        runs.push(new TextRun({ break: 1 }))
+        break
+
+      case 'html': {
+        const raw = ((token as { raw?: string; text?: string }).raw || (token as { text?: string }).text || '').trim().toLowerCase()
+        if (raw === '<br>' || raw === '<br/>' || raw === '<br />') {
+          runs.push(new TextRun({ break: 1 }))
+        }
+        break
+      }
+
       case 'link':
-        // 链接显示为带下划线的蓝色文本
         if ('tokens' in token && token.tokens) {
           for (const t of token.tokens) {
             if (t.type === 'text') {
@@ -1323,7 +1347,7 @@ function createTable(token: Tokens.Table, style: WordStyleConfig): Table {
         }
         const children = cell.tokens && cell.tokens.length > 0
           ? parseInlineTokens(cell.tokens, headerBaseStyle)
-          : [new TextRun({ text: decodeHtmlEntities(cell.text), font: tableFont, size: tableFontSizeHalf, bold: headerBold, color: headerTextColor })]
+          : textWithBreaks(cell.text, { font: tableFont, size: tableFontSizeHalf, bold: headerBold, color: headerTextColor })
 
         const align = token.align?.[colIdx]
         const alignment = align === 'center' ? AlignmentType.CENTER
@@ -1353,7 +1377,7 @@ function createTable(token: Tokens.Table, style: WordStyleConfig): Table {
       children: row.map((cell, colIdx) => {
         const children = cell.tokens && cell.tokens.length > 0
           ? parseInlineTokens(cell.tokens, { font: tableFont, size: tableFontSize })
-          : [new TextRun({ text: decodeHtmlEntities(cell.text), font: tableFont, size: tableFontSizeHalf })]
+          : textWithBreaks(cell.text, { font: tableFont, size: tableFontSizeHalf })
 
         const align = token.align?.[colIdx]
         const alignment = align === 'center' ? AlignmentType.CENTER

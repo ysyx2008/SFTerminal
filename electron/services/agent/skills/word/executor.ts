@@ -79,6 +79,52 @@ const execAsync = promisify(exec)
 const log = createLogger('WordExecutor')
 
 /**
+ * mammoth 样式映射配置
+ * docx 库生成的 Title 样式 ID 为 "Title"，需要显式映射为 h1
+ */
+const MAMMOTH_OPTIONS = {
+  styleMap: [
+    "p[style-name='Title'] => h1.document-title:fresh",
+    "p.Title => h1.document-title:fresh",
+    "p[style-name='Subtitle'] => h2.document-subtitle:fresh"
+  ]
+}
+
+/**
+ * 从 docx XML 中提取段落对齐信息，注入到 mammoth 生成的 HTML 中
+ * mammoth 不保留对齐属性，需要后处理补回
+ */
+async function enrichHtmlAlignment(html: string, source: string | Buffer): Promise<string> {
+  try {
+    const buf = typeof source === 'string' ? fs.readFileSync(source) : source
+    const JSZip = (await import('jszip')).default
+    const zip = await JSZip.loadAsync(buf)
+    const xml = await zip.file('word/document.xml')?.async('string')
+    if (!xml) return html
+
+    const aligns: string[] = []
+    for (const m of xml.matchAll(/<w:p[\s>][\s\S]*?<\/w:p>/g)) {
+      const jc = m[0].match(/<w:jc\s+w:val="([^"]+)"/)
+      aligns.push(jc?.[1] || '')
+    }
+
+    let i = 0
+    return html.replace(/<(p|h[1-6])([ >])/gi, (full, tag, after) => {
+      const a = aligns[i++]
+      if (!a || a === 'left' || a === 'start') return full
+      const css = a === 'right' ? 'text-align:right;text-indent:0'
+        : a === 'center' ? 'text-align:center;text-indent:0'
+        : a === 'both' ? 'text-align:justify'
+        : ''
+      return css ? `<${tag} style="${css}"${after}` : full
+    })
+  } catch (e) {
+    log.warn('enrichHtmlAlignment failed:', e)
+    return html
+  }
+}
+
+/**
  * 生成 Word 文档预览 HTML（供 Canvas 展示）
  * 对于新建文档使用 sections 转 HTML，已有文档从段落列表生成
  */
@@ -95,8 +141,8 @@ async function generatePreviewHtml(filePath: string): Promise<string> {
       cloned.file('word/document.xml', session.documentXml)
       const outBuf = await cloned.generateAsync({ type: 'nodebuffer' })
       const mammoth = await import('mammoth')
-      const result = await mammoth.convertToHtml({ buffer: outBuf })
-      return result.value
+      const result = await mammoth.convertToHtml({ buffer: outBuf }, MAMMOTH_OPTIONS)
+      return enrichHtmlAlignment(result.value, outBuf)
     } catch (e) {
       log.warn('Failed to generate mammoth preview, falling back to text:', e)
       try {
@@ -639,7 +685,7 @@ async function wordOpen(
   try {
     // 使用 mammoth 将文档转为 HTML，保留结构信息
     const mammoth = await import('mammoth')
-    const htmlResult = await mammoth.convertToHtml({ path: filePath })
+    const htmlResult = await mammoth.convertToHtml({ path: filePath }, MAMMOTH_OPTIONS)
     const html = htmlResult.value
 
     // 创建一个新的 Document 实例（用于后续添加内容）
@@ -651,6 +697,9 @@ async function wordOpen(
     
     // 从 HTML 解析出结构化内容
     parseHtmlToSections(html, session.sections)
+
+    // 对齐增强后用于 Canvas 预览
+    const enrichedHtml = await enrichHtmlAlignment(html, filePath)
 
     // 生成内容预览
     const textResult = await mammoth.extractRawText({ path: filePath })
@@ -671,7 +720,7 @@ async function wordOpen(
         action: 'open',
         renderer: 'document',
         title: path.basename(filePath),
-        content: html
+        content: enrichedHtml
       }
     })
 
@@ -2240,12 +2289,13 @@ async function wordFromMarkdown(
     let canvasData: CanvasData | undefined
     try {
       const mammoth = await import('mammoth')
-      const htmlResult = await mammoth.convertToHtml({ path: filePath })
+      const htmlResult = await mammoth.convertToHtml({ path: filePath }, MAMMOTH_OPTIONS)
+      const enrichedHtml = await enrichHtmlAlignment(htmlResult.value, filePath)
       canvasData = {
         action: 'open',
         renderer: 'document',
         title: path.basename(filePath),
-        content: htmlResult.value
+        content: enrichedHtml
       }
     } catch { /* ignore preview errors */ }
 

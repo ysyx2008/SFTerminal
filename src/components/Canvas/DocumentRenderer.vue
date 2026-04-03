@@ -54,23 +54,36 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
 }
 
 /* mammoth 输出的 HTML 元素样式 */
-.document-content :deep(h1) {
-  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+
+/* 文档标题（Word Title 样式 → h1.document-title） */
+.document-content :deep(h1.document-title) {
+  font-family: 'STXiaoBiaoSong', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
   font-size: 22px;
   font-weight: 700;
-  margin: 1em 0 0.5em;
+  margin: 0.5em 0 0.8em;
   color: #000;
   text-align: center;
 }
 
-.document-content :deep(h2) {
-  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+/* 一级标题（Word Heading 1 → h1） */
+.document-content :deep(h1) {
+  font-family: 'STHeiti', 'Heiti SC', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
   font-size: 18px;
+  font-weight: 600;
+  margin: 1em 0 0.5em;
+  color: #000;
+}
+
+/* 二级标题（Word Heading 2 → h2） */
+.document-content :deep(h2) {
+  font-family: 'STKaiti', 'Kaiti SC', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  font-size: 16px;
   font-weight: 600;
   margin: 0.8em 0 0.4em;
   color: #111;
 }
 
+/* 三级标题（Word Heading 3 → h3） */
 .document-content :deep(h3) {
   font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
   font-size: 15px;
@@ -97,6 +110,7 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
 
 .document-content :deep(table) {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   margin: 0.8em 0;
   font-size: 13px;
@@ -104,16 +118,24 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
 
 .document-content :deep(th),
 .document-content :deep(td) {
-  border: 1px solid #bbb;
-  padding: 5px 8px;
+  border: 1px solid #555;
+  padding: 6px 10px;
   text-align: left;
   text-indent: 0;
+  vertical-align: top;
+}
+
+.document-content :deep(th p),
+.document-content :deep(td p) {
+  text-indent: 0;
+  margin: 0.15em 0;
 }
 
 .document-content :deep(th) {
-  background: #f2f2f2;
+  background: #f0f0f0;
   font-weight: 600;
   color: #111;
+  text-align: center;
 }
 
 .document-content :deep(strong),
