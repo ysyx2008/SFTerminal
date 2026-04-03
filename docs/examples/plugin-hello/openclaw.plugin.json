@@ -1,0 +1,11 @@
+{
+  "id": "hello-world",
+  "name": "Hello World",
+  "description": "示例插件 — 演示工具注册和 Hook 拦截",
+  "version": "1.0.0",
+  "configSchema": {},
+  "enabledByDefault": true,
+  "contracts": {
+    "tools": ["greet", "random_number"]
+  }
+}

@@ -1,0 +1,268 @@
+# 插件开发指南
+
+SailFish 支持通过插件扩展 Agent 能力，无需修改源码。插件可以注册自定义工具、AI Provider、IM 渠道、Hook 拦截和 HTTP 路由。
+
+## 快速开始
+
+### 1. 创建插件目录
+
+```bash
+mkdir ~/Library/Application\ Support/SailFish/plugins/my-plugin
+cd ~/Library/Application\ Support/SailFish/plugins/my-plugin
+```
+
+### 2. 创建 manifest
+
+**openclaw.plugin.json**
+
+```json
+{
+  "id": "my-plugin",
+  "name": "My Plugin",
+  "description": "一个示例插件",
+  "version": "1.0.0",
+  "configSchema": {},
+  "enabledByDefault": true
+}
+```
+
+### 3. 创建入口文件
+
+**index.js**
+
+```javascript
+module.exports = {
+  default: {
+    id: "my-plugin",
+    register(api) {
+      api.registerTool({
+        name: "greet",
+        description: "向指定的人打招呼",
+        parameters: {
+          type: "object",
+          properties: {
+            name: { type: "string", description: "要问候的人名" }
+          },
+          required: ["name"]
+        },
+        async execute(toolCallId, params) {
+          return {
+            content: [{ type: "text", text: `你好，${params.name}！` }]
+          }
+        }
+      })
+    }
+  }
+}
+```
+
+### 4. 重启 SailFish
+
+插件会在启动时自动加载。对话中 Agent 即可调用 `greet` 工具。
+
+## Manifest 规范
+
+`openclaw.plugin.json` 是插件的入口声明文件：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `id` | string | ✅ | 插件唯一标识（建议 kebab-case） |
+| `name` | string | | 展示名称 |
+| `description` | string | | 简短描述 |
+| `version` | string | | 语义化版本号 |
+| `configSchema` | object | ✅ | 配置的 JSON Schema（无配置传 `{}`） |
+| `enabledByDefault` | true | | 安装后默认启用 |
+
+## Registration API
+
+插件入口的 `register(api)` 函数接收一个 API 对象，提供以下注册方法：
+
+### api.registerTool(def, opts?)
+
+注册一个工具，Agent 可以在对话中调用。
+
+```javascript
+api.registerTool({
+  name: "fetch_price",
+  description: "查询商品实时价格",
+  parameters: {
+    type: "object",
+    properties: {
+      product: { type: "string", description: "商品名称" },
+      currency: { type: "string", enum: ["CNY", "USD"], description: "货币" }
+    },
+    required: ["product"]
+  },
+  async execute(toolCallId, params) {
+    const price = await fetchPriceFromAPI(params.product, params.currency || "CNY")
+    return {
+      content: [{ type: "text", text: `${params.product} 当前价格：${price}` }]
+    }
+  }
+}, { optional: false })
+```
+
+**工具命名规则**：工具会被自动映射为 `plugin_{pluginId}_{toolName}`，Agent 看到的是这个完整名称。
+
+**返回格式**：
+
+```javascript
+{
+  content: [
+    { type: "text", text: "文本结果" },
+    { type: "image", data: "base64..." }  // 可选，返回图片
+  ]
+}
+```
+
+### api.registerHook(event, handler)
+
+注册生命周期 Hook，拦截或监听 Agent 行为。
+
+**可用事件**：
+
+| 事件 | 触发时机 | 典型用途 |
+|------|----------|----------|
+| `before_tool_call` | 工具执行前 | 审计日志、权限控制、参数校验 |
+| `after_tool_call` | 工具执行后 | 结果审计、统计 |
+| `before_ai_request` | AI 请求发送前 | 消息脱敏、prompt 注入 |
+| `message_sending` | IM 消息发送前 | 内容过滤、格式转换 |
+
+```javascript
+api.registerHook("before_tool_call", (context) => {
+  console.log(`工具调用: ${context.toolName}`, context.toolArgs)
+
+  // 拦截危险操作
+  if (context.toolName.includes("delete")) {
+    return { block: true }  // 阻止执行
+  }
+
+  // 要求用户确认
+  if (context.toolName.includes("write")) {
+    return { requireApproval: true }
+  }
+
+  return {}  // 放行
+})
+```
+
+### api.registerProvider(def)
+
+注册自定义 AI 模型 Provider。
+
+```javascript
+api.registerProvider({
+  id: "my-llm",
+  name: "内部 LLM",
+  match(profile) {
+    return profile.apiUrl.includes("internal-llm.company.com")
+  },
+  async chatWithTools({ messages, tools, model, apiUrl, apiKey }) {
+    const response = await fetch(`${apiUrl}/chat`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ messages, tools, model })
+    })
+    return await response.json()
+  }
+})
+```
+
+### api.registerChannel(def)
+
+注册自定义 IM 渠道。
+
+```javascript
+api.registerChannel({
+  id: "my-chat",
+  name: "内部聊天系统",
+  createAdapter(config) {
+    return new MyInternalChatAdapter(config)
+  }
+})
+```
+
+Adapter 需实现 `IMAdapter` 接口（参考 `electron/services/im/types.ts`）。
+
+### api.registerHttpRoute(method, path, handler)
+
+在 Gateway 上注册自定义 HTTP 端点（需鉴权后才可访问）。
+
+```javascript
+api.registerHttpRoute("GET", "/api/plugin/status", (req, res) => {
+  res.writeHead(200, { "Content-Type": "application/json" })
+  res.end(JSON.stringify({ status: "ok", version: "1.0.0" }))
+})
+```
+
+## 使用 TypeScript
+
+插件可以用 TypeScript 编写（SailFish 运行时已注册 tsx）：
+
+**index.ts**
+
+```typescript
+import type { PluginRegistrationAPI, ToolRegistration } from "../../electron/services/plugin/types"
+
+export default {
+  id: "my-ts-plugin",
+  register(api: PluginRegistrationAPI) {
+    api.registerTool({
+      name: "calculate",
+      description: "执行数学计算",
+      parameters: {
+        type: "object",
+        properties: {
+          expression: { type: "string", description: "数学表达式" }
+        },
+        required: ["expression"]
+      },
+      async execute(_toolCallId, params) {
+        const result = new Function(`return (${params.expression})`)()
+        return { content: [{ type: "text", text: String(result) }] }
+      }
+    })
+  }
+}
+```
+
+## 通过 npm 安装
+
+插件可以发布到 npm，用户在设置页点击「安装」输入包名即可。
+
+发布时确保包里包含 `openclaw.plugin.json` 和入口文件。`package.json` 示例：
+
+```json
+{
+  "name": "sailfish-plugin-example",
+  "version": "1.0.0",
+  "main": "index.js",
+  "files": ["index.js", "openclaw.plugin.json"]
+}
+```
+
+## 插件发现路径
+
+SailFish 按以下顺序扫描插件（先找到的优先）：
+
+1. 配置中指定的路径（`pluginsLoadPaths`）
+2. `{userData}/plugins/`（直接放置的插件）
+3. `{userData}/plugins/node_modules/`（npm 安装的插件）
+4. `~/.openclaw/extensions/`（兼容 OpenClaw 全局扩展目录）
+
+## 生命周期
+
+- **加载**：应用启动时扫描目录 → 解析 manifest → import 入口 → 调用 `register(api)`
+- **启用/禁用**：通过设置页开关，状态持久化到配置
+- **卸载**：npm 安装的插件可通过设置页卸载；手动放置的直接删目录
+- **清理**：插件可导出 `onUnload()` 方法，卸载时会被调用
+
+## 调试
+
+- 插件加载日志：`{userData}/logs/` 下搜索 `PluginLoader` / `PluginRegistry`
+- 工具执行日志：搜索 `plugin_` 前缀的工具名
+- 开发时修改插件后需重启应用
+
+## 示例插件
+
+完整示例见 `docs/examples/plugin-hello/` 目录。
