@@ -58,7 +58,7 @@ export interface IMServiceConfig {
 
 // ==================== 适配器接口 ====================
 
-export type IMPlatform = 'dingtalk' | 'feishu' | 'slack' | 'telegram' | 'wecom' | 'wechat'
+export type IMPlatform = 'dingtalk' | 'feishu' | 'slack' | 'telegram' | 'wecom' | 'wechat' | (string & {})
 
 /**
  * IM 接收消息中的附件（图片、语音、视频、文件）

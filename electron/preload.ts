@@ -1738,6 +1738,26 @@ const electronAPI = {
     }
   },
 
+  // 插件系统
+  plugin: {
+    list: () =>
+      ipcRenderer.invoke('plugin:list') as Promise<Array<{ id: string; name?: string; description?: string; version?: string; enabled: boolean; toolCount: number }>>,
+    enable: (id: string) =>
+      ipcRenderer.invoke('plugin:enable', id) as Promise<boolean>,
+    disable: (id: string) =>
+      ipcRenderer.invoke('plugin:disable', id) as Promise<boolean>,
+    install: (spec: string) =>
+      ipcRenderer.invoke('plugin:install', spec) as Promise<{ success: boolean; pluginId?: string; error?: string }>,
+    uninstall: (packageName: string) =>
+      ipcRenderer.invoke('plugin:uninstall', packageName) as Promise<{ success: boolean; error?: string }>,
+    update: (packageName: string) =>
+      ipcRenderer.invoke('plugin:update', packageName) as Promise<{ success: boolean; error?: string }>,
+    getConfig: (id: string) =>
+      ipcRenderer.invoke('plugin:getConfig', id) as Promise<Record<string, unknown>>,
+    setConfig: (id: string, config: Record<string, unknown>) =>
+      ipcRenderer.invoke('plugin:setConfig', id, config) as Promise<void>,
+  },
+
   // 内置技能
   builtinSkill: {
     list: () =>

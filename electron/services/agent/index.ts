@@ -143,6 +143,13 @@ export class AgentService {
     this.services.historyService = historyService
   }
 
+  /**
+   * 设置插件注册表
+   */
+  setPluginRegistry(pluginRegistry: import('../plugin/registry').PluginRegistry): void {
+    this.services.pluginRegistry = pluginRegistry
+  }
+
   // ==================== 工厂方法 ====================
 
   /**

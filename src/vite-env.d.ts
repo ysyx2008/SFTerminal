@@ -1569,6 +1569,24 @@ interface Window {
       // 获取拖放文件的路径（Electron 24+ 推荐方式）
       getPathForFile: (file: File) => string
     }
+    // 插件系统
+    plugin: {
+      list: () => Promise<Array<{
+        id: string
+        name?: string
+        description?: string
+        version?: string
+        enabled: boolean
+        toolCount: number
+      }>>
+      enable: (id: string) => Promise<boolean>
+      disable: (id: string) => Promise<boolean>
+      install: (spec: string) => Promise<{ success: boolean; pluginId?: string; error?: string }>
+      uninstall: (packageName: string) => Promise<{ success: boolean; error?: string }>
+      update: (packageName: string) => Promise<{ success: boolean; error?: string }>
+      getConfig: (id: string) => Promise<Record<string, unknown>>
+      setConfig: (id: string, config: Record<string, unknown>) => Promise<void>
+    }
     // 内置技能
     builtinSkill: {
       list: () => Promise<Array<{

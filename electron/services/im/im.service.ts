@@ -229,6 +229,8 @@ export class IMService {
   private pendingConnectPlatforms = new Set<IMPlatform>()
   private connectDebounceTimer: NodeJS.Timeout | null = null
   private static readonly CONNECT_DEBOUNCE_MS = 3000
+  /** 插件注册的额外 adapter（运行时动态添加） */
+  private pluginAdapters = new Map<string, IMAdapter>()
 
   constructor() {
     this.loadPersistedContacts()
@@ -1242,7 +1244,21 @@ export class IMService {
     if (platform === 'telegram') return this.telegramAdapter
     if (platform === 'wecom') return this.wecomAdapter
     if (platform === 'wechat') return this.wechatAdapter
-    return null
+    return this.pluginAdapters.get(platform) ?? null
+  }
+
+  /**
+   * 注册插件提供的 IM adapter
+   */
+  registerAdapter(adapter: IMAdapter): void {
+    this.pluginAdapters.set(adapter.platform, adapter)
+    adapter.onMessage = (msg) => this.handleIncomingMessage(msg)
+    adapter.onConnectionChange = (connected) => {
+      if (connected) {
+        log.info(`Plugin IM adapter "${adapter.platform}" connected`)
+      }
+    }
+    log.info(`Plugin IM adapter registered: ${adapter.platform}`)
   }
 
   private loadPersistedContacts(): void {

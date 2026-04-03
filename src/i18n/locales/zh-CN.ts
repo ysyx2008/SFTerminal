@@ -168,6 +168,7 @@ export default {
       ai: 'AI 配置',
       aiRules: 'AI 规则',
       mcp: 'MCP 服务器',
+      plugins: '插件',
       skills: '技能',
       knowledge: '记忆',
       email: '邮箱账户',
@@ -536,6 +537,25 @@ export default {
   },
 
   // MCP 设置
+  pluginSettings: {
+    title: '插件',
+    description: '安装和管理 OpenClaw 兼容插件，扩展 AI Agent 的工具、Provider 和集成能力',
+    enabled: '已启用',
+    tools: '个工具',
+    install: '安装',
+    installing: '安装中...',
+    uninstall: '卸载',
+    noPlugins: '尚未安装任何插件',
+    noPluginsHint: '点击「安装」按钮从 npm 安装 OpenClaw 插件，或将插件放入 plugins 目录',
+    installTitle: '安装插件',
+    installDesc: '输入 npm 包名、本地路径或 tarball 路径',
+    installPlaceholder: '例如：@openclaw/voice-call 或 ./my-plugin',
+    installSuccess: '插件安装成功',
+    installFailed: '插件安装失败',
+    uninstallSuccess: '插件已卸载',
+    uninstallFailed: '插件卸载失败',
+  },
+
   mcpSettings: {
     title: 'MCP 服务器',
     description: 'MCP (Model Context Protocol) 让 AI 能够访问外部工具和资源',

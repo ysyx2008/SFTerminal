@@ -3,6 +3,7 @@
  */
 import type { ToolDefinition } from '../ai.service'
 import type { McpService } from '../mcp.service'
+import type { PluginRegistry } from '../plugin/registry'
 import { getSkillsSummary } from './skills/registry'
 import { getUserSkillService } from '../user-skill.service'
 import { getConfigService } from '../config.service'
@@ -122,8 +123,9 @@ export interface GetAgentToolsOptions {
  * 获取可用工具定义
  * @param mcpService 可选的 MCP 服务，用于动态加载 MCP 工具
  * @param options 可选配置，如终端类型
+ * @param pluginRegistry 可选的插件注册表，用于加载插件工具
  */
-export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOptions): ToolDefinition[] {
+export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOptions, pluginRegistry?: PluginRegistry): ToolDefinition[] {
   // assistant 模式的轻量命令执行工具（child_process）
   // 终端模式的 execute_command 及终端交互工具由 terminal 技能提供
   const execTool: ToolDefinitionWithMeta | null = options?.mode === 'assistant'
@@ -578,6 +580,11 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
     const { _meta, ...clean } = tool as ToolDefinitionWithMeta
     return clean as ToolDefinition
   })
+
+  // 添加插件工具
+  if (pluginRegistry) {
+    cleanTools.push(...pluginRegistry.getToolDefinitions())
+  }
 
   // 如果有 MCP 服务，添加 MCP 工具
   if (mcpService) {

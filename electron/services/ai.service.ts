@@ -607,9 +607,21 @@ export class AiService {
   private configService: ConfigService
   // 使用 Map 存储多个请求的 AbortController，支持多个终端同时请求
   private abortControllers: Map<string, AbortController> = new Map()
+  // 插件 provider（由 PluginRegistry 初始化后注入）
+  private pluginProviders: Array<import('./plugin/types').ProviderRegistration> = []
 
   constructor() {
     this.configService = new ConfigService()
+  }
+
+  /**
+   * 注入插件 provider（由 PluginRegistry 初始化后调用）
+   */
+  setPluginProviders(providers: Array<import('./plugin/types').ProviderRegistration>): void {
+    this.pluginProviders = providers
+    if (providers.length > 0) {
+      log.info(`Registered ${providers.length} plugin provider(s): ${providers.map(p => p.id).join(', ')}`)
+    }
   }
 
   /**
@@ -1053,6 +1065,15 @@ export class AiService {
     const profile = await this.getCurrentProfile(profileId)
     if (!profile) {
       throw new Error(t('error.ai_no_config'))
+    }
+
+    // 插件 provider 前置检查
+    for (const provider of this.pluginProviders) {
+      if (provider.match(profile)) {
+        log.info(`Delegating to plugin provider "${provider.id}" for model=${profile.model}`)
+        const result = await provider.chatWithTools({ messages, tools, model: profile.model, apiUrl: profile.apiUrl, apiKey: profile.apiKey })
+        return result as ChatWithToolsResult
+      }
     }
 
     const startTime = Date.now()

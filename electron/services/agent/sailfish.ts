@@ -103,7 +103,7 @@ export class SailFish extends Agent {
       mode,
       remoteChannel,
       includeContextTools: this.contextManagementEnabled
-    })
+    }, this.services.pluginRegistry)
     
     if (this.currentRun?.skillSession) {
       this.currentRun.skillSession.updateCoreTools(baseTools)

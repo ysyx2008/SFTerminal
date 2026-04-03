@@ -168,6 +168,7 @@ export default {
       ai: 'AI Config',
       aiRules: 'AI Rules',
       mcp: 'MCP Servers',
+      plugins: 'Plugins',
       skills: 'Skills',
       knowledge: 'Memory',
       email: 'Email',
@@ -536,6 +537,25 @@ export default {
   },
 
   // MCP Settings
+  pluginSettings: {
+    title: 'Plugins',
+    description: 'Install and manage OpenClaw-compatible plugins to extend AI Agent tools, providers, and integrations',
+    enabled: 'enabled',
+    tools: 'tool(s)',
+    install: 'Install',
+    installing: 'Installing...',
+    uninstall: 'Uninstall',
+    noPlugins: 'No plugins installed',
+    noPluginsHint: 'Click "Install" to install an OpenClaw plugin from npm, or place plugins in the plugins directory',
+    installTitle: 'Install Plugin',
+    installDesc: 'Enter an npm package name, local path, or tarball path',
+    installPlaceholder: 'e.g. @openclaw/voice-call or ./my-plugin',
+    installSuccess: 'Plugin installed successfully',
+    installFailed: 'Plugin installation failed',
+    uninstallSuccess: 'Plugin uninstalled',
+    uninstallFailed: 'Plugin uninstall failed',
+  },
+
   mcpSettings: {
     title: 'MCP Servers',
     description: 'MCP (Model Context Protocol) allows AI to access external tools and resources',

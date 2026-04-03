@@ -416,6 +416,18 @@ const localFsService = new LocalFsService()
 // 设置 SFTP 服务到 Agent（用于 SSH 终端的文件写入）
 agentService.setSftpService(sftpService)
 
+// 插件系统
+import { createPluginRegistry } from './services/plugin/registry'
+const pluginRegistry = createPluginRegistry({
+  enabled: configService.get('pluginsEnabled'),
+  allow: configService.get('pluginsAllow'),
+  deny: configService.get('pluginsDeny'),
+  loadPaths: configService.get('pluginsLoadPaths'),
+  entries: configService.get('pluginsEntries'),
+  userDataPath: app.getPath('userData')
+})
+agentService.setPluginRegistry(pluginRegistry)
+
 // 定时任务调度服务
 const schedulerService = getSchedulerService()
 
@@ -997,6 +1009,37 @@ app.whenReady().then(async () => {
   // 打包版中 did-finish-load 可能因事件竞争不触发，导致所有后端服务不启动
   ;(async () => {
     log.info('开始初始化后端服务')
+
+    // 初始化插件系统
+    try {
+      await pluginRegistry.loadAll()
+      // 注册插件 provider 到 AI 服务
+      const pluginProviders = pluginRegistry.getAllProviders()
+      if (pluginProviders.length > 0) {
+        aiService.setPluginProviders(pluginProviders)
+      }
+      // 注册插件 HTTP 路由到 Gateway
+      const pluginRoutes = pluginRegistry.getAllHttpRoutes()
+      if (pluginRoutes.length > 0) {
+        gatewayService.registerPluginRoutes(pluginRoutes)
+      }
+      // 注册插件 IM channels
+      const pluginChannels = pluginRegistry.getAllChannels()
+      if (pluginChannels.length > 0) {
+        const { getIMService } = require('./services/im/im.service')
+        try {
+          const imService = getIMService()
+          for (const channel of pluginChannels) {
+            const pluginConfig = configService.get('pluginsEntries')?.[channel.id]?.config || {}
+            const adapter = channel.createAdapter(pluginConfig)
+            imService.registerAdapter(adapter)
+          }
+        } catch { /* IM service may not be available */ }
+      }
+      log.info('插件系统初始化完成')
+    } catch (e) {
+      log.error('插件系统初始化失败:', e)
+    }
 
     // 初始化定时任务调度服务
     try {
@@ -4116,6 +4159,65 @@ ipcMain.handle('mcp:connectEnabledServers', async () => {
 // 断开所有 MCP 连接
 ipcMain.handle('mcp:disconnectAll', async () => {
   await mcpService.disconnectAll()
+})
+
+// ==================== 插件系统相关 ====================
+
+import { installPlugin, uninstallPlugin, updatePlugin } from './services/plugin/installer'
+
+ipcMain.handle('plugin:list', async () => {
+  return pluginRegistry.listAll()
+})
+
+ipcMain.handle('plugin:enable', async (_event, id: string) => {
+  const success = pluginRegistry.enablePlugin(id)
+  if (success) {
+    const entries = configService.get('pluginsEntries') || {}
+    entries[id] = { ...entries[id], enabled: true }
+    configService.set('pluginsEntries', entries)
+  }
+  return success
+})
+
+ipcMain.handle('plugin:disable', async (_event, id: string) => {
+  const success = pluginRegistry.disablePlugin(id)
+  if (success) {
+    const entries = configService.get('pluginsEntries') || {}
+    entries[id] = { ...entries[id], enabled: false }
+    configService.set('pluginsEntries', entries)
+  }
+  return success
+})
+
+ipcMain.handle('plugin:install', async (_event, spec: string) => {
+  const result = await installPlugin(spec, app.getPath('userData'))
+  if (result.success) {
+    await pluginRegistry.loadAll()
+    const providers = pluginRegistry.getAllProviders()
+    if (providers.length > 0) aiService.setPluginProviders(providers)
+    const routes = pluginRegistry.getAllHttpRoutes()
+    if (routes.length > 0) gatewayService.registerPluginRoutes(routes)
+  }
+  return result
+})
+
+ipcMain.handle('plugin:uninstall', async (_event, packageName: string) => {
+  return uninstallPlugin(packageName, app.getPath('userData'))
+})
+
+ipcMain.handle('plugin:update', async (_event, packageName: string) => {
+  return updatePlugin(packageName, app.getPath('userData'))
+})
+
+ipcMain.handle('plugin:getConfig', async (_event, id: string) => {
+  const entries = configService.get('pluginsEntries') || {}
+  return entries[id]?.config || {}
+})
+
+ipcMain.handle('plugin:setConfig', async (_event, id: string, config: Record<string, unknown>) => {
+  const entries = configService.get('pluginsEntries') || {}
+  entries[id] = { ...entries[id], enabled: entries[id]?.enabled ?? true, config }
+  configService.set('pluginsEntries', entries)
 })
 
 // ==================== 内置技能相关 ====================

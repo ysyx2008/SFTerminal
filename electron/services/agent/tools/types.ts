@@ -60,6 +60,8 @@ export interface ToolExecutorConfig {
   getSshConfig?: (terminalId: string) => SshConfig | null
   // 技能系统
   skillSession?: SkillSession
+  // 插件系统
+  pluginRegistry?: import('../../plugin/registry').PluginRegistry
   // 上下文管理（compress_context / recall_compressed 工具使用）
   compressCurrentContext?: (summary: string, keepRecent: number) => {
     beforeTokens: number

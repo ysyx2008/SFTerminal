@@ -1533,6 +1533,17 @@ export abstract class Agent {
       pendingUpdate = false
     }
     
+    const availableTools = this.getAvailableTools()
+
+    // Plugin hook: before_ai_request (must run before the Promise callback)
+    const hookBus = this.services.pluginRegistry?.hookBus
+    if (hookBus?.hasHandlers('before_ai_request')) {
+      await hookBus.trigger('before_ai_request', {
+        messages: run.messages as Array<{ role: string; content: string }>,
+        tools: availableTools
+      })
+    }
+
     return new Promise<ChatWithToolsResult>((resolve, reject) => {
       streamContent = ''
       lastContentUpdate = 0
@@ -1541,7 +1552,6 @@ export abstract class Agent {
       toolProgressStepCreated = false
       lastToolProgressUpdate = 0
       
-      const availableTools = this.getAvailableTools()
       run.requestId = run.id
       
       const effectiveProfileId = this.resolveEffectiveProfileId(run)
@@ -1914,6 +1924,32 @@ export abstract class Agent {
     const stepCountBefore = run.steps.length
     const toolStartTime = Date.now()
     let result: ToolResult
+
+    // Plugin hook: before_tool_call
+    const hookBus = this.services.pluginRegistry?.hookBus
+    if (hookBus?.hasHandlers('before_tool_call')) {
+      const decision = await hookBus.trigger('before_tool_call', {
+        toolName, toolArgs, toolCallId: toolCall.id
+      })
+      if (decision.block) {
+        result = { success: false, output: '', error: 'Blocked by plugin' }
+        this.ensureToolResultStep(run, stepCountBefore, toolName, result)
+        this.processToolResult(run, toolCall, result, toolArgs)
+        return
+      }
+      if (decision.requireApproval) {
+        const approved = await toolExecutorConfig.waitForConfirmation(
+          toolCall.id, toolName, toolArgs, 'moderate'
+        )
+        if (!approved) {
+          result = { success: false, output: '', error: t('error.operation_aborted') }
+          this.ensureToolResultStep(run, stepCountBefore, toolName, result)
+          this.processToolResult(run, toolCall, result, toolArgs)
+          return
+        }
+      }
+    }
+
     try {
       result = await executeTool(
         run.ptyId,
@@ -1935,6 +1971,13 @@ export abstract class Agent {
       log.info(`Tool executed: ${toolName}, ${toolElapsed}ms, outputLen=${result.output.length}`)
     } else {
       log.warn(`Tool failed: ${toolName}, ${toolElapsed}ms, error=${(result.error || '').slice(0, 200)}`)
+    }
+
+    // Plugin hook: after_tool_call
+    if (hookBus?.hasHandlers('after_tool_call')) {
+      await hookBus.trigger('after_tool_call', {
+        toolName, toolArgs, result: { success: result.success, output: result.output, error: result.error }
+      })
     }
     
     this.ensureToolResultStep(run, stepCountBefore, toolName, result)
@@ -2032,6 +2075,7 @@ export abstract class Agent {
       hostProfileService: this.services.hostProfileService,
       mcpService: this.services.mcpService,
       skillSession: run.skillSession,
+      pluginRegistry: this.services.pluginRegistry,
       addStep: (step) => this.addStep(step),
       updateStep: (stepId, updates) => this.updateStep(stepId, updates),
       waitForConfirmation: async (toolCallId, toolName, toolArgs, riskLevel) => {

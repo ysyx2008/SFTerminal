@@ -208,6 +208,12 @@ export async function executeTool(
         return { success: false, output: '', error: t('error.mcp_not_initialized') }
       }
 
+      // 插件工具（plugin_ 前缀）
+      if (name.startsWith('plugin_') && executor.pluginRegistry) {
+        const pluginResult = await executor.pluginRegistry.executeTool(name, args, toolCall.id)
+        if (pluginResult) return pluginResult
+      }
+
       // 检查是否是技能工具调用
       if (executor.skillSession) {
         const skillTools = executor.skillSession.getAvailableTools()

@@ -350,6 +350,7 @@ export interface AgentServices {
   mcpService?: import('../mcp.service').McpService
   configService?: import('../config.service').ConfigService
   historyService?: import('../history.service').HistoryService
+  pluginRegistry?: import('../plugin/registry').PluginRegistry
 }
 
 /**

@@ -74,6 +74,7 @@ export class GatewayService {
   }
   private auditLog: AuditLogEntry[] = []
   private static readonly MAX_AUDIT_LOG = 500  // 最多保留 500 条记录
+  private pluginRoutes: Array<{ method: string; path: string; handler: (req: http.IncomingMessage, res: http.ServerResponse) => void | Promise<void> }> = []
 
   /** 便捷访问 Web Chat 服务 */
   private get chat(): WebChatService {
@@ -93,6 +94,16 @@ export class GatewayService {
   setMainWindow(win: GatewayDependencies['mainWindow']) {
     if (this.deps) {
       this.deps.mainWindow = win
+    }
+  }
+
+  /**
+   * 注册插件 HTTP 路由
+   */
+  registerPluginRoutes(routes: Array<{ method: string; path: string; handler: (req: http.IncomingMessage, res: http.ServerResponse) => void | Promise<void> }>): void {
+    this.pluginRoutes = routes
+    if (routes.length > 0) {
+      log.info(`Registered ${routes.length} plugin HTTP route(s)`)
     }
   }
 
@@ -203,6 +214,29 @@ export class GatewayService {
     if (!this.authenticate(req)) {
       res.writeHead(401, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'Unauthorized' }))
+      return
+    }
+
+    // 插件路由（在固定路由之前检查）
+    const pluginRoute = this.pluginRoutes.find(
+      r => r.method === req.method && r.path === path
+    )
+    if (pluginRoute) {
+      try {
+        Promise.resolve(pluginRoute.handler(req, res)).catch(err => {
+          log.error(`Plugin route error: ${path}`, err)
+          if (!res.headersSent) {
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Plugin route error' }))
+          }
+        })
+      } catch (err) {
+        log.error(`Plugin route error: ${path}`, err)
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Plugin route error' }))
+        }
+      }
       return
     }
 
