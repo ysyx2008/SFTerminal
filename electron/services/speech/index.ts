@@ -61,20 +61,6 @@ function getUnpackedNodeModules(): string {
   }
 }
 
-/**
- * 获取 sherpa-onnx 平台原生库目录（用于设置动态库搜索路径）
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function getSherpaLibPath(): string {
-  const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
-  const platformPkg: Record<string, string> = {
-    darwin: `sherpa-onnx-darwin-${arch}`,
-    win32: `sherpa-onnx-win-${arch}`,
-    linux: `sherpa-onnx-linux-${arch}`,
-  }
-  const pkg = platformPkg[process.platform] || `sherpa-onnx-${process.platform}-${arch}`
-  return path.join(getUnpackedNodeModules(), pkg)
-}
 
 // ── Windows Unicode 路径兼容 ──────────────────────────────────
 // Windows 原生 DLL 加载器在路径含非 ASCII 字符时可能失败（ERROR_MOD_NOT_FOUND）。

@@ -134,7 +134,7 @@ async function wecomWrite(
 
 async function readCalendar(args: WeComReadArgs, executor: ToolExecutorConfig): Promise<ToolResult> {
   const { corpId, corpSecret } = getCredentials()
-  const { calendar_id, event_id, start_date: _start_date, end_date: _end_date, limit } = args
+  const { calendar_id, event_id, limit } = args
 
   // 获取单个日程详情
   if (event_id) {
