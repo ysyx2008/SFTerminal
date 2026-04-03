@@ -497,6 +497,15 @@ export function detectContextReference(userMessage: string): boolean {
   return patterns.some(p => p.test(userMessage))
 }
 
+// ==================== 构建选项 ====================
+
+export interface TaskHistoryOptions {
+  /** 最多取几条任务（默认不限，取决于 token 预算） */
+  maxTasks?: number
+  /** 强制最低压缩级别（默认按 getMinCompressionLevel 规则） */
+  minCompressionLevel?: CompressionLevel
+}
+
 // ==================== 核心构建函数 ====================
 
 /**
@@ -505,7 +514,8 @@ export function detectContextReference(userMessage: string): boolean {
 export function buildRecentTasksContext(
   taskMemoryStore: TaskMemoryStore,
   budget: number,
-  userMessage?: string
+  userMessage?: string,
+  options?: TaskHistoryOptions
 ): ContextBuildResult {
   const result: ContextBuildResult = {
     recentTaskMessages: [],
@@ -535,12 +545,17 @@ export function buildRecentTasksContext(
   
   // 获取按时间顺序的任务（最近的在前）
   const tasks = taskMemoryStore.getTasksInOrder()
-  result.stats.totalTasks = tasks.length
+  const taskLimit = options?.maxTasks ? Math.min(options.maxTasks, tasks.length) : tasks.length
+  result.stats.totalTasks = taskLimit
   
-  for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
+  const forcedMinLevel = options?.minCompressionLevel
+  
+  for (let taskIndex = 0; taskIndex < taskLimit; taskIndex++) {
     const task = tasks[taskIndex]
-    // AI 建议的压缩级别优先，程序规则 fallback
-    const minLevel = task.aiSuggestedLevel ?? getMinCompressionLevel(task, taskIndex)
+    const ruleLevel = task.aiSuggestedLevel ?? getMinCompressionLevel(task, taskIndex)
+    const minLevel = forcedMinLevel !== undefined
+      ? Math.max(ruleLevel, forcedMinLevel) as CompressionLevel
+      : ruleLevel
     let placed = false
     
     // 尝试各个压缩级别（从完整到精简）
@@ -615,9 +630,10 @@ export function buildRecentTasksContext(
 export function buildTaskHistoryContext(
   taskMemoryStore: TaskMemoryStore,
   contextLength: number,
-  userMessage: string
+  userMessage: string,
+  options?: TaskHistoryOptions
 ): ContextBuildResult {
   const budget = calculateBudget(contextLength)
-  return buildRecentTasksContext(taskMemoryStore, budget.recentTasks, userMessage)
+  return buildRecentTasksContext(taskMemoryStore, budget.recentTasks, userMessage, options)
 }
 

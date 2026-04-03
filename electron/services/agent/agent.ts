@@ -33,7 +33,7 @@ import { TaskMemoryStore } from './task-memory'
 import { getBondService } from '../bond.service'
 import type { ToolExecutorConfig, ToolResult } from './tools/types'
 import { executeTool } from './tools/index'
-import { buildTaskHistoryContext } from './context-builder'
+import { buildTaskHistoryContext, type TaskHistoryOptions } from './context-builder'
 import { getKnowledgeService } from '../knowledge'
 import { getContextKnowledgeService } from '../knowledge/context-knowledge'
 import { getWatchService } from '../watch/watch.service'
@@ -1078,7 +1078,10 @@ export abstract class Agent {
     
     if (this.taskMemory.getTaskCount() > 0) {
       const contextLength = this.getContextLength()
-      const contextResult = buildTaskHistoryContext(this.taskMemory, contextLength, message)
+      const historyOptions: TaskHistoryOptions | undefined = run.context.wakeup
+        ? { maxTasks: 5, minCompressionLevel: 3 }
+        : undefined
+      const contextResult = buildTaskHistoryContext(this.taskMemory, contextLength, message, historyOptions)
       
       recentTaskMessages = contextResult.recentTaskMessages
       if (contextResult.taskSummarySection) {
