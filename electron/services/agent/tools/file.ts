@@ -18,7 +18,9 @@ import { VISION_IMAGE_EXTENSIONS, IMAGE_MIME_TYPES, CONVERTIBLE_IMAGE_EXTENSIONS
 
 function expandTilde(filePath: string): string {
   if (filePath === '~') return os.homedir()
-  if (filePath.startsWith('~/')) return path.join(os.homedir(), filePath.slice(2))
+  if (filePath.startsWith('~/') || filePath.startsWith('~\\')) {
+    return path.join(os.homedir(), filePath.slice(2))
+  }
   return filePath
 }
 

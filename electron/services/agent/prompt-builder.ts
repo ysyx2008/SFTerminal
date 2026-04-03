@@ -552,6 +552,7 @@ export class PromptBuilder {
       this.isAssistant ? `**禁止的命令**：vim/vi/nano/emacs（用 \`${this.writeFileTool}\`）` : '',
       this.buildFileSearchRule(),
       '**文件编辑**：使用 `edit_file` 前必须先 `read_file` 查看目标文件，old_text 从输出中精确复制（去掉行号前缀）。read_file 输出带行号（格式 `行号|内容`），也可用 `write_text_file(mode="replace_lines")` 按行号范围替换。',
+      this.buildWindowsPathRule(),
       '**临时文件清理**：任务过程中创建的所有临时文件，使用完毕后及时清除',
       this.buildExecutionGuide(),
       this.buildBehaviorRules(),
@@ -581,6 +582,14 @@ export class PromptBuilder {
       '- **禁止**通过任何方式发送密码，遇到密码提示让用户自行输入',
       '- 连续失败 2-3 次后停止，报告问题而非无限重试',
     ].join('\n')
+  }
+
+  private buildWindowsPathRule(): string {
+    if (!this.osType.toLowerCase().includes('windows')) return ''
+    const hostId = this.context.hostId || 'local'
+    const profile = this.hostProfileService?.getProfile(hostId)
+    const example = profile?.homeDir ? `（如 \`${profile.homeDir}\\Documents\\...\`）` : ''
+    return `**Windows 路径规范**：当前为 Windows 系统，\`~\` 在 cmd/PowerShell 中不可靠。文件路径请始终使用绝对路径${example}，不要使用 \`~/...\` 形式。`
   }
 
   private buildFileSearchRule(): string {
