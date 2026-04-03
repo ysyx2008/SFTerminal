@@ -19,7 +19,8 @@ import {
   VerticalAlignTable,
   ShadingType,
   convertInchesToTwip,
-  LevelFormat
+  LevelFormat,
+  LevelSuffix
 } from 'docx'
 import { marked, Token, Tokens } from 'marked'
 import JSZip from 'jszip'
@@ -80,6 +81,8 @@ export interface NumberingRule {
     indent?: number
     /** 对应的 Word Heading 级别（1-6）。设置后使用文档级别的 Heading 样式，而非内联格式 */
     headingLevel?: number
+    /** 多级编号层级（0-based）。设置后去除文本中的编号前缀，改用 Word 原生自动编号 */
+    numberingLevel?: number
   }
 }
 
@@ -188,10 +191,36 @@ export interface WordStyleConfig {
         size?: number
         bold?: boolean
         align?: 'left' | 'center' | 'right' | 'justify'
+        /** 首行缩进（字符数）。用于制度文件的"条"级标题等需要缩进的 Heading */
+        indent?: number
+        /** 段前间距（twips，默认 240 = 12pt）。设为 0 可让标题与正文间距一致 */
+        spacingBefore?: number
+        /** 段后间距（twips，默认 120 = 6pt） */
+        spacingAfter?: number
       }
     }
     /** 编号层级规则（按优先级排序，先匹配的优先） */
     numberingRules?: NumberingRule[]
+    /** 多级自动编号定义（如 章→节→条→款）。
+     * 生成 Word 原生多级列表，增删段落时编号自动调整 */
+    multiLevelNumbering?: {
+      levels: {
+        /** 编号格式（OpenXML numFmt 值，如 'chineseCounting'、'decimal'） */
+        format: string
+        /** 显示文本，含层级占位符（%1, %2, ...），如 '第%1章\u3000' */
+        text: string
+        /** 编号对齐方式 */
+        alignment?: 'left' | 'center' | 'right'
+        /** 编号后的分隔符。默认 'nothing'（分隔符已含在 text 中） */
+        suffix?: 'nothing' | 'tab' | 'space'
+        /** 重启行为：undefined = 上级变化时重启（默认），0 = 永不重启（如"条"跨章连续编号） */
+        restart?: number
+        /** 段落缩进（twips） */
+        indent?: { left?: number; hanging?: number; firstLine?: number }
+        /** 编号前缀的字符格式（如加粗），独立于段落正文格式 */
+        run?: { bold?: boolean; font?: string; fontAscii?: string; size?: number }
+      }[]
+    }
     /** 表格样式 */
     table?: {
       /** 表头底色（十六进制，如 "4472C4"） */
@@ -253,13 +282,16 @@ interface DocxBuildContext {
       text: string
       alignment: (typeof AlignmentType)[keyof typeof AlignmentType]
       start?: number
+      suffix?: (typeof LevelSuffix)[keyof typeof LevelSuffix]
       style?: {
         run?: Record<string, unknown>
-        paragraph?: { indent: { left: number; hanging: number } }
+        paragraph?: { indent: Record<string, unknown> }
       }
     }[]
   }[]
   orderedListCounter: number
+  /** 多级自动编号的引用名称（由 multiLevelNumbering 生成） */
+  multiLevelRef?: string
 }
 
 /**
@@ -461,6 +493,69 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
       blockquote: { borderColor: '999999', italic: true, color: '333333' }
     }
   },
+  // 企业制度文件（章→节→条→款/项，参照立法技术规范编号体系）
+  regulation: {
+    name: '制度文件',
+    sourceType: 'preset',
+    config: {
+      page: {
+        size: 'a4',
+        marginTop: 1440,
+        marginBottom: 1440,
+        marginLeft: 1800,
+        marginRight: 1800
+      },
+      font: '仿宋',
+      fontAscii: '仿宋',
+      fontSize: 12,
+      lineSpacing: 1.5,
+      textAlign: 'justify',
+      firstLineIndent: true,
+      firstLineIndentChars: 2,
+      title: { font: '黑体', fontAscii: '黑体', size: 15, bold: true, align: 'center' },
+      headings: {
+        1: { font: '仿宋', fontAscii: '仿宋', size: 12, bold: true, align: 'center' },
+        2: { font: '仿宋', fontAscii: '仿宋', size: 12, bold: true, align: 'center' },
+        3: { font: '仿宋', fontAscii: '仿宋', size: 12, bold: false, indent: 2, spacingBefore: 0, spacingAfter: 0 },
+        4: { font: '仿宋', fontAscii: '仿宋', size: 12, bold: false, indent: 2, spacingBefore: 0, spacingAfter: 0 },
+        5: { font: '仿宋', fontAscii: '仿宋', size: 12, bold: false },
+        6: { font: '仿宋', fontAscii: '仿宋', size: 12, bold: false }
+      },
+      multiLevelNumbering: {
+        levels: [
+          // Level 0: 章 — "第一章　"、"第二章　"...（段落居中由 Heading1 样式控制）
+          { format: 'chineseCounting', text: '第%1章\u3000', alignment: 'left', indent: { left: 0, hanging: 0 }, run: { bold: true } },
+          // Level 1: 节 — "第一节　"、"第二节　"...（段落居中由 Heading2 样式控制）
+          { format: 'chineseCounting', text: '第%2节\u3000', alignment: 'left', indent: { left: 0, hanging: 0 }, run: { bold: true } },
+          // Level 2: 条 — "第一条　"、"第二条　"...（跨章连续编号）
+          { format: 'chineseCounting', text: '第%3条\u3000', restart: 0, indent: { firstLine: 480 }, run: { bold: true } },
+          // Level 3: 款 — "（一）"、"（二）"...（每条重新开始）
+          { format: 'chineseCounting', text: '\uff08%4\uff09', indent: { firstLine: 480 } },
+          // Level 4: 项 — "1．"、"2．"...（每款重新开始）
+          { format: 'decimal', text: '%5\uff0e', indent: { firstLine: 480 } }
+        ]
+      },
+      numberingRules: [
+        { pattern: '^第[一二三四五六七八九十百千万]+章', style: { headingLevel: 1, numberingLevel: 0, indent: 0 } },
+        { pattern: '^第[一二三四五六七八九十百]+节', style: { headingLevel: 2, numberingLevel: 1, indent: 0 } },
+        { pattern: '^第[一二三四五六七八九十百千万]+条', style: { headingLevel: 3, numberingLevel: 2, indent: 0 } },
+        { pattern: '^（[一二三四五六七八九十]+）', style: { headingLevel: 4, numberingLevel: 3, indent: 0 } },
+        { pattern: '^\\d+[.．\uff0e]', style: { numberingLevel: 4, indent: 0 } }
+      ],
+      table: {
+        headerBackground: 'F2F2F2',
+        headerBold: true,
+        headerAlign: 'center',
+        borderColor: '000000',
+        borderSize: 4,
+        font: '仿宋',
+        fontAscii: '仿宋',
+        fontSize: 10.5
+      },
+      codeBlock: { font: 'Courier New', fontSize: 10, background: 'F5F5F5' },
+      blockquote: { borderColor: '999999', italic: false, color: '333333' }
+    }
+  },
   // 会议纪要（中国企业常用格式）
   meeting: {
     name: '会议纪要',
@@ -634,19 +729,24 @@ function buildDocumentStyles(style: WordStyleConfig): { default: Record<string, 
     const key = headingKeys[level - 1]
 
     if (hConfig) {
+      const hFontSize = hConfig.size || config.fontSize || 12
+      const hIndent = hConfig.indent != null
+        ? { firstLine: hConfig.indent * hFontSize * 20 }
+        : undefined
       defaultStyles[key] = {
         run: {
           font: buildFontConfig(
             hConfig.font || config.font,
             hConfig.fontAscii || config.fontAscii
           ),
-          size: (hConfig.size || config.fontSize || 12) * 2,
+          size: hFontSize * 2,
           bold: hConfig.bold ?? true,
           color: '000000'
         },
         paragraph: {
           alignment: getAlignment(hConfig.align),
-          spacing: { before: 240, after: 120, ...lineSpacing }
+          spacing: { before: hConfig.spacingBefore ?? 240, after: hConfig.spacingAfter ?? 120, ...lineSpacing },
+          indent: hIndent
         }
       }
     } else {
@@ -761,6 +861,115 @@ async function injectTheme(buffer: Buffer, config: WordStyleConfig['config']): P
 }
 
 /**
+ * 向 docx buffer 注入 lvlRestart 属性，控制多级编号的重启行为
+ * docx 库不支持 lvlRestart，需在打包后通过 XML 修补
+ * restart=0 表示永不重启（如"条"跨章连续编号）
+ */
+async function patchNumberingRestart(
+  buffer: Buffer,
+  mlConfig: NonNullable<WordStyleConfig['config']['multiLevelNumbering']>
+): Promise<Buffer> {
+  const restartLevels = mlConfig.levels
+    .map((lvl, idx) => ({ idx, restart: lvl.restart }))
+    .filter(l => l.restart != null)
+  if (restartLevels.length === 0) return buffer
+
+  const zip = await JSZip.loadAsync(buffer)
+  const numFile = zip.file('word/numbering.xml')
+  if (!numFile) return buffer
+
+  let numXml = await numFile.async('string')
+
+  // 找到包含我们多级编号的 abstractNum 块（通过 chineseCounting 格式识别）
+  const abstractBlocks = numXml.match(/<w:abstractNum[\s\S]*?<\/w:abstractNum>/g) || []
+  for (const block of abstractBlocks) {
+    if (!block.includes('w:val="chineseCounting"')) continue
+
+    let patched = block
+    for (const { idx, restart } of restartLevels) {
+      const lvlPattern = new RegExp(`(<w:lvl w:ilvl="${idx}"[^>]*>)`)
+      patched = patched.replace(lvlPattern, `$1<w:lvlRestart w:val="${restart}"/>`)
+    }
+    numXml = numXml.replace(block, patched)
+    break
+  }
+
+  zip.file('word/numbering.xml', numXml)
+  return await zip.generateAsync({ type: 'nodebuffer' }) as Buffer
+}
+
+/**
+ * 将 Heading 样式绑定到多级编号定义，使用户在 Word 中切换标题级别时编号自动跟随。
+ * 通过向 styles.xml 的 Heading pPr 中注入 numPr（numId + ilvl）实现。
+ */
+async function linkHeadingStylesToNumbering(
+  buffer: Buffer,
+  config: WordStyleConfig['config']
+): Promise<Buffer> {
+  const rules = config.numberingRules
+  if (!rules || !config.multiLevelNumbering) return buffer
+
+  const headingToLevel = new Map<number, number>()
+  for (const rule of rules) {
+    if (rule.style.headingLevel && rule.style.numberingLevel != null) {
+      headingToLevel.set(rule.style.headingLevel, rule.style.numberingLevel)
+    }
+  }
+  if (headingToLevel.size === 0) return buffer
+
+  const zip = await JSZip.loadAsync(buffer)
+
+  const numFile = zip.file('word/numbering.xml')
+  if (!numFile) return buffer
+  let numXml = await numFile.async('string')
+
+  // 逐块匹配 abstractNum，找到包含 chineseCounting 的那个（与 patchNumberingRestart 同策略）
+  const abstractBlocks = numXml.match(/<w:abstractNum[\s\S]*?<\/w:abstractNum>/g) || []
+  let abstractNumId: string | null = null
+  for (const block of abstractBlocks) {
+    if (!block.includes('w:val="chineseCounting"')) continue
+    const idMatch = block.match(/w:abstractNumId="(\d+)"/)
+    if (idMatch) { abstractNumId = idMatch[1]; break }
+  }
+  if (!abstractNumId) return buffer
+
+  // 查找或创建 num 元素（当所有编号级别都由 heading 样式携带时，可能无段落引用，docx 库不生成 num）
+  let numId: string
+  const numIdMatch = numXml.match(new RegExp(
+    `<w:num w:numId="(\\d+)"[^>]*>[\\s\\S]*?<w:abstractNumId w:val="${abstractNumId}"`
+  ))
+  if (numIdMatch) {
+    numId = numIdMatch[1]
+  } else {
+    const existingIds = [...numXml.matchAll(/w:numId="(\d+)"/g)].map(m => parseInt(m[1]))
+    numId = String(existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1)
+    numXml = numXml.replace(
+      '</w:numbering>',
+      `<w:num w:numId="${numId}"><w:abstractNumId w:val="${abstractNumId}"/></w:num></w:numbering>`
+    )
+    zip.file('word/numbering.xml', numXml)
+  }
+
+  const stylesFile = zip.file('word/styles.xml')
+  if (!stylesFile) return buffer
+  let stylesXml = await stylesFile.async('string')
+
+  for (const [headingLevel, numLevel] of headingToLevel) {
+    const headingId = `Heading${headingLevel}`
+    const numPr = `<w:numPr><w:ilvl w:val="${numLevel}"/><w:numId w:val="${numId}"/></w:numPr>`
+    const pprPattern = new RegExp(
+      `(<w:style[^>]*w:styleId="${headingId}"[\\s\\S]*?<w:pPr>)`
+    )
+    if (pprPattern.test(stylesXml)) {
+      stylesXml = stylesXml.replace(pprPattern, `$1${numPr}`)
+    }
+  }
+
+  zip.file('word/styles.xml', stylesXml)
+  return await zip.generateAsync({ type: 'nodebuffer' }) as Buffer
+}
+
+/**
  * 将 Markdown 转换为 Word 文档
  */
 export async function markdownToDocx(
@@ -789,6 +998,46 @@ export async function markdownToDocx(
   
   // 构建上下文（收集有序列表编号定义）
   const ctx: DocxBuildContext = { numberingConfigs: [], orderedListCounter: 0 }
+
+  // 注册多级自动编号（如制度文件的 章→节→条→款 体系）
+  if (styleConfig.config.multiLevelNumbering) {
+    const mlConfig = styleConfig.config.multiLevelNumbering
+    ctx.multiLevelRef = 'multi-level-auto'
+    const formatMap: Record<string, (typeof LevelFormat)[keyof typeof LevelFormat]> = {
+      chineseCounting: LevelFormat.CHINESE_COUNTING,
+      chineseCountingThousand: LevelFormat.CHINESE_COUNTING_THOUSAND,
+      decimal: LevelFormat.DECIMAL,
+      upperRoman: LevelFormat.UPPER_ROMAN,
+      lowerRoman: LevelFormat.LOWER_ROMAN,
+      none: LevelFormat.NONE
+    }
+    const suffixMap: Record<string, (typeof LevelSuffix)[keyof typeof LevelSuffix]> = {
+      nothing: LevelSuffix.NOTHING,
+      tab: LevelSuffix.TAB,
+      space: LevelSuffix.SPACE
+    }
+    ctx.numberingConfigs.push({
+      reference: ctx.multiLevelRef,
+      levels: mlConfig.levels.map((lvl, idx) => ({
+        level: idx,
+        format: formatMap[lvl.format] || LevelFormat.DECIMAL,
+        text: lvl.text,
+        alignment: getAlignment(lvl.alignment),
+        suffix: suffixMap[lvl.suffix || 'nothing'] || LevelSuffix.NOTHING,
+        start: 1,
+        style: (lvl.indent || lvl.run) ? {
+          paragraph: lvl.indent ? { indent: lvl.indent } : undefined,
+          run: lvl.run ? {
+            bold: lvl.run.bold,
+            font: lvl.run.font || lvl.run.fontAscii
+              ? buildFontConfig(lvl.run.font, lvl.run.fontAscii)
+              : undefined,
+            size: lvl.run.size ? lvl.run.size * 2 : undefined
+          } : undefined
+        } : undefined
+      }))
+    })
+  }
   
   // 转换为 docx 元素
   const children = tokensToDocxElements(tokens, styleConfig, ctx)
@@ -827,6 +1076,13 @@ export async function markdownToDocx(
   // 注入自定义主题，确保 Word 不会用默认主题颜色/字体覆盖自定义样式
   buffer = await injectTheme(buffer, styleConfig.config)
 
+  // 修补多级编号的重启行为（docx 库不支持 lvlRestart，需后处理）
+  if (styleConfig.config.multiLevelNumbering) {
+    buffer = await patchNumberingRestart(buffer, styleConfig.config.multiLevelNumbering)
+    // 将编号定义绑定到 Heading 样式，使用户在 Word 中切换标题级别时编号自动跟随
+    buffer = await linkHeadingStylesToNumbering(buffer, styleConfig.config)
+  }
+
   return buffer
 }
 
@@ -853,9 +1109,9 @@ function tokensToDocxElements(
         // 使用 token.tokens（已解析的内联格式），而不是 token.text（原始文本）
         const paragraphToken = token as Tokens.Paragraph
         if (paragraphToken.tokens && paragraphToken.tokens.length > 0) {
-          elements.push(createParagraphFromTokens(paragraphToken.tokens, style))
+          elements.push(createParagraphFromTokens(paragraphToken.tokens, style, ctx))
         } else {
-          elements.push(createParagraph(paragraphToken.text, style))
+          elements.push(createParagraph(paragraphToken.text, style, ctx))
         }
         lastAlign = undefined
         break
@@ -954,7 +1210,7 @@ function createHeading(token: Tokens.Heading, _style: WordStyleConfig): Paragrap
 /**
  * 从已解析的 tokens 创建段落（用于正确处理粗体、斜体等内联格式）
  */
-function createParagraphFromTokens(tokens: Token[], style: WordStyleConfig): Paragraph {
+function createParagraphFromTokens(tokens: Token[], style: WordStyleConfig, ctx?: DocxBuildContext): Paragraph {
   // 获取原始文本用于检测编号规则
   const rawText = tokens.map(t => 'text' in t ? t.text : '').join('')
   const decodedText = decodeHtmlEntities(rawText)
@@ -964,6 +1220,18 @@ function createParagraphFromTokens(tokens: Token[], style: WordStyleConfig): Par
   
   if (matchedRule) {
     const ruleStyle = matchedRule.style
+
+    // 原生自动编号：去除文本中的编号前缀，改用 Word 多级列表自动生成
+    if (ruleStyle.numberingLevel != null && ctx?.multiLevelRef) {
+      const strippedTokens = stripNumberingPrefix(tokens, matchedRule.pattern)
+      return new Paragraph({
+        heading: ruleStyle.headingLevel ? HEADING_LEVEL_MAP[ruleStyle.headingLevel] : undefined,
+        // 有 headingLevel 时编号由样式定义携带（linkHeadingStylesToNumbering 注入），
+        // 切换 Heading 级别时编号自动跟随；无 headingLevel 的级别（如项）仍用段落级编号
+        numbering: ruleStyle.headingLevel ? undefined : { reference: ctx.multiLevelRef, level: ruleStyle.numberingLevel },
+        children: parseInlineTokens(strippedTokens, {})
+      })
+    }
 
     // 指定了 headingLevel → 使用文档级别的 Heading 样式，格式由样式定义控制
     if (ruleStyle.headingLevel && HEADING_LEVEL_MAP[ruleStyle.headingLevel]) {
@@ -1021,9 +1289,44 @@ function matchNumberingRule(text: string, style: WordStyleConfig): NumberingRule
 }
 
 /**
+ * 去除 Token 列表开头的编号前缀（如"第一章　"、"（一）"），用于 Word 原生编号替换
+ * 匹配 pattern 及其后的空白字符，从 tokens 文本的开头剥离
+ */
+function stripNumberingPrefix(tokens: Token[], pattern: string): Token[] {
+  const rawText = tokens.map(t => 'text' in t ? t.text : '').join('')
+  const decoded = decodeHtmlEntities(rawText)
+  const regex = new RegExp(pattern + '[\\s\\u3000]*')
+  const match = regex.exec(decoded.trim())
+  if (!match) return tokens
+
+  const leadingSpaces = decoded.length - decoded.trimStart().length
+  let remaining = leadingSpaces + match[0].length
+
+  const result: Token[] = []
+  for (const token of tokens) {
+    if (remaining <= 0) {
+      result.push(token)
+      continue
+    }
+    if (token.type === 'text' && 'text' in token) {
+      const text = decodeHtmlEntities(token.text)
+      if (text.length <= remaining) {
+        remaining -= text.length
+      } else {
+        result.push({ ...token, text: text.slice(remaining) } as Token)
+        remaining = 0
+      }
+    } else {
+      result.push(token)
+    }
+  }
+  return result
+}
+
+/**
  * 创建段落
  */
-function createParagraph(text: string, style: WordStyleConfig): Paragraph {
+function createParagraph(text: string, style: WordStyleConfig, ctx?: DocxBuildContext): Paragraph {
   const decodedText = decodeHtmlEntities(text)
   
   // 检查是否匹配编号规则
@@ -1031,6 +1334,17 @@ function createParagraph(text: string, style: WordStyleConfig): Paragraph {
   
   if (matchedRule) {
     const ruleStyle = matchedRule.style
+
+    // 原生自动编号：去除编号前缀，改用 Word 多级列表
+    if (ruleStyle.numberingLevel != null && ctx?.multiLevelRef) {
+      const regex = new RegExp(matchedRule.pattern + '[\\s\\u3000]*')
+      const strippedText = decodedText.trim().replace(regex, '')
+      return new Paragraph({
+        heading: ruleStyle.headingLevel ? HEADING_LEVEL_MAP[ruleStyle.headingLevel] : undefined,
+        numbering: ruleStyle.headingLevel ? undefined : { reference: ctx.multiLevelRef, level: ruleStyle.numberingLevel },
+        children: [new TextRun({ text: strippedText })]
+      })
+    }
 
     // 指定了 headingLevel → 使用文档级别的 Heading 样式
     if (ruleStyle.headingLevel && HEADING_LEVEL_MAP[ruleStyle.headingLevel]) {
