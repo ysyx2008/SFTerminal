@@ -493,73 +493,64 @@ function cancelFreeMode() {
       </div>
       <p class="section-desc">{{ t('settings.im.description') }}</p>
 
-      <!-- 钉钉 -->
-      <div class="im-platform-card" :class="{ expanded: dingtalkExpanded, connected: dtConnected }">
-        <button class="im-platform-header" @click="dingtalkExpanded = !dingtalkExpanded">
-          <span class="im-platform-name">{{ t('settings.im.dingtalk') }}</span>
-          <span class="im-status-indicator" :class="{ connected: dtConnected, connecting: dtConnecting }">
+      <!-- 微信 -->
+      <div class="im-platform-card" :class="{ expanded: wechatExpanded, connected: wxConnected }">
+        <button class="im-platform-header" @click="wechatExpanded = !wechatExpanded">
+          <span class="im-platform-name">{{ t('settings.im.wechat') }}</span>
+          <span class="im-status-indicator" :class="{ connected: wxConnected, connecting: wxConnecting }">
             <span class="indicator-dot"></span>
-            {{ dtConnecting ? t('settings.im.connecting') : (dtConnected ? t('settings.im.connected') : t('settings.im.disconnected')) }}
+            {{ wxConnecting ? t('settings.im.connecting') : (wxConnected ? t('settings.im.connected') : t('settings.im.disconnected')) }}
           </span>
-          <span class="toggle-arrow" :class="{ open: dingtalkExpanded }">›</span>
+          <span class="toggle-arrow" :class="{ open: wechatExpanded }">›</span>
         </button>
 
-        <div v-if="dingtalkExpanded" class="im-platform-body">
+        <div v-if="wechatExpanded" class="im-platform-body">
           <div class="im-hint">
             <div class="im-hint-header">
-              <p class="hint-summary">{{ t('settings.im.dingtalkHint') }}</p>
-              <div class="im-hint-actions">
-                <button class="btn-ai-setup" @click="requestAiSetup('dingtalk')" :disabled="dtConnected">🤖 {{ t('settings.im.aiSetupBtn') }}</button>
-                <a class="im-channel-help-link" :href="t('settings.im.guideDocUrlDingtalk')" target="_blank" rel="noopener noreferrer">{{ t('settings.im.guideDetailLink') }} ↗</a>
-              </div>
+              <p class="hint-summary">{{ t('settings.im.wechatHint') }}</p>
             </div>
             <ol class="setup-steps">
-              <li>{{ t('settings.im.dingtalkStep1') }}</li>
-              <li>{{ t('settings.im.dingtalkStep2') }}</li>
-              <li>{{ t('settings.im.dingtalkStep3') }}</li>
-              <li>{{ t('settings.im.dingtalkStep4') }}</li>
+              <li>{{ t('settings.im.wechatStep1') }}</li>
+              <li>{{ t('settings.im.wechatStep2') }}</li>
+              <li>{{ t('settings.im.wechatStep3') }}</li>
             </ol>
           </div>
 
-          <div class="form-group">
-            <label class="form-label">{{ t('settings.im.clientId') }}</label>
-            <input
-              v-model="dtClientId"
-              type="text"
-              :disabled="dtConnected"
-              class="input-field"
-              placeholder="AppKey"
-            />
-          </div>
-          <div class="form-group">
-            <label class="form-label">{{ t('settings.im.clientSecret') }}</label>
-            <input
-              v-model="dtClientSecret"
-              type="password"
-              :disabled="dtConnected"
-              class="input-field"
-              placeholder="AppSecret"
-            />
+          <!-- 二维码区域 -->
+          <div v-if="wxShowQrcode && wxQrcodeUrl" class="wechat-qrcode-area">
+            <p class="qrcode-hint">{{ t('settings.im.wechatScanHint') }}</p>
+            <div class="qrcode-actions">
+              <a :href="wxQrcodeUrl" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary">
+                {{ t('settings.im.wechatOpenInBrowser') }}
+              </a>
+            </div>
           </div>
 
-          <div v-if="dtError" class="error-msg">{{ dtError }}</div>
+          <div v-if="wxError" class="error-msg">{{ wxError }}</div>
 
           <div class="im-card-actions">
-            <label class="auto-connect-label">
-              <input type="checkbox" v-model="dtAutoConnect" @change="toggleDtAutoConnect" />
+            <label v-if="wxHasToken" class="auto-connect-label">
+              <input type="checkbox" v-model="wxAutoConnect" @change="toggleWxAutoConnect" />
               <span>{{ t('settings.im.autoConnect') }}</span>
             </label>
-            <button
-              v-if="dtConnected"
-              class="btn btn-sm btn-outline-danger"
-              @click="toggleDingTalk"
-            >{{ t('settings.im.disconnect') }}</button>
-            <button
-              v-else
-              class="btn btn-sm btn-primary"
-              :disabled="dtConnecting"
-              @click="toggleDingTalk"
-            >{{ dtConnecting ? t('settings.im.connecting') : t('settings.im.connect') }}</button>
+            <template v-if="wxConnected">
+              <button class="btn btn-sm btn-outline-danger" @click="wechatDisconnect">{{ t('settings.im.disconnect') }}</button>
+              <button class="btn btn-sm btn-outline-secondary" @click="wechatLogout">{{ t('settings.im.wechatLogout') }}</button>
+            </template>
+            <template v-else-if="wxHasToken && !wxShowQrcode">
+              <button class="btn btn-sm btn-primary" :disabled="wxConnecting" @click="wechatReconnect">
+                {{ wxConnecting ? t('settings.im.connecting') : t('settings.im.connect') }}
+              </button>
+              <button class="btn btn-sm btn-outline-secondary" @click="wechatLogin" :disabled="wxConnecting">
+                {{ t('settings.im.wechatRescan') }}
+              </button>
+              <button class="btn btn-sm btn-outline-secondary" @click="wechatLogout">{{ t('settings.im.wechatLogout') }}</button>
+            </template>
+            <template v-else>
+              <button class="btn btn-sm btn-primary" :disabled="wxConnecting" @click="wechatLogin">
+                {{ wxConnecting && !wxShowQrcode ? t('settings.im.connecting') : t('settings.im.wechatLoginBtn') }}
+              </button>
+            </template>
           </div>
         </div>
       </div>
@@ -651,6 +642,147 @@ function cancelFreeMode() {
               :disabled="fsConnecting"
               @click="toggleFeishu"
             >{{ fsConnecting ? t('settings.im.connecting') : t('settings.im.connect') }}</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 钉钉 -->
+      <div class="im-platform-card" :class="{ expanded: dingtalkExpanded, connected: dtConnected }">
+        <button class="im-platform-header" @click="dingtalkExpanded = !dingtalkExpanded">
+          <span class="im-platform-name">{{ t('settings.im.dingtalk') }}</span>
+          <span class="im-status-indicator" :class="{ connected: dtConnected, connecting: dtConnecting }">
+            <span class="indicator-dot"></span>
+            {{ dtConnecting ? t('settings.im.connecting') : (dtConnected ? t('settings.im.connected') : t('settings.im.disconnected')) }}
+          </span>
+          <span class="toggle-arrow" :class="{ open: dingtalkExpanded }">›</span>
+        </button>
+
+        <div v-if="dingtalkExpanded" class="im-platform-body">
+          <div class="im-hint">
+            <div class="im-hint-header">
+              <p class="hint-summary">{{ t('settings.im.dingtalkHint') }}</p>
+              <div class="im-hint-actions">
+                <button class="btn-ai-setup" @click="requestAiSetup('dingtalk')" :disabled="dtConnected">🤖 {{ t('settings.im.aiSetupBtn') }}</button>
+                <a class="im-channel-help-link" :href="t('settings.im.guideDocUrlDingtalk')" target="_blank" rel="noopener noreferrer">{{ t('settings.im.guideDetailLink') }} ↗</a>
+              </div>
+            </div>
+            <ol class="setup-steps">
+              <li>{{ t('settings.im.dingtalkStep1') }}</li>
+              <li>{{ t('settings.im.dingtalkStep2') }}</li>
+              <li>{{ t('settings.im.dingtalkStep3') }}</li>
+              <li>{{ t('settings.im.dingtalkStep4') }}</li>
+            </ol>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">{{ t('settings.im.clientId') }}</label>
+            <input
+              v-model="dtClientId"
+              type="text"
+              :disabled="dtConnected"
+              class="input-field"
+              placeholder="AppKey"
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('settings.im.clientSecret') }}</label>
+            <input
+              v-model="dtClientSecret"
+              type="password"
+              :disabled="dtConnected"
+              class="input-field"
+              placeholder="AppSecret"
+            />
+          </div>
+
+          <div v-if="dtError" class="error-msg">{{ dtError }}</div>
+
+          <div class="im-card-actions">
+            <label class="auto-connect-label">
+              <input type="checkbox" v-model="dtAutoConnect" @change="toggleDtAutoConnect" />
+              <span>{{ t('settings.im.autoConnect') }}</span>
+            </label>
+            <button
+              v-if="dtConnected"
+              class="btn btn-sm btn-outline-danger"
+              @click="toggleDingTalk"
+            >{{ t('settings.im.disconnect') }}</button>
+            <button
+              v-else
+              class="btn btn-sm btn-primary"
+              :disabled="dtConnecting"
+              @click="toggleDingTalk"
+            >{{ dtConnecting ? t('settings.im.connecting') : t('settings.im.connect') }}</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 企业微信 -->
+      <div class="im-platform-card" :class="{ expanded: wecomExpanded, connected: wcConnected }">
+        <button class="im-platform-header" @click="wecomExpanded = !wecomExpanded">
+          <span class="im-platform-name">{{ t('settings.im.wecom') }}</span>
+          <span class="im-status-indicator" :class="{ connected: wcConnected, connecting: wcConnecting }">
+            <span class="indicator-dot"></span>
+            {{ wcConnecting ? t('settings.im.connecting') : (wcConnected ? t('settings.im.connected') : t('settings.im.disconnected')) }}
+          </span>
+          <span class="toggle-arrow" :class="{ open: wecomExpanded }">›</span>
+        </button>
+
+        <div v-if="wecomExpanded" class="im-platform-body">
+          <div class="im-hint">
+            <div class="im-hint-header">
+              <p class="hint-summary">{{ t('settings.im.wecomHint') }}</p>
+              <div class="im-hint-actions">
+                <button class="btn-ai-setup" @click="requestAiSetup('wecom')" :disabled="wcConnected">🤖 {{ t('settings.im.aiSetupBtn') }}</button>
+                <a class="im-channel-help-link" :href="t('settings.im.guideDocUrlWecom')" target="_blank" rel="noopener noreferrer">{{ t('settings.im.guideDetailLink') }} ↗</a>
+              </div>
+            </div>
+            <ol class="setup-steps">
+              <li>{{ t('settings.im.wecomStep1') }}</li>
+              <li>{{ t('settings.im.wecomStep2') }}</li>
+              <li>{{ t('settings.im.wecomStep3') }}</li>
+            </ol>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">{{ t('settings.im.wecomBotId') }}</label>
+            <input
+              v-model="wcBotId"
+              type="text"
+              :disabled="wcConnected"
+              class="input-field"
+              placeholder="Bot ID"
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('settings.im.wecomSecret') }}</label>
+            <input
+              v-model="wcSecret"
+              type="password"
+              :disabled="wcConnected"
+              class="input-field"
+              placeholder="Secret"
+            />
+          </div>
+
+          <div v-if="wcError" class="error-msg">{{ wcError }}</div>
+
+          <div class="im-card-actions">
+            <label class="auto-connect-label">
+              <input type="checkbox" v-model="wcAutoConnect" @change="toggleWcAutoConnect" />
+              <span>{{ t('settings.im.autoConnect') }}</span>
+            </label>
+            <button
+              v-if="wcConnected"
+              class="btn btn-sm btn-outline-danger"
+              @click="toggleWeCom"
+            >{{ t('settings.im.disconnect') }}</button>
+            <button
+              v-else
+              class="btn btn-sm btn-primary"
+              :disabled="wcConnecting"
+              @click="toggleWeCom"
+            >{{ wcConnecting ? t('settings.im.connecting') : t('settings.im.connect') }}</button>
           </div>
         </div>
       </div>
@@ -783,138 +915,6 @@ function cancelFreeMode() {
               :disabled="tgConnecting"
               @click="toggleTelegram"
             >{{ tgConnecting ? t('settings.im.connecting') : t('settings.im.connect') }}</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- 企业微信 -->
-      <div class="im-platform-card" :class="{ expanded: wecomExpanded, connected: wcConnected }">
-        <button class="im-platform-header" @click="wecomExpanded = !wecomExpanded">
-          <span class="im-platform-name">{{ t('settings.im.wecom') }}</span>
-          <span class="im-status-indicator" :class="{ connected: wcConnected, connecting: wcConnecting }">
-            <span class="indicator-dot"></span>
-            {{ wcConnecting ? t('settings.im.connecting') : (wcConnected ? t('settings.im.connected') : t('settings.im.disconnected')) }}
-          </span>
-          <span class="toggle-arrow" :class="{ open: wecomExpanded }">›</span>
-        </button>
-
-        <div v-if="wecomExpanded" class="im-platform-body">
-          <div class="im-hint">
-            <div class="im-hint-header">
-              <p class="hint-summary">{{ t('settings.im.wecomHint') }}</p>
-              <div class="im-hint-actions">
-                <button class="btn-ai-setup" @click="requestAiSetup('wecom')" :disabled="wcConnected">🤖 {{ t('settings.im.aiSetupBtn') }}</button>
-                <a class="im-channel-help-link" :href="t('settings.im.guideDocUrlWecom')" target="_blank" rel="noopener noreferrer">{{ t('settings.im.guideDetailLink') }} ↗</a>
-              </div>
-            </div>
-            <ol class="setup-steps">
-              <li>{{ t('settings.im.wecomStep1') }}</li>
-              <li>{{ t('settings.im.wecomStep2') }}</li>
-              <li>{{ t('settings.im.wecomStep3') }}</li>
-            </ol>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">{{ t('settings.im.wecomBotId') }}</label>
-            <input
-              v-model="wcBotId"
-              type="text"
-              :disabled="wcConnected"
-              class="input-field"
-              placeholder="Bot ID"
-            />
-          </div>
-          <div class="form-group">
-            <label class="form-label">{{ t('settings.im.wecomSecret') }}</label>
-            <input
-              v-model="wcSecret"
-              type="password"
-              :disabled="wcConnected"
-              class="input-field"
-              placeholder="Secret"
-            />
-          </div>
-
-          <div v-if="wcError" class="error-msg">{{ wcError }}</div>
-
-          <div class="im-card-actions">
-            <label class="auto-connect-label">
-              <input type="checkbox" v-model="wcAutoConnect" @change="toggleWcAutoConnect" />
-              <span>{{ t('settings.im.autoConnect') }}</span>
-            </label>
-            <button
-              v-if="wcConnected"
-              class="btn btn-sm btn-outline-danger"
-              @click="toggleWeCom"
-            >{{ t('settings.im.disconnect') }}</button>
-            <button
-              v-else
-              class="btn btn-sm btn-primary"
-              :disabled="wcConnecting"
-              @click="toggleWeCom"
-            >{{ wcConnecting ? t('settings.im.connecting') : t('settings.im.connect') }}</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- 微信 -->
-      <div class="im-platform-card" :class="{ expanded: wechatExpanded, connected: wxConnected }">
-        <button class="im-platform-header" @click="wechatExpanded = !wechatExpanded">
-          <span class="im-platform-name">{{ t('settings.im.wechat') }}</span>
-          <span class="im-status-indicator" :class="{ connected: wxConnected, connecting: wxConnecting }">
-            <span class="indicator-dot"></span>
-            {{ wxConnecting ? t('settings.im.connecting') : (wxConnected ? t('settings.im.connected') : t('settings.im.disconnected')) }}
-          </span>
-          <span class="toggle-arrow" :class="{ open: wechatExpanded }">›</span>
-        </button>
-
-        <div v-if="wechatExpanded" class="im-platform-body">
-          <div class="im-hint">
-            <div class="im-hint-header">
-              <p class="hint-summary">{{ t('settings.im.wechatHint') }}</p>
-            </div>
-            <ol class="setup-steps">
-              <li>{{ t('settings.im.wechatStep1') }}</li>
-              <li>{{ t('settings.im.wechatStep2') }}</li>
-              <li>{{ t('settings.im.wechatStep3') }}</li>
-            </ol>
-          </div>
-
-          <!-- 二维码区域 -->
-          <div v-if="wxShowQrcode && wxQrcodeUrl" class="wechat-qrcode-area">
-            <p class="qrcode-hint">{{ t('settings.im.wechatScanHint') }}</p>
-            <div class="qrcode-actions">
-              <a :href="wxQrcodeUrl" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary">
-                {{ t('settings.im.wechatOpenInBrowser') }}
-              </a>
-            </div>
-          </div>
-
-          <div v-if="wxError" class="error-msg">{{ wxError }}</div>
-
-          <div class="im-card-actions">
-            <label v-if="wxHasToken" class="auto-connect-label">
-              <input type="checkbox" v-model="wxAutoConnect" @change="toggleWxAutoConnect" />
-              <span>{{ t('settings.im.autoConnect') }}</span>
-            </label>
-            <template v-if="wxConnected">
-              <button class="btn btn-sm btn-outline-danger" @click="wechatDisconnect">{{ t('settings.im.disconnect') }}</button>
-              <button class="btn btn-sm btn-outline-secondary" @click="wechatLogout">{{ t('settings.im.wechatLogout') }}</button>
-            </template>
-            <template v-else-if="wxHasToken && !wxShowQrcode">
-              <button class="btn btn-sm btn-primary" :disabled="wxConnecting" @click="wechatReconnect">
-                {{ wxConnecting ? t('settings.im.connecting') : t('settings.im.connect') }}
-              </button>
-              <button class="btn btn-sm btn-outline-secondary" @click="wechatLogin" :disabled="wxConnecting">
-                {{ t('settings.im.wechatRescan') }}
-              </button>
-              <button class="btn btn-sm btn-outline-secondary" @click="wechatLogout">{{ t('settings.im.wechatLogout') }}</button>
-            </template>
-            <template v-else>
-              <button class="btn btn-sm btn-primary" :disabled="wxConnecting" @click="wechatLogin">
-                {{ wxConnecting && !wxShowQrcode ? t('settings.im.connecting') : t('settings.im.wechatLoginBtn') }}
-              </button>
-            </template>
           </div>
         </div>
       </div>
