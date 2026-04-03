@@ -2062,12 +2062,17 @@ interface Window {
       stopTelegram: () => Promise<{ success: boolean }>
       startWeCom: (config: { enabled: boolean; botId: string; secret: string }) => Promise<{ success: boolean; error?: string }>
       stopWeCom: () => Promise<{ success: boolean }>
+      wechatLogin: () => Promise<{ success: boolean; qrcodeUrl?: string; error?: string }>
+      startWeChat: () => Promise<{ success: boolean; error?: string }>
+      stopWeChat: () => Promise<{ success: boolean }>
+      wechatLogout: () => Promise<{ success: boolean }>
       getStatus: () => Promise<{
         dingtalk: { enabled: boolean; connected: boolean }
         feishu: { enabled: boolean; connected: boolean }
         slack: { enabled: boolean; connected: boolean }
         telegram: { enabled: boolean; connected: boolean }
         wecom: { enabled: boolean; connected: boolean }
+        wechat: { enabled: boolean; connected: boolean }
       }>
       getConfig: () => Promise<{
         dingtalk: { clientId: string; clientSecret: string; autoConnect: boolean }
@@ -2075,6 +2080,7 @@ interface Window {
         slack: { botToken: string; appToken: string; autoConnect: boolean }
         telegram: { botToken: string; autoConnect: boolean }
         wecom: { botId: string; secret: string; autoConnect: boolean }
+        wechat: { hasToken: boolean; autoConnect: boolean }
         executionMode: ExecutionMode
         sendProcessMessages: boolean
       }>

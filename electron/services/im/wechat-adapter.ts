@@ -25,7 +25,6 @@ const log = createLogger('WeChatAdapter')
 
 const FIXED_BASE_URL = 'https://ilinkai.weixin.qq.com'
 const DEFAULT_TIMEOUT_MS = 40_000
-const POLL_INTERVAL_MS = 1_000
 const QR_POLL_INTERVAL_MS = 2_000
 const QR_EXPIRE_MS = 180_000
 const RECONNECT_DELAY_MS = 5_000

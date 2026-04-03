@@ -338,7 +338,7 @@ import { getMigrationRunner, createBackup } from './migrations'
 import { getGatewayService, type GatewayConfig } from './services/gateway.service'
 import { BastionService } from './services/bastion.service'
 import { getIMService } from './services/im/im.service'
-import type { DingTalkConfig, FeishuConfig, SlackConfig, TelegramConfig, WeComConfig, WeChatConfig } from './services/im/types'
+import type { DingTalkConfig, FeishuConfig, SlackConfig, TelegramConfig, WeComConfig } from './services/im/types'
 import { getWorkspacePath } from './services/agent/tools/file'
 import { getContextKnowledgeService } from './services/knowledge/context-knowledge'
 import {
