@@ -51,6 +51,7 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
   font-size: 14px;
   line-height: 1.8;
   word-wrap: break-word;
+  text-align: justify;
 }
 
 /* mammoth 输出的 HTML 元素样式 */

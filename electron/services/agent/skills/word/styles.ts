@@ -163,6 +163,8 @@ export interface WordStyleConfig {
     lineSpacing?: number
     /** 固定行距（磅），如 28.5。与 lineSpacing 二选一，优先使用 */
     lineSpacingFixed?: number
+    /** 正文对齐方式（默认 left，公文建议 justify） */
+    textAlign?: 'left' | 'center' | 'right' | 'justify'
     /** 首行缩进 */
     firstLineIndent?: boolean
     /** 首行缩进字符数（默认 2） */
@@ -592,6 +594,7 @@ function buildDocumentStyles(style: WordStyleConfig): { default: Record<string, 
         color: '000000'
       },
       paragraph: {
+        alignment: AlignmentType.JUSTIFIED,
         spacing: lineSpacing
       }
     },

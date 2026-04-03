@@ -683,19 +683,23 @@ async function wordOpen(
   }
 
   try {
-    // 使用 mammoth 将文档转为 HTML，保留结构信息
+    // 以 XML 模式打开，保留原始格式
+    const JSZip = (await import('jszip')).default
+    const fileBuffer = fs.readFileSync(filePath)
+    const zip = await JSZip.loadAsync(fileBuffer)
+    const documentXml = await zip.file('word/document.xml')?.async('string')
+    if (!documentXml) {
+      return { success: false, output: '', error: t('word.open_failed') }
+    }
+
+    const session = createXmlSession(filePath, zip, documentXml)
+
+    // 使用 mammoth 生成 HTML 预览和结构化内容
     const mammoth = await import('mammoth')
     const htmlResult = await mammoth.convertToHtml({ path: filePath }, MAMMOTH_OPTIONS)
     const html = htmlResult.value
 
-    // 创建一个新的 Document 实例（用于后续添加内容）
-    const doc = new Document({
-      sections: []
-    })
-
-    const session = createSession(filePath, doc, false)
-    
-    // 从 HTML 解析出结构化内容
+    // 从 HTML 解析出结构化内容（用于 word_read 等文本操作）
     parseHtmlToSections(html, session.sections)
 
     // 对齐增强后用于 Canvas 预览
@@ -1516,7 +1520,16 @@ async function wordSetPage(
     settings.pageNumberPosition = args.page_number_position as 'header' | 'footer'
   }
   
-  setPageSettings(filePath, settings)
+  // XML 模式：直接修改 zip 中的 XML 添加页眉页脚
+  if (session.zip && session.documentXml) {
+    try {
+      await applyPageSettingsToXml(session as { zip: import('jszip'); documentXml: string; dirty: boolean }, settings)
+    } catch (e) {
+      log.warn('Failed to apply page settings to XML:', e)
+    }
+  } else {
+    setPageSettings(filePath, settings)
+  }
   
   const parts: string[] = []
   if (settings.header !== undefined) parts.push(`页眉: "${settings.header}"`)
@@ -1533,6 +1546,119 @@ async function wordSetPage(
   })
 
   return { success: true, output }
+}
+
+/**
+ * 在 XML 模式下直接修改 zip 添加页眉页脚（保留原始文档格式）
+ */
+async function applyPageSettingsToXml(
+  session: { zip: import('jszip'); documentXml: string; dirty: boolean },
+  settings: PageSettings
+): Promise<void> {
+  const zip = session.zip
+  let docXml = session.documentXml
+
+  // 读取现有 relationships，找到最大 rId 避免冲突
+  const relsPath = 'word/_rels/document.xml.rels'
+  const relsFile = zip.file(relsPath)
+  let relsXml = relsFile
+    ? await relsFile.async('string')
+    : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n</Relationships>`
+
+  let maxRid = 0
+  for (const m of relsXml.matchAll(/Id="rId(\d+)"/g)) {
+    maxRid = Math.max(maxRid, parseInt(m[1]))
+  }
+
+  // 移除已有的 header/footer 引用（覆盖更新）
+  relsXml = relsXml.replace(/<Relationship[^>]*Type="[^"]*\/(header|footer)"[^>]*\/>\s*/g, '')
+  docXml = docXml.replace(/<w:(headerReference|footerReference)[^>]*\/>\s*/g, '')
+
+  const newRels: string[] = []
+  let headerRid = ''
+  let footerRid = ''
+
+  // 生成页眉
+  if (settings.header !== undefined && settings.header) {
+    headerRid = `rId${++maxRid}`
+    zip.file('word/header1.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+       xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:p><w:pPr><w:jc w:val="center"/></w:pPr>
+    <w:r><w:t>${escapeXml(settings.header)}</w:t></w:r>
+  </w:p>
+</w:hdr>`)
+    newRels.push(`<Relationship Id="${headerRid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>`)
+  }
+
+  // 生成页脚
+  if (settings.footer || settings.pageNumber) {
+    footerRid = `rId${++maxRid}`
+    const runs: string[] = []
+    if (settings.footer) {
+      runs.push(`<w:r><w:t>${escapeXml(settings.footer)}</w:t></w:r>`)
+    }
+    if (settings.pageNumber) {
+      if (runs.length > 0) runs.push(`<w:r><w:t xml:space="preserve">    </w:t></w:r>`)
+      runs.push(
+        `<w:r><w:t xml:space="preserve">第 </w:t></w:r>`,
+        `<w:r><w:fldChar w:fldCharType="begin"/></w:r>`,
+        `<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>`,
+        `<w:r><w:fldChar w:fldCharType="separate"/></w:r>`,
+        `<w:r><w:t>1</w:t></w:r>`,
+        `<w:r><w:fldChar w:fldCharType="end"/></w:r>`,
+        `<w:r><w:t xml:space="preserve"> 页</w:t></w:r>`
+      )
+    }
+    zip.file('word/footer1.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+       xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:p><w:pPr><w:jc w:val="center"/></w:pPr>
+    ${runs.join('\n    ')}
+  </w:p>
+</w:ftr>`)
+    newRels.push(`<Relationship Id="${footerRid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>`)
+  }
+
+  // 更新 relationships
+  if (newRels.length > 0) {
+    relsXml = relsXml.replace('</Relationships>', newRels.join('\n') + '\n</Relationships>')
+    zip.file(relsPath, relsXml)
+  }
+
+  // 更新 document.xml 的 sectPr 添加引用
+  const refs = (headerRid ? `<w:headerReference w:type="default" r:id="${headerRid}"/>` : '')
+    + (footerRid ? `<w:footerReference w:type="default" r:id="${footerRid}"/>` : '')
+
+  if (refs) {
+    if (docXml.includes('<w:sectPr')) {
+      docXml = docXml.replace(/<w:sectPr([^>]*>)/, `<w:sectPr$1${refs}`)
+    } else {
+      docXml = docXml.replace('</w:body>', `<w:sectPr>${refs}</w:sectPr></w:body>`)
+    }
+  }
+
+  // 更新 [Content_Types].xml 注册 header/footer 内容类型
+  const ctFile = zip.file('[Content_Types].xml')
+  if (ctFile) {
+    let ctXml = await ctFile.async('string')
+    if (headerRid && !ctXml.includes('PartName="/word/header1.xml"')) {
+      ctXml = ctXml.replace('</Types>',
+        '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>\n</Types>')
+    }
+    if (footerRid && !ctXml.includes('PartName="/word/footer1.xml"')) {
+      ctXml = ctXml.replace('</Types>',
+        '<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>\n</Types>')
+    }
+    zip.file('[Content_Types].xml', ctXml)
+  }
+
+  session.documentXml = docXml
+  session.dirty = true
+}
+
+function escapeXml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
 /**
