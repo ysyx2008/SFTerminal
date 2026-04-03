@@ -334,9 +334,25 @@ export class PluginRegistry {
 
 let sdkShimRegistered = false
 
+const shimExports = {
+  definePluginEntry: (entry: unknown) => entry,
+  defineChannelPluginEntry: (entry: unknown) => entry,
+  createPluginRuntimeStore: () => {
+    const store: Record<string, unknown> = {}
+    return {
+      get(key: string) { return store[key] },
+      set(key: string, value: unknown) { store[key] = value },
+      getAll() { return { ...store } },
+      clear() { for (const k of Object.keys(store)) delete store[k] }
+    }
+  }
+}
+
 /**
  * 注册 OpenClaw SDK 模块解析拦截
  * 让 `import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry"` 等指向我们的 shim
+ *
+ * 通过预填 require.cache + 拦截 _resolveFilename 实现，无需外部 .js 文件
  */
 function registerSdkShim(): void {
   if (sdkShimRegistered) return
@@ -344,8 +360,23 @@ function registerSdkShim(): void {
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const shimRegister = require('./sdk-shim-register')
-    shimRegister.register()
+    const Module = require('module')
+    const SHIM_KEY = '__openclaw_plugin_sdk_shim__'
+
+    // 预填 cache，使 require(SHIM_KEY) 直接返回 shimExports
+    const m = new Module(SHIM_KEY)
+    m.exports = { ...shimExports, default: shimExports }
+    m.loaded = true
+    require.cache[SHIM_KEY] = m
+
+    const origResolve = Module._resolveFilename
+    Module._resolveFilename = function (request: string, ...rest: unknown[]) {
+      if (typeof request === 'string' && request.startsWith('openclaw/plugin-sdk')) {
+        return SHIM_KEY
+      }
+      return origResolve.call(this, request, ...rest)
+    }
+
     log.info('OpenClaw SDK shim registered')
   } catch (err) {
     log.warn('Failed to register OpenClaw SDK shim (non-fatal):', err)

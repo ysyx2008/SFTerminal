@@ -349,6 +349,7 @@ import { getServerConfig } from './services/agent/skills/email/session'
 import { setEmailAccounts } from './services/agent/skills/email/executor'
 import { setCalendarAccounts } from './services/agent/skills/calendar/executor'
 import { readIdentityFile, readSoulFile, readUserFile, readHeartbeatFile } from './services/agent/prompt-builder'
+import { startFeishuOAuth, revokeFeishuOAuth, getFeishuOAuthStatus } from './services/agent/skills/feishu/oauth'
 
 // 禁用 GPU 加速可能导致的问题（可选）
 // app.disableHardwareAcceleration()
@@ -2883,7 +2884,6 @@ ipcMain.handle('im:stopFeishu', async () => {
 
 ipcMain.handle('feishu:startOAuth', async () => {
   try {
-    const { startFeishuOAuth } = await import('./services/agent/skills/feishu/oauth')
     return await startFeishuOAuth()
   } catch (err: any) {
     return { authorized: false, error: err.message || String(err) }
@@ -2892,7 +2892,6 @@ ipcMain.handle('feishu:startOAuth', async () => {
 
 ipcMain.handle('feishu:revokeOAuth', async () => {
   try {
-    const { revokeFeishuOAuth } = await import('./services/agent/skills/feishu/oauth')
     await revokeFeishuOAuth()
     return { success: true }
   } catch (err: any) {
@@ -2902,7 +2901,6 @@ ipcMain.handle('feishu:revokeOAuth', async () => {
 
 ipcMain.handle('feishu:getOAuthStatus', async () => {
   try {
-    const { getFeishuOAuthStatus } = await import('./services/agent/skills/feishu/oauth')
     return await getFeishuOAuthStatus()
   } catch {
     return { authorized: false }

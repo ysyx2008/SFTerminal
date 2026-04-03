@@ -69,6 +69,7 @@ import {
   modifyParagraphText,
   modifyParagraphStyle
 } from './docx-xml'
+import JSZip from 'jszip'
 import { app } from 'electron'
 import { getKnowledgeService } from '../../../knowledge'
 import { exec } from 'child_process'
@@ -97,7 +98,6 @@ const MAMMOTH_OPTIONS = {
 async function enrichHtmlAlignment(html: string, source: string | Buffer): Promise<string> {
   try {
     const buf = typeof source === 'string' ? fs.readFileSync(source) : source
-    const JSZip = (await import('jszip')).default
     const zip = await JSZip.loadAsync(buf)
     const xml = await zip.file('word/document.xml')?.async('string')
     if (!xml) return html
@@ -135,7 +135,6 @@ async function generatePreviewHtml(filePath: string): Promise<string> {
   if (session.zip && session.documentXml) {
     // 将修改后的 XML 写回 zip 副本，用 mammoth 转 HTML 保留格式
     try {
-      const JSZip = (await import('jszip')).default
       const rawBuf = await session.zip.generateAsync({ type: 'nodebuffer' })
       const cloned = await JSZip.loadAsync(rawBuf)
       cloned.file('word/document.xml', session.documentXml)
@@ -239,7 +238,7 @@ function escapeHtml(text: string): string {
  * 获取或自动创建 XML 编辑会话
  * 编辑已有文档时，首次操作自动加载文件到内存，后续操作复用会话
  */
-async function getOrCreateXmlSession(filePath: string): Promise<{ documentXml: string; zip: import('jszip') }> {
+async function getOrCreateXmlSession(filePath: string): Promise<{ documentXml: string; zip: JSZip }> {
   const session = getSession(filePath)
   if (session?.zip && session?.documentXml) {
     return { documentXml: session.documentXml, zip: session.zip }
@@ -684,7 +683,6 @@ async function wordOpen(
 
   try {
     // 以 XML 模式打开，保留原始格式
-    const JSZip = (await import('jszip')).default
     const fileBuffer = fs.readFileSync(filePath)
     const zip = await JSZip.loadAsync(fileBuffer)
     const documentXml = await zip.file('word/document.xml')?.async('string')
@@ -1527,7 +1525,7 @@ async function wordSetPage(
   // XML 模式：直接修改 zip 中的 XML 添加页眉页脚
   if (session.zip && session.documentXml) {
     try {
-      await applyPageSettingsToXml(session as { zip: import('jszip'); documentXml: string; dirty: boolean }, settings)
+      await applyPageSettingsToXml(session as { zip: JSZip; documentXml: string; dirty: boolean }, settings)
     } catch (e) {
       log.warn('Failed to apply page settings to XML:', e)
     }
@@ -1556,7 +1554,7 @@ async function wordSetPage(
  * 在 XML 模式下直接修改 zip 添加页眉页脚（保留原始文档格式）
  */
 async function applyPageSettingsToXml(
-  session: { zip: import('jszip'); documentXml: string; dirty: boolean },
+  session: { zip: JSZip; documentXml: string; dirty: boolean },
   settings: PageSettings
 ): Promise<void> {
   const zip = session.zip
