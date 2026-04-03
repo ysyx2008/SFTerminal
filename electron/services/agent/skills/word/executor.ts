@@ -1385,7 +1385,7 @@ async function wordSave(
 
   executor.addStep({
     type: 'tool_call',
-    content: t('word.confirm_save', { path: filePath }),
+    content: t(fileExists ? 'word.confirm_overwrite_save' : 'word.confirm_save', { path: filePath }),
     toolName: 'word_save',
     toolArgs: args,
     riskLevel
@@ -2338,7 +2338,7 @@ async function wordFromMarkdown(
 
   executor.addStep({
     type: 'tool_call',
-    content: t('word.confirm_create_from_md', { path: filePath }),
+    content: t(fileExists ? 'word.confirm_overwrite_from_md' : 'word.confirm_create_from_md', { path: filePath }),
     toolName: 'word_from_markdown',
     toolArgs: { path: filePath, style: styleName },
     riskLevel

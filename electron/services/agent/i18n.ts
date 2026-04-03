@@ -368,6 +368,7 @@ const translations = {
     'word.save_reminder': '修改未保存，请使用 word_save 保存',
     'word.no_changes': '没有需要保存的修改',
     'word.confirm_save': '确认保存 Word 文档: {path}',
+    'word.confirm_overwrite_save': '确认覆盖保存 Word 文档: {path}',
     'word.saved': '已保存 Word 文档: {path}',
     'word.save_failed': '保存失败',
     'word.user_rejected': '用户取消了操作',
@@ -381,6 +382,7 @@ const translations = {
     'word.markdown_empty': 'Markdown 文件内容为空: {path}',
     'word.markdown_read_failed': '读取 Markdown 文件失败: {path}\n{detail}',
     'word.confirm_create_from_md': '确认创建 Word 文档: {path}',
+    'word.confirm_overwrite_from_md': '确认覆盖创建 Word 文档: {path}',
     'word.created_from_md': '已创建 Word 文档: {path}（样式: {style}）',
     // 样式管理
     'word.style_name_required': '请指定样式名称',
@@ -1647,6 +1649,7 @@ Please output the summary in the following format:
     'word.save_reminder': 'Changes not saved, use word_save to save',
     'word.no_changes': 'No changes to save',
     'word.confirm_save': 'Confirm saving Word document: {path}',
+    'word.confirm_overwrite_save': 'Confirm overwriting Word document: {path}',
     'word.saved': 'Saved Word document: {path}',
     'word.save_failed': 'Failed to save',
     'word.user_rejected': 'User cancelled the operation',
@@ -1660,6 +1663,7 @@ Please output the summary in the following format:
     'word.markdown_empty': 'Markdown file is empty: {path}',
     'word.markdown_read_failed': 'Failed to read Markdown file: {path}\n{detail}',
     'word.confirm_create_from_md': 'Confirm creating Word document: {path}',
+    'word.confirm_overwrite_from_md': 'Confirm overwriting Word document: {path}',
     'word.created_from_md': 'Created Word document: {path} (style: {style})',
     // Style management
     'word.style_name_required': 'Please specify style name',
