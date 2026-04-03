@@ -165,6 +165,16 @@ export interface WordStyleConfig {
     firstLineIndent?: boolean
     /** 首行缩进字符数（默认 2） */
     firstLineIndentChars?: number
+    /** 文档标题样式（对应 Word 的 Title 样式）
+     * 通过 Markdown YAML front matter 的 title 字段指定：---\ntitle: 标题文字\n---
+     * 独立于 Heading 层级，不影响 # ## ### 的映射 */
+    title?: {
+      font?: string
+      fontAscii?: string
+      size?: number
+      bold?: boolean
+      align?: 'left' | 'center' | 'right' | 'justify'
+    }
     /** 标题样式（用于 Markdown # 标题） */
     headings?: {
       [level: number]: {
@@ -377,11 +387,12 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
       lineSpacingFixed: 28.5,
       firstLineIndent: true,
       firstLineIndentChars: 2,
+      title: { font: '小标宋体', size: 22, bold: false, align: 'center' },
       headings: {
-        1: { font: '小标宋体', size: 22, bold: false, align: 'center' },
-        2: { font: '黑体', size: 16, bold: false },
-        3: { font: '楷体', size: 16, bold: true },
-        4: { font: '仿宋', size: 16, bold: true },
+        1: { font: '黑体', size: 16, bold: false },
+        2: { font: '楷体', size: 16, bold: true },
+        3: { font: '仿宋', size: 16, bold: true },
+        4: { font: '仿宋', size: 16, bold: false },
         5: { font: '仿宋', size: 16, bold: false },
         6: { font: '仿宋', size: 16, bold: false }
       },
@@ -417,11 +428,12 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
       lineSpacingFixed: 28.5,
       firstLineIndent: true,
       firstLineIndentChars: 2,
+      title: { font: '方正小标宋简体', size: 22, bold: false, align: 'center' },
       headings: {
-        1: { font: '方正小标宋简体', size: 22, bold: false, align: 'center' },
-        2: { font: '黑体', size: 16, bold: false },
-        3: { font: '楷体_GB2312', size: 16, bold: true },
-        4: { font: '仿宋_GB2312', size: 16, bold: true },
+        1: { font: '黑体', size: 16, bold: false },
+        2: { font: '楷体_GB2312', size: 16, bold: true },
+        3: { font: '仿宋_GB2312', size: 16, bold: true },
+        4: { font: '仿宋_GB2312', size: 16, bold: false },
         5: { font: '仿宋_GB2312', size: 16, bold: false },
         6: { font: '仿宋_GB2312', size: 16, bold: false }
       },
@@ -457,14 +469,12 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
       lineSpacingFixed: 28.5,
       firstLineIndent: true,
       firstLineIndentChars: 2,
+      title: { font: '小标宋体', size: 22, bold: false, align: 'center' },
       headings: {
-        // 纪要标题：二号小标宋体，居中
-        1: { font: '小标宋体', size: 22, bold: false, align: 'center' },
-        // 议题标题：三号黑体
-        2: { font: '黑体', size: 16, bold: false },
-        // 子议题：三号楷体加粗
-        3: { font: '楷体', size: 16, bold: true },
-        4: { font: '仿宋', size: 16, bold: true },
+        1: { font: '黑体', size: 16, bold: false },
+        2: { font: '楷体', size: 16, bold: true },
+        3: { font: '仿宋', size: 16, bold: true },
+        4: { font: '仿宋', size: 16, bold: false },
         5: { font: '仿宋', size: 16, bold: false },
         6: { font: '仿宋', size: 16, bold: false }
       },
@@ -587,6 +597,26 @@ function buildDocumentStyles(style: WordStyleConfig): { default: Record<string, 
       run: {
         font: buildFontConfig(config.font, config.fontAscii),
         size: config.fontSize ? config.fontSize * 2 : undefined
+      }
+    }
+  }
+
+  // Title 样式（文档标题，独立于 Heading 层级）
+  if (config.title) {
+    const tc = config.title
+    defaultStyles['title'] = {
+      run: {
+        font: buildFontConfig(
+          tc.font || config.font,
+          tc.fontAscii || config.fontAscii
+        ),
+        size: (tc.size || config.fontSize || 12) * 2,
+        bold: tc.bold ?? false,
+        color: '000000'
+      },
+      paragraph: {
+        alignment: getAlignment(tc.align),
+        spacing: { before: 240, after: 120, ...lineSpacing }
       }
     }
   }
@@ -737,14 +767,31 @@ export async function markdownToDocx(
     ? getStyleConfig(style) 
     : (style || getStyleConfig())
   
+  // 提取 YAML front matter 中的文档标题
+  let contentMarkdown = markdown
+  let documentTitle: string | undefined
+  const frontMatterMatch = markdown.match(/^---\s*\n([\s\S]*?)\n---\s*\n/)
+  if (frontMatterMatch) {
+    const titleMatch = frontMatterMatch[1].match(/^title:\s*(.+)$/m)
+    if (titleMatch) {
+      documentTitle = titleMatch[1].trim().replace(/^["']|["']$/g, '')
+    }
+    contentMarkdown = markdown.slice(frontMatterMatch[0].length)
+  }
+  
   // 解析 Markdown
-  const tokens = marked.lexer(markdown)
+  const tokens = marked.lexer(contentMarkdown)
   
   // 构建上下文（收集有序列表编号定义）
   const ctx: DocxBuildContext = { numberingConfigs: [], orderedListCounter: 0 }
   
   // 转换为 docx 元素
   const children = tokensToDocxElements(tokens, styleConfig, ctx)
+  
+  // 如果有文档标题，插入到最前面（使用 Title 样式）
+  if (documentTitle) {
+    children.unshift(createDocumentTitle(documentTitle, styleConfig))
+  }
   
   // 解析页面配置
   const pageResolved = resolvePageConfig(styleConfig.config.page)
@@ -864,6 +911,17 @@ function tokensToDocxElements(
   }
   
   return elements
+}
+
+/**
+ * 创建文档标题（Word Title 样式）
+ * 依赖文档级别的 Title 样式定义；若样式未定义 title，回退到 Heading 1
+ */
+function createDocumentTitle(text: string, style: WordStyleConfig): Paragraph {
+  return new Paragraph({
+    heading: HeadingLevel.TITLE,
+    children: [new TextRun({ text })]
+  })
 }
 
 /**

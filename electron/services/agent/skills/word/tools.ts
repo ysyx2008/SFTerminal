@@ -508,6 +508,7 @@ word_delete_paragraph({
 **支持的 Markdown 语法**：
 标题(# ## ###)、段落、列表(- 或 1.)、表格(| |)、加粗(**)、斜体(*)、代码块(\`\`\`)、引用(>)
 特殊标签：<p>顶格段落</p>、<p align="right">右对齐</p>、<center>居中</center>
+文档标题：YAML front matter 的 title 字段 → Word Title 样式（详见技能文档）
 
 **预设样式**（每个样式包含正文、标题、表格、代码块、引用的完整主题）：
 - simple：简洁风格（默认，灰色表头）
@@ -521,7 +522,8 @@ word_delete_paragraph({
 
 **公文格式特别说明**：
 official/securities/meeting 会自动识别中文编号：一、→黑体 （一）→楷体加粗 1.→仿宋加粗 （1）→仿宋
-主送机关用 <p> 包裹顶格，落款用 <p align="right"> 包裹，系统自动在落款前加空行。`,
+主送机关用 <p> 包裹顶格，落款用 <p align="right"> 包裹，系统自动在落款前加空行。
+文档标题须放在 YAML front matter 的 title 中（渲染为 Word Title 样式），不要用 # 标记。详见技能文档。`,
       parameters: {
         type: 'object',
         properties: {
@@ -574,6 +576,7 @@ official/securities/meeting 会自动识别中文编号：一、→黑体 （一
 - fontSize: 正文字号（磅）
 - lineSpacing: 行距倍数 | lineSpacingFixed: 固定行距（磅）
 - firstLineIndent/firstLineIndentChars: 首行缩进
+- title: { font, fontAscii, size, bold, align } — 文档标题（Word Title 样式，通过 front matter 指定）
 - headings: { 1: { font, fontAscii, size, bold, align }, 2: {...}, ... }
 - numberingRules: 编号层级规则数组
 - table: { headerBackground, headerTextColor, headerBold, headerAlign, alternatingColors, borderColor, borderSize, fontSize, font, fontAscii, cellPadding }
