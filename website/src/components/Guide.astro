@@ -25,6 +25,7 @@ const g = t.guide;
           <li><a href="#vision-routing" class="toc-link">{g.visionRouting.title}</a></li>
           <li><a href="#watch" class="toc-link">{g.watch.title}</a></li>
           <li><a href="#im-access" class="toc-link">{g.imAccess.title}</a></li>
+          <li><a href="#wechat-guide" class="toc-link">{g.wechatGuide.title}</a></li>
           <li><a href="#word-skill" class="toc-link">{g.wordSkill.title}</a></li>
           <li><a href="#email-skill" class="toc-link">{g.emailSkill.title}</a></li>
           <li><a href="#calendar-skill" class="toc-link">{g.calendarSkill.title}</a></li>
@@ -202,6 +203,40 @@ const g = t.guide;
           <h3>{g.imAccess.tips}</h3>
           <ul class="tips-list">
             {g.imAccess.tipsList.map(tip => <li>{tip}</li>)}
+          </ul>
+        </section>
+
+        {/* ==================== 微信集成 ==================== */}
+        <section id="wechat-guide" class="guide-article">
+          <h2 class="article-title">{g.wechatGuide.title}</h2>
+          <p class="article-intro">{g.wechatGuide.intro}</p>
+
+          <h3>{g.wechatGuide.howItWorks}</h3>
+          <p>{g.wechatGuide.howItWorksDesc}</p>
+
+          <h3>{g.wechatGuide.supported}</h3>
+          <div class="capability-grid">
+            {g.wechatGuide.supportedList.map(s => (
+              <div class="cap-card">
+                <div class="cap-name">{s.type}</div>
+                <div class="cap-desc">{s.desc}</div>
+              </div>
+            ))}
+          </div>
+
+          <h3>{g.wechatGuide.setup}</h3>
+          <ol class="setup-steps">
+            {g.wechatGuide.setupSteps.map(step => <li>{step}</li>)}
+          </ol>
+
+          <h3>{g.wechatGuide.examples}</h3>
+          <ul class="example-list">
+            {g.wechatGuide.exampleList.map(ex => <li>{ex}</li>)}
+          </ul>
+
+          <h3>{g.wechatGuide.tips}</h3>
+          <ul class="tips-list">
+            {g.wechatGuide.tipsList.map(tip => <li>{tip}</li>)}
           </ul>
         </section>
 
