@@ -456,7 +456,8 @@ export function useAgentMode(
           items.push({ id: step.id, type: 'step', step, group, size, isFirstStep: i === 0 })
         }
 
-        if (group.isCurrentTask && isAgentRunning.value && !pendingConfirm.value && !isStreamingOutput(group)) {
+        const hasThinkingStep = group.steps.some(s => s.type === 'thinking' && s.isStreaming)
+        if (group.isCurrentTask && isAgentRunning.value && !pendingConfirm.value && !isStreamingOutput(group) && !hasThinkingStep) {
           items.push({ id: `thinking_${group.id}`, type: 'thinking_indicator', size: 40 })
         }
       }
