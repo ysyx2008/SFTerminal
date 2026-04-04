@@ -388,6 +388,7 @@ export function useAgentMode(
         lastGroup.isCurrentTask = true
       }
     }
+
     
     // 去除步骤中与 finalResult 重复的最后一个 message
     // 后端已在 callAiWithStreaming 的 onDone 中将推理模型的步骤内容重建为仅含推理，
@@ -486,12 +487,12 @@ export function useAgentMode(
   }
 
   // 运行 Agent 或发送补充消息
-  const runAgent = async () => {
+  const runAgent = async (overrideMessage?: string) => {
     const hasImageData = (imageCallbacks?.getImages()?.length ?? 0) > 0
-    if ((!inputText.value.trim() && !hasImageData) || !currentTabId.value) return
+    const message = overrideMessage ?? inputText.value
+    if ((!message.trim() && !hasImageData) || !currentTabId.value) return
 
     const tabId = currentTabId.value
-    const message = inputText.value
 
     const isAssistantMode = currentTab.value?.type === 'assistant'
 
@@ -550,9 +551,11 @@ export function useAgentMode(
       log.error('无法获取终端上下文')
       return
     }
-
-    // 获取主机 ID（基于 tabId 而非 activeTab，防止用户在 Agent 执行期间切换标签导致 hostId 错误）
-    const hostId = await getHostIdByTabId(tabId)
+    // 并行获取异步上下文，减少等待时间
+    const [hostId, documentContext] = await Promise.all([
+      getHostIdByTabId(tabId),
+      getDocumentContext()
+    ])
 
     // 首次运行时自动探测主机信息（后台执行，不阻塞）
     autoProbeHostProfile().catch(e => {
@@ -566,9 +569,6 @@ export function useAgentMode(
     if (!agentState.value?.sessionId) {
       terminalStore.setAgentSession(tabId, `session_${startTime}`, startTime)
     }
-    
-    // 获取文档上下文
-    const documentContext = await getDocumentContext()
     
     // 获取图片：全部图片传给 AI，预览图片存入步骤供 UI 展示
     const images = imageCallbacks?.getImages() || []
@@ -631,7 +631,6 @@ export function useAgentMode(
           activeProfileId.value || undefined
         )
       }
-
       // 后端已通过 onStep 推送 final_result，这里只需设置 finalResult 状态
       if (!result.success) {
         const finalContent = result.aborted

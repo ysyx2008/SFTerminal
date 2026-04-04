@@ -4,14 +4,15 @@
  * 重构版本：使用 composables 模块化管理逻辑
  * 每个 tab 独立实例，通过 tabId prop 绑定
  */
-import { ref, computed, watch, inject, onMounted, onUnmounted, toRef, nextTick } from 'vue'
+import { ref, computed, watch, inject, onMounted, onUnmounted, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Upload, Trash2, X, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2 } from 'lucide-vue-next'
+import { Upload, Trash2, X, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import AgentPlanView from './AgentPlanView.vue'
+import AiComposer from './AiComposer.vue'
 import sailfishLogo from '../../resources/logo.png'
 
 // 导入 composables
@@ -22,7 +23,6 @@ import {
   useContextStats,
   useHostProfile,
   useAgentMode,
-  useMentions,
   useSpeechRecognition,
   toast
 } from '../composables'
@@ -62,6 +62,7 @@ const handleClose = () => {
 // Refs
 const messagesRef = ref<HTMLDivElement | null>(null)
 const scrollerRef = ref<InstanceType<typeof DynamicScroller> | null>(null)
+const composerRef = ref<InstanceType<typeof AiComposer> | null>(null)
 
 // 统一附件选择（图片 + 文档，自动按类型分流）
 const isAttaching = computed(() => isUploadingDocs.value || isProcessingImage.value)
@@ -140,6 +141,8 @@ const {
   hasImages
 } = useImageUpload()
 
+const hasImagesComputed = computed(() => hasImages())
+
 // Markdown 渲染
 const {
   renderMarkdown,
@@ -160,8 +163,6 @@ const {
 
 // Agent 模式（包含输入、滚动、终端状态等所有功能）
 const {
-  // 输入和终端状态
-  inputText,
   isLoading,
   currentSystemInfo,
   terminalSelectedText,
@@ -233,25 +234,6 @@ const {
   }
 )
 
-// @ 命令（提及）
-const {
-  showMenu: showMentionMenu,
-  menuType: mentionMenuType,
-  suggestions: mentionSuggestions,
-  selectedIndex: mentionSelectedIndex,
-  isLoading: isMentionLoading,
-  hasMore: mentionHasMore,
-  totalCount: mentionTotalCount,
-  currentDir: mentionCurrentDir,
-  detectTrigger,
-  selectSuggestion: doSelectSuggestion,
-  clearMentions,
-  closeMenu: closeMentionMenu,
-  goBack: mentionGoBack,
-  handleKeyDown: handleMentionKeyDown,
-  expandMentions
-} = useMentions(inputText, currentTabId, uploadedDocs)
-
 // 语音识别
 const {
   isRecording,
@@ -278,12 +260,7 @@ const handleRecordClick = async () => {
     // 停止录音并转录
     const result = await stopRecording()
     if (result?.text) {
-      // 将转录结果添加到输入框
-      inputText.value = (inputText.value + ' ' + result.text).trim()
-      // 聚焦输入框
-      nextTick(() => {
-        mentionInputRef.value?.focus()
-      })
+      composerRef.value?.appendText(result.text)
     }
   } else {
     // 开始录音
@@ -363,10 +340,7 @@ const finishPTTRecording = async () => {
   const result = await stopRecording()
   if (!isMounted.value) return
   if (result?.text) {
-    inputText.value = (inputText.value + ' ' + result.text).trim()
-    nextTick(() => {
-      mentionInputRef.value?.focus()
-    })
+    composerRef.value?.appendText(result.text)
   }
 }
 
@@ -392,43 +366,6 @@ const handlePTTWindowBlur = () => {
     cancelRecording()
   }
 }
-
-// 输入框引用（用于选择后重新聚焦）
-const mentionInputRef = ref<HTMLTextAreaElement | null>(null)
-
-// 监听面板可见性变化，当面板显示时聚焦输入框
-watch(() => props.visible, (isVisible) => {
-  if (isVisible) {
-    nextTick(() => {
-      mentionInputRef.value?.focus()
-    })
-  }
-}, { immediate: true })
-
-// 选择建议并重新聚焦输入框
-const selectSuggestion = (suggestion: typeof mentionSuggestions.value[0]) => {
-  doSelectSuggestion(suggestion)
-  // 延迟聚焦，确保 DOM 更新完成
-  nextTick(() => {
-    mentionInputRef.value?.focus()
-  })
-}
-
-// @ 命令补全列表引用（用于滚动）
-const mentionListRef = ref<HTMLDivElement | null>(null)
-
-
-// 监听选中项变化，自动滚动到可见区域
-watch(mentionSelectedIndex, (newIndex) => {
-  nextTick(() => {
-    if (!mentionListRef.value) return
-    const items = mentionListRef.value.querySelectorAll('.mention-item')
-    const selectedItem = items[newIndex] as HTMLElement
-    if (selectedItem) {
-      selectedItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-    }
-  })
-})
 
 // 上下文统计（使用 per-tab 的 activeAiProfile）
 const {
@@ -569,11 +506,6 @@ const formatConfirmArgs = (confirm: typeof pendingConfirm.value) => {
 }
 
 
-// ==================== 发送消息 ====================
-
-// IME 组合输入状态
-const isComposing = ref(false)
-
 // 自由模式二次确认弹窗状态
 const showFreeModeConfirm = ref(false)
 
@@ -669,31 +601,6 @@ const canSendEmpty = computed(() => {
   return !!step.toolArgs?.default_value
 })
 
-// 自动调整 textarea 高度
-const adjustTextareaHeight = () => {
-  const textarea = mentionInputRef.value
-  if (!textarea) return
-  
-  // 重置高度以获取正确的 scrollHeight
-  textarea.style.height = 'auto'
-  // 设置为内容高度，但不超过最大高度 (CSS 中限制了 max-height)
-  textarea.style.height = `${textarea.scrollHeight}px`
-}
-
-// 处理输入事件（检测 @ 触发）
-const handleInputChange = (event: Event) => {
-  const textarea = event.target as HTMLTextAreaElement
-  const cursorPos = textarea.selectionStart || 0
-  detectTrigger(inputText.value, cursorPos)
-  // 调整高度
-  adjustTextareaHeight()
-}
-
-// 监听 inputText 变化（包括程序性修改）
-watch(inputText, () => {
-  nextTick(adjustTextareaHeight)
-})
-
 let visionWarningShown = false
 const checkVisionSupport = async () => {
   if (visionWarningShown) return
@@ -720,74 +627,31 @@ const handlePaste = async (event: ClipboardEvent) => {
   }
 }
 
-// 处理失焦事件（延迟关闭菜单，以便点击菜单项时不会被 blur 打断）
-const handleInputBlur = () => {
-  setTimeout(() => closeMentionMenu(), 150)
-}
-
-// 处理键盘事件（@ 补全菜单导航）
-const handleInputKeyDown = (event: KeyboardEvent) => {
-  // 如果 @ 补全菜单打开，优先处理菜单导航
-  if (showMentionMenu.value) {
-    const handled = handleMentionKeyDown(event)
-    if (handled) return
-  }
-  
-  // 回车发送（非 IME 组合输入状态）
-  if (event.key === 'Enter' && !event.shiftKey && !isComposing.value) {
-    event.preventDefault()
-    handleSend()
-  }
-}
-
-// 发送消息（根据模式选择普通对话或 Agent）
-const handleSend = async () => {
-  // 如果正在 IME 组合输入（如中文输入法选词），不发送
-  if (isComposing.value) return
-  
-  // 用户有操作时，清除错误提示
+const clearTabError = () => {
   if (currentTabId.value) {
     terminalStore.clearError(currentTabId.value)
   }
-  
-  // 关闭 @ 补全菜单
-  closeMentionMenu()
-  
-  // 如果输入为空且有等待的提问有默认值，发送空消息让后端使用默认值（没有图片时）
+}
+
+const handleComposerSubmit = async (message: string, traceId?: string) => {
+  await runAgent(message, traceId)
+}
+
+const handleComposerEmptySubmit = async () => {
   const agentKey = getAgentKey()
-  if (!inputText.value.trim() && !hasImages() && canSendEmpty.value && isAgentRunning.value && agentKey) {
-    window.electronAPI.agent.addMessage(agentKey, '')
-    return
-  }
-  
-  // 如果只有图片没有文本，设置默认提示
-  if (!inputText.value.trim() && hasImages()) {
-    inputText.value = t('ai.describeImage')
-  }
-  
-  // 展开 @ 引用，获取引用内容
-  const { contextParts } = await expandMentions(inputText.value)
-  
-  // 如果有 @ 引用的内容，将展开的内容追加到消息末尾
-  // 这样 AI 可以看到完整的引用内容
-  if (contextParts.length > 0) {
-    const mentionContext = contextParts.join('\n\n')
-    // 在原始消息后追加引用内容
-    inputText.value = inputText.value + '\n\n' + mentionContext
-  }
-  
-  // 清空已选择的 @ 引用
-  clearMentions()
-  
-  // 统一使用 Agent 模式执行任务
-  runAgent()
+  if (!agentKey || !isAgentRunning.value || !canSendEmpty.value) return
+  await window.electronAPI.agent.addMessage(agentKey, '')
+}
+
+const clearComposerDraft = () => {
+  composerRef.value?.clearText()
 }
 
 // ==================== 对外暴露的方法 ====================
 
 function analyzeText(text: string) {
-  inputText.value = `${t('ai.analyzeContentPrompt')}\n\`\`\`\n${text}\n\`\`\``
-  runAgent()
+  clearComposerDraft()
+  void runAgent(`${t('ai.analyzeContentPrompt')}\n\`\`\`\n${text}\n\`\`\``)
 }
 
 defineExpose({ analyzeText })
@@ -815,10 +679,8 @@ watch(
       if (latestProfileId) {
         activeProfileId.value = latestProfileId
       }
-      inputText.value = task
-      nextTick(() => {
-        runAgent()
-      })
+      clearComposerDraft()
+      void runAgent(task)
     }
   },
   { immediate: true }
@@ -833,9 +695,8 @@ watch(
     onboardingTriggered = true
     // 确保 AI 配置已就绪（SetupWizard 完成后才会到这里）
     if (!configStore.hasAiConfig) return
-    inputText.value = '__onboarding__'
-    await nextTick()
-    runAgent()
+    clearComposerDraft()
+    await runAgent('__onboarding__')
   },
   { immediate: true }
 )
@@ -853,9 +714,9 @@ const handleDiagnoseError = () => {
   }
   
   // 设置输入文本为诊断提示
-  inputText.value = `${t('ai.analyzeErrorPrompt')}\n\`\`\`\n${error.content}\n\`\`\``
   // 通过 Agent 执行分析
-  runAgent()
+  clearComposerDraft()
+  void runAgent(`${t('ai.analyzeErrorPrompt')}\n\`\`\`\n${error.content}\n\`\`\``)
 }
 
 // 分析选中内容（通过 Agent 执行）
@@ -864,9 +725,9 @@ const handleAnalyzeSelection = () => {
   if (!selection || isLoading.value) return
   
   // 设置输入文本为分析提示
-  inputText.value = `${t('ai.analyzeOutputPrompt')}\n\`\`\`\n${selection}\n\`\`\``
   // 通过 Agent 执行分析
-  runAgent()
+  clearComposerDraft()
+  void runAgent(`${t('ai.analyzeOutputPrompt')}\n\`\`\`\n${selection}\n\`\`\``)
 }
 
 // ==================== 拖放处理 ====================
@@ -1095,7 +956,6 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
 // ==================== 生命周期 ====================
 
-// Wire DynamicScroller's $el to messagesRef so useAgentMode scroll logic works
 watch(scrollerRef, (scroller, oldScroller) => {
   const oldEl = oldScroller?.$el as HTMLElement | undefined
   if (oldEl) {
@@ -1127,6 +987,16 @@ const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
   return []
 }
 
+const warmupMessageList = () => {
+  if (!import.meta.env.DEV) return
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      scrollerRef.value?.forceUpdate?.(true)
+    })
+  })
+}
+
 onMounted(() => {
   isMounted.value = true
   loadHostProfile()
@@ -1140,6 +1010,8 @@ onMounted(() => {
   if (configStore.keyboardShortcuts.voiceInput && audioAvailable.value) {
     initSpeech()
   }
+
+  warmupMessageList()
 })
 
 onUnmounted(() => {
@@ -1148,13 +1020,19 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handlePTTKeyDown)
   document.removeEventListener('keyup', handlePTTKeyUp)
   window.removeEventListener('blur', handlePTTWindowBlur)
-  const el = scrollerRef.value?.$el as HTMLElement | undefined
-  if (el) {
-    el.removeEventListener('scroll', updateScrollPosition)
-    el.removeEventListener('click', handleCodeBlockClick)
-    el.removeEventListener('contextmenu', handleFilePathContextMenu)
+  if (wiredMessagesEl) {
+    wiredMessagesEl.removeEventListener('scroll', updateScrollPosition)
+    wiredMessagesEl.removeEventListener('click', handleCodeBlockClick)
+    wiredMessagesEl.removeEventListener('contextmenu', handleFilePathContextMenu)
+    wiredMessagesEl = null
   }
 })
+
+watch(() => props.visible, (visible) => {
+  if (visible) {
+    warmupMessageList()
+  }
+}, { flush: 'post' })
 </script>
 
 <template>
@@ -1396,12 +1274,29 @@ onUnmounted(() => {
       </div>
 
       <!-- 消息列表（虚拟滚动） -->
-      <div class="ai-messages-wrapper">
+      <!-- 隔离消息区渲染，避免 inputText 变化拖着整块历史列表一起重渲染 -->
+      <div
+        class="ai-messages-wrapper"
+        v-memo="[
+          flattenedItems,
+          agentTaskGroups.length,
+          agentUserTask,
+          recentHistory,
+          showHistoryModal,
+          allHistory,
+          hasMoreHistory,
+          isLoadingHistory,
+          isLoadingAllHistory,
+          executionMode,
+          isStandaloneAssistant
+        ]"
+      >
         <DynamicScroller
           ref="scrollerRef"
           :items="flattenedItems"
           :min-item-size="36"
           :buffer="800"
+          :prerender="10"
           key-field="id"
           class="ai-messages"
           :class="{ 'standalone-mode': isStandaloneAssistant }"
@@ -1762,6 +1657,7 @@ onUnmounted(() => {
           </template>
         </DynamicScroller>
 
+
         <!-- 新消息指示器 -->
         <div v-if="hasNewMessage" class="new-message-indicator" @click="scrollToBottom" :title="t('ai.newMessage')">
           <ChevronDown :size="14" />
@@ -1770,204 +1666,38 @@ onUnmounted(() => {
       </div>
 
 
-      <!-- 已上传文档列表 -->
-      <div v-if="uploadedDocs.length > 0" class="uploaded-docs">
-        <div class="uploaded-docs-header">
-          <span class="uploaded-docs-title">📎 {{ t('ai.uploadedDocs') }} ({{ uploadedDocs.length }})</span>
-          <button class="btn-clear-docs" @click="clearUploadedDocs" :title="t('ai.clearDocs')">
-            <X :size="12" />
-          </button>
-        </div>
-        <div class="uploaded-docs-list">
-          <div 
-            v-for="(doc, index) in uploadedDocs" 
-            :key="index" 
-            class="uploaded-doc-item"
-            :class="{ 'has-error': doc.error }"
-          >
-            <span class="doc-icon">{{ doc.fileType === 'pdf' ? '📕' : doc.fileType === 'docx' || doc.fileType === 'doc' ? '📘' : '📄' }}</span>
-            <span class="doc-name" :title="doc.filename">{{ doc.filename }}</span>
-            <span class="doc-size">{{ formatFileSize(doc.fileSize) }}</span>
-            <span v-if="doc.error" class="doc-error" :data-tooltip="doc.error">⚠️</span>
-            <button class="btn-remove-doc" @click="removeUploadedDoc(index)" :title="t('ai.removeDoc')">
-              <X :size="10" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- @ 引用已在输入框中显示，不需要额外的标签列表 -->
-
-      <!-- 输入区域 -->
-      <div class="ai-input">
-        <!-- 上下文使用量迷你指示器 -->
-        <div 
-          v-if="contextStats.tokenEstimate > 0" 
-          class="context-mini"
-        >
-          <template v-if="cacheBarWidth > 0">
-            <div 
-              class="context-mini-bar cached"
-              :style="{ width: cacheBarWidth + '%' }"
-            ></div>
-            <div 
-              class="context-mini-bar"
-              :class="{ 'warning': contextStats.percentage > 60, 'danger': contextStats.percentage > 85 }"
-              :style="{ left: cacheBarWidth + '%', width: (contextStats.percentage - cacheBarWidth) + '%' }"
-            ></div>
-          </template>
-          <div 
-            v-else
-            class="context-mini-bar"
-            :class="{ 'warning': contextStats.percentage > 60, 'danger': contextStats.percentage > 85 }"
-            :style="{ width: contextStats.percentage + '%' }"
-          ></div>
-          <span class="context-mini-tip">
-            {{ t('ai.context') }}: {{ contextStats.tokenEstimate.toLocaleString() }} / {{ (contextStats.maxTokens / 1000).toFixed(0) }}K ({{ contextStats.percentage }}%)<template v-if="contextStats.cacheHitRate !== undefined"> · Cache {{ contextStats.cacheHitRate }}%</template>
-          </span>
-        </div>
-        <!-- 图片预览区域 -->
-        <div v-if="pendingImages.length > 0" class="image-preview-strip">
-          <div 
-            v-for="img in pendingImages" 
-            :key="img.id" 
-            class="image-preview-item"
-          >
-            <img :src="img.dataUrl" :alt="img.name" class="image-thumbnail" @click="openImagePreview(img.dataUrl)" />
-            <button class="image-remove-btn" @click="removeImage(img.id)" :title="t('ai.removeImage')">
-              <X :size="12" />
-            </button>
-          </div>
-        </div>
-        <div class="input-container">
-          <!-- 附件按钮（图片 + 文档统一选择） -->
-          <button
-            class="upload-btn"
-            :disabled="isAttaching"
-            :title="t('ai.attach')"
-            @click="selectAttachment"
-          >
-            <span v-if="isAttaching" class="upload-spinner"></span>
-            <Plus v-else :size="18" />
-          </button>
-          <textarea
-            ref="mentionInputRef"
-            v-model="inputText"
-            :placeholder="isAgentRunning ? t('ai.inputPlaceholderSupplement') : t('ai.inputPlaceholderAgent')"
-            rows="1"
-            @input="handleInputChange"
-            @keydown="handleInputKeyDown"
-            @paste="handlePaste"
-            @compositionstart="isComposing = true"
-            @compositionend="isComposing = false"
-            @blur="handleInputBlur"
-          ></textarea>
-          
-          <!-- @ 命令补全菜单 -->
-          <div v-if="showMentionMenu" class="mention-menu">
-            <div v-if="mentionMenuType === null" class="mention-menu-header">
-              {{ t('mentions.selectCommand') }}
-            </div>
-            <div v-else class="mention-menu-header">
-              <span v-if="mentionMenuType === 'file'">📄 {{ t('mentions.file') }}</span>
-              <span v-else-if="mentionMenuType === 'docs'">📚 {{ t('mentions.docs') }}</span>
-              <span v-if="mentionCurrentDir" class="mention-path" :title="mentionCurrentDir">{{ mentionCurrentDir }}</span>
-            </div>
-            <div v-if="isMentionLoading" class="mention-loading">
-              <span class="mention-spinner"></span>
-              {{ t('common.loading') }}
-            </div>
-            <div v-else-if="mentionSuggestions.length === 0" class="mention-empty">
-              {{ t('mentions.noResults') }}
-            </div>
-            <div v-else ref="mentionListRef" class="mention-list">
-              <div 
-                v-for="(suggestion, index) in mentionSuggestions"
-                :key="suggestion.id"
-                class="mention-item"
-                :class="{ active: index === mentionSelectedIndex }"
-                @mousedown.prevent="selectSuggestion(suggestion)"
-                @mouseenter="mentionSelectedIndex = index"
-              >
-                <span class="mention-icon">{{ suggestion.icon }}</span>
-                <div class="mention-content">
-                  <span class="mention-label">{{ suggestion.label }}</span>
-                  <span v-if="suggestion.description" class="mention-desc">{{ suggestion.description }}</span>
-                </div>
-              </div>
-              <!-- 更多提示 -->
-              <div v-if="mentionHasMore" class="mention-more">
-                {{ t('mentions.moreItems', { count: mentionTotalCount - 50 }) }}
-              </div>
-            </div>
-            <div class="mention-hint">
-              <span v-if="mentionMenuType !== null" class="mention-back-btn" @mousedown.prevent="mentionGoBack(); mentionInputRef?.focus()">← {{ t('mentions.back') }}</span>
-              <span class="mention-hint-keys">
-                <span>↑↓</span> {{ t('mentions.navigate') }}
-                <span>Tab/Enter</span> {{ t('mentions.select') }}
-                <span>Esc</span> {{ t('mentions.close') }}
-              </span>
-            </div>
-          </div>
-          <!-- 语音输入按钮（普通模式和 Agent 运行时都显示，支持按住 Ctrl 说话） -->
-          <button
-            v-if="!isLoading || isAgentRunning"
-            class="voice-btn"
-            :class="{ 'recording': isRecording, 'transcribing': isTranscribing, 'ptt': isPushToTalk, 'unavailable': !audioAvailable }"
-            :disabled="!audioAvailable || isTranscribing || isSpeechInitializing"
-            :title="!audioAvailable ? t('ai.noAudioDevice') : isRecording ? t('ai.stopRecording') : (isTranscribing ? t('ai.transcribing') : t('ai.startRecording'))"
-            @click="handleRecordClick"
-          >
-            <Loader2 v-if="isTranscribing || isSpeechInitializing" :size="18" class="spin" />
-            <MicOff v-else-if="isRecording || !audioAvailable" :size="18" />
-            <Mic v-else :size="18" />
-          </button>
-          <!-- 停止按钮 (AI 响应中，非 Agent 运行时) -->
-          <button
-            v-if="isLoading && !isAgentRunning"
-            class="btn btn-danger stop-btn"
-            @click="stopGeneration"
-            :title="t('ai.stopGeneration')"
-          >
-            <Square :size="16" fill="currentColor" />
-          </button>
-          <!-- Agent 运行中：有输入显示补充按钮，有默认值提问时显示使用默认值按钮，否则显示停止按钮 -->
-          <button
-            v-else-if="isAgentRunning && inputText.trim()"
-            class="send-btn send-btn-supplement"
-            :title="t('ai.sendSupplement')"
-            @click="handleSend"
-          >
-            <ArrowUp :size="18" />
-          </button>
-          <button
-            v-else-if="isAgentRunning && canSendEmpty"
-            class="send-btn send-btn-default"
-            :title="t('ai.useDefault')"
-            @click="handleSend"
-          >
-            <Check :size="18" />
-          </button>
-          <button
-            v-else-if="isAgentRunning"
-            class="btn btn-danger stop-btn"
-            @click="abortAgent"
-            :title="t('ai.stopAgent')"
-          >
-            <Square :size="16" fill="currentColor" />
-          </button>
-          <!-- 发送按钮 -->
-          <button
-            v-else
-            class="send-btn send-btn-agent"
-            :disabled="!inputText.trim() && !hasImages()"
-            :title="t('ai.executeTask')"
-            @click="handleSend"
-          >
-            <ArrowUp :size="18" />
-          </button>
-        </div>
-      </div>
+      <AiComposer
+        ref="composerRef"
+        :current-tab-id="currentTabId"
+        :visible="props.visible"
+        :context-stats="contextStats"
+        :cache-bar-width="cacheBarWidth"
+        :uploaded-docs="uploadedDocs"
+        :pending-images="pendingImages"
+        :is-attaching="isAttaching"
+        :is-agent-running="isAgentRunning"
+        :is-loading="isLoading"
+        :can-send-empty="canSendEmpty"
+        :has-images="hasImagesComputed"
+        :is-recording="isRecording"
+        :is-transcribing="isTranscribing"
+        :is-push-to-talk="isPushToTalk"
+        :audio-available="audioAvailable"
+        :is-speech-initializing="isSpeechInitializing"
+        :format-file-size="(size?: number) => formatFileSize(size ?? 0)"
+        :open-image-preview="openImagePreview"
+        :remove-image="removeImage"
+        :select-attachment="selectAttachment"
+        :remove-uploaded-doc="removeUploadedDoc"
+        :clear-uploaded-docs="clearUploadedDocs"
+        :handle-paste="handlePaste"
+        :handle-record-click="handleRecordClick"
+        :stop-generation="stopGeneration"
+        :abort-agent="abortAgent"
+        :submit-message="handleComposerSubmit"
+        :submit-empty-message="handleComposerEmptySubmit"
+        :clear-tab-error="clearTabError"
+      />
     </template>
     <!-- 图片预览弹窗（支持缩放拖拽、键盘导航） -->
     <div 
@@ -3155,7 +2885,6 @@ onUnmounted(() => {
 
 .message {
   padding-bottom: 12px;
-  animation: messageEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes messageEnter {
@@ -3207,7 +2936,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  transition: transform 0.2s ease;
 }
 
 .standalone-mode .message.assistant .message-wrapper {

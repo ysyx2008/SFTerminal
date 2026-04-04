@@ -201,6 +201,16 @@ export abstract class Agent {
     const taskStartTime = Date.now()
     
     try {
+      // 延迟解析 CWD：user_task 已发出，此时再刷新 CWD 不阻塞消息上墙
+      if (options?.cwdResolver) {
+        try {
+          const cwd = await options.cwdResolver()
+          run.context = { ...run.context, cwd }
+        } catch (e) {
+          log.warn('CWD resolve failed, using fallback:', e)
+        }
+      }
+      
       await this.buildContext(run, message)
       const result = await this.executeLoop(run)
       this.finalizeRun(run, result)
@@ -430,6 +440,14 @@ export abstract class Agent {
         sshHost: context.sshHost
       }
     }
+
+    // 先推送 user_task 步骤，让用户消息立即上墙，再做耗时的初始化
+    this.addStep({
+      type: 'user_task',
+      content: message,
+      images: context.previewImages || context.images,
+      attachments: context.attachments
+    })
     
     // 初始化 TaskMemory（仅首次 run 时，从 HistoryService 恢复）
     // 场景：用户恢复了历史对话，Agent 实例刚创建，TaskMemory 为空
@@ -442,15 +460,6 @@ export abstract class Agent {
         this._isRestoring = false
       }
     }
-    
-    // 添加 user_task 步骤（统一由后端生成，前端通过 onStep 回调接收）
-    // previewImages 仅含 PDF 页面预览（UI 展示用），Word 嵌入图片只传给 AI 不展示
-    this.addStep({
-      type: 'user_task',
-      content: message,
-      images: context.previewImages || context.images,
-      attachments: context.attachments
-    })
     
     // 添加初始步骤
     const initialStep = this.addStep({
