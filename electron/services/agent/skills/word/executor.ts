@@ -94,6 +94,7 @@ const MAMMOTH_OPTIONS = {
 /**
  * 从 docx XML 中提取段落对齐信息，注入到 mammoth 生成的 HTML 中
  * mammoth 不保留对齐属性，需要后处理补回
+ * 同时读取 styles.xml 中的样式对齐，作为段落无显式 jc 时的 fallback
  */
 async function enrichHtmlAlignment(html: string, source: string | Buffer): Promise<string> {
   try {
@@ -102,10 +103,31 @@ async function enrichHtmlAlignment(html: string, source: string | Buffer): Promi
     const xml = await zip.file('word/document.xml')?.async('string')
     if (!xml) return html
 
+    // 从 styles.xml 构建 styleId → alignment 映射
+    const styleAlignMap = new Map<string, string>()
+    const stylesXml = await zip.file('word/styles.xml')?.async('string')
+    if (stylesXml) {
+      // \s 避免匹配 <w:styles>（根元素），只匹配 <w:style ...>（子元素）
+      const styleBlocks = stylesXml.match(/<w:style\s[\s\S]*?<\/w:style>/g) || []
+      for (const block of styleBlocks) {
+        const idMatch = block.match(/w:styleId="([^"]+)"/)
+        const jcMatch = block.match(/<w:jc\s+w:val="([^"]+)"/)
+        if (idMatch && jcMatch) {
+          styleAlignMap.set(idMatch[1], jcMatch[1])
+        }
+      }
+    }
+
     const aligns: string[] = []
     for (const m of xml.matchAll(/<w:p[\s>][\s\S]*?<\/w:p>/g)) {
       const jc = m[0].match(/<w:jc\s+w:val="([^"]+)"/)
-      aligns.push(jc?.[1] || '')
+      if (jc) {
+        aligns.push(jc[1])
+      } else {
+        // 段落无显式 jc → 从样式定义继承
+        const pStyle = m[0].match(/<w:pStyle\s+w:val="([^"]+)"/)
+        aligns.push(pStyle ? (styleAlignMap.get(pStyle[1]) || '') : '')
+      }
     }
 
     let i = 0
@@ -159,8 +181,13 @@ async function enrichHtmlNumbering(html: string, source: string | Buffer): Promi
     const stylesXml = await zip.file('word/styles.xml')?.async('string')
     if (!numXml || !stylesXml) return html
 
-    // Heading 样式 → 编号层级映射
-    const headingMap = new Map<number, { ilvl: number; numId: string }>()
+    // Heading 样式 → 编号层级映射 + 样式属性（用于 inline style 覆盖通用 CSS）
+    interface HeadingInfo {
+      ilvl: number; numId: string
+      font?: string; fontSize?: string; fontWeight?: string
+      textAlign?: string; textIndent?: string
+    }
+    const headingMap = new Map<number, HeadingInfo>()
     for (let h = 1; h <= 6; h++) {
       const styleBlock = stylesXml.match(
         new RegExp(`<w:style[^>]*w:styleId="Heading${h}"[\\s\\S]*?</w:style>`)
@@ -168,9 +195,30 @@ async function enrichHtmlNumbering(html: string, source: string | Buffer): Promi
       if (!styleBlock) continue
       const ilvl = styleBlock.match(/<w:ilvl w:val="(\d+)"/)?.[1]
       const numId = styleBlock.match(/<w:numId w:val="(\d+)"/)?.[1]
-      if (ilvl && numId && numId !== '0') {
-        headingMap.set(h, { ilvl: parseInt(ilvl), numId })
+      if (!ilvl || !numId || numId === '0') continue
+
+      const info: HeadingInfo = { ilvl: parseInt(ilvl), numId }
+
+      const eastAsia = styleBlock.match(/<w:rFonts[^>]*w:eastAsia="([^"]+)"/)
+      if (eastAsia) info.font = `'${eastAsia[1]}', 'STFangsong', 'SimFang', serif`
+
+      const sz = styleBlock.match(/<w:sz\s+w:val="(\d+)"/)
+      if (sz) info.fontSize = `${parseInt(sz[1]) / 2}pt`
+
+      const hasBoldOff = styleBlock.includes('<w:b w:val="false"') || styleBlock.includes('<w:b w:val="0"')
+      if (hasBoldOff) info.fontWeight = 'normal'
+      else if (styleBlock.includes('<w:b/>') || styleBlock.includes('<w:b w:val="true"')) info.fontWeight = 'bold'
+
+      const jc = styleBlock.match(/<w:jc\s+w:val="([^"]+)"/)
+      if (jc) {
+        const val = jc[1]
+        info.textAlign = val === 'center' ? 'center' : val === 'right' ? 'right' : val === 'both' ? 'justify' : undefined
       }
+
+      const firstLine = styleBlock.match(/<w:ind[^>]*w:firstLine="(\d+)"/)
+      if (firstLine) info.textIndent = `${parseInt(firstLine[1]) / 20}pt`
+
+      headingMap.set(h, info)
     }
     if (headingMap.size === 0) return html
 
@@ -234,7 +282,24 @@ async function enrichHtmlNumbering(html: string, source: string | Buffer): Promi
       }
 
       const prefix = levelDef.bold ? `<strong>${numText}</strong>` : numText
-      return `<h${levelStr}${attrs}>${prefix}${content}</h${levelStr}>`
+
+      // 合并 enrichHtmlAlignment 已有的 style 和 Heading 样式属性
+      let existingStyle = ''
+      const styleMatch = attrs.match(/style="([^"]*)"/)
+      if (styleMatch) {
+        existingStyle = styleMatch[1]
+        attrs = attrs.replace(/\s*style="[^"]*"/, '')
+      }
+      const parts: string[] = existingStyle ? [existingStyle] : []
+      if (info.font) parts.push(`font-family:${info.font}`)
+      if (info.fontSize) parts.push(`font-size:${info.fontSize}`)
+      if (info.fontWeight) parts.push(`font-weight:${info.fontWeight}`)
+      if (info.textAlign && !existingStyle.includes('text-align')) parts.push(`text-align:${info.textAlign}`)
+      if (info.textIndent) parts.push(`text-indent:${info.textIndent}`)
+      else if (info.textAlign === 'center') parts.push('text-indent:0')
+      const styleAttr = parts.length > 0 ? ` style="${parts.join(';')}"` : ''
+
+      return `<h${levelStr}${attrs}${styleAttr}>${prefix}${content}</h${levelStr}>`
     })
   } catch (e) {
     log.warn('enrichHtmlNumbering failed:', e)
