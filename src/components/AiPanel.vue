@@ -1020,11 +1020,11 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handlePTTKeyDown)
   document.removeEventListener('keyup', handlePTTKeyUp)
   window.removeEventListener('blur', handlePTTWindowBlur)
-  if (wiredMessagesEl) {
-    wiredMessagesEl.removeEventListener('scroll', updateScrollPosition)
-    wiredMessagesEl.removeEventListener('click', handleCodeBlockClick)
-    wiredMessagesEl.removeEventListener('contextmenu', handleFilePathContextMenu)
-    wiredMessagesEl = null
+  const el = scrollerRef.value?.$el as HTMLElement | undefined
+  if (el) {
+    el.removeEventListener('scroll', updateScrollPosition)
+    el.removeEventListener('click', handleCodeBlockClick)
+    el.removeEventListener('contextmenu', handleFilePathContextMenu)
   }
 })
 
@@ -1288,7 +1288,8 @@ watch(() => props.visible, (visible) => {
           isLoadingHistory,
           isLoadingAllHistory,
           executionMode,
-          isStandaloneAssistant
+          isStandaloneAssistant,
+          hasNewMessage
         ]"
       >
         <DynamicScroller
