@@ -285,19 +285,18 @@ export class AgentService {
       agent.updateConfig(config)
     }
     
-    // 在启动前刷新并设置当前工作目录（重要！避免 AI 使用错误的相对路径）
+    // 将 CWD 刷新延迟到 user_task 步骤发出之后，避免阻塞用户消息上墙
     const terminalStateService = getTerminalStateService()
-    const cwd = await terminalStateService.refreshCwd(ptyId, 'initial')
-    const enrichedContext: AgentContext = {
-      ...context,
-      cwd: (cwd && cwd !== '~') ? cwd : os.homedir()
+    const cwdResolver = async () => {
+      const cwd = await terminalStateService.refreshCwd(ptyId, 'initial')
+      return (cwd && cwd !== '~') ? cwd : os.homedir()
     }
     
-    // 运行
-    return agent.run(userMessage, enrichedContext, {
+    return agent.run(userMessage, context, {
       profileId,
       workerOptions,
-      callbacks
+      callbacks,
+      cwdResolver
     })
   }
   

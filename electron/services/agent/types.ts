@@ -363,6 +363,8 @@ export interface RunOptions {
   workerOptions?: WorkerAgentOptions
   /** 运行级别回调（覆盖默认回调） */
   callbacks?: AgentCallbacks
+  /** 延迟解析 CWD（在 user_task 步骤发出后再执行，避免阻塞消息上墙） */
+  cwdResolver?: () => Promise<string>
 }
 
 /**
