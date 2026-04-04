@@ -32,7 +32,7 @@ export interface EventPoolConfig {
 
 const DEFAULT_DRAIN_INTERVAL_MS = 15 * 60 * 1000
 const DEFAULT_MAX_POOL_SIZE = 50
-const DEFAULT_STARTUP_GRACE_MS = 15000
+const DEFAULT_STARTUP_GRACE_MS = 30000
 
 export class EventPool {
   private pool: SensorEvent[] = []
