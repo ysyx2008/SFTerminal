@@ -182,6 +182,14 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
   let totalTokens: TokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
   const toolSteps: SubAgentToolStep[] = []
   const messages: AiMessage[] = [...initialMessages]
+  const abortController = new AbortController()
+
+  // 轮询父 abort 信号，触发 HTTP 请求中断
+  const pollInterval = setInterval(() => {
+    if (abortSignal.aborted && !abortController.signal.aborted) {
+      abortController.abort()
+    }
+  }, 500)
 
   log.info(`Sub-agent [${task.id}] started: ${task.description}`)
 
@@ -191,11 +199,12 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
 
     while (MAX_SUB_AGENT_STEPS === 0 || stepCount < MAX_SUB_AGENT_STEPS) {
       if (abortSignal.aborted) {
+        abortController.abort()
         return { id: task.id, description: task.description, status: 'failed', error: 'Aborted by parent agent', steps: toolSteps }
       }
 
       stepCount++
-      const result: ChatWithToolsResult = await aiService.chatWithTools(messages, tools, profileId)
+      const result: ChatWithToolsResult = await aiService.chatWithTools(messages, tools, profileId, abortController.signal)
       accumulateTokens(totalTokens, result.usage)
 
       if (!result.tool_calls || result.tool_calls.length === 0) {
@@ -275,6 +284,9 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
       steps: toolSteps
     }
   } catch (err) {
+    if (abortSignal.aborted) {
+      return { id: task.id, description: task.description, status: 'failed', error: 'Aborted by parent agent', steps: toolSteps }
+    }
     const errorMsg = err instanceof Error ? err.message : String(err)
     log.error(`Sub-agent [${task.id}] error: ${errorMsg}`)
     return {
@@ -285,6 +297,8 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
       tokensUsed: totalTokens,
       steps: toolSteps
     }
+  } finally {
+    clearInterval(pollInterval)
   }
 }
 

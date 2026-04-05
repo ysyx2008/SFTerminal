@@ -1295,7 +1295,8 @@ export class AiService {
   async chatWithTools(
     messages: AiMessage[],
     tools: ToolDefinition[],
-    profileId?: string
+    profileId?: string,
+    signal?: AbortSignal
   ): Promise<ChatWithToolsResult> {
     const profile = await this.getCurrentProfile(profileId)
     if (!profile) {
@@ -1341,8 +1342,9 @@ export class AiService {
       }
 
       try {
-        data = await this.makeRequest(profile, body)
+        data = await this.makeRequest(profile, body, signal)
       } catch (err) {
+        if (signal?.aborted) throw new Error('Aborted')
         if (!stripImages && hasImages && err instanceof Error &&
             (isVisionNotSupportedError(err.message) || isGenericParamErrorWithImages(err.message))) {
           log.warn(`Model ${profile.model} may not support images (error: ${err.message}), retrying without images`)
