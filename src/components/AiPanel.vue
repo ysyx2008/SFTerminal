@@ -4,7 +4,7 @@
  * 重构版本：使用 composables 模块化管理逻辑
  * 每个 tab 独立实例，通过 tabId prop 绑定
  */
-import { ref, computed, watch, inject, onMounted, onUnmounted, toRef } from 'vue'
+import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Upload, Trash2, X, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
@@ -108,14 +108,16 @@ const togglePlanExpand = (stepId: string) => {
   }
 }
 
-// 子 Agent 结果展开状态
-const expandedSubAgents = ref<Set<string>>(new Set())
-const toggleSubAgentExpand = (key: string) => {
-  if (expandedSubAgents.value.has(key)) {
-    expandedSubAgents.value.delete(key)
-  } else {
-    expandedSubAgents.value.add(key)
-  }
+// 子 Agent 展开状态：undefined=默认行为, true=用户展开, false=用户收起
+const subAgentExpandState = reactive(new Map<string, boolean>())
+const isSubAgentExpanded = (key: string, sa: import('@shared/types').SubAgentResult): boolean => {
+  const state = subAgentExpandState.get(key)
+  if (state === false) return false
+  if (state === true) return true
+  return sa.status === 'running' && !!sa.steps?.length
+}
+const toggleSubAgentExpand = (key: string, sa: import('@shared/types').SubAgentResult) => {
+  subAgentExpandState.set(key, !isSubAgentExpanded(key, sa))
 }
 
 /** 获取子 Agent 当前活动摘要（最新的 running 或最后一个已完成步骤的 tool+args） */
@@ -1582,7 +1584,7 @@ watch(() => props.visible, (visible) => {
                         class="sub-agent-card"
                         :class="sa.status"
                       >
-                        <div class="sub-agent-header" @click="toggleSubAgentExpand(item.step!.id + ':' + sa.id)">
+                        <div class="sub-agent-header" @click="toggleSubAgentExpand(item.step!.id + ':' + sa.id, sa)">
                           <span class="sub-agent-status-icon">
                             <span v-if="sa.status === 'pending'" class="sa-icon-pending">○</span>
                             <span v-else-if="sa.status === 'running'" class="sa-icon-running">◌</span>
@@ -1596,9 +1598,9 @@ watch(() => props.visible, (visible) => {
                           <span class="sub-agent-status-text">
                             {{ t(`ai.subAgent${sa.status.charAt(0).toUpperCase() + sa.status.slice(1)}`) }}
                           </span>
-                          <span v-if="sa.result || sa.error || (sa.steps && sa.steps.length > 0)" class="sub-agent-expand-icon" :class="{ expanded: expandedSubAgents.has(item.step!.id + ':' + sa.id) || sa.status === 'running' }">▶</span>
+                          <span v-if="sa.result || sa.error || (sa.steps && sa.steps.length > 0)" class="sub-agent-expand-icon" :class="{ expanded: isSubAgentExpanded(item.step!.id + ':' + sa.id, sa) }">▶</span>
                         </div>
-                        <div v-if="expandedSubAgents.has(item.step!.id + ':' + sa.id) || (sa.status === 'running' && sa.steps && sa.steps.length > 0)" class="sub-agent-detail">
+                        <div v-if="isSubAgentExpanded(item.step!.id + ':' + sa.id, sa)" class="sub-agent-detail">
                           <div v-if="sa.steps && sa.steps.length > 0" class="sub-agent-steps">
                             <div v-for="(step, stepIdx) in sa.steps" :key="stepIdx" class="sa-step" :class="step.status">
                               <span class="sa-step-icon">
