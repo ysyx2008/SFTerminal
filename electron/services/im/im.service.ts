@@ -223,6 +223,8 @@ export class IMService {
   private lastContact: IMLastContact | null = null
   /** 各平台最近一次联系记录（持久化） */
   private contactsByPlatform: Partial<Record<IMPlatform, IMLastContact>> = {}
+  /** 已知用户集合（platform:userId），用于精确判断首次联系（持久化） */
+  private knownUsers = new Set<string>()
   /** 本次运行期间已发送过 im_connected 事件的平台（避免重连时重复触发） */
   private emittedConnectPlatforms = new Set<IMPlatform>()
   /** 防抖：多个平台短时间内连接时合并为一个 im_connected 事件 */
@@ -744,8 +746,9 @@ export class IMService {
     const adapter = this.getAdapter(msg.platform)
     if (!adapter) return
 
-    // 检测是否为该平台的首次联系（在保存 contact 之前判断）
-    const isFirstContact = !this.contactsByPlatform[msg.platform]
+    // 检测该用户是否首次联系（按 platform:userId 精确判断）
+    const userKey = `${msg.platform}:${msg.userId}`
+    const isFirstContact = !this.knownUsers.has(userKey)
 
     // 记录最近联系的渠道，用于后续主动推送
     const contact: IMLastContact = {
@@ -763,6 +766,8 @@ export class IMService {
 
     // 首次联系：标记到消息上，让 Agent 自己决定如何打招呼
     if (isFirstContact) {
+      this.knownUsers.add(userKey)
+      this.persistKnownUsers()
       msg = { ...msg, isFirstContact: true }
     }
 
@@ -919,7 +924,10 @@ export class IMService {
         terminalOutput: [] as string[],
         systemInfo: { os: getLocalOS(), shell: getDefaultShell() },
         terminalType: 'assistant' as const,
-        remoteChannel: msg.platform
+        remoteChannel: msg.platform,
+        ...(msg.isFirstContact ? {
+          contextHint: t('im.first_contact_context', { userName: msg.userName, platform: msg.platform })
+        } : {})
       }
 
       await this.deps.agentService.runAssistant(agentId, fullMessage, context, {
@@ -1198,10 +1206,6 @@ export class IMService {
   private buildAgentMessage(msg: IMIncomingMessage): string {
     let text = msg.text || ''
 
-    if (msg.isFirstContact) {
-      text = t('im.first_contact_context', { userName: msg.userName, platform: msg.platform }) + '\n' + text
-    }
-
     if (msg.attachments && msg.attachments.length > 0) {
       const BINARY_TYPES = new Set<IMAttachment['type']>(['image', 'audio', 'video'])
 
@@ -1262,20 +1266,46 @@ export class IMService {
   }
 
   private loadPersistedContacts(): void {
-    try {
-      const configService = getConfigService()
-      const stored = configService.get('imLastContacts') as Record<string, unknown> | undefined
-      if (!stored || typeof stored !== 'object') return
+    const configService = getConfigService()
 
-      const parsed: Partial<Record<IMPlatform, IMLastContact>> = {}
-      const platforms: IMPlatform[] = ['dingtalk', 'feishu', 'slack', 'telegram', 'wecom', 'wechat']
-      for (const platform of platforms) {
-        const raw = stored[platform] as IMLastContact | undefined
-        if (this.isValidContact(raw) && !this.isContactExpired(raw)) {
-          parsed[platform] = raw
+    // 先加载已知用户集合
+    let hasPersistedKnownUsers = false
+    try {
+      const stored = configService.get('imKnownUsers') as string[] | undefined
+      if (Array.isArray(stored) && stored.length > 0) {
+        this.knownUsers = new Set(stored)
+        hasPersistedKnownUsers = true
+      }
+    } catch (err) {
+      log.warn('Failed to load known users:', err)
+    }
+
+    // 再加载各平台联系记录
+    try {
+      const stored = configService.get('imLastContacts') as Record<string, unknown> | undefined
+      if (stored && typeof stored === 'object') {
+        const parsed: Partial<Record<IMPlatform, IMLastContact>> = {}
+        const platforms: IMPlatform[] = ['dingtalk', 'feishu', 'slack', 'telegram', 'wecom', 'wechat']
+        for (const platform of platforms) {
+          const raw = stored[platform] as IMLastContact | undefined
+          if (this.isValidContact(raw) && !this.isContactExpired(raw)) {
+            parsed[platform] = raw
+          }
+        }
+        this.contactsByPlatform = parsed
+
+        // 向后兼容：老版本没有 imKnownUsers，从 contactsByPlatform 迁移
+        if (!hasPersistedKnownUsers) {
+          for (const contact of Object.values(this.contactsByPlatform)) {
+            if (contact?.userId) {
+              this.knownUsers.add(`${contact.platform}:${contact.userId}`)
+            }
+          }
+          if (this.knownUsers.size > 0) {
+            this.persistKnownUsers()
+          }
         }
       }
-      this.contactsByPlatform = parsed
     } catch (err) {
       log.warn('Failed to load persisted contacts:', err)
       this.contactsByPlatform = {}
@@ -1296,6 +1326,15 @@ export class IMService {
       configService.set('imLastContacts', serializable)
     } catch (err) {
       log.warn('Failed to persist contacts:', err)
+    }
+  }
+
+  private persistKnownUsers(): void {
+    try {
+      const configService = getConfigService()
+      configService.set('imKnownUsers', Array.from(this.knownUsers))
+    } catch (err) {
+      log.warn('Failed to persist known users:', err)
     }
   }
 

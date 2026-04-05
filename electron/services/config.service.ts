@@ -202,6 +202,7 @@ interface StoreSchema {
   imWeChatBaseUrl: string         // 微信 API base URL
   imExecutionMode: ExecutionMode  // IM Agent 执行模式，默认 relaxed
   imLastContacts: Record<string, unknown> // IM 各平台最近联系人（主动推送使用）
+  imKnownUsers: string[] // IM 已知用户（platform:userId），用于首次联系检测
   logLevel: LogLevel  // 日志级别
   skillMarketRegistryUrl: string  // 技能市场 registry URL
   disabledBuiltinSkills: string[] // 被禁用的内置技能 ID 列表
@@ -295,6 +296,7 @@ const defaultConfig: StoreSchema = {
   imWeChatBaseUrl: '',
   imExecutionMode: 'relaxed',
   imLastContacts: {},
+  imKnownUsers: [],
   logLevel: 'warn',
   skillMarketRegistryUrl: '',
   disabledBuiltinSkills: [],

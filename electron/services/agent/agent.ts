@@ -1177,6 +1177,10 @@ export abstract class Agent {
     
     // 添加当前用户消息（如果有图片，附带 images 字段；如有主动消息上下文，注入到 API 消息中）
     let enhancedMessage = this.enhanceUserMessage(message)
+    // contextHint：仅注入 API 消息的上下文提示（如首次联系），不显示在 user_task 步骤中
+    if (run.context.contextHint?.trim()) {
+      enhancedMessage = run.context.contextHint.trim() + '\n' + enhancedMessage
+    }
     // proactiveContext：IM 路径由 context 直传，桌面路径从 proactive-store 补充
     const proactiveCtx = run.context.proactiveContext
       || (this._agentId ? consumeProactiveContext(this._agentId) : undefined)

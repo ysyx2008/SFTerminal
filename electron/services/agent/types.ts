@@ -80,6 +80,7 @@ export interface AgentContext {
   currentPlan?: AgentPlan  // 当前执行计划（从前端 steps 恢复，用于跨对话持久化）
   wakeup?: boolean  // 唤醒模式：静默运行，不累积到会话历史
   proactiveContext?: string  // IM 场景：Agent 之前主动发送的消息内容，作为用户回复的上下文注入 API 消息
+  contextHint?: string  // 仅注入 API 消息的上下文提示（如首次联系提醒），不显示在 user_task 步骤中
 }
 
 // 工具执行结果
