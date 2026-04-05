@@ -187,7 +187,7 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
 
   // 轮询父 abort 信号，触发 HTTP 请求中断
   const pollInterval = setInterval(() => {
-    if (abortSignal.aborted && !abortController.signal.aborted) {
+    if ((abortSignal.aborted || executorConfig.isAborted()) && !abortController.signal.aborted) {
       abortController.abort()
     }
   }, 500)
@@ -200,7 +200,7 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
     let hasExecutedTools = false
 
     while (MAX_SUB_AGENT_STEPS === 0 || stepCount < MAX_SUB_AGENT_STEPS) {
-      if (abortSignal.aborted) {
+      if (abortSignal.aborted || executorConfig.isAborted()) {
         abortController.abort()
         return { id: task.id, description: task.description, status: 'failed', error: 'Aborted by parent agent', steps: toolSteps }
       }
@@ -232,7 +232,7 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
       })
 
       for (const toolCall of result.tool_calls) {
-        if (abortSignal.aborted) break
+        if (abortSignal.aborted || executorConfig.isAborted()) break
 
         const toolName = toolCall.function?.name || 'unknown'
         const toolArgs = summarizeToolArgs(toolName, toolCall.function?.arguments)
