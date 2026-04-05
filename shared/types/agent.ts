@@ -95,6 +95,8 @@ export interface SubAgentToolStep {
 export interface SubAgentResult {
   id: string
   description: string
+  /** 主 Agent 下达的具体任务指令 */
+  prompt?: string
   status: 'pending' | 'running' | 'completed' | 'failed'
   result?: string
   error?: string

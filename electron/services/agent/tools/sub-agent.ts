@@ -344,6 +344,7 @@ export async function dispatchSubAgents(
   const subAgentResults: SubAgentResult[] = tasks.map(t => ({
     id: t.id,
     description: t.description,
+    prompt: t.prompt,
     status: 'pending' as const
   }))
 

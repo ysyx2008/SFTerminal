@@ -1601,6 +1601,7 @@ watch(() => props.visible, (visible) => {
                           <span v-if="sa.result || sa.error || (sa.steps && sa.steps.length > 0)" class="sub-agent-expand-icon" :class="{ expanded: isSubAgentExpanded(item.step!.id + ':' + sa.id, sa) }">▶</span>
                         </div>
                         <div v-if="isSubAgentExpanded(item.step!.id + ':' + sa.id, sa)" class="sub-agent-detail">
+                          <div v-if="sa.prompt" class="sub-agent-prompt">{{ sa.prompt }}</div>
                           <div v-if="sa.steps && sa.steps.length > 0" class="sub-agent-steps">
                             <div v-for="(step, stepIdx) in sa.steps" :key="stepIdx" class="sa-step" :class="step.status">
                               <span class="sa-step-icon">
@@ -4430,6 +4431,15 @@ watch(() => props.visible, (visible) => {
 .sub-agent-detail {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(0, 0, 0, 0.1);
+}
+
+.sub-agent-prompt {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .sub-agent-steps {
