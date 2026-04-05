@@ -108,6 +108,16 @@ const togglePlanExpand = (stepId: string) => {
   }
 }
 
+// 子 Agent 结果展开状态
+const expandedSubAgents = ref<Set<string>>(new Set())
+const toggleSubAgentExpand = (key: string) => {
+  if (expandedSubAgents.value.has(key)) {
+    expandedSubAgents.value.delete(key)
+  } else {
+    expandedSubAgents.value.add(key)
+  }
+}
+
 
 // ==================== 初始化 Composables ====================
 
@@ -1554,6 +1564,33 @@ watch(() => props.visible, (visible) => {
                       </div>
                     </div>
                     <div v-else class="step-text markdown-content" v-html="renderMarkdown(item.step!.content)"></div>
+                    <!-- 并行子 Agent 卡片组 -->
+                    <div v-if="item.step!.subAgents && item.step!.subAgents.length > 0" class="sub-agents-group">
+                      <div
+                        v-for="sa in item.step!.subAgents"
+                        :key="sa.id"
+                        class="sub-agent-card"
+                        :class="sa.status"
+                      >
+                        <div class="sub-agent-header" @click="toggleSubAgentExpand(item.step!.id + ':' + sa.id)">
+                          <span class="sub-agent-status-icon">
+                            <span v-if="sa.status === 'pending'" class="sa-icon-pending">○</span>
+                            <span v-else-if="sa.status === 'running'" class="sa-icon-running">◌</span>
+                            <span v-else-if="sa.status === 'completed'" class="sa-icon-completed">✓</span>
+                            <span v-else class="sa-icon-failed">✗</span>
+                          </span>
+                          <span class="sub-agent-desc">{{ sa.description }}</span>
+                          <span class="sub-agent-status-text">
+                            {{ t(`ai.subAgent${sa.status.charAt(0).toUpperCase() + sa.status.slice(1)}`) }}
+                          </span>
+                          <span v-if="sa.result || sa.error" class="sub-agent-expand-icon" :class="{ expanded: expandedSubAgents.has(item.step!.id + ':' + sa.id) }">▶</span>
+                        </div>
+                        <div v-if="expandedSubAgents.has(item.step!.id + ':' + sa.id)" class="sub-agent-result">
+                          <pre v-if="sa.result">{{ sa.result }}</pre>
+                          <pre v-if="sa.error" class="sub-agent-error">{{ sa.error }}</pre>
+                        </div>
+                      </div>
+                    </div>
                     <div v-if="item.step!.type === 'user_supplement' && item.step!.attachments && item.step!.attachments.length > 0" class="message-attachments">
                       <span
                         v-for="(file, fileIdx) in item.step!.attachments"
@@ -1565,7 +1602,7 @@ watch(() => props.visible, (visible) => {
                         <span class="attachment-size">{{ formatFileSize(file.fileSize) }}</span>
                       </span>
                     </div>
-                    <div v-if="item.step!.toolResult && item.step!.toolResult !== '已拒绝' && item.step!.toolResult !== item.step!.content && item.step!.type !== 'asking'" class="step-result">
+                    <div v-if="item.step!.toolResult && item.step!.toolResult !== '已拒绝' && item.step!.toolResult !== item.step!.content && item.step!.type !== 'asking' && !item.step!.subAgents" class="step-result">
                       <pre>{{ item.step!.toolResult }}</pre>
                     </div>
                     <div v-if="item.step!.images && item.step!.images.length > 0" class="step-images">
@@ -2303,7 +2340,7 @@ watch(() => props.visible, (visible) => {
 .standalone-mode .agent-step-virtual.first-step::before {
   content: '';
   position: absolute;
-  left: -48px;
+  left: calc(-48px - 2px);
   top: 4px;
   width: 38px;
   height: 38px;
@@ -3318,390 +3355,6 @@ watch(() => props.visible, (visible) => {
   color: var(--accent-primary);
 }
 
-/* 已上传文档列表 */
-.uploaded-docs {
-  padding: 8px 12px;
-  background: var(--bg-tertiary);
-  border-top: 1px solid var(--border-color);
-}
-
-.uploaded-docs-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-
-.uploaded-docs-title {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.btn-clear-docs {
-  padding: 2px 4px;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-radius: 3px;
-  opacity: 0.6;
-  transition: all 0.2s;
-}
-
-.btn-clear-docs:hover {
-  opacity: 1;
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-}
-
-.uploaded-docs-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.uploaded-doc-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-size: 11px;
-  max-width: 200px;
-}
-
-.uploaded-doc-item.has-error {
-  border-color: rgba(239, 68, 68, 0.5);
-  background: rgba(239, 68, 68, 0.05);
-}
-
-.doc-icon {
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
-.doc-name {
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100px;
-}
-
-.doc-size {
-  color: var(--text-muted);
-  font-size: 10px;
-  flex-shrink: 0;
-}
-
-.doc-error {
-  flex-shrink: 0;
-  cursor: help;
-  position: relative;
-}
-
-.doc-error::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(30, 30, 30, 0.95);
-  color: #fff;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  line-height: 1.4;
-  white-space: pre-wrap;
-  max-width: 280px;
-  min-width: 120px;
-  z-index: 1000;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.2s ease, visibility 0.2s ease;
-  pointer-events: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-}
-
-.doc-error::before {
-  content: '';
-  position: absolute;
-  bottom: calc(100% + 4px);
-  left: 50%;
-  transform: translateX(-50%);
-  border: 5px solid transparent;
-  border-top-color: rgba(30, 30, 30, 0.95);
-  z-index: 1001;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.2s ease, visibility 0.2s ease;
-  pointer-events: none;
-}
-
-.doc-error:hover::after,
-.doc-error:hover::before {
-  opacity: 1;
-  visibility: visible;
-}
-
-.btn-remove-doc {
-  padding: 2px;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-radius: 3px;
-  opacity: 0.5;
-  transition: all 0.2s;
-  flex-shrink: 0;
-}
-
-.btn-remove-doc:hover {
-  opacity: 1;
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-}
-
-.ai-input {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px 14px;
-  border-top: 1px solid var(--border-color);
-  background: linear-gradient(180deg, var(--bg-tertiary) 0%, var(--bg-primary) 100%);
-}
-
-/* 输入框容器 - 包含输入框和按钮的统一容器 */
-.input-container {
-  position: relative; /* 用于定位 @ 补全菜单 */
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 8px 8px 10px;
-  background: var(--bg-surface);
-  border: none;
-  border-radius: 16px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.03);
-}
-
-.input-container:focus-within {
-  box-shadow: 0 0 0 2px var(--accent-primary), 0 4px 12px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-/* 上传按钮 */
-.upload-btn {
-  flex-shrink: 0;
-  padding: 6px;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.upload-btn:hover:not(:disabled) {
-  background: rgba(100, 150, 255, 0.12);
-  color: var(--accent-primary);
-  transform: scale(1.08);
-}
-
-.upload-btn:active:not(:disabled) {
-  transform: scale(0.95);
-}
-
-.upload-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-
-.upload-spinner {
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(100, 150, 255, 0.2);
-  border-top-color: var(--accent-primary);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-/* 语音输入按钮 */
-.voice-btn {
-  flex-shrink: 0;
-  padding: 6px;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.voice-btn:hover:not(:disabled) {
-  background: rgba(100, 150, 255, 0.12);
-  color: var(--accent-primary);
-  transform: scale(1.08);
-}
-
-.voice-btn:active:not(:disabled) {
-  transform: scale(0.95);
-}
-
-.voice-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.voice-btn.recording {
-  color: var(--color-error);
-  background: rgba(255, 100, 100, 0.15);
-  animation: pulse-recording 1.5s ease-in-out infinite;
-}
-
-.voice-btn.transcribing {
-  color: var(--accent-primary);
-}
-
-.voice-btn .spin {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes pulse-recording {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(255, 100, 100, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 0 6px rgba(255, 100, 100, 0);
-  }
-}
-
-.ai-input textarea {
-  flex: 1;
-  padding: 6px 4px;
-  font-size: 14px;
-  font-family: inherit;
-  color: var(--text-primary);
-  background: transparent;
-  border: none;
-  resize: none;
-  outline: none;
-  line-height: 1.5;
-  min-height: 24px;
-  max-height: 360px;
-  overflow-y: auto;
-  transition: height 0.1s ease-out;
-}
-
-.ai-input textarea:focus {
-  border: none;
-  box-shadow: none;
-  outline: none;
-}
-
-.ai-input textarea::placeholder {
-  color: var(--text-muted);
-  opacity: 0.7;
-  transition: opacity 0.2s;
-}
-
-.ai-input textarea:focus::placeholder {
-  opacity: 0.5;
-}
-
-.send-btn {
-  flex-shrink: 0;
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #6b8cff 0%, #5a7bff 50%, #4f6ef7 100%);
-  border: none;
-  box-shadow: 0 2px 8px rgba(90, 123, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.send-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(90, 123, 255, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  background: linear-gradient(135deg, #7d9aff 0%, #6b8cff 50%, #5a7bff 100%);
-}
-
-.send-btn:active:not(:disabled) {
-  transform: translateY(0) scale(0.97);
-  box-shadow: 0 2px 4px rgba(90, 123, 255, 0.3);
-}
-
-.send-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.send-btn-agent {
-  background: linear-gradient(135deg, #34d399 0%, #10b981 50%, #059669 100%);
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-}
-
-.send-btn-agent:hover:not(:disabled) {
-  background: linear-gradient(135deg, #4ade80 0%, #34d399 50%, #10b981 100%);
-  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-}
-
-.send-btn-supplement {
-  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%);
-  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-}
-
-.send-btn-supplement:hover:not(:disabled) {
-  background: linear-gradient(135deg, #fcd34d 0%, #fbbf24 50%, #f59e0b 100%);
-  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-}
-
-.send-btn-default {
-  background: linear-gradient(135deg, #6ee7b7 0%, #10b981 50%, #059669 100%);
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-}
-
-.send-btn-default:hover:not(:disabled) {
-  background: linear-gradient(135deg, #a7f3d0 0%, #34d399 50%, #10b981 100%);
-  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-}
-
-.stop-btn {
-  flex-shrink: 0;
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #f87171 0%, #ef4444 50%, #dc2626 100%);
-  border: none;
-  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  animation: pulse-glow 1.5s ease-in-out infinite;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.stop-btn:hover {
-  transform: translateY(-1px);
-  background: linear-gradient(135deg, #fca5a5 0%, #f87171 50%, #ef4444 100%);
-  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.5);
-}
-
-.stop-btn:active {
-  transform: translateY(0) scale(0.97);
-}
-
-@keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  }
-  50% {
-    box-shadow: 0 2px 16px rgba(239, 68, 68, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  }
-}
 
 @keyframes pulse {
   0%, 100% {
@@ -4605,6 +4258,141 @@ watch(() => props.visible, (visible) => {
 
 .agent-step-inline.plan_archived .plan-step-header:hover .plan-step-text {
   color: var(--text-primary);
+}
+
+/* ==================== 并行子 Agent 卡片组 ==================== */
+
+.sub-agents-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 6px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sub-agent-card {
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+
+.sub-agent-card.running {
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.sub-agent-card.completed {
+  border-color: rgba(110, 231, 183, 0.3);
+}
+
+.sub-agent-card.failed {
+  border-color: rgba(244, 67, 54, 0.3);
+}
+
+.sub-agent-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+}
+
+.sub-agent-header:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sub-agent-status-icon {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.sa-icon-pending {
+  color: var(--text-muted);
+}
+
+.sa-icon-running {
+  color: #3b82f6;
+  animation: sa-spin 1.2s linear infinite;
+}
+
+.sa-icon-completed {
+  color: #6ee7b7;
+}
+
+.sa-icon-failed {
+  color: #f44336;
+}
+
+@keyframes sa-spin {
+  0% { opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+.sub-agent-desc {
+  flex: 1;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sub-agent-status-text {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.sub-agent-card.running .sub-agent-status-text {
+  color: #3b82f6;
+}
+
+.sub-agent-card.completed .sub-agent-status-text {
+  color: #6ee7b7;
+}
+
+.sub-agent-card.failed .sub-agent-status-text {
+  color: #f44336;
+}
+
+.sub-agent-expand-icon {
+  flex-shrink: 0;
+  font-size: 9px;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.sub-agent-expand-icon.expanded {
+  transform: rotate(90deg);
+}
+
+.sub-agent-result {
+  padding: 6px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.sub-agent-result pre {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.sub-agent-result pre.sub-agent-error {
+  color: #f44336;
 }
 
 /* 等待处理的补充消息 */

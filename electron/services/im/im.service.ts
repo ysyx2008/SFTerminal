@@ -93,7 +93,7 @@ export interface IMLastContact {
 
 /** 工具 → 图标 */
 const TOOL_ICONS: Record<string, string> = {
-  execute_command: '🔧', exec: '🔧', read_file: '📄', edit_file: '✏️',
+  execute_command: '🔧', exec: '🔧', dispatch_agents: '🔀', read_file: '📄', edit_file: '✏️',
   write_text_file: '📝', write_remote_text_file: '📝', file_search: '🔍',
   search_knowledge: '📚', get_knowledge_doc: '📚',
   recall: '🧠', recall_task: '🧠', deep_recall: '🧠', wait: '⏳',
@@ -129,6 +129,7 @@ const TOOL_I18N_MAP: Record<string, Parameters<typeof t>[0]> = {
   clear_plan: 'tool.clear_plan',
   skill: 'tool.skill',
   ask_user: 'tool.ask_user',
+  dispatch_agents: 'tool.dispatch_agents',
 }
 
 /**
@@ -155,6 +156,8 @@ function formatToolNotification(toolName: string, toolArgs?: Record<string, unkn
     detail = ` ${toolArgs.key}`
   } else if (toolName === 'wait' && toolArgs?.seconds) {
     detail = ` ${toolArgs.seconds}s`
+  } else if (toolName === 'dispatch_agents' && Array.isArray(toolArgs?.tasks)) {
+    detail = ` ${(toolArgs.tasks as Array<unknown>).length} 个子任务`
   }
 
   return `${icon} ${label}${detail}`

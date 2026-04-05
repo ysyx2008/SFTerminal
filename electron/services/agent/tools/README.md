@@ -16,6 +16,7 @@ tools/
 ├── plan.ts         # 计划/待办 (create_plan, update_plan, clear_plan)
 ├── memory.ts       # 任务记忆 (recall_task, deep_recall)
 ├── context.ts      # 上下文管理 (compress_context, recall_compressed, manage_memory)
+├── sub-agent.ts    # 并行子 Agent (dispatch_agents)
 ├── misc.ts         # 其他工具 (wait, ask_user, MCP, 技能工具)
 └── README.md       # 本文档
 ```
@@ -55,6 +56,11 @@ tools/
 - `recall_task` - 回忆任务摘要
 - `deep_recall` - 获取任务详细步骤
 
+### 并行子 Agent (sub-agent.ts)
+- `dispatch_agents` - 将多个独立子任务分派给并行子 Agent 同时执行
+- `getSubAgentTools` - 获取子 Agent 可用的工具子集
+- `runSubAgent` - 单个子 Agent 的 ReAct 循环（内部函数）
+
 ### 其他工具 (misc.ts)
 - `wait` - 等待指定时间
 - `ask_user` - 向用户提问
@@ -73,6 +79,7 @@ index.ts
     ├── knowledge.ts  → utils.ts, types.ts
     ├── plan.ts       → types.ts
     ├── memory.ts     → types.ts
+    ├── sub-agent.ts  → utils.ts, types.ts, index.ts (executeTool)
     └── misc.ts       → utils.ts, types.ts
 ```
 

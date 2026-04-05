@@ -24,6 +24,7 @@ import { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 import { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
 import { compressContext, recallCompressed, manageMemory } from './context'
 import { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, messageUser, executeMcpTool, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
+import { dispatchSubAgents } from './sub-agent'
 
 // 重新导出类型
 export type { ToolExecutorConfig, AgentConfig, ToolResult, ErrorCategory } from './types'
@@ -38,6 +39,7 @@ export { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 export { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
 export { compressContext, recallCompressed, manageMemory } from './context'
 export { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, messageUser, executeMcpTool, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
+export { dispatchSubAgents, getSubAgentTools } from './sub-agent'
 
 // 导出工具函数
 export {
@@ -191,6 +193,9 @@ export async function executeTool(
 
     case 'manage_memory':
       return manageMemory(args, executor)
+
+    case 'dispatch_agents':
+      return dispatchSubAgents(args, config, executor)
 
     case 'send_to_chat':
       return sendToChat(args, executor)

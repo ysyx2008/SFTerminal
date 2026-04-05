@@ -1291,6 +1291,12 @@ export default {
     askingDefault: '默认：',
     askingDefaultHint: '（直接按回车使用默认值）',
     confirmMultiSelect: '确认选择',
+    subAgentPending: '等待中',
+    subAgentRunning: '执行中',
+    subAgentCompleted: '已完成',
+    subAgentFailed: '失败',
+    subAgentShowResult: '查看结果',
+    subAgentHideResult: '收起结果',
     // 分析功能相关（通过 Agent 执行）
     analyzeErrorPrompt: '请帮我分析这个错误：',
     analyzeOutputPrompt: '请帮我分析这段终端输出：',

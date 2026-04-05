@@ -1291,6 +1291,12 @@ export default {
     askingDefault: 'Default:',
     askingDefaultHint: '(Press Enter to use default value)',
     confirmMultiSelect: 'Confirm Selection',
+    subAgentPending: 'Pending',
+    subAgentRunning: 'Running',
+    subAgentCompleted: 'Completed',
+    subAgentFailed: 'Failed',
+    subAgentShowResult: 'Show result',
+    subAgentHideResult: 'Hide result',
     // Analysis related (executed via Agent)
     analyzeErrorPrompt: 'Please help me analyze this error:',
     analyzeOutputPrompt: 'Please help me analyze this terminal output:',

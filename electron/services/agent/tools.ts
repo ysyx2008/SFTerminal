@@ -493,6 +493,48 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         }
       }
     },
+    // ==================== 并行子 Agent ====================
+    {
+      type: 'function',
+      function: {
+        name: 'dispatch_agents',
+        description: `将多个**独立子任务**分派给并行子 Agent 同时执行。适用于可拆分为互不依赖的子问题的场景（如同时分析多个文件、并行调研不同方向）。
+
+⚠️ 使用条件：
+- 子任务之间**无数据依赖**，可独立完成
+- 子任务各自聚焦明确的小目标
+- 2 个及以上子任务才有并行价值
+
+子 Agent 能力：读取文件、执行命令(exec)、搜索文件、搜索知识库。不能操作终端、不能向用户提问。
+默认只读模式，设 readonly=false 可启用文件写入（edit_file/write_text_file）。`,
+        parameters: {
+          type: 'object',
+          properties: {
+            tasks: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  description: { type: 'string', description: '任务简述（一句话，用于进度展示）' },
+                  prompt: { type: 'string', description: '详细任务指令（子 Agent 的完整上下文）' }
+                },
+                required: ['description', 'prompt']
+              },
+              description: '子任务列表（2-10 个）'
+            },
+            max_concurrent: {
+              type: 'number',
+              description: '最大并发数（默认 5，范围 1-10）'
+            },
+            readonly: {
+              type: 'boolean',
+              description: '只读模式（默认 true）。true: 子 Agent 仅能读取和分析；false: 可修改文件（edit_file/write_text_file）'
+            }
+          },
+          required: ['tasks']
+        }
+      }
+    },
     // ==================== 发消息给用户 ====================
     {
       type: 'function',

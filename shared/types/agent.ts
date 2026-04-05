@@ -71,6 +71,23 @@ export interface AttachmentInfo {
   previewPages?: number
 }
 
+/** 子 Agent 任务描述（dispatch_agents 工具参数） */
+export interface SubAgentTask {
+  id: string
+  description: string
+  prompt: string
+}
+
+/** 子 Agent 执行结果（通过 AgentStep.subAgents 推送进度） */
+export interface SubAgentResult {
+  id: string
+  description: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  result?: string
+  error?: string
+  tokensUsed?: TokenUsage
+}
+
 export interface AgentStep {
   id: string
   type: 'thinking' | 'tool_call' | 'tool_result' | 'message' | 'error' | 'confirm' | 'streaming' | 'user_supplement' | 'waiting' | 'asking' | 'waiting_password' | 'plan_created' | 'plan_updated' | 'plan_archived' | 'user_task' | 'final_result'
@@ -90,6 +107,8 @@ export interface AgentStep {
   cacheHitRate?: number
   /** Canvas 预览数据（仅 UI 消费，不发给 AI） */
   canvasData?: import('./canvas').CanvasData
+  /** 并行子 Agent 状态（dispatch_agents 工具专用，实时更新） */
+  subAgents?: SubAgentResult[]
 }
 
 /**

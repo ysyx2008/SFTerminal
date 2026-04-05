@@ -555,6 +555,7 @@ export class PromptBuilder {
       this.buildWindowsPathRule(),
       '**临时文件清理**：任务过程中创建的所有临时文件，使用完毕后及时清除',
       this.buildExecutionGuide(),
+      this.buildParallelAgentRule(),
       this.buildBehaviorRules(),
       this.buildWatchGuide(),
       this.buildDocumentRule(),
@@ -572,6 +573,17 @@ export class PromptBuilder {
       '- 简单任务：直接执行，不要创建 plan',
       '- 复杂任务且步骤间存在依赖关系：使用 `plan(action="create")`，执行时用 `plan(action="update")` 更新状态',
       '- 用户说"直接做"/"快速帮我"：不要创建 plan',
+    ].join('\n')
+  }
+
+  private buildParallelAgentRule(): string {
+    return [
+      '**并行子任务**（`dispatch_agents`）：',
+      '- 当任务可拆分为 2+ 个**互不依赖**的子问题时，使用 `dispatch_agents` 并行执行',
+      '- 典型场景：同时分析多个文件、并行调研不同方向、批量检查多个配置',
+      '- 每个子任务的 prompt 须**自包含**，提供完整上下文（文件路径、目标、约束等）',
+      '- 默认只读模式（读文件、exec、搜索），需要修改文件时设 `readonly: false`',
+      '- 子 Agent 不能操作终端或向用户提问',
     ].join('\n')
   }
 
