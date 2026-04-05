@@ -379,7 +379,7 @@ const handleSendClick = (event: MouseEvent) => {
 
       <button
         v-if="isLoading && !isAgentRunning"
-        class="btn btn-danger stop-btn"
+        class="stop-btn"
         @click="stopGeneration"
         :title="t('ai.stopGeneration')"
       >
@@ -403,7 +403,7 @@ const handleSendClick = (event: MouseEvent) => {
       </button>
       <button
         v-else-if="isAgentRunning"
-        class="btn btn-danger stop-btn"
+        class="stop-btn"
         @click="abortAgent"
         :title="t('ai.stopAgent')"
       >
@@ -740,7 +740,12 @@ const handleSendClick = (event: MouseEvent) => {
 .send-btn,
 .stop-btn {
   flex-shrink: 0;
-  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
   border-radius: 10px;
   border: none;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
