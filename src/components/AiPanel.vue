@@ -120,7 +120,7 @@ const toggleSubAgentExpand = (key: string) => {
 /** 获取子 Agent 当前活动摘要（最新的 running 或最后一个已完成步骤的 tool+args） */
 const getSubAgentActivity = (sa: import('@shared/types').SubAgentResult): string | null => {
   if (!sa.steps || sa.steps.length === 0) return null
-  const running = sa.steps.findLast(s => s.status === 'running')
+  const running = [...sa.steps].reverse().find(s => s.status === 'running')
   const step = running || sa.steps[sa.steps.length - 1]
   const parts = [step.tool]
   if (step.args) parts.push(step.args)

@@ -186,7 +186,7 @@ interface SubAgentRunOptions {
 async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult> {
   const { task, aiService, tools, allowedTools, initialMessages, executorConfig, agentConfig, profileId, abortSignal, onProgress } = options
   const startTime = Date.now()
-  let totalTokens: TokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+  const totalTokens: TokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
   const toolSteps: SubAgentToolStep[] = []
   const messages: AiMessage[] = [...initialMessages]
   const abortController = new AbortController()
