@@ -848,6 +848,9 @@ const electronAPI = {
     // AI 名字
     getAgentName: () => ipcRenderer.invoke('config:getAgentName') as Promise<string>,
     setAgentName: (name: string) => ipcRenderer.invoke('config:setAgentName', name),
+    // AI 头像
+    getAgentAvatar: () => ipcRenderer.invoke('config:getAgentAvatar') as Promise<string>,
+    setAgentAvatar: (dataUrl: string) => ipcRenderer.invoke('config:setAgentAvatar', dataUrl),
 
     // 日志级别
     getLogLevel: () => ipcRenderer.invoke('config:getLogLevel') as Promise<string>,

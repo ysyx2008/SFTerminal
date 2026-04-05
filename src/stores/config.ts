@@ -325,6 +325,8 @@ export const useConfigStore = defineStore('config', () => {
   const agentPersonalityText = ref<string>('')
   // AI 名字（默认旗鱼，用户可自定义）
   const agentName = ref<string>('')
+  // AI 头像（data URL，用户可自定义）
+  const agentAvatar = ref<string>('')
 
   // 日志级别
   const logLevel = ref<LogLevel>('warn')
@@ -358,7 +360,7 @@ export const useConfigStore = defineStore('config', () => {
         theme, uiThemeValue, mbti, debugMode,
         completed, onboarded, lang, sponsorStatus,
         sortBy, defaultOrder, rules, personalityText,
-        savedAgentName, savedLogLevel, savedTerminalSettings,
+        savedAgentName, savedAgentAvatar, savedLogLevel, savedTerminalSettings,
         accounts, savedShortcuts, savedAutoVision, calAccounts,
       ] = await Promise.all([
         window.electronAPI.config.getAiProfiles(),
@@ -378,6 +380,7 @@ export const useConfigStore = defineStore('config', () => {
         window.electronAPI.config.getAiRules(),
         window.electronAPI.config.getAgentPersonalityText(),
         window.electronAPI.config.getAgentName(),
+        window.electronAPI.config.getAgentAvatar(),
         window.electronAPI.config.get('logLevel') as Promise<string | undefined>,
         window.electronAPI.config.get('terminalSettings'),
         window.electronAPI.config.get('emailAccounts') as Promise<EmailAccount[] | undefined>,
@@ -407,6 +410,7 @@ export const useConfigStore = defineStore('config', () => {
       aiRules.value = rules || ''
       agentPersonalityText.value = personalityText || ''
       agentName.value = savedAgentName || ''
+      agentAvatar.value = savedAgentAvatar || ''
       if (savedLogLevel != null && savedLogLevel !== '') {
         logLevel.value = savedLogLevel as LogLevel
         setFrontendLogLevel(savedLogLevel as LogLevel)
@@ -668,6 +672,11 @@ export const useConfigStore = defineStore('config', () => {
     agentName.value = name
   }
 
+  async function setAgentAvatar(dataUrl: string): Promise<void> {
+    await window.electronAPI.config.setAgentAvatar(dataUrl)
+    agentAvatar.value = dataUrl
+  }
+
   // ==================== 日志级别 ====================
 
   async function setLogLevel(level: LogLevel): Promise<void> {
@@ -913,6 +922,8 @@ export const useConfigStore = defineStore('config', () => {
     setAiRules,
     setAgentPersonalityText,
     setAgentName,
+    agentAvatar,
+    setAgentAvatar,
     setLogLevel,
     addEmailAccount,
     updateEmailAccount,

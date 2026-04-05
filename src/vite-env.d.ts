@@ -563,6 +563,9 @@ interface Window {
       // AI 名字
       getAgentName: () => Promise<string>
       setAgentName: (name: string) => Promise<void>
+      // AI 头像
+      getAgentAvatar: () => Promise<string>
+      setAgentAvatar: (dataUrl: string) => Promise<void>
       // 日志级别
       getLogLevel: () => Promise<string>
       setLogLevel: (level: string) => Promise<void>

@@ -1300,8 +1300,8 @@ watch(() => props.visible, (visible) => {
           :prerender="10"
           key-field="id"
           class="ai-messages"
-          :class="{ 'standalone-mode': isStandaloneAssistant }"
-          :style="isStandaloneAssistant ? { '--assistant-avatar': `url(${sailfishLogo})` } : undefined"
+          :class="{ 'standalone-mode': isStandaloneAssistant, 'custom-avatar': isStandaloneAssistant && configStore.agentAvatar }"
+          :style="isStandaloneAssistant ? { '--assistant-avatar': `url(${configStore.agentAvatar || sailfishLogo})` } : undefined"
         >
           <template #before>
             <!-- 欢迎页（无任务且无历史对话时显示） -->
@@ -2315,6 +2315,9 @@ watch(() => props.visible, (visible) => {
   background-color: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
+.standalone-mode.custom-avatar .agent-step-virtual.first-step::before {
+  background-size: cover;
+}
 
 /* Agent 执行模式 - 宽松模式绿色内阴影（仅左右两边） */
 .ai-panel.mode-relaxed .ai-messages {
@@ -2929,6 +2932,9 @@ watch(() => props.visible, (visible) => {
   border: 1px solid rgba(255, 255, 255, 0.12);
   position: relative;
   z-index: 1;
+}
+.standalone-mode.custom-avatar .message.assistant::before {
+  background-size: cover;
 }
 
 .message-wrapper {

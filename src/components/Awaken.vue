@@ -5,7 +5,7 @@ import { useConfigStore, type AgentMbtiType } from '../stores/config'
 import {
   X, Play, Trash2, Eye, RefreshCw, History,
   Clock, Heart, Globe, Zap, FolderOpen, Calendar, Mail,
-  LayoutTemplate, Plus, Sparkles, Pencil, Fingerprint, UserRound, HeartPulse
+  LayoutTemplate, Plus, Sparkles, Pencil, Fingerprint, UserRound, HeartPulse, Camera
 } from 'lucide-vue-next'
 
 const { t } = useI18n()
@@ -635,6 +635,52 @@ async function saveAgentName() {
   await configStore.setAgentName(trimmed)
 }
 
+// AI 头像
+const avatarFileInput = ref<HTMLInputElement | null>(null)
+const currentAvatar = computed(() => configStore.agentAvatar)
+
+function triggerAvatarSelect() {
+  avatarFileInput.value?.click()
+}
+
+async function handleAvatarSelect(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  input.value = ''
+
+  if (!file.type.startsWith('image/')) return
+
+  const MAX_SIZE = 128
+  const dataUrl = await new Promise<string>((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        let w = img.width, h = img.height
+        if (w > MAX_SIZE || h > MAX_SIZE) {
+          const scale = MAX_SIZE / Math.max(w, h)
+          w = Math.round(w * scale)
+          h = Math.round(h * scale)
+        }
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')!
+        ctx.drawImage(img, 0, 0, w, h)
+        resolve(canvas.toDataURL('image/png'))
+      }
+      img.src = reader.result as string
+    }
+    reader.readAsDataURL(file)
+  })
+  await configStore.setAgentAvatar(dataUrl)
+}
+
+async function removeAvatar() {
+  await configStore.setAgentAvatar('')
+}
+
 async function savePersonalityText() {
   if (!personalityDirty.value) return
   personalitySaving.value = true
@@ -966,17 +1012,41 @@ onUnmounted(() => {
                   <h3>{{ t('awaken.identityTitle') }}</h3>
                 </div>
                 <p class="personality-hint">{{ t('awaken.identityHint') }}</p>
-                <div class="personality-name-row">
-                  <label class="personality-name-label">{{ t('awaken.nameLabel') }}</label>
-                  <input
-                    v-model="agentNameInput"
-                    class="personality-name-input"
-                    :placeholder="t('awaken.namePlaceholder')"
-                    maxlength="20"
-                    spellcheck="false"
-                    @blur="saveAgentName"
-                    @keydown.enter="($event.target as HTMLInputElement)?.blur()"
-                  />
+                <div class="identity-profile-row">
+                  <div class="identity-avatar-area" @click="triggerAvatarSelect" :title="t('awaken.avatarChange')">
+                    <img v-if="currentAvatar" :src="currentAvatar" class="identity-avatar-img" />
+                    <div v-else class="identity-avatar-placeholder">
+                      <Camera :size="20" />
+                    </div>
+                    <div class="identity-avatar-overlay">
+                      <Camera :size="14" />
+                    </div>
+                    <button v-if="currentAvatar" class="identity-avatar-remove" @click.stop="removeAvatar" :title="t('awaken.avatarRemove')">
+                      <X :size="10" />
+                    </button>
+                    <input
+                      ref="avatarFileInput"
+                      type="file"
+                      accept="image/*"
+                      style="display: none"
+                      @change="handleAvatarSelect"
+                    />
+                  </div>
+                  <div class="identity-name-group">
+                    <div class="personality-name-row">
+                      <label class="personality-name-label">{{ t('awaken.nameLabel') }}</label>
+                      <input
+                        v-model="agentNameInput"
+                        class="personality-name-input"
+                        :placeholder="t('awaken.namePlaceholder')"
+                        maxlength="20"
+                        spellcheck="false"
+                        @blur="saveAgentName"
+                        @keydown.enter="($event.target as HTMLInputElement)?.blur()"
+                      />
+                    </div>
+                    <span class="identity-avatar-hint">{{ t('awaken.avatarHint') }}</span>
+                  </div>
                 </div>
                 <textarea
                   v-model="identityText"
@@ -1912,6 +1982,96 @@ onUnmounted(() => {
   border-color: var(--primary);
 }
 .personality-name-input::placeholder {
+  color: var(--text-muted);
+}
+
+.identity-profile-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.identity-avatar-area {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  transition: border-color 0.2s;
+}
+.identity-avatar-area:hover {
+  border-color: var(--primary);
+}
+.identity-avatar-area:hover .identity-avatar-overlay {
+  opacity: 1;
+}
+
+.identity-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.identity-avatar-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.identity-avatar-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.identity-avatar-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.identity-avatar-area:hover .identity-avatar-remove {
+  opacity: 1;
+}
+.identity-avatar-remove:hover {
+  background: rgba(220, 38, 38, 0.8);
+}
+
+.identity-name-group {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-height: 64px;
+}
+
+.identity-avatar-hint {
+  font-size: 11px;
   color: var(--text-muted);
 }
 

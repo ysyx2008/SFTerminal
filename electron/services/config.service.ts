@@ -174,6 +174,7 @@ interface StoreSchema {
   aiRules: string  // 用户自定义的 AI 规则/指令
   agentPersonalityText: string  // 用户自定义个性描述（在 MBTI 基础上追加）
   agentName: string             // AI 名字（默认旗鱼，用户可自定义）
+  agentAvatar: string           // AI 头像（data URL，用户可自定义）
   autoCheckUpdate: boolean   // 启动时自动检查更新
   autoDownloadUpdate: boolean // 发现新版本后自动下载并在退出时静默安装
   gatewayAutoStart: boolean  // Gateway 远程访问自动启动
@@ -269,6 +270,7 @@ const defaultConfig: StoreSchema = {
   aiRules: '',
   agentPersonalityText: '',
   agentName: '',
+  agentAvatar: '',
   autoCheckUpdate: true,
   autoDownloadUpdate: false,
   gatewayAutoStart: false,
@@ -926,6 +928,18 @@ export class ConfigService {
   setAgentName(name: string): void {
     const safeName = (name || '').trim().substring(0, 20)
     this.store.set('agentName', safeName)
+  }
+
+  // ==================== AI 头像 ====================
+
+  getAgentAvatar(): string {
+    return this.store.get('agentAvatar') || ''
+  }
+
+  setAgentAvatar(dataUrl: string): void {
+    const MAX_AVATAR_SIZE = 100 * 1024
+    if (dataUrl.length > MAX_AVATAR_SIZE) return
+    this.store.set('agentAvatar', dataUrl)
   }
 
   // ==================== 快捷键 ====================

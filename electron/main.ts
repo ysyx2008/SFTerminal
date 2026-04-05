@@ -2317,6 +2317,15 @@ ipcMain.handle('config:setAgentName', async (_event, name: string) => {
   configService.setAgentName(name)
 })
 
+// AI 头像
+ipcMain.handle('config:getAgentAvatar', async () => {
+  return configService.getAgentAvatar()
+})
+
+ipcMain.handle('config:setAgentAvatar', async (_event, dataUrl: string) => {
+  configService.setAgentAvatar(dataUrl)
+})
+
 // 日志级别
 ipcMain.handle('config:getLogLevel', async () => {
   return configService.getLogLevel()
