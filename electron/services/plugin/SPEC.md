@@ -109,3 +109,35 @@ api.registerHttpRoute(method: string, path: string, handler: RouteHandler): void
 ## 测试
 
 `__tests__/plugin-contract.test.ts` — 契约测试，验证公开 API 稳定性。修改插件系统代码后此测试必须通过。
+
+## 覆盖面与演进路线
+
+### 与 OpenClaw 的对比（2026-04-05 评估）
+
+| 能力 | OpenClaw | SailFish | 备注 |
+|------|:--------:|:--------:|------|
+| `registerTool` | ✅ | ✅ | Agent 工具，最高频需求 |
+| `registerProvider` | ✅ | ✅ | LLM 文字推理 |
+| `registerChannel` | ✅ | ✅ | IM 消息渠道 |
+| `registerHook` | ✅ | ✅ | 生命周期拦截 |
+| `registerHttpRoute` | ❌ | ✅ | SailFish 独有，Webhook 集成 |
+| `registerCli` | ✅ | ❌ | CLI 命令扩展 |
+| `registerSpeechProvider` | ✅ | ❌ | 语音合成/识别 |
+| `registerRealtimeTranscriptionProvider` | ✅ | ❌ | 实时转写 |
+| `registerRealtimeVoiceProvider` | ✅ | ❌ | 实时语音对话 |
+| `registerMediaUnderstandingProvider` | ✅ | ❌ | 图片/视频理解 |
+| `registerImageGenerationProvider` | ✅ | ❌ | 图片生成 |
+| `registerVideoGenerationProvider` | ✅ | ❌ | 视频生成 |
+| `registerWebFetchProvider` | ✅ | ❌ | 网页抓取 |
+| `registerWebSearchProvider` | ✅ | ❌ | 网页搜索 |
+| `registerCliBackend` | ✅ | ❌ | CLI 推理后端 |
+
+Hook 事件差异：OpenClaw 有 `before_agent_start`、`before_model_resolve`、`before_prompt_build`、`after_tools_resolved` 等；SailFish 有 `before_tool_call`、`after_tool_call`、`before_ai_request`、`message_sending`。
+
+### 现状结论
+
+当前覆盖了 OpenClaw 14 个注册 API 中的 4 个核心 API，另有 1 个 SailFish 独有 API。
+
+**已够用的场景**：自定义 Agent 工具、自定义 AI Provider、自定义 IM 渠道、Hook 拦截（审计/权限）、HTTP 路由（Webhook）。
+
+**缺失的部分不是"加个 register 方法"能解决的** — 语音、图片生成、网页搜索等模块在 SailFish 内部尚未做成可替换的 Provider 架构，暴露插件接口无意义。应随 SailFish 自身功能演进，在内部模块重构为 Provider 模式后再逐步补充对应的 `registerXxxProvider`。
