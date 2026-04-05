@@ -2,7 +2,31 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.29.0 (2026-04-05) (Latest)
+## v10.30.0 (2026-04-06) (Latest)
+
+Significantly improves task execution speed with parallel sub-agent dispatching and streaming tool parallel execution, drastically reducing response latency for complex tasks.
+
+### New Features
+- 🚀 **Parallel Sub-Agents**: New `dispatch_agents` tool enabling multiple sub-agents to execute tasks in parallel, with a type system (explore/edit/research), sync/async dual modes, and fork context inheritance sharing prompt cache
+- ⚡ **Streaming Tool Parallel Execution**: Read-only tools start executing while AI is still generating output, reducing wait time
+- 🎨 **Custom Assistant Avatar**: Awaken mode now supports setting a custom assistant avatar
+
+### Improvements
+- 📦 **Tool Result Budget**: Automatically cleans up old read-only tool outputs to free tokens, preventing context bloat in long conversations
+- 🔄 **Unified AI Request Retry**: All AI request paths now share a unified retry strategy
+- 💬 **AI Error Message Optimization**: Agent can now correctly identify error sources, improving error handling
+- 🖱️ **Input Box Interaction Feedback**: Added cursor/hover feedback for buttons, unified stop/send button height to prevent layout jitter
+- ⏱️ **Instant User Supplement Response**: User supplement message steps are created immediately, eliminating pending delay during long tool calls
+
+### Bug Fixes
+- 🐛 Fixed DynamicScroller inaccurate height estimation for long message steps
+- 🐛 Fixed tool output not being preserved for AI when tool execution fails
+- 🐛 Fixed CLI streaming line truncation by display width, preventing Chinese line-break overwrite issues
+- 🐛 Fixed CLI agent:run output deduplication, streaming steps now use single-line overwrite
+- 🐛 Used dedicated HTTP agent to eliminate MaxListenersExceededWarning during concurrent requests
+- 🐛 Fixed IM first-contact misjudgment and system prompt being visible to users
+
+## v10.29.0 (2026-04-05)
 
 Introduces a plugin system supporting tool, provider, route, and IM channel extensions. Major Word skill enhancements with institutional document formatting and multi-level numbering.
 
