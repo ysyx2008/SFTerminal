@@ -834,13 +834,52 @@ async function agentRun(args: string[]): Promise<void> {
   
   const mode = (flags.mode as string) || 'free'
   
-  // Set up output callbacks
+  // Set up output callbacks with inline-overwrite for streaming/progress updates.
+  // Three rendering states per step:
+  //   unseen → inline (streaming/progress, \r overwrite) → printed (final, console.log)
+  // Once a step reaches "printed", all subsequent onStep calls for it are skipped.
+  let inlineMode = false
+  const printedSteps = new Set<string>()
+  
+  const cols = () => process.stdout.columns || 80
+  const clearInline = () => {
+    if (inlineMode) {
+      process.stdout.write('\r' + ' '.repeat(cols() - 1) + '\r')
+      inlineMode = false
+    }
+  }
+  const writeInline = (text: string) => {
+    const maxLen = cols() - 1
+    const singleLine = text.replace(/\n/g, ' ').substring(0, maxLen)
+    process.stdout.write('\r' + singleLine.padEnd(maxLen))
+    inlineMode = true
+  }
+  const stepPrefix = (type: string) =>
+    type === 'thinking' ? '💭' : type === 'tool_call' ? '🔧' :
+    type === 'tool_result' ? '📋' : type === 'message' ? '💬' : '  '
+
   const callbacks = {
     onStep: (_agentId: string, step: any) => {
-      const prefix = step.type === 'thinking' ? '💭' :
-                     step.type === 'tool_call' ? '🔧' :
-                     step.type === 'tool_result' ? '📋' :
-                     step.type === 'message' ? '💬' : '  '
+      if (printedSteps.has(step.id)) return
+      
+      const isStreaming = step.isStreaming === true
+      
+      // Streaming content → inline overwrite (single-line \r progress)
+      if (isStreaming) {
+        const prefix = stepPrefix(step.type)
+        const preview = (step.content || '').substring(0, 60)
+        writeInline(`${prefix} [${step.type}] ${preview}`)
+        return
+      }
+      
+      // Non-streaming step → print full line and mark as done
+      clearInline()
+      printedSteps.add(step.id)
+      
+      // final_result duplicates the last message; skip it since onComplete prints the result
+      if (step.type === 'final_result' || step.type === 'user_task') return
+      
+      const prefix = stepPrefix(step.type)
       const content = step.content?.substring(0, 200) || ''
       console.log(`${prefix} [${step.type}] ${content}`)
       if (step.toolName) {
@@ -863,10 +902,11 @@ async function agentRun(args: string[]): Promise<void> {
         agent.confirmToolCall(ptyId, confirmation.toolCallId, false)
       }
     },
-    onComplete: (_agentId: string, result: string) => {
-      console.log(`\n✓ Agent completed: ${result.substring(0, 500)}`)
+    onComplete: () => {
+      clearInline()
     },
     onError: (_agentId: string, error: string) => {
+      clearInline()
       console.error(`\n✗ Agent error: ${error}`)
     }
   }
