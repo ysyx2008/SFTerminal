@@ -2134,7 +2134,7 @@ export abstract class Agent {
       },
       historyService: this.services.historyService,
       getAiService: () => this.services.aiService,
-      getActiveProfileId: () => this.services.configService?.getActiveAiProfile() ?? undefined,
+      getActiveProfileId: () => this.profileId || this.services.configService?.getActiveAiProfile() || undefined,
       injectPendingMessage: (message: string) => {
         if (this.currentRun) {
           this.currentRun.pendingUserMessages.push({ message })
