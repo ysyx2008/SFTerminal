@@ -68,7 +68,7 @@ SailFish/
 │       │   ├── orchestrator.ts  # 编排器（多 Agent 协调）
 │       │   ├── tool-executor.ts # 工具执行器
 │       │   ├── tools.ts         # 工具定义（Function Calling）
-│       │   ├── tools/           # 工具实现（command/file/knowledge/plan/memory/terminal/context/exec）
+│       │   ├── tools/           # 工具实现（command/file/knowledge/plan/memory/terminal/context/exec/sub-agent）
 │       │   ├── skills/          # 技能系统（excel/email/browser/word/watch/scheduler/calendar/terminal/skill-manager/feishu/wecom/dingtalk/personality/pdf）
 │       │   ├── prompt-builder.ts # 系统提示构建
 │       │   ├── context-builder.ts # 上下文管理（L1 任务历史压缩）
@@ -131,6 +131,7 @@ SailFish/
 ### AI Agent 架构
 - **ReAct 循环**：思考 → 工具调用 → 观察结果 → 循环
 - **工具系统**：内置工具 + 技能系统（按需加载）+ MCP 工具
+- **并行子 Agent**：`dispatch_agents` 工具分派轻量子任务并行执行，支持 Agent 类型系统（explore/edit/research）、同步/异步双模式、prompt cache 优化
 - **风险评估**：safe / moderate / dangerous / blocked 四级
 - **执行模式**：strict（全确认）/ relaxed（危险确认）/ free（全自动）
 - **Agent Workspace**：`{userData}/agent-workspace/`，Agent 私有数据目录，文件读写自动跳过确认

@@ -110,22 +110,19 @@ const defaultConfig: AgentConfig = {
 // ==================== 测试 ====================
 
 describe('getSubAgentTools', () => {
-  it('readonly mode (default) should exclude write tools', () => {
+  it('explore type (default) should exclude write tools', () => {
     const tools = getSubAgentTools()
     const toolNames = tools.map(t => t.function.name)
 
-    // 只读工具应包含
     expect(toolNames).toContain('read_file')
     expect(toolNames).toContain('file_search')
     expect(toolNames).toContain('exec')
     expect(toolNames).toContain('search_knowledge')
     expect(toolNames).toContain('get_knowledge_doc')
 
-    // 写工具不应包含
     expect(toolNames).not.toContain('edit_file')
     expect(toolNames).not.toContain('write_text_file')
 
-    // 危险/无关工具不应包含
     expect(toolNames).not.toContain('execute_command')
     expect(toolNames).not.toContain('dispatch_agents')
     expect(toolNames).not.toContain('ask_user')
@@ -135,8 +132,8 @@ describe('getSubAgentTools', () => {
     expect(toolNames).not.toContain('talk_to_user')
   })
 
-  it('writable mode should include write tools', () => {
-    const tools = getSubAgentTools(false)
+  it('edit type should include write tools', () => {
+    const tools = getSubAgentTools('edit')
     const toolNames = tools.map(t => t.function.name)
 
     expect(toolNames).toContain('read_file')
@@ -147,14 +144,37 @@ describe('getSubAgentTools', () => {
     expect(toolNames).toContain('search_knowledge')
     expect(toolNames).toContain('get_knowledge_doc')
 
-    // 危险/无关工具仍不包含
     expect(toolNames).not.toContain('dispatch_agents')
     expect(toolNames).not.toContain('ask_user')
   })
 
+  it('research type should have focused tool set', () => {
+    const tools = getSubAgentTools('research')
+    const toolNames = tools.map(t => t.function.name)
+
+    expect(toolNames).toContain('read_file')
+    expect(toolNames).toContain('exec')
+    expect(toolNames).toContain('search_knowledge')
+    expect(toolNames).toContain('get_knowledge_doc')
+
+    expect(toolNames).toContain('file_search')
+
+    // research 不包含写工具
+    expect(toolNames).not.toContain('edit_file')
+    expect(toolNames).not.toContain('write_text_file')
+  })
+
+  it('unknown type should fall back to explore', () => {
+    const tools = getSubAgentTools('nonexistent')
+    const exploreTools = getSubAgentTools('explore')
+    const toolNames = tools.map(t => t.function.name)
+    const exploreNames = exploreTools.map(t => t.function.name)
+    expect(toolNames).toEqual(exploreNames)
+  })
+
   it('each tool should have required schema fields', () => {
-    for (const readonly of [true, false]) {
-      const tools = getSubAgentTools(readonly)
+    for (const type of ['explore', 'edit', 'research']) {
+      const tools = getSubAgentTools(type)
       for (const tool of tools) {
         expect(tool.type).toBe('function')
         expect(tool.function.name).toBeTruthy()
@@ -167,8 +187,7 @@ describe('getSubAgentTools', () => {
 
   it('parameter schemas should match main agent tools', () => {
     const mainTools = getAgentTools(undefined, { mode: 'assistant' })
-    // 测试读写模式（覆盖更多工具）
-    const subTools = getSubAgentTools(false)
+    const subTools = getSubAgentTools('edit')
 
     for (const subTool of subTools) {
       const mainTool = mainTools.find(t => t.function.name === subTool.function.name)
@@ -450,7 +469,7 @@ describe('dispatchSubAgents', () => {
     )
   })
 
-  it('should default to readonly mode', async () => {
+  it('should default to explore agent type', async () => {
     const executor = createMockExecutor()
     const mockAi = (executor as any)._mockAiService
 
@@ -465,22 +484,20 @@ describe('dispatchSubAgents', () => {
       tasks: [{ description: 'Read task', prompt: 'Read something' }]
     }, defaultConfig, executor)
 
-    // 验证 AI 收到的工具集不包含写工具
     const toolsPassedToAi = mockAi.chatWithTools.mock.calls[0][1] as ToolDefinition[]
     const toolNames = toolsPassedToAi.map((t: ToolDefinition) => t.function.name)
     expect(toolNames).not.toContain('edit_file')
     expect(toolNames).not.toContain('write_text_file')
     expect(toolNames).toContain('read_file')
 
-    // 进度步骤应显示"只读"
     expect(executor.addStep).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: expect.stringContaining('只读')
+        content: expect.stringContaining('explore')
       })
     )
   })
 
-  it('should include write tools when readonly=false', async () => {
+  it('should use edit agent type with write tools', async () => {
     const executor = createMockExecutor()
     const mockAi = (executor as any)._mockAiService
 
@@ -493,21 +510,99 @@ describe('dispatchSubAgents', () => {
 
     await dispatchSubAgents({
       tasks: [{ description: 'Write task', prompt: 'Edit something' }],
-      readonly: false
+      agent_type: 'edit'
     }, defaultConfig, executor)
 
-    // 验证 AI 收到的工具集包含写工具
     const toolsPassedToAi = mockAi.chatWithTools.mock.calls[0][1] as ToolDefinition[]
     const toolNames = toolsPassedToAi.map((t: ToolDefinition) => t.function.name)
     expect(toolNames).toContain('edit_file')
     expect(toolNames).toContain('write_text_file')
     expect(toolNames).toContain('read_file')
 
-    // 进度步骤应显示"读写"
     expect(executor.addStep).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: expect.stringContaining('读写')
+        content: expect.stringContaining('edit')
       })
     )
+  })
+
+  it('should allow per-task agent_type override', async () => {
+    const executor = createMockExecutor()
+    const mockAi = (executor as any)._mockAiService
+
+    mockAi.chatWithTools.mockResolvedValue({
+      content: 'Done',
+      tool_calls: undefined,
+      finish_reason: 'stop',
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+    })
+
+    await dispatchSubAgents({
+      tasks: [
+        { description: 'Read task', prompt: 'Read something' },
+        { description: 'Edit task', prompt: 'Edit something', agent_type: 'edit' }
+      ],
+      agent_type: 'explore'
+    }, defaultConfig, executor)
+
+    // 第一个子任务用 explore 工具集
+    const tools1 = mockAi.chatWithTools.mock.calls[0][1] as ToolDefinition[]
+    const names1 = tools1.map((t: ToolDefinition) => t.function.name)
+    expect(names1).not.toContain('edit_file')
+
+    // 第二个子任务用 edit 工具集
+    const tools2 = mockAi.chatWithTools.mock.calls[1][1] as ToolDefinition[]
+    const names2 = tools2.map((t: ToolDefinition) => t.function.name)
+    expect(names2).toContain('edit_file')
+
+    // 进度步骤应显示 mixed（因为两个子任务类型不同）
+    expect(executor.addStep).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining('mixed')
+      })
+    )
+  })
+
+  it('should support background async mode', async () => {
+    const executor = createMockExecutor({
+      injectPendingMessage: vi.fn()
+    })
+    const mockAi = (executor as any)._mockAiService
+
+    mockAi.chatWithTools.mockImplementation(async () => {
+      await new Promise(resolve => setTimeout(resolve, 50))
+      return {
+        content: 'Background task done',
+        tool_calls: undefined,
+        finish_reason: 'stop',
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+      }
+    })
+
+    const result = await dispatchSubAgents({
+      tasks: [{ description: 'Bg task', prompt: 'Do something in background' }],
+      background: true
+    }, defaultConfig, executor)
+
+    // 异步模式应立即返回成功
+    expect(result.success).toBe(true)
+    expect(result.output).toContain('后台子任务')
+
+    // 等待后台任务完成
+    await new Promise(resolve => setTimeout(resolve, 200))
+
+    // 完成后应注入 pending message
+    expect(executor.injectPendingMessage).toHaveBeenCalledWith(
+      expect.stringContaining('后台任务通知')
+    )
+  })
+
+  it('should validate sub-task prompt is non-empty', async () => {
+    const executor = createMockExecutor()
+    const result = await dispatchSubAgents({
+      tasks: [{ description: 'Bad task', prompt: '  ' }]
+    }, defaultConfig, executor)
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('prompt')
   })
 })

@@ -118,6 +118,16 @@ const toggleSubAgentExpand = (key: string) => {
   }
 }
 
+/** 获取子 Agent 当前活动摘要（最新的 running 或最后一个已完成步骤的 tool+args） */
+const getSubAgentActivity = (sa: import('@shared/types').SubAgentResult): string | null => {
+  if (!sa.steps || sa.steps.length === 0) return null
+  const running = sa.steps.findLast(s => s.status === 'running')
+  const step = running || sa.steps[sa.steps.length - 1]
+  const parts = [step.tool]
+  if (step.args) parts.push(step.args)
+  return parts.join(' ')
+}
+
 
 // ==================== 初始化 Composables ====================
 
@@ -1579,7 +1589,10 @@ watch(() => props.visible, (visible) => {
                             <span v-else-if="sa.status === 'completed'" class="sa-icon-completed">✓</span>
                             <span v-else class="sa-icon-failed">✗</span>
                           </span>
-                          <span class="sub-agent-desc">{{ sa.description }}</span>
+                          <span class="sub-agent-header-text">
+                            <span class="sub-agent-desc">{{ sa.description }}</span>
+                            <span v-if="sa.status === 'running' && getSubAgentActivity(sa)" class="sub-agent-activity">⟳ {{ getSubAgentActivity(sa) }}</span>
+                          </span>
                           <span class="sub-agent-status-text">
                             {{ t(`ai.subAgent${sa.status.charAt(0).toUpperCase() + sa.status.slice(1)}`) }}
                           </span>
@@ -4310,12 +4323,18 @@ watch(() => props.visible, (visible) => {
 
 .sub-agent-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 6px 10px;
   cursor: pointer;
   user-select: none;
   font-size: 12px;
+}
+
+.sub-agent-header .sub-agent-status-icon,
+.sub-agent-header .sub-agent-status-text,
+.sub-agent-header .sub-agent-expand-icon {
+  margin-top: 1px;
 }
 
 .sub-agent-header:hover {
@@ -4352,12 +4371,29 @@ watch(() => props.visible, (visible) => {
   100% { opacity: 0.4; }
 }
 
-.sub-agent-desc {
+.sub-agent-header-text {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.sub-agent-desc {
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.sub-agent-activity {
+  font-size: 11px;
+  color: #3b82f6;
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: sa-spin 1.5s ease-in-out infinite;
 }
 
 .sub-agent-status-text {

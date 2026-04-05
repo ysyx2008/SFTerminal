@@ -71,11 +71,16 @@ export interface AttachmentInfo {
   previewPages?: number
 }
 
+/** 子 Agent 类型（与 sub-agent.ts 中 SUB_AGENT_TYPES 注册表对应） */
+export type SubAgentTypeName = 'explore' | 'edit' | 'research'
+
 /** 子 Agent 任务描述（dispatch_agents 工具参数） */
 export interface SubAgentTask {
   id: string
   description: string
   prompt: string
+  /** Agent 类型：explore(只读分析) / edit(文件修改) / research(知识检索)，默认 explore */
+  agentType?: SubAgentTypeName
 }
 
 /** 子 Agent 单步工具调用记录 */

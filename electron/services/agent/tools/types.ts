@@ -76,6 +76,8 @@ export interface ToolExecutorConfig {
   // AI 服务（remember_info 等工具触发 LLM 更新时使用）
   getAiService?: () => import('../../ai.service').AiService | undefined
   getActiveProfileId?: () => string | undefined
+  /** 注入待处理的用户消息（异步子 Agent 完成后将结果注入主 Agent 的 ReAct 循环） */
+  injectPendingMessage?: (message: string) => void
 }
 
 /** 常见图片扩展名（AI Vision 模型可直接处理的格式） */

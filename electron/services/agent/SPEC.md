@@ -106,6 +106,29 @@ run(message, context, options)
 | `memory.ts` | 任务记忆检索 |
 | `context.ts` | 上下文压缩/恢复 |
 | `misc.ts` | 等待、提问、MCP、技能 |
+| `sub-agent.ts` | 并行子 Agent（dispatch_agents 工具） |
+
+### 并行子 Agent (`tools/sub-agent.ts`)
+
+主 Agent 通过 `dispatch_agents` 工具分派轻量子任务并行执行。子任务拥有独立 AI 对话上下文和受限工具集，完成后结果汇总返回。
+
+**Agent 类型系统**：每个子 Agent 按类型分配工具集和系统提示：
+
+| 类型 | 用途 | 工具集 |
+|---|---|---|
+| `explore`（默认） | 只读分析 | read_file, file_search, exec, search_knowledge, get_knowledge_doc |
+| `edit` | 文件修改 | explore + edit_file, write_text_file |
+| `research` | 知识检索归纳 | read_file, file_search, exec, search_knowledge, get_knowledge_doc |
+
+类型通过 `SubAgentType` 接口定义，注册在 `SUB_AGENT_TYPES` 注册表中。
+
+**执行模式**：
+- **同步**（默认）：`dispatchSubAgents` 阻塞等待全部完成
+- **异步**（`background: true`）：立即返回，后台执行，完成后通过 `injectPendingMessage` 注入结果
+
+**Prompt Cache 优化**：同类型子 Agent 共享预构建的 tools 和 system prompt，最大化 provider 侧前缀缓存命中。
+
+**安全约束**：子 Agent 继承父 Agent 的 `executionMode`，不可递归 `dispatch_agents`。安全性通过工具白名单保障（无终端操作等高危工具）。
 
 ### 技能系统 (`skills/`)
 

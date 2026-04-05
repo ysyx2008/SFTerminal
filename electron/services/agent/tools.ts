@@ -505,8 +505,12 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
 - 子任务各自聚焦明确的小目标
 - 2 个及以上子任务才有并行价值
 
-子 Agent 能力：读取文件、执行命令(exec)、搜索文件、搜索知识库。不能操作终端、不能向用户提问。
-默认只读模式，设 readonly=false 可启用文件写入（edit_file/write_text_file）。`,
+Agent 类型：
+- explore（默认）：只读分析，读文件/exec/搜索
+- edit：可修改文件（edit_file/write_text_file）
+- research：知识检索与归纳，侧重知识库和结构化输出
+
+子 Agent 不能操作终端、不能向用户提问。支持 background 模式异步执行。`,
         parameters: {
           type: 'object',
           properties: {
@@ -516,19 +520,25 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
                 type: 'object',
                 properties: {
                   description: { type: 'string', description: '任务简述（一句话，用于进度展示）' },
-                  prompt: { type: 'string', description: '详细任务指令（子 Agent 的完整上下文）' }
+                  prompt: { type: 'string', description: '详细任务指令（子 Agent 的完整上下文）' },
+                  agent_type: { type: 'string', enum: ['explore', 'edit', 'research'], description: '此子任务的 Agent 类型（覆盖全局 agent_type）' }
                 },
                 required: ['description', 'prompt']
               },
               description: '子任务列表（2-10 个）'
             },
+            agent_type: {
+              type: 'string',
+              enum: ['explore', 'edit', 'research'],
+              description: '全局 Agent 类型（默认 explore）。每个子任务可单独指定 agent_type 覆盖'
+            },
             max_concurrent: {
               type: 'number',
               description: '最大并发数（默认 5，范围 1-10）'
             },
-            readonly: {
+            background: {
               type: 'boolean',
-              description: '只读模式（默认 true）。true: 子 Agent 仅能读取和分析；false: 可修改文件（edit_file/write_text_file）'
+              description: '异步模式（默认 false）。true: 立即返回，子任务在后台执行，完成后自动通知结果'
             }
           },
           required: ['tasks']
