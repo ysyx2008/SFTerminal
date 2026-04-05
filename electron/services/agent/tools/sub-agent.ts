@@ -11,7 +11,7 @@
  * - 进度推送：通过父 executor 的 addStep/updateStep 实时更新 subAgents 字段
  */
 import type { AiService, AiMessage, ToolDefinition, ChatWithToolsResult } from '../../ai.service'
-import type { SubAgentTask, SubAgentResult, TokenUsage } from '@shared/types'
+import type { SubAgentTask, SubAgentResult, SubAgentToolStep, TokenUsage } from '@shared/types'
 import type { ToolExecutorConfig, ToolResult, AgentConfig } from './types'
 import { executeTool } from './index'
 import { getAgentTools } from '../tools'
@@ -118,6 +118,7 @@ interface SubAgentRunOptions {
   profileId?: string
   abortSignal: { aborted: boolean }
   readonly: boolean
+  onProgress: (update: Partial<SubAgentResult>) => void
 }
 
 /**
@@ -127,9 +128,10 @@ interface SubAgentRunOptions {
  * 返回最终的文本结果或错误信息
  */
 async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult> {
-  const { task, aiService, tools, executorConfig, agentConfig, profileId, abortSignal, readonly } = options
+  const { task, aiService, tools, executorConfig, agentConfig, profileId, abortSignal, readonly, onProgress } = options
   const startTime = Date.now()
   let totalTokens: TokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+  const toolSteps: SubAgentToolStep[] = []
 
   const systemPrompt = buildSubAgentSystemPrompt(task, readonly)
   const messages: AiMessage[] = [
@@ -145,7 +147,7 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
 
     while (stepCount < MAX_SUB_AGENT_STEPS) {
       if (abortSignal.aborted) {
-        return { id: task.id, description: task.description, status: 'failed', error: 'Aborted by parent agent' }
+        return { id: task.id, description: task.description, status: 'failed', error: 'Aborted by parent agent', steps: toolSteps }
       }
 
       stepCount++
@@ -160,30 +162,42 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
           description: task.description,
           status: 'completed',
           result: truncateFromEnd(finalText, MAX_RESULT_LENGTH),
-          tokensUsed: totalTokens
+          tokensUsed: totalTokens,
+          steps: toolSteps
         }
       }
 
       hasExecutedTools = true
 
-      // 将 assistant 消息（含 tool_calls）加入历史
       messages.push({
         role: 'assistant',
         content: result.content || '',
         tool_calls: result.tool_calls
       })
 
-      // 执行所有工具调用
       for (const toolCall of result.tool_calls) {
         if (abortSignal.aborted) break
 
+        const toolName = toolCall.function?.name || 'unknown'
+        const toolArgs = summarizeToolArgs(toolName, toolCall.function?.arguments)
+        const step: SubAgentToolStep = { tool: toolName, args: toolArgs, status: 'running' }
+        toolSteps.push(step)
+        onProgress({ steps: [...toolSteps] })
+
         const toolResult = await executeTool(
-          undefined, // 子 Agent 无终端
+          undefined,
           toolCall,
           agentConfig,
           [],
           executorConfig
         )
+
+        step.status = toolResult.success ? 'completed' : 'failed'
+        step.result = truncateFromEnd(
+          toolResult.success ? toolResult.output : (toolResult.error || toolResult.output),
+          500
+        )
+        onProgress({ steps: [...toolSteps] })
 
         messages.push({
           role: 'tool',
@@ -195,7 +209,6 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
       }
     }
 
-    // 达到步数上限
     const lastContent = messages[messages.length - 1]?.content || ''
     log.warn(`Sub-agent [${task.id}] hit step limit (${MAX_SUB_AGENT_STEPS})`)
     return {
@@ -204,7 +217,8 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
       status: hasExecutedTools ? 'completed' : 'failed',
       result: truncateFromEnd(lastContent, MAX_RESULT_LENGTH),
       error: hasExecutedTools ? undefined : 'Reached step limit without producing results',
-      tokensUsed: totalTokens
+      tokensUsed: totalTokens,
+      steps: toolSteps
     }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err)
@@ -214,7 +228,8 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
       description: task.description,
       status: 'failed',
       error: errorMsg,
-      tokensUsed: totalTokens
+      tokensUsed: totalTokens,
+      steps: toolSteps
     }
   }
 }
@@ -315,7 +330,8 @@ export async function dispatchSubAgents(
         agentConfig: { ...config, executionMode: config.executionMode === 'free' ? 'relaxed' : config.executionMode },
         profileId,
         abortSignal,
-        readonly
+        readonly,
+        onProgress: (update) => updateProgress(task.id, update)
       }).then(result => {
         updateProgress(task.id, result)
         return result
@@ -359,7 +375,8 @@ export async function dispatchSubAgents(
 
   return {
     success: failCount === 0,
-    output: summary
+    output: summary,
+    error: failCount > 0 ? `${failCount}/${allResults.length} 个子任务失败` : undefined
   }
 }
 
@@ -383,6 +400,25 @@ function buildSubAgentSystemPrompt(task: SubAgentTask, readonly: boolean): strin
     '## 任务',
     task.description,
   ].join('\n')
+}
+
+function summarizeToolArgs(toolName: string, argsStr?: string): string | undefined {
+  if (!argsStr) return undefined
+  try {
+    const args = JSON.parse(argsStr)
+    switch (toolName) {
+      case 'read_file': return args.path || args.file_path
+      case 'edit_file': return args.file_path || args.path
+      case 'write_text_file': return args.file_path || args.path
+      case 'file_search': return args.query || args.pattern
+      case 'exec': return args.command ? (args.command.length > 80 ? args.command.slice(0, 77) + '...' : args.command) : undefined
+      case 'search_knowledge': return args.query
+      case 'get_knowledge_doc': return args.title || args.id
+      default: return undefined
+    }
+  } catch {
+    return undefined
+  }
 }
 
 function accumulateTokens(total: TokenUsage, usage?: { prompt_tokens: number; completion_tokens: number; total_tokens?: number }) {

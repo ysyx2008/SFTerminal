@@ -1583,11 +1583,26 @@ watch(() => props.visible, (visible) => {
                           <span class="sub-agent-status-text">
                             {{ t(`ai.subAgent${sa.status.charAt(0).toUpperCase() + sa.status.slice(1)}`) }}
                           </span>
-                          <span v-if="sa.result || sa.error" class="sub-agent-expand-icon" :class="{ expanded: expandedSubAgents.has(item.step!.id + ':' + sa.id) }">▶</span>
+                          <span v-if="sa.result || sa.error || (sa.steps && sa.steps.length > 0)" class="sub-agent-expand-icon" :class="{ expanded: expandedSubAgents.has(item.step!.id + ':' + sa.id) || sa.status === 'running' }">▶</span>
                         </div>
-                        <div v-if="expandedSubAgents.has(item.step!.id + ':' + sa.id)" class="sub-agent-result">
-                          <pre v-if="sa.result">{{ sa.result }}</pre>
-                          <pre v-if="sa.error" class="sub-agent-error">{{ sa.error }}</pre>
+                        <div v-if="expandedSubAgents.has(item.step!.id + ':' + sa.id) || (sa.status === 'running' && sa.steps && sa.steps.length > 0)" class="sub-agent-detail">
+                          <div v-if="sa.steps && sa.steps.length > 0" class="sub-agent-steps">
+                            <div v-for="(step, stepIdx) in sa.steps" :key="stepIdx" class="sa-step" :class="step.status">
+                              <span class="sa-step-icon">
+                                <span v-if="step.status === 'running'" class="sa-step-running">⟳</span>
+                                <span v-else-if="step.status === 'completed'" class="sa-step-done">✓</span>
+                                <span v-else class="sa-step-fail">✗</span>
+                              </span>
+                              <span class="sa-step-tool">{{ step.tool }}</span>
+                              <span v-if="step.args" class="sa-step-args">{{ step.args }}</span>
+                            </div>
+                          </div>
+                          <div v-if="sa.result" class="sub-agent-result">
+                            <pre>{{ sa.result }}</pre>
+                          </div>
+                          <div v-if="sa.error" class="sub-agent-result">
+                            <pre class="sub-agent-error">{{ sa.error }}</pre>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -4374,10 +4389,57 @@ watch(() => props.visible, (visible) => {
   transform: rotate(90deg);
 }
 
-.sub-agent-result {
-  padding: 6px 10px;
+.sub-agent-detail {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(0, 0, 0, 0.1);
+}
+
+.sub-agent-steps {
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sa-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.sa-step-icon {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: 10px;
+}
+
+.sa-step-running { color: #3b82f6; }
+.sa-step-done { color: #6ee7b7; }
+.sa-step-fail { color: #f44336; }
+
+.sa-step-tool {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.sa-step-args {
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+
+.sub-agent-result {
+  padding: 6px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .sub-agent-result pre {

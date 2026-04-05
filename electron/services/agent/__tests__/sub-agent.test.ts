@@ -310,6 +310,8 @@ describe('dispatchSubAgents', () => {
     expect(result.output).toContain('成功任务')
     expect(result.output).toContain('失败任务')
     expect(result.output).toContain('rate limit')
+    // error 字段应有明确的失败计数信息
+    expect(result.error).toContain('1/2')
   })
 
   it('should respect max_concurrent parameter', async () => {
@@ -406,6 +408,21 @@ describe('dispatchSubAgents', () => {
     expect(mockAi.chatWithTools).toHaveBeenCalledTimes(2)
     expect(result.success).toBe(true)
     expect(result.output).toContain('File analysis complete')
+
+    // updateStep 应包含 steps 字段（工具执行记录）
+    const updateCalls = (executor.updateStep as any).mock.calls
+    const stepsUpdates = updateCalls.filter((c: any[]) => c[1]?.subAgents?.some((sa: any) => sa.steps?.length > 0))
+    expect(stepsUpdates.length).toBeGreaterThan(0)
+
+    // 最终结果中应包含 read_file 步骤
+    const finalUpdate = updateCalls.at(-1)
+    const finalSubAgent = finalUpdate[1].subAgents?.[0]
+    expect(finalSubAgent?.steps).toBeDefined()
+    expect(finalSubAgent.steps[0]).toMatchObject({
+      tool: 'read_file',
+      args: '/test/file.ts'
+    })
+    expect(['completed', 'failed']).toContain(finalSubAgent.steps[0].status)
   })
 
   it('should use default description when not provided', async () => {

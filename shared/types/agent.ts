@@ -78,6 +78,14 @@ export interface SubAgentTask {
   prompt: string
 }
 
+/** 子 Agent 单步工具调用记录 */
+export interface SubAgentToolStep {
+  tool: string
+  args?: string
+  status: 'running' | 'completed' | 'failed'
+  result?: string
+}
+
 /** 子 Agent 执行结果（通过 AgentStep.subAgents 推送进度） */
 export interface SubAgentResult {
   id: string
@@ -86,6 +94,8 @@ export interface SubAgentResult {
   result?: string
   error?: string
   tokensUsed?: TokenUsage
+  /** 子 Agent 工具调用步骤（实时更新，提供执行过程透明度） */
+  steps?: SubAgentToolStep[]
 }
 
 export interface AgentStep {
