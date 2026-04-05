@@ -743,6 +743,25 @@ describe('dispatchSubAgents', () => {
     expect(toolResult?.content).toContain('不在当前子 Agent 类型的可用范围内')
   })
 
+  it('should not invoke parent waitForConfirmation (sub-agent auto-handles)', async () => {
+    const executor = createMockExecutor()
+    const mockAi = (executor as any)._mockAiService
+
+    mockAi.chatWithTools.mockResolvedValue({
+      content: 'Task completed',
+      tool_calls: undefined,
+      finish_reason: 'stop',
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+    })
+
+    await dispatchSubAgents({
+      tasks: [{ description: 'Test task', prompt: 'Do something' }],
+      agent_type: 'edit'
+    }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
+
+    expect(executor.waitForConfirmation).not.toHaveBeenCalled()
+  })
+
   it('should handle multiple pending tool_calls with placeholders', async () => {
     const messagesWithMultipleCalls = [
       { role: 'system' as const, content: 'System prompt' },

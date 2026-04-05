@@ -136,8 +136,14 @@ function buildSubAgentExecutorConfig(
     // 子 Agent 的 step 不推送到前端（由父 Agent 汇总推送）
     addStep: () => noopStep(),
     updateStep: () => {},
-    // 子 Agent 内部的写操作继承父 Agent 的确认策略
-    waitForConfirmation: parentExecutor.waitForConfirmation,
+    // 子 Agent 不弹确认框：moderate 自动放行，dangerous 自动拒绝并报错
+    waitForConfirmation: async (_toolCallId, toolName, _toolArgs, riskLevel) => {
+      if (riskLevel === 'dangerous') {
+        log.warn(`Sub-agent auto-rejected dangerous operation: ${toolName}`)
+        return false
+      }
+      return true
+    },
     isAborted: () => abortSignal.aborted || parentExecutor.isAborted(),
     getHostId: parentExecutor.getHostId,
     hasPendingUserMessage: () => false,

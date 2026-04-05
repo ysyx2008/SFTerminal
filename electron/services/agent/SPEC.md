@@ -129,7 +129,10 @@ run(message, context, options)
 - **同步**（默认）：`dispatchSubAgents` 阻塞等待全部完成
 - **异步**（`background: true`）：立即返回，后台执行，完成后通过 `injectPendingMessage` 注入结果
 
-**安全约束**：子 Agent 继承父 Agent 的 `executionMode`，不可递归 `dispatch_agents`。安全性通过工具白名单保障（无终端操作等高危工具）。
+**安全约束**：
+- 子 Agent 继承父 Agent 的 `executionMode`，不可递归 `dispatch_agents`
+- 工具白名单保障安全（无终端操作等高危工具）
+- **确认策略**：子 Agent 不弹确认框（避免阻塞并行执行）。moderate 级操作自动放行，dangerous 级操作自动拒绝并返回错误，子 Agent 可换策略重试或报告给主 Agent 处理
 
 ### 流式工具并行执行 (`streaming-tool-executor.ts`)
 
