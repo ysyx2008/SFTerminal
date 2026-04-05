@@ -2009,9 +2009,14 @@ export abstract class Agent {
     result: ToolResult,
     _toolArgs: Record<string, unknown>
   ): void {
-    const resultContent = result.success 
-      ? result.output 
-      : t('agent.tool_error', { error: result.error || t('agent.unknown_error') })
+    const errorText = !result.success
+      ? t('agent.tool_error', { error: result.error || t('agent.unknown_error') })
+      : ''
+    const resultContent = result.success
+      ? result.output
+      : result.output
+        ? `${result.output}\n\n${errorText}`
+        : errorText
     
     // AI Debug: 记录工具执行结果
     if (run.requestId) {
