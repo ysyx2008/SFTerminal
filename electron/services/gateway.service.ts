@@ -11,10 +11,9 @@
  * 
  * API 端点：
  * - GET  /chat               → 聊天页面
- * - POST /api/chat           → 发送消息（SSE 流式响应）
+ * - POST /api/chat           → 发送消息（Agent 空闲时返回 SSE 流；运行中自动降级为补充信息，返回 JSON）
  * - GET  /api/chat/events    → 实时事件 SSE 流（旁听所有通道的 Agent 事件）
  * - GET  /api/chat/history   → 获取历史
- * - POST /api/chat/supplement → 任务执行中补充信息
  * - POST /api/chat/abort     → 中止执行
  * - POST /api/chat/confirm   → 确认工具调用
  * - GET  /api/chat/status    → 获取状态
@@ -246,8 +245,6 @@ export class GatewayService {
         return req.method === 'POST' ? this.handleChatMessage(req, res) : this.methodNotAllowed(res)
       case '/api/chat/history':
         return req.method === 'GET' ? this.handleChatHistory(req, res) : this.methodNotAllowed(res)
-      case '/api/chat/supplement':
-        return req.method === 'POST' ? this.handleChatSupplement(req, res) : this.methodNotAllowed(res)
       case '/api/chat/abort':
         return req.method === 'POST' ? this.handleChatAbort(req, res) : this.methodNotAllowed(res)
       case '/api/chat/confirm':
@@ -381,9 +378,18 @@ export class GatewayService {
       return
     }
 
+    // Agent 运行中：自动降级为补充信息，不再返回 409 让客户端处理
     if (this.chat.isRunning) {
-      res.writeHead(409, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Agent is already running' }))
+      const result = this.chat.supplement(message.trim())
+      const clientIp = (req.headers['x-forwarded-for'] as string || req.socket.remoteAddress || '').split(',')[0].trim()
+      this.addAuditLog({
+        type: 'supplement',
+        clientIp,
+        summary: `补充信息（自动降级）: ${message.trim().substring(0, 80)}`,
+        details: { message: message.trim() }
+      })
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ success: result, action: 'supplement' }))
       return
     }
 
@@ -534,44 +540,6 @@ export class GatewayService {
       isRunning: this.chat.isRunning,
       executionMode: this.chat.executionMode
     }))
-  }
-
-  /**
-   * POST /api/chat/supplement - 任务执行中发送补充信息
-   */
-  private async handleChatSupplement(req: http.IncomingMessage, res: http.ServerResponse) {
-    const body = await this.readBody(req)
-    if (!body) {
-      res.writeHead(400, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Invalid request body' }))
-      return
-    }
-
-    const { message } = body as any
-    if (!message || typeof message !== 'string') {
-      res.writeHead(400, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Message is required' }))
-      return
-    }
-
-    if (!this.chat.isRunning) {
-      res.writeHead(400, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'No running task' }))
-      return
-    }
-
-    const result = this.chat.supplement(message.trim())
-
-    // 审计日志
-    this.addAuditLog({
-      type: 'supplement',
-      clientIp: (req.headers['x-forwarded-for'] as string || req.socket.remoteAddress || '').split(',')[0].trim(),
-      summary: `补充信息: ${message.trim().substring(0, 80)}`,
-      details: { message: message.trim() }
-    })
-
-    res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ success: result }))
   }
 
   /**
@@ -1144,32 +1112,6 @@ async function loadHistory(isRefresh) {
   }
 }
 
-// ==================== Supplement ====================
-
-async function sendSupplement(message) {
-  // 在当前助手消息区域内添加补充提示
-  if (currentAssistantEl) {
-    var stepsEl = currentAssistantEl.querySelector('.msg-steps');
-    if (stepsEl) {
-      var supEl = document.createElement('div');
-      supEl.className = 'supplement-bubble';
-      supEl.innerHTML = '<span class="supplement-label">' + T.supplementSent + '</span><span class="supplement-text">' + escapeHtml(message) + '</span>';
-      stepsEl.appendChild(supEl);
-      scrollToBottom();
-    }
-  }
-
-  try {
-    await fetch(API_BASE + '/api/chat/supplement', {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({ message: message })
-    });
-  } catch (e) {
-    console.error('Supplement failed:', e);
-  }
-}
-
 // ==================== Send Message ====================
 
 async function sendMessage() {
@@ -1177,28 +1119,13 @@ async function sendMessage() {
   var message = input.value.trim();
   if (!message) return;
 
-  // 任务运行中：发送补充信息
-  if (isRunning) {
-    sendSupplement(message);
-    input.value = '';
-    autoResize(input);
-    return;
-  }
-
   input.value = '';
   autoResize(input);
-  var emptyEl = document.getElementById('empty-state');
-  if (emptyEl) emptyEl.style.display = 'none';
-
-  addUserBubble(message);
-
-  currentAssistantEl = createAssistantBubble();
-  updateStatus(true);
-  ownTaskActive = true;
-  console.log('[RemoteDebug][Web] sendMessage: 开始发送, ownTaskActive=true, message="' + message.substring(0, 60) + '"');
 
   var mode = document.getElementById('mode-select').value;
-  var sseEventCount = 0;
+
+  // 在 fetch 之前设置，防止事件流在等待响应期间重复处理 task_started
+  ownTaskActive = true;
 
   try {
     var r = await fetch(API_BASE + '/api/chat', {
@@ -1208,27 +1135,54 @@ async function sendMessage() {
     });
 
     if (!r.ok) {
+      ownTaskActive = false;
       var errData = await r.json().catch(function() { return { error: 'Request failed' }; });
       console.warn('[RemoteDebug][Web] sendMessage: 请求失败', r.status, errData);
-      finishAssistant(T.error + ': ' + (errData.error || r.statusText));
-      updateStatus(false);
-      ownTaskActive = false;
       return;
     }
 
-    console.log('[RemoteDebug][Web] sendMessage: SSE 流已建立');
+    var contentType = (r.headers.get('content-type') || '').toLowerCase();
+    var isSSE = contentType.indexOf('text/event-stream') !== -1;
 
-    // Read SSE stream
+    // 服务端自动降级为补充信息（Agent 运行中，返回 JSON 而非 SSE 流）
+    if (!isSSE) {
+      ownTaskActive = false;
+      try {
+        var data = await r.json();
+        if (data.action === 'supplement') {
+          if (currentAssistantEl) {
+            var stepsEl = currentAssistantEl.querySelector('.msg-steps');
+            if (stepsEl) {
+              var supEl = document.createElement('div');
+              supEl.className = 'supplement-bubble';
+              supEl.innerHTML = '<span class="supplement-label">' + T.supplementSent + '</span><span class="supplement-text">' + escapeHtml(message) + '</span>';
+              stepsEl.appendChild(supEl);
+              scrollToBottom();
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[RemoteDebug][Web] sendMessage: JSON 解析失败', e);
+      }
+      return;
+    }
+
+    // 新任务：SSE 流式响应
+    var emptyEl = document.getElementById('empty-state');
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    addUserBubble(message);
+    currentAssistantEl = createAssistantBubble();
+    updateStatus(true);
+
+    var sseEventCount = 0;
     var reader = r.body.getReader();
     var decoder = new TextDecoder();
     var buffer = '';
 
     while (true) {
       var chunk = await reader.read();
-      if (chunk.done) {
-        console.log('[RemoteDebug][Web] sendMessage: SSE 流结束 (done), 共收到 ' + sseEventCount + ' 个事件');
-        break;
-      }
+      if (chunk.done) break;
 
       buffer += decoder.decode(chunk.value, { stream: true });
       var lines = buffer.split('\\n');
@@ -1245,19 +1199,19 @@ async function sendMessage() {
       }
     }
 
-    // 流结束后兜底：如果 complete/error 未触发，确保 UI 不卡在 running
+    // 流结束后兜底
     if (isRunning && currentAssistantEl) {
-      console.warn('[RemoteDebug][Web] sendMessage: 流结束但未收到 complete/error，强制结束');
       finishAssistant('');
       updateStatus(false);
     }
   } catch (e) {
     console.error('[RemoteDebug][Web] sendMessage: 异常', e.message);
-    finishAssistant(T.error + ': ' + e.message);
     updateStatus(false);
+    if (currentAssistantEl) {
+      finishAssistant(T.error + ': ' + e.message);
+    }
   }
   ownTaskActive = false;
-  console.log('[RemoteDebug][Web] sendMessage: 结束, ownTaskActive=false, 共处理 ' + sseEventCount + ' 个 SSE 事件');
 }
 
 function handleSSEEvent(event) {
@@ -1637,11 +1591,13 @@ document.getElementById('token-input').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') doLogin();
 });
 
-// 事件委托：ask_user 选项按钮点击
+// 事件委托：ask_user 选项按钮点击（统一走 sendMessage，服务端自动降级为 supplement）
 document.getElementById('messages').addEventListener('click', function(e) {
   var btn = e.target.closest('.ask-option');
   if (btn && btn.dataset.option) {
-    sendSupplement(btn.dataset.option);
+    var input = document.getElementById('msg-input');
+    input.value = btn.dataset.option;
+    sendMessage();
   }
 });
 
