@@ -2132,6 +2132,13 @@ export abstract class Agent {
         } else {
           log.warn('injectPendingMessage: no active run, message dropped')
         }
+      },
+      getParentContext: () => {
+        if (!run.messages.length) return undefined
+        return {
+          messages: run.messages,
+          tools: this.getAvailableTools()
+        }
       }
     }
   }

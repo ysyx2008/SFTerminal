@@ -78,6 +78,11 @@ export interface ToolExecutorConfig {
   getActiveProfileId?: () => string | undefined
   /** 注入待处理的用户消息（异步子 Agent 完成后将结果注入主 Agent 的 ReAct 循环） */
   injectPendingMessage?: (message: string) => void
+  /** 获取父 Agent 的 fork 上下文（消息历史 + 工具列表），用于子 Agent 共享 prompt cache */
+  getParentContext?: () => {
+    messages: import('../../ai.service').AiMessage[]
+    tools: import('../../ai.service').ToolDefinition[]
+  } | undefined
 }
 
 /** 常见图片扩展名（AI Vision 模型可直接处理的格式） */

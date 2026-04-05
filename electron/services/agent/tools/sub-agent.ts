@@ -5,8 +5,10 @@
  * 每个子任务拥有独立的 AI 对话上下文和受限工具集，完成后将结果汇总返回。
  *
  * 设计要点：
- * - 子任务是轻量 ReAct 循环，非完整 Agent 实例（无会话/持久化/记忆）
- * - Agent 类型系统：explore/edit/research 各有独立工具集和系统提示
+ * - Fork 模式（参考 Claude Code）：子 Agent 继承父的完整上下文（system prompt +
+ *   消息历史 + 工具列表），最大化 prompt cache 命中。父的 tool_result 用占位符替代，
+ *   子任务指令作为追加的 user 消息
+ * - Agent 类型系统：explore/edit/research 各有独立工具白名单和执行约束
  * - 并发控制：Promise.allSettled + 可配置并发上限
  * - 同步/异步双模式：background=true 时立即返回，后台执行后注入结果
  * - 进度推送：通过父 executor 的 addStep/updateStep 实时更新 subAgents 字段
@@ -25,6 +27,9 @@ const log = createLogger('SubAgent')
 const MAX_SUB_AGENT_STEPS = 0
 const DEFAULT_MAX_CONCURRENT = 5
 const MAX_RESULT_LENGTH = 8000
+
+/** Fork 占位符：所有子 Agent 使用相同文本，确保 API 前缀字节一致以命中 prompt cache */
+const FORK_PLACEHOLDER = '子任务已分派，正在后台执行'
 
 // ==================== Agent 类型系统 ====================
 
@@ -152,8 +157,12 @@ function buildSubAgentExecutorConfig(
 interface SubAgentRunOptions {
   task: SubAgentTask
   aiService: AiService
+  /** API 请求使用的工具列表（fork 模式下为父 Agent 的完整工具列表） */
   tools: ToolDefinition[]
-  systemPrompt: string
+  /** 执行时允许的工具白名单（按 agent type 过滤） */
+  allowedTools: Set<string>
+  /** 初始消息（fork 模式：父上下文 + 占位 + 指令；独立模式：system + user） */
+  initialMessages: AiMessage[]
   executorConfig: ToolExecutorConfig
   agentConfig: AgentConfig
   profileId?: string
@@ -164,18 +173,15 @@ interface SubAgentRunOptions {
 /**
  * 运行单个子 Agent 的 ReAct 循环
  *
- * 执行流程：构建系统提示 → AI 调用 → 工具执行 → 循环至无工具调用或达到步数上限
- * 返回最终的文本结果或错误信息
+ * Fork 模式：继承父 Agent 完整消息历史 + 工具列表，最大化 prompt cache 命中
+ * 独立模式：独立系统提示 + 受限工具集（fallback）
  */
 async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult> {
-  const { task, aiService, tools, systemPrompt, executorConfig, agentConfig, profileId, abortSignal, onProgress } = options
+  const { task, aiService, tools, allowedTools, initialMessages, executorConfig, agentConfig, profileId, abortSignal, onProgress } = options
   const startTime = Date.now()
   let totalTokens: TokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
   const toolSteps: SubAgentToolStep[] = []
-  const messages: AiMessage[] = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: task.prompt }
-  ]
+  const messages: AiMessage[] = [...initialMessages]
 
   log.info(`Sub-agent [${task.id}] started: ${task.description}`)
 
@@ -221,6 +227,16 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
         const step: SubAgentToolStep = { tool: toolName, args: toolArgs, status: 'running' }
         toolSteps.push(step)
         onProgress({ steps: [...toolSteps] })
+
+        // 工具白名单检查：拦截不在当前 agent type 允许范围内的调用
+        if (!allowedTools.has(toolName)) {
+          const errorMsg = `工具 "${toolName}" 不在当前子 Agent 类型的可用范围内`
+          step.status = 'failed'
+          step.result = errorMsg
+          onProgress({ steps: [...toolSteps] })
+          messages.push({ role: 'tool', tool_call_id: toolCall.id, content: `Error: ${errorMsg}` })
+          continue
+        }
 
         const toolResult = await executeTool(
           undefined,
@@ -277,13 +293,14 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
 /**
  * dispatch_agents 工具的执行入口
  *
- * 解析任务列表 → 创建进度步骤 → 按并发上限分批执行 → 汇总结果返回
- * 支持同步（默认）和异步（background: true）两种模式
+ * Fork 模式（默认）：子 Agent 继承父 Agent 完整上下文 + 工具列表，最大化 prompt cache 命中
+ * 独立模式（fallback）：父上下文不可用时，子 Agent 使用独立系统提示 + 受限工具集
  */
 export async function dispatchSubAgents(
   args: Record<string, unknown>,
   config: AgentConfig,
-  executor: ToolExecutorConfig
+  executor: ToolExecutorConfig,
+  toolCallId?: string
 ): Promise<ToolResult> {
   const aiService = executor.getAiService?.()
   if (!aiService) {
@@ -355,26 +372,15 @@ export async function dispatchSubAgents(
     }
   }
 
+  // Fork 模式：从父 Agent 获取完整上下文（消息历史 + 工具列表）
+  const parentContext = executor.getParentContext?.()
+  if (!parentContext || !toolCallId || parentContext.messages.length === 0) {
+    return { success: false, output: '', error: 'dispatch_agents 需要父 Agent 上下文（内部错误）' }
+  }
+
   log.info(`Dispatching ${tasks.length} sub-agents (type: ${typeLabel}, concurrent: ${maxConcurrent}, background: ${background})`)
 
-  // 按 agent_type 分组预构建 tools 和 systemPrompt（prompt cache 优化：同类型共享）
-  const toolsCache = new Map<string, ToolDefinition[]>()
-  const promptCache = new Map<string, string>()
-
-  const getToolsForType = (agentType: string): ToolDefinition[] => {
-    if (!toolsCache.has(agentType)) {
-      toolsCache.set(agentType, getSubAgentTools(agentType))
-    }
-    return toolsCache.get(agentType)!
-  }
-
-  const getSystemPromptForType = (agentType: string, task: SubAgentTask): string => {
-    const cacheKey = agentType
-    if (!promptCache.has(cacheKey)) {
-      promptCache.set(cacheKey, buildSubAgentSystemPrompt(agentType, getToolsForType(agentType)))
-    }
-    return promptCache.get(cacheKey)! + `\n\n## 任务\n${task.description}`
-  }
+  const forkBaseMessages = buildForkBaseMessages(parentContext.messages, toolCallId)
 
   // 核心执行函数（同步/异步共用）
   const executeAll = async (): Promise<SubAgentResult[]> => {
@@ -395,15 +401,17 @@ export async function dispatchSubAgents(
         updateProgress(task.id, { status: 'running' })
 
         const taskAgentType = task.agentType || globalAgentType
-        const tools = getToolsForType(taskAgentType)
-        const systemPrompt = getSystemPromptForType(taskAgentType, task)
+        const typeDefinition = resolveAgentType(taskAgentType)
         const subExecutor = buildSubAgentExecutorConfig(executor, config, abortSignal)
+        const directive = buildForkDirective(task, typeDefinition)
+        const initialMessages: AiMessage[] = [...forkBaseMessages, { role: 'user' as const, content: directive }]
 
         return runSubAgent({
           task,
           aiService,
-          tools,
-          systemPrompt,
+          tools: parentContext.tools,
+          allowedTools: typeDefinition.tools,
+          initialMessages,
           executorConfig: subExecutor,
           agentConfig: config,
           profileId,
@@ -494,6 +502,72 @@ export async function dispatchSubAgents(
   }
 }
 
+// ==================== Fork 上下文构建 ====================
+
+/**
+ * 构建 fork 基础消息：父 Agent 的完整消息历史 + 缺失的 tool_result 占位
+ *
+ * 所有子 Agent 共享这个前缀（byte-exact 一致），各自追加不同的 user 指令。
+ * Anthropic/DeepSeek 的前缀缓存机制会自动复用这段共享前缀，只对追加部分收费。
+ */
+function buildForkBaseMessages(parentMessages: AiMessage[], dispatchToolCallId: string): AiMessage[] {
+  const messages = parentMessages.map(m => ({ ...m }))
+
+  // 找到最后一条包含 tool_calls 的 assistant 消息
+  let lastAssistantIdx = -1
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'assistant' && messages[i].tool_calls?.length) {
+      lastAssistantIdx = i
+      break
+    }
+  }
+
+  if (lastAssistantIdx >= 0) {
+    const assistantMsg = messages[lastAssistantIdx]
+    const existingResultIds = new Set(
+      messages.slice(lastAssistantIdx + 1)
+        .filter(m => m.role === 'tool')
+        .map(m => m.tool_call_id)
+    )
+
+    // 为所有尚无 tool_result 的 tool_call 添加占位（包括 dispatch_agents 自身）
+    for (const tc of assistantMsg.tool_calls || []) {
+      if (!existingResultIds.has(tc.id)) {
+        messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: FORK_PLACEHOLDER
+        })
+      }
+    }
+  }
+
+  return messages
+}
+
+/**
+ * 构建 fork 指令消息：告知子 Agent 它的身份、类型约束和具体任务
+ *
+ * 这条 user 消息追加在 fork 前缀之后，是唯一因子 Agent 而异的部分
+ */
+function buildForkDirective(task: SubAgentTask, agentType: SubAgentType): string {
+  const toolNames = [...agentType.tools].join('、')
+  return [
+    `你现在是一个并行子任务执行器（${agentType.name} 类型）。`,
+    agentType.systemPromptPrefix,
+    '',
+    '## 约束',
+    `- 可用工具：${toolNames}`,
+    '- 不可使用其他工具（不在上述列表的工具调用会被拦截）',
+    '- 不可操作终端、不可创建子任务、不可向用户提问',
+    '- 完成任务后直接输出结果文本，不要多余寒暄',
+    '',
+    `## 任务：${task.description}`,
+    '',
+    task.prompt
+  ].join('\n')
+}
+
 // ==================== 辅助函数 ====================
 
 /** 校验 agent_type 有效性，无效时返回 undefined（由调用方决定 fallback） */
@@ -502,22 +576,6 @@ function validateAgentType(value: string | undefined, validTypes: SubAgentTypeNa
   if (validTypes.includes(value as SubAgentTypeName)) return value as SubAgentTypeName
   log.warn(`Invalid agent_type "${value}", valid values: ${validTypes.join(', ')}`)
   return undefined
-}
-
-/** 根据 Agent 类型构建系统提示（不含任务描述，便于缓存共享） */
-function buildSubAgentSystemPrompt(agentType: string, tools: ToolDefinition[]): string {
-  const typeDefinition = resolveAgentType(agentType)
-  const toolNames = tools.map(t => t.function.name).join('、')
-
-  return [
-    typeDefinition.systemPromptPrefix,
-    '',
-    '## 约束',
-    '- 你是父 Agent 并行分派的子任务执行器，专注完成指定任务',
-    `- 可用工具：${toolNames}`,
-    '- 不可使用终端交互、不可创建子任务、不可向用户提问',
-    '- 完成任务后直接输出结果文本，不要多余寒暄',
-  ].join('\n')
 }
 
 function summarizeToolArgs(toolName: string, argsStr?: string): string | undefined {

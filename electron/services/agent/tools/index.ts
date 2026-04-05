@@ -195,7 +195,7 @@ export async function executeTool(
       return manageMemory(args, executor)
 
     case 'dispatch_agents':
-      return dispatchSubAgents(args, config, executor)
+      return dispatchSubAgents(args, config, executor, toolCall.id)
 
     case 'send_to_chat':
       return sendToChat(args, executor)
