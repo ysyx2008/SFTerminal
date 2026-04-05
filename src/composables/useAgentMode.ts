@@ -41,7 +41,7 @@ export interface AgentTaskGroup {
 
 export interface VirtualItem {
   id: string
-  type: 'user_task' | 'agent_loading' | 'step' | 'thinking_indicator' | 'final_result' | 'proactive_message' | 'pending_supplement' | 'confirm'
+  type: 'user_task' | 'agent_loading' | 'step' | 'thinking_indicator' | 'final_result' | 'proactive_message' | 'confirm'
   group?: AgentTaskGroup
   step?: AgentStep
   content?: string
@@ -96,7 +96,6 @@ export function useAgentMode(
   const commandTimeout = ref(10)     // 命令超时时间（秒），默认 10 秒
   const activeProfileId = ref<string>(configStore.activeAiProfileId || '')  // 当前终端选择的 AI 配置档案 ID（每个终端独立，初始值继承全局设置）
   const collapsedTaskIds = ref<Set<string>>(new Set())  // 已折叠的任务 ID
-  const pendingSupplements = ref<string[]>([])  // 等待处理的补充消息
 
   // 清理事件监听的函数
   let cleanupStepListener: (() => void) | null = null
@@ -469,12 +468,6 @@ export function useAgentMode(
       }
     }
 
-    if (isAgentRunning.value) {
-      for (let i = 0; i < pendingSupplements.value.length; i++) {
-        items.push({ id: `supplement_${i}`, type: 'pending_supplement', content: pendingSupplements.value[i], size: 60 })
-      }
-    }
-
     if (pendingConfirm.value) {
       items.push({ id: '__confirm__', type: 'confirm', size: 280 })
     }
@@ -517,16 +510,6 @@ export function useAgentMode(
       const supplementAttachments = attachmentCallbacks?.getAttachments() || []
       const documentContext = await getDocumentContext()
       const images = imageCallbacks?.getImages() || []
-      
-      const hasWaitingAsk = agentTaskGroups.value.some(group => 
-        group.isCurrentTask && group.steps.some(step => 
-          step.type === 'asking' && step.toolResult?.includes('⏳')
-        )
-      )
-      
-      if (!hasWaitingAsk) {
-        pendingSupplements.value.push(message)
-      }
       
       const success = await window.electronAPI.agent.addMessage(
         agentKey,
@@ -803,14 +786,6 @@ export function useAgentMode(
         canvasStore.handleAgentStep(tabId, data.step)
       }
       
-      // 如果是用户补充消息步骤，从待处理列表中移除
-      if (data.step.type === 'user_supplement') {
-        const idx = pendingSupplements.value.indexOf(data.step.content)
-        if (idx !== -1) {
-          pendingSupplements.value.splice(idx, 1)
-        }
-      }
-      
       // 使用智能滚动，不打断用户查看历史
       scrollToBottomIfNeeded()
     })
@@ -853,9 +828,6 @@ export function useAgentMode(
       if (isStandaloneAssistant.value) {
         canvasStore.handleAgentComplete(currentTabId.value)
       }
-      // 清空待处理的补充消息
-      pendingSupplements.value = []
-
       // 队列化的 proactive 回复优先：作为新任务启动（consumeProactiveContext 自动注入 Watch 上下文）
       if (queuedProactiveReply.value) {
         const reply = queuedProactiveReply.value
@@ -892,8 +864,6 @@ export function useAgentMode(
       }
       
       terminalStore.setAgentRunning(currentTabId.value, false)
-      // 清空待处理状态
-      pendingSupplements.value = []
       queuedProactiveReply.value = null
       terminalStore.addAgentStep(currentTabId.value, {
         id: `error_${Date.now()}`,
@@ -1081,7 +1051,6 @@ export function useAgentMode(
     commandTimeout,
     activeProfileId,
     collapsedTaskIds,
-    pendingSupplements,
     agentState,
     isAgentRunning,
     pendingConfirm,

@@ -195,7 +195,6 @@ const {
   executionMode,
   commandTimeout,
   activeProfileId,
-  pendingSupplements,
   agentState,
   isAgentRunning,
   pendingConfirm,
@@ -492,8 +491,6 @@ const doClearMessages = async () => {
   }
   // 清空上传的文档
   clearUploadedDocs()
-  // 清空待处理的补充消息
-  pendingSupplements.value = []
 }
 
 // 兼容旧的 clearMessages（现在改为 requestClearMessages）
@@ -1664,20 +1661,6 @@ watch(() => props.visible, (visible) => {
                       <span class="final-title">{{ item.group!.finalResult!.startsWith('❌') ? t('ai.taskFailed') : item.group!.finalResult!.startsWith('⚠️') ? t('ai.taskAborted') : t('ai.taskComplete') }}</span>
                     </div>
                     <div class="agent-final-body markdown-content" v-html="renderMarkdown(item.group!.finalResult!.replace(/^[❌✅⚠️]\s*(Agent\s*(执行失败|运行出错)[:\s]*)?/, ''))"></div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 等待处理的补充消息 -->
-              <div v-else-if="item.type === 'pending_supplement'" class="message assistant">
-                <div class="message-wrapper">
-                  <div class="message-content pending-supplement">
-                    <div class="pending-supplement-header">
-                      <span class="pending-icon">💡</span>
-                      <span class="pending-label">{{ t('ai.supplementInfo') }}（{{ t('ai.pendingProcess') }}）</span>
-                      <span class="pending-spinner"></span>
-                    </div>
-                    <div class="pending-supplement-content">{{ item.content }}</div>
                   </div>
                 </div>
               </div>
@@ -4502,44 +4485,7 @@ watch(() => props.visible, (visible) => {
   color: #f44336;
 }
 
-/* 等待处理的补充消息 */
-.pending-supplement {
-  background: rgba(245, 158, 11, 0.08) !important;
-  border: 1px dashed rgba(245, 158, 11, 0.4) !important;
-  border-radius: 8px !important;
-}
 
-.pending-supplement-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  font-size: 12px;
-}
-
-.pending-icon {
-  font-size: 14px;
-}
-
-.pending-label {
-  color: #f59e0b;
-  font-weight: 500;
-}
-
-.pending-spinner {
-  width: 12px;
-  height: 12px;
-  border: 2px solid rgba(245, 158, 11, 0.2);
-  border-top-color: #f59e0b;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-.pending-supplement-content {
-  color: var(--text-primary);
-  font-size: 13px;
-  line-height: 1.5;
-}
 
 /* 风险等级颜色 */
 .risk-safe {

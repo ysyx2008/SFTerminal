@@ -285,6 +285,14 @@ export abstract class Agent {
       return false
     }
     
+    // 立即创建 user_supplement 步骤，让前端马上渲染为用户气泡
+    this.addStep({
+      type: 'user_supplement',
+      content: message,
+      attachments: attachments?.length ? attachments : undefined,
+      images: images?.length ? images : undefined
+    })
+    
     this.currentRun.pendingUserMessages.push({
       message,
       attachments: attachments?.length ? attachments : undefined,
@@ -2295,19 +2303,12 @@ export abstract class Agent {
       run.pendingSystemMessages = []
     }
     
-    // 2. 用户消息：创建 user_supplement 步骤 + 注入 AI 上下文
+    // 2. 用户消息：注入 AI 上下文（步骤已在 addUserMessage 中立即创建）
     if (hasUser) {
       let combinedText = ''
       const allImages: string[] = []
       
       for (const pending of run.pendingUserMessages) {
-        this.addStep({
-          type: 'user_supplement',
-          content: pending.message,
-          attachments: pending.attachments,
-          images: pending.images
-        })
-        
         let msgPart = Agent.formatTimestamp() + pending.message
         if (pending.documentContext) {
           msgPart += '\n\n' + pending.documentContext
