@@ -39,6 +39,7 @@ import { getContextKnowledgeService } from '../knowledge/context-knowledge'
 import { getWatchService } from '../watch/watch.service'
 import { formatWatchListForPrompt } from './skills/watch/executor'
 import { consumeProactiveContext } from './proactive-store'
+import { applyToolResultBudget } from './tool-result-budget'
 import { t } from './i18n'
 import { createSkillSession, SkillSession } from './skills'
 import { getAiDebugService } from '../ai-debug.service'
@@ -1355,6 +1356,9 @@ export abstract class Agent {
     run: AgentRun, 
     toolExecutorConfig: ToolExecutorConfig
   ): Promise<{ response: ChatWithToolsResult | null; hasToolCalls: boolean; truncated?: boolean }> {
+    // 清理旧的工具输出，释放 token（taskMessageLog 不受影响）
+    applyToolResultBudget(run.messages)
+
     // 更新上下文状态（注入 Context Status + 渐进式提醒）
     this.updateContextPressure(run)
     
