@@ -842,16 +842,27 @@ async function agentRun(args: string[]): Promise<void> {
   const printedSteps = new Set<string>()
   
   const cols = () => process.stdout.columns || 80
+  const truncateToWidth = (str: string, maxWidth: number): string => {
+    let width = 0
+    let end = 0
+    for (const ch of str) {
+      const code = ch.codePointAt(0)!
+      const w = code >= 0x1100 ? 2 : 1
+      if (width + w > maxWidth) break
+      width += w
+      end += ch.length
+    }
+    return str.substring(0, end)
+  }
   const clearInline = () => {
     if (inlineMode) {
-      process.stdout.write('\r' + ' '.repeat(cols() - 1) + '\r')
+      process.stdout.write('\r\x1b[K')
       inlineMode = false
     }
   }
   const writeInline = (text: string) => {
-    const maxLen = cols() - 1
-    const singleLine = text.replace(/\n/g, ' ').substring(0, maxLen)
-    process.stdout.write('\r' + singleLine.padEnd(maxLen))
+    const line = truncateToWidth(text.replace(/\n/g, ' '), cols() - 1)
+    process.stdout.write('\r\x1b[K' + line)
     inlineMode = true
   }
   const stepPrefix = (type: string) =>
@@ -867,7 +878,7 @@ async function agentRun(args: string[]): Promise<void> {
       // Streaming content → inline overwrite (single-line \r progress)
       if (isStreaming) {
         const prefix = stepPrefix(step.type)
-        const preview = (step.content || '').substring(0, 60)
+        const preview = (step.content || '').substring(0, 80)
         writeInline(`${prefix} [${step.type}] ${preview}`)
         return
       }
