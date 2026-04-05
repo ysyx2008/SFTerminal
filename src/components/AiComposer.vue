@@ -748,6 +748,7 @@ const handleSendClick = (event: MouseEvent) => {
   padding: 0;
   border-radius: 10px;
   border: none;
+  cursor: pointer;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -781,6 +782,16 @@ const handleSendClick = (event: MouseEvent) => {
 .stop-btn {
   background: linear-gradient(135deg, #f87171 0%, #ef4444 50%, #dc2626 100%);
   box-shadow: 0 2px 8px rgba(239, 68, 68, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.stop-btn:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, #fca5a5 0%, #f87171 50%, #ef4444 100%);
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.5);
+}
+
+.stop-btn:active {
+  transform: translateY(0) scale(0.95);
 }
 
 .mention-menu {
