@@ -405,6 +405,7 @@ export abstract class Agent {
       isRunning: true,
       aborted: false,
       pendingUserMessages: [],
+      pendingSystemMessages: [],
       config,
       context,
       realtimeOutputBuffer: [...context.terminalOutput],
@@ -1285,7 +1286,7 @@ export abstract class Agent {
           if (!stepResult.hasToolCalls) {
             if (!hasExecutedAnyTool) {
               // 从未执行过工具
-              if (run.pendingUserMessages.length > 0) {
+              if (run.pendingUserMessages.length > 0 || run.pendingSystemMessages.length > 0) {
                 continue
               }
               
@@ -1305,8 +1306,8 @@ export abstract class Agent {
               continue
             }
             
-            // 已执行过工具，检查是否有待处理的用户消息
-            if (run.pendingUserMessages.length > 0) {
+            // 已执行过工具，检查是否有待处理的消息
+            if (run.pendingUserMessages.length > 0 || run.pendingSystemMessages.length > 0) {
               continue
             }
             
@@ -1330,7 +1331,7 @@ export abstract class Agent {
         const errorMsg = error instanceof Error ? error.message : String(error)
         const isAborted = errorMsg.toLowerCase().includes('aborted')
         
-        if (isAborted && run.pendingUserMessages.length > 0) {
+        if (isAborted && (run.pendingUserMessages.length > 0 || run.pendingSystemMessages.length > 0)) {
           log.info('AI 输出被用户消息中断，继续循环处理')
           // 修复不完整的 tool_calls 消息序列
           // 当 abort 发生在工具执行过程中时，可能存在 assistant 消息（含 tool_calls）但缺少对应的 tool result
@@ -2158,7 +2159,7 @@ export abstract class Agent {
       },
       isAborted: () => run.aborted,
       getHostId: () => run.context.hostId,
-      hasPendingUserMessage: () => run.pendingUserMessages.length > 0,
+      hasPendingUserMessage: () => run.pendingUserMessages.length > 0 || run.pendingSystemMessages.length > 0,
       peekPendingUserMessage: () => run.pendingUserMessages[0]?.message,
       consumePendingUserMessage: () => run.pendingUserMessages.shift()?.message,
       getRealtimeTerminalOutput: () => [...run.realtimeOutputBuffer],
@@ -2193,6 +2194,13 @@ export abstract class Agent {
           this.currentRun.pendingUserMessages.push({ message })
         } else {
           log.warn('injectPendingMessage: no active run, message dropped')
+        }
+      },
+      injectSystemMessage: (content: string, notify?: string) => {
+        if (this.currentRun) {
+          this.currentRun.pendingSystemMessages.push({ content, notify })
+        } else {
+          log.warn('injectSystemMessage: no active run, message dropped')
         }
       },
       getParentContext: () => {
@@ -2264,51 +2272,70 @@ export abstract class Agent {
   }
   
   /**
-   * 处理待处理的用户消息
+   * 处理待处理的用户消息和系统消息
    */
   protected processPendingUserMessages(run: AgentRun): void {
-    if (run.pendingUserMessages.length === 0) return
+    const hasUser = run.pendingUserMessages.length > 0
+    const hasSystem = run.pendingSystemMessages.length > 0
+    if (!hasUser && !hasSystem) return
     
-    // 收集所有 pending 消息的文本、文档内容、图片
-    let combinedText = ''
-    const allImages: string[] = []
+    // 1. 系统消息：注入 AI 上下文，可选创建简短通知步骤
+    if (hasSystem) {
+      const parts: string[] = []
+      for (const sys of run.pendingSystemMessages) {
+        parts.push(sys.content)
+        if (sys.notify) {
+          this.addStep({ type: 'tool_result', content: sys.notify, toolName: 'dispatch_agents' })
+        }
+      }
+      const systemText = parts.join('\n\n')
+      const systemMsg: AiMessage = { role: 'user', content: Agent.formatTimestamp() + systemText }
+      run.messages.push(systemMsg)
+      run.taskMessageLog.push({ role: 'user', content: systemText })
+      run.pendingSystemMessages = []
+    }
     
-    for (const pending of run.pendingUserMessages) {
-      this.addStep({
-        type: 'user_supplement',
-        content: pending.message,
-        attachments: pending.attachments,
-        images: pending.images
-      })
+    // 2. 用户消息：创建 user_supplement 步骤 + 注入 AI 上下文
+    if (hasUser) {
+      let combinedText = ''
+      const allImages: string[] = []
       
-      let msgPart = Agent.formatTimestamp() + pending.message
-      if (pending.documentContext) {
-        msgPart += '\n\n' + pending.documentContext
+      for (const pending of run.pendingUserMessages) {
+        this.addStep({
+          type: 'user_supplement',
+          content: pending.message,
+          attachments: pending.attachments,
+          images: pending.images
+        })
+        
+        let msgPart = Agent.formatTimestamp() + pending.message
+        if (pending.documentContext) {
+          msgPart += '\n\n' + pending.documentContext
+        }
+        if (pending.images?.length) {
+          const imageCount = pending.images.length
+          log.info(`Supplement images: ${imageCount} image(s)`)
+          msgPart += `\n\n[${t('agent.images_attached', { count: imageCount })}]`
+          allImages.push(...pending.images)
+        }
+        combinedText += (combinedText ? '\n' : '') + msgPart
       }
-      if (pending.images?.length) {
-        const imageCount = pending.images.length
-        log.info(`Supplement images: ${imageCount} image(s)`)
-        msgPart += `\n\n[${t('agent.images_attached', { count: imageCount })}]`
-        allImages.push(...pending.images)
+      
+      const userSupplementMsg: AiMessage = { role: 'user', content: Agent.formatTimestamp() + combinedText }
+      if (allImages.length > 0) {
+        userSupplementMsg.images = allImages
       }
-      combinedText += (combinedText ? '\n' : '') + msgPart
+      run.messages.push(userSupplementMsg)
+      run.taskMessageLog.push({ role: 'user', content: combinedText })
+      
+      if (this.currentPlan && this.currentPlan.steps.some(s => s.status === 'pending')) {
+        const planHintMsg: AiMessage = { role: 'user', content: t('agent.user_supplement_with_plan') }
+        run.messages.push(planHintMsg)
+        run.taskMessageLog.push({ ...planHintMsg })
+      }
+      
+      run.pendingUserMessages = []
     }
-    
-    const userSupplementMsg: AiMessage = { role: 'user', content: Agent.formatTimestamp() + combinedText }
-    if (allImages.length > 0) {
-      userSupplementMsg.images = allImages
-    }
-    run.messages.push(userSupplementMsg)
-    run.taskMessageLog.push({ role: 'user', content: combinedText })
-    
-    // 如果有计划，提示 AI
-    if (this.currentPlan && this.currentPlan.steps.some(s => s.status === 'pending')) {
-      const planHintMsg: AiMessage = { role: 'user', content: t('agent.user_supplement_with_plan') }
-      run.messages.push(planHintMsg)
-      run.taskMessageLog.push({ ...planHintMsg })
-    }
-    
-    run.pendingUserMessages = []
   }
   
   /**

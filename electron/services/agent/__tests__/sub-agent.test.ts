@@ -598,7 +598,7 @@ describe('dispatchSubAgents', () => {
 
   it('should support background async mode', async () => {
     const executor = createMockExecutor({
-      injectPendingMessage: vi.fn()
+      injectSystemMessage: vi.fn()
     })
     const mockAi = (executor as any)._mockAiService
 
@@ -624,9 +624,10 @@ describe('dispatchSubAgents', () => {
     // 等待后台任务完成
     await new Promise(resolve => setTimeout(resolve, 200))
 
-    // 完成后应注入 pending message
-    expect(executor.injectPendingMessage).toHaveBeenCalledWith(
-      expect.stringContaining('后台任务通知')
+    // 完成后应通过 injectSystemMessage 注入结果（AI 收到完整内容，用户看到简短通知）
+    expect(executor.injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('后台任务通知'),
+      expect.stringContaining('后台子任务已完成')
     )
   })
 

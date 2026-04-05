@@ -76,8 +76,10 @@ export interface ToolExecutorConfig {
   // AI 服务（remember_info 等工具触发 LLM 更新时使用）
   getAiService?: () => import('../../ai.service').AiService | undefined
   getActiveProfileId?: () => string | undefined
-  /** 注入待处理的用户消息（异步子 Agent 完成后将结果注入主 Agent 的 ReAct 循环） */
+  /** @deprecated 使用 injectSystemMessage 代替 */
   injectPendingMessage?: (message: string) => void
+  /** 注入系统消息到 AI 上下文，可选创建简短 UI 通知（不产生 user_supplement 气泡） */
+  injectSystemMessage?: (content: string, notify?: string) => void
   /** 获取父 Agent 的 fork 上下文（消息历史 + 工具列表），用于子 Agent 共享 prompt cache */
   getParentContext?: () => {
     messages: import('../../ai.service').AiMessage[]

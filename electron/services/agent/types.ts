@@ -137,6 +137,8 @@ export interface AgentRun {
   aborted: boolean
   pendingConfirmation?: PendingConfirmationInternal
   pendingUserMessages: PendingUserMessage[]
+  /** 系统注入消息（如异步子 Agent 结果），发给 AI 并可选创建简短通知步骤 */
+  pendingSystemMessages: Array<{ content: string; notify?: string }>
   config: AgentConfig
   context: AgentContext  // 运行上下文
   // 实时终端输出缓冲区（Agent 运行期间收集）

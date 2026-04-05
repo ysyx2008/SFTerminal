@@ -504,18 +504,29 @@ export async function dispatchSubAgents(
         subAgents: [...subAgentResults]
       })
 
-      // 通过 pendingUserMessage 注入结果，让主 Agent 在下一轮 ReAct 循环中消费
-      const notification = [
+      // 通过 systemMessage 注入结果：完整内容给 AI，简短通知给用户
+      const fullContent = [
         `[后台任务通知] dispatch_agents 的 ${allResults.length} 个子任务已完成（${successCount} 成功${failCount > 0 ? `，${failCount} 失败` : ''}）：`,
         '',
         summary
       ].join('\n')
+      const taskList = allResults.map(r => `${r.status === 'completed' ? '✓' : '✗'} ${r.description}`).join('、')
+      const briefNotify = `✅ ${allResults.length} 个后台子任务已完成：${taskList}`
 
-      executor.injectPendingMessage?.(notification)
+      if (executor.injectSystemMessage) {
+        executor.injectSystemMessage(fullContent, briefNotify)
+      } else {
+        executor.injectPendingMessage?.(fullContent)
+      }
       log.info(`Background sub-agents completed: ${successCount} success, ${failCount} failed`)
     }).catch(err => {
       log.error('Background sub-agents unexpected error:', err)
-      executor.injectPendingMessage?.(`[后台任务通知] dispatch_agents 执行出错: ${err instanceof Error ? err.message : String(err)}`)
+      const errorMsg = `[后台任务通知] dispatch_agents 执行出错: ${err instanceof Error ? err.message : String(err)}`
+      if (executor.injectSystemMessage) {
+        executor.injectSystemMessage(errorMsg, `❌ 后台子任务执行出错`)
+      } else {
+        executor.injectPendingMessage?.(errorMsg)
+      }
     })
 
     return {
