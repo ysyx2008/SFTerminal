@@ -1455,7 +1455,8 @@ export class AiService {
     profileId?: string,
     onToolCallProgress?: (toolName: string, argsLength: number) => void,  // 工具调用参数生成进度
     requestId?: string,  // 用于支持中止请求
-    onRetry?: () => void  // 重试前通知调用方重置流状态（避免 reasoning 块重复）
+    onRetry?: () => void,  // 重试前通知调用方重置流状态（避免 reasoning 块重复）
+    onToolCallReady?: (toolCall: ToolCall) => void  // 流式中某个 tool_call 参数完整时回调
   ): Promise<void> {
     const profile = await this.getCurrentProfile(profileId)
     if (!profile) {
@@ -1523,6 +1524,8 @@ export class AiService {
     // reasoning 输出状态（需跨重试可见，以便重试前关闭未闭合的 <details> 块）
     let hasReasoningOutput = false
     let hasContentOutput = false
+    // 流式工具就绪追踪：已通过 onToolCallReady 回调的 tool_call 索引
+    const readyToolCallIndices = new Set<number>()
 
     const complete = (fn: () => void) => {
       if (!isCompleted) {
@@ -1547,6 +1550,7 @@ export class AiService {
       req = undefined
       hasReasoningOutput = false
       hasContentOutput = false
+      readyToolCallIndices.clear()
     }
 
     // 关闭未闭合的 reasoning <details> 块（重试前调用，避免嵌套）
@@ -1865,6 +1869,19 @@ export class AiService {
                   }
                   if (onToolCallProgress && toolCalls[index]) {
                     onToolCallProgress(toolCalls[index].function.name, toolCalls[index].function.arguments.length)
+                  }
+                  // 检测 tool_call 参数是否已完整（可解析为 JSON）
+                  if (onToolCallReady && toolCalls[index] && !readyToolCallIndices.has(index)) {
+                    const tc = toolCalls[index]
+                    if (tc.id && tc.function.name && tc.function.arguments) {
+                      try {
+                        JSON.parse(tc.function.arguments)
+                        readyToolCallIndices.add(index)
+                        onToolCallReady(tc)
+                      } catch {
+                        // 参数尚不完整，继续等待
+                      }
+                    }
                   }
                 }
               }

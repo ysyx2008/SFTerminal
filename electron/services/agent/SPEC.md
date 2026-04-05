@@ -65,10 +65,11 @@ run(message, context, options)
   │           ├── processPendingUserMessages()
   │           ├── executeStep()
   │           │     ├── updateContextPressure() — 注入上下文状态
-  │           │     ├── callAiWithStreaming()   — 调用 AI API
+  │           │     ├── StreamingToolExecutor   — 创建流式工具执行器
+  │           │     ├── callAiWithStreaming()   — 调用 AI API（流式中提前执行就绪的只读工具）
   │           │     ├── 处理 finish_reason=length（截断重试）
   │           │     ├── 风险评估 + 用户确认
-  │           │     └── executeTool()           — 执行工具
+  │           │     └── executeToolCallsWithStreaming() — 收集预执行结果 + 执行剩余工具
   │           ├── saveCheckpoint()  — 每轮工具调用后增量写盘
   │           └── checkPlanProgress()
   │
@@ -129,6 +130,18 @@ run(message, context, options)
 - **异步**（`background: true`）：立即返回，后台执行，完成后通过 `injectPendingMessage` 注入结果
 
 **安全约束**：子 Agent 继承父 Agent 的 `executionMode`，不可递归 `dispatch_agents`。安全性通过工具白名单保障（无终端操作等高危工具）。
+
+### 流式工具并行执行 (`streaming-tool-executor.ts`)
+
+在 AI 模型流式输出过程中，一旦某个 tool_call 的参数完整（可解析为 JSON），`StreamingToolExecutor` 立即开始执行该工具，无需等待整个 assistant 消息输出完毕。
+
+**并发策略**（与 `PARALLELIZABLE_TOOLS` 一致）：
+- 只读工具（read_file、file_search、search_knowledge 等）可并行执行
+- 有副作用的工具（execute_command、edit_file 等）独占执行，等前面的全部完成
+
+**流程**：`executeStep` 创建 `StreamingToolExecutor` → 传入 `callAiWithStreaming` → AI 流式输出中 `onToolCallReady` 回调触发 `addTool()` → 流结束后 `executeToolCallsWithStreaming` 收集预执行结果 + 执行剩余工具
+
+**安全约束**：重试（onRetry）和截断（finish_reason=length）时会 abort 执行器；幻觉工具在执行器内部检测并拒绝；结果按原始 tool_calls 顺序写入消息历史。
 
 ### 技能系统 (`skills/`)
 

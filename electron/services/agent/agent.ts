@@ -9,6 +9,7 @@
  */
 
 import type { AiMessage, ToolCall, ChatWithToolsResult, ToolDefinition } from '../ai.service'
+import { StreamingToolExecutor } from './streaming-tool-executor'
 import type { AgentRecord, AgentStepRecord } from '../history.service'
 import type {
   AgentConfig,
@@ -1362,11 +1363,21 @@ export abstract class Agent {
     // 更新上下文状态（注入 Context Status + 渐进式提醒）
     this.updateContextPressure(run)
     
-    // 调用 AI
-    const response = await this.callAiWithStreaming(run)
+    // 创建流式工具执行器：AI 流式输出过程中提前启动只读工具
+    const availableToolNames = new Set(this.getAvailableTools().map(t => t.function.name))
+    const streamingExecutor = new StreamingToolExecutor({
+      run,
+      toolExecutorConfig,
+      availableToolNames
+    })
+    
+    // 调用 AI（传入流式执行器，使其在流式输出中提前执行工具）
+    const response = await this.callAiWithStreaming(run, streamingExecutor)
     
     // 处理 finish_reason=length（输出被 max_tokens 截断）
     if (response.finish_reason === 'length') {
+      streamingExecutor.abort()
+      
       const totalToolCalls = response.tool_calls?.length || 0
       const validToolCalls = (response.tool_calls || []).filter(tc => {
         if (!tc.id || !tc.function.name || !tc.function.arguments) return false
@@ -1384,10 +1395,8 @@ export abstract class Agent {
       // 有有效的工具调用 → 正常执行，截断的已被丢弃
       if (validToolCalls.length > 0) {
         log.info(`Proceeding with ${validToolCalls.length} valid tool_calls despite truncation`)
-        // 继续走正常的工具调用流程（下面的 if 分支会处理）
         response.tool_calls = validToolCalls
       } else {
-        // 没有可用的工具调用，注入续写提示让 AI 重试
         const truncationHint: AiMessage = {
           role: 'assistant',
           content: response.content || ''
@@ -1424,6 +1433,7 @@ export abstract class Agent {
       }
       
       if (validToolCalls.length === 0) {
+        streamingExecutor.abort()
         const discardedNames = response.tool_calls.map(tc => tc.function?.name || 'unknown').join(', ')
         log.warn(`All tool_calls discarded due to malformed arguments: [${discardedNames}], triggering retry`)
         
@@ -1467,8 +1477,8 @@ export abstract class Agent {
       run.messages.push(assistantMsg)
       run.taskMessageLog.push({ ...assistantMsg })
       
-      // 执行工具调用
-      await this.executeToolCalls(run, validToolCalls, toolExecutorConfig)
+      // 执行工具调用（流式执行器可能已完成部分工具）
+      await this.executeToolCallsWithStreaming(run, validToolCalls, toolExecutorConfig, streamingExecutor)
       
       return { response, hasToolCalls: true }
     }
@@ -1526,8 +1536,9 @@ export abstract class Agent {
   
   /**
    * 流式调用 AI
+   * @param streamingExecutor 可选的流式工具执行器，传入时会在流式过程中提前启动工具执行
    */
-  protected async callAiWithStreaming(run: AgentRun): Promise<ChatWithToolsResult> {
+  protected async callAiWithStreaming(run: AgentRun, streamingExecutor?: StreamingToolExecutor): Promise<ChatWithToolsResult> {
     const streamStepId = this.generateId()
     const toolProgressStepId = this.generateId()
     let streamContent = ''
@@ -1750,7 +1761,16 @@ export abstract class Agent {
             this.removeStep(toolProgressStepId)
             toolProgressStepCreated = false
           }
-        }
+          // 重试时中止已启动的流式工具执行
+          streamingExecutor?.abort()
+        },
+        // onToolCallReady - 流式中 tool_call 参数完整时立即投入执行
+        streamingExecutor
+          ? (toolCall) => {
+              log.info(`Streaming tool ready: ${toolCall.function.name} (id=${toolCall.id})`)
+              streamingExecutor.addTool(toolCall)
+            }
+          : undefined
       )
     })
   }
@@ -1849,6 +1869,55 @@ export abstract class Agent {
     
     run.executionPhase = 'thinking'
     run.currentToolName = undefined
+  }
+  
+  /**
+   * 带流式预执行的工具调用处理。
+   *
+   * StreamingToolExecutor 在 AI 流式输出过程中已提前启动部分工具。
+   * 本方法：
+   * 1. 等待流式执行器完成所有已投入的工具
+   * 2. 收集预执行的结果并 processToolResult
+   * 3. 对剩余未预执行的工具走传统 executeToolCalls 路径
+   */
+  private async executeToolCallsWithStreaming(
+    run: AgentRun,
+    toolCalls: ToolCall[],
+    toolExecutorConfig: ToolExecutorConfig,
+    streamingExecutor: StreamingToolExecutor
+  ): Promise<void> {
+    if (toolCalls.length === 0) return
+
+    // 等待流式执行器中所有已投入的工具完成
+    const preExecuted = await streamingExecutor.waitForAll()
+    const preExecutedIds = new Set(preExecuted.map(r => r.toolCall.id))
+    
+    if (preExecuted.length > 0) {
+      const names = preExecuted.map(r => r.toolCall.function.name).join(', ')
+      log.info(`Streaming pre-executed ${preExecuted.length} tools: [${names}]`)
+    }
+    
+    // 按原始 toolCalls 顺序处理预执行的结果
+    const stepCountBefore = run.steps.length
+    for (const toolCall of toolCalls) {
+      if (!preExecutedIds.has(toolCall.id)) continue
+      
+      const completed = preExecuted.find(r => r.toolCall.id === toolCall.id)!
+      this.setExecutionPhase(run, toolCall.function.name)
+      this.ensureToolResultStep(run, stepCountBefore, toolCall.function.name, completed.result)
+      this.processToolResult(run, toolCall, completed.result, completed.toolArgs)
+    }
+    
+    // 过滤出未被流式执行器处理的工具
+    const remaining = toolCalls.filter(tc => !preExecutedIds.has(tc.id))
+    
+    if (remaining.length > 0) {
+      log.info(`Running ${remaining.length} remaining tools via standard path`)
+      await this.executeToolCalls(run, remaining, toolExecutorConfig)
+    } else {
+      run.executionPhase = 'thinking'
+      run.currentToolName = undefined
+    }
   }
   
   /**
