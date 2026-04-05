@@ -61,7 +61,8 @@
 | 🔌 **MCP Extension** | Connect external tools via Model Context Protocol |
 | 🗄️ **Database** | Natural language SQL execution and analysis |
 | 🛒 **Skill Market** | Browse, install, and share community Agent skills with one click |
-| 📊 **Excel & Word** | Style themes, Markdown-to-Excel, numbered lists, and more — all via natural language |
+| 📊 **Excel & Word** | Style themes, Markdown-to-Excel, institutional document formatting with multi-level numbering — all via natural language |
+| 🔌 **Plugin System** | Extend Agent with custom tools, providers, routes, and IM channels via a lightweight plugin API |
 | 🔒 **System Tray** | Minimize to tray; Cmd+W hides window without quitting. Single instance. |
 | 🖥️ **CLI Mode** | Run all backend services without Electron — headless automation via `npm run sft` |
 

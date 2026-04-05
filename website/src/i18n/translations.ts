@@ -62,8 +62,8 @@ export const translations = {
         },
         {
           title: '丰富的 Agent 技能',
-          description: '开箱即用的技能扩展：飞书多维表格/云文档读写（OAuth 授权）、浏览器自动化、邮件收发、日程管理、Excel/Word 处理，让 AI 的能力远不止命令行。觉醒模式下 AI 主动监控、推送通知。',
-          highlights: ['飞书 Bitable / 云文档', '邮件 / 日程管理', 'Excel / Word 处理'],
+          description: '开箱即用的技能扩展：飞书多维表格/云文档读写（OAuth 授权）、浏览器自动化、邮件收发、日程管理、Excel/Word 处理（一键生成多级编号制度文件），让 AI 的能力远不止命令行。觉醒模式下 AI 主动监控、推送通知。',
+          highlights: ['飞书 Bitable / 云文档', '邮件 / 日程管理', 'Excel / Word 制度文件'],
         },
         {
           title: '本地知识库',
@@ -452,7 +452,7 @@ export const translations = {
       },
       wordSkill: {
         title: 'Word 文档生成',
-        intro: '旗鱼的 Word 技能让你通过自然语言快速生成专业的 Word 文档。内置公文（GB/T 9704-2012）、学术论文、技术文档等预设样式，直接说「帮我写一份会议纪要」即可生成格式规范的 .docx 文件。',
+        intro: '旗鱼的 Word 技能让你通过自然语言快速生成专业的 Word 文档。内置公文（GB/T 9704-2012）、学术论文、技术文档等预设样式，支持一键生成多级自动编号的标准制度文件。直接说「帮我写一份会议纪要」即可生成格式规范的 .docx 文件。',
         capabilities: '能力概览',
         capabilityList: [
           { cap: '从零创建文档', desc: '会议纪要、通知、报告、方案等各类文档' },
@@ -923,8 +923,8 @@ export const translations = {
         },
         {
           title: 'Rich Agent Skills',
-          description: 'Out-of-the-box skill extensions: Feishu Bitable/Docs read-write (OAuth), browser automation, email management, calendar scheduling, Excel/Word processing — AI capabilities far beyond the command line. In Awaken mode, AI proactively monitors and pushes notifications.',
-          highlights: ['Feishu Bitable / Docs', 'Email / Calendar', 'Excel / Word Processing'],
+          description: 'Out-of-the-box skill extensions: Feishu Bitable/Docs read-write (OAuth), browser automation, email management, calendar scheduling, Excel/Word processing (one-click institutional documents with multi-level numbering) — AI capabilities far beyond the command line. In Awaken mode, AI proactively monitors and pushes notifications.',
+          highlights: ['Feishu Bitable / Docs', 'Email / Calendar', 'Excel / Word Documents'],
         },
         {
           title: 'Local Knowledge Base',
@@ -1313,7 +1313,7 @@ export const translations = {
       },
       wordSkill: {
         title: 'Word Document Generation',
-        intro: 'SailFish\'s Word skill lets you generate professional Word documents through natural language. Built-in styles include official documents (GB/T 9704-2012), academic papers, technical documents, and more. Just say "write me a meeting minutes" to get a properly formatted .docx file.',
+        intro: 'SailFish\'s Word skill lets you generate professional Word documents through natural language. Built-in styles include official documents (GB/T 9704-2012), academic papers, technical documents, and more. Supports one-click generation of institutional documents with multi-level auto-numbering. Just say "write me a meeting minutes" to get a properly formatted .docx file.',
         capabilities: 'Capabilities',
         capabilityList: [
           { cap: 'Create from scratch', desc: 'Meeting minutes, notices, reports, proposals, and more' },

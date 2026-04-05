@@ -2,7 +2,35 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.28.0 (2026-04-03) (Latest)
+## v10.29.0 (2026-04-05) (Latest)
+
+Introduces a plugin system supporting tool, provider, route, and IM channel extensions. Major Word skill enhancements with institutional document formatting and multi-level numbering.
+
+### New Features
+- 🔌 **Plugin System**: New plugin framework supporting four extension points — tools, providers, routes, and IM channels, with management UI, developer documentation, and example plugins
+- 📝 **Word Institutional Documents**: Support for institutional document formatting, multi-level auto-numbering, and document title styles
+- 📊 **Excel Preview Enhancement**: Real-time highlighting of modified regions, with row/column insert and delete operations
+- 🔗 **File Path Links Enhancement**: Added right-click context menu and error tooltips for file path links
+- 🌐 **Website WeChat Spotlight**: Added WeChat integration showcase and setup guide on the homepage
+
+### Improvements
+- ⚡ **Message Rendering Optimization**: Faster message rendering by splitting the input component for improved responsiveness
+- ⚡ **Agent Startup Optimization**: Lazy-loaded cwdResolver to reduce initialization overhead
+- 📝 **Word Format Conversion Guide**: Added operational guide for document format conversion
+- 🧹 **Code Cleanup**: Removed unused variables and functions, resolved all ESLint/TypeScript lint errors
+
+### Bug Fixes
+- 🐛 Fixed Watch EventPool startup-phase duplicate triggers by extending collection period to 30 seconds
+- 🐛 Fixed new message indicator not disappearing
+- 🐛 Fixed "preparing" status being displayed repeatedly
+- 🐛 Fixed multiple Word document preview discrepancies vs actual Word rendering (headings/alignment/tables/line breaks/numbering/headers-footers)
+- 🐛 Fixed overwrite save and new file confirmation prompt logic
+- 🐛 Increased AI connection timeout to 30 seconds; user abort no longer triggers error
+- 🐛 Added missing i18n toolNames translations for all skill tools
+- 🐛 Eliminated Vite build warnings and runtime errors
+- 🐛 Fixed Agent using `~/` paths on Windows
+
+## v10.28.0 (2026-04-03)
 
 Adds WeChat as a new IM channel and improves system stability and Windows experience.
 
