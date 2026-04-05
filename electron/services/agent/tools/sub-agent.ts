@@ -133,7 +133,7 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
   let totalTokens: TokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
   const toolSteps: SubAgentToolStep[] = []
 
-  const systemPrompt = buildSubAgentSystemPrompt(task, readonly)
+  const systemPrompt = buildSubAgentSystemPrompt(task, readonly, tools)
   const messages: AiMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: task.prompt }
@@ -261,6 +261,13 @@ export async function dispatchSubAgents(
     return { success: false, output: '', error: '一次最多 dispatch 10 个子任务' }
   }
 
+  for (let i = 0; i < rawTasks.length; i++) {
+    const t = rawTasks[i]
+    if (!t?.prompt || typeof t.prompt !== 'string' || t.prompt.trim() === '') {
+      return { success: false, output: '', error: `子任务 ${i + 1} 缺少 prompt（任务指令）` }
+    }
+  }
+
   const maxConcurrent = Math.min(
     Math.max(1, Number(args.max_concurrent) || DEFAULT_MAX_CONCURRENT),
     10
@@ -268,11 +275,10 @@ export async function dispatchSubAgents(
 
   const readonly = args.readonly !== false // 默认 true
 
-  // 构建任务列表
   const tasks: SubAgentTask[] = rawTasks.map((t, i) => ({
     id: `sub-${i + 1}`,
     description: t.description || `Task ${i + 1}`,
-    prompt: t.prompt || t.description
+    prompt: t.prompt
   }))
 
   // 创建进度步骤（tool_call 类型 + subAgents 字段）
@@ -319,6 +325,11 @@ export async function dispatchSubAgents(
 
     const batch = tasks.slice(i, i + maxConcurrent)
     const batchPromises = batch.map(task => {
+      if (abortSignal.aborted || executor.isAborted()) {
+        const abortedResult: SubAgentResult = { id: task.id, description: task.description, status: 'failed', error: 'Aborted' }
+        updateProgress(task.id, abortedResult)
+        return Promise.resolve(abortedResult)
+      }
       updateProgress(task.id, { status: 'running' })
 
       const subExecutor = buildSubAgentExecutorConfig(executor, config, abortSignal)
@@ -347,7 +358,9 @@ export async function dispatchSubAgents(
         const failedTask = batch[j]
         const errorMsg = settled.reason instanceof Error
           ? settled.reason.message
-          : String(settled.reason)
+          : typeof settled.reason === 'string'
+            ? settled.reason
+            : String(settled.reason)
         const failedResult: SubAgentResult = {
           id: failedTask.id,
           description: failedTask.description,
@@ -382,10 +395,8 @@ export async function dispatchSubAgents(
 
 // ==================== 辅助函数 ====================
 
-function buildSubAgentSystemPrompt(task: SubAgentTask, readonly: boolean): string {
-  const toolDesc = readonly
-    ? '文件读取（read_file）、文件搜索（file_search）、命令执行（exec）、知识库搜索（search_knowledge）'
-    : '文件读写（read_file/edit_file/write_text_file）、文件搜索（file_search）、命令执行（exec）、知识库搜索（search_knowledge）'
+function buildSubAgentSystemPrompt(task: SubAgentTask, readonly: boolean, tools: ToolDefinition[]): string {
+  const toolNames = tools.map(t => t.function.name).join('、')
   const writeConstraint = readonly ? '- **只读模式**：不可修改任何文件或系统状态，exec 仅用于读取类命令（grep/find/cat/ls/git log 等）\n' : ''
 
   return [
@@ -393,7 +404,7 @@ function buildSubAgentSystemPrompt(task: SubAgentTask, readonly: boolean): strin
     '',
     '## 约束',
     '- 你是父 Agent 并行分派的子任务执行器，专注完成指定任务',
-    `- 可用工具：${toolDesc}`,
+    `- 可用工具：${toolNames}`,
     writeConstraint + '- 不可使用终端交互、不可创建子任务、不可向用户提问',
     '- 完成任务后直接输出结果文本，不要多余寒暄',
     '',
