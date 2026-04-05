@@ -18,21 +18,137 @@ const AI_TIMEOUT = {
 
 // 网络错误自动重试配置
 const AI_RETRY = {
-  MAX_RETRIES: 3,            // 最大重试次数
-  RETRY_DELAY: 2000,         // 重试间隔：2 秒
-  RATE_LIMIT_MAX_RETRIES: 3, // Rate limit 最大重试次数
+  MAX_RETRIES: 3,            // 网络错误最大重试次数
+  BASE_DELAY: 2000,          // 网络错误基础退避：2 秒
+  RATE_LIMIT_MAX_RETRIES: 5, // Rate limit 最大重试次数
   RATE_LIMIT_BASE_DELAY: 5000, // Rate limit 基础退避：5 秒
-  SERVER_ERROR_MAX_RETRIES: 2, // 5xx 服务端错误最大重试次数
+  SERVER_ERROR_MAX_RETRIES: 3, // 5xx 服务端错误最大重试次数
   SERVER_ERROR_BASE_DELAY: 3000, // 5xx 基础退避：3 秒
-  // 可重试的网络错误码
+  JITTER_FACTOR: 0.2,        // 退避抖动因子（±20%），避免 thundering herd
+  // Node.js 网络错误码（稳定常量，非关键词匹配）
   RETRYABLE_ERRORS: ['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNREFUSED', 'EPIPE', 'EAI_AGAIN', 'socket hang up'],
   // 可重试的 HTTP 状态码（服务端临时错误）
   RETRYABLE_STATUS_CODES: [500, 502, 503, 529] as readonly number[]
 }
 
-// 判断错误是否可重试
 function isRetryableError(errorMessage: string): boolean {
   return AI_RETRY.RETRYABLE_ERRORS.some(code => errorMessage.includes(code))
+}
+
+function isRetryableStatusCode(statusCode: number): boolean {
+  return statusCode === 429 || AI_RETRY.RETRYABLE_STATUS_CODES.includes(statusCode)
+}
+
+/**
+ * 计算带 jitter 的指数退避延迟
+ * delay = baseDelay * 2^attempt * (1 ± jitterFactor)
+ */
+function calculateBackoff(baseDelay: number, attempt: number): number {
+  const expDelay = baseDelay * Math.pow(2, attempt)
+  const jitter = expDelay * AI_RETRY.JITTER_FACTOR * (2 * Math.random() - 1)
+  return Math.max(0, Math.round(expDelay + jitter))
+}
+
+/**
+ * AI API 请求错误分类
+ */
+interface ApiRequestError extends Error {
+  statusCode?: number
+  retryAfter?: number
+  apiErrorCode?: string
+}
+
+function toApiRequestError(err: unknown, statusCode?: number, headers?: Record<string, string | string[] | undefined>, apiErrorCode?: string): ApiRequestError {
+  const error = (err instanceof Error ? err : new Error(String(err))) as ApiRequestError
+  error.statusCode = statusCode
+  error.apiErrorCode = apiErrorCode
+  if (statusCode === 429 && headers?.['retry-after']) {
+    const raw = String(headers['retry-after'])
+    const seconds = Number(raw)
+    if (!isNaN(seconds) && seconds > 0) {
+      error.retryAfter = seconds * 1000
+    } else {
+      const date = Date.parse(raw)
+      if (!isNaN(date)) {
+        error.retryAfter = Math.max(1000, date - Date.now())
+      }
+    }
+  }
+  return error
+}
+
+/**
+ * 通用 AI API 重试包装器
+ * 对 Promise 类请求（chat / chatWithTools / makeRequest）提供统一的重试策略：
+ * - 网络错误：指数退避 + jitter
+ * - 429 Rate Limit：优先 Retry-After，否则指数退避
+ * - 5xx 服务端错误：指数退避
+ * - context_length_exceeded / 其他 4xx：不重试
+ */
+async function withApiRetry<T>(
+  fn: () => Promise<T>,
+  options?: {
+    /** 覆盖网络错误最大重试次数 */
+    maxRetries?: number
+    /** 不重试的错误码 */
+    noRetryErrorCodes?: string[]
+    /** 重试前回调 */
+    onRetry?: (attempt: number, delay: number, reason: string) => void
+  }
+): Promise<T> {
+  const maxRetries = options?.maxRetries ?? AI_RETRY.MAX_RETRIES
+  const noRetryCodes = new Set(options?.noRetryErrorCodes ?? ['context_length_exceeded'])
+  let networkAttempt = 0
+  let rateLimitAttempt = 0
+  let serverErrorAttempt = 0
+
+  const _retry = async (): Promise<T> => {
+    try {
+      return await fn()
+    } catch (err) {
+      const apiErr = err as ApiRequestError
+
+      // 不重试的业务错误
+      if (apiErr.apiErrorCode && noRetryCodes.has(apiErr.apiErrorCode)) {
+        throw apiErr
+      }
+
+      // 429 Rate Limit
+      if (apiErr.statusCode === 429 && rateLimitAttempt < AI_RETRY.RATE_LIMIT_MAX_RETRIES) {
+        rateLimitAttempt++
+        const delay = apiErr.retryAfter ?? calculateBackoff(AI_RETRY.RATE_LIMIT_BASE_DELAY, rateLimitAttempt - 1)
+        log.warn(`Rate limited (429), retry ${rateLimitAttempt}/${AI_RETRY.RATE_LIMIT_MAX_RETRIES} in ${(delay / 1000).toFixed(1)}s`)
+        options?.onRetry?.(rateLimitAttempt, delay, '429')
+        await new Promise(resolve => setTimeout(resolve, delay))
+        return _retry()
+      }
+
+      // 5xx 服务端错误
+      if (apiErr.statusCode && AI_RETRY.RETRYABLE_STATUS_CODES.includes(apiErr.statusCode) &&
+          serverErrorAttempt < AI_RETRY.SERVER_ERROR_MAX_RETRIES) {
+        serverErrorAttempt++
+        const delay = calculateBackoff(AI_RETRY.SERVER_ERROR_BASE_DELAY, serverErrorAttempt - 1)
+        log.warn(`Server error (${apiErr.statusCode}), retry ${serverErrorAttempt}/${AI_RETRY.SERVER_ERROR_MAX_RETRIES} in ${(delay / 1000).toFixed(1)}s`)
+        options?.onRetry?.(serverErrorAttempt, delay, String(apiErr.statusCode))
+        await new Promise(resolve => setTimeout(resolve, delay))
+        return _retry()
+      }
+
+      // 网络错误
+      if (isRetryableError(apiErr.message) && networkAttempt < maxRetries) {
+        networkAttempt++
+        const delay = calculateBackoff(AI_RETRY.BASE_DELAY, networkAttempt - 1)
+        log.warn(`Network error (${apiErr.message.slice(0, 80)}), retry ${networkAttempt}/${maxRetries} in ${(delay / 1000).toFixed(1)}s`)
+        options?.onRetry?.(networkAttempt, delay, 'network')
+        await new Promise(resolve => setTimeout(resolve, delay))
+        return _retry()
+      }
+
+      throw apiErr
+    }
+  }
+
+  return _retry()
 }
 
 /**
@@ -712,21 +828,24 @@ export class AiService {
       return result
     } catch (error) {
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-      log.error(`Chat failed: model=${profile.model}, duration=${elapsed}s, error=${error instanceof Error ? error.message : error}`)
+      const errMsg = error instanceof Error ? error.message : String(error)
+      log.error(`Chat failed: model=${profile.model}, duration=${elapsed}s, error=${errMsg}`)
       if (error instanceof Error) {
         if (error.message === t('error.context_length_exceeded')) {
           throw error
         }
-        throw new Error(t('error.ai_request_failed', { message: translateNetworkError(error.message) }))
+        // 保留 makeRequest 已重试后的原始错误信息，翻译网络错误码
+        throw new Error(t('error.ai_request_failed', { message: translateNetworkError(errMsg) }))
       }
       throw error
     }
   }
 
   /**
-   * 发送 HTTP 请求（支持代理，带超时处理）
+   * 发送单次 HTTP 请求（支持代理，带超时处理）
+   * 抛出 ApiRequestError 携带 statusCode / retryAfter / apiErrorCode，供 withApiRetry 分类重试
    */
-  private makeRequest<T>(profile: AiProfile, body: object, signal?: AbortSignal): Promise<T> {
+  private makeRequestOnce<T>(profile: AiProfile, body: object, signal?: AbortSignal): Promise<T> {
     return new Promise((resolve, reject) => {
       const url = new URL(profile.apiUrl)
       const isHttps = url.protocol === 'https:'
@@ -758,7 +877,7 @@ export class AiService {
       const totalTimeoutId = setTimeout(() => {
         if (!isCompleted) {
           req.destroy()
-          complete(() => reject(new Error(t('error.ai_total_timeout'))))
+          complete(() => reject(toApiRequestError(new Error(t('error.ai_total_timeout')))))
         }
       }, AI_TIMEOUT.TOTAL)
 
@@ -769,7 +888,7 @@ export class AiService {
         res.socket?.setTimeout(AI_TIMEOUT.SOCKET_IDLE)
         res.socket?.on('timeout', () => {
           req.destroy()
-          complete(() => reject(new Error(t('error.ai_idle_timeout'))))
+          complete(() => reject(toApiRequestError(new Error('ETIMEDOUT'))))
         })
 
         res.on('data', (chunk) => {
@@ -785,11 +904,18 @@ export class AiService {
                 }
                 resolve(parsed)
               } catch {
-                reject(new Error(t('error.ai_parse_failed', { data })))
+                reject(toApiRequestError(new Error(t('error.ai_parse_failed', { data }))))
               }
             })
           } else {
-            complete(() => reject(new Error(t('error.api_request_failed', { data: parseApiError(data).message }))))
+            const parsed = parseApiError(data)
+            const headers = res.headers as Record<string, string | string[] | undefined>
+            complete(() => reject(toApiRequestError(
+              new Error(parsed.message),
+              res.statusCode!,
+              headers,
+              parsed.code
+            )))
           }
         })
       })
@@ -797,18 +923,18 @@ export class AiService {
       // 连接超时处理
       req.on('timeout', () => {
         req.destroy()
-        complete(() => reject(new Error(t('error.ai_connection_timeout'))))
+        complete(() => reject(toApiRequestError(new Error('ETIMEDOUT'))))
       })
 
       req.on('error', (err) => {
-        complete(() => reject(new Error(t('error.request_error', { message: translateNetworkError(err.message) }))))
+        complete(() => reject(toApiRequestError(err)))
       })
 
       // 支持中止请求
       if (signal) {
         signal.addEventListener('abort', () => {
           req.destroy()
-          complete(() => reject(new Error(t('error.request_aborted'))))
+          complete(() => reject(toApiRequestError(new Error(t('error.request_aborted')))))
         })
       }
 
@@ -819,8 +945,16 @@ export class AiService {
   }
 
   /**
+   * 发送 HTTP 请求（带自动重试：网络错误 / 429 / 5xx 均自动退避重试）
+   */
+  private makeRequest<T>(profile: AiProfile, body: object, signal?: AbortSignal): Promise<T> {
+    return withApiRetry(() => this.makeRequestOnce<T>(profile, body, signal))
+  }
+
+  /**
    * 发送聊天请求（流式，支持代理）
    * 支持 think 模型（如 DeepSeek-R1）的 reasoning_content 字段
+   * 支持网络错误 / 429 / 5xx 自动重试（指数退避 + jitter）
    * @param requestId 请求 ID，用于支持多个终端同时请求
    */
   async chatStream(
@@ -869,6 +1003,21 @@ export class AiService {
 
     // 完成状态标记，防止重复回调
     let isCompleted = false
+    // 总超时计时器
+    let totalTimeoutId: NodeJS.Timeout
+    // 空闲超时计时器（收到数据后重置）
+    let idleTimeoutId: NodeJS.Timeout
+    // 请求对象引用
+    let req: http.ClientRequest | undefined
+    // 重试计数器
+    let networkRetryCount = 0
+    let rateLimitRetryCount = 0
+    let serverErrorRetryCount = 0
+
+    // reasoning 输出状态
+    let hasReasoningOutput = false
+    let hasContentOutput = false
+
     const complete = (fn: () => void) => {
       if (!isCompleted) {
         isCompleted = true
@@ -879,22 +1028,87 @@ export class AiService {
       }
     }
 
-    // 总超时计时器
-    let totalTimeoutId: NodeJS.Timeout
-    // 空闲超时计时器（收到数据后重置）
-    let idleTimeoutId: NodeJS.Timeout
+    const resetForRetry = () => {
+      clearTimeout(totalTimeoutId)
+      clearTimeout(idleTimeoutId)
+      req = undefined
+      hasReasoningOutput = false
+      hasContentOutput = false
+    }
+
+    const closeOpenReasoningBlock = () => {
+      if (hasReasoningOutput && !hasContentOutput) {
+        onChunk('\n\n</blockquote>\n</details>\n\n')
+        hasReasoningOutput = false
+      }
+    }
 
     const resetIdleTimeout = () => {
       clearTimeout(idleTimeoutId)
       idleTimeoutId = setTimeout(() => {
         if (!isCompleted) {
           req?.destroy()
-          complete(() => onError(t('error.ai_idle_timeout')))
+          if (!tryRetry('ETIMEDOUT')) {
+            complete(() => onError(t('error.ai_idle_timeout')))
+          }
         }
       }, AI_TIMEOUT.SOCKET_IDLE)
     }
 
-    let req: http.ClientRequest | undefined
+    const tryRetry = (errorMsg: string, statusCode?: number, retryAfterMs?: number): boolean => {
+      if (isCompleted) return true
+
+      // 429 Rate Limit
+      if (statusCode === 429 && rateLimitRetryCount < AI_RETRY.RATE_LIMIT_MAX_RETRIES) {
+        rateLimitRetryCount++
+        const delay = retryAfterMs ?? calculateBackoff(AI_RETRY.RATE_LIMIT_BASE_DELAY, rateLimitRetryCount - 1)
+        log.warn(`ChatStream rate limited (429), retry ${rateLimitRetryCount}/${AI_RETRY.RATE_LIMIT_MAX_RETRIES} in ${(delay / 1000).toFixed(0)}s`)
+        closeOpenReasoningBlock()
+        onChunk(`⚠️ ${t('error.rate_limited', { seconds: (delay / 1000).toFixed(0), attempt: String(rateLimitRetryCount), max: String(AI_RETRY.RATE_LIMIT_MAX_RETRIES) })}\n`)
+        resetForRetry()
+        setTimeout(doRequest, delay)
+        isCompleted = true
+        return true
+      }
+
+      // 5xx 服务端错误
+      if (statusCode && AI_RETRY.RETRYABLE_STATUS_CODES.includes(statusCode) && serverErrorRetryCount < AI_RETRY.SERVER_ERROR_MAX_RETRIES) {
+        serverErrorRetryCount++
+        const delay = calculateBackoff(AI_RETRY.SERVER_ERROR_BASE_DELAY, serverErrorRetryCount - 1)
+        log.warn(`ChatStream server error (${statusCode}), retry ${serverErrorRetryCount}/${AI_RETRY.SERVER_ERROR_MAX_RETRIES} in ${(delay / 1000).toFixed(0)}s`)
+        closeOpenReasoningBlock()
+        onChunk(`⚠️ ${t('error.server_error_retry', { status: String(statusCode), seconds: (delay / 1000).toFixed(0), attempt: String(serverErrorRetryCount), max: String(AI_RETRY.SERVER_ERROR_MAX_RETRIES) })}\n`)
+        resetForRetry()
+        setTimeout(doRequest, delay)
+        isCompleted = true
+        return true
+      }
+
+      // 网络错误
+      if (networkRetryCount < AI_RETRY.MAX_RETRIES && isRetryableError(errorMsg)) {
+        networkRetryCount++
+        const delay = calculateBackoff(AI_RETRY.BASE_DELAY, networkRetryCount - 1)
+        log.warn(`ChatStream network error, retry ${networkRetryCount}/${AI_RETRY.MAX_RETRIES} in ${(delay / 1000).toFixed(0)}s`)
+        closeOpenReasoningBlock()
+        onChunk(`⚠️ ${t('error.network_retry', { attempt: String(networkRetryCount), max: String(AI_RETRY.MAX_RETRIES) })}\n`)
+        resetForRetry()
+        setTimeout(doRequest, delay)
+        isCompleted = true
+        return true
+      }
+
+      return false
+    }
+
+    const doRequest = () => {
+    isCompleted = false
+
+    // 重试等待期间用户可能已取消请求
+    if (abortController.signal.aborted) {
+      this.abortControllers.delete(reqId)
+      onDone()
+      return
+    }
 
     try {
       const url = new URL(profile.apiUrl)
@@ -921,9 +1135,6 @@ export class AiService {
         }
       }, AI_TIMEOUT.TOTAL)
 
-      let hasReasoningOutput = false
-      let hasContentOutput = false
-
       req = httpModule.request(options, (res) => {
         // 开始接收响应，启动空闲超时
         resetIdleTimeout()
@@ -935,11 +1146,23 @@ export class AiService {
             resetIdleTimeout()
           })
           res.on('end', () => {
-            // 尝试解析 JSON 提取结构化错误信息
             const parsed = parseApiError(errorData)
             if (parsed.code === 'context_length_exceeded') {
               complete(() => onError(t('error.context_length_exceeded')))
-            } else {
+              return
+            }
+            // 解析 Retry-After header
+            let retryAfterMs: number | undefined
+            const retryAfterHeader = res.headers['retry-after']
+            if (retryAfterHeader) {
+              const seconds = Number(retryAfterHeader)
+              if (!isNaN(seconds) && seconds > 0) retryAfterMs = seconds * 1000
+              else {
+                const date = Date.parse(String(retryAfterHeader))
+                if (!isNaN(date)) retryAfterMs = Math.max(1000, date - Date.now())
+              }
+            }
+            if (!tryRetry(parsed.message, res.statusCode, retryAfterMs)) {
               complete(() => onError(t('error.api_request_failed', { data: parsed.message })))
             }
           })
@@ -1016,23 +1239,28 @@ export class AiService {
         })
 
         res.on('error', (err) => {
-          complete(() => onError(t('error.ai_response_error', { message: translateNetworkError(err.message) })))
+          if (!tryRetry(err.message)) {
+            complete(() => onError(t('error.ai_response_error', { message: translateNetworkError(err.message) })))
+          }
         })
       })
 
       // 连接超时处理
       req.on('timeout', () => {
         req?.destroy()
-        complete(() => onError(t('error.ai_connection_timeout')))
+        if (!tryRetry('ETIMEDOUT')) {
+          complete(() => onError(t('error.ai_connection_timeout')))
+        }
       })
 
       req.on('error', (err) => {
-        // 检查是否是中止错误（可能是原始消息或国际化后的消息）
-        if (err.message === t('error.request_aborted') || err.message.includes('aborted')) {
+        if (abortController.signal.aborted) {
           complete(() => onDone())
           return
         }
-        complete(() => onError(t('error.request_error', { message: translateNetworkError(err.message) })))
+        if (!tryRetry(err.message)) {
+          complete(() => onError(t('error.request_error', { message: translateNetworkError(err.message) })))
+        }
       })
 
       // 支持中止请求
@@ -1045,12 +1273,19 @@ export class AiService {
       req.write(JSON.stringify(chatStreamBody))
       req.end()
     } catch (error) {
-      if (error instanceof Error) {
-        complete(() => onError(t('error.ai_request_failed', { message: translateNetworkError(error.message) })))
-      } else {
-        complete(() => onError(t('error.ai_request_failed_unknown')))
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+      if (!tryRetry(errorMsg)) {
+        if (error instanceof Error) {
+          complete(() => onError(t('error.ai_request_failed', { message: translateNetworkError(error.message) })))
+        } else {
+          complete(() => onError(t('error.ai_request_failed_unknown')))
+        }
       }
     }
+    }  // end of doRequest
+
+    // 开始执行请求
+    doRequest()
   }
 
   /**
@@ -1339,19 +1574,20 @@ export class AiService {
       return false
     }
 
-    // 尝试重试的辅助函数
+    // 尝试重试的辅助函数（网络错误：指数退避 + jitter）
     const tryRetry = (errorMsg: string, doRequest: () => void): boolean => {
       // 已有重试在等待或请求已完成，跳过（防止 res/req 同时 emit error 导致重复重试）
       if (isCompleted) return true
       if (retryCount < AI_RETRY.MAX_RETRIES && isRetryableError(errorMsg)) {
         retryCount++
+        const delay = calculateBackoff(AI_RETRY.BASE_DELAY, retryCount - 1)
         closeOpenReasoningBlock()
         if (!onRetry) {
           onChunk(`⚠️ ${t('error.network_retry', { attempt: String(retryCount), max: String(AI_RETRY.MAX_RETRIES) })}\n`)
         }
-        getAiDebugService().logResponseError(reqId, `${errorMsg} - 准备重试 ${retryCount}/${AI_RETRY.MAX_RETRIES}`)
+        getAiDebugService().logResponseError(reqId, `${errorMsg} - 准备重试 ${retryCount}/${AI_RETRY.MAX_RETRIES} in ${(delay / 1000).toFixed(1)}s`)
         resetForRetry()
-        setTimeout(doRequest, AI_RETRY.RETRY_DELAY)
+        setTimeout(doRequest, delay)
         // 阻止旧请求的其他错误处理器调用 complete()
         isCompleted = true
         return true
@@ -1362,6 +1598,18 @@ export class AiService {
     const doRequest = () => {
     // 每次（重）试开始时允许 complete() 回调
     isCompleted = false
+
+    // 重试等待期间用户可能已取消请求
+    if (abortController.signal.aborted) {
+      this.abortControllers.delete(reqId)
+      getAiDebugService().logResponseDone(reqId, { finishReason: 'aborted' })
+      onDone({
+        content: undefined,
+        tool_calls: undefined,
+        finish_reason: 'stop'
+      })
+      return
+    }
 
     try {
       const url = new URL(profile.apiUrl)
@@ -1404,17 +1652,15 @@ export class AiService {
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
             log.error(`Request HTTP error: model=${profile.model}, status=${res.statusCode}, duration=${elapsed}s, error=${parsed.message.slice(0, 200)}`)
             if (res.statusCode === 429 && rateLimitRetryCount < AI_RETRY.RATE_LIMIT_MAX_RETRIES) {
-              // Rate limit: 指数退避重试，优先使用 Retry-After header
+              // Rate limit: 优先 Retry-After header，否则指数退避 + jitter
               rateLimitRetryCount++
               const retryAfterHeader = res.headers['retry-after']
-              const defaultBackoff = AI_RETRY.RATE_LIMIT_BASE_DELAY * Math.pow(2, rateLimitRetryCount - 1)
-              let retryAfterMs = defaultBackoff
+              let retryAfterMs = calculateBackoff(AI_RETRY.RATE_LIMIT_BASE_DELAY, rateLimitRetryCount - 1)
               if (retryAfterHeader) {
                 const seconds = Number(retryAfterHeader)
                 if (!isNaN(seconds) && seconds > 0) {
                   retryAfterMs = seconds * 1000
                 } else {
-                  // Retry-After 也可以是 HTTP 日期格式（RFC 1123）
                   const date = Date.parse(retryAfterHeader)
                   if (!isNaN(date)) {
                     retryAfterMs = Math.max(1000, date - Date.now())
@@ -1435,7 +1681,7 @@ export class AiService {
               complete(() => onError(t('error.context_length_exceeded')))
             } else if (res.statusCode && AI_RETRY.RETRYABLE_STATUS_CODES.includes(res.statusCode) && serverErrorRetryCount < AI_RETRY.SERVER_ERROR_MAX_RETRIES) {
               serverErrorRetryCount++
-              const delay = AI_RETRY.SERVER_ERROR_BASE_DELAY * Math.pow(2, serverErrorRetryCount - 1)
+              const delay = calculateBackoff(AI_RETRY.SERVER_ERROR_BASE_DELAY, serverErrorRetryCount - 1)
               const delaySec = (delay / 1000).toFixed(0)
               log.warn(`Server error (${res.statusCode}), retrying in ${delaySec}s (${serverErrorRetryCount}/${AI_RETRY.SERVER_ERROR_MAX_RETRIES})`)
               closeOpenReasoningBlock()
