@@ -1313,9 +1313,31 @@ export class AiService {
     }
 
     const startTime = Date.now()
+    const reqId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     log.info(`ChatWithTools request: model=${profile.model}, messages=${messages.length}, tools=${tools.length}`)
 
+    const aiDebug = getAiDebugService()
     const hasImages = messagesContainImages(messages)
+
+    aiDebug.logRequestStart(reqId, {
+      profileId: profile.id,
+      model: profile.model,
+      messages: messages.map(m => ({
+        role: m.role,
+        content: m.content,
+        tool_call_id: m.tool_call_id,
+        tool_calls: m.tool_calls,
+        images: m.images && m.images.length > 0
+          ? m.images.map((img, i) => {
+              const sizeKB = (img.length * 0.75 / 1024).toFixed(0)
+              const mimeMatch = img.match(/^data:(image\/[^;]+);/)
+              const mime = mimeMatch ? mimeMatch[1] : 'unknown'
+              return `[image_${i}: ${mime}, ~${sizeKB}KB]`
+            })
+          : undefined
+      })),
+      tools
+    })
 
     const doRequest = async (stripImages: boolean): Promise<ChatWithToolsResult> => {
       const fmtMessages = messages.map(msg => formatMessageForApi(msg, stripImages))
@@ -1383,6 +1405,17 @@ export class AiService {
         ...extractCacheStats(data.usage)
       } : undefined
 
+      aiDebug.logResponseDone(reqId, {
+        response: choice.message?.content || undefined,
+        finishReason: choice.finish_reason,
+        usage: normalizedUsage,
+        toolCalls: choice.message?.tool_calls?.map(tc => ({
+          id: tc.id,
+          name: tc.function.name,
+          arguments: tc.function.arguments
+        }))
+      })
+
       return {
         content: choice.message?.content || undefined,
         tool_calls: choice.message?.tool_calls,
@@ -1396,6 +1429,7 @@ export class AiService {
     } catch (error) {
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
       log.error(`ChatWithTools failed: model=${profile.model}, duration=${elapsed}s, error=${error instanceof Error ? error.message : error}`)
+      aiDebug.logResponseError(reqId, error instanceof Error ? error.message : String(error))
       if (error instanceof Error) {
         if (error.message === t('error.context_length_exceeded')) {
           throw error

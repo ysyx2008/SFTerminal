@@ -19,6 +19,7 @@ import type { ToolExecutorConfig, ToolResult, AgentConfig } from './types'
 import { executeTool } from './index'
 import { getAgentTools } from '../tools'
 import { truncateFromEnd } from './utils'
+import { getAiDebugService } from '../../ai-debug.service'
 import { createLogger } from '../../../utils/logger'
 
 const log = createLogger('SubAgent')
@@ -192,6 +193,7 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
   }, 500)
 
   log.info(`Sub-agent [${task.id}] started: ${task.description}`)
+  const aiDebug = getAiDebugService()
 
   try {
     let stepCount = 0
@@ -204,6 +206,7 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
       }
 
       stepCount++
+      const iterReqId = `sub_${task.id}_step${stepCount}`
       const result: ChatWithToolsResult = await aiService.chatWithTools(messages, tools, profileId, abortController.signal)
       accumulateTokens(totalTokens, result.usage)
 
@@ -237,12 +240,19 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
         toolSteps.push(step)
         onProgress({ steps: [...toolSteps] })
 
+        aiDebug.logToolCall(iterReqId, {
+          id: toolCall.id,
+          name: toolName,
+          arguments: toolCall.function?.arguments || ''
+        })
+
         // 工具白名单检查：拦截不在当前 agent type 允许范围内的调用
         if (!allowedTools.has(toolName)) {
           const errorMsg = `工具 "${toolName}" 不在当前子 Agent 类型的可用范围内`
           step.status = 'failed'
           step.result = errorMsg
           onProgress({ steps: [...toolSteps] })
+          aiDebug.logToolResult(iterReqId, { toolCallId: toolCall.id, success: false, result: errorMsg })
           messages.push({ role: 'tool', tool_call_id: toolCall.id, content: `Error: ${errorMsg}` })
           continue
         }
@@ -262,12 +272,20 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
         )
         onProgress({ steps: [...toolSteps] })
 
+        const resultContent = toolResult.success
+          ? toolResult.output
+          : `Error: ${toolResult.error || toolResult.output}`
+
+        aiDebug.logToolResult(iterReqId, {
+          toolCallId: toolCall.id,
+          success: toolResult.success,
+          result: resultContent
+        })
+
         messages.push({
           role: 'tool',
           tool_call_id: toolCall.id,
-          content: toolResult.success
-            ? toolResult.output
-            : `Error: ${toolResult.error || toolResult.output}`
+          content: resultContent
         })
       }
     }
