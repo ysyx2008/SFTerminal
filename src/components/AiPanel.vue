@@ -633,8 +633,8 @@ const clearTabError = () => {
   }
 }
 
-const handleComposerSubmit = async (message: string, traceId?: string) => {
-  await runAgent(message, traceId)
+const handleComposerSubmit = async (message: string) => {
+  await runAgent(message)
 }
 
 const handleComposerEmptySubmit = async () => {
