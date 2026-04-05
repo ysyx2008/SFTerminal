@@ -725,9 +725,16 @@ export class AiService {
   private abortControllers: Map<string, AbortController> = new Map()
   // 插件 provider（由 PluginRegistry 初始化后注入）
   private pluginProviders: Array<import('./plugin/types').ProviderRegistration> = []
+  // 专用 HTTP agent，支持子 Agent 并发请求时连接池复用，避免 MaxListenersExceededWarning
+  private readonly httpsAgent: https.Agent
+  private readonly httpAgent: http.Agent
 
   constructor() {
     this.configService = new ConfigService()
+    this.httpsAgent = new https.Agent({ keepAlive: true })
+    this.httpsAgent.setMaxListeners(30)
+    this.httpAgent = new http.Agent({ keepAlive: true })
+    this.httpAgent.setMaxListeners(30)
   }
 
   /**
@@ -857,11 +864,8 @@ export class AiService {
         path: url.pathname + url.search,
         method: 'POST',
         headers: getRequestHeaders(profile),
-        timeout: AI_TIMEOUT.CONNECT
-      }
-
-      if (profile.proxy) {
-        options.agent = this.getProxyAgent(profile.proxy)
+        timeout: AI_TIMEOUT.CONNECT,
+        agent: profile.proxy ? this.getProxyAgent(profile.proxy) : (isHttps ? this.httpsAgent : this.httpAgent)
       }
 
       let isCompleted = false
@@ -1121,11 +1125,8 @@ export class AiService {
         path: url.pathname + url.search,
         method: 'POST',
         headers: getRequestHeaders(profile),
-        timeout: AI_TIMEOUT.CONNECT
-      }
-
-      if (profile.proxy) {
-        options.agent = this.getProxyAgent(profile.proxy)
+        timeout: AI_TIMEOUT.CONNECT,
+        agent: profile.proxy ? this.getProxyAgent(profile.proxy) : (isHttps ? this.httpsAgent : this.httpAgent)
       }
 
       totalTimeoutId = setTimeout(() => {
@@ -1662,11 +1663,8 @@ export class AiService {
         path: url.pathname + url.search,
         method: 'POST',
         headers: getRequestHeaders(profile),
-        timeout: AI_TIMEOUT.CONNECT
-      }
-
-      if (profile.proxy) {
-        options.agent = this.getProxyAgent(profile.proxy)
+        timeout: AI_TIMEOUT.CONNECT,
+        agent: profile.proxy ? this.getProxyAgent(profile.proxy) : (isHttps ? this.httpsAgent : this.httpAgent)
       }
 
       totalTimeoutId = setTimeout(() => {
