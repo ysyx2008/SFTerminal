@@ -593,6 +593,7 @@ function buildForkDirective(task: SubAgentTask, agentType: SubAgentType): string
     `- 可用工具：${toolNames}`,
     '- 不可使用其他工具（不在上述列表的工具调用会被拦截）',
     '- 不可操作终端、不可创建子任务、不可向用户提问',
+    '- **必须通过工具获取和验证信息，不能依赖上下文中的历史信息直接给出结论**',
     '- 完成任务后直接输出结果文本，不要多余寒暄',
     '',
     `## 任务：${task.description}`,
