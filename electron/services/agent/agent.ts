@@ -1363,11 +1363,11 @@ export abstract class Agent {
     // 更新上下文状态（注入 Context Status + 渐进式提醒）
     this.updateContextPressure(run)
     
-    // 创建流式工具执行器：AI 流式输出过程中提前启动只读工具
+    // 创建流式工具执行器：AI 流式输出过程中提前启动工具
     const availableToolNames = new Set(this.getAvailableTools().map(t => t.function.name))
     const streamingExecutor = new StreamingToolExecutor({
       run,
-      toolExecutorConfig,
+      executeFn: (toolCall) => this.executeToolWithChecks(run, toolCall, toolExecutorConfig),
       availableToolNames
     })
     
@@ -1937,7 +1937,6 @@ export abstract class Agent {
     const batchStartTime = Date.now()
     const stepCountBefore = run.steps.length
     const parallelPromises = toolCalls.map(async (toolCall) => {
-      // 检查 abort 状态
       if (run.aborted) {
         return { 
           toolCall, 
@@ -1945,34 +1944,7 @@ export abstract class Agent {
           toolArgs: {} as Record<string, unknown>
         }
       }
-      
-      let toolArgs: Record<string, unknown> = {}
-      try {
-        toolArgs = JSON.parse(toolCall.function.arguments)
-      } catch {
-        // 忽略解析错误
-      }
-      
-      try {
-        const result = await executeTool(
-          run.ptyId,
-          toolCall,
-          run.config,
-          run.context.terminalOutput,
-          toolExecutorConfig
-        )
-        return { toolCall, result, toolArgs }
-      } catch (error) {
-        return { 
-          toolCall, 
-          result: { 
-            success: false, 
-            output: '', 
-            error: error instanceof Error ? error.message : String(error) 
-          } as ToolResult, 
-          toolArgs 
-        }
-      }
+      return { toolCall, ...(await this.executeToolWithChecks(run, toolCall, toolExecutorConfig)) }
     })
     
     const results = await Promise.all(parallelPromises)
@@ -1991,11 +1963,15 @@ export abstract class Agent {
   /**
    * 顺序执行单个工具
    */
-  private async executeToolSingle(
+  /**
+   * 执行单个工具（含安全检查），返回结果但不写入消息历史。
+   * 这是工具执行的核心路径，流式预执行和标准路径共用。
+   */
+  private async executeToolWithChecks(
     run: AgentRun,
     toolCall: ToolCall,
     toolExecutorConfig: ToolExecutorConfig
-  ): Promise<void> {
+  ): Promise<{ result: ToolResult; toolArgs: Record<string, unknown> }> {
     let toolArgs: Record<string, unknown> = {}
     try {
       toolArgs = JSON.parse(toolCall.function.arguments)
@@ -2004,9 +1980,6 @@ export abstract class Agent {
     }
     
     const toolName = toolCall.function.name
-    this.setExecutionPhase(run, toolName)
-    
-    const stepCountBefore = run.steps.length
     const toolStartTime = Date.now()
     let result: ToolResult
 
@@ -2017,20 +1990,14 @@ export abstract class Agent {
         toolName, toolArgs, toolCallId: toolCall.id
       })
       if (decision.block) {
-        result = { success: false, output: '', error: 'Blocked by plugin' }
-        this.ensureToolResultStep(run, stepCountBefore, toolName, result)
-        this.processToolResult(run, toolCall, result, toolArgs)
-        return
+        return { result: { success: false, output: '', error: 'Blocked by plugin' }, toolArgs }
       }
       if (decision.requireApproval) {
         const approved = await toolExecutorConfig.waitForConfirmation(
           toolCall.id, toolName, toolArgs, 'moderate'
         )
         if (!approved) {
-          result = { success: false, output: '', error: t('error.operation_aborted') }
-          this.ensureToolResultStep(run, stepCountBefore, toolName, result)
-          this.processToolResult(run, toolCall, result, toolArgs)
-          return
+          return { result: { success: false, output: '', error: t('error.operation_aborted') }, toolArgs }
         }
       }
     }
@@ -2064,7 +2031,24 @@ export abstract class Agent {
         toolName, toolArgs, result: { success: result.success, output: result.output, error: result.error }
       })
     }
-    
+
+    return { result, toolArgs }
+  }
+
+  /**
+   * 执行单个工具并写入消息历史（标准路径入口）。
+   */
+  private async executeToolSingle(
+    run: AgentRun,
+    toolCall: ToolCall,
+    toolExecutorConfig: ToolExecutorConfig
+  ): Promise<void> {
+    const toolName = toolCall.function.name
+    this.setExecutionPhase(run, toolName)
+    const stepCountBefore = run.steps.length
+
+    const { result, toolArgs } = await this.executeToolWithChecks(run, toolCall, toolExecutorConfig)
+
     this.ensureToolResultStep(run, stepCountBefore, toolName, result)
     this.processToolResult(run, toolCall, result, toolArgs)
   }

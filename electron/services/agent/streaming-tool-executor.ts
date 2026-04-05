@@ -2,8 +2,11 @@
  * 流式工具并行执行器
  *
  * 在模型流式输出过程中，一旦检测到完整的 tool_call 就立即开始执行，
- * 无需等待整个 assistant 消息输出完毕。只读工具可并行执行，
- * 有副作用的工具独占执行。
+ * 无需等待整个 assistant 消息输出完毕。所有工具都经过完整安全链路
+ * （plugin hooks、风险评估、用户确认），通过 Agent 注入的 executeFn 执行。
+ *
+ * 并发策略：只读工具可并行，有副作用的工具独占执行。
+ * 结果处理：本执行器只负责执行和收集结果，消息历史写入由调用方按原始顺序完成。
  *
  * 与 agent.ts 中既有的 PARALLELIZABLE_TOOLS + 批量并行逻辑互补：
  * - 既有逻辑：等 AI 输出结束后再按批次并行/串行
@@ -12,8 +15,6 @@
 
 import type { ToolCall } from '../ai.service'
 import type { ToolResult, AgentRun } from './types'
-import type { ToolExecutorConfig } from './tools/types'
-import { executeTool } from './tools/index'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('StreamingToolExecutor')
@@ -48,9 +49,16 @@ const CONCURRENCY_SAFE_TOOLS = new Set([
   'load_user_skill'
 ])
 
+/**
+ * 工具执行函数签名（含安全检查：plugin hooks、风险评估、用户确认）。
+ * 由 Agent 注入，StreamingToolExecutor 不直接依赖 Agent 内部实现。
+ */
+export type ToolExecuteFn = (toolCall: ToolCall) => Promise<{ result: ToolResult; toolArgs: Record<string, unknown> }>
+
 export interface StreamingToolExecutorOptions {
   run: AgentRun
-  toolExecutorConfig: ToolExecutorConfig
+  /** 工具执行函数，包含完整安全链路 */
+  executeFn: ToolExecuteFn
   /** 可用工具名集合，用于检测幻觉工具 */
   availableToolNames: Set<string>
   /** 最大并行数 */
@@ -69,7 +77,7 @@ export class StreamingToolExecutor {
   private aborted = false
   private readonly maxConcurrency: number
   private readonly run: AgentRun
-  private readonly toolExecutorConfig: ToolExecutorConfig
+  private readonly executeFn: ToolExecuteFn
   private readonly availableToolNames: Set<string>
 
   /** 解析器：当有工具完成时唤醒 getRemainingResults */
@@ -77,7 +85,7 @@ export class StreamingToolExecutor {
 
   constructor(options: StreamingToolExecutorOptions) {
     this.run = options.run
-    this.toolExecutorConfig = options.toolExecutorConfig
+    this.executeFn = options.executeFn
     this.availableToolNames = options.availableToolNames
     this.maxConcurrency = options.maxConcurrency ?? 10
   }
@@ -89,20 +97,11 @@ export class StreamingToolExecutor {
   addTool(toolCall: ToolCall): void {
     if (this.aborted) return
 
-    let toolArgs: Record<string, unknown> = {}
-    try {
-      toolArgs = JSON.parse(toolCall.function.arguments)
-    } catch {
-      // JSON 解析失败 — 不应该到这里，调用方已校验
-    }
-
-    const isConcurrencySafe = CONCURRENCY_SAFE_TOOLS.has(toolCall.function.name)
-
     this.tools.push({
       toolCall,
       status: 'queued',
-      isConcurrencySafe,
-      toolArgs
+      isConcurrencySafe: CONCURRENCY_SAFE_TOOLS.has(toolCall.function.name),
+      toolArgs: {}
     })
 
     this.processQueue()
@@ -163,7 +162,7 @@ export class StreamingToolExecutor {
   // ==================== 内部逻辑 ====================
 
   private processQueue(): void {
-    if (this.aborted) return
+    if (this.aborted || this.run.aborted) return
 
     for (const tracked of this.tools) {
       if (tracked.status !== 'queued') continue
@@ -177,25 +176,20 @@ export class StreamingToolExecutor {
   /**
    * 判断当前工具是否可以启动执行。
    * 规则：
-   * 1. 如果有非安全工具正在执行，所有工具都要等待
-   * 2. 非安全工具前面不能有任何排队/执行中的工具
-   * 3. 安全工具可以与其他安全工具并行（不超过 maxConcurrency）
+   * 1. 安全工具可以与其他安全工具并行（不超过 maxConcurrency）
+   * 2. 非安全工具独占执行（前面的必须全部完成）
+   * 3. 有非安全工具正在执行时，所有工具都等待
    */
   private canExecute(tracked: TrackedTool): boolean {
     if (this.executingCount >= this.maxConcurrency) return false
 
-    // 有非安全工具正在执行 → 全部等待
     const hasUnsafeExecuting = this.tools.some(
       t => t.status === 'executing' && !t.isConcurrencySafe
     )
     if (hasUnsafeExecuting) return false
 
-    if (tracked.isConcurrencySafe) {
-      // 安全工具：只要没有非安全工具在执行就可以跑
-      return true
-    }
+    if (tracked.isConcurrencySafe) return true
 
-    // 非安全工具：必须没有任何工具在执行
     return this.executingCount === 0
   }
 
@@ -236,13 +230,9 @@ export class StreamingToolExecutor {
     }
 
     try {
-      tracked.result = await executeTool(
-        this.run.ptyId,
-        toolCall,
-        this.run.config,
-        this.run.context.terminalOutput,
-        this.toolExecutorConfig
-      )
+      const { result, toolArgs } = await this.executeFn(toolCall)
+      tracked.result = result
+      tracked.toolArgs = toolArgs
     } catch (err) {
       tracked.result = {
         success: false,
