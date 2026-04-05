@@ -451,10 +451,11 @@ export function useAgentMode(
       if (group.steps.length > 0) {
         for (let i = 0; i < group.steps.length; i++) {
           const step = group.steps[i]
+          const isFirst = i === 0
           const size = step.type === 'message'
             ? Math.max(80, Math.ceil(step.content.length / 4))
-            : step.type === 'asking' ? 120 : 40
-          items.push({ id: step.id, type: 'step', step, group, size, isFirstStep: i === 0 })
+            : step.type === 'asking' ? 120 : isFirst ? 46 : 40
+          items.push({ id: step.id, type: 'step', step, group, size, isFirstStep: isFirst })
         }
 
         const hasThinkingStep = group.steps.some(s => s.type === 'thinking' && s.isStreaming)
