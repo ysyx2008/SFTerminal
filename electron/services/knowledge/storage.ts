@@ -116,33 +116,37 @@ export class VectorStorage extends EventEmitter {
   private async checkDimensionMismatch(expectedDimensions: number): Promise<number | null> {
     if (!this.table) return null
     
-    try {
-      // 查询一条记录检查向量维度
-      const results = await this.table.search(new Array(expectedDimensions).fill(0)).limit(1).toArray()
-      if (results.length === 0) return null
-      
-      const vectorLength = results[0].vector?.length
-      if (vectorLength && vectorLength !== expectedDimensions) {
-        return vectorLength
-      }
-      return null
-    } catch (error) {
-      // 如果查询失败（可能是维度不匹配导致的），尝试直接读取记录
+    // 带重试的查询，LanceDB 在 manifest 过多时首次查询可能失败
+    const maxRetries = 3
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         const sample = await this.table.query().limit(1).toArray()
-        if (sample.length > 0 && sample[0].vector) {
-          const vectorLength = sample[0].vector.length
-          if (vectorLength !== expectedDimensions) {
-            return vectorLength
-          }
+        if (sample.length === 0) return null
+        
+        const vectorLength = sample[0].vector?.length
+        if (vectorLength && vectorLength !== expectedDimensions) {
+          return vectorLength
         }
-      } catch {
-        // 无法读取，可能数据损坏，清空重建
-        log.warn('无法读取现有数据，将清空重建')
-        return -1  // 返回特殊值表示需要重建
+        return null
+      } catch (error) {
+        log.warn(`维度检查第 ${attempt}/${maxRetries} 次查询失败:`, error)
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 500 * attempt))
+        }
       }
-      return null
     }
+
+    // 所有重试都失败：数据可能损坏，清空表但不报告为维度变化
+    log.warn('LanceDB 表数据无法读取，清空损坏的表（非模型升级）')
+    try {
+      await this.db.dropTable(this.tableName)
+    } catch (e) {
+      log.warn('清空损坏表失败:', e)
+    }
+    this.table = null
+    this.emit('dataCorrupted')
+    // 返回 null：不触发 dimensionMismatch 事件，后续 checkAndRebuildIndex 会静默重建
+    return null
   }
 
   /**

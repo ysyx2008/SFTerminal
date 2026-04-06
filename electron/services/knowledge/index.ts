@@ -189,6 +189,12 @@ export class KnowledgeService extends EventEmitter {
         await this.bm25Index.clear()
         this.emit('indexCleared', { reason: 'dimension_mismatch', oldDimensions: oldDim, newDimensions: newDim })
       })
+
+      // 监听数据损坏事件（LanceDB 无法读取，同步清空 BM25 保持一致）
+      this.vectorStorage.once('dataCorrupted', async () => {
+        log.warn('向量库数据损坏，同步清空 BM25 索引...')
+        await this.bm25Index.clear()
+      })
       
       await this.vectorStorage.initialize(dimensions)
 
@@ -236,7 +242,14 @@ export class KnowledgeService extends EventEmitter {
     // 如果向量库和 BM25 索引都有数据，跳过重建
     if (stats.chunkCount > 0 && bm25Stats.documentCount > 0) return
     
-    log.info(`开始重建索引，共 ${docs.length} 个文档...`)
+    const needRebuildVector = stats.chunkCount === 0
+    const needRebuildBM25 = bm25Stats.documentCount === 0
+    
+    log.info(`开始重建索引，共 ${docs.length} 个文档 (vector=${needRebuildVector}, bm25=${needRebuildBM25})...`)
+    
+    // 批量收集向量记录，最后一次性写入以减少 LanceDB manifest 版本数
+    const VECTOR_BATCH_SIZE = 200
+    let pendingVectorRecords: VectorRecord[] = []
     
     for (let i = 0; i < docs.length; i++) {
       const doc = docs[i]
@@ -250,7 +263,6 @@ export class KnowledgeService extends EventEmitter {
       })
       
       try {
-        // 对加密内容（host-memory）先解密，确保分词和 embedding 基于原文
         let contentForIndex = doc.content
         if (isEncrypted(doc.content)) {
           try {
@@ -261,14 +273,10 @@ export class KnowledgeService extends EventEmitter {
           }
         }
 
-        // 重新分块
         const chunks = this.chunker.chunk(contentForIndex, doc.id, { filename: doc.filename, tags: doc.tags || [] })
-        
-        // 生成 embedding
         const texts = chunks.map(c => c.content)
         const embeddings = await this.embeddingService.embed(texts)
         
-        // 创建向量记录（host-memory 重新加密存储，普通文档保持原样）
         const isHostMemory = doc.fileType === 'host-memory'
         const records: VectorRecord[] = chunks.map((chunk, index) => ({
           id: chunk.id,
@@ -282,13 +290,15 @@ export class KnowledgeService extends EventEmitter {
           createdAt: doc.createdAt
         }))
         
-        // 添加到向量存储（仅当向量库为空时）
-        if (stats.chunkCount === 0) {
-          await this.vectorStorage.addRecords(records)
+        if (needRebuildVector) {
+          pendingVectorRecords.push(...records)
+          if (pendingVectorRecords.length >= VECTOR_BATCH_SIZE) {
+            await this.vectorStorage.addRecords(pendingVectorRecords)
+            pendingVectorRecords = []
+          }
         }
         
-        // 添加到 BM25 索引（仅当 BM25 索引为空时，使用原文确保关键词搜索有效）
-        if (bm25Stats.documentCount === 0) {
+        if (needRebuildBM25) {
           const bm25Docs = chunks.map((chunk, index) => ({
             id: records[index].id,
             docId: doc.id,
@@ -300,9 +310,26 @@ export class KnowledgeService extends EventEmitter {
           await this.bm25Index.addDocuments(bm25Docs)
         }
         
-        log.info(`已重建 ${i + 1}/${docs.length}: ${doc.filename}`)
+        if ((i + 1) % 100 === 0 || i === docs.length - 1) {
+          log.info(`已重建 ${i + 1}/${docs.length}: ${doc.filename}`)
+        }
       } catch (error) {
         log.error(`Failed to rebuild index for ${doc.filename}:`, error)
+      }
+    }
+    
+    // 刷入剩余的向量记录
+    if (pendingVectorRecords.length > 0) {
+      await this.vectorStorage.addRecords(pendingVectorRecords)
+    }
+    
+    // compact 合并 LanceDB manifest，防止版本文件膨胀导致下次启动读取失败
+    if (needRebuildVector) {
+      try {
+        log.info('索引重建完成，执行 compact...')
+        await this.vectorStorage.compact(true)
+      } catch (e) {
+        log.warn('Compact failed after rebuild:', e)
       }
     }
     
