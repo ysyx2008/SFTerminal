@@ -289,11 +289,13 @@ export class TerminalAwarenessService {
         canExecuteCommand = false
         suggestion = getInputWaitingSuggestion(input.type, input.prompt, input.suggestedResponse, input.options)
       } else if (processState.status === 'possibly_stuck') {
-        // 进程可能卡死
-        status = 'stuck'
+        // possibly_stuck 只是猜测（长时间无输出），不能当 stuck 处理
+        // 可能是正常的服务器/后台进程在等待请求，也可能是真的卡死
+        // 按 busy 处理，让 AI 通过检查终端内容自行判断
+        status = 'busy'
         needsUserInput = false
         canExecuteCommand = false
-        suggestion = processState.suggestion || '命令可能已卡死。建议使用 send_control_key 发送 Ctrl+C 中断。'
+        suggestion = `终端有进程在运行但较长时间无输出（${processState.runningTime ? Math.round(processState.runningTime / 1000) + '秒' : '未知'}）。可能是正常等待（如服务器监听请求），也可能已卡死。建议先用 get_terminal_context 查看终端内容再决定。`
       } else if (processState.status === 'idle') {
         // 后端认为空闲 = 真正的空闲
         status = 'idle'

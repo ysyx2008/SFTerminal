@@ -54,7 +54,8 @@ export async function executeCommand(
     const isBusy = preAdvice.reason?.includes('终端正在执行命令')
     
     if (isBusy) {
-      const waitMsg = `⏳ ${t('hint.wait_terminal')}\n\n💡 ${t('hint.wait_suggestions')}`
+      const suggestion = preAdvice.suggestion || t('hint.wait_suggestions')
+      const waitMsg = `⏳ ${t('hint.wait_terminal')}\n\n💡 ${suggestion}`
       executor.addStep({
         type: 'tool_call',
         content: `⏳ ${command}`,
