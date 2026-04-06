@@ -6,6 +6,7 @@
 import type * as http from 'http'
 import type { ToolDefinition } from '../ai.service'
 import type { IMAdapter } from '../im/types'
+import type { TtsProvider } from '../tts/types'
 
 // ==================== Manifest ====================
 
@@ -27,6 +28,7 @@ export interface PluginManifest {
   contracts?: {
     tools?: string[]
     speechProviders?: string[]
+    ttsProviders?: string[]
     mediaUnderstandingProviders?: string[]
     imageGenerationProviders?: string[]
     webSearchProviders?: string[]
@@ -175,11 +177,15 @@ export type HookHandler = (context: HookContext) => HookDecision | Promise<HookD
 
 // ==================== Plugin Registration API ====================
 
+/** TTS Provider 注册参数（复用 TtsProvider 接口） */
+export type TtsProviderRegistration = TtsProvider
+
 /** 传给 register(api) 的注册 API 对象 */
 export interface PluginRegistrationAPI {
   registerTool(def: ToolRegistration, opts?: ToolRegistrationOptions): void
   registerProvider(def: ProviderRegistration): void
   registerChannel(def: ChannelRegistration): void
+  registerTtsProvider(def: TtsProviderRegistration): void
   registerHook(event: HookEvent, handler: HookHandler): void
   registerHttpRoute(method: string, path: string, handler: RouteHandler): void
 }
@@ -209,6 +215,8 @@ export interface LoadedPlugin {
   providers: ProviderRegistration[]
   /** 注册的 channel */
   channels: ChannelRegistration[]
+  /** 注册的 TTS provider */
+  ttsProviders: TtsProviderRegistration[]
   /** 注册的 hook */
   hooks: Map<HookEvent, HookHandler[]>
   /** 注册的 HTTP 路由 */

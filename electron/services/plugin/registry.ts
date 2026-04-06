@@ -13,6 +13,7 @@ import type {
   PluginEntryConfig,
   ProviderRegistration,
   ChannelRegistration,
+  TtsProviderRegistration,
   HttpRouteEntry,
   ToolExecuteResult
 } from './types'
@@ -203,6 +204,14 @@ export class PluginRegistry {
       if (plugin.enabled) providers.push(...plugin.providers)
     }
     return providers
+  }
+
+  getAllTtsProviders(): TtsProviderRegistration[] {
+    const ttsProviders: TtsProviderRegistration[] = []
+    for (const plugin of this.plugins.values()) {
+      if (plugin.enabled) ttsProviders.push(...plugin.ttsProviders)
+    }
+    return ttsProviders
   }
 
   getAllChannels(): ChannelRegistration[] {

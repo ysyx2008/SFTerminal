@@ -2537,6 +2537,35 @@ const electronAPI = {
       ipcRenderer.invoke('speech:isReady') as Promise<boolean>
   },
 
+  // TTS 语音合成
+  tts: {
+    synthesize: (text: string, options?: { voice?: string; model?: string; speed?: number }) =>
+      ipcRenderer.invoke('tts:synthesize', text, options) as Promise<{
+        success: boolean
+        audio?: ArrayBuffer
+        format?: string
+        error?: string
+      }>,
+
+    getVoices: () =>
+      ipcRenderer.invoke('tts:getVoices') as Promise<Array<{
+        id: string
+        name: string
+        language?: string
+        gender?: string
+        previewUrl?: string
+      }>>,
+
+    getProviders: () =>
+      ipcRenderer.invoke('tts:getProviders') as Promise<Array<{
+        id: string
+        name: string
+      }>>,
+
+    stop: () =>
+      ipcRenderer.invoke('tts:stop') as Promise<void>,
+  },
+
   // 定时任务调度
   scheduler: {
     // 获取所有任务

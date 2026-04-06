@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Pencil, Trash2, X, ExternalLink, Eye } from 'lucide-vue-next'
 import { useConfigStore, type AiProfile, type AiModelType, type ApiFormat } from '../../stores/config'
@@ -21,6 +21,7 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown, true)
+  initTtsState()
 })
 
 onUnmounted(() => {
@@ -250,6 +251,191 @@ const openKeyUrl = (url: string) => {
   window.open(url, '_blank')
 }
 
+// ==================== TTS 语音合成 ====================
+
+interface TtsPresetVoice { id: string; name: string }
+interface TtsPreset {
+  id: string
+  providerId: string
+  name: string
+  group: 'international' | 'domestic' | 'other'
+  apiUrl: string
+  models: string[]
+  defaultModel: string
+  voices: TtsPresetVoice[]
+  defaultVoice: string
+  keyUrl: string
+  keyPlaceholder: string
+  keyLabel?: string
+  modelLabel?: string
+  modelPlaceholder?: string
+}
+
+const ttsPresets: TtsPreset[] = [
+  {
+    id: 'openai',
+    providerId: 'openai-compat',
+    name: 'OpenAI',
+    group: 'international',
+    apiUrl: 'https://api.openai.com/v1/audio/speech',
+    models: ['tts-1', 'tts-1-hd'],
+    defaultModel: 'tts-1',
+    voices: [
+      { id: 'alloy', name: 'Alloy' }, { id: 'ash', name: 'Ash' },
+      { id: 'ballad', name: 'Ballad' }, { id: 'coral', name: 'Coral' },
+      { id: 'echo', name: 'Echo' }, { id: 'fable', name: 'Fable' },
+      { id: 'nova', name: 'Nova' }, { id: 'onyx', name: 'Onyx' },
+      { id: 'sage', name: 'Sage' }, { id: 'shimmer', name: 'Shimmer' },
+    ],
+    defaultVoice: 'alloy',
+    keyUrl: 'https://platform.openai.com/api-keys',
+    keyPlaceholder: 'sk-...',
+  },
+  {
+    id: 'volcengine',
+    providerId: 'volcengine-tts',
+    name: t('settings.tts.presets.volcengine'),
+    group: 'domestic',
+    apiUrl: 'https://openspeech.bytedance.com/api/v1/tts',
+    models: [],
+    defaultModel: '',
+    voices: [
+      { id: 'zh_female_cancan_mars_bigtts', name: '灿灿 (Shiny)' },
+      { id: 'zh_male_xudong_conversation_wvae_bigtts', name: '快乐小东' },
+      { id: 'zh_female_qinqienvsheng_moon_bigtts', name: '亲切女声' },
+    ],
+    defaultVoice: 'zh_female_cancan_mars_bigtts',
+    keyUrl: 'https://console.volcengine.com/speech/app',
+    keyPlaceholder: 'Access Token',
+    keyLabel: 'Access Token',
+    modelLabel: 'App ID',
+    modelPlaceholder: t('settings.tts.volcengineAppIdHint'),
+  },
+  {
+    id: 'dashscope',
+    providerId: 'dashscope-tts',
+    name: t('settings.tts.presets.dashscope'),
+    group: 'domestic',
+    apiUrl: 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation',
+    models: ['qwen3-tts-flash', 'qwen3-tts-instruct-flash'],
+    defaultModel: 'qwen3-tts-flash',
+    voices: [
+      { id: 'Cherry', name: '芊悦 (Cherry)' }, { id: 'Ethan', name: '晨煦 (Ethan)' },
+      { id: 'Nofish', name: '不吃鱼 (Nofish)' }, { id: 'Ryan', name: '甜茶 (Ryan)' },
+      { id: 'Katerina', name: '卡捷琳娜 (Katerina)' }, { id: 'Elias', name: '墨讲师 (Elias)' },
+    ],
+    defaultVoice: 'Cherry',
+    keyUrl: 'https://bailian.console.aliyun.com/?tab=model#/api-key',
+    keyPlaceholder: 'sk-...',
+  },
+  {
+    id: 'custom',
+    providerId: 'openai-compat',
+    name: t('settings.tts.presets.custom'),
+    group: 'other',
+    apiUrl: '', models: [], defaultModel: '',
+    voices: [], defaultVoice: '',
+    keyUrl: '', keyPlaceholder: '',
+  },
+]
+
+const ttsEnabled = ref(false)
+const ttsPresetId = ref('openai')
+const ttsApiUrl = ref('')
+const ttsApiKey = ref('')
+const ttsModel = ref('')
+const ttsVoice = ref('')
+const ttsSpeed = ref(1.0)
+const ttsAutoSpeak = ref(false)
+const ttsIsTesting = ref(false)
+const ttsTestError = ref('')
+let ttsInitializing = true
+
+const ttsSelectedPreset = computed(() =>
+  ttsPresets.find(p => p.id === ttsPresetId.value) || ttsPresets[ttsPresets.length - 1]
+)
+const ttsIsCustom = computed(() => ttsPresetId.value === 'custom')
+const ttsInternationalPresets = computed(() => ttsPresets.filter(p => p.group === 'international'))
+const ttsDomesticPresets = computed(() => ttsPresets.filter(p => p.group === 'domestic'))
+const ttsOtherPresets = computed(() => ttsPresets.filter(p => p.group === 'other'))
+
+const initTtsState = () => {
+  ttsInitializing = true
+  const s = configStore.ttsSettings
+  ttsEnabled.value = s.enabled
+  ttsPresetId.value = s.preset || 'openai'
+  ttsApiUrl.value = s.apiUrl
+  ttsApiKey.value = s.apiKey
+  ttsModel.value = s.model
+  ttsVoice.value = s.voice
+  ttsSpeed.value = s.speed
+  ttsAutoSpeak.value = s.autoSpeak
+  nextTick(() => { ttsInitializing = false })
+}
+
+watch(ttsPresetId, (newId) => {
+  if (ttsInitializing) return
+  const preset = ttsPresets.find(p => p.id === newId)
+  if (!preset || newId === 'custom') return
+  ttsApiUrl.value = preset.apiUrl
+  ttsModel.value = preset.defaultModel
+  ttsVoice.value = preset.defaultVoice
+})
+
+watch([ttsEnabled, ttsPresetId, ttsApiUrl, ttsApiKey, ttsModel, ttsVoice, ttsSpeed, ttsAutoSpeak], () => {
+  if (ttsInitializing) return
+  saveTts()
+}, { deep: true })
+
+async function saveTts() {
+  await configStore.saveTtsSettings({
+    enabled: ttsEnabled.value,
+    providerId: ttsSelectedPreset.value.providerId,
+    preset: ttsPresetId.value,
+    apiUrl: ttsApiUrl.value,
+    apiKey: ttsApiKey.value,
+    model: ttsModel.value,
+    voice: ttsVoice.value,
+    speed: ttsSpeed.value,
+    autoSpeak: ttsAutoSpeak.value,
+  })
+}
+
+function openTtsKeyUrl() {
+  const url = ttsSelectedPreset.value.keyUrl
+  if (url) window.open(url, '_blank')
+}
+
+async function testTts() {
+  const text = t('settings.tts.defaultTestText')
+  ttsIsTesting.value = true
+  ttsTestError.value = ''
+  try {
+    const result = await window.electronAPI.tts.synthesize(text, {
+      voice: ttsVoice.value,
+      model: ttsModel.value,
+      speed: ttsSpeed.value,
+    })
+    if (!result.success) {
+      ttsTestError.value = result.error || t('settings.tts.testFailed')
+      return
+    }
+    if (result.audio) {
+      const ctx = new AudioContext()
+      const buffer = await ctx.decodeAudioData(result.audio.slice(0))
+      const source = ctx.createBufferSource()
+      source.buffer = buffer
+      source.connect(ctx.destination)
+      source.start(0)
+      source.onended = () => ctx.close()
+    }
+  } catch (err) {
+    ttsTestError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    ttsIsTesting.value = false
+  }
+}
+
 </script>
 
 <template>
@@ -445,6 +631,113 @@ const openKeyUrl = (url: string) => {
       <p class="section-desc">
         {{ t('aiSettings.autoVisionModelDesc') }}
       </p>
+    </div>
+
+    <!-- 语音合成（TTS） -->
+    <div v-if="!isSteamBuild" class="settings-section">
+      <div class="section-header">
+        <h4>{{ t('settings.tts.title') }}</h4>
+        <label class="toggle-switch">
+          <input
+            type="checkbox"
+            :checked="ttsEnabled"
+            @change="ttsEnabled = ($event.target as HTMLInputElement).checked"
+          />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p class="section-desc">{{ t('settings.tts.description') }}</p>
+
+      <template v-if="ttsEnabled">
+        <div class="tts-form-fields">
+          <div class="form-group">
+            <label class="form-label">{{ t('settings.tts.provider') }}</label>
+            <select v-model="ttsPresetId" class="input">
+              <optgroup :label="t('settings.tts.groupInternational')">
+                <option v-for="p in ttsInternationalPresets" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </optgroup>
+              <optgroup :label="t('settings.tts.groupDomestic')">
+                <option v-for="p in ttsDomesticPresets" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </optgroup>
+              <optgroup :label="t('settings.tts.groupOther')">
+                <option v-for="p in ttsOtherPresets" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </optgroup>
+            </select>
+          </div>
+
+          <div v-if="ttsIsCustom" class="form-group">
+            <label class="form-label">{{ t('settings.tts.apiUrl') }}</label>
+            <input v-model="ttsApiUrl" type="text" class="input" placeholder="https://api.example.com/v1/audio/speech" />
+            <span class="form-hint">{{ t('settings.tts.apiUrlHint') }}</span>
+          </div>
+
+          <div class="form-group">
+            <div class="form-label-row">
+              <label class="form-label">{{ ttsSelectedPreset.keyLabel || t('settings.tts.apiKey') }}</label>
+              <button
+                v-if="ttsSelectedPreset.keyUrl"
+                class="get-key-btn"
+                @click="openTtsKeyUrl"
+              >
+                <ExternalLink :size="12" />
+                <span>{{ t('settings.tts.getKey') }}</span>
+              </button>
+            </div>
+            <input v-model="ttsApiKey" type="password" class="input" :placeholder="ttsSelectedPreset.keyPlaceholder || 'API Key'" />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label class="form-label">{{ ttsSelectedPreset.modelLabel || t('settings.tts.model') }}</label>
+              <select v-if="ttsSelectedPreset.models.length > 0" v-model="ttsModel" class="input">
+                <option v-for="m in ttsSelectedPreset.models" :key="m" :value="m">{{ m }}</option>
+              </select>
+              <input v-else v-model="ttsModel" type="text" class="input" :placeholder="ttsSelectedPreset.modelPlaceholder || t('settings.tts.modelPlaceholder')" />
+            </div>
+            <div class="form-group flex-1">
+              <label class="form-label">{{ t('settings.tts.voice') }}</label>
+              <select v-if="ttsSelectedPreset.voices.length > 0" v-model="ttsVoice" class="input">
+                <option v-for="v in ttsSelectedPreset.voices" :key="v.id" :value="v.id">{{ v.name }}</option>
+              </select>
+              <input v-else v-model="ttsVoice" type="text" class="input" :placeholder="t('settings.tts.voicePlaceholder')" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">{{ t('settings.tts.speed') }}: {{ ttsSpeed.toFixed(1) }}x</label>
+            <input v-model.number="ttsSpeed" type="range" min="0.25" max="4.0" step="0.1" class="tts-range-slider" />
+          </div>
+
+          <div class="form-group tts-auto-speak">
+            <label class="toggle-switch toggle-switch-sm">
+              <input
+                type="checkbox"
+                :checked="ttsAutoSpeak"
+                @change="ttsAutoSpeak = ($event.target as HTMLInputElement).checked"
+              />
+              <span class="toggle-slider"></span>
+            </label>
+            <div>
+              <span class="tts-auto-speak-label">{{ t('settings.tts.autoSpeak') }}</span>
+              <span class="form-hint">{{ t('settings.tts.autoSpeakHint') }}</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <div class="tts-test-row">
+              <button
+                class="btn btn-primary btn-sm"
+                :disabled="ttsIsTesting || !ttsApiKey"
+                @click="testTts"
+              >
+                {{ ttsIsTesting ? t('settings.tts.testing') : t('settings.tts.testPlay') }}
+              </button>
+              <span class="form-hint">{{ t('settings.tts.testHint') }}</span>
+            </div>
+            <div v-if="ttsTestError" class="tts-error-msg">{{ ttsTestError }}</div>
+          </div>
+        </div>
+      </template>
     </div>
 
     <!-- Agent 调试、日志（仅非 Steam 版） -->
@@ -854,6 +1147,66 @@ const openKeyUrl = (url: string) => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* TTS 语音合成 */
+.tts-form-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.tts-form-fields .form-group {
+  margin-bottom: 0;
+}
+
+.tts-range-slider {
+  width: 100%;
+  accent-color: var(--accent-primary);
+}
+
+.tts-auto-speak {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 10px;
+}
+
+.tts-auto-speak-label {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.toggle-switch-sm {
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.toggle-switch-sm .toggle-slider:before {
+  height: 14px;
+  width: 14px;
+  left: 2px;
+  bottom: 2px;
+}
+
+.toggle-switch-sm input:checked + .toggle-slider:before {
+  transform: translateX(16px);
+}
+
+.tts-test-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tts-error-msg {
+  margin-top: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 6px;
 }
 
 </style>

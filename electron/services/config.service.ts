@@ -3,6 +3,8 @@ import { safeStorage } from 'electron'
 import type { ExecutionMode } from '@shared/types'
 import type { KnowledgeSettings } from './knowledge/types'
 import { DEFAULT_KNOWLEDGE_SETTINGS } from './knowledge/types'
+import type { TtsSettings } from '@shared/types'
+import { DEFAULT_TTS_SETTINGS } from '@shared/types'
 import { createLogger, type LogLevel } from '../utils/logger'
 import { normalizeTerminalSettings, normalizeKeyboardShortcuts } from '../utils/normalize'
 
@@ -236,6 +238,8 @@ interface StoreSchema {
   pluginsDeny: string[]
   pluginsLoadPaths: string[]
   pluginsEntries: Record<string, { enabled: boolean; config?: Record<string, unknown> }>
+  // TTS 语音合成
+  ttsSettings: TtsSettings
 }
 
 const defaultConfig: StoreSchema = {
@@ -327,7 +331,9 @@ const defaultConfig: StoreSchema = {
   pluginsAllow: [],
   pluginsDeny: [],
   pluginsLoadPaths: [],
-  pluginsEntries: {}
+  pluginsEntries: {},
+  // TTS 语音合成
+  ttsSettings: DEFAULT_TTS_SETTINGS,
 }
 
 export class ConfigService {

@@ -11,6 +11,7 @@ import { useCanvasStore } from '../stores/canvas'
 import type { ExecutionMode, AttachmentInfo } from '@shared/types'
 import type { AgentStep, AgentState } from '../stores/terminal'
 import { createLogger } from '../utils/logger'
+import { useTts } from './useTts'
 
 const log = createLogger('Agent')
 
@@ -69,6 +70,10 @@ export function useAgentMode(
   const terminalStore = useTerminalStore()
   const configStore = useConfigStore()
   const canvasStore = useCanvasStore()
+  const tts = useTts()
+  if (configStore.ttsSettings.enabled && configStore.ttsSettings.autoSpeak) {
+    tts.isEnabled.value = true
+  }
 
   // 当前终端 ID（使用传入的 tabId，不再依赖 activeTabId）
   const currentTabId = tabId
@@ -530,6 +535,8 @@ export function useAgentMode(
     const startTime = Date.now()
     inputText.value = ''
 
+    tts.stop()
+
     // 获取 Agent 上下文
     const context = isAssistantMode
       ? { terminalOutput: [] as string[], systemInfo: getLocalSystemInfo() } as any
@@ -653,6 +660,7 @@ export function useAgentMode(
   }
 
   const abortAgent = async () => {
+    tts.stop()
     const tab = currentTab.value
     const agentKey = tab?.type === 'assistant' 
       ? tab.agentId 
@@ -785,6 +793,15 @@ export function useAgentMode(
       // 独立助手模式下，驱动 Canvas 预览面板
       if (isStandaloneAssistant.value) {
         canvasStore.handleAgentStep(tabId, data.step)
+      }
+
+      // TTS: 流式 message 步骤喂给语音合成
+      if (tts.isEnabled.value && configStore.ttsSettings.enabled) {
+        if (data.step.type === 'message' && data.step.content) {
+          tts.feedContent(data.step.content)
+        } else if (data.step.type === 'final_result') {
+          tts.flush()
+        }
       }
       
       // 使用智能滚动，不打断用户查看历史
@@ -1084,6 +1101,11 @@ export function useAgentMode(
     hasExistingConversation,
     formatHistoryTime,
     saveCurrentSession,  // 保存当前会话（清空对话时调用）
-    getAgentKey  // 获取当前 tab 对应的 Agent 标识符
+    getAgentKey,  // 获取当前 tab 对应的 Agent 标识符
+    // TTS 语音播报
+    ttsIsSpeaking: tts.isSpeaking,
+    ttsIsEnabled: tts.isEnabled,
+    ttsToggle: tts.toggle,
+    ttsStop: tts.stop,
   }
 }

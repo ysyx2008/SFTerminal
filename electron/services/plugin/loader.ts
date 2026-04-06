@@ -16,6 +16,7 @@ import type {
   ToolRegistrationOptions,
   ProviderRegistration,
   ChannelRegistration,
+  TtsProviderRegistration,
   HookEvent,
   HookHandler,
   RouteHandler
@@ -104,6 +105,7 @@ export async function loadPlugin(
     tools: [],
     providers: [],
     channels: [],
+    ttsProviders: [],
     hooks: new Map(),
     httpRoutes: [],
     enabled: true
@@ -151,6 +153,10 @@ function createRegistrationAPI(pluginId: string, plugin: LoadedPlugin): PluginRe
     registerChannel(def: ChannelRegistration) {
       plugin.channels.push(def)
       log.debug(`Plugin "${pluginId}" registered channel: ${def.id}`)
+    },
+    registerTtsProvider(def: TtsProviderRegistration) {
+      plugin.ttsProviders.push(def)
+      log.debug(`Plugin "${pluginId}" registered TTS provider: ${def.id}`)
     },
     registerHook(event: HookEvent, handler: HookHandler) {
       let list = plugin.hooks.get(event)

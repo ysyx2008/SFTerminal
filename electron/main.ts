@@ -1019,6 +1019,12 @@ app.whenReady().then(async () => {
       if (pluginProviders.length > 0) {
         aiService.setPluginProviders(pluginProviders)
       }
+      // 注册插件 TTS provider
+      const pluginTtsProviders = pluginRegistry.getAllTtsProviders()
+      if (pluginTtsProviders.length > 0) {
+        const tts = await import('./services/tts')
+        for (const p of pluginTtsProviders) tts.registerProvider(p)
+      }
       // 注册插件 HTTP 路由到 Gateway
       const pluginRoutes = pluginRegistry.getAllHttpRoutes()
       if (pluginRoutes.length > 0) {
@@ -4216,6 +4222,11 @@ ipcMain.handle('plugin:install', async (_event, spec: string) => {
     if (providers.length > 0) aiService.setPluginProviders(providers)
     const routes = pluginRegistry.getAllHttpRoutes()
     if (routes.length > 0) gatewayService.registerPluginRoutes(routes)
+    const ttsPs = pluginRegistry.getAllTtsProviders()
+    if (ttsPs.length > 0) {
+      const tts = await import('./services/tts')
+      for (const p of ttsPs) tts.registerProvider(p)
+    }
   }
   return result
 })
@@ -4996,5 +5007,64 @@ ipcMain.handle('speech:transcribe', async (_event, audioData: number[], sampleRa
 ipcMain.handle('speech:isReady', async () => {
   const { isReady } = await import('./services/speech')
   return isReady()
+})
+
+// ==================== TTS 语音合成 ====================
+
+async function ensureTtsService() {
+  const tts = await import('./services/tts')
+  tts.ensureInitialized()
+  const proxyGet = () => configService.getProxySettings()
+  const { setProxyGetter } = await import('./services/tts/openai-provider')
+  const { setVolcengineProxyGetter } = await import('./services/tts/volcengine-provider')
+  const { setDashScopeProxyGetter } = await import('./services/tts/dashscope-provider')
+  setProxyGetter(proxyGet)
+  setVolcengineProxyGetter(proxyGet)
+  setDashScopeProxyGetter(proxyGet)
+  const settings = configService.get('ttsSettings')
+  if (settings) tts.updateSettings(settings)
+  return tts
+}
+
+ipcMain.handle('tts:synthesize', async (_event, text: string, options?: { voice?: string; model?: string; speed?: number }) => {
+  try {
+    const tts = await ensureTtsService()
+    const result = await tts.synthesize(text, options)
+    return {
+      success: true,
+      audio: result.audio.buffer.slice(result.audio.byteOffset, result.audio.byteOffset + result.audio.byteLength),
+      format: result.format,
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+})
+
+ipcMain.handle('tts:getVoices', async () => {
+  try {
+    const tts = await ensureTtsService()
+    return await tts.getVoices()
+  } catch {
+    return []
+  }
+})
+
+ipcMain.handle('tts:getProviders', async () => {
+  try {
+    const tts = await ensureTtsService()
+    return tts.getProviders()
+  } catch {
+    return []
+  }
+})
+
+ipcMain.handle('tts:stop', async () => {
+  try {
+    const tts = await import('./services/tts')
+    tts.stopSynthesis()
+  } catch { /* ignore */ }
 })
 

@@ -80,6 +80,7 @@ SailFish/
 │       ├── terminal-awareness/  # 终端感知（进程监控）
 │       ├── knowledge/           # 知识库（L2 知识文档，向量存储 + 嵌入 + BM25）
 │       ├── im/                  # IM 集成（钉钉/飞书/企业微信/Slack/Telegram）
+│       ├── tts/                 # TTS 语音合成（可插拔 provider）
 │       ├── speech/              # 语音识别
 │       └── __tests__/           # 服务单元测试
 ├── src/                         # 前端（Vue 3）

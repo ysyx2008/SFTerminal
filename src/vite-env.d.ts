@@ -1734,6 +1734,28 @@ interface Window {
       }>
     }
 
+    // TTS 语音合成
+    tts: {
+      synthesize: (text: string, options?: { voice?: string; model?: string; speed?: number }) => Promise<{
+        success: boolean
+        audio?: ArrayBuffer
+        format?: string
+        error?: string
+      }>
+      getVoices: () => Promise<Array<{
+        id: string
+        name: string
+        language?: string
+        gender?: string
+        previewUrl?: string
+      }>>
+      getProviders: () => Promise<Array<{
+        id: string
+        name: string
+      }>>
+      stop: () => Promise<void>
+    }
+
     // AI Debug 调试窗口
     aiDebugOpenWindow: () => Promise<void>
     aiDebugCloseWindow: () => Promise<void>

@@ -343,6 +343,11 @@ export const useConfigStore = defineStore('config', () => {
   // 自动使用视觉模型
   const autoVisionModel = ref<boolean>(true)
 
+  // TTS 语音合成设置
+  const ttsSettings = ref<import('@shared/types').TtsSettings>({
+    ...{ enabled: false, providerId: 'openai-compat', preset: 'openai', apiUrl: 'https://api.openai.com/v1/audio/speech', apiKey: '', model: 'tts-1', voice: 'alloy', speed: 1.0, autoSpeak: false },
+  })
+
   // 计算属性
   const activeAiProfile = computed(() =>
     aiProfiles.value.find(p => p.id === activeAiProfileId.value)
@@ -361,7 +366,7 @@ export const useConfigStore = defineStore('config', () => {
         completed, onboarded, lang, sponsorStatus,
         sortBy, defaultOrder, rules, personalityText,
         savedAgentName, savedAgentAvatar, savedLogLevel, savedTerminalSettings,
-        accounts, savedShortcuts, savedAutoVision, calAccounts,
+        accounts, savedShortcuts, savedAutoVision, calAccounts, savedTtsSettings,
       ] = await Promise.all([
         window.electronAPI.config.getAiProfiles(),
         window.electronAPI.config.getActiveAiProfile(),
@@ -387,6 +392,7 @@ export const useConfigStore = defineStore('config', () => {
         window.electronAPI.config.get('keyboardShortcuts') as Promise<Partial<KeyboardShortcuts> | null | undefined>,
         window.electronAPI.config.get('autoVisionModel') as Promise<boolean | undefined>,
         window.electronAPI.config.get('calendarAccounts') as Promise<CalendarAccount[] | undefined>,
+        window.electronAPI.config.get('ttsSettings') as Promise<import('@shared/types').TtsSettings | undefined>,
       ])
 
       // 批量赋值
@@ -424,6 +430,9 @@ export const useConfigStore = defineStore('config', () => {
       }
       autoVisionModel.value = savedAutoVision ?? true
       calendarAccounts.value = calAccounts || []
+      if (savedTtsSettings && typeof savedTtsSettings === 'object') {
+        ttsSettings.value = { ...ttsSettings.value, ...savedTtsSettings }
+      }
 
       // 后端同步（不阻塞主流程）
       if (emailAccounts.value.length > 0) {
@@ -862,7 +871,12 @@ export const useConfigStore = defineStore('config', () => {
     await window.electronAPI.config.setKeyboardShortcuts({ ...shortcuts })
   }
 
-  // ==================== 数据迁移 ====================
+  // ==================== TTS 语音合成 ====================
+
+  async function saveTtsSettings(settings: import('@shared/types').TtsSettings): Promise<void> {
+    ttsSettings.value = { ...settings }
+    await window.electronAPI.config.set('ttsSettings', JSON.parse(JSON.stringify(settings)))
+  }
 
   return {
     // 状态
@@ -938,7 +952,9 @@ export const useConfigStore = defineStore('config', () => {
     updateCalendarAccountStatus,
     getCalendarServerUrl,
     keyboardShortcuts,
-    setKeyboardShortcuts
+    setKeyboardShortcuts,
+    ttsSettings,
+    saveTtsSettings
   }
 })
 
