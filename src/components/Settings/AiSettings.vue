@@ -705,7 +705,7 @@ async function testTts() {
 
           <div class="form-group">
             <label class="form-label">{{ t('settings.tts.speed') }}: {{ ttsSpeed.toFixed(1) }}x</label>
-            <input v-model.number="ttsSpeed" type="range" min="0.25" max="4.0" step="0.1" class="tts-range-slider" />
+            <input v-model.number="ttsSpeed" type="range" min="0.5" max="2.0" step="0.1" class="tts-range-slider" />
           </div>
 
           <div class="form-group tts-auto-speak">

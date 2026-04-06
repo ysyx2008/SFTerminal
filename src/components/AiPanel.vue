@@ -222,7 +222,9 @@ const {
   hasExistingConversation,
   formatHistoryTime,
   saveCurrentSession,
-  getAgentKey
+  getAgentKey,
+  ttsIsSpeaking,
+  ttsStop,
 } = useAgentMode(
   messagesRef,
   async () => {
@@ -1743,6 +1745,8 @@ watch(() => props.visible, (visible) => {
         :handle-record-click="handleRecordClick"
         :stop-generation="stopGeneration"
         :abort-agent="abortAgent"
+        :tts-is-speaking="ttsIsSpeaking"
+        :tts-stop="ttsStop"
         :submit-message="handleComposerSubmit"
         :submit-empty-message="handleComposerEmptySubmit"
         :clear-tab-error="clearTabError"

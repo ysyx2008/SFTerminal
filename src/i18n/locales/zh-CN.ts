@@ -1077,6 +1077,7 @@ export default {
     useDefault: '使用默认值 (Enter)',
     stopGeneration: '停止生成',
     stopAgent: '停止助手',
+    stopTts: '停止朗读',
     startRecording: '语音输入（按住 Ctrl 说话）',
     stopRecording: '松开停止录音',
     transcribing: '正在识别...',

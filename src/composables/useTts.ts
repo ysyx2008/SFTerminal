@@ -180,10 +180,31 @@ export function useTts(): TtsController {
     })
   }
 
+  function interruptForNewContent(): void {
+    generation++
+    playbackQueue = []
+    synthesisQueue.length = 0
+    activeSynthesisCount = 0
+    isPlaying = false
+    pendingBuffer = ''
+    processedLength = 0
+
+    if (audioContext && audioContext.state !== 'closed') {
+      audioContext.close().catch(() => {})
+      audioContext = null
+    }
+    window.electronAPI.tts.stop().catch(() => {})
+  }
+
   function feedContent(fullContent: string): void {
     if (!isEnabled.value || stopped) return
 
     const stripped = stripMarkdown(fullContent)
+
+    if (processedLength > 0 && stripped.length < processedLength) {
+      interruptForNewContent()
+    }
+
     if (stripped.length <= processedLength) return
 
     const newText = stripped.slice(processedLength)

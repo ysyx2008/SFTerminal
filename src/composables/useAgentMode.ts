@@ -535,8 +535,6 @@ export function useAgentMode(
     const startTime = Date.now()
     inputText.value = ''
 
-    tts.stop()
-
     // 获取 Agent 上下文
     const context = isAssistantMode
       ? { terminalOutput: [] as string[], systemInfo: getLocalSystemInfo() } as any

@@ -1077,6 +1077,7 @@ export default {
     useDefault: 'Use Default (Enter)',
     stopGeneration: 'Stop Generation',
     stopAgent: 'Stop Agent',
+    stopTts: 'Stop reading',
     startRecording: 'Voice Input (Hold Ctrl to talk)',
     stopRecording: 'Release to stop recording',
     transcribing: 'Transcribing...',

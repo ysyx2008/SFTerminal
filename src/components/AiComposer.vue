@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2 } from 'lucide-vue-next'
+import { X, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2, Volume2, VolumeOff } from 'lucide-vue-next'
 import { useMentions } from '../composables/useMentions'
 import type { ParsedDocument } from '../stores/terminal'
 
@@ -52,6 +52,8 @@ const props = defineProps<{
   handleRecordClick: () => void
   stopGeneration: () => void
   abortAgent: () => void
+  ttsIsSpeaking: boolean
+  ttsStop: () => void
   submitMessage: (message: string) => void | Promise<void>
   submitEmptyMessage: () => void | Promise<void>
   clearTabError: () => void
@@ -375,6 +377,15 @@ const handleSendClick = (event: MouseEvent) => {
         <Loader2 v-if="isTranscribing || isSpeechInitializing" :size="18" class="spin" />
         <MicOff v-else-if="isRecording || !audioAvailable" :size="18" />
         <Mic v-else :size="18" />
+      </button>
+
+      <button
+        v-if="ttsIsSpeaking"
+        class="tts-stop-btn"
+        @click="ttsStop"
+        :title="t('ai.stopTts')"
+      >
+        <Volume2 :size="18" class="tts-speaking-icon" />
       </button>
 
       <button
@@ -788,6 +799,35 @@ const handleSendClick = (event: MouseEvent) => {
   transform: translateY(-1px);
   background: linear-gradient(135deg, #fca5a5 0%, #f87171 50%, #ef4444 100%);
   box-shadow: 0 4px 16px rgba(239, 68, 68, 0.5);
+}
+
+.tts-stop-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--accent-primary, #6366f1);
+  transition: all 0.2s ease;
+}
+
+.tts-stop-btn:hover {
+  background: rgba(99, 102, 241, 0.3);
+}
+
+@keyframes tts-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.tts-speaking-icon {
+  animation: tts-pulse 1.5s ease-in-out infinite;
 }
 
 .stop-btn:active {
