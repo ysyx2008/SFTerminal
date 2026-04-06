@@ -691,7 +691,12 @@ export class IMService {
   async sendNotification(
     text: string,
     options?: { markdown?: boolean; title?: string }
-  ): Promise<{ success: boolean; platform?: IMPlatform; error?: string }> {
+  ): Promise<{
+    success: boolean
+    platform?: IMPlatform
+    error?: string
+    failedPlatforms?: { platform: string; error: string }[]
+  }> {
     if (!text || typeof text !== 'string') {
       return { success: false, error: t('im.notification_empty') }
     }
@@ -706,7 +711,7 @@ export class IMService {
       ? text.substring(0, IM_TEXT_MAX_LENGTH - 20) + t('im.text_truncated')
       : text
 
-    let lastError = ''
+    const failedPlatforms: { platform: string; error: string }[] = []
     for (const contact of targets) {
       const adapter = this.getAdapter(contact.platform)
       if (!adapter || !adapter.isConnected()) continue
@@ -718,10 +723,12 @@ export class IMService {
           await adapter.sendText(contact.replyContext, truncated)
         }
         this.lastContact = contact
-        log.info(`Proactive notification sent via ${contact.platform}`)
-        return { success: true, platform: contact.platform }
+        log.info(`Proactive notification sent via ${contact.platform}` +
+          (failedPlatforms.length > 0 ? ` (fallback from ${failedPlatforms.map(f => f.platform).join(', ')})` : ''))
+        return { success: true, platform: contact.platform, failedPlatforms: failedPlatforms.length > 0 ? failedPlatforms : undefined }
       } catch (err: any) {
-        lastError = err?.message || 'Unknown error'
+        const errorMsg = err?.message || 'Unknown error'
+        failedPlatforms.push({ platform: contact.platform, error: errorMsg })
         log.error(`Failed to send proactive notification via ${contact.platform}:`, err)
         // 该平台上下文失效时，从联系人池移除，避免后续重复失败
         delete this.contactsByPlatform[contact.platform]
@@ -732,7 +739,8 @@ export class IMService {
       }
     }
 
-    return { success: false, error: lastError || t('im.notification_no_contact') }
+    const lastFailed = failedPlatforms[failedPlatforms.length - 1]
+    return { success: false, error: lastFailed?.error || t('im.notification_no_contact'), failedPlatforms }
   }
 
   // ==================== 消息处理核心 ====================

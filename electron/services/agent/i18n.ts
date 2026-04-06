@@ -1298,6 +1298,8 @@ const translations = {
     'im.tool_notification_sent': '通知已通过 {platform} 发送成功',
     'im.tool_notification_sent_step': '✅ 通知已通过 {platform} 发送成功',
     'im.tool_notification_failed': '❌ 发送失败: {error}',
+    'im.tool_im_delivery_failed': '⚠️ {platform} 消息发送失败: {error}（会话凭证可能已过期，用户需重新给机器人发消息）',
+    'im.tool_im_fallback_success': '⚠️ {failed} 发送失败，已降级通过 {succeeded} 投递成功',
 
     // IM 上下文
     'im.first_contact_context': '[系统提示：这是用户 {userName} 通过 {platform} 首次与你联系，请在回复中自然地打个招呼、做个自我介绍。]',
@@ -2590,6 +2592,8 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'im.tool_notification_sent': 'Notification sent via {platform}',
     'im.tool_notification_sent_step': '✅ Notification sent via {platform}',
     'im.tool_notification_failed': '❌ Send failed: {error}',
+    'im.tool_im_delivery_failed': '⚠️ {platform} message delivery failed: {error} (session token may have expired, user needs to message the bot again)',
+    'im.tool_im_fallback_success': '⚠️ {failed} delivery failed, fell back to {succeeded} successfully',
 
     // IM context
     'im.first_contact_context': '[System note: This is the first time user {userName} has contacted you via {platform}. Please naturally greet them and introduce yourself in your response.]',

@@ -720,6 +720,7 @@ export async function messageUser(
   }
 
   const deliveredVia: string[] = []
+  const failedChannels: { platform: string; error: string }[] = []
   // 与 AgentService.COMPANION_AGENT_ID 保持一致（不直接 import 以避免循环依赖）
   const companionAgentId = '__companion__'
 
@@ -741,8 +742,30 @@ export async function messageUser(
         markdown: !!title,
         title,
       })
+      if (result.failedPlatforms?.length) {
+        for (const f of result.failedPlatforms) {
+          failedChannels.push(f)
+        }
+      }
       if (result.success) {
         deliveredVia.push(result.platform || 'IM')
+        if (result.failedPlatforms?.length) {
+          const failedNames = result.failedPlatforms.map(f => f.platform).join(', ')
+          executor.addStep({
+            type: 'tool_result',
+            content: t('im.tool_im_fallback_success', { failed: failedNames, succeeded: result.platform! }),
+            toolName: 'talk_to_user',
+            toolResult: result.failedPlatforms.map(f => `${f.platform}: ${f.error}`).join('; ')
+          })
+        }
+      } else if (result.error) {
+        const failedInfo = result.failedPlatforms?.map(f => `${f.platform}: ${f.error}`).join('; ') || result.error
+        executor.addStep({
+          type: 'tool_result',
+          content: t('im.tool_im_delivery_failed', { platform: result.failedPlatforms?.map(f => f.platform).join(', ') || 'IM', error: result.error }),
+          toolName: 'talk_to_user',
+          toolResult: failedInfo
+        })
       }
     }
   } catch (e) {
@@ -806,11 +829,15 @@ export async function messageUser(
     const channels = deliveredVia.join(', ')
     const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
     const truncatedMsg = message.length > 200 ? message.substring(0, 200) + '...' : message
-    const output = `<notification_delivered>
+    let output = `<notification_delivered>
 <time>${timeStr}</time>
 <channels>${channels}</channels>
 <content>${truncatedMsg}</content>
 </notification_delivered>`
+    if (failedChannels.length > 0) {
+      const failedInfo = failedChannels.map(f => `${f.platform}: ${f.error}`).join('; ')
+      output += `\n<im_delivery_failed>${failedInfo}</im_delivery_failed>`
+    }
     executor.addStep({
       type: 'tool_result',
       content: t('im.tool_notification_sent_step', { platform: channels }),
@@ -819,7 +846,10 @@ export async function messageUser(
     })
     return { success: true, output }
   } else {
-    const error = t('im.tool_no_contact')
+    const failedInfo = failedChannels.length > 0
+      ? failedChannels.map(f => `${f.platform}: ${f.error}`).join('; ')
+      : ''
+    const error = failedInfo || t('im.tool_no_contact')
     executor.addStep({
       type: 'tool_result',
       content: t('im.tool_notification_failed', { error }),
