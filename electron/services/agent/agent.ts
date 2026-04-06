@@ -2332,7 +2332,7 @@ export abstract class Agent {
       run.messages.push(userSupplementMsg)
       run.taskMessageLog.push({ role: 'user', content: combinedText })
       
-      if (this.currentPlan && this.currentPlan.steps.some(s => s.status === 'pending')) {
+      if (this.currentPlan && !this.currentPlan.paused && this.currentPlan.steps.some(s => s.status === 'pending')) {
         const planHintMsg: AiMessage = { role: 'user', content: t('agent.user_supplement_with_plan') }
         run.messages.push(planHintMsg)
         run.taskMessageLog.push({ ...planHintMsg })
@@ -2350,12 +2350,15 @@ export abstract class Agent {
       return 'complete'
     }
     
+    if (this.currentPlan.paused) {
+      return 'complete'
+    }
+    
     const pendingSteps = this.currentPlan.steps.filter(s => 
       s.status === 'pending' || s.status === 'in_progress'
     )
     
     if (pendingSteps.length > 0) {
-      // 提示继续执行计划
       const stepTitles = pendingSteps.map((s, i) => `${i + 1}. ${s.title}`).join('\n')
       const hint = t('agent.plan_incomplete', { count: pendingSteps.length, steps: stepTitles })
       const planMsg: AiMessage = { role: 'user', content: hint }

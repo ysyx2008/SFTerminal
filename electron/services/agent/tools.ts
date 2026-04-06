@@ -396,13 +396,15 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
 **action**：
 - create: 创建计划（需 title + steps）
 - update: 更新步骤状态（需 step_index + status）
+- pause: 暂停计划，停止自动推进，等待用户指示后再继续（可选 reason）
+- resume: 恢复已暂停的计划，继续执行
 - clear: 归档计划（可选 reason）`,
         parameters: {
           type: 'object',
           properties: {
             action: {
               type: 'string',
-              enum: ['create', 'update', 'clear'],
+              enum: ['create', 'update', 'pause', 'resume', 'clear'],
               description: '操作类型'
             },
             title: { type: 'string', description: 'create: 计划标题' },
@@ -425,7 +427,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
               description: 'update: 步骤状态'
             },
             result: { type: 'string', description: 'update: 步骤结果说明（可选）' },
-            reason: { type: 'string', description: 'clear: 归档原因（可选）' }
+            reason: { type: 'string', description: 'pause/clear: 暂停或归档原因（可选）' }
           },
           required: ['action']
         }

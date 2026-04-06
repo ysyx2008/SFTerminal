@@ -1,6 +1,6 @@
 /**
  * 计划/待办工具
- * 包括：创建计划、更新计划、清除计划
+ * 包括：创建计划、更新计划、暂停/恢复计划、归档计划
  */
 import { t } from '../i18n'
 import type { ToolExecutorConfig, ToolResult, AgentPlan } from './types'
@@ -23,7 +23,7 @@ function isPlanFinished(plan: AgentPlan): boolean {
 }
 
 /**
- * plan 工具统一入口：根据 action 分发到 create/update/clear
+ * plan 工具统一入口：根据 action 分发
  */
 export function dispatchPlan(
   args: Record<string, unknown>,
@@ -35,10 +35,14 @@ export function dispatchPlan(
       return createPlan(args, executor)
     case 'update':
       return updatePlan(args, executor)
+    case 'pause':
+      return pausePlan(args, executor)
+    case 'resume':
+      return resumePlan(args, executor)
     case 'clear':
       return clearPlan(args, executor)
     default:
-      return { success: false, output: '', error: `Unknown plan action: ${action}. Use "create", "update", or "clear".` }
+      return { success: false, output: '', error: `Unknown plan action: ${action}. Use "create", "update", "pause", "resume", or "clear".` }
   }
 }
 
@@ -224,11 +228,103 @@ export function updatePlan(
       output += `\n\n✅ ${t('plan.complete_success')}`
     }
     output += `\n\n💡 ${t('plan.complete_hint')}`
+  } else if (plan.paused) {
+    output += `\n\n⏸️ ${t('plan.paused_hint')}`
   } else {
     const nextPendingIndex = plan.steps.findIndex(s => s.status === 'pending')
     if (nextPendingIndex !== -1) {
       output += `\n\n${t('plan.next_step', { index: nextPendingIndex + 1, title: plan.steps[nextPendingIndex].title })}`
     }
+  }
+  
+  return { success: true, output }
+}
+
+/**
+ * 暂停当前计划（停止自动推进，等待用户指示）
+ */
+export function pausePlan(
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): ToolResult {
+  const reason = args.reason as string | undefined
+  
+  const plan = executor.getCurrentPlan()
+  if (!plan) {
+    return { success: false, output: '', error: t('error.no_active_plan') }
+  }
+  
+  if (plan.paused) {
+    return { success: true, output: t('plan.already_paused') }
+  }
+  
+  plan.paused = true
+  plan.updatedAt = Date.now()
+  executor.setCurrentPlan(plan)
+  
+  const completedCount = plan.steps.filter(s => s.status === 'completed').length
+  const totalCount = plan.steps.length
+  const reasonText = reason ? ` (${reason})` : ''
+  
+  executor.addStep({
+    type: 'plan_updated',
+    content: `⏸️ ${t('plan.paused', { title: plan.title })}${reasonText}`,
+    toolName: 'pause_plan',
+    toolArgs: { reason },
+    plan: plan,
+    riskLevel: 'safe'
+  })
+  
+  let output = `⏸️ ${t('plan.paused', { title: plan.title })}${reasonText}`
+  output += `\n${t('plan.progress', { completed: completedCount, total: totalCount, percent: Math.round((completedCount / totalCount) * 100) })}`
+  output += `\n\n${t('plan.paused_stop')}`
+  
+  return { success: true, output }
+}
+
+/**
+ * 恢复已暂停的计划
+ */
+export function resumePlan(
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): ToolResult {
+  const plan = executor.getCurrentPlan()
+  if (!plan) {
+    return { success: false, output: '', error: t('error.no_active_plan') }
+  }
+  
+  if (!plan.paused) {
+    return { success: true, output: t('plan.not_paused') }
+  }
+  
+  plan.paused = false
+  plan.updatedAt = Date.now()
+  
+  // 恢复时将卡在 in_progress 的步骤重置为 pending（暂停期间无实际执行）
+  for (const step of plan.steps) {
+    if (step.status === 'in_progress') {
+      step.status = 'pending'
+    }
+  }
+  
+  executor.setCurrentPlan(plan)
+  
+  const pendingSteps = plan.steps.filter(s => s.status === 'pending')
+  const nextPendingIndex = plan.steps.findIndex(s => s.status === 'pending')
+  
+  executor.addStep({
+    type: 'plan_updated',
+    content: `▶️ ${t('plan.resumed', { title: plan.title })}`,
+    toolName: 'resume_plan',
+    plan: plan,
+    riskLevel: 'safe'
+  })
+  
+  let output = `▶️ ${t('plan.resumed', { title: plan.title })}`
+  output += `\n${t('plan.resume_remaining', { count: pendingSteps.length })}`
+  if (nextPendingIndex !== -1) {
+    output += `\n\n${t('plan.next_step', { index: nextPendingIndex + 1, title: plan.steps[nextPendingIndex].title })}`
   }
   
   return { success: true, output }

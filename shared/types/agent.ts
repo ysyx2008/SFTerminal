@@ -54,6 +54,7 @@ export interface AgentPlan {
   id: string
   title: string
   steps: AgentPlanStep[]
+  paused?: boolean
   createdAt: number
   updatedAt: number
 }
