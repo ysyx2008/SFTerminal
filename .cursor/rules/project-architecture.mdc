@@ -131,12 +131,17 @@ SailFish/
 ### AI Agent 架构
 - **ReAct 循环**：思考 → 工具调用 → 观察结果 → 循环
 - **工具系统**：内置工具 + 技能系统（按需加载）+ MCP 工具
-- **并行子 Agent**：`dispatch_agents` 工具分派轻量子任务并行执行，支持 Agent 类型系统（explore/edit/research）、同步/异步双模式、prompt cache 优化
+- **三种终端模式**：`local`（本地终端）/ `ssh`（SSH 远程）/ `assistant`（无终端助手），见下方独立章节
+- **并行子 Agent**：`dispatch_agents` 工具分派轻量子任务并行执行，支持 Agent 类型系统（explore/edit/research）、同步/异步双模式、prompt cache 优化。仅 local 和 assistant 模式可用（子 Agent 只能操作本地文件系统和执行本地命令）
 - **风险评估**：safe / moderate / dangerous / blocked 四级
 - **执行模式**：strict（全确认）/ relaxed（危险确认）/ free（全自动）
 - **Agent Workspace**：`{userData}/agent-workspace/`，Agent 私有数据目录，文件读写自动跳过确认
 - **三级记忆架构**：见下方独立章节
 - **上下文管理**：`ContextBuilder` 根据 token 预算动态选择压缩级别
+
+### 三种终端模式（⚠️ 开发新功能必须考虑）
+
+Agent 的运行环境分三种：`local`（本地终端）、`ssh`（SSH 远程终端）、`assistant`（无终端助手）。**核心区别是操作目标机器不同**：local 和 assistant 操作的是用户本机，ssh 操作的是远程服务器。因此文件读写、命令执行在 ssh 模式下走完全不同的通道（SSH/SFTP），两套工具互不通用。新增涉及文件或命令的功能时，必须明确它操作的是哪台机器，并通过 `_meta.supportedModes` 限定适用模式。详见 `tools.ts` 中各工具的 `_meta` 定义。
 
 ### Agent 会话与持久化
 - **后端为唯一数据源**：Steps（含 `user_task`/`final_result`）和 API messages 均由后端 Agent 生成、管理和持久化，前端仅负责渲染
