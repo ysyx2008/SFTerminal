@@ -84,6 +84,23 @@ const SILENT_COMMANDS = [
   'git clone', 'git pull', 'git push', 'git fetch',
   'git submodule update', 'git lfs pull', 'git lfs fetch',
   
+  // 系统包管理器
+  'brew install', 'brew upgrade', 'brew reinstall',
+  'port install', 'port upgrade',
+  'apt install', 'apt upgrade', 'apt full-upgrade',
+  'apt-get install', 'apt-get upgrade',
+  'yum install', 'yum update',
+  'dnf install', 'dnf upgrade',
+  'zypper install', 'zypper update', 'zypper in', 'zypper up',
+  'pacman -S', 'pacman -U', 'pacman -Syu',
+  'apk add', 'apk upgrade',
+  'emerge',
+  'choco install', 'choco upgrade',
+  'winget install', 'winget upgrade',
+  'snap install', 'snap refresh',
+  'flatpak install', 'flatpak update',
+  'nix-env -i', 'nix profile install',
+
   // 文件传输
   'dd',
   'rsync',

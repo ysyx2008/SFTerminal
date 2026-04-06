@@ -232,7 +232,27 @@ export async function executeCommand(
       const processMonitor = getProcessMonitor()
       const isLongRunningCommand = processMonitor.isKnownLongRunningCommand(command)
       
-      if (isLongRunningCommand) {
+      // 运行时检测：进程还在跑就不算"超时错误"，区分有输出/无输出给不同提示
+      let runtimeStatus: 'active' | 'waiting' | 'unknown' = 'unknown'
+      if (!isLongRunningCommand) {
+        try {
+          const RECENT_OUTPUT_THRESHOLD_MS = 5000
+          const processState = await processMonitor.getProcessState(ptyId)
+          const isRunning = processState.status === 'running_streaming'
+            || processState.status === 'running_silent'
+            || processState.status === 'running_interactive'
+          if (isRunning) {
+            const hasRecentOutput = processState.status === 'running_streaming'
+              || (processState.outputRate !== undefined && processState.outputRate > 0)
+              || (processState.lastOutputTime !== undefined && Date.now() - processState.lastOutputTime < RECENT_OUTPUT_THRESHOLD_MS)
+            runtimeStatus = hasRecentOutput ? 'active' : 'waiting'
+          }
+        } catch {
+          // 检测失败走 unknown，回退到原有超时逻辑
+        }
+      }
+
+      if (isLongRunningCommand || runtimeStatus === 'active') {
         executor.addStep({
           type: 'tool_result',
           content: `⏳ ${t('status.command_running')} (${config.commandTimeout / 1000}${t('misc.seconds')})`,
@@ -242,6 +262,21 @@ export async function executeCommand(
         return {
           success: true,
           output: latestOutput + '\n\n💡 ' + t('error.command_still_running'),
+          isRunning: true
+        }
+      }
+
+      if (runtimeStatus === 'waiting') {
+        const hint = t('hint.command_may_wait_input')
+        executor.addStep({
+          type: 'tool_result',
+          content: `⏳ ${t('status.command_running')} (${config.commandTimeout / 1000}${t('misc.seconds')})`,
+          toolName: 'execute_command',
+          toolResult: latestOutput + '\n\n💡 ' + hint
+        })
+        return {
+          success: true,
+          output: latestOutput + '\n\n💡 ' + hint,
           isRunning: true
         }
       }
