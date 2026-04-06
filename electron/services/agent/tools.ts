@@ -543,8 +543,9 @@ Agent 类型：
           },
           required: ['tasks']
         }
-      }
-    },
+      },
+      _meta: { supportedModes: ['local', 'assistant'] }
+    } as ToolDefinitionWithMeta,
     // ==================== 发消息给用户 ====================
     {
       type: 'function',
