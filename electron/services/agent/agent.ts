@@ -1380,6 +1380,9 @@ export abstract class Agent {
       availableToolNames
     })
     
+    // 记录流式执行前的步骤数，用于后续 ensureToolResultStep 正确检测预执行工具的步骤
+    const stepCountBeforeStreaming = run.steps.length
+    
     // 调用 AI（传入流式执行器，使其在流式输出中提前执行工具）
     const response = await this.callAiWithStreaming(run, streamingExecutor)
     
@@ -1487,7 +1490,7 @@ export abstract class Agent {
       run.taskMessageLog.push({ ...assistantMsg })
       
       // 执行工具调用（流式执行器可能已完成部分工具）
-      await this.executeToolCallsWithStreaming(run, validToolCalls, toolExecutorConfig, streamingExecutor)
+      await this.executeToolCallsWithStreaming(run, validToolCalls, toolExecutorConfig, streamingExecutor, stepCountBeforeStreaming)
       
       return { response, hasToolCalls: true }
     }
@@ -1893,7 +1896,8 @@ export abstract class Agent {
     run: AgentRun,
     toolCalls: ToolCall[],
     toolExecutorConfig: ToolExecutorConfig,
-    streamingExecutor: StreamingToolExecutor
+    streamingExecutor: StreamingToolExecutor,
+    stepCountBeforeStreaming: number
   ): Promise<void> {
     if (toolCalls.length === 0) return
 
@@ -1907,13 +1911,13 @@ export abstract class Agent {
     }
     
     // 按原始 toolCalls 顺序处理预执行的结果
-    const stepCountBefore = run.steps.length
+    // 使用流式执行前的步骤数作为基线，这样能看到预执行期间添加的 tool_result 步骤
     for (const toolCall of toolCalls) {
       if (!preExecutedIds.has(toolCall.id)) continue
       
       const completed = preExecuted.find(r => r.toolCall.id === toolCall.id)!
       this.setExecutionPhase(run, toolCall.function.name)
-      this.ensureToolResultStep(run, stepCountBefore, toolCall.function.name, completed.result)
+      this.ensureToolResultStep(run, stepCountBeforeStreaming, toolCall.function.name, completed.result)
       this.processToolResult(run, toolCall, completed.result, completed.toolArgs)
     }
     
@@ -2115,8 +2119,7 @@ export abstract class Agent {
   /**
    * 确保工具执行后有 tool_result 步骤（内置工具自己添加，技能工具可能缺失）
    *
-   * 顺序执行时 stepCountBefore 精确对应单次调用，无需匹配 toolName；
-   * 并行执行时可并行的工具全部已自行添加结果步骤，本方法为空操作。
+   * 通过 toolName 匹配对应工具的 tool_result，适用于顺序、并行、流式预执行等各种路径。
    */
   private ensureToolResultStep(
     run: AgentRun,
@@ -2125,7 +2128,7 @@ export abstract class Agent {
     result: ToolResult
   ): void {
     const newSteps = run.steps.slice(stepCountBefore)
-    if (newSteps.some(s => s.type === 'tool_result' || s.type === 'error')) return
+    if (newSteps.some(s => s.type === 'error' || (s.type === 'tool_result' && s.toolName === toolName))) return
 
     if (!result.success) {
       const errorMsg = result.error || t('agent.unknown_error')
