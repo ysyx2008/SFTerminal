@@ -349,6 +349,7 @@ const ttsSpeed = ref(1.0)
 const ttsAutoSpeak = ref(false)
 const ttsIsTesting = ref(false)
 const ttsTestError = ref('')
+const ttsSaved = ref(false)
 let ttsInitializing = true
 
 const ttsSelectedPreset = computed(() =>
@@ -358,6 +359,16 @@ const ttsIsCustom = computed(() => ttsPresetId.value === 'custom')
 const ttsInternationalPresets = computed(() => ttsPresets.filter(p => p.group === 'international'))
 const ttsDomesticPresets = computed(() => ttsPresets.filter(p => p.group === 'domestic'))
 const ttsOtherPresets = computed(() => ttsPresets.filter(p => p.group === 'other'))
+
+const ttsDirty = computed(() => {
+  const s = configStore.ttsSettings
+  return ttsPresetId.value !== (s.preset || 'openai')
+    || ttsApiUrl.value !== s.apiUrl
+    || ttsApiKey.value !== s.apiKey
+    || ttsModel.value !== s.model
+    || ttsVoice.value !== s.voice
+    || ttsSpeed.value !== s.speed
+})
 
 const initTtsState = () => {
   ttsInitializing = true
@@ -370,6 +381,7 @@ const initTtsState = () => {
   ttsVoice.value = s.voice
   ttsSpeed.value = s.speed
   ttsAutoSpeak.value = s.autoSpeak
+  ttsSaved.value = false
   nextTick(() => { ttsInitializing = false })
 }
 
@@ -380,14 +392,29 @@ watch(ttsPresetId, (newId) => {
   ttsApiUrl.value = preset.apiUrl
   ttsModel.value = preset.defaultModel
   ttsVoice.value = preset.defaultVoice
+  ttsSaved.value = false
 })
 
-watch([ttsEnabled, ttsPresetId, ttsApiUrl, ttsApiKey, ttsModel, ttsVoice, ttsSpeed, ttsAutoSpeak], () => {
+watch(ttsEnabled, () => {
   if (ttsInitializing) return
-  saveTts()
-}, { deep: true })
+  saveTtsToggles()
+})
 
-async function saveTts() {
+watch(ttsAutoSpeak, () => {
+  if (ttsInitializing) return
+  saveTtsToggles()
+})
+
+async function saveTtsToggles() {
+  const s = configStore.ttsSettings
+  await configStore.saveTtsSettings({
+    ...s,
+    enabled: ttsEnabled.value,
+    autoSpeak: ttsAutoSpeak.value,
+  })
+}
+
+async function saveTtsConfig() {
   await configStore.saveTtsSettings({
     enabled: ttsEnabled.value,
     providerId: ttsSelectedPreset.value.providerId,
@@ -399,6 +426,8 @@ async function saveTts() {
     speed: ttsSpeed.value,
     autoSpeak: ttsAutoSpeak.value,
   })
+  ttsSaved.value = true
+  setTimeout(() => { ttsSaved.value = false }, 2000)
 }
 
 function openTtsKeyUrl() {
@@ -411,6 +440,7 @@ async function testTts() {
   ttsIsTesting.value = true
   ttsTestError.value = ''
   try {
+    await saveTtsConfig()
     const result = await window.electronAPI.tts.synthesize(text, {
       voice: ttsVoice.value,
       model: ttsModel.value,
@@ -732,7 +762,15 @@ async function testTts() {
               >
                 {{ ttsIsTesting ? t('settings.tts.testing') : t('settings.tts.testPlay') }}
               </button>
-              <span class="form-hint">{{ t('settings.tts.testHint') }}</span>
+              <button
+                class="btn btn-sm"
+                :class="ttsSaved ? 'btn-success' : 'btn-save'"
+                :disabled="!ttsDirty && !ttsSaved"
+                @click="saveTtsConfig"
+              >
+                {{ ttsSaved ? t('settings.tts.saved') : t('settings.tts.save') }}
+              </button>
+              <span v-if="ttsDirty" class="form-hint tts-dirty-hint">{{ t('settings.tts.unsaved') }}</span>
             </div>
             <div v-if="ttsTestError" class="tts-error-msg">{{ ttsTestError }}</div>
           </div>
@@ -1198,6 +1236,24 @@ async function testTts() {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.btn-save {
+  background: var(--accent-primary, #4a9eff);
+  color: white;
+}
+
+.btn-save:disabled {
+  opacity: 0.4;
+}
+
+.btn-success {
+  background: #10b981;
+  color: white;
+}
+
+.tts-dirty-hint {
+  color: var(--accent-primary, #4a9eff) !important;
 }
 
 .tts-error-msg {

@@ -242,6 +242,9 @@ export default {
       testHint: 'Play a sample to test current settings',
       testing: 'Synthesizing...',
       testFailed: 'Test failed',
+      save: 'Save',
+      saved: 'Saved',
+      unsaved: 'Unsaved changes',
     },
     gateway: {
       title: 'Web Service',

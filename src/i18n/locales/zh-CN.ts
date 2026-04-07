@@ -242,6 +242,9 @@ export default {
       testHint: '用一段示例文本测试当前配置',
       testing: '合成中...',
       testFailed: '试听失败',
+      save: '保存',
+      saved: '已保存',
+      unsaved: '设置已修改，请保存',
     },
     gateway: {
       title: 'Web 服务',
