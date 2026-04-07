@@ -504,7 +504,9 @@ export class PromptBuilder {
 
   private buildRemoteChannelContext(): string {
     const channel = this.context.remoteChannel
-    if (!channel || channel === 'desktop') return ''
+    if (!channel || channel === 'desktop') {
+      return '**交互通道**：用户通过桌面应用与你对话，你的回复直接显示在对话界面中'
+    }
 
     const imPlatforms: Record<string, { name: string; fileLimit: string; imageLimit: string }> = {
       dingtalk: { name: '钉钉机器人', fileLimit: '20MB', imageLimit: '20MB' },

@@ -553,7 +553,7 @@ Agent 类型：
       type: 'function',
       function: {
         name: 'talk_to_user',
-        description: `向用户发送 IM 消息或应用内推送通知。用于主动触达用户（如关切触发、唤醒、定时提醒、后台任务完成通知等）。`,
+        description: `向用户发送 IM 消息或应用内推送通知，不会直接展示在桌面对话中。用于后台主动触达用户（如关切触发、唤醒、定时提醒、后台任务完成通知等）。`,
         parameters: {
           type: 'object',
           properties: {
