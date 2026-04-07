@@ -44,8 +44,10 @@ function stripMarkdown(text: string): string {
   result = result.replace(/!\[.*?\]\(.*?\)/g, '')
   // 移除链接保留文字
   result = result.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-  // 移除 HTML details/summary/blockquote 标签
-  result = result.replace(/<\/?(?:details|summary|blockquote|strong|em|b|i|hr)[^>]*>/g, '')
+  // 移除 <details> 块整体（包含思考过程等折叠内容）
+  result = result.replace(/<details[\s\S]*?<\/details>/g, '')
+  // 移除残留 HTML 标签
+  result = result.replace(/<\/?(?:summary|blockquote|strong|em|b|i|hr|p|div|span|br)[^>]*>/g, '')
   // 移除 markdown 标题标记
   result = result.replace(/^#{1,6}\s+/gm, '')
   // 移除 markdown 加粗/斜体（成对）
