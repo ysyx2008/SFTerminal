@@ -53,12 +53,15 @@ run(message, context, options)
   │     ├── 添加 user_task 步骤
   │     └── 设置终端输出监听器
   │
-  ├── buildContext()          构建执行上下文
-  │     ├── 加载知识库上下文（L2 知识文档 + 向量检索）
-  │     ├── 构建任务历史（L1 TaskMemory → ContextBuilder 分层压缩）
-  │     ├── L3 auto-recall（语义检索历史对话）
-  │     ├── 加载关切列表、羁绊上下文
-  │     └── 调用 buildSystemPrompt() 组装系统提示
+  ├── buildContext()          构建执行上下文（双路径）
+  │     ├─ [Cache path] 沿用上一个任务的完整 messages + 追加新 user 消息
+  │     │    └── 知识检索结果注入 user 消息（而非 system prompt）
+  │     └─ [Cold start] 从零构建（首次任务 / 唤醒 run / 上下文超限）
+  │          ├── 加载知识库上下文（L2 知识文档 + 向量检索）
+  │          ├── 构建任务历史（L1 TaskMemory → ContextBuilder 分层压缩）
+  │          ├── L3 auto-recall（语义检索历史对话）
+  │          ├── 加载关切列表、羁绊上下文
+  │          └── 调用 buildSystemPrompt() 组装系统提示
   │
   ├── executeLoop()           主执行循环
   │     └── while (running && !aborted)
@@ -75,10 +78,23 @@ run(message, context, options)
   │
   └── finalizeRun()           完成运行
         ├── 保存任务到 TaskMemory
+        ├── 保存 messages 快照到 _previousRunMessages（供下次 cache path）
         ├── 保存会话到 HistoryService
         ├── L2: 异步更新知识文档
         └── L3: 异步索引对话到向量库
 ```
+
+## Prompt Cache 优化
+
+同一 session 内，连续任务复用上一个任务的完整 messages 作为前缀，只追加新 user 消息，使 LLM provider 的前缀缓存跨任务命中。
+
+- **`_previousRunMessages`**：`finalizeRun` 时保存 `run.messages` + 最终 assistant 回复的快照
+- **Cache path 条件**：前序快照存在 && 非唤醒 run && token 用量 < 上下文的 70%
+- **Cache path 差异**：system prompt 不重建（AI 已持有完整对话）；知识检索结果注入到 user 消息而非 system prompt
+- **Cold start 降级**：首次任务、唤醒 run（Watch/Sensor）、上下文空间不足时走原有的 TaskMemory 压缩重建路径
+- **Anthropic 缓存断点**：前序消息的最后一条 assistant 上设置 `cache_control`（第 3 个断点），`_cacheBreakpoint` 标记在 `convertToAnthropicBody` 中消费
+- **DeepSeek/OpenAI**：自动前缀缓存天然命中，无需额外标记
+- **重置**：`resetSession()` 清空 `_previousRunMessages`
 
 ## 会话与持久化
 

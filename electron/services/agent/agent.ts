@@ -124,6 +124,10 @@ export abstract class Agent {
   private _lastPromptTokens?: number
   /** 最近一次 API 调用计算出的缓存命中率（0-100），用于跨步骤保持显示 */
   private _lastCacheHitRate?: number
+
+  /** 上一次 run 结束时的完整 messages 快照（用于跨任务 prompt cache 复用）
+   *  下一个 run 直接沿用此前缀 + 追加新 user 消息，使 LLM 的前缀缓存命中。 */
+  private _previousRunMessages?: AiMessage[]
   
   // ==================== 构造函数 ====================
   
@@ -728,6 +732,14 @@ export abstract class Agent {
       result,
       run.taskMessageLog
     )
+
+    // 保存 messages 快照供下一个任务复用（prompt cache 优化）
+    // run.messages 不含最终纯文本回复（只有 tool_calls 时才 push），需要补上
+    const snapshot = run.messages.map(m => ({ ...m }))
+    if (result != null) {
+      snapshot.push({ role: 'assistant' as const, content: result })
+    }
+    this._previousRunMessages = snapshot
     
     this.accumulateSessionData(run, status, result)
     this.saveSessionToHistory()
@@ -924,6 +936,7 @@ export abstract class Agent {
     this._lastPromptTokens = undefined
     this._lastCacheHitRate = undefined
     this._terminalMeta = undefined
+    this._previousRunMessages = undefined
     this.taskMemory.clear()
   }
 
@@ -1088,10 +1101,43 @@ export abstract class Agent {
    * 构建执行上下文
    */
   protected async buildContext(run: AgentRun, message: string): Promise<void> {
-    // 加载知识库上下文
+    // ── Cache-optimized path ──
+    // 同一 session 内，直接沿用上一个任务的完整 messages 作为前缀，只追加新 user 消息。
+    // LLM 的前缀缓存（Anthropic explicit / DeepSeek·OpenAI automatic）可命中整段前缀。
+    // 跳过条件：首次任务、唤醒 run（Watch 等，上下文差异大）、上下文预算不足。
+    if (this._previousRunMessages && this._previousRunMessages.length > 0 && !run.context.wakeup) {
+      const contextLength = this.getContextLength()
+      const prevTokens = this._lastPromptTokens || this.estimateTotalTokens(this._previousRunMessages)
+
+      if (prevTokens < contextLength * 0.7) {
+        // 复用前序消息，清除旧的缓存断点标记
+        run.messages = this._previousRunMessages.map(m => {
+          const copy = { ...m }
+          delete copy._cacheBreakpoint
+          return copy
+        })
+
+        // 在前序消息末尾设置 Anthropic cache breakpoint（第 3 个断点）
+        const lastPrevMsg = run.messages[run.messages.length - 1]
+        if (lastPrevMsg) {
+          lastPrevMsg._cacheBreakpoint = true
+        }
+
+        // 组装新 user 消息（知识检索结果注入到 user 消息前缀，而非 system prompt）
+        const userMsg = await this.buildUserMessage(run, message, true)
+        run.messages.push(userMsg)
+        run.taskMessageLog.push({ ...userMsg })
+
+        log.info(`[Cache] Reusing ${this._previousRunMessages.length} messages (~${prevTokens} tokens, ${Math.round(prevTokens / contextLength * 100)}% of context)`)
+        return
+      }
+
+      log.info(`[Cache] Reuse skipped: ~${prevTokens} tokens exceed 70% of ${contextLength} context`)
+    }
+
+    // ── Cold start path: 从零构建上下文 ──
     const knowledgeResult = await this.loadKnowledgeContext(message, run.context.hostId)
     
-    // 构建任务历史上下文
     let taskSummaries = ''
     let relatedTaskDigests = ''
     let recentTaskMessages: AiMessage[] = []
@@ -1110,14 +1156,12 @@ export abstract class Agent {
       }
       availableTaskIds = contextResult.availableTaskIds
       
-      // 语义预加载相关任务摘要
       const relatedDigests = this.taskMemory.getRelatedDigests(message, 3)
       if (relatedDigests.length > 0) {
         relatedTaskDigests = this.taskMemory.formatRelatedDigestsForContext(relatedDigests)
       }
     }
     
-    // 加载 L2 知识文档
     let contextKnowledgeDoc = ''
     const contextId = run.context.hostId || 'personal'
     try {
@@ -1127,7 +1171,6 @@ export abstract class Agent {
       log.warn('ContextKnowledge load error:', e)
     }
 
-    // L3 auto-recall: 语义检索相关的历史对话，注入提示词
     let conversationHistory: Array<{ userRequest: string; finalResult: string; status: string; timestamp: number; relevance: number }> = []
     try {
       const ks = getKnowledgeService()
@@ -1147,7 +1190,6 @@ export abstract class Agent {
       log.warn('L3 auto-recall error:', e)
     }
 
-    // 关切列表摘要（注入提示词，供 Agent 知晓已有关切）
     let watchListSummary = ''
     try {
       const watches = getWatchService().getAll()
@@ -1156,10 +1198,8 @@ export abstract class Agent {
       log.warn('Watch list for prompt error:', e)
     }
 
-    // 判断是否为诞生引导
     const isOnboarding = !(this.services.configService?.getAgentOnboardingCompleted() ?? true)
 
-    // 构建系统提示
     const promptOptions: PromptOptions = {
       mbtiType: this.services.configService?.getAgentMbti() ?? undefined,
       knowledgeContext: knowledgeResult.context,
@@ -1179,20 +1219,35 @@ export abstract class Agent {
     const systemPrompt = this.buildSystemPrompt(run.context, promptOptions)
     run.messages.push({ role: 'system', content: systemPrompt })
     
-    // 注入最近任务的消息
     if (recentTaskMessages.length > 0) {
       for (const msg of recentTaskMessages) {
         run.messages.push(msg)
       }
     }
     
-    // 添加当前用户消息（如果有图片，附带 images 字段；如有主动消息上下文，注入到 API 消息中）
+    const userMsg = await this.buildUserMessage(run, message, false)
+    run.messages.push(userMsg)
+    run.taskMessageLog.push({ ...userMsg })
+  }
+
+  /**
+   * 组装增强后的用户消息
+   * @param injectKnowledge cache-reuse 路径下，知识检索结果不在 system prompt 中，需注入到 user 消息
+   */
+  private async buildUserMessage(run: AgentRun, message: string, injectKnowledge: boolean): Promise<AiMessage> {
     let enhancedMessage = this.enhanceUserMessage(message)
-    // contextHint：仅注入 API 消息的上下文提示（如首次联系），不显示在 user_task 步骤中
+
+    // cache-reuse 路径：知识检索结果注入到 user 消息前缀
+    if (injectKnowledge) {
+      const knowledgeResult = await this.loadKnowledgeContext(message, run.context.hostId)
+      if (knowledgeResult.context) {
+        enhancedMessage = knowledgeResult.context + '\n\n' + enhancedMessage
+      }
+    }
+
     if (run.context.contextHint?.trim()) {
       enhancedMessage = run.context.contextHint.trim() + '\n' + enhancedMessage
     }
-    // proactiveContext：IM 路径由 context 直传，桌面路径从 proactive-store 补充
     const proactiveCtx = run.context.proactiveContext
       || (this._agentId ? consumeProactiveContext(this._agentId) : undefined)
     if (proactiveCtx?.trim()) {
@@ -1201,7 +1256,6 @@ export abstract class Agent {
     if (run.context.documentContext) {
       enhancedMessage = enhancedMessage + '\n\n' + run.context.documentContext
     }
-    // 如果有用户上传的图片，附带 images 字段并追加提示
     if (run.context.images && run.context.images.length > 0) {
       const imageCount = run.context.images.length
       const totalSize = run.context.images.reduce((sum, img) => sum + img.length, 0)
@@ -1212,10 +1266,7 @@ export abstract class Agent {
     if (run.context.images && run.context.images.length > 0) {
       userMsg.images = run.context.images
     }
-    run.messages.push(userMsg)
-    
-    // 记录到完整对话日志（taskMessageLog 的第一条）
-    run.taskMessageLog.push({ ...userMsg })
+    return userMsg
   }
   
   /**

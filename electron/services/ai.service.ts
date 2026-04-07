@@ -215,6 +215,8 @@ export interface AiMessage {
   tool_call_id?: string  // 用于 tool 角色的消息
   tool_calls?: ToolCall[]  // 用于 assistant 角色的工具调用
   reasoning_content?: string  // 用于 think 模型的思考内容（DeepSeek-R1 等）
+  /** @internal Anthropic prompt cache: 标记此消息为缓存断点（跨任务复用的消息边界） */
+  _cacheBreakpoint?: boolean
 }
 
 interface ToolParameterSchema {
@@ -381,10 +383,9 @@ function formatMessageForApi(msg: AiMessage, stripImages = false): Record<string
   }
   // vLLM 等推理引擎拒绝空 content，纯 assistant 文本消息也需保护
   const content = msg.content || (msg.role === 'assistant' ? '[no response]' : ' ')
-  return {
-    role: msg.role,
-    content
-  }
+  const result: Record<string, unknown> = { role: msg.role, content }
+  if (msg._cacheBreakpoint) result._cacheBreakpoint = true
+  return result
 }
 
 /**
@@ -519,7 +520,12 @@ function convertToAnthropicBody(body: Record<string, unknown>): Record<string, u
           blocks.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input })
         }
       }
-      if (blocks.length === 1 && blocks[0].type === 'text') {
+      // 缓存断点 3/4：跨任务消息复用边界（前序任务的最后一条 assistant 消息）
+      if (msg._cacheBreakpoint) {
+        if (blocks.length === 0) blocks.push({ type: 'text', text: '' })
+        blocks[blocks.length - 1].cache_control = { type: 'ephemeral' }
+        messages.push({ role: 'assistant', content: blocks })
+      } else if (blocks.length === 1 && blocks[0].type === 'text') {
         messages.push({ role: 'assistant', content: blocks[0].text })
       } else if (blocks.length > 0) {
         messages.push({ role: 'assistant', content: blocks })
