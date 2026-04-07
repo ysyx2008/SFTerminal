@@ -97,14 +97,18 @@ export function useTts(): TtsController {
 
   let audioContext: AudioContext | null = null
   let pendingBuffer = ''
-  let playbackQueue: Array<{ audio: ArrayBuffer; format: string }> = []
   let isPlaying = false
   let stopped = false
   let activeSynthesisCount = 0
   let generation = 0
+  let lastRawLength = 0
+  const synthesizedSentences = new Set<string>()
 
   const MAX_CONCURRENT_SYNTHESIS = 3
-  const synthesisQueue: string[] = []
+  let nextSynthesisIdx = 0
+  let nextPlaybackIdx = 0
+  const readyAudio = new Map<number, { audio: ArrayBuffer; format: string } | null>()
+  const synthesisWaitQueue: Array<{ sentence: string; index: number }> = []
 
   function getAudioContext(): AudioContext {
     if (!audioContext || audioContext.state === 'closed') {
@@ -116,59 +120,70 @@ export function useTts(): TtsController {
     return audioContext
   }
 
-  async function enqueueSynthesis(sentence: string): Promise<void> {
+  function enqueueSynthesis(sentence: string): void {
     if (stopped || !sentence.trim()) return
+    const index = nextSynthesisIdx++
     if (activeSynthesisCount < MAX_CONCURRENT_SYNTHESIS) {
-      doSynthesis(sentence)
+      doSynthesis(sentence, index)
     } else {
-      synthesisQueue.push(sentence)
+      synthesisWaitQueue.push({ sentence, index })
     }
   }
 
-  async function doSynthesis(sentence: string): Promise<void> {
+  async function doSynthesis(sentence: string, index: number): Promise<void> {
     const gen = generation
     activeSynthesisCount++
     try {
       const result = await window.electronAPI.tts.synthesize(sentence)
       if (gen !== generation) return
       if (result.success && result.audio) {
-        playbackQueue.push({ audio: result.audio, format: result.format || 'mp3' })
-        drainQueue()
+        readyAudio.set(index, { audio: result.audio, format: result.format || 'mp3' })
+      } else {
+        readyAudio.set(index, null)
       }
+      drainQueue()
     } catch (err) {
       if (gen !== generation) return
       console.warn('[useTts] synthesis failed:', err)
+      readyAudio.set(index, null)
+      drainQueue()
     } finally {
       if (gen !== generation) return
       activeSynthesisCount--
-      if (synthesisQueue.length > 0 && !stopped) {
-        const next = synthesisQueue.shift()!
-        doSynthesis(next)
+      if (synthesisWaitQueue.length > 0 && !stopped) {
+        const next = synthesisWaitQueue.shift()!
+        doSynthesis(next.sentence, next.index)
       }
-      if (activeSynthesisCount === 0 && playbackQueue.length === 0 && !isPlaying) {
+      if (activeSynthesisCount === 0 && readyAudio.size === 0 && !isPlaying) {
         isSpeaking.value = false
       }
     }
   }
 
   async function drainQueue(): Promise<void> {
-    if (isPlaying || playbackQueue.length === 0 || stopped) return
+    if (isPlaying || stopped) return
+    if (!readyAudio.has(nextPlaybackIdx)) return
     isPlaying = true
     isSpeaking.value = true
 
-    while (playbackQueue.length > 0 && !stopped) {
-      const item = playbackQueue.shift()!
-      try {
-        const ctx = getAudioContext()
-        const audioBuffer = await ctx.decodeAudioData(item.audio.slice(0))
-        await playAudioBuffer(ctx, audioBuffer)
-      } catch (err) {
-        console.warn('[useTts] playback failed:', err)
+    while (readyAudio.has(nextPlaybackIdx) && !stopped) {
+      const item = readyAudio.get(nextPlaybackIdx)
+      readyAudio.delete(nextPlaybackIdx)
+      nextPlaybackIdx++
+
+      if (item?.audio) {
+        try {
+          const ctx = getAudioContext()
+          const audioBuffer = await ctx.decodeAudioData(item.audio.slice(0))
+          await playAudioBuffer(ctx, audioBuffer)
+        } catch (err) {
+          console.warn('[useTts] playback failed:', err)
+        }
       }
     }
 
     isPlaying = false
-    if (activeSynthesisCount === 0) {
+    if (activeSynthesisCount === 0 && readyAudio.size === 0) {
       isSpeaking.value = false
     }
   }
@@ -184,16 +199,21 @@ export function useTts(): TtsController {
     })
   }
 
-  let currentStepProcessed = 0
-
-  function startNewTask(): void {
-    generation++
-    playbackQueue = []
-    synthesisQueue.length = 0
+  function resetSynthesisState(): void {
+    readyAudio.clear()
+    synthesisWaitQueue.length = 0
+    nextSynthesisIdx = 0
+    nextPlaybackIdx = 0
     activeSynthesisCount = 0
     isPlaying = false
     pendingBuffer = ''
-    currentStepProcessed = 0
+    lastRawLength = 0
+    synthesizedSentences.clear()
+  }
+
+  function startNewTask(): void {
+    generation++
+    resetSynthesisState()
 
     if (audioContext && audioContext.state !== 'closed') {
       audioContext.close().catch(() => {})
@@ -206,56 +226,44 @@ export function useTts(): TtsController {
   function feedContent(fullContent: string): void {
     if (!isEnabled.value || stopped) return
 
+    // 原始内容变短 → 新的 message step 开始，重置原始长度追踪
+    if (fullContent.length < lastRawLength) {
+      lastRawLength = 0
+    }
+    // 原始内容未增长 → 无新内容，跳过
+    if (fullContent.length <= lastRawLength) return
+    lastRawLength = fullContent.length
+
     const stripped = stripMarkdown(fullContent)
+    const allSentences = splitSentences(stripped)
+    if (allSentences.length === 0) return
 
-    if (stripped.length < currentStepProcessed) {
-      // stripped 比已处理长度短：说明是新的 message step（不是同一 step 的更新）
-      // 重置计数器从头处理，但不中断已有播放
-      currentStepProcessed = 0
-      pendingBuffer = ''
-    }
-    if (stripped.length <= currentStepProcessed) return
+    const endsWithBoundary = /[。！？.!?\n]\s*$/.test(stripped)
+    const completeSentences = endsWithBoundary ? allSentences : allSentences.slice(0, -1)
+    pendingBuffer = endsWithBoundary ? '' : allSentences[allSentences.length - 1]
 
-    const newText = stripped.slice(currentStepProcessed)
-    const combined = pendingBuffer + newText
-
-    const sentences = splitSentences(combined)
-    if (sentences.length === 0) {
-      pendingBuffer = combined
-      currentStepProcessed = stripped.length
-      return
-    }
-
-    const endsWithBoundary = /[。！？.!?\n]\s*$/.test(combined)
-
-    const toSynthesize = endsWithBoundary ? sentences : sentences.slice(0, -1)
-    pendingBuffer = endsWithBoundary ? '' : sentences[sentences.length - 1]
-
-    currentStepProcessed = stripped.length
-
-    for (const sentence of toSynthesize) {
-      enqueueSynthesis(sentence)
+    for (const sentence of completeSentences) {
+      if (!synthesizedSentences.has(sentence)) {
+        synthesizedSentences.add(sentence)
+        enqueueSynthesis(sentence)
+      }
     }
   }
 
   function flush(): void {
     if (!isEnabled.value || stopped) return
-    if (pendingBuffer.trim().length >= MIN_SENTENCE_LENGTH) {
-      enqueueSynthesis(pendingBuffer.trim())
+    const text = pendingBuffer.trim()
+    if (text.length >= MIN_SENTENCE_LENGTH && !synthesizedSentences.has(text)) {
+      synthesizedSentences.add(text)
+      enqueueSynthesis(text)
     }
     pendingBuffer = ''
-    // 不重置 currentStepProcessed：防止同一 message step 被重新发送时重复处理
   }
 
   function stop(): void {
     stopped = true
     generation++
-    playbackQueue = []
-    synthesisQueue.length = 0
-    pendingBuffer = ''
-    currentStepProcessed = 0
-    activeSynthesisCount = 0
-    isPlaying = false
+    resetSynthesisState()
     isSpeaking.value = false
 
     if (audioContext && audioContext.state !== 'closed') {
@@ -269,11 +277,7 @@ export function useTts(): TtsController {
   function reset(): void {
     stopped = false
     generation++
-    currentStepProcessed = 0
-    pendingBuffer = ''
-    playbackQueue = []
-    isPlaying = false
-    activeSynthesisCount = 0
+    resetSynthesisState()
   }
 
   function toggle(): void {

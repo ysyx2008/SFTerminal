@@ -798,12 +798,11 @@ export function useAgentMode(
         canvasStore.handleAgentStep(tabId, data.step)
       }
 
-      // TTS: 流式 message 步骤喂给语音合成
-      if (tts.isEnabled.value && configStore.ttsSettings.enabled) {
+      // TTS: 流式 message 步骤喂给语音合成（远程会话不播报）
+      if (tts.isEnabled.value && configStore.ttsSettings.enabled && !currentTab.value?.isRemote) {
         if (data.step.type === 'message' && data.step.content) {
           tts.feedContent(data.step.content)
         } else {
-          // 非 message step（工具调用、final_result 等）：flush 缓冲区，确保上一段 message 朗读完整
           tts.flush()
         }
       }
@@ -820,6 +819,26 @@ export function useAgentMode(
       if (!isEventForThisTab(eventData.agentId, eventData.ptyId)) return
       
       terminalStore.setAgentPendingConfirm(currentTabId.value, data)
+
+      // TTS 播报确认请求
+      if (tts.isEnabled.value && configStore.ttsSettings.enabled && !currentTab.value?.isRemote) {
+        tts.flush()
+        const args = eventData.toolArgs
+        const risk = eventData.riskLevel === 'dangerous' ? '注意，这是高风险操作。'
+          : eventData.riskLevel === 'moderate' ? '这是中等风险操作。'
+          : ''
+        let action = ''
+        if (args.command) {
+          action = `我需要执行 ${args.command}`
+        } else if (args.path) {
+          action = `我需要操作文件 ${args.path}`
+        } else {
+          action = '接下来的操作'
+        }
+        tts.feedContent(`${risk}${action}，请确认。`)
+        tts.flush()
+      }
+
       // 需要确认时强制滚动，确保用户看到确认框
       // 多次滚动：DynamicScroller 测量实际高度需要时间，首次滚动可能基于估算值
       scrollToBottom()
