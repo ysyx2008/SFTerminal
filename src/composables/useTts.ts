@@ -38,8 +38,8 @@ function stripMarkdown(text: string): string {
   let result = text
   // 移除代码块（多行）
   result = result.replace(/```[\s\S]*?```/g, '')
-  // 移除行内代码
-  result = result.replace(/`[^`]*`/g, '')
+  // 行内代码：保留内容，去掉反引号
+  result = result.replace(/`([^`]*)`/g, '$1')
   // 移除图片
   result = result.replace(/!\[.*?\]\(.*?\)/g, '')
   // 移除链接保留文字
