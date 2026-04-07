@@ -535,6 +535,11 @@ export function useAgentMode(
     const startTime = Date.now()
     inputText.value = ''
 
+    // 新任务开始，重置 TTS（会停止旧播报）
+    if (tts.isEnabled.value) {
+      tts.startNewTask()
+    }
+
     // 获取 Agent 上下文
     const context = isAssistantMode
       ? { terminalOutput: [] as string[], systemInfo: getLocalSystemInfo() } as any
@@ -797,7 +802,8 @@ export function useAgentMode(
       if (tts.isEnabled.value && configStore.ttsSettings.enabled) {
         if (data.step.type === 'message' && data.step.content) {
           tts.feedContent(data.step.content)
-        } else if (data.step.type === 'final_result') {
+        } else {
+          // 非 message step（工具调用、final_result 等）：flush 缓冲区，确保上一段 message 朗读完整
           tts.flush()
         }
       }

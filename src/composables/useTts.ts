@@ -16,6 +16,8 @@ export interface TtsController {
   flush(): void
   /** 停止播放并清空队列 */
   stop(): void
+  /** 新任务开始：等当前播放完毕后重置状态，为新内容做准备 */
+  startNewTask(): void
   /** 是否正在朗读 */
   isSpeaking: ReturnType<typeof ref<boolean>>
   /** 是否已启用自动朗读 */
@@ -46,9 +48,12 @@ function stripMarkdown(text: string): string {
   result = result.replace(/<\/?(?:details|summary|blockquote|strong|em|b|i|hr)[^>]*>/g, '')
   // 移除 markdown 标题标记
   result = result.replace(/^#{1,6}\s+/gm, '')
-  // 移除 markdown 加粗/斜体
+  // 移除 markdown 加粗/斜体（成对）
   result = result.replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1')
   result = result.replace(/_{1,3}([^_]+)_{1,3}/g, '$1')
+  // 移除流式输出中残留的未闭合 **（粗体标记）
+  result = result.replace(/\*{2}/g, '')
+  result = result.replace(/(?<![a-zA-Z0-9])_{2}|_{2}(?![a-zA-Z0-9])/g, '')
   // 移除水平线
   result = result.replace(/^[-*_]{3,}\s*$/gm, '')
   // 移除列表标记
@@ -91,7 +96,6 @@ export function useTts(): TtsController {
   const isEnabled = ref(false)
 
   let audioContext: AudioContext | null = null
-  let processedLength = 0
   let pendingBuffer = ''
   let playbackQueue: Array<{ audio: ArrayBuffer; format: string }> = []
   let isPlaying = false
@@ -180,20 +184,23 @@ export function useTts(): TtsController {
     })
   }
 
-  function interruptForNewContent(): void {
+  let currentStepProcessed = 0
+
+  function startNewTask(): void {
     generation++
     playbackQueue = []
     synthesisQueue.length = 0
     activeSynthesisCount = 0
     isPlaying = false
     pendingBuffer = ''
-    processedLength = 0
+    currentStepProcessed = 0
 
     if (audioContext && audioContext.state !== 'closed') {
       audioContext.close().catch(() => {})
       audioContext = null
     }
     window.electronAPI.tts.stop().catch(() => {})
+    isSpeaking.value = false
   }
 
   function feedContent(fullContent: string): void {
@@ -201,30 +208,30 @@ export function useTts(): TtsController {
 
     const stripped = stripMarkdown(fullContent)
 
-    if (processedLength > 0 && stripped.length < processedLength) {
-      interruptForNewContent()
+    if (stripped.length < currentStepProcessed) {
+      // stripped 比已处理长度短：说明是新的 message step（不是同一 step 的更新）
+      // 重置计数器从头处理，但不中断已有播放
+      currentStepProcessed = 0
+      pendingBuffer = ''
     }
+    if (stripped.length <= currentStepProcessed) return
 
-    if (stripped.length <= processedLength) return
-
-    const newText = stripped.slice(processedLength)
+    const newText = stripped.slice(currentStepProcessed)
     const combined = pendingBuffer + newText
 
     const sentences = splitSentences(combined)
     if (sentences.length === 0) {
       pendingBuffer = combined
-      processedLength = stripped.length
+      currentStepProcessed = stripped.length
       return
     }
 
-    // 最后一段可能还没结束，留在 buffer 里
-    const lastSentence = sentences[sentences.length - 1]
     const endsWithBoundary = /[。！？.!?\n]\s*$/.test(combined)
 
     const toSynthesize = endsWithBoundary ? sentences : sentences.slice(0, -1)
-    pendingBuffer = endsWithBoundary ? '' : lastSentence
+    pendingBuffer = endsWithBoundary ? '' : sentences[sentences.length - 1]
 
-    processedLength = stripped.length
+    currentStepProcessed = stripped.length
 
     for (const sentence of toSynthesize) {
       enqueueSynthesis(sentence)
@@ -237,6 +244,7 @@ export function useTts(): TtsController {
       enqueueSynthesis(pendingBuffer.trim())
     }
     pendingBuffer = ''
+    // 不重置 currentStepProcessed：防止同一 message step 被重新发送时重复处理
   }
 
   function stop(): void {
@@ -245,7 +253,7 @@ export function useTts(): TtsController {
     playbackQueue = []
     synthesisQueue.length = 0
     pendingBuffer = ''
-    processedLength = 0
+    currentStepProcessed = 0
     activeSynthesisCount = 0
     isPlaying = false
     isSpeaking.value = false
@@ -261,7 +269,7 @@ export function useTts(): TtsController {
   function reset(): void {
     stopped = false
     generation++
-    processedLength = 0
+    currentStepProcessed = 0
     pendingBuffer = ''
     playbackQueue = []
     isPlaying = false
@@ -288,6 +296,7 @@ export function useTts(): TtsController {
     },
     flush,
     stop,
+    startNewTask,
     isSpeaking,
     isEnabled,
     toggle,
