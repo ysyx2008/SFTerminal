@@ -8,6 +8,7 @@
  * - 串行播放：用 AudioContext 按顺序播放已合成的音频
  */
 import { ref, onUnmounted } from 'vue'
+import { marked } from 'marked'
 
 export interface TtsController {
   /** 喂入流式增量文本（每次传完整累积内容） */
@@ -32,38 +33,42 @@ const MAX_SENTENCE_LENGTH = 500
 const MIN_SENTENCE_LENGTH = 2
 
 /**
- * 从 markdown 文本中提取可朗读的纯文本
+ * 复用临时 DOM 元素，避免每次调用创建/销毁
+ */
+let _stripDiv: HTMLDivElement | null = null
+function getStripDiv(): HTMLDivElement {
+  if (!_stripDiv) {
+    _stripDiv = document.createElement('div')
+    _stripDiv.style.display = 'none'
+  }
+  return _stripDiv
+}
+
+/**
+ * 从 markdown 文本中提取可朗读的纯文本。
+ * 利用 marked 渲染为 HTML 后通过 DOM 取 innerText，
+ * 天然处理折叠块（details）、代码块、格式标记等。
  */
 function stripMarkdown(text: string): string {
-  let result = text
-  // 移除代码块（多行）
-  result = result.replace(/```[\s\S]*?```/g, '')
-  // 行内代码：保留内容，去掉反引号
-  result = result.replace(/`([^`]*)`/g, '$1')
-  // 移除图片
-  result = result.replace(/!\[.*?\]\(.*?\)/g, '')
-  // 移除链接保留文字
-  result = result.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-  // 移除 <details> 块整体（包含思考过程等折叠内容）
-  result = result.replace(/<details[\s\S]*?<\/details>/g, '')
-  // 移除残留 HTML 标签
-  result = result.replace(/<\/?(?:summary|blockquote|strong|em|b|i|hr|p|div|span|br)[^>]*>/g, '')
-  // 移除 markdown 标题标记
-  result = result.replace(/^#{1,6}\s+/gm, '')
-  // 移除 markdown 加粗/斜体（成对）
-  result = result.replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1')
-  result = result.replace(/_{1,3}([^_]+)_{1,3}/g, '$1')
-  // 移除流式输出中残留的未闭合 **（粗体标记）
-  result = result.replace(/\*{2}/g, '')
-  result = result.replace(/(?<![a-zA-Z0-9])_{2}|_{2}(?![a-zA-Z0-9])/g, '')
-  // 移除水平线
-  result = result.replace(/^[-*_]{3,}\s*$/gm, '')
-  // 移除列表标记
-  result = result.replace(/^[\s]*[-*+]\s+/gm, '')
-  result = result.replace(/^[\s]*\d+\.\s+/gm, '')
-  // 合并多余空行
-  result = result.replace(/\n{3,}/g, '\n\n')
-  return result.trim()
+  // 流式中未闭合的 <details>（思考过程）需先移除再交给 marked
+  const cleaned = text.replace(/<details[\s\S]*?(<\/details>|$)/g, '')
+
+  let html: string
+  try {
+    html = marked.parse(cleaned, { async: false }) as string
+  } catch {
+    return cleaned.replace(/<[^>]*>/g, '').trim()
+  }
+
+  const div = getStripDiv()
+  div.innerHTML = html
+
+  // 移除代码块和折叠块（双保险）
+  div.querySelectorAll('pre, details').forEach(el => el.remove())
+
+  const result = (div.innerText || div.textContent || '').trim()
+  div.innerHTML = ''
+  return result
 }
 
 /**
