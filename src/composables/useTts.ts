@@ -155,14 +155,15 @@ export function useTts(): TtsController {
       readyAudio.set(index, null)
       drainQueue()
     } finally {
-      if (gen !== generation) return
-      activeSynthesisCount--
-      if (synthesisWaitQueue.length > 0 && !stopped) {
-        const next = synthesisWaitQueue.shift()!
-        doSynthesis(next.sentence, next.index)
-      }
-      if (activeSynthesisCount === 0 && readyAudio.size === 0 && !isPlaying) {
-        isSpeaking.value = false
+      if (gen === generation) {
+        activeSynthesisCount--
+        if (synthesisWaitQueue.length > 0 && !stopped) {
+          const next = synthesisWaitQueue.shift()!
+          doSynthesis(next.sentence, next.index)
+        }
+        if (activeSynthesisCount === 0 && readyAudio.size === 0 && !isPlaying) {
+          isSpeaking.value = false
+        }
       }
     }
   }

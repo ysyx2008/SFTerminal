@@ -2,7 +2,27 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.30.0 (2026-04-06) (Latest)
+## v10.31.0 (2026-04-13) (Latest)
+
+Introduces text-to-speech (TTS) for Agent responses with multiple provider support, along with improved Agent execution stability and cross-task context reuse.
+
+### New Features
+- 🔊 **Text-to-Speech (TTS)**: Agent responses can now be read aloud, with OpenAI, Volcengine, and Alibaba DashScope providers, playback speed control, play/stop buttons, automatic skipping of code blocks and thinking process, and remote session bypass
+
+### Improvements
+- ⚡ **Cross-Task Prompt Cache Reuse**: New tasks within the same session reuse the message prefix from prior tasks, reducing redundant token consumption
+
+### Bug Fixes
+- Fixed desktop assistant Agent incorrectly using `talk_to_user` causing persistent IM notifications
+- Fixed knowledge base startup triggering an infinite full rebuild loop
+- Fixed `possibly_stuck` commands being misidentified as hung and interrupted
+- Fixed plan continuing to execute after being paused
+- Fixed command timeout now using runtime state instead of static list
+- Fixed streaming pre-executed tool results being displayed twice
+- Disabled `dispatch_agents` in SSH mode (sub-agents only support local environments)
+- Fixed IM proactive notification fallback info not being exposed on failure
+
+## v10.30.0 (2026-04-06)
 
 Significantly improves task execution speed with parallel sub-agent dispatching and streaming tool parallel execution, drastically reducing response latency for complex tasks.
 

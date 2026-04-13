@@ -1745,7 +1745,7 @@ watch(() => props.visible, (visible) => {
         :handle-record-click="handleRecordClick"
         :stop-generation="stopGeneration"
         :abort-agent="abortAgent"
-        :tts-is-speaking="ttsIsSpeaking"
+        :tts-is-speaking="ttsIsSpeaking ?? false"
         :tts-stop="ttsStop"
         :submit-message="handleComposerSubmit"
         :submit-empty-message="handleComposerEmptySubmit"
