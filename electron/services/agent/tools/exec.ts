@@ -18,6 +18,18 @@ const DEFAULT_TIMEOUT = 60_000
 const MAX_TIMEOUT = 600_000
 const MAX_BUFFER = 10 * 1024 * 1024  // 10MB
 
+/**
+ * Windows 下在命令前注入 UTF-8 代码页设置，防止中文等非 ASCII 输出乱码。
+ * cmd.exe 用 chcp，PowerShell 用 .NET OutputEncoding。
+ */
+function wrapWindowsCommandForUtf8(command: string, shell: string): string {
+  const s = shell.toLowerCase()
+  if (s.includes('powershell') || s.includes('pwsh')) {
+    return `$OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${command}`
+  }
+  return `chcp 65001 >nul && ${command}`
+}
+
 export async function executeCommandDirect(
   args: Record<string, unknown>,
   toolCallId: string,
@@ -162,7 +174,8 @@ export async function executeCommandDirect(
     const shell = getDefaultShell()
     const opts = { cwd, timeout, maxBuffer: MAX_BUFFER }
     if (process.platform === 'win32') {
-      exec(command, { ...opts, shell }, execCallback)
+      const utf8Command = wrapWindowsCommandForUtf8(command, shell)
+      exec(utf8Command, { ...opts, shell }, execCallback)
     } else {
       execFile(shell, ['-l', '-c', command], opts, execCallback)
     }
