@@ -3009,6 +3009,14 @@ watch(() => props.visible, (visible) => {
   cursor: text;
 }
 
+.message.user .message-content :deep(a),
+.message.user .message-content :deep(.file-path-link),
+.message.user .message-content :deep(code.file-path-link) {
+  color: inherit;
+  text-decoration: underline;
+  border-bottom: none;
+}
+
 .message.assistant .message-content {
   background: var(--bg-surface);
   color: var(--text-primary);
@@ -4012,7 +4020,15 @@ watch(() => props.visible, (visible) => {
 }
 
 .agent-step-inline.user_supplement .step-icon {
-  display: none;  /* 隐藏图标，让消息看起来更自然 */
+  display: none;
+}
+
+.agent-step-inline.user_supplement .step-content :deep(a),
+.agent-step-inline.user_supplement .step-content :deep(.file-path-link),
+.agent-step-inline.user_supplement .step-content :deep(code.file-path-link) {
+  color: inherit;
+  text-decoration: underline;
+  border-bottom: none;
 }
 
 .agent-step-inline.waiting {
