@@ -348,6 +348,11 @@ export const useConfigStore = defineStore('config', () => {
     ...{ enabled: false, providerId: 'openai-compat', preset: 'openai', apiUrl: 'https://api.openai.com/v1/audio/speech', apiKey: '', model: 'tts-1', voice: 'alloy', speed: 1.0, autoSpeak: false },
   })
 
+  // Web 搜索设置
+  const webSearchSettings = ref<import('@shared/types').WebSearchSettings>({
+    enabled: false, providerId: 'bocha', apiKeys: {},
+  })
+
   // 计算属性
   const activeAiProfile = computed(() =>
     aiProfiles.value.find(p => p.id === activeAiProfileId.value)
@@ -366,7 +371,7 @@ export const useConfigStore = defineStore('config', () => {
         completed, onboarded, lang, sponsorStatus,
         sortBy, defaultOrder, rules, personalityText,
         savedAgentName, savedAgentAvatar, savedLogLevel, savedTerminalSettings,
-        accounts, savedShortcuts, savedAutoVision, calAccounts, savedTtsSettings,
+        accounts, savedShortcuts, savedAutoVision, calAccounts, savedTtsSettings, savedWebSearchSettings,
       ] = await Promise.all([
         window.electronAPI.config.getAiProfiles(),
         window.electronAPI.config.getActiveAiProfile(),
@@ -393,6 +398,7 @@ export const useConfigStore = defineStore('config', () => {
         window.electronAPI.config.get('autoVisionModel') as Promise<boolean | undefined>,
         window.electronAPI.config.get('calendarAccounts') as Promise<CalendarAccount[] | undefined>,
         window.electronAPI.config.get('ttsSettings') as Promise<import('@shared/types').TtsSettings | undefined>,
+        window.electronAPI.config.get('webSearchSettings') as Promise<import('@shared/types').WebSearchSettings | undefined>,
       ])
 
       // 批量赋值
@@ -432,6 +438,9 @@ export const useConfigStore = defineStore('config', () => {
       calendarAccounts.value = calAccounts || []
       if (savedTtsSettings && typeof savedTtsSettings === 'object') {
         ttsSettings.value = { ...ttsSettings.value, ...savedTtsSettings }
+      }
+      if (savedWebSearchSettings && typeof savedWebSearchSettings === 'object') {
+        webSearchSettings.value = { ...webSearchSettings.value, ...savedWebSearchSettings }
       }
 
       // 后端同步（不阻塞主流程）
@@ -878,6 +887,13 @@ export const useConfigStore = defineStore('config', () => {
     await window.electronAPI.config.set('ttsSettings', JSON.parse(JSON.stringify(settings)))
   }
 
+  // ==================== Web 搜索 ====================
+
+  async function saveWebSearchSettings(settings: import('@shared/types').WebSearchSettings): Promise<void> {
+    webSearchSettings.value = { ...settings }
+    await window.electronAPI.webSearch.updateSettings(settings)
+  }
+
   return {
     // 状态
     aiProfiles,
@@ -954,7 +970,9 @@ export const useConfigStore = defineStore('config', () => {
     keyboardShortcuts,
     setKeyboardShortcuts,
     ttsSettings,
-    saveTtsSettings
+    saveTtsSettings,
+    webSearchSettings,
+    saveWebSearchSettings
   }
 })
 

@@ -25,6 +25,7 @@ import { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
 import { compressContext, recallCompressed, manageMemory } from './context'
 import { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, messageUser, executeMcpTool, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
 import { dispatchSubAgents } from './sub-agent'
+import { executeWebSearch } from './web-search'
 
 // 重新导出类型
 export type { ToolExecutorConfig, AgentConfig, ToolResult, ErrorCategory } from './types'
@@ -40,6 +41,7 @@ export { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
 export { compressContext, recallCompressed, manageMemory } from './context'
 export { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, messageUser, executeMcpTool, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
 export { dispatchSubAgents, getSubAgentTools } from './sub-agent'
+export { executeWebSearch } from './web-search'
 
 // 导出工具函数
 export {
@@ -196,6 +198,9 @@ export async function executeTool(
 
     case 'dispatch_agents':
       return dispatchSubAgents(args, config, executor, toolCall.id)
+
+    case 'web_search':
+      return executeWebSearch(args, executor)
 
     case 'send_to_chat':
       return sendToChat(args, executor)

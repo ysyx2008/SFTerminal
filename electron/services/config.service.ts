@@ -3,8 +3,8 @@ import { safeStorage } from 'electron'
 import type { ExecutionMode } from '@shared/types'
 import type { KnowledgeSettings } from './knowledge/types'
 import { DEFAULT_KNOWLEDGE_SETTINGS } from './knowledge/types'
-import type { TtsSettings } from '@shared/types'
-import { DEFAULT_TTS_SETTINGS } from '@shared/types'
+import type { TtsSettings, WebSearchSettings } from '@shared/types'
+import { DEFAULT_TTS_SETTINGS, DEFAULT_WEB_SEARCH_SETTINGS } from '@shared/types'
 import { createLogger, type LogLevel } from '../utils/logger'
 import { normalizeTerminalSettings, normalizeKeyboardShortcuts } from '../utils/normalize'
 
@@ -240,6 +240,8 @@ interface StoreSchema {
   pluginsEntries: Record<string, { enabled: boolean; config?: Record<string, unknown> }>
   // TTS 语音合成
   ttsSettings: TtsSettings
+  // Web 搜索
+  webSearchSettings: WebSearchSettings
 }
 
 const defaultConfig: StoreSchema = {
@@ -334,6 +336,8 @@ const defaultConfig: StoreSchema = {
   pluginsEntries: {},
   // TTS 语音合成
   ttsSettings: DEFAULT_TTS_SETTINGS,
+  // Web 搜索
+  webSearchSettings: DEFAULT_WEB_SEARCH_SETTINGS,
 }
 
 export class ConfigService {

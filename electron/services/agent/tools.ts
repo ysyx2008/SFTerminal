@@ -7,6 +7,7 @@ import type { PluginRegistry } from '../plugin/registry'
 import { getSkillsSummary } from './skills/registry'
 import { getUserSkillService } from '../user-skill.service'
 import { getConfigService } from '../config.service'
+import { isConfigured as isWebSearchConfigured } from '../web-search/index'
 
 // 重新导出 ToolDefinition 类型供技能模块使用
 export type { ToolDefinition }
@@ -105,6 +106,34 @@ ${skillsList}`,
       }
     }
   }
+}
+
+/**
+ * 动态构建 web_search 工具定义（仅在已配置时返回）
+ */
+function buildWebSearchTool(): ToolDefinition[] {
+  if (!isWebSearchConfigured()) return []
+  return [{
+    type: 'function',
+    function: {
+      name: 'web_search',
+      description: `搜索互联网获取实时信息。需要查找最新资料、验证事实、获取在线内容时使用。返回搜索结果列表（标题、URL、摘要）。`,
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: '搜索查询词'
+          },
+          max_results: {
+            type: 'number',
+            description: '最大结果数（默认 5，最大 10）'
+          }
+        },
+        required: ['query']
+      }
+    }
+  }]
 }
 
 /**
@@ -495,6 +524,8 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         }
       }
     },
+    // ==================== Web 搜索 ====================
+    ...buildWebSearchTool(),
     // ==================== 并行子 Agent ====================
     {
       type: 'function',

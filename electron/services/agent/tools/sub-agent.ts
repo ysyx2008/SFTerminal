@@ -47,7 +47,7 @@ const SUB_AGENT_TYPES: Record<SubAgentTypeName, SubAgentType> = {
   explore: {
     name: 'explore',
     description: '只读分析（默认）：读取文件、搜索、执行命令，不修改任何内容',
-    tools: new Set(['read_file', 'file_search', 'exec', 'search_knowledge', 'get_knowledge_doc']),
+    tools: new Set(['read_file', 'file_search', 'exec', 'search_knowledge', 'get_knowledge_doc', 'web_search']),
     systemPromptPrefix: '你是一个专注**分析与调研**的子任务执行器。\n- **只读模式**：不可修改任何文件或系统状态，exec 仅用于读取类命令（grep/find/cat/ls/git log 等）',
   },
   edit: {
@@ -59,7 +59,7 @@ const SUB_AGENT_TYPES: Record<SubAgentTypeName, SubAgentType> = {
   research: {
     name: 'research',
     description: '知识检索：侧重知识库搜索和命令分析，输出结构化归纳',
-    tools: new Set(['read_file', 'file_search', 'exec', 'search_knowledge', 'get_knowledge_doc']),
+    tools: new Set(['read_file', 'file_search', 'exec', 'search_knowledge', 'get_knowledge_doc', 'web_search']),
     systemPromptPrefix: '你是一个专注**知识检索与归纳分析**的子任务执行器。\n- 优先使用知识库搜索获取已有信息\n- 输出要求结构化、条理清晰，便于父 Agent 整合',
   },
 }

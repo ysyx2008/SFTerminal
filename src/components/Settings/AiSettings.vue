@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Pencil, Trash2, X, ExternalLink, Eye } from 'lucide-vue-next'
 import { useConfigStore, type AiProfile, type AiModelType, type ApiFormat } from '../../stores/config'
+import { WEB_SEARCH_PROVIDERS, type WebSearchProviderId } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
 
 const { t } = useI18n()
@@ -466,6 +467,66 @@ async function testTts() {
   }
 }
 
+// ==================== Web 搜索 ====================
+
+const webSearchEnabled = ref(false)
+const webSearchProviderId = ref<WebSearchProviderId>('bocha')
+const webSearchApiKeys = ref<Partial<Record<WebSearchProviderId, string>>>({})
+const webSearchSaved = ref(false)
+let webSearchInitializing = true
+
+const webSearchProviderList = WEB_SEARCH_PROVIDERS
+const webSearchSelectedProvider = computed(() =>
+  WEB_SEARCH_PROVIDERS.find(p => p.id === webSearchProviderId.value)
+)
+
+const webSearchApiKey = computed({
+  get: () => webSearchApiKeys.value[webSearchProviderId.value] || '',
+  set: (v: string) => { webSearchApiKeys.value = { ...webSearchApiKeys.value, [webSearchProviderId.value]: v } },
+})
+
+const webSearchKeyUrls: Record<string, string> = {
+  bocha: 'https://open.bochaai.com/api-keys',
+  bing: 'https://portal.azure.com/#create/Microsoft.BingSearch',
+  jina: 'https://jina.ai/reader',
+  tavily: 'https://app.tavily.com/home',
+}
+const webSearchKeyUrl = computed(() => webSearchKeyUrls[webSearchProviderId.value] || '')
+
+const webSearchDirty = computed(() => {
+  const s = configStore.webSearchSettings
+  return webSearchProviderId.value !== s.providerId
+    || JSON.stringify(webSearchApiKeys.value) !== JSON.stringify(s.apiKeys || {})
+})
+
+onMounted(() => {
+  const s = configStore.webSearchSettings
+  webSearchEnabled.value = s.enabled
+  webSearchProviderId.value = s.providerId
+  webSearchApiKeys.value = { ...(s.apiKeys || {}) }
+  nextTick(() => { webSearchInitializing = false })
+})
+
+watch(webSearchEnabled, () => {
+  if (webSearchInitializing) return
+  saveWebSearchConfig()
+})
+
+async function saveWebSearchConfig() {
+  await configStore.saveWebSearchSettings({
+    enabled: webSearchEnabled.value,
+    providerId: webSearchProviderId.value,
+    apiKeys: { ...webSearchApiKeys.value },
+  })
+  webSearchSaved.value = true
+  setTimeout(() => { webSearchSaved.value = false }, 2000)
+}
+
+function openWebSearchKeyUrl() {
+  const url = webSearchKeyUrl.value
+  if (url) window.open(url, '_blank')
+}
+
 </script>
 
 <template>
@@ -773,6 +834,63 @@ async function testTts() {
               <span v-if="ttsDirty" class="form-hint tts-dirty-hint">{{ t('settings.tts.unsaved') }}</span>
             </div>
             <div v-if="ttsTestError" class="tts-error-msg">{{ ttsTestError }}</div>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- Web 搜索 -->
+    <div v-if="!isSteamBuild" class="settings-section">
+      <div class="section-header">
+        <h4>{{ t('settings.webSearch.title') }}</h4>
+        <label class="toggle-switch">
+          <input
+            type="checkbox"
+            :checked="webSearchEnabled"
+            @change="webSearchEnabled = ($event.target as HTMLInputElement).checked"
+          />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p class="section-desc">{{ t('settings.webSearch.description') }}</p>
+
+      <template v-if="webSearchEnabled">
+        <div class="tts-form-fields">
+          <div class="form-group">
+            <label class="form-label">{{ t('settings.webSearch.provider') }}</label>
+            <select v-model="webSearchProviderId" class="input">
+              <option v-for="p in webSearchProviderList" :key="p.id" :value="p.id">
+                {{ p.name }}
+              </option>
+            </select>
+            <span class="form-hint">{{ webSearchSelectedProvider?.description }}</span>
+          </div>
+
+          <div v-if="webSearchSelectedProvider?.requiresApiKey" class="form-group">
+            <div class="form-label-row">
+              <label class="form-label">API Key</label>
+              <button
+                v-if="webSearchKeyUrl"
+                class="get-key-btn"
+                @click="openWebSearchKeyUrl"
+              >
+                <ExternalLink :size="12" />
+                <span>{{ t('settings.webSearch.getKey') }}</span>
+              </button>
+            </div>
+            <input v-model="webSearchApiKey" type="password" class="input" placeholder="API Key" />
+          </div>
+
+          <div class="form-group">
+            <button
+              class="btn btn-sm"
+              :class="webSearchSaved ? 'btn-success' : 'btn-save'"
+              :disabled="!webSearchDirty && !webSearchSaved"
+              @click="saveWebSearchConfig"
+            >
+              {{ webSearchSaved ? t('settings.webSearch.saved') : t('settings.webSearch.save') }}
+            </button>
+            <span v-if="webSearchDirty" class="form-hint tts-dirty-hint">{{ t('settings.webSearch.unsaved') }}</span>
           </div>
         </div>
       </template>

@@ -172,6 +172,7 @@ export default {
       skills: 'Skills',
       knowledge: 'Memory',
       tts: 'Text-to-Speech',
+      webSearch: 'Web Search',
       email: 'Email',
       calendar: 'Calendar',
       im: 'Messaging',
@@ -245,6 +246,15 @@ export default {
       save: 'Save',
       saved: 'Saved',
       unsaved: 'Unsaved changes',
+    },
+    webSearch: {
+      title: 'Web Search',
+      description: 'When enabled, AI Agent can search the web for real-time information. Choose a search engine and configure the API key.',
+      provider: 'Search Engine',
+      getKey: 'Get Key',
+      save: 'Save',
+      saved: 'Saved',
+      unsaved: 'Settings modified, please save',
     },
     gateway: {
       title: 'Web Service',

@@ -1756,6 +1756,11 @@ interface Window {
       stop: () => Promise<void>
     }
 
+    // Web 搜索
+    webSearch: {
+      updateSettings: (settings: import('@shared/types').WebSearchSettings) => Promise<void>
+    }
+
     // AI Debug 调试窗口
     aiDebugOpenWindow: () => Promise<void>
     aiDebugCloseWindow: () => Promise<void>

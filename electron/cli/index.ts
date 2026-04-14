@@ -827,6 +827,17 @@ async function agentRun(args: string[]): Promise<void> {
   const { SshService } = require('../services/ssh.service')
   const ssh = new SshService()
   
+  // Initialize web search service
+  try {
+    const webSearch = require('../services/web-search/index')
+    const webSearchSettings = config.get('webSearchSettings')
+    if (webSearchSettings) {
+      await webSearch.initWebSearch(webSearchSettings)
+    }
+  } catch (e) {
+    log.warn('Web search init failed (non-fatal):', e)
+  }
+
   const agent = new AgentService(ai, pty, hostProfile, mcp, config, ssh)
   
   // Create a local terminal for the agent
@@ -1550,6 +1561,65 @@ Examples:
 `)
 }
 
+// ==================== Web Search ====================
+
+async function webSearchTest(args: string[]): Promise<void> {
+  const query = args[0]
+  if (!query) {
+    console.error('Usage: sft websearch:test <query>')
+    process.exit(1)
+  }
+
+  const config = new ConfigService()
+  const settings = config.get('webSearchSettings')
+  console.log('Settings:', JSON.stringify(settings, null, 2))
+
+  if (!settings?.enabled) {
+    console.error('Web search is not enabled. Enable it in Settings > AI > Web Search.')
+    process.exit(1)
+  }
+
+  const apiKey = settings.apiKey
+  const providerId = settings.providerId
+  console.log(`\nProvider: ${providerId}`)
+  console.log(`API Key: ${apiKey ? apiKey.slice(0, 8) + '...' : '(empty)'}`)
+
+  // Raw fetch to see the actual response
+  console.log(`\n--- Raw API call for "${query}" ---\n`)
+
+  if (providerId === 'bocha') {
+    const resp = await fetch('https://api.bochaai.com/v1/web-search', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query, count: 3, summary: true }),
+    })
+    console.log(`Status: ${resp.status} ${resp.statusText}`)
+    const raw = await resp.text()
+    console.log(`\nResponse body:\n${raw}`)
+  } else {
+    console.log('Raw test only supports bocha. Testing through service...')
+  }
+
+  // Also test through our service layer
+  console.log('\n--- Test through WebSearchService ---\n')
+  try {
+    const webSearch = require('../services/web-search/index')
+    await webSearch.initWebSearch(settings)
+    const results = await webSearch.search(query, { maxResults: 3 })
+    console.log(`Results: ${results.length}`)
+    if (results.length > 0) {
+      printJSON(results)
+    } else {
+      console.log('No results returned from service.')
+    }
+  } catch (e: any) {
+    console.error('Service error:', e.message)
+  }
+}
+
 // ==================== Main ====================
 
 async function main(): Promise<void> {
@@ -1647,6 +1717,9 @@ async function main(): Promise<void> {
       // Document Parser
       case 'doc:parse':      await docParse(cmdArgs); break
       case 'doc:types':      await docTypes(); break
+
+      // Web Search
+      case 'websearch:test': await webSearchTest(cmdArgs); break
 
       default:
         console.error(`Unknown command: ${command}`)

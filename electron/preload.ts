@@ -2566,6 +2566,12 @@ const electronAPI = {
       ipcRenderer.invoke('tts:stop') as Promise<void>,
   },
 
+  // Web 搜索
+  webSearch: {
+    updateSettings: (settings: import('@shared/types').WebSearchSettings) =>
+      ipcRenderer.invoke('webSearch:updateSettings', settings) as Promise<void>,
+  },
+
   // 定时任务调度
   scheduler: {
     // 获取所有任务

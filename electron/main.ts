@@ -1048,6 +1048,16 @@ app.whenReady().then(async () => {
       log.error('插件系统初始化失败:', e)
     }
 
+    // 初始化 Web 搜索服务
+    try {
+      const webSearch = await import('./services/web-search/index')
+      const webSearchSettings = configService.get('webSearchSettings')
+      await webSearch.initWebSearch(webSearchSettings)
+      log.info('Web search service initialized')
+    } catch (e) {
+      log.error('Web search service initialization failed:', e)
+    }
+
     // 初始化定时任务调度服务
     try {
       schedulerService.init({
@@ -5066,5 +5076,13 @@ ipcMain.handle('tts:stop', async () => {
     const tts = await import('./services/tts')
     tts.stopSynthesis()
   } catch { /* ignore */ }
+})
+
+// ==================== Web Search ====================
+
+ipcMain.handle('webSearch:updateSettings', async (_event, settings: import('@shared/types').WebSearchSettings) => {
+  configService.set('webSearchSettings', settings)
+  const webSearch = await import('./services/web-search/index')
+  webSearch.updateSettings(settings)
 })
 
