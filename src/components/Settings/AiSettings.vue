@@ -495,7 +495,7 @@ const webSearchApiKey = computed({
 
 const webSearchKeyUrls: Record<string, string> = {
   bocha: 'https://open.bochaai.com/api-keys',
-  jina: 'https://jina.ai/reader',
+  jina: 'https://jina.ai/api-dashboard/key-manager',
   tavily: 'https://app.tavily.com/home',
 }
 const webSearchKeyUrl = computed(() => webSearchKeyUrls[webSearchProviderId.value] || '')
