@@ -1,6 +1,6 @@
 /** Web Search 配置，前后端共享 */
 
-export type WebSearchProviderId = 'tavily' | 'bing' | 'jina' | 'bocha'
+export type WebSearchProviderId = 'tavily' | 'jina' | 'bocha'
 
 export interface WebSearchSettings {
   enabled: boolean
@@ -20,6 +20,5 @@ export const DEFAULT_WEB_SEARCH_SETTINGS: WebSearchSettings = {
 export const WEB_SEARCH_PROVIDERS: { id: WebSearchProviderId; name: string; requiresApiKey: boolean; description: string }[] = [
   { id: 'bocha', name: 'Bocha (博查)', requiresApiKey: true, description: 'AI search engine, best for China users' },
   { id: 'tavily', name: 'Tavily', requiresApiKey: true, description: 'Best AI agent search experience' },
-  { id: 'bing', name: 'Bing Web Search', requiresApiKey: true, description: 'Microsoft Azure, works in China' },
   { id: 'jina', name: 'Jina', requiresApiKey: true, description: 'Search + URL reader, returns Markdown' },
 ]

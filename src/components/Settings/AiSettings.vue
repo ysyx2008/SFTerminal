@@ -495,7 +495,6 @@ const webSearchApiKey = computed({
 
 const webSearchKeyUrls: Record<string, string> = {
   bocha: 'https://open.bochaai.com/api-keys',
-  bing: 'https://portal.azure.com/#create/Microsoft.BingSearch',
   jina: 'https://jina.ai/reader',
   tavily: 'https://app.tavily.com/home',
 }

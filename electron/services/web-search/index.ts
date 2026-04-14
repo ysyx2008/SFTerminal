@@ -70,8 +70,9 @@ export async function search(query: string, options?: WebSearchOptions): Promise
  * 初始化内置 provider
  */
 export async function initWebSearch(settings: WebSearchSettings): Promise<void> {
-  // DuckDuckGo was removed (blocked scraping), migrate to default
-  if ((settings.providerId as string) === 'duckduckgo') {
+  // Migrate removed providers to default
+  const removed = ['duckduckgo', 'bing']
+  if (removed.includes(settings.providerId as string)) {
     settings = { ...settings, providerId: DEFAULT_WEB_SEARCH_SETTINGS.providerId }
   }
   // Migrate legacy single apiKey → per-provider apiKeys
@@ -81,12 +82,10 @@ export async function initWebSearch(settings: WebSearchSettings): Promise<void> 
   updateSettings(settings)
 
   const { BochaProvider } = await import('./providers/bocha')
-  const { BingProvider } = await import('./providers/bing')
   const { JinaProvider } = await import('./providers/jina')
   const { TavilyProvider } = await import('./providers/tavily')
 
   registerProvider(new BochaProvider(() => getApiKey('bocha')))
-  registerProvider(new BingProvider(() => getApiKey('bing')))
   registerProvider(new JinaProvider(() => getApiKey('jina')))
   registerProvider(new TavilyProvider(() => getApiKey('tavily')))
 
