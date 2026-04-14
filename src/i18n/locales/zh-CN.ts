@@ -483,6 +483,8 @@ export default {
     maxOutputTokens: '最大输出长度',
     maxOutputTokensHint: '留空即可',
     maxOutputTokensTip: '通常无需设置。仅当 Agent 频繁输出截断时才需调大',
+    temperatureHint: '留空自动',
+    temperatureTip: '默认 0.7。部分模型有固定要求（如 Kimi K2.5 需设为 1）',
     saveProfile: '保存配置',
     deleteProfile: '删除配置',
     setActive: '设为当前',

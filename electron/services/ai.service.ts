@@ -279,6 +279,7 @@ export interface AiProfile {
   proxy?: string
   contextLength?: number  // 模型上下文长度（tokens），默认 128000
   maxOutputTokens?: number  // 单次回复最大输出 token 数，默认 8192
+  temperature?: number  // 采样温度，留空则自动选择（默认 0.7，部分模型如 Kimi K2.5 强制为 1）
   modelType?: import('./config.service').AiModelType  // 模型类型，默认 general
   visionProfileId?: string  // 关联的视觉模型 Profile ID（仅 general 类型有效）
   apiFormat?: import('./config.service').ApiFormat  // API 协议格式，默认 auto
@@ -332,6 +333,20 @@ function isGenericParamErrorWithImages(errorMsg: string): boolean {
     lower.includes('invalid content type') ||
     lower.includes('invalid message format')
   )
+}
+
+/**
+ * 解析模型的合适 temperature 值
+ * 部分模型有固定 temperature 要求（如 Kimi K2.5 只允许 temperature=1），
+ * 此函数根据模型名称返回合适的值，未命中时返回 defaultTemp。
+ */
+function resolveTemperature(profile: { model: string; temperature?: number }, defaultTemp = 0.7): number {
+  if (typeof profile.temperature === 'number' && !isNaN(profile.temperature)) {
+    return Math.max(0, Math.min(2, profile.temperature))
+  }
+  const lower = profile.model.toLowerCase()
+  if (lower.includes('k2.5') || lower.includes('k-2.5')) return 1
+  return defaultTemp
 }
 
 /**
@@ -817,7 +832,7 @@ export class AiService {
     const requestBody = {
       model: profile.model,
       messages,
-      temperature: 0.7,
+      temperature: resolveTemperature(profile),
       max_tokens: 2048
     }
 
@@ -1001,7 +1016,7 @@ export class AiService {
     const requestBody = {
       model: profile.model,
       messages,
-      temperature: 0.7,
+      temperature: resolveTemperature(profile),
       max_tokens: 2048,
       stream: true
     }
@@ -1354,7 +1369,7 @@ export class AiService {
         messages: fmtMessages,
         tools: tools.length > 0 ? tools : undefined,
         tool_choice: tools.length > 0 ? 'auto' : undefined,
-        temperature: 0.7,
+        temperature: resolveTemperature(profile),
         max_tokens: profile.maxOutputTokens || 8192
       }
 
@@ -1594,7 +1609,7 @@ export class AiService {
         messages: fmtMsgs,
         tools: tools.length > 0 ? tools : undefined,
         tool_choice: tools.length > 0 ? 'auto' : undefined,
-        temperature: 0.7,
+        temperature: resolveTemperature(profile),
         max_tokens: profile.maxOutputTokens || 8192,
         stream: true
       }

@@ -49,6 +49,7 @@ const formData = ref<Partial<AiProfile>>({
   proxy: '',
   contextLength: 128000,
   maxOutputTokens: undefined,
+  temperature: undefined,
   modelType: 'general' as AiModelType,
   visionProfileId: undefined,
   apiFormat: 'auto' as ApiFormat
@@ -66,6 +67,7 @@ const resetForm = () => {
     proxy: '',
     contextLength: 128000,
     maxOutputTokens: undefined,
+    temperature: undefined,
     modelType: 'general' as AiModelType,
     visionProfileId: undefined,
     apiFormat: 'auto' as ApiFormat
@@ -114,15 +116,21 @@ const saveProfile = async () => {
     }
   }
 
+  // v-model.number 清空时返回空字符串，需要还原为 undefined
+  const data = { ...formData.value }
+  if (typeof data.temperature !== 'number' || isNaN(data.temperature)) {
+    data.temperature = undefined
+  }
+
   if (editingProfile.value) {
     await configStore.updateAiProfile({
       ...editingProfile.value,
-      ...formData.value
+      ...data
     } as AiProfile)
   } else {
     await configStore.addAiProfile({
       id: uuidv4(),
-      ...formData.value
+      ...data
     } as AiProfile)
   }
 
@@ -657,6 +665,11 @@ function openWebSearchKeyUrl() {
                   <label class="form-label">{{ t('aiSettings.maxOutputTokens') }}（{{ t('aiSettings.maxOutputTokensHint') }}）</label>
                   <input v-model.number="formData.maxOutputTokens" type="number" class="input" placeholder="8192" min="1" max="128000" />
                   <span class="form-hint">{{ t('aiSettings.maxOutputTokensTip') }}</span>
+                </div>
+                <div class="form-group flex-1">
+                  <label class="form-label">Temperature（{{ t('aiSettings.temperatureHint') }}）</label>
+                  <input v-model.number="formData.temperature" type="number" class="input" placeholder="0.7" min="0" max="2" step="0.1" />
+                  <span class="form-hint">{{ t('aiSettings.temperatureTip') }}</span>
                 </div>
               </div>
               <div class="form-group">

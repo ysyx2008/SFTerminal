@@ -483,6 +483,8 @@ export default {
     maxOutputTokens: 'Max Output Tokens',
     maxOutputTokensHint: 'leave empty',
     maxOutputTokensTip: 'Usually no need to set. Only increase if Agent output is frequently truncated',
+    temperatureHint: 'auto if empty',
+    temperatureTip: 'Default 0.7. Some models require a fixed value (e.g. Kimi K2.5 requires 1)',
     saveProfile: 'Save Profile',
     deleteProfile: 'Delete Profile',
     setActive: 'Set as Active',
