@@ -213,14 +213,6 @@ export async function askUser(
       finalResponse = defaultValue
     }
 
-    if (finalResponse) {
-      executor.addStep({
-        type: 'user_supplement',
-        content: finalResponse,
-        riskLevel: 'safe'
-      })
-    }
-
     executor.updateStep(step.id, {
       toolResult: t('ask.received', { response: finalResponse || t('ask.empty') })
     })
