@@ -37,6 +37,9 @@ asarUnpack:
   - "**/onnxruntime-node/**/*"
   - dist-electron/services/speech/**/*
   - dist-electron/services/pdf-worker.js
+  - node_modules/pdfjs-dist/**/*
+  - node_modules/@napi-rs/canvas/**/*
+  - node_modules/@napi-rs/canvas-*/**/*
 # 启用最大压缩率以减小安装包大小（会增加打包时间）
 # compression: maximum
 extraResources:

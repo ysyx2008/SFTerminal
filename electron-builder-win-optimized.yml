@@ -45,6 +45,9 @@ files:
 asarUnpack:
   - node_modules/@homebridge/node-pty-prebuilt-multiarch/**/*
   - dist-electron/services/pdf-worker.js
+  - node_modules/pdfjs-dist/**/*
+  - node_modules/@napi-rs/canvas/**/*
+  - node_modules/@napi-rs/canvas-*/**/*
 
 # 额外资源 - 考虑模型优化
 extraResources:
