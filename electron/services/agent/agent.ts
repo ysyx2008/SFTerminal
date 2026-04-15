@@ -50,6 +50,27 @@ import { notifyFrontendConfigChanged } from './skills/config/executor'
 const log = createLogger('Agent')
 
 /**
+ * 去除流式输出中因 API 代理重复发送 reasoning_content 而产生的连续相同思考块。
+ * 仅移除内容完全相同的相邻 <details> 块，保留不同的块。
+ */
+function deduplicateThinkingBlocks(html: string): string {
+  const thinkingBlockRe = /(<details[^>]*>\s*<summary>[^<]*🤔[\s\S]*?<\/details>)\s*/g
+  const blocks: { full: string; normalized: string; index: number }[] = []
+  let match: RegExpExecArray | null
+  while ((match = thinkingBlockRe.exec(html)) !== null) {
+    blocks.push({ full: match[0], normalized: match[1].replace(/\s+/g, ' '), index: match.index })
+  }
+  if (blocks.length < 2) return html
+  let result = html
+  for (let i = blocks.length - 1; i > 0; i--) {
+    if (blocks[i].normalized === blocks[i - 1].normalized) {
+      result = result.slice(0, blocks[i].index) + result.slice(blocks[i].index + blocks[i].full.length)
+    }
+  }
+  return result.trim() ? result : html
+}
+
+/**
  * Agent 抽象基类
  */
 export abstract class Agent {
@@ -1718,6 +1739,8 @@ export abstract class Agent {
           if (finalContent.includes('<details>') && !finalContent.includes('</details>')) {
             finalContent += '\n\n</blockquote>\n</details>'
           }
+          // 去重：部分 API 代理可能导致连续出现内容相同的思考块，只保留第一个
+          finalContent = deduplicateThinkingBlocks(finalContent)
           // 当模型产生了推理+回复且没有工具调用时（即这是最终回复），
           // 将步骤内容重建为仅包含推理部分。回复内容会由 finalizeRun 作为 final_result 展示，
           // 避免执行步骤中的 message 和 final_result 重复显示同一段回复。

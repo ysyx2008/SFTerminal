@@ -1834,10 +1834,13 @@ export class AiService {
                 if (hasReasoningOutput && !hasContentOutput) {
                   onChunk('\n\n</blockquote>\n</details>')
                 }
-                const finalContent = content || (reasoningContent ? `<details>\n<summary>🤔 <strong>${t('ai.thinking_process')}</strong></summary>\n\n<blockquote>\n\n${reasoningContent}\n\n</blockquote>\n</details>` : undefined)
+                // 有 tool_calls 时不用 reasoning 兜底 content，避免 HTML 进入对话历史
+                // reasoning 已通过 streaming onChunk 展示，且保存在 reasoning_content 字段中
+                const hasToolCalls = toolCalls.length > 0
+                const finalContent = content || (!hasToolCalls && reasoningContent ? `<details>\n<summary>🤔 <strong>${t('ai.thinking_process')}</strong></summary>\n\n<blockquote>\n\n${reasoningContent}\n\n</blockquote>\n</details>` : undefined)
                 complete(() => onDone({
                   content: finalContent,
-                  tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+                  tool_calls: hasToolCalls ? toolCalls : undefined,
                   finish_reason: finishReason as ChatWithToolsResult['finish_reason'],
                   reasoning_content: reasoningContent || undefined,
                   usage: streamUsage
@@ -1923,11 +1926,11 @@ export class AiService {
             }
           }
 
-          // 如果有思考内容但没有最终内容，把思考内容作为最终内容
-          if (hasReasoningOutput && !hasContentOutput) {
+          if (!isCompleted && hasReasoningOutput && !hasContentOutput) {
             onChunk('\n\n</blockquote>\n</details>')
           }
-          const finalContent = content || (reasoningContent ? `<details>\n<summary>🤔 <strong>${t('ai.thinking_process')}</strong></summary>\n\n<blockquote>\n\n${reasoningContent}\n\n</blockquote>\n</details>` : undefined)
+          const hasToolCalls = toolCalls.length > 0
+          const finalContent = content || (!hasToolCalls && reasoningContent ? `<details>\n<summary>🤔 <strong>${t('ai.thinking_process')}</strong></summary>\n\n<blockquote>\n\n${reasoningContent}\n\n</blockquote>\n</details>` : undefined)
 
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
           const toolNames = toolCalls.map(tc => tc.function.name).join(', ')
@@ -1944,19 +1947,18 @@ export class AiService {
             reasoningContent: reasoningContent || undefined,
             finishReason,
             usage: streamUsage,
-            toolCalls: toolCalls.length > 0 ? toolCalls.map(tc => ({
+            toolCalls: hasToolCalls ? toolCalls.map(tc => ({
               id: tc.id,
               name: tc.function.name,
               arguments: tc.function.arguments
             })) : undefined
           })
-          // 如果有工具调用，通知回调
-          if (toolCalls.length > 0) {
+          if (hasToolCalls) {
             onToolCall(toolCalls)
           }
           complete(() => onDone({
             content: finalContent,
-            tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+            tool_calls: hasToolCalls ? toolCalls : undefined,
             finish_reason: finishReason as ChatWithToolsResult['finish_reason'],
             reasoning_content: reasoningContent || undefined,
             usage: streamUsage
@@ -2025,13 +2027,14 @@ export class AiService {
         if (validToolCalls.length < filteredCount) {
           log.info(`Abort: filtered ${filteredCount - validToolCalls.length}/${filteredCount} incomplete tool_calls`)
         }
-        if (hasReasoningOutput && !hasContentOutput) {
+        if (!isCompleted && hasReasoningOutput && !hasContentOutput) {
           onChunk('\n\n</blockquote>\n</details>')
         }
-        const finalContent = content || (reasoningContent ? `<details>\n<summary>🤔 <strong>${t('ai.thinking_process')}</strong></summary>\n\n<blockquote>\n\n${reasoningContent}\n\n</blockquote>\n</details>` : undefined)
+        const hasValidTools = validToolCalls.length > 0
+        const finalContent = content || (!hasValidTools && reasoningContent ? `<details>\n<summary>🤔 <strong>${t('ai.thinking_process')}</strong></summary>\n\n<blockquote>\n\n${reasoningContent}\n\n</blockquote>\n</details>` : undefined)
         complete(() => onDone({
           content: finalContent,
-          tool_calls: validToolCalls.length > 0 ? validToolCalls : undefined,
+          tool_calls: hasValidTools ? validToolCalls : undefined,
           finish_reason: 'stop',
           reasoning_content: reasoningContent || undefined
         }))
