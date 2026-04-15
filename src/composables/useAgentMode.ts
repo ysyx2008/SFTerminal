@@ -199,31 +199,28 @@ export function useAgentMode(
   // 实际执行滚动
   const doScrollIfNeeded = async () => {
     lastScrollTime = Date.now()
+    // 跳过 DynamicScroller 因布局调整触发的 scroll 事件，防止干扰 isUserNearBottom 状态
+    skipScrollUpdate = true
     await nextTick()
     
-    // 在执行滚动前再次检测是否在底部附近
-    // 这样可以避免内容突然增加导致的误判
-    const nearBottomNow = checkIsNearBottom()
-    
-    if (isUserNearBottom.value || nearBottomNow) {
+    // 仅依赖 isUserNearBottom（由用户真实滚动事件维护）
+    // 不做实时 checkIsNearBottom()：DynamicScroller 的 scrollHeight 基于估算，
+    // 虚拟化的 off-screen 项高度远小于实际值，会导致误判"在底部附近"
+    if (isUserNearBottom.value) {
       if (messagesRef.value) {
-        // 滚动期间跳过状态更新，避免 scroll 事件错误地更新状态
-        skipScrollUpdate = true
         setIsUserNearBottom(true)
         hasNewMessage.value = false
         
         messagesRef.value.scrollTop = messagesRef.value.scrollHeight
-        
-        // 延迟恢复 scroll 事件监听，等待滚动完成
-        // 使用 50ms 延迟，确保滚动动画完成，同时不影响用户后续手动滚动
-        setTimeout(() => {
-          skipScrollUpdate = false
-        }, 50)
       }
     } else {
-      // 用户在上方查看历史，显示新消息提示
       hasNewMessage.value = true
     }
+    
+    // 延迟恢复 scroll 事件监听，等待 DynamicScroller 布局稳定
+    setTimeout(() => {
+      skipScrollUpdate = false
+    }, 80)
   }
 
   // 智能滚动：只有用户在底部附近时才自动滚动（带节流）
