@@ -2,7 +2,23 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.31.0 (2026-04-13) (Latest)
+## v10.32.0 (2026-04-15) (Latest)
+
+Adds a new web search core tool and intelligent per-model temperature adjustment, along with several platform compatibility and UI fixes.
+
+### New Features
+- 🔍 **Web Search Tool**: New `web_search` core tool supporting Bocha, Tavily, Bing, and Jina search engines
+- 🌡️ **Smart Temperature Adjustment**: Automatically adjusts temperature per model, with manual user configuration support
+
+### Improvements
+- 📝 **File Search Optimization**: Improved tool descriptions to guide AI toward keyword-based searches instead of wildcards
+
+### Bug Fixes
+- Fixed duplicate thinking blocks appearing in streaming output for thinking models (e.g., Doubao)
+- Fixed Chinese character garbling in Windows exec tool output
+- Fixed link color in user message bubbles being invisible against background
+
+## v10.31.0 (2026-04-13)
 
 Introduces text-to-speech (TTS) for Agent responses with multiple provider support, along with improved Agent execution stability and cross-task context reuse.
 

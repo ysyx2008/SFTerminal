@@ -58,6 +58,7 @@
 | 🖥️ **SSH/SFTP** | Full remote connection and file management with JumpServer bastion host sync |
 | 📁 **File Manager** | Dual-pane file manager for local & remote |
 | 📚 **Knowledge Base** | Local RAG with L3 conversation vector search for long-term memory, completely offline |
+| 🔍 **Web Search** | Built-in web search with Bocha, Tavily, Bing, and Jina engines |
 | 🔌 **MCP Extension** | Connect external tools via Model Context Protocol |
 | 🗄️ **Database** | Natural language SQL execution and analysis |
 | 🛒 **Skill Market** | Browse, install, and share community Agent skills with one click |

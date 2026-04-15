@@ -48,6 +48,7 @@ export interface AiProfile {
   proxy?: string
   contextLength?: number  // 模型上下文长度（tokens），默认 128000
   maxOutputTokens?: number  // 单次回复最大输出 token 数，默认 8192
+  temperature?: number  // 采样温度，留空则自动选择
   modelType?: AiModelType        // 模型类型，默认 general
   visionProfileId?: string       // 关联的视觉模型 Profile ID（仅 general 类型有效）
   apiFormat?: ApiFormat           // API 协议格式，默认 auto
