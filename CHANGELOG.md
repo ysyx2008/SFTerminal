@@ -2,7 +2,14 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.32.0 (2026-04-15) (Latest)
+## v10.32.1 (2026-04-15) (Latest)
+
+Fixes PDF page rendering failure in production builds.
+
+### Bug Fixes
+- Fixed PDF rendering tool reporting `Cannot find package 'pdfjs-dist'` in production builds — the utilityProcess worker was unpacked outside asar but ESM import could not resolve dependencies across the asar boundary
+
+## v10.32.0 (2026-04-15)
 
 Adds a new web search core tool and intelligent per-model temperature adjustment, along with several platform compatibility and UI fixes.
 
