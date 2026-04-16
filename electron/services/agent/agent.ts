@@ -171,9 +171,6 @@ export abstract class Agent {
     this._agentId = id
   }
 
-  getAgentId(): string | undefined {
-    return this._agentId
-  }
   
   /**
    * 获取技能会话（延迟初始化，Agent 实例级别持久化）

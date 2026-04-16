@@ -5,6 +5,7 @@ import * as https from 'https'
 import * as http from 'http'
 import { t } from './agent/i18n'
 import { getAiDebugService } from './ai-debug.service'
+import type { ProviderChatParams } from './plugin/types'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('AI')
@@ -1329,7 +1330,7 @@ export class AiService {
     for (const provider of this.pluginProviders) {
       if (provider.match(profile)) {
         log.info(`Delegating to plugin provider "${provider.id}" for model=${profile.model}`)
-        const result = await provider.chatWithTools({ messages, tools, model: profile.model, apiUrl: profile.apiUrl, apiKey: profile.apiKey })
+        const result = await provider.chatWithTools({ messages: messages as ProviderChatParams['messages'], tools, model: profile.model, apiUrl: profile.apiUrl, apiKey: profile.apiKey })
         return result as ChatWithToolsResult
       }
     }
