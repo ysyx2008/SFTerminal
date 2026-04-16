@@ -795,10 +795,14 @@ export function useAgentMode(
         canvasStore.handleAgentStep(tabId, data.step)
       }
 
-      // TTS: 流式 message 步骤喂给语音合成（远程会话不播报）
+      // TTS: 流式 message / final_result 喂给语音合成（远程会话不播报）
       if (tts.isEnabled.value && configStore.ttsSettings.enabled && !currentTab.value?.isRemote) {
         if (data.step.type === 'message' && data.step.content) {
           tts.feedContent(data.step.content)
+        } else if (data.step.type === 'final_result' && data.step.content) {
+          tts.flush()
+          tts.feedContent(data.step.content)
+          tts.flush()
         } else {
           tts.flush()
         }
