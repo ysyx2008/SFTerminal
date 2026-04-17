@@ -177,6 +177,8 @@ async function renderPdfPages({ filePath, pageNumbers, dpi = 200, quality = 85 }
       const h = Math.floor(viewport.height)
       const c = createCanvas(w, h)
       const ctx = c.getContext('2d')
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, w, h)
       await page.render({ canvasContext: ctx, viewport, canvasFactory }).promise
       const buf = c.toBuffer('image/jpeg', quality)
       images.push(`data:image/jpeg;base64,${buf.toString('base64')}`)
