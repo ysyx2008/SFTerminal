@@ -54,6 +54,8 @@ export const configTools: ToolDefinition[] = [
 **安全类配置**（界面语言、主题、终端字号等）直接生效。
 **敏感类配置**（IM 凭证、网关、代理）也可设置，写入后建议用 im_connect 测试连接。
 
+**MCP 服务器列表（mcpServers）不可通过本工具整表写入**，否则会覆盖已有服务器；请使用 \`config_mcp_server_add\` 追加、\`config_mcp_server_update\` 修改、\`config_mcp_server_delete\` 删除。
+
 常见用法：
 - 切换语言: key="language", value="en-US"
 - 修改主题: key="uiTheme", value="dark"
@@ -209,6 +211,77 @@ export const configTools: ToolDefinition[] = [
           accountId: { type: 'string', description: '日历账户 ID（通过 config_list category=calendar 查看）' }
         },
         required: ['accountId']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'config_mcp_server_add',
+      description: `向旗鱼追加一个 MCP 服务器配置（合并到现有列表，不会删除已有项）。
+
+**stdio**：必须提供 command；可选 args（字符串数组）、env（键值对象）、cwd。
+**sse**：必须提供 url；可选 headers（键值对象）。
+
+与 \`config_set\` 写入 mcpServers 不同，本工具只追加一条记录。`,
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: '显示名称' },
+          transport: { type: 'string', enum: ['stdio', 'sse'], description: '传输方式' },
+          enabled: { type: 'boolean', description: '是否启用，默认 true' },
+          id: { type: 'string', description: '服务器唯一 id，省略则自动生成 UUID' },
+          command: { type: 'string', description: 'stdio：可执行文件或命令' },
+          args: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'stdio：命令行参数列表'
+          },
+          env: { type: 'object', description: 'stdio：环境变量（字符串键值）' },
+          cwd: { type: 'string', description: 'stdio：工作目录' },
+          url: { type: 'string', description: 'sse：服务端 URL' },
+          headers: { type: 'object', description: 'sse：HTTP 请求头（字符串键值）' }
+        },
+        required: ['name', 'transport']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'config_mcp_server_update',
+      description: `按 id 更新已有 MCP 服务器。未传入的字段保持原值（部分更新）。
+
+切换 transport 时请同时提供对应模式下必填字段（stdio 需 command，sse 需 url）。`,
+      parameters: {
+        type: 'object',
+        properties: {
+          serverId: { type: 'string', description: '要更新的服务器 id（与 config_get key=mcpServers 中一致）' },
+          name: { type: 'string', description: '显示名称' },
+          transport: { type: 'string', enum: ['stdio', 'sse'] },
+          enabled: { type: 'boolean' },
+          command: { type: 'string' },
+          args: { type: 'array', items: { type: 'string' } },
+          env: { type: 'object' },
+          cwd: { type: 'string' },
+          url: { type: 'string' },
+          headers: { type: 'object' }
+        },
+        required: ['serverId']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'config_mcp_server_delete',
+      description: '按 id 删除 MCP 服务器配置；若当前已连接会先断开。删除前请与用户确认。',
+      parameters: {
+        type: 'object',
+        properties: {
+          serverId: { type: 'string', description: '要删除的服务器 id' }
+        },
+        required: ['serverId']
       }
     }
   }

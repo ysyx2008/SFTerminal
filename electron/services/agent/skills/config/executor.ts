@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { createLogger } from '../../../../utils/logger'
 
 const log = createLogger('ConfigExecutor')
-import { getConfigService } from '../../../config.service'
+import { getConfigService, type McpServerConfig } from '../../../config.service'
 import { getIMService, type IMService } from '../../../im/im.service'
 import {
   getEmailCredential, setEmailCredential, deleteEmailCredential,
@@ -96,7 +96,8 @@ const CONFIG_REGISTRY: ConfigMeta[] = [
   { key: 'aiProfiles', label: 'AI 模型配置', category: 'agent', type: 'array', readonly: true },
   { key: 'sshSessions', label: 'SSH 会话', category: 'agent', type: 'array' },
   { key: 'sessionGroups', label: '会话分组', category: 'agent', type: 'array' },
-  { key: 'mcpServers', label: 'MCP 服务器', category: 'mcp', type: 'array' },
+  /** 仅整体展示；增删改须用 config_mcp_server_* 工具，禁止 config_set 覆盖列表 */
+  { key: 'mcpServers', label: 'MCP 服务器', category: 'mcp', type: 'array', readonly: true },
 ]
 
 const CONFIG_MAP = new Map(CONFIG_REGISTRY.map(m => [m.key, m]))
@@ -109,7 +110,7 @@ export async function executeConfigTool(
   args: Record<string, unknown>,
   _toolCallId: string,
   _config: AgentConfig,
-  _executor: ToolExecutorConfig
+  executor: ToolExecutorConfig
 ): Promise<ToolResult> {
   switch (toolName) {
     case 'config_list':
@@ -118,6 +119,12 @@ export async function executeConfigTool(
       return getConfig(args)
     case 'config_set':
       return setConfig(args)
+    case 'config_mcp_server_add':
+      return addMcpServerConfig(args)
+    case 'config_mcp_server_update':
+      return updateMcpServerConfig(args)
+    case 'config_mcp_server_delete':
+      return deleteMcpServerConfig(args, executor)
     case 'im_connect':
       return connectIM(args)
     case 'email_verify':
@@ -182,6 +189,10 @@ function listConfig(args: Record<string, unknown>): ToolResult {
         lines.push(formatCalendarAccountsSummary(config))
         continue
       }
+      if (m.key === 'mcpServers') {
+        lines.push(formatMcpServersSummary(config))
+        continue
+      }
       const sensitive = isSensitiveKey(m.key)
       const display = sensitive
         ? (resolveConfigValue(config, m.key) ? '_(已配置)_' : '_(未配置)_')
@@ -218,6 +229,9 @@ function getConfig(args: Record<string, unknown>): ToolResult {
 
   const config = getConfigService()
   const val = resolveConfigValue(config, key)
+  if (key === 'mcpServers') {
+    return { success: true, output: `**${meta.label}** (\`${key}\`)\n${formatMcpServersDetail(config)}` }
+  }
   return { success: true, output: `**${meta.label}** (\`${key}\`) = ${formatValue(val, meta)}` }
 }
 
@@ -234,7 +248,10 @@ function setConfig(args: Record<string, unknown>): ToolResult {
     return { success: false, output: '', error: `未知的配置项: "${key}"。使用 config_list 查看可用配置。` }
   }
   if (meta.readonly) {
-    return { success: false, output: '', error: `配置项 "${key}" 为只读，不允许通过此工具修改。` }
+    const mcpHint = key === 'mcpServers'
+      ? ' 请改用 config_mcp_server_add、config_mcp_server_update、config_mcp_server_delete。'
+      : ''
+    return { success: false, output: '', error: `配置项 "${key}" 为只读，不允许通过此工具修改。${mcpHint}` }
   }
 
   if (meta.options && !meta.options.includes(String(value))) {
@@ -250,6 +267,211 @@ function setConfig(args: Record<string, unknown>): ToolResult {
     return { success: true, output: `✅ 已设置 **${meta.label}** (\`${key}\`) = ${formatValue(newVal, meta)}` }
   } catch (err) {
     return { success: false, output: '', error: `设置失败: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+// ==================== MCP 服务器（合并写入，禁止整表覆盖）====================
+
+function formatMcpServersSummary(config: ReturnType<typeof getConfigService>): string {
+  const servers = config.getMcpServers()
+  if (servers.length === 0) {
+    return '  - **MCP 服务器** — _(未配置)_  使用 `config_mcp_server_add` 添加'
+  }
+  const lines = servers.map(s => {
+    const endpoint = s.transport === 'stdio'
+      ? (s.command ? `\`${s.command}\`` : '_(无 command)_')
+      : (s.url ? `\`${s.url}\`` : '_(无 url)_')
+    const on = s.enabled ? '启用' : '禁用'
+    return `    - **${s.name}** \`${s.id}\` · ${s.transport} · ${on} · ${endpoint}`
+  })
+  return `  - **MCP 服务器** — ${servers.length} 个（勿用 config_set 整表覆盖；用 config_mcp_server_add 追加）\n${lines.join('\n')}`
+}
+
+function formatMcpServersDetail(config: ReturnType<typeof getConfigService>): string {
+  const servers = config.getMcpServers()
+  if (servers.length === 0) {
+    return '_(未配置)_\n\n使用 `config_mcp_server_add` 添加服务器。'
+  }
+  const lines = servers.map((s, i) => {
+    const parts = [`${i + 1}. **${s.name}**`, `- id: \`${s.id}\``, `- transport: \`${s.transport}\``, `- enabled: \`${s.enabled}\``]
+    if (s.transport === 'stdio') {
+      if (s.command) parts.push(`- command: \`${s.command}\``)
+      if (s.args?.length) parts.push(`- args: \`${JSON.stringify(s.args)}\``)
+      if (s.cwd) parts.push(`- cwd: \`${s.cwd}\``)
+      if (s.env && Object.keys(s.env).length) parts.push(`- env: \`${JSON.stringify(s.env)}\``)
+    } else {
+      if (s.url) parts.push(`- url: \`${s.url}\``)
+      if (s.headers && Object.keys(s.headers).length) parts.push(`- headers: _(已配置 ${Object.keys(s.headers).length} 项)_`)
+    }
+    return parts.join('\n')
+  })
+  return `共 ${servers.length} 个：\n\n${lines.join('\n\n')}\n\n增删改请用 \`config_mcp_server_add\` / \`config_mcp_server_update\` / \`config_mcp_server_delete\`，勿用 \`config_set\` 写入整表。`
+}
+
+function parseOptionalStringArray(v: unknown): string[] | undefined {
+  if (v === undefined || v === null) return undefined
+  if (Array.isArray(v)) return v.map(x => String(x))
+  if (typeof v === 'string') {
+    try {
+      const p = JSON.parse(v) as unknown
+      return Array.isArray(p) ? p.map(x => String(x)) : undefined
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
+function parseOptionalStringRecord(v: unknown): Record<string, string> | undefined {
+  if (v === undefined || v === null) return undefined
+  if (typeof v === 'object' && !Array.isArray(v)) {
+    const o: Record<string, string> = {}
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      o[k] = typeof val === 'string' ? val : String(val)
+    }
+    return Object.keys(o).length > 0 ? o : undefined
+  }
+  if (typeof v === 'string') {
+    try {
+      const p = JSON.parse(v) as unknown
+      if (typeof p === 'object' && p !== null && !Array.isArray(p)) {
+        return parseOptionalStringRecord(p)
+      }
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
+function addMcpServerConfig(args: Record<string, unknown>): ToolResult {
+  const name = argStr(args, 'name')
+  const transport = args.transport as string
+  if (!name) return { success: false, output: '', error: '缺少 name 参数' }
+  if (transport !== 'stdio' && transport !== 'sse') {
+    return { success: false, output: '', error: 'transport 须为 stdio 或 sse' }
+  }
+
+  const command = argStr(args, 'command')
+  const url = argStr(args, 'url')
+  if (transport === 'stdio' && !command) {
+    return { success: false, output: '', error: 'stdio 模式需要 command' }
+  }
+  if (transport === 'sse' && !url) {
+    return { success: false, output: '', error: 'sse 模式需要 url' }
+  }
+
+  const enabled = args.enabled === false ? false : true
+  const id = argStr(args, 'id') || uuidv4()
+  const config = getConfigService()
+  const servers = config.getMcpServers()
+  if (servers.some(s => s.id === id)) {
+    return { success: false, output: '', error: `已存在 id 为 "${id}" 的 MCP 服务器` }
+  }
+
+  const server: McpServerConfig = {
+    id,
+    name,
+    enabled,
+    transport: transport as 'stdio' | 'sse',
+    command: transport === 'stdio' ? command : undefined,
+    args: parseOptionalStringArray(args.args),
+    env: parseOptionalStringRecord(args.env),
+    cwd: argStr(args, 'cwd') || undefined,
+    url: transport === 'sse' ? url : undefined,
+    headers: transport === 'sse' ? parseOptionalStringRecord(args.headers) : undefined,
+  }
+
+  config.addMcpServer(server)
+  notifyFrontendConfigChanged()
+  const n = config.getMcpServers().length
+  return {
+    success: true,
+    output: `✅ 已添加 MCP 服务器 **${name}**（id: \`${id}\`，${transport}）。当前共 ${n} 个。`,
+  }
+}
+
+function updateMcpServerConfig(args: Record<string, unknown>): ToolResult {
+  const serverId = argStr(args, 'serverId') || argStr(args, 'id')
+  if (!serverId) return { success: false, output: '', error: '缺少 serverId（或 id）参数' }
+
+  const config = getConfigService()
+  const existing = config.getMcpServers().find(s => s.id === serverId)
+  if (!existing) {
+    return { success: false, output: '', error: `未找到 id 为 "${serverId}" 的 MCP 服务器` }
+  }
+
+  const transport = (args.transport as string) || existing.transport
+  if (transport !== 'stdio' && transport !== 'sse') {
+    return { success: false, output: '', error: 'transport 须为 stdio 或 sse' }
+  }
+
+  const name = argStr(args, 'name') || existing.name
+  const enabled = typeof args.enabled === 'boolean' ? args.enabled : existing.enabled
+
+  let command = existing.command
+  let url = existing.url
+  if (transport === 'stdio') {
+    command = args.command !== undefined ? argStr(args, 'command') : existing.command
+  } else {
+    url = args.url !== undefined ? argStr(args, 'url') : existing.url
+  }
+
+  if (transport === 'stdio' && !command) {
+    return { success: false, output: '', error: 'stdio 模式需要 command' }
+  }
+  if (transport === 'sse' && !url) {
+    return { success: false, output: '', error: 'sse 模式需要 url' }
+  }
+
+  const merged: McpServerConfig = {
+    id: serverId,
+    name,
+    enabled,
+    transport: transport as 'stdio' | 'sse',
+    command: transport === 'stdio' ? command : undefined,
+    args: args.args !== undefined ? parseOptionalStringArray(args.args) : existing.args,
+    env: args.env !== undefined ? parseOptionalStringRecord(args.env) : existing.env,
+    cwd: args.cwd !== undefined ? (argStr(args, 'cwd') || undefined) : existing.cwd,
+    url: transport === 'sse' ? url : undefined,
+    headers: transport === 'sse'
+      ? (args.headers !== undefined ? parseOptionalStringRecord(args.headers) : existing.headers)
+      : undefined,
+  }
+
+  config.updateMcpServer(merged)
+  notifyFrontendConfigChanged()
+  return { success: true, output: `✅ 已更新 MCP 服务器 **${name}**（\`${serverId}\`）。` }
+}
+
+async function deleteMcpServerConfig(
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  const serverId = argStr(args, 'serverId') || argStr(args, 'id')
+  if (!serverId) return { success: false, output: '', error: '缺少 serverId（或 id）参数' }
+
+  const config = getConfigService()
+  const servers = config.getMcpServers()
+  const found = servers.find(s => s.id === serverId)
+  if (!found) {
+    return { success: false, output: '', error: `未找到 id 为 "${serverId}" 的 MCP 服务器` }
+  }
+
+  try {
+    if (executor.mcpService?.isConnected(serverId)) {
+      await executor.mcpService.disconnect(serverId)
+    }
+  } catch {
+    /* 断开失败仍继续删除配置 */
+  }
+
+  config.deleteMcpServer(serverId)
+  notifyFrontendConfigChanged()
+  const remaining = config.getMcpServers().length
+  return {
+    success: true,
+    output: `✅ 已删除 MCP 服务器 **${found.name}**（\`${serverId}\`）。剩余 ${remaining} 个。`,
   }
 }
 
