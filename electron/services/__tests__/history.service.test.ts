@@ -151,7 +151,8 @@ describe('HistoryService - getRecentAgentRecords', () => {
   it('cleanupOldRecords 后索引同步重建', () => {
     const svc = new HistoryService()
     const oldTime = new Date('2025-01-01T10:00:00').getTime()
-    const recentTime = new Date('2026-03-18T10:00:00').getTime()
+    // 用相对当前时间的日期，避免硬编码日期随时间流逝变"旧"
+    const recentTime = Date.now() - 24 * 60 * 60 * 1000 // 1 天前
 
     svc.saveAgentRecord(makeRecord({
       id: 'old', timestamp: oldTime, duration: 100, userTask: 'old task'

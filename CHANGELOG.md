@@ -2,7 +2,19 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.32.1 (2026-04-15) (Latest)
+## v10.32.2 (2026-04-18) (Latest)
+
+A patch release focused on fixing issues across the config skill, PDF rendering, TTS voice, and UI scrolling.
+
+### Bug Fixes
+- 🔧 **Config Skill**: Prevented `config_set` from overwriting the entire MCP list; added merge-style tools to avoid accidentally wiping existing MCP entries
+- 🖼️ **PDF Rendering**: Fill white background before rendering, fixing JPEG encoding failures and avoiding oversized PNG output
+- 🎙️ **TTS Voice**: Also speak the `final_result` step, fixing missing voice when a task completes directly without intermediate messages
+- 📜 **UI Scrolling**: Fixed content still auto-scrolling when the user scrolled up under virtual scroll mode
+- 💬 **Agent Interaction**: Fixed `ask_user` replies being displayed twice
+- 🛠️ **Type Fixes**: Fixed TypeScript type errors in `agent.ts` and `ai.service.ts`
+
+## v10.32.1 (2026-04-15)
 
 Fixes PDF page rendering failure in production builds.
 
