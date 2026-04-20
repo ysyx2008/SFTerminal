@@ -1852,29 +1852,28 @@ watch(() => props.visible, (visible) => {
 }
 
 .model-select {
-  padding: 4px 8px;
+  padding: 4px 6px;
   font-size: 11px;
   color: var(--text-secondary);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 4px;
   cursor: pointer;
   max-width: 160px;
   outline: none;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .model-select:hover {
-  border-color: var(--accent-primary);
+  background: var(--bg-surface);
+  color: var(--text-primary);
 }
 
-.model-select:focus {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 2px rgba(0, 150, 255, 0.2);
-}
+/* 聚焦态本身不叠加底色；鼠标离开后不会残留高亮，鼠标回到上方仍由 :hover 生效 */
 
 /* 紧凑变体：嵌入 system-info-bar 时使用 */
 .model-select-sm {
-  padding: 2px 6px;
+  padding: 2px 4px;
   font-size: 11px;
   height: 22px;
   max-width: 140px;
