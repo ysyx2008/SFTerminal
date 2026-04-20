@@ -148,7 +148,6 @@ export default {
 
   // 头部工具栏
   header: {
-    sessionManager: '会话管理',
     hostManager: '主机管理',
     aiAssistant: 'AI 助手',
     settings: '控制面板',
@@ -1507,6 +1506,7 @@ export default {
     scrollLeft: '向左滚动',
     scrollRight: '向右滚动',
     selectShell: '选择 Shell',
+    sshConnect: 'SSH 连接...',
     confirmCloseAgentRunning: 'AI 助手正在执行任务中，关闭终端将中断执行。确定要关闭吗？',
     confirmCloseWithChat: '当前终端有 AI 对话记录，关闭后将丢失。确定要关闭吗？'
   },

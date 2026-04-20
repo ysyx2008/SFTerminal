@@ -148,7 +148,6 @@ export default {
 
   // Header toolbar
   header: {
-    sessionManager: 'Session Manager',
     hostManager: 'Host Manager',
     aiAssistant: 'AI Assistant',
     settings: 'Control Panel',
@@ -1507,6 +1506,7 @@ export default {
     scrollLeft: 'Scroll Left',
     scrollRight: 'Scroll Right',
     selectShell: 'Select Shell',
+    sshConnect: 'SSH Connect...',
     confirmCloseAgentRunning: 'AI Agent is running a task. Closing the terminal will interrupt it. Are you sure?',
     confirmCloseWithChat: 'This terminal has AI chat history that will be lost. Are you sure you want to close?'
   },

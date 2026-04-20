@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Server, Bot, Settings, X, Loader2, Heart } from 'lucide-vue-next'
+import { Monitor, Bot, Settings, X, Loader2, Heart } from 'lucide-vue-next'
 import { useTerminalStore } from './stores/terminal'
 import { useConfigStore, type SshSession } from './stores/config'
 import { useCanvasStore } from './stores/canvas'
@@ -812,19 +812,21 @@ onUnmounted(() => {
     <!-- 顶部工具栏 -->
     <header class="app-header">
       <div class="header-left">
-        <button class="btn-icon" @click="toggleSidebar" :title="t('header.sessionManager')">
-          <Server :size="18" />
-        </button>
         <span class="app-title">{{ isSteamBuild ? steamAppTitle : t('app.title') }}</span>
       </div>
       <div class="header-center">
-        <TabBar />
+        <TabBar @open-ssh="showSidebar = true" />
       </div>
       <div class="header-right">
         <template v-if="!isSteamBuild">
           <button v-if="hasTerminalTab" class="btn-icon" @click="toggleAiPanel" :title="t('header.aiAssistant')">
             <Bot :size="18" />
           </button>
+        </template>
+        <button class="btn-icon" @click="toggleSidebar" :title="t('header.hostManager')">
+          <Monitor :size="18" />
+        </button>
+        <template v-if="!isSteamBuild">
           <button class="btn-icon" :class="{ 'awakened-active': isAwakened }" @click="showAwaken = true" :title="t('awaken.title') + ' — ' + t('awaken.description')">
             <Heart :size="18" fill="currentColor" />
           </button>

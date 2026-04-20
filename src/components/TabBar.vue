@@ -9,6 +9,10 @@ const { t } = useI18n()
 const terminalStore = useTerminalStore()
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 
+const emit = defineEmits<{
+  'open-ssh': []
+}>()
+
 // 拖拽状态
 const dragIndex = ref<number | null>(null)
 const dragOverIndex = ref<number | null>(null)
@@ -129,6 +133,11 @@ const handleNewTab = (shell?: string) => {
 
 const handleNewAssistant = () => {
   terminalStore.createAssistantTab()
+  showNewMenu.value = false
+}
+
+const handleOpenSsh = () => {
+  emit('open-ssh')
   showNewMenu.value = false
 }
 
@@ -316,6 +325,11 @@ const openBatchPanel = () => {
         >
           <span class="shell-icon">{{ option.icon }}</span>
           <span>{{ option.label }}</span>
+        </div>
+        <div class="shell-menu-divider"></div>
+        <div class="shell-menu-item" @click="handleOpenSsh">
+          <Monitor :size="14" class="shell-icon-lucide" />
+          <span>{{ t('tabs.sshConnect') }}</span>
         </div>
       </div>
     </Teleport>
@@ -738,6 +752,15 @@ const openBatchPanel = () => {
 
 .shell-icon {
   font-size: 14px;
+}
+
+.shell-icon-lucide {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--text-secondary);
 }
 
 .shell-menu-divider {
