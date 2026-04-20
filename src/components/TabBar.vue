@@ -40,10 +40,17 @@ const loadAvailableShells = async () => {
         { label: 'CMD', value: 'cmd.exe', icon: '📟' }
       ]
     } else {
-      shellOptions.value = [
-        { label: 'Bash', value: '/bin/bash', icon: '🐚' },
-        { label: 'Zsh', value: '/bin/zsh', icon: '🔮' }
-      ]
+      // macOS 默认 zsh，排在最前；其他类 Unix 环境两者均列出
+      const isMac = navigator.platform.toLowerCase().includes('mac')
+      shellOptions.value = isMac
+        ? [
+            { label: 'Zsh', value: '/bin/zsh', icon: '🔮' },
+            { label: 'Bash', value: '/bin/bash', icon: '🐚' }
+          ]
+        : [
+            { label: 'Bash', value: '/bin/bash', icon: '🐚' },
+            { label: 'Zsh', value: '/bin/zsh', icon: '🔮' }
+          ]
     }
   }
 }

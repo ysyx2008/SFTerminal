@@ -1257,6 +1257,17 @@ export class PtyService {
         }
       }
       
+      // 把用户当前默认 shell（$SHELL）排到最前
+      // macOS 默认 zsh、Linux 多为 bash；按用户实际默认排序，更贴合预期
+      const defaultShell = process.env.SHELL
+      if (defaultShell) {
+        const idx = shells.findIndex(s => s.value === defaultShell)
+        if (idx > 0) {
+          const [preferred] = shells.splice(idx, 1)
+          shells.unshift(preferred)
+        }
+      }
+      
       return shells
     }
   }
