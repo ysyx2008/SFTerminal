@@ -274,7 +274,11 @@ const openBatchPanel = () => {
     
     <!-- 新建终端按钮（带下拉菜单） -->
     <div class="new-tab-wrapper">
-      <button class="btn-new-tab" @click="handleNewTab()" :title="t('tabs.newTab')">
+      <button
+        class="btn-new-tab"
+        @click="isSteamBuild ? handleNewTab() : handleNewAssistant()"
+        :title="isSteamBuild ? t('tabs.newTab') : t('tabs.assistant', 'AI 助手')"
+      >
         <Plus :size="14" />
       </button>
       <button class="btn-new-tab-dropdown" @click="toggleNewMenu" :title="t('tabs.selectShell')">
@@ -293,7 +297,7 @@ const openBatchPanel = () => {
             @click="handleNewAssistant"
           >
             <span class="shell-icon">🤖</span>
-            <span>{{ t('tabs.assistant', '助手') }}</span>
+            <span>{{ t('tabs.assistant', 'AI 助手') }}</span>
           </div>
           <div class="shell-menu-divider"></div>
         </template>

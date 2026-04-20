@@ -1502,7 +1502,7 @@ export default {
     closeTabsToRight: '关闭右侧标签页',
     localTerminal: '本地终端',
     sshTerminal: 'SSH 终端',
-    assistant: '助手',
+    assistant: 'AI 助手',
     connecting: '连接中...',
     scrollLeft: '向左滚动',
     scrollRight: '向右滚动',
