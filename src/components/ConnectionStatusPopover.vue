@@ -465,13 +465,13 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  /* 高度对齐 header-right 其他按钮，避免 hover scale(1.1) 顶到 32px header 外框 */
-  height: 24px;
+  /* 高度对齐 header-right 其他按钮 */
+  height: 26px;
   padding: 2px 6px;
   border-radius: 6px;
 }
 
-/* 削弱 hover scale，避免在 32px 高的 header 里放大后贴到边缘 */
+/* 削弱 hover scale，避免在 32px 高的 header 里放大后贴到边缘（与 App.vue 对 header btn-icon 的 override 保持一致） */
 .conn-btn:hover {
   transform: scale(1.04);
 }

@@ -1041,6 +1041,13 @@ onUnmounted(() => {
   border-radius: 5px;
 }
 
+/* header 高 32px，全局 .btn-icon:hover 的 scale(1.1) 会让 26px 按钮放大到 28.6px，几乎贴到外框；
+   统一削弱 header 这一行按钮的 hover 放大比例 */
+.header-left .btn-icon:hover,
+.header-right .btn-icon:hover {
+  transform: scale(1.04);
+}
+
 .btn-icon.awakened-active {
   color: #10b981;
 }
