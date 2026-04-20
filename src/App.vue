@@ -1068,7 +1068,7 @@ onUnmounted(() => {
   font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
-  margin-left: 8px;
+  margin-left: 4px;
   letter-spacing: 0.3px;
   /* line-height: 1 消除行盒额外空间，让文字与同行图标在 flex 垂直居中下严格对齐 */
   line-height: 1;
