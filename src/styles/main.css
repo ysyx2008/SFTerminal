@@ -1331,3 +1331,17 @@ textarea:focus {
   60% { transform: translateX(-4px); }
   80% { transform: translateX(4px); }
 }
+
+/* ==================== 平台适配：全屏 modal 顶部栏避让系统窗口按钮 ==================== */
+/* 使用 `>` 限定为直接子元素，避免误伤子面板中同名 class 的内部小标题 */
+/* macOS hiddenInset：红绿灯按钮浮在左上 */
+.app-container.is-mac .settings-modal > .settings-header,
+.app-container.is-mac .watch-panel > .panel-header {
+  padding-left: 78px;
+}
+
+/* Windows titleBarOverlay：最小化/最大化/关闭按钮浮在右上 */
+.app-container.is-win .settings-modal > .settings-header,
+.app-container.is-win .watch-panel > .panel-header {
+  padding-right: 146px;
+}
