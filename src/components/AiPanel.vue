@@ -3216,32 +3216,33 @@ watch(() => props.visible, (visible) => {
   color: var(--text-secondary);
 }
 
-/* 思考过程折叠区域样式 */
+/* 思考过程折叠区域样式 - 低调呈现 */
 .markdown-content :deep(details) {
-  margin: 12px 0;
-  border: 1px solid rgba(122, 162, 247, 0.3);
-  border-radius: 8px;
-  background: linear-gradient(135deg, rgba(122, 162, 247, 0.08), rgba(122, 162, 247, 0.02));
+  margin: 4px 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
   overflow: hidden;
 }
 
 .markdown-content :deep(details[open]) {
-  background: linear-gradient(135deg, rgba(122, 162, 247, 0.12), rgba(122, 162, 247, 0.04));
+  background: transparent;
 }
 
 .markdown-content :deep(summary) {
-  padding: 10px 14px;
+  padding: 2px 0;
   cursor: pointer;
   user-select: none;
-  font-size: 13px;
-  color: #7aa2f7;
-  background: rgba(122, 162, 247, 0.1);
-  border-bottom: 1px solid rgba(122, 162, 247, 0.2);
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.7;
+  background: transparent;
+  border-bottom: none;
   list-style: none;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  transition: background 0.2s ease;
+  gap: 4px;
+  transition: opacity 0.15s ease;
 }
 
 .markdown-content :deep(summary::-webkit-details-marker) {
@@ -3250,9 +3251,10 @@ watch(() => props.visible, (visible) => {
 
 .markdown-content :deep(summary::before) {
   content: '▶';
-  font-size: 10px;
+  font-size: 8px;
   transition: transform 0.2s ease;
-  color: #7aa2f7;
+  color: var(--text-muted);
+  opacity: 0.7;
 }
 
 .markdown-content :deep(details[open] > summary::before) {
@@ -3260,32 +3262,34 @@ watch(() => props.visible, (visible) => {
 }
 
 .markdown-content :deep(summary:hover) {
-  background: rgba(122, 162, 247, 0.2);
+  opacity: 1;
+  background: transparent;
 }
 
 .markdown-content :deep(details > blockquote) {
-  margin: 0;
-  padding: 12px 16px;
-  border-left: none;
+  margin: 4px 0 4px 10px;
+  padding: 6px 10px;
+  border-left: 2px solid rgba(255, 255, 255, 0.08);
   border-radius: 0;
   background: transparent;
   color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.6;
-  max-height: 400px;
+  font-size: 11px;
+  line-height: 1.5;
+  max-height: 300px;
   overflow-y: auto;
+  opacity: 0.75;
 }
 
 /* 思考过程中的文本样式 */
 .markdown-content :deep(details > blockquote p) {
-  margin: 6px 0;
+  margin: 4px 0;
 }
 
 .markdown-content :deep(details > blockquote code) {
   background: rgba(0, 0, 0, 0.2);
   padding: 1px 4px;
   border-radius: 3px;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .markdown-content :deep(a) {
