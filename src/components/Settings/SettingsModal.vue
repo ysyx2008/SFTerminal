@@ -829,10 +829,15 @@ const onQrImageError = (event: Event) => {
 }
 
 .settings-header .btn-icon {
-  width: 30px;
-  height: 30px;
-  padding: 6px;
+  width: 26px;
+  height: 26px;
+  padding: 4px;
   border-radius: 6px;
+}
+
+/* 削弱 hover scale，避免在 32px 高的 header 里放大后贴到边缘 */
+.settings-header .btn-icon:hover {
+  transform: scale(1.04);
 }
 
 .settings-body {
