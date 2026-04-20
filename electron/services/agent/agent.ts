@@ -1672,13 +1672,11 @@ export abstract class Agent {
           streamContent += chunk
           const now = Date.now()
           
-          // 第一次收到内容时，移除初始步骤并立即创建流式步骤
+          // 第一次收到内容时，先创建流式步骤，再移除初始步骤
+          // 顺序很重要：若先 remove 再 add，前端 steps 会瞬间为 0，
+          // 触发 agent_loading 虚拟项闪现"助手启动中..."。
           if (!streamStepCreated) {
             streamStepCreated = true
-            if (run.initialStepId) {
-              this.removeStep(run.initialStepId)
-              run.initialStepId = undefined
-            }
             // 立即创建步骤，确保 timestamp 在工具结果之前
             this.addStep({
               id: streamStepId,
@@ -1686,6 +1684,10 @@ export abstract class Agent {
               content: streamContent,
               isStreaming: true
             })
+            if (run.initialStepId) {
+              this.removeStep(run.initialStepId)
+              run.initialStepId = undefined
+            }
             lastContentUpdate = Date.now()
             return
           }
@@ -1808,11 +1810,7 @@ export abstract class Agent {
           const progressContent = `⏳ ${t('progress.generating_args', { toolName })} ${argsLength} ${t('misc.characters')}`
           
           if (!toolProgressStepCreated) {
-            // 如果还没有创建进度步骤，先移除初始步骤
-            if (run.initialStepId) {
-              this.removeStep(run.initialStepId)
-              run.initialStepId = undefined
-            }
+            // 先创建进度步骤再移除初始步骤，避免前端 steps 瞬间为 0 闪现"助手启动中..."
             toolProgressStepCreated = true
             this.addStep({
               id: toolProgressStepId,
@@ -1820,6 +1818,10 @@ export abstract class Agent {
               content: progressContent,
               isStreaming: true
             })
+            if (run.initialStepId) {
+              this.removeStep(run.initialStepId)
+              run.initialStepId = undefined
+            }
           } else {
             this.updateStep(toolProgressStepId, {
               type: 'thinking',
