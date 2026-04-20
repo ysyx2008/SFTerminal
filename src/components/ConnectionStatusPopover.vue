@@ -465,9 +465,15 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 30px;
-  padding: 4px 8px;
+  /* 高度对齐 header-right 其他按钮，避免 hover scale(1.1) 顶到 32px header 外框 */
+  height: 24px;
+  padding: 2px 6px;
   border-radius: 6px;
+}
+
+/* 削弱 hover scale，避免在 32px 高的 header 里放大后贴到边缘 */
+.conn-btn:hover {
+  transform: scale(1.04);
 }
 
 /* 状态徽章 */
