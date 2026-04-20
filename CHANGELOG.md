@@ -2,7 +2,23 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.32.2 (2026-04-18) (Latest)
+## v10.33.0 (2026-04-21) (Latest)
+
+A refreshed UI layout — the app header now merges into the system title bar, making the whole interface lighter and more cohesive.
+
+### New Features
+- 🪟 **Unified Header & System Title Bar**: On both macOS and Windows, the app header is now embedded directly into the system title bar, saving vertical space and automatically avoiding traffic lights / window buttons
+
+### Improvements
+- 💭 **Subtler Thinking Cards**: Lighter color palette and a more compact visible area for AI thinking content
+- ⏳ **Unified Startup Prompt**: Removed the frontend "Assistant is starting..." message; unified under the backend step prompt
+
+### Bug Fixes
+- 📜 **Thinking Content Scroll Lag**: Streaming thinking content now correctly keeps the scroll at the bottom
+- ✨ **"Preparing..." Flash & Lingering**: No longer flashes on the first chunk, and no longer lingers after later steps appear
+- 🎯 **Close Button Hover Overflow**: Control panel / wake-up close buttons no longer break out of their frame on hover
+
+## v10.32.2 (2026-04-18)
 
 A patch release focused on fixing issues across the config skill, PDF rendering, TTS voice, and UI scrolling.
 

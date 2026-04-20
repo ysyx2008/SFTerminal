@@ -193,7 +193,6 @@ const {
   stopGeneration,
   // Agent 执行
   executionMode,
-  commandTimeout,
   activeProfileId,
   agentState,
   isAgentRunning,
