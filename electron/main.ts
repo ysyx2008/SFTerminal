@@ -714,6 +714,8 @@ function createWindow() {
     title: getAppTitle(),
     icon: iconPath,
     frame: true,
+    // macOS: 隐藏原生标题栏但保留红绿灯按钮（浮在内容上），让应用自绘的 header 与标题栏合并为单条
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const } : {}),
     show: false, // 先不显示，等待 ready-to-show
     backgroundColor: '#1e1e1e', // 设置背景色，避免白屏闪烁
     webPreferences: {

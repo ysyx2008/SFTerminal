@@ -53,6 +53,9 @@ const showSmartPatrol = ref(false)
 const showAwaken = ref(false)
 const isAwakened = ref(false)
 
+// macOS 下窗口使用 hiddenInset 标题栏，app-header 需为红绿灯按钮让位
+const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
+
 const hasTerminalTab = computed(() => terminalStore.tabs.some(t => t.type === 'local' || t.type === 'ssh'))
 
 // UI 主题
@@ -788,7 +791,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-container" :class="{ 'sidebar-open': showSidebar }" :data-ui-theme="currentUiTheme" :data-color-scheme="currentColorScheme">
+  <div class="app-container" :class="{ 'sidebar-open': showSidebar, 'is-mac': isMac }" :data-ui-theme="currentUiTheme" :data-color-scheme="currentColorScheme">
     <!-- 顶部工具栏 -->
     <header class="app-header">
       <div class="header-left">
@@ -972,6 +975,11 @@ onUnmounted(() => {
   z-index: 10;
 }
 
+/* macOS: hiddenInset 标题栏下红绿灯按钮浮在内容上，左侧留出空间避免遮挡 */
+.app-container.is-mac .app-header {
+  padding-left: 78px;
+}
+
 /* 深色主题：顶部渐变效果 */
 [data-color-scheme="dark"] .app-header {
   background: linear-gradient(180deg, var(--bg-secondary) 0%, rgba(var(--bg-secondary-rgb, 24, 24, 37), 0.95) 100%);
@@ -1020,7 +1028,7 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   overflow: hidden;
-  -webkit-app-region: no-drag;
+  /* 继承 app-header 的 drag：TabBar 空白区支持按住拖动窗口、双击最大化等系统行为 */
   margin: 0 12px;
   min-width: 0;
 }

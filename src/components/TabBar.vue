@@ -325,6 +325,7 @@ const openBatchPanel = () => {
   gap: 2px;
   max-width: 100%;
   overflow: hidden;
+  /* 空白区域继承父级 drag，使 TabBar 两侧/间隙可拖动窗口与双击最大化 */
 }
 
 .scroll-btn {
@@ -340,6 +341,7 @@ const openBatchPanel = () => {
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
+  -webkit-app-region: no-drag;
 }
 
 .scroll-btn:hover {
@@ -384,6 +386,7 @@ const openBatchPanel = () => {
   position: relative;
   overflow: hidden;
   z-index: 1;
+  -webkit-app-region: no-drag;
 }
 
 /* Tab 顶部 & 底部渐变指示线（宽度动画） */
@@ -583,6 +586,7 @@ const openBatchPanel = () => {
   position: relative;
   overflow: hidden;
   flex-shrink: 0;
+  -webkit-app-region: no-drag;
 }
 
 .btn-batch::before {
@@ -617,6 +621,7 @@ const openBatchPanel = () => {
   display: flex;
   flex-shrink: 0;
   margin-left: 4px;
+  -webkit-app-region: no-drag;
 }
 
 .btn-new-tab {
