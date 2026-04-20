@@ -3255,8 +3255,6 @@ watch(() => props.visible, (visible) => {
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.5;
-  max-height: 300px;
-  overflow-y: auto;
   opacity: 0.75;
 }
 
@@ -3903,8 +3901,6 @@ watch(() => props.visible, (visible) => {
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.6;
-  max-height: 300px;
-  overflow-y: auto;
 }
 
 .step-text.step-analysis.markdown-content :deep(blockquote p) {
