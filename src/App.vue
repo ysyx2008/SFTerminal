@@ -63,8 +63,8 @@ function syncTitleBarOverlay() {
   try {
     const styles = getComputedStyle(document.documentElement)
     // 需要把 CSS 变量值转成 #rrggbb 或 rgb()；Windows API 能接受 hex / rgb 字符串
-    const bg = styles.getPropertyValue('--bg-secondary').trim() || '#181825'
-    const fg = styles.getPropertyValue('--text-primary').trim() || '#cdd6f4'
+    const bg = styles.getPropertyValue('--bg-secondary').trim() || '#101010'
+    const fg = styles.getPropertyValue('--text-primary').trim() || '#e8e8e8'
     window.electronAPI.window.setTitleBarOverlay?.({ color: bg, symbolColor: fg })
   } catch {
     /* ignore */

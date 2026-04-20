@@ -19,25 +19,25 @@
   --tab-height: 28px;
 }
 
-/* 深色主题（默认） */
+/* 深色主题（默认）— 纯黑层次，接近 Cursor / VS Code 深色 */
 [data-ui-theme="dark"], :root {
-  --bg-primary: #1e1e2e;
-  --bg-secondary: #181825;
-  --bg-tertiary: #11111b;
-  --bg-surface: #313244;
-  --bg-hover: #45475a;
+  --bg-primary: #000000;
+  --bg-secondary: #101010;
+  --bg-tertiary: #080808;
+  --bg-surface: #161616;
+  --bg-hover: #2a2a2a;
   
-  --text-primary: #cdd6f4;
-  --text-secondary: #a6adc8;
-  --text-muted: #6c7086;
+  --text-primary: #e8e8e8;
+  --text-secondary: #a0a0a0;
+  --text-muted: #6b6b6b;
   
-  --accent-primary: #89b4fa;
-  --accent-secondary: #74c7ec;
-  --accent-success: #a6e3a1;
-  --accent-warning: #f9e2af;
-  --accent-error: #f38ba8;
+  --accent-primary: #4d9eff;
+  --accent-secondary: #6ab8ff;
+  --accent-success: #5ec463;
+  --accent-warning: #e5c07b;
+  --accent-error: #f14c4c;
   
-  --border-color: #45475a;
+  --border-color: #2a2a2a;
 }
 
 /* 浅色主题 */

@@ -434,29 +434,29 @@ export function getThemeNames(): ThemeName[] {
  * 为每个 UI 主题创建完美匹配的终端配色，让终端完全融入界面
  */
 const integratedTerminalThemes: Record<UiThemeName, ITheme> = {
-  // Dark (Catppuccin Mocha 风格) - 使用 UI 主题的背景色
+  // Dark — 与 UI 纯黑主题一致，ANSI 接近 VS Code Dark+ / Cursor
   'dark': {
-    background: '#1e1e2e',  // 与 UI 的 bgPrimary 完全一致
-    foreground: '#cdd6f4',
-    cursor: '#89b4fa',
-    cursorAccent: '#1e1e2e',
-    selectionBackground: '#45475a',
-    black: '#45475a',
-    red: '#f38ba8',
-    green: '#a6e3a1',
-    yellow: '#f9e2af',
-    blue: '#89b4fa',
-    magenta: '#cba6f7',
-    cyan: '#94e2d5',
-    white: '#bac2de',
-    brightBlack: '#585b70',
-    brightRed: '#f38ba8',
-    brightGreen: '#a6e3a1',
-    brightYellow: '#f9e2af',
-    brightBlue: '#89b4fa',
-    brightMagenta: '#cba6f7',
-    brightCyan: '#94e2d5',
-    brightWhite: '#a6adc8'
+    background: '#000000',
+    foreground: '#e4e4e4',
+    cursor: '#4d9eff',
+    cursorAccent: '#000000',
+    selectionBackground: '#264f78',
+    black: '#1e1e1e',
+    red: '#f44747',
+    green: '#6cc644',
+    yellow: '#dcdcaa',
+    blue: '#569cd6',
+    magenta: '#c586c0',
+    cyan: '#4ec9b0',
+    white: '#d4d4d4',
+    brightBlack: '#808080',
+    brightRed: '#f44747',
+    brightGreen: '#6cc644',
+    brightYellow: '#dcdcaa',
+    brightBlue: '#569cd6',
+    brightMagenta: '#c586c0',
+    brightCyan: '#4ec9b0',
+    brightWhite: '#e4e4e4'
   },
 
   // Light - 浅色主题

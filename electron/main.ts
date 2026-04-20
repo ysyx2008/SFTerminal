@@ -725,13 +725,13 @@ function createWindow() {
     ...(process.platform === 'win32' ? {
       titleBarStyle: 'hidden' as const,
       titleBarOverlay: {
-        color: '#181825',
-        symbolColor: '#cdd6f4',
+        color: '#101010',
+        symbolColor: '#e8e8e8',
         height: 32
       }
     } : {}),
     show: false, // 先不显示，等待 ready-to-show
-    backgroundColor: '#1e1e1e', // 设置背景色，避免白屏闪烁
+    backgroundColor: '#000000', // 设置背景色，避免白屏闪烁
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,

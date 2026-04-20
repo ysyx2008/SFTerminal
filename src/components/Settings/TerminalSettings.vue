@@ -277,7 +277,7 @@ const encodingOptions: LocalEncoding[] = [
 
 /* 预览 */
 .terminal-preview {
-  background: #1e1e2e;
+  background: var(--bg-primary);
   padding: 16px;
   border-radius: 6px;
   line-height: 1.5;

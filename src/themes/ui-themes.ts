@@ -40,26 +40,26 @@ export interface UiThemeVars {
   borderColor: string
 }
 
-// 深色主题（当前默认主题 - Catppuccin Mocha 风格）
+// 深色主题（默认）— 纯黑层次，接近 Cursor / VS Code 深色
 const darkTheme: UiThemeVars = {
   colorScheme: 'dark',
-  bgPrimary: '#1e1e2e',
-  bgSecondary: '#181825',
-  bgTertiary: '#11111b',
-  bgSurface: '#313244',
-  bgHover: '#45475a',
+  bgPrimary: '#000000',
+  bgSecondary: '#101010',
+  bgTertiary: '#080808',
+  bgSurface: '#161616',
+  bgHover: '#2a2a2a',
   
-  textPrimary: '#cdd6f4',
-  textSecondary: '#a6adc8',
-  textMuted: '#6c7086',
+  textPrimary: '#e8e8e8',
+  textSecondary: '#a0a0a0',
+  textMuted: '#6b6b6b',
   
-  accentPrimary: '#89b4fa',
-  accentSecondary: '#74c7ec',
-  accentSuccess: '#a6e3a1',
-  accentWarning: '#f9e2af',
-  accentError: '#f38ba8',
+  accentPrimary: '#4d9eff',
+  accentSecondary: '#6ab8ff',
+  accentSuccess: '#5ec463',
+  accentWarning: '#e5c07b',
+  accentError: '#f14c4c',
   
-  borderColor: '#45475a'
+  borderColor: '#2a2a2a'
 }
 
 // 浅色主题
