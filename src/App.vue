@@ -53,8 +53,23 @@ const showSmartPatrol = ref(false)
 const showAwaken = ref(false)
 const isAwakened = ref(false)
 
-// macOS 下窗口使用 hiddenInset 标题栏，app-header 需为红绿灯按钮让位
+// 平台判断：macOS 使用 hiddenInset（左侧红绿灯），Windows 使用 titleBarOverlay（右侧按钮）
 const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
+const isWin = typeof navigator !== 'undefined' && /Win/i.test(navigator.platform)
+
+// Windows: 将当前主题下的 header 背景色与前景色同步给系统标题栏 overlay
+function syncTitleBarOverlay() {
+  if (!isWin) return
+  try {
+    const styles = getComputedStyle(document.documentElement)
+    // 需要把 CSS 变量值转成 #rrggbb 或 rgb()；Windows API 能接受 hex / rgb 字符串
+    const bg = styles.getPropertyValue('--bg-secondary').trim() || '#181825'
+    const fg = styles.getPropertyValue('--text-primary').trim() || '#cdd6f4'
+    window.electronAPI.window.setTitleBarOverlay?.({ color: bg, symbolColor: fg })
+  } catch {
+    /* ignore */
+  }
+}
 
 const hasTerminalTab = computed(() => terminalStore.tabs.some(t => t.type === 'local' || t.type === 'ssh'))
 
@@ -118,6 +133,8 @@ provide('showSettings', () => {
 watch([currentUiTheme, currentColorScheme], ([theme, colorScheme]) => {
   document.body.setAttribute('data-ui-theme', theme)
   document.body.setAttribute('data-color-scheme', colorScheme)
+  // CSS 变量更新需等下一帧生效后再读
+  requestAnimationFrame(syncTitleBarOverlay)
 }, { immediate: true })
 
 /**
@@ -791,7 +808,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-container" :class="{ 'sidebar-open': showSidebar, 'is-mac': isMac }" :data-ui-theme="currentUiTheme" :data-color-scheme="currentColorScheme">
+  <div class="app-container" :class="{ 'sidebar-open': showSidebar, 'is-mac': isMac, 'is-win': isWin }" :data-ui-theme="currentUiTheme" :data-color-scheme="currentColorScheme">
     <!-- 顶部工具栏 -->
     <header class="app-header">
       <div class="header-left">
@@ -978,6 +995,11 @@ onUnmounted(() => {
 /* macOS: hiddenInset 标题栏下红绿灯按钮浮在内容上，左侧留出空间避免遮挡 */
 .app-container.is-mac .app-header {
   padding-left: 78px;
+}
+
+/* Windows: titleBarOverlay 在右上角绘制最小化/最大化/关闭按钮（约 138px），右侧留位避免遮挡 */
+.app-container.is-win .app-header {
+  padding-right: 146px;
 }
 
 /* 深色主题：顶部渐变效果 */

@@ -713,9 +713,19 @@ function createWindow() {
     minHeight: 600,
     title: getAppTitle(),
     icon: iconPath,
-    frame: true,
-    // macOS: 隐藏原生标题栏但保留红绿灯按钮（浮在内容上），让应用自绘的 header 与标题栏合并为单条
+    frame: process.platform !== 'win32', // Windows 使用无边框 + titleBarOverlay 合并标题栏
+    // macOS: 隐藏原生标题栏但保留红绿灯按钮（浮在内容上）
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const } : {}),
+    // Windows: 由系统绘制右上角最小化/最大化/关闭按钮，应用自绘的 header 与之合并为单条
+    // 初始颜色用深色默认值，渲染端加载后通过 IPC 按主题更新
+    ...(process.platform === 'win32' ? {
+      titleBarStyle: 'hidden' as const,
+      titleBarOverlay: {
+        color: '#181825',
+        symbolColor: '#cdd6f4',
+        height: 32
+      }
+    } : {}),
     show: false, // 先不显示，等待 ready-to-show
     backgroundColor: '#1e1e1e', // 设置背景色，避免白屏闪烁
     webPreferences: {
@@ -1744,6 +1754,21 @@ ipcMain.handle('window:forceQuit', async () => {
 ipcMain.on('window:focusWebContents', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.focus()
+  }
+})
+
+// Windows 标题栏按钮区颜色同步：渲染端主题切换时更新 titleBarOverlay 颜色
+ipcMain.on('window:setTitleBarOverlay', (_event, options: { color: string; symbolColor: string }) => {
+  if (process.platform !== 'win32') return
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  try {
+    mainWindow.setTitleBarOverlay({
+      color: options.color,
+      symbolColor: options.symbolColor,
+      height: 32
+    })
+  } catch (e) {
+    log.warn('[Window] setTitleBarOverlay failed:', e)
   }
 })
 

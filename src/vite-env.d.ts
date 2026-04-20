@@ -135,6 +135,7 @@ interface Window {
       close: () => Promise<void>
       forceQuit: () => Promise<void>
       focusWebContents: () => void
+      setTitleBarOverlay: (options: { color: string; symbolColor: string }) => void
       onRequestTerminalCount: (callback: () => void) => () => void
       responseTerminalCount: (count: number) => void
     }
