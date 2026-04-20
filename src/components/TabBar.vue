@@ -378,7 +378,7 @@ const openBatchPanel = () => {
   min-width: 120px;
   max-width: 180px;
   background: transparent;
-  border-radius: 8px 8px 0 0;
+  border-radius: 0;
   cursor: grab;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
