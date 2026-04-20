@@ -1124,7 +1124,6 @@ export default {
     aiAnalyze: 'AI 分析',
     preparing: '正在准备...',
     executing: '执行中...',
-    agentStarting: '助手启动中...',
     agentRunning: '助手执行中',
     agentHistory: '助手执行记录',
     steps: '步',

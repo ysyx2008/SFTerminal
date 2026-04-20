@@ -1498,18 +1498,6 @@ watch(() => props.visible, (visible) => {
                 </div>
               </div>
 
-              <!-- Agent 初始加载（无步骤时） -->
-              <div v-else-if="item.type === 'agent_loading'" class="message assistant">
-                <div class="message-wrapper">
-                  <div class="message-content agent-initial-loading">
-                    <div class="agent-thinking-indicator">
-                      <span class="thinking-spinner"></span>
-                      <span class="thinking-text">{{ t('ai.agentStarting') }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
               <!-- 单个步骤 -->
               <div v-else-if="item.type === 'step'" class="agent-step-virtual" :class="{ 'first-step': item.isFirstStep }">
                 <div 
@@ -1643,14 +1631,6 @@ watch(() => props.visible, (visible) => {
                       />
                     </div>
                   </div>
-                </div>
-              </div>
-
-              <!-- 思考中指示器 -->
-              <div v-else-if="item.type === 'thinking_indicator'" class="agent-step-virtual">
-                <div class="agent-thinking-indicator">
-                  <span class="thinking-spinner"></span>
-                  <span class="thinking-text">{{ t('ai.preparing') }}</span>
                 </div>
               </div>
 

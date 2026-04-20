@@ -42,7 +42,7 @@ export interface AgentTaskGroup {
 
 export interface VirtualItem {
   id: string
-  type: 'user_task' | 'agent_loading' | 'step' | 'thinking_indicator' | 'final_result' | 'proactive_message' | 'confirm'
+  type: 'user_task' | 'step' | 'final_result' | 'proactive_message' | 'confirm'
   group?: AgentTaskGroup
   step?: AgentStep
   content?: string
@@ -447,9 +447,7 @@ export function useAgentMode(
         items.push({ id: `user_${group.id}`, type: 'user_task', group, size: 60 })
       }
 
-      if (group.isCurrentTask && isAgentRunning.value && group.steps.length === 0) {
-        items.push({ id: `loading_${group.id}`, type: 'agent_loading', group, size: 50 })
-      }
+      // 初始等待提示由后端以 thinking step（"正在准备..."）承载，前端不再额外插入虚拟项
 
       if (group.steps.length > 0) {
         for (let i = 0; i < group.steps.length; i++) {
