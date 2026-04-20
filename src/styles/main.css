@@ -449,6 +449,13 @@ html, body {
   transform: scale(0.95);
 }
 
+/* 去掉按钮的默认焦点轮廓：按 ESC 等键盘操作后不残留黄框；
+   视觉反馈由 :hover / :active 提供，输入框焦点样式不受影响 */
+button:focus,
+button:focus-visible {
+  outline: none;
+}
+
 .btn-icon svg {
   transition: all 0.2s ease;
 }
