@@ -371,7 +371,7 @@ const openBatchPanel = () => {
   padding: 6px 10px;
   min-width: 120px;
   max-width: 180px;
-  background: var(--bg-tertiary);
+  background: transparent;
   border-radius: 8px 8px 0 0;
   cursor: grab;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -382,11 +382,11 @@ const openBatchPanel = () => {
   z-index: 1;
 }
 
-/* Tab 底部渐变指示线 */
+/* Tab 顶部 & 底部渐变指示线（宽度动画） */
+.tab::before,
 .tab::after {
   content: '';
   position: absolute;
-  bottom: 0;
   left: 50%;
   width: 0;
   height: 2px;
@@ -396,10 +396,21 @@ const openBatchPanel = () => {
   border-radius: 1px;
 }
 
+.tab::before {
+  top: 0;
+  border-radius: 0 0 2px 2px;
+}
+
+.tab::after {
+  bottom: 0;
+  border-radius: 1px;
+}
+
 .tab:hover {
   background: var(--bg-surface);
 }
 
+.tab:hover::before,
 .tab:hover::after {
   width: 50%;
 }
@@ -413,21 +424,12 @@ const openBatchPanel = () => {
   z-index: 2;
 }
 
+.tab.active::before,
 .tab.active::after {
   width: 100%;
   height: 3px;
   background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
   box-shadow: 0 0 10px var(--accent-primary);
-}
-
-.tab.active::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb, 137, 180, 250), 0.3), transparent);
 }
 
 .tab.dragging {
@@ -493,7 +495,7 @@ const openBatchPanel = () => {
 .tab-title {
   flex: 1;
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

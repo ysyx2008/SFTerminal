@@ -1075,30 +1075,6 @@ watch(() => props.visible, (visible) => {
       </div>
     </div>
 
-    <div class="ai-header">
-      <h3>{{ t('ai.assistant') }}</h3>
-      <div class="ai-header-actions">
-        <!-- 模型选择 -->
-        <select 
-          v-if="aiProfiles.length > 0"
-          class="model-select"
-          :value="activeAiProfile?.id || ''"
-          :title="t('ai.switchModel')"
-          @change="changeAiProfile(($event.target as HTMLSelectElement).value)"
-        >
-          <option v-for="profile in aiProfiles" :key="profile.id" :value="profile.id">
-            {{ profile.name }} ({{ profile.model }}){{ profile.modelType === 'vision' ? ` [${t('aiSettings.modelTypeVision')}]` : '' }}
-          </option>
-        </select>
-        <button class="btn-icon" @click="clearMessages" :title="t('ai.clearChat')">
-          <Trash2 :size="16" />
-        </button>
-        <button class="btn-icon" @click="handleClose" :title="t('ai.closePanel')">
-          <X :size="16" />
-        </button>
-      </div>
-    </div>
-
     <!-- 未配置 AI 提示 -->
     <div v-if="!hasAiConfig" class="ai-no-config">
       <HelpCircle :size="48" :stroke-width="1.5" />
@@ -1213,18 +1189,6 @@ watch(() => props.visible, (visible) => {
         </div>
         <!-- Agent 模式设置 -->
         <div class="agent-settings">
-          <!-- 超时设置 -->
-          <div class="timeout-setting" :title="t('ai.timeout')">
-            <span class="timeout-label">{{ t('ai.timeout') }}</span>
-            <select v-model.number="commandTimeout" class="timeout-select">
-              <option :value="5">5s</option>
-              <option :value="10">10s</option>
-              <option :value="30">30s</option>
-              <option :value="60">60s</option>
-              <option :value="120">2m</option>
-              <option :value="300">5m</option>
-            </select>
-          </div>
           <!-- 执行模式选择器（三选一：严格/宽松/自由） -->
           <div class="execution-mode-selector">
             <button 
@@ -1252,6 +1216,26 @@ watch(() => props.visible, (visible) => {
               {{ t('ai.free') }}
             </button>
           </div>
+        </div>
+        <!-- 从原 ai-header 迁移的控件，保持"最右侧"的对齐 -->
+        <div class="ai-header-actions">
+          <select
+            v-if="aiProfiles.length > 0"
+            class="model-select model-select-sm"
+            :value="activeAiProfile?.id || ''"
+            :title="t('ai.switchModel')"
+            @change="changeAiProfile(($event.target as HTMLSelectElement).value)"
+          >
+            <option v-for="profile in aiProfiles" :key="profile.id" :value="profile.id">
+              {{ profile.name }} ({{ profile.model }}){{ profile.modelType === 'vision' ? ` [${t('aiSettings.modelTypeVision')}]` : '' }}
+            </option>
+          </select>
+          <button class="btn-icon btn-icon-sm" @click="clearMessages" :title="t('ai.clearChat')">
+            <Trash2 :size="13" />
+          </button>
+          <button class="btn-icon btn-icon-sm" @click="handleClose" :title="t('ai.closePanel')">
+            <X :size="13" />
+          </button>
         </div>
       </div>
 
@@ -1868,60 +1852,6 @@ watch(() => props.visible, (visible) => {
   color: var(--text-muted);
 }
 
-.ai-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border-color);
-  position: relative;
-  animation: headerEnter 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
-}
-
-@keyframes headerEnter {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* 深色主题：头部底部微光 */
-[data-color-scheme="dark"] .ai-header::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(var(--accent-secondary-rgb, 116, 199, 236), 0.15), transparent);
-}
-
-.ai-header h3 {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.ai-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.ai-header-actions .btn-icon {
-  width: 28px;
-  height: 28px;
-  padding: 6px;
-  border-radius: 6px;
-}
-
 .model-select {
   padding: 4px 8px;
   font-size: 11px;
@@ -1943,6 +1873,35 @@ watch(() => props.visible, (visible) => {
   box-shadow: 0 0 0 2px rgba(0, 150, 255, 0.2);
 }
 
+/* 紧凑变体：嵌入 system-info-bar 时使用 */
+.model-select-sm {
+  padding: 2px 6px;
+  font-size: 11px;
+  height: 22px;
+  max-width: 140px;
+  border-radius: 4px;
+}
+
+.btn-icon-sm {
+  width: 22px;
+  height: 22px;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-icon-sm:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
 .ai-no-config {
   flex: 1;
   display: flex;
@@ -1958,18 +1917,49 @@ watch(() => props.visible, (visible) => {
 .system-info-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
   padding: 6px 12px;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
   font-size: 11px;
   color: var(--text-muted);
+  container-type: inline-size;
+  container-name: infobar;
+  white-space: nowrap;
+}
+
+/* ai-header-actions 固定在最右侧（无论 system-info-left 是否渲染） */
+.ai-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .system-info-left {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* 窄面板（如嵌入终端 tab 的 AI 侧栏）下隐藏辅助标签，只留图标/控件 */
+@container infobar (max-width: 500px) {
+  .system-info-left .system-text,
+  .system-info-left .hover-hint {
+    display: none;
+  }
+  .model-select-sm {
+    max-width: 100px;
+  }
+}
+
+@container infobar (max-width: 380px) {
+  .model-select-sm {
+    max-width: 70px;
+  }
 }
 
 .system-icon {
@@ -1984,10 +1974,11 @@ watch(() => props.visible, (visible) => {
 .host-info-trigger {
   position: relative;
   cursor: pointer;
-  padding: 2px 6px;
-  margin: -2px -6px;
+  height: 26px;
+  padding: 0 8px;
   border-radius: 6px;
   transition: all 0.2s ease;
+  box-sizing: border-box;
 }
 
 .host-info-trigger:hover {
@@ -2040,20 +2031,6 @@ watch(() => props.visible, (visible) => {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
-}
-
-/* 面板箭头 */
-.host-info-popover::before {
-  content: '';
-  position: absolute;
-  top: -6px;
-  left: 28px;
-  width: 12px;
-  height: 12px;
-  background: var(--bg-secondary);
-  border-left: 1px solid var(--border-color);
-  border-top: 1px solid var(--border-color);
-  transform: rotate(45deg);
 }
 
 .popover-header {
@@ -3376,40 +3353,9 @@ watch(() => props.visible, (visible) => {
 .agent-settings {
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-
-/* 超时设置 */
-.timeout-setting {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.timeout-label {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-.timeout-select {
-  font-size: 11px;
-  height: 26px;
-  padding: 0 2px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  color: var(--text-primary);
-  cursor: pointer;
-  outline: none;
-  text-align: right;
-}
-
-.timeout-select:hover {
-  border-color: var(--accent-primary);
-}
-
-.timeout-select:focus {
-  border-color: var(--accent-primary);
+  gap: 10px;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
 }
 
 /* 严格模式开关 */
@@ -3465,6 +3411,7 @@ watch(() => props.visible, (visible) => {
   border-radius: 6px;
   padding: 2px;
   border: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
 .mode-option {
