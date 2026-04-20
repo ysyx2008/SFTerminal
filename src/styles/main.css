@@ -14,9 +14,9 @@
   --font-mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
   
   /* 尺寸 */
-  --header-height: 40px;
+  --header-height: 32px;
   --sidebar-width: 320px;
-  --tab-height: 36px;
+  --tab-height: 28px;
 }
 
 /* 深色主题（默认） */

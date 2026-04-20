@@ -967,7 +967,6 @@ onUnmounted(() => {
   height: var(--header-height);
   padding: 0 12px;
   background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
   -webkit-app-region: drag;
   position: relative;
   z-index: 10;
@@ -1006,10 +1005,10 @@ onUnmounted(() => {
 
 .header-left .btn-icon,
 .header-right .btn-icon {
-  width: 30px;
-  height: 30px;
-  padding: 6px;
-  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  padding: 4px;
+  border-radius: 5px;
 }
 
 .btn-icon.awakened-active {
@@ -1022,6 +1021,8 @@ onUnmounted(() => {
   justify-content: center;
   overflow: hidden;
   -webkit-app-region: no-drag;
+  margin: 0 12px;
+  min-width: 0;
 }
 
 .app-title {

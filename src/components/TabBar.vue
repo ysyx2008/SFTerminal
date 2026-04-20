@@ -379,6 +379,7 @@ const openBatchPanel = () => {
   flex-shrink: 0;
   position: relative;
   overflow: hidden;
+  z-index: 1;
 }
 
 /* Tab 底部渐变指示线 */
@@ -409,6 +410,7 @@ const openBatchPanel = () => {
     0 -4px 15px rgba(var(--accent-rgb, 137, 180, 250), 0.15),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
   position: relative;
+  z-index: 2;
 }
 
 .tab.active::after {
