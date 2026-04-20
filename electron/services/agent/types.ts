@@ -192,6 +192,7 @@ export interface HostProfileServiceInterface {
 // Agent 事件回调
 export interface AgentCallbacks {
   onStep?: (agentId: string, step: AgentStep) => void
+  onStepRemoved?: (agentId: string, stepId: string) => void
   onNeedConfirm?: (confirmation: PendingConfirmationInternal) => void
   onComplete?: (agentId: string, result: string, pendingUserMessages?: string[]) => void
   onError?: (agentId: string, error: string) => void

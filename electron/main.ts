@@ -2668,6 +2668,11 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
         event.sender.send('agent:step', { agentId, ptyId, step: serializedStep })
       }
     },
+    onStepRemoved: (agentId: string, stepId: string) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('agent:stepRemoved', { agentId, ptyId, stepId })
+      }
+    },
     onNeedConfirm: (confirmation: PendingConfirmation) => {
       if (!event.sender.isDestroyed()) {
         // 只发送可序列化的字段，不包含 resolve 函数
@@ -2781,6 +2786,11 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
         event.sender.send('agent:step', { agentId, step: serializedStep })
       }
       if (isRemote) wcs.onAgentStep(step)
+    },
+    onStepRemoved: (_runId: string, stepId: string) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('agent:stepRemoved', { agentId, stepId })
+      }
     },
     onNeedConfirm: (confirmation: PendingConfirmation) => {
       if (!event.sender.isDestroyed()) {

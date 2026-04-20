@@ -688,6 +688,7 @@ interface Window {
       } | null>
       clearHistory: (ptyId: string) => Promise<void>
       onStep: (callback: (data: { agentId: string; ptyId?: string; step: AgentStep }) => void) => () => void
+      onStepRemoved: (callback: (data: { agentId: string; ptyId?: string; stepId: string }) => void) => () => void
       onNeedConfirm: (callback: (data: PendingConfirmation & { ptyId?: string }) => void) => () => void
       onConfirmResolved: (callback: (data: { agentId: string }) => void) => () => void
       onComplete: (callback: (data: { agentId: string; ptyId?: string; result: string; pendingUserMessages?: string[] }) => void) => () => void

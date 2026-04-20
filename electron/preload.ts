@@ -938,6 +938,15 @@ const electronAPI = {
       }
     },
 
+    // 监听 Agent 步骤移除（后端撤销了临时步骤，前端同步清除）
+    onStepRemoved: (callback: (data: { agentId: string; ptyId?: string; stepId: string }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string; ptyId?: string; stepId: string }) => callback(data)
+      ipcRenderer.on('agent:stepRemoved', handler)
+      return () => {
+        ipcRenderer.removeListener('agent:stepRemoved', handler)
+      }
+    },
+
     // 监听需要确认的工具调用（携带 ptyId 用于可靠匹配 tab）
     onNeedConfirm: (callback: (data: PendingConfirmation & { ptyId?: string }) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: PendingConfirmation & { ptyId?: string }) => callback(data)

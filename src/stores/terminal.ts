@@ -1056,6 +1056,19 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
+   * 按 ID 移除指定的 Agent 执行步骤
+   * 用于后端撤销临时占位步骤（如初始"正在准备..."）后同步前端状态
+   */
+  function removeAgentStep(tabId: string, stepId: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab?.agentState) return
+    const index = tab.agentState.steps.findIndex(s => s.id === stepId)
+    if (index !== -1) {
+      tab.agentState.steps.splice(index, 1)
+    }
+  }
+
+  /**
    * 设置待确认的工具调用
    */
   function setAgentPendingConfirm(tabId: string, confirmation: PendingConfirmation | undefined): void {
@@ -1466,6 +1479,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     setAgentSession,
     setAgentId,
     addAgentStep,
+    removeAgentStep,
     setAgentPendingConfirm,
     clearAgentState,
     setAgentFinalResult,

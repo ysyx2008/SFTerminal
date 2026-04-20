@@ -104,6 +104,7 @@ export function useAgentMode(
 
   // 清理事件监听的函数
   let cleanupStepListener: (() => void) | null = null
+  let cleanupStepRemovedListener: (() => void) | null = null
   let cleanupConfirmListener: (() => void) | null = null
   let cleanupConfirmResolvedListener: (() => void) | null = null
   let cleanupCompleteListener: (() => void) | null = null
@@ -459,11 +460,6 @@ export function useAgentMode(
             : step.type === 'asking' ? 120 : isFirst ? 46 : 40
           items.push({ id: step.id, type: 'step', step, group, size, isFirstStep: isFirst })
         }
-
-        const hasThinkingStep = group.steps.some(s => s.type === 'thinking' && s.isStreaming)
-        if (group.isCurrentTask && isAgentRunning.value && !pendingConfirm.value && !isStreamingOutput(group) && !hasThinkingStep) {
-          items.push({ id: `thinking_${group.id}`, type: 'thinking_indicator', size: 40 })
-        }
       }
 
       if (group.finalResult) {
@@ -812,6 +808,12 @@ export function useAgentMode(
       scrollToBottomIfNeeded()
     })
 
+    // 监听步骤移除（后端撤销临时占位步骤，如初始"正在准备..."）
+    cleanupStepRemovedListener = window.electronAPI.agent.onStepRemoved((data: { agentId: string; ptyId?: string; stepId: string }) => {
+      if (!isEventForThisTab(data.agentId, data.ptyId)) return
+      terminalStore.removeAgentStep(currentTabId.value, data.stepId)
+    })
+
     // 监听需要确认
     cleanupConfirmListener = window.electronAPI.agent.onNeedConfirm((data) => {
       // 类型转换，添加 ptyId 支持
@@ -921,6 +923,10 @@ export function useAgentMode(
     if (cleanupStepListener) {
       cleanupStepListener()
       cleanupStepListener = null
+    }
+    if (cleanupStepRemovedListener) {
+      cleanupStepRemovedListener()
+      cleanupStepRemovedListener = null
     }
     if (cleanupConfirmListener) {
       cleanupConfirmListener()

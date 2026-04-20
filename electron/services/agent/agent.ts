@@ -2346,11 +2346,12 @@ export abstract class Agent {
    */
   protected removeStep(stepId: string): void {
     if (!this.currentRun) return
-    
+
     const index = this.currentRun.steps.findIndex(s => s.id === stepId)
-    if (index !== -1) {
-      this.currentRun.steps.splice(index, 1)
-    }
+    if (index === -1) return
+
+    this.currentRun.steps.splice(index, 1)
+    this.callbacks?.onStepRemoved?.(this.currentRun.id, stepId)
   }
   
   /**
