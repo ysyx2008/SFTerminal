@@ -258,7 +258,7 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
         :placeholder="t('session.searchPlaceholder')"
       />
       <div class="new-dropdown toolbar-dropdown">
-        <button class="btn btn-primary btn-sm" @click="showNewMenu = !showNewMenu">
+        <button class="btn btn-sm" @click="showNewMenu = !showNewMenu">
           <Plus :size="14" />
           {{ t('common.new') }}
         </button>
