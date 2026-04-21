@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ExternalLink, FolderInput, Database, Plug, Check, ChevronDown, ChevronUp } from 'lucide-vue-next'
 import { useConfigStore, type AiProfile } from '../stores/config'
+import { AI_TEMPLATES, type AiTemplate } from '../config/ai-templates'
 import { v4 as uuidv4 } from 'uuid'
 
 const { t } = useI18n()
@@ -36,151 +37,22 @@ const selectedTemplateIndex = ref<number | null>(null)
 // 每个模板的API Key输入
 const templateApiKeys = ref<Record<number, string>>({})
 
-// 所有可用的 AI 模板
-const allAiTemplates = [
-  {
-    name: 'DeepSeek',
-    apiUrl: 'https://api.deepseek.com/v1/chat/completions',
-    model: 'deepseek-chat',
-    descKey: 'aiSettings.templates.deepseek',
-    keyUrl: 'https://platform.deepseek.com/api_keys',
-    contextLength: 128000,
-    isLocal: false,
-    needsApiKey: true,
-    isCustom: false
-  },
-  {
-    name: 'Qwen',
-    apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
-    model: 'qwen-plus',
-    descKey: 'aiSettings.templates.qwen',
-    keyUrl: 'https://bailian.console.aliyun.com/?tab=model#/api-key',
-    contextLength: 128000,
-    isLocal: false,
-    needsApiKey: true,
-    isCustom: false
-  },
-  {
-    name: 'Doubao',
-    apiUrl: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
-    model: 'doubao-1.5-pro-32k',
-    descKey: 'aiSettings.templates.doubao',
-    keyUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
-    contextLength: 32000,
-    isLocal: false,
-    needsApiKey: true,
-    isCustom: false
-  },
-  {
-    name: 'Zhipu',
-    apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-    model: 'glm-5',
-    descKey: 'aiSettings.templates.zhipu',
-    keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
-    contextLength: 200000,
-    isLocal: false,
-    needsApiKey: true,
-    isCustom: false
-  },
-  {
-    name: 'Kimi',
-    apiUrl: 'https://api.moonshot.cn/v1/chat/completions',
-    model: 'moonshot-v1-auto',
-    descKey: 'aiSettings.templates.kimi',
-    keyUrl: 'https://platform.moonshot.cn/console/api-keys',
-    contextLength: 128000,
-    isLocal: false,
-    needsApiKey: true,
-    isCustom: false
-  },
-  {
-    name: 'MiniMax',
-    apiUrl: 'https://api.minimaxi.com/v1/chat/completions',
-    model: 'MiniMax-M2.5',
-    descKey: 'aiSettings.templates.minimax',
-    keyUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key',
-    contextLength: 204800,
-    isLocal: false,
-    needsApiKey: true,
-    isCustom: false
-  },
-  {
-    name: 'OpenAI',
-    apiUrl: 'https://api.openai.com/v1/chat/completions',
-    model: 'gpt-4o-mini',
-    descKey: 'aiSettings.templates.openai',
-    keyUrl: 'https://platform.openai.com/api-keys',
-    contextLength: 128000,
-    isLocal: false,
-    needsApiKey: true,
-    isCustom: false
-  },
-  {
-    name: 'Claude',
-    apiUrl: 'https://api.anthropic.com/v1/messages',
-    model: 'claude-sonnet-4-6',
-    descKey: 'aiSettings.templates.claude',
-    keyUrl: 'https://console.anthropic.com/settings/keys',
-    contextLength: 200000,
-    isLocal: false,
-    needsApiKey: true,
-    isCustom: false
-  },
-  {
-    name: 'Gemini',
-    apiUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-    model: 'gemini-2.0-flash',
-    descKey: 'aiSettings.templates.gemini',
-    keyUrl: 'https://aistudio.google.com/apikey',
-    contextLength: 1000000,
-    isLocal: false,
-    needsApiKey: true,
-    isCustom: false
-  },
-  {
-    name: 'Grok',
-    apiUrl: 'https://api.x.ai/v1/chat/completions',
-    model: 'grok-3-fast',
-    descKey: 'aiSettings.templates.grok',
-    keyUrl: 'https://console.x.ai/team/default/api-keys',
-    contextLength: 131072,
-    isLocal: false,
-    needsApiKey: true,
-    isCustom: false
-  },
-  {
-    name: 'Mistral',
-    apiUrl: 'https://api.mistral.ai/v1/chat/completions',
-    model: 'mistral-large-latest',
-    descKey: 'aiSettings.templates.mistral',
-    keyUrl: 'https://console.mistral.ai/api-keys',
-    contextLength: 128000,
-    isLocal: false,
-    needsApiKey: true,
-    isCustom: false
-  },
-  {
-    name: 'Ollama',
-    apiUrl: 'http://localhost:11434/v1/chat/completions',
-    model: 'qwen2.5:7b',
-    descKey: 'aiSettings.templates.ollama',
-    keyUrl: 'https://ollama.com/',
-    contextLength: 32000,
-    isLocal: true,
-    needsApiKey: false,
-    isCustom: false
-  },
-  {
-    name: 'Custom',
-    apiUrl: '',
-    model: '',
-    descKey: 'aiSettings.templates.custom',
-    keyUrl: '',
-    contextLength: 128000,
-    isLocal: false,
-    needsApiKey: true,
-    isCustom: true
-  }
+// 自定义模板（非预设，仅向导内使用；字段与 AiTemplate 对齐）
+const CUSTOM_AI_TEMPLATE: AiTemplate = {
+  name: 'Custom',
+  apiUrl: '',
+  model: '',
+  descKey: 'aiSettings.templates.custom',
+  keyUrl: '',
+  contextLength: 128000,
+  isLocal: false,
+  needsApiKey: true,
+}
+
+// 所有可用的 AI 模板（预设来自 src/config/ai-templates.ts，尾部追加自定义项）
+const allAiTemplates: readonly (AiTemplate & { isCustom: boolean })[] = [
+  ...AI_TEMPLATES.map(tpl => ({ ...tpl, isCustom: false })),
+  { ...CUSTOM_AI_TEMPLATE, isCustom: true },
 ]
 
 // 自定义模板的表单数据
@@ -193,9 +65,7 @@ const customFormData = ref({
 
 // 非 Steam 版显示全部模板；Steam 版不展示 AI 配置步骤，此处仅用于非 Steam
 const aiTemplates = computed(() => {
-  const templates = allAiTemplates
-  
-  return templates.map((tpl, index) => ({
+  return allAiTemplates.map((tpl, index) => ({
     index,
     name: tpl.isCustom ? t('aiSettings.templates.customName') : tpl.name,
     apiUrl: tpl.apiUrl,

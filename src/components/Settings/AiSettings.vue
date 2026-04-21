@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Pencil, Trash2, X, ExternalLink, Eye } from 'lucide-vue-next'
 import { useConfigStore, type AiProfile, type AiModelType, type ApiFormat } from '../../stores/config'
+import { AI_TEMPLATES } from '../../config/ai-templates'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderId } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -151,98 +152,9 @@ const setActive = async (profileId: string) => {
 // Steam 版本：不提供任何 AI/API 配置入口，仅展示说明（__STEAM_BUILD__ 由 vite define 注入）
 const isSteamBuild = __STEAM_BUILD__
 
-// 所有可用的预设模板
-const allTemplates = [
-  {
-    name: 'DeepSeek',
-    apiUrl: 'https://api.deepseek.com/v1/chat/completions',
-    model: 'deepseek-chat',
-    keyUrl: 'https://platform.deepseek.com/api_keys',
-    isLocal: false
-  },
-  {
-    name: 'Qwen',
-    apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
-    model: 'qwen-plus',
-    keyUrl: 'https://bailian.console.aliyun.com/?tab=model#/api-key',
-    isLocal: false
-  },
-  {
-    name: 'Doubao',
-    apiUrl: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
-    model: 'doubao-1.5-pro-32k',
-    keyUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
-    isLocal: false
-  },
-  {
-    name: 'Zhipu',
-    apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-    model: 'glm-5',
-    keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
-    isLocal: false
-  },
-  {
-    name: 'Kimi',
-    apiUrl: 'https://api.moonshot.cn/v1/chat/completions',
-    model: 'moonshot-v1-auto',
-    keyUrl: 'https://platform.moonshot.cn/console/api-keys',
-    isLocal: false
-  },
-  {
-    name: 'MiniMax',
-    apiUrl: 'https://api.minimaxi.com/v1/chat/completions',
-    model: 'MiniMax-M2.5',
-    keyUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key',
-    isLocal: false
-  },
-  {
-    name: 'OpenAI',
-    apiUrl: 'https://api.openai.com/v1/chat/completions',
-    model: 'gpt-4o-mini',
-    keyUrl: 'https://platform.openai.com/api-keys',
-    isLocal: false
-  },
-  {
-    name: 'Claude',
-    apiUrl: 'https://api.anthropic.com/v1/messages',
-    model: 'claude-sonnet-4-6',
-    keyUrl: 'https://console.anthropic.com/settings/keys',
-    isLocal: false
-  },
-  {
-    name: 'Gemini',
-    apiUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-    model: 'gemini-2.0-flash',
-    keyUrl: 'https://aistudio.google.com/apikey',
-    isLocal: false
-  },
-  {
-    name: 'Grok',
-    apiUrl: 'https://api.x.ai/v1/chat/completions',
-    model: 'grok-3-fast',
-    keyUrl: 'https://console.x.ai/team/default/api-keys',
-    isLocal: false
-  },
-  {
-    name: 'Mistral',
-    apiUrl: 'https://api.mistral.ai/v1/chat/completions',
-    model: 'mistral-large-latest',
-    keyUrl: 'https://console.mistral.ai/api-keys',
-    isLocal: false
-  },
-  {
-    name: 'Ollama',
-    apiUrl: 'http://localhost:11434/v1/chat/completions',
-    model: 'qwen2.5:7b',
-    keyUrl: 'https://ollama.com/',
-    isLocal: true
-  }
-]
-
 // 非 Steam 版显示全部模板；Steam 版不展示配置 UI，此处仅用于非 Steam
-const templates = computed(() => {
-  return allTemplates
-})
+// 模板数据来自 src/config/ai-templates.ts（单一数据源）
+const templates = computed(() => AI_TEMPLATES)
 
 const applyTemplate = (template: typeof templates.value[0]) => {
   formData.value.name = template.name
