@@ -963,6 +963,18 @@ const handleKeyDown = (e: KeyboardEvent) => {
   }
   // ESC 键关闭弹窗
   if (e.key === 'Escape') {
+    if (showFreeModeConfirm.value) {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      cancelFreeMode()
+      return
+    }
+    if (showClearConfirm.value) {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      cancelClearMessages()
+      return
+    }
     if (showHistoryModal.value) {
       e.preventDefault()
       e.stopImmediatePropagation()
