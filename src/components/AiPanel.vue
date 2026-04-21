@@ -1156,55 +1156,6 @@ watch(() => props.visible, (visible) => {
 
       <!-- 系统环境信息 + Agent 设置 -->
       <div class="system-info-bar">
-        <div v-if="currentSystemInfo" class="system-info-left host-info-trigger">
-          <span class="system-icon">💻</span>
-          <span class="system-text">
-            {{ currentSystemInfo.os === 'windows' ? 'Windows' : currentSystemInfo.os === 'macos' ? 'macOS' : 'Linux' }}
-            · {{ currentSystemInfo.shell === 'powershell' ? 'PowerShell' : currentSystemInfo.shell === 'cmd' ? 'CMD' : currentSystemInfo.shell === 'bash' ? 'Bash' : currentSystemInfo.shell === 'zsh' ? 'Zsh' : currentSystemInfo.shell }}
-          </span>
-          <span class="hover-hint">▾</span>
-          
-          <!-- 悬浮主机信息面板 -->
-          <div class="host-info-popover">
-            <div class="popover-header">
-              <span>🖥️ {{ t('ai.agentWelcome.hostInfo') }}</span>
-              <button 
-                class="refresh-btn" 
-                @click.stop="refreshHostProfile" 
-                :disabled="isProbing"
-                :title="isProbing ? t('ai.agentWelcome.probing') : t('ai.agentWelcome.refreshHost')"
-              >
-                <span :class="{ spinning: isProbing }">🔄</span>
-              </button>
-            </div>
-            <div v-if="currentHostProfile" class="popover-content">
-              <div class="info-row">
-                <span class="info-label">{{ t('ai.agentWelcome.hostname') }}:</span>
-                <span class="info-value">{{ currentHostProfile.hostname || t('common.unknown') }}</span>
-                <span v-if="currentHostProfile.username" class="info-secondary">@ {{ currentHostProfile.username }}</span>
-              </div>
-              <div v-if="currentHostProfile.osVersion || currentHostProfile.os" class="info-row">
-                <span class="info-label">{{ t('ai.agentWelcome.system') }}:</span>
-                <span class="info-value">{{ currentHostProfile.osVersion || currentHostProfile.os }}</span>
-              </div>
-              <div v-if="currentHostProfile.shell" class="info-row">
-                <span class="info-label">{{ t('ai.agentWelcome.shell') }}:</span>
-                <span class="info-value">{{ currentHostProfile.shell }}</span>
-                <span v-if="currentHostProfile.packageManager" class="info-secondary">| {{ currentHostProfile.packageManager }}</span>
-              </div>
-              <div v-if="currentHostProfile.installedTools?.length" class="info-row tools-row">
-                <span class="info-label">{{ t('ai.agentWelcome.tools') }}:</span>
-                <span class="info-value tools-list">{{ currentHostProfile.installedTools.join(', ') }}</span>
-              </div>
-            </div>
-            <div v-else-if="isLoadingProfile" class="popover-loading">
-              {{ t('common.loading') }}
-            </div>
-            <div v-else class="popover-empty">
-              {{ t('ai.agentWelcome.notProbed') }}
-            </div>
-          </div>
-        </div>
         <!-- Agent 模式设置 -->
         <div class="agent-settings">
           <!-- 执行模式选择器（三选一：严格/宽松/自由） -->
@@ -1233,6 +1184,54 @@ watch(() => props.visible, (visible) => {
             >
               {{ t('ai.free') }}
             </button>
+          </div>
+        </div>
+        <div v-if="currentSystemInfo" class="system-info-left host-info-trigger">
+          <span class="system-icon">💻</span>
+          <span class="system-text">
+            {{ currentSystemInfo.os === 'windows' ? 'Windows' : currentSystemInfo.os === 'macos' ? 'macOS' : 'Linux' }}
+            · {{ currentSystemInfo.shell === 'powershell' ? 'PowerShell' : currentSystemInfo.shell === 'cmd' ? 'CMD' : currentSystemInfo.shell === 'bash' ? 'Bash' : currentSystemInfo.shell === 'zsh' ? 'Zsh' : currentSystemInfo.shell }}
+          </span>
+          <span class="hover-hint">▾</span>
+        </div>
+        <!-- 悬浮主机信息面板（固定锚定在信息栏左侧） -->
+        <div v-if="currentSystemInfo" class="host-info-popover">
+          <div class="popover-header">
+            <span>🖥️ {{ t('ai.agentWelcome.hostInfo') }}</span>
+            <button 
+              class="refresh-btn" 
+              @click.stop="refreshHostProfile" 
+              :disabled="isProbing"
+              :title="isProbing ? t('ai.agentWelcome.probing') : t('ai.agentWelcome.refreshHost')"
+            >
+              <span :class="{ spinning: isProbing }">🔄</span>
+            </button>
+          </div>
+          <div v-if="currentHostProfile" class="popover-content">
+            <div class="info-row">
+              <span class="info-label">{{ t('ai.agentWelcome.hostname') }}:</span>
+              <span class="info-value">{{ currentHostProfile.hostname || t('common.unknown') }}</span>
+              <span v-if="currentHostProfile.username" class="info-secondary">@ {{ currentHostProfile.username }}</span>
+            </div>
+            <div v-if="currentHostProfile.osVersion || currentHostProfile.os" class="info-row">
+              <span class="info-label">{{ t('ai.agentWelcome.system') }}:</span>
+              <span class="info-value">{{ currentHostProfile.osVersion || currentHostProfile.os }}</span>
+            </div>
+            <div v-if="currentHostProfile.shell" class="info-row">
+              <span class="info-label">{{ t('ai.agentWelcome.shell') }}:</span>
+              <span class="info-value">{{ currentHostProfile.shell }}</span>
+              <span v-if="currentHostProfile.packageManager" class="info-secondary">| {{ currentHostProfile.packageManager }}</span>
+            </div>
+            <div v-if="currentHostProfile.installedTools?.length" class="info-row tools-row">
+              <span class="info-label">{{ t('ai.agentWelcome.tools') }}:</span>
+              <span class="info-value tools-list">{{ currentHostProfile.installedTools.join(', ') }}</span>
+            </div>
+          </div>
+          <div v-else-if="isLoadingProfile" class="popover-loading">
+            {{ t('common.loading') }}
+          </div>
+          <div v-else class="popover-empty">
+            {{ t('ai.agentWelcome.notProbed') }}
           </div>
         </div>
         <!-- 从原 ai-header 迁移的控件，保持"最右侧"的对齐 -->
@@ -1943,6 +1942,7 @@ watch(() => props.visible, (visible) => {
   container-type: inline-size;
   container-name: infobar;
   white-space: nowrap;
+  position: relative;
 }
 
 /* ai-header-actions 固定在最右侧（无论 system-info-left 是否渲染） */
@@ -2015,11 +2015,30 @@ watch(() => props.visible, (visible) => {
   transform: translateY(1px);
 }
 
-/* 悬浮面板 */
+/* 指向悬浮面板的三角形（挂在触发器上，天然对准 💻 图标） */
+.host-info-trigger::after {
+  content: '';
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 8px;
+  width: 12px;
+  height: 12px;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-color);
+  transform: rotate(45deg);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.25s;
+  z-index: 101;
+  pointer-events: none;
+}
+
+/* 悬浮面板：固定锚定到信息栏左侧 */
 .host-info-popover {
   position: absolute;
   top: calc(100% + 4px);
-  left: 8px;
+  left: 12px;
   min-width: 380px;
   max-width: 380px;
   background: var(--bg-secondary);
@@ -2030,11 +2049,13 @@ watch(() => props.visible, (visible) => {
   opacity: 0;
   visibility: hidden;
   transform: translateY(-5px);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              visibility 0.25s,
+              transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* 添加透明连接区域，让鼠标能顺利移动到面板 */
-.host-info-popover::after {
+/* 透明桥接区域，让鼠标能在触发器和面板之间移动而不丢失 hover */
+.host-info-popover::before {
   content: '';
   position: absolute;
   top: -10px;
@@ -2043,11 +2064,18 @@ watch(() => props.visible, (visible) => {
   height: 10px;
 }
 
-.host-info-trigger:hover .host-info-popover,
-.host-info-popover:hover {
+/* 悬停在触发器或面板上时，显示面板和箭头 */
+.system-info-bar:has(.host-info-trigger:hover) .host-info-popover,
+.system-info-bar:has(.host-info-popover:hover) .host-info-popover {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
+}
+
+.system-info-bar:has(.host-info-trigger:hover) .host-info-trigger::after,
+.system-info-bar:has(.host-info-popover:hover) .host-info-trigger::after {
+  opacity: 1;
+  visibility: visible;
 }
 
 .popover-header {
