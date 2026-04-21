@@ -2,7 +2,27 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.33.0 (2026-04-21) (Latest)
+## v10.33.1 (2026-04-21) (Latest)
+
+This patch focuses on polishing AI panel readability and visual tone — a four-tier theme token system unifies strong-signal colors, alongside web search, AI error prompt, and other experience improvements.
+
+### New Features
+- 🔍 **Structured Web Search Results**: The web search tool now returns structured entries that can be expanded and clicked directly in the UI
+- 💬 **Friendly AI API Error Messages**: Readable error prompts based on the underlying business error when LLM calls fail
+- 🔗 **SSH Connection Entry Point**: Added an SSH connect entry to the host management dropdown, and the new-terminal dropdown now promotes the user's default shell to the top
+
+### Improvements
+- 🎨 **Theme Token System Refactor**: Built a four-tier token system with new `--brand-vital` / `--brand-alert` brand tokens, consolidating product-level alert/vital colors; the default dark theme now uses a pure-black, Cursor-like palette with the accent blue toned down further
+- ♻️ **AI Templates Refreshed for 2026**: Extracted shared templates and updated to each vendor's latest 2026 versions
+- 🧩 **Unified Agent Tool Card**: `tool_call` generation and execution now share a single card via state transitions, reducing visual flicker
+- ⌨️ **ESC Cancels Confirm Dialogs**: Free-mode switch and clear-conversation confirms can be dismissed with ESC
+
+### Bug Fixes
+- 🐛 **Main Window Starts Centered**: Fixed the main window hugging the top of the screen on macOS first launch
+- 🐛 **Dark Theme Accent Contrast**: Introduced `--accent-contrast` to fix insufficient contrast for accent-on-dark text
+- 🐛 **AI Panel First-Step Avatar Clipped**: Fixed the standalone-assistant "preparing" avatar being clipped by the virtual list
+
+## v10.33.0 (2026-04-21)
 
 A refreshed UI layout — the app header now merges into the system title bar, making the whole interface lighter and more cohesive.
 
