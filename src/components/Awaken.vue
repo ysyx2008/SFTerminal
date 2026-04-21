@@ -2763,4 +2763,14 @@ onUnmounted(() => {
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .spinning { animation: spin 1s linear infinite; }
+
+/* ==================== Header 与主标题"旗鱼"左对齐 ==================== */
+/* macOS 非全屏下红绿灯浮层会贴在 modal 左上角，header 需要和 app-header 同步让出 78px，
+   保证"觉醒"标题与"旗鱼"左边界对齐；全屏时红绿灯消失，恢复默认 12px */
+.app-container.is-mac .panel-header {
+  padding-left: 78px;
+}
+.app-container.is-mac.is-fullscreen .panel-header {
+  padding-left: 12px;
+}
 </style>
