@@ -36,17 +36,23 @@ export function useSessionDragDrop(
     draggingGroupName.value = groupName
     draggingSession.value = null
 
-    savedCollapsedState.value = new Set(collapsedGroups.value)
-    const allGroupNames = Object.keys(groupedSessions.value)
-    allGroupNames.forEach(name => { collapsedGroups.value.add(name) })
-
+    // dataTransfer 必须在 dragstart 同步阶段设置，否则浏览器可能当作无效拖拽直接取消
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = 'move'
       event.dataTransfer.setData('text/plain', groupName)
       event.dataTransfer.setData('application/x-group', 'true')
     }
+
+    // 折叠所有分组是为了方便用户对齐目标位置，但如果在 dragstart 同步阶段改 DOM，
+    // 上方分组回缩导致被拖元素视觉位置偏移，Chromium 会中断拖拽（除第一个分组外都拖不动）。
+    // 因此延后到下一个宏任务，等 dragstart 完全进入拖拽会话再折叠。
+    savedCollapsedState.value = new Set(collapsedGroups.value)
+    const allGroupNames = Object.keys(groupedSessions.value)
     const target = event.target as HTMLElement
-    setTimeout(() => { target.classList.add('dragging') }, 0)
+    setTimeout(() => {
+      allGroupNames.forEach(name => { collapsedGroups.value.add(name) })
+      target.classList.add('dragging')
+    }, 0)
   }
 
   const handleDragEnd = (event: DragEvent) => {

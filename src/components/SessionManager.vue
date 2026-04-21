@@ -594,14 +594,10 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
 .group-header.draggable { cursor: grab; }
 .group-header.draggable:active { cursor: grabbing; }
 
-.group-header.drag-over {
-  background: rgba(var(--accent-primary-rgb, 66, 153, 225), 0.15);
-}
-
 .group-header.drag-over::after {
   content: '';
   position: absolute;
-  left: 0; right: 0; bottom: -2px;
+  left: 0; right: 0; top: -2px;
   height: 2px;
   background: var(--accent-primary);
   border-radius: 1px;
