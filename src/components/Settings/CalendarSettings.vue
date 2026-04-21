@@ -585,8 +585,8 @@ const formatRelativeTime = (timestamp?: number): string => {
 }
 
 .status-dot.success {
-  background: var(--color-success);
-  box-shadow: 0 0 4px rgba(var(--color-success-rgb), 0.4);
+  background: var(--brand-vital);
+  box-shadow: 0 0 4px rgba(var(--brand-vital-rgb), 0.4);
 }
 
 .status-dot.failed {

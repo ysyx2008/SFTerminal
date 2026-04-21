@@ -198,8 +198,8 @@ const handleToggle = () => {
 }
 
 .agent-plan.is-completed {
-  border-color: rgba(var(--color-success-rgb), 0.3);
-  background: linear-gradient(135deg, rgba(var(--color-success-rgb), 0.05), transparent);
+  border-color: rgba(var(--brand-vital-rgb), 0.3);
+  background: linear-gradient(135deg, rgba(var(--brand-vital-rgb), 0.05), transparent);
 }
 
 .agent-plan.has-failed {
@@ -256,7 +256,7 @@ const handleToggle = () => {
 }
 
 .completed-hint {
-  color: var(--color-success);
+  color: var(--brand-vital);
   font-size: 13px;
 }
 
@@ -289,7 +289,7 @@ const handleToggle = () => {
   top: 0;
   bottom: 0;
   width: var(--progress, 0%);
-  background: linear-gradient(90deg, var(--color-success), var(--color-success));
+  background: linear-gradient(90deg, var(--brand-vital), var(--brand-vital-end));
   transition: width 0.4s ease;
 }
 
@@ -407,7 +407,7 @@ const handleToggle = () => {
 }
 
 .plan-step.completed {
-  border-left-color: var(--color-success);
+  border-left-color: var(--brand-vital);
 }
 
 .plan-step.failed {
@@ -447,7 +447,7 @@ const handleToggle = () => {
   font-weight: bold;
 }
 
-.step-icon.completed { color: var(--color-success); }
+.step-icon.completed { color: var(--brand-vital); }
 .step-icon.failed { color: var(--color-error); }
 .step-icon.skipped { color: var(--text-muted); }
 
@@ -497,8 +497,8 @@ const handleToggle = () => {
 }
 
 .step-result.completed {
-  color: var(--color-success);
-  background: rgba(var(--color-success-rgb), 0.1);
+  color: var(--brand-vital);
+  background: rgba(var(--brand-vital-rgb), 0.1);
 }
 
 .step-result.failed {

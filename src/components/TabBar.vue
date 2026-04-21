@@ -510,14 +510,14 @@ const openBatchPanel = () => {
   filter: drop-shadow(0 0 4px var(--accent-primary));
 }
 
-/* 远程 Agent 标签页图标 */
+/* 远程 Agent 标签页图标 —— 走 --brand-vital，让"远程在线"信号跨主题保持饱满 */
 .remote-icon {
-  color: var(--success-color, var(--color-success));
+  color: var(--brand-vital);
 }
 
 .tab.active .remote-icon {
-  color: var(--success-color, var(--color-success));
-  filter: drop-shadow(0 0 4px var(--success-color, var(--color-success)));
+  color: var(--brand-vital);
+  filter: drop-shadow(0 0 4px var(--brand-vital));
 }
 
 .tab-title {

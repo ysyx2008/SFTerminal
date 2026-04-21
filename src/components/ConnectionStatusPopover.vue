@@ -491,7 +491,7 @@ onUnmounted(() => {
 .status-dot { font-size: 10px; }
 .status-count { font-family: var(--font-mono); font-size: 10px; }
 
-.status-all .status-dot, .status-all.status-badge { color: var(--color-success); }
+.status-all .status-dot, .status-all.status-badge { color: var(--brand-vital); }
 .status-partial .status-dot, .status-partial.status-badge { color: var(--color-warning); }
 .status-offline .status-dot, .status-offline.status-badge { color: var(--color-error); }
 .status-none .status-dot, .status-none.status-badge { color: var(--text-muted); }
@@ -551,7 +551,7 @@ onUnmounted(() => {
 }
 
 .col-count.count-ok {
-  color: var(--color-success);
+  color: var(--brand-vital);
 }
 
 /* 栏体 */
@@ -583,7 +583,7 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.dot-on { color: var(--color-success); }
+.dot-on { color: var(--brand-vital); }
 .dot-off { color: var(--text-muted); }
 .dot-disabled { color: var(--text-muted); opacity: 0.5; }
 

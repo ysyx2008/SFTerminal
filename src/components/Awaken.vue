@@ -2216,8 +2216,8 @@ onUnmounted(() => {
   font-size: 11px;
   color: var(--text-secondary);
 }
-.patrol-hint.running { color: var(--color-success); }
-.patrol-hint.done { color: var(--color-success); }
+.patrol-hint.running { color: var(--brand-vital); }
+.patrol-hint.done { color: var(--brand-vital); }
 .patrol-hint.skipped { color: var(--text-tertiary); }
 .patrol-hint.error { color: var(--color-error); }
 
@@ -2646,7 +2646,7 @@ onUnmounted(() => {
 .history-steps-list .step-icon { flex-shrink: 0; font-size: 14px; }
 .history-steps-list .step-content { flex: 1; min-width: 0; }
 .history-steps-list .step-text { word-break: break-word; line-height: 1.5; white-space: pre-wrap; }
-.history-steps-list .agent-step-inline.thinking { color: rgba(var(--color-success-rgb), 0.75); }
+.history-steps-list .agent-step-inline.thinking { color: rgba(var(--brand-vital-rgb), 0.85); }
 .history-steps-list .agent-step-inline.tool_call { color: var(--accent-primary); }
 .history-steps-list .agent-step-inline.tool_call .step-text { color: var(--text-primary); }
 .history-steps-list .agent-step-inline.tool_result { color: var(--text-secondary); }

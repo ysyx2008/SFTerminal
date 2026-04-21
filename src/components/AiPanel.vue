@@ -2580,7 +2580,7 @@ watch(() => props.visible, (visible) => {
 }
 
 .strict-badge.relaxed {
-  background: var(--color-success);
+  background: var(--brand-vital);
 }
 
 .strict-badge.free {
@@ -2707,9 +2707,9 @@ watch(() => props.visible, (visible) => {
 }
 
 .history-status-icon.completed {
-  background: linear-gradient(135deg, rgba(var(--color-success-rgb), 0.2) 0%, rgba(var(--color-success-rgb), 0.1) 100%);
-  color: var(--color-success);
-  box-shadow: 0 0 0 1px rgba(var(--color-success-rgb), 0.3);
+  background: linear-gradient(135deg, rgba(var(--brand-vital-rgb), 0.2) 0%, rgba(var(--brand-vital-rgb), 0.1) 100%);
+  color: var(--brand-vital);
+  box-shadow: 0 0 0 1px rgba(var(--brand-vital-rgb), 0.3);
 }
 
 .history-status-icon.failed {
@@ -3606,11 +3606,11 @@ watch(() => props.visible, (visible) => {
 .thinking-spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(var(--color-success-rgb), 0.2);
-  border-top-color: var(--color-success);
+  border: 2px solid rgba(var(--brand-vital-rgb), 0.2);
+  border-top-color: var(--brand-vital);
   border-radius: 50%;
   animation: spin 1s linear infinite;
-  box-shadow: 0 0 8px rgba(var(--color-success-rgb), 0.3);
+  box-shadow: 0 0 8px rgba(var(--brand-vital-rgb), 0.3);
 }
 
 .thinking-text {
@@ -3618,16 +3618,16 @@ watch(() => props.visible, (visible) => {
   /* 渐变文字动画 */
   background: linear-gradient(
     90deg,
-    rgba(var(--color-success-rgb), 0.75) 0%,
-    rgba(var(--color-success-rgb), 1) 50%,
-    rgba(var(--color-success-rgb), 0.75) 100%
+    rgba(var(--brand-vital-rgb), 0.75) 0%,
+    rgba(var(--brand-vital-rgb), 1) 50%,
+    rgba(var(--brand-vital-rgb), 0.75) 100%
   );
   background-size: 200% 100%;
   animation: gradient-flow 2s linear infinite;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  color: rgba(var(--color-success-rgb), 0.75);
+  color: rgba(var(--brand-vital-rgb), 0.75);
   animation: pulse-text 2s ease-in-out infinite;
 }
 
@@ -3657,7 +3657,7 @@ watch(() => props.visible, (visible) => {
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  background: rgba(var(--color-success-rgb), 0.1);
+  background: rgba(var(--brand-vital-rgb), 0.1);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   font-size: 13px;
   font-weight: 500;
@@ -3912,7 +3912,7 @@ watch(() => props.visible, (visible) => {
 }
 
 .agent-step-inline.thinking {
-  color: rgba(var(--color-success-rgb), 0.75);
+  color: rgba(var(--brand-vital-rgb), 0.85);
 }
 
 .agent-step-inline.thinking .step-icon {
@@ -4050,7 +4050,7 @@ watch(() => props.visible, (visible) => {
 }
 
 .asking-default .default-hint {
-  color: var(--color-success);
+  color: var(--brand-vital);
   margin-left: 6px;
 }
 
@@ -4118,14 +4118,14 @@ watch(() => props.visible, (visible) => {
 }
 
 .asking-option-btn.selected {
-  background: rgba(var(--color-success-rgb), 0.12);
-  border-color: rgba(var(--color-success-rgb), 0.35);
-  color: var(--color-success);
+  background: rgba(var(--brand-vital-rgb), 0.12);
+  border-color: rgba(var(--brand-vital-rgb), 0.35);
+  color: var(--brand-vital);
 }
 
 .asking-option-btn.selected .option-label {
-  background: rgba(var(--color-success-rgb), 0.25);
-  color: var(--color-success);
+  background: rgba(var(--brand-vital-rgb), 0.25);
+  color: var(--brand-vital);
 }
 
 /* 多选确认按钮 */

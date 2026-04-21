@@ -353,7 +353,7 @@ onUnmounted(() => {
 /* 状态颜色 */
 .status-all .status-dot,
 .status-all.status-badge {
-  color: var(--color-success);
+  color: var(--brand-vital);
 }
 
 .status-partial .status-dot,
@@ -414,17 +414,17 @@ onUnmounted(() => {
   padding: 4px 10px;
   font-size: 11px;
   font-weight: 500;
-  color: var(--color-success);
-  background: rgba(var(--color-success-rgb), 0.1);
-  border: 1px solid rgba(var(--color-success-rgb), 0.3);
+  color: var(--brand-vital);
+  background: rgba(var(--brand-vital-rgb), 0.1);
+  border: 1px solid rgba(var(--brand-vital-rgb), 0.3);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .btn-connect-all:hover {
-  background: rgba(var(--color-success-rgb), 0.2);
-  border-color: var(--color-success);
+  background: rgba(var(--brand-vital-rgb), 0.2);
+  border-color: var(--brand-vital);
 }
 
 .popover-body {
@@ -465,7 +465,7 @@ onUnmounted(() => {
 }
 
 .dot-connected {
-  color: var(--color-success);
+  color: var(--brand-vital);
 }
 
 .dot-enabled {

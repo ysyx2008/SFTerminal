@@ -1135,8 +1135,8 @@ textarea:focus {
 }
 
 .connection-dot.connected {
-  background: var(--accent-success);
-  box-shadow: 0 0 8px var(--accent-success);
+  background: var(--brand-vital);
+  box-shadow: 0 0 8px var(--brand-vital);
 }
 
 .connection-dot.connected::after {
@@ -1144,7 +1144,7 @@ textarea:focus {
   position: absolute;
   inset: -4px;
   border-radius: 50%;
-  border: 2px solid var(--accent-success);
+  border: 2px solid var(--brand-vital);
   animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 
