@@ -1121,6 +1121,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       toolResult?: string
       riskLevel?: string
       timestamp: number
+      webSearchResults?: import('@shared/types').WebSearchResultItem[]
     }>
     finalResult?: string
     duration: number
@@ -1140,7 +1141,8 @@ export const useTerminalStore = defineStore('terminal', () => {
       toolArgs: s.toolArgs,
       toolResult: s.toolResult,
       riskLevel: s.riskLevel as RiskLevel | undefined,
-      timestamp: s.timestamp
+      timestamp: s.timestamp,
+      webSearchResults: s.webSearchResults
     }))
     
     // 兼容旧数据：确保有 user_task 和 final_result 步骤

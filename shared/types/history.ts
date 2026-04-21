@@ -15,6 +15,8 @@ export interface AgentStepRecord {
   toolResult?: string
   riskLevel?: string
   timestamp: number
+  /** Web 搜索结构化结果（web_search 工具专用） */
+  webSearchResults?: import('./agent').WebSearchResultItem[]
 }
 
 export interface AgentRecord {

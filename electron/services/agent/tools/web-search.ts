@@ -48,7 +48,17 @@ export async function executeWebSearch(
     }
 
     const output = lines.join('\n').trim()
-    executor.addStep({ type: 'tool_result', content: `Found ${results.length} results`, toolName: 'web_search' })
+    executor.addStep({
+      type: 'tool_result',
+      content: `Found ${results.length} results`,
+      toolName: 'web_search',
+      webSearchResults: results.map(r => ({
+        title: r.title,
+        url: r.url,
+        snippet: r.snippet,
+        content: r.content
+      }))
+    })
     return { success: true, output }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)

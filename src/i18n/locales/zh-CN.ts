@@ -1223,6 +1223,9 @@ export default {
       prevConversation: '上一条对话的图片 (↑)',
       nextConversation: '下一条对话的图片 (↓)',
     },
+    webSearch: {
+      foundResults: '搜索到 {count} 条结果',
+    },
     toolNames: {
       execute_command: '执行命令',
       exec: '运行命令',
@@ -1235,6 +1238,7 @@ export default {
       file_search: '搜索文件',
       remember_info: '记住信息',
       search_knowledge: '搜索知识库',
+      web_search: 'Web 搜索',
       get_knowledge_doc: '获取知识文档',
       ask_user: '询问用户',
       plan: '制定计划',

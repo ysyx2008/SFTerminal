@@ -92,6 +92,15 @@ export interface SubAgentToolStep {
   result?: string
 }
 
+/** Web 搜索结果条目（供 UI 展开渲染） */
+export interface WebSearchResultItem {
+  title: string
+  url: string
+  snippet?: string
+  /** 提取的正文（部分 Provider 支持，展示时会截断） */
+  content?: string
+}
+
 /** 子 Agent 执行结果（通过 AgentStep.subAgents 推送进度） */
 export interface SubAgentResult {
   id: string
@@ -127,6 +136,8 @@ export interface AgentStep {
   canvasData?: import('./canvas').CanvasData
   /** 并行子 Agent 状态（dispatch_agents 工具专用，实时更新） */
   subAgents?: SubAgentResult[]
+  /** Web 搜索结果（web_search 工具专用，供 UI 可展开渲染） */
+  webSearchResults?: WebSearchResultItem[]
 }
 
 /**

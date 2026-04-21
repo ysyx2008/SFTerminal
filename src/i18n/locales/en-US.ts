@@ -1223,6 +1223,9 @@ export default {
       prevConversation: 'Images from previous conversation (↑)',
       nextConversation: 'Images from next conversation (↓)',
     },
+    webSearch: {
+      foundResults: 'Found {count} results',
+    },
     toolNames: {
       execute_command: 'Execute Command',
       exec: 'Run Command',
@@ -1235,6 +1238,7 @@ export default {
       file_search: 'Search Files',
       remember_info: 'Remember Info',
       search_knowledge: 'Search Knowledge',
+      web_search: 'Web Search',
       get_knowledge_doc: 'Get Knowledge Doc',
       ask_user: 'Ask User',
       plan: 'Make Plan',
