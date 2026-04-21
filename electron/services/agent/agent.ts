@@ -71,6 +71,55 @@ function deduplicateThinkingBlocks(html: string): string {
 }
 
 /**
+ * 从流式到达的 partial tool_call arguments JSON 前缀里，取出第一个字符串字段的值。
+ *
+ * 实现思路：按结构（不做任何字段名匹配）扫描引号/括号，先把未闭合的字符串和容器
+ * 补齐成合法 JSON，再 JSON.parse 取首个 string value。任何解析异常或结构残缺
+ * 都直接返回 null，调用方负责保留上一次成功结果，避免显示回退。
+ */
+function extractFirstStringValue(partial: string): string | null {
+  if (!partial) return null
+  const trimmed = partial.trimStart()
+  if (!trimmed.startsWith('{')) return null
+
+  let inString = false
+  let escape = false
+  let braceDepth = 0
+  let bracketDepth = 0
+  for (let i = 0; i < partial.length; i++) {
+    const c = partial[i]
+    if (escape) { escape = false; continue }
+    if (inString) {
+      if (c === '\\') escape = true
+      else if (c === '"') inString = false
+      continue
+    }
+    if (c === '"') inString = true
+    else if (c === '{') braceDepth++
+    else if (c === '}') braceDepth--
+    else if (c === '[') bracketDepth++
+    else if (c === ']') bracketDepth--
+  }
+
+  let s = partial
+  if (inString) s += '"'
+  while (bracketDepth > 0) { s += ']'; bracketDepth-- }
+  while (braceDepth > 0) { s += '}'; braceDepth-- }
+
+  try {
+    const obj = JSON.parse(s) as unknown
+    if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return null
+    for (const k of Object.keys(obj as Record<string, unknown>)) {
+      const v = (obj as Record<string, unknown>)[k]
+      if (typeof v === 'string') return v
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Agent 抽象基类
  */
 export abstract class Agent {
@@ -570,7 +619,8 @@ export abstract class Agent {
         toolArgs: s.toolArgs,
         toolResult: s.toolResult,
         riskLevel: s.riskLevel as RiskLevel | undefined,
-        timestamp: s.timestamp
+        timestamp: s.timestamp,
+        webSearchResults: s.webSearchResults
       }))
     }
     
@@ -686,7 +736,8 @@ export abstract class Agent {
         toolArgs: s.toolArgs,
         toolResult: s.toolResult,
         riskLevel: s.riskLevel as RiskLevel | undefined,
-        timestamp: s.timestamp
+        timestamp: s.timestamp,
+        webSearchResults: s.webSearchResults
       }
       
       if (s.type === 'user_task') {
@@ -849,7 +900,8 @@ export abstract class Agent {
       toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,
       toolResult: s.toolResult,
       riskLevel: s.riskLevel,
-      timestamp: s.timestamp
+      timestamp: s.timestamp,
+      webSearchResults: s.webSearchResults
     }))
     
     const record: AgentRecord = {
@@ -897,7 +949,8 @@ export abstract class Agent {
       toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,
       toolResult: s.toolResult,
       riskLevel: s.riskLevel,
-      timestamp: s.timestamp
+      timestamp: s.timestamp,
+      webSearchResults: s.webSearchResults
     }))
     
     // 合并 API 消息
@@ -1621,15 +1674,14 @@ export abstract class Agent {
    */
   protected async callAiWithStreaming(run: AgentRun, streamingExecutor?: StreamingToolExecutor): Promise<ChatWithToolsResult> {
     const streamStepId = this.generateId()
-    const toolProgressStepId = this.generateId()
     let streamContent = ''
     let lastContentUpdate = 0
     let pendingUpdate = false
     let streamStepCreated = false
-    let toolProgressStepCreated = false
-    let lastToolProgressUpdate = 0
+    // 每个 toolCallId 独立节流（多个 tool_call 并行流式时互不干扰）
+    const toolProgressThrottle = new Map<string, number>()
     const STREAM_THROTTLE_MS = 100
-    const TOOL_PROGRESS_THROTTLE_MS = 200
+    const TOOL_PROGRESS_THROTTLE_MS = 120
     
     const sendContentUpdate = () => {
       this.updateStep(streamStepId, {
@@ -1657,9 +1709,8 @@ export abstract class Agent {
       lastContentUpdate = 0
       pendingUpdate = false
       streamStepCreated = false
-      toolProgressStepCreated = false
-      lastToolProgressUpdate = 0
-      
+      toolProgressThrottle.clear()
+
       run.requestId = run.id
       
       const effectiveProfileId = this.resolveEffectiveProfileId(run)
@@ -1709,10 +1760,12 @@ export abstract class Agent {
         // onDone
         (result) => {
           pendingUpdate = false
-          // 移除工具进度步骤（如果存在）
-          if (toolProgressStepCreated) {
-            this.removeStep(toolProgressStepId)
-            toolProgressStepCreated = false
+          // 预创建的 tool_call 卡片保留、稍后由工具执行器接管（见 executeToolWithChecks 中的 addStep 拦截）
+          // 此处只把仍处于 isStreaming 的预卡片停掉光标，避免"参数没来得及更新但模型已结束"的极端情况下卡片一直抖
+          if (run.pendingPreToolCallStepIds) {
+            for (const [, stepId] of run.pendingPreToolCallStepIds) {
+              this.updateStep(stepId, { isStreaming: false })
+            }
           }
 
           // 累积 token usage（由 LLM provider 返回的精确值）
@@ -1791,30 +1844,48 @@ export abstract class Agent {
         },
         // onError
         (error) => {
-          // 移除工具进度步骤（如果存在）
-          if (toolProgressStepCreated) {
-            this.removeStep(toolProgressStepId)
-            toolProgressStepCreated = false
-          }
+          // 出错时把预创建的 tool_call 卡片移除，避免留下没有结果的空卡
+          this.discardPreToolCallSteps(run)
           reject(new Error(error))
         },
         effectiveProfileId, // 视觉路由：有新图片时自动切换到视觉模型
-        // onToolCallProgress - 显示工具调用参数生成进度
-        (toolName: string, argsLength: number) => {
+        // onToolCallProgress - 流式生成 tool_call 参数时直接以"执行命令: xxx"这种最终形态的
+        // 内容创建一张 tool_call 卡片；随后该卡片会被工具执行器"认领"并 updateStep 成正式内容，
+        // 因为格式一致（同前缀、同字体、同样式），视觉上就是同一张卡上的命令文本在逐字增长。
+        //
+        // 只对 shell 系命令工具（execute_command / exec）启用预创建：这些工具的 tool_call
+        // 内容格式稳定为 "${t('status.executing')}: ${command}"，易于与执行器保持一致；
+        // 其他工具（read_file/file_search/…）由各自执行器按各自模板 addStep，预创建反而会引起闪烁。
+        (toolCallId: string, toolName: string, partialArgs: string) => {
+          if (!toolCallId) return  // 没有稳定 id 就无法与后续 executor 的 addStep 关联，跳过
+          if (!Agent.PRE_STEP_SHELL_TOOLS.has(toolName)) return
+
           const now = Date.now()
-          // 超过 50 字符且距离上次更新超过 200ms 才显示
-          if (argsLength <= 50 || now - lastToolProgressUpdate < TOOL_PROGRESS_THROTTLE_MS) return
-          lastToolProgressUpdate = now
-          
-          const progressContent = `⏳ ${t('progress.generating_args', { toolName })} ${argsLength} ${t('misc.characters')}`
-          
-          if (!toolProgressStepCreated) {
-            // 先创建进度步骤再移除初始步骤，避免前端 steps 出现瞬时为 0 的中间态
-            toolProgressStepCreated = true
+          const lastAt = toolProgressThrottle.get(toolCallId) || 0
+          if (now - lastAt < TOOL_PROGRESS_THROTTLE_MS) return
+
+          const extracted = extractFirstStringValue(partialArgs)
+          // 解析失败时不回退显示（保留上一次已解析内容），让用户观感上是"连续增长"
+          if (!run.pendingPreToolCallText) run.pendingPreToolCallText = new Map()
+          const previousText = run.pendingPreToolCallText.get(toolCallId)
+          const liveText = extracted ?? previousText
+          if (liveText === undefined) return  // 还没可显示内容
+          if (extracted !== null) run.pendingPreToolCallText.set(toolCallId, extracted)
+          toolProgressThrottle.set(toolCallId, now)
+
+          const displayContent = `${t('status.executing')}: ${liveText}`
+
+          if (!run.pendingPreToolCallStepIds) run.pendingPreToolCallStepIds = new Map()
+          let stepId = run.pendingPreToolCallStepIds.get(toolCallId)
+          if (!stepId) {
+            stepId = this.generateId()
+            run.pendingPreToolCallStepIds.set(toolCallId, stepId)
+            // 先创建 tool_call 卡片再移除初始步骤，避免前端 steps 出现瞬时为 0 的中间态
             this.addStep({
-              id: toolProgressStepId,
-              type: 'thinking',
-              content: progressContent,
+              id: stepId,
+              type: 'tool_call',
+              content: displayContent,
+              toolName,
               isStreaming: true
             })
             if (run.initialStepId) {
@@ -1822,9 +1893,10 @@ export abstract class Agent {
               run.initialStepId = undefined
             }
           } else {
-            this.updateStep(toolProgressStepId, {
-              type: 'thinking',
-              content: progressContent,
+            this.updateStep(stepId, {
+              type: 'tool_call',
+              content: displayContent,
+              toolName,
               isStreaming: true
             })
           }
@@ -1836,15 +1908,12 @@ export abstract class Agent {
           streamContent = ''
           pendingUpdate = false
           lastContentUpdate = 0
-          lastToolProgressUpdate = 0
+          toolProgressThrottle.clear()
           if (streamStepCreated) {
             this.removeStep(streamStepId)
             streamStepCreated = false
           }
-          if (toolProgressStepCreated) {
-            this.removeStep(toolProgressStepId)
-            toolProgressStepCreated = false
-          }
+          this.discardPreToolCallSteps(run)
           // 重试时中止已启动的流式工具执行
           streamingExecutor?.abort()
         },
@@ -1861,6 +1930,17 @@ export abstract class Agent {
   
   // ==================== 受保护方法：工具执行 ====================
   
+  /**
+   * 允许在 tool_call 参数流式阶段就提前创建 tool_call 卡片（预览命令正文）的工具。
+   * 这些工具在各自执行器里均使用 `${t('status.executing')}: ${command}` 作为 tool_call
+   * 步骤内容，因此可以在预创建阶段复用同一格式，使得后续执行器 updateStep 接管时
+   * 内容完全一致、没有视觉跳变。
+   */
+  private static readonly PRE_STEP_SHELL_TOOLS = new Set([
+    'execute_command',
+    'exec'
+  ])
+
   /** 可以并行执行的工具（只读、无副作用） */
   private static readonly PARALLELIZABLE_TOOLS = new Set([
     'read_file',
@@ -2087,13 +2167,19 @@ export abstract class Agent {
       }
     }
 
+    // 把流式阶段预创建的 tool_call 卡片交给工具执行器：当执行器第一次 addStep 一张
+    // tool_call 卡时，改为原地 updateStep 原卡，实现"生成→执行→结果"同一张卡的状态迁移。
+    const wrappedConfig: ToolExecutorConfig = this.wrapExecutorConfigForToolCall(
+      run, toolCall, toolExecutorConfig
+    )
+
     try {
       result = await executeTool(
         run.ptyId,
         toolCall,
         run.config,
         run.context.terminalOutput,
-        toolExecutorConfig
+        wrappedConfig
       )
     } catch (error) {
       result = { 
@@ -2102,6 +2188,10 @@ export abstract class Agent {
         error: error instanceof Error ? error.message : String(error) 
       }
     }
+
+    // 若工具执行完毕但执行器未曾 addStep 一张 tool_call 卡（少见：比如提前 return），
+    // 把预卡片收尾掉，避免留下一张永远 isStreaming 的空卡
+    this.finalizePreToolCallStep(run, toolCall.id)
     
     const toolElapsed = Date.now() - toolStartTime
     if (result.success) {
@@ -2118,6 +2208,63 @@ export abstract class Agent {
     }
 
     return { result, toolArgs }
+  }
+
+  /**
+   * 为单次工具执行包装 ToolExecutorConfig：
+   * - 如果 run 中有本 toolCallId 对应的预创建 tool_call 卡片，首次收到 executor.addStep(type='tool_call')
+   *   时改为 updateStep 原卡（把流式命令文本替换为执行器给出的正式内容，并收起光标），
+   *   并返回原卡实例；第二次及之后的 tool_call addStep 正常新增。
+   * - 其他 step 类型（tool_result / thinking 等）不受影响。
+   */
+  private wrapExecutorConfigForToolCall(
+    run: AgentRun,
+    toolCall: ToolCall,
+    base: ToolExecutorConfig
+  ): ToolExecutorConfig {
+    const preStepId = run.pendingPreToolCallStepIds?.get(toolCall.id)
+    if (!preStepId) return base
+
+    let adopted = false
+    return {
+      ...base,
+      addStep: (step) => {
+        if (!adopted && step.type === 'tool_call') {
+          adopted = true
+          base.updateStep(preStepId, { ...step, isStreaming: false })
+          run.pendingPreToolCallStepIds?.delete(toolCall.id)
+          run.pendingPreToolCallText?.delete(toolCall.id)
+          const existing = run.steps.find(s => s.id === preStepId)
+          if (existing) return existing
+        }
+        return base.addStep(step)
+      }
+    }
+  }
+
+  /**
+   * 丢弃 run 中所有尚未被执行器认领的预创建 tool_call 卡片（用于出错/重试场景）。
+   * 这些卡片只承载了"生成中"的中间状态，没有正式的工具执行结果，所以直接移除是安全的。
+   */
+  private discardPreToolCallSteps(run: AgentRun): void {
+    if (!run.pendingPreToolCallStepIds) return
+    for (const [, stepId] of run.pendingPreToolCallStepIds) {
+      this.removeStep(stepId)
+    }
+    run.pendingPreToolCallStepIds.clear()
+    run.pendingPreToolCallText?.clear()
+  }
+
+  /**
+   * 工具执行结束后兜底清理：如果预创建的 tool_call 卡片因为 executor 没 addStep(tool_call)
+   * 而未被认领，就把它当成已完成状态（关闭光标），避免留一张永远在"打字"的空卡。
+   */
+  private finalizePreToolCallStep(run: AgentRun, toolCallId: string): void {
+    const stepId = run.pendingPreToolCallStepIds?.get(toolCallId)
+    if (!stepId) return
+    run.pendingPreToolCallStepIds!.delete(toolCallId)
+    run.pendingPreToolCallText?.delete(toolCallId)
+    this.updateStep(stepId, { isStreaming: false })
   }
 
   /**

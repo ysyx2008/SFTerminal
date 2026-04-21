@@ -1587,7 +1587,7 @@ export class AiService {
     onDone: (result: ChatWithToolsResult) => void,
     onError: (error: string) => void,
     profileId?: string,
-    onToolCallProgress?: (toolName: string, argsLength: number) => void,  // 工具调用参数生成进度
+    onToolCallProgress?: (toolCallId: string, toolName: string, partialArgs: string) => void,  // 工具调用参数流式片段（含 toolCallId 以便前端就地更新对应卡片）
     requestId?: string,  // 用于支持中止请求
     onRetry?: () => void,  // 重试前通知调用方重置流状态（避免 reasoning 块重复）
     onToolCallReady?: (toolCall: ToolCall) => void  // 流式中某个 tool_call 参数完整时回调
@@ -2003,7 +2003,11 @@ export class AiService {
                     if (tc.function?.arguments) toolCalls[index].function.arguments += tc.function.arguments
                   }
                   if (onToolCallProgress && toolCalls[index]) {
-                    onToolCallProgress(toolCalls[index].function.name, toolCalls[index].function.arguments.length)
+                    onToolCallProgress(
+                      toolCalls[index].id,
+                      toolCalls[index].function.name,
+                      toolCalls[index].function.arguments
+                    )
                   }
                   // 检测 tool_call 参数是否已完整（可解析为 JSON）
                   if (onToolCallReady && toolCalls[index] && !readyToolCallIndices.has(index)) {

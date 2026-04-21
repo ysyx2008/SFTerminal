@@ -108,6 +108,40 @@ const togglePlanExpand = (stepId: string) => {
   }
 }
 
+// Web 搜索结果展开状态（默认收起，用户点击展开后可见全部链接）
+const expandedWebSearchSteps = ref<Set<string>>(new Set())
+const toggleWebSearchExpand = (stepId: string) => {
+  if (expandedWebSearchSteps.value.has(stepId)) {
+    expandedWebSearchSteps.value.delete(stepId)
+  } else {
+    expandedWebSearchSteps.value.add(stepId)
+  }
+}
+
+// 在默认浏览器中打开 URL（仅允许 http/https，防范 javascript:/data: 等协议）
+const openWebSearchLink = (url: string) => {
+  if (!url) return
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      console.warn('[AiPanel] Blocked non-http(s) URL:', url)
+      return
+    }
+    window.open(parsed.href, '_blank', 'noopener,noreferrer')
+  } catch (e) {
+    console.warn('[AiPanel] Invalid URL:', url, e)
+  }
+}
+
+// 获取 URL 的主机名用于展示
+const getHostname = (url: string): string => {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return url
+  }
+}
+
 // 子 Agent 展开状态（默认收起，用户点击切换）
 const subAgentExpandState = reactive(new Map<string, boolean>())
 const isSubAgentExpanded = (key: string): boolean => {
@@ -425,7 +459,7 @@ const truncateText = (text: string, maxLength: number): string => {
 }
 
 // 加载历史记录（带确认）
-const handleLoadHistory = (record: { id: string; timestamp: number; terminalId: string; terminalType: 'local' | 'ssh'; sshHost?: string; userTask: string; steps: Array<{ id: string; type: string; content: string; toolName?: string; toolArgs?: Record<string, unknown>; toolResult?: string; riskLevel?: string; timestamp: number }>; finalResult?: string; duration: number; status: 'completed' | 'failed' | 'aborted' }) => {
+const handleLoadHistory = (record: { id: string; timestamp: number; terminalId: string; terminalType: 'local' | 'ssh'; sshHost?: string; userTask: string; steps: Array<{ id: string; type: string; content: string; toolName?: string; toolArgs?: Record<string, unknown>; toolResult?: string; riskLevel?: string; timestamp: number; webSearchResults?: import('@shared/types').WebSearchResultItem[] }>; finalResult?: string; duration: number; status: 'completed' | 'failed' | 'aborted' }) => {
   // 如果当前有活跃的任务（用户任务不为空），需要确认
   // 注意：如果欢迎页显示（agentUserTask 为空），说明没有活跃任务，不需要确认
   if (agentUserTask.value && hasExistingConversation.value) {
@@ -1503,7 +1537,14 @@ watch(() => props.visible, (visible) => {
               <div v-else-if="item.type === 'step'" class="agent-step-virtual" :class="{ 'first-step': item.isFirstStep }">
                 <div 
                   class="agent-step-inline"
-                  :class="[item.step!.type, getRiskClass(item.step!.riskLevel), { 'step-rejected': item.step!.content.includes('拒绝') }]"
+                  :class="[
+                    item.step!.type,
+                    getRiskClass(item.step!.riskLevel),
+                    {
+                      'step-rejected': item.step!.content.includes('拒绝'),
+                      'risk-pending': item.step!.type === 'tool_call' && item.step!.isStreaming && !item.step!.riskLevel
+                    }
+                  ]"
                 >
                   <span class="step-icon">{{ getStepIcon(item.step!.type) }}</span>
                   <div class="step-content">
@@ -1559,6 +1600,27 @@ watch(() => props.visible, (visible) => {
                       <div v-if="expandedPlanSteps.has(item.step!.id) && item.step!.plan" class="plan-step-details">
                         <AgentPlanView :plan="item.step!.plan" :compact="false" />
                       </div>
+                    </div>
+                    <div v-else-if="item.step!.webSearchResults && item.step!.webSearchResults.length > 0" class="step-text web-search-content">
+                      <span class="web-search-header" @click="toggleWebSearchExpand(item.step!.id)">
+                        <span class="web-search-summary">{{ t('ai.webSearch.foundResults', { count: item.step!.webSearchResults.length }) }}</span>
+                        <span class="web-search-expand-icon" :class="{ expanded: expandedWebSearchSteps.has(item.step!.id) }">▶</span>
+                      </span>
+                      <ul v-if="expandedWebSearchSteps.has(item.step!.id)" class="web-search-list">
+                        <li
+                          v-for="(r, rIdx) in item.step!.webSearchResults"
+                          :key="rIdx"
+                          class="web-search-item"
+                        >
+                          <a
+                            class="web-search-link"
+                            href="#"
+                            :title="r.url"
+                            @click.prevent="openWebSearchLink(r.url)"
+                          >{{ r.title || r.url }}</a>
+                          <span class="web-search-host">{{ getHostname(r.url) }}</span>
+                        </li>
+                      </ul>
                     </div>
                     <div v-else class="step-text markdown-content" v-html="renderMarkdown(item.step!.content)"></div>
                     <!-- 并行子 Agent 卡片组 -->
@@ -4022,6 +4084,42 @@ watch(() => props.visible, (visible) => {
   color: var(--text-primary);
 }
 
+/* tool_call 步骤：把 markdown 渲染出的 <p> 拍扁成 inline，
+   这样 isStreaming 时追加的光标能紧跟在命令文本末尾而不是换行。 */
+.step-text.tool-call-step {
+  display: inline;
+}
+
+.tool-call-body {
+  display: inline;
+}
+
+.tool-call-body :deep(p) {
+  display: inline;
+  margin: 0;
+}
+
+.tool-call-body :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+/* 闪烁光标：同字号同基线，避免 isStreaming 切换时视觉抖动 */
+.tool-call-typing-cursor {
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 2px;
+  background: var(--accent-primary);
+  vertical-align: text-bottom;
+  animation: ai-typing-cursor-blink 1s step-end infinite;
+  border-radius: 1px;
+}
+
+@keyframes ai-typing-cursor-blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
 .agent-step-inline.error {
   color: var(--color-error);
 }
@@ -4321,6 +4419,74 @@ watch(() => props.visible, (visible) => {
   color: var(--text-primary);
 }
 
+/* ==================== Web 搜索结果（精简：无卡片/无摘要，只保留标题+域名） ==================== */
+
+.web-search-content {
+  color: var(--text-muted);
+}
+
+.web-search-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.web-search-header:hover .web-search-summary,
+.web-search-header:hover .web-search-expand-icon {
+  color: var(--text-primary);
+}
+
+.web-search-summary {
+  color: var(--text-muted);
+}
+
+.web-search-expand-icon {
+  font-size: 9px;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.web-search-expand-icon.expanded {
+  transform: rotate(90deg);
+}
+
+.web-search-list {
+  list-style: none;
+  margin: 4px 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.web-search-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.web-search-link {
+  color: var(--color-info, #4dabf7);
+  text-decoration: none;
+  word-break: break-word;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.web-search-link:hover {
+  text-decoration: underline;
+}
+
+.web-search-host {
+  color: var(--text-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 /* ==================== 并行子 Agent 卡片组 ==================== */
 
 .sub-agents-group {
@@ -4552,6 +4718,15 @@ watch(() => props.visible, (visible) => {
 
 .risk-dangerous {
   border-left: 3px solid var(--color-error);
+  padding-left: 10px;
+  margin-left: -2px;
+}
+
+/* 预创建的 tool_call 卡片还没拿到 riskLevel 时的占位：保持和 risk-* 同样的几何尺寸
+   （3px 左边框 + 10px 内边距 + -2px 外边距），颜色选用中性边线色。执行器接管后会被
+   getRiskClass(riskLevel) 覆写为正式的 safe/moderate/dangerous 颜色，位置完全不动。 */
+.risk-pending {
+  border-left: 3px solid var(--border-color);
   padding-left: 10px;
   margin-left: -2px;
 }

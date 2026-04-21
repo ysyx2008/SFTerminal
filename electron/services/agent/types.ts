@@ -171,6 +171,17 @@ export interface AgentRun {
   }>
   // 本次 run 累计的 token 用量（由 LLM provider 返回的精确值）
   tokenUsage?: TokenUsage
+  /**
+   * 流式生成阶段预先创建的 tool_call 步骤 ID：toolCallId → stepId。
+   * 供工具执行器在进入 addStep 时"认领"并就地更新（而不是重复添加一张新卡），
+   * 让"生成命令 → 执行命令 → 出结果"表现为同一张卡的状态迁移。
+   */
+  pendingPreToolCallStepIds?: Map<string, string>
+  /**
+   * 对应 pendingPreToolCallStepIds 的最后一次成功解析出的字符串值缓存，
+   * 用于在后续片段 JSON 解析失败时保持显示不回退。
+   */
+  pendingPreToolCallText?: Map<string, string>
 }
 
 // 主机档案服务接口

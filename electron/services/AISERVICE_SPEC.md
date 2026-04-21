@@ -17,7 +17,7 @@ AI API 的统一调用层。封装 OpenAI 兼容协议的 HTTP 请求，提供�
 | `chat(messages, profileId?)` | 纯文本对话（同步） | 知识文档更新、对话索引等后台任务 |
 | `chatStream(messages, onChunk, onDone, onError, profileId?)` | 纯文本对话（流式） | 前端 AI 对话面板 |
 | `chatWithTools(messages, tools, profileId?)` | 工具调用（同步） | Agent 非流式路径（较少使用） |
-| `chatWithToolsStream(messages, tools, onChunk, onToolCall, onDone, onError, profileId?, onToolCallProgress?, requestId?, onRetry?)` | 工具调用（流式） | Agent 主执行路径 |
+| `chatWithToolsStream(messages, tools, onChunk, onToolCall, onDone, onError, profileId?, onToolCallProgress?, requestId?, onRetry?, onToolCallReady?)` | 工具调用（流式）。`onToolCallProgress(id, name, partialArgs)` 在 tool_call 参数流式片段到达时回调，`partialArgs` 为截至当前的完整 JSON 前缀，Agent 据此在"生成参数"阶段即可显示该工具卡片的实时命令文本。 | Agent 主执行路径 |
 | `abort(requestId?)` | 中止请求 | Agent.abort()、用户取消 |
 | `static getExplainCommandPrompt(command)` | 命令解释 prompt 模板 | 前端命令解释功能 |
 | `static getDiagnoseErrorPrompt(error, context?)` | 错误诊断 prompt 模板 | 前端错误诊断功能 |

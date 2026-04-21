@@ -110,11 +110,6 @@ const translations = {
     'output.tests_passed': '通过',
     'output.tests_failed': '失败',
 
-    // 生成进度
-    'progress.generating': '生成中...',
-    'progress.generating_args': '正在生成 {toolName} 参数...',
-    'progress.chars': '{count} 字符',
-
     // Agent 执行状态
     'agent.waiting_confirm': '等待用户确认: {toolName}',
     'agent.auto_approved': '✅ 已自动批准（始终允许）: {toolName}',
@@ -1410,11 +1405,6 @@ const translations = {
     'output.error_count': 'Error count',
     'output.tests_passed': 'Passed',
     'output.tests_failed': 'Failed',
-
-    // Generation progress
-    'progress.generating': 'Generating...',
-    'progress.generating_args': 'Generating {toolName} args...',
-    'progress.chars': '{count} chars',
 
     // Agent execution status
     'agent.waiting_confirm': 'Waiting for confirmation: {toolName}',
