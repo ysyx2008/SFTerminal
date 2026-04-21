@@ -242,7 +242,7 @@ const handleClearAll = () => {
 
 .active-badge {
   background: var(--accent-primary);
-  color: var(--bg-primary);
+  color: var(--accent-contrast);
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 10px;

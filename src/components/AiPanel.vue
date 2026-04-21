@@ -2972,7 +2972,7 @@ watch(() => props.visible, (visible) => {
 
 .message.user .message-content {
   background: var(--accent-primary);
-  color: var(--bg-primary);
+  color: var(--accent-contrast);
   border-radius: 12px 12px 4px 12px;
   user-select: text;
   cursor: text;
@@ -3953,7 +3953,7 @@ watch(() => props.visible, (visible) => {
 .agent-step-inline.user_supplement .step-content {
   background: var(--accent-primary);
   opacity: 0.85;
-  color: var(--bg-primary);
+  color: var(--accent-contrast);
   border-radius: 12px 12px 4px 12px;
   padding: 8px 12px;
   max-width: 80%;

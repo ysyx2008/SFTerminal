@@ -909,7 +909,7 @@ const formatRelativeTime = (timestamp?: number): string => {
 
 .btn-primary {
   background: var(--accent-primary);
-  color: var(--bg-primary);
+  color: var(--accent-contrast);
 }
 
 .btn-primary:hover {

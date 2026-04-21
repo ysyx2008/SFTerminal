@@ -904,7 +904,7 @@ const onQrImageError = (event: Event) => {
 
 .nav-item.active {
   background: var(--accent-primary);
-  color: var(--bg-primary);
+  color: var(--accent-contrast);
 }
 
 .nav-icon {

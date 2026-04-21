@@ -1173,7 +1173,7 @@ function openWebSearchKeyUrl() {
 
 .template-btn:hover {
   background: var(--accent-primary);
-  color: var(--bg-primary);
+  color: var(--accent-contrast);
 }
 
 .form-label-row {

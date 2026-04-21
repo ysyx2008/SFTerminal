@@ -2287,7 +2287,7 @@ onUnmounted(() => {
 }
 
 .nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
-.nav-item.active { background: var(--accent-primary); color: var(--bg-primary); }
+.nav-item.active { background: var(--accent-primary); color: var(--accent-contrast); }
 
 .nav-badge {
   margin-left: auto;

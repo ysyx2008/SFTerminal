@@ -280,7 +280,7 @@ onMounted(loadPlugins)
 
 .tool-badge {
   background: var(--accent-primary);
-  color: var(--bg-primary);
+  color: var(--accent-contrast);
 }
 
 .header-actions {

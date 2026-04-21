@@ -998,7 +998,7 @@ enabled: true
 .category-chip.active {
   background: var(--accent-primary);
   border-color: var(--accent-primary);
-  color: var(--bg-primary);
+  color: var(--accent-contrast);
 }
 
 .chip-icon {
@@ -1562,7 +1562,7 @@ enabled: true
 
 .btn-primary {
   background: var(--accent-primary);
-  color: var(--bg-primary);
+  color: var(--accent-contrast);
 }
 
 .btn-primary:hover:not(:disabled) {

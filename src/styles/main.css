@@ -29,6 +29,12 @@
   --sidebar-width: 320px;
   --tab-height: 28px;
 
+  /* ===== accent 前景色（accent 底色之上的文字色，按主题亮度手工挑选） =====
+     默认白字，适用于大多数 accent 是中-深色的主题；
+     accent 本身很亮的主题（gruvbox/ayu-mirage/cyberpunk/sponsor-sakura/sponsor-rose-pine）
+     会在各自主题块里覆盖为深色。使用场景：btn-primary、用户消息气泡、nav.active 等。 */
+  --accent-contrast: #ffffff;
+
   /* ===== 语义色（默认，所有主题都继承；主题块可覆盖为低饱和版本） =====
      使用：color: var(--color-success); background: rgba(var(--color-success-rgb), 0.1); */
   --color-success: #10b981;
@@ -201,6 +207,9 @@
 
 /* 暖橙主题（温暖的棕橙色调，中深色） */
 [data-ui-theme="gruvbox"] {
+  /* accent #e8a855 是亮金黄，白字对比不足，用深字 */
+  --accent-contrast: #1f1a15;
+
   --bg-primary: #2d251f;
   --bg-secondary: #251f1a;
   --bg-tertiary: #1f1a15;
@@ -269,6 +278,9 @@
 
 /* Ayu Mirage 主题（现代化的橙色调） */
 [data-ui-theme="ayu-mirage"] {
+  /* accent #ffcc66 是亮黄，白字对比不足，用深字 */
+  --accent-contrast: #1a1f29;
+
   --bg-primary: #1f2430;
   --bg-secondary: #1a1f29;
   --bg-tertiary: #151920;
@@ -337,6 +349,9 @@
 
 /* 赞助者专属樱花粉主题（浅色温柔风格） */
 [data-ui-theme="sponsor-sakura"] {
+  /* accent #ebbcba 是淡粉，白字对比不足，用深字 */
+  --accent-contrast: #2a1e24;
+
   --bg-primary: #fdf8fa;
   --bg-secondary: #f8f0f4;
   --bg-tertiary: #f2e8ed;
@@ -371,6 +386,9 @@
 
 /* 赞助者专属玫瑰松主题（温暖的玫瑰色调） */
 [data-ui-theme="sponsor-rose-pine"] {
+  /* accent #7dd3fc 是亮天蓝，白字对比不足，用深字 */
+  --accent-contrast: #191724;
+
   --bg-primary: #191724;
   --bg-secondary: #1f1d2e;
   --bg-tertiary: #13111e;
@@ -405,6 +423,9 @@
 
 /* 🆕 赛博朋克霓虹主题 - 极致科技感 */
 [data-ui-theme="cyberpunk"] {
+  /* accent #00ffff 是亮青，白字对比不足，用深字 */
+  --accent-contrast: #0a0a0f;
+
   --bg-primary: #0a0a0f;
   --bg-secondary: #0f0f18;
   --bg-tertiary: #060609;
@@ -645,7 +666,7 @@ html, body {
 
 .btn-primary {
   background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-  color: var(--bg-primary);
+  color: var(--accent-contrast);
   border: none;
   font-weight: 600;
 }
@@ -1473,7 +1494,7 @@ textarea:focus {
 
 .message-bubble.user {
   background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-  color: var(--bg-primary);
+  color: var(--accent-contrast);
   margin-left: auto;
   border-bottom-right-radius: 4px;
 }
