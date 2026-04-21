@@ -1061,14 +1061,14 @@ onUnmounted(() => {
 
 .header-left .btn-icon,
 .header-right .btn-icon {
-  width: 26px;
-  height: 26px;
-  padding: 4px;
+  width: 22px;
+  height: 22px;
+  padding: 2px;
   border-radius: 5px;
 }
 
-/* header 高 32px，全局 .btn-icon:hover 的 scale(1.1) 会让 26px 按钮放大到 28.6px，几乎贴到外框；
-   统一削弱 header 这一行按钮的 hover 放大比例 */
+/* header 高 32px：把按钮收缩到 22px，让 hover 背景高亮在 header 内上下留出约 5px 空隙，
+   不会顶到边界；同时配合下面削弱的 scale，放大后仍明显小于外框。 */
 .header-left .btn-icon:hover,
 .header-right .btn-icon:hover {
   transform: scale(1.04);

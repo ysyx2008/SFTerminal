@@ -465,8 +465,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  /* 高度对齐 header-right 其他按钮 */
-  height: 26px;
+  /* 高度对齐 header-right 其他按钮（App.vue 中为 22px），避免 hover 背景顶到 header 边界 */
+  height: 22px;
   padding: 2px 6px;
   border-radius: 6px;
 }
