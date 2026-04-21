@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Monitor, FolderPlus, Download, FileText, Folder, ListFilter, FileEdit, AlignLeft, AlignRight, Clock, Terminal, GripVertical, ChevronDown, ExternalLink, Settings, Play, Pencil, Trash2 } from 'lucide-vue-next'
+import { Plus, Monitor, FolderPlus, Download, FileText, Folder, ListFilter, FileEdit, AlignLeft, AlignRight, Clock, Terminal, GripVertical, ChevronDown, ExternalLink, Settings, Plug, Pencil, Trash2 } from 'lucide-vue-next'
 import { useConfigStore, type SshSession, type SessionGroup, type JumpHostConfig, type SessionSortBy } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import { v4 as uuidv4 } from 'uuid'
@@ -274,9 +274,8 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
         </div>
       </div>
       <div class="import-dropdown toolbar-dropdown">
-        <button class="btn btn-sm" @click="showImportMenu = !showImportMenu">
+        <button class="btn btn-sm btn-icon-only" @click="showImportMenu = !showImportMenu" :title="t('common.import')">
           <Download :size="14" />
-          {{ t('common.import') }}
         </button>
         <div v-if="showImportMenu" class="dropdown-menu dropdown-right" @click.stop>
           <button class="dropdown-item" @click="importXshellFiles">
@@ -375,6 +374,7 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
                 'drag-over-before': dragOverSessionId === session.id && dragOverPosition === 'before',
                 'drag-over-after': dragOverSessionId === session.id && dragOverPosition === 'after'
               }"
+              :title="`${session.username ? session.username + '@' : ''}${session.host}${session.port !== 22 ? ':' + session.port : ''}`"
               draggable="true"
               @dragstart="handleDragStart(session, $event)"
               @dragover="handleDragOverSession(session.id, $event)"
@@ -387,20 +387,19 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
               </div>
               <div class="session-info">
                 <div class="session-name">{{ session.name }}</div>
-                <div class="session-host">{{ session.username }}@{{ session.host }}{{ session.port !== 22 ? ':' + session.port : '' }}</div>
               </div>
               <div class="session-actions">
-                <button class="btn-icon btn-sm" @click.stop="connectSession(session)" :title="t('session.connect')">
-                  <Play :size="14" />
+                <button class="btn-icon" @click.stop="connectSession(session)" :title="t('session.connect')">
+                  <Plug :size="12" />
                 </button>
-                <button class="btn-icon btn-sm" @click.stop="openFileManagerWindow(session)" :title="t('session.fileManager')">
-                  <Folder :size="14" />
+                <button class="btn-icon" @click.stop="openFileManagerWindow(session)" :title="t('session.fileManager')">
+                  <Folder :size="12" />
                 </button>
-                <button class="btn-icon btn-sm" @click.stop="openEditSession(session)" :title="t('common.edit')">
-                  <Pencil :size="14" />
+                <button class="btn-icon" @click.stop="openEditSession(session)" :title="t('common.edit')">
+                  <Pencil :size="12" />
                 </button>
-                <button class="btn-icon btn-sm" @click.stop="deleteSession(session)" :title="t('common.delete')">
-                  <Trash2 :size="14" />
+                <button class="btn-icon" @click.stop="deleteSession(session)" :title="t('common.delete')">
+                  <Trash2 :size="12" />
                 </button>
               </div>
             </div>
@@ -562,14 +561,14 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
 }
 
 .session-group {
-  margin-bottom: 8px;
-  padding: 4px;
+  margin-bottom: 4px;
+  padding: 2px;
   border-radius: 8px;
   border: 2px solid transparent;
   transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 
-.session-group.is-empty { margin-bottom: 4px; }
+.session-group.is-empty { margin-bottom: 2px; }
 .session-group.is-empty .group-sessions { min-height: 4px; }
 
 .session-group.drag-over {
@@ -675,9 +674,9 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
 .session-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  margin-bottom: 4px;
+  gap: 8px;
+  padding: 3px 10px;
+  margin-bottom: 2px;
   background: var(--bg-tertiary);
   border-radius: 6px;
   cursor: grab;
@@ -704,23 +703,23 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
 .session-item.drag-over-before::before { top: -2px; }
 .session-item.drag-over-after::after { bottom: -2px; }
 
-.session-icon { color: var(--accent-primary); }
+.session-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--accent-primary);
+}
 
 .session-info { flex: 1; min-width: 0; }
 
 .session-name {
   font-size: 13px;
   font-weight: 500;
+  line-height: 1.2;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.session-host {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
 }
 
 .session-actions {
@@ -731,6 +730,16 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
 }
 
 .session-item:hover .session-actions { opacity: 1; }
+
+.session-actions .btn-icon {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
 
 /* ==================== 空状态 ==================== */
 .empty-sessions {
