@@ -10,7 +10,7 @@ alwaysApply: true
 
 ## 概览
 
-SailFish（旗鱼）是一个私人 AI Agent 桌面应用。用户用自然语言描述需求，AI 自主规划并执行任务。支持本地和远程 (SSH) 环境操作，可通过钉钉/飞书/企业微信/Slack/Telegram 远程访问 Agent。
+SailFish（旗鱼）是一个私人 AI Agent 桌面应用。用户用自然语言描述需求，AI 自主规划并执行任务。支持本地和远程 (SSH) 环境操作，可通过钉钉/飞书/企业微信/微信/Slack/Telegram 远程访问 Agent。
 
 | 层 | 技术 | 说明 |
 |---|---|---|
@@ -79,9 +79,10 @@ SailFish/
 │       ├── sensor/              # 传感器系统（heartbeat/file-watch/calendar/email/app-lifecycle）
 │       ├── terminal-awareness/  # 终端感知（进程监控）
 │       ├── knowledge/           # 知识库（L2 知识文档，向量存储 + 嵌入 + BM25）
-│       ├── im/                  # IM 集成（钉钉/飞书/企业微信/Slack/Telegram）
+│       ├── im/                  # IM 集成（钉钉/飞书/企业微信/微信/Slack/Telegram）
 │       ├── tts/                 # TTS 语音合成（可插拔 provider）
 │       ├── speech/              # 语音识别
+│       ├── plugin/              # 插件系统（registry/loader/installer/hook-bus/sdk-shim）
 │       └── __tests__/           # 服务单元测试
 ├── src/                         # 前端（Vue 3）
 │   ├── views/                   # 页面视图
@@ -191,6 +192,17 @@ Agent 的记忆分三层，模拟人类记忆的衰减梯度，三层协同在�
 - 与 L2 互补：L2 提供事实（"nginx 监听 8080"），L3 提供经验（"上次怎么排查的"）
 - 有了 L3 兜底，L2 不需要"什么都记"，可以收紧写入标准
 - 类比：需要"想一想"才能回忆的完整经历
+
+### 插件系统
+
+`electron/services/plugin/` 提供扩展机制，宿主核心保持稳定，插件负责接入第三方能力。Manifest 格式兼容 OpenClaw `openclaw.plugin.json`。
+
+- **扩展点**：`registerTool`（Agent 工具）/ `registerProvider`（AI Provider）/ `registerChannel`（IM 渠道）/ `registerTtsProvider`（TTS）/ `registerHook`（生命周期拦截）/ `registerHttpRoute`（Gateway HTTP 路由）
+- **生命周期**：Registry 加载启用禁用 → Loader 扫描/动态 import → HookBus 分发事件 → Installer 通过 npm 管理包 → sdk-shim 暴露 `require('sailfish-sdk')`
+- **Hook 事件**：`before_tool_call` / `after_tool_call` / `before_ai_request` / `message_sending`
+- **宿主对接**：AgentService 注入插件工具、AiService 注入 Provider、IMService 注入渠道、GatewayService 注册路由、TtsService 注册 Provider
+- **前端 UI**：`src/components/Settings/PluginSettings.vue`（安装/启用/禁用/配置）
+- **公开契约**：见 `electron/services/plugin/SPEC.md`，契约测试 `__tests__/plugin-contract.test.ts`
 
 ### 日志系统
 
