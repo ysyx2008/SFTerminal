@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Monitor, FolderPlus, Download, FileText, Folder, ListFilter, FileEdit, AlignLeft, AlignRight, Clock, Terminal, GripVertical, ChevronDown, ExternalLink, Settings, Plug, Pencil, Trash2 } from 'lucide-vue-next'
+import { Plus, Monitor, FolderPlus, Download, FileText, Folder, ListFilter, FileEdit, AlignLeft, AlignRight, Clock, Terminal, ChevronDown, ExternalLink, Settings, Plug, Pencil, Trash2 } from 'lucide-vue-next'
 import { useConfigStore, type SshSession, type SessionGroup, type JumpHostConfig, type SessionSortBy } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import { v4 as uuidv4 } from 'uuid'
@@ -346,7 +346,6 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
             @drop="handleDropToGroupHeader(groupName as string, $event)"
           >
             <div class="group-header-left" @click.stop="toggleGroupCollapse(groupName as string)">
-              <GripVertical class="drag-handle" :size="10" />
               <ChevronDown 
                 class="collapse-icon" 
                 :class="{ collapsed: collapsedGroups.has(groupName as string) }"
@@ -390,16 +389,16 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
               </div>
               <div class="session-actions">
                 <button class="btn-icon" @click.stop="connectSession(session)" :title="t('session.connect')">
-                  <Plug :size="12" />
+                  <Plug :size="11" />
                 </button>
                 <button class="btn-icon" @click.stop="openFileManagerWindow(session)" :title="t('session.fileManager')">
-                  <Folder :size="12" />
+                  <Folder :size="11" />
                 </button>
                 <button class="btn-icon" @click.stop="openEditSession(session)" :title="t('common.edit')">
-                  <Pencil :size="12" />
+                  <Pencil :size="11" />
                 </button>
                 <button class="btn-icon" @click.stop="deleteSession(session)" :title="t('common.delete')">
-                  <Trash2 :size="12" />
+                  <Trash2 :size="11" />
                 </button>
               </div>
             </div>
@@ -557,18 +556,16 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
 .session-list {
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
+  padding: 6px;
 }
 
 .session-group {
-  margin-bottom: 4px;
-  padding: 2px;
+  margin-bottom: 2px;
   border-radius: 8px;
   border: 2px solid transparent;
   transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 
-.session-group.is-empty { margin-bottom: 2px; }
 .session-group.is-empty .group-sessions { min-height: 4px; }
 
 .session-group.drag-over {
@@ -582,7 +579,7 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 6px;
+  padding: 2px 6px;
   font-size: 11px;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -602,15 +599,6 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
   background: var(--accent-primary);
   border-radius: 1px;
 }
-
-.drag-handle {
-  opacity: 0;
-  color: var(--text-muted);
-  transition: opacity 0.15s ease;
-  flex-shrink: 0;
-}
-
-.group-header:hover .drag-handle { opacity: 0.5; }
 
 .collapse-icon {
   color: var(--text-muted);
@@ -728,8 +716,8 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
 .session-item:hover .session-actions { opacity: 1; }
 
 .session-actions .btn-icon {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   display: inline-flex;
   align-items: center;
