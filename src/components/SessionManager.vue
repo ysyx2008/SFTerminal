@@ -678,8 +678,8 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
 .group-header.draggable { cursor: grab; }
 .group-header.draggable:active { cursor: grabbing; }
 
-.group-header.drag-over-before::before,
-.group-header.drag-over-after::after {
+.group-header.drop-line-top::before,
+.group-header.drop-line-bottom::after {
   content: '';
   position: absolute;
   left: 0; right: 0;
@@ -688,8 +688,8 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
   border-radius: 1px;
 }
 
-.group-header.drag-over-before::before { top: -2px; }
-.group-header.drag-over-after::after { bottom: -2px; }
+.group-header.drop-line-top::before { top: -2px; }
+.group-header.drop-line-bottom::after { bottom: -2px; }
 
 .collapse-icon {
   color: currentColor;

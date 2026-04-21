@@ -55,7 +55,13 @@ export function useSessionDragDrop(
     }, 0)
   }
 
-  const handleDragEnd = (event: DragEvent) => {
+  const handleDragEnd = async (event: DragEvent) => {
+    // 落点在非有效 drop 区域（如 session-list 空白处、窗口边缘）时，浏览器不触发 drop 事件，
+    // 但用户预期的落点其实在最后显示的指示线位置。这里用最后一次落点指示位置作为兜底。
+    if (draggingGroupName.value && dragOverTargetGroupName.value) {
+      await applyGroupReorder(dragOverTargetGroupName.value, dragOverPosition.value)
+    }
+
     if (savedCollapsedState.value !== null) {
       collapsedGroups.value = new Set(savedCollapsedState.value)
       savedCollapsedState.value = null
@@ -100,24 +106,16 @@ export function useSessionDragDrop(
     if (draggingGroupName.value) {
       event.stopPropagation()
       dragOverTargetGroupName.value = targetGroupName
+      const target = event.currentTarget as HTMLElement
+      const rect = target.getBoundingClientRect()
+      dragOverPosition.value = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
     } else if (draggingSession.value) {
       dragOverGroupName.value = targetGroupName
     }
   }
 
-  const handleDropToGroupHeader = async (targetGroupName: string, event: DragEvent) => {
-    event.preventDefault()
-    dragOverTargetGroupName.value = null
-
-    if (!draggingGroupName.value) {
-      if (draggingSession.value) {
-        await handleDropToGroup(targetGroupName, event)
-      }
-      return
-    }
-
-    event.stopPropagation()
-
+  const applyGroupReorder = async (targetGroupName: string, position: 'before' | 'after') => {
+    if (!draggingGroupName.value) return
     if (draggingGroupName.value === targetGroupName) {
       draggingGroupName.value = null
       return
@@ -153,7 +151,11 @@ export function useSessionDragDrop(
     }
 
     const [movedItem] = sortItems.splice(dragIndex, 1)
-    sortItems.splice(dropIndex, 0, movedItem)
+    // splice 前目标位置 dropIndex；若 drag 原本在目标之前，splice 删除后
+    // 目标现在在 dropIndex-1，插入 before 用 dropIndex-1、after 用 dropIndex。
+    const afterAdjust = dragIndex < dropIndex ? -1 : 0
+    const insertIndex = dropIndex + afterAdjust + (position === 'after' ? 1 : 0)
+    sortItems.splice(insertIndex, 0, movedItem)
 
     const updates: { id: string; sortOrder: number }[] = []
     let newDefaultGroupOrder = -1
@@ -175,6 +177,21 @@ export function useSessionDragDrop(
     }
 
     draggingGroupName.value = null
+  }
+
+  const handleDropToGroupHeader = async (targetGroupName: string, event: DragEvent) => {
+    event.preventDefault()
+    dragOverTargetGroupName.value = null
+
+    if (!draggingGroupName.value) {
+      if (draggingSession.value) {
+        await handleDropToGroup(targetGroupName, event)
+      }
+      return
+    }
+
+    event.stopPropagation()
+    await applyGroupReorder(targetGroupName, dragOverPosition.value)
   }
 
   const handleDropToSession = async (targetSessionId: string, groupName: string, event: DragEvent) => {
