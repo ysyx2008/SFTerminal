@@ -1153,6 +1153,16 @@ onUnmounted(() => {
   letter-spacing: 0.5px;
 }
 
+.sidebar-header .btn-icon {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+}
+
 .sidebar-content {
   flex: 1;
   overflow-y: auto;
