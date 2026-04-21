@@ -711,6 +711,7 @@ function createWindow() {
     height: 800,
     minWidth: 800,
     minHeight: 600,
+    center: true, // 首次启动在当前屏幕工作区居中，避免默认策略下贴近屏幕上沿
     title: getAppTitle(),
     icon: iconPath,
     frame: process.platform !== 'win32', // Windows 使用无边框 + titleBarOverlay 合并标题栏
