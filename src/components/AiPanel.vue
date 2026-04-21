@@ -1501,7 +1501,7 @@ watch(() => props.visible, (visible) => {
               <div v-else-if="item.type === 'user_task'" class="message user">
                 <div class="message-wrapper">
                   <div class="message-content">
-                    <span>{{ item.group!.userTask }}</span>
+                    <span class="user-task-text">{{ item.group!.userTask }}</span>
                     <div v-if="item.group!.images && item.group!.images.length > 0" class="message-images">
                       <img 
                         v-for="(imgUrl, imgIdx) in item.group!.images" 
@@ -3100,6 +3100,11 @@ watch(() => props.visible, (visible) => {
   border-radius: 12px 12px 4px 12px;
   user-select: text;
   cursor: text;
+}
+
+.message.user .message-content .user-task-text {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .message.user .message-content :deep(a),
