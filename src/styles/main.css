@@ -96,17 +96,17 @@
   --text-secondary: #a0a0a0;
   --text-muted: #6b6b6b;
   
-  --accent-primary: #4a7dcc;
-  --accent-secondary: #6a93d6;
+  --accent-primary: #2d5aa0;
+  --accent-secondary: #3d72b8;
   --accent-success: #5aa371;
   --accent-warning: #d4a862;
   --accent-error: #d16c6c;
-  
+
   --border-color: #2a2a2a;
 
   /* RGB 辅助：rgba() 半透明场景使用 */
-  --accent-rgb: 74, 125, 204;
-  --accent-secondary-rgb: 106, 147, 214;
+  --accent-rgb: 45, 90, 160;
+  --accent-secondary-rgb: 61, 114, 184;
   --bg-secondary-rgb: 16, 16, 16;
 
   /* 语义色（去饱和版本） */
@@ -116,8 +116,8 @@
   --color-warning-rgb: 212, 168, 98;
   --color-error: #d16c6c;
   --color-error-rgb: 209, 108, 108;
-  --color-info: #4a7dcc;
-  --color-info-rgb: 74, 125, 204;
+  --color-info: #2d5aa0;
+  --color-info-rgb: 45, 90, 160;
 
   /* 品牌色（去饱和，跟纯黑协调） */
   --brand-assistant: #c88a3a;
