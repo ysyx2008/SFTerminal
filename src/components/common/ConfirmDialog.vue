@@ -181,18 +181,19 @@ const getIcon = () => {
 }
 
 .dialog-icon.info {
-  background: rgba(137, 180, 250, 0.15);
+  background: rgba(var(--accent-rgb), 0.15);
   color: var(--accent-primary);
 }
 
 .dialog-icon.warning {
-  background: rgba(249, 226, 175, 0.15);
-  color: var(--accent-warning);
+  background: rgba(var(--color-warning-rgb), 0.15);
+  color: var(--color-warning);
 }
 
+/* 强警示：危险操作（删除/高危命令）—— 跨主题固定红 */
 .dialog-icon.danger {
-  background: rgba(243, 139, 168, 0.15);
-  color: var(--accent-error);
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
 }
 
 /* 标题 */
@@ -283,12 +284,18 @@ const getIcon = () => {
   filter: brightness(1.1);
 }
 
+/* 强警示确认按钮 —— 跨主题固定红 */
 .btn-confirm.danger {
-  background: var(--accent-error);
+  background: #ef4444;
+}
+
+.btn-confirm.danger:hover {
+  background: #dc2626;
+  filter: none;
 }
 
 .btn-confirm.warning {
-  background: var(--accent-warning);
+  background: var(--color-warning);
   color: var(--bg-primary);
 }
 

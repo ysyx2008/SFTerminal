@@ -783,7 +783,7 @@ input:checked + .slider:before { transform: translateX(20px); }
 .detail-header { margin-bottom: 12px; }
 .detail-header h3 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
 .detail-meta { display: flex; gap: 12px; font-size: 11px; color: var(--text-muted); }
-.unsaved { color: var(--accent-warning, #f59e0b); font-weight: 500; }
+.unsaved { color: var(--color-warning); font-weight: 500; }
 
 .detail-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
 .tag { padding: 1px 6px; font-size: 10px; background: var(--accent-primary); color: white; border-radius: 3px; }

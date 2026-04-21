@@ -1,9 +1,17 @@
 /**
- * 全局样式
- * 
- * ⚠️ 注意：修改 UI 主题颜色时，需要同步修改以下两个文件：
- * 1. 本文件 (main.css) - 实际应用到 UI 的 CSS 变量
- * 2. src/themes/ui-themes.ts - 用于设置界面的主题预览卡片
+ * 全局样式 / 主题 Token 体系
+ *
+ * Token 分层（组件内严禁硬编码 hex / rgba 颜色，一律使用下列 token）：
+ *   1. 结构层  --bg-* / --text-* / --border-color       （页面骨架）
+ *   2. 强调层  --accent-*                                （主题主色、次色）
+ *   3. 语义层  --color-success / --color-warning / --color-error / --color-info
+ *              以及配套的 *-rgb 用于 rgba() 半透明
+ *   4. 品牌层  --brand-assistant / --brand-local / --brand-ssh / --brand-patrol
+ *              以及 *-end（渐变结束色）和 *-rgb（发光/阴影）
+ *
+ * ⚠️ 修改 UI 主题颜色时需同步维护：
+ *   1. 本文件 (main.css) - 实际生效的 CSS 变量
+ *   2. src/themes/ui-themes.ts - 设置界面的主题预览卡片
  */
 :root {
   /* 通用变量（不随主题变化） */
@@ -17,9 +25,38 @@
   --header-height: 32px;
   --sidebar-width: 320px;
   --tab-height: 28px;
+
+  /* ===== 语义色（默认，所有主题都继承；主题块可覆盖为低饱和版本） =====
+     使用：color: var(--color-success); background: rgba(var(--color-success-rgb), 0.1); */
+  --color-success: #10b981;
+  --color-success-rgb: 16, 185, 129;
+  --color-warning: #f59e0b;
+  --color-warning-rgb: 245, 158, 11;
+  --color-error: #ef4444;
+  --color-error-rgb: 239, 68, 68;
+  --color-info: #3b82f6;
+  --color-info-rgb: 59, 130, 246;
+
+  /* ===== 品牌色（功能识别色：欢迎页卡片、SmartPatrol 等） ===== */
+  --brand-assistant: #f59e0b;
+  --brand-assistant-end: #d97706;
+  --brand-assistant-rgb: 245, 158, 11;
+
+  --brand-local: #10b981;
+  --brand-local-end: #059669;
+  --brand-local-rgb: 16, 185, 129;
+
+  --brand-ssh: #3b82f6;
+  --brand-ssh-end: #2563eb;
+  --brand-ssh-rgb: 59, 130, 246;
+
+  --brand-patrol: #8b5cf6;
+  --brand-patrol-end: #7c3aed;
+  --brand-patrol-rgb: 139, 92, 246;
 }
 
-/* 深色主题（默认）— 纯黑层次，接近 Cursor / VS Code 深色 */
+/* 深色主题（默认）— 纯黑层次，接近 Cursor / VS Code 深色
+   所有色值均降饱和，避免大面积饱和色块与纯黑底冲突 */
 [data-ui-theme="dark"], :root {
   --bg-primary: #000000;
   --bg-secondary: #101010;
@@ -31,13 +68,45 @@
   --text-secondary: #a0a0a0;
   --text-muted: #6b6b6b;
   
-  --accent-primary: #4d9eff;
-  --accent-secondary: #6ab8ff;
-  --accent-success: #5ec463;
-  --accent-warning: #e5c07b;
-  --accent-error: #f14c4c;
+  --accent-primary: #4a7dcc;
+  --accent-secondary: #6a93d6;
+  --accent-success: #5aa371;
+  --accent-warning: #d4a862;
+  --accent-error: #d16c6c;
   
   --border-color: #2a2a2a;
+
+  /* RGB 辅助：rgba() 半透明场景使用 */
+  --accent-rgb: 74, 125, 204;
+  --accent-secondary-rgb: 106, 147, 214;
+  --bg-secondary-rgb: 16, 16, 16;
+
+  /* 语义色（去饱和版本） */
+  --color-success: #5aa371;
+  --color-success-rgb: 90, 163, 113;
+  --color-warning: #d4a862;
+  --color-warning-rgb: 212, 168, 98;
+  --color-error: #d16c6c;
+  --color-error-rgb: 209, 108, 108;
+  --color-info: #4a7dcc;
+  --color-info-rgb: 74, 125, 204;
+
+  /* 品牌色（去饱和，跟纯黑协调） */
+  --brand-assistant: #c88a3a;
+  --brand-assistant-end: #a56b22;
+  --brand-assistant-rgb: 200, 138, 58;
+
+  --brand-local: #4a8f6d;
+  --brand-local-end: #3a7056;
+  --brand-local-rgb: 74, 143, 109;
+
+  --brand-ssh: #4a7dcc;
+  --brand-ssh-end: #355fa8;
+  --brand-ssh-rgb: 74, 125, 204;
+
+  --brand-patrol: #7d6bc7;
+  --brand-patrol-end: #6754b0;
+  --brand-patrol-rgb: 125, 107, 199;
 }
 
 /* 浅色主题 */
@@ -59,6 +128,19 @@
   --accent-error: #d13438;
   
   --border-color: #d1d1d1;
+
+  --accent-rgb: 0, 120, 212;
+  --accent-secondary-rgb: 16, 110, 190;
+  --bg-secondary-rgb: 245, 245, 245;
+
+  --color-success: #107c10;
+  --color-success-rgb: 16, 124, 16;
+  --color-warning: #ca5010;
+  --color-warning-rgb: 202, 80, 16;
+  --color-error: #d13438;
+  --color-error-rgb: 209, 52, 56;
+  --color-info: #0078d4;
+  --color-info-rgb: 0, 120, 212;
 }
 
 /* 蓝色主题（VS 经典风格） */
@@ -80,6 +162,19 @@
   --accent-error: #ff6b6b;
   
   --border-color: #3a6a9a;
+
+  --accent-rgb: 77, 184, 255;
+  --accent-secondary-rgb: 102, 194, 255;
+  --bg-secondary-rgb: 21, 45, 74;
+
+  --color-success: #6dd400;
+  --color-success-rgb: 109, 212, 0;
+  --color-warning: #ffb900;
+  --color-warning-rgb: 255, 185, 0;
+  --color-error: #ff6b6b;
+  --color-error-rgb: 255, 107, 107;
+  --color-info: #4db8ff;
+  --color-info-rgb: 77, 184, 255;
 }
 
 /* 暖橙主题（温暖的棕橙色调，中深色） */
@@ -101,6 +196,19 @@
   --accent-error: #e07055;
   
   --border-color: #4a3d32;
+
+  --accent-rgb: 232, 168, 85;
+  --accent-secondary-rgb: 208, 149, 69;
+  --bg-secondary-rgb: 37, 31, 26;
+
+  --color-success: #a8c070;
+  --color-success-rgb: 168, 192, 112;
+  --color-warning: #e0a050;
+  --color-warning-rgb: 224, 160, 80;
+  --color-error: #e07055;
+  --color-error-rgb: 224, 112, 85;
+  --color-info: #e8a855;
+  --color-info-rgb: 232, 168, 85;
 }
 
 /* Forest 主题（浅色清新的森林绿色调） */
@@ -122,6 +230,19 @@
   --accent-error: #b85555;
   
   --border-color: #c8dcd0;
+
+  --accent-rgb: 74, 154, 112;
+  --accent-secondary-rgb: 58, 133, 96;
+  --bg-secondary-rgb: 238, 246, 240;
+
+  --color-success: #5aaa75;
+  --color-success-rgb: 90, 170, 117;
+  --color-warning: #aa8540;
+  --color-warning-rgb: 170, 133, 64;
+  --color-error: #b85555;
+  --color-error-rgb: 184, 85, 85;
+  --color-info: #4a9a70;
+  --color-info-rgb: 74, 154, 112;
 }
 
 /* Ayu Mirage 主题（现代化的橙色调） */
@@ -143,6 +264,19 @@
   --accent-error: #ff3333;
   
   --border-color: #3d4455;
+
+  --accent-rgb: 255, 204, 102;
+  --accent-secondary-rgb: 255, 213, 128;
+  --bg-secondary-rgb: 26, 31, 41;
+
+  --color-success: #bae67e;
+  --color-success-rgb: 186, 230, 126;
+  --color-warning: #ffa759;
+  --color-warning-rgb: 255, 167, 89;
+  --color-error: #ff3333;
+  --color-error-rgb: 255, 51, 51;
+  --color-info: #ffcc66;
+  --color-info-rgb: 255, 204, 102;
 }
 
 /* 赞助者专属暗金色主题（尊贵内敛风格） */
@@ -164,6 +298,19 @@
   --accent-error: #b85050;
   
   --border-color: #4a4035;
+
+  --accent-rgb: 184, 134, 11;
+  --accent-secondary-rgb: 153, 107, 8;
+  --bg-secondary-rgb: 35, 31, 26;
+
+  --color-success: #7a9a32;
+  --color-success-rgb: 122, 154, 50;
+  --color-warning: #cc8800;
+  --color-warning-rgb: 204, 136, 0;
+  --color-error: #b85050;
+  --color-error-rgb: 184, 80, 80;
+  --color-info: #b8860b;
+  --color-info-rgb: 184, 134, 11;
 }
 
 /* 赞助者专属樱花粉主题（浅色温柔风格） */
@@ -185,6 +332,19 @@
   --accent-error: #c95050;
   
   --border-color: #e8d0dc;
+
+  --accent-rgb: 212, 114, 138;
+  --accent-secondary-rgb: 194, 93, 120;
+  --bg-secondary-rgb: 248, 240, 244;
+
+  --color-success: #5a9a6a;
+  --color-success-rgb: 90, 154, 106;
+  --color-warning: #c98a40;
+  --color-warning-rgb: 201, 138, 64;
+  --color-error: #c95050;
+  --color-error-rgb: 201, 80, 80;
+  --color-info: #d4728a;
+  --color-info-rgb: 212, 114, 138;
 }
 
 /* 赞助者专属玫瑰松主题（温暖的玫瑰色调） */
@@ -206,6 +366,19 @@
   --accent-error: #eb6f92;
   
   --border-color: #403d52;
+
+  --accent-rgb: 235, 188, 186;
+  --accent-secondary-rgb: 196, 167, 231;
+  --bg-secondary-rgb: 31, 29, 46;
+
+  --color-success: #31748f;
+  --color-success-rgb: 49, 116, 143;
+  --color-warning: #f6c177;
+  --color-warning-rgb: 246, 193, 119;
+  --color-error: #eb6f92;
+  --color-error-rgb: 235, 111, 146;
+  --color-info: #ebbcba;
+  --color-info-rgb: 235, 188, 186;
 }
 
 /* 🆕 赛博朋克霓虹主题 - 极致科技感 */
@@ -227,6 +400,19 @@
   --accent-error: #ff0055;
   
   --border-color: #2a2a44;
+
+  --accent-rgb: 0, 255, 255;
+  --accent-secondary-rgb: 255, 0, 255;
+  --bg-secondary-rgb: 15, 15, 24;
+
+  --color-success: #00ff88;
+  --color-success-rgb: 0, 255, 136;
+  --color-warning: #ffff00;
+  --color-warning-rgb: 255, 255, 0;
+  --color-error: #ff0055;
+  --color-error-rgb: 255, 0, 85;
+  --color-info: #00ffff;
+  --color-info-rgb: 0, 255, 255;
   
   /* 赛博朋克特有变量 */
   --neon-glow: 0 0 10px var(--accent-primary), 0 0 20px var(--accent-primary), 0 0 40px var(--accent-primary);
@@ -280,6 +466,19 @@
   --accent-error: #ef4444;
   
   --border-color: #d8d0e8;
+
+  --accent-rgb: 139, 92, 246;
+  --accent-secondary-rgb: 167, 139, 250;
+  --bg-secondary-rgb: 240, 236, 248;
+
+  --color-success: #22c55e;
+  --color-success-rgb: 34, 197, 94;
+  --color-warning: #f59e0b;
+  --color-warning-rgb: 245, 158, 11;
+  --color-error: #ef4444;
+  --color-error-rgb: 239, 68, 68;
+  --color-info: #8b5cf6;
+  --color-info-rgb: 139, 92, 246;
 }
 
 /* 🆕 极光主题 - 神秘渐变 */
@@ -301,6 +500,19 @@
   --accent-error: #fb7185;
   
   --border-color: #2a3f54;
+
+  --accent-rgb: 125, 211, 252;
+  --accent-secondary-rgb: 192, 132, 252;
+  --bg-secondary-rgb: 19, 26, 33;
+
+  --color-success: #4ade80;
+  --color-success-rgb: 74, 222, 128;
+  --color-warning: #fbbf24;
+  --color-warning-rgb: 251, 191, 36;
+  --color-error: #fb7185;
+  --color-error-rgb: 251, 113, 133;
+  --color-info: #7dd3fc;
+  --color-info-rgb: 125, 211, 252;
 }
 
 /* 极光主题背景渐变 */
@@ -864,8 +1076,8 @@ button:focus-visible {
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.2);
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.25);
-  --shadow-glow: 0 0 20px rgba(137, 180, 250, 0.15);
-  --shadow-glow-strong: 0 0 30px rgba(137, 180, 250, 0.25);
+  --shadow-glow: 0 0 20px rgba(var(--accent-rgb), 0.15);
+  --shadow-glow-strong: 0 0 30px rgba(var(--accent-rgb), 0.25);
 }
 
 /* 输入框焦点光晕增强 */
@@ -874,8 +1086,8 @@ button:focus-visible {
 textarea:focus {
   border-color: var(--accent-primary);
   box-shadow: 
-    0 0 0 3px rgba(137, 180, 250, 0.15),
-    0 0 20px rgba(137, 180, 250, 0.1);
+    0 0 0 3px rgba(var(--accent-rgb), 0.15),
+    0 0 20px rgba(var(--accent-rgb), 0.1);
   outline: none;
 }
 
@@ -1073,7 +1285,7 @@ textarea:focus {
   background: linear-gradient(
     180deg,
     transparent 10%,
-    rgba(137, 180, 250, 0.3) 50%,
+    rgba(var(--accent-rgb), 0.3) 50%,
     transparent 90%
   );
 }
@@ -1086,7 +1298,7 @@ textarea:focus {
   background: linear-gradient(
     180deg,
     transparent 10%,
-    rgba(137, 180, 250, 0.5) 50%,
+    rgba(var(--accent-rgb), 0.5) 50%,
     transparent 90%
   );
 }
@@ -1096,9 +1308,9 @@ textarea:focus {
 /* 欢迎页背景 */
 .welcome-bg-enhanced {
   background: 
-    radial-gradient(ellipse at 20% 30%, rgba(137, 180, 250, 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 70%, rgba(116, 199, 236, 0.06) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 100%, rgba(166, 227, 161, 0.04) 0%, transparent 40%),
+    radial-gradient(ellipse at 20% 30%, rgba(var(--accent-rgb), 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 70%, rgba(var(--accent-secondary-rgb), 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 100%, rgba(var(--color-success-rgb), 0.04) 0%, transparent 40%),
     var(--bg-primary);
 }
 
@@ -1146,7 +1358,7 @@ textarea:focus {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, transparent 40%, rgba(137, 180, 250, 0.1) 100%);
+  background: linear-gradient(135deg, transparent 40%, rgba(var(--accent-rgb), 0.1) 100%);
   opacity: 0;
   transition: opacity 0.3s ease;
 }
@@ -1156,7 +1368,7 @@ textarea:focus {
   border-color: var(--accent-primary);
   box-shadow: 
     0 8px 24px rgba(0, 0, 0, 0.15),
-    0 0 0 1px rgba(137, 180, 250, 0.2);
+    0 0 0 1px rgba(var(--accent-rgb), 0.2);
 }
 
 .action-card:hover::before {

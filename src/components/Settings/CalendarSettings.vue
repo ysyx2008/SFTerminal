@@ -585,13 +585,13 @@ const formatRelativeTime = (timestamp?: number): string => {
 }
 
 .status-dot.success {
-  background: #22c55e;
-  box-shadow: 0 0 4px rgba(34, 197, 94, 0.4);
+  background: var(--color-success);
+  box-shadow: 0 0 4px rgba(var(--color-success-rgb), 0.4);
 }
 
 .status-dot.failed {
-  background: #ef4444;
-  box-shadow: 0 0 4px rgba(239, 68, 68, 0.4);
+  background: var(--color-error);
+  box-shadow: 0 0 4px rgba(var(--color-error-rgb), 0.4);
 }
 
 .status-dot.unknown {
@@ -607,13 +607,13 @@ const formatRelativeTime = (timestamp?: number): string => {
 }
 
 .status-tag.success {
-  background: rgba(34, 197, 94, 0.15);
-  color: #22c55e;
+  background: rgba(var(--color-success-rgb), 0.15);
+  color: var(--color-success);
 }
 
 .status-tag.error {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
+  background: rgba(var(--color-error-rgb), 0.15);
+  color: var(--color-error);
 }
 
 .status-tag.unknown {
@@ -656,8 +656,8 @@ const formatRelativeTime = (timestamp?: number): string => {
 }
 
 .btn-icon.danger:hover {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
+  background: rgba(var(--color-error-rgb), 0.1);
+  color: var(--color-error);
 }
 
 /* 表单弹窗 */
@@ -775,11 +775,11 @@ const formatRelativeTime = (timestamp?: number): string => {
 }
 
 .test-result.success {
-  color: #22c55e;
+  color: var(--color-success);
 }
 
 .test-result.error {
-  color: #ef4444;
+  color: var(--color-error);
 }
 
 .spinner {

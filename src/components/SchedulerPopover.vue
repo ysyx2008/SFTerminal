@@ -369,7 +369,7 @@ onUnmounted(() => {
 }
 
 .task-badge.attention {
-  background: #ef4444;
+  background: var(--color-error);
 }
 
 /* 弹出面板 */
@@ -525,13 +525,13 @@ onUnmounted(() => {
 }
 
 .status-success {
-  background: rgba(34, 197, 94, 0.2);
-  color: #22c55e;
+  background: rgba(var(--color-success-rgb), 0.2);
+  color: var(--color-success);
 }
 
 .status-error {
-  background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
+  background: rgba(var(--color-error-rgb), 0.2);
+  color: var(--color-error);
 }
 
 .status-warning {

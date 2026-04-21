@@ -883,9 +883,9 @@ onMounted(async () => {
 }
 
 .step-indicator.completed .step-number {
-  background: #10b981;
+  background: var(--color-success);
   color: white;
-  border-color: #10b981;
+  border-color: var(--color-success);
 }
 
 .step-line {
@@ -897,7 +897,7 @@ onMounted(async () => {
 }
 
 .step-indicator.completed .step-line {
-  background: #10b981;
+  background: var(--color-success);
 }
 
 /* 步骤内容 */
@@ -1001,12 +1001,12 @@ onMounted(async () => {
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: rgba(var(--color-success-rgb), 0.1);
+  border: 1px solid rgba(var(--color-success-rgb), 0.3);
   border-radius: 8px;
   margin-bottom: 20px;
   font-size: 13px;
-  color: #10b981;
+  color: var(--color-success);
 }
 
 .configured-icon {
@@ -1033,8 +1033,8 @@ onMounted(async () => {
 }
 
 .ai-template-card.configured {
-  border-color: rgba(16, 185, 129, 0.4);
-  background: rgba(16, 185, 129, 0.05);
+  border-color: rgba(var(--color-success-rgb), 0.4);
+  background: rgba(var(--color-success-rgb), 0.05);
 }
 
 
@@ -1077,8 +1077,8 @@ onMounted(async () => {
   gap: 4px;
   font-size: 11px;
   font-weight: 500;
-  color: #10b981;
-  background: rgba(16, 185, 129, 0.15);
+  color: var(--color-success);
+  background: rgba(var(--color-success-rgb), 0.15);
   padding: 2px 8px;
   border-radius: 10px;
 }
@@ -1286,9 +1286,9 @@ onMounted(async () => {
   align-items: center;
   gap: 8px;
   padding: 12px;
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(var(--color-success-rgb), 0.1);
   border-radius: 8px;
-  color: #10b981;
+  color: var(--color-success);
   font-size: 14px;
 }
 
@@ -1362,19 +1362,19 @@ onMounted(async () => {
 
 .success-message {
   padding: 12px;
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: rgba(var(--color-success-rgb), 0.1);
+  border: 1px solid rgba(var(--color-success-rgb), 0.3);
   border-radius: 8px;
-  color: #10b981;
+  color: var(--color-success);
   font-size: 13px;
 }
 
 .error-message {
   padding: 12px;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(var(--color-error-rgb), 0.1);
+  border: 1px solid rgba(var(--color-error-rgb), 0.3);
   border-radius: 8px;
-  color: #ef4444;
+  color: var(--color-error);
   font-size: 13px;
 }
 
@@ -1479,7 +1479,7 @@ onMounted(async () => {
 
 .password-error {
   font-size: 13px;
-  color: var(--accent-error, #ef4444);
+  color: var(--color-error);
   margin: 0;
 }
 
@@ -1602,8 +1602,8 @@ input:checked + .slider:before {
 }
 
 .server-status.enabled {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
+  background: rgba(var(--color-success-rgb), 0.15);
+  color: var(--color-success);
 }
 
 .no-mcp {
@@ -1629,8 +1629,8 @@ input:checked + .slider:before {
   align-items: center;
   gap: 16px;
   padding: 20px;
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: linear-gradient(135deg, rgba(var(--color-success-rgb), 0.1), rgba(var(--color-success-rgb), 0.05));
+  border: 1px solid rgba(var(--color-success-rgb), 0.3);
   border-radius: 12px;
   margin-bottom: 28px;
 }
@@ -1643,7 +1643,7 @@ input:checked + .slider:before {
 .ready-text h3 {
   font-size: 16px;
   font-weight: 600;
-  color: #10b981;
+  color: var(--color-success);
   margin: 0 0 4px;
 }
 
@@ -1727,11 +1727,11 @@ input:checked + .slider:before {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #10b981;
+  color: var(--color-success);
 }
 
 .config-card-header .status-icon.success {
-  color: #10b981;
+  color: var(--color-success);
 }
 
 .config-card-header .expand-icon {
@@ -1759,7 +1759,7 @@ input:checked + .slider:before {
 
 .scan-result-compact .result-text {
   font-size: 13px;
-  color: #10b981;
+  color: var(--color-success);
   margin: 0;
 }
 
@@ -1837,8 +1837,8 @@ input:checked + .slider:before {
 }
 
 .mcp-status.enabled {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
+  background: rgba(var(--color-success-rgb), 0.15);
+  color: var(--color-success);
 }
 
 .no-mcp-compact p {

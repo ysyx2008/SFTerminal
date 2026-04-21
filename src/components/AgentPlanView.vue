@@ -198,13 +198,13 @@ const handleToggle = () => {
 }
 
 .agent-plan.is-completed {
-  border-color: rgba(16, 185, 129, 0.3);
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), transparent);
+  border-color: rgba(var(--color-success-rgb), 0.3);
+  background: linear-gradient(135deg, rgba(var(--color-success-rgb), 0.05), transparent);
 }
 
 .agent-plan.has-failed {
-  border-color: rgba(239, 68, 68, 0.3);
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.05), transparent);
+  border-color: rgba(var(--color-error-rgb), 0.3);
+  background: linear-gradient(135deg, rgba(var(--color-error-rgb), 0.05), transparent);
 }
 
 /* ==================== 紧凑模式样式 ==================== */
@@ -238,7 +238,7 @@ const handleToggle = () => {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #3b82f6;
+  color: var(--color-info);
   font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
@@ -248,20 +248,20 @@ const handleToggle = () => {
 .current-step-spinner {
   width: 12px;
   height: 12px;
-  border: 2px solid rgba(59, 130, 246, 0.2);
-  border-top-color: #3b82f6;
+  border: 2px solid rgba(var(--color-info-rgb), 0.2);
+  border-top-color: var(--color-info);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   flex-shrink: 0;
 }
 
 .completed-hint {
-  color: #10b981;
+  color: var(--color-success);
   font-size: 13px;
 }
 
 .failed-hint {
-  color: #ef4444;
+  color: var(--color-error);
   font-size: 13px;
 }
 
@@ -289,12 +289,12 @@ const handleToggle = () => {
   top: 0;
   bottom: 0;
   width: var(--progress, 0%);
-  background: linear-gradient(90deg, #10b981, #34d399);
+  background: linear-gradient(90deg, var(--color-success), var(--color-success));
   transition: width 0.4s ease;
 }
 
 .top-progress-bar.failed::after {
-  background: linear-gradient(90deg, #f87171, #ef4444);
+  background: linear-gradient(90deg, var(--color-error), var(--color-error));
 }
 
 
@@ -402,17 +402,17 @@ const handleToggle = () => {
 }
 
 .plan-step.in_progress {
-  border-left-color: #3b82f6;
-  background: rgba(59, 130, 246, 0.08);
+  border-left-color: var(--color-info);
+  background: rgba(var(--color-info-rgb), 0.08);
 }
 
 .plan-step.completed {
-  border-left-color: #10b981;
+  border-left-color: var(--color-success);
 }
 
 .plan-step.failed {
-  border-left-color: #ef4444;
-  background: rgba(239, 68, 68, 0.05);
+  border-left-color: var(--color-error);
+  background: rgba(var(--color-error-rgb), 0.05);
 }
 
 .plan-step.skipped {
@@ -447,15 +447,15 @@ const handleToggle = () => {
   font-weight: bold;
 }
 
-.step-icon.completed { color: #10b981; }
-.step-icon.failed { color: #ef4444; }
+.step-icon.completed { color: var(--color-success); }
+.step-icon.failed { color: var(--color-error); }
 .step-icon.skipped { color: var(--text-muted); }
 
 .step-spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(59, 130, 246, 0.2);
-  border-top-color: #3b82f6;
+  border: 2px solid rgba(var(--color-info-rgb), 0.2);
+  border-top-color: var(--color-info);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -497,13 +497,13 @@ const handleToggle = () => {
 }
 
 .step-result.completed {
-  color: #10b981;
-  background: rgba(16, 185, 129, 0.1);
+  color: var(--color-success);
+  background: rgba(var(--color-success-rgb), 0.1);
 }
 
 .step-result.failed {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-error);
+  background: rgba(var(--color-error-rgb), 0.1);
 }
 
 .step-result.skipped {
@@ -522,21 +522,21 @@ const handleToggle = () => {
 .mini-progress-bar {
   flex: 1;
   height: 4px;
-  background: rgba(59, 130, 246, 0.2);
+  background: rgba(var(--color-info-rgb), 0.2);
   border-radius: 2px;
   overflow: hidden;
 }
 
 .mini-progress-fill {
   height: 100%;
-  background: #3b82f6;
+  background: var(--color-info);
   border-radius: 2px;
   transition: width 0.3s ease;
 }
 
 .mini-progress-fill.indeterminate {
   animation: indeterminate 1.5s ease-in-out infinite;
-  background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+  background: linear-gradient(90deg, transparent, var(--color-info), transparent);
 }
 
 @keyframes indeterminate {

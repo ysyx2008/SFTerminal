@@ -1013,7 +1013,7 @@ function openWebSearchKeyUrl() {
 
 .profile-item.active {
   border-color: var(--accent-primary);
-  background: rgba(137, 180, 250, 0.1);
+  background: rgba(var(--accent-rgb), 0.1);
 }
 
 .profile-radio input {
@@ -1048,7 +1048,7 @@ function openWebSearchKeyUrl() {
 
 .model-type-badge.vision {
   color: var(--accent-primary);
-  background: rgba(137, 180, 250, 0.15);
+  background: rgba(var(--accent-rgb), 0.15);
 }
 
 .profile-detail {
@@ -1378,7 +1378,7 @@ function openWebSearchKeyUrl() {
 }
 
 .btn-success {
-  background: #10b981;
+  background: var(--color-success);
   color: white;
 }
 
@@ -1390,8 +1390,8 @@ function openWebSearchKeyUrl() {
   margin-top: 6px;
   padding: 6px 10px;
   font-size: 12px;
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-error);
+  background: rgba(var(--color-error-rgb), 0.1);
   border-radius: 6px;
 }
 

@@ -485,9 +485,9 @@ function isActionModified(action: ShortcutAction): boolean {
   margin-bottom: 10px;
   padding: 8px 12px;
   font-size: 12px;
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.15);
+  color: var(--color-warning);
+  background: rgba(var(--color-warning-rgb), 0.08);
+  border: 1px solid rgba(var(--color-warning-rgb), 0.15);
   border-radius: 6px;
 }
 </style>

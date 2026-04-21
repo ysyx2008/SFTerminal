@@ -1,9 +1,20 @@
 /**
- * UI 主题定义（用于主题预览卡片）
- * 
- * ⚠️ 注意：修改主题颜色时，需要同步修改以下两个文件：
- * 1. 本文件 (ui-themes.ts) - 用于设置界面的主题预览卡片
- * 2. src/styles/main.css - 实际应用到 UI 的 CSS 变量
+ * UI 主题定义（用于设置面板的主题预览卡片）
+ *
+ * 本文件只承载"结构色 + 强调色"五项，**不**包含语义色 / 品牌色 / RGB 变量；
+ * 后者只在 src/styles/main.css 中维护，组件通过下列 CSS 变量读取：
+ *
+ *   结构层   --bg-primary / --bg-secondary / --bg-tertiary / --bg-surface / --bg-hover
+ *            --text-primary / --text-secondary / --text-muted / --border-color
+ *   强调层   --accent-primary / --accent-secondary / --accent-success / --accent-warning / --accent-error
+ *   语义层   --color-success / --color-warning / --color-error / --color-info
+ *            （附 *-rgb 版本，用于 rgba()；在 main.css 中按主题覆盖）
+ *   品牌层   --brand-assistant / --brand-local / --brand-ssh / --brand-patrol
+ *            （附 *-end 渐变尾色 和 *-rgb 版本）
+ *
+ * ⚠️ 修改主题颜色时，需同步维护：
+ *   1. 本文件 (ui-themes.ts) - 设置面板预览
+ *   2. src/styles/main.css   - 实际生效的 CSS 变量
  */
 
 // UI 主题类型

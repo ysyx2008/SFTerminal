@@ -416,7 +416,7 @@ const getFileIcon = (file: SftpFileInfo) => {
 .drop-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(137, 180, 250, 0.1);
+  background: rgba(var(--accent-rgb), 0.1);
   border: 2px dashed var(--accent-primary);
   display: flex;
   align-items: center;

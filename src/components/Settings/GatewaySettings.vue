@@ -463,12 +463,12 @@ async function copyToClipboard(text: string, label: string) {
 /* ==================== 按钮 ==================== */
 .btn-danger {
   background: transparent;
-  border-color: var(--accent-error, #f85149);
-  color: var(--accent-error, #f85149);
+  border-color: var(--color-error);
+  color: var(--color-error);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: rgba(248, 81, 73, 0.1);
+  background: rgba(var(--color-error-rgb), 0.1);
 }
 
 .btn-icon-sm {
@@ -494,13 +494,13 @@ async function copyToClipboard(text: string, label: string) {
 
 /* ==================== 错误提示 ==================== */
 .error-msg {
-  color: var(--danger-color, #f85149);
+  color: var(--danger-color, var(--color-error));
   font-size: 12px;
   margin-bottom: 14px;
   padding: 8px 12px;
-  background: rgba(248, 81, 73, 0.08);
+  background: rgba(var(--color-error-rgb), 0.08);
   border-radius: 6px;
-  border-left: 3px solid var(--danger-color, #f85149);
+  border-left: 3px solid var(--danger-color, var(--color-error));
 }
 
 /* ==================== 运行信息面板 ==================== */
@@ -571,12 +571,12 @@ async function copyToClipboard(text: string, label: string) {
 
 .security-note {
   font-size: 12px;
-  color: var(--warning-color, #d29922);
+  color: var(--color-warning);
   line-height: 1.5;
   padding: 8px 12px;
-  background: rgba(210, 153, 34, 0.06);
+  background: rgba(var(--color-warning-rgb), 0.06);
   border-radius: 6px;
-  border-left: 3px solid rgba(210, 153, 34, 0.4);
+  border-left: 3px solid rgba(var(--color-warning-rgb), 0.4);
 }
 
 /* ==================== 审计日志 ==================== */
@@ -675,11 +675,11 @@ async function copyToClipboard(text: string, label: string) {
 }
 
 .audit-task_error .audit-summary {
-  color: var(--accent-error, #f85149);
+  color: var(--color-error);
 }
 
 .audit-confirm .audit-summary {
-  color: var(--warning-color, #d29922);
+  color: var(--color-warning);
 }
 
 </style>

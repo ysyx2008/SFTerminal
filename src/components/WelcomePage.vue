@@ -222,16 +222,16 @@ const formatHost = (session: SshSession) => {
 /* 深色主题：微妙的渐变背景 */
 [data-color-scheme="dark"] .welcome-page {
   background: 
-    radial-gradient(ellipse at 30% 20%, rgba(var(--accent-rgb, 137, 180, 250), 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 80%, rgba(var(--accent-secondary-rgb, 116, 199, 236), 0.05) 0%, transparent 50%),
+    radial-gradient(ellipse at 30% 20%, rgba(var(--accent-rgb), 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 80%, rgba(var(--accent-secondary-rgb), 0.05) 0%, transparent 50%),
     var(--bg-primary);
 }
 
 /* 浅色主题：更柔和的渐变 */
 [data-color-scheme="light"] .welcome-page {
   background: 
-    radial-gradient(ellipse at 30% 20%, rgba(var(--accent-rgb, 0, 120, 212), 0.04) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 80%, rgba(var(--accent-secondary-rgb, 16, 110, 190), 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 30% 20%, rgba(var(--accent-rgb), 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 80%, rgba(var(--accent-secondary-rgb), 0.03) 0%, transparent 50%),
     var(--bg-primary);
 }
 
@@ -305,12 +305,12 @@ const formatHost = (session: SshSession) => {
   width: 112px;
   height: 112px;
   object-fit: contain;
-  filter: drop-shadow(0 4px 16px rgba(var(--accent-rgb, 59, 130, 246), 0.4));
+  filter: drop-shadow(0 4px 16px rgba(var(--accent-rgb), 0.4));
   transition: filter 0.3s ease;
 }
 
 .logo-container:hover .sailfish-logo {
-  filter: drop-shadow(0 6px 30px rgba(var(--accent-rgb, 59, 130, 246), 0.6));
+  filter: drop-shadow(0 6px 30px rgba(var(--accent-rgb), 0.6));
 }
 
 @keyframes float {
@@ -462,7 +462,7 @@ const formatHost = (session: SshSession) => {
   transform: translateY(-8px) scale(1.06);
   box-shadow: 
     0 20px 40px rgba(0, 0, 0, 0.2),
-    0 0 30px rgba(var(--accent-rgb, 137, 180, 250), 0.2);
+    0 0 30px rgba(var(--accent-rgb), 0.2);
 }
 
 .action-card:active:not(.disabled) {
@@ -495,23 +495,23 @@ const formatHost = (session: SshSession) => {
 }
 
 .card-icon.assistant {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+  background: linear-gradient(135deg, var(--brand-assistant), var(--brand-assistant-end));
+  box-shadow: 0 4px 15px rgba(var(--brand-assistant-rgb), 0.3);
 }
 
 .card-icon.local {
-  background: linear-gradient(135deg, #10b981, #059669);
-  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+  background: linear-gradient(135deg, var(--brand-local), var(--brand-local-end));
+  box-shadow: 0 4px 15px rgba(var(--brand-local-rgb), 0.3);
 }
 
 .card-icon.ssh {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+  background: linear-gradient(135deg, var(--brand-ssh), var(--brand-ssh-end));
+  box-shadow: 0 4px 15px rgba(var(--brand-ssh-rgb), 0.3);
 }
 
 .card-icon.patrol {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+  background: linear-gradient(135deg, var(--brand-patrol), var(--brand-patrol-end));
+  box-shadow: 0 4px 15px rgba(var(--brand-patrol-rgb), 0.3);
 }
 
 .card-title {
@@ -538,8 +538,8 @@ const formatHost = (session: SshSession) => {
   right: 12px;
   font-size: 10px;
   font-weight: 600;
-  color: #8b5cf6;
-  background: rgba(139, 92, 246, 0.1);
+  color: var(--brand-patrol);
+  background: rgba(var(--brand-patrol-rgb), 0.1);
   padding: 2px 8px;
   border-radius: 4px;
 }
@@ -608,7 +608,7 @@ const formatHost = (session: SshSession) => {
 .session-icon {
   width: 36px;
   height: 36px;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(59, 130, 246, 0.1));
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.2), rgba(var(--accent-rgb), 0.1));
   border-radius: 10px;
   display: flex;
   align-items: center;
@@ -664,7 +664,7 @@ const formatHost = (session: SshSession) => {
 }
 
 .view-all:hover {
-  background: rgba(var(--accent-rgb, 137, 180, 250), 0.1);
+  background: rgba(var(--accent-rgb), 0.1);
   transform: translateX(4px);
 }
 
@@ -672,8 +672,8 @@ const formatHost = (session: SshSession) => {
 .tips {
   padding: 12px 16px;
   margin-top: 38px;
-  background: linear-gradient(135deg, rgba(var(--accent-rgb, 59, 130, 246), 0.08), rgba(var(--accent-secondary-rgb, 116, 199, 236), 0.05));
-  border: 1px solid rgba(var(--accent-rgb, 59, 130, 246), 0.15);
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.08), rgba(var(--accent-secondary-rgb), 0.05));
+  border: 1px solid rgba(var(--accent-rgb), 0.15);
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.3s ease;
@@ -702,10 +702,10 @@ const formatHost = (session: SshSession) => {
 }
 
 .tips:hover {
-  background: linear-gradient(135deg, rgba(var(--accent-rgb, 59, 130, 246), 0.12), rgba(var(--accent-secondary-rgb, 116, 199, 236), 0.08));
-  border-color: rgba(var(--accent-rgb, 59, 130, 246), 0.25);
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.12), rgba(var(--accent-secondary-rgb), 0.08));
+  border-color: rgba(var(--accent-rgb), 0.25);
   transform: scale(1.01);
-  box-shadow: 0 4px 20px rgba(var(--accent-rgb, 59, 130, 246), 0.1);
+  box-shadow: 0 4px 20px rgba(var(--accent-rgb), 0.1);
 }
 
 .tips:active {

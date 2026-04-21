@@ -491,9 +491,9 @@ onUnmounted(() => {
 .status-dot { font-size: 10px; }
 .status-count { font-family: var(--font-mono); font-size: 10px; }
 
-.status-all .status-dot, .status-all.status-badge { color: #10b981; }
-.status-partial .status-dot, .status-partial.status-badge { color: #f59e0b; }
-.status-offline .status-dot, .status-offline.status-badge { color: #ef4444; }
+.status-all .status-dot, .status-all.status-badge { color: var(--color-success); }
+.status-partial .status-dot, .status-partial.status-badge { color: var(--color-warning); }
+.status-offline .status-dot, .status-offline.status-badge { color: var(--color-error); }
 .status-none .status-dot, .status-none.status-badge { color: var(--text-muted); }
 
 /* 弹出面板 */
@@ -551,7 +551,7 @@ onUnmounted(() => {
 }
 
 .col-count.count-ok {
-  color: #10b981;
+  color: var(--color-success);
 }
 
 /* 栏体 */
@@ -583,7 +583,7 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.dot-on { color: #10b981; }
+.dot-on { color: var(--color-success); }
 .dot-off { color: var(--text-muted); }
 .dot-disabled { color: var(--text-muted); opacity: 0.5; }
 
@@ -651,7 +651,7 @@ onUnmounted(() => {
 }
 
 .btn-connect:hover:not(:disabled) {
-  background: rgba(100, 150, 255, 0.1);
+  background: rgba(var(--accent-rgb), 0.1);
 }
 
 .btn-connect:disabled {
@@ -666,9 +666,9 @@ onUnmounted(() => {
 }
 
 .btn-disconnect:hover {
-  color: #ef4444;
-  border-color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-error);
+  border-color: var(--color-error);
+  background: rgba(var(--color-error-rgb), 0.1);
 }
 
 .btn-link {

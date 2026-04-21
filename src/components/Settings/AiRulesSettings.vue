@@ -279,8 +279,8 @@ const insertExample = (example: string) => {
 
 /* 使用提示 */
 .tips-section {
-  background: linear-gradient(135deg, rgba(137, 180, 250, 0.08) 0%, rgba(137, 180, 250, 0.02) 100%);
-  border: 1px solid rgba(137, 180, 250, 0.2);
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.08) 0%, rgba(var(--accent-rgb), 0.02) 100%);
+  border: 1px solid rgba(var(--accent-rgb), 0.2);
 }
 
 .tips-list {

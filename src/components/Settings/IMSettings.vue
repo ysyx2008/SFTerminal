@@ -1190,24 +1190,24 @@ function cancelFreeMode() {
 }
 
 .error-msg {
-  color: var(--danger-color, #f85149);
+  color: var(--danger-color, var(--color-error));
   font-size: 12px;
   margin-bottom: 14px;
   padding: 8px 12px;
-  background: rgba(248, 81, 73, 0.08);
+  background: rgba(var(--color-error-rgb), 0.08);
   border-radius: 6px;
-  border-left: 3px solid var(--danger-color, #f85149);
+  border-left: 3px solid var(--danger-color, var(--color-error));
 }
 
 /* 按钮 */
 .btn-outline-danger {
   background: transparent;
-  border: 1px solid var(--accent-error, #f85149);
-  color: var(--accent-error, #f85149);
+  border: 1px solid var(--color-error);
+  color: var(--color-error);
 }
 
 .btn-outline-danger:hover:not(:disabled) {
-  background: rgba(248, 81, 73, 0.1);
+  background: rgba(var(--color-error-rgb), 0.1);
 }
 
 .btn-outline-secondary {
@@ -1259,12 +1259,12 @@ function cancelFreeMode() {
 
 .security-note {
   font-size: 12px;
-  color: var(--warning-color, #d29922);
+  color: var(--color-warning);
   line-height: 1.5;
   padding: 8px 12px;
-  background: rgba(210, 153, 34, 0.06);
+  background: rgba(var(--color-warning-rgb), 0.06);
   border-radius: 6px;
-  border-left: 3px solid rgba(210, 153, 34, 0.4);
+  border-left: 3px solid rgba(var(--color-warning-rgb), 0.4);
 }
 
 /* IM 平台卡片 */
@@ -1314,9 +1314,9 @@ function cancelFreeMode() {
   line-height: 1;
   padding: 2px 6px;
   border-radius: 4px;
-  background: rgba(210, 153, 34, 0.15);
-  color: var(--warning-color, #d29922);
-  border: 1px solid rgba(210, 153, 34, 0.3);
+  background: rgba(var(--color-warning-rgb), 0.15);
+  color: var(--color-warning);
+  border: 1px solid rgba(var(--color-warning-rgb), 0.3);
   letter-spacing: 0.5px;
   text-transform: uppercase;
   cursor: help;
@@ -1340,8 +1340,8 @@ function cancelFreeMode() {
 }
 
 .im-status-indicator.connecting {
-  color: var(--warning-color, #d29922);
-  background: rgba(210, 153, 34, 0.1);
+  color: var(--color-warning);
+  background: rgba(var(--color-warning-rgb), 0.1);
 }
 
 .indicator-dot {
@@ -1446,7 +1446,7 @@ function cancelFreeMode() {
   line-height: 1.5;
   margin-bottom: 14px;
   padding: 10px 12px;
-  background: rgba(137, 180, 250, 0.06);
+  background: rgba(var(--accent-rgb), 0.06);
   border-radius: 6px;
   border-left: 3px solid var(--accent-primary);
 }
@@ -1560,7 +1560,7 @@ function cancelFreeMode() {
 }
 
 .mode-option-free.active {
-  background: var(--danger-color, #f85149);
+  background: var(--danger-color, var(--color-error));
 }
 
 /* 过程消息开关 */
@@ -1605,8 +1605,8 @@ function cancelFreeMode() {
 }
 
 .mode-option-free:hover:not(.active) {
-  background: rgba(248, 81, 73, 0.15);
-  color: var(--danger-color, #f85149);
+  background: rgba(var(--color-error-rgb), 0.15);
+  color: var(--danger-color, var(--color-error));
 }
 
 /* 自由模式二次确认对话框 */
@@ -1646,6 +1646,7 @@ function cancelFreeMode() {
 .confirm-dialog-title {
   font-size: 16px;
   font-weight: 600;
+  /* 产品级强警示色，固定不随主题变化 */
   color: #ef4444;
 }
 
@@ -1676,6 +1677,18 @@ function cancelFreeMode() {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+}
+
+/* 自由模式确认按钮 —— 产品级强警示色，跨主题固定红 */
+.confirm-dialog-actions .btn-danger {
+  background: #ef4444;
+  border: 1px solid #ef4444;
+  color: #fff;
+}
+
+.confirm-dialog-actions .btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+  border-color: #dc2626;
 }
 
 /* 配置说明 */
@@ -1782,7 +1795,7 @@ function cancelFreeMode() {
 }
 
 .command-item code.confirm-reject {
-  color: var(--danger-color, #f85149);
-  border-color: rgba(248, 81, 73, 0.3);
+  color: var(--danger-color, var(--color-error));
+  border-color: rgba(var(--color-error-rgb), 0.3);
 }
 </style>

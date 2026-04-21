@@ -435,13 +435,13 @@ export default {
 }
 
 .tree-node.current {
-  background: rgba(137, 180, 250, 0.15);
+  background: rgba(var(--accent-rgb), 0.15);
   color: var(--accent-primary);
   font-weight: 500;
 }
 
 .tree-node.current:hover {
-  background: rgba(137, 180, 250, 0.2);
+  background: rgba(var(--accent-rgb), 0.2);
 }
 
 .tree-node.ancestor {

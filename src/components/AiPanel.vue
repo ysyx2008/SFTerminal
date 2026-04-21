@@ -1801,7 +1801,7 @@ watch(() => props.visible, (visible) => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 150, 255, 0.15);
+  background: rgba(var(--accent-rgb), 0.15);
   backdrop-filter: blur(4px);
   z-index: 100;
   display: flex;
@@ -2137,13 +2137,15 @@ watch(() => props.visible, (visible) => {
 }
 
 /* 错误诊断提示 */
+/* 错误诊断提示 —— 产品级强警示色，固定 Tailwind red，
+   不跟随主题的 --color-error，保证各主题下"错误警告"的视觉强度一致。 */
 .error-alert {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: rgba(244, 63, 94, 0.15);
-  border-bottom: 1px solid rgba(244, 63, 94, 0.3);
+  background: rgba(239, 68, 68, 0.15);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.3);
   flex-shrink: 0;
   z-index: 10;
 }
@@ -2161,7 +2163,7 @@ watch(() => props.visible, (visible) => {
 .error-alert-title {
   font-size: 12px;
   font-weight: 600;
-  color: #f43f5e;
+  color: #ef4444;
   margin-bottom: 2px;
 }
 
@@ -2179,7 +2181,7 @@ watch(() => props.visible, (visible) => {
   font-size: 11px;
   font-weight: 500;
   color: #fff;
-  background: #f43f5e;
+  background: #ef4444;
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -2188,7 +2190,7 @@ watch(() => props.visible, (visible) => {
 }
 
 .error-alert-btn:hover:not(:disabled) {
-  background: #e11d48;
+  background: #dc2626;
 }
 
 .error-alert-btn:disabled {
@@ -2210,7 +2212,7 @@ watch(() => props.visible, (visible) => {
 
 .error-alert-close:hover {
   opacity: 1;
-  background: rgba(244, 63, 94, 0.2);
+  background: rgba(239, 68, 68, 0.2);
 }
 
 /* 选中内容提示 */
@@ -2219,8 +2221,8 @@ watch(() => props.visible, (visible) => {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: rgba(59, 130, 246, 0.15);
-  border-bottom: 1px solid rgba(59, 130, 246, 0.3);
+  background: rgba(var(--color-info-rgb), 0.15);
+  border-bottom: 1px solid rgba(var(--color-info-rgb), 0.3);
   flex-shrink: 0;
   z-index: 10;
 }
@@ -2238,7 +2240,7 @@ watch(() => props.visible, (visible) => {
 .selection-alert-title {
   font-size: 12px;
   font-weight: 600;
-  color: #3b82f6;
+  color: var(--color-info);
   margin-bottom: 2px;
 }
 
@@ -2256,7 +2258,7 @@ watch(() => props.visible, (visible) => {
   font-size: 11px;
   font-weight: 500;
   color: #fff;
-  background: #3b82f6;
+  background: var(--color-info);
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -2265,7 +2267,7 @@ watch(() => props.visible, (visible) => {
 }
 
 .selection-alert-btn:hover:not(:disabled) {
-  background: #2563eb;
+  background: var(--accent-secondary);
 }
 
 .selection-alert-btn:disabled {
@@ -2335,7 +2337,9 @@ watch(() => props.visible, (visible) => {
   background-size: cover;
 }
 
-/* Agent 执行模式 - 宽松模式绿色内阴影（仅左右两边） */
+/* Agent 执行模式 - 宽松模式绿色内阴影（仅左右两边）
+   注意：此处使用固定的产品语义色（emerald / rose），不跟随主题的 --color-success/-error，
+   以便"安全/宽松/自由"三态在所有主题下保持一致的视觉信号强度。 */
 .ai-panel.mode-relaxed .ai-messages {
   box-shadow: 
     inset 30px 0 30px -20px rgba(16, 185, 129, 0.35),
@@ -2379,7 +2383,7 @@ watch(() => props.visible, (visible) => {
   font-weight: 500;
   border-radius: 20px;
   cursor: pointer;
-  box-shadow: 0 2px 12px rgba(0, 150, 255, 0.4);
+  box-shadow: 0 2px 12px rgba(var(--accent-rgb), 0.4);
   transition: all 0.2s ease;
   animation: bounceIn 0.3s ease;
   z-index: 10;
@@ -2388,9 +2392,9 @@ watch(() => props.visible, (visible) => {
 }
 
 .new-message-indicator:hover {
-  background: var(--accent-primary-hover, #0080ff);
+  background: var(--accent-secondary);
   transform: translateX(-50%) scale(1.05);
-  box-shadow: 0 4px 16px rgba(0, 150, 255, 0.5);
+  box-shadow: 0 4px 16px rgba(var(--accent-rgb), 0.5);
 }
 
 .new-message-indicator:active {
@@ -2444,11 +2448,11 @@ watch(() => props.visible, (visible) => {
 }
 
 .context-mini-bar.warning {
-  background: var(--accent-warning, #f59e0b);
+  background: var(--color-warning);
 }
 
 .context-mini-bar.danger {
-  background: var(--accent-error, #ef4444);
+  background: var(--color-error);
 }
 
 .context-mini-tip {
@@ -2518,11 +2522,11 @@ watch(() => props.visible, (visible) => {
 }
 
 .context-bar-fill.warning {
-  background: var(--accent-warning, #f59e0b);
+  background: var(--color-warning);
 }
 
 .context-bar-fill.danger {
-  background: var(--accent-error, #ef4444);
+  background: var(--color-error);
 }
 
 .ai-welcome {
@@ -2576,11 +2580,11 @@ watch(() => props.visible, (visible) => {
 }
 
 .strict-badge.relaxed {
-  background: var(--accent-secondary, #10b981);
+  background: var(--color-success);
 }
 
 .strict-badge.free {
-  background: #ef4444;
+  background: var(--color-error);
 }
 
 /* ==================== 历史对话列表样式 ==================== */
@@ -2703,21 +2707,21 @@ watch(() => props.visible, (visible) => {
 }
 
 .history-status-icon.completed {
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(16, 185, 129, 0.1) 100%);
-  color: #10b981;
-  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.3);
+  background: linear-gradient(135deg, rgba(var(--color-success-rgb), 0.2) 0%, rgba(var(--color-success-rgb), 0.1) 100%);
+  color: var(--color-success);
+  box-shadow: 0 0 0 1px rgba(var(--color-success-rgb), 0.3);
 }
 
 .history-status-icon.failed {
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.1) 100%);
-  color: #ef4444;
-  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3);
+  background: linear-gradient(135deg, rgba(var(--color-error-rgb), 0.2) 0%, rgba(var(--color-error-rgb), 0.1) 100%);
+  color: var(--color-error);
+  box-shadow: 0 0 0 1px rgba(var(--color-error-rgb), 0.3);
 }
 
 .history-status-icon.aborted {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(245, 158, 11, 0.1) 100%);
-  color: #f59e0b;
-  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.3);
+  background: linear-gradient(135deg, rgba(var(--color-warning-rgb), 0.2) 0%, rgba(var(--color-warning-rgb), 0.1) 100%);
+  color: var(--color-warning);
+  box-shadow: 0 0 0 1px rgba(var(--color-warning-rgb), 0.3);
 }
 
 .history-task {
@@ -3284,7 +3288,7 @@ watch(() => props.visible, (visible) => {
 }
 
 .markdown-content :deep(code.file-path-link:hover) {
-  background: rgba(64, 158, 255, 0.12);
+  background: rgba(var(--accent-rgb), 0.12);
   text-decoration: none;
 }
 
@@ -3446,12 +3450,12 @@ watch(() => props.visible, (visible) => {
 }
 
 .mode-option-free.active {
-  background: #ef4444;
+  background: var(--color-error);
 }
 
 .mode-option-free:hover:not(.active) {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
+  background: rgba(var(--color-error-rgb), 0.15);
+  color: var(--color-error);
 }
 
 /* 自由模式确认对话框 */
@@ -3494,6 +3498,7 @@ watch(() => props.visible, (visible) => {
 .confirm-dialog-title {
   font-size: 16px;
   font-weight: 600;
+  /* 产品级强警示色，固定不随主题变化 */
   color: #ef4444;
 }
 
@@ -3539,7 +3544,7 @@ watch(() => props.visible, (visible) => {
 
 /* 警告文本样式 */
 .warning-text {
-  color: #ef4444 !important;
+  color: var(--color-error) !important;
 }
 
 /* Agent 步骤（融入对话） */
@@ -3601,11 +3606,11 @@ watch(() => props.visible, (visible) => {
 .thinking-spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(52, 211, 153, 0.2);
-  border-top-color: #34d399;
+  border: 2px solid rgba(var(--color-success-rgb), 0.2);
+  border-top-color: var(--color-success);
   border-radius: 50%;
   animation: spin 1s linear infinite;
-  box-shadow: 0 0 8px rgba(52, 211, 153, 0.3);
+  box-shadow: 0 0 8px rgba(var(--color-success-rgb), 0.3);
 }
 
 .thinking-text {
@@ -3613,16 +3618,16 @@ watch(() => props.visible, (visible) => {
   /* 渐变文字动画 */
   background: linear-gradient(
     90deg,
-    rgba(110, 231, 183, 0.75) 0%,
-    rgba(52, 211, 153, 1) 50%,
-    rgba(110, 231, 183, 0.75) 100%
+    rgba(var(--color-success-rgb), 0.75) 0%,
+    rgba(var(--color-success-rgb), 1) 50%,
+    rgba(var(--color-success-rgb), 0.75) 100%
   );
   background-size: 200% 100%;
   animation: gradient-flow 2s linear infinite;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  color: rgba(110, 231, 183, 0.75);
+  color: rgba(var(--color-success-rgb), 0.75);
   animation: pulse-text 2s ease-in-out infinite;
 }
 
@@ -3652,7 +3657,7 @@ watch(() => props.visible, (visible) => {
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(var(--color-success-rgb), 0.1);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   font-size: 13px;
   font-weight: 500;
@@ -3660,19 +3665,19 @@ watch(() => props.visible, (visible) => {
 
 /* 失败状态的样式 */
 .agent-final-content.is-error .agent-final-header {
-  background: rgba(244, 67, 54, 0.1);
+  background: rgba(var(--color-error-rgb), 0.1);
 }
 
 .agent-final-content.is-error {
-  border-color: rgba(244, 67, 54, 0.2);
+  border-color: rgba(var(--color-error-rgb), 0.2);
 }
 
 .agent-final-content.is-aborted .agent-final-header {
-  background: rgba(255, 152, 0, 0.1);
+  background: rgba(var(--color-warning-rgb), 0.1);
 }
 
 .agent-final-content.is-aborted {
-  border-color: rgba(255, 152, 0, 0.2);
+  border-color: rgba(var(--color-warning-rgb), 0.2);
 }
 
 .final-icon {
@@ -3709,8 +3714,8 @@ watch(() => props.visible, (visible) => {
 .agent-final-body :deep(blockquote) {
   margin: 8px 0;
   padding: 10px 14px;
-  border-left: 3px solid #10b981;
-  background: rgba(16, 185, 129, 0.08);
+  border-left: 3px solid var(--color-success);
+  background: rgba(var(--color-success-rgb), 0.08);
   border-radius: 0 6px 6px 0;
   color: var(--text-secondary);
   font-size: 12px;
@@ -3907,7 +3912,7 @@ watch(() => props.visible, (visible) => {
 }
 
 .agent-step-inline.thinking {
-  color: rgba(110, 231, 183, 0.75);
+  color: rgba(var(--color-success-rgb), 0.75);
 }
 
 .agent-step-inline.thinking .step-icon {
@@ -3927,7 +3932,7 @@ watch(() => props.visible, (visible) => {
 }
 
 .agent-step-inline.error {
-  color: var(--accent-error, #f44336);
+  color: var(--color-error);
 }
 
 .agent-step-inline.message {
@@ -3966,8 +3971,8 @@ watch(() => props.visible, (visible) => {
 }
 
 .agent-step-inline.waiting {
-  background: rgba(59, 130, 246, 0.1);
-  border-left: 3px solid #3b82f6;
+  background: rgba(var(--color-info-rgb), 0.1);
+  border-left: 3px solid var(--color-info);
   padding-left: 10px;
   margin-left: -2px;
   border-radius: 4px;
@@ -3975,12 +3980,12 @@ watch(() => props.visible, (visible) => {
 }
 
 .agent-step-inline.waiting .step-icon {
-  color: #3b82f6;
+  color: var(--color-info);
 }
 
 .agent-step-inline.asking {
-  background: rgba(96, 165, 250, 0.08);
-  border-left: 3px solid #60a5fa;
+  background: rgba(var(--accent-rgb), 0.08);
+  border-left: 3px solid var(--accent-primary);
   padding-left: 10px;
   margin-left: -2px;
   border-radius: 4px;
@@ -3988,12 +3993,12 @@ watch(() => props.visible, (visible) => {
 }
 
 .agent-step-inline.asking .step-icon {
-  color: #60a5fa;
+  color: var(--accent-primary);
 }
 
 .agent-step-inline.waiting_password {
-  background: rgba(251, 191, 36, 0.12);
-  border-left: 3px solid #fbbf24;
+  background: rgba(var(--color-warning-rgb), 0.12);
+  border-left: 3px solid var(--color-warning);
   padding-left: 10px;
   margin-left: -2px;
   border-radius: 4px;
@@ -4002,18 +4007,18 @@ watch(() => props.visible, (visible) => {
 }
 
 .agent-step-inline.waiting_password .step-icon {
-  color: #fbbf24;
+  color: var(--color-warning);
   animation: key-bounce 1s ease-in-out infinite;
 }
 
 @keyframes password-pulse {
   0%, 100% { 
-    background: rgba(251, 191, 36, 0.12);
-    border-left-color: #fbbf24;
+    background: rgba(var(--color-warning-rgb), 0.12);
+    border-left-color: var(--color-warning);
   }
   50% { 
-    background: rgba(251, 191, 36, 0.2);
-    border-left-color: #f59e0b;
+    background: rgba(var(--color-warning-rgb), 0.2);
+    border-left-color: var(--color-warning);
   }
 }
 
@@ -4045,7 +4050,7 @@ watch(() => props.visible, (visible) => {
 }
 
 .asking-default .default-hint {
-  color: #10b981;
+  color: var(--color-success);
   margin-left: 6px;
 }
 
@@ -4065,8 +4070,8 @@ watch(() => props.visible, (visible) => {
   font-size: 12px;
   font-weight: 500;
   color: var(--text-primary);
-  background: rgba(96, 165, 250, 0.06);
-  border: 1px solid rgba(96, 165, 250, 0.2);
+  background: rgba(var(--accent-rgb), 0.06);
+  border: 1px solid rgba(var(--accent-rgb), 0.2);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -4088,12 +4093,12 @@ watch(() => props.visible, (visible) => {
 }
 
 .asking-option-btn:hover:not(:disabled) {
-  background: rgba(96, 165, 250, 0.12);
-  border-color: rgba(96, 165, 250, 0.35);
+  background: rgba(var(--accent-rgb), 0.12);
+  border-color: rgba(var(--accent-rgb), 0.35);
 }
 
 .asking-option-btn:active:not(:disabled) {
-  background: rgba(96, 165, 250, 0.18);
+  background: rgba(var(--accent-rgb), 0.18);
 }
 
 .asking-option-btn:disabled {
@@ -4102,25 +4107,25 @@ watch(() => props.visible, (visible) => {
 }
 
 .asking-option-btn.clicking {
-  background: rgba(96, 165, 250, 0.2);
-  border-color: rgba(96, 165, 250, 0.5);
-  color: #60a5fa;
+  background: rgba(var(--accent-rgb), 0.2);
+  border-color: rgba(var(--accent-rgb), 0.5);
+  color: var(--accent-primary);
 }
 
 .asking-option-btn.clicking .option-label {
-  background: rgba(96, 165, 250, 0.3);
-  color: #60a5fa;
+  background: rgba(var(--accent-rgb), 0.3);
+  color: var(--accent-primary);
 }
 
 .asking-option-btn.selected {
-  background: rgba(34, 197, 94, 0.12);
-  border-color: rgba(34, 197, 94, 0.35);
-  color: #22c55e;
+  background: rgba(var(--color-success-rgb), 0.12);
+  border-color: rgba(var(--color-success-rgb), 0.35);
+  color: var(--color-success);
 }
 
 .asking-option-btn.selected .option-label {
-  background: rgba(34, 197, 94, 0.25);
-  color: #22c55e;
+  background: rgba(var(--color-success-rgb), 0.25);
+  color: var(--color-success);
 }
 
 /* 多选确认按钮 */
@@ -4133,7 +4138,7 @@ watch(() => props.visible, (visible) => {
   font-size: 12px;
   font-weight: 600;
   color: #fff;
-  background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--color-info) 100%);
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -4141,8 +4146,8 @@ watch(() => props.visible, (visible) => {
 }
 
 .asking-confirm-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #93c5fd 0%, #60a5fa 100%);
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+  background: linear-gradient(135deg, var(--accent-secondary) 0%, var(--accent-primary) 100%);
+  box-shadow: 0 2px 8px rgba(var(--color-info-rgb), 0.35);
 }
 
 .asking-confirm-btn:disabled {
@@ -4160,15 +4165,15 @@ watch(() => props.visible, (visible) => {
 }
 
 .asking-status.status-done {
-  color: #22c55e;
+  color: var(--color-success);
 }
 
 .asking-status.status-timeout {
-  color: #f59e0b;
+  color: var(--color-warning);
 }
 
 .asking-status.status-cancelled {
-  color: #ef4444;
+  color: var(--color-error);
 }
 
 /* 计划步骤样式 */
@@ -4247,15 +4252,15 @@ watch(() => props.visible, (visible) => {
 }
 
 .sub-agent-card.running {
-  border-color: rgba(59, 130, 246, 0.4);
+  border-color: rgba(var(--color-info-rgb), 0.4);
 }
 
 .sub-agent-card.completed {
-  border-color: rgba(110, 231, 183, 0.3);
+  border-color: rgba(var(--color-success-rgb), 0.3);
 }
 
 .sub-agent-card.failed {
-  border-color: rgba(244, 67, 54, 0.3);
+  border-color: rgba(var(--color-error-rgb), 0.3);
 }
 
 .sub-agent-header {
@@ -4290,16 +4295,16 @@ watch(() => props.visible, (visible) => {
 }
 
 .sa-icon-running {
-  color: #3b82f6;
+  color: var(--color-info);
   animation: sa-spin 1.2s linear infinite;
 }
 
 .sa-icon-completed {
-  color: #6ee7b7;
+  color: var(--color-success);
 }
 
 .sa-icon-failed {
-  color: #f44336;
+  color: var(--color-error);
 }
 
 @keyframes sa-spin {
@@ -4325,7 +4330,7 @@ watch(() => props.visible, (visible) => {
 
 .sub-agent-activity {
   font-size: 11px;
-  color: #3b82f6;
+  color: var(--color-info);
   opacity: 0.8;
   white-space: nowrap;
   overflow: hidden;
@@ -4340,15 +4345,15 @@ watch(() => props.visible, (visible) => {
 }
 
 .sub-agent-card.running .sub-agent-status-text {
-  color: #3b82f6;
+  color: var(--color-info);
 }
 
 .sub-agent-card.completed .sub-agent-status-text {
-  color: #6ee7b7;
+  color: var(--color-success);
 }
 
 .sub-agent-card.failed .sub-agent-status-text {
-  color: #f44336;
+  color: var(--color-error);
 }
 
 .sub-agent-expand-icon {
@@ -4399,9 +4404,9 @@ watch(() => props.visible, (visible) => {
   font-size: 10px;
 }
 
-.sa-step-running { color: #3b82f6; }
-.sa-step-done { color: #6ee7b7; }
-.sa-step-fail { color: #f44336; }
+.sa-step-running { color: var(--color-info); }
+.sa-step-done { color: var(--color-success); }
+.sa-step-fail { color: var(--color-error); }
 
 .sa-step-tool {
   flex-shrink: 0;
@@ -4436,26 +4441,26 @@ watch(() => props.visible, (visible) => {
 }
 
 .sub-agent-result pre.sub-agent-error {
-  color: #f44336;
+  color: var(--color-error);
 }
 
 
 
 /* 风险等级颜色 */
 .risk-safe {
-  border-left: 3px solid #10b981;
+  border-left: 3px solid var(--color-success);
   padding-left: 10px;
   margin-left: -2px;
 }
 
 .risk-moderate {
-  border-left: 3px solid #f59e0b;
+  border-left: 3px solid var(--color-warning);
   padding-left: 10px;
   margin-left: -2px;
 }
 
 .risk-dangerous {
-  border-left: 3px solid #ef4444;
+  border-left: 3px solid var(--color-error);
   padding-left: 10px;
   margin-left: -2px;
 }
@@ -4468,7 +4473,7 @@ watch(() => props.visible, (visible) => {
 /* 拒绝执行的步骤 */
 .step-rejected {
   opacity: 0.6;
-  border-left: 3px solid #ef4444 !important;
+  border-left: 3px solid var(--color-error) !important;
   padding-left: 10px;
   margin-left: -2px;
   opacity: 0.6;
@@ -4483,22 +4488,22 @@ watch(() => props.visible, (visible) => {
 /* ===== 高风险 - 红色系 ===== */
 .agent-confirm-inline.risk-dangerous {
   background: linear-gradient(135deg, #3b1018 0%, #2a0a10 100%) !important;
-  border: 2px solid #ef4444 !important;
-  box-shadow: 0 4px 20px rgba(239, 68, 68, 0.2);
+  border: 2px solid var(--color-error) !important;
+  box-shadow: 0 4px 20px rgba(var(--color-error-rgb), 0.2);
 }
 
 /* ===== 中风险 - 橙黄色系 ===== */
 .agent-confirm-inline.risk-moderate {
   background: linear-gradient(135deg, #3d2f10 0%, #2a2008 100%) !important;
-  border: 2px solid #f59e0b !important;
-  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.15);
+  border: 2px solid var(--color-warning) !important;
+  box-shadow: 0 4px 20px rgba(var(--color-warning-rgb), 0.15);
 }
 
 /* ===== 低风险 - 绿色系 ===== */
 .agent-confirm-inline.risk-safe {
   background: linear-gradient(135deg, #0f2920 0%, #081a14 100%) !important;
-  border: 2px solid #10b981 !important;
-  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.1);
+  border: 2px solid var(--color-success) !important;
+  box-shadow: 0 4px 20px rgba(var(--color-success-rgb), 0.1);
 }
 
 .confirm-header-inline {
@@ -4527,17 +4532,17 @@ watch(() => props.visible, (visible) => {
 }
 
 .confirm-risk-badge.risk-dangerous {
-  background: #ef4444;
+  background: var(--color-error);
   color: #fff;
 }
 
 .confirm-risk-badge.risk-moderate {
-  background: #f59e0b;
+  background: var(--color-warning);
   color: #000;
 }
 
 .confirm-risk-badge.risk-safe {
-  background: #10b981;
+  background: var(--color-success);
   color: #fff;
 }
 
@@ -4585,16 +4590,17 @@ watch(() => props.visible, (visible) => {
 }
 
 .btn-warning {
-  background: #f59e0b;
-  border: 1px solid #f59e0b;
+  background: var(--color-warning);
+  border: 1px solid var(--color-warning);
   color: #000;
 }
 
 .btn-warning:hover:not(:disabled) {
-  background: #d97706;
-  border-color: #d97706;
+  background: var(--color-warning);
+  border-color: var(--color-warning);
 }
 
+/* 强警示按钮（删除/自由模式开启等不可逆操作）—— 跨主题固定红 */
 .btn-danger {
   background: #ef4444;
   border: 1px solid #ef4444;
@@ -4606,50 +4612,49 @@ watch(() => props.visible, (visible) => {
   border-color: #dc2626;
 }
 
-/* 成功按钮样式 */
+/* 成功按钮样式（普通成功操作，跟随主题） */
 .btn-success {
-  background: #10b981;
-  border-color: #10b981;
+  background: var(--color-success);
+  border-color: var(--color-success);
   color: #fff;
 }
 
 .btn-success:hover:not(:disabled) {
-  background: #059669;
-  border-color: #059669;
+  filter: brightness(1.1);
 }
 
 /* Outline 按钮样式（用于"始终允许"） */
 .btn-outline-warning {
   background: transparent;
-  border: 1px solid #f59e0b;
-  color: #f59e0b;
+  border: 1px solid var(--color-warning);
+  color: var(--color-warning);
 }
 
 .btn-outline-warning:hover:not(:disabled) {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
+  background: rgba(var(--color-warning-rgb), 0.15);
+  color: var(--color-warning);
 }
 
 .btn-outline-danger {
   background: transparent;
-  border: 1px solid #ef4444;
-  color: #ef4444;
+  border: 1px solid var(--color-error);
+  color: var(--color-error);
 }
 
 .btn-outline-danger:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
+  background: rgba(var(--color-error-rgb), 0.15);
+  color: var(--color-error);
 }
 
 .btn-outline-success {
   background: transparent;
-  border: 1px solid #10b981;
-  color: #10b981;
+  border: 1px solid var(--color-success);
+  color: var(--color-success);
 }
 
 .btn-outline-success:hover:not(:disabled) {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
+  background: rgba(var(--color-success-rgb), 0.15);
+  color: var(--color-success);
 }
 
 /* ==================== @ 命令补全菜单样式 ==================== */
@@ -4725,7 +4730,7 @@ watch(() => props.visible, (visible) => {
 .mention-spinner {
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(100, 150, 255, 0.2);
+  border: 2px solid rgba(var(--accent-rgb), 0.2);
   border-top-color: var(--accent-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -4755,7 +4760,7 @@ watch(() => props.visible, (visible) => {
 }
 
 .mention-item.active {
-  background: rgba(100, 150, 255, 0.15);
+  background: rgba(var(--accent-rgb), 0.15);
 }
 
 .mention-more {

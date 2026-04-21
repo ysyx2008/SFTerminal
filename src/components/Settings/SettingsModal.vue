@@ -883,10 +883,11 @@ const onQrImageError = (event: Event) => {
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  padding: 9px 12px;
+  padding: 5px 10px;
   font-size: 13px;
+  line-height: 1.4;
   color: var(--text-secondary);
   background: transparent;
   border: none;
@@ -907,7 +908,7 @@ const onQrImageError = (event: Event) => {
 }
 
 .nav-icon {
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .settings-content {
@@ -1089,8 +1090,8 @@ const onQrImageError = (event: Event) => {
 }
 
 .update-hint.error {
-  color: #f44336;
-  background: rgba(244, 67, 54, 0.1);
+  color: var(--color-error);
+  background: rgba(var(--color-error-rgb), 0.1);
 }
 
 .source-selector {

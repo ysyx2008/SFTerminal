@@ -465,8 +465,8 @@ const handleSendClick = (event: MouseEvent) => {
 }
 
 .context-mini-bar.cached { background: #2dd4bf; }
-.context-mini-bar.warning { background: var(--accent-warning, #f59e0b); }
-.context-mini-bar.danger { background: var(--accent-error, #ef4444); }
+.context-mini-bar.warning { background: var(--color-warning); }
+.context-mini-bar.danger { background: var(--color-error); }
 
 .context-mini-tip {
   position: absolute;
@@ -524,8 +524,8 @@ const handleSendClick = (event: MouseEvent) => {
 
 .btn-clear-docs:hover {
   opacity: 1;
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
+  background: rgba(var(--color-error-rgb), 0.1);
+  color: var(--color-error);
 }
 
 .uploaded-docs-list {
@@ -547,8 +547,8 @@ const handleSendClick = (event: MouseEvent) => {
 }
 
 .uploaded-doc-item.has-error {
-  border-color: rgba(239, 68, 68, 0.5);
-  background: rgba(239, 68, 68, 0.05);
+  border-color: rgba(var(--color-error-rgb), 0.5);
+  background: rgba(var(--color-error-rgb), 0.05);
 }
 
 .doc-icon {
@@ -597,7 +597,7 @@ const handleSendClick = (event: MouseEvent) => {
   transition: opacity 0.2s ease, visibility 0.2s ease;
   pointer-events: none;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(var(--color-error-rgb), 0.3);
 }
 
 .doc-error::before {
@@ -635,8 +635,8 @@ const handleSendClick = (event: MouseEvent) => {
 
 .btn-remove-doc:hover {
   opacity: 1;
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
+  background: rgba(var(--color-error-rgb), 0.1);
+  color: var(--color-error);
 }
 
 .ai-input {
@@ -681,7 +681,7 @@ const handleSendClick = (event: MouseEvent) => {
 
 .upload-btn:hover:not(:disabled),
 .voice-btn:hover:not(:disabled) {
-  background: rgba(100, 150, 255, 0.12);
+  background: rgba(var(--accent-rgb), 0.12);
   color: var(--accent-primary);
   transform: scale(1.08);
 }
@@ -702,7 +702,7 @@ const handleSendClick = (event: MouseEvent) => {
   display: inline-block;
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(100, 150, 255, 0.2);
+  border: 2px solid rgba(var(--accent-rgb), 0.2);
   border-top-color: var(--accent-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -779,26 +779,26 @@ const handleSendClick = (event: MouseEvent) => {
 }
 
 .send-btn-agent {
-  background: linear-gradient(135deg, #34d399 0%, #10b981 50%, #059669 100%);
+  background: linear-gradient(135deg, var(--color-success) 0%, var(--color-success) 50%, var(--color-success) 100%);
 }
 
 .send-btn-supplement {
-  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%);
+  background: linear-gradient(135deg, var(--color-warning) 0%, var(--color-warning) 50%, var(--color-warning) 100%);
 }
 
 .send-btn-default {
-  background: linear-gradient(135deg, #6ee7b7 0%, #10b981 50%, #059669 100%);
+  background: linear-gradient(135deg, var(--color-success) 0%, var(--color-success) 50%, var(--color-success) 100%);
 }
 
 .stop-btn {
-  background: linear-gradient(135deg, #f87171 0%, #ef4444 50%, #dc2626 100%);
-  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  background: linear-gradient(135deg, var(--color-error) 0%, var(--color-error) 50%, var(--color-error) 100%);
+  box-shadow: 0 2px 8px rgba(var(--color-error-rgb), 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
 .stop-btn:hover {
   transform: translateY(-1px);
-  background: linear-gradient(135deg, #fca5a5 0%, #f87171 50%, #ef4444 100%);
-  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.5);
+  background: linear-gradient(135deg, #fca5a5 0%, var(--color-error) 50%, var(--color-error) 100%);
+  box-shadow: 0 4px 16px rgba(var(--color-error-rgb), 0.5);
 }
 
 .tts-stop-btn {
@@ -911,7 +911,7 @@ const handleSendClick = (event: MouseEvent) => {
 }
 
 .mention-item.active {
-  background: rgba(100, 150, 255, 0.15);
+  background: rgba(var(--accent-rgb), 0.15);
 }
 
 .mention-more {

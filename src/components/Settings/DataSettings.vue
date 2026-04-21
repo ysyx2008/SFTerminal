@@ -737,7 +737,7 @@ onUnmounted(() => {
 }
 
 .section-icon.danger {
-  color: #ef4444;
+  color: var(--color-error);
 }
 
 /* Message toast */
@@ -749,15 +749,15 @@ onUnmounted(() => {
 }
 
 .message.success {
-  background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  background: rgba(var(--color-success-rgb), 0.1);
+  color: var(--color-success);
+  border: 1px solid rgba(var(--color-success-rgb), 0.2);
 }
 
 .message.error {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.2);
+  background: rgba(var(--color-error-rgb), 0.1);
+  color: var(--color-error);
+  border: 1px solid rgba(var(--color-error-rgb), 0.2);
 }
 
 .msg-enter-active,
@@ -803,8 +803,8 @@ onUnmounted(() => {
 }
 
 .stat-icon-wrap.agent {
-  background: rgba(16, 185, 129, 0.12);
-  color: #10b981;
+  background: rgba(var(--color-success-rgb), 0.12);
+  color: var(--color-success);
 }
 
 .stat-icon-wrap.size {
@@ -1007,16 +1007,16 @@ onUnmounted(() => {
   padding: 8px 16px;
   font-size: 13px;
   border-radius: 8px;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  background: rgba(239, 68, 68, 0.08);
-  color: #ef4444;
+  border: 1px solid rgba(var(--color-error-rgb), 0.3);
+  background: rgba(var(--color-error-rgb), 0.08);
+  color: var(--color-error);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .btn-danger-fill:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(var(--color-error-rgb), 0.15);
+  border-color: rgba(var(--color-error-rgb), 0.5);
 }
 
 .btn-danger-fill:disabled {
@@ -1050,7 +1050,7 @@ onUnmounted(() => {
 }
 
 .token-period-card.total {
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.06), rgba(168, 85, 247, 0.06));
+  background: linear-gradient(135deg, rgba(var(--color-info-rgb), 0.06), rgba(168, 85, 247, 0.06));
 }
 
 .token-period-header {
@@ -1069,9 +1069,9 @@ onUnmounted(() => {
 .token-period-icon {
   opacity: 0.5;
 }
-.token-period-icon.today { color: #10b981; }
-.token-period-icon.week { color: #3b82f6; }
-.token-period-icon.month { color: #f59e0b; }
+.token-period-icon.today { color: var(--color-success); }
+.token-period-icon.week { color: var(--color-info); }
+.token-period-icon.month { color: var(--color-warning); }
 .token-period-icon.total { color: #a855f7; }
 
 .token-period-value {
@@ -1104,7 +1104,7 @@ onUnmounted(() => {
 
 .token-cache {
   font-size: 10px;
-  color: #10b981;
+  color: var(--color-success);
   margin-left: auto;
 }
 
@@ -1166,7 +1166,7 @@ onUnmounted(() => {
 }
 
 .token-daily-table td.cache-cell {
-  color: #10b981;
+  color: var(--color-success);
 }
 
 .token-daily-table tbody tr:hover {
@@ -1493,18 +1493,18 @@ onUnmounted(() => {
 }
 
 .status-completed {
-  background: rgba(16, 185, 129, 0.12);
-  color: #10b981;
+  background: rgba(var(--color-success-rgb), 0.12);
+  color: var(--color-success);
 }
 
 .status-failed {
-  background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
+  background: rgba(var(--color-error-rgb), 0.12);
+  color: var(--color-error);
 }
 
 .status-aborted {
-  background: rgba(251, 191, 36, 0.12);
-  color: #f59e0b;
+  background: rgba(var(--color-warning-rgb), 0.12);
+  color: var(--color-warning);
 }
 
 .agent-task {
@@ -1550,7 +1550,7 @@ onUnmounted(() => {
   padding: 12px;
   background: var(--bg-tertiary);
   border-radius: 8px;
-  border-left: 3px solid #10b981;
+  border-left: 3px solid var(--color-success);
 }
 
 .result-label {

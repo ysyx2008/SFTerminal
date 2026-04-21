@@ -987,7 +987,7 @@ onUnmounted(() => {
 }
 
 .unsaved-badge {
-  color: var(--accent-warning, #f59e0b);
+  color: var(--color-warning);
   font-weight: 500;
 }
 </style>

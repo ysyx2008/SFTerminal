@@ -374,8 +374,8 @@ onUnmounted(() => {
   gap: 8px;
   padding: 10px 16px;
   margin-bottom: 16px;
-  background: rgba(251, 191, 36, 0.1);
-  border: 1px solid rgba(251, 191, 36, 0.3);
+  background: rgba(var(--color-warning-rgb), 0.1);
+  border: 1px solid rgba(var(--color-warning-rgb), 0.3);
   border-radius: 8px;
   font-size: 13px;
 }
@@ -489,7 +489,7 @@ onUnmounted(() => {
 }
 
 .strategy-option.active {
-  background: rgba(59, 130, 246, 0.1);
+  background: rgba(var(--accent-rgb), 0.1);
 }
 
 .option-label {
@@ -522,13 +522,13 @@ onUnmounted(() => {
 }
 
 .btn-start {
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: linear-gradient(135deg, var(--brand-local), var(--brand-local-end));
   color: white;
 }
 
 .btn-start:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  box-shadow: 0 4px 12px rgba(var(--brand-local-rgb), 0.3);
 }
 
 .btn-start:disabled {
@@ -537,13 +537,13 @@ onUnmounted(() => {
 }
 
 .btn-stop {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
+  background: linear-gradient(135deg, var(--color-error), var(--color-error));
   color: white;
 }
 
 .btn-stop:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+  box-shadow: 0 4px 12px rgba(var(--color-error-rgb), 0.3);
 }
 
 /* 执行区域 */
@@ -651,12 +651,12 @@ onUnmounted(() => {
 }
 
 .message-avatar.user {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: linear-gradient(135deg, var(--brand-ssh), var(--brand-ssh-end));
   color: white;
 }
 
 .message-avatar.agent {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  background: linear-gradient(135deg, var(--brand-patrol), var(--brand-patrol-end));
 }
 
 .message-avatar.system {
@@ -682,7 +682,7 @@ onUnmounted(() => {
 }
 
 .message-item.user .message-text {
-  background: rgba(59, 130, 246, 0.1);
+  background: rgba(var(--brand-ssh-rgb), 0.1);
 }
 
 .message-item.system .message-text {

@@ -483,8 +483,8 @@ async function syncAssets() {
 }
 
 .result-msg.error {
-  background: rgba(248, 81, 73, 0.1);
-  color: var(--error-color, #f85149);
+  background: rgba(var(--color-error-rgb), 0.1);
+  color: var(--color-error);
 }
 
 .result-msg svg {

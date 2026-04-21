@@ -82,7 +82,7 @@ const changeLanguage = async (lang: LocaleType) => {
 
 .language-item.active {
   border-color: var(--accent-primary);
-  background: rgba(137, 180, 250, 0.1);
+  background: rgba(var(--accent-rgb), 0.1);
 }
 
 .language-info {

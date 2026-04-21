@@ -1051,7 +1051,7 @@ onUnmounted(() => {
 }
 
 .btn-icon.awakened-active {
-  color: #10b981;
+  color: var(--color-success);
 }
 
 .header-center {

@@ -1183,7 +1183,7 @@ enabled: true
 .update-badge {
   font-size: 10px;
   padding: 1px 6px;
-  background: var(--accent-orange, #f59e0b);
+  background: var(--color-warning);
   color: #fff;
   border-radius: 8px;
   font-weight: 500;
@@ -1570,7 +1570,7 @@ enabled: true
 }
 
 .btn-accent {
-  background: var(--accent-orange, #f59e0b);
+  background: var(--color-warning);
   color: #fff;
 }
 
@@ -1584,8 +1584,8 @@ enabled: true
 }
 
 .btn-danger-ghost:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
+  background: rgba(var(--color-error-rgb), 0.1);
+  color: var(--color-error);
 }
 
 .btn-outline {

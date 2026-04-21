@@ -353,17 +353,17 @@ onUnmounted(() => {
 /* 状态颜色 */
 .status-all .status-dot,
 .status-all.status-badge {
-  color: #10b981;
+  color: var(--color-success);
 }
 
 .status-partial .status-dot,
 .status-partial.status-badge {
-  color: #f59e0b;
+  color: var(--color-warning);
 }
 
 .status-offline .status-dot,
 .status-offline.status-badge {
-  color: #ef4444;
+  color: var(--color-error);
 }
 
 .status-none .status-dot,
@@ -414,17 +414,17 @@ onUnmounted(() => {
   padding: 4px 10px;
   font-size: 11px;
   font-weight: 500;
-  color: #10b981;
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: var(--color-success);
+  background: rgba(var(--color-success-rgb), 0.1);
+  border: 1px solid rgba(var(--color-success-rgb), 0.3);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .btn-connect-all:hover {
-  background: rgba(16, 185, 129, 0.2);
-  border-color: #10b981;
+  background: rgba(var(--color-success-rgb), 0.2);
+  border-color: var(--color-success);
 }
 
 .popover-body {
@@ -465,7 +465,7 @@ onUnmounted(() => {
 }
 
 .dot-connected {
-  color: #10b981;
+  color: var(--color-success);
 }
 
 .dot-enabled {
@@ -527,7 +527,7 @@ onUnmounted(() => {
 }
 
 .btn-connect:hover:not(:disabled) {
-  background: rgba(100, 150, 255, 0.1);
+  background: rgba(var(--accent-rgb), 0.1);
 }
 
 .btn-connect:disabled {
@@ -542,9 +542,9 @@ onUnmounted(() => {
 }
 
 .btn-disconnect:hover {
-  color: #ef4444;
-  border-color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-error);
+  border-color: var(--color-error);
+  background: rgba(var(--color-error-rgb), 0.1);
 }
 
 .spinner-small {

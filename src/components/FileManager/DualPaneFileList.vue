@@ -511,12 +511,12 @@ defineExpose({
 }
 
 .file-item.selected {
-  background: rgba(137, 180, 250, 0.15);
+  background: rgba(var(--accent-rgb), 0.15);
   color: var(--text-primary);
 }
 
 .file-item.selected:hover {
-  background: rgba(137, 180, 250, 0.2);
+  background: rgba(var(--accent-rgb), 0.2);
 }
 
 .file-item.directory {
@@ -626,7 +626,7 @@ defineExpose({
 .drop-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(137, 180, 250, 0.1);
+  background: rgba(var(--accent-rgb), 0.1);
   border: 2px dashed var(--accent-primary);
   display: flex;
   align-items: center;

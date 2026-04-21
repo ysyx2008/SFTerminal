@@ -473,24 +473,24 @@ const openBatchPanel = () => {
 /* 需要注意的状态（有待确认操作） */
 .tab.needs-attention {
   animation: tab-attention-pulse 1.5s ease-in-out infinite;
-  border-color: var(--warning-color, #f59e0b);
-  background: rgba(245, 158, 11, 0.15);
+  border-color: var(--color-warning);
+  background: rgba(var(--color-warning-rgb), 0.15);
 }
 
 .tab.needs-attention .tab-title {
-  color: var(--warning-color, #f59e0b);
+  color: var(--color-warning);
 }
 
 .tab.needs-attention .tab-icon {
-  color: var(--warning-color, #f59e0b);
+  color: var(--color-warning);
 }
 
 @keyframes tab-attention-pulse {
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
+    box-shadow: 0 0 0 0 rgba(var(--color-warning-rgb), 0.4);
   }
   50% {
-    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0);
+    box-shadow: 0 0 0 4px rgba(var(--color-warning-rgb), 0);
   }
 }
 
@@ -512,12 +512,12 @@ const openBatchPanel = () => {
 
 /* 远程 Agent 标签页图标 */
 .remote-icon {
-  color: var(--success-color, #22c55e);
+  color: var(--success-color, var(--color-success));
 }
 
 .tab.active .remote-icon {
-  color: var(--success-color, #22c55e);
-  filter: drop-shadow(0 0 4px var(--success-color, #22c55e));
+  color: var(--success-color, var(--color-success));
+  filter: drop-shadow(0 0 4px var(--success-color, var(--color-success)));
 }
 
 .tab-title {
