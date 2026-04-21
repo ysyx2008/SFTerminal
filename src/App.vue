@@ -832,20 +832,20 @@ onUnmounted(() => {
       </div>
       <div class="header-right">
         <template v-if="!isSteamBuild">
-          <button v-if="hasTerminalTab" class="btn-icon" @click="toggleAiPanel" :title="t('header.aiAssistant')">
+          <button v-if="hasTerminalTab" class="btn-icon btn-icon-header" @click="toggleAiPanel" :title="t('header.aiAssistant')">
             <Bot :size="18" />
           </button>
         </template>
-        <button class="btn-icon" @click="toggleSidebar" :title="t('header.hostManager')">
+        <button class="btn-icon btn-icon-header" @click="toggleSidebar" :title="t('header.hostManager')">
           <Monitor :size="18" />
         </button>
         <template v-if="!isSteamBuild">
-          <button class="btn-icon" :class="{ 'awakened-active': isAwakened }" @click="showAwaken = true" :title="t('awaken.title') + ' — ' + t('awaken.description')">
+          <button class="btn-icon btn-icon-header" :class="{ 'awakened-active': isAwakened }" @click="showAwaken = true" :title="t('awaken.title') + ' — ' + t('awaken.description')">
             <Heart :size="18" fill="currentColor" />
           </button>
           <ConnectionStatusPopover @open-settings="openConnectionSettings" />
         </template>
-        <button class="btn-icon" @click="showSettings = true" :title="t('header.settings')">
+        <button class="btn-icon btn-icon-header" @click="showSettings = true" :title="t('header.settings')">
           <Settings :size="18" />
         </button>
       </div>
@@ -1059,20 +1059,7 @@ onUnmounted(() => {
   -webkit-app-region: no-drag;
 }
 
-.header-left .btn-icon,
-.header-right .btn-icon {
-  width: 22px;
-  height: 22px;
-  padding: 2px;
-  border-radius: 5px;
-}
-
-/* header 高 32px：把按钮收缩到 22px，让 hover 背景高亮在 header 内上下留出约 5px 空隙，
-   不会顶到边界；同时配合下面削弱的 scale，放大后仍明显小于外框。 */
-.header-left .btn-icon:hover,
-.header-right .btn-icon:hover {
-  transform: scale(1.04);
-}
+/* header 按钮尺寸与 hover scale 统一由 main.css 的 .btn-icon-header 变体提供 */
 
 .btn-icon.awakened-active {
   color: var(--brand-vital);

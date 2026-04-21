@@ -702,6 +702,20 @@ html, body {
   transform: scale(0.95);
 }
 
+/* header 按钮变体：用于 32px 高的顶部栏（app-header / panel-header / settings-header 等）
+   hover 背景若按默认 26x26 会几乎顶到 header 边界，这里统一收紧到 22x22，
+   并削弱 hover 放大比例，保证软件各处顶部栏按钮视觉一致。 */
+.btn-icon.btn-icon-header {
+  width: 22px;
+  height: 22px;
+  padding: 2px;
+  border-radius: 5px;
+}
+
+.btn-icon.btn-icon-header:hover {
+  transform: scale(1.04);
+}
+
 /* 去掉按钮的默认焦点轮廓：按 ESC 等键盘操作后不残留黄框；
    视觉反馈由 :hover / :active 提供，输入框焦点样式不受影响 */
 button:focus,

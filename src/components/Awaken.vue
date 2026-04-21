@@ -898,7 +898,7 @@ onUnmounted(() => {
         <div class="header-stats" v-if="userWatches.length > 0">
           <span class="stat-item">{{ enabledCount }} {{ t('watch.activeCount') }}</span>
         </div>
-        <button class="btn-icon" @click="requestClose" :title="t('watch.close')">
+        <button class="btn-icon btn-icon-header" @click="requestClose" :title="t('watch.close')">
           <X :size="18" />
         </button>
       </div>
@@ -1718,18 +1718,23 @@ onUnmounted(() => {
   color: var(--brand-vital);
 }
 
+/* 与 main.css 的 .btn-icon-header 变体同源（22x22, padding 2, radius 5, hover scale 1.04）；
+   scoped 特异性更高，保证 HMR / 加载顺序变化时依然稳定生效。 */
 .panel-header .btn-icon {
-  width: 26px;
-  height: 26px;
-  padding: 4px;
-  border-radius: 6px;
+  width: 22px;
+  height: 22px;
+  padding: 2px;
+  border-radius: 5px;
   background: none;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
 }
-/* 削弱 hover scale，避免在 32px 高的 header 里放大后贴到边缘 */
-.panel-header .btn-icon:hover { background: var(--bg-hover); color: var(--text-primary); transform: scale(1.04); }
+.panel-header .btn-icon:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  transform: scale(1.04);
+}
 
 /* ==================== Awaken Bar ==================== */
 
