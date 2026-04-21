@@ -138,6 +138,8 @@ interface Window {
       setTitleBarOverlay: (options: { color: string; symbolColor: string }) => void
       onRequestTerminalCount: (callback: () => void) => () => void
       responseTerminalCount: (count: number) => void
+      isFullScreen: () => Promise<boolean>
+      onFullScreenChange: (callback: (isFullScreen: boolean) => void) => () => void
     }
     // 自动更新
     updater: {

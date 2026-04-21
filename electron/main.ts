@@ -763,6 +763,14 @@ function createWindow() {
     })
   }
 
+  // 全屏状态变化通知：macOS 下全屏会隐藏红绿灯按钮，渲染端需要取消左侧保留空间
+  mainWindow.on('enter-full-screen', () => {
+    mainWindow?.webContents.send('window:fullscreenChange', true)
+  })
+  mainWindow.on('leave-full-screen', () => {
+    mainWindow?.webContents.send('window:fullscreenChange', false)
+  })
+
   // 开发环境加载本地服务器
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
@@ -1717,6 +1725,12 @@ ipcMain.handle('path:waitReady', async () => {
 // 关闭当前窗口
 ipcMain.handle('window:close', async () => {
   mainWindow?.close()
+})
+
+// 查询当前窗口是否处于全屏（用于渲染端初始化时读取状态）
+ipcMain.handle('window:isFullScreen', async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false
+  return mainWindow.isFullScreen()
 })
 
 // 响应终端数量查询，决定是否需要确认退出

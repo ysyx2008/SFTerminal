@@ -378,6 +378,16 @@ const electronAPI = {
     // 响应终端数量
     responseTerminalCount: (count: number) => {
       ipcRenderer.send('window:terminalCountResponse', count)
+    },
+    // 查询窗口是否处于全屏
+    isFullScreen: () => ipcRenderer.invoke('window:isFullScreen') as Promise<boolean>,
+    // 监听全屏状态变化
+    onFullScreenChange: (callback: (isFullScreen: boolean) => void) => {
+      const handler = (_e: unknown, isFullScreen: boolean) => callback(isFullScreen)
+      ipcRenderer.on('window:fullscreenChange', handler)
+      return () => {
+        ipcRenderer.removeListener('window:fullscreenChange', handler)
+      }
     }
   },
 

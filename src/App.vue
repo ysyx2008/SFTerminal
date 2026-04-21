@@ -57,6 +57,9 @@ const isAwakened = ref(false)
 const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
 const isWin = typeof navigator !== 'undefined' && /Win/i.test(navigator.platform)
 
+// 全屏时红绿灯/系统标题栏按钮被隐藏，header 不再需要预留空间
+const isFullScreen = ref(false)
+
 // Windows: 将当前主题下的 header 背景色与前景色同步给系统标题栏 overlay
 function syncTitleBarOverlay() {
   if (!isWin) return
@@ -220,11 +223,20 @@ let cleanupWatchEnsureTab: (() => void) | null = null
 let cleanupWatchProactiveMessage: (() => void) | null = null
 let cleanupWatchActivateMessage: (() => void) | null = null
 let cleanupAgentCompleteForProactive: (() => void) | null = null
+let cleanupFullScreenChange: (() => void) | null = null
 
 
 onMounted(async () => {
   // 注册全局快捷键
   document.addEventListener('keydown', handleGlobalKeydown)
+
+  // 同步全屏状态：初始查询 + 监听变化（macOS 全屏会隐藏红绿灯，需要调整 header 左侧留白）
+  try {
+    isFullScreen.value = await window.electronAPI.window.isFullScreen()
+  } catch { /* ignore */ }
+  cleanupFullScreenChange = window.electronAPI.window.onFullScreenChange((fs) => {
+    isFullScreen.value = fs
+  })
 
   // Windows 焦点恢复：用户点击输入元素时确保 webContents 拥有键盘焦点
   // 修复 Windows 上因 setAlwaysOnTop/通知交互导致的"输入框看似有焦点但无法键入"问题
@@ -804,11 +816,12 @@ onUnmounted(() => {
   cleanupWatchProactiveMessage?.()
   cleanupWatchActivateMessage?.()
   cleanupAgentCompleteForProactive?.()
+  cleanupFullScreenChange?.()
 })
 </script>
 
 <template>
-  <div class="app-container" :class="{ 'sidebar-open': showSidebar, 'is-mac': isMac, 'is-win': isWin }" :data-ui-theme="currentUiTheme" :data-color-scheme="currentColorScheme">
+  <div class="app-container" :class="{ 'sidebar-open': showSidebar, 'is-mac': isMac, 'is-win': isWin, 'is-fullscreen': isFullScreen }" :data-ui-theme="currentUiTheme" :data-color-scheme="currentColorScheme">
     <!-- 顶部工具栏 -->
     <header class="app-header">
       <div class="header-left">
@@ -999,9 +1012,19 @@ onUnmounted(() => {
   padding-left: 78px;
 }
 
+/* macOS 全屏：红绿灯按钮被系统隐藏，恢复左侧默认留白让应用标题贴最左 */
+.app-container.is-mac.is-fullscreen .app-header {
+  padding-left: 12px;
+}
+
 /* Windows: titleBarOverlay 在右上角绘制最小化/最大化/关闭按钮（约 138px），右侧留位避免遮挡 */
 .app-container.is-win .app-header {
   padding-right: 146px;
+}
+
+/* Windows 全屏：系统标题栏按钮被隐藏，恢复右侧默认留白 */
+.app-container.is-win.is-fullscreen .app-header {
+  padding-right: 12px;
 }
 
 /* 深色主题：顶部渐变效果 */
