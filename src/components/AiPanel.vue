@@ -2427,7 +2427,6 @@ watch(() => props.visible, (visible) => {
 
 .agent-step-virtual {
   padding: 0 14px 4px;
-  margin-left: 20px;
   border-left: 2px solid rgba(255, 255, 255, 0.06);
 }
 
