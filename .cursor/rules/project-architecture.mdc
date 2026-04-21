@@ -16,7 +16,7 @@ SailFish（旗鱼）是一个私人 AI Agent 桌面应用。用户用自然语�
 |---|---|---|
 | 桌面壳 | Electron 37 | 窗口管理、系统集成、IPC |
 | 前端 | Vue 3 + Pinia + xterm.js | UI、终端渲染、状态管理 |
-| 后端服务 | TypeScript (Node.js) | 26 个服务，业务逻辑核心 |
+| 后端服务 | TypeScript (Node.js) | 业务逻辑核心 |
 | CLI | Node.js + tsx | 纯命令行模式，复用后端服务 |
 | AI | Transformers.js + LanceDB | 本地向量嵌入、知识库 |
 | 构建 | Vite + electron-builder | 多平台打包（macOS/Win/Linux） |
@@ -30,79 +30,78 @@ SailFish/
 │   ├── main.ts                  # 主进程入口（窗口、IPC、服务初始化）
 │   ├── preload.ts               # 预加载脚本（IPC 桥接）
 │   ├── cli/                     # CLI 模式入口
-│   │   ├── main.js              # CLI 启动器（JS，注册 electron-shim）
-│   │   ├── electron-shim.js     # Electron API 模拟层
-│   │   ├── index.ts             # CLI 命令实现
-│   │   └── test-cli.sh          # CLI 自动化回归测试
+│   │   ├── main.js              # 入口（纯 JS，拦截 require('electron')）
+│   │   ├── electron-shim.js     # Electron API 垫片
+│   │   ├── index.ts             # 命令注册与分发
+│   │   └── test-cli.sh          # CLI 回归测试
 │   ├── migrations/              # 数据迁移框架（版本化 migration + 自动备份）
 │   ├── utils/                   # 工具函数（logger、normalize 等）
 │   └── services/                # 后端服务
-│       ├── ai.service.ts        # AI 对话（多 provider 支持）
+│       ├── ai.service.ts        # AI 对话（多 provider 支持，见 AISERVICE_SPEC.md）
 │       ├── config.service.ts    # 配置管理（electron-store）
 │       ├── pty.service.ts       # 本地终端（node-pty）
 │       ├── ssh.service.ts       # SSH 连接管理
 │       ├── sftp.service.ts      # SFTP 文件传输
-│       ├── unified-terminal.service.ts # 统一终端服务
-│       ├── terminal-state.service.ts   # 终端状态管理
+│       ├── unified-terminal.service.ts # local/ssh 统一终端抽象
 │       ├── host-profile.service.ts     # 主机画像
 │       ├── history.service.ts   # 对话/Agent 历史（L3 对话记录）
-│       ├── scheduler.service.ts # 定时任务（已整合到 Watch）
 │       ├── mcp.service.ts       # MCP 服务器管理
-│       ├── local-fs.service.ts  # 本地文件系统
-│       ├── document-parser.service.ts  # 文档解析
-│       ├── file-search.service.ts      # 文件搜索
-│       ├── user-skill.service.ts       # 用户技能
-│       ├── skill-market.service.ts     # 技能市场
-│       ├── gateway.service.ts   # 网关服务
+│       ├── gateway.service.ts   # HTTP 网关（Webhook、Web 会话接入）
+│       ├── web-chat.service.ts  # Web 远程会话（后端直驱 Agent）
 │       ├── credential.service.ts # 凭证存储
-│       ├── web-chat.service.ts         # Web 远程会话服务（后端直驱）
-│       ├── screen-content.service.ts   # 屏幕内容服务
-│       ├── command-executor.service.ts # 命令执行服务
-│       ├── menu.service.ts      # 菜单服务
-│       ├── ai-debug.service.ts  # AI 调试服务
-│       ├── xshell-import.service.ts    # Xshell 导入
-│       ├── agent/               # AI Agent 子系统
-│       │   ├── agent.ts         # Agent 抽象基类（ReAct 循环、会话追踪、持久化、观察提取）
-│       │   ├── index.ts         # AgentService（Agent 实例管理，按 ptyId 复用）
-│       │   ├── sailfish.ts      # 旗鱼 Agent 实现
-│       │   ├── orchestrator.ts  # 编排器（多 Agent 协调）
-│       │   ├── tool-executor.ts # 工具执行器
-│       │   ├── tools.ts         # 工具定义（Function Calling）
-│       │   ├── tools/           # 工具实现（command/file/knowledge/plan/memory/terminal/context/exec/sub-agent）
-│       │   ├── skills/          # 技能系统（excel/email/browser/word/watch/scheduler/calendar/terminal/skill-manager/feishu/wecom/dingtalk/personality/pdf）
-│       │   ├── prompt-builder.ts # 系统提示构建
-│       │   ├── context-builder.ts # 上下文管理（L1 任务历史压缩）
-│       │   ├── task-memory.ts   # 任务记忆存储（L1）
-│       │   ├── risk-assessor.ts # 风险评估
-│       │   └── i18n.ts          # Agent 国际化
-│       ├── watch/               # Watch 感知层
-│       ├── sensor/              # 传感器系统（heartbeat/file-watch/calendar/email/app-lifecycle）
+│       ├── document-parser.service.ts  # 文档解析（PDF/Word/Excel）
+│       ├── local-fs.service.ts  # 本地文件系统
+│       ├── bastion.service.ts   # 堡垒机/跳板机
+│       ├── bond.service.ts      # 多终端绑定会话
+│       ├── agent/               # AI Agent 子系统（详细见 agent/SPEC.md）
+│       │   ├── agent.ts         # 抽象 Agent 基类（ReAct 循环、会话、记忆）
+│       │   ├── sailfish.ts      # SailFish Agent 实现
+│       │   ├── prompt-builder.ts / context-builder.ts / task-memory.ts
+│       │   ├── tools.ts + tools/        # 工具定义 + 执行（含 sub-agent.ts 并行子 Agent）
+│       │   ├── skills/          # 技能包（见下方「AI Agent 架构」）
+│       │   ├── orchestrator.ts  # 多 Agent 编排
+│       │   ├── streaming-tool-executor.ts  # 流式工具并行执行
+│       │   └── risk-assessor.ts # 命令风险分级
+│       ├── watch/               # 关切（Watch）系统
+│       │   ├── watch.service.ts # 核心服务（触发、事件分发、pre-check）
+│       │   ├── store.ts / templates.ts / event-pool.ts / types.ts
+│       ├── sensor/              # 触发器传感器
+│       │   ├── event-bus.ts     # 事件总线（串行队列）
+│       │   ├── heartbeat-sensor.ts / file-watch-sensor.ts
+│       │   ├── calendar-sensor.ts / email-sensor.ts
+│       │   ├── http-probe-sensor.ts / command-probe-sensor.ts
+│       │   └── app-lifecycle-sensor.ts
 │       ├── terminal-awareness/  # 终端感知（进程监控）
 │       ├── knowledge/           # 知识库（L2 知识文档，向量存储 + 嵌入 + BM25）
 │       ├── im/                  # IM 集成（钉钉/飞书/企业微信/微信/Slack/Telegram）
 │       ├── tts/                 # TTS 语音合成（可插拔 provider）
 │       ├── speech/              # 语音识别
-│       ├── plugin/              # 插件系统（registry/loader/installer/hook-bus/sdk-shim）
+│       ├── web-search/          # 网页搜索
+│       ├── plugin/              # 插件系统（详细见 plugin/SPEC.md）
+│       │   ├── registry.ts / loader.ts / installer.ts
+│       │   ├── hook-bus.ts      # 生命周期钩子总线
+│       │   └── sdk-shim.js      # 插件 SDK 注入
 │       └── __tests__/           # 服务单元测试
 ├── src/                         # 前端（Vue 3）
 │   ├── views/                   # 页面视图
 │   ├── components/              # 组件
-│   │   ├── Settings/            # 设置页组件
-│   │   ├── FileManager/         # 文件管理器
-│   │   ├── FileExplorer/        # 文件浏览器
+│   │   ├── Settings/            # 设置面板（AI / IM / Plugin / …）
+│   │   ├── FileManager/ + FileExplorer/
+│   │   ├── AiPanel.vue / Awaken.vue / SetupWizard.vue
 │   │   └── ...
-│   ├── stores/                  # Pinia 状态管理
-│   │   ├── terminal.ts          # 终端状态、标签页、Agent 状态
-│   │   └── config.ts            # 配置、AI profiles、SSH 会话
+│   ├── stores/                  # Pinia 状态（terminal、config、agent 等）
 │   ├── composables/             # 组合式函数
+│   ├── config/                  # 前端配置（AI 模板等）
 │   ├── i18n/                    # 国际化（中/英）
 │   └── themes/                  # 终端主题
 ├── resources/                   # 打包资源（嵌入模型、语音模型等）
 ├── scripts/                     # 构建/模型下载脚本
-├── docs/                        # 文档
+├── docs/                        # 文档（sensor-loop-architecture / plugin-dev-guide / …）
 ├── website/                     # 官网
 └── package.json                 # 依赖 & 脚本
 ```
+
+> 次要单文件服务（`menu` / `xshell-import` / `screen-content` / `ai-debug` / `command-executor` / `skill-market` / `user-skill` / `file-search` / `terminal-state`）不构成架构关键路径，按需查阅源码即可。废弃服务 `scheduler.service.ts` 已整合进关切系统（启动时自动迁移），保留仅为兼容。
 
 ## 关键架构模式
 
@@ -132,43 +131,31 @@ SailFish/
 
 ### AI Agent 架构
 - **ReAct 循环**：思考 → 工具调用 → 观察结果 → 循环
-- **工具系统**：内置工具 + 技能系统（按需加载）+ MCP 工具
-- **三种终端模式**：`local`（本地终端）/ `ssh`（SSH 远程）/ `assistant`（无终端助手），见下方独立章节
+- **工具系统**：内置工具 + 技能系统（按需加载）+ MCP 工具 + 插件工具
+- **三种终端模式**：`local` / `ssh` / `assistant`，见下方独立章节
 - **并行子 Agent**：`dispatch_agents` 工具分派轻量子任务并行执行，支持 Agent 类型系统（explore/edit/research）、同步/异步双模式、prompt cache 优化。仅 local 和 assistant 模式可用（子 Agent 只能操作本地文件系统和执行本地命令）
 - **风险评估**：safe / moderate / dangerous / blocked 四级
 - **执行模式**：strict（全确认）/ relaxed（危险确认）/ free（全自动）
 - **Agent Workspace**：`{userData}/agent-workspace/`，Agent 私有数据目录，文件读写自动跳过确认
-- **三级记忆架构**：见下方独立章节
-- **上下文管理**：`ContextBuilder` 根据 token 预算动态选择压缩级别
+- **三级记忆**：L1 任务记忆 / L2 知识文档 / L3 对话记录，见下方独立章节
+- **会话持久化**：Agent 实例按 `agentId`（终端模式= ptyId）复用，会话状态跨多次 run 累积；后端是唯一数据源，增量检查点防丢失，支持跨会话恢复。细节见 `agent/SPEC.md`
+- **技能系统**：`agent/skills/` 下为按需加载的技能包，如 excel / email / browser / word / pdf / calendar / terminal / watch / personality / skill-creator / 以及 IM 渠道（feishu / wecom / dingtalk）等，通过 `skill` 工具触发
+- **详细设计**：`electron/services/agent/SPEC.md`
 
 ### 三种终端模式（⚠️ 开发新功能必须考虑）
 
 Agent 的运行环境分三种：`local`（本地终端）、`ssh`（SSH 远程终端）、`assistant`（无终端助手）。**核心区别是操作目标机器不同**：local 和 assistant 操作的是用户本机，ssh 操作的是远程服务器。因此文件读写、命令执行在 ssh 模式下走完全不同的通道（SSH/SFTP），两套工具互不通用。新增涉及文件或命令的功能时，必须明确它操作的是哪台机器，并通过 `_meta.supportedModes` 限定适用模式。详见 `tools.ts` 中各工具的 `_meta` 定义。
 
-### Agent 会话与持久化
-- **后端为唯一数据源**：Steps（含 `user_task`/`final_result`）和 API messages 均由后端 Agent 生成、管理和持久化，前端仅负责渲染
-- **会话追踪**：Agent 实例按 `ptyId` 复用（`AgentService.agents` Map），会话状态（sessionId、累积 steps/messages）跨多次 `run` 持久化
-- **完整消息记录**：每次 `run` 通过 `taskMessageLog`（append-only）记录完整 API 对话，与可压缩的 `run.messages`（工作窗口）分离
-- **后端直接存盘**：`finalizeRun` 时 Agent 直接调 `HistoryService.saveAgentRecord` 保存 `AgentRecord`（含 `steps` + `messages`），前端不参与保存
-- **增量检查点**：每完成一轮工具调用后自动写盘，防止程序意外退出丢失记录
-- **跨会话恢复（两条路径）**：
-  - **终端 Agent**：前端保存 sessionId，重启后传给后端，`restoreFromHistory` 按 sessionId 精确加载旧 session 的完整状态（TaskMemory + steps + messages）
-  - **命名 Agent（Companion 等）**：IM 不传 sessionId，重启后生成新 sessionId 无法匹配旧记录。`restoreFromHistory` 的 fallback 路径从 HistoryService 加载最近 3 条 AgentRecord，提取最近 5 个任务填入 TaskMemory（仅恢复工作记忆，不恢复 session 状态）。之后由 ContextBuilder 的 L0-L4 压缩管线正常处理上下文注入
-- **生命周期**：终端关闭时 `cleanupAgent` 销毁 Agent 实例；"清空对话"时 `resetSession` 只重置会话状态和 TaskMemory，保留实例
-
 ### 关切系统（Watch / Sensor Loop）
 - **关切（Watch）**：Agent 的"关注点"配置，定义触发条件、执行 prompt、输出渠道
 - **Agent 驱动**：关切主要由 Agent 通过 `watch_*` 工具创建和管理，UI 面板为只读仪表盘
-- **触发器（10 种）**：cron / interval / heartbeat / webhook / manual / file_change / calendar / email / app_lifecycle / milestone
-- **传感器（5 种）**：HeartbeatSensor / FileWatchSensor / CalendarSensor / EmailSensor / AppLifecycleSensor（生命周期事件 + 里程碑检查）
+- **10 种触发器 / 5 种传感器 / 8 个内置模板**：具体清单见 `docs/sensor-loop-architecture.md`
 - **Webhook**：Gateway 的 `POST /hooks/:token` 端点，外部系统可触发 Watch
 - **Pre-check**：执行前让 AI 自主判断"该不该做"（Agency of Omission）
-- **有状态工作流**：Watch 自身状态 + 跨 Watch 共享状态，Agent 可通过 `STATE_UPDATE` / `SHARED_UPDATE` 指令自动更新
-- **模板系统**：8 个内置模板（晨间简报 / 日历提醒 / 邮件分类 / 日志监控 / 部署通知 / 服务器巡检 / 文件监控 / 工作总结）
+- **有状态工作流**：Watch 自身状态 + 跨 Watch 共享状态，Agent 通过 `STATE_UPDATE` / `SHARED_UPDATE` 指令自动更新
 - **串行执行**：所有事件通过 EventBus 排队，Watch 依次处理，不并发
 - **独立 Agent**：Watch 使用独立的 `__watch__` Agent ID，与 IM/桌面助手的 `__companion__` 隔离
-- **Scheduler 废弃**：旧版定时任务已整合到关切系统，启动时自动迁移数据，`schedule_*` 工具标记为废弃
-- **详细设计**：见 `docs/sensor-loop-architecture.md`
+- **Scheduler 废弃**：旧版定时任务已整合到关切系统，启动时自动迁移，`schedule_*` 工具标记为废弃
 
 ### 三级记忆架构
 
@@ -197,21 +184,15 @@ Agent 的记忆分三层，模拟人类记忆的衰减梯度，三层协同在�
 
 `electron/services/plugin/` 提供扩展机制，宿主核心保持稳定，插件负责接入第三方能力。Manifest 格式兼容 OpenClaw `openclaw.plugin.json`。
 
-- **扩展点**：`registerTool`（Agent 工具）/ `registerProvider`（AI Provider）/ `registerChannel`（IM 渠道）/ `registerTtsProvider`（TTS）/ `registerHook`（生命周期拦截）/ `registerHttpRoute`（Gateway HTTP 路由）
-- **生命周期**：Registry 加载启用禁用 → Loader 扫描/动态 import → HookBus 分发事件 → Installer 通过 npm 管理包 → sdk-shim 暴露 `require('sailfish-sdk')`
+- **扩展点**：`registerTool` / `registerProvider` / `registerChannel` / `registerTtsProvider` / `registerHook` / `registerHttpRoute`
 - **Hook 事件**：`before_tool_call` / `after_tool_call` / `before_ai_request` / `message_sending`
-- **宿主对接**：AgentService 注入插件工具、AiService 注入 Provider、IMService 注入渠道、GatewayService 注册路由、TtsService 注册 Provider
-- **前端 UI**：`src/components/Settings/PluginSettings.vue`（安装/启用/禁用/配置）
-- **公开契约**：见 `electron/services/plugin/SPEC.md`，契约测试 `__tests__/plugin-contract.test.ts`
+- **前端 UI**：`src/components/Settings/PluginSettings.vue`
+- **公开契约**：`electron/services/plugin/SPEC.md`
 
 ### 日志系统
-
-- **库**：`electron-log` v5.x，同时输出 console + 文件
-- **文件路径**：`{userData}/logs/{date}.log`（如 macOS `~/Library/Application Support/SailFish/logs/2026-02-23.log`）
-- **按日期分文件**：每天一个 `.log` 文件，自动保留 30 天
-- **统一接口**：`createLogger(tag)` 返回带 scope 的 Logger（`log.info/warn/error/debug`）
-- **初始化**：`initLogging()` 在 `main.ts` 和 CLI `index.ts` 启动时调用
-- **级别控制**：通过设置页面或 `config:setLogLevel` IPC 动态调整
+- **库**：`electron-log` v5.x，console + 文件双写，按日期分文件，自动保留 30 天
+- **接口**：`createLogger(tag)` 返回带 scope 的 Logger，启动时 `initLogging()` 初始化
+- **动态级别**：通过设置页或 `config:setLogLevel` IPC 调整
 - **源码**：`electron/utils/logger.ts`
 
 ### 数据迁移与兼容性
