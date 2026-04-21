@@ -2337,9 +2337,10 @@ watch(() => props.visible, (visible) => {
   background-size: cover;
 }
 
-/* Agent 执行模式 - 宽松模式绿色内阴影（仅左右两边）
-   走 --brand-vital（活力绿），跨主题固定，保持"安全/宽松/自由"三态视觉信号强度一致 */
-.ai-panel.mode-relaxed .ai-messages {
+/* Agent 执行模式 - 严格模式绿色内阴影（仅左右两边）
+   走 --brand-vital（活力绿），表示"每条命令都需确认的安全守护状态"；
+   默认的 relaxed 模式不加任何视觉效果，作为无感知的基线。 */
+.ai-panel.mode-strict .ai-messages {
   box-shadow: 
     inset 30px 0 30px -20px rgba(var(--brand-vital-rgb), 0.35),
     inset -30px 0 30px -20px rgba(var(--brand-vital-rgb), 0.35);
