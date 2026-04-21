@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Monitor, FolderPlus, Download, FileText, Folder, ListFilter, FileEdit, AlignLeft, AlignRight, Clock, Terminal, ChevronDown, ExternalLink, Settings, Plug, Pencil, Trash2 } from 'lucide-vue-next'
 import { useConfigStore, type SshSession, type SessionGroup, type JumpHostConfig, type SessionSortBy } from '../stores/config'
@@ -42,6 +42,21 @@ const {
   handleDragOverGroupHeader, handleDropToGroupHeader,
   handleDropToSession, handleDropToGroup,
 } = useSessionDragDrop(groupedSessions, collapsedGroups)
+
+// 分组拖拽落点指示：把 before/after 归一到单一「线锚定组」上，只渲染一条线
+const groupDropLineAnchor = computed<{ name: string; edge: 'top' | 'bottom' } | null>(() => {
+  if (!draggingGroupName.value || !dragOverTargetGroupName.value) return null
+  const names = Object.keys(groupedSessions.value)
+  const idx = names.indexOf(dragOverTargetGroupName.value)
+  if (idx === -1) return null
+  if (dragOverPosition.value === 'before') {
+    return { name: dragOverTargetGroupName.value, edge: 'top' }
+  }
+  if (idx < names.length - 1) {
+    return { name: names[idx + 1], edge: 'top' }
+  }
+  return { name: dragOverTargetGroupName.value, edge: 'bottom' }
+})
 
 // ==================== 菜单键盘/点击 ====================
 const handleKeydown = (e: KeyboardEvent) => {
@@ -258,9 +273,9 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
         :placeholder="t('session.searchPlaceholder')"
       />
       <div class="new-dropdown toolbar-dropdown">
-        <button class="btn btn-sm" @click="showNewMenu = !showNewMenu">
+        <button class="toolbar-btn toolbar-btn-primary" @click="showNewMenu = !showNewMenu">
           <Plus :size="14" />
-          {{ t('common.new') }}
+          <span>{{ t('common.new') }}</span>
         </button>
         <div v-if="showNewMenu" class="dropdown-menu dropdown-left" @click.stop>
           <button class="dropdown-item" @click="openNewSession(); showNewMenu = false">
@@ -274,7 +289,7 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
         </div>
       </div>
       <div class="import-dropdown toolbar-dropdown">
-        <button class="btn btn-sm btn-icon-only" @click="showImportMenu = !showImportMenu" :title="t('common.import')">
+        <button class="toolbar-btn toolbar-btn-icon" @click="showImportMenu = !showImportMenu" :title="t('common.import')">
           <Download :size="14" />
         </button>
         <div v-if="showImportMenu" class="dropdown-menu dropdown-right" @click.stop>
@@ -289,7 +304,7 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
         </div>
       </div>
       <div class="sort-dropdown toolbar-dropdown">
-        <button class="btn btn-sm btn-icon-only" @click="showSortMenu = !showSortMenu" :title="t('session.sort.title')">
+        <button class="toolbar-btn toolbar-btn-icon" @click="showSortMenu = !showSortMenu" :title="t('session.sort.title')">
           <ListFilter :size="14" />
         </button>
         <div v-if="showSortMenu" class="dropdown-menu dropdown-right" @click.stop>
@@ -316,7 +331,7 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
     <!-- 快速操作 -->
     <div class="quick-connect">
       <button class="quick-btn" @click="createLocalTerminal">
-        <Terminal :size="18" />
+        <Terminal :size="16" />
         <span>{{ t('terminal.localTerminal') }}</span>
       </button>
     </div>
@@ -338,7 +353,10 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
         >
           <div 
             class="group-header draggable"
-            :class="{ 'drag-over': dragOverTargetGroupName === groupName }"
+            :class="{
+              'drop-line-top': groupDropLineAnchor?.name === groupName && groupDropLineAnchor.edge === 'top',
+              'drop-line-bottom': groupDropLineAnchor?.name === groupName && groupDropLineAnchor.edge === 'bottom'
+            }"
             draggable="true"
             @dragstart="handleGroupDragStart(groupName as string, $event)"
             @dragend="handleDragEnd"
@@ -359,8 +377,8 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
               </span>
             </div>
             <div class="group-header-right">
-              <button class="btn-icon btn-xs" @click.stop="openGroupEditor(groupName as string)" :title="t('session.editGroup')">
-                <Settings :size="12" />
+              <button class="group-action-btn" @click.stop="openGroupEditor(groupName as string)" :title="t('session.editGroup')">
+                <Settings :size="13" />
               </button>
             </div>
           </div>
@@ -388,17 +406,17 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
                 <div class="session-name">{{ session.name }}</div>
               </div>
               <div class="session-actions">
-                <button class="btn-icon" @click.stop="connectSession(session)" :title="t('session.connect')">
-                  <Plug :size="11" />
+                <button class="session-action-btn" @click.stop="connectSession(session)" :title="t('session.connect')">
+                  <Plug :size="13" />
                 </button>
-                <button class="btn-icon" @click.stop="openFileManagerWindow(session)" :title="t('session.fileManager')">
-                  <Folder :size="11" />
+                <button class="session-action-btn" @click.stop="openFileManagerWindow(session)" :title="t('session.fileManager')">
+                  <Folder :size="13" />
                 </button>
-                <button class="btn-icon" @click.stop="openEditSession(session)" :title="t('common.edit')">
-                  <Pencil :size="11" />
+                <button class="session-action-btn" @click.stop="openEditSession(session)" :title="t('common.edit')">
+                  <Pencil :size="13" />
                 </button>
-                <button class="btn-icon" @click.stop="deleteSession(session)" :title="t('common.delete')">
-                  <Trash2 :size="11" />
+                <button class="session-action-btn session-action-btn-danger" @click.stop="deleteSession(session)" :title="t('common.delete')">
+                  <Trash2 :size="13" />
                 </button>
               </div>
             </div>
@@ -442,6 +460,15 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
 </template>
 
 <style scoped>
+/*
+ * 主机管理侧栏尺寸体系（与顶部栏/标签页视觉同家族）
+ *   - 工具栏控件统一高度 30px，图标 14px
+ *   - 分组头：字号 12 / 字重 600 / 不 uppercase，行高 22px，图标 14px
+ *   - 会话行：字号 13 / padding 6×10，图标 16px，默认无背景只 hover 出背景
+ *   - 行内操作按钮：22×22，图标 13px
+ *   - 所有容器圆角统一 6px，向 VSCode / Cursor 侧栏靠拢
+ */
+
 .session-manager {
   display: flex;
   flex-direction: column;
@@ -451,22 +478,63 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
 /* ==================== 工具栏 ==================== */
 .session-toolbar {
   display: flex;
-  gap: 8px;
-  padding: 12px;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--border-color);
 }
 
 .search-input {
   flex: 1;
-  height: 32px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
   box-sizing: border-box;
 }
 
-.session-toolbar .btn {
-  height: 32px;
-  min-width: fit-content;
+/* 工具栏按钮：30px 高，扁平风格，不继承全局 .btn 的 shimmer/上浮 */
+.toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
   white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
+
+.toolbar-btn:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+.toolbar-btn:focus,
+.toolbar-btn:focus-visible { outline: none; }
+
+.toolbar-btn-primary {
+  color: var(--text-primary);
+}
+
+/* 纯图标工具按钮：等宽方形 */
+.toolbar-btn-icon {
+  width: 30px;
+  padding: 0;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.toolbar-btn-icon:hover { color: var(--text-primary); }
 
 /* ==================== 通用下拉菜单 ==================== */
 .toolbar-dropdown {
@@ -475,15 +543,15 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
 
 .dropdown-menu {
   position: absolute;
-  top: 100%;
-  margin-top: 4px;
-  min-width: 140px;
+  top: calc(100% + 4px);
+  min-width: 160px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
   z-index: 100;
   overflow: hidden;
+  padding: 4px;
 }
 
 .dropdown-left { left: 0; }
@@ -494,14 +562,15 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 10px 12px;
-  font-size: 13px;
+  padding: 7px 10px;
+  font-size: 12.5px;
   color: var(--text-primary);
   background: transparent;
   border: none;
+  border-radius: 4px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s ease;
+  transition: background 0.12s ease;
 }
 
 .dropdown-item:hover {
@@ -510,98 +579,121 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
 
 .dropdown-item svg {
   color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .dropdown-item.active {
   color: var(--accent-primary);
-  background: rgba(var(--accent-primary-rgb, 66, 153, 225), 0.1);
+  background: rgba(var(--accent-rgb), 0.1);
 }
 
 .dropdown-item.active svg {
   color: var(--accent-primary);
 }
 
-.btn-icon-only {
-  padding: 0 8px;
-  min-width: 32px;
-}
-
-/* ==================== 快速操作 ==================== */
+/* ==================== 快速入口（本地终端） ==================== */
+/* 保留独立块（上下有分隔），但尺寸与会话行对齐，去厚重边框 */
 .quick-connect {
-  padding: 12px;
+  padding: 6px;
   border-bottom: 1px solid var(--border-color);
 }
 
+/* 本地终端：作为"特殊主机行"，左侧缩进对齐下方会话项的图标起点 */
 .quick-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  padding: 10px 12px;
+  height: 30px;
+  padding: 0 10px 0 20px;
   font-size: 13px;
-  color: var(--text-secondary);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
+  font-weight: 500;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.quick-btn svg {
+  flex-shrink: 0;
+  color: var(--brand-local, var(--accent-primary));
 }
 
 .quick-btn:hover {
   background: var(--bg-surface);
-  color: var(--text-primary);
 }
+
+.quick-btn:focus,
+.quick-btn:focus-visible { outline: none; }
 
 /* ==================== 会话列表 ==================== */
 .session-list {
   flex: 1;
   overflow-y: auto;
-  padding: 6px;
+  padding: 6px 6px 12px;
 }
 
 .session-group {
-  margin-bottom: 2px;
-  border-radius: 8px;
-  border: 2px solid transparent;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
   transition: border-color 0.2s ease, background-color 0.2s ease;
 }
+
+.session-group:last-child { margin-bottom: 0; }
 
 .session-group.is-empty .group-sessions { min-height: 4px; }
 
 .session-group.drag-over {
   border-color: var(--accent-primary);
-  background: rgba(var(--accent-primary-rgb, 66, 153, 225), 0.08);
+  background: rgba(var(--accent-rgb), 0.08);
   min-height: 40px;
 }
 
-/* ==================== 分组头 ==================== */
+/* ==================== 分组头 ====================
+   定位："小标题/容器"，不是"内容"。用字号收小 + 间距拉开 + text-muted/secondary
+   来和下方 session-item（字号 13 + text-primary）形成父子层级。 */
 .group-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2px 6px;
+  gap: 8px;
+  height: 24px;
+  padding: 0 6px;
   font-size: 11px;
   color: var(--text-muted);
-  text-transform: uppercase;
   border-radius: 4px;
-  transition: background-color 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
   position: relative;
+}
+
+.group-header:hover {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
 }
 
 .group-header.draggable { cursor: grab; }
 .group-header.draggable:active { cursor: grabbing; }
 
-.group-header.drag-over::after {
+.group-header.drag-over-before::before,
+.group-header.drag-over-after::after {
   content: '';
   position: absolute;
-  left: 0; right: 0; top: -2px;
+  left: 0; right: 0;
   height: 2px;
   background: var(--accent-primary);
   border-radius: 1px;
 }
 
+.group-header.drag-over-before::before { top: -2px; }
+.group-header.drag-over-after::after { bottom: -2px; }
+
 .collapse-icon {
-  color: var(--text-muted);
+  color: currentColor;
+  opacity: 0.7;
   transition: transform 0.2s ease;
   flex-shrink: 0;
 }
@@ -611,86 +703,157 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
 .group-header-left {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
   cursor: pointer;
 }
 
-.group-name { font-weight: 500; }
+/* 分组名：比主机名更小更紧，但字间距拉开一点，给"标题"的气质 */
+.group-name {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 中文不吃 uppercase，这里给中文再拉一档字号让两种语言视觉平衡 */
+.group-name:lang(zh) {
+  letter-spacing: 0.04em;
+}
 
 .group-header-right {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+  flex-shrink: 0;
 }
 
 .group-count {
+  padding: 0 6px;
+  min-width: 18px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-weight: 500;
   color: var(--text-muted);
-  font-size: 11px;
-  font-weight: normal;
+  background: var(--bg-surface);
+  border-radius: 8px;
+  flex-shrink: 0;
+  letter-spacing: 0;
   text-transform: none;
 }
 
+/* jump-host：中性灰，避免抢 accent，与其他分组头视觉平衡 */
 .jump-host-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  font-size: 10px;
-  font-weight: normal;
+  gap: 3px;
+  padding: 0 6px;
+  height: 16px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  max-width: 160px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  letter-spacing: 0;
   text-transform: none;
-  color: var(--accent-primary);
-  background: rgba(var(--accent-primary-rgb, 66, 153, 225), 0.15);
+}
+
+.jump-host-badge svg {
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.group-action-btn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
   border-radius: 4px;
-}
-
-.jump-host-badge svg { opacity: 0.8; }
-
-.btn-xs {
-  padding: 2px 4px;
+  cursor: pointer;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
-.group-header:hover .btn-xs { opacity: 0.6; }
-.btn-xs:hover { opacity: 1 !important; }
+.group-action-btn:focus,
+.group-action-btn:focus-visible { outline: none; }
+
+.group-header:hover .group-action-btn { opacity: 0.7; }
+
+.group-action-btn:hover {
+  opacity: 1 !important;
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
 
 /* ==================== 会话项 ==================== */
+.group-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-top: 2px;
+}
+
+/* padding-left 20px 让 Monitor 图标缩进到分组文字起点附近，
+   形成清晰的"分组标题 > 主机行"父子层级 */
 .session-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 3px 10px;
-  margin-bottom: 2px;
-  background: var(--bg-tertiary);
+  gap: 10px;
+  height: 30px;
+  padding: 0 8px 0 20px;
+  background: transparent;
   border-radius: 6px;
   cursor: grab;
-  transition: all 0.2s ease;
+  transition: background 0.15s ease;
+  position: relative;
 }
 
 .session-item:hover { background: var(--bg-surface); }
 .session-item:active { cursor: grabbing; }
 .session-item.dragging { opacity: 0.5; }
 
-.session-item.drag-over-before,
-.session-item.drag-over-after { position: relative; }
-
 .session-item.drag-over-before::before,
 .session-item.drag-over-after::after {
   content: '';
   position: absolute;
-  left: 0; right: 0;
+  left: 6px; right: 6px;
   height: 2px;
   background: var(--accent-primary);
   border-radius: 1px;
 }
 
-.session-item.drag-over-before::before { top: -2px; }
-.session-item.drag-over-after::after { bottom: -2px; }
+.session-item.drag-over-before::before { top: -1px; }
+.session-item.drag-over-after::after { bottom: -1px; }
 
+/* 图标降级为中性灰，不与分组标题争夺视觉焦点；hover 时回到 accent 提示可点击 */
 .session-icon {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+}
+
+.session-item:hover .session-icon {
   color: var(--accent-primary);
 }
 
@@ -706,23 +869,44 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
   text-overflow: ellipsis;
 }
 
+/* 行内操作按钮：统一 22×22 热区，hover 整行时出现 */
 .session-actions {
   display: flex;
+  align-items: center;
   gap: 2px;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.15s ease;
+  flex-shrink: 0;
 }
 
 .session-item:hover .session-actions { opacity: 1; }
 
-.session-actions .btn-icon {
-  width: 18px;
-  height: 18px;
-  padding: 0;
+.session-action-btn {
+  width: 22px;
+  height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
   border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.session-action-btn:focus,
+.session-action-btn:focus-visible { outline: none; }
+
+.session-action-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.session-action-btn-danger:hover {
+  color: var(--color-error);
+  background: rgba(var(--color-error-rgb), 0.12);
 }
 
 /* ==================== 空状态 ==================== */
@@ -730,10 +914,13 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
   padding: 40px 20px;
   text-align: center;
   color: var(--text-muted);
+  font-size: 13px;
 }
 
 .empty-sessions .tip {
   font-size: 12px;
   margin-top: 8px;
+  color: var(--text-muted);
+  opacity: 0.8;
 }
 </style>
