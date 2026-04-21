@@ -1636,14 +1636,36 @@ watch(() => props.visible, (visible) => {
               </div>
 
               <!-- 最终结果 -->
-              <div v-else-if="item.type === 'final_result'" class="message assistant">
-                <div class="message-wrapper agent-final-wrapper">
-                  <div class="message-content agent-final-content" :class="{ 'is-error': item.group!.finalResult!.startsWith('❌'), 'is-aborted': item.group!.finalResult!.startsWith('⚠️') }">
-                    <div class="agent-final-header">
-                      <span class="final-icon">{{ item.group!.finalResult!.startsWith('❌') ? '❌' : item.group!.finalResult!.startsWith('⚠️') ? '⚠️' : '✅' }}</span>
-                      <span class="final-title">{{ item.group!.finalResult!.startsWith('❌') ? t('ai.taskFailed') : item.group!.finalResult!.startsWith('⚠️') ? t('ai.taskAborted') : t('ai.taskComplete') }}</span>
+              <div v-else-if="item.type === 'final_result'">
+                <!-- 失败 / 中断：保留带色卡片，加淡入动画 -->
+                <div v-if="item.group!.finalResult!.startsWith('❌') || item.group!.finalResult!.startsWith('⚠️')" class="message assistant">
+                  <div class="message-wrapper agent-final-wrapper">
+                    <div
+                      class="message-content agent-final-content"
+                      :class="{ 'is-error': item.group!.finalResult!.startsWith('❌'), 'is-aborted': item.group!.finalResult!.startsWith('⚠️') }"
+                    >
+                      <div class="agent-final-header">
+                        <span class="final-icon">{{ item.group!.finalResult!.startsWith('❌') ? '❌' : '⚠️' }}</span>
+                        <span class="final-title">{{ item.group!.finalResult!.startsWith('❌') ? t('ai.taskFailed') : t('ai.taskAborted') }}</span>
+                      </div>
+                      <div class="agent-final-body markdown-content" v-html="renderMarkdown(item.group!.finalResult!.replace(/^[❌⚠️]\s*(Agent\s*(执行失败|运行出错)[:\s]*)?/, ''))"></div>
                     </div>
-                    <div class="agent-final-body markdown-content" v-html="renderMarkdown(item.group!.finalResult!.replace(/^[❌✅⚠️]\s*(Agent\s*(执行失败|运行出错)[:\s]*)?/, ''))"></div>
+                  </div>
+                </div>
+                <!-- 成功：沿用 step 的时间线样式，仅在下方浮出一条"已完成"尾注 -->
+                <div v-else class="agent-step-virtual" :class="{ 'first-step': item.isFirstStep }">
+                  <div class="agent-step-inline message">
+                    <span class="step-icon">{{ getStepIcon('message') }}</span>
+                    <div class="step-content">
+                      <div
+                        class="step-text step-analysis markdown-content"
+                        v-html="renderMarkdown(item.group!.finalResult!.replace(/^✅\s*/, ''))"
+                      ></div>
+                      <div class="agent-final-footer">
+                        <span class="agent-final-footer-icon">✓</span>
+                        <span>{{ t('ai.taskComplete') }}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3807,6 +3829,23 @@ watch(() => props.visible, (visible) => {
 .agent-final-body :deep(pre code) {
   background: transparent;
   padding: 0;
+}
+
+/* 成功完成的静默尾注：在最终消息下方轻轻浮出一行，不再用整张绿色卡片
+   不加入场动画——虚拟滚动器回收/复用 DOM 时会把 CSS 动画重播，反而造成闪烁 */
+.agent-final-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding-left: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.agent-final-footer-icon {
+  color: var(--color-success);
+  font-weight: 600;
 }
 
 .agent-running-dot {

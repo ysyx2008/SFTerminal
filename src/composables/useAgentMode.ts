@@ -461,7 +461,9 @@ export function useAgentMode(
       }
 
       if (group.finalResult) {
-        items.push({ id: `final_${group.id}`, type: 'final_result', group, size: 80 })
+        // 若 group 没有其它步骤（典型的纯对话场景），让 final_result 承担"首条"标识，
+        // 以便渲染 standalone 头像，避免从流式 → 完成时头像消失
+        items.push({ id: `final_${group.id}`, type: 'final_result', group, size: 80, isFirstStep: group.steps.length === 0 })
       }
     }
 
