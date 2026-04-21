@@ -2137,15 +2137,15 @@ watch(() => props.visible, (visible) => {
 }
 
 /* 错误诊断提示 */
-/* 错误诊断提示 —— 产品级强警示色，固定 Tailwind red，
-   不跟随主题的 --color-error，保证各主题下"错误警告"的视觉强度一致。 */
+/* 错误诊断提示 —— 走 --brand-alert（警戒红），跨主题固定，
+   与通用 --color-error 区分，保证"错误警告"的视觉强度各主题一致 */
 .error-alert {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: rgba(239, 68, 68, 0.15);
-  border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(var(--brand-alert-rgb), 0.15);
+  border-bottom: 1px solid rgba(var(--brand-alert-rgb), 0.3);
   flex-shrink: 0;
   z-index: 10;
 }
@@ -2163,7 +2163,7 @@ watch(() => props.visible, (visible) => {
 .error-alert-title {
   font-size: 12px;
   font-weight: 600;
-  color: #ef4444;
+  color: var(--brand-alert);
   margin-bottom: 2px;
 }
 
@@ -2181,7 +2181,7 @@ watch(() => props.visible, (visible) => {
   font-size: 11px;
   font-weight: 500;
   color: #fff;
-  background: #ef4444;
+  background: var(--brand-alert);
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -2190,7 +2190,7 @@ watch(() => props.visible, (visible) => {
 }
 
 .error-alert-btn:hover:not(:disabled) {
-  background: #dc2626;
+  background: var(--brand-alert-end);
 }
 
 .error-alert-btn:disabled {
@@ -2212,7 +2212,7 @@ watch(() => props.visible, (visible) => {
 
 .error-alert-close:hover {
   opacity: 1;
-  background: rgba(239, 68, 68, 0.2);
+  background: rgba(var(--brand-alert-rgb), 0.2);
 }
 
 /* 选中内容提示 */
@@ -2338,32 +2338,32 @@ watch(() => props.visible, (visible) => {
 }
 
 /* Agent 执行模式 - 宽松模式绿色内阴影（仅左右两边）
-   注意：此处使用固定的产品语义色（emerald / rose），不跟随主题的 --color-success/-error，
-   以便"安全/宽松/自由"三态在所有主题下保持一致的视觉信号强度。 */
+   走 --brand-vital（活力绿），跨主题固定，保持"安全/宽松/自由"三态视觉信号强度一致 */
 .ai-panel.mode-relaxed .ai-messages {
   box-shadow: 
-    inset 30px 0 30px -20px rgba(16, 185, 129, 0.35),
-    inset -30px 0 30px -20px rgba(16, 185, 129, 0.35);
+    inset 30px 0 30px -20px rgba(var(--brand-vital-rgb), 0.35),
+    inset -30px 0 30px -20px rgba(var(--brand-vital-rgb), 0.35);
 }
 
-/* Agent 执行模式 - 自由模式红色内阴影 + 脉冲警示（仅左右两边） */
+/* Agent 执行模式 - 自由模式红色内阴影 + 脉冲警示（仅左右两边）
+   走 --brand-alert（警戒红），跨主题固定 */
 .ai-panel.mode-free .ai-messages {
   box-shadow: 
-    inset 40px 0 40px -25px rgba(239, 68, 68, 0.4),
-    inset -40px 0 40px -25px rgba(239, 68, 68, 0.4);
+    inset 40px 0 40px -25px rgba(var(--brand-alert-rgb), 0.4),
+    inset -40px 0 40px -25px rgba(var(--brand-alert-rgb), 0.4);
   animation: free-mode-pulse 2s ease-in-out infinite;
 }
 
 @keyframes free-mode-pulse {
   0%, 100% {
     box-shadow: 
-      inset 40px 0 40px -25px rgba(239, 68, 68, 0.4),
-      inset -40px 0 40px -25px rgba(239, 68, 68, 0.4);
+      inset 40px 0 40px -25px rgba(var(--brand-alert-rgb), 0.4),
+      inset -40px 0 40px -25px rgba(var(--brand-alert-rgb), 0.4);
   }
   50% {
     box-shadow: 
-      inset 50px 0 50px -30px rgba(239, 68, 68, 0.5),
-      inset -50px 0 50px -30px rgba(239, 68, 68, 0.5);
+      inset 50px 0 50px -30px rgba(var(--brand-alert-rgb), 0.5),
+      inset -50px 0 50px -30px rgba(var(--brand-alert-rgb), 0.5);
   }
 }
 
@@ -3449,13 +3449,14 @@ watch(() => props.visible, (visible) => {
   color: #fff;
 }
 
+/* 自由模式按钮 —— 产品级警戒红，跨主题固定 */
 .mode-option-free.active {
-  background: var(--color-error);
+  background: var(--brand-alert);
 }
 
 .mode-option-free:hover:not(.active) {
-  background: rgba(var(--color-error-rgb), 0.15);
-  color: var(--color-error);
+  background: rgba(var(--brand-alert-rgb), 0.15);
+  color: var(--brand-alert);
 }
 
 /* 自由模式确认对话框 */
@@ -3498,8 +3499,7 @@ watch(() => props.visible, (visible) => {
 .confirm-dialog-title {
   font-size: 16px;
   font-weight: 600;
-  /* 产品级强警示色，固定不随主题变化 */
-  color: #ef4444;
+  color: var(--brand-alert);
 }
 
 .confirm-dialog-content {
@@ -3520,7 +3520,7 @@ watch(() => props.visible, (visible) => {
 
 .confirm-dialog-warnings li {
   font-size: 12px;
-  color: #ef4444;
+  color: var(--brand-alert);
   margin: 6px 0;
   line-height: 1.4;
 }
@@ -4499,11 +4499,11 @@ watch(() => props.visible, (visible) => {
   box-shadow: 0 4px 20px rgba(var(--color-warning-rgb), 0.15);
 }
 
-/* ===== 低风险 - 绿色系 ===== */
+/* ===== 低风险 - 绿色系（走 --brand-vital，跨主题固定活力绿） ===== */
 .agent-confirm-inline.risk-safe {
   background: linear-gradient(135deg, #0f2920 0%, #081a14 100%) !important;
-  border: 2px solid var(--color-success) !important;
-  box-shadow: 0 4px 20px rgba(var(--color-success-rgb), 0.1);
+  border: 2px solid var(--brand-vital) !important;
+  box-shadow: 0 4px 20px rgba(var(--brand-vital-rgb), 0.15);
 }
 
 .confirm-header-inline {
@@ -4542,7 +4542,7 @@ watch(() => props.visible, (visible) => {
 }
 
 .confirm-risk-badge.risk-safe {
-  background: var(--color-success);
+  background: var(--brand-vital);
   color: #fff;
 }
 
@@ -4600,27 +4600,29 @@ watch(() => props.visible, (visible) => {
   border-color: var(--color-warning);
 }
 
-/* 强警示按钮（删除/自由模式开启等不可逆操作）—— 跨主题固定红 */
+/* 强警示按钮（删除/自由模式开启等不可逆操作）—— 走 --brand-alert */
 .btn-danger {
-  background: #ef4444;
-  border: 1px solid #ef4444;
+  background: var(--brand-alert);
+  border: 1px solid var(--brand-alert);
   color: #fff;
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: #dc2626;
-  border-color: #dc2626;
+  background: var(--brand-alert-end);
+  border-color: var(--brand-alert-end);
 }
 
-/* 成功按钮样式（普通成功操作，跟随主题） */
+/* 低风险允许执行按钮 —— 走 --brand-vital，跨主题固定活力绿
+   （AiPanel scoped，仅作用于 Agent 确认卡片内的"允许执行"按钮） */
 .btn-success {
-  background: var(--color-success);
-  border-color: var(--color-success);
+  background: var(--brand-vital);
+  border: 1px solid var(--brand-vital);
   color: #fff;
 }
 
 .btn-success:hover:not(:disabled) {
-  filter: brightness(1.1);
+  background: var(--brand-vital-end);
+  border-color: var(--brand-vital-end);
 }
 
 /* Outline 按钮样式（用于"始终允许"） */
@@ -4646,15 +4648,16 @@ watch(() => props.visible, (visible) => {
   color: var(--color-error);
 }
 
+/* "始终允许"按钮 —— 走 --brand-vital，与低风险信号保持一致 */
 .btn-outline-success {
   background: transparent;
-  border: 1px solid var(--color-success);
-  color: var(--color-success);
+  border: 1px solid var(--brand-vital);
+  color: var(--brand-vital);
 }
 
 .btn-outline-success:hover:not(:disabled) {
-  background: rgba(var(--color-success-rgb), 0.15);
-  color: var(--color-success);
+  background: rgba(var(--brand-vital-rgb), 0.15);
+  color: var(--brand-vital);
 }
 
 /* ==================== @ 命令补全菜单样式 ==================== */

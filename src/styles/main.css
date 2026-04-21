@@ -8,6 +8,9 @@
  *              以及配套的 *-rgb 用于 rgba() 半透明
  *   4. 品牌层  --brand-assistant / --brand-local / --brand-ssh / --brand-patrol
  *              以及 *-end（渐变结束色）和 *-rgb（发光/阴影）
+ *              特殊（跨主题固定，不在任何主题块里覆盖）：
+ *                --brand-vital  产品级"活力绿/心跳/低风险信号"——觉醒心电图、Agent 低风险允许
+ *                --brand-alert  产品级"警戒红/高危/破坏性强警示"——错误诊断条、自由模式、btn-danger
  *
  * ⚠️ 修改 UI 主题颜色时需同步维护：
  *   1. 本文件 (main.css) - 实际生效的 CSS 变量
@@ -53,6 +56,25 @@
   --brand-patrol: #8b5cf6;
   --brand-patrol-end: #7c3aed;
   --brand-patrol-rgb: 139, 92, 246;
+
+  /* ===== 品牌"活力绿"（跨主题固定，不在任何主题块里覆盖）=====
+     语义：产品级"生命力/心跳/脉动/安全信号"——觉醒心电图、Agent 低风险允许执行等。
+     与 --color-success 的区别：
+       --color-success  通用成功反馈，随主题降饱和（如保存成功、Toast、传输完成）
+       --brand-vital    产品级"活物感"，永远保持 Tailwind emerald 的饱满质感  */
+  --brand-vital: #10b981;
+  --brand-vital-end: #059669;
+  --brand-vital-rgb: 16, 185, 129;
+
+  /* ===== 品牌"警戒红"（跨主题固定，不在任何主题块里覆盖）=====
+     语义：产品级"高危/破坏性/强警示信号"——错误诊断条、自由模式按钮激活态、
+           自由模式二次确认、高危命令确认按钮（btn-danger / ConfirmDialog.danger）等。
+     与 --color-error 的区别：
+       --color-error   通用错误反馈，随主题降饱和（如 toast 报错、小面积错误文本）
+       --brand-alert   产品级"不可逆操作 / 危险模式"信号，永远保持 Tailwind red 的强冲击  */
+  --brand-alert: #ef4444;
+  --brand-alert-end: #dc2626;
+  --brand-alert-rgb: 239, 68, 68;
 }
 
 /* 深色主题（默认）— 纯黑层次，接近 Cursor / VS Code 深色

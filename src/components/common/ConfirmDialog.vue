@@ -190,10 +190,10 @@ const getIcon = () => {
   color: var(--color-warning);
 }
 
-/* 强警示：危险操作（删除/高危命令）—— 跨主题固定红 */
+/* 强警示：危险操作（删除/高危命令）—— 走 --brand-alert */
 .dialog-icon.danger {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
+  background: rgba(var(--brand-alert-rgb), 0.15);
+  color: var(--brand-alert);
 }
 
 /* 标题 */
@@ -284,13 +284,13 @@ const getIcon = () => {
   filter: brightness(1.1);
 }
 
-/* 强警示确认按钮 —— 跨主题固定红 */
+/* 强警示确认按钮 —— 走 --brand-alert */
 .btn-confirm.danger {
-  background: #ef4444;
+  background: var(--brand-alert);
 }
 
 .btn-confirm.danger:hover {
-  background: #dc2626;
+  background: var(--brand-alert-end);
   filter: none;
 }
 

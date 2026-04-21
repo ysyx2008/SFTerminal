@@ -11,6 +11,9 @@
  *            （附 *-rgb 版本，用于 rgba()；在 main.css 中按主题覆盖）
  *   品牌层   --brand-assistant / --brand-local / --brand-ssh / --brand-patrol
  *            （附 *-end 渐变尾色 和 *-rgb 版本）
+ *            特殊（跨主题固定，不在任何主题块里覆盖）：
+ *              --brand-vital  产品级"活力绿/心跳/低风险信号"——觉醒心电图、Agent 低风险允许
+ *              --brand-alert  产品级"警戒红/高危/破坏性强警示"——错误诊断条、自由模式、btn-danger
  *
  * ⚠️ 修改主题颜色时，需同步维护：
  *   1. 本文件 (ui-themes.ts) - 设置面板预览

@@ -1051,7 +1051,7 @@ onUnmounted(() => {
 }
 
 .btn-icon.awakened-active {
-  color: var(--color-success);
+  color: var(--brand-vital);
 }
 
 .header-center {

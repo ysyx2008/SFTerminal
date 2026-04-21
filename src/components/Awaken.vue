@@ -1712,11 +1712,10 @@ onUnmounted(() => {
 
 .stat-item {
   font-size: 11px;
-  color: var(--text-muted);
   padding: 2px 8px;
-  background: rgba(40, 167, 69, 0.1);
+  background: rgba(var(--brand-vital-rgb), 0.12);
   border-radius: 10px;
-  color: #28a745;
+  color: var(--brand-vital);
 }
 
 .panel-header .btn-icon {
@@ -1787,7 +1786,7 @@ onUnmounted(() => {
   transition: transform 0.2s;
 }
 .awaken-toggle input:checked + .toggle-slider {
-  background: var(--color-success);
+  background: var(--brand-vital);
 }
 .awaken-toggle input:checked + .toggle-slider::before {
   transform: translateX(16px);
@@ -1801,7 +1800,7 @@ onUnmounted(() => {
   color: var(--text-secondary);
 }
 .awaken-status.active {
-  color: var(--color-success);
+  color: var(--brand-vital);
 }
 
 /* ==================== ECG Monitor ==================== */
@@ -1837,11 +1836,11 @@ onUnmounted(() => {
 
 .ecg-line {
   fill: none;
-  stroke: var(--color-success);
+  stroke: var(--brand-vital);
   stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
-  filter: drop-shadow(0 0 2px rgba(var(--color-success-rgb), 0.6));
+  filter: drop-shadow(0 0 2px rgba(var(--brand-vital-rgb), 0.6));
 }
 
 .ecg-wave-track {
@@ -1858,8 +1857,8 @@ onUnmounted(() => {
 }
 
 .ecg-monitor.active {
-  border-color: rgba(var(--color-success-rgb), 0.3);
-  box-shadow: 0 0 8px rgba(var(--color-success-rgb), 0.1);
+  border-color: rgba(var(--brand-vital-rgb), 0.3);
+  box-shadow: 0 0 8px rgba(var(--brand-vital-rgb), 0.1);
 }
 
 @keyframes ecg-scroll {

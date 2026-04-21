@@ -1646,8 +1646,7 @@ function cancelFreeMode() {
 .confirm-dialog-title {
   font-size: 16px;
   font-weight: 600;
-  /* 产品级强警示色，固定不随主题变化 */
-  color: #ef4444;
+  color: var(--brand-alert);
 }
 
 .confirm-dialog-content {
@@ -1668,7 +1667,7 @@ function cancelFreeMode() {
 
 .confirm-dialog-warnings li {
   font-size: 12px;
-  color: #ef4444;
+  color: var(--brand-alert);
   margin: 6px 0;
   line-height: 1.4;
 }
@@ -1679,16 +1678,16 @@ function cancelFreeMode() {
   justify-content: flex-end;
 }
 
-/* 自由模式确认按钮 —— 产品级强警示色，跨主题固定红 */
+/* 自由模式确认按钮 —— 走 --brand-alert */
 .confirm-dialog-actions .btn-danger {
-  background: #ef4444;
-  border: 1px solid #ef4444;
+  background: var(--brand-alert);
+  border: 1px solid var(--brand-alert);
   color: #fff;
 }
 
 .confirm-dialog-actions .btn-danger:hover:not(:disabled) {
-  background: #dc2626;
-  border-color: #dc2626;
+  background: var(--brand-alert-end);
+  border-color: var(--brand-alert-end);
 }
 
 /* 配置说明 */
