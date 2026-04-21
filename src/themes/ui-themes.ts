@@ -77,14 +77,15 @@ const darkTheme: UiThemeVars = {
   borderColor: '#323232'
 }
 
-// 浅色主题
+// 浅色主题 — 参照 Cursor Light，避免纯白刺眼，bg-* 反向递减（与深色对称）。
+// 与 src/styles/main.css 中 [data-ui-theme="light"] 块保持一致。
 const lightTheme: UiThemeVars = {
   colorScheme: 'light',
-  bgPrimary: '#ffffff',
-  bgSecondary: '#f5f5f5',
-  bgTertiary: '#e8e8e8',
-  bgSurface: '#ffffff',
-  bgHover: '#e0e0e0',
+  bgPrimary: '#f4f4f4',
+  bgSecondary: '#ebebeb',
+  bgTertiary: '#e2e2e2',
+  bgSurface: '#d9d9d9',
+  bgHover: '#c8c8c8',
   
   textPrimary: '#1a1a1a',
   textSecondary: '#4a4a4a',
@@ -96,7 +97,7 @@ const lightTheme: UiThemeVars = {
   accentWarning: '#ca5010',
   accentError: '#d13438',
   
-  borderColor: '#d1d1d1'
+  borderColor: '#bababa'
 }
 
 // 蓝色主题（VS 经典风格）

@@ -459,12 +459,12 @@ const integratedTerminalThemes: Record<UiThemeName, ITheme> = {
     brightWhite: '#e4e4e4'
   },
 
-  // Light - 浅色主题
+  // Light - 浅色主题（bgPrimary #f4f4f4，比纯白明显更灰，保证视觉可感知）
   'light': {
-    background: '#ffffff',  // 与 UI 的 bgPrimary 完全一致
+    background: '#f4f4f4',  // 与 UI 的 bgPrimary 完全一致
     foreground: '#1a1a1a',
     cursor: '#0078d4',
-    cursorAccent: '#ffffff',
+    cursorAccent: '#f4f4f4',
     selectionBackground: '#bde0fc',
     black: '#1a1a1a',
     red: '#d13438',
