@@ -89,14 +89,16 @@
   --brand-alert-rgb: 239, 68, 68;
 }
 
-/* 深色主题（默认）— 纯黑层次，接近 Cursor / VS Code 深色
-   所有色值均降饱和，避免大面积饱和色块与纯黑底冲突 */
+/* 深色主题 — 参照 Cursor 观感，整体比 VS Code Dark+ 再压低一档，更精致不刺眼。
+   底色遵守单调递增：primary < secondary < tertiary < surface < hover，
+   消费端可以用这个顺序稳定推理"谁在谁之上"。
+   实际默认主题是 blue（见 stores/config.ts），这里的 :root 兜底仅用于防 FOUC。 */
 [data-ui-theme="dark"], :root {
-  --bg-primary: #000000;
-  --bg-secondary: #101010;
-  --bg-tertiary: #080808;
-  --bg-surface: #161616;
-  --bg-hover: #2a2a2a;
+  --bg-primary: #181818;
+  --bg-secondary: #1f1f1f;
+  --bg-tertiary: #242424;
+  --bg-surface: #2a2a2a;
+  --bg-hover: #333333;
   
   --text-primary: #e8e8e8;
   --text-secondary: #a0a0a0;
@@ -108,12 +110,12 @@
   --accent-warning: #d4a862;
   --accent-error: #d16c6c;
 
-  --border-color: #2a2a2a;
+  --border-color: #323232;
 
   /* RGB 辅助：rgba() 半透明场景使用 */
   --accent-rgb: 45, 90, 160;
   --accent-secondary-rgb: 61, 114, 184;
-  --bg-secondary-rgb: 16, 16, 16;
+  --bg-secondary-rgb: 31, 31, 31;
 
   /* 语义色（去饱和版本） */
   --color-success: #5aa371;
@@ -124,28 +126,6 @@
   --color-error-rgb: 209, 108, 108;
   --color-info: #2d5aa0;
   --color-info-rgb: 45, 90, 160;
-}
-
-/* 深色主题品牌色专用覆盖：必须只命中 data-ui-theme="dark"，不要污染 :root。
-   上一个块用 `[data-ui-theme="dark"], :root` 是为了结构变量防 FOUC，
-   但品牌色若顺带落到 :root 就会被所有未重新定义品牌色的主题（blue/light/gruvbox/...）继承，
-   导致欢迎页、SmartPatrol 的功能识别色整体变灰。 */
-[data-ui-theme="dark"] {
-  --brand-assistant: #c88a3a;
-  --brand-assistant-end: #a56b22;
-  --brand-assistant-rgb: 200, 138, 58;
-
-  --brand-local: #4a8f6d;
-  --brand-local-end: #3a7056;
-  --brand-local-rgb: 74, 143, 109;
-
-  --brand-ssh: #4a7dcc;
-  --brand-ssh-end: #355fa8;
-  --brand-ssh-rgb: 74, 125, 204;
-
-  --brand-patrol: #7d6bc7;
-  --brand-patrol-end: #6754b0;
-  --brand-patrol-rgb: 125, 107, 199;
 }
 
 /* 浅色主题 */
