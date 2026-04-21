@@ -98,7 +98,7 @@ async function withApiRetry<T>(
   }
 ): Promise<T> {
   const maxRetries = options?.maxRetries ?? AI_RETRY.MAX_RETRIES
-  const noRetryCodes = new Set(options?.noRetryErrorCodes ?? ['context_length_exceeded'])
+  const noRetryCodes = new Set(options?.noRetryErrorCodes ?? NO_RETRY_BUSINESS_CODES)
   let networkAttempt = 0
   let rateLimitAttempt = 0
   let serverErrorAttempt = 0
@@ -173,6 +173,96 @@ function translateNetworkError(errMessage: string): string {
     }
   }
   return errMessage
+}
+
+/**
+ * AI API 业务错误到友好文案的映射
+ * 所有键都是厂商协议里稳定的字符串常量（code 或 type），不做关键词匹配
+ *
+ * 覆盖的典型场景与厂商：
+ *  - 余额/配额用尽：OpenAI/通义 `insufficient_quota`、`insufficient_user_quota`、阿里云 `ArrearsError`
+ *  - API Key 无效：OpenAI `invalid_api_key`、Anthropic `authentication_error`、通用 `unauthorized`
+ *  - 权限/地区受限：`permission_denied`、`permission_error`、`model_not_accessible`、`access_denied`、`region_not_supported`
+ *  - 模型不存在：OpenAI `model_not_found`、Anthropic `not_found_error`
+ *  - 内容安全：`content_filter`、`content_filtered`、阿里云 `data_inspection_failed`、`risk_control`
+ *  - 服务端过载：Anthropic `overloaded_error`
+ *  - 限流：`rate_limit_exceeded`、Anthropic `rate_limit_error`、`requests_per_minute_exceeded`、`tokens_per_minute_exceeded`
+ */
+const API_ERROR_CODE_MAP: Record<string, 'error.api_insufficient_quota' | 'error.api_invalid_key' | 'error.api_permission_denied' | 'error.api_model_not_found' | 'error.api_content_filtered' | 'error.api_overloaded' | 'error.api_rate_limited'> = {
+  insufficient_quota: 'error.api_insufficient_quota',
+  insufficient_user_quota: 'error.api_insufficient_quota',
+  arrearserror: 'error.api_insufficient_quota',
+  invalid_api_key: 'error.api_invalid_key',
+  authentication_error: 'error.api_invalid_key',
+  unauthorized: 'error.api_invalid_key',
+  permission_denied: 'error.api_permission_denied',
+  permission_error: 'error.api_permission_denied',
+  model_not_accessible: 'error.api_permission_denied',
+  access_denied: 'error.api_permission_denied',
+  region_not_supported: 'error.api_permission_denied',
+  model_not_found: 'error.api_model_not_found',
+  not_found_error: 'error.api_model_not_found',
+  content_filter: 'error.api_content_filtered',
+  content_filtered: 'error.api_content_filtered',
+  data_inspection_failed: 'error.api_content_filtered',
+  risk_control: 'error.api_content_filtered',
+  overloaded_error: 'error.api_overloaded',
+  rate_limit_exceeded: 'error.api_rate_limited',
+  rate_limit_error: 'error.api_rate_limited',
+  requests_per_minute_exceeded: 'error.api_rate_limited',
+  tokens_per_minute_exceeded: 'error.api_rate_limited'
+}
+
+/**
+ * 明确属于"调用方错误、重试无意义"的业务码
+ * withApiRetry 在这些码上直接放弃，避免把欠费/鉴权错误当成限流反复重试
+ */
+const NO_RETRY_BUSINESS_CODES: readonly string[] = [
+  'context_length_exceeded',
+  ...Object.keys(API_ERROR_CODE_MAP).filter(k =>
+    API_ERROR_CODE_MAP[k] !== 'error.api_overloaded' &&
+    API_ERROR_CODE_MAP[k] !== 'error.api_rate_limited'
+  )
+]
+
+/**
+ * 把原始 API 错误翻译为用户可读的文案
+ * - 先按厂商 code/type 精确匹配（最准确）
+ * - code 缺失或未知时按 HTTP 状态码粗分类（401/402/403/404/429/503/529）
+ * - 两者都未命中时返回 null，由调用方回退到 translateNetworkError 或原始消息
+ */
+function translateApiBusinessError(
+  statusCode: number | undefined,
+  apiErrorCode: string | undefined,
+  model?: string
+): string | null {
+  const code = apiErrorCode?.toLowerCase()
+  if (code && API_ERROR_CODE_MAP[code]) {
+    const key = API_ERROR_CODE_MAP[code]
+    return t(key, { model: model || '' })
+  }
+  if (statusCode !== undefined) {
+    switch (statusCode) {
+      case 401: return t('error.api_invalid_key')
+      case 402: return t('error.api_insufficient_quota')
+      case 403: return t('error.api_permission_denied')
+      case 404: return t('error.api_model_not_found', { model: model || '' })
+      case 429: return t('error.api_rate_limited')
+      case 503:
+      case 529: return t('error.api_overloaded')
+    }
+  }
+  return null
+}
+
+/**
+ * 从抛出的 Error 中提取 ApiRequestError 附加信息（statusCode / apiErrorCode）并翻译
+ * 未命中业务错误时返回 null，由调用方继续走 translateNetworkError 兜底
+ */
+function tryFriendlyApiError(err: unknown, model?: string): string | null {
+  if (!(err instanceof Error)) return null
+  const apiErr = err as ApiRequestError
+  return translateApiBusinessError(apiErr.statusCode, apiErr.apiErrorCode, model)
 }
 
 /**
@@ -848,6 +938,10 @@ export class AiService {
         if (code === 'context_length_exceeded') {
           throw new Error(t('error.context_length_exceeded'))
         }
+        const friendly = translateApiBusinessError(undefined, code, profile.model)
+        if (friendly) {
+          throw new Error(friendly)
+        }
         throw new Error(t('error.api_request_failed', { data: data.error.message || t('error.api_error_generic') }))
       }
 
@@ -862,6 +956,11 @@ export class AiService {
       if (error instanceof Error) {
         if (error.message === t('error.context_length_exceeded')) {
           throw error
+        }
+        // 先尝试匹配业务错误（欠费 / 鉴权 / 权限 / 模型不存在 / 内容安全等）
+        const friendly = tryFriendlyApiError(error, profile.model)
+        if (friendly) {
+          throw new Error(friendly)
         }
         // 保留 makeRequest 已重试后的原始错误信息，翻译网络错误码
         throw new Error(t('error.ai_request_failed', { message: translateNetworkError(errMsg) }))
@@ -1186,7 +1285,8 @@ export class AiService {
               }
             }
             if (!tryRetry(parsed.message, res.statusCode, retryAfterMs)) {
-              complete(() => onError(t('error.api_request_failed', { data: parsed.message })))
+              const friendly = translateApiBusinessError(res.statusCode, parsed.code, profile.model)
+              complete(() => onError(friendly || t('error.api_request_failed', { data: parsed.message })))
             }
           })
           return
@@ -1263,7 +1363,8 @@ export class AiService {
 
         res.on('error', (err) => {
           if (!tryRetry(err.message)) {
-            complete(() => onError(t('error.ai_response_error', { message: translateNetworkError(err.message) })))
+            const friendly = tryFriendlyApiError(err, profile.model)
+            complete(() => onError(friendly || t('error.ai_response_error', { message: translateNetworkError(err.message) })))
           }
         })
       })
@@ -1282,7 +1383,8 @@ export class AiService {
           return
         }
         if (!tryRetry(err.message)) {
-          complete(() => onError(t('error.request_error', { message: translateNetworkError(err.message) })))
+          const friendly = tryFriendlyApiError(err, profile.model)
+          complete(() => onError(friendly || t('error.request_error', { message: translateNetworkError(err.message) })))
         }
       })
 
@@ -1299,7 +1401,8 @@ export class AiService {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error'
       if (!tryRetry(errorMsg)) {
         if (error instanceof Error) {
-          complete(() => onError(t('error.ai_request_failed', { message: translateNetworkError(error.message) })))
+          const friendly = tryFriendlyApiError(error, profile.model)
+          complete(() => onError(friendly || t('error.ai_request_failed', { message: translateNetworkError(error.message) })))
         } else {
           complete(() => onError(t('error.ai_request_failed_unknown')))
         }
@@ -1409,6 +1512,10 @@ export class AiService {
           log.warn(`Model ${profile.model} may not support images (error: ${errorMsg}), retrying without images`)
           return doRequest(true)
         }
+        const friendly = translateApiBusinessError(undefined, code, profile.model)
+        if (friendly) {
+          throw new Error(friendly)
+        }
         throw new Error(t('error.api_request_failed', { data: errorMsg }))
       }
 
@@ -1456,6 +1563,10 @@ export class AiService {
       if (error instanceof Error) {
         if (error.message === t('error.context_length_exceeded')) {
           throw error
+        }
+        const friendly = tryFriendlyApiError(error, profile.model)
+        if (friendly) {
+          throw new Error(friendly)
         }
         throw new Error(t('error.ai_request_failed', { message: translateNetworkError(error.message) }))
       }
@@ -1755,7 +1866,8 @@ export class AiService {
             } else if (tryVisionFallback(parsed.message)) {
               // 已降级重试
             } else {
-              complete(() => onError(t('error.api_request_failed', { data: parsed.message })))
+              const friendly = translateApiBusinessError(res.statusCode, parsed.code, profile.model)
+              complete(() => onError(friendly || t('error.api_request_failed', { data: parsed.message })))
             }
           })
           return
@@ -1982,7 +2094,8 @@ export class AiService {
           log.error(`Request failed: model=${profile.model}, duration=${elapsed}s, error=${err.message}`)
           if (!tryRetry(err.message, doRequest)) {
             getAiDebugService().logResponseError(reqId, err.message)
-            complete(() => onError(t('error.request_error', { message: translateNetworkError(err.message) })))
+            const friendly = tryFriendlyApiError(err, profile.model)
+            complete(() => onError(friendly || t('error.request_error', { message: translateNetworkError(err.message) })))
           }
         })
       })
@@ -2012,7 +2125,8 @@ export class AiService {
         // 尝试重试网络错误（包括 socket hang up）
         if (!tryRetry(err.message, doRequest)) {
           getAiDebugService().logResponseError(reqId, err.message)
-          complete(() => onError(t('error.request_error', { message: translateNetworkError(err.message) })))
+          const friendly = tryFriendlyApiError(err, profile.model)
+          complete(() => onError(friendly || t('error.request_error', { message: translateNetworkError(err.message) })))
         }
       })
 
@@ -2051,7 +2165,8 @@ export class AiService {
       if (!tryRetry(errorMsg, doRequest)) {
         getAiDebugService().logResponseError(reqId, `Exception: ${errorMsg}`)
         if (error instanceof Error) {
-          complete(() => onError(t('error.ai_request_failed', { message: translateNetworkError(error.message) })))
+          const friendly = tryFriendlyApiError(error, profile.model)
+          complete(() => onError(friendly || t('error.ai_request_failed', { message: translateNetworkError(error.message) })))
         } else {
           complete(() => onError(t('error.ai_request_failed_unknown')))
         }
