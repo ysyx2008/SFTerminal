@@ -448,13 +448,13 @@ onMounted(loadPlugins)
 }
 
 .btn-primary {
-  background: var(--accent-primary);
-  color: white;
-  border-color: var(--accent-primary);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-color: var(--border-color);
 }
 
 .btn-primary:hover {
-  opacity: 0.9;
+  background: var(--bg-hover);
 }
 
 .btn-danger {

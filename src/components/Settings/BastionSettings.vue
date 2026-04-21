@@ -456,13 +456,13 @@ async function syncAssets() {
 }
 
 .btn-primary {
-  background: var(--accent-primary);
-  color: white;
-  border: 1px solid transparent;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
 }
 
 .btn-primary:hover:not(:disabled) {
-  filter: brightness(1.1);
+  background: var(--bg-hover);
 }
 
 /* 结果消息 */

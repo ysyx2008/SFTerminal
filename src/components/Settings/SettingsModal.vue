@@ -536,7 +536,7 @@ const onQrImageError = (event: Event) => {
     <div ref="modalRef" class="settings-modal" tabindex="-1">
       <div class="settings-header">
         <h2>{{ t('settings.title') }}</h2>
-        <button class="btn-icon" @click="emit('close')" :title="t('settings.closeSettings')">
+        <button class="btn-icon btn-icon-header" @click="emit('close')" :title="t('settings.closeSettings')">
           <X :size="18" />
         </button>
       </div>
@@ -608,7 +608,7 @@ const onQrImageError = (event: Event) => {
                   <a 
                     href="https://github.com/ysyx2008/SailFish/releases/latest" 
                     target="_blank"
-                    class="btn btn-primary update-btn"
+                    class="btn btn-outline update-btn"
                   >
                     🔗 {{ t('about.goToDownload') }}
                   </a>
@@ -828,17 +828,7 @@ const onQrImageError = (event: Event) => {
   padding-left: 4px;
 }
 
-.settings-header .btn-icon {
-  width: 26px;
-  height: 26px;
-  padding: 4px;
-  border-radius: 6px;
-}
-
-/* 削弱 hover scale，避免在 32px 高的 header 里放大后贴到边缘 */
-.settings-header .btn-icon:hover {
-  transform: scale(1.04);
-}
+/* header 按钮尺寸与 hover 放大由 main.css 的 .btn-icon-header 变体统一控制 */
 
 .settings-body {
   display: flex;

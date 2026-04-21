@@ -223,6 +223,19 @@ const insertExample = (example: string) => {
   font-size: 12px;
 }
 
+.editor-actions .btn-primary {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  font-weight: 500;
+}
+
+.editor-actions .btn-primary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  box-shadow: none;
+  transform: none;
+}
+
 /* 保存状态 */
 .save-status {
   margin-top: 8px;

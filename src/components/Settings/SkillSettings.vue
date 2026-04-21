@@ -1561,12 +1561,12 @@ enabled: true
 }
 
 .btn-primary {
-  background: var(--accent-primary);
-  color: var(--accent-contrast);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .btn-primary:hover:not(:disabled) {
-  filter: brightness(1.1);
+  background: var(--bg-hover);
 }
 
 .btn-accent {

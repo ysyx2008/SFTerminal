@@ -772,8 +772,8 @@ input:checked + .slider:before { transform: translateX(20px); }
 .btn-sm { padding: 5px 10px; font-size: 11px; }
 .btn-danger { background: var(--accent-error); color: white; border-color: var(--accent-error); }
 .btn-danger:hover { filter: brightness(1.1); }
-.btn-primary { background: var(--accent-primary); color: white; border-color: var(--accent-primary); }
-.btn-primary:hover { filter: brightness(1.1); }
+.btn-primary { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--border-color); }
+.btn-primary:hover { background: var(--bg-hover); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .empty-state { text-align: center; padding: 30px 16px; color: var(--text-muted); font-size: 13px; }

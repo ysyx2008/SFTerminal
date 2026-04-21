@@ -819,12 +819,13 @@ const formatRelativeTime = (timestamp?: number): string => {
 }
 
 .btn-primary {
-  background: var(--accent-primary);
-  color: var(--accent-contrast);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
 }
 
 .btn-primary:hover {
-  opacity: 0.9;
+  background: var(--bg-hover);
 }
 
 .btn-outline {

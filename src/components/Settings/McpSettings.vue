@@ -822,17 +822,29 @@ onUnmounted(() => {
 .template-btn {
   padding: 4px 10px;
   font-size: 12px;
-  color: var(--accent-primary);
-  background: transparent;
-  border: 1px solid var(--accent-primary);
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .template-btn:hover {
-  background: var(--accent-primary);
-  color: var(--accent-contrast);
+  background: var(--bg-hover);
+}
+
+.btn-primary {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  font-weight: 500;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  box-shadow: none;
+  transform: none;
 }
 
 .form-body {

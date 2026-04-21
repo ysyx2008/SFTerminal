@@ -1421,18 +1421,31 @@ function cancelFreeMode() {
 .btn-ai-setup {
   padding: 3px 10px;
   font-size: 12px;
-  border: 1px solid var(--accent-primary);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
-  background: transparent;
-  color: var(--accent-primary);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s, color 0.15s;
 }
 
 .btn-ai-setup:hover:not(:disabled) {
-  background: var(--accent-primary);
-  color: #fff;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.btn-primary {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  font-weight: 500;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  box-shadow: none;
+  transform: none;
 }
 
 .btn-ai-setup:disabled {
