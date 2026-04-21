@@ -996,7 +996,14 @@ const getPreviewHints = (attachments?: { totalPages?: number; previewPages?: num
 
 const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
   if (item.type === 'step' && item.step) {
-    return [item.step.content, item.step.toolResult, item.step.isStreaming, item.step.images?.length]
+    return [
+      item.step.content,
+      item.step.toolResult,
+      item.step.isStreaming,
+      item.step.images?.length,
+      item.isFirstStep,
+      isStandaloneAssistant.value,
+    ]
   }
   if (item.type === 'final_result' && item.group) return [item.group.finalResult]
   if (item.type === 'proactive_message' && item.group) return [item.group.finalResult]
@@ -2305,6 +2312,8 @@ watch(() => props.visible, (visible) => {
 .standalone-mode .agent-step-virtual.first-step {
   position: relative;
   padding-top: 4px;
+  /* 头像为 absolute，虚拟列表按内容盒测量高度时会偏小导致裁切 */
+  min-height: 46px;
 }
 
 .standalone-mode .agent-step-virtual.first-step::before {
