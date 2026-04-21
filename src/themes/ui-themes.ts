@@ -54,14 +54,15 @@ export interface UiThemeVars {
   borderColor: string
 }
 
-// 深色主题（默认）— 纯黑层次，接近 Cursor / VS Code 深色
+// 深色主题 — 参照 Cursor 观感，bg-* 单调递增，不用纯黑。
+// 与 src/styles/main.css 中 [data-ui-theme="dark"] 块保持一致。
 const darkTheme: UiThemeVars = {
   colorScheme: 'dark',
-  bgPrimary: '#000000',
-  bgSecondary: '#101010',
-  bgTertiary: '#080808',
-  bgSurface: '#161616',
-  bgHover: '#2a2a2a',
+  bgPrimary: '#181818',
+  bgSecondary: '#1f1f1f',
+  bgTertiary: '#242424',
+  bgSurface: '#2a2a2a',
+  bgHover: '#333333',
   
   textPrimary: '#e8e8e8',
   textSecondary: '#a0a0a0',
@@ -73,7 +74,7 @@ const darkTheme: UiThemeVars = {
   accentWarning: '#e5c07b',
   accentError: '#f14c4c',
   
-  borderColor: '#2a2a2a'
+  borderColor: '#323232'
 }
 
 // 浅色主题

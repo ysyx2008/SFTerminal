@@ -434,14 +434,14 @@ export function getThemeNames(): ThemeName[] {
  * 为每个 UI 主题创建完美匹配的终端配色，让终端完全融入界面
  */
 const integratedTerminalThemes: Record<UiThemeName, ITheme> = {
-  // Dark — 与 UI 纯黑主题一致，ANSI 接近 VS Code Dark+ / Cursor
+  // Dark — 与 UI 深色主题 bgPrimary 对齐（Cursor 档 #181818），ANSI 接近 VS Code Dark+ / Cursor
   'dark': {
-    background: '#000000',
+    background: '#181818',
     foreground: '#e4e4e4',
     cursor: '#4d9eff',
-    cursorAccent: '#000000',
+    cursorAccent: '#181818',
     selectionBackground: '#264f78',
-    black: '#1e1e1e',
+    black: '#2a2a2a',
     red: '#f44747',
     green: '#6cc644',
     yellow: '#dcdcaa',

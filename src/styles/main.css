@@ -14,7 +14,9 @@
  *
  * ⚠️ 修改 UI 主题颜色时需同步维护：
  *   1. 本文件 (main.css) - 实际生效的 CSS 变量
- *   2. src/themes/ui-themes.ts - 设置界面的主题预览卡片
+ *   2. src/themes/ui-themes.ts - 设置界面的主题预览卡片 + 动态生成终端主题的数据源
+ *   3. src/themes/index.ts - integratedTerminalThemes 每个 UI 主题手工精修的终端配色
+ *      （xterm.js canvas 的 background / cursorAccent 等，跟 main.css 的 bg-* 对齐）
  */
 :root {
   /* 通用变量（不随主题变化） */
