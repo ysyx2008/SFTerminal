@@ -715,10 +715,9 @@ function createWindow() {
     icon: iconPath,
     frame: process.platform !== 'win32', // Windows 使用无边框 + titleBarOverlay 合并标题栏
     // macOS: 隐藏原生标题栏但保留红绿灯按钮（浮在内容上）
-    // trafficLightPosition 下移 y 让按钮中心约 y=16，对齐 32px 高 header 内容的 flex 垂直中心
     ...(process.platform === 'darwin' ? {
       titleBarStyle: 'hiddenInset' as const,
-      trafficLightPosition: { x: 12, y: 10 }
+      trafficLightPosition: { x: 8, y: 8 }
     } : {}),
     // Windows: 由系统绘制右上角最小化/最大化/关闭按钮，应用自绘的 header 与之合并为单条
     // 初始颜色用深色默认值，渲染端加载后通过 IPC 按主题更新

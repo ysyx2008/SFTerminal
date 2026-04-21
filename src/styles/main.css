@@ -29,6 +29,12 @@
   --sidebar-width: 320px;
   --tab-height: 28px;
 
+  /* macOS hiddenInset 下红绿灯按钮需要的左侧让位宽度（含视觉呼吸量）；
+     所有浮在窗口顶层的 header（主 header、全屏 modal 的 header）都应使用它，
+     保证这些 header 左边界与窗口主标题"旗鱼"严格对齐。
+     与 electron/main.ts 的 trafficLightPosition 配合调整。 */
+  --mac-traffic-light-inset: 68px;
+
   /* ===== accent 前景色（accent 底色之上的文字色，按主题亮度手工挑选） =====
      默认白字，适用于大多数 accent 是中-深色的主题；
      accent 本身很亮的主题（gruvbox/ayu-mirage/cyberpunk/sponsor-sakura/sponsor-rose-pine）
@@ -1596,14 +1602,24 @@ textarea:focus {
 
 /* ==================== 平台适配：全屏 modal 顶部栏避让系统窗口按钮 ==================== */
 /* 使用 `>` 限定为直接子元素，避免误伤子面板中同名 class 的内部小标题 */
-/* macOS hiddenInset：红绿灯按钮浮在左上 */
+/* macOS hiddenInset：红绿灯按钮浮在左上，使用 --mac-traffic-light-inset 与主 header 同步 */
 .app-container.is-mac .settings-modal > .settings-header,
 .app-container.is-mac .watch-panel > .panel-header {
-  padding-left: 78px;
+  padding-left: var(--mac-traffic-light-inset);
+}
+/* 全屏下红绿灯被系统隐藏，取消让位，回到 12px 默认留白 */
+.app-container.is-mac.is-fullscreen .settings-modal > .settings-header,
+.app-container.is-mac.is-fullscreen .watch-panel > .panel-header {
+  padding-left: 12px;
 }
 
 /* Windows titleBarOverlay：最小化/最大化/关闭按钮浮在右上 */
 .app-container.is-win .settings-modal > .settings-header,
 .app-container.is-win .watch-panel > .panel-header {
   padding-right: 146px;
+}
+/* Windows 全屏：系统按钮被隐藏，取消右侧让位 */
+.app-container.is-win.is-fullscreen .settings-modal > .settings-header,
+.app-container.is-win.is-fullscreen .watch-panel > .panel-header {
+  padding-right: 12px;
 }

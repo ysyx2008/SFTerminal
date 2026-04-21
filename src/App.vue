@@ -1007,9 +1007,10 @@ onUnmounted(() => {
   z-index: 10;
 }
 
-/* macOS: hiddenInset 标题栏下红绿灯按钮浮在内容上，左侧留出空间避免遮挡 */
+/* macOS: hiddenInset 标题栏下红绿灯按钮浮在内容上，左侧留出空间避免遮挡；
+   使用 --mac-traffic-light-inset 统一管理，与 modal header 保持同一起点 */
 .app-container.is-mac .app-header {
-  padding-left: 78px;
+  padding-left: var(--mac-traffic-light-inset);
 }
 
 /* macOS 全屏：红绿灯按钮被系统隐藏，恢复左侧默认留白让应用标题贴最左 */
