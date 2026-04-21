@@ -1198,7 +1198,7 @@ watch(() => props.visible, (visible) => {
           <!-- 执行模式选择器（三选一：严格/宽松/自由） -->
           <div class="execution-mode-selector">
             <button 
-              class="mode-option" 
+              class="mode-option mode-option-strict" 
               :class="{ active: executionMode === 'strict' }"
               @click="switchToStrictMode"
               :title="t('ai.strictModeTitle')"
@@ -3448,6 +3448,17 @@ watch(() => props.visible, (visible) => {
 .mode-option.active {
   background: var(--accent-primary);
   color: #fff;
+}
+
+/* 严格模式按钮 —— 产品级活力绿（守护/安全），跨主题固定，与自由模式红对称 */
+.mode-option-strict.active {
+  background: var(--brand-vital);
+  color: #fff;
+}
+
+.mode-option-strict:hover:not(.active) {
+  background: rgba(var(--brand-vital-rgb), 0.15);
+  color: var(--brand-vital);
 }
 
 /* 自由模式按钮 —— 产品级警戒红，跨主题固定 */
