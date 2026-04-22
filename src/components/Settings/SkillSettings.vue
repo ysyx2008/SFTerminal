@@ -395,6 +395,14 @@ watch(() => props.pendingInstallSkillId, (newId) => {
 
 <template>
   <div class="skill-settings">
+    <!-- 页面标题 -->
+    <div class="settings-section page-intro">
+      <div class="section-header">
+        <h4>{{ t('skillSettings.title') }}</h4>
+      </div>
+      <p class="section-desc">{{ t('skillSettings.description') }}</p>
+    </div>
+
     <!-- 子标签切换 -->
     <div class="sub-tabs">
       <button
@@ -923,6 +931,10 @@ enabled: true
   color: var(--text-muted);
   margin-bottom: 16px;
   line-height: 1.5;
+}
+
+.page-intro .section-desc {
+  margin-bottom: 0;
 }
 
 /* 搜索栏 */
@@ -1528,87 +1540,27 @@ enabled: true
   border-top: 1px solid var(--border-color);
 }
 
-/* 按钮 */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  font-size: 13px;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
-
-.btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-sm {
-  padding: 6px 10px;
-  font-size: 12px;
-}
-
-.btn-xs {
-  padding: 3px 8px;
-  font-size: 11px;
-}
-
-.btn-primary {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--bg-hover);
-}
-
+/* 按钮语义变体（通用规格继承自 settings-content 统一规范） */
 .btn-accent {
   background: var(--color-warning);
   color: #fff;
+  border-color: transparent;
 }
 
 .btn-accent:hover:not(:disabled) {
   filter: brightness(1.1);
+  background: var(--color-warning);
 }
 
 .btn-danger-ghost {
   background: transparent;
   color: var(--text-muted);
+  border-color: transparent;
 }
 
 .btn-danger-ghost:hover:not(:disabled) {
   background: rgba(var(--color-error-rgb), 0.1);
   color: var(--color-error);
-}
-
-.btn-outline {
-  background: transparent;
-  border: 1px solid var(--border-color);
-}
-
-.btn-icon {
-  padding: 6px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: var(--text-secondary);
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-icon:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  border-color: transparent;
 }
 </style>

@@ -201,7 +201,7 @@ onMounted(loadPlugins)
 
     <!-- 安装对话框 -->
     <Teleport to="body">
-      <div v-if="showInstallDialog" class="dialog-overlay" @click.self="showInstallDialog = false">
+      <div v-if="showInstallDialog" class="dialog-overlay settings-scope" @click.self="showInstallDialog = false">
         <div class="dialog">
           <div class="dialog-header">
             <h4>{{ t('pluginSettings.installTitle') }}</h4>
@@ -421,67 +421,8 @@ onMounted(loadPlugins)
   opacity: 0.7;
 }
 
-/* 按钮 */
-.btn {
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.btn:hover {
-  background: var(--bg-hover);
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-sm {
-  padding: 4px 10px;
-  font-size: 12px;
-}
-
-.btn-primary {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border-color: var(--border-color);
-}
-
-.btn-primary:hover {
-  background: var(--bg-hover);
-}
-
-.btn-danger {
-  background: var(--accent-red, #e53e3e);
-  color: white;
-  border-color: var(--accent-red, #e53e3e);
-}
-
-.btn-icon {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-}
-
-.btn-icon:hover {
-  background: var(--bg-hover);
-}
-
 .btn-icon.danger:hover {
-  color: var(--accent-red, #e53e3e);
+  color: var(--color-error);
 }
 
 @keyframes spin {

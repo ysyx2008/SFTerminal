@@ -559,7 +559,7 @@ onUnmounted(() => {
     <!-- 历史记录查看器弹窗 -->
     <Teleport to="body">
       <Transition name="modal">
-        <div v-if="showHistoryViewer" class="history-modal-overlay" @click.self="closeHistoryViewer">
+        <div v-if="showHistoryViewer" class="history-modal-overlay settings-scope" @click.self="closeHistoryViewer">
           <div class="history-modal">
             <div class="history-modal-header">
               <div class="modal-title">
@@ -936,78 +936,19 @@ onUnmounted(() => {
   padding: 20px 0;
 }
 
-/* Buttons */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  font-size: 13px;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-sm {
-  padding: 4px 10px;
-  font-size: 12px;
-}
-
-.btn-icon {
-  padding: 6px;
-  border-radius: 6px;
-}
-
-.btn-primary {
-  background: var(--bg-tertiary);
-  border-color: var(--border-color);
-  color: var(--text-primary);
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--bg-hover);
-}
-
-.btn-ghost {
-  background: transparent;
-  border: 1px dashed var(--border-color);
-  color: var(--text-secondary);
-}
-
-.btn-ghost:hover:not(:disabled) {
-  border-color: var(--accent-primary);
-  color: var(--accent-primary);
-  background: rgba(var(--accent-primary-rgb, 59, 130, 246), 0.06);
-}
-
-.btn-outline {
-  background: transparent;
-}
-
+/* 填充式危险按钮（特殊语义：清理数据用） */
 .btn-danger-fill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 16px;
+  padding: 6px 14px;
   font-size: 13px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid rgba(var(--color-error-rgb), 0.3);
   background: rgba(var(--color-error-rgb), 0.08);
   color: var(--color-error);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, border-color 0.2s;
 }
 
 .btn-danger-fill:hover:not(:disabled) {

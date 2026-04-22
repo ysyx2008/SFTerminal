@@ -359,6 +359,14 @@ onUnmounted(() => {
 
 <template>
   <div class="knowledge-settings">
+    <!-- 页面标题 -->
+    <div class="settings-section page-intro">
+      <div class="section-header">
+        <h4>{{ t('knowledgeSettings.title') }}</h4>
+      </div>
+      <p class="section-desc">{{ t('knowledgeSettings.description') }}</p>
+    </div>
+
     <div v-if="loading" class="loading">{{ t('common.loading') }}</div>
 
     <template v-else>
@@ -563,7 +571,42 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.knowledge-settings { width: 100%; }
+.knowledge-settings {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-section {
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  margin-bottom: 8px;
+}
+
+.section-header h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.section-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.page-intro .section-desc {
+  margin-bottom: 0;
+}
 
 .loading {
   text-align: center;
@@ -762,19 +805,6 @@ input:checked + .slider:before { transform: translateX(20px); }
 
 .btn-del, .btn-del-hover { opacity: 0; transition: opacity 0.15s; }
 .btn-del:hover, .btn-del-hover:hover { color: var(--accent-error); }
-
-.btn {
-  padding: 6px 12px; font-size: 12px; border-radius: 5px;
-  border: 1px solid var(--border-color); background: var(--bg-tertiary);
-  color: var(--text-primary); cursor: pointer; transition: all 0.2s;
-}
-.btn:hover { background: var(--bg-hover); }
-.btn-sm { padding: 5px 10px; font-size: 11px; }
-.btn-danger { background: var(--accent-error); color: white; border-color: var(--accent-error); }
-.btn-danger:hover { filter: brightness(1.1); }
-.btn-primary { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--border-color); }
-.btn-primary:hover { background: var(--bg-hover); }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .empty-state { text-align: center; padding: 30px 16px; color: var(--text-muted); font-size: 13px; }
 .empty-state .hint, .hint { font-size: 11px; margin-top: 6px; color: var(--text-muted); }

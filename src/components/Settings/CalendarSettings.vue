@@ -580,11 +580,6 @@ const formatRelativeTime = (timestamp?: number): string => {
   color: var(--text-secondary);
 }
 
-.btn-sm {
-  padding: 4px 10px;
-  font-size: 12px;
-}
-
 /* 状态圆点 */
 .status-dot {
   display: inline-block;
@@ -813,45 +808,6 @@ const formatRelativeTime = (timestamp?: number): string => {
   gap: 12px;
   padding: 16px 20px;
   border-top: 1px solid var(--border-color);
-}
-
-/* 按钮样式 */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  border-radius: 8px;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn-primary {
-  background: transparent;
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-}
-
-.btn-primary:hover {
-  background: var(--bg-hover);
-}
-
-.btn-outline {
-  background: transparent;
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-}
-
-.btn-outline:hover {
-  background: var(--bg-hover);
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 @keyframes calendarFadeIn {

@@ -533,7 +533,7 @@ const onQrImageError = (event: Event) => {
         }"
       ></div>
     </div>
-    <div ref="modalRef" class="settings-modal" tabindex="-1">
+    <div ref="modalRef" class="settings-modal settings-scope" tabindex="-1">
       <div class="settings-header">
         <h2>{{ t('settings.title') }}</h2>
         <button class="btn-icon btn-icon-header" @click="emit('close')" :title="t('settings.closeSettings')">
@@ -1191,25 +1191,6 @@ const onQrImageError = (event: Event) => {
 
 .about-actions {
   margin: 24px 0;
-}
-
-.about-actions .btn {
-  padding: 8px 16px;
-  font-size: 13px;
-  border-radius: 6px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.about-actions .btn:hover {
-  background: var(--bg-hover);
-}
-
-.btn-outline {
-  background: transparent;
 }
 
 .copyright {

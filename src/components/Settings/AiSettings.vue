@@ -516,7 +516,7 @@ function openWebSearchKeyUrl() {
     <!-- 添加/编辑表单弹窗 -->
     <Teleport to="body">
       <Transition name="profile-modal">
-        <div v-if="showForm" class="profile-modal-overlay">
+        <div v-if="showForm" class="profile-modal-overlay settings-scope">
           <div class="profile-modal">
             <div class="form-header">
               <h4>{{ editingProfile ? t('aiSettings.editProfile') : t('aiSettings.addProfile') }}</h4>
@@ -1129,19 +1129,6 @@ function openWebSearchKeyUrl() {
   background: var(--bg-hover);
 }
 
-.btn-primary {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  font-weight: 500;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--bg-hover);
-  box-shadow: none;
-  transform: none;
-}
-
 .form-body {
   padding: 16px;
 }
@@ -1312,6 +1299,12 @@ function openWebSearchKeyUrl() {
 .btn-save {
   background: var(--accent-primary, #4a9eff);
   color: white;
+  border-color: transparent;
+}
+
+.btn-save:hover:not(:disabled) {
+  background: var(--accent-primary, #4a9eff);
+  filter: brightness(1.1);
 }
 
 .btn-save:disabled {
@@ -1321,6 +1314,12 @@ function openWebSearchKeyUrl() {
 .btn-success {
   background: var(--color-success);
   color: white;
+  border-color: transparent;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: var(--color-success);
+  filter: brightness(1.1);
 }
 
 .tts-dirty-hint {

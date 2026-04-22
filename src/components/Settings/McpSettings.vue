@@ -837,19 +837,6 @@ onUnmounted(() => {
   background: var(--bg-hover);
 }
 
-.btn-primary {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  font-weight: 500;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--bg-hover);
-  box-shadow: none;
-  transform: none;
-}
-
 .form-body {
   padding: 16px;
 }
