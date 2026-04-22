@@ -611,6 +611,18 @@
   --color-info-rgb: 125, 211, 252;
 }
 
+/* 欢迎页通用 ambient 背景：使用当前主题的 accent 色作轻微晕染
+ * - 特指度 (0,1,0)，低于任何 [data-ui-theme="xxx"] .welcome-page 规则
+ * - 各主题自动对应自己的 accent 色（蓝→蓝晕，森林→绿晕，秋日→橙晕……）
+ * - 透明度 0.04 / 0.03 保持克制，避免过度泛色
+ */
+.welcome-page {
+  background: 
+    radial-gradient(ellipse at 30% 20%, rgba(var(--accent-rgb), 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 80%, rgba(var(--accent-secondary-rgb), 0.03) 0%, transparent 50%),
+    var(--bg-primary);
+}
+
 /* 极光主题背景渐变 */
 [data-ui-theme="aurora"] .welcome-page {
   background: 

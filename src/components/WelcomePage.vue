@@ -214,25 +214,8 @@ const formatHost = (session: SshSession) => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--bg-primary);
   overflow-y: auto;
   padding: 24px 20px;
-}
-
-/* 深色主题：微妙的渐变背景 */
-[data-color-scheme="dark"] .welcome-page {
-  background: 
-    radial-gradient(ellipse at 30% 20%, rgba(var(--accent-rgb), 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 80%, rgba(var(--accent-secondary-rgb), 0.05) 0%, transparent 50%),
-    var(--bg-primary);
-}
-
-/* 浅色主题：更柔和的渐变 */
-[data-color-scheme="light"] .welcome-page {
-  background: 
-    radial-gradient(ellipse at 30% 20%, rgba(var(--accent-rgb), 0.04) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 80%, rgba(var(--accent-secondary-rgb), 0.03) 0%, transparent 50%),
-    var(--bg-primary);
 }
 
 .welcome-content {
