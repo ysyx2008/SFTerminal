@@ -484,28 +484,28 @@ const integratedTerminalThemes: Record<UiThemeName, ITheme> = {
     brightWhite: '#8c959f'
   },
 
-  // Blue (VS 经典风格)
+  // Blue (VS 经典风格) — 2026-04 与 ui-themes.ts/main.css 的新蓝调保持一致
   'blue': {
-    background: '#1e3a5f',  // 与 UI 的 bgPrimary 完全一致
+    background: '#1b3b63',  // 与 UI 的 bgPrimary 完全一致
     foreground: '#e8f0f8',
-    cursor: '#4db8ff',
-    cursorAccent: '#1e3a5f',
-    selectionBackground: '#2d5a8a',
-    black: '#152d4a',
+    cursor: '#5ec0ff',
+    cursorAccent: '#1b3b63',
+    selectionBackground: '#3f72a8',
+    black: '#112842',
     red: '#ff6b6b',
     green: '#6dd400',
     yellow: '#ffb900',
-    blue: '#4db8ff',
+    blue: '#5ec0ff',
     magenta: '#bc8cff',
-    cyan: '#66c2ff',
+    cyan: '#7fccff',
     white: '#b8d0e8',
-    brightBlack: '#3a6a9a',
+    brightBlack: '#3a6ba0',
     brightRed: '#ff8787',
     brightGreen: '#8ae000',
     brightYellow: '#ffc933',
-    brightBlue: '#66c2ff',
+    brightBlue: '#7fccff',
     brightMagenta: '#d2a8ff',
-    brightCyan: '#80ccff',
+    brightCyan: '#a0daff',
     brightWhite: '#e8f0f8'
   },
 

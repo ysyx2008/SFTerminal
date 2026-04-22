@@ -101,25 +101,27 @@ const lightTheme: UiThemeVars = {
 }
 
 // 蓝色主题（VS 经典风格）
+// 2026-04 重调：拉开 bg 亮度跨度 + 微幅色相漂移（navy 217° → steel 210°），
+// 与 src/styles/main.css 中 [data-ui-theme="blue"] 保持一致。
 const blueTheme: UiThemeVars = {
   colorScheme: 'dark',
-  bgPrimary: '#1e3a5f',
-  bgSecondary: '#152d4a',
-  bgTertiary: '#0d1f33',
-  bgSurface: '#264b73',
-  bgHover: '#2d5a8a',
+  bgPrimary: '#1b3b63',
+  bgSecondary: '#112842',
+  bgTertiary: '#0a1626',
+  bgSurface: '#2d5a87',
+  bgHover: '#3f72a8',
   
   textPrimary: '#e8f0f8',
   textSecondary: '#b8d0e8',
   textMuted: '#7a9aba',
   
-  accentPrimary: '#4db8ff',
-  accentSecondary: '#66c2ff',
+  accentPrimary: '#5ec0ff',
+  accentSecondary: '#7fccff',
   accentSuccess: '#6dd400',
   accentWarning: '#ffb900',
   accentError: '#ff6b6b',
   
-  borderColor: '#3a6a9a'
+  borderColor: '#3a6ba0'
 }
 
 // 暖橙主题（温暖的棕橙色调，中深色）

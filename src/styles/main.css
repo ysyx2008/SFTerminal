@@ -169,32 +169,36 @@
   --color-info-rgb: 0, 120, 212;
 }
 
-/* 蓝色主题（VS 经典风格） */
+/* 蓝色主题（VS 经典风格）
+   2026-04 重调：五层底色拉开亮度（L 9% → 45%）+ 微幅色相漂移
+   （deepest navy 217° → surface steel 210°），解决"整屏同一种蓝"的单调感。
+   层次语义：tertiary（tab 底槽/深海）< secondary（header/卡片）
+            < primary（canvas/active tab）< surface（抬起卡片/按钮）< hover */
 [data-ui-theme="blue"] {
-  /* accent #4db8ff 偏亮：用户气泡/主按钮上白字刺眼，用深字与经典 VS 蓝底深字习惯一致 */
-  --accent-contrast: #0d1f33;
+  /* accent #5ec0ff 偏亮：用户气泡/主按钮上白字刺眼，用深字与经典 VS 蓝底深字习惯一致 */
+  --accent-contrast: #0a1626;
 
-  --bg-primary: #1e3a5f;
-  --bg-secondary: #152d4a;
-  --bg-tertiary: #0d1f33;
-  --bg-surface: #264b73;
-  --bg-hover: #2d5a8a;
+  --bg-primary: #1b3b63;
+  --bg-secondary: #112842;
+  --bg-tertiary: #0a1626;
+  --bg-surface: #2d5a87;
+  --bg-hover: #3f72a8;
   
   --text-primary: #e8f0f8;
   --text-secondary: #b8d0e8;
   --text-muted: #7a9aba;
   
-  --accent-primary: #4db8ff;
-  --accent-secondary: #66c2ff;
+  --accent-primary: #5ec0ff;
+  --accent-secondary: #7fccff;
   --accent-success: #6dd400;
   --accent-warning: #ffb900;
   --accent-error: #ff6b6b;
   
-  --border-color: #3a6a9a;
+  --border-color: #3a6ba0;
 
-  --accent-rgb: 77, 184, 255;
-  --accent-secondary-rgb: 102, 194, 255;
-  --bg-secondary-rgb: 21, 45, 74;
+  --accent-rgb: 94, 192, 255;
+  --accent-secondary-rgb: 127, 204, 255;
+  --bg-secondary-rgb: 17, 40, 66;
 
   --color-success: #6dd400;
   --color-success-rgb: 109, 212, 0;
@@ -202,8 +206,8 @@
   --color-warning-rgb: 255, 185, 0;
   --color-error: #ff6b6b;
   --color-error-rgb: 255, 107, 107;
-  --color-info: #4db8ff;
-  --color-info-rgb: 77, 184, 255;
+  --color-info: #5ec0ff;
+  --color-info-rgb: 94, 192, 255;
 }
 
 /* 暖橙主题（温暖的棕橙色调，中深色） */
