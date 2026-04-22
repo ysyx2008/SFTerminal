@@ -171,6 +171,9 @@
 
 /* 蓝色主题（VS 经典风格） */
 [data-ui-theme="blue"] {
+  /* accent #4db8ff 偏亮：用户气泡/主按钮上白字刺眼，用深字与经典 VS 蓝底深字习惯一致 */
+  --accent-contrast: #0d1f33;
+
   --bg-primary: #1e3a5f;
   --bg-secondary: #152d4a;
   --bg-tertiary: #0d1f33;

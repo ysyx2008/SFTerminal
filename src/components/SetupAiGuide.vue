@@ -543,7 +543,7 @@ onMounted(() => {
 
 .message.user .message-content {
   background: var(--accent-primary);
-  color: white;
+  color: var(--accent-contrast);
   border-bottom-right-radius: 4px;
 }
 
