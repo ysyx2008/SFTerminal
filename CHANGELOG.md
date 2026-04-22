@@ -2,7 +2,24 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.33.1 (2026-04-21) (Latest)
+## v10.33.2 (2026-04-22) (Latest)
+
+A polish release focused on UI details: dark/light theme palettes re-tuned, session manager and header layouts tightened, plus several drag-and-drop and line-break fixes.
+
+### Improvements
+- 🎨 **Theme Palette Re-tuning**: Dark theme base moved from pure black to a Cursor-like tier, with terminal colors and theme preview updated in sync; light theme re-drawn against Cursor Light with `bg-*` stepping mirrored against dark
+- 🎨 **Session Manager Layout Overhaul**: Leans into a VSCode-sidebar style — tightened group spacing and left indent, trimmed session action buttons and the host management panel, and swapped the connection icon
+- 🎨 **Unified Header Buttons**: Normalized top-bar button hover highlight sizing and tightened the highlight area so it no longer bleeds into the header edge; host-panel title-bar close button also tightened
+- 🎨 **Neutralized Primary Buttons**: Settings primary button moved from blue-on-white to the neutral standard style; the session manager "New" button dropped its primary blue fill
+- 🎨 **AI Panel Spacing**: Removed the reserved-avatar left indent on AI messages in terminal mode
+- 📝 **Web Search SPEC**: Added the module SPEC document
+
+### Bug Fixes
+- 🐛 **Session Group Drag**: Fixed non-first groups being undraggable when expanded, improved drop indicators, and fell back to the last indicator when drops land on empty space
+- 🐛 **AI User Message Line Breaks**: User message bubbles now preserve the original input line breaks
+- 🐛 **Brand Color Leakage**: Removed the dark-theme `:root` brand-color fallback so it no longer leaks into other themes
+
+## v10.33.1 (2026-04-21)
 
 This patch focuses on polishing AI panel readability and visual tone — a four-tier theme token system unifies strong-signal colors, alongside web search, AI error prompt, and other experience improvements.
 
