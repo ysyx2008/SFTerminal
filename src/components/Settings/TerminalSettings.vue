@@ -193,9 +193,12 @@ const encodingOptions: LocalEncoding[] = [
 }
 
 .settings-section h4 {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  margin-bottom: 8px;
   font-size: 14px;
   font-weight: 600;
-  margin-bottom: 16px;
 }
 
 .slider-group {

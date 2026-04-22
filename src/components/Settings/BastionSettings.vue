@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { CheckCircle, AlertCircle, Loader2, Shield } from 'lucide-vue-next'
+import { CheckCircle, AlertCircle, Loader2 } from 'lucide-vue-next'
 import { useConfigStore } from '../../stores/config'
 
 const { t } = useI18n()
@@ -98,19 +98,13 @@ async function syncAssets() {
 
 <template>
   <div class="bastion-settings">
-    <!-- 标题区 -->
-    <div class="header">
-      <div class="header-icon">
-        <Shield :size="18" />
-      </div>
-      <div>
+    <div class="settings-section">
+      <div class="section-header">
         <h4>{{ t('settings.bastion.title') }}</h4>
-        <p class="header-desc">{{ t('settings.bastion.description') }}</p>
       </div>
-    </div>
+      <p class="section-desc">{{ t('settings.bastion.description') }}</p>
 
-    <!-- 凭证卡片 -->
-    <div class="credential-card">
+      <!-- 凭证 -->
       <div class="form-group">
         <label class="form-label">{{ t('settings.bastion.url') }}</label>
         <input
@@ -142,92 +136,94 @@ async function syncAssets() {
           />
         </div>
       </div>
-    </div>
 
-    <!-- 选项 -->
-    <div class="option-card">
-      <div class="setting-row">
-        <div class="setting-text">
-          <label class="form-label">{{ t('settings.bastion.autoJumpHost') }}</label>
-          <p class="setting-desc">{{ t('settings.bastion.autoJumpHostHint') }}</p>
+      <!-- 选项 -->
+      <div class="options-block">
+        <div class="setting-row">
+          <div class="setting-text">
+            <label class="form-label">{{ t('settings.bastion.autoJumpHost') }}</label>
+            <p class="setting-desc">{{ t('settings.bastion.autoJumpHostHint') }}</p>
+          </div>
+          <div class="setting-controls">
+            <div v-if="autoJumpHost" class="port-inline">
+              <span class="port-label">{{ t('settings.bastion.jumpHostPort') }}</span>
+              <input
+                v-model.number="jumpHostPort"
+                type="number"
+                min="1"
+                max="65535"
+                class="input-field input-port"
+              />
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="autoJumpHost" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
         </div>
-        <div class="setting-controls">
-          <div v-if="autoJumpHost" class="port-inline">
-            <span class="port-label">{{ t('settings.bastion.jumpHostPort') }}</span>
-            <input
-              v-model.number="jumpHostPort"
-              type="number"
-              min="1"
-              max="65535"
-              class="input-field input-port"
-            />
+        <div class="setting-row">
+          <div class="setting-text">
+            <label class="form-label">{{ t('settings.bastion.ignoreSsl') }}</label>
+            <p class="setting-desc">{{ t('settings.bastion.ignoreSslHint') }}</p>
           </div>
           <label class="toggle-switch">
-            <input type="checkbox" v-model="autoJumpHost" />
+            <input type="checkbox" :checked="!rejectUnauthorized" @change="rejectUnauthorized = !($event.target as HTMLInputElement).checked" />
             <span class="toggle-slider"></span>
           </label>
         </div>
       </div>
-      <div class="setting-row">
-        <div class="setting-text">
-          <label class="form-label">{{ t('settings.bastion.ignoreSsl') }}</label>
-          <p class="setting-desc">{{ t('settings.bastion.ignoreSslHint') }}</p>
-        </div>
-        <label class="toggle-switch">
-          <input type="checkbox" :checked="!rejectUnauthorized" @change="rejectUnauthorized = !($event.target as HTMLInputElement).checked" />
-          <span class="toggle-slider"></span>
-        </label>
+
+      <!-- 操作按钮 -->
+      <div class="action-row">
+        <button
+          class="btn btn-primary"
+          :disabled="!canOperate || isTesting || isSyncing"
+          @click="testConnection"
+        >
+          <Loader2 v-if="isTesting" :size="14" class="spin" />
+          {{ isTesting ? t('settings.bastion.testing') : t('settings.bastion.testConnection') }}
+        </button>
+        <button
+          class="btn btn-primary"
+          :disabled="!canSync || isTesting || isSyncing"
+          @click="syncAssets"
+        >
+          <Loader2 v-if="isSyncing" :size="14" class="spin" />
+          {{ isSyncing ? t('settings.bastion.syncing') : t('settings.bastion.syncAssets') }}
+        </button>
+      </div>
+
+      <!-- 结果消息 -->
+      <div v-if="testResult" class="result-msg" :class="testResult.success ? 'success' : 'error'">
+        <CheckCircle v-if="testResult.success" :size="14" />
+        <AlertCircle v-else :size="14" />
+        <span>{{ testResult.message }}</span>
+      </div>
+
+      <div v-if="syncResult" class="result-msg" :class="syncResult.success ? 'success' : 'error'">
+        <template v-if="syncResult.success">
+          <CheckCircle :size="14" />
+          <span>
+            {{ t('settings.bastion.syncSuccess', { added: syncResult.added, updated: syncResult.updated, total: syncResult.total }) }}
+            <template v-if="syncResult.removed > 0">
+              <br />{{ t('settings.bastion.syncRemoved', { count: syncResult.removed }) }}
+            </template>
+            <br />{{ t('settings.bastion.syncGroup', { name: syncResult.groupName }) }}
+          </span>
+        </template>
+        <template v-else>
+          <AlertCircle :size="14" />
+          <span>{{ syncResult.error }}</span>
+        </template>
       </div>
     </div>
 
-    <!-- 操作按钮 -->
-    <div class="action-row">
-      <button
-        class="btn btn-primary"
-        :disabled="!canOperate || isTesting || isSyncing"
-        @click="testConnection"
-      >
-        <Loader2 v-if="isTesting" :size="14" class="spin" />
-        {{ isTesting ? t('settings.bastion.testing') : t('settings.bastion.testConnection') }}
-      </button>
-      <button
-        class="btn btn-primary"
-        :disabled="!canSync || isTesting || isSyncing"
-        @click="syncAssets"
-      >
-        <Loader2 v-if="isSyncing" :size="14" class="spin" />
-        {{ isSyncing ? t('settings.bastion.syncing') : t('settings.bastion.syncAssets') }}
-      </button>
-    </div>
-
-    <!-- 结果消息 -->
-    <div v-if="testResult" class="result-msg" :class="testResult.success ? 'success' : 'error'">
-      <CheckCircle v-if="testResult.success" :size="14" />
-      <AlertCircle v-else :size="14" />
-      <span>{{ testResult.message }}</span>
-    </div>
-
-    <div v-if="syncResult" class="result-msg" :class="syncResult.success ? 'success' : 'error'">
-      <template v-if="syncResult.success">
-        <CheckCircle :size="14" />
-        <span>
-          {{ t('settings.bastion.syncSuccess', { added: syncResult.added, updated: syncResult.updated, total: syncResult.total }) }}
-          <template v-if="syncResult.removed > 0">
-            <br />{{ t('settings.bastion.syncRemoved', { count: syncResult.removed }) }}
-          </template>
-          <br />{{ t('settings.bastion.syncGroup', { name: syncResult.groupName }) }}
-        </span>
-      </template>
-      <template v-else>
-        <AlertCircle :size="14" />
-        <span>{{ syncResult.error }}</span>
-      </template>
-    </div>
-
     <!-- 使用说明 -->
-    <div class="guide-section">
-      <p>{{ t('settings.bastion.guideTitle') }}</p>
-      <ol>
+    <div class="settings-section guide-section">
+      <div class="section-header">
+        <h4>📘 {{ t('settings.bastion.guideTitle') }}</h4>
+      </div>
+      <ol class="guide-list">
         <li>{{ t('settings.bastion.guide1') }}</li>
         <li>{{ t('settings.bastion.guide2') }}</li>
         <li>{{ t('settings.bastion.guide3') }}</li>
@@ -239,59 +235,42 @@ async function syncAssets() {
 
 <style scoped>
 .bastion-settings {
-  padding: 0;
-}
-
-/* 标题区 */
-.header {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 20px;
+  flex-direction: column;
+  gap: 20px;
 }
 
-.header-icon {
-  width: 36px;
-  height: 36px;
+.settings-section {
+  background: var(--bg-tertiary);
   border-radius: 8px;
-  background: rgba(var(--accent-primary-rgb, 56, 139, 253), 0.12);
-  color: var(--accent-primary);
+  padding: 16px;
+}
+
+.section-header {
   display: flex;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+  justify-content: space-between;
+  min-height: 28px;
+  margin-bottom: 8px;
 }
 
-.header h4 {
+.section-header h4 {
   font-size: 14px;
   font-weight: 600;
-  margin-bottom: 3px;
 }
 
-.header-desc {
+.section-desc {
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.5;
+  margin-bottom: 16px;
 }
 
-/* 凭证卡片 */
-.credential-card {
-  padding: 14px;
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  margin-bottom: 12px;
-}
-
-.credential-card .form-group:last-child {
-  margin-bottom: 0;
-}
-
-/* 选项卡片 */
-.option-card {
-  padding: 4px 14px;
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  margin-bottom: 4px;
+/* 选项分组：与上方表单用细分隔线区隔 */
+.options-block {
+  border-top: 1px solid var(--border-color);
+  margin-top: 4px;
+  padding-top: 4px;
 }
 
 /* 表单控件 */
@@ -434,7 +413,7 @@ async function syncAssets() {
 .action-row {
   display: flex;
   gap: 10px;
-  margin: 16px 0 12px;
+  margin-top: 16px;
 }
 
 .btn {
@@ -474,7 +453,7 @@ async function syncAssets() {
   border-radius: 6px;
   font-size: 12px;
   line-height: 1.6;
-  margin-bottom: 10px;
+  margin-top: 12px;
 }
 
 .result-msg.success {
@@ -493,28 +472,15 @@ async function syncAssets() {
 }
 
 /* 使用说明 */
-.guide-section {
-  padding: 12px 14px;
-  margin-top: 16px;
-  background: var(--bg-tertiary);
-  border-radius: 8px;
+.guide-list {
+  margin: 0;
+  padding-left: 18px;
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.6;
 }
 
-.guide-section p {
-  font-weight: 500;
-  margin-bottom: 6px;
-  color: var(--text-secondary);
-}
-
-.guide-section ol {
-  margin: 0;
-  padding-left: 18px;
-}
-
-.guide-section li {
+.guide-list li {
   margin-bottom: 2px;
 }
 

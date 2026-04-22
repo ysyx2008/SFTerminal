@@ -55,10 +55,13 @@ const changeLanguage = async (lang: LocaleType) => {
 }
 
 .section-title {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  margin: 0 0 8px;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0 0 12px;
 }
 
 .language-list {

@@ -701,24 +701,24 @@ onUnmounted(() => {
 
 <style scoped>
 .data-settings {
-  max-width: 760px;
-  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 
-/* Sections：扁平布局（内部已有大量 bg-tertiary 子卡片，外框不再加背景） */
+/* Sections：与其他设置页一致的卡片容器 */
 .section {
-  display: flex;
-  flex-direction: column;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 16px;
 }
 
 .section-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 14px;
+  min-height: 28px;
+  margin-bottom: 8px;
 }
 
 .section-header h4 {
@@ -778,8 +778,8 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   padding: 14px;
-  background: var(--bg-tertiary);
-  border-radius: 10px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
   border: 1px solid transparent;
   transition: border-color 0.2s;
 }
@@ -855,7 +855,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   padding: 12px 14px;
-  background: var(--bg-tertiary);
+  background: var(--bg-secondary);
   border-radius: 8px;
   border: 1px solid var(--border-color);
 }
@@ -871,8 +871,8 @@ onUnmounted(() => {
 /* Backup card */
 .backup-card {
   padding: 14px;
-  background: var(--bg-tertiary);
-  border-radius: 10px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
   border: 1px solid var(--border-color);
 }
 
@@ -1035,8 +1035,8 @@ onUnmounted(() => {
 
 .token-period-card {
   padding: 14px;
-  background: var(--bg-tertiary);
-  border-radius: 10px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
   border: 1px solid transparent;
   transition: border-color 0.2s;
 }
