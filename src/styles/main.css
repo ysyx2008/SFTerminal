@@ -108,8 +108,9 @@
    消费端可以用这个顺序稳定推理"谁在谁之上"。
    实际默认主题是 blue（见 stores/config.ts），这里的 :root 兜底仅用于防 FOUC。 */
 [data-ui-theme="dark"], :root {
-  /* 用户气泡：冷调深蓝灰，和中性灰 bg-surface/bg-hover 拉开蓝味 */
-  --chat-user-bubble-bg: #2d3a4e;
+  /* 用户气泡：纯中性深灰，比 bg-hover (#333) 再亮一档——与 Cursor 风格一致：
+     整屏中性灰 + 蓝色 accent，不在气泡上增加色相偏移，避免"蓝色孤岛"。 */
+  --chat-user-bubble-bg: #3d3d3d;
 
   --bg-primary: #181818;
   --bg-secondary: #1f1f1f;
@@ -152,8 +153,9 @@
    与深色主题对称：bg-* 反向递减（primary 最亮、hover 最暗），同名变量在 UI 上
    表达相同的"视觉重量"。 */
 [data-ui-theme="light"] {
-  /* 用户气泡：浅蓝，呼应 Office/Cursor Light 的 accent 蓝 */
-  --chat-user-bubble-bg: #d7e5f5;
+  /* 用户气泡：纯白浮卡，与灰色助手气泡 (bg-surface #d9d9d9) 形成最清晰的"用户凸起、助手下沉"分层；
+     与 Cursor Light 风格一致——中性灰底 + 白色用户卡片，不在气泡上增加色相。 */
+  --chat-user-bubble-bg: #ffffff;
 
   --bg-primary: #f4f4f4;
   --bg-secondary: #ebebeb;
