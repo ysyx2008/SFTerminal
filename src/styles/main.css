@@ -46,13 +46,15 @@
      聊天用户气泡不用本变量：见下方 --chat-user-bubble-*（与助手气泡同属 surface 系，避免整板饱和 accent）。 */
   --accent-contrast: #ffffff;
 
-  /* 聊天用户气泡：以比助手气泡高一档的 bg-hover 为底，仅掺 8% accent 作氛围；无边框，避免"框"感。
-     助手气泡用 bg-surface（低一档），天然形成层次对比；正文用 --text-primary。 */
-  --chat-user-bubble-bg: color-mix(in srgb, var(--accent-primary) 8%, var(--bg-hover));
+  /* 聊天用户气泡：以 bg-hover 为底（比助手气泡的 bg-surface 高一档，形成层次），
+     叠 30% accent-primary 让每个主题的主色真正显色（蓝主题呈蓝、gruvbox 呈金、forest 呈绿…）。
+     无边框，避免"框"感；正文用 --text-primary。
+     各主题如果觉得默认混出来的颜色不够协调，可在自身主题块里单独覆盖。 */
+  --chat-user-bubble-bg: color-mix(in srgb, var(--accent-primary) 30%, var(--bg-hover));
   --chat-user-bubble-border: transparent;
   --chat-user-bubble-fg: var(--text-primary);
   /* Agent 流中的用户补充：比正式用户消息再淡一档，保持同一视觉语言 */
-  --chat-user-supplement-bubble-bg: color-mix(in srgb, var(--accent-primary) 5%, var(--bg-hover));
+  --chat-user-supplement-bubble-bg: color-mix(in srgb, var(--accent-primary) 18%, var(--bg-hover));
 
   /* ===== 语义色（默认，所有主题都继承；主题块可覆盖为低饱和版本） =====
      使用：color: var(--color-success); background: rgba(var(--color-success-rgb), 0.1); */
