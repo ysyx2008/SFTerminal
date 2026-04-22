@@ -155,6 +155,7 @@ const insertExample = (example: string) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 28px;
   margin-bottom: 8px;
 }
 
