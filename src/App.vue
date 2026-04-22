@@ -1039,7 +1039,9 @@ onUnmounted(() => {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-/* 深色主题：顶部微光效果 */
+/* 深色主题：顶部底缘微光效果
+   纯装饰分隔线，走 highlight：深色下变成柔和的中性白微光，与 header
+   的 "中性灰 + 蓝点缀" 基调对齐；蓝色主题继承默认（=accent）保持原观感。 */
 [data-color-scheme="dark"] .app-header::after {
   content: '';
   position: absolute;
@@ -1047,7 +1049,7 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb, 137, 180, 250), 0.2), transparent);
+  background: linear-gradient(90deg, transparent, rgba(var(--highlight-rgb, 137, 180, 250), 0.2), transparent);
   pointer-events: none;
 }
 

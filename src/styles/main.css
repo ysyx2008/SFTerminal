@@ -101,6 +101,23 @@
   --brand-alert: #ef4444;
   --brand-alert-end: #dc2626;
   --brand-alert-rgb: 239, 68, 68;
+
+  /* ===== 装饰高亮色（与 accent 解耦）=====
+     语义：用于"纯氛围/装饰"层——hover 发光、卡片浸染浮层、欢迎页背景光斑、
+           logo drop-shadow、图标底板、focus 外层光晕（注意：focus 的 border-color
+           依然用 accent，这里只指最外层柔光）等。
+     accent 继续承担"功能强调"——主按钮、激活 tab 条、焦点边框、链接、文字渐变。
+
+     解决的痛点：dark/light 两大主流主题都把 accent 选成蓝（对齐 Cursor/VS Code），
+     所有装饰层被 accent 染色后叠加出"蓝色雨"。现在可以在这两个主题单独把装饰层
+     改成中性白/黑，保留 accent 蓝只点缀功能位——而 blue/gruvbox/forest/sakura
+     等主题继承默认（=accent），保留自己的主题风味。
+
+     默认值：继承 accent，所以任何未覆盖本组 token 的主题行为不变。 */
+  --highlight-primary: var(--accent-primary);
+  --highlight-secondary: var(--accent-secondary);
+  --highlight-rgb: var(--accent-rgb);
+  --highlight-secondary-rgb: var(--accent-secondary-rgb);
 }
 
 /* 深色主题 — 参照 Cursor 观感，整体比 VS Code Dark+ 再压低一档，更精致不刺眼。
@@ -137,6 +154,14 @@
   --accent-rgb: 77, 158, 255;
   --accent-secondary-rgb: 106, 184, 255;
   --bg-secondary-rgb: 31, 31, 31;
+
+  /* 装饰层走中性白：让 hover glow/卡片浸染浮层/欢迎页光斑/logo drop-shadow
+     从"蓝色雨"变成"精致亮斑"，与 Notion/Linear/Raycast 的深色主题观感对齐；
+     按钮、激活 tab 条、焦点边框、链接等功能强调位继续走 accent 蓝。 */
+  --highlight-primary: #ffffff;
+  --highlight-secondary: #d8d8d8;
+  --highlight-rgb: 255, 255, 255;
+  --highlight-secondary-rgb: 216, 216, 216;
 
   /* 语义色（去饱和版本） */
   --color-success: #5aa371;
@@ -611,15 +636,16 @@
   --color-info-rgb: 125, 211, 252;
 }
 
-/* 欢迎页通用 ambient 背景：使用当前主题的 accent 色作轻微晕染
+/* 欢迎页通用 ambient 背景：使用当前主题的 highlight 色作轻微晕染
  * - 特指度 (0,1,0)，低于任何 [data-ui-theme="xxx"] .welcome-page 规则
- * - 各主题自动对应自己的 accent 色（蓝→蓝晕，森林→绿晕，秋日→橙晕……）
+ * - 默认 highlight 继承 accent → 蓝/森林/秋日等主题自然对应自己的色相
+ * - 深色主题 highlight 覆盖为中性白 → 不再是"蓝色薄雾"而是柔和亮斑
  * - 透明度 0.04 / 0.03 保持克制，避免过度泛色
  */
 .welcome-page {
   background: 
-    radial-gradient(ellipse at 30% 20%, rgba(var(--accent-rgb), 0.04) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 80%, rgba(var(--accent-secondary-rgb), 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 30% 20%, rgba(var(--highlight-rgb), 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 80%, rgba(var(--highlight-secondary-rgb), 0.03) 0%, transparent 50%),
     var(--bg-primary);
 }
 
@@ -795,7 +821,143 @@ button:focus-visible {
 }
 
 .btn-icon:hover svg {
-  filter: drop-shadow(0 0 3px var(--accent-primary));
+  filter: drop-shadow(0 0 3px var(--highlight-primary));
+}
+
+/* ==================================================================
+   Settings 模块按钮规范（中性扁平派）
+   覆盖 settings-scope 作用域内所有 .btn 变体，移除动画/阴影，
+   避免和各子 Settings 页里各自本地定义产生大小/颜色/行为差异。
+   settings-scope 挂在 SettingsModal 根节点，以及 Teleport 到 body
+   的 Settings 对话框根节点上，保证规范穿透。
+   ================================================================== */
+
+.settings-scope .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  box-shadow: none;
+  transform: none;
+  overflow: visible;
+}
+
+.settings-scope .btn::before {
+  display: none;
+}
+
+.settings-scope .btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  transform: none;
+  box-shadow: none;
+}
+
+.settings-scope .btn:active:not(:disabled) {
+  transform: none;
+}
+
+.settings-scope .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Settings 内部主按钮：中性略深底色，区分于次要操作（Phase 1 已确立） */
+.settings-scope .btn-primary {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  font-weight: 500;
+}
+
+.settings-scope .btn-primary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-color);
+  box-shadow: none;
+  transform: none;
+}
+
+.settings-scope .btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.settings-scope .btn-xs {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.settings-scope .btn-outline {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.settings-scope .btn-outline:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.settings-scope .btn-danger {
+  background: transparent;
+  color: var(--color-error);
+  border-color: rgba(var(--color-error-rgb), 0.4);
+}
+
+.settings-scope .btn-danger:hover:not(:disabled) {
+  background: rgba(var(--color-error-rgb), 0.1);
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.settings-scope .btn-ghost {
+  background: transparent;
+  border: 1px dashed var(--border-color);
+  color: var(--text-secondary);
+}
+
+.settings-scope .btn-ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* 图标按钮：28x28 无缩放 */
+.settings-scope .btn-icon {
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.settings-scope .btn-icon:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  transform: none;
+}
+
+.settings-scope .btn-icon:hover:not(:disabled) svg {
+  filter: none;
+}
+
+.settings-scope .btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 输入框样式 */
@@ -1032,7 +1194,7 @@ button:focus-visible {
 }
 
 .glow-on-hover:hover {
-  box-shadow: 0 0 20px rgba(var(--accent-rgb, 137, 180, 250), 0.3);
+  box-shadow: 0 0 20px rgba(var(--highlight-rgb, 137, 180, 250), 0.3);
   transform: translateY(-2px);
 }
 
@@ -1198,18 +1360,20 @@ button:focus-visible {
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.2);
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.25);
-  --shadow-glow: 0 0 20px rgba(var(--accent-rgb), 0.15);
-  --shadow-glow-strong: 0 0 30px rgba(var(--accent-rgb), 0.25);
+  --shadow-glow: 0 0 20px rgba(var(--highlight-rgb), 0.15);
+  --shadow-glow-strong: 0 0 30px rgba(var(--highlight-rgb), 0.25);
 }
 
-/* 输入框焦点光晕增强 */
+/* 输入框焦点光晕增强
+   border-color 保持 accent（焦点边框是"主动作"功能色，不能和装饰层混为一谈），
+   外层两层柔光走 highlight：深色/浅色下就是中性白晕，不会再出现"蓝色光环"。 */
 .input:focus,
 .select:focus,
 textarea:focus {
   border-color: var(--accent-primary);
   box-shadow: 
-    0 0 0 3px rgba(var(--accent-rgb), 0.15),
-    0 0 20px rgba(var(--accent-rgb), 0.1);
+    0 0 0 3px rgba(var(--highlight-rgb), 0.15),
+    0 0 20px rgba(var(--highlight-rgb), 0.1);
   outline: none;
 }
 
@@ -1346,7 +1510,7 @@ textarea:focus {
 
 .icon-animated:hover {
   transform: scale(1.15);
-  filter: drop-shadow(0 0 6px var(--accent-primary));
+  filter: drop-shadow(0 0 6px var(--highlight-primary));
 }
 
 /* 旋转加载图标 */
@@ -1407,7 +1571,7 @@ textarea:focus {
   background: linear-gradient(
     180deg,
     transparent 10%,
-    rgba(var(--accent-rgb), 0.3) 50%,
+    rgba(var(--highlight-rgb), 0.3) 50%,
     transparent 90%
   );
 }
@@ -1420,18 +1584,19 @@ textarea:focus {
   background: linear-gradient(
     180deg,
     transparent 10%,
-    rgba(var(--accent-rgb), 0.5) 50%,
+    rgba(var(--highlight-rgb), 0.5) 50%,
     transparent 90%
   );
 }
 
 /* ----- 6. 欢迎页视觉增强 ----- */
 
-/* 欢迎页背景 */
+/* 欢迎页背景光斑：纯氛围装饰，走 highlight——深色下是柔和白光斑，
+   蓝色主题下继承 accent 继续是蓝光斑。底层微弱绿斑保留（承担"活力"暗示）。 */
 .welcome-bg-enhanced {
   background: 
-    radial-gradient(ellipse at 20% 30%, rgba(var(--accent-rgb), 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 70%, rgba(var(--accent-secondary-rgb), 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 20% 30%, rgba(var(--highlight-rgb), 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 70%, rgba(var(--highlight-secondary-rgb), 0.06) 0%, transparent 50%),
     radial-gradient(ellipse at 50% 100%, rgba(var(--color-success-rgb), 0.04) 0%, transparent 40%),
     var(--bg-primary);
 }
@@ -1480,17 +1645,19 @@ textarea:focus {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, transparent 40%, rgba(var(--accent-rgb), 0.1) 100%);
+  background: linear-gradient(135deg, transparent 40%, rgba(var(--highlight-rgb), 0.1) 100%);
   opacity: 0;
   transition: opacity 0.3s ease;
 }
 
+/* border-color 保留 accent：这是"焦点/悬停指示"功能色，和装饰层不同。
+   外层薄描边走 highlight，避免在深色主题下卡片周围再镶一圈蓝。 */
 .action-card:hover {
   transform: translateY(-4px);
   border-color: var(--accent-primary);
   box-shadow: 
     0 8px 24px rgba(0, 0, 0, 0.15),
-    0 0 0 1px rgba(var(--accent-rgb), 0.2);
+    0 0 0 1px rgba(var(--highlight-rgb), 0.2);
 }
 
 .action-card:hover::before {

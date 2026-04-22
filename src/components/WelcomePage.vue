@@ -288,12 +288,12 @@ const formatHost = (session: SshSession) => {
   width: 112px;
   height: 112px;
   object-fit: contain;
-  filter: drop-shadow(0 4px 16px rgba(var(--accent-rgb), 0.4));
+  filter: drop-shadow(0 4px 16px rgba(var(--highlight-rgb), 0.4));
   transition: filter 0.3s ease;
 }
 
 .logo-container:hover .sailfish-logo {
-  filter: drop-shadow(0 6px 30px rgba(var(--accent-rgb), 0.6));
+  filter: drop-shadow(0 6px 30px rgba(var(--highlight-rgb), 0.6));
 }
 
 @keyframes float {
@@ -405,13 +405,16 @@ const formatHost = (session: SshSession) => {
   to { opacity: 1; }
 }
 
-/* 卡片悬停发光效果 */
+/* 卡片悬停发光效果
+   走 highlight：蓝色主题下仍是 accent→accent 的蓝色浸染（主题风味），
+   深色主题下则变成中性白→灰的玻璃浮层（glassmorphism 质感），
+   避免 dark 下"整块蓝色浸染"的视觉轰炸。 */
 .action-card::before {
   content: '';
   position: absolute;
   inset: -2px;
   border-radius: 22px;
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  background: linear-gradient(135deg, var(--highlight-primary), var(--highlight-secondary));
   opacity: 0;
   z-index: -1;
   transition: opacity 0.3s ease;
@@ -439,13 +442,17 @@ const formatHost = (session: SshSession) => {
   opacity: 1;
 }
 
+/* hover 整体反馈已经有"上浮 + 图标放大 + 玻璃浮层 + 外层柔光"四层叠加，
+   边框只需要轻度描边点到即止：
+   - 颜色切 highlight 半透明：深色下是柔和玻璃边，蓝色主题下仍带 accent 蓝味道但不过饱和
+   - 宽度从 3px 降到 2px：避免"hover 时周围跳 3px 蓝"的突兀感 */
 .action-card:hover:not(.disabled) {
-  border-color: var(--accent-primary);
-  border-width: 3px;
+  border-color: rgba(var(--highlight-rgb), 0.5);
+  border-width: 2px;
   transform: translateY(-8px) scale(1.06);
   box-shadow: 
     0 20px 40px rgba(0, 0, 0, 0.2),
-    0 0 30px rgba(var(--accent-rgb), 0.2);
+    0 0 30px rgba(var(--highlight-rgb), 0.2);
 }
 
 .action-card:active:not(.disabled) {
@@ -497,16 +504,15 @@ const formatHost = (session: SshSession) => {
   box-shadow: 0 4px 15px rgba(var(--brand-patrol-rgb), 0.3);
 }
 
+/* 标题 hover 不再变色：
+   hover 反馈已经由卡片上浮、图标放大、玻璃浮层、柔光描边合力表达，
+   再给文字变色会在深色主题下形成"中性卡片 + 蓝色文字孤岛"的割裂感。
+   保持 text-primary，让信息层级稳定、氛围内敛。 */
 .card-title {
   font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 4px;
-  transition: color 0.2s ease;
-}
-
-.action-card:hover:not(.disabled) .card-title {
-  color: var(--accent-primary);
 }
 
 .card-desc {
@@ -581,30 +587,38 @@ const formatHost = (session: SshSession) => {
   left: 100%;
 }
 
+/* border-color 走 highlight 半透明：保持与 action-card hover 观感一致，
+   深色下是柔和玻璃边，避免"一圈蓝色描边"的孤岛感。
+   hover 信号由背景变化 + 图标饱和 + 位移共同承担。 */
 .session-item:hover {
-  border-color: var(--accent-primary);
+  border-color: rgba(var(--highlight-rgb), 0.5);
   background: var(--bg-tertiary);
   transform: translateX(4px);
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 }
 
+/* 静态态：图标前景也走 text-secondary 中性灰，避免深色下的"蓝色屏幕图标孤岛"；
+   底板继续用 highlight 半透明淡衬。整组 session 入口走"纯中性"风格，让
+   主题色只在真正的功能锚点（btn-primary、激活 tab 条等）出现。 */
 .session-icon {
   width: 36px;
   height: 36px;
-  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.2), rgba(var(--accent-rgb), 0.1));
+  background: linear-gradient(135deg, rgba(var(--highlight-rgb), 0.2), rgba(var(--highlight-rgb), 0.1));
   border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--accent-primary);
+  color: var(--text-secondary);
   flex-shrink: 0;
-  transition: transform 0.2s ease, background 0.2s ease;
+  transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
 }
 
+/* hover 反馈：图标放大 + 底板加亮 + 前景提亮到 text-primary；
+   不再使用饱和 accent 渐变底板（那在深色下是孤立的蓝色方块）。 */
 .session-item:hover .session-icon {
   transform: scale(1.1);
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-  color: white;
+  background: linear-gradient(135deg, rgba(var(--highlight-rgb), 0.35), rgba(var(--highlight-rgb), 0.2));
+  color: var(--text-primary);
 }
 
 .session-info {
@@ -612,6 +626,8 @@ const formatHost = (session: SshSession) => {
   min-width: 0;
 }
 
+/* 与 card-title 同理：hover 不变色，信息层级更稳，深色下不再出现蓝色文字孤岛。
+   hover 反馈已经由 session-item 的背景变化 + 位移 + 图标饱和承担。 */
 .session-name {
   font-size: 13px;
   font-weight: 600;
@@ -619,11 +635,6 @@ const formatHost = (session: SshSession) => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: color 0.2s ease;
-}
-
-.session-item:hover .session-name {
-  color: var(--accent-primary);
 }
 
 .session-host {
@@ -635,10 +646,12 @@ const formatHost = (session: SshSession) => {
   text-overflow: ellipsis;
 }
 
+/* "查看全部会话 →" 改为次级文本色：→ 箭头已经承担"可点击"信号，
+   深色下不再是孤立的蓝色链接。hover 时提亮到 text-primary 表达可交互。 */
 .view-all {
   font-size: 13px;
   font-weight: 500;
-  color: var(--accent-primary);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
@@ -647,7 +660,8 @@ const formatHost = (session: SshSession) => {
 }
 
 .view-all:hover {
-  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--text-primary);
+  background: rgba(var(--highlight-rgb), 0.1);
   transform: translateX(4px);
 }
 
@@ -655,8 +669,8 @@ const formatHost = (session: SshSession) => {
 .tips {
   padding: 12px 16px;
   margin-top: 38px;
-  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.08), rgba(var(--accent-secondary-rgb), 0.05));
-  border: 1px solid rgba(var(--accent-rgb), 0.15);
+  background: linear-gradient(135deg, rgba(var(--highlight-rgb), 0.08), rgba(var(--highlight-secondary-rgb), 0.05));
+  border: 1px solid rgba(var(--highlight-rgb), 0.15);
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.3s ease;
@@ -685,10 +699,10 @@ const formatHost = (session: SshSession) => {
 }
 
 .tips:hover {
-  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.12), rgba(var(--accent-secondary-rgb), 0.08));
-  border-color: rgba(var(--accent-rgb), 0.25);
+  background: linear-gradient(135deg, rgba(var(--highlight-rgb), 0.12), rgba(var(--highlight-secondary-rgb), 0.08));
+  border-color: rgba(var(--highlight-rgb), 0.25);
   transform: scale(1.01);
-  box-shadow: 0 4px 20px rgba(var(--accent-rgb), 0.1);
+  box-shadow: 0 4px 20px rgba(var(--highlight-rgb), 0.1);
 }
 
 .tips:active {
@@ -721,9 +735,11 @@ const formatHost = (session: SshSession) => {
   line-height: 1.5;
 }
 
+/* ↻ 切换指示符：和 view-all 的 → 一致走次级文本色，
+   深色下不出现孤立蓝色图标。 */
 .tip-next {
   font-size: 16px;
-  color: var(--accent-primary);
+  color: var(--text-secondary);
   opacity: 0;
   transition: all 0.3s ease;
   flex-shrink: 0;
