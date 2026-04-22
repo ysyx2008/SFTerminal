@@ -3094,8 +3094,9 @@ watch(() => props.visible, (visible) => {
 }
 
 .message.user .message-content {
-  background: var(--accent-primary);
-  color: var(--accent-contrast);
+  background: var(--chat-user-bubble-bg);
+  color: var(--chat-user-bubble-fg);
+  border: 1px solid var(--chat-user-bubble-border);
   border-radius: 12px 12px 4px 12px;
   user-select: text;
   cursor: text;
@@ -4143,9 +4144,9 @@ watch(() => props.visible, (visible) => {
 }
 
 .agent-step-inline.user_supplement .step-content {
-  background: var(--accent-primary);
-  opacity: 0.85;
-  color: var(--accent-contrast);
+  background: var(--chat-user-supplement-bubble-bg);
+  color: var(--chat-user-bubble-fg);
+  border: 1px solid var(--chat-user-bubble-border);
   border-radius: 12px 12px 4px 12px;
   padding: 8px 12px;
   max-width: 80%;
