@@ -48,11 +48,11 @@
 
   /* 聊天用户气泡：语义是"有主题味道的、比助手气泡更显眼的表面"；
      每个主题单独手挑 --chat-user-bubble-bg 以匹配自身色系，
-     未覆盖时 fallback：bg-hover 叠 30% accent。边框透明、正文用 --text-primary。
+     未覆盖时 fallback：bg-hover 叠 30% accent。边框透明。
+     文字色**不**用本变量而直接用 --text-primary（避免嵌套 var() 在某些 Chromium 版本下的解析歧义）。
      Agent 流中的用户补充（supplement）自动从主气泡色与 bg-hover 混合得到，主题无需单独覆盖。 */
   --chat-user-bubble-bg: color-mix(in srgb, var(--accent-primary) 30%, var(--bg-hover));
   --chat-user-bubble-border: transparent;
-  --chat-user-bubble-fg: var(--text-primary);
   --chat-user-supplement-bubble-bg: color-mix(in srgb, var(--chat-user-bubble-bg) 55%, var(--bg-hover));
 
   /* ===== 语义色（默认，所有主题都继承；主题块可覆盖为低饱和版本） =====
@@ -153,9 +153,10 @@
    与深色主题对称：bg-* 反向递减（primary 最亮、hover 最暗），同名变量在 UI 上
    表达相同的"视觉重量"。 */
 [data-ui-theme="light"] {
-  /* 用户气泡：纯白浮卡，与灰色助手气泡 (bg-surface #d9d9d9) 形成最清晰的"用户凸起、助手下沉"分层；
-     与 Cursor Light 风格一致——中性灰底 + 白色用户卡片，不在气泡上增加色相。 */
-  --chat-user-bubble-bg: #ffffff;
+  /* 用户气泡：极淡冷蓝浮卡（Cursor Light 实际风格）。
+     bg-primary 已经是浅灰 #f4f4f4，若用纯白气泡会失去边界感，反而"糊"；
+     带一点冷蓝与助手气泡的纯灰区分，也承接 light 主题的蓝色 accent。 */
+  --chat-user-bubble-bg: #dbe9f7;
 
   --bg-primary: #f4f4f4;
   --bg-secondary: #ebebeb;
@@ -1560,7 +1561,7 @@ textarea:focus {
 
 .message-bubble.user {
   background: var(--chat-user-bubble-bg);
-  color: var(--chat-user-bubble-fg);
+  color: var(--text-primary);
   border: 1px solid var(--chat-user-bubble-border);
   margin-left: auto;
   border-bottom-right-radius: 4px;

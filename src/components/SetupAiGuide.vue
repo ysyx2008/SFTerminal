@@ -543,7 +543,7 @@ onMounted(() => {
 
 .message.user .message-content {
   background: var(--chat-user-bubble-bg);
-  color: var(--chat-user-bubble-fg);
+  color: var(--text-primary);
   border: 1px solid var(--chat-user-bubble-border);
   border-bottom-right-radius: 4px;
 }
