@@ -292,6 +292,7 @@ onMounted(loadPlugins)
   font-size: 12px;
   color: var(--text-muted);
   margin-bottom: 16px;
+  line-height: 1.5;
 }
 
 .operation-message {

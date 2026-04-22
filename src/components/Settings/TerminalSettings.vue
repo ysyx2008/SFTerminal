@@ -183,7 +183,7 @@ const encodingOptions: LocalEncoding[] = [
 .terminal-settings {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .settings-section {

@@ -701,6 +701,7 @@ onUnmounted(() => {
   font-size: 12px;
   color: var(--text-muted);
   margin-bottom: 16px;
+  line-height: 1.5;
 }
 
 /* 服务器列表 */
@@ -859,7 +860,7 @@ onUnmounted(() => {
   display: block;
   font-size: 12px;
   font-weight: 500;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   margin-bottom: 6px;
 }
 

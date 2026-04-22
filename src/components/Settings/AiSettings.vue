@@ -898,7 +898,8 @@ function openWebSearchKeyUrl() {
 .section-desc {
   font-size: 12px;
   color: var(--text-muted);
-  margin-bottom: 8px;
+  margin-bottom: 16px;
+  line-height: 1.5;
 }
 
 .profile-list {

@@ -43,18 +43,22 @@ const changeLanguage = async (lang: LocaleType) => {
 
 <style scoped>
 .language-settings {
-  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 .settings-section {
-  margin-bottom: 24px;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 16px;
 }
 
 .section-title {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0 0 16px;
+  margin: 0 0 12px;
 }
 
 .language-list {
@@ -67,8 +71,8 @@ const changeLanguage = async (lang: LocaleType) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
-  background: var(--bg-tertiary);
+  padding: 12px;
+  background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   cursor: pointer;

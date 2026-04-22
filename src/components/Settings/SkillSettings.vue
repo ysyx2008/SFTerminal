@@ -826,7 +826,7 @@ enabled: true
 .skill-settings {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 /* 子标签页 */
@@ -921,6 +921,7 @@ enabled: true
   font-size: 12px;
   color: var(--text-muted);
   margin-bottom: 16px;
+  line-height: 1.5;
 }
 
 /* 搜索栏 */

@@ -516,15 +516,16 @@ const formatRelativeTime = (timestamp?: number): string => {
 }
 
 .settings-header h3 {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   margin: 0;
 }
 
 .settings-description {
-  color: var(--text-secondary);
-  font-size: 13px;
-  margin-bottom: 20px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 16px;
 }
 
 /* 账户列表 */

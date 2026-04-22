@@ -726,9 +726,9 @@ onUnmounted(() => {
 }
 
 .section-header h4 {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   margin: 0;
 }
 
