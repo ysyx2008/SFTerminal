@@ -1090,6 +1090,21 @@ function openWebSearchKeyUrl() {
   background: var(--bg-hover);
 }
 
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.input {
+  padding: 8px 12px;
+  font-size: 13px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+
 .form-label-row {
   display: flex;
   align-items: center;

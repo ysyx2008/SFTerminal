@@ -187,25 +187,24 @@ function isActionModified(action: ShortcutAction): boolean {
 
 <template>
   <div class="shortcut-settings">
-    <div class="settings-header-bar">
-      <div>
+    <div class="settings-section">
+      <div class="section-header">
         <h4>{{ t('shortcutSettings.title') }}</h4>
-        <p class="section-description">{{ t('shortcutSettings.description') }}</p>
+        <button
+          v-if="isModified"
+          class="btn-reset-all"
+          @click="resetAll"
+        >
+          {{ t('shortcutSettings.resetAll') }}
+        </button>
       </div>
-      <button
-        v-if="isModified"
-        class="btn-reset-all"
-        @click="resetAll"
-      >
-        {{ t('shortcutSettings.resetAll') }}
-      </button>
-    </div>
+      <p class="section-desc">{{ t('shortcutSettings.description') }}</p>
 
-    <div v-if="conflictMessage" class="conflict-alert">
-      {{ conflictMessage }}
-    </div>
+      <div v-if="conflictMessage" class="conflict-alert">
+        {{ conflictMessage }}
+      </div>
 
-    <div class="shortcut-list">
+      <div class="shortcut-list">
       <div
         v-for="action in allActions"
         :key="action"
@@ -260,6 +259,7 @@ function isActionModified(action: ShortcutAction): boolean {
           </div>
         </div>
       </div>
+    </div>
   </div>
 </template>
 
@@ -267,26 +267,33 @@ function isActionModified(action: ShortcutAction): boolean {
 .shortcut-settings {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 20px;
 }
 
-.settings-header-bar {
+.settings-section {
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.section-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  min-height: 28px;
+  margin-bottom: 8px;
 }
 
-.settings-header-bar h4 {
+.section-header h4 {
   font-size: 14px;
   font-weight: 600;
-  margin-bottom: 4px;
 }
 
-.section-description {
+.section-desc {
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.5;
+  margin-bottom: 16px;
 }
 
 .btn-reset-all {
@@ -310,7 +317,7 @@ function isActionModified(action: ShortcutAction): boolean {
 }
 
 .shortcut-list {
-  background: var(--bg-tertiary);
+  background: var(--bg-secondary);
   border-radius: 8px;
   overflow: hidden;
 }

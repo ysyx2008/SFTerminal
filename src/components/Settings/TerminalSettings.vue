@@ -269,6 +269,21 @@ const encodingOptions: LocalEncoding[] = [
   font-size: 13px;
 }
 
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.select {
+  padding: 8px 12px;
+  font-size: 13px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+
 .form-hint {
   font-size: 11px;
   color: var(--text-muted);

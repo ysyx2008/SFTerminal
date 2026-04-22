@@ -259,29 +259,30 @@ const formatRelativeTime = (timestamp?: number): string => {
 
 <template>
   <div class="calendar-settings">
-    <div class="settings-header">
-      <h3>{{ t('calendarSettings.title') }}</h3>
-      <button class="btn btn-primary" @click="openNewAccount">
-        <Plus :size="16" />
-        {{ t('calendarSettings.addAccount') }}
-      </button>
-    </div>
+    <div class="settings-section">
+      <div class="section-header">
+        <h4>{{ t('calendarSettings.title') }}</h4>
+        <button class="btn btn-primary btn-sm" @click="openNewAccount">
+          <Plus :size="14" />
+          {{ t('calendarSettings.addAccount') }}
+        </button>
+      </div>
 
-    <p class="settings-description">
-      {{ t('calendarSettings.description') }}
-    </p>
+      <p class="section-desc">
+        {{ t('calendarSettings.description') }}
+      </p>
 
-    <!-- 账户概览 -->
-    <div v-if="accounts.length > 0" class="status-summary">
-      <span class="summary-count">{{ t('calendarSettings.accountCount', { n: accounts.length }) }}</span>
-      <button class="btn btn-outline btn-sm" @click="verifyAllAccounts" :disabled="verifyingAccounts.size > 0">
-        <ShieldCheck :size="14" />
-        {{ t('calendarSettings.verifyAll') }}
-      </button>
-    </div>
+      <!-- 账户概览 -->
+      <div v-if="accounts.length > 0" class="status-summary">
+        <span class="summary-count">{{ t('calendarSettings.accountCount', { n: accounts.length }) }}</span>
+        <button class="btn btn-outline btn-sm" @click="verifyAllAccounts" :disabled="verifyingAccounts.size > 0">
+          <ShieldCheck :size="14" />
+          {{ t('calendarSettings.verifyAll') }}
+        </button>
+      </div>
 
-    <!-- 账户列表 -->
-    <div class="account-list">
+      <!-- 账户列表 -->
+      <div class="account-list">
       <div v-if="accounts.length === 0" class="empty-state">
         <Calendar :size="48" class="empty-icon" />
         <p>{{ t('calendarSettings.noAccounts') }}</p>
@@ -344,6 +345,7 @@ const formatRelativeTime = (timestamp?: number): string => {
           </button>
         </div>
       </div>
+    </div>
     </div>
 
     <!-- 添加/编辑表单弹窗 -->
@@ -444,25 +446,33 @@ const formatRelativeTime = (timestamp?: number): string => {
 
 <style scoped>
 .calendar-settings {
-  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
-.settings-header {
+.settings-section {
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 28px;
   margin-bottom: 8px;
 }
 
-.settings-header h3 {
+.section-header h4 {
   font-size: 14px;
   font-weight: 600;
-  margin: 0;
 }
 
-.settings-description {
-  color: var(--text-muted);
+.section-desc {
   font-size: 12px;
+  color: var(--text-muted);
   line-height: 1.5;
   margin-bottom: 16px;
 }
@@ -496,10 +506,10 @@ const formatRelativeTime = (timestamp?: number): string => {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 14px 16px;
-  background: var(--bg-tertiary);
+  padding: 12px;
+  background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: 8px;
   transition: all 0.2s ease;
 }
 
@@ -559,7 +569,7 @@ const formatRelativeTime = (timestamp?: number): string => {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: var(--bg-tertiary);
+  background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   margin-bottom: 12px;

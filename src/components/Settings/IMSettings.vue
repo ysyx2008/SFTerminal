@@ -1140,7 +1140,7 @@ function cancelFreeMode() {
 
 .input-field {
   width: 100%;
-  padding: 7px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   background: var(--bg-secondary);

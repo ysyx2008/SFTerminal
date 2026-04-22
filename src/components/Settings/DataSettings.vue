@@ -358,8 +358,6 @@ onUnmounted(() => {
 
 <template>
   <div class="data-settings">
-    <h3>{{ t('dataSettings.title') }}</h3>
-    
     <!-- 消息提示 -->
     <Transition name="msg">
       <div v-if="message" class="message" :class="message.type">
@@ -705,17 +703,15 @@ onUnmounted(() => {
 .data-settings {
   max-width: 760px;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
-.data-settings h3 {
-  font-size: 16px;
-  font-weight: 600;
-  margin-bottom: 24px;
-}
-
-/* Sections */
+/* Sections：扁平布局（内部已有大量 bg-tertiary 子卡片，外框不再加背景） */
 .section {
-  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
 }
 
 .section-header {
