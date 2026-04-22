@@ -451,7 +451,7 @@ const formatRelativeTime = (timestamp?: number): string => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .settings-header h3 {

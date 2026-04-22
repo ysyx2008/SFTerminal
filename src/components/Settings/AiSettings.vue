@@ -1055,8 +1055,9 @@ function openWebSearchKeyUrl() {
 }
 
 .form-header h4 {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
+  margin: 0;
 }
 
 .templates {
