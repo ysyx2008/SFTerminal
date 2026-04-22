@@ -46,15 +46,14 @@
      聊天用户气泡不用本变量：见下方 --chat-user-bubble-*（与助手气泡同属 surface 系，避免整板饱和 accent）。 */
   --accent-contrast: #ffffff;
 
-  /* 聊天用户气泡：以 bg-hover 为底（比助手气泡的 bg-surface 高一档，形成层次），
-     叠 30% accent-primary 让每个主题的主色真正显色（蓝主题呈蓝、gruvbox 呈金、forest 呈绿…）。
-     无边框，避免"框"感；正文用 --text-primary。
-     各主题如果觉得默认混出来的颜色不够协调，可在自身主题块里单独覆盖。 */
+  /* 聊天用户气泡：语义是"有主题味道的、比助手气泡更显眼的表面"；
+     每个主题单独手挑 --chat-user-bubble-bg 以匹配自身色系，
+     未覆盖时 fallback：bg-hover 叠 30% accent。边框透明、正文用 --text-primary。
+     Agent 流中的用户补充（supplement）自动从主气泡色与 bg-hover 混合得到，主题无需单独覆盖。 */
   --chat-user-bubble-bg: color-mix(in srgb, var(--accent-primary) 30%, var(--bg-hover));
   --chat-user-bubble-border: transparent;
   --chat-user-bubble-fg: var(--text-primary);
-  /* Agent 流中的用户补充：比正式用户消息再淡一档，保持同一视觉语言 */
-  --chat-user-supplement-bubble-bg: color-mix(in srgb, var(--accent-primary) 18%, var(--bg-hover));
+  --chat-user-supplement-bubble-bg: color-mix(in srgb, var(--chat-user-bubble-bg) 55%, var(--bg-hover));
 
   /* ===== 语义色（默认，所有主题都继承；主题块可覆盖为低饱和版本） =====
      使用：color: var(--color-success); background: rgba(var(--color-success-rgb), 0.1); */
@@ -109,6 +108,9 @@
    消费端可以用这个顺序稳定推理"谁在谁之上"。
    实际默认主题是 blue（见 stores/config.ts），这里的 :root 兜底仅用于防 FOUC。 */
 [data-ui-theme="dark"], :root {
+  /* 用户气泡：冷调深蓝灰，和中性灰 bg-surface/bg-hover 拉开蓝味 */
+  --chat-user-bubble-bg: #2d3a4e;
+
   --bg-primary: #181818;
   --bg-secondary: #1f1f1f;
   --bg-tertiary: #242424;
@@ -150,6 +152,9 @@
    与深色主题对称：bg-* 反向递减（primary 最亮、hover 最暗），同名变量在 UI 上
    表达相同的"视觉重量"。 */
 [data-ui-theme="light"] {
+  /* 用户气泡：浅蓝，呼应 Office/Cursor Light 的 accent 蓝 */
+  --chat-user-bubble-bg: #d7e5f5;
+
   --bg-primary: #f4f4f4;
   --bg-secondary: #ebebeb;
   --bg-tertiary: #e2e2e2;
@@ -188,6 +193,9 @@
    层次语义：tertiary（tab 底槽/深海）< secondary（header/卡片）
             < primary（canvas/active tab）< surface（抬起卡片/按钮）< hover */
 [data-ui-theme="blue"] {
+  /* 用户气泡：比 bg-hover 更亮、更高饱和的天空蓝，与整屏蓝调和但明显"主动" */
+  --chat-user-bubble-bg: #4d88c6;
+
   --bg-primary: #1b3b63;
   --bg-secondary: #112842;
   --bg-tertiary: #0a1626;
@@ -225,6 +233,9 @@
   /* accent #e8a855 是亮金黄，白字对比不足，用深字 */
   --accent-contrast: #1f1a15;
 
+  /* 用户气泡：暖金棕，与主题整体暖色调协调 */
+  --chat-user-bubble-bg: #5a3e1f;
+
   --bg-primary: #2d251f;
   --bg-secondary: #251f1a;
   --bg-tertiary: #1f1a15;
@@ -259,6 +270,9 @@
 
 /* Forest 主题（浅色清新的森林绿色调） */
 [data-ui-theme="forest"] {
+  /* 用户气泡：淡薄荷绿，呼应主题森林绿系 */
+  --chat-user-bubble-bg: #d4e8dd;
+
   --bg-primary: #f6fbf8;
   --bg-secondary: #eef6f0;
   --bg-tertiary: #e5f0e8;
@@ -296,6 +310,9 @@
   /* accent #ffcc66 是亮黄，白字对比不足，用深字 */
   --accent-contrast: #1a1f29;
 
+  /* 用户气泡：深暖金，和冷调蓝灰 bg 形成冷暖对比，又承接 accent 的金黄 */
+  --chat-user-bubble-bg: #3d3524;
+
   --bg-primary: #1f2430;
   --bg-secondary: #1a1f29;
   --bg-tertiary: #151920;
@@ -330,6 +347,9 @@
 
 /* 赞助者专属暗金色主题（尊贵内敛风格） */
 [data-ui-theme="sponsor-gold"] {
+  /* 用户气泡：古铜金，与暗金 accent 同系 */
+  --chat-user-bubble-bg: #4a3825;
+
   --bg-primary: #1a1612;
   --bg-secondary: #231f1a;
   --bg-tertiary: #141210;
@@ -366,6 +386,9 @@
 [data-ui-theme="sponsor-sakura"] {
   /* accent #ebbcba 是淡粉，白字对比不足，用深字 */
   --accent-contrast: #2a1e24;
+
+  /* 用户气泡：淡樱花粉，与主题温柔调和 */
+  --chat-user-bubble-bg: #f8d8e2;
 
   --bg-primary: #fdf8fa;
   --bg-secondary: #f8f0f4;
@@ -404,6 +427,9 @@
   /* accent #7dd3fc 是亮天蓝，白字对比不足，用深字 */
   --accent-contrast: #191724;
 
+  /* 用户气泡：玫瑰灰紫，承接 accent 淡粉又保持主题紫调 */
+  --chat-user-bubble-bg: #4a3a48;
+
   --bg-primary: #191724;
   --bg-secondary: #1f1d2e;
   --bg-tertiary: #13111e;
@@ -440,6 +466,9 @@
 [data-ui-theme="cyberpunk"] {
   /* accent #00ffff 是亮青，白字对比不足，用深字 */
   --accent-contrast: #0a0a0f;
+
+  /* 用户气泡：深电紫（偏 accent-secondary 的品红/紫向）+ 青色文字氛围 */
+  --chat-user-bubble-bg: #24214a;
 
   --bg-primary: #0a0a0f;
   --bg-secondary: #0f0f18;
@@ -507,6 +536,9 @@
 
 /* 🆕 薰衣草浅色主题 - 优雅柔和 */
 [data-ui-theme="lavender"] {
+  /* 用户气泡：淡薰衣草紫，与 accent-primary #8b5cf6 同系 */
+  --chat-user-bubble-bg: #e4d9f5;
+
   --bg-primary: #f8f6fc;
   --bg-secondary: #f0ecf8;
   --bg-tertiary: #e8e2f4;
@@ -541,6 +573,9 @@
 
 /* 🆕 极光主题 - 神秘渐变 */
 [data-ui-theme="aurora"] {
+  /* 用户气泡：蓝紫夜空色，贴合极光主题的蓝（#7dd3fc）+ 紫（#c084fc）双 accent */
+  --chat-user-bubble-bg: #2c3450;
+
   --bg-primary: #0f1419;
   --bg-secondary: #131a21;
   --bg-tertiary: #0a0f13;
