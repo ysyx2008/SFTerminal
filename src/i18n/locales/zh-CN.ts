@@ -954,6 +954,7 @@ export default {
   // 数据管理
   dataSettings: {
     title: '数据管理',
+    description: '查看存储占用、备份/恢复所有配置与会话数据，或清理历史记录',
     exportData: '导出数据',
     exportDataDesc: '导出所有配置和会话数据',
     importData: '导入数据',

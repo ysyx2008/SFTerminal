@@ -954,6 +954,7 @@ export default {
   // Data Settings
   dataSettings: {
     title: 'Data Management',
+    description: 'Inspect storage usage, back up / restore all configuration and sessions, or clean up history',
     exportData: 'Export Data',
     exportDataDesc: 'Export all configuration and session data',
     importData: 'Import Data',

@@ -358,6 +358,14 @@ onUnmounted(() => {
 
 <template>
   <div class="data-settings">
+    <!-- 页面标题 -->
+    <div class="section page-intro">
+      <div class="section-header">
+        <h4>{{ t('dataSettings.title') }}</h4>
+      </div>
+      <p class="section-desc">{{ t('dataSettings.description') }}</p>
+    </div>
+
     <!-- 消息提示 -->
     <Transition name="msg">
       <div v-if="message" class="message" :class="message.type">
@@ -726,6 +734,13 @@ onUnmounted(() => {
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
+}
+
+.section-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 0;
 }
 
 .section-icon {
