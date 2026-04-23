@@ -226,8 +226,12 @@
    层次语义：tertiary（tab 底槽/深海）< secondary（header/卡片）
             < primary（canvas/active tab）< surface（抬起卡片/按钮）< hover */
 [data-ui-theme="blue"] {
-  /* 用户气泡：比 bg-hover 更亮、更高饱和的天空蓝，与整屏蓝调和但明显"主动" */
-  --chat-user-bubble-bg: #4d88c6;
+  /* 用户气泡：饱和蓝（比 bg-hover 略深但饱和度更高），配白色文字达 WCAG AA 正文对比度 5.4:1。
+     上一版 #4d88c6 配 text-primary #e8f0f8 只有 3.24:1，文字偏浅读起来费力。 */
+  --chat-user-bubble-bg: #2d6db0;
+  /* 文字色覆盖为纯白：text-primary #e8f0f8 在蓝底上对比度不足；其他主题不需要覆盖此变量，
+     样式规则 fallback 到 var(--text-primary) 继承原行为。 */
+  --chat-user-bubble-color: #ffffff;
 
   --bg-primary: #1b3b63;
   --bg-secondary: #112842;
@@ -1805,7 +1809,9 @@ textarea:focus {
 
 .message-bubble.user {
   background: var(--chat-user-bubble-bg);
-  color: var(--text-primary);
+  /* 气泡文字色：主题可在自己块内单独覆盖 --chat-user-bubble-color
+     （如蓝主题深蓝底需要纯白），默认 fallback 继承正文色。 */
+  color: var(--chat-user-bubble-color, var(--text-primary));
   border: 1px solid var(--chat-user-bubble-border);
   margin-left: auto;
   border-bottom-right-radius: 4px;

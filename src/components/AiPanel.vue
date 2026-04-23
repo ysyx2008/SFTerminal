@@ -3095,7 +3095,9 @@ watch(() => props.visible, (visible) => {
 
 .message.user .message-content {
   background: var(--chat-user-bubble-bg);
-  color: var(--text-primary);
+  /* 气泡文字色：主题可在自己块内覆盖 --chat-user-bubble-color
+     （蓝主题深蓝底用白字），默认 fallback 继承正文色。 */
+  color: var(--chat-user-bubble-color, var(--text-primary));
   border: 1px solid var(--chat-user-bubble-border);
   border-radius: 12px 12px 4px 12px;
   user-select: text;
@@ -4154,7 +4156,7 @@ watch(() => props.visible, (visible) => {
 
 .agent-step-inline.user_supplement .step-content {
   background: var(--chat-user-supplement-bubble-bg);
-  color: var(--text-primary);
+  color: var(--chat-user-bubble-color, var(--text-primary));
   border: 1px solid var(--chat-user-bubble-border);
   border-radius: 12px 12px 4px 12px;
   padding: 8px 12px;
