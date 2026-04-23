@@ -3159,6 +3159,11 @@ watch(() => props.visible, (visible) => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
+/* 代码块外壳保留深色（#1a1b26 / #16161e）跨主题一致——这是"终端/代码"视觉语言，
+   像 Cursor/ChatGPT 在浅色主题下代码块也保持深色。
+   仅把蓝色点缀（标题、复制按钮 hover、行内代码）改为 var(--accent-primary)，
+   让粉色/绿色/金色等主题下代码块的强调点能跟自己色系走。
+   发送按钮 hover 保留绿色 #9ece6a——"执行/运行"的通用语义色（像红绿灯按钮）。 */
 .markdown-content :deep(.code-header) {
   display: flex;
   align-items: center;
@@ -3166,7 +3171,7 @@ watch(() => props.visible, (visible) => {
   padding: 8px 14px;
   font-size: 11px;
   font-weight: 500;
-  color: #7aa2f7;
+  color: var(--accent-primary);
   background: #16161e;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   text-transform: uppercase;
@@ -3179,11 +3184,13 @@ watch(() => props.visible, (visible) => {
   gap: 6px;
 }
 
+/* 静态色走半透明白：代码块底是固定深色，不能用 var(--text-muted)
+   （浅色主题下它会是深色，在深底上看不见）。 */
 .markdown-content :deep(.code-copy-btn),
 .markdown-content :deep(.code-send-btn) {
   padding: 4px 8px;
   font-size: 11px;
-  color: #565f89;
+  color: rgba(255, 255, 255, 0.5);
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
@@ -3200,11 +3207,12 @@ watch(() => props.visible, (visible) => {
 }
 
 .markdown-content :deep(.code-copy-btn:hover) {
-  color: #7aa2f7;
-  background: rgba(122, 162, 247, 0.15);
-  border-color: #7aa2f7;
+  color: var(--accent-primary);
+  background: rgba(var(--accent-rgb), 0.15);
+  border-color: var(--accent-primary);
 }
 
+/* 保留绿色：发送 = 执行的语义色，跨主题稳定可识别 */
 .markdown-content :deep(.code-send-btn:hover) {
   color: #9ece6a;
   background: rgba(158, 206, 106, 0.15);
@@ -3228,15 +3236,16 @@ watch(() => props.visible, (visible) => {
   display: block;
 }
 
-/* 行内代码样式 */
+/* 行内代码样式：完全跟主题走——它出现在聊天气泡正文里，不是深色代码块内部，
+   所以每个主题该用各自 accent 色染色（粉色主题下是粉色背景+粉色文字）。 */
 .markdown-content :deep(.inline-code) {
   padding: 2px 6px;
   font-family: var(--font-mono);
   font-size: 12px;
-  background: rgba(122, 162, 247, 0.15);
-  border: 1px solid rgba(122, 162, 247, 0.3);
+  background: rgba(var(--accent-rgb), 0.12);
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
   border-radius: 4px;
-  color: #7aa2f7;
+  color: var(--accent-primary);
 }
 
 /* Markdown 样式 - 使用 :deep() 穿透 v-html */
@@ -4012,8 +4021,8 @@ watch(() => props.visible, (visible) => {
 .step-text.step-analysis.markdown-content :deep(blockquote) {
   margin: 8px 0;
   padding: 10px 14px;
-  border-left: 3px solid #7aa2f7;
-  background: rgba(122, 162, 247, 0.1);
+  border-left: 3px solid var(--accent-primary);
+  background: rgba(var(--accent-rgb), 0.1);
   border-radius: 0 6px 6px 0;
   color: var(--text-secondary);
   font-size: 12px;

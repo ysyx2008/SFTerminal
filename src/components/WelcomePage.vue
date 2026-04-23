@@ -288,12 +288,12 @@ const formatHost = (session: SshSession) => {
   width: 112px;
   height: 112px;
   object-fit: contain;
-  filter: drop-shadow(0 4px 16px rgba(var(--highlight-rgb), 0.4));
+  filter: drop-shadow(0 4px 16px rgba(var(--accent-decorative-rgb), 0.4));
   transition: filter 0.3s ease;
 }
 
 .logo-container:hover .sailfish-logo {
-  filter: drop-shadow(0 6px 30px rgba(var(--highlight-rgb), 0.6));
+  filter: drop-shadow(0 6px 30px rgba(var(--accent-decorative-rgb), 0.6));
 }
 
 @keyframes float {
@@ -406,15 +406,15 @@ const formatHost = (session: SshSession) => {
 }
 
 /* 卡片悬停发光效果
-   走 highlight：蓝色主题下仍是 accent→accent 的蓝色浸染（主题风味），
-   深色主题下则变成中性白→灰的玻璃浮层（glassmorphism 质感），
+   走 --accent-decorative-*：蓝色/粉色/绿色等主题下是 accent→accent 的同色浸染（保留主题风味），
+   深色主题下变成中性白→灰的玻璃浮层（glassmorphism 质感），
    避免 dark 下"整块蓝色浸染"的视觉轰炸。 */
 .action-card::before {
   content: '';
   position: absolute;
   inset: -2px;
   border-radius: 22px;
-  background: linear-gradient(135deg, var(--highlight-primary), var(--highlight-secondary));
+  background: linear-gradient(135deg, var(--accent-decorative-primary), var(--accent-decorative-secondary));
   opacity: 0;
   z-index: -1;
   transition: opacity 0.3s ease;
@@ -442,17 +442,20 @@ const formatHost = (session: SshSession) => {
   opacity: 1;
 }
 
-/* hover 整体反馈已经有"上浮 + 图标放大 + 玻璃浮层 + 外层柔光"四层叠加，
-   边框只需要轻度描边点到即止：
-   - 颜色切 highlight 半透明：深色下是柔和玻璃边，蓝色主题下仍带 accent 蓝味道但不过饱和
-   - 宽度从 3px 降到 2px：避免"hover 时周围跳 3px 蓝"的突兀感 */
+/* hover 边框走 --accent-decorative-primary 不透明纯色：
+   上一版用 rgba(装饰色, 0.5) 在深色下会与 ::before 的 50% 白玻璃浮层
+   融合成一片（白+白），边框完全不可见；换成不透明色后从玻璃里"凸"出来，
+   就是真实玻璃的"边缘高光"质感。
+   - dark 下：装饰色 = #ffffff → 清晰白边
+   - 蓝/粉/绿等主题下：装饰色 = 各自 accent → 清晰主题色边
+   - 宽度 2px：比原来 3px 纯 accent 温和一档，避免突兀的宽度跳变 */
 .action-card:hover:not(.disabled) {
-  border-color: rgba(var(--highlight-rgb), 0.5);
+  border-color: var(--accent-decorative-primary);
   border-width: 2px;
   transform: translateY(-8px) scale(1.06);
   box-shadow: 
     0 20px 40px rgba(0, 0, 0, 0.2),
-    0 0 30px rgba(var(--highlight-rgb), 0.2);
+    0 0 30px rgba(var(--accent-decorative-rgb), 0.2);
 }
 
 .action-card:active:not(.disabled) {
@@ -587,23 +590,23 @@ const formatHost = (session: SshSession) => {
   left: 100%;
 }
 
-/* border-color 走 highlight 半透明：保持与 action-card hover 观感一致，
-   深色下是柔和玻璃边，避免"一圈蓝色描边"的孤岛感。
-   hover 信号由背景变化 + 图标饱和 + 位移共同承担。 */
+/* border-color 走 --accent-decorative-primary 纯色：
+   深色下是清晰白边（不再是孤立的 accent 蓝边），
+   其他主题下是各自装饰色（= accent）。和 action-card hover 观感一致。 */
 .session-item:hover {
-  border-color: rgba(var(--highlight-rgb), 0.5);
+  border-color: var(--accent-decorative-primary);
   background: var(--bg-tertiary);
   transform: translateX(4px);
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 }
 
 /* 静态态：图标前景也走 text-secondary 中性灰，避免深色下的"蓝色屏幕图标孤岛"；
-   底板继续用 highlight 半透明淡衬。整组 session 入口走"纯中性"风格，让
+   底板继续用装饰色半透明淡衬。整组 session 入口走"纯中性"风格，让
    主题色只在真正的功能锚点（btn-primary、激活 tab 条等）出现。 */
 .session-icon {
   width: 36px;
   height: 36px;
-  background: linear-gradient(135deg, rgba(var(--highlight-rgb), 0.2), rgba(var(--highlight-rgb), 0.1));
+  background: linear-gradient(135deg, rgba(var(--accent-decorative-rgb), 0.2), rgba(var(--accent-decorative-rgb), 0.1));
   border-radius: 10px;
   display: flex;
   align-items: center;
@@ -617,7 +620,7 @@ const formatHost = (session: SshSession) => {
    不再使用饱和 accent 渐变底板（那在深色下是孤立的蓝色方块）。 */
 .session-item:hover .session-icon {
   transform: scale(1.1);
-  background: linear-gradient(135deg, rgba(var(--highlight-rgb), 0.35), rgba(var(--highlight-rgb), 0.2));
+  background: linear-gradient(135deg, rgba(var(--accent-decorative-rgb), 0.35), rgba(var(--accent-decorative-rgb), 0.2));
   color: var(--text-primary);
 }
 
@@ -661,7 +664,7 @@ const formatHost = (session: SshSession) => {
 
 .view-all:hover {
   color: var(--text-primary);
-  background: rgba(var(--highlight-rgb), 0.1);
+  background: rgba(var(--accent-decorative-rgb), 0.1);
   transform: translateX(4px);
 }
 
@@ -669,8 +672,8 @@ const formatHost = (session: SshSession) => {
 .tips {
   padding: 12px 16px;
   margin-top: 38px;
-  background: linear-gradient(135deg, rgba(var(--highlight-rgb), 0.08), rgba(var(--highlight-secondary-rgb), 0.05));
-  border: 1px solid rgba(var(--highlight-rgb), 0.15);
+  background: linear-gradient(135deg, rgba(var(--accent-decorative-rgb), 0.08), rgba(var(--accent-decorative-secondary-rgb), 0.05));
+  border: 1px solid rgba(var(--accent-decorative-rgb), 0.15);
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.3s ease;
@@ -699,10 +702,10 @@ const formatHost = (session: SshSession) => {
 }
 
 .tips:hover {
-  background: linear-gradient(135deg, rgba(var(--highlight-rgb), 0.12), rgba(var(--highlight-secondary-rgb), 0.08));
-  border-color: rgba(var(--highlight-rgb), 0.25);
+  background: linear-gradient(135deg, rgba(var(--accent-decorative-rgb), 0.12), rgba(var(--accent-decorative-secondary-rgb), 0.08));
+  border-color: rgba(var(--accent-decorative-rgb), 0.25);
   transform: scale(1.01);
-  box-shadow: 0 4px 20px rgba(var(--highlight-rgb), 0.1);
+  box-shadow: 0 4px 20px rgba(var(--accent-decorative-rgb), 0.1);
 }
 
 .tips:active {

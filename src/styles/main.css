@@ -102,22 +102,19 @@
   --brand-alert-end: #dc2626;
   --brand-alert-rgb: 239, 68, 68;
 
-  /* ===== 装饰高亮色（与 accent 解耦）=====
-     语义：用于"纯氛围/装饰"层——hover 发光、卡片浸染浮层、欢迎页背景光斑、
-           logo drop-shadow、图标底板、focus 外层光晕（注意：focus 的 border-color
-           依然用 accent，这里只指最外层柔光）等。
-     accent 继续承担"功能强调"——主按钮、激活 tab 条、焦点边框、链接、文字渐变。
+  /* ===== 装饰层 accent（--accent-decorative-*）=====
+     语义：用于"纯氛围/装饰"——hover 发光、卡片浸染浮层、欢迎页背景光斑、
+           logo drop-shadow、图标底板、focus 外层柔光（focus 的 border-color
+           依然用 --accent-primary，这里只指最外层柔光）等。
+     对比 --accent-primary（功能强调）：主按钮、激活 tab 条、焦点边框、链接、文字渐变。
 
-     解决的痛点：dark/light 两大主流主题都把 accent 选成蓝（对齐 Cursor/VS Code），
-     所有装饰层被 accent 染色后叠加出"蓝色雨"。现在可以在这两个主题单独把装饰层
-     改成中性白/黑，保留 accent 蓝只点缀功能位——而 blue/gruvbox/forest/sakura
-     等主题继承默认（=accent），保留自己的主题风味。
+     为什么拆两层：dark 主题的 accent 是蓝（对齐 Cursor），所有装饰层被 accent 染色后
+     叠加出"蓝色雨"；拆出 --accent-decorative-* 后，dark 单独让装饰层走中性白，
+     其他主题装饰层则显式等于自己的 accent（保持自己的色系）。
 
-     默认值：继承 accent，所以任何未覆盖本组 token 的主题行为不变。 */
-  --highlight-primary: var(--accent-primary);
-  --highlight-secondary: var(--accent-secondary);
-  --highlight-rgb: var(--accent-rgb);
-  --highlight-secondary-rgb: var(--accent-secondary-rgb);
+     约定：每个主题在自己的块内必须显式定义全部 4 个 --accent-decorative-* 变量，
+     不走 fallback——避免 :root 层叠导致"未定义的主题误继承别的主题色值"的 bug。
+     :root 的兜底值在下面 dark 主题的联合块里给出，仅防 FOUC。 */
 }
 
 /* 深色主题 — 参照 Cursor 观感，整体比 VS Code Dark+ 再压低一档，更精致不刺眼。
@@ -157,11 +154,13 @@
 
   /* 装饰层走中性白：让 hover glow/卡片浸染浮层/欢迎页光斑/logo drop-shadow
      从"蓝色雨"变成"精致亮斑"，与 Notion/Linear/Raycast 的深色主题观感对齐；
-     按钮、激活 tab 条、焦点边框、链接等功能强调位继续走 accent 蓝。 */
-  --highlight-primary: #ffffff;
-  --highlight-secondary: #d8d8d8;
-  --highlight-rgb: 255, 255, 255;
-  --highlight-secondary-rgb: 216, 216, 216;
+     按钮、激活 tab 条、焦点边框、链接等功能强调位继续走 accent 蓝。
+     同时作为 :root FOUC 兜底——其他主题必须在自己块里显式覆盖此 4 个变量，
+     否则会继承这里的白色（与主题色系冲突）。 */
+  --accent-decorative-primary: #ffffff;
+  --accent-decorative-secondary: #d8d8d8;
+  --accent-decorative-rgb: 255, 255, 255;
+  --accent-decorative-secondary-rgb: 216, 216, 216;
 
   /* 语义色（去饱和版本） */
   --color-success: #5aa371;
@@ -205,6 +204,12 @@
   --accent-secondary-rgb: 16, 110, 190;
   --bg-secondary-rgb: 235, 235, 235;
 
+  /* 装饰层 = 自己的 accent 蓝（light 主题与整体色系一致） */
+  --accent-decorative-primary: #0078d4;
+  --accent-decorative-secondary: #106ebe;
+  --accent-decorative-rgb: 0, 120, 212;
+  --accent-decorative-secondary-rgb: 16, 110, 190;
+
   --color-success: #107c10;
   --color-success-rgb: 16, 124, 16;
   --color-warning: #ca5010;
@@ -246,6 +251,12 @@
   --accent-secondary-rgb: 127, 204, 255;
   --bg-secondary-rgb: 17, 40, 66;
 
+  /* 装饰层 = accent 天空蓝（蓝色主题本身协调，装饰跟 accent 同色） */
+  --accent-decorative-primary: #5ec0ff;
+  --accent-decorative-secondary: #7fccff;
+  --accent-decorative-rgb: 94, 192, 255;
+  --accent-decorative-secondary-rgb: 127, 204, 255;
+
   --color-success: #6dd400;
   --color-success-rgb: 109, 212, 0;
   --color-warning: #ffb900;
@@ -286,6 +297,12 @@
   --accent-secondary-rgb: 208, 149, 69;
   --bg-secondary-rgb: 37, 31, 26;
 
+  /* 装饰层 = accent 金黄（暖橙主题保持暖色调装饰） */
+  --accent-decorative-primary: #e8a855;
+  --accent-decorative-secondary: #d09545;
+  --accent-decorative-rgb: 232, 168, 85;
+  --accent-decorative-secondary-rgb: 208, 149, 69;
+
   --color-success: #a8c070;
   --color-success-rgb: 168, 192, 112;
   --color-warning: #e0a050;
@@ -322,6 +339,12 @@
   --accent-rgb: 74, 154, 112;
   --accent-secondary-rgb: 58, 133, 96;
   --bg-secondary-rgb: 238, 246, 240;
+
+  /* 装饰层 = accent 森林绿 */
+  --accent-decorative-primary: #4a9a70;
+  --accent-decorative-secondary: #3a8560;
+  --accent-decorative-rgb: 74, 154, 112;
+  --accent-decorative-secondary-rgb: 58, 133, 96;
 
   --color-success: #5aaa75;
   --color-success-rgb: 90, 170, 117;
@@ -363,6 +386,12 @@
   --accent-secondary-rgb: 255, 213, 128;
   --bg-secondary-rgb: 26, 31, 41;
 
+  /* 装饰层 = accent 金黄（Ayu Mirage 保持暖黄调） */
+  --accent-decorative-primary: #ffcc66;
+  --accent-decorative-secondary: #ffd580;
+  --accent-decorative-rgb: 255, 204, 102;
+  --accent-decorative-secondary-rgb: 255, 213, 128;
+
   --color-success: #bae67e;
   --color-success-rgb: 186, 230, 126;
   --color-warning: #ffa759;
@@ -399,6 +428,12 @@
   --accent-rgb: 184, 134, 11;
   --accent-secondary-rgb: 153, 107, 8;
   --bg-secondary-rgb: 35, 31, 26;
+
+  /* 装饰层 = accent 暗金（赞助者主题保持尊贵金色调） */
+  --accent-decorative-primary: #b8860b;
+  --accent-decorative-secondary: #996b08;
+  --accent-decorative-rgb: 184, 134, 11;
+  --accent-decorative-secondary-rgb: 153, 107, 8;
 
   --color-success: #7a9a32;
   --color-success-rgb: 122, 154, 50;
@@ -440,6 +475,12 @@
   --accent-secondary-rgb: 194, 93, 120;
   --bg-secondary-rgb: 248, 240, 244;
 
+  /* 装饰层 = accent 樱花粉（保持温柔粉色调） */
+  --accent-decorative-primary: #d4728a;
+  --accent-decorative-secondary: #c25d78;
+  --accent-decorative-rgb: 212, 114, 138;
+  --accent-decorative-secondary-rgb: 194, 93, 120;
+
   --color-success: #5a9a6a;
   --color-success-rgb: 90, 154, 106;
   --color-warning: #c98a40;
@@ -480,6 +521,12 @@
   --accent-secondary-rgb: 196, 167, 231;
   --bg-secondary-rgb: 31, 29, 46;
 
+  /* 装饰层 = accent 玫瑰淡粉 / 紫（Rosé Pine 原色保持双调感） */
+  --accent-decorative-primary: #ebbcba;
+  --accent-decorative-secondary: #c4a7e7;
+  --accent-decorative-rgb: 235, 188, 186;
+  --accent-decorative-secondary-rgb: 196, 167, 231;
+
   --color-success: #31748f;
   --color-success-rgb: 49, 116, 143;
   --color-warning: #f6c177;
@@ -519,6 +566,12 @@
   --accent-rgb: 0, 255, 255;
   --accent-secondary-rgb: 255, 0, 255;
   --bg-secondary-rgb: 15, 15, 24;
+
+  /* 装饰层 = accent 霓虹青 + 品红（赛博朋克保持双色霓虹光感） */
+  --accent-decorative-primary: #00ffff;
+  --accent-decorative-secondary: #ff00ff;
+  --accent-decorative-rgb: 0, 255, 255;
+  --accent-decorative-secondary-rgb: 255, 0, 255;
 
   --color-success: #00ff88;
   --color-success-rgb: 0, 255, 136;
@@ -589,6 +642,12 @@
   --accent-secondary-rgb: 167, 139, 250;
   --bg-secondary-rgb: 240, 236, 248;
 
+  /* 装饰层 = accent 薰衣草紫 */
+  --accent-decorative-primary: #8b5cf6;
+  --accent-decorative-secondary: #a78bfa;
+  --accent-decorative-rgb: 139, 92, 246;
+  --accent-decorative-secondary-rgb: 167, 139, 250;
+
   --color-success: #22c55e;
   --color-success-rgb: 34, 197, 94;
   --color-warning: #f59e0b;
@@ -626,6 +685,12 @@
   --accent-secondary-rgb: 192, 132, 252;
   --bg-secondary-rgb: 19, 26, 33;
 
+  /* 装饰层 = accent 极光蓝 + 紫（呼应主题双色渐变） */
+  --accent-decorative-primary: #7dd3fc;
+  --accent-decorative-secondary: #c084fc;
+  --accent-decorative-rgb: 125, 211, 252;
+  --accent-decorative-secondary-rgb: 192, 132, 252;
+
   --color-success: #4ade80;
   --color-success-rgb: 74, 222, 128;
   --color-warning: #fbbf24;
@@ -636,16 +701,16 @@
   --color-info-rgb: 125, 211, 252;
 }
 
-/* 欢迎页通用 ambient 背景：使用当前主题的 highlight 色作轻微晕染
+/* 欢迎页通用 ambient 背景：使用当前主题的装饰层色作轻微晕染
  * - 特指度 (0,1,0)，低于任何 [data-ui-theme="xxx"] .welcome-page 规则
- * - 默认 highlight 继承 accent → 蓝/森林/秋日等主题自然对应自己的色相
- * - 深色主题 highlight 覆盖为中性白 → 不再是"蓝色薄雾"而是柔和亮斑
+ * - 每个主题在自己块内定义 --accent-decorative-* → 蓝/森林/樱花等主题自然对应自己的色相
+ * - 深色主题单独把装饰层覆盖为中性白 → 不再是"蓝色薄雾"而是柔和亮斑
  * - 透明度 0.04 / 0.03 保持克制，避免过度泛色
  */
 .welcome-page {
   background: 
-    radial-gradient(ellipse at 30% 20%, rgba(var(--highlight-rgb), 0.04) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 80%, rgba(var(--highlight-secondary-rgb), 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 30% 20%, rgba(var(--accent-decorative-rgb), 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 80%, rgba(var(--accent-decorative-secondary-rgb), 0.03) 0%, transparent 50%),
     var(--bg-primary);
 }
 
@@ -821,7 +886,7 @@ button:focus-visible {
 }
 
 .btn-icon:hover svg {
-  filter: drop-shadow(0 0 3px var(--highlight-primary));
+  filter: drop-shadow(0 0 3px var(--accent-decorative-primary));
 }
 
 /* ==================================================================
@@ -1194,7 +1259,7 @@ button:focus-visible {
 }
 
 .glow-on-hover:hover {
-  box-shadow: 0 0 20px rgba(var(--highlight-rgb, 137, 180, 250), 0.3);
+  box-shadow: 0 0 20px rgba(var(--accent-decorative-rgb, 137, 180, 250), 0.3);
   transform: translateY(-2px);
 }
 
@@ -1360,20 +1425,20 @@ button:focus-visible {
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.2);
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.25);
-  --shadow-glow: 0 0 20px rgba(var(--highlight-rgb), 0.15);
-  --shadow-glow-strong: 0 0 30px rgba(var(--highlight-rgb), 0.25);
+  --shadow-glow: 0 0 20px rgba(var(--accent-decorative-rgb), 0.15);
+  --shadow-glow-strong: 0 0 30px rgba(var(--accent-decorative-rgb), 0.25);
 }
 
 /* 输入框焦点光晕增强
    border-color 保持 accent（焦点边框是"主动作"功能色，不能和装饰层混为一谈），
-   外层两层柔光走 highlight：深色/浅色下就是中性白晕，不会再出现"蓝色光环"。 */
+   外层两层柔光走 --accent-decorative-*：深色主题下就是中性白晕，不会再出现"蓝色光环"。 */
 .input:focus,
 .select:focus,
 textarea:focus {
   border-color: var(--accent-primary);
   box-shadow: 
-    0 0 0 3px rgba(var(--highlight-rgb), 0.15),
-    0 0 20px rgba(var(--highlight-rgb), 0.1);
+    0 0 0 3px rgba(var(--accent-decorative-rgb), 0.15),
+    0 0 20px rgba(var(--accent-decorative-rgb), 0.1);
   outline: none;
 }
 
@@ -1510,7 +1575,7 @@ textarea:focus {
 
 .icon-animated:hover {
   transform: scale(1.15);
-  filter: drop-shadow(0 0 6px var(--highlight-primary));
+  filter: drop-shadow(0 0 6px var(--accent-decorative-primary));
 }
 
 /* 旋转加载图标 */
@@ -1571,7 +1636,7 @@ textarea:focus {
   background: linear-gradient(
     180deg,
     transparent 10%,
-    rgba(var(--highlight-rgb), 0.3) 50%,
+    rgba(var(--accent-decorative-rgb), 0.3) 50%,
     transparent 90%
   );
 }
@@ -1584,19 +1649,19 @@ textarea:focus {
   background: linear-gradient(
     180deg,
     transparent 10%,
-    rgba(var(--highlight-rgb), 0.5) 50%,
+    rgba(var(--accent-decorative-rgb), 0.5) 50%,
     transparent 90%
   );
 }
 
 /* ----- 6. 欢迎页视觉增强 ----- */
 
-/* 欢迎页背景光斑：纯氛围装饰，走 highlight——深色下是柔和白光斑，
-   蓝色主题下继承 accent 继续是蓝光斑。底层微弱绿斑保留（承担"活力"暗示）。 */
+/* 欢迎页背景光斑：纯氛围装饰，走 --accent-decorative-*——深色下是柔和白光斑，
+   蓝色主题下是蓝光斑（各主题装饰层 = 自己的 accent 色）。底层微弱绿斑保留（承担"活力"暗示）。 */
 .welcome-bg-enhanced {
   background: 
-    radial-gradient(ellipse at 20% 30%, rgba(var(--highlight-rgb), 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 70%, rgba(var(--highlight-secondary-rgb), 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 20% 30%, rgba(var(--accent-decorative-rgb), 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 70%, rgba(var(--accent-decorative-secondary-rgb), 0.06) 0%, transparent 50%),
     radial-gradient(ellipse at 50% 100%, rgba(var(--color-success-rgb), 0.04) 0%, transparent 40%),
     var(--bg-primary);
 }
@@ -1645,19 +1710,19 @@ textarea:focus {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, transparent 40%, rgba(var(--highlight-rgb), 0.1) 100%);
+  background: linear-gradient(135deg, transparent 40%, rgba(var(--accent-decorative-rgb), 0.1) 100%);
   opacity: 0;
   transition: opacity 0.3s ease;
 }
 
 /* border-color 保留 accent：这是"焦点/悬停指示"功能色，和装饰层不同。
-   外层薄描边走 highlight，避免在深色主题下卡片周围再镶一圈蓝。 */
+   外层薄描边走 --accent-decorative-*，深色主题下卡片周围是柔白光晕而非蓝。 */
 .action-card:hover {
   transform: translateY(-4px);
   border-color: var(--accent-primary);
   box-shadow: 
     0 8px 24px rgba(0, 0, 0, 0.15),
-    0 0 0 1px rgba(var(--highlight-rgb), 0.2);
+    0 0 0 1px rgba(var(--accent-decorative-rgb), 0.2);
 }
 
 .action-card:hover::before {
