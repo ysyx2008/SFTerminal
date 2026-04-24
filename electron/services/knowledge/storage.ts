@@ -151,29 +151,57 @@ export class VectorStorage extends EventEmitter {
 
   /**
    * 确保表存在
+   *
+   * 处理三种情况：
+   * 1. 内存里 this.table 已存在：直接返回
+   * 2. 磁盘上表已存在（tableNames 包含）：openTable 打开
+   * 3. 表不存在：createTable 创建
+   *
+   * createTable 抛 "already exists" 时 fallback 到 openTable，
+   * 防止磁盘残留（如 dropTable 失败）导致反复 createTable 刷屏。
    */
   private async ensureTable(sampleRecord?: VectorRecord): Promise<void> {
     if (this.table) return
-    
-    if (!sampleRecord) {
-      // 创建一个临时记录来初始化表结构
-      sampleRecord = {
-        id: '__init__',
-        docId: '__init__',
-        content: '',
-        vector: new Array(this.dimensions).fill(0),
-        filename: '',
-        hostId: '',
-        tags: '',
-        chunkIndex: 0,
-        createdAt: Date.now()
+
+    try {
+      const tableNames = await this.db.tableNames()
+      if (tableNames.includes(this.tableName)) {
+        this.table = await this.db.openTable(this.tableName)
+        return
       }
-      
-      this.table = await this.db.createTable(this.tableName, [sampleRecord])
+    } catch (e) {
+      log.warn('检查表是否存在失败，继续尝试创建:', e)
+    }
+
+    const isPlaceholder = !sampleRecord
+    const recordToInsert: VectorRecord = sampleRecord ?? {
+      id: '__init__',
+      docId: '__init__',
+      content: '',
+      vector: new Array(this.dimensions).fill(0),
+      filename: '',
+      hostId: '',
+      tags: '',
+      chunkIndex: 0,
+      createdAt: Date.now()
+    }
+
+    try {
+      this.table = await this.db.createTable(this.tableName, [recordToInsert])
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      if (msg.includes('already exists')) {
+        log.warn(`createTable 冲突（磁盘残留表），fallback 到 openTable: ${msg}`)
+        this.table = await this.db.openTable(this.tableName)
+        // openTable 成功后由调用方继续 add 新记录；不要再插入 __init__ 占位数据
+        return
+      }
+      throw error
+    }
+
+    if (isPlaceholder) {
       // 使用双引号包裹列名，防止 DataFusion SQL 解析器将其转为小写
       await this.table.delete('"id" = \'__init__\'')
-    } else {
-      this.table = await this.db.createTable(this.tableName, [sampleRecord])
     }
   }
 

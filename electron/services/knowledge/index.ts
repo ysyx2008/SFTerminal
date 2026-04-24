@@ -242,7 +242,7 @@ export class KnowledgeService extends EventEmitter {
     // 如果向量库和 BM25 索引都有数据，跳过重建
     if (stats.chunkCount > 0 && bm25Stats.documentCount > 0) return
     
-    const needRebuildVector = stats.chunkCount === 0
+    let needRebuildVector = stats.chunkCount === 0
     const needRebuildBM25 = bm25Stats.documentCount === 0
     
     log.info(`开始重建索引，共 ${docs.length} 个文档 (vector=${needRebuildVector}, bm25=${needRebuildBM25})...`)
@@ -293,8 +293,16 @@ export class KnowledgeService extends EventEmitter {
         if (needRebuildVector) {
           pendingVectorRecords.push(...records)
           if (pendingVectorRecords.length >= VECTOR_BATCH_SIZE) {
-            await this.vectorStorage.addRecords(pendingVectorRecords)
-            pendingVectorRecords = []
+            try {
+              await this.vectorStorage.addRecords(pendingVectorRecords)
+            } catch (batchError) {
+              // 批量写入失败后必须清空队列，否则后续每次循环都会再次尝试同一批
+              // 失败记录 → 反复抛出同一错误刷屏。失败时停止向量重建，BM25 继续。
+              log.error('向量批量写入失败，停止向量重建（BM25 继续）:', batchError)
+              needRebuildVector = false
+            } finally {
+              pendingVectorRecords = []
+            }
           }
         }
         
@@ -318,9 +326,14 @@ export class KnowledgeService extends EventEmitter {
       }
     }
     
-    // 刷入剩余的向量记录
+    // 刷入剩余的向量记录（同样需要容错，避免最后一批失败冒泡导致整个 initialize 报错）
     if (pendingVectorRecords.length > 0) {
-      await this.vectorStorage.addRecords(pendingVectorRecords)
+      try {
+        await this.vectorStorage.addRecords(pendingVectorRecords)
+      } catch (batchError) {
+        log.error('向量批量写入失败（最后一批）:', batchError)
+        needRebuildVector = false
+      }
     }
     
     // compact 合并 LanceDB manifest，防止版本文件膨胀导致下次启动读取失败
