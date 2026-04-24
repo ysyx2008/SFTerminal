@@ -129,8 +129,11 @@ function firstStringValue(obj: Record<string, unknown>): string | null {
 /**
  * 流式预创建卡片中"path 还没流到"时的占位符。
  * path 到达后会被真实路径替换，用户先看到卡片出现、再看到路径填入。
+ * 文字明确表达"临时状态、等一下"，避免用户误以为 AI 打算用空路径调用。
  */
-const STREAM_PLACEHOLDER = '…'
+function getStreamPlaceholder(): string {
+  return t('agent.stream_pending_field')
+}
 
 /**
  * 计算指定字符串字段累计长度，构造实时进度尾缀，如 ` · 1234 字符`。
@@ -183,7 +186,7 @@ export function buildPreToolCallDisplay(toolName: string, partialArgs: string): 
     case 'write_remote_text_file': {
       // 一旦工具名命中就立即显示卡片——path 未到（AI 未按 schema 顺序、或正在流 content 前置字段）
       // 时用占位符，避免"长字段流式期间卡片完全不出现"。path 到达后占位符自动被真实路径替换。
-      const pathDisplay = asString(parsed.path) ?? STREAM_PLACEHOLDER
+      const pathDisplay = asString(parsed.path) ?? getStreamPlaceholder()
       // mode 在 schema 中位于 content 之后，长内容流式时可能尚未到达，
       // 未到达时默认按 'create' 渲染（与执行器默认值一致）
       const mode = asString(parsed.mode) || 'create'
@@ -221,7 +224,7 @@ export function buildPreToolCallDisplay(toolName: string, partialArgs: string): 
     }
     case 'edit_file': {
       // 同 write_text_file：path 未到时用占位符保证卡片立刻出现
-      const pathDisplay = asString(parsed.path) ?? STREAM_PLACEHOLDER
+      const pathDisplay = asString(parsed.path) ?? getStreamPlaceholder()
       const progress = buildStreamProgressSuffix(parsed, ['old_text', 'new_text'])
       return `${t('file.edit')}: ${pathDisplay}${progress}`
     }
@@ -1818,6 +1821,13 @@ export abstract class Agent {
     const TOOL_PROGRESS_THROTTLE_MS = 120
     
     const sendContentUpdate = () => {
+      // reasoning 块一旦闭合（</details> 出现意味着 AI 已结束思考、切到 content 或 tool_calls 阶段），
+      // 立刻把 <details open> 替换为 <details> 折叠思考卡。不这样做的话会等到整个流结束（onDone）
+      // 才折叠，而 tool_calls 参数流式（尤其 write_text_file 的 content）动辄几秒到几十秒，
+      // 用户会误以为"思考还在进行"。替换是幂等的，onDone 里的 replace 继续作为兜底。
+      if (streamContent.includes('</details>') && streamContent.includes('<details open>')) {
+        streamContent = streamContent.replace(/<details open>/g, '<details>')
+      }
       this.updateStep(streamStepId, {
         type: 'message',
         content: streamContent,

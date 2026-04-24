@@ -169,11 +169,19 @@ run(message, context, options)
 **承诺**：`callAiWithStreaming` 的 `onToolCallProgress` 回调在参数流式阶段就根据已到达的 partial JSON 预创建一张 `tool_call` 卡片，执行器首次 `addStep` 时由 `wrapExecutorConfigForToolCall` 无缝接管。
 
 - **内容格式**由 `buildPreToolCallDisplay(toolName, partialArgs)` 集中决定，必须与执行器最终 `addStep` 的 content 对齐（相同前缀、相同路径/命令），避免接管瞬间视觉跳变
-- **工具名命中即显示**：只要 `toolName` 在支持列表中就立即创建卡片，`path` 未到达时用占位符（`…`）兜底，path 到达后自动替换。不要求字段齐全才显示——AI 未必按 schema 顺序输出 arguments，先流长字段（如 `old_text` / `content`）、最后才流 `path` 的情况很常见
+- **工具名命中即显示**：只要 `toolName` 在支持列表中就立即创建卡片，`path` 未到达时用占位符（`生成中…`，i18n key `agent.stream_pending_field`）兜底，path 到达后自动替换。不要求字段齐全才显示——AI 未必按 schema 顺序输出 arguments，先流长字段（如 `old_text` / `content`）、最后才流 `path` 的情况很常见
 - **path 固定、长内容隐藏的工具**（write_text_file / edit_file 等）额外追加实时字符数尾缀（如 `· 1234 字符`），累计 content / old_text / new_text 长度，让"AI 还在持续输出"这件事可见；命令类工具不追加尾缀（命令文本本身在流式增长）
 - **不做字段名模糊匹配**（遵循项目规则）：每个支持的工具显式声明取哪些字段
 - **解析失败不回退**：AI 还没流完字段时保留上一次的缓存内容，避免"闪一下就消失"
 - **回归保护**：`__tests__/pre-tool-call-display.test.ts` 固定了所有关键契约（预创建范围、字符数阈值、渲染格式、path 占位行为）。本承诺曾在 commit `4aeabb1a` 的重构中丢失，测试是防止再次丢失的机械护栏
+
+### 思考过程折叠时机（UX 承诺）
+
+推理模型（DeepSeek-R1、豆包思考、Claude Thinking 等）的 `reasoning_content` 在流式阶段以 `<details open>...</details>` 的 HTML 块呈现，让用户看到 AI 正在思考。**一旦 reasoning 结束、AI 切换到 content 或 tool_calls 阶段，思考卡必须立刻折叠**；否则用户会误以为"思考还没结束"。
+
+- **检测点**：`callAiWithStreaming` 的 `sendContentUpdate` 里。当 `streamContent` 同时包含 `<details open>` 和 `</details>`（即 reasoning 块已闭合），立即把 `<details open>` 替换为 `<details>`，UI 下次 render 时 details 默认折叠
+- **替换幂等**：onDone 里对 `streamContent` 做同样的 replace 作为兜底（纯 reasoning 无 content/tool_calls 的场景、或替换逻辑未被触发时）
+- **不能等到整段流结束才折叠**：有长参数工具（如 `write_text_file` 的大 content）时，AI 从"思考完"到"整段流结束"之间可能隔数秒到数十秒，此时思考卡继续展开会给用户"还在思考"的错觉。修复前曾在 commit `4aeabb1a` 引入 tool_call 预卡片后，因 tool_calls 参数流式变长、这个问题才暴露
 
 ### 技能系统 (`skills/`)
 

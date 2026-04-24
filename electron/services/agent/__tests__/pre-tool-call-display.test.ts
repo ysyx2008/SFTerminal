@@ -121,13 +121,13 @@ describe('buildPreToolCallDisplay', () => {
         'write_text_file',
         JSON.stringify({ mode: 'overwrite' })
       )
-      expect(out).toBe('覆盖写入文件: …')
+      expect(out).toBe('覆盖写入文件: 生成中…')
     })
 
     it('工具名刚命中、arguments 还是空对象 {} 时也要显示占位卡片', () => {
-      // tryParsePartialJson('{}') 成功返回 {}，应当立即显示"新建文件: …"
+      // tryParsePartialJson('{}') 成功返回 {}，应当立即显示"新建文件: 生成中…"
       const out = buildPreToolCallDisplay('write_text_file', '{}')
-      expect(out).toBe('新建文件: …')
+      expect(out).toBe('新建文件: 生成中…')
     })
 
     it('path 到达后占位符自动被真实路径替换', () => {
@@ -140,10 +140,10 @@ describe('buildPreToolCallDisplay', () => {
         'write_text_file',
         JSON.stringify({ path: '/tmp/a.txt', content: 'x'.repeat(200) })
       )
-      expect(before).toContain('…')
+      expect(before).toContain('生成中…')
       expect(before).not.toContain('/tmp/a.txt')
       expect(after).toContain('/tmp/a.txt')
-      expect(after).not.toContain('…')
+      expect(after).not.toContain('生成中…')
     })
   })
 
@@ -256,7 +256,7 @@ describe('buildPreToolCallDisplay', () => {
         'edit_file',
         JSON.stringify({ old_text: 'x'.repeat(200) })
       )
-      expect(out).toBe('编辑文件: … · 200 字符')
+      expect(out).toBe('编辑文件: 生成中… · 200 字符')
     })
 
     it('path 到达后占位符自动被替换，字符数尾缀保留', () => {
@@ -268,7 +268,7 @@ describe('buildPreToolCallDisplay', () => {
         'edit_file',
         JSON.stringify({ path: '/tmp/a.txt', old_text: 'x'.repeat(200) })
       )
-      expect(before).toBe('编辑文件: … · 150 字符')
+      expect(before).toBe('编辑文件: 生成中… · 150 字符')
       expect(after).toBe('编辑文件: /tmp/a.txt · 200 字符')
     })
   })
