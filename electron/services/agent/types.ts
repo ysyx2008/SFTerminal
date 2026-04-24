@@ -139,6 +139,13 @@ export interface AgentRun {
   pendingUserMessages: PendingUserMessage[]
   /** 系统注入消息（如异步子 Agent 结果），发给 AI 并可选创建简短通知步骤 */
   pendingSystemMessages: Array<{ content: string; notify?: string }>
+  /**
+   * 已启动但尚未完成的后台子任务 Promise（dispatch_agents background=true）。
+   * executeLoop 在"无工具调用 + 无 pending 消息"即将结束时，会先等待这些任务完成，
+   * 避免异步子 Agent 的结果因主 Agent 提前返回而被丢弃。
+   * Promise 完成后由 registerBackgroundTask 注册的 finally 自动从数组中移除。
+   */
+  pendingBackgroundPromises: Promise<unknown>[]
   config: AgentConfig
   context: AgentContext  // 运行上下文
   // 实时终端输出缓冲区（Agent 运行期间收集）

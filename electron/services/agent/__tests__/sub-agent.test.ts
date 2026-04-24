@@ -631,6 +631,49 @@ describe('dispatchSubAgents', () => {
     )
   })
 
+  it('should register background promise so the main Agent can await completion', async () => {
+    // 回归：异步模式下必须把执行 Promise 注册给主 Agent，否则主 Agent 可能在子任务完成前
+    // finalizeRun，导致 injectSystemMessage 注入的结果被丢弃。
+    const registerBackgroundTask = vi.fn()
+    const injectSystemMessage = vi.fn()
+    const executor = createMockExecutor({
+      registerBackgroundTask,
+      injectSystemMessage
+    })
+    const mockAi = (executor as any)._mockAiService
+
+    let aiResolved = false
+    mockAi.chatWithTools.mockImplementation(async () => {
+      await new Promise(resolve => setTimeout(resolve, 30))
+      aiResolved = true
+      return {
+        content: 'Sub-agent done',
+        tool_calls: undefined,
+        finish_reason: 'stop',
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+      }
+    })
+
+    const result = await dispatchSubAgents({
+      tasks: [{ description: 'Bg task', prompt: 'Do async work' }],
+      background: true
+    }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
+
+    // dispatch_agents 立即返回，子 Agent 尚未跑完
+    expect(result.success).toBe(true)
+    expect(aiResolved).toBe(false)
+
+    // 必须注册 Promise，供主 Agent 在"准备结束"时 await
+    expect(registerBackgroundTask).toHaveBeenCalledTimes(1)
+    const registered = registerBackgroundTask.mock.calls[0][0]
+    expect(registered).toBeInstanceOf(Promise)
+
+    // 等待注册的 Promise，此时 AI 应已调用完、结果也注入过
+    await registered
+    expect(aiResolved).toBe(true)
+    expect(injectSystemMessage).toHaveBeenCalled()
+  })
+
   it('should validate sub-task prompt is non-empty', async () => {
     const executor = createMockExecutor()
     const result = await dispatchSubAgents({

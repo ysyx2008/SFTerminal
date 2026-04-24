@@ -80,6 +80,14 @@ export interface ToolExecutorConfig {
   injectPendingMessage?: (message: string) => void
   /** 注入系统消息到 AI 上下文，可选创建简短 UI 通知（不产生 user_supplement 气泡） */
   injectSystemMessage?: (content: string, notify?: string) => void
+  /**
+   * 注册一个后台异步任务（如 dispatch_agents background=true 的 executeAll）。
+   *
+   * 主 Agent 的 executeLoop 在"即将返回最终结果但该任务尚未完成"时会先等待它，
+   * 以确保 injectSystemMessage 注入的结果能被下一轮 AI 对话消费，而不是在 run 结束后被丢弃。
+   * 传入的 Promise 建议使用不会 reject 的形式（内部 catch 错误），避免 UnhandledRejection。
+   */
+  registerBackgroundTask?: (promise: Promise<unknown>) => void
   /** 获取父 Agent 的 fork 上下文（消息历史 + 工具列表），用于子 Agent 共享 prompt cache */
   getParentContext?: () => {
     messages: import('../../ai.service').AiMessage[]

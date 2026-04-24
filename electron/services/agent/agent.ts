@@ -648,6 +648,7 @@ export abstract class Agent {
       aborted: false,
       pendingUserMessages: [],
       pendingSystemMessages: [],
+      pendingBackgroundPromises: [],
       config,
       context,
       realtimeOutputBuffer: [...context.terminalOutput],
@@ -1593,6 +1594,11 @@ export abstract class Agent {
                 continue
               }
               
+              // 即便没跑过工具，也要等后台任务（理论上 hasExecutedAnyTool 为 false 时不会有 bg，防御性检查）
+              if (await this.awaitBackgroundTasksIfAny(run)) {
+                continue
+              }
+              
               if (lastResponse?.content?.trim()) {
                 // 直接返回，让 run() 方法中的 finalizeRun 处理完成回调
                 return lastResponse.content
@@ -1611,6 +1617,13 @@ export abstract class Agent {
             
             // 已执行过工具，检查是否有待处理的消息
             if (run.pendingUserMessages.length > 0 || run.pendingSystemMessages.length > 0) {
+              continue
+            }
+            
+            // 若有异步子 Agent（dispatch_agents background=true）仍在后台执行，先等它们
+            // 完成并通过 injectSystemMessage 注入结果，再让 AI 基于完整信息决定是否结束。
+            // 否则主 Agent 会在子任务完成前就 finalizeRun，子任务结果彻底丢失。
+            if (await this.awaitBackgroundTasksIfAny(run)) {
               continue
             }
             
@@ -2643,6 +2656,15 @@ export abstract class Agent {
           log.warn('injectSystemMessage: no active run, message dropped')
         }
       },
+      registerBackgroundTask: (promise: Promise<unknown>) => {
+        // 绑定到具体 run 闭包（非 this.currentRun），保证跨 run 场景下归属正确
+        run.pendingBackgroundPromises.push(promise)
+        // 任务完成后自动从数组中移除，避免数组无限增长
+        promise.finally(() => {
+          const idx = run.pendingBackgroundPromises.indexOf(promise)
+          if (idx >= 0) run.pendingBackgroundPromises.splice(idx, 1)
+        })
+      },
       getParentContext: () => {
         if (!run.messages.length) return undefined
         return {
@@ -2712,6 +2734,29 @@ export abstract class Agent {
     this.callbacks?.onStepRemoved?.(this.currentRun.id, stepId)
   }
   
+  /**
+   * 若存在正在后台运行的子任务（dispatch_agents background=true），则等待至少一个完成。
+   *
+   * 时机：主循环"无工具调用 + 无 pending 消息"即将返回最终结果的关头。
+   * 完成的后台任务会通过 injectSystemMessage 将结果写入 pendingSystemMessages，
+   * 下一轮循环开头的 processPendingUserMessages 会把它注入 AI 上下文，触发继续对话。
+   *
+   * @returns true 表示发生过等待（调用方应 continue 继续循环）；false 表示没有后台任务可等
+   */
+  protected async awaitBackgroundTasksIfAny(run: AgentRun): Promise<boolean> {
+    if (run.pendingBackgroundPromises.length === 0) return false
+    if (run.aborted || !run.isRunning) return false
+
+    const count = run.pendingBackgroundPromises.length
+    log.info(`Agent waiting for ${count} background sub-agent task(s) before finalizing`)
+
+    // 快照当前 promise 列表（数组会被 finally 回调即时 splice），分别 .catch 吞错避免中断 race
+    const snapshot = [...run.pendingBackgroundPromises]
+    await Promise.race(snapshot.map(p => p.catch(() => {})))
+
+    return true
+  }
+
   /**
    * 处理待处理的用户消息和系统消息
    */

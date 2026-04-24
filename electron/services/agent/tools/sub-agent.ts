@@ -499,7 +499,7 @@ export async function dispatchSubAgents(
 
   // 异步模式：立即返回，后台执行
   if (background) {
-    executeAll().then(allResults => {
+    const backgroundPromise = executeAll().then(allResults => {
       const successCount = allResults.filter(r => r.status === 'completed').length
       const failCount = allResults.filter(r => r.status === 'failed').length
       const summary = formatResultsSummary(allResults)
@@ -533,6 +533,10 @@ export async function dispatchSubAgents(
         executor.injectPendingMessage?.(errorMsg)
       }
     })
+
+    // 注册到主 Agent，确保它在"看起来任务已完成"时不会抢先结束 run
+    // 从而丢弃后续 injectSystemMessage 注入的子任务结果。
+    executor.registerBackgroundTask?.(backgroundPromise)
 
     return {
       success: true,

@@ -1,6 +1,6 @@
 # Agent 子系统 SPEC
 
-> Last verified: 2026-04-24
+> Last verified: 2026-04-25
 
 ## 职责
 
@@ -143,7 +143,7 @@ run(message, context, options)
 
 **执行模式**：
 - **同步**（默认）：`dispatchSubAgents` 阻塞等待全部完成
-- **异步**（`background: true`）：立即返回，后台执行，完成后通过 `injectPendingMessage` 注入结果
+- **异步**（`background: true`）：立即返回，后台执行，完成后通过 `injectSystemMessage` 注入结果。后台 Promise 通过 `executor.registerBackgroundTask` 注册给主 Agent；`executeLoop` 在"无工具调用 + 无 pending 消息"即将返回最终结果前会调用 `awaitBackgroundTasksIfAny` 阻塞等待，避免子任务结果在主 Agent `finalizeRun` 后因 `currentRun.isRunning=false` 而被静默丢弃
 
 **安全约束**：
 - 子 Agent 继承父 Agent 的 `executionMode`，不可递归 `dispatch_agents`
