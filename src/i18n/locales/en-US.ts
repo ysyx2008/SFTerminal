@@ -488,6 +488,7 @@ export default {
     deleteProfile: 'Delete Profile',
     copyProfile: 'Copy Profile',
     copySuffix: '(Copy)',
+    dragToReorder: 'Drag to reorder',
     setActive: 'Set as Active',
     confirmDeleteProfile: 'Are you sure you want to delete this AI profile?',
     confirmNoApiKey: 'You have not entered an API Key.\n\nMost API services require a key to work (except local deployments like Ollama).\n\nDo you want to continue saving?',

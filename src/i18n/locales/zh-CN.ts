@@ -488,6 +488,7 @@ export default {
     deleteProfile: '删除配置',
     copyProfile: '复制配置',
     copySuffix: '副本',
+    dragToReorder: '拖动以调整顺序',
     setActive: '设为当前',
     confirmDeleteProfile: '确定要删除此 AI 配置吗？',
     confirmNoApiKey: '您没有填写 API Key。\n\n大多数 API 服务需要提供 Key 才能正常使用（本地部署的 Ollama 等除外）。\n\n确定要继续保存吗？',

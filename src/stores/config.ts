@@ -507,6 +507,20 @@ export const useConfigStore = defineStore('config', () => {
     }
   }
 
+  async function reorderAiProfiles(fromIndex: number, toIndex: number): Promise<void> {
+    const list = aiProfiles.value
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 || fromIndex >= list.length ||
+      toIndex < 0 || toIndex >= list.length
+    ) {
+      return
+    }
+    const [moved] = list.splice(fromIndex, 1)
+    list.splice(toIndex, 0, moved)
+    await saveAiProfiles()
+  }
+
   async function setActiveAiProfile(id: string): Promise<void> {
     activeAiProfileId.value = id
     await window.electronAPI.config.setActiveAiProfile(id)
@@ -926,6 +940,7 @@ export const useConfigStore = defineStore('config', () => {
     addAiProfile,
     updateAiProfile,
     deleteAiProfile,
+    reorderAiProfiles,
     setActiveAiProfile,
     addSshSession,
     updateSshSession,

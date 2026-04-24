@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Pencil, Trash2, X, ExternalLink, Eye, Copy } from 'lucide-vue-next'
+import { Plus, Pencil, Trash2, X, ExternalLink, Eye, Copy, GripVertical } from 'lucide-vue-next'
 import { useConfigStore, type AiProfile, type AiModelType, type ApiFormat } from '../../stores/config'
 import { AI_TEMPLATES } from '../../config/ai-templates'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderId } from '@shared/types'
@@ -162,6 +162,44 @@ const deleteProfile = async (profile: AiProfile) => {
 
 const setActive = async (profileId: string) => {
   await configStore.setActiveAiProfile(profileId)
+}
+
+// ==================== 拖拽排序 ====================
+const dragIndex = ref<number | null>(null)
+const dragOverIndex = ref<number | null>(null)
+
+const handleProfileDragStart = (index: number, event: DragEvent) => {
+  dragIndex.value = index
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', index.toString())
+  }
+}
+
+const handleProfileDragOver = (index: number, event: DragEvent) => {
+  event.preventDefault()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move'
+  }
+  dragOverIndex.value = index
+}
+
+const handleProfileDragLeave = () => {
+  dragOverIndex.value = null
+}
+
+const handleProfileDrop = async (toIndex: number, event: DragEvent) => {
+  event.preventDefault()
+  const from = dragIndex.value
+  dragIndex.value = null
+  dragOverIndex.value = null
+  if (from === null || from === toIndex) return
+  await configStore.reorderAiProfiles(from, toIndex)
+}
+
+const handleProfileDragEnd = () => {
+  dragIndex.value = null
+  dragOverIndex.value = null
 }
 
 // Steam 版本：不提供任何 AI/API 配置入口，仅展示说明（__STEAM_BUILD__ 由 vite define 注入）
@@ -487,11 +525,24 @@ function openWebSearchKeyUrl() {
         <!-- 配置列表 -->
         <div class="profile-list">
           <div
-            v-for="profile in profiles"
+            v-for="(profile, index) in profiles"
             :key="profile.id"
             class="profile-item"
-            :class="{ active: profile.id === activeProfileId }"
+            :class="{
+              active: profile.id === activeProfileId,
+              dragging: dragIndex === index,
+              'drag-over': dragOverIndex === index && dragIndex !== null && dragIndex !== index,
+            }"
+            draggable="true"
+            @dragstart="handleProfileDragStart(index, $event)"
+            @dragover="handleProfileDragOver(index, $event)"
+            @dragleave="handleProfileDragLeave"
+            @drop="handleProfileDrop(index, $event)"
+            @dragend="handleProfileDragEnd"
           >
+            <div class="drag-handle" :title="t('aiSettings.dragToReorder')">
+              <GripVertical :size="14" />
+            </div>
             <div class="profile-radio">
               <input
                 type="radio"
@@ -936,7 +987,7 @@ function openWebSearchKeyUrl() {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: border-color 0.2s ease, background 0.2s ease, opacity 0.2s ease;
 }
 
 .profile-item:hover {
@@ -946,6 +997,34 @@ function openWebSearchKeyUrl() {
 .profile-item.active {
   border-color: var(--accent-primary);
   background: rgba(var(--accent-rgb), 0.1);
+}
+
+.profile-item.dragging {
+  opacity: 0.5;
+}
+
+.profile-item.drag-over {
+  border-top: 2px solid var(--accent-primary);
+  margin-top: -1px;
+}
+
+.drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: grab;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+  flex-shrink: 0;
+}
+
+.profile-item:hover .drag-handle {
+  opacity: 1;
+}
+
+.profile-item.dragging .drag-handle {
+  cursor: grabbing;
 }
 
 .profile-radio input {
