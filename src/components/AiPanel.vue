@@ -3475,6 +3475,18 @@ watch(() => props.visible, (visible) => {
   text-decoration: underline;
 }
 
+/* .message-content / .agent-final-body 外层显式设置了 cursor: text（用于文本选中）。
+   cursor 是继承属性，会让子 <a> / .file-path-link 的 UA 默认手形光标失效。
+   这里显式恢复，保证 AI 最终总结 / proactive_message / 错误卡片里的链接也有手形光标。 */
+.message-content :deep(a[href]),
+.message-content :deep(.file-path-link),
+.message-content :deep(code.file-path-link),
+.agent-final-body :deep(a[href]),
+.agent-final-body :deep(.file-path-link),
+.agent-final-body :deep(code.file-path-link) {
+  cursor: pointer;
+}
+
 .markdown-content :deep(hr) {
   border: none;
   border-top: 1px solid var(--border-color);
