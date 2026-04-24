@@ -247,6 +247,14 @@ export class KnowledgeService extends EventEmitter {
     
     log.info(`开始重建索引，共 ${docs.length} 个文档 (vector=${needRebuildVector}, bm25=${needRebuildBM25})...`)
     
+    // 通知外层（main.ts）前端应当显示进度条。
+    // 不管触发原因是维度升级/数据损坏/BM25 缺失，只要真的会走重建流程就发。
+    const rebuildReason: 'vector' | 'bm25' | 'both' =
+      needRebuildVector && needRebuildBM25 ? 'both'
+      : needRebuildVector ? 'vector'
+      : 'bm25'
+    this.emit('rebuildStarted', { total: docs.length, reason: rebuildReason })
+    
     // 批量收集向量记录，最后一次性写入以减少 LanceDB manifest 版本数
     const VECTOR_BATCH_SIZE = 200
     let pendingVectorRecords: VectorRecord[] = []

@@ -498,13 +498,20 @@ async function initKnowledgeService(): Promise<void> {
       // 监听模型升级事件（维度变化导致索引重建）
       knowledgeService.once('indexCleared', ({ reason, oldDimensions, newDimensions }) => {
         log.info(`知识库模型升级: ${reason} (${oldDimensions} -> ${newDimensions})`)
-        // 通知前端正在升级
-        mainWindow?.webContents.send('knowledge:upgrading', { 
-          reason: 'model_upgrade',
-          message: '正在升级知识库模型，请稍候...'
+      })
+
+      // 监听重建开始事件（任何原因：模型升级/数据损坏/BM25 缺失等）
+      // 这是前端进度条出现的统一入口——indexCleared 只覆盖维度变化一种情况，
+      // 数据损坏/BM25 缺失场景此前没有触发 upgrading 导致用户感觉 UI 纯卡住。
+      knowledgeService.on('rebuildStarted', ({ total, reason }: { total: number; reason: string }) => {
+        log.info(`知识库开始重建: reason=${reason}, total=${total}`)
+        mainWindow?.webContents.send('knowledge:upgrading', {
+          reason,
+          total,
+          message: '正在重建知识库索引，请稍候...'
         })
       })
-      
+
       // 监听重建进度（仅在升级时通知前端）
       knowledgeService.on('rebuildProgress', (progress: { current: number; total: number; filename: string }) => {
         mainWindow?.webContents.send('knowledge:rebuildProgress', progress)
