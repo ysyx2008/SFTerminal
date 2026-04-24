@@ -1,6 +1,6 @@
 # AiService SPEC
 
-> Last verified: 2026-03-09
+> Last verified: 2026-04-24
 
 ## 职责
 
@@ -8,7 +8,7 @@ AI API 的统一调用层。封装 OpenAI 兼容协议的 HTTP 请求，提供�
 
 ## 文件
 
-单文件：`electron/services/ai.service.ts`（~1570 行）
+单文件：`electron/services/ai.service.ts`（~2240 行）
 
 ## 公开 API
 
@@ -69,7 +69,18 @@ AI API 的统一调用层。封装 OpenAI 兼容协议的 HTTP 请求，提供�
 
 ### Think 模型支持
 
-支持 DeepSeek-R1 等模型的 `reasoning_content` 字段，流式输出时包裹在折叠 HTML 块中。
+支持 DeepSeek-R1 / DeepSeek V3.2+ 等模型的 `reasoning_content` 字段，流式输出时包裹在折叠 HTML 块中。
+
+**DeepSeek V3.2+ 思考模式 + 工具调用的严格规则**（[官方文档](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode)）：带有 `tool_calls` 的 assistant 消息在后续所有请求中必须回传 `reasoning_content` 字段，否则 API 返回 400（`The reasoning_content in the thinking mode must be passed back to the API`）。
+
+`formatMessageForApi` 中对带 `tool_calls` 的 assistant 消息始终输出 `reasoning_content` 字段（缺失时补空串），以同时兼容：
+
+- DeepSeek V3.2+ 思考模式（必须回传）
+- DeepSeek R1 / 非思考模式（回传被忽略，无副作用）
+- OpenAI 及其他 OpenAI 兼容 API（忽略未知字段）
+- Anthropic 原生 API（走 `convertToAnthropicBody` 单独转换，不受影响）
+
+流式收集处用 `hasReasoningOutput` 标志（是否收到过 `delta.reasoning_content`）而非字符串非空作为"是否思考模式"的判定依据，避免空字符串被 `||` 转为 `undefined` 后在后续请求中字段消失。
 
 ### 中止机制
 

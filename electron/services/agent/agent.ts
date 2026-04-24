@@ -1535,6 +1535,9 @@ export abstract class Agent {
           role: 'assistant',
           content: response.content || ''
         }
+        if (response.reasoning_content !== undefined) {
+          truncationHint.reasoning_content = response.reasoning_content
+        }
         run.messages.push(truncationHint)
         run.taskMessageLog.push({ ...truncationHint })
         
@@ -1575,6 +1578,9 @@ export abstract class Agent {
           role: 'assistant',
           content: response.content || ''
         }
+        if (response.reasoning_content !== undefined) {
+          assistantMsg.reasoning_content = response.reasoning_content
+        }
         run.messages.push(assistantMsg)
         run.taskMessageLog.push({ ...assistantMsg })
         
@@ -1600,12 +1606,14 @@ export abstract class Agent {
       }
       
       // 添加 assistant 消息到历史
+      // DeepSeek V3.2+ 思考模式：带 tool_calls 的 assistant 消息后续请求必须回传 reasoning_content
+      // 这里用 !== undefined 确保即使模型只返回空字符串也会被保留（避免 || 把空串转成 undefined）
       const assistantMsg: AiMessage = {
         role: 'assistant',
         content: response.content || '',
         tool_calls: validToolCalls
       }
-      if (response.reasoning_content) {
+      if (response.reasoning_content !== undefined) {
         assistantMsg.reasoning_content = response.reasoning_content
       }
       run.messages.push(assistantMsg)

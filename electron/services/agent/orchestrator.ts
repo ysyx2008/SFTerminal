@@ -244,7 +244,11 @@ export class OrchestratorService {
               break
             }
             log.warn(`Orchestrator output truncated (finish_reason=length), retry ${truncationRetryCount}/${MAX_TRUNCATION_RETRIES}`)
-            messages.push({ role: 'assistant', content: response.content || '' })
+            const truncatedMsg: AiMessage = { role: 'assistant', content: response.content || '' }
+            if (response.reasoning_content !== undefined) {
+              truncatedMsg.reasoning_content = response.reasoning_content
+            }
+            messages.push(truncatedMsg)
             messages.push({ role: 'user', content: t('agent.output_truncated_hint') })
             continue
           }
@@ -281,10 +285,14 @@ export class OrchestratorService {
             }
             
             // 添加提示消息，要求 AI 使用工具
-            messages.push({
+            const noToolMsg: AiMessage = {
               role: 'assistant',
               content: response.content || ''
-            })
+            }
+            if (response.reasoning_content !== undefined) {
+              noToolMsg.reasoning_content = response.reasoning_content
+            }
+            messages.push(noToolMsg)
             messages.push({
               role: 'user',
               content: '请注意：你需要使用提供的工具来完成任务，而不是只给出文字回复。' +
@@ -336,11 +344,16 @@ export class OrchestratorService {
         }
         
         // 处理工具调用
-        messages.push({
+        // DeepSeek V3.2+ 思考模式：带 tool_calls 的 assistant 消息后续请求必须回传 reasoning_content
+        const toolCallMsg: AiMessage = {
           role: 'assistant',
           content: response.content || '',
           tool_calls: validToolCalls
-        })
+        }
+        if (response.reasoning_content !== undefined) {
+          toolCallMsg.reasoning_content = response.reasoning_content
+        }
+        messages.push(toolCallMsg)
         
         for (const toolCall of validToolCalls) {
           const toolName = toolCall.function.name

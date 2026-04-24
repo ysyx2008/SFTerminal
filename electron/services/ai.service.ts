@@ -305,7 +305,15 @@ export interface AiMessage {
   images?: string[]  // 图片 base64 data URL 列表（仅 user 消息），发送时会转为多模态格式
   tool_call_id?: string  // 用于 tool 角色的消息
   tool_calls?: ToolCall[]  // 用于 assistant 角色的工具调用
-  reasoning_content?: string  // 用于 think 模型的思考内容（DeepSeek-R1 等）
+  /**
+   * think 模型的思考内容（DeepSeek-R1 / DeepSeek V3.2+ 等）。
+   *
+   * 重要：当 assistant 消息包含 `tool_calls` 时，此字段必须在后续所有请求中
+   * 回传给 API（即使值为空字符串），否则 DeepSeek V3.2+ 思考模式会返回 400。
+   * `formatMessageForApi` 会在字段缺失时自动补空串，新建/保存消息时请用
+   * `!== undefined` 判断以保留空字符串值。
+   */
+  reasoning_content?: string
   /** @internal Anthropic prompt cache: 标记此消息为缓存断点（跨任务复用的消息边界） */
   _cacheBreakpoint?: boolean
 }
@@ -464,10 +472,10 @@ function formatMessageForApi(msg: AiMessage, stripImages = false): Record<string
     const assistantMsg: Record<string, unknown> = {
       role: 'assistant' as const,
       content: msg.content || null,
-      tool_calls: msg.tool_calls
-    }
-    if (msg.reasoning_content) {
-      assistantMsg.reasoning_content = msg.reasoning_content
+      tool_calls: msg.tool_calls,
+      // DeepSeek V3.2+ 思考模式：带 tool_calls 的 assistant 消息必须回传 reasoning_content
+      // 字段不存在（历史消息 / 非思考模型）时补空串，兼容其余 OpenAI 兼容 API（忽略未知字段）
+      reasoning_content: msg.reasoning_content ?? ''
     }
     return assistantMsg
   }
@@ -1955,7 +1963,10 @@ export class AiService {
                   content: finalContent,
                   tool_calls: hasToolCalls ? toolCalls : undefined,
                   finish_reason: finishReason as ChatWithToolsResult['finish_reason'],
-                  reasoning_content: reasoningContent || undefined,
+                  // 用 hasReasoningOutput 而非字符串非空作为"是否思考模式"标志：
+                  // DeepSeek V3.2+ 要求带 tool_calls 的 assistant 在后续请求中回传此字段，
+                  // 因此即使思考内容为空字符串也保留，避免被 || 转为 undefined 后丢失
+                  reasoning_content: hasReasoningOutput ? reasoningContent : undefined,
                   usage: streamUsage
                 }))
                 return
@@ -2061,7 +2072,7 @@ export class AiService {
           // AI Debug: 记录响应完成（包含工具调用）
           getAiDebugService().logResponseDone(reqId, {
             response: finalContent,
-            reasoningContent: reasoningContent || undefined,
+            reasoningContent: hasReasoningOutput ? reasoningContent : undefined,
             finishReason,
             usage: streamUsage,
             toolCalls: hasToolCalls ? toolCalls.map(tc => ({
@@ -2077,7 +2088,7 @@ export class AiService {
             content: finalContent,
             tool_calls: hasToolCalls ? toolCalls : undefined,
             finish_reason: finishReason as ChatWithToolsResult['finish_reason'],
-            reasoning_content: reasoningContent || undefined,
+            reasoning_content: hasReasoningOutput ? reasoningContent : undefined,
             usage: streamUsage
           }))
         })
@@ -2155,7 +2166,7 @@ export class AiService {
           content: finalContent,
           tool_calls: hasValidTools ? validToolCalls : undefined,
           finish_reason: 'stop',
-          reasoning_content: reasoningContent || undefined
+          reasoning_content: hasReasoningOutput ? reasoningContent : undefined
         }))
       })
 

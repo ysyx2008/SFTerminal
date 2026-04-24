@@ -235,11 +235,16 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
 
       hasExecutedTools = true
 
-      messages.push({
+      // DeepSeek V3.2+ 思考模式：带 tool_calls 的 assistant 消息后续请求必须回传 reasoning_content
+      const assistantMsg: AiMessage = {
         role: 'assistant',
         content: result.content || '',
         tool_calls: result.tool_calls
-      })
+      }
+      if (result.reasoning_content !== undefined) {
+        assistantMsg.reasoning_content = result.reasoning_content
+      }
+      messages.push(assistantMsg)
 
       for (const toolCall of result.tool_calls) {
         if (abortSignal.aborted || executorConfig.isAborted()) break
