@@ -71,13 +71,13 @@ function deduplicateThinkingBlocks(html: string): string {
 }
 
 /**
- * 从流式到达的 partial tool_call arguments JSON 前缀里，取出第一个字符串字段的值。
+ * 把流式到达的 partial tool_call arguments JSON 前缀容错地解析成对象。
  *
  * 实现思路：按结构（不做任何字段名匹配）扫描引号/括号，先把未闭合的字符串和容器
- * 补齐成合法 JSON，再 JSON.parse 取首个 string value。任何解析异常或结构残缺
- * 都直接返回 null，调用方负责保留上一次成功结果，避免显示回退。
+ * 补齐成合法 JSON，再 JSON.parse。任何异常或结构残缺都返回 null，调用方负责保留
+ * 上一次成功结果，避免显示回退。
  */
-function extractFirstStringValue(partial: string): string | null {
+function tryParsePartialJson(partial: string): Record<string, unknown> | null {
   if (!partial) return null
   const trimmed = partial.trimStart()
   if (!trimmed.startsWith('{')) return null
@@ -109,14 +109,115 @@ function extractFirstStringValue(partial: string): string | null {
   try {
     const obj = JSON.parse(s) as unknown
     if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return null
-    for (const k of Object.keys(obj as Record<string, unknown>)) {
-      const v = (obj as Record<string, unknown>)[k]
-      if (typeof v === 'string') return v
-    }
-    return null
+    return obj as Record<string, unknown>
   } catch {
     return null
   }
+}
+
+/**
+ * 从 partial 对象中取出第一个字符串字段的值（按 key 出现顺序）。
+ */
+function firstStringValue(obj: Record<string, unknown>): string | null {
+  for (const k of Object.keys(obj)) {
+    const v = obj[k]
+    if (typeof v === 'string') return v
+  }
+  return null
+}
+
+/**
+ * 计算指定字符串字段累计长度，构造实时进度尾缀，如 ` · 1234 字符`。
+ *
+ * 用途：文件写入/编辑类工具的 path 是一次性短输出，主要内容藏在看不见的
+ * content/old_text/new_text 里。path 输出完后卡片主文本不再变化，用户会以为卡住；
+ * 追加一个随 AI 流持续增长的字符数，让"还在工作"这件事可见。
+ *
+ * 统一使用字符数（不切换 KB）：数字位数多、每次更新跳动幅度大，能传达强烈的"在动"信号。
+ * 不足 100 字符时返回空串，避免 path 刚流完就开始抖动。
+ */
+function buildStreamProgressSuffix(parsed: Record<string, unknown>, fields: string[]): string {
+  let chars = 0
+  for (const f of fields) {
+    const v = parsed[f]
+    if (typeof v === 'string') chars += v.length
+  }
+  if (chars < 100) return ''
+  return ` · ${chars} ${t('file.chars')}`
+}
+
+/**
+ * 根据工具名和流式 partial args 构建"预创建 tool_call 卡片"的显示内容。
+ *
+ * 返回的内容格式应尽量贴近对应执行器最终 addStep 的 content，使得执行器通过
+ * wrapExecutorConfigForToolCall 接管预卡片时视觉上几乎无跳变。文件写入/编辑类
+ * 工具额外追加实时字符数尾缀，让用户直观看到 AI 仍在持续输出。
+ *
+ * 返回 null 表示当前 partial args 还不足以构建（例如 path 尚未流到），调用方应
+ * 保留上一次的缓存内容，避免"闪一下然后消失"。
+ */
+function buildPreToolCallDisplay(toolName: string, partialArgs: string): string | null {
+  const parsed = tryParsePartialJson(partialArgs)
+  if (!parsed) return null
+
+  const asString = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined)
+  const asNumber = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined)
+
+  switch (toolName) {
+    case 'execute_command':
+    case 'exec': {
+      // shell 命令的 command 参数本身可见、在流式增长，用户能直接感知"在动"，不加尾缀
+      const cmd = firstStringValue(parsed)
+      if (!cmd) return null
+      return `${t('status.executing')}: ${cmd}`
+    }
+    case 'write_text_file':
+    case 'write_remote_text_file': {
+      const filePath = asString(parsed.path)
+      if (!filePath) return null
+      // mode 在 schema 中位于 content 之后，长内容流式时可能尚未到达，
+      // 未到达时默认按 'create' 渲染（与执行器默认值一致）
+      const mode = asString(parsed.mode) || 'create'
+      const insertAtLine = asNumber(parsed.insert_at_line)
+      const startLine = asNumber(parsed.start_line)
+      const endLine = asNumber(parsed.end_line)
+      const replaceAll = typeof parsed.replace_all === 'boolean' ? parsed.replace_all : true
+      const progress = buildStreamProgressSuffix(parsed, ['content'])
+      let head: string
+      switch (mode) {
+        case 'overwrite':
+          head = `${t('file.overwrite')}: ${filePath}`
+          break
+        case 'append':
+          head = `${t('file.append')}: ${filePath}`
+          break
+        case 'insert':
+          head = insertAtLine !== undefined
+            ? `${t('file.insert_at_line', { line: insertAtLine })}: ${filePath}`
+            : `${t('file.create')}: ${filePath}`
+          break
+        case 'replace_lines':
+          head = startLine !== undefined && endLine !== undefined
+            ? `${t('file.replace_lines', { start: startLine, end: endLine })}: ${filePath}`
+            : `${t('file.create')}: ${filePath}`
+          break
+        case 'regex_replace':
+          head = `${t('file.regex_replace', { scope: replaceAll ? t('file.regex_scope_all') : t('file.regex_scope_first') })}: ${filePath}`
+          break
+        case 'create':
+        default:
+          head = `${t('file.create')}: ${filePath}`
+      }
+      return head + progress
+    }
+    case 'edit_file': {
+      const filePath = asString(parsed.path)
+      if (!filePath) return null
+      const progress = buildStreamProgressSuffix(parsed, ['old_text', 'new_text'])
+      return `${t('file.edit')}: ${filePath}${progress}`
+    }
+  }
+  return null
 }
 
 /**
@@ -1873,31 +1974,30 @@ export abstract class Agent {
           reject(new Error(error))
         },
         effectiveProfileId, // 视觉路由：有新图片时自动切换到视觉模型
-        // onToolCallProgress - 流式生成 tool_call 参数时直接以"执行命令: xxx"这种最终形态的
-        // 内容创建一张 tool_call 卡片；随后该卡片会被工具执行器"认领"并 updateStep 成正式内容，
-        // 因为格式一致（同前缀、同字体、同样式），视觉上就是同一张卡上的命令文本在逐字增长。
+        // onToolCallProgress - 流式生成 tool_call 参数时以"最终形态的"内容预创建一张
+        // tool_call 卡片；随后该卡片会被工具执行器"认领"并 updateStep 成正式内容，
+        // 因为格式一致（同前缀、同字体、同样式），视觉上就是同一张卡上的文本在逐字增长。
         //
-        // 只对 shell 系命令工具（execute_command / exec）启用预创建：这些工具的 tool_call
-        // 内容格式稳定为 "${t('status.executing')}: ${command}"，易于与执行器保持一致；
-        // 其他工具（read_file/file_search/…）由各自执行器按各自模板 addStep，预创建反而会引起闪烁。
+        // 支持预创建的工具由 buildPreToolCallDisplay 决定：目前包括 shell 命令类
+        // (execute_command / exec) 与文件写入/编辑类 (write_text_file /
+        // write_remote_text_file / edit_file)，这些工具内容较长、streaming 时间明显，
+        // 用户最需要"正在做什么"的即时反馈。其他工具（read_file / file_search 等）
+        // 执行快，由各自执行器按各自模板 addStep 即可，预创建反而会引起闪烁。
         (toolCallId: string, toolName: string, partialArgs: string) => {
           if (!toolCallId) return  // 没有稳定 id 就无法与后续 executor 的 addStep 关联，跳过
-          if (!Agent.PRE_STEP_SHELL_TOOLS.has(toolName)) return
 
           const now = Date.now()
           const lastAt = toolProgressThrottle.get(toolCallId) || 0
           if (now - lastAt < TOOL_PROGRESS_THROTTLE_MS) return
 
-          const extracted = extractFirstStringValue(partialArgs)
+          const built = buildPreToolCallDisplay(toolName, partialArgs)
           // 解析失败时不回退显示（保留上一次已解析内容），让用户观感上是"连续增长"
           if (!run.pendingPreToolCallText) run.pendingPreToolCallText = new Map()
           const previousText = run.pendingPreToolCallText.get(toolCallId)
-          const liveText = extracted ?? previousText
-          if (liveText === undefined) return  // 还没可显示内容
-          if (extracted !== null) run.pendingPreToolCallText.set(toolCallId, extracted)
+          const displayContent = built ?? previousText
+          if (displayContent === undefined) return  // 还没可显示内容
+          if (built !== null) run.pendingPreToolCallText.set(toolCallId, built)
           toolProgressThrottle.set(toolCallId, now)
-
-          const displayContent = `${t('status.executing')}: ${liveText}`
 
           if (!run.pendingPreToolCallStepIds) run.pendingPreToolCallStepIds = new Map()
           let stepId = run.pendingPreToolCallStepIds.get(toolCallId)
@@ -1953,17 +2053,6 @@ export abstract class Agent {
   }
   
   // ==================== 受保护方法：工具执行 ====================
-  
-  /**
-   * 允许在 tool_call 参数流式阶段就提前创建 tool_call 卡片（预览命令正文）的工具。
-   * 这些工具在各自执行器里均使用 `${t('status.executing')}: ${command}` 作为 tool_call
-   * 步骤内容，因此可以在预创建阶段复用同一格式，使得后续执行器 updateStep 接管时
-   * 内容完全一致、没有视觉跳变。
-   */
-  private static readonly PRE_STEP_SHELL_TOOLS = new Set([
-    'execute_command',
-    'exec'
-  ])
 
   /** 可以并行执行的工具（只读、无副作用） */
   private static readonly PARALLELIZABLE_TOOLS = new Set([
