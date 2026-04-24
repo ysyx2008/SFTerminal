@@ -2186,6 +2186,7 @@ export abstract class Agent {
       this.setExecutionPhase(run, toolCall.function.name)
       this.ensureToolResultStep(run, stepCountBeforeStreaming, toolCall.function.name, completed.result)
       this.processToolResult(run, toolCall, completed.result, completed.toolArgs)
+      this.finalizeToolCallStep(run, toolCall.id, completed.result.success)
     }
     
     // 过滤出未被流式执行器处理的工具
@@ -2237,6 +2238,7 @@ export abstract class Agent {
     for (const { toolCall, result, toolArgs } of results) {
       this.ensureToolResultStep(run, stepCountBefore, toolCall.function.name, result)
       this.processToolResult(run, toolCall, result, toolArgs)
+      this.finalizeToolCallStep(run, toolCall.id, result.success)
     }
   }
   
@@ -2304,10 +2306,6 @@ export abstract class Agent {
       }
     }
 
-    // 若工具执行完毕但执行器未曾 addStep 一张 tool_call 卡（少见：比如提前 return），
-    // 把预卡片收尾掉，避免留下一张永远 isStreaming 的空卡
-    this.finalizePreToolCallStep(run, toolCall.id)
-    
     const toolElapsed = Date.now() - toolStartTime
     if (result.success) {
       log.info(`Tool executed: ${toolName}, ${toolElapsed}ms, outputLen=${result.output.length}`)
@@ -2331,6 +2329,9 @@ export abstract class Agent {
    *   时改为 updateStep 原卡（把流式命令文本替换为执行器给出的正式内容，并收起光标），
    *   并返回原卡实例；第二次及之后的 tool_call addStep 正常新增。
    * - 其他 step 类型（tool_result / thinking 等）不受影响。
+   *
+   * 副作用：把 tool_call 步骤 ID 登记到 run.activeToolCallStepIds，
+   * 供工具执行结束后 finalizeToolCallStep 反向回填 success（用于 UI 侧的"执行结果色竖条"）。
    */
   private wrapExecutorConfigForToolCall(
     run: AgentRun,
@@ -2338,7 +2339,13 @@ export abstract class Agent {
     base: ToolExecutorConfig
   ): ToolExecutorConfig {
     const preStepId = run.pendingPreToolCallStepIds?.get(toolCall.id)
-    if (!preStepId) return base
+    const registerActive = (stepId: string) => {
+      if (!run.activeToolCallStepIds) run.activeToolCallStepIds = new Map()
+      run.activeToolCallStepIds.set(toolCall.id, stepId)
+    }
+    // 有预创建卡片时先登记：即使 executor 没有再 addStep(tool_call)（例如某些 skill 直接出结果），
+    // finalizeToolCallStep 也能找到并收尾。
+    if (preStepId) registerActive(preStepId)
 
     let adopted = false
     return {
@@ -2346,11 +2353,16 @@ export abstract class Agent {
       addStep: (step) => {
         if (!adopted && step.type === 'tool_call') {
           adopted = true
-          base.updateStep(preStepId, { ...step, isStreaming: false })
-          run.pendingPreToolCallStepIds?.delete(toolCall.id)
-          run.pendingPreToolCallText?.delete(toolCall.id)
-          const existing = run.steps.find(s => s.id === preStepId)
-          if (existing) return existing
+          if (preStepId) {
+            base.updateStep(preStepId, { ...step, isStreaming: false })
+            run.pendingPreToolCallStepIds?.delete(toolCall.id)
+            run.pendingPreToolCallText?.delete(toolCall.id)
+            const existing = run.steps.find(s => s.id === preStepId)
+            if (existing) return existing
+          }
+          const created = base.addStep(step)
+          registerActive(created.id)
+          return created
         }
         return base.addStep(step)
       }
@@ -2371,15 +2383,26 @@ export abstract class Agent {
   }
 
   /**
-   * 工具执行结束后兜底清理：如果预创建的 tool_call 卡片因为 executor 没 addStep(tool_call)
-   * 而未被认领，就把它当成已完成状态（关闭光标），避免留一张永远在"打字"的空卡。
+   * 工具执行结束后的统一收尾：
+   * - 关闭 tool_call 卡片的 isStreaming 光标
+   * - 把 ToolResult.success 回填到卡片，让前端可以按"执行结果"给左竖条着色
+   *   （失败=红、成功=不抢戏），和"风险等级"的视觉完全解耦
+   * - 清理 pending / active 两份映射
+   *
+   * 兼容两种路径：
+   *   A. 有预创建卡片（流式路径）：pendingPreToolCallStepIds 有 entry
+   *   B. 无预创建卡片（非流式路径）：executor.addStep(tool_call) 后 activeToolCallStepIds 有 entry
    */
-  private finalizePreToolCallStep(run: AgentRun, toolCallId: string): void {
-    const stepId = run.pendingPreToolCallStepIds?.get(toolCallId)
+  private finalizeToolCallStep(run: AgentRun, toolCallId: string, success: boolean): void {
+    const pendingStepId = run.pendingPreToolCallStepIds?.get(toolCallId)
+    if (pendingStepId) {
+      run.pendingPreToolCallStepIds!.delete(toolCallId)
+      run.pendingPreToolCallText?.delete(toolCallId)
+    }
+    const stepId = run.activeToolCallStepIds?.get(toolCallId) ?? pendingStepId
+    run.activeToolCallStepIds?.delete(toolCallId)
     if (!stepId) return
-    run.pendingPreToolCallStepIds!.delete(toolCallId)
-    run.pendingPreToolCallText?.delete(toolCallId)
-    this.updateStep(stepId, { isStreaming: false })
+    this.updateStep(stepId, { isStreaming: false, success })
   }
 
   /**
@@ -2398,6 +2421,7 @@ export abstract class Agent {
 
     this.ensureToolResultStep(run, stepCountBefore, toolName, result)
     this.processToolResult(run, toolCall, result, toolArgs)
+    this.finalizeToolCallStep(run, toolCall.id, result.success)
   }
   
   /**

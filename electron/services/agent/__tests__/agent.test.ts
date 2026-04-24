@@ -82,6 +82,21 @@ class TestAgent extends Agent {
   public exposeGetSkillSession() {
     return this.getSkillSession()
   }
+
+  // 暴露 finalizeToolCallStep 和 addStep 用于测试 tool_call 成功/失败的 UI 回填语义
+  public testFinalizeToolCallStep(run: any, toolCallId: string, success: boolean) {
+    return (this as any).finalizeToolCallStep(run, toolCallId, success)
+  }
+
+  public testAddStep(step: any) {
+    return (this as any).addStep(step)
+  }
+
+  // 注入 currentRun，便于直接针对 addStep/updateStep/finalizeToolCallStep 做单元测试
+  // 而不必真正启动 agent.run 流程
+  public injectCurrentRun(run: any) {
+    (this as any).currentRun = run
+  }
 }
 
 // Mock AI 服务
@@ -262,6 +277,73 @@ describe('Agent', () => {
   describe('cleanup', () => {
     it('should not throw when no run exists', () => {
       expect(() => agent.cleanup()).not.toThrow()
+    })
+  })
+
+  // ==================== tool_call 结果回填 ====================
+  // 这组测试确保 UI 能按"执行结果"给 tool_call 左竖条着色：
+  //   - 失败 → 红（exec-failed）
+  //   - 成功 → 无特殊色（success=true，但视觉上不加竖条）
+  // 避免此前"风险色红"被误读为"执行失败"。
+  describe('finalizeToolCallStep', () => {
+    // 构造一个最小化的 fake run，让 addStep/updateStep 可以工作
+    function makeFakeRun(): any {
+      return {
+        id: 'fake-run',
+        steps: [],
+        pendingPreToolCallStepIds: undefined,
+        pendingPreToolCallText: undefined,
+        activeToolCallStepIds: undefined
+      }
+    }
+
+    it('should backfill success=false onto the registered tool_call step', () => {
+      const run = makeFakeRun()
+      agent.injectCurrentRun(run)
+
+      const toolCallId = 'tc-fail'
+      const step = agent.testAddStep({
+        type: 'tool_call',
+        content: 'running...',
+        toolName: 'execute_command',
+        isStreaming: true
+      })
+      // 模拟 wrapExecutorConfigForToolCall 完成登记
+      run.activeToolCallStepIds = new Map<string, string>([[toolCallId, step.id]])
+
+      agent.testFinalizeToolCallStep(run, toolCallId, false)
+
+      expect(run.activeToolCallStepIds.has(toolCallId)).toBe(false)
+      expect(step.success).toBe(false)
+      expect(step.isStreaming).toBe(false)
+    })
+
+    it('should backfill success=true onto pending pre-created tool_call step when executor never re-addStep', () => {
+      const run = makeFakeRun()
+      agent.injectCurrentRun(run)
+
+      const toolCallId = 'tc-orphan'
+      const step = agent.testAddStep({
+        type: 'tool_call',
+        content: 'pre-created',
+        toolName: 'execute_command',
+        isStreaming: true
+      })
+      run.pendingPreToolCallStepIds = new Map<string, string>([[toolCallId, step.id]])
+      run.pendingPreToolCallText = new Map<string, string>([[toolCallId, 'pre-created']])
+
+      agent.testFinalizeToolCallStep(run, toolCallId, true)
+
+      expect(run.pendingPreToolCallStepIds.has(toolCallId)).toBe(false)
+      expect(run.pendingPreToolCallText.has(toolCallId)).toBe(false)
+      expect(step.success).toBe(true)
+      expect(step.isStreaming).toBe(false)
+    })
+
+    it('should be a no-op when no tool_call step is registered', () => {
+      const run = makeFakeRun()
+      agent.injectCurrentRun(run)
+      expect(() => agent.testFinalizeToolCallStep(run, 'nonexistent', false)).not.toThrow()
     })
   })
 })

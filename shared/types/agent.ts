@@ -138,6 +138,14 @@ export interface AgentStep {
   subAgents?: SubAgentResult[]
   /** Web 搜索结果（web_search 工具专用，供 UI 可展开渲染） */
   webSearchResults?: WebSearchResultItem[]
+  /**
+   * 工具执行是否成功。仅 tool_call 步骤使用：
+   *   undefined → 还在运行（或没有执行结果）
+   *   true      → 成功
+   *   false     → 失败（包括用户拒绝、超时、工具异常）
+   * 用于 UI 侧将"左侧风险色竖条"切换为"执行结果色竖条"，避免把风险红色误解为执行失败。
+   */
+  success?: boolean
 }
 
 /**

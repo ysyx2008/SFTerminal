@@ -188,6 +188,14 @@ export interface AgentRun {
    * 用于在后续片段 JSON 解析失败时保持显示不回退。
    */
   pendingPreToolCallText?: Map<string, string>
+  /**
+   * 工具执行期间记录 toolCallId → tool_call 步骤 ID 的映射。
+   * 工具结束后，Agent 使用它反向把 ToolResult.success 回填到 tool_call 步骤上，
+   * 让 UI 可以把左侧竖条颜色从"风险色"切换为"执行结果色"（失败=红 / 成功=淡色），
+   * 避免高风险但执行成功的命令被误读为"执行失败"。
+   * 回填完成后 entry 会被清除。
+   */
+  activeToolCallStepIds?: Map<string, string>
 }
 
 // 主机档案服务接口

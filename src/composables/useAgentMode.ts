@@ -741,6 +741,19 @@ export function useAgentMode(
     }
   }
 
+  /**
+   * 根据工具步骤的执行结果返回竖条样式类。
+   * 仅用于 tool_call 步骤：把"风险色"替换为"执行结果色"，和确认对话框里的风险红/黄/绿视觉解耦。
+   *   - success === false → 红色（exec-failed）
+   *   - success === true  → 绿色（exec-success）
+   *   - undefined         → 空串（由上游的 risk-pending/无色样式兜底表示"运行中"）
+   */
+  const getExecStatusClass = (step: AgentStep): string => {
+    if (step.success === false) return 'exec-failed'
+    if (step.success === true) return 'exec-success'
+    return ''
+  }
+
   // 设置 Agent 事件监听
   // 注意：每个 AiPanel 实例都会注册监听器，所以需要确保只处理属于自己 tab 的事件
   const setupAgentListeners = () => {
@@ -1115,6 +1128,7 @@ export function useAgentMode(
     sendAgentReply,
     getStepIcon,
     getRiskClass,
+    getExecStatusClass,
     // 历史对话功能
     recentHistory,
     isLoadingHistory,

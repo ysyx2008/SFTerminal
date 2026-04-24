@@ -241,6 +241,7 @@ const {
   sendAgentReply,
   getStepIcon,
   getRiskClass,
+  getExecStatusClass,
   // 历史对话功能
   recentHistory,
   isLoadingHistory,
@@ -1533,16 +1534,23 @@ watch(() => props.visible, (visible) => {
                 </div>
               </div>
 
-              <!-- 单个步骤 -->
+              <!--
+                单个步骤
+                tool_call 步骤的左竖条按"执行结果"着色：
+                  - success === undefined  → 灰色占位（risk-pending），覆盖"流式生成 + 工具执行中"整段未完成期
+                  - success === true       → 绿色（exec-success）
+                  - success === false      → 红色（exec-failed）
+                其他步骤类型保持现有风险色。
+              -->
               <div v-else-if="item.type === 'step'" class="agent-step-virtual" :class="{ 'first-step': item.isFirstStep }">
                 <div 
                   class="agent-step-inline"
                   :class="[
                     item.step!.type,
-                    getRiskClass(item.step!.riskLevel),
+                    item.step!.type === 'tool_call' ? getExecStatusClass(item.step!) : getRiskClass(item.step!.riskLevel),
                     {
                       'step-rejected': item.step!.content.includes('拒绝'),
-                      'risk-pending': item.step!.type === 'tool_call' && item.step!.isStreaming && !item.step!.riskLevel
+                      'risk-pending': item.step!.type === 'tool_call' && item.step!.success === undefined
                     }
                   ]"
                 >
@@ -4752,13 +4760,28 @@ watch(() => props.visible, (visible) => {
   padding-left: 10px;
 }
 
-/* 拒绝执行的步骤 */
-.step-rejected {
-  opacity: 0.6;
-  border-left: 3px solid var(--color-error) !important;
+/* 执行结果色 —— 仅 tool_call 步骤使用。
+   红=执行失败、绿=执行成功，和风险等级（确认对话框里的红/黄/绿）视觉完全解耦：
+   风险色只在"等待用户确认"时出现，执行后的卡片只看结果。 */
+.exec-failed {
+  border-left: 3px solid var(--color-error);
   padding-left: 10px;
   margin-left: -2px;
+}
+
+.exec-success {
+  border-left: 3px solid var(--color-success);
+  padding-left: 10px;
+  margin-left: -2px;
+}
+
+/* 拒绝执行的步骤：走灰色 + 半透明，和"失败红"在视觉上区分开。
+   注意：这里 border-left 色故意不用 --color-error，避免"拒绝"看起来像"失败"。 */
+.step-rejected {
   opacity: 0.6;
+  border-left: 3px solid #6b7280 !important;
+  padding-left: 10px;
+  margin-left: -2px;
 }
 
 /* Agent 确认对话框（融入对话） */
