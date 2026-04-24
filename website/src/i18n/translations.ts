@@ -169,7 +169,6 @@ export const translations = {
     },
     download: {
       title: '立即下载',
-      subtitle: '免费使用，开源共建。选择适合你系统的版本开始体验',
       platforms: {
         macOS: {
           name: 'macOS',
@@ -1030,7 +1029,6 @@ export const translations = {
     },
     download: {
       title: 'Download Now',
-      subtitle: 'Free to use, open source. Choose the version that fits your system and start experiencing',
       platforms: {
         macOS: {
           name: 'macOS',
