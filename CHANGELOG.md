@@ -4,9 +4,10 @@ All notable changes to SailFish will be documented in this file.
 
 ## v10.34.0 (2026-04-24) (Latest)
 
-This release strengthens AI profile management (drag-to-reorder and duplicate-from-existing), refines themes and user message bubble hierarchy, and fixes DeepSeek reasoning-mode tool calls plus blue/light-theme bubble contrast issues.
+DeepSeek V4 is now officially supported!
 
 ### New Features
+- 🔗 **DeepSeek V4 Support**: Full thinking-mode tool-call compatibility for DeepSeek V4 and V3.2+, including required `reasoning_content` passthrough so Agent tool chains work reliably
 - 🤖 **Drag-to-Reorder AI Profiles**: Reorder AI profiles in settings via drag-and-drop with improved drop interactions
 - 📋 **Duplicate Profile from Existing**: Create a new AI profile by duplicating an existing configuration in one step
 
@@ -16,7 +17,6 @@ This release strengthens AI profile management (drag-to-reorder and duplicate-fr
 - ⚙️ **Settings UI Consistency**: Phase 2 structure (compact forms, flat pages as cards); unified section headers, descriptions, spacing, and button patterns; data management page gains a title and functional description
 
 ### Bug Fixes
-- 🐛 **DeepSeek Reasoning-Mode Tool Calls**: Adapted to V3.2+/V4 requirements to return `reasoning_content` alongside tool calls in thinking mode
 - 🐛 **Blue Theme User Bubbles**: Fixed insufficient text contrast on user bubbles (including overly light text on light backgrounds)
 
 ## v10.33.2 (2026-04-22)
