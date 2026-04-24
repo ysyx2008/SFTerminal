@@ -273,6 +273,106 @@ describe('buildPreToolCallDisplay', () => {
     })
   })
 
+  describe('dispatch_agents（并行子任务）', () => {
+    it('tasks 数组还没出现时返回 null（还没到信息量够用的阶段）', () => {
+      const out = buildPreToolCallDisplay('dispatch_agents', '{}')
+      expect(out).toBeNull()
+    })
+
+    it('空 tasks 数组 [] 返回 null', () => {
+      const out = buildPreToolCallDisplay(
+        'dispatch_agents',
+        JSON.stringify({ tasks: [] })
+      )
+      expect(out).toBeNull()
+    })
+
+    it('单个同步子任务渲染为执行器对齐格式', () => {
+      // 与 tools/sub-agent.ts 执行器 addStep 的 content 格式严格对齐
+      const out = buildPreToolCallDisplay(
+        'dispatch_agents',
+        JSON.stringify({
+          tasks: [{ description: 'analyze code', prompt: 'read file X and summarize' }]
+        })
+      )
+      // 未指定 agent_type 默认 explore，未指定 background 默认同步
+      expect(out).toBe('并行执行 1 个子任务（explore, 同步）')
+    })
+
+    it('多个子任务且全部同 agent_type 时显示具体类型', () => {
+      const out = buildPreToolCallDisplay(
+        'dispatch_agents',
+        JSON.stringify({
+          tasks: [
+            { description: 't1', prompt: 'p1', agent_type: 'explore' },
+            { description: 't2', prompt: 'p2', agent_type: 'explore' }
+          ]
+        })
+      )
+      expect(out).toBe('并行执行 2 个子任务（explore, 同步）')
+    })
+
+    it('子任务 agent_type 不一致显示 mixed', () => {
+      const out = buildPreToolCallDisplay(
+        'dispatch_agents',
+        JSON.stringify({
+          tasks: [
+            { description: 't1', prompt: 'p1', agent_type: 'explore' },
+            { description: 't2', prompt: 'p2', agent_type: 'edit' }
+          ]
+        })
+      )
+      expect(out).toBe('并行执行 2 个子任务（mixed, 同步）')
+    })
+
+    it('background=true 显示异步', () => {
+      const out = buildPreToolCallDisplay(
+        'dispatch_agents',
+        JSON.stringify({
+          tasks: [{ description: 't', prompt: 'p' }],
+          background: true
+        })
+      )
+      expect(out).toBe('并行执行 1 个子任务（explore, 异步）')
+    })
+
+    it('prompt + description 累计达到 100 字符追加字符数尾缀', () => {
+      const out = buildPreToolCallDisplay(
+        'dispatch_agents',
+        JSON.stringify({
+          tasks: [{ description: 'short', prompt: 'x'.repeat(150) }]
+        })
+      )
+      // 5 + 150 = 155 ≥ 100
+      expect(out).toBe('并行执行 1 个子任务（explore, 同步） · 155 字符')
+    })
+
+    it('多个子任务的 prompt 汇总后一起计数（体现所有指令都在增长）', () => {
+      const out = buildPreToolCallDisplay(
+        'dispatch_agents',
+        JSON.stringify({
+          tasks: [
+            { description: 't1', prompt: 'a'.repeat(80) },
+            { description: 't2', prompt: 'b'.repeat(80) }
+          ]
+        })
+      )
+      // 80 + 80 + 2 + 2 = 164
+      expect(out).toContain('164 字符')
+    })
+
+    it('容错：正在流式第二个子任务 prompt 时也能部分渲染', () => {
+      // AI 刚流到 `tasks: [{完整第一个}, {description:"t2", prompt:"流到一半...`
+      const partial =
+        '{"tasks": [{"description": "t1", "prompt": "done"}, {"description": "t2", "prompt": "' +
+        'x'.repeat(200)
+      const out = buildPreToolCallDisplay('dispatch_agents', partial)
+      // 第二个任务 prompt 容错闭合后会包含已到达的 200 个 'x'
+      expect(out).toContain('并行执行 2 个子任务')
+      expect(out).toContain('字符')
+    })
+  })
+
   describe('非预创建工具', () => {
     it('read_file 返回 null（流式阶段不预创建，执行器快就直接 addStep）', () => {
       expect(

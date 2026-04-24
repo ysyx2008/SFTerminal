@@ -82,12 +82,38 @@ function tryParsePartialJson(partial: string): Record<string, unknown> | null {
   const trimmed = partial.trimStart()
   if (!trimmed.startsWith('{')) return null
 
+  // 从完整 partial 开始，失败就从尾部剥一个字符再试。每次尝试都对当前的 core 独立
+  // 扫描并按 LIFO 补闭合括号——嵌套 [{ 必须先补 } 再补 ]，这一点是原实现里
+  // `while(bracket)` + `while(brace)` 线性补全处理不了的。
+  // 剥到原串一半停止（保护性上限：partial chunk 通常很短，O(n²) 足够）
+  const minCoreLen = Math.max(1, Math.floor(partial.length / 2))
+  for (let coreLen = partial.length; coreLen >= minCoreLen; coreLen--) {
+    const core = partial.slice(0, coreLen)
+    const attempt = closePartial(core)
+    if (attempt === null) continue
+    try {
+      const obj = JSON.parse(attempt) as unknown
+      if (typeof obj === 'object' && obj !== null && !Array.isArray(obj)) {
+        return obj as Record<string, unknown>
+      }
+    } catch {
+      // 继续剥
+    }
+  }
+  return null
+}
+
+/**
+ * 扫描 core 中的未闭合字符串与括号，按 LIFO 补上闭合形成一段可能合法的 JSON；
+ * core 本身若不以 `{` 开头则返回 null。
+ */
+function closePartial(core: string): string | null {
+  if (!core || !core.trimStart().startsWith('{')) return null
   let inString = false
   let escape = false
-  let braceDepth = 0
-  let bracketDepth = 0
-  for (let i = 0; i < partial.length; i++) {
-    const c = partial[i]
+  const stack: string[] = []
+  for (let i = 0; i < core.length; i++) {
+    const c = core[i]
     if (escape) { escape = false; continue }
     if (inString) {
       if (c === '\\') escape = true
@@ -95,24 +121,14 @@ function tryParsePartialJson(partial: string): Record<string, unknown> | null {
       continue
     }
     if (c === '"') inString = true
-    else if (c === '{') braceDepth++
-    else if (c === '}') braceDepth--
-    else if (c === '[') bracketDepth++
-    else if (c === ']') bracketDepth--
+    else if (c === '{') stack.push('}')
+    else if (c === '[') stack.push(']')
+    else if (c === '}' || c === ']') stack.pop()
   }
-
-  let s = partial
+  let s = core
   if (inString) s += '"'
-  while (bracketDepth > 0) { s += ']'; bracketDepth-- }
-  while (braceDepth > 0) { s += '}'; braceDepth-- }
-
-  try {
-    const obj = JSON.parse(s) as unknown
-    if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return null
-    return obj as Record<string, unknown>
-  } catch {
-    return null
-  }
+  while (stack.length > 0) s += stack.pop()
+  return s
 }
 
 /**
@@ -227,6 +243,40 @@ export function buildPreToolCallDisplay(toolName: string, partialArgs: string): 
       const pathDisplay = asString(parsed.path) ?? getStreamPlaceholder()
       const progress = buildStreamProgressSuffix(parsed, ['old_text', 'new_text'])
       return `${t('file.edit')}: ${pathDisplay}${progress}`
+    }
+    case 'dispatch_agents': {
+      // 每个子任务的 prompt 是长字段，AI 流式耗时和 write_text_file 的 content 类似。
+      // 内容格式必须与 tools/sub-agent.ts 执行器 addStep 的 content 对齐：
+      //   "并行执行 {N} 个子任务（{typeLabel}, {modeLabel}）"
+      // 执行器那边目前硬编码中文（typeLabel 用英文 agent_type 值），此处同样硬编码以
+      // 保证接管时的字节级一致。将来两边一起 i18n 化时统一改。
+      const rawTasks = Array.isArray(parsed.tasks)
+        ? (parsed.tasks as unknown[])
+        : []
+      // tasks 数组还没到或为空数组时没法展示有意义信息，返回 null 让调用方保留上一次缓存
+      if (rawTasks.length === 0) return null
+
+      const globalType = asString(parsed.agent_type) || 'explore'
+      let typeLabel = globalType
+      for (const task of rawTasks) {
+        if (!task || typeof task !== 'object') continue
+        const tType = asString((task as Record<string, unknown>).agent_type) || globalType
+        if (tType !== typeLabel) { typeLabel = 'mixed'; break }
+      }
+      const modeLabel = parsed.background === true ? '异步' : '同步'
+
+      // prompt + description 累计字符数尾缀（与 write_text_file 的 content 尾缀同一套逻辑，
+      // 让用户看到每个子任务指令还在持续增长）
+      let chars = 0
+      for (const task of rawTasks) {
+        if (!task || typeof task !== 'object') continue
+        const rec = task as Record<string, unknown>
+        if (typeof rec.prompt === 'string') chars += rec.prompt.length
+        if (typeof rec.description === 'string') chars += rec.description.length
+      }
+      const progress = chars >= 100 ? ` · ${chars} ${t('file.chars')}` : ''
+
+      return `并行执行 ${rawTasks.length} 个子任务（${typeLabel}, ${modeLabel}）${progress}`
     }
   }
   return null
