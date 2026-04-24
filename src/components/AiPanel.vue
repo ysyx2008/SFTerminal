@@ -3451,6 +3451,30 @@ watch(() => props.visible, (visible) => {
   font-size: 0.85em;
 }
 
+/* 行内代码形式的 URL 链接（与 file-path-link 类似但用下划线区分） */
+.markdown-content :deep(a.inline-code.external-url-link) {
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px dashed var(--accent-primary);
+}
+
+.markdown-content :deep(a.inline-code.external-url-link:hover) {
+  background: rgba(var(--accent-rgb), 0.22);
+  text-decoration: none;
+}
+
+/* 纯文本中自动识别的外部 URL 链接（非 inline-code 形式） */
+.markdown-content :deep(a.external-url-link:not(.inline-code)) {
+  cursor: pointer;
+  color: var(--accent-primary);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.markdown-content :deep(a.external-url-link:not(.inline-code):hover) {
+  text-decoration: underline;
+}
+
 .markdown-content :deep(hr) {
   border: none;
   border-top: 1px solid var(--border-color);

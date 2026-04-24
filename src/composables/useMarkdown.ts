@@ -37,6 +37,8 @@ const writeClipboard = async (text: string): Promise<boolean> => {
 const isLocalFilePath = (text: string): boolean => {
   const trimmed = text.trim()
   if (trimmed.length < 2) return false
+  // 排除 HTTP(S) URL（例如 "p://localhost" 误匹配 Windows 盘符模式）
+  if (/^https?:\/\//i.test(trimmed)) return false
   // Unix/macOS/Linux 绝对路径
   if (/^\/[^\s<>*?"]+$/.test(trimmed) && trimmed.length > 1) return true
   // 用户主目录路径
@@ -44,6 +46,21 @@ const isLocalFilePath = (text: string): boolean => {
   // Windows 路径 (C:\ 或 C:/)
   if (/^[A-Za-z]:[\\/][^\s<>*?"]*$/.test(trimmed)) return true
   return false
+}
+
+/**
+ * 检测文本是否为 HTTP(S) URL
+ * 仅识别 http/https 协议，避免 javascript:/data: 等危险协议
+ */
+const isHttpUrl = (text: string): boolean => {
+  const trimmed = text.trim()
+  if (!/^https?:\/\//i.test(trimmed)) return false
+  try {
+    const url = new URL(trimmed)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -67,6 +84,49 @@ const decodeHtmlEntities = (text: string): string => {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+}
+
+/**
+ * 后处理 HTML：将文本节点中的裸 HTTP(S) URL 转为可点击链接
+ * 仅处理不在 <a>、<code>、<pre> 标签内的文本
+ * 必须在 wrapBareFilePaths 之前执行，避免 URL 中的 "p://" 片段被误识别为 Windows 盘符路径
+ */
+const wrapBareUrls = (html: string): string => {
+  // 匹配 http/https URL：贪婪匹配非空白、非 <>、非引号、非反引号字符
+  // 注意：反引号之内的内容由 codespan 处理，不会到这里
+  const urlPattern = /https?:\/\/[^\s<>"'`]+/gi
+  // 结尾常见的中英文标点不纳入链接
+  const trailingPunct = /[.,;:!?。，；：！？、)\]】』」》>]+$/
+
+  const parts = html.split(/(<[^>]+>)/g)
+  const depth = { a: 0, code: 0, pre: 0 }
+
+  return parts.map(part => {
+    if (part.startsWith('<')) {
+      if (/<a[\s>]/i.test(part)) depth.a++
+      else if (/<\/a>/i.test(part)) depth.a = Math.max(0, depth.a - 1)
+      if (/<code[\s>]/i.test(part)) depth.code++
+      else if (/<\/code>/i.test(part)) depth.code = Math.max(0, depth.code - 1)
+      if (/<pre[\s>]/i.test(part)) depth.pre++
+      else if (/<\/pre>/i.test(part)) depth.pre = Math.max(0, depth.pre - 1)
+      return part
+    }
+
+    if (depth.a > 0 || depth.code > 0 || depth.pre > 0) return part
+
+    return part.replace(urlPattern, (match) => {
+      // 剥离尾部标点（如 "访问 https://example.com/。" 中的 "。"）
+      const tail = trailingPunct.exec(match)
+      let url = match
+      let suffix = ''
+      if (tail) {
+        url = match.slice(0, -tail[0].length)
+        suffix = tail[0]
+      }
+      if (!isHttpUrl(url)) return match
+      return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer" class="external-url-link" title="点击在浏览器中打开">${url}</a>${suffix}`
+    })
+  }).join('')
 }
 
 /**
@@ -148,14 +208,20 @@ export function useMarkdown() {
     return `<div class="code-block"><div class="code-header"><span>${lang}</span><div class="code-actions">${sendBtn}${copyBtn}</div></div><pre><code>${escapedCode}</code></pre></div>`
   }
 
-  // 自定义行内代码渲染 - 检测文件路径并添加可点击标记
+  // 自定义行内代码渲染 - 检测文件路径 / URL 并添加可点击标记
   renderer.codespan = (codeOrToken: string | { text: string }) => {
     const text = typeof codeOrToken === 'object' ? (codeOrToken.text || '') : codeOrToken
-    // 解码 HTML 实体后检测是否为文件路径
+    // 解码 HTML 实体后检测是否为文件路径或 URL
     const decoded = decodeHtmlEntities(text)
 
     if (isLocalFilePath(decoded)) {
       return `<code class="inline-code file-path-link" data-file-path="${escapeAttr(decoded)}" title="点击打开文件">${text}</code>`
+    }
+
+    // HTTP(S) URL：用 <a> 代替 <code>，复用 inline-code 样式以保留代码块外观，
+    // 同时天然支持点击跳转（Electron setWindowOpenHandler 会调用 shell.openExternal）
+    if (isHttpUrl(decoded)) {
+      return `<a href="${escapeAttr(decoded)}" target="_blank" rel="noopener noreferrer" class="inline-code external-url-link" title="点击在浏览器中打开">${text}</a>`
     }
 
     return `<code class="inline-code">${text}</code>`
@@ -205,6 +271,9 @@ export function useMarkdown() {
     let html: string
     try {
       html = marked.parse(text) as string
+      // 先处理 URL（变成 <a>），再处理文件路径
+      // 这样文件路径扫描会跳过已链接化的 URL，避免 "p://" 被误识别为 Windows 盘符
+      html = wrapBareUrls(html)
       html = wrapBareFilePaths(html)
     } catch (e) {
       html = text
