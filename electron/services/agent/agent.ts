@@ -775,11 +775,16 @@ export abstract class Agent {
    */
   protected finalizeRun(run: AgentRun, result: string): void {
     run.isRunning = false
-    
+
     // 补录最终 assistant 回复到完整对话日志
     // （纯文本回复不经过 executeStep 的 tool_calls 分支，不会被自动记录）
+    // 思考模式：带上最近一次响应的 reasoning_content，避免下轮任务复用该消息时 DeepSeek V3.2+ 报错
     if (result != null) {
-      run.taskMessageLog.push({ role: 'assistant', content: result })
+      const finalMsg: AiMessage = { role: 'assistant', content: result }
+      if (run.lastAssistantReasoningContent !== undefined) {
+        finalMsg.reasoning_content = run.lastAssistantReasoningContent
+      }
+      run.taskMessageLog.push(finalMsg)
     }
     
     // 先添加 final_result 步骤到 run.steps，确保后续保存包含完整数据
@@ -804,9 +809,14 @@ export abstract class Agent {
 
     // 保存 messages 快照供下一个任务复用（prompt cache 优化）
     // run.messages 不含最终纯文本回复（只有 tool_calls 时才 push），需要补上
+    // 思考模式：保留 reasoning_content，确保下轮任务复用时 DeepSeek V3.2+ 不会因字段缺失拒绝
     const snapshot = run.messages.map(m => ({ ...m }))
     if (result != null) {
-      snapshot.push({ role: 'assistant' as const, content: result })
+      const finalMsg: AiMessage = { role: 'assistant', content: result }
+      if (run.lastAssistantReasoningContent !== undefined) {
+        finalMsg.reasoning_content = run.lastAssistantReasoningContent
+      }
+      snapshot.push(finalMsg)
     }
     this._previousRunMessages = snapshot
     
@@ -1507,7 +1517,13 @@ export abstract class Agent {
     
     // 调用 AI（传入流式执行器，使其在流式输出中提前执行工具）
     const response = await this.callAiWithStreaming(run, streamingExecutor)
-    
+
+    // 缓存最近一次 assistant 响应的 reasoning_content
+    // finalizeRun 的最终纯文本 assistant 消息会从这里取（思考模式必须回传）
+    if (response.reasoning_content !== undefined) {
+      run.lastAssistantReasoningContent = response.reasoning_content
+    }
+
     // 处理 finish_reason=length（输出被 max_tokens 截断）
     if (response.finish_reason === 'length') {
       streamingExecutor.abort()

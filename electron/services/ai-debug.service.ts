@@ -31,6 +31,7 @@ export interface AiLogEntry {
       content: string
       tool_call_id?: string
       tool_calls?: unknown[]
+      reasoning_content?: string  // DeepSeek V3.2+ 思考模式回传字段（排查必须）
       images?: string[]
     }>
     tools?: unknown[]
@@ -335,6 +336,27 @@ class AiDebugService extends EventEmitter {
         messages: options.messages,
         tools: options.tools
       }
+    })
+  }
+
+  /**
+   * 记录实际发送给 API 的请求体（formatMessageForApi 处理后的 messages 等）。
+   * 与 request_start（AiMessage 内部视图）互补，用于排查 API 侧字段是否齐全。
+   */
+  logRequestBody(requestId: string, body: Record<string, unknown>): void {
+    // body 可能包含大量 tools 定义，裁剪下以免日志过大
+    const messagesRaw = (body.messages as Array<Record<string, unknown>> | undefined) ?? []
+    const messagesView: AiLogEntry['data']['messages'] = messagesRaw.map(m => ({
+      role: String(m.role ?? ''),
+      content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? ''),
+      tool_call_id: m.tool_call_id as string | undefined,
+      tool_calls: m.tool_calls as unknown[] | undefined,
+      reasoning_content: m.reasoning_content as string | undefined
+    }))
+    this.addLog({
+      type: 'request_body',
+      requestId,
+      data: { messages: messagesView }
     })
   }
 

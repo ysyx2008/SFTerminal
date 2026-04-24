@@ -498,6 +498,11 @@ function formatMessageForApi(msg: AiMessage, stripImages = false): Record<string
   // vLLM 等推理引擎拒绝空 content，纯 assistant 文本消息也需保护
   const content = msg.content || (msg.role === 'assistant' ? '[no response]' : ' ')
   const result: Record<string, unknown> = { role: msg.role, content }
+  // DeepSeek V3.2+ 思考模式：纯文本 assistant 消息如带 reasoning_content 也需回传（任一 assistant 消息缺失都会被拒）
+  // 其余 OpenAI 兼容 API 忽略未知字段，不会受影响；仅在字段存在时才附加，避免误伤非思考模型
+  if (msg.role === 'assistant' && msg.reasoning_content !== undefined) {
+    result.reasoning_content = msg.reasoning_content
+  }
   if (msg._cacheBreakpoint) result._cacheBreakpoint = true
   return result
 }
@@ -1461,6 +1466,7 @@ export class AiService {
         content: m.content,
         tool_call_id: m.tool_call_id,
         tool_calls: m.tool_calls,
+        reasoning_content: m.reasoning_content,
         images: m.images && m.images.length > 0
           ? m.images.map((img, i) => {
               const sizeKB = (img.length * 0.75 / 1024).toFixed(0)
@@ -1484,6 +1490,8 @@ export class AiService {
         temperature: resolveTemperature(profile),
         max_tokens: profile.maxOutputTokens || 8192
       }
+
+      aiDebug.logRequestBody(reqId, body as unknown as Record<string, unknown>)
 
       let data: {
         choices?: {
@@ -1630,6 +1638,7 @@ export class AiService {
         content: m.content,
         tool_call_id: m.tool_call_id,
         tool_calls: m.tool_calls,
+        reasoning_content: m.reasoning_content,
         images: m.images && m.images.length > 0
           ? m.images.map((img, i) => {
               const sizeKB = (img.length * 0.75 / 1024).toFixed(0)
@@ -1740,6 +1749,8 @@ export class AiService {
     }
 
     let requestBody = rebuildRequestBody()
+    // 记录 formatMessageForApi 处理后的实际请求体（仅 messages），便于排查字段合规问题（如 DeepSeek reasoning_content）
+    getAiDebugService().logRequestBody(reqId, requestBody)
 
     // 视觉降级重试：剥离图片后重新请求（最多触发一次）
     const tryVisionFallback = (errorMsg: string): boolean => {

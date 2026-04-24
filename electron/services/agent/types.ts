@@ -162,6 +162,12 @@ export interface AgentRun {
   // 完整对话记录（append-only，不受 compress_context 影响）
   // 与 messages（工作窗口，可被压缩）分离，确保持久化的历史完整不丢失
   taskMessageLog: import('../ai.service').AiMessage[]
+  /**
+   * 最后一次 assistant 响应的 reasoning_content（思考模型特有，DeepSeek V3.2+ 等）。
+   * 由 executeStep 在每次模型响应后更新，finalizeRun 在保存最终纯文本 assistant 消息时取用，
+   * 避免 thinking 模式下丢失 reasoning_content 字段导致下轮任务被 DeepSeek 服务端拒绝。
+   */
+  lastAssistantReasoningContent?: string
   // 压缩归档：compress_context 工具将被压缩的原始消息归档在此，可通过 recall_compressed 找回
   compressedArchives?: Array<{
     id: string                                        // 归档 ID，如 "ca-1"
