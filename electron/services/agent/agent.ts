@@ -127,6 +127,12 @@ function firstStringValue(obj: Record<string, unknown>): string | null {
 }
 
 /**
+ * 流式预创建卡片中"path 还没流到"时的占位符。
+ * path 到达后会被真实路径替换，用户先看到卡片出现、再看到路径填入。
+ */
+const STREAM_PLACEHOLDER = '…'
+
+/**
  * 计算指定字符串字段累计长度，构造实时进度尾缀，如 ` · 1234 字符`。
  *
  * 用途：文件写入/编辑类工具的 path 是一次性短输出，主要内容藏在看不见的
@@ -175,8 +181,9 @@ export function buildPreToolCallDisplay(toolName: string, partialArgs: string): 
     }
     case 'write_text_file':
     case 'write_remote_text_file': {
-      const filePath = asString(parsed.path)
-      if (!filePath) return null
+      // 一旦工具名命中就立即显示卡片——path 未到（AI 未按 schema 顺序、或正在流 content 前置字段）
+      // 时用占位符，避免"长字段流式期间卡片完全不出现"。path 到达后占位符自动被真实路径替换。
+      const pathDisplay = asString(parsed.path) ?? STREAM_PLACEHOLDER
       // mode 在 schema 中位于 content 之后，长内容流式时可能尚未到达，
       // 未到达时默认按 'create' 渲染（与执行器默认值一致）
       const mode = asString(parsed.mode) || 'create'
@@ -188,35 +195,35 @@ export function buildPreToolCallDisplay(toolName: string, partialArgs: string): 
       let head: string
       switch (mode) {
         case 'overwrite':
-          head = `${t('file.overwrite')}: ${filePath}`
+          head = `${t('file.overwrite')}: ${pathDisplay}`
           break
         case 'append':
-          head = `${t('file.append')}: ${filePath}`
+          head = `${t('file.append')}: ${pathDisplay}`
           break
         case 'insert':
           head = insertAtLine !== undefined
-            ? `${t('file.insert_at_line', { line: insertAtLine })}: ${filePath}`
-            : `${t('file.create')}: ${filePath}`
+            ? `${t('file.insert_at_line', { line: insertAtLine })}: ${pathDisplay}`
+            : `${t('file.create')}: ${pathDisplay}`
           break
         case 'replace_lines':
           head = startLine !== undefined && endLine !== undefined
-            ? `${t('file.replace_lines', { start: startLine, end: endLine })}: ${filePath}`
-            : `${t('file.create')}: ${filePath}`
+            ? `${t('file.replace_lines', { start: startLine, end: endLine })}: ${pathDisplay}`
+            : `${t('file.create')}: ${pathDisplay}`
           break
         case 'regex_replace':
-          head = `${t('file.regex_replace', { scope: replaceAll ? t('file.regex_scope_all') : t('file.regex_scope_first') })}: ${filePath}`
+          head = `${t('file.regex_replace', { scope: replaceAll ? t('file.regex_scope_all') : t('file.regex_scope_first') })}: ${pathDisplay}`
           break
         case 'create':
         default:
-          head = `${t('file.create')}: ${filePath}`
+          head = `${t('file.create')}: ${pathDisplay}`
       }
       return head + progress
     }
     case 'edit_file': {
-      const filePath = asString(parsed.path)
-      if (!filePath) return null
+      // 同 write_text_file：path 未到时用占位符保证卡片立刻出现
+      const pathDisplay = asString(parsed.path) ?? STREAM_PLACEHOLDER
       const progress = buildStreamProgressSuffix(parsed, ['old_text', 'new_text'])
-      return `${t('file.edit')}: ${filePath}${progress}`
+      return `${t('file.edit')}: ${pathDisplay}${progress}`
     }
   }
   return null

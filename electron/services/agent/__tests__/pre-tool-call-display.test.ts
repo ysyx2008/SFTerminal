@@ -115,9 +115,35 @@ describe('buildPreToolCallDisplay', () => {
       expect(out).toContain('1-5')
     })
 
-    it('path 尚未流到时返回 null', () => {
-      const out = buildPreToolCallDisplay('write_text_file', '{"mode"')
-      expect(out).toBeNull()
+    it('path 尚未流到时用占位符立即显示卡片（避免 AI 不按 schema 顺序时卡片迟迟不出现）', () => {
+      // AI 先流了 mode 字段，path 还没到
+      const out = buildPreToolCallDisplay(
+        'write_text_file',
+        JSON.stringify({ mode: 'overwrite' })
+      )
+      expect(out).toBe('覆盖写入文件: …')
+    })
+
+    it('工具名刚命中、arguments 还是空对象 {} 时也要显示占位卡片', () => {
+      // tryParsePartialJson('{}') 成功返回 {}，应当立即显示"新建文件: …"
+      const out = buildPreToolCallDisplay('write_text_file', '{}')
+      expect(out).toBe('新建文件: …')
+    })
+
+    it('path 到达后占位符自动被真实路径替换', () => {
+      // 模拟连续两次流式调用
+      const before = buildPreToolCallDisplay(
+        'write_text_file',
+        JSON.stringify({ content: 'x'.repeat(200) })
+      )
+      const after = buildPreToolCallDisplay(
+        'write_text_file',
+        JSON.stringify({ path: '/tmp/a.txt', content: 'x'.repeat(200) })
+      )
+      expect(before).toContain('…')
+      expect(before).not.toContain('/tmp/a.txt')
+      expect(after).toContain('/tmp/a.txt')
+      expect(after).not.toContain('…')
     })
   })
 
@@ -222,6 +248,29 @@ describe('buildPreToolCallDisplay', () => {
       )
       expect(out).toBe('编辑文件: /tmp/a.txt')
     })
+
+    it('AI 先流 old_text 时卡片立刻显示占位符，不用等 path 到达', () => {
+      // 这是用户报告的真实场景：AI 不按 schema 顺序，先发长字段 old_text，
+      // 卡片必须立刻出现、字符数必须开始跳动，否则用户会以为卡住
+      const out = buildPreToolCallDisplay(
+        'edit_file',
+        JSON.stringify({ old_text: 'x'.repeat(200) })
+      )
+      expect(out).toBe('编辑文件: … · 200 字符')
+    })
+
+    it('path 到达后占位符自动被替换，字符数尾缀保留', () => {
+      const before = buildPreToolCallDisplay(
+        'edit_file',
+        JSON.stringify({ old_text: 'x'.repeat(150) })
+      )
+      const after = buildPreToolCallDisplay(
+        'edit_file',
+        JSON.stringify({ path: '/tmp/a.txt', old_text: 'x'.repeat(200) })
+      )
+      expect(before).toBe('编辑文件: … · 150 字符')
+      expect(after).toBe('编辑文件: /tmp/a.txt · 200 字符')
+    })
   })
 
   describe('非预创建工具', () => {
@@ -253,8 +302,9 @@ describe('buildPreToolCallDisplay', () => {
       expect(buildPreToolCallDisplay('execute_command', 'not json')).toBeNull()
     })
 
-    it('空对象 {} 返回 null（没有可展示字段）', () => {
-      expect(buildPreToolCallDisplay('write_text_file', '{}')).toBeNull()
+    it('空对象 {} 对命令类工具仍返回 null（没有 command 无法展示）', () => {
+      // write_text_file / edit_file 的空对象行为在各自 describe 中已测（用占位符显示卡片）
+      expect(buildPreToolCallDisplay('execute_command', '{}')).toBeNull()
     })
   })
 })
