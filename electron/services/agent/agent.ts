@@ -1989,7 +1989,11 @@ export abstract class Agent {
           // 当模型产生了推理+回复且没有工具调用时（即这是最终回复），
           // 将步骤内容重建为仅包含推理部分。回复内容会由 finalizeRun 作为 final_result 展示，
           // 避免执行步骤中的 message 和 final_result 重复显示同一段回复。
-          if (result.reasoning_content?.trim() && result.content && !result.tool_calls?.length) {
+          //
+          // 例外：请求被中止时（用户在 AI 输出过程中发送了新消息），后续不会走到 finalizeRun 的
+          // final_result 分支，而是直接继续下一轮对话。此时若抹掉正文，用户已经看到的回复就会凭空消失，
+          // 只剩下折叠的思考卡。按用户预期"立刻打断但保留已输出正文"，aborted 时保持 streamContent 原样。
+          if (!result.aborted && result.reasoning_content?.trim() && result.content && !result.tool_calls?.length) {
             finalContent = `<details>\n<summary>🤔 <strong>${t('ai.thinking_process')}</strong></summary>\n\n<blockquote>\n\n${result.reasoning_content}\n\n</blockquote>\n</details>`
           }
           if (finalContent && streamStepCreated) {

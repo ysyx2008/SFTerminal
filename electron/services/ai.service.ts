@@ -365,6 +365,7 @@ export interface ChatWithToolsResult {
   finish_reason?: 'stop' | 'tool_calls' | 'length'
   reasoning_content?: string  // think 模型的思考内容
   usage?: TokenUsageInfo
+  aborted?: boolean  // 是否因外部中止（如用户补充新消息）被打断；调用方据此避免把已展示的正文从步骤卡里抹掉
 }
 
 export type { AiModelType } from './config.service'
@@ -1799,7 +1800,8 @@ export class AiService {
       onDone({
         content: undefined,
         tool_calls: undefined,
-        finish_reason: 'stop'
+        finish_reason: 'stop',
+        aborted: true
       })
       return
     }
@@ -2112,7 +2114,8 @@ export class AiService {
             complete(() => onDone({
               content: undefined,
               tool_calls: undefined,
-              finish_reason: 'stop'
+              finish_reason: 'stop',
+              aborted: true
             }))
             return
           }
@@ -2143,7 +2146,8 @@ export class AiService {
           complete(() => onDone({
             content: undefined,
             tool_calls: undefined,
-            finish_reason: 'stop'
+            finish_reason: 'stop',
+            aborted: true
           }))
           return
         }
@@ -2177,7 +2181,8 @@ export class AiService {
           content: finalContent,
           tool_calls: hasValidTools ? validToolCalls : undefined,
           finish_reason: 'stop',
-          reasoning_content: hasReasoningOutput ? reasoningContent : undefined
+          reasoning_content: hasReasoningOutput ? reasoningContent : undefined,
+          aborted: true
         }))
       })
 
