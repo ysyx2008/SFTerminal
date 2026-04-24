@@ -5,17 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self' http: https: data: blob:;">
     <title>旗鱼</title>
+    <script>
+      // ⚡ FOUC 防护：在 Vue 挂载前把上次使用的 UI 主题同步到 <html>，
+      // 避免首帧用 stores/config.ts 的默认 'blue' 渲染出一闪而过的蓝色。
+      // 缓存 key 需与 src/stores/config.ts 中的 UI_THEME_STORAGE_KEY 保持一致。
+      (function () {
+        try {
+          var theme = localStorage.getItem('sfterm-ui-theme')
+          var scheme = localStorage.getItem('sfterm-ui-color-scheme')
+          if (theme) document.documentElement.setAttribute('data-ui-theme', theme)
+          if (scheme) document.documentElement.setAttribute('data-color-scheme', scheme)
+        } catch (e) { /* localStorage 不可用时让 :root 兜底 */ }
+      })()
+    </script>
     <style>
       * {
         margin: 0;
         padding: 0;
         box-sizing: border-box;
       }
+      /* 启动时 main.css 尚未加载，用 :root 的 bg-primary 兜底（dark 配色 #181818），
+         避免沿用纯黑导致的黑→蓝→目标主题二次闪烁。 */
       html, body, #app {
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background: #000000;
+        background: var(--bg-primary, #181818);
       }
     </style>
   </head>

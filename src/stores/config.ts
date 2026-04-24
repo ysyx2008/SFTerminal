@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { setLocale, type LocaleType } from '../i18n'
-import { type UiThemeName } from '../themes/ui-themes'
+import { uiThemes, type UiThemeName } from '../themes/ui-themes'
 import { setLogLevel as setFrontendLogLevel, type LogLevel } from '../utils/logger'
 
 // 快捷键配置（值为 Electron Accelerator 格式，空字符串表示禁用）
@@ -268,6 +268,34 @@ export interface CalendarAccount {
   lastUsedAt?: number
 }
 
+// ==================== UI 主题本地缓存 ====================
+// 通过 localStorage 缓存上次使用的 UI 主题，配合 index.html 的内联脚本
+// 在 Vue 挂载之前就把 data-ui-theme 写到 <html>，消除启动时的蓝色闪烁（FOUC）。
+// key 与 index.html / file-manager.html 的内联脚本保持一致。
+const UI_THEME_STORAGE_KEY = 'sfterm-ui-theme'
+const UI_COLOR_SCHEME_STORAGE_KEY = 'sfterm-ui-color-scheme'
+
+function readCachedUiTheme(): UiThemeName {
+  try {
+    const cached = typeof localStorage !== 'undefined'
+      ? localStorage.getItem(UI_THEME_STORAGE_KEY)
+      : null
+    if (cached && cached in uiThemes) {
+      return cached as UiThemeName
+    }
+  } catch { /* localStorage 不可用时静默降级 */ }
+  return 'blue'
+}
+
+function writeCachedUiTheme(theme: UiThemeName): void {
+  try {
+    if (typeof localStorage === 'undefined') return
+    localStorage.setItem(UI_THEME_STORAGE_KEY, theme)
+    const scheme = uiThemes[theme]?.colorScheme ?? 'dark'
+    localStorage.setItem(UI_COLOR_SCHEME_STORAGE_KEY, scheme)
+  } catch { /* localStorage 不可用时静默降级 */ }
+}
+
 export const useConfigStore = defineStore('config', () => {
   // AI 配置
   const aiProfiles = ref<AiProfile[]>([])
@@ -283,7 +311,15 @@ export const useConfigStore = defineStore('config', () => {
   const currentTheme = ref<string>('one-dark')
 
   // UI 主题
-  const uiTheme = ref<UiThemeName>('blue')
+  // 初始值优先读 localStorage 缓存（在 index.html 的内联脚本里已经写入 <html data-ui-theme>），
+  // 这样 Vue 首帧渲染的 data-ui-theme 就与 <html> 上的兜底保持一致，
+  // 避免启动时默认 'blue' 覆盖用户上次选择的主题而出现"蓝色一闪而过"。
+  const uiTheme = ref<UiThemeName>(readCachedUiTheme())
+
+  // 任一路径更新 uiTheme 都同步写回 localStorage，保证下次启动前即可读取
+  watch(uiTheme, (value) => {
+    writeCachedUiTheme(value)
+  })
 
   // 终端设置
   const terminalSettings = ref<TerminalSettings>({
