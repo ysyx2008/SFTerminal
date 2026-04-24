@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Pencil, Trash2, X, ExternalLink, Eye } from 'lucide-vue-next'
+import { Plus, Pencil, Trash2, X, ExternalLink, Eye, Copy } from 'lucide-vue-next'
 import { useConfigStore, type AiProfile, type AiModelType, type ApiFormat } from '../../stores/config'
 import { AI_TEMPLATES } from '../../config/ai-templates'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderId } from '@shared/types'
@@ -12,6 +12,7 @@ const { t } = useI18n()
 const configStore = useConfigStore()
 
 const showForm = ref(false)
+const isCopyMode = ref(false)
 
 // ESC 关闭编辑表单
 const handleKeydown = (e: KeyboardEvent) => {
@@ -95,12 +96,26 @@ const contextLengthInK = computed({
 
 const openNewProfile = () => {
   resetForm()
+  isCopyMode.value = false
   showForm.value = true
 }
 
 const openEditProfile = (profile: AiProfile) => {
   editingProfile.value = profile
   formData.value = { ...profile }
+  isCopyMode.value = false
+  showForm.value = true
+}
+
+// 基于现有配置创建新配置：预填内容、名称附"副本"后缀，由用户确认后保存为新配置
+const openCopyProfile = (profile: AiProfile) => {
+  editingProfile.value = null
+  const { id: _id, ...rest } = profile
+  formData.value = {
+    ...rest,
+    name: `${profile.name} ${t('aiSettings.copySuffix')}`,
+  }
+  isCopyMode.value = true
   showForm.value = true
 }
 
@@ -499,6 +514,9 @@ function openWebSearchKeyUrl() {
               <button class="btn-icon btn-sm" @click="openEditProfile(profile)" :title="t('aiSettings.editProfile')">
                 <Pencil :size="14" />
               </button>
+              <button class="btn-icon btn-sm" @click="openCopyProfile(profile)" :title="t('aiSettings.copyProfile')">
+                <Copy :size="14" />
+              </button>
               <button class="btn-icon btn-sm" @click="deleteProfile(profile)" :title="t('aiSettings.deleteProfile')">
                 <Trash2 :size="14" />
               </button>
@@ -519,14 +537,14 @@ function openWebSearchKeyUrl() {
         <div v-if="showForm" class="profile-modal-overlay settings-scope">
           <div class="profile-modal">
             <div class="form-header">
-              <h4>{{ editingProfile ? t('aiSettings.editProfile') : t('aiSettings.addProfile') }}</h4>
+              <h4>{{ editingProfile ? t('aiSettings.editProfile') : (isCopyMode ? t('aiSettings.copyProfile') : t('aiSettings.addProfile')) }}</h4>
               <button class="btn-icon" @click="showForm = false" :title="t('common.close')">
                 <X :size="16" />
               </button>
             </div>
 
             <!-- 快速模板 -->
-            <div class="templates" v-if="!editingProfile">
+            <div class="templates" v-if="!editingProfile && !isCopyMode">
               <span class="template-label">{{ t('setup.aiConfig.quickTemplates') }}</span>
               <button
                 v-for="template in templates"

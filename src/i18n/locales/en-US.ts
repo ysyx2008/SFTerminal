@@ -486,6 +486,8 @@ export default {
     temperatureTip: 'Default 0.7. Some models require a fixed value (e.g. Kimi K2.5 requires 1)',
     saveProfile: 'Save Profile',
     deleteProfile: 'Delete Profile',
+    copyProfile: 'Copy Profile',
+    copySuffix: '(Copy)',
     setActive: 'Set as Active',
     confirmDeleteProfile: 'Are you sure you want to delete this AI profile?',
     confirmNoApiKey: 'You have not entered an API Key.\n\nMost API services require a key to work (except local deployments like Ollama).\n\nDo you want to continue saving?',

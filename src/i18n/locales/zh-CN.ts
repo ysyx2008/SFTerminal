@@ -486,6 +486,8 @@ export default {
     temperatureTip: '默认 0.7。部分模型有固定要求（如 Kimi K2.5 需设为 1）',
     saveProfile: '保存配置',
     deleteProfile: '删除配置',
+    copyProfile: '复制配置',
+    copySuffix: '副本',
     setActive: '设为当前',
     confirmDeleteProfile: '确定要删除此 AI 配置吗？',
     confirmNoApiKey: '您没有填写 API Key。\n\n大多数 API 服务需要提供 Key 才能正常使用（本地部署的 Ollama 等除外）。\n\n确定要继续保存吗？',
