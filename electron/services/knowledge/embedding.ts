@@ -120,6 +120,10 @@ export class EmbeddingService extends EventEmitter {
    * 生成文本的向量嵌入
    * @param texts 文本数组
    * @returns 向量数组
+   *
+   * 使用 batch inference：一次 forward pass 处理整个 batch，
+   * 相比逐条串行在 CPU 上通常有 3-8 倍加速（避免重复的
+   * session.run 调度开销 + attention 层计算可部分共享）。
    */
   async embed(texts: string[]): Promise<number[][]> {
     if (!this.extractor) {
@@ -130,29 +134,56 @@ export class EmbeddingService extends EventEmitter {
       throw new Error('Embedding 模型未加载')
     }
 
+    if (texts.length === 0) return []
+
     try {
-      const results: number[][] = []
+      // 截断过长的文本（大多数模型限制 512 tokens，2000 字符留些余量给中文）
+      const truncated = texts.map(t => t.slice(0, 2000))
 
-      for (const text of texts) {
-        // 截断过长的文本（大多数模型限制 512 tokens）
-        const truncatedText = text.slice(0, 2000)
-        
-        // 生成嵌入
-        const output = await this.extractor(truncatedText, {
-          pooling: 'mean',
-          normalize: true
-        })
+      // 一次性 forward 整个 batch
+      const output = await this.extractor(truncated, {
+        pooling: 'mean',
+        normalize: true
+      })
 
-        // 转换为普通数组
-        const embedding = Array.from(output.data as Float32Array)
-        results.push(embedding)
+      // feature-extraction + pooling='mean' 的输出 shape = [B, D]
+      // output.data 是扁平的 Float32Array（行主序），长度 = B * D
+      const data = output.data as Float32Array
+      const dims = output.dims as number[] | undefined
+      const dim = dims && dims.length >= 2
+        ? dims[dims.length - 1]
+        : Math.floor(data.length / truncated.length)
+
+      if (!dim || data.length !== truncated.length * dim) {
+        // 理论不会发生，兜底防御：形状异常时降级为单条处理，保证正确性优先
+        log.warn(`batch embed 输出形状异常，dims=${JSON.stringify(dims)}, data.length=${data.length}，降级为单条推理`)
+        return this.embedFallbackSequential(truncated)
       }
 
+      const results: number[][] = new Array(truncated.length)
+      for (let i = 0; i < truncated.length; i++) {
+        results[i] = Array.from(data.subarray(i * dim, (i + 1) * dim))
+      }
       return results
     } catch (error) {
       log.error('Failed to generate embeddings:', error)
       throw error
     }
+  }
+
+  /**
+   * 降级：逐条推理（仅在 batch 输出形状异常时使用）
+   */
+  private async embedFallbackSequential(texts: string[]): Promise<number[][]> {
+    const results: number[][] = []
+    for (const text of texts) {
+      const output = await this.extractor(text, {
+        pooling: 'mean',
+        normalize: true
+      })
+      results.push(Array.from(output.data as Float32Array))
+    }
+    return results
   }
 
   /**

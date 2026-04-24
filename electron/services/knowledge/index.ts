@@ -254,22 +254,101 @@ export class KnowledgeService extends EventEmitter {
       : needRebuildVector ? 'vector'
       : 'bm25'
     this.emit('rebuildStarted', { total: docs.length, reason: rebuildReason })
-    
+
+    // 跨文档 embedding 攒批：把多个 doc 的 chunks 合并成 ≤64 条一起调 embed()，
+    // 让 ONNX 走真正的 batch inference。对 conversation 这类 1-chunk 文档收益最大
+    // （避免 "1 doc 1 embed call" 的极端低效）。
+    const EMBED_BATCH_SIZE = 64
     // 批量收集向量记录，最后一次性写入以减少 LanceDB manifest 版本数
     const VECTOR_BATCH_SIZE = 200
     let pendingVectorRecords: VectorRecord[] = []
-    
+
+    interface PendingChunk {
+      doc: KnowledgeDocument
+      chunkId: string
+      chunkIndex: number
+      text: string          // 原文（BM25 用原文，向量 host-memory 需要加密）
+      isHostMemory: boolean
+    }
+    let pendingChunks: PendingChunk[] = []
+
+    const flushEmbedBatch = async (): Promise<void> => {
+      if (pendingChunks.length === 0) return
+
+      const batch = pendingChunks
+      pendingChunks = []
+
+      let embeddings: number[][]
+      try {
+        embeddings = await this.embeddingService.embed(batch.map(p => p.text))
+      } catch (err) {
+        log.error(`embed 批量失败（${batch.length} 条），跳过此批:`, err)
+        return
+      }
+
+      const batchRecords: VectorRecord[] = []
+      const batchBm25Docs: Array<{
+        id: string; docId: string; content: string
+        filename: string; hostId: string; tags: string
+      }> = []
+
+      for (let i = 0; i < batch.length; i++) {
+        const p = batch[i]
+        const tagsStr = (p.doc.tags || []).join(',')
+        batchRecords.push({
+          id: p.chunkId,
+          docId: p.doc.id,
+          content: p.isHostMemory ? encrypt(p.text) : p.text,
+          vector: embeddings[i],
+          filename: p.doc.filename,
+          hostId: p.doc.hostId || '',
+          tags: tagsStr,
+          chunkIndex: p.chunkIndex,
+          createdAt: p.doc.createdAt
+        })
+        batchBm25Docs.push({
+          id: p.chunkId,
+          docId: p.doc.id,
+          content: p.text,
+          filename: p.doc.filename,
+          hostId: p.doc.hostId || '',
+          tags: tagsStr
+        })
+      }
+
+      if (needRebuildVector) {
+        pendingVectorRecords.push(...batchRecords)
+        if (pendingVectorRecords.length >= VECTOR_BATCH_SIZE) {
+          try {
+            await this.vectorStorage.addRecords(pendingVectorRecords)
+          } catch (batchError) {
+            log.error('向量批量写入失败，停止向量重建（BM25 继续）:', batchError)
+            needRebuildVector = false
+          } finally {
+            pendingVectorRecords = []
+          }
+        }
+      }
+
+      if (needRebuildBM25) {
+        try {
+          await this.bm25Index.addDocuments(batchBm25Docs)
+        } catch (e) {
+          log.error('BM25 批量写入失败，跳过此批:', e)
+        }
+      }
+    }
+
     for (let i = 0; i < docs.length; i++) {
       const doc = docs[i]
       if (!doc.content) continue
-      
-      // 发送重建进度
-      this.emit('rebuildProgress', { 
-        current: i + 1, 
-        total: docs.length, 
-        filename: doc.filename 
+
+      this.emit('rebuildProgress', {
+        current: i + 1,
+        total: docs.length,
+        filename: doc.filename
       })
-      
+
       try {
         let contentForIndex = doc.content
         if (isEncrypted(doc.content)) {
@@ -281,51 +360,25 @@ export class KnowledgeService extends EventEmitter {
           }
         }
 
-        const chunks = this.chunker.chunk(contentForIndex, doc.id, { filename: doc.filename, tags: doc.tags || [] })
-        const texts = chunks.map(c => c.content)
-        const embeddings = await this.embeddingService.embed(texts)
-        
-        const isHostMemory = doc.fileType === 'host-memory'
-        const records: VectorRecord[] = chunks.map((chunk, index) => ({
-          id: chunk.id,
-          docId: doc.id,
-          content: isHostMemory ? encrypt(chunk.content) : chunk.content,
-          vector: embeddings[index],
+        const chunks = this.chunker.chunk(contentForIndex, doc.id, {
           filename: doc.filename,
-          hostId: doc.hostId || '',
-          tags: (doc.tags || []).join(','),
-          chunkIndex: chunk.chunkIndex,
-          createdAt: doc.createdAt
-        }))
-        
-        if (needRebuildVector) {
-          pendingVectorRecords.push(...records)
-          if (pendingVectorRecords.length >= VECTOR_BATCH_SIZE) {
-            try {
-              await this.vectorStorage.addRecords(pendingVectorRecords)
-            } catch (batchError) {
-              // 批量写入失败后必须清空队列，否则后续每次循环都会再次尝试同一批
-              // 失败记录 → 反复抛出同一错误刷屏。失败时停止向量重建，BM25 继续。
-              log.error('向量批量写入失败，停止向量重建（BM25 继续）:', batchError)
-              needRebuildVector = false
-            } finally {
-              pendingVectorRecords = []
-            }
+          tags: doc.tags || []
+        })
+        const isHostMemory = doc.fileType === 'host-memory'
+
+        for (const chunk of chunks) {
+          pendingChunks.push({
+            doc,
+            chunkId: chunk.id,
+            chunkIndex: chunk.chunkIndex,
+            text: chunk.content,
+            isHostMemory
+          })
+          if (pendingChunks.length >= EMBED_BATCH_SIZE) {
+            await flushEmbedBatch()
           }
         }
-        
-        if (needRebuildBM25) {
-          const bm25Docs = chunks.map((chunk, index) => ({
-            id: records[index].id,
-            docId: doc.id,
-            content: chunk.content,
-            filename: doc.filename,
-            hostId: doc.hostId || '',
-            tags: (doc.tags || []).join(',')
-          }))
-          await this.bm25Index.addDocuments(bm25Docs)
-        }
-        
+
         if ((i + 1) % 100 === 0 || i === docs.length - 1) {
           log.info(`已重建 ${i + 1}/${docs.length}: ${doc.filename}`)
         }
@@ -333,7 +386,10 @@ export class KnowledgeService extends EventEmitter {
         log.error(`Failed to rebuild index for ${doc.filename}:`, error)
       }
     }
-    
+
+    // flush embedding 剩余未满一批的 chunks
+    await flushEmbedBatch()
+
     // 刷入剩余的向量记录（同样需要容错，避免最后一批失败冒泡导致整个 initialize 报错）
     if (pendingVectorRecords.length > 0) {
       try {
