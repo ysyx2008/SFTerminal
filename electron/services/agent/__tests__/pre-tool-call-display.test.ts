@@ -1,0 +1,260 @@
+/**
+ * buildPreToolCallDisplay 单元测试
+ *
+ * 保护"流式 tool_call 预创建卡片"这个 UX 承诺不在后续重构中再次丢失：
+ * - commit 4aeabb1a 曾把"正在生成 {tool} 参数 XX 字符"反馈误删，导致 write_text_file
+ *   这类长内容工具流式时卡片停滞不动，用户以为卡住（见 agent/SPEC.md "UX 承诺"）。
+ * - 本测试从公开契约层面固定：哪些工具在流式阶段就要有预卡片、长参数工具何时开始
+ *   追加字符数尾缀、尾缀格式长什么样。
+ *
+ * 纯函数测试，无需 mock。
+ */
+import { describe, it, expect, vi } from 'vitest'
+
+// 与 agent.test.ts 一致：agent.ts 的上层 import 链会拉起 electron 和 im.service，
+// 必须先 mock 掉才能在非 Electron 环境加载模块。
+vi.mock('electron', () => ({
+  app: {
+    getPath: vi.fn().mockReturnValue('/mock/user/data'),
+    getName: vi.fn().mockReturnValue('SailFish'),
+    getVersion: vi.fn().mockReturnValue('1.0.0')
+  },
+  BrowserWindow: vi.fn(),
+  ipcMain: { on: vi.fn(), handle: vi.fn() }
+}))
+
+vi.mock('../../im/im.service', () => ({
+  getIMService: vi.fn().mockReturnValue(null)
+}))
+
+import { buildPreToolCallDisplay } from '../agent'
+
+describe('buildPreToolCallDisplay', () => {
+  describe('shell 命令类工具', () => {
+    it('execute_command 取 command 字段渲染为"执行命令: {cmd}"', () => {
+      const out = buildPreToolCallDisplay(
+        'execute_command',
+        '{"command": "ls -la"}'
+      )
+      expect(out).toBe('执行命令: ls -la')
+    })
+
+    it('exec 同样取 command 字段', () => {
+      const out = buildPreToolCallDisplay(
+        'exec',
+        '{"command": "npm test"}'
+      )
+      expect(out).toBe('执行命令: npm test')
+    })
+
+    it('shell 命令不追加字符数尾缀（命令本身在流，用户能感知）', () => {
+      // 即使 command 很长，也不应该出现 "· N 字符" 尾缀
+      const longCmd = 'echo ' + 'a'.repeat(500)
+      const out = buildPreToolCallDisplay(
+        'execute_command',
+        JSON.stringify({ command: longCmd })
+      )
+      expect(out).not.toContain('字符')
+      expect(out).not.toContain('chars')
+      expect(out).toBe(`执行命令: ${longCmd}`)
+    })
+
+    it('partial JSON 中 command 还没流到时返回 null', () => {
+      const out = buildPreToolCallDisplay('execute_command', '{"command')
+      expect(out).toBeNull()
+    })
+
+    it('容错解析：流式中字符串未闭合也能取出已有 command 前缀', () => {
+      // AI 流到一半："{"command": "ls -l
+      const out = buildPreToolCallDisplay('execute_command', '{"command": "ls -l')
+      expect(out).toBe('执行命令: ls -l')
+    })
+  })
+
+  describe('write_text_file — mode 切换', () => {
+    it('未带 mode 默认按 create 渲染', () => {
+      // mode 在 schema 中位于 content 之后，长内容流式时未到达是常态
+      const out = buildPreToolCallDisplay(
+        'write_text_file',
+        '{"path": "/tmp/a.txt"}'
+      )
+      expect(out).toBe('新建文件: /tmp/a.txt')
+    })
+
+    it('mode=overwrite 渲染为"覆盖写入文件"', () => {
+      const out = buildPreToolCallDisplay(
+        'write_text_file',
+        '{"path": "/tmp/a.txt", "mode": "overwrite"}'
+      )
+      expect(out).toBe('覆盖写入文件: /tmp/a.txt')
+    })
+
+    it('mode=append 渲染为"追加写入文件"', () => {
+      const out = buildPreToolCallDisplay(
+        'write_text_file',
+        '{"path": "/tmp/a.txt", "mode": "append"}'
+      )
+      expect(out).toBe('追加写入文件: /tmp/a.txt')
+    })
+
+    it('mode=insert 带 insert_at_line', () => {
+      const out = buildPreToolCallDisplay(
+        'write_text_file',
+        '{"path": "/tmp/a.txt", "mode": "insert", "insert_at_line": 10}'
+      )
+      expect(out).toContain('/tmp/a.txt')
+      expect(out).toMatch(/第\s*10\s*行/)
+    })
+
+    it('mode=replace_lines 带 start_line/end_line', () => {
+      const out = buildPreToolCallDisplay(
+        'write_text_file',
+        '{"path": "/tmp/a.txt", "mode": "replace_lines", "start_line": 1, "end_line": 5}'
+      )
+      expect(out).toContain('/tmp/a.txt')
+      expect(out).toContain('1-5')
+    })
+
+    it('path 尚未流到时返回 null', () => {
+      const out = buildPreToolCallDisplay('write_text_file', '{"mode"')
+      expect(out).toBeNull()
+    })
+  })
+
+  describe('write_text_file — 实时字符数尾缀（核心 UX 承诺）', () => {
+    it('content 不足 100 字符不显示尾缀，避免 path 刚流完就抖动', () => {
+      const out = buildPreToolCallDisplay(
+        'write_text_file',
+        JSON.stringify({ path: '/tmp/a.txt', content: 'a'.repeat(50) })
+      )
+      expect(out).toBe('新建文件: /tmp/a.txt')
+      expect(out).not.toContain('字符')
+    })
+
+    it('content 达到 100 字符即开始显示字符数尾缀', () => {
+      const out = buildPreToolCallDisplay(
+        'write_text_file',
+        JSON.stringify({ path: '/tmp/a.txt', content: 'a'.repeat(100) })
+      )
+      expect(out).toBe('新建文件: /tmp/a.txt · 100 字符')
+    })
+
+    it('字符数随 content 变化而变化（即"跳动"的关键）', () => {
+      const out1 = buildPreToolCallDisplay(
+        'write_text_file',
+        JSON.stringify({ path: '/tmp/a.txt', content: 'x'.repeat(200) })
+      )
+      const out2 = buildPreToolCallDisplay(
+        'write_text_file',
+        JSON.stringify({ path: '/tmp/a.txt', content: 'x'.repeat(350) })
+      )
+      expect(out1).toContain('200 字符')
+      expect(out2).toContain('350 字符')
+      expect(out1).not.toEqual(out2)
+    })
+
+    it('始终使用字符单位，不切 KB（数字位数多跳动幅度大）', () => {
+      const out = buildPreToolCallDisplay(
+        'write_text_file',
+        JSON.stringify({ path: '/tmp/a.txt', content: 'x'.repeat(5000) })
+      )
+      expect(out).toContain('5000 字符')
+      expect(out).not.toContain('KB')
+    })
+
+    it('尾缀格式为 " · N 字符"（中间分隔符明显）', () => {
+      const out = buildPreToolCallDisplay(
+        'write_text_file',
+        JSON.stringify({ path: '/tmp/a.txt', content: 'x'.repeat(150) })
+      )
+      expect(out).toMatch(/ · 150 字符$/)
+    })
+
+    it('容错解析：content 字符串未闭合时也能累计已流到的字符数', () => {
+      // 模拟 AI 正在流 content：`{"path": "/tmp/a.txt", "content": "AAAA...`（未闭合）
+      const partial = '{"path": "/tmp/a.txt", "content": "' + 'A'.repeat(300)
+      const out = buildPreToolCallDisplay('write_text_file', partial)
+      expect(out).toContain('/tmp/a.txt')
+      expect(out).toContain('字符')
+    })
+  })
+
+  describe('write_remote_text_file', () => {
+    it('和 write_text_file 共享同一套渲染逻辑', () => {
+      const out = buildPreToolCallDisplay(
+        'write_remote_text_file',
+        JSON.stringify({ path: '/etc/nginx.conf', mode: 'overwrite', content: 'x'.repeat(200) })
+      )
+      expect(out).toBe('覆盖写入文件: /etc/nginx.conf · 200 字符')
+    })
+  })
+
+  describe('edit_file', () => {
+    it('按 path 渲染"编辑文件: {path}"', () => {
+      const out = buildPreToolCallDisplay(
+        'edit_file',
+        JSON.stringify({ path: '/tmp/a.txt' })
+      )
+      expect(out).toBe('编辑文件: /tmp/a.txt')
+    })
+
+    it('字符数累计 old_text + new_text（两段都是长文本）', () => {
+      const out = buildPreToolCallDisplay(
+        'edit_file',
+        JSON.stringify({
+          path: '/tmp/a.txt',
+          old_text: 'x'.repeat(60),
+          new_text: 'y'.repeat(60)
+        })
+      )
+      // 60 + 60 = 120 超过 100 阈值，尾缀应出现
+      expect(out).toBe('编辑文件: /tmp/a.txt · 120 字符')
+    })
+
+    it('old_text + new_text 之和不足 100 字符不显示尾缀', () => {
+      const out = buildPreToolCallDisplay(
+        'edit_file',
+        JSON.stringify({
+          path: '/tmp/a.txt',
+          old_text: 'x'.repeat(40),
+          new_text: 'y'.repeat(40)
+        })
+      )
+      expect(out).toBe('编辑文件: /tmp/a.txt')
+    })
+  })
+
+  describe('非预创建工具', () => {
+    it('read_file 返回 null（流式阶段不预创建，执行器快就直接 addStep）', () => {
+      expect(
+        buildPreToolCallDisplay('read_file', JSON.stringify({ path: '/tmp/a.txt' }))
+      ).toBeNull()
+    })
+
+    it('file_search 返回 null', () => {
+      expect(
+        buildPreToolCallDisplay('file_search', JSON.stringify({ query: 'foo' }))
+      ).toBeNull()
+    })
+
+    it('未知工具返回 null', () => {
+      expect(
+        buildPreToolCallDisplay('totally_unknown_tool', '{"foo": "bar"}')
+      ).toBeNull()
+    })
+  })
+
+  describe('容错边界', () => {
+    it('空字符串返回 null', () => {
+      expect(buildPreToolCallDisplay('execute_command', '')).toBeNull()
+    })
+
+    it('非 JSON 对象返回 null', () => {
+      expect(buildPreToolCallDisplay('execute_command', 'not json')).toBeNull()
+    })
+
+    it('空对象 {} 返回 null（没有可展示字段）', () => {
+      expect(buildPreToolCallDisplay('write_text_file', '{}')).toBeNull()
+    })
+  })
+})

@@ -155,8 +155,10 @@ function buildStreamProgressSuffix(parsed: Record<string, unknown>, fields: stri
  *
  * 返回 null 表示当前 partial args 还不足以构建（例如 path 尚未流到），调用方应
  * 保留上一次的缓存内容，避免"闪一下然后消失"。
+ *
+ * @internal 导出仅供单元测试使用，业务代码请勿直接调用
  */
-function buildPreToolCallDisplay(toolName: string, partialArgs: string): string | null {
+export function buildPreToolCallDisplay(toolName: string, partialArgs: string): string | null {
   const parsed = tryParsePartialJson(partialArgs)
   if (!parsed) return null
 

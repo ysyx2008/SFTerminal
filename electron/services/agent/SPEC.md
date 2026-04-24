@@ -1,6 +1,6 @@
 # Agent 子系统 SPEC
 
-> Last verified: 2026-03-09
+> Last verified: 2026-04-24
 
 ## 职责
 
@@ -161,6 +161,18 @@ run(message, context, options)
 **流程**：`executeStep` 创建 `StreamingToolExecutor` → 传入 `callAiWithStreaming` → AI 流式输出中 `onToolCallReady` 回调触发 `addTool()` → 流结束后 `executeToolCallsWithStreaming` 收集预执行结果 + 执行剩余工具
 
 **安全约束**：重试（onRetry）和截断（finish_reason=length）时会 abort 执行器；幻觉工具在执行器内部检测并拒绝；结果按原始 tool_calls 顺序写入消息历史。
+
+### 流式 tool_call 预创建卡片（UX 承诺）
+
+长参数工具（`write_text_file` / `write_remote_text_file` / `edit_file` / `execute_command` / `exec`）的 tool_call 参数流式输出经常耗时数秒到数十秒。不做特殊处理时，用户在 AI 输出完整个 assistant 消息前什么都看不到，体感像是卡住。
+
+**承诺**：`callAiWithStreaming` 的 `onToolCallProgress` 回调在参数流式阶段就根据已到达的 partial JSON 预创建一张 `tool_call` 卡片，执行器首次 `addStep` 时由 `wrapExecutorConfigForToolCall` 无缝接管。
+
+- **内容格式**由 `buildPreToolCallDisplay(toolName, partialArgs)` 集中决定，必须与执行器最终 `addStep` 的 content 对齐（相同前缀、相同路径/命令），避免接管瞬间视觉跳变
+- **path 固定、长内容隐藏的工具**（write_text_file 等）额外追加实时字符数尾缀（如 `· 1234 字符`），累计 content/old_text/new_text 长度，让"AI 还在持续输出"这件事可见；命令类工具不追加尾缀（命令文本本身在流式增长）
+- **不做字段名模糊匹配**（遵循项目规则）：每个支持的工具显式声明取哪些字段
+- **解析失败不回退**：AI 还没流完字段时保留上一次的缓存内容，避免"闪一下就消失"
+- **回归保护**：`__tests__/pre-tool-call-display.test.ts` 固定了所有关键契约（预创建范围、字符数阈值、渲染格式）。本承诺曾在 commit `4aeabb1a` 的重构中丢失，测试是防止再次丢失的机械护栏
 
 ### 技能系统 (`skills/`)
 
