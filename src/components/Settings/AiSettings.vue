@@ -165,8 +165,17 @@ const setActive = async (profileId: string) => {
 }
 
 // ==================== 拖拽排序 ====================
+// insertIndex 语义：0..profiles.length，表示插入到该索引之前（= profiles.length 表示追加到末尾）
 const dragIndex = ref<number | null>(null)
-const dragOverIndex = ref<number | null>(null)
+const insertIndex = ref<number | null>(null)
+
+// 当前是否显示落点指示：需要有拖拽来源、有目标位置、且位置不是"原地放下"
+const showInsertLine = computed(() => {
+  const from = dragIndex.value
+  const ins = insertIndex.value
+  if (from === null || ins === null) return false
+  return ins !== from && ins !== from + 1
+})
 
 const handleProfileDragStart = (index: number, event: DragEvent) => {
   dragIndex.value = index
@@ -181,25 +190,28 @@ const handleProfileDragOver = (index: number, event: DragEvent) => {
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = 'move'
   }
-  dragOverIndex.value = index
+  // 根据光标 Y 位置判断插入点：上半区 → 插入到当前行之前，下半区 → 之后
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  const isTopHalf = event.clientY < rect.top + rect.height / 2
+  insertIndex.value = isTopHalf ? index : index + 1
 }
 
-const handleProfileDragLeave = () => {
-  dragOverIndex.value = null
-}
-
-const handleProfileDrop = async (toIndex: number, event: DragEvent) => {
+const handleProfileDrop = async (event: DragEvent) => {
   event.preventDefault()
   const from = dragIndex.value
+  const ins = insertIndex.value
   dragIndex.value = null
-  dragOverIndex.value = null
-  if (from === null || from === toIndex) return
-  await configStore.reorderAiProfiles(from, toIndex)
+  insertIndex.value = null
+  if (from === null || ins === null) return
+  if (ins === from || ins === from + 1) return
+  // 先删后插：目标实际索引需要减去被移出的位置
+  const to = ins > from ? ins - 1 : ins
+  await configStore.reorderAiProfiles(from, to)
 }
 
 const handleProfileDragEnd = () => {
   dragIndex.value = null
-  dragOverIndex.value = null
+  insertIndex.value = null
 }
 
 // Steam 版本：不提供任何 AI/API 配置入口，仅展示说明（__STEAM_BUILD__ 由 vite define 注入）
@@ -531,13 +543,13 @@ function openWebSearchKeyUrl() {
             :class="{
               active: profile.id === activeProfileId,
               dragging: dragIndex === index,
-              'drag-over': dragOverIndex === index && dragIndex !== null && dragIndex !== index,
+              'insert-before': showInsertLine && insertIndex === index,
+              'insert-after': showInsertLine && insertIndex === profiles.length && index === profiles.length - 1,
             }"
             draggable="true"
             @dragstart="handleProfileDragStart(index, $event)"
             @dragover="handleProfileDragOver(index, $event)"
-            @dragleave="handleProfileDragLeave"
-            @drop="handleProfileDrop(index, $event)"
+            @drop="handleProfileDrop($event)"
             @dragend="handleProfileDragEnd"
           >
             <div class="drag-handle" :title="t('aiSettings.dragToReorder')">
@@ -979,6 +991,7 @@ function openWebSearchKeyUrl() {
 }
 
 .profile-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1000,12 +1013,29 @@ function openWebSearchKeyUrl() {
 }
 
 .profile-item.dragging {
-  opacity: 0.5;
+  opacity: 0.1;
 }
 
-.profile-item.drag-over {
-  border-top: 2px solid var(--accent-primary);
-  margin-top: -1px;
+/* 落点指示线：3px 发光横线，跨过行间 gap */
+.profile-item.insert-before::before,
+.profile-item.insert-after::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 3px;
+  background: var(--accent-primary);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.profile-item.insert-before::before {
+  top: -6px;
+}
+
+.profile-item.insert-after::after {
+  bottom: -6px;
 }
 
 .drag-handle {
