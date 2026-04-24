@@ -2,7 +2,14 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.34.0 (2026-04-24) (Latest)
+## v10.34.1 (2026-04-24) (Latest)
+
+Follow-up to v10.34.0's DeepSeek V4 thinking-mode support — patching a real-world compatibility gap uncovered after release.
+
+### Bug Fixes
+- 🐛 **DeepSeek V4 Thinking-Mode Passthrough**: Fixed a case where the final plain-text assistant summary dropped its `reasoning_content`, causing DeepSeek to reject the next task when that message was reused as history
+
+## v10.34.0 (2026-04-24)
 
 DeepSeek V4 is now officially supported!
 
