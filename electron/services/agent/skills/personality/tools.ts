@@ -3,7 +3,7 @@
  * SoulCraft 式引导对话，帮助用户定义 Agent 个性
  */
 
-import type { ToolDefinition } from '../../tools'
+import type { ToolDefinition, ToolDefinitionWithMeta } from '../../tools'
 
 export const personalityTools: ToolDefinition[] = [
   {
@@ -52,8 +52,10 @@ export const personalityTools: ToolDefinition[] = [
         },
         required: ['personality_text']
       }
-    }
-  },
+    },
+    // 调用此工具表示用户走完了诞生引导，Agent 基类据此把 onboardingCompleted 翻为 true
+    _meta: { lifecycle: { marksOnboardingComplete: true } }
+  } as ToolDefinitionWithMeta,
   {
     type: 'function',
     function: {

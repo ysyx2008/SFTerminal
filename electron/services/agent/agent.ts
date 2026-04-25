@@ -781,15 +781,18 @@ export abstract class Agent {
     this.accumulateSessionData(run, status, result)
     this.saveSessionToHistory()
 
-    // 诞生引导完成判定：personality_craft 被成功调用即视为引导完成
+    // 诞生引导完成判定：调用了任何被标注 lifecycle.marksOnboardingComplete 的工具
+    // 即视为引导完成（基类不知道具体是哪个工具，由 ToolDefinition._meta.lifecycle 声明）
     if (!(this.services.configService?.getAgentOnboardingCompleted())) {
-      const craftCalled = run.steps.some(s =>
-        s.type === 'tool_call' && s.toolName === 'personality_craft'
-      )
-      if (craftCalled) {
+      const tools = this.getAvailableTools()
+      const onboardingMarkerCalled = run.steps.some(s => {
+        if (s.type !== 'tool_call' || !s.toolName) return false
+        return getMetaByName(tools, s.toolName)?.lifecycle?.marksOnboardingComplete === true
+      })
+      if (onboardingMarkerCalled) {
         this.services.configService?.setAgentOnboardingCompleted(true)
         notifyFrontendConfigChanged()
-        log.info('Agent onboarding completed — personality_craft was called')
+        log.info('Agent onboarding completed — onboarding-marker tool was called')
       }
     }
     
