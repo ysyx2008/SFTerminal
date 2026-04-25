@@ -1473,7 +1473,8 @@ export abstract class Agent {
     toolExecutorConfig: ToolExecutorConfig
   ): Promise<{ response: ChatWithToolsResult | null; hasToolCalls: boolean; truncated?: boolean }> {
     // 清理旧的工具输出，释放 token（taskMessageLog 不受影响）
-    applyToolResultBudget(run.messages)
+    // 工具的可清理性由 _meta.contextBudget 声明，基类只是注入 lookup 回调
+    applyToolResultBudget(run.messages, (name) => getMetaByName(this.getAvailableTools(), name))
 
     // 更新上下文状态（注入 Context Status + 渐进式提醒）
     this.updateContextPressure(run)

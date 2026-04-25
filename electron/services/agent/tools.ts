@@ -372,6 +372,10 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         _meta: {
           // 命令本身就是这个工具的"主语"，幂等键只取 command（cwd / timeout 不影响"是否同一条命令"）
           idempotencyKey: ['command'],
+          // 命令输出可重新执行得到，上下文紧张时优先清理
+          contextBudget: { toolResult: 'clearable' },
+          // 历史摘要中"主命令"是 command 字段（task-memory.extractDigest 用得到）
+          argRole: { summaryLine: 'command' },
           // 流式预卡片：标题 + command 字段；命令文本本身在流式增长，不加字符数尾缀
           streamDisplay: { titleKey: 'status.executing', titleField: 'command' }
         }
@@ -412,6 +416,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       _meta: {
         supportedModes: ['local', 'assistant'],
         parallelizable: true,
+        contextBudget: { toolResult: 'clearable' },
         // 标题按 info_only 切换："读取文件" vs "读取文件 (仅查询信息)"，path 字段做副标题
         streamDisplay: { titleKey: readFileTitleKey, titleField: 'path' }
       }
@@ -445,7 +450,11 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           required: ['query']
         }
       },
-      _meta: { supportedModes: ['local', 'assistant'], parallelizable: true }
+      _meta: {
+        supportedModes: ['local', 'assistant'],
+        parallelizable: true,
+        contextBudget: { toolResult: 'clearable' }
+      }
     } as ToolDefinitionWithMeta,
     {
       type: 'function',
@@ -467,7 +476,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           required: ['query']
         }
       },
-      _meta: { parallelizable: true }
+      _meta: { parallelizable: true, contextBudget: { toolResult: 'clearable' } }
     } as ToolDefinitionWithMeta,
     {
       type: 'function',
@@ -485,7 +494,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           required: ['doc_id']
         }
       },
-      _meta: { parallelizable: true }
+      _meta: { parallelizable: true, contextBudget: { toolResult: 'clearable' } }
     } as ToolDefinitionWithMeta,
     ...buildWebSearchTool(),
     // ==================== edit 子 Agent 额外允许的工具 ====================
@@ -520,6 +529,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       _meta: {
         supportedModes: ['local', 'assistant'],
         phase: 'writing_file',
+        contextBudget: { toolResult: 'protected' },
         // 同 write_text_file：path 未到时占位符兜底，old_text + new_text 累计字符数尾缀
         streamDisplay: {
           titleKey: 'file.edit',
@@ -562,6 +572,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       _meta: {
         supportedModes: ['local', 'assistant'],
         phase: 'writing_file',
+        contextBudget: { toolResult: 'protected' },
         // 流式预卡片：mode 切换 6 种文案，path 占位符兜底，content 累计字符数尾缀。
         // customRender 只负责前缀，progressFields 在外层统一加尾缀。
         streamDisplay: {
@@ -599,6 +610,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       _meta: {
         supportedModes: ['ssh'],
         phase: 'writing_file',
+        contextBudget: { toolResult: 'protected' },
         // 与 write_text_file 共享同一套预卡片渲染（mode 切换文案、path 占位符、字符数尾缀）
         streamDisplay: {
           customRender: writeTextFilePrefix,
@@ -621,8 +633,9 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           },
           required: ['info']
         }
-      }
-    },
+      },
+      _meta: { contextBudget: { toolResult: 'protected' } }
+    } as ToolDefinitionWithMeta,
     {
       type: 'function',
       function: {
@@ -646,8 +659,13 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           },
           required: ['question']
         }
+      },
+      _meta: {
+        contextBudget: { toolResult: 'protected' },
+        // 此工具的 tool_call 后会阻塞等待用户输入（task-memory 据此识别"任务在等待确认"）
+        lifecycle: { blocksUntilUserInput: true }
       }
-    },
+    } as ToolDefinitionWithMeta,
     // ==================== Plan 工具（合并 create/update/clear） ====================
     {
       type: 'function',
@@ -693,8 +711,9 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           },
           required: ['action']
         }
-      }
-    },
+      },
+      _meta: { contextBudget: { toolResult: 'protected' } }
+    } as ToolDefinitionWithMeta,
     buildSkillTool(),
     buildLoadUserSkillTool(),
     // ==================== 任务记忆工具（合并 recall_task/deep_recall） ====================
@@ -725,7 +744,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           required: ['task_id']
         }
       },
-      _meta: { parallelizable: true }
+      _meta: { parallelizable: true, contextBudget: { toolResult: 'clearable' } }
     } as ToolDefinitionWithMeta,
     // ==================== 历史搜索工具 ====================
     {
@@ -807,6 +826,7 @@ Agent 类型：
       },
       _meta: {
         supportedModes: ['local', 'assistant'],
+        contextBudget: { toolResult: 'protected' },
         // 流式预卡片：tasks 数组才能确定文案，customRender 处理 N + agent_type；
         // 字符数从 tasks[].prompt + tasks[].description 嵌套累加，用 customProgress
         streamDisplay: {
@@ -952,8 +972,9 @@ function getContextManagementTools(): ToolDefinition[] {
           },
           required: ['summary']
         }
-      }
-    },
+      },
+      _meta: { contextBudget: { toolResult: 'protected' } }
+    } as ToolDefinitionWithMeta,
     {
       type: 'function',
       function: {
@@ -968,8 +989,9 @@ function getContextManagementTools(): ToolDefinition[] {
             }
           }
         }
-      }
-    },
+      },
+      _meta: { contextBudget: { toolResult: 'protected' } }
+    } as ToolDefinitionWithMeta,
     {
       type: 'function',
       function: {
@@ -998,7 +1020,8 @@ function getContextManagementTools(): ToolDefinition[] {
             }
           }
         }
-      }
-    }
+      },
+      _meta: { contextBudget: { toolResult: 'protected' } }
+    } as ToolDefinitionWithMeta
   ]
 }

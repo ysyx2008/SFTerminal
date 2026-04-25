@@ -1,52 +1,26 @@
 /**
  * 工具结果预算管理
- * 
+ *
  * 在每轮 AI 调用前，对 run.messages 中旧的工具输出做预算检查。
  * 超预算的旧 tool 结果替换为占位文本，释放 token 给更有价值的上下文。
- * 
+ *
  * 设计原则（借鉴 Claude Code 的 applyToolResultBudget + microcompact）：
  * - 只处理"可清理工具"的输出（只读类工具），写入类工具不动
  * - 保护最近 N 轮的 tool 结果（工作焦点）
  * - taskMessageLog 保持不变（完整记录不受影响）
  * - 已清理的消息不会被重复清理（幂等），保护最近 N 轮的结果不被过早清理
+ *
+ * 工具的可清理性由 `ToolDefinition._meta.contextBudget.toolResult` 声明，
+ * 调用方通过 `lookupMeta` 回调按需查询，本模块不知道任何具体工具名。
  */
 
 import type { AiMessage } from '../ai.service'
+import type { ToolMeta } from './tools'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ToolResultBudget')
 
 export const CLEARED_PLACEHOLDER = '[旧工具输出已清理]'
-
-/** 可清理的工具名（只读类，输出可重新获取） */
-const CLEARABLE_TOOLS = new Set([
-  'read_file',
-  'file_search',
-  'execute_command',
-  'get_terminal_context',
-  'check_terminal_status',
-  'search_knowledge',
-  'get_knowledge_doc',
-  'recall',
-  'recall_task',
-  'deep_recall',
-])
-
-/** 不可清理的工具名（写入类或关键信息，清理会丢失语义） */
-const PROTECTED_TOOLS = new Set([
-  'edit_file',
-  'write_text_file',
-  'write_remote_text_file',
-  'ask_user',
-  'plan',
-  'create_plan',
-  'update_plan',
-  'remember_info',
-  'compress_context',
-  'recall_compressed',
-  'manage_memory',
-  'dispatch_agents',
-])
 
 interface BudgetConfig {
   /** 保护最近 N 轮 assistant+tool 对不被清理 */
@@ -68,11 +42,23 @@ export interface BudgetResult {
 }
 
 /**
+ * 调用方注入的 ToolMeta 查询函数（按工具名查 _meta）。
+ * 真实运行时由 agent.ts 提供 `(name) => getMetaByName(this.getAvailableTools(), name)`。
+ */
+export type LookupToolMeta = (toolName: string) => ToolMeta | undefined
+
+/**
  * 判断一条 tool 消息是否可被清理
+ *
+ * 决策依据：
+ * - 工具声明了 `_meta.contextBudget.toolResult: 'clearable'` → 清理
+ * - 工具声明了 `_meta.contextBudget.toolResult: 'protected'` → 不清理
+ * - 工具未声明（未知工具，多见于 MCP / plugin）→ 默认按可清理处理（与既有行为一致）
  */
 function isClearableToolResult(
   toolMsg: AiMessage,
   toolNameMap: Map<string, string>,
+  lookupMeta: LookupToolMeta,
   minChars: number
 ): boolean {
   if (toolMsg.role !== 'tool' || !toolMsg.tool_call_id) return false
@@ -84,13 +70,11 @@ function isClearableToolResult(
   const toolName = toolNameMap.get(toolMsg.tool_call_id)
   if (!toolName) return false
 
-  if (PROTECTED_TOOLS.has(toolName)) return false
-  if (CLEARABLE_TOOLS.has(toolName)) return true
-
-  // MCP/plugin 工具默认可清理
-  if (toolName.startsWith('mcp_') || toolName.startsWith('plugin_')) return true
-
-  return false
+  const policy = lookupMeta(toolName)?.contextBudget?.toolResult
+  if (policy === 'protected') return false
+  if (policy === 'clearable') return true
+  // 未声明：默认可清理（多见于 MCP / plugin 工具，它们的输出通常无副作用、可重取）
+  return true
 }
 
 /**
@@ -128,15 +112,17 @@ function buildToolNameMap(messages: AiMessage[]): Map<string, string> {
 
 /**
  * 对 run.messages 执行工具结果预算清理
- * 
+ *
  * 直接修改 messages 数组中的 tool 消息内容（in-place），不影响 taskMessageLog。
- * 
- * @param messages - 当前 run.messages（会被就地修改）
- * @param config - 预算配置
+ *
+ * @param messages    - 当前 run.messages（会被就地修改）
+ * @param lookupMeta  - 按工具名查 ToolMeta 的回调（通常包装 getMetaByName + getAvailableTools）
+ * @param config      - 预算配置
  * @returns 清理统计
  */
 export function applyToolResultBudget(
   messages: AiMessage[],
+  lookupMeta: LookupToolMeta,
   config: Partial<BudgetConfig> = {}
 ): BudgetResult {
   const cfg = { ...DEFAULT_CONFIG, ...config }
@@ -159,7 +145,7 @@ export function applyToolResultBudget(
   // 遍历可清理范围内的消息
   for (let i = startIdx; i < protectionBoundary; i++) {
     const msg = messages[i]
-    if (isClearableToolResult(msg, toolNameMap, cfg.minClearableChars)) {
+    if (isClearableToolResult(msg, toolNameMap, lookupMeta, cfg.minClearableChars)) {
       const originalLength = (msg.content || '').length
       msg.content = CLEARED_PLACEHOLDER
       result.clearedCount++

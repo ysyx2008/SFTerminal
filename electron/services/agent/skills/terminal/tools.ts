@@ -57,6 +57,10 @@ export const ptyExecuteCommandTool: ToolDefinitionWithMeta = {
   _meta: {
     // 命令本身就是这个工具的"主语"，幂等键只取 command（cwd / timeout 不影响"是否同一条命令"）
     idempotencyKey: ['command'],
+    // 命令输出可重新执行得到，上下文紧张时优先清理
+    contextBudget: { toolResult: 'clearable' },
+    // 历史摘要中"主命令"是 command 字段（task-memory.extractDigest 用得到）
+    argRole: { summaryLine: 'command' },
     // 流式预卡片：标题 + command 字段；命令文本本身在流式增长，不加字符数尾缀
     streamDisplay: { titleKey: 'status.executing', titleField: 'command' }
   }
@@ -85,7 +89,7 @@ export const terminalOnlyTools: ToolDefinition[] = [
         properties: {}
       }
     },
-    _meta: { parallelizable: true }
+    _meta: { parallelizable: true, contextBudget: { toolResult: 'clearable' } }
   } as ToolDefinitionWithMeta,
   {
     type: 'function',
@@ -102,7 +106,7 @@ export const terminalOnlyTools: ToolDefinition[] = [
         }
       }
     },
-    _meta: { parallelizable: true }
+    _meta: { parallelizable: true, contextBudget: { toolResult: 'clearable' } }
   } as ToolDefinitionWithMeta,
   {
     type: 'function',

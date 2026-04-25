@@ -1,9 +1,15 @@
 /**
  * tool-result-budget.ts 单元测试
+ *
+ * 测试约定：本测试构造一个最小 ToolMeta 注册表（CLEARABLE_TOOLS / PROTECTED_TOOLS
+ * 两套显式列表 + 默认可清理），通过 lookupMeta 注入给 applyToolResultBudget。
+ * 实际运行时 agent.ts 通过 getMetaByName(this.getAvailableTools(), name) 注入，
+ * 测试这里用静态 map 实现等价行为，专注于预算清理逻辑本身。
  */
 import { describe, it, expect } from 'vitest'
 import { applyToolResultBudget } from '../tool-result-budget'
 import type { AiMessage } from '../../ai.service'
+import type { ToolMeta } from '../tools'
 
 function makeToolCall(id: string, name: string, args = '{}'): AiMessage {
   return {
@@ -25,9 +31,28 @@ const LONG_OUTPUT = 'x'.repeat(500)
 const SHORT_OUTPUT = 'short'
 const CLEARED = '[旧工具输出已清理]'
 
+// 测试用 ToolMeta 注册表：还原原始 CLEARABLE / PROTECTED 两套白名单的语义
+const CLEARABLE_NAMES = new Set([
+  'read_file', 'file_search', 'execute_command', 'get_terminal_context',
+  'check_terminal_status', 'search_knowledge', 'get_knowledge_doc', 'recall',
+  'recall_task', 'deep_recall'
+])
+const PROTECTED_NAMES = new Set([
+  'edit_file', 'write_text_file', 'write_remote_text_file', 'ask_user', 'plan',
+  'create_plan', 'update_plan', 'remember_info', 'compress_context',
+  'recall_compressed', 'manage_memory', 'dispatch_agents'
+])
+
+function lookupMeta(toolName: string): ToolMeta | undefined {
+  if (CLEARABLE_NAMES.has(toolName)) return { contextBudget: { toolResult: 'clearable' } }
+  if (PROTECTED_NAMES.has(toolName)) return { contextBudget: { toolResult: 'protected' } }
+  // MCP / plugin / 未知工具沿用模块默认（unspecified → clearable）
+  return undefined
+}
+
 describe('applyToolResultBudget', () => {
   it('should not modify empty messages', () => {
-    const result = applyToolResultBudget([])
+    const result = applyToolResultBudget([], lookupMeta)
     expect(result.clearedCount).toBe(0)
     expect(result.freedChars).toBe(0)
   })
@@ -40,7 +65,7 @@ describe('applyToolResultBudget', () => {
       makeToolCall('tc2', 'read_file'),
       makeToolResult('tc2', LONG_OUTPUT),
     ]
-    const result = applyToolResultBudget(messages, { protectRecentRounds: 4 })
+    const result = applyToolResultBudget(messages, lookupMeta, { protectRecentRounds: 4 })
     expect(result.clearedCount).toBe(0)
     expect(messages[2].content).toBe(LONG_OUTPUT)
     expect(messages[4].content).toBe(LONG_OUTPUT)
@@ -60,7 +85,7 @@ describe('applyToolResultBudget', () => {
       makeToolCall('tc4', 'read_file'),
       makeToolResult('tc4', LONG_OUTPUT),
     ]
-    const result = applyToolResultBudget(messages, { protectRecentRounds: 2 })
+    const result = applyToolResultBudget(messages, lookupMeta, { protectRecentRounds: 2 })
     expect(result.clearedCount).toBe(2)
     expect(messages[2].content).toBe(CLEARED)
     expect(messages[4].content).toBe(CLEARED)
@@ -84,7 +109,7 @@ describe('applyToolResultBudget', () => {
       makeToolCall('tc5', 'read_file'),
       makeToolResult('tc5', LONG_OUTPUT),
     ]
-    const result = applyToolResultBudget(messages, { protectRecentRounds: 2 })
+    const result = applyToolResultBudget(messages, lookupMeta, { protectRecentRounds: 2 })
     expect(result.clearedCount).toBe(0)
     expect(messages[2].content).toBe(LONG_OUTPUT)
     expect(messages[4].content).toBe(LONG_OUTPUT)
@@ -106,7 +131,7 @@ describe('applyToolResultBudget', () => {
       makeToolCall('tc5', 'read_file'),
       makeToolResult('tc5', LONG_OUTPUT),
     ]
-    const result = applyToolResultBudget(messages, { protectRecentRounds: 4 })
+    const result = applyToolResultBudget(messages, lookupMeta, { protectRecentRounds: 4 })
     expect(result.clearedCount).toBe(0)
     expect(messages[2].content).toBe(SHORT_OUTPUT)
   })
@@ -123,7 +148,7 @@ describe('applyToolResultBudget', () => {
       makeToolCall('tc3', 'read_file'),
       makeToolResult('tc3', LONG_OUTPUT),
     ]
-    const result = applyToolResultBudget(messages, { protectRecentRounds: 2 })
+    const result = applyToolResultBudget(messages, lookupMeta, { protectRecentRounds: 2 })
     expect(result.clearedCount).toBe(1)
     expect(messages[0].content).toBe('You are a helpful assistant.')
     expect(messages[3].content).toBe(CLEARED)
@@ -144,7 +169,7 @@ describe('applyToolResultBudget', () => {
       makeToolCall('tc5', 'read_file'),
       makeToolResult('tc5', LONG_OUTPUT),
     ]
-    const result = applyToolResultBudget(messages, { protectRecentRounds: 4 })
+    const result = applyToolResultBudget(messages, lookupMeta, { protectRecentRounds: 4 })
     expect(result.clearedCount).toBe(0)
   })
 
@@ -161,10 +186,10 @@ describe('applyToolResultBudget', () => {
       makeToolCall('tc4', 'read_file'),
       makeToolResult('tc4', LONG_OUTPUT),
     ]
-    const first = applyToolResultBudget(messages, { protectRecentRounds: 2 })
+    const first = applyToolResultBudget(messages, lookupMeta, { protectRecentRounds: 2 })
     expect(first.clearedCount).toBe(2)
 
-    const second = applyToolResultBudget(messages, { protectRecentRounds: 2 })
+    const second = applyToolResultBudget(messages, lookupMeta, { protectRecentRounds: 2 })
     expect(second.clearedCount).toBe(0)
   })
 
@@ -181,7 +206,7 @@ describe('applyToolResultBudget', () => {
       makeToolCall('tc4', 'read_file'),
       makeToolResult('tc4', LONG_OUTPUT),
     ]
-    const result = applyToolResultBudget(messages, { protectRecentRounds: 2 })
+    const result = applyToolResultBudget(messages, lookupMeta, { protectRecentRounds: 2 })
     expect(result.clearedCount).toBe(2)
     expect(messages[2].content).toBe(CLEARED)
     expect(messages[4].content).toBe(CLEARED)
@@ -203,7 +228,7 @@ describe('applyToolResultBudget', () => {
       makeToolCall('tc5', 'read_file'),
       makeToolResult('tc5', LONG_OUTPUT),
     ]
-    const result = applyToolResultBudget(messages, { protectRecentRounds: 4 })
+    const result = applyToolResultBudget(messages, lookupMeta, { protectRecentRounds: 4 })
     expect(result.clearedCount).toBe(1)
     expect(result.freedChars).toBe(content300.length - CLEARED.length)
   })
@@ -213,7 +238,7 @@ describe('applyToolResultBudget', () => {
       { role: 'system', content: 'system prompt' },
       makeUserMsg('user message'),
     ]
-    const result = applyToolResultBudget(messages)
+    const result = applyToolResultBudget(messages, lookupMeta)
     expect(result.clearedCount).toBe(0)
   })
 
@@ -231,7 +256,7 @@ describe('applyToolResultBudget', () => {
       makeToolCall('tc5', 'read_file'),
       makeToolResult('tc5', LONG_OUTPUT),
     ]
-    const result = applyToolResultBudget(messages, { protectRecentRounds: 4 })
+    const result = applyToolResultBudget(messages, lookupMeta, { protectRecentRounds: 4 })
     expect(result.clearedCount).toBe(0)
     expect(messages[1].content).toBe(LONG_OUTPUT)
   })
@@ -256,7 +281,7 @@ describe('applyToolResultBudget', () => {
       makeToolCall('tc4', 'read_file'),
       makeToolResult('tc4', LONG_OUTPUT),
     ]
-    const result = applyToolResultBudget(messages, { protectRecentRounds: 2 })
+    const result = applyToolResultBudget(messages, lookupMeta, { protectRecentRounds: 2 })
     expect(result.clearedCount).toBe(2)
     expect(messages[2].content).toBe(CLEARED)
     expect(messages[3].content).toBe(CLEARED)
