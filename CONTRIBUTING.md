@@ -18,7 +18,51 @@
 feature/xxx  →  develop  →  main (打标签发布)
 ```
 
-## 开发流程
+## 外部贡献者（Fork & PR）
+
+如果你不是项目协作者，请通过 fork + Pull Request 的方式贡献代码。
+
+### 1. Fork 与同步主仓库
+
+```bash
+# 1. 在 GitHub 上点击 Fork 把本仓库复制到你的账号下
+
+# 2. 克隆你 fork 出来的仓库到本地
+git clone https://github.com/<你的用户名>/SailFish.git
+cd SailFish
+
+# 3. 添加 upstream 远端，方便后续同步主仓库
+git remote add upstream https://github.com/ysyx2008/SailFish.git
+git fetch upstream
+```
+
+### 2. 创建分支并提交 PR
+
+```bash
+# 基于 upstream/develop 创建功能分支（注意：不要基于 main）
+git checkout -b feature/你的功能名 upstream/develop
+
+# 开发、提交后推送到你 fork 出来的仓库
+git push -u origin feature/你的功能名
+```
+
+然后到 GitHub 创建 Pull Request：
+
+- **目标分支务必选 `develop`**（GitHub 默认会指向 `main`，记得手动切换）
+- PR 标题使用[约定式提交](#提交规范)格式
+- 单个 PR 聚焦一个清晰目标，避免把多个无关改动捆在一起
+
+### 3. PR 等待期间同步上游
+
+如果 review 期间主仓库有新进展，可以把最新代码合到你的分支：
+
+```bash
+git fetch upstream
+git rebase upstream/develop   # 或 git merge upstream/develop
+git push --force-with-lease   # rebase 后需要强制推送
+```
+
+## 内部协作者开发流程
 
 ### 1. 开发新功能
 
