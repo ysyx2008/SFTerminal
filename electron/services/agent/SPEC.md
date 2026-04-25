@@ -1,6 +1,6 @@
 # Agent 子系统 SPEC
 
-> Last verified: 2026-04-25 (tool_call/tool_result 按 toolCallId 配对：同名同批多调用各自独立显示；并行/流式预执行"完成一个回填一个"，不再等齐；word_from_markdown / excel_from_markdown 加入预创建工具列表，长 markdown 流式期间显示字符数尾缀)
+> Last verified: 2026-04-25（工具元数据驱动模型：抽象层完全去除按工具名 switch / 硬编码工具名集合的 OOP 违反，所有差异化行为通过 `ToolDefinition._meta` 声明，由 `tool-metadata.ts` 的 helper 集中查询；机械护栏 `__tests__/oop-boundary.test.ts` 防止回退）
 
 ## 职责
 
@@ -123,11 +123,59 @@ run(message, context, options)
 - **跨会话恢复**：通过 `sessionId` 从 HistoryService 加载，`restoreFromHistory()` 重建 TaskMemory
 - **生命周期**：`cleanupAgent()` 销毁实例，`resetSession()` 重置会话但保留实例
 
+## 工具元数据驱动模型（核心 OOP 边界承诺）
+
+`agent.ts` 是 **Agent 抽象基类**，按 OOP 原则不应知道任何具体子类（具体工具）的名字。所有"按工具名做行为分支"的逻辑——预卡片渲染、并行性判断、执行阶段分配、上下文清理策略、引导完成判断、阻塞等待识别等——都通过 `ToolDefinition._meta`（声明在工具自己的定义里）完成，抽象层只读元数据决策。
+
+### 元数据字段（`ToolMeta`）
+
+定义在 `tools.ts`：
+
+| 字段 | 用途 | 没声明时默认 |
+|---|---|---|
+| `supportedModes` | 限定工具仅在某些终端模式下出现 | 所有模式 |
+| `streamDisplay` | 流式预卡片标题/字段/进度尾缀 | 通用兜底「调用: {toolName}」 |
+| `parallelizable` | 是否可与其他工具并行执行 | `false`（串行） |
+| `phase` | 执行此工具时的 Agent 阶段 | `'executing_command'` |
+| `idempotencyKey` | 工具白名单/幂等键的字段子集 | 整个 args |
+| `lifecycle.marksOnboardingComplete` | 调用此工具表示诞生引导完成 | `false` |
+| `lifecycle.blocksUntilUserInput` | 此工具的 tool_call 后阻塞等待用户输入 | `false` |
+| `argRole.summaryLine` | 历史摘要中"主命令"字段（task-memory 抽取用） | 不抽取 |
+| `contextBudget.toolResult` | 上下文压缩时的处理（`'clearable'` / `'protected'`） | `'clearable'`（即默认可清理） |
+
+### 元数据访问层（`tool-metadata.ts`）
+
+提供给抽象层访问元数据的**唯一通道**：
+
+- `getMetaByName(tools, toolName)` —— 从工具列表里按名查 `ToolMeta`
+- `formatStreamPreCardFromMeta(meta, args)` —— 流式预卡片完整内容（前缀 + 尾缀）
+- `formatToolCallPrefixFromMeta(meta, args)` —— 仅前缀，供执行器 addStep 使用（与 pre-card 共享同一前缀，takeover 时机械保证视觉无跳变）
+- `buildPreToolCallDisplay(toolName, partialArgs, meta)` —— 流式回调入口，含 partial JSON 解析与默认兜底
+- `tryParsePartialJson(partial)` —— 容错解析流式中尚未结束的 JSON
+
+抽象层中需要"按工具名查行为"的代码，统一通过这些 helper 读 meta，**绝不**用 `if (toolName === 'xxx')` 或 `Set.has(toolName)` 做硬编码分支。
+
+### 抽象层文件清单（边界保护对象）
+
+以下文件构成 Agent 抽象层 / 跨工具横切关注点，**禁止包含具体工具名字符串字面量**：
+
+- `agent.ts`、`streaming-tool-executor.ts`、`tool-result-budget.ts`、`task-memory.ts`、`context-builder.ts`、`tool-metadata.ts`
+
+### 机械护栏
+
+`__tests__/oop-boundary.test.ts`：动态枚举所有内置工具与技能工具的名字，断言上述 6 个抽象层文件源码不含任何一个字面量。一旦后续重构（包括 AI 顺手加的代码）违反原则，CI 阶段立刻失败。
+
+`.cursor/rules/agent-oop-boundary.mdc`：在 AI 编辑这些文件时给 LLM 上下文加上 OOP 边界规则，防止"看到 switch 已有 case 就照葫芦画瓢加新 case"的模仿大于架构反模式。
+
+### 历史教训
+
+抽象层曾积累 11 处 OOP 违反：`buildPreToolCallDisplay` 的 switch / `PARALLELIZABLE_TOOLS` 的 Set / `setExecutionPhase` 的 if-else / `generateAllowedToolKey` 的三元 / `tool-result-budget` 的两份白名单 + mcp_/plugin_ 前缀启发式 / `task-memory` 的 ask_user 与 execute_command 硬编码 / `personality_craft` 引导判断 / `streaming-tool-executor` 的 CONCURRENCY_SAFE_TOOLS 复制粘贴。每一处都是"看起来很合理"的小妥协，每一次都让抽象与具体的边界往基类里塌一点；一次性重构修完后，机械护栏 + 规则 + 文档三层防护防止再次堆积。
+
 ## 工具系统
 
 ### 内置工具 (`tools.ts`)
 
-通过 `getAgentTools(mode, remoteChannel)` 按模式过滤。见 `tools.ts` 中的完整定义。
+通过 `getAgentTools(mode, remoteChannel)` 按模式过滤。见 `tools.ts` 中的完整定义。返回的工具列表上仍保留 `_meta` 字段供 Agent 抽象层查询；真正发给 LLM 之前由 `stripToolMeta()` 在 `agent.ts` 调用点清理（避免浪费 token）。
 
 ### 工具列表顺序约定（Cache 友好）
 
