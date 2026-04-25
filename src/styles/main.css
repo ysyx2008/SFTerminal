@@ -173,51 +173,63 @@
   --color-info-rgb: 77, 158, 255;
 }
 
-/* 浅色主题 — 参照 Cursor Light 观感，避免纯白刺眼 + 消除 surface/primary 同色。
-   与深色主题对称：bg-* 反向递减（primary 最亮、hover 最暗），同名变量在 UI 上
-   表达相同的"视觉重量"。 */
+/* 浅色主题 — 严格参照 Cursor IDE 官方 cursor-light-color-theme.json (v0.0.2)
+   实测色值：
+     editor.background        #FCFCFC   主舞台
+     sideBar/panel/terminal/titleBar/statusBar  全部 #F3F3F3
+     dropdown/input/breadcrumb #FCFCFC + 1px 边框（Cursor 卡片回到 editor 色，靠边框分层）
+     list.hoverBackground     #14141411 （黑 7% 半透明叠加，等效 #ECECEC）
+     sideBar.border           #14141413 （≈ #E5E5E5）
+     foreground               #141414EB （≈ #232323）
+     button.background        #3C7CAB   品牌蓝
+   设计哲学：纯白/极浅灰只用 2 个真色阶，靠半透明叠加 + 极淡边框分层，
+   而不是多级灰度递减。 */
 [data-ui-theme="light"] {
-  /* 用户气泡：极淡冷蓝浮卡（Cursor Light 实际风格）。
-     bg-primary 已经是浅灰 #f4f4f4，若用纯白气泡会失去边界感，反而"糊"；
-     带一点冷蓝与助手气泡的纯灰区分，也承接 light 主题的蓝色 accent。 */
-  --chat-user-bubble-bg: #dbe9f7;
+  /* 用户气泡：极淡冷蓝浮卡，与 accent #3C7CAB 同色系。
+     仅 1.6% 亮度差靠柔和蓝调和 bg-primary #fcfcfc 区分。 */
+  --chat-user-bubble-bg: #e8eef5;
 
-  --bg-primary: #f4f4f4;
-  --bg-secondary: #ebebeb;
-  --bg-tertiary: #e2e2e2;
-  --bg-surface: #d9d9d9;
-  --bg-hover: #c8c8c8;
-  
-  --text-primary: #1a1a1a;
-  --text-secondary: #4a4a4a;
+  /* 结构色：直接对应 Cursor Light 真值
+     bg-tertiary 与 bg-secondary 同色（Cursor widget = sideBar，靠边框分层）
+     bg-surface  = #ffffff，比 primary 亮 1.6%——Cursor 实际让 dropdown/input
+     回到 #FCFCFC + 1px border，但当前 assistant 气泡尚未加边框，
+     先用纯白让卡片有微弱浮起感（阶段 2 加边框后可改回 #fcfcfc） */
+  --bg-primary: #fcfcfc;
+  --bg-secondary: #f3f3f3;
+  --bg-tertiary: #f3f3f3;
+  --bg-surface: #ffffff;
+  --bg-hover: #ececec;
+
+  --text-primary: #232323;
+  --text-secondary: #5c5c5c;
   --text-muted: #8a8a8a;
-  
-  --accent-primary: #0078d4;
-  --accent-secondary: #106ebe;
-  --accent-success: #107c10;
-  --accent-warning: #ca5010;
-  --accent-error: #d13438;
-  
-  --border-color: #bababa;
 
-  --accent-rgb: 0, 120, 212;
-  --accent-secondary-rgb: 16, 110, 190;
-  --bg-secondary-rgb: 235, 235, 235;
+  --accent-primary: #3c7cab;
+  --accent-secondary: #055180;
+  --accent-success: #1f8a65;
+  --accent-warning: #db704b;
+  --accent-error: #cf2d56;
+
+  --border-color: #e5e5e5;
+
+  --accent-rgb: 60, 124, 171;
+  --accent-secondary-rgb: 5, 81, 128;
+  --bg-secondary-rgb: 243, 243, 243;
 
   /* 装饰层 = 自己的 accent 蓝（light 主题与整体色系一致） */
-  --accent-decorative-primary: #0078d4;
-  --accent-decorative-secondary: #106ebe;
-  --accent-decorative-rgb: 0, 120, 212;
-  --accent-decorative-secondary-rgb: 16, 110, 190;
+  --accent-decorative-primary: #3c7cab;
+  --accent-decorative-secondary: #055180;
+  --accent-decorative-rgb: 60, 124, 171;
+  --accent-decorative-secondary-rgb: 5, 81, 128;
 
-  --color-success: #107c10;
-  --color-success-rgb: 16, 124, 16;
-  --color-warning: #ca5010;
-  --color-warning-rgb: 202, 80, 16;
-  --color-error: #d13438;
-  --color-error-rgb: 209, 52, 56;
-  --color-info: #0078d4;
-  --color-info-rgb: 0, 120, 212;
+  --color-success: #1f8a65;
+  --color-success-rgb: 31, 138, 101;
+  --color-warning: #db704b;
+  --color-warning-rgb: 219, 112, 75;
+  --color-error: #cf2d56;
+  --color-error-rgb: 207, 45, 86;
+  --color-info: #3c7cab;
+  --color-info-rgb: 60, 124, 171;
 }
 
 /* 蓝色主题（VS 经典风格）

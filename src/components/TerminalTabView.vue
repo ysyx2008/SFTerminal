@@ -227,11 +227,16 @@ defineExpose({ toggleAiPanel, ensureAiPanel, showAiPanel })
   border: 1px solid var(--border-primary);
 }
 
-/* 拖拽调整宽度手柄 */
+/* 拖拽调整宽度手柄
+   背景 = 侧栏色（bg-secondary），让 5px 拖拽条作为"侧栏的延伸"。
+   不能用 transparent：那样会透出 app-container 的 bg-primary，浅色主题下
+   bg-primary (#fcfcfc) 比 bg-secondary (#f3f3f3) 还亮，会出现一条比侧栏更亮
+   的"亮缝"。深色主题下两者反向（bg-primary #181818 < bg-secondary #1f1f1f）
+   原本能蒙混，统一改后两个主题都视觉一致。 */
 .resize-handle {
   width: 5px;
   cursor: col-resize;
-  background: transparent;
+  background: var(--bg-secondary);
   transition: all 0.25s ease;
   flex-shrink: 0;
   position: relative;

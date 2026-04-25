@@ -459,29 +459,33 @@ const integratedTerminalThemes: Record<UiThemeName, ITheme> = {
     brightWhite: '#e4e4e4'
   },
 
-  // Light - 浅色主题（bgPrimary #f4f4f4，比纯白明显更灰，保证视觉可感知）
+  // Light - 严格参照 Cursor IDE 官方 cursor-light-color-theme.json (v0.0.2) 的
+  // terminal.* 真实色值；background 与 UI 的 bgPrimary (#fcfcfc) 完全一致。
+  // Cursor 自身 terminal.background 用的是 panel 色 #F3F3F3，但我们终端所在
+  // 的 .app-container 用 bgPrimary 填充，要避免 wrapper 4px padding 透出色与
+  // xterm 内容色不一致而出现"亮缝"，统一对齐到 #fcfcfc。
   'light': {
-    background: '#f4f4f4',  // 与 UI 的 bgPrimary 完全一致
-    foreground: '#1a1a1a',
-    cursor: '#0078d4',
-    cursorAccent: '#f4f4f4',
-    selectionBackground: '#bde0fc',
-    black: '#1a1a1a',
-    red: '#d13438',
-    green: '#107c10',
-    yellow: '#9a6700',
-    blue: '#0078d4',
-    magenta: '#8250df',
-    cyan: '#1b7c83',
-    white: '#6e7781',
-    brightBlack: '#57606a',
-    brightRed: '#cf222e',
-    brightGreen: '#1a7f37',
-    brightYellow: '#ca5010',
-    brightBlue: '#218bff',
-    brightMagenta: '#a475f9',
-    brightCyan: '#3192aa',
-    brightWhite: '#8c959f'
+    background: '#fcfcfc',
+    foreground: '#232323',     // ansiBlack #141414EB ≈ #232323
+    cursor: '#3c7cab',         // Cursor: button.background / textLink
+    cursorAccent: '#fcfcfc',
+    selectionBackground: '#dcdcdc',  // Cursor: terminal.selectionBackground #1414141E ≈ #DCDCDC
+    black: '#232323',
+    red: '#cf2d56',
+    green: '#1f8a65',
+    yellow: '#a16900',
+    blue: '#3c7cab',
+    magenta: '#b8448b',
+    cyan: '#4c7f8c',
+    white: '#fcfcfc',
+    brightBlack: '#5c5c5c',    // ansiBrightBlack #141414AD ≈ #5C5C5C
+    brightRed: '#e75e78',
+    brightGreen: '#55a583',
+    brightYellow: '#c08532',
+    brightBlue: '#6299c3',
+    brightMagenta: '#d06ba6',
+    brightCyan: '#6f9ba6',
+    brightWhite: '#ffffff'
   },
 
   // Blue (VS 经典风格) — 2026-04 与 ui-themes.ts/main.css 的新蓝调保持一致

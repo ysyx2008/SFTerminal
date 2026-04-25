@@ -1350,7 +1350,11 @@ defineExpose({
   position: relative;
   width: 100%;
   height: 100%;
+  /* 4px padding 给 xterm 内容一圈呼吸感；显式 bg = bg-primary 保证这 4px
+     与 xterm 内部 background（已在 themes/index.ts 中对齐 bg-primary）
+     完全同色，避免浅色主题下透显 app-container 出现亮缝。 */
   padding: 4px;
+  background: var(--bg-primary);
   box-sizing: border-box;
   overflow: hidden;
 }

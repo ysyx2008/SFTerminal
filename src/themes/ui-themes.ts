@@ -77,27 +77,28 @@ const darkTheme: UiThemeVars = {
   borderColor: '#323232'
 }
 
-// 浅色主题 — 参照 Cursor Light，避免纯白刺眼，bg-* 反向递减（与深色对称）。
+// 浅色主题 — 严格参照 Cursor IDE 官方 cursor-light-color-theme.json (v0.0.2) 实测值。
+// 设计哲学：纯白/极浅灰 2 个真色阶 + 半透明叠加 + 极淡边框分层，不靠多级灰度递减。
 // 与 src/styles/main.css 中 [data-ui-theme="light"] 块保持一致。
 const lightTheme: UiThemeVars = {
   colorScheme: 'light',
-  bgPrimary: '#f4f4f4',
-  bgSecondary: '#ebebeb',
-  bgTertiary: '#e2e2e2',
-  bgSurface: '#d9d9d9',
-  bgHover: '#c8c8c8',
-  
-  textPrimary: '#1a1a1a',
-  textSecondary: '#4a4a4a',
+  bgPrimary: '#fcfcfc',
+  bgSecondary: '#f3f3f3',
+  bgTertiary: '#f3f3f3',
+  bgSurface: '#ffffff',
+  bgHover: '#ececec',
+
+  textPrimary: '#232323',
+  textSecondary: '#5c5c5c',
   textMuted: '#8a8a8a',
-  
-  accentPrimary: '#0078d4',
-  accentSecondary: '#106ebe',
-  accentSuccess: '#107c10',
-  accentWarning: '#ca5010',
-  accentError: '#d13438',
-  
-  borderColor: '#bababa'
+
+  accentPrimary: '#3c7cab',
+  accentSecondary: '#055180',
+  accentSuccess: '#1f8a65',
+  accentWarning: '#db704b',
+  accentError: '#cf2d56',
+
+  borderColor: '#e5e5e5'
 }
 
 // 蓝色主题（VS 经典风格）
