@@ -248,7 +248,7 @@ export default {
     },
     webSearch: {
       title: 'Web Search',
-      description: 'When enabled, AI Agent can search the web for real-time information. Choose a search engine and configure the API key.',
+      description: 'When enabled, AI Agent can search the web for real-time information. Choose a search engine and configure the API key (some engines need extra fields, e.g. Google requires a Search Engine ID).',
       provider: 'Search Engine',
       getKey: 'Get Key',
       save: 'Save',

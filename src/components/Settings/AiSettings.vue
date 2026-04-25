@@ -457,6 +457,7 @@ async function testTts() {
 const webSearchEnabled = ref(false)
 const webSearchProviderId = ref<WebSearchProviderId>('bocha')
 const webSearchApiKeys = ref<Partial<Record<WebSearchProviderId, string>>>({})
+const webSearchApiExtras = ref<Partial<Record<WebSearchProviderId, Record<string, string>>>>({})
 const webSearchSaved = ref(false)
 let webSearchInitializing = true
 
@@ -470,10 +471,20 @@ const webSearchApiKey = computed({
   set: (v: string) => { webSearchApiKeys.value = { ...webSearchApiKeys.value, [webSearchProviderId.value]: v } },
 })
 
+function getWebSearchExtra(key: string): string {
+  return webSearchApiExtras.value[webSearchProviderId.value]?.[key] || ''
+}
+function setWebSearchExtra(key: string, value: string) {
+  const current = { ...(webSearchApiExtras.value[webSearchProviderId.value] || {}) }
+  current[key] = value
+  webSearchApiExtras.value = { ...webSearchApiExtras.value, [webSearchProviderId.value]: current }
+}
+
 const webSearchKeyUrls: Record<string, string> = {
   bocha: 'https://open.bochaai.com/api-keys',
   jina: 'https://jina.ai/api-dashboard/key-manager',
   tavily: 'https://app.tavily.com/home',
+  google: 'https://developers.google.com/custom-search/v1/introduction',
 }
 const webSearchKeyUrl = computed(() => webSearchKeyUrls[webSearchProviderId.value] || '')
 
@@ -481,6 +492,7 @@ const webSearchDirty = computed(() => {
   const s = configStore.webSearchSettings
   return webSearchProviderId.value !== s.providerId
     || JSON.stringify(webSearchApiKeys.value) !== JSON.stringify(s.apiKeys || {})
+    || JSON.stringify(webSearchApiExtras.value) !== JSON.stringify(s.apiExtras || {})
 })
 
 onMounted(() => {
@@ -488,6 +500,7 @@ onMounted(() => {
   webSearchEnabled.value = s.enabled
   webSearchProviderId.value = s.providerId
   webSearchApiKeys.value = { ...(s.apiKeys || {}) }
+  webSearchApiExtras.value = { ...(s.apiExtras || {}) }
   nextTick(() => { webSearchInitializing = false })
 })
 
@@ -501,6 +514,7 @@ async function saveWebSearchConfig() {
     enabled: webSearchEnabled.value,
     providerId: webSearchProviderId.value,
     apiKeys: { ...webSearchApiKeys.value },
+    apiExtras: { ...webSearchApiExtras.value },
   })
   webSearchSaved.value = true
   setTimeout(() => { webSearchSaved.value = false }, 2000)
@@ -884,6 +898,21 @@ function openWebSearchKeyUrl() {
               </button>
             </div>
             <input v-model="webSearchApiKey" type="password" class="input" placeholder="API Key" />
+          </div>
+
+          <div
+            v-for="field in webSearchSelectedProvider?.extraFields || []"
+            :key="field.key"
+            class="form-group"
+          >
+            <label class="form-label">{{ field.label }}</label>
+            <input
+              :value="getWebSearchExtra(field.key)"
+              type="text"
+              class="input"
+              :placeholder="field.placeholder || field.label"
+              @input="setWebSearchExtra(field.key, ($event.target as HTMLInputElement).value)"
+            />
           </div>
 
           <div class="form-group">

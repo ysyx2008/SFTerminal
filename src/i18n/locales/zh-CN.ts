@@ -248,7 +248,7 @@ export default {
     },
     webSearch: {
       title: 'Web 搜索',
-      description: '启用后，AI Agent 可搜索互联网获取实时信息。选择一个搜索引擎并配置 API Key。',
+      description: '启用后，AI Agent 可搜索互联网获取实时信息。选择一个搜索引擎并配置 API Key（部分引擎需要额外字段，如 Google 需要 Search Engine ID）。',
       provider: '搜索引擎',
       getKey: '获取密钥',
       save: '保存',

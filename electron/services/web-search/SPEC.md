@@ -1,6 +1,6 @@
 # Web Search Service — 联网搜索服务
 
-> Last verified: 2026-04-21
+> Last verified: 2026-04-26
 
 ## 职责
 
@@ -21,7 +21,8 @@ electron/services/web-search/
   └── providers/
       ├── bocha.ts            博查（国内 AI 搜索，默认）
       ├── tavily.ts           Tavily（AI Agent 体验最好）
-      └── jina.ts             Jina（支持 URL 阅读，返回 Markdown）
+      ├── jina.ts             Jina（支持 URL 阅读，返回 Markdown）
+      └── google.ts           Google Custom Search（需 API Key + cx，国内需代理）
 
 Agent Tool
 ─────────────
@@ -47,7 +48,8 @@ electron/services/agent/tools/web-search.ts
 | `getSettings()` | 获取当前配置副本 |
 | `getProvider(id?)` | 获取 provider，未指定时用当前激活 providerId |
 | `getApiKey(providerId?)` | 获取指定 provider 的 API Key |
-| `isConfigured()` | 是否可用（已启用 + 当前 provider 已注册 + 必要 Key 已填） |
+| `getApiExtra(providerId, key)` | 获取 provider 的额外配置字段（如 Google 的 `cx`） |
+| `isConfigured()` | 是否可用（已启用 + 当前 provider 已注册 + 必要 Key 与 extraFields 都已填） |
 | `search(query, opts?)` | 执行搜索 → `WebSearchResult[]`，provider 未注册会抛错 |
 | `dispose()` | 清空所有 provider |
 
@@ -68,7 +70,8 @@ interface WebSearchProvider {
 
 ## Provider 插拔
 
-- 内置 provider 在 `initWebSearch` 里通过动态 import + `registerProvider` 注册，构造函数只接受一个 `() => string` 的懒加载 Key getter，避免 Key 变更后需重建实例。
+- 内置 provider 在 `initWebSearch` 里通过动态 import + `registerProvider` 注册，构造函数接受懒加载的 Key getter（`() => string`），避免 Key 变更后需重建实例。
+- 需要额外配置的 provider（如 Google 需要 `cx`）通过元数据 `extraFields` 声明，构造函数额外接收对应的 `() => string` extras getter，前端 `Settings` 自动按 `extraFields` 渲染输入框。
 - 插件可在主进程启动后调用 `registerProvider({ id, name, search })` 注入自定义 provider，id 冲突时会先 dispose 旧的再替换。
 - 已下线的 provider id（如 `duckduckgo`/`bing`）在 `initWebSearch` 里自动回退到默认，避免旧配置导致启动失败。
 
@@ -81,6 +84,7 @@ interface WebSearchProvider {
 | enabled | boolean | false | 总开关（`isConfigured()` 依赖） |
 | providerId | `WebSearchProviderId` | `'bocha'` | 当前激活 provider |
 | apiKeys | `Partial<Record<id, string>>` | `{}` | 每个 provider 独立的 Key |
+| apiExtras | `Partial<Record<id, Record<string, string>>>` | `{}` | provider 额外配置（如 `google.cx`），由 `extraFields` 元数据驱动 |
 | apiKey | string? | - | @deprecated，初始化时自动迁移到 apiKeys |
 
 IPC：渲染端通过通用的 `config:get` / `config:set` 读写，无专用 IPC 通道。
