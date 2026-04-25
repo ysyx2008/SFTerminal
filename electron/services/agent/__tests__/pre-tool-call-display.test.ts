@@ -287,7 +287,7 @@ describe('buildPreToolCallDisplay', () => {
       expect(out).toBeNull()
     })
 
-    it('单个同步子任务渲染为执行器对齐格式', () => {
+    it('单个子任务渲染为执行器对齐格式', () => {
       // 与 tools/sub-agent.ts 执行器 addStep 的 content 格式严格对齐
       const out = buildPreToolCallDisplay(
         'dispatch_agents',
@@ -295,8 +295,8 @@ describe('buildPreToolCallDisplay', () => {
           tasks: [{ description: 'analyze code', prompt: 'read file X and summarize' }]
         })
       )
-      // 未指定 agent_type 默认 explore，未指定 background 默认同步
-      expect(out).toBe('并行执行 1 个子任务（explore, 同步）')
+      // 未指定 agent_type 默认 explore
+      expect(out).toBe('并行执行 1 个子任务（explore）')
     })
 
     it('多个子任务且全部同 agent_type 时显示具体类型', () => {
@@ -309,7 +309,7 @@ describe('buildPreToolCallDisplay', () => {
           ]
         })
       )
-      expect(out).toBe('并行执行 2 个子任务（explore, 同步）')
+      expect(out).toBe('并行执行 2 个子任务（explore）')
     })
 
     it('子任务 agent_type 不一致显示 mixed', () => {
@@ -322,18 +322,7 @@ describe('buildPreToolCallDisplay', () => {
           ]
         })
       )
-      expect(out).toBe('并行执行 2 个子任务（mixed, 同步）')
-    })
-
-    it('background=true 显示异步', () => {
-      const out = buildPreToolCallDisplay(
-        'dispatch_agents',
-        JSON.stringify({
-          tasks: [{ description: 't', prompt: 'p' }],
-          background: true
-        })
-      )
-      expect(out).toBe('并行执行 1 个子任务（explore, 异步）')
+      expect(out).toBe('并行执行 2 个子任务（mixed）')
     })
 
     it('prompt + description 累计达到 100 字符追加字符数尾缀', () => {
@@ -344,7 +333,7 @@ describe('buildPreToolCallDisplay', () => {
         })
       )
       // 5 + 150 = 155 ≥ 100
-      expect(out).toBe('并行执行 1 个子任务（explore, 同步） · 155 字符')
+      expect(out).toBe('并行执行 1 个子任务（explore） · 155 字符')
     })
 
     it('多个子任务的 prompt 汇总后一起计数（体现所有指令都在增长）', () => {

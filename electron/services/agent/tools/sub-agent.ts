@@ -10,7 +10,6 @@
  *   子任务指令作为追加的 user 消息
  * - Agent 类型系统：explore/edit/research 各有独立工具白名单和执行约束
  * - 并发控制：Promise.allSettled + 可配置并发上限
- * - 同步/异步双模式：background=true 时立即返回，后台执行后注入结果
  * - 进度推送：通过父 executor 的 addStep/updateStep 实时更新 subAgents 字段
  */
 import type { AiService, AiMessage, ToolDefinition, ChatWithToolsResult } from '../../ai.service'
@@ -378,7 +377,6 @@ export async function dispatchSubAgents(
 
   const validTypes = getSubAgentTypeNames()
   const globalAgentType = validateAgentType(args.agent_type as string | undefined, validTypes) ?? DEFAULT_AGENT_TYPE
-  const background = args.background === true
 
   const tasks: SubAgentTask[] = rawTasks.map((t, i) => ({
     id: `sub-${i + 1}`,
@@ -398,12 +396,11 @@ export async function dispatchSubAgents(
   const typeLabel = tasks.every(t => t.agentType === globalAgentType)
     ? globalAgentType
     : 'mixed'
-  const modeLabel = background ? '异步' : '同步'
   const progressStep = executor.addStep({
     type: 'tool_call',
-    content: `并行执行 ${tasks.length} 个子任务（${typeLabel}, ${modeLabel}）`,
+    content: `并行执行 ${tasks.length} 个子任务（${typeLabel}）`,
     toolName: 'dispatch_agents',
-    toolArgs: { tasks: tasks.map(t => ({ description: t.description, agent_type: t.agentType })), max_concurrent: maxConcurrent, agent_type: globalAgentType, background },
+    toolArgs: { tasks: tasks.map(t => ({ description: t.description, agent_type: t.agentType })), max_concurrent: maxConcurrent, agent_type: globalAgentType },
     riskLevel: 'safe',
     subAgents: [...subAgentResults]
   })
@@ -426,126 +423,72 @@ export async function dispatchSubAgents(
     return { success: false, output: '', error: 'dispatch_agents 需要父 Agent 上下文（内部错误）' }
   }
 
-  log.info(`Dispatching ${tasks.length} sub-agents (type: ${typeLabel}, concurrent: ${maxConcurrent}, background: ${background})`)
+  log.info(`Dispatching ${tasks.length} sub-agents (type: ${typeLabel}, concurrent: ${maxConcurrent})`)
 
   const forkBaseMessages = buildForkBaseMessages(parentContext.messages, toolCallId)
 
-  // 核心执行函数（同步/异步共用）
-  const executeAll = async (): Promise<SubAgentResult[]> => {
-    const allResults: SubAgentResult[] = []
-    for (let i = 0; i < tasks.length; i += maxConcurrent) {
-      if (executor.isAborted()) {
-        abortSignal.aborted = true
-        break
-      }
-
-      const batch = tasks.slice(i, i + maxConcurrent)
-      const batchPromises = batch.map(task => {
-        if (abortSignal.aborted || executor.isAborted()) {
-          const abortedResult: SubAgentResult = { id: task.id, description: task.description, status: 'failed', error: 'Aborted' }
-          updateProgress(task.id, abortedResult)
-          return Promise.resolve(abortedResult)
-        }
-        updateProgress(task.id, { status: 'running' })
-
-        const taskAgentType = task.agentType || globalAgentType
-        const typeDefinition = resolveAgentType(taskAgentType)
-        const subExecutor = buildSubAgentExecutorConfig(executor, config, abortSignal)
-        const directive = buildForkDirective(task, typeDefinition)
-        const initialMessages: AiMessage[] = [...forkBaseMessages, { role: 'user' as const, content: directive }]
-
-        return runSubAgent({
-          task,
-          aiService,
-          tools: parentContext.tools,
-          allowedTools: typeDefinition.tools,
-          initialMessages,
-          executorConfig: subExecutor,
-          agentConfig: config,
-          profileId,
-          abortSignal,
-          onProgress: (update) => updateProgress(task.id, update)
-        }).then(result => {
-          updateProgress(task.id, result)
-          return result
-        })
-      })
-
-      const batchResults = await Promise.allSettled(batchPromises)
-      for (let j = 0; j < batchResults.length; j++) {
-        const settled = batchResults[j]
-        if (settled.status === 'fulfilled') {
-          allResults.push(settled.value)
-        } else {
-          const failedTask = batch[j]
-          const errorMsg = settled.reason instanceof Error
-            ? settled.reason.message
-            : typeof settled.reason === 'string'
-              ? settled.reason
-              : String(settled.reason)
-          const failedResult: SubAgentResult = {
-            id: failedTask.id,
-            description: failedTask.description,
-            status: 'failed',
-            error: errorMsg
-          }
-          updateProgress(failedTask.id, failedResult)
-          allResults.push(failedResult)
-        }
-      }
+  const allResults: SubAgentResult[] = []
+  for (let i = 0; i < tasks.length; i += maxConcurrent) {
+    if (executor.isAborted()) {
+      abortSignal.aborted = true
+      break
     }
-    return allResults
-  }
 
-  // 异步模式：立即返回，后台执行
-  if (background) {
-    const backgroundPromise = executeAll().then(allResults => {
-      const successCount = allResults.filter(r => r.status === 'completed').length
-      const failCount = allResults.filter(r => r.status === 'failed').length
-      const summary = formatResultsSummary(allResults)
+    const batch = tasks.slice(i, i + maxConcurrent)
+    const batchPromises = batch.map(task => {
+      if (abortSignal.aborted || executor.isAborted()) {
+        const abortedResult: SubAgentResult = { id: task.id, description: task.description, status: 'failed', error: 'Aborted' }
+        updateProgress(task.id, abortedResult)
+        return Promise.resolve(abortedResult)
+      }
+      updateProgress(task.id, { status: 'running' })
 
-      executor.updateStep(progressStep.id, {
-        content: `后台任务完成：${successCount} 成功${failCount > 0 ? `，${failCount} 失败` : ''}`,
-        subAgents: [...subAgentResults]
+      const taskAgentType = task.agentType || globalAgentType
+      const typeDefinition = resolveAgentType(taskAgentType)
+      const subExecutor = buildSubAgentExecutorConfig(executor, config, abortSignal)
+      const directive = buildForkDirective(task, typeDefinition)
+      const initialMessages: AiMessage[] = [...forkBaseMessages, { role: 'user' as const, content: directive }]
+
+      return runSubAgent({
+        task,
+        aiService,
+        tools: parentContext.tools,
+        allowedTools: typeDefinition.tools,
+        initialMessages,
+        executorConfig: subExecutor,
+        agentConfig: config,
+        profileId,
+        abortSignal,
+        onProgress: (update) => updateProgress(task.id, update)
+      }).then(result => {
+        updateProgress(task.id, result)
+        return result
       })
-
-      // 通过 systemMessage 注入结果：完整内容给 AI，简短通知给用户
-      const fullContent = [
-        `[后台任务通知] dispatch_agents 的 ${allResults.length} 个子任务已完成（${successCount} 成功${failCount > 0 ? `，${failCount} 失败` : ''}）：`,
-        '',
-        summary
-      ].join('\n')
-      const taskList = allResults.map(r => `${r.status === 'completed' ? '✓' : '✗'} ${r.description}`).join('、')
-      const briefNotify = `✅ ${allResults.length} 个后台子任务已完成：${taskList}`
-
-      if (executor.injectSystemMessage) {
-        executor.injectSystemMessage(fullContent, briefNotify)
-      } else {
-        executor.injectPendingMessage?.(fullContent)
-      }
-      log.info(`Background sub-agents completed: ${successCount} success, ${failCount} failed`)
-    }).catch(err => {
-      log.error('Background sub-agents unexpected error:', err)
-      const errorMsg = `[后台任务通知] dispatch_agents 执行出错: ${err instanceof Error ? err.message : String(err)}`
-      if (executor.injectSystemMessage) {
-        executor.injectSystemMessage(errorMsg, `❌ 后台子任务执行出错`)
-      } else {
-        executor.injectPendingMessage?.(errorMsg)
-      }
     })
 
-    // 注册到主 Agent，确保它在"看起来任务已完成"时不会抢先结束 run
-    // 从而丢弃后续 injectSystemMessage 注入的子任务结果。
-    executor.registerBackgroundTask?.(backgroundPromise)
-
-    return {
-      success: true,
-      output: `已启动 ${tasks.length} 个后台子任务（${typeLabel}），完成后会自动通知你结果。在等待期间你可以继续处理其他事情。`
+    const batchResults = await Promise.allSettled(batchPromises)
+    for (let j = 0; j < batchResults.length; j++) {
+      const settled = batchResults[j]
+      if (settled.status === 'fulfilled') {
+        allResults.push(settled.value)
+      } else {
+        const failedTask = batch[j]
+        const errorMsg = settled.reason instanceof Error
+          ? settled.reason.message
+          : typeof settled.reason === 'string'
+            ? settled.reason
+            : String(settled.reason)
+        const failedResult: SubAgentResult = {
+          id: failedTask.id,
+          description: failedTask.description,
+          status: 'failed',
+          error: errorMsg
+        }
+        updateProgress(failedTask.id, failedResult)
+        allResults.push(failedResult)
+      }
     }
   }
-
-  // 同步模式：阻塞等待
-  const allResults = await executeAll()
 
   const successCount = allResults.filter(r => r.status === 'completed').length
   const failCount = allResults.filter(r => r.status === 'failed').length

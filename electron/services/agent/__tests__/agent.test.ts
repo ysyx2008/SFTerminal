@@ -97,18 +97,6 @@ class TestAgent extends Agent {
   public injectCurrentRun(run: any) {
     (this as any).currentRun = run
   }
-
-  // 从外部向当前 run 注入后台任务 Promise（模拟 dispatch_agents background=true 的注册行为）
-  // 包含 finally 自动清理逻辑，与 createToolExecutorConfig 中的 registerBackgroundTask 保持一致
-  public pushBackgroundPromise(p: Promise<unknown>) {
-    const run = (this as any).currentRun
-    if (!run) return
-    run.pendingBackgroundPromises.push(p)
-    p.finally(() => {
-      const idx = run.pendingBackgroundPromises.indexOf(p)
-      if (idx >= 0) run.pendingBackgroundPromises.splice(idx, 1)
-    })
-  }
 }
 
 // Mock AI 服务
@@ -736,61 +724,6 @@ describe('Agent run method', () => {
       await agent.run('Test parallel execution', context)
 
       expect(mockAiService.chatWithToolsStream).toHaveBeenCalledTimes(2)
-    })
-
-    // 回归：异步子 Agent（dispatch_agents background=true）场景下，主 Agent 必须等待
-    // 尚未完成的后台 Promise，才能保证后续 injectSystemMessage 注入的结果被 AI 消费，
-    // 而不是在子任务完成前 finalizeRun 导致结果丢失。
-    it('should wait for pending background sub-agent tasks before finalizing the run', async () => {
-      let resolveBg: (() => void) | undefined
-      const bgPromise = new Promise<void>(resolve => { resolveBg = resolve })
-
-      let callCount = 0
-      mockAiService.chatWithToolsStream.mockImplementation(
-        (_messages: any, _tools: any, onChunk: any, _onToolCall: any, onDone: any) => {
-          callCount++
-          if (callCount === 1) {
-            // 第一次：模拟 AI 调完 dispatch_agents(background=true)，响应无工具调用准备结束
-            // 此时将一个尚未完成的 Promise 注入为"未完成后台任务"
-            agent.pushBackgroundPromise(bgPromise)
-            onChunk('Dispatched, waiting for background tasks...')
-            onDone({ content: 'Dispatched, waiting for background tasks...', tool_calls: undefined })
-          } else {
-            // 第二次：后台任务完成后 AI 被重新调用，此时消息历史中应能看到后台结果
-            const messages = _messages as AiMessage[]
-            const hasBgNotice = messages.some(m =>
-              typeof m.content === 'string' && m.content.includes('[BG-RESULT]')
-            )
-            expect(hasBgNotice).toBe(true)
-            onChunk('All background tasks processed')
-            onDone({ content: 'All background tasks processed', tool_calls: undefined })
-          }
-          return Promise.resolve()
-        }
-      )
-
-      const context = createMockContext()
-      const runPromise = agent.run('Dispatch background and wait', context)
-
-      // 等 Agent 跑完第一次 AI 调用并进入 awaitBackgroundTasksIfAny 的等待
-      for (let i = 0; i < 20; i++) {
-        if (callCount === 1) break
-        await new Promise(r => setTimeout(r, 10))
-      }
-      expect(callCount).toBe(1)
-
-      // 此时 Agent 应该还在运行（不会在 bg Promise 未 resolve 前就结束）
-      expect(agent.isRunning()).toBe(true)
-
-      // 模拟后台子 Agent 完成：先 inject system message（对应 dispatchSubAgents 的行为），再 resolve
-      const run = agent.exposeCurrentRun()
-      expect(run).toBeDefined()
-      run!.pendingSystemMessages.push({ content: '[BG-RESULT] sub-agent-1 completed' })
-      resolveBg!()
-
-      const result = await runPromise
-      expect(callCount).toBe(2)
-      expect(result).toBe('All background tasks processed')
     })
 
     it('should maintain execution order for mixed tool calls', async () => {

@@ -543,7 +543,7 @@ Agent 类型：
 - edit：可修改文件（edit_file/write_text_file）
 - research：知识检索与归纳，侧重知识库和结构化输出
 
-子 Agent 不能操作终端、不能向用户提问。支持 background 模式异步执行。`,
+子 Agent 不能操作终端、不能向用户提问。`,
         parameters: {
           type: 'object',
           properties: {
@@ -568,10 +568,6 @@ Agent 类型：
             max_concurrent: {
               type: 'number',
               description: '最大并发数（默认 5，范围 1-10）'
-            },
-            background: {
-              type: 'boolean',
-              description: '异步模式（默认 false）。true: 立即返回，子任务在后台执行，完成后自动通知结果'
             }
           },
           required: ['tasks']

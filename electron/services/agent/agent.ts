@@ -247,7 +247,7 @@ export function buildPreToolCallDisplay(toolName: string, partialArgs: string): 
     case 'dispatch_agents': {
       // 每个子任务的 prompt 是长字段，AI 流式耗时和 write_text_file 的 content 类似。
       // 内容格式必须与 tools/sub-agent.ts 执行器 addStep 的 content 对齐：
-      //   "并行执行 {N} 个子任务（{typeLabel}, {modeLabel}）"
+      //   "并行执行 {N} 个子任务（{typeLabel}）"
       // 执行器那边目前硬编码中文（typeLabel 用英文 agent_type 值），此处同样硬编码以
       // 保证接管时的字节级一致。将来两边一起 i18n 化时统一改。
       const rawTasks = Array.isArray(parsed.tasks)
@@ -263,7 +263,6 @@ export function buildPreToolCallDisplay(toolName: string, partialArgs: string): 
         const tType = asString((task as Record<string, unknown>).agent_type) || globalType
         if (tType !== typeLabel) { typeLabel = 'mixed'; break }
       }
-      const modeLabel = parsed.background === true ? '异步' : '同步'
 
       // prompt + description 累计字符数尾缀（与 write_text_file 的 content 尾缀同一套逻辑，
       // 让用户看到每个子任务指令还在持续增长）
@@ -276,7 +275,7 @@ export function buildPreToolCallDisplay(toolName: string, partialArgs: string): 
       }
       const progress = chars >= 100 ? ` · ${chars} ${t('file.chars')}` : ''
 
-      return `并行执行 ${rawTasks.length} 个子任务（${typeLabel}, ${modeLabel}）${progress}`
+      return `并行执行 ${rawTasks.length} 个子任务（${typeLabel}）${progress}`
     }
   }
   return null
@@ -647,8 +646,6 @@ export abstract class Agent {
       isRunning: true,
       aborted: false,
       pendingUserMessages: [],
-      pendingSystemMessages: [],
-      pendingBackgroundPromises: [],
       config,
       context,
       realtimeOutputBuffer: [...context.terminalOutput],
@@ -1590,12 +1587,7 @@ export abstract class Agent {
           if (!stepResult.hasToolCalls) {
             if (!hasExecutedAnyTool) {
               // 从未执行过工具
-              if (run.pendingUserMessages.length > 0 || run.pendingSystemMessages.length > 0) {
-                continue
-              }
-              
-              // 即便没跑过工具，也要等后台任务（理论上 hasExecutedAnyTool 为 false 时不会有 bg，防御性检查）
-              if (await this.awaitBackgroundTasksIfAny(run)) {
+              if (run.pendingUserMessages.length > 0) {
                 continue
               }
               
@@ -1616,14 +1608,7 @@ export abstract class Agent {
             }
             
             // 已执行过工具，检查是否有待处理的消息
-            if (run.pendingUserMessages.length > 0 || run.pendingSystemMessages.length > 0) {
-              continue
-            }
-            
-            // 若有异步子 Agent（dispatch_agents background=true）仍在后台执行，先等它们
-            // 完成并通过 injectSystemMessage 注入结果，再让 AI 基于完整信息决定是否结束。
-            // 否则主 Agent 会在子任务完成前就 finalizeRun，子任务结果彻底丢失。
-            if (await this.awaitBackgroundTasksIfAny(run)) {
+            if (run.pendingUserMessages.length > 0) {
               continue
             }
             
@@ -1647,7 +1632,7 @@ export abstract class Agent {
         const errorMsg = error instanceof Error ? error.message : String(error)
         const isAborted = errorMsg.toLowerCase().includes('aborted')
         
-        if (isAborted && (run.pendingUserMessages.length > 0 || run.pendingSystemMessages.length > 0)) {
+        if (isAborted && run.pendingUserMessages.length > 0) {
           log.info('AI 输出被用户消息中断，继续循环处理')
           // 修复不完整的 tool_calls 消息序列
           // 当 abort 发生在工具执行过程中时，可能存在 assistant 消息（含 tool_calls）但缺少对应的 tool result
@@ -2612,7 +2597,7 @@ export abstract class Agent {
       },
       isAborted: () => run.aborted,
       getHostId: () => run.context.hostId,
-      hasPendingUserMessage: () => run.pendingUserMessages.length > 0 || run.pendingSystemMessages.length > 0,
+      hasPendingUserMessage: () => run.pendingUserMessages.length > 0,
       peekPendingUserMessage: () => run.pendingUserMessages[0]?.message,
       consumePendingUserMessage: () => run.pendingUserMessages.shift()?.message,
       getRealtimeTerminalOutput: () => [...run.realtimeOutputBuffer],
@@ -2642,29 +2627,6 @@ export abstract class Agent {
       historyService: this.services.historyService,
       getAiService: () => this.services.aiService,
       getActiveProfileId: () => this.profileId || this.services.configService?.getActiveAiProfile() || undefined,
-      injectPendingMessage: (message: string) => {
-        if (this.currentRun) {
-          this.currentRun.pendingUserMessages.push({ message })
-        } else {
-          log.warn('injectPendingMessage: no active run, message dropped')
-        }
-      },
-      injectSystemMessage: (content: string, notify?: string) => {
-        if (this.currentRun) {
-          this.currentRun.pendingSystemMessages.push({ content, notify })
-        } else {
-          log.warn('injectSystemMessage: no active run, message dropped')
-        }
-      },
-      registerBackgroundTask: (promise: Promise<unknown>) => {
-        // 绑定到具体 run 闭包（非 this.currentRun），保证跨 run 场景下归属正确
-        run.pendingBackgroundPromises.push(promise)
-        // 任务完成后自动从数组中移除，避免数组无限增长
-        promise.finally(() => {
-          const idx = run.pendingBackgroundPromises.indexOf(promise)
-          if (idx >= 0) run.pendingBackgroundPromises.splice(idx, 1)
-        })
-      },
       getParentContext: () => {
         if (!run.messages.length) return undefined
         return {
@@ -2735,86 +2697,42 @@ export abstract class Agent {
   }
   
   /**
-   * 若存在正在后台运行的子任务（dispatch_agents background=true），则等待至少一个完成。
-   *
-   * 时机：主循环"无工具调用 + 无 pending 消息"即将返回最终结果的关头。
-   * 完成的后台任务会通过 injectSystemMessage 将结果写入 pendingSystemMessages，
-   * 下一轮循环开头的 processPendingUserMessages 会把它注入 AI 上下文，触发继续对话。
-   *
-   * @returns true 表示发生过等待（调用方应 continue 继续循环）；false 表示没有后台任务可等
-   */
-  protected async awaitBackgroundTasksIfAny(run: AgentRun): Promise<boolean> {
-    if (run.pendingBackgroundPromises.length === 0) return false
-    if (run.aborted || !run.isRunning) return false
-
-    const count = run.pendingBackgroundPromises.length
-    log.info(`Agent waiting for ${count} background sub-agent task(s) before finalizing`)
-
-    // 快照当前 promise 列表（数组会被 finally 回调即时 splice），分别 .catch 吞错避免中断 race
-    const snapshot = [...run.pendingBackgroundPromises]
-    await Promise.race(snapshot.map(p => p.catch(() => {})))
-
-    return true
-  }
-
-  /**
-   * 处理待处理的用户消息和系统消息
+   * 处理待处理的用户消息（运行中追加的 addUserMessage）
    */
   protected processPendingUserMessages(run: AgentRun): void {
-    const hasUser = run.pendingUserMessages.length > 0
-    const hasSystem = run.pendingSystemMessages.length > 0
-    if (!hasUser && !hasSystem) return
-    
-    // 1. 系统消息：注入 AI 上下文，可选创建简短通知步骤
-    if (hasSystem) {
-      const parts: string[] = []
-      for (const sys of run.pendingSystemMessages) {
-        parts.push(sys.content)
-        if (sys.notify) {
-          this.addStep({ type: 'tool_result', content: sys.notify, toolName: 'dispatch_agents' })
-        }
+    if (run.pendingUserMessages.length === 0) return
+
+    let combinedText = ''
+    const allImages: string[] = []
+
+    for (const pending of run.pendingUserMessages) {
+      let msgPart = Agent.formatTimestamp() + pending.message
+      if (pending.documentContext) {
+        msgPart += '\n\n' + pending.documentContext
       }
-      const systemText = parts.join('\n\n')
-      const systemMsg: AiMessage = { role: 'user', content: Agent.formatTimestamp() + systemText }
-      run.messages.push(systemMsg)
-      run.taskMessageLog.push({ role: 'user', content: systemText })
-      run.pendingSystemMessages = []
+      if (pending.images?.length) {
+        const imageCount = pending.images.length
+        log.info(`Supplement images: ${imageCount} image(s)`)
+        msgPart += `\n\n[${t('agent.images_attached', { count: imageCount })}]`
+        allImages.push(...pending.images)
+      }
+      combinedText += (combinedText ? '\n' : '') + msgPart
     }
-    
-    // 2. 用户消息：注入 AI 上下文（步骤已在 addUserMessage 中立即创建）
-    if (hasUser) {
-      let combinedText = ''
-      const allImages: string[] = []
-      
-      for (const pending of run.pendingUserMessages) {
-        let msgPart = Agent.formatTimestamp() + pending.message
-        if (pending.documentContext) {
-          msgPart += '\n\n' + pending.documentContext
-        }
-        if (pending.images?.length) {
-          const imageCount = pending.images.length
-          log.info(`Supplement images: ${imageCount} image(s)`)
-          msgPart += `\n\n[${t('agent.images_attached', { count: imageCount })}]`
-          allImages.push(...pending.images)
-        }
-        combinedText += (combinedText ? '\n' : '') + msgPart
-      }
-      
-      const userSupplementMsg: AiMessage = { role: 'user', content: Agent.formatTimestamp() + combinedText }
-      if (allImages.length > 0) {
-        userSupplementMsg.images = allImages
-      }
-      run.messages.push(userSupplementMsg)
-      run.taskMessageLog.push({ role: 'user', content: combinedText })
-      
-      if (this.currentPlan && !this.currentPlan.paused && this.currentPlan.steps.some(s => s.status === 'pending')) {
-        const planHintMsg: AiMessage = { role: 'user', content: t('agent.user_supplement_with_plan') }
-        run.messages.push(planHintMsg)
-        run.taskMessageLog.push({ ...planHintMsg })
-      }
-      
-      run.pendingUserMessages = []
+
+    const userSupplementMsg: AiMessage = { role: 'user', content: Agent.formatTimestamp() + combinedText }
+    if (allImages.length > 0) {
+      userSupplementMsg.images = allImages
     }
+    run.messages.push(userSupplementMsg)
+    run.taskMessageLog.push({ role: 'user', content: combinedText })
+
+    if (this.currentPlan && !this.currentPlan.paused && this.currentPlan.steps.some(s => s.status === 'pending')) {
+      const planHintMsg: AiMessage = { role: 'user', content: t('agent.user_supplement_with_plan') }
+      run.messages.push(planHintMsg)
+      run.taskMessageLog.push({ ...planHintMsg })
+    }
+
+    run.pendingUserMessages = []
   }
   
   /**
