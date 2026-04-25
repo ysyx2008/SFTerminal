@@ -25,6 +25,29 @@ function expandTilde(filePath: string): string {
 }
 
 /**
+ * 生成用于消息展示的简短路径：
+ * - 在 cwd 之内：返回相对路径
+ * - 在 home 之内（且不在 cwd 内）：返回 ~/... 形式
+ * - 其它：返回原始绝对路径
+ */
+function formatDisplayPath(filePath: string, ptyId?: string): string {
+  if (ptyId) {
+    try {
+      const cwd = getTerminalStateService().getCwd(ptyId)
+      if (cwd && (filePath === cwd || filePath.startsWith(cwd + path.sep))) {
+        return path.relative(cwd, filePath) || '.'
+      }
+    } catch (_) { /* ignore */ }
+  }
+  const home = os.homedir()
+  if (filePath === home) return '~'
+  if (filePath.startsWith(home + path.sep)) {
+    return '~' + filePath.slice(home.length)
+  }
+  return filePath
+}
+
+/**
  * 验证 Buffer 是否为合法 UTF-8 编码。
  * allowTruncatedEnd: 允许末尾的不完整多字节序列（用于部分读取的 buffer）
  */
@@ -1068,7 +1091,9 @@ ${sampleContent ? `### ${t('file.info_preview')}\n\`\`\`\n${sampleContent}\n\`\`
       actualLines = content.split('\n')
     }
 
+    const displayPath = formatDisplayPath(filePath, ptyId)
     const readInfo: string[] = []
+    readInfo.push(`📄 ${displayPath}`)
     if (startLine !== undefined || endLine !== undefined) {
       readInfo.push(t('file.read_line_range', { start: startLine || 1, end: endLine || t('file.end_of_file') }))
     } else if (maxLines !== undefined) {
