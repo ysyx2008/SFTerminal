@@ -8,8 +8,10 @@ import { ConfigService } from '../services/config.service'
 import { AiService } from '../services/ai.service'
 import { HistoryService } from '../services/history.service'
 import { HostProfileService } from '../services/host-profile.service'
-import { initLogging } from '../utils/logger'
+import { createLogger, initLogging } from '../utils/logger'
 import { getDefaultShell, getLocalOS } from '../utils/platform'
+
+const log = createLogger('CLI')
 
 // ==================== Helpers ====================
 

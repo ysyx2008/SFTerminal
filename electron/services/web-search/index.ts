@@ -7,6 +7,9 @@ import type { WebSearchProvider, WebSearchOptions, WebSearchResult } from './typ
 import type { WebSearchSettings, WebSearchProviderId } from '@shared/types'
 import { DEFAULT_WEB_SEARCH_SETTINGS, WEB_SEARCH_PROVIDERS } from '@shared/types'
 import { createLogger } from '../../utils/logger'
+import { BochaProvider } from './providers/bocha'
+import { JinaProvider } from './providers/jina'
+import { TavilyProvider } from './providers/tavily'
 
 const log = createLogger('WebSearch')
 
@@ -80,10 +83,6 @@ export async function initWebSearch(settings: WebSearchSettings): Promise<void> 
     settings = { ...settings, apiKeys: { [settings.providerId]: settings.apiKey }, apiKey: undefined }
   }
   updateSettings(settings)
-
-  const { BochaProvider } = await import('./providers/bocha')
-  const { JinaProvider } = await import('./providers/jina')
-  const { TavilyProvider } = await import('./providers/tavily')
 
   registerProvider(new BochaProvider(() => getApiKey('bocha')))
   registerProvider(new JinaProvider(() => getApiKey('jina')))
