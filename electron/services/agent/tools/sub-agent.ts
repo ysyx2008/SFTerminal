@@ -41,24 +41,33 @@ export interface SubAgentType {
   systemPromptPrefix: string
 }
 
-/** 内置 Agent 类型注册表 */
+/**
+ * 内置 Agent 类型注册表
+ *
+ * ⚠️ 工具白名单顺序约定：与 tools.ts 中 builtinTools 的前缀保持一致，
+ * 让父/子 Agent 的工具列表共享 byte-exact 前缀，最大化 prompt cache 命中。
+ * - explore/research 用前 6 个：exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search
+ * - edit 用前 8 个：上述 6 个 + edit_file, write_text_file
+ *
+ * 注意：edit 类型也保留 web_search（即使少用）以维持连续前缀；移除会破坏 cache。
+ */
 const SUB_AGENT_TYPES: Record<SubAgentTypeName, SubAgentType> = {
   explore: {
     name: 'explore',
     description: '只读分析（默认）：读取文件、搜索、执行命令，不修改任何内容',
-    tools: new Set(['read_file', 'file_search', 'exec', 'search_knowledge', 'get_knowledge_doc', 'web_search']),
+    tools: new Set(['exec', 'read_file', 'file_search', 'search_knowledge', 'get_knowledge_doc', 'web_search']),
     systemPromptPrefix: '你是一个专注**分析与调研**的子任务执行器。\n- **只读模式**：不可修改任何文件或系统状态，exec 仅用于读取类命令（grep/find/cat/ls/git log 等）',
   },
   edit: {
     name: 'edit',
     description: '文件修改：在 explore 基础上可编辑和创建文件',
-    tools: new Set(['read_file', 'file_search', 'exec', 'search_knowledge', 'get_knowledge_doc', 'edit_file', 'write_text_file']),
+    tools: new Set(['exec', 'read_file', 'file_search', 'search_knowledge', 'get_knowledge_doc', 'web_search', 'edit_file', 'write_text_file']),
     systemPromptPrefix: '你是一个专注**代码修改与文件编辑**的子任务执行器。\n- 修改文件前必须先用 read_file 查看目标内容',
   },
   research: {
     name: 'research',
     description: '知识检索：侧重知识库搜索和命令分析，输出结构化归纳',
-    tools: new Set(['read_file', 'file_search', 'exec', 'search_knowledge', 'get_knowledge_doc', 'web_search']),
+    tools: new Set(['exec', 'read_file', 'file_search', 'search_knowledge', 'get_knowledge_doc', 'web_search']),
     systemPromptPrefix: '你是一个专注**知识检索与归纳分析**的子任务执行器。\n- 优先使用知识库搜索获取已有信息\n- 输出要求结构化、条理清晰，便于父 Agent 整合',
   },
 }
@@ -87,32 +96,18 @@ function resolveAgentType(agentType?: string): SubAgentType {
   return SUB_AGENT_TYPES[DEFAULT_AGENT_TYPE]
 }
 
-/** 子 Agent 工具描述覆盖（精简版，节省 token、避免无关上下文干扰） */
-const SUB_AGENT_DESCRIPTION_OVERRIDES: Record<string, string> = {
-  read_file: '读取本地文件内容。支持文本、PDF、Word、图片。大文件先用 info_only 查信息，再按行范围读取。',
-  file_search: '快速搜索本地文件名（基于系统索引，毫秒级）。支持通配符 * 和 ?。仅搜文件名不搜内容，搜内容请用 exec + grep。',
-}
-
 /**
  * 根据 Agent 类型构建可用工具子集
  *
- * 参数 schema 从 getAgentTools(assistant) 复用，保证与执行层一致；
- * 描述按需精简（移除终端/SSH/IM 等无关上下文）。
+ * 直接复用父 Agent 的工具定义（byte-exact），不做 description 修改：
+ * - 子 Agent 工具列表是父 Agent 工具列表的连续前缀（见 tools.ts 顺序约定）
+ * - 不重写 description 以保持前缀字节一致，最大化 prompt cache 命中
+ * - 子 Agent 看不到禁用工具，无需在 prompt 中再做约束
  */
 export function getSubAgentTools(agentType: string = DEFAULT_AGENT_TYPE): ToolDefinition[] {
   const typeDefinition = resolveAgentType(agentType)
   const mainTools = getAgentTools(undefined, { mode: 'assistant' })
-
-  return mainTools
-    .filter(tool => typeDefinition.tools.has(tool.function.name))
-    .map(tool => {
-      const override = SUB_AGENT_DESCRIPTION_OVERRIDES[tool.function.name]
-      if (!override) return tool
-      return {
-        ...tool,
-        function: { ...tool.function, description: override }
-      }
-    })
+  return mainTools.filter(tool => typeDefinition.tools.has(tool.function.name))
 }
 
 // ==================== 子 Agent 执行器配置构建 ====================
@@ -136,9 +131,12 @@ function buildSubAgentExecutorConfig(
     addStep: () => noopStep(),
     updateStep: () => {},
     // 子 Agent 不弹确认框：moderate 自动放行，dangerous 自动拒绝并报错
-    waitForConfirmation: async (_toolCallId, toolName, _toolArgs, riskLevel) => {
+    waitForConfirmation: async (_toolCallId, toolName, toolArgs, riskLevel) => {
       if (riskLevel === 'dangerous') {
-        log.warn(`Sub-agent auto-rejected dangerous operation: ${toolName}`)
+        const argsPreview = (() => {
+          try { return JSON.stringify(toolArgs).slice(0, 300) } catch { return '<unserializable>' }
+        })()
+        log.warn(`Sub-agent auto-rejected dangerous operation: ${toolName} args=${argsPreview}`)
         return false
       }
       return true
@@ -449,10 +447,14 @@ export async function dispatchSubAgents(
       const directive = buildForkDirective(task, typeDefinition)
       const initialMessages: AiMessage[] = [...forkBaseMessages, { role: 'user' as const, content: directive }]
 
+      // 子 Agent 工具列表按白名单过滤（同时也是父 Agent 工具列表的连续前缀，
+      // 保留 messages 与工具列表前缀部分的 prompt cache 命中）
+      const subTools = getSubAgentTools(taskAgentType)
+
       return runSubAgent({
         task,
         aiService,
-        tools: parentContext.tools,
+        tools: subTools,
         allowedTools: typeDefinition.tools,
         initialMessages,
         executorConfig: subExecutor,
@@ -554,18 +556,17 @@ function buildForkBaseMessages(parentMessages: AiMessage[], dispatchToolCallId: 
 /**
  * 构建 fork 指令消息：告知子 Agent 它的身份、类型约束和具体任务
  *
- * 这条 user 消息追加在 fork 前缀之后，是唯一因子 Agent 而异的部分
+ * 这条 user 消息追加在 fork 前缀之后，是唯一因子 Agent 而异的部分。
+ *
+ * 子 Agent 看到的工具列表已按白名单过滤（不会出现 dispatch_agents/talk_to_user
+ * 等父专属工具），无需在 prompt 中重复声明"哪些工具不能用"。
  */
 function buildForkDirective(task: SubAgentTask, agentType: SubAgentType): string {
-  const toolNames = [...agentType.tools].join('、')
   return [
     `你现在是一个并行子任务执行器（${agentType.name} 类型）。`,
     agentType.systemPromptPrefix,
     '',
     '## 约束',
-    `- 可用工具：${toolNames}`,
-    '- 不可使用其他工具（不在上述列表的工具调用会被拦截）',
-    '- 不可操作终端、不可创建子任务、不可向用户提问',
     '- **禁止编造**：必须通过工具获取真实数据，严禁凭空生成、模拟或推测工具执行结果。如果无法执行，明确说明原因',
     '- 完成任务后直接输出结果文本，不要多余寒暄',
     '',

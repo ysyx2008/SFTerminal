@@ -186,7 +186,11 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
     : null
 
   // 内置工具（所有模式通用）
+  // ⚠️ 顺序约定：子 Agent 通用工具排在最前（前 8 个），让父/子 Agent 的工具列表共享 byte-exact 前缀，
+  // 最大化 prompt cache 命中（参考 sub-agent.ts 的 SUB_AGENT_TYPES）。
+  // 改动顺序时请同步检查子 Agent 工具白名单。
   const builtinTools: ToolDefinition[] = [
+    // ==================== 子 Agent 通用前缀（explore/edit/research 都用） ====================
     ...(execTool ? [execTool as ToolDefinition] : []),
     {
       type: 'function',
@@ -214,6 +218,77 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       },
       _meta: { supportedModes: ['local', 'assistant'] }
     } as ToolDefinitionWithMeta,
+    {
+      type: 'function',
+      function: {
+        name: 'file_search',
+        description: `快速搜索本地文件名（基于系统索引，毫秒级）。直接用关键词搜索，多个关键词用空格分隔表示同时包含。仅搜文件名不搜内容，搜内容请用 grep。仅本地，不支持 SSH。`,
+        parameters: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: '搜索关键词，多个关键词用空格分隔（如 "员工 奖惩"）。也支持通配符 * ?'
+            },
+            path: {
+              type: 'string',
+              description: '限制搜索目录（可选，不指定则全盘搜索）'
+            },
+            type: {
+              type: 'string',
+              enum: ['file', 'dir', 'all'],
+              description: '搜索类型：file（仅文件）、dir（仅目录）、all（全部，默认）'
+            },
+            limit: {
+              type: 'number',
+              description: '最大结果数量，默认 50'
+            }
+          },
+          required: ['query']
+        }
+      },
+      _meta: { supportedModes: ['local', 'assistant'] }
+    } as ToolDefinitionWithMeta,
+    {
+      type: 'function',
+      function: {
+        name: 'search_knowledge',
+        description: '搜索用户的知识库文档。搜索结果已包含文档内容，直接使用即可。',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: '简短的搜索词，1-3个核心关键词即可，避免堆砌'
+            },
+            limit: {
+              type: 'integer',
+              description: '返回结果数量（整数），默认 5，范围 1-20'
+            }
+          },
+          required: ['query']
+        }
+      }
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_knowledge_doc',
+        description: '按文档 ID 精确获取知识库中的完整文档内容。当用户通过 @docs 引用了特定文档时（消息中会显示 doc_id:xxx），使用此工具获取完整内容。',
+        parameters: {
+          type: 'object',
+          properties: {
+            doc_id: {
+              type: 'string',
+              description: '文档 ID，从用户消息中的 doc_id:xxx 获取'
+            }
+          },
+          required: ['doc_id']
+        }
+      }
+    },
+    ...buildWebSearchTool(),
+    // ==================== edit 子 Agent 额外允许的工具 ====================
     {
       type: 'function',
       function: {
@@ -277,6 +352,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       },
       _meta: { supportedModes: ['local', 'assistant'] }
     } as ToolDefinitionWithMeta,
+    // ==================== 父 Agent 专用工具 ====================
     {
       type: 'function',
       function: {
@@ -307,37 +383,6 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
     {
       type: 'function',
       function: {
-        name: 'file_search',
-        description: `快速搜索本地文件名（基于系统索引，毫秒级）。直接用关键词搜索，多个关键词用空格分隔表示同时包含。仅搜文件名不搜内容，搜内容请用 grep。仅本地，不支持 SSH。`,
-        parameters: {
-          type: 'object',
-          properties: {
-            query: {
-              type: 'string',
-              description: '搜索关键词，多个关键词用空格分隔（如 "员工 奖惩"）。也支持通配符 * ?'
-            },
-            path: {
-              type: 'string',
-              description: '限制搜索目录（可选，不指定则全盘搜索）'
-            },
-            type: {
-              type: 'string',
-              enum: ['file', 'dir', 'all'],
-              description: '搜索类型：file（仅文件）、dir（仅目录）、all（全部，默认）'
-            },
-            limit: {
-              type: 'number',
-              description: '最大结果数量，默认 50'
-            }
-          },
-          required: ['query']
-        }
-      },
-      _meta: { supportedModes: ['local', 'assistant'] }
-    } as ToolDefinitionWithMeta,
-    {
-      type: 'function',
-      function: {
         name: 'remember_info',
         description: '将信息整合到持久知识文档中，未来交互时自动提供。适用于用户要求记住的偏好、配置、约定等长期有效的信息。',
         parameters: {
@@ -349,44 +394,6 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
             }
           },
           required: ['info']
-        }
-      }
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'search_knowledge',
-        description: '搜索用户的知识库文档。搜索结果已包含文档内容，直接使用即可。',
-        parameters: {
-          type: 'object',
-          properties: {
-            query: {
-              type: 'string',
-              description: '简短的搜索词，1-3个核心关键词即可，避免堆砌'
-            },
-            limit: {
-              type: 'integer',
-              description: '返回结果数量（整数），默认 5，范围 1-20'
-            }
-          },
-          required: ['query']
-        }
-      }
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'get_knowledge_doc',
-        description: '按文档 ID 精确获取知识库中的完整文档内容。当用户通过 @docs 引用了特定文档时（消息中会显示 doc_id:xxx），使用此工具获取完整内容。',
-        parameters: {
-          type: 'object',
-          properties: {
-            doc_id: {
-              type: 'string',
-              description: '文档 ID，从用户消息中的 doc_id:xxx 获取'
-            }
-          },
-          required: ['doc_id']
         }
       }
     },
@@ -524,8 +531,6 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         }
       }
     },
-    // ==================== Web 搜索 ====================
-    ...buildWebSearchTool(),
     // ==================== 并行子 Agent ====================
     {
       type: 'function',

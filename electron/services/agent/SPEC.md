@@ -1,6 +1,6 @@
 # Agent 子系统 SPEC
 
-> Last verified: 2026-04-25
+> Last verified: 2026-04-25 (sub-agent tool isolation + cache-friendly ordering)
 
 ## 职责
 
@@ -109,6 +109,28 @@ run(message, context, options)
 
 通过 `getAgentTools(mode, remoteChannel)` 按模式过滤。见 `tools.ts` 中的完整定义。
 
+### 工具列表顺序约定（Cache 友好）
+
+`builtinTools` 数组的顺序**不是任意的**：子 Agent 工具列表是父 Agent 工具列表的**连续 byte-exact 前缀**，让 Anthropic/DeepSeek/OpenAI 的前缀缓存在工具 schema 部分尽可能命中。
+
+**分段约定**（assistant 模式下）：
+
+| 段 | 工具 | 用途 |
+|---|---|---|
+| 子 Agent 通用前缀（前 6 个） | `exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search` | explore/research 子 Agent 工具列表 = 此段 |
+| edit 子专用追加（前 7-8 个） | `edit_file, write_text_file` | edit 子 Agent 工具列表 = 上一段 + 此段 |
+| 父 Agent 专用尾部 | `write_remote_text_file, remember_info, ask_user, plan, skill, load_user_skill, recall, search_history, dispatch_agents, talk_to_user` | 仅父 Agent 可见 |
+
+**保持前缀连续的红线**：
+
+1. 新增子 Agent 用的工具时，必须放进对应分段（前 6 / 前 8）的末尾，并同步更新 `SUB_AGENT_TYPES` 白名单
+2. 新增父专用工具，只能加在尾部
+3. **不要**为子 Agent 重写工具 description（破坏 byte-exact 字节）。如果某些工具描述对子 Agent 无关上下文太多，应通过 `parameters.description` 传入或在 user 指令中说明，不要改 `function.description`
+4. `web_search` 是条件性工具（未配置时整体不存在），即使不存在也不破坏前缀关系（子 Agent 同样不会有它，仍是父的连续前缀）
+5. 测试 `all sub-agent tool lists should be a contiguous prefix of parent tool list` 是机械护栏
+
+回归保护：`__tests__/sub-agent.test.ts` 中的 "contiguous prefix" 与 "byte-exact tool list across sub-agents of same type" 两条用例固定了此约定。
+
 ### 工具执行 (`tools/`)
 
 | 文件 | 职责 |
@@ -129,24 +151,30 @@ run(message, context, options)
 
 主 Agent 通过 `dispatch_agents` 工具分派轻量子任务并行执行。
 
-**Fork 模式**（参考 Claude Code）：子 Agent 继承父 Agent 的完整上下文（system prompt + 消息历史 + 工具列表），最大化 Anthropic/DeepSeek 前缀缓存命中。父 Agent 尚未完成的 tool_result 用固定占位符替代，子任务指令作为追加的 user 消息。所有子 Agent 共享同一消息前缀（byte-exact 一致），仅追加部分因任务而异。当父上下文不可用时自动 fallback 到独立模式。
+**Fork 模式**（参考 Claude Code）：子 Agent 继承父 Agent 的**消息历史**（system prompt + messages）作为 fork 前缀，最大化 Anthropic/DeepSeek 前缀缓存命中。父 Agent 尚未完成的 tool_result 用固定占位符（`FORK_PLACEHOLDER`）替代，子任务指令作为追加的 user 消息。所有子 Agent 共享同一消息前缀（byte-exact 一致），仅追加部分因任务而异。当父上下文不可用时直接报错（不再 fallback）。
 
-**Agent 类型系统**：每个子 Agent 按类型分配**执行时工具白名单**和系统提示：
+**工具列表**：子 Agent 看到的是按类型白名单过滤后的工具列表（**不是父 Agent 的完整工具列表**）。父 Agent 专属工具（`dispatch_agents`、`talk_to_user`、`plan`、`ask_user`、`remember_info` 等）对子 Agent 完全不可见，避免 LLM 误调用。工具 schema 部分仍因为顺序约定（见上节）共享 byte-exact 前缀，cache 命中不受影响。
 
-| 类型 | 用途 | 可执行工具 |
+**Agent 类型系统**：每个子 Agent 按类型分配工具白名单和系统提示：
+
+| 类型 | 用途 | 可用工具 |
 |---|---|---|
-| `explore`（默认） | 只读分析 | read_file, file_search, exec, search_knowledge, get_knowledge_doc |
+| `explore`（默认） | 只读分析 | exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search |
 | `edit` | 文件修改 | explore + edit_file, write_text_file |
-| `research` | 知识检索归纳 | read_file, file_search, exec, search_knowledge, get_knowledge_doc |
+| `research` | 知识检索归纳 | exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search |
 
-类型通过 `SubAgentType` 接口定义，注册在 `SUB_AGENT_TYPES` 注册表中。Fork 模式下 API 请求使用父 Agent 的完整工具列表（缓存优化），执行时按类型白名单过滤（不在白名单内的调用会被拦截并返回错误提示）。
+类型通过 `SubAgentType` 接口定义，注册在 `SUB_AGENT_TYPES` 注册表中。白名单顺序与 `tools.ts` 中 `builtinTools` 的前缀严格对齐（见上节"工具列表顺序约定"），不要随意调整。
+
+`web_search` 在 edit 白名单里看似冗余（edit 任务很少联网），但保留它是为了让 edit 子 Agent 工具列表也是父工具列表的连续前缀（前 8 个）；无害，且 LLM 用不到也不会调。
+
+**执行时白名单（Defense in Depth）**：除了通过过滤工具列表让 LLM "看不到"禁用工具，运行时仍保留白名单检查（`allowedTools.has(toolName)`），万一 LLM 通过历史上下文等方式生成了禁用工具的调用，也会被运行时拦截并返回错误提示。
 
 **执行模式**：`dispatchSubAgents` 同步阻塞等待全部子任务完成后返回汇总结果。如果需要"边等边做"，主 Agent 应在同一次响应中并行调用其它工具（parallelizable tools），不需要单独的异步分支。
 
 **安全约束**：
-- 子 Agent 继承父 Agent 的 `executionMode`，不可递归 `dispatch_agents`
+- 子 Agent 继承父 Agent 的 `executionMode`，**工具列表中没有 `dispatch_agents`，物理上不可递归**
 - 工具白名单保障安全（无终端操作等高危工具）
-- **确认策略**：子 Agent 不弹确认框（避免阻塞并行执行）。moderate 级操作自动放行，dangerous 级操作自动拒绝并返回错误，子 Agent 可换策略重试或报告给主 Agent 处理
+- **确认策略**：子 Agent 不弹确认框（避免阻塞并行执行）。moderate 级操作自动放行，dangerous 级操作自动拒绝并打印工具参数预览（便于调试），子 Agent 可换策略重试或报告给主 Agent 处理
 
 ### 流式工具并行执行 (`streaming-tool-executor.ts`)
 

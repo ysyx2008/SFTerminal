@@ -162,6 +162,23 @@ describe('getSubAgentTools', () => {
 
     expect(toolNames).not.toContain('dispatch_agents')
     expect(toolNames).not.toContain('ask_user')
+    expect(toolNames).not.toContain('talk_to_user')
+    expect(toolNames).not.toContain('plan')
+    expect(toolNames).not.toContain('remember_info')
+  })
+
+  it('all sub-agent tool lists should be a contiguous prefix of parent tool list', () => {
+    // 工具顺序约定：子 Agent 工具列表是父 Agent 工具列表的连续前缀，
+    // 让父/子 Agent 共享 byte-exact 前缀，最大化 prompt cache 命中。
+    const parentTools = getAgentTools(undefined, { mode: 'assistant' })
+    const parentNames = parentTools.map(t => t.function.name)
+
+    for (const type of ['explore', 'edit', 'research']) {
+      const subTools = getSubAgentTools(type)
+      const subNames = subTools.map(t => t.function.name)
+      const prefix = parentNames.slice(0, subNames.length)
+      expect(subNames, `${type} 子 Agent 工具列表应是父 Agent 的连续前缀`).toEqual(prefix)
+    }
   })
 
   it('research type should have focused tool set', () => {
@@ -500,7 +517,7 @@ describe('dispatchSubAgents', () => {
     )
   })
 
-  it('should default to explore agent type and use parent tools', async () => {
+  it('should default to explore agent type and pass filtered tool list to AI', async () => {
     const executor = createMockExecutor()
     const mockAi = (executor as any)._mockAiService
 
@@ -515,9 +532,17 @@ describe('dispatchSubAgents', () => {
       tasks: [{ description: 'Read task', prompt: 'Read something' }]
     }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
 
-    // Fork 模式：使用父 Agent 的完整工具列表
+    // 子 Agent 看到的是按白名单过滤后的工具列表（不是父 Agent 的完整工具列表）
     const toolsPassedToAi = mockAi.chatWithTools.mock.calls[0][1]
-    expect(toolsPassedToAi).toBe(DEFAULT_PARENT_TOOLS)
+    const exploreTools = getSubAgentTools('explore')
+    expect(toolsPassedToAi).toEqual(exploreTools)
+    expect(toolsPassedToAi).not.toBe(DEFAULT_PARENT_TOOLS)
+
+    // 父专属工具不应在子 Agent 工具列表中
+    const subToolNames = toolsPassedToAi.map((t: any) => t.function.name)
+    expect(subToolNames).not.toContain('dispatch_agents')
+    expect(subToolNames).not.toContain('talk_to_user')
+    expect(subToolNames).not.toContain('plan')
 
     // 指令消息应包含 explore 类型约束
     const messagesPassedToAi = mockAi.chatWithTools.mock.calls[0][0]
@@ -531,7 +556,7 @@ describe('dispatchSubAgents', () => {
     )
   })
 
-  it('should include edit type constraint in directive', async () => {
+  it('should pass edit-type tool list when agent_type is edit', async () => {
     const executor = createMockExecutor()
     const mockAi = (executor as any)._mockAiService
 
@@ -547,18 +572,47 @@ describe('dispatchSubAgents', () => {
       agent_type: 'edit'
     }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
 
-    // 指令消息应包含 edit 类型和写工具
+    // 子 Agent 工具列表应包含 edit 类型工具，且不含父专属工具
+    const toolsPassedToAi = mockAi.chatWithTools.mock.calls[0][1]
+    const subToolNames = toolsPassedToAi.map((t: any) => t.function.name)
+    expect(subToolNames).toContain('edit_file')
+    expect(subToolNames).toContain('write_text_file')
+    expect(subToolNames).not.toContain('dispatch_agents')
+
+    // 指令消息应包含 edit 类型字样
     const messagesPassedToAi = mockAi.chatWithTools.mock.calls[0][0]
     const directive = messagesPassedToAi[messagesPassedToAi.length - 1].content
     expect(directive).toContain('edit')
-    expect(directive).toContain('edit_file')
-    expect(directive).toContain('write_text_file')
 
     expect(executor.addStep).toHaveBeenCalledWith(
       expect.objectContaining({
         content: expect.stringContaining('edit')
       })
     )
+  })
+
+  it('should share byte-exact tool list across sub-agents of same type', async () => {
+    // prompt cache 命中前提：相同类型的多个子 Agent 工具列表必须 byte-exact 一致
+    const executor = createMockExecutor()
+    const mockAi = (executor as any)._mockAiService
+
+    mockAi.chatWithTools.mockResolvedValue({
+      content: 'Done',
+      tool_calls: undefined,
+      finish_reason: 'stop',
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+    })
+
+    await dispatchSubAgents({
+      tasks: [
+        { description: 'Task A', prompt: 'Do A' },
+        { description: 'Task B', prompt: 'Do B' }
+      ]
+    }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
+
+    const tools1 = mockAi.chatWithTools.mock.calls[0][1]
+    const tools2 = mockAi.chatWithTools.mock.calls[1][1]
+    expect(JSON.stringify(tools1)).toBe(JSON.stringify(tools2))
   })
 
   it('should allow per-task agent_type override in directive', async () => {
@@ -673,7 +727,8 @@ describe('dispatchSubAgents', () => {
     expect(msgs2[msgs2.length - 1].content).toContain('Do B')
   })
 
-  it('should enforce tool whitelist and block unauthorized tools', async () => {
+  it('should enforce tool whitelist and block unauthorized tools (defense in depth)', async () => {
+    // 工具白名单是后置防线：即使 LLM 通过越狱/历史上下文等方式调用了禁用工具，运行时仍能拦截
     const executor = createMockExecutor()
     const mockAi = (executor as any)._mockAiService
 
@@ -681,9 +736,10 @@ describe('dispatchSubAgents', () => {
     mockAi.chatWithTools.mockImplementation(async () => {
       callCount++
       if (callCount === 1) {
+        // 模拟 LLM 试图调用 explore 类型禁用的 edit_file
         return {
           content: '',
-          tool_calls: [{ id: 'tc-edit', type: 'function', function: { name: 'edit_file', arguments: '{"file_path": "/test.ts", "edits": []}' } }],
+          tool_calls: [{ id: 'tc-edit', type: 'function', function: { name: 'edit_file', arguments: '{"path": "/test.ts", "old_text": "a", "new_text": "b"}' } }],
           finish_reason: 'tool_calls',
           usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }
         }
