@@ -38,7 +38,6 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   voiceInput: 'Control',
 }
 
-
 // 会话分组（支持跳板机继承）
 export interface SessionGroup {
   id: string
