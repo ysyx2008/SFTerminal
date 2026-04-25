@@ -230,6 +230,36 @@ export class KnowledgeService extends EventEmitter {
   }
   
   /**
+   * 强制重建所有索引（CLI / 用户手动触发用）。
+   *
+   * @param force 为 true 时先清空向量库 + BM25，再走完整重建路径；
+   *   为 false 时仅在二者缺失时重建（等价于 initialize 路径里的 checkAndRebuildIndex）。
+   * @returns 总耗时（ms）和处理的文档数
+   */
+  async rebuildAllIndices(force: boolean = false): Promise<{
+    durationMs: number
+    documentCount: number
+    forced: boolean
+  }> {
+    if (!this.isInitialized) {
+      await this.initialize()
+    }
+
+    if (force) {
+      log.info('强制重建：清空向量库和 BM25 索引')
+      await this.vectorStorage.clear()
+      await this.bm25Index.clear()
+    }
+
+    const documentCount = this.documentsIndex.size
+    const t0 = Date.now()
+    await this.checkAndRebuildIndex()
+    const durationMs = Date.now() - t0
+
+    return { durationMs, documentCount, forced: force }
+  }
+
+  /**
    * 检查并重建索引
    */
   private async checkAndRebuildIndex(): Promise<void> {

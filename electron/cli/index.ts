@@ -345,6 +345,27 @@ async function knowledgeStats(): Promise<void> {
   printJSON(stats)
 }
 
+async function knowledgeRebuild(args: string[]): Promise<void> {
+  const { flags } = parseArgs(args)
+  const force = flags.force === true || flags.force === 'true'
+
+  const { getKnowledgeService } = require('../services/knowledge')
+  const config = getConfig()
+  const ai = getAi()
+  const { McpService } = require('../services/mcp.service')
+  const mcp = new McpService()
+
+  const service = getKnowledgeService(config, ai, mcp)
+  if (!service) {
+    console.error('Knowledge service not available')
+    process.exit(1)
+  }
+
+  console.log(`Rebuilding indices (force=${force})...`)
+  const result = await service.rebuildAllIndices(force)
+  printJSON(result)
+}
+
 async function knowledgeAdd(args: string[]): Promise<void> {
   const { positional, flags } = parseArgs(args)
   const filePath = positional[0]
@@ -1474,6 +1495,8 @@ Knowledge Base:
   knowledge:add <file>       Add a document to knowledge base
     --host <hostId>          Associate with host
   knowledge:stats            Show knowledge base statistics
+  knowledge:rebuild          Rebuild vector + BM25 indices (with timing)
+    --force                  Clear and re-embed all documents
 
 History:
   history:list               List recent records
@@ -1658,10 +1681,11 @@ async function main(): Promise<void> {
       case 'agent:run':      await agentRun(cmdArgs); break
 
       // Knowledge
-      case 'knowledge:search': await knowledgeSearch(cmdArgs); break
-      case 'knowledge:list':   await knowledgeList(); break
-      case 'knowledge:add':    await knowledgeAdd(cmdArgs); break
-      case 'knowledge:stats':  await knowledgeStats(); break
+      case 'knowledge:search':  await knowledgeSearch(cmdArgs); break
+      case 'knowledge:list':    await knowledgeList(); break
+      case 'knowledge:add':     await knowledgeAdd(cmdArgs); break
+      case 'knowledge:stats':   await knowledgeStats(); break
+      case 'knowledge:rebuild': await knowledgeRebuild(cmdArgs); break
 
       // History
       case 'history:list':   await historyList(cmdArgs); break
