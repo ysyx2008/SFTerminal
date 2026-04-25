@@ -2,7 +2,7 @@
  * Excel 技能工具定义
  */
 
-import type { ToolDefinition } from '../../tools'
+import type { ToolDefinition, ToolDefinitionWithMeta } from '../../tools'
 
 export const excelTools: ToolDefinition[] = [
   {
@@ -183,8 +183,16 @@ export const excelTools: ToolDefinition[] = [
         },
         required: ['path']
       }
+    },
+    // 流式预卡片：与 word_from_markdown 同构，path 占位符兜底，markdown 字段累计字符数尾缀
+    _meta: {
+      streamDisplay: {
+        titleKey: 'excel.generating_from_md',
+        titleField: 'path',
+        progressFields: ['markdown']
+      }
     }
-  },
+  } as ToolDefinitionWithMeta,
   {
     type: 'function',
     function: {

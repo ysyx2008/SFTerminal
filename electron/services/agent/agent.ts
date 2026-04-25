@@ -35,7 +35,7 @@ import { getBondService } from '../bond.service'
 import type { ToolExecutorConfig, ToolResult } from './tools/types'
 import { executeTool } from './tools/index'
 import { stripToolMeta } from './tools'
-import { getMetaByName } from './tool-metadata'
+import { getMetaByName, buildPreToolCallDisplay } from './tool-metadata'
 import { buildTaskHistoryContext, type TaskHistoryOptions } from './context-builder'
 import { getKnowledgeService } from '../knowledge'
 import { getContextKnowledgeService } from '../knowledge/context-knowledge'
@@ -73,243 +73,13 @@ function deduplicateThinkingBlocks(html: string): string {
 }
 
 /**
- * 把流式到达的 partial tool_call arguments JSON 前缀容错地解析成对象。
- *
- * 实现思路：按结构（不做任何字段名匹配）扫描引号/括号，先把未闭合的字符串和容器
- * 补齐成合法 JSON，再 JSON.parse。任何异常或结构残缺都返回 null，调用方负责保留
- * 上一次成功结果，避免显示回退。
- */
-function tryParsePartialJson(partial: string): Record<string, unknown> | null {
-  if (!partial) return null
-  const trimmed = partial.trimStart()
-  if (!trimmed.startsWith('{')) return null
-
-  // 从完整 partial 开始，失败就从尾部剥一个字符再试。每次尝试都对当前的 core 独立
-  // 扫描并按 LIFO 补闭合括号——嵌套 [{ 必须先补 } 再补 ]，这一点是原实现里
-  // `while(bracket)` + `while(brace)` 线性补全处理不了的。
-  // 剥到原串一半停止（保护性上限：partial chunk 通常很短，O(n²) 足够）
-  const minCoreLen = Math.max(1, Math.floor(partial.length / 2))
-  for (let coreLen = partial.length; coreLen >= minCoreLen; coreLen--) {
-    const core = partial.slice(0, coreLen)
-    const attempt = closePartial(core)
-    if (attempt === null) continue
-    try {
-      const obj = JSON.parse(attempt) as unknown
-      if (typeof obj === 'object' && obj !== null && !Array.isArray(obj)) {
-        return obj as Record<string, unknown>
-      }
-    } catch {
-      // 继续剥
-    }
-  }
-  return null
-}
-
-/**
- * 扫描 core 中的未闭合字符串与括号，按 LIFO 补上闭合形成一段可能合法的 JSON；
- * core 本身若不以 `{` 开头则返回 null。
- */
-function closePartial(core: string): string | null {
-  if (!core || !core.trimStart().startsWith('{')) return null
-  let inString = false
-  let escape = false
-  const stack: string[] = []
-  for (let i = 0; i < core.length; i++) {
-    const c = core[i]
-    if (escape) { escape = false; continue }
-    if (inString) {
-      if (c === '\\') escape = true
-      else if (c === '"') inString = false
-      continue
-    }
-    if (c === '"') inString = true
-    else if (c === '{') stack.push('}')
-    else if (c === '[') stack.push(']')
-    else if (c === '}' || c === ']') stack.pop()
-  }
-  let s = core
-  if (inString) s += '"'
-  while (stack.length > 0) s += stack.pop()
-  return s
-}
-
-/**
- * 从 partial 对象中取出第一个字符串字段的值（按 key 出现顺序）。
- */
-function firstStringValue(obj: Record<string, unknown>): string | null {
-  for (const k of Object.keys(obj)) {
-    const v = obj[k]
-    if (typeof v === 'string') return v
-  }
-  return null
-}
-
-/**
- * 流式预创建卡片中"path 还没流到"时的占位符。
- * path 到达后会被真实路径替换，用户先看到卡片出现、再看到路径填入。
- * 文字明确表达"临时状态、等一下"，避免用户误以为 AI 打算用空路径调用。
- */
-function getStreamPlaceholder(): string {
-  return t('agent.stream_pending_field')
-}
-
-/**
- * 计算指定字符串字段累计长度，构造实时进度尾缀，如 ` · 1234 字符`。
- *
- * 用途：文件写入/编辑类工具的 path 是一次性短输出，主要内容藏在看不见的
- * content/old_text/new_text 里。path 输出完后卡片主文本不再变化，用户会以为卡住；
- * 追加一个随 AI 流持续增长的字符数，让"还在工作"这件事可见。
- *
- * 统一使用字符数（不切换 KB）：数字位数多、每次更新跳动幅度大，能传达强烈的"在动"信号。
- * 不足 100 字符时返回空串，避免 path 刚流完就开始抖动。
- */
-function buildStreamProgressSuffix(parsed: Record<string, unknown>, fields: string[]): string {
-  let chars = 0
-  for (const f of fields) {
-    const v = parsed[f]
-    if (typeof v === 'string') chars += v.length
-  }
-  if (chars < 100) return ''
-  return ` · ${chars} ${t('file.chars')}`
-}
-
-/**
- * 根据工具名和流式 partial args 构建"预创建 tool_call 卡片"的显示内容。
- *
- * 返回的内容格式应尽量贴近对应执行器最终 addStep 的 content，使得执行器通过
- * wrapExecutorConfigForToolCall 接管预卡片时视觉上几乎无跳变。文件写入/编辑类
- * 工具额外追加实时字符数尾缀，让用户直观看到 AI 仍在持续输出。
- *
- * 返回 null 表示当前 partial args 还不足以构建（例如 path 尚未流到），调用方应
- * 保留上一次的缓存内容，避免"闪一下然后消失"。
- *
- * @internal 导出仅供单元测试使用，业务代码请勿直接调用
- */
-export function buildPreToolCallDisplay(toolName: string, partialArgs: string): string | null {
-  const parsed = tryParsePartialJson(partialArgs)
-  if (!parsed) return null
-
-  const asString = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined)
-  const asNumber = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined)
-
-  switch (toolName) {
-    case 'execute_command':
-    case 'exec': {
-      // shell 命令的 command 参数本身可见、在流式增长，用户能直接感知"在动"，不加尾缀
-      const cmd = firstStringValue(parsed)
-      if (!cmd) return null
-      return `${t('status.executing')}: ${cmd}`
-    }
-    case 'write_text_file':
-    case 'write_remote_text_file': {
-      // 一旦工具名命中就立即显示卡片——path 未到（AI 未按 schema 顺序、或正在流 content 前置字段）
-      // 时用占位符，避免"长字段流式期间卡片完全不出现"。path 到达后占位符自动被真实路径替换。
-      const pathDisplay = asString(parsed.path) ?? getStreamPlaceholder()
-      // mode 在 schema 中位于 content 之后，长内容流式时可能尚未到达，
-      // 未到达时默认按 'create' 渲染（与执行器默认值一致）
-      const mode = asString(parsed.mode) || 'create'
-      const insertAtLine = asNumber(parsed.insert_at_line)
-      const startLine = asNumber(parsed.start_line)
-      const endLine = asNumber(parsed.end_line)
-      const replaceAll = typeof parsed.replace_all === 'boolean' ? parsed.replace_all : true
-      const progress = buildStreamProgressSuffix(parsed, ['content'])
-      let head: string
-      switch (mode) {
-        case 'overwrite':
-          head = `${t('file.overwrite')}: ${pathDisplay}`
-          break
-        case 'append':
-          head = `${t('file.append')}: ${pathDisplay}`
-          break
-        case 'insert':
-          head = insertAtLine !== undefined
-            ? `${t('file.insert_at_line', { line: insertAtLine })}: ${pathDisplay}`
-            : `${t('file.create')}: ${pathDisplay}`
-          break
-        case 'replace_lines':
-          head = startLine !== undefined && endLine !== undefined
-            ? `${t('file.replace_lines', { start: startLine, end: endLine })}: ${pathDisplay}`
-            : `${t('file.create')}: ${pathDisplay}`
-          break
-        case 'regex_replace':
-          head = `${t('file.regex_replace', { scope: replaceAll ? t('file.regex_scope_all') : t('file.regex_scope_first') })}: ${pathDisplay}`
-          break
-        case 'create':
-        default:
-          head = `${t('file.create')}: ${pathDisplay}`
-      }
-      return head + progress
-    }
-    case 'edit_file': {
-      // 同 write_text_file：path 未到时用占位符保证卡片立刻出现
-      const pathDisplay = asString(parsed.path) ?? getStreamPlaceholder()
-      const progress = buildStreamProgressSuffix(parsed, ['old_text', 'new_text'])
-      return `${t('file.edit')}: ${pathDisplay}${progress}`
-    }
-    case 'read_file': {
-      // 工具名命中即显示——AI 还没流到 path 时用占位符，等 path 到达替换为真实值。
-      // 这样从「AI 在思考」到「Agent 准备读 X」不会有空窗。
-      const pathDisplay = asString(parsed.path) ?? getStreamPlaceholder()
-      const infoOnly = parsed.info_only === true
-      return infoOnly
-        ? `${t('file.reading_info_only')}: ${pathDisplay}`
-        : `${t('file.reading')}: ${pathDisplay}`
-    }
-    case 'word_from_markdown': {
-      // markdown 字段是长内容（与 write_text_file 的 content 类似），AI 流式期间用户能感知"还在生成"
-      // 才不会把"AI 在写"误读成"卡住"。path 在 schema 中位于 markdown 之前，但 AI 不一定按顺序输出，
-      // 用占位符兜底；执行器 addStep 接管时使用同一前缀（word.generating_from_md）保证视觉无跳变。
-      const pathDisplay = asString(parsed.path) ?? getStreamPlaceholder()
-      const progress = buildStreamProgressSuffix(parsed, ['markdown'])
-      return `${t('word.generating_from_md')}: ${pathDisplay}${progress}`
-    }
-    case 'excel_from_markdown': {
-      // 与 word_from_markdown 同构：长 markdown 字段是 AI 主要输出耗时来源，path 用占位符兜底。
-      // 执行器 addStep 用同一前缀（excel.generating_from_md）+ ": " + path，takeover 瞬间不跳变；
-      // 执行器额外追加的"（N 个 Sheet）"后缀是流式阶段拿不到的运行时信息，属于可接受的尾部追加。
-      const pathDisplay = asString(parsed.path) ?? getStreamPlaceholder()
-      const progress = buildStreamProgressSuffix(parsed, ['markdown'])
-      return `${t('excel.generating_from_md')}: ${pathDisplay}${progress}`
-    }
-    case 'dispatch_agents': {
-      // 每个子任务的 prompt 是长字段，AI 流式耗时和 write_text_file 的 content 类似。
-      // 内容格式必须与 tools/sub-agent.ts 执行器 addStep 的 content 对齐：
-      //   "并行执行 {N} 个子任务（{typeLabel}）"
-      // 执行器那边目前硬编码中文（typeLabel 用英文 agent_type 值），此处同样硬编码以
-      // 保证接管时的字节级一致。将来两边一起 i18n 化时统一改。
-      const rawTasks = Array.isArray(parsed.tasks)
-        ? (parsed.tasks as unknown[])
-        : []
-      // tasks 数组还没到或为空数组时没法展示有意义信息，返回 null 让调用方保留上一次缓存
-      if (rawTasks.length === 0) return null
-
-      const globalType = asString(parsed.agent_type) || 'explore'
-      let typeLabel = globalType
-      for (const task of rawTasks) {
-        if (!task || typeof task !== 'object') continue
-        const tType = asString((task as Record<string, unknown>).agent_type) || globalType
-        if (tType !== typeLabel) { typeLabel = 'mixed'; break }
-      }
-
-      // prompt + description 累计字符数尾缀（与 write_text_file 的 content 尾缀同一套逻辑，
-      // 让用户看到每个子任务指令还在持续增长）
-      let chars = 0
-      for (const task of rawTasks) {
-        if (!task || typeof task !== 'object') continue
-        const rec = task as Record<string, unknown>
-        if (typeof rec.prompt === 'string') chars += rec.prompt.length
-        if (typeof rec.description === 'string') chars += rec.description.length
-      }
-      const progress = chars >= 100 ? ` · ${chars} ${t('file.chars')}` : ''
-
-      return `并行执行 ${rawTasks.length} 个子任务（${typeLabel}）${progress}`
-    }
-  }
-  return null
-}
-
-/**
  * Agent 抽象基类
+ *
+ * 注意：本基类不应硬编码任何具体工具名做行为分支。所有"按工具名差异化"的逻辑
+ * 都通过 `ToolDefinition._meta`（声明在工具自己的定义上）+ `tool-metadata.ts`
+ * 的 helper 完成查询，使基类对具体工具完全无感（OOP 抽象层不应穿透具体层）。
+ *
+ * 详见 SPEC.md「工具元数据驱动模型」一节。
  */
 export abstract class Agent {
   // ==================== 配置（持久化） ====================
@@ -2104,11 +1874,9 @@ export abstract class Agent {
         // 预创建（本回调）是这一原则在流式输出场景下的进一步强化：把卡片的出现时机从
         // 「执行开始」提前到「参数还在流」的阶段，避免「AI 在思考但屏幕一片空白」的体感。
         //
-        // 支持预创建的工具由 buildPreToolCallDisplay 决定：shell 命令类 (execute_command
-        // / exec)、文件读写类 (read_file / write_text_file / write_remote_text_file /
-        // edit_file)、子 Agent 调度 (dispatch_agents)。其余工具（file_search /
-        // search_knowledge / recall 等）参数短、执行快，由各自执行器无条件 addStep 已
-        // 足够；为这些工具加预创建只会增加双重维护与字段对齐风险，收益有限。
+        // 默认所有工具都生成预卡片：声明了 _meta.streamDisplay 的工具走富信息渲染，
+        // 没声明的工具走通用兜底「调用: {toolName}」。基类不知道具体工具叫什么——
+        // 展示行为完全由各自 ToolDefinition 自己声明。
         (toolCallId: string, toolName: string, partialArgs: string) => {
           if (!toolCallId) return  // 没有稳定 id 就无法与后续 executor 的 addStep 关联，跳过
 
@@ -2116,7 +1884,8 @@ export abstract class Agent {
           const lastAt = toolProgressThrottle.get(toolCallId) || 0
           if (now - lastAt < TOOL_PROGRESS_THROTTLE_MS) return
 
-          const built = buildPreToolCallDisplay(toolName, partialArgs)
+          const meta = getMetaByName(this.getAvailableTools(), toolName)
+          const built = buildPreToolCallDisplay(toolName, partialArgs, meta)
           // 解析失败时不回退显示（保留上一次已解析内容），让用户观感上是"连续增长"
           if (!run.pendingPreToolCallText) run.pendingPreToolCallText = new Map()
           const previousText = run.pendingPreToolCallText.get(toolCallId)

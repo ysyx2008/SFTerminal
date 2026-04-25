@@ -2,7 +2,7 @@
  * Word 技能工具定义
  */
 
-import type { ToolDefinition } from '../../tools'
+import type { ToolDefinition, ToolDefinitionWithMeta } from '../../tools'
 
 export const wordTools: ToolDefinition[] = [
   {
@@ -558,8 +558,17 @@ AI 写 Markdown 时仍需写出编号（如"第一章 总则"），转 Word 时�
         },
         required: ['path']
       }
+    },
+    // 流式预卡片：path 占位符兜底，markdown 字段累计字符数尾缀；
+    // 与执行器 addStep 共享同一前缀 t('word.generating_from_md')
+    _meta: {
+      streamDisplay: {
+        titleKey: 'word.generating_from_md',
+        titleField: 'path',
+        progressFields: ['markdown']
+      }
     }
-  },
+  } as ToolDefinitionWithMeta,
   // ========== 样式管理工具 ==========
   {
     type: 'function',

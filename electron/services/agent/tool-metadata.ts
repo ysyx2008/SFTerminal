@@ -8,11 +8,13 @@
  * 对应 SPEC.md「工具元数据驱动模型」一节。
  *
  * 现有 helper：
- * - getStreamPlaceholder()              "path 未到达时"的占位符文案
- * - buildStreamProgressSuffix(args, fs) 字符数尾缀
- * - formatStreamPreCardFromMeta(meta, args)        预卡片完整内容（前缀 + 尾缀），无 meta 时返回 null（调用方走兜底）
- * - formatToolCallPrefixFromMeta(meta, args)       仅前缀，供执行器 addStep 使用
- * - getMetaByName(tools, name)          从工具列表里按名查 meta
+ * - getStreamPlaceholder()                  "path 未到达时"的占位符文案
+ * - buildStreamProgressSuffix(args, fs)     字符数尾缀
+ * - formatStreamPreCardFromMeta(meta, args) 预卡片完整内容（前缀 + 尾缀），无 meta 时返回 null
+ * - formatToolCallPrefixFromMeta(meta, args) 仅前缀，供执行器 addStep 使用
+ * - buildPreToolCallDisplay(toolName, partialArgs, meta) 流式回调入口，含 partial JSON 解析与默认兜底
+ * - getMetaByName(tools, name)              从工具列表里按名查 meta
+ * - tryParsePartialJson(partial)            容错解析流式中尚未结束的 JSON 字符串
  */
 import type { ToolDefinition } from '../ai.service'
 import type { ToolDefinitionWithMeta, ToolMeta, ToolStreamDisplay } from './tools'
@@ -50,7 +52,10 @@ export function buildStreamProgressSuffix(parsed: Record<string, unknown>, field
 /**
  * 解析 streamDisplay.titleKey（可能是 string 或 (args) => string）成最终 i18n 键。
  */
-function resolveTitleKey(titleKey: ToolStreamDisplay['titleKey'], args: Record<string, unknown>): string {
+function resolveTitleKey(
+  titleKey: NonNullable<ToolStreamDisplay['titleKey']>,
+  args: Record<string, unknown>
+): string {
   return typeof titleKey === 'function' ? titleKey(args) : titleKey
 }
 
@@ -61,7 +66,11 @@ function resolveTitleKey(titleKey: ToolStreamDisplay['titleKey'], args: Record<s
  *（如 excel 的「（N 个 Sheet）」），但 prefix 部分必须经过本函数生成，
  * 才能保证和流式 pre-card 的对齐契约不漂移。
  *
- * 返回 null 表示该工具未声明 streamDisplay，调用方应自行决定 fallback 文案。
+ * customRender 优先于声明式 titleKey/titleField；customRender 返回 null 时
+ * 整体也返回 null（args 还不足以构造，调用方保留上次缓存或走兜底）。
+ *
+ * 返回 null 表示该工具未声明 streamDisplay 或暂时构造不出来，
+ * 调用方应自行决定 fallback 文案。
  */
 export function formatToolCallPrefixFromMeta(
   meta: ToolMeta | undefined,
@@ -69,6 +78,11 @@ export function formatToolCallPrefixFromMeta(
 ): string | null {
   const display = meta?.streamDisplay
   if (!display) return null
+  // 自定义渲染优先（complex 工具如 dispatch_agents 用得到）
+  if (display.customRender) {
+    return display.customRender(args)
+  }
+  if (!display.titleKey) return null
   const title = t(resolveTitleKey(display.titleKey, args))
   if (!display.titleField) return title
   const v = args[display.titleField]
@@ -79,8 +93,10 @@ export function formatToolCallPrefixFromMeta(
 /**
  * 完整预卡片内容（前缀 + 字符数尾缀）。
  *
- * 用途：流式 pre-card。返回 null 表示该工具未声明 streamDisplay，
+ * 用途：流式 pre-card。返回 null 表示该工具未声明 streamDisplay 或暂时构造不出来，
  * 调用方应使用通用兜底（`调用: {toolName}`）。
+ *
+ * 字符数来源：progressFields 累计 +（如有）customProgress 累计；总和 ≥ 100 才追加尾缀。
  */
 export function formatStreamPreCardFromMeta(
   meta: ToolMeta | undefined,
@@ -88,7 +104,18 @@ export function formatStreamPreCardFromMeta(
 ): string | null {
   const prefix = formatToolCallPrefixFromMeta(meta, args)
   if (prefix === null) return null
-  const suffix = buildStreamProgressSuffix(args, meta?.streamDisplay?.progressFields ?? [])
+  const display = meta?.streamDisplay
+  let chars = 0
+  if (display?.progressFields) {
+    for (const f of display.progressFields) {
+      const v = args[f]
+      if (typeof v === 'string') chars += v.length
+    }
+  }
+  if (display?.customProgress) {
+    chars += display.customProgress(args)
+  }
+  const suffix = chars < 100 ? '' : ` · ${chars} ${t('file.chars')}`
   return prefix + suffix
 }
 
@@ -108,4 +135,97 @@ export function getMetaByName(
     }
   }
   return undefined
+}
+
+/**
+ * 把流式到达的 partial tool_call arguments JSON 前缀容错地解析成对象。
+ *
+ * 实现思路：按结构（不做任何字段名匹配）扫描引号/括号，先把未闭合的字符串和容器
+ * 补齐成合法 JSON，再 JSON.parse。任何异常或结构残缺都返回 null，调用方负责保留
+ * 上一次成功结果，避免显示回退。
+ */
+export function tryParsePartialJson(partial: string): Record<string, unknown> | null {
+  if (!partial) return null
+  const trimmed = partial.trimStart()
+  if (!trimmed.startsWith('{')) return null
+  // 从完整 partial 开始，失败就从尾部剥一个字符再试。每次尝试都对当前的 core 独立
+  // 扫描并按 LIFO 补闭合括号——嵌套 [{ 必须先补 } 再补 ]，这一点是原实现里
+  // `while(bracket)` + `while(brace)` 线性补全处理不了的。
+  // 剥到原串一半停止（保护性上限：partial chunk 通常很短，O(n²) 足够）
+  const minCoreLen = Math.max(1, Math.floor(partial.length / 2))
+  for (let coreLen = partial.length; coreLen >= minCoreLen; coreLen--) {
+    const core = partial.slice(0, coreLen)
+    const attempt = closePartial(core)
+    if (attempt === null) continue
+    try {
+      const obj = JSON.parse(attempt) as unknown
+      if (typeof obj === 'object' && obj !== null && !Array.isArray(obj)) {
+        return obj as Record<string, unknown>
+      }
+    } catch {
+      // 继续剥
+    }
+  }
+  return null
+}
+
+/**
+ * 扫描 core 中的未闭合字符串与括号，按 LIFO 补上闭合形成一段可能合法的 JSON；
+ * core 本身若不以 `{` 开头则返回 null。
+ */
+function closePartial(core: string): string | null {
+  if (!core || !core.trimStart().startsWith('{')) return null
+  let inString = false
+  let escape = false
+  const stack: string[] = []
+  for (let i = 0; i < core.length; i++) {
+    const c = core[i]
+    if (escape) { escape = false; continue }
+    if (inString) {
+      if (c === '\\') escape = true
+      else if (c === '"') inString = false
+      continue
+    }
+    if (c === '"') inString = true
+    else if (c === '{') stack.push('}')
+    else if (c === '[') stack.push(']')
+    else if (c === '}' || c === ']') stack.pop()
+  }
+  let s = core
+  if (inString) s += '"'
+  while (stack.length > 0) s += stack.pop()
+  return s
+}
+
+/**
+ * 流式 tool_call 预创建卡片入口（透明原则的实现层）。
+ *
+ * 行为分四种情况：
+ * 1. partial JSON 无法解析 → 返回 null（上层保留上次缓存）
+ * 2. 工具声明了 streamDisplay 但当前 args 还构造不出来（如 dispatch_agents 的
+ *    tasks 数组还没到，customRender 返回 null）→ 返回 null（上层保留上次缓存）
+ * 3. 工具声明了 streamDisplay 且渲染成功 → 富信息渲染结果
+ * 4. 工具未声明 streamDisplay → 通用兜底「调用: {toolName}」
+ *    （透明原则的核心：所有工具默认都有预卡片）
+ *
+ * 关键区别：场景 2 vs 4——前者要保留上次"已经构造好的富信息"，避免从富信息
+ * 退化到通用兜底；后者从一开始就是通用兜底，没有富信息可保留。
+ *
+ * @param toolName    AI 流式中的工具名
+ * @param partialArgs 当前已到达的 args 字符串（可能不完整）
+ * @param meta        来自 ToolDefinition._meta 的元数据，调用方负责按 toolName 查表
+ */
+export function buildPreToolCallDisplay(
+  toolName: string,
+  partialArgs: string,
+  meta: ToolMeta | undefined
+): string | null {
+  const parsed = tryParsePartialJson(partialArgs)
+  if (!parsed) return null
+  // 工具声明了 streamDisplay：尝试富信息渲染
+  if (meta?.streamDisplay) {
+    return formatStreamPreCardFromMeta(meta, parsed)
+  }
+  // 未声明 streamDisplay 的工具走通用兜底（透明原则默认值）
+  return `${t('status.calling')}: ${toolName}`
 }

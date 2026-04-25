@@ -7,6 +7,10 @@
  * - 本测试从公开契约层面固定：哪些工具在流式阶段就要有预卡片、长参数工具何时开始
  *   追加字符数尾缀、尾缀格式长什么样。
  *
+ * 工具元数据驱动重构后：buildPreToolCallDisplay 接受 ToolMeta 参数，
+ * 测试通过把工具列表注册表里对应工具的 _meta 取出来传入。本测试用一个简单的
+ * registry helper 模拟运行时按工具名查 meta 的行为（与 agent.ts 实际做法一致）。
+ *
  * 纯函数测试，无需 mock。
  */
 import { describe, it, expect, vi } from 'vitest'
@@ -27,7 +31,46 @@ vi.mock('../../im/im.service', () => ({
   getIMService: vi.fn().mockReturnValue(null)
 }))
 
-import { buildPreToolCallDisplay } from '../agent'
+// user-skill 服务在初始化时会写盘，测试环境屏蔽掉
+vi.mock('../../user-skill.service', () => ({
+  getUserSkillService: () => ({ getEnabledSkills: () => [] })
+}))
+
+vi.mock('../../config.service', () => ({
+  getConfigService: () => ({ get: () => undefined })
+}))
+
+vi.mock('../../web-search/index', () => ({
+  isConfigured: () => false
+}))
+
+import { buildPreToolCallDisplay as rawBuildPreToolCallDisplay, getMetaByName } from '../tool-metadata'
+import type { ToolDefinition } from '../../ai.service'
+import { getAgentTools } from '../tools'
+import { getAllTerminalTools } from '../skills/terminal/tools'
+import { wordTools } from '../skills/word/tools'
+import { excelTools } from '../skills/excel/tools'
+
+/**
+ * 测试用工具注册表：直接静态 import 各 tool 定义文件得到带 _meta 的工具列表。
+ * 真实运行时 agent.ts 通过 `getMetaByName(this.getAvailableTools(), name)` 查 meta，
+ * 测试这里用同样的 helper 在静态构造好的列表上查。
+ *
+ * 这样测试纯粹聚焦 metadata 渲染契约，不需要拉起完整 Agent / Service 栈。
+ */
+// 同时拿 assistant 和 ssh 两种模式的工具，把 write_text_file / write_remote_text_file 都覆盖到
+const allTools: ToolDefinition[] = [
+  ...getAgentTools(undefined, { mode: 'assistant' }),
+  ...getAgentTools(undefined, { mode: 'ssh' }),
+  ...getAllTerminalTools(),
+  ...wordTools,
+  ...excelTools
+]
+
+function buildPreToolCallDisplay(toolName: string, partialArgs: string): string | null {
+  const meta = getMetaByName(allTools, toolName)
+  return rawBuildPreToolCallDisplay(toolName, partialArgs, meta)
+}
 
 describe('buildPreToolCallDisplay', () => {
   describe('shell 命令类工具', () => {
@@ -59,9 +102,16 @@ describe('buildPreToolCallDisplay', () => {
       expect(out).toBe(`执行命令: ${longCmd}`)
     })
 
-    it('partial JSON 中 command 还没流到时返回 null', () => {
+    it('partial JSON 中 command 还没流到时返回 null（无法解析的 partial）', () => {
       const out = buildPreToolCallDisplay('execute_command', '{"command')
       expect(out).toBeNull()
+    })
+
+    it('空对象 {} 走占位符兜底（透明原则：工具名命中即显示卡片）', () => {
+      // OOP 重构前对 execute_command 的 {} 返回 null（要求 command 字段必到）；
+      // 重构后统一走 titleField 占位符语义，"{}"也立刻有占位卡片
+      const out = buildPreToolCallDisplay('execute_command', '{}')
+      expect(out).toBe('执行命令: 生成中…')
     })
 
     it('容错解析：流式中字符串未闭合也能取出已有 command 前缀', () => {
@@ -504,32 +554,32 @@ describe('buildPreToolCallDisplay', () => {
     })
   })
 
-  describe('非预创建工具', () => {
-    it('file_search 返回 null', () => {
-      expect(
-        buildPreToolCallDisplay('file_search', JSON.stringify({ query: 'foo' }))
-      ).toBeNull()
+  describe('未声明 streamDisplay 的工具走"调用: {toolName}"通用兜底（透明原则默认开）', () => {
+    it('file_search（短参数信息检索类，未声明 streamDisplay）展示通用兜底', () => {
+      // OOP 重构前为这类工具不显示卡片（违反透明原则）；
+      // 重构后基类按统一兜底「调用: {toolName}」处理，保证流式期间用户能看到 Agent 在做什么
+      const out = buildPreToolCallDisplay('file_search', JSON.stringify({ query: 'foo' }))
+      expect(out).toBe('调用: file_search')
     })
 
-    it('未知工具返回 null', () => {
-      expect(
-        buildPreToolCallDisplay('totally_unknown_tool', '{"foo": "bar"}')
-      ).toBeNull()
+    it('未知工具（如 MCP / plugin 工具）也走通用兜底', () => {
+      const out = buildPreToolCallDisplay('totally_unknown_tool', '{"foo": "bar"}')
+      expect(out).toBe('调用: totally_unknown_tool')
+    })
+
+    it('未知工具 + 空对象 {} 同样有兜底', () => {
+      const out = buildPreToolCallDisplay('totally_unknown_tool', '{}')
+      expect(out).toBe('调用: totally_unknown_tool')
     })
   })
 
   describe('容错边界', () => {
-    it('空字符串返回 null', () => {
+    it('空字符串返回 null（partial JSON 还没开始）', () => {
       expect(buildPreToolCallDisplay('execute_command', '')).toBeNull()
     })
 
-    it('非 JSON 对象返回 null', () => {
+    it('非 JSON 对象返回 null（不可解析）', () => {
       expect(buildPreToolCallDisplay('execute_command', 'not json')).toBeNull()
-    })
-
-    it('空对象 {} 对命令类工具仍返回 null（没有 command 无法展示）', () => {
-      // write_text_file / edit_file 的空对象行为在各自 describe 中已测（用占位符显示卡片）
-      expect(buildPreToolCallDisplay('execute_command', '{}')).toBeNull()
     })
   })
 })

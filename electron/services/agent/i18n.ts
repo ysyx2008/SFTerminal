@@ -33,6 +33,7 @@ const translations = {
 
     // 执行状态
     'status.executing': '执行命令',
+    'status.calling': '调用',
     'status.timed_execution': '定时执行',
     'status.command_blocked': '命令被阻止',
     'status.terminal_busy': '终端忙碌中，需要等待',
@@ -1335,6 +1336,7 @@ const translations = {
 
     // Execution status
     'status.executing': 'Executing',
+    'status.calling': 'Calling',
     'status.timed_execution': 'Timed execution',
     'status.command_blocked': 'Command blocked',
     'status.terminal_busy': 'Terminal busy, please wait',

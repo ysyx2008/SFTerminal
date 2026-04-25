@@ -9,6 +9,8 @@ import { getUserSkillService } from '../user-skill.service'
 import { getConfigService } from '../config.service'
 import { isConfigured as isWebSearchConfigured } from '../web-search/index'
 import type { AgentExecutionPhase } from './types'
+import { t } from './i18n'
+import { getStreamPlaceholder } from './tool-metadata'
 
 // 重新导出 ToolDefinition 类型供技能模块使用
 export type { ToolDefinition }
@@ -21,15 +23,23 @@ export type AgentMode = TerminalType
 /**
  * 流式预卡片展示配置
  *
- * pre-card 和执行器 addStep 都通过 formatStreamPreCard / formatToolDisplayPrefix
- * 消费这些字段，对齐变成代码级机械保证（详见 tool-metadata.ts）。
+ * pre-card 和执行器 addStep 都通过 formatStreamPreCardFromMeta /
+ * formatToolCallPrefixFromMeta 消费这些字段，对齐变成代码级机械保证
+ *（详见 tool-metadata.ts）。
+ *
+ * 两种模式：
+ * - 「声明式」（推荐）：填 titleKey + titleField + progressFields，覆盖绝大多数场景
+ * - 「自定义渲染」：极少数复杂工具（如 dispatch_agents 要根据子任务数量构造文案）
+ *   填 customRender，本字段优先级最高，命中后忽略 title* 字段
+ *
+ * 两种模式都支持 progressFields 共同的字符数尾缀。
  */
 export interface ToolStreamDisplay {
   /**
    * 标题前缀的 i18n 键，或根据 args 动态返回 i18n 键的函数。
    * 复杂工具（如 write_text_file 按 mode 切换标题）写函数；简单工具直接写 string。
    */
-  titleKey: string | ((args: Record<string, unknown>) => string)
+  titleKey?: string | ((args: Record<string, unknown>) => string)
   /**
    * args 里取哪个字段作为副标题（path / command / query 等）。
    * AI 还没流到此字段时会用占位符兜底，避免长字段流式期间卡片不出现。
@@ -41,6 +51,19 @@ export interface ToolStreamDisplay {
    * 用于让 AI 流式输出长字段时用户能看到字符数在跳动。
    */
   progressFields?: string[]
+  /**
+   * 自定义渲染函数（可选），返回**前缀**（不含字符数尾缀）。
+   * 命中后忽略 titleKey/titleField，但 progressFields / customProgress 仍生效（统一加在末尾）。
+   * 返回 null 表示当前 args 还不足以构造（如 dispatch_agents 的 tasks 数组还没到），
+   * 让调用方保留上一次缓存内容，避免"闪一下又消失"。
+   */
+  customRender?: (args: Record<string, unknown>) => string | null
+  /**
+   * 自定义字符数计算（可选），用于 progressFields 表达不了的嵌套字段累计场景
+   *（如 dispatch_agents 的 tasks[].prompt + tasks[].description）。
+   * 返回 0 或 < 100 时不显示尾缀；progressFields 与 customProgress 同时存在时会累加。
+   */
+  customProgress?: (args: Record<string, unknown>) => number
 }
 
 /**
@@ -105,6 +128,93 @@ export interface ToolMeta {
  */
 export interface ToolDefinitionWithMeta extends ToolDefinition {
   _meta?: ToolMeta
+}
+
+// ============================================================================
+// streamDisplay customRender 辅助函数
+// ============================================================================
+
+/**
+ * write_text_file / write_remote_text_file 的预卡片标题渲染。
+ * 按 mode 切换 6 种文案；path 未到时占位符兜底；不含字符数尾缀（progressFields 单独负责）。
+ */
+function writeTextFilePrefix(args: Record<string, unknown>): string {
+  const path = typeof args.path === 'string' ? args.path : getStreamPlaceholder()
+  const mode = typeof args.mode === 'string' ? args.mode : 'create'
+  const insertAtLine = typeof args.insert_at_line === 'number' ? args.insert_at_line : undefined
+  const startLine = typeof args.start_line === 'number' ? args.start_line : undefined
+  const endLine = typeof args.end_line === 'number' ? args.end_line : undefined
+  const replaceAll = typeof args.replace_all === 'boolean' ? args.replace_all : true
+  switch (mode) {
+    case 'overwrite': return `${t('file.overwrite')}: ${path}`
+    case 'append': return `${t('file.append')}: ${path}`
+    case 'insert':
+      return insertAtLine !== undefined
+        ? `${t('file.insert_at_line', { line: insertAtLine })}: ${path}`
+        : `${t('file.create')}: ${path}`
+    case 'replace_lines':
+      return startLine !== undefined && endLine !== undefined
+        ? `${t('file.replace_lines', { start: startLine, end: endLine })}: ${path}`
+        : `${t('file.create')}: ${path}`
+    case 'regex_replace':
+      return `${t('file.regex_replace', { scope: replaceAll ? t('file.regex_scope_all') : t('file.regex_scope_first') })}: ${path}`
+    case 'create':
+    default:
+      return `${t('file.create')}: ${path}`
+  }
+}
+
+/**
+ * dispatch_agents 的预卡片渲染。
+ * 内容格式必须与 tools/sub-agent.ts 执行器 addStep 的 content 对齐：
+ *   "并行执行 {N} 个子任务（{typeLabel}）"
+ * tasks 数组还没到或为空时返回 null（上层调用方保留缓存）。
+ *
+ * 注：执行器目前硬编码中文（typeLabel 用英文 agent_type 值），此处同样硬编码以
+ * 保证接管时的字节级一致；将来两边一起 i18n 化时统一改。
+ */
+function dispatchAgentsPrefix(args: Record<string, unknown>): string | null {
+  const rawTasks = Array.isArray(args.tasks) ? (args.tasks as unknown[]) : []
+  if (rawTasks.length === 0) return null
+
+  const globalType = typeof args.agent_type === 'string' ? args.agent_type : 'explore'
+  let typeLabel = globalType
+  for (const task of rawTasks) {
+    if (!task || typeof task !== 'object') continue
+    const tType = (task as { agent_type?: unknown }).agent_type
+    const resolved = typeof tType === 'string' ? tType : globalType
+    if (resolved !== typeLabel) {
+      typeLabel = 'mixed'
+      break
+    }
+  }
+  return `并行执行 ${rawTasks.length} 个子任务（${typeLabel}）`
+}
+
+/**
+ * read_file 的预卡片标题切换：info_only=true 时显示"读取文件 (仅查询信息)"，否则"读取文件"。
+ * 提到顶层避免每次 getAgentTools 调用都生成新的函数引用（影响 toEqual 比较与 prompt cache）。
+ */
+function readFileTitleKey(args: Record<string, unknown>): string {
+  return (args as { info_only?: unknown }).info_only === true
+    ? 'file.reading_info_only'
+    : 'file.reading'
+}
+
+/**
+ * dispatch_agents 的字符数累计：tasks[].prompt + tasks[].description 嵌套字段。
+ * 用 customProgress 暴露给 formatStreamPreCardFromMeta，让用户看到子任务指令在持续增长。
+ */
+function dispatchAgentsCharCount(args: Record<string, unknown>): number {
+  const rawTasks = Array.isArray(args.tasks) ? (args.tasks as unknown[]) : []
+  let chars = 0
+  for (const task of rawTasks) {
+    if (!task || typeof task !== 'object') continue
+    const rec = task as { prompt?: unknown; description?: unknown }
+    if (typeof rec.prompt === 'string') chars += rec.prompt.length
+    if (typeof rec.description === 'string') chars += rec.description.length
+  }
+  return chars
 }
 
 /**
@@ -259,8 +369,12 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
             required: ['command']
           }
         },
-        // 命令本身就是这个工具的"主语"，幂等键只取 command（cwd / timeout 不影响"是否同一条命令"）
-        _meta: { idempotencyKey: ['command'] }
+        _meta: {
+          // 命令本身就是这个工具的"主语"，幂等键只取 command（cwd / timeout 不影响"是否同一条命令"）
+          idempotencyKey: ['command'],
+          // 流式预卡片：标题 + command 字段；命令文本本身在流式增长，不加字符数尾缀
+          streamDisplay: { titleKey: 'status.executing', titleField: 'command' }
+        }
       }
     : null
 
@@ -295,7 +409,12 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           required: ['path']
         }
       },
-      _meta: { supportedModes: ['local', 'assistant'], parallelizable: true }
+      _meta: {
+        supportedModes: ['local', 'assistant'],
+        parallelizable: true,
+        // 标题按 info_only 切换："读取文件" vs "读取文件 (仅查询信息)"，path 字段做副标题
+        streamDisplay: { titleKey: readFileTitleKey, titleField: 'path' }
+      }
     } as ToolDefinitionWithMeta,
     {
       type: 'function',
@@ -398,7 +517,16 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           required: ['path', 'old_text', 'new_text']
         }
       },
-      _meta: { supportedModes: ['local', 'assistant'], phase: 'writing_file' }
+      _meta: {
+        supportedModes: ['local', 'assistant'],
+        phase: 'writing_file',
+        // 同 write_text_file：path 未到时占位符兜底，old_text + new_text 累计字符数尾缀
+        streamDisplay: {
+          titleKey: 'file.edit',
+          titleField: 'path',
+          progressFields: ['old_text', 'new_text']
+        }
+      }
     } as ToolDefinitionWithMeta,
     {
       type: 'function',
@@ -431,7 +559,16 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           required: ['path']
         }
       },
-      _meta: { supportedModes: ['local', 'assistant'], phase: 'writing_file' }
+      _meta: {
+        supportedModes: ['local', 'assistant'],
+        phase: 'writing_file',
+        // 流式预卡片：mode 切换 6 种文案，path 占位符兜底，content 累计字符数尾缀。
+        // customRender 只负责前缀，progressFields 在外层统一加尾缀。
+        streamDisplay: {
+          customRender: writeTextFilePrefix,
+          progressFields: ['content']
+        }
+      }
     } as ToolDefinitionWithMeta,
     // ==================== 父 Agent 专用工具 ====================
     {
@@ -459,7 +596,15 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           required: ['path', 'content']
         }
       },
-      _meta: { supportedModes: ['ssh'], phase: 'writing_file' }
+      _meta: {
+        supportedModes: ['ssh'],
+        phase: 'writing_file',
+        // 与 write_text_file 共享同一套预卡片渲染（mode 切换文案、path 占位符、字符数尾缀）
+        streamDisplay: {
+          customRender: writeTextFilePrefix,
+          progressFields: ['content']
+        }
+      }
     } as ToolDefinitionWithMeta,
     {
       type: 'function',
@@ -660,7 +805,15 @@ Agent 类型：
           required: ['tasks']
         }
       },
-      _meta: { supportedModes: ['local', 'assistant'] }
+      _meta: {
+        supportedModes: ['local', 'assistant'],
+        // 流式预卡片：tasks 数组才能确定文案，customRender 处理 N + agent_type；
+        // 字符数从 tasks[].prompt + tasks[].description 嵌套累加，用 customProgress
+        streamDisplay: {
+          customRender: dispatchAgentsPrefix,
+          customProgress: dispatchAgentsCharCount
+        }
+      }
     } as ToolDefinitionWithMeta,
     // ==================== 发消息给用户 ====================
     {
