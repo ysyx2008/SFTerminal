@@ -160,13 +160,20 @@ export class BM25Index extends EventEmitter {
 
   /**
    * 批量添加文档
+   * @param docs 待添加文档列表
+   * @param options.skipSave 跳过 saveIndex 持久化（用于重建场景外层统一保存，
+   *   避免每批都序列化整个索引导致 O(N²) 复杂度）
    */
-  async addDocuments(docs: Omit<BM25Document, 'tokens'>[]): Promise<void> {
+  async addDocuments(
+    docs: Omit<BM25Document, 'tokens'>[],
+    options?: { skipSave?: boolean }
+  ): Promise<void> {
     for (const doc of docs) {
       await this.addDocument(doc)
     }
-    // 保存索引
-    await this.saveIndex()
+    if (!options?.skipSave) {
+      await this.saveIndex()
+    }
   }
 
   /**

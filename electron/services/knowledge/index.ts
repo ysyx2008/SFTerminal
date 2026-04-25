@@ -332,7 +332,9 @@ export class KnowledgeService extends EventEmitter {
 
       if (needRebuildBM25) {
         try {
-          await this.bm25Index.addDocuments(batchBm25Docs)
+          // skipSave=true：重建过程中不每批都 saveIndex（避免 O(N²) 序列化），
+          // 由循环结束后统一 saveIndex 一次。
+          await this.bm25Index.addDocuments(batchBm25Docs, { skipSave: true })
         } catch (e) {
           log.error('BM25 批量写入失败，跳过此批:', e)
         }
@@ -397,6 +399,15 @@ export class KnowledgeService extends EventEmitter {
       } catch (batchError) {
         log.error('向量批量写入失败（最后一批）:', batchError)
         needRebuildVector = false
+      }
+    }
+
+    // BM25 重建期间跳过了每批的 saveIndex，循环结束后统一保存一次
+    if (needRebuildBM25) {
+      try {
+        await this.bm25Index.saveIndex()
+      } catch (e) {
+        log.warn('BM25 saveIndex (重建结束) 失败:', e)
       }
     }
     
