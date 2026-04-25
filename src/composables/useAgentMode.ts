@@ -451,8 +451,10 @@ export function useAgentMode(
       // 初始等待提示由后端以 thinking step（"正在准备..."）承载，前端不再额外插入虚拟项
 
       if (group.steps.length > 0) {
-        // 调试模式 OFF 时，隐藏"成功且无用户必看产出"的 tool_result step（详见 utils/tool-display.ts）。
-        // 失败 / 写入类 / 携带富内容字段（图片、搜索结果、子 Agent）的 step 永远展示。
+        // 调试模式 OFF 时，隐藏"成功且无用户必看产出"的 tool_call / tool_result step
+        // （详见 utils/tool-display.ts）。失败 / 写入类 / 携带富内容字段（图片、搜索结果、
+        // 子 Agent）的 step 永远展示；专用 step type 工具（plan/ask_user/wait）的双卡也会
+        // 一并隐藏，让位给专用卡。
         const debugMode = configStore.agentDebugMode
         const visibleSteps = group.steps.filter(s => shouldShowToolResultStep(s, debugMode))
         for (let i = 0; i < visibleSteps.length; i++) {
