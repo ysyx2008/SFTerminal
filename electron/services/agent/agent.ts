@@ -1081,7 +1081,9 @@ export abstract class Agent {
       toolResult: s.toolResult,
       riskLevel: s.riskLevel,
       timestamp: s.timestamp,
-      webSearchResults: s.webSearchResults
+      webSearchResults: s.webSearchResults,
+      success: s.success,
+      subAgents: s.subAgents
     }))
     
     const record: AgentRecord = {
@@ -1130,7 +1132,9 @@ export abstract class Agent {
       toolResult: s.toolResult,
       riskLevel: s.riskLevel,
       timestamp: s.timestamp,
-      webSearchResults: s.webSearchResults
+      webSearchResults: s.webSearchResults,
+      success: s.success,
+      subAgents: s.subAgents
     }))
     
     // 合并 API 消息
@@ -2570,6 +2574,9 @@ export abstract class Agent {
    * 确保工具执行后有 tool_result 步骤（内置工具自己添加，技能工具可能缺失）
    *
    * 通过 toolName 匹配对应工具的 tool_result，适用于顺序、并行、流式预执行等各种路径。
+   *
+   * 同时回填 `success` 字段到工具自己 emit 的 tool_result 卡上——前端依据
+   * `step.success === false` 决定是否在非调试模式下也展开详情区，让用户看到错误。
    */
   private ensureToolResultStep(
     run: AgentRun,
@@ -2578,6 +2585,14 @@ export abstract class Agent {
     result: ToolResult
   ): void {
     const newSteps = run.steps.slice(stepCountBefore)
+
+    // 回填 success 到工具自己 emit 的 tool_result 卡（可能有多张，全部回填）
+    for (const s of newSteps) {
+      if (s.type === 'tool_result' && s.toolName === toolName && s.success === undefined) {
+        this.updateStep(s.id, { success: result.success })
+      }
+    }
+
     if (newSteps.some(s => s.type === 'error' || (s.type === 'tool_result' && s.toolName === toolName))) return
 
     if (!result.success) {
@@ -2586,7 +2601,8 @@ export abstract class Agent {
         type: 'tool_result',
         content: `❌ ${toolName}`,
         toolName,
-        toolResult: errorMsg
+        toolResult: errorMsg,
+        success: false
       })
     } else if (result.output) {
       const preview = result.output.length > 200
@@ -2596,7 +2612,8 @@ export abstract class Agent {
         type: 'tool_result',
         content: `✅ ${toolName}`,
         toolName,
-        toolResult: preview
+        toolResult: preview,
+        success: true
       })
     }
   }

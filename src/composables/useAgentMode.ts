@@ -12,6 +12,7 @@ import type { ExecutionMode, AttachmentInfo } from '@shared/types'
 import type { AgentStep, AgentState } from '../stores/terminal'
 import { createLogger } from '../utils/logger'
 import { useTts } from './useTts'
+import { shouldShowToolResultStep } from '../utils/tool-display'
 
 const log = createLogger('Agent')
 
@@ -450,8 +451,12 @@ export function useAgentMode(
       // 初始等待提示由后端以 thinking step（"正在准备..."）承载，前端不再额外插入虚拟项
 
       if (group.steps.length > 0) {
-        for (let i = 0; i < group.steps.length; i++) {
-          const step = group.steps[i]
+        // 调试模式 OFF 时，隐藏"成功且无用户必看产出"的 tool_result step（详见 utils/tool-display.ts）。
+        // 失败 / 写入类 / 携带富内容字段（图片、搜索结果、子 Agent）的 step 永远展示。
+        const debugMode = configStore.agentDebugMode
+        const visibleSteps = group.steps.filter(s => shouldShowToolResultStep(s, debugMode))
+        for (let i = 0; i < visibleSteps.length; i++) {
+          const step = visibleSteps[i]
           const isFirst = i === 0
           const size = step.type === 'message'
             ? Math.max(80, Math.ceil(step.content.length / 4))

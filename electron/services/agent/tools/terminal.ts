@@ -378,14 +378,12 @@ export async function sendControlKey(
     
     const terminalOutput = await waitForStableOutput(ptyId)
 
-    if (config.debugMode) {
-      executor.addStep({
-        type: 'tool_result',
-        content: `${t('control.key_sent')} ${key}`,
-        toolName: 'send_control_key',
-        toolResult: terminalOutput ? truncateFromEnd(terminalOutput, 300) : t('control.key_sent_result')
-      })
-    }
+    executor.addStep({
+      type: 'tool_result',
+      content: `${t('control.key_sent')} ${key}`,
+      toolName: 'send_control_key',
+      toolResult: terminalOutput ? truncateFromEnd(terminalOutput, 300) : t('control.key_sent_result')
+    })
 
     return { 
       success: true, 
@@ -437,15 +435,13 @@ export async function sendInput(
     const terminalOutput = await waitForStableOutput(ptyId)
 
     const inputDesc = `"${text}"${pressEnter ? ' + Enter' : ''}`
-    
-    if (config.debugMode) {
-      executor.addStep({
-        type: 'tool_result',
-        content: `${t('input.sent')}: ${inputDesc}`,
-        toolName: 'send_input',
-        toolResult: terminalOutput ? truncateFromEnd(terminalOutput, 300) : t('input.sent')
-      })
-    }
+
+    executor.addStep({
+      type: 'tool_result',
+      content: `${t('input.sent')}: ${inputDesc}`,
+      toolName: 'send_input',
+      toolResult: terminalOutput ? truncateFromEnd(terminalOutput, 300) : t('input.sent')
+    })
 
     return { 
       success: true, 

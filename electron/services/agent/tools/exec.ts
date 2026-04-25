@@ -149,14 +149,12 @@ export async function executeCommandDirect(
       }
 
       const output = truncateFromEnd(combined, 8000)
-      if (config.debugMode) {
-        executor.addStep({
-          type: 'tool_result',
-          content: `${t('status.command_complete')} (exit: ${exitCode})`,
-          toolName: 'exec',
-          toolResult: output
-        })
-      }
+      executor.addStep({
+        type: 'tool_result',
+        content: `${t('status.command_complete')} (exit: ${exitCode})`,
+        toolName: 'exec',
+        toolResult: output
+      })
 
       const finalOutput = userApproved ? `[${t('status.user_approved')}]\n${output}` : output
 

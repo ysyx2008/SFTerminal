@@ -7,6 +7,7 @@ import {
   Clock, Heart, Globe, Zap, FolderOpen, Calendar, Mail,
   LayoutTemplate, Plus, Sparkles, Pencil, Fingerprint, UserRound, HeartPulse, Camera
 } from 'lucide-vue-next'
+import { shouldShowToolResultStep } from '../utils/tool-display'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -69,11 +70,24 @@ const runningWatches = ref<Set<string>>(new Set())
 // 手动触发时的 Agent 实时输出（内心独白）
 const WATCH_AGENT_ID = '__watch__'
 const liveExecutionWatchId = ref<string | null>(null)
-const liveSteps = ref<Array<{ id: string; type: string; content: string; toolName?: string; toolResult?: string }>>([])
+// 字段需要包含 success / images / webSearchResults / subAgents，
+// 以便 shouldShowToolResultStep 能正确判定"失败 / 富内容"步骤始终展示
+type LiveStep = {
+  id: string
+  type: string
+  content: string
+  toolName?: string
+  toolResult?: string
+  success?: boolean
+  images?: string[]
+  webSearchResults?: unknown[]
+  subAgents?: unknown[]
+}
+const liveSteps = ref<LiveStep[]>([])
 
 // 执行历史详情查看
 const selectedHistoryRecord = ref<WatchHistoryRecord | null>(null)
-const historyDetailSteps = ref<Array<{ id: string; type: string; content: string; toolName?: string; toolArgs?: Record<string, unknown>; toolResult?: string; riskLevel?: string; timestamp: number }>>([])
+const historyDetailSteps = ref<Array<{ id: string; type: string; content: string; toolName?: string; toolArgs?: Record<string, unknown>; toolResult?: string; riskLevel?: string; timestamp: number; success?: boolean; images?: string[]; webSearchResults?: unknown[]; subAgents?: unknown[] }>>([])
 const historyDetailLoading = ref(false)
 const historyDetailUserTask = ref('')
 const historyDetailFinalResult = ref('')
@@ -81,10 +95,18 @@ const historyPromptExpanded = ref(false)
 
 const HIDDEN_STEP_TYPES = new Set(['user_task', 'streaming', 'waiting', 'waiting_password', 'confirm'])
 const filteredSteps = computed(() => {
-  const steps = historyDetailSteps.value.filter(s => !HIDDEN_STEP_TYPES.has(s.type))
+  const debugMode = configStore.agentDebugMode
+  const steps = historyDetailSteps.value
+    .filter(s => !HIDDEN_STEP_TYPES.has(s.type))
+    .filter(s => shouldShowToolResultStep(s, debugMode))
   const finalResult = steps.find(s => s.type === 'final_result')
   if (!finalResult) return steps
   return steps.filter(s => s.type === 'final_result' || s.content !== finalResult.content)
+})
+
+const visibleLiveSteps = computed(() => {
+  const debugMode = configStore.agentDebugMode
+  return liveSteps.value.filter(s => shouldShowToolResultStep(s, debugMode))
 })
 
 const templates = ref<WatchTemplateInfo[]>([])
@@ -860,11 +882,16 @@ onMounted(async () => {
     }
   }) ?? null
   // 监听关切助手的 Agent 步骤，用于详情面板展示内心独白
-  cleanupAgentStep = window.electronAPI.agent.onStep((data: { agentId: string; step: { id: string; type: string; content: string; toolName?: string; toolResult?: string } }) => {
+  cleanupAgentStep = window.electronAPI.agent.onStep((data: { agentId: string; step: { id: string; type: string; content: string; toolName?: string; toolResult?: string; success?: boolean; images?: string[]; webSearchResults?: unknown[]; subAgents?: unknown[] } }) => {
     if (data.agentId !== WATCH_AGENT_ID || !liveExecutionWatchId.value) return
     const step = data.step
     const idx = liveSteps.value.findIndex(s => s.id === step.id)
-    const entry = { id: step.id, type: step.type, content: step.content, toolName: step.toolName, toolResult: step.toolResult }
+    const entry: LiveStep = {
+      id: step.id, type: step.type, content: step.content,
+      toolName: step.toolName, toolResult: step.toolResult,
+      success: step.success, images: step.images,
+      webSearchResults: step.webSearchResults, subAgents: step.subAgents
+    }
     if (idx >= 0) {
       liveSteps.value[idx] = entry
     } else {
@@ -1380,11 +1407,11 @@ onUnmounted(() => {
                       <div class="prompt-content">{{ selectedWatch.prompt }}</div>
                     </div>
                     <!-- 手动触发时的 Agent 内心独白（实时执行过程） -->
-                    <div class="detail-section live-output-section" v-if="selectedWatch.id === liveExecutionWatchId && liveSteps.length > 0">
+                    <div class="detail-section live-output-section" v-if="selectedWatch.id === liveExecutionWatchId && visibleLiveSteps.length > 0">
                       <h4>{{ t('watch.liveOutput') }}</h4>
                       <div class="live-steps">
                         <div
-                          v-for="step in liveSteps"
+                          v-for="step in visibleLiveSteps"
                           :key="step.id"
                           class="live-step"
                           :class="[step.type, step.type === 'thinking' ? 'step-thinking' : '']"

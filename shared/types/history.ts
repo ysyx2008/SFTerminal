@@ -17,6 +17,10 @@ export interface AgentStepRecord {
   timestamp: number
   /** Web 搜索结构化结果（web_search 工具专用） */
   webSearchResults?: import('./agent').WebSearchResultItem[]
+  /** 工具执行成败标识，前端据此判断"失败的 tool_result 必须显示" */
+  success?: boolean
+  /** 并行子 Agent 卡片组（dispatch_agents 工具专用） */
+  subAgents?: import('./agent').SubAgentResult[]
 }
 
 export interface AgentRecord {

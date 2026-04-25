@@ -521,7 +521,7 @@ export async function loadSkillTool(
       type: 'tool_result',
       content: simpleOutput,
       toolName: 'load_skill',
-      toolResult: skillContent || (config.debugMode && toolsList ? toolsList : undefined)
+      toolResult: skillContent || toolsList || undefined
     })
     
     return { success: true, output: detailOutput }

@@ -1122,6 +1122,8 @@ export const useTerminalStore = defineStore('terminal', () => {
       riskLevel?: string
       timestamp: number
       webSearchResults?: import('@shared/types').WebSearchResultItem[]
+      success?: boolean
+      subAgents?: import('@shared/types').SubAgentResult[]
     }>
     finalResult?: string
     duration: number
@@ -1142,7 +1144,9 @@ export const useTerminalStore = defineStore('terminal', () => {
       toolResult: s.toolResult,
       riskLevel: s.riskLevel as RiskLevel | undefined,
       timestamp: s.timestamp,
-      webSearchResults: s.webSearchResults
+      webSearchResults: s.webSearchResults,
+      success: s.success,
+      subAgents: s.subAgents
     }))
     
     // 兼容旧数据：确保有 user_task 和 final_result 步骤

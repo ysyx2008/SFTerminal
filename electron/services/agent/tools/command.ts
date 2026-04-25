@@ -325,15 +325,13 @@ export async function executeCommand(
     }
 
     terminalStateService.completeCommandExecution(ptyId, 0, 'completed')
-    
-    if (config.debugMode) {
-      executor.addStep({
-        type: 'tool_result',
-        content: `${t('status.command_complete')} (${t('misc.duration')}: ${result.duration}ms)`,
-        toolName: 'execute_command',
-        toolResult: result.output
-      })
-    }
+
+    executor.addStep({
+      type: 'tool_result',
+      content: `${t('status.command_complete')} (${t('misc.duration')}: ${result.duration}ms)`,
+      toolName: 'execute_command',
+      toolResult: result.output
+    })
 
     const output = userApproved 
       ? `[${t('status.user_approved')}]\n${result.output}`
@@ -494,16 +492,14 @@ async function executeSudoCommand(
         content: t('password.verification_complete')
       })
     }
-    
-    if (config.debugMode) {
-      executor.addStep({
-        type: 'tool_result',
-        content: t('status.command_complete'),
-        toolName: 'execute_command',
-        toolResult: cleanOutput
-      })
-    }
-    
+
+    executor.addStep({
+      type: 'tool_result',
+      content: t('status.command_complete'),
+      toolName: 'execute_command',
+      toolResult: cleanOutput
+    })
+
     return { success: true, output: cleanOutput }
     
   } catch (error) {
