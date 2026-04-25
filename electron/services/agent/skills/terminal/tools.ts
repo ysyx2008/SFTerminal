@@ -5,12 +5,12 @@
  * 基础工具集不包含这些，由 terminal 技能加载后提供。
  */
 
-import type { ToolDefinition } from '../../tools'
+import type { ToolDefinition, ToolDefinitionWithMeta } from '../../tools'
 
 /**
  * PTY 版 execute_command 工具定义
  */
-export const ptyExecuteCommandTool: ToolDefinition = {
+export const ptyExecuteCommandTool: ToolDefinitionWithMeta = {
   type: 'function',
   function: {
     name: 'execute_command',
@@ -53,7 +53,9 @@ export const ptyExecuteCommandTool: ToolDefinition = {
       },
       required: ['command']
     }
-  }
+  },
+  // 命令本身就是这个工具的"主语"，幂等键只取 command（cwd / timeout 不影响"是否同一条命令"）
+  _meta: { idempotencyKey: ['command'] }
 }
 
 /**

@@ -256,7 +256,9 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
             },
             required: ['command']
           }
-        }
+        },
+        // 命令本身就是这个工具的"主语"，幂等键只取 command（cwd / timeout 不影响"是否同一条命令"）
+        _meta: { idempotencyKey: ['command'] }
       }
     : null
 
@@ -737,24 +739,35 @@ Agent 类型：
     filteredTools.push(...getContextManagementTools())
   }
 
-  // 清理内部元数据，避免发送到 API 浪费 token
-  const cleanTools = filteredTools.map(tool => {
-    const { _meta, ...clean } = tool as ToolDefinitionWithMeta
-    return clean as ToolDefinition
-  })
-
+  // 注意：保留 _meta 字段，让 Agent 基类能通过 getMetaByName 查到工具的元数据
+  // （phase / parallelizable / streamDisplay 等运行时决策都依赖此元数据）。
+  // 真正发给 LLM 之前由 stripToolMeta 在调用方剥离，避免浪费 token。
   // 添加插件工具
   if (pluginRegistry) {
-    cleanTools.push(...pluginRegistry.getToolDefinitions())
+    filteredTools.push(...pluginRegistry.getToolDefinitions())
   }
 
   // 如果有 MCP 服务，添加 MCP 工具
   if (mcpService) {
     const mcpTools = mcpService.getToolDefinitions()
-    return [...cleanTools, ...mcpTools]
+    return [...filteredTools, ...mcpTools]
   }
 
-  return cleanTools
+  return filteredTools
+}
+
+/**
+ * 剥离 ToolDefinition 上的 `_meta` 字段，得到可以安全发给 LLM 的形态。
+ *
+ * Agent 内部工具列表（`getAgentTools()` 返回值）保留 `_meta` 用于运行时决策；
+ * 在真正调用 AI Service 之前调用本函数清理，避免把内部元数据当作 token 发出去。
+ */
+export function stripToolMeta(tools: readonly ToolDefinition[]): ToolDefinition[] {
+  return tools.map(tool => {
+    const { _meta, ...clean } = tool as ToolDefinitionWithMeta
+    void _meta
+    return clean as ToolDefinition
+  })
 }
 
 /**

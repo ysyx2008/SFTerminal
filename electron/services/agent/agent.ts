@@ -34,6 +34,8 @@ import { TaskMemoryStore } from './task-memory'
 import { getBondService } from '../bond.service'
 import type { ToolExecutorConfig, ToolResult } from './tools/types'
 import { executeTool } from './tools/index'
+import { stripToolMeta } from './tools'
+import { getMetaByName } from './tool-metadata'
 import { buildTaskHistoryContext, type TaskHistoryOptions } from './context-builder'
 import { getKnowledgeService } from '../knowledge'
 import { getContextKnowledgeService } from '../knowledge/context-knowledge'
@@ -1931,13 +1933,15 @@ export abstract class Agent {
     }
     
     const availableTools = this.getAvailableTools()
+    // 发给 LLM 之前剥离 _meta（内部元数据，发出去会浪费 token）
+    const llmTools = stripToolMeta(availableTools)
 
     // Plugin hook: before_ai_request (must run before the Promise callback)
     const hookBus = this.services.pluginRegistry?.hookBus
     if (hookBus?.hasHandlers('before_ai_request')) {
       await hookBus.trigger('before_ai_request', {
         messages: run.messages as Array<{ role: string; content: string }>,
-        tools: availableTools
+        tools: llmTools
       })
     }
 
@@ -1954,7 +1958,7 @@ export abstract class Agent {
       
       this.services.aiService.chatWithToolsStream(
         run.messages,
-        availableTools,
+        llmTools,
         // onChunk
         (chunk) => {
           streamContent += chunk
@@ -2922,9 +2926,21 @@ export abstract class Agent {
   
   /**
    * 生成工具白名单键
+   *
+   * 默认整个 args 作为幂等键的一部分；工具可以在 ToolDefinition._meta.idempotencyKey
+   * 里声明只取部分字段（如 execute_command/exec 只取 ['command']，让"同一条命令"
+   * 的不同 cwd / timeout 共享白名单）。基类不知道具体工具叫什么。
    */
   private generateAllowedToolKey(toolName: string, toolArgs: Record<string, unknown>): string {
-    const keyArgs = (toolName === 'execute_command' || toolName === 'exec') ? { command: toolArgs.command } : toolArgs
+    const meta = getMetaByName(this.getAvailableTools(), toolName)
+    const keyFields = meta?.idempotencyKey
+    let keyArgs: Record<string, unknown> = toolArgs
+    if (keyFields && keyFields.length > 0) {
+      keyArgs = {}
+      for (const f of keyFields) {
+        keyArgs[f] = toolArgs[f]
+      }
+    }
     return `${toolName}:${JSON.stringify(keyArgs)}`
   }
   
