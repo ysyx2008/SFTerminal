@@ -5,7 +5,17 @@
 
 import type { AiMessage } from '../ai.service'
 import type { AgentStep, TaskMemory, TaskDigest, TaskSummary, RelatedTaskDigest } from './types'
+import type { ToolMeta } from './tools'
 import { createLogger } from '../../utils/logger'
+
+/**
+ * 调用方注入的 ToolMeta 查询函数（按工具名查 _meta）。
+ * 真实运行时由 agent.ts 提供 `(name) => getMetaByName(this.getAvailableTools(), name)`。
+ * 不传入时降级为"返回 undefined"——所有 metadata 检查都拿到 undefined，回到行为兜底。
+ */
+export type LookupToolMeta = (toolName: string) => ToolMeta | undefined
+
+const NO_LOOKUP: LookupToolMeta = () => undefined
 
 const log = createLogger('TaskMemory')
 
@@ -90,73 +100,94 @@ function calculateKeywordOverlap(queryKeywords: string[], memoryKeywords: string
 
 /**
  * 检测任务是否在等待用户确认
- * 通过检测 ask_user 工具调用来判断（结构化判断，而非模式匹配）
- * @param steps 执行步骤
+ * 通过检测"会阻塞等待用户输入"的工具（lifecycle.blocksUntilUserInput）来判断，
+ * 哪些工具属于这一类完全由 ToolDefinition._meta 自己声明，本函数不知道具体工具名。
+ *
+ * @param steps      执行步骤
+ * @param lookupMeta 按工具名查 ToolMeta 的回调（由调用方注入）；不提供则永远返回 isPending=false
  * @returns 检测结果，包含是否等待确认和待确认的操作
  */
-export function detectPendingConfirmation(steps: AgentStep[]): { 
-  isPending: boolean
-  pendingAction?: string 
-} {
-  // 从后往前找最后一个 ask_user 工具调用
+export function detectPendingConfirmation(
+  steps: AgentStep[],
+  lookupMeta: LookupToolMeta = NO_LOOKUP
+): { isPending: boolean; pendingAction?: string } {
+  const isBlockingTool = (toolName: string | undefined): boolean => {
+    if (!toolName) return false
+    return lookupMeta(toolName)?.lifecycle?.blocksUntilUserInput === true
+  }
+
+  // 从后往前找最后一个"阻塞等待用户输入"的 tool_call
   for (let i = steps.length - 1; i >= 0; i--) {
     const step = steps[i]
-    
-    // 检测 ask_user 工具调用
-    if (step.toolName === 'ask_user' && step.type === 'tool_call') {
-      // 检查这个 ask_user 调用是否有对应的结果
-      // 如果后面没有 tool_result，说明还在等待用户回复
-      let hasResponse = false
-      for (let j = i + 1; j < steps.length; j++) {
-        if (steps[j].type === 'tool_result' && steps[j].toolName === 'ask_user') {
-          hasResponse = true
-          break
-        }
+    if (step.type !== 'tool_call' || !isBlockingTool(step.toolName)) continue
+
+    // 检查这个 tool_call 是否有对应的 tool_result
+    let hasResponse = false
+    for (let j = i + 1; j < steps.length; j++) {
+      if (steps[j].type === 'tool_result' && steps[j].toolName === step.toolName) {
+        hasResponse = true
+        break
       }
-      
-      if (!hasResponse) {
-        // ask_user 没有收到响应，任务在等待确认
-        const question = step.toolArgs?.question as string
-        return { 
-          isPending: true, 
-          pendingAction: question ? (question.length > 50 ? question.substring(0, 50) + '...' : question) : undefined
+    }
+
+    if (!hasResponse) {
+      // 没有收到响应，任务在等待用户输入。优先取 question，否则取 args 第一个字符串字段
+      const args = (step.toolArgs ?? {}) as Record<string, unknown>
+      const question = typeof args.question === 'string' ? args.question : undefined
+      const fallback = (() => {
+        for (const v of Object.values(args)) {
+          if (typeof v === 'string' && v.length > 0) return v
         }
+        return undefined
+      })()
+      const text = question ?? fallback
+      return {
+        isPending: true,
+        pendingAction: text ? (text.length > 50 ? text.substring(0, 50) + '...' : text) : undefined
       }
     }
   }
-  
+
   return { isPending: false }
 }
 
 /**
  * 从执行步骤中提取摘要信息
+ *
+ * 哪些工具的 args 应被视为"主命令"（用于历史摘要单行展示）由 ToolDefinition._meta.argRole.summaryLine
+ * 声明（如命令类工具声明 'command'），本函数不知道具体工具名。
  */
-function extractDigest(steps: AgentStep[], userRequest: string): TaskDigest {
+function extractDigest(
+  steps: AgentStep[],
+  userRequest: string,
+  lookupMeta: LookupToolMeta = NO_LOOKUP
+): TaskDigest {
   const commands: string[] = []
   const paths: string[] = []
   const services: string[] = []
   const errors: string[] = []
   const keyFindings: string[] = []
-  
+
   // 服务名模式
   const servicePattern = /\b(nginx|apache|mysql|mariadb|postgresql|postgres|redis|mongodb|docker|pm2|systemd|cron)\b/gi
-  
+
   // 路径模式
   const pathPattern = /(?:\/[\w.-]+)+/g
-  
+
   for (const step of steps) {
-    // 提取命令
-    if ((step.toolName === 'execute_command' || step.toolName === 'exec') && step.toolArgs?.command) {
-      const cmd = String(step.toolArgs.command)
+    // 提取命令：只看声明了 argRole.summaryLine 的工具（如 execute_command/exec）
+    const summaryField = step.toolName ? lookupMeta(step.toolName)?.argRole?.summaryLine : undefined
+    if (summaryField && step.toolArgs && step.toolArgs[summaryField]) {
+      const cmd = String(step.toolArgs[summaryField])
       // 只保留命令的简短形式（前 100 字符）
       commands.push(cmd.length > 100 ? cmd.substring(0, 100) + '...' : cmd)
-      
+
       // 从命令中提取服务名
       const cmdServices = cmd.match(servicePattern)
       if (cmdServices) {
         services.push(...cmdServices.map(s => s.toLowerCase()))
       }
-      
+
       // 从命令中提取路径
       const cmdPaths = cmd.match(pathPattern)
       if (cmdPaths) {
@@ -213,7 +244,7 @@ function extractDigest(steps: AgentStep[], userRequest: string): TaskDigest {
   }
   
   // 检测是否等待确认，提取待确认操作
-  const { pendingAction } = detectPendingConfirmation(steps)
+  const { pendingAction } = detectPendingConfirmation(steps, lookupMeta)
   
   return {
     commands: Array.from(new Set(commands)).slice(0, 10),
@@ -280,7 +311,14 @@ export class TaskMemoryStore {
   private memories: Map<string, TaskMemory> = new Map()
   private taskOrder: string[] = []  // 按时间顺序存储任务 ID
   private maxMemories: number = 50  // 最大存储任务数
-  
+
+  /**
+   * @param lookupMeta 按工具名查 ToolMeta 的回调（由 Agent 注入）。
+   * 不传入时降级为"返回 undefined"——所有 metadata 检查都拿到 undefined，
+   * `detectPendingConfirmation` / `extractDigest` 会按"无声明"处理（保守不识别）。
+   */
+  constructor(private readonly lookupMeta: LookupToolMeta = NO_LOOKUP) {}
+
   /**
    * 保存任务记忆
    * @param taskId 任务 ID
@@ -298,7 +336,7 @@ export class TaskMemoryStore {
     messages?: AiMessage[]
   ): TaskMemory {
     // 生成 L2 摘要（先提取，因为 pendingAction 会用到）
-    const digest = extractDigest(steps, userRequest)
+    const digest = extractDigest(steps, userRequest, this.lookupMeta)
     
     // 生成 L1 总结
     const summary = generateSummary(userRequest, status, finalResult, digest.pendingAction)

@@ -166,10 +166,13 @@ export abstract class Agent {
   }
   
   /**
-   * 创建任务记忆存储（可被子类重写以支持测试 mock）
+   * 创建任务记忆存储（可被子类重写以支持测试 mock）。
+   * 注入按工具名查 _meta 的回调，让 task-memory 能根据 lifecycle / argRole 决策行为，
+   * 而不是硬编码具体工具名。回调内的 `this.getAvailableTools()` 在调用时才解析，
+   * 此处构造时 subclass 还未完成初始化也没关系。
    */
   protected createTaskMemory(): TaskMemoryStore {
-    return new TaskMemoryStore()
+    return new TaskMemoryStore((name) => getMetaByName(this.getAvailableTools(), name))
   }
 
   /**

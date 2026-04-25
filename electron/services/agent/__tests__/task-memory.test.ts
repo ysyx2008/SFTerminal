@@ -14,6 +14,18 @@ import {
   clearTaskMemoryStore
 } from '../task-memory'
 import type { AgentStep } from '../types'
+import type { ToolMeta } from '../tools'
+
+/**
+ * 测试用 ToolMeta lookup：还原原始硬编码两处行为的等价语义。
+ * - ask_user 声明 lifecycle.blocksUntilUserInput = true（曾经的 ask_user 硬编码判定）
+ * - execute_command / exec 声明 argRole.summaryLine = 'command'（曾经的命令抽取硬编码判定）
+ */
+function lookupMeta(toolName: string): ToolMeta | undefined {
+  if (toolName === 'ask_user') return { lifecycle: { blocksUntilUserInput: true } }
+  if (toolName === 'execute_command' || toolName === 'exec') return { argRole: { summaryLine: 'command' } }
+  return undefined
+}
 
 // ==================== extractKeywords ====================
 
@@ -154,7 +166,7 @@ describe('detectPendingConfirmation', () => {
       }
     ]
     
-    const result = detectPendingConfirmation(steps)
+    const result = detectPendingConfirmation(steps, lookupMeta)
     expect(result.isPending).toBe(true)
     expect(result.pendingAction).toBe('是否继续?')
   })
@@ -179,7 +191,7 @@ describe('detectPendingConfirmation', () => {
       }
     ]
     
-    const result = detectPendingConfirmation(steps)
+    const result = detectPendingConfirmation(steps, lookupMeta)
     expect(result.isPending).toBe(false)
   })
 
@@ -196,12 +208,12 @@ describe('detectPendingConfirmation', () => {
       }
     ]
     
-    const result = detectPendingConfirmation(steps)
+    const result = detectPendingConfirmation(steps, lookupMeta)
     expect(result.pendingAction!.length).toBeLessThanOrEqual(53) // 50 + '...'
   })
 
   it('should return not pending for empty steps', () => {
-    const result = detectPendingConfirmation([])
+    const result = detectPendingConfirmation([], lookupMeta)
     expect(result.isPending).toBe(false)
   })
 
@@ -217,7 +229,7 @@ describe('detectPendingConfirmation', () => {
       }
     ]
     
-    const result = detectPendingConfirmation(steps)
+    const result = detectPendingConfirmation(steps, lookupMeta)
     expect(result.isPending).toBe(false)
   })
 })
@@ -276,7 +288,7 @@ describe('extractDigest', () => {
       }
     ]
     
-    const digest = extractDigest(steps, '检查 nginx')
+    const digest = extractDigest(steps, '检查 nginx', lookupMeta)
     expect(digest.commands).toContain('systemctl status nginx')
   })
 
@@ -292,7 +304,7 @@ describe('extractDigest', () => {
       }
     ]
     
-    const digest = extractDigest(steps, '')
+    const digest = extractDigest(steps, '', lookupMeta)
     expect(digest.services).toContain('mysql')
   })
 
@@ -308,7 +320,7 @@ describe('extractDigest', () => {
       }
     ]
     
-    const digest = extractDigest(steps, '')
+    const digest = extractDigest(steps, '', lookupMeta)
     expect(digest.paths).toContain('/etc/nginx/nginx.conf')
   })
 
@@ -324,7 +336,7 @@ describe('extractDigest', () => {
       }
     ]
     
-    const digest = extractDigest(steps, '')
+    const digest = extractDigest(steps, '', lookupMeta)
     expect(digest.errors.length).toBeGreaterThan(0)
   })
 
@@ -338,12 +350,12 @@ describe('extractDigest', () => {
       }
     ]
     
-    const digest = extractDigest(steps, '')
+    const digest = extractDigest(steps, '', lookupMeta)
     expect(digest.keyFindings.length).toBeGreaterThan(0)
   })
 
   it('should extract services from user request', () => {
-    const digest = extractDigest([], '检查 redis 和 nginx 状态')
+    const digest = extractDigest([], '检查 redis 和 nginx 状态', lookupMeta)
     expect(digest.services).toContain('redis')
     expect(digest.services).toContain('nginx')
   })
@@ -358,7 +370,7 @@ describe('extractDigest', () => {
       timestamp: Date.now()
     }))
     
-    const digest = extractDigest(steps, '')
+    const digest = extractDigest(steps, '', lookupMeta)
     expect(digest.commands.length).toBeLessThanOrEqual(10)
   })
 })
@@ -369,7 +381,7 @@ describe('TaskMemoryStore', () => {
   let store: TaskMemoryStore
 
   beforeEach(() => {
-    store = new TaskMemoryStore()
+    store = new TaskMemoryStore(lookupMeta)
   })
 
   describe('saveTask', () => {
@@ -393,7 +405,7 @@ describe('TaskMemoryStore', () => {
 
     it('should limit max memories', () => {
       // Create store with small limit for testing
-      const smallStore = new TaskMemoryStore()
+      const smallStore = new TaskMemoryStore(lookupMeta)
       // @ts-expect-error - accessing private property for testing
       smallStore.maxMemories = 3
       
