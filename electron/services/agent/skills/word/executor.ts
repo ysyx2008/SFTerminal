@@ -2520,9 +2520,14 @@ async function wordFromMarkdown(
   const fileExists = fs.existsSync(filePath)
   const riskLevel = fileExists ? 'moderate' : 'safe'
 
+  // tool_call 卡片的 content 与 buildPreToolCallDisplay('word_from_markdown') 共享同一前缀
+  // （t('word.generating_from_md')/t('word.overwriting_from_md') + ': ' + path），让流式预创建卡片
+  // 接管到执行器接管的瞬间不出现视觉跳变；"是否需要确认"由 riskLevel 着色与确认弹窗承载，
+  // 不再在标题上加"确认"前缀。
+  const tcKey = fileExists ? 'word.overwriting_from_md' : 'word.generating_from_md'
   executor.addStep({
     type: 'tool_call',
-    content: t(fileExists ? 'word.confirm_overwrite_from_md' : 'word.confirm_create_from_md', { path: filePath }),
+    content: `${t(tcKey)}: ${filePath}`,
     toolName: 'word_from_markdown',
     toolArgs: { path: filePath, style: styleName },
     riskLevel

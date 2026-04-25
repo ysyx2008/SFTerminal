@@ -362,6 +362,120 @@ describe('buildPreToolCallDisplay', () => {
     })
   })
 
+  describe('word_from_markdown（Word 技能：长 markdown 内容）', () => {
+    it('path 已到、markdown 还未到时立刻显示卡片', () => {
+      const out = buildPreToolCallDisplay(
+        'word_from_markdown',
+        JSON.stringify({ path: '/tmp/report.docx' })
+      )
+      expect(out).toBe('生成 Word 文档: /tmp/report.docx')
+    })
+
+    it('path 还没流到时用占位符立刻显示（避免长 markdown 流式期间空窗）', () => {
+      // 用户报告：AI 先流 markdown 内容，path 后到，否则什么都看不见
+      const out = buildPreToolCallDisplay(
+        'word_from_markdown',
+        JSON.stringify({ markdown: 'x'.repeat(200) })
+      )
+      expect(out).toBe('生成 Word 文档: 生成中… · 200 字符')
+    })
+
+    it('markdown 达到 100 字符开始追加字符数尾缀', () => {
+      const out = buildPreToolCallDisplay(
+        'word_from_markdown',
+        JSON.stringify({ path: '/tmp/a.docx', markdown: 'a'.repeat(100) })
+      )
+      expect(out).toBe('生成 Word 文档: /tmp/a.docx · 100 字符')
+    })
+
+    it('markdown 不足 100 字符不显示尾缀，避免 path 刚流完就抖动', () => {
+      const out = buildPreToolCallDisplay(
+        'word_from_markdown',
+        JSON.stringify({ path: '/tmp/a.docx', markdown: 'short' })
+      )
+      expect(out).toBe('生成 Word 文档: /tmp/a.docx')
+    })
+
+    it('字符数随 markdown 持续增长而跳动', () => {
+      const out1 = buildPreToolCallDisplay(
+        'word_from_markdown',
+        JSON.stringify({ path: '/tmp/a.docx', markdown: 'x'.repeat(200) })
+      )
+      const out2 = buildPreToolCallDisplay(
+        'word_from_markdown',
+        JSON.stringify({ path: '/tmp/a.docx', markdown: 'x'.repeat(800) })
+      )
+      expect(out1).toContain('200 字符')
+      expect(out2).toContain('800 字符')
+      expect(out1).not.toEqual(out2)
+    })
+
+    it('容错解析：markdown 字符串未闭合时也能累计已流到的字符数', () => {
+      // AI 流 markdown 到一半：`{"path": "/tmp/a.docx", "markdown": "AAAA...`（未闭合）
+      const partial =
+        '{"path": "/tmp/a.docx", "markdown": "' + 'A'.repeat(300)
+      const out = buildPreToolCallDisplay('word_from_markdown', partial)
+      expect(out).toContain('/tmp/a.docx')
+      expect(out).toContain('字符')
+    })
+  })
+
+  describe('excel_from_markdown（Excel 技能：长 markdown 内容）', () => {
+    it('path 已到、markdown 还未到时立刻显示卡片', () => {
+      const out = buildPreToolCallDisplay(
+        'excel_from_markdown',
+        JSON.stringify({ path: '/tmp/data.xlsx' })
+      )
+      expect(out).toBe('生成 Excel 文件: /tmp/data.xlsx')
+    })
+
+    it('path 还没流到时用占位符立刻显示（避免长 markdown 流式期间空窗）', () => {
+      const out = buildPreToolCallDisplay(
+        'excel_from_markdown',
+        JSON.stringify({ markdown: 'x'.repeat(200) })
+      )
+      expect(out).toBe('生成 Excel 文件: 生成中… · 200 字符')
+    })
+
+    it('markdown 达到 100 字符开始追加字符数尾缀', () => {
+      const out = buildPreToolCallDisplay(
+        'excel_from_markdown',
+        JSON.stringify({ path: '/tmp/a.xlsx', markdown: 'a'.repeat(100) })
+      )
+      expect(out).toBe('生成 Excel 文件: /tmp/a.xlsx · 100 字符')
+    })
+
+    it('markdown 不足 100 字符不显示尾缀', () => {
+      const out = buildPreToolCallDisplay(
+        'excel_from_markdown',
+        JSON.stringify({ path: '/tmp/a.xlsx', markdown: '| col |' })
+      )
+      expect(out).toBe('生成 Excel 文件: /tmp/a.xlsx')
+    })
+
+    it('字符数随 markdown 持续增长而跳动', () => {
+      const out1 = buildPreToolCallDisplay(
+        'excel_from_markdown',
+        JSON.stringify({ path: '/tmp/a.xlsx', markdown: 'x'.repeat(200) })
+      )
+      const out2 = buildPreToolCallDisplay(
+        'excel_from_markdown',
+        JSON.stringify({ path: '/tmp/a.xlsx', markdown: 'x'.repeat(800) })
+      )
+      expect(out1).toContain('200 字符')
+      expect(out2).toContain('800 字符')
+      expect(out1).not.toEqual(out2)
+    })
+
+    it('容错解析：markdown 字符串未闭合时也能累计已流到的字符数', () => {
+      const partial =
+        '{"path": "/tmp/a.xlsx", "markdown": "' + 'A'.repeat(300)
+      const out = buildPreToolCallDisplay('excel_from_markdown', partial)
+      expect(out).toContain('/tmp/a.xlsx')
+      expect(out).toContain('字符')
+    })
+  })
+
   describe('read_file', () => {
     it('取 path 字段渲染为"读取文件: {path}"', () => {
       const out = buildPreToolCallDisplay(

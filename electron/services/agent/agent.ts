@@ -253,6 +253,22 @@ export function buildPreToolCallDisplay(toolName: string, partialArgs: string): 
         ? `${t('file.reading_info_only')}: ${pathDisplay}`
         : `${t('file.reading')}: ${pathDisplay}`
     }
+    case 'word_from_markdown': {
+      // markdown 字段是长内容（与 write_text_file 的 content 类似），AI 流式期间用户能感知"还在生成"
+      // 才不会把"AI 在写"误读成"卡住"。path 在 schema 中位于 markdown 之前，但 AI 不一定按顺序输出，
+      // 用占位符兜底；执行器 addStep 接管时使用同一前缀（word.generating_from_md）保证视觉无跳变。
+      const pathDisplay = asString(parsed.path) ?? getStreamPlaceholder()
+      const progress = buildStreamProgressSuffix(parsed, ['markdown'])
+      return `${t('word.generating_from_md')}: ${pathDisplay}${progress}`
+    }
+    case 'excel_from_markdown': {
+      // 与 word_from_markdown 同构：长 markdown 字段是 AI 主要输出耗时来源，path 用占位符兜底。
+      // 执行器 addStep 用同一前缀（excel.generating_from_md）+ ": " + path，takeover 瞬间不跳变；
+      // 执行器额外追加的"（N 个 Sheet）"后缀是流式阶段拿不到的运行时信息，属于可接受的尾部追加。
+      const pathDisplay = asString(parsed.path) ?? getStreamPlaceholder()
+      const progress = buildStreamProgressSuffix(parsed, ['markdown'])
+      return `${t('excel.generating_from_md')}: ${pathDisplay}${progress}`
+    }
     case 'dispatch_agents': {
       // 每个子任务的 prompt 是长字段，AI 流式耗时和 write_text_file 的 content 类似。
       // 内容格式必须与 tools/sub-agent.ts 执行器 addStep 的 content 对齐：

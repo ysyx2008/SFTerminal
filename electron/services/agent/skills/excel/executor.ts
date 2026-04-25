@@ -1092,9 +1092,15 @@ async function excelFromMarkdown(
   const fileExists = fs.existsSync(filePath)
   const riskLevel = fileExists ? 'moderate' : 'safe'
 
+  // tool_call 卡片的 content 与 buildPreToolCallDisplay('excel_from_markdown') 共享同一前缀
+  // （t('excel.generating_from_md')/t('excel.overwriting_from_md') + ': ' + path），让流式预创建卡片
+  // 接管到执行器接管的瞬间不出现视觉跳变；"是否需要确认"由 riskLevel 着色与确认弹窗承载，
+  // "(N 个 Sheet)" 是流式阶段拿不到的运行时信息，作为后缀追加，不影响前缀对齐。
+  const tcKey = fileExists ? 'excel.overwriting_from_md' : 'excel.generating_from_md'
+  const sheetSuffix = t('excel.sheet_count_suffix', { count: sheets.length })
   executor.addStep({
     type: 'tool_call',
-    content: t(fileExists ? 'excel.confirm_overwrite_from_md' : 'excel.confirm_from_md', { path: filePath, sheets: sheets.length }),
+    content: `${t(tcKey)}: ${filePath}${sheetSuffix}`,
     toolName: 'excel_from_markdown',
     toolArgs: { path: filePath, sheets: sheets.length },
     riskLevel
