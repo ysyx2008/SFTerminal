@@ -362,13 +362,35 @@ describe('buildPreToolCallDisplay', () => {
     })
   })
 
-  describe('非预创建工具', () => {
-    it('read_file 返回 null（流式阶段不预创建，执行器快就直接 addStep）', () => {
-      expect(
-        buildPreToolCallDisplay('read_file', JSON.stringify({ path: '/tmp/a.txt' }))
-      ).toBeNull()
+  describe('read_file', () => {
+    it('取 path 字段渲染为"读取文件: {path}"', () => {
+      const out = buildPreToolCallDisplay(
+        'read_file',
+        JSON.stringify({ path: '/tmp/a.txt' })
+      )
+      expect(out).toBe('读取文件: /tmp/a.txt')
     })
 
+    it('info_only=true 渲染为"读取文件 (仅查询信息): {path}"', () => {
+      const out = buildPreToolCallDisplay(
+        'read_file',
+        JSON.stringify({ path: '/tmp/a.txt', info_only: true })
+      )
+      expect(out).toBe('读取文件 (仅查询信息): /tmp/a.txt')
+    })
+
+    it('path 还没流到时用占位符（工具名命中即显示，避免空窗）', () => {
+      const out = buildPreToolCallDisplay('read_file', '{}')
+      expect(out).toBe('读取文件: 生成中…')
+    })
+
+    it('容错解析：流式中 path 未闭合也能取出已有前缀', () => {
+      const out = buildPreToolCallDisplay('read_file', '{"path": "/tmp/a')
+      expect(out).toBe('读取文件: /tmp/a')
+    })
+  })
+
+  describe('非预创建工具', () => {
     it('file_search 返回 null', () => {
       expect(
         buildPreToolCallDisplay('file_search', JSON.stringify({ query: 'foo' }))

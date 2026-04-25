@@ -244,6 +244,15 @@ export function buildPreToolCallDisplay(toolName: string, partialArgs: string): 
       const progress = buildStreamProgressSuffix(parsed, ['old_text', 'new_text'])
       return `${t('file.edit')}: ${pathDisplay}${progress}`
     }
+    case 'read_file': {
+      // 工具名命中即显示——AI 还没流到 path 时用占位符，等 path 到达替换为真实值。
+      // 这样从「AI 在思考」到「Agent 准备读 X」不会有空窗。
+      const pathDisplay = asString(parsed.path) ?? getStreamPlaceholder()
+      const infoOnly = parsed.info_only === true
+      return infoOnly
+        ? `${t('file.reading_info_only')}: ${pathDisplay}`
+        : `${t('file.reading')}: ${pathDisplay}`
+    }
     case 'dispatch_agents': {
       // 每个子任务的 prompt 是长字段，AI 流式耗时和 write_text_file 的 content 类似。
       // 内容格式必须与 tools/sub-agent.ts 执行器 addStep 的 content 对齐：
@@ -1475,7 +1484,7 @@ export abstract class Agent {
         run.messages.push(msg)
       }
     }
-    
+
     const userMsg = await this.buildUserMessage(run, message, false)
     run.messages.push(userMsg)
     run.taskMessageLog.push({ ...userMsg })
@@ -2058,11 +2067,16 @@ export abstract class Agent {
         // tool_call 卡片；随后该卡片会被工具执行器"认领"并 updateStep 成正式内容，
         // 因为格式一致（同前缀、同字体、同样式），视觉上就是同一张卡上的文本在逐字增长。
         //
-        // 支持预创建的工具由 buildPreToolCallDisplay 决定：目前包括 shell 命令类
-        // (execute_command / exec) 与文件写入/编辑类 (write_text_file /
-        // write_remote_text_file / edit_file)，这些工具内容较长、streaming 时间明显，
-        // 用户最需要"正在做什么"的即时反馈。其他工具（read_file / file_search 等）
-        // 执行快，由各自执行器按各自模板 addStep 即可，预创建反而会引起闪烁。
+        // 工具执行透明原则（见 SPEC.md「工具执行透明原则」）：所有工具执行器都会无条件
+        // emit `tool_call` 卡片再执行，确保用户看到「Agent 准备做什么 → 在做 → 做完」。
+        // 预创建（本回调）是这一原则在流式输出场景下的进一步强化：把卡片的出现时机从
+        // 「执行开始」提前到「参数还在流」的阶段，避免「AI 在思考但屏幕一片空白」的体感。
+        //
+        // 支持预创建的工具由 buildPreToolCallDisplay 决定：shell 命令类 (execute_command
+        // / exec)、文件读写类 (read_file / write_text_file / write_remote_text_file /
+        // edit_file)、子 Agent 调度 (dispatch_agents)。其余工具（file_search /
+        // search_knowledge / recall 等）参数短、执行快，由各自执行器无条件 addStep 已
+        // 足够；为这些工具加预创建只会增加双重维护与字段对齐风险，收益有限。
         (toolCallId: string, toolName: string, partialArgs: string) => {
           if (!toolCallId) return  // 没有稳定 id 就无法与后续 executor 的 addStep 关联，跳过
 

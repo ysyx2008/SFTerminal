@@ -72,15 +72,13 @@ export async function checkTerminalStatus(
   config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
-  if (config.debugMode) {
-    executor.addStep({
-      type: 'tool_call',
-      content: t('terminal.checking_status'),
-      toolName: 'check_terminal_status',
-      toolArgs: {},
-      riskLevel: 'safe'
-    })
-  }
+  executor.addStep({
+    type: 'tool_call',
+    content: t('terminal.checking_status'),
+    toolName: 'check_terminal_status',
+    toolArgs: {},
+    riskLevel: 'safe'
+  })
 
   try {
     const awarenessService = getTerminalAwarenessService()

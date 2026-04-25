@@ -889,15 +889,13 @@ export async function readFile(
   const maxLines = args.max_lines as number | undefined
   const tailLines = args.tail_lines as number | undefined
 
-  if (config.debugMode) {
-    executor.addStep({
-      type: 'tool_call',
-      content: infoOnly ? `${t('file.reading_info_only')}: ${filePath}` : `${t('file.reading')}: ${filePath}`,
-      toolName: 'read_file',
-      toolArgs: args,
-      riskLevel: 'safe'
-    })
-  }
+  executor.addStep({
+    type: 'tool_call',
+    content: infoOnly ? `${t('file.reading_info_only')}: ${filePath}` : `${t('file.reading')}: ${filePath}`,
+    toolName: 'read_file',
+    toolArgs: args,
+    riskLevel: 'safe'
+  })
 
   try {
     const stats = fs.statSync(filePath)
