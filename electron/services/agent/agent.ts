@@ -2871,17 +2871,14 @@ export abstract class Agent {
   
   /**
    * 设置执行阶段
+   *
+   * 默认 'executing_command'；工具可以在 ToolDefinition._meta.phase 里声明覆盖
+   *（如文件写入工具声明 'writing_file'，wait 工具声明 'waiting'）。基类不知道
+   * 具体工具叫什么。
    */
   protected setExecutionPhase(run: AgentRun, toolName: string): void {
-    if (toolName === 'write_file' || toolName === 'edit_file') {
-      run.executionPhase = 'writing_file'
-    } else if (toolName === 'execute_command' || toolName === 'exec' || toolName === 'run_command') {
-      run.executionPhase = 'executing_command'
-    } else if (toolName === 'wait') {
-      run.executionPhase = 'waiting'
-    } else {
-      run.executionPhase = 'executing_command'
-    }
+    const meta = getMetaByName(this.getAvailableTools(), toolName)
+    run.executionPhase = meta?.phase ?? 'executing_command'
     run.currentToolName = toolName
   }
   

@@ -171,8 +171,9 @@ export const terminalOnlyTools: ToolDefinition[] = [
         },
         required: ['seconds']
       }
-    }
-  }
+    },
+    _meta: { phase: 'waiting' }
+  } as ToolDefinitionWithMeta
 ]
 
 /**

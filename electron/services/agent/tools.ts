@@ -394,7 +394,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           required: ['path', 'old_text', 'new_text']
         }
       },
-      _meta: { supportedModes: ['local', 'assistant'] }
+      _meta: { supportedModes: ['local', 'assistant'], phase: 'writing_file' }
     } as ToolDefinitionWithMeta,
     {
       type: 'function',
@@ -427,7 +427,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           required: ['path']
         }
       },
-      _meta: { supportedModes: ['local', 'assistant'] }
+      _meta: { supportedModes: ['local', 'assistant'], phase: 'writing_file' }
     } as ToolDefinitionWithMeta,
     // ==================== 父 Agent 专用工具 ====================
     {
@@ -455,7 +455,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           required: ['path', 'content']
         }
       },
-      _meta: { supportedModes: ['ssh'] }
+      _meta: { supportedModes: ['ssh'], phase: 'writing_file' }
     } as ToolDefinitionWithMeta,
     {
       type: 'function',
