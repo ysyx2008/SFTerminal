@@ -8,6 +8,7 @@ import { getSkillsSummary } from './skills/registry'
 import { getUserSkillService } from '../user-skill.service'
 import { getConfigService } from '../config.service'
 import { isConfigured as isWebSearchConfigured } from '../web-search/index'
+import type { AgentExecutionPhase } from './types'
 
 // 重新导出 ToolDefinition 类型供技能模块使用
 export type { ToolDefinition }
@@ -18,17 +19,91 @@ import type { TerminalType, RemoteChannel } from '@shared/types'
 export type AgentMode = TerminalType
 
 /**
- * 工具元数据
+ * 流式预卡片展示配置
+ *
+ * pre-card 和执行器 addStep 都通过 formatStreamPreCard / formatToolDisplayPrefix
+ * 消费这些字段，对齐变成代码级机械保证（详见 tool-metadata.ts）。
  */
-interface ToolMeta {
+export interface ToolStreamDisplay {
+  /**
+   * 标题前缀的 i18n 键，或根据 args 动态返回 i18n 键的函数。
+   * 复杂工具（如 write_text_file 按 mode 切换标题）写函数；简单工具直接写 string。
+   */
+  titleKey: string | ((args: Record<string, unknown>) => string)
+  /**
+   * args 里取哪个字段作为副标题（path / command / query 等）。
+   * AI 还没流到此字段时会用占位符兜底，避免长字段流式期间卡片不出现。
+   * 不指定则只显示标题前缀（如 get_terminal_context 这类无参工具）。
+   */
+  titleField?: string
+  /**
+   * 哪些字段累计字符数尾缀（如 content / markdown / old_text）。
+   * 用于让 AI 流式输出长字段时用户能看到字符数在跳动。
+   */
+  progressFields?: string[]
+}
+
+/**
+ * 工具元数据
+ *
+ * 这里是 Agent 基类决策时**唯一**应该读到的"具体工具差异"。
+ * 任何"基类按工具名 switch / 硬编码工具名集合"的代码都应改为读这里的字段，
+ * 见 SPEC.md「工具元数据驱动模型」。
+ */
+export interface ToolMeta {
   /** 支持的运行模式（不指定则支持所有模式） */
   supportedModes?: AgentMode[]
+
+  /** 流式预卡片展示配置（不指定则用通用兜底「调用: {toolName}」） */
+  streamDisplay?: ToolStreamDisplay
+
+  /** 是否可与其他工具并行执行（默认 false：串行执行；副作用工具默认安全） */
+  parallelizable?: boolean
+
+  /** 执行此工具时的 Agent 执行阶段（默认 'executing_command'） */
+  phase?: AgentExecutionPhase
+
+  /**
+   * 工具白名单 / 幂等键的字段子集（默认全 args 参与生成 key）。
+   * 例如 execute_command 只取 ['command']，让"同一条命令"的不同上下文共享白名单。
+   */
+  idempotencyKey?: string[]
+
+  /** 生命周期标志：影响 Agent 全局状态判断 */
+  lifecycle?: {
+    /** 调用此工具表示 onboarding 引导完成（如 personality_craft） */
+    marksOnboardingComplete?: boolean
+    /** 此工具的 tool_call 后会阻塞等待用户输入（如 ask_user） */
+    blocksUntilUserInput?: boolean
+  }
+
+  /**
+   * 参数角色：用于历史摘要等场景"知道哪个字段是重点"
+   */
+  argRole?: {
+    /**
+     * 此 args 的"主命令"字段，单行历史摘要显示这个字段的值。
+     * 如 execute_command/exec 的 'command'。
+     */
+    summaryLine?: string
+  }
+
+  /**
+   * 上下文压缩时的预算策略。不指定 → 默认为 'clearable'（可清理），
+   * 让 Agent 在上下文紧张时优先清理这类工具的旧结果。
+   */
+  contextBudget?: {
+    /** 工具结果的处理：'clearable'（可清理） / 'protected'（保护，永不清理） */
+    toolResult?: 'clearable' | 'protected'
+  }
 }
 
 /**
  * 带元数据的工具定义
+ *
+ * 注：发送给 LLM 之前 `getAgentTools()` 会把 `_meta` 字段剥掉（见本文件末尾的 cleanTools）。
  */
-interface ToolDefinitionWithMeta extends ToolDefinition {
+export interface ToolDefinitionWithMeta extends ToolDefinition {
   _meta?: ToolMeta
 }
 
