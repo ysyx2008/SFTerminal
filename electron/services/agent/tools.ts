@@ -110,7 +110,7 @@ export interface ToolDefinitionWithMeta extends ToolDefinition {
 /**
  * 动态构建 skill 工具定义（合并 load_skill + unload_skill）
  */
-function buildSkillTool(): ToolDefinition {
+function buildSkillTool(): ToolDefinitionWithMeta {
   const disabledIds = new Set(getConfigService().get('disabledBuiltinSkills') || [])
   const skills = getSkillsSummary().filter(s => !disabledIds.has(s.id))
   const skillsCompact = skills.length > 0
@@ -143,7 +143,8 @@ ${skillsCompact}`,
         },
         required: ['action', 'skill_id']
       }
-    }
+    },
+    _meta: { parallelizable: true }
   }
 }
 
@@ -151,7 +152,7 @@ ${skillsCompact}`,
  * 动态构建 load_user_skill 工具定义
  * 用于加载用户自定义的技能（SKILL.md 文件）
  */
-function buildLoadUserSkillTool(): ToolDefinition {
+function buildLoadUserSkillTool(): ToolDefinitionWithMeta {
   const userSkillService = getUserSkillService()
   const skills = userSkillService.getEnabledSkills()
   const skillsList = skills.length > 0
@@ -179,7 +180,8 @@ ${skillsList}`,
         },
         required: ['skill_id']
       }
-    }
+    },
+    _meta: { parallelizable: true }
   }
 }
 
@@ -293,7 +295,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           required: ['path']
         }
       },
-      _meta: { supportedModes: ['local', 'assistant'] }
+      _meta: { supportedModes: ['local', 'assistant'], parallelizable: true }
     } as ToolDefinitionWithMeta,
     {
       type: 'function',
@@ -324,7 +326,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           required: ['query']
         }
       },
-      _meta: { supportedModes: ['local', 'assistant'] }
+      _meta: { supportedModes: ['local', 'assistant'], parallelizable: true }
     } as ToolDefinitionWithMeta,
     {
       type: 'function',
@@ -345,8 +347,9 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           },
           required: ['query']
         }
-      }
-    },
+      },
+      _meta: { parallelizable: true }
+    } as ToolDefinitionWithMeta,
     {
       type: 'function',
       function: {
@@ -362,8 +365,9 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           },
           required: ['doc_id']
         }
-      }
-    },
+      },
+      _meta: { parallelizable: true }
+    } as ToolDefinitionWithMeta,
     ...buildWebSearchTool(),
     // ==================== edit 子 Agent 额外允许的工具 ====================
     {
@@ -575,8 +579,9 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           },
           required: ['task_id']
         }
-      }
-    },
+      },
+      _meta: { parallelizable: true }
+    } as ToolDefinitionWithMeta,
     // ==================== 历史搜索工具 ====================
     {
       type: 'function',

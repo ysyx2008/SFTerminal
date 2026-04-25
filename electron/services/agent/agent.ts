@@ -1715,6 +1715,7 @@ export abstract class Agent {
       run,
       executeFn: (toolCall) => this.executeToolWithChecks(run, toolCall, toolExecutorConfig),
       availableToolNames,
+      isConcurrencySafe: (name) => this.isParallelizableTool(name),
       onToolCompleted: ({ toolCall, result }) => {
         // 仅做 UI 层回填（兜底 tool_result + finalizeToolCallStep），消息历史
         // 仍保留按 toolCalls 原始顺序在 executeToolCallsWithStreaming 中统一写入。
@@ -2180,27 +2181,15 @@ export abstract class Agent {
   
   // ==================== 受保护方法：工具执行 ====================
 
-  /** 可以并行执行的工具（只读、无副作用） */
-  private static readonly PARALLELIZABLE_TOOLS = new Set([
-    'read_file',
-    'file_search',
-    'get_terminal_context',
-    'check_terminal_status',
-    'search_knowledge',
-    'get_knowledge_doc',
-    'recall',
-    'recall_task',
-    'deep_recall',
-    'skill',
-    'load_skill',
-    'load_user_skill'
-  ])
-  
   /**
-   * 判断工具是否可以并行执行
+   * 判断工具是否可以并行执行（只读 / 无副作用 / 跨工具无相互依赖）
+   *
+   * 默认 false（串行）；工具可以在 ToolDefinition._meta.parallelizable 里声明覆盖。
+   * 基类不知道具体工具叫什么。
    */
   private isParallelizableTool(toolName: string): boolean {
-    return Agent.PARALLELIZABLE_TOOLS.has(toolName)
+    const meta = getMetaByName(this.getAvailableTools(), toolName)
+    return meta?.parallelizable === true
   }
   
   /**

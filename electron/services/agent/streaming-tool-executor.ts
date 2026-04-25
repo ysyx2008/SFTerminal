@@ -31,25 +31,6 @@ interface TrackedTool {
 }
 
 /**
- * 可并行执行的工具集合（只读、无副作用）
- * 与 Agent.PARALLELIZABLE_TOOLS 保持一致
- */
-const CONCURRENCY_SAFE_TOOLS = new Set([
-  'read_file',
-  'file_search',
-  'get_terminal_context',
-  'check_terminal_status',
-  'search_knowledge',
-  'get_knowledge_doc',
-  'recall',
-  'recall_task',
-  'deep_recall',
-  'skill',
-  'load_skill',
-  'load_user_skill'
-])
-
-/**
  * 工具执行函数签名（含安全检查：plugin hooks、风险评估、用户确认）。
  * 由 Agent 注入，StreamingToolExecutor 不直接依赖 Agent 内部实现。
  */
@@ -61,6 +42,13 @@ export interface StreamingToolExecutorOptions {
   executeFn: ToolExecuteFn
   /** 可用工具名集合，用于检测幻觉工具 */
   availableToolNames: Set<string>
+  /**
+   * 判断工具是否可并行执行（只读 / 无副作用）的回调。
+   * 由调用方提供，本执行器不知道也不关心具体工具叫什么——
+   * 真正的判定由 Agent 通过 ToolDefinition._meta.parallelizable 决定。
+   * 不提供时默认全部串行（最保守）。
+   */
+  isConcurrencySafe?: (toolName: string) => boolean
   /** 最大并行数 */
   maxConcurrency?: number
   /**
@@ -85,6 +73,7 @@ export class StreamingToolExecutor {
   private readonly run: AgentRun
   private readonly executeFn: ToolExecuteFn
   private readonly availableToolNames: Set<string>
+  private readonly isConcurrencySafe: (toolName: string) => boolean
   private readonly onToolCompleted?: (result: CompletedToolResult) => void
 
   /** 解析器：当有工具完成时唤醒 getRemainingResults */
@@ -94,6 +83,7 @@ export class StreamingToolExecutor {
     this.run = options.run
     this.executeFn = options.executeFn
     this.availableToolNames = options.availableToolNames
+    this.isConcurrencySafe = options.isConcurrencySafe ?? (() => false)
     this.maxConcurrency = options.maxConcurrency ?? 10
     this.onToolCompleted = options.onToolCompleted
   }
@@ -108,7 +98,7 @@ export class StreamingToolExecutor {
     this.tools.push({
       toolCall,
       status: 'queued',
-      isConcurrencySafe: CONCURRENCY_SAFE_TOOLS.has(toolCall.function.name),
+      isConcurrencySafe: this.isConcurrencySafe(toolCall.function.name),
       toolArgs: {}
     })
 

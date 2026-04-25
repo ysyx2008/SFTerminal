@@ -80,8 +80,9 @@ export const terminalOnlyTools: ToolDefinition[] = [
         type: 'object',
         properties: {}
       }
-    }
-  },
+    },
+    _meta: { parallelizable: true }
+  } as ToolDefinitionWithMeta,
   {
     type: 'function',
     function: {
@@ -96,8 +97,9 @@ export const terminalOnlyTools: ToolDefinition[] = [
           }
         }
       }
-    }
-  },
+    },
+    _meta: { parallelizable: true }
+  } as ToolDefinitionWithMeta,
   {
     type: 'function',
     function: {
