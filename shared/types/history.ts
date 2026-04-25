@@ -11,6 +11,8 @@ export interface AgentStepRecord {
   images?: string[]
   attachments?: import('./agent').AttachmentInfo[]
   toolName?: string
+  /** 关联的 tool_call ID，用于配对 tool_call ↔ tool_result（老记录可能缺失） */
+  toolCallId?: string
   toolArgs?: Record<string, unknown>
   toolResult?: string
   riskLevel?: string

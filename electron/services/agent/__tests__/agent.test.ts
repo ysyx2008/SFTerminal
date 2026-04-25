@@ -92,6 +92,16 @@ class TestAgent extends Agent {
     return (this as any).addStep(step)
   }
 
+  // 暴露 ensureToolResultStep / wrapExecutorConfigForToolCall 用于测试
+  // 同名批量、并行混合成败、toolCallId 注入等场景
+  public testEnsureToolResultStep(run: any, stepCountBefore: number, toolCall: any, result: any) {
+    return (this as any).ensureToolResultStep(run, stepCountBefore, toolCall, result)
+  }
+
+  public testWrapExecutorConfigForToolCall(run: any, toolCall: any, base: any) {
+    return (this as any).wrapExecutorConfigForToolCall(run, toolCall, base)
+  }
+
   // 注入 currentRun，便于直接针对 addStep/updateStep/finalizeToolCallStep 做单元测试
   // 而不必真正启动 agent.run 流程
   public injectCurrentRun(run: any) {
@@ -344,6 +354,139 @@ describe('Agent', () => {
       const run = makeFakeRun()
       agent.injectCurrentRun(run)
       expect(() => agent.testFinalizeToolCallStep(run, 'nonexistent', false)).not.toThrow()
+    })
+  })
+
+  // ==================== tool_result step 配对（按 toolCallId） ====================
+  // 这组测试覆盖之前的 bug：同一批次中多次同名工具调用时，因为 ensureToolResultStep
+  // 按 toolName 去重导致只有第 1 个 result 卡能显示。修复后改用 toolCallId 配对。
+  describe('ensureToolResultStep (toolCallId 配对)', () => {
+    function makeFakeRun(): any {
+      return {
+        id: 'fake-run',
+        steps: [],
+        pendingPreToolCallStepIds: undefined,
+        pendingPreToolCallText: undefined,
+        activeToolCallStepIds: undefined
+      }
+    }
+
+    function makeToolCall(id: string, name: string, args: Record<string, unknown> = {}) {
+      return { id, type: 'function', function: { name, arguments: JSON.stringify(args) } } as any
+    }
+
+    it('should emit one tool_result per call when same-named tool is invoked multiple times in a batch', () => {
+      const run = makeFakeRun()
+      agent.injectCurrentRun(run)
+
+      const baseline = run.steps.length
+      const tcA = makeToolCall('tc-a', 'exec', { command: 'ls' })
+      const tcB = makeToolCall('tc-b', 'exec', { command: 'pwd' })
+      const tcC = makeToolCall('tc-c', 'exec', { command: 'whoami' })
+
+      // 工具自己未 emit tool_result（exec 成功路径就是这种），由 ensureToolResultStep 兜底
+      agent.testEnsureToolResultStep(run, baseline, tcA, { success: true, output: 'fileA' })
+      agent.testEnsureToolResultStep(run, baseline, tcB, { success: true, output: 'fileB' })
+      agent.testEnsureToolResultStep(run, baseline, tcC, { success: true, output: 'fileC' })
+
+      const results = run.steps.filter((s: any) => s.type === 'tool_result')
+      expect(results).toHaveLength(3)
+      expect(results.map((s: any) => s.toolCallId)).toEqual(['tc-a', 'tc-b', 'tc-c'])
+      expect(results.map((s: any) => s.toolResult)).toEqual(['fileA', 'fileB', 'fileC'])
+      expect(results.every((s: any) => s.success === true)).toBe(true)
+    })
+
+    it('should backfill success precisely per toolCallId in a parallel mixed-result batch', () => {
+      const run = makeFakeRun()
+      agent.injectCurrentRun(run)
+
+      const baseline = run.steps.length
+      const tcA = makeToolCall('tc-a', 'read_file', { path: '/a' })
+      const tcB = makeToolCall('tc-b', 'read_file', { path: '/b' })
+      const tcC = makeToolCall('tc-c', 'read_file', { path: '/c' })
+
+      // 模拟工具自己 emit 的 tool_result 卡（read_file 走这条路径），都是 success=undefined
+      // 由 wrapExecutorConfigForToolCall 给 toolCallId 盖戳；这里直接显式带上模拟
+      agent.testAddStep({ type: 'tool_result', content: '✅', toolName: 'read_file', toolCallId: 'tc-a', toolResult: 'A content' })
+      agent.testAddStep({ type: 'tool_result', content: '❌', toolName: 'read_file', toolCallId: 'tc-b', toolResult: 'ENOENT' })
+      agent.testAddStep({ type: 'tool_result', content: '✅', toolName: 'read_file', toolCallId: 'tc-c', toolResult: 'C content' })
+
+      // A 完成（成功）→ 只回填 tc-a 那张，不会污染 tc-b / tc-c
+      agent.testEnsureToolResultStep(run, baseline, tcA, { success: true, output: 'A content' })
+      // B 完成（失败）→ 只回填 tc-b 那张
+      agent.testEnsureToolResultStep(run, baseline, tcB, { success: false, error: 'ENOENT' })
+      // C 完成（成功）→ 只回填 tc-c 那张
+      agent.testEnsureToolResultStep(run, baseline, tcC, { success: true, output: 'C content' })
+
+      const results = run.steps.filter((s: any) => s.type === 'tool_result')
+      expect(results).toHaveLength(3)
+      const byId = Object.fromEntries(results.map((s: any) => [s.toolCallId, s.success]))
+      expect(byId).toEqual({ 'tc-a': true, 'tc-b': false, 'tc-c': true })
+    })
+
+    it('should fall back to toolName matching when an existing step has no toolCallId (legacy compat)', () => {
+      const run = makeFakeRun()
+      agent.injectCurrentRun(run)
+
+      const baseline = run.steps.length
+      const tc = makeToolCall('tc-legacy', 'read_file', { path: '/x' })
+
+      // 模拟老版本的 step，只有 toolName，没有 toolCallId
+      agent.testAddStep({ type: 'tool_result', content: '✅', toolName: 'read_file', toolResult: 'legacy' })
+
+      agent.testEnsureToolResultStep(run, baseline, tc, { success: true, output: 'legacy' })
+
+      // 不应再追加新 tool_result（按 toolName 退化匹配命中），且 success 被回填
+      const results = run.steps.filter((s: any) => s.type === 'tool_result')
+      expect(results).toHaveLength(1)
+      expect(results[0].success).toBe(true)
+    })
+
+    it('wrapExecutorConfigForToolCall stamps toolCallId on tool_call / tool_result steps automatically', () => {
+      const run = makeFakeRun()
+      agent.injectCurrentRun(run)
+
+      const tc = makeToolCall('tc-stamp', 'exec', { command: 'date' })
+
+      // 构造一个最小可用的 base ToolExecutorConfig：只关心 addStep / updateStep 两个钩子
+      const base = {
+        addStep: (step: any) => agent.testAddStep(step),
+        updateStep: (id: string, patch: any) => {
+          const target = run.steps.find((s: any) => s.id === id)
+          if (target) Object.assign(target, patch)
+        },
+        // 其他字段对本测试无关，置空即可
+        isAborted: () => false,
+        waitForConfirmation: () => Promise.resolve(true)
+      }
+
+      const wrapped = agent.testWrapExecutorConfigForToolCall(run, tc, base)
+      // tool_call 类型应被自动盖戳
+      const callStep = wrapped.addStep({ type: 'tool_call', content: 'running', toolName: 'exec' })
+      expect(callStep.toolCallId).toBe('tc-stamp')
+      // tool_result 类型也应被盖戳
+      const resultStep = wrapped.addStep({ type: 'tool_result', content: '✅', toolName: 'exec' })
+      expect(resultStep.toolCallId).toBe('tc-stamp')
+      // 其他类型不应被改动
+      const msgStep = wrapped.addStep({ type: 'message', content: 'hello' })
+      expect(msgStep.toolCallId).toBeUndefined()
+    })
+
+    it('should not overwrite an existing toolCallId set by the tool implementation', () => {
+      const run = makeFakeRun()
+      agent.injectCurrentRun(run)
+
+      const tc = makeToolCall('tc-outer', 'exec')
+      const base = {
+        addStep: (step: any) => agent.testAddStep(step),
+        updateStep: () => {},
+        isAborted: () => false,
+        waitForConfirmation: () => Promise.resolve(true)
+      }
+
+      const wrapped = agent.testWrapExecutorConfigForToolCall(run, tc, base)
+      const step = wrapped.addStep({ type: 'tool_call', content: 'x', toolName: 'exec', toolCallId: 'tc-inner' })
+      expect(step.toolCallId).toBe('tc-inner')
     })
   })
 })

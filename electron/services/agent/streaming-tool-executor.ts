@@ -63,6 +63,12 @@ export interface StreamingToolExecutorOptions {
   availableToolNames: Set<string>
   /** 最大并行数 */
   maxConcurrency?: number
+  /**
+   * 每个工具完成时立即触发的回调。用于在 AI 流式输出阶段"完成一个显示一个"
+   * 地把 UI 卡片切到完成态（兜底 tool_result 步骤、回填 success），
+   * 而不必等 AI 输出结束、再统一处理。回调内的异常不会影响后续工具调度。
+   */
+  onToolCompleted?: (result: CompletedToolResult) => void
 }
 
 export interface CompletedToolResult {
@@ -79,6 +85,7 @@ export class StreamingToolExecutor {
   private readonly run: AgentRun
   private readonly executeFn: ToolExecuteFn
   private readonly availableToolNames: Set<string>
+  private readonly onToolCompleted?: (result: CompletedToolResult) => void
 
   /** 解析器：当有工具完成时唤醒 getRemainingResults */
   private completionResolve?: () => void
@@ -88,6 +95,7 @@ export class StreamingToolExecutor {
     this.executeFn = options.executeFn
     this.availableToolNames = options.availableToolNames
     this.maxConcurrency = options.maxConcurrency ?? 10
+    this.onToolCompleted = options.onToolCompleted
   }
 
   /**
@@ -205,6 +213,20 @@ export class StreamingToolExecutor {
         }
         tracked.status = 'completed'
         this.executingCount--
+
+        // 完成即回填：让外部（Agent UI 层）立即看到 tool_result，无需等 waitForAll
+        if (this.onToolCompleted) {
+          try {
+            this.onToolCompleted({
+              toolCall: tracked.toolCall,
+              result: tracked.result,
+              toolArgs: tracked.toolArgs
+            })
+          } catch (err) {
+            log.warn(`onToolCompleted handler threw: ${err instanceof Error ? err.message : String(err)}`)
+          }
+        }
+
         this.wakeWaiters()
         this.processQueue()
       })

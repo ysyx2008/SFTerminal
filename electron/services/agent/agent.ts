@@ -1687,16 +1687,23 @@ export abstract class Agent {
     // 更新上下文状态（注入 Context Status + 渐进式提醒）
     this.updateContextPressure(run)
     
-    // 创建流式工具执行器：AI 流式输出过程中提前启动工具
+    // 记录流式执行前的步骤数，用于后续 ensureToolResultStep 正确检测预执行工具的步骤
+    const stepCountBeforeStreaming = run.steps.length
+
+    // 创建流式工具执行器：AI 流式输出过程中提前启动工具，并在每个工具完成的瞬间
+    // 立即把 UI 卡片切到完成态（"完成一个显示一个"），不必等 AI 整段输出结束。
     const availableToolNames = new Set(this.getAvailableTools().map(t => t.function.name))
     const streamingExecutor = new StreamingToolExecutor({
       run,
       executeFn: (toolCall) => this.executeToolWithChecks(run, toolCall, toolExecutorConfig),
-      availableToolNames
+      availableToolNames,
+      onToolCompleted: ({ toolCall, result }) => {
+        // 仅做 UI 层回填（兜底 tool_result + finalizeToolCallStep），消息历史
+        // 仍保留按 toolCalls 原始顺序在 executeToolCallsWithStreaming 中统一写入。
+        this.ensureToolResultStep(run, stepCountBeforeStreaming, toolCall, result)
+        this.finalizeToolCallStep(run, toolCall.id, result.success)
+      }
     })
-    
-    // 记录流式执行前的步骤数，用于后续 ensureToolResultStep 正确检测预执行工具的步骤
-    const stepCountBeforeStreaming = run.steps.length
     
     // 调用 AI（传入流式执行器，使其在流式输出中提前执行工具）
     const response = await this.callAiWithStreaming(run, streamingExecutor)
@@ -2108,6 +2115,7 @@ export abstract class Agent {
               type: 'tool_call',
               content: displayContent,
               toolName,
+              toolCallId,
               isStreaming: true
             })
             if (run.initialStepId) {
@@ -2202,7 +2210,14 @@ export abstract class Agent {
       }
       log.warn(`Rejected hallucinated tool call: ${toolCall.function.name}`)
       const error = t('error.unknown_tool', { name: toolCall.function.name })
-      this.addStep({ type: 'tool_result', content: `⚠️ ${error}`, toolName: toolCall.function.name, toolResult: error })
+      this.addStep({
+        type: 'tool_result',
+        content: `⚠️ ${error}`,
+        toolName: toolCall.function.name,
+        toolCallId: toolCall.id,
+        toolResult: error,
+        success: false
+      })
       this.processToolResult(run, toolCall, { success: false, output: '', error }, {})
     }
 
@@ -2265,22 +2280,21 @@ export abstract class Agent {
     if (toolCalls.length === 0) return
 
     // 等待流式执行器中所有已投入的工具完成
+    // UI 层回填（ensureToolResultStep / finalizeToolCallStep）已经在 onToolCompleted
+    // 中"完成即处理"，这里只负责按原始 toolCalls 顺序把消息历史串起来。
     const preExecuted = await streamingExecutor.waitForAll()
     const preExecutedIds = new Set(preExecuted.map(r => r.toolCall.id))
-    
+
     if (preExecuted.length > 0) {
       const names = preExecuted.map(r => r.toolCall.function.name).join(', ')
       log.info(`Streaming pre-executed ${preExecuted.length} tools: [${names}]`)
     }
-    
-    // 按原始 toolCalls 顺序处理预执行的结果
-    // 使用流式执行前的步骤数作为基线，这样能看到预执行期间添加的 tool_result 步骤
+
     for (const toolCall of toolCalls) {
       if (!preExecutedIds.has(toolCall.id)) continue
-      
       const completed = preExecuted.find(r => r.toolCall.id === toolCall.id)!
-      this.setExecutionPhase(run, toolCall.function.name)
-      this.ensureToolResultStep(run, stepCountBeforeStreaming, toolCall.function.name, completed.result)
+      // 兜底再调一次：若 onToolCompleted 出错或被跳过，这里仍能保证 UI 状态收尾
+      this.ensureToolResultStep(run, stepCountBeforeStreaming, toolCall, completed.result)
       this.processToolResult(run, toolCall, completed.result, completed.toolArgs)
       this.finalizeToolCallStep(run, toolCall.id, completed.result.success)
     }
@@ -2299,6 +2313,11 @@ export abstract class Agent {
   
   /**
    * 并行执行一批工具
+   *
+   * "完成一个显示一个"：每个工具完成的瞬间立即在 UI 层兜底 tool_result 卡 +
+   * 收尾 tool_call 卡的状态（success / isStreaming），不必等整批 Promise.all 结束。
+   * 消息历史（run.messages）仍按 toolCalls 原始顺序在 await 之后统一 push，
+   * 以稳定 OpenAI/Anthropic 协议中 tool 消息序列。
    */
   private async executeToolBatchParallel(
     run: AgentRun,
@@ -2310,31 +2329,36 @@ export abstract class Agent {
 
     run.executionPhase = 'reading'
     run.currentToolName = `${toolCalls.length} tools`
-    
+
     const batchStartTime = Date.now()
     const stepCountBefore = run.steps.length
     const parallelPromises = toolCalls.map(async (toolCall) => {
       if (run.aborted) {
-        return { 
-          toolCall, 
-          result: { success: false, output: '', error: t('error.operation_aborted') } as ToolResult, 
+        const aborted = {
+          result: { success: false, output: '', error: t('error.operation_aborted') } as ToolResult,
           toolArgs: {} as Record<string, unknown>
         }
+        // 中止状态也立刻收尾 UI 卡，避免占位卡停留在"运行中"
+        this.ensureToolResultStep(run, stepCountBefore, toolCall, aborted.result)
+        this.finalizeToolCallStep(run, toolCall.id, aborted.result.success)
+        return { toolCall, ...aborted }
       }
-      return { toolCall, ...(await this.executeToolWithChecks(run, toolCall, toolExecutorConfig)) }
+      const out = await this.executeToolWithChecks(run, toolCall, toolExecutorConfig)
+      // 完成即回填 UI（视觉层面"完成一个显示一个"）
+      this.ensureToolResultStep(run, stepCountBefore, toolCall, out.result)
+      this.finalizeToolCallStep(run, toolCall.id, out.result.success)
+      return { toolCall, ...out }
     })
-    
+
     const results = await Promise.all(parallelPromises)
-    
+
     const batchElapsed = Date.now() - batchStartTime
     const successCount = results.filter(r => r.result.success).length
     log.info(`Tools parallel done: ${successCount}/${results.length} succeeded, ${batchElapsed}ms`)
 
-    // 按原始顺序处理结果
+    // 按原始顺序写入消息历史（协议层面）
     for (const { toolCall, result, toolArgs } of results) {
-      this.ensureToolResultStep(run, stepCountBefore, toolCall.function.name, result)
       this.processToolResult(run, toolCall, result, toolArgs)
-      this.finalizeToolCallStep(run, toolCall.id, result.success)
     }
   }
   
@@ -2443,24 +2467,34 @@ export abstract class Agent {
     // finalizeToolCallStep 也能找到并收尾。
     if (preStepId) registerActive(preStepId)
 
+    // 给所有 tool_call / tool_result 类型的步骤打上 toolCallId 戳，保证后续按 id 配对的可靠性。
+    // 工具实现层不需要感知这个字段，由本层统一注入。
+    const stamp = (step: Omit<AgentStep, 'id' | 'timestamp'>): Omit<AgentStep, 'id' | 'timestamp'> => {
+      if (step.type === 'tool_call' || step.type === 'tool_result') {
+        return { ...step, toolCallId: step.toolCallId ?? toolCall.id }
+      }
+      return step
+    }
+
     let adopted = false
     return {
       ...base,
       addStep: (step) => {
-        if (!adopted && step.type === 'tool_call') {
+        const stamped = stamp(step)
+        if (!adopted && stamped.type === 'tool_call') {
           adopted = true
           if (preStepId) {
-            base.updateStep(preStepId, { ...step, isStreaming: false })
+            base.updateStep(preStepId, { ...stamped, isStreaming: false })
             run.pendingPreToolCallStepIds?.delete(toolCall.id)
             run.pendingPreToolCallText?.delete(toolCall.id)
             const existing = run.steps.find(s => s.id === preStepId)
             if (existing) return existing
           }
-          const created = base.addStep(step)
+          const created = base.addStep(stamped)
           registerActive(created.id)
           return created
         }
-        return base.addStep(step)
+        return base.addStep(stamped)
       }
     }
   }
@@ -2515,7 +2549,7 @@ export abstract class Agent {
 
     const { result, toolArgs } = await this.executeToolWithChecks(run, toolCall, toolExecutorConfig)
 
-    this.ensureToolResultStep(run, stepCountBefore, toolName, result)
+    this.ensureToolResultStep(run, stepCountBefore, toolCall, result)
     this.processToolResult(run, toolCall, result, toolArgs)
     this.finalizeToolCallStep(run, toolCall.id, result.success)
   }
@@ -2573,7 +2607,8 @@ export abstract class Agent {
   /**
    * 确保工具执行后有 tool_result 步骤（内置工具自己添加，技能工具可能缺失）
    *
-   * 通过 toolName 匹配对应工具的 tool_result，适用于顺序、并行、流式预执行等各种路径。
+   * 优先按 toolCallId 配对，找不到时退化按 toolName 匹配（兼容老历史/未注入 id 的工具）。
+   * 适用于顺序、并行、流式预执行等各种路径，同名同批多次调用时也能精准对齐每一份结果。
    *
    * 同时回填 `success` 字段到工具自己 emit 的 tool_result 卡上——前端依据
    * `step.success === false` 决定是否在非调试模式下也展开详情区，让用户看到错误。
@@ -2581,19 +2616,28 @@ export abstract class Agent {
   private ensureToolResultStep(
     run: AgentRun,
     stepCountBefore: number,
-    toolName: string,
+    toolCall: ToolCall,
     result: ToolResult
   ): void {
+    const toolCallId = toolCall.id
+    const toolName = toolCall.function.name
     const newSteps = run.steps.slice(stepCountBefore)
 
-    // 回填 success 到工具自己 emit 的 tool_result 卡（可能有多张，全部回填）
+    const matches = (s: AgentStep) => {
+      if (s.toolCallId) return s.toolCallId === toolCallId
+      // 老步骤未带 toolCallId：退化按 toolName 匹配（仅对没有任何 toolCallId 的卡兜底）
+      return s.toolName === toolName
+    }
+
+    // 回填 success 到工具自己 emit 的 tool_result 卡（按 toolCallId 精准对齐）
     for (const s of newSteps) {
-      if (s.type === 'tool_result' && s.toolName === toolName && s.success === undefined) {
+      if (s.type === 'tool_result' && s.success === undefined && matches(s)) {
         this.updateStep(s.id, { success: result.success })
       }
     }
 
-    if (newSteps.some(s => s.type === 'error' || (s.type === 'tool_result' && s.toolName === toolName))) return
+    // 已存在本工具的结果卡（或有 error 步骤）就不再补 result 步骤
+    if (newSteps.some(s => s.type === 'error' || (s.type === 'tool_result' && matches(s)))) return
 
     if (!result.success) {
       const errorMsg = result.error || t('agent.unknown_error')
@@ -2601,6 +2645,7 @@ export abstract class Agent {
         type: 'tool_result',
         content: `❌ ${toolName}`,
         toolName,
+        toolCallId,
         toolResult: errorMsg,
         success: false
       })
@@ -2612,6 +2657,7 @@ export abstract class Agent {
         type: 'tool_result',
         content: `✅ ${toolName}`,
         toolName,
+        toolCallId,
         toolResult: preview,
         success: true
       })

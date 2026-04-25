@@ -122,6 +122,12 @@ export interface AgentStep {
   images?: string[]
   attachments?: AttachmentInfo[]
   toolName?: string
+  /**
+   * 关联的 tool_call ID。用于在同一批工具调用中精确配对 tool_call ↔ tool_result，
+   * 避免按 toolName 配对时同名工具相互覆盖。
+   * 仅 tool_call / tool_result 步骤需要；老历史数据可能缺失，此时退化为按 toolName 匹配。
+   */
+  toolCallId?: string
   toolArgs?: Record<string, unknown>
   toolResult?: string
   riskLevel?: RiskLevel
