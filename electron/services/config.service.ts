@@ -1,6 +1,6 @@
 import Store from 'electron-store'
 import { safeStorage } from 'electron'
-import type { ExecutionMode } from '@shared/types'
+import type { AiModelType, AiProfile, ApiFormat, ExecutionMode, JumpHostConfig } from '@shared/types'
 import type { KnowledgeSettings } from './knowledge/types'
 import { DEFAULT_KNOWLEDGE_SETTINGS } from './knowledge/types'
 import type { TtsSettings, WebSearchSettings } from '@shared/types'
@@ -8,39 +8,9 @@ import { DEFAULT_TTS_SETTINGS, DEFAULT_WEB_SEARCH_SETTINGS } from '@shared/types
 import { createLogger, type LogLevel } from '../utils/logger'
 import { normalizeTerminalSettings, normalizeKeyboardShortcuts } from '../utils/normalize'
 
+export type { AiModelType, AiProfile, ApiFormat, JumpHostConfig }
+
 const log = createLogger('Config')
-
-// AI 模型类型
-export type AiModelType = 'general' | 'vision'
-
-// API 协议格式
-export type ApiFormat = 'auto' | 'openai' | 'anthropic'
-
-export interface AiProfile {
-  id: string
-  name: string
-  apiUrl: string
-  apiKey: string
-  model: string
-  proxy?: string
-  contextLength?: number  // 模型上下文长度（tokens），默认 128000
-  maxOutputTokens?: number  // 单次回复最大输出 token 数，默认 8192
-  temperature?: number  // 采样温度，留空则自动选择
-  modelType?: AiModelType        // 模型类型，默认 general
-  visionProfileId?: string       // 关联的视觉模型 Profile ID（仅 general 类型有效）
-  apiFormat?: ApiFormat           // API 协议格式，默认 auto（自动检测）
-}
-
-// 跳板机配置
-export interface JumpHostConfig {
-  host: string
-  port: number
-  username: string
-  authType: 'password' | 'privateKey'
-  password?: string
-  privateKeyPath?: string
-  passphrase?: string
-}
 
 // 会话分组
 export interface SessionGroup {

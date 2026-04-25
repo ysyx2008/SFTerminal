@@ -2,20 +2,13 @@ import SftpClient from 'ssh2-sftp-client'
 import * as fs from 'fs'
 import * as path from 'path'
 import { EventEmitter } from 'events'
+import type { SftpConfig } from '@shared/types'
 import { getSshErrorMessage } from './ssh-error'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('SFTP')
 
-export interface SftpConfig {
-  host: string
-  port: number
-  username: string
-  password?: string
-  privateKey?: string | Buffer
-  privateKeyPath?: string
-  passphrase?: string
-}
+export type { SftpConfig }
 
 export interface SftpFileInfo {
   name: string

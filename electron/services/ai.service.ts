@@ -368,22 +368,7 @@ export interface ChatWithToolsResult {
   aborted?: boolean  // 是否因外部中止（如用户补充新消息）被打断；调用方据此避免把已展示的正文从步骤卡里抹掉
 }
 
-export type { AiModelType } from './config.service'
-
-export interface AiProfile {
-  id: string
-  name: string
-  apiUrl: string
-  apiKey: string
-  model: string
-  proxy?: string
-  contextLength?: number  // 模型上下文长度（tokens），默认 128000
-  maxOutputTokens?: number  // 单次回复最大输出 token 数，默认 8192
-  temperature?: number  // 采样温度，留空则自动选择（默认 0.7，部分模型如 Kimi K2.5 强制为 1）
-  modelType?: import('./config.service').AiModelType  // 模型类型，默认 general
-  visionProfileId?: string  // 关联的视觉模型 Profile ID（仅 general 类型有效）
-  apiFormat?: import('./config.service').ApiFormat  // API 协议格式，默认 auto
-}
+export type { AiModelType, AiProfile } from '@shared/types'
 
 /**
  * 检测 API 错误是否因为不支持多模态/视觉输入

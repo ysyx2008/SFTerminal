@@ -3,27 +3,14 @@ import { v4 as uuidv4 } from 'uuid'
 import * as fs from 'fs'
 import stripAnsi from 'strip-ansi'
 import * as iconv from 'iconv-lite'
+import type { JumpHostConfig, SshConfig, SshEncoding } from '@shared/types'
 import { getUnixProbeCommands } from './host-profile.service'
 import { getSshErrorMessage } from './ssh-error'
 import { createLogger } from '../utils/logger'
 
-const log = createLogger('SSH')
+export type { JumpHostConfig, SshConfig, SshEncoding }
 
-// 支持的字符编码（与前端保持一致）
-export type SshEncoding = 
-  | 'utf-8'      // UTF-8 (默认，支持所有语言)
-  | 'gbk'        // 简体中文 (Windows)
-  | 'gb2312'     // 简体中文
-  | 'gb18030'    // 简体中文 (完整)
-  | 'big5'       // 繁体中文
-  | 'shift_jis'  // 日语
-  | 'euc-jp'     // 日语 (Unix)
-  | 'euc-kr'     // 韩语
-  | 'iso-8859-1' // Latin-1 (西欧语言)
-  | 'iso-8859-15'// Latin-9 (西欧语言，含欧元符号)
-  | 'windows-1252' // Windows 西欧
-  | 'koi8-r'     // 俄语
-  | 'windows-1251' // 俄语 (Windows)
+const log = createLogger('SSH')
 
 // 终端状态接口（与 pty.service.ts 保持一致）
 export interface TerminalStatus {
@@ -32,31 +19,6 @@ export interface TerminalStatus {
   foregroundPid?: number
   foregroundProcess?: string
   stateDescription?: string
-}
-
-// 跳板机配置
-export interface JumpHostConfig {
-  host: string
-  port: number
-  username: string
-  authType: 'password' | 'privateKey'
-  password?: string
-  privateKeyPath?: string
-  passphrase?: string
-}
-
-export interface SshConfig {
-  host: string
-  port: number
-  username: string
-  password?: string
-  privateKey?: string
-  privateKeyPath?: string
-  passphrase?: string
-  cols?: number
-  rows?: number
-  jumpHost?: JumpHostConfig  // 跳板机配置
-  encoding?: SshEncoding     // 字符编码，默认 utf-8
 }
 
 interface SshInstance {

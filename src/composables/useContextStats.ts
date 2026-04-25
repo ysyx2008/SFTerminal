@@ -3,6 +3,7 @@
  * 估算 Token 使用量和上下文统计
  */
 import { computed, ComputedRef } from 'vue'
+import type { AiProfile } from '@shared/types'
 import type { AgentStep } from '../stores/terminal'
 
 // Agent 状态类型
@@ -13,17 +14,6 @@ interface AgentState {
   pendingConfirm?: unknown
   userTask?: string
   finalResult?: string
-}
-
-// AI Profile 类型
-interface AiProfile {
-  id: string
-  name: string
-  apiUrl: string
-  apiKey: string
-  model: string
-  proxy?: string
-  contextLength?: number
 }
 
 // 上下文统计结果

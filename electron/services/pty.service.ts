@@ -5,7 +5,10 @@ import { exec, execSync } from 'child_process'
 import { promisify } from 'util'
 import stripAnsi from 'strip-ansi'
 import * as iconv from 'iconv-lite'
+import type { PtyOptions } from '@shared/types'
 import { createLogger } from '../utils/logger'
+
+export type { PtyOptions }
 
 const log = createLogger('PTY')
 
@@ -43,15 +46,6 @@ function decodeLsofPath(path: string): string {
   } catch {
     return path
   }
-}
-
-export interface PtyOptions {
-  cols?: number
-  rows?: number
-  cwd?: string
-  shell?: string
-  env?: Record<string, string>
-  encoding?: string  // 字符编码：'auto' | 'utf-8' | 'gbk' | 'big5' | 'shift_jis' 等
 }
 
 export interface CommandResult {

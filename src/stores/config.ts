@@ -1,8 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
+import type { AiModelType, AiProfile, ApiFormat, JumpHostConfig, SshEncoding } from '@shared/types'
 import { setLocale, type LocaleType } from '../i18n'
 import { uiThemes, type UiThemeName } from '../themes/ui-themes'
 import { setLogLevel as setFrontendLogLevel, type LogLevel } from '../utils/logger'
+
+export type { AiModelType, AiProfile, ApiFormat, JumpHostConfig, SshEncoding }
 
 // 快捷键配置（值为 Electron Accelerator 格式，空字符串表示禁用）
 export interface KeyboardShortcuts {
@@ -35,35 +38,6 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   voiceInput: 'Control',
 }
 
-// 与 electron/services/config.service.ts 中的类型保持同步
-export type AiModelType = 'general' | 'vision'
-export type ApiFormat = 'auto' | 'openai' | 'anthropic'
-
-export interface AiProfile {
-  id: string
-  name: string
-  apiUrl: string
-  apiKey: string
-  model: string
-  proxy?: string
-  contextLength?: number  // 模型上下文长度（tokens），默认 128000
-  maxOutputTokens?: number  // 单次回复最大输出 token 数，默认 8192
-  temperature?: number  // 采样温度，留空则自动选择
-  modelType?: AiModelType        // 模型类型，默认 general
-  visionProfileId?: string       // 关联的视觉模型 Profile ID（仅 general 类型有效）
-  apiFormat?: ApiFormat           // API 协议格式，默认 auto
-}
-
-// 跳板机配置
-export interface JumpHostConfig {
-  host: string
-  port: number
-  username: string
-  authType: 'password' | 'privateKey'
-  password?: string
-  privateKeyPath?: string
-  passphrase?: string
-}
 
 // 会话分组（支持跳板机继承）
 export interface SessionGroup {
@@ -75,22 +49,6 @@ export interface SessionGroup {
 
 // 主机排序方式
 export type SessionSortBy = 'custom' | 'name' | 'name-desc' | 'lastUsed'
-
-// 支持的字符编码
-export type SshEncoding = 
-  | 'utf-8'      // UTF-8 (默认，支持所有语言)
-  | 'gbk'        // 简体中文 (Windows)
-  | 'gb2312'     // 简体中文
-  | 'gb18030'    // 简体中文 (完整)
-  | 'big5'       // 繁体中文
-  | 'shift_jis'  // 日语
-  | 'euc-jp'     // 日语 (Unix)
-  | 'euc-kr'     // 韩语
-  | 'iso-8859-1' // Latin-1 (西欧语言)
-  | 'iso-8859-15'// Latin-9 (西欧语言，含欧元符号)
-  | 'windows-1252' // Windows 西欧
-  | 'koi8-r'     // 俄语
-  | 'windows-1251' // 俄语 (Windows)
 
 export interface SshSession {
   id: string

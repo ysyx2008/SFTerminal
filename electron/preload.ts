@@ -1,4 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type { AiProfile, JumpHostConfig, PtyOptions, SftpConfig, SshConfig } from '@shared/types'
+
+export type { AiProfile, JumpHostConfig, PtyOptions, SftpConfig, SshConfig }
 
 // 更新状态类型
 export interface UpdateStatus {
@@ -14,53 +17,9 @@ export interface UpdateStatus {
   }
 }
 
-// 类型定义
-export interface PtyOptions {
-  cols?: number
-  rows?: number
-  cwd?: string
-  shell?: string
-  env?: Record<string, string>
-  encoding?: string  // 字符编码：'auto' | 'utf-8' | 'gbk' | 'big5' | 'shift_jis' 等
-}
-
-export interface SshConfig {
-  host: string
-  port: number
-  username: string
-  password?: string
-  privateKey?: string  // 私钥内容（直接传递）
-  privateKeyPath?: string  // 私钥文件路径（从文件读取）
-  passphrase?: string  // 私钥密码（可选）
-  cols?: number
-  rows?: number
-  jumpHost?: JumpHostConfig  // 跳板机配置
-  encoding?: string  // 字符编码，默认 utf-8
-}
-
 export interface AiMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
-}
-
-export interface AiProfile {
-  id: string
-  name: string
-  apiUrl: string
-  apiKey: string
-  model: string
-  proxy?: string
-}
-
-// 跳板机配置
-export interface JumpHostConfig {
-  host: string
-  port: number
-  username: string
-  authType: 'password' | 'privateKey'
-  password?: string
-  privateKeyPath?: string
-  passphrase?: string
 }
 
 // 会话分组
@@ -171,17 +130,6 @@ export interface ImportResult {
   success: boolean
   sessions: XshellSession[]
   errors: string[]
-}
-
-// SFTP 相关类型
-export interface SftpConfig {
-  host: string
-  port: number
-  username: string
-  password?: string
-  privateKey?: string | Buffer
-  privateKeyPath?: string
-  passphrase?: string
 }
 
 // 文件书签类型
