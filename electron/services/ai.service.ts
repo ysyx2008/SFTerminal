@@ -368,7 +368,8 @@ export interface ChatWithToolsResult {
   aborted?: boolean  // 是否因外部中止（如用户补充新消息）被打断；调用方据此避免把已展示的正文从步骤卡里抹掉
 }
 
-export type { AiModelType, AiProfile } from '@shared/types'
+import type { AiModelType, AiProfile } from '@shared/types'
+export type { AiModelType, AiProfile }
 
 /**
  * 检测 API 错误是否因为不支持多模态/视觉输入
