@@ -137,11 +137,11 @@ run(message, context, options)
 | `streamDisplay` | 流式预卡片标题/字段/进度尾缀 | 通用兜底「调用: {toolName}」 |
 | `parallelizable` | 是否可与其他工具并行执行 | `false`（串行） |
 | `phase` | 执行此工具时的 Agent 阶段 | `'executing_command'` |
-| `idempotencyKey` | 工具白名单/幂等键的字段子集 | 整个 args |
+| `idempotencyKey` | 工具白名单/幂等键的字段子集 | 全 args 参与生成 key |
 | `lifecycle.marksOnboardingComplete` | 调用此工具表示诞生引导完成 | `false` |
 | `lifecycle.blocksUntilUserInput` | 此工具的 tool_call 后阻塞等待用户输入 | `false` |
 | `argRole.summaryLine` | 历史摘要中"主命令"字段（task-memory 抽取用） | 不抽取 |
-| `contextBudget.toolResult` | 上下文压缩时的处理（`'clearable'` / `'protected'`） | `'clearable'`（即默认可清理） |
+| `contextBudget.toolResult` | 上下文压缩时的处理（`'clearable'` / `'protected'`） | `'clearable'`（即默认可清理）⚠️ 见下方说明 |
 
 ### 元数据访问层（`tool-metadata.ts`）
 
@@ -166,6 +166,17 @@ run(message, context, options)
 `__tests__/oop-boundary.test.ts`：动态枚举所有内置工具与技能工具的名字，断言上述 6 个抽象层文件源码不含任何一个字面量。一旦后续重构（包括 AI 顺手加的代码）违反原则，CI 阶段立刻失败。
 
 `.cursor/rules/agent-oop-boundary.mdc`：在 AI 编辑这些文件时给 LLM 上下文加上 OOP 边界规则，防止"看到 switch 已有 case 就照葫芦画瓢加新 case"的模仿大于架构反模式。
+
+### 关于 `contextBudget` 默认值的设计选择
+
+`contextBudget.toolResult` 未声明时默认按 **`'clearable'`** 处理（旧实现里"非 CLEARABLE / 非 PROTECTED / 非 mcp_/plugin_ 前缀"会按 false 即"不可清理"对待）。改默认值是**有意的**：
+
+1. 实际场景中"未登记"的工具几乎全是 MCP / plugin / user-skill 工具，它们的输出多为只读查询，可清理
+2. 写入类工具都已显式标注 `'protected'`，不会被误清理
+3. 若有第三方插件工具确实有副作用且不希望结果被清理，应显式声明 `'protected'` 而非依赖默认行为
+4. 默认更激进等于更省 token，符合上下文预算的整体目标
+
+如果有插件作者希望给自己的工具默认改回保护语义，请在 ToolDefinition 上显式声明，不要修改本节的默认值。
 
 ### 历史教训
 

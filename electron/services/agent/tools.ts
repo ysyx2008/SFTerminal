@@ -908,8 +908,10 @@ Agent 类型：
           },
           required: ['file_path']
         }
-      }
-    })
+      },
+      // 发送结果只是"已发送/失败"短消息，可清理；与其他动作型工具保持元数据一致性
+      _meta: { contextBudget: { toolResult: 'clearable' } }
+    } as ToolDefinitionWithMeta)
   }
 
   // 上下文管理工具：仅在用量超过阈值时注入，节省 token

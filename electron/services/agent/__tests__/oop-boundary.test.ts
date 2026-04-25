@@ -86,14 +86,23 @@ const ALLOWED_LITERALS = new Set<string>([
 
 /**
  * 检查指定文件源码中是否出现某个工具名作为字符串字面量。
- * 简化检测：直接 indexOf 匹配 'name' 或 "name"。
- * 字面量在注释里也会被匹配——这是有意为之，注释里也不该出现具体工具名。
+ *
+ * 检测覆盖三种字符串字面量形式：单引号 / 双引号 / 反引号（template literal，无插值）。
+ * 不覆盖刻意绕过的形式（字符串拼接、转义序列、动态拼接等）——那些不是日常会写出来的代码，
+ * 真要绕也容易在 review 时发现。
+ *
+ * 字面量在注释里也会被匹配——这是有意为之，注释里也不该出现具体工具名（提示文除外，
+ * 但提示文不属于本规则护栏的 6 个抽象层文件）。
  */
 function findToolNameLiterals(sourceCode: string, toolNames: string[]): string[] {
   const found: string[] = []
   for (const name of toolNames) {
     if (ALLOWED_LITERALS.has(name)) continue
-    if (sourceCode.includes(`'${name}'`) || sourceCode.includes(`"${name}"`)) {
+    if (
+      sourceCode.includes(`'${name}'`) ||
+      sourceCode.includes(`"${name}"`) ||
+      sourceCode.includes(`\`${name}\``)
+    ) {
       found.push(name)
     }
   }
