@@ -391,6 +391,10 @@ async function writeApproval(args: WeComWriteArgs, executor: ToolExecutorConfig)
     return { success: false, output: '', error: t('wecom.approval_template_required' as any) }
   }
 
+  if (!data) {
+    return { success: false, output: '', error: t('wecom.approval_creator_required' as any) }
+  }
+
   const body: any = {
     creator_userid: data.creator_userid || data.userid,
     template_id: args.template_id || data.template_id,
