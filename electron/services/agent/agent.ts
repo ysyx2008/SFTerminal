@@ -1194,16 +1194,11 @@ export abstract class Agent {
     
     if (this.taskMemory.getTaskCount() > 0) {
       const contextLength = this.getContextLength()
-      // 历史任务一律以"摘要"形式注入 system prompt（minCompressionLevel: 3+），
-      // 不再以 user/assistant/tool 对话形式塞进 messages，避免 LLM 把跨会话的历史档案
-      // 误判为"我刚做过的事"而模仿其中的工具调用、误判任务完成。
-      // 想看任务详情，AI 应主动调用 recall(id)。
-      // wakeup 路径维持原本的 maxTasks=5 限制（更紧的 token 预算）。
-      const historyOptions: TaskHistoryOptions = run.context.wakeup
+      const historyOptions: TaskHistoryOptions | undefined = run.context.wakeup
         ? { maxTasks: 5, minCompressionLevel: 3 }
-        : { minCompressionLevel: 3 }
+        : undefined
       const contextResult = buildTaskHistoryContext(this.taskMemory, contextLength, message, historyOptions)
-
+      
       recentTaskMessages = contextResult.recentTaskMessages
       if (contextResult.taskSummarySection) {
         taskSummaries = contextResult.taskSummarySection
@@ -1272,11 +1267,7 @@ export abstract class Agent {
     
     const systemPrompt = this.buildSystemPrompt(run.context, promptOptions)
     run.messages.push({ role: 'system', content: systemPrompt })
-
-    // 注：historyOptions 的 minCompressionLevel: 3 让 buildTaskHistoryContext 把所有
-    // 历史任务都归入 taskSummarySection（已注入 system prompt），recentTaskMessages
-    // 实际为空。此处保留 push 仅作向后兼容防御——若将来重新启用"历史以对话形式注入
-    // messages"的设计，需同时调整 historyOptions 与 PromptBuilder 中的描述。
+    
     if (recentTaskMessages.length > 0) {
       for (const msg of recentTaskMessages) {
         run.messages.push(msg)

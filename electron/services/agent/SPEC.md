@@ -96,26 +96,6 @@ run(message, context, options)
 - **DeepSeek/OpenAI**：自动前缀缓存天然命中，无需额外标记
 - **重置**：`resetSession()` 清空 `_previousRunMessages`
 
-## 历史任务的注入策略
-
-新会话第一次任务（cold start）时，`buildContext` 通过 `buildTaskHistoryContext` 注入历史任务，**统一以"摘要"形式注入 system prompt**，**不以对话形式（user/assistant/tool）塞进 messages 数组**。
-
-**为什么这样做**：
-- 历史任务和当前会话本就**不连续**（尤其新会话第一次任务时，TaskMemory 来自 `restoreFromHistory`，"最近的"任务可能是上一个会话的尾声）
-- 如果以原生对话格式注入 messages，LLM 看到的结构上和当前对话完全一样，会误判为"我刚做过的事"，进而：
-  1. 重复处理已完成的工作
-  2. 模仿历史中的工具调用（包括子 Agent 看不到的父专属工具如 `dispatch_agents`，导致幻觉调用）
-  3. 误判任务完成度
-- 把它们集中放在 system prompt 的 `# 历史任务` 一节，措辞明确"仅供参考、不属于当前对话"，AI 能清楚区分
-
-**实现细节**：
-- `agent.ts` cold start 路径下 `historyOptions` 一律设 `minCompressionLevel: 3`（用户主动 + wakeup 都一致）
-- `buildRecentTasksContext` 内部规则：level ≤ 2 进 `recentTaskMessages`（push 进 messages），level ≥ 3 进 `taskSummarySection`（注入 system prompt）。强制 `minCompressionLevel: 3` 即所有任务必走 summary 分支
-- `recentTaskMessages` 实际为空数组；agent.ts 中保留对它的 push 仅作向后兼容（将来如重新启用"对话形式注入"，需同时调整 `historyOptions` 与 PromptBuilder 描述）
-- `# 历史任务` section 描述明确告知 AI："仅供参考、不属于当前对话…需要详情用 `recall(id)`"
-- AI 想看任务详情，主动调用 `recall(id)` 工具按需获取
-- Cache path（同会话连续任务）天然不受影响——直接复用上一次的 messages
-
 ## 会话与持久化
 
 - **会话追踪**：`_sessionId`、`_sessionSteps`、`_sessionMessages` 跨多次 `run` 累积
