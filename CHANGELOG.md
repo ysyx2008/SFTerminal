@@ -2,7 +2,42 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.34.1 (2026-04-24) (Latest)
+## v10.35.0 (2026-04-26) (Latest)
+
+This release focuses on a major boost in Agent tool execution transparency — file reads/writes, sub-agents, and document generation tools all gain streaming pre-rendered cards with live character counts, making long-running task progress visible at a glance. It also delivers a major Agent base-class refactor and a brand-new light theme, alongside a Google Custom Search provider and a 10–20× speedup in knowledge base rebuilds.
+
+### New Features
+- 🛠️ **Streaming Pre-rendered Tool Cards**: `read_file`, file write, file edit, `word_from_markdown`, `excel_from_markdown`, `dispatch_agents` and friends now render their card during the generation phase; write tools also append live character counts so long-running progress stays visible
+- 🔍 **Google Custom Search Provider**: Web search adds a Google Custom Search provider, switchable alongside other providers
+- 🔗 **Auto-linkified URLs in AI Replies**: URLs in AI conversation text are auto-detected and rendered as clickable links (including final summaries and proactive messages)
+- 🛠️ **New CLI `knowledge:rebuild` Command**: End-to-end rebuild of the local knowledge index from the terminal — useful for troubleshooting and regression testing
+
+### Improvements
+- 🎨 **Brand-new Light Theme**: The light theme has been re-tuned with cleaner tonal hierarchy, and a long-standing bright-seam issue in the light terminal is now fixed
+- 🧩 **Major Agent Base-class Refactor**: Introduced a ToolMeta metadata skeleton that consolidates parallelizability, execution phase, lifecycle, stream display, context budget and similar behaviors directly onto tool declarations — alongside OOP boundary guardrails / Cursor rules / SPECs and shared front-/back-end types, paving the way for future tool-system extensions
+- ⚡ **10–20× Faster Knowledge Rebuild**: Embedding now uses batched inference with cross-document batching; BM25 rebuild skips per-batch `saveIndex` to eliminate O(N²) serialization
+- 📊 **Wider Rebuild Progress Coverage**: Fallback rebuilds triggered by data corruption / missing BM25 also show the progress bar
+- 🤖 **Tighter Sub-agent Toolset**: Physically disables tools that don't apply to sub-agents and orders the tool list cache-friendly; the async dispatch mode has been removed in favor of synchronous-only `dispatch_agents` for more predictable behavior
+- 🧩 **Smoother Tool Card Display**: `tool_call` / `tool_result` now pair via `toolCallId`, so parallel/streaming tools display as soon as they finish rather than depending on order
+- 🧹 **Debug Mode Decoupled**: Debug now only affects frontend presentation and no longer changes emit/persistence
+- 🎨 **Unified `tool_call` Accent**: The left bar now uses the "execution result" color, decoupled from the risk color
+- 📝 **File Read Success Toast**: Now includes the filename for clarity
+- 📝 **Refreshed External Contributor Guide & PR Template**
+
+### Bug Fixes
+- 🐛 **Async Sub-agent Completion Order**: The main Agent now waits for background sub-agents to finish before wrapping up, preventing premature termination
+- 🐛 **Blue Flash on Cold Start**: Combined `localStorage` pre-load with a pre-mount async prefetch as a dual safety net
+- 🐛 **Vector Index Rebuild Error Spam**: Fixed the error loop caused by `createTable` conflicts during vector rebuild
+- 🐛 **Lost Body When AI Output Interrupted**: Already-displayed body text is now preserved when the user interrupts
+- 🐛 **Thinking Card Collapse & Placeholders**: Reasoning collapses immediately on completion; placeholder strings fully localized
+- 🐛 **Pre-rendered Card Before `path` Arrives**: Cards display with a placeholder until the `path` argument streams in, removing the blank-screen gap
+- 🐛 **CLI `agent:run` Fails to Start**
+- 🐛 **Duplicate plan / ask_user / wait Cards Outside Debug Mode**: Only a single card is now shown
+- 🐛 **Cursor on Links**: Links in final summaries / proactive messages now show the pointer cursor again
+- 🐛 **WeCom Approval Null Guard**: `writeApproval` now null-checks missing `data`
+- 🐛 **Missing `AiProfile` Import**: Completed the `AiProfile` import declaration in `ai-service`
+
+## v10.34.1 (2026-04-24)
 
 Follow-up to v10.34.0's DeepSeek V4 thinking-mode support — patching a real-world compatibility gap uncovered after release.
 
