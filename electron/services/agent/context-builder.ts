@@ -92,7 +92,7 @@ export function calculateBudget(contextLength: number): ContextBudget {
 /**
  * 修复 assistant.tool_calls 后的消息序列，确保 OpenAI/DeepSeek 协议合规。
  *
- * 处理两类问题：
+ * 处理三类问题：
  *
  * 1. **缺失的 tool result**（残缺序列）
  *    场景：checkpoint 在工具执行中途写盘，或 App 在工具执行期间退出，
@@ -107,6 +107,14 @@ export function calculateBudget(contextLength: number): ContextBudget {
  *    "insufficient tool messages following tool_calls message"。
  *    修复：把夹杂的 user 消息挪到所有 tool 消息之后。
  *
+ * 3. **孤儿 tool 消息**（无主序列）
+ *    场景：splitMessagesIntoTasks 把工具图片注入的 user 消息当作任务边界切分，
+ *    导致某个 task 的 messages 第一条/中间出现一条 tool 消息但前面没有
+ *    对应的 assistant tool_calls。或者 history 数据中其他原因留下的孤儿 tool。
+ *    DeepSeek/OpenAI 都会报
+ *    "Messages with role 'tool' must be a response to a preceding message with 'tool_calls'"。
+ *    修复：把这种 tool 消息转成 user 消息（保留内容但角色合法）。
+ *
  * 当前 push 路径已不再产生第二类问题（见 Agent.flushPendingToolImages），
  * 此修复主要为兼容历史持久化数据。
  */
@@ -116,6 +124,19 @@ export function sanitizeToolCallSequence(messages: AiMessage[]): AiMessage[] {
   let i = 0
   while (i < messages.length) {
     const msg = messages[i]
+
+    // 第三类问题预防：当前位置不在 assistant.tool_calls 的扫描范围内（下方循环
+    // 会向前推进 i，所以这里能到达的 tool 消息都是「孤儿」），转成 user 消息保留内容。
+    if (msg.role === 'tool') {
+      const toolName = (msg.tool_call_id ? `[tool result orphan: ${msg.tool_call_id}]` : '[tool result orphan]')
+      result.push({
+        role: 'user',
+        content: `${toolName}\n${msg.content || ''}`
+      })
+      i++
+      continue
+    }
+
     result.push(msg)
 
     if (msg.role !== 'assistant' || !msg.tool_calls?.length) {

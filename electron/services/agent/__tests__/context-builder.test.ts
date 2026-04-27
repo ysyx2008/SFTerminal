@@ -484,4 +484,62 @@ describe('sanitizeToolCallSequence', () => {
   it('should handle empty messages', () => {
     expect(sanitizeToolCallSequence([])).toEqual([])
   })
+
+  // 第三类问题：孤儿 tool（前面没有 assistant tool_calls）
+  // 历史数据中 splitMessagesIntoTasks 把工具图片注入的 user 消息当作任务边界切分，
+  // 导致某个 task 的 messages 开头/中间是孤立的 tool 消息，发给 API 会报
+  // "Messages with role 'tool' must be a response to a preceding message with 'tool_calls'"
+  describe('orphan tool messages', () => {
+    it('should convert orphan tool at start to user message', () => {
+      const messages: AiMessage[] = [
+        { role: 'tool', content: 'orphan result', tool_call_id: 't1' },
+        { role: 'assistant', content: 'continuing' },
+        { role: 'user', content: 'next' }
+      ]
+      const result = sanitizeToolCallSequence(messages)
+      expect(result).toHaveLength(3)
+      expect(result[0].role).toBe('user')
+      expect(result[0].content).toContain('orphan result')
+      expect(result[1]).toEqual(messages[1])
+      expect(result[2]).toEqual(messages[2])
+    })
+
+    it('should convert orphan tool between two assistant messages to user', () => {
+      const messages: AiMessage[] = [
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: 'hello' }, // 普通 assistant，无 tool_calls
+        { role: 'tool', content: 'orphan', tool_call_id: 't1' }, // 孤儿
+        { role: 'assistant', content: 'next' }
+      ]
+      const result = sanitizeToolCallSequence(messages)
+      expect(result.map(m => m.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+      expect(result[2].content).toContain('orphan')
+    })
+
+    it('should handle multiple orphan tools', () => {
+      const messages: AiMessage[] = [
+        { role: 'tool', content: 'a', tool_call_id: 'a' },
+        { role: 'tool', content: 'b', tool_call_id: 'b' },
+        { role: 'user', content: 'follow-up' }
+      ]
+      const result = sanitizeToolCallSequence(messages)
+      expect(result).toHaveLength(3)
+      expect(result[0].role).toBe('user')
+      expect(result[1].role).toBe('user')
+      expect(result[2]).toEqual(messages[2])
+    })
+
+    it('should not produce orphan tool when properly paired', () => {
+      // 正确的 tool_calls 后跟 tool 消息不应被当作孤儿处理
+      const messages: AiMessage[] = [
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: '', tool_calls: [
+          { id: 'a', type: 'function', function: { name: 'f', arguments: '{}' } }
+        ] },
+        { role: 'tool', content: 'paired', tool_call_id: 'a' }
+      ]
+      const result = sanitizeToolCallSequence(messages)
+      expect(result).toEqual(messages) // 原样保留，role 仍是 'tool'
+    })
+  })
 })

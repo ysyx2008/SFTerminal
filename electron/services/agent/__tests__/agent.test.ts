@@ -146,7 +146,10 @@ function createMockConfigService() {
     getLanguage: vi.fn().mockReturnValue('zh-CN'),
     getAiProfiles: vi.fn().mockReturnValue([{ id: 'test', contextLength: 128000 }]),
     getActiveAiProfile: vi.fn().mockReturnValue('test'),
-    getAgentOnboardingCompleted: vi.fn().mockReturnValue(true)
+    getAgentOnboardingCompleted: vi.fn().mockReturnValue(true),
+    // 默认假设 profile 具备视觉能力——大多数测试关注的是「图片如何注入到 messages」
+    // 等协议路径，需要图片真的被附带；「无视觉时剥图」的行为有专门的测试用例覆盖。
+    hasVisionCapability: vi.fn().mockReturnValue(true)
   }
 }
 
@@ -612,6 +615,55 @@ describe('Agent', () => {
       expect(run.messages.map((m: any) => m.role)).toEqual(['tool'])
       // 无图片场景下不需要初始化 pendingToolImages（undefined 或空数组都视为"无暂存"）
       expect(run.pendingToolImages?.length ?? 0).toBe(0)
+    })
+
+    it('should drop images and inject "no vision" hint when current profile lacks vision capability', () => {
+      // 当前 profile 不支持视觉时，flushPendingToolImages 应剥图但仍 push 一条 user 提示，
+      // 让 AI 主动告知用户切换视觉模型，避免它凭文件名/上下文瞎编内容
+      const noVisionConfig = {
+        ...createMockConfigService(),
+        hasVisionCapability: vi.fn().mockReturnValue(false)
+      }
+      const noVisionAgent = new TestAgent(createMockServices({ configService: noVisionConfig as any }))
+      const run = makeRun()
+      run.messages.push({
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          { id: 'tc-a', type: 'function', function: { name: 'read_file', arguments: '{}' } }
+        ]
+      })
+      noVisionAgent.testProcessToolResult(run, makeToolCall('tc-a', 'read_file'), {
+        success: true, output: 'ok', images: ['imgA', 'imgB']
+      })
+      noVisionAgent.testFlushPendingToolImages(run)
+
+      // 序列：assistant → tool → user(无视觉提示，不带 images)
+      expect(run.messages.map((m: any) => m.role)).toEqual(['assistant', 'tool', 'user'])
+      const userMsg = run.messages[2]
+      expect(userMsg.images).toBeUndefined()
+      expect(userMsg.content).toBeTruthy()
+      expect(userMsg._systemInjected).toBe(true)
+    })
+
+    it('should mark vision-mode tool image messages as _systemInjected', () => {
+      // 系统注入的 user 消息必须打 _systemInjected 标记，
+      // 否则 splitMessagesIntoTasks 会把它当作任务边界，把同一个 task 切碎，
+      // 造成「孤儿 tool」违规序列
+      const run = makeRun()
+      run.messages.push({
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          { id: 'tc-a', type: 'function', function: { name: 'read_file', arguments: '{}' } }
+        ]
+      })
+      agent.testProcessToolResult(run, makeToolCall('tc-a', 'read_file'), {
+        success: true, output: 'ok', images: ['img']
+      })
+      agent.testFlushPendingToolImages(run)
+      const userMsg = run.messages.find((m: any) => m.role === 'user')
+      expect(userMsg?._systemInjected).toBe(true)
     })
   })
 })

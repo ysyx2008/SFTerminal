@@ -637,7 +637,11 @@ export abstract class Agent {
     let currentUserTask = ''
     
     for (const msg of messages) {
-      if (msg.role === 'user' && currentTaskMessages.length > 0) {
+      // 系统在 task 内部主动注入的 user 消息（如「工具读取图片占位」「上下文压力警告」）
+      // 不构成任务边界，仅作为当前 task 的内部对话累积。
+      const isRealUserBoundary = msg.role === 'user' && !msg._systemInjected
+
+      if (isRealUserBoundary && currentTaskMessages.length > 0) {
         // 新的 user 消息 → 结束当前任务
         const lastAssistant = [...currentTaskMessages].reverse().find(
           m => m.role === 'assistant' && !m.tool_calls
@@ -650,11 +654,11 @@ export abstract class Agent {
         })
         currentTaskMessages = []
       }
-      
-      if (msg.role === 'user') {
+
+      if (isRealUserBoundary) {
         currentUserTask = msg.content || ''
       }
-      
+
       currentTaskMessages.push(msg)
     }
     
@@ -1543,7 +1547,8 @@ export abstract class Agent {
         
         const continuationPrompt: AiMessage = {
           role: 'user',
-          content: t('agent.output_truncated_hint')
+          content: t('agent.output_truncated_hint'),
+          _systemInjected: true
         }
         run.messages.push(continuationPrompt)
         run.taskMessageLog.push({ ...continuationPrompt })
@@ -1586,7 +1591,8 @@ export abstract class Agent {
         
         const retryHint: AiMessage = {
           role: 'user',
-          content: t('agent.tool_args_malformed', { tools: discardedNames })
+          content: t('agent.tool_args_malformed', { tools: discardedNames }),
+          _systemInjected: true
         }
         run.messages.push(retryHint)
         run.taskMessageLog.push({ ...retryHint })
@@ -2433,18 +2439,23 @@ export abstract class Agent {
       imageMsg = {
         role: 'user',
         content: t('agent.image_from_tool'),
-        images: [...pending]
+        images: [...pending],
+        // 标记为系统注入，避免 splitMessagesIntoTasks 把它当作 task 边界——
+        // 否则会把同一个 task 切成两段，第二段开头是 tool 消息（孤儿 tool），
+        // 下次启动时会触发 DeepSeek "tool must be a response to tool_calls" 错误。
+        _systemInjected: true
       }
     } else {
       log.warn(`Dropping ${imageCount} tool-returned image(s) due to no vision capability on current profile`)
       imageMsg = {
         role: 'user',
-        content: t('agent.tool_image_no_vision', { count: imageCount })
+        content: t('agent.tool_image_no_vision', { count: imageCount }),
+        _systemInjected: true
       }
     }
     run.messages.push(imageMsg)
     // taskMessageLog 不保存 images（base64 太大，会撑爆持久化存储）
-    run.taskMessageLog.push({ role: 'user', content: imageMsg.content })
+    run.taskMessageLog.push({ role: 'user', content: imageMsg.content, _systemInjected: true })
 
     run.pendingToolImages = []
   }
@@ -2664,7 +2675,7 @@ export abstract class Agent {
     run.taskMessageLog.push({ role: 'user', content: combinedText })
 
     if (this.currentPlan && !this.currentPlan.paused && this.currentPlan.steps.some(s => s.status === 'pending')) {
-      const planHintMsg: AiMessage = { role: 'user', content: t('agent.user_supplement_with_plan') }
+      const planHintMsg: AiMessage = { role: 'user', content: t('agent.user_supplement_with_plan'), _systemInjected: true }
       run.messages.push(planHintMsg)
       run.taskMessageLog.push({ ...planHintMsg })
     }
@@ -2691,7 +2702,7 @@ export abstract class Agent {
     if (pendingSteps.length > 0) {
       const stepTitles = pendingSteps.map((s, i) => `${i + 1}. ${s.title}`).join('\n')
       const hint = t('agent.plan_incomplete', { count: pendingSteps.length, steps: stepTitles })
-      const planMsg: AiMessage = { role: 'user', content: hint }
+      const planMsg: AiMessage = { role: 'user', content: hint, _systemInjected: true }
       run.messages.push(planMsg)
       run.taskMessageLog.push({ ...planMsg })
       return 'continue'
@@ -2943,7 +2954,8 @@ export abstract class Agent {
           content: t('agent.context_pressure_warning', {
             percentage: usagePercent,
             remaining: remaining.toLocaleString()
-          })
+          }),
+          _systemInjected: true
         })
       }
     }

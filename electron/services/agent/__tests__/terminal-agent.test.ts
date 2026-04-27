@@ -77,7 +77,8 @@ function createMockConfigService() {
     getLanguage: vi.fn().mockReturnValue('zh-CN'),
     getAiProfiles: vi.fn().mockReturnValue([{ id: 'test', contextLength: 128000 }]),
     getActiveAiProfile: vi.fn().mockReturnValue('test'),
-    getAgentOnboardingCompleted: vi.fn().mockReturnValue(true)
+    getAgentOnboardingCompleted: vi.fn().mockReturnValue(true),
+    hasVisionCapability: vi.fn().mockReturnValue(true)
   }
 }
 

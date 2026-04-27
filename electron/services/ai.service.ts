@@ -316,6 +316,14 @@ export interface AiMessage {
   reasoning_content?: string
   /** @internal Anthropic prompt cache: 标记此消息为缓存断点（跨任务复用的消息边界） */
   _cacheBreakpoint?: boolean
+  /**
+   * @internal 系统在 task 内部主动注入的 user/assistant 消息（非用户真实输入），
+   * 例如「工具读取图片占位」「上下文压力警告」等。这种消息：
+   * - 不应被 splitMessagesIntoTasks 当作任务边界（否则会把同一个 task 切碎，
+   *   产生「孤儿 tool」之类的违规序列）。
+   * - 仍然会原样发给 API（formatMessageForApi 会忽略未知字段）。
+   */
+  _systemInjected?: boolean
 }
 
 interface ToolParameterSchema {
