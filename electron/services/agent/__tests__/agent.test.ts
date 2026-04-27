@@ -102,6 +102,16 @@ class TestAgent extends Agent {
     return (this as any).wrapExecutorConfigForToolCall(run, toolCall, base)
   }
 
+  // 暴露 processToolResult / flushPendingToolImages 用于验证：
+  // 多个工具返回图片时，user 消息不会夹在 tool 消息之间，破坏 OpenAI tool_calls 协议
+  public testProcessToolResult(run: any, toolCall: any, result: any, toolArgs: any = {}) {
+    return (this as any).processToolResult(run, toolCall, result, toolArgs)
+  }
+
+  public testFlushPendingToolImages(run: any) {
+    return (this as any).flushPendingToolImages(run)
+  }
+
   // 注入 currentRun，便于直接针对 addStep/updateStep/finalizeToolCallStep 做单元测试
   // 而不必真正启动 agent.run 流程
   public injectCurrentRun(run: any) {
@@ -487,6 +497,121 @@ describe('Agent', () => {
       const wrapped = agent.testWrapExecutorConfigForToolCall(run, tc, base)
       const step = wrapped.addStep({ type: 'tool_call', content: 'x', toolName: 'exec', toolCallId: 'tc-inner' })
       expect(step.toolCallId).toBe('tc-inner')
+    })
+  })
+
+  // ==================== 工具返回图片的延迟注入 ====================
+  // 这组测试覆盖之前的 bug：多个 read_file 并行返回图片时，旧实现立即在每个
+  // tool 消息后 push 一条 user 消息，导致 user 夹在同批 tool 消息之间，
+  // 触发 DeepSeek "insufficient tool messages following tool_calls message" 校验错误。
+  // 修复后：图片暂存到 pendingToolImages，由 flushPendingToolImages 在批次结束时
+  // 合并为单条 user 消息追加到所有 tool 消息之后。
+  describe('processToolResult + flushPendingToolImages (image deferral)', () => {
+    function makeRun(): any {
+      return {
+        id: 'fake-run',
+        steps: [],
+        messages: [],
+        taskMessageLog: [],
+        requestId: undefined
+      }
+    }
+
+    function makeToolCall(id: string, name: string) {
+      return { id, type: 'function', function: { name, arguments: '{}' } } as any
+    }
+
+    it('should NOT push image user-message immediately; accumulate in pendingToolImages', () => {
+      const run = makeRun()
+      const tc = makeToolCall('tc-a', 'read_file')
+
+      agent.testProcessToolResult(run, tc, {
+        success: true,
+        output: 'ok',
+        images: ['data:image/png;base64,AAAA']
+      })
+
+      // tool 消息已 push，但 user 图片消息没有
+      expect(run.messages).toHaveLength(1)
+      expect(run.messages[0]).toMatchObject({ role: 'tool', tool_call_id: 'tc-a' })
+      expect(run.pendingToolImages).toEqual(['data:image/png;base64,AAAA'])
+    })
+
+    it('should preserve OpenAI tool_calls protocol when multiple tools return images in one batch', () => {
+      const run = makeRun()
+      // 模拟一批 assistant.tool_calls 已经 push 过
+      run.messages.push({
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          { id: 'tc-a', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+          { id: 'tc-b', type: 'function', function: { name: 'read_file', arguments: '{}' } }
+        ]
+      })
+
+      // 两个工具依次完成，每个都返回图片
+      agent.testProcessToolResult(run, makeToolCall('tc-a', 'read_file'), {
+        success: true, output: 'ok-a', images: ['imgA']
+      })
+      agent.testProcessToolResult(run, makeToolCall('tc-b', 'read_file'), {
+        success: true, output: 'ok-b', images: ['imgB']
+      })
+
+      // 此时 messages 中只能是 assistant → tool_a → tool_b（user 还没注入）
+      expect(run.messages.map((m: any) => m.role)).toEqual(['assistant', 'tool', 'tool'])
+      expect(run.pendingToolImages).toEqual(['imgA', 'imgB'])
+
+      // 批次结束 flush
+      agent.testFlushPendingToolImages(run)
+
+      // 最终序列：assistant → tool → tool → user(合并的图片)
+      // 关键：两条 tool 消息之间没有 user 消息，DeepSeek API 才会接受
+      expect(run.messages.map((m: any) => m.role)).toEqual(['assistant', 'tool', 'tool', 'user'])
+      const userMsg = run.messages[3]
+      expect(userMsg.images).toEqual(['imgA', 'imgB'])
+      expect(run.pendingToolImages).toEqual([])
+    })
+
+    it('should not write images to taskMessageLog (they are too large to persist)', () => {
+      const run = makeRun()
+      agent.testProcessToolResult(run, makeToolCall('tc-a', 'read_file'), {
+        success: true, output: 'ok', images: ['large-base64-data']
+      })
+      agent.testFlushPendingToolImages(run)
+
+      const userInLog = run.taskMessageLog.find((m: any) => m.role === 'user')
+      expect(userInLog).toBeDefined()
+      expect(userInLog.images).toBeUndefined()
+      expect(userInLog.content).toBeTruthy()
+    })
+
+    it('flushPendingToolImages should be idempotent (no-op when pending is empty)', () => {
+      const run = makeRun()
+
+      agent.testFlushPendingToolImages(run)
+      expect(run.messages).toEqual([])
+
+      agent.testProcessToolResult(run, makeToolCall('tc-a', 'read_file'), {
+        success: true, output: 'ok', images: ['img']
+      })
+      agent.testFlushPendingToolImages(run)
+      const lengthAfterFirst = run.messages.length
+
+      // 再 flush 一次，不应再产生 user 消息
+      agent.testFlushPendingToolImages(run)
+      expect(run.messages).toHaveLength(lengthAfterFirst)
+    })
+
+    it('should not flush when no tool returns images', () => {
+      const run = makeRun()
+      agent.testProcessToolResult(run, makeToolCall('tc-a', 'execute_command'), {
+        success: true, output: 'plain text output'
+      })
+      agent.testFlushPendingToolImages(run)
+
+      expect(run.messages.map((m: any) => m.role)).toEqual(['tool'])
+      // 无图片场景下不需要初始化 pendingToolImages（undefined 或空数组都视为"无暂存"）
+      expect(run.pendingToolImages?.length ?? 0).toBe(0)
     })
   })
 })

@@ -2019,22 +2019,27 @@ export abstract class Agent {
       }
     }
     
-    // 按批次执行
-    for (const batch of batches) {
-      if (run.aborted) break
-      
-      if (batch.parallel && batch.tools.length > 1) {
-        await this.executeToolBatchParallel(run, batch.tools, toolExecutorConfig)
-      } else {
-        for (const toolCall of batch.tools) {
-          if (run.aborted) break
-          await this.executeToolSingle(run, toolCall, toolExecutorConfig)
+    try {
+      for (const batch of batches) {
+        if (run.aborted) break
+
+        if (batch.parallel && batch.tools.length > 1) {
+          await this.executeToolBatchParallel(run, batch.tools, toolExecutorConfig)
+        } else {
+          for (const toolCall of batch.tools) {
+            if (run.aborted) break
+            await this.executeToolSingle(run, toolCall, toolExecutorConfig)
+          }
         }
       }
+    } finally {
+      // 当前 assistant.tool_calls 这批工具的 tool 消息已全部写入 run.messages，
+      // 此时把工具返回的图片合并为一条 user 消息追加到末尾（见 flushPendingToolImages）。
+      // 用 try/finally 保证即便中途抛异常也不会留下未 flush 的图片污染下一批次。
+      this.flushPendingToolImages(run)
+      run.executionPhase = 'thinking'
+      run.currentToolName = undefined
     }
-    
-    run.executionPhase = 'thinking'
-    run.currentToolName = undefined
   }
   
   /**
@@ -2055,33 +2060,41 @@ export abstract class Agent {
   ): Promise<void> {
     if (toolCalls.length === 0) return
 
-    // 等待流式执行器中所有已投入的工具完成
-    // UI 层回填（ensureToolResultStep / finalizeToolCallStep）已经在 onToolCompleted
-    // 中"完成即处理"，这里只负责按原始 toolCalls 顺序把消息历史串起来。
-    const preExecuted = await streamingExecutor.waitForAll()
-    const preExecutedIds = new Set(preExecuted.map(r => r.toolCall.id))
+    try {
+      // 等待流式执行器中所有已投入的工具完成
+      // UI 层回填（ensureToolResultStep / finalizeToolCallStep）已经在 onToolCompleted
+      // 中"完成即处理"，这里只负责按原始 toolCalls 顺序把消息历史串起来。
+      const preExecuted = await streamingExecutor.waitForAll()
+      const preExecutedIds = new Set(preExecuted.map(r => r.toolCall.id))
 
-    if (preExecuted.length > 0) {
-      const names = preExecuted.map(r => r.toolCall.function.name).join(', ')
-      log.info(`Streaming pre-executed ${preExecuted.length} tools: [${names}]`)
-    }
+      if (preExecuted.length > 0) {
+        const names = preExecuted.map(r => r.toolCall.function.name).join(', ')
+        log.info(`Streaming pre-executed ${preExecuted.length} tools: [${names}]`)
+      }
 
-    for (const toolCall of toolCalls) {
-      if (!preExecutedIds.has(toolCall.id)) continue
-      const completed = preExecuted.find(r => r.toolCall.id === toolCall.id)!
-      // 兜底再调一次：若 onToolCompleted 出错或被跳过，这里仍能保证 UI 状态收尾
-      this.ensureToolResultStep(run, stepCountBeforeStreaming, toolCall, completed.result)
-      this.processToolResult(run, toolCall, completed.result, completed.toolArgs)
-      this.finalizeToolCallStep(run, toolCall.id, completed.result.success)
-    }
-    
-    // 过滤出未被流式执行器处理的工具
-    const remaining = toolCalls.filter(tc => !preExecutedIds.has(tc.id))
-    
-    if (remaining.length > 0) {
-      log.info(`Running ${remaining.length} remaining tools via standard path`)
-      await this.executeToolCalls(run, remaining, toolExecutorConfig)
-    } else {
+      for (const toolCall of toolCalls) {
+        if (!preExecutedIds.has(toolCall.id)) continue
+        const completed = preExecuted.find(r => r.toolCall.id === toolCall.id)!
+        // 兜底再调一次：若 onToolCompleted 出错或被跳过，这里仍能保证 UI 状态收尾
+        this.ensureToolResultStep(run, stepCountBeforeStreaming, toolCall, completed.result)
+        this.processToolResult(run, toolCall, completed.result, completed.toolArgs)
+        this.finalizeToolCallStep(run, toolCall.id, completed.result.success)
+      }
+
+      // 过滤出未被流式执行器处理的工具
+      const remaining = toolCalls.filter(tc => !preExecutedIds.has(tc.id))
+
+      if (remaining.length > 0) {
+        log.info(`Running ${remaining.length} remaining tools via standard path`)
+        // executeToolCalls 内部会统一 flushPendingToolImages，
+        // 把流式预执行批次和剩余批次累积的图片一次性合并为一条 user 消息。
+        await this.executeToolCalls(run, remaining, toolExecutorConfig)
+        // executeToolCalls 内的 finally 已经 flush 过了，下面的 finally 再调一次也是 no-op。
+      }
+    } finally {
+      // 兜底 flush：streaming 全部预执行（无 remaining）路径不会经过 executeToolCalls；
+      // 异常路径也不能留下未 flush 的图片污染下一批次。
+      this.flushPendingToolImages(run)
       run.executionPhase = 'thinking'
       run.currentToolName = undefined
     }
@@ -2365,19 +2378,39 @@ export abstract class Agent {
     }
     run.messages.push(toolMsg)
     run.taskMessageLog.push({ ...toolMsg })
-    
-    // 如果工具返回了图片，追加一条 user 消息携带图片
-    // 用 user 消息而非 tool 消息携带图片，兼容所有 AI 提供商
+
+    // 工具返回的图片不能立即 push 为 user 消息，否则会插在同批 tool 消息之间，
+    // 破坏 OpenAI/DeepSeek 的 tool_calls 序列校验。先暂存，由 flushPendingToolImages
+    // 在当前批次所有 tool 消息写完后统一注入（详见 AgentRun.pendingToolImages 注释）。
     if (result.images && result.images.length > 0) {
-      const imageMsg: AiMessage = {
-        role: 'user',
-        content: t('agent.image_from_tool'),
-        images: result.images
-      }
-      run.messages.push(imageMsg)
-      // taskMessageLog 不保存 images（base64 太大，会撑爆持久化存储）
-      run.taskMessageLog.push({ role: 'user', content: imageMsg.content })
+      if (!run.pendingToolImages) run.pendingToolImages = []
+      run.pendingToolImages.push(...result.images)
     }
+  }
+
+  /**
+   * 把当前批次累积的工具返回图片合并为单条 user 消息追加到 messages 末尾。
+   *
+   * 必须在一批 tool_calls 对应的所有 tool 消息都已写入 run.messages 之后调用，
+   * 不能在每个工具完成后立即调用——否则 user 消息会夹在同批 tool 消息之间，
+   * 触发 DeepSeek "insufficient tool messages following tool_calls message" 错误。
+   *
+   * 设计成幂等：pendingToolImages 为空时直接返回，所以可以在多个边界点重复调用。
+   */
+  protected flushPendingToolImages(run: AgentRun): void {
+    const pending = run.pendingToolImages
+    if (!pending || pending.length === 0) return
+
+    const imageMsg: AiMessage = {
+      role: 'user',
+      content: t('agent.image_from_tool'),
+      images: [...pending]
+    }
+    run.messages.push(imageMsg)
+    // taskMessageLog 不保存 images（base64 太大，会撑爆持久化存储）
+    run.taskMessageLog.push({ role: 'user', content: imageMsg.content })
+
+    run.pendingToolImages = []
   }
   
   /**

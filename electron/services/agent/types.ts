@@ -194,6 +194,20 @@ export interface AgentRun {
    * 回填完成后 entry 会被清除。
    */
   activeToolCallStepIds?: Map<string, string>
+  /**
+   * 当前批次中工具返回的图片暂存区。
+   *
+   * 工具返回的图片不能在每次 tool 消息后立即追加 user 消息——这会破坏
+   * OpenAI/DeepSeek 协议的"assistant.tool_calls 后必须连续跟随对应每个
+   * tool_call_id 的 tool 消息（中间不允许夹杂 user/assistant）"约束，
+   * 在多个 read_file 并行返回图片的场景下被 DeepSeek 严格校验拒绝
+   * （报 "insufficient tool messages following tool_calls message"）。
+   *
+   * 因此 processToolResult 把图片累积到本字段，由 flushPendingToolImages
+   * 在当前批次的所有 tool 消息都写入 messages 之后，统一合并为单条
+   * user 消息追加到 messages 末尾。
+   */
+  pendingToolImages?: string[]
 }
 
 // 主机档案服务接口

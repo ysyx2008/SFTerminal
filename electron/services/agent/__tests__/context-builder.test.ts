@@ -7,10 +7,12 @@ import {
   calculateBudget,
   detectContextReference,
   buildRecentTasksContext,
-  buildTaskHistoryContext
+  buildTaskHistoryContext,
+  sanitizeToolCallSequence
 } from '../context-builder'
 import { TaskMemoryStore } from '../task-memory'
 import type { AgentStep } from '../types'
+import type { AiMessage } from '../../ai.service'
 
 // ==================== calculateBudget ====================
 
@@ -370,5 +372,116 @@ describe('Context builder edge cases', () => {
     
     expect(result.stats.totalTasks).toBe(1)
     expect(result.availableTaskIds[0].summary).toContain('中文任务')
+  })
+})
+
+// ==================== sanitizeToolCallSequence ====================
+
+describe('sanitizeToolCallSequence', () => {
+  it('should pass through correct sequence unchanged', () => {
+    const messages: AiMessage[] = [
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: '', tool_calls: [
+        { id: 'a', type: 'function', function: { name: 'read_file', arguments: '{}' } }
+      ] },
+      { role: 'tool', content: 'res_a', tool_call_id: 'a' },
+      { role: 'assistant', content: 'done' }
+    ]
+    const result = sanitizeToolCallSequence(messages)
+    expect(result).toEqual(messages)
+  })
+
+  it('should append placeholder for missing tool result', () => {
+    const messages: AiMessage[] = [
+      { role: 'assistant', content: '', tool_calls: [
+        { id: 'a', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+        { id: 'b', type: 'function', function: { name: 'write_text_file', arguments: '{}' } }
+      ] },
+      { role: 'tool', content: 'res_a', tool_call_id: 'a' }
+    ]
+    const result = sanitizeToolCallSequence(messages)
+    expect(result).toHaveLength(3)
+    expect(result[2]).toMatchObject({ role: 'tool', tool_call_id: 'b' })
+    expect(result[2].content).toContain('write_text_file')
+  })
+
+  it('should relocate user message dangling between tool messages', () => {
+    // 模拟旧版本（修复前）：read_file 返回图片后立即 push 一条 user 消息
+    // 导致 user 夹在 tool_a 和 tool_b 之间
+    const messages: AiMessage[] = [
+      { role: 'user', content: 'analyze images' },
+      { role: 'assistant', content: '', tool_calls: [
+        { id: 'a', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+        { id: 'b', type: 'function', function: { name: 'read_file', arguments: '{}' } }
+      ] },
+      { role: 'tool', content: 'res_a', tool_call_id: 'a' },
+      { role: 'user', content: '[image from tool a]' },
+      { role: 'tool', content: 'res_b', tool_call_id: 'b' },
+      { role: 'user', content: '[image from tool b]' },
+      { role: 'assistant', content: 'analysis done' }
+    ]
+    const result = sanitizeToolCallSequence(messages)
+
+    // 序列应该是: user → assistant(tool_calls) → tool_a → tool_b → user(image_a) → user(image_b) → assistant
+    expect(result.map(m => `${m.role}:${m.tool_call_id ?? m.content.slice(0, 20)}`)).toEqual([
+      'user:analyze images',
+      'assistant:',
+      'tool:a',
+      'tool:b',
+      'user:[image from tool a]',
+      'user:[image from tool b]',
+      'assistant:analysis done'
+    ])
+  })
+
+  it('should relocate user message and append missing tool result together', () => {
+    const messages: AiMessage[] = [
+      { role: 'assistant', content: '', tool_calls: [
+        { id: 'a', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+        { id: 'b', type: 'function', function: { name: 'read_file', arguments: '{}' } }
+      ] },
+      { role: 'tool', content: 'res_a', tool_call_id: 'a' },
+      { role: 'user', content: '[image]' }
+      // tool b 缺失
+    ]
+    const result = sanitizeToolCallSequence(messages)
+    expect(result).toHaveLength(4)
+    expect(result[1]).toMatchObject({ role: 'tool', tool_call_id: 'a' })
+    expect(result[2]).toMatchObject({ role: 'tool', tool_call_id: 'b' })
+    expect(result[3]).toMatchObject({ role: 'user', content: '[image]' })
+  })
+
+  it('should handle multiple assistant.tool_calls batches', () => {
+    const messages: AiMessage[] = [
+      { role: 'assistant', content: '', tool_calls: [
+        { id: 'a1', type: 'function', function: { name: 'read_file', arguments: '{}' } }
+      ] },
+      { role: 'tool', content: 'res_a1', tool_call_id: 'a1' },
+      { role: 'user', content: '[image1]' },
+      { role: 'assistant', content: '', tool_calls: [
+        { id: 'b1', type: 'function', function: { name: 'read_file', arguments: '{}' } }
+      ] },
+      { role: 'tool', content: 'res_b1', tool_call_id: 'b1' },
+      { role: 'user', content: '[image2]' }
+    ]
+    const result = sanitizeToolCallSequence(messages)
+    expect(result.map(m => m.role)).toEqual([
+      'assistant', 'tool', 'user',  // 第一批
+      'assistant', 'tool', 'user'   // 第二批
+    ])
+  })
+
+  it('should handle assistant without tool_calls untouched', () => {
+    const messages: AiMessage[] = [
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: 'hello' },
+      { role: 'user', content: 'thanks' }
+    ]
+    const result = sanitizeToolCallSequence(messages)
+    expect(result).toEqual(messages)
+  })
+
+  it('should handle empty messages', () => {
+    expect(sanitizeToolCallSequence([])).toEqual([])
   })
 })

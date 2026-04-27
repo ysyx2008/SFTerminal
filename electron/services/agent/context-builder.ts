@@ -90,37 +90,57 @@ export function calculateBudget(contextLength: number): ContextBudget {
 // ==================== 消息序列校验 ====================
 
 /**
- * 修复不完整的 tool_call 序列
- * 
- * 场景：checkpoint 在工具执行中途写盘，或 App 在工具执行期间退出，
- * 导致 assistant 消息含 tool_calls 但缺少对应的 tool result 消息。
- * 这种残缺序列发给 API 会报错（DeepSeek/OpenAI 均要求严格配对）。
+ * 修复 assistant.tool_calls 后的消息序列，确保 OpenAI/DeepSeek 协议合规。
+ *
+ * 处理两类问题：
+ *
+ * 1. **缺失的 tool result**（残缺序列）
+ *    场景：checkpoint 在工具执行中途写盘，或 App 在工具执行期间退出，
+ *    导致 assistant 消息含 tool_calls 但缺少对应的 tool 消息。
+ *    修复：为每个未配对的 tool_call_id 补一条占位 tool 消息。
+ *
+ * 2. **夹杂的 user 消息**（错位序列）
+ *    场景：旧版本（修复前）在每个工具完成后立即 push 一条 user 消息携带图片，
+ *    导致 user 消息夹在同批 tool 消息之间。
+ *    DeepSeek API 严格校验：tool_calls 后必须连续跟随对应每个 tool_call_id 的
+ *    tool 消息，中间不允许 user/assistant，否则报
+ *    "insufficient tool messages following tool_calls message"。
+ *    修复：把夹杂的 user 消息挪到所有 tool 消息之后。
+ *
+ * 当前 push 路径已不再产生第二类问题（见 Agent.flushPendingToolImages），
+ * 此修复主要为兼容历史持久化数据。
  */
-function sanitizeToolCallSequence(messages: AiMessage[]): AiMessage[] {
+export function sanitizeToolCallSequence(messages: AiMessage[]): AiMessage[] {
   const result: AiMessage[] = []
 
-  for (let i = 0; i < messages.length; i++) {
+  let i = 0
+  while (i < messages.length) {
     const msg = messages[i]
     result.push(msg)
 
-    if (msg.role !== 'assistant' || !msg.tool_calls?.length) continue
-
-    const requiredIds = new Set(msg.tool_calls.map(tc => tc.id))
-
-    // 向前扫描直到下一个 assistant 消息，收集所有已有的 tool result
-    // （tool result 之间可能夹杂 user 消息，如工具返回图片时注入的 user 消息）
-    for (let j = i + 1; j < messages.length; j++) {
-      if (messages[j].role === 'assistant') break
-      if (messages[j].role === 'tool' && messages[j].tool_call_id) {
-        requiredIds.delete(messages[j].tool_call_id!)
-      }
+    if (msg.role !== 'assistant' || !msg.tool_calls?.length) {
+      i++
+      continue
     }
 
-    if (requiredIds.size === 0) continue
+    const requiredIds = new Set(msg.tool_calls.map(tc => tc.id))
+    const displacedMessages: AiMessage[] = []  // 错位夹在 tool 之间的非 tool 消息（user/system 等）
 
-    // 找到紧跟 assistant 消息后最后一条 tool 消息的位置，在其后插入补全消息
-    // 这样补全的 tool result 在位置上紧跟已有的 tool result，而非被推到 result 末尾
-    // 注意：此处的 result 数组还未包含后续消息，所以直接 push 即可
+    // 向前扫描直到下一个 assistant 消息：tool 消息保持原位，其他消息暂存延后
+    let j = i + 1
+    while (j < messages.length) {
+      const next = messages[j]
+      if (next.role === 'assistant') break
+      if (next.role === 'tool' && next.tool_call_id) {
+        result.push(next)
+        requiredIds.delete(next.tool_call_id!)
+      } else {
+        displacedMessages.push(next)
+      }
+      j++
+    }
+
+    // 为缺失的 tool_call_id 补占位
     for (const missingId of requiredIds) {
       const toolName = msg.tool_calls.find(tc => tc.id === missingId)?.function.name || 'unknown'
       result.push({
@@ -129,6 +149,13 @@ function sanitizeToolCallSequence(messages: AiMessage[]): AiMessage[] {
         tool_call_id: missingId
       })
     }
+
+    // 把错位的非 tool 消息挪到所有 tool 消息之后
+    for (const displaced of displacedMessages) {
+      result.push(displaced)
+    }
+
+    i = j  // 跳到下一个 assistant（或结尾）
   }
 
   return result
