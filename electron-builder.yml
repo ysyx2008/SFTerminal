@@ -127,6 +127,9 @@ mac:
       - en
       - zh_CN
       - zh-Hans
+    # macOS 14+ 本地网络访问授权说明（SSH/SFTP 连接局域网主机必需）
+    # 缺失此 key 会导致 macOS 静默拒绝本地网络访问且不弹授权弹窗，表现为 EHOSTUNREACH
+    NSLocalNetworkUsageDescription: "SailFish 需要访问本地网络以连接 SSH/SFTP 服务器、虚拟机及局域网设备。"
 dmg:
   # DMG 窗口配置
   window:
