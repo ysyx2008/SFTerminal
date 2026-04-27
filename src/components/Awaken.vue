@@ -1756,6 +1756,9 @@ onUnmounted(() => {
   border: none;
   color: var(--text-muted);
   cursor: pointer;
+  /* header-stats 在 userWatches 为空时 v-if=false 不渲染，没有它撑满中间空间，
+     X 会紧挨标题。这里强制让 X 始终被推到右侧，与 settings-header 的 space-between 对齐。 */
+  margin-left: auto;
 }
 .panel-header .btn-icon:hover {
   background: var(--bg-hover);

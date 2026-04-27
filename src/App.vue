@@ -60,13 +60,18 @@ const isWin = typeof navigator !== 'undefined' && /Win/i.test(navigator.platform
 // 全屏时红绿灯/系统标题栏按钮被隐藏，header 不再需要预留空间
 const isFullScreen = ref(false)
 
-// Windows: 将当前主题下的 header 背景色与前景色同步给系统标题栏 overlay
+// Windows: 将当前主题下"按钮区下方实际可见的标题栏"背景色与前景色同步给系统标题栏 overlay
+// - 主窗口可见时：按钮区下方是 app-header（--bg-secondary）
+// - 全屏模态（觉醒 / 控制面板）可见时：按钮区下方是 modal 的 panel-header / settings-header（--bg-tertiary）
 function syncTitleBarOverlay() {
   if (!isWin) return
   try {
     const styles = getComputedStyle(document.documentElement)
+    // 全屏模态会盖住主 app-header，此时取色要跟随 modal header
+    const useTertiary = showAwaken.value || showSettings.value
+    const bgVar = useTertiary ? '--bg-tertiary' : '--bg-secondary'
     // 需要把 CSS 变量值转成 #rrggbb 或 rgb()；Windows API 能接受 hex / rgb 字符串
-    const bg = styles.getPropertyValue('--bg-secondary').trim() || '#101010'
+    const bg = styles.getPropertyValue(bgVar).trim() || '#101010'
     const fg = styles.getPropertyValue('--text-primary').trim() || '#e8e8e8'
     window.electronAPI.window.setTitleBarOverlay?.({ color: bg, symbolColor: fg })
   } catch {
@@ -132,13 +137,23 @@ provide('showSettings', () => {
   showSettings.value = true
 })
 
-// 同步主题到 body，让 Teleport 到 body 的弹窗也能使用正确的主题
+// 同步主题到 <html> 与 <body>：
+// - <html>：syncTitleBarOverlay 通过 getComputedStyle(documentElement) 读 CSS 变量，必须在 html 上有当前主题
+//   （否则只命中 :root 兜底色，导致 Windows 系统按钮区与实际 header 颜色不一致）
+// - <body>：让 Teleport 到 body 的弹窗也能继承正确主题
 watch([currentUiTheme, currentColorScheme], ([theme, colorScheme]) => {
+  document.documentElement.setAttribute('data-ui-theme', theme)
+  document.documentElement.setAttribute('data-color-scheme', colorScheme)
   document.body.setAttribute('data-ui-theme', theme)
   document.body.setAttribute('data-color-scheme', colorScheme)
   // CSS 变量更新需等下一帧生效后再读
   requestAnimationFrame(syncTitleBarOverlay)
 }, { immediate: true })
+
+// 全屏模态显隐时也要同步系统按钮区颜色，使其与新可见的标题栏背景一致
+watch([showAwaken, showSettings], () => {
+  requestAnimationFrame(syncTitleBarOverlay)
+})
 
 /**
  * 检测 KeyboardEvent 是否匹配 Electron Accelerator 字符串
