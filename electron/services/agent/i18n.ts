@@ -1058,6 +1058,12 @@ const translations = {
     'knowledge.doc_retrieved': '已获取文档 {filename} ({chars} 字符)',
     'knowledge.get_doc_failed': '获取文档失败',
 
+    // Web 搜索
+    'web.search': 'Web 搜索',
+    'web.no_results': '未找到结果',
+    'web.found_results': '找到 {count} 条结果',
+    'web.search_failed': '搜索失败',
+
     // 等待功能
     'wait.planned': '⏱️ 计划等待 {total}，剩余 {remaining}',
     'wait.progress': '⏱️ 计划等待 {total}，剩余 {remaining} ({progress}%)',
@@ -2360,6 +2366,12 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'knowledge.doc_not_found': 'Document not found: {id}',
     'knowledge.doc_retrieved': 'Retrieved document {filename} ({chars} characters)',
     'knowledge.get_doc_failed': 'Failed to get document',
+
+    // Web search
+    'web.search': 'Web search',
+    'web.no_results': 'No results found.',
+    'web.found_results': 'Found {count} results',
+    'web.search_failed': 'Search failed',
 
     // Wait
     'wait.planned': '⏱️ Planned wait {total}, remaining {remaining}',

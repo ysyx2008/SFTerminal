@@ -298,7 +298,7 @@ ${skillsList}`,
 /**
  * 动态构建 web_search 工具定义（仅在已配置时返回）
  */
-function buildWebSearchTool(): ToolDefinition[] {
+function buildWebSearchTool(): ToolDefinitionWithMeta[] {
   if (!isWebSearchConfigured()) return []
   return [{
     type: 'function',
@@ -319,6 +319,12 @@ function buildWebSearchTool(): ToolDefinition[] {
         },
         required: ['query']
       }
+    },
+    _meta: {
+      parallelizable: true,
+      contextBudget: { toolResult: 'clearable' },
+      // 流式预卡片：标题用 i18n（zh: 网页搜索 / en: Web search），副标题取 query
+      streamDisplay: { titleKey: 'web.search', titleField: 'query' }
     }
   }]
 }

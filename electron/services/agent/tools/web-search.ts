@@ -5,6 +5,7 @@
 import type { ToolResult, ToolExecutorConfig } from './types'
 import { search } from '../../web-search/index'
 import { createLogger } from '../../../utils/logger'
+import { t } from '../i18n'
 
 const log = createLogger('Tool:WebSearch')
 
@@ -21,7 +22,7 @@ export async function executeWebSearch(
 
   executor.addStep({
     type: 'tool_call',
-    content: `web_search: ${query}`,
+    content: `${t('web.search')}: ${query}`,
     toolName: 'web_search'
   })
 
@@ -29,7 +30,7 @@ export async function executeWebSearch(
     const results = await search(query, { maxResults })
 
     if (results.length === 0) {
-      const output = 'No results found.'
+      const output = t('web.no_results')
       executor.addStep({ type: 'tool_result', content: output, toolName: 'web_search' })
       return { success: true, output }
     }
@@ -50,7 +51,7 @@ export async function executeWebSearch(
     const output = lines.join('\n').trim()
     executor.addStep({
       type: 'tool_result',
-      content: `Found ${results.length} results`,
+      content: t('web.found_results', { count: results.length }),
       toolName: 'web_search',
       webSearchResults: results.map(r => ({
         title: r.title,
@@ -63,7 +64,11 @@ export async function executeWebSearch(
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     log.error('Web search failed:', error)
-    executor.addStep({ type: 'tool_result', content: `Error: ${errorMsg}`, toolName: 'web_search' })
+    executor.addStep({
+      type: 'tool_result',
+      content: `${t('web.search_failed')}: ${errorMsg}`,
+      toolName: 'web_search'
+    })
     return { success: false, output: '', error: errorMsg }
   }
 }
