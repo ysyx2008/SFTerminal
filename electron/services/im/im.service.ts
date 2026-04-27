@@ -164,37 +164,49 @@ function formatToolNotification(toolName: string, toolArgs?: Record<string, unkn
 }
 
 /**
- * 将 AI 输出中的 HTML 思考块（<details>/<blockquote>）转为 IM 友好的 > 引用格式
- * 桌面端用 HTML 折叠面板展示思考过程，但 IM 平台（飞书/钉钉等）不支持这些 HTML 标签
+ * 把 AI 输出拆成 thinking（思考过程）和 body（正文）两部分，去掉所有 <details>/<blockquote> 标签。
+ *
+ * IM 渠道默认只发 body：
+ *  - 中间轮的「好的，帮你记上日程」这种正文会被发出去
+ *  - reasoning 模型的「思考过程」卡片不会刷屏
+ *
+ * 但保留 thinking 文本，在 onComplete 时如果整个会话都没发过任何实质正文，
+ * 把最近一次 thinking 当作兜底发给用户，避免「AI 没回复」的空洞结果。
+ *
+ * 兼容流式中途 flush（<details>/<blockquote> 可能未闭合）。
  */
-function formatContentForIM(content: string): string {
-  let result = content.replace(/\r\n/g, '\n')
+function splitThinkingAndBody(content: string): { thinking: string; body: string } {
+  const normalized = content.replace(/\r\n/g, '\n')
+  let thinking = ''
+  let body = normalized
 
-  // 1) 完整 <details> 块：提取 summary 和引用内容
-  result = result.replace(
-    /<details\b[^>]*>\s*<summary\b[^>]*>([\s\S]*?)<\/summary>\s*<blockquote\b[^>]*>\s*([\s\S]*?)\s*<\/blockquote>\s*<\/details>/g,
-    (_m, summary: string, body: string) => {
-      const title = summary.replace(/<[^>]+>/g, '').trim()
-      if (!title) return ''
-      const quoted = body.trim().split('\n').map((l: string) => `> ${l}`).join('\n')
-      return `**${title}**\n\n${quoted}`
+  // 1) 完整 <details>...</details>：抽取 blockquote 内文，原位删除整块
+  body = body.replace(
+    /<details\b[^>]*>\s*<summary\b[^>]*>[\s\S]*?<\/summary>\s*<blockquote\b[^>]*>\s*([\s\S]*?)\s*<\/blockquote>\s*<\/details>/g,
+    (_m, captured: string) => {
+      const cleaned = captured.replace(/<[^>]+>/g, '').trim()
+      if (cleaned) thinking = cleaned
+      return ''
     }
   )
 
-  // 2) 未闭合的 <details> 块（流式中途 flush）
-  result = result.replace(
-    /<details\b[^>]*>\s*<summary\b[^>]*>([\s\S]*?)<\/summary>\s*(?:<blockquote\b[^>]*>\s*)?([\s\S]*)$/,
-    (_m, summary: string, body: string) => {
-      const title = summary.replace(/<[^>]+>/g, '').trim()
-      if (!title) return ''
-      const cleaned = body.replace(/<\/?(blockquote|details)\b[^>]*>/g, '').trim()
-      if (!cleaned) return `**${title}**`
-      const quoted = cleaned.split('\n').map((l: string) => `> ${l}`).join('\n')
-      return `**${title}**\n\n${quoted}`
+  // 2) 未闭合的 <details>（流式中途）：抽取已收到的部分，从尾部删除
+  body = body.replace(
+    /<details\b[^>]*>\s*<summary\b[^>]*>[\s\S]*?<\/summary>\s*(?:<blockquote\b[^>]*>\s*)?([\s\S]*)$/,
+    (_m, captured: string) => {
+      const cleaned = captured.replace(/<\/?(blockquote|details)\b[^>]*>/g, '').replace(/<[^>]+>/g, '').trim()
+      if (cleaned) thinking = cleaned
+      return ''
     }
   )
 
-  return result
+  return { thinking: thinking.trim(), body: body.trim() }
+}
+
+/** 把思考过程文本格式化为 IM markdown（标题 + 引用块） */
+function formatThinkingForIM(thinking: string): string {
+  const quoted = thinking.split('\n').map((l) => `> ${l}`).join('\n')
+  return `**🤔 ${t('ai.thinking_process')}**\n\n${quoted}`
 }
 
 export class IMService {
@@ -904,6 +916,8 @@ export class IMService {
     let textBuffer = ''
     let hasSentText = false
     let lastFlushedContent = ''
+    /** 最近一次见到的思考过程（剥 HTML 后的纯文本），仅用于 onComplete 兜底，不主动推送 */
+    let lastThinkingContent = ''
     const notifiedToolCalls = new Set<string>()
     const sentMessageStepIds = new Set<string>()
 
@@ -917,24 +931,25 @@ export class IMService {
     /**
      * 把当前 textBuffer 作为一条消息发送出去。
      *
-     * 处理两类容易出现"重复"或"丢失"的情况：
-     * 1) 流式 message 期间被 tool_call 触发先 flush 一次，onDone 把同一 streamStep 标记为
-     *    final 后又 flush 一次：两次内容通常一致（OpenAI 协议下 content 在 tool_call 之前就完成）。
-     *    通过对 formatContentForIM 后的文本与 lastFlushedContent 比对去重，避免发出重复消息。
-     * 2) sendMarkdown 抛错时（contextToken 失效 / 网络抖动等）若仍然把 lastFlushedContent / hasSentText
-     *    标记为"已发送"，会让 onComplete 的去重判断把"实际未送达"的内容当成已送达，从而把最终回复
-     *    一并跳过 —— 用户看到的就是任务"完成了但没出最终消息"。状态仅在发送成功时更新。
+     * 行为约定：
+     * - IM 渠道默认只发正文，思考过程（<details> 块）剥离后留存到 lastThinkingContent，
+     *   仅在 onComplete 兜底场景使用，避免给用户刷屏。
+     * - 同一份正文不重复推送：用 lastFlushedContent 做内容去重，覆盖
+     *   「流式中 tool_call 触发 flush + onDone final flush」的重复场景。
+     * - sendMarkdown 失败时不更新已发送状态，否则 onComplete 会误判为"已送达"而把最终
+     *   回复一并跳过，表现为"任务完成了但没出最终消息"。
      */
     const flushTextBuffer = async () => {
       if (!textBuffer) return
       const content = textBuffer
       textBuffer = ''
-      const text = formatContentForIM(content)
-      if (text === lastFlushedContent) return
+      const { thinking, body } = splitThinkingAndBody(content)
+      if (thinking) lastThinkingContent = thinking
+      if (!body || body === lastFlushedContent) return
       try {
-        await adapter.sendMarkdown(replyContext, '旗鱼', text)
+        await adapter.sendMarkdown(replyContext, '旗鱼', body)
         hasSentText = true
-        lastFlushedContent = text
+        lastFlushedContent = body
       } catch (err) {
         log.error('Failed to send text:', err)
       }
@@ -1083,18 +1098,39 @@ export class IMService {
               textBuffer = ''
               lastFlushedContent = ''
             }
-            // 与 lastFlushedContent 同维度比较（lastFlushedContent 存的是 formatContentForIM 后的原文，未 trim）
-            // 否则当 result 含 <details> / <blockquote> 时永远判为"不同"，会把已发送过的最终回复重复推一遍
-            const formatted = result?.trim() ? formatContentForIM(result) : ''
-            if (formatted && formatted !== lastFlushedContent) {
-              try {
-                await adapter.sendMarkdown(replyContext, '旗鱼', formatted)
-                hasSentText = true
-                lastFlushedContent = formatted
-              } catch (err) {
-                log.error('Failed to send final result:', err)
+            // result 可能本身就是 fallback 占位（AI 没产出 content 时 executeLoop 给的兜底文本）。
+            // 这种情况不当作"实质回复"发出去，转而走思考过程兜底。
+            const trimmedResult = result?.trim() || ''
+            const isFallback =
+              !trimmedResult ||
+              trimmedResult === t('agent.no_response') ||
+              trimmedResult === t('agent.task_complete') ||
+              trimmedResult === t('error.operation_aborted')
+
+            if (!isFallback) {
+              const { thinking, body } = splitThinkingAndBody(result)
+              if (thinking) lastThinkingContent = thinking
+              // 不允许 fallback 回 raw result：万一后端把思考块塞进 content 字段，
+              // raw 文本里残留的 <details> 标签会原样推到 IM 用户面前。body 为空时走思考过程兜底。
+              if (body && body !== lastFlushedContent) {
+                try {
+                  await adapter.sendMarkdown(replyContext, '旗鱼', body)
+                  hasSentText = true
+                  lastFlushedContent = body
+                } catch (err) {
+                  log.error('Failed to send final result:', err)
+                }
+                return
               }
-            } else if (!hasSentText) {
+            }
+
+            if (hasSentText) return
+
+            // 整个会话从未发过实质正文：把最近的思考过程作为兜底发给用户，
+            // 满足"最后只有思考过程、没有正文时也能让用户知道 AI 想了什么"的需求。
+            if (lastThinkingContent) {
+              try { await adapter.sendMarkdown(replyContext, '旗鱼', formatThinkingForIM(lastThinkingContent)) } catch { /* ignore */ }
+            } else {
               try { await adapter.sendText(replyContext, t('im.task_complete')) } catch { /* ignore */ }
             }
           }
