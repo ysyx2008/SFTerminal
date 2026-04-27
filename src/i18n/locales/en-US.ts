@@ -154,6 +154,14 @@ export default {
     closeSidebar: 'Close Sidebar'
   },
 
+  // Windows custom title bar controls (rendered on Windows only)
+  windowControls: {
+    minimize: 'Minimize',
+    maximize: 'Maximize',
+    restore: 'Restore Down',
+    close: 'Close'
+  },
+
   // Console
   settings: {
     title: 'Control Panel',

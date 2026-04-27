@@ -312,9 +312,17 @@ const electronAPI = {
     forceQuit: () => ipcRenderer.invoke('window:forceQuit'),
     // Windows 焦点恢复：请求主进程让 webContents 获得键盘焦点
     focusWebContents: () => ipcRenderer.send('window:focusWebContents'),
-    // Windows titleBarOverlay 颜色同步（主题切换时调用，非 Windows 平台空操作）
-    setTitleBarOverlay: (options: { color: string; symbolColor: string }) =>
-      ipcRenderer.send('window:setTitleBarOverlay', options),
+    // Windows 自绘标题栏：最小化 / 最大化-还原（渲染端 WindowControls 调用，非 Windows 平台不会调）
+    minimize: () => ipcRenderer.send('window:minimize'),
+    toggleMaximize: () => ipcRenderer.send('window:toggleMaximize'),
+    isMaximized: () => ipcRenderer.invoke('window:isMaximized') as Promise<boolean>,
+    onMaximizeStateChange: (callback: (isMaximized: boolean) => void) => {
+      const handler = (_e: unknown, isMaximized: boolean) => callback(isMaximized)
+      ipcRenderer.on('window:maximizeChange', handler)
+      return () => {
+        ipcRenderer.removeListener('window:maximizeChange', handler)
+      }
+    },
     // 监听主进程请求终端数量
     onRequestTerminalCount: (callback: () => void) => {
       const handler = () => callback()

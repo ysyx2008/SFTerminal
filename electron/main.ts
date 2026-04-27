@@ -721,21 +721,17 @@ function createWindow() {
     center: true, // 首次启动在当前屏幕工作区居中，避免默认策略下贴近屏幕上沿
     title: getAppTitle(),
     icon: iconPath,
-    frame: process.platform !== 'win32', // Windows 使用无边框 + titleBarOverlay 合并标题栏
+    frame: process.platform !== 'win32', // Windows 使用无边框 + 完全自绘标题栏（min/max/close）
     // macOS: 隐藏原生标题栏但保留红绿灯按钮（浮在内容上）
     ...(process.platform === 'darwin' ? {
       titleBarStyle: 'hiddenInset' as const,
       trafficLightPosition: { x: 8, y: 8 }
     } : {}),
-    // Windows: 由系统绘制右上角最小化/最大化/关闭按钮，应用自绘的 header 与之合并为单条
-    // 初始颜色用深色默认值，渲染端加载后通过 IPC 按主题更新
+    // Windows: 完全无边框（不用 titleBarOverlay，因为系统按钮区无法被应用 DOM 覆盖，
+    // 全屏模态时会和模态自身关闭按钮挤一起）。改由渲染端 WindowControls.vue 自绘三按钮，
+    // 模态打开时按钮被模态全屏遮挡，体验最干净。
     ...(process.platform === 'win32' ? {
       titleBarStyle: 'hidden' as const,
-      titleBarOverlay: {
-        color: '#101010',
-        symbolColor: '#e8e8e8',
-        height: 32
-      }
     } : {}),
     show: false, // 先不显示，等待 ready-to-show
     backgroundColor: '#000000', // 设置背景色，避免白屏闪烁
@@ -776,6 +772,15 @@ function createWindow() {
   })
   mainWindow.on('leave-full-screen', () => {
     mainWindow?.webContents.send('window:fullscreenChange', false)
+  })
+
+  // Windows 最大化状态变化：渲染端的自绘 Max/Restore 按钮要据此切换图标
+  // （非 Windows 平台不依赖此事件，发了也无副作用）
+  mainWindow.on('maximize', () => {
+    mainWindow?.webContents.send('window:maximizeChange', true)
+  })
+  mainWindow.on('unmaximize', () => {
+    mainWindow?.webContents.send('window:maximizeChange', false)
   })
 
   // 开发环境加载本地服务器
@@ -1782,19 +1787,28 @@ ipcMain.on('window:focusWebContents', () => {
   }
 })
 
-// Windows 标题栏按钮区颜色同步：渲染端主题切换时更新 titleBarOverlay 颜色
-ipcMain.on('window:setTitleBarOverlay', (_event, options: { color: string; symbolColor: string }) => {
-  if (process.platform !== 'win32') return
+// ==================== Windows 自绘标题栏控制 ====================
+// frame:false 后窗口没有原生 min/max/close，渲染端 WindowControls 通过这些 IPC 操作窗口。
+// macOS / Linux 走原生标题栏，不会调用这些 IPC，调到了也安全（仅作用于 mainWindow）。
+
+ipcMain.on('window:minimize', () => {
   if (!mainWindow || mainWindow.isDestroyed()) return
-  try {
-    mainWindow.setTitleBarOverlay({
-      color: options.color,
-      symbolColor: options.symbolColor,
-      height: 32
-    })
-  } catch (e) {
-    log.warn('[Window] setTitleBarOverlay failed:', e)
+  mainWindow.minimize()
+})
+
+ipcMain.on('window:toggleMaximize', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize()
+  } else {
+    mainWindow.maximize()
   }
+})
+
+// 渲染端初始化时查询当前最大化状态，避免按钮图标错位
+ipcMain.handle('window:isMaximized', async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false
+  return mainWindow.isMaximized()
 })
 
 // ==================== 自动更新 ====================

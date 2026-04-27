@@ -154,6 +154,14 @@ export default {
     closeSidebar: '关闭侧边栏'
   },
 
+  // Windows 自绘标题栏按钮（仅 Win 平台显示）
+  windowControls: {
+    minimize: '最小化',
+    maximize: '最大化',
+    restore: '向下还原',
+    close: '关闭'
+  },
+
   // 控制台
   settings: {
     title: '控制面板',

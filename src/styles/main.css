@@ -1937,13 +1937,6 @@ textarea:focus {
   padding-left: 12px;
 }
 
-/* Windows titleBarOverlay：最小化/最大化/关闭按钮浮在右上 */
-.app-container.is-win .settings-modal > .settings-header,
-.app-container.is-win .watch-panel > .panel-header {
-  padding-right: 146px;
-}
-/* Windows 全屏：系统按钮被隐藏，取消右侧让位 */
-.app-container.is-win.is-fullscreen .settings-modal > .settings-header,
-.app-container.is-win.is-fullscreen .watch-panel > .panel-header {
-  padding-right: 12px;
-}
+/* Windows 改为完全自绘标题栏（WindowControls.vue）后，三个按钮是普通 DOM 元素。
+   全屏模态 position: fixed; inset: 0 时直接覆盖在主 app-header 之上，把按钮也一起遮住，
+   模态自身的 X 是唯一可见的关闭入口，因此模态 header 不再需要为系统按钮预留右侧空间。 */

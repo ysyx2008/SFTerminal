@@ -135,7 +135,11 @@ interface Window {
       close: () => Promise<void>
       forceQuit: () => Promise<void>
       focusWebContents: () => void
-      setTitleBarOverlay: (options: { color: string; symbolColor: string }) => void
+      // Windows 自绘标题栏控制
+      minimize: () => void
+      toggleMaximize: () => void
+      isMaximized: () => Promise<boolean>
+      onMaximizeStateChange: (callback: (isMaximized: boolean) => void) => () => void
       onRequestTerminalCount: (callback: () => void) => () => void
       responseTerminalCount: (count: number) => void
       isFullScreen: () => Promise<boolean>

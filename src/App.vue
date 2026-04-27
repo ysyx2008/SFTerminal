@@ -14,6 +14,7 @@ import SettingsModal from './components/Settings/SettingsModal.vue'
 import FileExplorer from './components/FileExplorer/FileExplorer.vue'
 import ConnectionStatusPopover from './components/ConnectionStatusPopover.vue'
 import Awaken from './components/Awaken.vue'
+import WindowControls from './components/WindowControls.vue'
 import SetupWizard from './components/SetupWizard.vue'
 import WelcomePage from './components/WelcomePage.vue'
 import SmartPatrolPage from './components/SmartPatrolPage.vue'
@@ -53,31 +54,12 @@ const showSmartPatrol = ref(false)
 const showAwaken = ref(false)
 const isAwakened = ref(false)
 
-// 平台判断：macOS 使用 hiddenInset（左侧红绿灯），Windows 使用 titleBarOverlay（右侧按钮）
+// 平台判断：macOS 使用 hiddenInset（左侧红绿灯），Windows 完全自绘标题栏（WindowControls 组件）
 const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
 const isWin = typeof navigator !== 'undefined' && /Win/i.test(navigator.platform)
 
-// 全屏时红绿灯/系统标题栏按钮被隐藏，header 不再需要预留空间
+// 全屏时红绿灯 / 自绘按钮都隐藏，header 不再需要预留空间
 const isFullScreen = ref(false)
-
-// Windows: 将当前主题下"按钮区下方实际可见的标题栏"背景色与前景色同步给系统标题栏 overlay
-// - 主窗口可见时：按钮区下方是 app-header（--bg-secondary）
-// - 全屏模态（觉醒 / 控制面板）可见时：按钮区下方是 modal 的 panel-header / settings-header（--bg-tertiary）
-function syncTitleBarOverlay() {
-  if (!isWin) return
-  try {
-    const styles = getComputedStyle(document.documentElement)
-    // 全屏模态会盖住主 app-header，此时取色要跟随 modal header
-    const useTertiary = showAwaken.value || showSettings.value
-    const bgVar = useTertiary ? '--bg-tertiary' : '--bg-secondary'
-    // 需要把 CSS 变量值转成 #rrggbb 或 rgb()；Windows API 能接受 hex / rgb 字符串
-    const bg = styles.getPropertyValue(bgVar).trim() || '#101010'
-    const fg = styles.getPropertyValue('--text-primary').trim() || '#e8e8e8'
-    window.electronAPI.window.setTitleBarOverlay?.({ color: bg, symbolColor: fg })
-  } catch {
-    /* ignore */
-  }
-}
 
 const hasTerminalTab = computed(() => terminalStore.tabs.some(t => t.type === 'local' || t.type === 'ssh'))
 
@@ -138,22 +120,14 @@ provide('showSettings', () => {
 })
 
 // 同步主题到 <html> 与 <body>：
-// - <html>：syncTitleBarOverlay 通过 getComputedStyle(documentElement) 读 CSS 变量，必须在 html 上有当前主题
-//   （否则只命中 :root 兜底色，导致 Windows 系统按钮区与实际 header 颜色不一致）
+// - <html>：CSS 变量从 :root 起作用，data-ui-theme 设在 html 上能让所有后代精确命中当前主题
 // - <body>：让 Teleport 到 body 的弹窗也能继承正确主题
 watch([currentUiTheme, currentColorScheme], ([theme, colorScheme]) => {
   document.documentElement.setAttribute('data-ui-theme', theme)
   document.documentElement.setAttribute('data-color-scheme', colorScheme)
   document.body.setAttribute('data-ui-theme', theme)
   document.body.setAttribute('data-color-scheme', colorScheme)
-  // CSS 变量更新需等下一帧生效后再读
-  requestAnimationFrame(syncTitleBarOverlay)
 }, { immediate: true })
-
-// 全屏模态显隐时也要同步系统按钮区颜色，使其与新可见的标题栏背景一致
-watch([showAwaken, showSettings], () => {
-  requestAnimationFrame(syncTitleBarOverlay)
-})
 
 /**
  * 检测 KeyboardEvent 是否匹配 Electron Accelerator 字符串
@@ -863,6 +837,9 @@ onUnmounted(() => {
         <button class="btn-icon btn-icon-header" @click="showSettings = true" :title="t('header.settings')">
           <Settings :size="18" />
         </button>
+        <!-- Windows 自绘标题栏按钮（最小化 / 最大化 / 关闭）：仅 Win 平台 + 非全屏时显示。
+             全屏模态打开时，模态全屏覆盖会自动遮住这三个按钮，模态自带的 X 是唯一可见关闭入口。 -->
+        <WindowControls v-if="isWin && !isFullScreen" />
       </div>
     </header>
 
@@ -1034,14 +1011,11 @@ onUnmounted(() => {
   padding-left: 12px;
 }
 
-/* Windows: titleBarOverlay 在右上角绘制最小化/最大化/关闭按钮（约 138px），右侧留位避免遮挡 */
+/* Windows: 自绘 WindowControls 紧贴右边缘 — 抵消 .app-header 默认的 12px padding-right，
+   让三按钮触达窗口最右像素，与 Win11 原生标题栏按钮位置一致。
+   全屏时 WindowControls 不渲染（v-if 控制），无需特殊处理 padding。 */
 .app-container.is-win .app-header {
-  padding-right: 146px;
-}
-
-/* Windows 全屏：系统标题栏按钮被隐藏，恢复右侧默认留白 */
-.app-container.is-win.is-fullscreen .app-header {
-  padding-right: 12px;
+  padding-right: 0;
 }
 
 /* 深色主题：顶部渐变效果 */
