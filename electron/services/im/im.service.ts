@@ -914,17 +914,29 @@ export class IMService {
       }))
     }
 
+    /**
+     * 把当前 textBuffer 作为一条消息发送出去。
+     *
+     * 处理两类容易出现"重复"或"丢失"的情况：
+     * 1) 流式 message 期间被 tool_call 触发先 flush 一次，onDone 把同一 streamStep 标记为
+     *    final 后又 flush 一次：两次内容通常一致（OpenAI 协议下 content 在 tool_call 之前就完成）。
+     *    通过对 formatContentForIM 后的文本与 lastFlushedContent 比对去重，避免发出重复消息。
+     * 2) sendMarkdown 抛错时（contextToken 失效 / 网络抖动等）若仍然把 lastFlushedContent / hasSentText
+     *    标记为"已发送"，会让 onComplete 的去重判断把"实际未送达"的内容当成已送达，从而把最终回复
+     *    一并跳过 —— 用户看到的就是任务"完成了但没出最终消息"。状态仅在发送成功时更新。
+     */
     const flushTextBuffer = async () => {
-      if (textBuffer) {
+      if (!textBuffer) return
+      const content = textBuffer
+      textBuffer = ''
+      const text = formatContentForIM(content)
+      if (text === lastFlushedContent) return
+      try {
+        await adapter.sendMarkdown(replyContext, '旗鱼', text)
         hasSentText = true
-        const text = formatContentForIM(textBuffer)
-        textBuffer = ''
         lastFlushedContent = text
-        try {
-          await adapter.sendMarkdown(replyContext, '旗鱼', text)
-        } catch (err) {
-          log.error('Failed to send text:', err)
-        }
+      } catch (err) {
+        log.error('Failed to send text:', err)
       }
     }
 
@@ -1071,9 +1083,17 @@ export class IMService {
               textBuffer = ''
               lastFlushedContent = ''
             }
-            const resultText = result?.trim() || ''
-            if (resultText && resultText !== lastFlushedContent.trim()) {
-              try { await adapter.sendMarkdown(replyContext, '旗鱼', formatContentForIM(result)) } catch { /* ignore */ }
+            // 与 lastFlushedContent 同维度比较（lastFlushedContent 存的是 formatContentForIM 后的原文，未 trim）
+            // 否则当 result 含 <details> / <blockquote> 时永远判为"不同"，会把已发送过的最终回复重复推一遍
+            const formatted = result?.trim() ? formatContentForIM(result) : ''
+            if (formatted && formatted !== lastFlushedContent) {
+              try {
+                await adapter.sendMarkdown(replyContext, '旗鱼', formatted)
+                hasSentText = true
+                lastFlushedContent = formatted
+              } catch (err) {
+                log.error('Failed to send final result:', err)
+              }
             } else if (!hasSentText) {
               try { await adapter.sendText(replyContext, t('im.task_complete')) } catch { /* ignore */ }
             }
