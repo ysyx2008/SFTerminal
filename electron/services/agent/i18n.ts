@@ -137,8 +137,10 @@ const translations = {
     'agent.stream_pending_field': '生成中…',
     'agent.context_limit_exceeded': '⚠️ 对话上下文超出模型限制（当前 {current} tokens，模型限制 {limit} tokens，占用 {percentage}%）。\n\n建议：\n1. 开始新对话\n2. 或切换到上下文更长的模型',
     'agent.context_pressure_warning': '[系统] 上下文用量告警（已用 {percentage}%，剩余约 {remaining} tokens）。请立即调用 compress_context 压缩较早的对话内容，否则下次请求可能因超出模型上下文限制而失败。',
-    'agent.images_attached': '系统：用户在本消息中附带了 {count} 张图片，图片已直接嵌入本消息，你可以直接看到并分析，无需使用 read_file 读取',
-    'agent.image_from_tool': '[系统：以下是工具读取的图片，图片已直接嵌入本消息，你可以直接看到并分析]',
+    'agent.images_attached': '[系统：用户在本消息中附带了 {count} 张图片，图片已通过多模态格式发送给视觉模型，无需使用 read_file 读取。如果你确实看到了图像内容，请直接分析；如果你看到的是空白/无法理解的内容，请如实告知用户图片未送达，不要凭上下文猜测图片内容。]',
+    'agent.image_from_tool': '[系统：工具读取了图片并已通过多模态格式发送给视觉模型。如果你确实看到了图像内容，请直接分析；如果看到的是空白/无法理解的内容，请如实告知，不要凭上下文猜测图片内容。]',
+    'agent.user_image_no_vision': '[系统：用户附带了 {count} 张图片，但当前 AI 配置不具备视觉能力（当前模型不是视觉模型，且未关联视觉模型，或「自动使用视觉模型」开关未开启），图片已被自动忽略。请明确告知用户：1) 你没有看到图片，无法分析图像内容；2) 建议用户在 AI 设置中切换到视觉模型（如 qwen-vl-plus、gpt-4o），或为当前模型关联视觉模型并打开「自动使用视觉模型」开关。不要凭上下文猜测图片内容。]',
+    'agent.tool_image_no_vision': '[系统：工具尝试返回 {count} 张图片，但当前 AI 配置不具备视觉能力，图片已被忽略。如果用户当前任务依赖图像内容，请明确告知用户切换到视觉模型；不要凭文件名或上下文猜测图片内容。]',
 
     // 上下文管理工具
     'context_tool.compress_success': '上下文已压缩。压缩前: ~{before} tokens, 压缩后: ~{after} tokens, 释放: ~{freed} tokens。归档 ID: {archiveId}（可通过 recall_compressed 找回原始内容）',
@@ -1446,8 +1448,10 @@ const translations = {
     'agent.stream_pending_field': 'generating…',
     'agent.context_limit_exceeded': '⚠️ Conversation context exceeds model limit (current {current} tokens, model limit {limit} tokens, {percentage}% used).\n\nSuggestions:\n1. Start a new conversation\n2. Or switch to a model with larger context',
     'agent.context_pressure_warning': '[System] Context usage critical ({percentage}%, ~{remaining} tokens remaining). You MUST call compress_context immediately to compress earlier conversation, otherwise the next request may fail due to exceeding the model context limit.',
-    'agent.images_attached': 'System: User attached {count} image(s) in this message. The images are directly embedded and visible to you — analyze them directly without using read_file',
-    'agent.image_from_tool': '[System: Below is the image read by the tool. The image is directly embedded and visible to you — analyze it directly]',
+    'agent.images_attached': '[System: User attached {count} image(s) in this message. The images have been sent to the vision model in multimodal format — no need to use read_file. If you can actually see the image content, analyze it directly. If you see only blank/unintelligible content, tell the user honestly that the image did not reach you. Do NOT guess the image content from context.]',
+    'agent.image_from_tool': '[System: A tool read an image and sent it to the vision model in multimodal format. If you can actually see the image content, analyze it directly. If you see only blank/unintelligible content, tell the user honestly. Do NOT guess the image content from context.]',
+    'agent.user_image_no_vision': '[System: User attached {count} image(s), but the current AI configuration does not have vision capability (the active model is not a vision model, and either no linked vision model is configured or the "Auto Vision Model" switch is off). The images have been dropped automatically. You MUST clearly tell the user: 1) you did NOT see the image and cannot analyze its content; 2) suggest switching to a vision model (e.g. qwen-vl-plus, gpt-4o) in AI Settings, or linking a vision model to the current profile and turning on the "Auto Vision Model" switch. Do NOT guess the image content from context.]',
+    'agent.tool_image_no_vision': '[System: A tool tried to return {count} image(s), but the current AI configuration does not have vision capability. The images have been dropped. If the user task depends on visual content, clearly tell the user to switch to a vision model. Do NOT guess the content from filenames or context.]',
 
     // Context management tools
     'context_tool.compress_success': 'Context compressed. Before: ~{before} tokens, After: ~{after} tokens, Freed: ~{freed} tokens. Archive ID: {archiveId} (use recall_compressed to retrieve original content)',

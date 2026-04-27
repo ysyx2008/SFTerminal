@@ -6,6 +6,14 @@ export interface ConfirmDialogOptions {
   detail?: string
   confirmText?: string
   cancelText?: string
+  /**
+   * 中性按钮文案（可选）。设置后 dialog 会在 cancel 与 confirm 之间渲染第三个按钮。
+   * 用户点击该按钮时不会 resolve confirm（promise 仍 resolve false），但会触发 onNeutral 回调。
+   * 适用于「主动操作但既非确认也非取消」的场景，例如「打开设置」「查看详情」。
+   */
+  neutralText?: string
+  /** 中性按钮的回调；点击 neutral 按钮时同步触发，promise 仍 resolve false。 */
+  onNeutral?: () => void
   type?: 'default' | 'danger' | 'warning'
   showCancel?: boolean
   fileInfo?: {
@@ -38,6 +46,8 @@ export function useConfirm() {
         detail: opts.detail,
         confirmText: opts.confirmText,
         cancelText: opts.cancelText,
+        neutralText: opts.neutralText,
+        onNeutral: opts.onNeutral,
         type: opts.type || 'default',
         showCancel: opts.showCancel,
         fileInfo: opts.fileInfo
@@ -59,6 +69,16 @@ export function useConfirm() {
     resolvePromise = null
   }
 
+  const handleNeutral = () => {
+    show.value = false
+    try {
+      options.onNeutral?.()
+    } finally {
+      resolvePromise?.(false)
+      resolvePromise = null
+    }
+  }
+
   const handleClose = () => {
     show.value = false
     resolvePromise?.(false)
@@ -71,6 +91,7 @@ export function useConfirm() {
     confirm,
     handleConfirm,
     handleCancel,
+    handleNeutral,
     handleClose
   }
 }

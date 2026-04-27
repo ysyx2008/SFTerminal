@@ -26,6 +26,7 @@ import {
   useSpeechRecognition,
   toast
 } from '../composables'
+import { showConfirm } from '../composables/useConfirm'
 
 // Props - 每个 AiPanel 实例绑定到特定的 tab
 const props = defineProps<{
@@ -671,6 +672,42 @@ watch(() => pendingImages.value.length, (newLen, oldLen) => {
   }
 })
 
+/**
+ * 在发送前对"带图但当前模型不支持视觉"做硬拦截。
+ * 返回 true 表示用户选择继续发送（带图字段会被后端剥掉），false 表示用户取消，调用方应中止发送。
+ *
+ * 提供三个动作：
+ * - 取消（默认）：什么都不做
+ * - 打开 AI 设置：跳到设置页让用户切换/关联视觉模型
+ * - 仍然发送：继续走 runAgent，后端会自动剥图并注入提示，让 AI 主动告知用户「我没看到图」
+ */
+const guardVisionBeforeSend = async (): Promise<boolean> => {
+  if (!hasImages()) return true
+  const hasVision = await window.electronAPI.config.hasVisionCapability()
+  if (hasVision) return true
+
+  const profile = activeAiProfile.value
+  const proceed = await showConfirm({
+    type: 'warning',
+    title: t('ai.visionGuardTitle'),
+    message: t('ai.visionGuardMessage', { model: profile?.model || t('ai.visionGuardCurrentModel') }),
+    detail: t('ai.visionGuardDetail'),
+    confirmText: t('ai.visionGuardSendAnyway'),
+    cancelText: t('common.cancel'),
+    neutralText: t('ai.visionGuardOpenSettings'),
+    onNeutral: () => {
+      showSettings?.()
+    }
+  })
+  // 用户确认"仍然发送"——按钮文案承诺了"不带图"，所以这里立刻清掉 pendingImages，
+  // 避免几 MB 的 base64 仍走渲染→主进程 IPC（后端虽然会兜底剥图，但传输已经发生了）。
+  if (proceed) {
+    clearImages()
+    toast.info(t('ai.visionGuardImagesDropped'))
+  }
+  return proceed
+}
+
 // 处理粘贴事件（检测图片）
 const handlePaste = async (event: ClipboardEvent) => {
   const handled = await handlePasteImages(event)
@@ -686,6 +723,7 @@ const clearTabError = () => {
 }
 
 const handleComposerSubmit = async (message: string) => {
+  if (!(await guardVisionBeforeSend())) return
   await runAgent(message)
 }
 
@@ -703,6 +741,9 @@ const clearComposerDraft = () => {
 
 function analyzeText(text: string) {
   clearComposerDraft()
+  // 这是"分析文本"的纯文字任务，用户附在 composer 里的图片与本任务无关，
+  // 提前清理避免被误打包发送（后端虽会兜底剥图，但带宽和上下文都浪费了）。
+  clearImages()
   void runAgent(`${t('ai.analyzeContentPrompt')}\n\`\`\`\n${text}\n\`\`\``)
 }
 
@@ -768,6 +809,7 @@ const handleDiagnoseError = () => {
   // 设置输入文本为诊断提示
   // 通过 Agent 执行分析
   clearComposerDraft()
+  clearImages()
   void runAgent(`${t('ai.analyzeErrorPrompt')}\n\`\`\`\n${error.content}\n\`\`\``)
 }
 
@@ -779,6 +821,7 @@ const handleAnalyzeSelection = () => {
   // 设置输入文本为分析提示
   // 通过 Agent 执行分析
   clearComposerDraft()
+  clearImages()
   void runAgent(`${t('ai.analyzeOutputPrompt')}\n\`\`\`\n${selection}\n\`\`\``)
 }
 

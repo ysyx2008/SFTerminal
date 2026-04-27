@@ -1305,14 +1305,21 @@ export abstract class Agent {
     if (run.context.documentContext) {
       enhancedMessage = enhancedMessage + '\n\n' + run.context.documentContext
     }
-    if (run.context.images && run.context.images.length > 0) {
-      const imageCount = run.context.images.length
-      const totalSize = run.context.images.reduce((sum, img) => sum + img.length, 0)
-      log.info(`User images: ${imageCount} image(s), total base64 size: ${(totalSize / 1024).toFixed(0)}KB`)
-      enhancedMessage += `\n\n[${t('agent.images_attached', { count: imageCount })}]`
+    const hasImages = !!(run.context.images && run.context.images.length > 0)
+    const visionAvailable = this.currentProfileHasVision()
+    if (hasImages) {
+      const imageCount = run.context.images!.length
+      const totalSize = run.context.images!.reduce((sum, img) => sum + img.length, 0)
+      log.info(`User images: ${imageCount} image(s), total base64 size: ${(totalSize / 1024).toFixed(0)}KB, vision=${visionAvailable}`)
+      if (visionAvailable) {
+        enhancedMessage += `\n\n${t('agent.images_attached', { count: imageCount })}`
+      } else {
+        log.warn(`Dropping ${imageCount} user image(s) due to no vision capability on current profile`)
+        enhancedMessage += `\n\n${t('agent.user_image_no_vision', { count: imageCount })}`
+      }
     }
     const userMsg: AiMessage = { role: 'user', content: enhancedMessage }
-    if (run.context.images && run.context.images.length > 0) {
+    if (hasImages && visionAvailable) {
       userMsg.images = run.context.images
     }
     return userMsg
@@ -1630,6 +1637,20 @@ export abstract class Agent {
    */
   private conversationContainsImages(messages: AiMessage[]): boolean {
     return messages.some(m => m.role === 'user' && m.images && m.images.length > 0)
+  }
+
+  /**
+   * 当前 Agent 使用的 profile 是否具备视觉能力。
+   * 用于在拼装消息阶段判断是否应该携带 base64 图片：
+   * - 不具备能力时附带图片，部分网关会静默丢弃 image_url（既不报错也不处理），
+   *   但 AI 仍会因 system 提示「图片已嵌入」而假装看到图片，进而瞎编内容。
+   * - 因此无视觉能力时应主动剥图，并在文本里告知 AI「用户附了图但你看不到」，
+   *   让模型如实告诉用户改用视觉模型。
+   */
+  private currentProfileHasVision(): boolean {
+    const configService = this.services.configService
+    if (!configService) return false
+    return configService.hasVisionCapability(this.profileId)
   }
   
   /**
@@ -2395,16 +2416,31 @@ export abstract class Agent {
    * 不能在每个工具完成后立即调用——否则 user 消息会夹在同批 tool 消息之间，
    * 触发 DeepSeek "insufficient tool messages following tool_calls message" 错误。
    *
+   * 当前 profile 不具备视觉能力时，剥图但仍注入一条文本提示，让 AI 主动告知用户
+   * （否则部分网关静默丢弃 image_url，AI 拿到「图片已嵌入」的提示却什么都看不到，
+   * 容易凭文件名/上下文瞎编内容）。
+   *
    * 设计成幂等：pendingToolImages 为空时直接返回，所以可以在多个边界点重复调用。
    */
   protected flushPendingToolImages(run: AgentRun): void {
     const pending = run.pendingToolImages
     if (!pending || pending.length === 0) return
 
-    const imageMsg: AiMessage = {
-      role: 'user',
-      content: t('agent.image_from_tool'),
-      images: [...pending]
+    const imageCount = pending.length
+    const visionAvailable = this.currentProfileHasVision()
+    let imageMsg: AiMessage
+    if (visionAvailable) {
+      imageMsg = {
+        role: 'user',
+        content: t('agent.image_from_tool'),
+        images: [...pending]
+      }
+    } else {
+      log.warn(`Dropping ${imageCount} tool-returned image(s) due to no vision capability on current profile`)
+      imageMsg = {
+        role: 'user',
+        content: t('agent.tool_image_no_vision', { count: imageCount })
+      }
     }
     run.messages.push(imageMsg)
     // taskMessageLog 不保存 images（base64 太大，会撑爆持久化存储）
@@ -2599,6 +2635,7 @@ export abstract class Agent {
 
     let combinedText = ''
     const allImages: string[] = []
+    const visionAvailable = this.currentProfileHasVision()
 
     for (const pending of run.pendingUserMessages) {
       let msgPart = Agent.formatTimestamp() + pending.message
@@ -2607,9 +2644,14 @@ export abstract class Agent {
       }
       if (pending.images?.length) {
         const imageCount = pending.images.length
-        log.info(`Supplement images: ${imageCount} image(s)`)
-        msgPart += `\n\n[${t('agent.images_attached', { count: imageCount })}]`
-        allImages.push(...pending.images)
+        log.info(`Supplement images: ${imageCount} image(s), vision=${visionAvailable}`)
+        if (visionAvailable) {
+          msgPart += `\n\n${t('agent.images_attached', { count: imageCount })}`
+          allImages.push(...pending.images)
+        } else {
+          log.warn(`Dropping ${imageCount} supplement image(s) due to no vision capability on current profile`)
+          msgPart += `\n\n${t('agent.user_image_no_vision', { count: imageCount })}`
+        }
       }
       combinedText += (combinedText ? '\n' : '') + msgPart
     }

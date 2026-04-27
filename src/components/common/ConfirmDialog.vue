@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   confirm: []
   cancel: []
+  neutral: []
   close: []
 }>()
 
@@ -34,6 +35,12 @@ const handleCancel = () => {
   emit('close')
 }
 
+// 处理中性按钮（既非确认也非取消的第三种动作）
+const handleNeutral = () => {
+  emit('neutral')
+  emit('close')
+}
+
 // 键盘事件
 const handleKeydown = (e: KeyboardEvent) => {
   if (!props.show) return
@@ -43,6 +50,13 @@ const handleKeydown = (e: KeyboardEvent) => {
     e.stopImmediatePropagation() // 阻止事件传播到父组件，防止同时关闭其他弹窗
     handleCancel()
   } else if (e.key === 'Enter') {
+    // 当焦点已经移到具体按钮上时（用户用 Tab 切到 cancel/neutral），让浏览器默认行为
+    // 触发该按钮的 click——这样三按钮场景下用户能用键盘选 neutral。
+    // 仅当焦点不在任何按钮上时才走默认 confirm。
+    const focused = document.activeElement
+    if (focused instanceof HTMLButtonElement && dialogRef.value?.contains(focused)) {
+      return
+    }
     e.preventDefault()
     handleConfirm()
   }
@@ -127,6 +141,13 @@ const getIcon = () => {
                 @click="handleCancel"
               >
                 {{ options.cancelText || t('common.cancel') }}
+              </button>
+              <button
+                v-if="options.neutralText"
+                class="btn btn-neutral"
+                @click="handleNeutral"
+              >
+                {{ options.neutralText }}
               </button>
               <button 
                 ref="confirmBtnRef"
@@ -273,6 +294,17 @@ const getIcon = () => {
 .btn-cancel:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+/* 中性按钮：用于"打开设置"等独立动作，视觉上比 cancel 显眼但不抢主按钮的焦点 */
+.btn-neutral {
+  background: transparent;
+  color: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
+}
+
+.btn-neutral:hover {
+  background: rgba(var(--accent-rgb), 0.1);
 }
 
 .btn-confirm {

@@ -45,7 +45,7 @@ const steamAppTitle = computed(() => {
   const lang = configStore.language || 'zh-CN'
   return lang.startsWith('zh') ? '旗鱼终端' : 'SFTerm'
 })
-const { show: showConfirmDialog, options: confirmOptions, handleConfirm, handleCancel, handleClose } = useConfirm()
+const { show: showConfirmDialog, options: confirmOptions, handleConfirm, handleCancel, handleNeutral, handleClose } = useConfirm()
 
 const showSidebar = ref(false)
 const showSettings = ref(false)
@@ -981,6 +981,7 @@ onUnmounted(() => {
       :options="confirmOptions"
       @confirm="handleConfirm"
       @cancel="handleCancel"
+      @neutral="handleNeutral"
       @close="handleClose"
     />
   </div>
