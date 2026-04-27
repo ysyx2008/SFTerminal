@@ -96,7 +96,7 @@ const getIcon = () => {
     <Transition name="fade">
       <div v-if="show" class="confirm-overlay" @click.self="handleCancel">
         <Transition name="scale">
-          <div v-if="show" ref="dialogRef" class="confirm-dialog" :class="options.type || 'default'">
+          <div v-if="show" ref="dialogRef" class="confirm-dialog" :class="[options.type || 'default', { 'has-neutral': !!options.neutralText }]">
             <!-- 图标 -->
             <div class="dialog-icon" :class="getIcon()">
               <AlertTriangle v-if="options.type === 'danger'" :size="24" />
@@ -188,6 +188,11 @@ const getIcon = () => {
   flex-direction: column;
   align-items: center;
   text-align: center;
+}
+
+/* 三按钮场景需要更多横向空间，否则按钮文字会被强制换成多行（视觉很挤）。 */
+.confirm-dialog.has-neutral {
+  width: 480px;
 }
 
 /* 图标 */
@@ -284,6 +289,11 @@ const getIcon = () => {
   cursor: pointer;
   transition: all 0.2s;
   border: none;
+  /* 强制按钮文字单行显示，避免在窄容器里被拆成多行造成视觉拥挤；
+     文案过长则触发省略号（设计上应避免，必要时由调用方加宽 dialog）。 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .btn-cancel {
