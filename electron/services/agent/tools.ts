@@ -425,13 +425,13 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       type: 'function',
       function: {
         name: 'file_search',
-        description: `快速搜索本地文件名（基于系统索引，毫秒级）。直接用关键词搜索，多个关键词用空格分隔表示同时包含。仅搜文件名不搜内容，搜内容请用 grep。仅本地，不支持 SSH。`,
+        description: `快速搜索本地文件名（基于系统索引，毫秒级）。多个关键词用空格分隔表示文件名需同时包含所有关键词（AND 关系，不要求连续，不区分大小写）。例如 "员工 奖惩" 可命中 "员工奖惩管理.docx" 和 "2024员工奖惩明细.xlsx"。仅搜文件名不搜内容，搜内容请用 grep。仅本地，不支持 SSH。`,
         parameters: {
           type: 'object',
           properties: {
             query: {
               type: 'string',
-              description: '搜索关键词，多个关键词用空格分隔（如 "员工 奖惩"）。也支持通配符 * ?'
+              description: '搜索关键词。多个关键词用空格分隔表示同时包含（AND，不要求顺序与连续），如 "员工 奖惩" 命中 "员工奖惩管理.docx"。也支持通配符 * ?'
             },
             path: {
               type: 'string',

@@ -153,8 +153,9 @@ describe('FileSearchService', () => {
       })
 
       it('纯文本中的单引号不需要转义（-name 参数安全传递）', () => {
-        const { args } = service.buildSpotlightArgs("it's a file")
-        expect(args).toEqual(['-name', "it's a file"])
+        // 单关键词路径（无空格），mdfind -name 通过 execFile 直接传参，无需转义
+        const { args } = service.buildSpotlightArgs("it's_a_file")
+        expect(args).toEqual(['-name', "it's_a_file"])
       })
     })
 
@@ -173,6 +174,115 @@ describe('FileSearchService', () => {
         const { args } = service.buildSpotlightArgs('test?.log*')
         expect(args).toEqual(["kMDItemFSName == 'test?.log*'c"])
       })
+    })
+
+    describe('多关键词查询（空格分隔，AND 关系）', () => {
+      it('两个关键词应构建 AND 复合查询', () => {
+        const { args, hasWildcard } = service.buildSpotlightArgs('员工 奖惩')
+        expect(args).toEqual([
+          "kMDItemFSName == '*员工*'cd && kMDItemFSName == '*奖惩*'cd"
+        ])
+        expect(hasWildcard).toBe(false)
+      })
+
+      it('三个关键词应全部 AND', () => {
+        const { args } = service.buildSpotlightArgs('金融科技部 Q1 报告')
+        expect(args).toEqual([
+          "kMDItemFSName == '*金融科技部*'cd && kMDItemFSName == '*Q1*'cd && kMDItemFSName == '*报告*'cd"
+        ])
+      })
+
+      it('多关键词 + 搜索路径', () => {
+        const { args } = service.buildSpotlightArgs('员工 奖惩', '/Users/test')
+        expect(args).toEqual([
+          '-onlyin', '/Users/test',
+          "kMDItemFSName == '*员工*'cd && kMDItemFSName == '*奖惩*'cd"
+        ])
+      })
+
+      it('多关键词 + type=file 应在查询中排除目录', () => {
+        const { args, typeFilteredInQuery } = service.buildSpotlightArgs('员工 奖惩', undefined, 'file')
+        expect(args).toEqual([
+          "kMDItemFSName == '*员工*'cd && kMDItemFSName == '*奖惩*'cd && kMDItemContentType != 'public.folder'"
+        ])
+        expect(typeFilteredInQuery).toBe(true)
+      })
+
+      it('多关键词 + type=dir 应在查询中只匹配目录', () => {
+        const { args } = service.buildSpotlightArgs('项目 笔记', undefined, 'dir')
+        expect(args).toEqual([
+          "kMDItemFSName == '*项目*'cd && kMDItemFSName == '*笔记*'cd && kMDItemContentType == 'public.folder'"
+        ])
+      })
+
+      it('多关键词中的单引号应被转义', () => {
+        const { args } = service.buildSpotlightArgs("it's report")
+        expect(args).toEqual([
+          "kMDItemFSName == '*it\\'s*'cd && kMDItemFSName == '*report*'cd"
+        ])
+      })
+
+      it('多个连续空格应被规范化为单一分隔', () => {
+        const { args } = service.buildSpotlightArgs('员工   奖惩')
+        expect(args).toEqual([
+          "kMDItemFSName == '*员工*'cd && kMDItemFSName == '*奖惩*'cd"
+        ])
+      })
+
+      it('单关键词（trim 后）仍走 -name 高效路径', () => {
+        const { args, typeFilteredInQuery } = service.buildSpotlightArgs('  package.json  ')
+        expect(args).toEqual(['-name', 'package.json'])
+        expect(typeFilteredInQuery).toBe(false)
+      })
+    })
+  })
+
+  // =========================================================================
+  // buildNativePatterns - 原生递归搜索的多关键词 AND 匹配
+  // =========================================================================
+  describe('buildNativePatterns (原生搜索)', () => {
+    function buildPatterns(query: string): RegExp[] {
+      return (service as any).buildNativePatterns(query)
+    }
+
+    it('单关键词应返回单个 wildcard regex', () => {
+      const patterns = buildPatterns('readme')
+      expect(patterns).toHaveLength(1)
+      expect(patterns[0].test('README.md')).toBe(true)
+    })
+
+    it('通配符模式应返回单个 wildcard regex', () => {
+      const patterns = buildPatterns('*.ts')
+      expect(patterns).toHaveLength(1)
+      expect(patterns[0].test('app.ts')).toBe(true)
+      expect(patterns[0].test('app.js')).toBe(false)
+    })
+
+    it('多关键词应返回多个字面量 regex（AND）', () => {
+      const patterns = buildPatterns('员工 奖惩')
+      expect(patterns).toHaveLength(2)
+      const allMatch = (name: string) => patterns.every(re => re.test(name))
+      expect(allMatch('员工奖惩管理.docx')).toBe(true)
+      expect(allMatch('2024员工奖惩明细.xlsx')).toBe(true)
+      // 缺一个关键词不算命中
+      expect(allMatch('员工花名册.xlsx')).toBe(false)
+      expect(allMatch('奖惩制度.pdf')).toBe(false)
+    })
+
+    it('多关键词应不区分大小写', () => {
+      const patterns = buildPatterns('Annual Report')
+      const allMatch = (name: string) => patterns.every(re => re.test(name))
+      expect(allMatch('annual_report_2024.pdf')).toBe(true)
+      expect(allMatch('ANNUAL-REPORT.docx')).toBe(true)
+      expect(allMatch('annual.pdf')).toBe(false)
+    })
+
+    it('多关键词应转义正则元字符', () => {
+      const patterns = buildPatterns('a.b c+d')
+      // 关键词中的 . + 应被当字面量
+      const allMatch = (name: string) => patterns.every(re => re.test(name))
+      expect(allMatch('a.b-and-c+d.txt')).toBe(true)
+      expect(allMatch('aXb-cYd.txt')).toBe(false)
     })
   })
 

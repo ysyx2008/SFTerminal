@@ -304,43 +304,91 @@ export class FileSearchService {
   }
 
   /**
+   * 解析查询字符串：
+   * - 含通配符（*?）：作为整体 glob 模式
+   * - 纯文本：按空白拆分为多个关键词（AND 关系）
+   */
+  private parseKeywords(query: string): {
+    hasWildcard: boolean
+    keywords: string[]
+  } {
+    const trimmed = query.trim()
+    const hasWildcard = trimmed.includes('*') || trimmed.includes('?')
+    if (hasWildcard) {
+      return { hasWildcard: true, keywords: [trimmed] }
+    }
+    return {
+      hasWildcard: false,
+      keywords: trimmed.split(/\s+/).filter(Boolean)
+    }
+  }
+
+  /**
+   * 转义正则特殊字符，把字符串变为字面量正则
+   */
+  private escapeRegex(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+
+  /**
+   * 在内存中按关键词 AND 过滤 basename（不区分大小写）
+   */
+  private filenameMatchesAll(name: string, keywords: string[]): boolean {
+    const lower = name.toLowerCase()
+    return keywords.every(kw => lower.includes(kw.toLowerCase()))
+  }
+
+  /**
    * 构建 Spotlight 查询参数
-   * 根据查询内容选择合适的 mdfind 调用方式：
-   * - 包含通配符 (* ?) 时：使用 kMDItemFSName 查询语法（支持 glob）
-   * - 纯文本时：使用 -name 参数（子串匹配）
    *
-   * @returns { args, hasWildcard } args 为 mdfind 参数数组，hasWildcard 标记是否使用了通配符模式
+   * 三种模式：
+   * - 含通配符：使用 kMDItemFSName 查询语法（glob 匹配）
+   * - 单关键词纯文本：使用 -name（子串匹配，简单高效）
+   * - 多关键词纯文本：使用 kMDItemFSName == '*kw*'cd && ... 复合 AND 查询
+   *
+   * @returns args 参数数组；hasWildcard 是否含通配符；typeFilteredInQuery 类型过滤是否已写入查询（true 表示无需代码层再过滤）
    */
   buildSpotlightArgs(
     query: string,
     searchPath?: string,
     type?: 'file' | 'dir' | 'all'
-  ): { args: string[]; hasWildcard: boolean } {
+  ): { args: string[]; hasWildcard: boolean; typeFilteredInQuery: boolean } {
     const args: string[] = []
 
     if (searchPath) {
       args.push('-onlyin', searchPath)
     }
 
-    const hasWildcard = query.includes('*') || query.includes('?')
+    const { hasWildcard, keywords } = this.parseKeywords(query)
 
-    if (hasWildcard) {
-      const escaped = this.escapeSpotlightQuery(query)
-      const conditions: string[] = [`kMDItemFSName == '${escaped}'c`]
-
+    const appendTypeCondition = (conditions: string[]) => {
       if (type === 'dir') {
         conditions.push("kMDItemContentType == 'public.folder'")
       } else if (type === 'file') {
         conditions.push("kMDItemContentType != 'public.folder'")
       }
-
-      args.push(conditions.join(' && '))
-    } else {
-      // 纯文本查询使用 -name（子串匹配，简单高效）
-      args.push('-name', query)
     }
 
-    return { args, hasWildcard }
+    if (hasWildcard) {
+      const escaped = this.escapeSpotlightQuery(query)
+      const conditions: string[] = [`kMDItemFSName == '${escaped}'c`]
+      appendTypeCondition(conditions)
+      args.push(conditions.join(' && '))
+      return { args, hasWildcard: true, typeFilteredInQuery: true }
+    }
+
+    if (keywords.length <= 1) {
+      args.push('-name', keywords[0] ?? query)
+      return { args, hasWildcard: false, typeFilteredInQuery: false }
+    }
+
+    // 多关键词：构建复合 AND 查询，每个关键词作为子串匹配文件名
+    const conditions = keywords.map(
+      kw => `kMDItemFSName == '*${this.escapeSpotlightQuery(kw)}*'cd`
+    )
+    appendTypeCondition(conditions)
+    args.push(conditions.join(' && '))
+    return { args, hasWildcard: false, typeFilteredInQuery: true }
   }
 
   /**
@@ -352,7 +400,7 @@ export class FileSearchService {
     type?: 'file' | 'dir' | 'all',
     limit?: number
   ): Promise<FileSearchResult[]> {
-    const { args, hasWildcard } = this.buildSpotlightArgs(query, searchPath, type)
+    const { args, typeFilteredInQuery } = this.buildSpotlightArgs(query, searchPath, type)
 
     try {
       const output = await this.execCommand('mdfind', args)
@@ -368,8 +416,8 @@ export class FileSearchService {
           const stats = fs.statSync(filePath)
           const isDir = stats.isDirectory()
 
-          // 使用 -name 时类型过滤需在代码中完成（kMDItemFSName 模式已在查询中过滤）
-          if (!hasWildcard) {
+          // 类型过滤已在查询条件中完成时跳过代码层过滤
+          if (!typeFilteredInQuery) {
             if (type === 'file' && isDir) continue
             if (type === 'dir' && !isDir) continue
           }
@@ -474,16 +522,24 @@ export class FileSearchService {
   ): Promise<FileSearchResult[]> {
     // 优先使用 plocate
     const locateCmd = await this.checkPlocateOrLocate()
-    const args: string[] = []
+    const { hasWildcard, keywords } = this.parseKeywords(query)
+    const maxResults = limit || 50
 
-    // 忽略大小写
-    args.push('-i')
-    
-    // 限制结果数量
-    args.push('-l', String(limit || 50))
+    // locate 只支持单 pattern，多关键词时挑最长的当 pattern，剩余关键词在内存过滤
+    const isMultiKeyword = !hasWildcard && keywords.length > 1
+    const primaryPattern = hasWildcard
+      ? query
+      : isMultiKeyword
+        ? [...keywords].sort((a, b) => b.length - a.length)[0]
+        : keywords[0] ?? query
+    const filterKeywords = isMultiKeyword
+      ? keywords.filter(kw => kw !== primaryPattern)
+      : []
 
-    // 添加搜索模式
-    args.push(query)
+    // 多关键词时上游需多抓些再过滤
+    const fetchLimit = isMultiKeyword ? Math.max(maxResults * 10, 500) : maxResults
+
+    const args: string[] = ['-i', '-l', String(fetchLimit), primaryPattern]
 
     try {
       const output = await this.execCommand(locateCmd, args)
@@ -496,10 +552,14 @@ export class FileSearchService {
 
       // 获取文件信息并过滤，直到达到 limit 数量
       const results: FileSearchResult[] = []
-      const maxResults = limit || 50
       for (const filePath of paths) {
         if (results.length >= maxResults) break
-        
+
+        const baseName = path.basename(filePath)
+        if (filterKeywords.length > 0 && !this.filenameMatchesAll(baseName, filterKeywords)) {
+          continue
+        }
+
         try {
           const stats = fs.statSync(filePath)
           const isDir = stats.isDirectory()
@@ -510,7 +570,7 @@ export class FileSearchService {
 
           results.push({
             path: filePath,
-            name: path.basename(filePath),
+            name: baseName,
             isDirectory: isDir,
             size: stats.size,
             modifiedTime: stats.mtimeMs,
@@ -557,25 +617,34 @@ export class FileSearchService {
       fdCmd = 'fdfind'
     }
 
-    const args: string[] = []
+    const { hasWildcard, keywords } = this.parseKeywords(query)
+    const maxResults = limit || 50
 
-    // 忽略大小写
-    args.push('-i')
+    // fd 只支持单 pattern。多关键词时挑最长的当 pattern，剩余关键词在内存过滤
+    const isMultiKeyword = !hasWildcard && keywords.length > 1
+    const primaryPattern = hasWildcard
+      ? query
+      : isMultiKeyword
+        ? [...keywords].sort((a, b) => b.length - a.length)[0]
+        : keywords[0] ?? query
+    const filterKeywords = isMultiKeyword
+      ? keywords.filter(kw => kw !== primaryPattern)
+      : []
 
-    // 类型过滤
+    // fd 默认使用正则，纯文本关键词需要转义；通配符模式保持原样（不严格 glob，但兼容现有行为）
+    const fdPattern = hasWildcard ? primaryPattern : this.escapeRegex(primaryPattern)
+
+    // 多关键词时上游需多抓些再过滤
+    const fetchLimit = isMultiKeyword ? Math.max(maxResults * 10, 500) : maxResults
+
+    const args: string[] = ['-i']
     if (type === 'file') {
       args.push('-t', 'f')
     } else if (type === 'dir') {
       args.push('-t', 'd')
     }
-
-    // 限制结果数量
-    args.push('--max-results', String(limit || 50))
-
-    // 搜索模式
-    args.push(query)
-
-    // 搜索路径
+    args.push('--max-results', String(fetchLimit))
+    args.push(fdPattern)
     args.push(searchPath)
 
     try {
@@ -585,11 +654,18 @@ export class FileSearchService {
       // 获取文件信息
       const results: FileSearchResult[] = []
       for (const filePath of paths) {
+        if (results.length >= maxResults) break
+
+        const baseName = path.basename(filePath)
+        if (filterKeywords.length > 0 && !this.filenameMatchesAll(baseName, filterKeywords)) {
+          continue
+        }
+
         try {
           const stats = fs.statSync(filePath)
           results.push({
             path: filePath,
-            name: path.basename(filePath),
+            name: baseName,
             isDirectory: stats.isDirectory(),
             size: stats.size,
             modifiedTime: stats.mtimeMs,
@@ -622,8 +698,9 @@ export class FileSearchService {
     const maxDepth = 5 // 限制搜索深度
     const maxDirEntries = 1000 // 每个目录最多读取的条目数
 
-    // 将通配符转换为正则表达式
-    const pattern = this.wildcardToRegex(query)
+    // 多关键词 AND：每个关键词转独立 regex，全部命中才算匹配
+    const patterns = this.buildNativePatterns(query)
+    const matches = (name: string) => patterns.every(re => re.test(name))
 
     const searchDir = async (dir: string, depth: number) => {
       if (depth > maxDepth || results.length >= maxResults) {
@@ -660,8 +737,8 @@ export class FileSearchService {
             continue
           }
 
-          // 名称匹配
-          if (pattern.test(entry.name)) {
+          // 名称匹配（多关键词 AND）
+          if (matches(entry.name)) {
             try {
               const stats = await fs.promises.stat(fullPath)
               results.push({
@@ -697,17 +774,33 @@ export class FileSearchService {
 
   /**
    * 将通配符转换为正则表达式
+   * - * → .*
+   * - ? → .
    */
   private wildcardToRegex(pattern: string): RegExp {
     // 转义特殊字符
     const regex = pattern
       .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      // 将 * 转换为 .*
       .replace(/\*/g, '.*')
-      // 将 ? 转换为 .
       .replace(/\?/g, '.')
 
     return new RegExp(regex, 'i')
+  }
+
+  /**
+   * 为原生递归搜索构建匹配 regex 列表
+   * - 单关键词或通配符模式：返回单个 regex（保持兼容）
+   * - 多关键词纯文本：每个关键词转字面量 regex（子串匹配，不区分大小写），AND 关系
+   */
+  private buildNativePatterns(query: string): RegExp[] {
+    const { hasWildcard, keywords } = this.parseKeywords(query)
+    if (hasWildcard) {
+      return [this.wildcardToRegex(query)]
+    }
+    if (keywords.length <= 1) {
+      return [this.wildcardToRegex(keywords[0] ?? query)]
+    }
+    return keywords.map(kw => new RegExp(this.escapeRegex(kw), 'i'))
   }
 
   /**
