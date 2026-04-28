@@ -12,6 +12,7 @@ import { t } from '../i18n'
 import { assessCommandRisk, analyzeCommand } from '../risk-assessor'
 import { truncateFromEnd } from './utils'
 import { getDefaultShell } from '../../../utils/platform'
+import { decodeBuffer } from '../../../utils/encoding'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 
 const DEFAULT_TIMEOUT = 60_000
@@ -19,15 +20,16 @@ const MAX_TIMEOUT = 600_000
 const MAX_BUFFER = 10 * 1024 * 1024  // 10MB
 
 /**
- * Windows 下在命令前注入 UTF-8 代码页设置，防止中文等非 ASCII 输出乱码。
- * cmd.exe 用 chcp，PowerShell 用 .NET OutputEncoding。
+ * 将 stdout/stderr 的 Buffer 解码为字符串。
+ *
+ * Windows 下编码策略："统一软件和系统的编码"——不强制 chcp 65001（不可靠，
+ * 大量 .exe 不尊重控制台代码页），让命令以系统默认 ANSI 编码运行，由
+ * decodeBuffer 按"BOM → UTF-8 校验 → 系统编码（chcp 探测）"分层识别。
  */
-function wrapWindowsCommandForUtf8(command: string, shell: string): string {
-  const s = shell.toLowerCase()
-  if (s.includes('powershell') || s.includes('pwsh')) {
-    return `$OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${command}`
-  }
-  return `chcp 65001 >nul && ${command}`
+function decodeOutput(buf: Buffer | string): string {
+  if (typeof buf === 'string') return buf
+  if (!buf || buf.length === 0) return ''
+  return decodeBuffer(buf, true).content
 }
 
 export async function executeCommandDirect(
@@ -128,11 +130,15 @@ export async function executeCommandDirect(
   }
 
   return new Promise<ToolResult>((resolve) => {
-    const execCallback = (error: Error | null, stdout: string, stderr: string) => {
+    // exec 回调用 ExecException、execFile 用 ExecFileException，
+    // 两者 code 字段类型不同；这里用 any 接收，运行时统一读 code/signal/killed。
+    const execCallback = (error: any, stdoutRaw: Buffer | string, stderrRaw: Buffer | string) => {
+      const stdout = decodeOutput(stdoutRaw)
+      const stderr = decodeOutput(stderrRaw)
       const combined = [stdout, stderr].filter(Boolean).join('\n').trim()
       const exitCode = error?.code ?? (error ? 1 : 0)
 
-      if (error && ((error as NodeJS.ErrnoException).signal === 'SIGTERM' || (error as any).killed)) {
+      if (error && (error.signal === 'SIGTERM' || error.killed)) {
         const output = truncateFromEnd(combined, 4000)
         executor.addStep({
           type: 'tool_result',
@@ -170,10 +176,11 @@ export async function executeCommandDirect(
     }
 
     const shell = getDefaultShell()
-    const opts = { cwd, timeout, maxBuffer: MAX_BUFFER }
+    // encoding: 'buffer' 让 stdout/stderr 返回原始字节，由 decodeOutput 按
+    // 系统默认编码（Windows = chcp 探测，其它 = utf-8）解码，避免乱码。
+    const opts = { cwd, timeout, maxBuffer: MAX_BUFFER, encoding: 'buffer' as const }
     if (process.platform === 'win32') {
-      const utf8Command = wrapWindowsCommandForUtf8(command, shell)
-      exec(utf8Command, { ...opts, shell }, execCallback)
+      exec(command, { ...opts, shell }, execCallback)
     } else {
       execFile(shell, ['-l', '-c', command], opts, execCallback)
     }

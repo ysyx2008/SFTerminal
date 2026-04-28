@@ -14,18 +14,6 @@ const log = createLogger('PTY')
 
 const execAsync = promisify(exec)
 
-// Windows 代码页到编码的映射
-const _CODE_PAGE_TO_ENCODING: Record<number, string> = {
-  65001: 'utf-8',    // UTF-8
-  936: 'gbk',        // 简体中文 GBK
-  950: 'big5',       // 繁体中文 Big5
-  932: 'shift_jis',  // 日语 Shift-JIS
-  949: 'euc-kr',     // 韩语
-  1252: 'windows-1252', // 西欧
-  1251: 'windows-1251', // 俄语
-  28591: 'iso-8859-1',  // Latin-1
-}
-
 /**
  * 解码 lsof 输出中的 \xXX 转义序列
  * lsof 在路径包含非 ASCII 字符时会输出 \xXX 格式的 UTF-8 编码
@@ -93,38 +81,6 @@ export class PtyService {
       return process.env.COMSPEC || 'powershell.exe'
     }
     return process.env.SHELL || '/bin/bash'
-  }
-
-  /**
-   * 检测 Windows 控制台的实际代码页
-   * 通过执行 chcp 命令获取当前活动代码页
-   */
-  private detectWindowsCodePage(): number | null {
-    if (process.platform !== 'win32') {
-      return null
-    }
-    
-    try {
-      // 执行 chcp 命令获取当前代码页
-      // 输出格式: "Active code page: 936" 或 "活动代码页: 936"
-      const output = execSync('chcp', { 
-        encoding: 'utf8',
-        windowsHide: true,
-        timeout: 3000
-      })
-      
-      // 提取数字（代码页）
-      const match = output.match(/(\d+)/)
-      if (match) {
-        const codePage = parseInt(match[1], 10)
-        log.info(`Windows 控制台代码页: ${codePage}`)
-        return codePage
-      }
-    } catch (error) {
-      log.warn('无法检测 Windows 代码页:', error)
-    }
-    
-    return null
   }
 
   /**

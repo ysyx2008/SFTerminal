@@ -12,6 +12,7 @@ import { getFileSearchService } from '../../file-search.service'
 import { getDocumentParserService } from '../../document-parser.service'
 import { getConfigService } from '../../config.service'
 import iconv from 'iconv-lite'
+import { decodeBuffer, detectEncoding } from '../../../utils/encoding'
 import { categorizeError, getErrorRecoverySuggestion, truncateFromEnd, formatFileSize } from './utils'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 import { VISION_IMAGE_EXTENSIONS, IMAGE_MIME_TYPES, CONVERTIBLE_IMAGE_EXTENSIONS } from './types'
@@ -45,67 +46,6 @@ function formatDisplayPath(filePath: string, ptyId?: string): string {
     return '~' + filePath.slice(home.length)
   }
   return filePath
-}
-
-/**
- * 验证 Buffer 是否为合法 UTF-8 编码。
- * allowTruncatedEnd: 允许末尾的不完整多字节序列（用于部分读取的 buffer）
- */
-function isValidUtf8(buf: Buffer, allowTruncatedEnd = false): boolean {
-  let i = 0
-  while (i < buf.length) {
-    const byte = buf[i]
-    let continuationBytes: number
-
-    if (byte <= 0x7F) {
-      i++
-      continue
-    } else if ((byte & 0xE0) === 0xC0) {
-      if (byte < 0xC2) return false
-      continuationBytes = 1
-    } else if ((byte & 0xF0) === 0xE0) {
-      continuationBytes = 2
-    } else if ((byte & 0xF8) === 0xF0) {
-      if (byte > 0xF4) return false
-      continuationBytes = 3
-    } else {
-      return false
-    }
-
-    if (i + continuationBytes >= buf.length) {
-      return allowTruncatedEnd
-    }
-
-    for (let j = 1; j <= continuationBytes; j++) {
-      if ((buf[i + j] & 0xC0) !== 0x80) return false
-    }
-
-    i += 1 + continuationBytes
-  }
-  return true
-}
-
-/**
- * 检测 Buffer 编码：BOM → UTF-8 验证 → 回退 GB18030
- */
-function detectEncoding(buf: Buffer, allowTruncatedEnd = false): string {
-  if (buf.length >= 3 && buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF) return 'utf-8'
-  if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) return 'utf-16le'
-  if (buf.length >= 2 && buf[0] === 0xFE && buf[1] === 0xFF) return 'utf-16be'
-  if (isValidUtf8(buf, allowTruncatedEnd)) return 'utf-8'
-  return 'gb18030'
-}
-
-/**
- * 按检测到的编码解码 Buffer，返回内容和编码名
- */
-function decodeBuffer(buf: Buffer, allowTruncatedEnd = false): { content: string, encoding: string } {
-  const encoding = detectEncoding(buf, allowTruncatedEnd)
-  if (encoding === 'utf-8') {
-    const start = (buf.length >= 3 && buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF) ? 3 : 0
-    return { content: buf.toString('utf-8', start), encoding }
-  }
-  return { content: iconv.decode(buf, encoding), encoding }
 }
 
 /**
