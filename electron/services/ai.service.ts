@@ -454,8 +454,10 @@ function messagesContainImages(messages: AiMessage[]): boolean {
  * 将 AiMessage 转换为 API 请求格式
  * 如果消息包含图片，content 会转为多模态数组格式（OpenAI Vision API）
  * @param stripImages 为 true 时忽略图片（用于 API 不支持视觉时的降级）
+ *
+ * 导出仅用于单元测试（DeepSeek 思考模式合规性回归）。运行时仅本文件内部使用。
  */
-function formatMessageForApi(msg: AiMessage, stripImages = false): Record<string, unknown> {
+export function formatMessageForApi(msg: AiMessage, stripImages = false): Record<string, unknown> {
   if (msg.role === 'tool') {
     return {
       role: 'tool' as const,
@@ -493,10 +495,12 @@ function formatMessageForApi(msg: AiMessage, stripImages = false): Record<string
   // vLLM 等推理引擎拒绝空 content，纯 assistant 文本消息也需保护
   const content = msg.content || (msg.role === 'assistant' ? '[no response]' : ' ')
   const result: Record<string, unknown> = { role: msg.role, content }
-  // DeepSeek V3.2+ 思考模式：纯文本 assistant 消息如带 reasoning_content 也需回传（任一 assistant 消息缺失都会被拒）
-  // 其余 OpenAI 兼容 API 忽略未知字段，不会受影响；仅在字段存在时才附加，避免误伤非思考模型
-  if (msg.role === 'assistant' && msg.reasoning_content !== undefined) {
-    result.reasoning_content = msg.reasoning_content
+  // DeepSeek V3.2+/V4 思考模式要求所有 assistant 消息必须带 reasoning_content（缺一即拒）。
+  // 与 tool_calls 分支一致，这里对纯文本 assistant 也无条件补字段（缺失补空串），
+  // 兜底所有可能漏字段的来源（TaskMemory L1/L2 压缩重建、跨会话恢复的老 record、模型切换等）。
+  // 其余 OpenAI 兼容 API 会忽略未知字段，不会受影响。
+  if (msg.role === 'assistant') {
+    result.reasoning_content = msg.reasoning_content ?? ''
   }
   if (msg._cacheBreakpoint) result._cacheBreakpoint = true
   return result
