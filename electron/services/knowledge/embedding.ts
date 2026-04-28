@@ -117,6 +117,19 @@ export class EmbeddingService extends EventEmitter {
   }
 
   /**
+   * 单次 forward 的最大 batch 大小。
+   *
+   * onnxruntime-node 跑在 Electron 主进程主线程，单次 forward 的
+   * 中间 tensor 与 BFCArena 块都从 process heap 申请，与 v8 的
+   * cppgc/partition alloc 共享地址空间。batch 过大时 native 大块分配
+   * 容易触发 v8 内部的内存约束，导致 SIGTRAP（EXC_BREAKPOINT brk 0）
+   * 直接 crash 进程。
+   *
+   * 64 与 checkAndRebuildIndex 中的攒批阈值保持一致，吞吐与稳定性兼顾。
+   */
+  private static readonly MAX_BATCH_SIZE = 64
+
+  /**
    * 生成文本的向量嵌入
    * @param texts 文本数组
    * @returns 向量数组
@@ -124,6 +137,9 @@ export class EmbeddingService extends EventEmitter {
    * 使用 batch inference：一次 forward pass 处理整个 batch，
    * 相比逐条串行在 CPU 上通常有 3-8 倍加速（避免重复的
    * session.run 调度开销 + attention 层计算可部分共享）。
+   *
+   * 内部按 MAX_BATCH_SIZE 切片，防止大文档（数百 chunks）
+   * 一次性推理时 onnxruntime 大块内存分配冲撞 v8 触发 crash。
    */
   async embed(texts: string[]): Promise<number[][]> {
     if (!this.extractor) {
@@ -136,12 +152,31 @@ export class EmbeddingService extends EventEmitter {
 
     if (texts.length === 0) return []
 
-    try {
-      // 截断过长的文本（大多数模型限制 512 tokens，2000 字符留些余量给中文）
-      const truncated = texts.map(t => t.slice(0, 2000))
+    // 截断过长的文本（大多数模型限制 512 tokens，2000 字符留些余量给中文）
+    const truncated = texts.map(t => t.slice(0, 2000))
 
-      // 一次性 forward 整个 batch
-      const output = await this.extractor(truncated, {
+    // 输入小于阈值，直接单次 forward
+    if (truncated.length <= EmbeddingService.MAX_BATCH_SIZE) {
+      return this.embedBatch(truncated)
+    }
+
+    // 超过阈值，分片串行推理（避免主线程 OOM/崩溃）
+    const results: number[][] = []
+    for (let start = 0; start < truncated.length; start += EmbeddingService.MAX_BATCH_SIZE) {
+      const slice = truncated.slice(start, start + EmbeddingService.MAX_BATCH_SIZE)
+      const sliceResults = await this.embedBatch(slice)
+      results.push(...sliceResults)
+    }
+    return results
+  }
+
+  /**
+   * 单次 batch forward（输入长度必须 ≤ MAX_BATCH_SIZE）。
+   * 形状异常时降级为逐条推理。
+   */
+  private async embedBatch(texts: string[]): Promise<number[][]> {
+    try {
+      const output = await this.extractor(texts, {
         pooling: 'mean',
         normalize: true
       })
@@ -152,16 +187,16 @@ export class EmbeddingService extends EventEmitter {
       const dims = output.dims as number[] | undefined
       const dim = dims && dims.length >= 2
         ? dims[dims.length - 1]
-        : Math.floor(data.length / truncated.length)
+        : Math.floor(data.length / texts.length)
 
-      if (!dim || data.length !== truncated.length * dim) {
+      if (!dim || data.length !== texts.length * dim) {
         // 理论不会发生，兜底防御：形状异常时降级为单条处理，保证正确性优先
         log.warn(`batch embed 输出形状异常，dims=${JSON.stringify(dims)}, data.length=${data.length}，降级为单条推理`)
-        return this.embedFallbackSequential(truncated)
+        return this.embedFallbackSequential(texts)
       }
 
-      const results: number[][] = new Array(truncated.length)
-      for (let i = 0; i < truncated.length; i++) {
+      const results: number[][] = new Array(texts.length)
+      for (let i = 0; i < texts.length; i++) {
         results[i] = Array.from(data.subarray(i * dim, (i + 1) * dim))
       }
       return results
