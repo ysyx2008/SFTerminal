@@ -151,7 +151,8 @@ export default {
     hostManager: '主机管理',
     aiAssistant: 'AI 助手',
     settings: '控制面板',
-    closeSidebar: '关闭侧边栏'
+    closeSidebar: '关闭侧边栏',
+    appMenu: '应用菜单（Alt）'
   },
 
   // Windows 自绘标题栏按钮（仅 Win 平台显示）

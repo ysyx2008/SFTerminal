@@ -140,6 +140,8 @@ interface Window {
       toggleMaximize: () => void
       isMaximized: () => Promise<boolean>
       onMaximizeStateChange: (callback: (isMaximized: boolean) => void) => () => void
+      // Windows 汉堡菜单：弹出应用菜单（frame:false 下原生菜单栏不显示，由此 IPC 替代）
+      popupAppMenu: (position?: { x: number; y: number }) => void
       onRequestTerminalCount: (callback: () => void) => () => void
       responseTerminalCount: (count: number) => void
       isFullScreen: () => Promise<boolean>

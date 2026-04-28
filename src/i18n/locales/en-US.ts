@@ -151,7 +151,8 @@ export default {
     hostManager: 'Host Manager',
     aiAssistant: 'AI Assistant',
     settings: 'Control Panel',
-    closeSidebar: 'Close Sidebar'
+    closeSidebar: 'Close Sidebar',
+    appMenu: 'Application Menu (Alt)'
   },
 
   // Windows custom title bar controls (rendered on Windows only)

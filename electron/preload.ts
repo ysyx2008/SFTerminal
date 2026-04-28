@@ -323,6 +323,9 @@ const electronAPI = {
         ipcRenderer.removeListener('window:maximizeChange', handler)
       }
     },
+    // Windows 汉堡菜单：弹出 menuService 注册的应用菜单（在 frame:false 下原生菜单栏不显示，由此入口替代）
+    popupAppMenu: (position?: { x: number; y: number }) =>
+      ipcRenderer.send('window:popupAppMenu', position),
     // 监听主进程请求终端数量
     onRequestTerminalCount: (callback: () => void) => {
       const handler = () => callback()

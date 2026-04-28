@@ -1811,6 +1811,21 @@ ipcMain.handle('window:isMaximized', async () => {
   return mainWindow.isMaximized()
 })
 
+// frame:false 下 Electron 不会绘制原生菜单栏，渲染端的汉堡按钮通过此 IPC
+// 唤起 menuService 注册的应用菜单（role/accelerator/勾选状态全部由 Electron 处理）。
+// 坐标 x/y 是渲染端按钮在窗口客户区内的坐标，由前端通过 getBoundingClientRect 提供。
+ipcMain.on('window:popupAppMenu', (_event, position?: { x: number; y: number }) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const menu = Menu.getApplicationMenu()
+  if (!menu) return
+  // 不传坐标时让 Electron 在鼠标位置弹出（兼容键盘快捷键唤起场景）
+  if (position && Number.isFinite(position.x) && Number.isFinite(position.y)) {
+    menu.popup({ window: mainWindow, x: Math.round(position.x), y: Math.round(position.y) })
+  } else {
+    menu.popup({ window: mainWindow })
+  }
+})
+
 // ==================== 自动更新 ====================
 
 // 配置自动更新

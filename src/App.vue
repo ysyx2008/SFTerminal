@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Monitor, Bot, Settings, X, Loader2, Heart } from 'lucide-vue-next'
+import { Monitor, Bot, Settings, X, Loader2, Heart, Menu as MenuIcon } from 'lucide-vue-next'
 import { useTerminalStore } from './stores/terminal'
 import { useConfigStore, type SshSession } from './stores/config'
 import { useCanvasStore } from './stores/canvas'
@@ -60,6 +60,25 @@ const isWin = typeof navigator !== 'undefined' && /Win/i.test(navigator.platform
 
 // 全屏时红绿灯 / 自绘按钮都隐藏，header 不再需要预留空间
 const isFullScreen = ref(false)
+
+// Windows 汉堡菜单按钮 DOM 引用：用于在按钮位置弹出原生菜单 popup
+const appMenuBtnRef = ref<HTMLButtonElement | null>(null)
+
+// 打开应用菜单：渲染端把按钮的客户区坐标（左下角）传给主进程，主进程在该位置弹原生 Menu。
+// 不传坐标时（如 Alt 键唤起且按钮已不可见），主进程会按鼠标位置兜底。
+function openAppMenu(anchor?: HTMLElement) {
+  if (!isWin) return
+  let position: { x: number; y: number } | undefined
+  if (anchor) {
+    const rect = anchor.getBoundingClientRect()
+    position = { x: rect.left, y: rect.bottom }
+  }
+  window.electronAPI.window.popupAppMenu?.(position)
+}
+
+function openAppMenuFromButton() {
+  openAppMenu(appMenuBtnRef.value || undefined)
+}
 
 const hasTerminalTab = computed(() => terminalStore.tabs.some(t => t.type === 'local' || t.type === 'ssh'))
 
@@ -155,9 +174,30 @@ function matchAccelerator(event: KeyboardEvent, accelerator: string): boolean {
   return eventKey === targetKey || event.key.toLowerCase() === targetKey.toLowerCase()
 }
 
+// Windows 标准：单独按下并松开 Alt 键弹出菜单栏（这里是汉堡菜单 popup）。
+// 通过追踪"Alt 按下时是否被其他键打断"区分"Alt 单击"和"Alt+其他键加速键"。
+// 注：右侧 AltGraph 用于输入特殊字符（如 €），不参与菜单唤起，与 Windows 系统行为一致
+let altPressedAlone = false
+
+// 是否有全屏 overlay 盖住主 header（汉堡按钮、自绘标题栏按钮均被遮住）
+// SetupWizard / Awaken / SettingsModal 都是 position:fixed inset:0 全屏覆盖
+const isFullScreenOverlayOpen = computed(() =>
+  showAwaken.value || showSettings.value || showSetupWizard.value
+)
+
 // 全局快捷键处理
 const handleGlobalKeydown = (event: KeyboardEvent) => {
   const shortcuts = configStore.keyboardShortcuts
+
+  // Alt 单击追踪：仅 Windows 启用。任何带其他修饰或与其他键组合的情况视为加速键，清除标记。
+  // event.repeat 过滤连续触发（按住不放时浏览器会反复 keydown），保持语义清晰
+  if (isWin) {
+    if (event.key === 'Alt' && !event.repeat && !event.ctrlKey && !event.shiftKey && !event.metaKey) {
+      altPressedAlone = true
+    } else {
+      altPressedAlone = false
+    }
+  }
 
   if (matchAccelerator(event, shortcuts.newAssistantTab)) {
     event.preventDefault()
@@ -182,6 +222,18 @@ const handleGlobalKeydown = (event: KeyboardEvent) => {
   if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'w') {
     event.preventDefault()
     handleCloseShortcut()
+  }
+}
+
+const handleGlobalKeyup = (event: KeyboardEvent) => {
+  if (!isWin) return
+  // Alt 松开且全程未与其他键组合：弹出汉堡菜单（与 Windows 系统菜单栏 Alt 行为一致）
+  if (event.key === 'Alt' && altPressedAlone) {
+    altPressedAlone = false
+    // 全屏 overlay 打开时按钮不可见，不主动唤起菜单（避免菜单弹在错误位置遮挡内容）
+    if (isFullScreenOverlayOpen.value) return
+    event.preventDefault()
+    openAppMenu(appMenuBtnRef.value || undefined)
   }
 }
 
@@ -218,6 +270,7 @@ let cleanupFullScreenChange: (() => void) | null = null
 onMounted(async () => {
   // 注册全局快捷键
   document.addEventListener('keydown', handleGlobalKeydown)
+  document.addEventListener('keyup', handleGlobalKeyup)
 
   // 同步全屏状态：初始查询 + 监听变化（macOS 全屏会隐藏红绿灯，需要调整 header 左侧留白）
   try {
@@ -789,6 +842,7 @@ const handleMenuCommand = async (command: string) => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleGlobalKeydown)
+  document.removeEventListener('keyup', handleGlobalKeyup)
   // 清理监听器
   cleanupTerminalCountListener?.()
   cleanupKnowledgeUpgrading?.()
@@ -814,6 +868,17 @@ onUnmounted(() => {
     <!-- 顶部工具栏 -->
     <header class="app-header">
       <div class="header-left">
+        <!-- Windows 汉堡菜单：替代 frame:false 下消失的原生菜单栏，弹出 menuService 注册的应用菜单。
+             Alt 键也可唤起（见 handleGlobalKeydown）。其他平台用各自原生菜单（macOS 全局菜单栏 / Linux frame 内菜单栏），不渲染本按钮。 -->
+        <button
+          v-if="isWin"
+          ref="appMenuBtnRef"
+          class="btn-icon btn-icon-header app-menu-btn"
+          @click="openAppMenuFromButton"
+          :title="t('header.appMenu')"
+        >
+          <MenuIcon :size="18" />
+        </button>
         <span class="app-title">{{ isSteamBuild ? steamAppTitle : t('app.title') }}</span>
       </div>
       <div class="header-center">
