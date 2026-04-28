@@ -101,6 +101,9 @@ npm run build:win    # Windows
 npm run build:linux  # Linux
 ```
 
+> **Dev Windows build** (for the author's cross-platform testing only): every push to `develop` triggers a CI build that overwrites a fixed OSS path. Stability is not guaranteed.
+> Download: <https://sfterm-download.oss-cn-wuhan-lr.aliyuncs.com/dev/SailFish-Setup-dev.exe>
+
 ### AI Configuration
 
 SailFish supports OpenAI-compatible APIs. Configure in Settings:

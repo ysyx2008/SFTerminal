@@ -1,0 +1,104 @@
+name: Build Dev (Windows)
+
+# 在 develop 分支推送代码后自动构建 Windows 安装包并推到 OSS 固定路径，
+# 方便作者从 Mac 远程拿到最新 Win 包做兼容性测试。
+# 与 build-release.yml（tag 触发，发版用）解耦，互不干扰。
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'electron/**'
+      - 'src/**'
+      - 'shared/**'
+      - 'scripts/**'
+      - 'resources/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'electron-builder.yml'
+      - 'electron-builder-win-optimized.yml'
+      - 'tsconfig*.json'
+      - 'vite.config.ts'
+      - '.github/workflows/build-dev-win.yml'
+  workflow_dispatch:
+
+# 同一分支只跑最新一次：连续 push 时旧的自动取消，节省 CI 资源
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build:win
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-dev
+          path: |
+            release/*.exe
+            release/*.zip
+          retention-days: 14
+          if-no-files-found: error
+
+  upload-oss:
+    needs: build-windows
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-dev
+          path: artifacts
+
+      - name: Display downloaded files
+        run: ls -R artifacts
+
+      - name: Setup aliyun ossutil
+        run: |
+          curl -o ossutil64 https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip -j ossutil64 -d /tmp/ossutil
+          chmod +x /tmp/ossutil/ossutil64
+          /tmp/ossutil/ossutil64 config -e oss-cn-wuhan-lr.aliyuncs.com -i ${{ secrets.OSS_ACCESS_KEY_ID }} -k ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+
+      - name: Upload to OSS (固定路径，覆盖旧的开发版)
+        run: |
+          OSSUTIL=/tmp/ossutil/ossutil64
+          BUCKET=oss://sfterm-download
+
+          # NSIS 安装包 → 固定路径，方便记忆和书签
+          EXE=$(ls artifacts/SailFish-Setup-*.exe 2>/dev/null | head -n 1)
+          if [ -z "$EXE" ]; then
+            echo "❌ 未找到 SailFish-Setup-*.exe"
+            exit 1
+          fi
+          echo "上传 $EXE → ${BUCKET}/dev/SailFish-Setup-dev.exe"
+          $OSSUTIL cp "$EXE" ${BUCKET}/dev/SailFish-Setup-dev.exe -f
+
+          # ZIP 便携版（如果产出了）
+          ZIP=$(ls artifacts/SailFish-*-x64.zip 2>/dev/null | head -n 1)
+          if [ -n "$ZIP" ] && [ -f "$ZIP" ]; then
+            echo "上传 $ZIP → ${BUCKET}/dev/SailFish-dev-x64.zip"
+            $OSSUTIL cp "$ZIP" ${BUCKET}/dev/SailFish-dev-x64.zip -f
+          fi
+
+          echo ""
+          echo "✅ 开发版已发布到 OSS:"
+          echo "   https://sfterm-download.oss-cn-wuhan-lr.aliyuncs.com/dev/SailFish-Setup-dev.exe"

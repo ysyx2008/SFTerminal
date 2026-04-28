@@ -101,6 +101,9 @@ npm run build:win    # Windows
 npm run build:linux  # Linux
 ```
 
+> **开发版 Windows 安装包**（仅供作者跨平台测试用）：每次推送到 `develop` 分支后由 CI 自动构建并覆盖到 OSS 固定路径，不保证稳定。
+> 下载地址：<https://sfterm-download.oss-cn-wuhan-lr.aliyuncs.com/dev/SailFish-Setup-dev.exe>
+
 ### AI 配置
 
 旗鱼支持 OpenAI 兼容 API。在设置中配置：
