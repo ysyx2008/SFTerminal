@@ -54,6 +54,14 @@ export interface IMServiceConfig {
   sessionTimeoutMinutes: number
   /** 是否发送过程消息（工具调用、中间文本等），关闭后仅发送最终结果和错误，默认 true */
   sendProcessMessages: boolean
+  /**
+   * 是否把 AI 的思考过程（reasoning）一并发到 IM。默认 false：
+   * - 关闭：仅发正文，思考过程被剥离，避免给 IM 用户刷屏
+   * - 开启：思考过程与正文一起发，便于调试或观察 AI 的推理路径
+   * 注意：无论开关与否，最终任务完成时若整个会话从未发过实质正文，
+   * 会把最近一次思考过程作为兜底发出去（保证用户至少有反馈）。
+   */
+  sendThinkingProcess: boolean
 }
 
 // ==================== 适配器接口 ====================

@@ -2142,10 +2142,12 @@ interface Window {
         wechat: { hasToken: boolean; autoConnect: boolean }
         executionMode: ExecutionMode
         sendProcessMessages: boolean
+        sendThinkingProcess: boolean
       }>
       setAutoConnect: (platform: string, enabled: boolean) => Promise<void>
       setExecutionMode: (mode: ExecutionMode) => Promise<void>
       setSendProcessMessages: (enabled: boolean) => Promise<void>
+      setSendThinkingProcess: (enabled: boolean) => Promise<void>
       sendNotification: (text: string, options?: { markdown?: boolean; title?: string }) => Promise<{ success: boolean; platform?: string; error?: string }>
       onConnectionChange: (callback: (data: { platform: string; connected: boolean }) => void) => () => void
     }

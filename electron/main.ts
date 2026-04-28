@@ -3045,6 +3045,11 @@ const savedImSendProcess = configService.get('imSendProcessMessages')
 if (savedImSendProcess === false) {
   imService.setSendProcessMessages(false)
 }
+// 从持久化配置恢复 IM 思考过程开关（默认 false）
+const savedImSendThinking = configService.get('imSendThinkingProcess')
+if (savedImSendThinking === true) {
+  imService.setSendThinkingProcess(true)
+}
 
 ipcMain.handle('im:startDingTalk', async (_event, config: DingTalkConfig) => {
   // 保存配置
@@ -3191,6 +3196,7 @@ ipcMain.handle('im:getConfig', async () => {
     },
     executionMode: (configService.get('imExecutionMode') as string) || 'relaxed',
     sendProcessMessages: configService.get('imSendProcessMessages') !== false,
+    sendThinkingProcess: configService.get('imSendThinkingProcess') === true,
   }
 })
 
@@ -3218,6 +3224,11 @@ ipcMain.handle('im:setExecutionMode', async (_event, mode: ExecutionMode) => {
 ipcMain.handle('im:setSendProcessMessages', async (_event, enabled: boolean) => {
   configService.set('imSendProcessMessages', enabled)
   imService.setSendProcessMessages(enabled)
+})
+
+ipcMain.handle('im:setSendThinkingProcess', async (_event, enabled: boolean) => {
+  configService.set('imSendThinkingProcess', enabled)
+  imService.setSendThinkingProcess(enabled)
 })
 
 // 更新远程 Agent 运行时执行模式（仅运行时，不持久化，用于 tab 界面手动切换）

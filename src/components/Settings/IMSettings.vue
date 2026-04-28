@@ -92,6 +92,8 @@ const wxAutoConnect = ref(false)
 const executionMode = ref<ExecutionMode>('relaxed')
 // 发送过程消息
 const sendProcessMessages = ref(true)
+// 发送思考过程
+const sendThinkingProcess = ref(false)
 // 自由模式二次确认弹窗
 const showFreeModeConfirm = ref(false)
 
@@ -160,6 +162,7 @@ async function loadIMSettings() {
     wxAutoConnect.value = config.wechat?.autoConnect || false
     executionMode.value = config.executionMode || 'relaxed'
     sendProcessMessages.value = config.sendProcessMessages !== false
+    sendThinkingProcess.value = config.sendThinkingProcess === true
 
     try {
       const oauthStatus = await window.electronAPI.feishuOAuth.getOAuthStatus()
@@ -456,6 +459,14 @@ async function toggleSendProcessMessages() {
     await window.electronAPI.im.setSendProcessMessages(sendProcessMessages.value)
   } catch {
     sendProcessMessages.value = !sendProcessMessages.value
+  }
+}
+
+async function toggleSendThinkingProcess() {
+  try {
+    await window.electronAPI.im.setSendThinkingProcess(sendThinkingProcess.value)
+  } catch {
+    sendThinkingProcess.value = !sendThinkingProcess.value
   }
 }
 
@@ -957,6 +968,14 @@ function cancelFreeMode() {
           <span class="process-messages-title">{{ t('settings.im.sendProcessMessages') }}</span>
         </label>
         <span class="process-messages-desc">{{ t('settings.im.sendProcessMessagesDesc') }}</span>
+      </div>
+
+      <div class="process-messages-section">
+        <label class="process-messages-label">
+          <input type="checkbox" v-model="sendThinkingProcess" @change="toggleSendThinkingProcess" />
+          <span class="process-messages-title">{{ t('settings.im.sendThinkingProcess') }}</span>
+        </label>
+        <span class="process-messages-desc">{{ t('settings.im.sendThinkingProcessDesc') }}</span>
       </div>
     </div>
 

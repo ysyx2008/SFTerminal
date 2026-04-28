@@ -357,6 +357,8 @@ export default {
       executionModeDesc: '控制 IM Agent 执行命令时的确认策略',
       sendProcessMessages: '发送过程消息',
       sendProcessMessagesDesc: '关闭后仅在任务完成或出错时发送消息，减少打扰',
+      sendThinkingProcess: '发送思考过程',
+      sendThinkingProcessDesc: '开启后将 AI 的思考过程也推送到 IM；默认关闭以减少噪音，仅在 AI 没有给出正文时作为兜底发送',
       modeStrict: '严格',
       modeRelaxed: '宽松',
       modeFree: '自由',

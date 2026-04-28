@@ -176,6 +176,8 @@ interface StoreSchema {
   imWeChatToken: string           // 微信 bot token（扫码登录获得）
   imWeChatBaseUrl: string         // 微信 API base URL
   imExecutionMode: ExecutionMode  // IM Agent 执行模式，默认 relaxed
+  imSendProcessMessages: boolean  // IM 是否发送过程消息（工具调用、中间文本），默认 true
+  imSendThinkingProcess: boolean  // IM 是否发送 AI 思考过程，默认 false
   imLastContacts: Record<string, unknown> // IM 各平台最近联系人（主动推送使用）
   imKnownUsers: string[] // IM 已知用户（platform:userId），用于首次联系检测
   logLevel: LogLevel  // 日志级别
@@ -275,6 +277,8 @@ const defaultConfig: StoreSchema = {
   imWeChatToken: '',
   imWeChatBaseUrl: '',
   imExecutionMode: 'relaxed',
+  imSendProcessMessages: true,
+  imSendThinkingProcess: false,
   imLastContacts: {},
   imKnownUsers: [],
   logLevel: 'warn',

@@ -2920,6 +2920,7 @@ const electronAPI = {
         wechat: { hasToken: boolean; autoConnect: boolean }
         executionMode: ExecutionMode
         sendProcessMessages: boolean
+        sendThinkingProcess: boolean
       }>,
     setAutoConnect: (platform: string, enabled: boolean) =>
       ipcRenderer.invoke('im:setAutoConnect', platform, enabled) as Promise<void>,
@@ -2927,6 +2928,8 @@ const electronAPI = {
       ipcRenderer.invoke('im:setExecutionMode', mode) as Promise<void>,
     setSendProcessMessages: (enabled: boolean) =>
       ipcRenderer.invoke('im:setSendProcessMessages', enabled) as Promise<void>,
+    setSendThinkingProcess: (enabled: boolean) =>
+      ipcRenderer.invoke('im:setSendThinkingProcess', enabled) as Promise<void>,
     sendNotification: (text: string, options?: { markdown?: boolean; title?: string }) =>
       ipcRenderer.invoke('im:sendNotification', text, options) as Promise<{ success: boolean; platform?: string; error?: string }>,
 

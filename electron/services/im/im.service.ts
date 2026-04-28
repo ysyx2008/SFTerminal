@@ -229,6 +229,7 @@ export class IMService {
     executionMode: 'relaxed',
     sessionTimeoutMinutes: 60,
     sendProcessMessages: true,
+    sendThinkingProcess: false,
   }
 
   /** 当前活跃的 IM 会话上下文（Agent 运行期间有效） */
@@ -282,6 +283,13 @@ export class IMService {
    */
   setSendProcessMessages(enabled: boolean) {
     this.config.sendProcessMessages = enabled
+  }
+
+  /**
+   * 设置是否发送 AI 思考过程
+   */
+  setSendThinkingProcess(enabled: boolean) {
+    this.config.sendThinkingProcess = enabled
   }
 
   // ==================== IM 生命周期事件 ====================
@@ -913,10 +921,12 @@ export class IMService {
     })
 
     const sendProcess = this.config.sendProcessMessages
+    const sendThinking = this.config.sendThinkingProcess
     let textBuffer = ''
     let hasSentText = false
-    let lastFlushedContent = ''
-    /** 最近一次见到的思考过程（剥 HTML 后的纯文本），仅用于 onComplete 兜底，不主动推送 */
+    /** 已发送过的"正文"（不含思考过程），用于流式 partial flush 与 onDone final flush 的去重 */
+    let lastFlushedBody = ''
+    /** 最近一次见到的思考过程（剥 HTML 后的纯文本），用于 onComplete 兜底 */
     let lastThinkingContent = ''
     const notifiedToolCalls = new Set<string>()
     const sentMessageStepIds = new Set<string>()
@@ -932,10 +942,12 @@ export class IMService {
      * 把当前 textBuffer 作为一条消息发送出去。
      *
      * 行为约定：
-     * - IM 渠道默认只发正文，思考过程（<details> 块）剥离后留存到 lastThinkingContent，
-     *   仅在 onComplete 兜底场景使用，避免给用户刷屏。
-     * - 同一份正文不重复推送：用 lastFlushedContent 做内容去重，覆盖
-     *   「流式中 tool_call 触发 flush + onDone final flush」的重复场景。
+     * - 思考过程（<details> 块）由 sendThinkingProcess 开关控制：开启时与正文一起发，
+     *   关闭（默认）时剥离仅留存到 lastThinkingContent，避免给 IM 用户刷屏。无论开关
+     *   与否，onComplete 兜底逻辑（无实质正文时发思考过程）始终生效。
+     * - 去重锚点是 body（不含 thinking）：流式中 thinking 可能反复变化，但同一段
+     *   body 不该被多次推送。「tool_call 触发 flush + onDone final flush」的重复
+     *   场景由此覆盖。
      * - sendMarkdown 失败时不更新已发送状态，否则 onComplete 会误判为"已送达"而把最终
      *   回复一并跳过，表现为"任务完成了但没出最终消息"。
      */
@@ -945,11 +957,14 @@ export class IMService {
       textBuffer = ''
       const { thinking, body } = splitThinkingAndBody(content)
       if (thinking) lastThinkingContent = thinking
-      if (!body || body === lastFlushedContent) return
+      if (!body || body === lastFlushedBody) return
+      const toSend = sendThinking && thinking
+        ? `${formatThinkingForIM(thinking)}\n\n${body}`
+        : body
       try {
-        await adapter.sendMarkdown(replyContext, '旗鱼', body)
+        await adapter.sendMarkdown(replyContext, '旗鱼', toSend)
         hasSentText = true
-        lastFlushedContent = body
+        lastFlushedBody = body
       } catch (err) {
         log.error('Failed to send text:', err)
       }
@@ -1096,7 +1111,7 @@ export class IMService {
               await flushTextBuffer()
             } else {
               textBuffer = ''
-              lastFlushedContent = ''
+              lastFlushedBody = ''
             }
             // result 可能本身就是 fallback 占位（AI 没产出 content 时 executeLoop 给的兜底文本）。
             // 这种情况不当作"实质回复"发出去，转而走思考过程兜底。
@@ -1112,11 +1127,11 @@ export class IMService {
               if (thinking) lastThinkingContent = thinking
               // 不允许 fallback 回 raw result：万一后端把思考块塞进 content 字段，
               // raw 文本里残留的 <details> 标签会原样推到 IM 用户面前。body 为空时走思考过程兜底。
-              if (body && body !== lastFlushedContent) {
+              if (body && body !== lastFlushedBody) {
                 try {
                   await adapter.sendMarkdown(replyContext, '旗鱼', body)
                   hasSentText = true
-                  lastFlushedContent = body
+                  lastFlushedBody = body
                 } catch (err) {
                   log.error('Failed to send final result:', err)
                 }
@@ -1150,7 +1165,7 @@ export class IMService {
               await flushTextBuffer()
             } else {
               textBuffer = ''
-              lastFlushedContent = ''
+              lastFlushedBody = ''
             }
             try { await adapter.sendText(replyContext, t('im.task_error', { error })) } catch { /* ignore */ }
           }

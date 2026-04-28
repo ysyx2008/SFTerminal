@@ -357,6 +357,8 @@ export default {
       executionModeDesc: 'Controls when the IM Agent asks for confirmation before executing commands',
       sendProcessMessages: 'Send process messages',
       sendProcessMessagesDesc: 'When off, only sends final results or errors to reduce interruptions',
+      sendThinkingProcess: 'Send thinking process',
+      sendThinkingProcessDesc: 'When on, the AI thinking process is also pushed to IM; off by default to reduce noise — still sent as a fallback when the AI returns no body',
       modeStrict: 'Strict',
       modeRelaxed: 'Relaxed',
       modeFree: 'Free',
