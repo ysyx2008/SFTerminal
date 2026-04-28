@@ -620,13 +620,23 @@ const initializeApp = async () => {
     setTimeout(connectMcpServers, 500)
   }
 
-  // 全局音频设备检测 + 语音模型预初始化（只执行一次）
+  // 全局音频设备检测：轻量同步操作，立即执行让用户尽早知道有无麦克风
+  // 语音模型预加载：~293MB ONNX 模型 + utility process 启动较重，低配机器上会和首屏抢 CPU/IO，
+  // 改为 requestIdleCallback 在浏览器空闲时悄悄加载——既不影响启动速度，用时模型也已就绪
+  // 兜底：useSpeechRecognition.startRecording 内已有「未初始化就先初始化」的逻辑，预加载失败也不影响功能
   if (configStore.keyboardShortcuts.voiceInput) {
     checkAudioDevicesGlobal().then(available => {
-      if (available) {
-        initSpeechGlobal()
-      } else {
+      if (!available) {
         toast.warning(t('ai.noAudioDevice'))
+        return
+      }
+      const preloadSpeech = () => {
+        initSpeechGlobal().catch(err => log.warn('[Speech] 空闲预加载失败，将在首次使用时按需加载:', err))
+      }
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(preloadSpeech, { timeout: 8000 })
+      } else {
+        setTimeout(preloadSpeech, 5000)
       }
     })
   }
