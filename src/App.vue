@@ -46,6 +46,10 @@ const steamAppTitle = computed(() => {
   const lang = configStore.language || 'zh-CN'
   return lang.startsWith('zh') ? '旗鱼终端' : 'SFTerm'
 })
+
+// 应用版本号（异步从主进程拉取）
+const appVersion = ref('')
+const appTitleText = computed(() => isSteamBuild ? steamAppTitle.value : t('app.title'))
 const { show: showConfirmDialog, options: confirmOptions, handleConfirm, handleCancel, handleNeutral, handleClose } = useConfirm()
 
 const showSidebar = ref(false)
@@ -271,6 +275,10 @@ onMounted(async () => {
   // 注册全局快捷键
   document.addEventListener('keydown', handleGlobalKeydown)
   document.addEventListener('keyup', handleGlobalKeyup)
+
+  try {
+    appVersion.value = await window.electronAPI.app.getVersion()
+  } catch { /* ignore */ }
 
   // 同步全屏状态：初始查询 + 监听变化（macOS 全屏会隐藏红绿灯，需要调整 header 左侧留白）
   try {
@@ -889,7 +897,9 @@ onUnmounted(() => {
         >
           <MenuIcon :size="18" />
         </button>
-        <span class="app-title">{{ isSteamBuild ? steamAppTitle : t('app.title') }}</span>
+        <span class="app-title">
+          {{ appTitleText }}<span v-if="appVersion" class="app-version">v{{ appVersion }}</span>
+        </span>
       </div>
       <div class="header-center">
         <TabBar @open-ssh="showSidebar = true" />
@@ -1150,6 +1160,15 @@ onUnmounted(() => {
   letter-spacing: 0.3px;
   /* line-height: 1 消除行盒额外空间，让文字与同行图标在 flex 垂直居中下严格对齐 */
   line-height: 1;
+}
+
+.app-version {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-tertiary, var(--text-secondary));
+  opacity: 0.7;
+  letter-spacing: 0;
 }
 
 /* 主体 */
