@@ -2,7 +2,35 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.35.0 (2026-04-26) (Latest)
+## v10.35.1 (2026-04-28) (Latest)
+
+This release focuses on polishing the Windows experience and shipping stability fixes: faster startup on low-end Windows machines, a fully custom-painted title bar, and Chinese encoding fixes — alongside multiple intermittent AI conversation and IM channel bug fixes.
+
+### New Features
+- 🪟 **Windows Fully Custom-painted Title Bar**: Replaces titleBarOverlay and adds a hamburger menu button to summon the application menu
+- 🌐 **macOS 14+ Local Network Permission**: `NSLocalNetworkUsageDescription` is now declared in the build config to avoid LAN access being blocked by the system
+
+### Improvements
+- ⚡ **Low-end Windows Startup Optimization**: Reduces first-paint CPU/IO contention for a smoother cold start
+- 🎙️ **Idle Speech Model Preload**: Avoids competing with first-paint rendering for resources
+- 🤖 **DeepSeek Default Upgraded to V4 Pro**: Also improves the "model not found" error message
+- 📚 **Knowledge Embed Internal Batching**: Prevents large documents from crashing the onnxruntime main thread
+- 💬 **IM Channels No Longer Push Thinking by Default**: Only sent in fallback scenarios, reducing noise
+- 🛠️ **CI Build Workflow Tweaks**: Added an auto Windows dev build for the develop branch, switched the dev win workflow to manual trigger, and introduced `npm run build:win:remote`
+- 🔍 **Web Search Tool Steps i18n**: Aligned wording with frontend `toolNames`
+- 🎨 **Three-button Confirm Dialog Widened**: Now 480px with button text forced to a single line
+
+### Bug Fixes
+- 🐛 **DeepSeek `tool_calls` Sequence Error**: Tool-returned images are now deferred until batch end and injected together, avoiding insertion in the middle of `tool_calls`
+- 🐛 **Orphan Tool Messages**: Fixed leftover orphan tool messages in history causing DeepSeek API errors
+- 🐛 **Chinese Garbled Output on Windows Commands**: Corrected child-process encoding handling
+- 🐛 **IM Duplicate Sends and Occasional Lost Final Reply**
+- 🐛 **Plain-text Models "Pretending to See Images"**: Added three layers of defense and a prompt guiding users to switch to a vision-capable model
+- 🐛 **Windows Title-bar Overlay Color Mismatch**: Now aligned with the visible header
+- 🐛 **File Search Multi-keyword AND Semantics**: Space-separated tokens now truly behave as AND
+- 🐛 **`reasoning_content` Fallback for Plain-text Assistant Messages**: Patches the field to avoid DeepSeek history-reuse failures
+
+## v10.35.0 (2026-04-26)
 
 This release focuses on a major boost in Agent tool execution transparency — file reads/writes, sub-agents, and document generation tools all gain streaming pre-rendered cards with live character counts, making long-running task progress visible at a glance. It also delivers a major Agent base-class refactor and a brand-new light theme, alongside a Google Custom Search provider and a 10–20× speedup in knowledge base rebuilds.
 
