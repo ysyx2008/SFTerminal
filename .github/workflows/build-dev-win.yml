@@ -1,28 +1,13 @@
 name: Build Dev (Windows)
 
-# 在 develop 分支推送代码后自动构建 Windows 安装包并推到 OSS 固定路径，
-# 方便作者从 Mac 远程拿到最新 Win 包做兼容性测试。
+# 仅手动触发：通过 GitHub Actions 网页或本地 `npm run build:win:remote` 触发，
+# 构建 Windows 安装包并推到 OSS 固定路径，方便作者从 Mac 拿到 Win 包做兼容性测试。
 # 与 build-release.yml（tag 触发，发版用）解耦，互不干扰。
 
 on:
-  push:
-    branches: [develop]
-    paths:
-      - 'electron/**'
-      - 'src/**'
-      - 'shared/**'
-      - 'scripts/**'
-      - 'resources/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'electron-builder.yml'
-      - 'electron-builder-win-optimized.yml'
-      - 'tsconfig*.json'
-      - 'vite.config.ts'
-      - '.github/workflows/build-dev-win.yml'
   workflow_dispatch:
 
-# 同一分支只跑最新一次：连续 push 时旧的自动取消，节省 CI 资源
+# 同一分支只跑最新一次：连续触发时旧的自动取消，节省 CI 资源
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

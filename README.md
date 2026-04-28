@@ -101,7 +101,7 @@ npm run build:win    # Windows
 npm run build:linux  # Linux
 ```
 
-> **Dev Windows build** (for the author's cross-platform testing only): every push to `develop` triggers a CI build that overwrites a fixed OSS path. Stability is not guaranteed.
+> **Dev Windows build** (for the author's cross-platform testing only): run `npm run build:win:remote` locally to trigger a GitHub Actions build; the artifact overwrites a fixed OSS path in 8-10 minutes. Stability is not guaranteed.
 > Download: <https://sfterm-download.oss-cn-wuhan-lr.aliyuncs.com/dev/SailFish-Setup-dev.exe>
 
 ### AI Configuration
