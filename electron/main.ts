@@ -96,6 +96,10 @@ function handleDeepLink(url: string) {
   }
 }
 
+// 启动耗时基线：进程刚启动时记录，后续各阶段日志均以此为参考
+// 用于在低配机器（特别是 Windows）上诊断启动慢的具体阶段
+const APP_START_TIME = Date.now()
+
 // 读取 package.json 获取版本号（开发模式下 app.getVersion() 返回 Electron 版本）
 const packageJson = JSON.parse(fs.readFileSync(join(__dirname, '../package.json'), 'utf-8'))
 const APP_VERSION = packageJson.version
@@ -733,8 +737,8 @@ function createWindow() {
     ...(process.platform === 'win32' ? {
       titleBarStyle: 'hidden' as const,
     } : {}),
-    show: false, // 先不显示，等待 ready-to-show
-    backgroundColor: '#000000', // 设置背景色，避免白屏闪烁
+    show: false, // 先不显示，等待 ready-to-show 或兜底超时（见下方）
+    backgroundColor: '#181818', // 与 :root --bg-primary 一致，避免显示瞬间黑/白闪烁
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -744,15 +748,38 @@ function createWindow() {
     }
   })
 
-  // 窗口准备好后立即显示（比 did-finish-load 更早）
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show()
+  // 窗口显示控制：低配机器上 ready-to-show 可能要 10s+ 才触发，期间窗口完全 hidden
+  // 但任务栏图标已经存在，用户感觉是"启动后最小化到状态栏"，体验极差。
+  // 用兜底超时强制 show：窗口先出现（依赖 dist/index.html 内嵌的启动占位），
+  // 再等渲染端首屏完成，明显比"窗口完全不出现"友好。
+  let mainWindowShown = false
+  let showFallbackTimer: NodeJS.Timeout | null = null
+  const showMainWindowOnce = (reason: string) => {
+    if (mainWindowShown || !mainWindow || mainWindow.isDestroyed()) return
+    mainWindowShown = true
+    if (showFallbackTimer) {
+      clearTimeout(showFallbackTimer)
+      showFallbackTimer = null
+    }
+    log.info(`[startup] showing main window (${reason}, +${Date.now() - APP_START_TIME}ms)`)
+    mainWindow.show()
     if (process.platform === 'win32') {
       // Windows 上 show() 可能仅闪烁任务栏而不前台显示（系统防焦点抢占）
       // 通过短暂置顶强制前台显示
-      mainWindow?.setAlwaysOnTop(true)
-      mainWindow?.setAlwaysOnTop(false)
-      mainWindow?.webContents.focus()
+      mainWindow.setAlwaysOnTop(true)
+      mainWindow.setAlwaysOnTop(false)
+      mainWindow.webContents.focus()
+    }
+  }
+  mainWindow.once('ready-to-show', () => showMainWindowOnce('ready-to-show'))
+  // 兜底：1.5s 后无论 ready-to-show 是否触发都强制 show，让用户看到启动占位
+  // 高配机器 ready-to-show 通常 <500ms，此 setTimeout 实际上不会生效
+  showFallbackTimer = setTimeout(() => showMainWindowOnce('timeout-fallback'), 1500)
+  // 窗口销毁时清理兜底 timer，避免 app 退出过程中触发无效 show()
+  mainWindow.once('closed', () => {
+    if (showFallbackTimer) {
+      clearTimeout(showFallbackTimer)
+      showFallbackTimer = null
     }
   })
 
@@ -989,6 +1016,8 @@ function createAiDebugWindow(): void {
 
 // 应用准备就绪
 app.whenReady().then(async () => {
+  log.info(`[startup] app.whenReady fired (+${Date.now() - APP_START_TIME}ms)`)
+
   // 设置媒体设备权限处理器（用于语音识别等功能）
   // Windows 上必须显式授权麦克风访问，否则会报 "Requested device not found"
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
@@ -1017,6 +1046,12 @@ app.whenReady().then(async () => {
   createWindow()
   setupWindowServices()
   createTray()
+  log.info(`[startup] window created & tray ready (+${Date.now() - APP_START_TIME}ms)`)
+
+  // webContents 加载完成日志：观测渲染端首屏 paint 完成时间（重要的低配机器诊断点）
+  mainWindow?.webContents.once('did-finish-load', () => {
+    log.info(`[startup] webContents did-finish-load (+${Date.now() - APP_START_TIME}ms)`)
+  })
 
   // 知识库需要等前端 Vue 组件挂载，优先走 did-finish-load
   let knowledgeInitDone = false
@@ -1042,10 +1077,38 @@ app.whenReady().then(async () => {
     }
   }, 10_000)
 
-  // 后端服务初始化：直接在 app.whenReady 中执行，不依赖 did-finish-load
-  // 打包版中 did-finish-load 可能因事件竞争不触发，导致所有后端服务不启动
-  ;(async () => {
-    log.info('开始初始化后端服务')
+  // 后端服务初始化推迟启动：低配 Windows 上 webContents 首屏 paint 可能要 5~10s，
+  // 后台同时启动 plugin/Watch/Sensor/IM/Gateway/邮箱日历/MCP 会严重抢占 CPU，
+  // 把首屏渲染从"窗口出来后白屏 10+ 秒"恶化成"窗口都出不来"。
+  //
+  // 调度策略：
+  // - 优先：窗口 ready-to-show 后再延迟 800ms 启动（高配 ~1.3s，给前端首屏 paint 留 CPU）
+  // - 兜底：6s 内必启动（防止极端情况 ready-to-show 一直不触发，导致后端服务永不启动）
+  let backendInitStarted = false
+  let backendReadyTimer: NodeJS.Timeout | null = null
+  let backendFallbackTimer: NodeJS.Timeout | null = null
+  const clearBackendTimers = () => {
+    if (backendReadyTimer) { clearTimeout(backendReadyTimer); backendReadyTimer = null }
+    if (backendFallbackTimer) { clearTimeout(backendFallbackTimer); backendFallbackTimer = null }
+  }
+  const startBackendInit = (reason: string) => {
+    if (backendInitStarted) return
+    backendInitStarted = true
+    clearBackendTimers()
+    log.info(`[startup] backend init triggered (${reason}, +${Date.now() - APP_START_TIME}ms)`)
+    runBackendInit().catch(e => {
+      log.error('后端服务初始化失败:', e)
+    })
+  }
+  mainWindow?.once('ready-to-show', () => {
+    backendReadyTimer = setTimeout(() => startBackendInit('ready-to-show+800ms'), 800)
+  })
+  backendFallbackTimer = setTimeout(() => startBackendInit('timeout-fallback'), 6000)
+  // 应用退出时清理未触发的 timer，避免 shutdown 期间启动后端服务
+  app.once('before-quit', clearBackendTimers)
+
+  async function runBackendInit() {
+    log.info(`开始初始化后端服务 (+${Date.now() - APP_START_TIME}ms)`)
 
     // 初始化插件系统
     try {
@@ -1309,9 +1372,8 @@ app.whenReady().then(async () => {
         }).catch(e => log.error('IM: WeChat auto-connect error:', e))
       }
     }
-  })().catch(e => {
-    log.error('后端服务初始化失败:', e)
-  })
+    log.info(`[startup] backend init finished (+${Date.now() - APP_START_TIME}ms)`)
+  } // end of runBackendInit
 
   // 启动自动检查更新
   scheduleAutoUpdateCheck()
