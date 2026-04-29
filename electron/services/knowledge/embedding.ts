@@ -1,37 +1,129 @@
 /**
  * Embedding 服务
- * 使用 @xenova/transformers 进行本地文本向量化
+ *
+ * 优先把推理放到 utilityProcess（独立子进程），与主进程的 v8 堆 / partition
+ * allocator 隔离。这样能避开 onnxruntime-node 1.14 的 BFC arena 扩张和主进程
+ * 地址空间相互踩踏导致 SIGTRAP（详见下方 MAX_BATCH_SIZE 注释）。
+ *
+ * 当 utilityProcess 不可用（例如 CLI 模式跑在纯 Node.js 下，electron shim
+ * 把 utilityProcess.fork 桩成返回 null），自动退回到主进程内推理，对调用方
+ * 透明。CLI 场景吞吐次要，可靠性优先。
  */
 import { EventEmitter } from 'events'
+import * as fs from 'fs'
+import * as path from 'path'
 import type { ModelTier, ModelInfo } from './types'
 import { getModelManager, ModelManager } from './model-manager'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('Embedding')
 
-// 动态导入 transformers（延迟加载）
-let pipeline: any = null
-let env: any = null
+// ────────────────────────── transformers 延迟加载（仅 in-process 路径使用） ──────────────────────────
 
-async function loadTransformers() {
-  if (!pipeline) {
+let inProcPipeline: any = null
+let inProcEnv: any = null
+
+async function loadTransformersInProc() {
+  if (!inProcPipeline) {
     const transformers = await import('@xenova/transformers')
-    pipeline = transformers.pipeline
-    env = transformers.env
-    
-    // 配置 transformers
-    env.allowLocalModels = true
-    env.allowRemoteModels = false  // 禁用远程下载，使用我们自己的下载管理
+    inProcPipeline = transformers.pipeline
+    inProcEnv = transformers.env
+    inProcEnv.allowLocalModels = true
+    inProcEnv.allowRemoteModels = false
   }
-  return { pipeline, env }
+  return { pipeline: inProcPipeline, env: inProcEnv }
 }
+
+// ────────────────────────── Worker 路径解析 ──────────────────────────
+
+/**
+ * 获取 utilityProcess worker 脚本的绝对路径
+ *
+ * 与 speech-worker 路径解析一致：
+ *  - 打包后：app.asar.unpacked/dist-electron/services/knowledge/embedding-worker.js
+ *  - 开发期：electron/services/knowledge/embedding-worker.js
+ */
+function getWorkerScriptPath(): string {
+  // app.isPackaged 只在加载到 electron 模块后可用，CLI 环境下访问会拿到 stub 的 false
+  // 这里走文件存在性兜底：先查打包后路径，再查开发路径
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { app } = require('electron')
+    if (app && app.isPackaged) {
+      return path.join(
+        process.resourcesPath,
+        'app.asar.unpacked',
+        'dist-electron',
+        'services',
+        'knowledge',
+        'embedding-worker.js'
+      )
+    }
+  } catch {
+    // ignore: 非 Electron 环境
+  }
+  return path.join(process.cwd(), 'electron', 'services', 'knowledge', 'embedding-worker.js')
+}
+
+/**
+ * 探测 utilityProcess 是否真实可用
+ *
+ * Electron 主进程下 utilityProcess.fork 是真函数；
+ * CLI shim 把它桩成 `() => null`，调用 fork 也能返回但拿到 null。
+ * 我们通过 process.type === 'browser' + utilityProcess 是否为函数双重判断。
+ */
+function detectUtilityProcessAvailable(): boolean {
+  try {
+    if ((process as any).type !== 'browser') return false
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const electron = require('electron')
+    return !!(electron && electron.utilityProcess && typeof electron.utilityProcess.fork === 'function')
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 获取 unpacked 的 node_modules 路径，让 worker 进程的 require 能找到
+ * @xenova/transformers 与其原生依赖 onnxruntime-node。
+ */
+function getUnpackedNodeModules(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { app } = require('electron')
+    if (app && app.isPackaged) {
+      return path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules')
+    }
+  } catch {
+    // ignore
+  }
+  return path.join(process.cwd(), 'node_modules')
+}
+
+// ────────────────────────── EmbeddingService ──────────────────────────
+
+interface PendingCall {
+  resolve: (value: any) => void
+  reject: (reason: Error) => void
+  timer: NodeJS.Timeout
+}
+
+const WORKER_CALL_TIMEOUT_MS = 5 * 60 * 1000 // 单次调用 5 分钟超时（embed 大批量在弱机上可能数十秒）
 
 export class EmbeddingService extends EventEmitter {
   private modelManager: ModelManager
   private currentModelId: ModelTier | null = null
-  private extractor: any = null
   private isLoading: boolean = false
   private loadPromise: Promise<void> | null = null
+
+  // ── Worker 模式（utilityProcess） ─────────────────────────────
+  private worker: any = null // Electron UtilityProcess
+  private useWorker: boolean = false
+  private nextMessageId: number = 0
+  private pending: Map<number, PendingCall> = new Map()
+
+  // ── In-process 模式（CLI / 测试 / fallback） ──────────────────
+  private extractor: any = null
 
   constructor() {
     super()
@@ -39,85 +131,7 @@ export class EmbeddingService extends EventEmitter {
   }
 
   /**
-   * 初始化 Embedding 服务
-   * @param modelId 指定模型，不指定则使用最佳可用模型
-   */
-  async initialize(modelId?: ModelTier): Promise<void> {
-    // 如果正在加载，等待加载完成
-    if (this.loadPromise) {
-      await this.loadPromise
-      return
-    }
-
-    // 确定要加载的模型
-    const targetModel = modelId 
-      ? this.modelManager.getModel(modelId)
-      : this.modelManager.getBestAvailableModel()
-
-    // 检查模型是否可用
-    if (!this.modelManager.isModelAvailable(targetModel.id)) {
-      // 如果指定的模型不可用，降级到轻量模型
-      if (modelId && modelId !== 'lite') {
-        log.warn(`Model ${modelId} not available, falling back to lite`)
-        return this.initialize('lite')
-      }
-      throw new Error(`模型 ${targetModel.id} 不可用，请先下载`)
-    }
-
-    // 如果当前模型就是目标模型，跳过
-    if (this.currentModelId === targetModel.id && this.extractor) {
-      return
-    }
-
-    this.isLoading = true
-    this.emit('loading', targetModel.id)
-
-    this.loadPromise = this.doInitialize(targetModel)
-    
-    try {
-      await this.loadPromise
-    } finally {
-      this.loadPromise = null
-      this.isLoading = false
-    }
-  }
-
-  /**
-   * 实际执行初始化
-   */
-  private async doInitialize(model: ModelInfo): Promise<void> {
-    try {
-      const { pipeline, env } = await loadTransformers()
-      
-      // 获取模型路径
-      const modelPath = this.modelManager.getModelPath(model.id)
-      
-      // 获取模型父目录和文件夹名
-      const path = await import('path')
-      const modelDir = path.dirname(modelPath)  // 父目录：resources/models/embedding
-      const modelName = path.basename(modelPath) // 文件夹名：bge-small-zh-v1.5
-      
-      // 禁止远程下载，设置本地模型路径为父目录
-      env.allowRemoteModels = false
-      env.localModelPath = modelDir
-
-      // 创建 feature-extraction pipeline
-      // 使用文件夹名作为模型标识符（会在 localModelPath 下查找）
-      this.extractor = await pipeline('feature-extraction', modelName, {
-        local_files_only: true
-      })
-
-      this.currentModelId = model.id
-      this.emit('loaded', model.id)
-    } catch (error) {
-      log.error('Failed to load model:', error)
-      this.emit('error', error)
-      throw error
-    }
-  }
-
-  /**
-   * 单次 forward 的最大 batch 大小。
+   * 单次 forward 的最大 batch 大小（in-process 模式安全值）。
    *
    * onnxruntime-node@1.14（被 @xenova/transformers@2.x 钉死的旧版）跑在
    * Electron 主进程主线程，单次 forward 的中间 tensor 与 BFCArena 块
@@ -133,28 +147,245 @@ export class EmbeddingService extends EventEmitter {
    *
    * 16 是稳妥的折中：单批 attention 张量从 768MB 降到约 48MB，BFC arena
    * 触达 2GB 边界的概率极低；相对逐条推理仍有 5-10× 加速。
-   * checkAndRebuildIndex 中的攒批阈值与此保持一致。
+   *
+   * 注意：worker 模式下 BFC arena 与主进程 v8 堆不再共享地址空间，
+   * 此限制不再适用，请通过实例方法 getMaxBatchSize() 取动态值。
    */
   static readonly MAX_BATCH_SIZE = 16
+
+  /** worker 模式下放宽的 batch 上限（独立进程，BFC arena 不再撞主进程 v8 堆） */
+  static readonly MAX_BATCH_SIZE_WORKER = 64
+
+  /**
+   * 当前实例的批量上限（依据运行模式动态返回）
+   *
+   * - worker 模式：64（独立进程，地址空间隔离）
+   * - in-process 模式：16（主进程内，受 BFC arena 与 v8 堆共享地址空间限制）
+   */
+  getMaxBatchSize(): number {
+    return this.useWorker
+      ? EmbeddingService.MAX_BATCH_SIZE_WORKER
+      : EmbeddingService.MAX_BATCH_SIZE
+  }
+
+  /**
+   * 初始化 Embedding 服务
+   * @param modelId 指定模型，不指定则使用最佳可用模型
+   */
+  async initialize(modelId?: ModelTier): Promise<void> {
+    if (this.loadPromise) {
+      await this.loadPromise
+      return
+    }
+
+    const targetModel = modelId
+      ? this.modelManager.getModel(modelId)
+      : this.modelManager.getBestAvailableModel()
+
+    if (!this.modelManager.isModelAvailable(targetModel.id)) {
+      if (modelId && modelId !== 'lite') {
+        log.warn(`Model ${modelId} not available, falling back to lite`)
+        return this.initialize('lite')
+      }
+      throw new Error(`模型 ${targetModel.id} 不可用，请先下载`)
+    }
+
+    if (this.currentModelId === targetModel.id && (this.extractor || this.worker)) {
+      return
+    }
+
+    this.isLoading = true
+    this.emit('loading', targetModel.id)
+
+    this.loadPromise = this.doInitialize(targetModel)
+
+    try {
+      await this.loadPromise
+    } finally {
+      this.loadPromise = null
+      this.isLoading = false
+    }
+  }
+
+  private async doInitialize(model: ModelInfo): Promise<void> {
+    try {
+      const modelPath = this.modelManager.getModelPath(model.id)
+      const modelDir = path.dirname(modelPath)
+      const modelName = path.basename(modelPath)
+
+      // ── 优先尝试 worker 模式 ────────────────────────────────
+      if (detectUtilityProcessAvailable()) {
+        try {
+          await this.startWorker()
+          await this.callWorker('initialize', { modelDir, modelName })
+          this.useWorker = true
+          this.currentModelId = model.id
+          log.info(
+            'Embedding 模型已加载到 worker 进程：%s（batch=%d）',
+            model.id,
+            this.getMaxBatchSize()
+          )
+          this.emit('loaded', model.id)
+          return
+        } catch (workerError) {
+          log.warn('Worker 模式初始化失败，回退到主进程内推理：', workerError)
+          this.killWorker()
+        }
+      }
+
+      // ── 退回主进程内推理（CLI / 测试 / worker 启动失败） ──────
+      const { pipeline, env } = await loadTransformersInProc()
+      env.allowRemoteModels = false
+      env.localModelPath = modelDir
+
+      this.extractor = await pipeline('feature-extraction', modelName, {
+        local_files_only: true
+      })
+
+      this.useWorker = false
+      this.currentModelId = model.id
+      log.info(
+        'Embedding 模型已加载到主进程：%s（batch=%d，建议在 Electron 环境下走 worker）',
+        model.id,
+        this.getMaxBatchSize()
+      )
+      this.emit('loaded', model.id)
+    } catch (error) {
+      log.error('Failed to load model:', error)
+      this.emit('error', error)
+      throw error
+    }
+  }
+
+  // ────────────────────────── Worker 启停 / RPC ──────────────────────────
+
+  private async startWorker(): Promise<void> {
+    if (this.worker) return
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { utilityProcess } = require('electron')
+
+    const workerPath = getWorkerScriptPath()
+    if (!fs.existsSync(workerPath)) {
+      throw new Error(`Embedding worker 脚本不存在：${workerPath}`)
+    }
+
+    const unpackedNM = getUnpackedNodeModules()
+    const workerEnv: NodeJS.ProcessEnv = { ...process.env }
+
+    // NODE_PATH 让 worker 能 require('@xenova/transformers') 与 onnxruntime-node
+    workerEnv.NODE_PATH = workerEnv.NODE_PATH
+      ? `${unpackedNM}${path.delimiter}${workerEnv.NODE_PATH}`
+      : unpackedNM
+
+    const proc = utilityProcess.fork(workerPath, [], {
+      env: workerEnv,
+      stdio: 'pipe'
+    })
+
+    if (!proc) {
+      // CLI shim 会返回 null
+      throw new Error('utilityProcess.fork 返回 null（可能运行在 CLI/测试环境）')
+    }
+
+    this.worker = proc
+
+    proc.on('message', (msg: any) => this.onWorkerMessage(msg))
+
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString().trim()
+      if (text) log.info('[worker]', text)
+    })
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString().trim()
+      if (text) log.warn('[worker]', text)
+    })
+
+    proc.on('exit', (code: number | null) => {
+      log.info('Embedding worker 退出，code=%s', code)
+      const isUnexpected = code !== null && code !== 0 && code !== 15 // 15 = SIGTERM 主动 kill
+      if (isUnexpected) {
+        log.error('Embedding worker 异常退出，所有进行中的 embed 调用将失败')
+      }
+      this.worker = null
+      // 拒绝所有 pending
+      for (const [, p] of this.pending) {
+        clearTimeout(p.timer)
+        p.reject(new Error(`Embedding worker exited with code ${code}`))
+      }
+      this.pending.clear()
+    })
+  }
+
+  private killWorker(): void {
+    if (!this.worker) return
+    try {
+      this.worker.kill()
+    } catch (e) {
+      log.warn('kill worker 失败：', e)
+    }
+    this.worker = null
+    for (const [, p] of this.pending) {
+      clearTimeout(p.timer)
+      p.reject(new Error('Embedding worker terminated'))
+    }
+    this.pending.clear()
+  }
+
+  private onWorkerMessage(msg: any): void {
+    if (!msg || typeof msg.id !== 'number') return
+    const p = this.pending.get(msg.id)
+    if (!p) return
+    this.pending.delete(msg.id)
+    clearTimeout(p.timer)
+    if (msg.success) {
+      p.resolve(msg.result)
+    } else {
+      const err = new Error(msg.error || 'Embedding worker error')
+      if (msg.stack) (err as any).workerStack = msg.stack
+      p.reject(err)
+    }
+  }
+
+  private callWorker<T = any>(type: string, data?: any): Promise<T> {
+    if (!this.worker) {
+      return Promise.reject(new Error('Embedding worker 未启动'))
+    }
+    const id = ++this.nextMessageId
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (this.pending.has(id)) {
+          this.pending.delete(id)
+          reject(new Error(`Embedding worker 调用超时（type=${type}）`))
+        }
+      }, WORKER_CALL_TIMEOUT_MS)
+      this.pending.set(id, { resolve, reject, timer })
+      try {
+        this.worker.postMessage({ id, type, data })
+      } catch (e) {
+        this.pending.delete(id)
+        clearTimeout(timer)
+        reject(e instanceof Error ? e : new Error(String(e)))
+      }
+    })
+  }
+
+  // ────────────────────────── embed 接口 ──────────────────────────
 
   /**
    * 生成文本的向量嵌入
    * @param texts 文本数组
    * @returns 向量数组
    *
-   * 使用 batch inference：一次 forward pass 处理整个 batch，
-   * 相比逐条串行在 CPU 上通常有 3-8 倍加速（避免重复的
-   * session.run 调度开销 + attention 层计算可部分共享）。
-   *
-   * 内部按 MAX_BATCH_SIZE 切片，防止大文档（数百 chunks）
-   * 一次性推理时 onnxruntime 大块内存分配冲撞 v8 触发 crash。
+   * 内部按 getMaxBatchSize() 切片：worker 模式 64 / in-process 模式 16，
+   * 防止单批攻击主进程地址空间。
    */
   async embed(texts: string[]): Promise<number[][]> {
-    if (!this.extractor) {
+    if (!this.extractor && !this.worker) {
       await this.initialize()
     }
 
-    if (!this.extractor) {
+    if (!this.extractor && !this.worker) {
       throw new Error('Embedding 模型未加载')
     }
 
@@ -163,15 +394,16 @@ export class EmbeddingService extends EventEmitter {
     // 截断过长的文本（大多数模型限制 512 tokens，2000 字符留些余量给中文）
     const truncated = texts.map(t => t.slice(0, 2000))
 
-    // 输入小于阈值，直接单次 forward
-    if (truncated.length <= EmbeddingService.MAX_BATCH_SIZE) {
+    const batchSize = this.getMaxBatchSize()
+
+    if (truncated.length <= batchSize) {
       return this.embedBatch(truncated)
     }
 
-    // 超过阈值，分片串行推理（避免主线程 OOM/崩溃）
+    // 分片串行推理
     const results: number[][] = []
-    for (let start = 0; start < truncated.length; start += EmbeddingService.MAX_BATCH_SIZE) {
-      const slice = truncated.slice(start, start + EmbeddingService.MAX_BATCH_SIZE)
+    for (let start = 0; start < truncated.length; start += batchSize) {
+      const slice = truncated.slice(start, start + batchSize)
       const sliceResults = await this.embedBatch(slice)
       results.push(...sliceResults)
     }
@@ -179,18 +411,53 @@ export class EmbeddingService extends EventEmitter {
   }
 
   /**
-   * 单次 batch forward（输入长度必须 ≤ MAX_BATCH_SIZE）。
-   * 形状异常时降级为逐条推理。
+   * 单次 batch forward（输入长度必须 ≤ getMaxBatchSize()）。
    */
   private async embedBatch(texts: string[]): Promise<number[][]> {
+    if (this.useWorker && this.worker) {
+      return this.embedBatchWorker(texts)
+    }
+    return this.embedBatchInProc(texts)
+  }
+
+  private async embedBatchWorker(texts: string[]): Promise<number[][]> {
+    try {
+      const ret = await this.callWorker<{
+        flat?: Float32Array
+        vectors?: number[][]
+        dim: number
+        count?: number
+        fallback?: boolean
+      }>('embed', { texts })
+
+      // worker 内已发生形状异常 fallback，直接返回它给的 number[][]
+      if (ret.vectors) return ret.vectors
+
+      const flat = ret.flat
+      const dim = ret.dim
+      if (!flat || !dim) {
+        throw new Error('Embedding worker 返回数据异常（缺少 flat/dim）')
+      }
+
+      // structured clone 后 flat 仍是 Float32Array，按行切回 number[]
+      const results: number[][] = new Array(texts.length)
+      for (let i = 0; i < texts.length; i++) {
+        results[i] = Array.from(flat.subarray(i * dim, (i + 1) * dim))
+      }
+      return results
+    } catch (error) {
+      log.error('Worker embed 失败：', error)
+      throw error
+    }
+  }
+
+  private async embedBatchInProc(texts: string[]): Promise<number[][]> {
     try {
       const output = await this.extractor(texts, {
         pooling: 'mean',
         normalize: true
       })
 
-      // feature-extraction + pooling='mean' 的输出 shape = [B, D]
-      // output.data 是扁平的 Float32Array（行主序），长度 = B * D
       const data = output.data as Float32Array
       const dims = output.dims as number[] | undefined
       const dim = dims && dims.length >= 2
@@ -198,8 +465,9 @@ export class EmbeddingService extends EventEmitter {
         : Math.floor(data.length / texts.length)
 
       if (!dim || data.length !== texts.length * dim) {
-        // 理论不会发生，兜底防御：形状异常时降级为单条处理，保证正确性优先
-        log.warn(`batch embed 输出形状异常，dims=${JSON.stringify(dims)}, data.length=${data.length}，降级为单条推理`)
+        log.warn(
+          `batch embed 输出形状异常，dims=${JSON.stringify(dims)}, data.length=${data.length}，降级为单条推理`
+        )
         return this.embedFallbackSequential(texts)
       }
 
@@ -215,7 +483,7 @@ export class EmbeddingService extends EventEmitter {
   }
 
   /**
-   * 降级：逐条推理（仅在 batch 输出形状异常时使用）
+   * In-process 降级：逐条推理（仅在 batch 输出形状异常时使用）
    */
   private async embedFallbackSequential(texts: string[]): Promise<number[][]> {
     const results: number[][] = []
@@ -229,73 +497,55 @@ export class EmbeddingService extends EventEmitter {
     return results
   }
 
-  /**
-   * 生成单个文本的向量嵌入
-   */
+  /** 生成单个文本的向量嵌入 */
   async embedSingle(text: string): Promise<number[]> {
     const results = await this.embed([text])
     return results[0]
   }
 
-  /**
-   * 切换模型
-   */
+  /** 切换模型 */
   async switchModel(modelId: ModelTier): Promise<void> {
-    if (modelId === this.currentModelId) {
-      return
-    }
-
-    // 释放当前模型
+    if (modelId === this.currentModelId) return
     this.dispose()
-
-    // 加载新模型
     await this.initialize(modelId)
   }
 
-  /**
-   * 获取当前模型信息
-   */
+  /** 获取当前模型信息 */
   getCurrentModel(): ModelInfo | null {
-    if (!this.currentModelId) {
-      return null
-    }
+    if (!this.currentModelId) return null
     return this.modelManager.getModel(this.currentModelId)
   }
 
-  /**
-   * 获取当前向量维度
-   */
+  /** 获取当前向量维度 */
   getDimensions(): number {
     const model = this.getCurrentModel()
     return model?.dimensions || 384
   }
 
-  /**
-   * 检查服务是否就绪
-   */
+  /** 检查服务是否就绪 */
   isReady(): boolean {
-    return this.extractor !== null && !this.isLoading
+    return (this.extractor !== null || this.worker !== null) && !this.isLoading
   }
 
-  /**
-   * 检查是否正在加载
-   */
+  /** 检查是否正在加载 */
   isModelLoading(): boolean {
     return this.isLoading
   }
 
-  /**
-   * 释放资源
-   */
+  /** 释放资源 */
   dispose(): void {
+    if (this.worker) {
+      // 先尝试通过 dispose 让 worker 释放 extractor，再 kill
+      this.callWorker('dispose').catch(() => {/* ignore */})
+      this.killWorker()
+    }
     this.extractor = null
+    this.useWorker = false
     this.currentModelId = null
     this.emit('disposed')
   }
 
-  /**
-   * 计算两个向量的余弦相似度
-   */
+  /** 计算两个向量的余弦相似度 */
   static cosineSimilarity(a: number[], b: number[]): number {
     if (a.length !== b.length) {
       throw new Error('向量维度不匹配')
@@ -314,9 +564,7 @@ export class EmbeddingService extends EventEmitter {
     normA = Math.sqrt(normA)
     normB = Math.sqrt(normB)
 
-    if (normA === 0 || normB === 0) {
-      return 0
-    }
+    if (normA === 0 || normB === 0) return 0
 
     return dotProduct / (normA * normB)
   }
@@ -331,4 +579,3 @@ export function getEmbeddingService(): EmbeddingService {
   }
   return embeddingService
 }
-

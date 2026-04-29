@@ -289,9 +289,10 @@ export class KnowledgeService extends EventEmitter {
     // 一起调 embed()，让 ONNX 走真正的 batch inference。对 conversation 这类
     // 1-chunk 文档收益最大（避免 "1 doc 1 embed call" 的极端低效）。
     //
-    // 单一数据源：复用 EmbeddingService.MAX_BATCH_SIZE，避免两边阈值漂移导致
-    // 内部又触发一次切片（embedBatch 在主进程主线程，batch 过大会 SIGTRAP crash）。
-    const EMBED_BATCH_SIZE = EmbeddingService.MAX_BATCH_SIZE
+    // 单一数据源：复用 embeddingService.getMaxBatchSize()（依据当前是否走
+    // utilityProcess worker 动态返回），避免两边阈值漂移导致内部又触发一次
+    // 切片。worker 模式下批量从 16 放宽到 64，吞吐能再涨 1.5~2×。
+    const EMBED_BATCH_SIZE = this.embeddingService.getMaxBatchSize()
     // 批量收集向量记录，最后一次性写入以减少 LanceDB manifest 版本数
     const VECTOR_BATCH_SIZE = 200
     let pendingVectorRecords: VectorRecord[] = []
@@ -369,15 +370,14 @@ export class KnowledgeService extends EventEmitter {
           // 由循环结束后统一 saveIndex 一次。
           await this.bm25Index.addDocuments(batchBm25Docs, { skipSave: true })
         } catch (e) {
-          log.error('BM25 批量写入失败，跳过此批:', e)
+          log.error('BM25 批量写入(仅信息)失败，跳过此批:', e)
         }
       }
 
-      // 让出事件循环：onnxruntime-node 跑在主进程主线程，连续调用 forward
-      // 不给 libuv 机会处理其它任务，与 v8 cppgc 共享的地址空间持续承压。
-      // 每批之间 setImmediate yield 一次，让 V8 GC、IPC 进度上报、其它 libuv
-      // 任务都有跑的机会，启动期推理不再"急促"，叠加 MAX_BATCH_SIZE=16 后
-      // BFC arena 触达 2GB 边界引发 SIGTRAP 的概率显著降低。
+      // 让出事件循环：worker 模式下推理虽然在子进程，但每批结束后仍需要
+      // 让 libuv 处理 IPC 进度上报与 v8 GC；in-process 模式则更关键，避免
+      // onnxruntime 连续 forward 把主线程拖死。setImmediate yield 是
+      // 廉价的兜底，对两种模式都有益。
       await new Promise<void>(resolve => setImmediate(resolve))
     }
 

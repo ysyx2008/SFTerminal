@@ -37,6 +37,8 @@ asarUnpack:
   - "**/onnxruntime-node/**/*"
   - dist-electron/services/speech/**/*
   - dist-electron/services/pdf-worker.js
+  - dist-electron/services/knowledge/**/*
+  - node_modules/@xenova/transformers/**/*
   - node_modules/pdfjs-dist/**/*
   - node_modules/@napi-rs/canvas/**/*
   - node_modules/@napi-rs/canvas-*/**/*

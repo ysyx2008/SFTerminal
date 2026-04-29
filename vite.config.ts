@@ -66,6 +66,26 @@ function copyPdfWorker() {
   }
 }
 
+// 复制 embedding-worker.js 到 dist-electron/services/knowledge
+function copyEmbeddingWorker() {
+  return {
+    name: 'copy-embedding-worker',
+    closeBundle() {
+      const srcPath = resolve(__dirname, 'electron/services/knowledge/embedding-worker.js')
+      const destDir = resolve(__dirname, 'dist-electron/services/knowledge')
+      const destPath = resolve(destDir, 'embedding-worker.js')
+
+      if (existsSync(srcPath)) {
+        if (!existsSync(destDir)) {
+          mkdirSync(destDir, { recursive: true })
+        }
+        copyFileSync(srcPath, destPath)
+        console.log('[copy-embedding-worker] Copied embedding-worker.js to dist-electron')
+      }
+    }
+  }
+}
+
 // Steam 构建标识：用全局常量注入，dev/build 均生效（不依赖 import.meta.env 在 dev 下的注入）
 const isSteamBuild = process.env.VITE_STEAM_BUILD === 'true'
 if (isSteamBuild) {
@@ -133,7 +153,7 @@ export default defineConfig({
           esbuild: {
             charset: 'utf8'
           },
-          plugins: [copyJiebaWasm(), copySpeechWorker(), copyPdfWorker()]
+          plugins: [copyJiebaWasm(), copySpeechWorker(), copyPdfWorker(), copyEmbeddingWorker()]
         }
       },
       {
