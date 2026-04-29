@@ -18,6 +18,23 @@ function expandTildePath(p: string): string {
   return p
 }
 
+/**
+ * 反转义 Unix shell 路径转义字符：`\<space>` / `\(` / `\)` 等 → 真实字符。
+ * Agent 工具卡片显示 shell 命令时会出现 `Application\ Support` 这种形式，
+ * 经前端文件路径正则识别为整段链接后，路径会带 `\<char>` 转义，必须反转义后才能 openPath。
+ * Windows 上 `\` 是路径分隔符，不应反转义。
+ */
+function unescapeShellPath(p: string): string {
+  if (process.platform === 'win32') return p
+  // shell 元字符（GNU bash 的可转义字符集合的常用子集）
+  return p.replace(/\\([ \t!"#$&'()*,;<=>?@[\]^`{|}])/g, '$1')
+}
+
+/** 组合：先 expand `~`，再 unescape shell 转义。所有打开本地路径的 IPC 都该走这条 */
+function resolveOpenablePath(p: string): string {
+  return unescapeShellPath(expandTildePath(p))
+}
+
 // 开发模式下禁用硬件加速，避免热重载时 GPU 进程崩溃
 // 这个调用必须在 app.whenReady() 之前
 if (!app.isPackaged) {
@@ -1802,19 +1819,19 @@ ipcMain.handle('app:getMessagingDocsPath', async () => {
 })
 
 // 打开路径（文件或目录）
-// 自动展开 `~` 前缀：Agent 工具卡片可能传入 `~/Source/foo` 形式的简化路径，
-// 但 Electron `shell.openPath` 不识别 `~`，必须先展开为绝对路径
+// resolveOpenablePath: 展开 `~` + 反转义 shell 转义符（如 `Application\ Support`）
+// Agent 工具卡片可能传入这两种形式，Electron shell.openPath 都不直接支持
 ipcMain.handle('shell:openPath', async (_event, targetPath: string) => {
-  return shell.openPath(expandTildePath(targetPath))
+  return shell.openPath(resolveOpenablePath(targetPath))
 })
 
 // 在文件管理器中显示文件（文件不存在时 fallback 到打开父目录）
 ipcMain.handle('shell:showItemInFolder', async (_event, fullPath: string) => {
-  const expanded = expandTildePath(fullPath)
-  if (fs.existsSync(expanded)) {
-    shell.showItemInFolder(expanded)
+  const resolved = resolveOpenablePath(fullPath)
+  if (fs.existsSync(resolved)) {
+    shell.showItemInFolder(resolved)
   } else {
-    const dir = path.dirname(expanded)
+    const dir = path.dirname(resolved)
     if (dir && fs.existsSync(dir)) {
       await shell.openPath(dir)
     }

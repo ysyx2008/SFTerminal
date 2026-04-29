@@ -139,13 +139,18 @@ const wrapBareUrls = (html: string): string => {
 /**
  * 后处理 HTML：将文本节点中的裸文件路径转为可点击链接
  * 仅处理不在 <a>、<code>、<pre> 标签内的文本
+ *
+ * Unix 部分字符类含 `\\`：tool_call 卡片中显示的 shell 命令常含 `\<空格>` 转义形式
+ * （如 `/Users/yushen/Library/Application\ Support/...`），不识别会让前半段截断、
+ * 后半段被单独包链接、`::before` 的 📄 emoji 出现在路径中间。整段识别后由主进程 IPC
+ * 反转义 `\<char>` 还原为真实路径。
  */
 const wrapBareFilePaths = (html: string): string => {
   // 匹配常见文件路径模式（支持中文、日文、韩文、欧洲字符等 Unicode 路径）
   // Unix/macOS: /path/to/file（至少两级路径或带扩展名的单级路径）
   // Windows: C:\path\to\file 或 C:/path/to/file
   // Home: ~/path/to/file
-  const filePathPattern = /(?:\/(?:[\w\u4e00-\u9fff\u3000-\u303f\u00C0-\u024F.\-+@#$()[\]% ]+\/)*[\w\u4e00-\u9fff\u3000-\u303f\u00C0-\u024F.\-+@#$()[\]% ]+\.[\w]{1,10}|~\/[\w\u4e00-\u9fff\u3000-\u303f\u00C0-\u024F.\-+@#$()[\]%/\\ ]+|[A-Za-z]:[\\/][\w\u4e00-\u9fff\u3000-\u303f\u00C0-\u024F.\-+@#$()[\]%/\\ ]+)/g
+  const filePathPattern = /(?:\/(?:[\w\u4e00-\u9fff\u3000-\u303f\u00C0-\u024F.\-+@#$()[\]%\\ ]+\/)*[\w\u4e00-\u9fff\u3000-\u303f\u00C0-\u024F.\-+@#$()[\]%\\ ]+\.[\w]{1,10}|~\/[\w\u4e00-\u9fff\u3000-\u303f\u00C0-\u024F.\-+@#$()[\]%/\\ ]+|[A-Za-z]:[\\/][\w\u4e00-\u9fff\u3000-\u303f\u00C0-\u024F.\-+@#$()[\]%/\\ ]+)/g
 
   // 拆分 HTML 为标签和文本节点
   const parts = html.split(/(<[^>]+>)/g)
