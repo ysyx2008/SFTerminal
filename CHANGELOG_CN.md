@@ -2,7 +2,19 @@
 
 本文件记录旗鱼（SailFish）的所有重要更新。
 
-## v10.35.1 (2026-04-28)（最新版本）
+## v10.35.2 (2026-04-29)（最新版本）
+
+针对 v10.35.1 在 macOS 上启动后偶发 onnxruntime 崩溃的紧急修复。
+
+### 问题修复
+- 🐛 **macOS 启动后 onnxruntime 崩溃**：embed 单次 forward 的 batch 上限从 64 收紧到 16，避免 BFC arena 在主进程主线程连续扩张到 2GB 边界触发 macOS libsystem_malloc 的 SIGTRAP（EXC_BREAKPOINT brk 0）
+- 🐛 **启动期推理过于"急促"**：知识库索引重建在每批之间 `setImmediate` 让出事件循环，给 BFC arena 的 free-block 合并、GC、IPC 进度上报留出时间，启动期 crash 概率显著降低
+
+### 改进
+- ⚡ **embedding 暖机推理推迟到启动 8 秒后**：避开 init/rebuild/IM 启动 等启动期重活儿，BFC arena 进入稳态再做暖机；知识库为空时直接跳过暖机
+- 📚 **embedding 攒批阈值统一**：`checkAndRebuildIndex` 改为引用 `EmbeddingService.MAX_BATCH_SIZE` 单一数据源，避免两边阈值漂移
+
+## v10.35.1 (2026-04-28)
 
 本版本聚焦 Windows 平台体验打磨与稳定性修复：优化低配机型启动速度、改用完全自绘标题栏、修复中文乱码；同时修复多项 AI 对话与 IM 渠道的偶发问题。
 

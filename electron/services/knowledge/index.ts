@@ -285,10 +285,13 @@ export class KnowledgeService extends EventEmitter {
       : 'bm25'
     this.emit('rebuildStarted', { total: docs.length, reason: rebuildReason })
 
-    // 跨文档 embedding 攒批：把多个 doc 的 chunks 合并成 ≤64 条一起调 embed()，
-    // 让 ONNX 走真正的 batch inference。对 conversation 这类 1-chunk 文档收益最大
-    // （避免 "1 doc 1 embed call" 的极端低效）。
-    const EMBED_BATCH_SIZE = 64
+    // 跨文档 embedding 攒批：把多个 doc 的 chunks 合并成 ≤MAX_BATCH_SIZE 条
+    // 一起调 embed()，让 ONNX 走真正的 batch inference。对 conversation 这类
+    // 1-chunk 文档收益最大（避免 "1 doc 1 embed call" 的极端低效）。
+    //
+    // 单一数据源：复用 EmbeddingService.MAX_BATCH_SIZE，避免两边阈值漂移导致
+    // 内部又触发一次切片（embedBatch 在主进程主线程，batch 过大会 SIGTRAP crash）。
+    const EMBED_BATCH_SIZE = EmbeddingService.MAX_BATCH_SIZE
     // 批量收集向量记录，最后一次性写入以减少 LanceDB manifest 版本数
     const VECTOR_BATCH_SIZE = 200
     let pendingVectorRecords: VectorRecord[] = []
@@ -369,6 +372,13 @@ export class KnowledgeService extends EventEmitter {
           log.error('BM25 批量写入失败，跳过此批:', e)
         }
       }
+
+      // 让出事件循环：onnxruntime-node 跑在主进程主线程，连续调用 forward
+      // 不给 libuv 机会处理其它任务，与 v8 cppgc 共享的地址空间持续承压。
+      // 每批之间 setImmediate yield 一次，让 V8 GC、IPC 进度上报、其它 libuv
+      // 任务都有跑的机会，启动期推理不再"急促"，叠加 MAX_BATCH_SIZE=16 后
+      // BFC arena 触达 2GB 边界引发 SIGTRAP 的概率显著降低。
+      await new Promise<void>(resolve => setImmediate(resolve))
     }
 
     for (let i = 0; i < docs.length; i++) {

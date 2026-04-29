@@ -119,15 +119,23 @@ export class EmbeddingService extends EventEmitter {
   /**
    * 单次 forward 的最大 batch 大小。
    *
-   * onnxruntime-node 跑在 Electron 主进程主线程，单次 forward 的
-   * 中间 tensor 与 BFCArena 块都从 process heap 申请，与 v8 的
-   * cppgc/partition alloc 共享地址空间。batch 过大时 native 大块分配
-   * 容易触发 v8 内部的内存约束，导致 SIGTRAP（EXC_BREAKPOINT brk 0）
-   * 直接 crash 进程。
+   * onnxruntime-node@1.14（被 @xenova/transformers@2.x 钉死的旧版）跑在
+   * Electron 主进程主线程，单次 forward 的中间 tensor 与 BFCArena 块
+   * 都从 process heap 通过 posix_memalign 申请，与 v8 的 cppgc /
+   * partition alloc 共享地址空间。
    *
-   * 64 与 checkAndRebuildIndex 中的攒批阈值保持一致，吞吐与稳定性兼顾。
+   * BGE-small 在 batch=64、max_seq_len=512 时，单个 attention scores
+   * 张量 [B, H, T, T] = [64, 12, 512, 512] float32 ≈ 768MB，BFC arena
+   * 每次扩张是上一次的 2 倍，连续推理几次后会请求 ≥2GB 的"下一片"，
+   * 命中 macOS libsystem_malloc 对 posix_memalign 的 size sanity check，
+   * 触发 SIGTRAP（EXC_BREAKPOINT brk 0）直接 crash 整个进程，try/catch
+   * 在 native 层接不住。
+   *
+   * 16 是稳妥的折中：单批 attention 张量从 768MB 降到约 48MB，BFC arena
+   * 触达 2GB 边界的概率极低；相对逐条推理仍有 5-10× 加速。
+   * checkAndRebuildIndex 中的攒批阈值与此保持一致。
    */
-  private static readonly MAX_BATCH_SIZE = 64
+  static readonly MAX_BATCH_SIZE = 16
 
   /**
    * 生成文本的向量嵌入

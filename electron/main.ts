@@ -536,14 +536,32 @@ async function initKnowledgeService(): Promise<void> {
       })
       
       await knowledgeService.initialize()
-      
-      // 预热 embedding 推理（后台执行，不阻塞）
-      // ONNX 模型第一次推理需要 JIT 编译，会比较慢
-      // 提前预热可以加速首次 Agent 对话响应
-      knowledgeService.search('预热', { limit: 1 }).catch(() => {
-        // 忽略预热错误（可能知识库为空）
-      })
-      log.info('Embedding 预热推理已启动')
+
+      // 预热 embedding 推理（条件触发 + 空闲延后执行）
+      //
+      // ONNX 模型第一次推理需要 JIT 编译，会比较慢，提前预热可以加速首次 Agent
+      // 对话响应。但 onnxruntime-node@1.14 的推理跑在主进程主线程，启动期 BFC
+      // arena 还在快速扩张时再叠加一次 forward，曾在 macOS 上把 BFC arena 推到
+      // 2GB 边界触发 libsystem_malloc 的 SIGTRAP（EXC_BREAKPOINT brk 0）。
+      //
+      // 收紧策略：
+      // 1) 知识库为空 → 直接跳过预热（首次 Agent 对话才会按需加载，差几百 ms 不影响体验）
+      // 2) 非空 → 延后 8 秒再跑，让启动期所有重活儿（rebuild、IM 启动、邮箱/日历同步等）
+      //    都跑完，BFC arena 进入稳态后再做这一次额外推理
+      const docCount = knowledgeService.getDocuments().length
+      if (docCount > 0) {
+        // unref：暖机仅为加速首次推理，绝不可阻塞进程退出。如果用户在 8 秒
+        // 之内就退出 app，这个 timer 不会把事件循环 keep alive
+        const warmupTimer = setTimeout(() => {
+          knowledgeService?.search('预热', { limit: 1 }).catch(() => {
+            // 忽略预热错误（可能知识库为空 / 模型未就绪）
+          })
+          log.info('Embedding 预热推理已启动（延后 8s）')
+        }, 8000)
+        warmupTimer.unref?.()
+      } else {
+        log.info('知识库为空，跳过 embedding 预热')
+      }
 
       // L3 对话索引回填（后台执行，不阻塞启动）
       backfillConversationIndexAsync(knowledgeService).catch(err => {
