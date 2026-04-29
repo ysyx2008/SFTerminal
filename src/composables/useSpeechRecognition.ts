@@ -51,6 +51,71 @@ const isModelReady = ref(false)
 let _audioChecked = false
 let _modelInitPromise: Promise<boolean> | null = null
 
+// ────────────────────────── AudioWorklet 采集器 ──────────────────────────
+
+/**
+ * 采集 worklet 的源代码（内联字符串）。
+ *
+ * - 跑在专用 audio worklet 线程，与 JS 主线程解耦，不会被 Vue 渲染 / IPC
+ *   调度抢资源；相对于已 deprecate 的 ScriptProcessorNode（每 256ms 在
+ *   主线程回调一次）抖动与 jank 大幅下降。
+ * - 内部攒到 4096 个采样（≈ 256ms@16kHz）再一次性 postMessage 回主线程，
+ *   保留原有节奏，IPC 调用次数与 ScriptProcessor 等价（process() 自身
+ *   每块 128 采样会被 worklet 线程驱动 32 次，但只触发一次跨线程通信）。
+ * - postMessage 用 transferable ArrayBuffer，主线程拿到的是 zero-copy
+ *   的 Float32Array，不再需要 `new Float32Array(inputData)` 拷贝。
+ */
+const CAPTURE_WORKLET_SOURCE = `
+class CaptureProcessor extends AudioWorkletProcessor {
+  constructor(options) {
+    super()
+    const opts = (options && options.processorOptions) || {}
+    this._bufferSize = opts.bufferSize || 4096
+    this._buffer = new Float32Array(this._bufferSize)
+    this._pos = 0
+    this._stopped = false
+    this.port.onmessage = (e) => {
+      if (e.data && e.data.type === 'stop') this._stopped = true
+    }
+  }
+  process(inputs) {
+    if (this._stopped) return false
+    const input = inputs[0]
+    if (!input || !input[0]) return true
+    const ch = input[0]
+    let i = 0
+    while (i < ch.length) {
+      const space = this._bufferSize - this._pos
+      const copyLen = Math.min(space, ch.length - i)
+      this._buffer.set(ch.subarray(i, i + copyLen), this._pos)
+      this._pos += copyLen
+      i += copyLen
+      if (this._pos >= this._bufferSize) {
+        const out = this._buffer
+        this.port.postMessage(out, [out.buffer])
+        this._buffer = new Float32Array(this._bufferSize)
+        this._pos = 0
+      }
+    }
+    return true
+  }
+}
+registerProcessor('sft-capture-processor', CaptureProcessor)
+`
+
+let _captureWorkletUrl: string | null = null
+function getCaptureWorkletUrl(): string {
+  if (!_captureWorkletUrl) {
+    const blob = new Blob([CAPTURE_WORKLET_SOURCE], { type: 'application/javascript' })
+    _captureWorkletUrl = URL.createObjectURL(blob)
+  }
+  return _captureWorkletUrl
+}
+
+// 同一 AudioContext 对应同一 worklet module 注册：每个 AudioContext 只能
+// addModule 一次相同名字的 processor，跨 context 互不影响
+const _workletRegistered = new WeakSet<AudioContext>()
+
 /**
  * 全局音频设备检测（只执行一次真正的设备枚举）
  */
@@ -117,6 +182,7 @@ export function useSpeechRecognition() {
   let audioContext: AudioContext | null = null
   let audioChunks: Float32Array[] = []
   let mediaStream: MediaStream | null = null
+  let captureNode: AudioWorkletNode | null = null
   let startAborted = false
 
   // 计算属性
@@ -152,6 +218,17 @@ export function useSpeechRecognition() {
   }
 
   function releaseMediaResources(): void {
+    if (captureNode) {
+      try {
+        // 通知 worklet 优雅退出 process 循环（process 返回 false → 节点自动释放）
+        captureNode.port.postMessage({ type: 'stop' })
+        captureNode.port.onmessage = null
+        captureNode.disconnect()
+      } catch {
+        // ignore
+      }
+      captureNode = null
+    }
     if (mediaStream) {
       mediaStream.getTracks().forEach(track => track.stop())
       mediaStream = null
@@ -225,28 +302,53 @@ export function useSpeechRecognition() {
         console.warn(`[useSpeechRecognition] 无法创建 ${targetSampleRate}Hz AudioContext，使用默认: ${audioContext.sampleRate}Hz`)
       }
       const source = audioContext.createMediaStreamSource(mediaStream)
-
-      // 使用 ScriptProcessorNode 捕获音频数据
-      const processor = audioContext.createScriptProcessor(4096, 1, 1)
       const actualSampleRate = audioContext.sampleRate
 
-      processor.onaudioprocess = (e) => {
-        if (isRecording.value) {
-          const inputData = e.inputBuffer.getChannelData(0)
-          
-          // 如果采样率不是目标采样率，需要重采样
-          if (actualSampleRate !== targetSampleRate) {
-            const resampledData = resampleAudio(inputData, actualSampleRate, targetSampleRate)
-            audioChunks.push(resampledData)
-          } else {
-            // 复制数据，因为 buffer 会被重用
-            audioChunks.push(new Float32Array(inputData))
-          }
+      // 使用 AudioWorkletNode 捕获音频数据（替代已 deprecate 的 ScriptProcessorNode）
+      // worklet 跑在专用音频线程，不再与 Vue 渲染 / IPC 抢主线程，抖动更小
+      try {
+        if (!_workletRegistered.has(audioContext)) {
+          await audioContext.audioWorklet.addModule(getCaptureWorkletUrl())
+          _workletRegistered.add(audioContext)
+        }
+      } catch (workletErr) {
+        releaseMediaResources()
+        console.error('[useSpeechRecognition] AudioWorklet 注册失败：', workletErr)
+        error.value = workletErr instanceof Error
+          ? `音频采集初始化失败：${workletErr.message}`
+          : '音频采集初始化失败'
+        return false
+      }
+
+      if (startAborted) {
+        releaseMediaResources()
+        return false
+      }
+
+      captureNode = new AudioWorkletNode(audioContext, 'sft-capture-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        channelCount: 1,
+        processorOptions: { bufferSize: 4096 }
+      })
+
+      captureNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
+        if (!isRecording.value) return
+        const data = e.data
+        if (!data) return
+        // worklet 已用 transferable 把 ArrayBuffer 所有权交给主线程，data 自身
+        // 就是新 buffer，可以直接 push，不需要再 new Float32Array(data) 拷贝
+        if (actualSampleRate !== targetSampleRate) {
+          audioChunks.push(resampleAudio(data, actualSampleRate, targetSampleRate))
+        } else {
+          audioChunks.push(data)
         }
       }
 
-      source.connect(processor)
-      processor.connect(audioContext.destination)
+      source.connect(captureNode)
+      // 不再 connect 到 destination：AudioWorkletNode 即使不连出口也会持续被
+      // process（与已 deprecate 的 ScriptProcessorNode 不同），连出口反而有
+      // 把麦克风信号送到扬声器造成回声/啸叫的风险。
 
       isRecording.value = true
       return true
