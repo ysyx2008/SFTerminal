@@ -33,18 +33,25 @@ const writeClipboard = async (text: string): Promise<boolean> => {
  * - Unix/macOS/Linux 绝对路径：/path/to/file
  * - 用户主目录路径：~/path/to/file
  * - Windows 路径：C:\path\to\file 或 C:/path/to/file
+ *
+ * 字符限制只排除真正不可能在文件名中的字符（HTML 标签符号 <>、shell 通配 *?、双引号、
+ * 控制字符 \n\r\t）；**空格是合法路径字符**——macOS `~/Library/Application Support`、
+ * Windows `C:\Program Files` 都含空格，不能用 `\s` 一刀切排除。
  */
 const isLocalFilePath = (text: string): boolean => {
   const trimmed = text.trim()
   if (trimmed.length < 2) return false
   // 排除 HTTP(S) URL（例如 "p://localhost" 误匹配 Windows 盘符模式）
   if (/^https?:\/\//i.test(trimmed)) return false
+  // 路径中不允许的字符：HTML 标签符号、shell 通配符、双引号、控制字符
+  const illegal = /[<>*?"\n\r\t]/
+  if (illegal.test(trimmed)) return false
   // Unix/macOS/Linux 绝对路径
-  if (/^\/[^\s<>*?"]+$/.test(trimmed) && trimmed.length > 1) return true
+  if (/^\//.test(trimmed)) return true
   // 用户主目录路径
-  if (/^~\/[^\s<>*?"]+$/.test(trimmed)) return true
+  if (/^~\//.test(trimmed)) return true
   // Windows 路径 (C:\ 或 C:/)
-  if (/^[A-Za-z]:[\\/][^\s<>*?"]*$/.test(trimmed)) return true
+  if (/^[A-Za-z]:[\\/]/.test(trimmed)) return true
   return false
 }
 
