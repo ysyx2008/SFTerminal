@@ -890,8 +890,10 @@ export async function readFile(
 
   const callDisplayPath = formatDisplayPath(filePath, ptyId)
   const rangeLabel = describeReadRange({ infoOnly, startLine, endLine, maxLines, tailLines })
+  // 范围片段贴在动作词后面（「读取文件 (前 5 行): path」），让路径始终落在末尾，
+  // 前端正则更容易识别可点击的文件路径。
   const callContent = rangeLabel
-    ? `${t('file.reading')}: ${callDisplayPath} (${rangeLabel})`
+    ? `${t('file.reading')} (${rangeLabel}): ${callDisplayPath}`
     : `${t('file.reading')}: ${callDisplayPath}`
 
   executor.addStep({
@@ -1095,27 +1097,28 @@ ${sampleContent ? `### ${t('file.info_preview')}\n\`\`\`\n${sampleContent}\n\`\`
     }
 
     const displayPath = formatDisplayPath(filePath, ptyId)
-    const readInfo: string[] = []
-    readInfo.push(`📄 ${displayPath}`)
+    // readMeta 只放范围 / 统计信息，路径单独放末尾——前端路径识别正则字符类含中文/空格/逗号，
+    // 路径若不在末尾会贪婪吞掉后面文本，导致 shell.openPath 找不到文件
+    const readMeta: string[] = []
     if (startLine !== undefined || endLine !== undefined) {
-      readInfo.push(t('file.read_line_range', { start: startLine || 1, end: endLine || t('file.end_of_file') }))
+      readMeta.push(t('file.read_line_range', { start: startLine || 1, end: endLine || t('file.end_of_file') }))
     } else if (maxLines !== undefined) {
-      readInfo.push(t('file.read_first_n', { count: maxLines }))
+      readMeta.push(t('file.read_first_n', { count: maxLines }))
     } else if (tailLines !== undefined) {
-      readInfo.push(t('file.read_last_n', { count: tailLines }))
+      readMeta.push(t('file.read_last_n', { count: tailLines }))
     } else {
-      readInfo.push(t('file.full_read'))
+      readMeta.push(t('file.full_read'))
     }
-    
+
     if (isPartialRead && totalLines !== undefined) {
-      readInfo.push(t('file.partial_read_stats', {
+      readMeta.push(t('file.partial_read_stats', {
         totalLines,
         totalBytes: formatBytes(fileSize),
         lines: actualLines.length,
         chars: formatBytes(content.length)
       }))
     } else {
-      readInfo.push(t('file.actual_read', { lines: actualLines.length, chars: content.length.toLocaleString() }))
+      readMeta.push(t('file.actual_read', { lines: actualLines.length, chars: content.length.toLocaleString() }))
     }
 
     const lineOffset = startLine !== undefined ? Math.max(1, startLine)
@@ -1125,7 +1128,7 @@ ${sampleContent ? `### ${t('file.info_preview')}\n\`\`\`\n${sampleContent}\n\`\`
 
     executor.addStep({
       type: 'tool_result',
-      content: `${t('file.read_success')}: ${readInfo.join(', ')}`,
+      content: `${t('file.read_success')} (${readMeta.join(', ')}): ${displayPath}`,
       toolName: 'read_file',
       toolResult: truncateFromEnd(numberedContent, 500)
     })
@@ -1266,8 +1269,9 @@ export async function editFile(
       }
     }
     if (editRangeLabel) {
+      // 范围标签放在动作词后，路径始终在末尾——前端文件路径正则才能干净地识别 path 并使其可点击
       executor.updateStep(callStep.id, {
-        content: `${t('file.edit')}: ${editDisplayPath} (${editRangeLabel})`
+        content: `${t('file.edit')} (${editRangeLabel}): ${editDisplayPath}`
       })
     }
 
@@ -1289,22 +1293,27 @@ export async function editFile(
 
     writeTextFileSync(filePath, newContent, fileEncoding)
 
-    // tool_result 文案：UI 卡片用短路径（与 tool_call 一致），output 给 AI 用绝对路径（避免 cwd 变化时定位失败）；
-    // 单次替换才追加行号；多处替换的 edit_success_all 文案已含 count，避免重复。
+    // tool_result 文案：路径必须放最末尾以保证前端路径识别正则可点击；UI 用短路径，output 给 AI 用绝对路径。
+    // 单次替换才追加行号；多处替换的 _all_short 文案已含 count，不再追加范围标签。
     const isMultiReplace = replaceAll && match.count > 1
-    const buildResult = (p: string) => {
-      const base = isMultiReplace
-        ? t('file.edit_success_all', { path: p, count: match.count })
-        : t('file.edit_success', { path: p })
-      return !isMultiReplace && editRangeLabel ? `${base} (${editRangeLabel})` : base
+    const buildContent = (p: string): string => {
+      const head = isMultiReplace
+        ? t('file.edit_success_all_short', { count: match.count })
+        : t('file.edit_success_short')
+      const headWithRange = !isMultiReplace && editRangeLabel ? `${head} (${editRangeLabel})` : head
+      return `${headWithRange}: ${p}`
     }
     executor.addStep({
       type: 'tool_result',
-      content: buildResult(editDisplayPath),
+      content: buildContent(editDisplayPath),
       toolName: 'edit_file'
     })
 
-    return { success: true, output: buildResult(filePath) }
+    // output 给 AI 看：保留含路径的旧文案，路径用绝对路径（避免 cwd 漂移时定位失败）
+    const outputForAi = isMultiReplace
+      ? t('file.edit_success_all', { path: filePath, count: match.count })
+      : t('file.edit_success', { path: filePath })
+    return { success: true, output: outputForAi }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : t('file.edit_failed')
     const errorCategory = categorizeError(errorMsg)

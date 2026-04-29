@@ -277,6 +277,9 @@ const translations = {
     'file.edit': '编辑文件',
     'file.edit_success': '文件编辑成功: {path}',
     'file.edit_success_all': '文件编辑成功（替换 {count} 处）: {path}',
+    // _short 版本不含路径，由调用方拼接「{head} ({range}): {path}」让路径落末尾、保持可点击
+    'file.edit_success_short': '文件编辑成功',
+    'file.edit_success_all_short': '文件编辑成功（替换 {count} 处）',
     'file.edit_failed': '文件编辑失败',
     'file.unsupported_format': '不支持的图片格式',
     'file.read_error': '读取文件失败',
@@ -1594,6 +1597,9 @@ Please output the summary in the following format:
     'file.edit': 'Edit file',
     'file.edit_success': 'File edited successfully: {path}',
     'file.edit_success_all': 'File edited successfully ({count} replacements): {path}',
+    // _short variants without path; callers compose "{head} ({range}): {path}" so the path stays at the tail and remains clickable
+    'file.edit_success_short': 'File edited successfully',
+    'file.edit_success_all_short': 'File edited successfully ({count} replacements)',
     'file.edit_failed': 'File edit failed',
     'file.unsupported_format': 'Unsupported image format',
     'file.read_error': 'Failed to read file',
