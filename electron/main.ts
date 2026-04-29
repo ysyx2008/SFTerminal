@@ -2,7 +2,21 @@ import { app, BrowserWindow, ipcMain, shell, dialog, session, Tray, Menu, native
 import { autoUpdater, type GenericServerOptions, type GithubOptions } from 'electron-updater'
 import path, { join } from 'path'
 import * as fs from 'fs'
+import * as os from 'os'
 import { getDefaultShell } from './utils/platform'
+
+/**
+ * 展开路径开头的 `~` 为用户 home 目录。支持 `~`、`~/...`、`~\...`（兼容 Windows）。
+ * 用于 shell.openPath / shell.showItemInFolder 等 Electron API（它们不支持 `~`）。
+ */
+function expandTildePath(p: string): string {
+  if (!p) return p
+  if (p === '~') return os.homedir()
+  if (p.startsWith('~/') || p.startsWith('~\\')) {
+    return path.join(os.homedir(), p.slice(2))
+  }
+  return p
+}
 
 // 开发模式下禁用硬件加速，避免热重载时 GPU 进程崩溃
 // 这个调用必须在 app.whenReady() 之前
@@ -1770,16 +1784,19 @@ ipcMain.handle('app:getMessagingDocsPath', async () => {
 })
 
 // 打开路径（文件或目录）
-ipcMain.handle('shell:openPath', async (_event, path: string) => {
-  return shell.openPath(path)
+// 自动展开 `~` 前缀：Agent 工具卡片可能传入 `~/Source/foo` 形式的简化路径，
+// 但 Electron `shell.openPath` 不识别 `~`，必须先展开为绝对路径
+ipcMain.handle('shell:openPath', async (_event, targetPath: string) => {
+  return shell.openPath(expandTildePath(targetPath))
 })
 
 // 在文件管理器中显示文件（文件不存在时 fallback 到打开父目录）
 ipcMain.handle('shell:showItemInFolder', async (_event, fullPath: string) => {
-  if (fs.existsSync(fullPath)) {
-    shell.showItemInFolder(fullPath)
+  const expanded = expandTildePath(fullPath)
+  if (fs.existsSync(expanded)) {
+    shell.showItemInFolder(expanded)
   } else {
-    const dir = path.dirname(fullPath)
+    const dir = path.dirname(expanded)
     if (dir && fs.existsSync(dir)) {
       await shell.openPath(dir)
     }

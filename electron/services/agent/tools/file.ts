@@ -27,25 +27,84 @@ function expandTilde(filePath: string): string {
 
 /**
  * 生成用于消息展示的简短路径：
- * - 在 cwd 之内：返回相对路径
- * - 在 home 之内（且不在 cwd 内）：返回 ~/... 形式
- * - 其它：返回原始绝对路径
+ * - 在 home 之内：返回 ~/... 形式（保持可点击：前端 `isLocalFilePath` 识别 `~/`，主进程 IPC 展开 ~ 为绝对路径）
+ * - 其它（含 cwd 之内）：返回原始绝对路径——避免 cwd 相对路径让 UI 失去点击打开能力
+ *
+ * 跨平台兼容：
+ * - Windows 大小写不敏感 + AI 可能混用正/反斜杠：用 path.normalize 归一化分隔符，再 toLowerCase 比较
+ * - 输出 home 简化路径时**统一使用正斜杠**：前端正则只识别 `~/`，且 macOS/Linux/Windows 显示 `~/foo/bar` 都自然
+ * - 第二个参数 ptyId 已废弃但保留以避免破坏调用方签名（接近的将来可移除）
  */
-function formatDisplayPath(filePath: string, ptyId?: string): string {
-  if (ptyId) {
-    try {
-      const cwd = getTerminalStateService().getCwd(ptyId)
-      if (cwd && (filePath === cwd || filePath.startsWith(cwd + path.sep))) {
-        return path.relative(cwd, filePath) || '.'
-      }
-    } catch (_) { /* ignore */ }
+function formatDisplayPath(filePath: string, _ptyId?: string): string {
+  const isWin = process.platform === 'win32'
+  const norm = (s: string): string => {
+    const n = path.normalize(s)
+    return isWin ? n.toLowerCase() : n
   }
+  const isUnder = (p: string, dir: string): boolean => {
+    const np = norm(p)
+    const nd = norm(dir)
+    if (np === nd) return true
+    return np.startsWith(nd.endsWith(path.sep) ? nd : nd + path.sep)
+  }
+
   const home = os.homedir()
-  if (filePath === home) return '~'
-  if (filePath.startsWith(home + path.sep)) {
-    return '~' + filePath.slice(home.length)
+  if (norm(filePath) === norm(home)) return '~'
+  if (isUnder(filePath, home)) {
+    // 用 path.relative 拿规范化后的相对部分；Windows 上反斜杠转为正斜杠以匹配 `~/` 形式
+    const rel = path.relative(home, filePath)
+    return '~/' + (isWin ? rel.replace(/\\/g, '/') : rel)
   }
   return filePath
+}
+
+/**
+ * 生成 readFile 的"行号范围"短描述，用于 tool_call 卡片标题（如「读取文件: SPEC.md (第 10-80 行)」）。
+ * info_only 走早期分支不读取内容，优先级最高；其余参数与 readFile 实际读取逻辑一致：start/end > max > tail > full。
+ * 完整读取时返回空字符串，调用方应省略括号。
+ */
+function describeReadRange(opts: {
+  infoOnly?: boolean
+  startLine?: number
+  endLine?: number
+  maxLines?: number
+  tailLines?: number
+}): string {
+  const { infoOnly, startLine, endLine, maxLines, tailLines } = opts
+  if (infoOnly) return t('file.range_info_only')
+  if (startLine !== undefined || endLine !== undefined) {
+    // start clamp 到 1：与 readFile 内部 `Math.max(1, startLine) - 1` 行为一致，
+    // 避免 AI 传 start_line=0 时显示「第 0 行」造成误导。
+    return t('file.range_lines', {
+      start: Math.max(1, startLine ?? 1),
+      end: endLine ?? t('file.end_of_file')
+    })
+  }
+  if (maxLines !== undefined) return t('file.range_first_n', { count: maxLines })
+  if (tailLines !== undefined) return t('file.range_last_n', { count: tailLines })
+  return ''
+}
+
+/**
+ * 计算 [startOffset, endOffset) 字符切片在文本中的起止行号（从 1 开始）。
+ * - startLine：startOffset 之前的换行数 + 1
+ * - endLine：切片内换行数加到 startLine；若切片末尾恰好是 \n，行号不再 +1（避免把仅含整行末换行的片段算成 +1 行）
+ * 用于 editFile 显示「编辑了第 X-Y 行」。
+ */
+function computeLineRange(content: string, startOffset: number, endOffset: number): { start: number, end: number } {
+  const safeStart = Math.max(0, Math.min(startOffset, content.length))
+  const safeEnd = Math.max(safeStart, Math.min(endOffset, content.length))
+  let start = 1
+  for (let i = 0; i < safeStart; i++) if (content.charCodeAt(i) === 10) start++
+  let lineCount = 0
+  for (let i = safeStart; i < safeEnd; i++) if (content.charCodeAt(i) === 10) lineCount++
+  // 切片以 \n 结尾时，最后那个换行只是结束符不开新行：
+  //   eg. "foo\nbar\n" 横跨第 N 与 N+1 两行，lineCount=2 → end=start+1，正确表达「第 N - N+1 行」。
+  //   `lineCount > 0` 防止仅含单个 \n 的切片把行数减为负数。
+  if (safeEnd > safeStart && content.charCodeAt(safeEnd - 1) === 10 && lineCount > 0) {
+    lineCount--
+  }
+  return { start, end: start + lineCount }
 }
 
 /**
@@ -829,9 +888,15 @@ export async function readFile(
   const maxLines = args.max_lines as number | undefined
   const tailLines = args.tail_lines as number | undefined
 
+  const callDisplayPath = formatDisplayPath(filePath, ptyId)
+  const rangeLabel = describeReadRange({ infoOnly, startLine, endLine, maxLines, tailLines })
+  const callContent = rangeLabel
+    ? `${t('file.reading')}: ${callDisplayPath} (${rangeLabel})`
+    : `${t('file.reading')}: ${callDisplayPath}`
+
   executor.addStep({
     type: 'tool_call',
-    content: infoOnly ? `${t('file.reading_info_only')}: ${filePath}` : `${t('file.reading')}: ${filePath}`,
+    content: callContent,
     toolName: 'read_file',
     toolArgs: args,
     riskLevel: 'safe'
@@ -1122,10 +1187,13 @@ export async function editFile(
   const newTextPreview = newText.length > 50 ? newText.substring(0, 50) + '...' : newText
   
   const inWorkspace = isInWorkspace(filePath)
+  const editDisplayPath = formatDisplayPath(filePath, ptyId)
 
-  executor.addStep({
+  // tool_call 卡先发出占位标题（无行号）：此时还没读文件，不知道 oldText 在哪
+  // 等下面 try 块定位 match 后会通过 updateStep 更新成「编辑文件: path (第 X-Y 行)」
+  const callStep = executor.addStep({
     type: 'tool_call',
-    content: `${t('file.edit')}: ${filePath}`,
+    content: `${t('file.edit')}: ${editDisplayPath}`,
     toolName: 'edit_file',
     toolArgs: { 
       path: filePath, 
@@ -1179,6 +1247,30 @@ export async function editFile(
       return { success: false, output: '', error: errorMsg }
     }
 
+    // 计算行号范围用于卡片标题：
+    // - 单点替换：使用 oldText 在原文件中的精确切片（normalized 容错时优先 originalStart/End，缺失时回退 indexOf）
+    // - replace_all 多处：仅展示「替换 N 处」，不逐一列出行号
+    let editRangeLabel = ''
+    if (replaceAll && match.count > 1) {
+      editRangeLabel = t('file.range_replace_count', { count: match.count })
+    } else {
+      // normalized=true 时 Tier 2/3 必填 originalStart/End；防御性兜底以应对未来新 Tier 漏赋值
+      const hasOriginalRange = match.normalized
+        && typeof match.originalStart === 'number'
+        && typeof match.originalEnd === 'number'
+      const startOff = hasOriginalRange ? match.originalStart! : fileContent.indexOf(oldText)
+      const endOff = hasOriginalRange ? match.originalEnd! : startOff + oldText.length
+      if (startOff >= 0) {
+        const { start, end } = computeLineRange(fileContent, startOff, endOff)
+        editRangeLabel = t('file.range_lines', { start, end })
+      }
+    }
+    if (editRangeLabel) {
+      executor.updateStep(callStep.id, {
+        content: `${t('file.edit')}: ${editDisplayPath} (${editRangeLabel})`
+      })
+    }
+
     let newContent: string
     if (match.normalized) {
       const styledNewText = preserveNewlineStyle(newText, fileContent)
@@ -1197,16 +1289,22 @@ export async function editFile(
 
     writeTextFileSync(filePath, newContent, fileEncoding)
 
-    const resultMsg = replaceAll && match.count > 1
-      ? t('file.edit_success_all', { path: filePath, count: match.count })
-      : t('file.edit_success', { path: filePath })
+    // tool_result 文案：UI 卡片用短路径（与 tool_call 一致），output 给 AI 用绝对路径（避免 cwd 变化时定位失败）；
+    // 单次替换才追加行号；多处替换的 edit_success_all 文案已含 count，避免重复。
+    const isMultiReplace = replaceAll && match.count > 1
+    const buildResult = (p: string) => {
+      const base = isMultiReplace
+        ? t('file.edit_success_all', { path: p, count: match.count })
+        : t('file.edit_success', { path: p })
+      return !isMultiReplace && editRangeLabel ? `${base} (${editRangeLabel})` : base
+    }
     executor.addStep({
       type: 'tool_result',
-      content: resultMsg,
+      content: buildResult(editDisplayPath),
       toolName: 'edit_file'
     })
 
-    return { success: true, output: resultMsg }
+    return { success: true, output: buildResult(filePath) }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : t('file.edit_failed')
     const errorCategory = categorizeError(errorMsg)
