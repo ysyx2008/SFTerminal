@@ -2,7 +2,25 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.35.1 (2026-04-28) (Latest)
+## v10.35.2 (2026-04-30) (Latest)
+
+This release focuses on improvements to knowledge base stability, speech input compatibility, and file path click handling.
+
+### Improvements
+- ⚡ **Embedding Inference Isolated to utilityProcess**: Knowledge base embedding inference now runs in a separate utility process, reducing onnxruntime impact on main-process stability and improving index rebuild throughput
+- 🎙️ **Speech Recording Migrated to AudioWorkletNode**: Replaces the deprecated ScriptProcessorNode to reduce runtime warnings and improve future compatibility
+- 🧩 **Richer File Tool Cards**: Shows line ranges and `~`-shortened paths for more compact display and easier navigation
+- 🎨 **Welcome Page Visual Polish**: Card hover states now follow brand colors, and the AI assistant color has been adjusted to violet
+- 🪪 **Version Number in the Title Bar**: Makes it easier to confirm the running version and diagnose environment differences
+- 💬 **IM Thinking Output Setting**: Adds a "send thinking process" toggle so users can control whether IM channels include AI reasoning content
+
+### Bug Fixes
+- 🐛 **onnxruntime Crash After macOS Startup**: Fixed a startup-time knowledge base embedding inference issue that could crash the main process
+- 🐛 **Unclickable File Tool Card Paths**: Fixed Agent file tool result paths not opening when clicked
+- 🐛 **Paths with Spaces Not Recognized**: Fixed paths such as macOS `Application Support` not being recognized and clicked correctly
+- 🐛 **Escaped Terminal Path Display Issue**: Fixed shell-escaped paths being split into two pieces with an emoji inserted in the middle
+
+## v10.35.1 (2026-04-28)
 
 This release focuses on polishing the Windows experience and shipping stability fixes: faster startup on low-end Windows machines, a fully custom-painted title bar, and Chinese encoding fixes — alongside multiple intermittent AI conversation and IM channel bug fixes.
 

@@ -2,17 +2,23 @@
 
 本文件记录旗鱼（SailFish）的所有重要更新。
 
-## v10.35.2 (2026-04-29)（最新版本）
+## v10.35.2 (2026-04-30)（最新版本）
 
-针对 v10.35.1 在 macOS 上启动后偶发 onnxruntime 崩溃的紧急修复。
-
-### 问题修复
-- 🐛 **macOS 启动后 onnxruntime 崩溃**：embed 单次 forward 的 batch 上限从 64 收紧到 16，避免 BFC arena 在主进程主线程连续扩张到 2GB 边界触发 macOS libsystem_malloc 的 SIGTRAP（EXC_BREAKPOINT brk 0）
-- 🐛 **启动期推理过于"急促"**：知识库索引重建在每批之间 `setImmediate` 让出事件循环，给 BFC arena 的 free-block 合并、GC、IPC 进度上报留出时间，启动期 crash 概率显著降低
+本版本聚焦知识库稳定性、语音输入兼容性与文件路径点击体验的改进。
 
 ### 改进
-- ⚡ **embedding 暖机推理推迟到启动 8 秒后**：避开 init/rebuild/IM 启动 等启动期重活儿，BFC arena 进入稳态再做暖机；知识库为空时直接跳过暖机
-- 📚 **embedding 攒批阈值统一**：`checkAndRebuildIndex` 改为引用 `EmbeddingService.MAX_BATCH_SIZE` 单一数据源，避免两边阈值漂移
+- ⚡ **Embedding 推理隔离到 utilityProcess**：知识库 embedding 推理从主进程移到独立 utility process，降低 onnxruntime 对主进程稳定性的影响，并提升索引重建吞吐
+- 🎙️ **语音录制迁移到 AudioWorkletNode**：替代已废弃的 ScriptProcessorNode，减少浏览器运行时警告并提升后续兼容性
+- 🧩 **文件工具卡片信息更完整**：展示行号范围与 `~` 短路径，路径显示更紧凑，定位更直观
+- 🎨 **欢迎页卡片视觉打磨**：hover 状态改为按品牌色主题化，AI 助手配色调整为紫罗兰
+- 🪪 **标题栏显示版本号**：便于确认当前运行版本与排查环境差异
+- 💬 **IM 思考过程发送设置优化**：新增“发送思考过程”开关，用户可控制 IM 渠道是否同步 AI 思考内容
+
+### 问题修复
+- 🐛 **macOS 启动后 onnxruntime 崩溃**：修复启动期知识库 embedding 推理可能导致主进程崩溃的问题
+- 🐛 **文件工具卡片路径不可点击**：修复 Agent 文件工具结果中的路径无法点击跳转的问题
+- 🐛 **带空格文件路径识别失败**：修复 macOS `Application Support` 等包含空格的路径无法正确识别和点击的问题
+- 🐛 **终端转义路径显示异常**：修复 shell 转义路径被切成两段、emoji 出现在路径中间的问题
 
 ## v10.35.1 (2026-04-28)
 
