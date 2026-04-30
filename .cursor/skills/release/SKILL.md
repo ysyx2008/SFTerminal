@@ -29,7 +29,9 @@ description: Automates SailFish release workflow: fix build/type errors, update 
    - `README.md` 和 `README_CN.md`（功能列表、描述、文档链接）
    - `website/src/i18n/translations.ts`（网站功能介绍、Hero 文案等）
 5. **提交日志及文档变更**：`git add` 并 `git commit` 更新日志和可能的 README 变更。
-6. **执行版本号更新**：执行与步骤 1 一致的 `npm version <patch|minor|major>`，此时产生的版本号会与日志中一致。
+6. **执行版本号更新**：执行与步骤 1 一致的 `npm_config_yes=true npm version <patch|minor|major>`，此时产生的版本号会与日志中一致。
+
+   > ⚠️ AI 工具调用 / 脚本 / 任何无 TTY 场景**必须加 `npm_config_yes=true` 前缀**，否则 preversion 的交互式"确认继续? (y/N)"会挂死。preversion 已加非 TTY 检测，缺前缀时会快速失败并报错而非挂起。
 
 ---
 
@@ -112,8 +114,11 @@ git log v<当前版本>..HEAD --oneline
 
 ## 3. 执行 npm version
 
-- 命令：`npm version patch` | `npm version minor` | `npm version major`
-- 非交互场景（如脚本/CI）：`npm version patch --no-git-tag-version` 仅改 `package.json`；若需走完整钩子且自动确认，可使用 `npm_config_yes=true npm version patch`（会触发 preversion 中的确认为"是"）。
+`preversion` 钩子带交互式确认（"确认继续? (y/N)"）。**AI 工具调用 / 脚本 / CI / 任何无 TTY 场景必须加 `npm_config_yes=true` 前缀**，否则 preversion 会快速失败（已加 TTY 检测，不再无限期挂起）。
+
+- **AI / 脚本（推荐）**：`npm_config_yes=true npm version patch`（或 `minor` / `major`）
+- 仅人工终端：`npm version patch`
+- 仅改 `package.json` 不打 tag：追加 `--no-git-tag-version`（跳过钩子）
 
 **preversion**（`scripts/preversion.js`）会：
 
@@ -140,4 +145,4 @@ git log v<当前版本>..HEAD --oneline
 - [ ] （minor/major）检查 `README.md`、`README_CN.md` 和 `website/src/i18n/translations.ts` 是否需要同步更新
 - [ ] 更新日志及文档变更已提交
 - [ ] 当前在 develop 或 main，无未提交更改
-- [ ] 执行 `npm version <patch|minor|major>` 完成发版
+- [ ] 执行 `npm_config_yes=true npm version <patch|minor|major>` 完成发版（AI / 脚本场景必加前缀）

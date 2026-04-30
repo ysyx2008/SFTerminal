@@ -86,6 +86,15 @@ async function confirm(question) {
     return true;
   }
 
+  // 非交互式 stdin（AI 工具调用、管道、后台进程）下 readline.question 会挂死。
+  // 此处快速失败，明确告诉调用方该怎么解，不要等用户去猜。
+  if (!process.stdin.isTTY) {
+    error('检测到非交互式 stdin（无 TTY），无法读取确认。');
+    log('  常见场景：AI 工具调用 / 管道 / 后台脚本 / 部分 CI runner。', 'yellow');
+    log('  请改用：  npm_config_yes=true npm version <patch|minor|major>', 'yellow');
+    process.exit(1);
+  }
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
