@@ -10,7 +10,7 @@
 import { exec, execFile } from 'child_process'
 import { t } from '../i18n'
 import { assessCommandRisk, analyzeCommand } from '../risk-assessor'
-import { truncateFromEnd } from './utils'
+import { truncateFromEnd, EXEC_MAX_COMMAND_LENGTH } from './utils'
 import { getDefaultShell } from '../../../utils/platform'
 import { decodeBuffer } from '../../../utils/encoding'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
@@ -43,7 +43,9 @@ export async function executeCommandDirect(
     return { success: false, output: '', error: t('hint.command_empty') }
   }
 
-  const MAX_COMMAND_LENGTH = 800
+  // exec 走 child_process.execFile（argv 传递），不经 PTY line discipline，
+  // 上限远高于 PTY 模式，仅做防误用兜底
+  const MAX_COMMAND_LENGTH = EXEC_MAX_COMMAND_LENGTH
   if (command.length > MAX_COMMAND_LENGTH) {
     const errorMsg = t('hint.command_too_long', { length: command.length, max: MAX_COMMAND_LENGTH })
     executor.addStep({

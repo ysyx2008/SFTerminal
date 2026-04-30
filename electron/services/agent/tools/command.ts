@@ -8,7 +8,7 @@ import { assessCommandRisk, analyzeCommand, isSudoCommand, detectPasswordPrompt 
 import { getTerminalStateService } from '../../terminal-state.service'
 import { getTerminalAwarenessService, getProcessMonitor } from '../../terminal-awareness'
 import { getLastNLinesFromBuffer, getScreenAnalysisFromFrontend } from '../../screen-content.service'
-import { categorizeError, getErrorRecoverySuggestion, withRetry, truncateFromEnd } from './utils'
+import { categorizeError, getErrorRecoverySuggestion, withRetry, truncateFromEnd, getPtyMaxCommandLength } from './utils'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 
 /**
@@ -26,8 +26,9 @@ export async function executeCommand(
     return { success: false, output: '', error: t('hint.command_empty') }
   }
 
-  // 检查命令长度
-  const MAX_COMMAND_LENGTH = 800
+  // 检查命令长度（PTY canonical mode 下 MAX_CANON 截断风险，按平台/模式动态阈值）
+  const isSsh = !!executor.getSshConfig?.(ptyId)
+  const MAX_COMMAND_LENGTH = getPtyMaxCommandLength(isSsh)
   if (command.length > MAX_COMMAND_LENGTH) {
     const errorMsg = t('hint.command_too_long', { length: command.length, max: MAX_COMMAND_LENGTH })
     executor.addStep({

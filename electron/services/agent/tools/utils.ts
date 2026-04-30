@@ -255,3 +255,34 @@ export function normalizeToolArgs(args: Record<string, unknown>): Record<string,
   }
   return result
 }
+
+/**
+ * 直接 child_process 执行的命令长度上限。
+ *
+ * exec/execFile 通过 argv 传递命令，不经过 PTY line discipline，
+ * 实际限制是系统 ARG_MAX（macOS/Linux 至少 256KB，Windows cmd.exe 8191）。
+ * 这里取 100KB 作为防误用上限：日常 oneliner 远低于此，超过这个量级
+ * 几乎一定是 LLM 生成异常或应改用 write_text_file 写脚本。
+ */
+export const EXEC_MAX_COMMAND_LENGTH = 100_000
+
+/**
+ * PTY 终端命令长度上限。
+ *
+ * 终端在 canonical mode 下受 termios `MAX_CANON` 限制，超长命令会被
+ * 截断/丢弃；不同平台默认值不同，按平台和模式分别给出保守阈值：
+ *
+ * - SSH 模式：远端 OS 通常是 Linux（MAX_CANON ≈ 4096），给 3500 留余量
+ * - 本地 macOS：Darwin MAX_CANON = 1024，给 1000
+ * - 本地 Linux：MAX_CANON ≈ 4096，给 3500
+ * - 本地 Windows：ConPTY 无 line discipline，cmd.exe 命令行 8191 上限，给 4000
+ *
+ * 命令真的超过此阈值时，仍建议先 `write_text_file` 写脚本再 `bash xxx.sh`，
+ * 避免被 line buffer 截断造成静默错误。
+ */
+export function getPtyMaxCommandLength(isSsh: boolean): number {
+  if (isSsh) return 3500
+  if (process.platform === 'darwin') return 1000
+  if (process.platform === 'win32') return 4000
+  return 3500
+}
