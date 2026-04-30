@@ -59,6 +59,22 @@ interface ApiRequestError extends Error {
   apiErrorCode?: string
 }
 
+/**
+ * 重试上下文（通过 onRetry 回调传递给调用方，便于在 UI 上展示「自动重试中」提示）
+ */
+export interface RetryInfo {
+  /** 当前是第几次重试（从 1 开始） */
+  attempt: number
+  /** 该类错误允许的最大重试次数 */
+  max: number
+  /** 距下次请求的等待毫秒数 */
+  delayMs: number
+  /** 触发重试的原因 */
+  reason: 'network' | 'rate_limit' | 'server_error'
+  /** HTTP 状态码（rate_limit / server_error 才有） */
+  statusCode?: number
+}
+
 function toApiRequestError(err: unknown, statusCode?: number, headers?: Record<string, string | string[] | undefined>, apiErrorCode?: string): ApiRequestError {
   const error = (err instanceof Error ? err : new Error(String(err))) as ApiRequestError
   error.statusCode = statusCode
@@ -1604,7 +1620,12 @@ export class AiService {
     profileId?: string,
     onToolCallProgress?: (toolCallId: string, toolName: string, partialArgs: string) => void,  // 工具调用参数流式片段（含 toolCallId 以便前端就地更新对应卡片）
     requestId?: string,  // 用于支持中止请求
-    onRetry?: () => void,  // 重试前通知调用方重置流状态（避免 reasoning 块重复）
+    /**
+     * 重试前通知调用方重置流状态（避免 reasoning 块重复）。
+     * 提供 retryInfo 时调用方可据此向前端展示「正在重试 N/M」的提示，
+     * 避免用户以为应用卡住了。
+     */
+    onRetry?: (retryInfo?: RetryInfo) => void,
     onToolCallReady?: (toolCall: ToolCall) => void  // 流式中某个 tool_call 参数完整时回调
   ): Promise<void> {
     const profile = await this.getCurrentProfile(profileId)
@@ -1688,10 +1709,13 @@ export class AiService {
     }
 
     // 重置状态以便重试（不重置 isCompleted，由 tryRetry/doRequest 管理）
+    // retryInfo 由具体重试分支提供：网络错误 / 429 / 5xx 各自构造后通过 resetForRetry 透传
+    let pendingRetryInfo: RetryInfo | undefined
     const resetForRetry = () => {
       clearTimeout(totalTimeoutId)
       clearTimeout(idleTimeoutId)
-      onRetry?.()
+      onRetry?.(pendingRetryInfo)
+      pendingRetryInfo = undefined
       content = ''
       reasoningContent = ''
       toolCalls = []
@@ -1778,6 +1802,7 @@ export class AiService {
           onChunk(`⚠️ ${t('error.network_retry', { attempt: String(retryCount), max: String(AI_RETRY.MAX_RETRIES) })}\n`)
         }
         getAiDebugService().logResponseError(reqId, `${errorMsg} - 准备重试 ${retryCount}/${AI_RETRY.MAX_RETRIES} in ${(delay / 1000).toFixed(1)}s`)
+        pendingRetryInfo = { attempt: retryCount, max: AI_RETRY.MAX_RETRIES, delayMs: delay, reason: 'network' }
         resetForRetry()
         setTimeout(doRequest, delay)
         // 阻止旧请求的其他错误处理器调用 complete()
@@ -1864,6 +1889,7 @@ export class AiService {
                 onChunk(`⚠️ ${t('error.rate_limited', { seconds: retryAfterSec, attempt: String(rateLimitRetryCount), max: String(AI_RETRY.RATE_LIMIT_MAX_RETRIES) })}\n`)
               }
               getAiDebugService().logResponseError(reqId, `429 Rate Limited - retry ${rateLimitRetryCount}/${AI_RETRY.RATE_LIMIT_MAX_RETRIES} in ${retryAfterSec}s`)
+              pendingRetryInfo = { attempt: rateLimitRetryCount, max: AI_RETRY.RATE_LIMIT_MAX_RETRIES, delayMs: retryAfterMs, reason: 'rate_limit', statusCode: 429 }
               resetForRetry()
               setTimeout(doRequest, retryAfterMs)
               isCompleted = true
@@ -1879,6 +1905,7 @@ export class AiService {
                 onChunk(`⚠️ ${t('error.server_error_retry', { status: String(res.statusCode), seconds: delaySec, attempt: String(serverErrorRetryCount), max: String(AI_RETRY.SERVER_ERROR_MAX_RETRIES) })}\n`)
               }
               getAiDebugService().logResponseError(reqId, `${res.statusCode} Server Error - retry ${serverErrorRetryCount}/${AI_RETRY.SERVER_ERROR_MAX_RETRIES} in ${delaySec}s`)
+              pendingRetryInfo = { attempt: serverErrorRetryCount, max: AI_RETRY.SERVER_ERROR_MAX_RETRIES, delayMs: delay, reason: 'server_error', statusCode: res.statusCode }
               resetForRetry()
               setTimeout(doRequest, delay)
               isCompleted = true

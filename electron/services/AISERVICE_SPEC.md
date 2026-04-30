@@ -1,6 +1,6 @@
 # AiService SPEC
 
-> Last verified: 2026-04-24
+> Last verified: 2026-04-30
 
 ## 职责
 
@@ -17,7 +17,7 @@ AI API 的统一调用层。封装 OpenAI 兼容协议的 HTTP 请求，提供�
 | `chat(messages, profileId?)` | 纯文本对话（同步） | 知识文档更新、对话索引等后台任务 |
 | `chatStream(messages, onChunk, onDone, onError, profileId?)` | 纯文本对话（流式） | 前端 AI 对话面板 |
 | `chatWithTools(messages, tools, profileId?)` | 工具调用（同步） | Agent 非流式路径（较少使用） |
-| `chatWithToolsStream(messages, tools, onChunk, onToolCall, onDone, onError, profileId?, onToolCallProgress?, requestId?, onRetry?, onToolCallReady?)` | 工具调用（流式）。`onToolCallProgress(id, name, partialArgs)` 在 tool_call 参数流式片段到达时回调，`partialArgs` 为截至当前的完整 JSON 前缀，Agent 据此在"生成参数"阶段即可显示该工具卡片的实时命令文本。 | Agent 主执行路径 |
+| `chatWithToolsStream(messages, tools, onChunk, onToolCall, onDone, onError, profileId?, onToolCallProgress?, requestId?, onRetry?, onToolCallReady?)` | 工具调用（流式）。`onToolCallProgress(id, name, partialArgs)` 在 tool_call 参数流式片段到达时回调，`partialArgs` 为截至当前的完整 JSON 前缀，Agent 据此在"生成参数"阶段即可显示该工具卡片的实时命令文本。`onRetry(retryInfo?)` 在网络错误 / 429 / 5xx 触发自动重试前调用，`retryInfo` 包含 `{ attempt, max, delayMs, reason, statusCode? }`，用于在 UI 上展示「正在重试 N/M」避免用户误以为应用卡死；同时承担"重置已流出脏内容"职责（提供 onRetry 时上层 onChunk 不再收到 `⚠️ 重试中` 文本，由调用方自行渲染）。视觉降级等内部重试不传 `retryInfo`。 | Agent 主执行路径 |
 | `abort(requestId?)` | 中止请求 | Agent.abort()、用户取消 |
 | `static getExplainCommandPrompt(command)` | 命令解释 prompt 模板 | 前端命令解释功能 |
 | `static getDiagnoseErrorPrompt(error, context?)` | 错误诊断 prompt 模板 | 前端错误诊断功能 |
@@ -59,9 +59,11 @@ AI API 的统一调用层。封装 OpenAI 兼容协议的 HTTP 请求，提供�
 
 | 错误类型 | 最大重试 | 退避策略 |
 |---|---|---|
-| 网络错误（ECONNRESET 等） | 3 次 | 固定 2s |
-| Rate Limit (429) | 3 次 | 指数退避，基础 5s |
-| 服务端错误 (5xx) | 2 次 | 指数退避，基础 3s |
+| 网络错误（ECONNRESET 等） | 3 次 | 指数退避 + jitter，基础 2s |
+| Rate Limit (429) | 5 次 | 指数退避 + jitter，基础 5s（优先 `Retry-After` header） |
+| 服务端错误 (5xx) | 3 次 | 指数退避 + jitter，基础 3s |
+
+调用方提供 `onRetry` 时可拿到 `RetryInfo`（`attempt` / `max` / `delayMs` / `reason` / `statusCode?`）以驱动 UI 提示。Agent 路径通过 `waiting` 类型 step 让用户实时看到自动重试，避免误以为应用卡死。
 
 ### 多模态降级
 

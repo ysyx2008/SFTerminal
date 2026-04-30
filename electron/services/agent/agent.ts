@@ -8,7 +8,7 @@
  * - SailFish（子类）：工具列表管理、系统提示构建、可选终端能力
  */
 
-import type { AiMessage, ToolCall, ChatWithToolsResult, ToolDefinition } from '../ai.service'
+import type { AiMessage, ToolCall, ChatWithToolsResult, ToolDefinition, RetryInfo } from '../ai.service'
 import { StreamingToolExecutor } from './streaming-tool-executor'
 import type { AgentRecord, AgentStepRecord } from '../history.service'
 import type {
@@ -1706,10 +1706,22 @@ export abstract class Agent {
     let lastContentUpdate = 0
     let pendingUpdate = false
     let streamStepCreated = false
+    // 最近一次重试提示步骤的 id（用 waiting 类型，让用户知道"自动重试中"，避免误以为卡住）
+    // 重试成功（首次 onChunk 到达）/ 最终失败（onError）/ 完成（onDone 兜底）时停掉 streaming 状态
+    let lastRetryStepId: string | undefined
     // 每个 toolCallId 独立节流（多个 tool_call 并行流式时互不干扰）
     const toolProgressThrottle = new Map<string, number>()
     const STREAM_THROTTLE_MS = 100
     const TOOL_PROGRESS_THROTTLE_MS = 120
+
+    // 把当前"正在重试"卡片定稿（关闭 spinner），保留卡片作为审计痕迹。
+    // 触发时机：重试成功（首次 onChunk）/ 整体完成（onDone）/ 最终失败（onError）/ 下一轮重试开始
+    const finalizeRetryStep = () => {
+      if (lastRetryStepId) {
+        this.updateStep(lastRetryStepId, { isStreaming: false })
+        lastRetryStepId = undefined
+      }
+    }
     
     const sendContentUpdate = () => {
       // reasoning 块一旦闭合（</details> 出现意味着 AI 已结束思考、切到 content 或 tool_calls 阶段），
@@ -1764,6 +1776,8 @@ export abstract class Agent {
           // 避免前端 steps 出现瞬时为 0 的中间态。
           if (!streamStepCreated) {
             streamStepCreated = true
+            // 重试成功：把上一次的"正在重试..."提示定稿（保留卡片但停掉 spinner）
+            finalizeRetryStep()
             // 立即创建步骤，确保 timestamp 在工具结果之前
             this.addStep({
               id: streamStepId,
@@ -1804,6 +1818,8 @@ export abstract class Agent {
               this.updateStep(stepId, { isStreaming: false })
             }
           }
+          // 重试成功但服务端立即返回（无 content/tool_call 流）时，onChunk 不会触发，这里兜底关掉 spinner
+          finalizeRetryStep()
 
           // 累积 token usage（由 LLM provider 返回的精确值）
           if (result.usage) {
@@ -1887,6 +1903,8 @@ export abstract class Agent {
         (error) => {
           // 出错时把预创建的 tool_call 卡片移除，避免留下没有结果的空卡
           this.discardPreToolCallSteps(run)
+          // 重试最终失败时也要把 spinner 关掉，否则"正在重试"卡片会一直转
+          finalizeRetryStep()
           reject(new Error(error))
         },
         effectiveProfileId, // 视觉路由：有新图片时自动切换到视觉模型
@@ -1948,8 +1966,9 @@ export abstract class Agent {
         },
         run.id, // requestId
         // onRetry - 重试时重置流状态，避免 reasoning 块重复
-        () => {
-          log.info('AI request retrying, resetting stream state')
+        // retryInfo 由 ai.service 提供，用来在 UI 上显示"正在重试"，避免用户以为应用卡死
+        (retryInfo?: RetryInfo) => {
+          log.info(`AI request retrying (reason=${retryInfo?.reason ?? 'unknown'}), resetting stream state`)
           streamContent = ''
           pendingUpdate = false
           lastContentUpdate = 0
@@ -1961,6 +1980,37 @@ export abstract class Agent {
           this.discardPreToolCallSteps(run)
           // 重试时中止已启动的流式工具执行
           streamingExecutor?.abort()
+          // 把上一次的"正在重试"卡片定稿（这次新的重试会再起一张），避免多张同时转 spinner
+          finalizeRetryStep()
+          // 显示 waiting 卡片让用户清楚"在等下次重试"，而不是"卡住了"。
+          // retryInfo 缺失时（如 vision-fallback 等内部重试）不显示，避免误导用户
+          if (retryInfo) {
+            const seconds = String(Math.max(1, Math.round(retryInfo.delayMs / 1000)))
+            const params: Record<string, string> = {
+              attempt: String(retryInfo.attempt),
+              max: String(retryInfo.max),
+              seconds
+            }
+            if (retryInfo.statusCode !== undefined) params.status = String(retryInfo.statusCode)
+            const i18nKey =
+              retryInfo.reason === 'rate_limit' ? 'agent.retry_rate_limit' :
+              retryInfo.reason === 'server_error' ? 'agent.retry_server_error' :
+              'agent.retry_network'
+            const stepId = this.generateId()
+            lastRetryStepId = stepId
+            this.addStep({
+              id: stepId,
+              type: 'waiting',
+              content: `🔄 ${t(i18nKey, params)}`,
+              isStreaming: true
+            })
+            // waiting 卡已经"接班"显示状态，再移除初始"正在准备..."步骤
+            // 顺序：先 add 再 remove，避免前端 steps 瞬时为 0 的中间态
+            if (run.initialStepId) {
+              this.removeStep(run.initialStepId)
+              run.initialStepId = undefined
+            }
+          }
         },
         // onToolCallReady - 流式中 tool_call 参数完整时立即投入执行
         streamingExecutor
