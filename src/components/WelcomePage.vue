@@ -371,7 +371,14 @@ const formatHost = (session: SshSession) => {
   }
 }
 
+/* 每张卡片继承自己图标的品牌色，让 hover 时整张卡片以自己的品牌色"被点亮"——
+   AI 卡 → 橙色氛围、本地卡 → 绿色氛围、SSH 卡 → 蓝色氛围。
+   原先所有卡片共用 --accent-decorative-*（浅色下是蓝色 accent），与橙/绿图标
+   产生色相冲突（橙图标 + 蓝外晕看着不和谐），新方案让 hover 时图标、边框、
+   外晕、底色全部围绕同一品牌色，整张卡片像"亮起来"，告别浅色下的暗淡感。 */
 .action-card {
+  --card-glow-rgb: var(--accent-decorative-rgb);
+  --card-glow-color: var(--accent-decorative-primary);
   position: relative;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -381,6 +388,7 @@ const formatHost = (session: SshSession) => {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
               border-color 0.3s ease, 
               border-width 0.3s ease,
+              background 0.3s ease,
               box-shadow 0.3s ease;
   display: flex;
   flex-direction: column;
@@ -396,6 +404,24 @@ const formatHost = (session: SshSession) => {
   animation: cardFadeIn 0.25s ease-out both;
 }
 
+/* 通过 :has() 让卡片继承自己图标的品牌色（不需要改模板加 class） */
+.action-card:has(.card-icon.assistant) {
+  --card-glow-rgb: var(--brand-assistant-rgb);
+  --card-glow-color: var(--brand-assistant);
+}
+.action-card:has(.card-icon.local) {
+  --card-glow-rgb: var(--brand-local-rgb);
+  --card-glow-color: var(--brand-local);
+}
+.action-card:has(.card-icon.ssh) {
+  --card-glow-rgb: var(--brand-ssh-rgb);
+  --card-glow-color: var(--brand-ssh);
+}
+.action-card:has(.card-icon.patrol) {
+  --card-glow-rgb: var(--brand-patrol-rgb);
+  --card-glow-color: var(--brand-patrol);
+}
+
 .action-card:nth-child(1) { animation-delay: 0.10s; }
 .action-card:nth-child(2) { animation-delay: 0.16s; }
 .action-card:nth-child(3) { animation-delay: 0.22s; }
@@ -405,23 +431,24 @@ const formatHost = (session: SshSession) => {
   to { opacity: 1; }
 }
 
-/* 卡片悬停发光效果
-   走 --accent-decorative-*：蓝色/粉色/绿色等主题下是 accent→accent 的同色浸染（保留主题风味），
-   深色主题下变成中性白→灰的玻璃浮层（glassmorphism 质感），
-   避免 dark 下"整块蓝色浸染"的视觉轰炸。 */
+/* ::before 是绕卡片外延 2px 的"边缘柔光环"（z-index:-1 在卡片背后，
+   只露出 inset:-2px 这一圈）。配合卡片自己的品牌色，hover 时变成
+   一圈与图标同色的发光描边。 */
 .action-card::before {
   content: '';
   position: absolute;
   inset: -2px;
   border-radius: 22px;
-  background: linear-gradient(135deg, var(--accent-decorative-primary), var(--accent-decorative-secondary));
+  background: linear-gradient(135deg,
+    rgba(var(--card-glow-rgb), 1),
+    rgba(var(--card-glow-rgb), 0.55));
   opacity: 0;
   z-index: -1;
   transition: opacity 0.3s ease;
 }
 
 .action-card:hover:not(.disabled)::before {
-  opacity: 0.5;
+  opacity: 0.55;
 }
 
 /* 卡片内部光晕 */
@@ -442,20 +469,19 @@ const formatHost = (session: SshSession) => {
   opacity: 1;
 }
 
-/* hover 边框走 --accent-decorative-primary 不透明纯色：
-   上一版用 rgba(装饰色, 0.5) 在深色下会与 ::before 的 50% 白玻璃浮层
-   融合成一片（白+白），边框完全不可见；换成不透明色后从玻璃里"凸"出来，
-   就是真实玻璃的"边缘高光"质感。
-   - dark 下：装饰色 = #ffffff → 清晰白边
-   - 蓝/粉/绿等主题下：装饰色 = 各自 accent → 清晰主题色边
-   - 宽度 2px：比原来 3px 纯 accent 温和一档，避免突兀的宽度跳变 */
+/* hover：让"整张卡片"看起来被自己的品牌色点亮——
+   - 边框：本卡品牌色实色（橙/绿/蓝），不再是统一的主题蓝
+   - 底色：基础灰底叠 8% 品牌色（color-mix）→ 从中性灰变成"暖灰/森林灰/湖蓝灰"，
+     这是解决"按钮还是很暗淡"的关键：卡片本体也参与了氛围
+   - 外晕：38px 品牌色发光，强度 0.32（比原来的 0.2 主题色更显眼） */
 .action-card:hover:not(.disabled) {
-  border-color: var(--accent-decorative-primary);
+  border-color: var(--card-glow-color);
   border-width: 2px;
   transform: translateY(-8px) scale(1.06);
+  background: color-mix(in srgb, var(--card-glow-color) 8%, var(--bg-secondary));
   box-shadow: 
-    0 20px 40px rgba(0, 0, 0, 0.2),
-    0 0 30px rgba(var(--accent-decorative-rgb), 0.2);
+    0 20px 40px rgba(0, 0, 0, 0.18),
+    0 0 38px rgba(var(--card-glow-rgb), 0.32);
 }
 
 .action-card:active:not(.disabled) {
@@ -468,7 +494,11 @@ const formatHost = (session: SshSession) => {
   cursor: not-allowed;
 }
 
+/* card-icon 直接继承父级 .action-card 上的 --card-glow-rgb 品牌色变量，
+   不需要每个 .assistant/.local/.ssh 单独定义。静态阴影和 hover 增强阴影
+   都从这条变量取色，与卡片整体氛围保持同一色相。 */
 .card-icon {
+  --icon-glow-rgb: var(--card-glow-rgb, var(--accent-decorative-rgb));
   width: 60px;
   height: 60px;
   min-width: 60px;
@@ -479,32 +509,37 @@ const formatHost = (session: SshSession) => {
   align-items: center;
   justify-content: center;
   color: white;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: 0 4px 15px rgba(var(--icon-glow-rgb), 0.3);
+  transition: transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
 }
 
+/* hover：让图标"活过来"的三件套——
+   1. filter 提亮+提色：图标本身从静态色变得更鲜艳，这是"有活力"的核心反馈
+   2. 加强品牌色光晕（0.6 强度，30px 扩散）：四周染上同色的氛围光
+   3. 柔和环境暗影：保留上浮层次感
+   原先单一的 rgba(0,0,0,0.35) 阴影在浅色主题下会把鲜艳图标"拍灰"，故彻底替换。 */
 .action-card:hover:not(.disabled) .card-icon {
-  transform: scale(1.06) translateY(-3px);
-  box-shadow: 0 12px 25px rgba(0, 0, 0, 0.35);
+  transform: scale(1.08) translateY(-4px);
+  filter: saturate(1.2) brightness(1.08);
+  box-shadow:
+    0 16px 32px rgba(var(--icon-glow-rgb), 0.55),
+    0 6px 14px rgba(0, 0, 0, 0.15);
 }
 
 .card-icon.assistant {
   background: linear-gradient(135deg, var(--brand-assistant), var(--brand-assistant-end));
-  box-shadow: 0 4px 15px rgba(var(--brand-assistant-rgb), 0.3);
 }
 
 .card-icon.local {
   background: linear-gradient(135deg, var(--brand-local), var(--brand-local-end));
-  box-shadow: 0 4px 15px rgba(var(--brand-local-rgb), 0.3);
 }
 
 .card-icon.ssh {
   background: linear-gradient(135deg, var(--brand-ssh), var(--brand-ssh-end));
-  box-shadow: 0 4px 15px rgba(var(--brand-ssh-rgb), 0.3);
 }
 
 .card-icon.patrol {
   background: linear-gradient(135deg, var(--brand-patrol), var(--brand-patrol-end));
-  box-shadow: 0 4px 15px rgba(var(--brand-patrol-rgb), 0.3);
 }
 
 /* 标题 hover 不再变色：

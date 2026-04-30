@@ -67,9 +67,15 @@
   --color-info-rgb: 59, 130, 246;
 
   /* ===== 品牌色（功能识别色：欢迎页卡片、SmartPatrol 等） ===== */
-  --brand-assistant: #f59e0b;
-  --brand-assistant-end: #d97706;
-  --brand-assistant-rgb: 245, 158, 11;
+  /* AI 助手品牌色：紫罗兰 → 深紫渐变。
+     紫色是 AI 产品的标志色（Anthropic / Cursor / Copilot），传递"智能、专业、神秘"调性；
+     与本地终端的绿、SSH 的蓝形成跨色相区分（橙/红→紫的演进史：amber 太刺眼、桃粉太甜，
+     紫罗兰兼具暖度与稳重）。
+     ⚠️ 与隐藏的 --brand-patrol（也是紫色）相同，将来 patrol 模块复活时需改 patrol 的色值
+     避开重复，而不是改 assistant。 */
+  --brand-assistant: #8b5cf6;
+  --brand-assistant-end: #6d28d9;
+  --brand-assistant-rgb: 139, 92, 246;
 
   --brand-local: #10b981;
   --brand-local-end: #059669;
