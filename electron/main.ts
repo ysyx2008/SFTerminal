@@ -798,10 +798,13 @@ function createWindow() {
     }
   })
 
-  // 窗口显示控制：低配机器上 ready-to-show 可能要 10s+ 才触发，期间窗口完全 hidden
-  // 但任务栏图标已经存在，用户感觉是"启动后最小化到状态栏"，体验极差。
-  // 用兜底超时强制 show：窗口先出现（依赖 dist/index.html 内嵌的启动占位），
-  // 再等渲染端首屏完成，明显比"窗口完全不出现"友好。
+  // 窗口显示控制：
+  // - 旧逻辑（ready-to-show 触发立即 show）：ready-to-show 在首帧 paint 时就触发，
+  //   此时 Vue 还没 mount（src/main.ts 之前 await IPC 拉主题阻塞了 mount），
+  //   用户会看到一段"dark 背景但 #app 内 boot-splash 还隐着"的黑屏。
+  // - 现在：等渲染端 Vue mount 完成（IPC 'app:mounted'）再 show，确保窗口出现
+  //   时就是真实 UI；2s 兜底防止极端情况（首次启动 / 低配 Win）渲染端长时间
+  //   不 mount，超时后 show 出窗口让 boot-splash 顶上。
   let mainWindowShown = false
   let showFallbackTimer: NodeJS.Timeout | null = null
   const showMainWindowOnce = (reason: string) => {
@@ -821,16 +824,23 @@ function createWindow() {
       mainWindow.webContents.focus()
     }
   }
-  mainWindow.once('ready-to-show', () => showMainWindowOnce('ready-to-show'))
-  // 兜底：1.5s 后无论 ready-to-show 是否触发都强制 show，让用户看到启动占位
-  // 高配机器 ready-to-show 通常 <500ms，此 setTimeout 实际上不会生效
-  showFallbackTimer = setTimeout(() => showMainWindowOnce('timeout-fallback'), 1500)
-  // 窗口销毁时清理兜底 timer，避免 app 退出过程中触发无效 show()
+  // 'app:mounted' IPC 由 src/main.ts 在 Vue mount 完成后立即发出
+  // 这是首选 show 时机：窗口出现 = 真实 UI 出现，不会有黑屏中转
+  // 用 removeAllListeners + on 的组合（而不是 once）以支持窗口重建场景
+  const onAppMounted = () => showMainWindowOnce('vue-mounted')
+  ipcMain.removeAllListeners('app:mounted')
+  ipcMain.on('app:mounted', onAppMounted)
+  // 兜底：2s 后无论 'app:mounted' 是否到达都强制 show
+  // 高配机器 Vue mount 通常 <500ms，此 setTimeout 实际上不会生效；
+  // 低配 Win 上 webContents 首屏 5~10s，超时后 boot-splash 接管显示
+  showFallbackTimer = setTimeout(() => showMainWindowOnce('timeout-fallback'), 2000)
+  // 窗口销毁时清理兜底 timer 和 IPC listener
   mainWindow.once('closed', () => {
     if (showFallbackTimer) {
       clearTimeout(showFallbackTimer)
       showFallbackTimer = null
     }
+    ipcMain.removeListener('app:mounted', onAppMounted)
   })
 
   // Windows 上窗口获得焦点时，确保 webContents 也获得键盘输入路由

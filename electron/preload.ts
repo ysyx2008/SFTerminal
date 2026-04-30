@@ -274,6 +274,9 @@ const electronAPI = {
   app: {
     getVersion: () => ipcRenderer.invoke('app:getVersion') as Promise<string>,
     getMessagingDocsPath: () => ipcRenderer.invoke('app:getMessagingDocsPath') as Promise<string>,
+    // 渲染端 Vue mount 完成后调用，主进程据此决定何时 show 主窗口，
+    // 避免在 ready-to-show 时 show 出"还没挂 UI 的黑屏窗口"。
+    notifyMounted: () => ipcRenderer.send('app:mounted'),
     onRunTask: (callback: (task: string) => void) => {
       const handler = (_event: unknown, task: string) => callback(task)
       ipcRenderer.on('app:run-task', handler)

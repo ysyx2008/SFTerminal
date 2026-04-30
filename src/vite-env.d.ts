@@ -121,6 +121,7 @@ interface Window {
     app: {
       getVersion: () => Promise<string>
       getMessagingDocsPath: () => Promise<string>
+      notifyMounted: () => void
       onRunTask: (callback: (task: string) => void) => () => void
       onInstallSkill: (callback: (skillId: string) => void) => () => void
     }
