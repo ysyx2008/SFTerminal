@@ -2,7 +2,17 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.35.2 (2026-04-30) (Latest)
+## v10.35.3 (2026-04-30) (Latest)
+
+This release makes auto-retry and document parsing waits visible in real time.
+
+### Improvements
+- 📂 **Per-file progress for drag-and-drop uploads**: Show progress cards per file when dragging in multiple documents (PDF by page, Excel/CSV/Word by stage); auto-clear on success/failure. Pressing Enter while parsing now shows a toast and disables the send button.
+
+### Bug Fixes
+- 🐛 **Auto-retry now visible to users**: API auto-retry on network errors / 429 rate-limit / 5xx server errors was already implemented, but in the Agent path the screen was cleared with no feedback during long backoffs, making users think the app had hung. Now displays a "🔄 Retrying in Ns (M/N)..." waiting card in real time, retained as an audit trail after success or failure.
+
+## v10.35.2 (2026-04-30)
 
 This release focuses on improvements to knowledge base stability, speech input compatibility, and file path click handling.
 
