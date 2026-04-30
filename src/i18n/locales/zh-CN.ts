@@ -1383,6 +1383,13 @@ export default {
     subAgentFailed: '失败',
     subAgentShowResult: '查看结果',
     subAgentHideResult: '收起结果',
+    // 思考块（reasoning 模型的 thinking 单行呈现）
+    thinking: {
+      streaming: '思考中',
+      done: '思考完成',
+      clickShow: '点击查看',
+      clickHide: '点击收起'
+    },
     // 分析功能相关（通过 Agent 执行）
     analyzeErrorPrompt: '请帮我分析这个错误：',
     analyzeOutputPrompt: '请帮我分析这段终端输出：',

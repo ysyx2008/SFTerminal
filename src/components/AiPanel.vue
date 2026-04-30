@@ -13,6 +13,8 @@ import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import AgentPlanView from './AgentPlanView.vue'
 import AiComposer from './AiComposer.vue'
+import ThinkingBlock from './ThinkingBlock.vue'
+import { parseThinking } from '../utils/thinking-block'
 import sailfishLogo from '../../resources/logo.png'
 
 // 导入 composables
@@ -116,6 +118,59 @@ const toggleWebSearchExpand = (stepId: string) => {
     expandedWebSearchSteps.value.delete(stepId)
   } else {
     expandedWebSearchSteps.value.add(stepId)
+  }
+}
+
+// 思考块展开状态（默认收起，按 stepId 管理；让 DynamicScroller 的 size dep 能感知切换）
+const expandedThinkingSteps = ref<Set<string>>(new Set())
+const isThinkingExpanded = (stepId: string): boolean => {
+  return expandedThinkingSteps.value.has(stepId)
+}
+const toggleThinkingExpand = (stepId: string) => {
+  if (expandedThinkingSteps.value.has(stepId)) {
+    expandedThinkingSteps.value.delete(stepId)
+  } else {
+    expandedThinkingSteps.value.add(stepId)
+  }
+}
+
+// 任务完成尾注的显示条件：group 完成（finalResult 存在且非失败/中断）+ 当前是 group 内最后一个
+// 可见的 message step。把"✓ 任务完成"作为最后一个 message step 的内部尾巴渲染，避免单独成 item
+// 引起列表重排跳动。
+const shouldShowTaskCompleteFooter = (item: { step?: { id: string; type: string }; group?: { finalResult?: string; steps: Array<{ id: string; type: string }> } }): boolean => {
+  if (!item.step || !item.group) return false
+  const finalResult = item.group.finalResult
+  if (!finalResult) return false
+  // 失败/中断有独立卡片显示错误信息，不在 message step 上重复尾注
+  if (finalResult.startsWith('❌') || finalResult.startsWith('⚠️')) return false
+  // 仅在 group 内最后一个 message step 上显示尾注
+  const messageSteps = item.group.steps.filter(s => s.type === 'message')
+  if (messageSteps.length === 0) return false
+  return messageSteps[messageSteps.length - 1].id === item.step.id
+}
+
+// 识别 createRun 一开始插入的"正在准备..." 占位步骤（type='thinking' + isStreaming=true）。
+// 让它借用 message step 的视觉壳（同一图标 + 同一 wrapper + ThinkingBlock 流式态），
+// 切换到真正的 message step 时外观无差，达到"持续往下呼呼输出"的稳定感。
+// 其它 thinking step（如截断警告、参数错误）isStreaming 为 undefined，不会被误判。
+const isInitialPreparingStep = (step: { type: string; isStreaming?: boolean }): boolean => {
+  return step.type === 'thinking' && step.isStreaming === true
+}
+
+// 思考块完成时长缓存（按 stepId 索引）
+// DynamicScroller 是虚拟列表，已完成的 ThinkingBlock 滚出视区后会被 unmount、滚回时 remount，
+// 仅用 step.timestamp 重算会得到"从起点到现在"的错乱时长（变成几十~上百秒）。
+// 此处用一个会话内的内存 Map 缓存：组件首次完成时 emit finalize 上报真实时长，remount 时回传，使用 reactive ref 触发模板更新
+const thinkingDurations = ref<Map<string, number>>(new Map())
+const getCachedThinkingDuration = (stepId: string): number | undefined => {
+  return thinkingDurations.value.get(stepId)
+}
+const cacheThinkingDuration = (stepId: string, ms: number) => {
+  // 同一 step 重复上报时仅在尚未缓存时写入，避免覆盖第一次的真实时长
+  if (!thinkingDurations.value.has(stepId)) {
+    const next = new Map(thinkingDurations.value)
+    next.set(stepId, ms)
+    thinkingDurations.value = next
   }
 }
 
@@ -1087,13 +1142,22 @@ const getPreviewHints = (attachments?: { totalPages?: number; previewPages?: num
 
 const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
   if (item.type === 'step' && item.step) {
+    // message step 把思考块剥离后再作为 size dep——思考块单行呈现且展开容器为固定高度，
+    // reasoning 文本流式刷新不会改变列表项高度。仅在用户主动切换思考块展开/收起时才参与重算
+    let contentForSize: string | undefined = item.step.content
+    let thinkingExpandedForSize: boolean | undefined
+    if (item.step.type === 'message' && contentForSize?.includes('🤔')) {
+      contentForSize = parseThinking(contentForSize).body
+      thinkingExpandedForSize = expandedThinkingSteps.value.has(item.step.id)
+    }
     return [
-      item.step.content,
+      contentForSize,
       item.step.toolResult,
       item.step.isStreaming,
       item.step.images?.length,
       item.isFirstStep,
       isStandaloneAssistant.value,
+      thinkingExpandedForSize,
     ]
   }
   if (item.type === 'final_result' && item.group) return [item.group.finalResult]
@@ -1590,7 +1654,7 @@ watch(() => props.visible, (visible) => {
                 <div 
                   class="agent-step-inline"
                   :class="[
-                    item.step!.type,
+                    isInitialPreparingStep(item.step!) ? 'message' : item.step!.type,
                     item.step!.type === 'tool_call' ? getExecStatusClass(item.step!) : getRiskClass(item.step!.riskLevel),
                     {
                       'step-rejected': item.step!.content.includes('拒绝'),
@@ -1598,14 +1662,44 @@ watch(() => props.visible, (visible) => {
                     }
                   ]"
                 >
-                  <span class="step-icon">{{ getStepIcon(item.step!.type) }}</span>
+                  <span class="step-icon">{{ isInitialPreparingStep(item.step!) ? getStepIcon('message') : getStepIcon(item.step!.type) }}</span>
                   <div class="step-content">
-                    <div 
-                      v-if="item.step!.type === 'message'" 
-                      class="step-text step-analysis markdown-content"
-                      :class="{ 'is-streaming': item.step!.isStreaming }"
-                      v-html="renderMarkdown(item.step!.content)"
-                    ></div>
+                    <!-- 初始"正在准备..."占位：借用 message step 的整套视觉壳（agent-message-stack + ThinkingBlock 流式态），
+                         切换到真正的 message step 时只是 ThinkingBlock 文字内部的"正在准备..." → "思考中 N.Ns" 变化，外层布局完全不变 -->
+                    <div v-if="isInitialPreparingStep(item.step!)" class="agent-message-stack">
+                      <ThinkingBlock
+                        reasoning=""
+                        :is-streaming="true"
+                        :expanded="false"
+                        :started-at="item.step!.timestamp"
+                        :label="item.step!.content"
+                      />
+                    </div>
+                    <div v-else-if="item.step!.type === 'message'" class="agent-message-stack">
+                      <ThinkingBlock
+                        v-if="parseThinking(item.step!.content).thinking"
+                        :reasoning="parseThinking(item.step!.content).thinking!.reasoning"
+                        :is-streaming="!parseThinking(item.step!.content).thinking!.isDone"
+                        :expanded="isThinkingExpanded(item.step!.id)"
+                        :started-at="item.step!.timestamp"
+                        :cached-duration-ms="getCachedThinkingDuration(item.step!.id)"
+                        @toggle="toggleThinkingExpand(item.step!.id)"
+                        @finalize="cacheThinkingDuration(item.step!.id, $event)"
+                      />
+                      <div
+                        v-if="parseThinking(item.step!.content).body"
+                        class="step-text step-analysis markdown-content"
+                        :class="{ 'is-streaming': item.step!.isStreaming }"
+                        v-html="renderMarkdown(parseThinking(item.step!.content).body)"
+                      ></div>
+                      <!-- 任务完成尾注：作为 message step 的尾巴，仅在 group 完成且这是 group 的最后一个
+                           message step 时显示。任务完成那一刻 group.finalResult 设置 → 尾注从 stack 末尾
+                           "长出"几像素，不引起独立 item 出现/消失，避免列表重排跳动 -->
+                      <div v-if="shouldShowTaskCompleteFooter(item)" class="agent-final-footer">
+                        <span class="agent-final-footer-icon">✓</span>
+                        <span>{{ t('ai.taskComplete') }}</span>
+                      </div>
+                    </div>
                     <div v-else-if="item.step!.type === 'asking'" class="step-text asking-content">
                       <div class="asking-question">{{ item.step!.content }}</div>
                       <div v-if="item.step!.toolArgs?.default_value" class="asking-default">
@@ -1749,10 +1843,11 @@ watch(() => props.visible, (visible) => {
                 </div>
               </div>
 
-              <!-- 最终结果 -->
-              <div v-else-if="item.type === 'final_result'">
-                <!-- 失败 / 中断：保留带色卡片，加淡入动画 -->
-                <div v-if="item.group!.finalResult!.startsWith('❌') || item.group!.finalResult!.startsWith('⚠️')" class="message assistant">
+              <!-- 最终结果：仅失败 / 中断时渲染独立卡片（含错误信息）；
+                   成功时不渲染——message step 已经完整呈现思考块 + 正文，
+                   独立的"任务完成"卡反而会引起列表跳动。 -->
+              <div v-else-if="item.type === 'final_result' && (item.group!.finalResult!.startsWith('❌') || item.group!.finalResult!.startsWith('⚠️'))">
+                <div class="message assistant">
                   <div class="message-wrapper agent-final-wrapper">
                     <div
                       class="message-content agent-final-content"
@@ -1763,22 +1858,6 @@ watch(() => props.visible, (visible) => {
                         <span class="final-title">{{ item.group!.finalResult!.startsWith('❌') ? t('ai.taskFailed') : t('ai.taskAborted') }}</span>
                       </div>
                       <div class="agent-final-body markdown-content" v-html="renderMarkdown(item.group!.finalResult!.replace(/^[❌⚠️]\s*(Agent\s*(执行失败|运行出错)[:\s]*)?/, ''))"></div>
-                    </div>
-                  </div>
-                </div>
-                <!-- 成功：沿用 step 的时间线样式，仅在下方浮出一条"已完成"尾注 -->
-                <div v-else class="agent-step-virtual" :class="{ 'first-step': item.isFirstStep }">
-                  <div class="agent-step-inline message">
-                    <span class="step-icon">{{ getStepIcon('message') }}</span>
-                    <div class="step-content">
-                      <div
-                        class="step-text step-analysis markdown-content"
-                        v-html="renderMarkdown(item.group!.finalResult!.replace(/^✅\s*/, ''))"
-                      ></div>
-                      <div class="agent-final-footer">
-                        <span class="agent-final-footer-icon">✓</span>
-                        <span>{{ t('ai.taskComplete') }}</span>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -4071,6 +4150,30 @@ watch(() => props.visible, (visible) => {
   min-width: 0;
   /* 限制重绘范围，减少流式输出时的布局抖动 */
   contain: layout style;
+}
+
+/* message step 的"思考块 + 正文"垂直栈：用 flex gap 接管两者间距，
+   彻底消除原本依赖 margin collapse（思考块 +4 + 正文 -4 = 0）的不稳定布局。
+   流式 → 完成切换时 marked 渲染节点变化会让 collapse 条件失效引起 ~4px 跳变，
+   gap 与 margin collapse 互不干涉，间距永远恒定。 */
+.agent-message-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.agent-message-stack > .step-text.step-analysis {
+  margin: 0;
+}
+
+.agent-message-stack :deep(.thinking-block) {
+  margin: 0;
+}
+
+/* footer 自身的 margin-top: 6px 在 stack 内会和 gap 叠加；让 stack gap 接管 */
+.agent-message-stack > .agent-final-footer {
+  margin-top: 0;
 }
 
 .step-text {

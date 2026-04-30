@@ -1222,7 +1222,12 @@ describe('Agent step callbacks', () => {
   })
 
   it('should call onStep for initial thinking step', async () => {
-    const onStep = vi.fn()
+    // 在调用瞬间 snapshot type，避免后续 updateStep 把 initial thinking step 改造为 message 时
+    // 通过对象引用回溯影响断言（见 callAiWithStreaming 第一个 chunk 的 step 复用逻辑）
+    const stepTypes: string[] = []
+    const onStep = vi.fn((_runId: string, step: { type: string }) => {
+      stepTypes.push(step.type)
+    })
     
     mockAiService.chatWithToolsStream.mockImplementation(
       (_messages, _tools, onChunk, _onToolCall, onDone) => {
@@ -1240,11 +1245,9 @@ describe('Agent step callbacks', () => {
     // 应该至少调用一次 onStep
     expect(onStep).toHaveBeenCalled()
     
-    // 第一个步骤是 user_task（后端统一生成），第二个是 thinking
-    const firstCall = onStep.mock.calls[0]
-    expect(firstCall[1].type).toBe('user_task')
-    const secondCall = onStep.mock.calls[1]
-    expect(secondCall[1].type).toBe('thinking')
+    // 第一个步骤是 user_task（后端统一生成），第二个是 thinking 占位（"正在准备..."）
+    expect(stepTypes[0]).toBe('user_task')
+    expect(stepTypes[1]).toBe('thinking')
   })
 
   it('should call onStep for message step', async () => {

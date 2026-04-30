@@ -393,21 +393,9 @@ export function useAgentMode(
     }
 
     
-    // 去除步骤中与 finalResult 重复的最后一个 message
-    // 后端已在 callAiWithStreaming 的 onDone 中将推理模型的步骤内容重建为仅含推理，
-    // 此处作为兜底：精确匹配（非推理模型）+ endsWith 匹配（推理模型兜底）
-    for (const group of groups) {
-      if (group.finalResult && group.steps.length > 0) {
-        const lastStep = group.steps[group.steps.length - 1]
-        if (lastStep.type === 'message') {
-          if (lastStep.content === group.finalResult) {
-            group.steps = group.steps.slice(0, -1)
-          } else if (group.finalResult.length >= 20 && lastStep.content.endsWith(group.finalResult)) { // 20 字符阈值避免短文本误匹配
-            group.steps = group.steps.slice(0, -1)
-          }
-        }
-      }
-    }
+    // 不再删除"跟 finalResult 重复"的最后一个 message step：
+    // 现在 message step 始终保留完整内容（思考块 + 正文），成功的 final_result 不再单独渲染卡片，
+    // 删除 message step 反而会让正文连同思考块一起消失。失败/中断的 final_result 才独立成卡。
     
     // 诊断日志：仅在远程 tab 且有变化时打印
     const tab = currentTab.value
@@ -468,9 +456,15 @@ export function useAgentMode(
       }
 
       if (group.finalResult) {
-        // 若 group 没有其它步骤（典型的纯对话场景），让 final_result 承担"首条"标识，
-        // 以便渲染 standalone 头像，避免从流式 → 完成时头像消失
-        items.push({ id: `final_${group.id}`, type: 'final_result', group, size: 80, isFirstStep: group.steps.length === 0 })
+        // 失败 / 中断的 final_result 才作为独立卡片渲染（包含错误信息）；
+        // 成功的 final_result 不再渲染——message step 已经完整呈现思考块 + 正文，
+        // 独立"任务完成"卡反而会引起列表跳动。
+        const isFailureFinal = group.finalResult.startsWith('❌') || group.finalResult.startsWith('⚠️')
+        if (isFailureFinal) {
+          // 若 group 没有其它步骤（典型的纯对话场景），让 final_result 承担"首条"标识，
+          // 以便渲染 standalone 头像，避免从流式 → 完成时头像消失
+          items.push({ id: `final_${group.id}`, type: 'final_result', group, size: 80, isFirstStep: group.steps.length === 0 })
+        }
       }
     }
 

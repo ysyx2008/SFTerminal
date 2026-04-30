@@ -1735,7 +1735,9 @@ export abstract class Agent {
    * @param streamingExecutor 可选的流式工具执行器，传入时会在流式过程中提前启动工具执行
    */
   protected async callAiWithStreaming(run: AgentRun, streamingExecutor?: StreamingToolExecutor): Promise<ChatWithToolsResult> {
-    const streamStepId = this.generateId()
+    // 用 let 而非 const：第一次 onChunk 时若 initial "正在准备..." step 还在，
+    // 会把 streamStepId 复用为 initialStepId，让前端 list item identity 保持不变（详见 onChunk 分支）
+    let streamStepId = this.generateId()
     let streamContent = ''
     let lastContentUpdate = 0
     let pendingUpdate = false
@@ -1806,22 +1808,31 @@ export abstract class Agent {
           streamContent += chunk
           const now = Date.now()
           
-          // 第一次收到内容时，先创建流式步骤，再移除初始"正在准备..."步骤，
-          // 避免前端 steps 出现瞬时为 0 的中间态。
+          // 第一次收到内容：优先复用 initial "正在准备..." step 的 id 把它原地改造为 message
+          // 流式态。这样前端只看到一次 updateStep（type/content 变化），list item identity 不变，
+          // 不会经历"先 add new + 再 remove old"两步 reactive 更新带来的 unmount/mount 闪动。
+          // 配合前端把 initial preparing 渲染成跟 message + ThinkingBlock 完全一致的视觉壳，
+          // 用户感知到的就是文字"正在准备..." → "思考中 N.Ns"无缝切换，整体持续往下输出。
           if (!streamStepCreated) {
             streamStepCreated = true
             // 重试成功：把上一次的"正在重试..."提示定稿（保留卡片但停掉 spinner）
             finalizeRetryStep()
-            // 立即创建步骤，确保 timestamp 在工具结果之前
-            this.addStep({
-              id: streamStepId,
-              type: 'message',
-              content: streamContent,
-              isStreaming: true
-            })
             if (run.initialStepId) {
-              this.removeStep(run.initialStepId)
+              streamStepId = run.initialStepId
+              this.updateStep(streamStepId, {
+                type: 'message',
+                content: streamContent,
+                isStreaming: true
+              })
               run.initialStepId = undefined
+            } else {
+              // initial step 不存在的边角场景（如未来某个分支提前清理过）：退化为 addStep
+              this.addStep({
+                id: streamStepId,
+                type: 'message',
+                content: streamContent,
+                isStreaming: true
+              })
             }
             lastContentUpdate = Date.now()
             return
@@ -1879,16 +1890,10 @@ export abstract class Agent {
           }
           // 去重：部分 API 代理可能导致连续出现内容相同的思考块，只保留第一个
           finalContent = deduplicateThinkingBlocks(finalContent)
-          // 当模型产生了推理+回复且没有工具调用时（即这是最终回复），
-          // 将步骤内容重建为仅包含推理部分。回复内容会由 finalizeRun 作为 final_result 展示，
-          // 避免执行步骤中的 message 和 final_result 重复显示同一段回复。
-          //
-          // 例外：请求被中止时（用户在 AI 输出过程中发送了新消息），后续不会走到 finalizeRun 的
-          // final_result 分支，而是直接继续下一轮对话。此时若抹掉正文，用户已经看到的回复就会凭空消失，
-          // 只剩下折叠的思考卡。按用户预期"立刻打断但保留已输出正文"，aborted 时保持 streamContent 原样。
-          if (!result.aborted && result.reasoning_content?.trim() && result.content && !result.tool_calls?.length) {
-            finalContent = `<details>\n<summary>🤔 <strong>${t('ai.thinking_process')}</strong></summary>\n\n<blockquote>\n\n${result.reasoning_content}\n\n</blockquote>\n</details>`
-          }
+          // message step 内容保持完整（思考块 + 正文），不再剥离正文给 final_result。
+          // 前端只渲染 message step（含完整内容），失败/中断的 final_result 才以独立卡片呈现，
+          // 成功的 final_result 不再渲染——这样流式 → 完成切换时只有 ThinkingBlock 从流式态
+          // 切到完成态，正文位置和下方布局完全不变，达到"持续往下输出"的稳定感。
           if (finalContent && streamStepCreated) {
             this.updateStep(streamStepId, {
               type: 'message',
@@ -2010,6 +2015,8 @@ export abstract class Agent {
           if (streamStepCreated) {
             this.removeStep(streamStepId)
             streamStepCreated = false
+            // streamStepId 可能复用过 initialStepId，这里重新生成避免下次 addStep 撞 id
+            streamStepId = this.generateId()
           }
           this.discardPreToolCallSteps(run)
           // 重试时中止已启动的流式工具执行

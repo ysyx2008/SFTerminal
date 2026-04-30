@@ -1383,6 +1383,13 @@ export default {
     subAgentFailed: 'Failed',
     subAgentShowResult: 'Show result',
     subAgentHideResult: 'Hide result',
+    // Thinking block (reasoning model thinking shown as single line)
+    thinking: {
+      streaming: 'Thinking',
+      done: 'Thought',
+      clickShow: 'Show details',
+      clickHide: 'Hide details'
+    },
     // Analysis related (executed via Agent)
     analyzeErrorPrompt: 'Please help me analyze this error:',
     analyzeOutputPrompt: 'Please help me analyze this terminal output:',

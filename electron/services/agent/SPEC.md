@@ -291,13 +291,20 @@ run(message, context, options)
 - **解析失败不回退**：AI 还没流完字段时保留上一次的缓存内容，避免"闪一下就消失"
 - **回归保护**：`__tests__/pre-tool-call-display.test.ts` 固定了所有关键契约（预创建范围、字符数阈值、渲染格式、path 占位行为、嵌套数组容错）。本承诺曾在 commit `4aeabb1a` 的重构中丢失，测试是防止再次丢失的机械护栏
 
-### 思考过程折叠时机（UX 承诺）
+### 思考过程呈现（UX 承诺）
 
-推理模型（DeepSeek-R1、豆包思考、Claude Thinking 等）的 `reasoning_content` 在流式阶段以 `<details open>...</details>` 的 HTML 块呈现，让用户看到 AI 正在思考。**一旦 reasoning 结束、AI 切换到 content 或 tool_calls 阶段，思考卡必须立刻折叠**；否则用户会误以为"思考还没结束"。
+推理模型（DeepSeek-R1、豆包思考、Claude Thinking 等）的 `reasoning_content` 由后端 `ai.service.ts` 包装成固定模板的 HTML 块写进 streamContent：
 
-- **检测点**：`callAiWithStreaming` 的 `sendContentUpdate` 里。当 `streamContent` 同时包含 `<details open>` 和 `</details>`（即 reasoning 块已闭合），立即把 `<details open>` 替换为 `<details>`，UI 下次 render 时 details 默认折叠
-- **替换幂等**：onDone 里对 `streamContent` 做同样的 replace 作为兜底（纯 reasoning 无 content/tool_calls 的场景、或替换逻辑未被触发时）
-- **不能等到整段流结束才折叠**：有长参数工具（如 `write_text_file` 的大 content）时，AI 从"思考完"到"整段流结束"之间可能隔数秒到数十秒，此时思考卡继续展开会给用户"还在思考"的错觉。修复前曾在 commit `4aeabb1a` 引入 tool_call 预卡片后，因 tool_calls 参数流式变长、这个问题才暴露
+- 流式中：`<details open>\n<summary>🤔 ...</summary>\n\n<blockquote>\n\n[reasoning so far]`（未闭合）
+- 完成后：`<details>\n<summary>🤔 ...</summary>\n\n<blockquote>\n\n[reasoning]\n\n</blockquote>\n</details>`（闭合）
+
+后端逻辑保持不变：`callAiWithStreaming` 的 `sendContentUpdate` 里仍然在检测到 `</details>` 闭合后立即把 `<details open>` 替换为 `<details>`，onDone 做同样替换作为兜底。这是后端持久化数据格式的承诺（IM 端、Web 端、历史记录都依赖这个格式）。
+
+**前端呈现**：AiPanel 不再用原生 `<details>` 渲染，而是把思考块从 `message.content` 抽出，交给 `<ThinkingBlock>` 组件单行呈现（streaming/done 两态）。这样做的目的是消除 DynamicScroller 的高度抖动——原生 `<details>` 折叠是瞬时无动画的，每次 v-html 重渲染时元素都被重建，导致流式期间反复展开/折叠引发列表项 size 反复重算。
+
+- **拆分入口**：`src/utils/thinking-block.ts` 的 `parseThinking(content)`，按上面两种模板正则匹配
+- **size dep 剥离**：`getItemSizeDeps` 中 message step 的 `content` 经过 `parseThinking` 剥离思考块后再作为 size dep，reasoning 文本变化不再触发列表项重算
+- **行为约束**：流式中只显示最后一行 reasoning（CSS `text-overflow: ellipsis` 自适应容器宽度，不需要硬编码字符数）；完成后默认收起，仅在用户主动点击时内嵌展开
 
 ### 技能系统 (`skills/`)
 
