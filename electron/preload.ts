@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { AiProfile, JumpHostConfig, PtyOptions, SftpConfig, SshConfig } from '@shared/types'
+import type { AiProfile, DocumentParseProgress, JumpHostConfig, PtyOptions, SftpConfig, SshConfig } from '@shared/types'
 
 export type { AiProfile, JumpHostConfig, PtyOptions, SftpConfig, SshConfig }
 
@@ -1317,6 +1317,7 @@ const electronAPI = {
       maxTextLength?: number
       extractMetadata?: boolean
       extractImages?: boolean
+      requestId?: string
     }) => ipcRenderer.invoke('document:parseMultiple', files, options) as Promise<Array<{
       filename: string
       filePath?: string
@@ -1330,6 +1331,14 @@ const electronAPI = {
       metadata?: Record<string, string>
       error?: string
     }>>,
+
+    onParseProgress: (callback: (progress: DocumentParseProgress) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, progress: DocumentParseProgress) => callback(progress)
+      ipcRenderer.on('document:parseProgress', handler)
+      return () => {
+        ipcRenderer.removeListener('document:parseProgress', handler)
+      }
+    },
 
     // 格式化为 AI 上下文
     formatAsContext: (docs: Array<{

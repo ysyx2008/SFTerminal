@@ -510,6 +510,31 @@ describe('DocumentParserService', () => {
         fs.unlinkSync(file1)
       }
     })
+
+    it('批量解析应发送每个文件的进度事件', async () => {
+      const tempDir = os.tmpdir()
+      const file1 = path.join(tempDir, `batch-progress-${crypto.randomUUID()}.txt`)
+      fs.writeFileSync(file1, '进度测试')
+      const events: Array<{ requestId: string; fileIndex: number; status: string; phase: string; percent: number }> = []
+
+      try {
+        const results = await service.parseDocuments([
+          { name: 'ok.txt', path: file1, size: fs.statSync(file1).size },
+          { name: 'missing.txt', path: '/tmp/no-such-file-' + crypto.randomUUID(), size: 100 }
+        ], {
+          requestId: 'test-progress',
+          onProgress: (progress) => events.push(progress)
+        })
+
+        expect(results).toHaveLength(2)
+        expect(events.some(e => e.requestId === 'test-progress' && e.fileIndex === 0 && e.status === 'queued')).toBe(true)
+        expect(events.some(e => e.fileIndex === 1 && e.status === 'queued')).toBe(true)
+        expect(events.some(e => e.fileIndex === 0 && e.status === 'completed' && e.percent === 100)).toBe(true)
+        expect(events.some(e => e.fileIndex === 1 && e.status === 'failed' && e.phase === 'failed')).toBe(true)
+      } finally {
+        fs.unlinkSync(file1)
+      }
+    })
   })
 
   describe('parseDocument - unknown 类型智能分流', () => {

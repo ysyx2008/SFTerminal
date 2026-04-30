@@ -3,7 +3,9 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2, Volume2 } from 'lucide-vue-next'
 import { useMentions } from '../composables/useMentions'
+import { toast } from '../composables/useToast'
 import type { ParsedDocument } from '../stores/terminal'
+import type { ParsingDocument } from '../composables/useDocumentUpload'
 
 interface ContextStats {
   tokenEstimate: number
@@ -31,6 +33,7 @@ const props = defineProps<{
   contextStats: ContextStats
   cacheBarWidth: number
   uploadedDocs: UploadedDoc[]
+  parsingDocs: ParsingDocument[]
   pendingImages: PendingImage[]
   isAttaching: boolean
   isAgentRunning: boolean
@@ -181,6 +184,10 @@ const handleInputKeyDown = (event: KeyboardEvent) => {
 
 const handleSend = async () => {
   if (isComposing.value) return
+  if (props.isAttaching) {
+    toast.warning(t('ai.parsingPleaseWait'))
+    return
+  }
   closeMentionMenu()
 
   if (!inputText.value.trim() && !props.hasImages && props.canSendEmpty && props.isAgentRunning) {
@@ -220,6 +227,20 @@ const getDocIcon = (fileType: string) => {
   return '📄'
 }
 
+const parsingSummary = computed(() => {
+  const total = props.parsingDocs.length
+  const done = props.parsingDocs.filter(doc => doc.status === 'completed' || doc.status === 'failed').length
+  return t('ai.parsingDocsSummary', { done, total })
+})
+
+const getParsePhaseLabel = (doc: ParsingDocument) => {
+  if (doc.error) return doc.error
+  if (doc.current !== undefined && doc.total !== undefined && doc.total > 0) {
+    return `${t(`ai.documentParsePhase.${doc.phase}`)} ${doc.current}/${doc.total}`
+  }
+  return doc.message || t(`ai.documentParsePhase.${doc.phase}`)
+}
+
 defineExpose({
   focusInput,
   appendText,
@@ -235,6 +256,33 @@ const handleSendClick = (event: MouseEvent) => {
 </script>
 
 <template>
+  <div v-if="parsingDocs.length > 0" class="parsing-docs">
+    <div class="uploaded-docs-header">
+      <span class="uploaded-docs-title">{{ t('ai.parsingDocs') }} · {{ parsingSummary }}</span>
+    </div>
+    <div class="parsing-docs-list">
+      <div
+        v-for="doc in parsingDocs"
+        :key="`${doc.requestId}-${doc.fileIndex}`"
+        class="parsing-doc-item"
+        :class="{ 'has-error': doc.status === 'failed', completed: doc.status === 'completed' }"
+      >
+        <div class="parsing-doc-main">
+          <span class="doc-icon">{{ doc.status === 'completed' ? '✓' : doc.status === 'failed' ? '⚠' : '📄' }}</span>
+          <span class="doc-name" :title="doc.filename">{{ doc.filename }}</span>
+          <span class="doc-size">{{ formatFileSize(doc.fileSize) }}</span>
+          <span class="parse-percent">{{ Math.round(doc.percent) }}%</span>
+        </div>
+        <div class="parse-progress-track">
+          <div class="parse-progress-bar" :style="{ width: Math.max(4, Math.min(100, doc.percent)) + '%' }"></div>
+        </div>
+        <div class="parse-phase" :title="getParsePhaseLabel(doc)">
+          {{ getParsePhaseLabel(doc) }}
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div v-if="uploadedDocs.length > 0" class="uploaded-docs">
     <div class="uploaded-docs-header">
       <span class="uploaded-docs-title">📎 {{ t('ai.uploadedDocs') }} ({{ uploadedDocs.length }})</span>
@@ -399,6 +447,7 @@ const handleSendClick = (event: MouseEvent) => {
       <button
         v-else-if="isAgentRunning && inputText.trim()"
         class="send-btn send-btn-supplement"
+        :disabled="isAttaching"
         :title="t('ai.sendSupplement')"
         @click="handleSendClick"
       >
@@ -407,6 +456,7 @@ const handleSendClick = (event: MouseEvent) => {
       <button
         v-else-if="isAgentRunning && canSendEmpty"
         class="send-btn send-btn-default"
+        :disabled="isAttaching"
         :title="t('ai.useDefault')"
         @click="handleSendClick"
       >
@@ -423,7 +473,7 @@ const handleSendClick = (event: MouseEvent) => {
       <button
         v-else
         class="send-btn send-btn-agent"
-        :disabled="!inputText.trim() && !hasImages"
+        :disabled="isAttaching || (!inputText.trim() && !hasImages)"
         :title="t('ai.executeTask')"
         @click="handleSendClick"
       >
@@ -498,6 +548,12 @@ const handleSendClick = (event: MouseEvent) => {
   border-top: 1px solid var(--border-color);
 }
 
+.parsing-docs {
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-color);
+}
+
 .uploaded-docs-header {
   display: flex;
   align-items: center;
@@ -532,6 +588,78 @@ const handleSendClick = (event: MouseEvent) => {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.parsing-docs-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 6px;
+}
+
+.parsing-doc-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.parsing-doc-item.has-error {
+  border-color: rgba(var(--color-error-rgb), 0.5);
+  background: rgba(var(--color-error-rgb), 0.05);
+}
+
+.parsing-doc-item.completed {
+  border-color: rgba(var(--color-success-rgb), 0.45);
+}
+
+.parsing-doc-main {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 11px;
+}
+
+.parse-percent {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.parse-progress-track {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.parse-progress-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-primary);
+  transition: width 0.2s ease;
+}
+
+.parsing-doc-item.has-error .parse-progress-bar {
+  background: var(--color-error);
+}
+
+.parsing-doc-item.completed .parse-progress-bar {
+  background: var(--color-success);
+}
+
+.parse-phase {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .uploaded-doc-item {

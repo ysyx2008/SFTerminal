@@ -1051,6 +1051,7 @@ interface Window {
         maxTextLength?: number
         extractMetadata?: boolean
         extractImages?: boolean
+        requestId?: string
       }) => Promise<Array<{
         filename: string
         filePath?: string
@@ -1064,6 +1065,7 @@ interface Window {
         metadata?: Record<string, string>
         error?: string
       }>>
+      onParseProgress: (callback: (progress: import('@shared/types').DocumentParseProgress) => void) => () => void
       formatAsContext: (docs: Array<{
         filename: string
         fileType: string

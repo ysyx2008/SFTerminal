@@ -77,8 +77,26 @@ async function loadCanvas() {
 
 const PDF_POINTS_PER_INCH = 72
 const MAX_RENDER_PAGES = 10
+const PROGRESS_PERCENT_STEP = 5
 
-async function parsePdf({ filePath, maxTextLength }) {
+/**
+ * 为高频按页进度回调做节流：percent 至少跨 5% 或到达末页才下发，
+ * 避免大 PDF 每页都发 IPC 消息（数百次）拖累渲染进程。
+ */
+function makeThrottledProgress(send) {
+  let lastPercent = -PROGRESS_PERCENT_STEP
+  return (payload) => {
+    const percent = payload?.percent ?? 0
+    const isLast = payload?.current && payload?.total && payload.current === payload.total
+    if (isLast || percent - lastPercent >= PROGRESS_PERCENT_STEP) {
+      lastPercent = percent
+      send(payload)
+    }
+  }
+}
+
+async function parsePdf({ filePath, maxTextLength }, sendProgress) {
+  const progress = makeThrottledProgress(sendProgress)
   const pdfjs = await loadPdfjs()
   const data = new Uint8Array(fs.readFileSync(filePath))
   const doc = await pdfjs.getDocument({
@@ -104,6 +122,12 @@ async function parsePdf({ filePath, maxTextLength }) {
       textParts.push(pageText)
       extractedPages = i
       totalChars += pageText.length
+      progress({
+        phase: 'extracting-text',
+        current: i,
+        total: pageCount,
+        percent: Math.round((i / Math.max(pageCount, 1)) * 100),
+      })
       if (totalChars >= maxTextLength) break
     }
   } finally {
@@ -117,7 +141,8 @@ async function parsePdf({ filePath, maxTextLength }) {
   }
 }
 
-async function pdfHasImages({ filePath, pageCount }) {
+async function pdfHasImages({ filePath, pageCount }, sendProgress) {
+  const progress = makeThrottledProgress(sendProgress)
   const pdfjs = await loadPdfjs()
   const OPS = pdfjs.OPS
   const IMAGE_OPS = new Set([OPS.paintImageXObject, OPS.paintImageMaskXObject, OPS.paintInlineImageXObject])
@@ -129,6 +154,12 @@ async function pdfHasImages({ filePath, pageCount }) {
     for (let i = 1; i <= pageCount; i++) {
       const page = await doc.getPage(i)
       const ops = await page.getOperatorList()
+      progress({
+        phase: 'detecting-images',
+        current: i,
+        total: pageCount,
+        percent: Math.round((i / Math.max(pageCount, 1)) * 100),
+      })
       for (const fn of ops.fnArray) {
         if (IMAGE_OPS.has(fn)) return true
       }
@@ -139,7 +170,7 @@ async function pdfHasImages({ filePath, pageCount }) {
   }
 }
 
-async function renderPdfPages({ filePath, pageNumbers, dpi = 200, quality = 85 }) {
+async function renderPdfPages({ filePath, pageNumbers, dpi = 200, quality = 85 }, progress) {
   const pdfjs = await loadPdfjs()
   const canvas = await loadCanvas()
   if (!canvas) throw new Error('@napi-rs/canvas not available in PDF worker')
@@ -169,7 +200,8 @@ async function renderPdfPages({ filePath, pageNumbers, dpi = 200, quality = 85 }
   }
 
   try {
-    for (const pageNum of pagesToRender) {
+    for (let index = 0; index < pagesToRender.length; index++) {
+      const pageNum = pagesToRender[index]
       if (pageNum < 1 || pageNum > totalPages) continue
       const page = await doc.getPage(pageNum)
       const viewport = page.getViewport({ scale })
@@ -182,6 +214,12 @@ async function renderPdfPages({ filePath, pageNumbers, dpi = 200, quality = 85 }
       await page.render({ canvasContext: ctx, viewport, canvasFactory }).promise
       const buf = c.toBuffer('image/jpeg', quality)
       images.push(`data:image/jpeg;base64,${buf.toString('base64')}`)
+      progress({
+        phase: 'rendering-preview',
+        current: index + 1,
+        total: pagesToRender.length,
+        percent: Math.round(((index + 1) / Math.max(pagesToRender.length, 1)) * 100),
+      })
     }
   } finally {
     doc.destroy()
@@ -196,19 +234,24 @@ function send(id, success, result, error) {
   process.parentPort.postMessage({ id, success, result, error })
 }
 
+function sendProgress(id, progress) {
+  process.parentPort.postMessage({ id, type: 'progress', progress })
+}
+
 process.parentPort.on('message', async (e) => {
   const { type, data, id } = e.data
   try {
     let result
+    const progress = (payload) => sendProgress(id, payload)
     switch (type) {
       case 'parsePdf':
-        result = await parsePdf(data)
+        result = await parsePdf(data, progress)
         break
       case 'pdfHasImages':
-        result = await pdfHasImages(data)
+        result = await pdfHasImages(data, progress)
         break
       case 'renderPdfPages':
-        result = await renderPdfPages(data)
+        result = await renderPdfPages(data, progress)
         break
       default:
         send(id, false, undefined, `Unknown type: ${type}`)

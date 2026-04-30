@@ -171,6 +171,7 @@ const currentTabId = toRef(props, 'tabId')
 // 文档上传（传入 currentTabId，每个终端独立管理文档）
 const {
   uploadedDocs,
+  parsingDocs,
   isUploadingDocs,
   isDraggingOver,
   handleDroppedFiles,
@@ -1840,6 +1841,7 @@ watch(() => props.visible, (visible) => {
         :context-stats="contextStats"
         :cache-bar-width="cacheBarWidth"
         :uploaded-docs="uploadedDocs"
+        :parsing-docs="parsingDocs"
         :pending-images="pendingImages"
         :is-attaching="isAttaching"
         :is-agent-running="isAgentRunning"

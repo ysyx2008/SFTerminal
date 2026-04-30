@@ -7,6 +7,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { app, utilityProcess, type UtilityProcess } from 'electron'
 import { createLogger } from '../utils/logger'
+import type { DocumentParsePhase, DocumentParseProgress } from '@shared/types'
 
 const log = createLogger('DocumentParser')
 
@@ -81,6 +82,27 @@ export interface ParseOptions {
   extractMetadata?: boolean
   /** 是否提取文档中的嵌入图片（需要视觉模型支持），默认 false */
   extractImages?: boolean
+  /** 本次解析请求 ID（用于前端进度事件关联） */
+  requestId?: string
+}
+
+type ProgressReporter = (progress: Omit<DocumentParseProgress, 'requestId' | 'fileIndex' | 'fileCount' | 'filename' | 'fileSize'>) => void
+
+interface InternalParseOptions extends ParseOptions {
+  onProgress?: ProgressReporter
+}
+
+interface BatchParseOptions extends ParseOptions {
+  onProgress?: (progress: DocumentParseProgress) => void
+}
+
+/** PDF worker → main 进度消息 payload（与 pdf-worker.js 中 sendProgress 对齐） */
+interface PdfWorkerProgress {
+  phase?: string
+  percent?: number
+  current?: number
+  total?: number
+  message?: string
 }
 
 // 默认选项
@@ -88,7 +110,8 @@ const DEFAULT_OPTIONS: Required<ParseOptions> = {
   maxFileSize: 10 * 1024 * 1024, // 10MB
   maxTextLength: 100000, // 100K 字符
   extractMetadata: true,
-  extractImages: false
+  extractImages: false,
+  requestId: ''
 }
 
 export class DocumentParserService {
@@ -99,7 +122,11 @@ export class DocumentParserService {
 
   // PDF worker (utilityProcess) — Electron 环境用子进程隔离 pdfjs-dist
   private pdfWorker: UtilityProcess | null = null
-  private pdfWorkerCallbacks = new Map<string, { resolve: (v: any) => void; reject: (e: Error) => void }>()
+  private pdfWorkerCallbacks = new Map<string, {
+    resolve: (v: any) => void
+    reject: (e: Error) => void
+    onProgress?: (progress: PdfWorkerProgress) => void
+  }>()
   private pdfWorkerMsgId = 0
 
   constructor() {
@@ -190,10 +217,11 @@ export class DocumentParserService {
   /**
    * 解析单个文档
    */
-  async parseDocument(file: UploadedFile, options?: ParseOptions): Promise<ParsedDocument> {
+  async parseDocument(file: UploadedFile, options?: InternalParseOptions): Promise<ParsedDocument> {
     await this.init()
     
     const opts = { ...DEFAULT_OPTIONS, ...options }
+    const report = options?.onProgress
     const startTime = Date.now()
     const fileType = this.detectFileType(file.name, file.mimeType)
 
@@ -208,6 +236,7 @@ export class DocumentParserService {
     }
 
     try {
+      report?.({ status: 'parsing', phase: 'loading', percent: 3 })
       if (!fs.existsSync(file.path)) {
         throw new Error(`文件不存在: ${file.path}`)
       }
@@ -227,12 +256,12 @@ export class DocumentParserService {
           if (file.size > opts.maxFileSize) {
             throw new Error(`文件大小 ${this.formatFileSize(file.size)} 超过限制 ${this.formatFileSize(opts.maxFileSize)}`)
           }
-          if (fileType === 'pdf') await this.parsePdf(file.path, result, opts)
-          else if (fileType === 'docx') await this.parseDocx(file.path, result, opts)
-          else if (fileType === 'doc') await this.parseDoc(file.path, result, opts)
-          else if (fileType === 'xlsx' || fileType === 'xls') await this.parseExcel(file.path, result, opts)
-          else if (fileType === 'csv') await this.parseCsv(file.path, result, opts)
-          else await this.parseTextFile(file.path, result, opts)
+          if (fileType === 'pdf') await this.parsePdf(file.path, result, opts, report)
+          else if (fileType === 'docx') await this.parseDocx(file.path, result, opts, report)
+          else if (fileType === 'doc') await this.parseDoc(file.path, result, opts, report)
+          else if (fileType === 'xlsx' || fileType === 'xls') await this.parseExcel(file.path, result, opts, report)
+          else if (fileType === 'csv') await this.parseCsv(file.path, result, opts, report)
+          else await this.parseTextFile(file.path, result, opts, report)
           break
         }
         default: {
@@ -243,7 +272,7 @@ export class DocumentParserService {
           if (file.size > opts.maxFileSize) {
             throw new Error(`文件大小 ${this.formatFileSize(file.size)} 超过限制 ${this.formatFileSize(opts.maxFileSize)}`)
           }
-          await this.parseTextFile(file.path, result, opts)
+          await this.parseTextFile(file.path, result, opts, report)
           break
         }
       }
@@ -253,9 +282,11 @@ export class DocumentParserService {
         result.content = result.content.substring(0, opts.maxTextLength)
         result.content += `\n\n... [内容已截断，原文共 ${result.content.length} 字符]`
       }
+      report?.({ status: 'parsing', phase: 'formatting', percent: 98 })
 
     } catch (error) {
       result.error = error instanceof Error ? error.message : '解析失败'
+      report?.({ status: 'failed', phase: 'failed', percent: 100, error: result.error })
     }
 
     result.parseTime = Date.now() - startTime
@@ -265,15 +296,83 @@ export class DocumentParserService {
   /**
    * 批量解析文档
    */
-  async parseDocuments(files: UploadedFile[], options?: ParseOptions): Promise<ParsedDocument[]> {
+  async parseDocuments(files: UploadedFile[], options?: BatchParseOptions): Promise<ParsedDocument[]> {
     const results: ParsedDocument[] = []
+    const requestId = options?.requestId || `doc_parse_${Date.now()}`
+    const onProgress = options?.onProgress
+
+    const emitFileProgress = (file: UploadedFile, fileIndex: number, progress: Parameters<ProgressReporter>[0]) => {
+      const percent = Math.max(0, Math.min(100, Math.round(progress.percent)))
+      this.emitDocumentProgress(onProgress, {
+        requestId,
+        fileIndex,
+        fileCount: files.length,
+        filename: file.name,
+        fileSize: file.size,
+        ...progress,
+        percent
+      })
+    }
+
+    files.forEach((file, fileIndex) => {
+      this.emitDocumentProgress(onProgress, {
+        requestId,
+        fileIndex,
+        fileCount: files.length,
+        filename: file.name,
+        fileSize: file.size,
+        status: 'queued',
+        phase: 'queued',
+        percent: 0
+      })
+    })
     
-    for (const file of files) {
-      const result = await this.parseDocument(file, options)
+    for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+      const file = files[fileIndex]
+      const result = await this.parseDocument(file, {
+        ...options,
+        onProgress: (progress) => emitFileProgress(file, fileIndex, progress)
+      })
       results.push(result)
+      this.emitDocumentProgress(onProgress, {
+        requestId,
+        fileIndex,
+        fileCount: files.length,
+        filename: file.name,
+        fileSize: file.size,
+        status: result.error ? 'failed' : 'completed',
+        phase: result.error ? 'failed' : 'completed',
+        percent: 100,
+        error: result.error
+      })
     }
     
     return results
+  }
+
+  private emitDocumentProgress(
+    onProgress: ((progress: DocumentParseProgress) => void) | undefined,
+    progress: DocumentParseProgress
+  ): void {
+    onProgress?.(progress)
+  }
+
+  private reportProgress(
+    report: ProgressReporter | undefined,
+    phase: DocumentParsePhase,
+    percent: number,
+    current?: number,
+    total?: number,
+    message?: string
+  ): void {
+    report?.({
+      status: 'parsing',
+      phase,
+      percent,
+      current,
+      total,
+      message
+    })
   }
 
   // ── PDF worker lifecycle ──────────────────────────────────────
@@ -303,9 +402,20 @@ export class DocumentParserService {
     }
     if (!proc) return null
 
-    proc.on('message', (message: { id: string; success: boolean; result?: any; error?: string }) => {
+    proc.on('message', (message: {
+      id: string
+      type?: 'progress'
+      success?: boolean
+      result?: any
+      error?: string
+      progress?: PdfWorkerProgress
+    }) => {
       const cb = this.pdfWorkerCallbacks.get(message.id)
       if (!cb) return
+      if (message.type === 'progress') {
+        if (message.progress) cb.onProgress?.(message.progress)
+        return
+      }
       this.pdfWorkerCallbacks.delete(message.id)
       if (message.success) {
         cb.resolve(message.result)
@@ -327,7 +437,11 @@ export class DocumentParserService {
     return proc
   }
 
-  private sendToPdfWorker<T>(type: string, data: Record<string, unknown>): Promise<T> {
+  private sendToPdfWorker<T>(
+    type: string,
+    data: Record<string, unknown>,
+    onProgress?: (progress: PdfWorkerProgress) => void
+  ): Promise<T> {
     return new Promise((resolve, reject) => {
       const worker = this.ensurePdfWorker()
       if (!worker) {
@@ -335,7 +449,7 @@ export class DocumentParserService {
         return
       }
       const id = `pdf_${++this.pdfWorkerMsgId}`
-      this.pdfWorkerCallbacks.set(id, { resolve, reject })
+      this.pdfWorkerCallbacks.set(id, { resolve, reject, onProgress })
 
       worker.postMessage({ type, data, id })
 
@@ -360,13 +474,29 @@ export class DocumentParserService {
 
   // ── PDF parsing (delegates to worker, falls back to direct in CLI) ──
 
-  private async parsePdf(filePath: string, result: ParsedDocument, opts: Required<ParseOptions>): Promise<void> {
+  private async parsePdf(
+    filePath: string,
+    result: ParsedDocument,
+    opts: Required<ParseOptions>,
+    report?: ProgressReporter
+  ): Promise<void> {
     let parsed: { content: string; pageCount: number; totalPages: number }
     try {
-      parsed = await this.sendToPdfWorker('parsePdf', { filePath, maxTextLength: opts.maxTextLength })
+      parsed = await this.sendToPdfWorker('parsePdf', { filePath, maxTextLength: opts.maxTextLength }, (progress) => {
+        this.reportProgress(
+          report,
+          'extracting-text',
+          10 + ((progress.percent ?? 0) * 0.6),
+          progress.current,
+          progress.total,
+          progress.message
+        )
+      })
     } catch (err: any) {
       if (err?.message === '__NO_WORKER__') {
-        parsed = await this.parsePdfDirect(filePath, opts.maxTextLength)
+        parsed = await this.parsePdfDirect(filePath, opts.maxTextLength, (current, total) => {
+          this.reportProgress(report, 'extracting-text', 10 + (current / Math.max(total, 1)) * 60, current, total)
+        })
       } else {
         throw err
       }
@@ -382,7 +512,9 @@ export class DocumentParserService {
     if (!hasText && parsed.totalPages > 0) {
       const pagesToRender = Array.from({ length: Math.min(parsed.totalPages, PREVIEW_PAGES) }, (_, i) => i + 1)
       try {
-        const renderResult = await this.renderPdfPages(filePath, pagesToRender)
+        const renderResult = await this.renderPdfPages(filePath, pagesToRender, undefined, (current, total) => {
+          this.reportProgress(report, 'rendering-preview', 75 + (current / Math.max(total, 1)) * 20, current, total)
+        })
         result.images = renderResult.images
         result.totalPages = renderResult.totalPages
         result.error = undefined
@@ -401,10 +533,14 @@ export class DocumentParserService {
 
     if (hasText && opts.extractImages && parsed.totalPages > 0) {
       try {
-        const hasImages = await this.pdfHasImages(filePath, parsed.totalPages)
+        const hasImages = await this.pdfHasImages(filePath, parsed.totalPages, (current, total) => {
+          this.reportProgress(report, 'detecting-images', 70 + (current / Math.max(total, 1)) * 12, current, total)
+        })
         if (hasImages) {
           const pagesToRender = Array.from({ length: Math.min(parsed.totalPages, PREVIEW_PAGES) }, (_, i) => i + 1)
-          const renderResult = await this.renderPdfPages(filePath, pagesToRender)
+          const renderResult = await this.renderPdfPages(filePath, pagesToRender, undefined, (current, total) => {
+            this.reportProgress(report, 'rendering-preview', 82 + (current / Math.max(total, 1)) * 14, current, total)
+          })
           result.images = renderResult.images
           result.totalPages = renderResult.totalPages
           log.info(`Mixed PDF detected: ${parsed.totalPages} pages, has images, rendered ${renderResult.images.length} preview pages`)
@@ -421,12 +557,14 @@ export class DocumentParserService {
     }
   }
 
-  private async pdfHasImages(filePath: string, pageCount: number): Promise<boolean> {
+  private async pdfHasImages(filePath: string, pageCount: number, onPage?: (current: number, total: number) => void): Promise<boolean> {
     try {
-      return await this.sendToPdfWorker<boolean>('pdfHasImages', { filePath, pageCount })
+      return await this.sendToPdfWorker<boolean>('pdfHasImages', { filePath, pageCount }, (progress) => {
+        if (progress.current && progress.total) onPage?.(progress.current, progress.total)
+      })
     } catch (err: any) {
       if (err?.message === '__NO_WORKER__') {
-        return this.pdfHasImagesDirect(filePath, pageCount)
+        return this.pdfHasImagesDirect(filePath, pageCount, onPage)
       }
       throw err
     }
@@ -434,7 +572,11 @@ export class DocumentParserService {
 
   // ── Direct (in-process) fallbacks for CLI mode ──────────────
 
-  private async parsePdfDirect(filePath: string, maxTextLength: number): Promise<{ content: string; pageCount: number; totalPages: number }> {
+  private async parsePdfDirect(
+    filePath: string,
+    maxTextLength: number,
+    onPage?: (current: number, total: number) => void
+  ): Promise<{ content: string; pageCount: number; totalPages: number }> {
     if (!this.pdfjsLib) {
       this.pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
     }
@@ -450,13 +592,13 @@ export class DocumentParserService {
         const page = await doc.getPage(i)
         const content = await page.getTextContent()
         const pageText = content.items
-          .filter((item): item is { str: string } => 'str' in item)
-          .map(item => item.str)
+          .map(item => 'str' in item ? item.str : '')
           .join(' ')
           .trim()
         textContent.push(pageText)
         extractedPages = i
         totalChars += pageText.length
+        onPage?.(i, totalPages)
         if (totalChars >= maxTextLength) break
       }
     } finally {
@@ -465,7 +607,7 @@ export class DocumentParserService {
     return { content: textContent.join('\n\n').trim(), pageCount: extractedPages, totalPages }
   }
 
-  private async pdfHasImagesDirect(filePath: string, pageCount: number): Promise<boolean> {
+  private async pdfHasImagesDirect(filePath: string, pageCount: number, onPage?: (current: number, total: number) => void): Promise<boolean> {
     if (!this.pdfjsLib) {
       this.pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
     }
@@ -477,6 +619,7 @@ export class DocumentParserService {
       for (let i = 1; i <= pageCount; i++) {
         const page = await doc.getPage(i)
         const ops = await page.getOperatorList()
+        onPage?.(i, pageCount)
         for (const fn of ops.fnArray) {
           if (IMAGE_OPS.has(fn)) return true
         }
@@ -490,20 +633,24 @@ export class DocumentParserService {
   /**
    * 解析 Word 文档 (.docx)
    */
-  private async parseDocx(filePath: string, result: ParsedDocument, opts: Required<ParseOptions>): Promise<void> {
+  private async parseDocx(filePath: string, result: ParsedDocument, opts: Required<ParseOptions>, report?: ProgressReporter): Promise<void> {
     if (!this.mammoth) {
       throw new Error('Word 解析库未安装，请运行: npm install mammoth')
     }
 
+    this.reportProgress(report, 'converting', 20)
     if (opts.extractImages) {
       await this.parseDocxWithImages(filePath, result)
     } else {
       // convertToHtml → Markdown，保留表格等结构信息
       try {
+        this.reportProgress(report, 'converting', 45)
         const htmlResult = await this.mammoth.convertToHtml({ path: filePath })
+        this.reportProgress(report, 'formatting', 80)
         result.content = this.mammothHtmlToMarkdown(htmlResult.value)
         this.collectDocxWarnings(htmlResult.messages, result)
       } catch {
+        this.reportProgress(report, 'extracting-text', 55)
         const docxResult = await this.mammoth.extractRawText({ path: filePath })
         result.content = docxResult.value
         this.collectDocxWarnings(docxResult.messages, result)
@@ -655,15 +802,17 @@ export class DocumentParserService {
   /**
    * 解析 Word 文档 (.doc - 旧版格式)
    */
-  private async parseDoc(filePath: string, result: ParsedDocument, _opts: Required<ParseOptions>): Promise<void> {
+  private async parseDoc(filePath: string, result: ParsedDocument, _opts: Required<ParseOptions>, report?: ProgressReporter): Promise<void> {
     if (!this.WordExtractor) {
       throw new Error('Word (.doc) 解析库未安装，请运行: npm install word-extractor')
     }
 
+    this.reportProgress(report, 'converting', 25)
     const extractor = new this.WordExtractor()
     const doc = await extractor.extract(filePath)
     
     // 获取文档正文
+    this.reportProgress(report, 'extracting-text', 75)
     result.content = doc.getBody()
     
     // 提取元数据（如果有）
@@ -680,11 +829,12 @@ export class DocumentParserService {
   /**
    * 解析 Excel 文件 (.xlsx/.xls)
    */
-  private async parseExcel(filePath: string, result: ParsedDocument, _opts: Required<ParseOptions>): Promise<void> {
+  private async parseExcel(filePath: string, result: ParsedDocument, _opts: Required<ParseOptions>, report?: ProgressReporter): Promise<void> {
     if (!this.ExcelJS) {
       throw new Error('Excel 解析库未安装，请运行: npm install exceljs')
     }
 
+    this.reportProgress(report, 'loading', 15)
     const workbook = new this.ExcelJS.Workbook()
     await workbook.xlsx.readFile(filePath)
 
@@ -692,9 +842,13 @@ export class DocumentParserService {
     let sheetCount = 0
     let totalRows = 0
 
+    const worksheets = workbook.worksheets
+    const totalSheets = Math.max(worksheets.length, 1)
+
     // 遍历所有工作表
     workbook.eachSheet((worksheet) => {
       sheetCount++
+      this.reportProgress(report, 'extracting-text', 25 + (sheetCount / totalSheets) * 55, sheetCount, totalSheets)
       const sheetRows = worksheet.rowCount
       totalRows += sheetRows
 
@@ -815,16 +969,19 @@ export class DocumentParserService {
   /**
    * 解析文本文件
    */
-  private async parseTextFile(filePath: string, result: ParsedDocument, _opts: Required<ParseOptions>): Promise<void> {
+  private async parseTextFile(filePath: string, result: ParsedDocument, _opts: Required<ParseOptions>, report?: ProgressReporter): Promise<void> {
     // 尝试检测编码并读取
+    this.reportProgress(report, 'loading', 25)
     const content = fs.readFileSync(filePath, 'utf-8')
+    this.reportProgress(report, 'extracting-text', 85)
     result.content = content
   }
 
   /**
    * 解析 CSV 文件，转换为 Markdown 表格格式
    */
-  private async parseCsv(filePath: string, result: ParsedDocument, _opts: Required<ParseOptions>): Promise<void> {
+  private async parseCsv(filePath: string, result: ParsedDocument, _opts: Required<ParseOptions>, report?: ProgressReporter): Promise<void> {
+    this.reportProgress(report, 'loading', 20)
     const content = fs.readFileSync(filePath, 'utf-8')
     const lines = content.split('\n').filter(line => line.trim())
     
@@ -832,6 +989,8 @@ export class DocumentParserService {
       result.content = ''
       return
     }
+
+    this.reportProgress(report, 'converting', 45, 0, lines.length)
 
     // 解析 CSV（简单实现，处理基本逗号分隔）
     const parseRow = (line: string): string[] => {
@@ -854,7 +1013,12 @@ export class DocumentParserService {
       return cells
     }
 
-    const rows = lines.map(parseRow)
+    const rows = lines.map((line, index) => {
+      if (index % 200 === 0 || index === lines.length - 1) {
+        this.reportProgress(report, 'converting', 45 + (index / Math.max(lines.length, 1)) * 35, index + 1, lines.length)
+      }
+      return parseRow(line)
+    })
     
     // 限制行列数
     const maxRows = 500
@@ -885,6 +1049,7 @@ export class DocumentParserService {
       }
     }
 
+    this.reportProgress(report, 'formatting', 88, displayRows.length, rows.length)
     result.content = markdown
   }
 
@@ -1020,7 +1185,8 @@ export class DocumentParserService {
   async renderPdfPages(
     filePath: string,
     pageNumbers: number[],
-    options?: PdfRenderOptions
+    options?: PdfRenderOptions,
+    onPage?: (current: number, total: number) => void
   ): Promise<{ images: string[]; totalPages: number }> {
     if (!filePath || !fs.existsSync(filePath)) {
       throw new Error(`PDF file not found: ${filePath}`)
@@ -1042,10 +1208,12 @@ export class DocumentParserService {
     try {
       return await this.sendToPdfWorker<{ images: string[]; totalPages: number }>('renderPdfPages', {
         filePath, pageNumbers: pagesToRender, dpi, quality,
+      }, (progress) => {
+        if (progress.current && progress.total) onPage?.(progress.current, progress.total)
       })
     } catch (err: any) {
       if (err?.message === '__NO_WORKER__') {
-        return this.renderPdfPagesDirect(filePath, pagesToRender, dpi, quality)
+        return this.renderPdfPagesDirect(filePath, pagesToRender, dpi, quality, onPage)
       }
       throw err
     }
@@ -1056,6 +1224,7 @@ export class DocumentParserService {
     pagesToRender: number[],
     dpi: number,
     quality: number,
+    onPage?: (current: number, total: number) => void
   ): Promise<{ images: string[]; totalPages: number }> {
     const scale = dpi / DocumentParserService.PDF_POINTS_PER_INCH
 
@@ -1087,7 +1256,8 @@ export class DocumentParserService {
       }
     }
 
-    for (const pageNum of pagesToRender) {
+    for (let index = 0; index < pagesToRender.length; index++) {
+      const pageNum = pagesToRender[index]
       if (pageNum < 1 || pageNum > totalPages) {
         log.warn(`Page ${pageNum} out of range (1-${totalPages}), skipping`)
         continue
@@ -1102,6 +1272,7 @@ export class DocumentParserService {
       await (page as any).render({ canvasContext: ctx, viewport, canvasFactory }).promise
       const jpegBuffer = canvas.toBuffer('image/jpeg', quality)
       images.push(`data:image/jpeg;base64,${jpegBuffer.toString('base64')}`)
+      onPage?.(index + 1, pagesToRender.length)
       log.info(`Rendered page ${pageNum}/${totalPages}: ${width}x${height}, ${(jpegBuffer.length / 1024).toFixed(0)}KB`)
     }
 

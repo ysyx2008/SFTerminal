@@ -3,15 +3,17 @@
  * 处理文档选择、解析和管理
  * 每个终端独立管理自己的文档
  */
-import { ref, computed, type Ref, type ComputedRef } from 'vue'
+import { ref, computed, onUnmounted, type Ref, type ComputedRef } from 'vue'
 import { useTerminalStore, type ParsedDocument } from '../stores/terminal'
 import { SUPPORTED_IMAGE_TYPES } from './useImageUpload'
+import { useDocumentParseStore, type ParsingDocument } from '../stores/documentParse'
 
 // 重新导出类型供外部使用
-export type { ParsedDocument }
+export type { ParsedDocument, ParsingDocument }
 
 export function useDocumentUpload(currentTabId: Ref<string | null> | ComputedRef<string | null>) {
   const terminalStore = useTerminalStore()
+  const parseStore = useDocumentParseStore()
 
   // 上传中状态（全局状态，因为同一时间只能上传一次）
   const isUploadingDocs = ref(false)
@@ -21,6 +23,22 @@ export function useDocumentUpload(currentTabId: Ref<string | null> | ComputedRef
   const isSavingToKnowledge = ref(false)
   // 等待知识库初始化中
   const isWaitingKnowledge = ref(false)
+  // 本实例发起的解析请求 ID 集合，用于从全局 store 过滤出本面板的进度卡片
+  const ownedRequestIds = ref<string[]>([])
+
+  const parsingDocs = computed<ParsingDocument[]>(() => {
+    const docs: ParsingDocument[] = []
+    for (const id of ownedRequestIds.value) {
+      const list = parseStore.parseStateByRequestId.get(id)
+      if (list) docs.push(...list)
+    }
+    return docs
+  })
+
+  onUnmounted(() => {
+    // 卸载时尽快清掉本实例引用的进度（实际进度由 store 自行延时清理）
+    ownedRequestIds.value = []
+  })
 
   // 当前终端的已上传文档列表（computed，自动响应终端切换）
   const uploadedDocs = computed(() => {
@@ -28,12 +46,43 @@ export function useDocumentUpload(currentTabId: Ref<string | null> | ComputedRef
     return terminalStore.getUploadedDocs(currentTabId.value)
   })
 
+  const createRequestId = () => {
+    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+      return crypto.randomUUID()
+    }
+    return `doc_parse_${Date.now()}_${Math.random().toString(36).slice(2)}`
+  }
+
+  const startParsingDocs = (files: Array<{ name: string; size: number }>) => {
+    const requestId = createRequestId()
+    parseStore.startTracking(requestId, files.map(f => ({ name: f.name, size: f.size })))
+    ownedRequestIds.value = [...ownedRequestIds.value, requestId]
+    return requestId
+  }
+
+  const releaseRequestId = (requestId: string) => {
+    ownedRequestIds.value = ownedRequestIds.value.filter(id => id !== requestId)
+  }
+
+  const finishParsingRequest = (requestId: string) => {
+    parseStore.finishTracking(requestId)
+    // 等 store 自行延时清理后再从本实例移除引用，让用户能看到完成态停留
+    setTimeout(() => releaseRequestId(requestId), 800)
+  }
+
+  const failParsingRequest = (requestId: string | null, error: unknown) => {
+    if (!requestId) return
+    parseStore.failTracking(requestId, error)
+    setTimeout(() => releaseRequestId(requestId), 3200)
+  }
+
   // 选择并上传文档（替换模式：新文档替换旧文档）
   const selectAndUploadDocs = async (hostId?: string) => {
     if (isUploadingDocs.value || !currentTabId.value) return
     
     const tabId = currentTabId.value
     
+    let requestId: string | null = null
     try {
       isUploadingDocs.value = true
       
@@ -45,7 +94,8 @@ export function useDocumentUpload(currentTabId: Ref<string | null> | ComputedRef
         return
       }
       
-      const parsedDocs = await documentAPI.parseMultiple(files)
+      requestId = startParsingDocs(files)
+      const parsedDocs = await documentAPI.parseMultiple(files, { requestId })
       
       // 追加模式：新上传的文档追加到现有列表
       terminalStore.addUploadedDocs(tabId, parsedDocs)
@@ -62,7 +112,9 @@ export function useDocumentUpload(currentTabId: Ref<string | null> | ComputedRef
       if (successCount > 0) {
         autoSaveToKnowledgeIfEnabled(parsedDocs, hostId)
       }
+      if (requestId) finishParsingRequest(requestId)
     } catch (error) {
+      failParsingRequest(requestId, error)
       console.error('上传文档失败:', error)
     } finally {
       isUploadingDocs.value = false
@@ -98,11 +150,13 @@ export function useDocumentUpload(currentTabId: Ref<string | null> | ComputedRef
     
     if (fileInfos.length === 0) return
     
+    let requestId: string | null = null
     try {
       isUploadingDocs.value = true
       
       const documentAPI = (window.electronAPI as { document: typeof window.electronAPI.document }).document
-      const parsedDocs = await documentAPI.parseMultiple(fileInfos)
+      requestId = startParsingDocs(fileInfos)
+      const parsedDocs = await documentAPI.parseMultiple(fileInfos, { requestId })
       
       terminalStore.addUploadedDocs(tabId, parsedDocs)
       
@@ -116,7 +170,9 @@ export function useDocumentUpload(currentTabId: Ref<string | null> | ComputedRef
       if (successCount > 0) {
         autoSaveToKnowledgeIfEnabled(parsedDocs, hostId)
       }
+      if (requestId) finishParsingRequest(requestId)
     } catch (error) {
+      failParsingRequest(requestId, error)
       console.error('处理拖放文档失败:', error)
     } finally {
       isUploadingDocs.value = false
@@ -297,6 +353,7 @@ export function useDocumentUpload(currentTabId: Ref<string | null> | ComputedRef
 
   return {
     uploadedDocs,
+    parsingDocs,
     isUploadingDocs,
     isDraggingOver,
     isSavingToKnowledge,

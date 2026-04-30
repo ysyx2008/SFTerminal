@@ -346,6 +346,7 @@ import type { OrchestratorConfig } from './services/agent/orchestrator-types'
 import { HistoryService, AgentRecord } from './services/history.service'
 import { HostProfileService, HostProfile } from './services/host-profile.service'
 import { getDocumentParserService, UploadedFile, ParseOptions, ParsedDocument } from './services/document-parser.service'
+import type { DocumentParseProgress } from '@shared/types'
 import { SftpService, SftpConfig } from './services/sftp.service'
 import { LocalFsService } from './services/local-fs.service'
 import { McpService } from './services/mcp.service'
@@ -3723,9 +3724,15 @@ ipcMain.handle('document:parse', async (_event, file: UploadedFile, options?: Pa
 })
 
 // 批量解析文档（extractImages 由后端根据视觉模型配置自动决定）
-ipcMain.handle('document:parseMultiple', async (_event, files: UploadedFile[], options?: ParseOptions) => {
+ipcMain.handle('document:parseMultiple', async (event, files: UploadedFile[], options?: ParseOptions) => {
   const extractImages = options?.extractImages ?? configService.hasVisionCapability()
-  return documentParserService.parseDocuments(files, { ...options, extractImages })
+  const requestId = options?.requestId || `doc_parse_${Date.now()}`
+  const sendProgress = (progress: DocumentParseProgress) => {
+    if (!event.sender.isDestroyed()) {
+      event.sender.send('document:parseProgress', progress)
+    }
+  }
+  return documentParserService.parseDocuments(files, { ...options, requestId, extractImages, onProgress: sendProgress })
 })
 
 // 格式化为 AI 上下文
