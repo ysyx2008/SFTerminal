@@ -94,6 +94,7 @@ run(message, context, options)
 - **Cold start 降级**：首次任务、唤醒 run（Watch/Sensor）、上下文空间不足时走原有的 TaskMemory 压缩重建路径
 - **Anthropic 缓存断点**：前序消息的最后一条 assistant 上设置 `cache_control`（第 3 个断点），`_cacheBreakpoint` 标记在 `convertToAnthropicBody` 中消费
 - **DeepSeek/OpenAI**：自动前缀缓存天然命中，无需额外标记
+- **失败任务对称维护**：`handleError` 与 `finalizeRun` 对称，会把 `❌ <错误>` 当作 assistant 回复追加到 `run.messages` 与 `taskMessageLog`，并修复悬空 `tool_calls`（补占位 tool result），最后用更新后的 `run.messages` 覆盖 `_previousRunMessages`。失败前如果 `buildContext` 还没装入 user 消息（半成品状态），则不更新快照，下次任务走 cold start 重建。这是 AI 看到"前面任务失败了"的唯一通道——缺了它，下次任务的 cache path 会沿用上一次成功 run 的快照，把整个失败任务沉默丢弃
 - **重置**：`resetSession()` 清空 `_previousRunMessages`
 
 ## 会话与持久化

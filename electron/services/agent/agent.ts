@@ -1112,16 +1112,45 @@ export abstract class Agent {
   
   /**
    * 处理运行错误
+   *
+   * 维护对话记录的对称性：成功路径（finalizeRun）会把最终 assistant 回复追加到
+   * taskMessageLog 与 _previousRunMessages，失败路径必须做同样的事，否则下次任务：
+   *   • cache path：复用上一次成功 run 的快照，整个失败任务的消息被沉默丢弃，
+   *                 AI 完全不知道用户上条消息存在过，无法做错误恢复
+   *   • cold start：TaskMemory 中的 messages 缺最终 assistant 回复，AI 看到工具
+   *                 调用历史后突然到下一个用户消息，无法理解为什么没有回复
    */
   protected handleError(run: AgentRun, error: unknown): void {
     const errorMessage = error instanceof Error ? error.message : String(error)
-    
+
     this.addStep({
       type: 'error',
       content: errorMessage
     })
-    
-    // 保存失败的任务
+
+    // 修复运行抛错时可能遗留的悬空 tool_calls：assistant 已宣告调用工具但 tool result
+    // 还没产生（典型场景：工具执行中崩溃、AI 流式输出后调下一轮 API 时网络超时）。
+    // fixIncompleteToolCalls 会同步补占位到 run.messages 与 run.taskMessageLog
+    this.fixIncompleteToolCalls(run, `[执行中断: ${errorMessage}]`)
+
+    // 把错误作为一条 assistant 回复追加到对话日志（与 finalizeRun 的成功路径对称）
+    const errorAssistantMsg: AiMessage = {
+      role: 'assistant',
+      content: `❌ ${errorMessage}`
+    }
+    if (run.lastAssistantReasoningContent !== undefined) {
+      errorAssistantMsg.reasoning_content = run.lastAssistantReasoningContent
+    }
+    run.messages.push(errorAssistantMsg)
+    run.taskMessageLog.push({ ...errorAssistantMsg })
+
+    // 添加 final_result 步骤（错误时也统一由后端生成，❌ 前缀供前端区分成功/失败）
+    this.addStep({
+      type: 'final_result',
+      content: `❌ ${errorMessage}`
+    })
+
+    // 保存失败的任务（此时 taskMessageLog 已包含完整的失败现场，含错误回复）
     this.taskMemory.saveTask(
       run.id,
       run.originalUserRequest,
@@ -1130,16 +1159,21 @@ export abstract class Agent {
       errorMessage,
       run.taskMessageLog
     )
-    
-    // 添加 final_result 步骤（错误时也统一由后端生成，❌ 前缀供前端区分成功/失败）
-    this.addStep({
-      type: 'final_result',
-      content: `❌ ${errorMessage}`
-    })
-    
+
+    // 更新 prompt cache 快照：让下个任务的 cache path 看到失败现场，
+    // 而不是沿用更早一次成功 run 的快照（导致整个失败任务被遗忘）。
+    // 仅当 run.messages 至少包含一条 user 消息时才更新——否则说明 buildContext
+    // 阶段就抛错了（system/user 都没装入），用这种半成品快照会让下次任务复用
+    // 一段无 system 无 user 的不合法序列。这种异常情况让 _previousRunMessages
+    // 保持原值（上次成功 run），下次任务走 cold start 重建即可。
+    const hasUserMessage = run.messages.some(m => m.role === 'user')
+    if (hasUserMessage) {
+      this._previousRunMessages = run.messages.map(m => ({ ...m }))
+    }
+
     this.accumulateSessionData(run, 'failed', errorMessage)
     this.saveSessionToHistory()
-    
+
     // L3: 异步索引失败的对话（失败经验同样有检索价值）
     this.indexConversationAsync(run, 'failed', errorMessage).catch(err => {
       log.warn('对话向量索引失败:', err)
@@ -3100,9 +3134,12 @@ export abstract class Agent {
 
   /**
    * 修复不完整的工具调用序列
-   * 当用户中断时，可能存在 assistant 消息（含 tool_calls）但缺少对应的 tool result
+   * 当用户中断或运行抛错时，可能存在 assistant 消息（含 tool_calls）但缺少对应的 tool result。
+   * 同时镜像写入 taskMessageLog，确保下次任务的 cache path / cold start 看到的对话序列合法。
+   *
+   * @param placeholder 占位 tool result 的内容（默认按"用户中断"语义；错误路径应传入更具体的描述）
    */
-  private fixIncompleteToolCalls(run: AgentRun): void {
+  private fixIncompleteToolCalls(run: AgentRun, placeholder: string = '[操作被用户中断]'): void {
     const { messages } = run
     if (messages.length === 0) return
 
@@ -3137,11 +3174,15 @@ export abstract class Agent {
     if (missingToolCalls.length > 0) {
       log.info(`修复 ${missingToolCalls.length} 个缺失的 tool result 消息`)
       for (const tc of missingToolCalls) {
-        messages.push({
+        const toolMsg: AiMessage = {
           role: 'tool',
-          content: '[操作被用户中断]',
+          content: placeholder,
           tool_call_id: tc.id
-        })
+        }
+        messages.push(toolMsg)
+        // 镜像写入 taskMessageLog：保持 append-only 的对话日志与 messages 同步，
+        // 否则 TaskMemory 持久化的 messages 会缺失 tool result，下次任务复用时序列违法
+        run.taskMessageLog.push({ ...toolMsg })
       }
     }
   }
