@@ -2,7 +2,22 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.35.3 (2026-04-30) (Latest)
+## v10.35.4 (2026-05-01) (Latest)
+
+This release optimizes the AI thinking process display experience and fixes several Agent execution issues.
+
+### Improvements
+
+- 🎨 **Thinking Process Display Optimization**: Unified thinking process presentation within message steps for improved user experience
+- ⚡ **Startup Experience Optimization**: Fixed a brief black window flash during startup
+- 🔧 **Release Process Improvement**: Prevents preversion from hanging in non-TTY scenarios
+
+### Bug Fixes
+
+- 🐛 **Command Length Limit Optimization**: Command length limit now dynamically adjusts based on platform/mode, avoiding false rejections at 800 characters
+- 🐛 **Error Handling Improvement**: Failed task error responses are now added to conversation history, ensuring AI is aware of previous errors
+
+## v10.35.3 (2026-04-30)
 
 This release makes auto-retry and document parsing waits visible in real time.
 
