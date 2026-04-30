@@ -1,10 +1,10 @@
 ===================================================================
-              SFTerm - Installation Guide
+              SailFish - Installation Guide
 ===================================================================
 
 [Installation]
 
-  Drag SFTerm.app to the Applications folder.
+  Drag SailFish.app to the Applications folder.
 
 
 [Fix "App is damaged" Error]
@@ -18,9 +18,9 @@
 
   2. Copy and paste the following command, then press Enter:
 
-     xattr -cr /Applications/SFTerm.app
+     xattr -cr /Applications/SailFish.app
 
-  3. Reopen SFTerm and it should work normally.
+  3. Reopen SailFish and it should work normally.
 
 
 [Notes]

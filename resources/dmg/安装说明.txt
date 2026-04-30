@@ -1,10 +1,10 @@
 ===================================================================
-              SFTerm - 安装说明
+              SailFish - 安装说明
 ===================================================================
 
 【安装步骤】
 
-  将 SFTerm.app 拖拽到 Applications 文件夹即可完成安装。
+  将 SailFish.app 拖拽到 Applications 文件夹即可完成安装。
 
 
 【修复"已损坏"提示】
@@ -18,9 +18,9 @@
 
   2. 复制并粘贴以下命令，然后按回车执行：
 
-     xattr -cr /Applications/SFTerm.app
+     xattr -cr /Applications/SailFish.app
 
-  3. 重新打开 SFTerm 应用即可正常使用。
+  3. 重新打开 SailFish 应用即可正常使用。
 
 
 【其他说明】
