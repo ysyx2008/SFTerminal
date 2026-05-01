@@ -166,8 +166,9 @@ onMounted(async () => {
   snapshotManager = new TerminalSnapshotManager(screenService)
   
   // 注册屏幕服务和快照管理器到 store（供外部访问）
-  terminalStore.registerScreenService(props.tabId, screenService)
-  terminalStore.registerSnapshotManager(props.tabId, snapshotManager)
+  // 注意：改为使用 ptyId 注册，以支持分屏模式
+  terminalStore.registerScreenService(props.ptyId, screenService)
+  terminalStore.registerSnapshotManager(props.ptyId, snapshotManager)
 
   // 初始化终端状态服务（CWD 追踪等）
   window.electronAPI.terminalState.init(props.ptyId, props.type)
@@ -561,8 +562,8 @@ onUnmounted(() => {
     keyDownHandler = null
   }
   // 注销屏幕服务和快照管理器
-  terminalStore.unregisterScreenService(props.tabId)
-  terminalStore.unregisterSnapshotManager(props.tabId)
+  terminalStore.unregisterScreenService(props.ptyId)
+  terminalStore.unregisterSnapshotManager(props.ptyId)
   screenService = null
   snapshotManager = null
   

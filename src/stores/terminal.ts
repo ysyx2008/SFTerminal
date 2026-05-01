@@ -120,8 +120,19 @@ export interface SplitPane {
   type: 'terminal' | 'split'
   direction?: 'horizontal' | 'vertical'
   children?: SplitPane[]
-  tabId?: string
-  size?: number
+  // 终端窗格属性（type='terminal' 时使用）
+  ptyId?: string        // 终端实例 ID
+  terminalType?: 'local' | 'ssh'  // 终端类型
+  sshConfig?: {         // SSH 配置（仅 SSH 类型）
+    host: string
+    port: number
+    username: string
+  }
+  sshSessionId?: string // SSH 会话 ID
+  label?: string        // 窗格标签（如 "左侧"、"右上"）
+  isActive?: boolean    // 是否为当前焦点窗格
+  // 布局属性
+  size?: number         // 窗格大小（百分比，0-100）
 }
 
 export const useTerminalStore = defineStore('terminal', () => {
@@ -138,8 +149,9 @@ export const useTerminalStore = defineStore('terminal', () => {
   // 定时任务待执行的 prompt（tabId -> prompt）
   const pendingSchedulerTasks = ref<Record<string, string>>({})
   
-  // 屏幕服务实例存储（tabId -> TerminalScreenService）
+  // 屏幕服务实例存储（ptyId -> TerminalScreenService）
   // 使用普通对象而非 ref，因为 TerminalScreenService 实例不需要响应式
+  // 注意：改为按 ptyId 存储，以支持分屏模式
   const screenServices = new Map<string, TerminalScreenService>()
   
   // 快照管理器存储（tabId -> TerminalSnapshotManager）
@@ -791,10 +803,350 @@ export const useTerminalStore = defineStore('terminal', () => {
 
   /**
    * 创建分屏
+   * 将当前激活的终端分割为两个窗格
    */
-  function splitTerminal(direction: 'horizontal' | 'vertical'): void {
-    // TODO: 实现分屏逻辑
-    log.debug('Split terminal:', direction)
+  async function splitTerminal(direction: 'horizontal' | 'vertical'): Promise<string | null> {
+    const currentTab = activeTab.value
+    if (!currentTab) {
+      log.warn('No active tab to split')
+      return null
+    }
+
+    // 如果当前 tab 还没有分屏布局，创建初始布局
+    if (!currentTab.splitLayout) {
+      // 创建新的终端实例
+      const newPtyId = await createNewTerminalInstance(currentTab)
+      if (!newPtyId) return null
+
+      // 创建分屏布局：原终端 + 新终端
+      const originalPane: SplitPane = {
+        id: uuidv4(),
+        type: 'terminal',
+        ptyId: currentTab.ptyId,
+        terminalType: currentTab.type,
+        sshConfig: currentTab.sshConfig,
+        sshSessionId: currentTab.sshSessionId,
+        label: getPositionLabel(direction, 0),
+        isActive: false,
+        size: 50
+      }
+
+      const newPane: SplitPane = {
+        id: uuidv4(),
+        type: 'terminal',
+        ptyId: newPtyId,
+        terminalType: currentTab.type,
+        sshConfig: currentTab.sshConfig,
+        sshSessionId: currentTab.sshSessionId,
+        label: getPositionLabel(direction, 1),
+        isActive: true,
+        size: 50
+      }
+
+      currentTab.splitLayout = {
+        id: uuidv4(),
+        type: 'split',
+        direction,
+        children: [originalPane, newPane]
+      }
+
+      // 重要：清空 tab.ptyId，进入分屏模式
+      currentTab.ptyId = undefined
+
+      log.debug('Created initial split layout:', direction)
+      return newPane.id
+    } else {
+      // 已有分屏布局，在当前激活的窗格上分割
+      const activePane = findActivePaneInLayout(currentTab.splitLayout)
+      if (!activePane) {
+        log.warn('No active pane found in split layout')
+        return null
+      }
+
+      // 创建新的终端实例
+      const newPtyId = await createNewTerminalInstance(currentTab)
+      if (!newPtyId) return null
+
+      // 将当前窗格替换为一个分割容器
+      const newPane: SplitPane = {
+        id: uuidv4(),
+        type: 'terminal',
+        ptyId: newPtyId,
+        terminalType: currentTab.type,
+        sshConfig: currentTab.sshConfig,
+        sshSessionId: currentTab.sshSessionId,
+        label: 'New',
+        isActive: true,
+        size: 50
+      }
+
+      // 将原窗格标记为非激活
+      activePane.isActive = false
+      activePane.size = 50
+
+      // 创建新的分割容器
+      const splitContainer: SplitPane = {
+        id: uuidv4(),
+        type: 'split',
+        direction,
+        children: [
+          { ...activePane },
+          newPane
+        ]
+      }
+
+      // 替换原窗格
+      replacePaneInLayout(currentTab.splitLayout, activePane.id, splitContainer)
+
+      // 更新所有窗格的标签
+      updatePaneLabels(currentTab.splitLayout)
+
+      log.debug('Split active pane:', direction)
+      return newPane.id
+    }
+  }
+
+  /**
+   * 创建新的终端实例（用于分屏）
+   */
+  async function createNewTerminalInstance(tab: TerminalTab): Promise<string | null> {
+    try {
+      if (tab.type === 'local') {
+        const configStore = useConfigStore()
+        const localEncoding = configStore.terminalSettings.localEncoding || 'auto'
+
+        const ptyId = await window.electronAPI.pty.create({
+          cols: 80,
+          rows: 24,
+          encoding: localEncoding
+        })
+        return ptyId
+      } else if (tab.type === 'ssh' && tab.sshSessionId) {
+        // 从 configStore 获取完整的 SSH 配置
+        const configStore = useConfigStore()
+        const session = configStore.sshSessions.find(s => s.id === tab.sshSessionId)
+        if (!session) {
+          log.error('SSH session not found:', tab.sshSessionId)
+          return null
+        }
+
+        const jumpHost = configStore.getEffectiveJumpHost(session)
+
+        const sshId = await window.electronAPI.ssh.connect({
+          host: session.host,
+          port: session.port,
+          username: session.username,
+          password: session.password,
+          privateKeyPath: session.privateKeyPath,
+          passphrase: session.passphrase,
+          jumpHost: jumpHost ? toRaw(jumpHost) : undefined,
+          encoding: session.encoding || 'utf-8',
+          cols: 80,
+          rows: 24
+        })
+        return sshId
+      }
+      return null
+    } catch (error) {
+      log.error('Failed to create terminal instance:', error)
+      return null
+    }
+  }
+
+  /**
+   * 获取窗格位置标签
+   */
+  function getPositionLabel(direction: 'horizontal' | 'vertical', index: number): string {
+    if (direction === 'horizontal') {
+      return index === 0 ? '左侧' : '右侧'
+    } else {
+      return index === 0 ? '上方' : '下方'
+    }
+  }
+
+  /**
+   * 在布局中查找激活的窗格
+   */
+  function findActivePaneInLayout(layout: SplitPane): SplitPane | null {
+    if (layout.type === 'terminal') {
+      return layout.isActive ? layout : null
+    }
+
+    if (layout.children) {
+      for (const child of layout.children) {
+        const found = findActivePaneInLayout(child)
+        if (found) return found
+      }
+    }
+
+    return null
+  }
+
+  /**
+   * 在布局中替换窗格
+   */
+  function replacePaneInLayout(layout: SplitPane, paneId: string, newPane: SplitPane): boolean {
+    if (layout.children) {
+      for (let i = 0; i < layout.children.length; i++) {
+        if (layout.children[i].id === paneId) {
+          layout.children[i] = newPane
+          return true
+        }
+        if (replacePaneInLayout(layout.children[i], paneId, newPane)) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  /**
+   * 更新所有窗格的标签
+   */
+  function updatePaneLabels(layout: SplitPane, path: string = ''): void {
+    if (layout.type === 'terminal') {
+      layout.label = path || '主窗格'
+      return
+    }
+
+    if (layout.children) {
+      layout.children.forEach((child, index) => {
+        const position = layout.direction === 'horizontal'
+          ? (index === 0 ? '左' : '右')
+          : (index === 0 ? '上' : '下')
+        const newPath = path ? `${path}-${position}` : position
+        updatePaneLabels(child, newPath)
+      })
+    }
+  }
+
+  /**
+   * 关闭分屏窗格
+   * 如果只剩一个窗格，则清除分屏布局
+   */
+  async function closePane(tabId: string, paneId: string): Promise<void> {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab?.splitLayout) return
+
+    const pane = findPaneById(tab.splitLayout, paneId)
+    if (!pane) return
+
+    // 清理终端连接
+    if (pane.ptyId) {
+      try {
+        if (pane.terminalType === 'local') {
+          await window.electronAPI.pty.dispose(pane.ptyId)
+        } else {
+          await window.electronAPI.ssh.disconnect(pane.ptyId)
+        }
+      } catch (e) {
+        log.error('Failed to dispose pane terminal:', e)
+      }
+    }
+
+    // 从布局中移除窗格
+    const allPanes = getAllTerminalPanes(tab.splitLayout)
+    if (allPanes.length <= 2) {
+      // 只剩两个窗格，关闭一个后恢复到单终端模式
+      const remainingPane = allPanes.find(p => p.id !== paneId)
+      if (remainingPane) {
+        // 重要：恢复 tab.ptyId，退出分屏模式
+        tab.ptyId = remainingPane.ptyId
+        tab.splitLayout = null
+        log.debug('Restored to single terminal mode, ptyId:', tab.ptyId)
+      }
+    } else {
+      // 多个窗格，移除指定窗格并重新组织布局
+      removePaneFromLayout(tab.splitLayout, paneId)
+      updatePaneLabels(tab.splitLayout)
+
+      // 如果关闭的是激活窗格，激活第一个窗格
+      if (pane.isActive) {
+        const firstPane = getAllTerminalPanes(tab.splitLayout)[0]
+        if (firstPane) {
+          setActivePaneInTab(tabId, firstPane.id)
+        }
+      }
+    }
+  }
+
+  /**
+   * 设置激活的窗格
+   */
+  function setActivePaneInTab(tabId: string, paneId: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab?.splitLayout) return
+
+    // 取消所有窗格的激活状态
+    const allPanes = getAllTerminalPanes(tab.splitLayout)
+    allPanes.forEach(p => p.isActive = false)
+
+    // 激活指定窗格
+    const targetPane = findPaneById(tab.splitLayout, paneId)
+    if (targetPane) {
+      targetPane.isActive = true
+    }
+  }
+
+  /**
+   * 根据 ID 查找窗格
+   */
+  function findPaneById(layout: SplitPane, paneId: string): SplitPane | null {
+    if (layout.id === paneId) {
+      return layout
+    }
+
+    if (layout.children) {
+      for (const child of layout.children) {
+        const found = findPaneById(child, paneId)
+        if (found) return found
+      }
+    }
+
+    return null
+  }
+
+  /**
+   * 从布局中移除窗格
+   */
+  function removePaneFromLayout(layout: SplitPane, paneId: string): boolean {
+    if (!layout.children) return false
+
+    // 查找包含目标窗格的父节点
+    for (let i = 0; i < layout.children.length; i++) {
+      if (layout.children[i].id === paneId) {
+        // 找到了，移除这个子节点
+        layout.children.splice(i, 1)
+
+        // 如果父节点只剩一个子节点，将其提升
+        if (layout.children.length === 1) {
+          const remainingChild = layout.children[0]
+          Object.assign(layout, remainingChild)
+        }
+
+        return true
+      }
+
+      // 递归查找
+      if (removePaneFromLayout(layout.children[i], paneId)) {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  /**
+   * 更新窗格大小
+   */
+  function updatePaneSize(tabId: string, paneId: string, size: number): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab?.splitLayout) return
+
+    const pane = findPaneById(tab.splitLayout, paneId)
+    if (pane) {
+      pane.size = Math.max(10, Math.min(90, size)) // 限制在 10-90% 之间
+    }
   }
 
   /**
@@ -804,7 +1156,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     if (fromIndex === toIndex) return
     if (fromIndex < 0 || fromIndex >= tabs.value.length) return
     if (toIndex < 0 || toIndex >= tabs.value.length) return
-    
+
     const [movedTab] = tabs.value.splice(fromIndex, 1)
     tabs.value.splice(toIndex, 0, movedTab)
   }
@@ -1178,36 +1530,91 @@ export const useTerminalStore = defineStore('terminal', () => {
 
   /**
    * 获取 Agent 上下文（用于发送给后端）
+   * 支持多屏感知：如果有分屏布局，返回所有窗格的信息
    * 返回纯 JavaScript 对象，确保可以通过 IPC 序列化
    */
   function getAgentContext(tabId: string) {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab) return null
 
-    // 优先使用屏幕服务获取更准确的终端内容
-    const screenService = screenServices.get(tabId)
-    let terminalOutput: string[]
-    
-    if (screenService) {
-      // 使用屏幕服务获取最近 50 行（更准确，直接从 xterm buffer 读取）
-      terminalOutput = screenService.getLastNLines(50)
+    // 检查是否有分屏布局
+    if (tab.splitLayout) {
+      // 多屏模式：收集所有终端窗格的信息
+      const panes = getAllTerminalPanes(tab.splitLayout)
+      const activePaneId = findActivePaneInLayout(tab.splitLayout)?.id
+
+      const panesContext = panes.map(pane => {
+        // 为每个窗格获取屏幕服务（通过 ptyId 查找对应的 screenService）
+        // 注意：screenServices 是按 tabId 存储的，但分屏后每个窗格有独立的 ptyId
+        // 我们需要一个新的映射机制，暂时先用 ptyId 作为 key
+        const screenService = screenServices.get(pane.ptyId || '')
+        let terminalOutput: string[] = []
+
+        if (screenService) {
+          terminalOutput = screenService.getLastNLines(50)
+        }
+
+        return {
+          paneId: pane.id,
+          ptyId: pane.ptyId || '',
+          label: pane.label || 'Unknown',
+          isActive: pane.id === activePaneId,
+          terminalOutput,
+          terminalType: pane.terminalType || tab.type
+        }
+      })
+
+      return JSON.parse(JSON.stringify({
+        mode: 'split',
+        activePaneId,
+        panes: panesContext,
+        systemInfo: {
+          os: tab.systemInfo?.os || 'unknown',
+          shell: tab.systemInfo?.shell || 'unknown'
+        }
+      }))
     } else {
-      // 降级到输出缓冲区
-      terminalOutput = (tab.outputBuffer || [])
-        .slice(-50)
-        .map(line => stripAnsi(line))
+      // 单屏模式：保持原有逻辑
+      const screenService = screenServices.get(tab.ptyId || '')
+      let terminalOutput: string[]
+
+      if (screenService) {
+        terminalOutput = screenService.getLastNLines(50)
+      } else {
+        terminalOutput = (tab.outputBuffer || [])
+          .slice(-50)
+          .map(line => stripAnsi(line))
+      }
+
+      return JSON.parse(JSON.stringify({
+        mode: 'single',
+        ptyId: tab.ptyId || '',
+        terminalOutput,
+        systemInfo: {
+          os: tab.systemInfo?.os || 'unknown',
+          shell: tab.systemInfo?.shell || 'unknown'
+        },
+        terminalType: tab.type
+      }))
+    }
+  }
+
+  /**
+   * 获取布局中的所有终端窗格
+   */
+  function getAllTerminalPanes(layout: SplitPane): SplitPane[] {
+    if (layout.type === 'terminal') {
+      return [layout]
     }
 
-    // 使用 JSON.parse(JSON.stringify()) 确保返回纯对象，移除 Proxy
-    return JSON.parse(JSON.stringify({
-      ptyId: tab.ptyId || '',
-      terminalOutput,
-      systemInfo: {
-        os: tab.systemInfo?.os || 'unknown',
-        shell: tab.systemInfo?.shell || 'unknown'
-      },
-      terminalType: tab.type
-    }))
+    const panes: SplitPane[] = []
+    if (layout.children) {
+      for (const child of layout.children) {
+        panes.push(...getAllTerminalPanes(child))
+      }
+    }
+
+    return panes
   }
 
   // ==================== 文档管理 ====================
@@ -1268,44 +1675,49 @@ export const useTerminalStore = defineStore('terminal', () => {
   /**
    * 注册屏幕服务实例
    * 由 Terminal.vue 组件在创建时调用
+   * @param ptyId 终端实例 ID（改为使用 ptyId 而不是 tabId，以支持分屏）
    */
-  function registerScreenService(tabId: string, service: TerminalScreenService): void {
-    screenServices.set(tabId, service)
+  function registerScreenService(ptyId: string, service: TerminalScreenService): void {
+    screenServices.set(ptyId, service)
   }
 
   /**
    * 注销屏幕服务实例
    * 由 Terminal.vue 组件在销毁时调用
+   * @param ptyId 终端实例 ID
    */
-  function unregisterScreenService(tabId: string): void {
-    screenServices.delete(tabId)
+  function unregisterScreenService(ptyId: string): void {
+    screenServices.delete(ptyId)
   }
 
   /**
    * 获取屏幕服务实例
+   * @param ptyId 终端实例 ID
    */
-  function getScreenService(tabId: string): TerminalScreenService | undefined {
-    return screenServices.get(tabId)
+  function getScreenService(ptyId: string): TerminalScreenService | undefined {
+    return screenServices.get(ptyId)
   }
 
   /**
    * 获取终端屏幕内容
    * 比 getRecentOutput 更准确，直接从 xterm buffer 读取
+   * @param ptyId 终端实例 ID
    */
-  function getScreenContent(tabId: string): ScreenContent | null {
-    const service = screenServices.get(tabId)
+  function getScreenContent(ptyId: string): ScreenContent | null {
+    const service = screenServices.get(ptyId)
     if (!service) return null
     return service.getScreenContent()
   }
 
   /**
    * 获取终端最近 N 行（从屏幕服务获取，更准确）
+   * @param ptyId 终端实例 ID
    */
-  function getScreenLastNLines(tabId: string, n: number): string[] {
-    const service = screenServices.get(tabId)
+  function getScreenLastNLines(ptyId: string, n: number): string[] {
+    const service = screenServices.get(ptyId)
     if (!service) {
-      // 降级到 outputBuffer
-      const tab = tabs.value.find(t => t.id === tabId)
+      // 降级到 outputBuffer（通过 ptyId 查找 tab）
+      const tab = tabs.value.find(t => t.ptyId === ptyId)
       if (!tab?.outputBuffer) return []
       return tab.outputBuffer.slice(-n).map(line => stripAnsi(line))
     }
@@ -1314,27 +1726,30 @@ export const useTerminalStore = defineStore('terminal', () => {
 
   /**
    * 检测终端是否处于命令提示符状态
+   * @param ptyId 终端实例 ID
    */
-  function isTerminalAtPrompt(tabId: string): boolean {
-    const service = screenServices.get(tabId)
+  function isTerminalAtPrompt(ptyId: string): boolean {
+    const service = screenServices.get(ptyId)
     if (!service) return false
     return service.isAtPrompt()
   }
 
   /**
    * 获取终端光标位置
+   * @param ptyId 终端实例 ID
    */
-  function getCursorPosition(tabId: string): { x: number; y: number } | null {
-    const service = screenServices.get(tabId)
+  function getCursorPosition(ptyId: string): { x: number; y: number } | null {
+    const service = screenServices.get(ptyId)
     if (!service) return null
     return service.getCursorPosition()
   }
 
   /**
    * 检测终端屏幕中的错误信息
+   * @param ptyId 终端实例 ID
    */
-  function detectScreenErrors(tabId: string, maxLines?: number): Array<{ line: number; content: string; type: string }> {
-    const service = screenServices.get(tabId)
+  function detectScreenErrors(ptyId: string, maxLines?: number): Array<{ line: number; content: string; type: string }> {
+    const service = screenServices.get(ptyId)
     if (!service) return []
     return service.detectErrors(maxLines)
   }
