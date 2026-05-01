@@ -113,6 +113,8 @@ export interface TerminalTab {
   remoteChannel?: RemoteChannel
   // 独立助手 Agent ID（仅 assistant 类型标签页使用）
   agentId?: string
+  // 分屏布局（分屏模式时使用）
+  splitLayout?: SplitPane
 }
 
 export interface SplitPane {
@@ -823,7 +825,7 @@ export const useTerminalStore = defineStore('terminal', () => {
         id: uuidv4(),
         type: 'terminal',
         ptyId: currentTab.ptyId,
-        terminalType: currentTab.type,
+        terminalType: currentTab.type === 'assistant' ? 'local' : currentTab.type,
         sshConfig: currentTab.sshConfig,
         sshSessionId: currentTab.sshSessionId,
         label: getPositionLabel(direction, 0),
@@ -835,7 +837,7 @@ export const useTerminalStore = defineStore('terminal', () => {
         id: uuidv4(),
         type: 'terminal',
         ptyId: newPtyId,
-        terminalType: currentTab.type,
+        terminalType: currentTab.type === 'assistant' ? 'local' : currentTab.type,
         sshConfig: currentTab.sshConfig,
         sshSessionId: currentTab.sshSessionId,
         label: getPositionLabel(direction, 1),
@@ -872,7 +874,7 @@ export const useTerminalStore = defineStore('terminal', () => {
         id: uuidv4(),
         type: 'terminal',
         ptyId: newPtyId,
-        terminalType: currentTab.type,
+        terminalType: currentTab.type === 'assistant' ? 'local' : currentTab.type,
         sshConfig: currentTab.sshConfig,
         sshSessionId: currentTab.sshSessionId,
         label: 'New',
@@ -1024,7 +1026,7 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 关闭分屏窗格
    * 如果只剩一个窗格，则清除分屏布局
    */
-  async function closePane(tabId: string, paneId: string): Promise<void> {
+  async function closePaneInternal(tabId: string, paneId: string): Promise<void> {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab?.splitLayout) return
 
@@ -1052,7 +1054,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       if (remainingPane) {
         // 重要：恢复 tab.ptyId，退出分屏模式
         tab.ptyId = remainingPane.ptyId
-        tab.splitLayout = null
+        tab.splitLayout = undefined
         log.debug('Restored to single terminal mode, ptyId:', tab.ptyId)
       }
     } else {
@@ -1880,6 +1882,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     writeToTerminal,
     resizeTerminal,
     splitTerminal,
+    closePane: closePaneInternal,
+    setActivePaneInTab,
+    updatePaneSize,
     reorderTabs,
     getAiMessages,
     addAiMessage,

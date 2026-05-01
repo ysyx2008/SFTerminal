@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
-import { useTerminalStore } from '../stores/terminal'
 import type { SplitPane } from '../stores/terminal'
 import Terminal from './Terminal.vue'
 
@@ -13,8 +12,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   sendToAi: [text: string]
 }>()
-
-const terminalStore = useTerminalStore()
 
 // 递归渲染分屏布局
 const isTerminal = computed(() => props.layout.type === 'terminal')
@@ -44,7 +41,7 @@ function handleSendToAi(text: string) {
 const isResizing = ref(false)
 const resizingIndex = ref(-1)
 
-function startResize(index: number, event: MouseEvent) {
+function startResize(index: number, _event: MouseEvent) {
   isResizing.value = true
   resizingIndex.value = index
 
@@ -53,10 +50,10 @@ function startResize(index: number, event: MouseEvent) {
   document.body.style.cursor = direction.value === 'horizontal' ? 'col-resize' : 'row-resize'
   document.body.style.userSelect = 'none'
 
-  event.preventDefault()
+  _event.preventDefault()
 }
 
-function handleResize(event: MouseEvent) {
+function handleResize(_event: MouseEvent) {
   if (!isResizing.value || resizingIndex.value < 0) return
 
   // TODO: 实现实际的大小调整逻辑
@@ -89,7 +86,7 @@ onUnmounted(() => {
         :tab-id="tabId"
         :pty-id="layout.ptyId"
         :type="(layout.terminalType as 'local' | 'ssh')"
-        :is-active="isActive && layout.isActive"
+        :is-active="isActive && (layout.isActive ?? false)"
         @send-to-ai="handleSendToAi"
       />
     </template>
