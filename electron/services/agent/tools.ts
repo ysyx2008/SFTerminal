@@ -870,7 +870,9 @@ Agent 类型：
       type: 'function',
       function: {
         name: 'close_pane',
-        description: `关闭指定窗格。关闭后若只剩一个窗格，tab 自动切回单终端模式。
+        description: `关闭指定窗格。关闭后若只剩一个窗格，list_panes 的 mode 会切回 'single'。
+
+⚠️ **不能关闭最后一个窗格**：那等于关掉整个 tab、终止你自己的 Agent 会话。如果只剩一个窗格，工具会拒绝执行并返回错误。要彻底关 tab 请让用户手动操作。
 
 pane_id 接受两种值（任选其一）：
 - list_panes 返回的 paneId（布局节点 id）

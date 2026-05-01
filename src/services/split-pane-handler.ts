@@ -93,6 +93,16 @@ async function dispatch(
     }
     case 'close': {
       log.info(`close start paneId=${op.paneId}`)
+      // 防自毁：Agent 关掉最后一个 pane 等于关闭整个 tab，Agent 实例随 PTY 销毁
+      // 而被回收，IPC 回信丢失导致工具调用超时——而且关掉的就是 Agent 自己的执行
+      // 环境。此路径仅允许用户手动操作（点击窗格 X 按钮，走 SplitPaneView 直连 store.closePane）。
+      const allPanes = tab.splitLayout ? collectPanes(tab.splitLayout) : []
+      if (allPanes.length <= 1) {
+        return {
+          ok: false,
+          error: '只剩最后一个窗格，不能通过 close_pane 关闭——这会关掉整个 tab、终止当前 Agent 会话。如需关闭 tab，请让用户手动操作。'
+        }
+      }
       const removed = await store.closePane(tab.id, op.paneId)
       log.info(`close done paneId=${op.paneId} removed=${removed}`)
       if (!removed) {
@@ -101,13 +111,16 @@ async function dispatch(
           error: `Pane not found: "${op.paneId}". Use list_panes to get current pane_id (布局可能在上次操作后已经变化).`
         }
       }
+      const remainingPanes = collectPanes(tab.splitLayout)
       return {
         ok: true,
         data: {
           tabId: tab.id,
           closedPaneId: op.paneId,
-          panes: collectPanes(tab.splitLayout),
-          mode: tab.splitLayout ? 'split' : 'single'
+          panes: remainingPanes,
+          // mode 按叶子数量判断而非 splitLayout 是否存在——root 永远是 split 容器，
+          // 但只剩 1 个叶子时用户体验等同单屏，应该报 'single' 让 Agent 心智一致。
+          mode: remainingPanes.length > 1 ? 'split' : 'single'
         }
       }
     }
@@ -129,12 +142,15 @@ async function dispatch(
     }
     case 'list': {
       if (tab.splitLayout) {
+        const panes = collectPanes(tab.splitLayout)
+        // mode 按叶子数量判断：root 永远是 split 容器（ensureRootSplitLayoutForTab 设计），
+        // 但只有 1 个 terminal 叶子时用户体验等同单屏，应报 'single'。
         return {
           ok: true,
           data: {
             tabId: tab.id,
-            mode: 'split' as const,
-            panes: collectPanes(tab.splitLayout)
+            mode: panes.length > 1 ? ('split' as const) : ('single' as const),
+            panes
           }
         }
       }
