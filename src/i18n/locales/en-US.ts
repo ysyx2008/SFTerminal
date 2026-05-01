@@ -1933,7 +1933,29 @@ export default {
       unknown: 'Connection failed'
     },
     reconnectHint: 'Click the button at bottom right or press Ctrl+Shift+R to reconnect',
-    noSessionSavedHint: 'This connection is not saved as a session, please reconnect from Session Manager'
+    noSessionSavedHint: 'This connection is not saved as a session, please reconnect from Session Manager',
+    split: {
+      position: {
+        left: 'Left',
+        right: 'Right',
+        top: 'Top',
+        bottom: 'Bottom'
+      },
+      label: {
+        main: 'Main',
+        new: 'New'
+      },
+      menu: {
+        horizontal: 'Split Horizontally',
+        vertical: 'Split Vertically',
+        close: 'Close Pane'
+      },
+      button: {
+        horizontal: 'Split Horizontally',
+        verticalTitle: 'Split Vertically',
+        horizontalTitle: 'Split Horizontally'
+      }
+    }
   },
 
   // MCP Status

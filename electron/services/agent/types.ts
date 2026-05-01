@@ -58,10 +58,20 @@ export interface PreviousTaskContext {
   messages?: import('../ai.service').AiMessage[]
 }
 
+// 分屏窗格信息（用于多屏感知 system prompt 注入）
+export interface AgentPaneInfo {
+  paneId: string
+  ptyId: string
+  label: string
+  isActive: boolean
+  terminalOutput: string[]
+  terminalType: 'local' | 'ssh'
+}
+
 // Agent 上下文
 export interface AgentContext {
   ptyId?: string
-  terminalOutput: string[]  // 最近的终端输出
+  terminalOutput: string[]  // 最近的终端输出（分屏模式下为激活窗格的输出）
   systemInfo: {
     os: string
     shell: string
@@ -81,6 +91,10 @@ export interface AgentContext {
   wakeup?: boolean  // 唤醒模式：静默运行，不累积到会话历史
   proactiveContext?: string  // IM 场景：Agent 之前主动发送的消息内容，作为用户回复的上下文注入 API 消息
   contextHint?: string  // 仅注入 API 消息的上下文提示（如首次联系提醒），不显示在 user_task 步骤中
+  // 分屏多屏感知（仅在 tab 处于分屏模式时由前端 IPC 注入）
+  mode?: 'single' | 'split'
+  panes?: AgentPaneInfo[]
+  activePaneId?: string
 }
 
 // 工具执行结果

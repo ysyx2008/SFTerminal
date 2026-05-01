@@ -368,6 +368,7 @@ import { getSchedulerStore } from './services/scheduler.store'
 import { getWatchService } from './services/watch/watch.service'
 import { getSensorService } from './services/sensor'
 import { getBondService } from './services/bond.service'
+import { splitPaneBridge } from './services/split-pane-bridge.service'
 import type { CreateWatchParams } from './services/watch/types'
 import { getWebChatService } from './services/web-chat.service'
 import { getMigrationRunner, createBackup } from './migrations'
@@ -841,7 +842,11 @@ function createWindow() {
       showFallbackTimer = null
     }
     ipcMain.removeListener('app:mounted', onAppMounted)
+    splitPaneBridge.detachWindow()
   })
+
+  // 分屏反向 IPC 桥接：让 Agent 工具可以从主进程触发渲染进程的分屏 store 操作
+  splitPaneBridge.init(mainWindow)
 
   // Windows 上窗口获得焦点时，确保 webContents 也获得键盘输入路由
   // 防止 setAlwaysOnTop 切换或通知交互后出现"窗口在前台但无法输入"的僵死状态

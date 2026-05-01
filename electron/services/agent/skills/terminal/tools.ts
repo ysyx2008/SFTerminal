@@ -49,6 +49,10 @@ export const ptyExecuteCommandTool: ToolDefinitionWithMeta = {
         command: {
           type: 'string',
           description: '要执行的 shell 命令（最长 500 字符，超过请先写入脚本文件再执行）'
+        },
+        pane_id: {
+          type: 'string',
+          description: '【分屏专用·可选】在指定窗格执行命令。值为 list_panes 返回的窗格 pty_id（不是 paneId）。不传则在 Agent 初始绑定的窗格执行——单屏时无需关心；分屏后想在其他窗格执行就传该窗格的 pty_id。'
         }
       },
       required: ['command']
@@ -86,7 +90,12 @@ export const terminalOnlyTools: ToolDefinition[] = [
 本地终端基于进程检测状态准确；SSH 终端需结合输出内容判断。`,
       parameters: {
         type: 'object',
-        properties: {}
+        properties: {
+          pane_id: {
+            type: 'string',
+            description: '【分屏专用·可选】检查指定窗格的状态。值为 list_panes 返回的窗格 pty_id。不传则检查 Agent 初始窗格。'
+          }
+        }
       }
     },
     _meta: { parallelizable: true, contextBudget: { toolResult: 'clearable' } }
@@ -102,6 +111,10 @@ export const terminalOnlyTools: ToolDefinition[] = [
           lines: {
             type: 'number',
             description: '获取的行数，默认 50，最大 500'
+          },
+          pane_id: {
+            type: 'string',
+            description: '【分屏专用·可选】读取指定窗格的输出。值为 list_panes 返回的窗格 pty_id。不传则读取 Agent 初始窗格。'
           }
         }
       }
@@ -120,6 +133,10 @@ export const terminalOnlyTools: ToolDefinition[] = [
             type: 'string',
             enum: ['ctrl+c', 'ctrl+d', 'ctrl+z', 'enter', 'q'],
             description: 'ctrl+c: 中断命令; ctrl+d: 发送EOF; ctrl+z: 暂停; enter: 回车; q: 退出分页器'
+          },
+          pane_id: {
+            type: 'string',
+            description: '【分屏专用·可选】向指定窗格发送控制键。值为 list_panes 返回的窗格 pty_id。不传则发送到 Agent 初始窗格。'
           }
         },
         required: ['key']
@@ -149,6 +166,10 @@ export const terminalOnlyTools: ToolDefinition[] = [
           press_enter: {
             type: 'boolean',
             description: '是否在文本后自动按回车键，默认 true'
+          },
+          pane_id: {
+            type: 'string',
+            description: '【分屏专用·可选】向指定窗格发送输入。值为 list_panes 返回的窗格 pty_id。不传则发送到 Agent 初始窗格。'
           }
         },
         required: ['text']

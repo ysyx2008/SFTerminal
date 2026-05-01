@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onUnmounted, defineAsyncComponent } from 'vue'
+import { ref, shallowRef, triggerRef, computed, watch, nextTick, onUnmounted, provide, defineAsyncComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AlertCircle } from 'lucide-vue-next'
 import { useTerminalStore } from '../stores/terminal'
-import type { TerminalTab } from '../stores/terminal'
+import type { TerminalTab, SplitPane } from '../stores/terminal'
+import { getAllTerminalPanes } from '../stores/split-pane-tree'
 import Terminal from './Terminal.vue'
 import SplitPaneView from './SplitPaneView.vue'
+import { PANE_SLOT_REGISTRY_KEY, type PaneSlotRegistry } from './pane-slot-registry'
 
 const AiPanel = defineAsyncComponent(() => import('./AiPanel.vue'))
 
@@ -96,6 +98,63 @@ function ensureAiPanel() {
 }
 
 defineExpose({ toggleAiPanel, ensureAiPanel, showAiPanel })
+
+// ==================== Terminal 实例池（按 ptyId 维护，通过 Teleport 投影） ====================
+//
+// 关键设计：
+//   Terminal 组件实例不再由 SplitPaneView 渲染——SplitPaneView 仅渲染占位 div 并通过
+//   provide/inject 向这里上报占位 div 的 element 引用（registerPaneSlot）。
+//   Terminal 实例在 v-for 按 ptyId 维护，Teleport 用 element 引用作 :to。
+//   布局变化时 SplitPaneView 重渲染→新占位 div mount→register→Teleport 重新 patch
+//   target→Terminal DOM 自动搬到新 element。Terminal 组件实例和 xterm 实例永不销毁。
+//
+//   关键：Teleport :to 必须用 element 引用而非 selector 字符串。selector 不变时
+//   Vue 不会重新 resolve，会让 Terminal DOM 残留在已 detach 的旧 element 里。
+const terminalPanes = computed<SplitPane[]>(() => {
+  if (!props.tab.splitLayout) return []
+  return getAllTerminalPanes(props.tab.splitLayout).filter(p => Boolean(p.ptyId))
+})
+
+// shallowRef：保存原始 HTMLElement 引用，不被 Vue 深度响应化（HTMLElement 不能 reactive）
+const paneSlotElements = shallowRef<Record<string, HTMLElement>>({})
+
+// 注册占位 div：覆盖式更新，不实现 unregister。
+// 原因：分屏后 SplitPaneView 重渲染，旧占位 div 销毁 + 新占位 div 创建是同一渲染周期，
+// 如果旧 div 立即 unregister 会让 v-if 短暂为 false，销毁 Terminal 组件实例。
+// 改为：保留最后注册的引用，新 register 自然覆盖旧引用；ptyId 真正消失时由下面的
+// watch 统一清理。
+function registerPaneSlot(ptyId: string, el: HTMLElement) {
+  if (paneSlotElements.value[ptyId] === el) return
+  paneSlotElements.value = { ...paneSlotElements.value, [ptyId]: el }
+  triggerRef(paneSlotElements)
+}
+
+provide<PaneSlotRegistry>(PANE_SLOT_REGISTRY_KEY, {
+  register: registerPaneSlot,
+  // unregister 兜底：仅当 ptyId 不再属于当前 tab 时才会真正释放，由 watch terminalPanes 处理
+  unregister: () => { /* no-op */ }
+})
+
+// 清理已不存在的 ptyId 对应的 element 引用（避免内存泄漏）
+watch(terminalPanes, (panes) => {
+  const validPtyIds = new Set(panes.map(p => p.ptyId).filter(Boolean) as string[])
+  const next: Record<string, HTMLElement> = {}
+  let changed = false
+  for (const [ptyId, el] of Object.entries(paneSlotElements.value)) {
+    if (validPtyIds.has(ptyId)) {
+      next[ptyId] = el
+    } else {
+      changed = true
+    }
+  }
+  if (changed) {
+    paneSlotElements.value = next
+    triggerRef(paneSlotElements)
+  }
+})
+
+// 分屏入口由各 Terminal 的右键菜单 + 全局快捷键 + 窗格右上角关闭按钮提供，
+// 这里不再放浮动工具按钮，避免遮挡终端内容、与窗格关闭按钮重叠。
 </script>
 
 <template>
@@ -121,23 +180,12 @@ defineExpose({ toggleAiPanel, ensureAiPanel, showAiPanel })
       ></div>
     </template>
     <div class="terminal-main">
-      <!-- 分屏模式：渲染 SplitPaneView -->
+      <!-- 终端布局：SplitPaneView 渲染嵌套结构与占位 div（不渲染 Terminal） -->
       <SplitPaneView
         v-if="tab.splitLayout"
         :tab-id="tab.id"
         :layout="tab.splitLayout"
         :is-active="isActive"
-        @send-to-ai="handleSendToAi"
-      />
-
-      <!-- 单终端模式（向后兼容）-->
-      <Terminal
-        v-else-if="tab.ptyId"
-        :tab-id="tab.id"
-        :pty-id="tab.ptyId"
-        :type="(tab.type as 'local' | 'ssh')"
-        :is-active="isActive"
-        @send-to-ai="handleSendToAi"
       />
 
       <!-- 加载中 -->
@@ -153,6 +201,23 @@ defineExpose({ toggleAiPanel, ensureAiPanel, showAiPanel })
         <span v-if="tab.connectionError" class="error-detail">{{ tab.connectionError }}</span>
         <button class="btn btn-sm" @click="terminalStore.closeTab(tab.id)">{{ t('common.close') }}</button>
       </div>
+
+      <!-- Terminal 实例池：v-for 按 ptyId 维护，Teleport target 用 element 引用
+           占位 div element 由 SplitPaneView 通过 provide/inject 上报到 paneSlotElements -->
+      <template v-for="pane in terminalPanes" :key="pane.ptyId">
+        <Teleport
+          v-if="pane.ptyId && paneSlotElements[pane.ptyId]"
+          :to="paneSlotElements[pane.ptyId]"
+        >
+          <Terminal
+            :tab-id="tab.id"
+            :pty-id="pane.ptyId"
+            :type="(pane.terminalType as 'local' | 'ssh')"
+            :is-active="isActive && (pane.isActive ?? false)"
+            @send-to-ai="handleSendToAi"
+          />
+        </Teleport>
+      </template>
     </div>
   </div>
 </template>
@@ -170,6 +235,7 @@ defineExpose({ toggleAiPanel, ensureAiPanel, showAiPanel })
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 
 /* 终端 Tab 内的 AI 侧栏（左侧） */

@@ -2160,5 +2160,20 @@ interface Window {
       revokeOAuth: () => Promise<{ success: boolean; error?: string }>
       getOAuthStatus: () => Promise<{ authorized: boolean; userName?: string; openId?: string; expiresAt?: number }>
     }
+
+    // 分屏反向 IPC：主进程 Agent 工具触发渲染进程 store 执行分屏操作
+    splitPane: {
+      onExec: (
+        handler: (
+          id: string,
+          op:
+            | { type: 'split'; direction: 'horizontal' | 'vertical' }
+            | { type: 'close'; paneId: string }
+            | { type: 'focus'; paneId: string }
+            | { type: 'list' }
+        ) => void
+      ) => () => void
+      sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => void
+    }
   }
 }

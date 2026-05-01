@@ -240,6 +240,23 @@ export function tryDecodePythonEscapesForPath(str: string): string {
 }
 
 /**
+ * 解析终端类工具的目标 PTY ID。
+ *
+ * 分屏场景下 Agent 可在工具参数中传 `pane_id`（值为 list_panes 返回的 ptyId），
+ * 把命令路由到指定窗格。不传则回退到 Agent 创建时锁定的默认 ptyId。
+ *
+ * 同时兼容 `pty_id` 别名（Agent 可能误用），写法上不限制大小写组合。
+ */
+export function resolveTargetPtyId(
+  args: Record<string, unknown>,
+  defaultPtyId: string
+): string {
+  const v = args.pane_id ?? args.paneId ?? args.pty_id ?? args.ptyId
+  if (typeof v === 'string' && v) return v
+  return defaultPtyId
+}
+
+/**
  * 处理工具参数，只对路径相关参数解码 Python 转义序列
  */
 export function normalizeToolArgs(args: Record<string, unknown>): Record<string, unknown> {

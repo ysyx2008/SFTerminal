@@ -302,11 +302,19 @@ export function useAgentMode(
     return collapsedTaskIds.value.has(taskId)
   }
 
-  // 获取当前 tab 对应的 Agent 标识符（终端用 ptyId，助手用 agentId）
+  // 获取当前 tab 对应的 Agent 标识符。
+  //
+  // ⚠️ 终端模式下必须返回 Agent 启动时绑定的 ptyId（保存在 agentState.agentId 上），
+  //    而不是"当前激活窗格 ptyId"。后端 AgentService 用 ptyId 在 Map 里索引 Agent 实例，
+  //    分屏 / focus_pane 之后激活窗格会变化，但 Agent 实例的 key 不能跟着变——
+  //    否则 addUserMessage / abort / confirm 都会找不到 Agent 实例（间歇性"补充消息无响应"bug）。
+  //
+  // 任务未启动时 fallback 到当前激活窗格 ptyId，方便未来一键启动新任务时识别 tab。
   const getAgentKey = (): string | undefined => {
     const tab = currentTab.value
-    if (tab?.type === 'assistant') return tab.agentId
-    return terminalStore.getAgentContext(currentTabId.value)?.ptyId || undefined
+    if (!tab) return undefined
+    if (tab.type === 'assistant') return tab.agentId
+    return tab.agentState?.agentId || terminalStore.getActivePtyId(tab)
   }
 
   // 监听执行模式变化，实时更新运行中的 Agent
@@ -493,7 +501,8 @@ export function useAgentMode(
     const isAssistantMode = currentTab.value?.type === 'assistant'
 
     // 如果 Agent 正在运行，发送补充消息而不是启动新任务
-    const agentKey = isAssistantMode ? currentTab.value?.agentId : terminalStore.getAgentContext(tabId)?.ptyId
+    // 用 getAgentKey() 拿 Agent 启动时绑定的稳定 key（不随激活窗格变化）
+    const agentKey = getAgentKey()
     if (isAgentRunning.value && agentKey) {
       // 安全兜底：如果 tab 有延迟的 proactive 通知，用户此时的回复可能是对通知的回应
       // 队列化等待当前任务完成后再作为新任务启动（由 consumeProactiveContext 自动注入上下文）
@@ -536,9 +545,13 @@ export function useAgentMode(
 
     // 获取 Agent 上下文
     const context = isAssistantMode
-      ? { terminalOutput: [] as string[], systemInfo: getLocalSystemInfo() } as any
+      ? { mode: 'single' as const, terminalOutput: [] as string[], systemInfo: getLocalSystemInfo() } as any
       : terminalStore.getAgentContext(tabId)
-    if (!isAssistantMode && (!context || !context.ptyId)) {
+    // 终端模式下 ptyId 必须存在（分屏取激活窗格，单屏取 tab.ptyId）
+    const runPtyId = isAssistantMode
+      ? undefined
+      : (currentTab.value ? terminalStore.getActivePtyId(currentTab.value) : undefined)
+    if (!isAssistantMode && (!context || !runPtyId)) {
       log.error('无法获取终端上下文')
       return
     }
@@ -577,8 +590,14 @@ export function useAgentMode(
       attachmentCallbacks?.clearAttachments()
     }
 
-    // 设置 Agent 状态：正在运行 + 用户任务
-    terminalStore.setAgentRunning(tabId, true, undefined, message)
+    // 设置 Agent 状态：正在运行 + 用户任务。
+    // 第三个参数 agentId 必须传——它在 agentState 上记录 Agent 启动时的稳定 key，
+    // 后续的 addUserMessage / abort / confirm 都通过 getAgentKey() 拿到这个 key，
+    // 保证分屏 / focus_pane 改变激活窗格时仍能定位到正确的 Agent 实例。
+    const stableAgentKey = isAssistantMode
+      ? currentTab.value?.agentId
+      : runPtyId
+    terminalStore.setAgentRunning(tabId, true, stableAgentKey, message)
     await scrollToBottom()
 
     try {
@@ -605,7 +624,7 @@ export function useAgentMode(
         )
       } else {
         result = await window.electronAPI.agent.run(
-          context.ptyId,
+          runPtyId as string,
           message,
           {
             ...context,
@@ -658,10 +677,7 @@ export function useAgentMode(
 
   const abortAgent = async () => {
     tts.stop()
-    const tab = currentTab.value
-    const agentKey = tab?.type === 'assistant' 
-      ? tab.agentId 
-      : terminalStore.getAgentContext(currentTabId.value)?.ptyId
+    const agentKey = getAgentKey()
     if (!agentKey) return
 
     try {
@@ -676,10 +692,7 @@ export function useAgentMode(
     const confirm = pendingConfirm.value
     if (!confirm) return
 
-    const tab = currentTab.value
-    const agentKey = tab?.type === 'assistant'
-      ? tab.agentId
-      : terminalStore.getAgentContext(currentTabId.value)?.ptyId
+    const agentKey = getAgentKey()
     if (!agentKey) return
 
     try {

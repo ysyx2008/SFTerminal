@@ -8,6 +8,13 @@ import { useConfigStore } from './config'
 import type { TerminalScreenService, ScreenContent } from '../services/terminal-screen.service'
 import type { TerminalSnapshotManager, TerminalSnapshot, TerminalDiff } from '../services/terminal-snapshot.service'
 import { createLogger } from '../utils/logger'
+import {
+  findActivePaneInLayout,
+  replacePaneInLayout,
+  findPaneById,
+  getAllTerminalPanes,
+  removePaneFromLayout
+} from './split-pane-tree'
 
 const log = createLogger('Store')
 
@@ -137,12 +144,49 @@ export interface SplitPane {
   size?: number         // 窗格大小（百分比，0-100）
 }
 
+/**
+ * Agent 终端上下文（用于发送给后端 Agent）
+ *
+ * 使用 discriminated union 强制调用方按 mode 分支处理：
+ * - mode='single' 时可访问 ptyId、terminalOutput
+ * - mode='split' 时可访问 panes、activePaneId
+ *
+ * 这样可以在 TS 编译期阻止"分屏模式下错误读 ptyId"这类静默 bug
+ */
+export interface AgentTerminalContextSingle {
+  mode: 'single'
+  ptyId: string
+  terminalOutput: string[]
+  systemInfo: { os: string; shell: string }
+  terminalType: TerminalType
+}
+
+export interface AgentTerminalContextSplit {
+  mode: 'split'
+  // 兼容字段：取自激活窗格，后端 agent.ts 仍按单值消费这些字段
+  ptyId: string
+  terminalOutput: string[]
+  terminalType: TerminalType
+  systemInfo: { os: string; shell: string }
+  // 多屏专属
+  activePaneId: string | undefined
+  panes: Array<{
+    paneId: string
+    ptyId: string
+    label: string
+    isActive: boolean
+    terminalOutput: string[]
+    terminalType: 'local' | 'ssh'
+  }>
+}
+
+export type AgentTerminalContext = AgentTerminalContextSingle | AgentTerminalContextSplit
+
 export const useTerminalStore = defineStore('terminal', () => {
   // 状态
   const tabs = ref<TerminalTab[]>([])
   const activeTabId = ref<string>('')
-  const splitLayout = ref<SplitPane | null>(null)
-  
+
   // 终端计数器（用于生成唯一标题）
   const localTerminalCounter = ref(0)
   const sshTerminalCounters = ref<Record<string, number>>({})
@@ -428,6 +472,7 @@ export const useTerminalStore = defineStore('terminal', () => {
         reactiveTab.isConnected = true
         // 检测本地系统信息
         reactiveTab.systemInfo = detectLocalSystemInfo(shell)
+        ensureRootSplitLayoutForTab(reactiveTab)
       } else if (type === 'ssh' && sshConfig) {
         const sshId = await window.electronAPI.ssh.connect({
           host: sshConfig.host,
@@ -450,6 +495,7 @@ export const useTerminalStore = defineStore('terminal', () => {
           shell: 'bash',
           description: `SSH 连接: ${sshConfig.username}@${sshConfig.host}${jumpInfo}`
         }
+        ensureRootSplitLayoutForTab(reactiveTab)
       }
     } catch (error) {
       console.error('Failed to create terminal:', error)
@@ -639,6 +685,8 @@ export const useTerminalStore = defineStore('terminal', () => {
       }
     }
 
+    ensureRootSplitLayoutForTab(tab)
+
     tabs.value.push(tab)
     if (shouldActivate) {
       activeTabId.value = id
@@ -727,13 +775,23 @@ export const useTerminalStore = defineStore('terminal', () => {
       // 更新 tab
       tab.ptyId = sshId
       tab.isConnected = true
-      
+
       // 更新系统信息
       const jumpInfo = jumpHost ? ` (via ${jumpHost.host})` : ''
       tab.systemInfo = {
         os: 'linux',
         shell: 'bash',
         description: `SSH 连接: ${session.username}@${session.host}${jumpInfo}`
+      }
+
+      // 同步 splitLayout：单屏时把 root 唯一 terminal 子节点的 ptyId 更新到新 sshId；
+      // 没有 layout 则创建。多屏 + 重连为复杂场景，暂不在这里处理。
+      if (tab.splitLayout?.children?.length === 1 && tab.splitLayout.children[0].type === 'terminal') {
+        tab.splitLayout.children[0].ptyId = sshId
+        tab.splitLayout.children[0].sshConfig = tab.sshConfig
+        tab.splitLayout.children[0].sshSessionId = tab.sshSessionId
+      } else if (!tab.splitLayout) {
+        ensureRootSplitLayoutForTab(tab)
       }
 
       return { success: true }
@@ -776,31 +834,56 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
-   * 向终端写入数据
+   * 直接按 ptyId + 终端类型写入数据（分屏安全）
+   *
+   * 调用方需要持有 ptyId（Terminal 组件内部、Agent IPC 等场景）。
+   * 不要用 tab.ptyId 路由：分屏后 tab.ptyId 是"当前激活窗格的 ptyId"，
+   * 而 Terminal 组件 onData 要写自己（可能是非激活窗格）的 pty。
    */
-  async function writeToTerminal(tabId: string, data: string): Promise<void> {
-    const tab = tabs.value.find(t => t.id === tabId)
-    if (!tab?.ptyId) return
-
-    if (tab.type === 'local') {
-      await window.electronAPI.pty.write(tab.ptyId, data)
+  async function writeToPty(ptyId: string, terminalType: 'local' | 'ssh', data: string): Promise<void> {
+    if (!ptyId) return
+    if (terminalType === 'local') {
+      await window.electronAPI.pty.write(ptyId, data)
     } else {
-      await window.electronAPI.ssh.write(tab.ptyId, data)
+      await window.electronAPI.ssh.write(ptyId, data)
     }
   }
 
   /**
-   * 调整终端大小
+   * 直接按 ptyId + 终端类型 resize（分屏安全，理由同 writeToPty）
+   */
+  async function resizePty(ptyId: string, terminalType: 'local' | 'ssh', cols: number, rows: number): Promise<void> {
+    if (!ptyId) return
+    if (terminalType === 'local') {
+      await window.electronAPI.pty.resize(ptyId, cols, rows)
+    } else {
+      await window.electronAPI.ssh.resize(ptyId, cols, rows)
+    }
+  }
+
+  /**
+   * 向 tab 当前激活窗格写入数据（外部调用接口：AI Panel、批量命令等）
+   *
+   * 分屏时路由到激活窗格的 ptyId（不再用 tab.ptyId，因为它在 setActivePaneInTab 时
+   * 不会同步更新）。
+   */
+  async function writeToTerminal(tabId: string, data: string): Promise<void> {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab) return
+    const ptyId = getActivePtyId(tab)
+    if (!ptyId) return
+    await writeToPty(ptyId, tab.type as 'local' | 'ssh', data)
+  }
+
+  /**
+   * 调整 tab 当前激活窗格的终端大小（保留给外部调用；Terminal 组件内部应用 resizePty）
    */
   async function resizeTerminal(tabId: string, cols: number, rows: number): Promise<void> {
     const tab = tabs.value.find(t => t.id === tabId)
-    if (!tab?.ptyId) return
-
-    if (tab.type === 'local') {
-      await window.electronAPI.pty.resize(tab.ptyId, cols, rows)
-    } else {
-      await window.electronAPI.ssh.resize(tab.ptyId, cols, rows)
-    }
+    if (!tab) return
+    const ptyId = getActivePtyId(tab)
+    if (!ptyId) return
+    await resizePty(ptyId, tab.type as 'local' | 'ssh', cols, rows)
   }
 
   /**
@@ -814,98 +897,86 @@ export const useTerminalStore = defineStore('terminal', () => {
       return null
     }
 
-    // 如果当前 tab 还没有分屏布局，创建初始布局
-    if (!currentTab.splitLayout) {
-      // 创建新的终端实例
-      const newPtyId = await createNewTerminalInstance(currentTab)
-      if (!newPtyId) return null
-
-      // 创建分屏布局：原终端 + 新终端
-      const originalPane: SplitPane = {
-        id: uuidv4(),
-        type: 'terminal',
-        ptyId: currentTab.ptyId,
-        terminalType: currentTab.type === 'assistant' ? 'local' : currentTab.type,
-        sshConfig: currentTab.sshConfig,
-        sshSessionId: currentTab.sshSessionId,
-        label: getPositionLabel(direction, 0),
-        isActive: false,
-        size: 50
-      }
-
-      const newPane: SplitPane = {
-        id: uuidv4(),
-        type: 'terminal',
-        ptyId: newPtyId,
-        terminalType: currentTab.type === 'assistant' ? 'local' : currentTab.type,
-        sshConfig: currentTab.sshConfig,
-        sshSessionId: currentTab.sshSessionId,
-        label: getPositionLabel(direction, 1),
-        isActive: true,
-        size: 50
-      }
-
-      currentTab.splitLayout = {
-        id: uuidv4(),
-        type: 'split',
-        direction,
-        children: [originalPane, newPane]
-      }
-
-      // 重要：清空 tab.ptyId，进入分屏模式
-      currentTab.ptyId = undefined
-
-      log.debug('Created initial split layout:', direction)
-      return newPane.id
-    } else {
-      // 已有分屏布局，在当前激活的窗格上分割
-      const activePane = findActivePaneInLayout(currentTab.splitLayout)
-      if (!activePane) {
-        log.warn('No active pane found in split layout')
-        return null
-      }
-
-      // 创建新的终端实例
-      const newPtyId = await createNewTerminalInstance(currentTab)
-      if (!newPtyId) return null
-
-      // 将当前窗格替换为一个分割容器
-      const newPane: SplitPane = {
-        id: uuidv4(),
-        type: 'terminal',
-        ptyId: newPtyId,
-        terminalType: currentTab.type === 'assistant' ? 'local' : currentTab.type,
-        sshConfig: currentTab.sshConfig,
-        sshSessionId: currentTab.sshSessionId,
-        label: 'New',
-        isActive: true,
-        size: 50
-      }
-
-      // 将原窗格标记为非激活
-      activePane.isActive = false
-      activePane.size = 50
-
-      // 创建新的分割容器
-      const splitContainer: SplitPane = {
-        id: uuidv4(),
-        type: 'split',
-        direction,
-        children: [
-          { ...activePane },
-          newPane
-        ]
-      }
-
-      // 替换原窗格
-      replacePaneInLayout(currentTab.splitLayout, activePane.id, splitContainer)
-
-      // 更新所有窗格的标签
-      updatePaneLabels(currentTab.splitLayout)
-
-      log.debug('Split active pane:', direction)
-      return newPane.id
+    if (currentTab.type === 'assistant') {
+      log.warn('Cannot split assistant tab')
+      return null
     }
+
+    // 兜底：老数据可能无 splitLayout，补齐
+    if (!currentTab.splitLayout) {
+      ensureRootSplitLayoutForTab(currentTab)
+    }
+    if (!currentTab.splitLayout) {
+      log.warn('Cannot split: tab has no ptyId or splitLayout')
+      return null
+    }
+
+    assertTabLayoutInvariant(currentTab)
+
+    const terminalType = currentTab.type as 'local' | 'ssh'
+
+    const activePane = findActivePaneInLayout(currentTab.splitLayout)
+      ?? getAllTerminalPanes(currentTab.splitLayout)[0]
+    if (!activePane || activePane.type !== 'terminal') {
+      log.warn('No terminal pane in layout to split on')
+      return null
+    }
+
+    const newPtyId = await createNewTerminalInstance(currentTab)
+    if (!newPtyId) return null
+
+    // 把 active 终端节点替换为一个 split 子容器（含原节点 + 新节点）。
+    //
+    // Terminal 实例的存活由 TerminalTabView 的 Teleport 池保证（Terminal 组件按 ptyId
+    // 在外层 v-for 维护，DOM 通过 Teleport 投影到 SplitPaneView 渲染的占位 div）。
+    // 因此布局节点 id 是否稳定，对 xterm 内容不再敏感——本函数只关心数据正确性。
+    const newPane: SplitPane = {
+      id: uuidv4(),
+      type: 'terminal',
+      ptyId: newPtyId,
+      terminalType,
+      sshConfig: currentTab.sshConfig,
+      sshSessionId: currentTab.sshSessionId,
+      label: i18n.global.t('terminal.split.label.new'),
+      isActive: true,
+      size: 50
+    }
+
+    // 复用原节点的 id（不要 uuidv4 新建）：
+    // - Agent 通过 list_panes 拿到的 paneId 在分屏后仍然有效，避免"持旧 id 调 close_pane 静默失败"
+    // - 用户体验上"原本那个窗格"在结构上确实是同一个，标识符延续也更合理
+    const originalChild: SplitPane = {
+      id: activePane.id,
+      type: 'terminal',
+      ptyId: activePane.ptyId,
+      terminalType: activePane.terminalType,
+      sshConfig: activePane.sshConfig,
+      sshSessionId: activePane.sshSessionId,
+      label: activePane.label,
+      isActive: false,
+      size: 50
+    }
+
+    // 继承被替换节点在父容器中分配到的 size，避免破坏外层窗格已有的尺寸比例。
+    // 否则二次分屏（如把右窗格再上下分）会让 splitContainer 失去 flex 权重，
+    // 表现为外层左右比例从 50:50 变成 50:1，新嵌套的窗格被挤成几乎不可见。
+    const splitContainer: SplitPane = {
+      id: uuidv4(),
+      type: 'split',
+      direction,
+      size: activePane.size,
+      children: [originalChild, newPane]
+    }
+
+    replacePaneInLayout(currentTab.splitLayout, activePane.id, splitContainer)
+
+    // 同步 tab.ptyId 为新激活窗格的 ptyId（外部兼容字段）
+    currentTab.ptyId = newPtyId
+
+    updatePaneLabels(currentTab.splitLayout)
+
+    log.debug('Split active pane:', direction)
+    return newPane.id
   }
 
   /**
@@ -956,66 +1027,21 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
-   * 获取窗格位置标签
-   */
-  function getPositionLabel(direction: 'horizontal' | 'vertical', index: number): string {
-    if (direction === 'horizontal') {
-      return index === 0 ? '左侧' : '右侧'
-    } else {
-      return index === 0 ? '上方' : '下方'
-    }
-  }
-
-  /**
-   * 在布局中查找激活的窗格
-   */
-  function findActivePaneInLayout(layout: SplitPane): SplitPane | null {
-    if (layout.type === 'terminal') {
-      return layout.isActive ? layout : null
-    }
-
-    if (layout.children) {
-      for (const child of layout.children) {
-        const found = findActivePaneInLayout(child)
-        if (found) return found
-      }
-    }
-
-    return null
-  }
-
-  /**
-   * 在布局中替换窗格
-   */
-  function replacePaneInLayout(layout: SplitPane, paneId: string, newPane: SplitPane): boolean {
-    if (layout.children) {
-      for (let i = 0; i < layout.children.length; i++) {
-        if (layout.children[i].id === paneId) {
-          layout.children[i] = newPane
-          return true
-        }
-        if (replacePaneInLayout(layout.children[i], paneId, newPane)) {
-          return true
-        }
-      }
-    }
-    return false
-  }
-
-  /**
    * 更新所有窗格的标签
+   * 标签语义化为可翻译字符串；切换语言后下次分屏操作会刷新
    */
   function updatePaneLabels(layout: SplitPane, path: string = ''): void {
+    const t = i18n.global.t
     if (layout.type === 'terminal') {
-      layout.label = path || '主窗格'
+      layout.label = path || t('terminal.split.label.main')
       return
     }
 
     if (layout.children) {
       layout.children.forEach((child, index) => {
         const position = layout.direction === 'horizontal'
-          ? (index === 0 ? '左' : '右')
-          : (index === 0 ? '上' : '下')
+          ? (index === 0 ? t('terminal.split.position.left') : t('terminal.split.position.right'))
+          : (index === 0 ? t('terminal.split.position.top') : t('terminal.split.position.bottom'))
         const newPath = path ? `${path}-${position}` : position
         updatePaneLabels(child, newPath)
       })
@@ -1023,15 +1049,27 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
-   * 关闭分屏窗格
-   * 如果只剩一个窗格，则清除分屏布局
+   * 关闭分屏窗格。
+   *
+   * `paneId` 接受两种值——优先按布局节点 id 查找；找不到时按 ptyId 查找。
+   * 这样 Agent 可以传 list_panes 返回的 paneId 或 ptyId 任一种来关闭窗格，
+   * 即使持有的 paneId 因某些边缘场景过期，也能用稳定的 ptyId 兜底。
+   *
+   * 返回 true 表示成功移除，false 表示找不到对应节点。
+   * 如果只剩一个窗格，则关闭整个 tab。
    */
-  async function closePaneInternal(tabId: string, paneId: string): Promise<void> {
+  async function closePaneInternal(tabId: string, paneId: string): Promise<boolean> {
     const tab = tabs.value.find(t => t.id === tabId)
-    if (!tab?.splitLayout) return
+    if (!tab?.splitLayout) return false
 
-    const pane = findPaneById(tab.splitLayout, paneId)
-    if (!pane) return
+    assertTabLayoutInvariant(tab)
+
+    let pane = findPaneById(tab.splitLayout, paneId)
+    if (!pane) {
+      // 兼容路径：传入的可能是 ptyId 而非 paneId
+      pane = getAllTerminalPanes(tab.splitLayout).find(p => p.ptyId === paneId) ?? null
+    }
+    if (!pane) return false
 
     // 清理终端连接
     if (pane.ptyId) {
@@ -1048,94 +1086,73 @@ export const useTerminalStore = defineStore('terminal', () => {
 
     // 从布局中移除窗格
     const allPanes = getAllTerminalPanes(tab.splitLayout)
-    if (allPanes.length <= 2) {
-      // 只剩两个窗格，关闭一个后恢复到单终端模式
-      const remainingPane = allPanes.find(p => p.id !== paneId)
-      if (remainingPane) {
-        // 重要：恢复 tab.ptyId，退出分屏模式
-        tab.ptyId = remainingPane.ptyId
-        tab.splitLayout = undefined
-        log.debug('Restored to single terminal mode, ptyId:', tab.ptyId)
-      }
-    } else {
-      // 多个窗格，移除指定窗格并重新组织布局
-      removePaneFromLayout(tab.splitLayout, paneId)
-      updatePaneLabels(tab.splitLayout)
 
-      // 如果关闭的是激活窗格，激活第一个窗格
-      if (pane.isActive) {
-        const firstPane = getAllTerminalPanes(tab.splitLayout)[0]
-        if (firstPane) {
-          setActivePaneInTab(tabId, firstPane.id)
-        }
+    // 关掉最后一个窗格 → 关闭整个 tab
+    if (allPanes.length <= 1) {
+      log.debug('Last pane closed, closing tab')
+      await closeTab(tabId)
+      return true
+    }
+
+    // 移除指定窗格（用 pane.id 而非入参 paneId——后者可能是 ptyId 兜底匹配进来的）；
+    // 嵌套 split 容器在只剩 1 child 时由 removePaneFromLayout 自动 lift
+    removePaneFromLayout(tab.splitLayout, pane.id)
+    updatePaneLabels(tab.splitLayout)
+
+    // 同步 root 终端身份字段（用激活窗格 / 第一个窗格）
+    const remainingPanes = getAllTerminalPanes(tab.splitLayout)
+    const fallbackPane = remainingPanes.find(p => p.isActive) || remainingPanes[0]
+    if (fallbackPane?.ptyId) {
+      tab.ptyId = fallbackPane.ptyId
+      if (fallbackPane.terminalType) {
+        tab.type = fallbackPane.terminalType
+      }
+      if (fallbackPane.terminalType === 'ssh') {
+        tab.sshConfig = fallbackPane.sshConfig
+        tab.sshSessionId = fallbackPane.sshSessionId
+      } else {
+        tab.sshConfig = undefined
+        tab.sshSessionId = undefined
       }
     }
+
+    // 维护不变量：splitLayout 永远至少有一个激活窗格。
+    // 关掉激活窗格时（pane.isActive === true）需要转移激活权；
+    // 关掉非激活窗格但 lift 路径让原激活节点的 isActive 字段被冲掉、
+    // 或被关闭的本身是 split 容器（没有 isActive 字段）等场景下，
+    // 剩余 panes 也可能全部 inactive——此时同样要补一个激活，
+    // 否则 getActivePtyId 找不到激活窗格会让 Agent 报"无法获取终端上下文"。
+    const hasAnyActive = remainingPanes.some(p => p.isActive)
+    if (!hasAnyActive && fallbackPane) {
+      setActivePaneInTab(tabId, fallbackPane.id)
+    }
+
+    return true
   }
 
   /**
-   * 设置激活的窗格
+   * 设置激活的窗格。
+   *
+   * `paneId` 优先按布局节点 id 查找；找不到时按 ptyId 兜底——跟 closePane 行为一致，
+   * Agent 拿到的 pane 标识符可以是 paneId 或 ptyId 任一种。
+   *
+   * 返回 true 表示成功激活，false 表示找不到目标节点（此时不修改任何状态，
+   * 避免把所有窗格都清成 inactive 破坏"至少一个激活"不变量）。
    */
-  function setActivePaneInTab(tabId: string, paneId: string): void {
+  function setActivePaneInTab(tabId: string, paneId: string): boolean {
     const tab = tabs.value.find(t => t.id === tabId)
-    if (!tab?.splitLayout) return
+    if (!tab?.splitLayout) return false
 
-    // 取消所有窗格的激活状态
+    let targetPane = findPaneById(tab.splitLayout, paneId)
+    if (!targetPane) {
+      targetPane = getAllTerminalPanes(tab.splitLayout).find(p => p.ptyId === paneId) ?? null
+    }
+    if (!targetPane) return false
+
     const allPanes = getAllTerminalPanes(tab.splitLayout)
     allPanes.forEach(p => p.isActive = false)
-
-    // 激活指定窗格
-    const targetPane = findPaneById(tab.splitLayout, paneId)
-    if (targetPane) {
-      targetPane.isActive = true
-    }
-  }
-
-  /**
-   * 根据 ID 查找窗格
-   */
-  function findPaneById(layout: SplitPane, paneId: string): SplitPane | null {
-    if (layout.id === paneId) {
-      return layout
-    }
-
-    if (layout.children) {
-      for (const child of layout.children) {
-        const found = findPaneById(child, paneId)
-        if (found) return found
-      }
-    }
-
-    return null
-  }
-
-  /**
-   * 从布局中移除窗格
-   */
-  function removePaneFromLayout(layout: SplitPane, paneId: string): boolean {
-    if (!layout.children) return false
-
-    // 查找包含目标窗格的父节点
-    for (let i = 0; i < layout.children.length; i++) {
-      if (layout.children[i].id === paneId) {
-        // 找到了，移除这个子节点
-        layout.children.splice(i, 1)
-
-        // 如果父节点只剩一个子节点，将其提升
-        if (layout.children.length === 1) {
-          const remainingChild = layout.children[0]
-          Object.assign(layout, remainingChild)
-        }
-
-        return true
-      }
-
-      // 递归查找
-      if (removePaneFromLayout(layout.children[i], paneId)) {
-        return true
-      }
-    }
-
-    return false
+    targetPane.isActive = true
+    return true
   }
 
   /**
@@ -1280,10 +1297,20 @@ export const useTerminalStore = defineStore('terminal', () => {
   /**
    * 根据 ptyId 查找对应的终端 ID
    * 用于 Agent 事件匹配（比 agentId 更可靠，因为 ptyId 在启动前就已知）
+   *
+   * 分屏时 tab.ptyId 只是"激活窗格"的 ptyId，非激活窗格的 ptyId 在 splitLayout 树里。
+   * 这里同时检查 tab.ptyId 和 splitLayout 中所有窗格，避免分屏后 Agent 用旧 ptyId 推
+   * step 时被误判为"不属于本 tab"而丢弃（典型表现：分屏后任务还在跑但前端不再收到消息）。
    */
   function findTabIdByPtyId(ptyId: string): string | undefined {
-    const tab = tabs.value.find(t => t.ptyId === ptyId)
-    return tab?.id
+    for (const tab of tabs.value) {
+      if (tab.ptyId === ptyId) return tab.id
+      if (tab.splitLayout) {
+        const panes = getAllTerminalPanes(tab.splitLayout)
+        if (panes.some(p => p.ptyId === ptyId)) return tab.id
+      }
+    }
+    return undefined
   }
 
   /**
@@ -1534,91 +1561,176 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 获取 Agent 上下文（用于发送给后端）
    * 支持多屏感知：如果有分屏布局，返回所有窗格的信息
    * 返回纯 JavaScript 对象，确保可以通过 IPC 序列化
+   *
+   * 返回 discriminated union（mode='single'|'split'）以强制调用方分支处理
    */
-  function getAgentContext(tabId: string) {
+  function getAgentContext(tabId: string): AgentTerminalContext | null {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab) return null
 
-    // 检查是否有分屏布局
+    assertTabLayoutInvariant(tab)
+
     if (tab.splitLayout) {
-      // 多屏模式：收集所有终端窗格的信息
       const panes = getAllTerminalPanes(tab.splitLayout)
       const activePaneId = findActivePaneInLayout(tab.splitLayout)?.id
 
-      const panesContext = panes.map(pane => {
-        // 为每个窗格获取屏幕服务（通过 ptyId 查找对应的 screenService）
-        // 注意：screenServices 是按 tabId 存储的，但分屏后每个窗格有独立的 ptyId
-        // 我们需要一个新的映射机制，暂时先用 ptyId 作为 key
-        const screenService = screenServices.get(pane.ptyId || '')
-        let terminalOutput: string[] = []
+      const panesContext = panes
+        .filter(pane => Boolean(pane.ptyId))
+        .map(pane => {
+          const screenService = screenServices.get(pane.ptyId || '')
+          let terminalOutput: string[] = []
+          if (screenService) {
+            terminalOutput = screenService.getLastNLines(50)
+          }
+          // tab.type 在 assistant 时已被分屏入口排除，此处一定是 local|ssh
+          const fallbackType = (pane.terminalType || tab.type) as 'local' | 'ssh'
+          return {
+            paneId: pane.id,
+            ptyId: pane.ptyId as string,
+            label: pane.label || 'Unknown',
+            isActive: pane.id === activePaneId,
+            terminalOutput,
+            terminalType: fallbackType
+          }
+        })
 
-        if (screenService) {
-          terminalOutput = screenService.getLastNLines(50)
-        }
+      // 默认窗格（激活窗格优先；否则第一个窗格）作为兼容字段填充
+      const defaultPane = panesContext.find(p => p.isActive) || panesContext[0]
 
-        return {
-          paneId: pane.id,
-          ptyId: pane.ptyId || '',
-          label: pane.label || 'Unknown',
-          isActive: pane.id === activePaneId,
-          terminalOutput,
-          terminalType: pane.terminalType || tab.type
-        }
-      })
-
-      return JSON.parse(JSON.stringify({
+      const result: AgentTerminalContextSplit = {
         mode: 'split',
+        ptyId: defaultPane?.ptyId || '',
+        terminalOutput: defaultPane?.terminalOutput || [],
+        terminalType: defaultPane?.terminalType || tab.type,
         activePaneId,
         panes: panesContext,
         systemInfo: {
           os: tab.systemInfo?.os || 'unknown',
           shell: tab.systemInfo?.shell || 'unknown'
         }
-      }))
-    } else {
-      // 单屏模式：保持原有逻辑
-      const screenService = screenServices.get(tab.ptyId || '')
-      let terminalOutput: string[]
-
-      if (screenService) {
-        terminalOutput = screenService.getLastNLines(50)
-      } else {
-        terminalOutput = (tab.outputBuffer || [])
-          .slice(-50)
-          .map(line => stripAnsi(line))
       }
+      return JSON.parse(JSON.stringify(result)) as AgentTerminalContextSplit
+    }
 
-      return JSON.parse(JSON.stringify({
-        mode: 'single',
-        ptyId: tab.ptyId || '',
-        terminalOutput,
-        systemInfo: {
-          os: tab.systemInfo?.os || 'unknown',
-          shell: tab.systemInfo?.shell || 'unknown'
-        },
-        terminalType: tab.type
-      }))
+    const screenService = screenServices.get(tab.ptyId || '')
+    let terminalOutput: string[]
+    if (screenService) {
+      terminalOutput = screenService.getLastNLines(50)
+    } else {
+      terminalOutput = (tab.outputBuffer || []).slice(-50).map(line => stripAnsi(line))
+    }
+
+    const result: AgentTerminalContextSingle = {
+      mode: 'single',
+      ptyId: tab.ptyId || '',
+      terminalOutput,
+      systemInfo: {
+        os: tab.systemInfo?.os || 'unknown',
+        shell: tab.systemInfo?.shell || 'unknown'
+      },
+      terminalType: tab.type
+    }
+    return JSON.parse(JSON.stringify(result)) as AgentTerminalContextSingle
+  }
+
+  // ==================== 分屏 helpers（对外暴露，避免外部直接读 tab.ptyId/splitLayout）====================
+
+  /**
+   * 是否处于分屏模式
+   */
+  function isSplitTab(tab: TerminalTab): boolean {
+    return Boolean(tab.splitLayout)
+  }
+
+  /**
+   * 获取激活窗格（或单屏）的 ptyId
+   * 分屏模式：返回当前激活窗格的 ptyId
+   * 单屏模式：返回 tab.ptyId
+   */
+  function getActivePtyId(tab: TerminalTab): string | undefined {
+    if (tab.splitLayout) {
+      // 找不到激活窗格时退回到第一个终端窗格——跟 getAgentContext 的兜底保持一致，
+      // 避免某些边缘场景（如关闭后 isActive 状态丢失）让上层误判为"没有可用终端"。
+      return findActivePaneInLayout(tab.splitLayout)?.ptyId
+        ?? getAllTerminalPanes(tab.splitLayout)[0]?.ptyId
+    }
+    return tab.ptyId
+  }
+
+  /**
+   * 获取 tab 内所有 ptyId（单屏返回单个，分屏返回所有窗格）
+   */
+  function getAllTabPtyIds(tab: TerminalTab): string[] {
+    if (tab.splitLayout) {
+      return getAllTerminalPanes(tab.splitLayout)
+        .map(p => p.ptyId)
+        .filter((id): id is string => Boolean(id))
+    }
+    return tab.ptyId ? [tab.ptyId] : []
+  }
+
+  /**
+   * 校验 tab.ptyId 与 tab.splitLayout 的不变量
+   *
+   * 设计：终端类型 tab 一旦持有 ptyId，就**始终**有一个 root split 容器作为 splitLayout，
+   * 单屏时 children 仅含 1 个 terminal 节点，分屏时 ≥2 个。这样 SplitPaneView 始终是
+   * 终端的渲染入口，从单屏到分屏只是给 root 容器添加兄弟节点，原 terminal 节点 id 稳定，
+   * Vue 通过 :key 复用组件实例 → xterm 内容自然保留。
+   *
+   * 违反时仅记录日志，不抛异常，避免阻塞用户操作；便于排查状态机 bug。
+   */
+  function assertTabLayoutInvariant(tab: TerminalTab): void {
+    if (tab.type === 'assistant') return
+    if (tab.ptyId && !tab.splitLayout) {
+      log.error(
+        `[invariant] Tab ${tab.id} has ptyId (${tab.ptyId}) but no splitLayout — should have been initialized`
+      )
+    }
+    if (tab.splitLayout && tab.splitLayout.type !== 'split') {
+      log.error(
+        `[invariant] Tab ${tab.id} root splitLayout must be a split container, got ${tab.splitLayout.type}`
+      )
+    }
+  }
+
+  /**
+   * 为 tab 初始化 root splitLayout（终端类型 tab，已分配 ptyId 后调用）
+   *
+   * 单屏 layout = split 容器 + 1 个 terminal 子节点。子节点 id 在此处分配并保持稳定，
+   * 之后无论分屏/关窗格，原 terminal 子节点 id 都不变（除非该窗格被关闭），
+   * 保证 SplitPaneView v-for 的 :key 稳定，原 Terminal 组件实例不重建。
+   *
+   * 已有 splitLayout 时本函数 no-op，避免覆盖。
+   */
+  function ensureRootSplitLayoutForTab(tab: TerminalTab): void {
+    if (tab.type === 'assistant') return
+    if (!tab.ptyId) return
+    if (tab.splitLayout) return
+
+    const t = i18n.global.t
+    tab.splitLayout = {
+      id: uuidv4(),
+      type: 'split',
+      direction: 'horizontal',
+      children: [
+        {
+          id: uuidv4(),
+          type: 'terminal',
+          ptyId: tab.ptyId,
+          terminalType: tab.type,
+          sshConfig: tab.sshConfig,
+          sshSessionId: tab.sshSessionId,
+          label: t('terminal.split.label.main'),
+          isActive: true,
+          size: 100
+        }
+      ]
     }
   }
 
   /**
    * 获取布局中的所有终端窗格
    */
-  function getAllTerminalPanes(layout: SplitPane): SplitPane[] {
-    if (layout.type === 'terminal') {
-      return [layout]
-    }
-
-    const panes: SplitPane[] = []
-    if (layout.children) {
-      for (const child of layout.children) {
-        panes.push(...getAllTerminalPanes(child))
-      }
-    }
-
-    return panes
-  }
-
   // ==================== 文档管理 ====================
 
   /**
@@ -1861,8 +1973,10 @@ export const useTerminalStore = defineStore('terminal', () => {
     activeTabId,
     activeTab,
     tabCount,
-    splitLayout,
     pendingFocusTabId,
+    isSplitTab,
+    getActivePtyId,
+    getAllTabPtyIds,
     createTab,
     createAssistantTab,
     createTabWithExistingPty,
@@ -1881,6 +1995,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     getRecentOutput,
     writeToTerminal,
     resizeTerminal,
+    writeToPty,
+    resizePty,
     splitTerminal,
     closePane: closePaneInternal,
     setActivePaneInTab,

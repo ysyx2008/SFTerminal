@@ -271,6 +271,7 @@ export class PromptBuilder {
 
       // ── Tier 2: 终端/主机级 ──
       this.buildHostEnvironment(),
+      this.buildSplitPanesSection(),
       this.buildRemoteChannelContext(),
 
       // ── Tier 3: 任务级 ──
@@ -478,6 +479,43 @@ export class PromptBuilder {
     lines.push(`- ${cwdLine}`)
 
     return `# 主机环境（命令必须匹配）\n\n${lines.join('\n')}`
+  }
+
+  /**
+   * 分屏多屏感知 section
+   * 当 tab 处于分屏模式时，列出所有窗格的标签、ptyId、激活状态、终端类型与最近输出末尾，
+   * 让 AI 明确"看到"多个并存的终端，并能用 ptyId 精确定位调用 terminal 工具。
+   */
+  private buildSplitPanesSection(): string {
+    const panes = this.context.panes
+    if (!panes || panes.length === 0) return ''
+    if (this.context.mode !== 'split') return ''
+
+    const lines: string[] = []
+    lines.push('# 多屏布局（分屏模式）')
+    lines.push('')
+    lines.push(`当前 tab 包含 ${panes.length} 个并存的终端窗格。`
+      + '终端类工具（execute_command / send_input / send_control_key / check_terminal_status / get_terminal_context）'
+      + '默认在你启动时绑定的窗格执行；要在其他窗格执行，请在工具参数里传 `pane_id`，值为目标窗格的 ptyId（见下方列表）。')
+    lines.push('')
+
+    panes.forEach(pane => {
+      const activeMark = pane.isActive ? '🟢 激活' : '⚪ 未激活'
+      const typeMark = pane.terminalType === 'ssh' ? '🌐 SSH' : '💻 本地'
+      lines.push(`- **${pane.label}**（pane_id 取值=\`${pane.ptyId}\`）: ${activeMark}, ${typeMark}`)
+      const tail = (pane.terminalOutput || []).slice(-5).map(l => l.trim()).filter(Boolean)
+      if (tail.length > 0) {
+        lines.push('  最近输出：')
+        tail.forEach(l => lines.push(`  > ${l}`))
+      }
+    })
+
+    if (this.context.activePaneId) {
+      lines.push('')
+      lines.push('注意："激活"标记仅表示前端 UI 焦点，跟命令默认执行的窗格无关。命令默认仍发到 Agent 启动时绑定的窗格——切换执行目标请显式传 `pane_id`。')
+    }
+
+    return lines.join('\n')
   }
 
   private buildKnowledgeDocSection(): string {

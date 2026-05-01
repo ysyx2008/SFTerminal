@@ -1530,6 +1530,7 @@ export abstract class Agent {
       availableToolNames,
       isConcurrencySafe: (name) => this.isParallelizableTool(name),
       onToolCompleted: ({ toolCall, result }) => {
+        log.info(`[onToolCompleted] tool=${toolCall.function.name} id=${toolCall.id} success=${result.success}`)
         // 仅做 UI 层回填（兜底 tool_result + finalizeToolCallStep），消息历史
         // 仍保留按 toolCalls 原始顺序在 executeToolCallsWithStreaming 中统一写入。
         this.ensureToolResultStep(run, stepCountBeforeStreaming, toolCall, result)
@@ -2436,9 +2437,14 @@ export abstract class Agent {
       run.pendingPreToolCallStepIds!.delete(toolCallId)
       run.pendingPreToolCallText?.delete(toolCallId)
     }
-    const stepId = run.activeToolCallStepIds?.get(toolCallId) ?? pendingStepId
+    const activeStepId = run.activeToolCallStepIds?.get(toolCallId)
+    const stepId = activeStepId ?? pendingStepId
     run.activeToolCallStepIds?.delete(toolCallId)
-    if (!stepId) return
+    if (!stepId) {
+      log.warn(`[finalizeToolCallStep] no stepId for toolCallId=${toolCallId} (success=${success}, active=${activeStepId}, pending=${pendingStepId})`)
+      return
+    }
+    log.info(`[finalizeToolCallStep] toolCallId=${toolCallId} stepId=${stepId} success=${success}`)
     this.updateStep(stepId, { isStreaming: false, success })
   }
 

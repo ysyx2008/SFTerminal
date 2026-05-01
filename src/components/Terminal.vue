@@ -195,9 +195,9 @@ onMounted(async () => {
       const rect = terminalRef.value.getBoundingClientRect()
       if (rect.width > 0 && rect.height > 0) {
         fitAddon.fit()
-        // 更新后端 PTY 大小
+        // 更新后端 PTY 大小（按 ptyId 直接路由，分屏安全）
         const { cols, rows } = terminal
-        await terminalStore.resizeTerminal(props.tabId, cols, rows)
+        await terminalStore.resizePty(props.ptyId, props.type, cols, rows)
         terminal.focus()
       }
     }
@@ -206,7 +206,9 @@ onMounted(async () => {
   // 监听用户输入
   if (!terminal) return
   terminal.onData(data => {
-    terminalStore.writeToTerminal(props.tabId, data)
+    // 直接按本 Terminal 的 ptyId 写——分屏关键：A 输入只能去 A 的 pty，
+    // 不能走 store.writeToTerminal(tabId)（那会路由到当前激活窗格）。
+    terminalStore.writeToPty(props.ptyId, props.type, data)
     
     // 用户有输入操作时，清除错误提示
     terminalStore.clearError(props.tabId)
@@ -268,6 +270,21 @@ onMounted(async () => {
         return false
       }
     }
+    // 分屏快捷键不应被发送到 pty（仅做拦截，分屏行为由 App.vue 全局监听完成）
+    // - mac: Cmd+D / Cmd+Shift+D / Cmd+Shift+W
+    // - win/linux: Ctrl+Shift+D / Ctrl+Shift+E / Ctrl+Shift+W
+    if (event.type === 'keydown') {
+      const k = event.key.toLowerCase()
+      const isMacAccel = event.metaKey && !event.ctrlKey && !event.altKey
+      const isWinAccel = event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey
+      if (isMacAccel) {
+        if (!event.shiftKey && k === 'd') return false
+        if (event.shiftKey && (k === 'd' || k === 'w')) return false
+      }
+      if (isWinAccel) {
+        if (k === 'd' || k === 'e' || k === 'w') return false
+      }
+    }
     return true
   })
 
@@ -279,7 +296,7 @@ onMounted(async () => {
     try {
       const text = await navigator.clipboard.readText()
       if (text) {
-        terminalStore.writeToTerminal(props.tabId, text)
+        terminalStore.writeToPty(props.ptyId, props.type, text)
       }
     } catch (e) {
       // 忽略错误
@@ -372,7 +389,7 @@ onMounted(async () => {
     resizeTimeout = setTimeout(() => {
       if (fitAddon && props.isActive && terminal && !isDisposed) {
         fitAddon.fit()
-        terminalStore.resizeTerminal(props.tabId, terminal.cols, terminal.rows)
+        terminalStore.resizePty(props.ptyId, props.type, terminal.cols, terminal.rows)
       }
     }, 50)
   }
@@ -585,22 +602,29 @@ onUnmounted(() => {
   searchAddon = null
 })
 
-// 当标签页激活时，重新适配大小并聚焦
+// 激活/失活切换：active 时 fit + focus；非 active 时 blur 释放焦点
+//
+// 分屏场景必须显式 blur：多个 Terminal 同时可见时，textarea 焦点决定输入路由，
+// 旧窗格不 blur 会导致用户点击新激活窗格但输入仍发到旧窗格的 pty。
 watch(
   () => props.isActive,
   async active => {
-    if (active && terminal && fitAddon && terminalRef.value) {
+    if (!terminal) return
+
+    if (active) {
+      // 等 DOM 稳定后再 fit/focus（Teleport 搬迁、splitLayout 变化都在 nextTick 内完成）
       await nextTick()
-      setTimeout(() => {
-        if (fitAddon && terminal && terminalRef.value) {
-          const rect = terminalRef.value.getBoundingClientRect()
-          if (rect.width > 0 && rect.height > 0) {
-            fitAddon.fit()
-            terminal.focus()
-            terminalStore.resizeTerminal(props.tabId, terminal.cols, terminal.rows)
-          }
-        }
-      }, 50)
+      if (!terminal || !fitAddon || !terminalRef.value) return
+      const rect = terminalRef.value.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        fitAddon.fit()
+        terminalStore.resizePty(props.ptyId, props.type, terminal.cols, terminal.rows)
+      }
+      terminal.focus()
+      log.debug(`[focus] pane activated ptyId=${props.ptyId} activeElement=${(document.activeElement as HTMLElement)?.tagName ?? 'null'}`)
+    } else {
+      terminal.blur()
+      log.debug(`[focus] pane blurred ptyId=${props.ptyId}`)
     }
   },
   { immediate: true }
@@ -637,15 +661,17 @@ watch(
 )
 
 // 监听焦点请求（从 AI 助手发送代码到终端后自动聚焦）
+// 注意分屏：同一 tab 下有多个 Terminal 实例，必须只让激活窗格响应，
+// 否则后 mount 的实例会"赢"焦点，输入会路由到错误窗格。
 watch(
   () => terminalStore.pendingFocusTabId,
   (focusTabId) => {
-    if (focusTabId === props.tabId && terminal) {
-      nextTick(() => {
-        terminal?.focus()
-        terminalStore.clearPendingFocus()
-      })
-    }
+    if (focusTabId !== props.tabId || !terminal) return
+    if (!props.isActive) return
+    nextTick(() => {
+      terminal?.focus()
+      terminalStore.clearPendingFocus()
+    })
   }
 )
 
@@ -725,7 +751,7 @@ const menuPaste = async () => {
   try {
     const text = await navigator.clipboard.readText()
     if (text) {
-      terminalStore.writeToTerminal(props.tabId, text)
+      terminalStore.writeToPty(props.ptyId, props.type, text)
     }
   } catch (e) {
     // 忽略错误
@@ -744,6 +770,45 @@ const menuClear = () => {
   terminal?.clear()
   hideContextMenu()
 }
+
+const menuSplitHorizontal = async () => {
+  hideContextMenu()
+  await terminalStore.splitTerminal('horizontal')
+}
+
+const menuSplitVertical = async () => {
+  hideContextMenu()
+  await terminalStore.splitTerminal('vertical')
+}
+
+const menuClosePane = async () => {
+  hideContextMenu()
+  const tab = terminalStore.tabs.find(t => t.id === props.tabId)
+  if (!tab || !terminalStore.isSplitTab(tab) || !tab.splitLayout) return
+  // 找到本 Terminal 所在窗格 id：通过 ptyId 在分屏布局中查
+  const findPaneIdByPty = (node: import('../stores/terminal').SplitPane): string | null => {
+    if (node.type === 'terminal') return node.ptyId === props.ptyId ? node.id : null
+    for (const c of node.children || []) {
+      const r = findPaneIdByPty(c)
+      if (r) return r
+    }
+    return null
+  }
+  const paneId = findPaneIdByPty(tab.splitLayout)
+  if (paneId) {
+    await terminalStore.closePane(tab.id, paneId)
+  }
+}
+
+const isCurrentTabSplit = computed(() => {
+  const tab = terminalStore.tabs.find(t => t.id === props.tabId)
+  return tab ? terminalStore.isSplitTab(tab) : false
+})
+
+const isMacPlatform = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
+const splitHorizontalShortcut = isMacPlatform ? '⌘D' : 'Ctrl+Shift+D'
+const splitVerticalShortcut = isMacPlatform ? '⌘⇧D' : 'Ctrl+Shift+E'
+const closePaneShortcut = isMacPlatform ? '⌘⇧W' : 'Ctrl+Shift+W'
 
 // 打开文件管理器
 const menuOpenFileManager = async () => {
@@ -868,7 +933,7 @@ const handleReconnect = async () => {
       // 重新调整终端大小
       if (fitAddon && terminal) {
         fitAddon.fit()
-        await terminalStore.resizeTerminal(props.tabId, terminal.cols, terminal.rows)
+        await terminalStore.resizePty(props.ptyId, props.type, terminal.cols, terminal.rows)
       }
     }
   } catch (error) {
@@ -1173,8 +1238,8 @@ const executeWithCard = async (
   // 更新状态为运行中
   updateCardStatus(cardId, { state: 'running' })
   
-  // 发送命令到终端
-  terminalStore.writeToTerminal(props.tabId, command + '\r')
+  // 发送命令到终端（按本 Terminal 的 ptyId 直接路由，分屏安全）
+  terminalStore.writeToPty(props.ptyId, props.type, command + '\r')
   
   // 等待命令完成（通过检测是否回到 prompt）
   return new Promise((resolve) => {
@@ -1336,6 +1401,22 @@ defineExpose({
       <div class="menu-item" @click="menuOpenFileManager()">
         <span class="menu-icon">📁</span>
         <span>{{ t('terminal.contextMenu.openFileManager') }}</span>
+      </div>
+      <div class="menu-divider"></div>
+      <div class="menu-item" @click="menuSplitHorizontal()">
+        <span class="menu-icon">▬</span>
+        <span>{{ t('terminal.split.menu.horizontal') }}</span>
+        <span class="shortcut">{{ splitHorizontalShortcut }}</span>
+      </div>
+      <div class="menu-item" @click="menuSplitVertical()">
+        <span class="menu-icon">▮</span>
+        <span>{{ t('terminal.split.menu.vertical') }}</span>
+        <span class="shortcut">{{ splitVerticalShortcut }}</span>
+      </div>
+      <div v-if="isCurrentTabSplit" class="menu-item danger" @click="menuClosePane()">
+        <span class="menu-icon">✕</span>
+        <span>{{ t('terminal.split.menu.close') }}</span>
+        <span class="shortcut">{{ closePaneShortcut }}</span>
       </div>
     </div>
     <div 

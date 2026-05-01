@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Monitor, Bot, Settings, X, Loader2, Heart, Menu as MenuIcon } from 'lucide-vue-next'
 import { useTerminalStore } from './stores/terminal'
+import { initSplitPaneHandler, disposeSplitPaneHandler } from './services/split-pane-handler'
 import { useConfigStore, type SshSession } from './stores/config'
 import { useCanvasStore } from './stores/canvas'
 import TabBar from './components/TabBar.vue'
@@ -227,6 +228,78 @@ const handleGlobalKeydown = (event: KeyboardEvent) => {
     event.preventDefault()
     handleCloseShortcut()
   }
+
+  // 分屏快捷键
+  // - mac: Cmd+D 水平、Cmd+Shift+D 垂直、Cmd+Shift+W 关窗格
+  // - win/linux: Ctrl+Shift+D 水平、Ctrl+Shift+E 垂直、Ctrl+Shift+W 关窗格
+  // 不在此处覆盖 Ctrl+D（Linux/Win 终端的 EOF）；mac 上 Cmd 修饰键不会发到 pty，无冲突
+  handleSplitShortcut(event)
+}
+
+function handleSplitShortcut(event: KeyboardEvent): void {
+  const tab = terminalStore.activeTab
+  if (!tab || tab.type === 'assistant') return
+  const k = event.key.toLowerCase()
+
+  if (isMac) {
+    if (event.metaKey && !event.ctrlKey && !event.altKey) {
+      if (!event.shiftKey && k === 'd') {
+        event.preventDefault()
+        terminalStore.splitTerminal('horizontal')
+        return
+      }
+      if (event.shiftKey && k === 'd') {
+        event.preventDefault()
+        terminalStore.splitTerminal('vertical')
+        return
+      }
+      if (event.shiftKey && k === 'w') {
+        event.preventDefault()
+        closeActivePane()
+        return
+      }
+    }
+  } else {
+    if (event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey) {
+      if (k === 'd') {
+        event.preventDefault()
+        terminalStore.splitTerminal('horizontal')
+        return
+      }
+      if (k === 'e') {
+        event.preventDefault()
+        terminalStore.splitTerminal('vertical')
+        return
+      }
+      // 注意：Ctrl+Shift+W 与浏览器/Electron"关闭所有窗口"在某些 build 下有冲突；
+      // 我们仅在分屏模式时拦截，避免影响单屏关 tab 的预期
+      if (k === 'w' && terminalStore.isSplitTab(tab)) {
+        event.preventDefault()
+        closeActivePane()
+        return
+      }
+    }
+  }
+}
+
+function closeActivePane(): void {
+  const tab = terminalStore.activeTab
+  if (!tab || !terminalStore.isSplitTab(tab)) return
+  const activePtyId = terminalStore.getActivePtyId(tab)
+  if (!activePtyId || !tab.splitLayout) return
+  // 找到激活窗格的 paneId
+  const findActivePaneId = (node: import('./stores/terminal').SplitPane): string | null => {
+    if (node.type === 'terminal') return node.isActive ? node.id : null
+    for (const c of node.children || []) {
+      const r = findActivePaneId(c)
+      if (r) return r
+    }
+    return null
+  }
+  const paneId = findActivePaneId(tab.splitLayout)
+  if (paneId) {
+    terminalStore.closePane(tab.id, paneId)
+  }
 }
 
 const handleGlobalKeyup = (event: KeyboardEvent) => {
@@ -275,6 +348,9 @@ onMounted(async () => {
   // 注册全局快捷键
   document.addEventListener('keydown', handleGlobalKeydown)
   document.addEventListener('keyup', handleGlobalKeyup)
+
+  // 注册分屏反向 IPC 处理器（响应主进程 Agent 工具的分屏调用）
+  initSplitPaneHandler()
 
   try {
     appVersion.value = await window.electronAPI.app.getVersion()
@@ -861,6 +937,7 @@ const handleMenuCommand = async (command: string) => {
 onUnmounted(() => {
   document.removeEventListener('keydown', handleGlobalKeydown)
   document.removeEventListener('keyup', handleGlobalKeyup)
+  disposeSplitPaneHandler()
   // 清理监听器
   cleanupTerminalCountListener?.()
   cleanupKnowledgeUpgrading?.()

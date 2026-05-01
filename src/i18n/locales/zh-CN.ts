@@ -1933,7 +1933,29 @@ export default {
       unknown: '连接失败'
     },
     reconnectHint: '点击右下角按钮或按 Ctrl+Shift+R 重新连接',
-    noSessionSavedHint: '该连接未保存为会话，请从会话管理器重新连接'
+    noSessionSavedHint: '该连接未保存为会话，请从会话管理器重新连接',
+    split: {
+      position: {
+        left: '左侧',
+        right: '右侧',
+        top: '上方',
+        bottom: '下方'
+      },
+      label: {
+        main: '主窗格',
+        new: '新窗格'
+      },
+      menu: {
+        horizontal: '左右分屏',
+        vertical: '上下分屏',
+        close: '关闭窗格'
+      },
+      button: {
+        horizontal: '左右分屏',
+        verticalTitle: '上下分屏',
+        horizontalTitle: '左右分屏'
+      }
+    }
   },
 
   // MCP 状态

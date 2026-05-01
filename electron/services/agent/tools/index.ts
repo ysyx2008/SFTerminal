@@ -26,9 +26,13 @@ import { compressContext, recallCompressed, manageMemory } from './context'
 import { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, messageUser, executeMcpTool, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
 import { dispatchSubAgents } from './sub-agent'
 import { executeWebSearch } from './web-search'
+import { splitTerminalTool, closePaneTool, focusPaneTool, listPanesTool } from './split-pane'
 
 // 重新导出类型
 export type { ToolExecutorConfig, AgentConfig, ToolResult, ErrorCategory } from './types'
+
+// 工具参数到目标 PTY 的解析（分屏：args.pane_id 优先于默认 ptyId）
+import { resolveTargetPtyId } from './utils'
 
 // 导出工具函数供外部使用
 export { executeCommand } from './command'
@@ -95,8 +99,12 @@ export async function executeTool(
 
   // 根据工具类型执行
   switch (name) {
-    case 'execute_command':
-      return executeCommand(ptyId!, args, toolCall.id, config, executor)
+    case 'execute_command': {
+      const requiredPtyId = requirePtyId(ptyId, name)
+      if (typeof requiredPtyId !== 'string') return requiredPtyId
+      // 分屏：args.pane_id 指定目标窗格，不传则用 Agent 创建时的默认 PTY
+      return executeCommand(resolveTargetPtyId(args, requiredPtyId), args, toolCall.id, config, executor)
+    }
 
     case 'exec':
       return executeCommandDirect(args, toolCall.id, config, executor)
@@ -104,25 +112,25 @@ export async function executeTool(
     case 'get_terminal_context': {
       const requiredPtyId = requirePtyId(ptyId, name)
       if (typeof requiredPtyId !== 'string') return requiredPtyId
-      return await getTerminalContext(requiredPtyId, args, executor)
+      return await getTerminalContext(resolveTargetPtyId(args, requiredPtyId), args, executor)
     }
 
     case 'check_terminal_status': {
       const requiredPtyId = requirePtyId(ptyId, name)
       if (typeof requiredPtyId !== 'string') return requiredPtyId
-      return checkTerminalStatus(requiredPtyId, config, executor)
+      return checkTerminalStatus(resolveTargetPtyId(args, requiredPtyId), config, executor)
     }
 
     case 'send_control_key': {
       const requiredPtyId = requirePtyId(ptyId, name)
       if (typeof requiredPtyId !== 'string') return requiredPtyId
-      return sendControlKey(requiredPtyId, args, config, executor)
+      return sendControlKey(resolveTargetPtyId(args, requiredPtyId), args, config, executor)
     }
 
     case 'send_input': {
       const requiredPtyId = requirePtyId(ptyId, name)
       if (typeof requiredPtyId !== 'string') return requiredPtyId
-      return sendInput(requiredPtyId, args, config, executor)
+      return sendInput(resolveTargetPtyId(args, requiredPtyId), args, config, executor)
     }
 
     case 'read_file':
@@ -208,6 +216,15 @@ export async function executeTool(
       return sendFileToChat(args, executor)
     case 'send_image_to_chat':
       return sendImageToChat(args, executor)
+
+    case 'split_terminal':
+      return splitTerminalTool(args)
+    case 'close_pane':
+      return closePaneTool(args)
+    case 'focus_pane':
+      return focusPaneTool(args)
+    case 'list_panes':
+      return listPanesTool()
 
     default:
       // MCP 工具有明确的 mcp_ 前缀，优先路由，避免被 skillSession 误认为技能工具

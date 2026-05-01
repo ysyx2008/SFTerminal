@@ -256,6 +256,29 @@ terminalStore.registerScreenService(props.ptyId, screenService)
 const screenService = screenServices.get(pane.ptyId)
 ```
 
+### 5.3 getAgentContext 返回值的 discriminated union
+
+`getAgentContext` 返回 `AgentTerminalContext`：
+
+```typescript
+type AgentTerminalContext =
+  | AgentTerminalContextSingle  // mode='single'
+  | AgentTerminalContextSplit   // mode='split'，含 panes/activePaneId
+```
+
+split 模式下仍保留兼容字段 `ptyId / terminalOutput / terminalType`（取自激活窗格），
+让后端 `agent.ts` 等抽象层无需感知多屏分支即可正常工作。
+
+调用方需通过 `mode` 字段做 TS 分支后才能访问 `panes` 等多屏字段。如果只需要"激活
+窗格的 ptyId"，使用 store 暴露的 helper：`isSplitTab(tab)` / `getActivePtyId(tab)` /
+`getAllTabPtyIds(tab)`，避免直接读 `tab.ptyId`（分屏模式下为 undefined）。
+
+### 5.4 invariant 校验
+
+`tab.ptyId` 与 `tab.splitLayout` 是互斥状态。在 `splitTerminal` / `closePaneInternal` /
+`getAgentContext` 入口调用 `assertTabLayoutInvariant(tab)`：违反时记录 error 日志（不抛
+异常，避免阻塞用户操作），便于排查状态机 bug。
+
 ## 6. UI 组件设计
 
 ### 6.1 组件层次结构
@@ -454,24 +477,45 @@ TerminalTabView.vue
 
 ### 9.1 已完成
 
-- [x] 数据结构增强（`SplitPane` 接口）
-- [x] 分屏核心逻辑（`splitTerminal` 函数）
-- [x] 窗格管理功能（`closePane`、`setActivePaneInTab`、`updatePaneSize`）
-- [x] AI 多屏感知（`getAgentContext` 函数）
-- [x] screenServices 映射机制（改为按 `ptyId` 存储）
+**数据层 / 状态管理**
+- [x] 数据结构（`SplitPane` 接口、`AgentTerminalContext` discriminated union）
+- [x] 分屏核心逻辑（`splitTerminal` / `closePane` / `setActivePaneInTab` / `updatePaneSize`）
+- [x] screenServices 映射机制（按 `ptyId` 存储）
+- [x] 互斥状态 invariant 运行时校验（`assertTabLayoutInvariant`）
+- [x] store helpers（`isSplitTab` / `getActivePtyId` / `getAllTabPtyIds`），调用方无需直接读 `tab.ptyId`
+- [x] 树形结构纯函数提取到 `src/stores/split-pane-tree.ts`，附 17 条单元测试
+- [x] 修复 P0 bug：`removePaneFromLayout` 提升后字段残留、`closePane` 未恢复 SSH 元信息、assistant tab 错误进入分屏
 
-### 9.2 待实现
+**UI 交互**
+- [x] `SplitPaneView.vue` 递归布局组件
+- [x] `TerminalTabView.vue` 自动按布局分支渲染单/分屏
+- [x] 分割线拖拽实时调整大小（按 flex-grow 比例）
+- [x] 点击窗格切换激活 + 激活窗格视觉高亮（边框）
+- [x] 关闭按钮（hover 浮现）+ 右键菜单（左右/上下分屏、关闭窗格）
+- [x] 全局快捷键（mac: Cmd+D / Cmd+Shift+D / Cmd+Shift+W；win/linux: Ctrl+Shift+D / Ctrl+Shift+E / Ctrl+Shift+W）
+- [x] xterm 拦截分屏快捷键，避免发送到 pty
+- [x] 中英文 i18n（位置标签、菜单项）
 
-- [ ] UI 组件
-  - [ ] 修改 `TerminalTabView.vue` 支持分屏渲染
-  - [ ] 实现 `SplitPaneView.vue` 递归布局组件
-  - [ ] 实现分割线拖拽调整大小
-- [ ] Agent 后端集成
-  - [ ] 修改 Agent 后端支持多屏上下文
-  - [ ] 增强 Agent System Prompt 支持多屏
-- [ ] Agent 工具
-  - [ ] 为 Agent 添加分屏管理工具
-  - [ ] 为 Agent 添加连接管理工具
+**Agent 后端集成**
+- [x] `AgentContext` 类型扩展 `mode` / `panes` / `activePaneId`
+- [x] `prompt-builder.buildSplitPanesSection`：列出所有窗格 ptyId/label/激活态/终端类型/最近输出
+- [x] split 模式下 `terminalOutput` 等兼容字段填充激活窗格内容，`agent.ts` 等抽象层无需感知多屏
+
+**Agent 工具（反向 IPC 通道）**
+- [x] `electron/services/split-pane-bridge.service.ts`：主进程→渲染进程的 IPC 桥接
+- [x] preload `splitPane.onExec` / `splitPane.sendResult` API
+- [x] 渲染端 `src/services/split-pane-handler.ts` 监听并调用 store
+- [x] 工具：`split_terminal` / `close_pane` / `focus_pane` / `list_panes`，`supportedModes: ['local', 'ssh']`
+
+### 9.2 后续可扩展（未实现）
+
+- [ ] 连接管理工具（`connect_ssh` / `connect_local` / `disconnect_terminal`）
+  - 涉及 SSH 会话选择、凭证查找，建议作为独立特性立项
+- [ ] 分屏布局持久化（重启后恢复）
+  - 需配合 SSH 会话恢复策略，pty 进程无法跨重启
+- [ ] 高级布局：窗格最大化/还原、布局模板（2x2、三栏等）
+- [ ] 窗格输入同步（一次输入广播到多个窗格）
+- [ ] 分屏混合 SSH + 本地时 L2 知识文档 hostId 的多源策略
 
 ## 10. 测试计划
 

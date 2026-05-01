@@ -77,6 +77,13 @@ export const HIDE_RESULT_WHEN_SUCCESS_TOOLS = new Set<string>([
   'exec',
   'send_input',
   'send_control_key',
+  // D. 分屏管理类——窗格变化在 UI 上直观可见，不需要 tool_result 卡再复述；
+  //    list_panes 是纯查询，结果只对 Agent 自身有意义。失败时（如 paneId 不存在）
+  //    会按"失败始终展示"逻辑自动显示出来。
+  'split_terminal',
+  'close_pane',
+  'focus_pane',
+  'list_panes',
 ])
 
 /**

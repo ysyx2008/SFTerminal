@@ -2962,6 +2962,30 @@ const electronAPI = {
       ipcRenderer.invoke('feishu:revokeOAuth') as Promise<{ success: boolean; error?: string }>,
     getOAuthStatus: () =>
       ipcRenderer.invoke('feishu:getOAuthStatus') as Promise<{ authorized: boolean; userName?: string; openId?: string; expiresAt?: number }>,
+  },
+
+  // 分屏反向 IPC：主进程 Agent 工具触发渲染进程 store 执行分屏操作
+  splitPane: {
+    onExec: (
+      handler: (
+        id: string,
+        op:
+          | { type: 'split'; direction: 'horizontal' | 'vertical' }
+          | { type: 'close'; paneId: string }
+          | { type: 'focus'; paneId: string }
+          | { type: 'list' }
+      ) => void
+    ) => {
+      const fn = (_event: Electron.IpcRendererEvent, payload: { id: string; op: Parameters<typeof handler>[1] }) => {
+        if (!payload || typeof payload.id !== 'string' || !payload.op) return
+        handler(payload.id, payload.op)
+      }
+      ipcRenderer.on('split-pane:exec', fn)
+      return () => ipcRenderer.removeListener('split-pane:exec', fn)
+    },
+    sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => {
+      ipcRenderer.send('split-pane:result', { id, result })
+    }
   }
 }
 
