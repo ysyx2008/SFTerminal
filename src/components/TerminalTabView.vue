@@ -5,6 +5,7 @@ import { AlertCircle } from 'lucide-vue-next'
 import { useTerminalStore } from '../stores/terminal'
 import type { TerminalTab } from '../stores/terminal'
 import Terminal from './Terminal.vue'
+import SplitPaneView from './SplitPaneView.vue'
 
 const AiPanel = defineAsyncComponent(() => import('./AiPanel.vue'))
 
@@ -120,18 +121,32 @@ defineExpose({ toggleAiPanel, ensureAiPanel, showAiPanel })
       ></div>
     </template>
     <div class="terminal-main">
+      <!-- 分屏模式：渲染 SplitPaneView -->
+      <SplitPaneView
+        v-if="tab.splitLayout"
+        :tab-id="tab.id"
+        :layout="tab.splitLayout"
+        :is-active="isActive"
+        @send-to-ai="handleSendToAi"
+      />
+
+      <!-- 单终端模式（向后兼容）-->
       <Terminal
-        v-if="tab.ptyId"
+        v-else-if="tab.ptyId"
         :tab-id="tab.id"
         :pty-id="tab.ptyId"
         :type="(tab.type as 'local' | 'ssh')"
         :is-active="isActive"
         @send-to-ai="handleSendToAi"
       />
+
+      <!-- 加载中 -->
       <div v-else-if="tab.isLoading" class="terminal-loading">
         <div class="loading-spinner"></div>
         <span>{{ tab.loadingMessage || t('terminal.connecting') }}</span>
       </div>
+
+      <!-- 连接错误 -->
       <div v-else class="terminal-error">
         <AlertCircle :size="48" />
         <span class="error-title">{{ t('terminal.connectionFailed') }}</span>
