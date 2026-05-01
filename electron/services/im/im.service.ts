@@ -933,9 +933,15 @@ export class IMService {
 
     let sendQueue: Promise<void> = Promise.resolve()
     const enqueueSend = (fn: () => Promise<void>): void => {
-      sendQueue = sendQueue.then(() => fn().catch(err => {
-        log.error('Send queue error:', err)
-      }))
+      sendQueue = sendQueue.then(
+        () => fn().catch(err => {
+          log.error('Send queue error:', err)
+        }),
+        // 即使前一个任务失败，也继续执行当前任务
+        () => fn().catch(err => {
+          log.error('Send queue error (after previous failure):', err)
+        })
+      )
     }
 
     /**
