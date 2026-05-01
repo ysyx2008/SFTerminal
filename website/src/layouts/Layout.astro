@@ -38,6 +38,34 @@ const pageDescription = description || (currentLang === 'zh' ? '旗鱼 AI Agent 
     <slot />
     
     <script>
+      // 主题切换功能
+      (function() {
+        const THEME_KEY = 'sailfish-theme';
+
+        // 初始化主题（在 DOM 加载前执行，避免闪烁）
+        function initTheme() {
+          const savedTheme = localStorage.getItem(THEME_KEY);
+          const theme = savedTheme || 'light'; // 默认浅色主题
+          document.documentElement.setAttribute('data-theme', theme);
+        }
+
+        // 立即执行，避免闪烁
+        initTheme();
+
+        // DOM 加载后绑定切换按钮
+        document.addEventListener('DOMContentLoaded', () => {
+          const themeSwitcher = document.getElementById('theme-switcher');
+          if (themeSwitcher) {
+            themeSwitcher.addEventListener('click', () => {
+              const currentTheme = document.documentElement.getAttribute('data-theme');
+              const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+              document.documentElement.setAttribute('data-theme', newTheme);
+              localStorage.setItem(THEME_KEY, newTheme);
+            });
+          }
+        });
+      })();
+
       // 滚动动画观察器
       const observerOptions = {
         root: null,
