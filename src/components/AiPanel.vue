@@ -1918,6 +1918,12 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         </li>
                       </ul>
                     </div>
+                    <!-- tool_call 步骤的 content 是「执行命令: <command>」「读取文件: <path>」这类
+                         状态行，命令/路径里完全可能出现 #、*、--- 这类 Markdown 语法字符（如 shell
+                         注释 `# 启动调试适配器`、option `--name`、heredoc `===` 等）。直接走
+                         renderMarkdown 会把它们解析成标题、加粗、分隔线，破坏命令原貌，所以单独
+                         走纯文本 + pre-wrap 渲染，保留原样的换行与符号。 -->
+                    <div v-else-if="item.step!.type === 'tool_call'" class="step-text tool-call-content">{{ item.step!.content }}</div>
                     <div v-else class="step-text markdown-content" v-html="renderMarkdown(item.step!.content)"></div>
                     <!-- 并行子 Agent 卡片组 -->
                     <div v-if="item.step!.subAgents && item.step!.subAgents.length > 0" class="sub-agents-group">
@@ -4518,40 +4524,11 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   color: var(--text-primary);
 }
 
-/* tool_call 步骤：把 markdown 渲染出的 <p> 拍扁成 inline，
-   这样 isStreaming 时追加的光标能紧跟在命令文本末尾而不是换行。 */
-.step-text.tool-call-step {
-  display: inline;
-}
-
-.tool-call-body {
-  display: inline;
-}
-
-.tool-call-body :deep(p) {
-  display: inline;
-  margin: 0;
-}
-
-.tool-call-body :deep(p:last-child) {
-  margin-bottom: 0;
-}
-
-/* 闪烁光标：同字号同基线，避免 isStreaming 切换时视觉抖动 */
-.tool-call-typing-cursor {
-  display: inline-block;
-  width: 0.5em;
-  height: 1em;
-  margin-left: 2px;
-  background: var(--accent-primary);
-  vertical-align: text-bottom;
-  animation: ai-typing-cursor-blink 1s step-end infinite;
-  border-radius: 1px;
-}
-
-@keyframes ai-typing-cursor-blink {
-  0%, 50% { opacity: 1; }
-  50.01%, 100% { opacity: 0; }
+/* tool_call 步骤的 content（如「执行命令: kill ...\nsleep 1\n...」）走纯文本渲染，
+   不经过 markdown，所以这里只负责保留原文的换行和缩进，不做任何加粗/标题样式。 */
+.step-text.tool-call-content {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .agent-step-inline.error {
