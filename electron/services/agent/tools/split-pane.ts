@@ -141,16 +141,16 @@ export async function closePaneTool(
   ownerPtyId?: string,
   config?: ToolExecutorConfig
 ): Promise<ToolResult> {
-  // pane_id 的语义就是目标窗格的 ptyId；同时容忍历史/同义字段名（pty_id / paneId / ptyId）。
-  // store 内部对未知 id 也会按 ptyId 兜底查找，所以即使 LLM 给的不是规范命名也能正确路由。
-  const paneId = (args as { pane_id?: unknown }).pane_id
+  // 工具参数名 pane_id 保留向后兼容；同时容忍历史/同义字段名（pty_id / paneId / ptyId）。
+  // 实际值就是目标窗格的 ptyId——store 内部对未知 id 也会按 ptyId 兜底查找。
+  const ptyId = (args as { pane_id?: unknown }).pane_id
     ?? (args as { pty_id?: unknown }).pty_id
     ?? (args as { paneId?: unknown }).paneId
     ?? (args as { ptyId?: unknown }).ptyId
-  if (typeof paneId !== 'string' || !paneId) {
+  if (typeof ptyId !== 'string' || !ptyId) {
     return fail('pane_id 必须为字符串（值为目标窗格的 ptyId）')
   }
-  const result = await callBridge({ type: 'close', ptyId: paneId }, ownerPtyId)
+  const result = await callBridge({ type: 'close', ptyId }, ownerPtyId)
   if (!result.ok) return fail(result.error || '关闭窗格失败')
 
   // 如果关掉的就是 Agent 当前操作的窗格，自动把 currentPtyId 切到剩余某个，
@@ -176,19 +176,20 @@ export async function focusPaneTool(
   ownerPtyId?: string,
   config?: ToolExecutorConfig
 ): Promise<ToolResult> {
-  const paneId = (args as { pane_id?: unknown }).pane_id
+  // 工具参数名 pane_id 保留向后兼容；实际值=目标窗格的 ptyId。
+  const ptyId = (args as { pane_id?: unknown }).pane_id
     ?? (args as { pty_id?: unknown }).pty_id
     ?? (args as { paneId?: unknown }).paneId
     ?? (args as { ptyId?: unknown }).ptyId
-  if (typeof paneId !== 'string' || !paneId) {
+  if (typeof ptyId !== 'string' || !ptyId) {
     return fail('pane_id 必须为字符串（值为目标窗格的 ptyId）')
   }
-  const result = await callBridge({ type: 'focus', ptyId: paneId }, ownerPtyId)
+  const result = await callBridge({ type: 'focus', ptyId }, ownerPtyId)
   if (!result.ok) return fail(result.error || '切换激活窗格失败')
 
   // 同步更新 Agent 的"当前默认操作 ptyId"——focus_pane 的语义就是切换操作焦点：
   // 既影响 UI，也影响后续命令工具的默认目标。Agent 不必每次都显式传 pane_id。
-  // store.setActivePaneInTab 成功后激活窗格已被设为 paneId 对应的窗格，直接用入参即可。
+  // store.setActivePaneInTab 成功后激活窗格就是入参对应的那个，直接信任 isActive 取回 ptyId。
   const data = result.data as { panes?: PaneInfo[] } | undefined
   const newPtyId = data?.panes?.find(p => p.isActive)?.ptyId
   if (newPtyId) {
