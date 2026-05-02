@@ -119,6 +119,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKey))
               class="picker-target-item"
               :class="{ active: selectedKind === 'local' }"
               @click="selectedKind = 'local'"
+              @dblclick="selectedKind = 'local'; handleConfirm()"
             >
               <span class="target-icon">💻</span>
               <span class="target-name">{{ t('terminal.split.target.local') }}</span>
