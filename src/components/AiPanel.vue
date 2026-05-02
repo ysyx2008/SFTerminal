@@ -1826,7 +1826,9 @@ watch(() => props.visible, (visible) => {
                         <span class="attachment-size">{{ formatFileSize(file.fileSize) }}</span>
                       </span>
                     </div>
-                    <div v-if="item.step!.toolResult && item.step!.toolResult !== '已拒绝' && item.step!.toolResult !== item.step!.content && item.step!.type !== 'asking' && !item.step!.subAgents" class="step-result">
+                    <!-- 拒绝步骤（rejected）的 content 与 toolResult 在语义上是同一句"用户拒绝…"，
+                         不需要再下方重复一份 step-result。其他场景下 toolResult 与 content 不同则展示。 -->
+                    <div v-if="item.step!.toolResult && !item.step!.rejected && item.step!.toolResult !== item.step!.content && item.step!.type !== 'asking' && !item.step!.subAgents" class="step-result">
                       <pre>{{ item.step!.toolResult }}</pre>
                     </div>
                     <div v-if="item.step!.images && item.step!.images.length > 0" class="step-images">
