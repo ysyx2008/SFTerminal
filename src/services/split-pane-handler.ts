@@ -137,19 +137,8 @@ async function dispatch(
         }
       }
 
-      // 不允许 Agent 关掉自己当前正在操作的窗格——run.context.ptyId 还指向它，
-      // 关闭后下一个 execute_command 会指向已销毁的 PTY 而失败。Agent 实例自身不会
-      // 销毁（已与 PTY 生命周期解耦），但操作语义上是错的：要"换"窗格就先 focus_pane
-      // 切到另一个，再关原来的。
-      if (ownerPtyId) {
-        const targetPane = allPanes.find(p => p.paneId === op.paneId || p.ptyId === op.paneId)
-        if (targetPane && targetPane.ptyId === ownerPtyId) {
-          return {
-            ok: false,
-            error: `不能关闭你当前操作的窗格（ptyId=${ownerPtyId}）——后续命令会指向已销毁的 PTY。要换到别的窗格，先 focus_pane 切过去，再 close_pane 关原来的。`
-          }
-        }
-      }
+      // Agent 关自己当前窗格是允许的：架构上 Agent 实例与 PTY 解耦不会自残；
+      // 关闭后由工具侧根据返回的 panes.isActive 把 run.ptyId 切到新激活窗格。
       const removed = await store.closePane(tab.id, op.paneId)
       log.info(`close done paneId=${op.paneId} removed=${removed}`)
       if (!removed) {

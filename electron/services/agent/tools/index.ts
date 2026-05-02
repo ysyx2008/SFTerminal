@@ -220,9 +220,9 @@ export async function executeTool(
     case 'split_terminal':
       return splitTerminalTool(args, ptyId)
     case 'close_pane':
-      return closePaneTool(args, ptyId)
+      return closePaneTool(args, ptyId, executor)
     case 'focus_pane':
-      return focusPaneTool(args, ptyId)
+      return focusPaneTool(args, ptyId, executor)
     case 'list_panes':
       return listPanesTool(ptyId)
     case 'list_ssh_sessions':

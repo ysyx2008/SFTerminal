@@ -2672,6 +2672,13 @@ export abstract class Agent {
           messages: run.messages,
           tools: this.getAvailableTools()
         }
+      },
+      setCurrentPtyId: (ptyId: string) => {
+        if (!ptyId || ptyId === run.ptyId) return
+        const before = run.ptyId
+        run.ptyId = ptyId
+        run.context.ptyId = ptyId
+        log.info(`Agent currentPtyId switched: ${before} → ${ptyId}`)
       }
     }
   }

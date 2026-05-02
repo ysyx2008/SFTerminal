@@ -81,6 +81,13 @@ export interface ToolExecutorConfig {
     messages: import('../../ai.service').AiMessage[]
     tools: import('../../ai.service').ToolDefinition[]
   } | undefined
+  /**
+   * 切换 Agent 当前默认操作的 ptyId（写入 run.ptyId / run.context.ptyId）。
+   *
+   * 用途：分屏场景下 focus_pane / close_pane 关掉当前窗格后，让 Agent 的"操作指针"
+   * 无缝迁移到剩余的某个窗格，不必依赖 args.pane_id 显式指定。
+   */
+  setCurrentPtyId?: (ptyId: string) => void
 }
 
 /** 常见图片扩展名（AI Vision 模型可直接处理的格式） */

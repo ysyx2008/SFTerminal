@@ -892,7 +892,7 @@ pane_id 接受两种值（任选其一）：
 
 如果你拿着旧 list_panes 的结果，**优先传 ptyId** 更稳。失败时（节点不存在）会返回明确错误。
 
-⚠️ **不能关闭你当前正在操作的窗格**：后续 execute_command 会指向已销毁的 PTY 而失败。要"换"操作目标，先 focus_pane 切到另一个窗格，再 close_pane 关原来的。`,
+可以关闭包括"你当前正在操作的窗格"在内的任意窗格。如果关掉的就是当前操作焦点，工具会自动把"当前默认窗格"切到剩余的某个，后续 execute_command 默认在新焦点执行（无需显式传 pane_id）。唯一例外：剩最后一个窗格时不能关——那等于关闭整个 tab。`,
         parameters: {
           type: 'object',
           properties: {
@@ -913,9 +913,9 @@ pane_id 接受两种值（任选其一）：
       type: 'function',
       function: {
         name: 'focus_pane',
-        description: `切换前端 UI 焦点（高亮显示）到指定窗格。这只影响视觉焦点和"split_terminal 默认在哪里分屏""关闭按钮作用于哪里"等隐式默认值。
+        description: `把激活焦点切到指定窗格。**会同时改变 Agent 的"当前默认操作窗格"**：调用之后 execute_command 等终端工具默认在该窗格执行，不必每次再传 pane_id。
 
-⚠️ 注意：focus_pane **不会改变命令路由**——execute_command 等终端工具默认仍发到 Agent 创建时绑定的窗格。要在指定窗格执行命令，请直接给终端工具传 pane_id 参数（值=该窗格的 ptyId），无需先调 focus_pane。
+适合"接下来一连串命令都要在同一个窗格跑"的场景——一次 focus_pane 切过去，后续命令简洁。如果只是想在某个窗格执行单条命令，直接给那条命令传 pane_id 更轻量。
 
 pane_id 接受 list_panes 返回的 paneId 或 ptyId 任一种（推荐 ptyId，更稳）。`,
         parameters: {

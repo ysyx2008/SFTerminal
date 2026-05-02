@@ -10,7 +10,25 @@
  */
 import { splitPaneBridge, type SplitPaneOp, type SplitPaneResult, type SplitTargetOp } from '../../split-pane-bridge.service'
 import { getConfigService } from '../../config.service'
-import type { ToolResult } from './types'
+import type { ToolResult, ToolExecutorConfig } from './types'
+
+/** handler 返回的 panes 项形态（与 split-pane-handler.ts::collectPanes 保持一致） */
+interface PaneInfo {
+  paneId: string
+  ptyId: string
+  label: string
+  isActive: boolean
+  terminalType: string
+}
+
+/**
+ * 根据 handler 返回的剩余窗格列表，挑一个新的"当前操作 ptyId"。
+ * 优先取 isActive 的那个（前端 closePane 已自动切焦点）；都没有就取第一个。
+ */
+function pickFallbackPtyId(panes: PaneInfo[] | undefined): string | undefined {
+  if (!panes || panes.length === 0) return undefined
+  return panes.find(p => p.isActive)?.ptyId || panes[0]?.ptyId
+}
 
 function ok(output: string, data?: unknown): ToolResult {
   return { success: true, output: data === undefined ? output : `${output}\n${JSON.stringify(data, null, 2)}` }
@@ -106,8 +124,7 @@ export async function listSshSessionsTool(): Promise<ToolResult> {
     host: s.host,
     port: s.port,
     username: s.username,
-    group: s.groupId || s.group,
-    lastUsedAt: s.lastUsedAt
+    group: s.groupId || s.group
   }))
   return ok(
     `共 ${safe.length} 个已配置的 SSH 会话。调用 split_terminal 时把 sessionId 作为 target 传入即可在新窗格中连接对应主机：\n  - 字符串形式：target: "ssh:<sessionId>"\n  - 对象形式：target: { kind: "ssh", sessionId: "<sessionId>" }`,
@@ -115,25 +132,59 @@ export async function listSshSessionsTool(): Promise<ToolResult> {
   )
 }
 
-export async function closePaneTool(args: Record<string, unknown>, ownerPtyId?: string): Promise<ToolResult> {
+export async function closePaneTool(
+  args: Record<string, unknown>,
+  ownerPtyId?: string,
+  config?: ToolExecutorConfig
+): Promise<ToolResult> {
   const paneId = (args as { pane_id?: unknown }).pane_id ?? (args as { paneId?: unknown }).paneId
   if (typeof paneId !== 'string' || !paneId) {
     return fail('pane_id 必须为字符串')
   }
   const result = await callBridge({ type: 'close', paneId }, ownerPtyId)
   if (!result.ok) return fail(result.error || '关闭窗格失败')
+
+  // 如果关掉的就是 Agent 当前操作的窗格，自动把 currentPtyId 切到剩余某个，
+  // 让后续 execute_command 等工具不必显式传 pane_id 也能继续工作。
+  // 判定"是否关到了自己"的方式：ownerPtyId 不再出现在剩余窗格列表里。
+  const data = result.data as { closedPaneId?: string; panes?: PaneInfo[] } | undefined
+  const remaining = data?.panes
+  if (ownerPtyId && remaining && !remaining.some(p => p.ptyId === ownerPtyId)) {
+    const newPtyId = pickFallbackPtyId(remaining)
+    if (newPtyId) {
+      config?.setCurrentPtyId?.(newPtyId)
+      return ok(
+        `已关闭窗格，当前操作焦点已自动切换到剩余窗格（ptyId=${newPtyId}）。后续命令默认在新焦点执行。`,
+        result.data
+      )
+    }
+  }
   return ok('已关闭窗格', result.data)
 }
 
-export async function focusPaneTool(args: Record<string, unknown>, ownerPtyId?: string): Promise<ToolResult> {
+export async function focusPaneTool(
+  args: Record<string, unknown>,
+  ownerPtyId?: string,
+  config?: ToolExecutorConfig
+): Promise<ToolResult> {
   const paneId = (args as { pane_id?: unknown }).pane_id ?? (args as { paneId?: unknown }).paneId
   if (typeof paneId !== 'string' || !paneId) {
     return fail('pane_id 必须为字符串')
   }
   const result = await callBridge({ type: 'focus', paneId }, ownerPtyId)
   if (!result.ok) return fail(result.error || '切换激活窗格失败')
+
+  // 同步更新 Agent 的"当前默认操作 ptyId"——focus_pane 的语义就是切换操作焦点：
+  // 既影响 UI，也影响后续命令工具的默认目标。Agent 不必每次都显式传 pane_id。
+  const data = result.data as { panes?: PaneInfo[] } | undefined
+  const newPtyId = data?.panes?.find(p => p.isActive)?.ptyId
+    || data?.panes?.find(p => p.paneId === paneId)?.ptyId
+    || data?.panes?.find(p => p.ptyId === paneId)?.ptyId
+  if (newPtyId) {
+    config?.setCurrentPtyId?.(newPtyId)
+  }
   return ok(
-    '已切换前端 UI 焦点。注意：这仅影响 UI 的高亮显示——要在该窗格执行命令，请在 execute_command 等工具的 pane_id 参数中传入该窗格的 pty_id。',
+    `已切换激活窗格${newPtyId ? `（当前操作焦点 ptyId=${newPtyId}）` : ''}。后续 execute_command 等工具默认在该窗格执行；如需在其他窗格执行可继续传 pane_id 显式指定。`,
     result.data
   )
 }
