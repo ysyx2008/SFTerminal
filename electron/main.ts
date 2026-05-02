@@ -362,6 +362,7 @@ import { initTerminalStateService, type TerminalState, type CwdChangeEvent, type
 import { initTerminalAwarenessService, type TerminalAwareness } from './services/terminal-awareness'
 import { initScreenContentService } from './services/screen-content.service'
 import { menuService } from './services/menu.service'
+import { attentionService } from './services/attention.service'
 import { getAiDebugService } from './services/ai-debug.service'
 import { getSchedulerService, type CreateTaskParams } from './services/scheduler.service'
 import { getSchedulerStore } from './services/scheduler.store'
@@ -735,6 +736,7 @@ function setupWindowServices() {
   gatewayService.setMainWindow(mainWindow)
   imService.setMainWindow(mainWindow)
   menuService.setMainWindow(mainWindow)
+  attentionService.setMainWindow(mainWindow)
 
   const lang = configService?.getLanguage() || 'zh-CN'
   menuService.setLanguage(lang)
@@ -2915,11 +2917,13 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
         event.sender.send('agent:complete', { agentId, ptyId, result, pendingUserMessages })
       }
       sensorService.appLifecycle.notifyConversationCompleted()
+      attentionService.request()
     },
     onError: (agentId: string, error: string) => {
       if (!event.sender.isDestroyed()) {
         event.sender.send('agent:error', { agentId, ptyId, error })
       }
+      attentionService.request()
     }
   }
 
@@ -3045,12 +3049,15 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
       }
       if (isRemote) wcs.onAgentComplete(result)
       sensorService.appLifecycle.notifyConversationCompleted()
+      // 远程会话由 Web 端用户在用，桌面用户没参与，不应打扰
+      if (!isRemote) attentionService.request()
     },
     onError: (_runId: string, error: string) => {
       if (!event.sender.isDestroyed()) {
         event.sender.send('agent:error', { agentId, error })
       }
       if (isRemote) wcs.onAgentError(error)
+      if (!isRemote) attentionService.request()
     }
   }
 
