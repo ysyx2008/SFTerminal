@@ -567,6 +567,79 @@ export const useTerminalStore = defineStore('terminal', () => {
     return id
   }
 
+  /**
+   * 从指定 tab 的 Agent 会话分叉出一个新的助手 tab（"另开一聊"）。
+   * 后端 fork 完成后再创建前端 tab，确保 Agent 实例和会话历史已经就绪。
+   *
+   * @param sourceTabId 源 tab ID
+   * @param opts.untilTaskCount 截断到第 N 个完成 task（包含），undefined = 全部
+   * @returns 新 tab ID，失败返回 null
+   */
+  async function forkToAssistantTab(sourceTabId: string, opts?: {
+    untilTaskCount?: number
+  }): Promise<string | null> {
+    const sourceTab = tabs.value.find(t => t.id === sourceTabId)
+    if (!sourceTab) {
+      log.warn(`forkToAssistantTab: source tab not found: ${sourceTabId}`)
+      return null
+    }
+    if (sourceTab.agentState?.isRunning) {
+      log.warn(`forkToAssistantTab: source agent is running, refuse to fork`)
+      return null
+    }
+
+    // 助手 tab 用 agentId 作为 agentKey；终端 tab 用 tabId 作为 agentKey
+    const sourceAgentKey = sourceTab.type === 'assistant'
+      ? (sourceTab.agentId || sourceTabId)
+      : sourceTabId
+
+    const newTabId = uuidv4()
+    const newAgentId = `assistant-${newTabId}`
+    const t = i18n.global.t
+    const titleSuffix = ' · ' + t('ai.fork.titleSuffix', '分支')
+
+    let result
+    try {
+      result = await window.electronAPI.agent.fork({
+        sourceAgentKey,
+        newAgentId,
+        untilTaskCount: opts?.untilTaskCount,
+        targetMode: 'assistant',
+        titleSuffix
+      })
+    } catch (err) {
+      log.error('forkToAssistantTab: backend fork failed', err)
+      return null
+    }
+    if (!result) {
+      log.warn('forkToAssistantTab: backend returned null (no session data or service unavailable)')
+      return null
+    }
+
+    const configStore = useConfigStore()
+    const baseTitle = sourceTab.type === 'assistant'
+      ? (configStore.agentName || t('tabs.assistant', '助手'))
+      : sourceTab.title
+
+    const tab: TerminalTab = {
+      id: newTabId,
+      title: baseTitle + titleSuffix,
+      type: 'assistant',
+      agentId: newAgentId,
+      isConnected: true,
+      isLoading: false,
+      agentState: {
+        isRunning: false,
+        steps: [],
+        agentId: newAgentId
+      }
+    }
+    tabs.value.push(tab)
+    activeTabId.value = newTabId
+    log.info(`Forked assistant tab: source=${sourceTabId} → new=${newTabId}, sessionId=${result.newSessionId}, untilTaskCount=${opts?.untilTaskCount ?? 'all'}`)
+    return newTabId
+  }
+
   // 当助手名字变更时，同步更新非远程助手标签页的标题
   {
     const configStore = useConfigStore()
@@ -2215,6 +2288,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     getAllTabPtyIds,
     createTab,
     createAssistantTab,
+    forkToAssistantTab,
     createTabWithExistingPty,
     createTabWithTask,
     pendingSchedulerTasks,

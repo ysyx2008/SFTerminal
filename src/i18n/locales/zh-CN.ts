@@ -1169,6 +1169,12 @@ export default {
     taskFailed: '任务失败',
     taskAborted: '任务中止',
     taskAbortedMessage: '⚠️ 用户中止了执行',
+    fork: {
+      action: '另开一聊',
+      tooltip: '从此处分一个新对话，原对话不受影响',
+      titleSuffix: '分支',
+      failed: '另开一聊失败：会话数据为空或服务不可用'
+    },
     agentExecutionFailed: '❌ 助手执行失败: {error}',
     agentRunError: '❌ 助手运行出错: {error}',
     unknownError: '未知错误',

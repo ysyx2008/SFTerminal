@@ -2975,6 +2975,17 @@ ipcMain.handle('agent:cleanup', async (_event, ptyId: string) => {
   agentService.cleanupAgent(ptyId)
 })
 
+// Fork Agent：从一个已存在的 Agent 会话分叉出新的助手 Agent（"另开一聊"）
+ipcMain.handle('agent:fork', async (_event, opts: {
+  sourceAgentKey: string
+  newAgentId: string
+  untilTaskCount?: number
+  targetMode?: 'assistant'
+  titleSuffix?: string
+}) => {
+  return await agentService.forkAgent(opts)
+})
+
 // 更新 Agent 配置（如执行模式、超时时间，改用 ptyId）
 ipcMain.handle('agent:updateConfig', async (_event, ptyId: string, config: { executionMode?: ExecutionMode; commandTimeout?: number; profileId?: string }) => {
   return agentService.updateConfig(ptyId, config)

@@ -687,6 +687,17 @@ interface Window {
       }) => Promise<boolean>
       getStatus: (ptyId: string) => Promise<unknown>
       cleanup: (ptyId: string) => Promise<void>
+      fork: (opts: {
+        sourceAgentKey: string
+        newAgentId: string
+        untilTaskCount?: number
+        targetMode?: 'assistant'
+        titleSuffix?: string
+      }) => Promise<{
+        newSessionId: string
+        newAgentId: string
+        sourceUserTask: string
+      } | null>
       updateConfig: (ptyId: string, config: { executionMode?: ExecutionMode; commandTimeout?: number; profileId?: string }) => Promise<boolean>
       addMessage: (ptyId: string, message: string, attachments?: import('@shared/types').AttachmentInfo[], documentContext?: string, images?: string[]) => Promise<boolean>
       getExecutionPhase: (ptyId: string) => Promise<{

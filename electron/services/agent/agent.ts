@@ -977,6 +977,139 @@ export abstract class Agent {
     }
   }
   
+  // ==================== Fork（另开一聊） ====================
+
+  /**
+   * 获取当前 session ID（fork 时给 AgentService 用，判断源 Agent 是否有可分叉的会话）
+   */
+  getSessionId(): string | undefined {
+    return this._sessionId
+  }
+
+  /**
+   * 获取终端模式元数据（fork 时给 AgentService 用，判断是否同模式以决定 cache snapshot 是否传递）
+   */
+  getTerminalType(): TerminalType | undefined {
+    return this._terminalMeta?.terminalType
+  }
+
+  /**
+   * 为 fork 生成截断后的新 AgentRecord。
+   *
+   * 实现要点：
+   * - 直接基于 in-memory 的 _sessionMessages / _sessionSteps 构造，不读 HistoryService
+   *   （source Agent 总是持有最新状态，HistoryService 中可能略滞后）
+   * - 截断按 task 边界（user_task step / 真实 user message）进行，task 内部的 tool_calls
+   *   配对天然完整，不会破坏 LLM API 协议
+   * - 返回的 record 还未写入 HistoryService，由调用方负责 saveAgentRecord
+   *
+   * @param newSessionId 新 session ID（由调用方生成）
+   * @param opts.untilTaskCount 截断到第 N 个 task（包含），undefined / >= 总数 = 不截断
+   * @param opts.titleSuffix userTask 后缀（如「· 分支」）
+   */
+  cloneRecordForFork(
+    newSessionId: string,
+    opts?: { untilTaskCount?: number; titleSuffix?: string }
+  ): AgentRecord | null {
+    if (!this._sessionId) return null
+
+    let messages = this._sessionMessages.map(m => JSON.parse(JSON.stringify(m))) as AiMessage[]
+    let steps = [...this._sessionSteps]
+
+    if (opts?.untilTaskCount !== undefined && opts.untilTaskCount > 0) {
+      const tasks = this.splitMessagesIntoTasks(messages)
+      if (opts.untilTaskCount < tasks.length) {
+        messages = tasks.slice(0, opts.untilTaskCount).flatMap(t => t.messages)
+      }
+
+      const stepChunks = this.splitSessionStepsByUserTask(steps)
+      if (opts.untilTaskCount < stepChunks.length) {
+        steps = stepChunks.slice(0, opts.untilTaskCount).flat()
+      }
+    }
+
+    const firstUserTask = steps.find(s => s.type === 'user_task')
+    if (!firstUserTask) return null
+
+    const lastFinalResult = [...steps].reverse().find(s => s.type === 'final_result')
+
+    const serializableSteps: AgentStepRecord[] = steps.map(s => ({
+      id: s.id,
+      type: s.type,
+      content: s.content || '',
+      images: s.images,
+      attachments: s.attachments,
+      toolName: s.toolName,
+      toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,
+      toolResult: s.toolResult,
+      riskLevel: s.riskLevel,
+      timestamp: s.timestamp,
+      webSearchResults: s.webSearchResults,
+      success: s.success,
+      subAgents: s.subAgents
+    }))
+
+    const titleSuffix = opts?.titleSuffix ?? ''
+    return {
+      id: newSessionId,
+      timestamp: Date.now(),
+      terminalId: '',
+      terminalType: this._terminalMeta?.terminalType || 'local',
+      sshHost: this._terminalMeta?.sshHost,
+      userTask: firstUserTask.content + titleSuffix,
+      steps: serializableSteps,
+      messages,
+      finalResult: lastFinalResult?.content,
+      duration: 0,
+      status: 'completed'
+    }
+  }
+
+  /**
+   * 按 user_task step 切分会话步骤（每个 chunk 是一个 task 的所有步骤）
+   * 用于 fork 时截断到第 N 个 task
+   *
+   * 前置条件：steps 的第一个元素必须是 user_task —— 由 initializeRun() 保证
+   * （它在 run.steps 上推入的第一条永远是 type='user_task'）。如果未来允许
+   * 在 user_task 之前注入任何 step，会导致第一个 chunk 不以 user_task 开头，
+   * 进而让 untilTaskCount 的 1-based 语义错位。
+   */
+  private splitSessionStepsByUserTask(steps: AgentStep[]): AgentStep[][] {
+    const chunks: AgentStep[][] = []
+    let current: AgentStep[] = []
+    for (const s of steps) {
+      if (s.type === 'user_task' && current.length > 0) {
+        chunks.push(current)
+        current = []
+      }
+      current.push(s)
+    }
+    if (current.length > 0) chunks.push(current)
+    return chunks
+  }
+
+  /**
+   * 装载 fork 数据到新 Agent 实例上。
+   *
+   * - sessionId：必须，让首次 run 走 restoreFromHistory(sessionId) 路径而非生成新 id
+   * - previousRunMessages：可选 cache snapshot。同模式 fork 时由 AgentService.forkAgent
+   *   直接用 newRecord.messages（与新 record 字节一致）传入，让下次 run 命中 LLM 前缀缓存；
+   *   跨模式不传，新 Agent 走 cold start 从 record 重建上下文
+   */
+  applyForkSnapshot(opts: {
+    sessionId: string
+    previousRunMessages?: AiMessage[]
+  }): void {
+    this._sessionId = opts.sessionId
+    this._sessionStartTime = Date.now()
+    this._sessionSteps = []
+    this._sessionMessages = []
+    if (opts.previousRunMessages && opts.previousRunMessages.length > 0) {
+      // AiMessage 含 tool_calls 等嵌套数组，必须深拷贝避免与源 Agent 共享引用
+      this._previousRunMessages = opts.previousRunMessages.map(m => JSON.parse(JSON.stringify(m))) as AiMessage[]
+    }
+  }
+
   /**
    * 重置会话状态（前端"新对话"或终端重连时调用）
    */

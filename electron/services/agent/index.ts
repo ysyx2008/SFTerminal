@@ -5,7 +5,7 @@
  * 实际执行逻辑在 Agent 基类和 SailFish 子类中
  */
 import os from 'os'
-import type { AiService } from '../ai.service'
+import type { AiService, AiMessage } from '../ai.service'
 import type { PtyService } from '../pty.service'
 import type { SshService } from '../ssh.service'
 import type { SftpService } from '../sftp.service'
@@ -205,6 +205,90 @@ export class AgentService {
       log.info(`Created assistant agent: ${agentId}`)
     }
     return agent
+  }
+
+  /**
+   * Fork：从一个已存在的 Agent 会话分叉出一个新的助手 Agent。
+   *
+   * 流程：
+   *  1. 从源 Agent in-memory 状态生成截断后的 AgentRecord（按 task 边界）
+   *  2. 写入 HistoryService（持久化为新 sessionId 的独立记录）
+   *  3. 创建新助手 Agent，applyForkSnapshot 装载 sessionId（+ 同模式 fork 时的 cache snapshot）
+   *  4. 新 Agent 首次 run 时通过 restoreFromHistory(newSessionId) 自动重建 TaskMemory / sessionMessages
+   *
+   * 安全约束：
+   *  - 源 Agent 不存在 / 在运行中 / 无会话数据时直接返回 null
+   *  - HistoryService 未注入时也返回 null（fork 必须能持久化）
+   *  - 跨模式 fork（终端→助手）不传 _previousRunMessages：源 system prompt 含终端工具，
+   *    新 Agent system prompt 不同，cache 不会命中且历史 messages 中残留的终端 tool_call
+   *    在新工具列表里"看起来不存在"——保守起见走 cold start
+   */
+  async forkAgent(opts: {
+    sourceAgentKey: string
+    newAgentId: string
+    untilTaskCount?: number
+    targetMode?: 'assistant'
+    titleSuffix?: string
+  }): Promise<{ newSessionId: string; newAgentId: string; sourceUserTask: string } | null> {
+    const sourceAgent = this.getAgent(opts.sourceAgentKey)
+    if (!sourceAgent) {
+      log.warn(`forkAgent: source agent not found: ${opts.sourceAgentKey}`)
+      return null
+    }
+    if (sourceAgent.isRunning()) {
+      log.warn(`forkAgent: source agent is running, refuse to fork`)
+      return null
+    }
+    const historyService = this.services.historyService
+    if (!historyService) {
+      log.warn(`forkAgent: historyService not available`)
+      return null
+    }
+
+    const newSessionId = `session_${Date.now()}_fork_${Math.random().toString(36).slice(2, 8)}`
+    const newRecord = sourceAgent.cloneRecordForFork(newSessionId, {
+      untilTaskCount: opts.untilTaskCount,
+      titleSuffix: opts.titleSuffix ?? ''
+    })
+    if (!newRecord) {
+      log.warn(`forkAgent: source agent has no session data to fork: ${opts.sourceAgentKey}`)
+      return null
+    }
+
+    historyService.saveAgentRecord(newRecord)
+
+    const newAgent = this.createAssistantAgent(opts.newAgentId)
+
+    const targetMode = opts.targetMode ?? 'assistant'
+    const sourceTerminalType = sourceAgent.getTerminalType()
+    const isSameMode = targetMode === 'assistant' && sourceTerminalType === undefined
+
+    // 同模式 fork 时携带 cache snapshot 让下一次 run 命中 LLM provider 的前缀缓存。
+    // 关键洞察：cache snapshot 必须与新 record.messages 一致——直接用 newRecord.messages
+    // 作为 snapshot 即可：
+    //   - 全量 fork：snapshot = 完整对话，与源 _previousRunMessages 等价
+    //   - 截断 fork：snapshot = 截断后的对话，与新 record 一致；source Agent 跑到该 task
+    //     时也曾对这段相同字节请求过 LLM，所以 prefix cache 同样命中
+    // 跨模式 fork（terminal→assistant）system prompt 必然不同，cache 物理上无法命中，
+    // 此时不传 snapshot 让新 Agent 走 cold start 即可。
+    const canCarryCacheSnapshot = isSameMode && newRecord.messages && newRecord.messages.length > 0
+
+    newAgent.applyForkSnapshot({
+      sessionId: newSessionId,
+      previousRunMessages: canCarryCacheSnapshot ? (newRecord.messages as AiMessage[]) : undefined
+    })
+
+    log.info(
+      `Forked agent: source=${opts.sourceAgentKey} → new=${opts.newAgentId}, ` +
+      `sessionId=${newSessionId}, untilTaskCount=${opts.untilTaskCount ?? 'all'}, ` +
+      `cacheSnapshotCarried=${canCarryCacheSnapshot}`
+    )
+
+    return {
+      newSessionId,
+      newAgentId: opts.newAgentId,
+      sourceUserTask: newRecord.userTask
+    }
   }
 
   /**

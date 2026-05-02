@@ -883,6 +883,20 @@ const electronAPI = {
     // 清理 Agent 运行记录（使用 ptyId）
     cleanup: (ptyId: string) => ipcRenderer.invoke('agent:cleanup', ptyId),
 
+    // Fork Agent：从源 Agent 会话分叉出新的助手 Agent（"另开一聊"）
+    // untilTaskCount：截断到第 N 个 task（包含），undefined = 全部
+    fork: (opts: {
+      sourceAgentKey: string
+      newAgentId: string
+      untilTaskCount?: number
+      targetMode?: 'assistant'
+      titleSuffix?: string
+    }) => ipcRenderer.invoke('agent:fork', opts) as Promise<{
+      newSessionId: string
+      newAgentId: string
+      sourceUserTask: string
+    } | null>,
+
     // 清空指定终端的任务历史记忆（用于"清空对话"功能）
     clearHistory: (ptyId: string) => ipcRenderer.invoke('agent:clearHistory', ptyId) as Promise<void>,
 

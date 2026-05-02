@@ -31,6 +31,11 @@ const SCROLL_THROTTLE_MS = 1000
 
 export interface AgentTaskGroup {
   id: string
+  /**
+   * group 在 agentTaskGroups 数组中的 0-based 索引。
+   * fork（"另开一聊"）时 untilTaskCount = index + 1，对齐后端按 user_task step 的切分。
+   */
+  index: number
   userTask: string
   images?: string[]
   attachments?: AttachmentInfo[]
@@ -369,6 +374,7 @@ export function useAgentMode(
         const isOnboarding = step.content === '__onboarding__'
         currentGroup = {
           id: step.id,
+          index: groups.length,
           userTask: (isProactive || isOnboarding) ? '' : step.content,
           images: step.images,
           attachments: step.attachments,

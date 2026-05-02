@@ -1169,6 +1169,12 @@ export default {
     taskFailed: 'Task Failed',
     taskAborted: 'Task Aborted',
     taskAbortedMessage: '⚠️ User aborted execution',
+    fork: {
+      action: 'Branch off',
+      tooltip: 'Open a new chat from here; the original conversation stays untouched',
+      titleSuffix: 'branch',
+      failed: 'Branch off failed: no session data or service unavailable'
+    },
     agentExecutionFailed: '❌ Agent execution failed: {error}',
     agentRunError: '❌ Agent run error: {error}',
     unknownError: 'Unknown error',

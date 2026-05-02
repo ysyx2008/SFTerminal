@@ -15,7 +15,10 @@ import AgentPlanView from './AgentPlanView.vue'
 import AiComposer from './AiComposer.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
 import { parseThinking } from '../utils/thinking-block'
+import { createLogger } from '../utils/logger'
 import sailfishLogo from '../../resources/logo.png'
+
+const log = createLogger('AiPanel')
 
 // 导入 composables
 import {
@@ -147,6 +150,46 @@ const shouldShowTaskCompleteFooter = (item: { step?: { id: string; type: string 
   const messageSteps = item.group.steps.filter(s => s.type === 'message')
   if (messageSteps.length === 0) return false
   return messageSteps[messageSteps.length - 1].id === item.step.id
+}
+
+/**
+ * 「另开一聊」按钮的可见性条件：
+ *   - group 已完成（成功 / 失败 / 中断都允许）
+ *   - 非 proactive / 非 onboarding（这两类不是用户发起的真实对话）
+ *   - Agent 不在运行中（运行中状态不一致，不允许 fork）
+ *
+ * 注：每个完成 group 都显示按钮，让用户能从任意历史节点分叉
+ */
+const canForkFromGroup = (group: import('../composables').AgentTaskGroup | undefined): boolean => {
+  if (!group) return false
+  if (!group.finalResult) return false
+  if (group.isProactive || group.isOnboarding) return false
+  if (isAgentRunning.value) return false
+  return true
+}
+
+// 正在 fork 的 group ID 集合：防止用户连续点击同一个按钮创建多个 fork tab
+const forkingGroupIds = ref<Set<string>>(new Set())
+const isForkingFromGroup = (group: import('../composables').AgentTaskGroup | undefined): boolean => {
+  return !!group && forkingGroupIds.value.has(group.id)
+}
+
+const handleForkFromGroup = async (group: import('../composables').AgentTaskGroup | undefined) => {
+  if (!group) return
+  if (!canForkFromGroup(group)) return
+  if (forkingGroupIds.value.has(group.id)) return
+  forkingGroupIds.value.add(group.id)
+  try {
+    const newTabId = await terminalStore.forkToAssistantTab(currentTabId.value, {
+      untilTaskCount: group.index + 1
+    })
+    if (!newTabId) {
+      log.warn('Fork from group failed', { groupId: group.id, untilTaskCount: group.index + 1 })
+      window.alert(t('ai.fork.failed'))
+    }
+  } finally {
+    forkingGroupIds.value.delete(group.id)
+  }
 }
 
 // 识别 createRun 一开始插入的"正在准备..." 占位步骤（type='thinking' + isStreaming=true）。
@@ -1737,6 +1780,16 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                       <div v-if="shouldShowTaskCompleteFooter(item)" class="agent-final-footer">
                         <span class="agent-final-footer-icon">✓</span>
                         <span>{{ t('ai.taskComplete') }}</span>
+                        <button
+                          v-if="canForkFromGroup(item.group)"
+                          type="button"
+                          class="agent-fork-btn"
+                          :title="t('ai.fork.tooltip')"
+                          :disabled="isForkingFromGroup(item.group)"
+                          @click="handleForkFromGroup(item.group)"
+                        >
+                          {{ t('ai.fork.action') }}
+                        </button>
                       </div>
                     </div>
                     <div v-else-if="item.step!.type === 'asking'" class="step-text asking-content">
@@ -1899,6 +1952,17 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         <span class="final-title">{{ item.group!.finalResult!.startsWith('❌') ? t('ai.taskFailed') : t('ai.taskAborted') }}</span>
                       </div>
                       <div class="agent-final-body markdown-content" v-html="renderMarkdown(item.group!.finalResult!.replace(/^[❌⚠️]\s*(Agent\s*(执行失败|运行出错)[:\s]*)?/, ''))"></div>
+                      <div v-if="canForkFromGroup(item.group)" class="agent-final-footer agent-final-footer--in-card">
+                        <button
+                          type="button"
+                          class="agent-fork-btn"
+                          :title="t('ai.fork.tooltip')"
+                          :disabled="isForkingFromGroup(item.group)"
+                          @click="handleForkFromGroup(item.group)"
+                        >
+                          {{ t('ai.fork.action') }}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -4133,6 +4197,41 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .agent-final-footer-icon {
   color: var(--color-success);
   font-weight: 600;
+}
+
+/* "另开一聊"按钮：尾注里的次要操作，与 ✓ 任务完成同行 */
+.agent-fork-btn {
+  margin-left: auto;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.agent-fork-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  border-color: var(--accent-primary);
+}
+
+.agent-fork-btn:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.agent-fork-btn:disabled {
+  cursor: progress;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* 失败/中断卡片内的尾注：和卡片正文同样的左右内边距，避免按钮贴边 */
+.agent-final-footer--in-card {
+  padding: 0 14px 12px;
+  margin-top: 0;
 }
 
 .agent-running-dot {
