@@ -399,7 +399,6 @@ const clearPTTStartTimer = () => {
   }
 }
 
-const MODIFIER_KEYS = new Set(['Control', 'Meta', 'Shift', 'Alt'])
 const MODIFIER_EVENT_PROPS: Record<string, keyof KeyboardEvent> = {
   Control: 'ctrlKey',
   Meta: 'metaKey',

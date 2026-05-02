@@ -2,7 +2,22 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.35.4 (2026-05-01) (Latest)
+## v10.36.0 (2026-05-02) (Latest)
+
+This release delivers a comprehensive upgrade to terminal split-pane management — supporting multi-pane parallel operation, heterogeneous terminal mixing, and Agent-driven pane control — alongside two new Agent tools for Word/Excel template filling and SFTP remote file transfer.
+
+### New Features
+- 🖥️ **Terminal Multi-pane Split View**: Split terminals horizontally or vertically; mix local and SSH panes within the same tab; split shortcuts are now configurable; Agent can actively manage panes (create, switch, close) via tools
+- 📝 **Word/Excel Template Filling**: New `word_template_fill` / `excel_template_fill` tools let the Agent generate reports and spreadsheets from templates, with support for sharedFormula and other Excel formula forms
+- 📁 **SFTP File Transfer Tools**: New `sftp_put` / `sftp_get` tools allow the Agent to upload and download remote files directly in SSH sessions
+
+### Improvements
+- 🎨 **Command Confirmation UX**: Confirmation cards now show context-aware action names (distinguishing create, overwrite, etc.), and the medium-risk color is more visually prominent
+
+### Bug Fixes
+- 🐛 **Knowledge Base Upgrade & Self-healing**: Eliminated false upgrade prompts; vector index now auto-repairs when it detects corruption
+
+## v10.35.4 (2026-05-01)
 
 This release optimizes the AI thinking process display experience and fixes several Agent execution issues.
 
