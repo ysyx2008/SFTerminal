@@ -1948,12 +1948,25 @@ export default {
       menu: {
         horizontal: 'Split Horizontally',
         vertical: 'Split Vertically',
-        close: 'Close Pane'
+        close: 'Close Pane',
+        connectTo: 'Split and connect to…'
       },
       button: {
         horizontal: 'Split Horizontally',
         verticalTitle: 'Split Vertically',
         horizontalTitle: 'Split Horizontally'
+      },
+      target: {
+        title: 'Split and connect to',
+        directionLabel: 'Direction',
+        directionHorizontal: 'Horizontal',
+        directionVertical: 'Vertical',
+        targetLabel: 'Connect to',
+        local: 'Local terminal',
+        sshSection: 'SSH sessions',
+        noSessions: 'No SSH sessions configured yet — add one via Session Manager',
+        cancel: 'Cancel',
+        confirm: 'Split'
       }
     }
   },

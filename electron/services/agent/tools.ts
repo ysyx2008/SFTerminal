@@ -846,9 +846,19 @@ Agent 类型：
       type: 'function',
       function: {
         name: 'split_terminal',
-        description: `在当前激活的终端 tab 上创建分屏。direction='horizontal' 表示左右分屏，'vertical' 表示上下分屏。新窗格会以当前激活窗格作为分割对象，类型继承自当前 tab。仅对终端 tab 有效。
+        description: `在当前激活的终端 tab 上创建分屏。direction='horizontal' 表示左右分屏，'vertical' 表示上下分屏。仅对终端 tab 有效。
 
-返回数据中 panes 数组列出所有窗格的 paneId / ptyId。如果你想在新窗格里执行命令，给 execute_command（以及 send_input、send_control_key、check_terminal_status、get_terminal_context 等终端工具）传入 pane_id 参数，值=该窗格的 ptyId。`,
+**新窗格连接到哪里**（通过可选 target 参数控制）：
+- 不传 target：复用当前激活窗格的连接（与原行为一致——本地激活就开本地，SSH 激活就开同一会话的新连接）
+- target="local"：强制新开本地终端
+- target="ssh:<sessionId>"：连接到指定的已配置 SSH 会话（先调 list_ssh_sessions 获取 sessionId）
+- 也支持对象形态：target={kind:"local"} / {kind:"inherit"} / {kind:"ssh", sessionId:"..."}
+
+返回数据中 panes 数组列出所有窗格的 paneId / ptyId / terminalType。如果你想在新窗格里执行命令，给 execute_command（以及 send_input、send_control_key、check_terminal_status、get_terminal_context 等终端工具）传入 pane_id 参数，值=该窗格的 ptyId。
+
+典型用法：
+- 多机巡检：list_ssh_sessions 拿清单 → 给每台 split_terminal(direction, target="ssh:xxx") → 各窗格并行 execute_command
+- 本地+远程对照：split_terminal("horizontal", "local") 在右边开本地终端`,
         parameters: {
           type: 'object',
           properties: {
@@ -856,6 +866,10 @@ Agent 类型：
               type: 'string',
               enum: ['horizontal', 'vertical'],
               description: '分屏方向：horizontal=左右、vertical=上下'
+            },
+            target: {
+              type: 'string',
+              description: '新窗格的连接源（可选）：不传或 "inherit" 复用激活窗格连接；"local" 新开本地终端；"ssh:<sessionId>" 连接到 list_ssh_sessions 返回的 SSH 会话'
             }
           },
           required: ['direction']
@@ -871,8 +885,6 @@ Agent 类型：
       function: {
         name: 'close_pane',
         description: `关闭指定窗格。关闭后若只剩一个窗格，list_panes 的 mode 会切回 'single'。
-
-⚠️ **不能关闭最后一个窗格**：那等于关掉整个 tab、终止你自己的 Agent 会话。如果只剩一个窗格，工具会拒绝执行并返回错误。要彻底关 tab 请让用户手动操作。
 
 pane_id 接受两种值（任选其一）：
 - list_panes 返回的 paneId（布局节点 id）
@@ -927,6 +939,29 @@ pane_id 接受 list_panes 返回的 paneId 或 ptyId 任一种（推荐 ptyId，
         description: `列出当前激活 tab 的所有窗格（含 pane_id、pty_id、label、是否激活、终端类型）。当 system prompt 中的窗格信息不够实时或刚做过分屏调整时使用。
 
 返回的 ptyId 字段就是其他终端工具（execute_command 等）pane_id 参数所需的值——想在哪个窗格跑命令，就把那个窗格的 ptyId 传给工具的 pane_id 参数。`,
+        parameters: {
+          type: 'object',
+          properties: {}
+        }
+      },
+      _meta: {
+        supportedModes: ['local', 'ssh'],
+        parallelizable: true,
+        contextBudget: { toolResult: 'clearable' }
+      }
+    } as ToolDefinitionWithMeta,
+    {
+      type: 'function',
+      function: {
+        name: 'list_ssh_sessions',
+        description: `列出用户已配置好的 SSH 会话清单（不含密码 / 私钥等敏感字段），返回每个会话的 sessionId、name、host、port、username、group、lastUsedAt。
+
+用途：当你想在新窗格里连接到某台已配置的服务器时，先调本工具拿 sessionId，再调 split_terminal(direction, target="ssh:<sessionId>") 即可在新窗格中打开对应的 SSH 连接。无需用户手工切换或输入凭证。
+
+适用场景：
+- 多机巡检 / 灰度对比（dev/staging/prod 平铺为多窗格）
+- 跨主机故障排查
+- 用户说"在 xxx 服务器上看一下..."时，对照本清单找到对应 sessionId`,
         parameters: {
           type: 'object',
           properties: {}

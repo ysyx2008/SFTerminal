@@ -3,6 +3,7 @@ import { ref, computed, watch, inject, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X } from 'lucide-vue-next'
 import { useTerminalStore, type SplitPane } from '../stores/terminal'
+import { getAllTerminalPanes } from '../stores/split-pane-tree'
 import { PANE_SLOT_REGISTRY_KEY, type PaneSlotRegistry } from './pane-slot-registry'
 
 const { t } = useI18n()
@@ -45,8 +46,16 @@ const paneStyle = computed(() => {
   return { flex: '1 1 0%' }
 })
 
-// 终端窗格被激活的视觉高亮
-const isPaneActive = computed(() => isTerminal.value && (props.layout.isActive ?? false))
+// 单窗格判定：当前 tab 总共只有一个终端窗格
+// 单窗格场景下，"激活"概念无意义（没法切换），不再显示焦点框；关闭按钮也无意义（关掉等于关 tab）
+const isSinglePane = computed(() => {
+  const tab = terminalStore.tabs.find(t => t.id === props.tabId)
+  if (!tab?.splitLayout) return true
+  return getAllTerminalPanes(tab.splitLayout).length <= 1
+})
+
+// 终端窗格被激活的视觉高亮（单窗格不显示）
+const isPaneActive = computed(() => isTerminal.value && !isSinglePane.value && (props.layout.isActive ?? false))
 
 // ==================== 容器引用（用于拖拽时计算容器尺寸）====================
 
@@ -165,7 +174,7 @@ onUnmounted(() => {
     <!-- 终端窗格：仅渲染占位 div，Terminal 由 TerminalTabView 通过 Teleport 投入 -->
     <template v-if="isTerminal">
       <button
-        v-if="layout.ptyId"
+        v-if="layout.ptyId && !isSinglePane"
         class="pane-close-btn"
         :title="t('common.close')"
         @click="handleClosePane"

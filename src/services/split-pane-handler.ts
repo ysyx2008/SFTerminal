@@ -6,13 +6,13 @@
  *
  * 注：所有操作都基于"当前激活 tab"。Agent 在 system prompt 中已被告知"分屏作用于当前 tab"。
  */
-import { useTerminalStore, type SplitPane } from '../stores/terminal'
+import { useTerminalStore, type SplitPane, type SplitTarget } from '../stores/terminal'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('SplitPaneHandler')
 
 type Op =
-  | { type: 'split'; direction: 'horizontal' | 'vertical' }
+  | { type: 'split'; direction: 'horizontal' | 'vertical'; target?: SplitTarget }
   | { type: 'close'; paneId: string }
   | { type: 'focus'; paneId: string }
   | { type: 'list' }
@@ -75,12 +75,13 @@ async function dispatch(
   switch (op.type) {
     case 'split': {
       const t0 = Date.now()
-      log.info(`split start direction=${op.direction}`)
-      const newPaneId = await store.splitTerminal(op.direction)
+      log.info(`split start direction=${op.direction} target=${op.target?.kind || 'inherit'}`)
+      const newPaneId = await store.splitTerminal(op.direction, op.target)
       const t1 = Date.now()
       log.info(`split done newPaneId=${newPaneId || 'null'} elapsed=${t1 - t0}ms`)
       if (!newPaneId) {
-        return { ok: false, error: 'Split failed (no active tab or terminal creation failed)' }
+        const reason = store.getLastSplitError() || 'no active tab, terminal creation failed, or invalid SSH sessionId'
+        return { ok: false, error: `Split failed: ${reason}` }
       }
       return {
         ok: true,

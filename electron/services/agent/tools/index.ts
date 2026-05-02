@@ -26,7 +26,7 @@ import { compressContext, recallCompressed, manageMemory } from './context'
 import { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, messageUser, executeMcpTool, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
 import { dispatchSubAgents } from './sub-agent'
 import { executeWebSearch } from './web-search'
-import { splitTerminalTool, closePaneTool, focusPaneTool, listPanesTool } from './split-pane'
+import { splitTerminalTool, closePaneTool, focusPaneTool, listPanesTool, listSshSessionsTool } from './split-pane'
 
 // 重新导出类型
 export type { ToolExecutorConfig, AgentConfig, ToolResult, ErrorCategory } from './types'
@@ -225,6 +225,8 @@ export async function executeTool(
       return focusPaneTool(args)
     case 'list_panes':
       return listPanesTool()
+    case 'list_ssh_sessions':
+      return listSshSessionsTool()
 
     default:
       // MCP 工具有明确的 mcp_ 前缀，优先路由，避免被 skillSession 误认为技能工具

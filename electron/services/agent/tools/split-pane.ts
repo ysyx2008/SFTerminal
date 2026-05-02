@@ -8,7 +8,8 @@
  * 要在其他窗格执行，请在工具参数里显式传 pane_id（值为 list_panes 返回的 pty_id）。
  * focus_pane 仅切换前端 UI 焦点（让用户看到激活高亮），不影响命令路由。
  */
-import { splitPaneBridge, type SplitPaneOp, type SplitPaneResult } from '../../split-pane-bridge.service'
+import { splitPaneBridge, type SplitPaneOp, type SplitPaneResult, type SplitTargetOp } from '../../split-pane-bridge.service'
+import { getConfigService } from '../../config.service'
 import type { ToolResult } from './types'
 
 function ok(output: string, data?: unknown): ToolResult {
@@ -23,16 +24,94 @@ async function callBridge(op: SplitPaneOp): Promise<SplitPaneResult> {
   return splitPaneBridge.exec(op)
 }
 
+/**
+ * 解析 Agent 给的 target 参数。
+ *
+ * 支持几种宽松写法（LLM 可能用任意一种）：
+ * - 不传 → undefined → 走 inherit
+ * - "inherit" / "local"
+ * - "ssh:<sessionId>"
+ * - { kind: "inherit" | "local" }
+ * - { kind: "ssh", sessionId: "..." }
+ */
+function parseSplitTarget(raw: unknown): SplitTargetOp | undefined | { error: string } {
+  if (raw === undefined || raw === null) return undefined
+
+  if (typeof raw === 'string') {
+    const s = raw.trim()
+    if (!s || s === 'inherit') return { kind: 'inherit' }
+    if (s === 'local') return { kind: 'local' }
+    if (s.startsWith('ssh:')) {
+      const sessionId = s.slice(4).trim()
+      if (!sessionId) return { error: 'target "ssh:..." 缺少 sessionId' }
+      return { kind: 'ssh', sessionId }
+    }
+    return { error: `target 字符串只支持 "inherit" / "local" / "ssh:<sessionId>"，收到 "${s}"` }
+  }
+
+  if (typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>
+    const kind = obj.kind
+    if (kind === 'inherit') return { kind: 'inherit' }
+    if (kind === 'local') return { kind: 'local' }
+    if (kind === 'ssh') {
+      const sessionId = obj.sessionId ?? obj.session_id
+      if (typeof sessionId !== 'string' || !sessionId) {
+        return { error: 'target.kind="ssh" 时必须提供 sessionId' }
+      }
+      return { kind: 'ssh', sessionId }
+    }
+  }
+
+  return { error: 'target 格式无效' }
+}
+
 export async function splitTerminalTool(args: Record<string, unknown>): Promise<ToolResult> {
   const direction = (args as { direction?: unknown }).direction
   if (direction !== 'horizontal' && direction !== 'vertical') {
     return fail('direction 必须是 "horizontal" 或 "vertical"')
   }
-  const result = await callBridge({ type: 'split', direction })
+
+  const parsedTarget = parseSplitTarget(args.target)
+  if (parsedTarget && typeof parsedTarget === 'object' && 'error' in parsedTarget) {
+    return fail(parsedTarget.error)
+  }
+  const target = parsedTarget as SplitTargetOp | undefined
+
+  const result = await callBridge({ type: 'split', direction, target })
   if (!result.ok) return fail(result.error || '分屏失败')
+
+  const targetDesc = target?.kind === 'ssh'
+    ? `（连接到 SSH 会话 ${target.sessionId}）`
+    : target?.kind === 'local'
+      ? '（新开本地终端）'
+      : ''
+
   return ok(
-    `已创建${direction === 'horizontal' ? '左右' : '上下'}分屏。后续如需在新窗格执行命令，请在 execute_command 等工具传入 pane_id（值为返回数据中新窗格的 ptyId）。`,
+    `已创建${direction === 'horizontal' ? '左右' : '上下'}分屏${targetDesc}。后续如需在新窗格执行命令，请在 execute_command 等工具传入 pane_id（值为返回数据中新窗格的 ptyId）。`,
     result.data
+  )
+}
+
+/**
+ * 列出所有已配置的 SSH 会话，供 Agent 调用 split_terminal 时选择目标。
+ *
+ * 不返回密码 / 私钥路径等敏感字段，只暴露足够 Agent 决策的元信息。
+ */
+export async function listSshSessionsTool(): Promise<ToolResult> {
+  const sessions = getConfigService().getSshSessions()
+  const safe = sessions.map(s => ({
+    sessionId: s.id,
+    name: s.name,
+    host: s.host,
+    port: s.port,
+    username: s.username,
+    group: s.groupId || s.group,
+    lastUsedAt: s.lastUsedAt
+  }))
+  return ok(
+    `共 ${safe.length} 个已配置的 SSH 会话。调用 split_terminal 时把 sessionId 作为 target 传入即可在新窗格中连接对应主机：\n  - 字符串形式：target: "ssh:<sessionId>"\n  - 对象形式：target: { kind: "ssh", sessionId: "<sessionId>" }`,
+    safe
   )
 }
 

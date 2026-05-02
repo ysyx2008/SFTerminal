@@ -7,7 +7,8 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { useConfigStore } from '../stores/config'
-import { useTerminalStore } from '../stores/terminal'
+import { useTerminalStore, type SplitTarget } from '../stores/terminal'
+import SplitTargetPicker from './SplitTargetPicker.vue'
 import { getIntegratedTheme } from '../themes'
 import { TerminalScreenService, type ScreenContent } from '../services/terminal-screen.service'
 import { TerminalSnapshotManager, type TerminalSnapshot, type TerminalDiff } from '../services/terminal-snapshot.service'
@@ -678,7 +679,13 @@ watch(
 // 右键菜单处理
 const handleContextMenu = (event: MouseEvent) => {
   event.preventDefault()
-  
+
+  // 右键即视为用户的窗格交互意图，切换 UI 焦点到本窗格。
+  // setActivePaneInTab 支持以 ptyId 直接定位窗格（无需先查 paneId）。
+  // 注意：这只切前端 UI 焦点（让用户看到高亮 + 后续键盘输入路由到此），
+  // 不影响 Agent 的命令路由——Agent 只认它启动时绑定的 ptyId 或 pane_id 参数。
+  terminalStore.setActivePaneInTab(props.tabId, props.ptyId)
+
   const selection = terminal?.getSelection() || ''
   
   // 菜单尺寸估算（5个菜单项 + 2个分隔线 + padding）
@@ -779,6 +786,30 @@ const menuSplitHorizontal = async () => {
 const menuSplitVertical = async () => {
   hideContextMenu()
   await terminalStore.splitTerminal('vertical')
+}
+
+// 分屏目标选择器（"分屏并连接到..." 入口）：
+// 默认行为（左右/上下分屏菜单）继续直接复用激活窗格的连接，不打断现有用户习惯；
+// 想换连接源时再走这条路径，明确选择本地或某个 SSH 会话。
+const splitPickerVisible = ref(false)
+const splitPickerDefaultDirection = ref<'horizontal' | 'vertical'>('horizontal')
+
+const menuSplitConnectTo = () => {
+  hideContextMenu()
+  splitPickerDefaultDirection.value = 'horizontal'
+  splitPickerVisible.value = true
+}
+
+const handlePickerConfirm = async (
+  direction: 'horizontal' | 'vertical',
+  target: SplitTarget
+) => {
+  splitPickerVisible.value = false
+  await terminalStore.splitTerminal(direction, target)
+}
+
+const handlePickerCancel = () => {
+  splitPickerVisible.value = false
 }
 
 const menuClosePane = async () => {
@@ -1413,6 +1444,10 @@ defineExpose({
         <span>{{ t('terminal.split.menu.vertical') }}</span>
         <span class="shortcut">{{ splitVerticalShortcut }}</span>
       </div>
+      <div class="menu-item" @click="menuSplitConnectTo()">
+        <span class="menu-icon">🌐</span>
+        <span>{{ t('terminal.split.menu.connectTo') }}</span>
+      </div>
       <div v-if="isCurrentTabSplit" class="menu-item danger" @click="menuClosePane()">
         <span class="menu-icon">✕</span>
         <span>{{ t('terminal.split.menu.close') }}</span>
@@ -1425,6 +1460,13 @@ defineExpose({
       @click="hideContextMenu"
     ></div>
   </Teleport>
+
+  <SplitTargetPicker
+    :visible="splitPickerVisible"
+    :default-direction="splitPickerDefaultDirection"
+    @confirm="handlePickerConfirm"
+    @cancel="handlePickerCancel"
+  />
 </template>
 
 <style scoped>

@@ -21,8 +21,14 @@ import { createLogger } from '../utils/logger'
 
 const log = createLogger('SplitPaneBridge')
 
+/** Agent 分屏时新窗格的目标连接源（与渲染端 SplitTarget 字段对齐，跨 IPC 序列化用纯对象形态） */
+export type SplitTargetOp =
+  | { kind: 'inherit' }
+  | { kind: 'local' }
+  | { kind: 'ssh', sessionId: string }
+
 export type SplitPaneOp =
-  | { type: 'split'; direction: 'horizontal' | 'vertical' }
+  | { type: 'split'; direction: 'horizontal' | 'vertical'; target?: SplitTargetOp }
   | { type: 'close'; paneId: string }
   | { type: 'focus'; paneId: string }
   | { type: 'list' }

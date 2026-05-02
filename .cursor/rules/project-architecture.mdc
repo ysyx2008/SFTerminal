@@ -146,6 +146,8 @@ SailFish/
 
 Agent 的运行环境分三种：`local`（本地终端）、`ssh`（SSH 远程终端）、`assistant`（无终端助手）。**核心区别是操作目标机器不同**：local 和 assistant 操作的是用户本机，ssh 操作的是远程服务器。因此文件读写、命令执行在 ssh 模式下走完全不同的通道（SSH/SFTP），两套工具互不通用。新增涉及文件或命令的功能时，必须明确它操作的是哪台机器，并通过 `_meta.supportedModes` 限定适用模式。详见 `tools.ts` 中各工具的 `_meta` 定义。
 
+**异构分屏**：分屏后同一个 tab 里允许混合不同 terminalType 的窗格——本地终端、多个不同主机的 SSH 连接可以并存。每个 `SplitPane.terminalType` / `sshSessionId` 都独立，所以 tab.type 只跟 root 兼容，"操作哪台机器"的真相是当前激活窗格（或工具显式指定的 pane_id）。`splitTerminal(direction, target)` 的 `target` 参数（`inherit` / `local` / `ssh:sessionId`）控制新窗格连哪里；Agent 也能调 `list_ssh_sessions` 拿 sessionId 后主动开 SSH 窗格。
+
 ### 关切系统（Watch / Sensor Loop）
 - **关切（Watch）**：Agent 的"关注点"配置，定义触发条件、执行 prompt、输出渠道
 - **Agent 驱动**：关切主要由 Agent 通过 `watch_*` 工具创建和管理，UI 面板为只读仪表盘

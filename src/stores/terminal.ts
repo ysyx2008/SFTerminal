@@ -124,6 +124,19 @@ export interface TerminalTab {
   splitLayout?: SplitPane
 }
 
+/**
+ * 分屏新窗格的目标连接源。
+ *
+ * - `inherit`：复用当前激活窗格的连接（默认；激活窗格是 SSH 就开同一会话的新连接，
+ *   是本地就开新本地 shell）
+ * - `local`：强制新开本地 shell（不论当前激活窗格是什么）
+ * - `ssh`：连接到指定的已配置 SSH 会话（sessionId 取自 configStore.sshSessions）
+ */
+export type SplitTarget =
+  | { kind: 'inherit' }
+  | { kind: 'local' }
+  | { kind: 'ssh', sessionId: string }
+
 export interface SplitPane {
   id: string
   type: 'terminal' | 'split'
@@ -889,15 +902,32 @@ export const useTerminalStore = defineStore('terminal', () => {
   /**
    * 创建分屏
    * 将当前激活的终端分割为两个窗格
+   *
+   * @param direction horizontal=左右、vertical=上下
+   * @param target    新窗格连接哪里：
+   *                  - 不传 / `{kind:'inherit'}`：复用当前激活窗格的连接（默认，与历史行为一致）
+   *                  - `{kind:'local'}`：新开本地 shell
+   *                  - `{kind:'ssh', sessionId}`：新开已配置的 SSH 会话
    */
-  async function splitTerminal(direction: 'horizontal' | 'vertical'): Promise<string | null> {
+  /** 最近一次分屏失败的具体原因——给 Agent / UI 调用方读取（非 reactive，仅模块内单值缓存） */
+  let lastSplitError: string | null = null
+  function getLastSplitError(): string | null { return lastSplitError }
+
+  async function splitTerminal(
+    direction: 'horizontal' | 'vertical',
+    target: SplitTarget = { kind: 'inherit' }
+  ): Promise<string | null> {
+    lastSplitError = null
+
     const currentTab = activeTab.value
     if (!currentTab) {
+      lastSplitError = 'no active tab'
       log.warn('No active tab to split')
       return null
     }
 
     if (currentTab.type === 'assistant') {
+      lastSplitError = 'cannot split assistant tab'
       log.warn('Cannot split assistant tab')
       return null
     }
@@ -907,23 +937,34 @@ export const useTerminalStore = defineStore('terminal', () => {
       ensureRootSplitLayoutForTab(currentTab)
     }
     if (!currentTab.splitLayout) {
+      lastSplitError = 'tab has no splitLayout'
       log.warn('Cannot split: tab has no ptyId or splitLayout')
       return null
     }
 
     assertTabLayoutInvariant(currentTab)
 
-    const terminalType = currentTab.type as 'local' | 'ssh'
-
     const activePane = findActivePaneInLayout(currentTab.splitLayout)
       ?? getAllTerminalPanes(currentTab.splitLayout)[0]
     if (!activePane || activePane.type !== 'terminal') {
+      lastSplitError = 'no terminal pane in layout to split on'
       log.warn('No terminal pane in layout to split on')
       return null
     }
 
-    const newPtyId = await createNewTerminalInstance(currentTab)
-    if (!newPtyId) return null
+    // 解析目标连接源：inherit 时回退到激活窗格的连接（不依赖 tab 顶层字段，
+    // 因为分屏后 tab.type/sshConfig 只跟 root 兼容，激活窗格的连接才是真相）
+    const resolved = resolveSplitTarget(target, activePane)
+    if (!resolved) {
+      lastSplitError = lastSplitError || 'failed to resolve split target'
+      return null
+    }
+
+    const newPtyId = await createTerminalInstanceForTarget(resolved)
+    if (!newPtyId) {
+      lastSplitError = lastSplitError || 'failed to create new terminal instance'
+      return null
+    }
 
     // 把 active 终端节点替换为一个 split 子容器（含原节点 + 新节点）。
     //
@@ -934,10 +975,10 @@ export const useTerminalStore = defineStore('terminal', () => {
       id: uuidv4(),
       type: 'terminal',
       ptyId: newPtyId,
-      terminalType,
-      sshConfig: currentTab.sshConfig,
-      sshSessionId: currentTab.sshSessionId,
-      label: i18n.global.t('terminal.split.label.new'),
+      terminalType: resolved.terminalType,
+      sshConfig: resolved.sshConfig,
+      sshSessionId: resolved.sshSessionId,
+      label: resolved.label || i18n.global.t('terminal.split.label.new'),
       isActive: true,
       size: 50
     }
@@ -980,47 +1021,98 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
-   * 创建新的终端实例（用于分屏）
+   * 把 SplitTarget 解析成创建 PTY 所需的全部参数。
+   *
+   * 失败时返回 null（如 ssh sessionId 不存在）。inherit 模式回退到 activePane 的连接：
+   * - 激活窗格是 ssh → 复用其 sshSessionId 重新 ssh.connect 一次（不会复用同一个 PTY，
+   *   Agent / 用户预期是"新开一个相同的连接"）
+   * - 激活窗格是 local → 走本地 shell
    */
-  async function createNewTerminalInstance(tab: TerminalTab): Promise<string | null> {
-    try {
-      if (tab.type === 'local') {
-        const configStore = useConfigStore()
-        const localEncoding = configStore.terminalSettings.localEncoding || 'auto'
+  function resolveSplitTarget(
+    target: SplitTarget,
+    activePane: SplitPane
+  ): {
+    terminalType: 'local' | 'ssh'
+    sshSessionId?: string
+    sshConfig?: { host: string; port: number; username: string }
+    label?: string
+  } | null {
+    const configStore = useConfigStore()
 
-        const ptyId = await window.electronAPI.pty.create({
+    const finalTarget: SplitTarget = (() => {
+      if (target.kind === 'inherit') {
+        if (activePane.terminalType === 'ssh' && activePane.sshSessionId) {
+          return { kind: 'ssh' as const, sessionId: activePane.sshSessionId }
+        }
+        return { kind: 'local' as const }
+      }
+      return target
+    })()
+
+    if (finalTarget.kind === 'local') {
+      return { terminalType: 'local' }
+    }
+
+    const session = configStore.sshSessions.find(s => s.id === finalTarget.sessionId)
+    if (!session) {
+      lastSplitError = `SSH session not found: ${finalTarget.sessionId}`
+      log.error('SSH session not found:', finalTarget.sessionId)
+      return null
+    }
+    return {
+      terminalType: 'ssh',
+      sshSessionId: session.id,
+      sshConfig: { host: session.host, port: session.port, username: session.username },
+      label: session.name
+    }
+  }
+
+  /**
+   * 按已解析的 target 创建一个新终端实例（PTY 或 SSH）
+   */
+  async function createTerminalInstanceForTarget(resolved: {
+    terminalType: 'local' | 'ssh'
+    sshSessionId?: string
+  }): Promise<string | null> {
+    const configStore = useConfigStore()
+    try {
+      if (resolved.terminalType === 'local') {
+        const localEncoding = configStore.terminalSettings.localEncoding || 'auto'
+        return await window.electronAPI.pty.create({
           cols: 80,
           rows: 24,
           encoding: localEncoding
         })
-        return ptyId
-      } else if (tab.type === 'ssh' && tab.sshSessionId) {
-        // 从 configStore 获取完整的 SSH 配置
-        const configStore = useConfigStore()
-        const session = configStore.sshSessions.find(s => s.id === tab.sshSessionId)
-        if (!session) {
-          log.error('SSH session not found:', tab.sshSessionId)
-          return null
-        }
-
-        const jumpHost = configStore.getEffectiveJumpHost(session)
-
-        const sshId = await window.electronAPI.ssh.connect({
-          host: session.host,
-          port: session.port,
-          username: session.username,
-          password: session.password,
-          privateKeyPath: session.privateKeyPath,
-          passphrase: session.passphrase,
-          jumpHost: jumpHost ? toRaw(jumpHost) : undefined,
-          encoding: session.encoding || 'utf-8',
-          cols: 80,
-          rows: 24
-        })
-        return sshId
       }
-      return null
+
+      if (!resolved.sshSessionId) {
+        lastSplitError = 'ssh target missing sessionId'
+        return null
+      }
+      const session = configStore.sshSessions.find(s => s.id === resolved.sshSessionId)
+      if (!session) {
+        lastSplitError = `SSH session not found: ${resolved.sshSessionId}`
+        log.error('SSH session not found:', resolved.sshSessionId)
+        return null
+      }
+
+      const jumpHost = configStore.getEffectiveJumpHost(session)
+
+      return await window.electronAPI.ssh.connect({
+        host: session.host,
+        port: session.port,
+        username: session.username,
+        password: session.password,
+        privateKeyPath: session.privateKeyPath,
+        passphrase: session.passphrase,
+        jumpHost: jumpHost ? toRaw(jumpHost) : undefined,
+        encoding: session.encoding || 'utf-8',
+        cols: 80,
+        rows: 24
+      })
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      lastSplitError = `failed to create terminal instance: ${msg}`
       log.error('Failed to create terminal instance:', error)
       return null
     }
@@ -1998,6 +2090,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     writeToPty,
     resizePty,
     splitTerminal,
+    getLastSplitError,
     closePane: closePaneInternal,
     setActivePaneInTab,
     updatePaneSize,

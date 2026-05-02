@@ -1948,12 +1948,25 @@ export default {
       menu: {
         horizontal: '左右分屏',
         vertical: '上下分屏',
-        close: '关闭窗格'
+        close: '关闭窗格',
+        connectTo: '分屏并连接到…'
       },
       button: {
         horizontal: '左右分屏',
         verticalTitle: '上下分屏',
         horizontalTitle: '左右分屏'
+      },
+      target: {
+        title: '分屏并连接到',
+        directionLabel: '方向',
+        directionHorizontal: '左右',
+        directionVertical: '上下',
+        targetLabel: '连接到',
+        local: '本地终端',
+        sshSection: 'SSH 会话',
+        noSessions: '尚未配置任何 SSH 会话——前往会话管理添加',
+        cancel: '取消',
+        confirm: '分屏'
       }
     }
   },

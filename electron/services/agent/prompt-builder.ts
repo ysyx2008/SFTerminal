@@ -515,6 +515,14 @@ export class PromptBuilder {
       lines.push('注意："激活"标记仅表示前端 UI 焦点，跟命令默认执行的窗格无关。命令默认仍发到 Agent 启动时绑定的窗格——切换执行目标请显式传 `pane_id`。')
     }
 
+    lines.push('')
+    lines.push('**异构分屏**：每个窗格的 terminalType 可以独立——同一个 tab 里允许有本地窗格和多个不同 SSH 主机的窗格并存。')
+    lines.push('调用 `split_terminal` 时通过 `target` 参数选择新窗格的连接源：')
+    lines.push('- 不传 / "inherit"：复用激活窗格的连接（本地→新本地，SSH→同会话新连接）')
+    lines.push('- "local"：强制新开本地终端（哪怕当前激活的是 SSH）')
+    lines.push('- "ssh:<sessionId>"：连接到指定的已配置 SSH 会话（先用 `list_ssh_sessions` 拿 sessionId）')
+    lines.push('典型场景：用户说"对比一下 prod 和 staging 的 nginx 配置"——你可以 split_terminal 两次（target 分别指向两个 SSH 会话），然后并行 execute_command。')
+
     return lines.join('\n')
   }
 
