@@ -753,90 +753,125 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
-   * 重新连接 SSH 终端
-   * 需要从 configStore 获取会话配置，返回 { success, needsSession } 指示结果
+   * 重新连接 SSH 终端。
+   *
+   * 多屏场景下每个窗格可能连不同主机，重连必须只动指定窗格，不能波及其他人。
+   * 调用方传 `targetPtyId`（来自 Terminal.vue 的 props.ptyId）就能精确定位窗格。
+   * 不传时退回老路径——按 tab.ptyId 找窗格，兼容老调用点 / 单屏场景。
+   *
+   * 返回 { success, needsSession } 指示结果。
    */
-  async function reconnectSsh(tabId: string): Promise<{ success: boolean; needsSession?: boolean }> {
+  async function reconnectSsh(
+    tabId: string,
+    targetPtyId?: string
+  ): Promise<{ success: boolean; needsSession?: boolean }> {
     const tab = tabs.value.find(t => t.id === tabId)
-    if (!tab || tab.type !== 'ssh') {
-      console.error('Cannot reconnect: tab not found or not SSH type')
+    if (!tab) {
+      console.error('Cannot reconnect: tab not found')
       return { success: false }
     }
 
-    // 如果没有 sessionId，无法重连（配置未保存）
-    if (!tab.sshSessionId) {
+    // 优先按 targetPtyId 找窗格，找不到再退回 tab.ptyId
+    const lookupPtyId = targetPtyId || tab.ptyId
+    const paneNode = tab.splitLayout && lookupPtyId
+      ? getAllTerminalPanes(tab.splitLayout).find(p => p.ptyId === lookupPtyId)
+      : undefined
+
+    // SSH 信息优先取窗格的；缺失时退回 tab 级（兼容窗格还没 SSH 元数据的边界场景）
+    const terminalType = paneNode?.terminalType || tab.type
+    const sshSessionId = paneNode?.sshSessionId || tab.sshSessionId
+
+    if (terminalType !== 'ssh') {
+      console.error('Cannot reconnect: pane/tab is not SSH type')
+      return { success: false }
+    }
+    if (!sshSessionId) {
       console.warn('Cannot reconnect: no sessionId saved (session was not saved)')
       return { success: false, needsSession: true }
     }
 
-    // 从 configStore 获取会话配置
     const configStore = useConfigStore()
-    const session = configStore.sshSessions.find(s => s.id === tab.sshSessionId)
+    const session = configStore.sshSessions.find(s => s.id === sshSessionId)
     if (!session) {
       console.error('Cannot reconnect: session not found in config')
       return { success: false, needsSession: true }
     }
 
-    // 标记正在重连
-    tab.isLoading = true
-    tab.isConnected = false
+    const oldPtyId = paneNode?.ptyId || tab.ptyId
+
+    // 多屏下每个窗格自带 isReconnecting（Terminal.vue 局部 ref），不污染 tab 级 loading；
+    // 没找到窗格节点说明走的是 tab 级老路径，仍按原方式标 tab.isLoading。
+    const wholeTabReconnect = !paneNode
+    if (wholeTabReconnect) {
+      tab.isLoading = true
+      tab.isConnected = false
+    }
 
     try {
-      // 尝试断开旧连接（如果还存在）
-      if (tab.ptyId) {
+      if (oldPtyId) {
         try {
-          await window.electronAPI.ssh.disconnect(tab.ptyId)
+          await window.electronAPI.ssh.disconnect(oldPtyId)
         } catch (e) {
           // 忽略断开连接的错误
         }
       }
 
-      // 获取跳板机配置
       const jumpHost = configStore.getEffectiveJumpHost(session)
 
-      // 使用会话配置重新连接
       const sshId = await window.electronAPI.ssh.connect({
         host: session.host,
         port: session.port,
         username: session.username,
         password: session.password,
-        privateKeyPath: session.privateKeyPath,  // 私钥文件路径
-        passphrase: session.passphrase,  // 私钥密码
+        privateKeyPath: session.privateKeyPath,
+        passphrase: session.passphrase,
         jumpHost: jumpHost ? toRaw(jumpHost) : undefined,
         encoding: session.encoding || 'utf-8',
         cols: 80,
         rows: 24
       })
 
-      // 更新 tab
-      tab.ptyId = sshId
-      tab.isConnected = true
-
-      // 更新系统信息
-      const jumpInfo = jumpHost ? ` (via ${jumpHost.host})` : ''
-      tab.systemInfo = {
-        os: 'linux',
-        shell: 'bash',
-        description: `SSH 连接: ${session.username}@${session.host}${jumpInfo}`
+      // 1. 精准更新该窗格节点的 ptyId（sshConfig / sshSessionId 不变，重连同一会话）
+      if (paneNode) {
+        paneNode.ptyId = sshId
       }
 
-      // 同步 splitLayout：单屏时把 root 唯一 terminal 子节点的 ptyId 更新到新 sshId；
-      // 没有 layout 则创建。多屏 + 重连为复杂场景，暂不在这里处理。
-      if (tab.splitLayout?.children?.length === 1 && tab.splitLayout.children[0].type === 'terminal') {
-        tab.splitLayout.children[0].ptyId = sshId
-        tab.splitLayout.children[0].sshConfig = tab.sshConfig
-        tab.splitLayout.children[0].sshSessionId = tab.sshSessionId
-      } else if (!tab.splitLayout) {
-        ensureRootSplitLayoutForTab(tab)
+      // 2. tab 级镜像字段：只有当重连的就是当前 active 窗格（或走的是 tab 级老路径）时才同步
+      //    多屏下重连非 active 窗格不应改动 tab.ptyId，否则会让 active pane 引用错乱
+      if (!paneNode || paneNode.isActive) {
+        tab.ptyId = sshId
+        tab.isConnected = true
+        const jumpInfo = jumpHost ? ` (via ${jumpHost.host})` : ''
+        tab.systemInfo = {
+          os: 'linux',
+          shell: 'bash',
+          description: `SSH 连接: ${session.username}@${session.host}${jumpInfo}`
+        }
+      }
+
+      // 3. 单屏 / 兜底：splitLayout 缺失时初始化；存在但仅 1 个 terminal 子节点时同步它
+      //    （多屏路径已经在 paneNode 那一步精确同步过了，不会进这里）
+      if (!paneNode) {
+        if (tab.splitLayout?.children?.length === 1 && tab.splitLayout.children[0].type === 'terminal') {
+          tab.splitLayout.children[0].ptyId = sshId
+          tab.splitLayout.children[0].sshConfig = tab.sshConfig
+          tab.splitLayout.children[0].sshSessionId = tab.sshSessionId
+        } else if (!tab.splitLayout) {
+          ensureRootSplitLayoutForTab(tab)
+        }
       }
 
       return { success: true }
     } catch (error) {
       console.error('Failed to reconnect SSH:', error)
-      tab.isConnected = false
+      if (wholeTabReconnect) {
+        tab.isConnected = false
+      }
       throw error
     } finally {
-      tab.isLoading = false
+      if (wholeTabReconnect) {
+        tab.isLoading = false
+      }
     }
   }
 

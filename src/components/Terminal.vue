@@ -919,8 +919,9 @@ const handleReconnect = async () => {
     // 在终端显示正在重连的消息
     terminal?.write(`\r\n\x1b[36m[${t('terminal.reconnecting')}]\x1b[0m\r\n`)
     
-    // 调用 store 的重连方法
-    const result = await terminalStore.reconnectSsh(props.tabId)
+    // 调用 store 的重连方法（多屏下传当前窗格的 ptyId，让 store 只重连这一个窗格，
+    // 不影响 tab 内其他 SSH 连接 / active 窗格）
+    const result = await terminalStore.reconnectSsh(props.tabId, props.ptyId)
     
     // 如果会话未保存，无法重连
     if (result.needsSession) {
