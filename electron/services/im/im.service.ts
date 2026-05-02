@@ -1070,7 +1070,8 @@ export class IMService {
               toolCallId: confirmation.toolCallId,
               toolName: confirmation.toolName,
               toolArgs: JSON.parse(JSON.stringify(confirmation.toolArgs)),
-              riskLevel: confirmation.riskLevel
+              riskLevel: confirmation.riskLevel,
+              displayName: confirmation.displayName
             })
           }
 

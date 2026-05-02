@@ -2905,7 +2905,8 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
           toolCallId: confirmation.toolCallId,
           toolName: confirmation.toolName,
           toolArgs: JSON.parse(JSON.stringify(confirmation.toolArgs)),
-          riskLevel: confirmation.riskLevel
+          riskLevel: confirmation.riskLevel,
+          displayName: confirmation.displayName
         })
       }
     },
@@ -3022,7 +3023,8 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
           toolCallId: confirmation.toolCallId,
           toolName: confirmation.toolName,
           toolArgs: JSON.parse(JSON.stringify(confirmation.toolArgs)),
-          riskLevel: confirmation.riskLevel
+          riskLevel: confirmation.riskLevel,
+          displayName: confirmation.displayName
         })
       }
     },

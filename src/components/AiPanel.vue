@@ -5023,11 +5023,11 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   box-shadow: 0 4px 20px rgba(var(--color-error-rgb), 0.2);
 }
 
-/* ===== 中风险 - 橙黄色系 ===== */
+/* ===== 中风险 - 警示橙（走 --brand-caution，跨主题固定醒目橙黄，与高/低风险强弱阶梯对齐） ===== */
 .agent-confirm-inline.risk-moderate {
-  background: linear-gradient(135deg, #3d2f10 0%, #2a2008 100%) !important;
-  border: 2px solid var(--color-warning) !important;
-  box-shadow: 0 4px 20px rgba(var(--color-warning-rgb), 0.15);
+  background: linear-gradient(135deg, #3d2810 0%, #2a1a08 100%) !important;
+  border: 2px solid var(--brand-caution) !important;
+  box-shadow: 0 4px 20px rgba(var(--brand-caution-rgb), 0.2);
 }
 
 /* ===== 低风险 - 绿色系（走 --brand-vital，跨主题固定活力绿） ===== */
@@ -5068,7 +5068,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 }
 
 .confirm-risk-badge.risk-moderate {
-  background: var(--color-warning);
+  background: var(--brand-caution);
   color: #000;
 }
 

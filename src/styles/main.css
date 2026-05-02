@@ -13,6 +13,7 @@
  *              特殊（跨主题固定，不在任何主题块里覆盖）：
  *                --brand-vital  产品级"活力绿/心跳/低风险信号"——觉醒心电图、Agent 低风险允许
  *                --brand-alert  产品级"警戒红/高危/破坏性强警示"——错误诊断条、自由模式、btn-danger
+ *                --brand-caution 产品级"警示橙/中风险确认"——Agent 中风险确认卡片、覆盖文件确认
  *
  * ⚠️ 修改 UI 主题颜色时需同步维护：
  *   1. 本文件 (main.css) - 实际生效的 CSS 变量
@@ -107,6 +108,16 @@
   --brand-alert: #ef4444;
   --brand-alert-end: #dc2626;
   --brand-alert-rgb: 239, 68, 68;
+
+  /* ===== 品牌"警示橙"（跨主题固定，不在任何主题块里覆盖）=====
+     语义：产品级"中风险/可逆但需关注的破坏性信号"——Agent 中风险确认卡片、覆盖文件确认等。
+     与 --color-warning 的区别：
+       --color-warning  通用警告反馈，随主题降饱和（如 TabBar 提示、toast 警告）
+       --brand-caution  产品级"看一下、确认下"信号，永远保持 Tailwind amber 的醒目橙黄，
+                        与 --brand-alert 形成"红→橙→绿"的三档强弱阶梯  */
+  --brand-caution: #f59e0b;
+  --brand-caution-end: #d97706;
+  --brand-caution-rgb: 245, 158, 11;
 
   /* ===== 装饰层 accent（--accent-decorative-*）=====
      语义：用于"纯氛围/装饰"——hover 发光、卡片浸染浮层、欢迎页背景光斑、

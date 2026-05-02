@@ -214,7 +214,8 @@ export class WebChatService {
           toolCallId: confirmation.toolCallId,
           toolName: confirmation.toolName,
           toolArgs: JSON.parse(JSON.stringify(confirmation.toolArgs)),
-          riskLevel: confirmation.riskLevel
+          riskLevel: confirmation.riskLevel,
+          displayName: confirmation.displayName
         })
       },
       onComplete: (_runId: string, result: string, pendingUserMessages?: string[]) => {
