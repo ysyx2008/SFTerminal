@@ -2679,7 +2679,8 @@ export abstract class Agent {
         run.ptyId = ptyId
         run.context.ptyId = ptyId
         log.info(`Agent currentPtyId switched: ${before} → ${ptyId}`)
-      }
+      },
+      getCurrentPtyId: () => run.ptyId
     }
   }
   

@@ -261,17 +261,49 @@ export function resolveTargetPtyId(
  *
  * 用于底层 terminalService.write() 返回 false 或 executeInTerminal()
  * 返回 status:'no_instance' 这两条"运行时探测到窗格消失"的路径——把这种
- * 失败转成对 Agent 友好的错误，提示去 list_panes 刷新现有窗格列表后重试。
+ * 失败转成对 Agent 友好的错误。
  *
  * 不在工具入口做预先 hasInstance 校验：那是 TOCTOU + 多一道 IPC 调用，
  * 而底层 write/executeInTerminal 本身就能"诚实地告诉调用方失败"，让失败
  * 自然冒泡更可靠。
+ *
+ * 自动附带最新窗格列表（避免 Agent 多调一次 list_panes）：
+ * 如果 executor 提供了 getCurrentPtyId（即 Agent 自己的 owner ptyId 还活着），
+ * 就借此反查 tab、抓最新 panes，把列表内联到错误里。Agent 一次调用就能
+ * 看到「目标 X 没了 + 现在只剩 Y/Z」的完整信息，直接挑一个新 ptyId 重试。
+ *
+ * 抓不到（owner ptyId 不存在 / 桥接不可用 / 超时）就回退到原始 hint，
+ * 提示 Agent 自己调 list_panes——保证最差情况也不会比改之前更差。
  */
-export function paneGoneResult(ptyId: string): ToolResult {
+export async function paneGoneResult(
+  targetPtyId: string,
+  executor?: ToolExecutorConfig
+): Promise<ToolResult> {
+  const baseError = t('error.pane_not_found_runtime', { paneId: targetPtyId })
+  const ownerPtyId = executor?.getCurrentPtyId?.()
+
+  if (ownerPtyId) {
+    try {
+      // 动态 import 避免引入与 split-pane-bridge 之间潜在的循环依赖
+      const { splitPaneBridge } = await import('../../split-pane-bridge.service')
+      const result = await splitPaneBridge.exec({ type: 'list' }, ownerPtyId)
+      if (result.ok && result.data) {
+        const panesText = JSON.stringify(result.data, null, 2)
+        return {
+          success: false,
+          output: '',
+          error: `${baseError}\n\n${t('error.pane_not_found_runtime.with_panes', { panes: panesText })}`
+        }
+      }
+    } catch {
+      // bridge 不可用（如非 UI 上下文 / 渲染窗口已销毁）就走 fallback
+    }
+  }
+
   return {
     success: false,
     output: '',
-    error: t('error.pane_not_found_runtime', { paneId: ptyId })
+    error: `${baseError} ${t('error.pane_not_found_runtime.fallback_hint')}`
   }
 }
 

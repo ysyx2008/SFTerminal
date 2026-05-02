@@ -1163,6 +1163,15 @@ export const useTerminalStore = defineStore('terminal', () => {
   /**
    * 更新所有窗格的标签
    * 标签语义化为可翻译字符串；切换语言后下次分屏操作会刷新
+   *
+   * 单子节点的 split 容器（典型例子：ensureRootSplitLayoutForTab 初始化的根
+   * split 在尚未真正分屏前只有 1 个 terminal child）不加方向前缀，否则单窗格
+   * 会被错标成"左侧"——视觉上既没有"右侧"对照、又让 Agent 误以为已分屏。
+   * 跳过这层后，唯一子节点继承父节点的 path，最终落到 `label.main`（"主窗格"）。
+   *
+   * 多层嵌套场景（如根 horizontal 含 1 个 vertical 子，vertical 又有 2 个终端）
+   * 也会因此跳过最外层的"左侧"前缀，标签直接呈现为"上方"/"下方"，避免
+   * 出现误导性的"左侧-上方"。
    */
   function updatePaneLabels(layout: SplitPane, path: string = ''): void {
     const t = i18n.global.t
@@ -1171,15 +1180,20 @@ export const useTerminalStore = defineStore('terminal', () => {
       return
     }
 
-    if (layout.children) {
-      layout.children.forEach((child, index) => {
-        const position = layout.direction === 'horizontal'
-          ? (index === 0 ? t('terminal.split.position.left') : t('terminal.split.position.right'))
-          : (index === 0 ? t('terminal.split.position.top') : t('terminal.split.position.bottom'))
-        const newPath = path ? `${path}-${position}` : position
-        updatePaneLabels(child, newPath)
-      })
+    if (!layout.children || layout.children.length === 0) return
+
+    if (layout.children.length === 1) {
+      updatePaneLabels(layout.children[0], path)
+      return
     }
+
+    layout.children.forEach((child, index) => {
+      const position = layout.direction === 'horizontal'
+        ? (index === 0 ? t('terminal.split.position.left') : t('terminal.split.position.right'))
+        : (index === 0 ? t('terminal.split.position.top') : t('terminal.split.position.bottom'))
+      const newPath = path ? `${path}-${position}` : position
+      updatePaneLabels(child, newPath)
+    })
   }
 
   /**

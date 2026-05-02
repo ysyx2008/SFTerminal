@@ -376,7 +376,7 @@ export async function sendControlKey(
   try {
     // write 返回 false = 目标窗格已不存在，不能继续骗 Agent "已发送"
     if (!executor.terminalService.write(ptyId, keySequence)) {
-      const result = paneGoneResult(ptyId)
+      const result = await paneGoneResult(ptyId, executor)
       executor.addStep({
         type: 'tool_result',
         content: `⚠️ ${result.error}`,
@@ -438,7 +438,7 @@ export async function sendInput(
   try {
     // write 返回 false = 目标窗格已不存在；第二条 \r 也不必尝试了
     if (!executor.terminalService.write(ptyId, text)) {
-      const result = paneGoneResult(ptyId)
+      const result = await paneGoneResult(ptyId, executor)
       executor.addStep({
         type: 'tool_result',
         content: `⚠️ ${result.error}`,

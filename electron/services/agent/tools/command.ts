@@ -221,18 +221,18 @@ export async function executeCommand(
     )
 
     // 窗格不存在：底层 service 在 ptyId 找不到实例时返回结构化的 no_instance，
-    // 不能再当成"普通输出"传给 Agent。这里立刻短路返回明确错误，提示去 list_panes 刷新。
+    // 不能再当成"普通输出"传给 Agent。这里立刻短路，让 paneGoneResult 自动附带最新窗格列表。
     if (result.status === 'no_instance') {
       unsubscribe()
       terminalStateService.completeCommandExecution(ptyId, 1, 'failed')
-      const errorMsg = t('error.pane_not_found_runtime', { paneId: result.ptyId })
+      const goneResult = await paneGoneResult(result.ptyId, executor)
       executor.addStep({
         type: 'tool_result',
-        content: `⚠️ ${errorMsg}`,
+        content: `⚠️ ${goneResult.error}`,
         toolName: 'execute_command',
-        toolResult: errorMsg
+        toolResult: goneResult.error || ''
       })
-      return { success: false, output: '', error: errorMsg }
+      return goneResult
     }
 
     const isTimeout = result.status === 'timeout'
@@ -418,7 +418,7 @@ async function executeSudoCommand(
   if (!executor.terminalService.write(ptyId, command + '\r')) {
     unsubscribe()
     terminalStateService.completeCommandExecution(ptyId, 1, 'failed')
-    const result = paneGoneResult(ptyId)
+    const result = await paneGoneResult(ptyId, executor)
     executor.addStep({
       type: 'tool_result',
       content: `⚠️ ${result.error}`,
@@ -557,7 +557,7 @@ async function executeFireAndForget(
 ): Promise<ToolResult> {
   // 写入失败说明窗格已不存在；不能再骗 Agent "命令已启动"——把这条转成明确错误
   if (!executor.terminalService.write(ptyId, command + '\r')) {
-    const result = paneGoneResult(ptyId)
+    const result = await paneGoneResult(ptyId, executor)
     executor.addStep({
       type: 'tool_result',
       content: `⚠️ ${result.error}`,
@@ -618,14 +618,17 @@ async function executeTimedCommand(
     // 写入失败说明窗格已不存在；放弃后续的等待 + 退出键序列，直接报错
     if (!executor.terminalService.write(ptyId, command + '\r')) {
       unsubscribe()
-      const result = paneGoneResult(ptyId)
-      executor.addStep({
-        type: 'tool_result',
-        content: `⚠️ ${result.error}`,
-        toolName: 'execute_command',
-        toolResult: result.error || ''
+      // paneGoneResult 异步抓 list_panes；这里仍然在 Promise executor 内部，
+      // 不能 await，所以把 resolve 链接到结果上即可
+      void paneGoneResult(ptyId, executor).then(result => {
+        executor.addStep({
+          type: 'tool_result',
+          content: `⚠️ ${result.error}`,
+          toolName: 'execute_command',
+          toolResult: result.error || ''
+        })
+        resolve(result)
       })
-      resolve(result)
       return
     }
 

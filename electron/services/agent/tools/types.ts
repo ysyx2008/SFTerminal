@@ -88,6 +88,14 @@ export interface ToolExecutorConfig {
    * 无缝迁移到剩余的某个窗格，不必依赖 args.pane_id 显式指定。
    */
   setCurrentPtyId?: (ptyId: string) => void
+  /**
+   * 读取 Agent 当前默认操作的 ptyId（即 run.ptyId / Agent 的 owner pty）。
+   *
+   * 用途：工具失败诊断时反查 Agent 所在 tab——例如 paneGoneResult 在目标
+   * 窗格已死的情况下，需要用"还活着的 owner ptyId"找到对应 tab 拉最新窗格列表。
+   * 不能依赖入参里那个目标 ptyId，因为它可能恰好就是已死的那个。
+   */
+  getCurrentPtyId?: () => string | undefined
 }
 
 /** 常见图片扩展名（AI Vision 模型可直接处理的格式） */
