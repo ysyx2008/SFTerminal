@@ -121,6 +121,13 @@ export class EmbeddingService extends EventEmitter {
   private useWorker: boolean = false
   private nextMessageId: number = 0
   private pending: Map<number, PendingCall> = new Map()
+  /**
+   * disposeAsync 触发后，禁止新的 callWorker 进入。
+   * 否则在 race timeout 之后还可能有调用者把请求塞进 pending，
+   * 紧接着 killWorker 会把这些请求 reject 成"Embedding worker terminated"。
+   * 加锁是为了让调用方收到更明确的错误，并避免误用一个正在销毁的 service。
+   */
+  private isDisposing: boolean = false
 
   // ── In-process 模式（CLI / 测试 / fallback） ──────────────────
   private extractor: any = null
@@ -351,6 +358,12 @@ export class EmbeddingService extends EventEmitter {
     if (!this.worker) {
       return Promise.reject(new Error('Embedding worker 未启动'))
     }
+    // disposeAsync 已经向 worker 发出 dispose 并准备 kill；
+    // 拒绝新调用，避免请求进入 pending 后被 kill 强制 reject 出难定位的错误。
+    // 注意：我们故意不拦截 'dispose' 自己的调用，让 disposeAsync 的 RPC 能继续。
+    if (this.isDisposing && type !== 'dispose') {
+      return Promise.reject(new Error('Embedding service is being disposed'))
+    }
     const id = ++this.nextMessageId
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -532,11 +545,37 @@ export class EmbeddingService extends EventEmitter {
     return this.isLoading
   }
 
-  /** 释放资源 */
+  /**
+   * 释放资源（同步入口，主要给 switchModel / 错误恢复用）
+   *
+   * 注意：worker 的 dispose 消息发出后立刻被 killWorker 抢断，worker 内部
+   * ORT session 没有机会干净释放。如需"主进程退出前优雅关闭 worker"，
+   * 请使用 disposeAsync。
+   */
   dispose(): void {
     if (this.worker) {
-      // 先尝试通过 dispose 让 worker 释放 extractor，再 kill
       this.callWorker('dispose').catch(() => {/* ignore */})
+      this.killWorker()
+    }
+    this.extractor = null
+    this.useWorker = false
+    this.currentModelId = null
+    this.emit('disposed')
+  }
+
+  /**
+   * 优雅释放：给 worker 一段时间处理 dispose 消息后再 kill，
+   * 用于主进程 quit 路径，减少"worker 在 ORT session 释放中途被 SIGKILL"。
+   */
+  async disposeAsync(timeoutMs: number = 500): Promise<void> {
+    this.isDisposing = true
+    if (this.worker) {
+      try {
+        await Promise.race([
+          this.callWorker('dispose'),
+          new Promise<void>(resolve => setTimeout(resolve, timeoutMs))
+        ])
+      } catch { /* ignore */ }
       this.killWorker()
     }
     this.extractor = null

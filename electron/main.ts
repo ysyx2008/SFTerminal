@@ -540,12 +540,15 @@ async function initKnowledgeService(): Promise<void> {
       // 监听重建开始事件（任何原因：模型升级/数据损坏/BM25 缺失等）
       // 这是前端进度条出现的统一入口——indexCleared 只覆盖维度变化一种情况，
       // 数据损坏/BM25 缺失场景此前没有触发 upgrading 导致用户感觉 UI 纯卡住。
-      knowledgeService.on('rebuildStarted', ({ total, reason }: { total: number; reason: string }) => {
-        log.info(`知识库开始重建: reason=${reason}, total=${total}`)
+      knowledgeService.on('rebuildStarted', (
+        { total, reason, cause }:
+        { total: number; reason: string; cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing' }
+      ) => {
+        log.info(`知识库开始重建: reason=${reason}, cause=${cause || 'missing'}, total=${total}`)
         mainWindow?.webContents.send('knowledge:upgrading', {
           reason,
-          total,
-          message: '正在重建知识库索引，请稍候...'
+          cause: cause || 'missing',
+          total
         })
       })
 
@@ -745,7 +748,7 @@ function setupWindowServices() {
 /**
  * 退出时清理所有后端服务和连接
  */
-function cleanupAllServices() {
+async function cleanupAllServices(): Promise<void> {
   watchService.stop()
   sensorService.stop().catch(() => {})
   schedulerService.stop()
@@ -756,6 +759,16 @@ function cleanupAllServices() {
   sshService.disposeAll()
   sftpService.disconnectAll()
   mcpService.disconnectAll()
+  // 主动释放知识库资源：让 embedding worker 收到 dispose 后干净退出，
+  // 避免被 OS SIGTERM 收尸时正好打断 LanceDB transaction / ORT session
+  // 释放，留下 "manifest 已落盘但 .lance 数据文件未落盘" 的损坏状态
+  // （曾导致 hybridSearch 整天反复报 LanceError(IO): Not found: …lance）。
+  // 给 worker 最多 800ms 优雅退出预算。
+  try {
+    await knowledgeService?.disposeAsync(800)
+  } catch (e) {
+    log.warn('Knowledge dispose 失败:', e)
+  }
 }
 
 // ==================== 主窗口 ====================
@@ -1495,8 +1508,8 @@ app.on('before-quit', (event) => {
 
 // 所有窗口关闭时的处理
 // macOS 上 Cmd+W 只隐藏窗口不触发此事件；真正退出时由 before-quit 驱动
-app.on('window-all-closed', () => {
-  cleanupAllServices()
+app.on('window-all-closed', async () => {
+  await cleanupAllServices()
   if (process.platform !== 'darwin') {
     app.quit()
   }

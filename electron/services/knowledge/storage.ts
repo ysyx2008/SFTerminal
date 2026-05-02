@@ -48,12 +48,17 @@ export class VectorStorage extends EventEmitter {
   private table: any = null
   private storagePath: string
   private tableName = 'knowledge_vectors'
+  private corruptionMarkerPath: string
   private isInitialized: boolean = false
   private dimensions: number = 384
 
   constructor() {
     super()
     this.storagePath = path.join(app.getPath('userData'), 'knowledge', 'lancedb')
+    // 损坏标记：search 路径检测到 LanceError(IO): Not found 等不可恢复
+    // IO 错误时写入；下次启动时强制 dropTable 重建。运行期不做实时重建是
+    // 因为重建需要重新跑 embedding（耗时且可能短暂阻塞用户搜索）。
+    this.corruptionMarkerPath = path.join(this.storagePath, '.corrupted')
     this.ensureDirectories()
   }
 
@@ -67,6 +72,57 @@ export class VectorStorage extends EventEmitter {
   }
 
   /**
+   * 标记向量表为损坏，下次启动时强制重建。
+   * 在运行期对损坏的 LanceDB 不会强行 dropTable —— search 报错可能是瞬态
+   * 文件锁/缓存问题，盲目 drop 会丢失未受影响的数据。
+   */
+  private markCorrupted(reason: string): void {
+    try {
+      fs.writeFileSync(
+        this.corruptionMarkerPath,
+        JSON.stringify({ reason, at: Date.now() }),
+        'utf-8'
+      )
+      log.warn('已标记向量表为损坏，将在下次启动时重建:', reason)
+    } catch (e) {
+      log.warn('写入损坏标记失败:', e)
+    }
+  }
+
+  /**
+   * 检查是否存在损坏标记并清理（initialize 调用）
+   */
+  private consumeCorruptionMarker(): { corrupted: boolean; reason?: string } {
+    if (!fs.existsSync(this.corruptionMarkerPath)) {
+      return { corrupted: false }
+    }
+    let reason: string | undefined
+    try {
+      const data = JSON.parse(fs.readFileSync(this.corruptionMarkerPath, 'utf-8'))
+      reason = data?.reason
+    } catch { /* ignore */ }
+    try {
+      fs.unlinkSync(this.corruptionMarkerPath)
+    } catch { /* ignore */ }
+    return { corrupted: true, reason }
+  }
+
+  /**
+   * 判断错误是否属于"LanceDB 不可恢复的物理损坏"
+   *
+   * 关键模式（ripgrep 自实测见过的字面错误）：
+   *   - "Not found: …knowledge_vectors.lance/data/…lance"（manifest 引用了不存在的 data 文件）
+   *   - "LanceError(IO)" 包裹的 IO 错误
+   * 不匹配关键词不进入自愈路径，避免把瞬态错误误判成损坏。
+   */
+  private isLanceCorruptionError(error: unknown): boolean {
+    const msg = error instanceof Error ? error.message : String(error || '')
+    if (!msg) return false
+    // 必须同时命中 IO 类别 + Not found，避免误伤超时/连接类瞬态错误
+    return msg.includes('LanceError(IO)') && msg.includes('Not found')
+  }
+
+  /**
    * 初始化数据库
    */
   async initialize(dimensions: number = 384): Promise<void> {
@@ -75,18 +131,38 @@ export class VectorStorage extends EventEmitter {
     }
 
     this.dimensions = dimensions
-    
+
     try {
       const { connect } = await loadLanceDB()
-      
+
       this.db = await connect(this.storagePath)
-      
+
+      // 优先消费上次运行期写入的"损坏标记"
+      // 这是 hybridSearch 等读路径在遇到 LanceError(IO): Not found: …lance
+      // 时留下的"下次启动请重建"提示。命中后直接 dropTable，让后续走和
+      // dimensionMismatch 一样的"清空 + 重建索引"路径，避免损坏状态延续。
+      const corruption = this.consumeCorruptionMarker()
+      if (corruption.corrupted) {
+        log.warn('启动时检测到向量表损坏标记，将清空并重建:', corruption.reason)
+        try {
+          const tableNames = await this.db.tableNames()
+          if (tableNames.includes(this.tableName)) {
+            await this.db.dropTable(this.tableName)
+          }
+        } catch (e) {
+          log.warn('清理损坏向量表失败（继续走重建流程）:', e)
+        }
+        this.table = null
+        // 复用现有 dataCorrupted 事件链路：知识库主服务监听后会同步清空 BM25
+        this.emit('dataCorrupted')
+      }
+
       // 检查表是否存在
       const tableNames = await this.db.tableNames()
-      
+
       if (tableNames.includes(this.tableName)) {
         this.table = await this.db.openTable(this.tableName)
-        
+
         // 检查现有数据的向量维度是否匹配
         const dimensionMismatch = await this.checkDimensionMismatch(dimensions)
         if (dimensionMismatch) {
@@ -417,6 +493,9 @@ export class VectorStorage extends EventEmitter {
       return this.formatResults(results, options)
     } catch (error) {
       log.error('Vector search failed:', error)
+      if (this.isLanceCorruptionError(error)) {
+        this.markCorrupted(`searchByVector: ${(error as Error).message}`)
+      }
       return []
     }
   }
@@ -475,6 +554,9 @@ export class VectorStorage extends EventEmitter {
       return fusedResults.slice(0, limit)
     } catch (error) {
       log.error('Hybrid search failed:', error)
+      if (this.isLanceCorruptionError(error)) {
+        this.markCorrupted(`hybridSearch: ${(error as Error).message}`)
+      }
       return []
     }
   }
@@ -610,7 +692,14 @@ export class VectorStorage extends EventEmitter {
         totalSize: 0,
         lastUpdated: Date.now()
       }
-    } catch {
+    } catch (error) {
+      // 物理损坏（manifest 指向不存在的 data 文件）会让 countRows/query 抛 IO；
+      // 这里若仍然吞错返回 0，checkAndRebuildIndex 会判定 chunkCount=0 → 重建，
+      // 而重建期间的 addRecords 会再次撞到同一损坏表，陷入死循环。
+      // 标记后由下次启动 dropTable 重建（与 search 路径同款自愈）。
+      if (this.isLanceCorruptionError(error)) {
+        this.markCorrupted(`getStats: ${(error as Error).message}`)
+      }
       return {
         documentCount: 0,
         chunkCount: 0,
@@ -703,6 +792,12 @@ export class VectorStorage extends EventEmitter {
       return docIds
     } catch (error) {
       log.error('Failed to get all docIds:', error)
+      // 关键路径：cleanupOrphanData 依赖此方法判断是否有孤儿数据，
+      // 如果这里因 LanceDB 物理损坏返回空 Set，会让 cleanupOrphanData 误判为
+      // "没有孤儿"直接 return，损坏状态延续到下次启动也不会自愈。
+      if (this.isLanceCorruptionError(error)) {
+        this.markCorrupted(`getAllDocIds: ${(error as Error).message}`)
+      }
       return new Set()
     }
   }

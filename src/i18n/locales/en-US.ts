@@ -1418,7 +1418,9 @@ export default {
 
   // Knowledge Base
   knowledge: {
-    upgrading: 'Upgrading knowledge base model...'
+    upgrading: 'Upgrading knowledge base model...',
+    repairing: 'Repairing knowledge base index...',
+    rebuilding: 'Rebuilding knowledge base index...'
   },
 
   // Session Manager

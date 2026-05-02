@@ -108,6 +108,12 @@ export class KnowledgeService extends EventEmitter {
   private documentsMetaPath: string
   private documentsIndex: Map<string, KnowledgeDocument> = new Map()
   private isInitialized: boolean = false
+  /**
+   * 记录最近一次"清空索引"的原因，供 rebuildStarted 事件携带，
+   * 让前端区分"模型升级"vs"数据损坏"vs"索引缺失"，避免文案误导。
+   * 取值：'dimension_mismatch' | 'data_corrupted' | undefined（未发生过清空）
+   */
+  private lastClearReason: 'dimension_mismatch' | 'data_corrupted' | undefined
 
   constructor(
     configService: ConfigService,
@@ -187,6 +193,7 @@ export class KnowledgeService extends EventEmitter {
       this.vectorStorage.once('dimensionMismatch', async ({ old: oldDim, new: newDim }) => {
         log.info(`模型维度变化 ${oldDim} -> ${newDim}，同步清空 BM25 索引...`)
         await this.bm25Index.clear()
+        this.lastClearReason = 'dimension_mismatch'
         this.emit('indexCleared', { reason: 'dimension_mismatch', oldDimensions: oldDim, newDimensions: newDim })
       })
 
@@ -194,6 +201,7 @@ export class KnowledgeService extends EventEmitter {
       this.vectorStorage.once('dataCorrupted', async () => {
         log.warn('向量库数据损坏，同步清空 BM25 索引...')
         await this.bm25Index.clear()
+        this.lastClearReason = 'data_corrupted'
       })
       
       await this.vectorStorage.initialize(dimensions)
@@ -275,15 +283,23 @@ export class KnowledgeService extends EventEmitter {
     let needRebuildVector = stats.chunkCount === 0
     const needRebuildBM25 = bm25Stats.documentCount === 0
     
-    log.info(`开始重建索引，共 ${docs.length} 个文档 (vector=${needRebuildVector}, bm25=${needRebuildBM25})...`)
-    
+    log.info(`开始重建索引，共 ${docs.length} 个文档 (vector=${needRebuildVector}, bm25=${needRebuildBM25}, cause=${this.lastClearReason || 'missing'})...`)
+
     // 通知外层（main.ts）前端应当显示进度条。
     // 不管触发原因是维度升级/数据损坏/BM25 缺失，只要真的会走重建流程就发。
     const rebuildReason: 'vector' | 'bm25' | 'both' =
       needRebuildVector && needRebuildBM25 ? 'both'
       : needRebuildVector ? 'vector'
       : 'bm25'
-    this.emit('rebuildStarted', { total: docs.length, reason: rebuildReason })
+    // cause 区分了"为什么会触发重建"：
+    //   - 'dimension_mismatch': 真正的模型升级
+    //   - 'data_corrupted'    : LanceDB 表损坏 / 物理 .lance 文件丢失
+    //   - 'missing'           : 索引文件缺失（首次启用 / 用户删过 lancedb 目录 / BM25 .json 丢失）
+    // 前端据此显示不同文案，避免一律提示"正在升级模型"误导用户
+    const cause = this.lastClearReason || 'missing'
+    this.emit('rebuildStarted', { total: docs.length, reason: rebuildReason, cause })
+    // 重建结束后清掉，让下次重启如果只是常规启动就能显示 "missing" 而非沿用上次值
+    this.lastClearReason = undefined
 
     // 跨文档 embedding 攒批：把多个 doc 的 chunks 合并成 ≤MAX_BATCH_SIZE 条
     // 一起调 embed()，让 ONNX 走真正的 batch inference。对 conversation 这类
@@ -1278,6 +1294,19 @@ export class KnowledgeService extends EventEmitter {
     this.embeddingService.dispose()
     this.isInitialized = false
     this.emit('disposed')
+  }
+
+  /**
+   * 优雅释放（主进程 quit 路径）：在 SIGTERM 之前给 worker 一段时间
+   * 处理 dispose 消息，减少 ORT session 被强制中断带来的副作用。
+   */
+  async disposeAsync(timeoutMs: number = 500): Promise<void> {
+    try {
+      await this.embeddingService.disposeAsync(timeoutMs)
+    } finally {
+      this.isInitialized = false
+      this.emit('disposed')
+    }
   }
 
   // ==================== 主机记忆功能 ====================

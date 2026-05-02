@@ -2069,9 +2069,18 @@ const electronAPI = {
       }
     },
 
-    // 监听知识库升级事件（模型变化导致索引重建）
-    onUpgrading: (callback: (data: { reason: string; message: string }) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, data: { reason: string; message: string }) => callback(data)
+    // 监听知识库索引重建事件（模型升级 / 数据损坏 / 索引缺失）
+    // payload.cause 区分原因，由前端决定文案
+    onUpgrading: (callback: (data: {
+      reason: 'vector' | 'bm25' | 'both' | string
+      cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing'
+      total?: number
+    }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: {
+        reason: 'vector' | 'bm25' | 'both' | string
+        cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing'
+        total?: number
+      }) => callback(data)
       ipcRenderer.on('knowledge:upgrading', handler)
       return () => {
         ipcRenderer.removeListener('knowledge:upgrading', handler)

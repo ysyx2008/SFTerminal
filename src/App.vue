@@ -35,9 +35,23 @@ const { t } = useI18n()
 // Steam 构建标识（由 vite define 注入），在 script 中取值供模板使用，避免模板直接访问全局
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 
-// 知识库升级进度
+// 知识库索引重建状态
+// cause 区分了为什么会重建，决定显示哪种文案：
+//   - dimension_mismatch: 真正的模型升级（首次见的概率最低，但确实存在）
+//   - data_corrupted    : 向量库损坏（manifest 指向不存在的 .lance 数据文件等）
+//   - missing           : 索引缺失（首次启用 / 用户删过 lancedb 目录 / BM25 .json 丢失）
 const knowledgeUpgrading = ref(false)
+const knowledgeUpgradeCause = ref<'dimension_mismatch' | 'data_corrupted' | 'missing'>('missing')
 const knowledgeUpgradeProgress = ref({ current: 0, total: 0, filename: '' })
+
+const knowledgeUpgradeText = computed(() => {
+  switch (knowledgeUpgradeCause.value) {
+    case 'dimension_mismatch': return t('knowledge.upgrading')
+    case 'data_corrupted':     return t('knowledge.repairing')
+    case 'missing':
+    default:                   return t('knowledge.rebuilding')
+  }
+})
 const terminalStore = useTerminalStore()
 const configStore = useConfigStore()
 const canvasStore = useCanvasStore()
@@ -385,9 +399,10 @@ onMounted(async () => {
     window.electronAPI.window.responseTerminalCount(terminalStore.tabs.length)
   })
 
-  // 监听知识库升级事件
-  cleanupKnowledgeUpgrading = window.electronAPI.knowledge.onUpgrading(() => {
+  // 监听知识库索引重建事件
+  cleanupKnowledgeUpgrading = window.electronAPI.knowledge.onUpgrading((payload?: { cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing' }) => {
     knowledgeUpgrading.value = true
+    knowledgeUpgradeCause.value = payload?.cause || 'missing'
   })
   cleanupKnowledgeProgress = window.electronAPI.knowledge.onRebuildProgress((data) => {
     knowledgeUpgradeProgress.value = data
@@ -1108,7 +1123,7 @@ onUnmounted(() => {
         <div class="upgrade-content">
           <Loader2 class="upgrade-icon" :size="16" />
           <span class="upgrade-text">
-            {{ t('knowledge.upgrading') }}
+            {{ knowledgeUpgradeText }}
             <template v-if="knowledgeUpgradeProgress.total > 0">
               ({{ knowledgeUpgradeProgress.current }}/{{ knowledgeUpgradeProgress.total }})
             </template>

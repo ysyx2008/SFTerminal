@@ -333,6 +333,11 @@ export class BM25Index extends EventEmitter {
 
   /**
    * 保存索引到磁盘
+   *
+   * 原子写入（temp + rename）：BM25 索引规模可达数十 MB，直接 writeFileSync
+   * 在写入中途若进程被 SIGKILL（崩溃 / 自动更新 / OS 收尸 worker 时连带主进程
+   * 短暂阻塞）会留下截断的 JSON，下次启动 loadIndex 静默清空 → 触发整库重建，
+   * 这是用户感知"经常升级知识库模型"的主要根因之一。
    */
   async saveIndex(): Promise<void> {
     try {
@@ -355,9 +360,16 @@ export class BM25Index extends EventEmitter {
         ])
       }
 
-      fs.writeFileSync(this.indexPath, JSON.stringify(data), 'utf-8')
+      const tempPath = this.indexPath + '.tmp'
+      fs.writeFileSync(tempPath, JSON.stringify(data), 'utf-8')
+      fs.renameSync(tempPath, this.indexPath)
     } catch (error) {
       log.error('Failed to save index:', error)
+      // 清理可能残留的 .tmp 文件
+      const tempPath = this.indexPath + '.tmp'
+      if (fs.existsSync(tempPath)) {
+        try { fs.unlinkSync(tempPath) } catch { /* ignore */ }
+      }
     }
   }
 
@@ -365,13 +377,22 @@ export class BM25Index extends EventEmitter {
    * 从磁盘加载索引
    */
   private async loadIndex(): Promise<void> {
+    // 清理上次写入未完成留下的临时文件，避免占用磁盘
+    const tempPath = this.indexPath + '.tmp'
+    if (fs.existsSync(tempPath)) {
+      try {
+        fs.unlinkSync(tempPath)
+        log.warn('清理了上次未完成写入的 BM25 索引临时文件')
+      } catch { /* ignore */ }
+    }
+
     try {
       if (!fs.existsSync(this.indexPath)) {
         return
       }
 
       const data = JSON.parse(fs.readFileSync(this.indexPath, 'utf-8'))
-      
+
       if (data.version !== 2) {
         log.warn('Index version mismatch (v%d → v2), rebuilding', data.version || 1)
         return
@@ -384,14 +405,15 @@ export class BM25Index extends EventEmitter {
 
       this.documents = new Map(data.documents || [])
       this.docLengths = new Map(data.docLengths || [])
-      
+
       this.invertedIndex = new Map()
       for (const [term, postings] of (data.invertedIndex || [])) {
         this.invertedIndex.set(term, new Map(postings))
       }
     } catch (error) {
-      log.error('Failed to load index:', error)
-      // 清空重建
+      // 损坏的 BM25 索引（半截 JSON / schema 异常）会导致整库重建，
+      // 这里 warn 而不是 error，但要明确写出原因供排查。
+      log.warn('BM25 索引损坏或无法解析，将清空并触发重建:', error)
       this.documents.clear()
       this.invertedIndex.clear()
       this.docLengths.clear()
