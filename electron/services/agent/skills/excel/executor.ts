@@ -26,6 +26,7 @@ import {
   type ExcelStyleConfig,
   type ExcelCellStyle
 } from './styles'
+import { mergeXlsxFile } from './template-merge'
 import { app } from 'electron'
 import { getKnowledgeService } from '../../../knowledge'
 import { createLogger } from '../../../../utils/logger'
@@ -318,6 +319,8 @@ export async function executeExcelTool(
       return await excelListStyles(executor)
     case 'excel_set_default_style':
       return await excelSetDefaultStyle(args, executor)
+    case 'excel_merge_template':
+      return await excelMergeTemplate(ptyId, args, executor)
     default:
       return { success: false, output: '', error: t('error.unknown_tool', { name: toolName }) }
   }
@@ -2532,5 +2535,114 @@ async function excelSetDefaultStyle(
   })
 
   return { success: true, output }
+}
+
+/**
+ * 用 JSON 数据填充 Excel 模板
+ */
+async function excelMergeTemplate(
+  ptyId: string,
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  const templateRaw = args.template as string | undefined
+  const outputRaw = args.output as string | undefined
+  const data = args.data as Record<string, unknown> | undefined
+  const sheet = args.sheet as string | undefined
+  const onMissing = (args.on_missing as 'error' | 'keep' | 'empty' | undefined) ?? 'error'
+
+  if (!templateRaw) {
+    return { success: false, output: '', error: t('excel.merge_template_required') }
+  }
+  if (!outputRaw) {
+    return { success: false, output: '', error: t('excel.merge_output_required') }
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return { success: false, output: '', error: t('excel.merge_data_required') }
+  }
+
+  const templatePath = resolvePath(ptyId, templateRaw)
+  const outputPath = resolvePath(ptyId, outputRaw)
+
+  if (templatePath === outputPath) {
+    return { success: false, output: '', error: t('excel.merge_same_path') }
+  }
+  if (!fs.existsSync(templatePath)) {
+    return { success: false, output: '', error: t('error.file_not_found', { path: templatePath }) }
+  }
+  if (!templatePath.toLowerCase().endsWith('.xlsx')) {
+    return { success: false, output: '', error: t('excel.merge_not_xlsx', { path: templatePath }) }
+  }
+
+  if (isSessionOpen(templatePath)) {
+    return { success: false, output: '', error: t('excel.merge_template_in_session', { path: templatePath }) }
+  }
+
+  const outDir = path.dirname(outputPath)
+  if (!fs.existsSync(outDir)) {
+    fs.mkdirSync(outDir, { recursive: true })
+  }
+
+  try {
+    const result = await mergeXlsxFile(templatePath, outputPath, data, { onMissing, sheet })
+
+    if (onMissing === 'error' && result.missing.length > 0) {
+      try { fs.unlinkSync(outputPath) } catch { /* ignore */ }
+      return {
+        success: false,
+        output: '',
+        error: t('excel.merge_missing_fields', { fields: result.missing.join(', ') })
+      }
+    }
+
+    // 生成 Canvas 预览（先用 excel session 临时打开，复用现有预览生成器）
+    let previewHtml = ''
+    try {
+      const ExcelJS = await import('exceljs')
+      const previewWb = new ExcelJS.Workbook()
+      await previewWb.xlsx.readFile(outputPath)
+      // 临时挂入 session 以便复用 generateExcelPreviewHtml
+      createSession(outputPath, previewWb)
+      try {
+        previewHtml = generateExcelPreviewHtml(outputPath)
+      } finally {
+        closeSession(outputPath, true)
+      }
+    } catch (e) {
+      log.warn('Failed to generate Excel merge preview:', e)
+    }
+
+    const loopSummary = result.loopExpansions.length > 0
+      ? '\n' + result.loopExpansions
+        .map(l => t('excel.merge_loop_summary', { sheet: l.sheet, field: l.field, count: l.count }))
+        .join('\n')
+      : ''
+    const missingNote = result.missing.length > 0
+      ? '\n' + t('excel.merge_missing_fields_warning', { fields: result.missing.join(', ') })
+      : ''
+
+    const output = t('excel.merge_success', {
+      output: outputPath,
+      replaced: result.replaced.length
+    }) + loopSummary + missingNote
+
+    executor.addStep({
+      type: 'tool_result',
+      content: output,
+      toolName: 'excel_merge_template',
+      toolResult: output,
+      canvasData: previewHtml ? {
+        action: 'open',
+        renderer: 'spreadsheet',
+        title: path.basename(outputPath),
+        content: previewHtml
+      } : undefined
+    })
+
+    return { success: true, output }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    return { success: false, output: '', error: t('excel.merge_failed', { error: errorMsg }) }
+  }
 }
 

@@ -69,6 +69,7 @@ import {
   modifyParagraphText,
   modifyParagraphStyle
 } from './docx-xml'
+import { mergeDocxFile } from './template-merge'
 import JSZip from 'jszip'
 import { app } from 'electron'
 import { getKnowledgeService } from '../../../knowledge'
@@ -765,6 +766,9 @@ export async function executeWordTool(
     // 导出工具
     case 'word_export_pdf':
       return await wordExportPdf(ptyId, args, executor)
+    // 模板填充
+    case 'word_merge_template':
+      return await wordMergeTemplate(ptyId, args, executor)
     default:
       return { success: false, output: '', error: t('error.unknown_tool', { name: toolName }) }
   }
@@ -3208,6 +3212,112 @@ async function wordExportPdf(
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     return { success: false, output: '', error: t('word.export_pdf_error', { error: errorMsg }) }
+  }
+}
+
+/**
+ * 用 JSON 数据填充 Word 模板
+ */
+async function wordMergeTemplate(
+  ptyId: string,
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  const templateRaw = args.template as string | undefined
+  const outputRaw = args.output as string | undefined
+  const data = args.data as Record<string, unknown> | undefined
+  const onMissing = (args.on_missing as 'error' | 'keep' | 'empty' | undefined) ?? 'error'
+
+  if (!templateRaw) {
+    return { success: false, output: '', error: t('word.merge_template_required') }
+  }
+  if (!outputRaw) {
+    return { success: false, output: '', error: t('word.merge_output_required') }
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return { success: false, output: '', error: t('word.merge_data_required') }
+  }
+
+  const templatePath = resolvePath(ptyId, templateRaw)
+  const outputPath = resolvePath(ptyId, outputRaw)
+
+  if (templatePath === outputPath) {
+    return { success: false, output: '', error: t('word.merge_same_path') }
+  }
+  if (!fs.existsSync(templatePath)) {
+    return { success: false, output: '', error: t('error.file_not_found', { path: templatePath }) }
+  }
+  if (!templatePath.toLowerCase().endsWith('.docx')) {
+    return { success: false, output: '', error: t('word.merge_not_docx', { path: templatePath }) }
+  }
+
+  // 模板文件不能正在被某个 word session 占用（避免读到旧内容）
+  if (isSessionOpen(templatePath)) {
+    return { success: false, output: '', error: t('word.merge_template_in_session', { path: templatePath }) }
+  }
+
+  // 输出目录确保存在
+  const outDir = path.dirname(outputPath)
+  if (!fs.existsSync(outDir)) {
+    fs.mkdirSync(outDir, { recursive: true })
+  }
+
+  try {
+    const result = await mergeDocxFile(templatePath, outputPath, data, { onMissing })
+
+    // 严格模式：缺失字段报错
+    if (onMissing === 'error' && result.missing.length > 0) {
+      // 输出文件已经写出，但缺失字段说明数据不完整，删除以避免误用
+      try { fs.unlinkSync(outputPath) } catch { /* ignore */ }
+      return {
+        success: false,
+        output: '',
+        error: t('word.merge_missing_fields', { fields: result.missing.join(', ') })
+      }
+    }
+
+    // 生成 Canvas 预览
+    let previewHtml = ''
+    try {
+      const mammoth = await import('mammoth')
+      const htmlResult = await mammoth.convertToHtml({ path: outputPath }, MAMMOTH_OPTIONS)
+      previewHtml = await enrichHtmlAlignment(htmlResult.value, outputPath)
+      previewHtml = await enrichHtmlNumbering(previewHtml, outputPath)
+    } catch (e) {
+      log.warn('Failed to generate merge preview HTML:', e)
+    }
+
+    const loopSummary = result.loopExpansions.length > 0
+      ? '\n' + result.loopExpansions
+        .map(l => t('word.merge_loop_summary', { kind: l.kind, field: l.field, count: l.count }))
+        .join('\n')
+      : ''
+    const missingNote = result.missing.length > 0
+      ? '\n' + t('word.merge_missing_fields_warning', { fields: result.missing.join(', ') })
+      : ''
+
+    const output = t('word.merge_success', {
+      output: outputPath,
+      replaced: result.replaced.length
+    }) + loopSummary + missingNote
+
+    executor.addStep({
+      type: 'tool_result',
+      content: output,
+      toolName: 'word_merge_template',
+      toolResult: output,
+      canvasData: previewHtml ? {
+        action: 'open',
+        renderer: 'document',
+        title: path.basename(outputPath),
+        content: previewHtml
+      } : undefined
+    })
+
+    return { success: true, output }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    return { success: false, output: '', error: t('word.merge_failed', { error: errorMsg }) }
   }
 }
 

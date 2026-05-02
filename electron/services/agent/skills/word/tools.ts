@@ -740,6 +740,70 @@ config: { font:"宋体", fontSize:14, headings:{1:{font:"黑体",size:22,align:"
         required: ['path']
       }
     }
+  },
+  // ========== 模板填充工具 ==========
+  {
+    type: 'function',
+    function: {
+      name: 'word_merge_template',
+      description: `用 JSON 数据填充 Word 模板（.docx）中的 {{占位符}}，输出新文档。
+
+**何时用**：
+- 你有一份**已存在**的 .docx 模板，里面写了 {{name}} {{date}} 这类占位符
+- 你需要按数据**填充**生成新文档（日报/周报/合同/通知/报告等批量场景）
+
+**何时不用**：
+- 从零创作新文档 → 用 word_create / word_from_markdown
+- 简单字符串替换无占位符语义 → 用 word_replace
+
+**创建模板的方式**：用 word_create / word_from_markdown / word_add 创建文档时，在可变内容位置写 {{占位符}} 即可。模板存到 \`{userData}/agent-workspace/templates/\` 便于复用。
+
+**支持的占位符语法**：
+- {{key}} 简单替换
+- {{user.name}} 嵌套字段
+- {{items[0].title}} 数组索引
+- {{#each items}}...{{/each}} 循环块（段落级或表格行级）
+- {{this}} / {{.}} 循环内当前项
+- {{@index}} / {{@index1}} 循环内序号（从 0 / 1 起）
+
+**循环规则**：
+- 段落级：{{#each xxx}} 和 {{/each}} 各自独占一段（段落 trim 后纯文本就是 marker），中间段落作为模板被复制 N 次
+- 表格行级：{{#each xxx}} 和 {{/each}} 出现在**同一个 <w:tr> 行**内的某些单元格里，整行作为模板被复制 N 次
+
+**格式保留**：占位符所在 run 的字体/字号/颜色自动继承给替换后的文本。
+
+**v1 限制**：不支持嵌套循环、页眉/页脚/文本框内的占位符。
+
+**示例**：
+word_merge_template({
+  template: "/templates/日报.docx",
+  output: "/output/日报-2026-04-30.docx",
+  data: { date: "2026-04-30", author: "张三", items: [{ title: "需求评审", status: "完成" }] }
+})`,
+      parameters: {
+        type: 'object',
+        properties: {
+          template: {
+            type: 'string',
+            description: '模板 .docx 文件路径（绝对路径或相对当前目录）'
+          },
+          output: {
+            type: 'string',
+            description: '输出 .docx 文件路径（绝对路径或相对当前目录），不能与 template 相同'
+          },
+          data: {
+            type: 'object',
+            description: 'JSON 数据对象，字段名对应模板中的 {{占位符}}。例如 { "name": "张三", "items": [{ "title": "xx" }] }'
+          },
+          on_missing: {
+            type: 'string',
+            enum: ['error', 'keep', 'empty'],
+            description: '缺失字段处理策略：error=报错(默认) / keep=保留原占位符 / empty=填空字符串'
+          }
+        },
+        required: ['template', 'output', 'data']
+      }
+    }
   }
 ]
 

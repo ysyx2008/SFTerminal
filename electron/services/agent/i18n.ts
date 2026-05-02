@@ -383,6 +383,18 @@ const translations = {
     'excel.style_not_found': 'Excel 样式不存在: {name}',
     'excel.style_create_failed': '创建 Excel 样式失败',
     'excel.style_preset_cannot_delete': '"{name}" 是预设样式，不能删除',
+    // 模板填充
+    'excel.merge_template_required': '请指定模板文件路径（template）',
+    'excel.merge_output_required': '请指定输出文件路径（output）',
+    'excel.merge_data_required': '请提供数据对象（data），必须是 JSON 对象',
+    'excel.merge_same_path': '模板路径与输出路径不能相同，避免覆盖模板',
+    'excel.merge_not_xlsx': '模板必须是 .xlsx 文件: {path}',
+    'excel.merge_template_in_session': '模板 {path} 正被打开，请先 excel_close 后再填充',
+    'excel.merge_missing_fields': '数据中缺少以下占位符字段：{fields}（请补全数据或将 on_missing 设为 keep/empty）',
+    'excel.merge_missing_fields_warning': '⚠️ 数据中缺少以下占位符字段：{fields}',
+    'excel.merge_loop_summary': '- [{sheet}] 行循环 "{field}" 展开 {count} 项',
+    'excel.merge_success': '已生成: {output}（替换 {replaced} 个占位符）',
+    'excel.merge_failed': '模板填充失败: {error}',
 
     // Word 操作
     'word.already_open': '文件已打开: {path}',
@@ -459,6 +471,18 @@ const translations = {
     'word.no_changes_specified': '未指定任何修改内容',
     'word.modify_paragraph_success': '已修改第 {index} 段: {changes}',
     'word.delete_paragraph_success': '已删除第 {index} 段 "{preview}"，剩余 {remaining} 段',
+    // 模板填充
+    'word.merge_template_required': '请指定模板文件路径（template）',
+    'word.merge_output_required': '请指定输出文件路径（output）',
+    'word.merge_data_required': '请提供数据对象（data），必须是 JSON 对象',
+    'word.merge_same_path': '模板路径与输出路径不能相同，避免覆盖模板',
+    'word.merge_not_docx': '模板必须是 .docx 文件: {path}',
+    'word.merge_template_in_session': '模板 {path} 正被打开，请先 word_close 后再填充',
+    'word.merge_missing_fields': '数据中缺少以下占位符字段：{fields}（请补全数据或将 on_missing 设为 keep/empty）',
+    'word.merge_missing_fields_warning': '⚠️ 数据中缺少以下占位符字段：{fields}',
+    'word.merge_loop_summary': '- {kind} 循环 "{field}" 展开 {count} 项',
+    'word.merge_success': '已生成: {output}（替换 {replaced} 个占位符）',
+    'word.merge_failed': '模板填充失败: {error}',
 
     // 邮箱操作
     'email.no_accounts_configured': '未配置邮箱账户，请先在设置中添加邮箱账户',
@@ -1726,6 +1750,18 @@ Please output the summary in the following format:
     'excel.style_not_found': 'Excel style not found: {name}',
     'excel.style_create_failed': 'Failed to create Excel style',
     'excel.style_preset_cannot_delete': '"{name}" is a preset style and cannot be deleted',
+    // Template merge
+    'excel.merge_template_required': 'Please specify the template file path (template)',
+    'excel.merge_output_required': 'Please specify the output file path (output)',
+    'excel.merge_data_required': 'Please provide a data object (data); must be a JSON object',
+    'excel.merge_same_path': 'Template path and output path must differ to avoid overwriting the template',
+    'excel.merge_not_xlsx': 'Template must be a .xlsx file: {path}',
+    'excel.merge_template_in_session': 'Template {path} is currently open; please excel_close it before merging',
+    'excel.merge_missing_fields': 'Data is missing the following placeholder fields: {fields} (provide them or set on_missing to keep/empty)',
+    'excel.merge_missing_fields_warning': '⚠️ Missing placeholder fields in data: {fields}',
+    'excel.merge_loop_summary': '- [{sheet}] row loop "{field}" expanded {count} item(s)',
+    'excel.merge_success': 'Generated: {output} ({replaced} placeholder(s) replaced)',
+    'excel.merge_failed': 'Template merge failed: {error}',
 
     // Word operations
     'word.already_open': 'File already open: {path}',
@@ -1802,6 +1838,18 @@ Please output the summary in the following format:
     'word.no_changes_specified': 'No changes specified',
     'word.modify_paragraph_success': 'Modified paragraph {index}: {changes}',
     'word.delete_paragraph_success': 'Deleted paragraph {index} "{preview}", {remaining} remaining',
+    // Template merge
+    'word.merge_template_required': 'Please specify the template file path (template)',
+    'word.merge_output_required': 'Please specify the output file path (output)',
+    'word.merge_data_required': 'Please provide a data object (data); must be a JSON object',
+    'word.merge_same_path': 'Template path and output path must differ to avoid overwriting the template',
+    'word.merge_not_docx': 'Template must be a .docx file: {path}',
+    'word.merge_template_in_session': 'Template {path} is currently open; please word_close it before merging',
+    'word.merge_missing_fields': 'Data is missing the following placeholder fields: {fields} (provide them or set on_missing to keep/empty)',
+    'word.merge_missing_fields_warning': '⚠️ Missing placeholder fields in data: {fields}',
+    'word.merge_loop_summary': '- {kind} loop "{field}" expanded {count} item(s)',
+    'word.merge_success': 'Generated: {output} ({replaced} placeholder(s) replaced)',
+    'word.merge_failed': 'Template merge failed: {error}',
 
     // Email operations
     'email.no_accounts_configured': 'No email accounts configured. Please add an email account in settings first.',

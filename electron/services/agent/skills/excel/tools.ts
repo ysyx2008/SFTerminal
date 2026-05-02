@@ -526,6 +526,80 @@ config: { header: { background:"C00000", color:"FFFFFF", bold:true }, data: { al
         required: ['name']
       }
     }
+  },
+  // ========== 模板填充工具 ==========
+  {
+    type: 'function',
+    function: {
+      name: 'excel_merge_template',
+      description: `用 JSON 数据填充 Excel 模板（.xlsx）中的 {{占位符}}，输出新文件。
+
+**何时用**：
+- 你有一份**已存在**的 .xlsx 模板（含 {{占位符}}），需要按数据**填充**生成新报表
+- 典型场景：财务月报、运营日报、批量发票、对账单等
+
+**何时不用**：
+- 从零创建新表格 → 用 excel_from_markdown
+- 改单元格值/样式 → 用 excel_modify
+
+**创建模板的方式**：用 excel_from_markdown 或 excel_modify 在单元格里写 {{占位符}} 即可。模板存到 \`{userData}/agent-workspace/templates/\` 便于复用。
+
+**支持的占位符语法**：
+- {{key}} 单元格简单替换
+- {{user.name}} 嵌套字段
+- {{items[0].amount}} 数组索引
+- {{#each rows}}...{{/each}} 行循环（必须在同一行的不同单元格中标记）
+- {{this}} / {{.}} 循环内当前项
+- {{@index}} / {{@index1}} 循环内序号
+
+**行循环规则**（v1 仅支持单行模板）：
+- 在某行 A 列写 \`{{#each rows}}\`，同一行最末列写 \`{{/each}}\`
+- 该行作为模板，会被复制成 N 行（N = 数组长度）
+- 单元格样式（背景/字体/边框/数字格式）完整保留
+- 公式中的相对行引用自动按行偏移：\`=A2*B2\` 复制到下一行变 \`=A3*B3\`，绝对引用 \`=$A$1\` 不变
+
+**v1 限制**：模板行内不可有合并单元格、不支持嵌套循环、不支持 each 跨多行模板、不调整图表数据源。
+
+**示例**：
+excel_merge_template({
+  template: "/templates/月报.xlsx",
+  output: "/output/月报-2026-04.xlsx",
+  data: {
+    month: "2026-04",
+    rows: [
+      { name: "服务A", revenue: 12000, cost: 8000 },
+      { name: "服务B", revenue: 15000, cost: 9500 }
+    ]
+  }
+})`,
+      parameters: {
+        type: 'object',
+        properties: {
+          template: {
+            type: 'string',
+            description: '模板 .xlsx 文件路径（绝对路径或相对当前目录）'
+          },
+          output: {
+            type: 'string',
+            description: '输出 .xlsx 文件路径（绝对路径或相对当前目录），不能与 template 相同'
+          },
+          data: {
+            type: 'object',
+            description: 'JSON 数据对象，字段名对应模板中的 {{占位符}}。例如 { "month": "2026-04", "rows": [{ "name": "服务A", "revenue": 12000 }] }'
+          },
+          sheet: {
+            type: 'string',
+            description: '可选：限定只处理某个 sheet，不指定则处理所有 sheet'
+          },
+          on_missing: {
+            type: 'string',
+            enum: ['error', 'keep', 'empty'],
+            description: '缺失字段处理策略：error=报错(默认) / keep=保留原占位符 / empty=填空字符串'
+          }
+        },
+        required: ['template', 'output', 'data']
+      }
+    }
   }
 ]
 
