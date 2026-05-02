@@ -6,7 +6,7 @@
  */
 import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Upload, Trash2, X, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-vue-next'
+import { Upload, Trash2, X, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MoreHorizontal } from 'lucide-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useConfigStore } from '../stores/config'
@@ -153,31 +153,62 @@ const shouldShowTaskCompleteFooter = (item: { step?: { id: string; type: string 
 }
 
 /**
- * 「另开一聊」按钮的可见性条件：
+ * group 操作菜单（含「另开一聊」）的可见性条件：
  *   - group 已完成（成功 / 失败 / 中断都允许）
  *   - 非 proactive / 非 onboarding（这两类不是用户发起的真实对话）
  *   - Agent 不在运行中（运行中状态不一致，不允许 fork）
- *
- * 注：每个完成 group 都显示按钮，让用户能从任意历史节点分叉
+ *   - 当前 tab 不是「加载历史」状态：加载历史时后端 Agent in-memory 没有会话数据，
+ *     fork 必然失败；且 LLM provider 的 prompt cache 也大概率早已过期（5 分钟 TTL），
+ *     即便绕路从 HistoryService 拉取也无性能收益。直接不显示菜单更诚实
  */
-const canForkFromGroup = (group: import('../composables').AgentTaskGroup | undefined): boolean => {
+const isLoadedFromHistory = computed(() => {
+  const tab = terminalStore.tabs.find(t => t.id === currentTabId.value)
+  return !!tab?.agentState?.loadedFromHistory
+})
+
+const canShowGroupMenu = (group: import('../composables').AgentTaskGroup | undefined): boolean => {
   if (!group) return false
   if (!group.finalResult) return false
   if (group.isProactive || group.isOnboarding) return false
   if (isAgentRunning.value) return false
+  if (isLoadedFromHistory.value) return false
   return true
 }
 
 // 正在 fork 的 group ID 集合：防止用户连续点击同一个按钮创建多个 fork tab
 const forkingGroupIds = ref<Set<string>>(new Set())
-const isForkingFromGroup = (group: import('../composables').AgentTaskGroup | undefined): boolean => {
-  return !!group && forkingGroupIds.value.has(group.id)
+
+// 当前展开操作菜单的 group ID（同一时间最多一个菜单展开）
+// 菜单通过 Teleport 渲染到 body，避免被 vue-virtual-scroller 的 overflow:hidden 裁掉
+const openGroupMenuId = ref<string | null>(null)
+const groupMenuPosition = ref<{ top: number; right: number }>({ top: 0, right: 0 })
+
+const toggleGroupMenu = (group: import('../composables').AgentTaskGroup | undefined, event: MouseEvent) => {
+  if (!group) return
+  if (openGroupMenuId.value === group.id) {
+    openGroupMenuId.value = null
+    return
+  }
+  // 以触发按钮的右下角对齐菜单（top = 按钮底部 + 4px gap，right = 视窗右边缘 - 按钮右边缘）
+  const trigger = event.currentTarget as HTMLElement
+  const rect = trigger.getBoundingClientRect()
+  groupMenuPosition.value = {
+    top: rect.bottom + 4,
+    right: window.innerWidth - rect.right
+  }
+  openGroupMenuId.value = group.id
 }
+
+// 当前展开菜单对应的 group 引用（Teleport 菜单按钮的 onClick 用它）
+const openGroupMenuGroup = computed(() =>
+  agentTaskGroups.value.find(g => g.id === openGroupMenuId.value)
+)
 
 const handleForkFromGroup = async (group: import('../composables').AgentTaskGroup | undefined) => {
   if (!group) return
-  if (!canForkFromGroup(group)) return
+  if (!canShowGroupMenu(group)) return
   if (forkingGroupIds.value.has(group.id)) return
+  openGroupMenuId.value = null
   forkingGroupIds.value.add(group.id)
   try {
     const newTabId = await terminalStore.forkToAssistantTab(currentTabId.value, {
@@ -191,6 +222,33 @@ const handleForkFromGroup = async (group: import('../composables').AgentTaskGrou
     forkingGroupIds.value.delete(group.id)
   }
 }
+
+const closeGroupMenu = () => {
+  if (openGroupMenuId.value !== null) openGroupMenuId.value = null
+}
+
+// 点击其他地方关闭菜单
+const handleGlobalClickForGroupMenu = (e: MouseEvent) => {
+  if (openGroupMenuId.value === null) return
+  const target = e.target as HTMLElement | null
+  if (target?.closest('.agent-group-menu') || target?.closest('.agent-group-menu-trigger')) return
+  openGroupMenuId.value = null
+}
+
+// 滚动 / 窗口尺寸变化时关闭菜单：fixed 定位的菜单不会跟随滚动，留在原位会与触发按钮失去视觉关联
+const handleScrollForGroupMenu = () => closeGroupMenu()
+
+onMounted(() => {
+  document.addEventListener('mousedown', handleGlobalClickForGroupMenu)
+  window.addEventListener('resize', closeGroupMenu)
+  // 监听虚拟滚动容器的 scroll 事件（capture 阶段，覆盖各种内部滚动场景）
+  document.addEventListener('scroll', handleScrollForGroupMenu, true)
+})
+onUnmounted(() => {
+  document.removeEventListener('mousedown', handleGlobalClickForGroupMenu)
+  window.removeEventListener('resize', closeGroupMenu)
+  document.removeEventListener('scroll', handleScrollForGroupMenu, true)
+})
 
 // 识别 createRun 一开始插入的"正在准备..." 占位步骤（type='thinking' + isStreaming=true）。
 // 让它借用 message step 的视觉壳（同一图标 + 同一 wrapper + ThinkingBlock 流式态），
@@ -1781,14 +1839,14 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         <span class="agent-final-footer-icon">✓</span>
                         <span>{{ t('ai.taskComplete') }}</span>
                         <button
-                          v-if="canForkFromGroup(item.group)"
+                          v-if="canShowGroupMenu(item.group)"
                           type="button"
-                          class="agent-fork-btn"
+                          class="agent-group-menu-trigger"
+                          :class="{ 'is-open': openGroupMenuId === item.group!.id }"
                           :title="t('ai.fork.tooltip')"
-                          :disabled="isForkingFromGroup(item.group)"
-                          @click="handleForkFromGroup(item.group)"
+                          @click.stop="toggleGroupMenu(item.group, $event)"
                         >
-                          {{ t('ai.fork.action') }}
+                          <MoreHorizontal :size="14" />
                         </button>
                       </div>
                     </div>
@@ -1952,15 +2010,15 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         <span class="final-title">{{ item.group!.finalResult!.startsWith('❌') ? t('ai.taskFailed') : t('ai.taskAborted') }}</span>
                       </div>
                       <div class="agent-final-body markdown-content" v-html="renderMarkdown(item.group!.finalResult!.replace(/^[❌⚠️]\s*(Agent\s*(执行失败|运行出错)[:\s]*)?/, ''))"></div>
-                      <div v-if="canForkFromGroup(item.group)" class="agent-final-footer agent-final-footer--in-card">
+                      <div v-if="canShowGroupMenu(item.group)" class="agent-final-footer agent-final-footer--in-card">
                         <button
                           type="button"
-                          class="agent-fork-btn"
+                          class="agent-group-menu-trigger"
+                          :class="{ 'is-open': openGroupMenuId === item.group!.id }"
                           :title="t('ai.fork.tooltip')"
-                          :disabled="isForkingFromGroup(item.group)"
-                          @click="handleForkFromGroup(item.group)"
+                          @click.stop="toggleGroupMenu(item.group, $event)"
                         >
-                          {{ t('ai.fork.action') }}
+                          <MoreHorizontal :size="14" />
                         </button>
                       </div>
                     </div>
@@ -2103,6 +2161,24 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
       </div>
     </div>
   </div>
+
+  <!-- group 操作菜单：Teleport 到 body 避免被 vue-virtual-scroller 的 overflow:hidden 裁掉 -->
+  <Teleport to="body">
+    <div
+      v-if="openGroupMenuId && openGroupMenuGroup"
+      class="agent-group-menu"
+      :style="{ top: groupMenuPosition.top + 'px', right: groupMenuPosition.right + 'px' }"
+    >
+      <button
+        type="button"
+        class="agent-group-menu-item"
+        :disabled="forkingGroupIds.has(openGroupMenuGroup.id)"
+        @click="handleForkFromGroup(openGroupMenuGroup)"
+      >
+        {{ t('ai.fork.action') }}
+      </button>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -4199,39 +4275,43 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   font-weight: 600;
 }
 
-/* "另开一聊"按钮：尾注里的次要操作，与 ✓ 任务完成同行 */
-.agent-fork-btn {
+/* group 操作菜单触发器（「...」图标按钮）：参照 Cursor 设计，平时极不起眼 */
+.agent-group-menu-trigger {
   margin-left: auto;
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
   background: transparent;
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border: none;
   border-radius: 4px;
   color: var(--text-muted);
-  font-size: 11px;
+  opacity: 0.35;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
 
-.agent-fork-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
+/* 鼠标 hover 到尾注/卡片任意位置时，按钮淡入显现 */
+.agent-final-footer:hover .agent-group-menu-trigger,
+.agent-final-content:hover .agent-group-menu-trigger {
+  opacity: 0.7;
+}
+
+.agent-group-menu-trigger:hover,
+.agent-group-menu-trigger.is-open {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
   color: var(--text-primary);
-  border-color: var(--accent-primary);
 }
 
-.agent-fork-btn:active {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.agent-fork-btn:disabled {
-  cursor: progress;
-  opacity: 0.5;
-  pointer-events: none;
-}
-
-/* 失败/中断卡片内的尾注：和卡片正文同样的左右内边距，避免按钮贴边 */
+/* 失败/中断卡片内的菜单容器：和卡片正文同样的左右内边距 */
 .agent-final-footer--in-card {
   padding: 0 14px 12px;
   margin-top: 0;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .agent-running-dot {
@@ -5725,4 +5805,42 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   transform: translateX(-50%);
 }
 
+</style>
+
+<!-- 全局样式：菜单通过 Teleport 渲染到 body，scoped 样式不会作用到它，需要单独的非 scoped block -->
+<style>
+.agent-group-menu {
+  position: fixed;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--bg-elevated, rgba(40, 40, 40, 0.98));
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  z-index: 10000;
+}
+
+.agent-group-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-primary, #e0e0e0);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.agent-group-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.agent-group-menu-item:disabled {
+  cursor: progress;
+  opacity: 0.5;
+  pointer-events: none;
+}
 </style>

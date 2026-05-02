@@ -229,7 +229,16 @@ export class AgentService {
     untilTaskCount?: number
     targetMode?: 'assistant'
     titleSuffix?: string
-  }): Promise<{ newSessionId: string; newAgentId: string; sourceUserTask: string } | null> {
+  }): Promise<{
+    newSessionId: string
+    newAgentId: string
+    sourceUserTask: string
+    /**
+     * 截断后的完整 AgentRecord——前端用它调 restoreAgentHistory 把 steps 填到新 tab
+     * 的 agentState 里，避免新 tab 显示成空白欢迎页
+     */
+    newRecord: import('../history.service').AgentRecord
+  } | null> {
     const sourceAgent = this.getAgent(opts.sourceAgentKey)
     if (!sourceAgent) {
       log.warn(`forkAgent: source agent not found: ${opts.sourceAgentKey}`)
@@ -281,13 +290,15 @@ export class AgentService {
     log.info(
       `Forked agent: source=${opts.sourceAgentKey} → new=${opts.newAgentId}, ` +
       `sessionId=${newSessionId}, untilTaskCount=${opts.untilTaskCount ?? 'all'}, ` +
-      `cacheSnapshotCarried=${canCarryCacheSnapshot}`
+      `cacheSnapshotCarried=${canCarryCacheSnapshot}, ` +
+      `titleSuffix="${opts.titleSuffix ?? ''}", newRecord.userTask="${newRecord.userTask}"`
     )
 
     return {
       newSessionId,
       newAgentId: opts.newAgentId,
-      sourceUserTask: newRecord.userTask
+      sourceUserTask: newRecord.userTask,
+      newRecord
     }
   }
 

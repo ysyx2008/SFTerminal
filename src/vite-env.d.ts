@@ -697,6 +697,7 @@ interface Window {
         newSessionId: string
         newAgentId: string
         sourceUserTask: string
+        newRecord: import('@shared/types').AgentRecord
       } | null>
       updateConfig: (ptyId: string, config: { executionMode?: ExecutionMode; commandTimeout?: number; profileId?: string }) => Promise<boolean>
       addMessage: (ptyId: string, message: string, attachments?: import('@shared/types').AttachmentInfo[], documentContext?: string, images?: string[]) => Promise<boolean>

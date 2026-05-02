@@ -885,6 +885,7 @@ const electronAPI = {
 
     // Fork Agent：从源 Agent 会话分叉出新的助手 Agent（"另开一聊"）
     // untilTaskCount：截断到第 N 个 task（包含），undefined = 全部
+    // newRecord：截断后的完整 AgentRecord，前端用它恢复新 tab 的 UI 历史
     fork: (opts: {
       sourceAgentKey: string
       newAgentId: string
@@ -895,6 +896,7 @@ const electronAPI = {
       newSessionId: string
       newAgentId: string
       sourceUserTask: string
+      newRecord: import('@shared/types').AgentRecord
     } | null>,
 
     // 清空指定终端的任务历史记忆（用于"清空对话"功能）

@@ -57,6 +57,12 @@ export interface AgentState {
   steps: AgentStep[]
   pendingConfirm?: PendingConfirmation
   finalResult?: string   // Agent 完成后的最终回复
+  /**
+   * 标记：当前 agentState 来自加载历史，且后端 Agent 实例尚未通过新任务把会话状态加载到 in-memory。
+   * 此状态下「另开一聊」无法工作（后端 in-memory _sessionId / _sessionMessages 为空），UI 应隐藏 fork 按钮。
+   * 用户发起首次新任务后清除（initializeRun 触发 restoreFromHistory，in-memory 状态就齐了）。
+   */
+  loadedFromHistory?: boolean
 }
 
 // 上传的文档类型（与 electron/services/document-parser.service.ts 同步）
@@ -636,6 +642,13 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
     tabs.value.push(tab)
     activeTabId.value = newTabId
+
+    // 用截断后的 newRecord 恢复 UI（与「加载历史」语义一致）：
+    // 显示截断点之前的对话历史 + loadedFromHistory=true 让二次 fork 按钮先隐藏，
+    // 直到用户在新 tab 发起首次任务后 in-memory 状态才齐全
+    restoreAgentHistory(newTabId, result.newRecord)
+    // restoreAgentHistory 用 newRecord.id 设置了 sessionId，与后端 Agent 实例一致
+
     log.info(`Forked assistant tab: source=${sourceTabId} → new=${newTabId}, sessionId=${result.newSessionId}, untilTaskCount=${opts?.untilTaskCount ?? 'all'}`)
     return newTabId
   }
@@ -1623,12 +1636,15 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
 
     // 创建新的 agentState 对象以确保响应式更新
+    // 用户开始运行新任务时清除 loadedFromHistory：initializeRun 会触发 restoreFromHistory，
+    // 把会话 in-memory 状态从 HistoryService 装回 Agent 实例，之后 fork 就能正常工作
     tab.agentState = {
       ...tab.agentState,
       isRunning,
       ...(agentId !== undefined && { agentId }),
       ...(userTask !== undefined && { userTask }),
-      ...(!isRunning && { pendingConfirm: undefined })
+      ...(!isRunning && { pendingConfirm: undefined }),
+      ...(isRunning && { loadedFromHistory: false })
     }
 
     // 强制触发数组更新
@@ -1830,11 +1846,13 @@ export const useTerminalStore = defineStore('terminal', () => {
     ]
 
     // 设置 agentState：sessionId 传给后端后，后端从 HistoryService 自行加载 messages 和 TaskMemory
+    // loadedFromHistory：标记当前 in-memory 状态来自历史；用户发起首次新任务后才会被清除
     tab.agentState = {
       isRunning: false,
       sessionId: record.id,
       sessionStartTime: record.timestamp,
-      steps: steps
+      steps: steps,
+      loadedFromHistory: true
     }
   }
 
