@@ -127,26 +127,26 @@ async function dispatch(
     }
     case 'close': {
       log.info(`close start paneId=${op.paneId}`)
-      // 防自毁：Agent 关掉最后一个 pane 等于关闭整个 tab，Agent 实例随 PTY 销毁
-      // 而被回收，IPC 回信丢失导致工具调用超时——而且关掉的就是 Agent 自己的执行
-      // 环境。此路径仅允许用户手动操作（点击窗格 X 按钮，走 SplitPaneView 直连 store.closePane）。
+      // 不允许 Agent 通过 close_pane 关掉最后一个窗格——这等于关闭整个 tab。
+      // tab 的关闭是用户决策，应通过 UI 完成。
       const allPanes = tab.splitLayout ? collectPanes(tab.splitLayout) : []
       if (allPanes.length <= 1) {
         return {
           ok: false,
-          error: '只剩最后一个窗格，不能通过 close_pane 关闭——这会关掉整个 tab、终止当前 Agent 会话。如需关闭 tab，请让用户手动操作。'
+          error: '只剩最后一个窗格，不能通过 close_pane 关闭——这等于关闭整个 tab。如需关闭 tab，请让用户手动操作。'
         }
       }
 
-      // 防自残：Agent 不能关掉自己所在的窗格——会让 Agent PTY 一起被销毁，
-      // Agent 实例死亡、本次工具调用永远拿不到 result，前端表现为"卡死"。
-      // 入参 paneId 可能是布局节点 id 或 ptyId，两种都得查。
+      // 不允许 Agent 关掉自己当前正在操作的窗格——run.context.ptyId 还指向它，
+      // 关闭后下一个 execute_command 会指向已销毁的 PTY 而失败。Agent 实例自身不会
+      // 销毁（已与 PTY 生命周期解耦），但操作语义上是错的：要"换"窗格就先 focus_pane
+      // 切到另一个，再关原来的。
       if (ownerPtyId) {
         const targetPane = allPanes.find(p => p.paneId === op.paneId || p.ptyId === op.paneId)
         if (targetPane && targetPane.ptyId === ownerPtyId) {
           return {
             ok: false,
-            error: `不能关闭你自己所在的窗格（ptyId=${ownerPtyId}）——这会终止你自己的执行环境。要清理这个窗格，请让用户手动点窗格右上角的 ✕。如果想让其他窗格"换内容"，应该关那个其他窗格再 split_terminal，而不是关自己。`
+            error: `不能关闭你当前操作的窗格（ptyId=${ownerPtyId}）——后续命令会指向已销毁的 PTY。要换到别的窗格，先 focus_pane 切过去，再 close_pane 关原来的。`
           }
         }
       }

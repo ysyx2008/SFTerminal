@@ -24,11 +24,27 @@ AgentService (index.ts)          — 工厂 + 生命周期管理，按 agentId �
 
 ### AgentService (`index.ts`)
 
-工厂和生命周期管理器。Agent 实例按 `agentId` 存储在 `Map<string, SailFish>` 中。
+工厂和生命周期管理器。Agent 实例按 `agentKey` 存储在 `Map<string, SailFish>` 中。
 
-- 终端 Agent：`agentId = ptyId`，通过 `getOrCreateAgent(ptyId)` 创建
-- 助手 Agent：通过 `createAssistantAgent(agentId)` 创建，无终端绑定
-- 固定实例：`__companion__`（IM/桌面助手）、`__watch__`（关切系统）
+**概念模型（v2，2026-05-02 起）**：一个 tab = 一个 Agent + N 个终端窗格。
+
+- **终端 Agent**：`agentKey = tabId`（前端 `tab.id`，跨多个窗格稳定）
+- **助手 Agent**：`agentKey = agentId`（前端生成的 UUID）
+- **固定 Agent**：`__companion__`（IM/桌面助手）、`__watch__`（关切系统）
+- **Worker Agent**：`agentKey = workerPtyId`（智能巡检 worker，与 worker 终端 1:1 绑定）
+
+**重要：Agent 与底层 PTY/SSH 生命周期解耦**
+
+- `pty:dispose` / `ssh:disconnect` IPC handler **不再**调用 `cleanupAgent`
+- 关闭一个窗格 ≠ 销毁 Agent；分屏 tab 内任何单个窗格关闭，Agent 都继续存活
+- 仅在以下场景调用 `cleanupAgent`：
+  - 用户关闭 tab：前端 `closeTab` 显式调 `agent.cleanup(tab.id)` 触发
+  - Worker Agent 任务完成：worker 终端关闭时一并清理（worker = pty 1:1）
+  - IM/Web 会话彻底结束
+
+Agent 实例自身**没有强绑定 ptyId 字段**——每次 `run()` 通过 `context.ptyId` 知道当前操作哪个窗格。窗格切换、分屏、focus_pane 都不影响 Agent 实例本身的存在。
+
+**形参兼容**：旧 API 参数名 `ptyId` 保留以兼容现有调用，但新代码语义上传 `agentKey`。
 
 ### Agent (`agent.ts`) — 抽象基类
 
@@ -102,7 +118,10 @@ run(message, context, options)
 - **会话追踪**：`_sessionId`、`_sessionSteps`、`_sessionMessages` 跨多次 `run` 累积
 - **增量检查点**：每完成一轮工具调用自动写盘（`saveCheckpoint`）
 - **跨会话恢复**：通过 `sessionId` 从 HistoryService 加载，`restoreFromHistory()` 重建 TaskMemory
-- **生命周期**：`cleanupAgent()` 销毁实例，`resetSession()` 重置会话但保留实例
+- **生命周期**：
+  - `cleanupAgent(agentKey)` 销毁实例，仅在用户关闭 tab 时由前端 `closeTab` 显式触发
+  - `resetSession(agentKey)` 重置会话但保留实例（"清空对话"功能）
+  - PTY/SSH 销毁不触发任何 Agent 清理（生命周期完全独立）
 
 ## 工具元数据驱动模型（核心 OOP 边界承诺）
 

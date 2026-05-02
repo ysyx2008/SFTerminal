@@ -302,19 +302,19 @@ export function useAgentMode(
     return collapsedTaskIds.value.has(taskId)
   }
 
-  // 获取当前 tab 对应的 Agent 标识符。
+  // 获取当前 tab 对应的 Agent 标识符（agentKey）。
   //
-  // ⚠️ 终端模式下必须返回 Agent 启动时绑定的 ptyId（保存在 agentState.agentId 上），
-  //    而不是"当前激活窗格 ptyId"。后端 AgentService 用 ptyId 在 Map 里索引 Agent 实例，
-  //    分屏 / focus_pane 之后激活窗格会变化，但 Agent 实例的 key 不能跟着变——
-  //    否则 addUserMessage / abort / confirm 都会找不到 Agent 实例（间歇性"补充消息无响应"bug）。
+  // 概念模型：一个 tab = 一个 Agent + N 个终端窗格。
+  //   - 终端 tab：agentKey = tab.id（稳定，不随分屏/focus 变化）
+  //   - 助手 tab：agentKey = tab.agentId（前端生成的 UUID）
   //
-  // 任务未启动时 fallback 到当前激活窗格 ptyId，方便未来一键启动新任务时识别 tab。
+  // 后端 AgentService 用 agentKey 在 Map 中索引 Agent 实例。Agent 内部通过每次 run 的
+  // context.ptyId 知道要操作哪个窗格——窗格切换不影响 Agent 实例。
   const getAgentKey = (): string | undefined => {
     const tab = currentTab.value
     if (!tab) return undefined
     if (tab.type === 'assistant') return tab.agentId
-    return tab.agentState?.agentId || terminalStore.getActivePtyId(tab)
+    return tab.id
   }
 
   // 监听执行模式变化，实时更新运行中的 Agent
@@ -591,12 +591,11 @@ export function useAgentMode(
     }
 
     // 设置 Agent 状态：正在运行 + 用户任务。
-    // 第三个参数 agentId 必须传——它在 agentState 上记录 Agent 启动时的稳定 key，
-    // 后续的 addUserMessage / abort / confirm 都通过 getAgentKey() 拿到这个 key，
-    // 保证分屏 / focus_pane 改变激活窗格时仍能定位到正确的 Agent 实例。
+    // 第三个参数 agentId 在 agentState 上记录 Agent 的稳定 key（终端 = tabId，助手 = agentId UUID）。
+    // 后续的 addUserMessage / abort / confirm 都通过 getAgentKey() 拿到 key 定位 Agent 实例。
     const stableAgentKey = isAssistantMode
       ? currentTab.value?.agentId
-      : runPtyId
+      : tabId
     terminalStore.setAgentRunning(tabId, true, stableAgentKey, message)
     await scrollToBottom()
 
@@ -623,8 +622,10 @@ export function useAgentMode(
           activeProfileId.value || undefined
         )
       } else {
+        // agentKey = tabId（Agent 索引主键），context.ptyId = 当前激活窗格 ptyId（Agent 操作目标）。
+        // 这两个不再耦合：Agent 实例归 tab 所有，跨多个窗格的生命周期。
         result = await window.electronAPI.agent.run(
-          runPtyId as string,
+          tabId,
           message,
           {
             ...context,

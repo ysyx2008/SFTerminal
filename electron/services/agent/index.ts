@@ -54,9 +54,16 @@ export { SailFish as TerminalAgent } from './sailfish'
 /**
  * Agent 服务 - 工厂和生命周期管理器
  * 
+ * 概念模型（v2）：一个 tab = 一个 Agent + N 个终端窗格。
+ *   - 终端 Agent：agentKey = tabId（前端的 tab.id，跨多个窗格稳定）
+ *   - 助手 Agent：agentKey = agentId（前端生成的 UUID）
+ *   - 固定 Agent：__companion__（IM/桌面）、__watch__（关切）
+ *
+ * Agent 实例的生命周期独立于底层 PTY/SSH。窗格关闭、SSH 断开都不应清理 Agent；
+ * 只在 tab 关闭时由前端显式调 cleanupAgent(tabId) 清理。
+ *
  * 职责：
  * - 创建和管理 SailFish 实例
- * - 提供向后兼容的 API
  * - 管理全局回调
  */
 export class AgentService {
@@ -65,7 +72,7 @@ export class AgentService {
   /** Watch Agent 固定 ID：关切系统（含觉醒唤醒）独立实例，与 Companion 隔离 */
   static readonly WATCH_AGENT_ID = '__watch__'
 
-  /** Agent 实例映射（按 agentId，终端 Agent 用 ptyId 作为 key） */
+  /** Agent 实例映射（按 agentKey 索引：终端 Agent 用 tabId，助手/固定 Agent 用 agentId） */
   private agents: Map<string, SailFish> = new Map()
   
   /** 依赖服务集合 */
@@ -154,6 +161,9 @@ export class AgentService {
 
   /**
    * 获取或创建 Agent 实例
+   *
+   * @param agentKey Agent 标识符。终端 Agent 传 tabId，固定 Agent 传 __companion__/__watch__。
+   *   形参名保留为 ptyId 仅为向后兼容；新代码请按 agentKey 语义传入。
    */
   getOrCreateAgent(ptyId: string): SailFish {
     let agent = this.agents.get(ptyId)
@@ -161,13 +171,14 @@ export class AgentService {
       agent = new SailFish(this.services, ptyId)
       agent.setCallbacks(this.defaultCallbacks)
       this.agents.set(ptyId, agent)
-      log.info(`Created agent for terminal: ${ptyId}`)
+      log.info(`Created agent: agentKey=${ptyId}`)
     }
     return agent
   }
 
   /**
    * 获取 Agent 实例（不创建）
+   * @param ptyId 实际语义为 agentKey（终端 = tabId，助手 = agentId UUID）
    */
   getAgent(ptyId: string): SailFish | undefined {
     return this.agents.get(ptyId)
@@ -175,6 +186,7 @@ export class AgentService {
 
   /**
    * 检查是否存在 Agent 实例
+   * @param ptyId 实际语义为 agentKey
    */
   hasAgent(ptyId: string): boolean {
     return this.agents.has(ptyId)
@@ -228,23 +240,30 @@ export class AgentService {
 
   /**
    * 清理 Agent 实例
+   *
+   * @param ptyId 实际语义为 agentKey（终端 = tabId，助手 = agentId UUID）。
+   *   ⚠️ 不应在 PTY 销毁/SSH 断开时调用——Agent 与底层连接生命周期解耦。
+   *   仅在以下场景调用：
+   *   - 用户关闭 tab（前端 closeTab 显式触发）
+   *   - Worker Agent 任务完成（与 worker 终端 1:1 绑定）
+   *   - 固定 Agent 的 IM/Web 会话彻底结束
    */
   cleanupAgent(ptyId: string): void {
     const agent = this.agents.get(ptyId)
     if (agent) {
       agent.cleanup()
       this.agents.delete(ptyId)
-      log.info(`Cleaned up agent for terminal: ${ptyId}`)
+      log.info(`Cleaned up agent: agentKey=${ptyId}`)
     }
-    }
+  }
 
   /**
    * 清理所有 Agent 实例
    */
   cleanupAllAgents(): void {
-    Array.from(this.agents.entries()).forEach(([ptyId, agent]) => {
+    Array.from(this.agents.entries()).forEach(([agentKey, agent]) => {
       agent.cleanup()
-      log.info(`Cleaned up agent for terminal: ${ptyId}`)
+      log.info(`Cleaned up agent: agentKey=${agentKey}`)
     })
     this.agents.clear()
   }

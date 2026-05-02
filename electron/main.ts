@@ -1525,8 +1525,9 @@ ipcMain.handle('pty:executeInTerminal', async (_event, id: string, command: stri
 
 ipcMain.handle('pty:dispose', async (_event, id: string) => {
   ptyService.dispose(id)
-  // 清理该终端的 Agent 实例和任务历史记忆
-  agentService.cleanupAgent(id)
+  // 注意：不在此处 cleanupAgent。
+  // Agent 实例归 tab 所有（agentKey = tabId），PTY 只是其当前操作的某个窗格。
+  // 关闭窗格不应销毁 Agent。Agent cleanup 走独立的 'agent:cleanup' 入口（关 tab 时由前端触发）。
 })
 
 ipcMain.handle('pty:getAvailableShells', async () => {
@@ -1591,8 +1592,7 @@ ipcMain.handle('ssh:disconnect', async (_event, id: string) => {
     sshDisconnectUnsubscribes.delete(id)
   }
   sshService.disconnect(id)
-  // 清理该终端的 Agent 实例和任务历史记忆
-  agentService.cleanupAgent(id)
+  // 注意：不在此处 cleanupAgent，原因同 pty:dispose。
 })
 
 // SSH 数据订阅的取消函数存储
@@ -1644,8 +1644,7 @@ ipcMain.on('ssh:subscribe', (event, id: string) => {
     // 清理订阅
     sshDataUnsubscribes.delete(id)
     sshDisconnectUnsubscribes.delete(id)
-    // 清理该终端的 Agent 实例和任务历史记忆（SSH 被动断开时也需要清理）
-    agentService.cleanupAgent(id)
+    // 注意：SSH 被动断开不再 cleanupAgent；Agent 归 tab 所有，由 tab 关闭走 'agent:cleanup' 触发。
   })
   sshDisconnectUnsubscribes.set(id, disconnectUnsubscribe)
 })
@@ -2857,7 +2856,7 @@ ipcMain.handle('xshell:scanDefaultPaths', async () => {
 
 // 运行 Agent
 ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, profileId }: {
-  ptyId: string
+  ptyId: string  // 实际语义为 agentKey（终端 Agent = tabId）；字段名保留以兼容现有 IPC 协议。
   message: string
   context: AgentContext
   config?: object
@@ -2866,10 +2865,10 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
   // 从持久化配置读取 debugMode，合并到运行时配置
   const debugMode = configService.getAgentDebugMode()
   const fullConfig = { ...config, debugMode }
-  
+
   // 创建回调函数，将 Agent 事件转发到渲染进程
   // 使用 JSON.parse(JSON.stringify()) 确保对象可序列化
-  // 在事件中携带 ptyId，前端可以用它可靠地匹配 tab
+  // 回调中的 ptyId 字段实际上是 agentKey（tabId），前端用它路由事件到对应 tab
   // 注意：回调作为参数传入 run()，每个 run 独立，解决多终端并发时回调覆盖问题
   const callbacks = {
     onStep: (agentId: string, step: AgentStep) => {
@@ -3387,7 +3386,8 @@ function initOrchestratorService() {
       }
       terminalTypes.delete(terminalId)
       terminalStateService.removeTerminal(terminalId)
-      // 清理该终端的 Agent 实例和任务历史记忆
+      // Worker Agent 与终端是 1:1 绑定（agentKey = terminalId），随终端一起清理是合理的。
+      // 这跟用户 tab 的多窗格场景不同（用户 tab 的 Agent 归 tab 所有，与 PTY 解耦）。
       agentService.cleanupAgent(terminalId)
     },
     getTerminalType: (terminalId) => {

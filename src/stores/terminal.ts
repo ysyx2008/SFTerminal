@@ -631,12 +631,35 @@ export const useTerminalStore = defineStore('terminal', () => {
       if (tab.agentId) {
         window.electronAPI.agent.cleanup(tab.agentId).catch(() => {})
       }
-    } else if (tab.ptyId && !tab.isRemote) {
-      if (tab.type === 'local') {
-        await window.electronAPI.pty.dispose(tab.ptyId)
-      } else {
-        await window.electronAPI.ssh.disconnect(tab.ptyId)
+    } else if (!tab.isRemote) {
+      // 终端 tab：遍历 splitLayout 中所有窗格的 PTY 都 dispose（分屏场景多个 ptyId）。
+      // 不能只 dispose tab.ptyId，否则其他窗格的 PTY 会泄漏。
+      // 异构分屏：每个窗格的 terminalType 可能不同，按窗格自身类型选 dispose 通道。
+      const ptyEntries: Array<{ ptyId: string; type: 'local' | 'ssh' }> = []
+      const seen = new Set<string>()
+      if (tab.splitLayout) {
+        for (const pane of getAllTerminalPanes(tab.splitLayout)) {
+          if (pane.ptyId && !seen.has(pane.ptyId)) {
+            seen.add(pane.ptyId)
+            ptyEntries.push({
+              ptyId: pane.ptyId,
+              type: (pane.terminalType || tab.type) as 'local' | 'ssh'
+            })
+          }
+        }
+      } else if (tab.ptyId) {
+        ptyEntries.push({ ptyId: tab.ptyId, type: tab.type as 'local' | 'ssh' })
       }
+      await Promise.all(
+        ptyEntries.map(({ ptyId, type }) => {
+          if (type === 'local') {
+            return window.electronAPI.pty.dispose(ptyId).catch(() => {})
+          }
+          return window.electronAPI.ssh.disconnect(ptyId).catch(() => {})
+        })
+      )
+      // 显式清理 Agent（agentKey = tab.id，与 PTY 生命周期解耦）
+      window.electronAPI.agent.cleanup(tab.id).catch(() => {})
     }
 
     // 清理延迟的 proactive 状态
@@ -1402,12 +1425,14 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 根据 ptyId 查找对应的终端 ID
    * 用于 Agent 事件匹配（比 agentId 更可靠，因为 ptyId 在启动前就已知）
    *
-   * 分屏时 tab.ptyId 只是"激活窗格"的 ptyId，非激活窗格的 ptyId 在 splitLayout 树里。
-   * 这里同时检查 tab.ptyId 和 splitLayout 中所有窗格，避免分屏后 Agent 用旧 ptyId 推
-   * step 时被误判为"不属于本 tab"而丢弃（典型表现：分屏后任务还在跑但前端不再收到消息）。
+   * 兼容三种输入：
+   *   1. tab.id（agentKey 重构后 IPC 回调 ptyId 字段携带的就是 tabId）
+   *   2. tab.ptyId（兼容历史调用方）
+   *   3. splitLayout 中任一窗格的 ptyId（分屏后非激活窗格也能匹配回 tab）
    */
   function findTabIdByPtyId(ptyId: string): string | undefined {
     for (const tab of tabs.value) {
+      if (tab.id === ptyId) return tab.id
       if (tab.ptyId === ptyId) return tab.id
       if (tab.splitLayout) {
         const panes = getAllTerminalPanes(tab.splitLayout)
