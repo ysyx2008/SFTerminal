@@ -19,6 +19,7 @@ import { executeCommand } from './command'
 import { executeCommandDirect } from './exec'
 import { getTerminalContext, checkTerminalStatus, sendControlKey, sendInput } from './terminal'
 import { fileSearch, readFile, editFile, writeTextFile, writeRemoteTextFile } from './file'
+import { sftpPut, sftpGet } from './sftp'
 import { rememberInfo, searchKnowledge, getKnowledgeDoc } from './knowledge'
 import { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 import { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
@@ -39,6 +40,7 @@ export { executeCommand } from './command'
 export { executeCommandDirect } from './exec'
 export { getTerminalContext, checkTerminalStatus, sendControlKey, sendInput } from './terminal'
 export { fileSearch, readFile, editFile, writeTextFile, writeRemoteTextFile, getWorkspacePath, isInWorkspace } from './file'
+export { sftpPut, sftpGet } from './sftp'
 export { rememberInfo, searchKnowledge, getKnowledgeDoc } from './knowledge'
 export { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 export { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
@@ -149,6 +151,19 @@ export async function executeTool(
 
     case 'write_remote_text_file':
       return writeRemoteTextFile(id, args, toolCall.id, config, executor)
+
+    case 'sftp_put': {
+      const requiredPtyId = requirePtyId(ptyId, name)
+      if (typeof requiredPtyId !== 'string') return requiredPtyId
+      // 异构分屏：local 模式 tab 也能通过 pane_id 指向 SSH 窗格执行 SFTP
+      return sftpPut(resolveTargetPtyId(args, requiredPtyId), args, toolCall.id, config, executor)
+    }
+
+    case 'sftp_get': {
+      const requiredPtyId = requirePtyId(ptyId, name)
+      if (typeof requiredPtyId !== 'string') return requiredPtyId
+      return sftpGet(resolveTargetPtyId(args, requiredPtyId), args, toolCall.id, config, executor)
+    }
 
     case 'remember_info':
       return await rememberInfo(args, config, executor)

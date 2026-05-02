@@ -198,7 +198,7 @@ run(message, context, options)
 |---|---|---|
 | 子 Agent 通用前缀（前 6 个） | `exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search` | explore/research 子 Agent 工具列表 = 此段 |
 | edit 子专用追加（前 7-8 个） | `edit_file, write_text_file` | edit 子 Agent 工具列表 = 上一段 + 此段 |
-| 父 Agent 专用尾部 | `write_remote_text_file, remember_info, ask_user, plan, skill, load_user_skill, recall, search_history, dispatch_agents, talk_to_user` | 仅父 Agent 可见 |
+| 父 Agent 专用尾部 | `write_remote_text_file, sftp_put, sftp_get, remember_info, ask_user, plan, skill, load_user_skill, recall, search_history, dispatch_agents, talk_to_user` | 仅父 Agent 可见；`write_remote_text_file` 仅 SSH 模式；`sftp_put/sftp_get` local+ssh 模式（local tab 通过 pane_id 指 SSH 窗格） |
 
 **保持前缀连续的红线**：
 

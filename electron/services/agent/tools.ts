@@ -627,6 +627,95 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
     {
       type: 'function',
       function: {
+        name: 'sftp_put',
+        description: `通过 SFTP 上传本地文件到远程主机。
+
+适用场景（write_remote_text_file 不擅长的）：
+- 大文件 / 二进制（write_remote_text_file 要把整个内容塞进 tool_args，token 灾难且二进制不支持）
+- 已有本地工件（构建产物、用 write_text_file 拼好的多文件批量推送）
+
+短文本配置 / 脚本（< 2KB）依然首选 write_remote_text_file，无需先在本地落盘。
+
+行为：远程已存在时除非 overwrite=true 否则报错；上传成功后不再回写终端，避免污染输出。
+
+**窗格选择**：本工具只能针对 SSH 窗格执行。当前默认窗格是 SSH 时直接用；是本地终端时必须先 list_panes 找到 SSH 窗格的 ptyId（或用 split_terminal 创建一个），再通过 pane_id 指定。`,
+        parameters: {
+          type: 'object',
+          properties: {
+            local_path: {
+              type: 'string',
+              description: '本地源文件绝对路径'
+            },
+            remote_path: {
+              type: 'string',
+              description: '远程目标文件绝对路径（不支持 ~ 展开，需用绝对路径）'
+            },
+            overwrite: {
+              type: 'boolean',
+              description: '远程已存在时是否覆盖（默认 false，存在则报错）'
+            },
+            pane_id: {
+              type: 'string',
+              description: '【分屏专用·可选】指定操作哪个 SSH 窗格。值=list_panes 返回的窗格 ptyId。不传则用 Agent 当前默认窗格——若默认窗格不是 SSH 会报错。'
+            }
+          },
+          required: ['local_path', 'remote_path']
+        }
+      },
+      _meta: {
+        // local 模式 tab 通过 pane_id 指向 SSH 窗格也能用；assistant 模式无终端，工具不可用
+        supportedModes: ['local', 'ssh'],
+        phase: 'writing_file',
+        contextBudget: { toolResult: 'protected' },
+        streamDisplay: {
+          titleKey: 'sftp.upload',
+          titleField: 'remote_path'
+        }
+      }
+    } as ToolDefinitionWithMeta,
+    {
+      type: 'function',
+      function: {
+        name: 'sftp_get',
+        description: `通过 SFTP 下载远程文件到本地。
+
+典型用法：把远程日志/数据/二进制拉到本地 agent workspace，再用 read_file / grep 等本地工具深度分析——比 cat 大文件灌进上下文省 token，比终端命令更适合二进制。
+
+local_path 省略时自动落到 agent workspace 根目录（文件名同 remote 的 basename），后续 read_file 可直接读。
+local_path 填相对路径时也归一到 workspace 内；填绝对路径才落到任意位置。
+
+**窗格选择**：本工具只能针对 SSH 窗格执行。当前默认窗格是 SSH 时直接用；是本地终端时必须先 list_panes 找到 SSH 窗格的 ptyId（或用 split_terminal 创建一个），再通过 pane_id 指定。`,
+        parameters: {
+          type: 'object',
+          properties: {
+            remote_path: {
+              type: 'string',
+              description: '远程源文件绝对路径'
+            },
+            local_path: {
+              type: 'string',
+              description: '本地目标路径（可选）。省略 → workspace/<basename>；相对路径 → workspace/<相对路径>；绝对路径 → 原样使用'
+            },
+            pane_id: {
+              type: 'string',
+              description: '【分屏专用·可选】指定从哪个 SSH 窗格下载。值=list_panes 返回的窗格 ptyId。不传则用 Agent 当前默认窗格——若默认窗格不是 SSH 会报错。'
+            }
+          },
+          required: ['remote_path']
+        }
+      },
+      _meta: {
+        supportedModes: ['local', 'ssh'],
+        contextBudget: { toolResult: 'clearable' },
+        streamDisplay: {
+          titleKey: 'sftp.download',
+          titleField: 'remote_path'
+        }
+      }
+    } as ToolDefinitionWithMeta,
+    {
+      type: 'function',
+      function: {
         name: 'remember_info',
         description: '将信息整合到持久知识文档中，未来交互时自动提供。适用于用户要求记住的偏好、配置、约定等长期有效的信息。',
         parameters: {
