@@ -257,6 +257,19 @@ export function resolveTargetPtyId(
 }
 
 /**
+ * "窗格已不存在"工具结果，区分给 AI 看的完整描述和给用户 UI 看的简要描述。
+ *
+ * `error` 字段（从 ToolResult 继承）= AI 看到的完整版（含最新 panes JSON），
+ * `briefError` = UI 卡片展示的一行描述（只说"目标窗格没了"，不带 JSON）。
+ *
+ * 这样既保证 AI 拿到足够信息一次决策（不必再调 list_panes），又避免在用户
+ * 聊天界面里堆一坨 JSON 噪音——完整数据走 logger 落到日志文件。
+ */
+export interface PaneGoneToolResult extends ToolResult {
+  briefError: string
+}
+
+/**
  * 构造"窗格已不存在"的标准 ToolResult。
  *
  * 用于底层 terminalService.write() 返回 false 或 executeInTerminal()
@@ -269,18 +282,22 @@ export function resolveTargetPtyId(
  *
  * 自动附带最新窗格列表（避免 Agent 多调一次 list_panes）：
  * 如果 executor 提供了 getCurrentPtyId（即 Agent 自己的 owner ptyId 还活着），
- * 就借此反查 tab、抓最新 panes，把列表内联到错误里。Agent 一次调用就能
- * 看到「目标 X 没了 + 现在只剩 Y/Z」的完整信息，直接挑一个新 ptyId 重试。
+ * 就借此反查 tab、抓最新 panes，把列表内联到 `error` 字段里给 AI 看。
  *
- * 抓不到（owner ptyId 不存在 / 桥接不可用 / 超时）就回退到原始 hint，
+ * 抓不到（owner ptyId 不存在 / 桥接不可用 / 超时）就回退到 fallback hint，
  * 提示 Agent 自己调 list_panes——保证最差情况也不会比改之前更差。
+ *
+ * UI 展示用 `briefError`（始终只是 baseError 一行），完整版只走 AI message
+ * 和日志，不直接灌给用户 — 用户不需要看那一坨 JSON 才能理解发生了什么。
  */
 export async function paneGoneResult(
   targetPtyId: string,
   executor?: ToolExecutorConfig
-): Promise<ToolResult> {
+): Promise<PaneGoneToolResult> {
   const baseError = t('error.pane_not_found_runtime', { paneId: targetPtyId })
   const ownerPtyId = executor?.getCurrentPtyId?.()
+
+  let detailedError = `${baseError} ${t('error.pane_not_found_runtime.fallback_hint')}`
 
   if (ownerPtyId) {
     try {
@@ -289,21 +306,20 @@ export async function paneGoneResult(
       const result = await splitPaneBridge.exec({ type: 'list' }, ownerPtyId)
       if (result.ok && result.data) {
         const panesText = JSON.stringify(result.data, null, 2)
-        return {
-          success: false,
-          output: '',
-          error: `${baseError}\n\n${t('error.pane_not_found_runtime.with_panes', { panes: panesText })}`
-        }
+        detailedError = `${baseError}\n\n${t('error.pane_not_found_runtime.with_panes', { panes: panesText })}`
+        log.info(`paneGone: targetPty=${targetPtyId}, attached panes for AI (ownerPty=${ownerPtyId})`)
       }
-    } catch {
+    } catch (e) {
       // bridge 不可用（如非 UI 上下文 / 渲染窗口已销毁）就走 fallback
+      log.warn(`paneGone: failed to fetch panes for AI (targetPty=${targetPtyId}, ownerPty=${ownerPtyId}):`, e)
     }
   }
 
   return {
     success: false,
     output: '',
-    error: `${baseError} ${t('error.pane_not_found_runtime.fallback_hint')}`
+    error: detailedError,
+    briefError: baseError
   }
 }
 

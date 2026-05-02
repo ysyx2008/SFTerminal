@@ -379,9 +379,9 @@ export async function sendControlKey(
       const result = await paneGoneResult(ptyId, executor)
       executor.addStep({
         type: 'tool_result',
-        content: `⚠️ ${result.error}`,
+        content: `⚠️ ${result.briefError}`,
         toolName: 'send_control_key',
-        toolResult: result.error || ''
+        toolResult: result.briefError
       })
       return result
     }
@@ -441,9 +441,9 @@ export async function sendInput(
       const result = await paneGoneResult(ptyId, executor)
       executor.addStep({
         type: 'tool_result',
-        content: `⚠️ ${result.error}`,
+        content: `⚠️ ${result.briefError}`,
         toolName: 'send_input',
-        toolResult: result.error || ''
+        toolResult: result.briefError
       })
       return result
     }

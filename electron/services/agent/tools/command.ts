@@ -228,9 +228,9 @@ export async function executeCommand(
       const goneResult = await paneGoneResult(result.ptyId, executor)
       executor.addStep({
         type: 'tool_result',
-        content: `⚠️ ${goneResult.error}`,
+        content: `⚠️ ${goneResult.briefError}`,
         toolName: 'execute_command',
-        toolResult: goneResult.error || ''
+        toolResult: goneResult.briefError
       })
       return goneResult
     }
@@ -421,9 +421,9 @@ async function executeSudoCommand(
     const result = await paneGoneResult(ptyId, executor)
     executor.addStep({
       type: 'tool_result',
-      content: `⚠️ ${result.error}`,
+      content: `⚠️ ${result.briefError}`,
       toolName: 'execute_command',
-      toolResult: result.error || ''
+      toolResult: result.briefError
     })
     return result
   }
@@ -560,9 +560,9 @@ async function executeFireAndForget(
     const result = await paneGoneResult(ptyId, executor)
     executor.addStep({
       type: 'tool_result',
-      content: `⚠️ ${result.error}`,
+      content: `⚠️ ${result.briefError}`,
       toolName: 'execute_command',
-      toolResult: result.error || ''
+      toolResult: result.briefError
     })
     return result
   }
@@ -623,9 +623,9 @@ async function executeTimedCommand(
       void paneGoneResult(ptyId, executor).then(result => {
         executor.addStep({
           type: 'tool_result',
-          content: `⚠️ ${result.error}`,
+          content: `⚠️ ${result.briefError}`,
           toolName: 'execute_command',
-          toolResult: result.error || ''
+          toolResult: result.briefError
         })
         resolve(result)
       })
