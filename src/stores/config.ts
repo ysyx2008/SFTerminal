@@ -21,7 +21,17 @@ export interface KeyboardShortcuts {
   openSettings: string
   aiDebugConsole: string
   voiceInput: string
+  splitHorizontal: string
+  splitVertical: string
+  closePane: string
 }
+
+// 分屏快捷键的平台默认值：
+// - mac 沿用原生终端 / iTerm2 习惯：⌘D 水平、⌘⇧D 垂直、⌘⇧W 关窗格
+// - win/linux：Ctrl+Shift+D 水平、Ctrl+Shift+E 垂直、Ctrl+Shift+W 关窗格
+//   （Ctrl+D 是终端 EOF，绝不能被分屏拦截，所以默认值用 Cmd/Ctrl 而非 CmdOrCtrl
+//   精确表达——matchAccelerator 会按字面意思区分这两类修饰键）
+const _isMac = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac')
 
 export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   newLocalTerminal: 'CmdOrCtrl+Shift+T',
@@ -36,6 +46,9 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   openSettings: 'CmdOrCtrl+,',
   aiDebugConsole: 'F12',
   voiceInput: 'Control',
+  splitHorizontal: _isMac ? 'Cmd+D' : 'Ctrl+Shift+D',
+  splitVertical: _isMac ? 'Cmd+Shift+D' : 'Ctrl+Shift+E',
+  closePane: _isMac ? 'Cmd+Shift+W' : 'Ctrl+Shift+W',
 }
 
 // 会话分组（支持跳板机继承）

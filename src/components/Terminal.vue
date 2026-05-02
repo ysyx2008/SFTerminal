@@ -13,6 +13,7 @@ import { getIntegratedTheme } from '../themes'
 import { TerminalScreenService, type ScreenContent } from '../services/terminal-screen.service'
 import { TerminalSnapshotManager, type TerminalSnapshot, type TerminalDiff } from '../services/terminal-snapshot.service'
 import { createLogger } from '../utils/logger'
+import { matchAccelerator, formatAccelerator } from '../utils/shortcut'
 import '@xterm/xterm/css/xterm.css'
 
 const log = createLogger('Terminal')
@@ -273,19 +274,16 @@ onMounted(async () => {
         return false
       }
     }
-    // 分屏快捷键不应被发送到 pty（仅做拦截，分屏行为由 App.vue 全局监听完成）
-    // - mac: Cmd+D / Cmd+Shift+D / Cmd+Shift+W
-    // - win/linux: Ctrl+Shift+D / Ctrl+Shift+E / Ctrl+Shift+W
+    // 分屏快捷键不应被发送到 pty（仅做拦截，分屏动作由 App.vue 全局监听完成）。
+    // 拦截范围 = 配置中的三个 split shortcuts，跟着用户改的快捷键走
     if (event.type === 'keydown') {
-      const k = event.key.toLowerCase()
-      const isMacAccel = event.metaKey && !event.ctrlKey && !event.altKey
-      const isWinAccel = event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey
-      if (isMacAccel) {
-        if (!event.shiftKey && k === 'd') return false
-        if (event.shiftKey && (k === 'd' || k === 'w')) return false
-      }
-      if (isWinAccel) {
-        if (k === 'd' || k === 'e' || k === 'w') return false
+      const shortcuts = configStore.keyboardShortcuts
+      if (
+        matchAccelerator(event, shortcuts.splitHorizontal) ||
+        matchAccelerator(event, shortcuts.splitVertical) ||
+        matchAccelerator(event, shortcuts.closePane)
+      ) {
+        return false
       }
     }
     return true
@@ -850,10 +848,11 @@ const isCurrentTabSplit = computed(() => {
   return tab ? terminalStore.isSplitTab(tab) : false
 })
 
-const isMacPlatform = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
-const splitHorizontalShortcut = isMacPlatform ? '⌘D' : 'Ctrl+Shift+D'
-const splitVerticalShortcut = isMacPlatform ? '⌘⇧D' : 'Ctrl+Shift+E'
-const closePaneShortcut = isMacPlatform ? '⌘⇧W' : 'Ctrl+Shift+W'
+// 跟随 configStore.keyboardShortcuts 实时变化——用户在设置面板里改了 split 快捷键，
+// 右键菜单里显示的提示也会立刻同步
+const splitHorizontalShortcut = computed(() => formatAccelerator(configStore.keyboardShortcuts.splitHorizontal))
+const splitVerticalShortcut = computed(() => formatAccelerator(configStore.keyboardShortcuts.splitVertical))
+const closePaneShortcut = computed(() => formatAccelerator(configStore.keyboardShortcuts.closePane))
 
 // 打开文件管理器
 const menuOpenFileManager = async () => {

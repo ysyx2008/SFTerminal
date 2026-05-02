@@ -105,7 +105,15 @@ export interface KeyboardShortcuts {
   openSettings: string
   aiDebugConsole: string
   voiceInput: string
+  splitHorizontal: string
+  splitVertical: string
+  closePane: string
 }
+
+// 分屏快捷键的平台默认值：mac 用 ⌘ 系，win/linux 用 Ctrl+Shift 系；
+// Ctrl+D 是终端 EOF 不能误用，所以这里用 Cmd/Ctrl 字面量精确表达，而非 CmdOrCtrl。
+// 详细原因见 src/utils/shortcut.ts 的 matchAccelerator 注释。
+const _isMac = process.platform === 'darwin'
 
 export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   newLocalTerminal: 'CmdOrCtrl+Shift+T',
@@ -120,6 +128,9 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   openSettings: 'CmdOrCtrl+,',
   aiDebugConsole: 'F12',
   voiceInput: 'Control',
+  splitHorizontal: _isMac ? 'Cmd+D' : 'Ctrl+Shift+D',
+  splitVertical: _isMac ? 'Cmd+Shift+D' : 'Ctrl+Shift+E',
+  closePane: _isMac ? 'Cmd+Shift+W' : 'Ctrl+Shift+W',
 }
 
 interface StoreSchema {

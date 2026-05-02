@@ -27,6 +27,7 @@ import { checkAudioDevicesGlobal, initSpeechGlobal } from './composables/useSpee
 import type { SftpConnectionConfig } from './composables/useSftp'
 import { uiThemes } from './themes/ui-themes'
 import { createLogger } from './utils/logger'
+import { matchAccelerator } from './utils/shortcut'
 
 const log = createLogger('App')
 
@@ -167,32 +168,6 @@ watch([currentUiTheme, currentColorScheme], ([theme, colorScheme]) => {
   document.body.setAttribute('data-color-scheme', colorScheme)
 }, { immediate: true })
 
-/**
- * 检测 KeyboardEvent 是否匹配 Electron Accelerator 字符串
- */
-function matchAccelerator(event: KeyboardEvent, accelerator: string): boolean {
-  if (!accelerator) return false
-  const parts = accelerator.split('+')
-  let needCtrl = false, needShift = false, needAlt = false
-  let targetKey = ''
-  for (const part of parts) {
-    switch (part) {
-      case 'CmdOrCtrl': needCtrl = true; break
-      case 'Shift': needShift = true; break
-      case 'Alt': needAlt = true; break
-      default: targetKey = part; break
-    }
-  }
-  if (needCtrl !== (event.ctrlKey || event.metaKey)) return false
-  if (needShift !== event.shiftKey) return false
-  if (needAlt !== event.altKey) return false
-
-  const eventKey = event.key.length === 1 ? event.key.toUpperCase() : event.key
-  if (targetKey === ',') return event.key === ','
-  if (/^F\d{1,2}$/.test(targetKey)) return eventKey === targetKey
-  return eventKey === targetKey || event.key.toLowerCase() === targetKey.toLowerCase()
-}
-
 // Windows 标准：单独按下并松开 Alt 键弹出菜单栏（这里是汉堡菜单 popup）。
 // 通过追踪"Alt 按下时是否被其他键打断"区分"Alt 单击"和"Alt+其他键加速键"。
 // 注：右侧 AltGraph 用于输入特殊字符（如 €），不参与菜单唤起，与 Windows 系统行为一致
@@ -243,56 +218,33 @@ const handleGlobalKeydown = (event: KeyboardEvent) => {
     handleCloseShortcut()
   }
 
-  // 分屏快捷键
-  // - mac: Cmd+D 水平、Cmd+Shift+D 垂直、Cmd+Shift+W 关窗格
-  // - win/linux: Ctrl+Shift+D 水平、Ctrl+Shift+E 垂直、Ctrl+Shift+W 关窗格
-  // 不在此处覆盖 Ctrl+D（Linux/Win 终端的 EOF）；mac 上 Cmd 修饰键不会发到 pty，无冲突
+  // 分屏快捷键（默认值见 DEFAULT_KEYBOARD_SHORTCUTS，用户可在设置面板里改）
+  // 默认 mac: ⌘D / ⌘⇧D / ⌘⇧W；默认 win/linux: Ctrl+Shift+D / E / W
+  // 默认值用 Cmd / Ctrl 字面量（非 CmdOrCtrl）精确表达，避免 win 上 Ctrl+D 误吃 EOF
   handleSplitShortcut(event)
 }
 
 function handleSplitShortcut(event: KeyboardEvent): void {
   const tab = terminalStore.activeTab
   if (!tab || tab.type === 'assistant') return
-  const k = event.key.toLowerCase()
+  const shortcuts = configStore.keyboardShortcuts
 
-  if (isMac) {
-    if (event.metaKey && !event.ctrlKey && !event.altKey) {
-      if (!event.shiftKey && k === 'd') {
-        event.preventDefault()
-        terminalStore.splitTerminal('horizontal')
-        return
-      }
-      if (event.shiftKey && k === 'd') {
-        event.preventDefault()
-        terminalStore.splitTerminal('vertical')
-        return
-      }
-      if (event.shiftKey && k === 'w') {
-        event.preventDefault()
-        closeActivePane()
-        return
-      }
-    }
-  } else {
-    if (event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey) {
-      if (k === 'd') {
-        event.preventDefault()
-        terminalStore.splitTerminal('horizontal')
-        return
-      }
-      if (k === 'e') {
-        event.preventDefault()
-        terminalStore.splitTerminal('vertical')
-        return
-      }
-      // 注意：Ctrl+Shift+W 与浏览器/Electron"关闭所有窗口"在某些 build 下有冲突；
-      // 我们仅在分屏模式时拦截，避免影响单屏关 tab 的预期
-      if (k === 'w' && terminalStore.isSplitTab(tab)) {
-        event.preventDefault()
-        closeActivePane()
-        return
-      }
-    }
+  if (matchAccelerator(event, shortcuts.splitHorizontal)) {
+    event.preventDefault()
+    terminalStore.splitTerminal('horizontal')
+    return
+  }
+  if (matchAccelerator(event, shortcuts.splitVertical)) {
+    event.preventDefault()
+    terminalStore.splitTerminal('vertical')
+    return
+  }
+  // 关闭窗格只在已分屏时生效——单屏下走 Ctrl+W / Cmd+W（handleCloseShortcut）
+  // 关 tab 的既有路径，避免覆盖用户对"关 tab"的预期
+  if (matchAccelerator(event, shortcuts.closePane) && terminalStore.isSplitTab(tab)) {
+    event.preventDefault()
+    closeActivePane()
+    return
   }
 }
 

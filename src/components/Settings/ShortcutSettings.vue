@@ -26,6 +26,9 @@ const allActions: ShortcutAction[] = ([
   'openSettings',
   'aiDebugConsole',
   'voiceInput',
+  'splitHorizontal',
+  'splitVertical',
+  'closePane',
 ] as ShortcutAction[]).filter(a => !isSteamBuild || !AI_ACTIONS.includes(a))
 
 const HOLD_KEY_ACTIONS: ShortcutAction[] = ['voiceInput']
@@ -37,9 +40,21 @@ function isHoldKeyAction(action: ShortcutAction): boolean {
 const recordingAction = ref<ShortcutAction | null>(null)
 const conflictMessage = ref<string>('')
 
+// 同时支持 CmdOrCtrl（用户录制的） 和 Cmd / Ctrl 字面量（DEFAULT 中分屏快捷键的平台专属
+// 写法）。Option 是 Alt 在 mac 上的别名。
 const KEY_DISPLAY_MAP: Record<string, string> = isMac
-  ? { CmdOrCtrl: '⌘', Shift: '⇧', Alt: '⌥', Control: '⌃', Meta: '⌘' }
-  : { CmdOrCtrl: 'Ctrl', Control: 'Ctrl', Meta: 'Win' }
+  ? {
+      CmdOrCtrl: '⌘', CommandOrControl: '⌘',
+      Cmd: '⌘', Command: '⌘', Meta: '⌘',
+      Ctrl: '⌃', Control: '⌃',
+      Shift: '⇧', Alt: '⌥', Option: '⌥',
+    }
+  : {
+      CmdOrCtrl: 'Ctrl', CommandOrControl: 'Ctrl',
+      Cmd: 'Cmd', Command: 'Cmd', Meta: 'Win',
+      Ctrl: 'Ctrl', Control: 'Ctrl',
+      Shift: 'Shift', Alt: 'Alt', Option: 'Alt',
+    }
 
 function acceleratorToKeys(accelerator: string): string[] {
   if (!accelerator) return []
