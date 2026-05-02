@@ -981,6 +981,11 @@ export const useTerminalStore = defineStore('terminal', () => {
       log.warn('No terminal pane in layout to split on')
       return null
     }
+    log.info(
+      `Split start direction=${direction} target=${target.kind} ` +
+      `activePane.id=${activePane.id} activePane.ptyId=${activePane.ptyId} ` +
+      `existingPanes=${getAllTerminalPanes(currentTab.splitLayout).map(p => `${p.id}:${p.ptyId}`).join(',')}`
+    )
 
     // 解析目标连接源：inherit 时回退到激活窗格的连接（不依赖 tab 顶层字段，
     // 因为分屏后 tab.type/sshConfig 只跟 root 兼容，激活窗格的连接才是真相）
@@ -1046,7 +1051,14 @@ export const useTerminalStore = defineStore('terminal', () => {
 
     updatePaneLabels(currentTab.splitLayout)
 
-    log.debug('Split active pane:', direction)
+    // 完成后立即查不变量——若 ptyId / paneId 出现重复，会在 console 输出 layout dump，
+    // 便于追"Agent 在右下敲命令命中左上"这类路由错位 bug。
+    assertTabLayoutInvariant(currentTab)
+
+    log.info(
+      `Split done direction=${direction} activePtyId=${activePane.ptyId} newPtyId=${newPtyId} ` +
+      `panes=${getAllTerminalPanes(currentTab.splitLayout).map(p => p.ptyId).join(',')}`
+    )
     return newPane.id
   }
 
@@ -1819,6 +1831,34 @@ export const useTerminalStore = defineStore('terminal', () => {
       log.error(
         `[invariant] Tab ${tab.id} root splitLayout must be a split container, got ${tab.splitLayout.type}`
       )
+    }
+    // 全局唯一性：同一 tab 的 splitLayout 树里不能出现重复 ptyId / 重复 paneId。
+    // 若违反，常见后果是 Agent 按 ptyId 路由命令时进了错的窗格，前端 SplitPaneView
+    // 也会出现两个 :key 相同的 Terminal 实例渲染冲突。
+    if (tab.splitLayout) {
+      const allPanes = getAllTerminalPanes(tab.splitLayout)
+      const ptyCount = new Map<string, number>()
+      const paneCount = new Map<string, number>()
+      for (const p of allPanes) {
+        if (p.ptyId) ptyCount.set(p.ptyId, (ptyCount.get(p.ptyId) || 0) + 1)
+        if (p.id) paneCount.set(p.id, (paneCount.get(p.id) || 0) + 1)
+      }
+      for (const [ptyId, n] of ptyCount) {
+        if (n > 1) {
+          log.error(
+            `[invariant] Tab ${tab.id} has DUPLICATE ptyId=${ptyId} (count=${n}) — Agent commands will route to the wrong pane!`,
+            { layout: JSON.parse(JSON.stringify(tab.splitLayout)) }
+          )
+        }
+      }
+      for (const [paneId, n] of paneCount) {
+        if (n > 1) {
+          log.error(
+            `[invariant] Tab ${tab.id} has DUPLICATE paneId=${paneId} (count=${n})`,
+            { layout: JSON.parse(JSON.stringify(tab.splitLayout)) }
+          )
+        }
+      }
     }
   }
 
