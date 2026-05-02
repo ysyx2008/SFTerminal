@@ -915,14 +915,21 @@ export const useTerminalStore = defineStore('terminal', () => {
 
   async function splitTerminal(
     direction: 'horizontal' | 'vertical',
-    target: SplitTarget = { kind: 'inherit' }
+    target: SplitTarget = { kind: 'inherit' },
+    tabId?: string
   ): Promise<string | null> {
     lastSplitError = null
 
-    const currentTab = activeTab.value
+    // tabId 缺省时操作 activeTab（UI 用户从右键菜单点击时走这条）
+    // 显式传 tabId 时操作那个 tab——split-pane-handler 给 Agent 工具调用走这条，
+    // 锁定到 Agent 自己所在的 tab，不会跟着用户切的 activeTab 漂移。
+    const currentTab = tabId
+      ? tabs.value.find(t => t.id === tabId)
+      : activeTab.value
+
     if (!currentTab) {
-      lastSplitError = 'no active tab'
-      log.warn('No active tab to split')
+      lastSplitError = tabId ? `tab not found: ${tabId}` : 'no active tab'
+      log.warn(lastSplitError)
       return null
     }
 

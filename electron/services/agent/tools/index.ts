@@ -218,13 +218,13 @@ export async function executeTool(
       return sendImageToChat(args, executor)
 
     case 'split_terminal':
-      return splitTerminalTool(args)
+      return splitTerminalTool(args, ptyId)
     case 'close_pane':
-      return closePaneTool(args)
+      return closePaneTool(args, ptyId)
     case 'focus_pane':
-      return focusPaneTool(args)
+      return focusPaneTool(args, ptyId)
     case 'list_panes':
-      return listPanesTool()
+      return listPanesTool(ptyId)
     case 'list_ssh_sessions':
       return listSshSessionsTool()
 

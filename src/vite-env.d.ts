@@ -2167,10 +2167,11 @@ interface Window {
         handler: (
           id: string,
           op:
-            | { type: 'split'; direction: 'horizontal' | 'vertical' }
+            | { type: 'split'; direction: 'horizontal' | 'vertical'; target?: { kind: string; sessionId?: string } }
             | { type: 'close'; paneId: string }
             | { type: 'focus'; paneId: string }
-            | { type: 'list' }
+            | { type: 'list' },
+          ownerPtyId?: string
         ) => void
       ) => () => void
       sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => void

@@ -4,9 +4,11 @@
  * 监听主进程 Agent 工具发起的分屏操作请求，调用 terminalStore 中相应方法，
  * 把执行结果回报给主进程 bridge。
  *
- * 注：所有操作都基于"当前激活 tab"。Agent 在 system prompt 中已被告知"分屏作用于当前 tab"。
+ * Tab 解析：bridge 透传 ownerPtyId（Agent 自己的初始 ptyId）时，handler 用它
+ * 反查 Agent 所在的 tab 再操作；缺省时（如 UI 用户操作）退回到 activeTab。
+ * 这样避免"用户切到别的 tab 时 Agent 误改别人 tab"的问题。
  */
-import { useTerminalStore, type SplitPane, type SplitTarget } from '../stores/terminal'
+import { useTerminalStore, type SplitPane, type SplitTarget, type TerminalTab } from '../stores/terminal'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('SplitPaneHandler')
@@ -27,13 +29,13 @@ export function initSplitPaneHandler(): void {
   }
 
   log.info('split-pane handler initialized')
-  unsubscribe = window.electronAPI.splitPane.onExec(async (id, op) => {
-    log.info(`recv op id=${id} type=${op.type}`)
+  unsubscribe = window.electronAPI.splitPane.onExec(async (id, op, ownerPtyId) => {
+    log.info(`recv op id=${id} type=${op.type} ownerPtyId=${ownerPtyId || 'none'}`)
     let result: { ok: boolean; data?: unknown; error?: string }
     try {
       // 每次都重新拿最新 store 实例，避免 HMR 后闭包持有旧 store
       const store = useTerminalStore()
-      result = await dispatch(store, op as Op)
+      result = await dispatch(store, op as Op, ownerPtyId)
       log.info(`dispatch done id=${id} ok=${result.ok} err=${result.error || ''}`)
     } catch (e) {
       result = { ok: false, error: e instanceof Error ? e.message : String(e) }
@@ -59,24 +61,44 @@ export function disposeSplitPaneHandler(): void {
 
 async function dispatch(
   store: ReturnType<typeof useTerminalStore>,
-  op: Op
+  op: Op,
+  ownerPtyId?: string
 ): Promise<{ ok: boolean; data?: unknown; error?: string }> {
-  const tab = store.activeTab
-  if (!tab) {
-    log.warn(`dispatch ${op.type}: no active tab`)
-    return { ok: false, error: 'No active tab' }
+  // 解析操作目标 tab：
+  // - ownerPtyId 提供（Agent 调用）：用 Agent 所在的 tab，避免跟随 activeTab 跑到用户切去的别人 tab
+  // - 缺省（UI 用户操作）：用当前 activeTab，与历史行为一致
+  let tab: TerminalTab | undefined
+  if (ownerPtyId) {
+    const tabId = store.findTabIdByPtyId(ownerPtyId)
+    if (tabId) {
+      tab = store.tabs.find(t => t.id === tabId)
+    }
+    if (!tab) {
+      log.warn(`dispatch ${op.type}: no tab owns ptyId=${ownerPtyId}`)
+      return { ok: false, error: `No tab found for ptyId=${ownerPtyId} (terminal may have been closed)` }
+    }
+  } else {
+    tab = store.activeTab
+    if (!tab) {
+      log.warn(`dispatch ${op.type}: no active tab`)
+      return { ok: false, error: 'No active tab' }
+    }
   }
+
   if (tab.type === 'assistant') {
-    log.warn(`dispatch ${op.type}: active tab is assistant`)
+    log.warn(`dispatch ${op.type}: tab is assistant`)
     return { ok: false, error: 'Cannot operate split panes on assistant tab' }
   }
   log.info(`dispatch ${op.type} tab=${tab.id} type=${tab.type}`)
+
+  // 锁定到 tab.id 后续操作都用它，避免下面任何路径里再读到 activeTab 引发漂移
+  const tabId = tab.id
 
   switch (op.type) {
     case 'split': {
       const t0 = Date.now()
       log.info(`split start direction=${op.direction} target=${op.target?.kind || 'inherit'}`)
-      const newPaneId = await store.splitTerminal(op.direction, op.target)
+      const newPaneId = await store.splitTerminal(op.direction, op.target, tabId)
       const t1 = Date.now()
       log.info(`split done newPaneId=${newPaneId || 'null'} elapsed=${t1 - t0}ms`)
       if (!newPaneId) {

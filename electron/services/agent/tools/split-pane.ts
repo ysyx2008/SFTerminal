@@ -20,8 +20,8 @@ function fail(error: string): ToolResult {
   return { success: false, output: '', error }
 }
 
-async function callBridge(op: SplitPaneOp): Promise<SplitPaneResult> {
-  return splitPaneBridge.exec(op)
+async function callBridge(op: SplitPaneOp, ownerPtyId?: string): Promise<SplitPaneResult> {
+  return splitPaneBridge.exec(op, ownerPtyId)
 }
 
 /**
@@ -66,7 +66,7 @@ function parseSplitTarget(raw: unknown): SplitTargetOp | undefined | { error: st
   return { error: 'target 格式无效' }
 }
 
-export async function splitTerminalTool(args: Record<string, unknown>): Promise<ToolResult> {
+export async function splitTerminalTool(args: Record<string, unknown>, ownerPtyId?: string): Promise<ToolResult> {
   const direction = (args as { direction?: unknown }).direction
   if (direction !== 'horizontal' && direction !== 'vertical') {
     return fail('direction 必须是 "horizontal" 或 "vertical"')
@@ -78,7 +78,7 @@ export async function splitTerminalTool(args: Record<string, unknown>): Promise<
   }
   const target = parsedTarget as SplitTargetOp | undefined
 
-  const result = await callBridge({ type: 'split', direction, target })
+  const result = await callBridge({ type: 'split', direction, target }, ownerPtyId)
   if (!result.ok) return fail(result.error || '分屏失败')
 
   const targetDesc = target?.kind === 'ssh'
@@ -115,22 +115,22 @@ export async function listSshSessionsTool(): Promise<ToolResult> {
   )
 }
 
-export async function closePaneTool(args: Record<string, unknown>): Promise<ToolResult> {
+export async function closePaneTool(args: Record<string, unknown>, ownerPtyId?: string): Promise<ToolResult> {
   const paneId = (args as { pane_id?: unknown }).pane_id ?? (args as { paneId?: unknown }).paneId
   if (typeof paneId !== 'string' || !paneId) {
     return fail('pane_id 必须为字符串')
   }
-  const result = await callBridge({ type: 'close', paneId })
+  const result = await callBridge({ type: 'close', paneId }, ownerPtyId)
   if (!result.ok) return fail(result.error || '关闭窗格失败')
   return ok('已关闭窗格', result.data)
 }
 
-export async function focusPaneTool(args: Record<string, unknown>): Promise<ToolResult> {
+export async function focusPaneTool(args: Record<string, unknown>, ownerPtyId?: string): Promise<ToolResult> {
   const paneId = (args as { pane_id?: unknown }).pane_id ?? (args as { paneId?: unknown }).paneId
   if (typeof paneId !== 'string' || !paneId) {
     return fail('pane_id 必须为字符串')
   }
-  const result = await callBridge({ type: 'focus', paneId })
+  const result = await callBridge({ type: 'focus', paneId }, ownerPtyId)
   if (!result.ok) return fail(result.error || '切换激活窗格失败')
   return ok(
     '已切换前端 UI 焦点。注意：这仅影响 UI 的高亮显示——要在该窗格执行命令，请在 execute_command 等工具的 pane_id 参数中传入该窗格的 pty_id。',
@@ -138,8 +138,8 @@ export async function focusPaneTool(args: Record<string, unknown>): Promise<Tool
   )
 }
 
-export async function listPanesTool(): Promise<ToolResult> {
-  const result = await callBridge({ type: 'list' })
+export async function listPanesTool(ownerPtyId?: string): Promise<ToolResult> {
+  const result = await callBridge({ type: 'list' }, ownerPtyId)
   if (!result.ok) return fail(result.error || '列出窗格失败')
   return ok('当前窗格列表（命令工具想在指定窗格执行时，传 pane_id 字段，值=该窗格的 ptyId）', result.data)
 }

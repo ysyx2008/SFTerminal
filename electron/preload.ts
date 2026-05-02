@@ -2970,15 +2970,16 @@ const electronAPI = {
       handler: (
         id: string,
         op:
-          | { type: 'split'; direction: 'horizontal' | 'vertical' }
+          | { type: 'split'; direction: 'horizontal' | 'vertical'; target?: { kind: string; sessionId?: string } }
           | { type: 'close'; paneId: string }
           | { type: 'focus'; paneId: string }
-          | { type: 'list' }
+          | { type: 'list' },
+        ownerPtyId?: string
       ) => void
     ) => {
-      const fn = (_event: Electron.IpcRendererEvent, payload: { id: string; op: Parameters<typeof handler>[1] }) => {
+      const fn = (_event: Electron.IpcRendererEvent, payload: { id: string; op: Parameters<typeof handler>[1]; ownerPtyId?: string }) => {
         if (!payload || typeof payload.id !== 'string' || !payload.op) return
-        handler(payload.id, payload.op)
+        handler(payload.id, payload.op, payload.ownerPtyId)
       }
       ipcRenderer.on('split-pane:exec', fn)
       return () => ipcRenderer.removeListener('split-pane:exec', fn)
