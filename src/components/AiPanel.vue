@@ -1657,7 +1657,7 @@ watch(() => props.visible, (visible) => {
                     isInitialPreparingStep(item.step!) ? 'message' : item.step!.type,
                     item.step!.type === 'tool_call' ? getExecStatusClass(item.step!) : getRiskClass(item.step!.riskLevel),
                     {
-                      'step-rejected': item.step!.content.includes('拒绝'),
+                      'step-rejected': item.step!.rejected === true,
                       'risk-pending': item.step!.type === 'tool_call' && item.step!.success === undefined
                     }
                   ]"

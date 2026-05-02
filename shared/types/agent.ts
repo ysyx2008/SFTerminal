@@ -152,6 +152,12 @@ export interface AgentStep {
    * 用于 UI 侧将"左侧风险色竖条"切换为"执行结果色竖条"，避免把风险红色误解为执行失败。
    */
   success?: boolean
+  /**
+   * 此步骤是否对应"被用户拒绝执行"。仅由工具层在拒绝场景显式标记。
+   * UI 用此字段（而不是 content 关键词）渲染"灰色 + 半透明"的拒绝样式，
+   * 避免正文里出现"拒绝"二字的 message step 被误判为拒绝步骤而整体变灰。
+   */
+  rejected?: boolean
 }
 
 /**

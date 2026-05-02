@@ -163,7 +163,8 @@ export async function executeCommand(
         type: 'tool_result',
         content: `⛔ ${t('status.user_rejected')}`,
         toolName: 'execute_command',
-        toolResult: t('status.user_rejected')
+        toolResult: t('status.user_rejected'),
+        rejected: true
       })
       return { success: false, output: '', error: t('error.user_rejected_command') }
     }

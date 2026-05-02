@@ -113,7 +113,8 @@ export async function executeCommandDirect(
         type: 'tool_result',
         content: `⛔ ${t('status.user_rejected')}`,
         toolName: 'exec',
-        toolResult: t('status.user_rejected')
+        toolResult: t('status.user_rejected'),
+        rejected: true
       })
       return { success: false, output: '', error: t('error.user_rejected_command') }
     }
