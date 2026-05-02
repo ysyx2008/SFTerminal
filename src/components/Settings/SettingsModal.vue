@@ -54,12 +54,34 @@ const showBadgeWithAnimation = ref(false)
 const aboutContentRef = ref<HTMLElement | null>(null)
 const qqGroupCopied = ref(false)
 
-const copyQQGroup = async () => {
+const QQ_GROUP_NUMBER = '1078041072'
+
+const writeClipboardReliable = async (text: string): Promise<boolean> => {
   try {
-    await navigator.clipboard.writeText('1078041072')
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    try {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.cssText = 'position:fixed;opacity:0;left:-9999px'
+      document.body.appendChild(textarea)
+      textarea.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(textarea)
+      return ok
+    } catch {
+      return false
+    }
+  }
+}
+
+const copyQQGroup = async () => {
+  const ok = await writeClipboardReliable(QQ_GROUP_NUMBER)
+  if (ok) {
     qqGroupCopied.value = true
     setTimeout(() => { qqGroupCopied.value = false }, 2000)
-  } catch { /* ignore */ }
+  }
 }
 
 // 平台检测 - macOS 上仅支持检查更新 + 手动下载（无公证签名，不支持自动更新）
@@ -583,7 +605,8 @@ const onQrImageError = (event: Event) => {
             <!-- 更新检测区域 -->
             <div class="update-section">
               <!-- 检查更新按钮 -->
-              <button 
+              <button
+                type="button"
                 v-if="updateStatus.status === 'idle' || updateStatus.status === 'not-available' || updateStatus.status === 'error'"
                 class="btn btn-outline update-btn"
                 @click="checkForUpdates"
@@ -615,25 +638,27 @@ const onQrImageError = (event: Event) => {
                 </template>
                 <!-- Windows/Linux：自动下载 + 安装 -->
                 <template v-else>
-                  <div v-if="updateStatus.sources" class="source-selector">
-                    <span class="source-label">{{ t('about.downloadSource') }}</span>
-                    <div class="source-options">
-                      <button
-                        v-for="src in (['github', 'oss'] as const)"
-                        :key="src"
-                        class="source-option"
-                        :class="{ active: updateStatus.sources.current === src, recommended: updateStatus.sources.recommended === src }"
-                        @click="switchSource(src)"
-                      >
-                        <span class="source-name">{{ sourceLabel(src) }}</span>
-                        <span class="source-latency">{{ formatLatency(updateStatus.sources.latency[src]) }}</span>
-                        <span v-if="updateStatus.sources.recommended === src" class="source-badge">{{ t('about.sourceRecommended') }}</span>
-                      </button>
+                  <div class="update-available-stack">
+                    <div v-if="updateStatus.sources" class="source-selector">
+                      <span class="source-label">{{ t('about.downloadSource') }}</span>
+                      <div class="source-options">
+                        <button
+                          v-for="src in (['github', 'oss'] as const)"
+                          :key="src"
+                          class="source-option"
+                          :class="{ active: updateStatus.sources.current === src, recommended: updateStatus.sources.recommended === src }"
+                          @click="switchSource(src)"
+                        >
+                          <span class="source-name">{{ sourceLabel(src) }}</span>
+                          <span class="source-latency">{{ formatLatency(updateStatus.sources.latency[src]) }}</span>
+                          <span v-if="updateStatus.sources.recommended === src" class="source-badge">{{ t('about.sourceRecommended') }}</span>
+                        </button>
+                      </div>
                     </div>
+                    <button type="button" class="btn btn-primary update-btn update-download-btn" @click="downloadUpdate">
+                      ⬇️ {{ t('about.downloadUpdate') }}
+                    </button>
                   </div>
-                  <button class="btn btn-primary update-btn" @click="downloadUpdate">
-                    ⬇️ {{ t('about.downloadUpdate') }}
-                  </button>
                 </template>
               </div>
               
@@ -658,7 +683,7 @@ const onQrImageError = (event: Event) => {
                   <span class="update-icon">✅</span>
                   <span>{{ t('about.updateReady', { version: updateStatus.info?.version }) }}</span>
                 </div>
-                <button class="btn btn-primary update-btn" @click="installUpdate">
+                <button type="button" class="btn btn-primary update-btn" @click="installUpdate">
                   🚀 {{ t('about.installAndRestart') }}
                 </button>
               </div>
@@ -673,17 +698,16 @@ const onQrImageError = (event: Event) => {
                 ⚠️ {{ updateStatus.error || t('about.updateError') }}
               </div>
 
-              <!-- 自动检查更新开关 -->
-              <label class="auto-check-toggle">
-                <input type="checkbox" :checked="autoCheckUpdate" @change="toggleAutoCheckUpdate" />
-                <span>{{ t('about.autoCheckUpdate') }}</span>
-              </label>
-
-              <!-- 自动下载并静默安装开关（仅在自动检查开启 + 非 macOS 时显示） -->
-              <label v-if="autoCheckUpdate && !isMac" class="auto-check-toggle">
-                <input type="checkbox" :checked="autoDownloadUpdate" @change="toggleAutoDownloadUpdate" />
-                <span>{{ t('about.autoDownloadUpdate') }}</span>
-              </label>
+              <div class="about-update-toggles">
+                <label class="auto-check-toggle">
+                  <input type="checkbox" :checked="autoCheckUpdate" @change="toggleAutoCheckUpdate" />
+                  <span>{{ t('about.autoCheckUpdate') }}</span>
+                </label>
+                <label v-if="autoCheckUpdate && !isMac" class="auto-check-toggle">
+                  <input type="checkbox" :checked="autoDownloadUpdate" @change="toggleAutoDownloadUpdate" />
+                  <span>{{ t('about.autoDownloadUpdate') }}</span>
+                </label>
+              </div>
             </div>
             
             <p v-if="!isSteamBuild" class="description">
@@ -692,9 +716,14 @@ const onQrImageError = (event: Event) => {
             <div class="about-links">
               <a href="http://www.sfterm.com/" target="_blank" class="about-link">{{ t('about.website') }}</a>
               <a href="mailto:nuoyan_cfan@163.com" class="about-link">{{ t('about.contact') }}</a>
-              <a class="about-link" @click="copyQQGroup" :title="'QQ: 1078041072'">
+              <button
+                type="button"
+                class="about-link about-link-action"
+                :title="`QQ: ${QQ_GROUP_NUMBER}`"
+                @click="copyQQGroup"
+              >
                 {{ qqGroupCopied ? t('about.qqGroupCopied') : t('about.qqGroup') }}
-              </a>
+              </button>
               <a href="http://www.gnu.org/licenses/agpl-3.0.html" target="_blank" class="about-link">{{ t('about.license') }}</a>
             </div>
             
@@ -961,14 +990,26 @@ const onQrImageError = (event: Event) => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  width: 100%;
+  max-width: 440px;
+}
+
+.about-update-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 20px;
+  margin-top: 4px;
+  width: 100%;
 }
 
 .auto-check-toggle {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 0;
   font-size: 12px;
   color: var(--text-muted);
   cursor: pointer;
@@ -1094,6 +1135,35 @@ const onQrImageError = (event: Event) => {
   background: rgba(var(--color-error-rgb), 0.1);
 }
 
+/* 新版本：下载源 + 下载按钮并排（窄屏仍纵向） */
+.update-available-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+}
+
+@media (min-width: 380px) {
+  .update-available-stack {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 12px 16px;
+  }
+
+  .update-available-stack .source-selector {
+    flex: 1 1 200px;
+    min-width: 0;
+  }
+
+  .update-available-stack .update-download-btn {
+    flex: 0 0 auto;
+    align-self: center;
+  }
+}
+
 .source-selector {
   width: 100%;
   display: flex;
@@ -1177,10 +1247,20 @@ const onQrImageError = (event: Event) => {
   color: var(--accent-primary);
   text-decoration: none;
   font-size: 13px;
+  cursor: pointer;
 }
 
 .about-link:hover {
   text-decoration: underline;
+}
+
+/* 无 href 的交互项用 button 复位，避免被当成可选中文本（I 形光标） */
+.about-link-action {
+  font: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
 }
 
 .producer {
