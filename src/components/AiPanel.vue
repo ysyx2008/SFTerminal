@@ -418,8 +418,9 @@ const handlePTTKeyDown = (event: KeyboardEvent) => {
   const pttKey = configStore.keyboardShortcuts.voiceInput
   if (!pttKey || !audioAvailable.value || !props.visible || terminalStore.activeTabId !== currentTabId.value) return
 
+  // 如果按下的不是 PTT 键，且当前正在 PTT 状态（计时器或录音中），则中止 PTT
   if (event.key !== pttKey) {
-    if (isPushToTalk.value || pttStartTimer) {
+    if (isPushToTalk.value || pttStartTimer || isRecording.value) {
       clearPTTStartTimer()
       clearPTTStopTimer()
       isPushToTalk.value = false
@@ -427,8 +428,11 @@ const handlePTTKeyDown = (event: KeyboardEvent) => {
     }
     return
   }
+
+  // 以下是按下 PTT 键的处理逻辑
   if (event.repeat) return
-  if (MODIFIER_KEYS.has(pttKey) && hasOtherModifiers(event, pttKey)) return
+  // 组合键（如 Ctrl+O）：PTT 为普通键时也必须忽略，否则仅 MODIFIER_KEYS.has(pttKey) 时才会走 hasOtherModifiers
+  if (hasOtherModifiers(event, pttKey)) return
   if (pttStopTimer) {
     clearPTTStopTimer()
     return
@@ -1180,8 +1184,9 @@ onMounted(() => {
   isMounted.value = true
   loadHostProfile()
   document.addEventListener('keydown', handleKeyDown)
-  document.addEventListener('keydown', handlePTTKeyDown)
-  document.addEventListener('keyup', handlePTTKeyUp)
+  // 捕获阶段：终端聚焦时 Ctrl+字母 的 keydown 可能无法冒泡到 document，导致无法用「第二键」取消以 Control 为 PTT 键时的长按计时
+  document.addEventListener('keydown', handlePTTKeyDown, true)
+  document.addEventListener('keyup', handlePTTKeyUp, true)
   window.addEventListener('blur', handlePTTWindowBlur)
 
   // 音频设备检测和 toast 已提升到 App.vue 全局执行一次
@@ -1196,8 +1201,8 @@ onMounted(() => {
 onUnmounted(() => {
   clearPTTStopTimer()
   document.removeEventListener('keydown', handleKeyDown)
-  document.removeEventListener('keydown', handlePTTKeyDown)
-  document.removeEventListener('keyup', handlePTTKeyUp)
+  document.removeEventListener('keydown', handlePTTKeyDown, true)
+  document.removeEventListener('keyup', handlePTTKeyUp, true)
   window.removeEventListener('blur', handlePTTWindowBlur)
   const el = scrollerRef.value?.$el as HTMLElement | undefined
   if (el) {
