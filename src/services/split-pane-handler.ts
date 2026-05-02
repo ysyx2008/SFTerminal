@@ -35,14 +35,25 @@ export function initSplitPaneHandler(): void {
     try {
       // 每次都重新拿最新 store 实例，避免 HMR 后闭包持有旧 store
       const store = useTerminalStore()
-      result = await dispatch(store, op as Op, ownerPtyId)
+      // dispatch 整体加超时——任何路径下都要保证 sendResult 一定回到主进程，
+      // 否则主进程 bridge 即使有自己的 timeout，工具调用层观察到的也是"无限挂起"。
+      result = await Promise.race([
+        dispatch(store, op as Op, ownerPtyId),
+        new Promise<{ ok: boolean; error: string }>((_, reject) =>
+          setTimeout(() => reject(new Error('split-pane handler dispatch timeout')), 8000)
+        )
+      ])
       log.info(`dispatch done id=${id} ok=${result.ok} err=${result.error || ''}`)
     } catch (e) {
       result = { ok: false, error: e instanceof Error ? e.message : String(e) }
       log.warn(`dispatch threw id=${id}`, e)
     }
-    window.electronAPI.splitPane.sendResult(id, result)
-    log.info(`sendResult id=${id}`)
+    try {
+      window.electronAPI.splitPane.sendResult(id, result)
+      log.info(`sendResult id=${id}`)
+    } catch (e) {
+      log.error(`sendResult failed id=${id}`, e)
+    }
   })
 }
 
@@ -124,6 +135,19 @@ async function dispatch(
         return {
           ok: false,
           error: '只剩最后一个窗格，不能通过 close_pane 关闭——这会关掉整个 tab、终止当前 Agent 会话。如需关闭 tab，请让用户手动操作。'
+        }
+      }
+
+      // 防自残：Agent 不能关掉自己所在的窗格——会让 Agent PTY 一起被销毁，
+      // Agent 实例死亡、本次工具调用永远拿不到 result，前端表现为"卡死"。
+      // 入参 paneId 可能是布局节点 id 或 ptyId，两种都得查。
+      if (ownerPtyId) {
+        const targetPane = allPanes.find(p => p.paneId === op.paneId || p.ptyId === op.paneId)
+        if (targetPane && targetPane.ptyId === ownerPtyId) {
+          return {
+            ok: false,
+            error: `不能关闭你自己所在的窗格（ptyId=${ownerPtyId}）——这会终止你自己的执行环境。要清理这个窗格，请让用户手动点窗格右上角的 ✕。如果想让其他窗格"换内容"，应该关那个其他窗格再 split_terminal，而不是关自己。`
+          }
         }
       }
       const removed = await store.closePane(tab.id, op.paneId)

@@ -890,7 +890,9 @@ pane_id 接受两种值（任选其一）：
 - list_panes 返回的 paneId（布局节点 id）
 - list_panes 返回的 ptyId（窗格 PTY 实例 id，**推荐**——分屏后保持不变，不会过期）
 
-如果你拿着旧 list_panes 的结果，**优先传 ptyId** 更稳。失败时（节点不存在）会返回明确错误。`,
+如果你拿着旧 list_panes 的结果，**优先传 ptyId** 更稳。失败时（节点不存在）会返回明确错误。
+
+⚠️ **不能关闭你自己所在的窗格**：你是在某个 ptyId 上启动的，关那个 ptyId 等于把自己的执行环境销毁，工具调用会永远卡死。要"换"那个窗格的内容，应该让用户手动操作；或者先 split_terminal 把新内容开在别的位置，再关掉旧的非 self 窗格。`,
         parameters: {
           type: 'object',
           properties: {

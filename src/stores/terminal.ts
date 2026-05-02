@@ -1170,16 +1170,21 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
     if (!pane) return false
 
-    // 清理终端连接
+    // 清理终端连接（加超时保护：底层 SSH/PTY dispose 异常时不能拖死整个 close 流程，
+    // 否则 Agent 端的 split-pane bridge 会一直 pending，前端用户也看到"调用 close_pane"
+    // 卡住没结果）
     if (pane.ptyId) {
+      const disposePtyId = pane.ptyId
       try {
-        if (pane.terminalType === 'local') {
-          await window.electronAPI.pty.dispose(pane.ptyId)
-        } else {
-          await window.electronAPI.ssh.disconnect(pane.ptyId)
-        }
+        const disposePromise = pane.terminalType === 'local'
+          ? window.electronAPI.pty.dispose(disposePtyId)
+          : window.electronAPI.ssh.disconnect(disposePtyId)
+        await Promise.race([
+          disposePromise,
+          new Promise<void>((_, reject) => setTimeout(() => reject(new Error('dispose timeout')), 2000))
+        ])
       } catch (e) {
-        log.error('Failed to dispose pane terminal:', e)
+        log.error('Failed to dispose pane terminal (continuing close anyway):', e)
       }
     }
 

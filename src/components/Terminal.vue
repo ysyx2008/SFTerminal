@@ -199,7 +199,9 @@ onMounted(async () => {
         // 更新后端 PTY 大小（按 ptyId 直接路由，分屏安全）
         const { cols, rows } = terminal
         await terminalStore.resizePty(props.ptyId, props.type, cols, rows)
-        terminal.focus()
+        // 注意：这里以前会 terminal.focus()——但 ResizeObserver 在 Agent 改变窗格
+        // 布局 / 输出大量内容引发 reflow 时会触发 resize，不该抢用户输入焦点。
+        // 焦点切换由 isActive watcher（用户交互/激活窗格变化）独家负责。
       }
     }
   }, 100)
