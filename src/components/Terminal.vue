@@ -729,6 +729,18 @@ const hideContextMenu = () => {
   })
 }
 
+// 鼠标按下：先于 xterm 在捕获阶段切换激活窗格（兜底）。
+//
+// 普通文本输出时 click 事件会冒泡到外层 SplitPaneView 触发 handlePaneClick；
+// 但 top / vim / htop 等开启 mouse tracking 的 alt-screen 应用会让 xterm.js
+// 直接消费鼠标事件转成 ESC 序列发回 PTY，click 不再冒泡——用户感受就是
+// "点 top 输出区域无法激活窗格，必须点旁边"。
+// 这里用 .capture 在 xterm 拿到事件之前先激活，xterm 后续做什么都不影响。
+const handleTerminalMouseDown = () => {
+  if (props.isActive) return
+  terminalStore.setActivePaneInTab(props.tabId, props.ptyId)
+}
+
 // 处理终端点击 - 修复 cmd+a 全选后点击不清除选中状态的问题
 // xterm.js 的 onSelectionChange 在 selectAll() 后点击取消选择时可能不触发
 let selectionCheckTimeout: ReturnType<typeof setTimeout> | null = null
@@ -1369,6 +1381,7 @@ defineExpose({
 <template>
   <div 
     class="terminal-wrapper" 
+    @mousedown.capture="handleTerminalMouseDown"
     @contextmenu="handleContextMenu"
     @click="handleTerminalClick"
   >
