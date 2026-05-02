@@ -619,16 +619,25 @@ async function executeTimedCommand(
     if (!executor.terminalService.write(ptyId, command + '\r')) {
       unsubscribe()
       // paneGoneResult 异步抓 list_panes；这里仍然在 Promise executor 内部，
-      // 不能 await，所以把 resolve 链接到结果上即可
-      void paneGoneResult(ptyId, executor).then(result => {
-        executor.addStep({
-          type: 'tool_result',
-          content: `⚠️ ${result.briefError}`,
-          toolName: 'execute_command',
-          toolResult: result.briefError
+      // 不能 await，所以把 resolve 链接到结果上即可。catch 兜底防止内部
+      // addStep / i18n 抛异常时把外层 Promise 永远挂起。
+      paneGoneResult(ptyId, executor)
+        .then(result => {
+          executor.addStep({
+            type: 'tool_result',
+            content: `⚠️ ${result.briefError}`,
+            toolName: 'execute_command',
+            toolResult: result.briefError
+          })
+          resolve(result)
         })
-        resolve(result)
-      })
+        .catch(err => {
+          resolve({
+            success: false,
+            output: '',
+            error: err instanceof Error ? err.message : String(err)
+          })
+        })
       return
     }
 

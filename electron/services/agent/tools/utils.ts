@@ -308,6 +308,10 @@ export async function paneGoneResult(
         const panesText = JSON.stringify(result.data, null, 2)
         detailedError = `${baseError}\n\n${t('error.pane_not_found_runtime.with_panes', { panes: panesText })}`
         log.info(`paneGone: targetPty=${targetPtyId}, attached panes for AI (ownerPty=${ownerPtyId})`)
+      } else {
+        // bridge 走通了但返回 not-ok（如 ownerPtyId 已死、tab 已关），走 fallback hint，
+        // 但留个日志方便排障——否则线上只会看到 Agent 突然走 fallback 路径找不到原因
+        log.warn(`paneGone: bridge returned not-ok (targetPty=${targetPtyId}, ownerPty=${ownerPtyId}): ${result.error || 'unknown'}`)
       }
     } catch (e) {
       // bridge 不可用（如非 UI 上下文 / 渲染窗口已销毁）就走 fallback

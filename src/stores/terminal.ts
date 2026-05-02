@@ -831,6 +831,24 @@ export const useTerminalStore = defineStore('terminal', () => {
         rows: 24
       })
 
+      // ssh.connect 是异步的——await 期间用户可能关了窗格 / 切了 tab / 关了整个 tab。
+      // 这里要重新校验 paneNode 还在 splitLayout 里、tab 还在 tabs 里，否则我们刚连上的
+      // sshId 没人用，得显式 disconnect 避免 ghost 连接泄漏（mutate 已 detach 的 paneNode
+      // 也是无效的，UI 不会更新）。
+      const tabStillAlive = tabs.value.some(t => t.id === tabId)
+      const paneStillAttached = paneNode
+        && tab.splitLayout
+        && getAllTerminalPanes(tab.splitLayout).includes(paneNode)
+
+      if (!tabStillAlive || (paneNode && !paneStillAttached)) {
+        try {
+          await window.electronAPI.ssh.disconnect(sshId)
+        } catch {
+          // 忽略：清理失败不阻塞调用方
+        }
+        return { success: false }
+      }
+
       // 1. 精准更新该窗格节点的 ptyId（sshConfig / sshSessionId 不变，重连同一会话）
       if (paneNode) {
         paneNode.ptyId = sshId
