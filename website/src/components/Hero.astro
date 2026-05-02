@@ -1,6 +1,7 @@
 ---
 import { useTranslations, type Lang } from '../i18n/utils';
 import { defaultLanguage } from '../i18n/translations';
+import { readRootPackageVersion } from '../lib/app-version';
 
 interface Props {
   lang?: Lang;
@@ -10,8 +11,8 @@ const { lang = defaultLanguage } = Astro.props;
 const t = useTranslations(lang);
 
 // Hero 首屏组件
-// 从 GitHub API 获取最新版本号
-let version = "7.1.0"; // 默认版本，API 失败时使用
+// 从 GitHub API 获取最新版本号；失败时用仓库根 package.json（与桌面端版本一致）
+let version = readRootPackageVersion();
 
 try {
   const response = await fetch('https://api.github.com/repos/ysyx2008/SailFish/releases/latest', {
@@ -25,9 +26,14 @@ try {
     const data = await response.json();
     // tag_name 格式为 "v7.1.0"，去掉 "v" 前缀
     version = data.tag_name.replace(/^v/, '');
+  } else {
+    console.warn(
+      `[Hero] GitHub releases/latest HTTP ${response.status}, showing package.json version:`,
+      version
+    );
   }
 } catch (error) {
-  console.warn('Failed to fetch latest release, using default version:', version);
+  console.warn('Failed to fetch latest release, using package.json version:', version, error);
 }
 ---
 

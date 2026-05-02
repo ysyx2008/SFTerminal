@@ -1,6 +1,7 @@
 ---
 import { useTranslations, type Lang } from '../i18n/utils';
 import { defaultLanguage } from '../i18n/translations';
+import { readRootPackageVersion } from '../lib/app-version';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -11,8 +12,8 @@ interface Props {
 const { lang = defaultLanguage } = Astro.props;
 const t = useTranslations(lang);
 
-// 从 GitHub API 获取最新版本号
-let version = "7.1.0";
+// 从 GitHub API 获取最新版本号；失败时用仓库根 package.json
+let version = readRootPackageVersion();
 
 try {
   const response = await fetch('https://api.github.com/repos/ysyx2008/SailFish/releases/latest', {
@@ -25,9 +26,14 @@ try {
   if (response.ok) {
     const data = await response.json();
     version = data.tag_name.replace(/^v/, '');
+  } else {
+    console.warn(
+      `[Download] GitHub releases/latest HTTP ${response.status}, using package.json version:`,
+      version
+    );
   }
 } catch (error) {
-  console.warn('Failed to fetch latest release, using default version:', version);
+  console.warn('Failed to fetch latest release, using package.json version:', version, error);
 }
 
 // 从 CHANGELOG 提取当前版本的一句话摘要
