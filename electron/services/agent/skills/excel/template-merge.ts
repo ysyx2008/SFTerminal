@@ -426,17 +426,38 @@ function replaceCellPlaceholders(
 
 // ============ 公式工具 ============
 
-function isFormulaCell(cell: ExcelJS.Cell): boolean {
+/**
+ * 判断是否为公式单元格。
+ *
+ * 兼容 ExcelJS 的两种公式形态：
+ * - 普通公式：`{ formula: 'A1+B1', result?: ... }`（CellFormulaValue）
+ * - 共享公式：`{ sharedFormula: 'A1+B1', result?: ... }`（CellSharedFormulaValue）
+ *   出现于 Excel 中多行相同公式被自动合并的场景，
+ *   也常出现于从外部 .xlsx 文件导入的模板里。
+ */
+export function isFormulaCell(cell: ExcelJS.Cell): boolean {
   const v = cell.value
-  if (v && typeof v === 'object' && 'formula' in (v as unknown as Record<string, unknown>)) return true
+  if (v && typeof v === 'object') {
+    const obj = v as unknown as Record<string, unknown>
+    if ('formula' in obj || 'sharedFormula' in obj) return true
+  }
   if (cell.formula) return true
   return false
 }
 
-function extractFormulaString(cell: ExcelJS.Cell): string {
+/**
+ * 提取公式字符串，优先 formula，其次 sharedFormula，最后回退到 cell.formula getter。
+ */
+export function extractFormulaString(cell: ExcelJS.Cell): string {
   const v = cell.value
-  if (v && typeof v === 'object' && 'formula' in (v as unknown as Record<string, unknown>)) {
-    return String((v as { formula: unknown }).formula ?? '')
+  if (v && typeof v === 'object') {
+    const obj = v as unknown as Record<string, unknown>
+    if ('formula' in obj && obj.formula != null) {
+      return String(obj.formula)
+    }
+    if ('sharedFormula' in obj && obj.sharedFormula != null) {
+      return String(obj.sharedFormula)
+    }
   }
   return cell.formula ?? ''
 }

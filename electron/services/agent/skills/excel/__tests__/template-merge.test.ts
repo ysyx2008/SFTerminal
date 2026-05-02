@@ -5,7 +5,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { mergeXlsxFile, shiftFormulaRows } from '../template-merge'
+import { mergeXlsxFile, shiftFormulaRows, isFormulaCell, extractFormulaString } from '../template-merge'
 
 let tmpDir: string
 
@@ -89,6 +89,46 @@ describe('shiftFormulaRows', () => {
 
   it('handles multiple cell refs in one formula', () => {
     expect(shiftFormulaRows('A1+B1*C1-D1', 3)).toBe('A4+B4*C4-D4')
+  })
+})
+
+// ============ formula cell detection (兼容 sharedFormula) ============
+
+describe('isFormulaCell / extractFormulaString', () => {
+  // 用 mock 而非真实 ExcelJS Cell（这两个函数只关心 value/formula 字段）
+  function mockCell(value: unknown, formula?: string): import('exceljs').Cell {
+    return { value, formula } as unknown as import('exceljs').Cell
+  }
+
+  it('detects normal formula cell { formula }', () => {
+    const c = mockCell({ formula: 'A1+B1' })
+    expect(isFormulaCell(c)).toBe(true)
+    expect(extractFormulaString(c)).toBe('A1+B1')
+  })
+
+  it('detects sharedFormula cell { sharedFormula }', () => {
+    // 真实场景：用真正的 Excel 软件保存的模板，多行相同公式被合并成共享公式
+    const c = mockCell({ sharedFormula: 'A2-B2', result: 7 })
+    expect(isFormulaCell(c)).toBe(true)
+    expect(extractFormulaString(c)).toBe('A2-B2')
+  })
+
+  it('prefers formula over sharedFormula when both present', () => {
+    const c = mockCell({ formula: 'X+Y', sharedFormula: 'A2-B2' })
+    expect(extractFormulaString(c)).toBe('X+Y')
+  })
+
+  it('falls back to cell.formula getter', () => {
+    const c = mockCell('not formula', 'A1*2')
+    expect(isFormulaCell(c)).toBe(true)
+    expect(extractFormulaString(c)).toBe('A1*2')
+  })
+
+  it('returns empty for non-formula cell', () => {
+    expect(isFormulaCell(mockCell('hello'))).toBe(false)
+    expect(isFormulaCell(mockCell(123))).toBe(false)
+    expect(isFormulaCell(mockCell(null))).toBe(false)
+    expect(extractFormulaString(mockCell('hello'))).toBe('')
   })
 })
 
