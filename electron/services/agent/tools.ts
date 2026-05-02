@@ -854,7 +854,7 @@ Agent 类型：
 - target="ssh:<sessionId>"：连接到指定的已配置 SSH 会话（先调 list_ssh_sessions 获取 sessionId）
 - 也支持对象形态：target={kind:"local"} / {kind:"inherit"} / {kind:"ssh", sessionId:"..."}
 
-返回数据中 panes 数组列出所有窗格的 paneId / ptyId / terminalType。如果你想在新窗格里执行命令，给 execute_command（以及 send_input、send_control_key、check_terminal_status、get_terminal_context 等终端工具）传入 pane_id 参数，值=该窗格的 ptyId。
+返回数据中 panes 数组列出所有窗格的 ptyId / label / terminalType。窗格的唯一标识统一用 ptyId（在窗格生命周期内稳定不变）。如果你想在新窗格里执行命令，给 execute_command（以及 send_input、send_control_key、check_terminal_status、get_terminal_context 等终端工具）传入 pane_id 参数，值=该窗格的 ptyId。
 
 典型用法：
 - 多机巡检：list_ssh_sessions 拿清单 → 给每台 split_terminal(direction, target="ssh:xxx") → 各窗格并行 execute_command
@@ -886,11 +886,7 @@ Agent 类型：
         name: 'close_pane',
         description: `关闭指定窗格。关闭后若只剩一个窗格，list_panes 的 mode 会切回 'single'。
 
-pane_id 接受两种值（任选其一）：
-- list_panes 返回的 paneId（布局节点 id）
-- list_panes 返回的 ptyId（窗格 PTY 实例 id，**推荐**——分屏后保持不变，不会过期）
-
-如果你拿着旧 list_panes 的结果，**优先传 ptyId** 更稳。失败时（节点不存在）会返回明确错误。
+pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字段）。窗格在系统里只有 ptyId 这一种稳定标识——传别的会找不到。
 
 可以关闭包括"你当前正在操作的窗格"在内的任意窗格。如果关掉的就是当前操作焦点，工具会自动把"当前默认窗格"切到剩余的某个，后续 execute_command 默认在新焦点执行（无需显式传 pane_id）。唯一例外：剩最后一个窗格时不能关——那等于关闭整个 tab。`,
         parameters: {
@@ -898,7 +894,7 @@ pane_id 接受两种值（任选其一）：
           properties: {
             pane_id: {
               type: 'string',
-              description: '要关闭的窗格标识符（list_panes 的 paneId 或 ptyId 任一种）'
+              description: '要关闭的窗格的 ptyId（来自 list_panes 返回的 ptyId 字段）'
             }
           },
           required: ['pane_id']
@@ -917,13 +913,13 @@ pane_id 接受两种值（任选其一）：
 
 适合"接下来一连串命令都要在同一个窗格跑"的场景——一次 focus_pane 切过去，后续命令简洁。如果只是想在某个窗格执行单条命令，直接给那条命令传 pane_id 更轻量。
 
-pane_id 接受 list_panes 返回的 paneId 或 ptyId 任一种（推荐 ptyId，更稳）。`,
+pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字段）。`,
         parameters: {
           type: 'object',
           properties: {
             pane_id: {
               type: 'string',
-              description: '要激活的窗格标识符（list_panes 的 paneId 或 ptyId 任一种）'
+              description: '要激活的窗格的 ptyId（来自 list_panes 返回的 ptyId 字段）'
             }
           },
           required: ['pane_id']
@@ -938,9 +934,9 @@ pane_id 接受 list_panes 返回的 paneId 或 ptyId 任一种（推荐 ptyId，
       type: 'function',
       function: {
         name: 'list_panes',
-        description: `列出当前激活 tab 的所有窗格（含 pane_id、pty_id、label、是否激活、终端类型）。当 system prompt 中的窗格信息不够实时或刚做过分屏调整时使用。
+        description: `列出当前激活 tab 的所有窗格（含 ptyId、label、是否激活、终端类型）。当 system prompt 中的窗格信息不够实时或刚做过分屏调整时使用。
 
-返回的 ptyId 字段就是其他终端工具（execute_command 等）pane_id 参数所需的值——想在哪个窗格跑命令，就把那个窗格的 ptyId 传给工具的 pane_id 参数。`,
+窗格的唯一稳定标识就是 ptyId——其他终端工具（execute_command / send_input / send_control_key / check_terminal_status / get_terminal_context / close_pane / focus_pane）的 pane_id 参数全都接收 ptyId 这个值。`,
         parameters: {
           type: 'object',
           properties: {}

@@ -2168,8 +2168,8 @@ interface Window {
           id: string,
           op:
             | { type: 'split'; direction: 'horizontal' | 'vertical'; target?: { kind: string; sessionId?: string } }
-            | { type: 'close'; paneId: string }
-            | { type: 'focus'; paneId: string }
+            | { type: 'close'; ptyId: string }
+            | { type: 'focus'; ptyId: string }
             | { type: 'list' },
           ownerPtyId?: string
         ) => void

@@ -15,8 +15,8 @@ const log = createLogger('SplitPaneHandler')
 
 type Op =
   | { type: 'split'; direction: 'horizontal' | 'vertical'; target?: SplitTarget }
-  | { type: 'close'; paneId: string }
-  | { type: 'focus'; paneId: string }
+  | { type: 'close'; ptyId: string }
+  | { type: 'focus'; ptyId: string }
   | { type: 'list' }
 
 let unsubscribe: (() => void) | null = null
@@ -126,7 +126,7 @@ async function dispatch(
       }
     }
     case 'close': {
-      log.info(`close start paneId=${op.paneId}`)
+      log.info(`close start ptyId=${op.ptyId}`)
       // 不允许 Agent 通过 close_pane 关掉最后一个窗格——这等于关闭整个 tab。
       // tab 的关闭是用户决策，应通过 UI 完成。
       const allPanes = tab.splitLayout ? collectPanes(tab.splitLayout) : []
@@ -139,12 +139,13 @@ async function dispatch(
 
       // Agent 关自己当前窗格是允许的：架构上 Agent 实例与 PTY 解耦不会自残；
       // 关闭后由工具侧根据返回的 panes.isActive 把 run.ptyId 切到新激活窗格。
-      const removed = await store.closePane(tab.id, op.paneId)
-      log.info(`close done paneId=${op.paneId} removed=${removed}`)
+      // store.closePane 第 2 参数命名为 paneId 是历史接口，实际按 ptyId 兜底查找。
+      const removed = await store.closePane(tab.id, op.ptyId)
+      log.info(`close done ptyId=${op.ptyId} removed=${removed}`)
       if (!removed) {
         return {
           ok: false,
-          error: `Pane not found: "${op.paneId}". Use list_panes to get current pane_id (布局可能在上次操作后已经变化).`
+          error: `Pane not found: "${op.ptyId}". No pane has this ptyId — use list_panes to refresh current ptyIds.`
         }
       }
       const remainingPanes = collectPanes(tab.splitLayout)
@@ -152,7 +153,7 @@ async function dispatch(
         ok: true,
         data: {
           tabId: tab.id,
-          closedPaneId: op.paneId,
+          closedPtyId: op.ptyId,
           panes: remainingPanes,
           // mode 按叶子数量判断而非 splitLayout 是否存在——root 永远是 split 容器，
           // 但只剩 1 个叶子时用户体验等同单屏，应该报 'single' 让 Agent 心智一致。
@@ -164,16 +165,16 @@ async function dispatch(
       if (!tab.splitLayout) {
         return { ok: false, error: 'Tab is not in split mode' }
       }
-      const ok = store.setActivePaneInTab(tab.id, op.paneId)
+      const ok = store.setActivePaneInTab(tab.id, op.ptyId)
       if (!ok) {
         return {
           ok: false,
-          error: `Pane not found: "${op.paneId}". Use list_panes to get current pane_id.`
+          error: `Pane not found: "${op.ptyId}". No pane has this ptyId — use list_panes to refresh current ptyIds.`
         }
       }
       return {
         ok: true,
-        data: { tabId: tab.id, activePaneId: op.paneId }
+        data: { tabId: tab.id, activePtyId: op.ptyId }
       }
     }
     case 'list': {
@@ -197,7 +198,6 @@ async function dispatch(
           mode: 'single' as const,
           panes: tab.ptyId
             ? [{
-                paneId: 'main',
                 ptyId: tab.ptyId,
                 label: 'Main',
                 isActive: true,
@@ -212,16 +212,25 @@ async function dispatch(
   }
 }
 
+/**
+ * 给 Agent 工具看的 pane 列表。
+ *
+ * 只暴露 ptyId 一种标识——ptyId 在窗格生命周期内稳定，用于跨工具调用引用窗格。
+ * 不返回布局节点 id（"paneId"），因为它会在布局压缩（lift）后被替换，旧值失效，
+ * Agent 拿着旧 paneId 调 close_pane / focus_pane 会报 not found。
+ *
+ * 内部仍保留布局节点 id（用于 Vue :key、树遍历主键、split 容器标识），但对外
+ * 只承诺 ptyId 这一种引用方式，避免 Agent 在两个等价名字之间踩坑。
+ */
 function collectPanes(
   layout: SplitPane | undefined
-): Array<{ paneId: string; ptyId: string; label: string; isActive: boolean; terminalType: string }> {
+): Array<{ ptyId: string; label: string; isActive: boolean; terminalType: string }> {
   if (!layout) return []
-  const out: Array<{ paneId: string; ptyId: string; label: string; isActive: boolean; terminalType: string }> = []
+  const out: Array<{ ptyId: string; label: string; isActive: boolean; terminalType: string }> = []
   const walk = (node: SplitPane) => {
     if (node.type === 'terminal') {
       if (!node.ptyId) return
       out.push({
-        paneId: node.id,
         ptyId: node.ptyId,
         label: node.label || '',
         isActive: Boolean(node.isActive),

@@ -27,10 +27,12 @@ export type SplitTargetOp =
   | { kind: 'local' }
   | { kind: 'ssh', sessionId: string }
 
+// close / focus 的 ptyId 字段=目标窗格的 ptyId（窗格的唯一稳定标识）。
+// 历史曾用 paneId 字段名，已统一为 ptyId 以避免与"布局节点 id"概念混淆。
 export type SplitPaneOp =
   | { type: 'split'; direction: 'horizontal' | 'vertical'; target?: SplitTargetOp }
-  | { type: 'close'; paneId: string }
-  | { type: 'focus'; paneId: string }
+  | { type: 'close'; ptyId: string }
+  | { type: 'focus'; ptyId: string }
   | { type: 'list' }
 
 export interface SplitPaneResult {
