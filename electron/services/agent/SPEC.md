@@ -325,6 +325,28 @@ run(message, context, options)
 - **size dep 剥离**：`getItemSizeDeps` 中 message step 的 `content` 经过 `parseThinking` 剥离思考块后再作为 size dep，reasoning 文本变化不再触发列表项重算
 - **行为约束**：流式中只显示最后一行 reasoning（CSS `text-overflow: ellipsis` 自适应容器宽度，不需要硬编码字符数）；完成后默认收起，仅在用户主动点击时内嵌展开
 
+### 任务完成尾注尺寸恒定（UX 承诺）
+
+`✓ 任务完成` 尾注（`.agent-final-footer`）作为 message step 的尾巴呈现，是 4dad4969 修复"任务完成那一刻整屏上下闪烁"的关键载体。
+
+**承诺**：footer 的 DynamicScroller item size 必须**恒定**，与 footer 内任何子元素（`✓` 文字、操作菜单按钮、未来可能新增的尾注内容）的存在与否无关。任何依赖 `isAgentRunning` / `isLoadedFromHistory` / `pendingConfirm` 等运行时状态切换 footer 内子元素 v-if 的改动，都不能引起 footer 高度变化。
+
+- **实现**：`.agent-final-footer { min-height: 22px }`，锁到当前最大子元素（22×22 操作按钮）高度。文字行高 ~17px 在 22px 容器内垂直居中略松，但比尺寸跳变好得多
+- **失败案例（commit `9607c2a8`）**：往 footer 里塞了一个高 22px 的 fork 菜单按钮，按钮 v-if 受 `isAgentRunning` 控制——Agent 跑完那一刻按钮整批出现，所有完成 group 的 footer 同时从 17 跳到 22，DynamicScroller 监测到全部 item size 变化触发整列重排
+- **修复（commit `274a2386`）**：min-height 锁底，按钮在/不在 footer 高度恒定
+- **回归保护**：未来在 footer 加新元素时高度必须 ≤ 22px；要超过 22px 必须同步把 min-height 抬高到新最大值，并且新元素也不能是基于运行时状态条件渲染的
+
+### 流式输出同帧贴底跟随（UX 承诺）
+
+流式 chunk 到达时，新内容必须**在浏览器 paint 之前**完成贴底滚动，用户视觉上感受不到任何"半行先冒出再上挪"的过渡。
+
+**承诺**：`useAgentMode` 内挂 `ResizeObserver` 直接监听 DynamicScroller 的内容容器 `.vue-recycle-scroller__item-wrapper` 自身高度变化。该 wrapper 高度即虚拟列表的 totalSize；ResizeObserver 回调时机在 layout 之后、paint 之前，那一刻把 `scrollTop` 钉到最新 `scrollHeight`，浏览器同帧合成出来的画面已经是贴底状态。
+
+- **触发条件**：`isUserNearBottom === true`（用户视觉处于底部）或 `skipScrollUpdate` 期间（强制贴底窗口内）；用户主动滚走后 `isUserNearBottom = false`，ResizeObserver 不会越权强行贴底
+- **失败案例（修复前）**：`doScrollIfNeeded` 仅在 `nextTick` 后调一次 `scrollTop = scrollHeight`，但 DynamicScroller 的 totalSize 是 item 的 ResizeObserver 异步上报的，nextTick 时 totalSize 还是旧值，于是滚到的是"旧底"；浏览器 paint 出新内容、半行裸露在视区底外，下一波 chunk 才补上去
+- **修复（commit `274a2386`）**：在 `useAgentMode` 内 `installContentResizeObserver` 直接观察 wrapper 高度；`doScrollIfNeeded` 等粗粒度滚动入口保留，作为新 step 加入瞬间的初始贴底兜底
+- **回归保护**：禁止把 ResizeObserver 改成基于 step.content 长度等内容驱动的判断（脆弱，且重新引入"vue-virtual-scroller 内部 size 测量异步"的根本问题）；禁止改成 setTimeout/setInterval 轮询（错过 paint 窗口）
+
 ### 技能系统 (`skills/`)
 
 动态加载的工具集合，通过 `skill` 工具触发。技能会话在 Agent 实例级别持久化。

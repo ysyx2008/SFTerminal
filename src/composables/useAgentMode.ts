@@ -251,6 +251,11 @@ export function useAgentMode(
 
   // ==================== 流式跟随：内容高度变化时同帧贴底 ====================
   //
+  // ⚠️ UX 不变量：流式 chunk 到达时新内容必须在浏览器 paint 之前完成贴底滚动。
+  //    详见 electron/services/agent/SPEC.md §"流式输出同帧贴底跟随"。改动前必读。
+  //    严禁改成 setTimeout 轮询、严禁改成基于 step.content 长度的内容驱动判断——
+  //    会重新引入"半行先冒出再上挪"的视觉抖动。
+  //
   // 流式输出时新内容会先在视区底部"露出半截 / 半行"再被滚到位，根因是 DynamicScroller
   // 的总高度（vue-recycle-scroller__item-wrapper.height）由 ResizeObserver 异步上报：
   // Vue patch DOM → 浏览器下次 layout 时 item ResizeObserver 触发 → DynamicScroller
