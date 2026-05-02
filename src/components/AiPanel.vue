@@ -4,7 +4,7 @@
  * 重构版本：使用 composables 模块化管理逻辑
  * 每个 tab 独立实例，通过 tabId prop 绑定
  */
-import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef } from 'vue'
+import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Upload, Trash2, X, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
@@ -1207,9 +1207,44 @@ onUnmounted(() => {
   }
 })
 
-watch(() => props.visible, (visible) => {
-  if (visible) {
+// 监听 visible 变化，保存和恢复滚动位置
+watch(() => props.visible, async (visible, wasVisible) => {
+  if (!visible && wasVisible) {
+    // 面板隐藏时，保存当前滚动位置
+    if (messagesRef.value && currentTabId.value) {
+      const scrollTop = messagesRef.value.scrollTop
+      terminalStore.setAiScrollTop(currentTabId.value, scrollTop)
+    }
+  } else if (visible && !wasVisible) {
+    // 面板显示时，恢复滚动位置
     warmupMessageList()
+    await nextTick()
+    if (messagesRef.value && currentTabId.value) {
+      const savedScrollTop = terminalStore.getAiScrollTop(currentTabId.value)
+      if (savedScrollTop !== undefined) {
+        messagesRef.value.scrollTop = savedScrollTop
+      }
+    }
+  }
+}, { flush: 'post' })
+
+// 监听 tabId 变化（用于分屏模式下切换激活窗格）
+watch(() => props.tabId, async (newTabId, oldTabId) => {
+  if (oldTabId && messagesRef.value) {
+    // 保存旧 tab 的滚动位置
+    const scrollTop = messagesRef.value.scrollTop
+    terminalStore.setAiScrollTop(oldTabId, scrollTop)
+  }
+
+  if (newTabId) {
+    // 恢复新 tab 的滚动位置
+    await nextTick()
+    if (messagesRef.value) {
+      const savedScrollTop = terminalStore.getAiScrollTop(newTabId)
+      if (savedScrollTop !== undefined) {
+        messagesRef.value.scrollTop = savedScrollTop
+      }
+    }
   }
 }, { flush: 'post' })
 </script>
