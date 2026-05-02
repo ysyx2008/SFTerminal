@@ -4259,13 +4259,18 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 }
 
 /* 成功完成的静默尾注：在最终消息下方轻轻浮出一行，不再用整张绿色卡片
-   不加入场动画——虚拟滚动器回收/复用 DOM 时会把 CSS 动画重播，反而造成闪烁 */
+   不加入场动画——虚拟滚动器回收/复用 DOM 时会把 CSS 动画重播，反而造成闪烁。
+   min-height 锁到按钮高度（22px），让按钮 v-if 切换不会改变 footer 的盒子
+   高度——这是 4dad4969 修复"任务完成上下闪烁"的核心承诺：DynamicScroller
+   item size 必须恒定，否则 isAgentRunning 翻转会让所有完成 group 的 footer
+   同时跳变，整列被往下顶。 */
 .agent-final-footer {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-top: 6px;
   padding-left: 2px;
+  min-height: 22px;
   font-size: 11px;
   color: var(--text-muted);
 }

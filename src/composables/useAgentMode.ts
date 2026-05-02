@@ -249,6 +249,65 @@ export function useAgentMode(
     await doScrollIfNeeded()
   }
 
+  // ==================== 流式跟随：内容高度变化时同帧贴底 ====================
+  //
+  // 流式输出时新内容会先在视区底部"露出半截 / 半行"再被滚到位，根因是 DynamicScroller
+  // 的总高度（vue-recycle-scroller__item-wrapper.height）由 ResizeObserver 异步上报：
+  // Vue patch DOM → 浏览器下次 layout 时 item ResizeObserver 触发 → DynamicScroller
+  // 重算 totalSize → wrapper height 才更新。doScrollIfNeeded 在 nextTick 后调
+  // scrollTop = scrollHeight，此刻 scrollHeight 还是旧值，于是滚到的是"旧底"，紧接
+  // 着浏览器 paint 出新内容、半行裸露在视区底外，下一帧/下一次 chunk 才补上去。
+  //
+  // 这里直接监听 wrapper 自身的尺寸变化：ResizeObserver 在 layout 之后、paint 之前
+  // 触发，那一刻把 scrollTop 钉到最新的 scrollHeight，浏览器同帧合成出来的画面已经
+  // 是贴底状态——用户视觉上感受不到任何半行过渡。
+  let contentResizeObserver: ResizeObserver | null = null
+  let contentObservedTarget: HTMLElement | null = null
+
+  const installContentResizeObserver = () => {
+    uninstallContentResizeObserver()
+    if (!messagesRef.value) return
+    const wrapper = messagesRef.value.querySelector(
+      '.vue-recycle-scroller__item-wrapper'
+    ) as HTMLElement | null
+    if (!wrapper) return
+    contentObservedTarget = wrapper
+    contentResizeObserver = new ResizeObserver(() => {
+      const el = messagesRef.value
+      if (!el) return
+      // skipScrollUpdate 期间（强制贴底窗口内）也跟随，确保 doScrollIfNeeded 早期
+      // 设的"旧底"被新 totalSize 立即纠正
+      if (skipScrollUpdate) {
+        el.scrollTop = el.scrollHeight
+        return
+      }
+      // 仅在用户视觉处于底部时跟随；用户主动滚走后 isUserNearBottom 为 false，
+      // 这里不会越权强行贴底，避免和"用户翻看历史"的意图打架
+      if (!isUserNearBottom.value) return
+      el.scrollTop = el.scrollHeight
+    })
+    contentResizeObserver.observe(wrapper)
+  }
+
+  const uninstallContentResizeObserver = () => {
+    if (contentResizeObserver && contentObservedTarget) {
+      contentResizeObserver.unobserve(contentObservedTarget)
+    }
+    contentResizeObserver?.disconnect()
+    contentResizeObserver = null
+    contentObservedTarget = null
+  }
+
+  // messagesRef 由 AiPanel 在 watch(scrollerRef) 中赋值；这里跟随它生命周期挂载/卸载
+  // wrapper 是 DynamicScroller mount 后内部渲染的子节点，等一帧确保挂载完成
+  watch(messagesRef, (el, oldEl) => {
+    if (oldEl === el) return
+    uninstallContentResizeObserver()
+    if (el) {
+      requestAnimationFrame(() => installContentResizeObserver())
+    }
+  }, { flush: 'post' })
+
   // 停止生成
   const stopGeneration = async () => {
     if (currentTabId.value) {
@@ -1111,6 +1170,7 @@ export function useAgentMode(
 
   onUnmounted(() => {
     cleanupAgentListeners()
+    uninstallContentResizeObserver()
     canvasStore.cleanup(currentTabId.value)
   })
 
