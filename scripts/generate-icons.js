@@ -71,7 +71,11 @@ function getImageSize(imagePath) {
 }
 
 function checkImageMagick() {
-  return execSilent('which convert') !== null;
+  return execSilent('which magick') !== null || execSilent('which convert') !== null;
+}
+
+function getMagickCmd() {
+  return execSilent('which magick') !== null ? 'magick' : 'convert';
 }
 
 function checkPlatform() {
@@ -168,16 +172,79 @@ async function main() {
   // ========================================
   // 生成 Windows .ico
   // ========================================
+  // Windows 与 macOS 图标设计规范不同：
+  //   - macOS：系统会自动加圆角并要求图标本身留白（Apple HIG）
+  //   - Windows：任务栏/桌面/文件管理器直接渲染 ICO，主流应用（VS Code/Chrome/Edge）
+  //     都让图标几乎贴边，留白会显得"图标偏小"
+  //
+  // 因此 Windows ICO 单独处理：
+  //   1) 先 trim 透明边距 → 获得"裸"图标内容
+  //   2) 等比缩放到 contentRatio * size，居中放到 size x size 透明画布（约 4% 边距）
+  //   3) 覆盖 100%-200% DPI 的所有任务栏/桌面尺寸（含 20/24/40/96，Win10/11 关键尺寸）
+  //   4) 用 Lanczos 高质量缩放滤波，对小尺寸（≤64）额外做 unsharp 锐化避免软糊
+  //   5) 合并为单个 ICO（256x256 用 PNG 压缩，其他尺寸用 BMP）
   log('\n生成 Windows icon.ico...', 'cyan');
   const icoPath = path.join(resourcesDir, 'icon.ico');
 
   if (hasImageMagick) {
-    // 使用 ImageMagick
-    if (exec(`convert "${sourceLogo}" -define icon:auto-resize=256,128,64,48,32,16 "${icoPath}"`, true)) {
-      success('已生成 icon.ico (使用 ImageMagick)');
-    } else {
-      error('生成 icon.ico 失败');
+    const magick = getMagickCmd();
+    const tmpDir = path.join(resourcesDir, '.tmp-ico');
+    if (fs.existsSync(tmpDir)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    const trimmedPath = path.join(tmpDir, 'trimmed.png');
+    if (!exec(`${magick} "${sourceLogo}" -background none -trim +repage "${trimmedPath}"`, true)) {
+      error('trim 透明边距失败');
+    }
+
+    // Win10/11 任务栏 100%/125%/150%/175%/200% DPI 关键尺寸
+    const winSizes = [16, 20, 24, 32, 40, 48, 64, 96, 128, 256];
+    const contentRatio = 0.92; // 约 4% 边距，让图标贴边显示
+
+    const pngFiles = [];
+    let allOk = true;
+    for (const size of winSizes) {
+      const outPath = path.join(tmpDir, `icon_${String(size).padStart(3, '0')}.png`);
+      const contentSize = Math.round(size * contentRatio);
+
+      let cmd = `${magick} "${trimmedPath}" -filter Lanczos -resize "${contentSize}x${contentSize}"` +
+                ` -background none -gravity center -extent "${size}x${size}"`;
+
+      // 小尺寸做 unsharp 锐化，避免边缘模糊；强度需平衡，过强会引入彩色噪点
+      if (size <= 20) {
+        // 极小尺寸：温和锐化，避免噪点
+        cmd += ' -unsharp 0x0.5+0.5+0.01';
+      } else if (size <= 32) {
+        cmd += ' -unsharp 0x0.6+0.7+0.008';
+      } else if (size <= 64) {
+        cmd += ' -unsharp 0x0.75+0.6+0.005';
+      }
+
+      cmd += ` "${outPath}"`;
+      if (exec(cmd, true)) {
+        pngFiles.push(outPath);
+      } else {
+        allOk = false;
+      }
+    }
+
+    if (pngFiles.length > 0) {
+      const pngList = pngFiles.map(p => `"${p}"`).join(' ');
+      if (exec(`${magick} ${pngList} "${icoPath}"`, true)) {
+        success(`已生成 icon.ico (${pngFiles.length} 个尺寸: ${winSizes.join(', ')})`);
+        if (!allOk) {
+          warn('部分尺寸生成失败，但 ICO 已写入');
+        }
+      } else {
+        error('合并 ICO 失败');
+      }
+    } else {
+      error('未生成任何尺寸的 PNG，跳过 ICO 合并');
+    }
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   } else {
     // 尝试使用 png2ico (如果存在)
     const hasPng2ico = execSilent('which png2ico') !== null;
