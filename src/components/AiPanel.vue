@@ -1916,7 +1916,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                     </span>
                   </div>
                   <div class="confirm-detail">
-                    <div class="confirm-tool-name">{{ getToolDisplayName(pendingConfirm.toolName) }}</div>
+                    <div class="confirm-tool-name">{{ pendingConfirm.displayName || getToolDisplayName(pendingConfirm.toolName) }}</div>
                     <pre class="confirm-args-inline">{{ formatConfirmArgs(pendingConfirm) }}</pre>
                   </div>
                   <div class="confirm-actions-inline">

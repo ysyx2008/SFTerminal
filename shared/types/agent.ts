@@ -170,4 +170,12 @@ export interface PendingConfirmation {
   toolName: string
   toolArgs: Record<string, unknown>
   riskLevel: RiskLevel
+  /**
+   * 可选的人类可读动作名（如 "覆盖生成 Word 文档"）。
+   *
+   * 用途：当同一个工具在不同场景下需要不同确认文案时（例如 word_from_markdown
+   * 的"新建" vs "覆盖"），由具体工具在调用 waitForConfirmation 时按场景传入。
+   * 前端有 displayName 时优先显示，否则回退到工具名映射表。
+   */
+  displayName?: string
 }

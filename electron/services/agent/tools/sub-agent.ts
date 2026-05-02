@@ -131,7 +131,8 @@ function buildSubAgentExecutorConfig(
     addStep: () => noopStep(),
     updateStep: () => {},
     // 子 Agent 不弹确认框：moderate 自动放行，dangerous 自动拒绝并报错
-    waitForConfirmation: async (_toolCallId, toolName, toolArgs, riskLevel) => {
+    // displayName 在子 Agent 场景下不需要（不弹卡片），保留参数仅为兼容接口
+    waitForConfirmation: async (_toolCallId, toolName, toolArgs, riskLevel, _displayName) => {
       if (riskLevel === 'dangerous') {
         const argsPreview = (() => {
           try { return JSON.stringify(toolArgs).slice(0, 300) } catch { return '<unserializable>' }

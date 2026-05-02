@@ -1584,7 +1584,8 @@ async function wordSave(
       toolCallId,
       'word_save',
       { path: filePath },
-      'moderate'
+      'moderate',
+      t('word.overwrite_save_action')
     )
 
     if (!approved) {
@@ -2542,7 +2543,8 @@ async function wordFromMarkdown(
       toolCallId,
       'word_from_markdown',
       { path: filePath },
-      'moderate'
+      'moderate',
+      t('word.overwriting_from_md')
     )
 
     if (!approved) {

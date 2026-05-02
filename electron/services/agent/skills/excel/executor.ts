@@ -937,7 +937,8 @@ async function excelSave(
       toolCallId,
       'excel_save',
       { path: filePath },
-      'moderate'
+      'moderate',
+      t('excel.overwrite_save_action')
     )
 
     if (!approved) {
@@ -1114,7 +1115,8 @@ async function excelFromMarkdown(
       toolCallId,
       'excel_from_markdown',
       { path: filePath },
-      'moderate'
+      'moderate',
+      t('excel.overwriting_from_md')
     )
 
     if (!approved) {

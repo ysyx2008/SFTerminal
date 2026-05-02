@@ -42,7 +42,9 @@ export interface ToolExecutorConfig {
     toolCallId: string,
     toolName: string,
     toolArgs: Record<string, unknown>,
-    riskLevel: RiskLevel
+    riskLevel: RiskLevel,
+    /** 可选的人类可读动作名，用于前端确认卡片显示（如"覆盖生成 Word 文档"） */
+    displayName?: string
   ) => Promise<boolean>
   isAborted: () => boolean
   getHostId: () => string | undefined

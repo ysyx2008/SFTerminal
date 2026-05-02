@@ -2630,8 +2630,8 @@ export abstract class Agent {
       pluginRegistry: this.services.pluginRegistry,
       addStep: (step) => this.addStep(step),
       updateStep: (stepId, updates) => this.updateStep(stepId, updates),
-      waitForConfirmation: async (toolCallId, toolName, toolArgs, riskLevel) => {
-        const result = await this.waitForConfirmation(run, toolCallId, toolName, toolArgs, riskLevel)
+      waitForConfirmation: async (toolCallId, toolName, toolArgs, riskLevel, displayName) => {
+        const result = await this.waitForConfirmation(run, toolCallId, toolName, toolArgs, riskLevel, displayName)
         return result.approved
       },
       isAborted: () => run.aborted,
@@ -2837,7 +2837,8 @@ export abstract class Agent {
     toolCallId: string, 
     toolName: string, 
     toolArgs: Record<string, unknown>,
-    riskLevel: RiskLevel
+    riskLevel: RiskLevel,
+    displayName?: string
   ): Promise<{ approved: boolean; modifiedArgs?: Record<string, unknown> }> {
     return new Promise((resolve) => {
       const confirmation: PendingConfirmationInternal = {
@@ -2846,6 +2847,7 @@ export abstract class Agent {
         toolName,
         toolArgs,
         riskLevel,
+        displayName,
         resolve: (approved, modifiedArgs) => {
           run.pendingConfirmation = undefined
           run.executionPhase = 'thinking'
