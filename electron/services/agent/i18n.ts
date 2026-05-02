@@ -1141,6 +1141,7 @@ const translations = {
     'error.check_terminal_status': '命令执行超时。请检查终端状态。',
     'error.get_terminal_output_failed': '获取终端输出失败: {error}',
     'error.terminal_output_empty': '(终端输出为空)',
+    'error.pane_not_found_runtime': '目标窗格已不存在 (ptyId="{paneId}")，可能被关闭或重建（如 SSH 断开、用户关掉窗格再开等）。命令未送达任何终端。请调用 list_panes 获取最新窗格列表，再用新的 ptyId 作为 pane_id 重试。',
 
     // 控制键错误
     'error.control_key_required': '必须指定要发送的控制键',
@@ -2463,6 +2464,7 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'error.check_terminal_status': 'Command execution timeout. Please check terminal status.',
     'error.get_terminal_output_failed': 'Failed to get terminal output: {error}',
     'error.terminal_output_empty': '(Terminal output is empty)',
+    'error.pane_not_found_runtime': 'Target pane no longer exists (ptyId="{paneId}"); it may have been closed or recreated (e.g. SSH disconnected, user closed and reopened the pane). The command was not delivered to any terminal. Call list_panes to refresh the pane list, then retry with the new ptyId as pane_id.',
 
     // Control key errors
     'error.control_key_required': 'Must specify control key to send',

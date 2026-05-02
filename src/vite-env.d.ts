@@ -183,12 +183,11 @@ interface Window {
       write: (id: string, data: string) => Promise<void>
       resize: (id: string, cols: number, rows: number) => Promise<void>
       dispose: (id: string) => Promise<void>
-      executeInTerminal: (id: string, command: string, timeout?: number) => Promise<{
-        success: boolean
-        output?: string
-        exitCode?: number
-        error?: string
-      }>
+      executeInTerminal: (id: string, command: string, timeout?: number) => Promise<
+        | { status: 'completed'; output: string; duration: number }
+        | { status: 'timeout'; output: string; duration: number }
+        | { status: 'no_instance'; ptyId: string }
+      >
       getAvailableShells: () => Promise<Array<{
         label: string
         value: string

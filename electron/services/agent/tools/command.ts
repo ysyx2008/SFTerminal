@@ -8,7 +8,7 @@ import { assessCommandRisk, analyzeCommand, isSudoCommand, detectPasswordPrompt 
 import { getTerminalStateService } from '../../terminal-state.service'
 import { getTerminalAwarenessService, getProcessMonitor } from '../../terminal-awareness'
 import { getLastNLinesFromBuffer, getScreenAnalysisFromFrontend } from '../../screen-content.service'
-import { categorizeError, getErrorRecoverySuggestion, withRetry, truncateFromEnd, getPtyMaxCommandLength } from './utils'
+import { categorizeError, getErrorRecoverySuggestion, withRetry, truncateFromEnd, getPtyMaxCommandLength, paneGoneResult } from './utils'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 
 /**
@@ -220,7 +220,22 @@ export async function executeCommand(
       }
     )
 
-    const isTimeout = result.output.includes('[命令执行超时]')
+    // 窗格不存在：底层 service 在 ptyId 找不到实例时返回结构化的 no_instance，
+    // 不能再当成"普通输出"传给 Agent。这里立刻短路返回明确错误，提示去 list_panes 刷新。
+    if (result.status === 'no_instance') {
+      unsubscribe()
+      terminalStateService.completeCommandExecution(ptyId, 1, 'failed')
+      const errorMsg = t('error.pane_not_found_runtime', { paneId: result.ptyId })
+      executor.addStep({
+        type: 'tool_result',
+        content: `⚠️ ${errorMsg}`,
+        toolName: 'execute_command',
+        toolResult: errorMsg
+      })
+      return { success: false, output: '', error: errorMsg }
+    }
+
+    const isTimeout = result.status === 'timeout'
     if (isTimeout) {
       let latestOutput = result.output
       try {
@@ -398,9 +413,21 @@ async function executeSudoCommand(
     }
   }
   const unsubscribe = executor.terminalService.onData(ptyId, outputHandler)
-  
-  executor.terminalService.write(ptyId, command + '\r')
-  
+
+  // 写入失败说明窗格已经不存在了——若不立刻 bail，下面的轮询会一直空转直到 sudoTimeout
+  if (!executor.terminalService.write(ptyId, command + '\r')) {
+    unsubscribe()
+    terminalStateService.completeCommandExecution(ptyId, 1, 'failed')
+    const result = paneGoneResult(ptyId)
+    executor.addStep({
+      type: 'tool_result',
+      content: `⚠️ ${result.error}`,
+      toolName: 'execute_command',
+      toolResult: result.error || ''
+    })
+    return result
+  }
+
   const sudoTimeout = 5 * 60 * 1000
   const startTime = Date.now()
   const pollInterval = 500
@@ -528,8 +555,18 @@ async function executeFireAndForget(
   handling: { reason?: string; hint?: string },
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
-  executor.terminalService.write(ptyId, command + '\r')
-  
+  // 写入失败说明窗格已不存在；不能再骗 Agent "命令已启动"——把这条转成明确错误
+  if (!executor.terminalService.write(ptyId, command + '\r')) {
+    const result = paneGoneResult(ptyId)
+    executor.addStep({
+      type: 'tool_result',
+      content: `⚠️ ${result.error}`,
+      toolName: 'execute_command',
+      toolResult: result.error || ''
+    })
+    return result
+  }
+
   await new Promise(resolve => setTimeout(resolve, 1000))
   
   let initialOutput = ''
@@ -577,9 +614,21 @@ async function executeTimedCommand(
       output += data
     }
     const unsubscribe = executor.terminalService.onData(ptyId, dataHandler)
-    
-    executor.terminalService.write(ptyId, command + '\r')
-    
+
+    // 写入失败说明窗格已不存在；放弃后续的等待 + 退出键序列，直接报错
+    if (!executor.terminalService.write(ptyId, command + '\r')) {
+      unsubscribe()
+      const result = paneGoneResult(ptyId)
+      executor.addStep({
+        type: 'tool_result',
+        content: `⚠️ ${result.error}`,
+        toolName: 'execute_command',
+        toolResult: result.error || ''
+      })
+      resolve(result)
+      return
+    }
+
     setTimeout(async () => {
       unsubscribe()
       

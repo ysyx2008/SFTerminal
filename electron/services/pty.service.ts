@@ -43,6 +43,23 @@ export interface CommandResult {
   aborted?: boolean
 }
 
+/**
+ * executeInTerminal 的结构化返回。
+ *
+ * 设计原则：调用方判断"是否完成 / 超时 / 实例不存在"必须靠 status 字段，
+ * 不要再用 output.includes('某关键字') 这种字符串匹配——否则命令本身的
+ * 输出里恰好出现该关键字就会被误判（典型例子：`echo '[命令执行超时]'`、
+ * `cat 含此字符串的日志`）。
+ *
+ * - completed：命令正常结束（检测到 shell 提示符）
+ * - timeout：达到 timeout 仍未结束，已停止收集；命令在终端里可能还在跑
+ * - no_instance：传入的 ptyId 在 service 里找不到对应实例（窗格已关闭/重建）
+ */
+export type ExecuteInTerminalResult =
+  | { status: 'completed'; output: string; duration: number }
+  | { status: 'timeout'; output: string; duration: number }
+  | { status: 'no_instance'; ptyId: string }
+
 interface PtyInstance {
   pty: pty.IPty
   dataCallbacks: ((data: string) => void)[]
@@ -204,20 +221,25 @@ export class PtyService {
   }
 
   /**
-   * 向 PTY 写入数据
+   * 向 PTY 写入数据。
+   *
+   * @returns true 表示写入成功；false 表示目标实例不存在（已被关闭/重建）。
+   *   IPC 用户击键路径会忽略返回值（保持原有静默行为）；Agent 工具路径需要
+   *   检查返回值，false 时立刻把"窗格不存在"作为明确错误返回给上层，避免
+   *   命令静默丢失。
    */
-  write(id: string, data: string): void {
+  write(id: string, data: string): boolean {
     const instance = this.instances.get(id)
-    if (instance) {
-      if (instance.useRawData && instance.encoding !== 'utf-8') {
-        // Windows 上使用 iconv-lite 编码
-        const encoded = iconv.encode(data, instance.encoding)
-        // node-pty 在 encoding: null 模式下接受 Buffer，但类型定义未更新
-        ;(instance.pty as unknown as { write: (data: Buffer) => void }).write(encoded)
-      } else {
-        instance.pty.write(data)
-      }
+    if (!instance) return false
+    if (instance.useRawData && instance.encoding !== 'utf-8') {
+      // Windows 上使用 iconv-lite 编码
+      const encoded = iconv.encode(data, instance.encoding)
+      // node-pty 在 encoding: null 模式下接受 Buffer，但类型定义未更新
+      ;(instance.pty as unknown as { write: (data: Buffer) => void }).write(encoded)
+    } else {
+      instance.pty.write(data)
     }
+    return true
   }
 
   /**
@@ -499,15 +521,15 @@ export class PtyService {
    * 通过检测 shell 提示符来判断命令完成
    */
   executeInTerminal(
-    id: string, 
-    command: string, 
+    id: string,
+    command: string,
     timeout: number = 30000
-  ): Promise<{ output: string; duration: number }> {
+  ): Promise<ExecuteInTerminalResult> {
     return new Promise((resolve) => {
       const instance = this.instances.get(id)
       if (!instance) {
         log.error(`终端实例不存在: id=${id}, 现有实例: ${Array.from(this.instances.keys()).join(', ')}`)
-        resolve({ output: `终端实例不存在 (id=${id})`, duration: 0 })
+        resolve({ status: 'no_instance', ptyId: id })
         return
       }
 
@@ -606,6 +628,7 @@ export class PtyService {
         }
         
         resolve({
+          status: 'completed',
           output: stripAnsi(lines.join('\n').trim()),
           duration: Date.now() - startTime
         })
@@ -642,12 +665,18 @@ export class PtyService {
       // 添加输出监听器
       instance.dataCallbacks.push(outputHandler)
 
-      // 设置总超时
+      // 设置总超时（直接 resolve 成 status:'timeout'，不复用 finish()
+      // 避免被 finish() 标成 completed；调用方靠 status 字段判断，不再
+      // 依赖 output 里夹带的"[命令执行超时]"魔法字符串）
       timeoutTimer = setTimeout(() => {
-        if (!resolved) {
-          output += '\n[命令执行超时]'
-          finish()
-        }
+        if (resolved) return
+        resolved = true
+        cleanup()
+        resolve({
+          status: 'timeout',
+          output: stripAnsi(output.trim()),
+          duration: Date.now() - startTime
+        })
       }, timeout)
 
       // 直接发送命令（使用 \r 触发执行，这在 PTY 中是标准的回车符）

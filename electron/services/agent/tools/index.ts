@@ -103,6 +103,8 @@ export async function executeTool(
       const requiredPtyId = requirePtyId(ptyId, name)
       if (typeof requiredPtyId !== 'string') return requiredPtyId
       // 分屏：args.pane_id 指定目标窗格，不传则用 Agent 创建时的默认 PTY
+      // 不在此处做"窗格存活"预校验：底层 write/executeInTerminal 在实例不存在
+      // 时会通过 boolean 返回值或 status:'no_instance' 明确报失败，自然冒泡更可靠
       return executeCommand(resolveTargetPtyId(args, requiredPtyId), args, toolCall.id, config, executor)
     }
 

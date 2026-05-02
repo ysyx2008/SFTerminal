@@ -2,7 +2,7 @@
  * 工具执行器通用工具函数
  */
 import { t } from '../i18n'
-import type { ErrorCategory } from './types'
+import type { ErrorCategory, ToolExecutorConfig, ToolResult } from './types'
 import { PATH_PARAM_NAMES } from './types'
 import { createLogger } from '../../../utils/logger'
 
@@ -254,6 +254,25 @@ export function resolveTargetPtyId(
   const v = args.pane_id ?? args.paneId ?? args.pty_id ?? args.ptyId
   if (typeof v === 'string' && v) return v
   return defaultPtyId
+}
+
+/**
+ * 构造"窗格已不存在"的标准 ToolResult。
+ *
+ * 用于底层 terminalService.write() 返回 false 或 executeInTerminal()
+ * 返回 status:'no_instance' 这两条"运行时探测到窗格消失"的路径——把这种
+ * 失败转成对 Agent 友好的错误，提示去 list_panes 刷新现有窗格列表后重试。
+ *
+ * 不在工具入口做预先 hasInstance 校验：那是 TOCTOU + 多一道 IPC 调用，
+ * 而底层 write/executeInTerminal 本身就能"诚实地告诉调用方失败"，让失败
+ * 自然冒泡更可靠。
+ */
+export function paneGoneResult(ptyId: string): ToolResult {
+  return {
+    success: false,
+    output: '',
+    error: t('error.pane_not_found_runtime', { paneId: ptyId })
+  }
 }
 
 /**

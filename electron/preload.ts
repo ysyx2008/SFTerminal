@@ -396,12 +396,11 @@ const electronAPI = {
       ipcRenderer.invoke('pty:resize', id, cols, rows),
     dispose: (id: string) => ipcRenderer.invoke('pty:dispose', id),
     executeInTerminal: (id: string, command: string, timeout?: number) =>
-      ipcRenderer.invoke('pty:executeInTerminal', id, command, timeout) as Promise<{
-        success: boolean
-        output?: string
-        exitCode?: number
-        error?: string
-      }>,
+      ipcRenderer.invoke('pty:executeInTerminal', id, command, timeout) as Promise<
+        | { status: 'completed'; output: string; duration: number }
+        | { status: 'timeout'; output: string; duration: number }
+        | { status: 'no_instance'; ptyId: string }
+      >,
     getAvailableShells: () => ipcRenderer.invoke('pty:getAvailableShells') as Promise<Array<{
       label: string
       value: string

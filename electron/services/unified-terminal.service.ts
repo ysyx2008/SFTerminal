@@ -3,30 +3,40 @@
  * 抽象 PTY 和 SSH 终端的公共接口，让 Agent 可以同时处理两种终端
  */
 
-import type { PtyService, TerminalStatus } from './pty.service'
+import type { PtyService, TerminalStatus, ExecuteInTerminalResult } from './pty.service'
 import type { SshService } from './ssh.service'
 import { getTerminalStateService, type TerminalStateService } from './terminal-state.service'
+
+export type { ExecuteInTerminalResult } from './pty.service'
 
 /**
  * 统一终端接口
  * 定义 PTY 和 SSH 终端共有的操作
  */
 export interface UnifiedTerminalInterface {
-  /** 向终端写入数据 */
-  write(id: string, data: string): void
-  
+  /**
+   * 向终端写入数据。
+   * @returns true 表示写入成功；false 表示目标实例不存在/不可用。
+   * Agent 工具应检查此返回值并把 false 当成"窗格已不存在"的明确错误。
+   */
+  write(id: string, data: string): boolean
+
   /** 注册数据回调，返回取消订阅函数 */
   onData(id: string, callback: (data: string) => void): () => void
-  
-  /** 在终端执行命令并收集输出 */
-  executeInTerminal(id: string, command: string, timeout?: number): Promise<{ output: string; duration: number }>
-  
+
+  /**
+   * 在终端执行命令并收集输出。
+   * 调用方必须用返回值的 status 字段判断结果（completed/timeout/no_instance），
+   * 不要再用 output.includes('某关键字') 这种字符串匹配判定状态。
+   */
+  executeInTerminal(id: string, command: string, timeout?: number): Promise<ExecuteInTerminalResult>
+
   /** 获取终端状态 */
   getTerminalStatus(id: string): Promise<TerminalStatus>
-  
+
   /** 检查终端实例是否存在 */
   hasInstance(id: string): boolean
-  
+
   /** 获取终端类型 */
   getTerminalType(id: string): 'local' | 'ssh' | null
 }
@@ -74,15 +84,22 @@ export class UnifiedTerminalService implements UnifiedTerminalInterface {
   }
 
   /**
-   * 向终端写入数据
+   * 向终端写入数据。
+   *
+   * 路由策略：
+   * - 已知是 SSH 类型 → 走 SSH service
+   * - 已知是本地或类型未知 → 走 PTY service
+   * - 任意一边返回 false 都直接透传（false = 实例不存在/不可用）
+   *
+   * 注：getTerminalType 在实例完全消失时会返回 null，此时回退到 PTY service
+   * 也会返回 false（因为它的 instances map 里也找不到），符合预期。
    */
-  write(id: string, data: string): void {
+  write(id: string, data: string): boolean {
     const type = this.getTerminalType(id)
     if (type === 'ssh') {
-      this.sshService.write(id, data)
-    } else {
-      this.ptyService.write(id, data)
+      return this.sshService.write(id, data)
     }
+    return this.ptyService.write(id, data)
   }
 
   /**
@@ -99,19 +116,18 @@ export class UnifiedTerminalService implements UnifiedTerminalInterface {
   }
 
   /**
-   * 在终端执行命令并收集输出
+   * 在终端执行命令并收集输出。返回结构化结果，调用方靠 status 字段判断。
    */
   async executeInTerminal(
-    id: string, 
-    command: string, 
+    id: string,
+    command: string,
     timeout: number = 30000
-  ): Promise<{ output: string; duration: number }> {
+  ): Promise<ExecuteInTerminalResult> {
     const type = this.getTerminalType(id)
     if (type === 'ssh') {
       return this.sshService.executeInTerminal(id, command, timeout)
-    } else {
-      return this.ptyService.executeInTerminal(id, command, timeout)
     }
+    return this.ptyService.executeInTerminal(id, command, timeout)
   }
 
   /**

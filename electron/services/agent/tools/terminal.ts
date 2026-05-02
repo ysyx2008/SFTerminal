@@ -6,7 +6,7 @@ import stripAnsi from 'strip-ansi'
 import { t } from '../i18n'
 import { getTerminalAwarenessService } from '../../terminal-awareness'
 import { getLastNLinesFromBuffer, getScreenAnalysisFromFrontend } from '../../screen-content.service'
-import { truncateFromEnd } from './utils'
+import { truncateFromEnd, paneGoneResult } from './utils'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 
 /**
@@ -374,8 +374,18 @@ export async function sendControlKey(
   })
 
   try {
-    executor.terminalService.write(ptyId, keySequence)
-    
+    // write 返回 false = 目标窗格已不存在，不能继续骗 Agent "已发送"
+    if (!executor.terminalService.write(ptyId, keySequence)) {
+      const result = paneGoneResult(ptyId)
+      executor.addStep({
+        type: 'tool_result',
+        content: `⚠️ ${result.error}`,
+        toolName: 'send_control_key',
+        toolResult: result.error || ''
+      })
+      return result
+    }
+
     const terminalOutput = await waitForStableOutput(ptyId)
 
     executor.addStep({
@@ -426,12 +436,22 @@ export async function sendInput(
   })
 
   try {
-    executor.terminalService.write(ptyId, text)
-    
+    // write 返回 false = 目标窗格已不存在；第二条 \r 也不必尝试了
+    if (!executor.terminalService.write(ptyId, text)) {
+      const result = paneGoneResult(ptyId)
+      executor.addStep({
+        type: 'tool_result',
+        content: `⚠️ ${result.error}`,
+        toolName: 'send_input',
+        toolResult: result.error || ''
+      })
+      return result
+    }
+
     if (pressEnter) {
       executor.terminalService.write(ptyId, '\r')
     }
-    
+
     const terminalOutput = await waitForStableOutput(ptyId)
 
     const inputDesc = `"${text}"${pressEnter ? ' + Enter' : ''}`

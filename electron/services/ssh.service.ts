@@ -7,6 +7,7 @@ import type { JumpHostConfig, SshConfig, SshEncoding } from '@shared/types'
 import { getUnixProbeCommands } from './host-profile.service'
 import { getSshErrorMessage } from './ssh-error'
 import { createLogger } from '../utils/logger'
+import type { ExecuteInTerminalResult } from './pty.service'
 
 export type { JumpHostConfig, SshConfig, SshEncoding }
 
@@ -416,17 +417,24 @@ export class SshService {
   /**
    * 向 SSH 写入数据（使用配置的编码）
    */
-  write(id: string, data: string): void {
+  /**
+   * 向 SSH 终端写入数据。
+   *
+   * @returns true 表示写入成功；false 表示目标实例不存在/stream 不可用
+   *   （SSH 已断开或 channel 关闭）。Agent 工具路径需要检查返回值，false
+   *   时把"窗格不存在"作为明确错误返回；用户击键路径忽略返回值即可。
+   */
+  write(id: string, data: string): boolean {
     const instance = this.instances.get(id)
-    if (instance?.stream) {
-      if (instance.encoding === 'utf-8') {
-        instance.stream.write(data)
-      } else {
-        // 使用 iconv-lite 编码非 UTF-8 数据
-        const encoded = iconv.encode(data, instance.encoding)
-        instance.stream.write(encoded)
-      }
+    if (!instance?.stream) return false
+    if (instance.encoding === 'utf-8') {
+      instance.stream.write(data)
+    } else {
+      // 使用 iconv-lite 编码非 UTF-8 数据
+      const encoded = iconv.encode(data, instance.encoding)
+      instance.stream.write(encoded)
     }
+    return true
   }
 
   /**
@@ -609,12 +617,12 @@ export class SshService {
     id: string,
     command: string,
     timeout: number = 30000
-  ): Promise<{ output: string; duration: number }> {
+  ): Promise<ExecuteInTerminalResult> {
     return new Promise((resolve) => {
       const instance = this.instances.get(id)
       if (!instance?.stream) {
         log.error(`SSH 实例不存在: id=${id}, 现有实例: ${Array.from(this.instances.keys()).join(', ')}`)
-        resolve({ output: `SSH 终端实例不存在 (id=${id})`, duration: 0 })
+        resolve({ status: 'no_instance', ptyId: id })
         return
       }
 
@@ -691,6 +699,7 @@ export class SshService {
         cleanOutput = cleanOutput.replace(/^\s*[\r\n]+/, '').replace(/[\r\n]+\s*$/, '')
 
         resolve({
+          status: 'completed',
           output: cleanOutput,
           duration: Date.now() - startTime
         })
@@ -722,16 +731,17 @@ export class SshService {
       // 发送命令
       stream.write(command + '\r')
 
-      // 超时处理
+      // 超时处理：用 status:'timeout' 明确告诉调用方，
+      // 不再往 output 里夹带"[命令执行超时]"魔法字符串
       timeoutTimer = setTimeout(() => {
-        if (!resolved) {
-          resolved = true
-          cleanup()
-          resolve({
-            output: output + '\n[命令执行超时]',
-            duration: Date.now() - startTime
-          })
-        }
+        if (resolved) return
+        resolved = true
+        cleanup()
+        resolve({
+          status: 'timeout',
+          output,
+          duration: Date.now() - startTime
+        })
       }, timeout)
     })
   }

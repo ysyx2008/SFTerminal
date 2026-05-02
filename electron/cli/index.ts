@@ -1304,9 +1304,20 @@ async function ptyExec(args: string[]): Promise<void> {
 
   try {
     const result = await pty.executeInTerminal(ptyId, command, timeout)
+    // 显式 return 让 TS 控制流分析更清晰（process.exit 是 never，narrowing 本身够用，
+    // 但加 return 后维护者不必去翻 @types/node 才能确信下面访问 result.output 是安全的）
+    if (result.status === 'no_instance') {
+      console.error(`Execution error: terminal instance not found (id=${result.ptyId})`)
+      process.exit(1)
+      return
+    }
     if (result.output) {
       process.stdout.write(result.output)
       if (!result.output.endsWith('\n')) console.log()
+    }
+    if (result.status === 'timeout') {
+      console.error(`\n[command timed out after ${timeout}ms]`)
+      process.exit(124)
     }
   } catch (error: any) {
     console.error('Execution error:', error.message || error)
