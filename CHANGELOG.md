@@ -2,7 +2,36 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.36.0 (2026-05-02) (Latest)
+## v10.37.0 (2026-05-04) (Latest)
+
+This release introduces three new features — fork conversation from any completed node, background Agent completion notifications, and system-aware UI theme — while bringing official document generation up to Chinese national standards; also fixes AI panel visual jitter, blurry Windows icons, unreliable macOS badge, and more.
+
+### New Features
+- 🌿 **Fork Conversation**: Fork a new assistant tab from any completed conversation node to explore different directions side by side
+- 🔔 **Background Completion Notification**: Agent notifies users via taskbar badge / Dock bounce when a background task finishes
+- 🎨 **System-aware UI Theme**: New "Follow System Appearance" option automatically switches between light and dark mode on macOS/Windows
+- 📝 **Official Document Generation Meets National Standards**: Word skill now incorporates GB/T 9704-2012 (Party & Government Document Format), GB/T 15834-2011 (Punctuation), and GB/T 15835-2011 (Numeral Usage), standardizing document structure, full-width punctuation, numeral conventions, and Chinese typography (no Pangu spacing); also removes brittle style-detection logic
+
+### Improvements
+- 🪶 **Lighter Toolbar Icons**: Reduced visual weight of toolbar icon buttons for a more restrained overall look
+- 🌑 **Unified Default Theme**: Consolidated default UI theme data source; dark theme is now the default
+- 🧭 **First-run Onboarding**: Added first-time setup guidance; default model unified to deepseek-v4-flash
+- 📚 **Documentation**: Added guides for split-pane and fork-conversation; captured two Agent UX invariants (task completion / streaming output) in SPEC
+- 🛠️ **Built-in Model Templates Updated**: Refreshed bundled LLM configuration templates
+
+### Bug Fixes
+- 🍎 **macOS Badge Reliability**: Switched to event-driven focus tracking; fixes occasional missing badge in production build
+- 🔗 **macOS Terminal Links**: Fixed terminal links opening an "Open With" dialog on macOS instead of the browser
+- 🪟 **Windows Icon Sharpness**: Improved Windows icon appearance — no longer small and blurry at high DPI
+- 💬 **AI Panel Visual Jitter**: Fixed two sources of visual jitter at task completion and during streaming output
+- 📜 **History Scroll**: Auto-scroll to bottom after loading conversation history
+- 🎯 **AI Input Focus Ring**: Input container now shows only one focus ring on focus, preventing overlap with the global textarea glow
+- 🧾 **Tool Call Rendering**: Disabled markdown rendering for tool_call step command text to prevent special characters from being misinterpreted
+- 📐 **Official Document Indentation**: Restored first-line indent for parallel list items starting with "（一）" in document body styles
+- 🪄 **Fork Conversation Fixes**: UI refactor and multiple interaction bug fixes
+- 🧰 **Type Assertion Fixes**: Fixed TS type assertion errors in config and IM services
+
+## v10.36.0 (2026-05-02)
 
 This release delivers a comprehensive upgrade to terminal split-pane management — supporting multi-pane parallel operation, heterogeneous terminal mixing, and Agent-driven pane control — alongside two new Agent tools for Word/Excel template filling and SFTP remote file transfer.
 
