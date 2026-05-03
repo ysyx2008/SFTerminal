@@ -266,6 +266,10 @@ export interface WordStyleConfig {
       /** 文字颜色（默认 "666666"） */
       color?: string
     }
+    /** 是否渲染 Markdown 水平线（---/***）。
+     * 默认 true；公文类样式（official/securities/regulation/meeting）默认 false，
+     * 因为公文中 --- 多为 AI 误用作章节分隔，而非真实需要的分割线 */
+    renderHr?: boolean
   }
 }
 
@@ -333,6 +337,7 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
       fontSize: 12,
       lineSpacing: 1.5,
       firstLineIndent: true,
+      renderHr: false,
       headings: {
         1: { font: '黑体', size: 22, bold: true, align: 'center' },
         2: { font: '黑体', size: 16, bold: true },
@@ -423,6 +428,7 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
       lineSpacingFixed: 28.5,
       firstLineIndent: true,
       firstLineIndentChars: 2,
+      renderHr: false,
       title: { font: '小标宋体', size: 22, bold: false, align: 'center' },
       headings: {
         1: { font: '黑体', size: 16, bold: false },
@@ -432,9 +438,13 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
         5: { font: '仿宋', size: 16, bold: false },
         6: { font: '仿宋', size: 16, bold: false }
       },
+      // 注：不再用 numberingRules 把 "一、" / "（一）" 自动识别成 Heading，
+      // 否则正文里以编号开头的并列项（如"（一）组织保障。说明…"）会被误升为标题。
+      // 标题层级完全由 markdown 的 # 数量决定，AI 显式标记。
+      // 仅保留缩进/字体相关的纯格式增强（顶格、字体），不做语义判断。
       numberingRules: [
-        { pattern: '^[一二三四五六七八九十]+、', style: { headingLevel: 1, indent: 0 } },
-        { pattern: '^（[一二三四五六七八九十]+）', style: { headingLevel: 2, indent: 0 } },
+        { pattern: '^[一二三四五六七八九十]+、', style: { indent: 0 } },
+        { pattern: '^（[一二三四五六七八九十]+）', style: { indent: 0 } },
         { pattern: '^\\d+[.．]', style: { font: '仿宋', size: 16, bold: false, indent: 0 } },
         { pattern: '^（\\d+）', style: { font: '仿宋', size: 16, bold: false, indent: 0 } }
       ],
@@ -464,6 +474,7 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
       lineSpacingFixed: 28.5,
       firstLineIndent: true,
       firstLineIndentChars: 2,
+      renderHr: false,
       title: { font: '方正小标宋简体', size: 22, bold: false, align: 'center' },
       headings: {
         1: { font: '黑体', size: 16, bold: false },
@@ -473,9 +484,10 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
         5: { font: '仿宋_GB2312', size: 16, bold: false },
         6: { font: '仿宋_GB2312', size: 16, bold: false }
       },
+      // 见 official 样式注释：标题层级由 markdown # 决定，不再基于编号文本自动推断
       numberingRules: [
-        { pattern: '^[一二三四五六七八九十]+、', style: { headingLevel: 1, indent: 0 } },
-        { pattern: '^（[一二三四五六七八九十]+）', style: { headingLevel: 2, indent: 0 } },
+        { pattern: '^[一二三四五六七八九十]+、', style: { indent: 0 } },
+        { pattern: '^（[一二三四五六七八九十]+）', style: { indent: 0 } },
         { pattern: '^\\d+[.．]', style: { font: '仿宋_GB2312', size: 16, bold: false, indent: 0 } },
         { pattern: '^（\\d+）', style: { font: '仿宋_GB2312', size: 16, bold: false, indent: 0 } }
       ],
@@ -512,6 +524,7 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
       textAlign: 'justify',
       firstLineIndent: true,
       firstLineIndentChars: 2,
+      renderHr: false,
       title: { font: '黑体', fontAscii: '黑体', size: 15, bold: true, align: 'center' },
       headings: {
         1: { font: '仿宋', fontAscii: '仿宋', size: 12, bold: true, align: 'center' },
@@ -568,6 +581,7 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
       lineSpacingFixed: 28.5,
       firstLineIndent: true,
       firstLineIndentChars: 2,
+      renderHr: false,
       title: { font: '小标宋体', size: 22, bold: false, align: 'center' },
       headings: {
         1: { font: '黑体', size: 16, bold: false },
@@ -577,9 +591,10 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
         5: { font: '仿宋', size: 16, bold: false },
         6: { font: '仿宋', size: 16, bold: false }
       },
+      // 见 official 样式注释：标题层级由 markdown # 决定，不再基于编号文本自动推断
       numberingRules: [
-        { pattern: '^[一二三四五六七八九十]+、', style: { headingLevel: 1, indent: 0 } },
-        { pattern: '^（[一二三四五六七八九十]+）', style: { headingLevel: 2, indent: 0 } },
+        { pattern: '^[一二三四五六七八九十]+、', style: { indent: 0 } },
+        { pattern: '^（[一二三四五六七八九十]+）', style: { indent: 0 } },
         { pattern: '^\\d+[.．]', style: { font: '仿宋', size: 16, bold: true, indent: 0 } },
         { pattern: '^（\\d+）', style: { font: '仿宋', size: 16, bold: false, indent: 0 } }
       ],
@@ -970,6 +985,46 @@ async function linkHeadingStylesToNumbering(
 }
 
 /**
+ * 从 markdown 开头提取文档标题，剥离对应行后返回剩余内容。
+ *
+ * 支持两种写法：
+ * 1. 标准 YAML front matter：`---\n...\n---\n`
+ * 2. 无围栏的开头 title 行（AI 经常忘记加 ---）：
+ *    - 首个非空行形如 `title: xxx`、`**title:** xxx`、`title：xxx` 等
+ *    - 必须独占一行（行尾即段落边界），避免误吞正文中含 "title:" 的句子
+ */
+function extractDocumentTitle(markdown: string): { title?: string; content: string } {
+  // 标准围栏 frontmatter
+  const frontMatterMatch = markdown.match(/^---\s*\n([\s\S]*?)\n---\s*\n/)
+  if (frontMatterMatch) {
+    const titleMatch = frontMatterMatch[1].match(/^title\s*[:：]\s*(.+)$/im)
+    const title = titleMatch
+      ? titleMatch[1].trim().replace(/^["'\u201C\u2018]|["'\u201D\u2019]$/g, '')
+      : undefined
+    return { title, content: markdown.slice(frontMatterMatch[0].length) }
+  }
+
+  // 无围栏容错：跳过开头空白后，匹配第一行的 title 模式
+  const leadingWhitespace = markdown.match(/^\s*/)?.[0] ?? ''
+  const rest = markdown.slice(leadingWhitespace.length)
+  // 第一行（到首个换行符为止）
+  const firstNewlineIdx = rest.indexOf('\n')
+  const firstLine = firstNewlineIdx >= 0 ? rest.slice(0, firstNewlineIdx) : rest
+  // 模式：可选的 ** 包裹 + title + 半角/全角冒号 + 内容
+  // 例：title: xxx / **title:** xxx / **title：** xxx / title：xxx
+  const looseTitleMatch = firstLine.match(/^\s*(?:\*\*\s*)?title\s*(?:\*\*\s*)?[:：]\s*(?:\*\*\s*)?(.+?)(?:\s*\*\*)?\s*$/i)
+  if (looseTitleMatch) {
+    const title = looseTitleMatch[1].trim().replace(/^["'\u201C\u2018]|["'\u201D\u2019]$/g, '')
+    if (title) {
+      const content = firstNewlineIdx >= 0 ? rest.slice(firstNewlineIdx + 1) : ''
+      return { title, content }
+    }
+  }
+
+  return { content: markdown }
+}
+
+/**
  * 将 Markdown 转换为 Word 文档
  */
 export async function markdownToDocx(
@@ -981,17 +1036,14 @@ export async function markdownToDocx(
     ? getStyleConfig(style) 
     : (style || getStyleConfig())
   
-  // 提取 YAML front matter 中的文档标题
-  let contentMarkdown = markdown
-  let documentTitle: string | undefined
-  const frontMatterMatch = markdown.match(/^---\s*\n([\s\S]*?)\n---\s*\n/)
-  if (frontMatterMatch) {
-    const titleMatch = frontMatterMatch[1].match(/^title:\s*(.+)$/m)
-    if (titleMatch) {
-      documentTitle = titleMatch[1].trim().replace(/^["']|["']$/g, '')
-    }
-    contentMarkdown = markdown.slice(frontMatterMatch[0].length)
-  }
+  // 提取文档标题
+  // 1) 标准 YAML front matter：--- ... ---
+  // 2) 容错：文档开头第一段（首个空行前）独占一行的 title 写法，常见 AI 笔误：
+  //    - title: xxx
+  //    - **title:** xxx / **title：** xxx
+  //    - title：xxx（中文冒号）
+  //    这种写法本意是 frontmatter，但缺少围栏，原本会被当成普通段落输出
+  const { title: documentTitle, content: contentMarkdown } = extractDocumentTitle(markdown)
   
   // 解析 Markdown
   const tokens = marked.lexer(contentMarkdown)
@@ -1138,7 +1190,10 @@ function tokensToDocxElements(
         break
         
       case 'hr':
-        elements.push(createHorizontalRule())
+        // 公文类样式默认不渲染水平线（renderHr === false 时跳过）
+        if (style.config.renderHr !== false) {
+          elements.push(createHorizontalRule())
+        }
         lastAlign = undefined
         break
         
