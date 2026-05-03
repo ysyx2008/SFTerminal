@@ -665,7 +665,7 @@ function openWebSearchKeyUrl() {
                 <div class="form-group flex-1">
                   <label class="form-label">{{ t('aiSettings.contextLength') }}（K）</label>
                   <input v-model.number="contextLengthInK" type="number" class="input" placeholder="128" min="1" max="2000" />
-                  <span class="form-hint">DeepSeek(64)、GPT-4o(128)、Claude(200)、Gemini(1000)</span>
+                  <span class="form-hint">DeepSeek/Qwen/Claude/Gemini(1000)、GPT-5.5(1050)</span>
                 </div>
                 <div class="form-group flex-1">
                   <label class="form-label">{{ t('aiSettings.maxOutputTokens') }}（{{ t('aiSettings.maxOutputTokensHint') }}）</label>

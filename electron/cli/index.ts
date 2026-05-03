@@ -121,7 +121,7 @@ async function configSet(args: string[]): Promise<void> {
   if (!key || !rawValue) {
     console.error('Usage: sft config:set <key> <value>')
     console.error('Example: sft config:set theme one-dark')
-    console.error('For complex values, use JSON: sft config:set aiProfiles \'[{"id":"1","name":"GPT-4","apiUrl":"...","apiKey":"...","model":"gpt-4o"}]\'')
+    console.error('For complex values, use JSON: sft config:set aiProfiles \'[{"id":"1","name":"GPT-5.5","apiUrl":"...","apiKey":"...","model":"gpt-5.5"}]\'')
     process.exit(1)
   }
   const config = getConfig()
@@ -170,7 +170,7 @@ async function configInit(): Promise<void> {
   console.log('  SFT_DATA_DIR   - Custom data directory')
   console.log('')
   console.log('Or configure via commands:')
-  console.log('  sft config:set aiProfiles \'[{"id":"default","name":"My AI","apiUrl":"https://api.openai.com/v1","apiKey":"sk-xxx","model":"gpt-4o"}]\'')
+  console.log('  sft config:set aiProfiles \'[{"id":"default","name":"My AI","apiUrl":"https://api.openai.com/v1","apiKey":"sk-xxx","model":"gpt-5.5"}]\'')
   console.log('  sft config:set activeAiProfile "default"')
   console.log('')
   console.log(`Config file location: ${config.get('language') !== undefined ? 'loaded' : 'will be created'}`)
@@ -1458,7 +1458,7 @@ function applyEnvOverrides(): void {
       name: 'CLI Environment',
       apiUrl: apiUrl || profiles[0]?.apiUrl || 'https://api.openai.com/v1',
       apiKey: apiKey || profiles[0]?.apiKey || '',
-      model: model || profiles[0]?.model || 'gpt-4o'
+      model: model || profiles[0]?.model || 'gpt-5.5'
     }
 
     const existingIdx = profiles.findIndex(p => p.id === 'env-override')

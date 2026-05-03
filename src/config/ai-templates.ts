@@ -34,10 +34,10 @@ export const AI_TEMPLATES: AiTemplate[] = [
   {
     name: 'DeepSeek',
     apiUrl: 'https://api.deepseek.com/chat/completions',
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-v4-pro',
     descKey: 'aiSettings.templates.deepseek',
     keyUrl: 'https://platform.deepseek.com/api_keys',
-    contextLength: 128000,
+    contextLength: 1_000_000,
     isLocal: false,
     needsApiKey: true,
   },
@@ -74,7 +74,7 @@ export const AI_TEMPLATES: AiTemplate[] = [
   {
     name: 'Kimi',
     apiUrl: 'https://api.moonshot.cn/v1/chat/completions',
-    model: 'kimi-k2.5',
+    model: 'kimi-k2.6',
     descKey: 'aiSettings.templates.kimi',
     keyUrl: 'https://platform.moonshot.cn/console/api-keys',
     contextLength: 256_000,
@@ -94,7 +94,7 @@ export const AI_TEMPLATES: AiTemplate[] = [
   {
     name: 'OpenAI',
     apiUrl: 'https://api.openai.com/v1/chat/completions',
-    model: 'gpt-5.4',
+    model: 'gpt-5.5',
     descKey: 'aiSettings.templates.openai',
     keyUrl: 'https://platform.openai.com/api-keys',
     contextLength: 1_050_000,
@@ -114,7 +114,7 @@ export const AI_TEMPLATES: AiTemplate[] = [
   {
     name: 'Gemini',
     apiUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-    model: 'gemini-2.5-pro',
+    model: 'gemini-3.1-pro-preview',
     descKey: 'aiSettings.templates.gemini',
     keyUrl: 'https://aistudio.google.com/apikey',
     contextLength: 1_000_000,
