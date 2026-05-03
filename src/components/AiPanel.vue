@@ -443,7 +443,8 @@ const {
         previewPages: d.images?.length
       })),
     clearAttachments: clearUploadedDocs
-  }
+  },
+  scrollerRef
 )
 
 // 语音识别
@@ -621,7 +622,7 @@ const truncateText = (text: string, maxLength: number): string => {
 }
 
 // 加载历史记录（带确认）
-const handleLoadHistory = (record: { id: string; timestamp: number; terminalId: string; terminalType: 'local' | 'ssh'; sshHost?: string; userTask: string; steps: Array<{ id: string; type: string; content: string; toolName?: string; toolArgs?: Record<string, unknown>; toolResult?: string; riskLevel?: string; timestamp: number; webSearchResults?: import('@shared/types').WebSearchResultItem[] }>; finalResult?: string; duration: number; status: 'completed' | 'failed' | 'aborted' }) => {
+const handleLoadHistory = async (record: { id: string; timestamp: number; terminalId: string; terminalType: 'local' | 'ssh'; sshHost?: string; userTask: string; steps: Array<{ id: string; type: string; content: string; toolName?: string; toolArgs?: Record<string, unknown>; toolResult?: string; riskLevel?: string; timestamp: number; webSearchResults?: import('@shared/types').WebSearchResultItem[] }>; finalResult?: string; duration: number; status: 'completed' | 'failed' | 'aborted' }) => {
   // 如果当前有活跃的任务（用户任务不为空），需要确认
   // 注意：如果欢迎页显示（agentUserTask 为空），说明没有活跃任务，不需要确认
   if (agentUserTask.value && hasExistingConversation.value) {
@@ -629,9 +630,7 @@ const handleLoadHistory = (record: { id: string; timestamp: number; terminalId: 
       return
     }
   }
-  loadHistoryRecord(record)
-  // 滚动到底部查看加载的历史
-  scrollToBottom()
+  await loadHistoryRecord(record)
 }
 
 // ==================== 消息清空 ====================

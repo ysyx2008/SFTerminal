@@ -70,7 +70,8 @@ export function useAgentMode(
   attachmentCallbacks?: {
     getAttachments: () => AttachmentInfo[]  // 获取当前已上传文件的元信息
     clearAttachments: () => void            // 清空已上传文件列表
-  }
+  },
+  scrollerRef?: Ref<{ scrollToBottom: () => void } | null>
 ) {
   const { t } = useI18n()
   const terminalStore = useTerminalStore()
@@ -206,28 +207,31 @@ export function useAgentMode(
   // 实际执行滚动
   const doScrollIfNeeded = async () => {
     lastScrollTime = Date.now()
-    // 跳过 DynamicScroller 因布局调整触发的 scroll 事件，防止干扰 isUserNearBottom 状态
-    skipScrollUpdate = true
     await nextTick()
-    
+
     // 仅依赖 isUserNearBottom（由用户真实滚动事件维护）
     // 不做实时 checkIsNearBottom()：DynamicScroller 的 scrollHeight 基于估算，
     // 虚拟化的 off-screen 项高度远小于实际值，会导致误判"在底部附近"
     if (isUserNearBottom.value) {
       if (messagesRef.value) {
+        // ⚠️ skipScrollUpdate 同时被 ResizeObserver 当作"正在贴底，跟随尺寸变化"信号
+        //（见 installContentResizeObserver）。所以只能在确实要贴底的分支里置位，
+        // 否则用户向上滚走后，新内容引发的 ResizeObserver 回调会被误触发为强制贴底，
+        // 把用户从阅读位拽回最底（曾经的回归 bug）。
+        skipScrollUpdate = true
         setIsUserNearBottom(true)
         hasNewMessage.value = false
-        
+
         messagesRef.value.scrollTop = messagesRef.value.scrollHeight
+
+        // 延迟恢复 scroll 事件监听，等待 DynamicScroller 布局稳定
+        setTimeout(() => {
+          skipScrollUpdate = false
+        }, 80)
       }
     } else {
       hasNewMessage.value = true
     }
-    
-    // 延迟恢复 scroll 事件监听，等待 DynamicScroller 布局稳定
-    setTimeout(() => {
-      skipScrollUpdate = false
-    }, 80)
   }
 
   // 智能滚动：只有用户在底部附近时才自动滚动（带节流）
@@ -1128,10 +1132,21 @@ export function useAgentMode(
   }
 
   // 加载历史记录到当前会话
-  const loadHistoryRecord = (record: AgentRecord) => {
+  const loadHistoryRecord = async (record: AgentRecord) => {
     terminalStore.restoreAgentHistory(currentTabId.value, record)
     // 关闭弹窗（如果是从弹窗中选择的）
     closeHistoryModal()
+
+    // 等待 Vue 响应式更新完成（DynamicScroller 挂载 / 列表项更新）
+    await nextTick()
+    // 优先使用 DynamicScroller 内置的 scrollToBottom，它通过 $_undefinedSizes 循环
+    // 确保所有项的真实尺寸测量完成后才停止，比固定延时可靠
+    if (scrollerRef?.value) {
+      scrollerRef.value.scrollToBottom()
+    } else {
+      scrollToBottom()
+      setTimeout(() => scrollToBottom(), 150)
+    }
   }
 
   // 检查是否有现有对话（用于确认是否覆盖）

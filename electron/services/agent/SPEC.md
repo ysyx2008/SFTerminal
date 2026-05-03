@@ -346,6 +346,7 @@ run(message, context, options)
 - **失败案例（修复前）**：`doScrollIfNeeded` 仅在 `nextTick` 后调一次 `scrollTop = scrollHeight`，但 DynamicScroller 的 totalSize 是 item 的 ResizeObserver 异步上报的，nextTick 时 totalSize 还是旧值，于是滚到的是"旧底"；浏览器 paint 出新内容、半行裸露在视区底外，下一波 chunk 才补上去
 - **修复（commit `274a2386`）**：在 `useAgentMode` 内 `installContentResizeObserver` 直接观察 wrapper 高度；`doScrollIfNeeded` 等粗粒度滚动入口保留，作为新 step 加入瞬间的初始贴底兜底
 - **回归保护**：禁止把 ResizeObserver 改成基于 step.content 长度等内容驱动的判断（脆弱，且重新引入"vue-virtual-scroller 内部 size 测量异步"的根本问题）；禁止改成 setTimeout/setInterval 轮询（错过 paint 窗口）
+- **`skipScrollUpdate` 语义陷阱**：该标志同时承担两件事——① 屏蔽强制贴底窗口内的 scroll 事件以免覆盖 `isUserNearBottom`；② 告诉 ResizeObserver "现在请跟随尺寸变化贴底"。**任何"决定不滚"的分支都不得置位 `skipScrollUpdate`**，否则用户向上滚阅读时，新 step 引发的 ResizeObserver 回调会被误解读为"请跟随贴底"，把用户从阅读位拽回最底（曾经的回归 bug）。`doScrollIfNeeded` 必须把 `skipScrollUpdate = true / setTimeout(... = false)` 收进 `if (isUserNearBottom)` 分支内
 
 ### 技能系统 (`skills/`)
 
