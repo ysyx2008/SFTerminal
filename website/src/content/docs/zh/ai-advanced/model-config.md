@@ -13,7 +13,7 @@ description: '管理多个 AI 模型配置，了解关联视觉模型和高级�
 
 | 服务商 | 说明 | 推荐模型 |
 |--------|------|---------|
-| DeepSeek | 国产推理模型，性价比极高 | deepseek-chat / deepseek-reasoner |
+| DeepSeek | 国产推理模型，性价比极高 | deepseek-v4-flash / deepseek-reasoner |
 | 通义千问 (Qwen) | 阿里云大模型 | qwen-plus / qwen-max |
 | OpenAI | GPT 系列，全球领先 | gpt-4o / gpt-4o-mini / o1 |
 | Claude | Anthropic 出品，擅长长文本和代码 | claude-sonnet-4-6 / claude-3.5-haiku |
@@ -36,7 +36,7 @@ description: '管理多个 AI 模型配置，了解关联视觉模型和高级�
 | 名称 | ✅ | 自定义名称，方便区分（如「日常 DeepSeek」「复杂任务 Claude」） |
 | API 地址 | ✅ | 服务商的 API 端点，选模板后自动填充 |
 | API Key | ⚠️ | 服务商提供的密钥（Ollama 等本地部署可留空） |
-| 模型 | ✅ | 要使用的模型名称（如 `gpt-4o`、`deepseek-chat`） |
+| 模型 | ✅ | 要使用的模型名称（如 `gpt-4o`、`deepseek-v4-flash`） |
 | 模型类型 | ✅ | 通用 或 视觉，影响多模态路由 |
 | 关联视觉模型 | — | 为纯文本模型关联一个能看图的模型 |
 | 代理 | — | 该配置专用的 HTTP/SOCKS 代理，可选 |
@@ -137,7 +137,7 @@ ollama pull llama3.1:8b    # 英文能力强
 
 **模型名称填什么？**
 - 使用服务商文档中列出的模型 ID（区分大小写）
-- 如 `gpt-4o`（非 `GPT-4o`）、`deepseek-chat`（非 `DeepSeek Chat`）
+- 如 `gpt-4o`（非 `GPT-4o`）、`deepseek-v4-flash`（非 `DeepSeek Chat`）
 
 **切换模型后 AI 行为不同了**
 - 不同模型的能力差异很大，这是正常的

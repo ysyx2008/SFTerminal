@@ -13,7 +13,7 @@ SailFish includes preset templates for these providers — click to auto-fill th
 
 | Provider | Description | Recommended Models |
 |----------|-------------|-------------------|
-| DeepSeek | Chinese reasoning model, excellent value | deepseek-chat / deepseek-reasoner |
+| DeepSeek | Chinese reasoning model, excellent value | deepseek-v4-flash / deepseek-reasoner |
 | Qwen (Tongyi) | Alibaba Cloud LLM | qwen-plus / qwen-max |
 | OpenAI | GPT series, industry leader | gpt-4o / gpt-4o-mini / o1 |
 | Claude | By Anthropic, strong at long text and code | claude-sonnet-4-6 / claude-3.5-haiku |
@@ -36,7 +36,7 @@ Also supports Doubao, Zhipu, Kimi, Grok, Mistral, and any other provider with an
 | Name | ✅ | Custom label to distinguish configs (e.g. "Daily DeepSeek", "Complex Tasks Claude") |
 | API URL | ✅ | Provider's API endpoint; auto-filled from template |
 | API Key | ⚠️ | Secret key from the provider (leave blank for Ollama / local) |
-| Model | ✅ | Model identifier (e.g. `gpt-4o`, `deepseek-chat`) |
+| Model | ✅ | Model identifier (e.g. `gpt-4o`, `deepseek-v4-flash`) |
 | Type | ✅ | General or Vision — affects multimodal routing |
 | Linked Vision Model | — | Associate a vision-capable model for image handling |
 | Proxy | — | Per-config HTTP/SOCKS proxy, optional |
@@ -137,7 +137,7 @@ ollama pull llama3.1:8b    # strong for English
 
 **What model name should I enter?**
 - Use the model ID from the provider's documentation (case-sensitive)
-- e.g. `gpt-4o` (not `GPT-4o`), `deepseek-chat` (not `DeepSeek Chat`)
+- e.g. `gpt-4o` (not `GPT-4o`), `deepseek-v4-flash` (not `DeepSeek Chat`)
 
 **AI behavior changed after switching models**
 - Different models have very different capabilities — this is expected

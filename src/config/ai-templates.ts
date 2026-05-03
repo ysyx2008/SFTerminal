@@ -34,7 +34,7 @@ export const AI_TEMPLATES: AiTemplate[] = [
   {
     name: 'DeepSeek',
     apiUrl: 'https://api.deepseek.com/chat/completions',
-    model: 'deepseek-v4-pro',
+    model: 'deepseek-v4-flash',
     descKey: 'aiSettings.templates.deepseek',
     keyUrl: 'https://platform.deepseek.com/api_keys',
     contextLength: 128000,

@@ -46,7 +46,7 @@ If this is your first time using an AI API, we recommend starting with **DeepSee
 4. Click **"Add"** (新增)
 5. Select **"DeepSeek"** in the provider list — the system will fill in the API URL and default model
 6. In the **API Key** field, paste the API Key you copied
-7. Choose model `deepseek-chat` (usually selected by default)
+7. Choose model `deepseek-v4-flash` (usually selected by default)
 8. Click **"Save"**
 
 ## Step 3: Set as Active
@@ -54,6 +54,57 @@ If this is your first time using an AI API, we recommend starting with **DeepSee
 After saving, you will see the new configuration in the model list. Click the **"Use"** button on the right (or the checkmark icon) to make it the active model.
 
 Setup complete! SailFish can now "think."
+
+## Recommended Add-on: Vision Model (GPT-4o)
+
+DeepSeek has strong text reasoning but does not support image input. By adding GPT-4o as a linked vision model, SailFish automatically switches to it when you send a screenshot, then switches back to DeepSeek for follow-up text — best of both worlds.
+
+### Get an OpenAI API Key
+
+1. Go to [OpenAI Platform](https://platform.openai.com/)
+2. Sign up or log in
+3. Navigate to **API Keys** and create a new key
+4. Copy the key (starts with `sk-`)
+
+> OpenAI requires a VPN in some regions. Alternatively, you can use **Gemini** (`gemini-2.0-flash`) via [Google AI Studio](https://aistudio.google.com/) — no VPN needed and it includes free credits.
+
+### Add GPT-4o in SailFish
+
+1. Open Settings → AI Model Configuration → Add
+2. Select **"OpenAI"** from the provider list
+3. Paste your API Key
+4. Set model to `gpt-4o`
+5. Set **Model Type** to **"Vision"**
+6. Save
+
+### Link GPT-4o to DeepSeek
+
+1. Edit your DeepSeek configuration
+2. In the **"Linked Vision Model"** dropdown, select **GPT-4o**
+3. Make sure **"Auto vision model switch"** is enabled in Settings → General
+4. Save
+
+Now pure-text messages use DeepSeek, and screenshots automatically use GPT-4o — no manual switching needed.
+
+## Recommended Add-on: Web Search (Google)
+
+With a search engine configured, the Agent can fetch real-time information from the web instead of relying solely on its training data.
+
+### Get a Google Custom Search API Key
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) and create a project
+2. Enable the **Custom Search API** for the project
+3. Create an **API Key** under Credentials and copy it
+4. Go to [Programmable Search Engine](https://programmablesearchengine.google.com/), create a new search engine set to search the entire web, and copy the **Search Engine ID (cx)**
+
+### Configure Google Search in SailFish
+
+1. Open Settings → Web Search
+2. Select **"Google"** as the search engine
+3. Paste your API Key and Search Engine ID
+4. Save
+
+Once configured, the AI will automatically call Google when it needs real-time information.
 
 ## Verify the Configuration
 
@@ -77,7 +128,7 @@ Besides DeepSeek, here are other common AI providers you can configure in SailFi
 
 | Provider | Highlights | Recommended Model | VPN Required |
 |----------|------------|-------------------|--------------|
-| DeepSeek | Cost-effective, strong reasoning | deepseek-chat | No |
+| DeepSeek | Cost-effective, strong reasoning | deepseek-v4-flash | No |
 | Qwen | Alibaba Cloud, generous free tier | qwen-plus | No |
 | OpenAI | Widely used globally | gpt-4o | Yes |
 | Claude | Long documents, complex reasoning | claude-sonnet-4-6 | Yes |
