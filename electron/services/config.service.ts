@@ -622,7 +622,7 @@ export class ConfigService {
    */
   getTerminalSettings(): TerminalSettings {
     const raw = this.store.get('terminalSettings') || defaultConfig.terminalSettings
-    return normalizeTerminalSettings(raw as Record<string, unknown>)
+    return normalizeTerminalSettings(raw as unknown as Record<string, unknown>)
   }
 
   /**
@@ -968,7 +968,7 @@ export class ConfigService {
 
   getKeyboardShortcuts(): KeyboardShortcuts {
     const raw = this.store.get('keyboardShortcuts') || {}
-    return normalizeKeyboardShortcuts(raw as Record<string, unknown>, DEFAULT_KEYBOARD_SHORTCUTS)
+    return normalizeKeyboardShortcuts(raw as unknown as Record<string, unknown>, DEFAULT_KEYBOARD_SHORTCUTS)
   }
 
   setKeyboardShortcuts(shortcuts: KeyboardShortcuts): void {

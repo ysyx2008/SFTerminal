@@ -12,7 +12,7 @@
  *                          callbacks 聚合文本 ──→ Adapter.sendMarkdown()
  */
 
-import type { ExecutionMode } from '@shared/types'
+import type { ExecutionMode, RemoteChannel } from '@shared/types'
 import { getDefaultShell, getLocalOS } from '../../utils/platform'
 import { getEventBus } from '../sensor/event-bus'
 import type {
@@ -983,7 +983,7 @@ export class IMService {
         terminalOutput: [] as string[],
         systemInfo: { os: getLocalOS(), shell: getDefaultShell() },
         terminalType: 'assistant' as const,
-        remoteChannel: msg.platform,
+        remoteChannel: msg.platform as RemoteChannel,
         ...(msg.isFirstContact ? {
           contextHint: t('im.first_contact_context', { userName: msg.userName, platform: msg.platform })
         } : {})
