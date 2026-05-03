@@ -876,6 +876,14 @@ const handleSendClick = (event: MouseEvent) => {
   opacity: 0.7;
 }
 
+/* 焦点环由外层 .input-container:focus-within 统一提供，
+   textarea 内部不再叠加全局 textarea:focus 光晕，避免出现两层焦点。 */
+.ai-input textarea:focus {
+  border-color: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
 .send-btn,
 .stop-btn {
   flex-shrink: 0;
