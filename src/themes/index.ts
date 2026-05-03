@@ -1,5 +1,6 @@
 import type { ITheme } from '@xterm/xterm'
 import { uiThemes, type UiThemeName } from './ui-themes'
+import { DEFAULT_UI_THEME } from '@shared/types'
 
 export type ThemeName =
   | 'one-dark'
@@ -758,8 +759,7 @@ export function getIntegratedTheme(uiThemeName: string): ITheme {
     return generateTerminalThemeFromUi(uiTheme)
   }
   
-  // 默认返回 blue 主题
-  return integratedTerminalThemes['blue']
+  return integratedTerminalThemes[DEFAULT_UI_THEME]
 }
 
 /**

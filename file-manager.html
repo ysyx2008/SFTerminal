@@ -7,7 +7,7 @@
     <title>File Manager</title>
     <script>
       // ⚡ FOUC 防护：同主窗口 index.html 逻辑，在 Vue 挂载前同步 <html> 主题属性
-      // 避免启动时用 stores/config.ts 的默认 'blue' 渲染出一闪而过的蓝色。
+      // 避免启动时用默认主题 (dark) 与用户实际选择不一致而出现一闪而过的色差。
       (function () {
         try {
           var theme = localStorage.getItem('sfterm-ui-theme')

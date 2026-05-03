@@ -20,8 +20,9 @@
  *   2. src/styles/main.css   - 实际生效的 CSS 变量
  */
 
-// UI 主题类型
-export type UiThemeName = 'dark' | 'light' | 'blue' | 'gruvbox' | 'forest' | 'ayu-mirage' | 'cyberpunk' | 'lavender' | 'aurora' | 'sponsor-gold' | 'sponsor-sakura' | 'sponsor-rose-pine'
+// UI 主题类型 / 默认主题常量统一从 shared/types 引入，前后端共用唯一数据源
+import { DEFAULT_UI_THEME, type UiThemeName } from '@shared/types'
+export { DEFAULT_UI_THEME, type UiThemeName }
 
 // 颜色模式类型
 export type ColorScheme = 'dark' | 'light'
@@ -344,7 +345,7 @@ export const sponsorUiThemes: UiThemeName[] = ['sponsor-gold', 'sponsor-sakura',
 
 // 获取 UI 主题
 export function getUiTheme(name: string): UiThemeVars {
-  return uiThemes[name as UiThemeName] || uiThemes.blue
+  return uiThemes[name as UiThemeName] || uiThemes[DEFAULT_UI_THEME]
 }
 
 // 获取所有 UI 主题名称

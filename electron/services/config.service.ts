@@ -3,8 +3,8 @@ import { safeStorage } from 'electron'
 import type { AiModelType, AiProfile, ApiFormat, ExecutionMode, JumpHostConfig } from '@shared/types'
 import type { KnowledgeSettings } from './knowledge/types'
 import { DEFAULT_KNOWLEDGE_SETTINGS } from './knowledge/types'
-import type { TtsSettings, WebSearchSettings } from '@shared/types'
-import { DEFAULT_TTS_SETTINGS, DEFAULT_WEB_SEARCH_SETTINGS } from '@shared/types'
+import type { TtsSettings, UiThemeName, WebSearchSettings } from '@shared/types'
+import { DEFAULT_TTS_SETTINGS, DEFAULT_UI_THEME, DEFAULT_WEB_SEARCH_SETTINGS } from '@shared/types'
 import { createLogger, type LogLevel } from '../utils/logger'
 import { normalizeTerminalSettings, normalizeKeyboardShortcuts } from '../utils/normalize'
 
@@ -88,8 +88,8 @@ export interface FileBookmark {
   createdAt: number
 }
 
-// UI 主题类型
-export type UiThemeType = 'dark' | 'light' | 'blue' | 'gruvbox' | 'forest' | 'ayu-mirage' | 'cyberpunk' | 'lavender' | 'aurora' | 'sponsor-gold' | 'sponsor-sakura' | 'sponsor-rose-pine'
+// UI 主题类型 — 共享类型 UiThemeName 的本地别名（保留 UiThemeType 名字以兼容外部引用者）
+export type UiThemeType = UiThemeName
 
 // 快捷键配置（值为 Electron Accelerator 格式，空字符串表示禁用）
 export interface KeyboardShortcuts {
@@ -235,7 +235,7 @@ const defaultConfig: StoreSchema = {
   sshSessions: [],
   sessionGroups: [],
   theme: 'one-dark',
-  uiTheme: 'blue',
+  uiTheme: DEFAULT_UI_THEME,
   terminalSettings: {
     fontSize: 14,
     fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, monospace',
@@ -581,7 +581,7 @@ export class ConfigService {
    * 获取 UI 主题
    */
   getUiTheme(): UiThemeType {
-    return this.store.get('uiTheme') || 'blue'
+    return this.store.get('uiTheme') || DEFAULT_UI_THEME
   }
 
   /**

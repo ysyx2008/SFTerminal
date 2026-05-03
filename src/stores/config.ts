@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import type { AiModelType, AiProfile, ApiFormat, JumpHostConfig, SshEncoding } from '@shared/types'
+import { DEFAULT_UI_THEME } from '@shared/types'
 import { setLocale, type LocaleType } from '../i18n'
 import { uiThemes, type UiThemeName } from '../themes/ui-themes'
 import { setLogLevel as setFrontendLogLevel, type LogLevel } from '../utils/logger'
@@ -254,7 +255,7 @@ function readCachedUiTheme(): UiThemeName {
       return cached as UiThemeName
     }
   } catch { /* localStorage 不可用时静默降级 */ }
-  return 'blue'
+  return DEFAULT_UI_THEME
 }
 
 function writeCachedUiTheme(theme: UiThemeName): void {
@@ -414,7 +415,7 @@ export const useConfigStore = defineStore('config', () => {
       sshSessions.value = sessions || []
       sessionGroups.value = groups || []
       currentTheme.value = theme || 'one-dark'
-      uiTheme.value = uiThemeValue || 'blue'
+      uiTheme.value = uiThemeValue || DEFAULT_UI_THEME
       agentMbti.value = mbti as AgentMbtiType
       agentDebugMode.value = debugMode || false
       setupCompleted.value = completed || false

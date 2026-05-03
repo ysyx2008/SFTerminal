@@ -7,7 +7,7 @@
     <title>旗鱼</title>
     <script>
       // ⚡ FOUC 防护：在 Vue 挂载前把上次使用的 UI 主题同步到 <html>，
-      // 避免首帧用 stores/config.ts 的默认 'blue' 渲染出一闪而过的蓝色。
+      // 避免首帧用默认主题 (dark) 与用户实际选择不一致而出现一闪而过的色差。
       // 缓存 key 需与 src/stores/config.ts 中的 UI_THEME_STORAGE_KEY 保持一致。
       (function () {
         try {
