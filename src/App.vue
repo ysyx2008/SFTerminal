@@ -102,8 +102,9 @@ function openAppMenuFromButton() {
 
 const hasTerminalTab = computed(() => terminalStore.tabs.some(t => t.type === 'local' || t.type === 'ssh'))
 
-// UI 主题
-const currentUiTheme = computed(() => configStore.uiTheme)
+// UI 主题：使用 effectiveUiTheme 而非 uiTheme，这样在"跟随系统"模式下
+// 系统外观切换时主题能立即反映出来（auto 下 effective = dark/light）
+const currentUiTheme = computed(() => configStore.effectiveUiTheme)
 // 当前主题的颜色模式（dark/light）
 const currentColorScheme = computed(() => {
   const theme = uiThemes[currentUiTheme.value as keyof typeof uiThemes]

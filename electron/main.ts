@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, dialog, session, Tray, Menu, nativeImage, powerMonitor } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, dialog, session, Tray, Menu, nativeImage, nativeTheme, powerMonitor } from 'electron'
 import { autoUpdater, type GenericServerOptions, type GithubOptions } from 'electron-updater'
 import path, { join } from 'path'
 import * as fs from 'fs'
@@ -2376,7 +2376,31 @@ ipcMain.handle('config:getUiTheme', async () => {
 })
 
 ipcMain.handle('config:setUiTheme', async (_event, theme: string) => {
-  configService.setUiTheme(theme as 'dark' | 'light' | 'blue' | 'gruvbox' | 'forest' | 'ayu-mirage' | 'cyberpunk' | 'lavender' | 'aurora' | 'sponsor-gold' | 'sponsor-sakura' | 'sponsor-rose-pine')
+  configService.setUiTheme(theme as import('@shared/types').UiThemeName)
+})
+
+// UI 主题模式（manual / auto），auto 模式下跟随系统外观
+ipcMain.handle('config:getUiThemeMode', async () => {
+  return configService.getUiThemeMode()
+})
+
+ipcMain.handle('config:setUiThemeMode', async (_event, mode: string) => {
+  configService.setUiThemeMode(mode as import('@shared/types').UiThemeMode)
+})
+
+// 系统当前外观（dark/light），用于 auto 模式下解析实际生效的主题
+ipcMain.handle('system:getColorScheme', async () => {
+  return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+})
+
+// 系统外观切换时广播给所有渲染进程
+nativeTheme.on('updated', () => {
+  const scheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('system:colorSchemeChanged', scheme)
+    }
+  }
 })
 
 // Agent MBTI 配置

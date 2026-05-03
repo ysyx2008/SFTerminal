@@ -20,6 +20,15 @@ const isSponsorUiTheme = (themeName: UiThemeName): boolean => {
 // UI 主题（赞助者专属主题隐藏，赞助后才显示作为惊喜）
 // 终端主题自动与 UI 主题同步，无需单独设置
 const currentUiTheme = computed(() => configStore.uiTheme)
+
+// 跟随系统外观（auto 模式）：开启后实际生效主题在 dark / light 之间根据系统切换，
+// 用户在主题网格里选定的彩色主题保留在配置中（关闭跟随后还原）。
+const followSystem = computed({
+  get: () => configStore.uiThemeMode === 'auto',
+  set: (value: boolean) => {
+    void configStore.setUiThemeMode(value ? 'auto' : 'manual')
+  }
+})
 const uiThemeList = computed<UiThemeName[]>(() => {
   // 基础主题列表
   const baseThemes: UiThemeName[] = ['dark', 'light', 'blue', 'gruvbox', 'forest', 'ayu-mirage', 'cyberpunk', 'lavender', 'aurora']
@@ -32,6 +41,11 @@ const uiThemeList = computed<UiThemeName[]>(() => {
 })
 
 const setUiTheme = async (themeName: UiThemeName) => {
+  // 用户主动点选主题视为"想要手动选定"，自动关闭跟随系统，避免 auto 锁住网格
+  // 让用户找不到换主题的入口
+  if (configStore.uiThemeMode === 'auto') {
+    await configStore.setUiThemeMode('manual')
+  }
   await configStore.setUiTheme(themeName)
   // 终端主题自动与 UI 主题同步，无需额外操作
 }
@@ -90,12 +104,27 @@ const getUiThemeAccentStyle = (themeName: UiThemeName) => {
       <h4>{{ t('themeSettings.uiTheme') }}</h4>
       <p class="section-desc">{{ t('themeSettings.selectUiTheme') }}</p>
 
-      <div class="ui-theme-grid">
+      <!-- 跟随系统外观开关 -->
+      <label class="follow-system-toggle">
+        <span class="toggle-label">
+          <span class="toggle-title">{{ t('themeSettings.followSystem') }}</span>
+          <span class="toggle-desc">{{ t('themeSettings.followSystemDesc') }}</span>
+        </span>
+        <input
+          type="checkbox"
+          class="toggle-input"
+          :checked="followSystem"
+          @change="followSystem = ($event.target as HTMLInputElement).checked"
+        />
+        <span class="toggle-slider"></span>
+      </label>
+
+      <div class="ui-theme-grid" :class="{ 'is-dimmed': followSystem }">
         <div
           v-for="themeName in uiThemeList"
           :key="themeName"
           class="ui-theme-card"
-          :class="{ active: currentUiTheme === themeName }"
+          :class="{ active: !followSystem && currentUiTheme === themeName }"
           @click="setUiTheme(themeName)"
         >
           <div class="ui-theme-preview" :style="getUiThemePreviewStyle(themeName)">
@@ -127,7 +156,7 @@ const getUiThemeAccentStyle = (themeName: UiThemeName) => {
                 {{ t('sponsor.exclusive') }}
               </span>
             </span>
-            <span v-if="currentUiTheme === themeName" class="theme-active">✓</span>
+            <span v-if="!followSystem && currentUiTheme === themeName" class="theme-active">✓</span>
           </div>
         </div>
       </div>
@@ -164,11 +193,101 @@ const getUiThemeAccentStyle = (themeName: UiThemeName) => {
   line-height: 1.5;
 }
 
+/* 跟随系统开关 */
+.follow-system-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  transition: border-color 0.2s ease;
+}
+
+.follow-system-toggle:hover {
+  border-color: var(--text-muted);
+}
+
+.toggle-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.toggle-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.toggle-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.toggle-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toggle-slider {
+  flex-shrink: 0;
+  position: relative;
+  width: 36px;
+  height: 20px;
+  background: var(--bg-hover);
+  border-radius: 10px;
+  transition: background 0.2s ease;
+}
+
+.toggle-slider::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: #ffffff;
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.toggle-input:checked ~ .toggle-slider {
+  background: var(--accent-primary);
+}
+
+.toggle-input:checked ~ .toggle-slider::after {
+  transform: translateX(16px);
+}
+
 /* UI 主题网格 */
 .ui-theme-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+}
+
+/* 跟随系统模式下网格整体变淡，提示"当前不直接生效"；
+   但仍允许点击——点击会自动切到 manual 并选中该主题，避免用户
+   找不到换主题的入口。hover 时单卡片透明度恢复，反馈"可点击"。 */
+.ui-theme-grid.is-dimmed {
+  opacity: 0.55;
+  transition: opacity 0.2s ease;
+}
+
+.ui-theme-grid.is-dimmed:hover {
+  opacity: 1;
 }
 
 .ui-theme-card {

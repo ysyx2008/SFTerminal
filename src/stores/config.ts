@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
-import type { AiModelType, AiProfile, ApiFormat, JumpHostConfig, SshEncoding } from '@shared/types'
-import { DEFAULT_UI_THEME } from '@shared/types'
+import type { AiModelType, AiProfile, ApiFormat, JumpHostConfig, SshEncoding, SystemColorScheme, UiThemeMode } from '@shared/types'
+import { DEFAULT_UI_THEME, DEFAULT_UI_THEME_MODE, resolveEffectiveUiTheme } from '@shared/types'
 import { setLocale, type LocaleType } from '../i18n'
 import { uiThemes, type UiThemeName } from '../themes/ui-themes'
 import { setLogLevel as setFrontendLogLevel, type LogLevel } from '../utils/logger'
@@ -240,11 +240,12 @@ export interface CalendarAccount {
 }
 
 // ==================== UI 主题本地缓存 ====================
-// 通过 localStorage 缓存上次使用的 UI 主题，配合 index.html 的内联脚本
-// 在 Vue 挂载之前就把 data-ui-theme 写到 <html>，消除启动时的蓝色闪烁（FOUC）。
+// 通过 localStorage 缓存上次使用的 UI 主题 + 模式，配合 index.html 的内联脚本
+// 在 Vue 挂载之前就把 data-ui-theme 写到 <html>，消除启动时的颜色闪烁（FOUC）。
 // key 与 index.html / file-manager.html 的内联脚本保持一致。
-const UI_THEME_STORAGE_KEY = 'sfterm-ui-theme'
-const UI_COLOR_SCHEME_STORAGE_KEY = 'sfterm-ui-color-scheme'
+const UI_THEME_STORAGE_KEY = 'sfterm-ui-theme'                  // 实际生效的主题（auto 时是 system→dark/light）
+const UI_THEME_MODE_STORAGE_KEY = 'sfterm-ui-theme-mode'        // manual / auto
+const UI_COLOR_SCHEME_STORAGE_KEY = 'sfterm-ui-color-scheme'    // 实际生效的 dark/light
 
 function readCachedUiTheme(): UiThemeName {
   try {
@@ -258,12 +259,38 @@ function readCachedUiTheme(): UiThemeName {
   return DEFAULT_UI_THEME
 }
 
+function readCachedUiThemeMode(): UiThemeMode {
+  try {
+    const cached = typeof localStorage !== 'undefined'
+      ? localStorage.getItem(UI_THEME_MODE_STORAGE_KEY)
+      : null
+    if (cached === 'manual' || cached === 'auto') return cached
+  } catch { /* localStorage 不可用时静默降级 */ }
+  return DEFAULT_UI_THEME_MODE
+}
+
+function readSystemColorScheme(): SystemColorScheme {
+  try {
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    }
+  } catch { /* matchMedia 不可用时静默降级 */ }
+  return 'dark'
+}
+
 function writeCachedUiTheme(theme: UiThemeName): void {
   try {
     if (typeof localStorage === 'undefined') return
     localStorage.setItem(UI_THEME_STORAGE_KEY, theme)
     const scheme = uiThemes[theme]?.colorScheme ?? 'dark'
     localStorage.setItem(UI_COLOR_SCHEME_STORAGE_KEY, scheme)
+  } catch { /* localStorage 不可用时静默降级 */ }
+}
+
+function writeCachedUiThemeMode(mode: UiThemeMode): void {
+  try {
+    if (typeof localStorage === 'undefined') return
+    localStorage.setItem(UI_THEME_MODE_STORAGE_KEY, mode)
   } catch { /* localStorage 不可用时静默降级 */ }
 }
 
@@ -281,15 +308,33 @@ export const useConfigStore = defineStore('config', () => {
   // 主题
   const currentTheme = ref<string>('one-dark')
 
-  // UI 主题
+  // UI 主题（用户在 manual 模式下选定的固定主题）
   // 初始值优先读 localStorage 缓存（在 index.html 的内联脚本里已经写入 <html data-ui-theme>），
-  // 这样 Vue 首帧渲染的 data-ui-theme 就与 <html> 上的兜底保持一致，
-  // 避免启动时默认 'blue' 覆盖用户上次选择的主题而出现"蓝色一闪而过"。
+  // 这样 Vue 首帧渲染的 data-ui-theme 就与 <html> 上的兜底保持一致，避免颜色闪烁。
   const uiTheme = ref<UiThemeName>(readCachedUiTheme())
 
-  // 任一路径更新 uiTheme 都同步写回 localStorage，保证下次启动前即可读取
-  watch(uiTheme, (value) => {
+  // UI 主题模式：manual=用户固定主题；auto=跟随系统外观（在 dark / light 之间切换）
+  const uiThemeMode = ref<UiThemeMode>(readCachedUiThemeMode())
+
+  // 系统当前外观（启动时同步用 matchMedia 读取，运行期由 main 进程通过 IPC 推送更新）
+  const systemColorScheme = ref<SystemColorScheme>(readSystemColorScheme())
+
+  /**
+   * 实际生效的 UI 主题：
+   * - manual 模式直接返回 uiTheme
+   * - auto 模式根据 systemColorScheme 在 dark / light 之间切换
+   */
+  const effectiveUiTheme = computed<UiThemeName>(() =>
+    resolveEffectiveUiTheme(uiThemeMode.value, uiTheme.value, systemColorScheme.value)
+  )
+
+  // 实际生效主题变化时同步缓存（auto 模式下 effective 与 uiTheme 不一致，必须以 effective 为准）
+  watch(effectiveUiTheme, (value) => {
     writeCachedUiTheme(value)
+  })
+
+  watch(uiThemeMode, (value) => {
+    writeCachedUiThemeMode(value)
   })
 
   // 终端设置
@@ -380,6 +425,7 @@ export const useConfigStore = defineStore('config', () => {
         sortBy, defaultOrder, rules, personalityText,
         savedAgentName, savedAgentAvatar, savedLogLevel, savedTerminalSettings,
         accounts, savedShortcuts, savedAutoVision, calAccounts, savedTtsSettings, savedWebSearchSettings,
+        themeMode, sysScheme,
       ] = await Promise.all([
         window.electronAPI.config.getAiProfiles(),
         window.electronAPI.config.getActiveAiProfile(),
@@ -407,6 +453,8 @@ export const useConfigStore = defineStore('config', () => {
         window.electronAPI.config.get('calendarAccounts') as Promise<CalendarAccount[] | undefined>,
         window.electronAPI.config.get('ttsSettings') as Promise<import('@shared/types').TtsSettings | undefined>,
         window.electronAPI.config.get('webSearchSettings') as Promise<import('@shared/types').WebSearchSettings | undefined>,
+        window.electronAPI.config.getUiThemeMode(),
+        window.electronAPI.config.getSystemColorScheme(),
       ])
 
       // 批量赋值
@@ -416,6 +464,8 @@ export const useConfigStore = defineStore('config', () => {
       sessionGroups.value = groups || []
       currentTheme.value = theme || 'one-dark'
       uiTheme.value = uiThemeValue || DEFAULT_UI_THEME
+      uiThemeMode.value = themeMode || DEFAULT_UI_THEME_MODE
+      systemColorScheme.value = sysScheme || systemColorScheme.value
       agentMbti.value = mbti as AgentMbtiType
       agentDebugMode.value = debugMode || false
       setupCompleted.value = completed || false
@@ -477,6 +527,41 @@ export const useConfigStore = defineStore('config', () => {
     })
   }
   listenConfigChanged()
+
+  /**
+   * 监听系统外观变化（macOS 早晚自动切换 / Win11 计划等），auto 模式下立即更新生效主题。
+   * 主进程通过 nativeTheme 的 'updated' 事件广播，比 prefers-color-scheme media query
+   * 在 Electron 下更可靠（部分版本 matchMedia 的 change 事件不稳定）。
+   */
+  let cleanupSystemSchemeChanged: (() => void) | null = null
+  function listenSystemColorScheme(): void {
+    if (cleanupSystemSchemeChanged) return
+    if (!window.electronAPI?.config?.onSystemColorSchemeChanged) return
+    cleanupSystemSchemeChanged = window.electronAPI.config.onSystemColorSchemeChanged((scheme) => {
+      systemColorScheme.value = scheme
+    })
+  }
+  listenSystemColorScheme()
+
+  /**
+   * 启动时尽早把主题相关的真实值从主进程同步进来（mount 之后立即并发执行，
+   * 不阻塞首帧）。覆盖"首次启动、localStorage 还没缓存"的场景，让 DOM 主题
+   * 尽早对齐磁盘真值，缩短可见的兜底期。loadConfig() 后续会再次覆盖，值
+   * 一致时无视觉变化。
+   */
+  ;(async () => {
+    try {
+      if (!window.electronAPI?.config) return
+      const [theme, mode, sysScheme] = await Promise.all([
+        window.electronAPI.config.getUiTheme(),
+        window.electronAPI.config.getUiThemeMode(),
+        window.electronAPI.config.getSystemColorScheme(),
+      ])
+      if (theme) uiTheme.value = theme
+      if (mode) uiThemeMode.value = mode
+      if (sysScheme) systemColorScheme.value = sysScheme
+    } catch { /* 主进程不可用时静默降级，由 store 默认值兜底 */ }
+  })()
 
   // ==================== AI 配置 ====================
 
@@ -638,6 +723,11 @@ export const useConfigStore = defineStore('config', () => {
   async function setUiTheme(theme: UiThemeName): Promise<void> {
     uiTheme.value = theme
     await window.electronAPI.config.setUiTheme(theme)
+  }
+
+  async function setUiThemeMode(mode: UiThemeMode): Promise<void> {
+    uiThemeMode.value = mode
+    await window.electronAPI.config.setUiThemeMode(mode)
   }
 
   // ==================== Agent MBTI ====================
@@ -926,6 +1016,8 @@ export const useConfigStore = defineStore('config', () => {
     sessionGroups,
     currentTheme,
     uiTheme,
+    uiThemeMode,
+    effectiveUiTheme,
     terminalSettings,
     agentMbti,
     agentDebugMode,
@@ -960,6 +1052,7 @@ export const useConfigStore = defineStore('config', () => {
     getEffectiveJumpHost,
     setTheme,
     setUiTheme,
+    setUiThemeMode,
     setAgentMbti,
     setAgentDebugMode,
     setAutoVisionModel,

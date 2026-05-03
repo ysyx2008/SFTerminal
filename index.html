@@ -7,12 +7,23 @@
     <title>旗鱼</title>
     <script>
       // ⚡ FOUC 防护：在 Vue 挂载前把上次使用的 UI 主题同步到 <html>，
-      // 避免首帧用默认主题 (dark) 与用户实际选择不一致而出现一闪而过的色差。
-      // 缓存 key 需与 src/stores/config.ts 中的 UI_THEME_STORAGE_KEY 保持一致。
+      // 避免首帧用默认主题与用户实际选择不一致而出现一闪而过的色差。
+      // 缓存 key 与 src/stores/config.ts 中的常量保持一致。
+      // 跟随系统模式下直接根据 prefers-color-scheme 选择 dark/light，
+      // 这样系统在应用关闭期间切换了外观，下次启动也能正确映射。
       (function () {
         try {
-          var theme = localStorage.getItem('sfterm-ui-theme')
-          var scheme = localStorage.getItem('sfterm-ui-color-scheme')
+          var mode = localStorage.getItem('sfterm-ui-theme-mode')
+          var theme, scheme
+          if (mode === 'auto') {
+            var prefersDark = window.matchMedia
+              && window.matchMedia('(prefers-color-scheme: dark)').matches
+            theme = prefersDark ? 'dark' : 'light'
+            scheme = prefersDark ? 'dark' : 'light'
+          } else {
+            theme = localStorage.getItem('sfterm-ui-theme')
+            scheme = localStorage.getItem('sfterm-ui-color-scheme')
+          }
           if (theme) document.documentElement.setAttribute('data-ui-theme', theme)
           if (scheme) document.documentElement.setAttribute('data-color-scheme', scheme)
         } catch (e) { /* localStorage 不可用时让 :root 兜底 */ }

@@ -3,8 +3,8 @@ import { safeStorage } from 'electron'
 import type { AiModelType, AiProfile, ApiFormat, ExecutionMode, JumpHostConfig } from '@shared/types'
 import type { KnowledgeSettings } from './knowledge/types'
 import { DEFAULT_KNOWLEDGE_SETTINGS } from './knowledge/types'
-import type { TtsSettings, UiThemeName, WebSearchSettings } from '@shared/types'
-import { DEFAULT_TTS_SETTINGS, DEFAULT_UI_THEME, DEFAULT_WEB_SEARCH_SETTINGS } from '@shared/types'
+import type { TtsSettings, UiThemeMode, UiThemeName, WebSearchSettings } from '@shared/types'
+import { DEFAULT_TTS_SETTINGS, DEFAULT_UI_THEME, DEFAULT_UI_THEME_MODE, DEFAULT_WEB_SEARCH_SETTINGS } from '@shared/types'
 import { createLogger, type LogLevel } from '../utils/logger'
 import { normalizeTerminalSettings, normalizeKeyboardShortcuts } from '../utils/normalize'
 
@@ -140,6 +140,7 @@ interface StoreSchema {
   sessionGroups: SessionGroup[]
   theme: string
   uiTheme: UiThemeType
+  uiThemeMode: UiThemeMode
   terminalSettings: TerminalSettings
   proxySettings: {
     enabled: boolean
@@ -236,6 +237,7 @@ const defaultConfig: StoreSchema = {
   sessionGroups: [],
   theme: 'one-dark',
   uiTheme: DEFAULT_UI_THEME,
+  uiThemeMode: DEFAULT_UI_THEME_MODE,
   terminalSettings: {
     fontSize: 14,
     fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, monospace',
@@ -373,6 +375,14 @@ export class ConfigService {
    */
   set<K extends keyof StoreSchema>(key: K, value: StoreSchema[K]): void {
     this.store.set(key, value)
+  }
+
+  /**
+   * 检查配置项是否存在于磁盘（区别于 defaults 兜底返回的值）。
+   * migration 中用来识别"新用户（已有该字段）"vs"老用户（字段缺失）"。
+   */
+  has<K extends keyof StoreSchema>(key: K): boolean {
+    return this.store.has(key)
   }
 
   /**
@@ -589,6 +599,20 @@ export class ConfigService {
    */
   setUiTheme(theme: UiThemeType): void {
     this.store.set('uiTheme', theme)
+  }
+
+  /**
+   * 获取 UI 主题模式（manual / auto）
+   */
+  getUiThemeMode(): UiThemeMode {
+    return this.store.get('uiThemeMode') || DEFAULT_UI_THEME_MODE
+  }
+
+  /**
+   * 设置 UI 主题模式
+   */
+  setUiThemeMode(mode: UiThemeMode): void {
+    this.store.set('uiThemeMode', mode)
   }
 
   // ==================== 终端设置 ====================

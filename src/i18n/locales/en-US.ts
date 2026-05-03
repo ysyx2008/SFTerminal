@@ -950,6 +950,8 @@ export default {
     preview: 'Preview',
     uiTheme: 'UI Theme',
     selectUiTheme: 'Select interface color style, terminal colors will auto-sync',
+    followSystem: 'Follow system appearance',
+    followSystemDesc: 'Auto-switch theme when system toggles dark/light mode (only between dark and light themes; does not affect colorful theme selection below)',
     terminalIntegration: 'Integrated Terminal Colors',
     terminalIntegrationDesc: 'Terminal colors automatically match the UI theme for a unified visual experience. Background, text, and accent colors are carefully calibrated to seamlessly blend the terminal into the interface.',
     uiThemes: {

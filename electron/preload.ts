@@ -766,8 +766,20 @@ const electronAPI = {
     setTheme: (theme: string) => ipcRenderer.invoke('config:setTheme', theme),
 
     // UI 主题
-    getUiTheme: () => ipcRenderer.invoke('config:getUiTheme') as Promise<'dark' | 'light' | 'blue' | 'gruvbox' | 'forest' | 'ayu-mirage' | 'cyberpunk' | 'lavender' | 'aurora' | 'sponsor-gold' | 'sponsor-sakura' | 'sponsor-rose-pine'>,
-    setUiTheme: (theme: 'dark' | 'light' | 'blue' | 'gruvbox' | 'forest' | 'ayu-mirage' | 'cyberpunk' | 'lavender' | 'aurora' | 'sponsor-gold' | 'sponsor-sakura' | 'sponsor-rose-pine') => ipcRenderer.invoke('config:setUiTheme', theme),
+    getUiTheme: () => ipcRenderer.invoke('config:getUiTheme') as Promise<import('@shared/types').UiThemeName>,
+    setUiTheme: (theme: import('@shared/types').UiThemeName) => ipcRenderer.invoke('config:setUiTheme', theme),
+
+    // UI 主题模式（manual / auto）
+    getUiThemeMode: () => ipcRenderer.invoke('config:getUiThemeMode') as Promise<import('@shared/types').UiThemeMode>,
+    setUiThemeMode: (mode: import('@shared/types').UiThemeMode) => ipcRenderer.invoke('config:setUiThemeMode', mode),
+
+    // 系统当前外观（dark/light），用于 auto 模式
+    getSystemColorScheme: () => ipcRenderer.invoke('system:getColorScheme') as Promise<import('@shared/types').SystemColorScheme>,
+    onSystemColorSchemeChanged: (callback: (scheme: import('@shared/types').SystemColorScheme) => void) => {
+      const listener = (_event: unknown, scheme: import('@shared/types').SystemColorScheme) => callback(scheme)
+      ipcRenderer.on('system:colorSchemeChanged', listener)
+      return () => ipcRenderer.removeListener('system:colorSchemeChanged', listener)
+    },
 
     // Agent MBTI
     getAgentMbti: () => ipcRenderer.invoke('config:getAgentMbti') as Promise<string | null>,

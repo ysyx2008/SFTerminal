@@ -950,6 +950,8 @@ export default {
     preview: '预览',
     uiTheme: '界面主题',
     selectUiTheme: '选择应用界面的配色风格，终端会自动融入整体风格',
+    followSystem: '跟随系统外观',
+    followSystemDesc: '系统切换深色/浅色时自动切换主题（仅 dark / light 之间切换，不影响下方彩色主题选择）',
     terminalIntegration: '终端配色自动融合',
     terminalIntegrationDesc: '终端配色会自动与界面主题保持一致，营造统一的视觉体验。背景色、文字色、强调色都经过精心调配，让终端完美融入整体界面。',
     uiThemes: {
