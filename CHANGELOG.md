@@ -2,9 +2,9 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.37.0 (2026-05-04) (Latest)
+## v10.37.1 (2026-05-04) (Latest)
 
-This release introduces three new features — fork conversation from any completed node, background Agent completion notifications, and system-aware UI theme — while bringing official document generation up to Chinese national standards; also fixes AI panel visual jitter, blurry Windows icons, unreliable macOS badge, and more.
+This release introduces three new features — fork conversation from any completed node, background Agent completion notifications, and system-aware UI theme — while bringing official document generation up to Chinese national standards.
 
 ### New Features
 - 🌿 **Fork Conversation**: Fork a new assistant tab from any completed conversation node to explore different directions side by side
@@ -20,6 +20,7 @@ This release introduces three new features — fork conversation from any comple
 - 🛠️ **Built-in Model Templates Updated**: Refreshed bundled LLM configuration templates
 
 ### Bug Fixes
+- 🌓 **Terminal Follows System Theme**: In follow-system mode, the UI switched between dark and light but xterm terminal colors stayed on the user-fixed theme, mismatching the interface — terminal now subscribes to the effective theme
 - 🍎 **macOS Badge Reliability**: Switched to event-driven focus tracking; fixes occasional missing badge in production build
 - 🔗 **macOS Terminal Links**: Fixed terminal links opening an "Open With" dialog on macOS instead of the browser
 - 🪟 **Windows Icon Sharpness**: Improved Windows icon appearance — no longer small and blurry at high DPI
