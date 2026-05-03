@@ -22,6 +22,7 @@ const g = t.guide;
         <h3 class="toc-title">{g.toc}</h3>
         <ul class="toc-list">
           <li><a href="#api-config" class="toc-link">{g.apiConfig.title}</a></li>
+          <li><a href="#terminal-workflow" class="toc-link">{g.terminalWorkflow.title}</a></li>
           <li><a href="#vision-routing" class="toc-link">{g.visionRouting.title}</a></li>
           <li><a href="#watch" class="toc-link">{g.watch.title}</a></li>
           <li><a href="#im-access" class="toc-link">{g.imAccess.title}</a></li>
@@ -74,6 +75,24 @@ const g = t.guide;
           <h3>{g.apiConfig.tips}</h3>
           <ul class="tips-list">
             {g.apiConfig.tipsList.map(tip => <li>{tip}</li>)}
+          </ul>
+        </section>
+
+        {/* ==================== 终端工作流 ==================== */}
+        <section id="terminal-workflow" class="guide-article">
+          <h2 class="article-title">{g.terminalWorkflow.title}</h2>
+          <p class="article-intro">{g.terminalWorkflow.intro}</p>
+
+          <h3>{g.terminalWorkflow.splitTitle}</h3>
+          <p>{g.terminalWorkflow.splitDesc}</p>
+          <ul class="capability-list">
+            {g.terminalWorkflow.splitItems.map(item => <li>{item}</li>)}
+          </ul>
+
+          <h3>{g.terminalWorkflow.forkTitle}</h3>
+          <p>{g.terminalWorkflow.forkDesc}</p>
+          <ul class="capability-list">
+            {g.terminalWorkflow.forkItems.map(item => <li>{item}</li>)}
           </ul>
         </section>
 

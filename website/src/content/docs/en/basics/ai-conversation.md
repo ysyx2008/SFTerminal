@@ -81,6 +81,16 @@ All of your conversations are saved automatically. Click the history icon in the
 
 Click a history entry to return to that context and continue. The AI will remember what was discussed before.
 
+### Branch Off
+
+When a task is in progress but you want to explore another direction from an intermediate result, use **"Branch off"**:
+
+1. Open the message group menu on an AI reply or task step and choose **"Branch off"**
+2. SailFish creates a new assistant tab from that point
+3. The new conversation inherits the earlier context, while the original conversation stays unchanged
+
+A typical use case: while troubleshooting a production issue, keep the main conversation on the conservative path, then branch off from an error analysis and ask the AI to explore a more aggressive fix. The two directions stay separate, making them easy to compare later.
+
 ### Clearing the Conversation
 
 Click "Clear conversation" in the chat area to start fresh. The AI will forget the current context and begin from scratch. Useful when you finish one task and want to switch to another.

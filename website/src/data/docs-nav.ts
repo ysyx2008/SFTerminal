@@ -35,6 +35,7 @@ export function getDocsNav(lang: 'zh' | 'en'): NavGroup[] {
         label: '服务器管理',
         items: [
           { slug: 'server/ssh-connection', label: 'SSH 连接' },
+          { slug: 'server/terminal-split', label: '多窗格分屏' },
           { slug: 'server/sftp-transfer', label: 'SFTP 文件传输' },
           { slug: 'server/multi-server', label: '多服务器管理' },
         ],
@@ -111,6 +112,7 @@ export function getDocsNav(lang: 'zh' | 'en'): NavGroup[] {
       label: 'Server Management',
       items: [
         { slug: 'server/ssh-connection', label: 'SSH Connection' },
+        { slug: 'server/terminal-split', label: 'Terminal Splits' },
         { slug: 'server/sftp-transfer', label: 'SFTP Transfer' },
         { slug: 'server/multi-server', label: 'Multi-Server' },
       ],

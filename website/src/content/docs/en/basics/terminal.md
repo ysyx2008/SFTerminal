@@ -79,6 +79,8 @@ You can run multiple terminal tabs at once:
 
 Example workflow: open tabs for production, test, and local, and switch as needed.
 
+> When you need to operate multiple local or SSH environments in one tab, use multi-pane splits. See [Multi-pane Terminal Splits](/docs/server/terminal-split).
+
 ## Terminal Settings
 
 Under **Settings → Terminal** you can customize:
