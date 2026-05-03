@@ -7,21 +7,21 @@ description: "Configure AI service from scratch so SailFish can think and work"
 
 SailFish does not include a built-in AI model — you need to configure an AI service API, like inserting a SIM card into a phone to make calls.
 
-Don't worry; the whole process takes about **5 minutes**. Just follow the steps below.
+Don't worry; the basic model setup usually only takes a few minutes. Web search can be configured right after that, or added later.
 
 ## What is an API Key
 
 An API Key is a secret string your AI provider gives you to verify your identity. Think of it as an "AI membership card" — with it, SailFish can call the AI service to think and answer.
 
-Most AI services bill by usage (like mobile plans). Typical monthly costs for normal use are usually low.
+Most AI services bill by usage (like mobile plans). Actual cost depends on how often you use it, so it is a good idea to monitor your balance or set budget alerts in the provider dashboard.
 
 ## Recommended: DeepSeek
 
 If this is your first time using an AI API, we recommend starting with **DeepSeek**:
 
 - Simple registration, no VPN required for most regions
-- Very low cost (around 1 CNY per million tokens; daily use often under 10 CNY per month)
-- Strong reasoning, good enough for most tasks
+- Very low cost (around 1 CNY per million tokens)
+- Good general capability for most everyday tasks
 
 > SailFish supports dozens of AI providers (OpenAI, Claude, Qwen, Gemini, etc.). You can switch or configure multiple at any time. We use DeepSeek as an example; the flow is similar for others.
 
@@ -36,14 +36,14 @@ If this is your first time using an AI API, we recommend starting with **DeepSee
 
 > **Keep your API Key secure** and do not share it. If it is leaked, delete the old key in the DeepSeek console and create a new one.
 
-7. New users often get free credits. If balance is low, top up in the **Recharge** page (minimum 10 CNY)
+7. New users may receive free credits. If balance is low, top up according to the provider console instructions
 
 ## Step 2: Configure in SailFish
 
 1. Open SailFish
 2. Click the **Settings** icon (gear) at the bottom-left
 3. Find the **"AI Model Configuration"** section in Settings
-4. Click **"Add"** (新增)
+4. Click **"Add"**
 5. Select **"DeepSeek"** in the provider list — the system will fill in the API URL and default model
 6. In the **API Key** field, paste the API Key you copied
 7. Choose model `deepseek-v4-flash` (usually selected by default)
@@ -55,38 +55,7 @@ After saving, you will see the new configuration in the model list. Click the **
 
 Setup complete! SailFish can now "think."
 
-## Recommended Add-on: Vision Model (GPT-4o)
-
-DeepSeek has strong text reasoning but does not support image input. By adding GPT-4o as a linked vision model, SailFish automatically switches to it when you send a screenshot, then switches back to DeepSeek for follow-up text — best of both worlds.
-
-### Get an OpenAI API Key
-
-1. Go to [OpenAI Platform](https://platform.openai.com/)
-2. Sign up or log in
-3. Navigate to **API Keys** and create a new key
-4. Copy the key (starts with `sk-`)
-
-> OpenAI requires a VPN in some regions. Alternatively, you can use **Gemini** (`gemini-2.0-flash`) via [Google AI Studio](https://aistudio.google.com/) — no VPN needed and it includes free credits.
-
-### Add GPT-4o in SailFish
-
-1. Open Settings → AI Model Configuration → Add
-2. Select **"OpenAI"** from the provider list
-3. Paste your API Key
-4. Set model to `gpt-4o`
-5. Set **Model Type** to **"Vision"**
-6. Save
-
-### Link GPT-4o to DeepSeek
-
-1. Edit your DeepSeek configuration
-2. In the **"Linked Vision Model"** dropdown, select **GPT-4o**
-3. Make sure **"Auto vision model switch"** is enabled in Settings → General
-4. Save
-
-Now pure-text messages use DeepSeek, and screenshots automatically use GPT-4o — no manual switching needed.
-
-## Recommended Add-on: Web Search (Google)
+## Recommended Add-on: Web Search (Google, Highly Recommended)
 
 With a search engine configured, the Agent can fetch real-time information from the web instead of relying solely on its training data.
 
@@ -100,13 +69,13 @@ With a search engine configured, the Agent can fetch real-time information from 
 ### Configure Google Search in SailFish
 
 1. Open Settings → Web Search
-2. Select **"Google"** as the search engine
+2. Select **"Google Custom Search"** as the search engine
 3. Paste your API Key and Search Engine ID
 4. Save
 
 Once configured, the AI will automatically call Google when it needs real-time information.
 
-## Verify the Configuration
+## Verify the Model Configuration
 
 Return to the main interface and try typing something, for example:
 
