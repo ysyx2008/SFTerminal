@@ -438,16 +438,9 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
         5: { font: '仿宋', size: 16, bold: false },
         6: { font: '仿宋', size: 16, bold: false }
       },
-      // 注：不再用 numberingRules 把 "一、" / "（一）" 自动识别成 Heading，
-      // 否则正文里以编号开头的并列项（如"（一）组织保障。说明…"）会被误升为标题。
-      // 标题层级完全由 markdown 的 # 数量决定，AI 显式标记。
-      // 仅保留缩进/字体相关的纯格式增强（顶格、字体），不做语义判断。
-      numberingRules: [
-        { pattern: '^[一二三四五六七八九十]+、', style: { indent: 0 } },
-        { pattern: '^（[一二三四五六七八九十]+）', style: { indent: 0 } },
-        { pattern: '^\\d+[.．]', style: { font: '仿宋', size: 16, bold: false, indent: 0 } },
-        { pattern: '^（\\d+）', style: { font: '仿宋', size: 16, bold: false, indent: 0 } }
-      ],
+      // 不设 numberingRules：标题层级由 markdown # 显式标记，正文里以编号开头的并列项
+      // （如"（一）组织保障。说明…"）走默认 Normal 样式（首行缩进 2 字符），
+      // 符合公文行文习惯。
       table: {
         headerBackground: 'F2F2F2',
         headerBold: true,
@@ -484,13 +477,7 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
         5: { font: '仿宋_GB2312', size: 16, bold: false },
         6: { font: '仿宋_GB2312', size: 16, bold: false }
       },
-      // 见 official 样式注释：标题层级由 markdown # 决定，不再基于编号文本自动推断
-      numberingRules: [
-        { pattern: '^[一二三四五六七八九十]+、', style: { indent: 0 } },
-        { pattern: '^（[一二三四五六七八九十]+）', style: { indent: 0 } },
-        { pattern: '^\\d+[.．]', style: { font: '仿宋_GB2312', size: 16, bold: false, indent: 0 } },
-        { pattern: '^（\\d+）', style: { font: '仿宋_GB2312', size: 16, bold: false, indent: 0 } }
-      ],
+      // 见 official 样式注释：标题层级由 markdown # 决定，正文段走 Normal 样式获得首行缩进
       table: {
         headerBackground: 'F2F2F2',
         headerBold: true,
@@ -591,13 +578,7 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
         5: { font: '仿宋', size: 16, bold: false },
         6: { font: '仿宋', size: 16, bold: false }
       },
-      // 见 official 样式注释：标题层级由 markdown # 决定，不再基于编号文本自动推断
-      numberingRules: [
-        { pattern: '^[一二三四五六七八九十]+、', style: { indent: 0 } },
-        { pattern: '^（[一二三四五六七八九十]+）', style: { indent: 0 } },
-        { pattern: '^\\d+[.．]', style: { font: '仿宋', size: 16, bold: true, indent: 0 } },
-        { pattern: '^（\\d+）', style: { font: '仿宋', size: 16, bold: false, indent: 0 } }
-      ],
+      // 见 official 样式注释：标题层级由 markdown # 决定，正文段走 Normal 样式获得首行缩进
       table: {
         headerBackground: 'E7E6E6',
         headerBold: true,
