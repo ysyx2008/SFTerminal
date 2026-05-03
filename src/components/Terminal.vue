@@ -114,8 +114,9 @@ const generateCardId = () => `card-${Date.now()}-${cardIdCounter++}`
 onMounted(async () => {
   if (!terminalRef.value) return
 
-  // 获取与 UI 主题融合的终端主题
-  const theme = getIntegratedTheme(configStore.uiTheme)
+  // 获取与 UI 主题融合的终端主题（用 effectiveUiTheme 而非 uiTheme，
+  // 跟随系统模式下才会和 UI 一起切换）
+  const theme = getIntegratedTheme(configStore.effectiveUiTheme)
   const settings = configStore.terminalSettings
 
   // 创建终端实例
@@ -634,9 +635,10 @@ watch(
   { immediate: true }
 )
 
-// 监听 UI 主题变化，同步更新终端配色
+// 监听 UI 主题变化，同步更新终端配色（订阅 effectiveUiTheme，
+// 这样 mode 切换、系统外观切换都会触发）
 watch(
-  () => configStore.uiTheme,
+  () => configStore.effectiveUiTheme,
   uiThemeName => {
     if (terminal) {
       const theme = getIntegratedTheme(uiThemeName)

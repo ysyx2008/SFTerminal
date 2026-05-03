@@ -37,7 +37,7 @@ let ready = false
 function initTerminal() {
   if (!terminalRef.value) return
 
-  const theme = getIntegratedTheme(configStore.uiTheme)
+  const theme = getIntegratedTheme(configStore.effectiveUiTheme)
   const settings = configStore.terminalSettings
 
   terminal = new XTerm({
@@ -142,10 +142,10 @@ watch(
 )
 
 watch(
-  () => configStore.uiTheme,
+  () => configStore.effectiveUiTheme,
   () => {
     if (terminal) {
-      terminal.options.theme = getIntegratedTheme(configStore.uiTheme)
+      terminal.options.theme = getIntegratedTheme(configStore.effectiveUiTheme)
     }
   }
 )
