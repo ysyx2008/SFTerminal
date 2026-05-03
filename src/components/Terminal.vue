@@ -133,7 +133,10 @@ onMounted(async () => {
   // 加载插件
   fitAddon = new FitAddon()
   searchAddon = new SearchAddon()
-  const webLinksAddon = new WebLinksAddon()
+  // 自定义 handler：直接传入 URL 触发 setWindowOpenHandler，避免默认行为先 open() 空窗口导致 macOS 报错
+  const webLinksAddon = new WebLinksAddon((_event, uri) => {
+    window.open(uri, '_blank')
+  })
 
   terminal.loadAddon(fitAddon)
   terminal.loadAddon(searchAddon)
