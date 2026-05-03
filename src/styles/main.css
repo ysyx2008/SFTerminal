@@ -895,16 +895,26 @@ html, body {
 
 /* header 按钮变体：用于 32px 高的顶部栏（app-header / panel-header / settings-header 等）
    hover 背景若按默认 26x26 会几乎顶到 header 边界，这里统一收紧到 22x22，
-   并削弱 hover 放大比例，保证软件各处顶部栏按钮视觉一致。 */
+   并削弱 hover 放大比例，保证软件各处顶部栏按钮视觉一致。
+   颜色采用次级文本色（默认弱化），hover 时回到主文本色——降低 header 图标整体视觉权重，
+   尤其在 Windows 上与系统标题栏按钮（细线条）并排时更协调。 */
 .btn-icon.btn-icon-header {
   width: 22px;
   height: 22px;
   padding: 2px;
   border-radius: 5px;
+  color: var(--text-secondary);
 }
 
 .btn-icon.btn-icon-header:hover {
   transform: scale(1.04);
+  color: var(--text-primary);
+}
+
+/* header 图标 hover 不再发光：避免顶栏一排按钮在 hover 时各自亮起彩色光晕，
+   交互反馈仅靠背景 + 颜色提亮，跟 Windows 自绘按钮的素净 hover 风格一致。 */
+.btn-icon.btn-icon-header:hover svg {
+  filter: none;
 }
 
 /* 去掉按钮的默认焦点轮廓：按 ESC 等键盘操作后不残留黄框；

@@ -469,26 +469,35 @@ onUnmounted(() => {
   height: 22px;
   padding: 2px 6px;
   border-radius: 6px;
+  /* 与 .btn-icon-header 的层级对齐：默认弱化到次级文本色，hover 时回到主文本色 */
+  color: var(--text-secondary);
 }
 
 /* 削弱 hover scale，避免在 32px 高的 header 里放大后贴到边缘（与 App.vue 对 header btn-icon 的 override 保持一致） */
 .conn-btn:hover {
   transform: scale(1.04);
+  color: var(--text-primary);
 }
 
-/* 状态徽章 */
+/* hover 不再发光：与其他 header 图标按钮保持一致的素净反馈 */
+.conn-btn:hover svg {
+  filter: none;
+}
+
+/* 状态徽章：作为图标的附属信息，对比度刻意压低，不与 Radio 图标抢视觉重点 */
 .status-badge {
   display: flex;
   align-items: center;
   gap: 2px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   padding: 1px 4px;
   border-radius: 8px;
   background: var(--bg-tertiary);
+  opacity: 0.85;
 }
 
-.status-dot { font-size: 10px; }
+.status-dot { font-size: 9px; }
 .status-count { font-family: var(--font-mono); font-size: 10px; }
 
 .status-all .status-dot, .status-all.status-badge { color: var(--brand-vital); }
