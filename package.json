@@ -63,6 +63,7 @@
     "adm-zip": "^0.5.16",
     "apache-arrow": "^18.1.0",
     "cron-parser": "^5.5.0",
+    "cronstrue": "^3.14.0",
     "dingtalk-stream": "^2.1.4",
     "docx": "^9.5.1",
     "electron-log": "^5.4.3",
@@ -129,7 +130,9 @@
     "vue-tsc": "^2.0.6"
   },
   "overrides": {
-    "protobufjs": "^7.5.6"
+    "protobufjs": "^7.5.6",
+    "hono": "^4.12.16",
+    "@hono/node-server": "^2.0.1"
   },
   "author": {
     "name": "旗鱼",
