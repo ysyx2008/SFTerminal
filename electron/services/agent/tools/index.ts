@@ -16,7 +16,7 @@ import { normalizeToolArgs } from './utils'
 
 // 导入各模块的工具函数
 import { executeCommand } from './command'
-import { executeCommandDirect } from './exec'
+import { executeCommandDirect, awaitExec } from './exec'
 import { getTerminalContext, checkTerminalStatus, sendControlKey, sendInput } from './terminal'
 import { fileSearch, readFile, editFile, writeTextFile, writeRemoteTextFile } from './file'
 import { sftpPut, sftpGet } from './sftp'
@@ -37,7 +37,7 @@ import { resolveTargetPtyId } from './utils'
 
 // 导出工具函数供外部使用
 export { executeCommand } from './command'
-export { executeCommandDirect } from './exec'
+export { executeCommandDirect, awaitExec } from './exec'
 export { getTerminalContext, checkTerminalStatus, sendControlKey, sendInput } from './terminal'
 export { fileSearch, readFile, editFile, writeTextFile, writeRemoteTextFile, getWorkspacePath, isInWorkspace } from './file'
 export { sftpPut, sftpGet } from './sftp'
@@ -112,6 +112,9 @@ export async function executeTool(
 
     case 'exec':
       return executeCommandDirect(args, toolCall.id, config, executor)
+
+    case 'await_exec':
+      return awaitExec(args, executor)
 
     case 'get_terminal_context': {
       const requiredPtyId = requirePtyId(ptyId, name)

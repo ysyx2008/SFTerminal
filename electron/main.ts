@@ -761,6 +761,15 @@ async function cleanupAllServices(): Promise<void> {
   sshService.disposeAll()
   sftpService.disconnectAll()
   mcpService.disconnectAll()
+  // 杀掉 assistant 模式 exec 工具留下的后台子进程。
+  // beforeExit 在 Electron app.quit() 时不会触发，必须在这里显式调用，
+  // 否则用户退出 SailFish 后，npm install / 长 build / 服务进程 仍挂着。
+  try {
+    const { getExecManager } = await import('./services/agent/tools/exec-manager')
+    getExecManager().killAllOnShutdown()
+  } catch (e) {
+    log.warn('exec-manager shutdown 失败:', e)
+  }
   // 主动释放知识库资源：让 embedding worker 收到 dispose 后干净退出，
   // 避免被 OS SIGTERM 收尸时正好打断 LanceDB transaction / ORT session
   // 释放，留下 "manifest 已落盘但 .lance 数据文件未落盘" 的损坏状态

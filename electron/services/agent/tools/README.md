@@ -10,6 +10,8 @@ tools/
 ├── types.ts        # 类型定义 (ToolExecutorConfig, ErrorCategory 等)
 ├── utils.ts        # 通用工具函数 (错误处理、重试、截断等)
 ├── command.ts      # 命令执行 (execute_command, sudo, 限时执行等)
+├── exec.ts         # 轻量命令执行 (exec, await_exec)，仅 assistant 模式
+├── exec-manager.ts # 后台任务管理器（spawn / ring buffer / 自动清理）
 ├── terminal.ts     # 终端操作 (get_terminal_context, check_terminal_status 等)
 ├── file.ts         # 文件操作 (read_file, write_text_file, edit_file 等)
 ├── knowledge.ts    # 知识库 (remember_info, search_knowledge 等)
@@ -28,6 +30,11 @@ tools/
 - `executeSudoCommand` - 执行 sudo 命令，处理密码输入
 - `executeFireAndForget` - 执行持续运行的命令 (如 tail -f, ping)
 - `executeTimedCommand` - 限时执行命令
+
+### 轻量命令执行 (exec.ts + exec-manager.ts，仅 assistant 模式)
+- `exec` - 基于 child_process.spawn 的命令执行；wait_seconds 内未结束自动转后台返回 task_id
+- `await_exec` - 等待已转后台的任务结束、命中 pattern、或返回最新进度
+- `BackgroundExecManager` - 后台任务管理器（exec-manager.ts）：进程托管、ring buffer、5 分钟自动清理、max_seconds 安全网
 
 ### 终端操作 (terminal.ts)
 - `get_terminal_context` - 获取终端最近 N 行输出

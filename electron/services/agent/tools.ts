@@ -348,35 +348,49 @@ export interface GetAgentToolsOptions {
  * @param pluginRegistry 可选的插件注册表，用于加载插件工具
  */
 export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOptions, pluginRegistry?: PluginRegistry): ToolDefinition[] {
-  // assistant 模式的轻量命令执行工具（child_process）
+  // assistant 模式的轻量命令执行工具（child_process.spawn）
   // 终端模式的 execute_command 及终端交互工具由 terminal 技能提供
   const execTool: ToolDefinitionWithMeta | null = options?.mode === 'assistant'
     ? {
         type: 'function',
         function: {
           name: 'exec',
-          description: `运行 shell 命令并返回输出（同步）。不支持交互式命令(vim/nano/tmux)。长时间命令通过 timeout 延长（默认 60s，最大 600s）。命令上限 800 字符。`,
+          description: `运行 shell 命令并返回输出。不支持交互式命令(vim/nano/tmux)。
+
+**等待与转后台**：
+- wait_seconds 内结束 → 返回完整结果
+- 超过 wait_seconds 仍在跑 → 自动转后台，返回 task_id 和 pid
+- 想接着等结果用 await_exec(task_id)；想杀就 exec("kill <pid>")
+
+**典型用法**：
+- 短命令（ls/grep/cat...）：直接 exec，默认 wait 60s 足够
+- 启动长任务（构建/部署/服务）：exec("npm run build", wait_seconds: 5) 立刻转后台，去做别的，回头 await_exec
+- 启动后想看到关键日志：先 exec 转后台拿 task_id，再 await_exec(task_id, pattern: "Listening on")`,
           parameters: {
             type: 'object',
             properties: {
               command: {
                 type: 'string',
-                description: '要执行的 shell 命令（最长 800 字符）'
+                description: '要执行的 shell 命令'
               },
               cwd: {
                 type: 'string',
                 description: '工作目录（可选，默认使用当前目录）'
               },
-              timeout: {
+              wait_seconds: {
                 type: 'number',
-                description: '超时秒数（默认 60，最大 600）。长时间命令（如构建、下载、sleep+check 轮询）应设置足够的 timeout'
+                description: '同步等待秒数（默认 60，最大 600）。命令在此时间内结束就返回完整结果，否则转后台返回 task_id'
+              },
+              max_seconds: {
+                type: 'number',
+                description: '命令最长允许运行时间（默认 3600 即 1 小时，最大 86400 即 24 小时）。到点会被 SIGKILL，防止僵尸进程'
               }
             },
             required: ['command']
           }
         },
         _meta: {
-          // 命令本身就是这个工具的"主语"，幂等键只取 command（cwd / timeout 不影响"是否同一条命令"）
+          // 命令本身就是这个工具的"主语"，幂等键只取 command（cwd / wait_seconds 不影响"是否同一条命令"）
           idempotencyKey: ['command'],
           // 命令输出可重新执行得到，上下文紧张时优先清理
           contextBudget: { toolResult: 'clearable' },
@@ -384,6 +398,50 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           argRole: { summaryLine: 'command' },
           // 流式预卡片：标题 + command 字段；命令文本本身在流式增长，不加字符数尾缀
           streamDisplay: { titleKey: 'status.executing', titleField: 'command' }
+        }
+      }
+    : null
+
+  // assistant 模式专属：等待已转后台的 exec 任务
+  const awaitExecTool: ToolDefinitionWithMeta | null = options?.mode === 'assistant'
+    ? {
+        type: 'function',
+        function: {
+          name: 'await_exec',
+          description: `等待 exec 转后台的任务结束、命中关键输出、或返回最新进度。
+
+**典型用法**：
+- 等任务结束：await_exec(task_id, wait_seconds: 60)
+- 等关键日志：await_exec(task_id, pattern: "Listening on \\\\d+")  → 命中即返回
+- 查看当前进度：await_exec(task_id, wait_seconds: 1)  → 1 秒后返回最新输出
+
+**返回**：
+- 任务已结束：output 全量 + exit_code
+- pattern 命中 或 wait 超时仍在跑：返回最近 8KB 输出，isRunning=true，可继续 await
+- 任务不存在（task_id 错误或已超过 5 分钟自动清理）：报错`,
+          parameters: {
+            type: 'object',
+            properties: {
+              task_id: {
+                type: 'string',
+                description: 'exec 转后台时返回的 task_id（如 "exec-1"）'
+              },
+              wait_seconds: {
+                type: 'number',
+                description: '最长等待秒数（默认 30，最大 600）。期间任务结束 / pattern 命中即提前返回'
+              },
+              pattern: {
+                type: 'string',
+                description: '可选正则（JS 语法，多行模式）。一旦命中立即返回，便于"等服务启动"等场景。如 "Listening on" 或 "error:"'
+              }
+            },
+            required: ['task_id']
+          }
+        },
+        _meta: {
+          contextBudget: { toolResult: 'clearable' },
+          parallelizable: true,  // 可同时 await 多个 task_id
+          streamDisplay: { titleKey: 'exec.awaiting_short', titleField: 'task_id' }
         }
       }
     : null
@@ -588,6 +646,9 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       }
     } as ToolDefinitionWithMeta,
     // ==================== 父 Agent 专用工具 ====================
+    // await_exec：仅 assistant 模式注入；放在子 Agent 白名单之后，
+    // 保持子 Agent 工具列表是父 Agent 工具列表的"连续前缀"（最大化 prompt cache 命中）。
+    ...(awaitExecTool ? [awaitExecTool as ToolDefinition] : []),
     {
       type: 'function',
       function: {

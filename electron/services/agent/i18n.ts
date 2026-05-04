@@ -1378,6 +1378,21 @@ const translations = {
 
     // IM 上下文
     'im.first_contact_context': '[系统提示：这是用户 {userName} 通过 {platform} 首次与你联系，请在回复中自然地打个招呼、做个自我介绍。]',
+
+    // exec 后台任务（assistant 模式 exec/await_exec 工具）
+    'exec.task_id_required': '必须提供 task_id',
+    'exec.task_not_found': '后台任务 {taskId} 不存在（可能已超过 5 分钟自动清理，或 task_id 错误）',
+    'exec.invalid_pattern': '无效的正则表达式: {error}',
+    'exec.killed_by_signal': '命令被信号 {signal} 终止',
+    'exec.backgrounded': '⏳ 命令仍在后台执行 [task_id={taskId}, pid={pid}, 已等待 {waited}s, 最长允许 {max}s]\n用 await_exec("{taskId}") 等结果，或 exec("kill {pid}") 停止',
+    'exec.backgrounded_short': '已转后台 (task_id={taskId})',
+    'exec.awaiting': '等待后台任务 {taskId}',
+    'exec.awaiting_short': '等待',
+    'exec.task_done': '[task_id={taskId}, status={status}, exit_code={exitCode}]',
+    'exec.pattern_matched': '✅ 命中 pattern [task_id={taskId}, pid={pid}]，任务仍在跑，可继续 await_exec',
+    'exec.pattern_matched_short': '命中 pattern (task_id={taskId})',
+    'exec.still_running': '⏳ 任务仍在跑 [task_id={taskId}, pid={pid}, 已等 {waited}s]，可继续 await_exec 或 exec("kill {pid}") 停止',
+    'exec.still_running_short': '仍在运行 (task_id={taskId})',
   },
   'en-US': {
     // Tool names
@@ -2747,6 +2762,21 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
 
     // IM context
     'im.first_contact_context': '[System note: This is the first time user {userName} has contacted you via {platform}. Please naturally greet them and introduce yourself in your response.]',
+
+    // exec background tasks (assistant mode exec/await_exec tools)
+    'exec.task_id_required': 'task_id is required',
+    'exec.task_not_found': 'Background task {taskId} not found (may have been cleaned up after 5 minutes, or task_id is wrong)',
+    'exec.invalid_pattern': 'Invalid regex pattern: {error}',
+    'exec.killed_by_signal': 'Command killed by signal {signal}',
+    'exec.backgrounded': '⏳ Command still running in background [task_id={taskId}, pid={pid}, waited {waited}s, max {max}s]\nUse await_exec("{taskId}") to wait for result, or exec("kill {pid}") to stop',
+    'exec.backgrounded_short': 'Backgrounded (task_id={taskId})',
+    'exec.awaiting': 'Awaiting background task {taskId}',
+    'exec.awaiting_short': 'Awaiting',
+    'exec.task_done': '[task_id={taskId}, status={status}, exit_code={exitCode}]',
+    'exec.pattern_matched': '✅ Pattern matched [task_id={taskId}, pid={pid}], task still running, can continue await_exec',
+    'exec.pattern_matched_short': 'Pattern matched (task_id={taskId})',
+    'exec.still_running': '⏳ Task still running [task_id={taskId}, pid={pid}, waited {waited}s], can continue await_exec or exec("kill {pid}") to stop',
+    'exec.still_running_short': 'Still running (task_id={taskId})',
   }
 } as const
 
