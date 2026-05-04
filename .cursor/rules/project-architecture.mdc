@@ -48,6 +48,7 @@ SailFish/
 │       ├── mcp.service.ts       # MCP 服务器管理
 │       ├── gateway.service.ts   # HTTP 网关（Webhook、Web 会话接入）
 │       ├── web-chat.service.ts  # Web 远程会话（后端直驱 Agent）
+│       ├── web-fetch.service.ts # 网页拉取与正文提取（Jina Reader / Readability + jsdom，给 web_fetch 工具用）
 │       ├── credential.service.ts # 凭证存储
 │       ├── document-parser.service.ts  # 文档解析（PDF/Word/Excel）
 │       ├── local-fs.service.ts  # 本地文件系统
@@ -122,7 +123,7 @@ SailFish/
 - **特点**：所有后端服务无需修改即可在 CLI 下运行
 - **配置隔离**：CLI 使用独立配置文件 `qiyu-terminal-config-cli`，避免与 Electron 加密配置冲突
 - **用法**：`npm run sft -- <command> [options]`
-- **测试**：`bash electron/cli/test-cli.sh`（33 个命令全覆盖，含 Watch & Sensor）
+- **测试**：`bash electron/cli/test-cli.sh`（12 个功能区覆盖，含 Watch & Sensor）
 
 ### 服务实例化
 - 服务在 `main.ts` 中直接实例化，部分使用工厂函数（如 `getKnowledgeService()`）
