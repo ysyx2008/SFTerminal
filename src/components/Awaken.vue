@@ -34,10 +34,33 @@ interface WatchTemplateInfo {
 
 // ==================== Navigation ====================
 
-type NavTab = 'watches' | 'templates' | 'sensors' | 'history' | 'personality' | 'identity' | 'userProfile' | 'heartbeat'
-const VALID_TABS: NavTab[] = ['watches', 'templates', 'sensors', 'history', 'personality', 'identity', 'userProfile', 'heartbeat']
+// 两大区：「觉醒」（AI 主动行为）+「关切」（用户委托的任务）。运行历史按区拆成两个独立 tab。
+// 传感器 tab 已下线（产品上属于关切的实现层，普通用户不需要看）
+type NavTab =
+  | 'identity' | 'personality' | 'userProfile' | 'heartbeat'   // 觉醒 - 个性
+  | 'wakeupHistory'                                             // 觉醒 - 记录
+  | 'watches' | 'templates' | 'watchHistory'                    // 关切
+
+const VALID_TABS: NavTab[] = [
+  'identity', 'personality', 'userProfile', 'heartbeat',
+  'wakeupHistory',
+  'watches', 'templates', 'watchHistory'
+]
+const LAST_TAB_STORAGE_KEY = 'sfterm-awaken-last-tab'
+const DEFAULT_TAB: NavTab = 'identity'
+
+function readLastTab(): NavTab {
+  try {
+    const v = localStorage.getItem(LAST_TAB_STORAGE_KEY)
+    if (v && VALID_TABS.includes(v as NavTab)) return v as NavTab
+  } catch { /* ignore */ }
+  return DEFAULT_TAB
+}
+
 const activeTab = ref<NavTab>(
-  props.initialTab && VALID_TABS.includes(props.initialTab as NavTab) ? props.initialTab as NavTab : 'watches'
+  props.initialTab && VALID_TABS.includes(props.initialTab as NavTab)
+    ? props.initialTab as NavTab
+    : readLastTab()
 )
 
 function switchTab(tab: NavTab, onSwitch?: () => void) {
@@ -54,6 +77,11 @@ function switchTab(tab: NavTab, onSwitch?: () => void) {
     }
   }
   activeTab.value = tab
+  // 觉醒区/关切区的运行历史共享同一份视图，进入哪个入口就预设对应的过滤
+  if (tab === 'wakeupHistory') historyFilter.value = 'wakeup'
+  else if (tab === 'watchHistory') historyFilter.value = 'watch'
+  // 记忆上次离开的 tab，下次打开面板回到这里
+  try { localStorage.setItem(LAST_TAB_STORAGE_KEY, tab) } catch { /* ignore quota */ }
   onSwitch?.()
 }
 
@@ -167,16 +195,6 @@ const filteredHistory = computed<WatchHistoryRecord[]>(() => {
   if (f === 'all') return watchHistory.value
   if (f === 'wakeup') return watchHistory.value.filter(h => h.watchId === '__wakeup__')
   return watchHistory.value.filter(h => h.watchId !== '__wakeup__')
-})
-
-const historyCounts = computed(() => {
-  let wakeup = 0
-  let watch = 0
-  for (const h of watchHistory.value) {
-    if (h.watchId === '__wakeup__') wakeup++
-    else watch++
-  }
-  return { all: watchHistory.value.length, wakeup, watch }
 })
 
 const hasMultipleWatchNames = computed(() => {
@@ -469,6 +487,10 @@ const RUNNING_TIMEOUT_MS = 10 * 60 * 1000
 const watchTimeouts = new Map<string, NodeJS.Timeout>()
 
 const triggerWatch = async (w: WatchDefinition) => {
+  // 手动触发时立即激活内心独白展示（不等 watch:task-started 事件回流），
+  // 防止某些场景下任务起步快、事件晚到导致 liveSteps 视图条件不满足
+  liveExecutionWatchId.value = w.id
+  liveSteps.value = []
   try { await window.electronAPI.watch.trigger(w.id) } catch (e) { console.error('Failed to trigger watch:', e) }
 }
 
@@ -501,9 +523,10 @@ const clearWatchHistory = async () => {
 }
 
 const viewHistoryDetail = async (record: WatchHistoryRecord) => {
-  // 切到 history tab 并展示该条详情（支持从关切详情页直接跳转）
-  if (activeTab.value !== 'history') {
-    switchTab('history', loadWatchData)
+  // 历史 tab 已按区拆成两个：根据该记录属于唤醒还是用户关切，切到对应区
+  const targetTab: NavTab = record.watchId === '__wakeup__' ? 'wakeupHistory' : 'watchHistory'
+  if (activeTab.value !== targetTab) {
+    switchTab(targetTab, loadWatchData)
   }
   historyPromptExpanded.value = false
   if (!record.agentSessionId) {
@@ -992,7 +1015,7 @@ onUnmounted(() => {
 
       <p class="awaken-desc">{{ t('awaken.description') }}</p>
 
-      <!-- 觉醒主控栏 -->
+      <!-- 觉醒主控栏：常驻顶部，避免切 tab 时一闪一闪 -->
       <div class="awaken-bar">
         <div class="awaken-left">
           <label class="awaken-toggle">
@@ -1042,10 +1065,10 @@ onUnmounted(() => {
       </div>
       
       <div class="panel-body">
-        <!-- Left Nav -->
+        <!-- Left Nav: 两大区——觉醒（AI 主动） / 关切（用户委托） -->
         <nav class="panel-nav">
           <div class="nav-group">
-            <div class="nav-group-label">{{ t('awaken.navCharacter') }}</div>
+            <div class="nav-group-label">{{ t('awaken.title') }}</div>
             <button class="nav-item" :class="{ active: activeTab === 'identity' }" @click="switchTab('identity')">
               <Fingerprint :size="16" />
               <span>{{ t('awaken.identityNav') }}</span>
@@ -1062,9 +1085,13 @@ onUnmounted(() => {
               <HeartPulse :size="16" />
               <span>{{ t('awaken.heartbeatNav') }}</span>
             </button>
+            <button class="nav-item" :class="{ active: activeTab === 'wakeupHistory' }" @click="switchTab('wakeupHistory', loadWatchData)">
+              <History :size="16" />
+              <span>{{ t('watch.executionHistory') }}</span>
+            </button>
           </div>
           <div class="nav-group">
-            <div class="nav-group-label">{{ t('watch.navAutomation') }}</div>
+            <div class="nav-group-label">{{ t('watch.watches') }}</div>
             <button class="nav-item" :class="{ active: activeTab === 'watches' }" @click="switchTab('watches')">
               <Eye :size="16" />
               <span>{{ t('watch.watches') }}</span>
@@ -1074,14 +1101,7 @@ onUnmounted(() => {
               <LayoutTemplate :size="16" />
               <span>{{ t('watch.templates') }}</span>
             </button>
-            <button class="nav-item" :class="{ active: activeTab === 'sensors' }" @click="switchTab('sensors', () => { loadSensorData() })">
-              <Heart :size="16" />
-              <span>{{ t('watch.sensors') }}</span>
-            </button>
-          </div>
-          <div class="nav-group">
-            <div class="nav-group-label">{{ t('watch.navRecords') }}</div>
-            <button class="nav-item" :class="{ active: activeTab === 'history' }" @click="switchTab('history', loadWatchData)">
+            <button class="nav-item" :class="{ active: activeTab === 'watchHistory' }" @click="switchTab('watchHistory', loadWatchData)">
               <History :size="16" />
               <span>{{ t('watch.executionHistory') }}</span>
             </button>
@@ -1646,7 +1666,7 @@ onUnmounted(() => {
           </template>
 
           <!-- ===================== 执行历史 ===================== -->
-          <template v-if="activeTab === 'history'">
+          <template v-if="activeTab === 'wakeupHistory' || activeTab === 'watchHistory'">
             <div class="content-page">
               <!-- 历史详情视图 -->
               <template v-if="selectedHistoryRecord">
@@ -1717,24 +1737,12 @@ onUnmounted(() => {
                 </div>
               </template>
 
-              <!-- 历史列表视图 -->
+              <!-- 历史列表视图：觉醒入口 → 仅唤醒；关切入口 → 仅用户关切 -->
               <template v-else>
                 <div class="page-toolbar">
-                  <span class="page-title">{{ t('watch.executionHistory') }}</span>
-                  <div class="history-filter-segment">
-                    <button class="filter-btn" :class="{ active: historyFilter === 'watch' }" @click="historyFilter = 'watch'">
-                      {{ t('watch.filterWatches') }}
-                      <span v-if="historyCounts.watch > 0" class="filter-count">{{ historyCounts.watch }}</span>
-                    </button>
-                    <button class="filter-btn" :class="{ active: historyFilter === 'wakeup' }" @click="historyFilter = 'wakeup'">
-                      {{ t('watch.filterWakeup') }}
-                      <span v-if="historyCounts.wakeup > 0" class="filter-count">{{ historyCounts.wakeup }}</span>
-                    </button>
-                    <button class="filter-btn" :class="{ active: historyFilter === 'all' }" @click="historyFilter = 'all'">
-                      {{ t('watch.filterAll') }}
-                      <span v-if="historyCounts.all > 0" class="filter-count">{{ historyCounts.all }}</span>
-                    </button>
-                  </div>
+                  <span class="page-title">
+                    {{ activeTab === 'wakeupHistory' ? t('watch.wakeupHistoryTitle') : t('watch.watchHistoryTitle') }}
+                  </span>
                   <div class="toolbar-right">
                     <button class="btn btn-sm btn-danger" @click="clearWatchHistory" :disabled="watchHistory.length === 0"><Trash2 :size="14" /> {{ t('watch.clearHistory') }}</button>
                   </div>
@@ -2789,36 +2797,6 @@ onUnmounted(() => {
 .watch-recent-empty { color: var(--text-muted); font-size: 12px; padding: 6px 4px; }
 .history-spacer-grow { flex: 1; }
 
-.history-filter-segment {
-  display: inline-flex;
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  padding: 2px;
-  gap: 2px;
-}
-.history-filter-segment .filter-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 12px;
-  background: transparent; border: none; border-radius: 6px;
-  color: var(--text-muted); font-size: 12px; cursor: pointer;
-  transition: all 0.15s ease;
-}
-.history-filter-segment .filter-btn:hover { color: var(--text-primary); }
-.history-filter-segment .filter-btn.active {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-.filter-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 18px; height: 16px; padding: 0 5px;
-  background: var(--border-color); color: var(--text-muted);
-  border-radius: 8px; font-size: 10px;
-}
-.history-filter-segment .filter-btn.active .filter-count {
-  background: var(--accent-primary);
-  color: var(--accent-on);
-}
 
 .history-detail-meta { color: var(--text-muted); font-size: 12px; margin-left: auto; }
 .history-detail-content { flex: 1; overflow-y: auto; padding: 0 24px 24px; }
