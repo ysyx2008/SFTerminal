@@ -5,11 +5,11 @@
  * 替代之前 AI pre-check 的角色，更快、更便宜、更可预测。
  *
  * 分流规则：
- * - 启动收集期（attach 后 15s）：所有事件入池，到期后统一 drain 为一个 batch
- * - 即时事件（high 优先级 / webhook / manual / file_change）：直接转发给 WatchService
+ * - 带 watchId 的事件（定向触发某个 Watch）：直通，不入池（避免 batch 化丢失 watchId）
+ * - 启动收集期（attach 后 30s）：未带 watchId 的事件入池，到期后统一 drain 为一个 batch
+ * - 即时事件（high 优先级 / webhook / manual / file_change 等）：直接转发给 WatchService
  * - 心跳事件：触发排水并投递；池空时也发送空 batch，让唤醒能做例行检查
- * - 其他事件（normal/low 优先级的 email / calendar / cron / interval）：
- *   放入池中等待排水
+ * - 其他无 watchId 的事件：放入池中等待排水
  *
  * 去重：按 event.id 幂等，同一事件不会入池两次
  * 静默时段：可配置不打扰的时间窗口（默认关闭）
@@ -163,6 +163,10 @@ export class EventPool {
 
   /** 判断事件是否应该立即通过（不入池） */
   private shouldPassThrough(event: SensorEvent): boolean {
+    // 带 watchId 的事件是定向触发某个 Watch（cron/interval/email/calendar/file_change 等
+    // sensor 都会按 target 发出带 watchId 的事件），必须直通；否则被打包成 batch heartbeat
+    // 后会丢失 watchId 与原始 type，导致目标 Watch 永远匹配不到（issue: 用户关切不触发）。
+    if (event.watchId) return true
     if (this.inStartupPhase) return false
     if (event.priority === 'high') return true
     if (event.type === 'webhook') return true

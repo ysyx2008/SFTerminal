@@ -763,7 +763,13 @@ export class WatchService {
 
   private truncate(text: string, maxLen: number): string {
     const oneLine = text.replace(/\n/g, ' ').trim()
-    return oneLine.length <= maxLen ? oneLine : oneLine.substring(0, maxLen) + '...'
+    if (oneLine.length <= maxLen) return oneLine
+    // 按 code point 切（Array.from 把 surrogate pair 当一个元素），避免在 emoji
+    // 中间切出孤立 surrogate，导致 JSON.stringify 输出不完整的 \uXXXX 转义，
+    // 进而被 DeepSeek 等严格 JSON 解析器拒绝（"unexpected end of hex escape"）。
+    const codePoints = Array.from(oneLine)
+    if (codePoints.length <= maxLen) return oneLine
+    return codePoints.slice(0, maxLen).join('') + '...'
   }
 
   private readWorkspaceFile(filename: string): string | null {

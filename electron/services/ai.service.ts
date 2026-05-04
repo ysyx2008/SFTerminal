@@ -593,6 +593,35 @@ function getRequestHeaders(profile: AiProfile): Record<string, string> {
   }
 }
 
+/**
+ * 清洗字符串中的孤立 UTF-16 surrogate（high surrogate 缺 low / low surrogate 缺 high）。
+ * 上层若用 substring/slice 按 UTF-16 code unit 截断包含 emoji 的文本，可能切出孤立
+ * surrogate；JSON.stringify 会把它原样输出为 `\uD8XX`，而严格的 JSON 解析器（如
+ * DeepSeek 服务端）会报 "unexpected end of hex escape" 拒绝整个请求。这里把孤立
+ * surrogate 替换为 U+FFFD（替换字符），是发请求前的最后兜底。
+ */
+function sanitizeIsolatedSurrogates(s: string): string {
+  if (!s) return s
+  // \uD800-\uDBFF 后必须紧跟 \uDC00-\uDFFF；任何不配对的高/低代理项替换为 U+FFFD
+  return s
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '\uFFFD')
+    .replace(/(^|[^\uD800-\uDBFF])([\uDC00-\uDFFF])/g, '$1\uFFFD')
+}
+
+/** 递归清洗 body 中所有字符串字段的孤立 surrogate */
+function sanitizeBodyStrings(value: unknown): unknown {
+  if (typeof value === 'string') return sanitizeIsolatedSurrogates(value)
+  if (Array.isArray(value)) return value.map(sanitizeBodyStrings)
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = sanitizeBodyStrings(v)
+    }
+    return out
+  }
+  return value
+}
+
 function convertToAnthropicBody(body: Record<string, unknown>): Record<string, unknown> {
   const rawMessages = body.messages as Array<Record<string, unknown>>
   let system = ''
@@ -1092,7 +1121,7 @@ export class AiService {
       }
 
       const finalBody = isAnthropicApi(profile) ? convertToAnthropicBody(body as Record<string, unknown>) : body
-      req.write(JSON.stringify(finalBody))
+      req.write(JSON.stringify(sanitizeBodyStrings(finalBody)))
       req.end()
     })
   }
@@ -1423,7 +1452,7 @@ export class AiService {
       })
 
       const chatStreamBody = isAnthropic ? convertToAnthropicBody(requestBody as Record<string, unknown>) : requestBody
-      req.write(JSON.stringify(chatStreamBody))
+      req.write(JSON.stringify(sanitizeBodyStrings(chatStreamBody)))
       req.end()
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error'
@@ -2212,7 +2241,7 @@ export class AiService {
       })
 
       const toolStreamBody = isAnthropic ? convertToAnthropicBody(requestBody as Record<string, unknown>) : requestBody
-      req.write(JSON.stringify(toolStreamBody))
+      req.write(JSON.stringify(sanitizeBodyStrings(toolStreamBody)))
       req.end()
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error'

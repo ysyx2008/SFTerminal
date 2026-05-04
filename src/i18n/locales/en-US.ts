@@ -2321,7 +2321,7 @@ export default {
     navTools: 'Tools',
     navRecords: 'Records',
     schedulerTab: 'Scheduled Tasks',
-    executionHistory: 'Awaken History',
+    executionHistory: 'Run History',
     newWatch: 'New Watch',
     createWatch: 'Create Watch',
     editWatch: 'Edit Watch',
@@ -2416,7 +2416,7 @@ export default {
     updatedAt: 'Updated',
 
     confirmDelete: 'Delete "{name}"?',
-    confirmClearHistory: 'Clear all awaken history?',
+    confirmClearHistory: 'Clear all run history?',
     today: 'Today',
     yesterday: 'Yesterday',
     loadMore: 'Load More',

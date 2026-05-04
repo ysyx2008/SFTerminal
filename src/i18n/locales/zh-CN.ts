@@ -2321,7 +2321,7 @@ export default {
     navTools: '工具',
     navRecords: '记录',
     schedulerTab: '定时任务',
-    executionHistory: '唤醒历史',
+    executionHistory: '运行历史',
     newWatch: '新建关切',
     createWatch: '创建关切',
     editWatch: '编辑关切',
@@ -2424,7 +2424,7 @@ export default {
 
     // 确认
     confirmDelete: '确定要删除 "{name}" 吗？',
-    confirmClearHistory: '确定要清除所有唤醒历史吗？',
+    confirmClearHistory: '确定要清除所有运行历史吗？',
     today: '今天',
     yesterday: '昨天',
     loadMore: '加载更多',
