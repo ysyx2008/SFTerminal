@@ -27,6 +27,7 @@ import { compressContext, recallCompressed, manageMemory } from './context'
 import { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, messageUser, executeMcpTool, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
 import { dispatchSubAgents } from './sub-agent'
 import { executeWebSearch } from './web-search'
+import { executeWebFetch } from './web-fetch'
 import { splitTerminalTool, closePaneTool, focusPaneTool, listPanesTool, listSshSessionsTool } from './split-pane'
 
 // 重新导出类型
@@ -48,6 +49,7 @@ export { compressContext, recallCompressed, manageMemory } from './context'
 export { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, messageUser, executeMcpTool, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
 export { dispatchSubAgents, getSubAgentTools } from './sub-agent'
 export { executeWebSearch } from './web-search'
+export { executeWebFetch } from './web-fetch'
 
 // 导出工具函数
 export {
@@ -229,6 +231,9 @@ export async function executeTool(
 
     case 'web_search':
       return executeWebSearch(args, executor)
+
+    case 'web_fetch':
+      return executeWebFetch(args, executor)
 
     case 'send_to_chat':
       return sendToChat(args, executor)

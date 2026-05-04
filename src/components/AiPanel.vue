@@ -14,6 +14,7 @@ import { useTerminalStore } from '../stores/terminal'
 import AgentPlanView from './AgentPlanView.vue'
 import AiComposer from './AiComposer.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
+import ToolCallContent from './ToolCallContent.vue'
 import { parseThinking } from '../utils/thinking-block'
 import { createLogger } from '../utils/logger'
 import sailfishLogo from '../../resources/logo.png'
@@ -1921,8 +1922,12 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                          状态行，命令/路径里完全可能出现 #、*、--- 这类 Markdown 语法字符（如 shell
                          注释 `# 启动调试适配器`、option `--name`、heredoc `===` 等）。直接走
                          renderMarkdown 会把它们解析成标题、加粗、分隔线，破坏命令原貌，所以单独
-                         走纯文本 + pre-wrap 渲染，保留原样的换行与符号。 -->
-                    <div v-else-if="item.step!.type === 'tool_call'" class="step-text tool-call-content">{{ item.step!.content }}</div>
+                         走纯文本 + pre-wrap 渲染，保留原样的换行与符号。
+                         例外：toolArgs 含 http(s) url 字段时把 URL 部分包成 <a>（自动通过
+                         Electron setWindowOpenHandler 走系统浏览器），其余仍走纯文本——既能点击，
+                         命令安全也不变。renderToolCallContent 把 content 拆成 [前缀, url, 后缀]，
+                         三段都走 Vue 文本插值，零 XSS 风险。 -->
+                    <ToolCallContent v-else-if="item.step!.type === 'tool_call'" :content="item.step!.content" :toolArgs="item.step!.toolArgs" />
                     <div v-else class="step-text markdown-content" v-html="renderMarkdown(item.step!.content)"></div>
                     <!-- 并行子 Agent 卡片组 -->
                     <div v-if="item.step!.subAgents && item.step!.subAgents.length > 0" class="sub-agents-group">
@@ -4528,6 +4533,19 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .step-text.tool-call-content {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* tool_call 内被 ToolCallContent 自动识别出的外部 URL 链接：与 markdown-content
+   里同名样式的视觉保持一致（accent 色 + 悬停下划线），只是作用域不同。 */
+.step-text.tool-call-content :deep(a.external-url-link) {
+  cursor: pointer;
+  color: var(--accent-primary);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.step-text.tool-call-content :deep(a.external-url-link:hover) {
+  text-decoration: underline;
 }
 
 .agent-step-inline.error {

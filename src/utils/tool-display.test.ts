@@ -278,10 +278,29 @@ describe('shouldShowToolResultStep', () => {
       ).toBe(true)
     })
 
+    it('web_fetch 的 tool_result 成功时隐藏（与 web_search / read_file 同类）', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_result', toolName: 'web_fetch', success: true },
+          false
+        )
+      ).toBe(false)
+    })
+
+    it('web_fetch 失败时仍展示', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_result', toolName: 'web_fetch', success: false },
+          false
+        )
+      ).toBe(true)
+    })
+
     it('集合内容和文档约定一致', () => {
       expect(HIDE_RESULT_WHEN_SUCCESS_TOOLS.has('execute_command')).toBe(true)
       expect(HIDE_RESULT_WHEN_SUCCESS_TOOLS.has('read_file')).toBe(true)
       expect(HIDE_RESULT_WHEN_SUCCESS_TOOLS.has('web_search')).toBe(true)
+      expect(HIDE_RESULT_WHEN_SUCCESS_TOOLS.has('web_fetch')).toBe(true)
     })
   })
 

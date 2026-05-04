@@ -46,28 +46,30 @@ export interface SubAgentType {
  *
  * ⚠️ 工具白名单顺序约定：与 tools.ts 中 builtinTools 的前缀保持一致，
  * 让父/子 Agent 的工具列表共享 byte-exact 前缀，最大化 prompt cache 命中。
- * - explore/research 用前 6 个：exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search
- * - edit 用前 8 个：上述 6 个 + edit_file, write_text_file
+ * - explore/research 用前 7 个：exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search, web_fetch
+ * - edit 用前 9 个：上述 7 个 + edit_file, write_text_file
  *
- * 注意：edit 类型也保留 web_search（即使少用）以维持连续前缀；移除会破坏 cache。
+ * 注意：
+ * - 即使 web_search 未配 key（父 Agent 跳过），白名单仍包含 'web_search'，filter 后子 Agent 也跳过——位置一致即可保持父=子的连续前缀。
+ * - edit 类型也保留 web_search/web_fetch（即使少用）以维持连续前缀；移除会破坏 cache。
  */
 const SUB_AGENT_TYPES: Record<SubAgentTypeName, SubAgentType> = {
   explore: {
     name: 'explore',
     description: '只读分析（默认）：读取文件、搜索、执行命令，不修改任何内容',
-    tools: new Set(['exec', 'read_file', 'file_search', 'search_knowledge', 'get_knowledge_doc', 'web_search']),
+    tools: new Set(['exec', 'read_file', 'file_search', 'search_knowledge', 'get_knowledge_doc', 'web_search', 'web_fetch']),
     systemPromptPrefix: '你是一个专注**分析与调研**的子任务执行器。\n- **只读模式**：不可修改任何文件或系统状态，exec 仅用于读取类命令（grep/find/cat/ls/git log 等）',
   },
   edit: {
     name: 'edit',
     description: '文件修改：在 explore 基础上可编辑和创建文件',
-    tools: new Set(['exec', 'read_file', 'file_search', 'search_knowledge', 'get_knowledge_doc', 'web_search', 'edit_file', 'write_text_file']),
+    tools: new Set(['exec', 'read_file', 'file_search', 'search_knowledge', 'get_knowledge_doc', 'web_search', 'web_fetch', 'edit_file', 'write_text_file']),
     systemPromptPrefix: '你是一个专注**代码修改与文件编辑**的子任务执行器。\n- 修改文件前必须先用 read_file 查看目标内容',
   },
   research: {
     name: 'research',
     description: '知识检索：侧重知识库搜索和命令分析，输出结构化归纳',
-    tools: new Set(['exec', 'read_file', 'file_search', 'search_knowledge', 'get_knowledge_doc', 'web_search']),
+    tools: new Set(['exec', 'read_file', 'file_search', 'search_knowledge', 'get_knowledge_doc', 'web_search', 'web_fetch']),
     systemPromptPrefix: '你是一个专注**知识检索与归纳分析**的子任务执行器。\n- 优先使用知识库搜索获取已有信息\n- 输出要求结构化、条理清晰，便于父 Agent 整合',
   },
 }

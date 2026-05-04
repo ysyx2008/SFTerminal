@@ -8,6 +8,7 @@ import { getSkillsSummary } from './skills/registry'
 import { getUserSkillService } from '../user-skill.service'
 import { getConfigService } from '../config.service'
 import { isConfigured as isWebSearchConfigured } from '../web-search/index'
+import { jinaAvailable as isJinaReaderAvailable } from '../web-fetch.service'
 import type { AgentExecutionPhase } from './types'
 import { t } from './i18n'
 import { getStreamPlaceholder } from './tool-metadata'
@@ -330,6 +331,68 @@ function buildWebSearchTool(): ToolDefinitionWithMeta[] {
 }
 
 /**
+ * 动态构建 web_fetch 工具定义
+ *
+ * 始终注入（不依赖任何配置就能用 Mozilla Readability 处理静态页面）。
+ * 如果用户在 web-search 配了 Jina key，description 里强调"能读 SPA"——
+ * 让 LLM 知道现在也能搞定飞书 API 文档 / Notion 公开页这类 JS 渲染的页面。
+ */
+function buildWebFetchTool(): ToolDefinitionWithMeta {
+  const hasJina = isJinaReaderAvailable()
+  // 拆成 base + jinaHint 两段：仅 jinaHint 随 Jina key 配置切换。
+  // 注意：这并不能减少 prompt cache 失效——LLM provider 看 tool schema 是原子的，
+  // 任何字节变化都会导致 cache miss。这样拆只是为了代码可读性（明确"哪部分变"）。
+  // 切换 Jina key 频率极低，一次 cache miss 是可接受的成本。
+  const baseDescription = `按 URL 抓取一个具体网页，返回 LLM 可读的文本/markdown。
+
+适用场景：
+- 已经知道想看哪个 URL（用户给的链接、或 web_search 拿到候选后想看详情）
+- 阅读 API 文档、博客文章、技术文档、维基、新闻等
+- 与 web_search 互补：search 给候选列表，fetch 看具体一篇
+
+不适用：
+- 需要登录的页面（通常会拿到登录墙，不是目标内容；注意辨别）
+- PDF / 图片 / 视频等二进制 → 改用 exec 下载到本地后再 read_file
+
+参数 max_bytes / timeout 通常用默认即可。`
+  const jinaHint = hasJina
+    ? '\n\n当前提取后端：Jina Reader（已配置 API key）——SPA 渲染的页面也能读，如飞书 API 文档、Notion 公开页、现代 SaaS docs。'
+    : '\n\n当前提取后端：本地 Readability——静态页面 OK，但 JS 渲染的 SPA（如飞书 API 文档、Notion 公开页）通常拿不到内容；如需读 SPA 请提示用户在 设置 → 联网搜索 配置 Jina API key。'
+  const description = baseDescription + jinaHint
+
+  return {
+    type: 'function',
+    function: {
+      name: 'web_fetch',
+      description,
+      parameters: {
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            description: '要抓取的 http(s) URL'
+          },
+          timeout: {
+            type: 'number',
+            description: '总耗时上限（秒），默认 30，最大 60'
+          },
+          max_bytes: {
+            type: 'number',
+            description: '响应体大小上限（字节），默认 1MB，最大 5MB。超出会截断'
+          }
+        },
+        required: ['url']
+      }
+    },
+    _meta: {
+      parallelizable: true,
+      contextBudget: { toolResult: 'clearable' },
+      streamDisplay: { titleKey: 'web.fetch.short', titleField: 'url' }
+    }
+  }
+}
+
+/**
  * 工具获取选项
  */
 export interface GetAgentToolsOptions {
@@ -561,6 +624,9 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       _meta: { parallelizable: true, contextBudget: { toolResult: 'clearable' } }
     } as ToolDefinitionWithMeta,
     ...buildWebSearchTool(),
+    // web_fetch：始终注入（无配置就用本地 Readability，配了 Jina 自动升级）
+    // 紧跟 web_search 之后，与子 Agent 白名单顺序对齐，保持"父=子前缀"
+    buildWebFetchTool(),
     // ==================== edit 子 Agent 额外允许的工具 ====================
     {
       type: 'function',

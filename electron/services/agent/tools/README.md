@@ -36,6 +36,9 @@ tools/
 - `await_exec` - 等待已转后台的任务结束、命中 pattern、或返回最新进度
 - `BackgroundExecManager` - 后台任务管理器（exec-manager.ts）：进程托管、ring buffer、5 分钟自动清理、max_seconds 安全网
 
+### 网页抓取 (web-fetch.ts → ../../web-fetch.service)
+- `web_fetch` - 按 URL 抓取并提取正文。降级链：用户配 Jina key → Jina Reader（SPA 也能读）；无 key → Mozilla Readability（静态页面）；失败 → 简单文本提取兜底
+
 ### 终端操作 (terminal.ts)
 - `get_terminal_context` - 获取终端最近 N 行输出
 - `check_terminal_status` - 检查终端状态（空闲/忙碌/等待输入）

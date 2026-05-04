@@ -41,7 +41,9 @@ vi.mock('../../config.service', () => ({
 }))
 
 vi.mock('../../web-search/index', () => ({
-  isConfigured: () => false
+  isConfigured: () => false,
+  // web-fetch.service 通过 getApiKey('jina') 检测是否走 Jina Reader 增强
+  getApiKey: () => '',
 }))
 
 import { buildPreToolCallDisplay as rawBuildPreToolCallDisplay, getMetaByName } from '../tool-metadata'

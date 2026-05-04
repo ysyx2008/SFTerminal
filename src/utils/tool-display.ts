@@ -64,6 +64,7 @@ export const HIDE_RESULT_WHEN_SUCCESS_TOOLS = new Set<string>([
   'deep_recall',
   'search_history',
   'web_search',
+  'web_fetch',
   'load_skill',
   'unload_skill',
   'load_user_skill',

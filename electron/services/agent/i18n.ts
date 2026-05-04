@@ -1379,6 +1379,15 @@ const translations = {
     // IM 上下文
     'im.first_contact_context': '[系统提示：这是用户 {userName} 通过 {platform} 首次与你联系，请在回复中自然地打个招呼、做个自我介绍。]',
 
+    // web_fetch 工具
+    'web.fetch.short': '阅读网页',
+    'web.fetch.fetching': '阅读网页',
+    'web.fetch.done': '阅读完成',
+    'web.fetch.failed': '阅读失败',
+    'web.fetch.url_required': '必须提供 url 参数',
+    'web.fetch.empty_body': '响应体为空',
+    'web.fetch.header': '[fetched: {url}, status {status}, content-type: {contentType}, {size}, backend: {backend}]',
+
     // exec 后台任务（assistant 模式 exec/await_exec 工具）
     'exec.task_id_required': '必须提供 task_id',
     'exec.task_not_found': '后台任务 {taskId} 不存在（可能已超过 5 分钟自动清理，或 task_id 错误）',
@@ -2762,6 +2771,15 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
 
     // IM context
     'im.first_contact_context': '[System note: This is the first time user {userName} has contacted you via {platform}. Please naturally greet them and introduce yourself in your response.]',
+
+    // web_fetch tool
+    'web.fetch.short': 'Read URL',
+    'web.fetch.fetching': 'Reading',
+    'web.fetch.done': 'Read',
+    'web.fetch.failed': 'Read failed',
+    'web.fetch.url_required': 'url parameter is required',
+    'web.fetch.empty_body': 'response body is empty',
+    'web.fetch.header': '[fetched: {url}, status {status}, content-type: {contentType}, {size}, backend: {backend}]',
 
     // exec background tasks (assistant mode exec/await_exec tools)
     'exec.task_id_required': 'task_id is required',
