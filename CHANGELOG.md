@@ -2,7 +2,20 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.37.1 (2026-05-04) (Latest)
+## v10.37.2 (2026-05-04) (Latest)
+
+This release fixes the Awaken panel usability issues and the emoji truncation bug causing LLM request failures, plus clears multiple dependency security alerts.
+
+### Bug Fixes
+- 🐛 **Awaken Panel Usability**: Filter run history by Watch/Wakeup/All; embedded last 5 runs timeline in Watch detail page; fixed selected highlight not working; cron expressions now shown as natural language (e.g. "Every 30 minutes"), interval displays improved; action buttons always visible
+- 🐛 **Watch Not Triggering**: Events with watchId (cron/interval, etc.) now bypass the pool, preventing target match loss from batch packing
+- 🐛 **Emoji Truncation**: Text truncation uses code points instead of UTF-16 units; isolated surrogates sanitized before JSON serialization to prevent strict JSON parsers from rejecting requests
+
+### Improvements
+- 🛡️ **Security Alert Cleanup**: Upgraded nodemailer 8.0.7, overrode hono/protobufjs, npm audit fix; cleared 1 critical and 40+ alerts
+- 🔍 **CodeQL Scanning**: Added CodeQL static analysis workflow
+
+## v10.37.1 (2026-05-04)
 
 This release introduces three new features — fork conversation from any completed node, background Agent completion notifications, and system-aware UI theme — while bringing official document generation up to Chinese national standards.
 
