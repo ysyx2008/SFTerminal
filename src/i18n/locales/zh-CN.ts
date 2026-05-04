@@ -2322,6 +2322,11 @@ export default {
     navRecords: '记录',
     schedulerTab: '定时任务',
     executionHistory: '运行历史',
+    recentRuns: '运行历史',
+    filterAll: '全部',
+    filterWakeup: '唤醒',
+    filterWatches: '关切',
+    noHistoryInFilter: '当前筛选下暂无记录',
     newWatch: '新建关切',
     createWatch: '创建关切',
     editWatch: '编辑关切',
@@ -2352,6 +2357,9 @@ export default {
     triggerWebhook: 'Webhook',
     triggerManual: '手动',
     triggerIntervalUnit: '秒',
+    triggerIntervalHumanHours: '每 {hours} 小时',
+    triggerIntervalHumanMinutes: '每 {minutes} 分钟',
+    triggerIntervalHumanSeconds: '每 {seconds} 秒',
     presets: '常用预设',
 
     // 执行目标

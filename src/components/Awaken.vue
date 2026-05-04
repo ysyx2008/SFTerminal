@@ -8,6 +8,7 @@ import {
   LayoutTemplate, Plus, Sparkles, Pencil, Fingerprint, UserRound, HeartPulse, Camera
 } from 'lucide-vue-next'
 import { shouldShowToolResultStep } from '../utils/tool-display'
+import cronstrue from 'cronstrue/i18n'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -63,6 +64,9 @@ const watchHistory = ref<WatchHistoryRecord[]>([])
 const historyPageSize = 50
 const historyHasMore = ref(false)
 const historyLoadingMore = ref(false)
+
+type HistoryFilter = 'all' | 'wakeup' | 'watch'
+const historyFilter = ref<HistoryFilter>('watch')
 const loading = ref(true)
 const selectedWatch = ref<WatchDefinition | null>(null)
 const runningWatches = ref<Set<string>>(new Set())
@@ -158,15 +162,32 @@ const formatDateLabel = (dateKey: string): string => {
   return dateKey
 }
 
+const filteredHistory = computed<WatchHistoryRecord[]>(() => {
+  const f = historyFilter.value
+  if (f === 'all') return watchHistory.value
+  if (f === 'wakeup') return watchHistory.value.filter(h => h.watchId === '__wakeup__')
+  return watchHistory.value.filter(h => h.watchId !== '__wakeup__')
+})
+
+const historyCounts = computed(() => {
+  let wakeup = 0
+  let watch = 0
+  for (const h of watchHistory.value) {
+    if (h.watchId === '__wakeup__') wakeup++
+    else watch++
+  }
+  return { all: watchHistory.value.length, wakeup, watch }
+})
+
 const hasMultipleWatchNames = computed(() => {
-  const names = new Set(watchHistory.value.map(h => h.watchName))
+  const names = new Set(filteredHistory.value.map(h => h.watchName))
   return names.size > 1
 })
 
 const groupedHistory = computed(() => {
   const groups: Array<{ dateKey: string; label: string; records: WatchHistoryRecord[] }> = []
   let currentKey = ''
-  for (const h of watchHistory.value) {
+  for (const h of filteredHistory.value) {
     const key = getDateKey(h.at)
     if (key !== currentKey) {
       currentKey = key
@@ -188,10 +209,26 @@ const loadMoreHistory = async () => {
   }
 }
 
+/** 把 cron 表达式翻译成自然语言（zh-CN/en），失败时回退到原始表达式 */
+const cronToHuman = (expr: string): string => {
+  try {
+    const locale = configStore.language === 'zh-CN' ? 'zh_CN' : 'en'
+    const text = cronstrue.toString(expr, { locale, use24HourTimeFormat: true })
+    return text.replace(/^在\s*/, '')
+  } catch {
+    return `Cron: ${expr}`
+  }
+}
+
 const getTriggerLabel = (trigger: WatchTrigger): string => {
   switch (trigger.type) {
-    case 'cron': return `Cron: ${trigger.expression}`
-    case 'interval': { const s = trigger.seconds || 0; return s >= 3600 ? `${s / 3600}h` : `${s / 60}m` }
+    case 'cron': return cronToHuman(trigger.expression)
+    case 'interval': {
+      const s = trigger.seconds || 0
+      if (s >= 3600) return t('watch.triggerIntervalHumanHours', { hours: Math.round(s / 3600) })
+      if (s >= 60) return t('watch.triggerIntervalHumanMinutes', { minutes: Math.round(s / 60) })
+      return t('watch.triggerIntervalHumanSeconds', { seconds: s })
+    }
     case 'heartbeat': return t('watch.triggerHeartbeat')
     case 'webhook': return 'Webhook'
     case 'manual': return t('watch.triggerManual')
@@ -320,6 +357,25 @@ watch(() => userWatches.value, (list) => {
 const selectWatch = (w: WatchDefinition) => {
   if (editing.value) cancelEditing()
   selectedWatch.value = w
+  loadWatchRecentHistory(w.id)
+}
+
+// 当前关切的最近运行历史（详情页内嵌时间线）
+const watchRecentHistory = ref<WatchHistoryRecord[]>([])
+const watchRecentHistoryLoading = ref(false)
+const WATCH_RECENT_HISTORY_LIMIT = 5
+
+const loadWatchRecentHistory = async (watchId: string) => {
+  watchRecentHistoryLoading.value = true
+  try {
+    const list = await window.electronAPI.watch.getHistory(watchId, WATCH_RECENT_HISTORY_LIMIT)
+    watchRecentHistory.value = Array.isArray(list) ? list : []
+  } catch (e) {
+    console.error('Failed to load watch recent history:', e)
+    watchRecentHistory.value = []
+  } finally {
+    watchRecentHistoryLoading.value = false
+  }
 }
 
 // ==================== Edit Mode ====================
@@ -445,6 +501,10 @@ const clearWatchHistory = async () => {
 }
 
 const viewHistoryDetail = async (record: WatchHistoryRecord) => {
+  // 切到 history tab 并展示该条详情（支持从关切详情页直接跳转）
+  if (activeTab.value !== 'history') {
+    switchTab('history', loadWatchData)
+  }
   historyPromptExpanded.value = false
   if (!record.agentSessionId) {
     selectedHistoryRecord.value = record
@@ -1240,16 +1300,6 @@ onUnmounted(() => {
                           {{ t('watch.statusRunning') }}
                         </span>
                       </div>
-                      <div class="item-meta">
-                        <span v-for="trigger in w.triggers" :key="trigger.type" class="trigger-badge">
-                          <component :is="getTriggerIcon(trigger.type)" :size="10" />
-                          {{ getTriggerLabel(trigger) }}
-                        </span>
-                      </div>
-                      <div class="item-sub" v-if="w.lastRun && !runningWatches.has(w.id)">
-                        <span :class="getStatusClass(w.lastRun.status)">{{ getStatusIcon(w.lastRun.status) }}</span>
-                        {{ formatDate(w.lastRun.at) }}
-                      </div>
                     </div>
                     <button class="btn-icon-sm" @click.stop="triggerWatch(w)" :disabled="runningWatches.has(w.id)" :title="t('watch.trigger')">
                       <RefreshCw v-if="runningWatches.has(w.id)" :size="14" class="spinning" />
@@ -1464,6 +1514,27 @@ onUnmounted(() => {
                         <span class="value">{{ selectedWatch.lastRun.skipReason }}</span>
                       </div>
                     </div>
+                    <!-- 该关切的运行历史时间线（最近 5 条） -->
+                    <div class="detail-section">
+                      <h4>{{ t('watch.recentRuns') }}</h4>
+                      <div v-if="watchRecentHistoryLoading" class="watch-recent-empty">{{ t('watch.loading') }}</div>
+                      <div v-else-if="watchRecentHistory.length === 0" class="watch-recent-empty">{{ t('watch.noHistory') }}</div>
+                      <div v-else class="watch-recent-list">
+                        <div
+                          v-for="h in watchRecentHistory" :key="h.id"
+                          class="watch-recent-row"
+                          :class="{ clickable: !!h.agentSessionId }"
+                          @click="viewHistoryDetail(h)"
+                        >
+                          <span class="history-status-icon" :class="getStatusClass(h.status)">{{ getStatusIcon(h.status) }}</span>
+                          <span class="history-trigger-chip">{{ getTriggerTypeLabel(h.triggerType) }}</span>
+                          <span class="history-spacer-grow"></span>
+                          <span class="history-time">{{ formatDate(h.at) }}</span>
+                          <span class="history-duration">{{ formatDuration(h.duration) }}</span>
+                          <span v-if="h.agentSessionId" class="history-detail-indicator"><Eye :size="12" /></span>
+                        </div>
+                      </div>
+                    </div>
                     <div class="detail-section detail-meta">
                       <span>{{ t('watch.createdAt') }}: {{ formatFullDate(selectedWatch.createdAt) }}</span>
                       <span>{{ t('watch.updatedAt') }}: {{ formatFullDate(selectedWatch.updatedAt) }}</span>
@@ -1650,18 +1721,32 @@ onUnmounted(() => {
               <template v-else>
                 <div class="page-toolbar">
                   <span class="page-title">{{ t('watch.executionHistory') }}</span>
+                  <div class="history-filter-segment">
+                    <button class="filter-btn" :class="{ active: historyFilter === 'watch' }" @click="historyFilter = 'watch'">
+                      {{ t('watch.filterWatches') }}
+                      <span v-if="historyCounts.watch > 0" class="filter-count">{{ historyCounts.watch }}</span>
+                    </button>
+                    <button class="filter-btn" :class="{ active: historyFilter === 'wakeup' }" @click="historyFilter = 'wakeup'">
+                      {{ t('watch.filterWakeup') }}
+                      <span v-if="historyCounts.wakeup > 0" class="filter-count">{{ historyCounts.wakeup }}</span>
+                    </button>
+                    <button class="filter-btn" :class="{ active: historyFilter === 'all' }" @click="historyFilter = 'all'">
+                      {{ t('watch.filterAll') }}
+                      <span v-if="historyCounts.all > 0" class="filter-count">{{ historyCounts.all }}</span>
+                    </button>
+                  </div>
                   <div class="toolbar-right">
                     <button class="btn btn-sm btn-danger" @click="clearWatchHistory" :disabled="watchHistory.length === 0"><Trash2 :size="14" /> {{ t('watch.clearHistory') }}</button>
                   </div>
                 </div>
 
-                <div v-if="watchHistory.length > 0" class="history-table">
+                <div v-if="filteredHistory.length > 0" class="history-table">
                   <template v-for="group in groupedHistory" :key="group.dateKey">
                     <div class="history-date-header">{{ group.label }}</div>
                     <div v-for="h in group.records" :key="h.id" class="history-row" :class="{ clickable: !!h.agentSessionId }" @click="viewHistoryDetail(h)">
                       <span class="history-status-icon" :class="getStatusClass(h.status)">{{ getStatusIcon(h.status) }}</span>
-                      <span class="history-trigger-primary"><component :is="getTriggerIcon(h.triggerType as WatchTriggerType)" :size="12" /> {{ getTriggerTypeLabel(h.triggerType) }}</span>
-                      <span v-if="hasMultipleWatchNames" class="history-name-secondary">{{ h.watchName }}</span>
+                      <span class="history-trigger-chip">{{ getTriggerTypeLabel(h.triggerType) }}</span>
+                      <span class="history-watch-name" :title="h.watchName">{{ h.watchName }}</span>
                       <span class="history-spacer"></span>
                       <span class="history-time">{{ formatTime(h.at) }}</span>
                       <span class="history-duration">{{ formatDuration(h.duration) }}</span>
@@ -1677,9 +1762,9 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <div v-if="watchHistory.length === 0" class="empty-state" style="padding: 60px 20px;">
+                <div v-else class="empty-state" style="padding: 60px 20px;">
                   <History :size="40" class="empty-icon" />
-                  <p>{{ t('watch.noHistory') }}</p>
+                  <p>{{ watchHistory.length === 0 ? t('watch.noHistory') : t('watch.noHistoryInFilter') }}</p>
                 </div>
               </template>
             </div>
@@ -2400,10 +2485,22 @@ onUnmounted(() => {
   margin-bottom: 2px;
   transition: background 0.15s;
 }
+.list-item { position: relative; }
 .list-item:hover { background: var(--bg-hover); }
-.list-item.active { background: var(--bg-active); }
+.list-item.active {
+  background: rgba(var(--accent-rgb, 137, 180, 250), 0.12);
+  border-color: rgba(var(--accent-rgb, 137, 180, 250), 0.35);
+}
+.list-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 6px; bottom: 6px;
+  width: 3px;
+  background: var(--accent-primary);
+  border-radius: 0 2px 2px 0;
+}
 .list-item.disabled { opacity: 0.5; }
-.list-item.running { border-color: var(--accent-primary); background: rgba(var(--accent-rgb), 0.06); }
+.list-item.running { border-color: var(--accent-primary); background: rgba(var(--accent-rgb, 137, 180, 250), 0.06); }
 
 .item-info { flex: 1; min-width: 0; }
 .item-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
@@ -2418,14 +2515,25 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 .item-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.item-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.item-sub {
+  font-size: 11px; color: var(--text-muted); margin-top: 2px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.item-sub-segment { display: inline-flex; align-items: center; gap: 3px; }
+.item-sub-muted { font-style: italic; opacity: 0.7; }
+.item-sub-next {
+  padding: 1px 6px;
+  background: rgba(var(--accent-rgb, 100 200 250), 0.08);
+  color: var(--accent-primary);
+  border-radius: 8px;
+}
 
 .btn-icon-sm {
   background: none; border: none; color: var(--text-muted); cursor: pointer;
-  padding: 4px; border-radius: 4px; opacity: 0; transition: all 0.15s;
+  padding: 4px; border-radius: 4px; opacity: 0.55; transition: all 0.15s;
 }
 .list-item:hover .btn-icon-sm, .list-item.active .btn-icon-sm { opacity: 1; }
-.btn-icon-sm:hover { background: var(--bg-hover); color: var(--text-primary); }
+.btn-icon-sm:hover { background: var(--bg-hover); color: var(--text-primary); opacity: 1; }
 
 /* ==================== Detail Components ==================== */
 
@@ -2651,14 +2759,66 @@ onUnmounted(() => {
 .history-row.clickable { cursor: pointer; }
 
 .history-status-icon { min-width: 18px; text-align: center; font-size: 13px; }
-.history-trigger-primary { display: flex; align-items: center; gap: 4px; font-weight: 500; min-width: 80px; }
-.history-name-secondary { color: var(--text-muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
-.history-spacer { flex: 1; }
-.history-time { color: var(--text-muted); min-width: 70px; text-align: right; }
-.history-duration { color: var(--text-muted); min-width: 50px; text-align: right; }
-.history-detail-indicator { color: var(--text-muted); opacity: 0; transition: opacity 0.15s; }
-.history-row:hover .history-detail-indicator { opacity: 0.7; }
+.history-trigger-chip {
+  display: inline-flex; align-items: center;
+  padding: 1px 8px;
+  background: var(--bg-tertiary); color: var(--text-secondary);
+  border-radius: 10px; font-size: 11px; font-weight: 500;
+  white-space: nowrap; flex-shrink: 0;
+}
+.history-watch-name {
+  color: var(--text-primary);
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.history-spacer { display: none; }
+.history-time { color: var(--text-muted); min-width: 70px; text-align: right; flex-shrink: 0; }
+.history-duration { color: var(--text-muted); min-width: 50px; text-align: right; flex-shrink: 0; }
+.history-detail-indicator { color: var(--text-muted); opacity: 0.5; transition: opacity 0.15s; flex-shrink: 0; }
+.history-row:hover .history-detail-indicator { opacity: 0.9; }
 .history-load-more { display: flex; justify-content: center; padding: 12px 0; }
+
+/* 关切详情内嵌的最近运行列表 */
+.watch-recent-list { display: flex; flex-direction: column; gap: 2px; }
+.watch-recent-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px; border-radius: 6px; font-size: 12px;
+}
+.watch-recent-row:hover { background: var(--bg-hover); }
+.watch-recent-row.clickable { cursor: pointer; }
+.watch-recent-empty { color: var(--text-muted); font-size: 12px; padding: 6px 4px; }
+.history-spacer-grow { flex: 1; }
+
+.history-filter-segment {
+  display: inline-flex;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+.history-filter-segment .filter-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px;
+  background: transparent; border: none; border-radius: 6px;
+  color: var(--text-muted); font-size: 12px; cursor: pointer;
+  transition: all 0.15s ease;
+}
+.history-filter-segment .filter-btn:hover { color: var(--text-primary); }
+.history-filter-segment .filter-btn.active {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.filter-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 16px; padding: 0 5px;
+  background: var(--border-color); color: var(--text-muted);
+  border-radius: 8px; font-size: 10px;
+}
+.history-filter-segment .filter-btn.active .filter-count {
+  background: var(--accent-primary);
+  color: var(--accent-on);
+}
 
 .history-detail-meta { color: var(--text-muted); font-size: 12px; margin-left: auto; }
 .history-detail-content { flex: 1; overflow-y: auto; padding: 0 24px 24px; }
