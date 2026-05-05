@@ -193,3 +193,44 @@ describe('markdownToDocx: image embedding', () => {
     expect(documentXml).toContain('<w:drawing>')
   })
 })
+
+describe('markdownToDocx: CommonMark wrapped <> path (用户必须显式包裹)', () => {
+  let spacedDir: string
+  let spacedImagePath: string
+
+  beforeAll(() => {
+    spacedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'word image space '))
+    const sub = path.join(spacedDir, 'Application Support', 'agent workspace')
+    fs.mkdirSync(sub, { recursive: true })
+    spacedImagePath = path.join(sub, '布局总览.png')
+    fs.writeFileSync(spacedImagePath, Buffer.from(PNG_1X1_BASE64, 'base64'))
+  })
+
+  afterAll(() => {
+    try {
+      fs.rmSync(spacedDir, { recursive: true, force: true })
+    } catch {
+      // ignore
+    }
+  })
+
+  it('embeds image when path is wrapped with <> (CommonMark spec)', async () => {
+    // 含空格路径必须由 AI 自己用 <> 包裹（已写入 word skill 提示）
+    const md = `# 标题\n\n![国元股权基金布局总览](<${spacedImagePath}>)\n\n正文`
+    const buf = await markdownToDocx(md, 'simple')
+    const { documentXml, mediaFiles } = await inspectDocx(buf)
+
+    expect(mediaFiles.length).toBeGreaterThan(0)
+    expect(documentXml).toContain('<w:drawing>')
+    expect(documentXml).not.toMatch(/!\[国元股权基金布局总览\]/)
+  })
+
+  it('handles inline image with wrapped spaced path', async () => {
+    const md = `这是行内图片 ![小图](<${spacedImagePath}>) 跟在文字后面。`
+    const buf = await markdownToDocx(md, 'simple')
+    const { documentXml, mediaFiles } = await inspectDocx(buf)
+
+    expect(mediaFiles.length).toBeGreaterThan(0)
+    expect(documentXml).toContain('<w:drawing>')
+  })
+})
