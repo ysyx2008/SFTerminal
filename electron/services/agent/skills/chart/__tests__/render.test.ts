@@ -108,10 +108,9 @@ describe('chart render', () => {
 })
 
 describe('candlestick kline style', () => {
-  // cn / us 用的是同一组 hex（红 #ef4444 / 绿 #22c55e），只是角色对调。
-  // SVG 字符串里两种颜色都会出现，只断言"包含某色"无法区分 cn/us。
-  // 必须在 ECharts option 层直接断言 series.itemStyle 的 color / color0 字段，
-  // 这才是用户明确强调的业务点：A 股红涨绿跌、美股绿涨红跌。
+  // cn 风格走通达信经典：阳线**空心**（color: 'transparent'）+ 红边框，阴线绿实心。
+  // us 风格走海外软件惯例：阳线**实心**绿、阴线红实心。
+  // 这是用户明确强调的业务点，不能弄错。
   type CandlestickSeries = {
     itemStyle: {
       color: string
@@ -132,31 +131,34 @@ describe('candlestick kline style', () => {
     values: [[100, 110, 95, 115], [110, 108, 105, 112]]
   }
 
-  it('cn style: 阳线红 / 阴线绿（A股、港股惯例）', () => {
+  it('cn style (light, 同花顺白底): 阳线空心红框 / 阴线绿实心', () => {
     const style = getCandlestickItemStyle({ type: 'candlestick', kline_style: 'cn', data: baseData })
-    expect(style.color).toBe('#ef4444')   // 涨 → 红
-    expect(style.color0).toBe('#22c55e')  // 跌 → 绿
+    expect(style.color).toBe('transparent')      // 阳线空心，背景透出
+    expect(style.borderColor).toBe('#dc2626')    // 阳线深红框
+    expect(style.color0).toBe('#16a34a')         // 阴线深绿实心
+    expect(style.borderColor0).toBe('#15803d')   // 阴线更深绿框
   })
 
-  it('us style: 阳线绿 / 阴线红（美股、欧股惯例）', () => {
+  it('cn style (dark, 通达信黑底): 阳线空心 + 鲜艳红框', () => {
+    const style = getCandlestickItemStyle({ type: 'candlestick', kline_style: 'cn', theme: 'dark', data: baseData })
+    expect(style.color).toBe('transparent')
+    expect(style.borderColor).toBe('#ef4444')    // dark 下用更亮的红
+    expect(style.color0).toBe('#22c55e')
+    expect(style.borderColor0).toBe('#16a34a')
+  })
+
+  it('us style: 阳线绿实心 / 阴线红实心（美股、欧股惯例）', () => {
     const style = getCandlestickItemStyle({ type: 'candlestick', kline_style: 'us', data: baseData })
-    expect(style.color).toBe('#22c55e')   // 涨 → 绿
-    expect(style.color0).toBe('#ef4444')  // 跌 → 红
+    expect(style.color).toBe('#22c55e')          // 阳线绿实心
+    expect(style.borderColor).toBe('#16a34a')
+    expect(style.color0).toBe('#ef4444')         // 阴线红实心
+    expect(style.borderColor0).toBe('#dc2626')
   })
 
   it('defaults to cn style when kline_style omitted', () => {
     const style = getCandlestickItemStyle({ type: 'candlestick', data: baseData })
-    expect(style.color).toBe('#ef4444')
-    expect(style.color0).toBe('#22c55e')
-  })
-
-  it('borderColor matches color (filled candles)', () => {
-    const cn = getCandlestickItemStyle({ type: 'candlestick', kline_style: 'cn', data: baseData })
-    expect(cn.borderColor).toBe('#dc2626')
-    expect(cn.borderColor0).toBe('#16a34a')
-    const us = getCandlestickItemStyle({ type: 'candlestick', kline_style: 'us', data: baseData })
-    expect(us.borderColor).toBe('#16a34a')
-    expect(us.borderColor0).toBe('#dc2626')
+    expect(style.color).toBe('transparent')
+    expect(style.borderColor).toBe('#dc2626')    // light 默认 → 深红
   })
 })
 
@@ -177,7 +179,13 @@ describe('candlestick with volumes', () => {
     volumes: [12000, 8500, 15300]
   }
 
-  it('renders volume sub-grid: 双 grid、两条 series、bar 用 xAxisIndex=1', () => {
+  function findBar(series: SeriesOut[]): SeriesOut {
+    const bar = series.find(s => s.type === 'bar')
+    if (!bar) throw new Error('expected bar series in candlestick output')
+    return bar
+  }
+
+  it('renders volume sub-grid: 双 grid、bar series 用 xAxisIndex=1', () => {
     const opt = buildOption({ type: 'candlestick', kline_style: 'cn', data: baseDataWithVol })
     const grids = opt.grid as unknown[]
     const xAxes = opt.xAxis as unknown[]
@@ -191,17 +199,17 @@ describe('candlestick with volumes', () => {
     expect(Array.isArray(yAxes)).toBe(true)
     expect(yAxes.length).toBe(2)
 
-    expect(series.length).toBe(2)
+    // series 顺序：candlestick → ...MA(line) → volume(bar)
     expect(series[0].type).toBe('candlestick')
-    expect(series[1].type).toBe('bar')
-    expect(series[1].xAxisIndex).toBe(1)
-    expect(series[1].yAxisIndex).toBe(1)
-    expect(series[1].data.length).toBe(3)
+    const bar = findBar(series)
+    expect(bar.xAxisIndex).toBe(1)
+    expect(bar.yAxisIndex).toBe(1)
+    expect(bar.data.length).toBe(3)
   })
 
   it('volume bars colored by 涨跌（cn 涨红跌绿）', () => {
     const opt = buildOption({ type: 'candlestick', kline_style: 'cn', data: baseDataWithVol })
-    const bars = (opt.series as SeriesOut[])[1].data as Bar[]
+    const bars = findBar(opt.series as SeriesOut[]).data as Bar[]
     expect(bars[0].itemStyle.color).toBe('#ef4444') // d1 close>open → 红
     expect(bars[1].itemStyle.color).toBe('#22c55e') // d2 close<open → 绿
     expect(bars[2].itemStyle.color).toBe('#ef4444') // d3 close>open → 红
@@ -209,7 +217,7 @@ describe('candlestick with volumes', () => {
 
   it('volume bars 反转: us 涨绿跌红', () => {
     const opt = buildOption({ type: 'candlestick', kline_style: 'us', data: baseDataWithVol })
-    const bars = (opt.series as SeriesOut[])[1].data as Bar[]
+    const bars = findBar(opt.series as SeriesOut[]).data as Bar[]
     expect(bars[0].itemStyle.color).toBe('#22c55e') // 涨 → 绿
     expect(bars[1].itemStyle.color).toBe('#ef4444') // 跌 → 红
   })
@@ -234,6 +242,113 @@ describe('candlestick with volumes', () => {
     expect(svg).toMatch(/<\/svg>$/)
     // 副图存在 → SVG 应该比单图更长（更多元素）
     expect(svg.length).toBeGreaterThan(2000)
+  })
+})
+
+describe('candlestick 通达信风格 + MA 均线', () => {
+  // 业务点：cn K 线必须呈现"通达信/同花顺"专业感——空心阳线、实线网格、自动 MA、
+  // 黄色十字光标、右侧价格轴。这些在 ECharts option 层都能直接断言。
+  type LineSeries = { type: 'line'; name: string; data: Array<number | '-'>; lineStyle?: { color: string } }
+  type AnySeries = { type: string; name?: string; data: unknown[]; xAxisIndex?: number; yAxisIndex?: number }
+
+  function buildLong(n: number) {
+    const cats = Array.from({ length: n }, (_, i) => `d${i + 1}`)
+    const vals = Array.from({ length: n }, (_, i) => {
+      const open = 100 + (i % 5)
+      const close = open + (i % 2 === 0 ? 2 : -2)
+      return [open, close, Math.min(open, close) - 1, Math.max(open, close) + 1]
+    })
+    return { categories: cats, values: vals }
+  }
+
+  it('数据 < 5 根时不画 MA（series 只有 1 条 candlestick）', () => {
+    const opt = buildOption({ type: 'candlestick', data: buildLong(3) })
+    const series = opt.series as AnySeries[]
+    expect(series.length).toBe(1)
+    expect(series[0].type).toBe('candlestick')
+  })
+
+  it('数据 ≥ 60 时自动叠加 MA5/10/20/60（默认行为）', () => {
+    const opt = buildOption({ type: 'candlestick', data: buildLong(80) })
+    const series = opt.series as AnySeries[]
+    const lineNames = series.filter(s => s.type === 'line').map(s => s.name)
+    expect(lineNames).toEqual(['MA5', 'MA10', 'MA20', 'MA60'])
+  })
+
+  it('数据 ≥ 10 < 20 时只叠加 MA5/MA10', () => {
+    const opt = buildOption({ type: 'candlestick', data: buildLong(15) })
+    const series = opt.series as AnySeries[]
+    const lineNames = series.filter(s => s.type === 'line').map(s => s.name)
+    expect(lineNames).toEqual(['MA5', 'MA10'])
+  })
+
+  it('kline_ma: [] 关闭均线', () => {
+    const opt = buildOption({ type: 'candlestick', data: buildLong(80), kline_ma: [] })
+    const series = opt.series as AnySeries[]
+    expect(series.filter(s => s.type === 'line').length).toBe(0)
+  })
+
+  it('kline_ma: [7, 25, 99] 自定义周期（币圈风格）', () => {
+    const opt = buildOption({ type: 'candlestick', data: buildLong(120), kline_ma: [7, 25, 99] })
+    const series = opt.series as AnySeries[]
+    const lineNames = series.filter(s => s.type === 'line').map(s => s.name)
+    expect(lineNames).toEqual(['MA7', 'MA25', 'MA99'])
+  })
+
+  it('SMA 计算正确：前 N-1 根用占位符 -，第 N 根开始为均值', () => {
+    const opt = buildOption({
+      type: 'candlestick',
+      data: { categories: ['a', 'b', 'c', 'd', 'e'], values: [
+        [100, 100, 95, 105], // close=100
+        [100, 110, 95, 115], // close=110
+        [100, 120, 95, 125], // close=120
+        [100, 130, 95, 135], // close=130
+        [100, 140, 95, 145]  // close=140
+      ]},
+      kline_ma: [3]
+    })
+    const series = opt.series as AnySeries[]
+    const ma3 = series.find(s => s.type === 'line') as LineSeries | undefined
+    expect(ma3).toBeTruthy()
+    // 前 2 根占位
+    expect(ma3!.data[0]).toBe('-')
+    expect(ma3!.data[1]).toBe('-')
+    // 第 3 根：(100+110+120)/3 = 110
+    expect(ma3!.data[2]).toBe(110)
+    // 第 4 根：(110+120+130)/3 = 120
+    expect(ma3!.data[3]).toBe(120)
+    // 第 5 根：(120+130+140)/3 = 130
+    expect(ma3!.data[4]).toBe(130)
+  })
+
+  it('cn 风格：黑底专业主题 + 实线 splitLine + 黄色十字光标', () => {
+    const opt = buildOption({ type: 'candlestick', kline_style: 'cn', theme: 'dark', data: buildLong(20) })
+    expect(opt.backgroundColor).toBe('#0c0e12')
+    type YAxis = { position?: string; splitLine?: { lineStyle?: { type?: string } } }
+    const yAxis = opt.yAxis as YAxis
+    expect(yAxis.position).toBe('right')   // 价格轴在右侧（行情软件惯例）
+    expect(yAxis.splitLine?.lineStyle?.type).toBe('solid')   // 实线网格
+    type Tooltip = { axisPointer?: { lineStyle?: { color?: string } } }
+    const tooltip = opt.tooltip as Tooltip
+    expect(tooltip.axisPointer?.lineStyle?.color).toBe('#fbbf24')   // 黄色十字
+  })
+
+  it('us 风格：海外软件主题 + 灰色十字光标（不是黄）', () => {
+    const opt = buildOption({ type: 'candlestick', kline_style: 'us', theme: 'dark', data: buildLong(20) })
+    type Tooltip = { axisPointer?: { lineStyle?: { color?: string } } }
+    const tooltip = opt.tooltip as Tooltip
+    expect(tooltip.axisPointer?.lineStyle?.color).not.toBe('#fbbf24')
+    expect(tooltip.axisPointer?.lineStyle?.color).toBe('#94a3b8')
+  })
+
+  it('K 线 + 成交量场景下 MA 也正常叠加（series 顺序：candlestick → MAs → bar）', () => {
+    const data = { ...buildLong(30), volumes: Array(30).fill(1000) }
+    const opt = buildOption({ type: 'candlestick', data })
+    const series = opt.series as AnySeries[]
+    expect(series[0].type).toBe('candlestick')
+    expect(series[series.length - 1].type).toBe('bar')
+    const lineCount = series.filter(s => s.type === 'line').length
+    expect(lineCount).toBe(3)   // MA5 / MA10 / MA20（30 不够 60）
   })
 })
 

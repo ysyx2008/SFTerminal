@@ -22,21 +22,44 @@
 | `scatter` | `number[][]`（`[[x,y],...]`）或 `{ series: [{ name?, data: number[][] }] }` |
 | `radar` | `{ indicators: [{ name, max }], series: [{ name?, value: number[] }] }` |
 | `heatmap` | `{ x_categories: string[], y_categories: string[], values: [[x_idx, y_idx, value], ...] }` |
-| `candlestick` | `{ categories: string[], values: [[open, close, low, high], ...] }` |
+| `candlestick` | `{ categories: string[], values: [[open, close, low, high], ...], volumes?: number[] }` |
 
-## K 线中美差异
+## K 线风格（通达信 / 同花顺专业风格）
 
-- `kline_style: 'cn'`（默认）— 红涨绿跌（A 股、港股、国内市场惯例）
-- `kline_style: 'us'` — 绿涨红跌（美股、欧股、海外市场惯例）
+K 线**整体走专业行情软件视觉**而不是商务图表样式：
+
+| 视觉元素 | 实现 |
+|---|---|
+| 阳线（cn） | **空心**（`color: 'transparent'`）+ 红色边框，靠 `backgroundColor` 透出形成"红框白心 / 红框黑心"——通达信经典 |
+| 阴线（cn） | 实心绿色蜡烛 |
+| 阳线 / 阴线（us） | 双实心，绿涨红跌（海外软件惯例） |
+| 网格 | **实线**（不是 dashed），更接近行情软件 |
+| 价格轴 | 移到 **右侧**（通达信、同花顺、TradingView、富途都如此） |
+| 十字光标 | cn 用**黄色虚线**+黄底反白价格标签（通达信招牌）；us 用灰色虚线 |
+| MA 均线 | 默认自动叠加 **MA5 / MA10 / MA20 / MA60**，颜色按通达信经典调色板（dark：白/黄/紫/青；light：深蓝灰/橙/紫/青） |
+| 背景 | dark = `#0c0e12`（近黑略蓝灰）；light = `#ffffff` |
+
+### kline_style — 中美差异
+
+- `kline_style: 'cn'`（默认）— 红涨绿跌 + 空心阳线（A 股、港股、国内市场）
+- `kline_style: 'us'` — 绿涨红跌 + 双实心蜡烛（美股、欧股、海外市场）
 
 由 AI 根据用户语境（股票代码、市场、币种、媒体来源）选择，无明确上下文时默认 cn。
+
+### kline_ma — MA 均线控制
+
+- 不传 → 默认 `[5, 10, 20, 60]`，按数据长度自动过滤（数据 < N 不画该 MA）
+- 传 `[]` → 关闭均线
+- 传自定义周期如 `[7, 25, 99]` → 币圈三均线常见配置
+
+实现细节：MA 用收盘价的 SMA（简单移动平均），前 `period - 1` 个数据点用 ECharts 占位符 `'-'`（不连线）；用滑动窗口 O(n) 实现，对全年日 K 也保持线性。
 
 ## 文件结构
 
 | 文件 | 职责 |
 |------|------|
-| `presets.ts` | 主题（light/dark）、K 线 cn/us 配色 |
-| `render.ts` | `buildOption(input)` —— 把统一参数转换成 ECharts option，含数据校验 |
+| `presets.ts` | 通用主题（light/dark）+ K 线专业主题 `getKlineProTheme(style, mode)`（含蜡烛配色、十字线、MA 调色板、空心阳线策略） |
+| `render.ts` | `buildOption(input)` —— 把统一参数转换成 ECharts option，含数据校验、SMA 计算、MA 周期自动过滤 |
 | `ssr.ts` | `loadEcharts()` 懒加载 + `renderToSvg(option, size)` SSR 渲染 |
 | `tools.ts` | `chartTools` 工具定义（generate_chart + render_echarts_option）+ `chartSkillContent` 技能说明文档 |
 | `executor.ts` | `executeChartTool` 执行入口，分发到 `generateChart`（DSL）或 `renderEchartsOption`（自由路径），参数归一化、SVG → data URL、可选写盘 |

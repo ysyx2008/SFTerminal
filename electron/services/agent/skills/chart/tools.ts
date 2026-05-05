@@ -7,6 +7,7 @@ export const chartTools: ToolDefinition[] = [
       name: 'generate_chart',
       description: `生成数据可视化图表，输出 SVG 矢量图直接显示在对话流中给**用户**看。
 支持 8 种类型：bar (柱状)、line (折线)、area (面积)、pie (饼图)、scatter (散点)、radar (雷达)、heatmap (热力)、candlestick (K线)。
+K 线采用通达信/同花顺专业风格——cn 空心阳线 + 实心阴线、实线网格、黄色十字光标、自动叠加 MA5/10/20/60 均线。
 K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (红涨绿跌)，美股/欧股/海外市场用 'us' (绿涨红跌)，无明确上下文时默认 'cn'。
 不同 type 的 data 字段格式不同，详见技能说明文档。
 
@@ -41,7 +42,12 @@ K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (�
           kline_style: {
             type: 'string',
             enum: ['cn', 'us'],
-            description: 'K 线配色风格，仅 candlestick 生效。cn=红涨绿跌（中国市场），us=绿涨红跌（海外市场）。默认 cn。'
+            description: 'K 线配色风格，仅 candlestick 生效。cn=红涨绿跌（中国市场，空心阳线通达信风），us=绿涨红跌（海外市场，双实心蜡烛）。默认 cn。'
+          },
+          kline_ma: {
+            type: 'array',
+            items: { type: 'integer', minimum: 1 },
+            description: 'K 线均线周期数组，仅 candlestick 生效。不传则自动叠加 [5, 10, 20, 60]（数据长度足够时才显示对应 MA）；传 [] 关闭均线；自定义如 [7, 25, 99]（币圈风格）也可。'
           },
           theme: {
             type: 'string',
@@ -180,16 +186,26 @@ candlestick:
   }
   # categories.length 必须等于 values.length；如果传 volumes，长度也必须等于 categories.length
   # 成交量 bar 颜色自动按涨跌（close>=open 涨色，否则跌色），无需自己指定
+  # MA 均线 (5/10/20/60) 默认自动叠加在主图上；想关闭传 kline_ma: []，自定义传 kline_ma: [7,25,99]
 \`\`\`
 
-### K 线必读：中美差异
+### K 线必读：中美差异 + 通达信风格
 
-K 线（candlestick）必须显式指定 \`kline_style\`：
+K 线（candlestick）输出**专业行情软件风格**：cn 风格直接照搬通达信/同花顺/东方财富的视觉语言——
+**空心阳线 + 实心阴线**、实线网格、右侧价格轴、黄色虚线十字光标、自动叠加 MA5/10/20/60 均线。
+你不需要也不应该再用 \`render_echarts_option\` 自己堆 MA / 改样式，generate_chart 已经搞定。
 
-- **cn（中式，红涨绿跌）**：A 股、港股、国内财经媒体的视觉惯例
-- **us（美式，绿涨红跌）**：美股、欧股、国际市场惯例
+\`kline_style\` 必须根据语境选择：
+
+- **cn（中式，红涨绿跌）**：A 股、港股、国内财经媒体的视觉惯例。**阳线空心**（仅红色边框）、阴线实心绿块——通达信/同花顺 30 年的经典视觉。
+- **us（美式，绿涨红跌）**：美股、欧股、国际市场惯例。双实心蜡烛（海外软件惯例）。
 
 判断规则：根据用户语境（提到的股票代码、市场名、币种、新闻来源）选择。无明确上下文时默认 cn。
+
+\`kline_ma\` 行为：
+- 默认（不传）→ 自动加 MA5/10/20/60，数据点不足某周期时该 MA 自动跳过
+- 传 \`[]\` → 完全关闭均线（看裸 K 时用）
+- 传自定义周期如 \`[7, 25, 99]\` → 币圈三均线常见配置
 
 ### 按内容规模选画布尺寸（重要）
 

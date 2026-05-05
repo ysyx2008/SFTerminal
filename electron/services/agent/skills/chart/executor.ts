@@ -249,8 +249,19 @@ function argsToChartInput(args: Record<string, unknown>, type: ChartType): Chart
     y_label: typeof args.y_label === 'string' ? args.y_label : undefined,
     theme: args.theme === 'dark' ? 'dark' : 'light',
     kline_style: args.kline_style === 'us' ? 'us' : 'cn',
+    kline_ma: parseKlineMa(args.kline_ma),
     legend: typeof args.legend === 'boolean' ? args.legend : undefined
   }
+}
+
+/**
+ * 容错解析 kline_ma：仅接受数字数组（含空数组），其他形态（undefined/null/非数组）
+ * 一律返回 undefined，让 render 走默认 [5,10,20,60]。
+ * 数组里的元素也做正整数过滤。
+ */
+function parseKlineMa(raw: unknown): number[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  return raw.filter((p): p is number => typeof p === 'number' && Number.isInteger(p) && p > 0)
 }
 
 function svgToDataUrl(svg: string): string {

@@ -7,7 +7,7 @@
  * - 出错抛 Error，由调用方捕获返回友好错误
  */
 
-import { getTheme, getKlineColors, type ChartTheme, type KlineStyle, type ThemePreset } from './presets'
+import { getTheme, getKlineProTheme, type ChartTheme, type KlineStyle, type ThemePreset, type KlineProTheme } from './presets'
 
 export type ChartType =
   | 'bar'
@@ -29,6 +29,12 @@ export interface ChartInput {
   theme?: ChartTheme
   /** 仅 candlestick 生效，默认 cn */
   kline_style?: KlineStyle
+  /**
+   * 仅 candlestick 生效。MA 均线周期数组，默认 [5, 10, 20, 60]（数据足够时自动叠加）。
+   * 传 `[]` 表示不画均线；传自定义周期如 `[7, 25, 99]`（币圈风格）也支持。
+   * 数据长度不足某个周期时，该 MA 自动跳过。
+   */
+  kline_ma?: number[]
   /** 是否显示图例（默认有 series.name 时显示） */
   legend?: boolean
 }
@@ -62,7 +68,10 @@ export function buildOption(input: ChartInput): EChartsOption {
 
 /**
  * 注入背景色、标题、调色板等通用配置；坐标轴样式由各 build 函数自己处理
- * （不同 chart 类型对 axis 的需要不同，比如 pie/radar 没有 axis）
+ * （不同 chart 类型对 axis 的需要不同，比如 pie/radar 没有 axis）。
+ *
+ * 注意：当 build* 函数已自行设置 `option.title`（如 K 线专业主题需要自定义
+ * title 颜色）时，applyCommon 不再覆盖，让各 chart 能保留自己的 title 样式。
  */
 function applyCommon(option: EChartsOption, input: ChartInput, theme: ThemePreset): EChartsOption {
   const merged: EChartsOption = {
@@ -72,7 +81,7 @@ function applyCommon(option: EChartsOption, input: ChartInput, theme: ThemePrese
     animation: false,
     ...option
   }
-  if (input.title || input.subtitle) {
+  if ((input.title || input.subtitle) && !option.title) {
     merged.title = {
       text: input.title ?? '',
       subtext: input.subtitle ?? '',
@@ -480,10 +489,49 @@ function buildHeatmap(input: ChartInput, theme: ThemePreset): EChartsOption {
 }
 
 // ============================================================================
-// candlestick (K线)
+// candlestick (K线) —— 通达信 / 同花顺风格
 // ============================================================================
 
-function buildCandlestick(input: ChartInput, theme: ThemePreset): EChartsOption {
+/** 默认 MA 均线周期（A 股软件经典）。数据长度不足某周期时该 MA 自动跳过 */
+const DEFAULT_MA_PERIODS = [5, 10, 20, 60] as const
+/** legend 中给 K 线主体用的名字 */
+const KLINE_SERIES_NAME = '价格'
+/** 成交量副图名字 */
+const VOLUME_SERIES_NAME = '成交量'
+
+/**
+ * 简单移动平均线。前 n-1 个数据点用 ECharts 占位符 '-' 表示空值（不参与连线）。
+ * 用滑动窗口避免 O(n²)，对全年日 K 也保持线性。
+ */
+function calcSMA(closes: number[], period: number): Array<number | '-'> {
+  const out: Array<number | '-'> = []
+  let sum = 0
+  for (let i = 0; i < closes.length; i++) {
+    sum += closes[i]
+    if (i >= period) sum -= closes[i - period]
+    if (i >= period - 1) {
+      out.push(+(sum / period).toFixed(4))
+    } else {
+      out.push('-')
+    }
+  }
+  return out
+}
+
+/**
+ * 解析 kline_ma 参数为最终生效的周期列表：
+ *   - undefined → 默认 [5, 10, 20, 60]
+ *   - 空数组   → 关闭 MA
+ *   - number[] → 仅保留正整数；按数据长度过滤掉无意义的周期
+ */
+function resolveMaPeriods(ma: number[] | undefined, dataLen: number): number[] {
+  const candidates = ma === undefined
+    ? Array.from(DEFAULT_MA_PERIODS)
+    : ma.filter(p => Number.isInteger(p) && p > 0)
+  return candidates.filter(p => dataLen >= p)
+}
+
+function buildCandlestick(input: ChartInput, baseTheme: ThemePreset): EChartsOption {
   const raw = input.data
   if (!raw || typeof raw !== 'object') {
     throw new Error('candlestick data must be { categories, values, volumes? }')
@@ -521,76 +569,192 @@ function buildCandlestick(input: ChartInput, theme: ThemePreset): EChartsOption 
     volumes = obj.volumes as number[]
   }
 
-  const klineColors = getKlineColors(input.kline_style ?? 'cn')
+  const themeMode: ChartTheme = input.theme ?? 'light'
+  const pro = getKlineProTheme(input.kline_style ?? 'cn', themeMode)
 
-  if (volumes === undefined) {
+  // ===== MA 均线（基于收盘价 SMA） =====
+  const closes = ohlc.map(v => v[1])
+  const maPeriods = resolveMaPeriods(input.kline_ma, categories.length)
+  // 注意：line series 必须同时设 itemStyle.color，否则 legend marker 会回落到全局
+  // palette，导致图上的线和 legend 上的圆点颜色不一致。
+  const maSeriesList = maPeriods.map((period, i) => {
+    const color = pro.maColors[i % pro.maColors.length]
     return {
-      grid: buildGrid(input, false),
-      tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-      xAxis: { ...buildAxis(theme, input.x_label, true), data: categories, scale: true, boundaryGap: true },
-      yAxis: { ...buildAxis(theme, input.y_label, false), scale: true },
-      series: [{
-        type: 'candlestick',
-        data: ohlc,
-        itemStyle: {
-          color: klineColors.color,
-          color0: klineColors.color0,
-          borderColor: klineColors.borderColor,
-          borderColor0: klineColors.borderColor0
-        }
-      }]
+      type: 'line' as const,
+      name: `MA${period}`,
+      data: calcSMA(closes, period),
+      smooth: false,
+      symbol: 'none' as const,
+      lineStyle: { width: 2, color },
+      itemStyle: { color },
+      z: 2,
+      xAxisIndex: 0,
+      yAxisIndex: 0
+    }
+  })
+
+  // 成交量 bar 颜色随当日涨跌（cn 阳线虽空心，但成交量柱仍用红色实心，符合行情软件惯例）
+  const volumeUpColor = input.kline_style === 'us' ? '#22c55e' : '#ef4444'
+  const volumeDownColor = input.kline_style === 'us' ? '#ef4444' : '#22c55e'
+
+  // ===== legend：标题正下方居左排列，覆盖 K 线主体 + 各 MA =====
+  const klineLegendNames = [KLINE_SERIES_NAME, ...maPeriods.map(p => `MA${p}`)]
+  const titleH = titleBlockHeight(input)
+  const legendBlock: EChartsOption = {
+    data: klineLegendNames,
+    top: titleH === 0 ? 8 : titleH + 8,
+    left: 16,
+    textStyle: { color: pro.axisLabelColor, fontSize: 12 },
+    itemGap: 14,
+    icon: 'roundRect'
+  }
+
+  // ===== title：用 K 线专业主题的颜色覆盖 base theme =====
+  const titleBlock: EChartsOption | undefined = (input.title || input.subtitle)
+    ? {
+        text: input.title ?? '',
+        subtext: input.subtitle ?? '',
+        left: 'center',
+        textStyle: { color: pro.textColor, fontSize: 16, fontWeight: 'bold' },
+        subtextStyle: { color: pro.axisLabelColor, fontSize: 12 }
+      }
+    : undefined
+
+  // ===== K 线专用轴：实线网格 + 右侧价格轴（行情软件惯例） =====
+  const priceAxisLabel = { color: pro.axisLabelColor, fontSize: 11 }
+  const priceAxisLine = { lineStyle: { color: pro.axisLineColor } }
+  const priceSplitLine = { show: true, lineStyle: { color: pro.splitLineColor, type: 'solid' as const } }
+
+  // 价格 yAxis：移到右侧（通达信/同花顺/TradingView 都把价格轴放右）
+  const priceYAxis = (gridIndex: number): EChartsOption => ({
+    type: 'value',
+    gridIndex,
+    position: 'right',
+    scale: true,
+    name: input.y_label,
+    nameTextStyle: { color: pro.axisLabelColor, fontSize: 12 },
+    axisLine: priceAxisLine,
+    axisLabel: priceAxisLabel,
+    splitLine: priceSplitLine
+  })
+
+  // category xAxis：水平方向实线（splitLine 走 yAxis），垂直方向 axisLabel 间隔的虚线分隔
+  // 通达信/同花顺习惯：水平价格线实线 + 垂直时间线虚线，让人能直读"某根 K 线对应哪个时间"
+  // ECharts 对 categoryAxis 的 splitLine 自动跟随 axisLabel.interval（避免 60 根全画）
+  const xAxisBase = (gridIndex: number): EChartsOption => ({
+    type: 'category',
+    gridIndex,
+    data: categories,
+    scale: true,
+    boundaryGap: true,
+    axisLine: priceAxisLine,
+    axisLabel: priceAxisLabel,
+    splitLine: {
+      show: true,
+      // 自定义 dash 节奏让虚线在缩放后视觉更连续（ECharts 默认 [5,5] 在低 DPI 下断点过多）
+      lineStyle: { color: pro.splitLineColor, type: [6, 4] }
+    },
+    axisTick: { lineStyle: { color: pro.axisLineColor } }
+  })
+
+  // 十字光标：黄色虚线 + 反白价格标签（通达信招牌视觉）
+  const axisPointerStyle = {
+    type: 'cross' as const,
+    lineStyle: { color: pro.crosshairColor, type: 'dashed' as const, width: 1 },
+    crossStyle: { color: pro.crosshairColor, type: 'dashed' as const, width: 1 },
+    label: {
+      backgroundColor: pro.crosshairLabelBg,
+      color: pro.crosshairLabelText,
+      borderWidth: 0,
+      fontSize: 11,
+      padding: [3, 6, 3, 6]
     }
   }
 
-  // ===== 双 grid 布局：上 K 线 ~62%、间隔 ~3%、下 成交量 ~18%、底部 ~17% 留 x 轴/标签 =====
-  // 顶部依旧把 title/legend 算进去，从顶 padding 开始计算上 grid 的 top。
-  const titleH = titleBlockHeight(input)
-  const topPx = titleH === 0 ? 16 : titleH + 10
-  // 价格 grid：占去除顶部留白后的 ~62%；成交量 grid：~18%；中间留 3% 间隔；底部 50px x 轴
-  const priceGrid = { left: 60, right: 30, top: topPx, height: '62%' }
-  const volumeGrid = { left: 60, right: 30, top: '72%', height: '18%' }
+  // borderWidth 适当加粗：cn 风格阳线是空心红框，太细在大画布上几乎看不见
+  const candlestickItemStyle = {
+    color: pro.candle.upColor,
+    color0: pro.candle.downColor,
+    borderColor: pro.candle.upBorderColor,
+    borderColor0: pro.candle.downBorderColor,
+    borderWidth: 2
+  }
 
-  // 成交量 bar 颜色随 K 线涨跌：close >= open 用涨色，否则跌色
+  // 共用的 tooltip 配色（黑底浮窗在白底/黑底主题下都清晰）
+  const tooltipStyle: EChartsOption = {
+    trigger: 'axis',
+    axisPointer: axisPointerStyle,
+    backgroundColor: themeMode === 'dark' ? '#1f2933' : '#1f2937',
+    borderWidth: 0,
+    textStyle: { color: '#f3f4f6', fontSize: 12 }
+  }
+
+  // ============== 单 grid（无 volume）==============
+  if (volumes === undefined) {
+    // 正文区域距离顶部 = title + legend 一行
+    const topPx = (titleH === 0 ? 8 : titleH + 8) + (klineLegendNames.length > 0 ? 28 : 0)
+    return {
+      backgroundColor: pro.backgroundColor,
+      textStyle: { color: pro.textColor, fontFamily: 'PingFang SC, Microsoft YaHei, Helvetica, Arial, sans-serif' },
+      ...(titleBlock ? { title: titleBlock } : {}),
+      legend: legendBlock,
+      grid: { left: 24, right: 70, top: topPx, bottom: 50, containLabel: true },
+      tooltip: tooltipStyle,
+      xAxis: xAxisBase(0),
+      yAxis: priceYAxis(0),
+      series: [
+        {
+          type: 'candlestick',
+          name: KLINE_SERIES_NAME,
+          data: ohlc,
+          itemStyle: candlestickItemStyle,
+          z: 1
+        },
+        ...maSeriesList
+      ]
+    }
+  }
+
+  // ============== 双 grid（K 线 + 成交量）==============
+  // 顶部 title + legend，price grid 占 ~58%，间隔 ~4%，volume grid 占 ~22%，底部 ~16% 留 x 轴/标签
+  const topPx = (titleH === 0 ? 8 : titleH + 8) + (klineLegendNames.length > 0 ? 28 : 0)
+  const priceGrid = { left: 24, right: 70, top: topPx, height: '58%', containLabel: false }
+  const volumeGrid = { left: 24, right: 70, top: '72%', height: '18%', containLabel: false }
+
   const volumeBars = volumes.map((vol, i) => ({
     value: vol,
     itemStyle: {
-      color: ohlc[i][1] >= ohlc[i][0] ? klineColors.color : klineColors.color0
+      color: ohlc[i][1] >= ohlc[i][0] ? volumeUpColor : volumeDownColor
     }
   }))
 
   return {
+    backgroundColor: pro.backgroundColor,
+    textStyle: { color: pro.textColor, fontFamily: 'PingFang SC, Microsoft YaHei, Helvetica, Arial, sans-serif' },
+    ...(titleBlock ? { title: titleBlock } : {}),
+    legend: legendBlock,
     grid: [priceGrid, volumeGrid],
     tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'cross', link: [{ xAxisIndex: 'all' }] }
+      ...tooltipStyle,
+      axisPointer: { ...axisPointerStyle, link: [{ xAxisIndex: 'all' }] }
     },
-    // 共两个 xAxis，都用 categories；上 grid 隐藏 x 标签，下 grid 显示
+    // 上 grid 隐藏 x 标签让两图共用底部轴；下 grid 才显示日期
     xAxis: [
-      {
-        ...buildAxis(theme, undefined, true),
-        gridIndex: 0,
-        data: categories,
-        scale: true,
-        boundaryGap: true,
-        axisLabel: { show: false },
-        axisTick: { show: false }
-      },
-      {
-        ...buildAxis(theme, input.x_label, true),
-        gridIndex: 1,
-        data: categories,
-        scale: true,
-        boundaryGap: true
-      }
+      { ...xAxisBase(0), axisLabel: { show: false }, axisTick: { show: false } },
+      { ...xAxisBase(1), name: input.x_label, nameTextStyle: { color: pro.axisLabelColor, fontSize: 12 } }
     ],
     yAxis: [
-      // 价格轴
-      { ...buildAxis(theme, input.y_label, false), gridIndex: 0, scale: true },
-      // 成交量轴：splitNumber 2 让网格更稀疏；不显示 splitLine 让副图更紧凑
+      priceYAxis(0),
+      // 成交量轴：放右侧、splitNumber 2 稀疏网格、不显示 splitLine 让副图紧凑
       {
-        ...buildAxis(theme, '成交量', false),
+        type: 'value',
         gridIndex: 1,
+        position: 'right',
         scale: true,
+        name: VOLUME_SERIES_NAME,
+        nameTextStyle: { color: pro.axisLabelColor, fontSize: 11 },
+        axisLine: priceAxisLine,
+        axisLabel: { ...priceAxisLabel, formatter: formatVolume },
         splitNumber: 2,
         splitLine: { show: false }
       }
@@ -598,23 +762,34 @@ function buildCandlestick(input: ChartInput, theme: ThemePreset): EChartsOption 
     series: [
       {
         type: 'candlestick',
+        name: KLINE_SERIES_NAME,
         xAxisIndex: 0,
         yAxisIndex: 0,
         data: ohlc,
-        itemStyle: {
-          color: klineColors.color,
-          color0: klineColors.color0,
-          borderColor: klineColors.borderColor,
-          borderColor0: klineColors.borderColor0
-        }
+        itemStyle: candlestickItemStyle,
+        z: 1
       },
+      ...maSeriesList,
       {
         type: 'bar',
-        name: '成交量',
+        name: VOLUME_SERIES_NAME,
         xAxisIndex: 1,
         yAxisIndex: 1,
-        data: volumeBars
+        data: volumeBars,
+        barWidth: '60%'
       }
     ]
   }
+}
+
+/**
+ * 成交量轴的简短刻度格式：1.2万 / 3.4亿 / 5.6M。
+ * 行情软件标配——避免长 0 数字撑爆右侧轴。
+ */
+function formatVolume(v: number): string {
+  const abs = Math.abs(v)
+  if (abs >= 1e8) return (v / 1e8).toFixed(2) + '亿'
+  if (abs >= 1e4) return (v / 1e4).toFixed(2) + '万'
+  if (abs >= 1e3) return (v / 1e3).toFixed(1) + 'k'
+  return String(v)
 }
