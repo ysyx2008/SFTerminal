@@ -775,7 +775,8 @@ export default {
       chart: 'Generate 8 chart types (bar/line/area/pie/scatter/radar/heatmap/candlestick) and output SVG vector images directly in chat. Candlestick supports CN-style (red-up green-down) and US-style (green-up red-down). Ideal for financial analysis, data reporting, and statistical visualization.',
       feishu: 'Read and write Feishu (Lark) cloud resources: calendar, docs, sheets, instant messages, users/departments/groups. Requires app credentials configured in the Feishu settings page.',
       wecom: 'Read and write WeCom OA resources: calendar, approval, attendance, contacts, drive, docs, meetings. Requires WeCom app credentials configured in the WeCom settings page.',
-      dingtalk: 'Read and write DingTalk OA resources: calendar, approval, attendance, contacts, smart forms. Requires internal app credentials configured in the DingTalk settings page.'
+      dingtalk: 'Read and write DingTalk OA resources: calendar, approval, attendance, contacts, smart forms. Requires internal app credentials configured in the DingTalk settings page.',
+      'chinese-writing': 'Use when producing any formal Chinese material (official documents, reports, contracts, emails, messages, etc.). Provides Chinese writing standards including GB/T 15834 punctuation, GB/T 15835 number usage, and "no space between Chinese characters and digits/English" conventions.'
     },
     extensionSkills: 'Extension Skills',
     extensionSkillsDesc: 'Extension skills teach AI how to complete specific tasks via SKILL.md files. Install from the market or add manually.'
