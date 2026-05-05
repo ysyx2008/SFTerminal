@@ -58,42 +58,71 @@ export interface BuildHint {
 
 export function buildOption(input: ChartInput, hint?: BuildHint): EChartsOption {
   const theme = getTheme(input.theme ?? 'light')
+  // 普通图表用 calcFontScale（基准 800）；K 线在 buildCandlestick 里用自己的 calcKlineFontScale
+  const scale = calcFontScale(hint?.width)
 
   let option: EChartsOption
   switch (input.type) {
-    case 'bar':         option = buildBar(input, theme); break
-    case 'line':        option = buildLine(input, theme, false); break
-    case 'area':        option = buildLine(input, theme, true); break
-    case 'pie':         option = buildPie(input, theme); break
-    case 'scatter':     option = buildScatter(input, theme); break
-    case 'radar':       option = buildRadar(input, theme); break
-    case 'heatmap':     option = buildHeatmap(input, theme); break
+    case 'bar':         option = buildBar(input, theme, scale); break
+    case 'line':        option = buildLine(input, theme, false, scale); break
+    case 'area':        option = buildLine(input, theme, true, scale); break
+    case 'pie':         option = buildPie(input, theme, scale); break
+    case 'scatter':     option = buildScatter(input, theme, scale); break
+    case 'radar':       option = buildRadar(input, theme, scale); break
+    case 'heatmap':     option = buildHeatmap(input, theme, scale); break
     case 'candlestick': option = buildCandlestick(input, theme, hint); break
     default:
       throw new Error(`Unsupported chart type: ${(input as ChartInput).type}`)
   }
 
-  return applyCommon(option, input, theme)
+  return applyCommon(option, input, theme, scale)
 }
 
 /**
- * 字号缩放系数：以 1280 宽画布为基准（系数 1），画布越大字号越大。
- *
- * 这里要解决的真实问题是「SVG 被前端聊天气泡缩放到 600-800 宽显示」——
- * SVG 字号是绝对像素，浏览器缩放时字也按 viewBox 一起缩，导致原图字号偏小
- * 时缩放后只剩 2-4 物理像素，根本看不清。所以画布越大、字号越要更大，
- * 让最终缩放后的物理像素保持可读（>= 7-8px）。
+ * K 线专用字号缩放（基准 1280，保留经实测的 K 线视觉手感不动）。
  *
  *   width <= 1280  → 1.0     （14px label）
  *   width 1280-2400 → 线性 → 1.4    （≈19.6px）
  *   width 2400-4800 → 线性 → 2.0    （≈28px）
  *   width >= 4800  → 2.0 上限
+ *
+ * K 线场景本来就鼓励大画布（半年/全年日 K 经常 4000+px），1280 基准让"标准
+ * 大小"K 线的字号和早期手工调过的视觉效果一致；普通图表使用更小的基准（见
+ * 下方 calcFontScale），因为它们默认画布也小很多。
  */
-function calcFontScale(width: number | undefined): number {
+function calcKlineFontScale(width: number | undefined): number {
   if (!width || width <= 1280) return 1
   if (width <= 2400) return 1 + (width - 1280) / (2400 - 1280) * 0.4
   if (width <= 4800) return 1.4 + (width - 2400) / (4800 - 2400) * 0.6
   return 2.0
+}
+
+/**
+ * 普通图表的字号缩放系数（bar/line/area/pie/scatter/radar/heatmap）。
+ *
+ * 设计前提（实测）：把 echarts SVG 嵌入聊天气泡或 Word 时，画布尺寸越大、
+ * 字号绝对像素被缩到的视觉占比就越小。1.0 基准选 800px 是一个经验值——
+ * 用户实测在 600-800 画布下硬编码 12-16px 字号刚好"舒服"，再大就开始
+ * 显得字小。所以 800 以下不放大（小画布字号自然合适），从 800 起线性
+ * 拉伸，让"画布大→字号大"，保留大画布的容量优势同时维持可读性。
+ *
+ *   width <= 800   → 1.0
+ *   800-1600       → 线性 → 1.4
+ *   1600-3200      → 线性 → 2.0
+ *   width >= 3200  → 2.0 上限
+ *
+ * K 线另有 calcKlineFontScale；不要混用。
+ */
+function calcFontScale(width: number | undefined): number {
+  if (!width || width <= 800) return 1
+  if (width <= 1600) return 1 + (width - 800) / (1600 - 800) * 0.4
+  if (width <= 3200) return 1.4 + (width - 1600) / (3200 - 1600) * 0.6
+  return 2.0
+}
+
+/** 字号缩放并取整：所有 fontSize 统一走这里，避免分散的 Math.round */
+function fs(base: number, scale: number): number {
+  return Math.round(base * scale)
 }
 
 /**
@@ -103,7 +132,7 @@ function calcFontScale(width: number | undefined): number {
  * 注意：当 build* 函数已自行设置 `option.title`（如 K 线专业主题需要自定义
  * title 颜色）时，applyCommon 不再覆盖，让各 chart 能保留自己的 title 样式。
  */
-function applyCommon(option: EChartsOption, input: ChartInput, theme: ThemePreset): EChartsOption {
+function applyCommon(option: EChartsOption, input: ChartInput, theme: ThemePreset, scale: number): EChartsOption {
   const merged: EChartsOption = {
     backgroundColor: theme.backgroundColor,
     color: theme.palette,
@@ -116,8 +145,8 @@ function applyCommon(option: EChartsOption, input: ChartInput, theme: ThemePrese
       text: input.title ?? '',
       subtext: input.subtitle ?? '',
       left: 'center',
-      textStyle: { color: theme.textColor, fontSize: 16, fontWeight: 'bold' },
-      subtextStyle: { color: theme.axisLabelColor, fontSize: 12 }
+      textStyle: { color: theme.textColor, fontSize: fs(16, scale), fontWeight: 'bold' },
+      subtextStyle: { color: theme.axisLabelColor, fontSize: fs(12, scale) }
     }
   }
   return merged
@@ -179,13 +208,14 @@ function asCategorySeries(raw: unknown, chartType: string): CategorySeriesData {
   return { categories, series: series as Array<{ name?: string; data: number[] }> }
 }
 
-function buildAxis(theme: ThemePreset, label?: string, isCategory = false): EChartsOption {
+function buildAxis(theme: ThemePreset, scale: number, label?: string, isCategory = false): EChartsOption {
   return {
     type: isCategory ? 'category' : 'value',
     name: label,
-    nameTextStyle: { color: theme.axisLabelColor, fontSize: 12 },
+    nameTextStyle: { color: theme.axisLabelColor, fontSize: fs(12, scale) },
     axisLine: { lineStyle: { color: theme.axisLineColor } },
-    axisLabel: { color: theme.axisLabelColor },
+    // 显式设 fontSize 让 scale 生效；echarts 默认 12px 在 1.0 下不变化
+    axisLabel: { color: theme.axisLabelColor, fontSize: fs(12, scale) },
     splitLine: { lineStyle: { color: theme.splitLineColor, type: 'dashed' } }
   }
 }
@@ -207,21 +237,23 @@ function titleBlockHeight(input: ChartInput, scale = 1): number {
   return 0
 }
 
-function buildLegend(input: ChartInput, theme: ThemePreset, names: string[]): EChartsOption | undefined {
+function buildLegend(input: ChartInput, theme: ThemePreset, names: string[], scale: number): EChartsOption | undefined {
   if (!shouldShowLegend(input, names)) return undefined
-  const titleH = titleBlockHeight(input)
+  const titleH = titleBlockHeight(input, scale)
   return {
     data: names,
     // 无 title 时贴顶 8px；有 title 时在 title 区块下方留 10px 间距
     top: titleH === 0 ? 8 : titleH + 10,
-    textStyle: { color: theme.axisLabelColor }
+    textStyle: { color: theme.axisLabelColor, fontSize: fs(12, scale) }
   }
 }
 
-function buildGrid(input: ChartInput, hasLegend: boolean): EChartsOption {
-  const titleH = titleBlockHeight(input)
-  // legend 单行高度（含间距）≈ 32，无 legend 时仅留 title 区块下方 16px
-  const legendBlock = hasLegend ? 32 + 10 : 0
+function buildGrid(input: ChartInput, hasLegend: boolean, scale: number): EChartsOption {
+  const titleH = titleBlockHeight(input, scale)
+  // legend 单行高度（含间距）：
+  //   - 历史固定值 42（32 marker 行高 + 10 间距），scale=1 下保持原布局，避免小画布回归
+  //   - scale > 1.7 时按字号放大（fs(12, 1.7) * 1.6 + 10 ≈ 42），避免大画布下 legend 盖住内容
+  const legendBlock = hasLegend ? Math.max(42, Math.round(fs(12, scale) * 1.6) + 10) : 0
   const topBase = titleH === 0 ? (hasLegend ? 8 : 16) : titleH + 10
   return {
     left: 60,
@@ -236,16 +268,16 @@ function buildGrid(input: ChartInput, hasLegend: boolean): EChartsOption {
 // bar / line / area
 // ============================================================================
 
-function buildBar(input: ChartInput, theme: ThemePreset): EChartsOption {
+function buildBar(input: ChartInput, theme: ThemePreset, scale: number): EChartsOption {
   const { categories, series } = asCategorySeries(input.data, 'bar')
   const names = series.map(s => s.name ?? '')
   const hasLegend = shouldShowLegend(input, names)
   return {
-    grid: buildGrid(input, hasLegend),
-    legend: buildLegend(input, theme, names),
+    grid: buildGrid(input, hasLegend, scale),
+    legend: buildLegend(input, theme, names, scale),
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    xAxis: { ...buildAxis(theme, input.x_label, true), data: categories },
-    yAxis: buildAxis(theme, input.y_label, false),
+    xAxis: { ...buildAxis(theme, scale, input.x_label, true), data: categories },
+    yAxis: buildAxis(theme, scale, input.y_label, false),
     series: series.map(s => ({
       type: 'bar',
       name: s.name,
@@ -254,23 +286,24 @@ function buildBar(input: ChartInput, theme: ThemePreset): EChartsOption {
   }
 }
 
-function buildLine(input: ChartInput, theme: ThemePreset, area: boolean): EChartsOption {
+function buildLine(input: ChartInput, theme: ThemePreset, area: boolean, scale: number): EChartsOption {
   const { categories, series } = asCategorySeries(input.data, area ? 'area' : 'line')
   const names = series.map(s => s.name ?? '')
   const hasLegend = shouldShowLegend(input, names)
   return {
-    grid: buildGrid(input, hasLegend),
-    legend: buildLegend(input, theme, names),
+    grid: buildGrid(input, hasLegend, scale),
+    legend: buildLegend(input, theme, names, scale),
     tooltip: { trigger: 'axis' },
-    xAxis: { ...buildAxis(theme, input.x_label, true), data: categories, boundaryGap: false },
-    yAxis: buildAxis(theme, input.y_label, false),
+    xAxis: { ...buildAxis(theme, scale, input.x_label, true), data: categories, boundaryGap: false },
+    yAxis: buildAxis(theme, scale, input.y_label, false),
     series: series.map(s => ({
       type: 'line',
       name: s.name,
       data: s.data,
       smooth: true,
       symbol: 'circle',
-      symbolSize: 6,
+      // symbolSize 跟字号一起放大，大画布下点位才看得见
+      symbolSize: Math.max(6, Math.round(6 * scale)),
       ...(area ? { areaStyle: { opacity: 0.3 } } : {})
     }))
   }
@@ -342,17 +375,17 @@ function pickNumber(o: Record<string, unknown>, keys: readonly string[]): number
   return undefined
 }
 
-function buildPie(input: ChartInput, theme: ThemePreset): EChartsOption {
+function buildPie(input: ChartInput, theme: ThemePreset, scale: number): EChartsOption {
   const items = asPieItems(input.data)
   return {
-    legend: buildLegend(input, theme, items.map(i => i.name)),
+    legend: buildLegend(input, theme, items.map(i => i.name), scale),
     tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
     series: [{
       type: 'pie',
       radius: ['40%', '65%'],
       center: ['50%', '55%'],
       data: items,
-      label: { color: theme.textColor },
+      label: { color: theme.textColor, fontSize: fs(12, scale) },
       labelLine: { lineStyle: { color: theme.axisLineColor } }
     }]
   }
@@ -362,7 +395,7 @@ function buildPie(input: ChartInput, theme: ThemePreset): EChartsOption {
 // scatter
 // ============================================================================
 
-function buildScatter(input: ChartInput, theme: ThemePreset): EChartsOption {
+function buildScatter(input: ChartInput, theme: ThemePreset, scale: number): EChartsOption {
   // 接受 [[x, y], ...] 或 { series: [{ name, data: [[x,y],...] }] }
   const raw = input.data
   const seriesArr: Array<{ name?: string; data: number[][] }> = []
@@ -384,16 +417,16 @@ function buildScatter(input: ChartInput, theme: ThemePreset): EChartsOption {
   const scatterNames = seriesArr.map(s => s.name ?? '')
   const scatterHasLegend = shouldShowLegend(input, scatterNames)
   return {
-    grid: buildGrid(input, scatterHasLegend),
-    legend: buildLegend(input, theme, scatterNames),
+    grid: buildGrid(input, scatterHasLegend, scale),
+    legend: buildLegend(input, theme, scatterNames, scale),
     tooltip: { trigger: 'item' },
-    xAxis: buildAxis(theme, input.x_label, false),
-    yAxis: buildAxis(theme, input.y_label, false),
+    xAxis: buildAxis(theme, scale, input.x_label, false),
+    yAxis: buildAxis(theme, scale, input.y_label, false),
     series: seriesArr.map(s => ({
       type: 'scatter',
       name: s.name,
       data: s.data,
-      symbolSize: 10
+      symbolSize: Math.max(10, Math.round(10 * scale))
     }))
   }
 }
@@ -412,7 +445,7 @@ function validatePoints(raw: unknown, ctx: string): number[][] {
 // radar
 // ============================================================================
 
-function buildRadar(input: ChartInput, theme: ThemePreset): EChartsOption {
+function buildRadar(input: ChartInput, theme: ThemePreset, scale: number): EChartsOption {
   const raw = input.data
   if (!raw || typeof raw !== 'object') throw new Error('radar data must be { indicators, series }')
   const obj = raw as Record<string, unknown>
@@ -444,11 +477,11 @@ function buildRadar(input: ChartInput, theme: ThemePreset): EChartsOption {
   })
 
   return {
-    legend: buildLegend(input, theme, validSeries.map(s => s.name)),
+    legend: buildLegend(input, theme, validSeries.map(s => s.name), scale),
     tooltip: {},
     radar: {
       indicator: validIndicators,
-      axisName: { color: theme.textColor },
+      axisName: { color: theme.textColor, fontSize: fs(12, scale) },
       splitLine: { lineStyle: { color: theme.splitLineColor } },
       axisLine: { lineStyle: { color: theme.axisLineColor } },
       splitArea: { areaStyle: { color: ['transparent'] } }
@@ -465,7 +498,7 @@ function buildRadar(input: ChartInput, theme: ThemePreset): EChartsOption {
 // heatmap
 // ============================================================================
 
-function buildHeatmap(input: ChartInput, theme: ThemePreset): EChartsOption {
+function buildHeatmap(input: ChartInput, theme: ThemePreset, scale: number): EChartsOption {
   const raw = input.data
   if (!raw || typeof raw !== 'object') {
     throw new Error('heatmap data must be { x_categories, y_categories, values }')
@@ -501,10 +534,10 @@ function buildHeatmap(input: ChartInput, theme: ThemePreset): EChartsOption {
     if (p[2] > maxV) maxV = p[2]
   }
   return {
-    grid: buildGrid(input, false),
+    grid: buildGrid(input, false, scale),
     tooltip: { position: 'top' },
-    xAxis: { ...buildAxis(theme, input.x_label, true), data: xCats, splitArea: { show: true } },
-    yAxis: { ...buildAxis(theme, input.y_label, true), data: yCats, splitArea: { show: true } },
+    xAxis: { ...buildAxis(theme, scale, input.x_label, true), data: xCats, splitArea: { show: true } },
+    yAxis: { ...buildAxis(theme, scale, input.y_label, true), data: yCats, splitArea: { show: true } },
     visualMap: {
       min: minV,
       max: maxV,
@@ -512,12 +545,12 @@ function buildHeatmap(input: ChartInput, theme: ThemePreset): EChartsOption {
       orient: 'horizontal',
       left: 'center',
       bottom: 8,
-      textStyle: { color: theme.axisLabelColor }
+      textStyle: { color: theme.axisLabelColor, fontSize: fs(11, scale) }
     },
     series: [{
       type: 'heatmap',
       data: points,
-      label: { show: true, color: theme.textColor }
+      label: { show: true, color: theme.textColor, fontSize: fs(12, scale) }
     }]
   }
 }
@@ -625,7 +658,8 @@ function buildCandlestick(input: ChartInput, _baseTheme: ThemePreset, hint?: Bui
   // 基准画布 1280 → scale=1；2400 → scale=1.4；4800+ → scale=2.0（上限）
   // 基础字号选 14（轴 label），刻意比"商务图表"略大，因为 SVG 会被前端缩到
   // 聊天气泡尺寸再显示，原图字号过小会让缩放后看不清"亿"等中文字。
-  const scale = calcFontScale(hint?.width)
+  // K 线专用 calcKlineFontScale，保留经实测的视觉手感；不和普通图表共用。
+  const scale = calcKlineFontScale(hint?.width)
   const fontAxisLabel = Math.round(14 * scale)         // 轴 label 基础字号
   const fontAxisName = Math.round(15 * scale)          // 轴名（"成交量"等）
   const fontTitle = Math.round(18 * scale)             // title 主标题

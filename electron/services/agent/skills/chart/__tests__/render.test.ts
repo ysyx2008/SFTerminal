@@ -531,6 +531,142 @@ describe('pie data tolerance', () => {
   })
 })
 
+describe('普通图表字号自适应（calcFontScale 基准 800）', () => {
+  // 业务点：1280×800 默认画布下硬编码 12-16px 字号实测偏小，原因是缺乏字号自适应。
+  // 新策略：普通图表用 calcFontScale，width ≤ 800 时 scale=1.0（小画布字号自然合适），
+  // 800-1600 线性 → 1.4×，1600-3200 → 2.0×，3200+ 上限。下面验证关键档位的字号。
+  // K 线另走 calcKlineFontScale（基准 1280），单独回归验证。
+  type WithFontSize = { fontSize?: number }
+  type TitleObj = { textStyle?: WithFontSize; subtextStyle?: WithFontSize }
+  type AxisObj = { axisLabel?: WithFontSize; nameTextStyle?: WithFontSize }
+  type LegendObj = { textStyle?: WithFontSize }
+  type PieSeriesObj = { label?: WithFontSize }
+
+  it('width=800 → scale=1.0：title 16 / subtitle 12 / axisLabel 12（基准值）', () => {
+    const opt = buildOption(
+      {
+        type: 'bar',
+        title: 'T',
+        subtitle: 'S',
+        x_label: 'x',
+        data: { categories: ['a'], series: [{ name: 's1', data: [1] }, { name: 's2', data: [2] }] }
+      },
+      { width: 800, height: 400 }
+    )
+    const title = opt.title as TitleObj
+    expect(title.textStyle?.fontSize).toBe(16)
+    expect(title.subtextStyle?.fontSize).toBe(12)
+    const xAxis = opt.xAxis as AxisObj
+    expect(xAxis.axisLabel?.fontSize).toBe(12)
+    expect(xAxis.nameTextStyle?.fontSize).toBe(12)
+    const legend = opt.legend as LegendObj
+    expect(legend.textStyle?.fontSize).toBe(12)
+  })
+
+  it('width=1280 → scale≈1.24：fontSize 按比例放大（不再"和小画布一样小"）', () => {
+    const opt = buildOption(
+      {
+        type: 'bar',
+        title: 'T',
+        subtitle: 'S',
+        data: { categories: ['a'], series: [{ name: 'x', data: [1] }] }
+      },
+      { width: 1280, height: 800 }
+    )
+    // scale = 1 + (1280-800)/(1600-800) × 0.4 = 1.24
+    const title = opt.title as TitleObj
+    expect(title.textStyle?.fontSize).toBe(Math.round(16 * 1.24)) // 20
+    expect(title.subtextStyle?.fontSize).toBe(Math.round(12 * 1.24)) // 15
+    const xAxis = opt.xAxis as AxisObj
+    expect(xAxis.axisLabel?.fontSize).toBe(Math.round(12 * 1.24)) // 15
+  })
+
+  it('width≥3200 → scale=2.0 上限：title 32 / axisLabel 24', () => {
+    const opt = buildOption(
+      { type: 'pie', title: 'T', data: [{ name: 'A', value: 50 }] },
+      { width: 3200, height: 1500 }
+    )
+    const title = opt.title as TitleObj
+    expect(title.textStyle?.fontSize).toBe(32)
+    const series = opt.series as PieSeriesObj[]
+    expect(series[0].label?.fontSize).toBe(24)
+  })
+
+  it('width 不传 → scale=1.0 兜底（buildOption 单参数调用不应崩）', () => {
+    const opt = buildOption({
+      type: 'bar',
+      title: 'T',
+      data: { categories: ['a'], series: [{ name: 'x', data: [1] }, { name: 'y', data: [2] }] }
+    })
+    const legend = opt.legend as LegendObj
+    expect(legend.textStyle?.fontSize).toBe(12)
+  })
+
+  it('heatmap series.label 和 visualMap.textStyle 也带上 scale（不被遗漏）', () => {
+    const opt = buildOption(
+      {
+        type: 'heatmap',
+        data: {
+          x_categories: ['a'],
+          y_categories: ['b'],
+          values: [[0, 0, 1]]
+        }
+      },
+      { width: 1600, height: 600 } // scale=1.4
+    )
+    type HeatmapSeries = { label?: WithFontSize }
+    type VisualMap = { textStyle?: WithFontSize }
+    const series = opt.series as HeatmapSeries[]
+    expect(series[0].label?.fontSize).toBe(Math.round(12 * 1.4))
+    const vm = opt.visualMap as VisualMap
+    expect(vm.textStyle?.fontSize).toBe(Math.round(11 * 1.4))
+  })
+
+  it('radar axisName 字号也带 scale', () => {
+    const opt = buildOption(
+      {
+        type: 'radar',
+        data: {
+          indicators: [{ name: 'A', max: 100 }],
+          series: [{ value: [50] }]
+        }
+      },
+      { width: 2400, height: 1200 } // scale=1.4 + (2400-1600)/(3200-1600)*0.6 = 1.7
+    )
+    type Radar = { axisName?: WithFontSize }
+    const radar = opt.radar as Radar
+    expect(radar.axisName?.fontSize).toBe(Math.round(12 * 1.7))
+  })
+})
+
+describe('K 线字号回归（calcKlineFontScale 基准 1280，与普通图表 calcFontScale 隔离）', () => {
+  // K 线视觉手感经过用户实测调过，本次"普通图表加字号自适应"不应改动 K 线。
+  // 这两个用例锁住"K 线 1280 = 1.0× / 2400 = 1.4×"的现状，避免后续误共用 scale。
+  type WithFontSize = { fontSize?: number }
+  type Legend = { textStyle?: WithFontSize }
+
+  const baseData = {
+    categories: ['a', 'b'],
+    values: [[100, 110, 95, 115], [110, 108, 105, 112]]
+  } as const
+
+  it('width=1280 → fontSubtitle = 14 × 1.0 = 14（不会因新 calcFontScale 提前放大）', () => {
+    const opt = buildOption(
+      { type: 'candlestick', data: baseData },
+      { width: 1280, height: 800 }
+    )
+    expect((opt.legend as Legend).textStyle?.fontSize).toBe(14)
+  })
+
+  it('width=2400 → fontSubtitle = 14 × 1.4 ≈ 20（calcKlineFontScale 自有曲线生效）', () => {
+    const opt = buildOption(
+      { type: 'candlestick', data: baseData },
+      { width: 2400, height: 1000 }
+    )
+    expect((opt.legend as Legend).textStyle?.fontSize).toBe(Math.round(14 * 1.4))
+  })
+})
+
 describe('renderToPng (sharp 栅格化, 中文字体走系统 PingFang SC)', () => {
   it('renders a chart to PNG buffer with valid PNG magic bytes', async () => {
     const opt = buildOption({

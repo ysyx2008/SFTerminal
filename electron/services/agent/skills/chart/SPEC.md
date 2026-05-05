@@ -88,7 +88,10 @@ K 线**整体走专业行情软件视觉**而不是商务图表样式：
 
 - 默认输出 SVG（对话流展示，矢量清晰、文件小）；`format: 'png'` 时输出 PNG（嵌入 Word/PDF/IM 等位图场景）。**不要让 AI 自己拿 SVG 再用 ImageMagick / convert 转 PNG**，那条路对中文 SVG 文本支持差，会丢字／降级到无衬线字体
 - 图片宽高 clamp 到 `[100, 7680]`（8K 上限，足以容纳全年日 K ~250 根 / 全天分时 ~240 点）；默认 1280×800（两个工具共用同一组常量）
-- **画布尺寸应由 AI 按内容规模主动决策**：默认值仅作兜底，AI 看见 200+ 数据点时应主动拉到 3840+。`tools.ts` 中 `chartSkillContent` 给出明确的规模 → 尺寸映射表。字号是绝对像素（不随尺寸缩放），所以画大画布的意义是「容纳更多数据点」而非「字变大」
+- **画布尺寸应由 AI 按内容规模主动决策**：默认值仅作兜底，AI 看见 200+ 数据点时应主动拉到 3840+。`tools.ts` 中 `chartSkillContent` 给出明确的规模 → 尺寸映射表
+- **字号自适应**（按画布宽度缩放，避免大画布下字号相对画布偏小看不清）：
+  - 普通图表用 `calcFontScale`：基准 800px=1.0×（小画布字号自然合适，跟历史值一致），800-1600 线性放大到 1.4×，1600-3200 到 2.0×，3200+ 上限。所有硬编码字号（title 16 / subtitle 12 / axis label 12 / legend 12 / pie label 12 / heatmap series label 12 / visualMap 11 / radar axisName 12）都乘 scale
+  - K 线另走 `calcKlineFontScale`（基准 1280px=1.0×，2400→1.4×，4800+→2.0×），曲线和经实测的视觉手感一致，**不与普通图表共用**——避免误调改了 K 线字号
 - `generate_chart` 数据校验失败抛 Error，由 executor 捕获返回 `success: false` + 友好错误，不让 echarts 内部报错暴露给 AI
 - `render_echarts_option` 反过来：**故意**把 ECharts 的原始报错（含字段路径）原样返给 AI，让 AI 能定位问题（自由路径下 AI 直接写 option，最有价值的反馈就是 ECharts 自己的诊断信息）
 - `_meta.parallelizable: true`、`contextBudget.toolResult: 'clearable'` —— 多张图可并行生成、图片返回后允许清理
