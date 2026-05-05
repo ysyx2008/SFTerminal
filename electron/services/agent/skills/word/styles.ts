@@ -191,12 +191,18 @@ export const PAGE_A4 = { width: 11906, height: 16838 }
 export const PAGE_LETTER = { width: 12240, height: 15840 }
 /** 默认页边距 1 inch = 1440 DXA */
 const DEFAULT_MARGIN = 1440
-/** GB/T 9704 公文页边距（mm → DXA：1mm ≈ 56.7 DXA） */
+/**
+ * GB/T 9704 公文页边距（mm → DXA：1mm ≈ 56.7 DXA）
+ *
+ * 字段名必须用 PageConfig 的 marginTop/marginBottom/marginLeft/marginRight，
+ * 历史上误写为 top/bottom/left/right 导致 ...展开后字段对不上、公文边距实际从未
+ * 生效（一直 fallback 到 1in = 1440 DXA 的默认值）。
+ */
 const OFFICIAL_MARGINS = {
-  top: Math.round(37 * 56.7),    // 37mm
-  bottom: Math.round(35 * 56.7), // 35mm
-  left: Math.round(28 * 56.7),   // 28mm
-  right: Math.round(26 * 56.7)   // 26mm
+  marginTop: Math.round(37 * 56.7),    // 37mm
+  marginBottom: Math.round(35 * 56.7), // 35mm
+  marginLeft: Math.round(28 * 56.7),   // 28mm
+  marginRight: Math.round(26 * 56.7)   // 26mm
 }
 
 /**
@@ -377,6 +383,12 @@ interface DocxBuildContext {
   /** 图片相对路径解析的基准目录（通常是 markdown 源文件所在目录或 cwd） */
   mediaBaseDir?: string
   /**
+   * 图片显示宽度上限（像素），按当前样式的页面 contentWidth 算出。
+   * createImageRunOrFallback 在最终决定 width/height 时若超出此值会按比例等比缩，
+   * 防止 AI 显式给大尺寸（或图片本身分辨率高被 AI 误填）撑爆 A4 版面。
+   */
+  maxImageWidthPx?: number
+  /**
    * 脚注 label → docx 中的数字 ID 映射
    * marked-footnote 用字符串 label 标识脚注（[^foo]），但 docx 库要数字 ID
    */
@@ -429,8 +441,16 @@ const IMAGE_EXT_TO_TYPE: Record<string, 'png' | 'jpg' | 'jpeg' | 'gif' | 'bmp' |
   svg: 'svg'
 }
 
-/** 图片默认显示宽度（像素，约等于 5.3 英寸 / 13.5cm） */
+/** 图片默认显示宽度（像素，约等于 5 英寸 / 12.7cm） */
 const IMAGE_DEFAULT_WIDTH = 480
+/**
+ * 图片最大宽度兜底值（像素）
+ * A4 默认 1in 边距下正文宽度 ≈ 6.27in ≈ 602px；公文样式 28/26mm 边距下 ≈ 589px。
+ * 取保守值 580 作为没有 ctx.maxImageWidthPx 时的兜底，避免大尺寸图片把版面撑爆。
+ */
+const IMAGE_MAX_WIDTH_FALLBACK = 580
+/** 1px ≈ 15 DXA（twips），96 DPI 约定 */
+const PX_TO_DXA = 15
 
 /**
  * 解析 Markdown 图片的尺寸信息
@@ -561,8 +581,19 @@ function createImageRunOrFallback(
     })
   }
 
-  const finalWidth = width || IMAGE_DEFAULT_WIDTH
-  const finalHeight = height || Math.round(finalWidth * 0.75)
+  const requestedWidth = width || IMAGE_DEFAULT_WIDTH
+  const requestedHeight = height || Math.round(requestedWidth * 0.75)
+
+  // 按页面正文宽度做硬上限：避免 AI 显式给大尺寸（如 |2400x1800）或图片源分辨率
+  // 巨大被无脑使用，导致图片溢出页面。等比缩放，不会放大小图。
+  const maxWidth = ctx?.maxImageWidthPx ?? IMAGE_MAX_WIDTH_FALLBACK
+  let finalWidth = requestedWidth
+  let finalHeight = requestedHeight
+  if (finalWidth > maxWidth) {
+    const ratio = maxWidth / finalWidth
+    finalWidth = maxWidth
+    finalHeight = Math.round(requestedHeight * ratio)
+  }
 
   return new ImageRun({
     data: buffer,
@@ -1365,11 +1396,16 @@ export async function markdownToDocx(
   // 收集所有标题 anchor（处理同名冲突），供 [文](#xxx) 跳转校验和给 heading 段落自动包 Bookmark
   const { ordered: headingAnchorList, set: headingAnchors } = collectHeadingAnchors(tokens)
 
+  // 计算当前样式下的页面正文宽度（像素），用作图片 cap
+  const pageMetrics = resolvePageConfig(styleConfig.config?.page)
+  const maxImageWidthPx = Math.floor(pageMetrics.contentWidth / PX_TO_DXA)
+
   // 构建上下文（收集有序列表编号定义）
   const ctx: DocxBuildContext = {
     numberingConfigs: [],
     orderedListCounter: 0,
     mediaBaseDir: options?.mediaBaseDir,
+    maxImageWidthPx,
     footnoteIdByLabel,
     headingAnchors,
     headingAnchorList,

@@ -222,6 +222,54 @@ describe('markdownToDocx: image embedding', () => {
   })
 })
 
+describe('markdownToDocx: image width cap (避免溢出 A4 版面)', () => {
+  it('caps oversized image to page contentWidth (simple style ≈ 601px)', async () => {
+    // simple 样式默认 A4 + 1in 边距：contentWidth = 11906 - 2880 = 9026 DXA = 601px
+    // AI 显式给 2400x1800 大尺寸（容易因为图片源分辨率 2400x1800 直接抄过来）
+    const md = `![大图|2400x1800](${imagePath})`
+    const buf = await markdownToDocx(md, 'simple')
+    const { documentXml } = await inspectDocx(buf)
+
+    // cap 后 width = 601px, height = 1800 * (601/2400) = 451px
+    // EMU: 601*9525 = 5724525, 451*9525 = 4295775
+    expect(documentXml).toMatch(/cx="5724525"/)
+    expect(documentXml).toMatch(/cy="4295775"/)
+    // 不应保留原始 2400x1800（22860000x17145000 EMU）
+    expect(documentXml).not.toMatch(/cx="22860000"/)
+  })
+
+  it('caps oversized image more tightly under securities style (≈ 589px)', async () => {
+    // securities 用 OFFICIAL_MARGINS（左 28mm + 右 26mm = 3062 DXA），contentWidth ≈ 589px
+    const md = `![大图|2400x1800](${imagePath})`
+    const buf = await markdownToDocx(md, 'securities')
+    const { documentXml } = await inspectDocx(buf)
+
+    // 589*9525 = 5610225
+    expect(documentXml).toMatch(/cx="5610225"/)
+    // 显著小于 simple 样式下的 cap (601*9525 = 5724525)
+    expect(documentXml).not.toMatch(/cx="5724525"/)
+  })
+
+  it('does NOT upscale small images (keep |200x100 as-is)', async () => {
+    const md = `![小图|200x100](${imagePath})`
+    const buf = await markdownToDocx(md, 'simple')
+    const { documentXml } = await inspectDocx(buf)
+
+    expect(documentXml).toMatch(/cx="1905000"/)
+    expect(documentXml).toMatch(/cy="952500"/)
+  })
+
+  it('default-size images (no |WxH) remain 480x360, unaffected by cap', async () => {
+    const md = `![无尺寸](${imagePath})`
+    const buf = await markdownToDocx(md, 'simple')
+    const { documentXml } = await inspectDocx(buf)
+
+    // 480*9525 = 4572000, 360*9525 = 3429000
+    expect(documentXml).toMatch(/cx="4572000"/)
+    expect(documentXml).toMatch(/cy="3429000"/)
+  })
+})
+
 describe('markdownToDocx: CommonMark wrapped <> path (用户必须显式包裹)', () => {
   let spacedDir: string
   let spacedImagePath: string
