@@ -1,8 +1,8 @@
 diff --git a/node_modules/@larksuiteoapi/node-sdk/es/index.js b/node_modules/@larksuiteoapi/node-sdk/es/index.js
-index eb6c589..dd1d324 100644
+index 008f36c..764f776 100644
 --- a/node_modules/@larksuiteoapi/node-sdk/es/index.js
 +++ b/node_modules/@larksuiteoapi/node-sdk/es/index.js
-@@ -85310,7 +85310,7 @@ class WSClient {
+@@ -85403,7 +85403,7 @@ class WSClient {
          return __awaiter(this, void 0, void 0, function* () {
              const { appId, appSecret } = this.wsConfig.getClient();
              try {
@@ -11,7 +11,7 @@ index eb6c589..dd1d324 100644
                      method: "post",
                      url: this.wsConfig.wsConfigUrl,
                      data: {
-@@ -85323,12 +85323,16 @@ class WSClient {
+@@ -85417,12 +85417,16 @@ class WSClient {
                      },
                      timeout: 15000,
                  });
@@ -32,10 +32,10 @@ index eb6c589..dd1d324 100644
                  this.wsConfig.updateWs({
                      connectUrl: URL,
 diff --git a/node_modules/@larksuiteoapi/node-sdk/lib/index.js b/node_modules/@larksuiteoapi/node-sdk/lib/index.js
-index d4cd7ec..1bf1c44 100644
+index 39ac49b..e4893bc 100644
 --- a/node_modules/@larksuiteoapi/node-sdk/lib/index.js
 +++ b/node_modules/@larksuiteoapi/node-sdk/lib/index.js
-@@ -85325,7 +85325,7 @@ class WSClient {
+@@ -85421,7 +85421,7 @@ class WSClient {
          return __awaiter(this, void 0, void 0, function* () {
              const { appId, appSecret } = this.wsConfig.getClient();
              try {
@@ -44,7 +44,7 @@ index d4cd7ec..1bf1c44 100644
                      method: "post",
                      url: this.wsConfig.wsConfigUrl,
                      data: {
-@@ -85338,12 +85338,16 @@ class WSClient {
+@@ -85435,12 +85435,16 @@ class WSClient {
                      },
                      timeout: 15000,
                  });
