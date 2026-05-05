@@ -710,6 +710,12 @@ const translations = {
     'chart.generated_with_path': '已生成 {type} 图表，已保存到 {path}',
     'chart.render_failed': '图表生成失败',
     'chart.render_failed_detail': '图表生成失败: {error}',
+    'chart.echarts_option_required': '参数 option 必填，且必须是 ECharts option 对象（或可解析的 JSON 字符串）',
+    'chart.echarts_option_invalid_json': 'option 字符串无法解析为 JSON: {error}',
+    'chart.echarts_option_not_object': 'option 必须是对象（包含 series 等顶层字段），got {kind}',
+    'chart.echarts_rendering': '渲染自定义 ECharts 图表 {title}',
+    'chart.echarts_rendered': '已渲染自定义 ECharts 图表',
+    'chart.echarts_rendered_with_path': '已渲染自定义 ECharts 图表，已保存到 {path}',
 
     // 飞书技能
     'feishu.resource_bitable': '多维表格',
@@ -2112,6 +2118,12 @@ After saving, wrap up naturally — like friends who've finished getting to know
     'chart.generated_with_path': 'Generated {type} chart, saved to {path}',
     'chart.render_failed': 'Chart generation failed',
     'chart.render_failed_detail': 'Chart generation failed: {error}',
+    'chart.echarts_option_required': 'Parameter "option" is required and must be an ECharts option object (or a parseable JSON string)',
+    'chart.echarts_option_invalid_json': 'Failed to parse option as JSON: {error}',
+    'chart.echarts_option_not_object': 'option must be an object (with top-level fields like series), got {kind}',
+    'chart.echarts_rendering': 'Rendering custom ECharts chart {title}',
+    'chart.echarts_rendered': 'Rendered custom ECharts chart',
+    'chart.echarts_rendered_with_path': 'Rendered custom ECharts chart, saved to {path}',
 
     // Feishu skill
     'feishu.resource_bitable': 'Bitable',

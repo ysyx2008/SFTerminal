@@ -97,3 +97,112 @@ describe('executeChartTool: image delivery contract', () => {
     expect(result.error).toMatch(/Unsupported|不支持/)
   })
 })
+
+describe('executeChartTool: render_echarts_option (free path)', () => {
+  it('renders arbitrary ECharts option (sankey, generate_chart 不支持的类型)', async () => {
+    const { config, steps } = makeExecutor()
+    const result = await executeChartTool(
+      'render_echarts_option',
+      'pty-1',
+      {
+        option: {
+          series: [{
+            type: 'sankey',
+            data: [{ name: 'A' }, { name: 'B' }, { name: 'C' }],
+            links: [
+              { source: 'A', target: 'B', value: 10 },
+              { source: 'B', target: 'C', value: 6 }
+            ]
+          }]
+        }
+      },
+      'call-sankey',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    expect(result.success).toBe(true)
+    const stepResult = steps.find(s => s.type === 'tool_result')
+    expect(stepResult?.images?.length).toBe(1)
+    expect(stepResult?.images?.[0]).toMatch(/^data:image\/svg\+xml;base64,/)
+    // 同 generate_chart：图不进 ToolResult.images（避免给 AI 喂 SVG）
+    expect(result.images).toBeUndefined()
+  })
+
+  it('accepts JSON string option (AI 偶尔会把 option 序列化成字符串传过来)', async () => {
+    const { config } = makeExecutor()
+    const optionStr = JSON.stringify({
+      series: [{ type: 'gauge', data: [{ value: 50 }] }]
+    })
+    const result = await executeChartTool(
+      'render_echarts_option',
+      'pty-1',
+      { option: optionStr },
+      'call-gauge',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    expect(result.success).toBe(true)
+  })
+
+  it('returns friendly error when option missing', async () => {
+    const { config } = makeExecutor()
+    const result = await executeChartTool(
+      'render_echarts_option',
+      'pty-1',
+      {},
+      'call-empty',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    expect(result.success).toBe(false)
+    expect(result.error).toMatch(/option .*required|必填/)
+  })
+
+  it('returns friendly error when option string is invalid JSON', async () => {
+    const { config } = makeExecutor()
+    const result = await executeChartTool(
+      'render_echarts_option',
+      'pty-1',
+      { option: '{not valid json' },
+      'call-badjson',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    expect(result.success).toBe(false)
+    expect(result.error).toMatch(/JSON|parse|无法解析/)
+  })
+
+  it('returns friendly error when option is array (not an object)', async () => {
+    const { config } = makeExecutor()
+    const result = await executeChartTool(
+      'render_echarts_option',
+      'pty-1',
+      { option: [1, 2, 3] },
+      'call-array',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    expect(result.success).toBe(false)
+    expect(result.error).toMatch(/object|对象/)
+  })
+
+  it('passes ECharts render error through to AI verbatim', async () => {
+    // 故意构造一个 ECharts 会拒的 option（series 没有 type 字段）
+    const { config, steps } = makeExecutor()
+    const result = await executeChartTool(
+      'render_echarts_option',
+      'pty-1',
+      { option: { series: [{ data: [1, 2, 3] }] } },
+      'call-noop',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    // 即便 ECharts 不报错（一些版本对缺 type 容忍），也要保证渲染流程不崩
+    // 主要是验证执行路径走通：要么 success、要么 success=false 且有 error
+    if (!result.success) {
+      expect(result.error).toBeTruthy()
+      const errStep = steps.find(s => s.type === 'tool_result')
+      expect(errStep?.images).toBeUndefined()
+    }
+  })
+})

@@ -69,6 +69,57 @@ K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (�
       parallelizable: true,
       contextBudget: { toolResult: 'clearable' }
     }
+  } as ToolDefinitionWithMeta,
+
+  // ============================================================================
+  // 自由路径：直接传完整 ECharts option，让 AI 表达 generate_chart 之外的任意图
+  // ============================================================================
+  {
+    type: 'function',
+    function: {
+      name: 'render_echarts_option',
+      description: `**高级路径**：直接传完整的 ECharts option（v6+）渲染任意图表，输出 SVG 给用户看。
+适用于 \`generate_chart\` 表达不出来的复杂场景：
+- 生僻图类型：sankey（桑基图）/ gauge（仪表盘）/ funnel（漏斗）/ graph（关系图）/ tree / treemap / sunburst / parallel / themeRiver / boxplot
+- 高级特性：dataZoom（数据缩放）/ visualMap（视觉映射）/ markLine/markArea / 自定义 tooltip formatter / 多 grid 联动 / 双 y 轴
+- generate_chart 8 类不够用的复杂组合
+
+⚠️ 何时**不要**用本工具，请用 \`generate_chart\`：
+- 简单柱/折/饼/雷达/散点/热力/常规 K 线（含成交量）—— generate_chart 更紧凑、有数据校验和容错
+- 不熟 ECharts option 时也优先 generate_chart，避免反复改错
+
+⚠️ AI 重要提示：
+1. 你（AI）**看不到**生成的图（同 generate_chart）。success=true 即用户已看到，不要再去"验证"。
+2. 出错时报错信息会原样返回（含 ECharts 路径信息），按提示修改 option 重试即可。
+3. 不必传 backgroundColor/textStyle 等通用样式，工具不会注入主题——你想要 dark 风格请自己在 option 里设。`,
+      parameters: {
+        type: 'object',
+        properties: {
+          option: {
+            type: 'object',
+            description: '完整的 ECharts option 对象（v6+ 格式），按 https://echarts.apache.org/zh/option.html 文档结构传。必须包含 series 等业务字段。提示：少数客户端会序列化对象为 JSON 字符串，工具也会自动 parse 容错。'
+          },
+          title: { type: 'string', description: '步骤卡片显示用的标题（可选，纯展示用，不影响 option）' },
+          width: {
+            type: 'number',
+            description: '画布宽度（px），默认 1280，上限 7680。按数据规模选——同 generate_chart 的尺寸指引。'
+          },
+          height: {
+            type: 'number',
+            description: '画布高度（px），默认 800，上限 7680。'
+          },
+          save_to_workspace: {
+            type: 'boolean',
+            description: '是否保存 SVG 到 agent-workspace/charts/。默认 false。'
+          }
+        },
+        required: ['option']
+      }
+    },
+    _meta: {
+      parallelizable: true,
+      contextBudget: { toolResult: 'clearable' }
+    }
   } as ToolDefinitionWithMeta
 ]
 
@@ -174,4 +225,64 @@ K 线（candlestick）必须显式指定 \`kline_style\`：
 
 工具返回 \`output\` 文本表示成功状态（含可选 workspace 路径），SVG 走 step.images 直接展示给用户。
 如果 \`save_to_workspace: true\`，同时返回 workspace 相对路径，可后续通过 \`read_file\` 重新读取该 SVG 文件。
+
+---
+
+## 高级路径：\`render_echarts_option\` 工具
+
+当 \`generate_chart\` 表达不出来时（生僻图类型、复杂联动、自定义 tooltip 等），用 \`render_echarts_option\` 直接写完整 ECharts option（v6+）。
+
+### 何时升级
+
+- ✅ **必须用本工具**：sankey / gauge / funnel / graph / tree / treemap / sunburst / parallel / themeRiver / boxplot 等 generate_chart 不支持的图
+- ✅ **建议用本工具**：需要 dataZoom / visualMap / markLine / markArea / 自定义 tooltip formatter / 多 grid 复杂联动 / 双 y 轴
+- ❌ **优先 generate_chart**：简单柱/折/饼/雷达/散点/热力/常规 K 线（含成交量）—— 那个工具有数据校验和友好错误，不容易出错
+
+### 出错怎么办
+
+工具会把 ECharts 的原始报错原样返给你（包含失败路径，如 \`Invalid series.0.data\`），按提示修改 option 重试即可。**不要乱猜**，错误信息里通常已经写清楚问题在哪。
+
+### 示例：sankey（桑基图，generate_chart 不支持）
+
+\`\`\`json
+{
+  "option": {
+    "series": [{
+      "type": "sankey",
+      "data": [
+        { "name": "公司 A" }, { "name": "部门 1" }, { "name": "项目 X" }
+      ],
+      "links": [
+        { "source": "公司 A", "target": "部门 1", "value": 100 },
+        { "source": "部门 1", "target": "项目 X", "value": 60 }
+      ]
+    }]
+  }
+}
+\`\`\`
+
+### 示例：gauge（仪表盘）
+
+\`\`\`json
+{
+  "option": {
+    "series": [{
+      "type": "gauge",
+      "data": [{ "value": 75, "name": "完成率" }],
+      "axisLine": { "lineStyle": { "width": 30 } }
+    }]
+  }
+}
+\`\`\`
+
+### 示例：K 线 + dataZoom（generate_chart 暂不支持的高级特性）
+
+generate_chart 不带 dataZoom；想让用户拖动时间轴时用本工具，option 框架同 ECharts 标准 K 线 + 在顶层加 \`dataZoom: [{ type: 'inside' }]\`。
+
+### 注意
+
+- 不要画 generate_chart 8 类能搞定的图（白白让自己出错）
+- option 不要包 \`{ option: {...} }\` 这一层，工具的参数就叫 option，里面直接是 ECharts option 内容
+- 如果传字符串 JSON，会自动 parse，但建议直接传对象避免转义问题
+- 工具不会注入主题/字体；想要 dark 风格请自己在 option 里设 \`backgroundColor\`、\`textStyle.color\` 等
 `

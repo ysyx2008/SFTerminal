@@ -5,7 +5,7 @@ import type { ToolResult, AgentConfig } from '../../types'
 import type { ToolExecutorConfig } from '../../tools/types'
 import { t } from '../../i18n'
 import { createLogger } from '../../../../utils/logger'
-import { buildOption, type ChartType, type ChartInput } from './render'
+import { buildOption, type ChartType, type ChartInput, type EChartsOption } from './render'
 import { renderToSvg, type RenderSize } from './ssr'
 
 const log = createLogger('ChartSkill')
@@ -37,6 +37,8 @@ export async function executeChartTool(
   switch (toolName) {
     case 'generate_chart':
       return generateChart(args, executor)
+    case 'render_echarts_option':
+      return renderEchartsOption(args, executor)
     default:
       return { success: false, output: '', error: t('chart.unknown_tool', { name: toolName }) }
   }
@@ -118,6 +120,111 @@ async function generateChart(
 }
 
 // ============================================================================
+// render_echarts_option：自由路径，AI 直接传完整 ECharts option
+// ============================================================================
+
+async function renderEchartsOption(
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  // 1) option 兜底：必填，且必须是 plain object（或可解析 JSON 字符串）
+  let option: EChartsOption
+  try {
+    option = parseEchartsOption(args.option)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { success: false, output: '', error: msg }
+  }
+
+  const size = clampSize(args.width, args.height)
+  const title = typeof args.title === 'string' ? args.title : ''
+
+  // 2) 步骤卡片只展示 size + 可选 title，避免把整个 option（可能很大）塞进 toolArgs
+  executor.addStep({
+    type: 'tool_call',
+    content: t('chart.echarts_rendering', { title }),
+    toolName: 'render_echarts_option',
+    toolArgs: { width: size.width, height: size.height, title },
+    riskLevel: 'safe'
+  })
+
+  let svgString: string
+  try {
+    svgString = await renderToSvg(option, size)
+  } catch (err) {
+    // 关键设计：把 ECharts 的原始报错原样返给 AI，让它能定位到具体出错的字段
+    // （ECharts 报错通常带路径，如 "Invalid series.0.data"）。不做包装。
+    const msg = err instanceof Error ? err.message : String(err)
+    log.error('Failed to render custom echarts option:', msg)
+    executor.addStep({
+      type: 'tool_result',
+      content: t('chart.render_failed'),
+      toolName: 'render_echarts_option',
+      toolResult: msg
+    })
+    return { success: false, output: '', error: t('chart.render_failed_detail', { error: msg }) }
+  }
+
+  const dataUrl = svgToDataUrl(svgString)
+
+  let savedPath: string | undefined
+  if (args.save_to_workspace === true) {
+    try {
+      // 自定义 echarts option 没有明确的 chart-type，统一保存为 'echarts' 前缀
+      savedPath = saveSvgToWorkspace(svgString, 'echarts')
+    } catch (err) {
+      log.warn('Failed to save chart to workspace:', err)
+    }
+  }
+
+  const output = savedPath
+    ? t('chart.echarts_rendered_with_path', { path: savedPath })
+    : t('chart.echarts_rendered')
+
+  // 同 generate_chart：图走 step.images 给用户，不进 ToolResult.images（AI 看不到 SVG）
+  executor.addStep({
+    type: 'tool_result',
+    content: output,
+    toolName: 'render_echarts_option',
+    toolResult: output,
+    images: [dataUrl]
+  })
+
+  return { success: true, output }
+}
+
+/**
+ * 把 args.option 解析成 ECharts option 对象。
+ * 容错策略：
+ *   - 已经是 plain object → 直接用
+ *   - 是字符串 → JSON.parse（AI 偶尔会把 option 序列化成字符串传过来）
+ *   - 其它都拒
+ */
+function parseEchartsOption(raw: unknown): EChartsOption {
+  if (raw === undefined || raw === null) {
+    throw new Error(t('chart.echarts_option_required'))
+  }
+  let candidate: unknown = raw
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (!trimmed) {
+      throw new Error(t('chart.echarts_option_required'))
+    }
+    try {
+      candidate = JSON.parse(trimmed)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      throw new Error(t('chart.echarts_option_invalid_json', { error: msg }))
+    }
+  }
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    const kind = candidate === null ? 'null' : Array.isArray(candidate) ? 'array' : typeof candidate
+    throw new Error(t('chart.echarts_option_not_object', { kind }))
+  }
+  return candidate as EChartsOption
+}
+
+// ============================================================================
 // helpers
 // ============================================================================
 
@@ -152,14 +259,15 @@ function svgToDataUrl(svg: string): string {
 }
 
 /**
- * 保存 SVG 到 agent-workspace/charts/{type}-{timestamp}.svg
+ * 保存 SVG 到 agent-workspace/charts/{prefix}-{timestamp}.svg
+ * prefix 可以是 ChartType（generate_chart）或自定义前缀（render_echarts_option 用 'echarts'）
  * 返回 workspace 相对路径（统一用 / 分隔，便于跨平台返给 AI 当 read_file 路径）
  */
-function saveSvgToWorkspace(svg: string, type: ChartType): string {
+function saveSvgToWorkspace(svg: string, prefix: ChartType | 'echarts'): string {
   const workspace = path.join(app.getPath('userData'), 'agent-workspace')
   const dir = path.join(workspace, 'charts')
   fs.mkdirSync(dir, { recursive: true })
-  const filename = `${type}-${Date.now()}.svg`
+  const filename = `${prefix}-${Date.now()}.svg`
   const absPath = path.join(dir, filename)
   fs.writeFileSync(absPath, svg, 'utf-8')
   return `charts/${filename}`

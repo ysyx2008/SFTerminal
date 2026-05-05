@@ -907,7 +907,7 @@ export async function executeSkillTool(
     return executePdfTool(toolName, id, args, toolCallId, config, executor)
   }
 
-  if (toolName === 'generate_chart') {
+  if (toolName === 'generate_chart' || toolName === 'render_echarts_option') {
     return executeChartTool(toolName, id, args, toolCallId, config, executor)
   }
 
