@@ -486,15 +486,17 @@ function buildHeatmap(input: ChartInput, theme: ThemePreset): EChartsOption {
 function buildCandlestick(input: ChartInput, theme: ThemePreset): EChartsOption {
   const raw = input.data
   if (!raw || typeof raw !== 'object') {
-    throw new Error('candlestick data must be { categories, values }')
+    throw new Error('candlestick data must be { categories, values, volumes? }')
   }
   const obj = raw as Record<string, unknown>
   const categories = obj.categories
   const values = obj.values
   if (!Array.isArray(categories) || !categories.every(c => typeof c === 'string')) {
-    throw new Error('candlestick data.categories must be string[]')
+    throw new Error(`candlestick data.categories must be string[], got ${describe(categories)}`)
   }
-  if (!Array.isArray(values)) throw new Error('candlestick data.values must be array')
+  if (!Array.isArray(values)) {
+    throw new Error(`candlestick data.values must be array, got ${describe(values)}`)
+  }
   const ohlc: number[][] = values.map((v, i) => {
     if (!Array.isArray(v) || v.length < 4 || !v.every(n => typeof n === 'number')) {
       throw new Error(`candlestick values[${i}] must be [open, close, low, high] number[]`)
@@ -505,22 +507,114 @@ function buildCandlestick(input: ChartInput, theme: ThemePreset): EChartsOption 
     throw new Error(`candlestick categories.length (${categories.length}) must equal values.length (${ohlc.length})`)
   }
 
+  // 可选的成交量数组：传了就走"K 线 + 成交量副图"的双 grid 布局
+  let volumes: number[] | undefined
+  if (obj.volumes !== undefined) {
+    if (!Array.isArray(obj.volumes) || !obj.volumes.every(v => typeof v === 'number')) {
+      throw new Error(`candlestick data.volumes must be number[], got ${describe(obj.volumes)}`)
+    }
+    if (obj.volumes.length !== categories.length) {
+      throw new Error(
+        `candlestick data.volumes.length (${obj.volumes.length}) must equal categories.length (${categories.length})`
+      )
+    }
+    volumes = obj.volumes as number[]
+  }
+
   const klineColors = getKlineColors(input.kline_style ?? 'cn')
 
+  if (volumes === undefined) {
+    return {
+      grid: buildGrid(input, false),
+      tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+      xAxis: { ...buildAxis(theme, input.x_label, true), data: categories, scale: true, boundaryGap: true },
+      yAxis: { ...buildAxis(theme, input.y_label, false), scale: true },
+      series: [{
+        type: 'candlestick',
+        data: ohlc,
+        itemStyle: {
+          color: klineColors.color,
+          color0: klineColors.color0,
+          borderColor: klineColors.borderColor,
+          borderColor0: klineColors.borderColor0
+        }
+      }]
+    }
+  }
+
+  // ===== 双 grid 布局：上 K 线 ~62%、间隔 ~3%、下 成交量 ~18%、底部 ~17% 留 x 轴/标签 =====
+  // 顶部依旧把 title/legend 算进去，从顶 padding 开始计算上 grid 的 top。
+  const titleH = titleBlockHeight(input)
+  const topPx = titleH === 0 ? 16 : titleH + 10
+  // 价格 grid：占去除顶部留白后的 ~62%；成交量 grid：~18%；中间留 3% 间隔；底部 50px x 轴
+  const priceGrid = { left: 60, right: 30, top: topPx, height: '62%' }
+  const volumeGrid = { left: 60, right: 30, top: '72%', height: '18%' }
+
+  // 成交量 bar 颜色随 K 线涨跌：close >= open 用涨色，否则跌色
+  const volumeBars = volumes.map((vol, i) => ({
+    value: vol,
+    itemStyle: {
+      color: ohlc[i][1] >= ohlc[i][0] ? klineColors.color : klineColors.color0
+    }
+  }))
+
   return {
-    grid: buildGrid(input, false),
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    xAxis: { ...buildAxis(theme, input.x_label, true), data: categories, scale: true, boundaryGap: true },
-    yAxis: { ...buildAxis(theme, input.y_label, false), scale: true },
-    series: [{
-      type: 'candlestick',
-      data: ohlc,
-      itemStyle: {
-        color: klineColors.color,
-        color0: klineColors.color0,
-        borderColor: klineColors.borderColor,
-        borderColor0: klineColors.borderColor0
+    grid: [priceGrid, volumeGrid],
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross', link: [{ xAxisIndex: 'all' }] }
+    },
+    // 共两个 xAxis，都用 categories；上 grid 隐藏 x 标签，下 grid 显示
+    xAxis: [
+      {
+        ...buildAxis(theme, undefined, true),
+        gridIndex: 0,
+        data: categories,
+        scale: true,
+        boundaryGap: true,
+        axisLabel: { show: false },
+        axisTick: { show: false }
+      },
+      {
+        ...buildAxis(theme, input.x_label, true),
+        gridIndex: 1,
+        data: categories,
+        scale: true,
+        boundaryGap: true
       }
-    }]
+    ],
+    yAxis: [
+      // 价格轴
+      { ...buildAxis(theme, input.y_label, false), gridIndex: 0, scale: true },
+      // 成交量轴：splitNumber 2 让网格更稀疏；不显示 splitLine 让副图更紧凑
+      {
+        ...buildAxis(theme, '成交量', false),
+        gridIndex: 1,
+        scale: true,
+        splitNumber: 2,
+        splitLine: { show: false }
+      }
+    ],
+    series: [
+      {
+        type: 'candlestick',
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        data: ohlc,
+        itemStyle: {
+          color: klineColors.color,
+          color0: klineColors.color0,
+          borderColor: klineColors.borderColor,
+          borderColor0: klineColors.borderColor0
+        }
+      },
+      {
+        type: 'bar',
+        name: '成交量',
+        xAxisIndex: 1,
+        yAxisIndex: 1,
+        data: volumeBars
+      }
+    ]
   }
 }

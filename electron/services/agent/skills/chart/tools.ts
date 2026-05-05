@@ -32,7 +32,9 @@ K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (�
 - scatter:        [[x,y], ...]   // 顶层数组；或 { series: [{ name?: string, data: number[][] }] }
 - radar:          { indicators: [{ name: string, max: number }], series: [{ name?: string, value: number[] }] }
 - heatmap:        { x_categories: string[], y_categories: string[], values: [[x_idx, y_idx, value], ...] }
-- candlestick:    { categories: string[], values: [[open, close, low, high], ...] }`
+- candlestick:    { categories: string[], values: [[open, close, low, high], ...], volumes?: number[] }
+                  // volumes 可选；传了会自动渲染"K 线主图 + 成交量副图"双 grid 布局，
+                  // 成交量 bar 颜色按当日涨跌（close>=open 用涨色，否则跌色）`
           },
           x_label: { type: 'string', description: 'X 轴标签（可选，pie/radar 无效）' },
           y_label: { type: 'string', description: 'Y 轴标签（可选，pie/radar 无效）' },
@@ -122,9 +124,11 @@ heatmap:
 candlestick:
   data = {
     categories: ["10-01","10-02","10-03"],
-    values: [[100, 110, 95, 115], ...]   // 每条 [open, close, low, high]
+    values: [[100, 110, 95, 115], ...],   // 每条 [open, close, low, high]
+    volumes: [12000000, 8500000, 15300000, ...]   // 可选；传了就出"K 线 + 成交量"双图
   }
-  # categories.length 必须等于 values.length
+  # categories.length 必须等于 values.length；如果传 volumes，长度也必须等于 categories.length
+  # 成交量 bar 颜色自动按涨跌（close>=open 涨色，否则跌色），无需自己指定
 \`\`\`
 
 ### K 线必读：中美差异

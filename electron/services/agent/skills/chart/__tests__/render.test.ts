@@ -160,6 +160,83 @@ describe('candlestick kline style', () => {
   })
 })
 
+describe('candlestick with volumes', () => {
+  // 校验「K 线 + 成交量」副图的 option 结构。
+  // 关键断言：双 grid、双 xAxis/yAxis、第二个 series 是 bar，
+  // 且每根 bar 的 itemStyle.color 跟当日 close vs open 一致。
+  type Bar = { value: number; itemStyle: { color: string } }
+  type SeriesOut = { type: string; data: Array<number[] | Bar>; xAxisIndex?: number; yAxisIndex?: number }
+
+  const baseDataWithVol = {
+    categories: ['d1', 'd2', 'd3'],
+    values: [
+      [100, 110, 95, 115],   // 阳线（涨）
+      [110, 108, 105, 112],  // 阴线（跌）
+      [108, 120, 107, 122]   // 阳线（涨）
+    ],
+    volumes: [12000, 8500, 15300]
+  }
+
+  it('renders volume sub-grid: 双 grid、两条 series、bar 用 xAxisIndex=1', () => {
+    const opt = buildOption({ type: 'candlestick', kline_style: 'cn', data: baseDataWithVol })
+    const grids = opt.grid as unknown[]
+    const xAxes = opt.xAxis as unknown[]
+    const yAxes = opt.yAxis as unknown[]
+    const series = opt.series as SeriesOut[]
+
+    expect(Array.isArray(grids)).toBe(true)
+    expect(grids.length).toBe(2)
+    expect(Array.isArray(xAxes)).toBe(true)
+    expect(xAxes.length).toBe(2)
+    expect(Array.isArray(yAxes)).toBe(true)
+    expect(yAxes.length).toBe(2)
+
+    expect(series.length).toBe(2)
+    expect(series[0].type).toBe('candlestick')
+    expect(series[1].type).toBe('bar')
+    expect(series[1].xAxisIndex).toBe(1)
+    expect(series[1].yAxisIndex).toBe(1)
+    expect(series[1].data.length).toBe(3)
+  })
+
+  it('volume bars colored by 涨跌（cn 涨红跌绿）', () => {
+    const opt = buildOption({ type: 'candlestick', kline_style: 'cn', data: baseDataWithVol })
+    const bars = (opt.series as SeriesOut[])[1].data as Bar[]
+    expect(bars[0].itemStyle.color).toBe('#ef4444') // d1 close>open → 红
+    expect(bars[1].itemStyle.color).toBe('#22c55e') // d2 close<open → 绿
+    expect(bars[2].itemStyle.color).toBe('#ef4444') // d3 close>open → 红
+  })
+
+  it('volume bars 反转: us 涨绿跌红', () => {
+    const opt = buildOption({ type: 'candlestick', kline_style: 'us', data: baseDataWithVol })
+    const bars = (opt.series as SeriesOut[])[1].data as Bar[]
+    expect(bars[0].itemStyle.color).toBe('#22c55e') // 涨 → 绿
+    expect(bars[1].itemStyle.color).toBe('#ef4444') // 跌 → 红
+  })
+
+  it('rejects volumes length mismatch', () => {
+    expect(() => buildOption({
+      type: 'candlestick',
+      data: { ...baseDataWithVol, volumes: [1, 2] }
+    } as ChartInput)).toThrow(/volumes\.length .* must equal categories\.length/)
+  })
+
+  it('rejects non-numeric volumes', () => {
+    expect(() => buildOption({
+      type: 'candlestick',
+      data: { ...baseDataWithVol, volumes: ['a', 'b', 'c'] }
+    } as unknown as ChartInput)).toThrow(/volumes must be number\[\]/)
+  })
+
+  it('renders to valid SVG', async () => {
+    const svg = await render({ type: 'candlestick', kline_style: 'cn', data: baseDataWithVol })
+    expect(svg).toMatch(/^<svg/)
+    expect(svg).toMatch(/<\/svg>$/)
+    // 副图存在 → SVG 应该比单图更长（更多元素）
+    expect(svg.length).toBeGreaterThan(2000)
+  })
+})
+
 describe('chart input validation', () => {
   it('rejects bar without categories', () => {
     expect(() => buildOption({ type: 'bar', data: { series: [{ data: [1, 2] }] } } as ChartInput))
