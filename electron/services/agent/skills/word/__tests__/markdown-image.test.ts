@@ -192,6 +192,34 @@ describe('markdownToDocx: image embedding', () => {
     expect(mediaFiles.length).toBeGreaterThan(0)
     expect(documentXml).toContain('<w:drawing>')
   })
+
+  it('block image paragraph uses lineRule=auto (not EXACT) under fixed-line styles', async () => {
+    // 公文样式（securities/official/regulation/meeting）的 Normal 段落用 lineRule:exact
+    // 28.5pt 固定行距，块级图片若不显式覆盖会被压成一条线（用户实际反馈的 bug）。
+    // 验证：securities 样式下，含图片的段落 spacing 必须是 lineRule="auto"。
+    const md = `# 标题\n\n![测试图](${imagePath})\n\n正文段落。`
+    const buf = await markdownToDocx(md, 'securities')
+    const { documentXml } = await inspectDocx(buf)
+
+    expect(documentXml).toContain('<w:drawing>')
+    // 找到图片所在的 <w:p>...<w:drawing>...</w:p>，断言其 spacing 用了 lineRule="auto"
+    // docx XML 里 <w:spacing w:line="240" w:lineRule="auto" .../>
+    const imageParaMatch = documentXml.match(/<w:p[^>]*>[\s\S]*?<w:drawing>[\s\S]*?<\/w:p>/)
+    expect(imageParaMatch).not.toBeNull()
+    const imagePara = imageParaMatch![0]
+    expect(imagePara).toMatch(/<w:spacing[^>]*w:lineRule="auto"/)
+    expect(imagePara).not.toMatch(/<w:spacing[^>]*w:lineRule="exact"/)
+  })
+
+  it('block image paragraph keeps lineRule=auto under "official" style as well', async () => {
+    const md = `![测试图](${imagePath})`
+    const buf = await markdownToDocx(md, 'official')
+    const { documentXml } = await inspectDocx(buf)
+
+    const imageParaMatch = documentXml.match(/<w:p[^>]*>[\s\S]*?<w:drawing>[\s\S]*?<\/w:p>/)
+    expect(imageParaMatch).not.toBeNull()
+    expect(imageParaMatch![0]).toMatch(/<w:spacing[^>]*w:lineRule="auto"/)
+  })
 })
 
 describe('markdownToDocx: CommonMark wrapped <> path (用户必须显式包裹)', () => {

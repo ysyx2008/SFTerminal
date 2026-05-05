@@ -595,11 +595,22 @@ function extractBlockLevelImages(tokens: Token[]): Tokens.Image[] {
 
 /**
  * 创建块级图片段落（居中、无首行缩进）
+ *
+ * spacing 必须显式覆盖：公文类样式（official/securities/regulation/meeting）的 Normal
+ * 段落用 lineRule:EXACT 固定 28.5 磅行距，图片段落如继承该设置会被压成一条线（图片只
+ * 能显示 28.5pt ≈ 1cm 高度）。这里改为 lineRule:AUTO 让 Word 按图片实际高度撑开段落，
+ * 同时段前段后留 120 twips (6pt) 与上下正文透气。
  */
 function createBlockImageParagraph(imageToken: Tokens.Image, ctx?: DocxBuildContext): Paragraph {
   const run = createImageRunOrFallback(imageToken, {}, ctx)
   return new Paragraph({
     alignment: AlignmentType.CENTER,
+    spacing: {
+      before: 120,
+      after: 120,
+      line: 240,
+      lineRule: LineRuleType.AUTO
+    },
     children: [run]
   })
 }
