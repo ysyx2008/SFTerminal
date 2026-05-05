@@ -42,11 +42,21 @@ export interface ChartInput {
 /** 通用 ECharts option（避免引入 ECharts 类型，保持解耦） */
 export type EChartsOption = Record<string, unknown>
 
+/**
+ * 可选的画布尺寸提示：buildOption 内部不渲染，传进来仅供 build* 函数做字号 / 线宽
+ * 等视觉自适应（如 K 线在 4K 大画布下需要更大字号才看得清）。
+ * executor 在调用前已经 clamp 过尺寸，这里只取 width 做缩放推断。
+ */
+export interface BuildHint {
+  width?: number
+  height?: number
+}
+
 // ============================================================================
 // 入口
 // ============================================================================
 
-export function buildOption(input: ChartInput): EChartsOption {
+export function buildOption(input: ChartInput, hint?: BuildHint): EChartsOption {
   const theme = getTheme(input.theme ?? 'light')
 
   let option: EChartsOption
@@ -58,12 +68,32 @@ export function buildOption(input: ChartInput): EChartsOption {
     case 'scatter':     option = buildScatter(input, theme); break
     case 'radar':       option = buildRadar(input, theme); break
     case 'heatmap':     option = buildHeatmap(input, theme); break
-    case 'candlestick': option = buildCandlestick(input, theme); break
+    case 'candlestick': option = buildCandlestick(input, theme, hint); break
     default:
       throw new Error(`Unsupported chart type: ${(input as ChartInput).type}`)
   }
 
   return applyCommon(option, input, theme)
+}
+
+/**
+ * 字号缩放系数：以 1280 宽画布为基准（系数 1），画布越大字号越大。
+ *
+ * 这里要解决的真实问题是「SVG 被前端聊天气泡缩放到 600-800 宽显示」——
+ * SVG 字号是绝对像素，浏览器缩放时字也按 viewBox 一起缩，导致原图字号偏小
+ * 时缩放后只剩 2-4 物理像素，根本看不清。所以画布越大、字号越要更大，
+ * 让最终缩放后的物理像素保持可读（>= 7-8px）。
+ *
+ *   width <= 1280  → 1.0     （14px label）
+ *   width 1280-2400 → 线性 → 1.4    （≈19.6px）
+ *   width 2400-4800 → 线性 → 2.0    （≈28px）
+ *   width >= 4800  → 2.0 上限
+ */
+function calcFontScale(width: number | undefined): number {
+  if (!width || width <= 1280) return 1
+  if (width <= 2400) return 1 + (width - 1280) / (2400 - 1280) * 0.4
+  if (width <= 4800) return 1.4 + (width - 2400) / (4800 - 2400) * 0.6
+  return 2.0
 }
 
 /**
@@ -165,11 +195,15 @@ function shouldShowLegend(input: ChartInput, names: string[]): boolean {
   return input.legend ?? (names.length > 1 && names.some(n => n))
 }
 
-// 估算 title 区块的占位高度（含顶部留白和 subtitle 间距），用于布局计算避免重叠
-// ECharts 默认 title 顶部留白约 5px；title 字号 16 行高 ≈ 24；subtitle 字号 12 行高 ≈ 18
-function titleBlockHeight(input: ChartInput): number {
-  if (input.subtitle) return 5 + 24 + 6 + 18 // ≈ 53
-  if (input.title) return 5 + 24 // ≈ 29
+// 估算 title 区块的占位高度（含顶部留白和 subtitle 间距），用于布局计算避免重叠。
+// ECharts 默认 title 顶部留白约 5px；title 行高 ≈ 字号 * 1.5；subtitle 行高同理。
+// scale 参数让 K 线大画布下放大字号时，title 区块也相应增高，避免和正文重叠
+// （K 线 title 字号 18 / subtitle 14；这里用接近的 16 / 12 估算够用，留点余量）
+function titleBlockHeight(input: ChartInput, scale = 1): number {
+  const titleH = Math.round(18 * scale * 1.4)    // ≈ 25px @ scale=1
+  const subH = Math.round(14 * scale * 1.4)      // ≈ 20px
+  if (input.subtitle) return 5 + titleH + 6 + subH
+  if (input.title) return 5 + titleH
   return 0
 }
 
@@ -546,7 +580,7 @@ function calcCategoryInterval(n: number): number {
   return Math.max(0, Math.ceil(n / 8) - 1)
 }
 
-function buildCandlestick(input: ChartInput, baseTheme: ThemePreset): EChartsOption {
+function buildCandlestick(input: ChartInput, _baseTheme: ThemePreset, hint?: BuildHint): EChartsOption {
   const raw = input.data
   if (!raw || typeof raw !== 'object') {
     throw new Error('candlestick data must be { categories, values, volumes? }')
@@ -587,6 +621,18 @@ function buildCandlestick(input: ChartInput, baseTheme: ThemePreset): EChartsOpt
   const themeMode: ChartTheme = input.theme ?? 'light'
   const pro = getKlineProTheme(input.kline_style ?? 'cn', themeMode)
 
+  // ===== 字号 / 线宽自适应：根据画布宽度缩放，让大画布也有可读字号 =====
+  // 基准画布 1280 → scale=1；2400 → scale=1.4；4800+ → scale=2.0（上限）
+  // 基础字号选 14（轴 label），刻意比"商务图表"略大，因为 SVG 会被前端缩到
+  // 聊天气泡尺寸再显示，原图字号过小会让缩放后看不清"亿"等中文字。
+  const scale = calcFontScale(hint?.width)
+  const fontAxisLabel = Math.round(14 * scale)         // 轴 label 基础字号
+  const fontAxisName = Math.round(15 * scale)          // 轴名（"成交量"等）
+  const fontTitle = Math.round(18 * scale)             // title 主标题
+  const fontSubtitle = Math.round(14 * scale)          // subtitle / legend
+  const candleBorder = Math.max(1.5, 1.5 * scale)      // 阳线红框宽度
+  const maLineWidth = Math.max(1.5, 1.6 * scale)       // MA 线宽
+
   // ===== MA 均线（基于收盘价 SMA） =====
   const closes = ohlc.map(v => v[1])
   const maPeriods = resolveMaPeriods(input.kline_ma, categories.length)
@@ -600,7 +646,7 @@ function buildCandlestick(input: ChartInput, baseTheme: ThemePreset): EChartsOpt
       data: calcSMA(closes, period),
       smooth: false,
       symbol: 'none' as const,
-      lineStyle: { width: 2, color },
+      lineStyle: { width: maLineWidth, color },
       itemStyle: { color },
       z: 2,
       xAxisIndex: 0,
@@ -614,15 +660,16 @@ function buildCandlestick(input: ChartInput, baseTheme: ThemePreset): EChartsOpt
 
   // ===== legend：标题正下方居左排列，覆盖 K 线主体 + 各 MA =====
   const klineLegendNames = [KLINE_SERIES_NAME, ...maPeriods.map(p => `MA${p}`)]
-  const titleH = titleBlockHeight(input)
+  const titleH = titleBlockHeight(input, scale)
   const legendBlock: EChartsOption = {
     data: klineLegendNames,
     top: titleH === 0 ? 8 : titleH + 8,
     left: 16,
-    textStyle: { color: pro.axisLabelColor, fontSize: 12 },
-    itemGap: 14,
+    textStyle: { color: pro.axisLabelColor, fontSize: fontSubtitle },
+    itemGap: Math.round(14 * scale),
     icon: 'roundRect'
   }
+  const legendBlockHeight = klineLegendNames.length > 0 ? Math.round(28 * scale) : 0
 
   // ===== title：用 K 线专业主题的颜色覆盖 base theme =====
   const titleBlock: EChartsOption | undefined = (input.title || input.subtitle)
@@ -630,13 +677,13 @@ function buildCandlestick(input: ChartInput, baseTheme: ThemePreset): EChartsOpt
         text: input.title ?? '',
         subtext: input.subtitle ?? '',
         left: 'center',
-        textStyle: { color: pro.textColor, fontSize: 16, fontWeight: 'bold' },
-        subtextStyle: { color: pro.axisLabelColor, fontSize: 12 }
+        textStyle: { color: pro.textColor, fontSize: fontTitle, fontWeight: 'bold' },
+        subtextStyle: { color: pro.axisLabelColor, fontSize: fontSubtitle }
       }
     : undefined
 
   // ===== K 线专用轴：实线网格 + 右侧价格轴（行情软件惯例） =====
-  const priceAxisLabel = { color: pro.axisLabelColor, fontSize: 11 }
+  const priceAxisLabel = { color: pro.axisLabelColor, fontSize: fontAxisLabel }
   const priceAxisLine = { lineStyle: { color: pro.axisLineColor } }
   const priceSplitLine = { show: true, lineStyle: { color: pro.splitLineColor, type: 'solid' as const } }
 
@@ -647,7 +694,7 @@ function buildCandlestick(input: ChartInput, baseTheme: ThemePreset): EChartsOpt
     position: 'right',
     scale: true,
     name: input.y_label,
-    nameTextStyle: { color: pro.axisLabelColor, fontSize: 12 },
+    nameTextStyle: { color: pro.axisLabelColor, fontSize: fontAxisName },
     axisLine: priceAxisLine,
     axisLabel: priceAxisLabel,
     splitLine: priceSplitLine
@@ -684,7 +731,7 @@ function buildCandlestick(input: ChartInput, baseTheme: ThemePreset): EChartsOpt
       backgroundColor: pro.crosshairLabelBg,
       color: pro.crosshairLabelText,
       borderWidth: 0,
-      fontSize: 11,
+      fontSize: fontAxisLabel,
       padding: [3, 6, 3, 6]
     }
   }
@@ -695,7 +742,7 @@ function buildCandlestick(input: ChartInput, baseTheme: ThemePreset): EChartsOpt
     color0: pro.candle.downColor,
     borderColor: pro.candle.upBorderColor,
     borderColor0: pro.candle.downBorderColor,
-    borderWidth: 2
+    borderWidth: candleBorder
   }
 
   // 共用的 tooltip 配色（黑底浮窗在白底/黑底主题下都清晰）
@@ -704,19 +751,25 @@ function buildCandlestick(input: ChartInput, baseTheme: ThemePreset): EChartsOpt
     axisPointer: axisPointerStyle,
     backgroundColor: themeMode === 'dark' ? '#1f2933' : '#1f2937',
     borderWidth: 0,
-    textStyle: { color: '#f3f4f6', fontSize: 12 }
+    textStyle: { color: '#f3f4f6', fontSize: fontSubtitle }
   }
+
+  // 价格轴留白要够放下"15.00亿"这样最长 label，按 fontAxisLabel 反推。
+  // 估算：5 个数字字符（≈ 0.55 字号宽）+ 1 个中文（≈ 1.0 字号宽）≈ 3.75 字号；
+  // 加 axisLine offset + 安全余量 buffer，避免 "亿" 字被画布右边界截掉
+  const priceAxisRight = Math.round(fontAxisLabel * 4.5 + 14)
+  const xAxisBottom = Math.round(fontAxisLabel * 2.5 + 12)
 
   // ============== 单 grid（无 volume）==============
   if (volumes === undefined) {
     // 正文区域距离顶部 = title + legend 一行
-    const topPx = (titleH === 0 ? 8 : titleH + 8) + (klineLegendNames.length > 0 ? 28 : 0)
+    const topPx = (titleH === 0 ? 8 : titleH + 8) + legendBlockHeight
     return {
       backgroundColor: pro.backgroundColor,
       textStyle: { color: pro.textColor, fontFamily: 'PingFang SC, Microsoft YaHei, Helvetica, Arial, sans-serif' },
       ...(titleBlock ? { title: titleBlock } : {}),
       legend: legendBlock,
-      grid: { left: 24, right: 70, top: topPx, bottom: 50, containLabel: true },
+      grid: { left: 24, right: priceAxisRight, top: topPx, bottom: xAxisBottom, containLabel: true },
       tooltip: tooltipStyle,
       xAxis: xAxisBase(0),
       yAxis: priceYAxis(0),
@@ -735,9 +788,9 @@ function buildCandlestick(input: ChartInput, baseTheme: ThemePreset): EChartsOpt
 
   // ============== 双 grid（K 线 + 成交量）==============
   // 顶部 title + legend，price grid 占 ~58%，间隔 ~4%，volume grid 占 ~22%，底部 ~16% 留 x 轴/标签
-  const topPx = (titleH === 0 ? 8 : titleH + 8) + (klineLegendNames.length > 0 ? 28 : 0)
-  const priceGrid = { left: 24, right: 70, top: topPx, height: '58%', containLabel: false }
-  const volumeGrid = { left: 24, right: 70, top: '72%', height: '18%', containLabel: false }
+  const topPx = (titleH === 0 ? 8 : titleH + 8) + legendBlockHeight
+  const priceGrid = { left: 24, right: priceAxisRight, top: topPx, height: '58%', containLabel: false }
+  const volumeGrid = { left: 24, right: priceAxisRight, top: '72%', height: '18%', containLabel: false }
 
   const volumeBars = volumes.map((vol, i) => ({
     value: vol,
@@ -759,7 +812,7 @@ function buildCandlestick(input: ChartInput, baseTheme: ThemePreset): EChartsOpt
     // 上 grid 隐藏 x 标签让两图共用底部轴；下 grid 才显示日期
     xAxis: [
       { ...xAxisBase(0), axisLabel: { show: false }, axisTick: { show: false } },
-      { ...xAxisBase(1), name: input.x_label, nameTextStyle: { color: pro.axisLabelColor, fontSize: 12 } }
+      { ...xAxisBase(1), name: input.x_label, nameTextStyle: { color: pro.axisLabelColor, fontSize: fontAxisName } }
     ],
     yAxis: [
       priceYAxis(0),
@@ -770,7 +823,7 @@ function buildCandlestick(input: ChartInput, baseTheme: ThemePreset): EChartsOpt
         position: 'right',
         scale: true,
         name: VOLUME_SERIES_NAME,
-        nameTextStyle: { color: pro.axisLabelColor, fontSize: 11 },
+        nameTextStyle: { color: pro.axisLabelColor, fontSize: fontAxisName },
         axisLine: priceAxisLine,
         axisLabel: { ...priceAxisLabel, formatter: formatVolume },
         splitNumber: 2,

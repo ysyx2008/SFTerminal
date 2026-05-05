@@ -42,6 +42,7 @@ describe.skipIf(!ENABLED)('K 线视觉样张生成', () => {
   const data = buildSample(60)
 
   it('cn light（同花顺白底）', async () => {
+    const size = { width: 2400, height: 1200 }
     const svg = await renderToSvg(
       buildOption({
         type: 'candlestick',
@@ -50,14 +51,15 @@ describe.skipIf(!ENABLED)('K 线视觉样张生成', () => {
         kline_style: 'cn',
         theme: 'light',
         data
-      }),
-      { width: 2400, height: 1200 }
+      }, size),
+      size
     )
     fs.writeFileSync('/tmp/kline-cn-light.svg', svg)
     console.log(`cn-light: /tmp/kline-cn-light.svg (${(svg.length / 1024).toFixed(1)}kb)`)
   })
 
   it('cn dark（通达信黑底）', async () => {
+    const size = { width: 2400, height: 1200 }
     const svg = await renderToSvg(
       buildOption({
         type: 'candlestick',
@@ -66,13 +68,14 @@ describe.skipIf(!ENABLED)('K 线视觉样张生成', () => {
         kline_style: 'cn',
         theme: 'dark',
         data
-      }),
-      { width: 2400, height: 1200 }
+      }, size),
+      size
     )
     fs.writeFileSync('/tmp/kline-cn-dark.svg', svg)
     console.log(`cn-dark:  /tmp/kline-cn-dark.svg (${(svg.length / 1024).toFixed(1)}kb)`)
 
     // 同时生成一份小尺寸（贴近实际聊天气泡）
+    const smallSize = { width: 1280, height: 720 }
     const small = await renderToSvg(
       buildOption({
         type: 'candlestick',
@@ -80,13 +83,14 @@ describe.skipIf(!ENABLED)('K 线视觉样张生成', () => {
         kline_style: 'cn',
         theme: 'dark',
         data: { categories: data.categories.slice(0, 30), values: data.values.slice(0, 30), volumes: data.volumes.slice(0, 30) }
-      }),
-      { width: 1280, height: 720 }
+      }, smallSize),
+      smallSize
     )
     fs.writeFileSync('/tmp/kline-cn-dark-small.svg', small)
   })
 
   it('us dark（海外软件双实心）', async () => {
+    const size = { width: 2400, height: 1200 }
     const svg = await renderToSvg(
       buildOption({
         type: 'candlestick',
@@ -95,8 +99,8 @@ describe.skipIf(!ENABLED)('K 线视觉样张生成', () => {
         kline_style: 'us',
         theme: 'dark',
         data
-      }),
-      { width: 2400, height: 1200 }
+      }, size),
+      size
     )
     fs.writeFileSync('/tmp/kline-us-dark.svg', svg)
     console.log(`us-dark:  /tmp/kline-us-dark.svg (${(svg.length / 1024).toFixed(1)}kb)`)

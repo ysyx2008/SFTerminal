@@ -68,7 +68,7 @@ async function generateChart(
 
   let svgString: string
   try {
-    const option = buildOption(input)
+    const option = buildOption(input, size)
     svgString = await renderToSvg(option, size)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
