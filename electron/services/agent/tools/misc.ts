@@ -15,6 +15,7 @@ import { executeConfigTool } from '../skills/config/executor'
 import { executeSkillCreatorTool } from '../skills/skill-creator/executor'
 import { executePersonalityTool } from '../skills/personality/executor'
 import { executePdfTool } from '../skills/pdf/executor'
+import { executeChartTool } from '../skills/chart/executor'
 import { executeFeishuTool } from '../skills/feishu/executor'
 import { executeWeComTool } from '../skills/wecom/executor'
 import { executeDingTalkTool } from '../skills/dingtalk/executor'
@@ -904,6 +905,10 @@ export async function executeSkillTool(
 
   if (toolName.startsWith('pdf_')) {
     return executePdfTool(toolName, id, args, toolCallId, config, executor)
+  }
+
+  if (toolName === 'generate_chart') {
+    return executeChartTool(toolName, id, args, toolCallId, config, executor)
   }
 
   if (toolName.startsWith('feishu_')) {

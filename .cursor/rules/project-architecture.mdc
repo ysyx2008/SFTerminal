@@ -141,7 +141,7 @@ SailFish/
 - **三级记忆**：L1 任务记忆 / L2 知识文档 / L3 对话记录，见下方独立章节
 - **会话持久化**：Agent 实例按 `agentKey` 复用，会话状态跨多次 run 累积；后端是唯一数据源，增量检查点防丢失，支持跨会话恢复。细节见 `agent/SPEC.md`
 - **Agent ↔ Tab ↔ 窗格 模型**（v2，2026-05-02）：一个 tab = 一个 Agent + N 个终端窗格。Agent 实例由 tab 拥有（`agentKey = tabId`，终端 Agent；助手 Agent 用前端 UUID）。窗格关闭、SSH 断开、分屏切换都不影响 Agent 实例存活——Agent 与底层 PTY/SSH 生命周期完全解耦，仅在用户关闭 tab 时由前端 `closeTab` 显式触发 `cleanupAgent`。Agent 类自身不持有 ptyId 字段，每次 run 通过 `context.ptyId` 知道当前操作哪个窗格。
-- **技能系统**：`agent/skills/` 下为按需加载的技能包，如 excel / email / browser / word / pdf / calendar / terminal / watch / personality / skill-creator / 以及 IM 渠道（feishu / wecom / dingtalk）等，通过 `skill` 工具触发
+- **技能系统**：`agent/skills/` 下为按需加载的技能包，如 excel / email / browser / word / pdf / chart / calendar / terminal / watch / personality / skill-creator / 以及 IM 渠道（feishu / wecom / dingtalk）等，通过 `skill` 工具触发
 - **详细设计**：`electron/services/agent/SPEC.md`
 
 ### 三种终端模式（⚠️ 开发新功能必须考虑）

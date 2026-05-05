@@ -702,6 +702,15 @@ const translations = {
     'pdf.render_failed_detail': 'PDF 页面渲染失败: {error}',
     'pdf.scanned_pdf_detected': '📄 {name} 是扫描版 PDF（共 {totalPages} 页），首页已作为图片附上。如需查看更多页面，请使用 pdf_view_page 工具，路径: {path}',
 
+    // Chart 技能
+    'chart.unknown_tool': '未知的图表工具: {name}',
+    'chart.invalid_type': '不支持的图表类型: {type}',
+    'chart.generating': '生成 {type} 图表 {title}',
+    'chart.generated': '已生成 {type} 图表',
+    'chart.generated_with_path': '已生成 {type} 图表，已保存到 {path}',
+    'chart.render_failed': '图表生成失败',
+    'chart.render_failed_detail': '图表生成失败: {error}',
+
     // 飞书技能
     'feishu.resource_bitable': '多维表格',
     'feishu.resource_doc': '云文档',
@@ -2094,6 +2103,15 @@ After saving, wrap up naturally — like friends who've finished getting to know
     'pdf.render_failed': 'PDF page rendering failed',
     'pdf.render_failed_detail': 'PDF page rendering failed: {error}',
     'pdf.scanned_pdf_detected': '📄 {name} is a scanned PDF ({totalPages} pages). First page attached as image. Use pdf_view_page tool for more pages, path: {path}',
+
+    // Chart skill
+    'chart.unknown_tool': 'Unknown chart tool: {name}',
+    'chart.invalid_type': 'Unsupported chart type: {type}',
+    'chart.generating': 'Generating {type} chart {title}',
+    'chart.generated': 'Generated {type} chart',
+    'chart.generated_with_path': 'Generated {type} chart, saved to {path}',
+    'chart.render_failed': 'Chart generation failed',
+    'chart.render_failed_detail': 'Chart generation failed: {error}',
 
     // Feishu skill
     'feishu.resource_bitable': 'Bitable',
