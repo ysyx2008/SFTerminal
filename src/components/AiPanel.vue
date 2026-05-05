@@ -155,6 +155,26 @@ const shouldShowTaskCompleteFooter = (item: { step?: { id: string; type: string 
   return messageSteps[messageSteps.length - 1].id === item.step.id
 }
 
+// 任务完成尾注首次出现时给一次性 fade-in 动画。
+//
+// 问题：footer 是 `v-if` 控制，且外层用 DynamicScroller 虚拟滚动，footer 滚出
+// 视区后会被 unmount，滚回时 remount——如果 CSS 入场动画无条件挂在 .agent-final-footer
+// 上，每次 remount 都会重播，造成"翻历史一路滑入闪烁"。
+//
+// 方案：用 Set 记录"已经播过入场动画的 group id"，class 只在 Set 不包含该 group 时
+// 附加 → 第一次出现时播动画 → animationend 写入 Set → 之后无论怎么 remount 都不再
+// 附加 class 也就不再播放。
+const animatedFooters = new Set<string>()
+
+const isFooterFirstShow = (groupId: string | undefined): boolean => {
+  if (!groupId) return false
+  return !animatedFooters.has(groupId)
+}
+
+const markFooterAnimated = (groupId: string | undefined) => {
+  if (groupId) animatedFooters.add(groupId)
+}
+
 /**
  * group 操作菜单（含「另开一聊」）的可见性条件：
  *   - group 已完成（成功 / 失败 / 中断都允许）
@@ -1881,8 +1901,16 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                       ></div>
                       <!-- 任务完成尾注：作为 message step 的尾巴，仅在 group 完成且这是 group 的最后一个
                            message step 时显示。任务完成那一刻 group.finalResult 设置 → 尾注从 stack 末尾
-                           "长出"几像素，不引起独立 item 出现/消失，避免列表重排跳动 -->
-                      <div v-if="shouldShowTaskCompleteFooter(item)" class="agent-final-footer">
+                           "长出"几像素，不引起独立 item 出现/消失，避免列表重排跳动。
+                           agent-final-footer--first-show 仅在该 group 第一次显示尾注时附加，触发一次性
+                           fade-in 动画；animationend 后 markFooterAnimated 写入 Set，后续虚拟滚动 remount
+                           不再附加 class，避免动画重播闪烁 -->
+                      <div
+                        v-if="shouldShowTaskCompleteFooter(item)"
+                        class="agent-final-footer"
+                        :class="{ 'agent-final-footer--first-show': isFooterFirstShow(item.group?.id) }"
+                        @animationend="markFooterAnimated(item.group?.id)"
+                      >
                         <span class="agent-final-footer-icon">✓</span>
                         <span>{{ t('ai.taskComplete') }}</span>
                         <button
@@ -4327,13 +4355,17 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   padding: 0;
 }
 
-/* 成功完成的静默尾注：在最终消息下方轻轻浮出一行，不再用整张绿色卡片
-   不加入场动画——虚拟滚动器回收/复用 DOM 时会把 CSS 动画重播，反而造成闪烁。
+/* 成功完成的静默尾注：在最终消息下方轻轻浮出一行，不再用整张绿色卡片。
+   入场动画通过 agent-final-footer--first-show 一次性附加，animationend 后由 JS 把
+   该 group id 加入 animatedFooters Set，class 不再附加 → 后续虚拟滚动 unmount/mount
+   不会重播动画，避免"翻历史一路滑入闪烁"的回归。
 
    ⚠️ UX 不变量：footer 的 DynamicScroller item size 必须恒定，与 footer 内
       任何子元素的存在与否无关。min-height 锁到当前最大子元素（22×22 操作
       按钮）高度。详见 electron/services/agent/SPEC.md §"任务完成尾注尺寸恒定"
-      改动前必读，否则会重新引入 4dad4969 修复过的"任务完成时整屏上下闪烁"。 */
+      改动前必读，否则会重新引入 4dad4969 修复过的"任务完成时整屏上下闪烁"。
+      入场动画用 opacity + translateY（compositor 层属性），不影响 box height，
+      不破坏 item size 恒定不变量。 */
 .agent-final-footer {
   display: flex;
   align-items: center;
@@ -4343,6 +4375,21 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   min-height: 22px;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.agent-final-footer--first-show {
+  animation: agent-final-footer-enter 320ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@keyframes agent-final-footer-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .agent-final-footer-icon {
