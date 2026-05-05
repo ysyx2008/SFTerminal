@@ -1269,6 +1269,7 @@ export default {
       noRecentHistory: 'No history yet',
       continueConversation: 'Continue',
       historyLoading: 'Loading...',
+      loadMore: 'Load more...',
       historyStatus: {
         completed: 'Completed',
         failed: 'Failed',

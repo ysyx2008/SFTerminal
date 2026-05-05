@@ -1269,6 +1269,7 @@ export default {
       noRecentHistory: '暂无历史对话',
       continueConversation: '继续对话',
       historyLoading: '加载中...',
+      loadMore: '加载更多...',
       historyStatus: {
         completed: '已完成',
         failed: '失败',
