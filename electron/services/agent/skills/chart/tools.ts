@@ -65,7 +65,12 @@ K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (�
           legend: { type: 'boolean', description: '是否显示图例（默认有 series.name 时显示）' },
           save_to_workspace: {
             type: 'boolean',
-            description: '是否同时保存 SVG 到 agent-workspace/charts/，便于后续引用或转发。默认 false。'
+            description: '是否同时保存图表到 agent-workspace/charts/，便于后续引用或转发。默认 false。文件扩展名按 format 决定（.svg / .png）。'
+          },
+          format: {
+            type: 'string',
+            enum: ['svg', 'png'],
+            description: '输出格式。默认 svg（矢量、对话流展示用）。**嵌入 Word/PDF/IM 等需要位图的场景必须传 png** —— 服务端用 sharp 直接转 PNG（中文字体走 macOS PingFang SC / Windows YaHei / Linux Noto CJK），不要再让 AI 调 ImageMagick / convert / sips 等系统命令二次转换（那会丢中文字体）。'
           }
         },
         required: ['type', 'data']
@@ -116,7 +121,12 @@ K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (�
           },
           save_to_workspace: {
             type: 'boolean',
-            description: '是否保存 SVG 到 agent-workspace/charts/。默认 false。'
+            description: '是否保存图表到 agent-workspace/charts/。默认 false。'
+          },
+          format: {
+            type: 'string',
+            enum: ['svg', 'png'],
+            description: '输出格式。默认 svg。**嵌入 Word/PDF/IM 等位图场景传 png**，原理同 generate_chart 的 format 参数。'
           }
         },
         required: ['option']
@@ -239,8 +249,17 @@ K 线（candlestick）输出**专业行情软件风格**：cn 风格直接照搬
 
 ### 输出
 
-工具返回 \`output\` 文本表示成功状态（含可选 workspace 路径），SVG 走 step.images 直接展示给用户。
-如果 \`save_to_workspace: true\`，同时返回 workspace 相对路径，可后续通过 \`read_file\` 重新读取该 SVG 文件。
+工具返回 \`output\` 文本表示成功状态（含可选 workspace 路径），渲染好的图走 step.images 直接展示给用户。
+如果 \`save_to_workspace: true\`，同时返回 workspace 相对路径，可后续通过 \`read_file\` 重新读取该文件。
+
+### ⚠️ 嵌入 Word / PDF / IM / 邮件等需要位图的场景：传 \`format: 'png'\`
+
+默认 \`format: 'svg'\` 是矢量图，**对话流里用户能直接看清**（前端把 SVG 渲染成 \`<img>\`），但下游嵌入 Word（\`word_from_markdown\`）、嵌入 IM 消息、转发邮件等场景要求**位图**：
+
+- ✅ **正确**：\`generate_chart({ type:'bar', ..., format:'png', save_to_workspace:true })\` 一步到位，落盘就是 \`.png\`，可直接被 \`![](path)\` 嵌入 Word
+- ❌ **不要**：先生成 SVG 落盘 → 再用 \`run_terminal\` 调 \`convert / sips / rsvg-convert\` 转 PNG。ImageMagick 默认不带 librsvg 委托，转中文 SVG 会丢字、变方框、字体降级到无衬线英文，效果远差于 chart 内置 sharp 转换
+
+服务端 PNG 渲染走 sharp + 系统字体（macOS PingFang SC / Windows Microsoft YaHei / Linux Noto Sans CJK），中文与 echarts SVG 显示效果一致。
 
 ---
 

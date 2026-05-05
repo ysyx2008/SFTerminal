@@ -6,7 +6,19 @@
  * - ToolResult.images **必须**为空 —— 这条路径会触发 flushPendingToolImages 把 SVG
  *   作为视觉输入塞给 AI，但主流多模态模型不识别 SVG，会让 AI 误以为「我看过图了」
  */
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
+import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
+
+// 把 electron.app.getPath('userData') 指向独立 tmp 目录，让 save_to_workspace 真实写盘可断言
+const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chart-executor-test-'))
+vi.mock('electron', () => ({
+  app: {
+    getPath: vi.fn((name: string) => name === 'userData' ? userDataDir : '/tmp')
+  }
+}))
+
 import { executeChartTool } from '../executor'
 import type { AgentStep } from '../../../types'
 import type { ToolExecutorConfig } from '../../../tools/types'
@@ -95,6 +107,164 @@ describe('executeChartTool: image delivery contract', () => {
     )
     expect(result.success).toBe(false)
     expect(result.error).toMatch(/Unsupported|不支持/)
+  })
+
+  it('format=png delivers image/png data URL via step.images', async () => {
+    const { config, steps } = makeExecutor()
+    const result = await executeChartTool(
+      'generate_chart',
+      'pty-1',
+      {
+        type: 'bar',
+        title: '季度营收',
+        data: { categories: ['Q1', 'Q2'], series: [{ name: '营收', data: [100, 200] }] },
+        format: 'png'
+      },
+      'call-png',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+
+    expect(result.success).toBe(true)
+    const toolResultStep = steps.find(s => s.type === 'tool_result')
+    expect(toolResultStep?.images?.length).toBe(1)
+    expect(toolResultStep?.images?.[0]).toMatch(/^data:image\/png;base64,/)
+    // PNG 同样不进 ToolResult.images，保持 chart 一贯"图给用户、不给 AI"原则
+    expect(result.images).toBeUndefined()
+  })
+
+  it('default format remains svg (向后兼容：未传 format 不应改变行为)', async () => {
+    const { config, steps } = makeExecutor()
+    await executeChartTool(
+      'generate_chart',
+      'pty-1',
+      { type: 'pie', data: [{ name: 'A', value: 30 }] },
+      'call-default',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    const toolResultStep = steps.find(s => s.type === 'tool_result')
+    expect(toolResultStep?.images?.[0]).toMatch(/^data:image\/svg\+xml;base64,/)
+    // tool_call 步骤的 toolArgs 不该出现 format 字段（默认 svg，未显式传时不污染卡片）
+    const toolCallStep = steps.find(s => s.type === 'tool_call')
+    expect(toolCallStep?.toolArgs).not.toHaveProperty('format')
+  })
+
+  it('parseFormat: 异常值 (jpg/null/数字) 一律回落到 svg', async () => {
+    for (const bad of ['jpg', null, 1, true, '', 'PNG']) {
+      const { config, steps } = makeExecutor()
+      const result = await executeChartTool(
+        'generate_chart',
+        'pty-1',
+        { type: 'pie', data: [{ name: 'A', value: 1 }], format: bad },
+        `call-bad-${String(bad)}`,
+        {} as Parameters<typeof executeChartTool>[4],
+        config
+      )
+      expect(result.success).toBe(true)
+      const stepResult = steps.find(s => s.type === 'tool_result')
+      expect(stepResult?.images?.[0]).toMatch(/^data:image\/svg\+xml;base64,/)
+    }
+  })
+})
+
+describe('executeChartTool: save_to_workspace + format', () => {
+  afterAll(() => {
+    try { fs.rmSync(userDataDir, { recursive: true, force: true }) } catch { /* ignore */ }
+  })
+
+  it('format=png + save_to_workspace 落盘 .png 后缀且文件是 PNG 格式', async () => {
+    const { config } = makeExecutor()
+    const result = await executeChartTool(
+      'generate_chart',
+      'pty-1',
+      {
+        type: 'pie',
+        data: [{ name: 'A', value: 30 }, { name: 'B', value: 70 }],
+        format: 'png',
+        save_to_workspace: true
+      },
+      'call-save-png',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.output).toMatch(/charts\/pie-\d+\.png/)
+    const rel = result.output!.match(/charts\/pie-\d+\.png/)![0]
+    const abs = path.join(userDataDir, 'agent-workspace', rel)
+    expect(fs.existsSync(abs)).toBe(true)
+    const buf = fs.readFileSync(abs)
+    expect(buf[0]).toBe(0x89) // PNG magic
+    expect(buf[1]).toBe(0x50)
+    expect(buf.length).toBeGreaterThan(500)
+  })
+
+  it('默认 format=svg + save_to_workspace 落盘 .svg 后缀且是 SVG 文本', async () => {
+    const { config } = makeExecutor()
+    const result = await executeChartTool(
+      'generate_chart',
+      'pty-1',
+      {
+        type: 'bar',
+        data: { categories: ['Q1'], series: [{ name: 'x', data: [1] }] },
+        save_to_workspace: true
+      },
+      'call-save-svg',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.output).toMatch(/charts\/bar-\d+\.svg/)
+    const rel = result.output!.match(/charts\/bar-\d+\.svg/)![0]
+    const abs = path.join(userDataDir, 'agent-workspace', rel)
+    expect(fs.existsSync(abs)).toBe(true)
+    const text = fs.readFileSync(abs, 'utf-8')
+    expect(text).toMatch(/^<svg/)
+  })
+
+  it('render_echarts_option + format=png + save_to_workspace 落 echarts-xxx.png', async () => {
+    const { config } = makeExecutor()
+    const result = await executeChartTool(
+      'render_echarts_option',
+      'pty-1',
+      {
+        option: { series: [{ type: 'gauge', data: [{ value: 50 }] }] },
+        format: 'png',
+        save_to_workspace: true
+      },
+      'call-save-free-png',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.output).toMatch(/charts\/echarts-\d+\.png/)
+  })
+})
+
+describe('executeChartTool: render_echarts_option + format=png', () => {
+  it('format=png on free path: 同样产 image/png data URL', async () => {
+    const { config, steps } = makeExecutor()
+    const result = await executeChartTool(
+      'render_echarts_option',
+      'pty-1',
+      {
+        option: {
+          xAxis: { type: 'category', data: ['一月', '二月'] },
+          yAxis: { type: 'value' },
+          series: [{ type: 'bar', data: [10, 20] }]
+        },
+        format: 'png'
+      },
+      'call-free-png',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    expect(result.success).toBe(true)
+    const stepResult = steps.find(s => s.type === 'tool_result')
+    expect(stepResult?.images?.[0]).toMatch(/^data:image\/png;base64,/)
   })
 })
 

@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { buildOption, type ChartInput } from '../render'
-import { renderToSvg } from '../ssr'
+import { renderToSvg, renderToPng } from '../ssr'
 
 const SIZE = { width: 600, height: 400 }
 
@@ -528,5 +528,40 @@ describe('pie data tolerance', () => {
       type: 'bar',
       data: 'not an object'
     } as unknown as ChartInput)).toThrow(/got string/)
+  })
+})
+
+describe('renderToPng (sharp 栅格化, 中文字体走系统 PingFang SC)', () => {
+  it('renders a chart to PNG buffer with valid PNG magic bytes', async () => {
+    const opt = buildOption({
+      type: 'bar',
+      title: '季度营收',
+      data: { categories: ['Q1', 'Q2', 'Q3', 'Q4'], series: [{ name: '营收', data: [120, 200, 150, 180] }] }
+    })
+    const buf = await renderToPng(opt, SIZE)
+
+    expect(Buffer.isBuffer(buf)).toBe(true)
+    expect(buf.length).toBeGreaterThan(500)
+    // PNG magic: 89 50 4E 47 0D 0A 1A 0A
+    expect(buf[0]).toBe(0x89)
+    expect(buf[1]).toBe(0x50)
+    expect(buf[2]).toBe(0x4E)
+    expect(buf[3]).toBe(0x47)
+  })
+
+  it('renders different chart types to PNG without throwing', async () => {
+    const cases: ChartInput[] = [
+      { type: 'pie', data: [{ name: '投行', value: 30 }, { name: '资管', value: 70 }] },
+      { type: 'line', data: { categories: ['一月', '二月', '三月'], series: [{ name: '营收', data: [10, 50, 30] }] } },
+      { type: 'radar', data: {
+        indicators: [{ name: '盈利能力', max: 100 }, { name: '成长性', max: 100 }],
+        series: [{ name: '本期', value: [80, 90] }]
+      } }
+    ]
+    for (const input of cases) {
+      const buf = await renderToPng(buildOption(input), SIZE)
+      expect(buf.length).toBeGreaterThan(500)
+      expect(buf[0]).toBe(0x89)
+    }
   })
 })

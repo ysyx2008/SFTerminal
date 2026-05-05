@@ -2,7 +2,7 @@
 
 ## 职责
 
-为 Agent 提供数据可视化能力。输入统一的扁平参数，输出 SVG 矢量图（base64 data URL），直接作为 `ToolResult.images` 展示给用户、可选保存到 agent-workspace。
+为 Agent 提供数据可视化能力。输入统一的扁平参数，输出 SVG 矢量图（默认）或 PNG 位图（`format: 'png'`），直接作为 `step.images` 展示给用户、可选保存到 agent-workspace。
 
 底层使用 Apache ECharts v6+ 的服务端 SVG 渲染（`renderer: 'svg', ssr: true`），不依赖 DOM、不依赖 canvas。
 
@@ -60,9 +60,9 @@ K 线**整体走专业行情软件视觉**而不是商务图表样式：
 |------|------|
 | `presets.ts` | 通用主题（light/dark）+ K 线专业主题 `getKlineProTheme(style, mode)`（含蜡烛配色、十字线、MA 调色板、空心阳线策略） |
 | `render.ts` | `buildOption(input)` —— 把统一参数转换成 ECharts option，含数据校验、SMA 计算、MA 周期自动过滤 |
-| `ssr.ts` | `loadEcharts()` 懒加载 + `renderToSvg(option, size)` SSR 渲染 |
+| `ssr.ts` | `loadEcharts()` 懒加载 + `renderToSvg(option, size)` SSR 渲染 + `renderToPng(option, size)` 复用 SVG 后用 sharp 栅格化为 PNG（中文走系统字体，比 ImageMagick 强很多） |
 | `tools.ts` | `chartTools` 工具定义（generate_chart + render_echarts_option）+ `chartSkillContent` 技能说明文档 |
-| `executor.ts` | `executeChartTool` 执行入口，分发到 `generateChart`（DSL）或 `renderEchartsOption`（自由路径），参数归一化、SVG → data URL、可选写盘 |
+| `executor.ts` | `executeChartTool` 执行入口，分发到 `generateChart`（DSL）或 `renderEchartsOption`（自由路径），参数归一化、按 `format` 选 SVG/PNG → data URL、可选写盘（扩展名跟 format 走） |
 | `index.ts` | 技能注册（id=`chart`），init 时预热 echarts |
 
 ## 输出与图片投递契约
@@ -79,13 +79,14 @@ K 线**整体走专业行情软件视觉**而不是商务图表样式：
 ## 依赖
 
 - `echarts` v6+ —— 服务端 SVG 渲染
+- `sharp` —— SVG → PNG 栅格化（`format: 'png'` 时使用，librsvg 后端 + fontconfig 系统字体）
 - `i18n.ts` —— `chart.*` 翻译键
 - `tools/misc.ts` —— `generate_chart` 工具名路由
 - `skills/index.ts` —— 技能注册入口
 
 ## 约束
 
-- 仅返回 SVG，不输出 PNG（IM 渠道转发等需要 PNG 的场景未来用 sharp 转）
+- 默认输出 SVG（对话流展示，矢量清晰、文件小）；`format: 'png'` 时输出 PNG（嵌入 Word/PDF/IM 等位图场景）。**不要让 AI 自己拿 SVG 再用 ImageMagick / convert 转 PNG**，那条路对中文 SVG 文本支持差，会丢字／降级到无衬线字体
 - 图片宽高 clamp 到 `[100, 7680]`（8K 上限，足以容纳全年日 K ~250 根 / 全天分时 ~240 点）；默认 1280×800（两个工具共用同一组常量）
 - **画布尺寸应由 AI 按内容规模主动决策**：默认值仅作兜底，AI 看见 200+ 数据点时应主动拉到 3840+。`tools.ts` 中 `chartSkillContent` 给出明确的规模 → 尺寸映射表。字号是绝对像素（不随尺寸缩放），所以画大画布的意义是「容纳更多数据点」而非「字变大」
 - `generate_chart` 数据校验失败抛 Error，由 executor 捕获返回 `success: false` + 友好错误，不让 echarts 内部报错暴露给 AI

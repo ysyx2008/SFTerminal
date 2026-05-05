@@ -71,3 +71,42 @@ export async function renderToSvg(option: EChartsOption, size: RenderSize): Prom
     chart.dispose()
   }
 }
+
+/**
+ * 把一份 ECharts option 渲染成 PNG buffer。
+ *
+ * 实现方式：先调 echarts SVG 渲染，再用 sharp 的 librsvg 后端栅格化为 PNG。
+ * 选择 librsvg 而非 ImageMagick 的原因：
+ *   - librsvg 走 fontconfig，能正确匹配 echarts 默认字体栈中的系统字体
+ *     （macOS 的 PingFang SC、Windows 的 Microsoft YaHei、Linux 的 Noto Sans CJK）
+ *   - ImageMagick 内置 SVG 渲染对中文/复杂 SVG 文本支持极差，常出方框/丢字
+ *
+ * 用 sharp 而非直接调 librsvg-loader 的原因：
+ *   - sharp 自带跨平台 prebuild（含 Apple Silicon / x64 / Linux），不必让用户自己装系统包
+ *   - SailFish 桌面 Electron 包早已被其它 native dep（@xenova/transformers 等）拉入 sharp，
+ *     这次只是把它从间接依赖升级为直接登记的 dep，包体积无增量
+ *
+ * Electron 打包注意：sharp 是 native 模块，依赖 N-API；如果未来升级 Electron 主版本，
+ * electron-builder 会自动 rebuild。生产构建后建议手测一次 format:'png'，因为 vitest
+ * 跑的是系统 Node ABI 而非 Electron Node ABI。
+ *
+ * 字体注意事项：
+ *   - 中文字体由系统提供。macOS 桌面环境永远有 PingFang SC，无需额外配置
+ *   - Linux 服务器需安装中文字体包（如 fonts-noto-cjk）才能正确渲染中文
+ *   - 字体匹配失败会回退到 sans-serif 默认字形（通常是英文字体），中文显示为 □
+ *
+ * sharp 用懒加载，避免 chart skill 没用 PNG 时也付出 sharp 启动开销。
+ */
+export async function renderToPng(option: EChartsOption, size: RenderSize): Promise<Buffer> {
+  const svg = await renderToSvg(option, size)
+  const sharpMod = await import('sharp')
+  // sharp 的 default export 行为在 CJS/ESM 下不一致，做一次容错探测
+  const sharp = (typeof sharpMod === 'function' ? sharpMod : sharpMod.default) as
+    typeof import('sharp').default
+  if (typeof sharp !== 'function') {
+    throw new Error('Failed to resolve sharp module: callable not found')
+  }
+  return sharp(Buffer.from(svg, 'utf8'))
+    .png()
+    .toBuffer()
+}

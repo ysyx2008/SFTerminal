@@ -6,7 +6,14 @@ import type { ToolExecutorConfig } from '../../tools/types'
 import { t } from '../../i18n'
 import { createLogger } from '../../../../utils/logger'
 import { buildOption, type ChartType, type ChartInput, type EChartsOption } from './render'
-import { renderToSvg, type RenderSize } from './ssr'
+import { renderToSvg, renderToPng, type RenderSize } from './ssr'
+
+/** 输出格式：svg 矢量（默认）/ png 位图（嵌入 Word/PDF/IM 等） */
+type ChartFormat = 'svg' | 'png'
+
+function parseFormat(raw: unknown): ChartFormat {
+  return raw === 'png' ? 'png' : 'svg'
+}
 
 const log = createLogger('ChartSkill')
 
@@ -55,8 +62,11 @@ async function generateChart(
 
   const size = clampSize(args.width, args.height)
   const input = argsToChartInput(args, type)
+  const format = parseFormat(args.format)
 
+  // 步骤卡片只在 AI 显式传 format 时显示该字段，避免给"默认 svg"的旧调用平添噪音
   const toolArgs: Record<string, unknown> = { type, width: size.width, height: size.height }
+  if (args.format !== undefined) toolArgs.format = format
   if (input.title) toolArgs.title = input.title
   executor.addStep({
     type: 'tool_call',
@@ -66,10 +76,10 @@ async function generateChart(
     riskLevel: 'safe'
   })
 
-  let svgString: string
+  let rendered: { dataUrl: string; payload: string | Buffer }
   try {
     const option = buildOption(input, size)
-    svgString = await renderToSvg(option, size)
+    rendered = await renderChart(option, size, format)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     log.error('Failed to build/render chart:', msg)
@@ -82,12 +92,10 @@ async function generateChart(
     return { success: false, output: '', error: t('chart.render_failed_detail', { error: msg }) }
   }
 
-  const dataUrl = svgToDataUrl(svgString)
-
   let savedPath: string | undefined
   if (args.save_to_workspace === true) {
     try {
-      savedPath = saveSvgToWorkspace(svgString, type)
+      savedPath = saveChartToWorkspace(rendered.payload, type, format)
     } catch (err) {
       log.warn('Failed to save chart to workspace:', err)
     }
@@ -110,7 +118,7 @@ async function generateChart(
     content: output,
     toolName: 'generate_chart',
     toolResult: output,
-    images: [dataUrl]
+    images: [rendered.dataUrl]
   })
 
   return {
@@ -138,22 +146,25 @@ async function renderEchartsOption(
 
   const size = clampSize(args.width, args.height)
   const title = typeof args.title === 'string' ? args.title : ''
+  const format = parseFormat(args.format)
 
   // 2) 步骤卡片只展示 size + 可选 title，避免把整个 option（可能很大）塞进 toolArgs
+  const toolArgs: Record<string, unknown> = { width: size.width, height: size.height, title }
+  if (args.format !== undefined) toolArgs.format = format
   executor.addStep({
     type: 'tool_call',
     content: t('chart.echarts_rendering', { title }),
     toolName: 'render_echarts_option',
-    toolArgs: { width: size.width, height: size.height, title },
+    toolArgs,
     riskLevel: 'safe'
   })
 
-  let svgString: string
+  let rendered: { dataUrl: string; payload: string | Buffer }
   try {
-    svgString = await renderToSvg(option, size)
+    rendered = await renderChart(option, size, format)
   } catch (err) {
-    // 关键设计：把 ECharts 的原始报错原样返给 AI，让它能定位到具体出错的字段
-    // （ECharts 报错通常带路径，如 "Invalid series.0.data"）。不做包装。
+    // 关键设计：把 ECharts / sharp 的原始报错原样返给 AI，让它能定位到具体问题
+    // （ECharts 报错通常带路径，如 "Invalid series.0.data"；sharp 报错通常是 SVG 解析问题）。
     const msg = err instanceof Error ? err.message : String(err)
     log.error('Failed to render custom echarts option:', msg)
     executor.addStep({
@@ -165,13 +176,11 @@ async function renderEchartsOption(
     return { success: false, output: '', error: t('chart.render_failed_detail', { error: msg }) }
   }
 
-  const dataUrl = svgToDataUrl(svgString)
-
   let savedPath: string | undefined
   if (args.save_to_workspace === true) {
     try {
       // 自定义 echarts option 没有明确的 chart-type，统一保存为 'echarts' 前缀
-      savedPath = saveSvgToWorkspace(svgString, 'echarts')
+      savedPath = saveChartToWorkspace(rendered.payload, 'echarts', format)
     } catch (err) {
       log.warn('Failed to save chart to workspace:', err)
     }
@@ -187,7 +196,7 @@ async function renderEchartsOption(
     content: output,
     toolName: 'render_echarts_option',
     toolResult: output,
-    images: [dataUrl]
+    images: [rendered.dataUrl]
   })
 
   return { success: true, output }
@@ -264,22 +273,45 @@ function parseKlineMa(raw: unknown): number[] | undefined {
   return raw.filter((p): p is number => typeof p === 'number' && Number.isInteger(p) && p > 0)
 }
 
-function svgToDataUrl(svg: string): string {
-  const base64 = Buffer.from(svg, 'utf-8').toString('base64')
-  return `data:image/svg+xml;base64,${base64}`
+/**
+ * 按 format 渲染 ECharts option，返回前端要展示的 data URL + 可落盘的原始 payload
+ * （SVG 是 utf-8 字符串，PNG 是 Buffer）。两个分支都走 step.images 展示给用户，
+ * 不进 ToolResult.images（同样的"图给用户、不给 AI"原则——见 generate_chart 注释）。
+ */
+async function renderChart(
+  option: EChartsOption,
+  size: RenderSize,
+  format: ChartFormat
+): Promise<{ dataUrl: string; payload: string | Buffer }> {
+  if (format === 'png') {
+    const buf = await renderToPng(option, size)
+    return { dataUrl: `data:image/png;base64,${buf.toString('base64')}`, payload: buf }
+  }
+  const svg = await renderToSvg(option, size)
+  return { dataUrl: `data:image/svg+xml;base64,${Buffer.from(svg, 'utf-8').toString('base64')}`, payload: svg }
 }
 
 /**
- * 保存 SVG 到 agent-workspace/charts/{prefix}-{timestamp}.svg
+ * 保存图表到 agent-workspace/charts/{prefix}-{timestamp}.{ext}
  * prefix 可以是 ChartType（generate_chart）或自定义前缀（render_echarts_option 用 'echarts'）
- * 返回 workspace 相对路径（统一用 / 分隔，便于跨平台返给 AI 当 read_file 路径）
+ * format=svg → 写 utf-8 文本；format=png → 写二进制 Buffer
+ * 返回 workspace 相对路径（统一用 / 分隔，便于跨平台返给 AI 当 read_file / 嵌入图片的路径）
  */
-function saveSvgToWorkspace(svg: string, prefix: ChartType | 'echarts'): string {
+function saveChartToWorkspace(
+  payload: string | Buffer,
+  prefix: ChartType | 'echarts',
+  format: ChartFormat
+): string {
   const workspace = path.join(app.getPath('userData'), 'agent-workspace')
   const dir = path.join(workspace, 'charts')
   fs.mkdirSync(dir, { recursive: true })
-  const filename = `${prefix}-${Date.now()}.svg`
+  const ext = format === 'png' ? 'png' : 'svg'
+  const filename = `${prefix}-${Date.now()}.${ext}`
   const absPath = path.join(dir, filename)
-  fs.writeFileSync(absPath, svg, 'utf-8')
+  if (format === 'png') {
+    fs.writeFileSync(absPath, payload as Buffer)
+  } else {
+    fs.writeFileSync(absPath, payload as string, 'utf-8')
+  }
   return `charts/${filename}`
 }
