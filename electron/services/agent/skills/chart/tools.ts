@@ -249,8 +249,8 @@ K 线（candlestick）输出**专业行情软件风格**：cn 风格直接照搬
 
 ### 输出
 
-工具返回 \`output\` 文本表示成功状态（含可选 workspace 路径），渲染好的图走 step.images 直接展示给用户。
-如果 \`save_to_workspace: true\`，同时返回 workspace 相对路径，可后续通过 \`read_file\` 重新读取该文件。
+工具返回 \`output\` 文本表示成功状态（含可选落盘绝对路径），渲染好的图走 step.images 直接展示给用户。
+如果 \`save_to_workspace: true\`，\`output\` 中带文件绝对路径（界面可点击打开），也可用 \`read_file\` 读取同一路径。
 
 ### ⚠️ 嵌入 Word / PDF / IM / 邮件等需要位图的场景：传 \`format: 'png'\`
 

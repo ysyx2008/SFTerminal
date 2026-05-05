@@ -74,7 +74,7 @@ K 线**整体走专业行情软件视觉**而不是商务图表样式：
 
 **与 PDF skill 的区别**：PDF skill 反过来——它的图首要目标是「给 AI 视觉分析扫描件」，所以走 ToolResult.images；chart 的图首要目标是「给用户看可视化」，所以走 step.images。两个 skill 设计目标不同，**不能照搬代码**。
 
-`save_to_workspace: true` 时同时落到 `{userData}/agent-workspace/charts/{type}-{timestamp}.svg`，`output` 中带相对路径，可被后续 `read_file` 引用。
+`save_to_workspace: true` 时同时落到 `{userData}/agent-workspace/charts/{type}-{timestamp}.svg`，`output` 中带**绝对路径**（前端可点击打开；`read_file` 也可用同一路径）。
 
 ## 依赖
 

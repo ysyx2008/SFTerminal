@@ -190,9 +190,10 @@ describe('executeChartTool: save_to_workspace + format', () => {
     )
 
     expect(result.success).toBe(true)
-    expect(result.output).toMatch(/charts\/pie-\d+\.png/)
-    const rel = result.output!.match(/charts\/pie-\d+\.png/)![0]
-    const abs = path.join(userDataDir, 'agent-workspace', rel)
+    const pieFile = result.output!.match(/(pie-\d+\.png)/)?.[1]
+    expect(pieFile).toBeDefined()
+    const abs = path.join(userDataDir, 'agent-workspace', 'charts', pieFile!)
+    expect(path.normalize(result.output!)).toContain(path.normalize(abs))
     expect(fs.existsSync(abs)).toBe(true)
     const buf = fs.readFileSync(abs)
     expect(buf[0]).toBe(0x89) // PNG magic
@@ -216,9 +217,10 @@ describe('executeChartTool: save_to_workspace + format', () => {
     )
 
     expect(result.success).toBe(true)
-    expect(result.output).toMatch(/charts\/bar-\d+\.svg/)
-    const rel = result.output!.match(/charts\/bar-\d+\.svg/)![0]
-    const abs = path.join(userDataDir, 'agent-workspace', rel)
+    const barFile = result.output!.match(/(bar-\d+\.svg)/)?.[1]
+    expect(barFile).toBeDefined()
+    const abs = path.join(userDataDir, 'agent-workspace', 'charts', barFile!)
+    expect(path.normalize(result.output!)).toContain(path.normalize(abs))
     expect(fs.existsSync(abs)).toBe(true)
     const text = fs.readFileSync(abs, 'utf-8')
     expect(text).toMatch(/^<svg/)
@@ -240,7 +242,11 @@ describe('executeChartTool: save_to_workspace + format', () => {
     )
 
     expect(result.success).toBe(true)
-    expect(result.output).toMatch(/charts\/echarts-\d+\.png/)
+    const echartsFile = result.output!.match(/(echarts-\d+\.png)/)?.[1]
+    expect(echartsFile).toBeDefined()
+    const abs = path.join(userDataDir, 'agent-workspace', 'charts', echartsFile!)
+    expect(path.normalize(result.output!)).toContain(path.normalize(abs))
+    expect(fs.existsSync(abs)).toBe(true)
   })
 })
 

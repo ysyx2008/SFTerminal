@@ -295,7 +295,7 @@ async function renderChart(
  * 保存图表到 agent-workspace/charts/{prefix}-{timestamp}.{ext}
  * prefix 可以是 ChartType（generate_chart）或自定义前缀（render_echarts_option 用 'echarts'）
  * format=svg → 写 utf-8 文本；format=png → 写二进制 Buffer
- * 返回 workspace 相对路径（统一用 / 分隔，便于跨平台返给 AI 当 read_file / 嵌入图片的路径）
+ * 返回落盘绝对路径：对话里展示给用户时可点击打开；read_file 等工具同样可用该路径。
  */
 function saveChartToWorkspace(
   payload: string | Buffer,
@@ -313,5 +313,5 @@ function saveChartToWorkspace(
   } else {
     fs.writeFileSync(absPath, payload as string, 'utf-8')
   }
-  return `charts/${filename}`
+  return absPath
 }
