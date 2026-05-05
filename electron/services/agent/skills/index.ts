@@ -27,4 +27,5 @@ import './chart'
 import './feishu'
 import './wecom'
 import './dingtalk'
+import './chinese-writing'
 
