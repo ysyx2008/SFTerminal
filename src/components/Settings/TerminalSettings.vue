@@ -17,7 +17,8 @@ const saveSettings = async () => {
   configStore.terminalSettings.scrollback = settings.value.scrollback
   configStore.terminalSettings.localEncoding = settings.value.localEncoding
   configStore.terminalSettings.commandHighlight = settings.value.commandHighlight
-  
+  configStore.terminalSettings.aiPanelPosition = settings.value.aiPanelPosition
+
   // 转换为普通对象，避免 IPC 结构化克隆错误
   const plainSettings = JSON.parse(JSON.stringify(settings.value))
   await window.electronAPI.config.set('terminalSettings', plainSettings)
@@ -118,12 +119,8 @@ const encodingOptions: LocalEncoding[] = [
         </label>
         <p class="form-hint">{{ t('terminalSettings.commandHighlightHint') }}</p>
       </div>
-    </div>
 
-    <div class="settings-section">
-      <h4>{{ t('terminalSettings.scrollback') }}</h4>
-      
-      <div class="form-group">
+      <div class="form-group form-group-divider">
         <label class="form-label">{{ t('terminalSettings.scrollback') }}</label>
         <div class="slider-group">
           <input
@@ -136,13 +133,8 @@ const encodingOptions: LocalEncoding[] = [
           />
           <span class="slider-value">{{ settings.scrollback }}</span>
         </div>
-        <p class="form-hint">{{ t('terminalSettings.scrollbackHint') }}</p>
       </div>
-    </div>
 
-    <div class="settings-section">
-      <h4>{{ t('terminalSettings.encoding') }}</h4>
-      
       <div class="form-group">
         <label class="form-label">{{ t('terminalSettings.localEncoding') }}</label>
         <select v-model="settings.localEncoding" class="select">
@@ -151,6 +143,20 @@ const encodingOptions: LocalEncoding[] = [
           </option>
         </select>
         <p class="form-hint">{{ t('terminalSettings.localEncodingHint') }}</p>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">{{ t('terminalSettings.aiPanelPosition') }}</label>
+        <div class="radio-group">
+          <label class="radio-item">
+            <input v-model="settings.aiPanelPosition" type="radio" value="left" />
+            <span>{{ t('terminalSettings.aiPanelPositions.left') }}</span>
+          </label>
+          <label class="radio-item">
+            <input v-model="settings.aiPanelPosition" type="radio" value="right" />
+            <span>{{ t('terminalSettings.aiPanelPositions.right') }}</span>
+          </label>
+        </div>
       </div>
     </div>
 
@@ -186,17 +192,29 @@ const encodingOptions: LocalEncoding[] = [
   gap: 20px;
 }
 
+/* 卡片本身做 grid 容器：第一列宽度 = 整卡内最长 label 的宽度，
+   配合内部 form-group 的 subgrid，让所有标签列统一对齐。 */
 .settings-section {
   background: var(--bg-tertiary);
   border-radius: 8px;
   padding: 16px;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 16px;
+  row-gap: 10px;
+}
+
+/* 预览卡片只有标题和预览面板，强制单列 */
+.preview-section {
+  grid-template-columns: 1fr;
 }
 
 .settings-section h4 {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   min-height: 28px;
-  margin-bottom: 8px;
+  margin: 0;
   font-size: 14px;
   font-weight: 600;
 }
@@ -272,25 +290,55 @@ const encodingOptions: LocalEncoding[] = [
   font-size: 13px;
 }
 
+/* 每个 form-group 跨满父 grid 的两列，并继承父级列定义（subgrid），
+   这样不同 form-group 的标签列宽度统一对齐。 */
+.form-group {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: center;
+  row-gap: 4px;
+  margin: 0;
+}
+
 .form-label {
-  display: block;
-  margin-bottom: 6px;
+  margin: 0;
   font-size: 12px;
   font-weight: 500;
   color: var(--text-primary);
+  white-space: nowrap;
+}
+
+/* checkbox 没有外部 label，整行占满 */
+.form-group > .checkbox-item {
+  grid-column: 1 / -1;
+}
+
+/* hint 与控件同列，紧贴控件下方 */
+.form-group > .form-hint {
+  grid-column: 2;
 }
 
 .select {
-  padding: 8px 12px;
+  padding: 6px 10px;
   font-size: 13px;
   background: var(--bg-secondary);
   border-radius: 6px;
+  width: 100%;
+  min-width: 0;
 }
 
 .form-hint {
   font-size: 11px;
   color: var(--text-muted);
-  margin-top: 6px;
+  margin: 0;
+}
+
+/* 视觉分隔：把"外观"和"行为"两组配置分开 */
+.form-group-divider {
+  border-top: 1px solid var(--border-color);
+  padding-top: 10px;
+  margin-top: 4px;
 }
 
 /* 预览 */

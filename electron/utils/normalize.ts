@@ -48,6 +48,7 @@ const defaultTerminalSettings: TerminalSettings = {
   scrollback: 10000,
   localEncoding: 'auto',
   commandHighlight: true,
+  aiPanelPosition: 'right',
 }
 
 export function normalizeTerminalSettings(raw: Record<string, unknown>): TerminalSettings {
@@ -61,6 +62,9 @@ export function normalizeTerminalSettings(raw: Record<string, unknown>): Termina
     scrollback: typeof raw.scrollback === 'number' ? raw.scrollback : defaultTerminalSettings.scrollback,
     localEncoding: typeof raw.localEncoding === 'string' ? raw.localEncoding : defaultTerminalSettings.localEncoding,
     commandHighlight: typeof raw.commandHighlight === 'boolean' ? raw.commandHighlight : defaultTerminalSettings.commandHighlight,
+    aiPanelPosition: raw.aiPanelPosition === 'left' || raw.aiPanelPosition === 'right'
+      ? raw.aiPanelPosition
+      : defaultTerminalSettings.aiPanelPosition,
   }
 }
 

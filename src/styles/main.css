@@ -637,6 +637,12 @@
   border-right: 1px solid rgba(255, 0, 255, 0.15);
 }
 
+/* 助手面板位于右侧时镜像边框 */
+[data-ui-theme="cyberpunk"] .terminal-tab.ai-panel-right .tab-ai-sidebar {
+  border-right: none;
+  border-left: 1px solid rgba(255, 0, 255, 0.15);
+}
+
 [data-ui-theme="cyberpunk"] .btn-primary {
   background: linear-gradient(135deg, #00ffff, #00ccff);
   box-shadow: 0 0 15px rgba(0, 255, 255, 0.4);

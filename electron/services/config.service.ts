@@ -47,6 +47,7 @@ export interface TerminalSettings {
   scrollback: number
   localEncoding?: string
   commandHighlight?: boolean
+  aiPanelPosition?: 'left' | 'right'
 }
 
 // MCP 服务器配置

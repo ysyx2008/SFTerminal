@@ -919,10 +919,8 @@ export default {
       bar: '竖线'
     },
     scrollback: '回滚行数',
-    scrollbackHint: '终端历史记录保留的行数',
     commandHighlight: '命令高亮',
     commandHighlightHint: '在执行命令时高亮显示命令行，便于区分命令和输出',
-    encoding: '字符编码',
     localEncoding: '本地终端编码',
     localEncodingHint: '本地终端使用的字符编码。传统中文 Windows 使用 GBK，Windows Terminal 使用 UTF-8。如遇乱码请尝试切换。修改后新建终端生效。',
     encodings: {
@@ -940,6 +938,11 @@ export default {
       'windows-1252': 'Windows-1252（西欧）',
       'koi8-r': 'KOI8-R（俄语）',
       'windows-1251': 'Windows-1251（俄语）'
+    },
+    aiPanelPosition: '助手面板位置',
+    aiPanelPositions: {
+      left: '左侧',
+      right: '右侧'
     }
   },
 

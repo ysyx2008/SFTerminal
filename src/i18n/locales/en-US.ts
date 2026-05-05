@@ -919,10 +919,8 @@ export default {
       bar: 'Bar'
     },
     scrollback: 'Scrollback Lines',
-    scrollbackHint: 'Number of lines to keep in terminal history',
     commandHighlight: 'Command Highlight',
     commandHighlightHint: 'Highlight command lines when executing to distinguish commands from output',
-    encoding: 'Character Encoding',
     localEncoding: 'Local Terminal Encoding',
     localEncodingHint: 'Character encoding for local terminal. Traditional Chinese Windows uses GBK, Windows Terminal uses UTF-8. Switch if you see garbled text. Changes apply to new terminals.',
     encodings: {
@@ -940,6 +938,11 @@ export default {
       'windows-1252': 'Windows-1252 (Western)',
       'koi8-r': 'KOI8-R (Russian)',
       'windows-1251': 'Windows-1251 (Russian)'
+    },
+    aiPanelPosition: 'Assistant Panel Position',
+    aiPanelPositions: {
+      left: 'Left',
+      right: 'Right'
     }
   },
 

@@ -106,6 +106,7 @@ export interface TerminalSettings {
   scrollback: number
   localEncoding: LocalEncoding  // 本地终端编码
   commandHighlight: boolean     // 命令行高亮
+  aiPanelPosition: 'left' | 'right'  // 助手面板位置
 }
 
 // Agent MBTI 类型
@@ -345,7 +346,8 @@ export const useConfigStore = defineStore('config', () => {
     cursorStyle: 'block',
     scrollback: 10000,
     localEncoding: 'auto',  // 默认自动检测
-    commandHighlight: true  // 默认开启命令高亮
+    commandHighlight: true,  // 默认开启命令高亮
+    aiPanelPosition: 'right'  // 助手面板默认在右侧
   })
 
   // Agent MBTI 设置

@@ -3,6 +3,7 @@ import { ref, shallowRef, triggerRef, computed, watch, nextTick, onUnmounted, pr
 import { useI18n } from 'vue-i18n'
 import { AlertCircle } from 'lucide-vue-next'
 import { useTerminalStore } from '../stores/terminal'
+import { useConfigStore } from '../stores/config'
 import type { TerminalTab, SplitPane } from '../stores/terminal'
 import { getAllTerminalPanes } from '../stores/split-pane-tree'
 import Terminal from './Terminal.vue'
@@ -13,7 +14,13 @@ const AiPanel = defineAsyncComponent(() => import('./AiPanel.vue'))
 
 const { t } = useI18n()
 const terminalStore = useTerminalStore()
+const configStore = useConfigStore()
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
+
+// 助手面板位置：跟随终端设置，默认右侧
+const aiPanelPosition = computed<'left' | 'right'>(
+  () => configStore.terminalSettings.aiPanelPosition ?? 'right'
+)
 
 const props = defineProps<{
   tab: TerminalTab
@@ -61,8 +68,13 @@ const startResize = (_e: MouseEvent) => {
 
 const handleResize = (e: MouseEvent) => {
   if (!isResizing.value) return
-  const containerLeft = containerRef.value?.getBoundingClientRect().left ?? 0
-  const newWidth = e.clientX - containerLeft
+  const rect = containerRef.value?.getBoundingClientRect()
+  if (!rect) return
+  // 助手面板在左：鼠标位置距容器左边的距离即面板宽度
+  // 助手面板在右：鼠标位置到容器右边的距离即面板宽度
+  const newWidth = aiPanelPosition.value === 'left'
+    ? e.clientX - rect.left
+    : rect.right - e.clientX
   const maxWidth = getMaxAiWidth()
   if (newWidth >= MIN_AI_WIDTH && newWidth <= maxWidth) {
     aiPanelWidth.value = newWidth
@@ -158,7 +170,7 @@ watch(terminalPanes, (panes) => {
 </script>
 
 <template>
-  <div ref="containerRef" class="terminal-tab">
+  <div ref="containerRef" class="terminal-tab" :class="`ai-panel-${aiPanelPosition}`">
     <template v-if="!isSteamBuild && aiPanelMounted">
       <div
         v-show="showAiPanel"
@@ -230,6 +242,13 @@ watch(terminalPanes, (panes) => {
   height: 100%;
 }
 
+/* 助手面板在右：把行方向反过来，让 sidebar 出现在右侧。
+   由于 DOM 顺序固定（sidebar → resize-handle → main），row-reverse 同时
+   把 resize-handle 和 main 一起翻到 sidebar 左边，正好达到"main + handle + sidebar"的视觉布局。 */
+.terminal-tab.ai-panel-right {
+  flex-direction: row-reverse;
+}
+
 .terminal-main {
   flex: 1;
   display: flex;
@@ -238,7 +257,9 @@ watch(terminalPanes, (panes) => {
   position: relative;
 }
 
-/* 终端 Tab 内的 AI 侧栏（左侧） */
+/* 终端 Tab 内的 AI 侧栏（位置由 .ai-panel-left / .ai-panel-right 控制）
+   sidebar 与 handle 接壤一侧画一条 1px border-color 分隔线，配合内侧 ::before
+   亮带形成「sidebar 渐变 → 1px 亮带 → 1px 暗线 → handle」的层次。 */
 .tab-ai-sidebar {
   min-width: 280px;
   background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
@@ -247,6 +268,12 @@ watch(terminalPanes, (panes) => {
   flex-direction: column;
   flex-shrink: 0;
   position: relative;
+}
+
+/* 在右侧时换为左边框，左右布局完全镜像 */
+.terminal-tab.ai-panel-right .tab-ai-sidebar {
+  border-right: none;
+  border-left: 1px solid var(--border-color);
 }
 
 .tab-ai-sidebar::before {
@@ -258,6 +285,12 @@ watch(terminalPanes, (panes) => {
   width: 1px;
   background: linear-gradient(180deg, transparent, rgba(var(--accent-secondary-rgb, 116, 199, 236), 0.15), transparent);
   pointer-events: none;
+}
+
+/* 在右侧时把装饰条挪到左边缘 */
+.terminal-tab.ai-panel-right .tab-ai-sidebar::before {
+  right: auto;
+  left: 0;
 }
 
 /* 终端 loading / error 状态 */
@@ -309,15 +342,14 @@ watch(terminalPanes, (panes) => {
 }
 
 /* 拖拽调整宽度手柄
-   背景 = 侧栏色（bg-secondary），让 5px 拖拽条作为"侧栏的延伸"。
-   不能用 transparent：那样会透出 app-container 的 bg-primary，浅色主题下
-   bg-primary (#fcfcfc) 比 bg-secondary (#f3f3f3) 还亮，会出现一条比侧栏更亮
-   的"亮缝"。深色主题下两者反向（bg-primary #181818 < bg-secondary #1f1f1f）
-   原本能蒙混，统一改后两个主题都视觉一致。 */
+   背景 = 主背景色（bg-primary），让 5px 拖拽条作为"终端侧的延伸"，
+   与 terminal 区域视觉融合，不再被识别为额外的色块。
+   sidebar 一侧靠 sidebar 自身的 border + ::before 亮带做层次过渡。
+   不用 transparent 是为了避免某些主题下祖先元素背景被透出造成的不可控色差。 */
 .resize-handle {
   width: 5px;
   cursor: col-resize;
-  background: var(--bg-secondary);
+  background: var(--bg-primary);
   transition: all 0.25s ease;
   flex-shrink: 0;
   position: relative;
