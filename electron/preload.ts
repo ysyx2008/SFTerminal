@@ -2820,6 +2820,20 @@ const electronAPI = {
   aiDebugExportLogs: (filePath: string) => ipcRenderer.invoke('aiDebug:exportLogs', filePath) as Promise<{ success: boolean; error?: string }>,
   aiDebugCopyEntry: (entryId: string) => ipcRenderer.invoke('aiDebug:copyEntry', entryId) as Promise<string | null>,
   aiDebugWriteClipboard: (text: string) => ipcRenderer.invoke('aiDebug:writeClipboard', text) as Promise<void>,
+  // 写入图片到原生剪贴板。buffer 是 PNG/JPEG 等格式的二进制数据。
+  // 前端用这条 IPC 替代 navigator.clipboard.write，避免 "Write permission denied"。
+  writeImageToClipboard: (buffer: ArrayBuffer | Uint8Array) => ipcRenderer.invoke('clipboard:writeImage', buffer) as Promise<void>,
+  // 弹原生"保存为"对话框写图片到磁盘。
+  // 详细契约见 main.ts 的 image:saveWithDialog handler。
+  saveImageWithDialog: (payload: {
+    defaultName: string
+    filters: Array<{ label: string; extensions: string[] }>
+    buffers: Record<string, ArrayBuffer | string>
+  }) => ipcRenderer.invoke('image:saveWithDialog', payload) as Promise<{
+    saved: boolean
+    filePath?: string
+    filename?: string
+  }>,
   onAiDebugMessage: (callback: (message: { type: string; entry?: unknown }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, message: { type: string; entry?: unknown }) => callback(message)
     ipcRenderer.on('aiDebug:message', handler)

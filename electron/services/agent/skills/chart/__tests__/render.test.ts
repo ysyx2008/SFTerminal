@@ -166,9 +166,14 @@ describe('chart input validation', () => {
       .toThrow(/categories must be string\[\]/)
   })
 
-  it('rejects pie wrong shape', () => {
+  it('rejects pie item missing value', () => {
     expect(() => buildOption({ type: 'pie', data: [{ name: 'A' }] } as unknown as ChartInput))
-      .toThrow(/value must be number/)
+      .toThrow(/missing number field "value"/)
+  })
+
+  it('rejects pie item missing name', () => {
+    expect(() => buildOption({ type: 'pie', data: [{ value: 30 }] } as unknown as ChartInput))
+      .toThrow(/missing string field "name"/)
   })
 
   it('rejects candlestick when categories and values length mismatch', () => {
@@ -229,5 +234,78 @@ describe('chart input validation', () => {
       type: 'heatmap',
       data: { x_categories: ['M'], y_categories: ['AM'], values: [[0, 3, 1]] }
     } as ChartInput)).toThrow(/out of y_categories range/)
+  })
+})
+
+describe('pie data tolerance', () => {
+  // AI 实测高频犯错：把 pie data 套进 {items:[...]} / {data:[...]} / {series:[...]}
+  // 工具应当容错并解析出来，避免反复重试。
+  type PieSeries = { data: Array<{ name: string; value: number }> }
+
+  function getPieData(input: ChartInput): Array<{ name: string; value: number }> {
+    const opt = buildOption(input)
+    return (opt.series as PieSeries[])[0].data
+  }
+
+  it('accepts top-level array (canonical shape)', () => {
+    const data = getPieData({
+      type: 'pie',
+      data: [{ name: 'A', value: 30 }, { name: 'B', value: 70 }]
+    })
+    expect(data).toEqual([{ name: 'A', value: 30 }, { name: 'B', value: 70 }])
+  })
+
+  it('tolerates { data: [...] } wrapper', () => {
+    const data = getPieData({
+      type: 'pie',
+      data: { data: [{ name: 'A', value: 30 }] }
+    } as unknown as ChartInput)
+    expect(data).toEqual([{ name: 'A', value: 30 }])
+  })
+
+  it('tolerates { items: [...] } wrapper', () => {
+    const data = getPieData({
+      type: 'pie',
+      data: { items: [{ name: 'A', value: 30 }] }
+    } as unknown as ChartInput)
+    expect(data).toEqual([{ name: 'A', value: 30 }])
+  })
+
+  it('tolerates { series: [...] } wrapper', () => {
+    const data = getPieData({
+      type: 'pie',
+      data: { series: [{ name: 'A', value: 30 }] }
+    } as unknown as ChartInput)
+    expect(data).toEqual([{ name: 'A', value: 30 }])
+  })
+
+  it('tolerates { values: [...] } wrapper', () => {
+    const data = getPieData({
+      type: 'pie',
+      data: { values: [{ name: 'A', value: 30 }] }
+    } as unknown as ChartInput)
+    expect(data).toEqual([{ name: 'A', value: 30 }])
+  })
+
+  it('tolerates field aliases (label/category/title for name; amount/count/v for value)', () => {
+    const data = getPieData({
+      type: 'pie',
+      data: [{ label: 'A', amount: 30 }, { category: 'B', count: 70 }]
+    } as unknown as ChartInput)
+    expect(data).toEqual([{ name: 'A', value: 30 }, { name: 'B', value: 70 }])
+  })
+
+  it('rejects object without recognizable list field', () => {
+    expect(() => buildOption({
+      type: 'pie',
+      data: { foo: 'bar' }
+    } as unknown as ChartInput)).toThrow(/object without data\/items\/series array field/)
+  })
+
+  it('error message contains received type for AI debugging', () => {
+    expect(() => buildOption({
+      type: 'bar',
+      data: 'not an object'
+    } as unknown as ChartInput)).toThrow(/got string/)
   })
 })

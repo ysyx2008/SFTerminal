@@ -93,18 +93,37 @@ interface CategorySeriesData {
   series: Array<{ name?: string; data: number[] }>
 }
 
+/**
+ * 把 unknown 描述成 AI 友好的简短字符串：
+ *   "string" / "number" / "null" / "undefined" / "array(len=3)" / "object(keys=foo,bar)"
+ * 错误信息里附带 received 类型可以让 AI 第二次尝试时定位错误，而不必猜。
+ */
+function describe(v: unknown): string {
+  if (v === null) return 'null'
+  if (v === undefined) return 'undefined'
+  if (Array.isArray(v)) return `array(len=${v.length})`
+  if (typeof v === 'object') {
+    const keys = Object.keys(v as Record<string, unknown>).slice(0, 4).join(',')
+    return `object(keys=${keys})`
+  }
+  return typeof v
+}
+
 function asCategorySeries(raw: unknown, chartType: string): CategorySeriesData {
-  if (!raw || typeof raw !== 'object') {
-    throw new Error(`${chartType} data must be an object with { categories, series }`)
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(
+      `${chartType} data must be object like { categories: string[], series: [{name?, data: number[]}] }, ` +
+      `got ${describe(raw)}`
+    )
   }
   const obj = raw as Record<string, unknown>
   const categories = obj.categories
   const series = obj.series
   if (!Array.isArray(categories) || !categories.every(c => typeof c === 'string')) {
-    throw new Error(`${chartType} data.categories must be string[]`)
+    throw new Error(`${chartType} data.categories must be string[], got ${describe(categories)}`)
   }
   if (!Array.isArray(series) || series.length === 0) {
-    throw new Error(`${chartType} data.series must be a non-empty array`)
+    throw new Error(`${chartType} data.series must be a non-empty array, got ${describe(series)}`)
   }
   for (const [i, s] of series.entries()) {
     if (!s || typeof s !== 'object') throw new Error(`${chartType} series item must be object`)
@@ -132,23 +151,40 @@ function buildAxis(theme: ThemePreset, label?: string, isCategory = false): ECha
   }
 }
 
+// 默认仅当多 series 且有名字时显示图例（单系列图例多余）；input.legend 可强制覆盖
+function shouldShowLegend(input: ChartInput, names: string[]): boolean {
+  return input.legend ?? (names.length > 1 && names.some(n => n))
+}
+
+// 估算 title 区块的占位高度（含顶部留白和 subtitle 间距），用于布局计算避免重叠
+// ECharts 默认 title 顶部留白约 5px；title 字号 16 行高 ≈ 24；subtitle 字号 12 行高 ≈ 18
+function titleBlockHeight(input: ChartInput): number {
+  if (input.subtitle) return 5 + 24 + 6 + 18 // ≈ 53
+  if (input.title) return 5 + 24 // ≈ 29
+  return 0
+}
+
 function buildLegend(input: ChartInput, theme: ThemePreset, names: string[]): EChartsOption | undefined {
-  // 默认仅当多 series 且有名字时显示图例（单系列图例多余）；input.legend 可强制覆盖
-  const wantLegend = input.legend ?? (names.length > 1 && names.some(n => n))
-  if (!wantLegend) return undefined
+  if (!shouldShowLegend(input, names)) return undefined
+  const titleH = titleBlockHeight(input)
   return {
     data: names,
-    top: input.title ? 32 : 8,
+    // 无 title 时贴顶 8px；有 title 时在 title 区块下方留 10px 间距
+    top: titleH === 0 ? 8 : titleH + 10,
     textStyle: { color: theme.axisLabelColor }
   }
 }
 
-function buildGrid(input: ChartInput): EChartsOption {
+function buildGrid(input: ChartInput, hasLegend: boolean): EChartsOption {
+  const titleH = titleBlockHeight(input)
+  // legend 单行高度（含间距）≈ 32，无 legend 时仅留 title 区块下方 16px
+  const legendBlock = hasLegend ? 32 + 10 : 0
+  const topBase = titleH === 0 ? (hasLegend ? 8 : 16) : titleH + 10
   return {
     left: 60,
     right: 30,
     bottom: 50,
-    top: input.title ? (input.subtitle ? 80 : 60) : 50,
+    top: topBase + legendBlock,
     containLabel: true
   }
 }
@@ -160,8 +196,9 @@ function buildGrid(input: ChartInput): EChartsOption {
 function buildBar(input: ChartInput, theme: ThemePreset): EChartsOption {
   const { categories, series } = asCategorySeries(input.data, 'bar')
   const names = series.map(s => s.name ?? '')
+  const hasLegend = shouldShowLegend(input, names)
   return {
-    grid: buildGrid(input),
+    grid: buildGrid(input, hasLegend),
     legend: buildLegend(input, theme, names),
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
     xAxis: { ...buildAxis(theme, input.x_label, true), data: categories },
@@ -177,8 +214,9 @@ function buildBar(input: ChartInput, theme: ThemePreset): EChartsOption {
 function buildLine(input: ChartInput, theme: ThemePreset, area: boolean): EChartsOption {
   const { categories, series } = asCategorySeries(input.data, area ? 'area' : 'line')
   const names = series.map(s => s.name ?? '')
+  const hasLegend = shouldShowLegend(input, names)
   return {
-    grid: buildGrid(input),
+    grid: buildGrid(input, hasLegend),
     legend: buildLegend(input, theme, names),
     tooltip: { trigger: 'axis' },
     xAxis: { ...buildAxis(theme, input.x_label, true), data: categories, boundaryGap: false },
@@ -201,17 +239,68 @@ function buildLine(input: ChartInput, theme: ThemePreset, area: boolean): EChart
 
 interface PieItem { name: string; value: number }
 
-function buildPie(input: ChartInput, theme: ThemePreset): EChartsOption {
-  if (!Array.isArray(input.data)) {
-    throw new Error('pie data must be array of { name, value }')
+/**
+ * 把 pie 用的 raw data 收敛成 PieItem[]，对 AI 常见误用做容错：
+ *   - 顶层数组：[{ name, value }]
+ *   - 嵌套对象：{ data: [...] } / { items: [...] } / { series: [...] }
+ *   - 字段别名：name | label | category | title；value | amount | count | v
+ * 每条 item 必须能解析出 name 和 value，否则抛友好错误。
+ */
+function asPieItems(raw: unknown): PieItem[] {
+  let arr: unknown[]
+  if (Array.isArray(raw)) {
+    arr = raw
+  } else if (raw && typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>
+    const candidate = obj.data ?? obj.items ?? obj.series ?? obj.values
+    if (!Array.isArray(candidate)) {
+      throw new Error(
+        'pie data must be array like [{name:"A",value:30},{name:"B",value:70}]; ' +
+        'received an object without data/items/series array field'
+      )
+    }
+    arr = candidate
+  } else {
+    throw new Error(
+      `pie data must be array like [{name:"A",value:30}]; received ${raw === null ? 'null' : typeof raw}`
+    )
   }
-  const items: PieItem[] = input.data.map((d, i) => {
-    if (!d || typeof d !== 'object') throw new Error(`pie data[${i}] must be object`)
+
+  return arr.map((d, i) => {
+    if (!d || typeof d !== 'object' || Array.isArray(d)) {
+      throw new Error(`pie data[${i}] must be object like {name,value}, got ${typeof d}`)
+    }
     const o = d as Record<string, unknown>
-    if (typeof o.name !== 'string') throw new Error(`pie data[${i}].name must be string`)
-    if (typeof o.value !== 'number') throw new Error(`pie data[${i}].value must be number`)
-    return { name: o.name, value: o.value }
+    const name = pickString(o, ['name', 'label', 'category', 'title'])
+    const value = pickNumber(o, ['value', 'amount', 'count', 'v'])
+    if (name === undefined) {
+      throw new Error(`pie data[${i}] missing string field "name" (or label/category/title)`)
+    }
+    if (value === undefined) {
+      throw new Error(`pie data[${i}] missing number field "value" (or amount/count/v)`)
+    }
+    return { name, value }
   })
+}
+
+function pickString(o: Record<string, unknown>, keys: readonly string[]): string | undefined {
+  for (const k of keys) {
+    const v = o[k]
+    if (typeof v === 'string') return v
+  }
+  return undefined
+}
+
+function pickNumber(o: Record<string, unknown>, keys: readonly string[]): number | undefined {
+  for (const k of keys) {
+    const v = o[k]
+    if (typeof v === 'number' && Number.isFinite(v)) return v
+  }
+  return undefined
+}
+
+function buildPie(input: ChartInput, theme: ThemePreset): EChartsOption {
+  const items = asPieItems(input.data)
   return {
     legend: buildLegend(input, theme, items.map(i => i.name)),
     tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
@@ -249,9 +338,11 @@ function buildScatter(input: ChartInput, theme: ThemePreset): EChartsOption {
   } else {
     throw new Error('scatter data must be number[][] or { series: [{ name, data }] }')
   }
+  const scatterNames = seriesArr.map(s => s.name ?? '')
+  const scatterHasLegend = shouldShowLegend(input, scatterNames)
   return {
-    grid: buildGrid(input),
-    legend: buildLegend(input, theme, seriesArr.map(s => s.name ?? '')),
+    grid: buildGrid(input, scatterHasLegend),
+    legend: buildLegend(input, theme, scatterNames),
     tooltip: { trigger: 'item' },
     xAxis: buildAxis(theme, input.x_label, false),
     yAxis: buildAxis(theme, input.y_label, false),
@@ -367,7 +458,7 @@ function buildHeatmap(input: ChartInput, theme: ThemePreset): EChartsOption {
     if (p[2] > maxV) maxV = p[2]
   }
   return {
-    grid: buildGrid(input),
+    grid: buildGrid(input, false),
     tooltip: { position: 'top' },
     xAxis: { ...buildAxis(theme, input.x_label, true), data: xCats, splitArea: { show: true } },
     yAxis: { ...buildAxis(theme, input.y_label, true), data: yCats, splitArea: { show: true } },
@@ -417,7 +508,7 @@ function buildCandlestick(input: ChartInput, theme: ThemePreset): EChartsOption 
   const klineColors = getKlineColors(input.kline_style ?? 'cn')
 
   return {
-    grid: buildGrid(input),
+    grid: buildGrid(input, false),
     tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
     xAxis: { ...buildAxis(theme, input.x_label, true), data: categories, scale: true, boundaryGap: true },
     yAxis: { ...buildAxis(theme, input.y_label, false), scale: true },

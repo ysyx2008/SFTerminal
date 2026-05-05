@@ -1283,6 +1283,18 @@ export default {
       prevConversation: 'Images from previous conversation (↑)',
       nextConversation: 'Images from next conversation (↓)',
     },
+    imageMenu: {
+      copy: 'Copy Image',
+      saveAs: 'Save Image As...',
+      copySuccess: 'Image copied to clipboard',
+      copyFailed: 'Copy failed: {error}',
+      saveSuccess: 'Saved {filename}',
+      saveFailed: 'Save failed: {error}',
+      unsupported: 'Clipboard image write is not supported in this environment',
+      filterPng: 'PNG Image (recommended)',
+      filterJpg: 'JPEG Image',
+      filterSvg: 'SVG Vector',
+    },
     webSearch: {
       foundResults: 'Found {count} results',
     },

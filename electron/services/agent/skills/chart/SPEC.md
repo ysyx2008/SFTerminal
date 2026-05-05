@@ -15,7 +15,7 @@
 | type | 数据格式 |
 |---|---|
 | `bar` / `line` / `area` | `{ categories: string[], series: [{ name?, data: number[] }] }` |
-| `pie` | `[{ name: string, value: number }]` |
+| `pie` | `[{ name: string, value: number }]`（顶层数组；亦容错 `{data\|items\|series\|values: [...]}` 嵌套写法和 `label\|category\|title` / `amount\|count\|v` 字段别名） |
 | `scatter` | `number[][]`（`[[x,y],...]`）或 `{ series: [{ name?, data: number[][] }] }` |
 | `radar` | `{ indicators: [{ name, max }], series: [{ name?, value: number[] }] }` |
 | `heatmap` | `{ x_categories: string[], y_categories: string[], values: [[x_idx, y_idx, value], ...] }` |
@@ -39,10 +39,16 @@
 | `executor.ts` | `executeChartTool` 执行入口，参数归一化、SVG → data URL、可选写盘 |
 | `index.ts` | 技能注册（id=`chart`），init 时预热 echarts |
 
-## 输出
+## 输出与图片投递契约
 
-- `ToolResult.images = ['data:image/svg+xml;base64,...']` —— 前端 `message-image` 直接 `<img :src>` 渲染
-- `save_to_workspace: true` 时同时落到 `{userData}/agent-workspace/charts/{type}-{timestamp}.svg`，`output` 中带相对路径，可被后续 `read_file` 引用
+| 通道 | 是否带 SVG | 给谁看 | 原因 |
+|---|---|---|---|
+| `step.images` | ✅ 带 | **用户** | 前端 `AiPanel.vue` / `Awaken.vue` / `tool-display.ts` 从 `step.images` 读图渲染 `<img>` |
+| `ToolResult.images` | ❌ 不带 | ~~AI~~ | 此通道经 `flushPendingToolImages` 注入到 user 消息当视觉输入，但主流多模态模型（OpenAI/Anthropic/Gemini）不识别 SVG 格式，发过去要么被拒、要么静默丢，还会让 AI 误以为「我看过图了」从而脑补图的内容 |
+
+**与 PDF skill 的区别**：PDF skill 反过来——它的图首要目标是「给 AI 视觉分析扫描件」，所以走 ToolResult.images；chart 的图首要目标是「给用户看可视化」，所以走 step.images。两个 skill 设计目标不同，**不能照搬代码**。
+
+`save_to_workspace: true` 时同时落到 `{userData}/agent-workspace/charts/{type}-{timestamp}.svg`，`output` 中带相对路径，可被后续 `read_file` 引用。
 
 ## 依赖
 
@@ -54,7 +60,8 @@
 ## 约束
 
 - 仅返回 SVG，不输出 PNG（IM 渠道转发等需要 PNG 的场景未来用 sharp 转）
-- 图片宽高 clamp 到 `[100, 4000]`，默认 800×500
+- 图片宽高 clamp 到 `[100, 7680]`（8K 上限，足以容纳全年日 K ~250 根 / 全天分时 ~240 点）；默认 1280×800
+- **画布尺寸应由 AI 按内容规模主动决策**：默认值仅作兜底，AI 看见 200+ 数据点时应主动拉到 3840+。`tools.ts` 中 `chartSkillContent` 给出明确的规模 → 尺寸映射表。字号是绝对像素（不随尺寸缩放），所以画大画布的意义是「容纳更多数据点」而非「字变大」
 - 任何 chart_type 数据校验失败抛 Error，由 executor 捕获返回 `success: false` + 友好错误，不让 echarts 内部报错暴露给 AI
 - `_meta.parallelizable: true`、`contextBudget.toolResult: 'clearable'` —— 多张图可并行生成、图片返回后允许清理
 - 不限制 `supportedModes` —— 本地终端、SSH、独立助手三种模式都能用（图表生成跟目标机器无关，纯本地计算）

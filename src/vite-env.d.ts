@@ -1812,6 +1812,14 @@ interface Window {
     aiDebugExportLogs: (filePath: string) => Promise<{ success: boolean; error?: string }>
     aiDebugCopyEntry: (entryId: string) => Promise<string | null>
     aiDebugWriteClipboard: (text: string) => Promise<void>
+    /** 写入图片到原生剪贴板（PNG/JPEG 等二进制 buffer）。绕开浏览器 Clipboard API 的权限/焦点限制。 */
+    writeImageToClipboard: (buffer: ArrayBuffer | Uint8Array) => Promise<void>
+    /** 弹原生"保存为"对话框写图片到磁盘。filters 顺序 = 优先级（第一项默认）。 */
+    saveImageWithDialog: (payload: {
+      defaultName: string
+      filters: Array<{ label: string; extensions: string[] }>
+      buffers: Record<string, ArrayBuffer | string>
+    }) => Promise<{ saved: boolean; filePath?: string; filename?: string }>
     onAiDebugMessage: (callback: (message: { type: string; entry?: unknown }) => void) => () => void
 
     // 定时任务调度

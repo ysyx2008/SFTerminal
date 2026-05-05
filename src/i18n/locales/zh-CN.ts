@@ -1283,6 +1283,18 @@ export default {
       prevConversation: '上一条对话的图片 (↑)',
       nextConversation: '下一条对话的图片 (↓)',
     },
+    imageMenu: {
+      copy: '复制图片',
+      saveAs: '另存为...',
+      copySuccess: '图片已复制到剪贴板',
+      copyFailed: '复制失败：{error}',
+      saveSuccess: '已保存 {filename}',
+      saveFailed: '保存失败：{error}',
+      unsupported: '当前环境不支持复制图片到剪贴板',
+      filterPng: 'PNG 图片（推荐）',
+      filterJpg: 'JPEG 图片',
+      filterSvg: 'SVG 矢量图',
+    },
     webSearch: {
       foundResults: '搜索到 {count} 条结果',
     },

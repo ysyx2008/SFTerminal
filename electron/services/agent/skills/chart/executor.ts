@@ -10,9 +10,12 @@ import { renderToSvg, type RenderSize } from './ssr'
 
 const log = createLogger('ChartSkill')
 
-const DEFAULT_WIDTH = 800
-const DEFAULT_HEIGHT = 500
-const MAX_DIM = 4000
+// 兜底默认 1280×800（适合大多数中等复杂度图表，矢量+1.6x 于老 800×500，文件可控）
+// 真正的尺寸决定权在 AI 手上——它最了解数据规模和图表类型，应在工具调用时显式传 width/height。
+// 见 tools.ts 的 chartSkillContent 中的"按内容规模选画布尺寸"指引。
+const DEFAULT_WIDTH = 1280
+const DEFAULT_HEIGHT = 800
+const MAX_DIM = 7680  // 8K 宽，足以画一年日 K（~250 根）或全天分钟级分时图（~240 点）
 const MIN_DIM = 100
 
 const VALID_TYPES: readonly ChartType[] = [
@@ -92,19 +95,25 @@ async function generateChart(
     ? t('chart.generated_with_path', { type, path: savedPath })
     : t('chart.generated', { type })
 
-  // 注意：images 只通过 ToolResult 返回，避免在 step 历史 + ToolResult 里重复存
-  // 一份大体积的 base64 SVG（与 pdf skill 行为对齐）
+  // chart skill 的图首要目标是「展示给用户」：
+  //   - step.images 是前端 (AiPanel.vue / Awaken.vue / tool-display.ts) 渲染图片的唯一来源，
+  //     必须带上，否则用户看不到生成的图。
+  //   - ToolResult.images 故意不带：那条路径会经 flushPendingToolImages 注入到 AI
+  //     的 user 消息当视觉输入，但主流多模态模型（OpenAI/Anthropic/Gemini）都不识别
+  //     SVG 格式，发过去要么被拒、要么静默丢弃，还会让 AI 误以为「图我看过了」从而
+  //     脑补内容。chart 工具的成功状态完全可由 success + output 判断，无需 AI 视觉校验。
+  // PDF skill 反过来：图首要目标是给 AI 看（视觉分析扫描件），所以走 ToolResult.images。
   executor.addStep({
     type: 'tool_result',
     content: output,
     toolName: 'generate_chart',
-    toolResult: output
+    toolResult: output,
+    images: [dataUrl]
   })
 
   return {
     success: true,
-    output,
-    images: [dataUrl]
+    output
   }
 }
 

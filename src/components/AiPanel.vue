@@ -15,6 +15,8 @@ import AgentPlanView from './AgentPlanView.vue'
 import AiComposer from './AiComposer.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
 import ToolCallContent from './ToolCallContent.vue'
+import ImageContextMenu from './ImageContextMenu.vue'
+import { useImageActions } from '../composables/useImageActions'
 import { parseThinking } from '../utils/thinking-block'
 import { createLogger } from '../utils/logger'
 import sailfishLogo from '../../resources/logo.png'
@@ -1081,6 +1083,26 @@ const closeImagePreview = () => {
   isDraggingImage.value = false
 }
 
+// ==================== 图片右键菜单 ====================
+const { copyImage } = useImageActions()
+const imageContextMenu = reactive<{ show: boolean; x: number; y: number; url: string | null }>({
+  show: false, x: 0, y: 0, url: null
+})
+
+const openImageContextMenu = (e: MouseEvent, url: string) => {
+  e.preventDefault()
+  e.stopPropagation()
+  imageContextMenu.show = true
+  imageContextMenu.x = e.clientX
+  imageContextMenu.y = e.clientY
+  imageContextMenu.url = url
+}
+
+const closeImageContextMenu = () => {
+  imageContextMenu.show = false
+  imageContextMenu.url = null
+}
+
 const navigatePreview = (groupIdx: number, imageIdx: number) => {
   const groups = allPreviewImages.value
   if (groupIdx < 0 || groupIdx >= groups.length) return
@@ -1183,6 +1205,17 @@ const handleKeyDown = (e: KeyboardEvent) => {
         closeImagePreview()
       }
       return
+    }
+    // Cmd/Ctrl+C 复制当前预览的大图（仅在没有文本选区时触发，避免覆盖正常的文本复制）
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'c' || e.key === 'C')) {
+      const sel = window.getSelection()?.toString()
+      if (!sel) {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        const url = previewImageUrl.value
+        if (url) copyImage(url).catch(() => { /* toast 已显示 */ })
+        return
+      }
     }
     // 缩放状态下方向键用于平移，未缩放时用于图片导航
     if (previewScale.value !== 1) {
@@ -1752,12 +1785,13 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                   <div class="message-content">
                     <span class="user-task-text">{{ item.group!.userTask }}</span>
                     <div v-if="item.group!.images && item.group!.images.length > 0" class="message-images">
-                      <img 
-                        v-for="(imgUrl, imgIdx) in item.group!.images" 
-                        :key="imgIdx" 
-                        :src="imgUrl" 
-                        class="message-image" 
+                      <img
+                        v-for="(imgUrl, imgIdx) in item.group!.images"
+                        :key="imgIdx"
+                        :src="imgUrl"
+                        class="message-image"
                         @click="openImagePreview(imgUrl)"
+                        @contextmenu="openImageContextMenu($event, imgUrl)"
                       />
                     </div>
                     <div 
@@ -1999,6 +2033,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         :alt="item.step!.toolResult || `image ${imgIdx + 1}`"
                         class="step-image"
                         @click="openImagePreview(imgUrl)"
+                        @contextmenu="openImageContextMenu($event, imgUrl)"
                       />
                     </div>
                   </div>
@@ -2157,6 +2192,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           :style="{ transform: previewTransform }"
           @mousedown="handlePreviewMouseDown"
           @dblclick="handlePreviewDblClick"
+          @contextmenu="openImageContextMenu($event, previewImageUrl!)"
           draggable="false"
         />
         <!-- 底部信息栏：图片位置 + 缩放比例 -->
@@ -2189,6 +2225,16 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
       </button>
     </div>
   </Teleport>
+
+  <!-- 图片右键菜单：所有 <img> 共用，包括小缩略图和大图预览 -->
+  <ImageContextMenu
+    :show="imageContextMenu.show"
+    :x="imageContextMenu.x"
+    :y="imageContextMenu.y"
+    :url="imageContextMenu.url"
+    default-name="image"
+    @close="closeImageContextMenu"
+  />
 </template>
 
 <style scoped>

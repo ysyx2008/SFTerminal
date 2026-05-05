@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, dialog, session, Tray, Menu, nativeImage, nativeTheme, powerMonitor } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, dialog, session, Tray, Menu, nativeImage, nativeTheme, powerMonitor, clipboard } from 'electron'
 import { autoUpdater, type GenericServerOptions, type GithubOptions } from 'electron-updater'
 import path, { join } from 'path'
 import * as fs from 'fs'
@@ -1875,6 +1875,74 @@ ipcMain.handle('shell:showItemInFolder', async (_event, fullPath: string) => {
       await shell.openPath(dir)
     }
   }
+})
+
+// 弹原生"保存为"对话框写入图片到磁盘。
+// 由前端预先把图片渲染成多种格式的 buffer/text 一起传过来；
+// 用户在原生对话框里选格式（PNG/JPG/SVG），主进程按选定的扩展名挑对应数据写盘。
+//
+// 入参契约：
+//   defaultName: 不带扩展名的默认文件名，如 'chart-1730000000000'
+//   filters: 文件类型选项数组（顺序 = 优先级，第一项默认）
+//     每项 { label: 'PNG (推荐)', extensions: ['png'] }
+//   buffers: { png?: ArrayBuffer, jpg?: ArrayBuffer, svg?: string, ... }
+//     key 必须等于对应 extensions[0]（jpeg 统一用 jpg）
+//
+// 返回 { saved: boolean, filePath?, filename? }；用户取消时 saved=false。
+ipcMain.handle('image:saveWithDialog', async (event, payload: {
+  defaultName: string
+  filters: Array<{ label: string; extensions: string[] }>
+  buffers: Record<string, ArrayBuffer | Uint8Array | string>
+}) => {
+  const win = BrowserWindow.fromWebContents(event.sender) ?? mainWindow
+  if (!win) throw new Error('image:saveWithDialog: no parent window')
+  if (!payload.filters?.length) throw new Error('image:saveWithDialog: filters required')
+
+  const defaultExt = payload.filters[0].extensions[0]
+  const result = await dialog.showSaveDialog(win, {
+    defaultPath: `${payload.defaultName}.${defaultExt}`,
+    filters: payload.filters.map(f => ({ name: f.label, extensions: f.extensions }))
+  })
+  if (result.canceled || !result.filePath) return { saved: false }
+
+  // jpeg → jpg 归一，方便用 buffers 字典查找
+  const rawExt = path.extname(result.filePath).toLowerCase().replace('.', '')
+  const ext = rawExt === 'jpeg' ? 'jpg' : rawExt
+  const data = payload.buffers[ext]
+  if (data === undefined) {
+    throw new Error(`image:saveWithDialog: no buffer provided for extension ".${rawExt}"`)
+  }
+
+  let bytes: Buffer
+  if (typeof data === 'string') {
+    bytes = Buffer.from(data, 'utf-8')
+  } else if (Buffer.isBuffer(data)) {
+    bytes = data
+  } else if (data instanceof Uint8Array) {
+    bytes = Buffer.from(data)
+  } else {
+    bytes = Buffer.from(new Uint8Array(data))
+  }
+
+  await fs.promises.writeFile(result.filePath, bytes)
+  return { saved: true, filePath: result.filePath, filename: path.basename(result.filePath) }
+})
+
+// 写入图片到系统剪贴板。前端把图片渲染成 PNG buffer 传过来，
+// 走 Electron 原生 clipboard 模块——绕开浏览器 navigator.clipboard.write
+// 在 document focus / Permissions Policy 上的各种限制（Cmd+C 触发时常报
+// "Write permission denied"）。
+ipcMain.handle('clipboard:writeImage', async (_event, payload: ArrayBuffer | Uint8Array) => {
+  const buf = Buffer.isBuffer(payload)
+    ? payload
+    : payload instanceof Uint8Array
+      ? Buffer.from(payload)
+      : Buffer.from(new Uint8Array(payload))
+  const img = nativeImage.createFromBuffer(buf)
+  if (img.isEmpty()) {
+    throw new Error('clipboard:writeImage received unrecognizable image buffer')
+  }
+  clipboard.writeImage(img)
 })
 
 // PATH 环境变量状态
