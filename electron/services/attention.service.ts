@@ -1,4 +1,6 @@
-import { app, type BrowserWindow } from 'electron'
+import { app, Notification, type BrowserWindow } from 'electron'
+import * as fs from 'fs'
+import * as path from 'path'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('attention')
@@ -19,6 +21,7 @@ const log = createLogger('attention')
 class AttentionService {
   private mainWindow: BrowserWindow | null = null
   private active = false
+  private permissionEnsured = false
   /**
    * 自维护的窗口聚焦状态——不依赖每次 win.isFocused() 的实时返回。
    *
@@ -45,9 +48,60 @@ class AttentionService {
   }
 
   /**
+   * macOS 一次性通知权限引导。
+   *
+   * 背景：Electron 的 `dock.setBadge(text)` 在 macOS 上**必须**应用拥有"显示通知"
+   * 权限才能生效（见 Electron 官方文档）。开发模式跑的是 Electron 二进制自身的
+   * bundle id（com.github.Electron），多数开发机历史上已经被授权过；生产打包是
+   * `com.sfterm.terminal`，是一个全新的 bundle，初始未授权——这就是"开发模式
+   * dock badge 正常、打包后无效"的根因。
+   *
+   * 解决：首次启动时主动 show 一条说明通知，触发系统的权限请求弹窗。用户做完
+   * 选择后系统会持久记住，后续 setBadge 即可正常工作。用 userData 下的 marker
+   * 文件标记"已请求过"，避免每次启动都打扰用户。
+   *
+   * 注意：即便用户最终选择"不允许"，我们也写 marker——macOS 系统级也会记住该
+   * 选择，重复 show 通知不会再次弹权限对话框，但会继续显示通知卡片，反而更烦。
+   */
+  ensurePermission(): void {
+    if (this.permissionEnsured) return
+    this.permissionEnsured = true
+    if (process.platform !== 'darwin') return
+
+    try {
+      const markerPath = path.join(app.getPath('userData'), '.attention-notification-requested')
+      if (fs.existsSync(markerPath)) {
+        log.debug('notification permission already requested previously, skip')
+        return
+      }
+
+      if (!Notification.isSupported()) {
+        log.debug('Notification not supported on this platform')
+        return
+      }
+
+      const notif = new Notification({
+        title: 'SailFish',
+        body: '允许通知后，任务完成时 Dock 图标可以显示提醒角标。',
+        silent: true,
+      })
+      notif.show()
+
+      try {
+        fs.writeFileSync(markerPath, new Date().toISOString())
+      } catch (e) {
+        log.warn('write notification permission marker failed:', e)
+      }
+      log.info('macOS notification permission requested (one-time)')
+    } catch (e) {
+      log.warn('ensurePermission failed:', e)
+    }
+  }
+
+  /**
    * 提请用户关注。窗口当前聚焦则不做任何事——用户已经在看了。
    */
-  request(): void {
+  async request(): Promise<void> {
     const win = this.mainWindow
     if (!win || win.isDestroyed()) {
       log.debug('attention.request skipped: no window')
@@ -64,10 +118,15 @@ class AttentionService {
       if (process.platform === 'darwin') {
         // 防御：用户按 Cmd+W 关到托盘时主进程会调 app.dock.hide()，
         // Dock 图标整个消失，setBadge 没视觉效果——重新 show 一下让
-        // 图标带着角标出现。Cmd+Tab 走的常规后台场景 dock 一直可见，
-        // 这段是 no-op。
+        // 图标带着角标出现。dock.show() 是异步的，必须 await，否则
+        // 在 dock 真正显示前就 setBadge，badge 会丢失。
+        // Cmd+Tab 走的常规后台场景 dock 一直可见，await 立即返回。
         if (app.dock && !app.dock.isVisible()) {
-          app.dock.show().catch(() => {})
+          try {
+            await app.dock.show()
+          } catch (e) {
+            log.debug('dock.show failed:', e)
+          }
         }
         // 圆点而非数字：我们不计数，只表达"有事情结束了"
         app.dock?.setBadge('•')
