@@ -42,6 +42,10 @@ asarUnpack:
   - node_modules/pdfjs-dist/**/*
   - node_modules/@napi-rs/canvas/**/*
   - node_modules/@napi-rs/canvas-*/**/*
+  # sharp 是 native 模块，运行时按平台动态 require
+  # build/Release/sharp-{platform}-{arch}.node，必须保留在文件系统而不是 asar 内
+  - node_modules/sharp/**/*
+  - node_modules/@img/sharp-*/**/*
 # 启用最大压缩率以减小安装包大小（会增加打包时间）
 # compression: maximum
 extraResources:

@@ -143,6 +143,12 @@ export default defineConfig({
                 // 转成 throw new Error('Could not resolve "bufferutil"')，破坏原本的 try/catch。
                 // 标记为 external 后 rollup 保留原样 require()，运行时由 ws 自行处理缺失情况。
                 '@napi-rs/canvas',
+                // sharp 是 native 模块，内部用 dynamic require 加载平台对应的 .node prebuild
+                // (sharp-darwin-arm64v8.node / sharp-linux-x64.node / ...)，rollup 静态分析无法
+                // 处理这种 dynamic require，会报 "Could not dynamically require ..."。
+                // 列入 external 让 sharp 在运行时由 Node 直接 require，平台 prebuild 由
+                // sharp 自身加载逻辑处理。
+                'sharp',
                 /^pdfjs-dist/,
                 'bufferutil',
                 'utf-8-validate'
