@@ -1502,8 +1502,7 @@ app.whenReady().then(async () => {
 // 处理 Cmd+Q / 托盘退出
 app.on('before-quit', (event) => {
   isQuitting = true
-  sensorService.appLifecycle.notifyAppWillQuit()
-  
+
   if (forceQuit) {
     return
   }

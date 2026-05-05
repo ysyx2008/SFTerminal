@@ -852,7 +852,6 @@ export class WatchService {
     const statsNote = days != null ? `（已陪伴 ${days} 天，共 ${convos ?? 0} 次对话）` : ''
     switch (event) {
       case 'app_started': return `应用启动${statsNote}`
-      case 'app_will_quit': return `应用即将退出${statsNote}`
       case 'app_resumed': return '系统从睡眠/锁屏恢复'
       case 'app_idle': return `系统空闲（${payload.idleSeconds}秒）`
       case 'awakening_enabled': return '用户开启了觉醒模式'

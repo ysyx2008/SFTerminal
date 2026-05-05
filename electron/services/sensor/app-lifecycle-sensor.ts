@@ -2,8 +2,16 @@
  * App Lifecycle Sensor - 应用生命周期与里程碑传感器
  *
  * 感知两类事件：
- * 1. 生命周期：app_started / app_will_quit / app_resumed / app_idle / awakening 变化
+ * 1. 生命周期：app_started / app_resumed / app_idle / awakening 变化
  * 2. 里程碑：陪伴天数、对话次数、周年纪念日
+ *
+ * 注意：曾经存在 app_will_quit 事件，但在 dev 重启时 watch 会在主进程
+ * 退出过程中跑 SailFish.run，导致 webContents.send 不停 throw
+ * "Render frame was disposed"，主进程死循环退不掉。已移除。
+ * 若未来要恢复，前置条件：
+ *   1. 退出路径设置全局 isQuitting 标志，watch 调度处直接短路新任务
+ *   2. Agent 内所有 webContents.send 加 isDestroyed() 守卫
+ *   3. 主进程注册 SIGTERM handler，绕过 before-quit 对话框直接 cleanup
  *
  * 生命周期事件由 main.ts 通过 notify* 方法触发。
  * 里程碑每小时检查一次，使用持久化计数器避免重复触发，纯数学运算无 I/O 开销。
@@ -19,7 +27,6 @@ const MILESTONE_CHECK_INTERVAL_MS = 60 * 60 * 1000 // 1 hour
 
 export type AppLifecycleEvent =
   | 'app_started'
-  | 'app_will_quit'
   | 'app_resumed'
   | 'app_idle'
   | 'awakening_enabled'
@@ -92,13 +99,6 @@ export class AppLifecycleSensor implements Sensor {
 
   notifyAppStarted(): void {
     this.emitLifecycle('app_started', 'high', {
-      daysTogether: this.getDaysTogether(),
-      totalConversations: this.totalConversations,
-    })
-  }
-
-  notifyAppWillQuit(): void {
-    this.emitLifecycle('app_will_quit', 'high', {
       daysTogether: this.getDaysTogether(),
       totalConversations: this.totalConversations,
     })
