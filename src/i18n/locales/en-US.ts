@@ -753,7 +753,12 @@ export default {
       config: 'SailFish Settings',
       'skill-manager': 'Skill Manager',
       terminal: 'Terminal Control',
-      personality: 'Personality'
+      personality: 'Personality',
+      pdf: 'PDF Reader',
+      chart: 'Chart Generation',
+      feishu: 'Feishu (Lark)',
+      wecom: 'WeCom',
+      dingtalk: 'DingTalk'
     },
     builtinSkillDescs: {
       excel: 'Read and write Excel files interactively. Supports opening files, reading data, modifying cells, adding/removing sheets, saving and closing. Ideal for data analysis and report processing.',
@@ -765,7 +770,12 @@ export default {
       config: 'Read and modify SailFish app settings (language, theme, terminal, Agent personality, IM credentials, etc.), manage email/calendar accounts, and test IM connections.',
       'skill-manager': 'Manage user skills and the skill market. Supports creating, updating and deleting user skills, as well as searching, previewing and installing skills from SailFish and ClawHub markets.',
       terminal: 'PTY terminal interaction: execute commands, view terminal status and output, send control keys and text input, wait for command completion. Auto-loaded when bound to a terminal.',
-      personality: 'Define or modify the Agent\'s personality, communication style, values and name through guided conversation. Use when you want to customize your AI assistant\'s character and behavior.'
+      personality: 'Define or modify the Agent\'s personality, communication style, values and name through guided conversation. Use when you want to customize your AI assistant\'s character and behavior.',
+      pdf: 'Render scanned/image-based PDF pages as images for visual model analysis. Auto-loaded when read_file encounters a scanned PDF, no manual activation needed.',
+      chart: 'Generate 8 chart types (bar/line/area/pie/scatter/radar/heatmap/candlestick) and output SVG vector images directly in chat. Candlestick supports CN-style (red-up green-down) and US-style (green-up red-down). Ideal for financial analysis, data reporting, and statistical visualization.',
+      feishu: 'Read and write Feishu (Lark) cloud resources: calendar, docs, sheets, instant messages, users/departments/groups. Requires app credentials configured in the Feishu settings page.',
+      wecom: 'Read and write WeCom OA resources: calendar, approval, attendance, contacts, drive, docs, meetings. Requires WeCom app credentials configured in the WeCom settings page.',
+      dingtalk: 'Read and write DingTalk OA resources: calendar, approval, attendance, contacts, smart forms. Requires internal app credentials configured in the DingTalk settings page.'
     },
     extensionSkills: 'Extension Skills',
     extensionSkillsDesc: 'Extension skills teach AI how to complete specific tasks via SKILL.md files. Install from the market or add manually.'
