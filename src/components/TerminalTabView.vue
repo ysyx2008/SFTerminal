@@ -183,13 +183,14 @@ watch(terminalPanes, (panes) => {
           :visible="aiPanelVisible"
           @close="showAiPanel = false"
         />
+        <!-- 拖拽手柄：绝对定位覆盖在 sidebar 朝 terminal 一侧的边缘，不占据 flex 流空间，
+             这样 sidebar 与 terminal 视觉上紧贴，hover 时才显示拖拽提示 -->
+        <div
+          class="resize-handle"
+          @mousedown="startResize"
+          :class="{ resizing: isResizing }"
+        ></div>
       </div>
-      <div
-        v-show="showAiPanel"
-        class="resize-handle"
-        @mousedown="startResize"
-        :class="{ resizing: isResizing }"
-      ></div>
     </template>
     <div class="terminal-main">
       <!-- 终端布局：SplitPaneView 渲染嵌套结构与占位 div（不渲染 Terminal） -->
@@ -276,6 +277,13 @@ watch(terminalPanes, (panes) => {
   border-left: 1px solid var(--border-color);
 }
 
+/* 左侧布局：sidebar 右缘是 AiPanel 滚动条与 resize-handle 的重合区。
+   留 3px padding 让 AiPanel 内容（含滚动条）向内偏移，避开 handle 的 hit area。
+   右侧布局滚动条在 viewport 最右、handle 在 sidebar 最左，天然不冲突，无需 padding。 */
+.terminal-tab.ai-panel-left .tab-ai-sidebar {
+  padding-right: 3px;
+}
+
 .tab-ai-sidebar::before {
   content: '';
   position: absolute;
@@ -341,18 +349,27 @@ watch(terminalPanes, (panes) => {
   border: 1px solid var(--border-primary);
 }
 
-/* 拖拽调整宽度手柄
-   背景 = 主背景色（bg-primary），让 5px 拖拽条作为"终端侧的延伸"，
-   与 terminal 区域视觉融合，不再被识别为额外的色块。
-   sidebar 一侧靠 sidebar 自身的 border + ::before 亮带做层次过渡。
-   不用 transparent 是为了避免某些主题下祖先元素背景被透出造成的不可控色差。 */
+/* 拖拽手柄：绝对定位覆盖在 sidebar 朝 terminal 一侧的最外 5px，
+   平时透明、不占视觉空间，hover/resizing 时显示渐变背景与中间小竖条作为可拖拽提示。 */
 .resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
   width: 5px;
   cursor: col-resize;
-  background: var(--bg-primary);
-  transition: all 0.25s ease;
-  flex-shrink: 0;
-  position: relative;
+  background: transparent;
+  transition: background 0.25s ease;
+  z-index: 5;
+}
+
+/* 左侧布局：handle 贴在 sidebar 的最右 5px */
+.terminal-tab.ai-panel-left .resize-handle {
+  right: 0;
+}
+
+/* 右侧布局：handle 贴在 sidebar 的最左 5px */
+.terminal-tab.ai-panel-right .resize-handle {
+  left: 0;
 }
 
 .resize-handle::after {
