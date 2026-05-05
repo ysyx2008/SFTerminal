@@ -350,6 +350,35 @@ describe('candlestick 通达信风格 + MA 均线', () => {
     const lineCount = series.filter(s => s.type === 'line').length
     expect(lineCount).toBe(3)   // MA5 / MA10 / MA20（30 不够 60）
   })
+
+  // 通达信/同花顺习惯：垂直虚线代表"时间分界"，不会每根 K 线都画一条；
+  // 我们用纯数量驱动 interval 把虚线数量稳定在 ~8 条。
+  it('xAxis splitLine 自适应稀疏：N 越大 interval 越大，确保竖虚线总数维持 ~8', () => {
+    type XAxis = { splitLine?: { interval?: number }; axisLabel?: { interval?: number } }
+    function xAxisOf(n: number): XAxis {
+      const opt = buildOption({ type: 'candlestick', data: buildLong(n) })
+      // 单 grid 模式下 xAxis 是单对象
+      return opt.xAxis as XAxis
+    }
+    expect(xAxisOf(5).splitLine?.interval).toBe(0)         // 数据少 → 全画
+    expect(xAxisOf(8).splitLine?.interval).toBe(0)
+    // n=80 时目标 ~8 条 → interval = ceil(80/8)-1 = 9（每 10 根一条）
+    expect(xAxisOf(80).splitLine?.interval).toBe(9)
+    // n=250 时 → interval = ceil(250/8)-1 = 31（每 32 根一条）
+    expect(xAxisOf(250).splitLine?.interval).toBe(31)
+    // axisLabel 与 splitLine 共用同一 interval，保证 label 和虚线对齐
+    expect(xAxisOf(80).axisLabel?.interval).toBe(xAxisOf(80).splitLine?.interval)
+  })
+
+  it('xAxis splitLine interval 在双 grid（K 线 + 成交量）下两轴一致', () => {
+    type XAxis = { splitLine?: { interval?: number } }
+    const data = { ...buildLong(120), volumes: Array(120).fill(1000) }
+    const opt = buildOption({ type: 'candlestick', data })
+    const xAxes = opt.xAxis as XAxis[]
+    expect(xAxes.length).toBe(2)
+    expect(xAxes[0].splitLine?.interval).toBe(xAxes[1].splitLine?.interval)
+    expect(xAxes[0].splitLine?.interval).toBeGreaterThan(0)
+  })
 })
 
 describe('chart input validation', () => {

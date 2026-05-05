@@ -531,6 +531,21 @@ function resolveMaPeriods(ma: number[] | undefined, dataLen: number): number[] {
   return candidates.filter(p => dataLen >= p)
 }
 
+/**
+ * 计算 categoryAxis 的 axisLabel/splitLine/axisTick 共用 interval，控制垂直虚线数量。
+ *
+ * 通达信/同花顺习惯里，垂直虚线表示"时间分界"——按月/按周/按整点等节奏稀疏排列，
+ * 不会每根 K 线都画一条。完全模拟需要解析 categories 字符串中的日期格式，但
+ * AI 传入的 categories 格式不固定（"2024-01-15" / "01-15" / "Q1" / "周一"…），
+ * 解析容易脆弱。这里用纯数量驱动：目标虚线总数 ~8 条，按数据长度反推 interval。
+ *
+ * ECharts 的 interval 语义：N 表示"每 N+1 个数据画一条"，0 表示全画。
+ */
+function calcCategoryInterval(n: number): number {
+  if (n <= 8) return 0   // 数据少，全画
+  return Math.max(0, Math.ceil(n / 8) - 1)
+}
+
 function buildCandlestick(input: ChartInput, baseTheme: ThemePreset): EChartsOption {
   const raw = input.data
   if (!raw || typeof raw !== 'object') {
@@ -638,9 +653,11 @@ function buildCandlestick(input: ChartInput, baseTheme: ThemePreset): EChartsOpt
     splitLine: priceSplitLine
   })
 
-  // category xAxis：水平方向实线（splitLine 走 yAxis），垂直方向 axisLabel 间隔的虚线分隔
-  // 通达信/同花顺习惯：水平价格线实线 + 垂直时间线虚线，让人能直读"某根 K 线对应哪个时间"
-  // ECharts 对 categoryAxis 的 splitLine 自动跟随 axisLabel.interval（避免 60 根全画）
+  // category xAxis：水平方向实线（走 yAxis splitLine），垂直方向稀疏虚线分隔
+  // 通达信/同花顺习惯：垂直虚线只在"时间分界"画（月初/周一/整点），不是每根 K 线都画。
+  // 这里用纯数量驱动的稀疏策略——目标虚线数 ~8 条，避免依赖日期字符串解析的脆弱性。
+  // axisLabel 与 splitLine 共用同一 interval 保证上下对齐（双 grid 时尤其重要）。
+  const gridInterval = calcCategoryInterval(categories.length)
   const xAxisBase = (gridIndex: number): EChartsOption => ({
     type: 'category',
     gridIndex,
@@ -648,13 +665,14 @@ function buildCandlestick(input: ChartInput, baseTheme: ThemePreset): EChartsOpt
     scale: true,
     boundaryGap: true,
     axisLine: priceAxisLine,
-    axisLabel: priceAxisLabel,
+    axisLabel: { ...priceAxisLabel, interval: gridInterval },
     splitLine: {
       show: true,
+      interval: gridInterval,
       // 自定义 dash 节奏让虚线在缩放后视觉更连续（ECharts 默认 [5,5] 在低 DPI 下断点过多）
       lineStyle: { color: pro.splitLineColor, type: [6, 4] }
     },
-    axisTick: { lineStyle: { color: pro.axisLineColor } }
+    axisTick: { lineStyle: { color: pro.axisLineColor }, interval: gridInterval }
   })
 
   // 十字光标：黄色虚线 + 反白价格标签（通达信招牌视觉）
