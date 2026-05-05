@@ -1023,6 +1023,10 @@ const handleDragLeave = (e: DragEvent) => {
 
 // ==================== 图片预览（支持缩放、拖拽、键盘导航） ====================
 const previewImageUrl = ref<string | null>(null)
+// 弹窗根节点 ref。用于手动绑 wheel 事件并显式 { passive: false }——
+// 模板里 @wheel.prevent 会让 Chrome 报"non-passive scroll-blocking"警告，
+// 因为 Vue 的 patchEvent 不显式传 passive 参数。
+const previewModalRef = ref<HTMLDivElement | null>(null)
 const previewScale = ref(1)
 const previewTranslateX = ref(0)
 const previewTranslateY = ref(0)
@@ -1141,6 +1145,15 @@ const handlePreviewWheel = (e: WheelEvent) => {
   const newScale = Math.max(0.1, Math.min(10, previewScale.value + delta * previewScale.value))
   previewScale.value = newScale
 }
+
+// 显式以 { passive: false } 绑定 wheel——告诉浏览器我们故意要 preventDefault（缩放），
+// 避免模板 @wheel.prevent 触发 "non-passive scroll-blocking" 警告。
+// previewModalRef 是 v-if 元素，每次弹窗出现/关闭都会重新挂载/卸载。
+watch(previewModalRef, (el, _old, onCleanup) => {
+  if (!el) return
+  el.addEventListener('wheel', handlePreviewWheel, { passive: false })
+  onCleanup(() => el.removeEventListener('wheel', handlePreviewWheel))
+})
 
 // 双击重置
 const handlePreviewDblClick = () => resetPreviewTransform()
@@ -2160,9 +2173,9 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
     <!-- 图片预览弹窗（支持缩放拖拽、键盘导航） -->
     <div 
       v-if="previewImageUrl" 
+      ref="previewModalRef"
       class="image-preview-modal" 
       @click="closeImagePreview"
-      @wheel.prevent="handlePreviewWheel"
     >
       <!-- 上方导航箭头：历史对话 -->
       <button v-if="canGoUp" class="image-preview-nav nav-up" @click.stop="goUp" :title="t('ai.imagePreview.prevConversation')">
