@@ -21,13 +21,87 @@ import {
   convertInchesToTwip,
   LevelFormat,
   LevelSuffix,
-  ImageRun
+  ImageRun,
+  FootnoteReferenceRun,
+  InternalHyperlink,
+  Bookmark
 } from 'docx'
 import { marked, Token, Tokens } from 'marked'
 import JSZip from 'jszip'
 import * as fs from 'fs'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
+
+/**
+ * 脚注 token 类型（自定义 marked 扩展产生）
+ * 不复用 marked-footnote 第三方包，因为它在文档没有任何脚注定义时会崩
+ * （tokenizer 假设 lexer.tokens[0] 是 footnotes block）
+ */
+interface FootnoteDefToken extends Tokens.Generic {
+  type: 'footnoteDef'
+  label: string
+  text: string
+}
+
+interface FootnoteRefToken extends Tokens.Generic {
+  type: 'footnoteRef'
+  label: string
+}
+
+/**
+ * marked.use 是全局的且会叠加扩展，需要确保只注册一次
+ * 注册两个扩展：
+ * - block 级 [^label]: 内容（脚注定义）
+ * - inline 级 [^label]（脚注引用）
+ */
+let footnoteExtensionRegistered = false
+function ensureFootnoteExtension(): void {
+  if (footnoteExtensionRegistered) return
+  marked.use({
+    extensions: [
+      {
+        name: 'footnoteDef',
+        level: 'block',
+        start(src: string) {
+          const m = src.match(/^[ \t]*\[\^[^\]\n]+\]:/m)
+          return m?.index
+        },
+        tokenizer(src: string) {
+          // [^label]: 内容（可跨行，后续行需缩进或不以新定义/空行开头）
+          const match = /^[ \t]*\[\^([^\]\n]+)\]:[ \t]*([^\n]+(?:\n[ \t]+[^\n]+)*)/.exec(src)
+          if (!match) return undefined
+          const token: FootnoteDefToken = {
+            type: 'footnoteDef',
+            raw: match[0],
+            label: match[1].trim(),
+            text: match[2].replace(/\n[ \t]+/g, '\n').trim()
+          }
+          return token
+        }
+      },
+      {
+        name: 'footnoteRef',
+        level: 'inline',
+        start(src: string) {
+          // 必须排除 [^label]: 这种定义形式（定义会被 block 扩展先吃掉，但 inline 阶段也要避开）
+          const m = src.match(/\[\^[^\]\n]+\](?!:)/)
+          return m?.index
+        },
+        tokenizer(src: string) {
+          const match = /^\[\^([^\]\n]+)\](?!:)/.exec(src)
+          if (!match) return undefined
+          const token: FootnoteRefToken = {
+            type: 'footnoteRef',
+            raw: match[0],
+            label: match[1].trim()
+          }
+          return token
+        }
+      }
+    ]
+  })
+  footnoteExtensionRegistered = true
+}
 
 /**
  * HTML 实体解码
@@ -302,6 +376,47 @@ interface DocxBuildContext {
   multiLevelRef?: string
   /** 图片相对路径解析的基准目录（通常是 markdown 源文件所在目录或 cwd） */
   mediaBaseDir?: string
+  /**
+   * 脚注 label → docx 中的数字 ID 映射
+   * marked-footnote 用字符串 label 标识脚注（[^foo]），但 docx 库要数字 ID
+   */
+  footnoteIdByLabel?: Map<string, number>
+  /**
+   * 标题 anchor 已去重集合：记录本文档中所有最终的 heading slug
+   * 用于校验 [文](#anchor) 跳转目标是否存在
+   */
+  headingAnchors?: Set<string>
+  /**
+   * 标题 anchor 按出现顺序的去重列表（同 collectHeadingAnchors 返回顺序）
+   * 配合 headingAnchorCursor 在 createHeading 里按序消费
+   */
+  headingAnchorList?: string[]
+  /**
+   * 当前 heading 取用的下标（mutable wrapper 让多个嵌套调用能共享）
+   * 用对象包装是因为 cursor 需要在调用栈中递增
+   */
+  headingAnchorCursor?: { value: number }
+}
+
+/**
+ * 把任意字符串转为合法 anchor / bookmark name
+ * - 字母数字/汉字/CJK 扩展/假名/韩文等所有 Unicode Letter+Number 保留
+ * - 标点空白替换为连字符
+ * - 多余连字符压缩
+ * - docx Bookmark name 限制 40 字符以内、不能以数字开头
+ */
+function slugify(text: string): string {
+  let s = text.trim().toLowerCase()
+  // 去除 Markdown 内联标记
+  s = s.replace(/[*_`~]/g, '')
+  // 仅保留 Unicode Letter / Number / 连字符 / 下划线，其余统统压成 -
+  s = s.replace(/[^\p{L}\p{N}_-]+/gu, '-')
+  s = s.replace(/-+/g, '-').replace(/^-|-$/g, '')
+  // docx Bookmark name 不能以数字开头
+  if (/^\d/.test(s)) s = 'a-' + s
+  if (!s) s = 'section'
+  // 截断
+  return s.slice(0, 40)
 }
 
 /** 图片元素允许的扩展名 → ImageRun 类型映射 */
@@ -1225,15 +1340,29 @@ export async function markdownToDocx(
   //    - title：xxx（中文冒号）
   //    这种写法本意是 frontmatter，但缺少围栏，原本会被当成普通段落输出
   const { title: documentTitle, content: contentMarkdown } = extractDocumentTitle(markdown)
-  
+
+  // 注册脚注扩展（GFM [^id] / [^id]: ... 语法）
+  ensureFootnoteExtension()
+
   // 解析 Markdown
   const tokens = marked.lexer(contentMarkdown)
-  
+
+  // 收集脚注定义（block 级 'footnotes' token），构建 label → 数字 ID 映射
+  const footnoteIdByLabel = new Map<string, number>()
+  const footnoteDefinitions = collectFootnoteDefinitions(tokens, footnoteIdByLabel)
+
+  // 收集所有标题 anchor（处理同名冲突），供 [文](#xxx) 跳转校验和给 heading 段落自动包 Bookmark
+  const { ordered: headingAnchorList, set: headingAnchors } = collectHeadingAnchors(tokens)
+
   // 构建上下文（收集有序列表编号定义）
   const ctx: DocxBuildContext = {
     numberingConfigs: [],
     orderedListCounter: 0,
-    mediaBaseDir: options?.mediaBaseDir
+    mediaBaseDir: options?.mediaBaseDir,
+    footnoteIdByLabel,
+    headingAnchors,
+    headingAnchorList,
+    headingAnchorCursor: { value: 0 }
   }
 
   // 注册多级自动编号（如制度文件的 章→节→条→款 体系）
@@ -1287,10 +1416,43 @@ export async function markdownToDocx(
   // 解析页面配置
   const pageResolved = resolvePageConfig(styleConfig.config.page)
 
-  // 创建文档（包含文档级别的样式定义 + 有序列表编号定义 + 页面配置）
+  // 构建脚注 docx 表示：{ id: { children: [Paragraph...] } }
+  let docxFootnotes: Record<number, { children: Paragraph[] }> | undefined
+  if (footnoteDefinitions.length > 0) {
+    docxFootnotes = {}
+    // 脚注内容用独立子上下文：禁用 heading anchor 跟踪（避免脚注里的标题侵占主文档 cursor），
+    // 但保留 footnoteIdByLabel 让脚注内可以引用其他脚注（仅引用，不再收集新定义）
+    const footnoteCtx: DocxBuildContext = {
+      ...ctx,
+      headingAnchors: undefined,
+      headingAnchorList: undefined,
+      headingAnchorCursor: undefined
+    }
+    for (const def of footnoteDefinitions) {
+      const id = footnoteIdByLabel.get(def.label)
+      if (id == null) continue
+      // 脚注内容是纯字符串（可能含内联 markdown），用 lexer 解析后转成段落
+      const innerTokens = marked.lexer(def.text)
+      const footnoteElements = tokensToDocxElements(innerTokens, styleConfig, footnoteCtx)
+      // 表格等非 Paragraph 元素退化为纯文本段落，避免静默丢失（Word 脚注通常只支持段落级内容）
+      const footnoteChildren: Paragraph[] = footnoteElements.map(el =>
+        el instanceof Paragraph
+          ? el
+          : new Paragraph({ children: [new TextRun({ text: '[非段落内容已省略]' })] })
+      )
+      docxFootnotes[id] = {
+        children: footnoteChildren.length > 0
+          ? footnoteChildren
+          : [new Paragraph({ children: [new TextRun(def.text)] })]
+      }
+    }
+  }
+
+  // 创建文档（包含文档级别的样式定义 + 有序列表编号定义 + 页面配置 + 脚注）
   const doc = new Document({
     styles: buildDocumentStyles(styleConfig),
     numbering: ctx.numberingConfigs.length > 0 ? { config: ctx.numberingConfigs } : undefined,
+    footnotes: docxFootnotes,
     sections: [{
       properties: {
         page: {
@@ -1321,6 +1483,63 @@ export async function markdownToDocx(
   }
 
   return buffer
+}
+
+/**
+ * 递归从 token 树收集脚注定义（marked 会把 footnoteDef 挂到 blockquote/list/table 等子 tokens 里）
+ * 按出现顺序往 idMap 分配数字 ID（docx FootnoteReferenceRun 要求数字）
+ * 重复 label 仅保留首个定义
+ */
+function collectFootnoteDefinitions(tokens: Token[], idMap: Map<string, number>): FootnoteDefToken[] {
+  const result: FootnoteDefToken[] = []
+
+  const walk = (nodes: Token[] | undefined): void => {
+    if (!nodes) return
+    for (const t of nodes) {
+      if (t.type === 'footnoteDef') {
+        const def = t as FootnoteDefToken
+        if (!idMap.has(def.label)) {
+          idMap.set(def.label, idMap.size + 1)
+          result.push(def)
+        }
+      }
+      // 递归子结构
+      const children = (t as { tokens?: Token[]; items?: { tokens?: Token[] }[] })
+      walk(children.tokens)
+      if (Array.isArray(children.items)) {
+        for (const item of children.items) walk(item.tokens)
+      }
+    }
+  }
+
+  walk(tokens)
+  return result
+}
+
+/**
+ * 收集所有 heading 文本对应的 anchor slug，处理冲突自动加 -2/-3 后缀
+ * 返回按出现顺序的去重列表 + 集合（用于 InternalHyperlink 校验）
+ * - 同名标题（"附录""附录"）→ 第二个变成"附录-2"
+ * - 空/超长标题截断后冲突也走同样路径
+ */
+function collectHeadingAnchors(tokens: Token[]): { ordered: string[]; set: Set<string> } {
+  const ordered: string[] = []
+  const seen = new Set<string>()
+  for (const t of tokens) {
+    if (t.type === 'heading') {
+      const heading = t as Tokens.Heading
+      const base = slugify(heading.text)
+      let final = base
+      let suffix = 2
+      while (seen.has(final)) {
+        final = `${base}-${suffix}`
+        suffix++
+      }
+      seen.add(final)
+      ordered.push(final)
+    }
+  }
+  return { ordered, set: seen }
 }
 
 /**
@@ -1407,7 +1626,12 @@ function tokensToDocxElements(
       case 'space':
         // 空行，跳过
         break
-        
+
+      case 'footnoteDef':
+        // 脚注定义已由 collectFootnoteDefinitions 在 markdownToDocx 收集，
+        // 这里跳过，避免脚注定义文字出现在正文里（docx footnotes 会渲染到页脚）
+        break
+
       default:
         // 其他类型尝试作为段落处理
         if ('text' in token && token.text) {
@@ -1446,10 +1670,22 @@ function createDocumentTitle(text: string, _style: WordStyleConfig): Paragraph {
  */
 function createHeading(token: Tokens.Heading, _style: WordStyleConfig, ctx?: DocxBuildContext): Paragraph {
   const level = token.depth
-  
+  const inlineChildren = parseInlineTokens(token.tokens || [], {}, ctx)
+
+  // 仅在主文档上下文（ctx 提供了 cursor 和 list）里包 Bookmark
+  // 子上下文（如脚注内容）不包，避免 anchor 重复 / cursor 错位
+  let anchor: string | undefined
+  if (ctx?.headingAnchorCursor && ctx.headingAnchorList) {
+    const idx = ctx.headingAnchorCursor.value
+    anchor = ctx.headingAnchorList[idx]
+    ctx.headingAnchorCursor.value = idx + 1
+  }
+
   return new Paragraph({
     heading: HEADING_LEVEL_MAP[level] || HeadingLevel.HEADING_1,
-    children: parseInlineTokens(token.tokens || [], {}, ctx)
+    children: anchor
+      ? [new Bookmark({ id: anchor, children: inlineChildren }) as unknown as TextRun]
+      : inlineChildren
   })
 }
 
@@ -1680,6 +1916,8 @@ function parseInlineTokens(
   for (const token of tokens) {
     switch (token.type) {
       case 'text':
+      case 'escape':
+        // escape token 用于 \[ \] \\ 等反斜杠转义，文本字段已是去转义后的字面量
         runs.push(new TextRun({
           text: decodeHtmlEntities(token.text),
           font: baseStyle.font,
@@ -1689,7 +1927,7 @@ function parseInlineTokens(
           color: baseStyle.color
         }))
         break
-        
+
       case 'strong':
         if ('tokens' in token && token.tokens) {
           runs.push(...parseInlineTokens(token.tokens, { ...baseStyle, bold: true }, ctx))
@@ -1723,26 +1961,66 @@ function parseInlineTokens(
         break
       }
 
-      case 'link':
-        if ('tokens' in token && token.tokens) {
-          for (const t of token.tokens) {
-            if (t.type === 'text') {
-              runs.push(new TextRun({
-                text: decodeHtmlEntities(t.text),
-                font: baseStyle.font,
-                size: baseStyle.size ? baseStyle.size * 2 : undefined,
-                color: '0066CC',
-                underline: {}
-              }))
-            }
+      case 'link': {
+        const linkToken = token as Tokens.Link
+        const href = linkToken.href || ''
+        const label = parseInlineTokens(linkToken.tokens || [], { ...baseStyle, color: '0066CC' }, ctx)
+
+        // 文档内跳转：href 以 # 开头，渲染为 InternalHyperlink
+        if (href.startsWith('#')) {
+          const anchor = slugify(href.slice(1))
+          // 如果目标不存在，仍然渲染为蓝色下划线（等同已知 anchor 的样式），不报错——降级体验
+          // docx InternalHyperlink 在 Word 打开时若 anchor 不存在会显示"未找到"
+          const linkRun = new InternalHyperlink({
+            anchor,
+            children: label.length > 0 ? label : [new TextRun({
+              text: href,
+              color: '0066CC',
+              underline: {}
+            })]
+          })
+          // InternalHyperlink 是 ParagraphChild，复用 TextRun 占位
+          runs.push(linkRun as unknown as TextRun)
+          break
+        }
+
+        // 外部链接：保留之前的渲染（仅文字蓝下划线，不挂真实超链）
+        for (const t of linkToken.tokens || []) {
+          if (t.type === 'text') {
+            runs.push(new TextRun({
+              text: decodeHtmlEntities(t.text),
+              font: baseStyle.font,
+              size: baseStyle.size ? baseStyle.size * 2 : undefined,
+              color: '0066CC',
+              underline: {}
+            }))
           }
         }
         break
+      }
 
       case 'image': {
         // 内联图片：默认尺寸略小，便于嵌入文字流
         const imageToken = token as Tokens.Image
         runs.push(createImageRunOrFallback(imageToken, baseStyle, ctx))
+        break
+      }
+
+      case 'footnoteRef': {
+        // 自定义 footnote 扩展的 inline 节点：根据 label 找到 docx 数字 ID
+        const ref = token as FootnoteRefToken
+        const id = ctx?.footnoteIdByLabel?.get(ref.label)
+        if (id != null) {
+          runs.push(new FootnoteReferenceRun(id) as unknown as TextRun)
+        } else {
+          // 引用了未定义的脚注 → 退化为 [^label] 文字
+          runs.push(new TextRun({
+            text: `[^${ref.label}]`,
+            font: baseStyle.font,
+            size: baseStyle.size ? baseStyle.size * 2 : undefined,
+            color: 'CC0000'
+          }))
+        }
         break
       }
 
