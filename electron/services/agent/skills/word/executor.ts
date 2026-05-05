@@ -39,6 +39,7 @@ import { t } from '../../i18n'
 import { getTerminalStateService } from '../../../terminal-state.service'
 import {
   isSessionOpen,
+  isXmlSession,
   getSession,
   createSession,
   createXmlSession,
@@ -1128,6 +1129,17 @@ async function wordAdd(
   // 验证参数
   if (!contentType) {
     return { success: false, output: '', error: t('word.type_required') }
+  }
+
+  // XML 编辑模式（word_open 打开已有文档时建立）下，word_add 写入的内容会被 word_save 完全忽略
+  // —— 因为 wordSave 在 XML 模式只写回 documentXml，不会读 sections。这是历史 bug。
+  // 暂未支持向已有文档追加内容；引导用户用 word_from_markdown 重写整篇，或用 word_modify_paragraph 精修。
+  if (isXmlSession(filePath)) {
+    return {
+      success: false,
+      output: '',
+      error: t('word.add_xml_mode_unsupported', { type: contentType })
+    }
   }
 
   let sectionContent: SectionContent
@@ -2599,7 +2611,11 @@ async function wordFromMarkdown(
     if (!markdown) {
       return { success: false, output: '', error: t('word.markdown_input_required') }
     }
-    const buffer = await markdownToDocx(markdown, styleConfig)
+    // 图片相对路径解析基准：markdown_path 模式下用源文件目录；inline markdown 用 cwd
+    const mediaBaseDir = markdownPathArg
+      ? path.dirname(resolvePath(ptyId, markdownPathArg))
+      : getTerminalStateService().getCwd(ptyId)
+    const buffer = await markdownToDocx(markdown, styleConfig, { mediaBaseDir })
     
     // 确保目录存在
     const dir = path.dirname(filePath)

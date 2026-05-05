@@ -80,9 +80,13 @@ word_read({ path: "/path/to/doc.docx" })`,
     type: 'function',
     function: {
       name: 'word_add',
-      description: `向已打开的 Word 文档添加内容。添加后需要调用 word_save 保存。
+      description: `向**新建的**（word_create）Word 文档添加内容。添加后需要调用 word_save 保存。
 
-**支持的内容类型**：
+**重要限制**：本工具**不能用于已通过 word_open 打开的现有文档**——内容会被保存时丢弃（XML 编辑模式只写回原 documentXml，不读 sections）。
+- 已有文档想"加内容"：用 word_from_markdown 整篇重写（推荐，支持图片）
+- 已有文档想精修：用 word_modify_paragraph / word_replace / word_delete_paragraph
+
+**支持的内容类型**（仅在新建文档下生效）：
 1. paragraph - 普通段落
 2. heading - 标题（level 1-6）
 3. list - 列表（使用 items 参数）
@@ -507,6 +511,10 @@ word_delete_paragraph({
 
 **支持的 Markdown 语法**：
 标题(# ## ###)、段落、列表(- 或 1.)、表格(| |)、加粗(**)、斜体(*)、代码块(\`\`\`)、引用(>)
+图片：\`![alt](path)\` — 独占一段时居中嵌入，段内则内联嵌入
+- 路径支持绝对路径和相对路径（相对 markdown_path 文件目录；inline markdown 时相对当前 cwd）
+- 暂不支持 http(s)、data:、SVG（会降级为文字 \`[图片: alt]\`）
+- 自定义尺寸：\`![描述|640x480](path)\` 或 \`![描述](path "640x480")\`，单位像素，默认 480×360
 特殊标签：<p>顶格段落</p>、<p align="right">右对齐</p>、<center>居中</center>
 文档标题：YAML front matter 的 title 字段 → Word Title 样式（详见技能文档）
 

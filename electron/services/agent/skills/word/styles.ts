@@ -20,10 +20,14 @@ import {
   ShadingType,
   convertInchesToTwip,
   LevelFormat,
-  LevelSuffix
+  LevelSuffix,
+  ImageRun
 } from 'docx'
 import { marked, Token, Tokens } from 'marked'
 import JSZip from 'jszip'
+import * as fs from 'fs'
+import * as path from 'path'
+import { fileURLToPath } from 'url'
 
 /**
  * HTML 实体解码
@@ -296,6 +300,193 @@ interface DocxBuildContext {
   orderedListCounter: number
   /** 多级自动编号的引用名称（由 multiLevelNumbering 生成） */
   multiLevelRef?: string
+  /** 图片相对路径解析的基准目录（通常是 markdown 源文件所在目录或 cwd） */
+  mediaBaseDir?: string
+}
+
+/** 图片元素允许的扩展名 → ImageRun 类型映射 */
+const IMAGE_EXT_TO_TYPE: Record<string, 'png' | 'jpg' | 'jpeg' | 'gif' | 'bmp' | 'svg'> = {
+  png: 'png',
+  jpg: 'jpg',
+  jpeg: 'jpeg',
+  gif: 'gif',
+  bmp: 'bmp',
+  svg: 'svg'
+}
+
+/** 图片默认显示宽度（像素，约等于 5.3 英寸 / 13.5cm） */
+const IMAGE_DEFAULT_WIDTH = 480
+
+/**
+ * 解析 Markdown 图片的尺寸信息
+ * 支持两种约定：
+ * - alt 后跟 |WIDTHxHEIGHT，例如 ![描述|640x480](path)
+ * - title 设为 WIDTHxHEIGHT，例如 ![描述](path "640x480")
+ * 返回 { width, height, cleanAlt }，其中 cleanAlt 是去掉尺寸标记后的纯描述文字
+ */
+function parseImageSize(alt: string, title?: string): { width?: number; height?: number; cleanAlt: string } {
+  const sizeRegex = /^(\d+)\s*[x×]\s*(\d+)$/i
+  let cleanAlt = alt || ''
+  let width: number | undefined
+  let height: number | undefined
+
+  // 优先尝试 alt 后缀 |WIDTHxHEIGHT
+  const pipeIdx = cleanAlt.lastIndexOf('|')
+  if (pipeIdx >= 0) {
+    const sizePart = cleanAlt.slice(pipeIdx + 1).trim()
+    const m = sizePart.match(sizeRegex)
+    if (m) {
+      width = parseInt(m[1], 10)
+      height = parseInt(m[2], 10)
+      cleanAlt = cleanAlt.slice(0, pipeIdx).trim()
+    }
+  }
+
+  // 其次尝试 title
+  if (width == null && title) {
+    const m = title.trim().match(sizeRegex)
+    if (m) {
+      width = parseInt(m[1], 10)
+      height = parseInt(m[2], 10)
+    }
+  }
+
+  return { width, height, cleanAlt }
+}
+
+/**
+ * 将 Markdown 图片 href 解析为本地文件路径
+ * - 绝对路径直接返回
+ * - 相对路径基于 baseDir 解析（无 baseDir → null，走文字降级）
+ * - file:// URL 用 fileURLToPath 提取本地路径（兼容 Windows 盘符）
+ * - http(s):// / data: 等远程 URL 返回 null
+ */
+function resolveMediaPath(href: string, baseDir?: string): string | null {
+  if (!href) return null
+  const trimmed = href.trim()
+
+  // 远程 URL 不支持
+  if (/^https?:\/\//i.test(trimmed) || /^data:/i.test(trimmed)) {
+    return null
+  }
+
+  // file:// URL（Windows 上 .pathname 会带前导斜杠 /C:/...，必须用 fileURLToPath）
+  if (/^file:\/\//i.test(trimmed)) {
+    try {
+      return fileURLToPath(trimmed)
+    } catch {
+      return null
+    }
+  }
+
+  // 绝对路径
+  if (path.isAbsolute(trimmed)) return trimmed
+
+  // 相对路径必须有 baseDir，否则 fs 会按 Node 进程 cwd 解析（可能与终端 cwd 不一致），
+  // 不如显式失败让上层走文字降级
+  if (!baseDir) return null
+  return path.resolve(baseDir, trimmed)
+}
+
+/**
+ * 由扩展名推断 ImageRun.type
+ * 不在登记表内（如 .webp/.tif/.heic）返回 null，让调用方走文字降级，
+ * 避免把陌生格式硬塞成 png 产出 Word 打不开的坏图
+ */
+function detectImageType(filePath: string): 'png' | 'jpg' | 'jpeg' | 'gif' | 'bmp' | 'svg' | null {
+  const ext = path.extname(filePath).toLowerCase().replace('.', '')
+  return IMAGE_EXT_TO_TYPE[ext] || null
+}
+
+/**
+ * 创建 ImageRun 或文字降级 TextRun
+ * 文件不存在/远程 URL/读取失败时返回 [图片缺失: alt] 的 TextRun
+ * SVG 在 docx 库下需要 fallback PNG，目前未提供，做文字降级
+ */
+function createImageRunOrFallback(
+  imageToken: Tokens.Image,
+  baseStyle: InlineBaseStyle,
+  ctx?: DocxBuildContext
+): TextRun | ImageRun {
+  const alt = imageToken.text || ''
+  const title = imageToken.title || undefined
+  const { width, height, cleanAlt } = parseImageSize(alt, title)
+
+  const localPath = resolveMediaPath(imageToken.href, ctx?.mediaBaseDir)
+  if (!localPath) {
+    return new TextRun({
+      text: `[图片: ${cleanAlt || imageToken.href}]`,
+      ...baseStyle as Record<string, unknown>
+    })
+  }
+
+  let buffer: Buffer
+  try {
+    buffer = fs.readFileSync(localPath)
+  } catch {
+    return new TextRun({
+      text: `[图片缺失: ${cleanAlt || path.basename(localPath)}]`,
+      ...baseStyle as Record<string, unknown>
+    })
+  }
+
+  const type = detectImageType(localPath)
+  if (type === null) {
+    // 未登记的扩展名（webp/tif/heic 等）→ 文字降级，避免产出坏图
+    return new TextRun({
+      text: `[图片(格式不支持): ${cleanAlt || path.basename(localPath)}]`,
+      ...baseStyle as Record<string, unknown>
+    })
+  }
+  if (type === 'svg') {
+    // docx 库要求 SVG 必须配 PNG fallback，没有就退到文字
+    return new TextRun({
+      text: `[图片(SVG): ${cleanAlt || path.basename(localPath)}]`,
+      ...baseStyle as Record<string, unknown>
+    })
+  }
+
+  const finalWidth = width || IMAGE_DEFAULT_WIDTH
+  const finalHeight = height || Math.round(finalWidth * 0.75)
+
+  return new ImageRun({
+    data: buffer,
+    transformation: { width: finalWidth, height: finalHeight },
+    type
+  })
+}
+
+/**
+ * 检测段落是否为"图片独占"段落
+ * 允许内联格式中夹杂仅含空白的 text 节点；返回所有有效 image token
+ * 段落里只要有任何带文字的节点（包括 strong/em/link/codespan 等），就视为"段落里有图"，不做块级处理
+ */
+function extractBlockLevelImages(tokens: Token[]): Tokens.Image[] {
+  const images: Tokens.Image[] = []
+  for (const token of tokens) {
+    if (token.type === 'image') {
+      images.push(token as Tokens.Image)
+    } else if (token.type === 'text') {
+      const text = (token as Tokens.Text).text || ''
+      if (text.trim()) return [] // 有非空白文字 → 不算块级
+    } else if (token.type === 'br' || token.type === 'space') {
+      // 允许换行/空白
+    } else {
+      return [] // 出现其他类型节点 → 不算块级
+    }
+  }
+  return images
+}
+
+/**
+ * 创建块级图片段落（居中、无首行缩进）
+ */
+function createBlockImageParagraph(imageToken: Tokens.Image, ctx?: DocxBuildContext): Paragraph {
+  const run = createImageRunOrFallback(imageToken, {}, ctx)
+  return new Paragraph({
+    alignment: AlignmentType.CENTER,
+    children: [run]
+  })
 }
 
 /**
@@ -1006,11 +1197,20 @@ function extractDocumentTitle(markdown: string): { title?: string; content: stri
 }
 
 /**
+ * markdownToDocx 的可选参数
+ */
+export interface MarkdownToDocxOptions {
+  /** 图片相对路径解析的基准目录。通常是 markdown 源文件所在目录或当前工作目录 */
+  mediaBaseDir?: string
+}
+
+/**
  * 将 Markdown 转换为 Word 文档
  */
 export async function markdownToDocx(
   markdown: string,
-  style?: string | WordStyleConfig
+  style?: string | WordStyleConfig,
+  options?: MarkdownToDocxOptions
 ): Promise<Buffer> {
   // 获取样式配置
   const styleConfig = typeof style === 'string' 
@@ -1030,7 +1230,11 @@ export async function markdownToDocx(
   const tokens = marked.lexer(contentMarkdown)
   
   // 构建上下文（收集有序列表编号定义）
-  const ctx: DocxBuildContext = { numberingConfigs: [], orderedListCounter: 0 }
+  const ctx: DocxBuildContext = {
+    numberingConfigs: [],
+    orderedListCounter: 0,
+    mediaBaseDir: options?.mediaBaseDir
+  }
 
   // 注册多级自动编号（如制度文件的 章→节→条→款 体系）
   if (styleConfig.config.multiLevelNumbering) {
@@ -1134,7 +1338,7 @@ function tokensToDocxElements(
   for (const token of tokens) {
     switch (token.type) {
       case 'heading':
-        elements.push(createHeading(token as Tokens.Heading, style))
+        elements.push(createHeading(token as Tokens.Heading, style, ctx))
         lastAlign = undefined
         break
         
@@ -1142,7 +1346,13 @@ function tokensToDocxElements(
         // 使用 token.tokens（已解析的内联格式），而不是 token.text（原始文本）
         const paragraphToken = token as Tokens.Paragraph
         if (paragraphToken.tokens && paragraphToken.tokens.length > 0) {
-          elements.push(createParagraphFromTokens(paragraphToken.tokens, style, ctx))
+          // 块级图片：段落只包含图片（允许夹杂空白文本节点），居中独占一段
+          const blockImages = extractBlockLevelImages(paragraphToken.tokens)
+          if (blockImages.length > 0) {
+            elements.push(...blockImages.map(img => createBlockImageParagraph(img, ctx)))
+          } else {
+            elements.push(createParagraphFromTokens(paragraphToken.tokens, style, ctx))
+          }
         } else {
           elements.push(createParagraph(paragraphToken.text, style, ctx))
         }
@@ -1156,7 +1366,7 @@ function tokensToDocxElements(
         break
         
       case 'table':
-        elements.push(createTable(token as Tokens.Table, style))
+        elements.push(createTable(token as Tokens.Table, style, ctx))
         lastAlign = undefined
         break
         
@@ -1234,12 +1444,12 @@ function createDocumentTitle(text: string, _style: WordStyleConfig): Paragraph {
  * 不设置内联格式，完全依赖文档级别的 Heading 样式定义
  * 这样用户在 Word 中修改标题样式即可批量更新所有同级标题
  */
-function createHeading(token: Tokens.Heading, _style: WordStyleConfig): Paragraph {
+function createHeading(token: Tokens.Heading, _style: WordStyleConfig, ctx?: DocxBuildContext): Paragraph {
   const level = token.depth
   
   return new Paragraph({
     heading: HEADING_LEVEL_MAP[level] || HeadingLevel.HEADING_1,
-    children: parseInlineTokens(token.tokens || [], {})
+    children: parseInlineTokens(token.tokens || [], {}, ctx)
   })
 }
 
@@ -1265,7 +1475,7 @@ function createParagraphFromTokens(tokens: Token[], style: WordStyleConfig, ctx?
         // 有 headingLevel 时编号由样式定义携带（linkHeadingStylesToNumbering 注入），
         // 切换 Heading 级别时编号自动跟随；无 headingLevel 的级别（如项）仍用段落级编号
         numbering: ruleStyle.headingLevel ? undefined : { reference: ctx.multiLevelRef, level: ruleStyle.numberingLevel },
-        children: parseInlineTokens(strippedTokens, {})
+        children: parseInlineTokens(strippedTokens, {}, ctx)
       })
     }
 
@@ -1273,7 +1483,7 @@ function createParagraphFromTokens(tokens: Token[], style: WordStyleConfig, ctx?
     if (ruleStyle.headingLevel && HEADING_LEVEL_MAP[ruleStyle.headingLevel]) {
       return new Paragraph({
         heading: HEADING_LEVEL_MAP[ruleStyle.headingLevel],
-        children: parseInlineTokens(tokens, {})
+        children: parseInlineTokens(tokens, {}, ctx)
       })
     }
 
@@ -1294,7 +1504,7 @@ function createParagraphFromTokens(tokens: Token[], style: WordStyleConfig, ctx?
         size: ruleStyle.size || style.config.fontSize,
         bold: ruleStyle.bold,
         italic: ruleStyle.italic
-      })
+      }, ctx)
     })
   }
   
@@ -1304,7 +1514,7 @@ function createParagraphFromTokens(tokens: Token[], style: WordStyleConfig, ctx?
   
   return new Paragraph({
     indent: firstLineIndent ? { firstLine: firstLineIndent } : undefined,
-    children: parseInlineTokens(tokens, {})
+    children: parseInlineTokens(tokens, {}, ctx)
   })
 }
 
@@ -1423,7 +1633,7 @@ function createParagraph(text: string, style: WordStyleConfig, ctx?: DocxBuildCo
   return new Paragraph({
     indent: firstLineIndent ? { firstLine: firstLineIndent } : undefined,
     children: tokens 
-      ? parseInlineTokens(tokens, {})
+      ? parseInlineTokens(tokens, {}, ctx)
       : [new TextRun({
           text: decodedText
         })]
@@ -1456,13 +1666,16 @@ function textWithBreaks(text: string, style: Record<string, unknown>): TextRun[]
 }
 
 /**
- * 解析内联 tokens（加粗、斜体、链接等）
+ * 解析内联 tokens（加粗、斜体、链接、图片等）
+ * 可选传入 ctx，主要用于解析图片相对路径
+ * 返回值可能混合 TextRun 与 ImageRun，两者都是 docx 的 ParagraphChild
  */
 function parseInlineTokens(
   tokens: Token[],
-  baseStyle: InlineBaseStyle
-): TextRun[] {
-  const runs: TextRun[] = []
+  baseStyle: InlineBaseStyle,
+  ctx?: DocxBuildContext
+): (TextRun | ImageRun)[] {
+  const runs: (TextRun | ImageRun)[] = []
   
   for (const token of tokens) {
     switch (token.type) {
@@ -1479,13 +1692,13 @@ function parseInlineTokens(
         
       case 'strong':
         if ('tokens' in token && token.tokens) {
-          runs.push(...parseInlineTokens(token.tokens, { ...baseStyle, bold: true }))
+          runs.push(...parseInlineTokens(token.tokens, { ...baseStyle, bold: true }, ctx))
         }
         break
         
       case 'em':
         if ('tokens' in token && token.tokens) {
-          runs.push(...parseInlineTokens(token.tokens, { ...baseStyle, italic: true }))
+          runs.push(...parseInlineTokens(token.tokens, { ...baseStyle, italic: true }, ctx))
         }
         break
         
@@ -1525,7 +1738,14 @@ function parseInlineTokens(
           }
         }
         break
-        
+
+      case 'image': {
+        // 内联图片：默认尺寸略小，便于嵌入文字流
+        const imageToken = token as Tokens.Image
+        runs.push(createImageRunOrFallback(imageToken, baseStyle, ctx))
+        break
+      }
+
       default:
         if ('text' in token && token.text) {
           runs.push(new TextRun({
@@ -1546,18 +1766,18 @@ function parseInlineTokens(
 /**
  * 解析列表项的文本内容（提取内联格式：加粗、斜体等）
  */
-function parseListItemContent(item: Tokens.ListItem): TextRun[] {
+function parseListItemContent(item: Tokens.ListItem, ctx?: DocxBuildContext): (TextRun | ImageRun)[] {
   if (item.tokens && item.tokens.length > 0) {
     // item.tokens[0] 通常是 'text' 类型，其 tokens 属性包含真正的内联格式
     const firstToken = item.tokens[0]
 
     if (firstToken.type === 'text' && 'tokens' in firstToken && firstToken.tokens) {
-      const runs = parseInlineTokens(firstToken.tokens, {})
+      const runs = parseInlineTokens(firstToken.tokens, {}, ctx)
       if (runs.length > 0) return runs
     } else if (firstToken.type !== 'list') {
       const inlineTokens = item.tokens.filter(t => t.type !== 'list')
       if (inlineTokens.length > 0) {
-        const runs = parseInlineTokens(inlineTokens, {})
+        const runs = parseInlineTokens(inlineTokens, {}, ctx)
         if (runs.length > 0) return runs
       }
     }
@@ -1602,7 +1822,7 @@ function createList(token: Tokens.List, style: WordStyleConfig, ctx: DocxBuildCo
   }
 
   for (const item of token.items) {
-    const children = parseListItemContent(item)
+    const children = parseListItemContent(item, ctx)
 
     if (token.ordered && numberingRef) {
       paragraphs.push(new Paragraph({
@@ -1644,7 +1864,7 @@ const DEFAULT_CELL_MARGINS = {
  * 使用 DXA 单位设置表格宽度（WidthType.PERCENTAGE 在 WPS 和 Google Docs 中渲染异常）
  * 同时设置 columnWidths 和单元格 width 双重宽度（Claude 最佳实践：Tables need dual widths）
  */
-function createTable(token: Tokens.Table, style: WordStyleConfig): Table {
+function createTable(token: Tokens.Table, style: WordStyleConfig, ctx?: DocxBuildContext): Table {
   const rows: TableRow[] = []
   const config = style.config
   const tc = config.table || {}
@@ -1699,7 +1919,7 @@ function createTable(token: Tokens.Table, style: WordStyleConfig): Table {
           color: headerTextColor
         }
         const children = cell.tokens && cell.tokens.length > 0
-          ? parseInlineTokens(cell.tokens, headerBaseStyle)
+          ? parseInlineTokens(cell.tokens, headerBaseStyle, ctx)
           : textWithBreaks(cell.text, { font: tableFont, size: tableFontSizeHalf, bold: headerBold, color: headerTextColor })
 
         const align = token.align?.[colIdx]
@@ -1729,7 +1949,7 @@ function createTable(token: Tokens.Table, style: WordStyleConfig): Table {
     rows.push(new TableRow({
       children: row.map((cell, colIdx) => {
         const children = cell.tokens && cell.tokens.length > 0
-          ? parseInlineTokens(cell.tokens, { font: tableFont, size: tableFontSize })
+          ? parseInlineTokens(cell.tokens, { font: tableFont, size: tableFontSize }, ctx)
           : textWithBreaks(cell.text, { font: tableFont, size: tableFontSizeHalf })
 
         const align = token.align?.[colIdx]
@@ -1782,7 +2002,7 @@ function createBlockquote(token: Tokens.Blockquote, style: WordStyleConfig): Par
   const textColor = bq.color || '666666'
   const borderClr = bq.borderColor || 'CCCCCC'
 
-  let children: TextRun[] = []
+  let children: (TextRun | ImageRun)[] = []
   const baseStyle: InlineBaseStyle = { italic: useItalic, color: textColor }
 
   if (token.tokens && token.tokens.length > 0) {
@@ -1895,7 +2115,7 @@ function createParagraphFromHtml(
     // 使用 marked 解析内联 Markdown 格式（粗体、斜体等）
     // 字体和字号由 Normal 样式控制
     const tokens = marked.lexer(trimmedLine)
-    let children: TextRun[]
+    let children: (TextRun | ImageRun)[]
     
     if (tokens.length > 0 && tokens[0].type === 'paragraph' && 'tokens' in tokens[0] && tokens[0].tokens) {
       children = parseInlineTokens(tokens[0].tokens, {})
