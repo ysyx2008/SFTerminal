@@ -60,7 +60,7 @@ K 线**整体走专业行情软件视觉**而不是商务图表样式：
 |------|------|
 | `presets.ts` | 通用主题（light/dark）+ K 线专业主题 `getKlineProTheme(style, mode)`（含蜡烛配色、十字线、MA 调色板、空心阳线策略） |
 | `render.ts` | `buildOption(input)` —— 把统一参数转换成 ECharts option，含数据校验、SMA 计算、MA 周期自动过滤 |
-| `ssr.ts` | `loadEcharts()` 懒加载 + `renderToSvg(option, size)` SSR 渲染 + `renderToPng(option, size)` 复用 SVG 后用 sharp 栅格化为 PNG（中文走系统字体，比 ImageMagick 强很多） |
+| `ssr.ts` | `loadEcharts()` 懒加载 + `renderToSvg(option, size)` SSR 渲染 + `renderToPng(option, size, { pixelRatio })` 复用 SVG 后用 sharp 栅格化为 PNG（中文走系统字体；通过 sharp `density` 参数控制栅格化 DPI，实现"布局尺寸 / 像素密度"解耦） |
 | `tools.ts` | `chartTools` 工具定义（generate_chart + render_echarts_option）+ `chartSkillContent` 技能说明文档 |
 | `executor.ts` | `executeChartTool` 执行入口，分发到 `generateChart`（DSL）或 `renderEchartsOption`（自由路径），参数归一化、按 `format` 选 SVG/PNG → data URL、可选写盘（扩展名跟 format 走） |
 | `index.ts` | 技能注册（id=`chart`），init 时预热 echarts |
@@ -89,6 +89,11 @@ K 线**整体走专业行情软件视觉**而不是商务图表样式：
 - 默认输出 SVG（对话流展示，矢量清晰、文件小）；`format: 'png'` 时输出 PNG（嵌入 Word/PDF/IM 等位图场景）。**不要让 AI 自己拿 SVG 再用 ImageMagick / convert 转 PNG**，那条路对中文 SVG 文本支持差，会丢字／降级到无衬线字体
 - 图片宽高 clamp 到 `[100, 7680]`（8K 上限，足以容纳全年日 K ~250 根 / 全天分时 ~240 点）；默认 1280×800（两个工具共用同一组常量）
 - **画布尺寸应由 AI 按内容规模主动决策**：默认值仅作兜底，AI 看见 200+ 数据点时应主动拉到 3840+。`tools.ts` 中 `chartSkillContent` 给出明确的规模 → 尺寸映射表
+- **PNG 像素密度独立于布局尺寸**（`pixel_ratio` 参数）：`width` / `height` 决定布局（字号、网格），`pixel_ratio` 决定栅格化时的像素倍率。用 sharp 的 `density` 参数实现（默认 72 dpi 对应 1:1，144 dpi 对应 2× 像素），高 DPI 路径下字体抗锯齿走 librsvg 渲染，比"先 1:1 出 PNG 再 .resize 放大"清晰得多。
+  - **⚠️ 行为变更**：PNG 默认 `pixel_ratio: 2`（之前是 1）。同样调用 `format:'png'` 不传 ratio 时，**输出像素现在 2× width × 2× height，PNG 文件体积约 4×**。理由：嵌入 Word/PDF 的图被缩放显示后依旧锐利是更好的默认体验，无需让 AI 把 `width` 拉到 3000+ 来追"高清"（那反而会让字相对画布显小）。data URL 也变大 ~4×，但 chart 的 PNG 不进 AI 视觉上下文（见图片投递契约），不消耗 AI tokens
+  - 范围 `[1, 4]`，并按 size × ratio 反推 `MAX_PIXEL_DIM=16384` 兜底，避免 8K 画布 × 4 倍触发 sharp/libvips 的"Input is too large"。**自动降级是静默的**——AI 传 ratio=4 + width=7680 时会被静默降到 2.13，工具描述里有明确说明
+  - 双层默认刻意不同：`ssr.ts` 的 `renderToPng()` 默认 `pixelRatio=1`（中性，对其他直接调用方友好）；`executor.ts` 的 `clampPixelRatio()` 在 PNG 路径默认 2（面向 AI 工具调用的最佳体验）
+  - SVG 格式忽略此参数（矢量本身分辨率无关）；`clampPixelRatio` 在 SVG 路径强制返回 1 让上下游一致
 - **字号自适应**（按画布宽度缩放，避免大画布下字号相对画布偏小看不清）：
   - 普通图表用 `calcFontScale`：基准 800px=1.0×（小画布字号自然合适，跟历史值一致），800-1600 线性放大到 1.4×，1600-3200 到 2.0×，3200+ 上限。所有硬编码字号（title 16 / subtitle 12 / axis label 12 / legend 12 / pie label 12 / heatmap series label 12 / visualMap 11 / radar axisName 12）都乘 scale
   - K 线另走 `calcKlineFontScale`（基准 1280px=1.0×，2400→1.4×，4800+→2.0×），曲线和经实测的视觉手感一致，**不与普通图表共用**——避免误调改了 K 线字号

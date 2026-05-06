@@ -25,6 +25,15 @@ const DEFAULT_HEIGHT = 800
 const MAX_DIM = 7680  // 8K 宽，足以画一年日 K（~250 根）或全天分钟级分时图（~240 点）
 const MIN_DIM = 100
 
+// PNG 像素密度（Retina 缩放）相关常量。
+// - 默认 2：嵌入 Word/PDF/IM 时图片几乎都被缩放到 ~600px 显示，2× 像素能在缩放后保持锐利
+// - 上限 4：4× 已经是打印级清晰度，再大对屏幕显示无意义且让文件变大、sharp 渲染压力上升
+// - 像素维度上限 16384：sharp / libvips 在常规 64 位 Node 下处理 16K 像素已经接近舒适边界，
+//   再大容易触发 "Input is too large" 类错误。本层兜底优先保护"不崩"，宁可降低 pixel_ratio
+const DEFAULT_PNG_PIXEL_RATIO = 2
+const MAX_PIXEL_RATIO = 4
+const MAX_PIXEL_DIM = 16384
+
 const VALID_TYPES: readonly ChartType[] = [
   'bar', 'line', 'area', 'pie', 'scatter', 'radar', 'heatmap', 'candlestick'
 ]
@@ -63,10 +72,15 @@ async function generateChart(
   const size = clampSize(args.width, args.height)
   const input = argsToChartInput(args, type)
   const format = parseFormat(args.format)
+  const pixelRatio = clampPixelRatio(args.pixel_ratio, format, size)
 
   // 步骤卡片只在 AI 显式传 format 时显示该字段，避免给"默认 svg"的旧调用平添噪音
   const toolArgs: Record<string, unknown> = { type, width: size.width, height: size.height }
   if (args.format !== undefined) toolArgs.format = format
+  // pixel_ratio 仅 PNG 有意义；显式传或非默认值才进卡片，让用户/开发能看到实际生效的 DPI
+  if (format === 'png' && (args.pixel_ratio !== undefined || pixelRatio !== DEFAULT_PNG_PIXEL_RATIO)) {
+    toolArgs.pixel_ratio = pixelRatio
+  }
   if (input.title) toolArgs.title = input.title
   executor.addStep({
     type: 'tool_call',
@@ -79,7 +93,7 @@ async function generateChart(
   let rendered: { dataUrl: string; payload: string | Buffer }
   try {
     const option = buildOption(input, size)
-    rendered = await renderChart(option, size, format)
+    rendered = await renderChart(option, size, format, pixelRatio)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     log.error('Failed to build/render chart:', msg)
@@ -147,10 +161,14 @@ async function renderEchartsOption(
   const size = clampSize(args.width, args.height)
   const title = typeof args.title === 'string' ? args.title : ''
   const format = parseFormat(args.format)
+  const pixelRatio = clampPixelRatio(args.pixel_ratio, format, size)
 
   // 2) 步骤卡片只展示 size + 可选 title，避免把整个 option（可能很大）塞进 toolArgs
   const toolArgs: Record<string, unknown> = { width: size.width, height: size.height, title }
   if (args.format !== undefined) toolArgs.format = format
+  if (format === 'png' && (args.pixel_ratio !== undefined || pixelRatio !== DEFAULT_PNG_PIXEL_RATIO)) {
+    toolArgs.pixel_ratio = pixelRatio
+  }
   executor.addStep({
     type: 'tool_call',
     content: t('chart.echarts_rendering', { title }),
@@ -161,7 +179,7 @@ async function renderEchartsOption(
 
   let rendered: { dataUrl: string; payload: string | Buffer }
   try {
-    rendered = await renderChart(option, size, format)
+    rendered = await renderChart(option, size, format, pixelRatio)
   } catch (err) {
     // 关键设计：把 ECharts / sharp 的原始报错原样返给 AI，让它能定位到具体问题
     // （ECharts 报错通常带路径，如 "Invalid series.0.data"；sharp 报错通常是 SVG 解析问题）。
@@ -248,6 +266,29 @@ function clampDim(v: unknown, fallback: number): number {
   return Math.max(MIN_DIM, Math.min(MAX_DIM, Math.round(v)))
 }
 
+/**
+ * 把 pixel_ratio 参数归一化到 [1, MAX_PIXEL_RATIO]，并保证 size × ratio 不超过 MAX_PIXEL_DIM。
+ *
+ * - 非 PNG（svg）：永远返回 1，pixel_ratio 对矢量图无意义，强制忽略让上下游一致
+ * - 缺省 / 异常输入（NaN / 负数 / 字符串）：用 DEFAULT_PNG_PIXEL_RATIO 兜底
+ * - 上限：先按用户值 clamp 到 [1, 4]，再按 size 反推"不会爆 sharp"的安全上限取较小值。
+ *   例如 width=7680 + ratio=4 = 30720 像素 → 触发维度兜底自动降回 ~2.13
+ *
+ * 浮点取两位小数，避免 step 卡片显示 "1.9999999999"
+ */
+function clampPixelRatio(raw: unknown, format: ChartFormat, size: RenderSize): number {
+  if (format !== 'png') return 1
+  const valid = typeof raw === 'number' && Number.isFinite(raw) && raw > 0
+  let ratio = valid ? raw : DEFAULT_PNG_PIXEL_RATIO
+  ratio = Math.min(MAX_PIXEL_RATIO, Math.max(1, ratio))
+  const maxDim = Math.max(size.width, size.height)
+  if (maxDim * ratio > MAX_PIXEL_DIM) {
+    // 像素维度超限时退到"刚好顶到 MAX_PIXEL_DIM"的比率；不会低于 1（width<=MAX_DIM 已保证）
+    ratio = Math.max(1, MAX_PIXEL_DIM / maxDim)
+  }
+  return Math.round(ratio * 100) / 100
+}
+
 function argsToChartInput(args: Record<string, unknown>, type: ChartType): ChartInput {
   return {
     type,
@@ -277,14 +318,18 @@ function parseKlineMa(raw: unknown): number[] | undefined {
  * 按 format 渲染 ECharts option，返回前端要展示的 data URL + 可落盘的原始 payload
  * （SVG 是 utf-8 字符串，PNG 是 Buffer）。两个分支都走 step.images 展示给用户，
  * 不进 ToolResult.images（同样的"图给用户、不给 AI"原则——见 generate_chart 注释）。
+ *
+ * pixelRatio 仅 PNG 路径生效（SVG 是矢量、本身分辨率无关）；executor 已通过
+ * clampPixelRatio 保证 PNG 时它落在合法区间。
  */
 async function renderChart(
   option: EChartsOption,
   size: RenderSize,
-  format: ChartFormat
+  format: ChartFormat,
+  pixelRatio: number
 ): Promise<{ dataUrl: string; payload: string | Buffer }> {
   if (format === 'png') {
-    const buf = await renderToPng(option, size)
+    const buf = await renderToPng(option, size, { pixelRatio })
     return { dataUrl: `data:image/png;base64,${buf.toString('base64')}`, payload: buf }
   }
   const svg = await renderToSvg(option, size)

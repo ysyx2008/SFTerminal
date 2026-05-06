@@ -250,6 +250,235 @@ describe('executeChartTool: save_to_workspace + format', () => {
   })
 })
 
+describe('executeChartTool: pixel_ratio (PNG 像素密度，与布局尺寸解耦)', () => {
+  // 复用 render.test.ts 的 PNG IHDR 解析法
+  function pngDims(buf: Buffer): { width: number; height: number } {
+    return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) }
+  }
+
+  function dataUrlToBuffer(dataUrl: string): Buffer {
+    const base64 = dataUrl.replace(/^data:image\/png;base64,/, '')
+    return Buffer.from(base64, 'base64')
+  }
+
+  it('format=png 默认 pixel_ratio=2 → PNG 像素 ≈ 2× width', async () => {
+    const { config, steps } = makeExecutor()
+    await executeChartTool(
+      'generate_chart',
+      'pty-1',
+      {
+        type: 'bar',
+        data: { categories: ['Q1', 'Q2'], series: [{ name: 'x', data: [1, 2] }] },
+        width: 800,
+        height: 500,
+        format: 'png'
+      },
+      'call-pr-default',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    const stepResult = steps.find(s => s.type === 'tool_result')
+    const buf = dataUrlToBuffer(stepResult!.images![0])
+    const { width, height } = pngDims(buf)
+    expect(width).toBeGreaterThanOrEqual(1599)
+    expect(width).toBeLessThanOrEqual(1601)
+    expect(height).toBeGreaterThanOrEqual(999)
+    expect(height).toBeLessThanOrEqual(1001)
+    // 默认值不污染步骤卡片（用户没显式传，卡片不该出现 pixel_ratio）
+    const callStep = steps.find(s => s.type === 'tool_call')
+    expect(callStep?.toolArgs).not.toHaveProperty('pixel_ratio')
+  })
+
+  it('format=png + pixel_ratio=1 → 1:1 像素', async () => {
+    const { config, steps } = makeExecutor()
+    await executeChartTool(
+      'generate_chart',
+      'pty-1',
+      {
+        type: 'bar',
+        data: { categories: ['Q1'], series: [{ name: 'x', data: [1] }] },
+        width: 800,
+        height: 500,
+        format: 'png',
+        pixel_ratio: 1
+      },
+      'call-pr-1',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    const stepResult = steps.find(s => s.type === 'tool_result')
+    const buf = dataUrlToBuffer(stepResult!.images![0])
+    const { width, height } = pngDims(buf)
+    expect(width).toBe(800)
+    expect(height).toBe(500)
+    // 显式传入 → 步骤卡片应展示生效 ratio
+    const callStep = steps.find(s => s.type === 'tool_call')
+    expect(callStep?.toolArgs).toHaveProperty('pixel_ratio', 1)
+  })
+
+  it('format=png + pixel_ratio=3 → 3× 像素', async () => {
+    const { config, steps } = makeExecutor()
+    await executeChartTool(
+      'generate_chart',
+      'pty-1',
+      {
+        type: 'pie',
+        data: [{ name: 'A', value: 1 }],
+        width: 400,
+        height: 300,
+        format: 'png',
+        pixel_ratio: 3
+      },
+      'call-pr-3',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    const stepResult = steps.find(s => s.type === 'tool_result')
+    const buf = dataUrlToBuffer(stepResult!.images![0])
+    const { width, height } = pngDims(buf)
+    expect(width).toBeGreaterThanOrEqual(1199)
+    expect(width).toBeLessThanOrEqual(1201)
+    expect(height).toBeGreaterThanOrEqual(899)
+    expect(height).toBeLessThanOrEqual(901)
+  })
+
+  it('pixel_ratio>4 被钳到 4（防爆）', async () => {
+    const { config, steps } = makeExecutor()
+    await executeChartTool(
+      'generate_chart',
+      'pty-1',
+      {
+        type: 'pie',
+        data: [{ name: 'A', value: 1 }],
+        width: 400,
+        height: 300,
+        format: 'png',
+        pixel_ratio: 100
+      },
+      'call-pr-clamp-max',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    const stepResult = steps.find(s => s.type === 'tool_result')
+    const buf = dataUrlToBuffer(stepResult!.images![0])
+    const { width } = pngDims(buf)
+    // 4× 400 = 1600，给点容差
+    expect(width).toBeGreaterThanOrEqual(1599)
+    expect(width).toBeLessThanOrEqual(1601)
+    const callStep = steps.find(s => s.type === 'tool_call')
+    expect(callStep?.toolArgs).toHaveProperty('pixel_ratio', 4)
+  })
+
+  it('pixel_ratio<1 / NaN / 字符串 → 回落默认 2', async () => {
+    for (const bad of [0, -2, NaN, 'big', null]) {
+      const { config, steps } = makeExecutor()
+      await executeChartTool(
+        'generate_chart',
+        'pty-1',
+        {
+          type: 'pie',
+          data: [{ name: 'A', value: 1 }],
+          width: 400,
+          height: 300,
+          format: 'png',
+          pixel_ratio: bad
+        },
+        `call-pr-bad-${String(bad)}`,
+        {} as Parameters<typeof executeChartTool>[4],
+        config
+      )
+      const stepResult = steps.find(s => s.type === 'tool_result')
+      const buf = dataUrlToBuffer(stepResult!.images![0])
+      const { width } = pngDims(buf)
+      // 默认 2× 400 = 800
+      expect(width).toBeGreaterThanOrEqual(799)
+      expect(width).toBeLessThanOrEqual(801)
+    }
+  })
+
+  it('format=svg 时 pixel_ratio 被忽略（SVG 是矢量，与像素无关）', async () => {
+    const { config, steps } = makeExecutor()
+    const result = await executeChartTool(
+      'generate_chart',
+      'pty-1',
+      {
+        type: 'bar',
+        data: { categories: ['Q1'], series: [{ name: 'x', data: [1] }] },
+        width: 800,
+        height: 500,
+        pixel_ratio: 4
+      },
+      'call-pr-svg-ignored',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    expect(result.success).toBe(true)
+    const stepResult = steps.find(s => s.type === 'tool_result')
+    expect(stepResult?.images?.[0]).toMatch(/^data:image\/svg\+xml;base64,/)
+    // SVG 路径不该把 pixel_ratio 写进卡片（避免给"我有像素密度"的错觉）
+    const callStep = steps.find(s => s.type === 'tool_call')
+    expect(callStep?.toolArgs).not.toHaveProperty('pixel_ratio')
+  })
+
+  it('size × ratio 超出 MAX_PIXEL_DIM 时自动降低 ratio（防爆 sharp）', async () => {
+    // width=7680（MAX_DIM）+ pixel_ratio=4 → 30720 像素，应被钳回 ~2.13
+    const { config, steps } = makeExecutor()
+    await executeChartTool(
+      'generate_chart',
+      'pty-1',
+      {
+        type: 'bar',
+        data: { categories: ['a'], series: [{ name: 'x', data: [1] }] },
+        width: 7680,
+        height: 1000,
+        format: 'png',
+        pixel_ratio: 4
+      },
+      'call-pr-dim-cap',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    const callStep = steps.find(s => s.type === 'tool_call')
+    const usedRatio = callStep?.toolArgs?.pixel_ratio as number
+    // MAX_PIXEL_DIM / 7680 = 2.133...，executor 取两位小数
+    expect(usedRatio).toBeGreaterThan(2)
+    expect(usedRatio).toBeLessThan(2.5)
+    // 即便维度兜底也绝不能让 ratio 跌到 <1（小于 1 会让 sharp density<72 出怪图）；
+    // 数学上 width<=MAX_DIM(7680)<MAX_PIXEL_DIM(16384) 保证比值恒>1，但锁住这条不变量
+    expect(usedRatio).toBeGreaterThanOrEqual(1)
+    // 实际像素也应 <=16384
+    const stepResult = steps.find(s => s.type === 'tool_result')
+    const buf = dataUrlToBuffer(stepResult!.images![0])
+    const { width } = pngDims(buf)
+    expect(width).toBeLessThanOrEqual(16384)
+  })
+
+  it('render_echarts_option 同样支持 pixel_ratio', async () => {
+    const { config, steps } = makeExecutor()
+    await executeChartTool(
+      'render_echarts_option',
+      'pty-1',
+      {
+        option: { series: [{ type: 'gauge', data: [{ value: 50 }] }] },
+        width: 600,
+        height: 400,
+        format: 'png',
+        pixel_ratio: 2
+      },
+      'call-free-pr',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    const stepResult = steps.find(s => s.type === 'tool_result')
+    const buf = dataUrlToBuffer(stepResult!.images![0])
+    const { width, height } = pngDims(buf)
+    expect(width).toBeGreaterThanOrEqual(1199)
+    expect(width).toBeLessThanOrEqual(1201)
+    expect(height).toBeGreaterThanOrEqual(799)
+    expect(height).toBeLessThanOrEqual(801)
+  })
+})
+
 describe('executeChartTool: render_echarts_option + format=png', () => {
   it('format=png on free path: 同样产 image/png data URL', async () => {
     const { config, steps } = makeExecutor()

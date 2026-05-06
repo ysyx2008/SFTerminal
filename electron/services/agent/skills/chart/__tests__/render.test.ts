@@ -701,3 +701,68 @@ describe('renderToPng (sharp 栅格化, 中文字体走系统 PingFang SC)', () 
     }
   })
 })
+
+describe('renderToPng pixelRatio (布局尺寸 / 像素密度解耦)', () => {
+  // PNG IHDR chunk: bytes 16-19 = width, 20-23 = height（big-endian uint32），
+  // 这是 PNG 规范固定布局；用 readUInt32BE 取出来比 sharp.metadata 要快、不必再加 import。
+  function pngDims(buf: Buffer): { width: number; height: number } {
+    return {
+      width: buf.readUInt32BE(16),
+      height: buf.readUInt32BE(20)
+    }
+  }
+
+  const opt = buildOption({
+    type: 'bar',
+    data: { categories: ['Q1', 'Q2'], series: [{ name: '营收', data: [10, 20] }] }
+  })
+
+  it('默认（不传 pixelRatio）= 1:1 像素，向后兼容', async () => {
+    const buf = await renderToPng(opt, { width: 800, height: 500 })
+    const { width, height } = pngDims(buf)
+    expect(width).toBe(800)
+    expect(height).toBe(500)
+  })
+
+  it('pixelRatio=2 → 像素 ≈ 2× SVG 尺寸（Retina 缩放）', async () => {
+    const buf = await renderToPng(opt, { width: 800, height: 500 }, { pixelRatio: 2 })
+    const { width, height } = pngDims(buf)
+    // librsvg 在 density=144 下偶尔有 ±1 像素的 floor/ceil 差异，给一格容差
+    expect(width).toBeGreaterThanOrEqual(1599)
+    expect(width).toBeLessThanOrEqual(1601)
+    expect(height).toBeGreaterThanOrEqual(999)
+    expect(height).toBeLessThanOrEqual(1001)
+  })
+
+  it('pixelRatio=3 → 像素 ≈ 3× SVG 尺寸', async () => {
+    const buf = await renderToPng(opt, { width: 600, height: 400 }, { pixelRatio: 3 })
+    const { width, height } = pngDims(buf)
+    expect(width).toBeGreaterThanOrEqual(1799)
+    expect(width).toBeLessThanOrEqual(1801)
+    expect(height).toBeGreaterThanOrEqual(1199)
+    expect(height).toBeLessThanOrEqual(1201)
+  })
+
+  it('pixelRatio=1 显式传入 = 不放大（=同未传）', async () => {
+    const buf = await renderToPng(opt, { width: 600, height: 400 }, { pixelRatio: 1 })
+    const { width, height } = pngDims(buf)
+    expect(width).toBe(600)
+    expect(height).toBe(400)
+  })
+
+  it('pixelRatio=0.5 / 负数 → 强制兜底到 1（避免 sharp density<72 出怪图）', async () => {
+    for (const r of [0.5, 0, -1]) {
+      const buf = await renderToPng(opt, { width: 600, height: 400 }, { pixelRatio: r })
+      const { width, height } = pngDims(buf)
+      expect(width).toBe(600)
+      expect(height).toBe(400)
+    }
+  })
+
+  it('高 ratio 输出像素显著大于 1× 输出（确认 sharp density 路径生效）', async () => {
+    const small = await renderToPng(opt, { width: 400, height: 300 }, { pixelRatio: 1 })
+    const large = await renderToPng(opt, { width: 400, height: 300 }, { pixelRatio: 3 })
+    // 同 SVG 在 1× 和 3× 之间，大图应远大于小图（理论 9 倍像素，PNG 压缩后 ≥3 倍即可）
+    expect(large.length).toBeGreaterThan(small.length * 3)
+  })
+})

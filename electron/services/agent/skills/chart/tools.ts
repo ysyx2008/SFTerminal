@@ -71,6 +71,10 @@ K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (�
             type: 'string',
             enum: ['svg', 'png'],
             description: '输出格式。默认 svg（矢量、对话流展示用）。**嵌入 Word/PDF/IM 等需要位图的场景必须传 png** —— 服务端用 sharp 直接转 PNG（中文字体走 macOS PingFang SC / Windows YaHei / Linux Noto CJK），不要再让 AI 调 ImageMagick / convert / sips 等系统命令二次转换（那会丢中文字体）。'
+          },
+          pixel_ratio: {
+            type: 'number',
+            description: '【仅 png 生效】PNG 像素密度倍率（Retina 缩放）。SVG 仍按 width×height 排版（字号/网格不变），但栅格化时按本倍率放大像素，让被 Word/PDF 缩放显示后依旧锐利。默认 2（@2x，足够大多数嵌入场景），打印稿可传 3。范围 1-4，**当 width × ratio 超过 16384 像素时会自动降低 ratio 防爆**（如 width=7680 + ratio=4 会降到 ~2.13）。**重要心智**：要做嵌入，width 选适合字号的逻辑尺寸（580-1000），不要堆到 3000+；像素清晰度交给 pixel_ratio。SVG 格式忽略此参数。'
           }
         },
         required: ['type', 'data']
@@ -127,6 +131,10 @@ K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (�
             type: 'string',
             enum: ['svg', 'png'],
             description: '输出格式。默认 svg。**嵌入 Word/PDF/IM 等位图场景传 png**，原理同 generate_chart 的 format 参数。'
+          },
+          pixel_ratio: {
+            type: 'number',
+            description: '【仅 png 生效】PNG 像素密度倍率（Retina 缩放）。SVG 仍按 width×height 排版（字号/网格不变），栅格化时按本倍率放大像素。默认 2（@2x），范围 1-4；width × ratio 超过 16384 像素时自动降低 ratio。SVG 格式忽略此参数。详细心智模型见 generate_chart 文档。'
           }
         },
         required: ['option']
@@ -219,9 +227,9 @@ K 线（candlestick）输出**专业行情软件风格**：cn 风格直接照搬
 
 ### 按内容规模选画布尺寸（重要）
 
-字号会随画布宽度自动缩放（基准 800px=1.0×，1600=1.4×，3200+=2.0× 上限），
-所以画大画布既能容纳更多数据，字也会跟着变大、不会显小。请根据数据规模主动选尺寸——
-别全用默认 1280×800：
+\`width\` 决定**布局尺寸**——字号、轴密度、留白比例、能塞多少数据点。和 PNG 像素密度（\`pixel_ratio\`）无关，**别用 width 来追"高分辨率"**，那会让字相对画布显小。
+
+字号会随 width 自动缩放（800px=1.0×，1600=1.4×，3200+=2.0× 上限），缩放幅度低于画布放大幅度——这是有意的，让大画布能容纳更多数据，但字号增长比画布慢、整体视觉舒适。请按"数据规模 → 画布"映射主动选尺寸：
 
 | 场景 | 数据点数 | 推荐 width × height |
 |---|---|---|
@@ -229,6 +237,7 @@ K 线（candlestick）输出**专业行情软件风格**：cn 风格直接照搬
 | 常规分析（多 series 对比、月度数据） | 10-50 | 1600-2400 × 900-1200 |
 | 中长期时序（季度日 K、双月数据） | 50-200 | 2400-3840 × 1000-1500（宽高 16:7） |
 | 长周期数据（半年/全年日 K、全天分时图） | 200+ | 3840-7680 × 1200-1800（宽高 16:6） |
+| 嵌入 Word/PDF（最终显示尺寸 ~580px） | 任意 | width 按内容规模选 800-1600，配 \`format:'png'\` 即可（默认 \`pixel_ratio:2\` 自动 Retina） |
 
 宽高比惯例：
 - 时序图（K 线、分时、长期趋势）：拉宽，≥ 16:7
@@ -239,6 +248,7 @@ K 线（candlestick）输出**专业行情软件风格**：cn 风格直接照搬
 - 上证指数全年日 K（~250 根）→ \`width: 4800, height: 1500\`
 - 沪深 300 全天分时（~240 分钟）→ \`width: 4000, height: 1400\`
 - Q1 国元各业务线收入对比（5 项 × 3 季度）→ \`width: 1280, height: 800\`（默认即可）
+- 嵌入 Word 的 Q1 业务对比图 → \`width: 1000, height: 600, format: 'png'\`（PNG 实际像素 2000×1200，缩到 580px 显示框依旧锐利，**不要**为了"清晰"硬把 width 拉到 3000+）
 
 ### 其它建议
 
@@ -261,6 +271,24 @@ K 线（candlestick）输出**专业行情软件风格**：cn 风格直接照搬
 - ❌ **不要**：先生成 SVG 落盘 → 再用 \`run_terminal\` 调 \`convert / sips / rsvg-convert\` 转 PNG。ImageMagick 默认不带 librsvg 委托，转中文 SVG 会丢字、变方框、字体降级到无衬线英文，效果远差于 chart 内置 sharp 转换
 
 服务端 PNG 渲染走 sharp + 系统字体（macOS PingFang SC / Windows Microsoft YaHei / Linux Noto Sans CJK），中文与 echarts SVG 显示效果一致。
+
+#### 关键心智：布局尺寸 ≠ 输出像素
+
+\`width\` / \`height\` 控制的是**布局尺寸**（决定字号、网格、留白比例），\`pixel_ratio\` 控制 PNG 的**像素密度**。两者解耦后规则非常简单：
+
+| 你想要 | 怎么做 |
+|---|---|
+| 字号合适、看着舒服 | \`width\` 选**逻辑显示尺寸**附近的值（嵌 Word 大致 580-1000） |
+| PNG 缩放到目标显示尺寸后依旧锐利 | \`format: 'png'\` 即可（默认 \`pixel_ratio: 2\`，已经够锐） |
+| 要打印稿级别的清晰度 | \`pixel_ratio: 3\` 或 \`4\` |
+
+**反例（容易踩的坑）**：以为"画布拉到 3000px 字就大了" → 实际 Word 把 3000px 图压回 580px 显示框，字反而被压缩到原来的 1/5。
+**正解**：\`width: 800, height: 500, format: 'png'\`，逻辑布局按 800px 设计字号，PNG 自动按 2× 出 1600×1000 像素，被 Word 压回 580px 时依旧锐利、字号正常。
+
+\`pixel_ratio\` 范围 1-4：
+- \`1\`：1:1 像素，文件最小，仅在画布本身已经够大时使用
+- \`2\`（默认）：Retina @2x，嵌入 Word/PDF/IM 的常用值
+- \`3-4\`：打印稿、海报、需要放大查看的场景
 
 ---
 

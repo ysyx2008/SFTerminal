@@ -72,6 +72,28 @@ export async function renderToSvg(option: EChartsOption, size: RenderSize): Prom
   }
 }
 
+export interface PngRenderOptions {
+  /**
+   * 像素密度倍率（Retina 缩放）。
+   *
+   * 设计目的：把"布局尺寸"和"输出像素"解耦。SVG 仍按 size.width × size.height 渲染，
+   * 字号/网格/留白等所有视觉元素的相对比例不变；但栅格化时按 pixelRatio 倍放大像素，
+   * 让 PNG 在被缩放（如 Word 把 1000px 图压到 580px 显示）后仍然清晰。
+   *
+   * 类比：CSS 中的 devicePixelRatio——@2x 资源在标清屏显示尺寸不变、视网膜屏更锐。
+   *
+   * 实现：通过 sharp 的 density 参数（默认 72 dpi 对应 1:1）放大 librsvg 的栅格化分辨率，
+   * 字体走高 DPI 抗锯齿，比"先 1:1 出 PNG 再 .resize 放大"清晰得多。
+   *
+   * 默认 1（1:1 像素，向后兼容）—— **指 ssr 这一层**：直接 import renderToPng 的代码
+   * 不会被意外放大。executor 入口（chart skill 工具调用）针对 PNG 默认值是 2，详见
+   * executor.ts 的 clampPixelRatio。两层默认刻意不同：
+   *   - ssr 层是基础设施，对所有内部调用方保持中性
+   *   - executor 层面向 AI 工具调用，已知"默认要 Retina 锐"是更好的体验
+   */
+  pixelRatio?: number
+}
+
 /**
  * 把一份 ECharts option 渲染成 PNG buffer。
  *
@@ -97,7 +119,11 @@ export async function renderToSvg(option: EChartsOption, size: RenderSize): Prom
  *
  * sharp 用懒加载，避免 chart skill 没用 PNG 时也付出 sharp 启动开销。
  */
-export async function renderToPng(option: EChartsOption, size: RenderSize): Promise<Buffer> {
+export async function renderToPng(
+  option: EChartsOption,
+  size: RenderSize,
+  opts: PngRenderOptions = {}
+): Promise<Buffer> {
   const svg = await renderToSvg(option, size)
   const sharpMod = await import('sharp')
   // sharp 的 default export 行为在 CJS/ESM 下不一致，做一次容错探测
@@ -106,7 +132,10 @@ export async function renderToPng(option: EChartsOption, size: RenderSize): Prom
   if (typeof sharp !== 'function') {
     throw new Error('Failed to resolve sharp module: callable not found')
   }
-  return sharp(Buffer.from(svg, 'utf8'))
+  // pixelRatio < 1 当作 1 处理（缩小图没意义，且会和 sharp 默认 72 DPI 冲突）。
+  // 上限不在这层兜，由 executor 层结合 size 算出"不会爆 sharp"的安全上限再传进来。
+  const ratio = opts.pixelRatio && opts.pixelRatio > 0 ? Math.max(1, opts.pixelRatio) : 1
+  return sharp(Buffer.from(svg, 'utf8'), { density: 72 * ratio })
     .png()
     .toBuffer()
 }
