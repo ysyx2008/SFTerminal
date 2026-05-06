@@ -14,6 +14,8 @@ import * as os from 'os'
 import * as path from 'path'
 import JSZip from 'jszip'
 import { markdownToDocx } from '../styles'
+// 注册副作用：让 securities / official 等公文样式可被解析
+import '../../chinese-document-official'
 
 // 1x1 透明 PNG（最小合法 PNG，67 字节）
 const PNG_1X1_BASE64 =

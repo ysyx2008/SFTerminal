@@ -532,22 +532,13 @@ word_delete_paragraph({
 - formal：正式报告（宋体，蓝色表头+交替行色）
 - tech：技术文档（微软雅黑，深蓝表头）
 - academic：学术论文（Times New Roman，双倍行距）
-- official：公文格式（GB/T 9704-2012，仿宋三号，A4+公文页边距）
-- securities：证券公文（仿宋_GB2312，A4+公文页边距）
-- meeting：会议纪要（仿宋三号，A4+公文页边距）
-- regulation：制度文件（仿宋小四，章→节→条→款/项编号体系，1.5倍行距）
-也可传入通过 word_create_style 创建的自定义样式名。
 
-**公文格式特别说明**：
-official/securities/meeting 会自动识别中文编号：一、→黑体 （一）→楷体加粗 1.→仿宋加粗 （1）→仿宋
-主送机关用 <p> 包裹顶格，落款用 <p align="right"> 包裹，系统自动在落款前加空行。
-文档标题须放在 YAML front matter 的 title 中（渲染为 Word Title 样式），不要用 # 标记。详见技能文档。
+**按需加载的样式**（需先 load_skill 对应技能才能使用）：
+- official / securities / meeting：加载 \`chinese-document-official\` 技能后可用（公文 / 证券公文 / 会议纪要 GB/T 9704-2012）
+- regulation：加载 \`chinese-document-regulation\` 技能后可用（制度文件章/节/条/款/项编号）
 
-**制度文件格式特别说明**：
-regulation 使用 Word 原生多级列表自动编号（章→节→条→款→项），增删段落时编号自动调整。
-AI 写 Markdown 时仍需写出编号（如"第一章 总则"），转 Word 时会自动替换为 Word 原生编号。
-编号→Heading 映射：第X章→H1（居中） 第X节→H2（居中） 第X条→H3（缩进） （X）→H4（缩进）
-条的编号跨章连续（不会每章重新从第一条开始），节和款会在上级变化时重新开始。`,
+也可传入通过 word_create_style 创建的自定义样式名。未注册的样式名会回退到 simple。
+`,
       parameters: {
         type: 'object',
         properties: {
@@ -565,7 +556,7 @@ AI 写 Markdown 时仍需写出编号（如"第一章 总则"），转 Word 时�
           },
           style: {
             type: 'string',
-            description: '样式模板名称：simple（默认）、formal、tech、academic、official（公文）、securities（证券公文）、meeting（会议纪要）、regulation（制度文件），或自定义样式名'
+            description: '样式模板名称：simple（默认）、formal、tech、academic；加载 chinese-document-official 后可用 official/securities/meeting；加载 chinese-document-regulation 后可用 regulation；也可传入 word_create_style 创建的自定义样式名（未注册回退到 simple）'
           },
           page_size: {
             type: 'string',

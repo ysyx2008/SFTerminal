@@ -758,7 +758,10 @@ export default {
       chart: 'Chart Generation',
       feishu: 'Feishu (Lark)',
       wecom: 'WeCom',
-      dingtalk: 'DingTalk'
+      dingtalk: 'DingTalk',
+      'chinese-writing': 'Chinese Writing',
+      'chinese-document-official': 'Chinese Official Document Writing',
+      'chinese-document-regulation': 'Regulation Document Writing'
     },
     builtinSkillDescs: {
       excel: 'Read and write Excel files interactively. Supports opening files, reading data, modifying cells, adding/removing sheets, saving and closing. Ideal for data analysis and report processing.',
@@ -776,7 +779,9 @@ export default {
       feishu: 'Read and write Feishu (Lark) cloud resources: calendar, docs, sheets, instant messages, users/departments/groups. Requires app credentials configured in the Feishu settings page.',
       wecom: 'Read and write WeCom OA resources: calendar, approval, attendance, contacts, drive, docs, meetings. Requires WeCom app credentials configured in the WeCom settings page.',
       dingtalk: 'Read and write DingTalk OA resources: calendar, approval, attendance, contacts, smart forms. Requires internal app credentials configured in the DingTalk settings page.',
-      'chinese-writing': 'Use when producing any formal Chinese material (official documents, reports, contracts, emails, messages, etc.). Provides Chinese writing standards including GB/T 15834 punctuation, GB/T 15835 number usage, and "no space between Chinese characters and digits/English" conventions.'
+      'chinese-writing': 'Use when producing any formal Chinese material (official documents, reports, contracts, emails, messages, etc.). Provides Chinese writing standards including GB/T 15834 punctuation, GB/T 15835 number usage, and "no space between Chinese characters and digits/English" conventions.',
+      'chinese-document-official': 'Use when drafting Chinese official documents (notices, requests, reports, replies, letters, minutes, etc.). Provides GB/T 9704-2012 government document format rules and enables the official/securities/meeting style presets.',
+      'chinese-document-regulation': 'Use when drafting enterprise rules, management measures, or internal control regulations. Provides the four-level numbering system (Chapter / Section / Article / (X) / 1.) and enables the regulation style preset with native multi-level numbering.'
     },
     extensionSkills: 'Extension Skills',
     extensionSkillsDesc: 'Extension skills teach AI how to complete specific tasks via SKILL.md files. Install from the market or add manually.'

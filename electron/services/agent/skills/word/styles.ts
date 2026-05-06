@@ -192,20 +192,6 @@ export const PAGE_LETTER = { width: 12240, height: 15840 }
 /** 默认页边距 1 inch = 1440 DXA */
 const DEFAULT_MARGIN = 1440
 /**
- * GB/T 9704 公文页边距（mm → DXA：1mm ≈ 56.7 DXA）
- *
- * 字段名必须用 PageConfig 的 marginTop/marginBottom/marginLeft/marginRight，
- * 历史上误写为 top/bottom/left/right 导致 ...展开后字段对不上、公文边距实际从未
- * 生效（一直 fallback 到 1in = 1440 DXA 的默认值）。
- */
-const OFFICIAL_MARGINS = {
-  marginTop: Math.round(37 * 56.7),    // 37mm
-  marginBottom: Math.round(35 * 56.7), // 35mm
-  marginLeft: Math.round(28 * 56.7),   // 28mm
-  marginRight: Math.round(26 * 56.7)   // 26mm
-}
-
-/**
  * 根据页面配置计算实际尺寸
  */
 export function resolvePageConfig(page?: PageConfig): {
@@ -764,183 +750,19 @@ export const PRESET_STYLES: Record<string, WordStyleConfig> = {
       blockquote: { borderColor: 'AAAAAA', italic: true, color: '555555' }
     }
   },
-  // 中国党政机关公文格式 (GB/T 9704-2012)
-  official: {
-    name: '公文格式',
-    sourceType: 'preset',
-    config: {
-      page: { size: 'a4', ...OFFICIAL_MARGINS },
-      font: '仿宋',
-      fontAscii: 'Times New Roman',
-      fontSize: 16,
-      lineSpacingFixed: 28.5,
-      firstLineIndent: true,
-      firstLineIndentChars: 2,
-      renderHr: false,
-      title: { font: '小标宋体', size: 22, bold: false, align: 'center' },
-      headings: {
-        1: { font: '黑体', size: 16, bold: false },
-        2: { font: '楷体', size: 16, bold: true },
-        3: { font: '仿宋', size: 16, bold: true },
-        4: { font: '仿宋', size: 16, bold: false },
-        5: { font: '仿宋', size: 16, bold: false },
-        6: { font: '仿宋', size: 16, bold: false }
-      },
-      // 不设 numberingRules：标题层级由 markdown # 显式标记，正文里以编号开头的并列项
-      // （如"（一）组织保障。说明…"）走默认 Normal 样式（首行缩进 2 字符），
-      // 符合公文行文习惯。
-      table: {
-        headerBackground: 'F2F2F2',
-        headerBold: true,
-        headerAlign: 'center',
-        borderColor: '000000',
-        borderSize: 4,
-        font: '仿宋',
-        fontAscii: 'Times New Roman',
-        fontSize: 12
-      },
-      codeBlock: { font: 'Courier New', fontSize: 10, background: 'F5F5F5' },
-      blockquote: { borderColor: '999999', italic: true, color: '333333' }
-    }
-  },
-  // 证券公司公文格式（参照 GB/T 9704-2012 及国元证券公文处理规范）
-  securities: {
-    name: '证券公文',
-    sourceType: 'preset',
-    config: {
-      page: { size: 'a4', ...OFFICIAL_MARGINS },
-      font: '仿宋_GB2312',
-      fontAscii: 'Times New Roman',
-      fontSize: 16,
-      lineSpacingFixed: 28.5,
-      firstLineIndent: true,
-      firstLineIndentChars: 2,
-      renderHr: false,
-      title: { font: '方正小标宋简体', size: 22, bold: false, align: 'center' },
-      headings: {
-        1: { font: '黑体', size: 16, bold: false },
-        2: { font: '楷体_GB2312', size: 16, bold: true },
-        3: { font: '仿宋_GB2312', size: 16, bold: true },
-        4: { font: '仿宋_GB2312', size: 16, bold: false },
-        5: { font: '仿宋_GB2312', size: 16, bold: false },
-        6: { font: '仿宋_GB2312', size: 16, bold: false }
-      },
-      // 见 official 样式注释：标题层级由 markdown # 决定，正文段走 Normal 样式获得首行缩进
-      table: {
-        headerBackground: 'F2F2F2',
-        headerBold: true,
-        headerAlign: 'center',
-        borderColor: '000000',
-        borderSize: 4,
-        font: '仿宋_GB2312',
-        fontAscii: 'Times New Roman',
-        fontSize: 12
-      },
-      codeBlock: { font: 'Courier New', fontSize: 10, background: 'F5F5F5' },
-      blockquote: { borderColor: '999999', italic: true, color: '333333' }
-    }
-  },
-  // 企业制度文件（章→节→条→款/项，参照立法技术规范编号体系）
-  regulation: {
-    name: '制度文件',
-    sourceType: 'preset',
-    config: {
-      page: {
-        size: 'a4',
-        marginTop: 1440,
-        marginBottom: 1440,
-        marginLeft: 1800,
-        marginRight: 1800
-      },
-      font: '仿宋',
-      fontAscii: '仿宋',
-      fontSize: 12,
-      lineSpacing: 1.5,
-      textAlign: 'justify',
-      firstLineIndent: true,
-      firstLineIndentChars: 2,
-      renderHr: false,
-      title: { font: '黑体', fontAscii: '黑体', size: 15, bold: true, align: 'center' },
-      headings: {
-        1: { font: '仿宋', fontAscii: '仿宋', size: 12, bold: true, align: 'center' },
-        2: { font: '仿宋', fontAscii: '仿宋', size: 12, bold: true, align: 'center' },
-        3: { font: '仿宋', fontAscii: '仿宋', size: 12, bold: false, indent: 2, spacingBefore: 0, spacingAfter: 0 },
-        4: { font: '仿宋', fontAscii: '仿宋', size: 12, bold: false, indent: 2, spacingBefore: 0, spacingAfter: 0 },
-        5: { font: '仿宋', fontAscii: '仿宋', size: 12, bold: false },
-        6: { font: '仿宋', fontAscii: '仿宋', size: 12, bold: false }
-      },
-      multiLevelNumbering: {
-        levels: [
-          // Level 0: 章 — "第一章"、"第二章"...（段落居中由 Heading1 样式控制）
-          { format: 'chineseCounting', text: '第%1章\u3000', alignment: 'left', indent: { left: 0, hanging: 0 }, run: { bold: true } },
-          // Level 1: 节 — "第一节"、"第二节"...（段落居中由 Heading2 样式控制）
-          { format: 'chineseCounting', text: '第%2节\u3000', alignment: 'left', indent: { left: 0, hanging: 0 }, run: { bold: true } },
-          // Level 2: 条 — "第一条"、"第二条"...（跨章连续编号）
-          { format: 'chineseCounting', text: '第%3条\u3000', restart: 0, indent: { firstLine: 480 }, run: { bold: true } },
-          // Level 3: 款 — "（一）"、"（二）"...（每条重新开始）
-          { format: 'chineseCounting', text: '\uff08%4\uff09', indent: { firstLine: 480 } },
-          // Level 4: 项 — "1．"、"2．"...（每款重新开始）
-          { format: 'decimal', text: '%5\uff0e', indent: { firstLine: 480 } }
-        ]
-      },
-      numberingRules: [
-        { pattern: '^第[一二三四五六七八九十百千万]+章', style: { headingLevel: 1, numberingLevel: 0, indent: 0 } },
-        { pattern: '^第[一二三四五六七八九十百]+节', style: { headingLevel: 2, numberingLevel: 1, indent: 0 } },
-        { pattern: '^第[一二三四五六七八九十百千万]+条', style: { headingLevel: 3, numberingLevel: 2, indent: 0 } },
-        { pattern: '^（[一二三四五六七八九十]+）', style: { headingLevel: 4, numberingLevel: 3, indent: 0 } },
-        { pattern: '^\\d+[.．\uff0e]', style: { numberingLevel: 4, indent: 0 } }
-      ],
-      table: {
-        headerBackground: 'F2F2F2',
-        headerBold: true,
-        headerAlign: 'center',
-        borderColor: '000000',
-        borderSize: 4,
-        font: '仿宋',
-        fontAscii: '仿宋',
-        fontSize: 10.5
-      },
-      codeBlock: { font: 'Courier New', fontSize: 10, background: 'F5F5F5' },
-      blockquote: { borderColor: '999999', italic: false, color: '333333' }
-    }
-  },
-  // 会议纪要（中国企业常用格式）
-  meeting: {
-    name: '会议纪要',
-    sourceType: 'preset',
-    config: {
-      page: { size: 'a4', ...OFFICIAL_MARGINS },
-      font: '仿宋',
-      fontAscii: 'Times New Roman',
-      fontSize: 16,
-      lineSpacingFixed: 28.5,
-      firstLineIndent: true,
-      firstLineIndentChars: 2,
-      renderHr: false,
-      title: { font: '小标宋体', size: 22, bold: false, align: 'center' },
-      headings: {
-        1: { font: '黑体', size: 16, bold: false },
-        2: { font: '楷体', size: 16, bold: true },
-        3: { font: '仿宋', size: 16, bold: true },
-        4: { font: '仿宋', size: 16, bold: false },
-        5: { font: '仿宋', size: 16, bold: false },
-        6: { font: '仿宋', size: 16, bold: false }
-      },
-      // 见 official 样式注释：标题层级由 markdown # 决定，正文段走 Normal 样式获得首行缩进
-      table: {
-        headerBackground: 'E7E6E6',
-        headerBold: true,
-        headerAlign: 'center',
-        borderColor: '000000',
-        borderSize: 4,
-        font: '仿宋',
-        fontAscii: 'Times New Roman',
-        fontSize: 12
-      },
-      codeBlock: { font: 'Courier New', fontSize: 10, background: 'F5F5F5' },
-      blockquote: { borderColor: '999999', italic: false, color: '333333' }
-    }
-  }
+}
+
+/**
+ * 注册外部技能贡献的样式预设
+ *
+ * 用途：拆分后 word 技能只保留通用预设（simple/formal/tech/academic）；
+ * 公文（official/securities/meeting）和制度（regulation）等中文场景专属预设
+ * 由独立技能在加载时通过本函数注册到共享注册表，机制（解析引擎）保持单一来源。
+ *
+ * 注意：name 重复注册时静默覆盖，与历史 PRESET_STYLES 字面量同名覆盖语义一致。
+ */
+export function registerStylePreset(name: string, config: WordStyleConfig): void {
+  PRESET_STYLES[name] = config
 }
 
 /**
@@ -1278,9 +1100,11 @@ async function linkHeadingStylesToNumbering(
   if (!abstractNumId) return buffer
 
   // 查找或创建 num 元素（当所有编号级别都由 heading 样式携带时，可能无段落引用，docx 库不生成 num）
+  // ⚠️ 正则必须限定在单个 <w:num> 块内，不能用 [\s\S]*? 跨越 </w:num> 边界，
+  // 否则在存在其他 <w:num>（如 bullet 列表）时会错误捕获前一个 num 的 numId。
   let numId: string
   const numIdMatch = numXml.match(new RegExp(
-    `<w:num w:numId="(\\d+)"[^>]*>[\\s\\S]*?<w:abstractNumId w:val="${abstractNumId}"`
+    `<w:num w:numId="(\\d+)"[^>]*>\\s*<w:abstractNumId w:val="${abstractNumId}"`
   ))
   if (numIdMatch) {
     numId = numIdMatch[1]

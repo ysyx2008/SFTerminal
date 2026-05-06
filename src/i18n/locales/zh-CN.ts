@@ -758,7 +758,10 @@ export default {
       chart: '图表生成',
       feishu: '飞书',
       wecom: '企业微信',
-      dingtalk: '钉钉'
+      dingtalk: '钉钉',
+      'chinese-writing': '中文写作',
+      'chinese-document-official': '党政机关公文写作',
+      'chinese-document-regulation': '制度文件写作'
     },
     builtinSkillDescs: {
       excel: '提供会话式 Excel 文件读写能力。支持打开文件、读取数据、修改单元格、添加/删除 Sheet、保存和关闭等操作。适用于数据分析、报表处理等场景。',
@@ -776,7 +779,9 @@ export default {
       feishu: '提供飞书云端资源读写能力：日历、文档、电子表格、即时消息、用户/部门/群组等。需在「飞书」设置页配置自建应用凭证后启用。',
       wecom: '提供企业微信 OA 资源读写能力：日历、审批、考勤、通讯录、微盘、文档、会议等。需在「企业微信」设置页配置企业自建应用凭证后启用。',
       dingtalk: '提供钉钉 OA 资源读写能力：日程、审批、考勤、通讯录、智能填表等。需在「钉钉」设置页配置企业内部应用凭证后启用。',
-      'chinese-writing': '产任何中文正式材料（公文、报告、合同、邮件、消息等）时使用，提供 GB/T 15834 标点符号、GB/T 15835 数字用法以及"汉字与数字/英文之间不加空格"等中文写作规范。'
+      'chinese-writing': '产任何中文正式材料（公文、报告、合同、邮件、消息等）时使用，提供 GB/T 15834 标点符号、GB/T 15835 数字用法以及"汉字与数字/英文之间不加空格"等中文写作规范。',
+      'chinese-document-official': '生成中文公文（通知、请示、报告、批复、函、纪要等）时使用，提供 GB/T 9704-2012《党政机关公文格式》的体例规范，并启用 official/securities/meeting 三个公文样式预设。',
+      'chinese-document-regulation': '生成企业管理办法、规章制度、内控规程等制度文件时使用，提供"第X章/节/条/（X）/1．"四级编号体系的写作规范，并启用 regulation 样式预设（自动多级编号）。'
     },
     extensionSkills: '扩展技能',
     extensionSkillsDesc: '扩展技能通过 SKILL.md 文件教 AI 如何完成特定任务。从技能市场安装或手动添加。'

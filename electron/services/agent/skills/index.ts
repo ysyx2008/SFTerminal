@@ -28,4 +28,6 @@ import './feishu'
 import './wecom'
 import './dingtalk'
 import './chinese-writing'
+import './chinese-document-official'
+import './chinese-document-regulation'
 
