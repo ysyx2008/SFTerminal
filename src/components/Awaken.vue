@@ -40,6 +40,7 @@ type NavTab =
   | 'identity' | 'personality' | 'userProfile' | 'heartbeat'   // 觉醒 - 个性
   | 'wakeupHistory'                                             // 觉醒 - 记录
   | 'watches' | 'templates' | 'watchHistory'                    // 关切
+  | 'sensors'                                                   // 传感器（未接入侧栏，模板保留）
 
 const VALID_TABS: NavTab[] = [
   'identity', 'personality', 'userProfile', 'heartbeat',
@@ -195,11 +196,6 @@ const filteredHistory = computed<WatchHistoryRecord[]>(() => {
   if (f === 'all') return watchHistory.value
   if (f === 'wakeup') return watchHistory.value.filter(h => h.watchId === '__wakeup__')
   return watchHistory.value.filter(h => h.watchId !== '__wakeup__')
-})
-
-const hasMultipleWatchNames = computed(() => {
-  const names = new Set(filteredHistory.value.map(h => h.watchName))
-  return names.size > 1
 })
 
 const groupedHistory = computed(() => {
