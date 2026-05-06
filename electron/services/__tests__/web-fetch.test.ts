@@ -21,9 +21,7 @@ vi.mock('../web-search', () => ({
   getApiKey: vi.fn().mockReturnValue(''),
 }))
 
-// eslint-disable-next-line import/first
 import { webFetch, _internal, jinaAvailable } from '../web-fetch.service'
-// eslint-disable-next-line import/first
 import { getApiKey } from '../web-search'
 
 // ============================================================================

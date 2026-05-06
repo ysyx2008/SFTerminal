@@ -481,9 +481,9 @@ async function readBodyWithLimit(
   let truncated = false
 
   try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
+    let chunk = await reader.read()
+    while (!chunk.done) {
+      const value = chunk.value
       total += value.byteLength
       if (total > maxBytes) {
         // 截断：保留到 maxBytes 就够（多余部分丢掉）
@@ -497,6 +497,7 @@ async function readBodyWithLimit(
         break
       }
       buffers.push(value)
+      chunk = await reader.read()
     }
   } finally {
     try { reader.releaseLock() } catch { /* ignore */ }
