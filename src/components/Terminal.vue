@@ -830,7 +830,7 @@ const handleDrop = (e: DragEvent) => {
 
   const paths: string[] = []
   for (const file of files) {
-    const filePath = (file as any).path as string
+    const filePath = window.electronAPI.fileUtils.getPathForFile(file)
     if (filePath) {
       paths.push(filePath.includes(' ') ? `"${filePath}"` : filePath)
     }
