@@ -148,11 +148,31 @@ function buildHeaders(token: string): Record<string, string> {
   }
 }
 
+/** 微信会话过期 errcode（来自官方 openclaw-weixin），收到后必须暂停整个 account 的所有 API 调用 */
+const SESSION_EXPIRED_ERRCODE = SESSION_TIMEOUT_CODE
+/** 会话暂停时长（1 小时），与官方 openclaw-weixin 保持一致 */
+const SESSION_PAUSE_DURATION_MS = 60 * 60 * 1000
+
+interface ApiError extends Error {
+  errcode?: number
+}
+
 function checkApiError(data: any, context: string): void {
   const code = data?.errcode ?? data?.ret
   if (code != null && code !== 0) {
-    throw new Error(`${context}: errcode=${code} errmsg=${data?.errmsg || 'unknown'}`)
+    const err = new Error(`${context}: errcode=${code} errmsg=${data?.errmsg || 'unknown'}`) as ApiError
+    err.errcode = code
+    throw err
   }
+}
+
+/** 脱敏响应文本里可能出现的敏感字段，截断过长内容 */
+function redactBody(body: string, max = 500): string {
+  const redacted = body
+    .replace(/"context_token"\s*:\s*"[^"]*"/g, '"context_token":"<REDACTED>"')
+    .replace(/"token"\s*:\s*"[^"]*"/g, '"token":"<REDACTED>"')
+    .replace(/"aes_key"\s*:\s*"[^"]*"/g, '"aes_key":"<REDACTED>"')
+  return redacted.length > max ? redacted.substring(0, max) + '...(truncated)' : redacted
 }
 
 async function apiPost<T>(baseUrl: string, apiPath: string, token: string, body: unknown, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
@@ -161,6 +181,7 @@ async function apiPost<T>(baseUrl: string, apiPath: string, token: string, body:
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   const startedAt = Date.now()
+  let respText: string | undefined
 
   try {
     const resp = await fetch(url, {
@@ -173,7 +194,8 @@ async function apiPost<T>(baseUrl: string, apiPath: string, token: string, body:
       signal: controller.signal,
     })
     if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`)
-    const data = await resp.json() as T
+    respText = await resp.text()
+    const data = JSON.parse(respText) as T
     checkApiError(data, apiPath)
     return data
   } catch (err: any) {
@@ -181,7 +203,8 @@ async function apiPost<T>(baseUrl: string, apiPath: string, token: string, body:
     const reason = err?.name === 'AbortError'
       ? `timeout(${timeoutMs}ms)`
       : (err?.message || String(err))
-    log.error(`apiPost failed path=${apiPath} elapsed=${elapsed}ms reason=${reason}`)
+    const bodyInfo = respText ? ` response=${redactBody(respText)}` : ''
+    log.error(`apiPost failed path=${apiPath} elapsed=${elapsed}ms reason=${reason}${bodyInfo}`)
     throw err
   } finally {
     clearTimeout(timer)
@@ -342,11 +365,14 @@ export class WeChatAdapter implements IMAdapter {
   private getUpdatesBuf: string = ''
   private abortController: AbortController | null = null
   private reconnectDelay = RECONNECT_DELAY_MS
-  /** context_token 缓存：userId → contextToken（回复时必须携带） */
-  private contextTokens = new Map<string, string>()
-  private static readonly MAX_CONTEXT_TOKENS = 100
   /** 服务端建议的长轮询超时（ms），从 getUpdates 响应中动态更新 */
   private serverTimeoutMs = DEFAULT_TIMEOUT_MS
+  /**
+   * session-guard：收到 errcode=-14 后整个 account 暂停 1 小时不再调任何 API。
+   * 与官方 openclaw-weixin 的 session-guard 行为一致，避免会话过期后继续打 API
+   * 触发服务端进一步限制甚至封号。
+   */
+  private sessionPausedUntil = 0
 
   /** QR 轮询使用的 base URL（IDC 重定向时会切换） */
   private qrPollBaseUrl: string = FIXED_BASE_URL
@@ -462,6 +488,39 @@ export class WeChatAdapter implements IMAdapter {
     }
   }
 
+  // ==================== Session Guard ====================
+
+  /** 暂停期内拒绝所有 API 调用，避免雪崩式打到服务端 */
+  private assertSessionActive(): void {
+    if (this.sessionPausedUntil === 0) return
+    const remaining = this.sessionPausedUntil - Date.now()
+    if (remaining <= 0) {
+      this.sessionPausedUntil = 0
+      return
+    }
+    const remainingMin = Math.ceil(remaining / 60_000)
+    throw new Error(`session paused, ${remainingMin}min remaining (errcode ${SESSION_EXPIRED_ERRCODE})`)
+  }
+
+  /** 收到 errcode=-14 时调用：暂停 1 小时所有 API 调用 */
+  private pauseSession(): void {
+    this.sessionPausedUntil = Date.now() + SESSION_PAUSE_DURATION_MS
+    log.error(`session-guard: paused for ${SESSION_PAUSE_DURATION_MS / 60_000}min until ${new Date(this.sessionPausedUntil).toISOString()} (errcode ${SESSION_EXPIRED_ERRCODE})`)
+  }
+
+  /** apiPost 的实例包装：调用前检查暂停状态，调用后识别 -14 触发暂停 */
+  private async post<T>(apiPath: string, body: unknown, timeoutMs?: number): Promise<T> {
+    this.assertSessionActive()
+    try {
+      return await apiPost<T>(this.baseUrl, apiPath, this.token, body, timeoutMs)
+    } catch (err) {
+      if ((err as ApiError)?.errcode === SESSION_EXPIRED_ERRCODE) {
+        this.pauseSession()
+      }
+      throw err
+    }
+  }
+
   // ==================== IMAdapter 接口 ====================
 
   async start(): Promise<void> {
@@ -490,14 +549,13 @@ export class WeChatAdapter implements IMAdapter {
 
   async sendText(replyContext: any, text: string): Promise<void> {
     const { userId, contextToken } = replyContext as { userId: string; contextToken?: string }
-    const token = contextToken || this.contextTokens.get(userId)
-    if (!token) {
-      log.warn(`sendText: no contextToken for user ${userId}, message may fail`)
+    if (!contextToken) {
+      log.warn(`sendText: no contextToken for user ${userId}, sending without context`)
     }
     const truncated = text.length > IM_TEXT_MAX_LENGTH
       ? text.substring(0, IM_TEXT_MAX_LENGTH - 20) + '\n...(已截断)'
       : text
-    await this.sendMessageApi(userId, truncated, token)
+    await this.sendMessageApi(userId, truncated, contextToken)
   }
 
   async sendMarkdown(replyContext: any, _title: string, content: string): Promise<void> {
@@ -506,9 +564,8 @@ export class WeChatAdapter implements IMAdapter {
 
   async sendImage(replyContext: any, filePath: string): Promise<void> {
     const { userId, contextToken } = replyContext as { userId: string; contextToken?: string }
-    const token = contextToken || this.contextTokens.get(userId)
 
-    log.info(`sendImage: file=${filePath} userId=${userId} hasToken=${!!token}`)
+    log.info(`sendImage: file=${filePath} userId=${userId} hasToken=${!!contextToken}`)
     const uploaded = await this.uploadMedia(filePath, userId, UploadMediaType.IMAGE)
     const body = {
       msg: {
@@ -528,17 +585,16 @@ export class WeChatAdapter implements IMAdapter {
             mid_size: uploaded.ciphertextSize,
           },
         }],
-        context_token: token || undefined,
+        context_token: contextToken || undefined,
       },
       base_info: { channel_version: '1.0' } as BaseInfo,
     }
-    await apiPost(this.baseUrl, '/ilink/bot/sendmessage', this.token, body)
+    await this.post('/ilink/bot/sendmessage', body)
     log.info(`sendImage: success file=${path.basename(filePath)}`)
   }
 
   async sendFile(replyContext: any, filePath: string, fileName?: string): Promise<void> {
     const { userId, contextToken } = replyContext as { userId: string; contextToken?: string }
-    const token = contextToken || this.contextTokens.get(userId)
     const name = fileName || path.basename(filePath)
 
     const ext = path.extname(filePath).toLowerCase()
@@ -549,7 +605,7 @@ export class WeChatAdapter implements IMAdapter {
       : isImage ? UploadMediaType.IMAGE
       : UploadMediaType.FILE
 
-    log.info(`sendFile: file=${name} userId=${userId} mediaType=${mediaType} hasToken=${!!token}`)
+    log.info(`sendFile: file=${name} userId=${userId} mediaType=${mediaType} hasToken=${!!contextToken}`)
     const uploaded = await this.uploadMedia(filePath, userId, mediaType)
     const clientId = `sf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
     const cdnMedia: CDNMedia = {
@@ -575,11 +631,11 @@ export class WeChatAdapter implements IMAdapter {
         message_type: MessageType.BOT,
         message_state: MessageState.FINISH,
         item_list: itemList,
-        context_token: token || undefined,
+        context_token: contextToken || undefined,
       },
       base_info: { channel_version: '1.0' } as BaseInfo,
     }
-    await apiPost(this.baseUrl, '/ilink/bot/sendmessage', this.token, body)
+    await this.post('/ilink/bot/sendmessage', body)
     log.info(`sendFile: success file=${name}`)
   }
 
@@ -611,6 +667,7 @@ export class WeChatAdapter implements IMAdapter {
           resp.ret === SESSION_TIMEOUT_CODE || resp.errcode === SESSION_TIMEOUT_CODE
         if (isSessionExpired) {
           log.warn('Session expired, stopping...')
+          this.pauseSession()
           this.setConnected(false)
           this.polling = false
           break
@@ -710,7 +767,7 @@ export class WeChatAdapter implements IMAdapter {
     }
 
     try {
-      await apiPost(this.baseUrl, '/ilink/bot/sendmessage', this.token, body)
+      await this.post('/ilink/bot/sendmessage', body)
     } catch (err: any) {
       log.error(`sendMessageApi failed toUserId=${toUserId} textLen=${text.length} hasContextToken=${!!contextToken} clientId=${clientId} err=${err?.message || err}`)
       throw err
@@ -733,8 +790,8 @@ export class WeChatAdapter implements IMAdapter {
 
     log.info(`uploadMedia: file=${path.basename(filePath)} rawsize=${rawsize} filesize=${filesize} type=${mediaType}`)
 
-    const uploadUrlResp = await apiPost<GetUploadUrlResp>(
-      this.baseUrl, '/ilink/bot/getuploadurl', this.token,
+    const uploadUrlResp = await this.post<GetUploadUrlResp>(
+      '/ilink/bot/getuploadurl',
       {
         filekey,
         media_type: mediaType,
@@ -816,14 +873,6 @@ export class WeChatAdapter implements IMAdapter {
   private async handleMessage(msg: WeixinMessage): Promise<void> {
     const userId = msg.from_user_id || ''
     if (!userId) return
-
-    if (msg.context_token) {
-      this.contextTokens.set(userId, msg.context_token)
-      if (this.contextTokens.size > WeChatAdapter.MAX_CONTEXT_TOKENS) {
-        const first = this.contextTokens.keys().next().value
-        if (first) this.contextTokens.delete(first)
-      }
-    }
 
     const text = extractTextFromItems(msg.item_list)
     const attachments = await this.downloadAttachments(msg.item_list)
