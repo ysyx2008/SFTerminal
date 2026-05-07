@@ -1090,6 +1090,10 @@ export class IMService {
           } else if (step.type === 'tool_call' && step.toolName) {
             if (step.toolName === 'ask_user') return
             if (!sendProcess) return
+            // 流式 tool_call 会先以 isStreaming=true、无 toolArgs 回调；若此时发通知并记入
+            // notifiedToolCalls，后续执行器 updateStep 带上 toolArgs 会因同 step.id 被去重跳过，
+            // IM 侧就只剩工具名。等非流式态（执行器认领卡片后）再通知。
+            if (step.isStreaming) return
             const toolCallKey = step.id || `${step.toolName}:${JSON.stringify(step.toolArgs || {})}`
             if (notifiedToolCalls.has(toolCallKey)) return
             notifiedToolCalls.add(toolCallKey)
