@@ -153,8 +153,14 @@ function formatToolNotification(toolName: string, toolArgs?: Record<string, unkn
   if (toolName === 'execute_command' || toolName === 'exec') {
     const cmd = args.command ? String(args.command) : ''
     detail = cmd ? `\n$ ${cmd.length > 200 ? cmd.substring(0, 200) + '...' : cmd}` : ''
-  } else if (toolName === 'file_search' && (args.pattern || args.query)) {
-    detail = `  ${truncate(String(args.pattern || args.query))}`
+  } else if (toolName === 'file_search') {
+    const q = args.pattern ?? args.query
+    const parts: string[] = []
+    if (q != null && String(q).trim() !== '') parts.push(`query: ${truncate(String(q))}`)
+    if (args.path != null && String(args.path).trim() !== '') parts.push(`path: ${truncate(String(args.path))}`)
+    if (args.type != null && args.type !== 'all') parts.push(`type: ${String(args.type)}`)
+    if (args.limit != null && Number(args.limit) !== 50) parts.push(`limit: ${String(args.limit)}`)
+    if (parts.length > 0) detail = `  ${parts.join(' · ')}`
   } else if (toolName === 'send_control_key' && args.key) {
     detail = ` ${args.key}`
   } else if (toolName === 'wait' && args.seconds) {
@@ -164,8 +170,18 @@ function formatToolNotification(toolName: string, toolArgs?: Record<string, unkn
   } else if (toolName === 'skill' || toolName === 'load_skill' || toolName === 'load_user_skill') {
     const id = args.skill_id || args.name
     if (id) detail = `  ${id}`
-  } else if (toolName === 'web_search' || toolName === 'search_knowledge') {
-    if (args.query) detail = `  ${truncate(String(args.query))}`
+  } else if (toolName === 'web_search') {
+    const parts: string[] = []
+    if (args.query != null && String(args.query).trim() !== '') {
+      parts.push(`query: ${truncate(String(args.query))}`)
+    }
+    if (args.max_results != null && Number(args.max_results) !== 5) {
+      parts.push(`max_results: ${String(args.max_results)}`)
+    }
+    if (parts.length > 0) detail = `  ${parts.join(' · ')}`
+  } else if (toolName === 'search_knowledge' && args.query) {
+    // 知识库搜索本身带完整 toolArgs，沿用仅展示关键词的简洁样式
+    detail = `  ${truncate(String(args.query))}`
   } else if (toolName === 'search_history' && args.keyword) {
     detail = `  ${truncate(String(args.keyword))}`
   } else if (toolName === 'web_fetch' && args.url) {

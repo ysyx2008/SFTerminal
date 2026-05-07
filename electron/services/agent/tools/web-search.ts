@@ -23,7 +23,9 @@ export async function executeWebSearch(
   executor.addStep({
     type: 'tool_call',
     content: `${t('web.search')}: ${query}`,
-    toolName: 'web_search'
+    toolName: 'web_search',
+    toolArgs: { query, max_results: maxResults },
+    riskLevel: 'safe'
   })
 
   try {
