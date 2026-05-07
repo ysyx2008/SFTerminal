@@ -319,6 +319,13 @@ const encodingOptions: LocalEncoding[] = [
   grid-column: 2;
 }
 
+/* checkbox 行已跨满两列，对应的 hint 也要跨满整行，
+   并左缩进与 checkbox 文字对齐（checkbox 13px + gap 8px ≈ 21px） */
+.form-group > .checkbox-item + .form-hint {
+  grid-column: 1 / -1;
+  padding-left: 21px;
+}
+
 .select {
   padding: 6px 10px;
   font-size: 13px;
