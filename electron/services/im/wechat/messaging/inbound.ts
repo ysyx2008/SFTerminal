@@ -169,7 +169,7 @@ export function isMediaItem(item: MessageItem): boolean {
   );
 }
 
-function bodyFromItemList(itemList?: MessageItem[]): string {
+export function bodyFromItemList(itemList?: MessageItem[]): string {
   if (!itemList?.length) return "";
   for (const item of itemList) {
     if (item.type === MessageItemType.TEXT && item.text_item?.text != null) {

@@ -31,6 +31,7 @@ import {
   setContextToken,
   getContextToken,
   restoreContextTokens,
+  bodyFromItemList,
 } from './wechat/messaging/inbound'
 import { downloadAndDecryptBuffer, downloadPlainCdnBuffer } from './wechat/cdn/pic-decrypt'
 import type { WeixinMessage, MessageItem } from './wechat/api/types'
@@ -436,7 +437,7 @@ export class WeChatAdapter implements IMAdapter {
       log.warn(`configManager.getForUser threw (ignored): ${String(err)}`)
     }
 
-    const text = extractTextFromItems(msg.item_list)
+    const text = bodyFromItemList(msg.item_list)
     const attachments = await this.downloadAttachments(msg.item_list)
 
     if (!text && attachments.length === 0) {
@@ -589,21 +590,4 @@ export class WeChatAdapter implements IMAdapter {
       signal?.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
     })
   }
-}
-
-function extractTextFromItems(items?: MessageItem[]): string {
-  if (!items?.length) return ''
-  const parts: string[] = []
-  for (const item of items) {
-    if (item.type === MessageItemType.TEXT && item.text_item?.text) {
-      parts.push(item.text_item.text)
-    } else if (item.type === MessageItemType.VOICE && (item.voice_item as any)?.text) {
-      parts.push((item.voice_item as any).text)
-    } else if (item.type === MessageItemType.REF_MSG && (item as any).ref_msg) {
-      const ref = (item as any).ref_msg
-      const refText = ref.message_item?.text_item?.text
-      if (refText) parts.push(`[引用: ${refText}]`)
-    }
-  }
-  return parts.join('\n')
 }

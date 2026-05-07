@@ -110,6 +110,21 @@ export const TRANSFORMS = [
       );
     },
   },
+  {
+    // SailFish wechat-adapter 直接复用 vendored 的 bodyFromItemList（处理引用消息、
+    // 语音转文字等业务逻辑），保持 adapter 当薄壳。上游目前没 export 该函数，
+    // 这里改成 export 以便外部 import；同步时若上游已自行导出，正则不会匹配，
+    // transform 自动失效。
+    name: "messaging/inbound.ts: export bodyFromItemList for adapter reuse",
+    match: "messaging/inbound.ts",
+    apply(content) {
+      if (/export function bodyFromItemList\(/.test(content)) return content;
+      return content.replace(
+        /^function bodyFromItemList\(/m,
+        "export function bodyFromItemList(",
+      );
+    },
+  },
 ];
 
 export function applyTransforms(relPath, content) {
