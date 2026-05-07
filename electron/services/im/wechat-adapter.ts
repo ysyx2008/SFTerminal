@@ -498,23 +498,30 @@ export class WeChatAdapter implements IMAdapter {
     const timestamp = Date.now()
     const tempDir = this.ensureTempDir()
 
+    // vendored downloadAndDecryptBuffer / downloadPlainCdnBuffer 用位置参数：
+    //   (encryptedQueryParam, [aesKeyBase64], cdnBaseUrl, label, fullUrl?)
+    // 之前误用对象参数，全部 attachment 下载都直接走到 catch 被静默吞掉。
     const fetchBuf = async (media: any, aeskeyHex?: string): Promise<Buffer> => {
-      const aesKeyBase64 = aeskeyHex
+      const aesKeyBase64: string | undefined = aeskeyHex
         ? Buffer.from(aeskeyHex, 'hex').toString('base64')
         : media?.aes_key
+      const encryptedQueryParam: string = media?.encrypt_query_param ?? ''
+      const fullUrl: string | undefined = media?.full_url
       if (aesKeyBase64) {
-        return await downloadAndDecryptBuffer({
-          media,
+        return await downloadAndDecryptBuffer(
+          encryptedQueryParam,
           aesKeyBase64,
-          cdnBaseUrl: CDN_BASE_URL,
-          label: 'wechat-attachment',
-        })
+          CDN_BASE_URL,
+          'wechat-attachment',
+          fullUrl,
+        )
       }
-      return await downloadPlainCdnBuffer({
-        media,
-        cdnBaseUrl: CDN_BASE_URL,
-        label: 'wechat-attachment',
-      })
+      return await downloadPlainCdnBuffer(
+        encryptedQueryParam,
+        CDN_BASE_URL,
+        'wechat-attachment',
+        fullUrl,
+      )
     }
 
     if (item.type === MessageItemType.IMAGE) {
