@@ -5,6 +5,7 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
+import { pathToFileURL } from 'url'
 import { app, utilityProcess, type UtilityProcess } from 'electron'
 import { createLogger } from '../utils/logger'
 import type { DocumentParsePhase, DocumentParseProgress } from '@shared/types'
@@ -577,11 +578,9 @@ export class DocumentParserService {
     maxTextLength: number,
     onPage?: (current: number, total: number) => void
   ): Promise<{ content: string; pageCount: number; totalPages: number }> {
-    if (!this.pdfjsLib) {
-      this.pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
-    }
+    const pdfjs = await this.loadPdfjs()
     const data = new Uint8Array(fs.readFileSync(filePath))
-    const doc = await this.pdfjsLib.getDocument({ data, useSystemFonts: true, isEvalSupported: false }).promise
+    const doc = await pdfjs.getDocument({ data, useSystemFonts: true, isEvalSupported: false }).promise
     const totalPages = doc.numPages
     const textContent: string[] = []
     let totalChars = 0
@@ -608,13 +607,11 @@ export class DocumentParserService {
   }
 
   private async pdfHasImagesDirect(filePath: string, pageCount: number, onPage?: (current: number, total: number) => void): Promise<boolean> {
-    if (!this.pdfjsLib) {
-      this.pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
-    }
-    const OPS = this.pdfjsLib.OPS
+    const pdfjs = await this.loadPdfjs()
+    const OPS = pdfjs.OPS
     const IMAGE_OPS = new Set([OPS.paintImageXObject, OPS.paintImageMaskXObject, OPS.paintInlineImageXObject])
     const data = new Uint8Array(fs.readFileSync(filePath))
-    const doc = await this.pdfjsLib.getDocument({ data, useSystemFonts: true, isEvalSupported: false }).promise
+    const doc = await pdfjs.getDocument({ data, useSystemFonts: true, isEvalSupported: false }).promise
     try {
       for (let i = 1; i <= pageCount; i++) {
         const page = await doc.getPage(i)
@@ -1179,6 +1176,24 @@ export class DocumentParserService {
   private static readonly MAX_PDF_FILE_SIZE = 1000 * 1024 * 1024 // 1GB
 
   /**
+   * 加载 pdfjs-dist 并配置 workerSrc。
+   * pdfjs-dist 通过 `import(workerSrc)` 加载 fake worker，必须传 file:// URL，
+   * 否则 Windows 上原始绝对路径 `C:\\...` 会被 Node ESM 当协议 `c:` 解析而报错。
+   */
+  private async loadPdfjs(): Promise<typeof import('pdfjs-dist/legacy/build/pdf.mjs')> {
+    if (this.pdfjsLib) return this.pdfjsLib
+    const mod = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    try {
+      const workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')
+      mod.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href
+    } catch {
+      // 解析不到 worker 文件时，让 pdfjs 走默认行为
+    }
+    this.pdfjsLib = mod
+    return mod
+  }
+
+  /**
    * 将 PDF 指定页面渲染为 JPEG 图片
    * 用于扫描件/图片型 PDF 的视觉模型处理
    */
@@ -1228,15 +1243,13 @@ export class DocumentParserService {
   ): Promise<{ images: string[]; totalPages: number }> {
     const scale = dpi / DocumentParserService.PDF_POINTS_PER_INCH
 
-    if (!this.pdfjsLib) {
-      this.pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
-    }
+    const pdfjs = await this.loadPdfjs()
     if (!this.napiCanvas) {
       this.napiCanvas = await import('@napi-rs/canvas')
     }
 
     const data = new Uint8Array(fs.readFileSync(filePath))
-    const doc = await this.pdfjsLib.getDocument({ data, useSystemFonts: true, isEvalSupported: false }).promise
+    const doc = await pdfjs.getDocument({ data, useSystemFonts: true, isEvalSupported: false }).promise
     const totalPages = doc.numPages
     const images: string[] = []
     const { createCanvas } = this.napiCanvas

@@ -16,6 +16,7 @@
 'use strict'
 
 const fs = require('fs')
+const { pathToFileURL } = require('url')
 
 // Polyfill browser globals needed by pdfjs-dist for coordinate transforms.
 // Must be set before pdfjs-dist import so they're available everywhere.
@@ -54,7 +55,10 @@ async function loadPdfjs() {
     // Use destructured named export to ensure we set the right object
     const { GlobalWorkerOptions } = mod
     try {
-      GlobalWorkerOptions.workerSrc = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')
+      // pdfjs-dist 通过动态 import() 加载 fake worker，必须传 file:// URL，
+      // 否则 Windows 上 'C:\\...\\pdf.worker.mjs' 会被 Node ESM 解析成协议 'c:' 而报错
+      const workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')
+      GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href
     } catch {
       // If resolve fails, pdfjs-dist will try its fallback
     }
