@@ -2,7 +2,58 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.37.2 (2026-05-04) (Latest)
+## v10.38.1 (2026-05-07) (Latest)
+
+This patch release delivers a major revamp of the WeChat adapter with vendored upstream SDK sources, adds drag-and-drop file support and image paste passthrough in the terminal, and fixes multiple WeChat message loss bugs under various edge cases.
+
+### Improvements
+- 🔧 **WeChat Adapter Revamp**: Refactored wechat-adapter into a thin shell, vendored @tencent-weixin/openclaw-weixin@2.4.1 SDK source; all business logic delegated to the vendored module for a cleaner architecture
+- ✨ **Image Paste & File Drop**: Terminal now supports pasting images with passthrough display; drag-and-drop files use `webUtils.getPathForFile` to resolve real paths
+- 🔧 **Tool Call Notification Enhancement**: Extended parameter display in tool call notifications; extracted reusable `truncate` utility
+- 🔧 **Type Check Cleanup**: Cleared 19 typecheck:electron errors (Phase 1)
+
+### Bug Fixes
+- 🐛 **WeChat Message Loss (Inbound)**: Object parameter misalignment in inbound image/file attachment download caused all attachments to silently fail—fixed
+- 🐛 **WeChat Message Loss (Outbound)**: `sendMessage` returned `errcode=-2` due to vendored module incompatibility; now routed through vendor transform to sync with upstream weekly release
+- 🐛 **WeChat Missing Lifecycle Hooks**: Adapter didn't align with official openclaw-weixin lifecycle, causing persistent `errcode=-2` on outbound messages—fixed with full lifecycle compliance
+- 🐛 **Streaming Tool Call Deduplication**: Stream-based tool_calls sent process notifications before non-streaming message arrived, causing parameters to be deduplicated and swallowed—fixed
+- 🐛 **Windows PDF Drag-drop Crash**: Dragging a PDF into the terminal on Windows threw "Setting up fake worker failed: protocol 'c:'" error
+- 🐛 **Command Highlight Alignment**: Terminal settings command highlight option misaligned with its description text
+
+### Documentation
+- 📝 **Gateway Service Spec**: Added Gateway Service specification document
+
+## v10.38.0 (2026-05-06)
+
+This release introduces native chart generation for Agent, web_fetch and background Agent execution tools, a comprehensive Chinese writing standards framework, and a revamped Awaken panel UI.
+
+### New Features
+- 📊 **Chart Skill**: New standalone chart skill supporting 8 chart types; K-line charts match Tonghuashun/Tongdaxin pro-level quality with volume sub-charts, adaptive font sizing, and PNG direct output (bypassing ImageMagick Chinese character issues); `render_echarts_option` for custom ECharts rendering
+- 🌐 **Web Fetch Tool**: New `web_fetch` tool for extracting web page content
+- ⚡ **Background Agent Execution**: assistant-mode exec now supports background execution with new `await_exec` tool
+- 📄 **Word Image Embedding**: `word_from_markdown` supports image embedding, footnotes, and intra-document navigation
+- 📝 **Chinese Writing Skill**: Extracted `chinese-writing` as an independent skill
+- 🧩 **Document/Regulation Skills**: Split Word-based document/regulation into separate skills; regulation files support auto multi-level numbering
+- 🎛️ **Assistant Panel Position**: Toggle assistant panel between left/right sides
+
+### Improvements
+- 🇨🇳 **GB Standards in System Prompt**: GB/T 15834 & GB/T 15835 writing standards added to core system prompt
+- 🔄 **Awaken/Watch UI Overhaul**: Separated into two zones with tab-based history display
+- ✨ **Smooth AI Panel Animation**: FLIP-based smooth sliding animation for content appending
+- 🪟 **Compact Terminal Settings**: Optimized terminal settings panel layout
+- 🎯 **Left-sidebar Refinement**: Added 3px inner padding to sidebar right edge for easier scrollbar selection
+
+### Bug Fixes
+- 🐛 macOS production build Dock badge not showing
+- 🐛 sharp native module missing from asar package causing build failure
+- 🐛 `save_to_workspace` not using absolute path causing click-to-open failure
+- 🐛 `word_add` silently losing data
+- 🐛 Word image width overflow in A4 layout; block images compressed by document body styling
+- 🐛 Multiple i18n translation gaps
+- 🐛 Awaken/Watch panel typecheck errors
+- 🐛 Sensor `app_will_quit` lifecycle event residue
+
+## v10.37.2 (2026-05-04)
 
 This release fixes the Awaken panel usability issues and the emoji truncation bug causing LLM request failures, plus clears multiple dependency security alerts.
 

@@ -2,7 +2,28 @@
 
 本文件记录旗鱼（SailFish）的所有重要更新。
 
-## v10.38.0 (2026-05-06)（最新版本）
+## v10.38.1 (2026-05-07)（最新版本）
+
+本补丁版本对微信适配器进行了重大重构——vendor 了上游官方 SDK 源码，将其改造为薄壳架构；终端新增图片粘贴透传与文件拖放能力；修复了多项微信消息在各种边界条件下静默丢失的问题。
+
+### 改进
+- 🔧 **微信适配器重构**：wechat-adapter 改为薄壳，vendor @tencent-weixin/openclaw-weixin@2.4.1 源码，业务逻辑全部委托至 vendored 模块，结构更清晰
+- ✨ **图片粘贴与文件拖放**：终端支持图片粘贴透传显示，文件拖放通过 webUtils.getPathForFile 获取真实路径
+- 🔧 **工具调用通知优化**：扩展工具调用参数显示，抽出可复用的 truncate 工具函数
+- 🔧 **类型系统清理**：消除 typecheck:electron 19 条类型错误（Phase 1）
+
+### 问题修复
+- 🐛 **微信 Inbound 消息丢失**：图片/文件附件下载因对象参数错位导致全部附件静默丢失
+- 🐛 **微信 Outbound 消息失败**：sendMessage 因 vendored 模块不兼容返回 errcode=-2，改走 vendor transform 后与上游周同步对齐
+- 🐛 **微信生命周期不完整**：适配器未对齐官方 openclaw-weixin 生命周期，主动消息持续 errcode=-2，补齐后修复
+- 🐛 **流式 Tool Call 参数去重**：流式输出时 tool_call 先于非流式消息发送进程通知，导致参数被去重吞掉
+- 🐛 **Windows 拖入 PDF 崩溃**：Windows 下拖入 PDF 报 "Setting up fake worker failed: protocol 'c:'" 错误
+- 🐛 **终端设置对齐**：命令高亮选项与提示文字显示错位
+
+### 文档
+- 📝 **Gateway Service 规范文档**：添加 Gateway Service 规范
+
+## v10.38.0 (2026-05-06)
 
 图表技能首度登场——Agent 首次具备原生图表生成能力，K线达同花顺/通达信专业水准；新增 web_fetch 网页提取与 exec 后台执行；中文写作规范体系化，国标要求纳入系统提示。
 
