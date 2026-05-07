@@ -1,0 +1,134 @@
+name: Sync WeChat Upstream
+
+on:
+  schedule:
+    - cron: '37 3 * * 1'  # 每周一 03:37 UTC（避开整点拥堵）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Check upstream version
+        id: check
+        run: |
+          set +e
+          node scripts/vendor-wechat.mjs --check
+          status=$?
+          set -e
+          if [ $status -eq 0 ]; then
+            echo "needs_update=false" >> $GITHUB_OUTPUT
+          else
+            echo "needs_update=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Sync vendored sources
+        if: steps.check.outputs.needs_update == 'true'
+        id: sync
+        run: |
+          node scripts/vendor-wechat.mjs --skip-typecheck 2>&1 | tee /tmp/vendor-output.log
+          {
+            echo 'output<<EOF'
+            cat /tmp/vendor-output.log
+            echo EOF
+          } >> $GITHUB_OUTPUT
+
+      - name: Typecheck after sync
+        if: steps.check.outputs.needs_update == 'true'
+        id: typecheck
+        run: |
+          npx tsc --noEmit -p tsconfig.json 2>&1 | tee /tmp/tsc-output.log
+          ec=${PIPESTATUS[0]}
+          {
+            echo 'output<<EOF'
+            cat /tmp/tsc-output.log
+            echo EOF
+          } >> $GITHUB_OUTPUT
+          exit $ec
+        continue-on-error: true
+
+      - name: Lint after sync
+        if: steps.check.outputs.needs_update == 'true'
+        id: lint
+        run: npx eslint electron/services/im/wechat
+        continue-on-error: true
+
+      - name: Run unit tests
+        if: steps.check.outputs.needs_update == 'true'
+        id: tests
+        run: npx vitest run electron/services/im
+        continue-on-error: true
+
+      - name: Create PR or fallback issue
+        if: steps.check.outputs.needs_update == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(node -e "console.log(require('./electron/services/im/wechat/UPSTREAM.md').match(/Version: \`(.+?)\`/)?.[1] || 'unknown')" 2>/dev/null || echo "unknown")
+          # 退化方案：用 grep 提取版本号
+          version=$(grep -oP 'Version: \`\K[^\`]+' electron/services/im/wechat/UPSTREAM.md || echo "unknown")
+          branch="auto/sync-wechat-${version}"
+
+          tc_status="${{ steps.typecheck.outcome }}"
+          lint_status="${{ steps.lint.outcome }}"
+          tests_status="${{ steps.tests.outcome }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "Branch $branch already exists on remote, skipping"
+            exit 0
+          fi
+
+          git checkout -b "$branch"
+          git add electron/services/im/wechat scripts/vendor-wechat.mjs scripts/vendor-wechat-transforms.mjs
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "chore(im): sync @tencent-weixin/openclaw-weixin to ${version}"
+          git push origin "$branch"
+
+          body=$(cat <<EOF
+          ## Auto-sync from upstream
+
+          Synced \`@tencent-weixin/openclaw-weixin\` to **${version}**.
+
+          ### Status
+          - Typecheck: \`${tc_status}\`
+          - Lint: \`${lint_status}\`
+          - Unit tests: \`${tests_status}\`
+
+          ### Vendor script output
+          \`\`\`
+          ${{ steps.sync.outputs.output }}
+          \`\`\`
+
+          ### Typecheck output
+          \`\`\`
+          ${{ steps.typecheck.outputs.output }}
+          \`\`\`
+
+          ---
+          自动生成。如果 typecheck/lint/tests 通过且 diff 看起来合理，可直接 merge。
+          否则需要更新 \`scripts/vendor-wechat-transforms.mjs\` 里的 transform 规则后重跑。
+          EOF
+          )
+          echo "$body" | gh pr create --title "chore(im): sync wechat upstream → ${version}" --body-file - --base develop
