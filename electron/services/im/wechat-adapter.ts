@@ -160,6 +160,7 @@ async function apiPost<T>(baseUrl: string, apiPath: string, token: string, body:
   const jsonBody = JSON.stringify(body)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const startedAt = Date.now()
 
   try {
     const resp = await fetch(url, {
@@ -175,6 +176,13 @@ async function apiPost<T>(baseUrl: string, apiPath: string, token: string, body:
     const data = await resp.json() as T
     checkApiError(data, apiPath)
     return data
+  } catch (err: any) {
+    const elapsed = Date.now() - startedAt
+    const reason = err?.name === 'AbortError'
+      ? `timeout(${timeoutMs}ms)`
+      : (err?.message || String(err))
+    log.error(`apiPost failed path=${apiPath} elapsed=${elapsed}ms reason=${reason}`)
+    throw err
   } finally {
     clearTimeout(timer)
   }
@@ -701,7 +709,12 @@ export class WeChatAdapter implements IMAdapter {
       base_info: { channel_version: '1.0' } as BaseInfo,
     }
 
-    await apiPost(this.baseUrl, '/ilink/bot/sendmessage', this.token, body)
+    try {
+      await apiPost(this.baseUrl, '/ilink/bot/sendmessage', this.token, body)
+    } catch (err: any) {
+      log.error(`sendMessageApi failed toUserId=${toUserId} textLen=${text.length} hasContextToken=${!!contextToken} clientId=${clientId} err=${err?.message || err}`)
+      throw err
+    }
   }
 
   // ==================== CDN 上传 ====================
