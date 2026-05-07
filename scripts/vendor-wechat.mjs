@@ -1,0 +1,153 @@
+#!/usr/bin/env node
+// Vendor @tencent-weixin/openclaw-weixin into electron/services/im/wechat/.
+//
+// Pipeline: npm view → npm pack → extract → copy whitelist → apply transforms
+//           → write UPSTREAM.md → run typecheck.
+//
+// Flags:
+//   --check     exit 1 if upstream version differs from UPSTREAM.md (no copy)
+//   --version=X pin to a specific version instead of "latest"
+//   --skip-typecheck  skip the final tsc run
+
+import { execSync, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import os from "node:os";
+import { UPSTREAM_PACKAGE, VENDOR_DIR, FILE_LIST, SHIM_FILES, applyTransforms } from "./vendor-wechat-transforms.mjs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, "..");
+const vendorAbs = path.join(repoRoot, VENDOR_DIR);
+const upstreamMdPath = path.join(vendorAbs, "UPSTREAM.md");
+
+const args = process.argv.slice(2);
+const checkOnly = args.includes("--check");
+const skipTypecheck = args.includes("--skip-typecheck");
+const versionArg = args.find((a) => a.startsWith("--version="))?.split("=")[1];
+
+function sh(cmd, opts = {}) {
+  return execSync(cmd, { encoding: "utf8", ...opts }).trim();
+}
+
+function readCurrentVersion() {
+  if (!fs.existsSync(upstreamMdPath)) return null;
+  const m = fs.readFileSync(upstreamMdPath, "utf8").match(/^- Version: `([^`]+)`/m);
+  return m?.[1] ?? null;
+}
+
+function fetchLatestVersion() {
+  if (versionArg) return versionArg;
+  return sh(`npm view ${UPSTREAM_PACKAGE} version`);
+}
+
+function npmPackTo(targetDir, version) {
+  fs.mkdirSync(targetDir, { recursive: true });
+  const out = sh(`npm pack ${UPSTREAM_PACKAGE}@${version} --pack-destination=${targetDir}`);
+  const tgz = out.split("\n").pop().trim();
+  const tgzAbs = path.join(targetDir, tgz);
+  sh(`tar -xzf ${tgzAbs} -C ${targetDir}`);
+  return path.join(targetDir, "package");
+}
+
+function copyAndTransform(packageDir) {
+  for (const rel of FILE_LIST) {
+    const src = path.join(packageDir, "src", rel);
+    const dst = path.join(vendorAbs, rel);
+    if (!fs.existsSync(src)) {
+      throw new Error(`Whitelisted file missing in upstream: src/${rel}`);
+    }
+    if (SHIM_FILES.includes(rel)) {
+      throw new Error(`File ${rel} is in both FILE_LIST and SHIM_FILES — pick one.`);
+    }
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    const transformed = applyTransforms(rel, fs.readFileSync(src, "utf8"));
+    fs.writeFileSync(dst, transformed);
+  }
+}
+
+function assertShimsExist() {
+  for (const rel of SHIM_FILES) {
+    const p = path.join(vendorAbs, rel);
+    if (!fs.existsSync(p)) {
+      throw new Error(`Missing local shim: ${VENDOR_DIR}/${rel}`);
+    }
+  }
+}
+
+function writeUpstreamMd(version, packageJson) {
+  const lines = [
+    `# Vendored: ${UPSTREAM_PACKAGE}`,
+    "",
+    "This directory contains source code copied from the upstream npm package.",
+    "Do not edit files listed under \"Vendored files\" by hand — modify",
+    "`scripts/vendor-wechat-transforms.mjs` and re-run `node scripts/vendor-wechat.mjs`.",
+    "",
+    `- Package: \`${UPSTREAM_PACKAGE}\``,
+    `- Version: \`${version}\``,
+    `- License: ${packageJson.license || "MIT"}`,
+    `- Synced: ${new Date().toISOString()}`,
+    "",
+    "## Vendored files",
+    "",
+    ...FILE_LIST.map((f) => `- \`${f}\``),
+    "",
+    "## Local shims (not overwritten by sync)",
+    "",
+    ...SHIM_FILES.map((f) => `- \`${f}\``),
+    "",
+  ];
+  fs.writeFileSync(upstreamMdPath, lines.join("\n"));
+}
+
+function runTypecheck() {
+  const result = spawnSync("npx", ["tsc", "--noEmit", "-p", "tsconfig.json"], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+  if (result.status !== 0) {
+    throw new Error("Typecheck failed after vendoring. Adjust transforms.");
+  }
+}
+
+async function main() {
+  const current = readCurrentVersion();
+  const latest = fetchLatestVersion();
+  console.log(`[vendor-wechat] current=${current ?? "<none>"} upstream=${latest}`);
+
+  if (checkOnly) {
+    if (current !== latest) {
+      console.log(`[vendor-wechat] Upstream version differs (${current} → ${latest})`);
+      process.exit(1);
+    }
+    console.log("[vendor-wechat] Up to date.");
+    return;
+  }
+
+  if (current === latest) {
+    console.log("[vendor-wechat] Already at latest. Nothing to do (use --version=X to force).");
+    if (!versionArg) return;
+  }
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "vendor-wechat-"));
+  try {
+    const pkgDir = npmPackTo(tmp, latest);
+    const packageJson = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"));
+    copyAndTransform(pkgDir);
+    assertShimsExist();
+    writeUpstreamMd(latest, packageJson);
+    console.log(`[vendor-wechat] Synced ${FILE_LIST.length} files from ${UPSTREAM_PACKAGE}@${latest}`);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+
+  if (!skipTypecheck) {
+    console.log("[vendor-wechat] Running typecheck...");
+    runTypecheck();
+  }
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
