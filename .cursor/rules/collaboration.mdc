@@ -29,6 +29,12 @@ alwaysApply: true
 - 拆成多个 commit，每个 commit 可独立验证
 - 重构和新功能分开做，不要混在一起
 
+## SPEC 文档要求
+
+- **改 service 前先读 SPEC.md**：改动任何 service 前，必须先读取对应的 `electron/services/XXX_SPEC.md`（或子目录 `SPEC.md`）。若不存在，先写一份再动手改代码
+- **探索必须用 code-query**：摸底类层次/方法/接口/引用一律用 `npx tsx scripts/code-query.ts`，**禁止直接 Read 整文件做"摸底"**
+- **新 service 必须带 SPEC**：完成新 service 后必须有对应 SPEC.md，否则 PR/commit 不能过
+
 ## 禁止事项
 
 - 不跑测试就说"完成了"

@@ -1,0 +1,79 @@
+# Skill Market Service SPEC
+
+> Last verified: 2026-05-07
+
+## 职责
+
+技能市场客户端。从 SailFish 官方注册表和 ClawHub 社区获取技能列表，提供搜索、预览、安装、更新、卸载流程，并扫描技能内容安全性。支持本地 `.md` 文件的技能导入。
+
+## 文件 / 规模
+
+单文件：`electron/services/skill-market.service.ts`（~912 行）
+
+## 公开 API
+
+| 方法签名 | 用途 | 主要调用方 |
+|---------|------|-----------|
+| `getRegistryUrl(): string` | 获取当前注册表 URL | UI |
+| `setRegistryUrl(url): void` | 切换注册表地址 | 设置页 |
+| `async fetchRegistry(force?): Promise<SkillRegistry>` | 拉取注册表元数据 | 初始化/ls 前 |
+| `async listSkills(force?): Promise<MarketSkillItem[]>` | 列出所有技能（含安装状态） | 市场页 |
+| `async searchSkills(query): Promise<MarketSkillItem[]>` | 按关键词搜索技能 | 市场搜索 |
+| `async getCategories(): Promise<SkillCategory[]>` | 获取技能分类列表 | 市场分类 |
+| `async installSkill(skillId): Promise<SkillOperationResult>` | 安装技能（从注册表） | 市场/CLI |
+| `uninstallSkill(skillId): SkillOperationResult` | 卸载技能 | 市场/CLI |
+| `async updateSkill(skillId): Promise<SkillOperationResult>` | 更新已安装技能 | 更新检查 |
+| `async searchClawHub(query): Promise<MarketSkill[]>` | 搜索 ClawHub 社区技能 | 社区市场 |
+| `async previewSkill(skillId, source?): Promise<SkillPreviewResult>` | 预览技能内容（含安全扫描） | 安装前预览 |
+| `async installClawHubSkill(skillId): Promise<SkillOperationResult>` | 安装 ClawHub 技能 | 社区市场 |
+| `previewLocalSkill(localPath): SkillPreviewResult` | 预览本地技能文件 | 本地导入 |
+| `installLocalSkillFiles(skillId, filesMap): SkillOperationResult` | 安装本地技能文件 | 本地导入 |
+| `installSkillFromContent(skillId, content, meta?): SkillOperationResult` | 从内容字符串直接安装 | 编程接口 |
+
+## 核心类型 / 接口
+
+```ts
+type SkillSource = "sailfish" | "clawhub"
+interface SkillCategory { id, name, nameEn, icon }
+interface MarketSkill {
+  id, name, description, version, author, source
+  category?, tags?, featured?, url, size?, permissions?
+  createdAt?, updatedAt?
+}
+interface MarketSkillItem extends MarketSkill { installed, installedVersion?, hasUpdate }
+interface SkillOperationResult { success: boolean; error?: string }
+interface SkillPreviewResult {
+  success: boolean; skill?: MarketSkill; content?: string
+  scan?: SecurityScanResult; files?: string[]; error?: string
+}
+interface SecurityScanResult { safe: boolean; warnings: SecurityWarning[] }
+interface SecurityWarning {
+  type: "hidden_content" | "sensitive_path" | "data_exfil" | "proc_manipulation" | "unapproved_network" | "other"
+  description: string; evidence: string
+}
+```
+
+## 依赖（跨 service）
+
+| 服务 | 关系 | 说明 |
+|------|:----:|------|
+| `ConfigService` | **必需** | 获取注册表 URL |
+| `UserSkillService` | **必需** | 安装/卸载/管理本地技能文件 |
+
+## 关键行为 / 数据流
+
+**远程安装流程**：
+1. `fetchRegistry` 拉取注册表 JSON → 缓存 `CACHE_TTL` 时间
+2. `previewSkill` → 获取 `SKILL.md` 内容 → `SecurityScan` 扫描 → 返回预览
+3. `installSkill` → 下载 skill 文件 → 写入 `~/.sailfish/skills/{id}/` → 调用 `UserSkillService`
+
+**安全扫描**：`scanSkillContent` 检查隐藏内容（零宽字符）、敏感路径、数据外泄模式、进程操纵、未授权网络访问。
+
+**本地导入**：`previewLocalSkill` 读目录内所有文件 → `installLocalSkillFiles` 写入 skills 目录
+
+## 关键约束
+
+- **安全扫描必须在安装前完成**——`installSkill` / `installClawHubSkill` / `installSkillFromContent` 必须先过 `scanSkillContent`
+- **注册表缓存不得跨实例共享**——`CACHE_TTL` 按实例计算，不得静态化
+- **技能文件大小限制**：`MAX_SKILL_SIZE` + `MAX_SINGLE_FILE_SIZE`，超限拒绝安装
+- **安装路径必须在 `UserSkillService.getSkillsDir()` 内**——`assertInsideDir` 检查，防路径遍历攻击
