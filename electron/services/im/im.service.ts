@@ -132,6 +132,12 @@ const TOOL_I18N_MAP: Record<string, Parameters<typeof t>[0]> = {
   dispatch_agents: 'tool.dispatch_agents',
 }
 
+/** 截断过长文本，附加省略号 */
+function truncate(text: string, maxLen = 100): string {
+  if (!text) return ''
+  return text.length > maxLen ? text.substring(0, maxLen) + '...' : text
+}
+
 /**
  * 将工具调用格式化为用户友好的通知文本
  * 通过映射复用 i18n 已有翻译，无匹配时 fallback 到 toolName
@@ -140,24 +146,61 @@ function formatToolNotification(toolName: string, toolArgs?: Record<string, unkn
   const icon = TOOL_ICONS[toolName] || '🔧'
   const i18nKey = TOOL_I18N_MAP[toolName]
   const label = i18nKey ? t(i18nKey) : toolName
+  const args = toolArgs || {}
 
   // 根据工具类型附加关键参数
   let detail = ''
   if (toolName === 'execute_command' || toolName === 'exec') {
-    const cmd = toolArgs?.command ? String(toolArgs.command) : ''
+    const cmd = args.command ? String(args.command) : ''
     detail = cmd ? `\n$ ${cmd.length > 200 ? cmd.substring(0, 200) + '...' : cmd}` : ''
-  } else if (toolArgs?.path) {
-    detail = `  ${toolArgs.path}`
-  } else if (toolName === 'file_search' && (toolArgs?.pattern || toolArgs?.query)) {
-    detail = `  ${toolArgs.pattern || toolArgs.query}`
-  } else if ((toolName === 'skill' || toolName === 'load_skill' || toolName === 'load_user_skill') && (toolArgs?.skill_id || toolArgs?.name)) {
-    detail = `  ${toolArgs.skill_id || toolArgs.name}`
-  } else if (toolName === 'send_control_key' && toolArgs?.key) {
-    detail = ` ${toolArgs.key}`
-  } else if (toolName === 'wait' && toolArgs?.seconds) {
-    detail = ` ${toolArgs.seconds}s`
-  } else if (toolName === 'dispatch_agents' && Array.isArray(toolArgs?.tasks)) {
-    detail = ` ${(toolArgs.tasks as Array<unknown>).length} 个子任务`
+  } else if (toolName === 'file_search' && (args.pattern || args.query)) {
+    detail = `  ${truncate(String(args.pattern || args.query))}`
+  } else if (toolName === 'send_control_key' && args.key) {
+    detail = ` ${args.key}`
+  } else if (toolName === 'wait' && args.seconds) {
+    detail = ` ${args.seconds}s`
+  } else if (toolName === 'dispatch_agents' && Array.isArray(args.tasks)) {
+    detail = ` ${(args.tasks as Array<unknown>).length} 个子任务`
+  } else if (toolName === 'skill' || toolName === 'load_skill' || toolName === 'load_user_skill') {
+    const id = args.skill_id || args.name
+    if (id) detail = `  ${id}`
+  } else if (toolName === 'web_search' || toolName === 'search_knowledge') {
+    if (args.query) detail = `  ${truncate(String(args.query))}`
+  } else if (toolName === 'search_history' && args.keyword) {
+    detail = `  ${truncate(String(args.keyword))}`
+  } else if (toolName === 'web_fetch' && args.url) {
+    detail = `  ${truncate(String(args.url))}`
+  } else if (toolName === 'send_input' && args.text) {
+    detail = `  ${truncate(String(args.text))}`
+  } else if (toolName === 'remember_info' && args.info) {
+    detail = `  ${truncate(String(args.info))}`
+  } else if (toolName === 'ask_user' && args.question) {
+    detail = `  ${truncate(String(args.question))}`
+  } else if (toolName === 'talk_to_user') {
+    const msg = args.msg || args.message || args.text
+    if (msg) detail = `  ${truncate(String(msg))}`
+  } else if (toolName === 'send_to_chat' && args.file_path) {
+    detail = `  ${truncate(String(args.file_path))}`
+  } else if (toolName === 'recall' && args.task_id) {
+    detail = `  ${truncate(String(args.task_id))}`
+  } else if (toolName === 'get_knowledge_doc' && args.doc_id) {
+    detail = `  ${truncate(String(args.doc_id))}`
+  } else if (toolName === 'plan' && args.title) {
+    detail = `  ${truncate(String(args.title))}`
+  } else if (toolName.startsWith('calendar_') || toolName.startsWith('todo_')) {
+    const action = toolName.split('_').slice(1).join('_')
+    const parts: string[] = []
+    if (action) parts.push(action)
+    if (args.title) parts.push(truncate(String(args.title)))
+    if (parts.length > 0) detail = `  ${parts.join(' · ')}`
+  } else if (toolName === 'wecom_read' || toolName === 'wecom_write') {
+    const action = toolName === 'wecom_read' ? 'read' : 'write'
+    const parts: string[] = [action]
+    if (args.resource) parts.push(truncate(String(args.resource)))
+    detail = `  ${parts.join(' · ')}`
+  } else if (args.path) {
+    // read_file / edit_file / write_text_file 等通用 path 参数兜底
+    detail = `  ${truncate(String(args.path))}`
   }
 
   return `${icon} ${label}${detail}`
