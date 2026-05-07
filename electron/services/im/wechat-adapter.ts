@@ -12,8 +12,14 @@ import type { IMAdapter, IMIncomingMessage, IMPlatform, WeChatConfig, IMAttachme
 import { IM_TEXT_MAX_LENGTH } from './types'
 import { createLogger } from '../../utils/logger'
 
-import { apiGetFetch, getUpdates as vendoredGetUpdates } from './wechat/api/api'
+import {
+  apiGetFetch,
+  getUpdates as vendoredGetUpdates,
+  notifyStart as vendoredNotifyStart,
+  notifyStop as vendoredNotifyStop,
+} from './wechat/api/api'
 import type { WeixinApiOptions } from './wechat/api/api'
+import { WeixinConfigManager } from './wechat/api/config-cache'
 import {
   SESSION_EXPIRED_ERRCODE,
   assertSessionActive,
@@ -21,6 +27,11 @@ import {
 } from './wechat/api/session-guard'
 import { sendMessageWeixin } from './wechat/messaging/send'
 import { sendWeixinMediaFile } from './wechat/messaging/send-media'
+import {
+  setContextToken,
+  getContextToken,
+  restoreContextTokens,
+} from './wechat/messaging/inbound'
 import { downloadAndDecryptBuffer, downloadPlainCdnBuffer } from './wechat/cdn/pic-decrypt'
 import type { WeixinMessage, MessageItem } from './wechat/api/types'
 import { MessageItemType } from './wechat/api/types'
@@ -73,6 +84,14 @@ export class WeChatAdapter implements IMAdapter {
   private qrPollBaseUrl: string = FIXED_BASE_URL
   private loginAbort: AbortController | null = null
 
+  /**
+   * 上游 monitor.ts 在每条 inbound 上调 ConfigManager.getForUser(userId, msg.context_token)，
+   * 既缓存 typing_ticket（24h TTL + 指数退避），又触发服务端 per-user 配置注册。
+   * 没这一步，sendmessage 会被服务端持续以 errcode=-2 errmsg=unknown 拒掉。
+   */
+  private configManager: WeixinConfigManager | null = null
+  private contextTokensRestored = false
+
   constructor(private config: WeChatConfig) {
     this.token = config.token || ''
     this.baseUrl = config.baseUrl || FIXED_BASE_URL
@@ -85,6 +104,25 @@ export class WeChatAdapter implements IMAdapter {
 
   private get apiOpts(): WeixinApiOptions {
     return { baseUrl: this.baseUrl, token: this.token }
+  }
+
+  /** 获取/惰性创建 ConfigManager 单例（token/baseUrl 变化时重建）。 */
+  private getConfigManager(): WeixinConfigManager {
+    if (!this.configManager) {
+      this.configManager = new WeixinConfigManager(
+        { baseUrl: this.baseUrl, token: this.token },
+        (msg) => log.debug(msg),
+      )
+    }
+    return this.configManager
+  }
+
+  /**
+   * 出站发消息时取最新 context_token：优先 store（持久化），缺省再用 replyContext 快照。
+   * 上游所有 outbound 路径（channel.ts 的 sendText/sendMedia）都走 getContextToken。
+   */
+  private resolveContextToken(replyContext: { userId: string; contextToken?: string }): string | undefined {
+    return getContextToken(this.accountKey, replyContext.userId) ?? replyContext.contextToken
   }
 
   /** 包裹 vendored 调用：先 assert 暂停期，捕获 -14 触发 pause，其它原样抛出。 */
@@ -213,6 +251,17 @@ export class WeChatAdapter implements IMAdapter {
     this.stopPolling()
     this.connected = false
     this.onConnectionChange?.(false)
+    // 与上游 channel.ts 的 stopAccount 对齐：通知服务端"客户端下线"，失败仅 warn。
+    if (this.token) {
+      try {
+        const resp = await vendoredNotifyStop(this.apiOpts)
+        if (resp.ret !== undefined && resp.ret !== 0) {
+          log.warn(`notifyStop: ret=${resp.ret} errmsg=${resp.errmsg ?? ''}`)
+        }
+      } catch (err) {
+        log.warn(`notifyStop failed during shutdown (ignored): ${String(err)}`)
+      }
+    }
     log.info('Stopped')
   }
 
@@ -225,12 +274,13 @@ export class WeChatAdapter implements IMAdapter {
   }
 
   async sendText(replyContext: any, text: string): Promise<void> {
-    const { userId, contextToken } = replyContext as { userId: string; contextToken?: string }
+    const ctx = replyContext as { userId: string; contextToken?: string }
+    const contextToken = this.resolveContextToken(ctx)
     const truncated = text.length > IM_TEXT_MAX_LENGTH
       ? text.substring(0, IM_TEXT_MAX_LENGTH - 20) + '\n...(已截断)'
       : text
     await this.guarded(() => sendMessageWeixin({
-      to: userId,
+      to: ctx.userId,
       text: truncated,
       opts: { ...this.apiOpts, contextToken },
     }))
@@ -241,11 +291,12 @@ export class WeChatAdapter implements IMAdapter {
   }
 
   async sendImage(replyContext: any, filePath: string): Promise<void> {
-    const { userId, contextToken } = replyContext as { userId: string; contextToken?: string }
-    log.info(`sendImage: file=${path.basename(filePath)} userId=${userId} hasToken=${!!contextToken}`)
+    const ctx = replyContext as { userId: string; contextToken?: string }
+    const contextToken = this.resolveContextToken(ctx)
+    log.info(`sendImage: file=${path.basename(filePath)} userId=${ctx.userId} hasToken=${!!contextToken}`)
     await this.guarded(() => sendWeixinMediaFile({
       filePath,
-      to: userId,
+      to: ctx.userId,
       text: '',
       opts: { ...this.apiOpts, contextToken },
       cdnBaseUrl: CDN_BASE_URL,
@@ -253,11 +304,12 @@ export class WeChatAdapter implements IMAdapter {
   }
 
   async sendFile(replyContext: any, filePath: string, fileName?: string): Promise<void> {
-    const { userId, contextToken } = replyContext as { userId: string; contextToken?: string }
-    log.info(`sendFile: file=${fileName || path.basename(filePath)} userId=${userId} hasToken=${!!contextToken}`)
+    const ctx = replyContext as { userId: string; contextToken?: string }
+    const contextToken = this.resolveContextToken(ctx)
+    log.info(`sendFile: file=${fileName || path.basename(filePath)} userId=${ctx.userId} hasToken=${!!contextToken}`)
     await this.guarded(() => sendWeixinMediaFile({
       filePath,
-      to: userId,
+      to: ctx.userId,
       text: '',
       opts: { ...this.apiOpts, contextToken },
       cdnBaseUrl: CDN_BASE_URL,
@@ -271,6 +323,28 @@ export class WeChatAdapter implements IMAdapter {
     this.polling = true
     this.abortController = new AbortController()
     this.reconnectDelay = RECONNECT_DELAY_MS
+
+    // 上游 channel.ts 的 startAccount 顺序：restoreContextTokens → setStatus → notifyStart → monitor。
+    // restoreContextTokens 把磁盘上的 contextTokenStore 加载回内存（重启后还能 proactive 推送），
+    // notifyStart 通知服务端"客户端上线"——没这步 sendmessage 一律 errcode=-2。
+    if (!this.contextTokensRestored) {
+      try {
+        restoreContextTokens(this.accountKey)
+      } catch (err) {
+        log.warn(`restoreContextTokens failed (ignored): ${String(err)}`)
+      }
+      this.contextTokensRestored = true
+    }
+
+    try {
+      const resp = await vendoredNotifyStart(this.apiOpts)
+      if (resp.ret !== undefined && resp.ret !== 0) {
+        log.warn(`notifyStart: ret=${resp.ret} errmsg=${resp.errmsg ?? ''}`)
+      }
+    } catch (err) {
+      // 上游 startAccount 也是 warn 不抛——失败 polling 仍然可继续，但 sendmessage 大概率会失败
+      log.warn(`notifyStart failed during startup (ignored): ${String(err)}`)
+    }
 
     this.setConnected(true)
     this.pollLoop(this.abortController.signal)
@@ -344,6 +418,24 @@ export class WeChatAdapter implements IMAdapter {
     const userId = msg.from_user_id || ''
     if (!userId) return
 
+    // 与上游 monitor.ts + process-message.ts 对齐：每条 inbound 都要做两件事，
+    // 不做 sendmessage 一律会被服务端拒掉（errcode=-2）。
+    //   1. setContextToken：把 token 写进 store + 持久化到磁盘
+    //   2. ConfigManager.getForUser：触发 getconfig 注册 user 端会话 + 缓存 typing_ticket
+    if (msg.context_token) {
+      try {
+        setContextToken(this.accountKey, userId, msg.context_token)
+      } catch (err) {
+        log.warn(`setContextToken failed (ignored): ${String(err)}`)
+      }
+    }
+    try {
+      // 不 await 失败：configManager 内部有重试与退避，发不出去也不阻断这条消息
+      void this.getConfigManager().getForUser(userId, msg.context_token)
+    } catch (err) {
+      log.warn(`configManager.getForUser threw (ignored): ${String(err)}`)
+    }
+
     const text = extractTextFromItems(msg.item_list)
     const attachments = await this.downloadAttachments(msg.item_list)
 
@@ -360,6 +452,7 @@ export class WeChatAdapter implements IMAdapter {
       chatType: 'single',
       replyContext: {
         userId,
+        // 仅作 fallback 种子；实际发送时 resolveContextToken 优先取 store 里的最新值
         contextToken: msg.context_token,
       },
       ...(attachments.length > 0 ? { attachments } : {}),
