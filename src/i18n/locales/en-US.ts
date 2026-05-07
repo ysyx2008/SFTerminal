@@ -1953,6 +1953,7 @@ export default {
     connectionClosed: 'Connection closed',
     reconnect: 'Reconnect',
     reconnecting: 'Reconnecting...',
+    dropFiles: 'Drop files here',
     cannotReconnect: 'Cannot reconnect',
     cannotReconnectHint: 'This connection is not saved as a session, please reconnect from Session Manager',
     reconnectFailed: 'Reconnect failed',

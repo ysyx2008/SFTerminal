@@ -1953,6 +1953,7 @@ export default {
     connectionClosed: '连接已关闭',
     reconnect: '重新连接',
     reconnecting: '正在重新连接...',
+    dropFiles: '拖放文件到终端',
     cannotReconnect: '无法重连',
     cannotReconnectHint: '该连接未保存为会话，请从会话管理器重新连接',
     reconnectFailed: '重连失败',

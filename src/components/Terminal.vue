@@ -68,6 +68,9 @@ let dprChangeHandler: (() => void) | null = null
 // 用户输入缓冲区（用于 CWD 追踪）
 let inputBuffer = ''
 
+// 拖放视觉指示
+const isDragOver = ref(false)
+
 // ============== 命令行高亮功能 ==============
 interface CommandHighlight {
   marker: any
@@ -297,14 +300,29 @@ onMounted(async () => {
   const handlePaste = async () => {
     if (isPasting || isDisposed || !terminal) return
     isPasting = true
-    
+
     try {
-      const text = await navigator.clipboard.readText()
-      if (text) {
-        terminalStore.writeToPty(props.ptyId, props.type, text)
+      const items = await navigator.clipboard.read()
+      const hasImage = items.some(item =>
+        item.types.some(t => t.startsWith('image/'))
+      )
+      if (hasImage) {
+        // 剪贴板含图片：透传 Ctrl+V 给 pty，让 CLI 进程（如 Claude Code）自行读剪贴板
+        terminalStore.writeToPty(props.ptyId, props.type, '\x16')
+      } else {
+        const text = await navigator.clipboard.readText()
+        if (text) {
+          terminalStore.writeToPty(props.ptyId, props.type, text)
+        }
       }
     } catch (e) {
-      // 忽略错误
+      // fallback: 尝试纯文本
+      try {
+        const text = await navigator.clipboard.readText()
+        if (text) {
+          terminalStore.writeToPty(props.ptyId, props.type, text)
+        }
+      } catch {}
     } finally {
       setTimeout(() => { isPasting = false }, 200)
     }
@@ -788,6 +806,38 @@ const menuSendToAi = () => {
     emit('sendToAi', contextMenu.value.selectedText)
   }
   hideContextMenu()
+}
+
+// ============== 拖放文件到终端 ==============
+const handleDragOver = (e: DragEvent) => {
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+}
+
+const handleDragEnter = () => {
+  isDragOver.value = true
+}
+
+const handleDragLeave = (e: DragEvent) => {
+  if (e.currentTarget && !(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+    isDragOver.value = false
+  }
+}
+
+const handleDrop = (e: DragEvent) => {
+  isDragOver.value = false
+  const files = e.dataTransfer?.files
+  if (!files?.length) return
+
+  const paths: string[] = []
+  for (const file of files) {
+    const filePath = (file as any).path as string
+    if (filePath) {
+      paths.push(filePath.includes(' ') ? `"${filePath}"` : filePath)
+    }
+  }
+  if (paths.length > 0) {
+    terminalStore.writeToPty(props.ptyId, props.type, paths.join(' '))
+  }
 }
 
 const menuClear = () => {
@@ -1384,13 +1434,18 @@ defineExpose({
 </script>
 
 <template>
-  <div 
-    class="terminal-wrapper" 
+  <div
+    class="terminal-wrapper"
     @mousedown.capture="handleTerminalMouseDown"
     @contextmenu="handleContextMenu"
     @click="handleTerminalClick"
+    @dragover.prevent="handleDragOver"
+    @drop.prevent="handleDrop"
+    @dragenter="handleDragEnter"
+    @dragleave="handleDragLeave"
   >
     <div ref="terminalRef" class="terminal-inner"></div>
+    <div v-if="isDragOver" class="drop-overlay">{{ t('terminal.dropFiles') }}</div>
     
     <!-- 卡片现在由 xterm Decoration API 直接渲染到终端内部 -->
     
@@ -1507,6 +1562,21 @@ defineExpose({
   width: 100%;
   height: 100%;
   overflow: hidden;
+}
+
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(100, 150, 255, 0.08);
+  border: 2px dashed var(--accent-primary);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+  pointer-events: none;
+  z-index: 10;
 }
 
 .terminal-inner :deep(.xterm) {
