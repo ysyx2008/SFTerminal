@@ -235,7 +235,7 @@ const formatHost = (session: SshSession) => {
 }
 
 .welcome-content {
-  max-width: 720px;
+  max-width: 780px;
   width: 100%;
   margin: auto;
   /* 入场动画 */
@@ -374,17 +374,22 @@ const formatHost = (session: SshSession) => {
   }
 }
 
+/* 卡片容器：默认 4 列等宽 grid，让"关切"始终与前 3 张同行不换行；
+   窗口很窄时（< 640px）降级为单列纵向堆叠。 */
 .action-cards {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
   gap: 20px;
+  justify-content: center;
 }
 
 @media (max-width: 640px) {
   .action-cards {
-    flex-direction: column;
-    align-items: center;
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+  .action-card {
+    width: min(280px, 100%);
   }
 }
 
@@ -413,9 +418,9 @@ const formatHost = (session: SshSession) => {
   justify-content: center;
   text-align: center;
   gap: 12px;
-  width: 170px;
+  /* 宽度由 grid 列均分；保留 height 与 min-width 防止内容挤压 */
+  min-width: 0;
   height: 165px;
-  flex-shrink: 0;
   overflow: hidden;
   /* 入场动画只用 opacity，让 hover transform 正常工作 */
   animation: cardFadeIn 0.25s ease-out both;

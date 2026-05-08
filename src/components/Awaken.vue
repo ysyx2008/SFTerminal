@@ -382,12 +382,14 @@ const watchStatusOf = (w: WatchDefinition): WatchUIStatus => {
 const errorCount = computed(() =>
   userWatches.value.filter(w => w.enabled && watchStatusOf(w) === 'error').length
 )
-const normalCount = computed(() =>
-  userWatches.value.filter(w => w.enabled && watchStatusOf(w) === 'success').length
-)
 const runningCount = computed(() => userWatches.value.filter(w => runningWatches.value.has(w.id)).length)
 const disabledCount = computed(() => userWatches.value.filter(w => !w.enabled).length)
 const totalCount = computed(() => userWatches.value.length)
+// 「正常」= 启用 - 异常 - 运行中，包含 idle（从未运行过）和 warning（上次被取消/跳过）。
+// 这样汇总条的口径满足 normal + error + running + disabled = total，不会漏数。
+const normalCount = computed(() =>
+  Math.max(0, totalCount.value - disabledCount.value - errorCount.value - runningCount.value)
+)
 
 // 状态汇总条筛选
 type WatchStatusFilter = 'all' | 'normal' | 'error' | 'running' | 'disabled'
@@ -399,7 +401,12 @@ const setStatusFilter = (f: WatchStatusFilter) => {
 const filteredWatches = computed<WatchDefinition[]>(() => {
   const list = userWatches.value
   switch (statusFilter.value) {
-    case 'normal':   return list.filter(w => w.enabled && watchStatusOf(w) === 'success')
+    // 与 normalCount 同口径：启用且非异常非运行中（含 idle / warning）
+    case 'normal':   return list.filter(w => {
+      if (!w.enabled) return false
+      const s = watchStatusOf(w)
+      return s !== 'error' && s !== 'running'
+    })
     case 'error':    return list.filter(w => w.enabled && watchStatusOf(w) === 'error')
     case 'running':  return list.filter(w => runningWatches.value.has(w.id))
     case 'disabled': return list.filter(w => !w.enabled)
