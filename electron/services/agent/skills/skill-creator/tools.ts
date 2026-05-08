@@ -2,7 +2,7 @@
  * 用户技能创建工具定义
  */
 
-import type { ToolDefinition } from '../../tools'
+import type { ToolDefinition, ToolDefinitionWithMeta } from '../../tools'
 
 export const skillCreatorTools: ToolDefinition[] = [
   {
@@ -44,8 +44,17 @@ export const skillCreatorTools: ToolDefinition[] = [
         },
         required: ['skill_id', 'name', 'description', 'content']
       }
+    },
+    // 流式预卡片：技能 content 通常很长（操作手册级别），AI 输出期间需要字符数尾缀
+    // 让用户看到"还在写"，否则 content 流式期间卡片静止显得卡死。
+    _meta: {
+      streamDisplay: {
+        titleKey: 'skill.creating',
+        titleField: 'name',
+        progressFields: ['content']
+      }
     }
-  },
+  } as ToolDefinitionWithMeta,
   {
     type: 'function',
     function: {
@@ -110,8 +119,16 @@ export const skillCreatorTools: ToolDefinition[] = [
         },
         required: ['skill_id']
       }
+    },
+    // 与 skill_create 同理：更新通常重写 content，需要字符数尾缀显示进度
+    _meta: {
+      streamDisplay: {
+        titleKey: 'skill.updating',
+        titleField: 'skill_id',
+        progressFields: ['content']
+      }
     }
-  },
+  } as ToolDefinitionWithMeta,
   {
     type: 'function',
     function: {
