@@ -136,6 +136,10 @@ mac:
     # macOS 14+ 本地网络访问授权说明（SSH/SFTP 连接局域网主机必需）
     # 缺失此 key 会导致 macOS 静默拒绝本地网络访问且不弹授权弹窗，表现为 EHOSTUNREACH
     NSLocalNetworkUsageDescription: "SailFish 需要访问本地网络以连接 SSH/SFTP 服务器、虚拟机及局域网设备。"
+    # 麦克风访问授权说明（语音识别 / 语音输入功能必需）
+    # macOS TCC 在首次调用 getUserMedia 时会读取此 key 作为弹窗文案；
+    # 缺失会被系统静默拒绝授权。
+    NSMicrophoneUsageDescription: "SailFish 需要访问麦克风以提供语音输入和语音识别功能。"
 dmg:
   # DMG 窗口配置
   window:
