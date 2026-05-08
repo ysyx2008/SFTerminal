@@ -72,6 +72,7 @@ const showSidebar = ref(false)
 const showSettings = ref(false)
 const showSmartPatrol = ref(false)
 const showAwaken = ref(false)
+const awakenInitialTab = ref<string | undefined>(undefined)
 const isAwakened = ref(false)
 
 // 平台判断：macOS 使用 hiddenInset（左侧红绿灯），Windows 完全自绘标题栏（WindowControls 组件）
@@ -149,6 +150,7 @@ function startCanvasResize(e: MouseEvent, _tabId: string) {
 
 async function onAwakenClose() {
   showAwaken.value = false
+  awakenInitialTab.value = undefined
   try {
     isAwakened.value = !!(await window.electronAPI.config.get('agentAwakened'))
   } catch { /* ignore */ }
@@ -737,6 +739,12 @@ const openSmartPatrolFromWelcome = () => {
   showSmartPatrol.value = true
 }
 
+// 从欢迎页打开关切面板（默认进 watches tab，Awaken 自身会落到「总览」视图）
+const openWatchesFromWelcome = () => {
+  awakenInitialTab.value = 'watches'
+  showAwaken.value = true
+}
+
 // 从智能巡检返回欢迎页
 const backFromSmartPatrol = () => {
   showSmartPatrol.value = false
@@ -997,6 +1005,7 @@ onUnmounted(() => {
           @open-ssh="openSshFromWelcome"
           @open-session-manager="openSessionManagerFromWelcome"
           @open-smart-patrol="openSmartPatrolFromWelcome"
+          @open-watches="openWatchesFromWelcome"
         />
         <SmartPatrolPage 
           v-else-if="showSmartPatrol"
@@ -1066,6 +1075,7 @@ onUnmounted(() => {
     <!-- 关切面板（Steam 版不渲染） -->
     <Awaken
       v-if="showAwaken && !isSteamBuild"
+      :initial-tab="awakenInitialTab"
       @close="onAwakenClose"
       @awakened-change="isAwakened = $event"
     />
