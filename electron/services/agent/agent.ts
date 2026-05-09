@@ -575,6 +575,7 @@ export abstract class Agent {
         type: s.type as AgentStep['type'],
         content: s.content,
         images: s.images,
+        echartsOption: s.echartsOption,
         attachments: s.attachments,
         toolName: s.toolName,
         toolArgs: s.toolArgs,
@@ -693,16 +694,25 @@ export abstract class Agent {
     const baseTs = stepRecords[0]?.timestamp || Date.now()
     
     for (const s of stepRecords) {
+      // 注意：除 user_task 入口外，其它 record → step 重建路径（restoreFromSession /
+      // saveSession / saveCheckpoint / forkSession）都已带富内容字段；此降级路径之前
+      // 漏带 images / subAgents / success / echartsOption，导致仅有 steps 没有 messages
+      // 的旧记录恢复时图表/子 Agent 卡片显示空白，本次一并补齐，与其它路径保持一致。
       const step: AgentStep = {
         id: s.id,
         type: s.type as AgentStep['type'],
         content: s.content,
+        images: s.images,
+        echartsOption: s.echartsOption,
+        attachments: s.attachments,
         toolName: s.toolName,
         toolArgs: s.toolArgs,
         toolResult: s.toolResult,
         riskLevel: s.riskLevel as RiskLevel | undefined,
         timestamp: s.timestamp,
-        webSearchResults: s.webSearchResults
+        webSearchResults: s.webSearchResults,
+        success: s.success,
+        subAgents: s.subAgents
       }
       
       if (s.type === 'user_task') {
@@ -873,6 +883,7 @@ export abstract class Agent {
       type: s.type,
       content: s.content || '',
       images: s.images,
+      echartsOption: s.echartsOption,
       attachments: s.attachments,
       toolName: s.toolName,
       toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,
@@ -924,6 +935,7 @@ export abstract class Agent {
       type: s.type,
       content: s.content || '',
       images: s.images,
+      echartsOption: s.echartsOption,
       attachments: s.attachments,
       toolName: s.toolName,
       toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,
@@ -1038,6 +1050,7 @@ export abstract class Agent {
       type: s.type,
       content: s.content || '',
       images: s.images,
+      echartsOption: s.echartsOption,
       attachments: s.attachments,
       toolName: s.toolName,
       toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,

@@ -2,9 +2,9 @@
 
 ## 职责
 
-为 Agent 提供数据可视化能力。输入统一的扁平参数，输出 SVG 矢量图（默认）或 PNG 位图（`format: 'png'`），直接作为 `step.images` 展示给用户、可选保存到 agent-workspace。
+为 Agent 提供数据可视化能力。输入统一的扁平参数，默认输出**「活图」**（让前端实例化 ECharts 提供 tooltip / dataZoom / legend toggle 等交互，同时带 SVG dataURL 作兜底）或 PNG 位图（`format: 'png'`，服务端 sharp 栅格化，嵌入 Word/PDF/IM 用）。可选保存到 agent-workspace。
 
-底层使用 Apache ECharts v6+ 的服务端 SVG 渲染（`renderer: 'svg', ssr: true`），不依赖 DOM、不依赖 canvas。
+底层使用 Apache ECharts v6+ 的服务端 SVG 渲染（`renderer: 'svg', ssr: true`），不依赖 DOM、不依赖 canvas。「活图」走前端 `EChartsCanvas` 组件，把后端 `buildOption` 产出的 ECharts option 直接 `setOption` 到浏览器实例；主题已被 `applyCommon` inline 进 option（backgroundColor / color / textStyle），前后端视觉完全一致。
 
 ## 工具
 
@@ -67,12 +67,23 @@ K 线**整体走专业行情软件视觉**而不是商务图表样式：
 
 ## 输出与图片投递契约
 
-| 通道 | 是否带 SVG | 给谁看 | 原因 |
+| 通道 | 内容 | 给谁看 | 原因 |
 |---|---|---|---|
-| `step.images` | ✅ 带 | **用户** | 前端 `AiPanel.vue` / `Awaken.vue` / `tool-display.ts` 从 `step.images` 读图渲染 `<img>` |
+| `step.echartsOption` | ECharts option JSON（仅 svg 模式） | **用户**，活图 | 前端 `AiPanel.vue` 用 `EChartsCanvas` 实例化为可交互图表（hover tooltip / 拖 dataZoom / 点击 legend 切换 series / 右键以任意倍率高清复制／另存为）。`Awaken.vue` 暂未支持，自然降级到 `step.images` |
+| `step.images` | SVG 或 PNG 的 dataURL | **用户**，静态兜底 | 旧历史会话恢复、Awaken 关切面板等不实例化 echarts 的视图沿用此路径渲染 `<img>`；同时让 `tool-display.ts::hasRichPayload` 这类「按是否带图判断展示」的逻辑在新老路径下行为一致 |
 | `ToolResult.images` | ❌ 不带 | ~~AI~~ | 此通道经 `flushPendingToolImages` 注入到 user 消息当视觉输入，但主流多模态模型（OpenAI/Anthropic/Gemini）不识别 SVG 格式，发过去要么被拒、要么静默丢，还会让 AI 误以为「我看过图了」从而脑补图的内容 |
 
-**与 PDF skill 的区别**：PDF skill 反过来——它的图首要目标是「给 AI 视觉分析扫描件」，所以走 ToolResult.images；chart 的图首要目标是「给用户看可视化」，所以走 step.images。两个 skill 设计目标不同，**不能照搬代码**。
+### 为什么 PNG 模式不投递 echartsOption
+
+`format: 'png'` 通常意味着 AI 主动选了「我要导出位图给 word/IM」，下游消费的是落盘的 PNG 文件。这种语义下用户在气泡里看到的应该是**与导出物视觉一致的 PNG 预览**，而非活图——避免出现「气泡里看到的活图能拖 dataZoom，但导出的 PNG 是另一个画面」的认知错位。所以 PNG 模式下只走 `step.images`，活图能力关闭。
+
+### 与 PDF skill 的区别
+
+PDF skill 反过来——它的图首要目标是「给 AI 视觉分析扫描件」，所以走 ToolResult.images；chart 的图首要目标是「给用户看可视化」，所以走 step.echartsOption / step.images。两个 skill 设计目标不同，**不能照搬代码**。
+
+### 持久化与历史恢复
+
+`echartsOption` 同时持久化到 `AgentStepRecord` 中（约束见 `shared/types/history.ts`）。重新打开历史会话或 fork 出新对话时，前端从 `record.steps[*].echartsOption` 恢复活图渲染——所以**历史里的图也是活的**。option JSON 体积通常 5-30KB，比同等画面的 SVG base64（80KB+）小，整体让历史文件略微变小。
 
 `save_to_workspace: true` 时同时落到 `{userData}/agent-workspace/charts/{type}-{timestamp}.svg`，`output` 中带**绝对路径**（前端可点击打开；`read_file` 也可用同一路径）。
 

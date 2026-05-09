@@ -17,6 +17,31 @@ function parseFormat(raw: unknown): ChartFormat {
 
 const log = createLogger('ChartSkill')
 
+/**
+ * 判断 option 能否安全经 IPC（structured clone）传给前端。
+ *
+ * 风险：ECharts 文档大量推荐写法会让 option 含函数字段——`tooltip.formatter` /
+ * `axisLabel.formatter` / `series.label.formatter` 等。结构化克隆碰到 function
+ * 会直接抛 DataCloneError，整条 step 投递失败。
+ *
+ * 后端 SSR 渲染（renderToSvg）跑在同进程，function 是有效的；只有「投递给前端实例化」
+ * 这条路怕函数。所以这里只在投递前过一遍，函数 → 不投递 echartsOption（让前端走
+ * SVG 兜底，function 在后端 SSR 时已经发挥过作用，前端只显示静态结果），并打 warn
+ * 让开发知情。
+ *
+ * 用 structuredClone（Node 18+ 内置全局，与 Electron IPC 序列化语义一致）而不是
+ * JSON.stringify——后者会把函数静默转成 undefined，让前端 setOption 时 formatter 失踪
+ * 但 IPC 不抛错，反而更难排查。直接 throw 让我们一次性识别"这个 option 不能给前端"。
+ */
+function isIpcSafeForChart(option: unknown): boolean {
+  try {
+    structuredClone(option)
+    return true
+  } catch {
+    return false
+  }
+}
+
 // 兜底默认 1280×800（适合大多数中等复杂度图表，矢量+1.6x 于老 800×500，文件可控）
 // 真正的尺寸决定权在 AI 手上——它最了解数据规模和图表类型，应在工具调用时显式传 width/height。
 // 见 tools.ts 的 chartSkillContent 中的"按内容规模选画布尺寸"指引。
@@ -90,9 +115,10 @@ async function generateChart(
     riskLevel: 'safe'
   })
 
+  let option: EChartsOption
   let rendered: { dataUrl: string; payload: string | Buffer }
   try {
-    const option = buildOption(input, size)
+    option = buildOption(input, size)
     rendered = await renderChart(option, size, format, pixelRatio)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -120,19 +146,38 @@ async function generateChart(
     : t('chart.generated', { type })
 
   // chart skill 的图首要目标是「展示给用户」：
-  //   - step.images 是前端 (AiPanel.vue / Awaken.vue / tool-display.ts) 渲染图片的唯一来源，
-  //     必须带上，否则用户看不到生成的图。
+  //   - step.echartsOption（svg 模式专属）让前端把图实例化为「活图」，用户能 hover
+  //     tooltip、点击 legend 切换 series、拖 dataZoom 看局部、右键以任意倍率高清复制／另存为。
+  //   - step.images 同时带 SVG/PNG dataURL 作兜底：旧历史恢复、Awaken 关切面板等场景
+  //     不实例化 echarts；以及让 hasRichPayload 这类「按是否带图判断展示」的逻辑在
+  //     新老路径下行为一致。
+  //   - PNG 模式（AI 显式 format='png'）通常意味着「我要导出位图给 word/IM」，气泡里看
+  //     PNG 预览反而比看活图更贴合 AI 的意图，所以那条路不投递 echartsOption。
   //   - ToolResult.images 故意不带：那条路径会经 flushPendingToolImages 注入到 AI
   //     的 user 消息当视觉输入，但主流多模态模型（OpenAI/Anthropic/Gemini）都不识别
   //     SVG 格式，发过去要么被拒、要么静默丢弃，还会让 AI 误以为「图我看过了」从而
   //     脑补内容。chart 工具的成功状态完全可由 success + output 判断，无需 AI 视觉校验。
   // PDF skill 反过来：图首要目标是给 AI 看（视觉分析扫描件），所以走 ToolResult.images。
+  // svg 模式才考虑投递活图；同时 option 必须 IPC 安全（不含 function 字段，详见 isIpcSafeForChart）
+  // generate_chart 自己 buildOption 出来的 option 当前都是 IPC 安全的（formatter 都是字符串
+  // 模板而非函数），但保留这道检查作为契约不变量——某天 build* 函数加了 function formatter
+  // 也能被自动降级到 SVG 兜底，而不是炸 IPC
+  let echartsPayload: { option: EChartsOption; width: number; height: number } | undefined
+  if (format === 'svg') {
+    if (isIpcSafeForChart(option)) {
+      echartsPayload = { option, width: size.width, height: size.height }
+    } else {
+      log.warn('echartsOption contains non-cloneable values (likely function formatters); falling back to SVG-only delivery')
+    }
+  }
+
   executor.addStep({
     type: 'tool_result',
     content: output,
     toolName: 'generate_chart',
     toolResult: output,
-    images: [rendered.dataUrl]
+    images: [rendered.dataUrl],
+    echartsOption: echartsPayload
   })
 
   return {
@@ -208,13 +253,30 @@ async function renderEchartsOption(
     ? t('chart.echarts_rendered_with_path', { path: savedPath })
     : t('chart.echarts_rendered')
 
-  // 同 generate_chart：图走 step.images 给用户，不进 ToolResult.images（AI 看不到 SVG）
+  // 同 generate_chart：svg 模式同时投递 echartsOption（活图）+ images（SVG 兜底），
+  // 让前端实例化交互；PNG 模式只走 images（AI 选位图通常是为了导出，气泡内看 PNG
+  // 与导出物视觉一致更直观）。详见 generate_chart 中的 addStep 注释。
+  //
+  // 自由路径下 option 来自 AI 直传，更可能含函数 formatter（ECharts 文档大量推荐
+  // 这种写法），用 isIpcSafeForChart 把这种 option 拦下来仅走 SVG 兜底——后端 SSR
+  // 阶段 function 已经被 echarts 调用过、产出的 SVG 视觉效果完整，所以用户在气泡里
+  // 看到的图不会受影响，只是失去了"前端再次实例化时 formatter 也能用"的可能性。
+  let echartsPayload: { option: EChartsOption; width: number; height: number } | undefined
+  if (format === 'svg') {
+    if (isIpcSafeForChart(option)) {
+      echartsPayload = { option, width: size.width, height: size.height }
+    } else {
+      log.warn('render_echarts_option: option contains non-cloneable values (function formatters); falling back to SVG-only delivery')
+    }
+  }
+
   executor.addStep({
     type: 'tool_result',
     content: output,
     toolName: 'render_echarts_option',
     toolResult: output,
-    images: [rendered.dataUrl]
+    images: [rendered.dataUrl],
+    echartsOption: echartsPayload
   })
 
   return { success: true, output }
