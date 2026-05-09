@@ -1248,10 +1248,6 @@ export default {
       example3: '"Find the process using the most memory and show details"',
       example4: '"Create a backup folder and backup all config files"',
       standaloneDesc: 'Standalone assistant helps with documents, spreadsheets, file management, and information search. Drag & drop files or folders into the chat to get started.',
-      standaloneExample1: '"Write a weekly work summary and save it as a Word document"',
-      standaloneExample2: 'Drop a CSV file → "Convert to Excel spreadsheet with a summary row"',
-      standaloneExample3: '"Search for the latest React 19 features and compile them into notes"',
-      standaloneExample4: 'Drop a PDF file → "Extract key terms and organize into a table"',
       standaloneAllCommandsVisible: 'All operations are fully transparent, you can see the details of every step',
       standaloneCaution1: 'File operations (like delete, overwrite) will ask for confirmation first',
       standaloneCaution2: 'You can click "Stop" at any time to abort the assistant',
@@ -1284,7 +1280,173 @@ export default {
         aborted: 'Aborted'
       },
       confirmLoadHistory: 'Current session has existing conversations. Loading history will overwrite them. Continue?',
-      historyLoaded: 'History loaded, you can continue the conversation'
+      historyLoaded: 'History loaded, you can continue the conversation',
+      // Standalone assistant capability examples grid
+      examplesHint: 'Click a scenario to fill the input — edit and press Enter to send',
+      shuffleExamples: 'Shuffle',
+      shuffleTooltip: 'Pick another 8 from 25 use cases',
+      categoryLabels: {
+        writing: 'Writing',
+        data: 'Data',
+        file: 'Files',
+        web: 'Web',
+        office: 'Office',
+        automation: 'Automation',
+        system: 'System',
+        memory: 'Memory'
+      },
+      scenarios: {
+        // Writing & Documents
+        workSummary: {
+          title: 'Weekly Report',
+          subtitle: 'Three-section Word doc',
+          prompt: 'Here is what I did this week:\n- (list your tasks, one per line)\n- \n- \n\nPlease organize these into a polished weekly report in three sections — "Done / Next Week / Risks & Suggestions" — and save as a Word document'
+        },
+        officialDoc: {
+          title: 'Official Notice',
+          subtitle: 'Chinese gov-style doc',
+          prompt: 'Draft an official notice on holiday duty arrangements following the GB/T 9704 Chinese government document format. Save as Word.'
+        },
+        regulationDoc: {
+          title: 'Company Policy',
+          subtitle: 'Chapter/Article structure',
+          prompt: 'Draft a Travel Expense Reimbursement Policy in formal Chapter/Article structure (Chapter X / Article X / (X) / 1.), covering application, approval, reimbursement, and audit. Save as Word.'
+        },
+        polishWriting: {
+          title: 'Polish Writing',
+          subtitle: 'Formal business tone',
+          prompt: 'Polish the following text into a formal business report tone, removing colloquial expressions:\n\n(paste your draft here)'
+        },
+        translateDoc: {
+          title: 'Translate Document',
+          subtitle: 'PDF EN → bilingual Word',
+          prompt: 'I will drop an English PDF — translate it to Chinese, preserve the original heading and paragraph structure, and output a bilingual Word document (English left, Chinese right)'
+        },
+
+        // Data & Spreadsheets
+        excelSummary: {
+          title: 'Excel Summary',
+          subtitle: 'CSV → grouped totals',
+          prompt: 'I will drop a CSV file — group rows by department, add summary rows and a month-over-month change column, and produce an Excel file with conditional formatting (highlight outliers)'
+        },
+        dataAnalysis: {
+          title: 'Data Analysis',
+          subtitle: 'Excel → trend report',
+          prompt: 'I will drop a sales Excel — analyze it for outliers and trends, then produce an analysis report (Word) with key findings and supporting charts'
+        },
+        dataChart: {
+          title: 'Data Visualization',
+          subtitle: 'Bar + line chart',
+          prompt: 'Using a fabricated "past 6 months sales" dataset, generate a combined bar + line chart (bars for revenue, line for YoY growth, annotated with key values) and output as SVG — show me what your charting can do'
+        },
+        kLineChart: {
+          title: 'Candlestick Chart',
+          subtitle: 'Stock K-line',
+          prompt: 'Using a fabricated 60 trading days of A-share daily K data, generate a Chinese-style candlestick chart (red up, green down) with 5-day and 20-day moving averages overlaid, output as SVG'
+        },
+
+        // Files & Search
+        pdfExtract: {
+          title: 'PDF Extract',
+          subtitle: 'Contract terms table',
+          prompt: 'I will drop a contract PDF — extract every key term (amount, duration, liability, dispute resolution, etc.) along with original locations, and organize them into a comparison table'
+        },
+        fileSearch: {
+          title: 'File Search',
+          subtitle: 'Millisecond full-disk',
+          prompt: 'Use the file_search tool (system-index based, millisecond — do NOT use mdfind/find shell commands) to search for files matching "project evaluation report", sort by modified time descending, list up to 20'
+        },
+        desktopOrganize: {
+          title: 'Desktop Cleanup',
+          subtitle: 'Sort + dedupe',
+          prompt: 'Organize my desktop: sort images, documents, archives, and installers into folders; detect duplicate files and flag them for my review'
+        },
+
+        // Web & Search
+        webResearch: {
+          title: 'Topic Research',
+          subtitle: 'Notes with citations',
+          prompt: 'Research the major new features in React 19, compile structured notes, and cite the original source link for each item'
+        },
+        webFetch: {
+          title: 'Web Page Capture',
+          subtitle: 'Fetch + summarize',
+          prompt: 'Fetch the content of this technical blog post (paste URL) and summarize it into structured key takeaways: https://...'
+        },
+        parallelResearch: {
+          title: 'Parallel Research',
+          subtitle: 'Sub-agents in parallel',
+          prompt: 'In parallel, research and compare three brokerage outlooks for this year\'s market (e.g. Goldman, Morgan Stanley, JPMorgan), then output a comparison table'
+        },
+
+        // Office Collaboration
+        emailReview: {
+          title: 'Email Triage',
+          subtitle: 'Sort by priority',
+          prompt: 'Look at my unread emails today, classify by priority, surface the ones needing my reply, and draft suggested response snippets'
+        },
+        calendarCheck: {
+          title: 'Calendar Review',
+          subtitle: 'Pre-meeting prep',
+          prompt: 'Review tomorrow\'s meeting schedule. For each meeting, list the prep items needed and remind me 15 minutes before'
+        },
+        feishuDoc: {
+          title: 'Feishu Lookup',
+          subtitle: 'Cloud doc search',
+          prompt: 'Search my Feishu cloud docs for "project plan" related documents updated in the last 7 days'
+        },
+        browserAuto: {
+          title: 'Browser Automation',
+          subtitle: 'Auto-browse + extract',
+          prompt: 'Open GitHub Trending Python (today), extract the top 10 projects with name, description, stars, and primary language, output as a table'
+        },
+
+        // Automation & Watch
+        watchEmail: {
+          title: 'Email Watch',
+          subtitle: 'Daily 9am to Slack',
+          prompt: 'Create a watch: every morning at 9am scan my inbox, surface important emails from execs and clients, and push them to my Slack/Feishu bot'
+        },
+        watchFolder: {
+          title: 'Folder Watch',
+          subtitle: 'Auto-sort new files',
+          prompt: 'Create a watch: monitor my Downloads folder; when new PDFs arrive, auto-sort them into category folders and notify me'
+        },
+        watchWebpage: {
+          title: 'Page Change Watch',
+          subtitle: 'Content update alert',
+          prompt: 'Create a watch: monitor a specific webpage (paste URL), check hourly, notify me when the main content changes'
+        },
+
+        // System & Development
+        systemCheck: {
+          title: 'System Check',
+          subtitle: 'Memory + disk + procs',
+          prompt: 'Check my computer\'s current memory and disk usage, find the top processes by RAM and CPU, and explain what each one does'
+        },
+        gitHistory: {
+          title: 'Git History',
+          subtitle: 'Commits by author',
+          prompt: 'Look at this repo\'s (paste local path) commit history over the last 30 days, group by author with commit counts and the main modules they touched'
+        },
+        codeRefactor: {
+          title: 'Bulk Code Edit',
+          subtitle: 'Cross-file find/replace',
+          prompt: 'In this folder (paste path), replace every print(...) with logger.info(...) across all .py files, and auto-add the logger import at the top of each file'
+        },
+
+        // Memory & Knowledge
+        recallHistory: {
+          title: 'Recall History',
+          subtitle: 'Search past conversations',
+          prompt: 'You looked into a project (keyword: ...) for me previously — what was your conclusion? Find it in the conversation history'
+        },
+        knowledgeQa: {
+          title: 'Knowledge Q&A',
+          subtitle: 'Local knowledge base',
+          prompt: 'Search my knowledge base for content about ..., summarize the key points and cite the source file paths'
+        }
+      }
     },
     imagePreview: {
       prevImage: 'Previous image (←)',

@@ -1248,10 +1248,6 @@ export default {
       example3: '「找出占用内存最多的进程并显示详情」',
       example4: '「在当前目录创建一个 backup 文件夹并备份所有配置文件」',
       standaloneDesc: '独立助手可以帮你处理文档、表格、文件管理、信息搜索等日常任务。支持拖放文件或文件夹到对话框直接操作。',
-      standaloneExample1: '「帮我写一份本周工作总结，输出为 Word 文档」',
-      standaloneExample2: '拖入 CSV 文件 →「整理成 Excel 表格，加上汇总行」',
-      standaloneExample3: '「搜索一下最近 React 19 的新特性，整理成笔记」',
-      standaloneExample4: '拖入 PDF 文件 →「提取关键条款，整理成表格」',
       standaloneAllCommandsVisible: '所有操作过程完全透明，你可以看到每一步执行详情',
       standaloneCaution1: '文件操作（如删除、覆盖）会先请求确认',
       standaloneCaution2: '你可以随时点击「停止」中止助手执行',
@@ -1284,7 +1280,173 @@ export default {
         aborted: '已中止'
       },
       confirmLoadHistory: '当前会话已有对话记录，加载历史将覆盖现有内容。确定要继续吗？',
-      historyLoaded: '已加载历史对话，可以继续提问'
+      historyLoaded: '已加载历史对话，可以继续提问',
+      // 独立助手能力示例网格
+      examplesHint: '点击场景填入输入框，可改可补充后按 Enter 发送',
+      shuffleExamples: '换一批',
+      shuffleTooltip: '从 25 个使用场景里再抽 8 个',
+      categoryLabels: {
+        writing: '写作',
+        data: '数据',
+        file: '文件',
+        web: '网络',
+        office: '办公',
+        automation: '自动化',
+        system: '系统',
+        memory: '记忆'
+      },
+      scenarios: {
+        // 文档与写作
+        workSummary: {
+          title: '工作总结',
+          subtitle: 'Word 三段式周报',
+          prompt: '我这周做的事如下：\n- （在这里列出你本周完成的事项，每行一条）\n- \n- \n\n请帮我整理成正式的工作总结，按"完成事项 / 下周计划 / 风险与建议"三段式组织，输出为 Word 文档'
+        },
+        officialDoc: {
+          title: '通知公文',
+          subtitle: '党政机关公文格式',
+          prompt: '起草一份《关于春节假期值班安排的通知》，按 GB/T 9704-2012《党政机关公文格式》输出 Word 文档，含发文字号、主送机关、正文、落款'
+        },
+        regulationDoc: {
+          title: '管理制度',
+          subtitle: '第X章/第X条体例',
+          prompt: '帮我起草《员工差旅报销管理办法》，按"第X章/第X条/（X）/1．"四级编号体例，覆盖申请、审批、报销、监督环节，输出 Word 文档'
+        },
+        polishWriting: {
+          title: '内容润色',
+          subtitle: '工作汇报口吻',
+          prompt: '把下面这段文字润色成正式的工作汇报口吻，符合中文写作规范（标点、数字用法），去掉口语化表达：\n\n（在这里粘贴你的原文）'
+        },
+        translateDoc: {
+          title: '文档翻译',
+          subtitle: '英文 PDF → 中文对照',
+          prompt: '我会拖一份英文 PDF 进来，请翻译成中文，保留原始的标题层级和段落结构，输出对照版 Word 文档（左英右中）'
+        },
+
+        // 数据与表格
+        excelSummary: {
+          title: 'Excel 汇总',
+          subtitle: 'CSV 自动分组 + 汇总行',
+          prompt: '我会拖一个 CSV 文件进来，请按部门分组、加上汇总行和环比变化列，生成一份带条件格式（高亮异常值）的 Excel'
+        },
+        dataAnalysis: {
+          title: '数据分析报告',
+          subtitle: 'Excel → 异常与趋势',
+          prompt: '我会拖一份销售数据的 Excel 进来，帮我分析找出异常值和趋势点，生成一份带要点和图示的分析报告 Word 文档'
+        },
+        dataChart: {
+          title: '数据可视化',
+          subtitle: '柱状图 + 折线图',
+          prompt: '用一组虚构的"过去 6 个月销售数据"演示生成一张柱状图+折线图组合图（柱状显示销售额、折线显示同比增长率，标注关键数值），输出 SVG，让我看看你的图表能力'
+        },
+        kLineChart: {
+          title: 'K 线图',
+          subtitle: '中式红涨绿跌',
+          prompt: '用一组虚构的某只 A 股最近 60 个交易日数据，生成一张中式 K 线图（红涨绿跌），叠加 5 日和 20 日均线，输出 SVG，让我看看 K 线图效果'
+        },
+
+        // 文件与查找
+        pdfExtract: {
+          title: 'PDF 提取',
+          subtitle: '合同条款对照表',
+          prompt: '我会拖一份合同 PDF 进来，请提取所有关键条款（金额、期限、违约责任、争议解决等）和对应原文位置，整理成对照表格'
+        },
+        fileSearch: {
+          title: '文件搜索',
+          subtitle: '全盘毫秒级查找',
+          prompt: '请用 file_search 工具（基于系统索引、毫秒级，不要用 mdfind/find 等 shell 命令）帮我搜索文件名包含"项目 评估 报告"的文件，按修改时间倒序列出最多 20 条'
+        },
+        desktopOrganize: {
+          title: '桌面整理',
+          subtitle: '分类 + 重复检测',
+          prompt: '帮我整理桌面：把图片、文档、压缩包、安装包分类移到对应文件夹；同时检测重复文件并标记出来供我确认'
+        },
+
+        // 网络与搜索
+        webResearch: {
+          title: '资料调研',
+          subtitle: '整理笔记附原文链接',
+          prompt: '帮我搜一下 React 19 的主要新特性，整理成中文学习笔记，每条附原文链接'
+        },
+        webFetch: {
+          title: '网页提取',
+          subtitle: '抓取并整理要点',
+          prompt: '帮我抓取这篇技术博客的内容（粘贴 URL），整理成要点笔记：https://...'
+        },
+        parallelResearch: {
+          title: '多角度调研',
+          subtitle: '并行子 Agent 对比',
+          prompt: '同时帮我搜索并对比三家券商对今年 A 股市场的展望（中信、中金、华泰），并行调研后输出对比表格'
+        },
+
+        // 办公协同
+        emailReview: {
+          title: '邮件总览',
+          subtitle: '按重要性挑回复',
+          prompt: '看一下我今天收到的未读邮件，按重要性分类，挑出需要我回复的列出来，并给出回复建议草稿'
+        },
+        calendarCheck: {
+          title: '日程查询',
+          subtitle: '会前 15 分钟提醒',
+          prompt: '看一下我明天的会议安排，每个会议给我列出需要提前准备的事项，会议前 15 分钟提醒我'
+        },
+        feishuDoc: {
+          title: '飞书查文档',
+          subtitle: '云文档检索',
+          prompt: '帮我在飞书云文档里找一下"项目计划表"相关的文档，列出最近 7 天有更新的'
+        },
+        browserAuto: {
+          title: '浏览器操作',
+          subtitle: '自动浏览 + 提取',
+          prompt: '帮我打开 GitHub Trending 的 Python 榜单（今日），提取前 10 个项目的名称、描述、star 数和主语言，输出为表格'
+        },
+
+        // 自动化与关切
+        watchEmail: {
+          title: '定时邮件扫描',
+          subtitle: '每天 9 点推飞书',
+          prompt: '创建一个关切：每天早上 9 点扫描我的收件箱，把来自领导和客户的重要邮件挑出来推送到飞书机器人'
+        },
+        watchFolder: {
+          title: '文件夹监控',
+          subtitle: '新文件自动整理',
+          prompt: '创建一个关切：监控我的下载目录，每当出现新的 PDF 文件时自动整理到分类文件夹并通知我'
+        },
+        watchWebpage: {
+          title: '网页变更监控',
+          subtitle: '内容更新告警',
+          prompt: '创建一个关切：监控指定网页（粘贴 URL），每小时检查一次，正文有更新时通知我'
+        },
+
+        // 系统与开发
+        systemCheck: {
+          title: '系统检查',
+          subtitle: '内存 + 磁盘 + 进程',
+          prompt: '帮我看一下电脑现在的内存和磁盘占用情况，找出占用内存和 CPU 最多的几个进程并解释它们是什么'
+        },
+        gitHistory: {
+          title: 'Git 历史',
+          subtitle: '提交记录按作者归类',
+          prompt: '看看这个仓库（粘贴本地路径）最近 30 天的提交记录，按作者归类统计提交次数和主要改动模块'
+        },
+        codeRefactor: {
+          title: '代码批量改',
+          subtitle: '跨文件统一替换',
+          prompt: '把这个文件夹（粘贴路径）下所有 .py 文件里的 print(...) 替换成 logger.info(...)，并在文件头自动加上 logger 的 import'
+        },
+
+        // 智能对话
+        recallHistory: {
+          title: '回忆历史',
+          subtitle: '搜过去的对话记录',
+          prompt: '上回我让你查过的那个项目（关键词 ...），你给的结论是什么来着？帮我从对话历史里找出来'
+        },
+        knowledgeQa: {
+          title: '知识库问答',
+          subtitle: '基于本地知识库',
+          prompt: '在我的知识库里帮我找一下关于 ... 的内容，整理出要点并附上来源文件路径'
+        }
+      }
     },
     imagePreview: {
       prevImage: '上一张 (←)',

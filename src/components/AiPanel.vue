@@ -6,7 +6,7 @@
  */
 import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Upload, Trash2, X, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MoreHorizontal } from 'lucide-vue-next'
+import { Upload, Trash2, X, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MoreHorizontal, Shuffle } from 'lucide-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useConfigStore } from '../stores/config'
@@ -35,6 +35,11 @@ import {
   toast
 } from '../composables'
 import { showConfirm } from '../composables/useConfirm'
+import {
+  getFeaturedExamples,
+  shuffleExamples as shuffleExamplePool,
+  type AssistantExample,
+} from '../config/assistantExamples'
 
 // Props - 每个 AiPanel 实例绑定到特定的 tab
 const props = defineProps<{
@@ -72,6 +77,28 @@ const handleClose = () => {
 const messagesRef = ref<HTMLDivElement | null>(null)
 const scrollerRef = ref<InstanceType<typeof DynamicScroller> | null>(null)
 const composerRef = ref<InstanceType<typeof AiComposer> | null>(null)
+
+// ==================== 独立助手能力示例网格 ====================
+// 欢迎区展示的 8 张场景卡片。首屏精选覆盖最广能力组合，"换一批"从 25 条池子洗牌。
+// 仅独立助手 tab 使用，因此普通终端 tab 上 displayedExamples 不会被读取，开销可忽略。
+const displayedExamples = ref<AssistantExample[]>(getFeaturedExamples())
+const shuffleSpinning = ref(false)
+const shuffleScenarios = () => {
+  // 排除当前展示的 ID，避免连点两次出现完全相同的卡片
+  const currentIds = displayedExamples.value.map(e => e.id)
+  displayedExamples.value = shuffleExamplePool(currentIds)
+  // 给按钮一次旋转动画，仅视觉反馈
+  shuffleSpinning.value = false
+  nextTick(() => {
+    shuffleSpinning.value = true
+    setTimeout(() => { shuffleSpinning.value = false }, 600)
+  })
+}
+const handleScenarioClick = (example: AssistantExample) => {
+  const prompt = t(`ai.agentWelcome.scenarios.${example.id}.prompt`)
+  composerRef.value?.setText(prompt)
+  composerRef.value?.flashHint()
+}
 
 // 统一附件选择（图片 + 文档，自动按类型分流）
 const isAttaching = computed(() => isUploadingDocs.value || isProcessingImage.value)
@@ -1657,7 +1684,9 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           isLoadingAllHistory,
           executionMode,
           isStandaloneAssistant,
-          hasNewMessage
+          hasNewMessage,
+          displayedExamples,
+          shuffleSpinning
         ]"
       >
         <DynamicScroller
@@ -1679,19 +1708,47 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
               <p class="welcome-section-title">💡 {{ t('ai.agentWelcome.whatIsAgent') }}</p>
               <p class="welcome-desc">{{ isStandaloneAssistant ? t('ai.agentWelcome.standaloneDesc') : t('ai.agentWelcome.agentDesc') }}</p>
               
-              <p class="welcome-section-title">🎯 {{ t('ai.agentWelcome.examples') }}</p>
-              <ul v-if="isStandaloneAssistant">
-                <li>{{ t('ai.agentWelcome.standaloneExample1') }}</li>
-                <li>{{ t('ai.agentWelcome.standaloneExample2') }}</li>
-                <li>{{ t('ai.agentWelcome.standaloneExample3') }}</li>
-                <li>{{ t('ai.agentWelcome.standaloneExample4') }}</li>
-              </ul>
-              <ul v-else>
-                <li>{{ t('ai.agentWelcome.example1') }}</li>
-                <li>{{ t('ai.agentWelcome.example2') }}</li>
-                <li>{{ t('ai.agentWelcome.example3') }}</li>
-                <li>{{ t('ai.agentWelcome.example4') }}</li>
-              </ul>
+              <!-- 独立助手：可点击的能力示例网格（25 条池子，首屏精选 8，"换一批"洗牌） -->
+              <template v-if="isStandaloneAssistant">
+                <div class="scenarios-header">
+                  <p class="welcome-section-title">🎯 {{ t('ai.agentWelcome.examples') }}</p>
+                  <button
+                    class="shuffle-btn"
+                    :class="{ spinning: shuffleSpinning }"
+                    :title="t('ai.agentWelcome.shuffleTooltip')"
+                    @click="shuffleScenarios"
+                  >
+                    <Shuffle :size="13" />
+                    <span>{{ t('ai.agentWelcome.shuffleExamples') }}</span>
+                  </button>
+                </div>
+                <p class="scenarios-hint">{{ t('ai.agentWelcome.examplesHint') }}</p>
+                <div class="scenario-grid">
+                  <button
+                    v-for="example in displayedExamples"
+                    :key="example.id"
+                    class="scenario-card"
+                    :data-category="example.category"
+                    :title="t(`ai.agentWelcome.scenarios.${example.id}.prompt`)"
+                    @click="handleScenarioClick(example)"
+                  >
+                    <span class="scenario-icon">{{ example.icon }}</span>
+                    <span class="scenario-tag">{{ t(`ai.agentWelcome.categoryLabels.${example.category}`) }}</span>
+                    <span class="scenario-title">{{ t(`ai.agentWelcome.scenarios.${example.id}.title`) }}</span>
+                    <span class="scenario-subtitle">{{ t(`ai.agentWelcome.scenarios.${example.id}.subtitle`) }}</span>
+                  </button>
+                </div>
+              </template>
+              <!-- 终端模式：保持原有的纯文本示例列表 -->
+              <template v-else>
+                <p class="welcome-section-title">🎯 {{ t('ai.agentWelcome.examples') }}</p>
+                <ul>
+                  <li>{{ t('ai.agentWelcome.example1') }}</li>
+                  <li>{{ t('ai.agentWelcome.example2') }}</li>
+                  <li>{{ t('ai.agentWelcome.example3') }}</li>
+                  <li>{{ t('ai.agentWelcome.example4') }}</li>
+                </ul>
+              </template>
 
               <p class="welcome-section-title">
                 <template v-if="executionMode === 'free'">🔥 {{ t('ai.agentWelcome.freeMode') }} <span class="strict-badge free">{{ t('ai.agentWelcome.freeModeOn') }}</span></template>
@@ -3119,6 +3176,176 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .strict-badge.free {
   background: var(--color-error);
+}
+
+/* ==================== 独立助手能力示例网格 ==================== */
+
+.scenarios-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+.scenarios-header .welcome-section-title {
+  margin: 0;
+}
+
+.shuffle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.shuffle-btn:hover {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent-decorative-primary) 60%, var(--border-color));
+  background: color-mix(in srgb, var(--accent-decorative-primary) 8%, transparent);
+}
+
+.shuffle-btn:active {
+  transform: scale(0.96);
+}
+
+.shuffle-btn :deep(svg) {
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.shuffle-btn:hover :deep(svg),
+.shuffle-btn.spinning :deep(svg) {
+  transform: rotate(360deg);
+}
+
+.scenarios-hint {
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+/* 宽面板（>= 760px）切到 4 列：独立助手 tab 占满主区时常见，让信息密度更高 */
+@media (min-width: 760px) {
+  .scenario-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* 中等宽度（>= 520px）切到 3 列，避免 2 列时单卡过宽 */
+@media (min-width: 520px) and (max-width: 759px) {
+  .scenario-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.scenario-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    "icon tag"
+    "title title"
+    "subtitle subtitle";
+  gap: 2px 8px;
+  padding: 10px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.2s ease,
+              background 0.2s ease,
+              box-shadow 0.2s ease;
+  position: relative;
+  overflow: hidden;
+  min-height: 76px;
+}
+
+.scenario-card:hover {
+  border-color: color-mix(in srgb, var(--accent-decorative-primary) 70%, var(--border-color));
+  background: color-mix(in srgb, var(--accent-decorative-primary) 5%, var(--bg-tertiary));
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15),
+              0 0 0 1px color-mix(in srgb, var(--accent-decorative-primary) 30%, transparent);
+}
+
+.scenario-card:active {
+  transform: translateY(0);
+}
+
+.scenario-icon {
+  grid-area: icon;
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
+
+.scenario-tag {
+  grid-area: tag;
+  justify-self: end;
+  align-self: center;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  padding: 1px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  white-space: nowrap;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+/* 类别色调：让 tag 在 hover 时染上对应类的"主调"，强化分类识别 */
+.scenario-card:hover .scenario-tag {
+  color: var(--text-secondary);
+  border-color: color-mix(in srgb, var(--accent-decorative-primary) 50%, var(--border-color));
+}
+
+.scenario-card[data-category="writing"]:hover .scenario-tag,
+.scenario-card[data-category="writing"]:hover .scenario-icon { filter: hue-rotate(0deg); }
+
+.scenario-title {
+  grid-area: title;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.35;
+  margin-top: 4px;
+  /* 单行省略，避免长标题撑破卡片高度 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scenario-subtitle {
+  grid-area: subtitle;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ==================== 历史对话列表样式 ==================== */

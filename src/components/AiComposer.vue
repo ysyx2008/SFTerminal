@@ -125,6 +125,28 @@ const clearText = () => {
   nextTick(adjustTextareaHeight)
 }
 
+// 一次性脉冲提示：让用户从场景卡片填入 prompt 后，注意到输入框已就绪。
+// 用户从欢迎区点击场景卡片 → setText 把 prompt 填进来 → flashHint 触发蓝色
+// outline 脉冲 ~1.5s 引导用户「这就是输入框，按 Enter 就发送」。
+const isFlashHint = ref(false)
+let flashHintTimer: ReturnType<typeof setTimeout> | null = null
+
+const flashHint = () => {
+  if (flashHintTimer) {
+    clearTimeout(flashHintTimer)
+    flashHintTimer = null
+  }
+  // 先关再开，确保 CSS 动画从头重放（连续点击场景卡片时也能每次脉冲）
+  isFlashHint.value = false
+  nextTick(() => {
+    isFlashHint.value = true
+    flashHintTimer = setTimeout(() => {
+      isFlashHint.value = false
+      flashHintTimer = null
+    }, 1500)
+  })
+}
+
 watch(() => props.visible, (isVisible) => {
   if (isVisible) {
     nextTick(() => {
@@ -246,6 +268,7 @@ defineExpose({
   appendText,
   setText,
   clearText,
+  flashHint,
   getText: () => inputText.value
 })
 
@@ -338,7 +361,7 @@ const handleSendClick = (event: MouseEvent) => {
       </div>
     </div>
 
-    <div class="input-container">
+    <div class="input-container" :class="{ 'flash-hint': isFlashHint }">
       <button
         class="upload-btn"
         :disabled="isAttaching"
@@ -793,6 +816,34 @@ const handleSendClick = (event: MouseEvent) => {
 
 .input-container:focus-within {
   box-shadow: 0 0 0 2px var(--accent-primary), 0 4px 12px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* flash-hint：场景卡片填入 prompt 后的一次性脉冲，提醒用户"输入框已就绪，按 Enter 发送"。
+   动画期间盖过 :focus-within 的 box-shadow（因 specificity + 动画在同 selector 上覆盖），
+   1.5s 后 class 自动移除，恢复默认 / focus 态外观。 */
+.input-container.flash-hint {
+  animation: composerFlashHint 1.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes composerFlashHint {
+  0% {
+    box-shadow:
+      0 0 0 0 rgba(var(--accent-decorative-rgb), 0.6),
+      0 0 0 0 rgba(var(--accent-decorative-rgb), 0),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+  25% {
+    box-shadow:
+      0 0 0 4px rgba(var(--accent-decorative-rgb), 0.55),
+      0 0 22px 2px rgba(var(--accent-decorative-rgb), 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+  100% {
+    box-shadow:
+      0 0 0 2px var(--accent-primary),
+      0 4px 12px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
 }
 
 .upload-btn,
