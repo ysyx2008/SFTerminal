@@ -483,7 +483,6 @@ export default {
     importJsonAction: '导入',
     importJsonDialogTitle: '从 JSON 配置导入 MCP 服务器',
     importJsonHint: '粘贴 MCP 服务方提供的 JSON 配置（含 url、headers 等），一键批量添加',
-    importJsonPlaceholder: '{\n  "mcpServers": {\n    "qcc-company": {\n      "url": "https://agent.qcc.com/mcp/company/stream",\n      "headers": {\n        "Authorization": "Bearer YOUR_TOKEN_HERE"\n      }\n    }\n  }\n}',
     importJsonCompat: '兼容 Claude Desktop / Cursor 的 mcpServers 配置格式',
     importJsonSuccess: '已导入 {count} 个 MCP 服务器',
     importJsonInvalid: 'JSON 解析失败：{error}'

@@ -483,7 +483,6 @@ export default {
     importJsonAction: 'Import',
     importJsonDialogTitle: 'Import MCP Servers from JSON',
     importJsonHint: 'Paste the JSON config provided by an MCP service (with url, headers, etc.) to bulk-add servers',
-    importJsonPlaceholder: '{\n  "mcpServers": {\n    "example": {\n      "url": "https://example.com/mcp/stream",\n      "headers": {\n        "Authorization": "Bearer YOUR_TOKEN_HERE"\n      }\n    }\n  }\n}',
     importJsonCompat: 'Compatible with Claude Desktop / Cursor mcpServers config format',
     importJsonSuccess: 'Imported {count} MCP server(s)',
     importJsonInvalid: 'JSON parse failed: {error}'

@@ -115,6 +115,19 @@ const headersText = ref('')
 const importText = ref('')
 const importResult = ref<{ success: boolean; message: string } | null>(null)
 
+// JSON placeholder 不走 i18n：里面的 `{` / `}` 会被 vue-i18n 当作命名占位符语法解析失败。
+// 示例本身是格式化的 JSON，跟语言无关，硬编码即可。
+const IMPORT_JSON_PLACEHOLDER = `{
+  "mcpServers": {
+    "qcc-company": {
+      "url": "https://agent.qcc.com/mcp/company/stream",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}`
+
 // 模板类型
 interface McpTemplate {
   name: string
@@ -594,10 +607,7 @@ onUnmounted(() => {
           v-for="server in servers"
           :key="server.id"
           class="server-item"
-          :class="{ 
-            disabled: !server.enabled,
-            connected: getServerStatus(server.id)?.connected 
-          }"
+          :class="{ disabled: !server.enabled }"
         >
           <div class="server-toggle">
             <input
@@ -765,7 +775,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 服务器详情弹窗 -->
-    <div v-if="showDetails && selectedServer" class="details-modal" @click.self="showDetails = false">
+    <div v-if="showDetails && selectedServer" key="mcp-details-modal" class="details-modal" @click.self="showDetails = false">
       <div class="details-content">
         <div class="details-header">
           <h4>{{ selectedServer.name }}</h4>
@@ -814,7 +824,7 @@ onUnmounted(() => {
     </div>
 
     <!-- JSON 一键导入弹窗 -->
-    <div v-if="showImport" class="details-modal" @click.self="showImport = false">
+    <div v-if="showImport" key="mcp-import-modal" class="details-modal" @click.self="showImport = false">
       <div class="details-content import-modal">
         <div class="details-header">
           <h4>{{ t('mcpSettings.importJsonDialogTitle') }}</h4>
@@ -827,7 +837,7 @@ onUnmounted(() => {
           <textarea
             v-model="importText"
             class="input textarea import-textarea"
-            :placeholder="t('mcpSettings.importJsonPlaceholder')"
+            :placeholder="IMPORT_JSON_PLACEHOLDER"
             rows="14"
             spellcheck="false"
           ></textarea>
@@ -925,10 +935,6 @@ onUnmounted(() => {
 
 .server-item.disabled {
   opacity: 0.5;
-}
-
-.server-item.connected {
-  border-color: var(--accent-green);
 }
 
 .server-toggle input {
