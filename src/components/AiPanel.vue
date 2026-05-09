@@ -1733,7 +1733,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                     @click="handleScenarioClick(example)"
                   >
                     <span class="scenario-icon">{{ example.icon }}</span>
-                    <span class="scenario-tag">{{ t(`ai.agentWelcome.categoryLabels.${example.category}`) }}</span>
                     <span class="scenario-title">{{ t(`ai.agentWelcome.scenarios.${example.id}.title`) }}</span>
                     <span class="scenario-subtitle">{{ t(`ai.agentWelcome.scenarios.${example.id}.subtitle`) }}</span>
                   </button>
@@ -3256,38 +3255,47 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   }
 }
 
+/*
+ * 两行布局：
+ *   ┌──────────────────────────┐
+ *   │ 📊  数据可视化            │
+ *   │     柱状图 + 折线图        │
+ *   └──────────────────────────┘
+ * 设计取舍：
+ *   - 去掉 tag 胶囊（emoji + 标题已能表达类别，胶囊重复且增重）
+ *   - 卡片背景透明、边框 50% 透明，hover 才浅染——一眼看到的不是"8 个独立按钮"，
+ *     而是"一片可点的能力网格"，整体噪点显著下降
+ *   - 高度从 76px 收到 ~52px，减小 padding，让 8 张卡视觉占用更轻
+ */
 .scenario-card {
   display: grid;
   grid-template-columns: auto 1fr;
   grid-template-rows: auto auto;
   grid-template-areas:
-    "icon tag"
-    "title title"
-    "subtitle subtitle";
-  gap: 2px 8px;
-  padding: 10px 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
+    "icon title"
+    "icon subtitle";
+  align-items: center;
+  gap: 0 10px;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+  border-radius: 10px;
   cursor: pointer;
   text-align: left;
   font: inherit;
   color: inherit;
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
               border-color 0.2s ease,
-              background 0.2s ease,
-              box-shadow 0.2s ease;
+              background 0.2s ease;
   position: relative;
   overflow: hidden;
-  min-height: 76px;
+  min-height: 52px;
 }
 
 .scenario-card:hover {
-  border-color: color-mix(in srgb, var(--accent-decorative-primary) 70%, var(--border-color));
-  background: color-mix(in srgb, var(--accent-decorative-primary) 5%, var(--bg-tertiary));
-  transform: translateY(-2px);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15),
-              0 0 0 1px color-mix(in srgb, var(--accent-decorative-primary) 30%, transparent);
+  border-color: color-mix(in srgb, var(--accent-decorative-primary) 55%, var(--border-color));
+  background: color-mix(in srgb, var(--accent-decorative-primary) 6%, transparent);
+  transform: translateY(-1px);
 }
 
 .scenario-card:active {
@@ -3296,42 +3304,22 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .scenario-icon {
   grid-area: icon;
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1;
   display: inline-flex;
   align-items: center;
-}
-
-.scenario-tag {
-  grid-area: tag;
-  justify-self: end;
+  justify-content: center;
   align-self: center;
-  font-size: 10px;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  padding: 1px 6px;
-  border: 1px solid var(--border-color);
-  border-radius: 999px;
-  white-space: nowrap;
-  transition: color 0.2s ease, border-color 0.2s ease;
 }
-
-/* 类别色调：让 tag 在 hover 时染上对应类的"主调"，强化分类识别 */
-.scenario-card:hover .scenario-tag {
-  color: var(--text-secondary);
-  border-color: color-mix(in srgb, var(--accent-decorative-primary) 50%, var(--border-color));
-}
-
-.scenario-card[data-category="writing"]:hover .scenario-tag,
-.scenario-card[data-category="writing"]:hover .scenario-icon { filter: hue-rotate(0deg); }
 
 .scenario-title {
   grid-area: title;
   font-size: 12.5px;
   font-weight: 600;
   color: var(--text-primary);
-  line-height: 1.35;
-  margin-top: 4px;
+  line-height: 1.3;
+  align-self: end;
+  margin-bottom: 1px;
   /* 单行省略，避免长标题撑破卡片高度 */
   white-space: nowrap;
   overflow: hidden;
@@ -3342,7 +3330,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   grid-area: subtitle;
   font-size: 11px;
   color: var(--text-muted);
-  line-height: 1.4;
+  line-height: 1.3;
+  align-self: start;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

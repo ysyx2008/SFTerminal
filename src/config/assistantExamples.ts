@@ -41,7 +41,7 @@ export const ASSISTANT_EXAMPLES: AssistantExample[] = [
   { id: 'officialDoc',    icon: '🇨🇳', category: 'writing' },
   { id: 'regulationDoc',  icon: '📜', category: 'writing' },
   { id: 'polishWriting',  icon: '✍️', category: 'writing' },
-  { id: 'translateDoc',   icon: '🌏', category: 'writing' },
+  { id: 'translateSnippet', icon: '🌏', category: 'writing' },
 
   // 数据与表格（4）
   { id: 'excelSummary',   icon: '📊', category: 'data' },
@@ -50,7 +50,7 @@ export const ASSISTANT_EXAMPLES: AssistantExample[] = [
   { id: 'kLineChart',     icon: '📉', category: 'data' },
 
   // 文件与查找（3）
-  { id: 'pdfExtract',     icon: '📕', category: 'file' },
+  { id: 'findDuplicates', icon: '🧹', category: 'file' },
   { id: 'fileSearch',     icon: '🔎', category: 'file' },
   { id: 'desktopOrganize',icon: '📂', category: 'file' },
 
@@ -73,7 +73,7 @@ export const ASSISTANT_EXAMPLES: AssistantExample[] = [
   // 系统与开发（3）
   { id: 'systemCheck',    icon: '💻', category: 'system' },
   { id: 'gitHistory',     icon: '🌿', category: 'system' },
-  { id: 'codeRefactor',   icon: '⚡', category: 'system' },
+  { id: 'portCheck',      icon: '🔌', category: 'system' },
 
   // 智能对话（2）
   { id: 'recallHistory',  icon: '💭', category: 'memory' },
@@ -83,17 +83,21 @@ export const ASSISTANT_EXAMPLES: AssistantExample[] = [
 /**
  * 首屏精选 8 条
  *
- * 选取原则：覆盖最广的代表性组合，让用户首次打开欢迎区一眼看到 8 个互不重叠的能力领域。
- * 涵盖：Word 生成 / 中文公文（独家）/ 图表 / 网搜 / 邮件 / 系统操作 / 毫秒级文件搜索（独家）/ 自动化关切
+ * 选取原则：
+ *   1. 覆盖最广的代表性组合，让用户首次打开欢迎区一眼看到 8 个互不重叠的能力领域
+ *   2. 优先放"视觉冲击力强 + 不需要用户提供材料就能跑"的能力（K 线图、图表、公文）
+ *   3. fileSearch 这种"低视觉冲击力"的能力放在洗牌池里轮换出现，首屏让位给更有"哇"感的演示
+ *
+ * 涵盖：Word 周报 / 中文公文（独家） / 图表 / K 线图（视觉冲击）/ 网搜 / 邮件 / 系统操作 / 自动化关切
  */
 export const FEATURED_IDS: readonly string[] = [
   'workSummary',
   'officialDoc',
   'dataChart',
+  'kLineChart',
   'webResearch',
   'emailReview',
   'systemCheck',
-  'fileSearch',
   'watchEmail',
 ] as const
 

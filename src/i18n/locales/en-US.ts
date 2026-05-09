@@ -1300,7 +1300,7 @@ export default {
         workSummary: {
           title: 'Weekly Report',
           subtitle: 'Three-section Word doc',
-          prompt: 'Here is what I did this week:\n- (list your tasks, one per line)\n- \n- \n\nPlease organize these into a polished weekly report in three sections — "Done / Next Week / Risks & Suggestions" — and save as a Word document'
+          prompt: 'Organize the following fabricated weekly tasks into a polished weekly report with three sections — "Done / Next Week / Risks & Suggestions" — and save as a Word document:\n- Shipped the new sign-in page redesign; conversion rate up ~12%\n- Fixed 5 customer-reported defects on production (one P0)\n- Helped PM finalize the Q3 OKR draft\n- Migrated backend logging from print to structured logger\n- Aligned with design on the visual spec for the new notification center'
         },
         officialDoc: {
           title: 'Official Notice',
@@ -1315,24 +1315,24 @@ export default {
         polishWriting: {
           title: 'Polish Writing',
           subtitle: 'Formal business tone',
-          prompt: 'Polish the following text into a formal business report tone, removing colloquial expressions:\n\n(paste your draft here)'
+          prompt: 'Polish the following colloquial draft into a formal business report tone, fixing grammar and removing chatty expressions:\n\nHad a decent week — mostly got the new login page over the line, looks way nicer than the old one. Squashed a bunch of bugs too, one was kinda scary and almost shipped, lucky we caught it. Plan for next week is to keep cracking on the notification center, should be fine.'
         },
-        translateDoc: {
-          title: 'Translate Document',
-          subtitle: 'PDF EN → bilingual Word',
-          prompt: 'I will drop an English PDF — translate it to Chinese, preserve the original heading and paragraph structure, and output a bilingual Word document (English left, Chinese right)'
+        translateSnippet: {
+          title: 'Bilingual Translation',
+          subtitle: 'EN → CN side-by-side',
+          prompt: 'Translate the following English paragraph to Chinese and present it as a left-English / right-Chinese bilingual Markdown table:\n\nLarge language models have evolved from research curiosities into core infrastructure for modern software. Treating them as predictable services—rather than oracles—lets engineers build reliable products on top of inherently probabilistic systems.'
         },
 
         // Data & Spreadsheets
         excelSummary: {
           title: 'Excel Summary',
-          subtitle: 'CSV → grouped totals',
-          prompt: 'I will drop a CSV file — group rows by department, add summary rows and a month-over-month change column, and produce an Excel file with conditional formatting (highlight outliers)'
+          subtitle: 'Fabricated grouped data',
+          prompt: 'Using a fabricated 12-month sales dataset for four departments (Sales / Marketing / R&D / Support), group rows by department, add monthly summary rows and a month-over-month change column, and produce an Excel file with conditional formatting that highlights outliers'
         },
         dataAnalysis: {
           title: 'Data Analysis',
-          subtitle: 'Excel → trend report',
-          prompt: 'I will drop a sales Excel — analyze it for outliers and trends, then produce an analysis report (Word) with key findings and supporting charts'
+          subtitle: 'Fabricated sales report',
+          prompt: 'Using a fabricated 12-month, 4-region sales dataset, find the outlier months and trend characteristics, then produce a Word analysis report with key findings and supporting charts'
         },
         dataChart: {
           title: 'Data Visualization',
@@ -1346,15 +1346,15 @@ export default {
         },
 
         // Files & Search
-        pdfExtract: {
-          title: 'PDF Extract',
-          subtitle: 'Contract terms table',
-          prompt: 'I will drop a contract PDF — extract every key term (amount, duration, liability, dispute resolution, etc.) along with original locations, and organize them into a comparison table'
+        findDuplicates: {
+          title: 'Duplicate Files',
+          subtitle: 'Hash-based dedupe',
+          prompt: 'Scan my Downloads folder (this folder only, do not recurse) and find duplicate files by content hash. List them in a table with path, size, and last-modified time. Do not delete anything — let me confirm first.'
         },
         fileSearch: {
           title: 'File Search',
           subtitle: 'Millisecond full-disk',
-          prompt: 'Use the file_search tool (system-index based, millisecond — do NOT use mdfind/find shell commands) to search for files matching "project evaluation report", sort by modified time descending, list up to 20'
+          prompt: 'Use the file_search tool (system-index based, millisecond — do NOT use mdfind/find shell commands) to find files whose name contains "report", sort by modified time descending, list up to 20'
         },
         desktopOrganize: {
           title: 'Desktop Cleanup',
@@ -1370,8 +1370,8 @@ export default {
         },
         webFetch: {
           title: 'Web Page Capture',
-          subtitle: 'Fetch + summarize',
-          prompt: 'Fetch the content of this technical blog post (paste URL) and summarize it into structured key takeaways: https://...'
+          subtitle: 'HN front-page top 10',
+          prompt: 'Fetch the front page of https://news.ycombinator.com/ and list the current top 10 stories with title, link, and comment count, formatted as a table'
         },
         parallelResearch: {
           title: 'Parallel Research',
@@ -1414,8 +1414,8 @@ export default {
         },
         watchWebpage: {
           title: 'Page Change Watch',
-          subtitle: 'Content update alert',
-          prompt: 'Create a watch: monitor a specific webpage (paste URL), check hourly, notify me when the main content changes'
+          subtitle: 'GitHub Trending alert',
+          prompt: 'Create a watch: check https://github.com/trending/python every hour and notify me whenever a new project enters today\'s ranking'
         },
 
         // System & Development
@@ -1426,25 +1426,25 @@ export default {
         },
         gitHistory: {
           title: 'Git History',
-          subtitle: 'Commits by author',
-          prompt: 'Look at this repo\'s (paste local path) commit history over the last 30 days, group by author with commit counts and the main modules they touched'
+          subtitle: 'Current repo stats',
+          prompt: 'Look at the git history of the current working directory over the last 30 days, group by author with commit counts and the main modules they touched, output as a table'
         },
-        codeRefactor: {
-          title: 'Bulk Code Edit',
-          subtitle: 'Cross-file find/replace',
-          prompt: 'In this folder (paste path), replace every print(...) with logger.info(...) across all .py files, and auto-add the logger import at the top of each file'
+        portCheck: {
+          title: 'Port Usage',
+          subtitle: 'Who owns common ports',
+          prompt: 'Check which processes currently hold the common ports 80, 443, 3000, 5173, and 8080 on this machine. List the process name, PID, and the launch command for each.'
         },
 
         // Memory & Knowledge
         recallHistory: {
           title: 'Recall History',
           subtitle: 'Search past conversations',
-          prompt: 'You looked into a project (keyword: ...) for me previously — what was your conclusion? Find it in the conversation history'
+          prompt: 'Search my past conversation history for anything related to "candlestick chart" and list the 5 most recent matches with a short summary and timestamp'
         },
         knowledgeQa: {
           title: 'Knowledge Q&A',
           subtitle: 'Local knowledge base',
-          prompt: 'Search my knowledge base for content about ..., summarize the key points and cite the source file paths'
+          prompt: 'Search my knowledge base for content related to "API documentation", summarize the key points found, and cite the source file paths. If the knowledge base is empty, tell me how to add documents.'
         }
       }
     },
