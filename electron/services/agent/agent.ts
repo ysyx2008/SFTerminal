@@ -2799,13 +2799,8 @@ export abstract class Agent {
       historyService: this.services.historyService,
       getAiService: () => this.services.aiService,
       getActiveProfileId: () => this.profileId || this.services.configService?.getActiveAiProfile() || undefined,
-      getParentContext: () => {
-        if (!run.messages.length) return undefined
-        return {
-          messages: run.messages,
-          tools: this.getAvailableTools()
-        }
-      },
+      getAgentContext: () => run.context,
+      getAiRules: () => this.services.configService?.getAiRules() ?? '',
       setCurrentPtyId: (ptyId: string) => {
         if (!ptyId || ptyId === run.ptyId) return
         const before = run.ptyId

@@ -196,13 +196,13 @@ run(message, context, options)
 
 | 段 | 工具 | 用途 |
 |---|---|---|
-| 子 Agent 通用前缀（前 6 个） | `exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search` | explore/research 子 Agent 工具列表 = 此段 |
-| edit 子专用追加（前 7-8 个） | `edit_file, write_text_file` | edit 子 Agent 工具列表 = 上一段 + 此段 |
+| 子 Agent 通用前缀（前 7 个） | `exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search, web_fetch` | `read` 类型子 Agent 工具列表 = 此段 |
+| `write` 类型追加（前 8-9 个） | `edit_file, write_text_file` | `write` 类型子 Agent 工具列表 = 上一段 + 此段 |
 | 父 Agent 专用尾部 | `write_remote_text_file, sftp_put, sftp_get, remember_info, ask_user, plan, skill, load_user_skill, recall, search_history, dispatch_agents, talk_to_user` | 仅父 Agent 可见；`write_remote_text_file` 仅 SSH 模式；`sftp_put/sftp_get` local+ssh 模式（local tab 通过 pane_id 指 SSH 窗格） |
 
 **保持前缀连续的红线**：
 
-1. 新增子 Agent 用的工具时，必须放进对应分段（前 6 / 前 8）的末尾，并同步更新 `SUB_AGENT_TYPES` 白名单
+1. 新增子 Agent 用的工具时，必须放进对应分段（前 7 / 前 9）的末尾，并同步更新 `SUB_AGENT_TYPES` 白名单
 2. 新增父专用工具，只能加在尾部
 3. **不要**为子 Agent 重写工具 description（破坏 byte-exact 字节）。如果某些工具描述对子 Agent 无关上下文太多，应通过 `parameters.description` 传入或在 user 指令中说明，不要改 `function.description`
 4. `web_search` 是条件性工具（未配置时整体不存在），即使不存在也不破坏前缀关系（子 Agent 同样不会有它，仍是父的连续前缀）
@@ -230,28 +230,51 @@ run(message, context, options)
 
 主 Agent 通过 `dispatch_agents` 工具分派轻量子任务并行执行。
 
-**Fork 模式**（参考 Claude Code）：子 Agent 继承父 Agent 的**消息历史**（system prompt + messages）作为 fork 前缀，最大化 Anthropic/DeepSeek 前缀缓存命中。父 Agent 尚未完成的 tool_result 用固定占位符（`FORK_PLACEHOLDER`）替代，子任务指令作为追加的 user 消息。所有子 Agent 共享同一消息前缀（byte-exact 一致），仅追加部分因任务而异。当父上下文不可用时直接报错（不再 fallback）。
+**独立模式**：子 Agent 用 `[system, user]` 两条消息开局，**不继承父 Agent 的对话历史**。父 Agent 想让子 Agent 知道的上下文必须显式写在 `task.prompt` 里。
 
-**工具列表**：子 Agent 看到的是按类型白名单过滤后的工具列表（**不是父 Agent 的完整工具列表**）。父 Agent 专属工具（`dispatch_agents`、`talk_to_user`、`plan`、`ask_user`、`remember_info` 等）对子 Agent 完全不可见，避免 LLM 误调用。工具 schema 部分仍因为顺序约定（见上节）共享 byte-exact 前缀，cache 命中不受影响。
+为什么不用 fork 模式：曾经参考 Claude Code 改成 fork（继承父消息历史以最大化 prompt cache），但导致严重的工具幻觉——子 Agent 的 system prompt 是父 Agent 的（描述自己能用 `dispatch_agents` / `talk_to_user` / `plan` 等），对话历史里也有这些工具的调用先例，但实际工具列表里没有这些。LLM 看到这种不一致会反复尝试调用不存在的工具，被运行时拦截后再重试，整体卡死。
 
-**Agent 类型系统**：每个子 Agent 按类型分配工具白名单和系统提示：
+切回独立模式后：
+- 身份、工具、历史三者彻底一致，根除幻觉源头
+- prompt cache 仍正常命中：所有同类型子 Agent 的 system prompt 与工具 schema byte-exact 一致
+
+**子 Agent system prompt 结构**（由 `PromptBuilder.buildSubAgentSystemPrompt` 构建）：
+
+| 段落 | 来源 | 备注 |
+|---|---|---|
+| 语言规则 | `LANGUAGE_RULE` 常量 | 与父 Agent 共用同一字符串 |
+| 运行环境（OS / Shell / CWD / 用户名 / 主目录） | `PromptBuilder.buildHostEnvironment(context, hostProfileService)` | 子 Agent `exec` 命令必须知道当前 OS / Shell（如 macOS sed -i 写法）、CWD（解析相对路径）等 |
+| 用户 AI Rules | `executor.getAiRules()` | 项目编码约定（如"用 npm 不用 yarn"），write 类型尤其重要 |
+| 类型角色 | `SUB_AGENT_TYPES[type].systemPromptPrefix` | 一两句话区分 read/write |
+| 工作方式 | 固定文本（不编造、简洁结构化输出） | byte-exact 常量 |
+
+**不**继承的部分：身份描述（IDENTITY/SOUL/USER）、技能列表、知识文档、对话历史、任务记忆、关切列表、羁绊上下文——这些都是会话级动态状态，子 Agent 是一次性短任务不需要。
+
+**不在 prompt 里点名"哪些工具不能调用"**：schema 不暴露的工具 LLM 一般不会主动捏造，反复点名反而是诱导。
+
+**byte-exact 一致性**：同一父 Agent 内所有子 Agent 共享相同 `context` / `aiRules` / `hostProfileService`，因此 system prompt 跨子 Agent byte-exact 一致；工具 schema 因为顺序约定（见「工具列表顺序约定」一节）天然共享前缀。两者都让 Anthropic/DeepSeek/OpenAI 的前缀缓存正常命中。
+
+**工具列表**：子 Agent 看到的是按类型白名单过滤后的工具列表（**不是父 Agent 的完整工具列表**）。父 Agent 专属工具（`dispatch_agents` / `talk_to_user` / `plan` / `ask_user` / `remember_info` 等）对子 Agent 完全不可见。
+
+**Agent 类型系统**：
 
 | 类型 | 用途 | 可用工具 |
 |---|---|---|
-| `explore`（默认） | 只读分析 | exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search |
-| `edit` | 文件修改 | explore + edit_file, write_text_file |
-| `research` | 知识检索归纳 | exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search |
+| `read`（默认） | 只读分析、调研、知识检索 | exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search, web_fetch |
+| `write` | 文件修改 | read + edit_file, write_text_file |
 
-类型通过 `SubAgentType` 接口定义，注册在 `SUB_AGENT_TYPES` 注册表中。白名单顺序与 `tools.ts` 中 `builtinTools` 的前缀严格对齐（见上节"工具列表顺序约定"），不要随意调整。
+类型通过 `SubAgentType` 接口定义，注册在 `SUB_AGENT_TYPES` 注册表中。白名单顺序与 `tools.ts` 中 `builtinTools` 的前缀严格对齐（见「工具列表顺序约定」），不要随意调整。
 
-`web_search` 在 edit 白名单里看似冗余（edit 任务很少联网），但保留它是为了让 edit 子 Agent 工具列表也是父工具列表的连续前缀（前 8 个）；无害，且 LLM 用不到也不会调。
+`web_search` / `web_fetch` 在 write 白名单里看似冗余（写任务很少联网），但保留是为了让 write 子 Agent 工具列表也是父工具列表的连续前缀（前 9 个）；无害，且 LLM 用不到也不会调。
 
-**执行时白名单（Defense in Depth）**：除了通过过滤工具列表让 LLM "看不到"禁用工具，运行时仍保留白名单检查（`allowedTools.has(toolName)`），万一 LLM 通过历史上下文等方式生成了禁用工具的调用，也会被运行时拦截并返回错误提示。
+**向后兼容**：fork 模式时期使用过 `explore` / `research` / `edit` 三种类型，`resolveAgentType` 保留映射（`explore` / `research` → `read`、`edit` → `write`），LLM 凭旧训练习惯传旧值也能 work。
+
+**执行时白名单（Defense in Depth）**：除了通过过滤工具列表让 LLM "看不到"禁用工具，运行时仍保留白名单检查（`allowedTools.has(toolName)`），万一 LLM 通过其它途径生成了禁用工具的调用，也会被运行时拦截并返回错误提示。
 
 **执行模式**：`dispatchSubAgents` 同步阻塞等待全部子任务完成后返回汇总结果。如果需要"边等边做"，主 Agent 应在同一次响应中并行调用其它工具（parallelizable tools），不需要单独的异步分支。
 
 **安全约束**：
-- 子 Agent 继承父 Agent 的 `executionMode`，**工具列表中没有 `dispatch_agents`，物理上不可递归**
+- 子 Agent 工具列表中**没有** `dispatch_agents`，物理上不可递归
 - 工具白名单保障安全（无终端操作等高危工具）
 - **确认策略**：子 Agent 不弹确认框（避免阻塞并行执行）。moderate 级操作自动放行，dangerous 级操作自动拒绝并打印工具参数预览（便于调试），子 Agent 可换策略重试或报告给主 Agent 处理
 

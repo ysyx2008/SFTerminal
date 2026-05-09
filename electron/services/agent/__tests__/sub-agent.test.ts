@@ -1,8 +1,13 @@
 /**
  * sub-agent.ts 单元测试
- * 测试并行子 Agent 的核心功能：任务分派、并发控制、结果汇总、错误处理
+ *
+ * 测试并行子 Agent 的核心功能（独立模式）：
+ * - 任务分派、并发控制、结果汇总、错误处理
+ * - 独立 [system, user] 开局，不继承父 Agent 对话历史
+ * - system prompt 包含运行环境与 aiRules，跨同类型子 Agent byte-exact 一致
+ * - 工具白名单：read / write 两类，向后兼容旧值（explore/research → read，edit → write）
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
 vi.mock('electron', () => ({
   app: {
@@ -34,21 +39,19 @@ import { dispatchSubAgents, getSubAgentTools } from '../tools/sub-agent'
 import { getAgentTools } from '../tools'
 import type { ToolDefinition } from '../../ai.service'
 import type { ToolExecutorConfig, AgentConfig } from '../tools/types'
+import type { AgentContext } from '../types'
 import type { AgentStep } from '@shared/types'
 
 // ==================== Mock 工厂函数 ====================
 
 const MOCK_TOOL_CALL_ID = 'tc-dispatch-mock'
 
-const DEFAULT_PARENT_MESSAGES = [
-  { role: 'system' as const, content: 'You are a helpful assistant.' },
-  { role: 'user' as const, content: '请帮我分析项目' },
-  { role: 'assistant' as const, content: '好的，我来分派子任务。', tool_calls: [
-    { id: MOCK_TOOL_CALL_ID, type: 'function' as const, function: { name: 'dispatch_agents', arguments: '{}' } }
-  ] }
-]
-
-const DEFAULT_PARENT_TOOLS: ToolDefinition[] = getAgentTools(undefined, { mode: 'assistant' })
+const DEFAULT_AGENT_CONTEXT: AgentContext = {
+  terminalOutput: [],
+  systemInfo: { os: 'darwin', shell: 'zsh' },
+  terminalType: 'assistant',
+  cwd: '/Users/test/workspace',
+}
 
 function createMockAiService() {
   return {
@@ -102,10 +105,8 @@ function createMockExecutor(overrides: Partial<ToolExecutorConfig> = {}): ToolEx
     getAiService: vi.fn().mockReturnValue(mockAiService),
     getActiveProfileId: vi.fn().mockReturnValue('test-profile'),
     historyService: undefined,
-    getParentContext: vi.fn().mockReturnValue({
-      messages: DEFAULT_PARENT_MESSAGES,
-      tools: DEFAULT_PARENT_TOOLS
-    }),
+    getAgentContext: vi.fn().mockReturnValue(DEFAULT_AGENT_CONTEXT),
+    getAiRules: vi.fn().mockReturnValue(''),
     ...overrides,
     // Expose for assertions
     _mockAiService: mockAiService,
@@ -126,7 +127,7 @@ const defaultConfig: AgentConfig = {
 // ==================== 测试 ====================
 
 describe('getSubAgentTools', () => {
-  it('explore type (default) should exclude write tools', () => {
+  it('read type (default) should exclude write tools', () => {
     const tools = getSubAgentTools()
     const toolNames = tools.map(t => t.function.name)
 
@@ -139,6 +140,7 @@ describe('getSubAgentTools', () => {
     expect(toolNames).not.toContain('edit_file')
     expect(toolNames).not.toContain('write_text_file')
 
+    // 父专属工具一律不在子 Agent 工具列表
     expect(toolNames).not.toContain('execute_command')
     expect(toolNames).not.toContain('dispatch_agents')
     expect(toolNames).not.toContain('ask_user')
@@ -148,8 +150,8 @@ describe('getSubAgentTools', () => {
     expect(toolNames).not.toContain('talk_to_user')
   })
 
-  it('edit type should include write tools', () => {
-    const tools = getSubAgentTools('edit')
+  it('write type should include edit/write tools', () => {
+    const tools = getSubAgentTools('write')
     const toolNames = tools.map(t => t.function.name)
 
     expect(toolNames).toContain('read_file')
@@ -173,7 +175,7 @@ describe('getSubAgentTools', () => {
     const parentTools = getAgentTools(undefined, { mode: 'assistant' })
     const parentNames = parentTools.map(t => t.function.name)
 
-    for (const type of ['explore', 'edit', 'research']) {
+    for (const type of ['read', 'write']) {
       const subTools = getSubAgentTools(type)
       const subNames = subTools.map(t => t.function.name)
       const prefix = parentNames.slice(0, subNames.length)
@@ -181,32 +183,28 @@ describe('getSubAgentTools', () => {
     }
   })
 
-  it('research type should have focused tool set', () => {
-    const tools = getSubAgentTools('research')
-    const toolNames = tools.map(t => t.function.name)
+  it('legacy agent_type values should map to current types', () => {
+    // 向后兼容：fork 模式时期使用过 explore / research / edit 三种类型，
+    // LLM 凭旧训练习惯调用 explore 等也能 work
+    const exploreTools = getSubAgentTools('explore')
+    const researchTools = getSubAgentTools('research')
+    const readTools = getSubAgentTools('read')
+    expect(exploreTools.map(t => t.function.name)).toEqual(readTools.map(t => t.function.name))
+    expect(researchTools.map(t => t.function.name)).toEqual(readTools.map(t => t.function.name))
 
-    expect(toolNames).toContain('read_file')
-    expect(toolNames).toContain('exec')
-    expect(toolNames).toContain('search_knowledge')
-    expect(toolNames).toContain('get_knowledge_doc')
-
-    expect(toolNames).toContain('file_search')
-
-    // research 不包含写工具
-    expect(toolNames).not.toContain('edit_file')
-    expect(toolNames).not.toContain('write_text_file')
+    const editTools = getSubAgentTools('edit')
+    const writeTools = getSubAgentTools('write')
+    expect(editTools.map(t => t.function.name)).toEqual(writeTools.map(t => t.function.name))
   })
 
-  it('unknown type should fall back to explore', () => {
+  it('unknown type should fall back to read', () => {
     const tools = getSubAgentTools('nonexistent')
-    const exploreTools = getSubAgentTools('explore')
-    const toolNames = tools.map(t => t.function.name)
-    const exploreNames = exploreTools.map(t => t.function.name)
-    expect(toolNames).toEqual(exploreNames)
+    const readTools = getSubAgentTools('read')
+    expect(tools.map(t => t.function.name)).toEqual(readTools.map(t => t.function.name))
   })
 
   it('each tool should have required schema fields', () => {
-    for (const type of ['explore', 'edit', 'research']) {
+    for (const type of ['read', 'write']) {
       const tools = getSubAgentTools(type)
       for (const tool of tools) {
         expect(tool.type).toBe('function')
@@ -220,7 +218,7 @@ describe('getSubAgentTools', () => {
 
   it('parameter schemas should match main agent tools', () => {
     const mainTools = getAgentTools(undefined, { mode: 'assistant' })
-    const subTools = getSubAgentTools('edit')
+    const subTools = getSubAgentTools('write')
 
     for (const subTool of subTools) {
       const mainTool = mainTools.find(t => t.function.name === subTool.function.name)
@@ -270,9 +268,9 @@ describe('dispatchSubAgents', () => {
     expect(result.error).toContain('AI service')
   })
 
-  it('should reject when parent context is unavailable', async () => {
+  it('should reject when agent context is unavailable', async () => {
     const executor = createMockExecutor({
-      getParentContext: vi.fn().mockReturnValue(undefined)
+      getAgentContext: vi.fn().mockReturnValue(undefined)
     })
     const result = await dispatchSubAgents(
       { tasks: [{ description: 'test', prompt: 'test' }] },
@@ -281,14 +279,22 @@ describe('dispatchSubAgents', () => {
       MOCK_TOOL_CALL_ID
     )
     expect(result.success).toBe(false)
-    expect(result.error).toContain('父 Agent 上下文')
+    expect(result.error).toContain('Agent 运行上下文')
+  })
+
+  it('should validate sub-task prompt is non-empty', async () => {
+    const executor = createMockExecutor()
+    const result = await dispatchSubAgents({
+      tasks: [{ description: 'Bad task', prompt: '  ' }]
+    }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('prompt')
   })
 
   it('should dispatch tasks and collect results', async () => {
     const executor = createMockExecutor()
     const mockAi = (executor as any)._mockAiService
 
-    // 每个子 Agent 第一轮返回最终结果（无工具调用）
     mockAi.chatWithTools.mockResolvedValue({
       content: 'Task completed successfully',
       tool_calls: undefined,
@@ -308,7 +314,6 @@ describe('dispatchSubAgents', () => {
     expect(result.output).toContain('分析文件 B')
     expect(result.output).toContain('Task completed successfully')
 
-    // AI 应被调用 2 次（每个子任务 1 次）
     expect(mockAi.chatWithTools).toHaveBeenCalledTimes(2)
   })
 
@@ -327,7 +332,6 @@ describe('dispatchSubAgents', () => {
       tasks: [{ description: 'Task 1', prompt: 'Do task 1' }]
     }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
 
-    // addStep 应被调用一次（dispatch_agents 工具的 tool_call 步骤）
     expect(executor.addStep).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'tool_call',
@@ -336,10 +340,8 @@ describe('dispatchSubAgents', () => {
       })
     )
 
-    // updateStep 应被调用来更新进度（running → completed）
     expect(executor.updateStep).toHaveBeenCalled()
 
-    // 最终 updateStep 调用应包含 completed 状态
     const lastUpdateCall = (executor.updateStep as any).mock.calls.at(-1)
     expect(lastUpdateCall).toBeDefined()
     const lastSubAgents = lastUpdateCall[1].subAgents
@@ -372,12 +374,10 @@ describe('dispatchSubAgents', () => {
       ]
     }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
 
-    // 整体标记为非全成功
     expect(result.success).toBe(false)
     expect(result.output).toContain('成功任务')
     expect(result.output).toContain('失败任务')
     expect(result.output).toContain('rate limit')
-    // error 字段应有明确的失败计数信息
     expect(result.error).toContain('1/2')
   })
 
@@ -406,7 +406,6 @@ describe('dispatchSubAgents', () => {
       max_concurrent: 2
     }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
 
-    // 并发度不应超过 2
     expect(Math.max(...concurrencyTracker)).toBeLessThanOrEqual(2)
     expect(mockAi.chatWithTools).toHaveBeenCalledTimes(4)
   })
@@ -419,13 +418,12 @@ describe('dispatchSubAgents', () => {
     const mockAi = (executor as any)._mockAiService
 
     mockAi.chatWithTools.mockImplementation(async () => {
-      // 在第一个子任务完成后标记为 aborted
       isAborted = true
       await new Promise(resolve => setTimeout(resolve, 10))
       return { content: 'Done', tool_calls: undefined, finish_reason: 'stop', usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } }
     })
 
-    const result = await dispatchSubAgents({
+    await dispatchSubAgents({
       tasks: [
         { description: 'T1', prompt: 'P1' },
         { description: 'T2', prompt: 'P2' },
@@ -446,7 +444,6 @@ describe('dispatchSubAgents', () => {
     mockAi.chatWithTools.mockImplementation(async () => {
       callCount++
       if (callCount === 1) {
-        // 第一轮：要求读取文件
         return {
           content: '',
           tool_calls: [{
@@ -458,7 +455,6 @@ describe('dispatchSubAgents', () => {
           usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }
         }
       }
-      // 第二轮：返回最终结果
       return {
         content: 'File analysis complete: 50 lines of code',
         tool_calls: undefined,
@@ -471,17 +467,14 @@ describe('dispatchSubAgents', () => {
       tasks: [{ description: '分析文件', prompt: '请分析 /test/file.ts' }]
     }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
 
-    // AI 被调用 2 次（一轮工具调用 + 一轮最终结果）
     expect(mockAi.chatWithTools).toHaveBeenCalledTimes(2)
     expect(result.success).toBe(true)
     expect(result.output).toContain('File analysis complete')
 
-    // updateStep 应包含 steps 字段（工具执行记录）
     const updateCalls = (executor.updateStep as any).mock.calls
     const stepsUpdates = updateCalls.filter((c: any[]) => c[1]?.subAgents?.some((sa: any) => sa.steps?.length > 0))
     expect(stepsUpdates.length).toBeGreaterThan(0)
 
-    // 最终结果中应包含 read_file 步骤
     const finalUpdate = updateCalls.at(-1)
     const finalSubAgent = finalUpdate[1].subAgents?.[0]
     expect(finalSubAgent?.steps).toBeDefined()
@@ -507,7 +500,6 @@ describe('dispatchSubAgents', () => {
       tasks: [{ description: '', prompt: 'Do something' }]
     }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
 
-    // addStep 应使用默认描述
     expect(executor.addStep).toHaveBeenCalledWith(
       expect.objectContaining({
         subAgents: expect.arrayContaining([
@@ -517,7 +509,7 @@ describe('dispatchSubAgents', () => {
     )
   })
 
-  it('should default to explore agent type and pass filtered tool list to AI', async () => {
+  it('should default to read agent type and pass filtered tool list to AI', async () => {
     const executor = createMockExecutor()
     const mockAi = (executor as any)._mockAiService
 
@@ -532,11 +524,10 @@ describe('dispatchSubAgents', () => {
       tasks: [{ description: 'Read task', prompt: 'Read something' }]
     }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
 
-    // 子 Agent 看到的是按白名单过滤后的工具列表（不是父 Agent 的完整工具列表）
+    // 子 Agent 看到的是按白名单过滤后的工具列表
     const toolsPassedToAi = mockAi.chatWithTools.mock.calls[0][1]
-    const exploreTools = getSubAgentTools('explore')
-    expect(toolsPassedToAi).toEqual(exploreTools)
-    expect(toolsPassedToAi).not.toBe(DEFAULT_PARENT_TOOLS)
+    const readTools = getSubAgentTools('read')
+    expect(toolsPassedToAi).toEqual(readTools)
 
     // 父专属工具不应在子 Agent 工具列表中
     const subToolNames = toolsPassedToAi.map((t: any) => t.function.name)
@@ -544,19 +535,14 @@ describe('dispatchSubAgents', () => {
     expect(subToolNames).not.toContain('talk_to_user')
     expect(subToolNames).not.toContain('plan')
 
-    // 指令消息应包含 explore 类型约束
-    const messagesPassedToAi = mockAi.chatWithTools.mock.calls[0][0]
-    const directive = messagesPassedToAi[messagesPassedToAi.length - 1].content
-    expect(directive).toContain('explore')
-
     expect(executor.addStep).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: expect.stringContaining('explore')
+        content: expect.stringContaining('read')
       })
     )
   })
 
-  it('should pass edit-type tool list when agent_type is edit', async () => {
+  it('should pass write-type tool list when agent_type is write', async () => {
     const executor = createMockExecutor()
     const mockAi = (executor as any)._mockAiService
 
@@ -569,24 +555,46 @@ describe('dispatchSubAgents', () => {
 
     await dispatchSubAgents({
       tasks: [{ description: 'Write task', prompt: 'Edit something' }],
-      agent_type: 'edit'
+      agent_type: 'write'
     }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
 
-    // 子 Agent 工具列表应包含 edit 类型工具，且不含父专属工具
     const toolsPassedToAi = mockAi.chatWithTools.mock.calls[0][1]
     const subToolNames = toolsPassedToAi.map((t: any) => t.function.name)
     expect(subToolNames).toContain('edit_file')
     expect(subToolNames).toContain('write_text_file')
     expect(subToolNames).not.toContain('dispatch_agents')
 
-    // 指令消息应包含 edit 类型字样
-    const messagesPassedToAi = mockAi.chatWithTools.mock.calls[0][0]
-    const directive = messagesPassedToAi[messagesPassedToAi.length - 1].content
-    expect(directive).toContain('edit')
-
     expect(executor.addStep).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: expect.stringContaining('edit')
+        content: expect.stringContaining('write')
+      })
+    )
+  })
+
+  it('should accept legacy agent_type values (explore/research/edit)', async () => {
+    const executor = createMockExecutor()
+    const mockAi = (executor as any)._mockAiService
+
+    mockAi.chatWithTools.mockResolvedValue({
+      content: 'Done',
+      tool_calls: undefined,
+      finish_reason: 'stop',
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+    })
+
+    // legacy 'edit' 应映射为 'write'，工具列表与新值一致
+    await dispatchSubAgents({
+      tasks: [{ description: 'Legacy edit', prompt: 'Edit using legacy type' }],
+      agent_type: 'edit'
+    }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
+
+    const toolsPassedToAi = mockAi.chatWithTools.mock.calls[0][1]
+    expect(toolsPassedToAi).toEqual(getSubAgentTools('write'))
+
+    // 进度步骤标签使用归一化后的类型名（write）
+    expect(executor.addStep).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining('write')
       })
     )
   })
@@ -615,7 +623,7 @@ describe('dispatchSubAgents', () => {
     expect(JSON.stringify(tools1)).toBe(JSON.stringify(tools2))
   })
 
-  it('should allow per-task agent_type override in directive', async () => {
+  it('should allow per-task agent_type override', async () => {
     const executor = createMockExecutor()
     const mockAi = (executor as any)._mockAiService
 
@@ -629,18 +637,21 @@ describe('dispatchSubAgents', () => {
     await dispatchSubAgents({
       tasks: [
         { description: 'Read task', prompt: 'Read something' },
-        { description: 'Edit task', prompt: 'Edit something', agent_type: 'edit' }
+        { description: 'Write task', prompt: 'Edit something', agent_type: 'write' }
       ],
-      agent_type: 'explore'
+      agent_type: 'read'
     }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
 
-    // 第一个子任务指令应包含 explore
-    const msgs1 = mockAi.chatWithTools.mock.calls[0][0]
-    expect(msgs1[msgs1.length - 1].content).toContain('explore')
+    // 第一个子任务用 read 工具集
+    const tools1 = mockAi.chatWithTools.mock.calls[0][1]
+    const tools1Names = tools1.map((t: any) => t.function.name)
+    expect(tools1Names).not.toContain('edit_file')
 
-    // 第二个子任务指令应包含 edit
-    const msgs2 = mockAi.chatWithTools.mock.calls[1][0]
-    expect(msgs2[msgs2.length - 1].content).toContain('edit')
+    // 第二个子任务用 write 工具集
+    const tools2 = mockAi.chatWithTools.mock.calls[1][1]
+    const tools2Names = tools2.map((t: any) => t.function.name)
+    expect(tools2Names).toContain('edit_file')
+    expect(tools2Names).toContain('write_text_file')
 
     // 进度步骤应显示 mixed
     expect(executor.addStep).toHaveBeenCalledWith(
@@ -650,19 +661,102 @@ describe('dispatchSubAgents', () => {
     )
   })
 
-  it('should validate sub-task prompt is non-empty', async () => {
+  it('should not invoke parent waitForConfirmation (sub-agent auto-handles)', async () => {
     const executor = createMockExecutor()
-    const result = await dispatchSubAgents({
-      tasks: [{ description: 'Bad task', prompt: '  ' }]
+    const mockAi = (executor as any)._mockAiService
+
+    mockAi.chatWithTools.mockResolvedValue({
+      content: 'Task completed',
+      tool_calls: undefined,
+      finish_reason: 'stop',
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+    })
+
+    await dispatchSubAgents({
+      tasks: [{ description: 'Test task', prompt: 'Do something' }],
+      agent_type: 'write'
     }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
-    expect(result.success).toBe(false)
-    expect(result.error).toContain('prompt')
+
+    expect(executor.waitForConfirmation).not.toHaveBeenCalled()
   })
 
-  // ==================== Fork 上下文继承测试 ====================
-
-  it('should inherit parent message history via fork', async () => {
+  it('should enforce tool whitelist and block unauthorized tools (defense in depth)', async () => {
+    // 工具白名单是后置防线：即使 LLM 通过越狱/历史上下文等方式调用了禁用工具，运行时仍能拦截
     const executor = createMockExecutor()
+    const mockAi = (executor as any)._mockAiService
+
+    let callCount = 0
+    mockAi.chatWithTools.mockImplementation(async () => {
+      callCount++
+      if (callCount === 1) {
+        // 模拟 LLM 试图调用 read 类型禁用的 edit_file
+        return {
+          content: '',
+          tool_calls: [{ id: 'tc-edit', type: 'function', function: { name: 'edit_file', arguments: '{"path": "/test.ts", "old_text": "a", "new_text": "b"}' } }],
+          finish_reason: 'tool_calls',
+          usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }
+        }
+      }
+      return {
+        content: 'OK, read-only mode noted',
+        tool_calls: undefined,
+        finish_reason: 'stop',
+        usage: { prompt_tokens: 200, completion_tokens: 20, total_tokens: 220 }
+      }
+    })
+
+    const result = await dispatchSubAgents({
+      tasks: [{ description: 'Read task', prompt: 'Analyze files' }],
+      agent_type: 'read'
+    }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
+
+    expect(result.success).toBe(true)
+    expect(mockAi.chatWithTools).toHaveBeenCalledTimes(2)
+
+    const msgs = mockAi.chatWithTools.mock.calls[1][0]
+    const toolResult = msgs.find((m: any) => m.role === 'tool' && m.tool_call_id === 'tc-edit')
+    expect(toolResult?.content).toContain('不在当前子 Agent 类型的可用范围内')
+  })
+
+  // ==================== 独立模式：消息开局结构 ====================
+
+  it('should start with [system, user] only (no inherited parent history)', async () => {
+    // 独立模式核心断言：子 Agent 的初始消息 = system prompt + user 任务指令，
+    // **不包含**父 Agent 的对话历史（避免身份/工具/历史认知错位的幻觉）
+    const executor = createMockExecutor()
+    const mockAi = (executor as any)._mockAiService
+
+    mockAi.chatWithTools.mockResolvedValue({
+      content: 'Done',
+      tool_calls: undefined,
+      finish_reason: 'stop',
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+    })
+
+    await dispatchSubAgents({
+      tasks: [{ description: 'Task', prompt: '请分析 /path/file.ts' }]
+    }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
+
+    const messages = mockAi.chatWithTools.mock.calls[0][0]
+    expect(messages).toHaveLength(2)
+    expect(messages[0].role).toBe('system')
+    expect(messages[1]).toEqual({ role: 'user', content: '请分析 /path/file.ts' })
+
+    // 不应携带任何 fork 痕迹（assistant 消息、tool 占位等）
+    expect(messages.some((m: any) => m.role === 'assistant')).toBe(false)
+    expect(messages.some((m: any) => m.role === 'tool')).toBe(false)
+  })
+
+  it('should include host environment in system prompt', async () => {
+    // 项目级稳定信息继承：子 Agent system prompt 必须包含运行环境
+    const executor = createMockExecutor({
+      getAgentContext: vi.fn().mockReturnValue({
+        terminalOutput: [],
+        systemInfo: { os: 'darwin', shell: 'zsh' },
+        terminalType: 'assistant',
+        cwd: '/Users/test/proj',
+      } as AgentContext)
+    })
     const mockAi = (executor as any)._mockAiService
 
     mockAi.chatWithTools.mockResolvedValue({
@@ -676,27 +770,59 @@ describe('dispatchSubAgents', () => {
       tasks: [{ description: 'Task', prompt: 'Do something' }]
     }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
 
-    const messagesPassedToAi = mockAi.chatWithTools.mock.calls[0][0]
-
-    // 应包含父的系统提示
-    expect(messagesPassedToAi[0]).toMatchObject({ role: 'system', content: 'You are a helpful assistant.' })
-
-    // 应包含父的用户消息
-    expect(messagesPassedToAi[1]).toMatchObject({ role: 'user', content: '请帮我分析项目' })
-
-    // 应包含 fork 占位 tool_result
-    const toolResults = messagesPassedToAi.filter((m: any) => m.role === 'tool')
-    expect(toolResults.length).toBe(1)
-    expect(toolResults[0].tool_call_id).toBe(MOCK_TOOL_CALL_ID)
-
-    // 最后一条应该是子 Agent 的指令
-    const lastMsg = messagesPassedToAi[messagesPassedToAi.length - 1]
-    expect(lastMsg.role).toBe('user')
-    expect(lastMsg.content).toContain('Do something')
-    expect(lastMsg.content).toContain('explore')
+    const systemPrompt = mockAi.chatWithTools.mock.calls[0][0][0].content
+    expect(systemPrompt).toContain('darwin')
+    expect(systemPrompt).toContain('zsh')
+    expect(systemPrompt).toContain('/Users/test/proj')
   })
 
-  it('should share same message prefix across multiple sub-agents', async () => {
+  it('should include aiRules in system prompt when configured', async () => {
+    // aiRules 继承：用户配置的项目级编码约定必须传递给子 Agent
+    const executor = createMockExecutor({
+      getAiRules: vi.fn().mockReturnValue('用 npm 不用 yarn\n测试用 vitest')
+    })
+    const mockAi = (executor as any)._mockAiService
+
+    mockAi.chatWithTools.mockResolvedValue({
+      content: 'Done',
+      tool_calls: undefined,
+      finish_reason: 'stop',
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+    })
+
+    await dispatchSubAgents({
+      tasks: [{ description: 'Task', prompt: 'Do something' }]
+    }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
+
+    const systemPrompt = mockAi.chatWithTools.mock.calls[0][0][0].content
+    expect(systemPrompt).toContain('用户自定义规则')
+    expect(systemPrompt).toContain('用 npm 不用 yarn')
+    expect(systemPrompt).toContain('测试用 vitest')
+  })
+
+  it('should omit aiRules section when not configured', async () => {
+    const executor = createMockExecutor({
+      getAiRules: vi.fn().mockReturnValue('')
+    })
+    const mockAi = (executor as any)._mockAiService
+
+    mockAi.chatWithTools.mockResolvedValue({
+      content: 'Done',
+      tool_calls: undefined,
+      finish_reason: 'stop',
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+    })
+
+    await dispatchSubAgents({
+      tasks: [{ description: 'Task', prompt: 'Do something' }]
+    }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
+
+    const systemPrompt = mockAi.chatWithTools.mock.calls[0][0][0].content
+    expect(systemPrompt).not.toContain('用户自定义规则')
+  })
+
+  it('should produce byte-exact same system prompt across sub-agents of same type', async () => {
+    // prompt cache 关键不变量：同一父 Agent 下相同类型的子 Agent system prompt 必须完全一致
     const executor = createMockExecutor()
     const mockAi = (executor as any)._mockAiService
 
@@ -714,113 +840,8 @@ describe('dispatchSubAgents', () => {
       ]
     }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
 
-    const msgs1 = mockAi.chatWithTools.mock.calls[0][0]
-    const msgs2 = mockAi.chatWithTools.mock.calls[1][0]
-
-    // 前缀部分（除最后一条 user 指令外）应完全一致
-    const prefix1 = msgs1.slice(0, -1)
-    const prefix2 = msgs2.slice(0, -1)
-    expect(prefix1).toEqual(prefix2)
-
-    // 最后一条各自包含不同任务
-    expect(msgs1[msgs1.length - 1].content).toContain('Do A')
-    expect(msgs2[msgs2.length - 1].content).toContain('Do B')
-  })
-
-  it('should enforce tool whitelist and block unauthorized tools (defense in depth)', async () => {
-    // 工具白名单是后置防线：即使 LLM 通过越狱/历史上下文等方式调用了禁用工具，运行时仍能拦截
-    const executor = createMockExecutor()
-    const mockAi = (executor as any)._mockAiService
-
-    let callCount = 0
-    mockAi.chatWithTools.mockImplementation(async () => {
-      callCount++
-      if (callCount === 1) {
-        // 模拟 LLM 试图调用 explore 类型禁用的 edit_file
-        return {
-          content: '',
-          tool_calls: [{ id: 'tc-edit', type: 'function', function: { name: 'edit_file', arguments: '{"path": "/test.ts", "old_text": "a", "new_text": "b"}' } }],
-          finish_reason: 'tool_calls',
-          usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }
-        }
-      }
-      return {
-        content: 'OK, read-only mode noted',
-        tool_calls: undefined,
-        finish_reason: 'stop',
-        usage: { prompt_tokens: 200, completion_tokens: 20, total_tokens: 220 }
-      }
-    })
-
-    const result = await dispatchSubAgents({
-      tasks: [{ description: 'Explore task', prompt: 'Analyze files' }],
-      agent_type: 'explore'
-    }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
-
-    expect(result.success).toBe(true)
-    expect(mockAi.chatWithTools).toHaveBeenCalledTimes(2)
-
-    const msgs = mockAi.chatWithTools.mock.calls[1][0]
-    const toolResult = msgs.find((m: any) => m.role === 'tool' && m.tool_call_id === 'tc-edit')
-    expect(toolResult?.content).toContain('不在当前子 Agent 类型的可用范围内')
-  })
-
-  it('should not invoke parent waitForConfirmation (sub-agent auto-handles)', async () => {
-    const executor = createMockExecutor()
-    const mockAi = (executor as any)._mockAiService
-
-    mockAi.chatWithTools.mockResolvedValue({
-      content: 'Task completed',
-      tool_calls: undefined,
-      finish_reason: 'stop',
-      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-    })
-
-    await dispatchSubAgents({
-      tasks: [{ description: 'Test task', prompt: 'Do something' }],
-      agent_type: 'edit'
-    }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
-
-    expect(executor.waitForConfirmation).not.toHaveBeenCalled()
-  })
-
-  it('should handle multiple pending tool_calls with placeholders', async () => {
-    const messagesWithMultipleCalls = [
-      { role: 'system' as const, content: 'System prompt' },
-      { role: 'user' as const, content: 'User request' },
-      { role: 'assistant' as const, content: '', tool_calls: [
-        { id: 'tc-read', type: 'function' as const, function: { name: 'read_file', arguments: '{}' } },
-        { id: 'tc-dispatch-2', type: 'function' as const, function: { name: 'dispatch_agents', arguments: '{}' } },
-      ] },
-      { role: 'tool' as const, tool_call_id: 'tc-read', content: 'file contents' },
-    ]
-
-    const executor = createMockExecutor({
-      getParentContext: vi.fn().mockReturnValue({
-        messages: messagesWithMultipleCalls,
-        tools: DEFAULT_PARENT_TOOLS
-      })
-    })
-    const mockAi = (executor as any)._mockAiService
-
-    mockAi.chatWithTools.mockResolvedValue({
-      content: 'Done',
-      tool_calls: undefined,
-      finish_reason: 'stop',
-      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-    })
-
-    await dispatchSubAgents({
-      tasks: [{ description: 'Task', prompt: 'Do it' }]
-    }, defaultConfig, executor, 'tc-dispatch-2')
-
-    const messagesPassedToAi = mockAi.chatWithTools.mock.calls[0][0]
-
-    const readResult = messagesPassedToAi.find((m: any) => m.role === 'tool' && m.tool_call_id === 'tc-read')
-    expect(readResult?.content).toBe('file contents')
-
-    const dispatchResult = messagesPassedToAi.find((m: any) => m.role === 'tool' && m.tool_call_id === 'tc-dispatch-2')
-    expect(dispatchResult).toBeDefined()
-    expect(dispatchResult?.content).toContain('子任务已分派')
+    const sys1 = mockAi.chatWithTools.mock.calls[0][0][0].content
+    const sys2 = mockAi.chatWithTools.mock.calls[1][0][0].content
+    expect(sys1).toBe(sys2)
   })
 })

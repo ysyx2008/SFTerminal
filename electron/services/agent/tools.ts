@@ -178,7 +178,7 @@ function dispatchAgentsPrefix(args: Record<string, unknown>): string | null {
   const rawTasks = Array.isArray(args.tasks) ? (args.tasks as unknown[]) : []
   if (rawTasks.length === 0) return null
 
-  const globalType = typeof args.agent_type === 'string' ? args.agent_type : 'explore'
+  const globalType = typeof args.agent_type === 'string' ? args.agent_type : 'read'
   let typeLabel = globalType
   for (const task of rawTasks) {
     if (!task || typeof task !== 'object') continue
@@ -514,7 +514,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
   // 最大化 prompt cache 命中（参考 sub-agent.ts 的 SUB_AGENT_TYPES）。
   // 改动顺序时请同步检查子 Agent 工具白名单。
   const builtinTools: ToolDefinition[] = [
-    // ==================== 子 Agent 通用前缀（explore/edit/research 都用） ====================
+    // ==================== 子 Agent 通用前缀（read / write 都用） ====================
     ...(execTool ? [execTool as ToolDefinition] : []),
     {
       type: 'function',
@@ -1012,11 +1012,10 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
 - 2 个及以上子任务才有并行价值
 
 Agent 类型：
-- explore（默认）：只读分析，读文件/exec/搜索
-- edit：可修改文件（edit_file/write_text_file）
-- research：知识检索与归纳，侧重知识库和结构化输出
+- read（默认）：只读分析与调研，读文件/exec/搜索/查知识库
+- write：可修改文件（在 read 基础上增加 edit_file / write_text_file）
 
-子 Agent 不能操作终端、不能向用户提问。`,
+⚠️ 子 Agent 看不到你的对话历史，每个子任务的 prompt 必须**自包含**（完整上下文：路径、目标、约束等）。子 Agent 不能操作终端、不能向用户提问。`,
         parameters: {
           type: 'object',
           properties: {
@@ -1027,7 +1026,7 @@ Agent 类型：
                 properties: {
                   description: { type: 'string', description: '任务简述（一句话，用于进度展示）' },
                   prompt: { type: 'string', description: '详细任务指令（子 Agent 的完整上下文）' },
-                  agent_type: { type: 'string', enum: ['explore', 'edit', 'research'], description: '此子任务的 Agent 类型（覆盖全局 agent_type）' }
+                  agent_type: { type: 'string', enum: ['read', 'write'], description: '此子任务的 Agent 类型（覆盖全局 agent_type）' }
                 },
                 required: ['description', 'prompt']
               },
@@ -1035,8 +1034,8 @@ Agent 类型：
             },
             agent_type: {
               type: 'string',
-              enum: ['explore', 'edit', 'research'],
-              description: '全局 Agent 类型（默认 explore）。每个子任务可单独指定 agent_type 覆盖'
+              enum: ['read', 'write'],
+              description: '全局 Agent 类型（默认 read）。每个子任务可单独指定 agent_type 覆盖'
             },
             max_concurrent: {
               type: 'number',
