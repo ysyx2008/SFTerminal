@@ -20,22 +20,31 @@
 import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { EChartsStepPayload } from '@shared/types'
+import { reifyFormattersForRender } from '@shared/utils/echarts-formatters'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('EChartsCanvas')
 const { t } = useI18n()
 
 /**
- * 缩略图最大宽度（px）。把活图嵌进对话气泡时如果完全跟随后端建议尺寸，
- * 大画布（如全年日 K 4800px）会撑爆气泡；这里一刀切到 480 让所有缩略图大小受控，
- * 超过此宽度的图按比例缩小。预览模态不受此限制（由 .image-preview-echarts 自己控制）。
+ * 缩略图尺寸约束（px）：用 max-width + max-height 同时收口，让宽高比差距大的图视觉
+ * 量级接近——宽幅图触顶宽度（K 线 720×225），高幅图触顶高度（饼图 400×400），
+ * 普通比例图取中（bar 640×400）。
  *
- * 注意：曾尝试同时加 THUMBNAIL_MAX_HEIGHT_PX 让宽幅图（K 线 ratio=3.2）和正方形图
- * （饼图 ratio=1）的视觉量级靠拢，但代价是正方形图会被压成 300×300（vs 之前 480×480），
- * 内部 title / pie 主体显得拥挤。在尚未找到两全方案前，保留单一 max-width 约束，
- * 接受 K 线缩略图自然偏矮的客观比例。
+ * 数值取舍：
+ * - max-width 720：让 K 线（ratio≈3.2）和 16:7 时序图能舒展开标签和成交量轴，
+ *   解决 "宽不够导致字号挤" 的问题（后端按 width=1600 算的 17px 字塞进 480 容器
+ *   时刻度互相重叠）；常见对话气泡内宽 700-900，720 不会撑爆
+ * - max-height 400：让接近正方形的图（饼图 ratio=1，雷达 ratio≈1）保持 400×400，
+ *   比单纯 max-width:480 时的 480×480 略小但不会"挤"（之前 300×300 会挤是因为
+ *   pie center / radar 的 radius 用百分比，画布缩到 300 时半径只有 ~110）
+ *
+ * 实现细节：用 CSS `min(payload.width, 720, 400 * ratio)` 让浏览器在三者中选最小，
+ * 自然达成 "contain 进 720×400 框" 的效果。aspect-ratio 由 payload.width/height
+ * 反算，让浏览器即便父容器 height auto 也能拿到具体高度（echarts.init 依赖 offsetHeight）
  */
-const THUMBNAIL_MAX_WIDTH_PX = 480
+const THUMBNAIL_MAX_WIDTH_PX = 720
+const THUMBNAIL_MAX_HEIGHT_PX = 400
 
 const props = defineProps<{
   payload: EChartsStepPayload
@@ -63,11 +72,11 @@ const containerStyle = computed(() => {
     // 具体 width / height，浏览器有完整尺寸信息直接渲染，不存在父子互相依赖问题）。
     return { width: '100%', height: '100%' }
   }
-  // 缩略图最多占 THUMBNAIL_MAX_WIDTH_PX，但保留后端建议尺寸作为天花板（小图不放大）
+  // 缩略图：用 min(payload.width, MAX_W, MAX_H × ratio) 让浏览器自动选 contain 尺寸。
+  // 三个参数：原图像素天花板（小图不放大）/ 720 宽度上限 / 按 ratio 反推的"高度上限对应宽度"。
   return {
     aspectRatio: `${ratio}`,
-    maxWidth: `min(${props.payload.width}px, ${THUMBNAIL_MAX_WIDTH_PX}px)`,
-    width: '100%'
+    width: `min(${props.payload.width}px, ${THUMBNAIL_MAX_WIDTH_PX}px, calc(${THUMBNAIL_MAX_HEIGHT_PX}px * ${ratio}))`
   }
 })
 
@@ -96,9 +105,14 @@ async function ensureChart(): Promise<void> {
     if (!chartInstance) {
       chartInstance = echarts.init(containerRef.value, null, { renderer: 'svg' })
     }
+    // reify：后端 sanitizeOptionForIpc 把 tagged function 转成了 { __echartsFn: id } marker
+    // （IPC 通道不支持 function），这里按 marker id 在 FORMATTER_REGISTRY 里查表还原成
+    // 内置 function，让 K 线副图 yAxis 等需要程序化 formatter 的场景视觉跟后端 SSR 一致。
+    // 未识别的 marker 会被丢弃（让 echarts 走默认 formatter），不抛错。
+    const reifiedOption = reifyFormattersForRender(props.payload.option)
     // notMerge:true 避免重渲染时旧 option 字段残留；lazyUpdate:true 把 setOption 推迟到
     // 下一帧合并，对话流里多个图同时初始化时减少卡顿
-    chartInstance.setOption(props.payload.option, { notMerge: true, lazyUpdate: true })
+    chartInstance.setOption(reifiedOption, { notMerge: true, lazyUpdate: true })
     renderError.value = null
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

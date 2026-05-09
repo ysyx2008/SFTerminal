@@ -197,6 +197,48 @@ describe('executeChartTool: image delivery contract', () => {
     expect(payload?.option).toHaveProperty('series')
   })
 
+  it('K 线 svg 模式：投递的 echartsOption 里 function formatter 被替换为 marker（保活图、过 IPC）', async () => {
+    const { config, steps } = makeExecutor()
+    // K 线 buildCandlestick 的成交量 yAxis 用 formatVolume function，必须通过 marker 协议
+    // 才能过 Electron IPC（structuredClone）。
+    const result = await executeChartTool(
+      'generate_chart',
+      'pty-1',
+      {
+        type: 'candlestick',
+        title: 'K 线 marker 测试',
+        data: {
+          categories: ['1', '2', '3'],
+          values: [[10, 12, 9, 13], [12, 11, 10, 13], [11, 14, 11, 15]],
+          volumes: [100000, 200000, 150000]
+        },
+        width: 1600,
+        height: 800
+      },
+      'call-kline-marker',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    expect(result.success).toBe(true)
+    const stepResult = steps.find(s => s.type === 'tool_result')
+    const payload = stepResult?.echartsOption
+    expect(payload).toBeDefined()
+
+    // sanitize 后的 option 必须能通过 structuredClone（IPC 投递不报错）
+    expect(() => structuredClone(payload!.option)).not.toThrow()
+
+    // 在 yAxis 数组里找成交量轴的 axisLabel.formatter——应该是 marker 而不是 function
+    const opt = payload!.option as {
+      yAxis: Array<{ axisLabel?: { formatter?: unknown } }>
+      tooltip: { formatter?: unknown }
+    }
+    const volumeAxis = opt.yAxis.find(a => a.axisLabel?.formatter)
+    expect(volumeAxis).toBeDefined()
+    expect(volumeAxis!.axisLabel!.formatter).toEqual({ __echartsFn: 'volume' })
+    // tooltip.formatter 也应该是 marker（中文 OHLC 输出由前端 reify 还原）
+    expect(opt.tooltip.formatter).toEqual({ __echartsFn: 'klineTooltip' })
+  })
+
   it('render_echarts_option svg 模式：含 function formatter 的 option 静默降级，仅走 SVG 兜底（避免 IPC DataCloneError）', async () => {
     const { config, steps } = makeExecutor()
     const result = await executeChartTool(

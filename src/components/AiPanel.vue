@@ -1104,22 +1104,39 @@ let dragStartTranslateY = 0
 const previewGroupIdx = ref(-1)
 const previewImageIdx = ref(-1)
 
-interface PreviewImageGroup {
-  groupId: string
-  images: string[]
+// 预览模式每张图都附带可选的 echartsPayload——这样左右/上下方向键导航时也能恢复活图
+// 模式（之前因为只存 string[]，导航时丢了 payload 上下文，切到下一张就退化成 <img>）。
+interface PreviewItem {
+  url: string
+  echartsPayload?: import('@shared/types').EChartsStepPayload
 }
 
-// 收集所有对话中的图片，按任务分组（用户图片 + 步骤图片合并到同一组）
+interface PreviewImageGroup {
+  groupId: string
+  items: PreviewItem[]
+}
+
+// 收集所有对话中的图片，按任务分组（用户图片 + 步骤图片合并到同一组）。
+// 一个 step 通常只有一张图但有一个 step.echartsOption——把 payload 关联到 step.images[0]，
+// 后续图（如果有）走纯 <img> 兜底（chart skill 当前是一 step 一图，不会触发；其它 skill
+// 多图时活图能力本来也没注入）。
 const allPreviewImages = computed((): PreviewImageGroup[] => {
   const result: PreviewImageGroup[] = []
   for (const group of agentTaskGroups.value) {
-    const images: string[] = []
-    if (group.images?.length) images.push(...group.images)
-    for (const step of group.steps) {
-      if (step.images?.length) images.push(...step.images)
+    const items: PreviewItem[] = []
+    if (group.images?.length) {
+      for (const url of group.images) items.push({ url })
     }
-    if (images.length > 0) {
-      result.push({ groupId: group.id, images })
+    for (const step of group.steps) {
+      if (!step.images?.length) continue
+      const payload = step.echartsOption
+      items.push({ url: step.images[0], echartsPayload: payload })
+      for (let i = 1; i < step.images.length; i++) {
+        items.push({ url: step.images[i] })
+      }
+    }
+    if (items.length > 0) {
+      result.push({ groupId: group.id, items })
     }
   }
   return result
@@ -1143,7 +1160,7 @@ const openImagePreview = (
   previewGroupIdx.value = -1
   previewImageIdx.value = -1
   for (let gi = 0; gi < allPreviewImages.value.length; gi++) {
-    const imgIdx = allPreviewImages.value[gi].images.indexOf(url)
+    const imgIdx = allPreviewImages.value[gi].items.findIndex(it => it.url === url)
     if (imgIdx !== -1) {
       previewGroupIdx.value = gi
       previewImageIdx.value = imgIdx
@@ -1190,15 +1207,14 @@ const navigatePreview = (groupIdx: number, imageIdx: number) => {
   const groups = allPreviewImages.value
   if (groupIdx < 0 || groupIdx >= groups.length) return
   const group = groups[groupIdx]
-  if (imageIdx < 0 || imageIdx >= group.images.length) return
+  if (imageIdx < 0 || imageIdx >= group.items.length) return
+  const item = group.items[imageIdx]
   previewGroupIdx.value = groupIdx
   previewImageIdx.value = imageIdx
-  previewImageUrl.value = group.images[imageIdx]
-  // 上下/左右导航的"目标图"是从 step.images 数组定位的，缺少 echartsOption 上下文，
-  // 退回到普通 <img> 路径——降级合理：用户主动按导航就接受静态视觉，需要交互可以
-  // 点击关闭后从对话流里再次单击想要的活图。allPreviewImages 暂未携带 echartsOption
-  // 数据源，未来可扩展为 PreviewItem[] 同时保留 echartsOption 引用。
-  previewEchartsPayload.value = null
+  previewImageUrl.value = item.url
+  // PreviewItem 同时携带 echartsPayload，导航到活图项时自动还原可交互模式；
+  // 普通图项 echartsPayload 为 undefined → null，模板自然走 <img> 路径。
+  previewEchartsPayload.value = item.echartsPayload ?? null
   resetPreviewTransform()
 }
 
@@ -1206,7 +1222,7 @@ const navigatePreview = (groupIdx: number, imageIdx: number) => {
 const canGoLeft = computed(() => previewImageIdx.value > 0)
 const canGoRight = computed(() => {
   const g = allPreviewImages.value[previewGroupIdx.value]
-  return g ? previewImageIdx.value < g.images.length - 1 : false
+  return g ? previewImageIdx.value < g.items.length - 1 : false
 })
 const canGoUp = computed(() => previewGroupIdx.value > 0)
 const canGoDown = computed(() => previewGroupIdx.value >= 0 && previewGroupIdx.value < allPreviewImages.value.length - 1)
@@ -1216,11 +1232,11 @@ const goRight = () => canGoRight.value && navigatePreview(previewGroupIdx.value,
 const goUp = () => {
   if (!canGoUp.value) return
   const prevGroup = allPreviewImages.value[previewGroupIdx.value - 1]
-  navigatePreview(previewGroupIdx.value - 1, prevGroup.images.length - 1)
+  navigatePreview(previewGroupIdx.value - 1, prevGroup.items.length - 1)
 }
 const goDown = () => canGoDown.value && navigatePreview(previewGroupIdx.value + 1, 0)
 
-const currentGroupImageCount = computed(() => allPreviewImages.value[previewGroupIdx.value]?.images.length ?? 0)
+const currentGroupImageCount = computed(() => allPreviewImages.value[previewGroupIdx.value]?.items.length ?? 0)
 
 // 滚轮缩放
 const handlePreviewWheel = (e: WheelEvent) => {

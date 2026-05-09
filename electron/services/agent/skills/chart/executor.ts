@@ -7,6 +7,7 @@ import { t } from '../../i18n'
 import { createLogger } from '../../../../utils/logger'
 import { buildOption, type ChartType, type ChartInput, type EChartsOption } from './render'
 import { renderToSvg, renderToPng, type RenderSize } from './ssr'
+import { sanitizeOptionForIpc, stripFormatterMarkers } from './ipc-sanitize'
 
 /** 输出格式：svg 矢量（默认）/ png 位图（嵌入 Word/PDF/IM 等） */
 type ChartFormat = 'svg' | 'png'
@@ -18,20 +19,14 @@ function parseFormat(raw: unknown): ChartFormat {
 const log = createLogger('ChartSkill')
 
 /**
- * 判断 option 能否安全经 IPC（structured clone）传给前端。
+ * 判断 option 能否原样安全经 IPC（structured clone）。仅给 render_echarts_option
+ * 自由路径用——AI 直传的 option 含 function 时，sanitize 会把陌生 function 删掉，
+ * 让 echarts 走默认 formatter，跟 SSR 出的 SVG 视觉不一致。所以自由路径选择保留旧
+ * 行为：含 function 就完全不投活图，让前端 fallback 到 SVG `<img>`，所见即所得。
  *
- * 风险：ECharts 文档大量推荐写法会让 option 含函数字段——`tooltip.formatter` /
- * `axisLabel.formatter` / `series.label.formatter` 等。结构化克隆碰到 function
- * 会直接抛 DataCloneError，整条 step 投递失败。
- *
- * 后端 SSR 渲染（renderToSvg）跑在同进程，function 是有效的；只有「投递给前端实例化」
- * 这条路怕函数。所以这里只在投递前过一遍，函数 → 不投递 echartsOption（让前端走
- * SVG 兜底，function 在后端 SSR 时已经发挥过作用，前端只显示静态结果），并打 warn
- * 让开发知情。
- *
- * 用 structuredClone（Node 18+ 内置全局，与 Electron IPC 序列化语义一致）而不是
- * JSON.stringify——后者会把函数静默转成 undefined，让前端 setOption 时 formatter 失踪
- * 但 IPC 不抛错，反而更难排查。直接 throw 让我们一次性识别"这个 option 不能给前端"。
+ * generate_chart 自家 build* 出来的 option 含的是已 tagFormatter 标记过的 function
+ * （见 ipc-sanitize.ts），sanitize 后会变成 marker 走活图，前端 reify 还原 formatter，
+ * 不需要走这个 fallback 检查。
  */
 function isIpcSafeForChart(option: unknown): boolean {
   try {
@@ -158,16 +153,15 @@ async function generateChart(
   //     SVG 格式，发过去要么被拒、要么静默丢弃，还会让 AI 误以为「图我看过了」从而
   //     脑补内容。chart 工具的成功状态完全可由 success + output 判断，无需 AI 视觉校验。
   // PDF skill 反过来：图首要目标是给 AI 看（视觉分析扫描件），所以走 ToolResult.images。
-  // svg 模式才考虑投递活图；同时 option 必须 IPC 安全（不含 function 字段，详见 isIpcSafeForChart）
-  // generate_chart 自己 buildOption 出来的 option 当前都是 IPC 安全的（formatter 都是字符串
-  // 模板而非函数），但保留这道检查作为契约不变量——某天 build* 函数加了 function formatter
-  // 也能被自动降级到 SVG 兜底，而不是炸 IPC
-  let echartsPayload: { option: EChartsOption; width: number; height: number } | undefined
+  // svg 模式投递活图：sanitize 把 tagFormatter 标记过的 function 转成 marker，前端 reify
+  // 还原。build* 出来的 option 完全在掌控之下（K 线 formatVolume 是唯一 function，已经 tag），
+  // sanitize 后必然 IPC 安全，不再需要 isIpcSafeForChart 兜底。
+  let echartsPayload: { option: unknown; width: number; height: number } | undefined
   if (format === 'svg') {
-    if (isIpcSafeForChart(option)) {
-      echartsPayload = { option, width: size.width, height: size.height }
-    } else {
-      log.warn('echartsOption contains non-cloneable values (likely function formatters); falling back to SVG-only delivery')
+    echartsPayload = {
+      option: sanitizeOptionForIpc(option),
+      width: size.width,
+      height: size.height
     }
   }
 
@@ -253,18 +247,23 @@ async function renderEchartsOption(
     ? t('chart.echarts_rendered_with_path', { path: savedPath })
     : t('chart.echarts_rendered')
 
-  // 同 generate_chart：svg 模式同时投递 echartsOption（活图）+ images（SVG 兜底），
-  // 让前端实例化交互；PNG 模式只走 images（AI 选位图通常是为了导出，气泡内看 PNG
-  // 与导出物视觉一致更直观）。详见 generate_chart 中的 addStep 注释。
+  // 同 generate_chart：svg 模式投递 echartsOption + images（SVG 兜底），让前端实例化交互。
   //
-  // 自由路径下 option 来自 AI 直传，更可能含函数 formatter（ECharts 文档大量推荐
-  // 这种写法），用 isIpcSafeForChart 把这种 option 拦下来仅走 SVG 兜底——后端 SSR
-  // 阶段 function 已经被 echarts 调用过、产出的 SVG 视觉效果完整，所以用户在气泡里
-  // 看到的图不会受影响，只是失去了"前端再次实例化时 formatter 也能用"的可能性。
+  // 自由路径下 option 来自 AI 直传：
+  //   (1) 自带 function 时不能走 sanitize——sanitize 会把陌生 function 全删（只留 tagFormatter
+  //       的内置 formatter），AI 写的 function 删了 echarts 走默认 formatter，跟 SSR 出的
+  //       SVG 视觉不一致。改用 isIpcSafeForChart 判断：含 function 就完全不投活图，让前端
+  //       fallback 到 SVG `<img>`——视觉所见即所得（SSR 阶段 function 已被 echarts 调用过、
+  //       SVG 完整呈现，只是失去重新实例化的交互能力）。
+  //   (2) AI 还可能直传 marker 占位符（如 `{__echartsFn:'klineTooltip'}` 这种 plain object）：
+  //       structuredClone 通得过 IPC 检查、原样到前端 reify 后会把内置 K 线 formatter 装到
+  //       散点/柱状图上，跑出怪异 tooltip。投递前先调 stripFormatterMarkers 清理——marker
+  //       协议仅供后端 generate_chart 内部使用，自由路径上 AI 永远碰不到 marker 还原能力。
   let echartsPayload: { option: EChartsOption; width: number; height: number } | undefined
   if (format === 'svg') {
-    if (isIpcSafeForChart(option)) {
-      echartsPayload = { option, width: size.width, height: size.height }
+    const cleaned = stripFormatterMarkers(option) as EChartsOption
+    if (isIpcSafeForChart(cleaned)) {
+      echartsPayload = { option: cleaned, width: size.width, height: size.height }
     } else {
       log.warn('render_echarts_option: option contains non-cloneable values (function formatters); falling back to SVG-only delivery')
     }
