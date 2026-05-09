@@ -632,6 +632,8 @@ export default {
     transportStdioLabel: 'Stdio (本地进程)',
     transportSse: 'SSE',
     transportSseLabel: 'SSE (远程服务)',
+    transportHttpLabel: 'Streamable HTTP (推荐)',
+    deprecated: '已弃用',
     command: '命令',
     commandPlaceholder: '例如：npx',
     commandPlaceholder2: '例如：npx、node、python',
@@ -641,6 +643,11 @@ export default {
     url: 'URL 地址',
     urlPlaceholder: 'http://localhost:3000/sse',
     sseUrl: 'SSE URL',
+    httpUrl: 'HTTP URL',
+    httpUrlPlaceholder: 'https://example.com/mcp/stream',
+    headersPerLine: '请求头 (Key: Value，每行一个)',
+    headersPlaceholder: 'Authorization: Bearer sk-xxxx\nX-Custom-Key: value',
+    headersHint: '远程 MCP 服务的鉴权信息（如 Bearer Token）等通过请求头携带；不需要可留空',
     env: '环境变量',
     envPlaceholder: 'KEY=value（每行一个）',
     envPerLine: '环境变量 (KEY=VALUE 格式，每行一个)',
@@ -674,11 +681,21 @@ export default {
       filesystem: 'Filesystem (本地文件)',
       github: 'GitHub',
       postgres: 'PostgreSQL',
-      sqlite: 'SQLite'
+      sqlite: 'SQLite',
+      httpBearer: 'HTTP + Bearer Token (示例)'
     },
     placeholders: {
-      githubToken: '<在此填入你的GitHub Token>'
-    }
+      githubToken: '<在此填入你的GitHub Token>',
+      bearerToken: 'Bearer <在此填入你的 API Key>'
+    },
+    importJson: '从 JSON 导入',
+    importJsonAction: '导入',
+    importJsonDialogTitle: '从 JSON 配置导入 MCP 服务器',
+    importJsonHint: '粘贴 MCP 服务方提供的 JSON 配置（含 url、headers 等），一键批量添加',
+    importJsonPlaceholder: '{\n  "mcpServers": {\n    "qcc-company": {\n      "url": "https://agent.qcc.com/mcp/company/stream",\n      "headers": {\n        "Authorization": "Bearer YOUR_TOKEN_HERE"\n      }\n    }\n  }\n}',
+    importJsonCompat: '兼容 Claude Desktop / Cursor 的 mcpServers 配置格式',
+    importJsonSuccess: '已导入 {count} 个 MCP 服务器',
+    importJsonInvalid: 'JSON 解析失败：{error}'
   },
 
   // 用户技能设置

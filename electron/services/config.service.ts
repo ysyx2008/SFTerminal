@@ -51,17 +51,20 @@ export interface TerminalSettings {
 }
 
 // MCP 服务器配置
+// NOTE: 与 electron/services/mcp.service.ts 中的同名 interface 保持一致；
+// 长期应迁移到 shared/types/ 集中定义。修改 transport 等公共字段时务必同步两处。
 export interface McpServerConfig {
   id: string
   name: string
   enabled: boolean
-  transport: 'stdio' | 'sse'
+  // 'http' = MCP Streamable HTTP（推荐）；'sse' = 旧 SSE（已被规范标记为 deprecated）
+  transport: 'stdio' | 'sse' | 'http'
   // stdio 模式
   command?: string
   args?: string[]
   env?: Record<string, string>
   cwd?: string
-  // sse 模式
+  // sse / http 模式
   url?: string
   headers?: Record<string, string>
 }

@@ -5,6 +5,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { ToolDefinition } from './ai.service'
 import { ChildProcess } from 'child_process'
@@ -14,18 +15,31 @@ import { createLogger } from '../utils/logger'
 
 const log = createLogger('MCP')
 
+/**
+ * 构造 SSE/Streamable-HTTP transport 的初始化选项
+ *
+ * SDK 内部的 `_commonHeaders()` 会从 `requestInit.headers` 提取自定义请求头，
+ * 自动合并到所有 GET (SSE)、POST、DELETE 请求中，因此只需把 headers 放进
+ * `requestInit` 即可同时覆盖两种传输方式（SSE 和 Streamable HTTP）。
+ */
+function buildHttpTransportOptions(headers?: Record<string, string>): { requestInit?: RequestInit } | undefined {
+  if (!headers || Object.keys(headers).length === 0) return undefined
+  return { requestInit: { headers } }
+}
+
 // MCP 服务器配置
 export interface McpServerConfig {
   id: string
   name: string
   enabled: boolean
-  transport: 'stdio' | 'sse'
+  // 'http' = MCP Streamable HTTP（推荐）；'sse' = 旧 SSE（已被规范标记 deprecated，仍保留用于兼容老服务器）
+  transport: 'stdio' | 'sse' | 'http'
   // stdio 模式
   command?: string
   args?: string[]
   env?: Record<string, string>
   cwd?: string
-  // sse 模式
+  // sse / http 模式
   url?: string
   headers?: Record<string, string>
 }
@@ -136,7 +150,15 @@ export class McpService extends EventEmitter {
           throw new Error('sse 模式需要指定 url')
         }
 
-        transport = new SSEClientTransport(new URL(config.url))
+        log.info(`Connecting ${config.name} via SSE: ${config.url} (custom headers: ${Object.keys(config.headers || {}).join(', ') || 'none'})`)
+        transport = new SSEClientTransport(new URL(config.url), buildHttpTransportOptions(config.headers))
+      } else if (config.transport === 'http') {
+        if (!config.url) {
+          throw new Error('http 模式需要指定 url')
+        }
+
+        log.info(`Connecting ${config.name} via Streamable HTTP: ${config.url} (custom headers: ${Object.keys(config.headers || {}).join(', ') || 'none'})`)
+        transport = new StreamableHTTPClientTransport(new URL(config.url), buildHttpTransportOptions(config.headers))
       } else {
         throw new Error(`不支持的传输类型: ${config.transport}`)
       }

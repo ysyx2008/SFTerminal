@@ -632,6 +632,8 @@ export default {
     transportStdioLabel: 'Stdio (Local Process)',
     transportSse: 'SSE',
     transportSseLabel: 'SSE (Remote Service)',
+    transportHttpLabel: 'Streamable HTTP (Recommended)',
+    deprecated: 'deprecated',
     command: 'Command',
     commandPlaceholder: 'e.g., npx',
     commandPlaceholder2: 'e.g., npx, node, python',
@@ -641,6 +643,11 @@ export default {
     url: 'URL',
     urlPlaceholder: 'http://localhost:3000/sse',
     sseUrl: 'SSE URL',
+    httpUrl: 'HTTP URL',
+    httpUrlPlaceholder: 'https://example.com/mcp/stream',
+    headersPerLine: 'Headers (Key: Value, one per line)',
+    headersPlaceholder: 'Authorization: Bearer sk-xxxx\nX-Custom-Key: value',
+    headersHint: 'Auth info (e.g. Bearer Token) for remote MCP services is sent via headers; leave empty if not required',
     env: 'Environment Variables',
     envPlaceholder: 'KEY=value (one per line)',
     envPerLine: 'Environment Variables (KEY=VALUE, one per line)',
@@ -674,11 +681,21 @@ export default {
       filesystem: 'Filesystem (Local Files)',
       github: 'GitHub',
       postgres: 'PostgreSQL',
-      sqlite: 'SQLite'
+      sqlite: 'SQLite',
+      httpBearer: 'HTTP + Bearer Token (example)'
     },
     placeholders: {
-      githubToken: '<Enter your GitHub Token here>'
-    }
+      githubToken: '<Enter your GitHub Token here>',
+      bearerToken: 'Bearer <Enter your API key here>'
+    },
+    importJson: 'Import from JSON',
+    importJsonAction: 'Import',
+    importJsonDialogTitle: 'Import MCP Servers from JSON',
+    importJsonHint: 'Paste the JSON config provided by an MCP service (with url, headers, etc.) to bulk-add servers',
+    importJsonPlaceholder: '{\n  "mcpServers": {\n    "example": {\n      "url": "https://example.com/mcp/stream",\n      "headers": {\n        "Authorization": "Bearer YOUR_TOKEN_HERE"\n      }\n    }\n  }\n}',
+    importJsonCompat: 'Compatible with Claude Desktop / Cursor mcpServers config format',
+    importJsonSuccess: 'Imported {count} MCP server(s)',
+    importJsonInvalid: 'JSON parse failed: {error}'
   },
 
   // User Skill Settings

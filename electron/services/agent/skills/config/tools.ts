@@ -221,14 +221,15 @@ export const configTools: ToolDefinition[] = [
       description: `向旗鱼追加一个 MCP 服务器配置（合并到现有列表，不会删除已有项）。
 
 **stdio**：必须提供 command；可选 args（字符串数组）、env（键值对象）、cwd。
-**sse**：必须提供 url；可选 headers（键值对象）。
+**http**（推荐，MCP Streamable HTTP 规范）：必须提供 url；可选 headers（键值对象，例如 \`{ "Authorization": "Bearer xxx" }\`）。
+**sse**（已被规范标记为 deprecated，仅用于兼容老服务器）：必须提供 url；可选 headers。
 
 与 \`config_set\` 写入 mcpServers 不同，本工具只追加一条记录。`,
       parameters: {
         type: 'object',
         properties: {
           name: { type: 'string', description: '显示名称' },
-          transport: { type: 'string', enum: ['stdio', 'sse'], description: '传输方式' },
+          transport: { type: 'string', enum: ['stdio', 'sse', 'http'], description: '传输方式：远程服务优先选 http' },
           enabled: { type: 'boolean', description: '是否启用，默认 true' },
           id: { type: 'string', description: '服务器唯一 id，省略则自动生成 UUID' },
           command: { type: 'string', description: 'stdio：可执行文件或命令' },
@@ -239,8 +240,8 @@ export const configTools: ToolDefinition[] = [
           },
           env: { type: 'object', description: 'stdio：环境变量（字符串键值）' },
           cwd: { type: 'string', description: 'stdio：工作目录' },
-          url: { type: 'string', description: 'sse：服务端 URL' },
-          headers: { type: 'object', description: 'sse：HTTP 请求头（字符串键值）' }
+          url: { type: 'string', description: 'sse / http：服务端 URL' },
+          headers: { type: 'object', description: 'sse / http：HTTP 请求头（字符串键值），常用于 Bearer Token 鉴权' }
         },
         required: ['name', 'transport']
       }
@@ -252,13 +253,13 @@ export const configTools: ToolDefinition[] = [
       name: 'config_mcp_server_update',
       description: `按 id 更新已有 MCP 服务器。未传入的字段保持原值（部分更新）。
 
-切换 transport 时请同时提供对应模式下必填字段（stdio 需 command，sse 需 url）。`,
+切换 transport 时请同时提供对应模式下必填字段（stdio 需 command，sse / http 需 url）。`,
       parameters: {
         type: 'object',
         properties: {
           serverId: { type: 'string', description: '要更新的服务器 id（与 config_get key=mcpServers 中一致）' },
           name: { type: 'string', description: '显示名称' },
-          transport: { type: 'string', enum: ['stdio', 'sse'] },
+          transport: { type: 'string', enum: ['stdio', 'sse', 'http'] },
           enabled: { type: 'boolean' },
           command: { type: 'string' },
           args: { type: 'array', items: { type: 'string' } },

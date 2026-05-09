@@ -62,7 +62,7 @@ interface McpServerConfig {
   id: string
   name: string
   enabled: boolean
-  transport: 'stdio' | 'sse'
+  transport: 'stdio' | 'sse' | 'http'
   command?: string
   args?: string[]
   env?: Record<string, string>

@@ -344,12 +344,20 @@ function parseOptionalStringRecord(v: unknown): Record<string, string> | undefin
   return undefined
 }
 
+// 支持的 transport 类型；'http' 走 MCP Streamable HTTP，'sse' 已被规范标记 deprecated 仅保留兼容
+type McpTransport = 'stdio' | 'sse' | 'http'
+const VALID_TRANSPORTS: readonly McpTransport[] = ['stdio', 'sse', 'http']
+const isValidTransport = (t: string): t is McpTransport =>
+  (VALID_TRANSPORTS as readonly string[]).includes(t)
+// 'sse' 和 'http' 都通过 url + headers 描述端点，验证逻辑相同
+const isRemoteTransport = (t: McpTransport) => t === 'sse' || t === 'http'
+
 function addMcpServerConfig(args: Record<string, unknown>): ToolResult {
   const name = argStr(args, 'name')
   const transport = args.transport as string
   if (!name) return { success: false, output: '', error: '缺少 name 参数' }
-  if (transport !== 'stdio' && transport !== 'sse') {
-    return { success: false, output: '', error: 'transport 须为 stdio 或 sse' }
+  if (!isValidTransport(transport)) {
+    return { success: false, output: '', error: 'transport 须为 stdio、sse 或 http' }
   }
 
   const command = argStr(args, 'command')
@@ -357,8 +365,8 @@ function addMcpServerConfig(args: Record<string, unknown>): ToolResult {
   if (transport === 'stdio' && !command) {
     return { success: false, output: '', error: 'stdio 模式需要 command' }
   }
-  if (transport === 'sse' && !url) {
-    return { success: false, output: '', error: 'sse 模式需要 url' }
+  if (isRemoteTransport(transport) && !url) {
+    return { success: false, output: '', error: `${transport} 模式需要 url` }
   }
 
   const enabled = args.enabled === false ? false : true
@@ -369,17 +377,18 @@ function addMcpServerConfig(args: Record<string, unknown>): ToolResult {
     return { success: false, output: '', error: `已存在 id 为 "${id}" 的 MCP 服务器` }
   }
 
+  const remote = isRemoteTransport(transport)
   const server: McpServerConfig = {
     id,
     name,
     enabled,
-    transport: transport as 'stdio' | 'sse',
+    transport,
     command: transport === 'stdio' ? command : undefined,
     args: parseOptionalStringArray(args.args),
     env: parseOptionalStringRecord(args.env),
     cwd: argStr(args, 'cwd') || undefined,
-    url: transport === 'sse' ? url : undefined,
-    headers: transport === 'sse' ? parseOptionalStringRecord(args.headers) : undefined,
+    url: remote ? url : undefined,
+    headers: remote ? parseOptionalStringRecord(args.headers) : undefined,
   }
 
   config.addMcpServer(server)
@@ -402,8 +411,8 @@ function updateMcpServerConfig(args: Record<string, unknown>): ToolResult {
   }
 
   const transport = (args.transport as string) || existing.transport
-  if (transport !== 'stdio' && transport !== 'sse') {
-    return { success: false, output: '', error: 'transport 须为 stdio 或 sse' }
+  if (!isValidTransport(transport)) {
+    return { success: false, output: '', error: 'transport 须为 stdio、sse 或 http' }
   }
 
   const name = argStr(args, 'name') || existing.name
@@ -420,21 +429,22 @@ function updateMcpServerConfig(args: Record<string, unknown>): ToolResult {
   if (transport === 'stdio' && !command) {
     return { success: false, output: '', error: 'stdio 模式需要 command' }
   }
-  if (transport === 'sse' && !url) {
-    return { success: false, output: '', error: 'sse 模式需要 url' }
+  if (isRemoteTransport(transport) && !url) {
+    return { success: false, output: '', error: `${transport} 模式需要 url` }
   }
 
+  const remote = isRemoteTransport(transport)
   const merged: McpServerConfig = {
     id: serverId,
     name,
     enabled,
-    transport: transport as 'stdio' | 'sse',
+    transport,
     command: transport === 'stdio' ? command : undefined,
     args: args.args !== undefined ? parseOptionalStringArray(args.args) : existing.args,
     env: args.env !== undefined ? parseOptionalStringRecord(args.env) : existing.env,
     cwd: args.cwd !== undefined ? (argStr(args, 'cwd') || undefined) : existing.cwd,
-    url: transport === 'sse' ? url : undefined,
-    headers: transport === 'sse'
+    url: remote ? url : undefined,
+    headers: remote
       ? (args.headers !== undefined ? parseOptionalStringRecord(args.headers) : existing.headers)
       : undefined,
   }
