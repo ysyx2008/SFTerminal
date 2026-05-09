@@ -549,6 +549,85 @@ describe('chart input validation', () => {
   })
 })
 
+describe('chart error message includes received data shape (AI self-correct hint)', () => {
+  // 弱模型（豆包 Lite / DeepSeek Flash 等）实测常把 categories 写成方言别名（dates / x /
+  // labels / time 等），错误信息只说 "got undefined" 时它无法定位自己实际传的 data 长啥样，
+  // 反复用同样的 args 重试。throw 信息附带 "(received data: object(keys=...))" 后缀让
+  // 弱模型能从字面看出"哦我用的字段名叫 dates，应该叫 categories"，显著提升自纠正成功率。
+
+  it('candlestick: 把 categories 写成 dates 时错误信息列出 received keys', () => {
+    expect(() => buildOption({
+      type: 'candlestick',
+      data: { dates: ['a', 'b'], values: [[1, 2, 3, 4], [5, 6, 7, 8]] }
+    } as unknown as ChartInput)).toThrow(/received data: object\(keys=dates,values\)/)
+  })
+
+  it('candlestick: 把 categories 写成 x 时错误信息列出 received keys', () => {
+    expect(() => buildOption({
+      type: 'candlestick',
+      data: { x: ['a', 'b'], y: [[1, 2, 3, 4], [5, 6, 7, 8]] }
+    } as unknown as ChartInput)).toThrow(/received data: object\(keys=x,y\)/)
+  })
+
+  it('candlestick: data 是数组（外层类型搞错）时 received data 描述成 array', () => {
+    // AI 偶尔会把整个 data 写成 [[...K线行...]] 这种顶层数组形式（混淆了 scatter 的 schema）。
+    // 数组也是 object，会走到 categories 检查，错误后缀显示 "array(len=N)" 让 AI 看出
+    // "我把 data 写成了数组，应该写成 { categories, values } 对象"。
+    expect(() => buildOption({
+      type: 'candlestick',
+      data: [['a', 1, 2, 3, 4]]
+    } as unknown as ChartInput)).toThrow(/received data: array\(len=1\)/)
+  })
+
+  it('candlestick: data 完全不是对象（字符串）时顶层 throw 描述形状', () => {
+    expect(() => buildOption({
+      type: 'candlestick',
+      data: 'whatever'
+    } as unknown as ChartInput)).toThrow(/got string/)
+  })
+
+  it('candlestick: volumes 类型错时也带 received keys', () => {
+    expect(() => buildOption({
+      type: 'candlestick',
+      data: {
+        categories: ['a', 'b'],
+        values: [[1, 2, 3, 4], [5, 6, 7, 8]],
+        volumes: 'not-an-array'
+      }
+    } as unknown as ChartInput)).toThrow(/received data: object\(keys=categories,values,volumes\)/)
+  })
+
+  it('bar/line: 把 categories 写成 x_axis 时错误信息列出 received keys', () => {
+    expect(() => buildOption({
+      type: 'bar',
+      data: { x_axis: ['a'], series: [{ data: [1] }] }
+    } as unknown as ChartInput)).toThrow(/received data: object\(keys=x_axis,series\)/)
+  })
+
+  it('heatmap: 把 x_categories 写成 x 时错误信息列出 received keys', () => {
+    expect(() => buildOption({
+      type: 'heatmap',
+      data: { x: ['a'], y: ['b'], values: [[0, 0, 1]] }
+    } as unknown as ChartInput)).toThrow(/received data: object\(keys=x,y,values\)/)
+  })
+
+  it('radar: 把 indicators 写成 dimensions 时错误信息列出 received keys', () => {
+    expect(() => buildOption({
+      type: 'radar',
+      data: { dimensions: [{ name: 'A', max: 100 }], series: [{ value: [50] }] }
+    } as unknown as ChartInput)).toThrow(/received data: object\(keys=dimensions,series\)/)
+  })
+
+  it('对象 keys 数量超过 4 时不被截断（dataShape 不像 describe 那样 slice 4）', () => {
+    // describe() 旧 helper 截断 4 个 keys，但 dataShape 用全列出。AI 把 candlestick 数据
+    // 写成"完全不像 K 线"的对象时（很多字段都错），列全部 keys 才能让 AI 看清整体结构。
+    expect(() => buildOption({
+      type: 'candlestick',
+      data: { f1: 1, f2: 2, f3: 3, f4: 4, f5: 5, f6: 6 }
+    } as unknown as ChartInput)).toThrow(/received data: object\(keys=f1,f2,f3,f4,f5,f6\)/)
+  })
+})
+
 describe('pie data tolerance', () => {
   // AI 实测高频犯错：把 pie data 套进 {items:[...]} / {data:[...]} / {series:[...]}
   // 工具应当容错并解析出来，避免反复重试。

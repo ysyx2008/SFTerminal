@@ -172,6 +172,7 @@ ECharts option 含 function formatter（如 `axisLabel.formatter` / `tooltip.for
   - 普通图表用 `calcFontScale`：基准 800px=1.0×（小画布字号自然合适，跟历史值一致），800-1600 线性放大到 1.4×，1600-3200 到 2.0×，3200+ 上限。所有硬编码字号（title 16 / subtitle 12 / axis label 12 / legend 12 / pie label 12 / heatmap series label 12 / visualMap 11 / radar axisName 12）都乘 scale
   - K 线另走 `calcKlineFontScale`（基准 1280px=1.0×，2400→1.4×，4800+→2.0×），曲线和经实测的视觉手感一致，**不与普通图表共用**——避免误调改了 K 线字号
 - `generate_chart` 数据校验失败抛 Error，由 executor 捕获返回 `success: false` + 友好错误，不让 echarts 内部报错暴露给 AI
+- **错误信息附带 received data 形状**：data 顶层字段缺失/类型错时（如 candlestick 缺 categories、heatmap 缺 x_categories），throw 信息后缀 `(received data: object(keys=...))` 列出 AI 实际传的顶层 keys。弱模型（豆包 Lite / DeepSeek Flash 等）实测在错误只说 "got undefined" 时会反复发同样错误的 args，附带 received keys 后能从字面看出"哦我把 categories 写成了 dates，应该改字段名"。helper `dataShape()` 跟 `describe()` 区别：前者列全部 keys（截断到 200 字符），后者截断 4 个 keys（保持向后兼容旧错误信息）
 - `render_echarts_option` 反过来：**故意**把 ECharts 的原始报错（含字段路径）原样返给 AI，让 AI 能定位问题（自由路径下 AI 直接写 option，最有价值的反馈就是 ECharts 自己的诊断信息）
 - `_meta.parallelizable: true`、`contextBudget.toolResult: 'clearable'` —— 多张图可并行生成、图片返回后允许清理
 - 不限制 `supportedModes` —— 本地终端、SSH、独立助手三种模式都能用（图表生成跟目标机器无关，纯本地计算）

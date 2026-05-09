@@ -190,6 +190,32 @@ function describe(v: unknown): string {
   return typeof v
 }
 
+/**
+ * 完整描述 data 对象的"形状"——顶层 keys 全列（不像 describe 截断 4 个）。
+ * 给 throw 信息当后缀，让 AI 看到自己实际传的 data 长啥样：
+ *
+ *   "candlestick data.categories must be string[], got undefined
+ *    (received data: object(keys=dates,prices,vol))"
+ *
+ * 这样 AI 第二次重试时一眼能看出是把 "categories" 写成了 "dates"，不用反复猜。
+ * 弱模型（豆包 Lite / DeepSeek Flash 等）实测在错误信息只有 "got undefined" 时
+ * 会反复发同样错误的 args，加上这个后缀后能明显提升自纠正成功率。
+ *
+ * 截断策略：keys 总长 > 200 字符时截断（避免 AI 误传超大对象时日志爆炸）。
+ */
+function dataShape(v: unknown): string {
+  if (v === null) return 'null'
+  if (v === undefined) return 'undefined'
+  if (Array.isArray(v)) return `array(len=${v.length})`
+  if (typeof v === 'object') {
+    const keys = Object.keys(v as Record<string, unknown>)
+    if (keys.length === 0) return 'object(keys=<empty>)'
+    const joined = keys.join(',')
+    return `object(keys=${joined.length > 200 ? joined.slice(0, 200) + '...' : joined})`
+  }
+  return typeof v
+}
+
 function asCategorySeries(raw: unknown, chartType: string): CategorySeriesData {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error(
@@ -201,10 +227,16 @@ function asCategorySeries(raw: unknown, chartType: string): CategorySeriesData {
   const categories = obj.categories
   const series = obj.series
   if (!Array.isArray(categories) || !categories.every(c => typeof c === 'string')) {
-    throw new Error(`${chartType} data.categories must be string[], got ${describe(categories)}`)
+    throw new Error(
+      `${chartType} data.categories must be string[], got ${describe(categories)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
   }
   if (!Array.isArray(series) || series.length === 0) {
-    throw new Error(`${chartType} data.series must be a non-empty array, got ${describe(series)}`)
+    throw new Error(
+      `${chartType} data.series must be a non-empty array, got ${describe(series)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
   }
   for (const [i, s] of series.entries()) {
     if (!s || typeof s !== 'object') throw new Error(`${chartType} series item must be object`)
@@ -471,12 +503,24 @@ function validatePoints(raw: unknown, ctx: string): number[][] {
 
 function buildRadar(input: ChartInput, theme: ThemePreset, scale: number): EChartsOption {
   const raw = input.data
-  if (!raw || typeof raw !== 'object') throw new Error('radar data must be { indicators, series }')
+  if (!raw || typeof raw !== 'object') {
+    throw new Error(`radar data must be { indicators, series }, got ${dataShape(raw)}`)
+  }
   const obj = raw as Record<string, unknown>
   const indicators = obj.indicators
   const series = obj.series
-  if (!Array.isArray(indicators)) throw new Error('radar data.indicators must be array')
-  if (!Array.isArray(series) || series.length === 0) throw new Error('radar data.series must be non-empty array')
+  if (!Array.isArray(indicators)) {
+    throw new Error(
+      `radar data.indicators must be array, got ${describe(indicators)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
+  }
+  if (!Array.isArray(series) || series.length === 0) {
+    throw new Error(
+      `radar data.series must be non-empty array, got ${describe(series)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
+  }
 
   const validIndicators = indicators.map((ind, i) => {
     if (!ind || typeof ind !== 'object') throw new Error(`radar indicator[${i}] must be object`)
@@ -525,19 +569,30 @@ function buildRadar(input: ChartInput, theme: ThemePreset, scale: number): EChar
 function buildHeatmap(input: ChartInput, theme: ThemePreset, scale: number): EChartsOption {
   const raw = input.data
   if (!raw || typeof raw !== 'object') {
-    throw new Error('heatmap data must be { x_categories, y_categories, values }')
+    throw new Error(`heatmap data must be { x_categories, y_categories, values }, got ${dataShape(raw)}`)
   }
   const obj = raw as Record<string, unknown>
   const xCats = obj.x_categories
   const yCats = obj.y_categories
   const values = obj.values
   if (!Array.isArray(xCats) || !xCats.every(c => typeof c === 'string')) {
-    throw new Error('heatmap data.x_categories must be string[]')
+    throw new Error(
+      `heatmap data.x_categories must be string[], got ${describe(xCats)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
   }
   if (!Array.isArray(yCats) || !yCats.every(c => typeof c === 'string')) {
-    throw new Error('heatmap data.y_categories must be string[]')
+    throw new Error(
+      `heatmap data.y_categories must be string[], got ${describe(yCats)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
   }
-  if (!Array.isArray(values)) throw new Error('heatmap data.values must be array')
+  if (!Array.isArray(values)) {
+    throw new Error(
+      `heatmap data.values must be array, got ${describe(values)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
+  }
   const points: number[][] = values.map((v, i) => {
     if (!Array.isArray(v) || v.length < 3 || !v.every(n => typeof n === 'number')) {
       throw new Error(`heatmap values[${i}] must be [x_index, y_index, value]`)
@@ -640,16 +695,22 @@ function calcCategoryInterval(n: number): number {
 function buildCandlestick(input: ChartInput, _baseTheme: ThemePreset, hint?: BuildHint): EChartsOption {
   const raw = input.data
   if (!raw || typeof raw !== 'object') {
-    throw new Error('candlestick data must be { categories, values, volumes? }')
+    throw new Error(`candlestick data must be { categories, values, volumes? }, got ${dataShape(raw)}`)
   }
   const obj = raw as Record<string, unknown>
   const categories = obj.categories
   const values = obj.values
   if (!Array.isArray(categories) || !categories.every(c => typeof c === 'string')) {
-    throw new Error(`candlestick data.categories must be string[], got ${describe(categories)}`)
+    throw new Error(
+      `candlestick data.categories must be string[], got ${describe(categories)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
   }
   if (!Array.isArray(values)) {
-    throw new Error(`candlestick data.values must be array, got ${describe(values)}`)
+    throw new Error(
+      `candlestick data.values must be array, got ${describe(values)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
   }
   const ohlc: number[][] = values.map((v, i) => {
     if (!Array.isArray(v) || v.length < 4 || !v.every(n => typeof n === 'number')) {
@@ -665,7 +726,10 @@ function buildCandlestick(input: ChartInput, _baseTheme: ThemePreset, hint?: Bui
   let volumes: number[] | undefined
   if (obj.volumes !== undefined) {
     if (!Array.isArray(obj.volumes) || !obj.volumes.every(v => typeof v === 'number')) {
-      throw new Error(`candlestick data.volumes must be number[], got ${describe(obj.volumes)}`)
+      throw new Error(
+        `candlestick data.volumes must be number[], got ${describe(obj.volumes)} ` +
+        `(received data: ${dataShape(raw)})`
+      )
     }
     if (obj.volumes.length !== categories.length) {
       throw new Error(
