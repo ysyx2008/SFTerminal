@@ -16,6 +16,7 @@ import AiComposer from './AiComposer.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
 import ToolCallContent from './ToolCallContent.vue'
 import ImageContextMenu from './ImageContextMenu.vue'
+import EChartsCanvas from './EChartsCanvas.vue'
 import { useImageActions } from '../composables/useImageActions'
 import { parseThinking } from '../utils/thinking-block'
 import { createLogger } from '../utils/logger'
@@ -1070,6 +1071,13 @@ const handleDragLeave = (e: DragEvent) => {
 
 // ==================== 图片预览（支持缩放、拖拽、键盘导航） ====================
 const previewImageUrl = ref<string | null>(null)
+// 活图预览载荷：当点击"活图"（chart skill 投递的 echartsOption）时填入；
+// 模态优先用 EChartsCanvas 渲染（保留 tooltip / dataZoom 等交互），否则降级到 <img>。
+// 上下/左右导航触发时清空（导航目标可能是普通 SVG 图），让降级路径自然接管。
+const previewEchartsPayload = ref<import('@shared/types').EChartsStepPayload | null>(null)
+// 大图预览的 EChartsCanvas 实例 ref——复制图片 / 另存为时通过 getDataURL() 拿当前
+// (含用户交互后的 dataZoom 范围) 的高清 dataURL，比 step.images 里 SVG dataURL 更鲜活
+const previewEchartsRef = ref<InstanceType<typeof EChartsCanvas> | null>(null)
 // 弹窗根节点 ref。用于手动绑 wheel 事件并显式 { passive: false }——
 // 模板里 @wheel.prevent 会让 Chrome 报"non-passive scroll-blocking"警告，
 // 因为 Vue 的 patchEvent 不显式传 passive 参数。
@@ -1114,8 +1122,14 @@ const resetPreviewTransform = () => {
   previewTranslateY.value = 0
 }
 
-const openImagePreview = (url: string) => {
+const openImagePreview = (
+  url: string,
+  echartsPayload?: import('@shared/types').EChartsStepPayload
+) => {
   previewImageUrl.value = url
+  // 仅当本次点击来自"活图"时填载荷；普通 SVG/PNG 图调用方传 undefined（不传也行），
+  // 模态自然走 <img> 路径
+  previewEchartsPayload.value = echartsPayload ?? null
   resetPreviewTransform()
   previewGroupIdx.value = -1
   previewImageIdx.value = -1
@@ -1131,6 +1145,8 @@ const openImagePreview = (url: string) => {
 
 const closeImagePreview = () => {
   previewImageUrl.value = null
+  previewEchartsPayload.value = null
+  // previewEchartsRef.value 由 Vue 在子组件 unmount 时自动写回 null，无需手动清零
   isDraggingImage.value = false
 }
 
@@ -1149,6 +1165,13 @@ const openImageContextMenu = (e: MouseEvent, url: string) => {
   imageContextMenu.url = url
 }
 
+// 「活图」EChartsCanvas 触发右键菜单时,组件 emit 的载荷形如 { event, dataUrl }——
+// 模板里直接写带 TS 类型的内联箭头函数会被 Vue 模板编译器拒（它不支持模板表达式里的
+// 类型注解）；抽到 <script setup> 里做薄包装后模板写法回退到无类型的 @contextmenu="onEchartsContextMenu"
+const onEchartsContextMenu = (payload: { event: MouseEvent; dataUrl: string }) => {
+  openImageContextMenu(payload.event, payload.dataUrl)
+}
+
 const closeImageContextMenu = () => {
   imageContextMenu.show = false
   imageContextMenu.url = null
@@ -1162,6 +1185,11 @@ const navigatePreview = (groupIdx: number, imageIdx: number) => {
   previewGroupIdx.value = groupIdx
   previewImageIdx.value = imageIdx
   previewImageUrl.value = group.images[imageIdx]
+  // 上下/左右导航的"目标图"是从 step.images 数组定位的，缺少 echartsOption 上下文，
+  // 退回到普通 <img> 路径——降级合理：用户主动按导航就接受静态视觉，需要交互可以
+  // 点击关闭后从对话流里再次单击想要的活图。allPreviewImages 暂未携带 echartsOption
+  // 数据源，未来可扩展为 PreviewItem[] 同时保留 echartsOption 引用。
+  previewEchartsPayload.value = null
   resetPreviewTransform()
 }
 
@@ -1208,6 +1236,15 @@ const handlePreviewDblClick = () => resetPreviewTransform()
 // 拖拽平移
 const handlePreviewMouseDown = (e: MouseEvent) => {
   if (e.button !== 0) return
+  // 「活图」预览模态：mousedown 落在 EChartsCanvas 内部时直接放行——echarts 自己要用
+  // mousedown 启动 dataZoom 拖动 / brush 框选 / legend 点击等核心交互，外层包装的
+  // 「拖动平移」一旦抢断这个事件就把活图最值钱的能力废掉了。空白区域（图表四周的
+  // padding）仍然走拖动平移，保持普通预览的视觉操作惯例。
+  // 注意：用 closest 而不是 ===，因为 echarts SVG renderer 渲染出来的 <g><path> 等
+  // 子节点是真正的事件 target，不是 .echarts-canvas 这个父容器
+  if (previewEchartsPayload.value && (e.target as HTMLElement | null)?.closest?.('.echarts-canvas')) {
+    return
+  }
   e.preventDefault()
   isDraggingImage.value = true
   dragStartX = e.clientX
@@ -1272,7 +1309,9 @@ const handleKeyDown = (e: KeyboardEvent) => {
       if (!sel) {
         e.preventDefault()
         e.stopImmediatePropagation()
-        const url = previewImageUrl.value
+        // 「活图」预览时优先用 echarts 实例的 getDataURL 拿当前实时（含用户拖过的 dataZoom）
+        // 高清 PNG，比把后端 SVG 兜底图再 canvas 转一遍质量更好；普通图沿用 previewImageUrl
+        const url = previewEchartsRef.value?.getDataURL('png') || previewImageUrl.value
         if (url) copyImage(url).catch(() => { /* toast 已显示 */ })
         return
       }
@@ -1352,6 +1391,9 @@ const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
       item.step.toolResult,
       item.step.isStreaming,
       item.step.images?.length,
+      // 活图（echartsOption）出现/消失会改变这一行高度（ImagePlaceholder vs EChartsCanvas
+      // 的最大尺寸不同），让 size dep 把它感知到，避免虚拟滚动布局错位
+      !!item.step.echartsOption,
       item.isFirstStep,
       isStandaloneAssistant.value,
       thinkingExpandedForSize,
@@ -2122,7 +2164,19 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                     <div v-if="item.step!.toolResult && !item.step!.rejected && item.step!.toolResult !== item.step!.content && item.step!.type !== 'asking' && !item.step!.subAgents" class="step-result">
                       <pre>{{ item.step!.toolResult }}</pre>
                     </div>
-                    <div v-if="item.step!.images && item.step!.images.length > 0" class="step-images">
+                    <!-- 「活图」优先：chart skill 在 svg 模式下投递 echartsOption（同时也带 SVG 兜底到 step.images），
+                         前端把它实例化成可交互的 ECharts，单击放大/右键复制走 EChartsCanvas 内部 getDataURL 的高清 PNG。
+                         单击时把 step.images[0]（SVG dataURL）一起传给 openImagePreview，让导航定位能在 group 中找到当前位置。 -->
+                    <div v-if="item.step!.echartsOption" class="step-images">
+                      <EChartsCanvas
+                        :payload="item.step!.echartsOption"
+                        :alt="item.step!.toolResult || 'chart'"
+                        mode="thumb"
+                        @preview="openImagePreview(item.step!.images?.[0] ?? '', item.step!.echartsOption)"
+                        @contextmenu="onEchartsContextMenu"
+                      />
+                    </div>
+                    <div v-else-if="item.step!.images && item.step!.images.length > 0" class="step-images">
                       <img
                         v-for="(imgUrl, imgIdx) in item.step!.images"
                         :key="imgIdx"
@@ -2282,9 +2336,30 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         <button class="image-preview-close" @click="closeImagePreview">
           <X :size="20" />
         </button>
-        <img 
-          :src="previewImageUrl" 
-          class="image-preview-full" 
+        <!-- 「活图」预览：当点击的是 chart skill 投递的活图时，模态里也用 EChartsCanvas 渲染，
+             保留 tooltip / dataZoom / legend toggle 等所有交互能力。复制图片 / 另存为通过
+             previewEchartsRef.getDataURL() 拿当前实时（含用户拖过的 dataZoom 范围）高清 PNG。
+             缩放和拖拽也作用在 EChartsCanvas 上——CSS transform 控制外层包装，echarts 实例
+             保持原始尺寸不影响交互精度。-->
+        <div
+          v-if="previewEchartsPayload"
+          class="image-preview-full image-preview-echarts"
+          :class="{ 'dragging': isDraggingImage }"
+          :style="{ transform: previewTransform }"
+          @mousedown="handlePreviewMouseDown"
+          @dblclick="handlePreviewDblClick"
+        >
+          <EChartsCanvas
+            ref="previewEchartsRef"
+            :payload="previewEchartsPayload"
+            mode="preview"
+            @contextmenu="onEchartsContextMenu"
+          />
+        </div>
+        <img
+          v-else
+          :src="previewImageUrl"
+          class="image-preview-full"
           :class="{ 'dragging': isDraggingImage }"
           :style="{ transform: previewTransform }"
           @mousedown="handlePreviewMouseDown"
@@ -6032,6 +6107,29 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .image-preview-full.dragging {
   cursor: grabbing;
+}
+
+/* 「活图」预览容器：CSS 上跟 .image-preview-full 一样吃 90vw/90vh 上限，
+ * 但内部要给 EChartsCanvas 一个有具体宽度的盒子（aspectRatio 让高度跟随）。
+ * 注意：echarts 实例在 mount 时通过 ResizeObserver 跟随容器尺寸 resize，
+ * 所以这里的 width 改动会自动反映到图表本身。
+ */
+.image-preview-echarts {
+  /* 确保有可量算的尺寸（echarts.init 依赖 offsetWidth），按视口宽度自适应、上限 90vw */
+  width: min(90vw, 1600px);
+  /* 高度由 EChartsCanvas 的 aspect-ratio 控制；给个 max-height 防止极端宽屏比时把高度撑爆 */
+  max-height: 90vh;
+  border-radius: 8px;
+  cursor: grab;
+  transform-origin: center center;
+  transition: none;
+  user-select: none;
+  background: var(--bg-primary, #1a1a1a);
+  /* 让内部 EChartsCanvas 在 max-height 限制下也能等比缩放 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 
 .image-preview-close {

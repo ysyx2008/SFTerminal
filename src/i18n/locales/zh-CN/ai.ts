@@ -365,6 +365,9 @@ export default {
       filterJpg: 'JPEG 图片',
       filterSvg: 'SVG 矢量图',
     },
+    echartsCanvas: {
+      renderFailed: '图表渲染失败',
+    },
     webSearch: {
       foundResults: '搜索到 {count} 条结果',
     },

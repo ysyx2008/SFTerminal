@@ -365,6 +365,9 @@ export default {
       filterJpg: 'JPEG Image',
       filterSvg: 'SVG Vector',
     },
+    echartsCanvas: {
+      renderFailed: 'Chart render failed',
+    },
     webSearch: {
       foundResults: 'Found {count} results',
     },
