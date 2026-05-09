@@ -86,9 +86,10 @@ export function buildOption(input: ChartInput, hint?: BuildHint): EChartsOption 
  *   width 2400-4800 → 线性 → 2.0    （≈28px）
  *   width >= 4800  → 2.0 上限
  *
- * K 线场景本来就鼓励大画布（半年/全年日 K 经常 4000+px），1280 基准让"标准
- * 大小"K 线的字号和早期手工调过的视觉效果一致；普通图表使用更小的基准（见
- * 下方 calcFontScale），因为它们默认画布也小很多。
+ * 1280 基准跟 SVG 活图模式下的"日常显示尺寸"对齐（缩略图 480 / 大图 ~1440），
+ * 字号在 14-20px 落在视觉舒适区间。PNG 模式嵌 Word/PDF 时如果 AI 选 4800+，
+ * 字号自动拉到 2.0× 上限，对位图静态显示同样合理。普通图表使用更小的基准
+ * （见下方 calcFontScale），因为它们的"日常尺寸"本身更接近 800-1280。
  */
 function calcKlineFontScale(width: number | undefined): number {
   if (!width || width <= 1280) return 1

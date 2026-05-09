@@ -1075,6 +1075,15 @@ const previewImageUrl = ref<string | null>(null)
 // 模态优先用 EChartsCanvas 渲染（保留 tooltip / dataZoom 等交互），否则降级到 <img>。
 // 上下/左右导航触发时清空（导航目标可能是普通 SVG 图），让降级路径自然接管。
 const previewEchartsPayload = ref<import('@shared/types').EChartsStepPayload | null>(null)
+// 视口尺寸——给活图预览容器算"contain 进 90vw × 90vh 框"的具体 width/height。
+// 不能纯靠 CSS（max-width/max-height + aspect-ratio）：父容器 .image-preview-modal-content
+// 是 max-content sizing，子元素 EChartsCanvas 又要 width:100%——两边互相依赖塌陷为 0×0。
+const winSize = ref({ w: 1024, h: 768 })
+function updateWinSize() {
+  if (typeof window !== 'undefined') {
+    winSize.value = { w: window.innerWidth, h: window.innerHeight }
+  }
+}
 // 大图预览的 EChartsCanvas 实例 ref——复制图片 / 另存为时通过 getDataURL() 拿当前
 // (含用户交互后的 dataZoom 范围) 的高清 dataURL，比 step.images 里 SVG dataURL 更鲜活
 const previewEchartsRef = ref<InstanceType<typeof EChartsCanvas> | null>(null)
@@ -1271,6 +1280,33 @@ const previewTransform = computed(() => {
   return `translate(${previewTranslateX.value}px, ${previewTranslateY.value}px) scale(${previewScale.value})`
 })
 
+// 活图预览容器的具体 width/height —— 按 viewport 90vw × 90vh 做 contain 算法，
+// 同时保留后端建议尺寸作为天花板（小图不放大）。父容器拿到具体尺寸后子组件
+// EChartsCanvas mode='preview' 用 width:100%/height:100% 跟随，echarts 实例内部
+// 的 ResizeObserver 会在 winSize 变化时自动 resize。
+const PREVIEW_MAX_WIDTH_VW = 0.9
+const PREVIEW_MAX_HEIGHT_VH = 0.9
+const PREVIEW_ABS_MAX_WIDTH = 1600
+const previewEchartsBoxStyle = computed<Record<string, string>>(() => {
+  if (!previewEchartsPayload.value) return {} as Record<string, string>
+  const { width: pw, height: ph } = previewEchartsPayload.value
+  const ratio = pw / Math.max(1, ph)
+  const maxW = Math.min(winSize.value.w * PREVIEW_MAX_WIDTH_VW, PREVIEW_ABS_MAX_WIDTH, pw)
+  const maxH = Math.min(winSize.value.h * PREVIEW_MAX_HEIGHT_VH, ph)
+  // contain：先按宽度满铺，若反推高度超 maxH 再翻转改用高度满铺
+  let w = maxW
+  let h = w / ratio
+  if (h > maxH) {
+    h = maxH
+    w = h * ratio
+  }
+  return {
+    width: `${Math.round(w)}px`,
+    height: `${Math.round(h)}px`,
+    transform: previewTransform.value
+  }
+})
+
 // 拖放放下（支持文档和图片）
 const handleDrop = async (e: DragEvent) => {
   e.preventDefault()
@@ -1418,6 +1454,8 @@ const warmupMessageList = () => {
 onMounted(() => {
   isMounted.value = true
   loadHostProfile()
+  updateWinSize()
+  window.addEventListener('resize', updateWinSize)
   document.addEventListener('keydown', handleKeyDown)
   // 捕获阶段：终端聚焦时 Ctrl+字母 的 keydown 可能无法冒泡到 document，导致无法用「第二键」取消以 Control 为 PTT 键时的长按计时
   document.addEventListener('keydown', handlePTTKeyDown, true)
@@ -1435,6 +1473,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearPTTStopTimer()
+  window.removeEventListener('resize', updateWinSize)
   document.removeEventListener('keydown', handleKeyDown)
   document.removeEventListener('keydown', handlePTTKeyDown, true)
   document.removeEventListener('keyup', handlePTTKeyUp, true)
@@ -2345,7 +2384,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           v-if="previewEchartsPayload"
           class="image-preview-full image-preview-echarts"
           :class="{ 'dragging': isDraggingImage }"
-          :style="{ transform: previewTransform }"
+          :style="previewEchartsBoxStyle"
           @mousedown="handlePreviewMouseDown"
           @dblclick="handlePreviewDblClick"
         >
@@ -6109,26 +6148,25 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   cursor: grabbing;
 }
 
-/* 「活图」预览容器：CSS 上跟 .image-preview-full 一样吃 90vw/90vh 上限，
- * 但内部要给 EChartsCanvas 一个有具体宽度的盒子（aspectRatio 让高度跟随）。
- * 注意：echarts 实例在 mount 时通过 ResizeObserver 跟随容器尺寸 resize，
- * 所以这里的 width 改动会自动反映到图表本身。
+/* 「活图」预览容器：width / height 由 previewEchartsBoxStyle (JS) 内联提供。
+ *
+ * 不能纯靠 CSS 实现 contain 进 90vw × 90vh：父容器 .image-preview-modal-content
+ * 是 max-content sizing，没有具体 width；子组件 EChartsCanvas 又得 width:100%
+ * 才能跟随。两边互相依赖会塌陷为 0×0（曾经踩过这个坑——大图打不开就是这个原因）。
+ *
+ * 现在父容器拿到 JS 算好的具体像素，子元素 100%/100% 跟随，echarts 内部 ResizeObserver
+ * 在 winSize 变化时自动 resize，没有 aspect-ratio 重复约束的边界 case。
  */
 .image-preview-echarts {
-  /* 确保有可量算的尺寸（echarts.init 依赖 offsetWidth），按视口宽度自适应、上限 90vw */
-  width: min(90vw, 1600px);
-  /* 高度由 EChartsCanvas 的 aspect-ratio 控制；给个 max-height 防止极端宽屏比时把高度撑爆 */
-  max-height: 90vh;
   border-radius: 8px;
   cursor: grab;
   transform-origin: center center;
   transition: none;
   user-select: none;
   background: var(--bg-primary, #1a1a1a);
-  /* 让内部 EChartsCanvas 在 max-height 限制下也能等比缩放 */
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: stretch;
   overflow: hidden;
 }
 

@@ -28,7 +28,12 @@ const { t } = useI18n()
 /**
  * 缩略图最大宽度（px）。把活图嵌进对话气泡时如果完全跟随后端建议尺寸，
  * 大画布（如全年日 K 4800px）会撑爆气泡；这里一刀切到 480 让所有缩略图大小受控，
- * 超过此宽度的图按比例缩小。预览模态不受此限制（由 .image-preview-echarts 的 90vw 控制）。
+ * 超过此宽度的图按比例缩小。预览模态不受此限制（由 .image-preview-echarts 自己控制）。
+ *
+ * 注意：曾尝试同时加 THUMBNAIL_MAX_HEIGHT_PX 让宽幅图（K 线 ratio=3.2）和正方形图
+ * （饼图 ratio=1）的视觉量级靠拢，但代价是正方形图会被压成 300×300（vs 之前 480×480），
+ * 内部 title / pie 主体显得拥挤。在尚未找到两全方案前，保留单一 max-width 约束，
+ * 接受 K 线缩略图自然偏矮的客观比例。
  */
 const THUMBNAIL_MAX_WIDTH_PX = 480
 
@@ -54,8 +59,9 @@ const emit = defineEmits<{
 const containerStyle = computed(() => {
   const ratio = props.payload.width / Math.max(1, props.payload.height)
   if (props.mode === 'preview') {
-    // 充满父容器宽度（父容器自己用 max-width: 90vw 等约束最大尺寸），高度跟 aspect-ratio
-    return { aspectRatio: `${ratio}`, width: '100%' }
+    // preview：完全跟随父容器（.image-preview-echarts 已通过 inline style 拿到 JS 算好的
+    // 具体 width / height，浏览器有完整尺寸信息直接渲染，不存在父子互相依赖问题）。
+    return { width: '100%', height: '100%' }
   }
   // 缩略图最多占 THUMBNAIL_MAX_WIDTH_PX，但保留后端建议尺寸作为天花板（小图不放大）
   return {

@@ -98,8 +98,8 @@ PDF skill 反过来——它的图首要目标是「给 AI 视觉分析扫描件
 ## 约束
 
 - 默认输出 SVG（对话流展示，矢量清晰、文件小）；`format: 'png'` 时输出 PNG（嵌入 Word/PDF/IM 等位图场景）。**不要让 AI 自己拿 SVG 再用 ImageMagick / convert 转 PNG**，那条路对中文 SVG 文本支持差，会丢字／降级到无衬线字体
-- 图片宽高 clamp 到 `[100, 7680]`（8K 上限，足以容纳全年日 K ~250 根 / 全天分时 ~240 点）；默认 1280×800（两个工具共用同一组常量）
-- **画布尺寸应由 AI 按内容规模主动决策**：默认值仅作兜底，AI 看见 200+ 数据点时应主动拉到 3840+。`tools.ts` 中 `chartSkillContent` 给出明确的规模 → 尺寸映射表
+- 图片宽高 clamp 到 `[100, 7680]`（8K 上限，仅 PNG 打印稿场景需要）；默认 1280×800（两个工具共用同一组常量）
+- **画布尺寸由 AI 按"输出格式 + 内容规模"主动决策**：SVG 模式（活图）用户能 dataZoom 缩放，width 选 1280-1600 即可（字号写死 px 进 option，width 拉过大会让缩略图字相对画面过粗）；PNG 模式（嵌 Word/PDF/IM）是静态位图才需要更大 width 让字号相对画布够大。`tools.ts` 中 `chartSkillContent` 表格按"SVG / PNG"两栏分别给推荐尺寸
 - **PNG 像素密度独立于布局尺寸**（`pixel_ratio` 参数）：`width` / `height` 决定布局（字号、网格），`pixel_ratio` 决定栅格化时的像素倍率。用 sharp 的 `density` 参数实现（默认 72 dpi 对应 1:1，144 dpi 对应 2× 像素），高 DPI 路径下字体抗锯齿走 librsvg 渲染，比"先 1:1 出 PNG 再 .resize 放大"清晰得多。
   - **⚠️ 行为变更**：PNG 默认 `pixel_ratio: 2`（之前是 1）。同样调用 `format:'png'` 不传 ratio 时，**输出像素现在 2× width × 2× height，PNG 文件体积约 4×**。理由：嵌入 Word/PDF 的图被缩放显示后依旧锐利是更好的默认体验，无需让 AI 把 `width` 拉到 3000+ 来追"高清"（那反而会让字相对画布显小）。data URL 也变大 ~4×，但 chart 的 PNG 不进 AI 视觉上下文（见图片投递契约），不消耗 AI tokens
   - 范围 `[1, 4]`，并按 size × ratio 反推 `MAX_PIXEL_DIM=16384` 兜底，避免 8K 画布 × 4 倍触发 sharp/libvips 的"Input is too large"。**自动降级是静默的**——AI 传 ratio=4 + width=7680 时会被静默降到 2.13，工具描述里有明确说明
