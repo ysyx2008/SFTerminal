@@ -1,6 +1,6 @@
 # Agent 子系统 SPEC
 
-> Last verified: 2026-04-25（工具元数据驱动模型：抽象层完全去除按工具名 switch / 硬编码工具名集合的 OOP 违反，所有差异化行为通过 `ToolDefinition._meta` 声明，由 `tool-metadata.ts` 的 helper 集中查询；机械护栏 `__tests__/oop-boundary.test.ts` 防止回退）
+> Last verified: 2026-05-09（持久命名 Agent vs 普通 tab Agent 边界：`restoreFromHistory` 的全局 fallback 仅对 `__companion__` / `__watch__` 生效，普通 tab 第一次对话不再被全局历史污染，根除"新开 tab 第一句话就捏造历史里用过但本 tab 没加载的工具名"幻觉）
 
 ## 职责
 
@@ -122,6 +122,19 @@ run(message, context, options)
   - `cleanupAgent(agentKey)` 销毁实例，仅在用户关闭 tab 时由前端 `closeTab` 显式触发
   - `resetSession(agentKey)` 重置会话但保留实例（"清空对话"功能）
   - PTY/SSH 销毁不触发任何 Agent 清理（生命周期完全独立）
+
+### 持久命名 Agent vs 普通 tab Agent（`restoreFromHistory` fallback 边界）
+
+`restoreFromHistory` 在 sessionId 找不到 record 时分两种路径：
+
+- **持久命名 Agent**（Companion `__companion__` / Watch `__watch__`）：走 `restoreRecentTaskMemory` fallback——从全局最近 N 条历史提取任务恢复工作记忆。这些 Agent 重启后用 `session_${Date.now()}` 找不到 record，但语义上是「同一个长期 Agent」，必须靠这条 fallback 才能"记得最近聊过什么"
+- **普通 tab Agent**（terminal / SSH / 独立助手）：直接返回，TaskMemory 保持空白。新开 tab 的第一次对话本就是新任务，注入全局历史会让 LLM 误以为是连续对话，沿用历史里的工具名（甚至当前 tab 工具表里没有的工具——例如上次对话用过 chart 技能里的 `candlestick`，新 tab 第一次说"画个图"，AI 会捏造出 `generate_chart` 而不是先 `load skill`），造成 `Unknown tool` 幻觉调用
+
+**关于 Companion fallback 的"跨 Agent"语义**：`restoreRecentTaskMemory` 取的是**全局**最近 N 条 `AgentRecord`，不区分这些记录原本属于哪个 Agent / 哪个 tab。这是有意设计，不是 bug：Companion 是用户的"贴身助手"，肩负主动通知（proactive message）、IM 推送、桌面唤起等任务，需要随时能在通知里参考用户「最近在做什么」——无论用户是在哪个终端 tab 操作、还是和独立助手聊天，最近的活动都应作为 Companion 的工作记忆。Watch Agent 同理（关切的执行决策也常常需要参考最近上下文）。如果未来某些命名 Agent 不希望"跨 Agent 借记忆"，应在该 Agent 自身加过滤逻辑，而非改这条全局 fallback。
+
+**实现**：`Agent._persistentNamedAgent: boolean`（默认 false）。`AgentService.createAssistantAgent(agentId)` 内部根据 `agentId === COMPANION_AGENT_ID || WATCH_AGENT_ID` 自动调 `markAsPersistentNamed()`——调用方（IM service / Watch service）无需感知。`getOrCreateAgent`（终端 Agent）和 createAssistantAgent 的非命名分支默认就是 false。
+
+**回归保护**：`__tests__/agent.test.ts` 的 "should NOT restore global recent history for normal agent when sessionId record missing" 与 "should restore global recent history for persistent named agent ..." 两条用例锁定了边界。新增类似的固定 ID Agent 时记得在 `isPersistentNamedAgentId` 里登记。
 
 ## 工具元数据驱动模型（核心 OOP 边界承诺）
 

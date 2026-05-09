@@ -884,6 +884,122 @@ describe('Agent run method', () => {
       expect(mockHistoryService.getAgentRecordById).toHaveBeenCalledWith(sessionId)
     })
 
+    /**
+     * 防回归：新开 tab 的第一次对话不应被全局历史污染
+     *
+     * 场景：用户新开一个 terminal/SSH/独立助手 tab，前端生成新 sessionId 传给后端。
+     * 由于是新 sessionId，HistoryService 必然找不到对应 record。此时普通 Agent
+     * **绝对不能**走 restoreRecentTaskMemory fallback——那会把全局最近 N 个无关任务
+     * 注入 TaskMemory，让 LLM 误以为是连续对话，沿用历史里的工具名造成幻觉调用
+     * （例如截图反馈过的 `Unknown tool: generate_chart` 案例：上次对话用过 chart
+     * 技能，新 tab 第一次说"画个图"，AI 直接捏造 generate_chart 而不是先 load 技能）。
+     */
+    it('should NOT restore global recent history for normal agent when sessionId record missing', async () => {
+      const newSessionId = 'session_brand_new_tab'
+      const mockHistoryService = {
+        getAgentRecordById: vi.fn().mockReturnValue(undefined),
+        getRecentAgentRecords: vi.fn().mockReturnValue([
+          {
+            id: 'session_other_tab',
+            timestamp: Date.now() - 10000,
+            terminalId: 'other-pty',
+            terminalType: 'local',
+            userTask: 'Unrelated task from another tab',
+            steps: [
+              { id: 'ut1', type: 'user_task', content: 'Unrelated task', timestamp: Date.now() - 10000 },
+              { id: 'fr1', type: 'final_result', content: 'Unrelated result', timestamp: Date.now() - 9000 }
+            ],
+            messages: [
+              { role: 'user', content: 'Unrelated task' },
+              { role: 'assistant', content: 'Unrelated result' }
+            ],
+            finalResult: 'Unrelated result',
+            duration: 1000,
+            status: 'completed'
+          }
+        ]),
+        saveAgentRecord: vi.fn()
+      }
+
+      const services = createMockServices({ historyService: mockHistoryService as any })
+      const normalAgent = new TestAgent(services)
+      // 默认情况下 _persistentNamedAgent === false（普通 tab Agent）
+      expect(normalAgent.isPersistentNamedAgent()).toBe(false)
+
+      const ai = services.aiService as any
+      ai.chatWithToolsStream.mockImplementation(
+        (_messages: any, _tools: any, onChunk: any, _onToolCall: any, onDone: any) => {
+          onChunk('OK')
+          onDone({ content: 'OK', tool_calls: undefined })
+          return Promise.resolve()
+        }
+      )
+
+      const context = createMockContext({ sessionId: newSessionId, sessionStartTime: Date.now() })
+      await normalAgent.run('First message in new tab', context)
+
+      // sessionId 找不到 record → 普通 Agent 直接返回，**不**调用 getRecentAgentRecords
+      expect(mockHistoryService.getAgentRecordById).toHaveBeenCalledWith(newSessionId)
+      expect(mockHistoryService.getRecentAgentRecords).not.toHaveBeenCalled()
+      // TaskMemory 仅含本次新任务，没有任何全局历史
+      const taskMemory = normalAgent.exposeTaskMemory()
+      expect(taskMemory.getTaskCount()).toBe(1)
+    })
+
+    /**
+     * 持久命名 Agent（Companion / Watch）的 fallback 行为必须保留。
+     * 这些 Agent 重启后用 `session_${Date.now()}` 找不到 record，但语义上是「同一个
+     * 长期 Agent」，需要从全局最近历史恢复工作记忆才能记得最近聊过什么。
+     */
+    it('should restore global recent history for persistent named agent when sessionId record missing', async () => {
+      const newSessionId = 'session_companion_after_restart'
+      const recentRecord = {
+        id: 'session_previous',
+        timestamp: Date.now() - 10000,
+        terminalId: 'companion-pty',
+        terminalType: 'assistant',
+        userTask: 'Previous companion chat',
+        steps: [
+          { id: 'ut1', type: 'user_task', content: 'Previous companion chat', timestamp: Date.now() - 10000 },
+          { id: 'fr1', type: 'final_result', content: 'Previous reply', timestamp: Date.now() - 9000 }
+        ],
+        messages: [
+          { role: 'user', content: 'Previous companion chat' },
+          { role: 'assistant', content: 'Previous reply' }
+        ],
+        finalResult: 'Previous reply',
+        duration: 1000,
+        status: 'completed'
+      }
+      const mockHistoryService = {
+        getAgentRecordById: vi.fn().mockReturnValue(undefined),
+        getRecentAgentRecords: vi.fn().mockReturnValue([recentRecord]),
+        saveAgentRecord: vi.fn()
+      }
+
+      const services = createMockServices({ historyService: mockHistoryService as any })
+      const persistentAgent = new TestAgent(services)
+      persistentAgent.markAsPersistentNamed()
+      expect(persistentAgent.isPersistentNamedAgent()).toBe(true)
+
+      const ai = services.aiService as any
+      ai.chatWithToolsStream.mockImplementation(
+        (_messages: any, _tools: any, onChunk: any, _onToolCall: any, onDone: any) => {
+          onChunk('Hi again')
+          onDone({ content: 'Hi again', tool_calls: undefined })
+          return Promise.resolve()
+        }
+      )
+
+      const context = createMockContext({ sessionId: newSessionId, sessionStartTime: Date.now() })
+      await persistentAgent.run('Hello after restart', context)
+
+      // 持久命名 Agent 走 fallback，TaskMemory 含恢复的 1 条 + 当前 1 条
+      expect(mockHistoryService.getRecentAgentRecords).toHaveBeenCalled()
+      const taskMemory = persistentAgent.exposeTaskMemory()
+      expect(taskMemory.getTaskCount()).toBe(2)
+    })
+
     it('should restore from steps when messages field is missing (old records)', async () => {
       const sessionId = 'session_old_record'
       const mockHistoryService = {
