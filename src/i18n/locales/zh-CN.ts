@@ -1317,7 +1317,7 @@ export default {
         workSummary: {
           title: '工作总结',
           subtitle: 'Word 三段式周报',
-          prompt: '我这周做的事如下：\n- （在这里列出你本周完成的事项，每行一条）\n- \n- \n\n请帮我整理成正式的工作总结，按"完成事项 / 下周计划 / 风险与建议"三段式组织，输出为 Word 文档'
+          prompt: '请按"完成事项 / 下周计划 / 风险与建议"三段式，把下面这些虚构的本周事项整理成正式的工作总结，输出为 Word 文档：\n- 完成新版用户登录页改造，转化率提升约 12%\n- 修复线上 5 个客诉级缺陷（含 1 个 P0）\n- 协助 PM 完成 Q3 OKR 草案评审\n- 推动后端把日志从 print 切到结构化 logger\n- 与设计同学对齐了消息中心的视觉规范'
         },
         officialDoc: {
           title: '通知公文',
@@ -1332,24 +1332,24 @@ export default {
         polishWriting: {
           title: '内容润色',
           subtitle: '工作汇报口吻',
-          prompt: '把下面这段文字润色成正式的工作汇报口吻，符合中文写作规范（标点、数字用法），去掉口语化表达：\n\n（在这里粘贴你的原文）'
+          prompt: '把下面这段口语化的原文润色成正式的工作汇报口吻，符合中文写作规范（标点、数字用法），去掉口语化表达：\n\n这周还行吧，主要就是把那个登录页给搞定了，新的样式比老的好看挺多。然后就是修了几个 bug，有一个挺严重的差点上线出事故，幸好上线前发现了。下周打算继续干消息中心，应该问题不大。'
         },
-        translateDoc: {
-          title: '文档翻译',
-          subtitle: '英文 PDF → 中文对照',
-          prompt: '我会拖一份英文 PDF 进来，请翻译成中文，保留原始的标题层级和段落结构，输出对照版 Word 文档（左英右中）'
+        translateSnippet: {
+          title: '中英对照翻译',
+          subtitle: '段落级双语演示',
+          prompt: '把下面这段英文翻译成中文，输出为左英右中的对照表格（Markdown）：\n\nLarge language models have evolved from research curiosities into core infrastructure for modern software. Treating them as predictable services—rather than oracles—lets engineers build reliable products on top of inherently probabilistic systems.'
         },
 
         // 数据与表格
         excelSummary: {
           title: 'Excel 汇总',
-          subtitle: 'CSV 自动分组 + 汇总行',
-          prompt: '我会拖一个 CSV 文件进来，请按部门分组、加上汇总行和环比变化列，生成一份带条件格式（高亮异常值）的 Excel'
+          subtitle: '虚构数据自动分组',
+          prompt: '请用一组虚构的"销售部 / 市场部 / 研发部 / 售后部"过去 12 个月的月度销售额数据，按部门分组，添加月度汇总行和环比变化列，生成一份带条件格式（高亮异常值）的 Excel 文件给我演示'
         },
         dataAnalysis: {
           title: '数据分析报告',
-          subtitle: 'Excel → 异常与趋势',
-          prompt: '我会拖一份销售数据的 Excel 进来，帮我分析找出异常值和趋势点，生成一份带要点和图示的分析报告 Word 文档'
+          subtitle: '虚构销售数据演示',
+          prompt: '请用一组虚构的"过去 12 个月、4 个区域"的销售数据，找出异常月份和趋势特征，生成一份带要点和图示的分析报告 Word 文档给我演示'
         },
         dataChart: {
           title: '数据可视化',
@@ -1363,15 +1363,15 @@ export default {
         },
 
         // 文件与查找
-        pdfExtract: {
-          title: 'PDF 提取',
-          subtitle: '合同条款对照表',
-          prompt: '我会拖一份合同 PDF 进来，请提取所有关键条款（金额、期限、违约责任、争议解决等）和对应原文位置，整理成对照表格'
+        findDuplicates: {
+          title: '重复文件查找',
+          subtitle: '按内容哈希去重',
+          prompt: '扫描我的"下载"目录（限本目录、不递归子目录），按文件内容哈希找出重复文件，列成表格（保留路径、大小、最后修改时间），先不删，让我确认'
         },
         fileSearch: {
           title: '文件搜索',
           subtitle: '全盘毫秒级查找',
-          prompt: '请用 file_search 工具（基于系统索引、毫秒级，不要用 mdfind/find 等 shell 命令）帮我搜索文件名包含"项目 评估 报告"的文件，按修改时间倒序列出最多 20 条'
+          prompt: '请用 file_search 工具（基于系统索引、毫秒级，不要用 mdfind/find 等 shell 命令）帮我搜索文件名包含"报告"的文件，按修改时间倒序列出最多 20 条'
         },
         desktopOrganize: {
           title: '桌面整理',
@@ -1387,8 +1387,8 @@ export default {
         },
         webFetch: {
           title: '网页提取',
-          subtitle: '抓取并整理要点',
-          prompt: '帮我抓取这篇技术博客的内容（粘贴 URL），整理成要点笔记：https://...'
+          subtitle: 'HN 首页热榜要点',
+          prompt: '帮我抓取 https://news.ycombinator.com/ 的首页内容，列出当前热度前 10 条新闻的标题、链接和讨论数，整理成表格'
         },
         parallelResearch: {
           title: '多角度调研',
@@ -1431,8 +1431,8 @@ export default {
         },
         watchWebpage: {
           title: '网页变更监控',
-          subtitle: '内容更新告警',
-          prompt: '创建一个关切：监控指定网页（粘贴 URL），每小时检查一次，正文有更新时通知我'
+          subtitle: 'GitHub Trending 告警',
+          prompt: '创建一个关切：每小时检查一次 https://github.com/trending/python 的内容，当今日榜出现新项目时通知我'
         },
 
         // 系统与开发
@@ -1443,25 +1443,25 @@ export default {
         },
         gitHistory: {
           title: 'Git 历史',
-          subtitle: '提交记录按作者归类',
-          prompt: '看看这个仓库（粘贴本地路径）最近 30 天的提交记录，按作者归类统计提交次数和主要改动模块'
+          subtitle: '当前仓库提交统计',
+          prompt: '看看当前工作目录这个 git 仓库最近 30 天的提交记录，按作者归类统计提交次数和主要改动模块，输出表格'
         },
-        codeRefactor: {
-          title: '代码批量改',
-          subtitle: '跨文件统一替换',
-          prompt: '把这个文件夹（粘贴路径）下所有 .py 文件里的 print(...) 替换成 logger.info(...)，并在文件头自动加上 logger 的 import'
+        portCheck: {
+          title: '端口占用查询',
+          subtitle: '常用端口谁在用',
+          prompt: '帮我查一下本机 80、443、3000、5173、8080 这几个常用端口的占用情况，列出占用进程的名称、PID 和启动命令'
         },
 
         // 智能对话
         recallHistory: {
           title: '回忆历史',
           subtitle: '搜过去的对话记录',
-          prompt: '上回我让你查过的那个项目（关键词 ...），你给的结论是什么来着？帮我从对话历史里找出来'
+          prompt: '在我过去的对话历史里搜一下"K 线图"相关的内容，列出最近 5 条对话的摘要和时间'
         },
         knowledgeQa: {
           title: '知识库问答',
           subtitle: '基于本地知识库',
-          prompt: '在我的知识库里帮我找一下关于 ... 的内容，整理出要点并附上来源文件路径'
+          prompt: '在我的知识库里搜索"API 文档"相关内容，整理出找到的要点并附上来源文件路径；如果知识库为空，告诉我怎么添加文档'
         }
       }
     },
