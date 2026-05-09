@@ -1,0 +1,581 @@
+// AI 助手面板：对话/工具/Welcome/历史/场景示例等
+export default {
+
+  // AI Panel
+  ai: {
+    assistant: 'AI Assistant',
+    clearChat: 'Clear Chat',
+    closePanel: 'Close Panel',
+    noConfig: 'No AI model configured',
+    goToSettings: 'Go to Settings',
+    switchModel: 'Switch AI Model',
+    timeout: 'Timeout',
+    strict: 'Strict',
+    relaxed: 'Relaxed',
+    free: 'Free',
+    strictModeTitle: 'Strict Mode: Every command requires confirmation',
+    relaxedModeTitle: 'Relaxed Mode: Only dangerous commands require confirmation',
+    freeModeTitle: 'Free Mode: Fully automatic execution without any confirmation (Dangerous!)',
+    freeModeConfirmTitle: 'Enable Free Mode',
+    freeModeConfirmDesc: 'Free Mode allows AI Agent to automatically execute all commands including dangerous operations (such as deleting files, modifying system configurations, etc.) without any confirmation.',
+    freeModeWarning1: 'All commands will be executed directly without confirmation',
+    freeModeWarning2: 'May cause irreversible system damage or data loss',
+    freeModeWarning3: 'Only recommended when you fully trust AI and understand the risks',
+    enableFreeMode: 'Enable Free Mode',
+    inputPlaceholder: 'Enter your question or describe the command you want...',
+    inputPlaceholderAgent: 'Describe the task you want Agent to complete...',
+    inputPlaceholderSupplement: 'Enter supplementary information (will take effect in next step)...',
+    sendMessage: 'Send Message (Enter)',
+    executeTask: 'Execute Task (Enter)',
+    sendSupplement: 'Send Supplement (Enter)',
+    useDefault: 'Use Default (Enter)',
+    stopGeneration: 'Stop Generation',
+    stopAgent: 'Stop Agent',
+    stopTts: 'Stop reading',
+    startRecording: 'Voice Input (Hold Ctrl to talk)',
+    stopRecording: 'Release to stop recording',
+    transcribing: 'Transcribing...',
+    speechError: 'Speech recognition failed: {error}',
+    noAudioDevice: 'No microphone detected, voice input disabled',
+    clearConfirmTitle: 'Stop Agent and Clear Chat',
+    clearConfirmDesc: 'Agent is currently executing a task. Clearing the chat will:',
+    clearConfirmWarning1: 'Immediately abort the current operation',
+    clearConfirmWarning2: 'Clear all chat history and execution records',
+    clearConfirmButton: 'Stop and Clear',
+    attach: 'Add Attachment',
+    uploadDocument: 'Upload Document',
+    uploadImage: 'Upload Image',
+    removeImage: 'Remove Image',
+    describeImage: 'Please describe the content of this image',
+    visionNotSupported: 'Model {model} may not support vision. Consider switching to a vision model (e.g. qwen3.5-plus, gpt-5.5)',
+    visionGuardTitle: 'Current Model Does Not Support Image Recognition',
+    visionGuardCurrentModel: 'the current model',
+    visionGuardMessage: "You're using {model}, which isn't a vision model and has no linked vision model. If you send the image directly, the AI won't actually see it and may guess content from context — producing plausible but incorrect descriptions.",
+    visionGuardDetail: 'Recommended: switch to a vision model (e.g. qwen3.5-plus, gpt-5.5) in AI Settings, or link a vision model to the current profile and enable "Auto Vision Model".',
+    visionGuardOpenSettings: 'Open AI Settings',
+    visionGuardSendAnyway: 'Send Anyway (without image)',
+    visionGuardImagesDropped: 'Images dropped — sending text only',
+    dropToUpload: 'Drop to upload document or image',
+    dropHint: 'Any file format supported',
+    uploadedDocs: 'Uploaded Documents',
+    parsingDocs: 'Parsing Documents',
+    parsingDocsSummary: '{done}/{total} complete',
+    parsingPleaseWait: 'Parsing documents, please wait before sending',
+    documentParsePhase: {
+      queued: 'Waiting to parse',
+      loading: 'Reading file',
+      'extracting-text': 'Extracting text',
+      'detecting-images': 'Detecting images',
+      'rendering-preview': 'Rendering preview',
+      converting: 'Converting format',
+      formatting: 'Preparing content',
+      completed: 'Parsed',
+      failed: 'Parse failed'
+    },
+    clearDocs: 'Clear All Documents',
+    removeDoc: 'Remove',
+    context: 'Context',
+    contextUsed: 'used',
+    newMessage: 'New Message',
+    errorDetected: 'Error Detected',
+    aiDiagnose: 'AI Diagnose',
+    closeError: 'Close Error',
+    selectedContent: 'Terminal Content Selected',
+    aiAnalyze: 'AI Analyze',
+    preparing: 'Preparing...',
+    executing: 'Executing...',
+    agentRunning: 'Agent Running',
+    agentHistory: 'Agent Execution History',
+    steps: 'steps',
+    taskComplete: 'Task Complete',
+    taskFailed: 'Task Failed',
+    taskAborted: 'Task Aborted',
+    taskAbortedMessage: '⚠️ User aborted execution',
+    fork: {
+      action: 'Branch off',
+      tooltip: 'Open a new chat from here; the original conversation stays untouched',
+      titleSuffix: 'branch',
+      failed: 'Branch off failed: no session data or service unavailable'
+    },
+    agentExecutionFailed: '❌ Agent execution failed: {error}',
+    agentRunError: '❌ Agent run error: {error}',
+    unknownError: 'Unknown error',
+    needConfirm: 'Confirmation Required',
+    highRisk: 'High Risk',
+    mediumRisk: 'Medium Risk',
+    lowRisk: 'Low Risk',
+    reject: 'Reject',
+    alwaysAllow: 'Always Allow',
+    alwaysAllowHint: 'Skip confirmation for same operation in this session',
+    allowExecute: 'Allow Execute',
+    supplementInfo: 'Supplement Info',
+    pendingProcess: 'Pending',
+    welcome: {
+      greeting: 'Hello! I\'m your SailFish AI assistant.',
+      directChat: 'Direct Chat',
+      directChatDesc: 'Enter any question in the input box below, and I\'ll do my best to help.',
+      quickFeatures: 'Quick Features',
+      explainCommand: 'Explain Command',
+      explainCommandDesc: 'Select terminal content and click to explain, or click to see examples',
+      errorDiagnose: 'Error Diagnosis',
+      errorDiagnoseDesc: 'Auto-prompt when terminal errors occur, click "AI Diagnose"',
+      generateCommand: 'Generate Command',
+      generateCommandDesc: 'Describe your needs in natural language, like "find files larger than 100M"',
+      analyzeOutput: 'Analyze Output',
+      analyzeOutputDesc: 'After selecting terminal content, "AI Analyze" button appears automatically',
+      usageTips: 'Usage Tips',
+      tip1: 'Right-click menu in terminal allows "Send to AI Analysis"',
+      tip2: 'Code blocks in AI replies can be sent to terminal with one click',
+      tip3: 'Each terminal tab has its own conversation history',
+      tip4: 'I generate commands appropriate for your system environment'
+    },
+    agentWelcome: {
+      enabled: 'Agent Mode Enabled',
+      hostInfo: 'Host Information',
+      refreshHost: 'Refresh Host Info',
+      probing: 'Probing...',
+      hostname: 'Host',
+      system: 'System',
+      shell: 'Shell',
+      tools: 'Tools',
+      notProbed: 'Not probed yet, click refresh to probe host information',
+      whatIsAgent: 'What is Agent Mode?',
+      agentDesc: 'Agent can autonomously execute commands to complete your tasks, and you can see the complete execution process.',
+      examples: 'Examples',
+      example1: '"Check server disk space, clean logs if over 80%"',
+      example2: '"Check nginx service status, start it if not running"',
+      example3: '"Find the process using the most memory and show details"',
+      example4: '"Create a backup folder and backup all config files"',
+      standaloneDesc: 'Standalone assistant helps with documents, spreadsheets, file management, and information search. Drag & drop files or folders into the chat to get started.',
+      standaloneAllCommandsVisible: 'All operations are fully transparent, you can see the details of every step',
+      standaloneCaution1: 'File operations (like delete, overwrite) will ask for confirmation first',
+      standaloneCaution2: 'You can click "Stop" at any time to abort the assistant',
+      strictMode: 'Strict Mode',
+      relaxedMode: 'Relaxed Mode',
+      freeMode: 'Free Mode',
+      strictModeOn: 'On',
+      relaxedModeOn: 'On',
+      freeModeOn: 'On',
+      strictModeDesc1: 'Every command requires your confirmation before execution',
+      strictModeDesc2: 'Suitable for sensitive environments, full control over every step',
+      relaxedModeDesc1: 'Safe commands auto-execute, only dangerous commands require confirmation',
+      relaxedModeDesc2: 'Suitable for daily use, efficient while maintaining security',
+      freeModeDesc1: '⚠️ All commands auto-execute without any confirmation!',
+      freeModeDesc2: 'Make sure you fully trust AI and understand the potential risks',
+      allCommandsVisible: 'All commands execute in terminal, you can see complete input and output',
+      cautions: 'Cautions',
+      caution1: 'Dangerous commands (like delete, modify system files) always require confirmation',
+      caution2: 'You can click "Stop" at any time to abort Agent execution',
+      // History conversations
+      recentHistory: 'Recent Conversations',
+      viewMoreHistory: 'View more history...',
+      noRecentHistory: 'No history yet',
+      continueConversation: 'Continue',
+      historyLoading: 'Loading...',
+      loadMore: 'Load more...',
+      historyStatus: {
+        completed: 'Completed',
+        failed: 'Failed',
+        aborted: 'Aborted'
+      },
+      confirmLoadHistory: 'Current session has existing conversations. Loading history will overwrite them. Continue?',
+      historyLoaded: 'History loaded, you can continue the conversation',
+      // Standalone assistant capability examples grid
+      examplesHint: 'Click a scenario to fill the input — edit and press Enter to send',
+      shuffleExamples: 'Shuffle',
+      shuffleTooltip: 'Pick another 8 from 25 use cases',
+      categoryLabels: {
+        writing: 'Writing',
+        data: 'Data',
+        file: 'Files',
+        web: 'Web',
+        office: 'Office',
+        automation: 'Automation',
+        system: 'System',
+        memory: 'Memory'
+      },
+      scenarios: {
+        // Writing & Documents
+        workSummary: {
+          title: 'Weekly Report',
+          subtitle: 'Three-section Word doc',
+          prompt: 'Organize the following fabricated weekly tasks into a polished weekly report with three sections — "Done / Next Week / Risks & Suggestions" — and save as a Word document:\n- Shipped the new sign-in page redesign; conversion rate up ~12%\n- Fixed 5 customer-reported defects on production (one P0)\n- Helped PM finalize the Q3 OKR draft\n- Migrated backend logging from print to structured logger\n- Aligned with design on the visual spec for the new notification center'
+        },
+        officialDoc: {
+          title: 'Official Notice',
+          subtitle: 'Chinese gov-style doc',
+          prompt: 'Draft an official notice on holiday duty arrangements following the GB/T 9704 Chinese government document format. Save as Word.'
+        },
+        regulationDoc: {
+          title: 'Company Policy',
+          subtitle: 'Chapter/Article structure',
+          prompt: 'Draft a Travel Expense Reimbursement Policy in formal Chapter/Article structure (Chapter X / Article X / (X) / 1.), covering application, approval, reimbursement, and audit. Save as Word.'
+        },
+        polishWriting: {
+          title: 'Polish Writing',
+          subtitle: 'Formal business tone',
+          prompt: 'Polish the following colloquial draft into a formal business report tone, fixing grammar and removing chatty expressions:\n\nHad a decent week — mostly got the new login page over the line, looks way nicer than the old one. Squashed a bunch of bugs too, one was kinda scary and almost shipped, lucky we caught it. Plan for next week is to keep cracking on the notification center, should be fine.'
+        },
+        translateSnippet: {
+          title: 'Bilingual Translation',
+          subtitle: 'EN → CN side-by-side',
+          prompt: 'Translate the following English paragraph to Chinese and present it as a left-English / right-Chinese bilingual Markdown table:\n\nLarge language models have evolved from research curiosities into core infrastructure for modern software. Treating them as predictable services—rather than oracles—lets engineers build reliable products on top of inherently probabilistic systems.'
+        },
+
+        // Data & Spreadsheets
+        excelSummary: {
+          title: 'Excel Summary',
+          subtitle: 'Fabricated grouped data',
+          prompt: 'Using a fabricated 12-month sales dataset for four departments (Sales / Marketing / R&D / Support), group rows by department, add monthly summary rows and a month-over-month change column, and produce an Excel file with conditional formatting that highlights outliers'
+        },
+        dataAnalysis: {
+          title: 'Data Analysis',
+          subtitle: 'Fabricated sales report',
+          prompt: 'Using a fabricated 12-month, 4-region sales dataset, find the outlier months and trend characteristics, then produce a Word analysis report with key findings and supporting charts'
+        },
+        dataChart: {
+          title: 'Data Visualization',
+          subtitle: 'Bar + line chart',
+          prompt: 'Using a fabricated "past 6 months sales" dataset, generate a combined bar + line chart (bars for revenue, line for YoY growth, annotated with key values) and output as SVG — show me what your charting can do'
+        },
+        kLineChart: {
+          title: 'Candlestick Chart',
+          subtitle: 'Stock K-line',
+          prompt: 'Using a fabricated 60 trading days of A-share daily K data, generate a Chinese-style candlestick chart (red up, green down) with 5-day and 20-day moving averages overlaid, output as SVG'
+        },
+
+        // Files & Search
+        findDuplicates: {
+          title: 'Duplicate Files',
+          subtitle: 'Hash-based dedupe',
+          prompt: 'Scan my Downloads folder (this folder only, do not recurse) and find duplicate files by content hash. List them in a table with path, size, and last-modified time. Do not delete anything — let me confirm first.'
+        },
+        fileSearch: {
+          title: 'File Search',
+          subtitle: 'Millisecond full-disk',
+          prompt: 'Use the file_search tool (system-index based, millisecond — do NOT use mdfind/find shell commands) to find files whose name contains "report", sort by modified time descending, list up to 20'
+        },
+        desktopOrganize: {
+          title: 'Desktop Cleanup',
+          subtitle: 'Sort + dedupe',
+          prompt: 'Organize my desktop: sort images, documents, archives, and installers into folders; detect duplicate files and flag them for my review'
+        },
+
+        // Web & Search
+        webResearch: {
+          title: 'Topic Research',
+          subtitle: 'Notes with citations',
+          prompt: 'Research the major new features in React 19, compile structured notes, and cite the original source link for each item'
+        },
+        webFetch: {
+          title: 'Web Page Capture',
+          subtitle: 'HN front-page top 10',
+          prompt: 'Fetch the front page of https://news.ycombinator.com/ and list the current top 10 stories with title, link, and comment count, formatted as a table'
+        },
+        parallelResearch: {
+          title: 'Parallel Research',
+          subtitle: 'Sub-agents in parallel',
+          prompt: 'In parallel, research and compare three brokerage outlooks for this year\'s market (e.g. Goldman, Morgan Stanley, JPMorgan), then output a comparison table'
+        },
+
+        // Office Collaboration
+        emailReview: {
+          title: 'Email Triage',
+          subtitle: 'Sort by priority',
+          prompt: 'Look at my unread emails today, classify by priority, surface the ones needing my reply, and draft suggested response snippets'
+        },
+        calendarCheck: {
+          title: 'Calendar Review',
+          subtitle: 'Pre-meeting prep',
+          prompt: 'Review tomorrow\'s meeting schedule. For each meeting, list the prep items needed and remind me 15 minutes before'
+        },
+        feishuDoc: {
+          title: 'Feishu Lookup',
+          subtitle: 'Cloud doc search',
+          prompt: 'Search my Feishu cloud docs for "project plan" related documents updated in the last 7 days'
+        },
+        browserAuto: {
+          title: 'Browser Automation',
+          subtitle: 'Auto-browse + extract',
+          prompt: 'Open GitHub Trending Python (today), extract the top 10 projects with name, description, stars, and primary language, output as a table'
+        },
+
+        // Automation & Watch
+        watchEmail: {
+          title: 'Email Watch',
+          subtitle: 'Daily 9am to Slack',
+          prompt: 'Create a watch: every morning at 9am scan my inbox, surface important emails from execs and clients, and push them to my Slack/Feishu bot'
+        },
+        watchFolder: {
+          title: 'Folder Watch',
+          subtitle: 'Auto-sort new files',
+          prompt: 'Create a watch: monitor my Downloads folder; when new PDFs arrive, auto-sort them into category folders and notify me'
+        },
+        watchWebpage: {
+          title: 'Page Change Watch',
+          subtitle: 'GitHub Trending alert',
+          prompt: 'Create a watch: check https://github.com/trending/python every hour and notify me whenever a new project enters today\'s ranking'
+        },
+
+        // System & Development
+        systemCheck: {
+          title: 'System Check',
+          subtitle: 'Memory + disk + procs',
+          prompt: 'Check my computer\'s current memory and disk usage, find the top processes by RAM and CPU, and explain what each one does'
+        },
+        gitHistory: {
+          title: 'Git History',
+          subtitle: 'Current repo stats',
+          prompt: 'Look at the git history of the current working directory over the last 30 days, group by author with commit counts and the main modules they touched, output as a table'
+        },
+        portCheck: {
+          title: 'Port Usage',
+          subtitle: 'Who owns common ports',
+          prompt: 'Check which processes currently hold the common ports 80, 443, 3000, 5173, and 8080 on this machine. List the process name, PID, and the launch command for each.'
+        },
+
+        // Memory & Knowledge
+        recallHistory: {
+          title: 'Recall History',
+          subtitle: 'Search past conversations',
+          prompt: 'Search my past conversation history for anything related to "candlestick chart" and list the 5 most recent matches with a short summary and timestamp'
+        },
+        knowledgeQa: {
+          title: 'Knowledge Q&A',
+          subtitle: 'Local knowledge base',
+          prompt: 'Search my knowledge base for content related to "API documentation", summarize the key points found, and cite the source file paths. If the knowledge base is empty, tell me how to add documents.'
+        }
+      }
+    },
+    imagePreview: {
+      prevImage: 'Previous image (←)',
+      nextImage: 'Next image (→)',
+      prevConversation: 'Images from previous conversation (↑)',
+      nextConversation: 'Images from next conversation (↓)',
+    },
+    imageMenu: {
+      copy: 'Copy Image',
+      saveAs: 'Save Image As...',
+      copySuccess: 'Image copied to clipboard',
+      copyFailed: 'Copy failed: {error}',
+      saveSuccess: 'Saved {filename}',
+      saveFailed: 'Save failed: {error}',
+      unsupported: 'Clipboard image write is not supported in this environment',
+      filterPng: 'PNG Image (recommended)',
+      filterJpg: 'JPEG Image',
+      filterSvg: 'SVG Vector',
+    },
+    webSearch: {
+      foundResults: 'Found {count} results',
+    },
+    toolNames: {
+      execute_command: 'Execute Command',
+      exec: 'Run Command',
+      read_file: 'Read File',
+      write_file: 'Write File',
+      write_text_file: 'Write Text File',
+      write_remote_text_file: 'Write Remote Text File',
+      edit_file: 'Edit File',
+      get_terminal_context: 'Get Terminal Context',
+      file_search: 'Search Files',
+      remember_info: 'Remember Info',
+      search_knowledge: 'Search Knowledge',
+      web_search: 'Web Search',
+      get_knowledge_doc: 'Get Knowledge Doc',
+      ask_user: 'Ask User',
+      plan: 'Make Plan',
+      recall: 'Recall',
+      search_history: 'Search History',
+      talk_to_user: 'Talk to User',
+      send_to_chat: 'Send Message',
+      compress_context: 'Compress Context',
+      recall_compressed: 'Recall Compressed',
+      manage_memory: 'Manage Memory',
+      skill: 'Load Skill',
+      load_user_skill: 'Load User Skill',
+      // Excel skill
+      excel_open: 'Open Excel',
+      excel_read: 'Read Excel',
+      excel_save: 'Save Excel',
+      excel_close: 'Close Excel',
+      excel_from_markdown: 'Generate Excel from Markdown',
+      excel_modify: 'Modify Excel',
+      excel_analyze: 'Analyze Excel',
+      excel_create_style: 'Create Excel Style',
+      excel_edit_style: 'Edit Excel Style',
+      excel_delete_style: 'Delete Excel Style',
+      excel_list_styles: 'List Excel Styles',
+      excel_set_default_style: 'Set Default Excel Style',
+      // Word skill
+      word_create: 'Create Word',
+      word_open: 'Open Word',
+      word_read: 'Read Word',
+      word_add: 'Add Word Content',
+      word_replace: 'Replace Word Content',
+      word_modify_paragraph: 'Modify Word Paragraph',
+      word_delete_paragraph: 'Delete Word Paragraph',
+      word_save: 'Save Word',
+      word_close: 'Close Word',
+      word_set_page: 'Set Word Page',
+      word_track_changes: 'Track Word Changes',
+      word_from_markdown: 'Generate Word from Markdown',
+      word_create_style: 'Create Word Style',
+      word_edit_style: 'Edit Word Style',
+      word_delete_style: 'Delete Word Style',
+      word_list_styles: 'List Word Styles',
+      word_set_default_style: 'Set Default Word Style',
+      word_export_pdf: 'Export PDF',
+      // Browser skill
+      browser_launch: 'Launch Browser',
+      browser_snapshot: 'Browser Snapshot',
+      browser_goto: 'Browser Navigate',
+      browser_screenshot: 'Browser Screenshot',
+      browser_get_content: 'Get Page Content',
+      browser_click: 'Browser Click',
+      browser_type: 'Browser Type',
+      browser_scroll: 'Browser Scroll',
+      browser_wait: 'Browser Wait',
+      browser_evaluate: 'Browser Evaluate',
+      browser_list_tabs: 'List Browser Tabs',
+      browser_switch_tab: 'Switch Browser Tab',
+      browser_save_login: 'Save Login',
+      browser_list_profiles: 'List Browser Profiles',
+      browser_close: 'Close Browser',
+      // Email skill
+      email_connect: 'Connect Email',
+      email_list: 'List Emails',
+      email_read: 'Read Email',
+      email_download_attachment: 'Download Attachment',
+      email_search: 'Search Emails',
+      email_send: 'Send Email',
+      email_delete: 'Delete Email',
+      email_verify: 'Verify Email',
+      email_account_add: 'Add Email Account',
+      email_account_delete: 'Delete Email Account',
+      // Calendar skill
+      calendar_connect: 'Connect Calendar',
+      calendar_list: 'List Calendar Events',
+      calendar_create: 'Create Calendar Event',
+      calendar_update: 'Update Calendar Event',
+      calendar_delete: 'Delete Calendar Event',
+      calendar_verify: 'Verify Calendar',
+      calendar_account_add: 'Add Calendar Account',
+      calendar_account_delete: 'Delete Calendar Account',
+      // Watch skill
+      watch_list: 'List Watches',
+      watch_create: 'Create Watch',
+      watch_update: 'Update Watch',
+      watch_delete: 'Delete Watch',
+      watch_toggle: 'Toggle Watch',
+      watch_trigger: 'Trigger Watch',
+      watch_history: 'Watch History',
+      watch_state_update: 'Update Watch State',
+      // IM skills
+      feishu_read: 'Read Feishu Message',
+      feishu_write: 'Send Feishu Message',
+      dingtalk_read: 'Read DingTalk Message',
+      dingtalk_write: 'Send DingTalk Message',
+      wecom_read: 'Read WeCom Message',
+      wecom_write: 'Send WeCom Message',
+      // PDF skill
+      pdf_view_page: 'View PDF Page'
+    },
+    askingDefault: 'Default:',
+    askingDefaultHint: '(Press Enter to use default value)',
+    confirmMultiSelect: 'Confirm Selection',
+    subAgentPending: 'Pending',
+    subAgentRunning: 'Running',
+    subAgentCompleted: 'Completed',
+    subAgentFailed: 'Failed',
+    subAgentShowResult: 'Show result',
+    subAgentHideResult: 'Hide result',
+    // Thinking block (reasoning model thinking shown as single line)
+    thinking: {
+      streaming: 'Thinking',
+      done: 'Thought',
+      clickShow: 'Show details',
+      clickHide: 'Hide details'
+    },
+    // Analysis related (executed via Agent)
+    analyzeErrorPrompt: 'Please help me analyze this error:',
+    analyzeOutputPrompt: 'Please help me analyze this terminal output:',
+    analyzeContentPrompt: 'Please help me analyze this terminal content:'
+  },
+
+
+  // @ Commands (Mentions)
+  mentions: {
+    selectCommand: 'Select reference type',
+    file: 'File',
+    fileShortcut: "{'@'}file",
+    fileDesc: 'Reference files in current directory',
+    docs: 'Knowledge',
+    docsShortcut: "{'@'}docs",
+    docsDesc: 'Reference knowledge base documents',
+    directory: 'Directory',
+    uploaded: 'Uploaded',
+    knowledge: 'Knowledge Base',
+    noResults: 'No results found',
+    navigate: 'Navigate',
+    select: 'Select',
+    close: 'Close',
+    back: 'Back',
+    moreItems: '{count} more items, type to filter'
+  },
+
+
+  // Knowledge Base
+  knowledge: {
+    upgrading: 'Upgrading knowledge base model...',
+    repairing: 'Repairing knowledge base index...',
+    rebuilding: 'Rebuilding knowledge base index...'
+  },
+
+
+  // Knowledge Manager
+  knowledgeManager: {
+    title: 'Memory Manager',
+    close: 'Close',
+    searchPlaceholder: 'Search documents...',
+    unknownError: 'Unknown error',
+    selectAll: 'Select All',
+    selected: '{count} selected',
+    cancel: 'Cancel',
+    confirmDelete: 'Are you sure you want to delete "{name}"?',
+    deleteFailed: 'Delete failed',
+    confirmBatchDelete: 'Are you sure you want to delete {count} selected documents? This cannot be undone.',
+    batchDeleteFailed: 'Batch delete failed',
+    confirmClear: 'Are you sure you want to clear the entire knowledge base? All {count} documents will be deleted. This cannot be undone!',
+    clearFailed: 'Clear failed',
+    noMatchingDocs: 'No matching documents found',
+    emptyKnowledge: 'Knowledge base is empty',
+    loading: 'Loading...',
+    deleting: 'Deleting...',
+    deleteSelected: 'Delete Selected',
+    clearing: 'Clearing...',
+    clearAll: 'Clear All',
+    type: 'Type',
+    size: 'Size',
+    chunkCount: 'Chunks',
+    tags: 'Tags',
+    noTags: 'No tags',
+    timeInfo: 'Time Info',
+    createdAt: 'Created',
+    updatedAt: 'Updated',
+    contentPreview: 'Content Preview',
+    totalChars: '{count} characters total',
+    selectDocToView: 'Select a document to view details',
+    delete: 'Delete',
+    chunk: 'chunks',
+    export: 'Export',
+    import: 'Import',
+    refresh: 'Refresh',
+    exporting: 'Exporting...',
+    importing: 'Importing...',
+    exportSuccess: 'Export successful: {path}',
+    exportFailed: 'Export failed',
+    importSuccess: 'Import successful, {count} documents imported',
+    importFailed: 'Import failed',
+    confirmImport: 'Import will merge with existing data. Continue?'
+  },
+}

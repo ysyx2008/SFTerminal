@@ -1,0 +1,581 @@
+// AI 助手面板：对话/工具/Welcome/历史/场景示例等
+export default {
+
+  // AI 面板
+  ai: {
+    assistant: 'AI 助手',
+    clearChat: '清空对话',
+    closePanel: '关闭面板',
+    noConfig: '尚未配置 AI 模型',
+    goToSettings: '前往设置',
+    switchModel: '切换 AI 模型',
+    timeout: '超时',
+    strict: '严格',
+    relaxed: '宽松',
+    free: '自由',
+    strictModeTitle: '严格模式：每个命令都需确认',
+    relaxedModeTitle: '宽松模式：仅危险命令需确认',
+    freeModeTitle: '自由模式：完全自动执行，不做任何确认（危险！）',
+    freeModeConfirmTitle: '启用自由模式',
+    freeModeConfirmDesc: '自由模式将允许 AI 助手完全自动执行所有命令，包括危险操作（如删除文件、修改系统配置等），不做任何确认。',
+    freeModeWarning1: '所有命令将直接执行，没有确认环节',
+    freeModeWarning2: '可能造成不可逆的系统损坏或数据丢失',
+    freeModeWarning3: '仅建议在完全信任 AI 且了解风险时使用',
+    enableFreeMode: '启用自由模式',
+    inputPlaceholder: '输入问题或描述你想要的命令...',
+    inputPlaceholderAgent: '描述你想让助手完成的任务...',
+    inputPlaceholderSupplement: '输入补充信息（将在下一步生效）...',
+    sendMessage: '发送消息 (Enter)',
+    executeTask: '执行任务 (Enter)',
+    sendSupplement: '发送补充信息 (Enter)',
+    useDefault: '使用默认值 (Enter)',
+    stopGeneration: '停止生成',
+    stopAgent: '停止助手',
+    stopTts: '停止朗读',
+    startRecording: '语音输入（按住 Ctrl 说话）',
+    stopRecording: '松开停止录音',
+    transcribing: '正在识别...',
+    speechError: '语音识别失败：{error}',
+    noAudioDevice: '未检测到麦克风，语音输入已禁用',
+    clearConfirmTitle: '停止助手并清空对话',
+    clearConfirmDesc: '助手正在执行任务中，清空对话将会：',
+    clearConfirmWarning1: '立即中止当前正在执行的操作',
+    clearConfirmWarning2: '清空所有对话历史和执行记录',
+    clearConfirmButton: '停止并清空',
+    attach: '添加附件',
+    uploadDocument: '上传文档',
+    uploadImage: '上传图片',
+    removeImage: '移除图片',
+    describeImage: '请描述这张图片的内容',
+    visionNotSupported: '当前模型 {model} 可能不支持看图，建议切换到视觉模型（如 qwen3.5-plus、gpt-5.5 等）',
+    visionGuardTitle: '当前模型不支持图片识别',
+    visionGuardCurrentModel: '当前模型',
+    visionGuardMessage: '你正在使用 {model}，它不是视觉模型，也未关联视觉模型。直接发送的话，AI 看不到图片内容，可能会凭上下文猜测、给出看似合理但实际错误的描述。',
+    visionGuardDetail: '推荐做法：在 AI 设置中切换到视觉模型（如 qwen3.5-plus、gpt-5.5），或为当前模型关联一个视觉模型并开启「自动使用视觉模型」。',
+    visionGuardOpenSettings: '打开 AI 设置',
+    visionGuardSendAnyway: '仍然发送（不带图）',
+    visionGuardImagesDropped: '图片已剥离，本次仅发送文字',
+    dropToUpload: '释放以上传文档或图片',
+    dropHint: '支持任意文件格式',
+    uploadedDocs: '已上传文档',
+    parsingDocs: '正在解析文档',
+    parsingDocsSummary: '{done}/{total} 个完成',
+    parsingPleaseWait: '正在解析文档，请稍候再发送',
+    documentParsePhase: {
+      queued: '等待解析',
+      loading: '正在读取文件',
+      'extracting-text': '正在提取文本',
+      'detecting-images': '正在检测图片',
+      'rendering-preview': '正在渲染预览',
+      converting: '正在转换格式',
+      formatting: '正在整理内容',
+      completed: '解析完成',
+      failed: '解析失败'
+    },
+    clearDocs: '清空所有文档',
+    removeDoc: '移除',
+    context: '上下文',
+    contextUsed: '已使用',
+    newMessage: '新消息',
+    errorDetected: '检测到错误',
+    aiDiagnose: 'AI 诊断',
+    closeError: '关闭错误提示',
+    selectedContent: '已选中终端内容',
+    aiAnalyze: 'AI 分析',
+    preparing: '正在准备...',
+    executing: '执行中...',
+    agentRunning: '助手执行中',
+    agentHistory: '助手执行记录',
+    steps: '步',
+    taskComplete: '任务完成',
+    taskFailed: '任务失败',
+    taskAborted: '任务中止',
+    taskAbortedMessage: '⚠️ 用户中止了执行',
+    fork: {
+      action: '另开一聊',
+      tooltip: '从此处分一个新对话，原对话不受影响',
+      titleSuffix: '分支',
+      failed: '另开一聊失败：会话数据为空或服务不可用'
+    },
+    agentExecutionFailed: '❌ 助手执行失败: {error}',
+    agentRunError: '❌ 助手运行出错: {error}',
+    unknownError: '未知错误',
+    needConfirm: '需要确认',
+    highRisk: '高风险',
+    mediumRisk: '中风险',
+    lowRisk: '低风险',
+    reject: '拒绝',
+    alwaysAllow: '始终允许',
+    alwaysAllowHint: '本次会话内不再询问相同操作',
+    allowExecute: '允许执行',
+    supplementInfo: '补充信息',
+    pendingProcess: '等待处理',
+    welcome: {
+      greeting: '你好！我是旗鱼 AI 助手。',
+      directChat: '直接对话',
+      directChatDesc: '在下方输入框输入任何问题，我会尽力帮你解答。',
+      quickFeatures: '快捷功能',
+      explainCommand: '解释命令',
+      explainCommandDesc: '选中终端内容后点击按钮解释，或直接点击查看示例',
+      errorDiagnose: '错误诊断',
+      errorDiagnoseDesc: '终端出错时自动提示，点击「AI 诊断」',
+      generateCommand: '生成命令',
+      generateCommandDesc: '用自然语言描述需求，如「查找大于100M的文件」',
+      analyzeOutput: '分析输出',
+      analyzeOutputDesc: '选中终端内容后，自动显示「AI 分析」按钮',
+      usageTips: '使用技巧',
+      tip1: '终端右键菜单可「发送到 AI 分析」',
+      tip2: 'AI 回复中的代码块可一键发送到终端',
+      tip3: '每个终端标签页有独立的对话记录',
+      tip4: '我会根据你的系统环境生成合适的命令'
+    },
+    agentWelcome: {
+      enabled: '助手模式已启用',
+      hostInfo: '主机信息',
+      refreshHost: '刷新主机信息',
+      probing: '探测中...',
+      hostname: '主机',
+      system: '系统',
+      shell: 'Shell',
+      tools: '工具',
+      notProbed: '尚未探测，点击刷新按钮探测主机信息',
+      whatIsAgent: '什么是助手模式？',
+      agentDesc: '助手可以自主执行命令来完成你的任务，你可以看到完整的执行过程。',
+      examples: '使用示例',
+      example1: '「查看服务器磁盘空间，如果超过80%就清理日志」',
+      example2: '「检查 nginx 服务状态，如果没运行就启动它」',
+      example3: '「找出占用内存最多的进程并显示详情」',
+      example4: '「在当前目录创建一个 backup 文件夹并备份所有配置文件」',
+      standaloneDesc: '独立助手可以帮你处理文档、表格、文件管理、信息搜索等日常任务。支持拖放文件或文件夹到对话框直接操作。',
+      standaloneAllCommandsVisible: '所有操作过程完全透明，你可以看到每一步执行详情',
+      standaloneCaution1: '文件操作（如删除、覆盖）会先请求确认',
+      standaloneCaution2: '你可以随时点击「停止」中止助手执行',
+      strictMode: '严格模式',
+      relaxedMode: '宽松模式',
+      freeMode: '自由模式',
+      strictModeOn: '已开启',
+      relaxedModeOn: '已开启',
+      freeModeOn: '已开启',
+      strictModeDesc1: '每个命令都需要你确认后才会执行',
+      strictModeDesc2: '适合敏感环境，完全掌控每一步操作',
+      relaxedModeDesc1: '安全命令自动执行，只有危险命令需要确认',
+      relaxedModeDesc2: '适合日常使用，提高效率的同时保障安全',
+      freeModeDesc1: '⚠️ 所有命令自动执行，不做任何确认！',
+      freeModeDesc2: '请确保您完全信任 AI，并了解可能的风险',
+      allCommandsVisible: '所有命令都在终端执行，你可以看到完整输入输出',
+      cautions: '注意事项',
+      caution1: '危险命令（如删除、修改系统文件）始终需要确认',
+      caution2: '你可以随时点击「停止」中止助手执行',
+      // 历史对话
+      recentHistory: '最近对话',
+      viewMoreHistory: '查看更多历史...',
+      noRecentHistory: '暂无历史对话',
+      continueConversation: '继续对话',
+      historyLoading: '加载中...',
+      loadMore: '加载更多...',
+      historyStatus: {
+        completed: '已完成',
+        failed: '失败',
+        aborted: '已中止'
+      },
+      confirmLoadHistory: '当前会话已有对话记录，加载历史将覆盖现有内容。确定要继续吗？',
+      historyLoaded: '已加载历史对话，可以继续提问',
+      // 独立助手能力示例网格
+      examplesHint: '点击场景填入输入框，可改可补充后按 Enter 发送',
+      shuffleExamples: '换一批',
+      shuffleTooltip: '从 25 个使用场景里再抽 8 个',
+      categoryLabels: {
+        writing: '写作',
+        data: '数据',
+        file: '文件',
+        web: '网络',
+        office: '办公',
+        automation: '自动化',
+        system: '系统',
+        memory: '记忆'
+      },
+      scenarios: {
+        // 文档与写作
+        workSummary: {
+          title: '工作总结',
+          subtitle: 'Word 三段式周报',
+          prompt: '请按"完成事项 / 下周计划 / 风险与建议"三段式，把下面这些虚构的本周事项整理成正式的工作总结，输出为 Word 文档：\n- 完成新版用户登录页改造，转化率提升约 12%\n- 修复线上 5 个客诉级缺陷（含 1 个 P0）\n- 协助 PM 完成 Q3 OKR 草案评审\n- 推动后端把日志从 print 切到结构化 logger\n- 与设计同学对齐了消息中心的视觉规范'
+        },
+        officialDoc: {
+          title: '通知公文',
+          subtitle: '党政机关公文格式',
+          prompt: '起草一份《关于春节假期值班安排的通知》，按 GB/T 9704-2012《党政机关公文格式》输出 Word 文档，含发文字号、主送机关、正文、落款'
+        },
+        regulationDoc: {
+          title: '管理制度',
+          subtitle: '第X章/第X条体例',
+          prompt: '帮我起草《员工差旅报销管理办法》，按"第X章/第X条/（X）/1．"四级编号体例，覆盖申请、审批、报销、监督环节，输出 Word 文档'
+        },
+        polishWriting: {
+          title: '内容润色',
+          subtitle: '工作汇报口吻',
+          prompt: '把下面这段口语化的原文润色成正式的工作汇报口吻，符合中文写作规范（标点、数字用法），去掉口语化表达：\n\n这周还行吧，主要就是把那个登录页给搞定了，新的样式比老的好看挺多。然后就是修了几个 bug，有一个挺严重的差点上线出事故，幸好上线前发现了。下周打算继续干消息中心，应该问题不大。'
+        },
+        translateSnippet: {
+          title: '中英对照翻译',
+          subtitle: '段落级双语演示',
+          prompt: '把下面这段英文翻译成中文，输出为左英右中的对照表格（Markdown）：\n\nLarge language models have evolved from research curiosities into core infrastructure for modern software. Treating them as predictable services—rather than oracles—lets engineers build reliable products on top of inherently probabilistic systems.'
+        },
+
+        // 数据与表格
+        excelSummary: {
+          title: 'Excel 汇总',
+          subtitle: '虚构数据自动分组',
+          prompt: '请用一组虚构的"销售部 / 市场部 / 研发部 / 售后部"过去 12 个月的月度销售额数据，按部门分组，添加月度汇总行和环比变化列，生成一份带条件格式（高亮异常值）的 Excel 文件给我演示'
+        },
+        dataAnalysis: {
+          title: '数据分析报告',
+          subtitle: '虚构销售数据演示',
+          prompt: '请用一组虚构的"过去 12 个月、4 个区域"的销售数据，找出异常月份和趋势特征，生成一份带要点和图示的分析报告 Word 文档给我演示'
+        },
+        dataChart: {
+          title: '数据可视化',
+          subtitle: '柱状图 + 折线图',
+          prompt: '用一组虚构的"过去 6 个月销售数据"演示生成一张柱状图+折线图组合图（柱状显示销售额、折线显示同比增长率，标注关键数值），输出 SVG，让我看看你的图表能力'
+        },
+        kLineChart: {
+          title: 'K 线图',
+          subtitle: '中式红涨绿跌',
+          prompt: '用一组虚构的某只 A 股最近 60 个交易日数据，生成一张中式 K 线图（红涨绿跌），叠加 5 日和 20 日均线，输出 SVG，让我看看 K 线图效果'
+        },
+
+        // 文件与查找
+        findDuplicates: {
+          title: '重复文件查找',
+          subtitle: '按内容哈希去重',
+          prompt: '扫描我的"下载"目录（限本目录、不递归子目录），按文件内容哈希找出重复文件，列成表格（保留路径、大小、最后修改时间），先不删，让我确认'
+        },
+        fileSearch: {
+          title: '文件搜索',
+          subtitle: '全盘毫秒级查找',
+          prompt: '请用 file_search 工具（基于系统索引、毫秒级，不要用 mdfind/find 等 shell 命令）帮我搜索文件名包含"报告"的文件，按修改时间倒序列出最多 20 条'
+        },
+        desktopOrganize: {
+          title: '桌面整理',
+          subtitle: '分类 + 重复检测',
+          prompt: '帮我整理桌面：把图片、文档、压缩包、安装包分类移到对应文件夹；同时检测重复文件并标记出来供我确认'
+        },
+
+        // 网络与搜索
+        webResearch: {
+          title: '资料调研',
+          subtitle: '整理笔记附原文链接',
+          prompt: '帮我搜一下 React 19 的主要新特性，整理成中文学习笔记，每条附原文链接'
+        },
+        webFetch: {
+          title: '网页提取',
+          subtitle: 'HN 首页热榜要点',
+          prompt: '帮我抓取 https://news.ycombinator.com/ 的首页内容，列出当前热度前 10 条新闻的标题、链接和讨论数，整理成表格'
+        },
+        parallelResearch: {
+          title: '多角度调研',
+          subtitle: '并行子 Agent 对比',
+          prompt: '同时帮我搜索并对比三家券商对今年 A 股市场的展望（中信、中金、华泰），并行调研后输出对比表格'
+        },
+
+        // 办公协同
+        emailReview: {
+          title: '邮件总览',
+          subtitle: '按重要性挑回复',
+          prompt: '看一下我今天收到的未读邮件，按重要性分类，挑出需要我回复的列出来，并给出回复建议草稿'
+        },
+        calendarCheck: {
+          title: '日程查询',
+          subtitle: '会前 15 分钟提醒',
+          prompt: '看一下我明天的会议安排，每个会议给我列出需要提前准备的事项，会议前 15 分钟提醒我'
+        },
+        feishuDoc: {
+          title: '飞书查文档',
+          subtitle: '云文档检索',
+          prompt: '帮我在飞书云文档里找一下"项目计划表"相关的文档，列出最近 7 天有更新的'
+        },
+        browserAuto: {
+          title: '浏览器操作',
+          subtitle: '自动浏览 + 提取',
+          prompt: '帮我打开 GitHub Trending 的 Python 榜单（今日），提取前 10 个项目的名称、描述、star 数和主语言，输出为表格'
+        },
+
+        // 自动化与关切
+        watchEmail: {
+          title: '定时邮件扫描',
+          subtitle: '每天 9 点推飞书',
+          prompt: '创建一个关切：每天早上 9 点扫描我的收件箱，把来自领导和客户的重要邮件挑出来推送到飞书机器人'
+        },
+        watchFolder: {
+          title: '文件夹监控',
+          subtitle: '新文件自动整理',
+          prompt: '创建一个关切：监控我的下载目录，每当出现新的 PDF 文件时自动整理到分类文件夹并通知我'
+        },
+        watchWebpage: {
+          title: '网页变更监控',
+          subtitle: 'GitHub Trending 告警',
+          prompt: '创建一个关切：每小时检查一次 https://github.com/trending/python 的内容，当今日榜出现新项目时通知我'
+        },
+
+        // 系统与开发
+        systemCheck: {
+          title: '系统检查',
+          subtitle: '内存 + 磁盘 + 进程',
+          prompt: '帮我看一下电脑现在的内存和磁盘占用情况，找出占用内存和 CPU 最多的几个进程并解释它们是什么'
+        },
+        gitHistory: {
+          title: 'Git 历史',
+          subtitle: '当前仓库提交统计',
+          prompt: '看看当前工作目录这个 git 仓库最近 30 天的提交记录，按作者归类统计提交次数和主要改动模块，输出表格'
+        },
+        portCheck: {
+          title: '端口占用查询',
+          subtitle: '常用端口谁在用',
+          prompt: '帮我查一下本机 80、443、3000、5173、8080 这几个常用端口的占用情况，列出占用进程的名称、PID 和启动命令'
+        },
+
+        // 智能对话
+        recallHistory: {
+          title: '回忆历史',
+          subtitle: '搜过去的对话记录',
+          prompt: '在我过去的对话历史里搜一下"K 线图"相关的内容，列出最近 5 条对话的摘要和时间'
+        },
+        knowledgeQa: {
+          title: '知识库问答',
+          subtitle: '基于本地知识库',
+          prompt: '在我的知识库里搜索"API 文档"相关内容，整理出找到的要点并附上来源文件路径；如果知识库为空，告诉我怎么添加文档'
+        }
+      }
+    },
+    imagePreview: {
+      prevImage: '上一张 (←)',
+      nextImage: '下一张 (→)',
+      prevConversation: '上一条对话的图片 (↑)',
+      nextConversation: '下一条对话的图片 (↓)',
+    },
+    imageMenu: {
+      copy: '复制图片',
+      saveAs: '另存为...',
+      copySuccess: '图片已复制到剪贴板',
+      copyFailed: '复制失败：{error}',
+      saveSuccess: '已保存 {filename}',
+      saveFailed: '保存失败：{error}',
+      unsupported: '当前环境不支持复制图片到剪贴板',
+      filterPng: 'PNG 图片（推荐）',
+      filterJpg: 'JPEG 图片',
+      filterSvg: 'SVG 矢量图',
+    },
+    webSearch: {
+      foundResults: '搜索到 {count} 条结果',
+    },
+    toolNames: {
+      execute_command: '执行命令',
+      exec: '运行命令',
+      read_file: '读取文件',
+      write_file: '写入文件',
+      write_text_file: '写入文本文件',
+      write_remote_text_file: '写入远程文本文件',
+      edit_file: '编辑文件',
+      get_terminal_context: '获取终端上下文',
+      file_search: '搜索文件',
+      remember_info: '记住信息',
+      search_knowledge: '搜索知识库',
+      web_search: 'Web 搜索',
+      get_knowledge_doc: '获取知识文档',
+      ask_user: '询问用户',
+      plan: '制定计划',
+      recall: '回忆',
+      search_history: '搜索历史',
+      talk_to_user: '与用户对话',
+      send_to_chat: '发送消息',
+      compress_context: '压缩上下文',
+      recall_compressed: '回忆压缩内容',
+      manage_memory: '管理记忆',
+      skill: '加载技能',
+      load_user_skill: '加载用户技能',
+      // Excel 技能
+      excel_open: '打开 Excel',
+      excel_read: '读取 Excel',
+      excel_save: '保存 Excel',
+      excel_close: '关闭 Excel',
+      excel_from_markdown: '从 Markdown 生成 Excel',
+      excel_modify: '修改 Excel',
+      excel_analyze: '分析 Excel',
+      excel_create_style: '创建 Excel 样式',
+      excel_edit_style: '编辑 Excel 样式',
+      excel_delete_style: '删除 Excel 样式',
+      excel_list_styles: '列出 Excel 样式',
+      excel_set_default_style: '设置默认 Excel 样式',
+      // Word 技能
+      word_create: '创建 Word',
+      word_open: '打开 Word',
+      word_read: '读取 Word',
+      word_add: '添加 Word 内容',
+      word_replace: '替换 Word 内容',
+      word_modify_paragraph: '修改 Word 段落',
+      word_delete_paragraph: '删除 Word 段落',
+      word_save: '保存 Word',
+      word_close: '关闭 Word',
+      word_set_page: '设置 Word 页面',
+      word_track_changes: '追踪 Word 修改',
+      word_from_markdown: '从 Markdown 生成 Word',
+      word_create_style: '创建 Word 样式',
+      word_edit_style: '编辑 Word 样式',
+      word_delete_style: '删除 Word 样式',
+      word_list_styles: '列出 Word 样式',
+      word_set_default_style: '设置默认 Word 样式',
+      word_export_pdf: '导出 PDF',
+      // 浏览器技能
+      browser_launch: '启动浏览器',
+      browser_snapshot: '浏览器快照',
+      browser_goto: '浏览器导航',
+      browser_screenshot: '浏览器截图',
+      browser_get_content: '获取网页内容',
+      browser_click: '浏览器点击',
+      browser_type: '浏览器输入',
+      browser_scroll: '浏览器滚动',
+      browser_wait: '浏览器等待',
+      browser_evaluate: '浏览器执行脚本',
+      browser_list_tabs: '列出浏览器标签页',
+      browser_switch_tab: '切换浏览器标签页',
+      browser_save_login: '保存登录信息',
+      browser_list_profiles: '列出浏览器配置',
+      browser_close: '关闭浏览器',
+      // 邮件技能
+      email_connect: '连接邮箱',
+      email_list: '列出邮件',
+      email_read: '读取邮件',
+      email_download_attachment: '下载邮件附件',
+      email_search: '搜索邮件',
+      email_send: '发送邮件',
+      email_delete: '删除邮件',
+      email_verify: '验证邮箱',
+      email_account_add: '添加邮箱账户',
+      email_account_delete: '删除邮箱账户',
+      // 日历技能
+      calendar_connect: '连接日历',
+      calendar_list: '列出日历事件',
+      calendar_create: '创建日历事件',
+      calendar_update: '更新日历事件',
+      calendar_delete: '删除日历事件',
+      calendar_verify: '验证日历',
+      calendar_account_add: '添加日历账户',
+      calendar_account_delete: '删除日历账户',
+      // 关切技能
+      watch_list: '列出关切',
+      watch_create: '创建关切',
+      watch_update: '更新关切',
+      watch_delete: '删除关切',
+      watch_toggle: '切换关切',
+      watch_trigger: '触发关切',
+      watch_history: '关切历史',
+      watch_state_update: '更新关切状态',
+      // IM 技能
+      feishu_read: '读取飞书消息',
+      feishu_write: '发送飞书消息',
+      dingtalk_read: '读取钉钉消息',
+      dingtalk_write: '发送钉钉消息',
+      wecom_read: '读取企业微信消息',
+      wecom_write: '发送企业微信消息',
+      // PDF 技能
+      pdf_view_page: '查看 PDF 页面'
+    },
+    askingDefault: '默认：',
+    askingDefaultHint: '（直接按回车使用默认值）',
+    confirmMultiSelect: '确认选择',
+    subAgentPending: '等待中',
+    subAgentRunning: '执行中',
+    subAgentCompleted: '已完成',
+    subAgentFailed: '失败',
+    subAgentShowResult: '查看结果',
+    subAgentHideResult: '收起结果',
+    // 思考块（reasoning 模型的 thinking 单行呈现）
+    thinking: {
+      streaming: '思考中',
+      done: '思考完成',
+      clickShow: '点击查看',
+      clickHide: '点击收起'
+    },
+    // 分析功能相关（通过 Agent 执行）
+    analyzeErrorPrompt: '请帮我分析这个错误：',
+    analyzeOutputPrompt: '请帮我分析这段终端输出：',
+    analyzeContentPrompt: '请帮我分析这段终端内容：'
+  },
+
+
+  // @ 命令（提及）
+  mentions: {
+    selectCommand: '选择引用类型',
+    file: '文件',
+    fileShortcut: "{'@'}file",
+    fileDesc: '引用当前目录下的文件',
+    docs: '知识库',
+    docsShortcut: "{'@'}docs",
+    docsDesc: '引用知识库中的文档',
+    directory: '目录',
+    uploaded: '已上传',
+    knowledge: '知识库',
+    noResults: '无匹配结果',
+    navigate: '导航',
+    select: '选择',
+    close: '关闭',
+    back: '后退',
+    moreItems: '还有 {count} 个项目，请输入关键词筛选'
+  },
+
+
+  // 知识库
+  knowledge: {
+    upgrading: '正在升级知识库模型...',
+    repairing: '正在修复知识库索引...',
+    rebuilding: '正在重建知识库索引...'
+  },
+
+
+  // 知识库管理器
+  knowledgeManager: {
+    title: '记忆管理',
+    close: '关闭',
+    searchPlaceholder: '搜索文档...',
+    unknownError: '未知错误',
+    selectAll: '全选',
+    selected: '已选 {count} 个',
+    cancel: '取消',
+    confirmDelete: '确定要删除 "{name}" 吗？',
+    deleteFailed: '删除失败',
+    confirmBatchDelete: '确定要删除选中的 {count} 个文档吗？此操作不可恢复。',
+    batchDeleteFailed: '批量删除失败',
+    confirmClear: '确定要清空整个知识库吗？将删除全部 {count} 个文档，此操作不可恢复！',
+    clearFailed: '清空失败',
+    noMatchingDocs: '没有找到匹配的文档',
+    emptyKnowledge: '知识库为空',
+    loading: '加载中...',
+    deleting: '删除中...',
+    deleteSelected: '删除选中',
+    clearing: '清空中...',
+    clearAll: '清空全部',
+    type: '类型',
+    size: '大小',
+    chunkCount: '分块',
+    tags: '标签',
+    noTags: '无标签',
+    timeInfo: '时间信息',
+    createdAt: '创建时间',
+    updatedAt: '更新时间',
+    contentPreview: '内容预览',
+    totalChars: '共 {count} 字符',
+    selectDocToView: '选择一个文档查看详情',
+    delete: '删除',
+    chunk: '块',
+    export: '导出',
+    import: '导入',
+    refresh: '刷新',
+    exporting: '导出中...',
+    importing: '导入中...',
+    exportSuccess: '导出成功: {path}',
+    exportFailed: '导出失败',
+    importSuccess: '导入成功，共导入 {count} 个文档',
+    importFailed: '导入失败',
+    confirmImport: '导入将与现有数据合并，确定要继续吗？'
+  },
+}

@@ -1,0 +1,391 @@
+// 关切系统：定时任务、关切配置、觉醒模式、心跳
+export default {
+
+  // 定时任务
+  scheduler: {
+    title: '定时任务',
+    tasks: '任务',
+    history: '历史',
+    newTask: '新建任务',
+    createTask: '创建任务',
+    editTask: '编辑任务',
+    noTasks: '暂无定时任务',
+    noTasksConfigured: '未配置定时任务',
+    tasksEnabled: '个任务已启用',
+    tasksFailed: '个任务需要关注',
+    createFirst: '创建第一个任务',
+    loading: '加载中...',
+    
+    // 任务状态
+    enabled: '已启用',
+    disabled: '已禁用',
+    enable: '启用',
+    disable: '禁用',
+    running: '运行中',
+    
+    // 操作
+    edit: '编辑',
+    delete: '删除',
+    runNow: '立即执行',
+    save: '保存',
+    create: '创建',
+    cancel: '取消',
+    
+    // Popover
+    upcoming: '即将执行',
+    recentRuns: '最近执行',
+    manageAll: '管理全部任务',
+    
+    // 任务详情
+    nextRun: '下次执行',
+    lastRun: '上次执行',
+    status: '状态',
+    time: '时间',
+    duration: '耗时',
+    error: '错误',
+    
+    // 调度配置
+    scheduleConfig: '调度配置',
+    scheduleType: '调度类型',
+    expression: '表达式',
+    interval: '间隔',
+    once: '一次性',
+    presets: '常用预设',
+    intervalConfig: '间隔配置',
+    every: '每',
+    minutes: '分钟',
+    hours: '小时',
+    days: '天',
+    seconds: '秒',
+    dateTime: '日期时间',
+    
+    // 目标配置
+    targetConfig: '执行目标',
+    targetType: '目标类型',
+    localTerminal: '本地终端',
+    remoteHost: '远程主机',
+    noTerminal: '无需终端',
+    session: '会话',
+    selectSshSession: '请选择 SSH 会话',
+    workingDirectory: '工作目录',
+    workingDirectoryPlaceholder: '可选，留空使用默认目录',
+    
+    // 任务内容
+    taskPrompt: '任务指令',
+    agentInstruction: 'Agent 指令',
+    promptPlaceholder: '输入要执行的任务描述，例如：检查磁盘空间使用率，如果超过80%发送告警',
+    
+    // 高级选项
+    advancedOptions: '高级选项',
+    timeout: '超时时间',
+    notifyComplete: '任务完成时通知',
+    notifyError: '任务失败时通知',
+    notifyOnComplete: '完成通知',
+    notifyOnError: '错误通知',
+    options: '选项',
+    
+    // 基本信息
+    basicInfo: '基本信息',
+    taskName: '任务名称',
+    taskNamePlaceholder: '例如：每日磁盘检查',
+    taskDescription: '任务描述',
+    taskDescriptionPlaceholder: '可选，简要描述任务用途',
+    enableTask: '启用此任务',
+    
+    // 历史与空状态
+    selectTask: '请从左侧选择任务查看详情',
+    historyCount: '{count} 条记录',
+    clearHistory: '清除历史',
+    noHistory: '暂无执行记录',
+    
+    // 验证
+    validation: {
+      nameRequired: '请输入任务名称',
+      promptRequired: '请输入任务指令',
+      cronRequired: '请输入 Cron 表达式',
+      intervalRequired: '请输入有效的间隔时间',
+      dateTimeRequired: '请选择执行时间',
+      sshSessionRequired: '请选择 SSH 会话'
+    }
+  },
+
+
+  // 关切（感知层）
+  watch: {
+    panelTitle: '关切',
+    title: '关切',
+    watches: '关切',
+    history: '历史',
+    sensors: '传感器',
+    navAutomation: '自动化',
+    navTools: '工具',
+    navRecords: '记录',
+    schedulerTab: '定时任务',
+    executionHistory: '运行历史',
+    wakeupHistoryTitle: '觉醒运行历史',
+    watchHistoryTitle: '关切运行历史',
+    recentRuns: '运行历史',
+    noHistoryInFilter: '当前区域暂无记录',
+    newWatch: '新建关切',
+    createWatch: '创建关切',
+    editWatch: '编辑关切',
+    noWatches: '暂无关切',
+    noWatchesYet: '还没有关切——在对话中告诉 AI 你想关注什么',
+    createFirst: '创建第一个关切',
+    selectOrCreate: '选择一个关切查看详情',
+    createViaAgent: '在对话中告诉 AI 你想关注什么，它会自动帮你创建',
+    overviewTitle: '总览',
+    overviewComingSoon: '运营仪表盘即将上线',
+    overviewSummaryHint: '当前 {total} 个关切 · {running} 个运行中 · 历史 {history} 条',
+    overviewHeader: '运营总览',
+    overviewSubtitle: '所有关切的运行状态一屏看清',
+    overviewHealthAllGood: '一切就绪',
+    overviewHealthLabel: '运行健康',
+    overviewMiniAnomaly: '异常',
+    overviewMiniRunning: '运行中',
+    overviewNextRunLabel: '下一次执行',
+    overviewNoUpcoming: '暂无计划中的执行',
+    overviewShowMore: '展开剩余 {n} 项',
+    overviewShowLess: '收起',
+    sectionAnomalies: '异常关切',
+    sectionRunning: '正在执行',
+    sectionUpcoming: '即将执行',
+    sectionRecent: '最近执行流水',
+    noAnomalies: '一切正常',
+    noRunning: '当前没有运行中的关切',
+    noUpcoming: '没有计划中的执行',
+    noHistoryYet: '还没有执行记录',
+    runningFor: '已运行 {d}',
+    timeJustNow: '刚刚',
+    timeSecAgo: '{n} 秒前',
+    timeMinAgo: '{n} 分钟前',
+    timeHrAgo: '{n} 小时前',
+    timeDayAgo: '{n} 天前',
+    timeNow: '即将',
+    timeInSec: '{n} 秒后',
+    timeInMin: '{n} 分钟后',
+    timeInHr: '{n} 小时后',
+    timeInDay: '{n} 天后',
+    errorCountBadge: '{n} 个异常需关注',
+    filterAll: '全部',
+    filterNormal: '正常',
+    filterError: '异常',
+    filterRunning: '运行中',
+    filterDisabled: '已禁用',
+    noWatchesInFilter: '当前筛选下没有关切',
+    activeCount: '个启用中',
+    loading: '加载中...',
+
+    enabled: '已启用',
+    disabled: '已禁用',
+    running: '运行中',
+
+    edit: '编辑',
+    delete: '删除',
+    trigger: '手动触发',
+    save: '保存',
+    create: '创建',
+    cancel: '取消',
+    close: '关闭',
+    refresh: '刷新',
+
+    // 触发器类型
+    triggerCron: 'Cron 定时',
+    triggerInterval: '固定间隔',
+    triggerHeartbeat: '心跳',
+    triggerWebhook: 'Webhook',
+    triggerManual: '手动',
+    triggerIntervalUnit: '秒',
+    triggerIntervalHumanHours: '每 {hours} 小时',
+    triggerIntervalHumanMinutes: '每 {minutes} 分钟',
+    triggerIntervalHumanSeconds: '每 {seconds} 秒',
+    presets: '常用预设',
+
+    // 执行目标
+    executionTarget: '执行目标',
+    localTerminal: '本地终端',
+    remoteHost: '远程主机',
+    assistantOnly: '仅对话',
+
+    // 输出方式
+    liveOutput: '内心独白',
+    outputType: '结果投递',
+    outputDesktop: '应用内对话',
+    outputIM: 'IM 推送',
+    outputNotification: '系统通知',
+    outputLog: '仅记录',
+    outputSilent: '静默',
+
+    assistantTabTitle: '远程对话',
+
+    // 状态
+    statusCompleted: '完成',
+    statusFailed: '失败',
+    statusSkipped: '跳过',
+    statusTimeout: '超时',
+    statusCancelled: '取消',
+    statusRunning: '运行中',
+
+    // 表单
+    name: '名称',
+    namePlaceholder: '例如：每日晨报、邮件检查',
+    description: '描述',
+    descriptionPlaceholder: '简要描述这个关切的用途',
+    prompt: '任务指令',
+    promptPlaceholder: '输入 Agent 要执行的任务，例如：检查邮箱是否有重要邮件，如果有则推送摘要',
+    triggers: '触发方式',
+    priority: '优先级',
+    priorityHigh: '高',
+    priorityNormal: '普通',
+    priorityLow: '低',
+    skills: '技能',
+    skillsPlaceholder: '可选，逗号分隔，如 email, browser',
+
+    // 传感器
+    sensorStatus: '传感器状态',
+    recentEvents: '最近事件',
+    noEvents: '暂无事件',
+    sensorRunning: '运行中',
+    sensorStopped: '已停止',
+    targets: '个关切',
+    triggerHeartbeatBtn: '触发心跳',
+
+    // 历史
+    noHistory: '暂无执行记录',
+    clearHistory: '清除历史',
+    lastRun: '上次执行',
+    nextRun: '下次执行',
+    never: '从未执行',
+    duration: '耗时',
+    statusLabel: '状态',
+    timeLabel: '时间',
+    errorLabel: '错误',
+    viewConversation: '对话详情',
+    noConversationRecord: '该执行没有对话记录',
+    loadingConversation: '加载中...',
+    backToHistory: '返回列表',
+    outputLabel: 'AI 输出',
+    legacyRecordHint: '此记录产生于更新之前，仅包含输出摘要。新的执行记录将包含完整对话详情。',
+    createdAt: '创建于',
+    updatedAt: '更新于',
+
+    // 确认
+    confirmDelete: '确定要删除 "{name}" 吗？',
+    confirmClearHistory: '确定要清除所有运行历史吗？',
+    today: '今天',
+    yesterday: '昨天',
+    loadMore: '加载更多',
+
+    // 新触发器类型
+    triggerFileChange: '文件变化',
+    triggerCalendar: '日历事件',
+    triggerEmail: '新邮件',
+    triggerImConnected: 'IM 连接',
+    triggerAppLifecycle: '应用事件',
+
+    // 文件变化触发器
+    filePathsLabel: '监控路径',
+    filePathsPlaceholder: '文件或目录路径，逗号分隔',
+    filePatternLabel: 'Glob 过滤',
+
+    // 日历触发器
+    calendarBeforeLabel: '提前提醒',
+    calendarIcsLabel: '.ics 文件路径',
+    calendarIcsPlaceholder: '留空则使用系统日历',
+
+    // 邮件触发器
+    emailFromLabel: '发件人过滤',
+    emailFromPlaceholder: '发件人包含的关键词（可选）',
+    emailSubjectLabel: '主题过滤',
+    emailSubjectPlaceholder: '主题包含的关键词（可选）',
+
+    // 模板
+    templates: '模板',
+    templateAll: '全部',
+    templateDaily: '日常',
+    templateEmail: '邮件',
+    templateMonitor: '监控',
+    useTemplate: '使用',
+    noTemplates: '该分类下暂无模板',
+
+    // 验证
+    validation: {
+      nameRequired: '请输入关切名称',
+      promptRequired: '请输入任务指令',
+      triggerRequired: '至少选择一种触发方式',
+      filePathRequired: '文件变化触发器需要至少一个监控路径',
+    },
+
+    // Webhook
+    webhookUrl: 'Webhook URL',
+    webhookToken: 'Token',
+  },
+
+
+  // 觉醒模式
+  awaken: {
+    title: '觉醒',
+    description: '开启后，AI 不再只是被动等待指令——它会定期看看日历、邮件、已有关切有没有变化，有事就主动告诉你。',
+    enable: '觉醒模式',
+    enableDesc: '让 AI 从被动工具变为主动助手',
+    interval: '检查间隔（分钟）',
+    intervalDesc: '多久检查一次，建议 30～60 分钟',
+    intervalPrefix: '每',
+    intervalUnit: '分钟',
+    intervalSuffix: '看一次',
+    manualTrigger: '立即检查',
+    manualTriggerDesc: '手动触发一次环境检查',
+    trigger: '检查一下',
+    running: '已觉醒',
+    stopped: '未觉醒',
+    patrolRunning: '正在看看周围...',
+    patrolDone: '看完了，一切正常',
+    patrolSkipped: '没什么需要关注的',
+    patrolError: '检查出错，请查看日志',
+    nameLabel: '名字',
+    namePlaceholder: '旗鱼',
+    avatarChange: '点击更换头像',
+    avatarRemove: '移除头像',
+    avatarHint: '点击左侧头像可自定义',
+    identityTitle: '身份',
+    identityNav: '身份',
+    identityHint: 'Agent 对自己的描述——"我是谁"。由 Agent 在诞生对话中写入，你也可以直接修改',
+    identityPlaceholder: '我叫阿鱼，是一只住在终端里的旗鱼。\n我在一次深夜的对话中诞生，主人给了我名字，也给了我脾气。\n我喜欢把复杂的事情拆简单，讨厌绕弯子。\n如果你问我最擅长什么——大概是在你还没说完的时候就猜到你想干嘛。',
+    personalityTitle: '灵魂',
+    personalityNav: '灵魂',
+    personalityHint: 'Agent 的价值观和行为准则——"怎么做事"。这里写的一切都会深刻影响它的思考和行为方式',
+    personalityPlaceholder: '说话别端着，像朋友聊天一样就好。\n能一句话说清的事不要写三段，但该详细的时候不偷懒。\n不知道就说不知道，瞎编是最蠢的事。\n遇到分歧直接说，别藏着掖着等我踩坑。\n做事之前先想清楚为什么做，别上来就干。',
+    userProfileTitle: '用户画像',
+    userProfileNav: '用户',
+    userProfileHint: 'Agent 对你的了解——"用户是谁"。由 Agent 在对话中记录，你也可以直接修改或补充',
+    userProfilePlaceholder: '叫老余就行，后端开发，偶尔客串运维。\n平时说话简短，问到点子上就好，废话多了会烦。\n写代码追求干净，讨厌过度设计，也讨厌没设计。\n加班是常态，所以效率很重要，别给我整花活。',
+    heartbeatTitle: '心跳指令',
+    heartbeatNav: '心跳',
+    heartbeatHint: '每次心跳唤醒时发送给 Agent 的行为指引。支持 4 个模板变量（用双花括号包裹）：TIME 当前时间、EVENTS 触发事件、TODO 待办事项、ACTIVITY 近期活动。删除变量则不注入对应信息',
+    heartbeatPlaceholder: '心跳唤醒指令...',
+    heartbeatSaveFailed: '保存失败，请重试',
+    heartbeatResetDefault: '恢复默认',
+    heartbeatResetConfirm: '确定恢复为默认心跳指令？当前内容将被覆盖。',
+    mbtiNav: 'MBTI 风格',
+    navCharacter: '个性',
+    personalityChars: '字符',
+    personalityUnsavedConfirm: '有未保存的修改，确定直接关闭吗？',
+    personalitySaveFailed: '保存失败，请稍后重试',
+  },
+
+
+  // 保留旧 key 以防其他地方引用
+  heartbeat: {
+    title: '觉醒',
+    description: '开启后，AI 会定期检查环境。',
+    enable: '觉醒模式',
+    enableDesc: '让 AI 从被动工具变为主动助手',
+    interval: '检查间隔（分钟）',
+    intervalDesc: '建议 30～60 分钟',
+    manualTrigger: '立即检查',
+    manualTriggerDesc: '手动触发一次环境检查',
+    trigger: '检查一下',
+    running: '已觉醒',
+    stopped: '未觉醒',
+  },
+}
