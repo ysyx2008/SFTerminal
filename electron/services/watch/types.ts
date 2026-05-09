@@ -11,6 +11,7 @@ export {
   type FileChangeTrigger,
   type CalendarTrigger,
   type EmailTrigger,
+  type WatchFailureTrigger,
   type WatchTrigger,
   type WatchTriggerType,
   type WatchExecution,

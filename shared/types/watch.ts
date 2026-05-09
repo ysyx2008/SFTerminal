@@ -67,6 +67,10 @@ export interface MilestoneTrigger {
   type: 'milestone'
 }
 
+export interface WatchFailureTrigger {
+  type: 'watch_failure'
+}
+
 export interface CommandProbeTrigger {
   type: 'command_probe'
   command: string
@@ -111,6 +115,7 @@ export type WatchTrigger =
   | MilestoneTrigger
   | CommandProbeTrigger
   | HttpProbeTrigger
+  | WatchFailureTrigger
 
 export type WatchTriggerType = WatchTrigger['type']
 

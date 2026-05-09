@@ -13,6 +13,7 @@ export type SensorEventType =
   | 'im_connected'
   | 'app_lifecycle' | 'milestone'
   | 'command_probe' | 'http_probe'
+  | 'watch_failure'
 
 export type SensorEventPriority = 'high' | 'normal' | 'low'
 
