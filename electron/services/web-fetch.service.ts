@@ -22,8 +22,9 @@
  *
  * 设计要点：
  * - jsdom + Readability 用 lazy import，不影响 main 进程启动
- * - jsdom 在主进程同步执行，对 1MB HTML 占用 ~10-25MB 内存 + 数百 ms CPU，
- *   所以默认 max_bytes 调到 1MB（够覆盖几乎所有文档/博客页），上限 5MB
+ * - jsdom 在主进程同步执行，对 1MB HTML 占用 ~10-25MB 内存 + 数百 ms CPU；
+ *   默认 max_bytes 设 3MB（覆盖绝大多数长文档 / Confluence / Notion 公开页 /
+ *   现代 SaaS docs SPA 渲染产物），上限 10MB 留给极端页面
  * - 流式读取 + Content-Length 检查，超过 max_bytes 立即中断
  * - charset：从 response content-type 解析；UTF-8 走 TextDecoder，其他
  *   （GBK / Shift_JIS / Big5 等）lazy import iconv-lite 解码；不识别就回落
@@ -38,10 +39,11 @@ const log = createLogger('WebFetch')
 
 const DEFAULT_TIMEOUT_SEC = 30
 const MAX_TIMEOUT_SEC = 60
-// 主进程跑 jsdom，HTML 越大 CPU 阻塞越久。1MB 已能装下绝大多数文档/博客；
-// 上限 5MB 留给极端长页面。
-const DEFAULT_MAX_BYTES = 1 * 1024 * 1024     // 1MB
-const MAX_MAX_BYTES = 5 * 1024 * 1024         // 5MB
+// 主进程跑 jsdom，HTML 越大 CPU 阻塞越久。3MB 能覆盖绝大多数长文档（含 Confluence
+// / Notion 公开页 / SaaS docs SPA 渲染产物）；上限 10MB 留给极端长页面。
+// 提示：jsdom 处理 3MB HTML 大约 30-75MB 内存 + 1-3s CPU，已是可接受范围。
+const DEFAULT_MAX_BYTES = 3 * 1024 * 1024     // 3MB
+const MAX_MAX_BYTES = 10 * 1024 * 1024        // 10MB
 const TEXT_OUTPUT_TRUNCATE = 16_000           // 返回给 Agent 的文本上限
 const MIN_READABILITY_CHARS = 50              // Readability 提取结果短于此值视为提取失败
 const ERROR_PREVIEW_BYTES = 8 * 1024          // 错误响应体最多读 8KB 用于预览

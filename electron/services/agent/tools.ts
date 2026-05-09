@@ -378,7 +378,7 @@ function buildWebFetchTool(): ToolDefinitionWithMeta {
           },
           max_bytes: {
             type: 'number',
-            description: '响应体大小上限（字节），默认 1MB，最大 5MB。超出会截断'
+            description: '响应体大小上限（字节），默认 3MB，最大 10MB。超出会截断'
           }
         },
         required: ['url']

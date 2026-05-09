@@ -1,6 +1,6 @@
 # Web Fetch Service SPEC
 
-> Last verified: 2026-05-07
+> Last verified: 2026-05-09
 
 ## 职责
 
@@ -26,7 +26,7 @@
 interface WebFetchOptions {
   url: string
   timeoutSec?: number     // 超时秒数
-  maxBytes?: number       // 响应体大小上限（默认 1MB）
+  maxBytes?: number       // 响应体大小上限（默认 3MB，硬上限 10MB）
   backend?: "auto" | "jina" | "readability" | "raw"
 }
 ```
@@ -63,7 +63,7 @@ type WebFetchBackend = "jina" | "readability" | "raw" | "fallback-text"
 
 **SSRF 防���**：`ensureNotInternal` 在请求前解析目标 IP，拦截所有内网地址（127.0.0.0/8、10.0.0.0/8、172.16.0.0/12、192.168.0.0/16）。
 
-**大小限制**：`maxBytes` 默认 1MB，超出截断并标记 `truncated: true`，硬上限 5MB。
+**大小限制**：`maxBytes` 默认 3MB，超出截断并标记 `truncated: true`，硬上限 10MB。注意：若服务器声明的 `Content-Length` 已超过 `maxBytes`，会直接抛 `Response too large` 错误而不是截断（避免下载浪费）。
 
 ## 关键约束
 
@@ -71,4 +71,4 @@ type WebFetchBackend = "jina" | "readability" | "raw" | "fallback-text"
 - **Readability 后端不得返回原始 HTML**——必须提取纯文本
 - **Jina 后端为付费服务**，未配置 API key 时不得发起 Jina 请求
 - **URL 格式必须包含协议**（`http://` 或 `https://`），否则拒绝
-- **`maxBytes` 上限硬编码 5MB**，调用方不得突破
+- **`maxBytes` 上限硬编码 10MB**，调用方不得突破（超过会被 clamp 到 10MB）
