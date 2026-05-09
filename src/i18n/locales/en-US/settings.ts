@@ -581,7 +581,7 @@ export default {
       word: 'Create and edit Word documents interactively. Supports creating documents, adding paragraphs/headings/lists/tables, reading content, saving and closing. Ideal for generating reports and writing documents.',
       calendar: 'Manage calendars and schedules. Supports viewing, creating, modifying and deleting events and TODOs. Works with CalDAV services (Google Calendar, iCloud, Outlook, etc.).',
       watch: 'Watch = AI-driven automated tasks triggered on schedule or events (e.g. daily checks, file changes, incoming emails). Results can be pushed to desktop or IM. Supports cron, interval, file monitoring, email, calendar events, webhooks and more.',
-      config: 'Read and modify SailFish app settings (language, theme, terminal, Agent personality, IM credentials, etc.), manage email/calendar accounts, and test IM connections.',
+      config: 'Read and modify SailFish app settings (language, theme, terminal, Agent personality, IM credentials, etc.), manage email/calendar accounts, test IM connections, and add/update/delete MCP servers for SailFish itself.',
       'skill-manager': 'Manage user skills and the skill market. Supports creating, updating and deleting user skills, as well as searching, previewing and installing skills from SailFish and ClawHub markets.',
       terminal: 'PTY terminal interaction: execute commands, view terminal status and output, send control keys and text input, wait for command completion. Auto-loaded when bound to a terminal.',
       personality: 'Define or modify the Agent\'s personality, communication style, values and name through guided conversation. Use when you want to customize your AI assistant\'s character and behavior.',

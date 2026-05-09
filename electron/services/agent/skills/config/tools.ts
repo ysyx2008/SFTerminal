@@ -11,9 +11,10 @@ export const configTools: ToolDefinition[] = [
       name: 'config_list',
       description: `列出所有可管理的旗鱼配置项及其当前值。
 
-返回按分类整理的配置清单（界面、终端、AI Agent、IM 渠道、邮箱、日历、网关等），
+返回按分类整理的配置清单（界面、终端、AI Agent、IM 渠道、邮箱、日历、网关、MCP 服务器等），
 每项标注是否可直接修改或需要用户确认。
-邮箱和日历账户会显示已配置的账户列表、服务商和当前连接状态。`,
+邮箱和日历账户会显示已配置的账户列表、服务商和当前连接状态。
+MCP 服务器列表可通过 config_mcp_server_add/update/delete 管理（不可用 config_set 整表覆盖）。`,
       parameters: {
         type: 'object',
         properties: {
@@ -32,7 +33,9 @@ export const configTools: ToolDefinition[] = [
       name: 'config_get',
       description: `读取指定配置项的当前值。
 
-支持的配置 key 见 config_list 的输出。`,
+支持的配置 key 见 config_list 的输出。
+特殊用法：key="mcpServers" 可查看所有已配置的 MCP 服务器详情（id、transport、command/url 等），
+在执行 config_mcp_server_add/update/delete 前建议先用此工具了解现状。`,
       parameters: {
         type: 'object',
         properties: {
@@ -81,9 +84,10 @@ export const configTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'im_connect',
-      description: `测试 IM 渠道连接。读取已保存的凭证并尝试连接指定平台。
+      description: `激活 IM 渠道连接。读取已保存的凭证并尝试连接指定平台。
 
-连接成功后会自动开启自动连接（autoConnect），下次启动时自动连接。
+**典型工作流**：先用 config_set 写入凭证（AppKey/Token 等），再调用本工具激活连接。
+连接成功后会自动开启自动连接（autoConnect），下次启动时自动重连。
 如果凭证未配置，会返回缺少哪些字段。
 
 **支持的平台**: dingtalk, feishu, slack, telegram, wecom`,
@@ -260,7 +264,7 @@ export const configTools: ToolDefinition[] = [
           serverId: { type: 'string', description: '要更新的服务器 id（与 config_get key=mcpServers 中一致）' },
           name: { type: 'string', description: '显示名称' },
           transport: { type: 'string', enum: ['stdio', 'sse', 'http'] },
-          enabled: { type: 'boolean' },
+          enabled: { type: 'boolean', description: '启用/禁用该服务器，不需要删除后重建' },
           command: { type: 'string' },
           args: { type: 'array', items: { type: 'string' } },
           env: { type: 'object' },
