@@ -28,6 +28,13 @@ export class WeixinConfigManager {
     private log: (msg: string) => void,
   ) {}
 
+  /** Force the next getForUser call for this user to bypass the TTL cache and re-fetch.
+   * Call whenever a fresh context_token arrives to re-register the server-side session.
+   */
+  invalidateUser(userId: string): void {
+    this.cache.delete(userId);
+  }
+
   async getForUser(userId: string, contextToken?: string): Promise<CachedConfig> {
     const now = Date.now();
     const entry = this.cache.get(userId);

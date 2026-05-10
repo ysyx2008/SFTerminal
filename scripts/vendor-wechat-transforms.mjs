@@ -125,6 +125,23 @@ export const TRANSFORMS = [
       );
     },
   },
+  {
+    // 每条 inbound 消息都携带一个新的 context_token。当 context_token 变化时，
+    // SailFish adapter 需要立即让 configManager 对该 user 的缓存失效，强制重新
+    // 调用 getconfig，否则服务端 per-user session 过期后 sendmessage 会持续报
+    // errcode=-2，直到 24h 随机 TTL 自然到期才恢复。
+    // 
+    // 若上游已自行暴露该方法，正则不会匹配，transform 自动失效。
+    name: "api/config-cache.ts: expose invalidateUser to force session re-registration",
+    match: "api/config-cache.ts",
+    apply(content) {
+      if (content.includes("invalidateUser(")) return content;
+      return content.replace(
+        /  async getForUser\(/,
+        "  /** Force the next getForUser call for this user to bypass the TTL cache and re-fetch.\n   * Call whenever a fresh context_token arrives to re-register the server-side session.\n   */\n  invalidateUser(userId: string): void {\n    this.cache.delete(userId);\n  }\n\n  async getForUser(",
+      );
+    },
+  },
 ];
 
 export function applyTransforms(relPath, content) {

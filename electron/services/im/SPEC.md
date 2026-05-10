@@ -1,6 +1,6 @@
 # IM Service SPEC
 
-> Last verified: 2026-05-07
+> Last verified: 2026-05-10
 
 ## 职责
 
@@ -17,7 +17,7 @@
 | `dingtalk-adapter.ts` | 608 | 钉钉适配器 |
 | `feishu-adapter.ts` | 1088 | 飞书适配器（最大，含完整飞书 SDK 接入） |
 | `wecom-adapter.ts` | 368 | 企业微信适配器 |
-| `wechat-adapter.ts` | 593 | 微信适配器（依赖 `wechat/` 子目录） |
+| `wechat-adapter.ts` | ~650 | 微信适配器（依赖 `wechat/` 子目录） |
 | `slack-adapter.ts` | 358 | Slack 适配器 |
 | `telegram-adapter.ts` | 407 | Telegram 适配器 |
 
@@ -158,6 +158,12 @@ interface SendFileResult { success: boolean; error?: string; messageId?: string 
 **微信登录的两阶段流程**（其它平台单步）：
 1. `loginWeChat(onCredentials)` → 启动扫码登录 → 凭证回调
 2. → 用户保存凭证后，再调 `startWeChat(config)` 完成连接
+
+**微信适配器（WeChatAdapter）长轮询可靠性设计**：
+- `startPolling` 启动时：先立即 `setConnected(true)` + 启动 `pollLoop`，再后台并发发 `notifyStart`（不阻塞接收）。之前 `notifyStart` 串行阻塞时，若请求挂起会导致 `pollLoop` 迟迟不启动，造成"重启后收不到消息"。
+- session 过期（`errcode=-14`）：`pauseSession` 暂停 1h 后自动 `continue` 继续轮询（自愈），不再 `break` 导致 loop 永久停止。
+- `getUpdatesBuf` 游标持久化到 `~/.openclaw/openclaw-weixin/accounts/<accountKey>.sync.json`，进程重启后恢复，避免漏消息。
+- `context_token` 失效 (`errcode=-2`) 自愈：每条 inbound 消息携带新 `context_token`；若与上次不同，立即 `invalidateUser` 清除 `WeixinConfigManager` 的 24h TTL 缓存，强制重新调用 `getconfig` 注册服务端 session。防止服务端 session 短期失效（约 30-60 分钟）但客户端缓存尚未到期时，导致 bot 发消息持续报 `errcode=-2`。
 
 **适配器架构**：每个平台一个 `*Adapter`，构造时从 `getEventBus()` 拿事件总线，注册到 IMService 的 `adapters: Map<IMPlatform, IMAdapter>` 中。
 

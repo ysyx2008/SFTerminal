@@ -7,7 +7,7 @@ Do not edit files listed under "Vendored files" by hand — modify
 - Package: `@tencent-weixin/openclaw-weixin`
 - Version: `2.4.1`
 - License: MIT
-- Synced: 2026-05-07T09:20:36.275Z
+- Synced: 2026-05-10T15:12:46.129Z
 
 ## Vendored files
 

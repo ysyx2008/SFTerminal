@@ -24,6 +24,7 @@ import {
   SESSION_EXPIRED_ERRCODE,
   assertSessionActive,
   pauseSession,
+  getRemainingPauseMs,
 } from './wechat/api/session-guard'
 import { sendMessageWeixin } from './wechat/messaging/send'
 import { sendWeixinMediaFile } from './wechat/messaging/send-media'
@@ -33,6 +34,7 @@ import {
   restoreContextTokens,
   bodyFromItemList,
 } from './wechat/messaging/inbound'
+import { resolveStateDir } from './wechat/storage/state-dir'
 import { downloadAndDecryptBuffer, downloadPlainCdnBuffer } from './wechat/cdn/pic-decrypt'
 import type { WeixinMessage, MessageItem } from './wechat/api/types'
 import { MessageItemType } from './wechat/api/types'
@@ -92,6 +94,13 @@ export class WeChatAdapter implements IMAdapter {
    */
   private configManager: WeixinConfigManager | null = null
   private contextTokensRestored = false
+
+  /**
+   * 追踪每个 user 最近一次调用 getForUser 时使用的 context_token。
+   * 若新消息携带不同的 token，说明服务端可能已刷新 session，需要立即 invalidate 缓存
+   * 并重新调用 getconfig，否则旧 session 失效后 sendmessage 会持续报 errcode=-2。
+   */
+  private lastConfigContextToken = new Map<string, string>()
 
   constructor(private config: WeChatConfig) {
     this.token = config.token || ''
@@ -319,15 +328,53 @@ export class WeChatAdapter implements IMAdapter {
 
   // ==================== 长轮询 ====================
 
+  // ---------------------------------------------------------------------------
+  // getUpdatesBuf 磁盘持久化：进程重启后不丢失游标，避免漏消息或重复拉历史。
+  // 对应上游 storage/sync-buf.ts 的 loadGetUpdatesBuf / saveGetUpdatesBuf。
+  // ---------------------------------------------------------------------------
+
+  private getSyncBufPath(): string {
+    return path.join(
+      resolveStateDir(),
+      'openclaw-weixin',
+      'accounts',
+      `${this.accountKey}.sync.json`,
+    )
+  }
+
+  private loadSyncBuf(): string {
+    try {
+      const raw = fs.readFileSync(this.getSyncBufPath(), 'utf-8')
+      const data = JSON.parse(raw) as { get_updates_buf?: string }
+      if (typeof data.get_updates_buf === 'string') {
+        log.info(`loadSyncBuf: restored ${data.get_updates_buf.length} bytes for account=${this.accountKey}`)
+        return data.get_updates_buf
+      }
+    } catch {
+      // 文件不存在或格式异常，从头拉取
+    }
+    return ''
+  }
+
+  private saveSyncBuf(buf: string): void {
+    try {
+      const p = this.getSyncBufPath()
+      fs.mkdirSync(path.dirname(p), { recursive: true })
+      fs.writeFileSync(p, JSON.stringify({ get_updates_buf: buf }), 'utf-8')
+    } catch (err) {
+      log.warn(`saveSyncBuf: failed: ${String(err)}`)
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+
   private async startPolling(): Promise<void> {
     if (this.polling) return
     this.polling = true
     this.abortController = new AbortController()
     this.reconnectDelay = RECONNECT_DELAY_MS
 
-    // 上游 channel.ts 的 startAccount 顺序：restoreContextTokens → setStatus → notifyStart → monitor。
-    // restoreContextTokens 把磁盘上的 contextTokenStore 加载回内存（重启后还能 proactive 推送），
-    // notifyStart 通知服务端"客户端上线"——没这步 sendmessage 一律 errcode=-2。
+    // restoreContextTokens 把磁盘上的 contextTokenStore 加载回内存（重启后还能 proactive 推送）。
     if (!this.contextTokensRestored) {
       try {
         restoreContextTokens(this.accountKey)
@@ -337,18 +384,27 @@ export class WeChatAdapter implements IMAdapter {
       this.contextTokensRestored = true
     }
 
-    try {
-      const resp = await vendoredNotifyStart(this.apiOpts)
-      if (resp.ret !== undefined && resp.ret !== 0) {
-        log.warn(`notifyStart: ret=${resp.ret} errmsg=${resp.errmsg ?? ''}`)
-      }
-    } catch (err) {
-      // 上游 startAccount 也是 warn 不抛——失败 polling 仍然可继续，但 sendmessage 大概率会失败
-      log.warn(`notifyStart failed during startup (ignored): ${String(err)}`)
-    }
+    // 恢复 getUpdatesBuf 游标（对应上游 monitor.ts 的 loadGetUpdatesBuf）。
+    this.getUpdatesBuf = this.loadSyncBuf()
 
+    // poll loop 立即启动，不等待 notifyStart——防止 notifyStart 慢/挂导致长时间收不到消息。
+    // 对应上游 monitor.ts：monitorWeixinProvider 在 notifyStart 之后才启动，但 channel.ts 的
+    // startAccount 是顺序的；而我们本地 startPolling 由于没有独立进程隔离，必须先启动 loop。
     this.setConnected(true)
     this.pollLoop(this.abortController.signal)
+
+    // notifyStart 在后台并发执行——通知服务端"客户端上线"，失败仅 warn，不阻断接收。
+    // 注意：不 await，让 start() 调用方立即返回。
+    void (async () => {
+      try {
+        const resp = await vendoredNotifyStart(this.apiOpts)
+        if (resp.ret !== undefined && resp.ret !== 0) {
+          log.warn(`notifyStart: ret=${resp.ret} errmsg=${resp.errmsg ?? ''}`)
+        }
+      } catch (err) {
+        log.warn(`notifyStart failed during startup (ignored): ${String(err)}`)
+      }
+    })()
   }
 
   private stopPolling(): void {
@@ -371,11 +427,15 @@ export class WeChatAdapter implements IMAdapter {
 
         const code = resp.ret ?? resp.errcode
         if (code === SESSION_EXPIRED_ERRCODE) {
-          log.warn('Session expired, pausing for 1h and stopping poll loop')
+          // 上游 monitor.ts：sleep(pauseMs) → continue，session pause 到期后自动恢复。
+          // 原先 this.polling = false + break 会导致 loop 永久停止，需要重启才能恢复接收。
           pauseSession(this.accountKey)
+          const pauseMs = getRemainingPauseMs(this.accountKey)
+          log.warn(`Session expired (errcode=${SESSION_EXPIRED_ERRCODE}), pausing ${Math.ceil(pauseMs / 60_000)} min then resuming`)
           this.setConnected(false)
-          this.polling = false
-          break
+          await this.sleep(pauseMs, signal)
+          if (!signal.aborted) this.setConnected(true)
+          continue
         }
         if (code !== undefined && code !== 0) {
           log.warn(`getUpdates error: ret=${resp.ret} errcode=${resp.errcode} errmsg=${resp.errmsg || ''}`)
@@ -388,6 +448,7 @@ export class WeChatAdapter implements IMAdapter {
 
         if (resp.get_updates_buf) {
           this.getUpdatesBuf = resp.get_updates_buf
+          this.saveSyncBuf(this.getUpdatesBuf)
         }
         if (resp.longpolling_timeout_ms && resp.longpolling_timeout_ms > 0) {
           this.serverTimeoutMs = resp.longpolling_timeout_ms + 5_000
@@ -402,9 +463,12 @@ export class WeChatAdapter implements IMAdapter {
         if (signal.aborted) break
         if (extractErrcode(err) === SESSION_EXPIRED_ERRCODE) {
           pauseSession(this.accountKey)
+          const pauseMs = getRemainingPauseMs(this.accountKey)
+          log.warn(`Session expired (catch, errcode=${SESSION_EXPIRED_ERRCODE}), pausing ${Math.ceil(pauseMs / 60_000)} min then resuming`)
           this.setConnected(false)
-          this.polling = false
-          break
+          await this.sleep(pauseMs, signal)
+          if (!signal.aborted) this.setConnected(true)
+          continue
         }
         log.error('Poll error:', err)
         if (this.connected) this.setConnected(false)
@@ -428,6 +492,16 @@ export class WeChatAdapter implements IMAdapter {
         setContextToken(this.accountKey, userId, msg.context_token)
       } catch (err) {
         log.warn(`setContextToken failed (ignored): ${String(err)}`)
+      }
+
+      // 若 context_token 与上次调用 getconfig 时使用的不同，说明服务端已刷新 session。
+      // 立即 invalidate 该 user 的配置缓存，让下面的 getForUser 绕过 24h TTL 重新注册，
+      // 否则旧 session 失效后 sendmessage 会持续报 errcode=-2，直到缓存自然到期才恢复。
+      const prevToken = this.lastConfigContextToken.get(userId)
+      if (prevToken !== msg.context_token) {
+        this.lastConfigContextToken.set(userId, msg.context_token)
+        this.getConfigManager().invalidateUser(userId)
+        log.debug(`context_token changed for ${userId}, invalidating config cache`)
       }
     }
     try {
