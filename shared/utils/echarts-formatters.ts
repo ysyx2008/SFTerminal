@@ -147,7 +147,7 @@ function reifyImpl(node: unknown): unknown {
     // 路径里只要构造 { __echartsFn:'toString' } 这种纯对象 marker（structuredClone 通得过）
     // 就能命中 Object.prototype.toString 装到 echarts 当 formatter——绕过 FORMATTER_REGISTRY
     // 白名单设计意图。Object.hasOwn 把命中范围限制在显式登记的内置 formatter。
-    if (!Object.hasOwn(FORMATTER_REGISTRY, node.__echartsFn)) return undefined
+    if (!Object.prototype.hasOwnProperty.call(FORMATTER_REGISTRY, node.__echartsFn)) return undefined
     const fn = (FORMATTER_REGISTRY as Record<string, (v: number) => string>)[node.__echartsFn]
     return fn ?? undefined
   }

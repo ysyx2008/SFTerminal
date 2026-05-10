@@ -8,6 +8,7 @@
     "allowSyntheticDefaultImports": true,
     "strict": true,
     "noEmit": false,
+    "noEmitOnError": false,
     "declaration": true,
     "emitDeclarationOnly": true,
     "outDir": "./dist-electron-types",
