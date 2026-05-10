@@ -40,8 +40,6 @@ jobs:
 
       - name: Build application
         run: npm run build:win
-        env:
-          npm_config_electron_mirror: "https://github.com/electron/electron/releases/download/"
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -74,18 +72,18 @@ jobs:
       - name: Build application
         run: npm run build:mac
         # fix-mac-yml.js 会在本地修复 latest-mac.yml 添加 arch 字段
+        # 不要设置 npm_config_electron_mirror / ELECTRON_MIRROR：
+        # @electron/get 的 mirrorVar 会让该 env 优先级压过 electron-builder
+        # 内部传给 dmg-builder 的 mirrorOptions.mirror，导致 dmg-builder 二进制
+        # 也被错误地拼接到 electron/electron repo 路径下 → 404
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"  # vite build 内存密集，默认堆约 2GB 不够用
-          npm_config_electron_mirror: "https://github.com/electron/electron/releases/download/"
-          # dmg-builder arm64 包在 npmmirror 上不存在(404)，改走官方 GitHub Releases
-          ELECTRON_BUILDER_BINARIES_MIRROR: "https://github.com/electron-userland/electron-builder-binaries/releases/download/"
           # 如果需要代码签名，取消注释以下配置
           # CSC_LINK: ${{ secrets.MAC_CERTS }}
           # CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
           # APPLE_ID: ${{ secrets.APPLE_ID }}
           # APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          PLACEHOLDER: "placeholder"  # 保持 env 块存在以便将来添加签名配置
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -117,8 +115,6 @@ jobs:
 
       - name: Build application
         run: npm run build:linux
-        env:
-          npm_config_electron_mirror: "https://github.com/electron/electron/releases/download/"
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
