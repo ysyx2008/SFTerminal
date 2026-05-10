@@ -739,6 +739,8 @@ onUnmounted(() => {
 /* 右侧面板 */
 .doc-detail-panel {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   padding: 20px;
   overflow: hidden;
   display: flex;
@@ -956,6 +958,7 @@ onUnmounted(() => {
 
 .context-doc-textarea {
   flex: 1;
+  min-height: 0;
   width: 100%;
   padding: 12px;
   font-size: 13px;
@@ -967,6 +970,7 @@ onUnmounted(() => {
   color: var(--text-primary);
   resize: none;
   tab-size: 2;
+  overflow-y: auto;
 }
 
 .context-doc-textarea:focus {

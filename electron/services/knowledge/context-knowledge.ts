@@ -22,7 +22,7 @@ export interface ContextKnowledgeOptions {
   maxDocChars?: number
 }
 
-const DEFAULT_MAX_DOC_CHARS = 3000
+const DEFAULT_MAX_DOC_CHARS = 5000
 const MIN_VALID_DOC_LENGTH = 10
 const MAX_CONTEXT_ID_LENGTH = 128
 

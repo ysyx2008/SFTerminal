@@ -724,6 +724,8 @@ input:checked + .slider:before { transform: translateX(20px); }
 
 .detail-panel {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   padding: 16px;
   overflow: hidden;
   display: flex;
@@ -835,10 +837,20 @@ input:checked + .slider:before { transform: translateX(20px); }
 /* 编辑器 */
 .editor-area { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .editor-textarea {
-  flex: 1; width: 100%; padding: 10px; font-size: 12px;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding: 10px;
+  font-size: 12px;
   font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
-  line-height: 1.5; border: 1px solid var(--border-color); border-radius: 6px;
-  background: var(--bg-tertiary); color: var(--text-primary); resize: none; tab-size: 2;
+  line-height: 1.5;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  resize: none;
+  tab-size: 2;
+  overflow-y: auto;
 }
 .editor-textarea:focus { outline: none; border-color: var(--accent-primary); }
 .editor-actions { display: flex; align-items: center; gap: 10px; padding-top: 8px; }
