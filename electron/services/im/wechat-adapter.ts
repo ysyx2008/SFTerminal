@@ -28,12 +28,13 @@ import {
   pauseSession,
   getRemainingPauseMs,
 } from './wechat/api/session-guard'
-import { sendMessageWeixin } from './wechat/messaging/send'
+import { sendMessageWeixin, StreamingMarkdownFilter } from './wechat/messaging/send'
 import { sendWeixinMediaFile } from './wechat/messaging/send-media'
 import {
   setContextToken,
   getContextToken,
   restoreContextTokens,
+  clearContextTokensForAccount,
   bodyFromItemList,
 } from './wechat/messaging/inbound'
 import { resolveStateDir } from './wechat/storage/state-dir'
@@ -271,6 +272,17 @@ export class WeChatAdapter implements IMAdapter {
     this.stopPolling()
     this.connected = false
     this.onConnectionChange?.(false)
+    // 清理 context tokens（内存 + 磁盘），避免 stop/重新登录 后旧 token 污染新会话。
+    if (this.token) {
+      try {
+        clearContextTokensForAccount(this.accountKey)
+      } catch (err) {
+        log.warn(`clearContextTokensForAccount failed (ignored): ${String(err)}`)
+      }
+    }
+    this.contextTokensRestored = false
+    this.lastConfigContextToken.clear()
+    this.configManager = null
     // 与上游 channel.ts 的 stopAccount 对齐：通知服务端"客户端下线"，失败仅 warn。
     if (this.token) {
       try {
@@ -297,9 +309,13 @@ export class WeChatAdapter implements IMAdapter {
     const ctx = replyContext as { userId: string; contextToken?: string }
     this.stopTypingKeepalive(ctx.userId)
     const contextToken = this.resolveContextToken(ctx)
-    const truncated = text.length > IM_TEXT_MAX_LENGTH
-      ? text.substring(0, IM_TEXT_MAX_LENGTH - 20) + '\n...(已截断)'
-      : text
+    // 对齐上游 process-message.ts：过滤掉微信不支持的 markdown 语法。
+    // 主要效果：移除图片标记 ![alt](url)、CJK 内容的斜体/粗斜体星号。
+    const f = new StreamingMarkdownFilter()
+    const filtered = f.feed(text) + f.flush()
+    const truncated = filtered.length > IM_TEXT_MAX_LENGTH
+      ? filtered.substring(0, IM_TEXT_MAX_LENGTH - 20) + '\n...(已截断)'
+      : filtered
     await this.guarded(() => sendMessageWeixin({
       to: ctx.userId,
       text: truncated,
