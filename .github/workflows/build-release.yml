@@ -77,6 +77,8 @@ jobs:
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"  # vite build 内存密集，默认堆约 2GB 不够用
           npm_config_electron_mirror: "https://github.com/electron/electron/releases/download/"
+          # dmg-builder arm64 包在 npmmirror 上不存在(404)，改走官方 GitHub Releases
+          ELECTRON_BUILDER_BINARIES_MIRROR: "https://github.com/electron-userland/electron-builder-binaries/releases/download/"
           # 如果需要代码签名，取消注释以下配置
           # CSC_LINK: ${{ secrets.MAC_CERTS }}
           # CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
