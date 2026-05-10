@@ -40,6 +40,8 @@ jobs:
 
       - name: Build application
         run: npm run build:win
+        env:
+          npm_config_electron_mirror: "https://github.com/electron/electron/releases/download/"
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -74,9 +76,7 @@ jobs:
         # fix-mac-yml.js 会在本地修复 latest-mac.yml 添加 arch 字段
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"  # vite build 内存密集，默认堆约 2GB 不够用
-          # .npmrc 的 electron_mirror 指向 npmmirror，但 dmg-builder arm64 包在该镜像上不存在(404)
-          # 这里单独覆盖 builder binaries 镜像到官方 GitHub Releases
-          ELECTRON_BUILDER_BINARIES_MIRROR: "https://github.com/electron-userland/electron-builder-binaries/releases/download/"
+          npm_config_electron_mirror: "https://github.com/electron/electron/releases/download/"
           # 如果需要代码签名，取消注释以下配置
           # CSC_LINK: ${{ secrets.MAC_CERTS }}
           # CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
@@ -115,6 +115,8 @@ jobs:
 
       - name: Build application
         run: npm run build:linux
+        env:
+          npm_config_electron_mirror: "https://github.com/electron/electron/releases/download/"
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
