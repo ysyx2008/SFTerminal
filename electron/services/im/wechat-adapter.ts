@@ -17,9 +17,11 @@ import {
   getUpdates as vendoredGetUpdates,
   notifyStart as vendoredNotifyStart,
   notifyStop as vendoredNotifyStop,
+  sendTyping as vendoredSendTyping,
 } from './wechat/api/api'
 import type { WeixinApiOptions } from './wechat/api/api'
 import { WeixinConfigManager } from './wechat/api/config-cache'
+import { TypingStatus } from './wechat/api/types'
 import {
   SESSION_EXPIRED_ERRCODE,
   assertSessionActive,
@@ -101,6 +103,14 @@ export class WeChatAdapter implements IMAdapter {
    * 并重新调用 getconfig，否则旧 session 失效后 sendmessage 会持续报 errcode=-2。
    */
   private lastConfigContextToken = new Map<string, string>()
+
+  /**
+   * 正在运行的 sendTyping keepalive 定时器（按 userId 隔离）。
+   * 上游 process-message.ts 用 createTypingCallbacks({ keepaliveIntervalMs: 5000 }) 实现，
+   * 每 5 秒调一次 sendtyping，用 typing_ticket 维持服务端 context_token session 存活。
+   * 不发 keepalive 则 session ~2-3 分钟后失效，sendmessage 报 errcode=-2。
+   */
+  private typingKeepalives = new Map<string, { timer: ReturnType<typeof setInterval>; ticket: string }>()
 
   constructor(private config: WeChatConfig) {
     this.token = config.token || ''
@@ -285,6 +295,7 @@ export class WeChatAdapter implements IMAdapter {
 
   async sendText(replyContext: any, text: string): Promise<void> {
     const ctx = replyContext as { userId: string; contextToken?: string }
+    this.stopTypingKeepalive(ctx.userId)
     const contextToken = this.resolveContextToken(ctx)
     const truncated = text.length > IM_TEXT_MAX_LENGTH
       ? text.substring(0, IM_TEXT_MAX_LENGTH - 20) + '\n...(已截断)'
@@ -302,6 +313,7 @@ export class WeChatAdapter implements IMAdapter {
 
   async sendImage(replyContext: any, filePath: string): Promise<void> {
     const ctx = replyContext as { userId: string; contextToken?: string }
+    this.stopTypingKeepalive(ctx.userId)
     const contextToken = this.resolveContextToken(ctx)
     log.info(`sendImage: file=${path.basename(filePath)} userId=${ctx.userId} hasToken=${!!contextToken}`)
     await this.guarded(() => sendWeixinMediaFile({
@@ -315,6 +327,7 @@ export class WeChatAdapter implements IMAdapter {
 
   async sendFile(replyContext: any, filePath: string, fileName?: string): Promise<void> {
     const ctx = replyContext as { userId: string; contextToken?: string }
+    this.stopTypingKeepalive(ctx.userId)
     const contextToken = this.resolveContextToken(ctx)
     log.info(`sendFile: file=${fileName || path.basename(filePath)} userId=${ctx.userId} hasToken=${!!contextToken}`)
     await this.guarded(() => sendWeixinMediaFile({
@@ -411,6 +424,10 @@ export class WeChatAdapter implements IMAdapter {
     this.polling = false
     this.abortController?.abort()
     this.abortController = null
+    // 停止所有 typing keepalive，避免 stop() 后还在发送 sendtyping 请求。
+    for (const userId of [...this.typingKeepalives.keys()]) {
+      this.stopTypingKeepalive(userId)
+    }
   }
 
   private async pollLoop(signal: AbortSignal): Promise<void> {
@@ -504,12 +521,12 @@ export class WeChatAdapter implements IMAdapter {
         log.debug(`context_token changed for ${userId}, invalidating config cache`)
       }
     }
-    try {
-      // 不 await 失败：configManager 内部有重试与退避，发不出去也不阻断这条消息
-      void this.getConfigManager().getForUser(userId, msg.context_token)
-    } catch (err) {
-      log.warn(`configManager.getForUser threw (ignored): ${String(err)}`)
-    }
+
+    // 启动 sendTyping keepalive：每 5 秒发一次 sendtyping 保持服务端 session 存活。
+    // 对应上游 process-message.ts 的 createTypingCallbacks({ keepaliveIntervalMs: 5000 })。
+    // 不做这一步，服务端 context_token session 约 2-3 分钟无活动后失效，
+    // 此后 sendmessage 持续报 errcode=-2 直到用户再发一条消息。
+    void this.startTypingKeepalive(userId, msg.context_token)
 
     const text = bodyFromItemList(msg.item_list)
     const attachments = await this.downloadAttachments(msg.item_list)
@@ -640,6 +657,65 @@ export class WeChatAdapter implements IMAdapter {
       return { type: 'audio', localPath, fileName }
     }
     return null
+  }
+
+  // ==================== Typing Keepalive ====================
+
+  /**
+   * 收到 inbound 消息后立即启动：
+   * 1. 用 configManager.getForUser 注册服务端 session 并取 typing_ticket
+   * 2. 每 5 秒发一次 sendtyping（status=TYPING），保持 context_token session 存活
+   * 不做这一步，服务端 session ~2-3 分钟无活动后失效，sendmessage 报 errcode=-2。
+   * 对应上游 process-message.ts 的 createTypingCallbacks({ keepaliveIntervalMs: 5000 })。
+   */
+  private async startTypingKeepalive(userId: string, contextToken?: string): Promise<void> {
+    let cachedConfig: Awaited<ReturnType<WeixinConfigManager['getForUser']>>
+    try {
+      cachedConfig = await this.getConfigManager().getForUser(userId, contextToken)
+    } catch (err) {
+      log.warn(`startTypingKeepalive: getForUser failed (ignored): ${String(err)}`)
+      return
+    }
+    const ticket = cachedConfig.typingTicket
+    if (!ticket) {
+      log.debug(`startTypingKeepalive: no typingTicket for ${userId}, skip`)
+      return
+    }
+
+    this.stopTypingKeepalive(userId)
+
+    const fire = () => {
+      void vendoredSendTyping({
+        ...this.apiOpts,
+        body: { ilink_user_id: userId, typing_ticket: ticket, status: TypingStatus.TYPING },
+      }).catch((err: unknown) => log.debug(`sendTyping error (ignored): ${String(err)}`))
+    }
+
+    fire()
+    const timer = setInterval(fire, 5_000)
+    this.typingKeepalives.set(userId, { timer, ticket })
+    log.debug(`Started typing keepalive for ${userId}`)
+
+    // 安全兜底：10 分钟后自动停止，防止 leak（正常情况 sendText 先触发 stop）
+    setTimeout(() => {
+      if (this.typingKeepalives.has(userId)) {
+        log.debug(`Typing keepalive auto-stopped after 10min for ${userId}`)
+        this.stopTypingKeepalive(userId)
+      }
+    }, 10 * 60 * 1_000)
+  }
+
+  /** 发送回复前调用：停止 keepalive 并发送 sendtyping(CANCEL)。 */
+  private stopTypingKeepalive(userId: string): void {
+    const existing = this.typingKeepalives.get(userId)
+    if (!existing) return
+    clearInterval(existing.timer)
+    this.typingKeepalives.delete(userId)
+    void vendoredSendTyping({
+      ...this.apiOpts,
+      body: { ilink_user_id: userId, typing_ticket: existing.ticket, status: TypingStatus.CANCEL },
+    }).catch((err: unknown) => log.debug(`sendTyping cancel error (ignored): ${String(err)}`))
+    log.debug(`Stopped typing keepalive for ${userId}`)
   }
 
   // ==================== 工具方法 ====================
