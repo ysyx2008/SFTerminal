@@ -98,6 +98,20 @@ export abstract class Agent {
 
   /** Agent 实例的逻辑 ID（用于路由 proactive message 等场景） */
   private _agentId?: string
+
+  /**
+   * 是否为「持久命名 Agent」（如 Companion / Watch 这类固定 ID、跨重启复用的 Agent）。
+   *
+   * 仅影响 `restoreFromHistory` 的全局历史 fallback：
+   *   - true：sessionId 找不到 record 时，从全局最近 N 条历史提取任务恢复工作记忆
+   *           （Companion/Watch 重启后第一次 run 用 `session_${Date.now()}` 找不到 record，
+   *            必须靠这条 fallback 才能"记得最近聊过什么"）
+   *   - false（默认）：普通 tab Agent 第一次对话本就是新任务，不应被全局历史污染，
+   *           直接保持 TaskMemory 空白
+   *
+   * 由 `AgentService` 在创建命名 Agent 时通过 `markAsPersistentNamed()` 设置。
+   */
+  private _persistentNamedAgent: boolean = false
   
   // ==================== 状态（持久化） ====================
   
@@ -180,6 +194,22 @@ export abstract class Agent {
    */
   setAgentId(id: string): void {
     this._agentId = id
+  }
+
+  /**
+   * 标记为「持久命名 Agent」（Companion / Watch 这类固定 ID、跨重启复用的 Agent）。
+   * 仅 AgentService 工厂方法调用，普通 tab Agent 不应调用此方法。
+   * 详见字段注释 `_persistentNamedAgent`。
+   */
+  markAsPersistentNamed(): void {
+    this._persistentNamedAgent = true
+  }
+
+  /**
+   * 是否为持久命名 Agent（供测试和子类查询）。
+   */
+  isPersistentNamedAgent(): boolean {
+    return this._persistentNamedAgent
   }
 
   
@@ -521,6 +551,14 @@ export abstract class Agent {
   /**
    * 从 HistoryService 恢复 TaskMemory 和 session 步骤
    * 使用 sessionId 直接从后端存储加载，无需前端传递数据
+   *
+   * Fallback 策略（sessionId 找不到 record 时）：
+   *   - 持久命名 Agent（Companion/Watch）：从全局最近历史恢复工作记忆
+   *     —— 这些 Agent 重启后用 `session_${Date.now()}` 找不到 record，但语义上是
+   *     「同一个长期 Agent」，需要记得最近聊过什么
+   *   - 普通 tab Agent（terminal/独立助手）：直接返回，保持 TaskMemory 空白
+   *     —— 新开 tab 的第一次对话本就是新任务，注入全局历史会让 AI 误以为是连续
+   *     对话，沿用历史里的工具名（甚至当前 tab 工具表里没有的工具），造成幻觉调用
    */
   private restoreFromHistory(): void {
     const historyService = this.services.historyService
@@ -532,8 +570,11 @@ export abstract class Agent {
       return
     }
 
-    // Fallback：sessionId 匹配不到记录（典型场景：App 重启后命名 Agent 生成了新 sessionId）
-    // 从最近的历史记录中提取任务，恢复工作记忆（仅填充 TaskMemory，不恢复 session 状态）
+    if (!this._persistentNamedAgent) {
+      log.info(`No record for sessionId=${this._sessionId}; skipping global recent fallback (not a persistent named agent)`)
+      return
+    }
+
     this.restoreRecentTaskMemory(historyService)
   }
 
@@ -575,6 +616,7 @@ export abstract class Agent {
         type: s.type as AgentStep['type'],
         content: s.content,
         images: s.images,
+        echartsOption: s.echartsOption,
         attachments: s.attachments,
         toolName: s.toolName,
         toolArgs: s.toolArgs,
@@ -693,16 +735,25 @@ export abstract class Agent {
     const baseTs = stepRecords[0]?.timestamp || Date.now()
     
     for (const s of stepRecords) {
+      // 注意：除 user_task 入口外，其它 record → step 重建路径（restoreFromSession /
+      // saveSession / saveCheckpoint / forkSession）都已带富内容字段；此降级路径之前
+      // 漏带 images / subAgents / success / echartsOption，导致仅有 steps 没有 messages
+      // 的旧记录恢复时图表/子 Agent 卡片显示空白，本次一并补齐，与其它路径保持一致。
       const step: AgentStep = {
         id: s.id,
         type: s.type as AgentStep['type'],
         content: s.content,
+        images: s.images,
+        echartsOption: s.echartsOption,
+        attachments: s.attachments,
         toolName: s.toolName,
         toolArgs: s.toolArgs,
         toolResult: s.toolResult,
         riskLevel: s.riskLevel as RiskLevel | undefined,
         timestamp: s.timestamp,
-        webSearchResults: s.webSearchResults
+        webSearchResults: s.webSearchResults,
+        success: s.success,
+        subAgents: s.subAgents
       }
       
       if (s.type === 'user_task') {
@@ -873,6 +924,7 @@ export abstract class Agent {
       type: s.type,
       content: s.content || '',
       images: s.images,
+      echartsOption: s.echartsOption,
       attachments: s.attachments,
       toolName: s.toolName,
       toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,
@@ -924,6 +976,7 @@ export abstract class Agent {
       type: s.type,
       content: s.content || '',
       images: s.images,
+      echartsOption: s.echartsOption,
       attachments: s.attachments,
       toolName: s.toolName,
       toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,
@@ -1038,6 +1091,7 @@ export abstract class Agent {
       type: s.type,
       content: s.content || '',
       images: s.images,
+      echartsOption: s.echartsOption,
       attachments: s.attachments,
       toolName: s.toolName,
       toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,
@@ -2799,13 +2853,8 @@ export abstract class Agent {
       historyService: this.services.historyService,
       getAiService: () => this.services.aiService,
       getActiveProfileId: () => this.profileId || this.services.configService?.getActiveAiProfile() || undefined,
-      getParentContext: () => {
-        if (!run.messages.length) return undefined
-        return {
-          messages: run.messages,
-          tools: this.getAvailableTools()
-        }
-      },
+      getAgentContext: () => run.context,
+      getAiRules: () => this.services.configService?.getAiRules() ?? '',
       setCurrentPtyId: (ptyId: string) => {
         if (!ptyId || ptyId === run.ptyId) return
         const before = run.ptyId

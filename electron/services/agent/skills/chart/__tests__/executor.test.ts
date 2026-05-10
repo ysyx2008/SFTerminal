@@ -3,6 +3,9 @@
  *
  * 关键不变量（容易被「优化」时无意打破）：
  * - step.images **必须**带 dataURL —— 前端 (AiPanel/Awaken/tool-display) 是从 step.images 渲染
+ * - step.echartsOption **仅在 svg 模式**注入 —— 让前端实例化为「活图」（tooltip / dataZoom 等）；
+ *   PNG 模式刻意不带，因为 AI 选 PNG 通常意味着「我要导出位图给 word/IM」，气泡内 PNG 预览
+ *   与导出物视觉一致更直观。两条规则 buildOption / renderChart 都覆盖。
  * - ToolResult.images **必须**为空 —— 这条路径会触发 flushPendingToolImages 把 SVG
  *   作为视觉输入塞给 AI，但主流多模态模型不识别 SVG，会让 AI 误以为「我看过图了」
  */
@@ -131,6 +134,157 @@ describe('executeChartTool: image delivery contract', () => {
     expect(toolResultStep?.images?.[0]).toMatch(/^data:image\/png;base64,/)
     // PNG 同样不进 ToolResult.images，保持 chart 一贯"图给用户、不给 AI"原则
     expect(result.images).toBeUndefined()
+    // PNG 模式不投递 echartsOption（AI 显式选位图导出，气泡看 PNG 预览与导出物一致）
+    expect(toolResultStep?.echartsOption).toBeUndefined()
+  })
+
+  it('svg mode（默认）同时投递 echartsOption（活图）+ images（兜底）', async () => {
+    const { config, steps } = makeExecutor()
+    const result = await executeChartTool(
+      'generate_chart',
+      'pty-1',
+      {
+        type: 'bar',
+        data: { categories: ['Q1', 'Q2'], series: [{ name: 'x', data: [1, 2] }] },
+        width: 800,
+        height: 500
+      },
+      'call-svg-echarts',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+
+    expect(result.success).toBe(true)
+    const toolResultStep = steps.find(s => s.type === 'tool_result')
+    // 兜底 SVG dataURL 仍在
+    expect(toolResultStep?.images?.[0]).toMatch(/^data:image\/svg\+xml;base64,/)
+    // 活图载荷：option 是 plain object，width/height 跟 size 一致
+    const payload = toolResultStep?.echartsOption
+    expect(payload).toBeDefined()
+    expect(payload?.width).toBe(800)
+    expect(payload?.height).toBe(500)
+    expect(typeof payload?.option).toBe('object')
+    // option 应已被 applyCommon inline 主题（前后端视觉一致的关键）
+    expect(payload?.option).toHaveProperty('backgroundColor')
+    expect(payload?.option).toHaveProperty('series')
+  })
+
+  it('render_echarts_option svg 模式同样投递 echartsOption', async () => {
+    const { config, steps } = makeExecutor()
+    const result = await executeChartTool(
+      'render_echarts_option',
+      'pty-1',
+      {
+        option: {
+          xAxis: { type: 'category', data: ['一月', '二月'] },
+          yAxis: { type: 'value' },
+          series: [{ type: 'bar', data: [10, 20] }]
+        },
+        width: 1024,
+        height: 600
+      },
+      'call-free-echarts',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    expect(result.success).toBe(true)
+    const toolResultStep = steps.find(s => s.type === 'tool_result')
+    const payload = toolResultStep?.echartsOption
+    expect(payload).toBeDefined()
+    expect(payload?.width).toBe(1024)
+    expect(payload?.height).toBe(600)
+    // 自由路径下 option 透传，user 给的字段必须保留
+    expect(payload?.option).toHaveProperty('series')
+  })
+
+  it('K 线 svg 模式：投递的 echartsOption 里 function formatter 被替换为 marker（保活图、过 IPC）', async () => {
+    const { config, steps } = makeExecutor()
+    // K 线 buildCandlestick 的成交量 yAxis 用 formatVolume function，必须通过 marker 协议
+    // 才能过 Electron IPC（structuredClone）。
+    const result = await executeChartTool(
+      'generate_chart',
+      'pty-1',
+      {
+        type: 'candlestick',
+        title: 'K 线 marker 测试',
+        data: {
+          categories: ['1', '2', '3'],
+          values: [[10, 12, 9, 13], [12, 11, 10, 13], [11, 14, 11, 15]],
+          volumes: [100000, 200000, 150000]
+        },
+        width: 1600,
+        height: 800
+      },
+      'call-kline-marker',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    expect(result.success).toBe(true)
+    const stepResult = steps.find(s => s.type === 'tool_result')
+    const payload = stepResult?.echartsOption
+    expect(payload).toBeDefined()
+
+    // sanitize 后的 option 必须能通过 structuredClone（IPC 投递不报错）
+    expect(() => structuredClone(payload!.option)).not.toThrow()
+
+    // 在 yAxis 数组里找成交量轴的 axisLabel.formatter——应该是 marker 而不是 function
+    const opt = payload!.option as {
+      yAxis: Array<{ axisLabel?: { formatter?: unknown } }>
+      tooltip: { formatter?: unknown }
+    }
+    const volumeAxis = opt.yAxis.find(a => a.axisLabel?.formatter)
+    expect(volumeAxis).toBeDefined()
+    expect(volumeAxis!.axisLabel!.formatter).toEqual({ __echartsFn: 'volume' })
+    // tooltip.formatter 也应该是 marker（中文 OHLC 输出由前端 reify 还原）
+    expect(opt.tooltip.formatter).toEqual({ __echartsFn: 'klineTooltip' })
+  })
+
+  it('render_echarts_option svg 模式：含 function formatter 的 option 静默降级，仅走 SVG 兜底（避免 IPC DataCloneError）', async () => {
+    const { config, steps } = makeExecutor()
+    const result = await executeChartTool(
+      'render_echarts_option',
+      'pty-1',
+      {
+        option: {
+          xAxis: { type: 'category', data: ['Q1', 'Q2'] },
+          yAxis: { type: 'value' },
+          tooltip: {
+            // ECharts 文档主推写法之一：function formatter。在后端 SSR 时是有效的
+            // （同进程同 V8），但走 IPC 给前端会被 structuredClone 拒绝。
+            formatter: (params: { value: number }) => `Custom: ${params.value}`
+          },
+          series: [{ type: 'bar', data: [10, 20] }]
+        }
+        // 默认 svg 模式
+      },
+      'call-fn-formatter',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    expect(result.success).toBe(true)
+    const stepResult = steps.find(s => s.type === 'tool_result')
+    // SVG dataURL 仍存在（后端 SSR 没问题）
+    expect(stepResult?.images?.[0]).toMatch(/^data:image\/svg\+xml;base64,/)
+    // 但活图载荷被静默丢弃，避免 IPC 抛 DataCloneError
+    expect(stepResult?.echartsOption).toBeUndefined()
+  })
+
+  it('render_echarts_option png 模式不投递 echartsOption（与 generate_chart 一致）', async () => {
+    const { config, steps } = makeExecutor()
+    await executeChartTool(
+      'render_echarts_option',
+      'pty-1',
+      {
+        option: { series: [{ type: 'gauge', data: [{ value: 50 }] }] },
+        format: 'png'
+      },
+      'call-free-png-no-echarts',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    const toolResultStep = steps.find(s => s.type === 'tool_result')
+    expect(toolResultStep?.images?.[0]).toMatch(/^data:image\/png;base64,/)
+    expect(toolResultStep?.echartsOption).toBeUndefined()
   })
 
   it('default format remains svg (向后兼容：未传 format 不应改变行为)', async () => {

@@ -369,7 +369,7 @@ export class WatchService {
 
   private static readonly AUTO_TRIGGER_TYPES = new Set([
     'heartbeat', 'cron', 'interval', 'email', 'calendar', 'file_change', 'im_connected',
-    'command_probe', 'http_probe', 'app_lifecycle', 'milestone'
+    'command_probe', 'http_probe', 'app_lifecycle', 'milestone', 'watch_failure'
   ])
 
   private async executeWatch(watch: WatchDefinition, event: SensorEvent): Promise<WatchExecutionResult> {
@@ -448,7 +448,11 @@ export class WatchService {
 
     this.recordExecution(watch, event, result, agentSessionId)
 
-    await this.deliverOutput(watch, result, isSilent)
+    if (!result.success && !result.skipped) {
+      this.notifyFailure(watch, result)
+    } else {
+      await this.deliverOutput(watch, result, isSilent)
+    }
 
     this.notifyFrontend('watch:task-completed', {
       watchId: watch.id,
@@ -823,6 +827,8 @@ export class WatchService {
         return this.describeAppLifecycle(payload)
       case 'milestone':
         return this.describeMilestone(payload)
+      case 'watch_failure':
+        return `关切「${payload.watchName}」执行失败：${payload.error}（耗时 ${Math.round((payload.duration as number) / 1000)}s）`
       default:
         return `${type}${payload.source ? ` 来自 ${payload.source}` : ''}`
     }
@@ -874,6 +880,34 @@ export class WatchService {
   // ==================== 输出投递 ====================
 
   private static readonly WATCH_ASSISTANT_AGENT_ID = '__watch__'
+
+  /**
+   * 关切执行失败：作为生命周期事件发射到 EventBus。
+   * 唤醒 Watch 监听此事件并由 AI 自主决定如何通知用户，
+   * 通知链路（主动消息 → IM → 系统通知）复用已有觉醒机制，无需重复实现。
+   */
+  private notifyFailure(watch: WatchDefinition, result: WatchExecutionResult): void {
+    const errorMsg = result.error || '执行失败'
+    log.warn(`Watch '${watch.name}' (${watch.id}) failed: ${errorMsg}`)
+
+    try {
+      getEventBus().emit({
+        id: `watch-failure-${watch.id}-${Date.now().toString(36)}`,
+        type: 'watch_failure',
+        source: `watch:${watch.id}`,
+        timestamp: Date.now(),
+        payload: {
+          watchId: watch.id,
+          watchName: watch.name,
+          error: errorMsg,
+          duration: result.duration
+        },
+        priority: 'high'
+      })
+    } catch (err) {
+      log.error('Failed to emit watch_failure event:', err)
+    }
+  }
 
   private isNoAction(output: string): boolean {
     const lastLine = output.trim().split('\n').pop()?.trim().toUpperCase() || ''
@@ -1303,6 +1337,7 @@ export class WatchService {
         case 'im_connected':
         case 'app_lifecycle':
         case 'milestone':
+        case 'watch_failure':
           break
         case 'file_change':
           if (!trigger.paths || trigger.paths.length === 0) {
@@ -1426,6 +1461,7 @@ export class WatchService {
     { type: 'milestone' },
     { type: 'email' },
     { type: 'calendar' },
+    { type: 'watch_failure' },
   ]
 
   /** 确保内置「唤醒」关切存在（觉醒模式开启时调用），幂等 */

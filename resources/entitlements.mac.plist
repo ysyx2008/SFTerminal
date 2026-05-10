@@ -33,5 +33,11 @@
     <!-- 禁用库验证 -->
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
+
+    <!-- 允许访问麦克风（语音识别 / 语音输入功能必需）。
+         在启用 hardened runtime 的 macOS 签名构建上，缺少这个 entitlement
+         系统不会授予音频输入权限。-->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
 </dict>
 </plist>

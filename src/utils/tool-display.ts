@@ -94,10 +94,12 @@ export const HIDE_RESULT_WHEN_SUCCESS_TOOLS = new Set<string>([
  */
 function hasRichPayload(step: {
   images?: unknown[]
+  echartsOption?: unknown
   webSearchResults?: unknown[]
   subAgents?: unknown[]
 }): boolean {
   if (step.images && step.images.length > 0) return true
+  if (step.echartsOption) return true
   if (step.webSearchResults && step.webSearchResults.length > 0) return true
   if (step.subAgents && step.subAgents.length > 0) return true
   return false
@@ -121,6 +123,7 @@ export function shouldShowToolResultStep(
     toolName?: string
     success?: boolean
     images?: unknown[]
+    echartsOption?: unknown
     webSearchResults?: unknown[]
     subAgents?: unknown[]
   },

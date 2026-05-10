@@ -946,6 +946,8 @@ const translations = {
     'skill.unloading': '正在卸载技能: {id}',
     'skill.unloaded': '已卸载技能: {id}',
     'skill.unload_failed': '卸载技能失败',
+    'skill.creating': '创建技能',
+    'skill.updating': '更新技能',
 
     // 用户技能系统（渐进式加载）
     'user_skill.id_required': '用户技能 ID 不能为空',
@@ -2355,6 +2357,8 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'skill.unloading': 'Unloading skill: {id}',
     'skill.unloaded': 'Skill unloaded: {id}',
     'skill.unload_failed': 'Failed to unload skill',
+    'skill.creating': 'Creating skill',
+    'skill.updating': 'Updating skill',
 
     // User skill system (progressive loading)
     'user_skill.id_required': 'User skill ID required',

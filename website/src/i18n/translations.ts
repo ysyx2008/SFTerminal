@@ -19,7 +19,7 @@ export const translations = {
       stats: '统计',
       changelog: '更新日志',
       skills: '技能市场',
-      guide: '指南',
+      guide: '使用指南',
       dataPrivacy: '数据安全',
       github: 'GitHub',
       cta: '立即下载',

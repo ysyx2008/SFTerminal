@@ -1,6 +1,6 @@
 # Agent 子系统 SPEC
 
-> Last verified: 2026-04-25（工具元数据驱动模型：抽象层完全去除按工具名 switch / 硬编码工具名集合的 OOP 违反，所有差异化行为通过 `ToolDefinition._meta` 声明，由 `tool-metadata.ts` 的 helper 集中查询；机械护栏 `__tests__/oop-boundary.test.ts` 防止回退）
+> Last verified: 2026-05-09（持久命名 Agent vs 普通 tab Agent 边界：`restoreFromHistory` 的全局 fallback 仅对 `__companion__` / `__watch__` 生效，普通 tab 第一次对话不再被全局历史污染，根除"新开 tab 第一句话就捏造历史里用过但本 tab 没加载的工具名"幻觉）
 
 ## 职责
 
@@ -123,6 +123,19 @@ run(message, context, options)
   - `resetSession(agentKey)` 重置会话但保留实例（"清空对话"功能）
   - PTY/SSH 销毁不触发任何 Agent 清理（生命周期完全独立）
 
+### 持久命名 Agent vs 普通 tab Agent（`restoreFromHistory` fallback 边界）
+
+`restoreFromHistory` 在 sessionId 找不到 record 时分两种路径：
+
+- **持久命名 Agent**（Companion `__companion__` / Watch `__watch__`）：走 `restoreRecentTaskMemory` fallback——从全局最近 N 条历史提取任务恢复工作记忆。这些 Agent 重启后用 `session_${Date.now()}` 找不到 record，但语义上是「同一个长期 Agent」，必须靠这条 fallback 才能"记得最近聊过什么"
+- **普通 tab Agent**（terminal / SSH / 独立助手）：直接返回，TaskMemory 保持空白。新开 tab 的第一次对话本就是新任务，注入全局历史会让 LLM 误以为是连续对话，沿用历史里的工具名（甚至当前 tab 工具表里没有的工具——例如上次对话用过 chart 技能里的 `candlestick`，新 tab 第一次说"画个图"，AI 会捏造出 `generate_chart` 而不是先 `load skill`），造成 `Unknown tool` 幻觉调用
+
+**关于 Companion fallback 的"跨 Agent"语义**：`restoreRecentTaskMemory` 取的是**全局**最近 N 条 `AgentRecord`，不区分这些记录原本属于哪个 Agent / 哪个 tab。这是有意设计，不是 bug：Companion 是用户的"贴身助手"，肩负主动通知（proactive message）、IM 推送、桌面唤起等任务，需要随时能在通知里参考用户「最近在做什么」——无论用户是在哪个终端 tab 操作、还是和独立助手聊天，最近的活动都应作为 Companion 的工作记忆。Watch Agent 同理（关切的执行决策也常常需要参考最近上下文）。如果未来某些命名 Agent 不希望"跨 Agent 借记忆"，应在该 Agent 自身加过滤逻辑，而非改这条全局 fallback。
+
+**实现**：`Agent._persistentNamedAgent: boolean`（默认 false）。`AgentService.createAssistantAgent(agentId)` 内部根据 `agentId === COMPANION_AGENT_ID || WATCH_AGENT_ID` 自动调 `markAsPersistentNamed()`——调用方（IM service / Watch service）无需感知。`getOrCreateAgent`（终端 Agent）和 createAssistantAgent 的非命名分支默认就是 false。
+
+**回归保护**：`__tests__/agent.test.ts` 的 "should NOT restore global recent history for normal agent when sessionId record missing" 与 "should restore global recent history for persistent named agent ..." 两条用例锁定了边界。新增类似的固定 ID Agent 时记得在 `isPersistentNamedAgentId` 里登记。
+
 ## 工具元数据驱动模型（核心 OOP 边界承诺）
 
 `agent.ts` 是 **Agent 抽象基类**，按 OOP 原则不应知道任何具体子类（具体工具）的名字。所有"按工具名做行为分支"的逻辑——预卡片渲染、并行性判断、执行阶段分配、上下文清理策略、引导完成判断、阻塞等待识别等——都通过 `ToolDefinition._meta`（声明在工具自己的定义里）完成，抽象层只读元数据决策。
@@ -196,13 +209,13 @@ run(message, context, options)
 
 | 段 | 工具 | 用途 |
 |---|---|---|
-| 子 Agent 通用前缀（前 6 个） | `exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search` | explore/research 子 Agent 工具列表 = 此段 |
-| edit 子专用追加（前 7-8 个） | `edit_file, write_text_file` | edit 子 Agent 工具列表 = 上一段 + 此段 |
+| 子 Agent 通用前缀（前 7 个） | `exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search, web_fetch` | `read` 类型子 Agent 工具列表 = 此段 |
+| `write` 类型追加（前 8-9 个） | `edit_file, write_text_file` | `write` 类型子 Agent 工具列表 = 上一段 + 此段 |
 | 父 Agent 专用尾部 | `write_remote_text_file, sftp_put, sftp_get, remember_info, ask_user, plan, skill, load_user_skill, recall, search_history, dispatch_agents, talk_to_user` | 仅父 Agent 可见；`write_remote_text_file` 仅 SSH 模式；`sftp_put/sftp_get` local+ssh 模式（local tab 通过 pane_id 指 SSH 窗格） |
 
 **保持前缀连续的红线**：
 
-1. 新增子 Agent 用的工具时，必须放进对应分段（前 6 / 前 8）的末尾，并同步更新 `SUB_AGENT_TYPES` 白名单
+1. 新增子 Agent 用的工具时，必须放进对应分段（前 7 / 前 9）的末尾，并同步更新 `SUB_AGENT_TYPES` 白名单
 2. 新增父专用工具，只能加在尾部
 3. **不要**为子 Agent 重写工具 description（破坏 byte-exact 字节）。如果某些工具描述对子 Agent 无关上下文太多，应通过 `parameters.description` 传入或在 user 指令中说明，不要改 `function.description`
 4. `web_search` 是条件性工具（未配置时整体不存在），即使不存在也不破坏前缀关系（子 Agent 同样不会有它，仍是父的连续前缀）
@@ -230,28 +243,51 @@ run(message, context, options)
 
 主 Agent 通过 `dispatch_agents` 工具分派轻量子任务并行执行。
 
-**Fork 模式**（参考 Claude Code）：子 Agent 继承父 Agent 的**消息历史**（system prompt + messages）作为 fork 前缀，最大化 Anthropic/DeepSeek 前缀缓存命中。父 Agent 尚未完成的 tool_result 用固定占位符（`FORK_PLACEHOLDER`）替代，子任务指令作为追加的 user 消息。所有子 Agent 共享同一消息前缀（byte-exact 一致），仅追加部分因任务而异。当父上下文不可用时直接报错（不再 fallback）。
+**独立模式**：子 Agent 用 `[system, user]` 两条消息开局，**不继承父 Agent 的对话历史**。父 Agent 想让子 Agent 知道的上下文必须显式写在 `task.prompt` 里。
 
-**工具列表**：子 Agent 看到的是按类型白名单过滤后的工具列表（**不是父 Agent 的完整工具列表**）。父 Agent 专属工具（`dispatch_agents`、`talk_to_user`、`plan`、`ask_user`、`remember_info` 等）对子 Agent 完全不可见，避免 LLM 误调用。工具 schema 部分仍因为顺序约定（见上节）共享 byte-exact 前缀，cache 命中不受影响。
+为什么不用 fork 模式：曾经参考 Claude Code 改成 fork（继承父消息历史以最大化 prompt cache），但导致严重的工具幻觉——子 Agent 的 system prompt 是父 Agent 的（描述自己能用 `dispatch_agents` / `talk_to_user` / `plan` 等），对话历史里也有这些工具的调用先例，但实际工具列表里没有这些。LLM 看到这种不一致会反复尝试调用不存在的工具，被运行时拦截后再重试，整体卡死。
 
-**Agent 类型系统**：每个子 Agent 按类型分配工具白名单和系统提示：
+切回独立模式后：
+- 身份、工具、历史三者彻底一致，根除幻觉源头
+- prompt cache 仍正常命中：所有同类型子 Agent 的 system prompt 与工具 schema byte-exact 一致
+
+**子 Agent system prompt 结构**（由 `PromptBuilder.buildSubAgentSystemPrompt` 构建）：
+
+| 段落 | 来源 | 备注 |
+|---|---|---|
+| 语言规则 | `LANGUAGE_RULE` 常量 | 与父 Agent 共用同一字符串 |
+| 运行环境（OS / Shell / CWD / 用户名 / 主目录） | `PromptBuilder.buildHostEnvironment(context, hostProfileService)` | 子 Agent `exec` 命令必须知道当前 OS / Shell（如 macOS sed -i 写法）、CWD（解析相对路径）等 |
+| 用户 AI Rules | `executor.getAiRules()` | 项目编码约定（如"用 npm 不用 yarn"），write 类型尤其重要 |
+| 类型角色 | `SUB_AGENT_TYPES[type].systemPromptPrefix` | 一两句话区分 read/write |
+| 工作契约 | 固定文本：数据真实性 + **失败如实上报**（禁止私自换命令补救） + 结论结构化（做到/没做到/为什么） | byte-exact 常量 |
+
+**不**继承的部分：身份描述（IDENTITY/SOUL/USER）、技能列表、知识文档、对话历史、任务记忆、关切列表、羁绊上下文——这些都是会话级动态状态，子 Agent 是一次性短任务不需要。
+
+**不在 prompt 里点名"哪些工具不能调用"**：schema 不暴露的工具 LLM 一般不会主动捏造，反复点名反而是诱导。
+
+**byte-exact 一致性**：同一父 Agent 内所有子 Agent 共享相同 `context` / `aiRules` / `hostProfileService`，因此 system prompt 跨子 Agent byte-exact 一致；工具 schema 因为顺序约定（见「工具列表顺序约定」一节）天然共享前缀。两者都让 Anthropic/DeepSeek/OpenAI 的前缀缓存正常命中。
+
+**工具列表**：子 Agent 看到的是按类型白名单过滤后的工具列表（**不是父 Agent 的完整工具列表**）。父 Agent 专属工具（`dispatch_agents` / `talk_to_user` / `plan` / `ask_user` / `remember_info` 等）对子 Agent 完全不可见。
+
+**Agent 类型系统**：
 
 | 类型 | 用途 | 可用工具 |
 |---|---|---|
-| `explore`（默认） | 只读分析 | exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search |
-| `edit` | 文件修改 | explore + edit_file, write_text_file |
-| `research` | 知识检索归纳 | exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search |
+| `read`（默认） | 只读分析、调研、知识检索 | exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search, web_fetch |
+| `write` | 文件修改 | read + edit_file, write_text_file |
 
-类型通过 `SubAgentType` 接口定义，注册在 `SUB_AGENT_TYPES` 注册表中。白名单顺序与 `tools.ts` 中 `builtinTools` 的前缀严格对齐（见上节"工具列表顺序约定"），不要随意调整。
+类型通过 `SubAgentType` 接口定义，注册在 `SUB_AGENT_TYPES` 注册表中。白名单顺序与 `tools.ts` 中 `builtinTools` 的前缀严格对齐（见「工具列表顺序约定」），不要随意调整。
 
-`web_search` 在 edit 白名单里看似冗余（edit 任务很少联网），但保留它是为了让 edit 子 Agent 工具列表也是父工具列表的连续前缀（前 8 个）；无害，且 LLM 用不到也不会调。
+`web_search` / `web_fetch` 在 write 白名单里看似冗余（写任务很少联网），但保留是为了让 write 子 Agent 工具列表也是父工具列表的连续前缀（前 9 个）；无害，且 LLM 用不到也不会调。
 
-**执行时白名单（Defense in Depth）**：除了通过过滤工具列表让 LLM "看不到"禁用工具，运行时仍保留白名单检查（`allowedTools.has(toolName)`），万一 LLM 通过历史上下文等方式生成了禁用工具的调用，也会被运行时拦截并返回错误提示。
+**向后兼容**：fork 模式时期使用过 `explore` / `research` / `edit` 三种类型，`resolveAgentType` 保留映射（`explore` / `research` → `read`、`edit` → `write`），LLM 凭旧训练习惯传旧值也能 work。
+
+**执行时白名单（Defense in Depth）**：除了通过过滤工具列表让 LLM "看不到"禁用工具，运行时仍保留白名单检查（`allowedTools.has(toolName)`），万一 LLM 通过其它途径生成了禁用工具的调用，也会被运行时拦截并返回错误提示。
 
 **执行模式**：`dispatchSubAgents` 同步阻塞等待全部子任务完成后返回汇总结果。如果需要"边等边做"，主 Agent 应在同一次响应中并行调用其它工具（parallelizable tools），不需要单独的异步分支。
 
 **安全约束**：
-- 子 Agent 继承父 Agent 的 `executionMode`，**工具列表中没有 `dispatch_agents`，物理上不可递归**
+- 子 Agent 工具列表中**没有** `dispatch_agents`，物理上不可递归
 - 工具白名单保障安全（无终端操作等高危工具）
 - **确认策略**：子 Agent 不弹确认框（避免阻塞并行执行）。moderate 级操作自动放行，dangerous 级操作自动拒绝并打印工具参数预览（便于调试），子 Agent 可换策略重试或报告给主 Agent 处理
 
@@ -288,8 +324,8 @@ run(message, context, options)
 **`debugMode` 与持久化解耦**：`debugMode` 只是 **UI 渲染层** 的呈现开关，**不影响后端是否 emit step、不影响是否写入会话历史**。
 
 - 后端永远 emit 完整 step（tool_call + tool_result），永远写入 `run.steps` → `saveCheckpoint` / `finalizeRun` → `HistoryService` 持久化
-- `success` 与 `subAgents` 字段也必须随 `AgentStepRecord` 一起持久化（见 `shared/types/history.ts`），否则历史详情面板无法判定"失败步骤始终显示"
-- 前端 `src/utils/tool-display.ts` 的 `shouldShowToolResultStep` 才是 UX 决策点（覆盖 `tool_call` 与 `tool_result` 两类）：非调试模式下隐藏"成功且无用户必看产出"的信息检索 / 命令类工具结果（如 `read_file`、`execute_command`）；用专用 step type 呈现的工具（`TOOLS_WITH_DEDICATED_STEP_TYPE`，如 `plan`）连其 `tool_call` 通告卡也一并隐藏，避免和专用卡重复；失败 / 写入类 / 携带 `images`/`webSearchResults`/`subAgents` 的步骤永远展示
+- `success`、`subAgents`、`echartsOption`（chart skill 投递的活图 ECharts option，类型见 `shared/types/agent.ts::EChartsStepPayload`）等富内容字段都必须随 `AgentStepRecord` 一起持久化（见 `shared/types/history.ts`），否则历史详情面板无法判定"失败步骤始终显示" / 历史里的图无法恢复成活图
+- 前端 `src/utils/tool-display.ts` 的 `shouldShowToolResultStep` 才是 UX 决策点（覆盖 `tool_call` 与 `tool_result` 两类）：非调试模式下隐藏"成功且无用户必看产出"的信息检索 / 命令类工具结果（如 `read_file`、`execute_command`）；用专用 step type 呈现的工具（`TOOLS_WITH_DEDICATED_STEP_TYPE`，如 `plan`）连其 `tool_call` 通告卡也一并隐藏，避免和专用卡重复；失败 / 写入类 / 携带 `images`/`echartsOption`/`webSearchResults`/`subAgents` 的步骤永远展示
 - 反例（已修复）：曾在 `tools/exec.ts` / `tools/command.ts` / `tools/terminal.ts` / `tools/misc.ts` 里写过 `if (config.debugMode) executor.addStep({type:'tool_result', ...})`——这导致非调试模式下命令输出**整条 step 都没产生**，既不进 messages、也不进会话历史，事后开调试模式也找不回来。这种耦合是错误的，新增工具时不要重蹈覆辙。
 
 **为什么重要**：用户读 Agent 输出的常见心智是「Agent 当前在干什么」。任何静默执行（卡片只在结束后才出现）都会让用户误以为 Agent 卡住，或对 AI 的实际行为缺乏控制感。这条原则是「不让用户怀疑 Agent 是否还活着」的最基本保障。同时，把"是否展示"与"是否记录"分离，保证调试时能回看任何过去发生过的工具执行。
@@ -384,6 +420,7 @@ run(message, context, options)
 | calendar | 日历管理 |
 | browser | 浏览器操作 |
 | feishu | 飞书集成（OAuth） |
+| chart | 数据可视化（默认输出活图 ECharts，PNG 兜底；详见 `skills/chart/SPEC.md`） |
 | watch | 关切管理 |
 | config | Agent 配置 |
 | skill-manager | 用户技能管理与市场 |

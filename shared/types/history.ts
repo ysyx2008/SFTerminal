@@ -9,6 +9,14 @@ export interface AgentStepRecord {
   type: string
   content: string
   images?: string[]
+  /**
+   * 「活图」载荷的持久化形态。重新打开历史会话时，前端从这里恢复出可交互的
+   * ECharts 图表。详见 `EChartsStepPayload` 注释（shared/types/agent.ts）。
+   *
+   * 体积说明：典型 ECharts option 序列化后 5-30KB，比同等画面的 SVG base64
+   * （80KB+）小一个数量级——所以同时持久化两路图依旧让历史文件总体变小。
+   */
+  echartsOption?: import('./agent').EChartsStepPayload
   attachments?: import('./agent').AttachmentInfo[]
   toolName?: string
   /** 关联的 tool_call ID，用于配对 tool_call ↔ tool_result（老记录可能缺失） */

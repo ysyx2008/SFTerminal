@@ -78,11 +78,23 @@ export interface ToolExecutorConfig {
   // AI 服务（remember_info 等工具触发 LLM 更新时使用）
   getAiService?: () => import('../../ai.service').AiService | undefined
   getActiveProfileId?: () => string | undefined
-  /** 获取父 Agent 的 fork 上下文（消息历史 + 工具列表），用于子 Agent 共享 prompt cache */
-  getParentContext?: () => {
-    messages: import('../../ai.service').AiMessage[]
-    tools: import('../../ai.service').ToolDefinition[]
-  } | undefined
+  /**
+   * 获取父 Agent 的运行上下文（systemInfo / cwd / hostId 等）。
+   *
+   * 子 Agent（dispatch_agents）需要复用这些项目级稳定信息构建自己的 system prompt——
+   * 让子 Agent 也"知道"当前的 OS / Shell / CWD，跑命令时不会因环境信息缺失而出错。
+   *
+   * 返回 undefined 表示当前执行器不持有运行上下文（例如某些 mock 场景或非 Agent 调用），
+   * 此时依赖此 getter 的工具应优雅降级或返回错误。
+   */
+  getAgentContext?: () => import('../types').AgentContext | undefined
+  /**
+   * 获取用户配置的 AI Rules（项目级编码约定）。
+   *
+   * 子 Agent 需要遵守同样的约定（如"用 npm 不用 yarn"、"测试用 vitest"），
+   * 否则它写出来的代码 / 跑出来的命令风格会和父 Agent 不一致。
+   */
+  getAiRules?: () => string
   /**
    * 切换 Agent 当前默认操作的 ptyId（写入 run.ptyId / run.context.ptyId）。
    *

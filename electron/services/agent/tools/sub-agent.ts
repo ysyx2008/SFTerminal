@@ -5,12 +5,18 @@
  * 每个子任务拥有独立的 AI 对话上下文和受限工具集，完成后将结果汇总返回。
  *
  * 设计要点：
- * - Fork 模式（参考 Claude Code）：子 Agent 继承父的完整上下文（system prompt +
- *   消息历史 + 工具列表），最大化 prompt cache 命中。父的 tool_result 用占位符替代，
- *   子任务指令作为追加的 user 消息
- * - Agent 类型系统：explore/edit/research 各有独立工具白名单和执行约束
+ * - **独立模式**：子 Agent 用 [system, user] 两条消息开局，不继承父 Agent 的对话历史。
+ *   每次都是干净的小型 ReAct 循环，避免因继承父上下文导致身份/工具/历史认知错位的幻觉
+ * - **byte-exact 一致**：同一父 Agent 内所有子 Agent 的 system prompt 与工具 schema
+ *   完全一致，自动命中 Anthropic/DeepSeek/OpenAI 的前缀缓存
+ * - Agent 类型系统：read / write 两类，工具白名单不同，向后兼容旧值
+ *   （explore/research → read，edit → write）
  * - 并发控制：Promise.allSettled + 可配置并发上限
  * - 进度推送：通过父 executor 的 addStep/updateStep 实时更新 subAgents 字段
+ *
+ * 历史：曾参考 Claude Code 改成 fork 模式（继承父消息历史以最大化 prompt cache），
+ * 但导致严重的工具幻觉（子 Agent 看到父的工具调用历史会去模仿调用 dispatch_agents
+ * / plan / ask_user 等不在自己白名单的工具，不断被运行时拦截卡死）。已撤回到独立模式。
  */
 import type { AiService, AiMessage, ToolDefinition, ChatWithToolsResult } from '../../ai.service'
 import type { SubAgentTask, SubAgentResult, SubAgentToolStep, SubAgentTypeName, TokenUsage } from '@shared/types'
@@ -18,6 +24,7 @@ import type { ToolExecutorConfig, ToolResult, AgentConfig } from './types'
 import { executeTool } from './index'
 import { getAgentTools } from '../tools'
 import { truncateFromEnd } from './utils'
+import { PromptBuilder } from '../prompt-builder'
 import { getAiDebugService } from '../../ai-debug.service'
 import { createLogger } from '../../../utils/logger'
 
@@ -28,14 +35,11 @@ const MAX_SUB_AGENT_STEPS = 0
 const DEFAULT_MAX_CONCURRENT = 5
 const MAX_RESULT_LENGTH = 8000
 
-/** Fork 占位符：所有子 Agent 使用相同文本，确保 API 前缀字节一致以命中 prompt cache */
-const FORK_PLACEHOLDER = '子任务已分派，正在后台执行'
-
 // ==================== Agent 类型系统 ====================
 
 /** 子 Agent 类型定义 */
 export interface SubAgentType {
-  name: string
+  name: SubAgentTypeName
   description: string
   tools: Set<string>
   systemPromptPrefix: string
@@ -46,35 +50,42 @@ export interface SubAgentType {
  *
  * ⚠️ 工具白名单顺序约定：与 tools.ts 中 builtinTools 的前缀保持一致，
  * 让父/子 Agent 的工具列表共享 byte-exact 前缀，最大化 prompt cache 命中。
- * - explore/research 用前 7 个：exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search, web_fetch
- * - edit 用前 9 个：上述 7 个 + edit_file, write_text_file
+ * - read 用前 7 个：exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search, web_fetch
+ * - write 用前 9 个：上述 7 个 + edit_file, write_text_file
  *
  * 注意：
- * - 即使 web_search 未配 key（父 Agent 跳过），白名单仍包含 'web_search'，filter 后子 Agent 也跳过——位置一致即可保持父=子的连续前缀。
- * - edit 类型也保留 web_search/web_fetch（即使少用）以维持连续前缀；移除会破坏 cache。
+ * - 即使 web_search 未配 key（父 Agent 跳过），白名单仍包含 'web_search'，filter 后子 Agent
+ *   也跳过——位置一致即可保持父=子的连续前缀
+ * - write 类型也保留 web_search/web_fetch（即使少用）以维持连续前缀；移除会破坏 cache
  */
 const SUB_AGENT_TYPES: Record<SubAgentTypeName, SubAgentType> = {
-  explore: {
-    name: 'explore',
-    description: '只读分析（默认）：读取文件、搜索、执行命令，不修改任何内容',
+  read: {
+    name: 'read',
+    description: '只读分析与调研（默认）：读文件、搜索、跑只读命令、查知识库；不修改任何内容',
     tools: new Set(['exec', 'read_file', 'file_search', 'search_knowledge', 'get_knowledge_doc', 'web_search', 'web_fetch']),
-    systemPromptPrefix: '你是一个专注**分析与调研**的子任务执行器。\n- **只读模式**：不可修改任何文件或系统状态，exec 仅用于读取类命令（grep/find/cat/ls/git log 等）',
+    systemPromptPrefix: '你是一个侧重**只读分析与调研**的子任务执行器。读文件、搜索、跑只读命令（grep / find / cat / ls / git log 等）收集信息后给出结论。',
   },
-  edit: {
-    name: 'edit',
-    description: '文件修改：在 explore 基础上可编辑和创建文件',
+  write: {
+    name: 'write',
+    description: '文件修改：在 read 基础上可编辑和创建文件',
     tools: new Set(['exec', 'read_file', 'file_search', 'search_knowledge', 'get_knowledge_doc', 'web_search', 'web_fetch', 'edit_file', 'write_text_file']),
-    systemPromptPrefix: '你是一个专注**代码修改与文件编辑**的子任务执行器。\n- 修改文件前必须先用 read_file 查看目标内容',
-  },
-  research: {
-    name: 'research',
-    description: '知识检索：侧重知识库搜索和命令分析，输出结构化归纳',
-    tools: new Set(['exec', 'read_file', 'file_search', 'search_knowledge', 'get_knowledge_doc', 'web_search', 'web_fetch']),
-    systemPromptPrefix: '你是一个专注**知识检索与归纳分析**的子任务执行器。\n- 优先使用知识库搜索获取已有信息\n- 输出要求结构化、条理清晰，便于父 Agent 整合',
+    systemPromptPrefix: '你是一个侧重**文件修改**的子任务执行器。修改文件前先用 read_file 看清现状，再用 edit_file 或 write_text_file 改写。',
   },
 }
 
-const DEFAULT_AGENT_TYPE: SubAgentTypeName = 'explore'
+const DEFAULT_AGENT_TYPE: SubAgentTypeName = 'read'
+
+/**
+ * 旧类型值兼容映射。
+ *
+ * Fork 模式时期使用过 explore / research / edit 三种类型，砍成 read/write 后保留
+ * 兼容映射，避免 LLM 凭旧训练习惯调用 explore 等被运行时拒绝。
+ */
+const LEGACY_TYPE_ALIASES: Record<string, SubAgentTypeName> = {
+  explore: 'read',
+  research: 'read',
+  edit: 'write',
+}
 
 /** 获取所有可用的 Agent 类型名称（供工具定义和提示构建使用） */
 export function getSubAgentTypeNames(): SubAgentTypeName[] {
@@ -88,11 +99,20 @@ export function getSubAgentTypeDescriptions(): string {
     .join('\n')
 }
 
-/** 解析并校验 agent_type，返回对应的类型定义 */
+/**
+ * 解析并校验 agent_type，返回对应的类型定义。
+ *
+ * 优先级：当前类型名 > 旧类型别名（向后兼容）> 默认 read
+ */
 function resolveAgentType(agentType?: string): SubAgentType {
   if (!agentType) return SUB_AGENT_TYPES[DEFAULT_AGENT_TYPE]
   if (agentType in SUB_AGENT_TYPES) {
     return SUB_AGENT_TYPES[agentType as SubAgentTypeName]
+  }
+  const aliased = LEGACY_TYPE_ALIASES[agentType]
+  if (aliased) {
+    log.info(`Mapping legacy agent_type "${agentType}" → "${aliased}"`)
+    return SUB_AGENT_TYPES[aliased]
   }
   log.warn(`Unknown agent_type "${agentType}", falling back to "${DEFAULT_AGENT_TYPE}"`)
   return SUB_AGENT_TYPES[DEFAULT_AGENT_TYPE]
@@ -102,9 +122,13 @@ function resolveAgentType(agentType?: string): SubAgentType {
  * 根据 Agent 类型构建可用工具子集
  *
  * 直接复用父 Agent 的工具定义（byte-exact），不做 description 修改：
- * - 子 Agent 工具列表是父 Agent 工具列表的连续前缀（见 tools.ts 顺序约定）
- * - 不重写 description 以保持前缀字节一致，最大化 prompt cache 命中
- * - 子 Agent 看不到禁用工具，无需在 prompt 中再做约束
+ * - 子 Agent **始终**按 assistant 模式获取工具（不随父 Agent 终端类型 local/ssh 变化），
+ *   保证不同父 Agent 派生的同类型子 Agent 工具列表 byte-exact 一致
+ * - 不重写 description 以保持字节一致，最大化 prompt cache 命中
+ *
+ * 注：在 local/assistant 父 Agent 下，子 Agent 工具列表也是父工具列表的连续前缀
+ * （见 tools.ts「工具列表顺序约定」）；SSH 父 Agent 不能调 dispatch_agents
+ * （`supportedModes` 限制），无需考虑该模式下的前缀关系。
  */
 export function getSubAgentTools(agentType: string = DEFAULT_AGENT_TYPE): ToolDefinition[] {
   const typeDefinition = resolveAgentType(agentType)
@@ -164,12 +188,12 @@ function buildSubAgentExecutorConfig(
 interface SubAgentRunOptions {
   task: SubAgentTask
   aiService: AiService
-  /** API 请求使用的工具列表（fork 模式下为父 Agent 的完整工具列表） */
+  /** API 请求使用的工具列表（按 agent type 过滤后，是父 Agent 工具列表的连续前缀） */
   tools: ToolDefinition[]
-  /** 执行时允许的工具白名单（按 agent type 过滤） */
+  /** 执行时允许的工具白名单（防御层：万一 LLM 通过其它方式生成了未列入工具的调用） */
   allowedTools: Set<string>
-  /** 初始消息（fork 模式：父上下文 + 占位 + 指令；独立模式：system + user） */
-  initialMessages: AiMessage[]
+  /** 子 Agent 自己的系统提示（不继承父 Agent 历史） */
+  systemPrompt: string
   executorConfig: ToolExecutorConfig
   agentConfig: AgentConfig
   profileId?: string
@@ -180,15 +204,18 @@ interface SubAgentRunOptions {
 /**
  * 运行单个子 Agent 的 ReAct 循环
  *
- * Fork 模式：继承父 Agent 完整消息历史 + 工具列表，最大化 prompt cache 命中
- * 独立模式：独立系统提示 + 受限工具集（fallback）
+ * 独立模式：[system, user] 两条消息开局；不继承父 Agent 的对话历史。
+ * 父 Agent 想让子 Agent 知道的上下文必须显式写在 task.prompt 里。
  */
 async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult> {
-  const { task, aiService, tools, allowedTools, initialMessages, executorConfig, agentConfig, profileId, abortSignal, onProgress } = options
+  const { task, aiService, tools, allowedTools, systemPrompt, executorConfig, agentConfig, profileId, abortSignal, onProgress } = options
   const startTime = Date.now()
   const totalTokens: TokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
   const toolSteps: SubAgentToolStep[] = []
-  const messages: AiMessage[] = [...initialMessages]
+  const messages: AiMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: task.prompt },
+  ]
   const abortController = new AbortController()
 
   // 轮询父 abort 信号，触发 HTTP 请求中断
@@ -261,7 +288,8 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
           arguments: toolCall.function?.arguments || ''
         })
 
-        // 工具白名单检查：拦截不在当前 agent type 允许范围内的调用
+        // 工具白名单检查：防御层。schema 已经把白名单外的工具过滤掉，
+        // 这里再拦一道，避免 LLM 通过其它途径生成未列入工具的调用
         if (!allowedTools.has(toolName)) {
           const errorMsg = `工具 "${toolName}" 不在当前子 Agent 类型的可用范围内`
           step.status = 'failed'
@@ -340,14 +368,15 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
 /**
  * dispatch_agents 工具的执行入口
  *
- * Fork 模式（默认）：子 Agent 继承父 Agent 完整上下文 + 工具列表，最大化 prompt cache 命中
- * 独立模式（fallback）：父上下文不可用时，子 Agent 使用独立系统提示 + 受限工具集
+ * 独立模式：每个子 Agent 用独立的 [system, user] 开局，不继承父 Agent 上下文。
+ * system prompt 由 PromptBuilder.buildSubAgentSystemPrompt 构建，包含语言规则、
+ * 运行环境、用户 AI Rules 与类型角色，跨同一父 Agent 的子任务 byte-exact 一致。
  */
 export async function dispatchSubAgents(
   args: Record<string, unknown>,
   config: AgentConfig,
   executor: ToolExecutorConfig,
-  toolCallId?: string
+  _toolCallId?: string
 ): Promise<ToolResult> {
   const aiService = executor.getAiService?.()
   if (!aiService) {
@@ -376,14 +405,14 @@ export async function dispatchSubAgents(
     10
   )
 
-  const validTypes = getSubAgentTypeNames()
-  const globalAgentType = validateAgentType(args.agent_type as string | undefined, validTypes) ?? DEFAULT_AGENT_TYPE
+  const globalAgentTypeRaw = args.agent_type as string | undefined
+  const globalAgentType = resolveAgentType(globalAgentTypeRaw).name
 
   const tasks: SubAgentTask[] = rawTasks.map((t, i) => ({
     id: `sub-${i + 1}`,
     description: t.description || `Task ${i + 1}`,
     prompt: t.prompt,
-    agentType: validateAgentType(t.agent_type, validTypes) ?? globalAgentType,
+    agentType: resolveAgentType(t.agent_type ?? globalAgentTypeRaw).name,
   }))
 
   // 创建进度步骤（tool_call 类型 + subAgents 字段）
@@ -406,6 +435,13 @@ export async function dispatchSubAgents(
     subAgents: [...subAgentResults]
   })
 
+  // 子 Agent system prompt 需要的项目级上下文
+  const agentContext = executor.getAgentContext?.()
+  if (!agentContext) {
+    return { success: false, output: '', error: 'dispatch_agents 需要 Agent 运行上下文（内部错误）' }
+  }
+  const aiRules = executor.getAiRules?.() ?? ''
+
   const profileId = executor.getActiveProfileId?.()
   const abortSignal = { aborted: false }
 
@@ -418,15 +454,27 @@ export async function dispatchSubAgents(
     }
   }
 
-  // Fork 模式：从父 Agent 获取完整上下文（消息历史 + 工具列表）
-  const parentContext = executor.getParentContext?.()
-  if (!parentContext || !toolCallId || parentContext.messages.length === 0) {
-    return { success: false, output: '', error: 'dispatch_agents 需要父 Agent 上下文（内部错误）' }
-  }
-
   log.info(`Dispatching ${tasks.length} sub-agents (type: ${typeLabel}, concurrent: ${maxConcurrent})`)
 
-  const forkBaseMessages = buildForkBaseMessages(parentContext.messages, toolCallId)
+  // 按 type 缓存工具列表与 system prompt，避免对每个子任务重复跑 getAgentTools + filter
+  // 与 prompt 拼接（同次 dispatch 内最多 2 个 type，共享缓存即可）
+  const toolsByType = new Map<SubAgentTypeName, ToolDefinition[]>()
+  const promptByType = new Map<SubAgentTypeName, string>()
+  const getToolsForType = (type: SubAgentTypeName): ToolDefinition[] => {
+    if (!toolsByType.has(type)) toolsByType.set(type, getSubAgentTools(type))
+    return toolsByType.get(type)!
+  }
+  const getPromptForType = (type: SubAgentTypeName): string => {
+    if (!promptByType.has(type)) {
+      promptByType.set(type, PromptBuilder.buildSubAgentSystemPrompt({
+        typePromptPrefix: SUB_AGENT_TYPES[type].systemPromptPrefix,
+        context: agentContext,
+        aiRules,
+        hostProfileService: executor.hostProfileService,
+      }))
+    }
+    return promptByType.get(type)!
+  }
 
   const allResults: SubAgentResult[] = []
   for (let i = 0; i < tasks.length; i += maxConcurrent) {
@@ -447,19 +495,17 @@ export async function dispatchSubAgents(
       const taskAgentType = task.agentType || globalAgentType
       const typeDefinition = resolveAgentType(taskAgentType)
       const subExecutor = buildSubAgentExecutorConfig(executor, config, abortSignal)
-      const directive = buildForkDirective(task, typeDefinition)
-      const initialMessages: AiMessage[] = [...forkBaseMessages, { role: 'user' as const, content: directive }]
+      const systemPrompt = getPromptForType(typeDefinition.name)
 
-      // 子 Agent 工具列表按白名单过滤（同时也是父 Agent 工具列表的连续前缀，
-      // 保留 messages 与工具列表前缀部分的 prompt cache 命中）
-      const subTools = getSubAgentTools(taskAgentType)
+      // 子 Agent 工具列表按类型从缓存取（同 type 跨子任务复用，保证 byte-exact 一致）
+      const subTools = getToolsForType(typeDefinition.name)
 
       return runSubAgent({
         task,
         aiService,
         tools: subTools,
         allowedTools: typeDefinition.tools,
-        initialMessages,
+        systemPrompt,
         executorConfig: subExecutor,
         agentConfig: config,
         profileId,
@@ -513,81 +559,7 @@ export async function dispatchSubAgents(
   }
 }
 
-// ==================== Fork 上下文构建 ====================
-
-/**
- * 构建 fork 基础消息：父 Agent 的完整消息历史 + 缺失的 tool_result 占位
- *
- * 所有子 Agent 共享这个前缀（byte-exact 一致），各自追加不同的 user 指令。
- * Anthropic/DeepSeek 的前缀缓存机制会自动复用这段共享前缀，只对追加部分收费。
- */
-function buildForkBaseMessages(parentMessages: AiMessage[], dispatchToolCallId: string): AiMessage[] {
-  const messages = parentMessages.map(m => ({ ...m }))
-
-  // 找到最后一条包含 tool_calls 的 assistant 消息
-  let lastAssistantIdx = -1
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === 'assistant' && messages[i].tool_calls?.length) {
-      lastAssistantIdx = i
-      break
-    }
-  }
-
-  if (lastAssistantIdx >= 0) {
-    const assistantMsg = messages[lastAssistantIdx]
-    const existingResultIds = new Set(
-      messages.slice(lastAssistantIdx + 1)
-        .filter(m => m.role === 'tool')
-        .map(m => m.tool_call_id)
-    )
-
-    // 为所有尚无 tool_result 的 tool_call 添加占位（包括 dispatch_agents 自身）
-    for (const tc of assistantMsg.tool_calls || []) {
-      if (!existingResultIds.has(tc.id)) {
-        messages.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          content: FORK_PLACEHOLDER
-        })
-      }
-    }
-  }
-
-  return messages
-}
-
-/**
- * 构建 fork 指令消息：告知子 Agent 它的身份、类型约束和具体任务
- *
- * 这条 user 消息追加在 fork 前缀之后，是唯一因子 Agent 而异的部分。
- *
- * 子 Agent 看到的工具列表已按白名单过滤（不会出现 dispatch_agents/talk_to_user
- * 等父专属工具），无需在 prompt 中重复声明"哪些工具不能用"。
- */
-function buildForkDirective(task: SubAgentTask, agentType: SubAgentType): string {
-  return [
-    `你现在是一个并行子任务执行器（${agentType.name} 类型）。`,
-    agentType.systemPromptPrefix,
-    '',
-    '## 约束',
-    '- **禁止编造**：必须通过工具获取真实数据，严禁凭空生成、模拟或推测工具执行结果。如果无法执行，明确说明原因',
-    '- 完成任务后直接输出结果文本，不要多余寒暄',
-    '',
-    `## 任务：${task.description}`,
-    '',
-    task.prompt
-  ].join('\n')
-}
-
 // ==================== 辅助函数 ====================
-
-/** 校验 agent_type 有效性，无效时返回 undefined（由调用方决定 fallback） */
-function validateAgentType(value: string | undefined, validTypes: SubAgentTypeName[]): SubAgentTypeName | undefined {
-  if (!value) return undefined
-  if (validTypes.includes(value as SubAgentTypeName)) return value as SubAgentTypeName
-  log.warn(`Invalid agent_type "${value}", valid values: ${validTypes.join(', ')}`)
-  return undefined
-}
 
 function summarizeToolArgs(toolName: string, argsStr?: string): string | undefined {
   if (!argsStr) return undefined

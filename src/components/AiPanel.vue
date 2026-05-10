@@ -6,7 +6,7 @@
  */
 import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Upload, Trash2, X, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MoreHorizontal } from 'lucide-vue-next'
+import { Upload, Trash2, X, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MoreHorizontal, Shuffle } from 'lucide-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useConfigStore } from '../stores/config'
@@ -16,6 +16,7 @@ import AiComposer from './AiComposer.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
 import ToolCallContent from './ToolCallContent.vue'
 import ImageContextMenu from './ImageContextMenu.vue'
+import EChartsCanvas from './EChartsCanvas.vue'
 import { useImageActions } from '../composables/useImageActions'
 import { parseThinking } from '../utils/thinking-block'
 import { createLogger } from '../utils/logger'
@@ -35,6 +36,11 @@ import {
   toast
 } from '../composables'
 import { showConfirm } from '../composables/useConfirm'
+import {
+  getFeaturedExamples,
+  shuffleExamples as shuffleExamplePool,
+  type AssistantExample,
+} from '../config/assistantExamples'
 
 // Props - 每个 AiPanel 实例绑定到特定的 tab
 const props = defineProps<{
@@ -72,6 +78,28 @@ const handleClose = () => {
 const messagesRef = ref<HTMLDivElement | null>(null)
 const scrollerRef = ref<InstanceType<typeof DynamicScroller> | null>(null)
 const composerRef = ref<InstanceType<typeof AiComposer> | null>(null)
+
+// ==================== 独立助手能力示例网格 ====================
+// 欢迎区展示的 8 张场景卡片。首屏精选覆盖最广能力组合，"换一批"从 25 条池子洗牌。
+// 仅独立助手 tab 使用，因此普通终端 tab 上 displayedExamples 不会被读取，开销可忽略。
+const displayedExamples = ref<AssistantExample[]>(getFeaturedExamples())
+const shuffleSpinning = ref(false)
+const shuffleScenarios = () => {
+  // 排除当前展示的 ID，避免连点两次出现完全相同的卡片
+  const currentIds = displayedExamples.value.map(e => e.id)
+  displayedExamples.value = shuffleExamplePool(currentIds)
+  // 给按钮一次旋转动画，仅视觉反馈
+  shuffleSpinning.value = false
+  nextTick(() => {
+    shuffleSpinning.value = true
+    setTimeout(() => { shuffleSpinning.value = false }, 600)
+  })
+}
+const handleScenarioClick = (example: AssistantExample) => {
+  const prompt = t(`ai.agentWelcome.scenarios.${example.id}.prompt`)
+  composerRef.value?.setText(prompt)
+  composerRef.value?.flashHint()
+}
 
 // 统一附件选择（图片 + 文档，自动按类型分流）
 const isAttaching = computed(() => isUploadingDocs.value || isProcessingImage.value)
@@ -1043,6 +1071,22 @@ const handleDragLeave = (e: DragEvent) => {
 
 // ==================== 图片预览（支持缩放、拖拽、键盘导航） ====================
 const previewImageUrl = ref<string | null>(null)
+// 活图预览载荷：当点击"活图"（chart skill 投递的 echartsOption）时填入；
+// 模态优先用 EChartsCanvas 渲染（保留 tooltip / dataZoom 等交互），否则降级到 <img>。
+// 上下/左右导航触发时清空（导航目标可能是普通 SVG 图），让降级路径自然接管。
+const previewEchartsPayload = ref<import('@shared/types').EChartsStepPayload | null>(null)
+// 视口尺寸——给活图预览容器算"contain 进 90vw × 90vh 框"的具体 width/height。
+// 不能纯靠 CSS（max-width/max-height + aspect-ratio）：父容器 .image-preview-modal-content
+// 是 max-content sizing，子元素 EChartsCanvas 又要 width:100%——两边互相依赖塌陷为 0×0。
+const winSize = ref({ w: 1024, h: 768 })
+function updateWinSize() {
+  if (typeof window !== 'undefined') {
+    winSize.value = { w: window.innerWidth, h: window.innerHeight }
+  }
+}
+// 大图预览的 EChartsCanvas 实例 ref——复制图片 / 另存为时通过 getDataURL() 拿当前
+// (含用户交互后的 dataZoom 范围) 的高清 dataURL，比 step.images 里 SVG dataURL 更鲜活
+const previewEchartsRef = ref<InstanceType<typeof EChartsCanvas> | null>(null)
 // 弹窗根节点 ref。用于手动绑 wheel 事件并显式 { passive: false }——
 // 模板里 @wheel.prevent 会让 Chrome 报"non-passive scroll-blocking"警告，
 // 因为 Vue 的 patchEvent 不显式传 passive 参数。
@@ -1060,22 +1104,39 @@ let dragStartTranslateY = 0
 const previewGroupIdx = ref(-1)
 const previewImageIdx = ref(-1)
 
-interface PreviewImageGroup {
-  groupId: string
-  images: string[]
+// 预览模式每张图都附带可选的 echartsPayload——这样左右/上下方向键导航时也能恢复活图
+// 模式（之前因为只存 string[]，导航时丢了 payload 上下文，切到下一张就退化成 <img>）。
+interface PreviewItem {
+  url: string
+  echartsPayload?: import('@shared/types').EChartsStepPayload
 }
 
-// 收集所有对话中的图片，按任务分组（用户图片 + 步骤图片合并到同一组）
+interface PreviewImageGroup {
+  groupId: string
+  items: PreviewItem[]
+}
+
+// 收集所有对话中的图片，按任务分组（用户图片 + 步骤图片合并到同一组）。
+// 一个 step 通常只有一张图但有一个 step.echartsOption——把 payload 关联到 step.images[0]，
+// 后续图（如果有）走纯 <img> 兜底（chart skill 当前是一 step 一图，不会触发；其它 skill
+// 多图时活图能力本来也没注入）。
 const allPreviewImages = computed((): PreviewImageGroup[] => {
   const result: PreviewImageGroup[] = []
   for (const group of agentTaskGroups.value) {
-    const images: string[] = []
-    if (group.images?.length) images.push(...group.images)
-    for (const step of group.steps) {
-      if (step.images?.length) images.push(...step.images)
+    const items: PreviewItem[] = []
+    if (group.images?.length) {
+      for (const url of group.images) items.push({ url })
     }
-    if (images.length > 0) {
-      result.push({ groupId: group.id, images })
+    for (const step of group.steps) {
+      if (!step.images?.length) continue
+      const payload = step.echartsOption
+      items.push({ url: step.images[0], echartsPayload: payload })
+      for (let i = 1; i < step.images.length; i++) {
+        items.push({ url: step.images[i] })
+      }
+    }
+    if (items.length > 0) {
+      result.push({ groupId: group.id, items })
     }
   }
   return result
@@ -1087,13 +1148,19 @@ const resetPreviewTransform = () => {
   previewTranslateY.value = 0
 }
 
-const openImagePreview = (url: string) => {
+const openImagePreview = (
+  url: string,
+  echartsPayload?: import('@shared/types').EChartsStepPayload
+) => {
   previewImageUrl.value = url
+  // 仅当本次点击来自"活图"时填载荷；普通 SVG/PNG 图调用方传 undefined（不传也行），
+  // 模态自然走 <img> 路径
+  previewEchartsPayload.value = echartsPayload ?? null
   resetPreviewTransform()
   previewGroupIdx.value = -1
   previewImageIdx.value = -1
   for (let gi = 0; gi < allPreviewImages.value.length; gi++) {
-    const imgIdx = allPreviewImages.value[gi].images.indexOf(url)
+    const imgIdx = allPreviewImages.value[gi].items.findIndex(it => it.url === url)
     if (imgIdx !== -1) {
       previewGroupIdx.value = gi
       previewImageIdx.value = imgIdx
@@ -1104,6 +1171,8 @@ const openImagePreview = (url: string) => {
 
 const closeImagePreview = () => {
   previewImageUrl.value = null
+  previewEchartsPayload.value = null
+  // previewEchartsRef.value 由 Vue 在子组件 unmount 时自动写回 null，无需手动清零
   isDraggingImage.value = false
 }
 
@@ -1122,6 +1191,13 @@ const openImageContextMenu = (e: MouseEvent, url: string) => {
   imageContextMenu.url = url
 }
 
+// 「活图」EChartsCanvas 触发右键菜单时,组件 emit 的载荷形如 { event, dataUrl }——
+// 模板里直接写带 TS 类型的内联箭头函数会被 Vue 模板编译器拒（它不支持模板表达式里的
+// 类型注解）；抽到 <script setup> 里做薄包装后模板写法回退到无类型的 @contextmenu="onEchartsContextMenu"
+const onEchartsContextMenu = (payload: { event: MouseEvent; dataUrl: string }) => {
+  openImageContextMenu(payload.event, payload.dataUrl)
+}
+
 const closeImageContextMenu = () => {
   imageContextMenu.show = false
   imageContextMenu.url = null
@@ -1131,10 +1207,14 @@ const navigatePreview = (groupIdx: number, imageIdx: number) => {
   const groups = allPreviewImages.value
   if (groupIdx < 0 || groupIdx >= groups.length) return
   const group = groups[groupIdx]
-  if (imageIdx < 0 || imageIdx >= group.images.length) return
+  if (imageIdx < 0 || imageIdx >= group.items.length) return
+  const item = group.items[imageIdx]
   previewGroupIdx.value = groupIdx
   previewImageIdx.value = imageIdx
-  previewImageUrl.value = group.images[imageIdx]
+  previewImageUrl.value = item.url
+  // PreviewItem 同时携带 echartsPayload，导航到活图项时自动还原可交互模式；
+  // 普通图项 echartsPayload 为 undefined → null，模板自然走 <img> 路径。
+  previewEchartsPayload.value = item.echartsPayload ?? null
   resetPreviewTransform()
 }
 
@@ -1142,7 +1222,7 @@ const navigatePreview = (groupIdx: number, imageIdx: number) => {
 const canGoLeft = computed(() => previewImageIdx.value > 0)
 const canGoRight = computed(() => {
   const g = allPreviewImages.value[previewGroupIdx.value]
-  return g ? previewImageIdx.value < g.images.length - 1 : false
+  return g ? previewImageIdx.value < g.items.length - 1 : false
 })
 const canGoUp = computed(() => previewGroupIdx.value > 0)
 const canGoDown = computed(() => previewGroupIdx.value >= 0 && previewGroupIdx.value < allPreviewImages.value.length - 1)
@@ -1152,11 +1232,11 @@ const goRight = () => canGoRight.value && navigatePreview(previewGroupIdx.value,
 const goUp = () => {
   if (!canGoUp.value) return
   const prevGroup = allPreviewImages.value[previewGroupIdx.value - 1]
-  navigatePreview(previewGroupIdx.value - 1, prevGroup.images.length - 1)
+  navigatePreview(previewGroupIdx.value - 1, prevGroup.items.length - 1)
 }
 const goDown = () => canGoDown.value && navigatePreview(previewGroupIdx.value + 1, 0)
 
-const currentGroupImageCount = computed(() => allPreviewImages.value[previewGroupIdx.value]?.images.length ?? 0)
+const currentGroupImageCount = computed(() => allPreviewImages.value[previewGroupIdx.value]?.items.length ?? 0)
 
 // 滚轮缩放
 const handlePreviewWheel = (e: WheelEvent) => {
@@ -1181,6 +1261,15 @@ const handlePreviewDblClick = () => resetPreviewTransform()
 // 拖拽平移
 const handlePreviewMouseDown = (e: MouseEvent) => {
   if (e.button !== 0) return
+  // 「活图」预览模态：mousedown 落在 EChartsCanvas 内部时直接放行——echarts 自己要用
+  // mousedown 启动 dataZoom 拖动 / brush 框选 / legend 点击等核心交互，外层包装的
+  // 「拖动平移」一旦抢断这个事件就把活图最值钱的能力废掉了。空白区域（图表四周的
+  // padding）仍然走拖动平移，保持普通预览的视觉操作惯例。
+  // 注意：用 closest 而不是 ===，因为 echarts SVG renderer 渲染出来的 <g><path> 等
+  // 子节点是真正的事件 target，不是 .echarts-canvas 这个父容器
+  if (previewEchartsPayload.value && (e.target as HTMLElement | null)?.closest?.('.echarts-canvas')) {
+    return
+  }
   e.preventDefault()
   isDraggingImage.value = true
   dragStartX = e.clientX
@@ -1205,6 +1294,33 @@ const handlePreviewMouseDown = (e: MouseEvent) => {
 // 预览图片的 transform 样式
 const previewTransform = computed(() => {
   return `translate(${previewTranslateX.value}px, ${previewTranslateY.value}px) scale(${previewScale.value})`
+})
+
+// 活图预览容器的具体 width/height —— 按 viewport 90vw × 90vh 做 contain 算法，
+// 同时保留后端建议尺寸作为天花板（小图不放大）。父容器拿到具体尺寸后子组件
+// EChartsCanvas mode='preview' 用 width:100%/height:100% 跟随，echarts 实例内部
+// 的 ResizeObserver 会在 winSize 变化时自动 resize。
+const PREVIEW_MAX_WIDTH_VW = 0.9
+const PREVIEW_MAX_HEIGHT_VH = 0.9
+const PREVIEW_ABS_MAX_WIDTH = 1600
+const previewEchartsBoxStyle = computed<Record<string, string>>(() => {
+  if (!previewEchartsPayload.value) return {} as Record<string, string>
+  const { width: pw, height: ph } = previewEchartsPayload.value
+  const ratio = pw / Math.max(1, ph)
+  const maxW = Math.min(winSize.value.w * PREVIEW_MAX_WIDTH_VW, PREVIEW_ABS_MAX_WIDTH, pw)
+  const maxH = Math.min(winSize.value.h * PREVIEW_MAX_HEIGHT_VH, ph)
+  // contain：先按宽度满铺，若反推高度超 maxH 再翻转改用高度满铺
+  let w = maxW
+  let h = w / ratio
+  if (h > maxH) {
+    h = maxH
+    w = h * ratio
+  }
+  return {
+    width: `${Math.round(w)}px`,
+    height: `${Math.round(h)}px`,
+    transform: previewTransform.value
+  }
 })
 
 // 拖放放下（支持文档和图片）
@@ -1245,7 +1361,9 @@ const handleKeyDown = (e: KeyboardEvent) => {
       if (!sel) {
         e.preventDefault()
         e.stopImmediatePropagation()
-        const url = previewImageUrl.value
+        // 「活图」预览时优先用 echarts 实例的 getDataURL 拿当前实时（含用户拖过的 dataZoom）
+        // 高清 PNG，比把后端 SVG 兜底图再 canvas 转一遍质量更好；普通图沿用 previewImageUrl
+        const url = previewEchartsRef.value?.getDataURL('png') || previewImageUrl.value
         if (url) copyImage(url).catch(() => { /* toast 已显示 */ })
         return
       }
@@ -1325,6 +1443,9 @@ const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
       item.step.toolResult,
       item.step.isStreaming,
       item.step.images?.length,
+      // 活图（echartsOption）出现/消失会改变这一行高度（ImagePlaceholder vs EChartsCanvas
+      // 的最大尺寸不同），让 size dep 把它感知到，避免虚拟滚动布局错位
+      !!item.step.echartsOption,
       item.isFirstStep,
       isStandaloneAssistant.value,
       thinkingExpandedForSize,
@@ -1349,6 +1470,8 @@ const warmupMessageList = () => {
 onMounted(() => {
   isMounted.value = true
   loadHostProfile()
+  updateWinSize()
+  window.addEventListener('resize', updateWinSize)
   document.addEventListener('keydown', handleKeyDown)
   // 捕获阶段：终端聚焦时 Ctrl+字母 的 keydown 可能无法冒泡到 document，导致无法用「第二键」取消以 Control 为 PTT 键时的长按计时
   document.addEventListener('keydown', handlePTTKeyDown, true)
@@ -1366,6 +1489,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearPTTStopTimer()
+  window.removeEventListener('resize', updateWinSize)
   document.removeEventListener('keydown', handleKeyDown)
   document.removeEventListener('keydown', handlePTTKeyDown, true)
   document.removeEventListener('keyup', handlePTTKeyUp, true)
@@ -1657,7 +1781,9 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           isLoadingAllHistory,
           executionMode,
           isStandaloneAssistant,
-          hasNewMessage
+          hasNewMessage,
+          displayedExamples,
+          shuffleSpinning
         ]"
       >
         <DynamicScroller
@@ -1679,19 +1805,46 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
               <p class="welcome-section-title">💡 {{ t('ai.agentWelcome.whatIsAgent') }}</p>
               <p class="welcome-desc">{{ isStandaloneAssistant ? t('ai.agentWelcome.standaloneDesc') : t('ai.agentWelcome.agentDesc') }}</p>
               
-              <p class="welcome-section-title">🎯 {{ t('ai.agentWelcome.examples') }}</p>
-              <ul v-if="isStandaloneAssistant">
-                <li>{{ t('ai.agentWelcome.standaloneExample1') }}</li>
-                <li>{{ t('ai.agentWelcome.standaloneExample2') }}</li>
-                <li>{{ t('ai.agentWelcome.standaloneExample3') }}</li>
-                <li>{{ t('ai.agentWelcome.standaloneExample4') }}</li>
-              </ul>
-              <ul v-else>
-                <li>{{ t('ai.agentWelcome.example1') }}</li>
-                <li>{{ t('ai.agentWelcome.example2') }}</li>
-                <li>{{ t('ai.agentWelcome.example3') }}</li>
-                <li>{{ t('ai.agentWelcome.example4') }}</li>
-              </ul>
+              <!-- 独立助手：可点击的能力示例网格（25 条池子，首屏精选 8，"换一批"洗牌） -->
+              <template v-if="isStandaloneAssistant">
+                <div class="scenarios-header">
+                  <p class="welcome-section-title">🎯 {{ t('ai.agentWelcome.examples') }}</p>
+                  <button
+                    class="shuffle-btn"
+                    :class="{ spinning: shuffleSpinning }"
+                    :title="t('ai.agentWelcome.shuffleTooltip')"
+                    @click="shuffleScenarios"
+                  >
+                    <Shuffle :size="13" />
+                    <span>{{ t('ai.agentWelcome.shuffleExamples') }}</span>
+                  </button>
+                </div>
+                <p class="scenarios-hint">{{ t('ai.agentWelcome.examplesHint') }}</p>
+                <div class="scenario-grid">
+                  <button
+                    v-for="example in displayedExamples"
+                    :key="example.id"
+                    class="scenario-card"
+                    :data-category="example.category"
+                    :title="t(`ai.agentWelcome.scenarios.${example.id}.prompt`)"
+                    @click="handleScenarioClick(example)"
+                  >
+                    <span class="scenario-icon">{{ example.icon }}</span>
+                    <span class="scenario-title">{{ t(`ai.agentWelcome.scenarios.${example.id}.title`) }}</span>
+                    <span class="scenario-subtitle">{{ t(`ai.agentWelcome.scenarios.${example.id}.subtitle`) }}</span>
+                  </button>
+                </div>
+              </template>
+              <!-- 终端模式：保持原有的纯文本示例列表 -->
+              <template v-else>
+                <p class="welcome-section-title">🎯 {{ t('ai.agentWelcome.examples') }}</p>
+                <ul>
+                  <li>{{ t('ai.agentWelcome.example1') }}</li>
+                  <li>{{ t('ai.agentWelcome.example2') }}</li>
+                  <li>{{ t('ai.agentWelcome.example3') }}</li>
+                  <li>{{ t('ai.agentWelcome.example4') }}</li>
+                </ul>
+              </template>
 
               <p class="welcome-section-title">
                 <template v-if="executionMode === 'free'">🔥 {{ t('ai.agentWelcome.freeMode') }} <span class="strict-badge free">{{ t('ai.agentWelcome.freeModeOn') }}</span></template>
@@ -2066,7 +2219,19 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                     <div v-if="item.step!.toolResult && !item.step!.rejected && item.step!.toolResult !== item.step!.content && item.step!.type !== 'asking' && !item.step!.subAgents" class="step-result">
                       <pre>{{ item.step!.toolResult }}</pre>
                     </div>
-                    <div v-if="item.step!.images && item.step!.images.length > 0" class="step-images">
+                    <!-- 「活图」优先：chart skill 在 svg 模式下投递 echartsOption（同时也带 SVG 兜底到 step.images），
+                         前端把它实例化成可交互的 ECharts，单击放大/右键复制走 EChartsCanvas 内部 getDataURL 的高清 PNG。
+                         单击时把 step.images[0]（SVG dataURL）一起传给 openImagePreview，让导航定位能在 group 中找到当前位置。 -->
+                    <div v-if="item.step!.echartsOption" class="step-images">
+                      <EChartsCanvas
+                        :payload="item.step!.echartsOption"
+                        :alt="item.step!.toolResult || 'chart'"
+                        mode="thumb"
+                        @preview="openImagePreview(item.step!.images?.[0] ?? '', item.step!.echartsOption)"
+                        @contextmenu="onEchartsContextMenu"
+                      />
+                    </div>
+                    <div v-else-if="item.step!.images && item.step!.images.length > 0" class="step-images">
                       <img
                         v-for="(imgUrl, imgIdx) in item.step!.images"
                         :key="imgIdx"
@@ -2226,9 +2391,30 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         <button class="image-preview-close" @click="closeImagePreview">
           <X :size="20" />
         </button>
-        <img 
-          :src="previewImageUrl" 
-          class="image-preview-full" 
+        <!-- 「活图」预览：当点击的是 chart skill 投递的活图时，模态里也用 EChartsCanvas 渲染，
+             保留 tooltip / dataZoom / legend toggle 等所有交互能力。复制图片 / 另存为通过
+             previewEchartsRef.getDataURL() 拿当前实时（含用户拖过的 dataZoom 范围）高清 PNG。
+             缩放和拖拽也作用在 EChartsCanvas 上——CSS transform 控制外层包装，echarts 实例
+             保持原始尺寸不影响交互精度。-->
+        <div
+          v-if="previewEchartsPayload"
+          class="image-preview-full image-preview-echarts"
+          :class="{ 'dragging': isDraggingImage }"
+          :style="previewEchartsBoxStyle"
+          @mousedown="handlePreviewMouseDown"
+          @dblclick="handlePreviewDblClick"
+        >
+          <EChartsCanvas
+            ref="previewEchartsRef"
+            :payload="previewEchartsPayload"
+            mode="preview"
+            @contextmenu="onEchartsContextMenu"
+          />
+        </div>
+        <img
+          v-else
+          :src="previewImageUrl"
+          class="image-preview-full"
           :class="{ 'dragging': isDraggingImage }"
           :style="{ transform: previewTransform }"
           @mousedown="handlePreviewMouseDown"
@@ -3119,6 +3305,166 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .strict-badge.free {
   background: var(--color-error);
+}
+
+/* ==================== 独立助手能力示例网格 ==================== */
+
+.scenarios-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+.scenarios-header .welcome-section-title {
+  margin: 0;
+}
+
+.shuffle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.shuffle-btn:hover {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent-decorative-primary) 60%, var(--border-color));
+  background: color-mix(in srgb, var(--accent-decorative-primary) 8%, transparent);
+}
+
+.shuffle-btn:active {
+  transform: scale(0.96);
+}
+
+.shuffle-btn :deep(svg) {
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.shuffle-btn:hover :deep(svg),
+.shuffle-btn.spinning :deep(svg) {
+  transform: rotate(360deg);
+}
+
+.scenarios-hint {
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+/* 宽面板（>= 760px）切到 4 列：独立助手 tab 占满主区时常见，让信息密度更高 */
+@media (min-width: 760px) {
+  .scenario-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* 中等宽度（>= 520px）切到 3 列，避免 2 列时单卡过宽 */
+@media (min-width: 520px) and (max-width: 759px) {
+  .scenario-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/*
+ * 两行布局：
+ *   ┌──────────────────────────┐
+ *   │ 📊  数据可视化            │
+ *   │     柱状图 + 折线图        │
+ *   └──────────────────────────┘
+ * 设计取舍：
+ *   - 去掉 tag 胶囊（emoji + 标题已能表达类别，胶囊重复且增重）
+ *   - 卡片背景透明、边框 50% 透明，hover 才浅染——一眼看到的不是"8 个独立按钮"，
+ *     而是"一片可点的能力网格"，整体噪点显著下降
+ *   - 高度从 76px 收到 ~52px，减小 padding，让 8 张卡视觉占用更轻
+ */
+.scenario-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    "icon title"
+    "icon subtitle";
+  align-items: center;
+  gap: 0 10px;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.2s ease,
+              background 0.2s ease;
+  position: relative;
+  overflow: hidden;
+  min-height: 52px;
+}
+
+.scenario-card:hover {
+  border-color: color-mix(in srgb, var(--accent-decorative-primary) 55%, var(--border-color));
+  background: color-mix(in srgb, var(--accent-decorative-primary) 6%, transparent);
+  transform: translateY(-1px);
+}
+
+.scenario-card:active {
+  transform: translateY(0);
+}
+
+.scenario-icon {
+  grid-area: icon;
+  font-size: 20px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+}
+
+.scenario-title {
+  grid-area: title;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+  align-self: end;
+  margin-bottom: 1px;
+  /* 单行省略，避免长标题撑破卡片高度 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scenario-subtitle {
+  grid-area: subtitle;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.3;
+  align-self: start;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ==================== 历史对话列表样式 ==================== */
@@ -5816,6 +6162,28 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .image-preview-full.dragging {
   cursor: grabbing;
+}
+
+/* 「活图」预览容器：width / height 由 previewEchartsBoxStyle (JS) 内联提供。
+ *
+ * 不能纯靠 CSS 实现 contain 进 90vw × 90vh：父容器 .image-preview-modal-content
+ * 是 max-content sizing，没有具体 width；子组件 EChartsCanvas 又得 width:100%
+ * 才能跟随。两边互相依赖会塌陷为 0×0（曾经踩过这个坑——大图打不开就是这个原因）。
+ *
+ * 现在父容器拿到 JS 算好的具体像素，子元素 100%/100% 跟随，echarts 内部 ResizeObserver
+ * 在 winSize 变化时自动 resize，没有 aspect-ratio 重复约束的边界 case。
+ */
+.image-preview-echarts {
+  border-radius: 8px;
+  cursor: grab;
+  transform-origin: center center;
+  transition: none;
+  user-select: none;
+  background: var(--bg-primary, #1a1a1a);
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  overflow: hidden;
 }
 
 .image-preview-close {

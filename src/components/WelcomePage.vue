@@ -5,7 +5,7 @@
  */
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Bot, SquareTerminal, Monitor } from 'lucide-vue-next'
+import { Bot, SquareTerminal, Monitor, Eye } from 'lucide-vue-next'
 import { useConfigStore, type SshSession } from '../stores/config'
 import MatrixRain from './EasterEgg/MatrixRain.vue'
 import sailfishLogo from '../../resources/logo.png'
@@ -64,10 +64,15 @@ const emit = defineEmits<{
   'open-ssh': [session: SshSession]
   'open-session-manager': []
   'open-smart-patrol': []
+  'open-watches': []
 }>()
 
 const openAssistant = () => {
   emit('open-assistant')
+}
+
+const openWatches = () => {
+  emit('open-watches')
 }
 
 // 最近连接的会话（最多显示 5 个，按最近使用时间逆序排序）
@@ -154,6 +159,17 @@ const formatHost = (session: SshSession) => {
             </div>
           </div>
 
+          <!-- 关切总览（Steam 版隐藏，无 Agent 即无关切） -->
+          <div v-if="!isSteamBuild" class="action-card" @click="openWatches">
+            <div class="card-icon watch">
+              <Eye :size="32" :stroke-width="1.5" />
+            </div>
+            <div class="card-content">
+              <div class="card-title">{{ t('welcome.watch') }}</div>
+              <div class="card-desc">{{ t('welcome.watchDesc') }}</div>
+            </div>
+          </div>
+
           <!-- 智能巡检（暂时隐藏）
           <div class="action-card" @click="openSmartPatrol">
             <div class="card-icon patrol">
@@ -219,7 +235,7 @@ const formatHost = (session: SshSession) => {
 }
 
 .welcome-content {
-  max-width: 720px;
+  max-width: 780px;
   width: 100%;
   margin: auto;
   /* 入场动画 */
@@ -358,16 +374,22 @@ const formatHost = (session: SshSession) => {
   }
 }
 
+/* 卡片容器：默认 4 列等宽 grid，让"关切"始终与前 3 张同行不换行；
+   窗口很窄时（< 640px）降级为单列纵向堆叠。 */
 .action-cards {
-  display: flex;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
   gap: 20px;
+  justify-content: center;
 }
 
 @media (max-width: 640px) {
   .action-cards {
-    flex-direction: column;
-    align-items: center;
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+  .action-card {
+    width: min(280px, 100%);
   }
 }
 
@@ -396,9 +418,9 @@ const formatHost = (session: SshSession) => {
   justify-content: center;
   text-align: center;
   gap: 12px;
-  width: 170px;
+  /* 宽度由 grid 列均分；保留 height 与 min-width 防止内容挤压 */
+  min-width: 0;
   height: 165px;
-  flex-shrink: 0;
   overflow: hidden;
   /* 入场动画只用 opacity，让 hover transform 正常工作 */
   animation: cardFadeIn 0.25s ease-out both;
@@ -421,10 +443,16 @@ const formatHost = (session: SshSession) => {
   --card-glow-rgb: var(--brand-patrol-rgb);
   --card-glow-color: var(--brand-patrol);
 }
+/* 关切：橙色品牌色（与 ssh 蓝/local 绿/assistant 紫错开），呼应"运营监控"语义 */
+.action-card:has(.card-icon.watch) {
+  --card-glow-rgb: 245, 158, 11;
+  --card-glow-color: #f59e0b;
+}
 
 .action-card:nth-child(1) { animation-delay: 0.10s; }
 .action-card:nth-child(2) { animation-delay: 0.16s; }
 .action-card:nth-child(3) { animation-delay: 0.22s; }
+.action-card:nth-child(4) { animation-delay: 0.28s; }
 
 @keyframes cardFadeIn {
   from { opacity: 0; }
@@ -540,6 +568,10 @@ const formatHost = (session: SshSession) => {
 
 .card-icon.patrol {
   background: linear-gradient(135deg, var(--brand-patrol), var(--brand-patrol-end));
+}
+
+.card-icon.watch {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
 }
 
 /* 标题 hover 不再变色：

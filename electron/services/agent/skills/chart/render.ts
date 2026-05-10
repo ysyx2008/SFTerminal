@@ -8,6 +8,18 @@
  */
 
 import { getTheme, getKlineProTheme, type ChartTheme, type KlineStyle, type ThemePreset, type KlineProTheme } from './presets'
+import {
+  formatVolume as _formatVolume,
+  formatKlineTooltip as _formatKlineTooltip
+} from '../../../../../shared/utils/echarts-formatters'
+import { tagFormatter } from './ipc-sanitize'
+
+// 给 K 线相关 formatter 加 IPC marker tag——后端 SSR 时按 function 调用，投 IPC 给前端时
+// sanitizeOptionForIpc 通过 tag 把它替换成 { __echartsFn: id } marker，前端 reify 时按 id
+// 在 FORMATTER_REGISTRY 查表还原。这样既保 K 线副图 yAxis 中文成交量格式（亿/万/k）和 tooltip
+// 中文 OHLC（开盘/收盘/最低/最高），又让 K 线 option 完整通过 IPC 在前端实例化为活图。
+const formatVolume = tagFormatter('volume', _formatVolume as (...args: unknown[]) => unknown) as (v: number) => string
+const formatKlineTooltip = tagFormatter('klineTooltip', _formatKlineTooltip as (...args: unknown[]) => unknown) as typeof _formatKlineTooltip
 
 export type ChartType =
   | 'bar'
@@ -86,9 +98,10 @@ export function buildOption(input: ChartInput, hint?: BuildHint): EChartsOption 
  *   width 2400-4800 → 线性 → 2.0    （≈28px）
  *   width >= 4800  → 2.0 上限
  *
- * K 线场景本来就鼓励大画布（半年/全年日 K 经常 4000+px），1280 基准让"标准
- * 大小"K 线的字号和早期手工调过的视觉效果一致；普通图表使用更小的基准（见
- * 下方 calcFontScale），因为它们默认画布也小很多。
+ * 1280 基准跟 SVG 活图模式下的"日常显示尺寸"对齐（缩略图 480 / 大图 ~1440），
+ * 字号在 14-20px 落在视觉舒适区间。PNG 模式嵌 Word/PDF 时如果 AI 选 4800+，
+ * 字号自动拉到 2.0× 上限，对位图静态显示同样合理。普通图表使用更小的基准
+ * （见下方 calcFontScale），因为它们的"日常尺寸"本身更接近 800-1280。
  */
 function calcKlineFontScale(width: number | undefined): number {
   if (!width || width <= 1280) return 1
@@ -177,6 +190,32 @@ function describe(v: unknown): string {
   return typeof v
 }
 
+/**
+ * 完整描述 data 对象的"形状"——顶层 keys 全列（不像 describe 截断 4 个）。
+ * 给 throw 信息当后缀，让 AI 看到自己实际传的 data 长啥样：
+ *
+ *   "candlestick data.categories must be string[], got undefined
+ *    (received data: object(keys=dates,prices,vol))"
+ *
+ * 这样 AI 第二次重试时一眼能看出是把 "categories" 写成了 "dates"，不用反复猜。
+ * 弱模型（豆包 Lite / DeepSeek Flash 等）实测在错误信息只有 "got undefined" 时
+ * 会反复发同样错误的 args，加上这个后缀后能明显提升自纠正成功率。
+ *
+ * 截断策略：keys 总长 > 200 字符时截断（避免 AI 误传超大对象时日志爆炸）。
+ */
+function dataShape(v: unknown): string {
+  if (v === null) return 'null'
+  if (v === undefined) return 'undefined'
+  if (Array.isArray(v)) return `array(len=${v.length})`
+  if (typeof v === 'object') {
+    const keys = Object.keys(v as Record<string, unknown>)
+    if (keys.length === 0) return 'object(keys=<empty>)'
+    const joined = keys.join(',')
+    return `object(keys=${joined.length > 200 ? joined.slice(0, 200) + '...' : joined})`
+  }
+  return typeof v
+}
+
 function asCategorySeries(raw: unknown, chartType: string): CategorySeriesData {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error(
@@ -188,10 +227,16 @@ function asCategorySeries(raw: unknown, chartType: string): CategorySeriesData {
   const categories = obj.categories
   const series = obj.series
   if (!Array.isArray(categories) || !categories.every(c => typeof c === 'string')) {
-    throw new Error(`${chartType} data.categories must be string[], got ${describe(categories)}`)
+    throw new Error(
+      `${chartType} data.categories must be string[], got ${describe(categories)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
   }
   if (!Array.isArray(series) || series.length === 0) {
-    throw new Error(`${chartType} data.series must be a non-empty array, got ${describe(series)}`)
+    throw new Error(
+      `${chartType} data.series must be a non-empty array, got ${describe(series)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
   }
   for (const [i, s] of series.entries()) {
     if (!s || typeof s !== 'object') throw new Error(`${chartType} series item must be object`)
@@ -212,6 +257,13 @@ function buildAxis(theme: ThemePreset, scale: number, label?: string, isCategory
   return {
     type: isCategory ? 'category' : 'value',
     name: label,
+    // nameLocation:'middle' 把 axis name 显示在 grid 边的中央而不是默认的 'end'（轴末端贴边），
+    // 解决 "应用场景" 这类多字 label 紧贴 grid right padding 时被画布边界截断的问题；
+    // x 轴 name 居中放在 grid 下方、y 轴居中放在 grid 左侧（旋转 90°），是常见的报表样式
+    nameLocation: 'middle',
+    // x 轴 nameGap 拉到 30 让 axis name 跟下方 axis label 视觉分离；y 轴 nameGap 50 让 name
+    // 越过 axis label 不重叠（y 轴 axis label 通常 35-45px 宽，留 50 安全）
+    nameGap: isCategory ? 30 : 50,
     nameTextStyle: { color: theme.axisLabelColor, fontSize: fs(12, scale) },
     axisLine: { lineStyle: { color: theme.axisLineColor } },
     // 显式设 fontSize 让 scale 生效；echarts 默认 12px 在 1.0 下不变化
@@ -255,10 +307,14 @@ function buildGrid(input: ChartInput, hasLegend: boolean, scale: number): EChart
   //   - scale > 1.7 时按字号放大（fs(12, 1.7) * 1.6 + 10 ≈ 42），避免大画布下 legend 盖住内容
   const legendBlock = hasLegend ? Math.max(42, Math.round(fs(12, scale) * 1.6) + 10) : 0
   const topBase = titleH === 0 ? (hasLegend ? 8 : 16) : titleH + 10
+  // x 轴 axis name 现在用 nameLocation:'middle' + nameGap:30 显示在 grid 下方中央，
+  // bottom 留 70 给 axis label（~24）+ nameGap（30）+ axis name 行（~16）；
+  // 没有 x_label 时也无害（用不到的留白浏览器会自动收缩）。同理 right=40 给最后一根
+  // x 轴 label（如月份"5月"）兜底，避免画到画布边缘
   return {
     left: 60,
-    right: 30,
-    bottom: 50,
+    right: 40,
+    bottom: 70,
     top: topBase + legendBlock,
     containLabel: true
   }
@@ -447,12 +503,24 @@ function validatePoints(raw: unknown, ctx: string): number[][] {
 
 function buildRadar(input: ChartInput, theme: ThemePreset, scale: number): EChartsOption {
   const raw = input.data
-  if (!raw || typeof raw !== 'object') throw new Error('radar data must be { indicators, series }')
+  if (!raw || typeof raw !== 'object') {
+    throw new Error(`radar data must be { indicators, series }, got ${dataShape(raw)}`)
+  }
   const obj = raw as Record<string, unknown>
   const indicators = obj.indicators
   const series = obj.series
-  if (!Array.isArray(indicators)) throw new Error('radar data.indicators must be array')
-  if (!Array.isArray(series) || series.length === 0) throw new Error('radar data.series must be non-empty array')
+  if (!Array.isArray(indicators)) {
+    throw new Error(
+      `radar data.indicators must be array, got ${describe(indicators)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
+  }
+  if (!Array.isArray(series) || series.length === 0) {
+    throw new Error(
+      `radar data.series must be non-empty array, got ${describe(series)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
+  }
 
   const validIndicators = indicators.map((ind, i) => {
     if (!ind || typeof ind !== 'object') throw new Error(`radar indicator[${i}] must be object`)
@@ -501,19 +569,30 @@ function buildRadar(input: ChartInput, theme: ThemePreset, scale: number): EChar
 function buildHeatmap(input: ChartInput, theme: ThemePreset, scale: number): EChartsOption {
   const raw = input.data
   if (!raw || typeof raw !== 'object') {
-    throw new Error('heatmap data must be { x_categories, y_categories, values }')
+    throw new Error(`heatmap data must be { x_categories, y_categories, values }, got ${dataShape(raw)}`)
   }
   const obj = raw as Record<string, unknown>
   const xCats = obj.x_categories
   const yCats = obj.y_categories
   const values = obj.values
   if (!Array.isArray(xCats) || !xCats.every(c => typeof c === 'string')) {
-    throw new Error('heatmap data.x_categories must be string[]')
+    throw new Error(
+      `heatmap data.x_categories must be string[], got ${describe(xCats)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
   }
   if (!Array.isArray(yCats) || !yCats.every(c => typeof c === 'string')) {
-    throw new Error('heatmap data.y_categories must be string[]')
+    throw new Error(
+      `heatmap data.y_categories must be string[], got ${describe(yCats)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
   }
-  if (!Array.isArray(values)) throw new Error('heatmap data.values must be array')
+  if (!Array.isArray(values)) {
+    throw new Error(
+      `heatmap data.values must be array, got ${describe(values)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
+  }
   const points: number[][] = values.map((v, i) => {
     if (!Array.isArray(v) || v.length < 3 || !v.every(n => typeof n === 'number')) {
       throw new Error(`heatmap values[${i}] must be [x_index, y_index, value]`)
@@ -616,16 +695,22 @@ function calcCategoryInterval(n: number): number {
 function buildCandlestick(input: ChartInput, _baseTheme: ThemePreset, hint?: BuildHint): EChartsOption {
   const raw = input.data
   if (!raw || typeof raw !== 'object') {
-    throw new Error('candlestick data must be { categories, values, volumes? }')
+    throw new Error(`candlestick data must be { categories, values, volumes? }, got ${dataShape(raw)}`)
   }
   const obj = raw as Record<string, unknown>
   const categories = obj.categories
   const values = obj.values
   if (!Array.isArray(categories) || !categories.every(c => typeof c === 'string')) {
-    throw new Error(`candlestick data.categories must be string[], got ${describe(categories)}`)
+    throw new Error(
+      `candlestick data.categories must be string[], got ${describe(categories)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
   }
   if (!Array.isArray(values)) {
-    throw new Error(`candlestick data.values must be array, got ${describe(values)}`)
+    throw new Error(
+      `candlestick data.values must be array, got ${describe(values)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
   }
   const ohlc: number[][] = values.map((v, i) => {
     if (!Array.isArray(v) || v.length < 4 || !v.every(n => typeof n === 'number')) {
@@ -641,7 +726,10 @@ function buildCandlestick(input: ChartInput, _baseTheme: ThemePreset, hint?: Bui
   let volumes: number[] | undefined
   if (obj.volumes !== undefined) {
     if (!Array.isArray(obj.volumes) || !obj.volumes.every(v => typeof v === 'number')) {
-      throw new Error(`candlestick data.volumes must be number[], got ${describe(obj.volumes)}`)
+      throw new Error(
+        `candlestick data.volumes must be number[], got ${describe(obj.volumes)} ` +
+        `(received data: ${dataShape(raw)})`
+      )
     }
     if (obj.volumes.length !== categories.length) {
       throw new Error(
@@ -721,13 +809,22 @@ function buildCandlestick(input: ChartInput, _baseTheme: ThemePreset, hint?: Bui
   const priceAxisLine = { lineStyle: { color: pro.axisLineColor } }
   const priceSplitLine = { show: true, lineStyle: { color: pro.splitLineColor, type: 'solid' as const } }
 
-  // 价格 yAxis：移到右侧（通达信/同花顺/TradingView 都把价格轴放右）
+  // 价格 yAxis：移到右侧（通达信/同花顺/TradingView 都把价格轴放右）。
+  // nameLocation:'middle' + nameGap 把 axis name（input.y_label，如「价格(元)」）放在 axis
+  // 垂直中央而不是默认的 'end'（顶端）；'end' 在双 grid 场景下会卡进两 grid 之间的窄缝里
+  // 跟成交量轴 name 撞，单 grid 也会挤到 title/legend 区。middle + nameGap=36 让 name
+  // 安全地横向偏离 axis label 35px 以上，避免与 "10.5 / 9.9" 这类 label 重叠。
+  //
+  // name 默认走 KLINE_SERIES_NAME（"价格"）兜底——AI 不传 y_label 时也要显示，跟 volumeGrid
+  // 写死的 "成交量" 对称。AI 显式传了 y_label（如"价格(元)"带单位）则尊重 AI 的更精确写法。
   const priceYAxis = (gridIndex: number): EChartsOption => ({
     type: 'value',
     gridIndex,
     position: 'right',
     scale: true,
-    name: input.y_label,
+    name: input.y_label ?? KLINE_SERIES_NAME,
+    nameLocation: 'middle',
+    nameGap: 36,
     nameTextStyle: { color: pro.axisLabelColor, fontSize: fontAxisName },
     axisLine: priceAxisLine,
     axisLabel: priceAxisLabel,
@@ -780,18 +877,37 @@ function buildCandlestick(input: ChartInput, _baseTheme: ThemePreset, hint?: Bui
   }
 
   // 共用的 tooltip 配色（黑底浮窗在白底/黑底主题下都清晰）
+  // formatter 走 marker 协议（详见 ipc-sanitize.ts + shared/utils/echarts-formatters.ts），
+  // 把 echarts 内置英文 OHLC 标签换成中文（开盘/收盘/最低/最高），并把成交量 series 用
+  // formatVolume 显示成「亿/万/k」。
   const tooltipStyle: EChartsOption = {
     trigger: 'axis',
     axisPointer: axisPointerStyle,
     backgroundColor: themeMode === 'dark' ? '#1f2933' : '#1f2937',
     borderWidth: 0,
-    textStyle: { color: '#f3f4f6', fontSize: fontSubtitle }
+    textStyle: { color: '#f3f4f6', fontSize: fontSubtitle },
+    formatter: formatKlineTooltip as unknown as EChartsOption['tooltip']
   }
 
-  // 价格轴留白要够放下"15.00亿"这样最长 label，按 fontAxisLabel 反推。
-  // 估算：5 个数字字符（≈ 0.55 字号宽）+ 1 个中文（≈ 1.0 字号宽）≈ 3.75 字号；
-  // 加 axisLine offset + 安全余量 buffer，避免 "亿" 字被画布右边界截掉
-  const priceAxisRight = Math.round(fontAxisLabel * 4.5 + 14)
+  // 价格轴留白：双 grid 模式（K 线 + 成交量副图）下 axis name 跟 axisLabel 会撞，所以
+  // 双 grid 模式 axis name 全去掉（见下方 yAxis 配置），priceAxisRight 只考虑 axisLabel
+  // 最坏情形；单 grid 模式保留 axis name（仅 AI 显式传 y_label 时显示），right 取两种 max。
+  //
+  // axisLabel 最坏情形："1500.00万"——4 数字 + 1 点 + 2 数字 + 1 中文 = 8 字符
+  // ≈ 7×0.55 + 1.0 = 4.85 字号 + axisLine offset + 安全余量 → 取 5.5 字号。
+  // 之前用 4.5 字号是按"15.00亿"算的，但 A 股成交量在千万级（"1500.00万"）时会撑爆，
+  // 导致 axisLabel 推到 axis name 的 nameGap 区间里，echarts 自动收窄 grid 给 name 让位
+  // → 双 grid 上下错位（用户实测：300.00万 OK、1500.00万 错位，差 2 字符 ~20px）。
+  //
+  // axis name 路径：nameLocation:'middle' + nameGap=36 让 name 在 axisLine 右侧 36px 处，
+  // name 文字（3-4 中文 ≈ 4 × fontAxisName）落在画布外时 echarts 会收 grid 塞下它。
+  const isDoubleGrid = volumes !== undefined
+  const priceAxisRight = isDoubleGrid
+    ? Math.round(fontAxisLabel * 5.5 + 14)
+    : Math.max(
+        Math.round(fontAxisLabel * 5.5 + 14),
+        Math.round(36 + 4 * fontAxisName + 8)
+      )
   const xAxisBottom = Math.round(fontAxisLabel * 2.5 + 12)
 
   // ============== 单 grid（无 volume）==============
@@ -821,10 +937,16 @@ function buildCandlestick(input: ChartInput, _baseTheme: ThemePreset, hint?: Bui
   }
 
   // ============== 双 grid（K 线 + 成交量）==============
-  // 顶部 title + legend，price grid 占 ~58%，间隔 ~4%，volume grid 占 ~22%，底部 ~16% 留 x 轴/标签
+  // 价格区与成交量区视觉合一：priceGrid.bottom='25%' + volumeGrid.top='75%' 中间间隙=0，
+  // priceGrid 底边即 volumeGrid 顶边，从用户视角看就是一个统一区域（TradingView/通达信样式）。
+  //   旧配置 priceGrid: top=80px + height=58% 在 600px 画布下底部=80+0.58×600=428≈71%
+  //   旧配置 priceGrid: bottom=32% / volumeGrid: top=74% 留 6% 空隙——必要原因是 priceGrid
+  //   底部要放 xAxis label，跟 volumeGrid 顶部 axis label 撞，所以必须留缝。
+  // 现在做法：xAxis 0 改 position:'top' 把价格区 xAxis 整体挪到 priceGrid 顶部，priceGrid
+  // 底部就没有 axisLabel 占位了 → 两 grid 可以贴边而不撞 label，视觉上完全连续。
   const topPx = (titleH === 0 ? 8 : titleH + 8) + legendBlockHeight
-  const priceGrid = { left: 24, right: priceAxisRight, top: topPx, height: '58%', containLabel: false }
-  const volumeGrid = { left: 24, right: priceAxisRight, top: '72%', height: '18%', containLabel: false }
+  const priceGrid = { left: 24, right: priceAxisRight, top: topPx, bottom: '25%', containLabel: false }
+  const volumeGrid = { left: 24, right: priceAxisRight, top: '75%', bottom: '12%', containLabel: false }
 
   const volumeBars = volumes.map((vol, i) => ({
     value: vol,
@@ -839,27 +961,59 @@ function buildCandlestick(input: ChartInput, _baseTheme: ThemePreset, hint?: Bui
     ...(titleBlock ? { title: titleBlock } : {}),
     legend: legendBlock,
     grid: [priceGrid, volumeGrid],
-    tooltip: {
-      ...tooltipStyle,
-      axisPointer: { ...axisPointerStyle, link: [{ xAxisIndex: 'all' }] }
+    // **顶层** axisPointer.link 让两个 xAxis 联动：hover 任一 grid 时另一 grid 的 axisPointer
+    // 同步移动，垂直虚线贯穿全图、tooltip 自动合并价格+成交量同时显示——TradingView 行情图样式。
+    // 之前把 link 写在 tooltip.axisPointer 内不生效（echarts link 是顶层 axisPointer 的属性），
+    // 这是 K 线 hover 时价格/成交量 tooltip 拆成两块、十字线只在单 grid 内的根因。
+    axisPointer: {
+      link: [{ xAxisIndex: 'all' }]
     },
-    // 上 grid 隐藏 x 标签让两图共用底部轴；下 grid 才显示日期
+    tooltip: tooltipStyle,
+    // priceGrid xAxis 改 position:'top'：把日期轴整体放到 priceGrid 顶部（贴近 title/legend
+    // 下方）。axisLine/Tick/Label 全 show:false 让平时只看见 splitLine（垂直虚线网格），不
+    // 多画一根多余 axis line；hover 时 axisPointer label 自动在 priceGrid 顶部显示日期，跟
+    // volumeGrid 底部 xAxis 上的日期 axisPointer label 形成"上下双标签"——TradingView 风格。
+    //
+    // ⚠️ axisTick / axisLabel override 必须**显式重申 interval=gridInterval**：echarts
+    // category xAxis 的 splitLine.interval 默认 'auto' 时会回退用 axisLabel.interval。本来
+    // xAxisBase 在 axisLabel/axisTick 里都设了 interval=gridInterval，但 `{ show: false }`
+    // 这种整对象替换会把 interval 丢掉 → priceGrid 的 splitLine 退到 echarts 自己估算的
+    // 'auto' 密度，跟 volumeGrid（保留 interval）算出的密度不一致 → 上下垂直虚线网格错位。
     xAxis: [
-      { ...xAxisBase(0), axisLabel: { show: false }, axisTick: { show: false } },
+      {
+        ...xAxisBase(0),
+        position: 'top',
+        axisLine: { show: false },
+        axisTick: { show: false, interval: gridInterval },
+        axisLabel: { show: false, interval: gridInterval }
+      },
       { ...xAxisBase(1), name: input.x_label, nameTextStyle: { color: pro.axisLabelColor, fontSize: fontAxisName } }
     ],
     yAxis: [
-      priceYAxis(0),
-      // 成交量轴：放右侧、splitNumber 2 稀疏网格、不显示 splitLine 让副图紧凑
+      // 双 grid 模式：
+      // (a) showMinLabel:false 隐藏价格最低值，跟下方 showMaxLabel:false 配套——两 grid 紧贴
+      //     后 priceGrid 最低值 label 跟 volumeGrid 最高值 label 都贴在画布 75% 高度的拼接
+      //     线上互相挤压（"4500" 撞 "300" 显示成 "3500"+"00"）。行情软件（通达信/同花顺/
+      //     TradingView）标准：两侧极值 label 都不显示，靠 splitLine 网格 + hover axisPointer
+      //     label 看精确值，视觉对称干净。
+      // (b) name:'' 去掉 axis name——双 grid 模式下 axis name 跟较长的 axisLabel（如 4 位数
+      //     "1500.00万"）会撞，echarts 自动收 grid 给 name 让位 → 上下错位。legend 里有
+      //     "价格 MA5 MA10 MA20" 已能标识"上面是价格"，下方红绿条形图本身就是成交量惯例，
+      //     axis name 是冗余信息。单 grid 模式保留（AI 传 y_label 时显示），见 priceYAxis 函数。
+      {
+        ...(priceYAxis(0) as Record<string, unknown>),
+        name: '',
+        axisLabel: { ...priceAxisLabel, showMinLabel: false }
+      },
+      // 成交量轴：放右侧、splitNumber 2 稀疏网格、不显示 splitLine 让副图紧凑。
+      // 不带 name（理由同上方 (b)）；showMaxLabel:false 跟上方价格轴 showMinLabel:false 配套。
       {
         type: 'value',
         gridIndex: 1,
         position: 'right',
         scale: true,
-        name: VOLUME_SERIES_NAME,
-        nameTextStyle: { color: pro.axisLabelColor, fontSize: fontAxisName },
         axisLine: priceAxisLine,
-        axisLabel: { ...priceAxisLabel, formatter: formatVolume },
+        axisLabel: { ...priceAxisLabel, formatter: formatVolume, showMaxLabel: false },
         splitNumber: 2,
         splitLine: { show: false }
       }
@@ -887,14 +1041,5 @@ function buildCandlestick(input: ChartInput, _baseTheme: ThemePreset, hint?: Bui
   }
 }
 
-/**
- * 成交量轴的简短刻度格式：1.2万 / 3.4亿 / 5.6M。
- * 行情软件标配——避免长 0 数字撑爆右侧轴。
- */
-function formatVolume(v: number): string {
-  const abs = Math.abs(v)
-  if (abs >= 1e8) return (v / 1e8).toFixed(2) + '亿'
-  if (abs >= 1e4) return (v / 1e4).toFixed(2) + '万'
-  if (abs >= 1e3) return (v / 1e3).toFixed(1) + 'k'
-  return String(v)
-}
+// formatVolume 已迁移到 shared/utils/echarts-formatters.ts，前后端共用。
+// 后端 import 时叠加 tagFormatter('volume', ...) 让 IPC sanitize 能识别。

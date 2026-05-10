@@ -20,6 +20,14 @@ const IDENTITY_FILENAME = 'IDENTITY.md'
 const SOUL_FILENAME = 'SOUL.md'
 
 /**
+ * 全局语言规则常量。
+ *
+ * 在 PromptBuilder 内部和子 Agent system prompt 共用，确保 byte-exact 一致以最大化
+ * prompt cache 命中。任何修改必须同步到所有 LLM 请求的最前面一行。
+ */
+export const LANGUAGE_RULE = '**CRITICAL RULE: You MUST respond in the SAME language the user uses**'
+
+/**
  * 缓存分隔符：分隔系统提示词中的稳定内容和动态内容
  * - Anthropic 适配器按此标记拆分，对稳定部分启用 prompt caching
  * - DeepSeek/OpenAI 自动前缀缓存天然匹配到此标记之前的公共前缀
@@ -358,7 +366,7 @@ export class PromptBuilder {
   // ==================== 私有方法：顶层 Section ====================
 
   private buildLanguageRule(): string {
-    return '**CRITICAL RULE: You MUST respond in the SAME language the user uses**'
+    return LANGUAGE_RULE
   }
 
   private buildIdentitySection(): string {
@@ -434,21 +442,42 @@ export class PromptBuilder {
   }
 
   private buildHostEnvironment(): string {
-    const hostId = this.context.hostId || 'local'
-    const profile = this.hostProfileService
-      ? this.hostProfileService.getProfile(hostId)
-      : null
+    return PromptBuilder.buildHostEnvironment(this.context, this.hostProfileService)
+  }
 
-    const cwdLine = this.context.cwd
-      ? this.isAssistant
-        ? `命令默认执行目录：${this.context.cwd}`
-        : `当前工作目录：${this.context.cwd}（系统实时获取，无需执行 pwd 验证）`
+  /**
+   * 构建主机环境章节（公开静态方法，供子 Agent 等其它 prompt 复用）。
+   *
+   * 输出根据 terminalType 切换格式：
+   * - assistant 模式：精简列表，标题 `# 运行环境`
+   * - local / ssh 模式：含终端类型与"命令必须匹配"提醒，标题 `# 主机环境（命令必须匹配）`
+   *
+   * 同一个父 Agent 内调用此方法的输出 byte-exact 一致——这是子 Agent system prompt
+   * 复用前缀缓存的关键。修改本方法时务必保持纯函数特性（仅依赖 context 与 profile）。
+   */
+  static buildHostEnvironment(
+    context: AgentContext,
+    hostProfileService?: HostProfileServiceInterface
+  ): string {
+    const osType = context.systemInfo.os || 'unknown'
+    const shellType = context.systemInfo.shell || 'unknown'
+    const terminalType = context.terminalType || 'local'
+    const isSshTerminal = terminalType === 'ssh'
+    const isAssistant = terminalType !== 'local' && terminalType !== 'ssh'
+
+    const hostId = context.hostId || 'local'
+    const profile = hostProfileService ? hostProfileService.getProfile(hostId) : null
+
+    const cwdLine = context.cwd
+      ? isAssistant
+        ? `命令默认执行目录：${context.cwd}`
+        : `当前工作目录：${context.cwd}（系统实时获取，无需执行 pwd 验证）`
       : '当前工作目录：未成功获取'
 
-    if (this.isAssistant) {
+    if (isAssistant) {
       const lines: string[] = [
-        `- 操作系统: ${this.osType}`,
-        `- Shell: ${this.shellType}`,
+        `- 操作系统: ${osType}`,
+        `- Shell: ${shellType}`,
       ]
       if (profile?.username) lines.push(`- 当前用户: ${profile.username}`)
       if (profile?.homeDir) lines.push(`- 用户主目录: ${profile.homeDir}`)
@@ -457,7 +486,7 @@ export class PromptBuilder {
     }
 
     const lines: string[] = [
-      `- **终端类型**: ${this.isSshTerminal ? '🌐 SSH 远程终端' : '💻 本地终端'}`
+      `- **终端类型**: ${isSshTerminal ? '🌐 SSH 远程终端' : '💻 本地终端'}`
     ]
 
     if (profile?.hostname) {
@@ -467,8 +496,8 @@ export class PromptBuilder {
       lines.push(`- 当前用户: ${profile.username}`)
     }
 
-    lines.push(`- 操作系统: ${this.osType}`)
-    lines.push(`- Shell: ${this.shellType}`)
+    lines.push(`- 操作系统: ${osType}`)
+    lines.push(`- Shell: ${shellType}`)
 
     if (profile?.homeDir) {
       lines.push(`- 用户主目录: ${profile.homeDir}`)
@@ -479,6 +508,45 @@ export class PromptBuilder {
     lines.push(`- ${cwdLine}`)
 
     return `# 主机环境（命令必须匹配）\n\n${lines.join('\n')}`
+  }
+
+  /**
+   * 构建子 Agent 的 system prompt（独立模式）。
+   *
+   * 设计目标：
+   * - 子 Agent 与父 Agent 完全独立——不继承身份、人格、对话历史，避免幻觉
+   * - 但**继承项目级稳定信息**：语言规则、运行环境、用户自定义 AI Rules
+   * - byte-exact 一致：同一父 Agent 内所有子 Agent 的 system prompt 完全一致，命中 prompt cache
+   *
+   * 不在系统提示里点名"哪些工具不能调用"——schema 不暴露的工具 LLM 一般不会主动捏造，
+   * 反复点名反而是诱导。
+   */
+  static buildSubAgentSystemPrompt(options: {
+    typePromptPrefix: string
+    context: AgentContext
+    aiRules?: string
+    hostProfileService?: HostProfileServiceInterface
+  }): string {
+    const { typePromptPrefix, context, aiRules, hostProfileService } = options
+    const sections: string[] = [
+      LANGUAGE_RULE,
+      PromptBuilder.buildHostEnvironment(context, hostProfileService),
+    ]
+
+    const trimmedRules = aiRules?.trim()
+    if (trimmedRules) {
+      sections.push(`# 用户自定义规则（必须遵守）\n\n${trimmedRules}`)
+    }
+
+    sections.push(typePromptPrefix)
+    sections.push([
+      '## 工作契约',
+      '- **数据真实性**：通过工具获取真实数据，禁止编造或推测工具结果',
+      '- **失败如实上报**：任何工具返回 `Error:` 都要原样写进最终汇报；不允许私自换命令、改路径或绕路径"补救"完成同一目标——失败信息本身就是父 Agent 需要的关键信号，由父 Agent 决定是否换方案',
+      '- **结论结构化**：最终汇报需明确区分「做到了什么 / 没做到什么 / 为什么没做到」，简洁、按要点列出',
+    ].join('\n'))
+
+    return sections.filter(Boolean).join('\n\n')
   }
 
   /**
@@ -630,8 +698,8 @@ export class PromptBuilder {
       '**并行子任务**（`dispatch_agents`）：',
       '- 当任务可拆分为 2+ 个**互不依赖**的子问题时，使用 `dispatch_agents` 并行执行',
       '- 典型场景：同时分析多个文件、并行调研不同方向、批量检查多个配置',
-      '- 每个子任务的 prompt 须**自包含**，提供完整上下文（文件路径、目标、约束等）',
-      '- Agent 类型选择：`explore`（默认，只读分析）、`edit`（可修改文件）、`research`（知识检索归纳）',
+      '- 每个子任务的 prompt 须**自包含**：包含完整上下文（文件路径、目标、约束等），子 Agent 看不到你的对话历史',
+      '- Agent 类型选择：`read`（默认，只读分析与调研）、`write`（可修改文件）',
       '- 每个子任务可单独指定 `agent_type` 覆盖全局设置',
       '- 子 Agent 不能操作终端或向用户提问',
     ].join('\n')

@@ -11,7 +11,7 @@ interface McpServerConfig {
   id: string
   name: string
   enabled: boolean
-  transport: 'stdio' | 'sse'
+  transport: 'stdio' | 'sse' | 'http'
   command?: string
   args?: string[]
   env?: Record<string, string>
@@ -55,11 +55,15 @@ interface McpPrompt {
 // ESC 关闭子弹窗
 const showForm = ref(false)
 const showDetails = ref(false)
+const showImport = ref(false)
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
     if (showDetails.value) {
       e.stopImmediatePropagation()
       showDetails.value = false
+    } else if (showImport.value) {
+      e.stopImmediatePropagation()
+      showImport.value = false
     } else if (showForm.value) {
       e.stopImmediatePropagation()
       showForm.value = false
@@ -102,17 +106,37 @@ const formData = ref<Partial<McpServerConfig>>({
   headers: {}
 })
 
-// 用于编辑 args 和 env 的辅助字段
+// 用于编辑 args / env / headers 的辅助字段
 const argsText = ref('')
 const envText = ref('')
+const headersText = ref('')
+
+// 从 JSON 一键导入（showImport 在顶部已声明）
+const importText = ref('')
+const importResult = ref<{ success: boolean; message: string } | null>(null)
+
+// JSON placeholder 不走 i18n：里面的 `{` / `}` 会被 vue-i18n 当作命名占位符语法解析失败。
+// 示例本身是格式化的 JSON，跟语言无关，硬编码即可。
+const IMPORT_JSON_PLACEHOLDER = `{
+  "mcpServers": {
+    "qcc-company": {
+      "url": "https://agent.qcc.com/mcp/company/stream",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}`
 
 // 模板类型
 interface McpTemplate {
   name: string
-  transport: 'stdio' | 'sse'
-  command: string
-  args: string[]
+  transport: 'stdio' | 'sse' | 'http'
+  command?: string
+  args?: string[]
   env?: Record<string, string>
+  url?: string
+  headers?: Record<string, string>
 }
 
 // 获取预设模板
@@ -141,6 +165,12 @@ const getTemplates = (): McpTemplate[] => [
     transport: 'stdio',
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-sqlite', '/path/to/database.db']
+  },
+  {
+    name: t('mcpSettings.templates.httpBearer'),
+    transport: 'http',
+    url: 'https://example.com/mcp/stream',
+    headers: { Authorization: t('mcpSettings.placeholders.bearerToken') }
   }
 ]
 
@@ -182,6 +212,7 @@ const resetForm = () => {
   }
   argsText.value = ''
   envText.value = ''
+  headersText.value = ''
   editingServer.value = null
   testResult.value = null
 }
@@ -200,6 +231,9 @@ const openEditServer = (server: McpServerConfig) => {
   envText.value = Object.entries(server.env || {})
     .map(([k, v]) => `${k}=${v}`)
     .join('\n')
+  headersText.value = Object.entries(server.headers || {})
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('\n')
   testResult.value = null
   showForm.value = true
 }
@@ -208,12 +242,17 @@ const openEditServer = (server: McpServerConfig) => {
 const applyTemplate = (template: McpTemplate) => {
   formData.value.name = template.name
   formData.value.transport = template.transport
-  formData.value.command = template.command
-  formData.value.args = [...template.args]
+  formData.value.command = template.command || ''
+  formData.value.args = template.args ? [...template.args] : []
   formData.value.env = template.env ? { ...template.env } : {}
-  argsText.value = template.args.join('\n')
+  formData.value.url = template.url || ''
+  formData.value.headers = template.headers ? { ...template.headers } : {}
+  argsText.value = (template.args || []).join('\n')
   envText.value = template.env
     ? Object.entries(template.env).map(([k, v]) => `${k}=${v}`).join('\n')
+    : ''
+  headersText.value = template.headers
+    ? Object.entries(template.headers).map(([k, v]) => `${k}: ${v}`).join('\n')
     : ''
 }
 
@@ -238,6 +277,25 @@ const parseEnv = () => {
   formData.value.env = env
 }
 
+// 解析 headers 文本（每行 Key: Value，兼容 Key=Value）
+const parseHeaders = () => {
+  const headers: Record<string, string> = {}
+  headersText.value.split('\n').forEach(line => {
+    const trimmed = line.trim()
+    if (!trimmed) return
+    // 优先按冒号分隔（HTTP 头标准格式），兼容等号分隔
+    const sepIdx = trimmed.indexOf(':')
+    const eqIdx = trimmed.indexOf('=')
+    const splitAt = sepIdx > 0 && (eqIdx < 0 || sepIdx < eqIdx) ? sepIdx : eqIdx
+    if (splitAt > 0) {
+      const key = trimmed.substring(0, splitAt).trim()
+      const value = trimmed.substring(splitAt + 1).trim()
+      if (key) headers[key] = value
+    }
+  })
+  formData.value.headers = headers
+}
+
 // 测试连接
 const testConnection = async () => {
   if (!formData.value.name) {
@@ -247,6 +305,7 @@ const testConnection = async () => {
 
   parseArgs()
   parseEnv()
+  parseHeaders()
 
   // 使用 toRaw 转换响应式对象，避免 IPC 克隆错误
   const testConfig: McpServerConfig = {
@@ -291,6 +350,7 @@ const saveServer = async () => {
 
   parseArgs()
   parseEnv()
+  parseHeaders()
 
   // 使用 toRaw 转换响应式对象，避免 IPC 克隆错误
   const rawArgs = toRaw(formData.value.args) || []
@@ -383,6 +443,97 @@ const viewServerDetails = async (server: McpServerConfig) => {
   showDetails.value = true
 }
 
+// 打开 JSON 导入弹窗
+const openImport = () => {
+  importText.value = ''
+  importResult.value = null
+  showImport.value = true
+}
+
+/**
+ * 从 JSON 文本批量导入 MCP 服务器（兼容 Claude Desktop / Cursor 配置格式）
+ * 接受 { mcpServers: {...} } 或直接的 {...} 映射
+ */
+const importFromJson = async () => {
+  importResult.value = null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(importText.value)
+  } catch (err) {
+    importResult.value = {
+      success: false,
+      message: t('mcpSettings.importJsonInvalid', { error: err instanceof Error ? err.message : 'parse error' })
+    }
+    return
+  }
+
+  // 同时兼容 { mcpServers: {...} } 和直接映射
+  const root = parsed as { mcpServers?: Record<string, unknown> } & Record<string, unknown>
+  const map = (root.mcpServers ?? root) as Record<string, unknown>
+  if (!map || typeof map !== 'object') {
+    importResult.value = { success: false, message: t('mcpSettings.importJsonInvalid', { error: 'no servers found' }) }
+    return
+  }
+
+  const toAdd: McpServerConfig[] = []
+  for (const [name, raw] of Object.entries(map)) {
+    if (!raw || typeof raw !== 'object') continue
+    const entry = raw as {
+      command?: string
+      args?: string[]
+      env?: Record<string, string>
+      cwd?: string
+      url?: string
+      headers?: Record<string, string>
+      transport?: 'stdio' | 'sse' | 'http'
+      type?: 'stdio' | 'sse' | 'http' | 'streamable-http' | 'streamableHttp'
+    }
+
+    // 推断传输方式：显式 transport/type 优先，否则按 url/command 推断
+    let transport: 'stdio' | 'sse' | 'http'
+    if (entry.transport) {
+      transport = entry.transport
+    } else if (entry.type === 'streamable-http' || entry.type === 'streamableHttp' || entry.type === 'http') {
+      transport = 'http'
+    } else if (entry.type === 'sse') {
+      transport = 'sse'
+    } else if (entry.type === 'stdio') {
+      transport = 'stdio'
+    } else if (entry.url) {
+      // 没显式声明又有 url：默认按推荐的 Streamable HTTP 走
+      transport = 'http'
+    } else {
+      transport = 'stdio'
+    }
+
+    toAdd.push({
+      id: uuidv4(),
+      name,
+      enabled: true,
+      transport,
+      command: entry.command,
+      args: entry.args,
+      env: entry.env,
+      cwd: entry.cwd,
+      url: entry.url,
+      headers: entry.headers
+    })
+  }
+
+  if (toAdd.length === 0) {
+    importResult.value = { success: false, message: t('mcpSettings.importJsonInvalid', { error: 'empty mcpServers' }) }
+    return
+  }
+
+  for (const server of toAdd) {
+    await window.electronAPI.mcp.addServer(JSON.parse(JSON.stringify(server)))
+  }
+  await loadServers()
+  importResult.value = { success: true, message: t('mcpSettings.importJsonSuccess', { count: toAdd.length }) }
+  // 短暂展示成功后自动关闭
+  setTimeout(() => { showImport.value = false }, 1200)
+}
+
 // 连接所有启用的服务器
 const connectAllEnabled = async () => {
   const results = await window.electronAPI.mcp.connectEnabledServers()
@@ -437,6 +588,9 @@ onUnmounted(() => {
           <button class="btn btn-sm" @click="connectAllEnabled" v-if="servers.some(s => s.enabled)">
             {{ t('common.connect') }}
           </button>
+          <button class="btn btn-sm" @click="openImport" :title="t('mcpSettings.importJsonHint')">
+            {{ t('mcpSettings.importJson') }}
+          </button>
           <button class="btn btn-primary btn-sm" @click="openNewServer">
             <Plus :size="14" />
             {{ t('mcpSettings.addServer') }}
@@ -453,10 +607,7 @@ onUnmounted(() => {
           v-for="server in servers"
           :key="server.id"
           class="server-item"
-          :class="{ 
-            disabled: !server.enabled,
-            connected: getServerStatus(server.id)?.connected 
-          }"
+          :class="{ disabled: !server.enabled }"
         >
           <div class="server-toggle">
             <input
@@ -552,8 +703,12 @@ onUnmounted(() => {
               <span>{{ t('mcpSettings.transportStdioLabel') }}</span>
             </label>
             <label class="radio-item">
+              <input type="radio" v-model="formData.transport" value="http" />
+              <span>{{ t('mcpSettings.transportHttpLabel') }}</span>
+            </label>
+            <label class="radio-item">
               <input type="radio" v-model="formData.transport" value="sse" />
-              <span>{{ t('mcpSettings.transportSseLabel') }}</span>
+              <span>{{ t('mcpSettings.transportSseLabel') }} <em class="deprecated-tag">{{ t('mcpSettings.deprecated') }}</em></span>
             </label>
           </div>
         </div>
@@ -580,8 +735,25 @@ onUnmounted(() => {
 
         <template v-else>
           <div class="form-group">
-            <label class="form-label">{{ t('mcpSettings.sseUrl') }} *</label>
-            <input v-model="formData.url" type="text" class="input" :placeholder="t('mcpSettings.urlPlaceholder')" />
+            <label class="form-label">
+              {{ formData.transport === 'http' ? t('mcpSettings.httpUrl') : t('mcpSettings.sseUrl') }} *
+            </label>
+            <input
+              v-model="formData.url"
+              type="text"
+              class="input"
+              :placeholder="formData.transport === 'http' ? t('mcpSettings.httpUrlPlaceholder') : t('mcpSettings.urlPlaceholder')"
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('mcpSettings.headersPerLine') }}</label>
+            <textarea
+              v-model="headersText"
+              class="input textarea"
+              :placeholder="t('mcpSettings.headersPlaceholder')"
+              rows="2"
+            ></textarea>
+            <span class="form-hint">{{ t('mcpSettings.headersHint') }}</span>
           </div>
         </template>
 
@@ -603,7 +775,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 服务器详情弹窗 -->
-    <div v-if="showDetails && selectedServer" class="details-modal" @click.self="showDetails = false">
+    <div v-if="showDetails && selectedServer" key="mcp-details-modal" class="details-modal" @click.self="showDetails = false">
       <div class="details-content">
         <div class="details-header">
           <h4>{{ selectedServer.name }}</h4>
@@ -646,6 +818,40 @@ onUnmounted(() => {
               </div>
             </div>
             <div v-else class="empty-list">{{ t('mcpSettings.noPrompts') }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- JSON 一键导入弹窗 -->
+    <div v-if="showImport" key="mcp-import-modal" class="details-modal" @click.self="showImport = false">
+      <div class="details-content import-modal">
+        <div class="details-header">
+          <h4>{{ t('mcpSettings.importJsonDialogTitle') }}</h4>
+          <button class="btn-icon" @click="showImport = false">
+            <X :size="16" />
+          </button>
+        </div>
+        <div class="details-body">
+          <p class="import-hint">{{ t('mcpSettings.importJsonHint') }}</p>
+          <textarea
+            v-model="importText"
+            class="input textarea import-textarea"
+            :placeholder="IMPORT_JSON_PLACEHOLDER"
+            rows="14"
+            spellcheck="false"
+          ></textarea>
+          <div v-if="importResult" class="test-result" :class="{ success: importResult.success, error: !importResult.success }">
+            {{ importResult.message }}
+          </div>
+        </div>
+        <div class="form-footer">
+          <span class="form-hint">{{ t('mcpSettings.importJsonCompat') }}</span>
+          <div class="form-footer-right">
+            <button class="btn" @click="showImport = false">{{ t('common.cancel') }}</button>
+            <button class="btn btn-primary" @click="importFromJson" :disabled="!importText.trim()">
+              {{ t('mcpSettings.importJsonAction') }}
+            </button>
           </div>
         </div>
       </div>
@@ -729,10 +935,6 @@ onUnmounted(() => {
 
 .server-item.disabled {
   opacity: 0.5;
-}
-
-.server-item.connected {
-  border-color: var(--accent-green);
 }
 
 .server-toggle input {
@@ -1011,6 +1213,43 @@ onUnmounted(() => {
   text-align: center;
   background: var(--bg-tertiary);
   border-radius: 6px;
+}
+
+/* 已弃用标签 */
+.deprecated-tag {
+  font-style: normal;
+  font-size: 10px;
+  margin-left: 4px;
+  padding: 1px 6px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+/* JSON 导入弹窗 */
+.import-modal {
+  width: 640px;
+}
+
+.import-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.import-textarea {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  min-height: 240px;
+}
+
+.form-hint {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
 }
 
 /* 加载动画 */

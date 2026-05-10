@@ -73,14 +73,14 @@ export interface AttachmentInfo {
 }
 
 /** 子 Agent 类型（与 sub-agent.ts 中 SUB_AGENT_TYPES 注册表对应） */
-export type SubAgentTypeName = 'explore' | 'edit' | 'research'
+export type SubAgentTypeName = 'read' | 'write'
 
 /** 子 Agent 任务描述（dispatch_agents 工具参数） */
 export interface SubAgentTask {
   id: string
   description: string
   prompt: string
-  /** Agent 类型：explore(只读分析) / edit(文件修改) / research(知识检索)，默认 explore */
+  /** Agent 类型：read(只读分析/调研) / write(可修改文件)，默认 read */
   agentType?: SubAgentTypeName
 }
 
@@ -115,11 +115,41 @@ export interface SubAgentResult {
   steps?: SubAgentToolStep[]
 }
 
+/**
+ * 「活图」载荷：让前端在对话气泡里实例化 ECharts，提供 tooltip / dataZoom / legend toggle
+ * 等交互能力，并支持高 DPI 复制 / 任意倍率另存为。
+ *
+ * 与 `images` 是**并列两路**而不是替代关系：
+ *   - chart skill 在 svg 模式下同时投递 `echartsOption`（活图）+ `images`（SVG 兜底）
+ *   - 前端渲染优先级：`echartsOption` > `images`
+ *   - `images` 兜底场景：旧历史记录、不支持 echarts 的视图（如 Awaken 关切面板）、
+ *     钉钉/飞书 IM 渠道转发（IM 链路只用 `format='png'` 落盘的文件，不读这些 dataURL）
+ *   - PNG 模式（AI 显式选 `format='png'`，意图是导出位图）下 chart skill 不投递 echartsOption——
+ *     用户在气泡里看到的 PNG 与导出文件视觉一致更直观
+ *
+ * IPC 通过结构化克隆透传，注意 `option` 必须是纯 JSON 兼容对象（chart skill 的
+ * `buildOption` 已经把所有主题颜色 inline 进去，无函数引用）。
+ */
+export interface EChartsStepPayload {
+  /** 完整 ECharts option（v6+ 格式，已含 backgroundColor/color/textStyle 等主题） */
+  option: Record<string, unknown>
+  /** 后端建议的画布逻辑宽度（px），前端按容器实际宽度 resize，但保留宽高比 */
+  width: number
+  /** 后端建议的画布逻辑高度（px） */
+  height: number
+}
+
 export interface AgentStep {
   id: string
   type: 'thinking' | 'tool_call' | 'tool_result' | 'message' | 'error' | 'confirm' | 'streaming' | 'user_supplement' | 'waiting' | 'asking' | 'waiting_password' | 'plan_created' | 'plan_updated' | 'plan_archived' | 'user_task' | 'final_result'
   content: string
   images?: string[]
+  /**
+   * 「活图」载荷。chart skill 在默认 svg 模式下注入；前端用 echarts 实例化得到
+   * 可交互图表（tooltip / legend toggle / dataZoom 等）。同时 `images` 仍带 SVG
+   * 兜底以兼容历史展示链路。详见 `EChartsStepPayload` 注释。
+   */
+  echartsOption?: EChartsStepPayload
   attachments?: AttachmentInfo[]
   toolName?: string
   /**

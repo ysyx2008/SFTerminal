@@ -207,6 +207,97 @@ describe('candlestick with volumes', () => {
     expect(bar.data.length).toBe(3)
   })
 
+  it('双 grid 视觉合一（紧贴无间隙）+ xAxis 0 移到 priceGrid 顶部 + 顶层 axisPointer.link 让 hover 跨 grid 联动', () => {
+    const opt = buildOption({
+      type: 'candlestick',
+      kline_style: 'cn',
+      data: baseDataWithVol,
+      y_label: '价格(元)'
+    })
+    const grids = opt.grid as Array<{ top: string | number; bottom: string | number }>
+    const xAxes = opt.xAxis as Array<{ position?: string; axisLine?: { show?: boolean }; axisTick?: { show?: boolean }; axisLabel?: { show?: boolean } }>
+    const yAxes = opt.yAxis as Array<{ name?: string; nameLocation?: string; nameGap?: number }>
+
+    // priceGrid bottom='25%' + volumeGrid top='75%'：两 grid 边界在画布 75% 高度处对齐，
+    // 中间无空隙，价格区+成交量区视觉上是一个统一区域（TradingView 风格）。
+    expect(grids[0].bottom).toBe('25%')
+    expect(grids[1].top).toBe('75%')
+    expect(grids[1].bottom).toBe('12%')
+
+    // 价格 xAxis 改 position:'top' 把日期轴整体放到 priceGrid 顶部，axisLine/Tick/Label 全
+    // hide——平时只看见 splitLine（垂直网格虚线），hover 时 axisPointer label 自动在上方
+    // 显示日期，跟 volumeGrid 底部 xAxis 上的日期 label 形成"上下双标签"。
+    expect(xAxes[0].position).toBe('top')
+    expect(xAxes[0].axisLine?.show).toBe(false)
+    expect(xAxes[0].axisTick?.show).toBe(false)
+    expect(xAxes[0].axisLabel?.show).toBe(false)
+    // axisTick/axisLabel hide 但 interval 必须保留——否则 echarts splitLine.interval 默认
+    // 'auto' 会回退用 axisLabel.interval，priceGrid 跟 volumeGrid 的 splitLine 密度算出来
+    // 不一致 → 上下垂直虚线网格错位。
+    type AxisIntervalCarrier = { interval?: number | string; show?: boolean }
+    type XAxisWithInterval = { axisTick?: AxisIntervalCarrier; axisLabel?: AxisIntervalCarrier }
+    const x0 = xAxes[0] as XAxisWithInterval
+    const x1 = xAxes[1] as XAxisWithInterval
+    expect(x0.axisTick?.interval).toBe(x1.axisTick?.interval)
+    expect(x0.axisLabel?.interval).toBe(x1.axisLabel?.interval)
+    expect(x0.axisTick?.interval).toBeDefined()
+
+    // 顶层 axisPointer.link 让两 xAxis 联动：hover 任一 grid 时另一 grid 的 axisPointer
+    // 同步 → 垂直虚线贯穿全图、tooltip 自动合并价格+成交量。link 必须放顶层，写在
+    // tooltip.axisPointer 内 echarts 不识别（这是 K 线 tooltip 拆两块的根因）。
+    type OptWithAxisPointer = { axisPointer?: { link?: Array<{ xAxisIndex?: string | number }> } }
+    const ap = (opt as OptWithAxisPointer).axisPointer
+    expect(ap?.link).toBeDefined()
+    expect(ap?.link?.[0]?.xAxisIndex).toBe('all')
+
+    // 双 grid 模式两侧 axis name 都不显示——不同位数的成交量 axisLabel（"300.00万" 跟
+    // "1500.00万" 差 ~20px）会跟 axis name 的 nameGap=36 区间撞，echarts 自动收 grid 给
+    // name 让位 → 上下错位。legend 已能标识"价格"，红绿条形图本身就是成交量惯例。
+    // AI 传了 y_label='价格(元)' 也不显示——双 grid 模式下 axis name 必须 disable。
+    expect(yAxes[0].name).toBeFalsy()
+    expect(yAxes[1].name).toBeFalsy()
+
+    // priceGrid 最低 label 跟 volumeGrid 最高 label 在交界处（画布 75% 高度）会重叠
+    // （比如 "4500" 撞 "300" 看起来像 "3500"+"00"）→ 行情软件（通达信/同花顺/TradingView）
+    // 标准做法：两侧极值 label 都不显示，靠 splitLine 网格 + hover axisPointer 看精确值。
+    type AxisLabel = { showMinLabel?: boolean; showMaxLabel?: boolean }
+    type YAxisWithLabel = { axisLabel?: AxisLabel }
+    const priceLabel = (yAxes[0] as YAxisWithLabel).axisLabel
+    const volumeLabel = (yAxes[1] as YAxisWithLabel).axisLabel
+    expect(priceLabel?.showMinLabel).toBe(false)
+    expect(volumeLabel?.showMaxLabel).toBe(false)
+
+    // priceGrid 跟 volumeGrid 的 right 必须**完全相同**——否则一边宽一边窄，整张图水平错位
+    // （用户实测：volumeGrid 必有"成交量"name 占用，priceGrid 不一定有 y_label name，
+    //  没让 right 兜底到 axis name 占用时下方比上方短一截）。
+    type GridRight = { left?: number; right?: number }
+    const g0 = grids[0] as GridRight
+    const g1 = grids[1] as GridRight
+    expect(g0.right).toBe(g1.right)
+    expect(g0.left).toBe(g1.left)
+  })
+
+  it('单 grid 模式 priceYAxis name 兜底到"价格"，AI 传 y_label 时尊重 AI', () => {
+    // 单 grid 模式（无 volumes）priceGrid 占满画布，axis name 在 axis 中央显示，不会撞
+    // axisLabel——保留 axis name 作为标识。
+    const noY = buildOption({ type: 'candlestick', kline_style: 'cn', data: { ...baseDataWithVol, volumes: undefined } as ChartInput['data'] } as ChartInput)
+    expect((noY.yAxis as { name?: string }).name).toBe('价格')
+
+    const withY = buildOption({ type: 'candlestick', kline_style: 'cn', data: { ...baseDataWithVol, volumes: undefined } as ChartInput['data'], y_label: '价格(元)' } as ChartInput)
+    expect((withY.yAxis as { name?: string }).name).toBe('价格(元)')
+  })
+
+  it('priceAxisRight 容纳 4 位数成交量 label "1500.00万"，避免双 grid 错位', () => {
+    // 双 grid 模式：A 股成交量在千万级时 axisLabel 是 "1500.00万" (8 字符)，比 "300.00万"
+    // (6 字符) 长 ~20px。旧的 fontAxisLabel*4.5 算法按 "15.00亿" (6 字符) 估算，撑不住
+    // "1500.00万" → axisLabel 推到 axis name 的 nameGap 区间撞 name → echarts 收窄 grid。
+    // 改为 fontAxisLabel*5.5 后能容纳 "1500.00万" 不撞 name 区间。
+    const opt = buildOption({ type: 'candlestick', kline_style: 'cn', data: baseDataWithVol })
+    const grids = opt.grid as Array<{ right?: number }>
+    // fontAxisLabel=14, scale=1.0：round(14*5.5 + 14) = 91
+    expect(grids[0].right).toBeGreaterThanOrEqual(85)
+  })
+
   it('volume bars colored by 涨跌（cn 涨红跌绿）', () => {
     const opt = buildOption({ type: 'candlestick', kline_style: 'cn', data: baseDataWithVol })
     const bars = findBar(opt.series as SeriesOut[]).data as Bar[]
@@ -455,6 +546,85 @@ describe('chart input validation', () => {
       type: 'heatmap',
       data: { x_categories: ['M'], y_categories: ['AM'], values: [[0, 3, 1]] }
     } as ChartInput)).toThrow(/out of y_categories range/)
+  })
+})
+
+describe('chart error message includes received data shape (AI self-correct hint)', () => {
+  // 弱模型（豆包 Lite / DeepSeek Flash 等）实测常把 categories 写成方言别名（dates / x /
+  // labels / time 等），错误信息只说 "got undefined" 时它无法定位自己实际传的 data 长啥样，
+  // 反复用同样的 args 重试。throw 信息附带 "(received data: object(keys=...))" 后缀让
+  // 弱模型能从字面看出"哦我用的字段名叫 dates，应该叫 categories"，显著提升自纠正成功率。
+
+  it('candlestick: 把 categories 写成 dates 时错误信息列出 received keys', () => {
+    expect(() => buildOption({
+      type: 'candlestick',
+      data: { dates: ['a', 'b'], values: [[1, 2, 3, 4], [5, 6, 7, 8]] }
+    } as unknown as ChartInput)).toThrow(/received data: object\(keys=dates,values\)/)
+  })
+
+  it('candlestick: 把 categories 写成 x 时错误信息列出 received keys', () => {
+    expect(() => buildOption({
+      type: 'candlestick',
+      data: { x: ['a', 'b'], y: [[1, 2, 3, 4], [5, 6, 7, 8]] }
+    } as unknown as ChartInput)).toThrow(/received data: object\(keys=x,y\)/)
+  })
+
+  it('candlestick: data 是数组（外层类型搞错）时 received data 描述成 array', () => {
+    // AI 偶尔会把整个 data 写成 [[...K线行...]] 这种顶层数组形式（混淆了 scatter 的 schema）。
+    // 数组也是 object，会走到 categories 检查，错误后缀显示 "array(len=N)" 让 AI 看出
+    // "我把 data 写成了数组，应该写成 { categories, values } 对象"。
+    expect(() => buildOption({
+      type: 'candlestick',
+      data: [['a', 1, 2, 3, 4]]
+    } as unknown as ChartInput)).toThrow(/received data: array\(len=1\)/)
+  })
+
+  it('candlestick: data 完全不是对象（字符串）时顶层 throw 描述形状', () => {
+    expect(() => buildOption({
+      type: 'candlestick',
+      data: 'whatever'
+    } as unknown as ChartInput)).toThrow(/got string/)
+  })
+
+  it('candlestick: volumes 类型错时也带 received keys', () => {
+    expect(() => buildOption({
+      type: 'candlestick',
+      data: {
+        categories: ['a', 'b'],
+        values: [[1, 2, 3, 4], [5, 6, 7, 8]],
+        volumes: 'not-an-array'
+      }
+    } as unknown as ChartInput)).toThrow(/received data: object\(keys=categories,values,volumes\)/)
+  })
+
+  it('bar/line: 把 categories 写成 x_axis 时错误信息列出 received keys', () => {
+    expect(() => buildOption({
+      type: 'bar',
+      data: { x_axis: ['a'], series: [{ data: [1] }] }
+    } as unknown as ChartInput)).toThrow(/received data: object\(keys=x_axis,series\)/)
+  })
+
+  it('heatmap: 把 x_categories 写成 x 时错误信息列出 received keys', () => {
+    expect(() => buildOption({
+      type: 'heatmap',
+      data: { x: ['a'], y: ['b'], values: [[0, 0, 1]] }
+    } as unknown as ChartInput)).toThrow(/received data: object\(keys=x,y,values\)/)
+  })
+
+  it('radar: 把 indicators 写成 dimensions 时错误信息列出 received keys', () => {
+    expect(() => buildOption({
+      type: 'radar',
+      data: { dimensions: [{ name: 'A', max: 100 }], series: [{ value: [50] }] }
+    } as unknown as ChartInput)).toThrow(/received data: object\(keys=dimensions,series\)/)
+  })
+
+  it('对象 keys 数量超过 4 时不被截断（dataShape 不像 describe 那样 slice 4）', () => {
+    // describe() 旧 helper 截断 4 个 keys，但 dataShape 用全列出。AI 把 candlestick 数据
+    // 写成"完全不像 K 线"的对象时（很多字段都错），列全部 keys 才能让 AI 看清整体结构。
+    expect(() => buildOption({
+      type: 'candlestick',
+      data: { f1: 1, f2: 2, f3: 3, f4: 4, f5: 5, f6: 6 }
+    } as unknown as ChartInput)).toThrow(/received data: object\(keys=f1,f2,f3,f4,f5,f6\)/)
   })
 })
 

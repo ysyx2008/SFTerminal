@@ -1,6 +1,6 @@
 # AiService SPEC
 
-> Last verified: 2026-04-30
+> Last verified: 2026-05-07
 
 ## 职责
 
@@ -8,12 +8,13 @@ AI API 的统一调用层。封装 OpenAI 兼容协议的 HTTP 请求，提供�
 
 ## 文件
 
-单文件：`electron/services/ai.service.ts`（~2240 行）
+单文件：`electron/services/ai.service.ts`（~2316 行）
 
 ## 公开 API
 
 | 方法 | 用途 | 调用方 |
 |---|---|---|
+| `setPluginProviders(providers: ProviderRegistration[])` | 注入插件 AI provider（启动时调用） | `main.ts` 插件加载阶段 |
 | `chat(messages, profileId?)` | 纯文本对话（同步） | 知识文档更新、对话索引等后台任务 |
 | `chatStream(messages, onChunk, onDone, onError, profileId?)` | 纯文本对话（流式） | 前端 AI 对话面板 |
 | `chatWithTools(messages, tools, profileId?)` | 工具调用（同步） | Agent 非流式路径（较少使用） |
@@ -23,15 +24,21 @@ AI API 的统一调用层。封装 OpenAI 兼容协议的 HTTP 请求，提供�
 | `static getDiagnoseErrorPrompt(error, context?)` | 错误诊断 prompt 模板 | 前端错误诊断功能 |
 | `static getNaturalToCommandPrompt(description, os?)` | 自然语言→命令 prompt 模板 | 前端命令生成功能 |
 
-## 核心类型
+## 核心类型 / 接口
 
-见文件头部导出，共享给 Agent 等模块：
+| 类型 | 说明 |
+|------|------|
+| `AiMessage` | 消息格式（role + content + 可选 images/tool_calls/reasoning_content/tool_call_id） |
+| `ToolDefinition` | Function Calling 工具定义（name + description + parameters schema） |
+| `ToolCall` | AI 返回的工具调用（id + name + arguments JSON） |
+| `ChatWithToolsResult` | 工具调用结果（content + tool_calls + finish_reason + usage + aborted） |
+| `ApiRequestError` | API 请求错误（statusCode + retryAfter + apiErrorCode） |
+| `RetryInfo` | 重试信息（attempt + max + delayMs + reason + statusCode） |
+| `TokenUsageInfo` | Token 消耗统计（prompt + completion + total + cache_hit/miss） |
+| `AnthropicStreamDelta` | Anthropic 流式增量（content/reasoning_content/tool_calls/finish_reason/usage） |
+| `AiContentPart` | 多模态内容块（text \| image_url） |
 
-- `AiMessage` — 消息格式（role + content + 可选 images/tool_calls/reasoning_content）
-- `ToolDefinition` — Function Calling 工具定义
-- `ToolCall` — AI 返回的工具调用
-- `ChatWithToolsResult` — 工具调用结果（content + tool_calls + finish_reason）
-- `AiProfile` — AI 配置档案（apiUrl, apiKey, model, proxy, contextLength...）
+注：`AiProfile` 来自 `@shared/types`，非本文件定义。
 
 ## 依赖
 
@@ -90,8 +97,9 @@ AI API 的统一调用层。封装 OpenAI 兼容协议的 HTTP 请求，提供�
 
 ## 关键约束
 
-1. **OpenAI 兼容协议**：所有 API 调用遵循 OpenAI Chat Completions 格式，支持 Anthropic 格式转换
-2. **并发安全**：通过 `Map<string, AbortController>` 支持多个终端同时请求
-3. **完成回调幂等**：流式请求的 `complete()` 函数保证回调只触发一次
-4. **错误消息国际化**：网络错误码翻译为用户可读语言（通过 `translateNetworkError`）
-5. **不含业务逻辑**：纯传输层，不理解消息内容或工具语义
+- **API 协议必须保持 OpenAI 兼容**——不得引入厂商专有扩展作为必需路径，Anthropic 格式必须在 `convertToAnthropicBody` 中透明转换
+- **并发安全靠 `requestId` → `AbortController` 映射保证**——严禁跨 requestId 共享 AbortController
+- **流式完成回调必须幂等**——`complete()` 函数必须只 trigger 一次
+- **重试逻辑封装在 `chatWithToolsStream` 内部**——调用方不得自行实现重试
+- **Think 模型 reasoning_content 必须回传**——带 `tool_calls` 的消息在后续请求中缺此字段必 400
+- **AiService 不得理解消息内容或工具语义**——纯传输层，判断逻辑在上层

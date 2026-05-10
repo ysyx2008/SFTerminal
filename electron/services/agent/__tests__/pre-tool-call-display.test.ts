@@ -347,8 +347,8 @@ describe('buildPreToolCallDisplay', () => {
           tasks: [{ description: 'analyze code', prompt: 'read file X and summarize' }]
         })
       )
-      // 未指定 agent_type 默认 explore
-      expect(out).toBe('并行执行 1 个子任务（explore）')
+      // 未指定 agent_type 默认 read
+      expect(out).toBe('并行执行 1 个子任务（read）')
     })
 
     it('多个子任务且全部同 agent_type 时显示具体类型', () => {
@@ -356,12 +356,12 @@ describe('buildPreToolCallDisplay', () => {
         'dispatch_agents',
         JSON.stringify({
           tasks: [
-            { description: 't1', prompt: 'p1', agent_type: 'explore' },
-            { description: 't2', prompt: 'p2', agent_type: 'explore' }
+            { description: 't1', prompt: 'p1', agent_type: 'read' },
+            { description: 't2', prompt: 'p2', agent_type: 'read' }
           ]
         })
       )
-      expect(out).toBe('并行执行 2 个子任务（explore）')
+      expect(out).toBe('并行执行 2 个子任务（read）')
     })
 
     it('子任务 agent_type 不一致显示 mixed', () => {
@@ -369,8 +369,8 @@ describe('buildPreToolCallDisplay', () => {
         'dispatch_agents',
         JSON.stringify({
           tasks: [
-            { description: 't1', prompt: 'p1', agent_type: 'explore' },
-            { description: 't2', prompt: 'p2', agent_type: 'edit' }
+            { description: 't1', prompt: 'p1', agent_type: 'read' },
+            { description: 't2', prompt: 'p2', agent_type: 'write' }
           ]
         })
       )
@@ -385,7 +385,7 @@ describe('buildPreToolCallDisplay', () => {
         })
       )
       // 5 + 150 = 155 ≥ 100
-      expect(out).toBe('并行执行 1 个子任务（explore） · 155 字符')
+      expect(out).toBe('并行执行 1 个子任务（read） · 155 字符')
     })
 
     it('多个子任务的 prompt 汇总后一起计数（体现所有指令都在增长）', () => {

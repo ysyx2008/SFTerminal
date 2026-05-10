@@ -7,6 +7,7 @@ import { t } from '../../i18n'
 import { createLogger } from '../../../../utils/logger'
 import { buildOption, type ChartType, type ChartInput, type EChartsOption } from './render'
 import { renderToSvg, renderToPng, type RenderSize } from './ssr'
+import { sanitizeOptionForIpc, stripFormatterMarkers } from './ipc-sanitize'
 
 /** 输出格式：svg 矢量（默认）/ png 位图（嵌入 Word/PDF/IM 等） */
 type ChartFormat = 'svg' | 'png'
@@ -16,6 +17,25 @@ function parseFormat(raw: unknown): ChartFormat {
 }
 
 const log = createLogger('ChartSkill')
+
+/**
+ * 判断 option 能否原样安全经 IPC（structured clone）。仅给 render_echarts_option
+ * 自由路径用——AI 直传的 option 含 function 时，sanitize 会把陌生 function 删掉，
+ * 让 echarts 走默认 formatter，跟 SSR 出的 SVG 视觉不一致。所以自由路径选择保留旧
+ * 行为：含 function 就完全不投活图，让前端 fallback 到 SVG `<img>`，所见即所得。
+ *
+ * generate_chart 自家 build* 出来的 option 含的是已 tagFormatter 标记过的 function
+ * （见 ipc-sanitize.ts），sanitize 后会变成 marker 走活图，前端 reify 还原 formatter，
+ * 不需要走这个 fallback 检查。
+ */
+function isIpcSafeForChart(option: unknown): boolean {
+  try {
+    structuredClone(option)
+    return true
+  } catch {
+    return false
+  }
+}
 
 // 兜底默认 1280×800（适合大多数中等复杂度图表，矢量+1.6x 于老 800×500，文件可控）
 // 真正的尺寸决定权在 AI 手上——它最了解数据规模和图表类型，应在工具调用时显式传 width/height。
@@ -90,9 +110,10 @@ async function generateChart(
     riskLevel: 'safe'
   })
 
+  let option: EChartsOption
   let rendered: { dataUrl: string; payload: string | Buffer }
   try {
-    const option = buildOption(input, size)
+    option = buildOption(input, size)
     rendered = await renderChart(option, size, format, pixelRatio)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -120,19 +141,37 @@ async function generateChart(
     : t('chart.generated', { type })
 
   // chart skill 的图首要目标是「展示给用户」：
-  //   - step.images 是前端 (AiPanel.vue / Awaken.vue / tool-display.ts) 渲染图片的唯一来源，
-  //     必须带上，否则用户看不到生成的图。
+  //   - step.echartsOption（svg 模式专属）让前端把图实例化为「活图」，用户能 hover
+  //     tooltip、点击 legend 切换 series、拖 dataZoom 看局部、右键以任意倍率高清复制／另存为。
+  //   - step.images 同时带 SVG/PNG dataURL 作兜底：旧历史恢复、Awaken 关切面板等场景
+  //     不实例化 echarts；以及让 hasRichPayload 这类「按是否带图判断展示」的逻辑在
+  //     新老路径下行为一致。
+  //   - PNG 模式（AI 显式 format='png'）通常意味着「我要导出位图给 word/IM」，气泡里看
+  //     PNG 预览反而比看活图更贴合 AI 的意图，所以那条路不投递 echartsOption。
   //   - ToolResult.images 故意不带：那条路径会经 flushPendingToolImages 注入到 AI
   //     的 user 消息当视觉输入，但主流多模态模型（OpenAI/Anthropic/Gemini）都不识别
   //     SVG 格式，发过去要么被拒、要么静默丢弃，还会让 AI 误以为「图我看过了」从而
   //     脑补内容。chart 工具的成功状态完全可由 success + output 判断，无需 AI 视觉校验。
   // PDF skill 反过来：图首要目标是给 AI 看（视觉分析扫描件），所以走 ToolResult.images。
+  // svg 模式投递活图：sanitize 把 tagFormatter 标记过的 function 转成 marker，前端 reify
+  // 还原。build* 出来的 option 完全在掌控之下（K 线 formatVolume 是唯一 function，已经 tag），
+  // sanitize 后必然 IPC 安全，不再需要 isIpcSafeForChart 兜底。
+  let echartsPayload: { option: unknown; width: number; height: number } | undefined
+  if (format === 'svg') {
+    echartsPayload = {
+      option: sanitizeOptionForIpc(option),
+      width: size.width,
+      height: size.height
+    }
+  }
+
   executor.addStep({
     type: 'tool_result',
     content: output,
     toolName: 'generate_chart',
     toolResult: output,
-    images: [rendered.dataUrl]
+    images: [rendered.dataUrl],
+    echartsOption: echartsPayload
   })
 
   return {
@@ -208,13 +247,35 @@ async function renderEchartsOption(
     ? t('chart.echarts_rendered_with_path', { path: savedPath })
     : t('chart.echarts_rendered')
 
-  // 同 generate_chart：图走 step.images 给用户，不进 ToolResult.images（AI 看不到 SVG）
+  // 同 generate_chart：svg 模式投递 echartsOption + images（SVG 兜底），让前端实例化交互。
+  //
+  // 自由路径下 option 来自 AI 直传：
+  //   (1) 自带 function 时不能走 sanitize——sanitize 会把陌生 function 全删（只留 tagFormatter
+  //       的内置 formatter），AI 写的 function 删了 echarts 走默认 formatter，跟 SSR 出的
+  //       SVG 视觉不一致。改用 isIpcSafeForChart 判断：含 function 就完全不投活图，让前端
+  //       fallback 到 SVG `<img>`——视觉所见即所得（SSR 阶段 function 已被 echarts 调用过、
+  //       SVG 完整呈现，只是失去重新实例化的交互能力）。
+  //   (2) AI 还可能直传 marker 占位符（如 `{__echartsFn:'klineTooltip'}` 这种 plain object）：
+  //       structuredClone 通得过 IPC 检查、原样到前端 reify 后会把内置 K 线 formatter 装到
+  //       散点/柱状图上，跑出怪异 tooltip。投递前先调 stripFormatterMarkers 清理——marker
+  //       协议仅供后端 generate_chart 内部使用，自由路径上 AI 永远碰不到 marker 还原能力。
+  let echartsPayload: { option: EChartsOption; width: number; height: number } | undefined
+  if (format === 'svg') {
+    const cleaned = stripFormatterMarkers(option) as EChartsOption
+    if (isIpcSafeForChart(cleaned)) {
+      echartsPayload = { option: cleaned, width: size.width, height: size.height }
+    } else {
+      log.warn('render_echarts_option: option contains non-cloneable values (function formatters); falling back to SVG-only delivery')
+    }
+  }
+
   executor.addStep({
     type: 'tool_result',
     content: output,
     toolName: 'render_echarts_option',
     toolResult: output,
-    images: [rendered.dataUrl]
+    images: [rendered.dataUrl],
+    echartsOption: echartsPayload
   })
 
   return { success: true, output }

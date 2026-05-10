@@ -1,6 +1,6 @@
 {
   "name": "SFTerm",
-  "version": "10.38.1",
+  "version": "10.39.1",
   "description": "旗鱼 - AI 驱动的智能助手",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -24,6 +24,7 @@
     "typecheck:electron": "tsc --project tsconfig.node.json --noEmit",
     "typecheck:src": "vue-tsc --noEmit --skipLibCheck",
     "check": "npm run typecheck && npm run lint:check",
+    "check:i18n": "node scripts/check-i18n.mjs",
     "check:fast": "npm run typecheck:src",
     "build:check": "vue-tsc --noEmit && vite build --mode production",
     "verify": "concurrently --group --names typecheck,lint,build,unit-test,cli-test -c blue,yellow,magenta,cyan,green \"vue-tsc --noEmit\" \"eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx\" \"vite build --mode production\" \"vitest run\" \"bash electron/cli/test-cli.sh --no-ai\"",

@@ -5,10 +5,12 @@ import { useConfigStore, type AgentMbtiType } from '../stores/config'
 import {
   X, Play, Trash2, Eye, RefreshCw, History,
   Clock, Heart, Globe, Zap, FolderOpen, Calendar, Mail,
-  LayoutTemplate, Plus, Sparkles, Pencil, Fingerprint, UserRound, HeartPulse, Camera
+  LayoutTemplate, Plus, Sparkles, Pencil, Fingerprint, UserRound, HeartPulse, Camera,
+  LayoutGrid
 } from 'lucide-vue-next'
 import { shouldShowToolResultStep } from '../utils/tool-display'
 import cronstrue from 'cronstrue/i18n'
+import WatchOverviewPanel from './Awaken/WatchOverviewPanel.vue'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -98,6 +100,8 @@ type HistoryFilter = 'all' | 'wakeup' | 'watch'
 const historyFilter = ref<HistoryFilter>('watch')
 const loading = ref(true)
 const selectedWatch = ref<WatchDefinition | null>(null)
+// 关切 tab 右侧详情区的两种渲染模式：'overview' = 运营仪表盘；'watch' = 单个关切详情
+const selectedView = ref<'overview' | 'watch'>('overview')
 const runningWatches = ref<Set<string>>(new Set())
 
 // 手动触发时的 Agent 实时输出（内心独白）
@@ -360,9 +364,61 @@ const userWatches = computed(() =>
 )
 const enabledCount = computed(() => userWatches.value.filter(w => w.enabled).length)
 
+// 把 watch 折算成「运营 UI 状态」，与 binding-resolver.computeWatchStatus 同源
+type WatchUIStatus = 'running' | 'error' | 'success' | 'warning' | 'idle'
+const watchStatusOf = (w: WatchDefinition): WatchUIStatus => {
+  if (runningWatches.value.has(w.id)) return 'running'
+  if (!w.enabled) return 'idle'
+  const last = w.lastRun
+  if (!last) return 'idle'
+  if (last.status === 'failed' || last.status === 'timeout') return 'error'
+  if (last.status === 'cancelled' || last.status === 'skipped') return 'warning'
+  if (last.status === 'completed') return 'success'
+  if (last.status === 'running') return 'running'
+  return 'idle'
+}
+
+// 异常关切数（含失败/超时），供总览徽章/状态条使用
+const errorCount = computed(() =>
+  userWatches.value.filter(w => w.enabled && watchStatusOf(w) === 'error').length
+)
+const runningCount = computed(() => userWatches.value.filter(w => runningWatches.value.has(w.id)).length)
+const disabledCount = computed(() => userWatches.value.filter(w => !w.enabled).length)
+const totalCount = computed(() => userWatches.value.length)
+// 「正常」= 启用 - 异常 - 运行中，包含 idle（从未运行过）和 warning（上次被取消/跳过）。
+// 这样汇总条的口径满足 normal + error + running + disabled = total，不会漏数。
+const normalCount = computed(() =>
+  Math.max(0, totalCount.value - disabledCount.value - errorCount.value - runningCount.value)
+)
+
+// 状态汇总条筛选
+type WatchStatusFilter = 'all' | 'normal' | 'error' | 'running' | 'disabled'
+const statusFilter = ref<WatchStatusFilter>('all')
+const setStatusFilter = (f: WatchStatusFilter) => {
+  // 再次点击当前筛选项 → 回到「全部」
+  statusFilter.value = statusFilter.value === f ? 'all' : f
+}
+const filteredWatches = computed<WatchDefinition[]>(() => {
+  const list = userWatches.value
+  switch (statusFilter.value) {
+    // 与 normalCount 同口径：启用且非异常非运行中（含 idle / warning）
+    case 'normal':   return list.filter(w => {
+      if (!w.enabled) return false
+      const s = watchStatusOf(w)
+      return s !== 'error' && s !== 'running'
+    })
+    case 'error':    return list.filter(w => w.enabled && watchStatusOf(w) === 'error')
+    case 'running':  return list.filter(w => runningWatches.value.has(w.id))
+    case 'disabled': return list.filter(w => !w.enabled)
+    default:         return list
+  }
+})
+
 watch(() => userWatches.value, (list) => {
   if (selectedWatch.value && !list.some(w => w.id === selectedWatch.value!.id)) {
     selectedWatch.value = null
+    // 选中的 watch 被删/筛掉时，回到总览视图
+    selectedView.value = 'overview'
   }
 })
 
@@ -371,7 +427,14 @@ watch(() => userWatches.value, (list) => {
 const selectWatch = (w: WatchDefinition) => {
   if (editing.value) cancelEditing()
   selectedWatch.value = w
+  selectedView.value = 'watch'
   loadWatchRecentHistory(w.id)
+}
+
+const selectOverview = () => {
+  if (editing.value) cancelEditing()
+  selectedWatch.value = null
+  selectedView.value = 'overview'
 }
 
 // 当前关切的最近运行历史（详情页内嵌时间线）
@@ -1303,8 +1366,46 @@ onUnmounted(() => {
                   </button>
                 </div>
 
+                <!-- 状态汇总条（点击筛选下方真实关切列表，总览虚拟项不受影响） -->
+                <div class="status-summary" v-if="userWatches.length > 0">
+                  <button class="status-chip" :class="{ active: statusFilter === 'all' }" @click="setStatusFilter('all')" :title="t('watch.filterAll')">
+                    <span class="chip-label">{{ t('watch.filterAll') }}</span>
+                    <span class="chip-count">{{ totalCount }}</span>
+                  </button>
+                  <button class="status-chip status-normal" :class="{ active: statusFilter === 'normal' }" @click="setStatusFilter('normal')" :title="t('watch.filterNormal')">
+                    <span class="chip-dot"></span>
+                    <span class="chip-count">{{ normalCount }}</span>
+                  </button>
+                  <button class="status-chip status-error" :class="{ active: statusFilter === 'error' }" @click="setStatusFilter('error')" :title="t('watch.filterError')">
+                    <span class="chip-dot"></span>
+                    <span class="chip-count">{{ errorCount }}</span>
+                  </button>
+                  <button class="status-chip status-running" :class="{ active: statusFilter === 'running' }" @click="setStatusFilter('running')" :title="t('watch.filterRunning')">
+                    <span class="chip-dot"></span>
+                    <span class="chip-count">{{ runningCount }}</span>
+                  </button>
+                  <button class="status-chip status-disabled" :class="{ active: statusFilter === 'disabled' }" @click="setStatusFilter('disabled')" :title="t('watch.filterDisabled')">
+                    <span class="chip-dot"></span>
+                    <span class="chip-count">{{ disabledCount }}</span>
+                  </button>
+                </div>
+
                 <div class="item-list">
-                  <div v-for="w in userWatches" :key="w.id" class="list-item" :class="{ active: selectedWatch?.id === w.id, disabled: !w.enabled, running: runningWatches.has(w.id) }" @click="selectWatch(w)">
+                  <!-- 总览虚拟项：选中后右侧渲染运营仪表盘 -->
+                  <div
+                    class="list-item list-item-overview"
+                    :class="{ active: selectedView === 'overview' }"
+                    @click="selectOverview"
+                  >
+                    <div class="overview-icon"><LayoutGrid :size="14" /></div>
+                    <div class="item-info">
+                      <div class="item-name">{{ t('watch.overviewTitle') }}</div>
+                    </div>
+                    <span v-if="errorCount > 0" class="overview-badge" :title="t('watch.errorCountBadge', { n: errorCount })">{{ errorCount }}</span>
+                  </div>
+                  <div class="overview-divider" v-if="userWatches.length > 0"></div>
+
+                  <div v-for="w in filteredWatches" :key="w.id" class="list-item" :class="{ active: selectedView === 'watch' && selectedWatch?.id === w.id, disabled: !w.enabled, running: runningWatches.has(w.id) }" @click="selectWatch(w)">
                     <button class="btn-toggle" :class="{ enabled: w.enabled }" @click.stop="toggleWatch(w)">
                       <span class="toggle-dot"></span>
                     </button>
@@ -1323,17 +1424,28 @@ onUnmounted(() => {
                     </button>
                   </div>
 
-                  <div v-if="userWatches.length === 0 && !loading" class="empty-state">
-                    <Eye :size="40" class="empty-icon" />
-                    <p>{{ t('watch.noWatches') }}</p>
-                    <p class="hint-text">{{ t('watch.createViaAgent') }}</p>
+                  <div v-if="userWatches.length === 0 && !loading" class="empty-state empty-state-list">
+                    <p class="hint-text">{{ t('watch.noWatchesYet') }}</p>
+                  </div>
+                  <div v-else-if="filteredWatches.length === 0 && !loading" class="empty-state empty-state-list">
+                    <p class="hint-text">{{ t('watch.noWatchesInFilter') }}</p>
+                    <button class="btn btn-sm" @click="setStatusFilter('all')">{{ t('watch.filterAll') }}</button>
                   </div>
                 </div>
               </div>
 
               <!-- Watch Detail -->
               <div class="detail-area">
-                <template v-if="selectedWatch">
+                <!-- 总览仪表盘（默认） -->
+                <WatchOverviewPanel
+                  v-if="selectedView === 'overview'"
+                  :watches="userWatches"
+                  :history="watchHistory"
+                  :running-watches="runningWatches"
+                  @select-watch="(id) => { const w = userWatches.find(x => x.id === id); if (w) selectWatch(w) }"
+                  @view-history-detail="viewHistoryDetail"
+                />
+                <template v-else-if="selectedWatch">
                   <div class="detail-header">
                     <div class="detail-title" v-if="!editing">
                       <h3>{{ selectedWatch.name }}</h3>
@@ -2505,6 +2617,86 @@ onUnmounted(() => {
 }
 .list-item.disabled { opacity: 0.5; }
 .list-item.running { border-color: var(--accent-primary); background: rgba(var(--accent-rgb, 137, 180, 250), 0.06); }
+
+/* 状态汇总条 */
+.status-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 4px 10px;
+  flex-wrap: wrap;
+}
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.status-chip:hover {
+  background: var(--bg-hover);
+}
+.status-chip.active {
+  background: rgba(var(--accent-rgb, 137, 180, 250), 0.15);
+  border-color: rgba(var(--accent-rgb, 137, 180, 250), 0.5);
+  color: var(--text-primary);
+}
+.status-chip .chip-label { font-weight: 500; }
+.status-chip .chip-count {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.status-chip .chip-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.status-chip.status-normal .chip-dot   { background: #2ecc71; }
+.status-chip.status-error .chip-dot    { background: #e74c3c; }
+.status-chip.status-running .chip-dot  { background: var(--accent-primary); animation: chip-pulse 1.4s ease-in-out infinite; }
+.status-chip.status-disabled .chip-dot { background: var(--text-muted); }
+@keyframes chip-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+/* 总览虚拟项 */
+.list-item-overview { gap: 8px; }
+.overview-icon {
+  width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+.overview-badge {
+  background: var(--status-error, #c0392b);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 9px;
+  min-width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.overview-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 4px 6px 4px;
+  opacity: 0.6;
+}
+.empty-state-list {
+  padding: 24px 12px;
+  text-align: center;
+}
 
 .item-info { flex: 1; min-width: 0; }
 .item-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
