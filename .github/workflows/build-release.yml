@@ -73,6 +73,7 @@ jobs:
         run: npm run build:mac
         # fix-mac-yml.js 会在本地修复 latest-mac.yml 添加 arch 字段
         env:
+          NODE_OPTIONS: "--max-old-space-size=4096"  # vite build 内存密集，默认堆约 2GB 不够用
           # 如果需要代码签名，取消注释以下配置
           # CSC_LINK: ${{ secrets.MAC_CERTS }}
           # CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
