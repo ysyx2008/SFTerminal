@@ -320,6 +320,11 @@ export class PtyService {
     return this.instances.has(id)
   }
 
+  /** 当前活跃本地 PTY 数量（退出确认等场景的主进程兜底统计） */
+  getActiveInstanceCount(): number {
+    return this.instances.size
+  }
+
   /**
    * 生成唯一标记 ID
    */

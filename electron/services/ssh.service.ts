@@ -519,6 +519,11 @@ export class SshService {
     }
   }
 
+  /** 当前活跃 SSH 终端会话数（退出确认等场景的主进程兜底统计） */
+  getActiveInstanceCount(): number {
+    return this.instances.size
+  }
+
   /**
    * 断开 SSH 连接
    */

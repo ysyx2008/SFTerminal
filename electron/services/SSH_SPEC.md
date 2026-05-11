@@ -19,6 +19,7 @@ SSH 远程连接管理。建立、维持多路 SSH 会话，支持跳板机直�
 | `resize(id, cols, rows): void` | 调整终端窗口大小 | PtyService |
 | `onData(id, callback): () => void` | 注册终端数据回调，返回取消函数 | PtyService |
 | `hasInstance(id): boolean` | 查询 session 是否存活 | tool/ssh |
+| `getActiveInstanceCount(): number` | 当前活跃 SSH 会话数（退出确认主进程兜底） | `main.ts` |
 | `onDisconnect(id, callback): () => void` | 注册断连回调 | PtyService |
 | `disconnect(id): void` | 断开单个会话 | CLI, UI |
 | `disposeAll(): void` | 断开所有会话 | 生命周期 |

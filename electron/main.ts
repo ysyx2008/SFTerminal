@@ -429,9 +429,66 @@ let fileManagerParams: {  // 文件管理器窗口初始化参数
 let forceQuit = false  // 是否强制退出（跳过确认）
 let isQuitting = false  // 是否正在退出应用（Cmd+Q 触发，区分于 Cmd+W 关闭窗口）
 
+// Cmd+Q 退出确认：若渲染进程未及时回复终端数量，避免主窗口 close 永久被 preventDefault 卡住
+let quitTerminalCountTimer: ReturnType<typeof setTimeout> | null = null
+let quitTerminalCountHandled = false
+
 // 服务实例
 const ptyService = new PtyService()
 const sshService = new SshService()
+
+function clearQuitTerminalCountWatchdog(): void {
+  if (quitTerminalCountTimer !== null) {
+    clearTimeout(quitTerminalCountTimer)
+    quitTerminalCountTimer = null
+  }
+}
+
+function beginQuitTerminalCountRequest(): void {
+  clearQuitTerminalCountWatchdog()
+  quitTerminalCountHandled = false
+  quitTerminalCountTimer = setTimeout(() => {
+    quitTerminalCountTimer = null
+    const n = ptyService.getActiveInstanceCount() + sshService.getActiveInstanceCount()
+    log.warn('[Quit] 渲染进程未及时返回终端数量，使用主进程会话数兜底:', n)
+    void proceedQuitAfterTerminalCount(n)
+  }, 2500)
+}
+
+async function proceedQuitAfterTerminalCount(terminalCount: number): Promise<void> {
+  if (quitTerminalCountHandled) {
+    return
+  }
+  quitTerminalCountHandled = true
+  clearQuitTerminalCountWatchdog()
+
+  const messageBoxOptions = {
+    type: 'question' as const,
+    buttons: ['取消', '退出'],
+    defaultId: 0,
+    cancelId: 0,
+    title: '确认退出',
+    message: '确定要退出程序吗？',
+    detail: `当前有 ${terminalCount} 个终端会话正在运行，退出将关闭所有会话。`
+  }
+
+  if (terminalCount > 0) {
+    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+    const result = parent
+      ? await dialog.showMessageBox(parent, messageBoxOptions)
+      : await dialog.showMessageBox(messageBoxOptions)
+
+    if (result.response === 1) {
+      forceQuit = true
+      mainWindow?.close()
+    } else {
+      isQuitting = false
+    }
+  } else {
+    forceQuit = true
+    mainWindow?.close()
+  }
+}
 const aiService = new AiService()
 const configService = new ConfigService()
 setConfigServiceInstance(configService)
@@ -948,8 +1005,10 @@ function createWindow() {
       // Cmd+Q 退出：走终端确认逻辑
       event.preventDefault()
       try {
+        beginQuitTerminalCountRequest()
         mainWindow?.webContents.send('window:requestTerminalCount')
       } catch (e) {
+        clearQuitTerminalCountWatchdog()
         forceQuit = true
         mainWindow?.close()
       }
@@ -1968,32 +2027,9 @@ ipcMain.handle('window:isFullScreen', async () => {
 })
 
 // 响应终端数量查询，决定是否需要确认退出
-ipcMain.on('window:terminalCountResponse', async (_event, terminalCount: number) => {
-  if (terminalCount > 0) {
-    // 有终端，显示确认对话框
-    const result = await dialog.showMessageBox(mainWindow!, {
-      type: 'question',
-      buttons: ['取消', '退出'],
-      defaultId: 0,
-      cancelId: 0,
-      title: '确认退出',
-      message: '确定要退出程序吗？',
-      detail: `当前有 ${terminalCount} 个终端会话正在运行，退出将关闭所有会话。`
-    })
-
-    if (result.response === 1) {
-      // 用户确认退出
-      forceQuit = true
-      mainWindow?.close()
-    } else {
-      // 用户取消，重置退出标志
-      isQuitting = false
-    }
-  } else {
-    // 没有终端，直接退出
-    forceQuit = true
-    mainWindow?.close()
-  }
+ipcMain.on('window:terminalCountResponse', (_event, terminalCount: number) => {
+  const n = typeof terminalCount === 'number' && !Number.isNaN(terminalCount) ? terminalCount : 0
+  void proceedQuitAfterTerminalCount(n)
 })
 
 // 强制退出（跳过确认）

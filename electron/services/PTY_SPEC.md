@@ -21,6 +21,7 @@
 | `dispose(id: string): void` | 销毁单个终端实例 | 前端关闭标签 |
 | `disposeAll(): void` | 销毁所有终端实例 | 应用退出 |
 | `hasInstance(id: string): boolean` | 检查终端实例是否存在 | `agent/index.ts` |
+| `getActiveInstanceCount(): number` | 当前活跃本地 PTY 数量（退出确认主进程兜底） | `main.ts` |
 | `executeCommand(id: string, command: string, timeout?: number): Promise<CommandResult>` | Agent 模式注入命令并等待完成（标记机制） | `agent/index.ts` |
 | `abortCommand(id: string): boolean` | ��止正在执行的注入命令 | `agent/index.ts` |
 | `isCommandPending(id: string): boolean` | 检查是否有待处理的注入命令 | `agent/index.ts` |
