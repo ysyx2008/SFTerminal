@@ -278,7 +278,7 @@ interface ParseOptions {
 
 ## 8. 注意事项
 
-1. **大文件处理**: 默认限制 10MB，可通过 `maxFileSize` 调整
+1. **大文件处理**: 默认限制 10MB，可通过 `maxFileSize` 调整。超过限制时**不会抛出异常**，而是优雅降级：`content` 字段返回结构化说明文字，`skipped` 字段设为 `true`，供调用方（Agent）区分"解析出错"和"主动跳过"
 2. **编码问题**: 文本文件默认使用 UTF-8 编码
 3. **旧版 Word**: .doc 格式暂不支持，建议用户转换为 .docx
 4. **依赖安装**: PDF 和 Word 解析需要安装对应的 npm 包

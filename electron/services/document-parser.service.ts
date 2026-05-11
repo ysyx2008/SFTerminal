@@ -36,6 +36,8 @@ export interface ParsedDocument {
   metadata?: Record<string, string>
   /** 错误信息（如果解析失败） */
   error?: string
+  /** 文件因大小超限被主动跳过（非解析错误） */
+  skipped?: boolean
 }
 
 // PDF 页面渲染选项
@@ -255,7 +257,9 @@ export class DocumentParserService {
         case 'html':
         case 'csv': {
           if (file.size > opts.maxFileSize) {
-            throw new Error(`文件大小 ${this.formatFileSize(file.size)} 超过限制 ${this.formatFileSize(opts.maxFileSize)}`)
+            result.skipped = true
+            result.content = `[${file.name} 文件较大（${this.formatFileSize(file.size)}），已跳过内容读取]`
+            break
           }
           if (fileType === 'pdf') await this.parsePdf(file.path, result, opts, report)
           else if (fileType === 'docx') await this.parseDocx(file.path, result, opts, report)
@@ -271,7 +275,9 @@ export class DocumentParserService {
             break
           }
           if (file.size > opts.maxFileSize) {
-            throw new Error(`文件大小 ${this.formatFileSize(file.size)} 超过限制 ${this.formatFileSize(opts.maxFileSize)}`)
+            result.skipped = true
+            result.content = `[${file.name} 文件较大（${this.formatFileSize(file.size)}），已跳过内容读取]`
+            break
           }
           await this.parseTextFile(file.path, result, opts, report)
           break
