@@ -154,7 +154,7 @@ jobs:
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: 旗鱼 ${{ steps.get_version.outputs.VERSION }}
           draft: false  # 不作为草稿，直接发布
