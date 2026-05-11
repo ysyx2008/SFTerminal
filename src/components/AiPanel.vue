@@ -964,11 +964,20 @@ const guardVisionBeforeSend = async (): Promise<boolean> => {
   return proceed
 }
 
-// 处理粘贴事件（检测图片）
+// 处理粘贴：剪贴板文件（与拖放一致：先图片再文档）；否则仅处理剪贴板里的位图图片
 const handlePaste = async (event: ClipboardEvent) => {
+  const files = event.clipboardData?.files
+  if (files && files.length > 0) {
+    const imageCount = await handleDroppedImages(files)
+    if (imageCount < files.length) {
+      await handleDroppedFiles(files)
+    }
+    event.preventDefault()
+    return
+  }
   const handled = await handlePasteImages(event)
   if (handled) {
-    event.preventDefault()  // 阻止默认粘贴行为（避免粘贴图片文件名等）
+    event.preventDefault() // 避免把截图等当文本粘进输入框
   }
 }
 
