@@ -3007,6 +3007,26 @@ ipcMain.handle('xshell:scanDefaultPaths', async () => {
 
 // ==================== Agent 相关 ====================
 
+/**
+ * 构建确认通知的 body 文本。
+ * 优先用 displayName（已人类可读），否则从 toolArgs 提取关键内容字段，
+ * 最后 fallback 到 toolName。
+ */
+function buildConfirmNotifBody(
+  toolName: string,
+  toolArgs: Record<string, unknown>,
+  displayName?: string
+): string {
+  if (displayName) return displayName
+  // 命令类工具：显示实际命令
+  const cmd = typeof toolArgs.command === 'string' ? toolArgs.command : null
+  if (cmd) return cmd.length > 80 ? cmd.slice(0, 80) + '…' : cmd
+  // 文件类工具：显示路径
+  const filePath = typeof toolArgs.path === 'string' ? toolArgs.path : (typeof toolArgs.file_path === 'string' ? toolArgs.file_path : null)
+  if (filePath) return filePath
+  return toolName
+}
+
 // 运行 Agent
 ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, profileId }: {
   ptyId: string  // 实际语义为 agentKey（终端 Agent = tabId）；字段名保留以兼容现有 IPC 协议。
@@ -3053,7 +3073,7 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
       const riskEmoji1 = confirmation.riskLevel === 'dangerous' ? '⚠️ ' : ''
       attentionService.request({
         title: `${riskEmoji1}SailFish 需要确认`,
-        body: confirmation.displayName || confirmation.toolName
+        body: buildConfirmNotifBody(confirmation.toolName, confirmation.toolArgs, confirmation.displayName)
       })
     },
     onComplete: (agentId: string, result: string, pendingUserMessages?: string[]) => {
@@ -3190,7 +3210,7 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
       const riskEmoji2 = confirmation.riskLevel === 'dangerous' ? '⚠️ ' : ''
       attentionService.request({
         title: `${riskEmoji2}SailFish 需要确认`,
-        body: confirmation.displayName || confirmation.toolName
+        body: buildConfirmNotifBody(confirmation.toolName, confirmation.toolArgs, confirmation.displayName)
       })
     },
     onComplete: (_runId: string, result: string, pendingUserMessages?: string[]) => {

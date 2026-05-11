@@ -38,11 +38,14 @@ class AttentionService {
   setMainWindow(win: BrowserWindow): void {
     this.mainWindow = win
     this.focused = win.isFocused()
+    log.info(`attention setMainWindow: initial focused=${this.focused}`)
     win.on('focus', () => {
+      log.info('attention: window focused')
       this.focused = true
       this.clear()
     })
     win.on('blur', () => {
+      log.info('attention: window blurred')
       this.focused = false
     })
   }
@@ -101,6 +104,12 @@ class AttentionService {
   /**
    * 提请用户关注。窗口当前聚焦则不做任何事——用户已经在看了。
    *
+   * 焦点判断使用「双重确认」策略：
+   * - 只有事件驱动状态（this.focused）和 win.isFocused() 同时为 true，
+   *   才认为窗口在前台，跳过提醒。
+   * - 任意一方认为窗口不在前台，即触发提醒。
+   * 这样可避免 packaged 版中偶发的 focus/blur 事件时序延迟造成漏报。
+   *
    * @param notification 可选。窗口不在前台时额外弹出系统通知。
    */
   async request(notification?: { title: string; body: string }): Promise<void> {
@@ -109,17 +118,25 @@ class AttentionService {
       log.debug('attention.request skipped: no window')
       return
     }
-    if (this.focused) {
-      log.debug('attention.request skipped: window focused')
+
+    const nativeFocused = win.isFocused()
+    log.info(`attention.request: event-focused=${this.focused}, native-focused=${nativeFocused}`)
+
+    // 双重确认：两者都说 focused 才跳过；任一说 not focused 则触发
+    if (this.focused && nativeFocused) {
+      log.info('attention.request skipped: window is focused (both event and native agree)')
       return
     }
 
     if (notification && Notification.isSupported()) {
+      log.info(`attention notification: title="${notification.title}"`)
       try {
         new Notification({ title: notification.title, body: notification.body, silent: false }).show()
       } catch (e) {
         log.warn('attention notification failed:', e)
       }
+    } else if (notification) {
+      log.warn('attention notification skipped: Notification.isSupported()=false')
     }
 
     this.active = true
@@ -131,21 +148,23 @@ class AttentionService {
         // 图标带着角标出现。dock.show() 是异步的，必须 await，否则
         // 在 dock 真正显示前就 setBadge，badge 会丢失。
         // Cmd+Tab 走的常规后台场景 dock 一直可见，await 立即返回。
-        if (app.dock && !app.dock.isVisible()) {
+        const dockVisible = app.dock?.isVisible()
+        log.info(`attention badge: dock=${!!app.dock}, dock.isVisible=${dockVisible}`)
+        if (app.dock && !dockVisible) {
           try {
             await app.dock.show()
+            log.info('attention badge: dock.show() completed')
           } catch (e) {
-            log.debug('dock.show failed:', e)
+            log.warn('attention badge: dock.show failed:', e)
           }
         }
-        // 圆点而非数字：我们不计数，只表达"有事情结束了"
+        // 圆点而非数字：我们不计数，只表达"有事情要看"
         app.dock?.setBadge('•')
         log.info('attention badge set (macOS dock)')
       } else if (process.platform === 'win32') {
         win.flashFrame(true)
         log.info('attention flash started (Windows)')
       } else {
-        // Linux：部分桌面环境（Unity 等）支持 setBadgeCount，其它环境是 no-op
         app.setBadgeCount(1)
         log.info('attention badge set (Linux)')
       }
