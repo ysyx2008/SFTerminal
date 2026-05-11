@@ -138,6 +138,9 @@ export abstract class Agent {
   /** 技能会话（Agent 实例级别，跨 Run 持久化） */
   private _skillSession?: SkillSession
 
+  /** "始终允许"工具白名单（Agent 实例级别，跨 Run 持久化，重启后清空） */
+  private allowedTools = new Set<string>()
+
   /** 上下文管理功能是否已激活（用量超过 50% 时启用） */
   protected contextManagementEnabled = false
   
@@ -385,11 +388,11 @@ export abstract class Agent {
     }
     
     if (!toolCallId || this.currentRun.pendingConfirmation.toolCallId === toolCallId) {
-      // 如果用户选择"始终允许"，将工具+参数加入白名单
+      // 如果用户选择"始终允许"，将工具+参数加入 Agent 级白名单（跨 Run 持久化）
       if (approved && alwaysAllow) {
         const { toolName, toolArgs } = this.currentRun.pendingConfirmation
         const key = this.generateAllowedToolKey(toolName, modifiedArgs || toolArgs)
-        this.currentRun.allowedTools.add(key)
+        this.allowedTools.add(key)
       }
       
       this.currentRun.pendingConfirmation.resolve(approved, modifiedArgs)
@@ -482,7 +485,6 @@ export abstract class Agent {
       workerOptions: options?.workerOptions,
       executionPhase: 'thinking',
       skillSession: this.getSkillSession(),  // 使用 Agent 级别的技能会话，跨 Run 持久化
-      allowedTools: new Set<string>(),
       taskMessageLog: []
     }
     
@@ -2818,9 +2820,9 @@ export abstract class Agent {
       addStep: (step) => this.addStep(step),
       updateStep: (stepId, updates) => this.updateStep(stepId, updates),
       waitForConfirmation: async (toolCallId, toolName, toolArgs, riskLevel, displayName) => {
-        // 检查"始终允许"白名单：若已在名单中则跳过弹框直接放行
+        // 检查"始终允许"白名单（Agent 实例级别，跨 Run 持久化）
         const allowKey = this.generateAllowedToolKey(toolName, toolArgs)
-        if (run.allowedTools.has(allowKey)) {
+        if (this.allowedTools.has(allowKey)) {
           return true
         }
         const result = await this.waitForConfirmation(run, toolCallId, toolName, toolArgs, riskLevel, displayName)

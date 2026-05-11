@@ -169,8 +169,6 @@ export interface AgentRun {
   initialStepId?: string
   // 技能会话
   skillSession?: import('./skills').SkillSession
-  // 会话级别的工具白名单（"始终允许"功能）
-  allowedTools: Set<string>
   // 完整对话记录（append-only，不受 compress_context 影响）
   // 与 messages（工作窗口，可被压缩）分离，确保持久化的历史完整不丢失
   taskMessageLog: import('../ai.service').AiMessage[]

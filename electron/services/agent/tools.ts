@@ -660,6 +660,8 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         supportedModes: ['local', 'assistant'],
         phase: 'writing_file',
         contextBudget: { toolResult: 'protected' },
+        // 白名单键只取 path：同一文件的任意编辑操作共享"始终允许"授权
+        idempotencyKey: ['path'],
         // 同 write_text_file：path 未到时占位符兜底，old_text + new_text 累计字符数尾缀
         streamDisplay: {
           titleKey: 'file.edit',
@@ -703,6 +705,8 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         supportedModes: ['local', 'assistant'],
         phase: 'writing_file',
         contextBudget: { toolResult: 'protected' },
+        // 白名单键只取 path：同一路径的任意写入操作共享"始终允许"授权
+        idempotencyKey: ['path'],
         // 流式预卡片：mode 切换 6 种文案，path 占位符兜底，content 累计字符数尾缀。
         // customRender 只负责前缀，progressFields 在外层统一加尾缀。
         streamDisplay: {
@@ -744,6 +748,8 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         supportedModes: ['ssh'],
         phase: 'writing_file',
         contextBudget: { toolResult: 'protected' },
+        // 白名单键只取 path：同一路径的任意远程写入操作共享"始终允许"授权
+        idempotencyKey: ['path'],
         // 与 write_text_file 共享同一套预卡片渲染（mode 切换文案、path 占位符、字符数尾缀）
         streamDisplay: {
           customRender: writeTextFilePrefix,
