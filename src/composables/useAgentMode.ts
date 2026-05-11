@@ -8,7 +8,7 @@ import { useI18n } from 'vue-i18n'
 import { useTerminalStore } from '../stores/terminal'
 import { useConfigStore } from '../stores/config'
 import { useCanvasStore } from '../stores/canvas'
-import type { ExecutionMode, AttachmentInfo } from '@shared/types'
+import type { ExecutionMode, AttachmentInfo, AgentRecord, AgentHistorySummary } from '@shared/types'
 import type { AgentStep, AgentState } from '../stores/terminal'
 import { createLogger } from '../utils/logger'
 import { useTts } from './useTts'
@@ -1201,43 +1201,33 @@ export function useAgentMode(
   }
 
   // ==================== 历史对话功能 ====================
-  
-  // 历史记录类型定义
-  interface AgentRecord {
-    id: string
-    timestamp: number
-    terminalId: string
-    terminalType: 'local' | 'ssh'
-    sshHost?: string
-    userTask: string
-    steps: Array<{
-      id: string
-      type: string
-      content: string
-      toolName?: string
-      toolArgs?: Record<string, unknown>
-      toolResult?: string
-      riskLevel?: string
-      timestamp: number
-    }>
-    finalResult?: string
-    duration: number
-    status: 'completed' | 'failed' | 'aborted'
-  }
 
   // 近期历史记录（用于欢迎页展示）
   const recentHistory = ref<AgentRecord[]>([])
   const isLoadingHistory = ref(false)
-  
-  // 查看更多弹窗状态
+
+  // 查看更多弹窗：一次拉取索引中的全部标题摘要，本地筛选 + 分页展示；点开行再 getAgentRecordById
   const showHistoryModal = ref(false)
-  const allHistory = ref<AgentRecord[]>([])
+  const historyModalSummaries = ref<AgentHistorySummary[]>([])
   const isLoadingAllHistory = ref(false)
   const HISTORY_PAGE_SIZE = 20
-  const hasMoreHistory = ref(true)
+  const historyModalDisplayCount = ref(HISTORY_PAGE_SIZE)
   const historySearchKeyword = ref('')
-  let historySearchDebounceTimer: ReturnType<typeof setTimeout> | null = null
-  const HISTORY_SEARCH_DEBOUNCE_MS = 300
+
+  const filteredHistorySummaries = computed(() => {
+    const kw = historySearchKeyword.value.trim().toLowerCase()
+    const base = historyModalSummaries.value
+    if (!kw) return base
+    return base.filter(s => s.userTask.toLowerCase().includes(kw))
+  })
+
+  const allHistory = computed(() =>
+    filteredHistorySummaries.value.slice(0, historyModalDisplayCount.value)
+  )
+
+  const hasMoreHistory = computed(
+    () => historyModalDisplayCount.value < filteredHistorySummaries.value.length
+  )
 
   // 加载近期历史（最近 5 条，用于欢迎页）
   const loadRecentHistory = async () => {
@@ -1253,74 +1243,48 @@ export function useAgentMode(
     }
   }
 
-  // 分页加载历史（用于弹窗）；有关键字时走后端 search，limit 随「加载更多」递增
-  const loadAllHistory = async (reset = true) => {
-    if (isLoadingAllHistory.value) return
+  const loadMoreHistory = () => {
+    historyModalDisplayCount.value += HISTORY_PAGE_SIZE
+  }
+
+  /** 标题筛选：纯本地，重置可见条数 */
+  const setHistorySearchKeyword = (value: string) => {
+    historySearchKeyword.value = value
+    historyModalDisplayCount.value = HISTORY_PAGE_SIZE
+  }
+
+  /** Enter / 搜索按钮：回到列表顶部（仍只显示前 N 条） */
+  const flushHistorySearch = () => {
+    historyModalDisplayCount.value = HISTORY_PAGE_SIZE
+  }
+
+  const clearHistorySearch = () => {
+    historySearchKeyword.value = ''
+    historyModalDisplayCount.value = HISTORY_PAGE_SIZE
+  }
+
+  // 打开历史弹窗：单次 IPC 读全量摘要（来自 agent-index.json）
+  const openHistoryModal = async () => {
+    showHistoryModal.value = true
+    historySearchKeyword.value = ''
+    historyModalDisplayCount.value = HISTORY_PAGE_SIZE
     isLoadingAllHistory.value = true
     try {
-      const currentCount = reset ? 0 : allHistory.value.length
-      const fetchSize = currentCount + HISTORY_PAGE_SIZE
-      const kw = historySearchKeyword.value.trim()
-
-      if (kw) {
-        const result = await window.electronAPI.history.searchAgentRecords({
-          keyword: kw,
-          limit: fetchSize,
-          excludeWakeup: true
-        })
-        const sorted = result.records.sort(
-          (a, b) => b.timestamp + b.duration - (a.timestamp + a.duration)
-        ) as AgentRecord[]
-        allHistory.value = sorted
-        hasMoreHistory.value = result.hasMore
-      } else {
-        const records = await window.electronAPI.history.getRecentAgentRecords(fetchSize, true) as AgentRecord[]
-        const sorted = records.sort((a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration))
-        allHistory.value = sorted
-        hasMoreHistory.value = records.length >= fetchSize
-      }
+      historyModalSummaries.value = await window.electronAPI.history.listAgentSummaries(true)
     } catch (e) {
-      log.error('加载历史记录失败:', e)
+      log.error('加载历史摘要失败:', e)
+      historyModalSummaries.value = []
     } finally {
       isLoadingAllHistory.value = false
     }
   }
 
-  const loadMoreHistory = () => loadAllHistory(false)
-
-  /** 弹窗内搜索框：更新关键字并防抖重新拉取 */
-  const setHistorySearchKeyword = (value: string) => {
-    historySearchKeyword.value = value
-    if (historySearchDebounceTimer !== null) {
-      clearTimeout(historySearchDebounceTimer)
-      historySearchDebounceTimer = null
-    }
-    historySearchDebounceTimer = setTimeout(() => {
-      historySearchDebounceTimer = null
-      void loadAllHistory(true)
-    }, HISTORY_SEARCH_DEBOUNCE_MS)
-  }
-
-  const clearHistorySearchDebounce = () => {
-    if (historySearchDebounceTimer !== null) {
-      clearTimeout(historySearchDebounceTimer)
-      historySearchDebounceTimer = null
-    }
-  }
-
-  // 打开历史弹窗
-  const openHistoryModal = async () => {
-    showHistoryModal.value = true
-    await loadAllHistory(true)
-  }
-
   // 关闭历史弹窗
   const closeHistoryModal = () => {
     showHistoryModal.value = false
-    allHistory.value = []
-    hasMoreHistory.value = true
+    historyModalSummaries.value = []
     historySearchKeyword.value = ''
-    clearHistorySearchDebounce()
+    historyModalDisplayCount.value = HISTORY_PAGE_SIZE
   }
 
   // 加载历史记录到当前会话
@@ -1384,7 +1348,6 @@ export function useAgentMode(
     cleanupAgentListeners()
     uninstallContentResizeObserver()
     canvasStore.cleanup(currentTabId.value)
-    clearHistorySearchDebounce()
   })
 
   return {
@@ -1432,8 +1395,9 @@ export function useAgentMode(
     hasMoreHistory,
     historySearchKeyword,
     setHistorySearchKeyword,
+    flushHistorySearch,
+    clearHistorySearch,
     loadRecentHistory,
-    loadAllHistory,
     loadMoreHistory,
     openHistoryModal,
     closeHistoryModal,

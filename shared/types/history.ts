@@ -47,3 +47,17 @@ export interface AgentRecord {
   status: 'completed' | 'failed' | 'aborted'
   tokenUsage?: TokenUsage
 }
+
+/**
+ * Agent 历史列表行（来自磁盘索引，无 steps）。
+ * 用于「最近对话」弹窗一次拉全量标题后本地筛选，点开时再 `getAgentRecordById`。
+ */
+export interface AgentHistorySummary {
+  id: string
+  timestamp: number
+  duration: number
+  userTask: string
+  terminalType: TerminalType
+  sshHost?: string
+  status: 'completed' | 'failed' | 'aborted'
+}

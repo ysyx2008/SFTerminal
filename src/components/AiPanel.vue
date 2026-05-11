@@ -6,7 +6,7 @@
  */
 import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Upload, Trash2, X, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MoreHorizontal, Shuffle } from 'lucide-vue-next'
+import { Upload, Trash2, X, Search, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MoreHorizontal, Shuffle } from 'lucide-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useConfigStore } from '../stores/config'
@@ -41,6 +41,7 @@ import {
   shuffleExamples as shuffleExamplePool,
   type AssistantExample,
 } from '../config/assistantExamples'
+import type { AgentRecord, AgentHistorySummary } from '@shared/types'
 
 // Props - 每个 AiPanel 实例绑定到特定的 tab
 const props = defineProps<{
@@ -460,6 +461,8 @@ const {
   hasMoreHistory,
   historySearchKeyword,
   setHistorySearchKeyword,
+  flushHistorySearch,
+  clearHistorySearch,
   loadMoreHistory,
   openHistoryModal,
   closeHistoryModal,
@@ -709,14 +712,20 @@ watch(
   }
 )
 
-// 加载历史记录（带确认）
-const handleLoadHistory = async (record: { id: string; timestamp: number; terminalId: string; terminalType: 'local' | 'ssh'; sshHost?: string; userTask: string; steps: Array<{ id: string; type: string; content: string; toolName?: string; toolArgs?: Record<string, unknown>; toolResult?: string; riskLevel?: string; timestamp: number; webSearchResults?: import('@shared/types').WebSearchResultItem[] }>; finalResult?: string; duration: number; status: 'completed' | 'failed' | 'aborted' }) => {
-  // 如果当前有活跃的任务（用户任务不为空），需要确认
-  // 注意：如果欢迎页显示（agentUserTask 为空），说明没有活跃任务，不需要确认
+// 加载历史记录（带确认）。欢迎区为完整 AgentRecord；弹窗列表为 AgentHistorySummary，需按 id 拉全量
+const handleLoadHistory = async (row: AgentRecord | AgentHistorySummary) => {
   if (agentUserTask.value && hasExistingConversation.value) {
     if (!window.confirm(t('ai.agentWelcome.confirmLoadHistory'))) {
       return
     }
+  }
+  const record: AgentRecord | undefined =
+    'steps' in row && Array.isArray(row.steps)
+      ? (row as AgentRecord)
+      : ((await window.electronAPI.history.getAgentRecordById(row.id)) as AgentRecord | undefined)
+  if (!record) {
+    toast.error(t('ai.agentWelcome.historyRecordMissing'))
+    return
   }
   await loadHistoryRecord(record)
 }
@@ -1965,13 +1974,23 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                     :value="historySearchKeyword"
                     autocomplete="off"
                     @input="setHistorySearchKeyword(($event.target as HTMLInputElement).value)"
+                    @keydown.enter.prevent="flushHistorySearch()"
                   />
+                  <button
+                    type="button"
+                    class="history-search-submit"
+                    :title="t('ai.agentWelcome.historySearchSubmit')"
+                    :disabled="isLoadingAllHistory"
+                    @click="flushHistorySearch()"
+                  >
+                    <Search :size="18" />
+                  </button>
                   <button
                     v-if="historySearchKeyword.trim()"
                     type="button"
                     class="history-search-clear"
                     :title="t('ai.agentWelcome.historySearchClear')"
-                    @click="setHistorySearchKeyword('')"
+                    @click="clearHistorySearch()"
                   >
                     ×
                   </button>
@@ -2009,10 +2028,9 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                     <button
                       v-if="hasMoreHistory"
                       class="history-load-more"
-                      :disabled="isLoadingAllHistory"
                       @click="loadMoreHistory"
                     >
-                      {{ isLoadingAllHistory ? t('ai.agentWelcome.historyLoading') : t('ai.agentWelcome.loadMore', '加载更多...') }}
+                      {{ t('ai.agentWelcome.loadMore', '加载更多...') }}
                     </button>
                   </div>
                 </div>
@@ -3858,6 +3876,31 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .history-search-input::-webkit-search-cancel-button {
   display: none;
+}
+
+.history-search-submit {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent-primary) 22%, var(--bg-hover));
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 35%, var(--border-color));
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.history-search-submit:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-primary) 32%, var(--bg-hover));
+}
+
+.history-search-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .history-search-clear {

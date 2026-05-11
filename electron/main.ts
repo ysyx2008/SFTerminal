@@ -3613,6 +3613,10 @@ ipcMain.handle('history:getRecentAgentRecords', async (_event, limit?: number, e
   return historyService.getRecentAgentRecords(limit ?? 5, filter)
 })
 
+ipcMain.handle('history:listAgentSummaries', async (_event, excludeWakeup?: boolean) => {
+  return historyService.listAgentHistorySummaries(excludeWakeup)
+})
+
 ipcMain.handle(
   'history:searchAgentRecords',
   async (
@@ -3623,6 +3627,7 @@ ipcMain.handle(
       endDate?: string
       limit?: number
       excludeWakeup?: boolean
+      titleOnly?: boolean
     }
   ) => {
     const filter = options.excludeWakeup
@@ -3633,7 +3638,8 @@ ipcMain.handle(
       startDate: options.startDate,
       endDate: options.endDate,
       limit: options.limit ?? 50,
-      filter
+      filter,
+      titleOnly: options.titleOnly
     })
   }
 )

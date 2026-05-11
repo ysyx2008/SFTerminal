@@ -757,12 +757,22 @@ interface Window {
         status: 'completed' | 'failed' | 'aborted'
         duration: number
       }>>
+      listAgentSummaries: (excludeWakeup?: boolean) => Promise<Array<{
+        id: string
+        timestamp: number
+        duration: number
+        userTask: string
+        terminalType: 'local' | 'ssh'
+        sshHost?: string
+        status: 'completed' | 'failed' | 'aborted'
+      }>>
       searchAgentRecords: (options: {
         keyword?: string
         startDate?: string
         endDate?: string
         limit?: number
         excludeWakeup?: boolean
+        titleOnly?: boolean
       }) => Promise<{
         records: Array<{
           id: string

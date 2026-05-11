@@ -9,8 +9,8 @@ const log = createLogger('History')
 // ==================== 类型定义 ====================
 
 // 从共享类型导入并重新导出
-import type { TerminalType, AgentRecord, TokenUsage } from '@shared/types'
-export type { AgentStepRecord, AgentRecord } from '@shared/types'
+import type { TerminalType, AgentRecord, TokenUsage, AgentHistorySummary } from '@shared/types'
+export type { AgentStepRecord, AgentRecord, AgentHistorySummary } from '@shared/types'
 
 export interface ChatRecord {
   id: string
@@ -61,6 +61,8 @@ export interface SearchAgentRecordsOptions {
   endDate?: string
   /** 与 getRecentAgentRecords 的 filter 一致，在关键字/日期匹配后再过滤 */
   filter?: (r: AgentRecord) => boolean
+  /** 为 true 时仅匹配 userTask（列表标题），不扫 finalResult/steps，适合实时筛选 */
+  titleOnly?: boolean
 }
 
 export interface SearchAgentRecordsResult {
@@ -434,6 +436,30 @@ export class HistoryService {
   }
 
   /**
+   * 列出全部 Agent 历史的轻量摘要（来自 agent-index.json，不读各日 JSON）。
+   * 按「最后活跃时间」timestamp + duration 倒序。
+   */
+  listAgentHistorySummaries(excludeWakeup?: boolean): AgentHistorySummary[] {
+    const index = this.getIndex()
+    let entries = [...index]
+    if (excludeWakeup) {
+      entries = entries.filter(
+        e => !(e.userTask.startsWith('[当前时间：') && e.userTask.includes('触发事件'))
+      )
+    }
+    entries.sort((a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration))
+    return entries.map(e => ({
+      id: e.id,
+      timestamp: e.timestamp,
+      duration: e.duration,
+      userTask: e.userTask,
+      terminalType: e.terminalType,
+      sshHost: e.sshHost,
+      status: e.status,
+    }))
+  }
+
+  /**
    * 关键字搜索 Agent 历史记录
    * 搜索范围：userTask、finalResult、以及过程中用户追加的消息（user_task / user_supplement steps）
    */
@@ -443,7 +469,8 @@ export class HistoryService {
 
   /**
    * 高级搜索 Agent 历史记录
-   * 支持关键字搜索、时间范围过滤，以及 hasMore 提示
+   * 支持关键字搜索、时间范围过滤，以及 hasMore 提示。
+   * `titleOnly: true` 时仅匹配 userTask，不扫描 finalResult / steps，适合高频实时筛选。
    */
   searchAgentRecordsAdvanced(options: SearchAgentRecordsOptions): SearchAgentRecordsResult {
     const keyword = options.keyword?.trim() ?? ''
@@ -470,15 +497,20 @@ export class HistoryService {
         if (startTs !== undefined && ts < startTs) continue
         if (endTs !== undefined && ts > endTs) continue
 
+        const titleOnly = options.titleOnly === true
         const matchedByKeyword = hasKeyword
-          ? (r.userTask?.toLowerCase().includes(lowerKeyword) ||
-              r.finalResult?.toLowerCase().includes(lowerKeyword) ||
-              r.steps?.some(s =>
-                ((s.type === 'user_task' || s.type === 'user_supplement') &&
-                  s.content?.toLowerCase().includes(lowerKeyword)) ||
-                (s.toolName === 'talk_to_user' &&
-                  (s.toolArgs as Record<string, unknown>)?.message?.toString().toLowerCase().includes(lowerKeyword))
-              ))
+          ? titleOnly
+            ? Boolean(r.userTask?.toLowerCase().includes(lowerKeyword))
+            : Boolean(
+                r.userTask?.toLowerCase().includes(lowerKeyword) ||
+                  r.finalResult?.toLowerCase().includes(lowerKeyword) ||
+                  r.steps?.some(s =>
+                    ((s.type === 'user_task' || s.type === 'user_supplement') &&
+                      s.content?.toLowerCase().includes(lowerKeyword)) ||
+                    (s.toolName === 'talk_to_user' &&
+                      (s.toolArgs as Record<string, unknown>)?.message?.toString().toLowerCase().includes(lowerKeyword))
+                  )
+              )
           : true
         const passesRecordFilter = !options.filter || options.filter(r)
         if (matchedByKeyword && passesRecordFilter) {

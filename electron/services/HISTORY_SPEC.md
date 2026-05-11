@@ -21,8 +21,9 @@ Agent 对话和聊天记录的持久化存储。按日期分文件存储 JSON �
 | `getAgentRecords(startDate?, endDate?): AgentRecord[]` | 按日期范围查询 Agent 记录 | 前端历史面板 |
 | `getAgentRecordById(id: string): AgentRecord \| undefined` | 按 ID 精确查找 Agent 记录 | 回放/详情查看 |
 | `getRecentAgentRecords(limit?, filter?): AgentRecord[]` | 获取最近的 Agent 记录（支持自定义过滤） | `agent/index.ts`、上下文构建 |
+| `listAgentHistorySummaries(excludeWakeup?): AgentHistorySummary[]` | 从索引列出全部摘要（标题等，不读日文件） | IPC `history:listAgentSummaries`、最近对话弹窗 |
 | `searchAgentRecords(keyword: string, limit?): AgentRecord[]` | 关键词搜索 Agent 记录（遍历索引） | 前端搜索 |
-| `searchAgentRecordsAdvanced(options): SearchAgentRecordsResult` | 高级搜索（多字段、时间范围、可选 `filter`） | 前端高级搜索 / IPC `history:searchAgentRecords` |
+| `searchAgentRecordsAdvanced(options): SearchAgentRecordsResult` | 高级搜索（多字段、时间范围、可选 `filter`、`titleOnly` 仅匹配 userTask） | 前端高级搜索 / IPC `history:searchAgentRecords` |
 | `getTokenUsageStats(): TokenUsageStatsResult` | 返回 Token 用量统计 | 设置 UI |
 | `getDataPath(): string` | 返回数据目录路径 | `cli/index.ts` 信息展示 |
 | `getHistoryPath(): string` | 返回历史记录目录路径 | `cli/index.ts` |

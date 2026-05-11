@@ -1167,12 +1167,26 @@ const electronAPI = {
     getRecentAgentRecords: (limit?: number, excludeWakeup?: boolean) =>
       ipcRenderer.invoke('history:getRecentAgentRecords', limit, excludeWakeup),
 
+    listAgentSummaries: (excludeWakeup?: boolean) =>
+      ipcRenderer.invoke('history:listAgentSummaries', excludeWakeup) as Promise<
+        Array<{
+          id: string
+          timestamp: number
+          duration: number
+          userTask: string
+          terminalType: 'local' | 'ssh'
+          sshHost?: string
+          status: 'completed' | 'failed' | 'aborted'
+        }>
+      >,
+
     searchAgentRecords: (options: {
       keyword?: string
       startDate?: string
       endDate?: string
       limit?: number
       excludeWakeup?: boolean
+      titleOnly?: boolean
     }) =>
       ipcRenderer.invoke('history:searchAgentRecords', options) as Promise<{
         records: Array<{
