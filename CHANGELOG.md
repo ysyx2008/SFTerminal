@@ -2,7 +2,30 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.39.1 (2026-05-10) (Latest)
+## v10.39.2 (2026-05-11) (Latest)
+
+Search your recent conversations — just type a keyword and find what you need; paste files directly as attachments; WeChat connection is now more stable and won't drop unexpectedly; knowledge base articles can hold more content.
+
+### New Features
+- 🎯 **Search Recent Conversations**: Open the dialog, type a keyword, and instantly find the conversation you're looking for
+- 📎 **Paste Files as Attachments**: Copy a file from anywhere, paste it into the input box, and send it as an attachment
+
+### Improvements
+- 🔧 **Better Conversation UX**: Search and layout interactions feel smoother and more intuitive
+- 🔧 **Cleaner Large File Handling**: No more noisy warnings — large files are handled quietly in the background
+- 🔧 **Security Scans Stay in Sync**: Dependency scanning follows the latest development branch to reduce irrelevant alerts
+
+### Bug Fixes
+- 🐛 **Exit No Longer Hangs**: The app now quits properly even when the UI is unresponsive
+- 🐛 **"Always Allow" Works Reliably**: Authorizations persist across sessions, and you'll get system notifications while waiting for approval
+- 🐛 **WeChat Connection Stabilized**: Fixed disconnections and send failures — the long connection no longer drops unexpectedly
+- 🐛 **Paste Without Side Effects**: Pasting files no longer leaves stray filenames in the input box
+- 🐛 **Smarter Away Detection**: Better at detecting when you're at your computer; notifications are clearer and easier to read
+- 🐛 **Multi-language Document Parsing**: The document parser now speaks your language — UI text follows system language settings
+- 🐛 **More Room for Knowledge**: Knowledge base articles can now hold up to 5,000 characters (up from 3,000); editor no longer clips content
+- 🐛 **Security Hardening**: Upgraded underlying dependencies to fix known vulnerabilities
+
+## v10.39.1 (2026-05-10)
 
 A new watch dashboard on the home screen lets you see all scheduled task statuses at a glance; charts in conversations are now interactive — drag, zoom, and hover like a real chart; failed automated tasks now notify you instead of going silent; and more external services are now supported via HTTP transport.
 
