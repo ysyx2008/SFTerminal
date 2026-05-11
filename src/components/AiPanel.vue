@@ -6,7 +6,7 @@
  */
 import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Upload, Trash2, X, Search, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MoreHorizontal, Shuffle } from 'lucide-vue-next'
+import { Upload, Trash2, X, Search, Loader2, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MoreHorizontal, Shuffle } from 'lucide-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useConfigStore } from '../stores/config'
@@ -458,6 +458,9 @@ const {
   showHistoryModal,
   allHistory,
   isLoadingAllHistory,
+  isHistorySearchLoading,
+  historyFullTextSearchActive,
+  historySearchTotalMatched,
   hasMoreHistory,
   historySearchKeyword,
   setHistorySearchKeyword,
@@ -712,7 +715,7 @@ watch(
   }
 )
 
-// 加载历史记录（带确认）。欢迎区为完整 AgentRecord；弹窗列表为 AgentHistorySummary，需按 id 拉全量
+// 加载历史记录（带确认）。欢迎区为完整 AgentRecord；弹窗无 steps 时按 id 拉全量
 const handleLoadHistory = async (row: AgentRecord | AgentHistorySummary) => {
   if (agentUserTask.value && hasExistingConversation.value) {
     if (!window.confirm(t('ai.agentWelcome.confirmLoadHistory'))) {
@@ -1835,6 +1838,9 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           historySearchKeyword,
           isLoadingHistory,
           isLoadingAllHistory,
+          isHistorySearchLoading,
+          historyFullTextSearchActive,
+          historySearchTotalMatched,
           executionMode,
           isStandaloneAssistant,
           hasNewMessage,
@@ -1989,7 +1995,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                     type="button"
                     class="history-search-submit"
                     :title="t('ai.agentWelcome.historySearchSubmit')"
-                    :disabled="isLoadingAllHistory"
+                    :disabled="isLoadingAllHistory || isHistorySearchLoading"
                     @click="flushHistorySearch()"
                   >
                     <Search :size="18" />
@@ -2004,10 +2010,42 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                     ×
                   </button>
                 </div>
+                <div
+                  v-if="
+                    historyFullTextSearchActive &&
+                    historySearchKeyword.trim() &&
+                    !isLoadingAllHistory &&
+                    isHistorySearchLoading
+                  "
+                  class="history-search-in-progress"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <Loader2 class="history-search-loader-icon" :size="16" aria-hidden="true" />
+                  <span>{{ t('ai.agentWelcome.historySearchLoading') }}</span>
+                </div>
+                <p
+                  v-else-if="
+                    historyFullTextSearchActive &&
+                    historySearchKeyword.trim() &&
+                    !isLoadingAllHistory
+                  "
+                  class="history-search-matched-hint"
+                >
+                  {{ t('ai.agentWelcome.historySearchMatchedCount', { count: historySearchTotalMatched }) }}
+                </p>
                 <div class="history-modal-body">
                   <div v-if="isLoadingAllHistory" class="history-loading">
                     {{ t('ai.agentWelcome.historyLoading') }}
                   </div>
+                  <div
+                    v-else-if="
+                      historyFullTextSearchActive &&
+                      isHistorySearchLoading &&
+                      allHistory.length === 0
+                    "
+                    class="history-search-wait-area"
+                  ></div>
                   <div v-else-if="allHistory.length === 0" class="history-empty">
                     {{
                       historySearchKeyword.trim()
@@ -2037,6 +2075,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                     <button
                       v-if="hasMoreHistory"
                       class="history-load-more"
+                      type="button"
+                      :disabled="isHistorySearchLoading"
                       @click="loadMoreHistory"
                     >
                       {{ t('ai.agentWelcome.loadMore', '加载更多...') }}
@@ -3776,6 +3816,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 /* 历史弹窗 */
 .history-modal-overlay {
+  /* 顶距单一来源：与 .history-modal max-height 联动 */
+  --history-modal-top-gap: max(48px, min(10vh, 88px));
   position: fixed;
   top: 0;
   left: 0;
@@ -3785,7 +3827,11 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   backdrop-filter: blur(4px);
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start;
+  padding-top: var(--history-modal-top-gap);
+  padding-bottom: 24px;
+  box-sizing: border-box;
+  overflow-y: auto;
   z-index: 1000;
   animation: modalOverlayIn 0.2s ease;
 }
@@ -3801,10 +3847,12 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   border-radius: 16px;
   width: 90%;
   max-width: 600px;
-  max-height: 80vh;
+  /* 与 overlay padding 对齐：内容再多也只撑满剩余视窗，由 body 内部滚动 */
+  max-height: min(80vh, calc(100vh - var(--history-modal-top-gap) - 24px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  flex-shrink: 0;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
   animation: modalSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -3827,6 +3875,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   padding: 18px 24px;
   border-bottom: 1px solid var(--border-color);
   background: linear-gradient(180deg, var(--bg-surface) 0%, transparent 100%);
+  flex-shrink: 0;
 }
 
 .history-modal-header h3 {
@@ -3864,6 +3913,47 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   padding: 12px 24px;
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.history-search-in-progress {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 24px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  background: color-mix(in srgb, var(--accent-primary) 8%, var(--bg-secondary));
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 65%, transparent);
+  flex-shrink: 0;
+}
+
+.history-search-loader-icon {
+  flex-shrink: 0;
+  animation: spin 0.9s linear infinite;
+  color: color-mix(in srgb, var(--accent-primary) 75%, var(--text-muted));
+}
+
+.history-search-wait-area {
+  flex: 1;
+  min-height: 120px;
+}
+
+.history-search-matched-hint {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 24px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 65%, transparent);
+  flex-shrink: 0;
 }
 
 .history-search-input {
@@ -3941,6 +4031,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .history-modal-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 20px 24px;
 }

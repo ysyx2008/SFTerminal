@@ -1214,6 +1214,56 @@ export function useAgentMode(
   const historyModalDisplayCount = ref(HISTORY_PAGE_SIZE)
   const historySearchKeyword = ref('')
 
+  /**
+   * 输入框实时：仅本地按摘要标题（首条 user_task）筛选已加载的 listAgentSummaries。
+   * 回车 / 搜索按钮：置 true 并走 IPC 全文检索（整段对话中的用户消息与结果等）。
+   */
+  const historyFullTextSearchActive = ref(false)
+  const historySearchResults = ref<AgentRecord[]>([])
+  const historySearchTotalMatched = ref(0)
+  const historySearchHasMore = ref(false)
+  const isHistorySearchLoading = ref(false)
+  const historySearchFetchLimit = ref(HISTORY_PAGE_SIZE)
+  const historySearchRequestId = ref(0)
+
+  const clearHistorySearchState = () => {
+    historySearchResults.value = []
+    historySearchTotalMatched.value = 0
+    historySearchHasMore.value = false
+    historySearchFetchLimit.value = HISTORY_PAGE_SIZE
+  }
+
+  const executeHistorySearch = async (reqId: number) => {
+    const kw = historySearchKeyword.value.trim()
+    if (!kw) {
+      if (reqId === historySearchRequestId.value) {
+        isHistorySearchLoading.value = false
+      }
+      return
+    }
+    try {
+      const res = await window.electronAPI.history.searchAgentRecords({
+        keyword: kw,
+        limit: historySearchFetchLimit.value,
+        excludeWakeup: true,
+      })
+      if (reqId !== historySearchRequestId.value) return
+      historySearchResults.value = res.records as AgentRecord[]
+      historySearchTotalMatched.value = res.totalMatched
+      historySearchHasMore.value = res.hasMore
+    } catch (e) {
+      log.error('搜索历史记录失败:', e)
+      if (reqId !== historySearchRequestId.value) return
+      historySearchResults.value = []
+      historySearchTotalMatched.value = 0
+      historySearchHasMore.value = false
+    } finally {
+      if (reqId === historySearchRequestId.value) {
+        isHistorySearchLoading.value = false
+      }
+    }
+  }
+
   const filteredHistorySummaries = computed(() => {
     const kw = historySearchKeyword.value.trim().toLowerCase()
     const base = historyModalSummaries.value
@@ -1221,13 +1271,19 @@ export function useAgentMode(
     return base.filter(s => s.userTask.toLowerCase().includes(kw))
   })
 
-  const allHistory = computed(() =>
-    filteredHistorySummaries.value.slice(0, historyModalDisplayCount.value)
-  )
+  const allHistory = computed((): Array<AgentHistorySummary | AgentRecord> => {
+    if (historyFullTextSearchActive.value) {
+      return historySearchResults.value
+    }
+    return filteredHistorySummaries.value.slice(0, historyModalDisplayCount.value)
+  })
 
-  const hasMoreHistory = computed(
-    () => historyModalDisplayCount.value < filteredHistorySummaries.value.length
-  )
+  const hasMoreHistory = computed(() => {
+    if (historyFullTextSearchActive.value) {
+      return historySearchHasMore.value
+    }
+    return historyModalDisplayCount.value < filteredHistorySummaries.value.length
+  })
 
   // 加载近期历史（最近 5 条，用于欢迎页）
   const loadRecentHistory = async () => {
@@ -1244,30 +1300,61 @@ export function useAgentMode(
   }
 
   const loadMoreHistory = () => {
-    historyModalDisplayCount.value += HISTORY_PAGE_SIZE
+    if (historyFullTextSearchActive.value) {
+      historySearchFetchLimit.value += HISTORY_PAGE_SIZE
+      isHistorySearchLoading.value = true
+      const reqId = historySearchRequestId.value
+      void executeHistorySearch(reqId)
+    } else {
+      historyModalDisplayCount.value += HISTORY_PAGE_SIZE
+    }
   }
 
-  /** 标题筛选：纯本地，重置可见条数 */
   const setHistorySearchKeyword = (value: string) => {
     historySearchKeyword.value = value
+    historyFullTextSearchActive.value = false
     historyModalDisplayCount.value = HISTORY_PAGE_SIZE
   }
 
-  /** Enter / 搜索按钮：回到列表顶部（仍只显示前 N 条） */
+  /** Enter / 搜索按钮：后端全文检索（非输入实时） */
   const flushHistorySearch = () => {
-    historyModalDisplayCount.value = HISTORY_PAGE_SIZE
+    const kw = historySearchKeyword.value.trim()
+    if (!kw) {
+      historyFullTextSearchActive.value = false
+      historyModalDisplayCount.value = HISTORY_PAGE_SIZE
+      clearHistorySearchState()
+      return
+    }
+    historySearchRequestId.value += 1
+    const reqId = historySearchRequestId.value
+    historySearchFetchLimit.value = HISTORY_PAGE_SIZE
+    historyFullTextSearchActive.value = true
+    // 立即清空旧结果，避免等待 IPC 时仍显示上一条全文结果，看起来像卡住
+    historySearchResults.value = []
+    historySearchTotalMatched.value = 0
+    historySearchHasMore.value = false
+    isHistorySearchLoading.value = true
+    void executeHistorySearch(reqId)
   }
 
   const clearHistorySearch = () => {
+    historySearchRequestId.value += 1
     historySearchKeyword.value = ''
     historyModalDisplayCount.value = HISTORY_PAGE_SIZE
+    historyFullTextSearchActive.value = false
+    clearHistorySearchState()
+    isHistorySearchLoading.value = false
   }
 
   // 打开历史弹窗：单次 IPC 读全量摘要（来自 agent-index.json）
   const openHistoryModal = async () => {
     showHistoryModal.value = true
+    historySearchRequestId.value += 1
     historySearchKeyword.value = ''
     historyModalDisplayCount.value = HISTORY_PAGE_SIZE
+    historyFullTextSearchActive.value = false
+    clearHistorySearchState()
+    isHistorySearchLoading.value = false
     isLoadingAllHistory.value = true
     try {
       historyModalSummaries.value = await window.electronAPI.history.listAgentSummaries(true)
@@ -1283,8 +1370,12 @@ export function useAgentMode(
   const closeHistoryModal = () => {
     showHistoryModal.value = false
     historyModalSummaries.value = []
+    historySearchRequestId.value += 1
     historySearchKeyword.value = ''
     historyModalDisplayCount.value = HISTORY_PAGE_SIZE
+    historyFullTextSearchActive.value = false
+    clearHistorySearchState()
+    isHistorySearchLoading.value = false
   }
 
   // 加载历史记录到当前会话
@@ -1392,6 +1483,9 @@ export function useAgentMode(
     showHistoryModal,
     allHistory,
     isLoadingAllHistory,
+    isHistorySearchLoading,
+    historyFullTextSearchActive,
+    historySearchTotalMatched,
     hasMoreHistory,
     historySearchKeyword,
     setHistorySearchKeyword,
