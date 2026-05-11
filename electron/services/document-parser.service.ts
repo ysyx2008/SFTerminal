@@ -8,6 +8,7 @@ import * as path from 'path'
 import { pathToFileURL } from 'url'
 import { app, utilityProcess, type UtilityProcess } from 'electron'
 import { createLogger } from '../utils/logger'
+import { t } from './document-parser.i18n'
 import type { DocumentParsePhase, DocumentParseProgress } from '@shared/types'
 
 const log = createLogger('DocumentParser')
@@ -241,7 +242,7 @@ export class DocumentParserService {
     try {
       report?.({ status: 'parsing', phase: 'loading', percent: 3 })
       if (!fs.existsSync(file.path)) {
-        throw new Error(`文件不存在: ${file.path}`)
+        throw new Error(t('doc.file_not_found', { path: file.path }))
       }
 
       switch (fileType) {
@@ -258,7 +259,7 @@ export class DocumentParserService {
         case 'csv': {
           if (file.size > opts.maxFileSize) {
             result.skipped = true
-            result.content = `[${file.name} 文件较大（${this.formatFileSize(file.size)}），已跳过内容读取]`
+            result.content = t('doc.file_too_large', { name: file.name, size: this.formatFileSize(file.size) })
             break
           }
           if (fileType === 'pdf') await this.parsePdf(file.path, result, opts, report)
@@ -276,7 +277,7 @@ export class DocumentParserService {
           }
           if (file.size > opts.maxFileSize) {
             result.skipped = true
-            result.content = `[${file.name} 文件较大（${this.formatFileSize(file.size)}），已跳过内容读取]`
+            result.content = t('doc.file_too_large', { name: file.name, size: this.formatFileSize(file.size) })
             break
           }
           await this.parseTextFile(file.path, result, opts, report)
@@ -287,12 +288,12 @@ export class DocumentParserService {
       // 截断过长的内容
       if (result.content.length > opts.maxTextLength) {
         result.content = result.content.substring(0, opts.maxTextLength)
-        result.content += `\n\n... [内容已截断，原文共 ${result.content.length} 字符]`
+        result.content += t('doc.content_truncated', { length: result.content.length })
       }
       report?.({ status: 'parsing', phase: 'formatting', percent: 98 })
 
     } catch (error) {
-      result.error = error instanceof Error ? error.message : '解析失败'
+      result.error = error instanceof Error ? error.message : t('doc.parse_failed')
       report?.({ status: 'failed', phase: 'failed', percent: 100, error: result.error })
     }
 
@@ -528,13 +529,13 @@ export class DocumentParserService {
         log.info(`Scanned PDF detected: ${parsed.totalPages} pages, rendered ${renderResult.images.length} preview pages`)
       } catch (renderErr) {
         log.warn('Failed to render scanned PDF page:', renderErr)
-        result.error = `PDF 共 ${parsed.totalPages} 页，但未能提取到文本内容。该文件可能是扫描件或图片型 PDF。`
+        result.error = t('doc.scan_pdf_error', { pages: parsed.totalPages })
       }
       return
     }
 
     if (!hasText && parsed.totalPages === 0) {
-      result.error = 'PDF 文件为空或格式不支持'
+      result.error = t('doc.empty_pdf_error')
       return
     }
 
@@ -638,7 +639,7 @@ export class DocumentParserService {
    */
   private async parseDocx(filePath: string, result: ParsedDocument, opts: Required<ParseOptions>, report?: ProgressReporter): Promise<void> {
     if (!this.mammoth) {
-      throw new Error('Word 解析库未安装，请运行: npm install mammoth')
+      throw new Error(t('doc.mammoth_not_installed'))
     }
 
     this.reportProgress(report, 'converting', 20)
@@ -807,7 +808,7 @@ export class DocumentParserService {
    */
   private async parseDoc(filePath: string, result: ParsedDocument, _opts: Required<ParseOptions>, report?: ProgressReporter): Promise<void> {
     if (!this.WordExtractor) {
-      throw new Error('Word (.doc) 解析库未安装，请运行: npm install word-extractor')
+      throw new Error(t('doc.word_extractor_not_installed'))
     }
 
     this.reportProgress(report, 'converting', 25)
@@ -834,7 +835,7 @@ export class DocumentParserService {
    */
   private async parseExcel(filePath: string, result: ParsedDocument, _opts: Required<ParseOptions>, report?: ProgressReporter): Promise<void> {
     if (!this.ExcelJS) {
-      throw new Error('Excel 解析库未安装，请运行: npm install exceljs')
+      throw new Error(t('doc.exceljs_not_installed'))
     }
 
     this.reportProgress(report, 'loading', 15)
@@ -855,8 +856,8 @@ export class DocumentParserService {
       const sheetRows = worksheet.rowCount
       totalRows += sheetRows
 
-      parts.push(`## 工作表: ${worksheet.name}`)
-      parts.push(`(${sheetRows} 行 x ${worksheet.columnCount} 列)\n`)
+      parts.push(t('doc.excel_sheet', { name: worksheet.name }))
+      parts.push(t('doc.excel_sheet_size', { rows: sheetRows, cols: worksheet.columnCount }) + '\n')
 
       // 限制每个工作表的行数
       const maxRowsPerSheet = 200
@@ -864,7 +865,7 @@ export class DocumentParserService {
       const truncatedRows = sheetRows > maxRowsPerSheet
       
       if (truncatedRows) {
-        parts.push(`⚠️ 内容已截断（显示前 ${maxRowsPerSheet} 行）\n`)
+        parts.push(t('doc.excel_sheet_truncated', { maxRows: maxRowsPerSheet }) + '\n')
       }
 
       // 收集数据行
@@ -930,14 +931,14 @@ export class DocumentParserService {
           parts.push('| ' + rows[i].map(escapeCell).join(' | ') + ' |')
         }
       } else {
-        parts.push('（空工作表）')
+        parts.push(t('doc.excel_sheet_empty'))
       }
 
       parts.push('\n')
     })
 
     // 添加概览信息
-    const summary = `📊 Excel 文件概览：${sheetCount} 个工作表，共 ${totalRows} 行数据\n\n`
+    const summary = t('doc.excel_summary', { sheets: sheetCount, rows: totalRows }) + '\n\n'
     result.content = summary + parts.join('\n')
     result.pageCount = sheetCount
     result.metadata = {
@@ -1035,7 +1036,12 @@ export class DocumentParserService {
     let markdown = ''
     
     if (truncatedRows || truncatedCols) {
-      markdown += `⚠️ 表格已截断（共 ${rows.length} 行 x ${rows[0]?.length || 0} 列，显示 ${displayRows.length} 行 x ${displayRows[0]?.length || 0} 列）\n\n`
+      markdown += t('doc.csv_truncated', {
+        rows: rows.length,
+        cols: rows[0]?.length || 0,
+        dispRows: displayRows.length,
+        dispCols: displayRows[0]?.length || 0,
+      }) + '\n\n'
     }
 
     if (displayRows.length > 0) {
@@ -1072,17 +1078,17 @@ export class DocumentParserService {
     const lines: string[] = []
     
     lines.push(`📄 **${doc.filename}**`)
-    lines.push(`- 类型: ${doc.fileType.toUpperCase()}`)
-    lines.push(`- 大小: ${this.formatFileSize(doc.fileSize)}`)
-    
+    lines.push(t('doc.summary_type', { type: doc.fileType.toUpperCase() }))
+    lines.push(t('doc.summary_size', { size: this.formatFileSize(doc.fileSize) }))
+
     if (doc.pageCount) {
-      lines.push(`- 页数: ${doc.pageCount}`)
+      lines.push(t('doc.summary_pages', { pages: doc.pageCount }))
     }
-    
-    lines.push(`- 内容长度: ${doc.content.length} 字符`)
-    
+
+    lines.push(t('doc.summary_length', { length: doc.content.length }))
+
     if (doc.error) {
-      lines.push(`- ⚠️ 错误: ${doc.error}`)
+      lines.push(t('doc.summary_error', { error: doc.error }))
     }
     
     return lines.join('\n')
@@ -1139,17 +1145,17 @@ export class DocumentParserService {
    */
   getSupportedTypes(): { extension: string; description: string; available: boolean }[] {
     return [
-      { extension: '.pdf', description: 'PDF 文档', available: true },
-      { extension: '.docx', description: 'Word 文档 (2007+)', available: !!this.mammoth },
-      { extension: '.doc', description: 'Word 文档 (97-2003)', available: !!this.WordExtractor },
-      { extension: '.xlsx', description: 'Excel 表格 (2007+)', available: !!this.ExcelJS },
-      { extension: '.xls', description: 'Excel 表格 (97-2003)', available: !!this.ExcelJS },
-      { extension: '.txt', description: '纯文本', available: true },
-      { extension: '.md', description: 'Markdown', available: true },
-      { extension: '.json', description: 'JSON', available: true },
-      { extension: '.xml', description: 'XML', available: true },
-      { extension: '.html', description: 'HTML', available: true },
-      { extension: '.csv', description: 'CSV', available: true }
+      { extension: '.pdf', description: t('doc.type_pdf'), available: true },
+      { extension: '.docx', description: t('doc.type_docx'), available: !!this.mammoth },
+      { extension: '.doc', description: t('doc.type_doc'), available: !!this.WordExtractor },
+      { extension: '.xlsx', description: t('doc.type_xlsx'), available: !!this.ExcelJS },
+      { extension: '.xls', description: t('doc.type_xls'), available: !!this.ExcelJS },
+      { extension: '.txt', description: t('doc.type_txt'), available: true },
+      { extension: '.md', description: t('doc.type_md'), available: true },
+      { extension: '.json', description: t('doc.type_json'), available: true },
+      { extension: '.xml', description: t('doc.type_xml'), available: true },
+      { extension: '.html', description: t('doc.type_html'), available: true },
+      { extension: '.csv', description: t('doc.type_csv'), available: true }
     ]
   }
 
