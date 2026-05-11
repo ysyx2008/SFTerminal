@@ -122,12 +122,14 @@ export function useImageUpload() {
     }
     
     if (!hasImage) return false
-    
-    // 处理所有图片
+
+    // 须在首个 await 之前调用，否则默认粘贴会把占位文本写入输入框
+    event.preventDefault()
+
     for (const file of imageFiles) {
       await addImageFile(file)
     }
-    
+
     return true
   }
   

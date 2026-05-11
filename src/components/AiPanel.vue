@@ -968,20 +968,18 @@ const guardVisionBeforeSend = async (): Promise<boolean> => {
 }
 
 // 处理粘贴：剪贴板文件（与拖放一致：先图片再文档）；否则仅处理剪贴板里的位图图片
+// 注意：handler 是 async，但必须在首个 await 之前同步 preventDefault，否则浏览器已把默认内容（如文件名）插入输入框
 const handlePaste = async (event: ClipboardEvent) => {
   const files = event.clipboardData?.files
   if (files && files.length > 0) {
+    event.preventDefault()
     const imageCount = await handleDroppedImages(files)
     if (imageCount < files.length) {
       await handleDroppedFiles(files)
     }
-    event.preventDefault()
     return
   }
-  const handled = await handlePasteImages(event)
-  if (handled) {
-    event.preventDefault() // 避免把截图等当文本粘进输入框
-  }
+  await handlePasteImages(event)
 }
 
 const clearTabError = () => {
