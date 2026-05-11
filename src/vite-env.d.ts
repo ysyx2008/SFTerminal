@@ -757,6 +757,28 @@ interface Window {
         status: 'completed' | 'failed' | 'aborted'
         duration: number
       }>>
+      searchAgentRecords: (options: {
+        keyword?: string
+        startDate?: string
+        endDate?: string
+        limit?: number
+        excludeWakeup?: boolean
+      }) => Promise<{
+        records: Array<{
+          id: string
+          timestamp: number
+          terminalId: string
+          terminalType: 'local' | 'ssh'
+          sshHost?: string
+          userTask: string
+          steps: AgentStep[]
+          finalResult?: string
+          status: 'completed' | 'failed' | 'aborted'
+          duration: number
+        }>
+        totalMatched: number
+        hasMore: boolean
+      }>
       getAgentRecordById: (id: string) => Promise<{
         id: string
         timestamp: number

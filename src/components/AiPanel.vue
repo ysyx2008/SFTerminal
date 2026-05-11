@@ -458,6 +458,8 @@ const {
   allHistory,
   isLoadingAllHistory,
   hasMoreHistory,
+  historySearchKeyword,
+  setHistorySearchKeyword,
   loadMoreHistory,
   openHistoryModal,
   closeHistoryModal,
@@ -671,6 +673,41 @@ const truncateText = (text: string, maxLength: number): string => {
   if (text.length <= maxLength) return text
   return text.slice(0, maxLength) + '...'
 }
+
+const escapeHtml = (s: string) =>
+  s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+
+/** 历史弹窗列表：截断后高亮关键字（先 escape 再包 mark，避免 XSS） */
+const highlightHistoryTaskHtml = (text: string, keyword: string, maxLen: number): string => {
+  const truncated = truncateText(text, maxLen)
+  const kw = keyword.trim()
+  if (!kw) return escapeHtml(truncated)
+  const escaped = escapeHtml(truncated)
+  const safeKw = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  try {
+    return escaped.replace(
+      new RegExp(safeKw, 'gi'),
+      m => `<mark class="history-search-mark">${escapeHtml(m)}</mark>`
+    )
+  } catch {
+    return escaped
+  }
+}
+
+const historySearchInputRef = ref<HTMLInputElement | null>(null)
+watch(
+  () => showHistoryModal.value,
+  async open => {
+    if (open) {
+      await nextTick()
+      historySearchInputRef.value?.focus()
+    }
+  }
+)
 
 // 加载历史记录（带确认）
 const handleLoadHistory = async (record: { id: string; timestamp: number; terminalId: string; terminalType: 'local' | 'ssh'; sshHost?: string; userTask: string; steps: Array<{ id: string; type: string; content: string; toolName?: string; toolArgs?: Record<string, unknown>; toolResult?: string; riskLevel?: string; timestamp: number; webSearchResults?: import('@shared/types').WebSearchResultItem[] }>; finalResult?: string; duration: number; status: 'completed' | 'failed' | 'aborted' }) => {
@@ -1777,6 +1814,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           showHistoryModal,
           allHistory,
           hasMoreHistory,
+          historySearchKeyword,
           isLoadingHistory,
           isLoadingAllHistory,
           executionMode,
@@ -1918,12 +1956,36 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                   <h3>📜 {{ t('ai.agentWelcome.recentHistory') }}</h3>
                   <button class="history-modal-close" @click="closeHistoryModal">×</button>
                 </div>
+                <div class="history-modal-search">
+                  <input
+                    ref="historySearchInputRef"
+                    type="search"
+                    class="history-search-input"
+                    :placeholder="t('ai.agentWelcome.historySearchPlaceholder')"
+                    :value="historySearchKeyword"
+                    autocomplete="off"
+                    @input="setHistorySearchKeyword(($event.target as HTMLInputElement).value)"
+                  />
+                  <button
+                    v-if="historySearchKeyword.trim()"
+                    type="button"
+                    class="history-search-clear"
+                    :title="t('ai.agentWelcome.historySearchClear')"
+                    @click="setHistorySearchKeyword('')"
+                  >
+                    ×
+                  </button>
+                </div>
                 <div class="history-modal-body">
                   <div v-if="isLoadingAllHistory" class="history-loading">
                     {{ t('ai.agentWelcome.historyLoading') }}
                   </div>
                   <div v-else-if="allHistory.length === 0" class="history-empty">
-                    {{ t('ai.agentWelcome.noRecentHistory') }}
+                    {{
+                      historySearchKeyword.trim()
+                        ? t('ai.agentWelcome.noSearchResult')
+                        : t('ai.agentWelcome.noRecentHistory')
+                    }}
                   </div>
                   <div v-else class="history-modal-list">
                     <div 
@@ -1935,7 +1997,10 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                       <span class="history-status-icon" :class="record.status">
                         {{ record.status === 'completed' ? '✓' : record.status === 'failed' ? '✗' : '!' }}
                       </span>
-                      <span class="history-task">{{ truncateText(record.userTask, 80) }}</span>
+                      <span
+                        class="history-task"
+                        v-html="highlightHistoryTaskHtml(record.userTask, historySearchKeyword, 80)"
+                      />
                       <span class="history-meta">
                         <span v-if="record.terminalType === 'ssh'" class="history-ssh">{{ record.sshHost }}</span>
                         <span class="history-time">{{ formatHistoryTime(record.timestamp + record.duration) }}</span>
@@ -3763,6 +3828,63 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .history-modal-close:hover {
   background: var(--accent-error);
   color: white;
+}
+
+.history-modal-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.history-search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.history-search-input:focus {
+  border-color: color-mix(in srgb, var(--accent-primary) 55%, var(--border-color));
+}
+
+.history-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.history-search-clear {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.history-search-clear:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.history-modal-list .history-search-mark {
+  background: color-mix(in srgb, var(--accent-primary) 38%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 2px;
 }
 
 .history-modal-body {

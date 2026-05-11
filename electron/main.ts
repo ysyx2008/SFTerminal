@@ -3613,6 +3613,31 @@ ipcMain.handle('history:getRecentAgentRecords', async (_event, limit?: number, e
   return historyService.getRecentAgentRecords(limit ?? 5, filter)
 })
 
+ipcMain.handle(
+  'history:searchAgentRecords',
+  async (
+    _event,
+    options: {
+      keyword?: string
+      startDate?: string
+      endDate?: string
+      limit?: number
+      excludeWakeup?: boolean
+    }
+  ) => {
+    const filter = options.excludeWakeup
+      ? (r: AgentRecord) => !(r.userTask.startsWith('[当前时间：') && r.userTask.includes('触发事件'))
+      : undefined
+    return historyService.searchAgentRecordsAdvanced({
+      keyword: options.keyword,
+      startDate: options.startDate,
+      endDate: options.endDate,
+      limit: options.limit ?? 50,
+      filter
+    })
+  }
+)
+
 // 按 ID 获取单条 Agent 记录（用于 Watch 执行详情查看）
 ipcMain.handle('history:getAgentRecordById', async (_event, id: string) => {
   return historyService.getAgentRecordById(id)

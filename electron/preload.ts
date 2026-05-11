@@ -1167,6 +1167,39 @@ const electronAPI = {
     getRecentAgentRecords: (limit?: number, excludeWakeup?: boolean) =>
       ipcRenderer.invoke('history:getRecentAgentRecords', limit, excludeWakeup),
 
+    searchAgentRecords: (options: {
+      keyword?: string
+      startDate?: string
+      endDate?: string
+      limit?: number
+      excludeWakeup?: boolean
+    }) =>
+      ipcRenderer.invoke('history:searchAgentRecords', options) as Promise<{
+        records: Array<{
+          id: string
+          timestamp: number
+          terminalId: string
+          terminalType: 'local' | 'ssh'
+          sshHost?: string
+          userTask: string
+          steps: Array<{
+            id: string
+            type: string
+            content: string
+            toolName?: string
+            toolArgs?: Record<string, unknown>
+            toolResult?: string
+            riskLevel?: string
+            timestamp: number
+          }>
+          finalResult?: string
+          duration: number
+          status: 'completed' | 'failed' | 'aborted'
+        }>
+        totalMatched: number
+        hasMore: boolean
+      }>,
+
     // 按 ID 获取单条 Agent 记录
     getAgentRecordById: (id: string) =>
       ipcRenderer.invoke('history:getAgentRecordById', id),

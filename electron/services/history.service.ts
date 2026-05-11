@@ -59,6 +59,8 @@ export interface SearchAgentRecordsOptions {
   limit?: number
   startDate?: string
   endDate?: string
+  /** 与 getRecentAgentRecords 的 filter 一致，在关键字/日期匹配后再过滤 */
+  filter?: (r: AgentRecord) => boolean
 }
 
 export interface SearchAgentRecordsResult {
@@ -478,7 +480,8 @@ export class HistoryService {
                   (s.toolArgs as Record<string, unknown>)?.message?.toString().toLowerCase().includes(lowerKeyword))
               ))
           : true
-        if (matchedByKeyword) {
+        const passesRecordFilter = !options.filter || options.filter(r)
+        if (matchedByKeyword && passesRecordFilter) {
           totalMatched++
           if (results.length < limit) {
             results.push(r)

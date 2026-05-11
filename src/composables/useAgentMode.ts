@@ -1235,6 +1235,9 @@ export function useAgentMode(
   const isLoadingAllHistory = ref(false)
   const HISTORY_PAGE_SIZE = 20
   const hasMoreHistory = ref(true)
+  const historySearchKeyword = ref('')
+  let historySearchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+  const HISTORY_SEARCH_DEBOUNCE_MS = 300
 
   // 加载近期历史（最近 5 条，用于欢迎页）
   const loadRecentHistory = async () => {
@@ -1250,17 +1253,32 @@ export function useAgentMode(
     }
   }
 
-  // 分页加载历史（用于弹窗）
+  // 分页加载历史（用于弹窗）；有关键字时走后端 search，limit 随「加载更多」递增
   const loadAllHistory = async (reset = true) => {
     if (isLoadingAllHistory.value) return
     isLoadingAllHistory.value = true
     try {
       const currentCount = reset ? 0 : allHistory.value.length
       const fetchSize = currentCount + HISTORY_PAGE_SIZE
-      const records = await window.electronAPI.history.getRecentAgentRecords(fetchSize, true) as AgentRecord[]
-      const sorted = records.sort((a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration))
-      allHistory.value = sorted
-      hasMoreHistory.value = records.length >= fetchSize
+      const kw = historySearchKeyword.value.trim()
+
+      if (kw) {
+        const result = await window.electronAPI.history.searchAgentRecords({
+          keyword: kw,
+          limit: fetchSize,
+          excludeWakeup: true
+        })
+        const sorted = result.records.sort(
+          (a, b) => b.timestamp + b.duration - (a.timestamp + a.duration)
+        ) as AgentRecord[]
+        allHistory.value = sorted
+        hasMoreHistory.value = result.hasMore
+      } else {
+        const records = await window.electronAPI.history.getRecentAgentRecords(fetchSize, true) as AgentRecord[]
+        const sorted = records.sort((a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration))
+        allHistory.value = sorted
+        hasMoreHistory.value = records.length >= fetchSize
+      }
     } catch (e) {
       log.error('加载历史记录失败:', e)
     } finally {
@@ -1269,6 +1287,26 @@ export function useAgentMode(
   }
 
   const loadMoreHistory = () => loadAllHistory(false)
+
+  /** 弹窗内搜索框：更新关键字并防抖重新拉取 */
+  const setHistorySearchKeyword = (value: string) => {
+    historySearchKeyword.value = value
+    if (historySearchDebounceTimer !== null) {
+      clearTimeout(historySearchDebounceTimer)
+      historySearchDebounceTimer = null
+    }
+    historySearchDebounceTimer = setTimeout(() => {
+      historySearchDebounceTimer = null
+      void loadAllHistory(true)
+    }, HISTORY_SEARCH_DEBOUNCE_MS)
+  }
+
+  const clearHistorySearchDebounce = () => {
+    if (historySearchDebounceTimer !== null) {
+      clearTimeout(historySearchDebounceTimer)
+      historySearchDebounceTimer = null
+    }
+  }
 
   // 打开历史弹窗
   const openHistoryModal = async () => {
@@ -1281,6 +1319,8 @@ export function useAgentMode(
     showHistoryModal.value = false
     allHistory.value = []
     hasMoreHistory.value = true
+    historySearchKeyword.value = ''
+    clearHistorySearchDebounce()
   }
 
   // 加载历史记录到当前会话
@@ -1344,6 +1384,7 @@ export function useAgentMode(
     cleanupAgentListeners()
     uninstallContentResizeObserver()
     canvasStore.cleanup(currentTabId.value)
+    clearHistorySearchDebounce()
   })
 
   return {
@@ -1389,6 +1430,8 @@ export function useAgentMode(
     allHistory,
     isLoadingAllHistory,
     hasMoreHistory,
+    historySearchKeyword,
+    setHistorySearchKeyword,
     loadRecentHistory,
     loadAllHistory,
     loadMoreHistory,
