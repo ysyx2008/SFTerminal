@@ -1,0 +1,45 @@
+# Dependabot 配置
+# 工作流：develop 开发 → main 发版，所有依赖升级走 develop 分支
+
+version: 2
+updates:
+
+  # npm 依赖
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    target-branch: "develop"
+    labels:
+      - "dependencies"
+      - "npm"
+    # 控制 PR 数量，避免过多
+    open-pull-requests-limit: 5
+    # 每次只升一个包（减少冲突）
+    pull-request-branch-name:
+      separator: "/"
+    # 只升级 patch 和 minor，不自动升 major
+    versioning-strategy: increase-if-necessary
+    # 允许 Dependabot 自动合并 patch 版本的安全更新
+    allow:
+      - dependency-type: "production"
+        update-types: ["version-update:semver-patch", "version-update:semver-minor"]
+      - dependency-type: "development"
+        update-types: ["version-update:semver-patch", "version-update:semver-minor"]
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    target-branch: "develop"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    open-pull-requests-limit: 3
