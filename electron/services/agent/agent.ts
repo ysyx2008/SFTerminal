@@ -2818,6 +2818,11 @@ export abstract class Agent {
       addStep: (step) => this.addStep(step),
       updateStep: (stepId, updates) => this.updateStep(stepId, updates),
       waitForConfirmation: async (toolCallId, toolName, toolArgs, riskLevel, displayName) => {
+        // 检查"始终允许"白名单：若已在名单中则跳过弹框直接放行
+        const allowKey = this.generateAllowedToolKey(toolName, toolArgs)
+        if (run.allowedTools.has(allowKey)) {
+          return true
+        }
         const result = await this.waitForConfirmation(run, toolCallId, toolName, toolArgs, riskLevel, displayName)
         return result.approved
       },

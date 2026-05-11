@@ -3013,6 +3013,12 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
           displayName: confirmation.displayName
         })
       }
+      // 任务栏/Dock 提醒 + 系统通知（仅在窗口不在前台时触发）
+      const riskEmoji1 = confirmation.riskLevel === 'dangerous' ? '⚠️ ' : ''
+      attentionService.request({
+        title: `${riskEmoji1}SailFish 需要确认`,
+        body: confirmation.displayName || confirmation.toolName
+      })
     },
     onComplete: (agentId: string, result: string, pendingUserMessages?: string[]) => {
       if (!event.sender.isDestroyed()) {
@@ -3144,6 +3150,12 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
           displayName: confirmation.displayName
         })
       }
+      // 任务栏/Dock 提醒 + 系统通知（仅在窗口不在前台时触发）
+      const riskEmoji2 = confirmation.riskLevel === 'dangerous' ? '⚠️ ' : ''
+      attentionService.request({
+        title: `${riskEmoji2}SailFish 需要确认`,
+        body: confirmation.displayName || confirmation.toolName
+      })
     },
     onComplete: (_runId: string, result: string, pendingUserMessages?: string[]) => {
       if (!event.sender.isDestroyed()) {

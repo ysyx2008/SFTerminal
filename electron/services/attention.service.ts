@@ -100,8 +100,10 @@ class AttentionService {
 
   /**
    * 提请用户关注。窗口当前聚焦则不做任何事——用户已经在看了。
+   *
+   * @param notification 可选。窗口不在前台时额外弹出系统通知。
    */
-  async request(): Promise<void> {
+  async request(notification?: { title: string; body: string }): Promise<void> {
     const win = this.mainWindow
     if (!win || win.isDestroyed()) {
       log.debug('attention.request skipped: no window')
@@ -110,6 +112,14 @@ class AttentionService {
     if (this.focused) {
       log.debug('attention.request skipped: window focused')
       return
+    }
+
+    if (notification && Notification.isSupported()) {
+      try {
+        new Notification({ title: notification.title, body: notification.body, silent: false }).show()
+      } catch (e) {
+        log.warn('attention notification failed:', e)
+      }
     }
 
     this.active = true
