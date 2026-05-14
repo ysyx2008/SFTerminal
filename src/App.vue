@@ -310,6 +310,7 @@ let cleanupWatchEnsureTab: (() => void) | null = null
 let cleanupWatchProactiveMessage: (() => void) | null = null
 let cleanupWatchActivateMessage: (() => void) | null = null
 let cleanupAgentCompleteForProactive: (() => void) | null = null
+let cleanupAgentErrorForTabAttention: (() => void) | null = null
 let cleanupFullScreenChange: (() => void) | null = null
 
 
@@ -546,12 +547,38 @@ onMounted(async () => {
     terminalStore.clearDeferredProactive(tab.id)
   }
 
-  // 全局监听 agent 完成事件，刷新延迟的 proactive 消息
-  cleanupAgentCompleteForProactive = window.electronAPI.agent.onComplete((data: { agentId: string }) => {
+  // 全局监听 agent 完成事件：刷新延迟的 proactive + 后台 tab 标签栏提醒（microtask 晚于各 AiPanel 同步逻辑，可配合 skip）
+  cleanupAgentCompleteForProactive = window.electronAPI.agent.onComplete((data: {
+    agentId: string
+    ptyId?: string
+    pendingUserMessages?: string[]
+  }) => {
     const tab = terminalStore.tabs.find(t => t.agentId === data.agentId)
     if (tab && terminalStore.hasDeferredProactive(tab.id)) {
       flushDeferredProactive(data.agentId)
     }
+
+    const foundTabId = data.ptyId
+      ? terminalStore.findTabIdByPtyId(data.ptyId)
+      : terminalStore.findTabIdByAgentId(data.agentId)
+
+    queueMicrotask(() => {
+      if (!foundTabId || foundTabId === terminalStore.activeTabId) return
+      if (data.pendingUserMessages && data.pendingUserMessages.length > 0) return
+      if (terminalStore.consumeAgentCompleteTabAttentionSkip(foundTabId)) return
+      terminalStore.setAgentCompletedUnseen(foundTabId, true)
+    })
+  })
+
+  // 从未挂载 AiPanel 的 tab 上 Agent 报错时，仍要点亮标签（与完成兜底一致）
+  cleanupAgentErrorForTabAttention = window.electronAPI.agent.onError((data: { agentId: string; ptyId?: string }) => {
+    const foundTabId = data.ptyId
+      ? terminalStore.findTabIdByPtyId(data.ptyId)
+      : terminalStore.findTabIdByAgentId(data.agentId)
+    queueMicrotask(() => {
+      if (!foundTabId || foundTabId === terminalStore.activeTabId) return
+      terminalStore.setAgentCompletedUnseen(foundTabId, true)
+    })
   })
 
   cleanupWatchProactiveMessage = window.electronAPI.watch.onProactiveMessage((data) => {
@@ -930,6 +957,7 @@ onUnmounted(() => {
   cleanupWatchProactiveMessage?.()
   cleanupWatchActivateMessage?.()
   cleanupAgentCompleteForProactive?.()
+  cleanupAgentErrorForTabAttention?.()
   cleanupFullScreenChange?.()
 })
 </script>

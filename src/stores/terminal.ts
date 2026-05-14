@@ -56,6 +56,8 @@ export interface AgentState {
   userTask?: string      // 用户任务描述
   steps: AgentStep[]
   pendingConfirm?: PendingConfirmation
+  /** 后台 tab：Agent 已结束（成功或报错）而用户当时不在该 tab，用于标签栏高亮引导 */
+  agentCompletedUnseen?: boolean
   finalResult?: string   // Agent 完成后的最终回复
   /**
    * 标记：当前 agentState 来自加载历史，且后端 Agent 实例尚未通过新任务把会话状态加载到 in-memory。
@@ -985,6 +987,7 @@ export const useTerminalStore = defineStore('terminal', () => {
   function setActiveTab(tabId: string): void {
     if (tabs.value.find(t => t.id === tabId)) {
       activeTabId.value = tabId
+      setAgentCompletedUnseen(tabId, false)
     }
   }
 
@@ -1644,7 +1647,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       ...(agentId !== undefined && { agentId }),
       ...(userTask !== undefined && { userTask }),
       ...(!isRunning && { pendingConfirm: undefined }),
-      ...(isRunning && { loadedFromHistory: false })
+      ...(isRunning && { loadedFromHistory: false, agentCompletedUnseen: false })
     }
 
     // 强制触发数组更新
@@ -1754,6 +1757,16 @@ export const useTerminalStore = defineStore('terminal', () => {
     if (!tab?.agentState) return
 
     tab.agentState.pendingConfirm = confirmation
+  }
+
+  /**
+   * 标签栏「需要注意」：任务在后台 tab 结束，引导用户切回查看。
+   */
+  function setAgentCompletedUnseen(tabId: string, unseen: boolean): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab?.agentState) return
+    tab.agentState = { ...tab.agentState, agentCompletedUnseen: unseen }
+    tabs.value = [...tabs.value]
   }
 
   /**
@@ -2279,8 +2292,36 @@ export const useTerminalStore = defineStore('terminal', () => {
     return !!tab?.agentState?.pendingConfirm
   }
 
+  function hasAgentCompletedUnseen(tabId: string): boolean {
+    const tab = tabs.value.find(t => t.id === tabId)
+    return tab?.agentState?.agentCompletedUnseen === true
+  }
+
+  /** 标签栏 needs-attention：待确认 或 后台任务刚结束 */
+  function hasTabAgentAttention(tabId: string): boolean {
+    return hasPendingConfirm(tabId) || hasAgentCompletedUnseen(tabId)
+  }
+
   // Proactive 消息延迟投递：agent 忙时暂存，完成后再注入 tab
   const deferredProactiveTabs = ref(new Set<string>())
+
+  /**
+   * `agent:complete` 在 App 中用 microtask 兜底点亮 tab 前，
+   * useAgentMode 若将立即自动起新 run（队列 proactive / pending 用户消息），先 request，consume 后跳过点亮。
+   */
+  const agentCompleteTabAttentionSkipOnce = ref(new Set<string>())
+
+  function requestAgentCompleteTabAttentionSkip(tabId: string): void {
+    agentCompleteTabAttentionSkipOnce.value = new Set([...agentCompleteTabAttentionSkipOnce.value, tabId])
+  }
+
+  function consumeAgentCompleteTabAttentionSkip(tabId: string): boolean {
+    if (!agentCompleteTabAttentionSkipOnce.value.has(tabId)) return false
+    const next = new Set(agentCompleteTabAttentionSkipOnce.value)
+    next.delete(tabId)
+    agentCompleteTabAttentionSkipOnce.value = next
+    return true
+  }
 
   function markDeferredProactive(tabId: string): void {
     deferredProactiveTabs.value = new Set([...deferredProactiveTabs.value, tabId])
@@ -2383,10 +2424,15 @@ export const useTerminalStore = defineStore('terminal', () => {
     getNewOutputSinceLastSnapshot,
     updateSnapshotExternalState,
     hasPendingConfirm,
+    hasAgentCompletedUnseen,
+    hasTabAgentAttention,
+    setAgentCompletedUnseen,
     // Proactive 消息延迟投递
     markDeferredProactive,
     hasDeferredProactive,
-    clearDeferredProactive
+    clearDeferredProactive,
+    requestAgentCompleteTabAttentionSkip,
+    consumeAgentCompleteTabAttentionSkip
   }
 })
 

@@ -136,7 +136,9 @@ export default {
     selectShell: '选择 Shell',
     sshConnect: 'SSH 连接...',
     confirmCloseAgentRunning: 'AI 助手正在执行任务中，关闭终端将中断执行。确定要关闭吗？',
-    confirmCloseWithChat: '当前终端有 AI 对话记录，关闭后将丢失。确定要关闭吗？'
+    confirmCloseWithChat: '当前终端有 AI 对话记录，关闭后将丢失。确定要关闭吗？',
+    needsAttentionConfirm: '需要您的确认',
+    needsAttentionTaskFinished: 'Agent 已完成任务'
   },
 
 

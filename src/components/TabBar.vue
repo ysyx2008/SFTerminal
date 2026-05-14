@@ -214,6 +214,19 @@ const hasMultipleTerminals = computed(() => {
 const openBatchPanel = () => {
   batchPanelRef.value?.open()
 }
+
+/** 非激活 tab 上的标签栏提示（待确认 / 后台任务已结束） */
+const tabAttentionTooltip = (tabId: string): string | undefined => {
+  if (tabId === terminalStore.activeTabId) return undefined
+  const pending = terminalStore.hasPendingConfirm(tabId)
+  const unseen = terminalStore.hasAgentCompletedUnseen(tabId)
+  if (!pending && !unseen) return undefined
+  if (pending && unseen) {
+    return `${t('tabs.needsAttentionConfirm')} · ${t('tabs.needsAttentionTaskFinished')}`
+  }
+  if (pending) return t('tabs.needsAttentionConfirm')
+  return t('tabs.needsAttentionTaskFinished')
+}
 </script>
 
 <template>
@@ -233,11 +246,12 @@ const openBatchPanel = () => {
         v-for="(tab, index) in terminalStore.tabs"
         :key="tab.id"
         class="tab"
+        :title="tabAttentionTooltip(tab.id)"
         :class="{ 
           active: tab.id === terminalStore.activeTabId,
           dragging: dragIndex === index,
           'drag-over': dragOverIndex === index && dragIndex !== index,
-          'needs-attention': tab.id !== terminalStore.activeTabId && terminalStore.hasPendingConfirm(tab.id)
+          'needs-attention': tab.id !== terminalStore.activeTabId && terminalStore.hasTabAgentAttention(tab.id)
         }"
         draggable="true"
         @click="terminalStore.setActiveTab(tab.id)"
@@ -470,7 +484,7 @@ const openBatchPanel = () => {
   margin-left: -2px;
 }
 
-/* 需要注意的状态（有待确认操作） */
+/* 需要注意的状态：有待确认操作，或后台 tab 上 Agent 任务刚结束 */
 .tab.needs-attention {
   animation: tab-attention-pulse 1.5s ease-in-out infinite;
   border-color: var(--color-warning);

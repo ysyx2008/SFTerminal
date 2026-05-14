@@ -1112,15 +1112,12 @@ export function useAgentMode(
 
     // 监听完成
     cleanupCompleteListener = window.electronAPI.agent.onComplete((data: { agentId: string; ptyId?: string; result: string; pendingUserMessages?: string[] }) => {
-      // 只处理属于当前 tab 的事件（优先使用 ptyId 匹配）
-      if (data.ptyId) {
-        const foundTabId = terminalStore.findTabIdByPtyId(data.ptyId)
-        if (foundTabId !== currentTabId.value) return
-      } else {
-        const foundTabId = terminalStore.findTabIdByAgentId(data.agentId)
-        if (foundTabId !== currentTabId.value) return
-      }
-      
+      const foundTabId = data.ptyId
+        ? terminalStore.findTabIdByPtyId(data.ptyId)
+        : terminalStore.findTabIdByAgentId(data.agentId)
+      // 只处理属于当前 AiPanel 绑定 tab 的事件（优先使用 ptyId 匹配）
+      if (foundTabId !== currentTabId.value) return
+
       terminalStore.setAgentRunning(currentTabId.value, false)
       // 通知 Canvas 任务完成
       if (isStandaloneAssistant.value) {
@@ -1128,6 +1125,7 @@ export function useAgentMode(
       }
       // 队列化的 proactive 回复优先：作为新任务启动（consumeProactiveContext 自动注入 Watch 上下文）
       if (queuedProactiveReply.value) {
+        terminalStore.requestAgentCompleteTabAttentionSkip(foundTabId)
         const reply = queuedProactiveReply.value
         queuedProactiveReply.value = null
         log.info('任务完成，启动队列中的 proactive 回复:', reply)
@@ -1137,30 +1135,32 @@ export function useAgentMode(
         }, 100)
         return
       }
-      
+
       // 如果有未处理的用户消息（用户在 Agent 总结时发送的），自动作为新任务启动
       if (data.pendingUserMessages && data.pendingUserMessages.length > 0) {
+        terminalStore.requestAgentCompleteTabAttentionSkip(foundTabId)
         const pendingMessage = data.pendingUserMessages.join('\n')
         log.info('发现未处理的用户消息，将作为新任务启动:', pendingMessage)
-        // 延迟一点启动，让当前完成状态先更新到 UI
         setTimeout(() => {
           inputText.value = pendingMessage
           runAgent()
         }, 100)
+        return
+      }
+
+      // 任务在后台 tab 结束时，标签栏高亮（与待确认一致），便于多 tab 定位
+      if (foundTabId && foundTabId !== terminalStore.activeTabId) {
+        terminalStore.setAgentCompletedUnseen(foundTabId, true)
       }
     })
 
     // 监听错误
     cleanupErrorListener = window.electronAPI.agent.onError((data: { agentId: string; ptyId?: string; error: string }) => {
-      // 只处理属于当前 tab 的事件（优先使用 ptyId 匹配）
-      if (data.ptyId) {
-        const foundTabId = terminalStore.findTabIdByPtyId(data.ptyId)
-        if (foundTabId !== currentTabId.value) return
-      } else {
-        const foundTabId = terminalStore.findTabIdByAgentId(data.agentId)
-        if (foundTabId !== currentTabId.value) return
-      }
-      
+      const foundTabId = data.ptyId
+        ? terminalStore.findTabIdByPtyId(data.ptyId)
+        : terminalStore.findTabIdByAgentId(data.agentId)
+      if (foundTabId !== currentTabId.value) return
+
       terminalStore.setAgentRunning(currentTabId.value, false)
       queuedProactiveReply.value = null
       terminalStore.addAgentStep(currentTabId.value, {
@@ -1169,6 +1169,10 @@ export function useAgentMode(
         content: data.error,
         timestamp: Date.now()
       })
+
+      if (foundTabId && foundTabId !== terminalStore.activeTabId) {
+        terminalStore.setAgentCompletedUnseen(foundTabId, true)
+      }
     })
   }
 
