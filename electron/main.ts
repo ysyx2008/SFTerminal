@@ -5144,9 +5144,9 @@ ipcMain.handle('contextKnowledge:list', async () => {
       contextId: id,
       content: service.getDocument(id)
     }))
-    return { success: true, items }
+    return { success: true, items, maxDocChars: service.getMaxDocChars() }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : '获取列表失败', items: [] }
+    return { success: false, error: error instanceof Error ? error.message : '获取列表失败', items: [], maxDocChars: 5000 }
   }
 })
 

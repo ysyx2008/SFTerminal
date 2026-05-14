@@ -113,6 +113,11 @@ export class ContextKnowledgeService {
     return Array.from(this.cache.keys())
   }
 
+  /** 单份 L2 知识文档最大字符数（与 setDocument / LLM 提示一致，供设置页展示） */
+  getMaxDocChars(): number {
+    return this.maxDocChars
+  }
+
   /**
    * 通过 LLM 更新知识文档
    *

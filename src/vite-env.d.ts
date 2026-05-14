@@ -1704,7 +1704,12 @@ interface Window {
     }
     // L2 知识文档（结构化持久记忆）
     contextKnowledge: {
-      list: () => Promise<{ success: boolean; items: Array<{ contextId: string; content: string }>; error?: string }>
+      list: () => Promise<{
+        success: boolean
+        items: Array<{ contextId: string; content: string }>
+        maxDocChars: number
+        error?: string
+      }>
       get: (contextId: string) => Promise<{ success: boolean; content: string; error?: string }>
       set: (contextId: string, content: string) => Promise<{ success: boolean; error?: string }>
       delete: (contextId: string) => Promise<{ success: boolean; error?: string }>

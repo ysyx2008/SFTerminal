@@ -2177,6 +2177,7 @@ const electronAPI = {
       ipcRenderer.invoke('contextKnowledge:list') as Promise<{
         success: boolean
         items: Array<{ contextId: string; content: string }>
+        maxDocChars: number
         error?: string
       }>,
     get: (contextId: string) =>

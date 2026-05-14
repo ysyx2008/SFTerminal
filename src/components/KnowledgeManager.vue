@@ -44,6 +44,7 @@ const selectedContextId = ref<string | null>(null)
 const contextDocContent = ref('')
 const contextDocSaving = ref(false)
 const contextDocDirty = ref(false)
+const contextKnowledgeMaxChars = ref(5000)
 
 // ==================== 知识库 tab 状态 ====================
 const documents = ref<KnowledgeDocument[]>([])
@@ -98,9 +99,9 @@ const formatDate = (timestamp: number): string => {
 }
 
 const getContextLabel = (contextId: string): string => {
-  if (contextId === 'local') return '💻 本地主机'
-  if (contextId === 'personal') return '👤 个人'
-  return `🌐 ${contextId}`
+  if (contextId === 'local') return t('knowledgeManager.contextLabelLocal')
+  if (contextId === 'personal') return t('knowledgeManager.contextLabelPersonal')
+  return t('knowledgeManager.contextLabelRemote', { id: contextId })
 }
 
 // ==================== 数据加载 ====================
@@ -121,6 +122,9 @@ const loadContextDocs = async () => {
     const result = await window.electronAPI.contextKnowledge.list()
     if (result.success) {
       contextDocs.value = result.items
+      if (typeof result.maxDocChars === 'number' && result.maxDocChars > 0) {
+        contextKnowledgeMaxChars.value = result.maxDocChars
+      }
     }
   } catch (error) {
     console.error('加载记忆失败:', error)
@@ -143,7 +147,7 @@ const loadKnowledgeDocs = async () => {
 
 const selectContextDoc = (item: ContextKnowledgeItem) => {
   if (contextDocDirty.value && selectedContextId.value) {
-    if (!confirm('当前记忆有未保存的修改，确定要切换吗？')) return
+    if (!confirm(t('knowledgeManager.confirmSwitchMemory'))) return
   }
   selectedContextId.value = item.contextId
   contextDocContent.value = item.content
@@ -166,7 +170,7 @@ const saveContextDoc = async () => {
       contextDocDirty.value = false
       await loadContextDocs()
     } else {
-      alert('保存失败: ' + (result.error || '未知错误'))
+      alert(t('knowledgeManager.saveMemoryFailed', { error: result.error || t('knowledgeManager.unknownError') }))
     }
   } catch (error) {
     console.error('保存记忆失败:', error)
@@ -177,7 +181,7 @@ const saveContextDoc = async () => {
 
 const deleteContextDoc = async (contextId: string) => {
   const label = getContextLabel(contextId)
-  if (!confirm(`确定删除「${label}」的记忆吗？`)) return
+  if (!confirm(t('knowledgeManager.confirmDeleteMemory', { name: label }))) return
   try {
     const result = await window.electronAPI.contextKnowledge.delete(contextId)
     if (result.success) {
@@ -188,7 +192,7 @@ const deleteContextDoc = async (contextId: string) => {
       }
       await loadContextDocs()
     } else {
-      alert('删除失败: ' + (result.error || '未知错误'))
+      alert(t('knowledgeManager.deleteMemoryFailed', { error: result.error || t('knowledgeManager.unknownError') }))
     }
   } catch (error) {
     console.error('删除记忆失败:', error)
@@ -274,7 +278,7 @@ const clearKnowledge = async () => {
     selectedDoc.value = null
     clearSelection()
     if (result.failed && result.failed > 0) {
-      alert(`${t('knowledgeManager.clearFailed')}: ${result.deleted} 个成功, ${result.failed} 个失败`)
+      alert(t('knowledgeManager.clearPartialResult', { deleted: result.deleted, failed: result.failed }))
     }
   } catch (error) {
     console.error('Clear knowledge base failed:', error)
@@ -349,7 +353,7 @@ onUnmounted(() => {
   <div class="modal-overlay" @click.self="emit('close')">
     <div class="knowledge-manager">
       <div class="manager-header">
-        <h2>💡 记忆管理</h2>
+        <h2>💡 {{ t('knowledgeManager.title') }}</h2>
         <button class="btn-icon" @click="emit('close')" :title="t('knowledgeManager.close')">
           <X :size="18" />
         </button>
@@ -365,14 +369,14 @@ onUnmounted(() => {
               :class="{ active: activeTab === 'memory' }"
               @click="activeTab = 'memory'"
             >
-              💡 记忆 ({{ contextDocs.length }})
+              {{ t('knowledgeManager.memoryTab', { count: contextDocs.length }) }}
             </button>
             <button 
               class="tab-btn" 
               :class="{ active: activeTab === 'knowledge' }"
               @click="activeTab = 'knowledge'"
             >
-              📚 知识库 ({{ kbDocuments.length }})
+              {{ t('knowledgeManager.knowledgeTab', { count: kbDocuments.length }) }}
             </button>
           </div>
 
@@ -387,7 +391,7 @@ onUnmounted(() => {
                 @click="selectContextDoc(item)"
               >
                 <div class="context-doc-label">{{ getContextLabel(item.contextId) }}</div>
-                <div class="context-doc-preview">{{ item.content.substring(0, 80) || '（空）' }}</div>
+                <div class="context-doc-preview">{{ item.content.substring(0, 80) || t('knowledgeManager.emptyDocPreview') }}</div>
                 <button 
                   class="btn-icon btn-delete-small"
                   @click.stop="deleteContextDoc(item.contextId)"
@@ -398,8 +402,8 @@ onUnmounted(() => {
               </div>
 
               <div v-if="contextDocs.length === 0" class="empty-state">
-                <p>暂无记忆</p>
-                <p class="empty-hint">Agent 在执行任务后会自动积累记忆</p>
+                <p>{{ t('knowledgeManager.noMemoryYet') }}</p>
+                <p class="empty-hint">{{ t('knowledgeManager.noMemoryHint') }}</p>
               </div>
             </div>
 
@@ -521,8 +525,8 @@ onUnmounted(() => {
               <div class="detail-header">
                 <h3>{{ getContextLabel(selectedContextId) }}</h3>
                 <div class="detail-meta">
-                  <span>{{ contextDocContent.length }} 字符</span>
-                  <span v-if="contextDocDirty" class="unsaved-badge">● 未保存</span>
+                  <span>{{ t('knowledgeManager.memoryCharCount', { current: contextDocContent.length, max: contextKnowledgeMaxChars }) }}</span>
+                  <span v-if="contextDocDirty" class="unsaved-badge">{{ t('knowledgeManager.unsavedBadge') }}</span>
                 </div>
               </div>
               <div class="context-doc-editor">
@@ -530,7 +534,7 @@ onUnmounted(() => {
                   v-model="contextDocContent"
                   @input="onContextDocInput"
                   class="context-doc-textarea"
-                  placeholder="在此编辑记忆内容（Markdown 格式）&#10;&#10;Agent 会在每次任务结束后自动更新此文档，记录有用的系统信息和用户偏好。&#10;你也可以手动编辑来纠正或补充信息。"
+                  :placeholder="t('knowledgeManager.contextDocPlaceholder')"
                   spellcheck="false"
                 ></textarea>
               </div>
@@ -540,15 +544,15 @@ onUnmounted(() => {
                   @click="saveContextDoc"
                   :disabled="contextDocSaving || !contextDocDirty"
                 >
-                  {{ contextDocSaving ? '保存中...' : '💾 保存' }}
+                  {{ contextDocSaving ? t('knowledgeManager.savingMemory') : t('knowledgeManager.saveMemory') }}
                 </button>
-                <span class="context-doc-hint">Agent 执行任务后会自动更新</span>
+                <span class="context-doc-hint">{{ t('knowledgeManager.memoryAutoUpdateHint') }}</span>
               </div>
             </template>
             <div v-else class="no-selection">
               <div class="no-selection-content">
-                <p class="no-selection-title">选择左侧记忆进行查看或编辑</p>
-                <p class="no-selection-hint">每台主机、每种连接方式各有独立的记忆文档</p>
+                <p class="no-selection-title">{{ t('knowledgeManager.noSelectionMemoryTitle') }}</p>
+                <p class="no-selection-hint">{{ t('knowledgeManager.noSelectionMemoryHint') }}</p>
               </div>
             </div>
           </template>

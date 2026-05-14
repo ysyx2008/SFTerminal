@@ -73,6 +73,7 @@ const selectedContextId = ref<string | null>(null)
 const contextDocContent = ref('')
 const contextDocSaving = ref(false)
 const contextDocDirty = ref(false)
+const contextKnowledgeMaxChars = ref(5000)
 
 // 知识库文档
 const documents = ref<KnowledgeDocument[]>([])
@@ -175,7 +176,12 @@ const loadAllData = async () => {
 const loadContextDocs = async () => {
   try {
     const result = await window.electronAPI.contextKnowledge.list()
-    if (result.success) contextDocs.value = result.items
+    if (result.success) {
+      contextDocs.value = result.items
+      if (typeof result.maxDocChars === 'number' && result.maxDocChars > 0) {
+        contextKnowledgeMaxChars.value = result.maxDocChars
+      }
+    }
   } catch (error) {
     console.error('加载记忆失败:', error)
   }
@@ -487,7 +493,7 @@ onUnmounted(() => {
                   <div class="detail-header">
                     <h3>{{ getContextLabel(selectedContextId) }}</h3>
                     <div class="detail-meta">
-                      <span>{{ contextDocContent.length }} 字符</span>
+                      <span>{{ t('knowledgeManager.memoryCharCount', { current: contextDocContent.length, max: contextKnowledgeMaxChars }) }}</span>
                       <span v-if="contextDocDirty" class="unsaved">● 未保存</span>
                     </div>
                   </div>
