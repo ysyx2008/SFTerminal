@@ -595,6 +595,8 @@ export default {
     contextLabelRemote: '🌐 {id}',
     contextDocPlaceholder:
       'Edit memory here (Markdown).\n\nThe Agent updates this document after tasks with useful system information and your preferences.\nYou can also edit manually to correct or add information.',
+    contextDocPlaceholderSettings:
+      'Edit memory here (Markdown).\n\nThe Agent updates this document after tasks.\nYou can also edit manually to correct or add information.',
     emptyDocPreview: '(empty)',
     noMemoryYet: 'No memory yet',
     noMemoryHint: 'The Agent will build memory automatically as it runs tasks',
@@ -604,6 +606,7 @@ export default {
     memoryAutoUpdateHint: 'The Agent updates this after tasks',
     noSelectionMemoryTitle: 'Select a memory on the left to view or edit',
     noSelectionMemoryHint: 'Each host and connection mode has its own memory document',
+    noSelectionMemoryHintSettings: 'Each host has its own memory document',
     confirmSwitchMemory: 'You have unsaved changes. Switch anyway?',
     confirmDeleteMemory: 'Delete memory for "{name}"?',
     saveMemoryFailed: 'Save failed: {error}',

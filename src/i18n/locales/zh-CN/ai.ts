@@ -595,6 +595,8 @@ export default {
     contextLabelRemote: '🌐 {id}',
     contextDocPlaceholder:
       '在此编辑记忆内容（Markdown 格式）\n\nAgent 会在每次任务结束后自动更新此文档，记录有用的系统信息和用户偏好。\n你也可以手动编辑来纠正或补充信息。',
+    contextDocPlaceholderSettings:
+      '在此编辑记忆内容（Markdown 格式）\n\nAgent 会在每次任务结束后自动更新此文档。\n你也可以手动编辑来纠正或补充信息。',
     emptyDocPreview: '（空）',
     noMemoryYet: '暂无记忆',
     noMemoryHint: 'Agent 在执行任务后会自动积累记忆',
@@ -604,6 +606,7 @@ export default {
     memoryAutoUpdateHint: 'Agent 执行任务后会自动更新',
     noSelectionMemoryTitle: '选择左侧记忆进行查看或编辑',
     noSelectionMemoryHint: '每台主机、每种连接方式各有独立的记忆文档',
+    noSelectionMemoryHintSettings: '每台主机各有独立的记忆文档',
     confirmSwitchMemory: '当前记忆有未保存的修改，确定要切换吗？',
     confirmDeleteMemory: '确定删除「{name}」的记忆吗？',
     saveMemoryFailed: '保存失败: {error}',
