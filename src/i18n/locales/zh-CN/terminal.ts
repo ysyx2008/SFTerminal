@@ -228,6 +228,16 @@ export default {
     }
   },
 
+  // 独立助手右侧 Canvas（Markdown 等）
+  canvas: {
+    markdownSource: 'Markdown',
+    markdownPreview: '预览',
+    saveToDisk: '保存到磁盘',
+    saveShortcut: 'Ctrl/Cmd+S 保存',
+    noPathHint: '无本地文件路径时仅可编辑预览；Agent 写入 .md 后会自动关联保存',
+    savedToDisk: '已保存到磁盘',
+    saveFailed: '保存失败',
+  },
 
   // MCP 状态
   mcp: {

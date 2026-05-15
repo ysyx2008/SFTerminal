@@ -5,11 +5,12 @@
  * 独立助手右侧的动态预览区域，根据 renderer 类型动态加载对应渲染组件。
  */
 import { computed, ref } from 'vue'
-import { X, TerminalSquare, FileText, Table2 } from 'lucide-vue-next'
+import { X, TerminalSquare, FileText, Table2, FileCode } from 'lucide-vue-next'
 import { useCanvasStore } from '../../stores/canvas'
 import TerminalRenderer from './TerminalRenderer.vue'
 import DocumentRenderer from './DocumentRenderer.vue'
 import SpreadsheetRenderer from './SpreadsheetRenderer.vue'
+import MarkdownRenderer from './MarkdownRenderer.vue'
 
 const props = defineProps<{
   tabId: string
@@ -31,6 +32,7 @@ const rendererIcon = computed(() => {
     case 'terminal': return TerminalSquare
     case 'document': return FileText
     case 'spreadsheet': return Table2
+    case 'markdown': return FileCode
     default: return TerminalSquare
   }
 })
@@ -65,6 +67,10 @@ defineExpose({
       />
       <SpreadsheetRenderer
         v-else-if="renderer === 'spreadsheet'"
+        :tab-id="tabId"
+      />
+      <MarkdownRenderer
+        v-else-if="renderer === 'markdown'"
         :tab-id="tabId"
       />
     </div>

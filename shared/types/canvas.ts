@@ -53,4 +53,9 @@ export interface CanvasData {
   title?: string
   /** HTML 内容（Word 文档 / Excel 表格） */
   content?: string
+  /**
+   * Markdown 等文本类型：本地绝对路径，供 Canvas 内保存写回磁盘。
+   * 与 UI 展示路径（~/ 缩写）无关，必须为主进程可解析的绝对路径。
+   */
+  filePath?: string
 }

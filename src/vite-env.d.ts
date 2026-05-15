@@ -1503,6 +1503,10 @@ interface Window {
       copyFile: (src: string, dest: string) => Promise<{ success: boolean; error?: string }>
       copyDir: (src: string, dest: string) => Promise<{ success: boolean; error?: string }>
       readFile: (path: string) => Promise<{ success: boolean; data?: string; error?: string }>
+      writeFile: (
+        filePath: string,
+        content: string
+      ) => Promise<{ success: boolean; error?: string }>
       getDrives: () => Promise<Array<{
         name: string
         path: string

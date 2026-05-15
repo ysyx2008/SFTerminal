@@ -24,8 +24,10 @@ export const useCanvasStore = defineStore('canvas', () => {
     title: string
     /** 终端条目队列（TerminalRenderer 消费） */
     terminalEntries: TerminalEntry[]
-    /** 通用内容（文档 HTML、图片 URL 等） */
+    /** 通用内容（文档 HTML、图片 URL、Markdown 源码等） */
     content: string
+    /** Markdown 保存目标（绝对路径），无则 Canvas 内编辑不落盘 */
+    filePath: string | null
   }>>(new Map())
 
   /** 分割比例（所有 tab 共用，0-1 范围，表示 Canvas 占比） */
@@ -41,7 +43,8 @@ export const useCanvasStore = defineStore('canvas', () => {
         renderer: null,
         title: '',
         terminalEntries: [],
-        content: ''
+        content: '',
+        filePath: null
       })
     }
     return states.value.get(tabId)!
@@ -59,6 +62,10 @@ export const useCanvasStore = defineStore('canvas', () => {
     return states.value.get(tabId)?.title ?? ''
   }
 
+  function getFilePath(tabId: string): string | null {
+    return states.value.get(tabId)?.filePath ?? null
+  }
+
   function getTerminalEntries(tabId: string): TerminalEntry[] {
     return states.value.get(tabId)?.terminalEntries ?? []
   }
@@ -66,16 +73,20 @@ export const useCanvasStore = defineStore('canvas', () => {
   /**
    * 打开 Canvas
    */
-  function open(tabId: string, renderer: CanvasRendererType, title: string) {
+  function open(tabId: string, renderer: CanvasRendererType, title: string, filePath?: string | null) {
     cancelPendingClose(tabId)
     const state = getState(tabId)
     if (state.renderer !== renderer) {
       state.terminalEntries = []
       state.content = ''
+      state.filePath = null
     }
     state.visible = true
     state.renderer = renderer
     state.title = title
+    if (filePath !== undefined) {
+      state.filePath = filePath
+    }
   }
 
   /**
@@ -139,9 +150,14 @@ export const useCanvasStore = defineStore('canvas', () => {
   function handleAgentStep(tabId: string, step: AgentStep) {
     // 优先处理 canvasData（后端 executor 主动推送）
     if (step.canvasData) {
-      const { action, renderer, title: canvasTitle, content: canvasContent } = step.canvasData
+      const { action, renderer, title: canvasTitle, content: canvasContent, filePath: canvasFilePath } = step.canvasData
       if (action === 'open' && renderer) {
-        open(tabId, renderer, canvasTitle || '')
+        open(
+          tabId,
+          renderer,
+          canvasTitle || '',
+          canvasFilePath !== undefined ? canvasFilePath ?? null : undefined
+        )
         if (canvasContent) {
           updateContent(tabId, canvasContent)
         }
@@ -193,6 +209,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     isVisible,
     getRenderer,
     getTitle,
+    getFilePath,
     getTerminalEntries,
     open,
     close,

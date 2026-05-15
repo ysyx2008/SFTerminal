@@ -15,7 +15,24 @@ import iconv from 'iconv-lite'
 import { decodeBuffer, detectEncoding } from '../../../utils/encoding'
 import { categorizeError, getErrorRecoverySuggestion, truncateFromEnd, formatFileSize } from './utils'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
+import type { CanvasData } from '@shared/types'
 import { VISION_IMAGE_EXTENSIONS, IMAGE_MIME_TYPES, CONVERTIBLE_IMAGE_EXTENSIONS } from './types'
+
+/** Agent 写入/编辑 .md 后推送到独立助手 Canvas，供用户预览与本地保存 */
+function markdownCanvasDataForPath(filePath: string): CanvasData | undefined {
+  if (!/\.(md|markdown)$/i.test(filePath)) return undefined
+  try {
+    return {
+      action: 'open',
+      renderer: 'markdown',
+      title: path.basename(filePath),
+      content: fs.readFileSync(filePath, 'utf-8'),
+      filePath
+    }
+  } catch {
+    return undefined
+  }
+}
 
 function expandTilde(filePath: string): string {
   if (filePath === '~') return os.homedir()
@@ -1303,10 +1320,12 @@ export async function editFile(
       const headWithRange = !isMultiReplace && editRangeLabel ? `${head} (${editRangeLabel})` : head
       return `${headWithRange}: ${p}`
     }
+    const mdCanvas = markdownCanvasDataForPath(filePath)
     executor.addStep({
       type: 'tool_result',
       content: buildContent(editDisplayPath),
-      toolName: 'edit_file'
+      toolName: 'edit_file',
+      ...(mdCanvas && { canvasData: mdCanvas })
     })
 
     // output 给 AI 看：保留含路径的旧文案，路径用绝对路径（避免 cwd 漂移时定位失败）
@@ -1599,18 +1618,21 @@ export async function writeTextFile(
       }
     }
 
+    const mdCanvas = markdownCanvasDataForPath(filePath)
     if (progressStepId) {
       executor.updateStep(progressStepId, {
         type: 'tool_result',
         content: `✅ ${resultMsg}`,
         toolName: 'write_text_file',
-        isStreaming: false
+        isStreaming: false,
+        ...(mdCanvas && { canvasData: mdCanvas })
       })
     } else {
       executor.addStep({
         type: 'tool_result',
         content: resultMsg,
-        toolName: 'write_text_file'
+        toolName: 'write_text_file',
+        ...(mdCanvas && { canvasData: mdCanvas })
       })
     }
     return { success: true, output: resultMsg }

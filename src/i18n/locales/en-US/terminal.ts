@@ -228,6 +228,16 @@ export default {
     }
   },
 
+  // Assistant Canvas panel (Markdown, etc.)
+  canvas: {
+    markdownSource: 'Markdown',
+    markdownPreview: 'Preview',
+    saveToDisk: 'Save to disk',
+    saveShortcut: 'Ctrl/Cmd+S to save',
+    noPathHint: 'No file path yet—edit for preview only; saving links after Agent writes a .md file',
+    savedToDisk: 'Saved to disk',
+    saveFailed: 'Save failed',
+  },
 
   // MCP Status
   mcp: {
