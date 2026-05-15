@@ -1,11 +1,12 @@
 <script setup lang="ts">
 /**
- * Canvas Markdown：左侧源码编辑 + 右侧预览，可选保存到本地路径（与 Agent write_text_file 对齐）。
+ * Canvas Markdown：默认全屏编辑，可切换预览；选中内容可引用到同 Tab 的 AI 输入框。
  */
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Save } from 'lucide-vue-next'
+import { Eye, MessageSquareQuote, Save, SquarePen } from 'lucide-vue-next'
 import { useCanvasStore } from '../../stores/canvas'
+import { useComposerQuoteStore } from '../../stores/composer-quote'
 import { useMarkdown } from '../../composables/useMarkdown'
 import { useToast } from '../../composables/useToast'
 
@@ -15,11 +16,19 @@ const props = defineProps<{
 
 const { t } = useI18n()
 const canvasStore = useCanvasStore()
+const composerQuoteStore = useComposerQuoteStore()
 const { renderMarkdown } = useMarkdown()
-const { success: toastSuccess, error: toastError } = useToast()
+const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
 
 const draft = ref('')
 const saving = ref(false)
+const viewMode = ref<'edit' | 'preview'>('edit')
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const rootRef = ref<HTMLElement | null>(null)
+
+const ctxVisible = ref(false)
+const ctxX = ref(0)
+const ctxY = ref(0)
 
 const state = computed(() => canvasStore.getState(props.tabId))
 const filePath = computed(() => state.value.filePath)
@@ -34,6 +43,90 @@ watch(
   },
   { immediate: true }
 )
+
+function toggleViewMode() {
+  viewMode.value = viewMode.value === 'edit' ? 'preview' : 'edit'
+  if (viewMode.value === 'edit') {
+    nextTick(() => textareaRef.value?.focus())
+  }
+}
+
+function setViewMode(m: 'edit' | 'preview') {
+  viewMode.value = m
+  if (m === 'edit') {
+    nextTick(() => textareaRef.value?.focus())
+  }
+}
+
+/** 当前选中的可引用文本（编辑：textarea；预览：document 选区，须落在本面板内） */
+function captureQuoteText(): string {
+  const root = rootRef.value
+  if (viewMode.value === 'edit') {
+    const el = textareaRef.value
+    if (!el) return ''
+    const a = el.selectionStart
+    const b = el.selectionEnd
+    if (a === b) return ''
+    return el.value.slice(a, b)
+  }
+  const sel = window.getSelection()
+  if (!sel?.rangeCount || sel.isCollapsed) return ''
+  if (!root || !sel.anchorNode || !root.contains(sel.anchorNode)) return ''
+  return sel.toString()
+}
+
+function quoteSelectionToAi() {
+  const raw = captureQuoteText().trim()
+  if (!raw) {
+    toastInfo(t('canvas.quoteToAiNeedSelection'))
+    closeCtxMenu()
+    return
+  }
+  composerQuoteStore.requestQuoteToComposer(props.tabId, raw)
+  closeCtxMenu()
+}
+
+function openCtxMenu(e: MouseEvent) {
+  const raw = captureQuoteText().trim()
+  if (!raw) return
+  e.preventDefault()
+  ctxX.value = e.clientX
+  ctxY.value = e.clientY
+  ctxVisible.value = true
+}
+
+function closeCtxMenu() {
+  ctxVisible.value = false
+}
+
+function onGlobalKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') closeCtxMenu()
+}
+
+function onGlobalMouseDown(e: MouseEvent) {
+  const t = e.target as HTMLElement
+  if (t.closest?.('.md-ctx-menu')) return
+  closeCtxMenu()
+}
+
+function onPanelKeydown(e: KeyboardEvent) {
+  const mod = e.ctrlKey || e.metaKey
+  const k = e.key.toLowerCase()
+
+  if (mod && e.shiftKey && k === 'm') {
+    e.preventDefault()
+    e.stopPropagation()
+    toggleViewMode()
+    return
+  }
+
+  // Ctrl/Cmd+L：引用到 AI 对话（避免 Cmd+Shift+Q 触发退出等系统行为）
+  if (mod && !e.shiftKey && !e.altKey && k === 'l') {
+    e.preventDefault()
+    e.stopPropagation()
+    quoteSelectionToAi()
+  }
+}
 
 async function saveToDisk() {
   const path = filePath.value
@@ -52,14 +145,14 @@ async function saveToDisk() {
     } else {
       toastError(res.error || t('canvas.saveFailed'))
     }
-  } catch (e) {
-    toastError(e instanceof Error ? e.message : t('canvas.saveFailed'))
+  } catch (err) {
+    toastError(err instanceof Error ? err.message : t('canvas.saveFailed'))
   } finally {
     saving.value = false
   }
 }
 
-function onKeyDown(e: KeyboardEvent) {
+function onWindowKeydown(e: KeyboardEvent) {
   if (!canSave.value) return
   const meta = e.metaKey || e.ctrlKey
   if (meta && e.key === 's') {
@@ -69,20 +162,51 @@ function onKeyDown(e: KeyboardEvent) {
 }
 
 onMounted(() => {
-  window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('keydown', onWindowKeydown)
+  window.addEventListener('keydown', onGlobalKeydown)
+  document.addEventListener('mousedown', onGlobalMouseDown, true)
 })
 onUnmounted(() => {
-  window.removeEventListener('keydown', onKeyDown)
+  window.removeEventListener('keydown', onWindowKeydown)
+  window.removeEventListener('keydown', onGlobalKeydown)
+  document.removeEventListener('mousedown', onGlobalMouseDown, true)
 })
 </script>
 
 <template>
-  <div class="markdown-renderer">
+  <div ref="rootRef" class="markdown-renderer" @keydown.capture="onPanelKeydown">
     <div class="md-toolbar">
       <div class="md-toolbar-left">
-        <span class="md-label">{{ t('canvas.markdownSource') }}</span>
-        <span class="md-sep" aria-hidden="true">·</span>
-        <span class="md-label muted">{{ t('canvas.markdownPreview') }}</span>
+        <div class="md-mode-switch" role="tablist" :aria-label="t('canvas.viewMode')">
+          <button
+            type="button"
+            role="tab"
+            class="md-mode-btn"
+            :class="{ active: viewMode === 'edit' }"
+            :aria-selected="viewMode === 'edit'"
+            :title="t('canvas.modeEditHint')"
+            @click="setViewMode('edit')"
+          >
+            <SquarePen :size="14" aria-hidden="true" />
+            <span>{{ t('canvas.modeEdit') }}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="md-mode-btn"
+            :class="{ active: viewMode === 'preview' }"
+            :aria-selected="viewMode === 'preview'"
+            :title="t('canvas.modePreviewHint')"
+            @click="setViewMode('preview')"
+          >
+            <Eye :size="14" aria-hidden="true" />
+            <span>{{ t('canvas.modePreview') }}</span>
+          </button>
+        </div>
+      </div>
+      <div class="md-toolbar-mid">
+        <span class="md-shortcut-hint">{{ t('canvas.toggleModeHint') }}</span>
+        <span class="md-shortcut-hint quote">{{ t('canvas.quoteHint') }}</span>
       </div>
       <div class="md-toolbar-right">
         <span v-if="!canSave" class="md-hint">{{ t('canvas.noPathHint') }}</span>
@@ -99,18 +223,46 @@ onUnmounted(() => {
         </button>
       </div>
     </div>
-    <div class="md-split" role="group" :aria-label="t('canvas.markdownSource')">
+
+    <div class="md-body">
       <textarea
+        v-show="viewMode === 'edit'"
+        id="canvas-md-editor"
+        ref="textareaRef"
         v-model="draft"
         class="md-editor"
         spellcheck="false"
         autocomplete="off"
-        :aria-label="t('canvas.markdownSource')"
+        :aria-label="t('canvas.modeEdit')"
+        @contextmenu="openCtxMenu"
       />
-      <div class="md-preview-wrap">
-        <div class="md-preview-inner markdown-canvas-preview" v-html="previewHtml" />
+      <div
+        v-show="viewMode === 'preview'"
+        class="md-preview-wrap md-preview-full"
+        :aria-label="t('canvas.modePreview')"
+      >
+        <div
+          class="md-preview-inner markdown-canvas-preview"
+          v-html="previewHtml"
+          @contextmenu="openCtxMenu"
+        />
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="ctxVisible"
+        class="md-ctx-menu"
+        :style="{ left: ctxX + 'px', top: ctxY + 'px' }"
+        role="menu"
+        @mousedown.prevent
+      >
+        <button type="button" role="menuitem" class="md-ctx-item" @click="quoteSelectionToAi">
+          <MessageSquareQuote :size="14" aria-hidden="true" />
+          <span>{{ t('canvas.quoteToComposer') }}</span>
+        </button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -138,21 +290,59 @@ onUnmounted(() => {
 .md-toolbar-left {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
-.md-label {
+.md-toolbar-mid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+}
+
+.md-shortcut-hint {
+  color: var(--text-tertiary, #6a6a6a);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.md-shortcut-hint.quote {
+  opacity: 0.9;
+}
+
+.md-mode-switch {
+  display: inline-flex;
+  border-radius: 6px;
+  padding: 2px;
+  background: var(--bg-secondary, #252525);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+}
+
+.md-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  background: transparent;
   color: var(--text-secondary, #aaa);
-  font-weight: 500;
+  transition: background 0.12s, color 0.12s;
 }
 
-.md-label.muted {
-  opacity: 0.85;
+.md-mode-btn:hover {
+  color: var(--text-primary, #eee);
 }
 
-.md-sep {
-  color: var(--text-tertiary, #666);
+.md-mode-btn.active {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.12));
+  color: var(--text-primary, #fff);
 }
 
 .md-toolbar-right {
@@ -164,9 +354,10 @@ onUnmounted(() => {
 
 .md-hint {
   color: var(--text-tertiary, #888);
-  max-width: 220px;
+  max-width: 200px;
   text-align: right;
   line-height: 1.35;
+  font-size: 10px;
 }
 
 .md-save-btn {
@@ -192,15 +383,18 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
-.md-split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+.md-body {
   flex: 1;
   min-height: 0;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .md-editor {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
   margin: 0;
   padding: 12px 14px;
   border: none;
@@ -217,7 +411,11 @@ onUnmounted(() => {
 .md-preview-wrap {
   overflow: auto;
   background: #f5f5f5;
-  border-left: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+}
+
+.md-preview-full {
+  flex: 1;
+  min-height: 0;
 }
 
 .md-preview-inner {
@@ -228,7 +426,43 @@ onUnmounted(() => {
   color: #1a1a1a;
 }
 
-/* 预览区 Markdown（与对话区大致对齐，独立画布浅色底） */
+/* 右键菜单（Teleport 到 body，需全局类名） */
+</style>
+
+<style>
+/* 非 scoped：Teleport 到 body 的菜单 */
+.md-ctx-menu {
+  position: fixed;
+  z-index: 10050;
+  min-width: 180px;
+  padding: 4px;
+  border-radius: 6px;
+  background: var(--bg-secondary, #2d2d2d);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.md-ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-primary, #eaeaea);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.md-ctx-item:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.08));
+}
+</style>
+
+<style scoped>
 .markdown-canvas-preview :deep(p) {
   margin: 0.45em 0;
 }

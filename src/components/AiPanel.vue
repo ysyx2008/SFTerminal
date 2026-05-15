@@ -11,6 +11,7 @@ import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
+import { useComposerQuoteStore } from '../stores/composer-quote'
 import AgentPlanView from './AgentPlanView.vue'
 import AiComposer from './AiComposer.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
@@ -60,6 +61,14 @@ const { t } = useI18n()
 // Stores
 const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
+const composerQuoteStore = useComposerQuoteStore()
+
+/** Canvas 等入口：把引用片段按 Markdown 引用块形式追加到输入框，便于模型理解 */
+function formatQuotedSnippetForComposer(raw: string): string {
+  const body = raw.trim()
+  if (!body) return ''
+  return '\n\n' + body.split('\n').map((line) => '> ' + line).join('\n') + '\n\n'
+}
 const showSettings = inject<() => void>('showSettings')
 
 const isStandaloneAssistant = computed(() => {
@@ -525,6 +534,17 @@ watch(speechError, (error) => {
     toast.error(t('ai.speechError', { error }))
   }
 })
+
+// 右侧 Canvas 等：将选中内容引用到本 Tab 的输入框
+watch(
+  () => composerQuoteStore.injectSignal,
+  () => {
+    const data = composerQuoteStore.peekForTab(props.tabId)
+    if (!data) return
+    composerQuoteStore.clearPayload()
+    composerRef.value?.appendText(formatQuotedSnippetForComposer(data.text))
+  }
+)
 
 // 处理录音按钮点击
 const handleRecordClick = async () => {
