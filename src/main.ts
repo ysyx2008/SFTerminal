@@ -4,6 +4,7 @@ import App from './App.vue'
 import i18n from './i18n'
 import { oemConfig } from './config/oem.config'
 import './styles/main.css'
+import './styles/markdown-content.css'
 
 const app = createApp(App)
 const pinia = createPinia()

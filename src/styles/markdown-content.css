@@ -1,0 +1,354 @@
+/**
+ * Markdown 正文（AiPanel 消息、Canvas 预览、ThinkingBlock 等共用）
+ * - 正文/标题/链接/表格等：跟随 data-ui-theme 的 --text-* / --accent-* / --bg-*
+ * - 围栏代码块：固定深色底（跨主题一致，强调色仍走 --accent-primary）
+ */
+.markdown-content {
+  width: 100%;
+  color: var(--text-primary);
+  line-height: 1.6;
+  /* 流式输出时减轻重绘闪动 */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* 代码块样式 */
+/* 代码块样式 - 使用  穿透 v-html */
+.markdown-content .code-block {
+  margin: 12px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #1a1b26;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  width: 100%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* 代码块外壳保留深色（#1a1b26 / #16161e）跨主题一致——这是"终端/代码"视觉语言，
+   像 Cursor/ChatGPT 在浅色主题下代码块也保持深色。
+   仅把蓝色点缀（标题、复制按钮 hover、行内代码）改为 var(--accent-primary)，
+   让粉色/绿色/金色等主题下代码块的强调点能跟自己色系走。
+   发送按钮 hover 使用 --brand-vital——各主题统一的「可执行」语义色。 */
+.markdown-content .code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent-primary);
+  background: #16161e;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  letter-spacing: 0.5px;
+}
+
+.markdown-content .code-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* 静态色走半透明白：代码块底是固定深色，不能用 var(--text-muted)
+   （浅色主题下它会是深色，在深底上看不见）。 */
+.markdown-content .code-copy-btn,
+.markdown-content .code-send-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+}
+
+/* 确保 SVG 不拦截点击事件 */
+.markdown-content .code-copy-btn svg,
+.markdown-content .code-send-btn svg {
+  pointer-events: none;
+}
+
+.markdown-content .code-copy-btn:hover {
+  color: var(--accent-primary);
+  background: rgba(var(--accent-rgb), 0.15);
+  border-color: var(--accent-primary);
+}
+
+/* 发送到终端：产品级活力色，各主题下保持「可执行」语义 */
+.markdown-content .code-send-btn:hover {
+  color: var(--brand-vital);
+  background: rgba(var(--brand-vital-rgb), 0.15);
+  border-color: var(--brand-vital);
+}
+
+.markdown-content .code-block pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  background: #1a1b26;
+  white-space: pre;
+}
+
+.markdown-content .code-block code {
+  font-family: 'Fira Code', 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #a9b1d6;
+  white-space: pre;
+  display: block;
+}
+
+/* 行内代码样式：完全跟主题走——它出现在聊天气泡正文里，不是深色代码块内部，
+   所以每个主题该用各自 accent 色染色（粉色主题下是粉色背景+粉色文字）。 */
+.markdown-content .inline-code {
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: rgba(var(--accent-rgb), 0.12);
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  border-radius: 4px;
+  color: var(--accent-primary);
+}
+
+.markdown-content p {
+  margin: 0 0 8px;
+}
+
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content strong {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.markdown-content em {
+  font-style: italic;
+}
+
+.markdown-content h1,
+.markdown-content h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 12px 0 8px;
+  color: var(--text-primary);
+}
+
+.markdown-content h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 10px 0 6px;
+  color: var(--text-primary);
+}
+
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 8px 0 4px;
+  color: var(--text-primary);
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.markdown-content li {
+  margin: 4px 0;
+}
+
+.markdown-content ul li {
+  list-style-type: disc;
+}
+
+.markdown-content ol li {
+  list-style-type: decimal;
+}
+
+.markdown-content blockquote {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent-primary);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+/* 思考过程折叠区域样式 - 低调呈现 */
+.markdown-content details {
+  margin: 4px 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+.markdown-content details[open] {
+  background: transparent;
+}
+
+.markdown-content summary {
+  padding: 2px 0;
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.7;
+  background: transparent;
+  border-bottom: none;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: opacity 0.15s ease;
+}
+
+.markdown-content summary::-webkit-details-marker {
+  display: none;
+}
+
+.markdown-content summary::before {
+  content: '▶';
+  font-size: 8px;
+  transition: transform 0.2s ease;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.markdown-content details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.markdown-content summary:hover {
+  opacity: 1;
+  background: transparent;
+}
+
+.markdown-content details > blockquote {
+  margin: 4px 0 4px 10px;
+  padding: 6px 10px;
+  border-left: 2px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.75;
+}
+
+/* 思考过程中的文本样式 */
+.markdown-content details > blockquote p {
+  margin: 4px 0;
+}
+
+.markdown-content details > blockquote code {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.markdown-content a {
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+.markdown-content a:hover {
+  text-decoration: underline;
+}
+
+/* 可点击的文件路径链接 */
+.markdown-content .file-path-link {
+  cursor: pointer;
+  color: var(--accent-primary);
+  text-decoration: none;
+  transition: opacity 0.15s, background-color 0.15s;
+}
+
+.markdown-content .file-path-link:hover {
+  text-decoration: underline;
+  opacity: 0.85;
+}
+
+/* 行内代码形式的文件路径（带底部虚线指示可点击） */
+.markdown-content code.file-path-link {
+  cursor: pointer;
+  color: var(--accent-primary);
+  border-bottom: 1px dashed var(--accent-primary);
+}
+
+.markdown-content code.file-path-link:hover {
+  background: rgba(var(--accent-rgb), 0.12);
+  text-decoration: none;
+}
+
+/* 普通 <a> 形式的文件路径链接（文本节点中检测到的裸路径） */
+.markdown-content a.file-path-link {
+  cursor: pointer;
+}
+
+.markdown-content a.file-path-link::before {
+  content: '📄 ';
+  font-size: 0.85em;
+}
+
+/* 行内代码形式的 URL 链接（与 file-path-link 类似但用下划线区分） */
+.markdown-content a.inline-code.external-url-link {
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px dashed var(--accent-primary);
+}
+
+.markdown-content a.inline-code.external-url-link:hover {
+  background: rgba(var(--accent-rgb), 0.22);
+  text-decoration: none;
+}
+
+/* 纯文本中自动识别的外部 URL 链接（非 inline-code 形式） */
+.markdown-content a.external-url-link:not(.inline-code) {
+  cursor: pointer;
+  color: var(--accent-primary);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.markdown-content a.external-url-link:not(.inline-code):hover {
+  text-decoration: underline;
+}
+
+/* 链接与可点击路径（Canvas 预览等场景） */
+.markdown-content a[href],
+.markdown-content .file-path-link,
+.markdown-content code.file-path-link {
+  cursor: pointer;
+}
+
+.markdown-content hr {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 12px 0;
+}
+
+.markdown-content table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  width: 100%;
+}
+
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid var(--border-color);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.markdown-content th {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+}

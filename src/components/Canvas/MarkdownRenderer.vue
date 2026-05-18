@@ -17,7 +17,8 @@ const props = defineProps<{
 const { t } = useI18n()
 const canvasStore = useCanvasStore()
 const composerQuoteStore = useComposerQuoteStore()
-const { renderMarkdown } = useMarkdown()
+const { renderMarkdown, handleCodeBlockClick, handleFilePathContextMenu } = useMarkdown()
+const previewWrapRef = ref<HTMLElement | null>(null)
 const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
 
 const draft = ref('')
@@ -228,12 +229,38 @@ function onWindowKeydown(e: KeyboardEvent) {
   }
 }
 
+function bindPreviewMarkdownInteractions() {
+  const el = previewWrapRef.value
+  if (!el) return
+  el.addEventListener('click', handleCodeBlockClick)
+  el.addEventListener('contextmenu', handleFilePathContextMenu)
+}
+
+function unbindPreviewMarkdownInteractions() {
+  const el = previewWrapRef.value
+  if (!el) return
+  el.removeEventListener('click', handleCodeBlockClick)
+  el.removeEventListener('contextmenu', handleFilePathContextMenu)
+}
+
+watch(viewMode, (mode) => {
+  if (mode === 'preview') {
+    nextTick(bindPreviewMarkdownInteractions)
+  } else {
+    unbindPreviewMarkdownInteractions()
+  }
+})
+
 onMounted(() => {
   window.addEventListener('keydown', onWindowKeydown)
   window.addEventListener('keydown', onGlobalKeydown)
   document.addEventListener('mousedown', onGlobalMouseDown, true)
+  if (viewMode.value === 'preview') {
+    nextTick(bindPreviewMarkdownInteractions)
+  }
 })
 onUnmounted(() => {
+  unbindPreviewMarkdownInteractions()
   window.removeEventListener('keydown', onWindowKeydown)
   window.removeEventListener('keydown', onGlobalKeydown)
   document.removeEventListener('mousedown', onGlobalMouseDown, true)
@@ -305,11 +332,12 @@ onUnmounted(() => {
       />
       <div
         v-show="viewMode === 'preview'"
+        ref="previewWrapRef"
         class="md-preview-wrap md-preview-full"
         :aria-label="t('canvas.modePreview')"
       >
         <div
-          class="md-preview-inner markdown-canvas-preview"
+          class="md-preview-inner markdown-content"
           v-html="previewHtml"
           @contextmenu="openCtxMenu"
         />
@@ -469,15 +497,15 @@ onUnmounted(() => {
   font-family: ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--text-primary, #e8e8e8);
-  background: #141414;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
   outline: none;
   tab-size: 2;
 }
 
 .md-preview-wrap {
   overflow: auto;
-  background: #f5f5f5;
+  background: var(--bg-primary, #1e1e1e);
 }
 
 .md-preview-full {
@@ -488,9 +516,6 @@ onUnmounted(() => {
 .md-preview-inner {
   padding: 14px 16px 24px;
   min-height: 100%;
-  font-size: 13px;
-  line-height: 1.65;
-  color: #1a1a1a;
 }
 
 /* 右键菜单（Teleport 到 body，需全局类名） */
@@ -526,93 +551,5 @@ onUnmounted(() => {
 
 .md-ctx-item:hover {
   background: var(--hover-bg, rgba(255, 255, 255, 0.08));
-}
-</style>
-
-<style scoped>
-.markdown-canvas-preview :deep(p) {
-  margin: 0.45em 0;
-}
-
-.markdown-canvas-preview :deep(p:first-child) {
-  margin-top: 0;
-}
-
-.markdown-canvas-preview :deep(h1),
-.markdown-canvas-preview :deep(h2),
-.markdown-canvas-preview :deep(h3) {
-  margin: 0.7em 0 0.35em;
-  font-weight: 600;
-  color: #111;
-}
-
-.markdown-canvas-preview :deep(h1) {
-  font-size: 1.35em;
-}
-.markdown-canvas-preview :deep(h2) {
-  font-size: 1.2em;
-}
-.markdown-canvas-preview :deep(h3) {
-  font-size: 1.08em;
-}
-
-.markdown-canvas-preview :deep(ul),
-.markdown-canvas-preview :deep(ol) {
-  padding-left: 1.4em;
-  margin: 0.4em 0;
-}
-
-.markdown-canvas-preview :deep(blockquote) {
-  border-left: 3px solid #ccc;
-  margin: 0.5em 0;
-  padding-left: 10px;
-  color: #444;
-}
-
-.markdown-canvas-preview :deep(table) {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 0.6em 0;
-  font-size: 12px;
-}
-
-.markdown-canvas-preview :deep(th),
-.markdown-canvas-preview :deep(td) {
-  border: 1px solid #ccc;
-  padding: 4px 8px;
-}
-
-.markdown-canvas-preview :deep(th) {
-  background: #eee;
-}
-
-.markdown-canvas-preview :deep(pre) {
-  overflow: auto;
-  padding: 10px 12px;
-  border-radius: 4px;
-  background: #ececec;
-  font-size: 12px;
-}
-
-.markdown-canvas-preview :deep(code) {
-  font-family: ui-monospace, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.92em;
-}
-
-.markdown-canvas-preview :deep(p code),
-.markdown-canvas-preview :deep(li code) {
-  background: rgba(0, 0, 0, 0.06);
-  padding: 1px 4px;
-  border-radius: 3px;
-}
-
-.markdown-canvas-preview :deep(a) {
-  color: #0969da;
-}
-
-.markdown-canvas-preview :deep(hr) {
-  border: none;
-  border-top: 1px solid #ddd;
-  margin: 1em 0;
 }
 </style>
