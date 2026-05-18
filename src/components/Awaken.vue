@@ -19,7 +19,7 @@ const props = defineProps<{
   initialTab?: string
 }>()
 
-const emit = defineEmits<{ close: []; 'awakened-change': [value: boolean] }>()
+const emit = defineEmits<{ close: [awakened: boolean]; 'awakened-change': [value: boolean] }>()
 
 // ==================== Types ====================
 
@@ -694,16 +694,48 @@ function startEcgBoot() {
   }, ECG_BASELINE_FLASH_MS)
 }
 
-async function toggleAwakened() {
-  const prev = !awakened.value
+let awakenTogglePending: boolean | null = null
+let awakenToggleRunning = false
+
+async function applyAwakenedState(enabled: boolean) {
+  const prev = awakened.value
+  awakened.value = enabled
   try {
-    await window.electronAPI.sensor.setAwakened(awakened.value, heartbeatInterval.value)
-    awakenedRunning.value = awakened.value
-    emit('awakened-change', awakened.value)
+    await window.electronAPI.sensor.setAwakened(enabled, heartbeatInterval.value)
+    const stored = await window.electronAPI.config.get('agentAwakened')
+    if (!!stored !== enabled) {
+      await window.electronAPI.config.set('agentAwakened', enabled)
+    }
+    const statusList = await window.electronAPI.sensor.getStatus()
+    awakenedRunning.value = statusList.some((s: { id: string; running: boolean }) => s.id === 'heartbeat' && s.running)
+    emit('awakened-change', enabled)
   } catch (e) {
     console.error('Failed to toggle awakened:', e)
     awakened.value = prev
+    emit('awakened-change', prev)
   }
+}
+
+async function flushAwakenToggle() {
+  if (awakenToggleRunning) return
+  awakenToggleRunning = true
+  try {
+    while (awakenTogglePending !== null) {
+      const enabled = awakenTogglePending
+      awakenTogglePending = null
+      await applyAwakenedState(enabled)
+    }
+  } finally {
+    awakenToggleRunning = false
+    if (awakenTogglePending !== null) {
+      void flushAwakenToggle()
+    }
+  }
+}
+
+function requestAwakenToggle() {
+  awakenTogglePending = !awakened.value
+  void flushAwakenToggle()
 }
 
 watch(awakened, (next, prev) => {
@@ -966,7 +998,7 @@ function requestClose() {
   if (personalityDirty.value && !confirm(t('awaken.personalityUnsavedConfirm'))) {
     return
   }
-  emit('close')
+  emit('close', awakened.value)
 }
 
 // ==================== Lifecycle ====================
@@ -1077,8 +1109,8 @@ onUnmounted(() => {
       <!-- 觉醒主控栏：常驻顶部，避免切 tab 时一闪一闪 -->
       <div class="awaken-bar">
         <div class="awaken-left">
-          <label class="awaken-toggle">
-            <input type="checkbox" v-model="awakened" @change="toggleAwakened" />
+          <label class="awaken-toggle" @click.prevent="requestAwakenToggle">
+            <input type="checkbox" :checked="awakened" tabindex="-1" aria-hidden="true" />
             <span class="toggle-slider"></span>
           </label>
           <div class="ecg-monitor" :class="{ active: awakened }">

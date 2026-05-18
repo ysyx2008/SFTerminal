@@ -148,12 +148,16 @@ function startCanvasResize(e: MouseEvent, _tabId: string) {
   document.addEventListener('mouseup', onUp)
 }
 
-async function onAwakenClose() {
+function onAwakenClose(awakened?: boolean) {
   showAwaken.value = false
   awakenInitialTab.value = undefined
-  try {
-    isAwakened.value = !!(await window.electronAPI.config.get('agentAwakened'))
-  } catch { /* ignore */ }
+  if (typeof awakened === 'boolean') {
+    isAwakened.value = awakened
+    return
+  }
+  void window.electronAPI.config.get('agentAwakened')
+    .then((value) => { isAwakened.value = !!value })
+    .catch(() => { /* ignore */ })
 }
 
 // 提供给子组件
