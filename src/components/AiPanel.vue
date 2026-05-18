@@ -62,13 +62,6 @@ const { t } = useI18n()
 const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
 const composerQuoteStore = useComposerQuoteStore()
-
-/** Canvas 等入口：把引用片段按 Markdown 引用块形式追加到输入框，便于模型理解 */
-function formatQuotedSnippetForComposer(raw: string): string {
-  const body = raw.trim()
-  if (!body) return ''
-  return '\n\n' + body.split('\n').map((line) => '> ' + line).join('\n') + '\n\n'
-}
 const showSettings = inject<() => void>('showSettings')
 
 const isStandaloneAssistant = computed(() => {
@@ -534,17 +527,6 @@ watch(speechError, (error) => {
     toast.error(t('ai.speechError', { error }))
   }
 })
-
-// 右侧 Canvas 等：将选中内容引用到本 Tab 的输入框
-watch(
-  () => composerQuoteStore.injectSignal,
-  () => {
-    const data = composerQuoteStore.peekForTab(props.tabId)
-    if (!data) return
-    composerQuoteStore.clearPayload()
-    composerRef.value?.appendText(formatQuotedSnippetForComposer(data.text))
-  }
-)
 
 // 处理录音按钮点击
 const handleRecordClick = async () => {
@@ -1025,15 +1007,31 @@ const clearComposerDraft = () => {
 
 // ==================== 对外暴露的方法 ====================
 
-function analyzeText(text: string) {
-  clearComposerDraft()
-  // 这是"分析文本"的纯文字任务，用户附在 composer 里的图片与本任务无关，
-  // 提前清理避免被误打包发送（后端虽会兜底剥图，但带宽和上下文都浪费了）。
-  clearImages()
-  void runAgent(`${t('ai.analyzeContentPrompt')}\n\`\`\`\n${text}\n\`\`\``)
+/** 终端右键「发送到 AI」：加入引用胶囊（发送时再附带全文与行号），不自动跑 Agent */
+function addQuotedTerminalSelection(text: string, tabTitle: string) {
+  const trimmed = text.trim()
+  if (!trimmed) return
+  const label = tabTitle.trim() || t('ai.quoteSnippetTerminalTabFallback')
+  composerQuoteStore.addSnippet(props.tabId, {
+    label,
+    sourcePath: null,
+    sourceLinesAccurate: false,
+    quoteOrigin: 'terminal',
+    startLine: null,
+    endLine: null,
+    excerpt: trimmed
+  })
+  toast.success(t('ai.quoteSnippetAdded'))
+  nextTick(() => composerRef.value?.focusInput())
 }
 
-defineExpose({ analyzeText })
+/** @deprecated 请使用 addQuotedTerminalSelection；保留别名兼容旧调用 */
+function analyzeText(text: string) {
+  const tab = terminalStore.tabs.find((x) => x.id === props.tabId)
+  addQuotedTerminalSelection(text, tab?.title ?? '')
+}
+
+defineExpose({ analyzeText, addQuotedTerminalSelection })
 
 // ==================== 定时任务 / 远程任务监听 ====================
 // 监听定时任务 / 远程任务：当有 pendingSchedulerTask 时自动执行

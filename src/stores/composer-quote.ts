@@ -1,36 +1,73 @@
 /**
- * 将「选中段落」推送到指定 Tab 的 AiComposer（右侧 Canvas 等跨组件调用）
+ * Composer「引用摘录」：输入框仅展示胶囊摘要，发送时再附带带行号的完整正文。
  */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
+export interface ComposerQuoteSnippet {
+  id: string
+  /** 胶囊展示用短文件名 */
+  label: string
+  /** 绝对路径（发给模型）；无则为 null */
+  sourcePath: string | null
+  /** canvas 编辑区为 true（文件绝对行号）；预览/终端为 false */
+  sourceLinesAccurate: boolean
+  startLine: number | null
+  endLine: number | null
+  /** 摘录原文 */
+  excerpt: string
+  /** 终端右键选区为 terminal，侧栏 Markdown 为 canvas（默认） */
+  quoteOrigin?: 'canvas' | 'terminal'
+}
+
+const snippetsByTabId = ref<Record<string, ComposerQuoteSnippet[]>>({})
+
 export const useComposerQuoteStore = defineStore('composerQuote', () => {
-  /** 递增以触发 AiPanel 中的 watch */
-  const injectSignal = ref(0)
-  const pending = ref<{ tabId: string; text: string } | null>(null)
-
-  function requestQuoteToComposer(tabId: string, text: string) {
-    const trimmed = text.trim()
-    if (!trimmed) return
-    pending.value = { tabId, text: trimmed }
-    injectSignal.value++
+  function getSnippets(tabId: string): ComposerQuoteSnippet[] {
+    return snippetsByTabId.value[tabId] ?? []
   }
 
-  function peekForTab(tabId: string): { text: string } | null {
-    const p = pending.value
-    if (!p || p.tabId !== tabId) return null
-    return { text: p.text }
+  function addSnippet(tabId: string, snippet: Omit<ComposerQuoteSnippet, 'id'> & { id?: string }) {
+    const id = snippet.id ?? `q-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+    const cur = snippetsByTabId.value[tabId] ?? []
+    snippetsByTabId.value = {
+      ...snippetsByTabId.value,
+      [tabId]: [
+        ...cur,
+        {
+          id,
+          label: snippet.label,
+          sourcePath: snippet.sourcePath,
+          sourceLinesAccurate: snippet.sourceLinesAccurate,
+          startLine: snippet.startLine,
+          endLine: snippet.endLine,
+          excerpt: snippet.excerpt,
+          quoteOrigin: snippet.quoteOrigin ?? 'canvas'
+        }
+      ]
+    }
   }
 
-  function clearPayload() {
-    pending.value = null
+  function removeSnippet(tabId: string, id: string) {
+    const cur = snippetsByTabId.value[tabId] ?? []
+    snippetsByTabId.value = {
+      ...snippetsByTabId.value,
+      [tabId]: cur.filter((s) => s.id !== id)
+    }
+  }
+
+  function clearSnippets(tabId: string) {
+    if (!(tabId in snippetsByTabId.value)) return
+    const next = { ...snippetsByTabId.value }
+    delete next[tabId]
+    snippetsByTabId.value = next
   }
 
   return {
-    injectSignal,
-    pending,
-    requestQuoteToComposer,
-    peekForTab,
-    clearPayload
+    snippetsByTabId,
+    getSnippets,
+    addSnippet,
+    removeSnippet,
+    clearSnippets
   }
 })

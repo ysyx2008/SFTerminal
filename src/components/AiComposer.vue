@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n'
 import { X, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2, Volume2 } from 'lucide-vue-next'
 import { useMentions } from '../composables/useMentions'
 import { toast } from '../composables/useToast'
+import { useComposerQuoteStore } from '../stores/composer-quote'
+import type { ComposerQuoteSnippet } from '../stores/composer-quote'
 import type { ParsedDocument } from '../stores/terminal'
 import type { ParsingDocument } from '../composables/useDocumentUpload'
 
@@ -63,6 +65,66 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+
+const quoteStore = useComposerQuoteStore()
+const quoteSnippets = computed(() => quoteStore.getSnippets(props.currentTabId))
+
+/** 输入框无文字时，有图片或引用摘录也可发送 */
+const canSubmitMessage = computed(
+  () => !!inputText.value.trim() || props.hasImages || quoteSnippets.value.length > 0
+)
+
+function removeQuoteSnippet(id: string) {
+  quoteStore.removeSnippet(props.currentTabId, id)
+}
+
+function snippetChipSummary(s: ComposerQuoteSnippet): string {
+  const count = [...s.excerpt].length
+  if (s.quoteOrigin === 'terminal') {
+    return t('ai.quoteSnippetChipTerminal', { label: s.label, count })
+  }
+  if (s.sourceLinesAccurate && s.startLine != null && s.endLine != null) {
+    return t('ai.quoteSnippetChipRange', {
+      label: s.label,
+      start: s.startLine,
+      end: s.endLine,
+      count
+    })
+  }
+  return t('ai.quoteSnippetChipPreview', { label: s.label, count })
+}
+
+/** 发送时附加给模型：带行号的完整摘录 */
+function formatQuotesAppendix(snippets: ComposerQuoteSnippet[]): string {
+  if (snippets.length === 0) return ''
+  const blocks: string[] = [t('ai.quoteSnippetAppendixIntro')]
+  snippets.forEach((s, i) => {
+    const n = i + 1
+    const range =
+      s.quoteOrigin === 'terminal'
+        ? t('ai.quoteSnippetRangeTerminal')
+        : s.sourceLinesAccurate && s.startLine != null && s.endLine != null
+          ? t('ai.quoteSnippetRangeFileLines', { start: s.startLine, end: s.endLine })
+          : t('ai.quoteSnippetRelativeLinesNote')
+    blocks.push(`### ${t('ai.quoteSnippetAppendixHeading', { n, label: s.label, range })}`)
+    if (s.sourcePath) {
+      blocks.push(`${t('ai.quoteSnippetAppendixPath')}: ${s.sourcePath}`)
+    }
+    if (s.quoteOrigin === 'terminal') {
+      blocks.push(t('ai.quoteSnippetAppendixTerminalDisclaimer'))
+    } else if (!s.sourceLinesAccurate) {
+      blocks.push(t('ai.quoteSnippetAppendixPreviewDisclaimer'))
+    }
+    blocks.push('')
+    const lines = s.excerpt.split('\n')
+    lines.forEach((line, idx) => {
+      const num =
+        s.sourceLinesAccurate && s.startLine != null ? s.startLine + idx : idx + 1
+      blocks.push(`${String(num).padStart(5, ' ')} | ${line}`)
+    })
+  })
+  return blocks.join('\n')
+}
 
 const inputText = ref('')
 const isComposing = ref(false)
@@ -156,6 +218,18 @@ watch(() => props.visible, (isVisible) => {
   }
 }, { immediate: true })
 
+watch(
+  () => quoteSnippets.value.length,
+  (len, prevLen) => {
+    if (len > (prevLen ?? 0)) {
+      nextTick(() => {
+        focusInput()
+        adjustTextareaHeight()
+      })
+    }
+  }
+)
+
 watch(inputText, () => {
   nextTick(adjustTextareaHeight)
 })
@@ -212,7 +286,15 @@ const handleSend = async () => {
   }
   closeMentionMenu()
 
-  if (!inputText.value.trim() && !props.hasImages && props.canSendEmpty && props.isAgentRunning) {
+  const quotesSnapshot = [...quoteStore.getSnippets(props.currentTabId)]
+
+  if (
+    !inputText.value.trim() &&
+    !props.hasImages &&
+    quotesSnapshot.length === 0 &&
+    props.canSendEmpty &&
+    props.isAgentRunning
+  ) {
     props.clearTabError()
     await props.submitEmptyMessage()
     return
@@ -222,22 +304,29 @@ const handleSend = async () => {
     inputText.value = t('ai.describeImage')
   }
 
-  if (!inputText.value.trim() && !props.hasImages) {
+  if (!inputText.value.trim() && !props.hasImages && quotesSnapshot.length === 0) {
     return
   }
 
-  const messageToSend = inputText.value
+  const rawInput = inputText.value.trim()
   inputText.value = ''
   props.clearTabError()
 
   await new Promise(resolve => setTimeout(resolve, 0))
 
-  const { contextParts } = await expandMentions(messageToSend)
-  const finalMessage = contextParts.length > 0
-    ? `${messageToSend}\n\n${contextParts.join('\n\n')}`
-    : messageToSend
+  const { contextParts } = await expandMentions(rawInput)
+  let mergedUser =
+    contextParts.length > 0 ? `${rawInput}\n\n${contextParts.join('\n\n')}` : rawInput
+
+  if (!mergedUser.trim() && quotesSnapshot.length > 0) {
+    mergedUser = t('ai.quoteOnlyPrompt')
+  }
+
+  const appendix = formatQuotesAppendix(quotesSnapshot)
+  const finalMessage = appendix ? `${mergedUser}\n\n${appendix}` : mergedUser
 
   clearMentions()
+  quoteStore.clearSnippets(props.currentTabId)
 
   await new Promise(resolve => setTimeout(resolve, 0))
   await props.submitMessage(finalMessage)
@@ -326,6 +415,20 @@ const handleSendClick = (event: MouseEvent) => {
         <span v-if="doc.error" class="doc-error" :data-tooltip="doc.error">⚠️</span>
         <button class="btn-remove-doc" @click="removeUploadedDoc(index)" :title="t('ai.removeDoc')">
           <X :size="10" />
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="quoteSnippets.length > 0" class="composer-quote-snips">
+    <div class="composer-quote-snips-header">
+      <span class="composer-quote-snips-title">{{ t('ai.quoteSnippetsSection') }}</span>
+    </div>
+    <div class="composer-quote-snips-list">
+      <div v-for="s in quoteSnippets" :key="s.id" class="composer-quote-chip" :title="snippetChipSummary(s)">
+        <span class="composer-quote-chip-label">{{ snippetChipSummary(s) }}</span>
+        <button type="button" class="composer-quote-chip-remove" @click="removeQuoteSnippet(s.id)" :title="t('ai.quoteSnippetRemove')">
+          <X :size="12" />
         </button>
       </div>
     </div>
@@ -468,7 +571,7 @@ const handleSendClick = (event: MouseEvent) => {
         <Square :size="16" fill="currentColor" />
       </button>
       <button
-        v-else-if="isAgentRunning && inputText.trim()"
+        v-else-if="isAgentRunning && canSubmitMessage"
         class="send-btn send-btn-supplement"
         :disabled="isAttaching"
         :title="t('ai.sendSupplement')"
@@ -496,7 +599,7 @@ const handleSendClick = (event: MouseEvent) => {
       <button
         v-else
         class="send-btn send-btn-agent"
-        :disabled="isAttaching || (!inputText.trim() && !hasImages)"
+        :disabled="isAttaching || !canSubmitMessage"
         :title="t('ai.executeTask')"
         @click="handleSendClick"
       >
@@ -787,6 +890,68 @@ const handleSendClick = (event: MouseEvent) => {
 .btn-remove-doc:hover {
   opacity: 1;
   background: rgba(var(--color-error-rgb), 0.1);
+  color: var(--color-error);
+}
+
+.composer-quote-snips {
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-color);
+}
+
+.composer-quote-snips-header {
+  margin-bottom: 6px;
+}
+
+.composer-quote-snips-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.composer-quote-snips-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.composer-quote-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+.composer-quote-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-quote-chip-remove {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.composer-quote-chip-remove:hover {
+  opacity: 1;
+  background: rgba(var(--color-error-rgb), 0.12);
   color: var(--color-error);
 }
 

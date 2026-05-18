@@ -29,6 +29,13 @@ const rootRef = ref<HTMLElement | null>(null)
 const ctxVisible = ref(false)
 const ctxX = ref(0)
 const ctxY = ref(0)
+/** 右键菜单打开时的摘录快照（点击菜单项时选区可能已丢失） */
+const ctxQuotePayload = ref<{
+  excerpt: string
+  accurate: boolean
+  startLine: number | null
+  endLine: number | null
+} | null>(null)
 
 const state = computed(() => canvasStore.getState(props.tabId))
 const filePath = computed(() => state.value.filePath)
@@ -58,38 +65,97 @@ function setViewMode(m: 'edit' | 'preview') {
   }
 }
 
-/** 当前选中的可引用文本（编辑：textarea；预览：document 选区，须落在本面板内） */
-function captureQuoteText(): string {
+/** 预览：窗口选区；编辑：textarea 选区及文件内行号 */
+function captureQuoteMeta(): {
+  excerpt: string
+  accurate: boolean
+  startLine: number | null
+  endLine: number | null
+} | null {
   const root = rootRef.value
   if (viewMode.value === 'edit') {
     const el = textareaRef.value
-    if (!el) return ''
+    if (!el) return null
     const a = el.selectionStart
     const b = el.selectionEnd
-    if (a === b) return ''
-    return el.value.slice(a, b)
+    if (a === b) return null
+    const full = draft.value
+    const excerpt = full.slice(a, b)
+    const startLine = full.slice(0, a).split('\n').length
+    const endLine = full.slice(0, b).split('\n').length
+    return { excerpt, accurate: true, startLine, endLine }
   }
   const sel = window.getSelection()
-  if (!sel?.rangeCount || sel.isCollapsed) return ''
-  if (!root || !sel.anchorNode || !root.contains(sel.anchorNode)) return ''
-  return sel.toString()
+  if (!sel?.rangeCount || sel.isCollapsed) return null
+  if (!root || !sel.anchorNode || !root.contains(sel.anchorNode)) return null
+  return {
+    excerpt: sel.toString(),
+    accurate: false,
+    startLine: null,
+    endLine: null
+  }
+}
+
+function basenamePath(p: string): string {
+  const norm = p.replace(/\\/g, '/')
+  const i = norm.lastIndexOf('/')
+  return i >= 0 ? norm.slice(i + 1) : norm
+}
+
+function pushQuoteSnippet(meta: {
+  excerpt: string
+  accurate: boolean
+  startLine: number | null
+  endLine: number | null
+}) {
+  const trimmed = meta.excerpt.trim()
+  if (!trimmed) {
+    toastInfo(t('canvas.quoteToAiNeedSelection'))
+    return
+  }
+  const fp = filePath.value
+  const title = canvasStore.getTitle(props.tabId)
+  const label = fp ? basenamePath(fp) : (title || 'Markdown')
+
+  composerQuoteStore.addSnippet(props.tabId, {
+    label,
+    sourcePath: fp || null,
+    sourceLinesAccurate: meta.accurate,
+    quoteOrigin: 'canvas',
+    startLine: meta.startLine,
+    endLine: meta.endLine,
+    excerpt: trimmed
+  })
+  toastSuccess(t('ai.quoteSnippetAdded'))
 }
 
 function quoteSelectionToAi() {
-  const raw = captureQuoteText().trim()
-  if (!raw) {
+  const meta = captureQuoteMeta()
+  const trimmed = meta?.excerpt.trim() ?? ''
+  if (!trimmed || !meta) {
     toastInfo(t('canvas.quoteToAiNeedSelection'))
     closeCtxMenu()
     return
   }
-  composerQuoteStore.requestQuoteToComposer(props.tabId, raw)
+  pushQuoteSnippet(meta)
+  closeCtxMenu()
+}
+
+function applyCtxQuoteFromMenu() {
+  const meta = ctxQuotePayload.value
+  if (!meta?.excerpt.trim()) {
+    closeCtxMenu()
+    return
+  }
+  pushQuoteSnippet(meta)
   closeCtxMenu()
 }
 
 function openCtxMenu(e: MouseEvent) {
-  const raw = captureQuoteText().trim()
-  if (!raw) return
+  const meta = captureQuoteMeta()
+  if (!meta || !meta.excerpt.trim()) return
   e.preventDefault()
+  ctxQuotePayload.value = meta
   ctxX.value = e.clientX
   ctxY.value = e.clientY
   ctxVisible.value = true
@@ -97,6 +163,7 @@ function openCtxMenu(e: MouseEvent) {
 
 function closeCtxMenu() {
   ctxVisible.value = false
+  ctxQuotePayload.value = null
 }
 
 function onGlobalKeydown(e: KeyboardEvent) {
@@ -257,7 +324,7 @@ onUnmounted(() => {
         role="menu"
         @mousedown.prevent
       >
-        <button type="button" role="menuitem" class="md-ctx-item" @click="quoteSelectionToAi">
+        <button type="button" role="menuitem" class="md-ctx-item" @click="applyCtxQuoteFromMenu">
           <MessageSquareQuote :size="14" aria-hidden="true" />
           <span>{{ t('canvas.quoteToComposer') }}</span>
         </button>

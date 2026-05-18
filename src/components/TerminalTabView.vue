@@ -51,8 +51,9 @@ watch(() => props.isActive, (active) => {
 
 function handleSendToAi(text: string) {
   showAiPanel.value = true
+  const addQuote = () => aiPanelRef.value?.addQuotedTerminalSelection(text, props.tab.title)
   nextTick(() => {
-    aiPanelRef.value?.analyzeText(text)
+    if (!addQuote()) nextTick(addQuote)
   })
 }
 
