@@ -52,18 +52,28 @@ watch(
   { immediate: true }
 )
 
+function focusEditorIfNeeded() {
+  if (viewMode.value !== 'edit') return
+  nextTick(() => textareaRef.value?.focus())
+}
+
 function toggleViewMode() {
   viewMode.value = viewMode.value === 'edit' ? 'preview' : 'edit'
-  if (viewMode.value === 'edit') {
-    nextTick(() => textareaRef.value?.focus())
-  }
+  focusEditorIfNeeded()
 }
 
 function setViewMode(m: 'edit' | 'preview') {
   viewMode.value = m
-  if (m === 'edit') {
-    nextTick(() => textareaRef.value?.focus())
-  }
+  focusEditorIfNeeded()
+}
+
+/** 预览区多为非可聚焦节点，焦点常在面板外，需 window 级快捷键 */
+function isMarkdownPanelActive(): boolean {
+  const root = rootRef.value
+  if (!root?.isConnected) return false
+  const active = document.activeElement
+  if (active && root.contains(active)) return true
+  return viewMode.value === 'preview'
 }
 
 /** 预览：窗口选区；编辑：textarea 选区及文件内行号 */
@@ -181,13 +191,6 @@ function onPanelKeydown(e: KeyboardEvent) {
   const mod = e.ctrlKey || e.metaKey
   const k = e.key.toLowerCase()
 
-  if (mod && e.shiftKey && k === 'm') {
-    e.preventDefault()
-    e.stopPropagation()
-    toggleViewMode()
-    return
-  }
-
   // Ctrl/Cmd+L：引用到 AI 对话（避免 Cmd+Shift+Q 触发退出等系统行为）
   if (mod && !e.shiftKey && !e.altKey && k === 'l') {
     e.preventDefault()
@@ -221,9 +224,19 @@ async function saveToDisk() {
 }
 
 function onWindowKeydown(e: KeyboardEvent) {
-  if (!canSave.value) return
   const meta = e.metaKey || e.ctrlKey
-  if (meta && e.key === 's') {
+  if (!meta) return
+
+  const k = e.key.toLowerCase()
+  if (e.shiftKey && k === 'm' && isMarkdownPanelActive()) {
+    e.preventDefault()
+    e.stopPropagation()
+    toggleViewMode()
+    return
+  }
+
+  if (!canSave.value) return
+  if (e.key === 's') {
     e.preventDefault()
     void saveToDisk()
   }
@@ -501,6 +514,13 @@ onUnmounted(() => {
   background: var(--bg-secondary);
   outline: none;
   tab-size: 2;
+}
+
+/* 覆盖全局 textarea:focus 光晕（main.css），全屏编辑区不需要焦点环 */
+.md-editor:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .md-preview-wrap {
