@@ -2,7 +2,24 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.39.2 (2026-05-11) (Latest)
+## v10.40.0 (2026-05-18) (Latest)
+
+> Canvas Markdown panels now support editing and preview switching with AI reference, plus improved quoting, background task notifications, and more.
+
+### New Features
+- 🎯 **Markdown Panel Editing**: Canvas Markdown panels now support switching between edit and preview mode; content can be directly referenced into the AI input box
+
+### Improvements
+- 🔧 **Capsule-Style Quoting**: Terminal and Canvas quotes now use composer capsule extracts — cleaner and more intuitive
+- 🔧 **Agent Completion Highlight**: Background tab Agents now highlight in the tab bar when they finish their tasks
+- 🔧 **Memory Usage Display**: L2 memory now shows current/limit character count so you know how much room is left
+- 🔧 **Unified Markdown Styles**: Canvas Markdown preview reuses shared styles for a consistent visual experience
+
+### Bug Fixes
+- 🐛 **Wake Switch Persistence**: Fixed an issue where toggling the wake switch off and back on didn't persist properly
+- 🐛 **i18n Gaps Filled**: Settings page memory and knowledge base panels now have complete knowledgeManager translations
+
+## v10.39.2 (2026-05-11)
 
 Search your recent conversations — just type a keyword and find what you need; paste files directly as attachments; WeChat connection is now more stable and won't drop unexpectedly; knowledge base articles can hold more content.
 

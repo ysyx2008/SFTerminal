@@ -382,7 +382,25 @@ describe('DocumentParserService', () => {
           { name: 'big.txt', path: tempFile, size: 100 },
           { maxFileSize: 50 }
         )
-        expect(result.error).toContain('超过限制')
+        expect(result.skipped).toBe(true)
+        expect(result.content).toContain('文件较大')
+      } finally {
+        fs.unlinkSync(tempFile)
+      }
+    })
+
+    it('已知类型超大文件应报错', async () => {
+      const tempDir = os.tmpdir()
+      const tempFile = path.join(tempDir, `test-${crypto.randomUUID()}.txt`)
+      fs.writeFileSync(tempFile, 'x')
+
+      try {
+        const result = await service.parseDocument(
+          { name: 'big.txt', path: tempFile, size: 999_999_999 },
+          { maxFileSize: 50 }
+        )
+        expect(result.skipped).toBe(true)
+        expect(result.content).toContain('文件较大')
       } finally {
         fs.unlinkSync(tempFile)
       }
@@ -626,7 +644,8 @@ describe('DocumentParserService', () => {
           { name: 'big.txt', path: tempFile, size: 999_999_999 },
           { maxFileSize: 50 }
         )
-        expect(result.error).toContain('超过限制')
+        expect(result.skipped).toBe(true)
+        expect(result.content).toContain('文件较大')
       } finally {
         fs.unlinkSync(tempFile)
       }

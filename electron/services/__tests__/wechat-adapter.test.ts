@@ -1,14 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // vi.mock 调用会被 hoist 到文件顶部，引用的变量必须用 vi.hoisted。
-const mocks = vi.hoisted(() => ({
-  sendMessageWeixin: vi.fn(),
-  sendWeixinMediaFile: vi.fn(),
-  vendoredGetUpdates: vi.fn(),
-  apiGetFetch: vi.fn(),
-  pauseSession: vi.fn(),
-  assertSessionActive: vi.fn(),
-}))
+const mocks = vi.hoisted(() => {
+  class MockStreamingMarkdownFilter {
+    feed = vi.fn((s: string) => s)
+    flush = vi.fn(() => '')
+  }
+  return {
+    sendMessageWeixin: vi.fn(),
+    sendWeixinMediaFile: vi.fn(),
+    vendoredGetUpdates: vi.fn(),
+    apiGetFetch: vi.fn(),
+    pauseSession: vi.fn(),
+    assertSessionActive: vi.fn(),
+    StreamingMarkdownFilter: MockStreamingMarkdownFilter,
+  }
+})
 const sendMessageWeixinMock = mocks.sendMessageWeixin
 const sendWeixinMediaFileMock = mocks.sendWeixinMediaFile
 const pauseSessionMock = mocks.pauseSession
@@ -16,6 +23,7 @@ const assertSessionActiveMock = mocks.assertSessionActive
 
 vi.mock('../im/wechat/messaging/send', () => ({
   sendMessageWeixin: mocks.sendMessageWeixin,
+  StreamingMarkdownFilter: mocks.StreamingMarkdownFilter,
 }))
 vi.mock('../im/wechat/messaging/send-media', () => ({
   sendWeixinMediaFile: mocks.sendWeixinMediaFile,
