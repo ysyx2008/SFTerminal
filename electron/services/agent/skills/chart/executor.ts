@@ -6,6 +6,7 @@ import type { ToolExecutorConfig } from '../../tools/types'
 import { t } from '../../i18n'
 import { createLogger } from '../../../../utils/logger'
 import { buildOption, type ChartType, type ChartInput, type EChartsOption } from './render'
+import { resolveChartBackground, type ChartTheme } from './presets'
 import { renderToSvg, renderToPng, type RenderSize } from './ssr'
 import { sanitizeOptionForIpc, stripFormatterMarkers } from './ipc-sanitize'
 
@@ -184,6 +185,26 @@ async function generateChart(
 // render_echarts_option：自由路径，AI 直接传完整 ECharts option
 // ============================================================================
 
+function parseChartTheme(raw: unknown): ChartTheme {
+  return raw === 'dark' ? 'dark' : 'light'
+}
+
+function applyChartBackground(
+  option: EChartsOption,
+  args: { theme?: unknown; background_color?: unknown }
+): EChartsOption {
+  const theme = parseChartTheme(args.theme)
+  const background_color = parseBackgroundColor(args.background_color)
+  return {
+    ...option,
+    backgroundColor: resolveChartBackground({
+      theme,
+      background_color,
+      existing: option.backgroundColor
+    })
+  }
+}
+
 async function renderEchartsOption(
   args: Record<string, unknown>,
   executor: ToolExecutorConfig
@@ -191,7 +212,7 @@ async function renderEchartsOption(
   // 1) option 兜底：必填，且必须是 plain object（或可解析 JSON 字符串）
   let option: EChartsOption
   try {
-    option = parseEchartsOption(args.option)
+    option = applyChartBackground(parseEchartsOption(args.option), args)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { success: false, output: '', error: msg }
@@ -348,6 +369,12 @@ function clampPixelRatio(raw: unknown, format: ChartFormat, size: RenderSize): n
     ratio = Math.max(1, MAX_PIXEL_DIM / maxDim)
   }
   return Math.round(ratio * 100) / 100
+}
+
+function parseBackgroundColor(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const s = raw.trim()
+  return s.length > 0 ? s : undefined
 }
 
 function argsToChartInput(args: Record<string, unknown>, type: ChartType): ChartInput {

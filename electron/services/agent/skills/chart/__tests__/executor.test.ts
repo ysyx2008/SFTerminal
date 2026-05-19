@@ -195,6 +195,33 @@ describe('executeChartTool: image delivery contract', () => {
     expect(payload?.height).toBe(600)
     // 自由路径下 option 透传，user 给的字段必须保留
     expect(payload?.option).toHaveProperty('series')
+    // 未设背景时按 theme:light 注入预设白底
+    expect((payload?.option as { backgroundColor?: string }).backgroundColor).toBe('#ffffff')
+  })
+
+  it('render_echarts_option 支持 background_color 覆盖 option', async () => {
+    const { config, steps } = makeExecutor()
+    const result = await executeChartTool(
+      'render_echarts_option',
+      'pty-1',
+      {
+        option: {
+          backgroundColor: '#000000',
+          xAxis: { type: 'category', data: ['a'] },
+          yAxis: { type: 'value' },
+          series: [{ type: 'bar', data: [1] }]
+        },
+        background_color: '#f0f0f0',
+        width: 800,
+        height: 500
+      },
+      'call-bg-override',
+      {} as Parameters<typeof executeChartTool>[4],
+      config
+    )
+    expect(result.success).toBe(true)
+    const payload = steps.find(s => s.type === 'tool_result')?.echartsOption
+    expect((payload?.option as { backgroundColor?: string }).backgroundColor).toBe('#f0f0f0')
   })
 
   it('K 线 svg 模式：投递的 echartsOption 里 function formatter 被替换为 marker（保活图、过 IPC）', async () => {

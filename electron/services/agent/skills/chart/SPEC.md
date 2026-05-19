@@ -6,6 +6,8 @@
 
 底层使用 Apache ECharts v6+ 的服务端 SVG 渲染（`renderer: 'svg', ssr: true`），不依赖 DOM、不依赖 canvas。「活图」走前端 `EChartsCanvas` 组件，把后端 `buildOption` 产出的 ECharts option 直接 `setOption` 到浏览器实例；主题已被 `applyCommon` inline 进 option（backgroundColor / color / textStyle），前后端视觉完全一致。
 
+**画布背景**：`generate_chart` 由 `theme`（默认 light）经 `applyCommon` 注入；`render_echarts_option` 在 option 未设 `backgroundColor` 时，由 `resolveChartBackground` 按 `theme`（默认 light）补预设背景。
+
 ## 工具
 
 - `generate_chart` — 傻瓜路径，结构化 DSL，AI 不用懂 ECharts。参数 `type` + `data` + 可选样式

@@ -106,7 +106,7 @@ K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (�
 ⚠️ AI 重要提示：
 1. 你（AI）**看不到**生成的图（同 generate_chart）。success=true 即用户已看到，不要再去"验证"。
 2. 出错时报错信息会原样返回（含 ECharts 路径信息），按提示修改 option 重试即可。
-3. 不必传 backgroundColor/textStyle 等通用样式，工具不会注入主题——你想要 dark 风格请自己在 option 里设。`,
+3. 未在 option 设 \`backgroundColor\` 时，工具按 \`theme\`（默认 light，白底）注入预设背景；dark 风格请设 \`theme: 'dark'\` 或 \`background_color\`，并同步 \`textStyle.color\` 等。`,
       parameters: {
         type: 'object',
         properties: {
@@ -115,6 +115,15 @@ K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (�
             description: '完整的 ECharts option 对象（v6+ 格式），按 https://echarts.apache.org/zh/option.html 文档结构传。必须包含 series 等业务字段。提示：少数客户端会序列化对象为 JSON 字符串，工具也会自动 parse 容错。'
           },
           title: { type: 'string', description: '步骤卡片显示用的标题（可选，纯展示用，不影响 option）' },
+          theme: {
+            type: 'string',
+            enum: ['light', 'dark'],
+            description: '主题，默认 light（白底）。未在 option 设 backgroundColor 时，按 theme 注入预设背景色。'
+          },
+          background_color: {
+            type: 'string',
+            description: '画布背景色（CSS 颜色）。可选；优先级高于 option.backgroundColor 和 theme。'
+          },
           width: {
             type: 'number',
             description: '画布宽度（px），默认 1280，上限 7680。按数据规模选——同 generate_chart 的尺寸指引。'
@@ -352,5 +361,5 @@ generate_chart 不带 dataZoom；想让用户拖动时间轴时用本工具，op
 - 不要画 generate_chart 8 类能搞定的图（白白让自己出错）
 - option 不要包 \`{ option: {...} }\` 这一层，工具的参数就叫 option，里面直接是 ECharts option 内容
 - 如果传字符串 JSON，会自动 parse，但建议直接传对象避免转义问题
-- 工具不会注入主题/字体；想要 dark 风格请自己在 option 里设 \`backgroundColor\`、\`textStyle.color\` 等
+- 画布背景：\`render_echarts_option\` 未设 \`backgroundColor\` 时默认 \`theme: light\`（白底）；可用 \`background_color\` / \`theme: 'dark'\` 覆盖，dark 时需同步 \`textStyle.color\` 等
 `

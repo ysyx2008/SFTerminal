@@ -62,6 +62,20 @@ export function getTheme(theme: ChartTheme): ThemePreset {
   return theme === 'dark' ? DARK_THEME : LIGHT_THEME
 }
 
+/** 解析画布背景：background_color > option 已有值 > theme 预设（默认 light） */
+export function resolveChartBackground(opts: {
+  theme?: ChartTheme
+  background_color?: string
+  existing?: unknown
+}): string {
+  const explicit = opts.background_color?.trim()
+  if (explicit) return explicit
+  if (typeof opts.existing === 'string' && opts.existing.trim()) {
+    return opts.existing.trim()
+  }
+  return getTheme(opts.theme ?? 'light').backgroundColor
+}
+
 // ============================================================================
 // K 线专业主题（通达信 / 同花顺风格）
 // ============================================================================
