@@ -14,6 +14,7 @@
     "outDir": "./dist-electron-types",
     "baseUrl": ".",
     "paths": {
+      "@shared/types": ["./shared/types/index.ts"],
       "@shared/*": ["./shared/*"]
     }
   },

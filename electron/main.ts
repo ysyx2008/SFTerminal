@@ -1,9 +1,11 @@
 import { app, BrowserWindow, ipcMain, shell, dialog, session, Tray, Menu, nativeImage, nativeTheme, powerMonitor, clipboard } from 'electron'
-import { autoUpdater, type GenericServerOptions, type GithubOptions } from 'electron-updater'
+import { autoUpdater } from 'electron-updater'
+import type { GenericServerOptions, GithubOptions } from 'builder-util-runtime'
 import path, { join } from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
 import { getDefaultShell } from './utils/platform'
+import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, WebSearchSettings } from '@shared/types'
 
 /**
  * 展开路径开头的 `~` 为用户 home 目录。支持 `~`、`~/...`、`~\...`（兼容 Windows）。
@@ -336,7 +338,7 @@ fixShellEnvAsync()
 import { PtyService } from './services/pty.service'
 import { SshService } from './services/ssh.service'
 import { AiService } from './services/ai.service'
-import { ConfigService, McpServerConfig, setConfigServiceInstance, DEFAULT_KEYBOARD_SHORTCUTS } from './services/config.service'
+import { ConfigService, McpServerConfig, setConfigServiceInstance, DEFAULT_KEYBOARD_SHORTCUTS, type KeyboardShortcuts } from './services/config.service'
 import { initLogging, setLogLevel as setBackendLogLevel, getLogDir, createLogger } from './utils/logger'
 import { XshellImportService } from './services/xshell-import.service'
 import { AgentService, AgentStep, AgentContext } from './services/agent'
@@ -346,7 +348,6 @@ import type { OrchestratorConfig } from './services/agent/orchestrator-types'
 import { HistoryService, AgentRecord } from './services/history.service'
 import { HostProfileService, HostProfile } from './services/host-profile.service'
 import { getDocumentParserService, UploadedFile, ParseOptions, ParsedDocument } from './services/document-parser.service'
-import type { DocumentParseProgress } from '@shared/types'
 import { SftpService, SftpConfig } from './services/sftp.service'
 import { LocalFsService } from './services/local-fs.service'
 import { McpService } from './services/mcp.service'
@@ -2490,7 +2491,7 @@ ipcMain.handle('config:getUiTheme', async () => {
 })
 
 ipcMain.handle('config:setUiTheme', async (_event, theme: string) => {
-  configService.setUiTheme(theme as import('@shared/types').UiThemeName)
+  configService.setUiTheme(theme as UiThemeName)
 })
 
 // UI 主题模式（manual / auto），auto 模式下跟随系统外观
@@ -2499,7 +2500,7 @@ ipcMain.handle('config:getUiThemeMode', async () => {
 })
 
 ipcMain.handle('config:setUiThemeMode', async (_event, mode: string) => {
-  configService.setUiThemeMode(mode as import('@shared/types').UiThemeMode)
+  configService.setUiThemeMode(mode as UiThemeMode)
 })
 
 // 系统当前外观（dark/light），用于 auto 模式下解析实际生效的主题
@@ -2582,11 +2583,11 @@ ipcMain.handle('config:setLanguage', async (_event, language: string) => {
 })
 
 // 快捷键变更时重建菜单
-ipcMain.handle('config:setKeyboardShortcuts', async (_event, shortcuts: import('./services/config.service').KeyboardShortcuts) => {
+ipcMain.handle('config:setKeyboardShortcuts', async (_event, shortcuts: KeyboardShortcuts) => {
   if (!shortcuts || typeof shortcuts !== 'object') return
   const defaults = DEFAULT_KEYBOARD_SHORTCUTS
-  const validKeys = Object.keys(defaults) as (keyof typeof defaults)[]
-  const sanitized: Record<string, string> = {}
+  const validKeys = Object.keys(defaults) as (keyof KeyboardShortcuts)[]
+  const sanitized: KeyboardShortcuts = { ...defaults }
   for (const key of validKeys) {
     sanitized[key] = typeof shortcuts[key] === 'string' ? shortcuts[key] : defaults[key]
   }
@@ -3155,7 +3156,7 @@ ipcMain.handle('agent:updateConfig', async (_event, ptyId: string, config: { exe
 })
 
 // 添加用户补充消息（Agent 执行过程中，改用 ptyId）
-ipcMain.handle('agent:addMessage', async (_event, ptyId: string, message: string, attachments?: import('@shared/types').AttachmentInfo[], documentContext?: string, images?: string[]) => {
+ipcMain.handle('agent:addMessage', async (_event, ptyId: string, message: string, attachments?: AttachmentInfo[], documentContext?: string, images?: string[]) => {
   return agentService.addUserMessage(ptyId, message, attachments, documentContext, images)
 })
 
@@ -5547,7 +5548,7 @@ ipcMain.handle('tts:stop', async () => {
 
 // ==================== Web Search ====================
 
-ipcMain.handle('webSearch:updateSettings', async (_event, settings: import('@shared/types').WebSearchSettings) => {
+ipcMain.handle('webSearch:updateSettings', async (_event, settings: WebSearchSettings) => {
   configService.set('webSearchSettings', settings)
   const webSearch = await import('./services/web-search/index')
   webSearch.updateSettings(settings)
