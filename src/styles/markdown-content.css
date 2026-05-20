@@ -7,6 +7,9 @@
   width: 100%;
   color: var(--text-primary);
   line-height: 1.6;
+  /* 应用全局 user-select:none，Markdown 正文区需显式允许选择与复制 */
+  user-select: text;
+  -webkit-user-select: text;
   /* 流式输出时减轻重绘闪动 */
   transform: translateZ(0);
   backface-visibility: hidden;
