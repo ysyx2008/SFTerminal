@@ -1,12 +1,13 @@
 <script setup lang="ts">
 /**
- * Canvas Markdown：默认全屏编辑，可切换预览；选中内容可引用到同 Tab 的 AI 输入框。
+ * Canvas Markdown：默认预览渲染，可切换编辑；选中内容可引用到同 Tab 的 AI 输入框。
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Eye, MessageSquareQuote, Save, SquarePen } from 'lucide-vue-next'
 import { useCanvasStore } from '../../stores/canvas'
 import { useComposerQuoteStore } from '../../stores/composer-quote'
+import { useTerminalStore } from '../../stores/terminal'
 import { useMarkdown } from '../../composables/useMarkdown'
 import { useToast } from '../../composables/useToast'
 
@@ -17,13 +18,14 @@ const props = defineProps<{
 const { t } = useI18n()
 const canvasStore = useCanvasStore()
 const composerQuoteStore = useComposerQuoteStore()
+const terminalStore = useTerminalStore()
 const { renderMarkdown, handleCodeBlockClick, handleFilePathContextMenu } = useMarkdown()
 const previewWrapRef = ref<HTMLElement | null>(null)
 const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
 
 const draft = ref('')
 const saving = ref(false)
-const viewMode = ref<'edit' | 'preview'>('edit')
+const viewMode = ref<'edit' | 'preview'>('preview')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const rootRef = ref<HTMLElement | null>(null)
 
@@ -32,6 +34,13 @@ const ctxX = ref(0)
 const ctxY = ref(0)
 /** 右键菜单打开时的摘录快照（点击菜单项时选区可能已丢失） */
 const ctxQuotePayload = ref<{
+  excerpt: string
+  accurate: boolean
+  startLine: number | null
+  endLine: number | null
+} | null>(null)
+/** 预览区选区快照（右键/快捷键时 DOM 选区可能已丢失） */
+const lastPreviewQuoteMeta = ref<{
   excerpt: string
   accurate: boolean
   startLine: number | null
@@ -67,13 +76,40 @@ function setViewMode(m: 'edit' | 'preview') {
   focusEditorIfNeeded()
 }
 
-/** 预览区多为非可聚焦节点，焦点常在面板外，需 window 级快捷键 */
+type QuoteMeta = {
+  excerpt: string
+  accurate: boolean
+  startLine: number | null
+  endLine: number | null
+}
+
+/** 预览区多为非可聚焦节点，焦点常在 AI 输入框，需 window 级快捷键 */
 function isMarkdownPanelActive(): boolean {
   const root = rootRef.value
   if (!root?.isConnected) return false
+  if (!canvasStore.isVisible(props.tabId)) return false
+  if (canvasStore.getRenderer(props.tabId) !== 'markdown') return false
+  if (terminalStore.activeTabId !== props.tabId) return false
   const active = document.activeElement
   if (active && root.contains(active)) return true
   return viewMode.value === 'preview'
+}
+
+function refreshPreviewQuoteSnapshot() {
+  if (viewMode.value !== 'preview') return
+  const meta = captureQuoteMeta()
+  if (meta?.excerpt.trim()) {
+    lastPreviewQuoteMeta.value = meta
+  }
+}
+
+function resolveQuoteMeta(): QuoteMeta | null {
+  const meta = captureQuoteMeta()
+  if (meta?.excerpt.trim()) return meta
+  if (viewMode.value === 'preview' && lastPreviewQuoteMeta.value?.excerpt.trim()) {
+    return lastPreviewQuoteMeta.value
+  }
+  return null
 }
 
 /** 预览：窗口选区；编辑：textarea 选区及文件内行号 */
@@ -141,7 +177,7 @@ function pushQuoteSnippet(meta: {
 }
 
 function quoteSelectionToAi() {
-  const meta = captureQuoteMeta()
+  const meta = resolveQuoteMeta()
   const trimmed = meta?.excerpt.trim() ?? ''
   if (!trimmed || !meta) {
     toastInfo(t('canvas.quoteToAiNeedSelection'))
@@ -163,13 +199,21 @@ function applyCtxQuoteFromMenu() {
 }
 
 function openCtxMenu(e: MouseEvent) {
-  const meta = captureQuoteMeta()
+  const meta = resolveQuoteMeta()
   if (!meta || !meta.excerpt.trim()) return
   e.preventDefault()
   ctxQuotePayload.value = meta
   ctxX.value = e.clientX
   ctxY.value = e.clientY
   ctxVisible.value = true
+}
+
+/** 预览区 capture 阶段处理右键，避免选区在冒泡前丢失；文件路径链路由 useMarkdown 处理 */
+function onPreviewContextMenuCapture(e: MouseEvent) {
+  if (viewMode.value !== 'preview') return
+  const target = e.target as HTMLElement
+  if (target.closest('[data-file-path]')) return
+  openCtxMenu(e)
 }
 
 function closeCtxMenu() {
@@ -185,18 +229,6 @@ function onGlobalMouseDown(e: MouseEvent) {
   const t = e.target as HTMLElement
   if (t.closest?.('.md-ctx-menu')) return
   closeCtxMenu()
-}
-
-function onPanelKeydown(e: KeyboardEvent) {
-  const mod = e.ctrlKey || e.metaKey
-  const k = e.key.toLowerCase()
-
-  // Ctrl/Cmd+L：引用到 AI 对话（避免 Cmd+Shift+Q 触发退出等系统行为）
-  if (mod && !e.shiftKey && !e.altKey && k === 'l') {
-    e.preventDefault()
-    e.stopPropagation()
-    quoteSelectionToAi()
-  }
 }
 
 async function saveToDisk() {
@@ -228,6 +260,19 @@ function onWindowKeydown(e: KeyboardEvent) {
   if (!meta) return
 
   const k = e.key.toLowerCase()
+
+  // Ctrl/Cmd+L：引用到 AI（预览无焦点时也需 window 级响应）
+  if (!e.shiftKey && !e.altKey && k === 'l' && isMarkdownPanelActive()) {
+    const quoteMeta = resolveQuoteMeta()
+    if (quoteMeta?.excerpt.trim()) {
+      e.preventDefault()
+      e.stopPropagation()
+      pushQuoteSnippet(quoteMeta)
+      closeCtxMenu()
+      return
+    }
+  }
+
   if (e.shiftKey && k === 'm' && isMarkdownPanelActive()) {
     e.preventDefault()
     e.stopPropagation()
@@ -247,6 +292,7 @@ function bindPreviewMarkdownInteractions() {
   if (!el) return
   el.addEventListener('click', handleCodeBlockClick)
   el.addEventListener('contextmenu', handleFilePathContextMenu)
+  el.addEventListener('contextmenu', onPreviewContextMenuCapture, true)
 }
 
 function unbindPreviewMarkdownInteractions() {
@@ -254,34 +300,42 @@ function unbindPreviewMarkdownInteractions() {
   if (!el) return
   el.removeEventListener('click', handleCodeBlockClick)
   el.removeEventListener('contextmenu', handleFilePathContextMenu)
+  el.removeEventListener('contextmenu', onPreviewContextMenuCapture, true)
+}
+
+function onDocumentSelectionChange() {
+  refreshPreviewQuoteSnapshot()
 }
 
 watch(viewMode, (mode) => {
   if (mode === 'preview') {
     nextTick(bindPreviewMarkdownInteractions)
   } else {
+    lastPreviewQuoteMeta.value = null
     unbindPreviewMarkdownInteractions()
   }
 })
 
 onMounted(() => {
-  window.addEventListener('keydown', onWindowKeydown)
+  window.addEventListener('keydown', onWindowKeydown, true)
   window.addEventListener('keydown', onGlobalKeydown)
   document.addEventListener('mousedown', onGlobalMouseDown, true)
+  document.addEventListener('selectionchange', onDocumentSelectionChange)
   if (viewMode.value === 'preview') {
     nextTick(bindPreviewMarkdownInteractions)
   }
 })
 onUnmounted(() => {
   unbindPreviewMarkdownInteractions()
-  window.removeEventListener('keydown', onWindowKeydown)
+  window.removeEventListener('keydown', onWindowKeydown, true)
   window.removeEventListener('keydown', onGlobalKeydown)
   document.removeEventListener('mousedown', onGlobalMouseDown, true)
+  document.removeEventListener('selectionchange', onDocumentSelectionChange)
 })
 </script>
 
 <template>
-  <div ref="rootRef" class="markdown-renderer" @keydown.capture="onPanelKeydown">
+  <div ref="rootRef" class="markdown-renderer">
     <div class="md-toolbar">
       <div class="md-toolbar-left">
         <div class="md-mode-switch" role="tablist" :aria-label="t('canvas.viewMode')">
@@ -352,7 +406,6 @@ onUnmounted(() => {
         <div
           class="md-preview-inner markdown-content"
           v-html="previewHtml"
-          @contextmenu="openCtxMenu"
         />
       </div>
     </div>
