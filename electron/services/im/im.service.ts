@@ -222,6 +222,20 @@ function formatToolNotification(toolName: string, toolArgs?: Record<string, unkn
   return `${icon} ${label}${detail}`
 }
 
+/** 进程通知去重键：同工具+同 path 只通知一次（避免分段 write 刷屏） */
+function toolProcessNotifyKey(
+  toolName: string,
+  toolArgs: Record<string, unknown> | undefined,
+  stepId?: string,
+): string {
+  const args = toolArgs || {}
+  const pathVal = args.path ?? args.file_path
+  if (pathVal != null && String(pathVal).trim() !== '') {
+    return `${toolName}:${String(pathVal)}`
+  }
+  return stepId || `${toolName}:${JSON.stringify(args)}`
+}
+
 /**
  * 把 AI 输出拆成 thinking（思考过程）和 body（正文）两部分，去掉所有 <details>/<blockquote> 标签。
  *
@@ -969,8 +983,26 @@ export class IMService {
     const agentId = AgentService.COMPANION_AGENT_ID
 
     try {
+      await adapter.beginOutboundSession?.(replyContext)
+    } catch (err) {
+      log.warn('beginOutboundSession failed (ignored):', err)
+    }
+
+    let wechatSendFailedNotified = false
+    const notifyWechatSendFailure = async () => {
+      if (msg.platform !== 'wechat' || wechatSendFailedNotified) return
+      wechatSendFailedNotified = true
+      try {
+        await adapter.sendText(replyContext, t('im.wechat_send_failed'))
+      } catch { /* ignore */ }
+    }
+
+    try {
       await adapter.sendText(replyContext, t('im.processing'))
-    } catch { /* ignore */ }
+    } catch (err) {
+      log.error('Failed to send processing notice:', err)
+      await notifyWechatSendFailure()
+    }
 
     // 确保桌面端有 companion tab（不激活，不抢焦点）
     this.sendToDesktop('watch:ensureTab', { agentId })
@@ -1032,6 +1064,7 @@ export class IMService {
         lastFlushedBody = body
       } catch (err) {
         log.error('Failed to send text:', err)
+        await notifyWechatSendFailure()
       }
     }
 
@@ -1110,7 +1143,11 @@ export class IMService {
             // notifiedToolCalls，后续执行器 updateStep 带上 toolArgs 会因同 step.id 被去重跳过，
             // IM 侧就只剩工具名。等非流式态（执行器认领卡片后）再通知。
             if (step.isStreaming) return
-            const toolCallKey = step.id || `${step.toolName}:${JSON.stringify(step.toolArgs || {})}`
+            const toolCallKey = toolProcessNotifyKey(
+              step.toolName,
+              step.toolArgs as Record<string, unknown> | undefined,
+              step.id,
+            )
             if (notifiedToolCalls.has(toolCallKey)) return
             notifiedToolCalls.add(toolCallKey)
 
@@ -1119,7 +1156,10 @@ export class IMService {
               try {
                 await adapter.sendText(replyContext,
                   formatToolNotification(step.toolName, step.toolArgs as Record<string, unknown>))
-              } catch { /* ignore */ }
+              } catch (err) {
+                log.error('Failed to send tool notification:', err)
+                await notifyWechatSendFailure()
+              }
             }
             enqueueSend(sendToolNotify)
           }
@@ -1204,6 +1244,7 @@ export class IMService {
                   lastFlushedBody = body
                 } catch (err) {
                   log.error('Failed to send final result:', err)
+                  await notifyWechatSendFailure()
                 }
                 return
               }
@@ -1214,9 +1255,19 @@ export class IMService {
             // 整个会话从未发过实质正文：把最近的思考过程作为兜底发给用户，
             // 满足"最后只有思考过程、没有正文时也能让用户知道 AI 想了什么"的需求。
             if (lastThinkingContent) {
-              try { await adapter.sendMarkdown(replyContext, '旗鱼', formatThinkingForIM(lastThinkingContent)) } catch { /* ignore */ }
+              try {
+                await adapter.sendMarkdown(replyContext, '旗鱼', formatThinkingForIM(lastThinkingContent))
+              } catch (err) {
+                log.error('Failed to send thinking fallback:', err)
+                await notifyWechatSendFailure()
+              }
             } else {
-              try { await adapter.sendText(replyContext, t('im.task_complete')) } catch { /* ignore */ }
+              try {
+                await adapter.sendText(replyContext, t('im.task_complete'))
+              } catch (err) {
+                log.error('Failed to send task complete:', err)
+                await notifyWechatSendFailure()
+              }
             }
           }
           enqueueSend(finish)
@@ -1237,7 +1288,12 @@ export class IMService {
               textBuffer = ''
               lastFlushedBody = ''
             }
-            try { await adapter.sendText(replyContext, t('im.task_error', { error })) } catch { /* ignore */ }
+            try {
+              await adapter.sendText(replyContext, t('im.task_error', { error }))
+            } catch (sendErr) {
+              log.error('Failed to send task error:', sendErr)
+              await notifyWechatSendFailure()
+            }
           }
           enqueueSend(finish)
 
@@ -1255,6 +1311,7 @@ export class IMService {
       } catch { /* ignore */ }
     } finally {
       try { await sendQueue } catch { /* ignore */ }
+      adapter.endOutboundSession?.(replyContext)
       this.activeSession = null
     }
   }

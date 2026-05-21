@@ -127,6 +127,14 @@ export interface IMAdapter {
   /** 发送 ask_user 选项卡片：单选显示按钮，多选显示下拉多选+提交按钮（可选，仅部分平台支持） */
   sendAskCard?(replyContext: any, question: string, options: string[], allowMultiple?: boolean): Promise<void>
 
+  /**
+   * 开始长出站会话（可选，微信实现）。
+   * 在 Agent 任务全程维持 typing keepalive，避免 context_token 中途失效。
+   */
+  beginOutboundSession?(replyContext: any): Promise<void>
+  /** 结束长出站会话（与 beginOutboundSession 配对） */
+  endOutboundSession?(replyContext: any): void
+
   /** 消息到达回调 */
   onMessage: ((msg: IMIncomingMessage) => void) | null
   /** 连接状态变化回调 */

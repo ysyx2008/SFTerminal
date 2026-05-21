@@ -119,8 +119,8 @@ describe('WeChatAdapter', () => {
   })
 
   it('sendText does NOT pause session for other errors', async () => {
-    sendMessageWeixinMock.mockRejectedValueOnce(
-      new Error('sendMessage 500: {"errcode":-2,"errmsg":"unknown"}'),
+    sendMessageWeixinMock.mockRejectedValue(
+      new Error('sendMessage 500: {"errcode":-99,"errmsg":"unknown"}'),
     )
     const adapter = new WeChatAdapter({ token: 'tok' } as any)
 
@@ -174,5 +174,26 @@ describe('WeChatAdapter', () => {
       token: 'tok-xyz',
       baseUrl: 'https://example.test',
     })
+  })
+
+  it('sendText retries once on errcode=-2 after refreshing config', async () => {
+    sendMessageWeixinMock
+      .mockRejectedValueOnce(
+        new Error('sendMessage 200: {"errcode":-2,"errmsg":"unknown"}'),
+      )
+      .mockResolvedValueOnce({ messageId: 'cid-retry' })
+    const adapter = new WeChatAdapter({ token: 'tok' } as any)
+
+    await adapter.sendText({ userId: 'u1', contextToken: 'ctx-1' }, 'hello')
+
+    expect(sendMessageWeixinMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('beginOutboundSession and endOutboundSession are exposed on adapter', async () => {
+    const adapter = new WeChatAdapter({ token: 'tok' } as any)
+    expect(typeof adapter.beginOutboundSession).toBe('function')
+    expect(typeof adapter.endOutboundSession).toBe('function')
+    await expect(adapter.beginOutboundSession({ userId: 'u1' })).resolves.toBeUndefined()
+    adapter.endOutboundSession({ userId: 'u1' })
   })
 })

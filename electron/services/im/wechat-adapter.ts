@@ -51,6 +51,11 @@ const QR_POLL_INTERVAL_MS = 2_000
 const QR_EXPIRE_MS = 180_000
 const RECONNECT_DELAY_MS = 5_000
 const MAX_RECONNECT_DELAY_MS = 60_000
+/** 服务端 context_token 失效时 sendmessage 返回的 errcode */
+export const CONTEXT_INVALID_ERRCODE = -2
+const TYPING_KEEPALIVE_MS = 5_000
+/** 未配对 endOutboundSession 时的泄漏兜底（正常由 IMService finally 结束） */
+const TYPING_KEEPALIVE_LEAK_MS = 3 * 60 * 60 * 1_000
 
 interface QRCodeResp {
   qrcode?: string
@@ -107,11 +112,14 @@ export class WeChatAdapter implements IMAdapter {
 
   /**
    * 正在运行的 sendTyping keepalive 定时器（按 userId 隔离）。
-   * 上游 process-message.ts 用 createTypingCallbacks({ keepaliveIntervalMs: 5000 }) 实现，
-   * 每 5 秒调一次 sendtyping，用 typing_ticket 维持服务端 context_token session 存活。
-   * 不发 keepalive 则 session ~2-3 分钟后失效，sendmessage 报 errcode=-2。
+   * 对齐上游 process-message.ts 的 createReplyDispatcherWithTyping：整段 Agent 回复期间
+   * 保持 keepalive，仅在 endOutboundSession（markDispatchIdle）时停止，不在每条 sendText 时停止。
    */
-  private typingKeepalives = new Map<string, { timer: ReturnType<typeof setInterval>; ticket: string }>()
+  private typingKeepalives = new Map<string, {
+    timer: ReturnType<typeof setInterval>
+    ticket: string
+    leakTimer: ReturnType<typeof setTimeout>
+  }>()
 
   constructor(private config: WeChatConfig) {
     this.token = config.token || ''
@@ -156,6 +164,51 @@ export class WeChatAdapter implements IMAdapter {
         pauseSession(this.accountKey)
       }
       throw err
+    }
+  }
+
+  /** errcode=-2 时刷新 getconfig 并重试一次发送 */
+  private async withSendRetry<T>(
+    userId: string,
+    seedToken: string | undefined,
+    sendFn: (contextToken: string | undefined) => Promise<T>,
+  ): Promise<T> {
+    let lastErr: unknown
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const contextToken = getContextToken(this.accountKey, userId) ?? seedToken
+      try {
+        return await sendFn(contextToken)
+      } catch (err) {
+        lastErr = err
+        const code = extractErrcode(err)
+        // -14 由 guarded() 内 pauseSession；此处只透传
+        if (code === SESSION_EXPIRED_ERRCODE) {
+          throw err
+        }
+        if (code === CONTEXT_INVALID_ERRCODE && attempt === 0) {
+          log.warn(`send failed errcode=${CONTEXT_INVALID_ERRCODE}, refreshing session for ${userId}`)
+          this.getConfigManager().invalidateUser(userId)
+          const fresh = getContextToken(this.accountKey, userId) ?? seedToken
+          await this.getConfigManager().getForUser(userId, fresh)
+          continue
+        }
+        throw err
+      }
+    }
+    throw lastErr
+  }
+
+  /** IMAdapter：Agent 长任务开始时启动 typing keepalive（对齐上游 markDispatchIdle 之前保持存活） */
+  async beginOutboundSession(replyContext: { userId: string; contextToken?: string }): Promise<void> {
+    const userId = replyContext.userId
+    if (!userId) return
+    await this.startTypingKeepalive(userId, this.resolveContextToken(replyContext))
+  }
+
+  /** IMAdapter：Agent 任务结束时停止 keepalive */
+  endOutboundSession(replyContext: { userId: string }): void {
+    if (replyContext.userId) {
+      this.stopTypingKeepalive(replyContext.userId)
     }
   }
 
@@ -307,20 +360,20 @@ export class WeChatAdapter implements IMAdapter {
 
   async sendText(replyContext: any, text: string): Promise<void> {
     const ctx = replyContext as { userId: string; contextToken?: string }
-    this.stopTypingKeepalive(ctx.userId)
     const contextToken = this.resolveContextToken(ctx)
     // 对齐上游 process-message.ts：过滤掉微信不支持的 markdown 语法。
-    // 主要效果：移除图片标记 ![alt](url)、CJK 内容的斜体/粗斜体星号。
     const f = new StreamingMarkdownFilter()
     const filtered = f.feed(text) + f.flush()
     const truncated = filtered.length > IM_TEXT_MAX_LENGTH
       ? filtered.substring(0, IM_TEXT_MAX_LENGTH - 20) + '\n...(已截断)'
       : filtered
-    await this.guarded(() => sendMessageWeixin({
-      to: ctx.userId,
-      text: truncated,
-      opts: { ...this.apiOpts, contextToken },
-    }))
+    await this.withSendRetry(ctx.userId, contextToken, (token) =>
+      this.guarded(() => sendMessageWeixin({
+        to: ctx.userId,
+        text: truncated,
+        opts: { ...this.apiOpts, contextToken: token },
+      })),
+    )
   }
 
   async sendMarkdown(replyContext: any, _title: string, content: string): Promise<void> {
@@ -329,30 +382,32 @@ export class WeChatAdapter implements IMAdapter {
 
   async sendImage(replyContext: any, filePath: string): Promise<void> {
     const ctx = replyContext as { userId: string; contextToken?: string }
-    this.stopTypingKeepalive(ctx.userId)
     const contextToken = this.resolveContextToken(ctx)
     log.info(`sendImage: file=${path.basename(filePath)} userId=${ctx.userId} hasToken=${!!contextToken}`)
-    await this.guarded(() => sendWeixinMediaFile({
-      filePath,
-      to: ctx.userId,
-      text: '',
-      opts: { ...this.apiOpts, contextToken },
-      cdnBaseUrl: CDN_BASE_URL,
-    }))
+    await this.withSendRetry(ctx.userId, contextToken, (token) =>
+      this.guarded(() => sendWeixinMediaFile({
+        filePath,
+        to: ctx.userId,
+        text: '',
+        opts: { ...this.apiOpts, contextToken: token },
+        cdnBaseUrl: CDN_BASE_URL,
+      })),
+    )
   }
 
   async sendFile(replyContext: any, filePath: string, fileName?: string): Promise<void> {
     const ctx = replyContext as { userId: string; contextToken?: string }
-    this.stopTypingKeepalive(ctx.userId)
     const contextToken = this.resolveContextToken(ctx)
     log.info(`sendFile: file=${fileName || path.basename(filePath)} userId=${ctx.userId} hasToken=${!!contextToken}`)
-    await this.guarded(() => sendWeixinMediaFile({
-      filePath,
-      to: ctx.userId,
-      text: '',
-      opts: { ...this.apiOpts, contextToken },
-      cdnBaseUrl: CDN_BASE_URL,
-    }))
+    await this.withSendRetry(ctx.userId, contextToken, (token) =>
+      this.guarded(() => sendWeixinMediaFile({
+        filePath,
+        to: ctx.userId,
+        text: '',
+        opts: { ...this.apiOpts, contextToken: token },
+        cdnBaseUrl: CDN_BASE_URL,
+      })),
+    )
   }
 
   // ==================== 长轮询 ====================
@@ -538,11 +593,8 @@ export class WeChatAdapter implements IMAdapter {
       }
     }
 
-    // 启动 sendTyping keepalive：每 5 秒发一次 sendtyping 保持服务端 session 存活。
-    // 对应上游 process-message.ts 的 createTypingCallbacks({ keepaliveIntervalMs: 5000 })。
-    // 不做这一步，服务端 context_token session 约 2-3 分钟无活动后失效，
-    // 此后 sendmessage 持续报 errcode=-2 直到用户再发一条消息。
-    void this.startTypingKeepalive(userId, msg.context_token)
+    // keepalive 由 IMService.runAgentTask 通过 beginOutboundSession/endOutboundSession 管理，
+    // 对齐上游 createReplyDispatcherWithTyping（整段回复期间保持，不在每条 send 时停止）。
 
     const text = bodyFromItemList(msg.item_list)
     const attachments = await this.downloadAttachments(msg.item_list)
@@ -678,11 +730,8 @@ export class WeChatAdapter implements IMAdapter {
   // ==================== Typing Keepalive ====================
 
   /**
-   * 收到 inbound 消息后立即启动：
-   * 1. 用 configManager.getForUser 注册服务端 session 并取 typing_ticket
-   * 2. 每 5 秒发一次 sendtyping（status=TYPING），保持 context_token session 存活
-   * 不做这一步，服务端 session ~2-3 分钟无活动后失效，sendmessage 报 errcode=-2。
-   * 对应上游 process-message.ts 的 createTypingCallbacks({ keepaliveIntervalMs: 5000 })。
+   * 启动 sendTyping keepalive（由 beginOutboundSession 调用）。
+   * 每 5 秒发一次 sendtyping，保持 context_token session 存活直至 endOutboundSession。
    */
   private async startTypingKeepalive(userId: string, contextToken?: string): Promise<void> {
     let cachedConfig: Awaited<ReturnType<WeixinConfigManager['getForUser']>>
@@ -708,24 +757,23 @@ export class WeChatAdapter implements IMAdapter {
     }
 
     fire()
-    const timer = setInterval(fire, 5_000)
-    this.typingKeepalives.set(userId, { timer, ticket })
-    log.debug(`Started typing keepalive for ${userId}`)
-
-    // 安全兜底：10 分钟后自动停止，防止 leak（正常情况 sendText 先触发 stop）
-    setTimeout(() => {
+    const timer = setInterval(fire, TYPING_KEEPALIVE_MS)
+    const leakTimer = setTimeout(() => {
       if (this.typingKeepalives.has(userId)) {
-        log.debug(`Typing keepalive auto-stopped after 10min for ${userId}`)
+        log.warn(`Typing keepalive leak guard: auto-stopped after ${TYPING_KEEPALIVE_LEAK_MS / 3_600_000}h for ${userId}`)
         this.stopTypingKeepalive(userId)
       }
-    }, 10 * 60 * 1_000)
+    }, TYPING_KEEPALIVE_LEAK_MS)
+    this.typingKeepalives.set(userId, { timer, ticket, leakTimer })
+    log.debug(`Started typing keepalive for ${userId}`)
   }
 
-  /** 发送回复前调用：停止 keepalive 并发送 sendtyping(CANCEL)。 */
+  /** 结束出站会话：停止 keepalive 并发送 sendtyping(CANCEL)。 */
   private stopTypingKeepalive(userId: string): void {
     const existing = this.typingKeepalives.get(userId)
     if (!existing) return
     clearInterval(existing.timer)
+    clearTimeout(existing.leakTimer)
     this.typingKeepalives.delete(userId)
     void vendoredSendTyping({
       ...this.apiOpts,
