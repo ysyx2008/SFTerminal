@@ -57,6 +57,7 @@ import {
   markdownToDocx,
   PRESET_STYLES,
   extractStyleFromTemplate,
+  summarizeExtractedConfig,
   getStyleExtractionPrompt,
   resolvePageConfig,
   type WordStyleConfig
@@ -2735,6 +2736,27 @@ async function wordCreateStyle(
       styleConfig.name = name
       styleConfig.source = fromTemplate
       styleConfig.sourceType = 'template'
+
+      if (configArg) {
+        const mergedHeadings = { ...styleConfig.config.headings }
+        if (configArg.headings && typeof configArg.headings === 'object') {
+          const headingsArg = configArg.headings as Record<string, unknown>
+          for (const [level, hStyle] of Object.entries(headingsArg)) {
+            const lvl = Number(level)
+            if (!isNaN(lvl) && hStyle && typeof hStyle === 'object') {
+              mergedHeadings[lvl] = { ...mergedHeadings[lvl], ...(hStyle as Record<string, unknown>) } as typeof mergedHeadings[number]
+            }
+          }
+        }
+        styleConfig.config = {
+          ...styleConfig.config,
+          ...configArg,
+          headings: mergedHeadings,
+          numberingRules: configArg.numberingRules !== undefined
+            ? configArg.numberingRules as WordStyleConfig['config']['numberingRules']
+            : styleConfig.config.numberingRules
+        } as WordStyleConfig['config']
+      }
     } else if (fromDescription) {
       // 从格式说明文件解析（需要 AI 辅助）
       const descPath = resolvePath(ptyId, fromDescription)
@@ -2806,8 +2828,15 @@ async function wordCreateStyle(
       saveCustomStylesToFile()
     }
 
-    const output = t('word.style_created', { name }) + 
+    let output = t('word.style_created', { name }) +
       (setAsDefault ? '\n' + t('word.style_set_as_default', { name }) : '')
+    if (fromTemplate) {
+      output += '\n\n' + t('word.style_extracted_summary', {
+        summary: summarizeExtractedConfig(styleConfig.config)
+      })
+    } else if (configArg) {
+      output += '\n\n' + formatStyleSummary(styleConfig.config)
+    }
 
     executor.addStep({
       type: 'tool_result',

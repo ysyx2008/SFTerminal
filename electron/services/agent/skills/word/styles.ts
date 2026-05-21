@@ -2285,20 +2285,7 @@ function createParagraphFromHtml(
   return { paragraphs, align }
 }
 
-/**
- * 解析样板文档中的样式（从 .docx 文件提取）
- * TODO: 实现从 styles.xml 提取样式
- */
-export async function extractStyleFromTemplate(docxPath: string): Promise<WordStyleConfig> {
-  // 这里需要解析 docx 文件的 styles.xml
-  // 暂时返回默认样式
-  return {
-    name: '自定义样式',
-    source: docxPath,
-    sourceType: 'template',
-    config: PRESET_STYLES.simple.config
-  }
-}
+export { extractStyleFromTemplate, summarizeExtractedConfig } from './style-extract'
 
 /**
  * 从格式说明文本生成样式配置（AI 辅助）

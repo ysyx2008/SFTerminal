@@ -442,7 +442,8 @@ const translations = {
     'word.style_not_found': '样式不存在: {name}',
     'word.style_create_failed': '创建样式失败',
     'word.style_extraction_prompt': '请根据以下提示解析格式规范 "{name}"：\n\n{prompt}',
-    'word.style_extraction_hint': '请解析上述格式说明并返回 JSON 配置，然后使用配置创建样式。',
+    'word.style_extraction_hint': '请解析上述格式说明并返回 JSON 配置，然后使用 config 参数再次调用 word_create_style 保存（不要只靠对话记忆）。',
+    'word.style_extracted_summary': '已从样板提取样式：\n{summary}',
     'word.pdf_style_hint': '请先使用 read_file 工具读取 PDF 内容，然后告诉我格式要求。',
     // PDF 导出
     'word.export_pdf_docx_only': '仅支持 .docx 格式文件',
@@ -1853,7 +1854,8 @@ Please output the summary in the following format:
     'word.style_not_found': 'Style not found: {name}',
     'word.style_create_failed': 'Failed to create style',
     'word.style_extraction_prompt': 'Please parse the format specification "{name}" based on:\n\n{prompt}',
-    'word.style_extraction_hint': 'Please parse the format description above and return JSON config, then use it to create the style.',
+    'word.style_extraction_hint': 'Parse the format description above, return JSON config, then call word_create_style again with the config parameter (do not rely on chat memory alone).',
+    'word.style_extracted_summary': 'Extracted from template:\n{summary}',
     'word.pdf_style_hint': 'Please use read_file tool to read PDF content first, then tell me the format requirements.',
     // PDF export
     'word.export_pdf_docx_only': 'Only .docx format is supported',
