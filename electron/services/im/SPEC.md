@@ -163,7 +163,8 @@ interface SendFileResult { success: boolean; error?: string; messageId?: string 
 - `startPolling` 启动时：先立即 `setConnected(true)` + 启动 `pollLoop`，再后台并发发 `notifyStart`（不阻塞接收）。之前 `notifyStart` 串行阻塞时，若请求挂起会导致 `pollLoop` 迟迟不启动，造成"重启后收不到消息"。
 - session 过期（`errcode=-14`）：`pauseSession` 暂停 1h 后自动 `continue` 继续轮询（自愈），不再 `break` 导致 loop 永久停止。
 - `getUpdatesBuf` 游标持久化到 `~/.openclaw/openclaw-weixin/accounts/<accountKey>.sync.json`，进程重启后恢复，避免漏消息。
-- `context_token` 失效 (`errcode=-2`) 自愈：每条 inbound 消息携带新 `context_token`；若与上次不同，立即 `invalidateUser` 清除 `WeixinConfigManager` 的 24h TTL 缓存，强制重新调用 `getconfig` 注册服务端 session。出站 `sendmessage` 遇 `-2` 时自动 invalidate + 重试一次。
+- `context_token` 失效 (`errcode=-2`) 自愈：每条 inbound 消息携带新 `context_token`；若与上次不同，立即 `invalidateUser` 清除 `WeixinConfigManager` 的 24h TTL 缓存，并调用 `getForUser` 注册服务端 session（`handleMessage` + `beginOutboundSession`）。出站 `sendmessage` 遇 `-2` 时自动 invalidate + 重试一次。
+- **IM 投递工具失败必推送到聊天**：`send_file_to_chat` / `send_image_to_chat` / `send_to_chat` 的 `tool_result` 失败会经 `IMService` 发到当前 IM 会话（与 `sendProcessMessages` 无关），避免错误仅出现在桌面 Companion 面板。
 - **typing keepalive 生命周期**：对齐上游 `createReplyDispatcherWithTyping`——`IMService.runAgentTask` 在任务开始时调 `beginOutboundSession`，`finally` 调 `endOutboundSession`；**不在**每条 `sendText` 时停止 keepalive（否则长任务约 2–3 分钟后出站失败）。
 
 **适配器架构**：每个平台一个 `*Adapter`，构造时从 `getEventBus()` 拿事件总线，注册到 IMService 的 `adapters: Map<IMPlatform, IMAdapter>` 中。

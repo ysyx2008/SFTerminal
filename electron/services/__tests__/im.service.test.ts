@@ -21,7 +21,12 @@ vi.mock('../agent/i18n', () => ({
   t: (key: string) => key
 }))
 
-import { IMService, type IMLastContact } from '../im/im.service'
+import {
+  IMService,
+  type IMLastContact,
+  isImDeliveryToolFailure,
+  formatImDeliveryToolFailure,
+} from '../im/im.service'
 
 type MockAdapter = {
   isConnected: ReturnType<typeof vi.fn>
@@ -48,6 +53,32 @@ function createAdapter(connected: boolean): MockAdapter {
     sendMarkdown: vi.fn().mockResolvedValue(undefined)
   }
 }
+
+describe('IM delivery tool failure helpers', () => {
+  it('detects send_file_to_chat failure by success flag', () => {
+    expect(isImDeliveryToolFailure({
+      toolName: 'send_file_to_chat',
+      success: false,
+      content: '❌ 文件发送失败',
+    })).toBe(true)
+  })
+
+  it('ignores unrelated tool failures', () => {
+    expect(isImDeliveryToolFailure({
+      toolName: 'read_file',
+      success: false,
+      content: '❌',
+    })).toBe(false)
+  })
+
+  it('formatImDeliveryToolFailure prefers step content', () => {
+    expect(formatImDeliveryToolFailure({
+      toolName: 'send_file_to_chat',
+      content: '❌ 文件发送失败: errcode=-2',
+      toolResult: 'ignored',
+    })).toBe('❌ 文件发送失败: errcode=-2')
+  })
+})
 
 describe('IMService proactive notification routing', () => {
   beforeEach(() => {

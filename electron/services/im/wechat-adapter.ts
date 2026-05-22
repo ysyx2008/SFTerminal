@@ -202,7 +202,14 @@ export class WeChatAdapter implements IMAdapter {
   async beginOutboundSession(replyContext: { userId: string; contextToken?: string }): Promise<void> {
     const userId = replyContext.userId
     if (!userId) return
-    await this.startTypingKeepalive(userId, this.resolveContextToken(replyContext))
+    const contextToken = this.resolveContextToken(replyContext)
+    try {
+      await this.getConfigManager().getForUser(userId, contextToken)
+      if (contextToken) this.lastConfigContextToken.set(userId, contextToken)
+    } catch (err) {
+      log.warn(`beginOutboundSession getForUser failed: ${String(err)}`)
+    }
+    await this.startTypingKeepalive(userId, contextToken)
   }
 
   /** IMAdapter：Agent 任务结束时停止 keepalive */
@@ -590,6 +597,17 @@ export class WeChatAdapter implements IMAdapter {
         this.lastConfigContextToken.set(userId, msg.context_token)
         this.getConfigManager().invalidateUser(userId)
         log.debug(`context_token changed for ${userId}, invalidating config cache`)
+      }
+    }
+
+    // 对齐上游 monitor.ts：每条 inbound 注册服务端 session，否则出站 sendmessage 会 errcode=-2
+    const inboundToken = msg.context_token ?? getContextToken(this.accountKey, userId)
+    if (inboundToken) {
+      try {
+        await this.getConfigManager().getForUser(userId, inboundToken)
+        this.lastConfigContextToken.set(userId, inboundToken)
+      } catch (err) {
+        log.warn(`handleMessage getForUser failed (ignored): ${String(err)}`)
       }
     }
 

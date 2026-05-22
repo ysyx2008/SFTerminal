@@ -130,6 +130,9 @@ const TOOL_I18N_MAP: Record<string, Parameters<typeof t>[0]> = {
   skill: 'tool.skill',
   ask_user: 'tool.ask_user',
   dispatch_agents: 'tool.dispatch_agents',
+  send_file_to_chat: 'im.tool_sending_file',
+  send_image_to_chat: 'im.tool_sending_image',
+  send_to_chat: 'im.tool_sending_file',
 }
 
 /** 截断过长文本，附加省略号 */
@@ -220,6 +223,37 @@ function formatToolNotification(toolName: string, toolArgs?: Record<string, unkn
   }
 
   return `${icon} ${label}${detail}`
+}
+
+/** 向 IM 用户投递文件/图片的工具；失败时必须推送到聊天，不能只在桌面面板可见 */
+export const IM_DELIVERY_TOOL_NAMES = new Set([
+  'send_file_to_chat',
+  'send_image_to_chat',
+  'send_to_chat',
+])
+
+/** 是否为 IM 投递类工具的失败结果（需同步到微信等渠道） */
+export function isImDeliveryToolFailure(step: {
+  toolName?: string
+  success?: boolean
+  content?: string
+}): boolean {
+  if (!step.toolName || !IM_DELIVERY_TOOL_NAMES.has(step.toolName)) return false
+  if (step.success === false) return true
+  return !!step.content?.includes('❌')
+}
+
+/** 格式化 IM 投递失败通知（优先复用工具已生成的 i18n 文案） */
+export function formatImDeliveryToolFailure(step: {
+  content?: string
+  toolName?: string
+  toolResult?: string
+}): string {
+  const text = step.content?.trim()
+  if (text) return text
+  const detail = step.toolResult?.trim()
+  if (detail) return `❌ ${step.toolName}: ${detail}`
+  return `❌ ${step.toolName ?? 'send'}`
 }
 
 /** 进程通知去重键：同工具+同 path 只通知一次（避免分段 write 刷屏） */
@@ -1162,6 +1196,21 @@ export class IMService {
               }
             }
             enqueueSend(sendToolNotify)
+          } else if (step.type === 'tool_result' && isImDeliveryToolFailure(step)) {
+            // 投递类工具失败必须推到 IM（与 sendProcess 无关），避免用户只在桌面看到错误
+            const resultKey = step.id || `tool_result:${step.toolCallId ?? ''}:${step.toolName}`
+            if (notifiedToolCalls.has(resultKey)) return
+            notifiedToolCalls.add(resultKey)
+
+            const sendDeliveryFailure = async () => {
+              try {
+                await adapter.sendText(replyContext, formatImDeliveryToolFailure(step))
+              } catch (err) {
+                log.error('Failed to send IM delivery tool failure:', err)
+                await notifyWechatSendFailure()
+              }
+            }
+            enqueueSend(sendDeliveryFailure)
           }
         },
 
