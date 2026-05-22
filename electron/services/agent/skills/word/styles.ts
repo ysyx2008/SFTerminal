@@ -1174,6 +1174,20 @@ function extractDocumentTitle(markdown: string): { title?: string; content: stri
     }
   }
 
+  // AI 误用 Markdown 标题写文档标题：`## title: xxx` / `# title：xxx`
+  const hashTitleMatch = rest.match(
+    /^#{1,6}\s+(?:\*\*\s*)?title\s*(?:\*\*\s*)?[:：]\s*(?:\*\*\s*)?(.+?)(?:\s*\*\*)?\s*(?:\r?\n|$)/i
+  )
+  if (hashTitleMatch) {
+    const title = hashTitleMatch[1].trim().replace(/^["'\u201C\u2018]|["'\u201D\u2019]$/g, '')
+    if (title) {
+      let content = rest.slice(hashTitleMatch[0].length)
+      if (content.startsWith('\r\n')) content = content.slice(2)
+      else if (content.startsWith('\n')) content = content.slice(1)
+      return { title, content: leadingWhitespace + content }
+    }
+  }
+
   return { content: markdown }
 }
 

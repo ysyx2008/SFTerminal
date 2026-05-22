@@ -184,4 +184,15 @@ describe('markdownToDocx: edge cases', () => {
     expect(documentXml).toMatch(/w:name="a-1-0-概述"/)  // 数字开头加 a- 前缀
     expect(documentXml).toMatch(/w:name="section"/)
   })
+
+  it('treats ## title: line as document Title, not Heading 2', async () => {
+    const md = `## title: 关于审议人工智能的议案\n\n<p>公司党委：</p>\n\n正文。`
+    const buf = await markdownToDocx(md, 'official')
+    const { documentXml } = await inspect(buf)
+
+    expect(documentXml).not.toContain('title: 关于审议')
+    expect(documentXml).toContain('关于审议人工智能的议案')
+    expect(documentXml).toMatch(/<w:pStyle w:val="Title"/)
+    expect(documentXml).not.toMatch(/<w:pStyle w:val="Heading2"[^>]*>[\s\S]*?title:/)
+  })
 })
