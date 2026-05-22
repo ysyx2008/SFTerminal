@@ -271,13 +271,15 @@ export default {
   // Batch Operations
   batch: {
     title: 'Batch Command',
-    selectTerminals: 'Select terminals to operate',
-    noActiveTerminals: 'No active terminals available',
+    scopeTab: 'This tab',
+    scopeAll: 'All tabs',
+    selectPanes: 'Select panes to operate',
+    noActiveTerminals: 'No active terminal panes available',
     commandInput: 'Enter command',
-    commandPlaceholder: 'Enter command to send to all selected terminals...',
+    commandPlaceholder: 'Enter command to send to all selected panes...',
     send: 'Send',
     sendEnter: 'Press Enter after sending',
-    selectedCount: '{count} terminal(s) selected',
-    shortcutHint: 'Shortcut: Ctrl+Shift+B to toggle batch panel, Enter to send command'
+    selectedCount: '{count} pane(s) selected',
+    shortcutHint: 'Shortcut: Ctrl+Shift+B to toggle batch panel, Enter to send. Defaults to this tab when split, all tabs otherwise'
   },
 }

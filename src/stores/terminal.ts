@@ -145,6 +145,21 @@ export type SplitTarget =
   | { kind: 'local' }
   | { kind: 'ssh', sessionId: string }
 
+/** 批量命令可选目标（窗格粒度，非 Tab 粒度） */
+export interface BatchCommandTarget {
+  /** `${tabId}:${ptyId}` */
+  key: string
+  tabId: string
+  ptyId: string
+  terminalType: 'local' | 'ssh'
+  tabTitle: string
+  paneLabel?: string
+  hostHint?: string
+  isConnected: boolean
+}
+
+export type BatchCommandScope = 'tab' | 'all'
+
 export interface SplitPane {
   id: string
   type: 'terminal' | 'split'
@@ -1983,6 +1998,84 @@ export const useTerminalStore = defineStore('terminal', () => {
     return tab.ptyId ? [tab.ptyId] : []
   }
 
+  /** 当前 tab 内可用于批量命令的窗格数量（>1 视为已分屏） */
+  function getBatchPaneCount(tab: TerminalTab): number {
+    if (tab.type === 'assistant') return 0
+    if (tab.splitLayout) {
+      return getAllTerminalPanes(tab.splitLayout).filter(p => Boolean(p.ptyId)).length
+    }
+    return tab.ptyId ? 1 : 0
+  }
+
+  function hasMultipleBatchPanes(tab: TerminalTab): boolean {
+    return getBatchPaneCount(tab) > 1
+  }
+
+  function buildBatchTargetsFromTab(tab: TerminalTab): BatchCommandTarget[] {
+    if (tab.type === 'assistant' || !tab.isConnected) return []
+
+    const panes = tab.splitLayout
+      ? getAllTerminalPanes(tab.splitLayout).filter(p => Boolean(p.ptyId))
+      : []
+
+    if (panes.length === 0) {
+      if (!tab.ptyId) return []
+      const terminalType = tab.type as 'local' | 'ssh'
+      const hostHint = tab.sshConfig
+        ? `${tab.sshConfig.username}@${tab.sshConfig.host}`
+        : undefined
+      return [{
+        key: `${tab.id}:${tab.ptyId}`,
+        tabId: tab.id,
+        ptyId: tab.ptyId,
+        terminalType,
+        tabTitle: tab.title,
+        hostHint,
+        isConnected: tab.isConnected
+      }]
+    }
+
+    return panes.map(pane => {
+      const ptyId = pane.ptyId as string
+      const terminalType = (pane.terminalType ?? tab.type) as 'local' | 'ssh'
+      const hostHint = pane.sshConfig
+        ? `${pane.sshConfig.username}@${pane.sshConfig.host}`
+        : tab.sshConfig && terminalType === 'ssh'
+          ? `${tab.sshConfig.username}@${tab.sshConfig.host}`
+          : undefined
+      return {
+        key: `${tab.id}:${ptyId}`,
+        tabId: tab.id,
+        ptyId,
+        terminalType,
+        tabTitle: tab.title,
+        paneLabel: pane.label,
+        hostHint,
+        isConnected: tab.isConnected
+      }
+    })
+  }
+
+  function getAllBatchTargets(): BatchCommandTarget[] {
+    return tabs.value.flatMap(buildBatchTargetsFromTab)
+  }
+
+  function getBatchTargetsForTab(tabId: string): BatchCommandTarget[] {
+    const tab = tabs.value.find(t => t.id === tabId)
+    return tab ? buildBatchTargetsFromTab(tab) : []
+  }
+
+  /**
+   * 打开批量面板时的默认范围：当前 tab 已分屏 → 本 tab；否则 → 全部 tab
+   */
+  function getDefaultBatchScope(): { scope: BatchCommandScope; tabId?: string } {
+    const tab = activeTab.value
+    if (tab && tab.type !== 'assistant' && hasMultipleBatchPanes(tab)) {
+      return { scope: 'tab', tabId: tab.id }
+    }
+    return { scope: 'all' }
+  }
+
   /**
    * 校验 tab.ptyId 与 tab.splitLayout 的不变量
    *
@@ -2347,6 +2440,11 @@ export const useTerminalStore = defineStore('terminal', () => {
     isSplitTab,
     getActivePtyId,
     getAllTabPtyIds,
+    getBatchPaneCount,
+    hasMultipleBatchPanes,
+    getAllBatchTargets,
+    getBatchTargetsForTab,
+    getDefaultBatchScope,
     createTab,
     createAssistantTab,
     forkToAssistantTab,

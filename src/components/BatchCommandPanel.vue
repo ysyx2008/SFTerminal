@@ -3,89 +3,165 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X, Terminal, Monitor, Check, Send, Layers } from 'lucide-vue-next'
 import { useTerminalStore } from '../stores/terminal'
+import type { BatchCommandScope, BatchCommandTarget } from '../stores/terminal'
 
 const { t } = useI18n()
 const terminalStore = useTerminalStore()
 
-// 是否显示面板
 const isOpen = ref(false)
-// 命令输入
 const command = ref('')
-// 选中的终端 ID 列表
-const selectedTabIds = ref<string[]>([])
-// 是否发送回车
+const selectedKeys = ref<string[]>([])
 const sendEnter = ref(true)
-// 输入框引用
 const inputRef = ref<HTMLInputElement | null>(null)
 
-// 可用的终端列表（已连接的）
-const availableTabs = computed(() => {
-  return terminalStore.tabs.filter(tab => tab.isConnected && tab.ptyId)
+const scope = ref<BatchCommandScope>('all')
+/** 本标签范围所绑定的 tab（打开面板时由 activeTab 决定） */
+const scopeTabId = ref<string | undefined>(undefined)
+
+const allTargets = computed(() => terminalStore.getAllBatchTargets())
+
+const visibleTargets = computed(() => {
+  if (scope.value === 'tab' && scopeTabId.value) {
+    return terminalStore.getBatchTargetsForTab(scopeTabId.value)
+  }
+  return allTargets.value
 })
 
-// 是否全选
+const groupedTargets = computed(() => {
+  const groups = new Map<string, { tabTitle: string; targets: BatchCommandTarget[] }>()
+  for (const target of visibleTargets.value) {
+    const existing = groups.get(target.tabId)
+    if (existing) {
+      existing.targets.push(target)
+    } else {
+      groups.set(target.tabId, { tabTitle: target.tabTitle, targets: [target] })
+    }
+  }
+  return Array.from(groups.entries()).map(([tabId, group]) => ({ tabId, ...group }))
+})
+
+/** 全部标签 + 多窗格 Tab 才用分组头；单窗格或本标签范围均扁平列表 */
+const shouldUseGroupLayout = (group: { targets: BatchCommandTarget[] }) =>
+  scope.value === 'all' && group.targets.length > 1
+
 const isAllSelected = computed(() => {
-  return availableTabs.value.length > 0 && 
-    selectedTabIds.value.length === availableTabs.value.length
+  const available = visibleTargets.value
+  return available.length > 0 && selectedKeys.value.length === available.length
 })
 
-// 切换终端选中状态
-const toggleTab = (tabId: string) => {
-  const index = selectedTabIds.value.indexOf(tabId)
+const targetDisplayName = (target: BatchCommandTarget, groupSize: number): string => {
+  if (groupSize === 1) {
+    return formatTargetLine(target, scope.value === 'all')
+  }
+  return formatTargetLine(target, false)
+}
+
+function formatTargetLine(target: BatchCommandTarget, includeTab: boolean): string {
+  const parts: string[] = []
+  if (includeTab) parts.push(target.tabTitle)
+  if (target.paneLabel && (target.hostHint || getBatchPaneCountForTab(target.tabId) > 1)) {
+    parts.push(target.paneLabel)
+  }
+  if (target.hostHint) parts.push(target.hostHint)
+  if (parts.length === 0) return target.tabTitle
+  return parts.join(' · ')
+}
+
+function getBatchPaneCountForTab(tabId: string): number {
+  const tab = terminalStore.tabs.find(t => t.id === tabId)
+  return tab ? terminalStore.getBatchPaneCount(tab) : 1
+}
+
+const toggleTarget = (key: string) => {
+  const index = selectedKeys.value.indexOf(key)
   if (index === -1) {
-    selectedTabIds.value.push(tabId)
+    selectedKeys.value.push(key)
   } else {
-    selectedTabIds.value.splice(index, 1)
+    selectedKeys.value.splice(index, 1)
   }
 }
 
-// 全选/取消全选
+const toggleGroup = (tabId: string) => {
+  const keys = visibleTargets.value.filter(t => t.tabId === tabId).map(t => t.key)
+  const allSelected = keys.every(k => selectedKeys.value.includes(k))
+  if (allSelected) {
+    selectedKeys.value = selectedKeys.value.filter(k => !keys.includes(k))
+  } else {
+    const merged = new Set(selectedKeys.value)
+    for (const k of keys) merged.add(k)
+    selectedKeys.value = Array.from(merged)
+  }
+}
+
+const isGroupSelected = (tabId: string): boolean => {
+  const keys = visibleTargets.value.filter(t => t.tabId === tabId).map(t => t.key)
+  return keys.length > 0 && keys.every(k => selectedKeys.value.includes(k))
+}
+
+const isGroupIndeterminate = (tabId: string): boolean => {
+  const keys = visibleTargets.value.filter(t => t.tabId === tabId).map(t => t.key)
+  const selected = keys.filter(k => selectedKeys.value.includes(k)).length
+  return selected > 0 && selected < keys.length
+}
+
 const toggleSelectAll = () => {
   if (isAllSelected.value) {
-    selectedTabIds.value = []
+    selectedKeys.value = []
   } else {
-    selectedTabIds.value = availableTabs.value.map(tab => tab.id)
+    selectedKeys.value = visibleTargets.value.map(t => t.key)
   }
 }
 
-// 发送命令到所有选中的终端
+const applyDefaultSelection = () => {
+  selectedKeys.value = visibleTargets.value.map(t => t.key)
+}
+
+const setScope = (newScope: BatchCommandScope) => {
+  if (scope.value === newScope) return
+  scope.value = newScope
+  if (newScope === 'tab') {
+    scopeTabId.value = terminalStore.activeTabId ?? scopeTabId.value
+    if (!scopeTabId.value) {
+      scope.value = 'all'
+      return
+    }
+  }
+  applyDefaultSelection()
+}
+
 const sendCommand = async () => {
-  if (!command.value.trim() || selectedTabIds.value.length === 0) return
-  
+  if (!command.value.trim() || selectedKeys.value.length === 0) return
+
   const cmdToSend = sendEnter.value ? command.value + '\r' : command.value
-  
-  // 并行发送到所有选中的终端
-  const promises = selectedTabIds.value.map(tabId => 
-    terminalStore.writeToTerminal(tabId, cmdToSend)
+  const keySet = new Set(selectedKeys.value)
+  const targets = allTargets.value.filter(t => keySet.has(t.key))
+
+  await Promise.all(
+    targets.map(target => terminalStore.writeToPty(target.ptyId, target.terminalType, cmdToSend))
   )
-  
-  await Promise.all(promises)
-  
-  // 清空命令输入
+
   command.value = ''
 }
 
-// 打开面板
 const open = () => {
+  const defaults = terminalStore.getDefaultBatchScope()
+  scope.value = defaults.scope
+  scopeTabId.value = defaults.tabId
   isOpen.value = true
-  // 默认选中所有终端
-  selectedTabIds.value = availableTabs.value.map(tab => tab.id)
-  // 聚焦输入框
+  applyDefaultSelection()
   setTimeout(() => {
     inputRef.value?.focus()
   }, 100)
 }
 
-// 关闭面板
 const close = () => {
   isOpen.value = false
   command.value = ''
 }
 
-// 处理键盘事件
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
-    e.stopImmediatePropagation() // 阻止事件传播到父组件，防止同时关闭其他弹窗
+    e.stopImmediatePropagation()
     close()
   } else if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
@@ -93,7 +169,6 @@ const handleKeydown = (e: KeyboardEvent) => {
   }
 }
 
-// 监听菜单命令触发的自定义事件（快捷键由 Electron 菜单 accelerator 统一处理）
 const handleToggleBatchPanel = () => {
   if (isOpen.value) {
     close()
@@ -101,6 +176,13 @@ const handleToggleBatchPanel = () => {
     open()
   }
 }
+
+const canUseTabScope = computed(() => {
+  const tabId = terminalStore.activeTabId
+  if (!tabId) return false
+  const tab = terminalStore.tabs.find(t => t.id === tabId)
+  return Boolean(tab && tab.type !== 'assistant' && terminalStore.getBatchTargetsForTab(tabId).length > 0)
+})
 
 onMounted(() => {
   window.addEventListener('toggle-batch-panel', handleToggleBatchPanel)
@@ -110,7 +192,6 @@ onUnmounted(() => {
   window.removeEventListener('toggle-batch-panel', handleToggleBatchPanel)
 })
 
-// 暴露给父组件
 defineExpose({
   open,
   close,
@@ -119,13 +200,11 @@ defineExpose({
 </script>
 
 <template>
-  <!-- 遮罩层 -->
   <Teleport to="body">
     <Transition name="fade">
       <div v-if="isOpen" class="batch-overlay" @click="close"></div>
     </Transition>
-    
-    <!-- 批量命令面板 -->
+
     <Transition name="slide-up">
       <div v-if="isOpen" class="batch-panel">
         <div class="batch-header">
@@ -137,43 +216,102 @@ defineExpose({
             <X :size="16" />
           </button>
         </div>
-        
+
         <div class="batch-content">
-          <!-- 终端选择 -->
+          <div class="scope-switch" role="tablist">
+            <button
+              type="button"
+              class="scope-btn"
+              :class="{ active: scope === 'tab' }"
+              :disabled="!canUseTabScope"
+              role="tab"
+              :aria-selected="scope === 'tab'"
+              @click="setScope('tab')"
+            >
+              {{ t('batch.scopeTab') }}
+            </button>
+            <button
+              type="button"
+              class="scope-btn"
+              :class="{ active: scope === 'all' }"
+              role="tab"
+              :aria-selected="scope === 'all'"
+              @click="setScope('all')"
+            >
+              {{ t('batch.scopeAll') }}
+            </button>
+          </div>
+
           <div class="terminal-selection">
             <div class="selection-header">
-              <span class="selection-label">{{ t('batch.selectTerminals') }}</span>
+              <span class="selection-label">{{ t('batch.selectPanes') }}</span>
               <button class="select-all-btn" @click="toggleSelectAll">
                 <span v-if="isAllSelected">{{ t('common.unselectAll') }}</span>
                 <span v-else>{{ t('common.selectAll') }}</span>
               </button>
             </div>
-            
-            <div v-if="availableTabs.length === 0" class="no-terminals">
+
+            <div v-if="visibleTargets.length === 0" class="no-terminals">
               {{ t('batch.noActiveTerminals') }}
             </div>
-            
+
             <div v-else class="terminal-list">
-              <div 
-                v-for="tab in availableTabs" 
-                :key="tab.id"
-                class="terminal-item"
-                :class="{ selected: selectedTabIds.includes(tab.id) }"
-                @click="toggleTab(tab.id)"
-              >
-                <div class="terminal-checkbox">
-                  <Check v-if="selectedTabIds.includes(tab.id)" :size="14" />
+              <template v-for="group in groupedTargets" :key="group.tabId">
+                <template v-if="shouldUseGroupLayout(group)">
+                  <div
+                    class="terminal-group"
+                    :class="{ selected: isGroupSelected(group.tabId) }"
+                    @click="toggleGroup(group.tabId)"
+                  >
+                    <div
+                      class="terminal-checkbox"
+                      :class="{ indeterminate: isGroupIndeterminate(group.tabId) }"
+                    >
+                      <Check v-if="isGroupSelected(group.tabId)" :size="14" />
+                    </div>
+                    <span class="terminal-name group-name">{{ group.tabTitle }}</span>
+                    <span class="group-count">{{ group.targets.length }}</span>
+                  </div>
+
+                  <div
+                    v-for="target in group.targets"
+                    :key="target.key"
+                    class="terminal-item nested"
+                    :class="{ selected: selectedKeys.includes(target.key) }"
+                    @click="toggleTarget(target.key)"
+                  >
+                    <div class="terminal-checkbox">
+                      <Check v-if="selectedKeys.includes(target.key)" :size="14" />
+                    </div>
+                    <span class="terminal-icon">
+                      <Terminal v-if="target.terminalType === 'local'" :size="14" />
+                      <Monitor v-else :size="14" />
+                    </span>
+                    <span class="terminal-name">{{ targetDisplayName(target, group.targets.length) }}</span>
+                  </div>
+                </template>
+
+                <div
+                  v-else
+                  v-for="target in group.targets"
+                  :key="target.key"
+                  class="terminal-item"
+                  :class="{ selected: selectedKeys.includes(target.key) }"
+                  @click="toggleTarget(target.key)"
+                >
+                  <div class="terminal-checkbox">
+                    <Check v-if="selectedKeys.includes(target.key)" :size="14" />
+                  </div>
+                  <span class="terminal-icon">
+                    <Terminal v-if="target.terminalType === 'local'" :size="14" />
+                    <Monitor v-else :size="14" />
+                  </span>
+                  <span class="terminal-name">{{ targetDisplayName(target, group.targets.length) }}</span>
                 </div>
-                <span class="terminal-icon">
-                  <Terminal v-if="tab.type === 'local'" :size="14" />
-                  <Monitor v-else :size="14" />
-                </span>
-                <span class="terminal-name">{{ tab.title }}</span>
-              </div>
+              </template>
             </div>
           </div>
-          
-          <!-- 命令输入 -->
+
           <div class="command-input-section">
             <label class="input-label">{{ t('batch.commandInput') }}</label>
             <div class="input-wrapper">
@@ -185,28 +323,28 @@ defineExpose({
                 :placeholder="t('batch.commandPlaceholder')"
                 @keydown="handleKeydown"
               />
-              <button 
-                class="send-btn" 
-                :disabled="!command.trim() || selectedTabIds.length === 0"
+              <button
+                class="send-btn"
+                :disabled="!command.trim() || selectedKeys.length === 0"
                 @click="sendCommand"
                 :title="t('batch.send')"
               >
                 <Send :size="16" />
               </button>
             </div>
-            
+
             <div class="input-options">
               <label class="checkbox-label">
                 <input type="checkbox" v-model="sendEnter" />
                 <span>{{ t('batch.sendEnter') }}</span>
               </label>
               <span class="selected-count">
-                {{ t('batch.selectedCount', { count: selectedTabIds.length }) }}
+                {{ t('batch.selectedCount', { count: selectedKeys.length }) }}
               </span>
             </div>
           </div>
         </div>
-        
+
         <div class="batch-footer">
           <span class="shortcut-hint">{{ t('batch.shortcutHint') }}</span>
         </div>
@@ -290,7 +428,43 @@ defineExpose({
   padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
+}
+
+.scope-switch {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  width: fit-content;
+}
+
+.scope-btn {
+  padding: 6px 14px;
+  font-size: 13px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.scope-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.scope-btn.active {
+  background: var(--accent-primary);
+  color: white;
+}
+
+.scope-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .terminal-selection {
@@ -337,8 +511,43 @@ defineExpose({
 
 .terminal-list {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.terminal-group {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.terminal-group:hover {
+  border-color: var(--accent-primary);
+}
+
+.terminal-group.selected {
+  border-color: var(--accent-primary);
+  background: rgba(var(--accent-rgb, 137, 180, 250), 0.1);
+}
+
+.group-name {
+  flex: 1;
+  font-weight: 600;
+}
+
+.group-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-primary);
+  padding: 2px 8px;
+  border-radius: 10px;
 }
 
 .terminal-item {
@@ -352,6 +561,10 @@ defineExpose({
   cursor: pointer;
   transition: all 0.2s ease;
   user-select: none;
+}
+
+.terminal-item.nested {
+  margin-left: 16px;
 }
 
 .terminal-item:hover {
@@ -374,9 +587,17 @@ defineExpose({
   border-radius: 4px;
   background: var(--bg-primary);
   transition: all 0.2s ease;
+  flex-shrink: 0;
 }
 
-.terminal-item.selected .terminal-checkbox {
+.terminal-checkbox.indeterminate {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  opacity: 0.6;
+}
+
+.terminal-item.selected .terminal-checkbox,
+.terminal-group.selected .terminal-checkbox {
   background: var(--accent-primary);
   border-color: var(--accent-primary);
   color: white;
@@ -395,7 +616,6 @@ defineExpose({
 .terminal-name {
   font-size: 13px;
   color: var(--text-primary);
-  max-width: 150px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -502,7 +722,6 @@ defineExpose({
   color: var(--text-muted);
 }
 
-/* 动画 */
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s ease;
@@ -524,4 +743,3 @@ defineExpose({
   opacity: 0;
 }
 </style>
-

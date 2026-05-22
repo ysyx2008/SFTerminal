@@ -271,13 +271,15 @@ export default {
   // 批量操作
   batch: {
     title: '批量操作',
-    selectTerminals: '选择要操作的终端',
-    noActiveTerminals: '没有可用的终端',
+    scopeTab: '本标签',
+    scopeAll: '全部标签',
+    selectPanes: '选择要操作的窗格',
+    noActiveTerminals: '没有可用的终端窗格',
     commandInput: '输入命令',
-    commandPlaceholder: '输入要发送到所有选中终端的命令...',
+    commandPlaceholder: '输入要发送到所有选中窗格的命令...',
     send: '发送',
     sendEnter: '发送后按回车执行',
-    selectedCount: '已选择 {count} 个终端',
-    shortcutHint: '快捷键：Ctrl+Shift+B 打开/关闭批量操作面板，Enter 发送命令'
+    selectedCount: '已选择 {count} 个窗格',
+    shortcutHint: '快捷键：Ctrl+Shift+B 打开/关闭批量操作面板，Enter 发送命令；已分屏时默认本标签，否则默认全部标签'
   },
 }
