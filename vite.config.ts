@@ -46,22 +46,24 @@ function copySpeechWorker() {
   }
 }
 
-// 复制 pdf-worker.js 到 dist-electron/services
+// 复制 pdf-worker.js / pdfjs-config.js 到 dist-electron/services
 function copyPdfWorker() {
   return {
     name: 'copy-pdf-worker',
     closeBundle() {
-      const srcPath = resolve(__dirname, 'electron/services/pdf-worker.js')
       const destDir = resolve(__dirname, 'dist-electron/services')
-      const destPath = resolve(destDir, 'pdf-worker.js')
-
-      if (existsSync(srcPath)) {
-        if (!existsSync(destDir)) {
-          mkdirSync(destDir, { recursive: true })
-        }
-        copyFileSync(srcPath, destPath)
-        console.log('[copy-pdf-worker] Copied pdf-worker.js to dist-electron')
+      const files = ['pdf-worker.js', 'pdfjs-config.mjs']
+      if (!existsSync(destDir)) {
+        mkdirSync(destDir, { recursive: true })
       }
+      for (const file of files) {
+        const srcPath = resolve(__dirname, 'electron/services', file)
+        const destPath = resolve(destDir, file)
+        if (existsSync(srcPath)) {
+          copyFileSync(srcPath, destPath)
+        }
+      }
+      console.log('[copy-pdf-worker] Copied pdf-worker.js and pdfjs-config.mjs to dist-electron')
     }
   }
 }

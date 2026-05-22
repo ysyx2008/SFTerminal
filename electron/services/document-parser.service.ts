@@ -8,6 +8,7 @@ import * as path from 'path'
 import { pathToFileURL } from 'url'
 import { app, utilityProcess, type UtilityProcess } from 'electron'
 import { createLogger } from '../utils/logger'
+import { buildPdfDocumentInit } from './pdfjs-config.mjs'
 import { t } from './document-parser.i18n'
 import type { DocumentParsePhase, DocumentParseProgress } from '@shared/types'
 
@@ -587,7 +588,7 @@ export class DocumentParserService {
   ): Promise<{ content: string; pageCount: number; totalPages: number }> {
     const pdfjs = await this.loadPdfjs()
     const data = new Uint8Array(fs.readFileSync(filePath))
-    const doc = await pdfjs.getDocument({ data, useSystemFonts: true, isEvalSupported: false }).promise
+    const doc = await pdfjs.getDocument(buildPdfDocumentInit(data)).promise
     const totalPages = doc.numPages
     const textContent: string[] = []
     let totalChars = 0
@@ -618,7 +619,7 @@ export class DocumentParserService {
     const OPS = pdfjs.OPS
     const IMAGE_OPS = new Set([OPS.paintImageXObject, OPS.paintImageMaskXObject, OPS.paintInlineImageXObject])
     const data = new Uint8Array(fs.readFileSync(filePath))
-    const doc = await pdfjs.getDocument({ data, useSystemFonts: true, isEvalSupported: false }).promise
+    const doc = await pdfjs.getDocument(buildPdfDocumentInit(data)).promise
     try {
       for (let i = 1; i <= pageCount; i++) {
         const page = await doc.getPage(i)
@@ -1261,7 +1262,7 @@ export class DocumentParserService {
     }
 
     const data = new Uint8Array(fs.readFileSync(filePath))
-    const doc = await pdfjs.getDocument({ data, useSystemFonts: true, isEvalSupported: false }).promise
+    const doc = await pdfjs.getDocument(buildPdfDocumentInit(data)).promise
     const totalPages = doc.numPages
     const images: string[] = []
     const { createCanvas } = this.napiCanvas
@@ -1293,6 +1294,8 @@ export class DocumentParserService {
       const height = Math.floor(viewport.height)
       const canvas = createCanvas(width, height)
       const ctx = canvas.getContext('2d')
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, width, height)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (page as any).render({ canvasContext: ctx, viewport, canvasFactory }).promise
       const jpegBuffer = canvas.toBuffer('image/jpeg', quality)

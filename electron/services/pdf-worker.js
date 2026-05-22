@@ -17,6 +17,13 @@
 
 const fs = require('fs')
 const { pathToFileURL } = require('url')
+let _buildPdfDocumentInit = null
+async function getBuildPdfDocumentInit() {
+  if (!_buildPdfDocumentInit) {
+    _buildPdfDocumentInit = (await import('./pdfjs-config.mjs')).buildPdfDocumentInit
+  }
+  return _buildPdfDocumentInit
+}
 
 // Polyfill browser globals needed by pdfjs-dist for coordinate transforms.
 // Must be set before pdfjs-dist import so they're available everywhere.
@@ -103,11 +110,8 @@ async function parsePdf({ filePath, maxTextLength }, sendProgress) {
   const progress = makeThrottledProgress(sendProgress)
   const pdfjs = await loadPdfjs()
   const data = new Uint8Array(fs.readFileSync(filePath))
-  const doc = await pdfjs.getDocument({
-    data,
-    useSystemFonts: true,
-    isEvalSupported: false,
-  }).promise
+  const buildPdfDocumentInit = await getBuildPdfDocumentInit()
+  const doc = await pdfjs.getDocument(buildPdfDocumentInit(data)).promise
 
   const pageCount = doc.numPages
   const textParts = []
@@ -152,7 +156,8 @@ async function pdfHasImages({ filePath, pageCount }, sendProgress) {
   const IMAGE_OPS = new Set([OPS.paintImageXObject, OPS.paintImageMaskXObject, OPS.paintInlineImageXObject])
 
   const data = new Uint8Array(fs.readFileSync(filePath))
-  const doc = await pdfjs.getDocument({ data, useSystemFonts: true, isEvalSupported: false }).promise
+  const buildPdfDocumentInit = await getBuildPdfDocumentInit()
+  const doc = await pdfjs.getDocument(buildPdfDocumentInit(data)).promise
 
   try {
     for (let i = 1; i <= pageCount; i++) {
@@ -184,7 +189,8 @@ async function renderPdfPages({ filePath, pageNumbers, dpi = 200, quality = 85 }
   const pagesToRender = pageNumbers.slice(0, MAX_RENDER_PAGES)
 
   const data = new Uint8Array(fs.readFileSync(filePath))
-  const doc = await pdfjs.getDocument({ data, useSystemFonts: true, isEvalSupported: false }).promise
+  const buildPdfDocumentInit = await getBuildPdfDocumentInit()
+  const doc = await pdfjs.getDocument(buildPdfDocumentInit(data)).promise
   const totalPages = doc.numPages
   const images = []
 

@@ -1,6 +1,6 @@
 # Document Parser Service SPEC
 
-> Last verified: 2026-05-07
+> Last verified: 2026-05-22
 
 ## 职责
 
@@ -56,6 +56,8 @@ type DocumentType = "pdf" | "docx" | "doc" | "xlsx" | "xls" | "txt" | "md" | "js
 **格式路由**：`detectFileType` → 按扩展名 → 调用对应解析器（`parsePdf` / `parseDocx` / `parseExcel` / `parseTextFile` / `parseCsv`）
 
 **图片提取**：DOCX 支持内嵌图片提取（`parseDocxWithImages`），PDF 通过 `renderPdfPages` 渲染
+
+**PDF 字体 / CMap**：`getDocument` 统一经 `pdfjs-config.mjs` 注入 `cMapUrl`、`standardFontDataUrl`，Node 环境设 `disableFontFace: true`、`useSystemFonts: false`。缺 CMap 时 CJK 页面渲染会出现方框（tofu）。
 
 ## 关键约束
 
