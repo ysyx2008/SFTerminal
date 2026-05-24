@@ -119,7 +119,19 @@ export class WeChatAdapter implements IMAdapter {
     timer: ReturnType<typeof setInterval>
     ticket: string
     leakTimer: ReturnType<typeof setTimeout>
+    /**
+     * 连续失败计数。每次 sendTyping 失败 +1，成功重置为 0。
+     * 达到阈值后触发自动 invalidate + 重启 keepalive（防"假活"）。
+     */
+    consecutiveFailures: number
+    /** 上次成功的 sendTyping 时间戳，便于诊断 */
+    lastSuccessAt: number
+    /** 正在重启中，避免并发触发多次重启 */
+    restarting: boolean
   }>()
+
+  /** 连续 sendTyping 失败次数阈值：超过则视为 keepalive 假活，自动重启。 */
+  private static readonly KEEPALIVE_FAIL_THRESHOLD = 3
 
   constructor(private config: WeChatConfig) {
     this.token = config.token || ''
@@ -190,6 +202,15 @@ export class WeChatAdapter implements IMAdapter {
           this.getConfigManager().invalidateUser(userId)
           const fresh = getContextToken(this.accountKey, userId) ?? seedToken
           await this.getConfigManager().getForUser(userId, fresh)
+          // 同步刷新 keepalive：如果当前正在 keepalive，重启它以拿到新 ticket。
+          // 否则下次 send 还可能再次撞 -2（因为旧 ticket 跟着旧 session 一起失效了）。
+          if (this.typingKeepalives.has(userId)) {
+            try {
+              await this.startTypingKeepalive(userId, fresh)
+            } catch (restartErr) {
+              log.warn(`withSendRetry: restart keepalive failed: ${String(restartErr)}`)
+            }
+          }
           continue
         }
         throw err
@@ -767,14 +788,39 @@ export class WeChatAdapter implements IMAdapter {
 
     this.stopTypingKeepalive(userId)
 
+    // fire 用 closure 内的 ticket（重启时会重建 closure 拿新 ticket），
+    // 与 typingKeepalives map 解耦，方便在 set state 之前就能调用 fire。
     const fire = () => {
       void vendoredSendTyping({
         ...this.apiOpts,
         body: { ilink_user_id: userId, typing_ticket: ticket, status: TypingStatus.TYPING },
-      }).catch((err: unknown) => log.debug(`sendTyping error (ignored): ${String(err)}`))
+      })
+        .then(() => {
+          const s = this.typingKeepalives.get(userId)
+          if (!s) return
+          s.consecutiveFailures = 0
+          s.lastSuccessAt = Date.now()
+        })
+        .catch((err: unknown) => {
+          const s = this.typingKeepalives.get(userId)
+          if (!s) return
+          s.consecutiveFailures += 1
+          const msg = String(err)
+          log.warn(
+            `sendTyping keepalive failed for ${userId} (consecutive=${s.consecutiveFailures}): ${msg}`,
+          )
+          if (s.consecutiveFailures >= WeChatAdapter.KEEPALIVE_FAIL_THRESHOLD && !s.restarting) {
+            s.restarting = true
+            log.warn(
+              `Keepalive failed ${s.consecutiveFailures} times, restarting (invalidate + getForUser) for ${userId}`,
+            )
+            void this.restartTypingKeepalive(userId).catch((restartErr: unknown) =>
+              log.warn(`restartTypingKeepalive failed: ${String(restartErr)}`),
+            )
+          }
+        })
     }
 
-    fire()
     const timer = setInterval(fire, TYPING_KEEPALIVE_MS)
     const leakTimer = setTimeout(() => {
       if (this.typingKeepalives.has(userId)) {
@@ -782,8 +828,40 @@ export class WeChatAdapter implements IMAdapter {
         this.stopTypingKeepalive(userId)
       }
     }, TYPING_KEEPALIVE_LEAK_MS)
-    this.typingKeepalives.set(userId, { timer, ticket, leakTimer })
+    // 必须先 set state 再 fire，否则 .then/.catch 里的 typingKeepalives.get 拿不到 state
+    this.typingKeepalives.set(userId, {
+      timer,
+      ticket,
+      leakTimer,
+      consecutiveFailures: 0,
+      lastSuccessAt: Date.now(),
+      restarting: false,
+    })
+    fire()
     log.debug(`Started typing keepalive for ${userId}`)
+  }
+
+  /**
+   * keepalive 自愈：连续 sendTyping 失败到阈值时调用。
+   * 1) invalidateUser（绕过 24h TTL 缓存）
+   * 2) 拿 lastConfigContextToken 作为 seed 重新 getForUser 拉新 typingTicket
+   * 3) 重启 keepalive 计时器
+   * 任何一步失败都把 state.restarting 复位，避免永远卡住；下次 fire 还会重新触发尝试。
+   */
+  private async restartTypingKeepalive(userId: string): Promise<void> {
+    const seed = this.lastConfigContextToken.get(userId)
+      ?? getContextToken(this.accountKey, userId)
+    try {
+      this.getConfigManager().invalidateUser(userId)
+      await this.getConfigManager().getForUser(userId, seed)
+    } catch (err) {
+      log.warn(`restartTypingKeepalive: refresh config failed for ${userId}: ${String(err)}`)
+      const s = this.typingKeepalives.get(userId)
+      if (s) s.restarting = false
+      return
+    }
+    // 重新 start：会先 stop 旧的，再用新 ticket 启动
+    await this.startTypingKeepalive(userId, seed)
   }
 
   /** 结束出站会话：停止 keepalive 并发送 sendtyping(CANCEL)。 */

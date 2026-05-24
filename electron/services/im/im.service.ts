@@ -1023,9 +1023,26 @@ export class IMService {
     }
 
     let wechatSendFailedNotified = false
-    const notifyWechatSendFailure = async () => {
+    /**
+     * 微信发送失败时的兜底通知。两条路：
+     *   1. 通过 adapter.sendText 发"请再发一条消息恢复对话"——在 errcode=-2 自动重试成功的场景能送达。
+     *   2. 通过 IPC 推送 'im:sendFailure' 给桌面前端——adapter 完全失联时仍能让用户感知到。
+     * 两条路都失败也没关系，至少 main 进程日志会留 warn。
+     */
+    const notifyWechatSendFailure = async (reason?: unknown) => {
       if (msg.platform !== 'wechat' || wechatSendFailedNotified) return
       wechatSendFailedNotified = true
+      log.warn('WeChat outbound send failure surfaced to user', {
+        userId: msg.userId,
+        userName: msg.userName,
+        reason: reason ? String(reason) : undefined,
+      })
+      this.sendToDesktop('im:sendFailure', {
+        platform: msg.platform,
+        userId: msg.userId,
+        userName: msg.userName,
+        reason: reason ? String(reason) : undefined,
+      })
       try {
         await adapter.sendText(replyContext, t('im.wechat_send_failed'))
       } catch { /* ignore */ }
@@ -1035,7 +1052,7 @@ export class IMService {
       await adapter.sendText(replyContext, t('im.processing'))
     } catch (err) {
       log.error('Failed to send processing notice:', err)
-      await notifyWechatSendFailure()
+      await notifyWechatSendFailure(err)
     }
 
     // 确保桌面端有 companion tab（不激活，不抢焦点）
@@ -1098,7 +1115,7 @@ export class IMService {
         lastFlushedBody = body
       } catch (err) {
         log.error('Failed to send text:', err)
-        await notifyWechatSendFailure()
+        await notifyWechatSendFailure(err)
       }
     }
 
@@ -1192,7 +1209,7 @@ export class IMService {
                   formatToolNotification(step.toolName, step.toolArgs as Record<string, unknown>))
               } catch (err) {
                 log.error('Failed to send tool notification:', err)
-                await notifyWechatSendFailure()
+                await notifyWechatSendFailure(err)
               }
             }
             enqueueSend(sendToolNotify)
@@ -1207,7 +1224,7 @@ export class IMService {
                 await adapter.sendText(replyContext, formatImDeliveryToolFailure(step))
               } catch (err) {
                 log.error('Failed to send IM delivery tool failure:', err)
-                await notifyWechatSendFailure()
+                await notifyWechatSendFailure(err)
               }
             }
             enqueueSend(sendDeliveryFailure)
@@ -1293,7 +1310,7 @@ export class IMService {
                   lastFlushedBody = body
                 } catch (err) {
                   log.error('Failed to send final result:', err)
-                  await notifyWechatSendFailure()
+                  await notifyWechatSendFailure(err)
                 }
                 return
               }
@@ -1308,14 +1325,14 @@ export class IMService {
                 await adapter.sendMarkdown(replyContext, '旗鱼', formatThinkingForIM(lastThinkingContent))
               } catch (err) {
                 log.error('Failed to send thinking fallback:', err)
-                await notifyWechatSendFailure()
+                await notifyWechatSendFailure(err)
               }
             } else {
               try {
                 await adapter.sendText(replyContext, t('im.task_complete'))
               } catch (err) {
                 log.error('Failed to send task complete:', err)
-                await notifyWechatSendFailure()
+                await notifyWechatSendFailure(err)
               }
             }
           }
@@ -1341,7 +1358,7 @@ export class IMService {
               await adapter.sendText(replyContext, t('im.task_error', { error }))
             } catch (sendErr) {
               log.error('Failed to send task error:', sendErr)
-              await notifyWechatSendFailure()
+              await notifyWechatSendFailure(sendErr)
             }
           }
           enqueueSend(finish)

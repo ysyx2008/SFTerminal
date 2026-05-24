@@ -142,6 +142,44 @@ export const TRANSFORMS = [
       );
     },
   },
+  {
+    // 上游 sendTyping 只 await apiPostFetch 但不解析响应体的 errcode/ret，导致
+    // typing_ticket 失效或 context_token 过期时 keepalive 静默失败（5 秒一次全是
+    // 错误响应但调用方一无所知），表现为"keepalive 看起来在跑实际假活"。
+    // SailFish 需要把 errcode 暴露出来，让 adapter 能感知 keepalive 失败并主动重启。
+    name: "api/api.ts: sendTyping propagates non-zero errcode from response body",
+    match: "api/api.ts",
+    apply(content) {
+      if (content.includes("/ilink/bot/sendtyping: errcode=")) return content;
+      const re =
+        /(export async function sendTyping\([\s\S]*?\): Promise<void> \{\n)\s*await (apiPostFetch\(\{[\s\S]*?label: "sendTyping",\s*\}\);)\n\}/;
+      if (!re.test(content)) {
+        console.warn(
+          "[vendor-wechat] notice: upstream sendTyping no longer matches the\n" +
+          "  'silent return' shape. Inspect api/api.ts and verify whether the\n" +
+          "  errcode-throw transform is still needed.",
+        );
+        return content;
+      }
+      return content.replace(re, (_m, header, call) =>
+        header +
+        "  const rawText = await " + call + "\n" +
+        "  const trimmed = (rawText ?? \"\").trim();\n" +
+        "  if (!trimmed) return;\n" +
+        "  try {\n" +
+        "    const data = JSON.parse(trimmed) as { errcode?: number; ret?: number; errmsg?: string };\n" +
+        "    const code = data.errcode ?? data.ret;\n" +
+        "    if (code != null && code !== 0) {\n" +
+        "      throw new Error(`/ilink/bot/sendtyping: errcode=${code} errmsg=${data.errmsg || \"unknown\"}`);\n" +
+        "    }\n" +
+        "  } catch (e) {\n" +
+        "    if (e instanceof SyntaxError) return;\n" +
+        "    throw e;\n" +
+        "  }\n" +
+        "}",
+      );
+    },
+  },
 ];
 
 export function applyTransforms(relPath, content) {
