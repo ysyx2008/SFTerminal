@@ -98,7 +98,7 @@ export function sanitizeBotAgent(raw: string | undefined): string {
   const trimmed = raw.trim();
   if (!trimmed) return DEFAULT_BOT_AGENT;
 
-  const productRe = /^[A-Za-z0-9_.\-]{1,32}\/[A-Za-z0-9_.+\-]{1,32}$/;
+  const productRe = /^[A-Za-z0-9_.-]{1,32}\/[A-Za-z0-9_.+-]{1,32}$/;
   const commentCharRe = /^[\x20-\x27\x2A-\x7E]{1,64}$/;
 
   // Tokenize on whitespace, but keep `(comment)` glued to the preceding product.

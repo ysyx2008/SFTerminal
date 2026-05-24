@@ -322,7 +322,9 @@ onMounted(async () => {
         if (text) {
           terminalStore.writeToPty(props.ptyId, props.type, text)
         }
-      } catch {}
+      } catch {
+        // clipboard readText also failed — nothing to paste
+      }
     } finally {
       setTimeout(() => { isPasting = false }, 200)
     }

@@ -176,18 +176,6 @@ function pushQuoteSnippet(meta: {
   toastSuccess(t('ai.quoteSnippetAdded'))
 }
 
-function quoteSelectionToAi() {
-  const meta = resolveQuoteMeta()
-  const trimmed = meta?.excerpt.trim() ?? ''
-  if (!trimmed || !meta) {
-    toastInfo(t('canvas.quoteToAiNeedSelection'))
-    closeCtxMenu()
-    return
-  }
-  pushQuoteSnippet(meta)
-  closeCtxMenu()
-}
-
 function applyCtxQuoteFromMenu() {
   const meta = ctxQuotePayload.value
   if (!meta?.excerpt.trim()) {

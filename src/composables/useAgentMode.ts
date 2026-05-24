@@ -1272,7 +1272,7 @@ export function useAgentMode(
     const kw = historySearchKeyword.value.trim().toLowerCase()
     const base = historyModalSummaries.value
     if (!kw) return base
-    return base.filter(s => s.userTask.toLowerCase().includes(kw))
+    return base.filter((s: AgentHistorySummary) => s.userTask.toLowerCase().includes(kw))
   })
 
   const allHistory = computed((): Array<AgentHistorySummary | AgentRecord> => {
