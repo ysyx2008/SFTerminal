@@ -1063,15 +1063,20 @@ watch(
   { immediate: true }
 )
 
-// 诞生引导：首次使用时 Agent 自动发起对话
+// 诞生引导：全局仅自动触发一次（独立助手 tab）；用户跳过未完成 personality 也不再重复
 let onboardingTriggered = false
 watch(
-  [isMounted, () => configStore.agentOnboardingCompleted],
-  async ([mounted, completed]) => {
-    if (!mounted || completed || onboardingTriggered) return
-    onboardingTriggered = true
-    // 确保 AI 配置已就绪（SetupWizard 完成后才会到这里）
+  [
+    isMounted,
+    () => configStore.agentOnboardingShown,
+    () => configStore.agentOnboardingCompleted,
+    isStandaloneAssistant,
+  ],
+  async ([mounted, shown, completed, isAssistant]) => {
+    if (!mounted || shown || completed || !isAssistant || onboardingTriggered) return
     if (!configStore.hasAiConfig) return
+    onboardingTriggered = true
+    await configStore.markAgentOnboardingShown()
     clearComposerDraft()
     await runAgent('__onboarding__')
   },

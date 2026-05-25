@@ -33,7 +33,8 @@
 | | `getAgentAvatar() / setAgentAvatar(a)` | Agent 头像 |
 | | `getAiRules() / setAiRules(arr)` | AI 行为规则列表 |
 | | `getSetupCompleted() / setSetupCompleted(b)` | 初始设置是否完成 |
-| | `getAgentOnboardingCompleted() / setAgentOnboardingCompleted(b)` | Agent 引导是否完成 |
+| | `getAgentOnboardingCompleted() / setAgentOnboardingCompleted(b)` | Agent 引导是否完成（personality_craft 等） |
+| | `getAgentOnboardingShown() / setAgentOnboardingShown(b)` | 诞生引导是否已展示（跳过也算，防新 tab 重复触发） |
 | **知识库** | `getKnowledgeSettings() / setKnowledgeSettings(s)` | 知识库全局设置 |
 | | `updateKnowledgeSettings(partial)` | 部分更新 |
 | **MCP** | `getMcpServers() / setMcpServers(arr)` | MCP 服务器列表 |

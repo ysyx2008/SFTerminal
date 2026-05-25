@@ -361,6 +361,7 @@ export const useConfigStore = defineStore('config', () => {
 
   // Agent 诞生引导
   const agentOnboardingCompleted = ref<boolean>(false)
+  const agentOnboardingShown = ref<boolean>(false)
 
   // 语言设置
   const language = ref<LocaleType>('zh-CN')
@@ -423,7 +424,7 @@ export const useConfigStore = defineStore('config', () => {
       const [
         profiles, activeId, sessions, groups,
         theme, uiThemeValue, mbti, debugMode,
-        completed, onboarded, lang, sponsorStatus,
+        completed, onboarded, onboardingShown, lang, sponsorStatus,
         sortBy, defaultOrder, rules, personalityText,
         savedAgentName, savedAgentAvatar, savedLogLevel, savedTerminalSettings,
         accounts, savedShortcuts, savedAutoVision, calAccounts, savedTtsSettings, savedWebSearchSettings,
@@ -439,6 +440,7 @@ export const useConfigStore = defineStore('config', () => {
         window.electronAPI.config.getAgentDebugMode(),
         window.electronAPI.config.getSetupCompleted(),
         window.electronAPI.config.getAgentOnboardingCompleted(),
+        window.electronAPI.config.get('agentOnboardingShown') as Promise<boolean | undefined>,
         window.electronAPI.config.getLanguage(),
         window.electronAPI.config.getSponsorStatus(),
         window.electronAPI.config.getSessionSortBy(),
@@ -472,6 +474,7 @@ export const useConfigStore = defineStore('config', () => {
       agentDebugMode.value = debugMode || false
       setupCompleted.value = completed || false
       agentOnboardingCompleted.value = onboarded || false
+      agentOnboardingShown.value = onboardingShown || onboarded || false
       if (lang) {
         language.value = lang as LocaleType
         setLocale(lang as LocaleType)
@@ -744,6 +747,13 @@ export const useConfigStore = defineStore('config', () => {
   async function setAgentDebugMode(enabled: boolean): Promise<void> {
     agentDebugMode.value = enabled
     await window.electronAPI.config.setAgentDebugMode(enabled)
+  }
+
+  /** 标记诞生引导已展示（用户未完成 personality 流程时也仅触发一次） */
+  async function markAgentOnboardingShown(): Promise<void> {
+    if (agentOnboardingShown.value) return
+    agentOnboardingShown.value = true
+    await window.electronAPI.config.set('agentOnboardingShown', true)
   }
 
   // ==================== 视觉模型 ====================
@@ -1026,6 +1036,7 @@ export const useConfigStore = defineStore('config', () => {
     autoVisionModel,
     setupCompleted,
     agentOnboardingCompleted,
+    agentOnboardingShown,
     language,
     isSponsor,
     sessionSortBy,
@@ -1056,6 +1067,7 @@ export const useConfigStore = defineStore('config', () => {
     setUiTheme,
     setUiThemeMode,
     setAgentMbti,
+    markAgentOnboardingShown,
     setAgentDebugMode,
     setAutoVisionModel,
     setSetupCompleted,

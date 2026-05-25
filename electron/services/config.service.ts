@@ -156,6 +156,8 @@ interface StoreSchema {
   knowledgeSettings: KnowledgeSettings
   setupCompleted: boolean
   agentOnboardingCompleted: boolean
+  /** 诞生引导是否已展示过（与 completed 分离：用户跳过引导时也只展示一次） */
+  agentOnboardingShown: boolean
   language: LocaleType
   sponsorStatus: boolean
   sessionSortBy: SessionSortBy
@@ -259,6 +261,7 @@ const defaultConfig: StoreSchema = {
   knowledgeSettings: DEFAULT_KNOWLEDGE_SETTINGS,
   setupCompleted: false,
   agentOnboardingCompleted: false,
+  agentOnboardingShown: false,
   language: 'zh-CN',
   sponsorStatus: false,
   sessionSortBy: 'custom',
@@ -785,6 +788,17 @@ export class ConfigService {
 
   setAgentOnboardingCompleted(completed: boolean): void {
     this.store.set('agentOnboardingCompleted', completed)
+    if (completed) {
+      this.store.set('agentOnboardingShown', true)
+    }
+  }
+
+  getAgentOnboardingShown(): boolean {
+    return this.store.get('agentOnboardingShown') || this.getAgentOnboardingCompleted()
+  }
+
+  setAgentOnboardingShown(shown: boolean): void {
+    this.store.set('agentOnboardingShown', shown)
   }
 
   // ==================== 语言设置 ====================
