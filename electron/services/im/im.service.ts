@@ -1052,8 +1052,13 @@ export class IMService {
       } catch { /* ignore */ }
     }
 
-    const useWechatStructuredProgress =
-      msg.platform === 'wechat' && typeof adapter.notifyToolProgress === 'function'
+    // 结构化工具进度（TOOL_CALL_START / TOOL_CALL_RESULT，item.type=11/12）默认关闭：
+    // 微信普通会话客户端不渲染这两种 type，消息虽然能成功送达服务端，但用户端看不见
+    // （手机上只剩"处理中"和最终回复，所有工具调用进度全丢）。继续走 TEXT 通知，
+    // 让"调用 calendar_list…"这类过程消息真正出现在聊天里。
+    // notifyToolProgress 方法本身保留在 adapter 上，留给将来 SDK / Web 客户端等支持
+    // 结构化进度的渠道按需启用。
+    const useWechatStructuredProgress = false
 
     try {
       await adapter.sendText(replyContext, t('im.processing'))
@@ -1077,6 +1082,20 @@ export class IMService {
     let lastFlushedBody = ''
     /** 最近一次见到的思考过程（剥 HTML 后的纯文本），用于 onComplete 兜底 */
     let lastThinkingContent = ''
+    /**
+     * 当前是否有 message step 处于流式态（isStreaming=true）。
+     *
+     * 关键场景：streaming-tool-executor 在 tool_call.args 收齐时就把 tool_call 定稿
+     * 并预执行，**这早于 message step 的流式结束**。如果此时 `sendToolNotify` 内
+     * 的 `await flushTextBuffer()` 把 textBuffer 里还没收尾的 partial 文本发出去，
+     * 紧接着 message step 真正定稿（比如多了个句号），就会因为 body 字面值不同而
+     * 被当成新内容再发一次，最终用户看到「我来查一下...」+「我来查一下...。」两条
+     * 几乎一样的消息。
+     *
+     * 修复策略：partial 文本不出门。flush 在 message 还在流式时直接 return，
+     * 留给 message step 定稿时的那次 flush 统一发出完整内容。
+     */
+    let messageStreaming = false
     const notifiedToolCalls = new Set<string>()
     const sentMessageStepIds = new Set<string>()
 
@@ -1108,6 +1127,9 @@ export class IMService {
      */
     const flushTextBuffer = async () => {
       if (!textBuffer) return
+      // partial 文本不能外发（详见 messageStreaming 注释）。textBuffer 不在这里清空，
+      // 等 message 定稿后的 flush 用完整内容覆盖再统一发出。
+      if (messageStreaming) return
       const content = textBuffer
       textBuffer = ''
       const { thinking, body } = splitThinkingAndBody(content)
@@ -1155,13 +1177,18 @@ export class IMService {
 
           if (step.type === 'message' && step.content) {
             if (step.isStreaming) {
+              messageStreaming = true
               textBuffer = step.content
             } else if (!sentMessageStepIds.has(step.id)) {
               sentMessageStepIds.add(step.id)
+              messageStreaming = false
               textBuffer = step.content
               if (sendProcess) {
                 enqueueSend(() => flushTextBuffer())
               }
+            } else {
+              // 同 step.id 的非流式回调（比如 finalize 阶段二次推送）也算定稿
+              messageStreaming = false
             }
           } else if (step.type === 'asking' && step.toolArgs) {
             const askKey = step.id || `asking:${step.toolArgs.question}`

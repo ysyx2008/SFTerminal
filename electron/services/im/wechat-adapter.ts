@@ -59,9 +59,6 @@ export const CONTEXT_INVALID_ERRCODE = -2
 const TYPING_KEEPALIVE_MS = 5_000
 /** 未配对 endOutboundSession 时的泄漏兜底（正常由 IMService finally 结束） */
 const TYPING_KEEPALIVE_LEAK_MS = 3 * 60 * 60 * 1_000
-/** errcode=-2 时最多重试次数（含首次），对齐长任务多段出站场景 */
-const SEND_RETRY_MAX_ATTEMPTS = 4
-const SEND_RETRY_BACKOFF_MS = 350
 
 export interface WeChatReplyContext {
   userId: string
@@ -90,10 +87,19 @@ interface QRStatusResp {
   redirect_host?: string
 }
 
-/** 从 vendored 抛出的 Error.message 中尝试解析 errcode/ret */
+/**
+ * 从 vendored 抛出的 Error.message 中解析 errcode/ret。
+ *
+ * 兼容两种格式：
+ *   1. vendored transform 后：`/ilink/bot/sendmessage: errcode=-2 errmsg=unknown`
+ *   2. 原始服务端 JSON 体（兜底）：`...{"errcode":-2,"errmsg":"unknown"}`
+ *
+ * 早期实现只匹配带引号格式，导致 vendor transform 输出的 `errcode=-2` 全部
+ * 漏判，-2 既不重试也不刷新 session，session 一旦失效就再也无法自愈。
+ */
 function extractErrcode(err: unknown): number | undefined {
   if (!(err instanceof Error)) return
-  const m = err.message.match(/"(?:errcode|ret)"\s*:\s*(-?\d+)/)
+  const m = err.message.match(/(?:"(?:errcode|ret)"\s*:\s*|\b(?:errcode|ret)\s*=\s*)(-?\d+)/)
   return m ? Number(m[1]) : undefined
 }
 
@@ -205,44 +211,58 @@ export class WeChatAdapter implements IMAdapter {
     }
   }
 
-  /** errcode=-2 时刷新 getconfig 并退避重试（官方单轮回复内 deliver 串行，长任务需更强重试） */
+  /** 当前正在执行 -2 自愈的 userId 集合，避免并发重复刷新 */
+  private recoveringContextUsers = new Set<string>()
+
+  /**
+   * 出站发送的统一封装。
+   *
+   * 设计要点（修复 -2 雪崩）：
+   * - errcode=-2 时**绝不重试同一条消息**：服务端 -2 的语义模糊，重试用新 client_id
+   *   可能导致同一条消息送达多次（与「同一消息收到两次」问题对应）。
+   * - 检测到 -2 后异步触发自愈：invalidate config + 重新 getForUser + 重启 typing
+   *   keepalive。这样**下一条**消息有机会用新 session 发出。
+   * - errcode=-14 由 guarded() 内 pauseSession 处理，这里仅透传。
+   */
   private async withSendRetry<T>(
     userId: string,
     seedToken: string | undefined,
     sendFn: (contextToken: string | undefined) => Promise<T>,
   ): Promise<T> {
-    let lastErr: unknown
-    for (let attempt = 0; attempt < SEND_RETRY_MAX_ATTEMPTS; attempt++) {
-      const contextToken = getContextToken(this.accountKey, userId) ?? seedToken
+    const contextToken = getContextToken(this.accountKey, userId) ?? seedToken
+    try {
+      return await sendFn(contextToken)
+    } catch (err) {
+      const code = extractErrcode(err)
+      if (code === CONTEXT_INVALID_ERRCODE) {
+        this.scheduleContextRecovery(userId, seedToken)
+      }
+      throw err
+    }
+  }
+
+  /**
+   * 异步刷新 context（不阻塞调用方）。
+   * 同一 userId 同时只跑一次，避免多条出站同时撞 -2 导致并发 getconfig。
+   */
+  private scheduleContextRecovery(userId: string, seedToken: string | undefined): void {
+    if (this.recoveringContextUsers.has(userId)) return
+    this.recoveringContextUsers.add(userId)
+    void (async () => {
       try {
-        return await sendFn(contextToken)
-      } catch (err) {
-        lastErr = err
-        const code = extractErrcode(err)
-        if (code === SESSION_EXPIRED_ERRCODE) {
-          throw err
-        }
-        const canRetry = code === CONTEXT_INVALID_ERRCODE && attempt < SEND_RETRY_MAX_ATTEMPTS - 1
-        if (!canRetry) {
-          throw err
-        }
-        log.warn(
-          `send failed errcode=${CONTEXT_INVALID_ERRCODE}, refreshing session for ${userId} (attempt ${attempt + 1}/${SEND_RETRY_MAX_ATTEMPTS})`,
-        )
+        log.warn(`context errcode=${CONTEXT_INVALID_ERRCODE}, refreshing session for ${userId}`)
         this.getConfigManager().invalidateUser(userId)
         const fresh = getContextToken(this.accountKey, userId) ?? seedToken
         await this.getConfigManager().getForUser(userId, fresh)
         if (this.typingKeepalives.has(userId)) {
-          try {
-            await this.startTypingKeepalive(userId, fresh)
-          } catch (restartErr) {
-            log.warn(`withSendRetry: restart keepalive failed: ${String(restartErr)}`)
-          }
+          await this.startTypingKeepalive(userId, fresh)
         }
-        await this.sleep(SEND_RETRY_BACKOFF_MS * (attempt + 1))
+      } catch (err) {
+        log.warn(`scheduleContextRecovery failed for ${userId}: ${String(err)}`)
+      } finally {
+        this.recoveringContextUsers.delete(userId)
       }
-    }
-    throw lastErr
+    })()
   }
 
   private getOutboundSession(userId: string): WeixinOutboundSession | undefined {
