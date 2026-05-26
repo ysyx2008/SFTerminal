@@ -133,7 +133,17 @@ export interface IMAdapter {
    */
   beginOutboundSession?(replyContext: any): Promise<void>
   /** 结束长出站会话（与 beginOutboundSession 配对） */
-  endOutboundSession?(replyContext: any): void
+  endOutboundSession?(replyContext: any): void | Promise<void>
+  /**
+   * 微信：发送结构化工具进度（TOOL_CALL_START/RESULT），替代纯文本刷屏。
+   * 须在 beginOutboundSession 之后、endOutboundSession 之前调用。
+   */
+  notifyToolProgress?(
+    replyContext: any,
+    event: { phase: 'start' | 'end'; toolName: string; toolCallId?: string; success?: boolean },
+  ): void
+  /** 微信：出站失败时向用户发一条纯文本提示（对齐上游 sendWeixinErrorNotice） */
+  sendErrorNotice?(replyContext: any, message: string): Promise<void>
 
   /** 消息到达回调 */
   onMessage: ((msg: IMIncomingMessage) => void) | null

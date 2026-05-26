@@ -24,6 +24,8 @@ export const FILE_LIST = [
   "messaging/send-media.ts",
   "messaging/inbound.ts",
   "messaging/markdown-filter.ts",
+  "messaging/reply-progress-sender.ts",
+  "messaging/error-notice.ts",
   "auth/login-qr.ts",
   "storage/state-dir.ts",
   "util/random.ts",

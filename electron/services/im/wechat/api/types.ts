@@ -74,6 +74,8 @@ export const MessageItemType = {
   VOICE: 3,
   FILE: 4,
   VIDEO: 5,
+  TOOL_CALL_START: 11,
+  TOOL_CALL_RESULT: 12,
 } as const;
 
 export const MessageState = {
@@ -147,6 +149,17 @@ export interface RefMessage {
   title?: string; // 摘要
 }
 
+export interface ToolCallStartItem {
+  tool_name?: string;
+  tool_call_id?: string;
+}
+
+export interface ToolCallResultItem {
+  tool_name?: string;
+  tool_call_id?: string;
+  status?: string;
+}
+
 export interface MessageItem {
   type?: number;
   create_time_ms?: number;
@@ -159,6 +172,8 @@ export interface MessageItem {
   voice_item?: VoiceItem;
   file_item?: FileItem;
   video_item?: VideoItem;
+  tool_call_start_item?: ToolCallStartItem;
+  tool_call_result_item?: ToolCallResultItem;
 }
 
 /** Unified message (proto: WeixinMessage). Replaces the old split Message + MessageContent + FullMessage. */
@@ -177,6 +192,7 @@ export interface WeixinMessage {
   message_state?: number;
   item_list?: MessageItem[];
   context_token?: string;
+  run_id?: string;
 }
 
 /** GetUpdates request: bytes fields are base64 strings in JSON. */

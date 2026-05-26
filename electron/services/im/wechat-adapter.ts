@@ -30,6 +30,9 @@ import {
 } from './wechat/api/session-guard'
 import { sendMessageWeixin, StreamingMarkdownFilter } from './wechat/messaging/send'
 import { sendWeixinMediaFile } from './wechat/messaging/send-media'
+import { sendWeixinErrorNotice } from './wechat/messaging/error-notice'
+import { WeixinOutboundSession } from './wechat/outbound-session'
+import { generateId } from './wechat/util/random'
 import {
   setContextToken,
   getContextToken,
@@ -56,6 +59,23 @@ export const CONTEXT_INVALID_ERRCODE = -2
 const TYPING_KEEPALIVE_MS = 5_000
 /** 未配对 endOutboundSession 时的泄漏兜底（正常由 IMService finally 结束） */
 const TYPING_KEEPALIVE_LEAK_MS = 3 * 60 * 60 * 1_000
+/** errcode=-2 时最多重试次数（含首次），对齐长任务多段出站场景 */
+const SEND_RETRY_MAX_ATTEMPTS = 4
+const SEND_RETRY_BACKOFF_MS = 350
+
+export interface WeChatReplyContext {
+  userId: string
+  contextToken?: string
+  /** beginOutboundSession 写入，出站 sendmessage 携带 run_id */
+  runId?: string
+}
+
+export interface WeChatToolProgressEvent {
+  phase: 'start' | 'end'
+  toolName: string
+  toolCallId?: string
+  success?: boolean
+}
 
 interface QRCodeResp {
   qrcode?: string
@@ -133,6 +153,12 @@ export class WeChatAdapter implements IMAdapter {
   /** 连续 sendTyping 失败次数阈值：超过则视为 keepalive 假活，自动重启。 */
   private static readonly KEEPALIVE_FAIL_THRESHOLD = 3
 
+  /**
+   * 进行中的出站会话（按 userId）。对齐上游 createReplyDispatcherWithTyping +
+   * WeixinReplyProgressSender 串行 deliver 链。
+   */
+  private outboundSessions = new Map<string, WeixinOutboundSession>()
+
   constructor(private config: WeChatConfig) {
     this.token = config.token || ''
     this.baseUrl = config.baseUrl || FIXED_BASE_URL
@@ -179,48 +205,52 @@ export class WeChatAdapter implements IMAdapter {
     }
   }
 
-  /** errcode=-2 时刷新 getconfig 并重试一次发送 */
+  /** errcode=-2 时刷新 getconfig 并退避重试（官方单轮回复内 deliver 串行，长任务需更强重试） */
   private async withSendRetry<T>(
     userId: string,
     seedToken: string | undefined,
     sendFn: (contextToken: string | undefined) => Promise<T>,
   ): Promise<T> {
     let lastErr: unknown
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < SEND_RETRY_MAX_ATTEMPTS; attempt++) {
       const contextToken = getContextToken(this.accountKey, userId) ?? seedToken
       try {
         return await sendFn(contextToken)
       } catch (err) {
         lastErr = err
         const code = extractErrcode(err)
-        // -14 由 guarded() 内 pauseSession；此处只透传
         if (code === SESSION_EXPIRED_ERRCODE) {
           throw err
         }
-        if (code === CONTEXT_INVALID_ERRCODE && attempt === 0) {
-          log.warn(`send failed errcode=${CONTEXT_INVALID_ERRCODE}, refreshing session for ${userId}`)
-          this.getConfigManager().invalidateUser(userId)
-          const fresh = getContextToken(this.accountKey, userId) ?? seedToken
-          await this.getConfigManager().getForUser(userId, fresh)
-          // 同步刷新 keepalive：如果当前正在 keepalive，重启它以拿到新 ticket。
-          // 否则下次 send 还可能再次撞 -2（因为旧 ticket 跟着旧 session 一起失效了）。
-          if (this.typingKeepalives.has(userId)) {
-            try {
-              await this.startTypingKeepalive(userId, fresh)
-            } catch (restartErr) {
-              log.warn(`withSendRetry: restart keepalive failed: ${String(restartErr)}`)
-            }
-          }
-          continue
+        const canRetry = code === CONTEXT_INVALID_ERRCODE && attempt < SEND_RETRY_MAX_ATTEMPTS - 1
+        if (!canRetry) {
+          throw err
         }
-        throw err
+        log.warn(
+          `send failed errcode=${CONTEXT_INVALID_ERRCODE}, refreshing session for ${userId} (attempt ${attempt + 1}/${SEND_RETRY_MAX_ATTEMPTS})`,
+        )
+        this.getConfigManager().invalidateUser(userId)
+        const fresh = getContextToken(this.accountKey, userId) ?? seedToken
+        await this.getConfigManager().getForUser(userId, fresh)
+        if (this.typingKeepalives.has(userId)) {
+          try {
+            await this.startTypingKeepalive(userId, fresh)
+          } catch (restartErr) {
+            log.warn(`withSendRetry: restart keepalive failed: ${String(restartErr)}`)
+          }
+        }
+        await this.sleep(SEND_RETRY_BACKOFF_MS * (attempt + 1))
       }
     }
     throw lastErr
   }
 
-  /** IMAdapter：Agent 长任务开始时启动 typing keepalive（对齐上游 markDispatchIdle 之前保持存活） */
-  async beginOutboundSession(replyContext: { userId: string; contextToken?: string }): Promise<void> {
+  private getOutboundSession(userId: string): WeixinOutboundSession | undefined {
+    return this.outboundSessions.get(userId)
+  }
+
+  /** IMAdapter：Agent 长任务开始时启动出站 lane + typing keepalive */
+  async beginOutboundSession(replyContext: WeChatReplyContext): Promise<void> {
     const userId = replyContext.userId
     if (!userId) return
     const contextToken = this.resolveContextToken(replyContext)
@@ -230,14 +260,67 @@ export class WeChatAdapter implements IMAdapter {
     } catch (err) {
       log.warn(`beginOutboundSession getForUser failed: ${String(err)}`)
     }
+
+    const runId = generateId('sf-wechat-run')
+    replyContext.runId = runId
+    const session = new WeixinOutboundSession({
+      userId,
+      accountKey: this.accountKey,
+      runId,
+      apiOpts: this.apiOpts,
+      resolveContextToken: () => this.resolveContextToken(replyContext),
+      sendWithRetry: (sendFn) => this.withSendRetry(userId, contextToken, sendFn),
+    })
+    this.outboundSessions.set(userId, session)
+
     await this.startTypingKeepalive(userId, contextToken)
   }
 
-  /** IMAdapter：Agent 任务结束时停止 keepalive */
-  endOutboundSession(replyContext: { userId: string }): void {
-    if (replyContext.userId) {
-      this.stopTypingKeepalive(replyContext.userId)
+  /**
+   * 结构化工具进度（TOOL_CALL_START/RESULT），替代 IM 侧纯文本工具通知刷屏。
+   * 对齐上游 WeixinReplyProgressSender + replyProgressMessages。
+   */
+  notifyToolProgress(replyContext: WeChatReplyContext, event: WeChatToolProgressEvent): void {
+    const session = this.getOutboundSession(replyContext.userId)
+    if (!session) return
+    if (event.phase === 'start') {
+      session.progressSender.notifyToolStart(event.toolName, event.toolCallId)
+    } else {
+      session.progressSender.notifyToolEnd(event.toolName, event.toolCallId, event.success)
     }
+  }
+
+  /** IMAdapter：排空出站队列并停止 keepalive */
+  async endOutboundSession(replyContext: { userId: string }): Promise<void> {
+    const userId = replyContext.userId
+    if (!userId) return
+    const session = this.outboundSessions.get(userId)
+    if (session) {
+      try {
+        await session.drain()
+      } catch (err) {
+        log.warn(`endOutboundSession drain failed for ${userId}: ${String(err)}`)
+      }
+      this.outboundSessions.delete(userId)
+    }
+    this.stopTypingKeepalive(userId)
+  }
+
+  /**
+   * 发送失败时尝试通知用户（对齐上游 sendWeixinErrorNotice，fire-and-forget）。
+   */
+  async sendErrorNotice(replyContext: WeChatReplyContext, message: string): Promise<void> {
+    const ctx = replyContext
+    const contextToken = this.resolveContextToken(ctx)
+    await sendWeixinErrorNotice({
+      to: ctx.userId,
+      contextToken,
+      message,
+      baseUrl: this.baseUrl,
+      token: this.token,
+      runId: ctx.runId,
+      errLog: (m) => log.warn(m),
+    })
   }
 
   // ==================== QR 登录 ====================
@@ -387,19 +470,25 @@ export class WeChatAdapter implements IMAdapter {
   }
 
   async sendText(replyContext: any, text: string): Promise<void> {
-    const ctx = replyContext as { userId: string; contextToken?: string }
+    const ctx = replyContext as WeChatReplyContext
     const contextToken = this.resolveContextToken(ctx)
-    // 对齐上游 process-message.ts：过滤掉微信不支持的 markdown 语法。
     const f = new StreamingMarkdownFilter()
     const filtered = f.feed(text) + f.flush()
     const truncated = filtered.length > IM_TEXT_MAX_LENGTH
       ? filtered.substring(0, IM_TEXT_MAX_LENGTH - 20) + '\n...(已截断)'
       : filtered
+
+    const session = this.getOutboundSession(ctx.userId)
+    if (session) {
+      await this.guarded(() => session.sendText(truncated))
+      return
+    }
+
     await this.withSendRetry(ctx.userId, contextToken, (token) =>
       this.guarded(() => sendMessageWeixin({
         to: ctx.userId,
         text: truncated,
-        opts: { ...this.apiOpts, contextToken: token },
+        opts: { ...this.apiOpts, contextToken: token, runId: ctx.runId },
       })),
     )
   }
@@ -409,33 +498,47 @@ export class WeChatAdapter implements IMAdapter {
   }
 
   async sendImage(replyContext: any, filePath: string): Promise<void> {
-    const ctx = replyContext as { userId: string; contextToken?: string }
+    const ctx = replyContext as WeChatReplyContext
     const contextToken = this.resolveContextToken(ctx)
     log.info(`sendImage: file=${path.basename(filePath)} userId=${ctx.userId} hasToken=${!!contextToken}`)
-    await this.withSendRetry(ctx.userId, contextToken, (token) =>
-      this.guarded(() => sendWeixinMediaFile({
-        filePath,
-        to: ctx.userId,
-        text: '',
-        opts: { ...this.apiOpts, contextToken: token },
-        cdnBaseUrl: CDN_BASE_URL,
-      })),
-    )
+    const send = () =>
+      this.withSendRetry(ctx.userId, contextToken, (token) =>
+        this.guarded(() => sendWeixinMediaFile({
+          filePath,
+          to: ctx.userId,
+          text: '',
+          opts: { ...this.apiOpts, contextToken: token, runId: ctx.runId },
+          cdnBaseUrl: CDN_BASE_URL,
+        })),
+      )
+    const session = this.getOutboundSession(ctx.userId)
+    if (session) {
+      await session.enqueue(() => send())
+      return
+    }
+    await send()
   }
 
   async sendFile(replyContext: any, filePath: string, fileName?: string): Promise<void> {
-    const ctx = replyContext as { userId: string; contextToken?: string }
+    const ctx = replyContext as WeChatReplyContext
     const contextToken = this.resolveContextToken(ctx)
     log.info(`sendFile: file=${fileName || path.basename(filePath)} userId=${ctx.userId} hasToken=${!!contextToken}`)
-    await this.withSendRetry(ctx.userId, contextToken, (token) =>
-      this.guarded(() => sendWeixinMediaFile({
-        filePath,
-        to: ctx.userId,
-        text: '',
-        opts: { ...this.apiOpts, contextToken: token },
-        cdnBaseUrl: CDN_BASE_URL,
-      })),
-    )
+    const send = () =>
+      this.withSendRetry(ctx.userId, contextToken, (token) =>
+        this.guarded(() => sendWeixinMediaFile({
+          filePath,
+          to: ctx.userId,
+          text: '',
+          opts: { ...this.apiOpts, contextToken: token, runId: ctx.runId },
+          cdnBaseUrl: CDN_BASE_URL,
+        })),
+      )
+    const session = this.getOutboundSession(ctx.userId)
+    if (session) {
+      await session.enqueue(() => send())
+      return
+    }
+    await send()
   }
 
   // ==================== 长轮询 ====================
@@ -523,7 +626,9 @@ export class WeChatAdapter implements IMAdapter {
     this.polling = false
     this.abortController?.abort()
     this.abortController = null
-    // 停止所有 typing keepalive，避免 stop() 后还在发送 sendtyping 请求。
+    for (const userId of [...this.outboundSessions.keys()]) {
+      void this.endOutboundSession({ userId })
+    }
     for (const userId of [...this.typingKeepalives.keys()]) {
       this.stopTypingKeepalive(userId)
     }

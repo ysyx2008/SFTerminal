@@ -5,9 +5,9 @@ Do not edit files listed under "Vendored files" by hand — modify
 `scripts/vendor-wechat-transforms.mjs` and re-run `node scripts/vendor-wechat.mjs`.
 
 - Package: `@tencent-weixin/openclaw-weixin`
-- Version: `2.4.1`
+- Version: `2.4.4`
 - License: MIT
-- Synced: 2026-05-10T15:12:46.129Z
+- Synced: 2026-05-26T06:39:07.467Z
 
 ## Vendored files
 
@@ -27,6 +27,8 @@ Do not edit files listed under "Vendored files" by hand — modify
 - `messaging/send-media.ts`
 - `messaging/inbound.ts`
 - `messaging/markdown-filter.ts`
+- `messaging/reply-progress-sender.ts`
+- `messaging/error-notice.ts`
 - `auth/login-qr.ts`
 - `storage/state-dir.ts`
 - `util/random.ts`

@@ -10,6 +10,11 @@ import type { UploadedFileInfo } from "../cdn/upload.js";
 
 export { StreamingMarkdownFilter } from "./markdown-filter.js";
 
+type WeixinMessageSendOptions = WeixinApiOptions & {
+  contextToken?: string;
+  runId?: string;
+};
+
 function generateClientId(): string {
   return generateId("openclaw-weixin");
 }
@@ -19,9 +24,10 @@ function buildTextMessageReq(params: {
   to: string;
   text: string;
   contextToken?: string;
+  runId?: string;
   clientId: string;
 }): SendMessageReq {
-  const { to, text, contextToken, clientId } = params;
+  const { to, text, contextToken, runId, clientId } = params;
   const item_list: MessageItem[] = text
     ? [{ type: MessageItemType.TEXT, text_item: { text } }]
     : [];
@@ -34,6 +40,7 @@ function buildTextMessageReq(params: {
       message_state: MessageState.FINISH,
       item_list: item_list.length ? item_list : undefined,
       context_token: contextToken ?? undefined,
+      run_id: runId ?? undefined,
     },
   };
 }
@@ -42,14 +49,16 @@ function buildTextMessageReq(params: {
 function buildSendMessageReq(params: {
   to: string;
   contextToken?: string;
+  runId?: string;
   payload: ReplyPayload;
   clientId: string;
 }): SendMessageReq {
-  const { to, contextToken, payload, clientId } = params;
+  const { to, contextToken, runId, payload, clientId } = params;
   return buildTextMessageReq({
     to,
     text: payload.text ?? "",
     contextToken,
+    runId,
     clientId,
   });
 }
@@ -60,7 +69,7 @@ function buildSendMessageReq(params: {
 export async function sendMessageWeixin(params: {
   to: string;
   text: string;
-  opts: WeixinApiOptions & { contextToken?: string };
+  opts: WeixinMessageSendOptions;
 }): Promise<{ messageId: string }> {
   const { to, text, opts } = params;
   if (!opts.contextToken) {
@@ -70,6 +79,7 @@ export async function sendMessageWeixin(params: {
   const req = buildSendMessageReq({
     to,
     contextToken: opts.contextToken,
+    runId: opts.runId,
     payload: { text },
     clientId,
   });
@@ -87,6 +97,47 @@ export async function sendMessageWeixin(params: {
   return { messageId: clientId };
 }
 
+/** Send a single structured MessageItem downstream. */
+export async function sendMessageItemWeixin(params: {
+  to: string;
+  item: MessageItem;
+  opts: WeixinMessageSendOptions;
+  clientId?: string;
+  label?: string;
+}): Promise<{ messageId: string }> {
+  const { to, item, opts } = params;
+  if (!opts.contextToken) {
+    logger.warn(`sendMessageItemWeixin: contextToken missing for to=${to}, sending without context`);
+  }
+  const clientId = params.clientId ?? generateClientId();
+  const req: SendMessageReq = {
+    msg: {
+      from_user_id: "",
+      to_user_id: to,
+      client_id: clientId,
+      message_type: MessageType.BOT,
+      message_state: MessageState.FINISH,
+      item_list: [item],
+      context_token: opts.contextToken ?? undefined,
+      run_id: opts.runId,
+    },
+  };
+  try {
+    await sendMessageApi({
+      baseUrl: opts.baseUrl,
+      token: opts.token,
+      timeoutMs: opts.timeoutMs,
+      body: req,
+    });
+  } catch (err) {
+    logger.error(
+      `${params.label ?? "sendMessageItemWeixin"}: failed to=${to} clientId=${clientId} err=${String(err)}`,
+    );
+    throw err;
+  }
+  return { messageId: clientId };
+}
+
 /**
  * Send one or more MessageItems (optionally preceded by a text caption) downstream.
  * Each item is sent as its own request so that item_list always has exactly one entry.
@@ -95,10 +146,11 @@ async function sendMediaItems(params: {
   to: string;
   text: string;
   mediaItem: MessageItem;
-  opts: WeixinApiOptions & { contextToken?: string };
+  opts: WeixinMessageSendOptions;
   label: string;
 }): Promise<{ messageId: string }> {
   const { to, text, mediaItem, opts, label } = params;
+  const runId = opts.runId;
 
   const items: MessageItem[] = [];
   if (text) {
@@ -118,6 +170,7 @@ async function sendMediaItems(params: {
         message_state: MessageState.FINISH,
         item_list: [item],
         context_token: opts.contextToken ?? undefined,
+        run_id: runId,
       },
     };
     try {
@@ -152,7 +205,7 @@ export async function sendImageMessageWeixin(params: {
   to: string;
   text: string;
   uploaded: UploadedFileInfo;
-  opts: WeixinApiOptions & { contextToken?: string };
+  opts: WeixinMessageSendOptions;
 }): Promise<{ messageId: string }> {
   const { to, text, uploaded, opts } = params;
   if (!opts.contextToken) {
@@ -186,7 +239,7 @@ export async function sendVideoMessageWeixin(params: {
   to: string;
   text: string;
   uploaded: UploadedFileInfo;
-  opts: WeixinApiOptions & { contextToken?: string };
+  opts: WeixinMessageSendOptions;
 }): Promise<{ messageId: string }> {
   const { to, text, uploaded, opts } = params;
   if (!opts.contextToken) {
@@ -218,7 +271,7 @@ export async function sendFileMessageWeixin(params: {
   text: string;
   fileName: string;
   uploaded: UploadedFileInfo;
-  opts: WeixinApiOptions & { contextToken?: string };
+  opts: WeixinMessageSendOptions;
 }): Promise<{ messageId: string }> {
   const { to, text, fileName, uploaded, opts } = params;
   if (!opts.contextToken) {

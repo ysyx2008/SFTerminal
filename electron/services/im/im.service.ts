@@ -1044,9 +1044,16 @@ export class IMService {
         reason: reason ? String(reason) : undefined,
       })
       try {
-        await adapter.sendText(replyContext, t('im.wechat_send_failed'))
+        if (adapter.sendErrorNotice) {
+          await adapter.sendErrorNotice(replyContext, t('im.wechat_send_failed'))
+        } else {
+          await adapter.sendText(replyContext, t('im.wechat_send_failed'))
+        }
       } catch { /* ignore */ }
     }
+
+    const useWechatStructuredProgress =
+      msg.platform === 'wechat' && typeof adapter.notifyToolProgress === 'function'
 
     try {
       await adapter.sendText(replyContext, t('im.processing'))
@@ -1194,10 +1201,11 @@ export class IMService {
             // notifiedToolCalls，后续执行器 updateStep 带上 toolArgs 会因同 step.id 被去重跳过，
             // IM 侧就只剩工具名。等非流式态（执行器认领卡片后）再通知。
             if (step.isStreaming) return
+            const progressCallId = step.toolCallId || step.id
             const toolCallKey = toolProcessNotifyKey(
               step.toolName,
               step.toolArgs as Record<string, unknown> | undefined,
-              step.id,
+              progressCallId,
             )
             if (notifiedToolCalls.has(toolCallKey)) return
             notifiedToolCalls.add(toolCallKey)
@@ -1205,14 +1213,53 @@ export class IMService {
             const sendToolNotify = async () => {
               await flushTextBuffer()
               try {
-                await adapter.sendText(replyContext,
-                  formatToolNotification(step.toolName, step.toolArgs as Record<string, unknown>))
+                if (useWechatStructuredProgress) {
+                  adapter.notifyToolProgress!(replyContext, {
+                    phase: 'start',
+                    toolName: step.toolName!,
+                    toolCallId: progressCallId,
+                  })
+                } else {
+                  await adapter.sendText(replyContext,
+                    formatToolNotification(step.toolName, step.toolArgs as Record<string, unknown>))
+                }
               } catch (err) {
                 log.error('Failed to send tool notification:', err)
                 await notifyWechatSendFailure(err)
               }
             }
             enqueueSend(sendToolNotify)
+          } else if (
+            step.type === 'tool_result' &&
+            useWechatStructuredProgress &&
+            step.toolName &&
+            !isImDeliveryToolFailure(step)
+          ) {
+            const progressCallId = step.toolCallId || step.id
+            const toolEndKey = toolProcessNotifyKey(
+              step.toolName,
+              undefined,
+              progressCallId,
+            )
+            if (!notifiedToolCalls.has(toolEndKey)) return
+            const endKey = `${toolEndKey}:end`
+            if (notifiedToolCalls.has(endKey)) return
+            notifiedToolCalls.add(endKey)
+
+            const sendToolEnd = async () => {
+              try {
+                adapter.notifyToolProgress!(replyContext, {
+                  phase: 'end',
+                  toolName: step.toolName!,
+                  toolCallId: progressCallId,
+                  success: step.success !== false,
+                })
+              } catch (err) {
+                log.error('Failed to send wechat tool end progress:', err)
+                await notifyWechatSendFailure(err)
+              }
+            }
+            enqueueSend(sendToolEnd)
           } else if (step.type === 'tool_result' && isImDeliveryToolFailure(step)) {
             // 投递类工具失败必须推到 IM（与 sendProcess 无关），避免用户只在桌面看到错误
             const resultKey = step.id || `tool_result:${step.toolCallId ?? ''}:${step.toolName}`
@@ -1377,7 +1424,11 @@ export class IMService {
       } catch { /* ignore */ }
     } finally {
       try { await sendQueue } catch { /* ignore */ }
-      adapter.endOutboundSession?.(replyContext)
+      try {
+        await Promise.resolve(adapter.endOutboundSession?.(replyContext))
+      } catch (err) {
+        log.warn('endOutboundSession failed (ignored):', err)
+      }
       this.activeSession = null
     }
   }

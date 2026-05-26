@@ -159,6 +159,13 @@ export type WeixinQrStartResult = {
 
 export type WeixinQrWaitResult = {
   connected: boolean;
+  /**
+   * Server reported `binded_redirect`: the scanned bot is already bound to
+   * this OpenClaw instance, so no new credentials are issued and existing
+   * local credentials remain valid. Callers should treat this as a successful
+   * outcome (semantically "already done") rather than a login failure.
+   */
+  alreadyConnected?: boolean;
   botToken?: string;
   accountId?: string;
   baseUrl?: string;
@@ -258,7 +265,7 @@ export async function waitForWeixinLogin(opts: {
   apiBaseUrl: string;
   botType?: string;
 }): Promise<WeixinQrWaitResult> {
-  const activeLogin = activeLogins.get(opts.sessionKey);
+  let activeLogin = activeLogins.get(opts.sessionKey);
 
   if (!activeLogin) {
     logger.warn(`waitForWeixinLogin: no active login sessionKey=${opts.sessionKey}`);
@@ -385,6 +392,7 @@ export async function waitForWeixinLogin(opts: {
           activeLogins.delete(opts.sessionKey);
           return {
             connected: false,
+            alreadyConnected: true,
             message: "已连接过此 OpenClaw，无需重复连接。",
           };
         }
