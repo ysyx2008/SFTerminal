@@ -175,6 +175,7 @@ interface SendFileResult { success: boolean; error?: string; messageId?: string 
 - **vendored 版本**：`@tencent-weixin/openclaw-weixin@2.4.4`（含 `sendMessageItemWeixin`、`run_id`、`reply-progress-sender`、`error-notice`）。
 - **微信发送失败的桌面兜底**：`IMService.notifyWechatSendFailure(reason?)` 在出站失败时调用，做两件事：(a) 经 `WeChatAdapter.sendErrorNotice`（上游 `sendWeixinErrorNotice`）尝试发"请再发一条消息恢复对话"；(b) IPC `im:sendFailure` 推送桌面前端。会话内幂等，不刷屏。
 - **IM 投递工具失败必推送到聊天**：`send_file_to_chat` / `send_image_to_chat` / `send_to_chat` 的 `tool_result` 失败会经 `IMService` 发到当前 IM 会话（与 `sendProcessMessages` 无关），避免错误仅出现在桌面 Companion 面板。
+- **工具失败补 ❌ 提示**：`sendProcessMessages` 开启时，普通工具 `tool_result.success === false` 会经 `formatToolFailureNotification` 发一条「❌ {label} 失败：{原因首行}」到 IM，让用户能与"🔧 调用 …"开始通知配对、看清成败。成功工具不刷 ✅（频繁正面反馈会推高出站密度逼近微信 -2 阈值，最终回复会体现成果）。
 
 **适配器架构**：每个平台一个 `*Adapter`，构造时从 `getEventBus()` 拿事件总线，注册到 IMService 的 `adapters: Map<IMPlatform, IMAdapter>` 中。
 

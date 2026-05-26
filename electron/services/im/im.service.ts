@@ -256,6 +256,31 @@ export function formatImDeliveryToolFailure(step: {
   return `❌ ${step.toolName ?? 'send'}`
 }
 
+/**
+ * 格式化通用工具失败通知（区别于 IM 投递失败）。
+ *
+ * 微信侧用户原本只能看到「🔧 调用 calendar_list…」一条 tool_call 通知，看不出
+ * 工具最终成败；同名工具反复失败时手机端表现为"重复刷同一句"，体感诡异。
+ * 失败时补一条「❌ xxx：原因」让用户能区分。成功的工具不发"✅"提示，避免
+ * 短时间内出站消息密度过高（微信会触发 errcode=-2）。
+ *
+ * reason 取 toolResult / content 的第一行，并剥掉首端已有的红/警告 emoji，
+ * 防止"❌ xxx：❌ ..."的重复。
+ */
+export function formatToolFailureNotification(step: {
+  toolName?: string
+  toolResult?: string
+  content?: string
+}): string {
+  const toolName = step.toolName ?? '工具'
+  const i18nKey = TOOL_I18N_MAP[toolName]
+  const label = i18nKey ? t(i18nKey) : toolName
+  const raw = (step.toolResult || step.content || '').trim()
+  const firstLine = raw.split('\n')[0]?.replace(/^[\u274c\u26a0\ufe0f\ud83d\udeab]+\s*/u, '').trim() ?? ''
+  const detail = firstLine ? `：${truncate(firstLine, 120)}` : ''
+  return `❌ ${label} 失败${detail}`
+}
+
 /** 进程通知去重键：同工具+同 path 只通知一次（避免分段 write 刷屏） */
 function toolProcessNotifyKey(
   toolName: string,
@@ -1258,35 +1283,27 @@ export class IMService {
             enqueueSend(sendToolNotify)
           } else if (
             step.type === 'tool_result' &&
-            useWechatStructuredProgress &&
+            sendProcess &&
             step.toolName &&
+            step.toolName !== 'ask_user' &&
+            step.success === false &&
             !isImDeliveryToolFailure(step)
           ) {
-            const progressCallId = step.toolCallId || step.id
-            const toolEndKey = toolProcessNotifyKey(
-              step.toolName,
-              undefined,
-              progressCallId,
-            )
-            if (!notifiedToolCalls.has(toolEndKey)) return
-            const endKey = `${toolEndKey}:end`
-            if (notifiedToolCalls.has(endKey)) return
-            notifiedToolCalls.add(endKey)
+            // 工具失败补一条 ❌ 提示，让用户能与成功调用区分开。
+            // 成功不发"✅"——用 burst 风险换不大的收益不值，最终回复会体现成果。
+            const failureKey = `tool_failure:${step.toolCallId ?? step.id}:${step.toolName}`
+            if (notifiedToolCalls.has(failureKey)) return
+            notifiedToolCalls.add(failureKey)
 
-            const sendToolEnd = async () => {
+            const sendToolFailure = async () => {
               try {
-                adapter.notifyToolProgress!(replyContext, {
-                  phase: 'end',
-                  toolName: step.toolName!,
-                  toolCallId: progressCallId,
-                  success: step.success !== false,
-                })
+                await adapter.sendText(replyContext, formatToolFailureNotification(step))
               } catch (err) {
-                log.error('Failed to send wechat tool end progress:', err)
+                log.error('Failed to send tool failure notification:', err)
                 await notifyWechatSendFailure(err)
               }
             }
-            enqueueSend(sendToolEnd)
+            enqueueSend(sendToolFailure)
           } else if (step.type === 'tool_result' && isImDeliveryToolFailure(step)) {
             // 投递类工具失败必须推到 IM（与 sendProcess 无关），避免用户只在桌面看到错误
             const resultKey = step.id || `tool_result:${step.toolCallId ?? ''}:${step.toolName}`
