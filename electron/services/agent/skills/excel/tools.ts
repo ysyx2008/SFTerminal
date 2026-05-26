@@ -43,8 +43,9 @@ export const excelTools: ToolDefinition[] = [
 3. 指定 sheet + range：返回指定单元格范围的数据
 
 **大表处理**：默认最多显示 50 行 x 20 列，超出部分显示摘要。可通过 max_rows 参数调整（上限 500）。
+**行号**：输出表格首列为 Excel 行号（1-based），填数据时请以此为准，勿假设「输出第 1 行 = 工作表第 1 行」。
 **include_styles**：设为 true 时，在有非默认样式的单元格值后附加样式标注（如 \`文本[bg:#FF9900]\`），用于检查/复刻现有格式。
-**建议**：先不指定 sheet 获取概览，再根据数据量决定读取策略。对于大表，建议分批使用 range 读取。`,
+**建议**：先不指定 sheet 获取概览，再根据数据量决定读取策略。填表前用 range 读表头区，excel_modify 时用 expected_originals 锚定行号。`,
       parameters: {
         type: 'object',
         properties: {
@@ -214,6 +215,11 @@ export const excelTools: ToolDefinition[] = [
 - 支持范围：\`"A1:C3"\` 对范围内所有单元格应用同一样式
 - 可用属性：font(字体名), fontSize, bold, italic, underline, color(十六进制), background(十六进制), align(left/center/right), verticalAlign(top/middle/bottom), wrapText, numberFormat(如"#,##0.00"), border("thin"/"medium"/"thick"/"none"/"all"或{style,color})
 
+**写前校验（推荐）**：传入 expected_originals，工具会先核对目标区域当前值是否匹配，任一不符则**整次不写入**。用于确认标题行/数据行位置，避免写错行。
+
+示例：填第 3 行前确认表头与空行
+\`expected_originals: {"A2": "序号", "A3": ""}\` + \`cells: {"A3": 1, "B3": "某公司"}\`
+
 **注意**：修改只在内存中生效，需要 excel_save 才能写入文件。`,
       parameters: {
         type: 'object',
@@ -229,6 +235,10 @@ export const excelTools: ToolDefinition[] = [
           cells: {
             type: 'object',
             description: '要修改的单元格，格式：{"A1": "值1", "B2": 123}'
+          },
+          expected_originals: {
+            type: 'object',
+            description: '写前校验：单元格当前值必须与预期一致才执行写入。格式：{"A2": "序号", "A3": ""}。空单元格用 "" 表示。与 cells 配合使用，任一不匹配则整次操作失败、零写入。'
           },
           styles: {
             type: 'object',

@@ -27,6 +27,7 @@ import {
   type ExcelCellStyle
 } from './styles'
 import { mergeXlsxFile } from './template-merge'
+import { formatCellValue, validateExpectedOriginals } from './cell-value'
 import { app } from 'electron'
 import { getKnowledgeService } from '../../../knowledge'
 import { createLogger } from '../../../../utils/logger'
@@ -513,10 +514,12 @@ async function excelRead(
   }
 
   if (rows.length > 0) {
-    markdown += '| ' + rows[0].join(' | ') + ' |\n'
-    markdown += '| ' + rows[0].map(() => '---').join(' | ') + ' |\n'
-    for (let i = 1; i < rows.length; i++) {
-      markdown += '| ' + rows[i].join(' | ') + ' |\n'
+    markdown += `> ${t('excel.read_row_hint', { start: startRow, end: actualEndRow })}\n\n`
+    markdown += '| ' + t('excel.read_row_col') + ' | ' + rows[0].join(' | ') + ' |\n'
+    markdown += '| --- | ' + rows[0].map(() => '---').join(' | ') + ' |\n'
+    for (let i = 0; i < rows.length; i++) {
+      const excelRow = startRow + i
+      markdown += '| ' + excelRow + ' | ' + rows[i].join(' | ') + ' |\n'
     }
   }
 
@@ -563,6 +566,26 @@ async function excelModify(
   }
 
   const workbook = session.workbook
+  const expectedOriginals = args.expected_originals as Record<string, unknown> | undefined
+
+  if (expectedOriginals && Object.keys(expectedOriginals).length > 0) {
+    if (!sheetName) {
+      return { success: false, output: '', error: t('excel.expected_originals_need_sheet') }
+    }
+    const worksheetForCheck = workbook.getWorksheet(sheetName)
+    const mismatches = validateExpectedOriginals(worksheetForCheck, expectedOriginals)
+    if (mismatches.length > 0) {
+      const lines = mismatches.map(m =>
+        t('excel.expected_mismatch_line', { ref: m.ref, expected: m.expected, actual: m.actual })
+      )
+      return {
+        success: false,
+        output: '',
+        error: t('excel.expected_mismatch_header') + '\n' + lines.join('\n')
+      }
+    }
+  }
+
   const results: string[] = []
   const modifiedCells = new Set<string>()
   let shiftedCells: Set<string> | undefined
@@ -2143,46 +2166,6 @@ function addCellsFromRef(set: Set<string>, ref: string, maxRow?: number, maxCol?
   if (cellMatch) {
     set.add(`${parseInt(cellMatch[2])},${columnLetterToNumber(cellMatch[1])}`)
   }
-}
-
-function formatCellValue(value: unknown): string {
-  if (value === null || value === undefined) {
-    return ''
-  }
-  if (typeof value === 'object') {
-    const obj = value as Record<string, unknown>
-    
-    // 公式单元格：优先显示计算结果，如果没有结果则显示公式
-    if ('formula' in obj) {
-      if ('result' in obj && obj.result !== undefined && obj.result !== null) {
-        // 有计算结果，显示结果
-        return formatCellValue(obj.result)
-      }
-      // 没有计算结果，显示公式（带 = 前缀提示这是公式）
-      return `=${obj.formula}`
-    }
-    
-    // 普通对象的 result 属性（如错误值）
-    if ('result' in obj) {
-      return String(obj.result)
-    }
-    
-    // 共享字符串（text 属性）
-    if ('text' in obj) {
-      return String(obj.text)
-    }
-    
-    // 富文本
-    if ('richText' in obj) {
-      return ((obj.richText as { text: string }[]) || [])
-        .map(rt => rt.text)
-        .join('')
-    }
-    
-    // 其他对象类型
-    return JSON.stringify(value)
-  }
-  return String(value).replace(/\|/g, '\\|').replace(/\n/g, ' ')
 }
 
 /**
