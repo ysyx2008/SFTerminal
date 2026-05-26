@@ -28,7 +28,8 @@ MCP（Model Context Protocol）客户端。连接和管理外部 MCP 服务器�
 | `async testConnection(config): Promise<{success, toolCount?, error?}>` | 测试服务器连接（不持久化） | 添加服务器前 |
 | `async refreshServer(serverId): Promise<void>` | 刷新服务器的工具/资源列表 | UI/手动 |
 | `isConnected(serverId): boolean` | 查询连接状态 | agent/tools |
-| `parseToolCallName(fullName): {serverId, toolName} \| null` | 解析 `serverName__toolName` 格式的工具名 | agent |
+| `parseToolCallName(fullName): {serverId, toolName} \| null` | 解析 `mcp_{serverId}_{toolName}` 格式的工具名 | agent |
+| `getToolDisplayLabel(fullName): string \| null` | 解析 UI 展示名（title → description 首行 → 格式化英文名） | agent/tools |
 
 ## 核心类型 / 接口
 
@@ -41,7 +42,7 @@ interface McpServerConfig {
 }
 interface McpTool {
   serverId: string; serverName: string; name: string
-  description: string
+  title?: string; description: string
   inputSchema: { type: "object"; properties: Record<string, unknown>; required?: string[] }
 }
 interface McpResource { serverId; serverName; uri; name; description?; mimeType? }

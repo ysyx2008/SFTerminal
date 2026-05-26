@@ -25,6 +25,7 @@ import { addProactiveContext } from '../proactive-store'
 import { getIMService } from '../../im/im.service'
 import { getConfigService } from '../../config.service'
 import { formatRemainingTime, formatTotalTime, truncateFromEnd } from './utils'
+import { formatMcpToolCallContent } from '../../mcp-tool-display'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 
 /**
@@ -406,6 +407,7 @@ export async function executeMcpTool(
   }
 
   const { serverId, toolName } = parsed
+  const displayLabel = executor.mcpService.getToolDisplayLabel(fullName) ?? toolName
 
   if (!executor.mcpService.isConnected(serverId)) {
     return { success: false, output: '', error: t('error.mcp_server_not_connected', { server: serverId }) }
@@ -413,7 +415,7 @@ export async function executeMcpTool(
 
   executor.addStep({
     type: 'tool_call',
-    content: `${t('mcp.calling_tool')}: ${toolName}`,
+    content: formatMcpToolCallContent(displayLabel),
     toolName: fullName,
     toolArgs: args,
     riskLevel: 'moderate'

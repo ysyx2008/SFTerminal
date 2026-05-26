@@ -8,6 +8,8 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { ToolDefinition } from './ai.service'
+import type { ToolDefinitionWithMeta } from './agent/tools'
+import { formatMcpToolCallContent, resolveMcpToolDisplayLabel } from './mcp-tool-display'
 import { ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
 import { app } from 'electron'
@@ -49,6 +51,8 @@ export interface McpTool {
   serverId: string
   serverName: string
   name: string
+  /** MCP 规范可选字段，人类可读标题（常为中文） */
+  title?: string
   description: string
   inputSchema: {
     type: 'object'
@@ -256,13 +260,17 @@ export class McpService extends EventEmitter {
   private async fetchTools(client: Client, config: McpServerConfig): Promise<McpTool[]> {
     try {
       const result = await client.listTools()
-      return (result.tools || []).map(tool => ({
-        serverId: config.id,
-        serverName: config.name,
-        name: tool.name,
-        description: tool.description || '',
-        inputSchema: tool.inputSchema as McpTool['inputSchema']
-      }))
+      return (result.tools || []).map(tool => {
+        const raw = tool as { title?: string; description?: string; name: string; inputSchema: unknown }
+        return {
+          serverId: config.id,
+          serverName: config.name,
+          name: raw.name,
+          title: typeof raw.title === 'string' ? raw.title : undefined,
+          description: raw.description || '',
+          inputSchema: raw.inputSchema as McpTool['inputSchema']
+        }
+      })
     } catch (error) {
       log.error(`Failed to fetch tools from ${config.name}:`, error)
       return []
@@ -402,6 +410,7 @@ export class McpService extends EventEmitter {
     
     return this.getAllTools().map(tool => {
       const generatedName = this.generateToolName(tool.serverId, tool.name)
+      const displayLabel = resolveMcpToolDisplayLabel(tool)
       
       // 保存映射关系，以便后续解析
       this.toolNameMap.set(generatedName, {
@@ -409,7 +418,7 @@ export class McpService extends EventEmitter {
         toolName: tool.name
       })
       
-      return {
+      const def: ToolDefinitionWithMeta = {
         type: 'function' as const,
         function: {
           name: generatedName,
@@ -427,8 +436,14 @@ export class McpService extends EventEmitter {
             ),
             required: tool.inputSchema.required
           }
+        },
+        _meta: {
+          streamDisplay: {
+            customRender: () => formatMcpToolCallContent(displayLabel)
+          }
         }
       }
+      return def
     })
   }
 
@@ -606,6 +621,22 @@ export class McpService extends EventEmitter {
    */
   isConnected(serverId: string): boolean {
     return this.connections.has(serverId)
+  }
+
+  /**
+   * 解析 MCP 工具的人类可读展示名（用于步骤卡片、确认框等）
+   */
+  getToolDisplayLabel(fullName: string): string | null {
+    const parsed = this.parseToolCallName(fullName)
+    if (!parsed) return null
+
+    for (const connection of this.connections.values()) {
+      const tool = connection.tools.find(
+        t => t.serverId === parsed.serverId && t.name === parsed.toolName
+      )
+      if (tool) return resolveMcpToolDisplayLabel(tool)
+    }
+    return resolveMcpToolDisplayLabel({ name: parsed.toolName })
   }
 
   /**
