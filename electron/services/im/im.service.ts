@@ -1138,6 +1138,33 @@ export class IMService {
     }
 
     /**
+     * 流式 message 期间挂起的"工具相关"通知。message 定稿后统一刷入 sendQueue。
+     *
+     * 背景：streaming-tool-executor 在 tool.args 收齐时就 finalize tool_call 并预执行，
+     * 这一切都发生在 message 流式结束**之前**，导致 tool_call onStep（以及随之而来的
+     * tool_result onStep）比 message 定稿先到。直接入队会让用户看到「工具通知 → 文字消息」
+     * 这种和桌面 UI 反过来的顺序（桌面按 steps 数组位置渲染，message 创建早所以在前）。
+     *
+     * 设计：tool_call 通知 / tool_result 失败通知统一走 enqueueAfterMessage——message
+     * 流式时挂入 pendingAfterMessage，message 定稿那一刻调 flushPendingAfterMessage
+     * 把它们成批转入 sendQueue，自然得到「message → 工具」的真实顺序。
+     */
+    const pendingAfterMessage: Array<() => Promise<void>> = []
+    const flushPendingAfterMessage = (): void => {
+      while (pendingAfterMessage.length) {
+        const fn = pendingAfterMessage.shift()!
+        enqueueSend(fn)
+      }
+    }
+    const enqueueAfterMessage = (fn: () => Promise<void>): void => {
+      if (messageStreaming) {
+        pendingAfterMessage.push(fn)
+      } else {
+        enqueueSend(fn)
+      }
+    }
+
+    /**
      * 把当前 textBuffer 作为一条消息发送出去。
      *
      * 行为约定：
@@ -1211,9 +1238,13 @@ export class IMService {
               if (sendProcess) {
                 enqueueSend(() => flushTextBuffer())
               }
+              // message 定稿那一刻，把流式期间挂起的工具通知刷入 sendQueue，
+              // 顺序自然变为「message → 工具相关」，与桌面 UI 对齐
+              flushPendingAfterMessage()
             } else {
               // 同 step.id 的非流式回调（比如 finalize 阶段二次推送）也算定稿
               messageStreaming = false
+              flushPendingAfterMessage()
             }
           } else if (step.type === 'asking' && step.toolArgs) {
             const askKey = step.id || `asking:${step.toolArgs.question}`
@@ -1259,8 +1290,13 @@ export class IMService {
               step.toolArgs as Record<string, unknown> | undefined,
               progressCallId,
             )
-            if (notifiedToolCalls.has(toolCallKey)) return
+            // callIdKey 是按 toolCallId 维度的"该 tool 已通知"标志（不带 args hash），
+            // 与下面 tool_result 失败分支共享：失败先到时会先入队一条 🔧 并 add 这个 key，
+            // 此处真正的 finalize onStep 拿到时直接跳过，避免「❌ → 🔧」乱序后再补一条 🔧。
+            const callIdKey = `tool_start_by_call_id:${progressCallId}`
+            if (notifiedToolCalls.has(toolCallKey) || notifiedToolCalls.has(callIdKey)) return
             notifiedToolCalls.add(toolCallKey)
+            notifiedToolCalls.add(callIdKey)
 
             const sendToolNotify = async () => {
               await flushTextBuffer()
@@ -1280,7 +1316,7 @@ export class IMService {
                 await notifyWechatSendFailure(err)
               }
             }
-            enqueueSend(sendToolNotify)
+            enqueueAfterMessage(sendToolNotify)
           } else if (
             step.type === 'tool_result' &&
             sendProcess &&
@@ -1289,9 +1325,35 @@ export class IMService {
             step.success === false &&
             !isImDeliveryToolFailure(step)
           ) {
+            // streaming-tool-executor 的 onToolCompleted 顺序是 ensureToolResultStep → finalizeToolCallStep，
+            // 因此对应 tool_call 的 isStreaming=false onStep 会比这条 tool_result 晚一拍到 IMService。
+            // 如果直接发 ❌，会跑到「🔧 调用 xxx」之前，观感像「失败信息凭空出现」。
+            // 这里先按 toolCallId 补一条 🔧（去重锚点同 tool_call 分支共享），让随后真正的
+            // tool_call finalize onStep 因 callIdKey 已存在而跳过自身的入队，顺序自然变为 🔧 → ❌。
+            const progressCallId = step.toolCallId ?? step.id
+            const callIdKey = `tool_start_by_call_id:${progressCallId}`
+            if (step.toolName && !notifiedToolCalls.has(callIdKey)) {
+              notifiedToolCalls.add(callIdKey)
+              const startToolName = step.toolName
+              const startToolArgs = step.toolArgs as Record<string, unknown> | undefined
+              const sendToolStartRetro = async () => {
+                await flushTextBuffer()
+                try {
+                  await adapter.sendText(
+                    replyContext,
+                    formatToolNotification(startToolName, startToolArgs),
+                  )
+                } catch (err) {
+                  log.error('Failed to send tool notification (retro):', err)
+                  await notifyWechatSendFailure(err)
+                }
+              }
+              enqueueAfterMessage(sendToolStartRetro)
+            }
+
             // 工具失败补一条 ❌ 提示，让用户能与成功调用区分开。
             // 成功不发"✅"——用 burst 风险换不大的收益不值，最终回复会体现成果。
-            const failureKey = `tool_failure:${step.toolCallId ?? step.id}:${step.toolName}`
+            const failureKey = `tool_failure:${progressCallId}:${step.toolName}`
             if (notifiedToolCalls.has(failureKey)) return
             notifiedToolCalls.add(failureKey)
 
@@ -1303,7 +1365,7 @@ export class IMService {
                 await notifyWechatSendFailure(err)
               }
             }
-            enqueueSend(sendToolFailure)
+            enqueueAfterMessage(sendToolFailure)
           } else if (step.type === 'tool_result' && isImDeliveryToolFailure(step)) {
             // 投递类工具失败必须推到 IM（与 sendProcess 无关），避免用户只在桌面看到错误
             const resultKey = step.id || `tool_result:${step.toolCallId ?? ''}:${step.toolName}`
@@ -1373,6 +1435,10 @@ export class IMService {
         },
 
         onComplete: (_runId: string, result: string) => {
+          // 兜底：若 task 在 message 流式中途结束（罕见，但 onComplete 触发时若有遗留），
+          // 把 pendingAfterMessage 刷掉，避免工具通知永远卡住
+          messageStreaming = false
+          flushPendingAfterMessage()
           const finish = async () => {
             if (sendProcess) {
               await flushTextBuffer()
@@ -1438,6 +1504,9 @@ export class IMService {
         },
 
         onError: (_runId: string, error: string) => {
+          // 同 onComplete：兜底刷掉流式期间挂起的工具通知
+          messageStreaming = false
+          flushPendingAfterMessage()
           const finish = async () => {
             if (sendProcess) {
               await flushTextBuffer()
