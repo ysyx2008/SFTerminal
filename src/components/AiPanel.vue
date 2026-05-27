@@ -37,6 +37,7 @@ import {
   toast
 } from '../composables'
 import { showConfirm } from '../composables/useConfirm'
+import { planComposerPaste, ingestComposerAttachments } from '../composables/useComposerPaste'
 import {
   getFeaturedExamples,
   shuffleExamples as shuffleExamplePool,
@@ -114,23 +115,7 @@ const selectAttachment = () => {
   input.accept = ''
   input.onchange = async () => {
     if (!input.files || input.files.length === 0) return
-    const imageFiles: File[] = []
-    const docFiles: File[] = []
-    for (const file of input.files) {
-      if (file.type.startsWith('image/')) {
-        imageFiles.push(file)
-      } else {
-        docFiles.push(file)
-      }
-    }
-    // 图片走 useImageUpload
-    if (imageFiles.length > 0) {
-      await handleDroppedImages(imageFiles)
-    }
-    // 文档走 useDocumentUpload
-    if (docFiles.length > 0) {
-      await handleDroppedFiles(docFiles)
-    }
+    await ingestAttachmentFiles(input.files)
   }
   input.click()
 }
@@ -398,7 +383,6 @@ const {
 const {
   pendingImages,
   isProcessingImage,
-  handlePasteImages,
   handleDroppedImages,
   removeImage,
   clearImages,
@@ -407,6 +391,13 @@ const {
 } = useImageUpload()
 
 const hasImagesComputed = computed(() => hasImages())
+
+/** 附件分流：图片 → 视觉区，其余 → 文档解析（粘贴 / 拖放 / 选择附件共用） */
+const ingestAttachmentFiles = (files: FileList | File[]) =>
+  ingestComposerAttachments(files, {
+    ingestImages: handleDroppedImages,
+    ingestDocuments: handleDroppedFiles
+  })
 
 // Markdown 渲染
 const {
@@ -969,19 +960,12 @@ const guardVisionBeforeSend = async (): Promise<boolean> => {
   return proceed
 }
 
-// 处理粘贴：剪贴板文件（与拖放一致：先图片再文档）；否则仅处理剪贴板里的位图图片
-// 注意：handler 是 async，但必须在首个 await 之前同步 preventDefault，否则浏览器已把默认内容（如文件名）插入输入框
+// 粘贴：文本优先（有纯文本则默认贴字）；纯图/纯文件才拦截并走附件管道
 const handlePaste = async (event: ClipboardEvent) => {
-  const files = event.clipboardData?.files
-  if (files && files.length > 0) {
-    event.preventDefault()
-    const imageCount = await handleDroppedImages(files)
-    if (imageCount < files.length) {
-      await handleDroppedFiles(files)
-    }
-    return
-  }
-  await handlePasteImages(event)
+  const plan = planComposerPaste(event)
+  if (plan.kind === 'default') return
+  event.preventDefault()
+  await ingestAttachmentFiles(plan.files)
 }
 
 const clearTabError = () => {
@@ -1410,12 +1394,7 @@ const handleDrop = async (e: DragEvent) => {
   
   const files = e.dataTransfer?.files
   if (files && files.length > 0) {
-    // 先处理图片文件
-    const imageCount = await handleDroppedImages(files)
-    // 剩余的非图片文件交给文档处理
-    if (imageCount < files.length) {
-      await handleDroppedFiles(files)
-    }
+    await ingestAttachmentFiles(files)
   }
 }
 

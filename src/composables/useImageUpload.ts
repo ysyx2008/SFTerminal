@@ -1,6 +1,6 @@
 /**
  * 图片上传 composable
- * 处理图片粘贴、拖拽、选择和管理
+ * 处理图片拖拽、选择和管理（粘贴分类见 useComposerPaste）
  * 将图片转为 base64 data URL 发送给 AI 用于视觉理解
  */
 import { ref, type Ref } from 'vue'
@@ -101,39 +101,6 @@ export function useImageUpload() {
   }
   
   /**
-   * 处理粘贴事件中的图片
-   * 返回 true 如果处理了图片（阻止默认粘贴行为）
-   */
-  const handlePasteImages = async (event: ClipboardEvent): Promise<boolean> => {
-    const items = event.clipboardData?.items
-    if (!items) return false
-    
-    let hasImage = false
-    const imageFiles: File[] = []
-    
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        const file = item.getAsFile()
-        if (file) {
-          imageFiles.push(file)
-          hasImage = true
-        }
-      }
-    }
-    
-    if (!hasImage) return false
-
-    // 须在首个 await 之前调用，否则默认粘贴会把占位文本写入输入框
-    event.preventDefault()
-
-    for (const file of imageFiles) {
-      await addImageFile(file)
-    }
-
-    return true
-  }
-  
-  /**
    * 处理拖拽的文件中的图片
    * 返回处理的图片数量
    */
@@ -208,7 +175,6 @@ export function useImageUpload() {
     pendingImages,
     isProcessingImage,
     addImageFile,
-    handlePasteImages,
     handleDroppedImages,
     removeImage,
     clearImages,
