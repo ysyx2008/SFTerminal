@@ -14,7 +14,7 @@
 
 ## 读取行号
 
-`excel_read` 指定 `sheet` 时，Markdown 表格首列为 **Excel 行号**（1-based），避免 Agent 把「输出第 1 行」当成「工作表第 1 行」。
+`excel_read` 指定 `sheet` 时，Markdown 表格首列为 **Excel 行号**（1-based），列标题为 **A/B/C…**（读取范围对应列字母）；范围内每一行（含表头行）各出现一次，避免把 `rows[0]` 既当表头又当数据行。
 
 ## 主要文件
 

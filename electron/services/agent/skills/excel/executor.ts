@@ -28,6 +28,7 @@ import {
 } from './styles'
 import { mergeXlsxFile } from './template-merge'
 import { formatCellValue, validateExpectedOriginals } from './cell-value'
+import { buildReadRangeMarkdownTable } from './read-markdown'
 import { app } from 'electron'
 import { getKnowledgeService } from '../../../knowledge'
 import { createLogger } from '../../../../utils/logger'
@@ -514,13 +515,17 @@ async function excelRead(
   }
 
   if (rows.length > 0) {
-    markdown += `> ${t('excel.read_row_hint', { start: startRow, end: actualEndRow })}\n\n`
-    markdown += '| ' + t('excel.read_row_col') + ' | ' + rows[0].join(' | ') + ' |\n'
-    markdown += '| --- | ' + rows[0].map(() => '---').join(' | ') + ' |\n'
-    for (let i = 0; i < rows.length; i++) {
-      const excelRow = startRow + i
-      markdown += '| ' + excelRow + ' | ' + rows[i].join(' | ') + ' |\n'
+    const colHeaders: string[] = []
+    for (let c = startCol; c <= actualEndCol; c++) {
+      colHeaders.push(numberToColumnLetter(c))
     }
+    markdown += buildReadRangeMarkdownTable(
+      startRow,
+      colHeaders,
+      rows,
+      t('excel.read_row_col'),
+      t('excel.read_row_hint', { start: startRow, end: actualEndRow })
+    )
   }
 
   const previewHtml = generateExcelPreviewHtml(filePath, sheetName)
