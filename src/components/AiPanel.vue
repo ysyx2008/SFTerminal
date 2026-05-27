@@ -193,12 +193,14 @@ const markFooterAnimated = (groupId: string | undefined) => {
 
 /**
  * group 操作菜单（含「另开一聊」）的可见性条件：
- *   - group 已完成（成功 / 失败 / 中断都允许）
+ *   - group 已完成（成功 / 失败 / 中断都允许；进行中的当前 task 无 finalResult，自然不显示）
  *   - 非 proactive / 非 onboarding（这两类不是用户发起的真实对话）
- *   - Agent 不在运行中（运行中状态不一致，不允许 fork）
  *   - 当前 tab 不是「加载历史」状态：加载历史时后端 Agent in-memory 没有会话数据，
  *     fork 必然失败；且 LLM provider 的 prompt cache 也大概率早已过期（5 分钟 TTL），
  *     即便绕路从 HistoryService 拉取也无性能收益。直接不显示菜单更诚实
+ *
+ * 注：Agent 运行中仍可对已完成 group 分叉（untilTaskCount 截断），与主对话并行探索。
+ * footer 高度由 min-height 锁定，按钮不因运行状态显隐引起列表重排（见 agent/SPEC.md）。
  */
 const isLoadedFromHistory = computed(() => {
   const tab = terminalStore.tabs.find(t => t.id === currentTabId.value)
@@ -209,7 +211,6 @@ const canShowGroupMenu = (group: import('../composables').AgentTaskGroup | undef
   if (!group) return false
   if (!group.finalResult) return false
   if (group.isProactive || group.isOnboarding) return false
-  if (isAgentRunning.value) return false
   if (isLoadedFromHistory.value) return false
   return true
 }

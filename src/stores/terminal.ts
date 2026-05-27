@@ -606,11 +606,6 @@ export const useTerminalStore = defineStore('terminal', () => {
       log.warn(`forkToAssistantTab: source tab not found: ${sourceTabId}`)
       return null
     }
-    if (sourceTab.agentState?.isRunning) {
-      log.warn(`forkToAssistantTab: source agent is running, refuse to fork`)
-      return null
-    }
-
     // 助手 tab 用 agentId 作为 agentKey；终端 tab 用 tabId 作为 agentKey
     const sourceAgentKey = sourceTab.type === 'assistant'
       ? (sourceTab.agentId || sourceTabId)

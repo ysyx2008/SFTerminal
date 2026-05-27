@@ -258,8 +258,9 @@ export class AgentService {
       log.warn(`forkAgent: source agent not found: ${opts.sourceAgentKey}`)
       return null
     }
-    if (sourceAgent.isRunning()) {
-      log.warn(`forkAgent: source agent is running, refuse to fork`)
+    // 运行中仅允许按 task 截断分叉（已完成段落）；全量 fork 会带上进行中的半截 task
+    if (sourceAgent.isRunning() && opts.untilTaskCount === undefined) {
+      log.warn(`forkAgent: source agent is running, refuse full fork`)
       return null
     }
     const historyService = this.services.historyService

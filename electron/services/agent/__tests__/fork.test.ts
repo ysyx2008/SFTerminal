@@ -84,6 +84,14 @@ class TestAgent extends Agent {
   exposePreviousRunMessages() {
     return (this as any)._previousRunMessages as AiMessage[] | undefined
   }
+
+  setRunning(running: boolean): void {
+    if (running) {
+      ;(this as any).currentRun = { isRunning: true }
+    } else {
+      ;(this as any).currentRun = undefined
+    }
+  }
 }
 
 function createMockServices(overrides?: Partial<AgentServices>): AgentServices {
@@ -462,6 +470,62 @@ describe('AgentService.forkAgent', () => {
 
     expect(savedRecords[0].messages?.length).toBe(4)
     expect(savedRecords[0].steps.length).toBe(6)
+    expect(savedRecords[0].finalResult).toBe('Task 2 answer')
+  })
+
+  it('returns null on full fork while source agent is running', async () => {
+    const ai = { chatWithToolsStream: vi.fn(), abort: vi.fn() } as any
+    const pty = { onData: vi.fn().mockReturnValue(() => {}), write: vi.fn() } as any
+    const service = new AgentService(ai, pty)
+
+    const historyService = {
+      saveAgentRecord: vi.fn(),
+      getAgentRecordById: vi.fn().mockReturnValue(undefined),
+      getRecentAgentRecords: vi.fn().mockReturnValue([])
+    }
+    service.setHistoryService(historyService as any)
+
+    const src = service.createAssistantAgent('src') as unknown as TestAgent
+    Object.setPrototypeOf(src, TestAgent.prototype)
+    const { messages, steps } = buildThreeTaskSession()
+    src.injectSession({ sessionId: 'src-session', sessionMessages: messages, sessionSteps: steps })
+    src.setRunning(true)
+
+    const result = await service.forkAgent({
+      sourceAgentKey: 'src',
+      newAgentId: 'new-id'
+    })
+    expect(result).toBeNull()
+    expect(historyService.saveAgentRecord).not.toHaveBeenCalled()
+  })
+
+  it('allows truncated fork while source agent is running', async () => {
+    const ai = { chatWithToolsStream: vi.fn(), abort: vi.fn() } as any
+    const pty = { onData: vi.fn().mockReturnValue(() => {}), write: vi.fn() } as any
+    const service = new AgentService(ai, pty)
+
+    const savedRecords: any[] = []
+    const historyService = {
+      saveAgentRecord: vi.fn((r) => { savedRecords.push(r) }),
+      getAgentRecordById: vi.fn().mockReturnValue(undefined),
+      getRecentAgentRecords: vi.fn().mockReturnValue([])
+    }
+    service.setHistoryService(historyService as any)
+
+    const src = service.createAssistantAgent('src') as unknown as TestAgent
+    Object.setPrototypeOf(src, TestAgent.prototype)
+    const { messages, steps } = buildThreeTaskSession()
+    src.injectSession({ sessionId: 'src-session', sessionMessages: messages, sessionSteps: steps })
+    src.setRunning(true)
+
+    const result = await service.forkAgent({
+      sourceAgentKey: 'src',
+      newAgentId: 'new-id',
+      untilTaskCount: 2
+    })
+
+    expect(result).not.toBeNull()
+    expect(savedRecords[0].messages?.length).toBe(4)
     expect(savedRecords[0].finalResult).toBe('Task 2 answer')
   })
 })
