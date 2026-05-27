@@ -168,7 +168,9 @@ interface StoreSchema {
   agentName: string             // AI 名字（默认旗鱼，用户可自定义）
   agentAvatar: string           // AI 头像（data URL，用户可自定义）
   autoCheckUpdate: boolean   // 启动时自动检查更新
-  autoDownloadUpdate: boolean // 发现新版本后自动下载并在退出时静默安装
+  autoDownloadUpdate: boolean // 发现新版本后自动下载（Win/Linux）
+  installUpdateOnQuit: boolean // 已下载更新在退出应用时安装（「退出时安装」）
+  dismissedUpdateVersion?: string // 关闭「退出时安装」时，用户选择「稍后提醒」跳过的版本号
   gatewayAutoStart: boolean  // Gateway 远程访问自动启动
   gatewayPort: number        // Gateway 端口
   gatewayHost: string        // Gateway 监听地址
@@ -272,7 +274,8 @@ const defaultConfig: StoreSchema = {
   agentName: '',
   agentAvatar: '',
   autoCheckUpdate: true,
-  autoDownloadUpdate: false,
+  autoDownloadUpdate: true,
+  installUpdateOnQuit: true,
   gatewayAutoStart: false,
   gatewayPort: 3721,
   gatewayHost: '0.0.0.0',

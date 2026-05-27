@@ -168,6 +168,14 @@ interface Window {
         success: boolean
         error?: string
       }>
+      deferInstall: () => Promise<{
+        success: boolean
+        error?: string
+      }>
+      isInstallDeferred: () => Promise<{
+        deferred: boolean
+        version?: string
+      }>
       getStatus: () => Promise<UpdateStatusInfo>
       onStatusChanged: (callback: (status: UpdateStatusInfo) => void) => () => void
     }

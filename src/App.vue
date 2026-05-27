@@ -28,6 +28,7 @@ import type { SftpConnectionConfig } from './composables/useSftp'
 import { uiThemes } from './themes/ui-themes'
 import { createLogger } from './utils/logger'
 import { matchAccelerator } from './utils/shortcut'
+import { useAppUpdaterPrompts } from './composables/useAppUpdaterPrompts'
 
 const log = createLogger('App')
 
@@ -67,6 +68,7 @@ const steamAppTitle = computed(() => {
 const appVersion = ref('')
 const appTitleText = computed(() => isSteamBuild ? steamAppTitle.value : t('app.title'))
 const { show: showConfirmDialog, options: confirmOptions, handleConfirm, handleCancel, handleNeutral, handleClose } = useConfirm()
+const { start: startUpdaterPrompts, stop: stopUpdaterPrompts } = useAppUpdaterPrompts()
 
 const showSidebar = ref(false)
 const showSettings = ref(false)
@@ -674,6 +676,9 @@ onMounted(async () => {
 
   // 已完成设置，正常启动
   await initializeApp()
+
+  // 全局更新提醒（Toast + 下载完成确认弹窗）
+  startUpdaterPrompts()
 })
 
 // 初始化应用（正常启动流程）
@@ -786,6 +791,7 @@ const onSetupComplete = async () => {
   showSetupWizard.value = false
   // 向导完成后初始化应用并打开 AI 面板（触发诞生对话）
   await initializeApp()
+  startUpdaterPrompts()
   ensureAiPanel()
 }
 
@@ -963,6 +969,7 @@ onUnmounted(() => {
   cleanupAgentCompleteForProactive?.()
   cleanupAgentErrorForTabAttention?.()
   cleanupFullScreenChange?.()
+  stopUpdaterPrompts()
 })
 </script>
 

@@ -377,6 +377,16 @@ const electronAPI = {
       error?: string
     }>,
 
+    deferInstall: () => ipcRenderer.invoke('updater:deferInstall') as Promise<{
+      success: boolean
+      error?: string
+    }>,
+
+    isInstallDeferred: () => ipcRenderer.invoke('updater:isInstallDeferred') as Promise<{
+      deferred: boolean
+      version?: string
+    }>,
+
     getStatus: () => ipcRenderer.invoke('updater:getStatus') as Promise<UpdateStatus>,
 
     onStatusChanged: (callback: (status: UpdateStatus) => void) => {

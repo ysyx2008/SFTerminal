@@ -2089,7 +2089,7 @@ ipcMain.on('window:popupAppMenu', (_event, position?: { x: number; y: number }) 
 
 // 配置自动更新
 autoUpdater.autoDownload = false
-autoUpdater.autoInstallOnAppQuit = true
+autoUpdater.autoInstallOnAppQuit = false
 
 // 更新源定义
 type UpdateSource = 'github' | 'oss'
@@ -2170,6 +2170,18 @@ function applyUpdateSource(source: UpdateSource) {
 
 let currentUpdateSource: UpdateSource = 'github'
 let lastSpeedTestResult: { recommended: UpdateSource; latency: Record<UpdateSource, number> } | null = null
+/** 用户选择「退出时安装」后为 true，退出时由 electron-updater 安装已下载更新 */
+let pendingInstallOnQuit = false
+
+function syncAutoInstallOnAppQuit(): void {
+  const installOnQuitEnabled = configService?.get('installUpdateOnQuit') ?? true
+  autoUpdater.autoInstallOnAppQuit = pendingInstallOnQuit && installOnQuitEnabled
+}
+
+function resetPendingInstallOnQuit(): void {
+  pendingInstallOnQuit = false
+  syncAutoInstallOnAppQuit()
+}
 
 // 更新状态
 let updateStatus: {
@@ -2204,6 +2216,7 @@ autoUpdater.on('checking-for-update', () => {
 
 autoUpdater.on('update-available', (info) => {
   log.info('AutoUpdater: 发现新版本:', info.version)
+  resetPendingInstallOnQuit()
   updateStatus = {
     status: 'available',
     info: {
@@ -2256,6 +2269,7 @@ autoUpdater.on('download-progress', (progress) => {
 
 autoUpdater.on('update-downloaded', (info) => {
   log.info('AutoUpdater: 更新下载完成:', info.version)
+  resetPendingInstallOnQuit()
   updateStatus = {
     status: 'downloaded',
     info: {
@@ -2406,17 +2420,35 @@ ipcMain.handle('updater:downloadUpdate', async (_event, preferredSource?: Update
 // 安装更新并重启
 ipcMain.handle('updater:quitAndInstall', async () => {
   try {
+    resetPendingInstallOnQuit()
     // 安装前备份用户数据
     const version = app.getVersion()
     createBackup(app.getPath('userData'), `pre-update-v${version}`)
 
-    autoUpdater.quitAndInstall(true, true)
+    // 使用非静默安装，让系统安装器显示可见进度
+    autoUpdater.quitAndInstall(false, true)
     return { success: true }
   } catch (error) {
     log.error('AutoUpdater: 安装更新失败:', error)
     return { success: false, error: error instanceof Error ? error.message : '安装更新失败' }
   }
 })
+
+// 用户选择「退出时安装」：退出应用时再安装，不打断当前操作
+ipcMain.handle('updater:deferInstall', async () => {
+  if (updateStatus.status !== 'downloaded') {
+    return { success: false, error: 'No downloaded update' }
+  }
+  pendingInstallOnQuit = true
+  syncAutoInstallOnAppQuit()
+  log.info('AutoUpdater: 已安排在退出时安装', updateStatus.info?.version)
+  return { success: true }
+})
+
+ipcMain.handle('updater:isInstallDeferred', async () => ({
+  deferred: pendingInstallOnQuit,
+  version: updateStatus.info?.version,
+}))
 
 // 获取当前更新状态
 ipcMain.handle('updater:getStatus', async () => {
@@ -2431,6 +2463,9 @@ ipcMain.handle('config:get', async (_event, key: string) => {
 ipcMain.handle('config:set', async (_event, key: string, value: unknown) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   configService.set(key as any, value as any)
+  if (key === 'installUpdateOnQuit' && value === false) {
+    syncAutoInstallOnAppQuit()
+  }
 })
 
 ipcMain.handle('config:getAll', async () => {

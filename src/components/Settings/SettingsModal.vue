@@ -48,7 +48,8 @@ const showConfirmDialog = ref(false)
 // 更新相关状态
 const updateStatus = ref<UpdateStatusInfo>({ status: 'idle' })
 const autoCheckUpdate = ref(true)
-const autoDownloadUpdate = ref(false)
+const autoDownloadUpdate = ref(true)
+const installUpdateOnQuit = ref(true)
 const showUnlockAnimation = ref(false)
 const showBadgeWithAnimation = ref(false)
 const aboutContentRef = ref<HTMLElement | null>(null)
@@ -322,15 +323,31 @@ const toggleAutoCheckUpdate = async (event: Event) => {
   await window.electronAPI.config.set('autoCheckUpdate', checked)
   if (!checked) {
     autoDownloadUpdate.value = false
+    installUpdateOnQuit.value = false
     await window.electronAPI.config.set('autoDownloadUpdate', false)
+    await window.electronAPI.config.set('installUpdateOnQuit', false)
   }
 }
 
-// 切换自动下载更新（静默安装）
+// 切换自动下载更新
 const toggleAutoDownloadUpdate = async (event: Event) => {
   const checked = (event.target as HTMLInputElement).checked
   autoDownloadUpdate.value = checked
   await window.electronAPI.config.set('autoDownloadUpdate', checked)
+  if (!checked) {
+    installUpdateOnQuit.value = false
+    await window.electronAPI.config.set('installUpdateOnQuit', false)
+  } else if (installUpdateOnQuit.value === false) {
+    installUpdateOnQuit.value = true
+    await window.electronAPI.config.set('installUpdateOnQuit', true)
+  }
+}
+
+// 退出应用时安装已下载的更新
+const toggleInstallUpdateOnQuit = async (event: Event) => {
+  const checked = (event.target as HTMLInputElement).checked
+  installUpdateOnQuit.value = checked
+  await window.electronAPI.config.set('installUpdateOnQuit', checked)
 }
 
 // 格式化文件大小
@@ -399,7 +416,10 @@ onMounted(async () => {
   autoCheckUpdate.value = savedAutoCheck ?? true
   
   const savedAutoDownload = await window.electronAPI.config.get('autoDownloadUpdate') as boolean | undefined
-  autoDownloadUpdate.value = savedAutoDownload ?? false
+  autoDownloadUpdate.value = savedAutoDownload ?? true
+
+  const savedInstallOnQuit = await window.electronAPI.config.get('installUpdateOnQuit') as boolean | undefined
+  installUpdateOnQuit.value = savedInstallOnQuit ?? true
   
   // 聚焦到模态框容器使其可接收键盘事件
   await nextTick()
@@ -707,7 +727,14 @@ const onQrImageError = (event: Event) => {
                   <input type="checkbox" :checked="autoDownloadUpdate" @change="toggleAutoDownloadUpdate" />
                   <span>{{ t('about.autoDownloadUpdate') }}</span>
                 </label>
+                <label v-if="autoCheckUpdate && autoDownloadUpdate && !isMac" class="auto-check-toggle update-nested-toggle">
+                  <input type="checkbox" :checked="installUpdateOnQuit" @change="toggleInstallUpdateOnQuit" />
+                  <span>{{ t('about.installUpdateOnQuit') }}</span>
+                </label>
               </div>
+              <p v-if="autoCheckUpdate && autoDownloadUpdate && !isMac && installUpdateOnQuit" class="update-option-hint">
+                {{ t('about.installUpdateOnQuitHint') }}
+              </p>
             </div>
             
             <p v-if="!isSteamBuild" class="description">
@@ -1003,6 +1030,19 @@ const onQrImageError = (event: Event) => {
   gap: 8px 20px;
   margin-top: 4px;
   width: 100%;
+}
+
+.update-nested-toggle {
+  padding-left: 18px;
+}
+
+.update-option-hint {
+  margin: 0;
+  max-width: 360px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-align: center;
 }
 
 .auto-check-toggle {
