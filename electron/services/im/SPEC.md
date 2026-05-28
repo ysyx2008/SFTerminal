@@ -1,6 +1,6 @@
 # IM Service SPEC
 
-> Last verified: 2026-05-26
+> Last verified: 2026-05-28
 
 ## 职责
 
@@ -163,17 +163,14 @@ interface SendFileResult { success: boolean; error?: string; messageId?: string 
 - `startPolling` 启动时：先立即 `setConnected(true)` + 启动 `pollLoop`，再后台并发发 `notifyStart`（不阻塞接收）。之前 `notifyStart` 串行阻塞时，若请求挂起会导致 `pollLoop` 迟迟不启动，造成"重启后收不到消息"。
 - session 过期（`errcode=-14`）：`pauseSession` 暂停 1h 后自动 `continue` 继续轮询（自愈），不再 `break` 导致 loop 永久停止。
 - `getUpdatesBuf` 游标持久化到 `~/.openclaw/openclaw-weixin/accounts/<accountKey>.sync.json`，进程重启后恢复，避免漏消息。
-- `context_token` 失效 (`errcode=-2`) 自愈（出站侧）：`WeChatAdapter.withSendRetry` 捕捉到 `errcode=-2` 时**不重发当前消息**（避免 -2 语义模糊导致重复送达），直接抛错让 `IMService` 走 `notifyWechatSendFailure` 兜底；同时异步触发 `scheduleContextRecovery`——`invalidateUser` 清缓存、`getForUser` 用最新 token 重新注册服务端 session、重启 typing keepalive 拉新 `typing_ticket`，为**下一条**出站留出恢复窗口。同一 userId 的 recovery 由 `recoveringContextUsers` 去重。
-- `context_token` 失效 (`errcode=-2`) 自愈（入站侧）：每条 inbound 消息携带新 `context_token`；若与上次不同，`handleMessage` 立即 `invalidateUser` + `await getForUser` 重新注册（对齐上游 `monitor.ts`），避免下次出站撞 `-2`。
-- **`sendTyping` 错误暴露**：通过 `scripts/vendor-wechat-transforms.mjs` 给 vendored `sendTyping` 加 errcode 解析，把响应体的 `errcode/ret != 0` 转成抛错，避免 keepalive "假活"（5 秒一次全是错误响应但调用方一无所知）。
-- **`typing keepalive` 自愈**：`startTypingKeepalive` 的 fire 闭包追踪 `consecutiveFailures`，每次失败计数 +1、成功重置 0；连续失败到 `KEEPALIVE_FAIL_THRESHOLD`（=3）时自动调用 `restartTypingKeepalive`——执行 `invalidateUser` + `getForUser` 拿新 ticket 后重启 keepalive，治标 `context_token`/`typing_ticket` 中途失效场景。
-- **`typing keepalive` 生命周期**：对齐上游 `createReplyDispatcherWithTyping`——`IMService.runAgentTask` 在任务开始时调 `beginOutboundSession`，`finally` **await** `endOutboundSession`；**不在**每条 `sendText` 时停止 keepalive（否则长任务约 2–3 分钟后出站失败）。同时设有 `TYPING_KEEPALIVE_LEAK_MS`（3h）泄漏保护，避免遗漏 `endOutboundSession` 时永久挂着。
-- **出站串行 lane + `run_id`（2.4.4 对齐）**：`beginOutboundSession` 创建 `WeixinOutboundSession`（`wechat/outbound-session.ts`），同一用户任务内所有 `sendText`/媒体/工具进度消息经 **串行队列** 发出，相邻两条间隔 ≥ `WEIXIN_OUTBOUND_MIN_INTERVAL_MS`（450ms），且 `sendmessage` 请求体携带官方 `run_id`（减少 burst 触发 `errcode=-2`）。
-- **结构化工具进度**：`sendProcessMessages` 开启且平台为微信时，IMService 走 `notifyToolProgress` 发 `TOOL_CALL_START` / `TOOL_CALL_RESULT`（`sf-reply-progress.ts`），**不再**为每个工具刷一条纯文本「🔧 xxx」；与上游 `WeixinReplyProgressSender` + `replyProgressMessages` 一致。
-- **`-2` 错误识别**：`extractErrcode` 正则同时兼容 vendor transform 后的 `errcode=-2`（无引号）与原始 JSON 体的 `"errcode":-2`，避免误判为"不可重试错误"导致 -2 既不抛信号也不自愈。
+- **`errcode=-2` 静默对齐官方 SDK**：服务端 `sendmessage` / `sendtyping` 在 body 返回 `{errcode:-2, errmsg:"unknown"}` 是 ilink 的"软失败"信号（语义模糊：可能限流、可能 context_token TTL 失效，但客户端无主动刷新接口），官方 `apiPostFetch` 只看 HTTP status、不解析 body errcode → 调用方视作发送成功，最多偶尔丢一条但**下一条仍可继续**。SailFish 完全沿用该语义（`scripts/vendor-wechat-transforms.mjs` 不再注入 errcode-throw transform），杜绝早期"一次 -2 → IMService 抛错 → 整段对话停发"的雪崩。
+- `context_token` 出入站同步：每条 inbound 消息携带新 `context_token`；若与上次不同，`handleMessage` 立即 `invalidateUser` + `await getForUser` 重新注册服务端 per-user session（对齐上游 `monitor.ts`）。出站 `runWithContextToken` 永远从持久化 store 取最新 token，避免 token 漂移。
+- **`typing keepalive` 生命周期**：对齐上游 `createReplyDispatcherWithTyping`——`IMService.runAgentTask` 在任务开始时调 `beginOutboundSession`，`finally` **await** `endOutboundSession`；**不在**每条 `sendText` 时停止 keepalive（否则长任务约 2–3 分钟后出站失败）。同时设有 `TYPING_KEEPALIVE_LEAK_MS`（3h）泄漏保护，避免遗漏 `endOutboundSession` 时永久挂着。sendTyping 不抛 errcode（与官方一致），单次 HTTP 失败仅 log，由下次 interval 自动重发，**不再**做 consecutiveFailures + restart 那套额外机制。
+- **出站串行 lane + `run_id`（2.4.4 对齐）**：`beginOutboundSession` 创建 `WeixinOutboundSession`（`wechat/outbound-session.ts`），同一用户任务内所有 `sendText`/媒体/工具进度消息经 **串行队列** 发出，相邻两条间隔 ≥ `WEIXIN_OUTBOUND_MIN_INTERVAL_MS`（450ms），且 `sendmessage` 请求体携带官方 `run_id`。
+- **结构化工具进度（默认关）**：`sendProcessMessages` 开启时默认走纯文本「🔧 调用 …」进度通知。结构化 `TOOL_CALL_START` / `TOOL_CALL_RESULT`（`sf-reply-progress.ts` + `notifyToolProgress`）保留实现但默认不启用——手机微信普通会话客户端不渲染这两种 item type，开启反而会让用户看不到任何过程消息。
 - **流式 partial 防外发**：`IMService.runAgentTask` 维护 `messageStreaming` 标志位，`flushTextBuffer` 在 message step 仍处于流式态时直接 return，防止 `sendToolNotify` 抢在 message 定稿前把"未收尾"的 partial 文本发出去（partial 与最终定稿差几个字符就会被 `lastFlushedBody` 字面去重漏掉，导致两条几乎一样的消息）。
 - **vendored 版本**：`@tencent-weixin/openclaw-weixin@2.4.4`（含 `sendMessageItemWeixin`、`run_id`、`reply-progress-sender`、`error-notice`）。
-- **微信发送失败的桌面兜底**：`IMService.notifyWechatSendFailure(reason?)` 在出站失败时调用，做两件事：(a) 经 `WeChatAdapter.sendErrorNotice`（上游 `sendWeixinErrorNotice`）尝试发"请再发一条消息恢复对话"；(b) IPC `im:sendFailure` 推送桌面前端。会话内幂等，不刷屏。
+- **微信发送失败的桌面兜底**：`IMService.notifyWechatSendFailure(reason?)` 仅在 HTTP 错误 / 网络超时等真硬失败时触发（`errcode=-2` 软失败由 api 层静默吞掉，不会进 catch）。做两件事：(a) 经 `WeChatAdapter.sendErrorNotice`（上游 `sendWeixinErrorNotice`）尝试发"请再发一条消息恢复对话"；(b) IPC `im:sendFailure` 推送桌面前端。会话内幂等，不刷屏。
 - **IM 投递工具失败必推送到聊天**：`send_file_to_chat` / `send_image_to_chat` / `send_to_chat` 的 `tool_result` 失败会经 `IMService` 发到当前 IM 会话（与 `sendProcessMessages` 无关），避免错误仅出现在桌面 Companion 面板。
 - **工具失败补 ❌ 提示**：`sendProcessMessages` 开启时，普通工具 `tool_result.success === false` 会经 `formatToolFailureNotification` 发一条「❌ {label} 失败：{原因首行}」到 IM，让用户能与"🔧 调用 …"开始通知配对、看清成败。成功工具不刷 ✅（频繁正面反馈会推高出站密度逼近微信 -2 阈值，最终回复会体现成果）。
 - **工具进度顺序对齐**：`IMService.runAgentTask` 维护 `pendingAfterMessage` 缓冲与 `enqueueAfterMessage`：流式 message 期间所有「🔧 调用 / ❌ 失败」入队都先挂起，待 message 定稿那一刻批量转入 `sendQueue`，使 IM 端顺序变为「message → 工具相关」与桌面 UI 一致（streaming-tool-executor 在 args 收齐就 finalize，原本会让工具通知早于 message）。`onComplete` / `onError` 兜底刷出，防止流式中途异常退出时通知卡住。

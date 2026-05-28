@@ -1,6 +1,7 @@
 /**
  * 对齐上游 WeixinReplyProgressSender（2.4.4），但出站发送走 adapter 注入的
- * sendItem（串行 lane + withSendRetry + run_id），避免直接打 API 导致 -2 雪崩。
+ * sendItem（串行 lane + runWithContextToken 注入最新 contextToken + run_id），
+ * 与 adapter 共用同一出站串行队列，避免 burst 与 token 不一致。
  */
 import type { MessageItem } from './api/types.js'
 import { MessageItemType } from './api/types.js'

@@ -59,60 +59,6 @@ export const TRANSFORMS = [
     },
   },
   {
-    // Upstream sendMessage only checks HTTP status — body errors like
-    // { errcode: -2, errmsg: "unknown" } silently return. We need to surface
-    // them so SailFish channels can react (retry, notify user, etc.).
-    //
-    // Best-effort: if upstream still matches the "silent return" shape we
-    // patch it; if upstream changed (added their own errcode handling, or
-    // refactored sendMessage entirely), we leave it alone and log a notice
-    // so a human can decide whether this transform is still needed. We
-    // intentionally do NOT throw — the goal is the behavior, not this exact
-    // patch, and a hard failure would block the weekly sync for a transform
-    // that may already be obsolete upstream.
-    name: "api/api.ts: sendMessage propagates non-zero errcode from response body",
-    match: "api/api.ts",
-    apply(content) {
-      // Idempotency guard — already patched.
-      if (content.includes("/ilink/bot/sendmessage: errcode=")) return content;
-
-      const re =
-        /(export async function sendMessage\([\s\S]*?\): Promise<void> \{\n)\s*await (apiPostFetch\(\{[\s\S]*?label: "sendMessage",\s*\}\);)\n\}/;
-      if (!re.test(content)) {
-        console.warn(
-          "[vendor-wechat] notice: upstream sendMessage no longer matches the\n" +
-          "  'silent return' shape we used to patch. Skipping the errcode-throw\n" +
-          "  transform. Inspect api/api.ts and decide whether the patch is still\n" +
-          "  needed (upstream may now surface errcode itself).",
-        );
-        return content;
-      }
-      return content.replace(re, (_m, header, call) =>
-        header +
-        "  const rawText = await " + call + "\n" +
-        "  const trimmed = rawText.trim();\n" +
-        "  if (!trimmed) return;\n" +
-        "  try {\n" +
-        "    const data = JSON.parse(trimmed) as {\n" +
-        "      errcode?: number;\n" +
-        "      ret?: number;\n" +
-        "      errmsg?: string;\n" +
-        "    };\n" +
-        "    const code = data.errcode ?? data.ret;\n" +
-        "    if (code != null && code !== 0) {\n" +
-        "      throw new Error(\n" +
-        "        `/ilink/bot/sendmessage: errcode=${code} errmsg=${data.errmsg || \"unknown\"}`,\n" +
-        "      );\n" +
-        "    }\n" +
-        "  } catch (e) {\n" +
-        "    if (e instanceof SyntaxError) return;\n" +
-        "    throw e;\n" +
-        "  }\n" +
-        "}",
-      );
-    },
-  },
-  {
     // SailFish wechat-adapter 直接复用 vendored 的 bodyFromItemList（处理引用消息、
     // 语音转文字等业务逻辑），保持 adapter 当薄壳。上游目前没 export 该函数，
     // 这里改成 export 以便外部 import；同步时若上游已自行导出，正则不会匹配，
@@ -141,44 +87,6 @@ export const TRANSFORMS = [
       return content.replace(
         /  async getForUser\(/,
         "  /** Force the next getForUser call for this user to bypass the TTL cache and re-fetch.\n   * Call whenever a fresh context_token arrives to re-register the server-side session.\n   */\n  invalidateUser(userId: string): void {\n    this.cache.delete(userId);\n  }\n\n  async getForUser(",
-      );
-    },
-  },
-  {
-    // 上游 sendTyping 只 await apiPostFetch 但不解析响应体的 errcode/ret，导致
-    // typing_ticket 失效或 context_token 过期时 keepalive 静默失败（5 秒一次全是
-    // 错误响应但调用方一无所知），表现为"keepalive 看起来在跑实际假活"。
-    // SailFish 需要把 errcode 暴露出来，让 adapter 能感知 keepalive 失败并主动重启。
-    name: "api/api.ts: sendTyping propagates non-zero errcode from response body",
-    match: "api/api.ts",
-    apply(content) {
-      if (content.includes("/ilink/bot/sendtyping: errcode=")) return content;
-      const re =
-        /(export async function sendTyping\([\s\S]*?\): Promise<void> \{\n)\s*await (apiPostFetch\(\{[\s\S]*?label: "sendTyping",\s*\}\);)\n\}/;
-      if (!re.test(content)) {
-        console.warn(
-          "[vendor-wechat] notice: upstream sendTyping no longer matches the\n" +
-          "  'silent return' shape. Inspect api/api.ts and verify whether the\n" +
-          "  errcode-throw transform is still needed.",
-        );
-        return content;
-      }
-      return content.replace(re, (_m, header, call) =>
-        header +
-        "  const rawText = await " + call + "\n" +
-        "  const trimmed = (rawText ?? \"\").trim();\n" +
-        "  if (!trimmed) return;\n" +
-        "  try {\n" +
-        "    const data = JSON.parse(trimmed) as { errcode?: number; ret?: number; errmsg?: string };\n" +
-        "    const code = data.errcode ?? data.ret;\n" +
-        "    if (code != null && code !== 0) {\n" +
-        "      throw new Error(`/ilink/bot/sendtyping: errcode=${code} errmsg=${data.errmsg || \"unknown\"}`);\n" +
-        "    }\n" +
-        "  } catch (e) {\n" +
-        "    if (e instanceof SyntaxError) return;\n" +
-        "    throw e;\n" +
-        "  }\n" +
-        "}",
       );
     },
   },

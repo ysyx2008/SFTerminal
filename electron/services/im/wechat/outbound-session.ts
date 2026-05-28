@@ -7,7 +7,7 @@ import type { MessageItem } from './api/types.js'
 import { sendMessageItemWeixin, sendMessageWeixin } from './messaging/send.js'
 import { SfWeixinReplyProgressSender } from './sf-reply-progress.js'
 
-/** 两条 sendmessage 之间的最小间隔，降低短时间 burst 触发 errcode=-2 的概率 */
+/** 两条 sendmessage 之间的最小间隔，避免短时间 burst */
 export const WEIXIN_OUTBOUND_MIN_INTERVAL_MS = 450
 
 function sleep(ms: number): Promise<void> {
@@ -20,7 +20,11 @@ export type WeixinOutboundSessionDeps = {
   runId: string
   apiOpts: WeixinApiOptions
   resolveContextToken: () => string | undefined
-  sendWithRetry: <T>(sendFn: (contextToken: string | undefined) => Promise<T>) => Promise<T>
+  /**
+   * 出站发送的统一封装：从 adapter 取最新 contextToken（store 优先，inbound 快照兜底）
+   * 后交给 sendFn。失败原样透传；服务端 `errcode=-2` 已对齐官方 SDK 在 api 层静默吞掉。
+   */
+  runWithContextToken: <T>(sendFn: (contextToken: string | undefined) => Promise<T>) => Promise<T>
   minIntervalMs?: number
 }
 
@@ -31,7 +35,7 @@ export class WeixinOutboundSession {
   private readonly userId: string
   private readonly apiOpts: WeixinApiOptions
   private readonly resolveContextToken: () => string | undefined
-  private readonly sendWithRetry: WeixinOutboundSessionDeps['sendWithRetry']
+  private readonly runWithContextToken: WeixinOutboundSessionDeps['runWithContextToken']
   private readonly minIntervalMs: number
 
   private sendChain: Promise<void> = Promise.resolve()
@@ -42,7 +46,7 @@ export class WeixinOutboundSession {
     this.userId = deps.userId
     this.apiOpts = deps.apiOpts
     this.resolveContextToken = deps.resolveContextToken
-    this.sendWithRetry = deps.sendWithRetry
+    this.runWithContextToken = deps.runWithContextToken
     this.minIntervalMs = deps.minIntervalMs ?? WEIXIN_OUTBOUND_MIN_INTERVAL_MS
 
     this.progressSender = new SfWeixinReplyProgressSender({
@@ -51,7 +55,7 @@ export class WeixinOutboundSession {
       accountId: deps.accountKey,
       sendItem: (item, label) =>
         this.enqueue(() =>
-          this.sendWithRetry((contextToken) =>
+          this.runWithContextToken((contextToken) =>
             sendMessageItemWeixin({
               to: this.userId,
               item,
@@ -62,7 +66,7 @@ export class WeixinOutboundSession {
               },
               label,
             }),
-          ),
+          ).then(() => undefined),
         ),
     })
   }
@@ -90,7 +94,7 @@ export class WeixinOutboundSession {
 
   sendText(text: string): Promise<void> {
     return this.enqueue(() =>
-      this.sendWithRetry((contextToken) =>
+      this.runWithContextToken((contextToken) =>
         sendMessageWeixin({
           to: this.userId,
           text,

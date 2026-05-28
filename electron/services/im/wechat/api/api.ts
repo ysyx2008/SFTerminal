@@ -460,7 +460,7 @@ export async function getUploadUrl(
 export async function sendMessage(
   params: WeixinApiOptions & { body: SendMessageReq },
 ): Promise<void> {
-  const rawText = await apiPostFetch({
+  await apiPostFetch({
     baseUrl: params.baseUrl,
     endpoint: "ilink/bot/sendmessage",
     body: JSON.stringify({ ...params.body, base_info: buildBaseInfo() }),
@@ -468,24 +468,6 @@ export async function sendMessage(
     timeoutMs: params.timeoutMs ?? DEFAULT_API_TIMEOUT_MS,
     label: "sendMessage",
   });
-  const trimmed = rawText.trim();
-  if (!trimmed) return;
-  try {
-    const data = JSON.parse(trimmed) as {
-      errcode?: number;
-      ret?: number;
-      errmsg?: string;
-    };
-    const code = data.errcode ?? data.ret;
-    if (code != null && code !== 0) {
-      throw new Error(
-        `/ilink/bot/sendmessage: errcode=${code} errmsg=${data.errmsg || "unknown"}`,
-      );
-    }
-  } catch (e) {
-    if (e instanceof SyntaxError) return;
-    throw e;
-  }
 }
 
 /** Fetch bot config (includes typing_ticket) for a given user. */
@@ -512,7 +494,7 @@ export async function getConfig(
 export async function sendTyping(
   params: WeixinApiOptions & { body: SendTypingReq },
 ): Promise<void> {
-  const rawText = await apiPostFetch({
+  await apiPostFetch({
     baseUrl: params.baseUrl,
     endpoint: "ilink/bot/sendtyping",
     body: JSON.stringify({ ...params.body, base_info: buildBaseInfo() }),
@@ -520,18 +502,6 @@ export async function sendTyping(
     timeoutMs: params.timeoutMs ?? DEFAULT_CONFIG_TIMEOUT_MS,
     label: "sendTyping",
   });
-  const trimmed = (rawText ?? "").trim();
-  if (!trimmed) return;
-  try {
-    const data = JSON.parse(trimmed) as { errcode?: number; ret?: number; errmsg?: string };
-    const code = data.errcode ?? data.ret;
-    if (code != null && code !== 0) {
-      throw new Error(`/ilink/bot/sendtyping: errcode=${code} errmsg=${data.errmsg || "unknown"}`);
-    }
-  } catch (e) {
-    if (e instanceof SyntaxError) return;
-    throw e;
-  }
 }
 
 /**

@@ -54,8 +54,6 @@ const QR_POLL_INTERVAL_MS = 2_000
 const QR_EXPIRE_MS = 180_000
 const RECONNECT_DELAY_MS = 5_000
 const MAX_RECONNECT_DELAY_MS = 60_000
-/** 服务端 context_token 失效时 sendmessage 返回的 errcode */
-export const CONTEXT_INVALID_ERRCODE = -2
 const TYPING_KEEPALIVE_MS = 5_000
 /** 未配对 endOutboundSession 时的泄漏兜底（正常由 IMService finally 结束） */
 const TYPING_KEEPALIVE_LEAK_MS = 3 * 60 * 60 * 1_000
@@ -85,22 +83,6 @@ interface QRStatusResp {
   ilink_bot_id?: string
   baseurl?: string
   redirect_host?: string
-}
-
-/**
- * 从 vendored 抛出的 Error.message 中解析 errcode/ret。
- *
- * 兼容两种格式：
- *   1. vendored transform 后：`/ilink/bot/sendmessage: errcode=-2 errmsg=unknown`
- *   2. 原始服务端 JSON 体（兜底）：`...{"errcode":-2,"errmsg":"unknown"}`
- *
- * 早期实现只匹配带引号格式，导致 vendor transform 输出的 `errcode=-2` 全部
- * 漏判，-2 既不重试也不刷新 session，session 一旦失效就再也无法自愈。
- */
-function extractErrcode(err: unknown): number | undefined {
-  if (!(err instanceof Error)) return
-  const m = err.message.match(/(?:"(?:errcode|ret)"\s*:\s*|\b(?:errcode|ret)\s*=\s*)(-?\d+)/)
-  return m ? Number(m[1]) : undefined
 }
 
 export class WeChatAdapter implements IMAdapter {
@@ -140,24 +122,15 @@ export class WeChatAdapter implements IMAdapter {
    * 正在运行的 sendTyping keepalive 定时器（按 userId 隔离）。
    * 对齐上游 process-message.ts 的 createReplyDispatcherWithTyping：整段 Agent 回复期间
    * 保持 keepalive，仅在 endOutboundSession（markDispatchIdle）时停止，不在每条 sendText 时停止。
+   *
+   * sendTyping 不再解析 body errcode（与官方 SDK 一致），所以无"假活"问题，单条失败仅 log，
+   * 由下次 interval 自动重试即可，不需要 consecutiveFailures + restart 那套额外机制。
    */
   private typingKeepalives = new Map<string, {
     timer: ReturnType<typeof setInterval>
     ticket: string
     leakTimer: ReturnType<typeof setTimeout>
-    /**
-     * 连续失败计数。每次 sendTyping 失败 +1，成功重置为 0。
-     * 达到阈值后触发自动 invalidate + 重启 keepalive（防"假活"）。
-     */
-    consecutiveFailures: number
-    /** 上次成功的 sendTyping 时间戳，便于诊断 */
-    lastSuccessAt: number
-    /** 正在重启中，避免并发触发多次重启 */
-    restarting: boolean
   }>()
-
-  /** 连续 sendTyping 失败次数阈值：超过则视为 keepalive 假活，自动重启。 */
-  private static readonly KEEPALIVE_FAIL_THRESHOLD = 3
 
   /**
    * 进行中的出站会话（按 userId）。对齐上游 createReplyDispatcherWithTyping +
@@ -198,71 +171,31 @@ export class WeChatAdapter implements IMAdapter {
     return getContextToken(this.accountKey, replyContext.userId) ?? replyContext.contextToken
   }
 
-  /** 包裹 vendored 调用：先 assert 暂停期，捕获 -14 触发 pause，其它原样抛出。 */
+  /**
+   * 包裹 vendored 调用：先 assert 暂停期，HTTP 错误原样抛出。
+   *
+   * 注意：sendmessage / sendtyping 在服务端 body 返回 `errcode=-2 errmsg=unknown` 时，
+   * 官方 SDK 是 silently return（apiPostFetch 只看 HTTP status，不解析 body errcode）。
+   * 我们也保持这个语义：调用方视作"已送达"，最多偶尔丢一条，但不会把一次出站失败放大
+   * 成整段对话的雪崩。session 级别的 `-14` 由 pollLoop 在 resp.ret 字段统一处理。
+   */
   private async guarded<T>(fn: () => Promise<T>): Promise<T> {
     assertSessionActive(this.accountKey)
-    try {
-      return await fn()
-    } catch (err) {
-      if (extractErrcode(err) === SESSION_EXPIRED_ERRCODE) {
-        pauseSession(this.accountKey)
-      }
-      throw err
-    }
+    return await fn()
   }
 
-  /** 当前正在执行 -2 自愈的 userId 集合，避免并发重复刷新 */
-  private recoveringContextUsers = new Set<string>()
-
   /**
-   * 出站发送的统一封装。
-   *
-   * 设计要点（修复 -2 雪崩）：
-   * - errcode=-2 时**绝不重试同一条消息**：服务端 -2 的语义模糊，重试用新 client_id
-   *   可能导致同一条消息送达多次（与「同一消息收到两次」问题对应）。
-   * - 检测到 -2 后异步触发自愈：invalidate config + 重新 getForUser + 重启 typing
-   *   keepalive。这样**下一条**消息有机会用新 session 发出。
-   * - errcode=-14 由 guarded() 内 pauseSession 处理，这里仅透传。
+   * 出站发送的统一封装：从持久化 store 取最新 contextToken（缺失则回退到 inbound 时的
+   * 快照 seedToken），交给 sendFn 走 sendmessage。失败直接透传 —— 不重试、不识别 errcode：
+   * 跟随官方 SDK 的"sendmessage 即发即弃，errcode 不暴露"语义。
    */
-  private async withSendRetry<T>(
+  private async runWithContextToken<T>(
     userId: string,
     seedToken: string | undefined,
     sendFn: (contextToken: string | undefined) => Promise<T>,
   ): Promise<T> {
     const contextToken = getContextToken(this.accountKey, userId) ?? seedToken
-    try {
-      return await sendFn(contextToken)
-    } catch (err) {
-      const code = extractErrcode(err)
-      if (code === CONTEXT_INVALID_ERRCODE) {
-        this.scheduleContextRecovery(userId, seedToken)
-      }
-      throw err
-    }
-  }
-
-  /**
-   * 异步刷新 context（不阻塞调用方）。
-   * 同一 userId 同时只跑一次，避免多条出站同时撞 -2 导致并发 getconfig。
-   */
-  private scheduleContextRecovery(userId: string, seedToken: string | undefined): void {
-    if (this.recoveringContextUsers.has(userId)) return
-    this.recoveringContextUsers.add(userId)
-    void (async () => {
-      try {
-        log.warn(`context errcode=${CONTEXT_INVALID_ERRCODE}, refreshing session for ${userId}`)
-        this.getConfigManager().invalidateUser(userId)
-        const fresh = getContextToken(this.accountKey, userId) ?? seedToken
-        await this.getConfigManager().getForUser(userId, fresh)
-        if (this.typingKeepalives.has(userId)) {
-          await this.startTypingKeepalive(userId, fresh)
-        }
-      } catch (err) {
-        log.warn(`scheduleContextRecovery failed for ${userId}: ${String(err)}`)
-      } finally {
-        this.recoveringContextUsers.delete(userId)
-      }
-    })()
+    return await sendFn(contextToken)
   }
 
   private getOutboundSession(userId: string): WeixinOutboundSession | undefined {
@@ -289,7 +222,7 @@ export class WeChatAdapter implements IMAdapter {
       runId,
       apiOpts: this.apiOpts,
       resolveContextToken: () => this.resolveContextToken(replyContext),
-      sendWithRetry: (sendFn) => this.withSendRetry(userId, contextToken, sendFn),
+      runWithContextToken: (sendFn) => this.runWithContextToken(userId, contextToken, sendFn),
     })
     this.outboundSessions.set(userId, session)
 
@@ -504,7 +437,7 @@ export class WeChatAdapter implements IMAdapter {
       return
     }
 
-    await this.withSendRetry(ctx.userId, contextToken, (token) =>
+    await this.runWithContextToken(ctx.userId, contextToken, (token) =>
       this.guarded(() => sendMessageWeixin({
         to: ctx.userId,
         text: truncated,
@@ -522,7 +455,7 @@ export class WeChatAdapter implements IMAdapter {
     const contextToken = this.resolveContextToken(ctx)
     log.info(`sendImage: file=${path.basename(filePath)} userId=${ctx.userId} hasToken=${!!contextToken}`)
     const send = () =>
-      this.withSendRetry(ctx.userId, contextToken, (token) =>
+      this.runWithContextToken(ctx.userId, contextToken, (token) =>
         this.guarded(() => sendWeixinMediaFile({
           filePath,
           to: ctx.userId,
@@ -544,7 +477,7 @@ export class WeChatAdapter implements IMAdapter {
     const contextToken = this.resolveContextToken(ctx)
     log.info(`sendFile: file=${fileName || path.basename(filePath)} userId=${ctx.userId} hasToken=${!!contextToken}`)
     const send = () =>
-      this.withSendRetry(ctx.userId, contextToken, (token) =>
+      this.runWithContextToken(ctx.userId, contextToken, (token) =>
         this.guarded(() => sendWeixinMediaFile({
           filePath,
           to: ctx.userId,
@@ -702,15 +635,8 @@ export class WeChatAdapter implements IMAdapter {
         }
       } catch (err: any) {
         if (signal.aborted) break
-        if (extractErrcode(err) === SESSION_EXPIRED_ERRCODE) {
-          pauseSession(this.accountKey)
-          const pauseMs = getRemainingPauseMs(this.accountKey)
-          log.warn(`Session expired (catch, errcode=${SESSION_EXPIRED_ERRCODE}), pausing ${Math.ceil(pauseMs / 60_000)} min then resuming`)
-          this.setConnected(false)
-          await this.sleep(pauseMs, signal)
-          if (!signal.aborted) this.setConnected(true)
-          continue
-        }
+        // session 过期（-14）走的是上面 resp.ret 字段分支；getUpdates 在 HTTP 错误时
+        // 不解析 body errcode，与官方 monitor.ts 保持一致，全部按通用网络异常处理。
         log.error('Poll error:', err)
         if (this.connected) this.setConnected(false)
         await this.reconnectBackoff(signal)
@@ -913,37 +839,13 @@ export class WeChatAdapter implements IMAdapter {
 
     this.stopTypingKeepalive(userId)
 
-    // fire 用 closure 内的 ticket（重启时会重建 closure 拿新 ticket），
-    // 与 typingKeepalives map 解耦，方便在 set state 之前就能调用 fire。
     const fire = () => {
       void vendoredSendTyping({
         ...this.apiOpts,
         body: { ilink_user_id: userId, typing_ticket: ticket, status: TypingStatus.TYPING },
+      }).catch((err: unknown) => {
+        log.warn(`sendTyping keepalive failed for ${userId}: ${String(err)}`)
       })
-        .then(() => {
-          const s = this.typingKeepalives.get(userId)
-          if (!s) return
-          s.consecutiveFailures = 0
-          s.lastSuccessAt = Date.now()
-        })
-        .catch((err: unknown) => {
-          const s = this.typingKeepalives.get(userId)
-          if (!s) return
-          s.consecutiveFailures += 1
-          const msg = String(err)
-          log.warn(
-            `sendTyping keepalive failed for ${userId} (consecutive=${s.consecutiveFailures}): ${msg}`,
-          )
-          if (s.consecutiveFailures >= WeChatAdapter.KEEPALIVE_FAIL_THRESHOLD && !s.restarting) {
-            s.restarting = true
-            log.warn(
-              `Keepalive failed ${s.consecutiveFailures} times, restarting (invalidate + getForUser) for ${userId}`,
-            )
-            void this.restartTypingKeepalive(userId).catch((restartErr: unknown) =>
-              log.warn(`restartTypingKeepalive failed: ${String(restartErr)}`),
-            )
-          }
-        })
     }
 
     const timer = setInterval(fire, TYPING_KEEPALIVE_MS)
@@ -953,40 +855,9 @@ export class WeChatAdapter implements IMAdapter {
         this.stopTypingKeepalive(userId)
       }
     }, TYPING_KEEPALIVE_LEAK_MS)
-    // 必须先 set state 再 fire，否则 .then/.catch 里的 typingKeepalives.get 拿不到 state
-    this.typingKeepalives.set(userId, {
-      timer,
-      ticket,
-      leakTimer,
-      consecutiveFailures: 0,
-      lastSuccessAt: Date.now(),
-      restarting: false,
-    })
+    this.typingKeepalives.set(userId, { timer, ticket, leakTimer })
     fire()
     log.debug(`Started typing keepalive for ${userId}`)
-  }
-
-  /**
-   * keepalive 自愈：连续 sendTyping 失败到阈值时调用。
-   * 1) invalidateUser（绕过 24h TTL 缓存）
-   * 2) 拿 lastConfigContextToken 作为 seed 重新 getForUser 拉新 typingTicket
-   * 3) 重启 keepalive 计时器
-   * 任何一步失败都把 state.restarting 复位，避免永远卡住；下次 fire 还会重新触发尝试。
-   */
-  private async restartTypingKeepalive(userId: string): Promise<void> {
-    const seed = this.lastConfigContextToken.get(userId)
-      ?? getContextToken(this.accountKey, userId)
-    try {
-      this.getConfigManager().invalidateUser(userId)
-      await this.getConfigManager().getForUser(userId, seed)
-    } catch (err) {
-      log.warn(`restartTypingKeepalive: refresh config failed for ${userId}: ${String(err)}`)
-      const s = this.typingKeepalives.get(userId)
-      if (s) s.restarting = false
-      return
-    }
-    // 重新 start：会先 stop 旧的，再用新 ticket 启动
-    await this.startTypingKeepalive(userId, seed)
   }
 
   /** 结束出站会话：停止 keepalive 并发送 sendtyping(CANCEL)。 */

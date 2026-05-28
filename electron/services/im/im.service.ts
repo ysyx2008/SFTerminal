@@ -1049,9 +1049,11 @@ export class IMService {
 
     let wechatSendFailedNotified = false
     /**
-     * 微信发送失败时的兜底通知。两条路：
-     *   1. 通过 adapter.sendText 发"请再发一条消息恢复对话"——在 errcode=-2 自动重试成功的场景能送达。
-     *   2. 通过 IPC 推送 'im:sendFailure' 给桌面前端——adapter 完全失联时仍能让用户感知到。
+     * 微信发送失败时的兜底通知（HTTP 错误、网络超时等真硬失败才会进来——服务端
+     * `errcode=-2 errmsg=unknown` 这种软错误已对齐官方 SDK 静默放行，不再触发本回调）。
+     * 两条路：
+     *   1. 经 adapter.sendErrorNotice 尝试给用户发一条提示文本（同样可能再次失败，那就算了）。
+     *   2. IPC 推 'im:sendFailure' 让桌面前端弹个提示，adapter 完全失联时仍能感知。
      * 两条路都失败也没关系，至少 main 进程日志会留 warn。
      */
     const notifyWechatSendFailure = async (reason?: unknown) => {
