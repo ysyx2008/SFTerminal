@@ -24,6 +24,5 @@
     "baseUrl": "."
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue", "shared/**/*.ts"],
-  "references": [{ "path": "./tsconfig.node.json" }]
 }
 
