@@ -129,7 +129,7 @@ describe('WeChatAdapter', () => {
     expect(arg.cdnBaseUrl).toContain('weixin.qq.com')
   })
 
-  it('sendText pauses session when vendored throws errcode=-14', async () => {
+  it('sendText surfaces send failure without pausing on errcode=-14 (pause handled in pollLoop)', async () => {
     sendMessageWeixinMock.mockRejectedValueOnce(
       new Error('sendMessage 200: {"ret":-14,"errmsg":"session expired"}'),
     )
@@ -139,8 +139,10 @@ describe('WeChatAdapter', () => {
       adapter.sendText({ userId: 'u1' }, 'hi'),
     ).rejects.toThrow(/session expired/)
 
-    expect(pauseSessionMock).toHaveBeenCalledTimes(1)
-    expect(pauseSessionMock.mock.calls[0][0]).toContain('sf-wechat-')
+    // 对齐官方 SDK：发送路径不再解析 body errcode，-14（会话过期）只由 pollLoop
+    // 通过 resp.ret 统一处理，sendText 仅原样透传异常、不暂停会话。
+    expect(pauseSessionMock).not.toHaveBeenCalled()
+    expect(sendMessageWeixinMock).toHaveBeenCalledTimes(1)
   })
 
   it('sendText does NOT pause session for other errors', async () => {
@@ -201,17 +203,19 @@ describe('WeChatAdapter', () => {
     })
   })
 
-  it('sendText retries once on errcode=-2 after refreshing config', async () => {
-    sendMessageWeixinMock
-      .mockRejectedValueOnce(
-        new Error('sendMessage 200: {"errcode":-2,"errmsg":"unknown"}'),
-      )
-      .mockResolvedValueOnce({ messageId: 'cid-retry' })
+  it('sendText does NOT retry on errcode=-2 (aligned with official SDK)', async () => {
+    // 官方 SDK 在 api 层静默吞掉 errcode=-2；适配器不再做"刷新 config 后重试一次"，
+    // 失败直接透传，sendmessage 只调用一次。
+    sendMessageWeixinMock.mockRejectedValueOnce(
+      new Error('sendMessage 200: {"errcode":-2,"errmsg":"unknown"}'),
+    )
     const adapter = new WeChatAdapter({ token: 'tok' } as any)
 
-    await adapter.sendText({ userId: 'u1', contextToken: 'ctx-1' }, 'hello')
+    await expect(
+      adapter.sendText({ userId: 'u1', contextToken: 'ctx-1' }, 'hello'),
+    ).rejects.toThrow()
 
-    expect(sendMessageWeixinMock).toHaveBeenCalledTimes(2)
+    expect(sendMessageWeixinMock).toHaveBeenCalledTimes(1)
   })
 
   it('beginOutboundSession and endOutboundSession are exposed on adapter', async () => {
@@ -243,7 +247,7 @@ describe('WeChatAdapter', () => {
     expect(cancelCalls.length).toBe(1)
   })
 
-  it('keepalive auto-restarts after consecutive sendTyping failures', async () => {
+  it('keepalive keeps firing on sendTyping failures without self-heal (aligned with official SDK)', async () => {
     // 让 fire 永远抛错；CANCEL 不算失败
     sendTypingMock.mockImplementation(({ body }: any) => {
       if (body?.status === 2) return Promise.resolve(undefined)
@@ -251,9 +255,6 @@ describe('WeChatAdapter', () => {
         new Error('/ilink/bot/sendtyping: errcode=-2 errmsg=invalid context'),
       )
     })
-    getForUserMock
-      .mockResolvedValueOnce({ typingTicket: 'ticket-old' })
-      .mockResolvedValue({ typingTicket: 'ticket-new' })
 
     vi.useFakeTimers()
     const adapter = new WeChatAdapter({ token: 'tok' } as any)
@@ -261,39 +262,44 @@ describe('WeChatAdapter', () => {
     // 让初始 fire 的 .catch 链跑完
     await Promise.resolve(); await Promise.resolve()
 
-    // 推进 2 次 setInterval（5s/次）使 consecutiveFailures 达到 3 触发 restart
+    // begin 阶段会调用 getForUser（出站会话 + keepalive 各一次），之后失败不应再触发刷新
+    const getForUserCallsAfterBegin = getForUserMock.mock.calls.length
+
+    // 推进多次 5s interval：每次都按固定 ticket 重发，下次 interval 自然重试即可
     await vi.advanceTimersByTimeAsync(5_000)
     await vi.advanceTimersByTimeAsync(5_000)
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
 
     const typingCalls = sendTypingMock.mock.calls.filter((c) => c[0]?.body?.status === 1)
+    // 初始 fire + 2 次 interval = 至少 3 次
     expect(typingCalls.length).toBeGreaterThanOrEqual(3)
-    expect(invalidateUserMock).toHaveBeenCalled()
-    expect(getForUserMock.mock.calls.length).toBeGreaterThanOrEqual(2)
+    // 失败只 log，不再 invalidateUser / 重新 getForUser 自愈重启
+    expect(invalidateUserMock).not.toHaveBeenCalled()
+    expect(getForUserMock.mock.calls.length).toBe(getForUserCallsAfterBegin)
 
     adapter.endOutboundSession({ userId: 'u1' })
     vi.useRealTimers()
   })
 
-  it('sendText with errcode=-2 refreshes keepalive ticket on retry', async () => {
+  it('sendText with active session does NOT retry or refresh ticket on errcode=-2', async () => {
     const adapter = new WeChatAdapter({ token: 'tok' } as any)
     await adapter.beginOutboundSession({ userId: 'u1', contextToken: 'ctx-1' })
     await Promise.resolve(); await Promise.resolve()
 
-    sendMessageWeixinMock
-      .mockRejectedValueOnce(
-        new Error('sendMessage 200: {"errcode":-2,"errmsg":"unknown"}'),
-      )
-      .mockResolvedValueOnce({ messageId: 'cid-retry' })
+    sendMessageWeixinMock.mockRejectedValueOnce(
+      new Error('sendMessage 200: {"errcode":-2,"errmsg":"unknown"}'),
+    )
     invalidateUserMock.mockClear()
     const getForUserCallsBefore = getForUserMock.mock.calls.length
 
-    await adapter.sendText({ userId: 'u1', contextToken: 'ctx-1' }, 'hello')
+    // 对齐官方 SDK：失败不再重试，也不刷新 keepalive ticket，异常原样透传
+    await expect(
+      adapter.sendText({ userId: 'u1', contextToken: 'ctx-1' }, 'hello'),
+    ).rejects.toThrow()
 
-    expect(sendMessageWeixinMock).toHaveBeenCalledTimes(2)
-    expect(invalidateUserMock).toHaveBeenCalled()
-    // withSendRetry 显式 getForUser + restart keepalive 又一次 getForUser，所以至少 2 次新增
-    expect(getForUserMock.mock.calls.length).toBeGreaterThan(getForUserCallsBefore)
+    expect(sendMessageWeixinMock).toHaveBeenCalledTimes(1)
+    expect(invalidateUserMock).not.toHaveBeenCalled()
+    expect(getForUserMock.mock.calls.length).toBe(getForUserCallsBefore)
 
     adapter.endOutboundSession({ userId: 'u1' })
   })
