@@ -14,13 +14,12 @@
 const path = require('path')
 const os = require('os')
 
-/**
- * Compute the same userData path that Electron would use.
- * Respects SFT_DATA_DIR env var for custom locations.
- */
-function getUserDataPath() {
-  if (process.env.SFT_DATA_DIR) return process.env.SFT_DATA_DIR
+const fs = require('fs')
 
+/**
+ * Compute the *default* userData path that Electron would use.
+ */
+function getDefaultUserDataPath() {
   const appName = 'SailFish'
   switch (process.platform) {
     case 'darwin':
@@ -36,6 +35,29 @@ function getUserDataPath() {
         appName
       )
   }
+}
+
+/**
+ * Resolve the effective userData path.
+ * Priority: SFT_DATA_DIR env var > pointer file (data-location.json) > default.
+ * Keeps CLI and GUI pointing at the same custom data directory.
+ */
+function getUserDataPath() {
+  if (process.env.SFT_DATA_DIR) return process.env.SFT_DATA_DIR
+
+  const defaultPath = getDefaultUserDataPath()
+  try {
+    const pointerPath = path.join(defaultPath, 'data-location.json')
+    if (fs.existsSync(pointerPath)) {
+      const pointer = JSON.parse(fs.readFileSync(pointerPath, 'utf-8'))
+      if (pointer && typeof pointer.dataDir === 'string' && pointer.dataDir) {
+        return pointer.dataDir
+      }
+    }
+  } catch {
+    // 指针文件损坏或不可读时回退默认目录
+  }
+  return defaultPath
 }
 
 const userDataPath = getUserDataPath()

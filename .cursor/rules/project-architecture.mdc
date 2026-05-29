@@ -206,6 +206,13 @@ Agent 的记忆分三层，模拟人类记忆的衰减梯度，三层协同在�
 - **Normalize 层**（`electron/utils/normalize.ts`）：各 service 读取磁盘数据时补齐新增字段的默认值，防止 undefined 崩溃
 - 新增 migration：创建 `vN-xxx.ts` 实现 `Migration` 接口，在 `index.ts` 注册即可
 
+### 自定义数据目录（`electron/utils/bootstrap.ts`）
+
+所有运行期数据都基于 `app.getPath('userData')`，用户可在「数据管理」页把整个数据目录迁到其他磁盘（解决 C 盘占满）。
+- **引导模块**：`bootstrap.ts` 必须是 `main.ts` 的**第一个 import**，在任何 service 实例化前根据指针文件 `{默认userData}/data-location.json` 执行 `app.setPath('userData', 自定义目录)`。指针文件永远留在默认目录，体积极小。
+- **重启时迁移**：用户选目录后只写 `pendingMigration` 标记并重启；在 `app.whenReady()` 最前（早于 createWindow / sensor / watch / agent，源目录无运行时写入）带进度窗复制数据 → 再次重启切到新目录 → 启动早期延迟清理旧目录（规避 Windows 文件锁）。迁移前用 `AgentService.hasRunningAgents()` 提示重启会中断进行中的任务。
+- **CLI 一致**：`electron/cli/electron-shim.js` 读同一指针文件（`SFT_DATA_DIR` 环境变量优先级最高）。
+
 ### 国际化（i18n）
 
 - **翻译文件**：`src/i18n/locales/zh-CN/` 和 `src/i18n/locales/en-US/`，按功能域分文件（`ai` / `common` / `settings` / `terminal` 等）

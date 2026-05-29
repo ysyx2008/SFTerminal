@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
-import { Bot, HardDrive, CalendarRange, FolderOpen, History, Download, Upload, Trash2, Clock, AlertTriangle, Search, X, ChevronDown, ChevronRight, ExternalLink, Monitor, Server, Coins, ArrowUpRight, ArrowDownLeft, Zap } from 'lucide-vue-next'
+import { Bot, HardDrive, CalendarRange, FolderOpen, History, Download, Upload, Trash2, Clock, AlertTriangle, Search, X, ChevronDown, ChevronRight, ExternalLink, Monitor, Server, Coins, ArrowUpRight, ArrowDownLeft, Zap, FolderSymlink, RotateCcw } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const isSteamBuild = __STEAM_BUILD__
@@ -20,6 +20,10 @@ const storageStats = ref<{
 
 // 数据目录路径
 const dataPath = ref('')
+// 是否使用自定义数据目录
+const isCustomDataDir = ref(false)
+// 是否正在提交迁移请求
+const isMigratingDataDir = ref(false)
 
 // 加载状态
 const isLoading = ref(false)
@@ -244,6 +248,86 @@ const openDataFolder = async () => {
   }
 }
 
+// 加载数据目录信息（当前/是否自定义/上次迁移错误）
+const loadDataDirInfo = async () => {
+  try {
+    const info = await window.electronAPI.dataDir.getInfo()
+    dataPath.value = info.current
+    isCustomDataDir.value = info.isCustom
+    if (info.lastError) {
+      showMessage('error', t('dataSettings.migrateErrorLast', { error: info.lastError }))
+    }
+  } catch (e) {
+    console.error('Failed to load data dir info:', e)
+  }
+}
+
+// 把后端返回的错误码映射成可读文案
+const dataDirErrorText = (code?: string): string => {
+  switch (code) {
+    case 'invalid_path': return t('dataSettings.migrateErrInvalid')
+    case 'same_as_current': return t('dataSettings.migrateErrSame')
+    case 'nested': return t('dataSettings.migrateErrNested')
+    case 'not_writable': return t('dataSettings.migrateErrNotWritable')
+    case 'already_default': return t('dataSettings.migrateErrAlreadyDefault')
+    default: return t('dataSettings.migrateFailed', { error: code || '' })
+  }
+}
+
+// 迁移前的统一确认：若有任务在运行需额外提示中断
+const confirmRestartForMigration = async (): Promise<boolean> => {
+  let running = false
+  try {
+    running = await window.electronAPI.dataDir.hasRunningAgents()
+  } catch { /* 查询失败按无运行处理 */ }
+  const msg = running
+    ? t('dataSettings.changeDirConfirmRunning')
+    : t('dataSettings.changeDirConfirmRestart')
+  return confirm(msg)
+}
+
+// 更改数据目录
+const changeDataDir = async () => {
+  if (isMigratingDataDir.value) return
+  isMigratingDataDir.value = true
+  try {
+    const picked = await window.electronAPI.dataDir.pickTarget()
+    if (picked.canceled || !picked.target) return
+    if (picked.nonEmpty && !confirm(t('dataSettings.changeDirConfirmNonEmpty'))) return
+    if (!(await confirmRestartForMigration())) return
+
+    const res = await window.electronAPI.dataDir.migrate(picked.target)
+    if (res.ok) {
+      showMessage('success', t('dataSettings.migrateStarting'))
+    } else {
+      showMessage('error', dataDirErrorText(res.error))
+    }
+  } catch (e) {
+    showMessage('error', t('dataSettings.migrateFailed', { error: String(e) }))
+  } finally {
+    isMigratingDataDir.value = false
+  }
+}
+
+// 恢复到默认数据目录
+const resetDataDir = async () => {
+  if (isMigratingDataDir.value) return
+  if (!(await confirmRestartForMigration())) return
+  isMigratingDataDir.value = true
+  try {
+    const res = await window.electronAPI.dataDir.reset()
+    if (res.ok) {
+      showMessage('success', t('dataSettings.migrateStarting'))
+    } else {
+      showMessage('error', dataDirErrorText(res.error))
+    }
+  } catch (e) {
+    showMessage('error', t('dataSettings.migrateFailed', { error: String(e) }))
+  } finally {
+    isMigratingDataDir.value = false
+  }
+}
+
 // 导出选项
 const exportOptions = ref({
   includeSshPasswords: false,
@@ -348,6 +432,7 @@ watch(showHistoryViewer, async (isOpen) => {
 onMounted(() => {
   loadStorageStats()
   loadTokenUsageStats()
+  loadDataDirInfo()
   document.addEventListener('keydown', handleKeydown, true)
 })
 
@@ -498,6 +583,7 @@ onUnmounted(() => {
       <div class="section-header">
         <FolderOpen :size="15" class="section-icon" />
         <h4>{{ t('dataSettings.dataDirectory') }}</h4>
+        <span v-if="isCustomDataDir" class="custom-badge">{{ t('dataSettings.customBadge') }}</span>
       </div>
       <div class="data-path-card">
         <code class="path-text">{{ dataPath }}</code>
@@ -505,7 +591,17 @@ onUnmounted(() => {
           <ExternalLink :size="14" />
         </button>
       </div>
-      <p class="hint">{{ t('dataSettings.migrationHint') }}</p>
+      <div class="datadir-actions">
+        <button class="btn btn-outline" @click="changeDataDir" :disabled="isMigratingDataDir">
+          <FolderSymlink :size="14" />
+          {{ t('dataSettings.changeDir') }}
+        </button>
+        <button v-if="isCustomDataDir" class="btn btn-outline" @click="resetDataDir" :disabled="isMigratingDataDir">
+          <RotateCcw :size="14" />
+          {{ t('dataSettings.resetDir') }}
+        </button>
+      </div>
+      <p class="hint">{{ t('dataSettings.dataDirHint') }}</p>
     </div>
     
     <!-- 导出/导入 -->
@@ -881,6 +977,29 @@ onUnmounted(() => {
   color: var(--text-secondary);
   word-break: break-all;
   line-height: 1.4;
+}
+
+.custom-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  background: rgba(var(--color-info-rgb), 0.12);
+  color: var(--color-info);
+}
+
+.datadir-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.datadir-actions .btn {
+  flex: 1;
+  min-width: 140px;
+  justify-content: center;
 }
 
 /* Backup card */

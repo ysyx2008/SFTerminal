@@ -191,6 +191,15 @@ export class AgentService {
   hasAgent(ptyId: string): boolean {
     return this.agents.has(ptyId)
   }
+
+  /**
+   * 是否存在正在运行（ReAct 循环执行中）的 Agent。
+   * 覆盖终端 / 助手 / Watch / IM 等所有 Agent 实例。
+   * 用于数据目录迁移前提示用户：重启会中断进行中的任务。
+   */
+  hasRunningAgents(): boolean {
+    return Array.from(this.agents.values()).some(agent => agent.isRunning())
+  }
   
   /**
    * 判断 agentId 是否为「持久命名 Agent」——固定 ID、跨 App 重启复用、需要从全局

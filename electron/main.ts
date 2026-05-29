@@ -1,3 +1,5 @@
+// ⚠️ 必须是第一个 import：在任何 service 实例化之前完成 userData 目录重定向
+import { runStartupMigrationIfNeeded, getDataDirInfo, requestDataDirMigration, requestDataDirReset, isTargetNonEmpty } from './utils/bootstrap'
 import { app, BrowserWindow, ipcMain, shell, dialog, session, Tray, Menu, nativeImage, nativeTheme, powerMonitor, clipboard } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import type { GenericServerOptions, GithubOptions } from 'builder-util-runtime'
@@ -1168,6 +1170,11 @@ function createAiDebugWindow(): void {
 // 应用准备就绪
 app.whenReady().then(async () => {
   log.info(`[startup] app.whenReady fired (+${Date.now() - APP_START_TIME}ms)`)
+
+  // 数据目录迁移：必须在创建窗口、初始化 sensor/watch/agent 等一切重活之前执行。
+  // 此刻源目录无任何运行时写入，复制数据保证一致；完成后会自动重启。
+  const migrated = await runStartupMigrationIfNeeded()
+  if (migrated) return // 已触发重启，停止后续初始化
 
   // 设置媒体设备权限处理器（用于语音识别等功能）
   // Windows 上必须显式授权麦克风访问，否则会报 "Requested device not found"
@@ -3751,6 +3758,47 @@ ipcMain.handle('history:getAgentRecordById', async (_event, id: string) => {
 // 获取数据目录路径
 ipcMain.handle('history:getDataPath', async () => {
   return historyService.getDataPath()
+})
+
+// ==================== 数据目录自定义 / 迁移 ====================
+
+// 获取数据目录信息（当前 / 默认 / 是否自定义 / 上次迁移错误）
+ipcMain.handle('dataDir:getInfo', async () => {
+  return getDataDirInfo()
+})
+
+// 是否有 Agent 正在运行（迁移前提示用户重启会中断任务）
+ipcMain.handle('dataDir:hasRunningAgents', async () => {
+  return agentService.hasRunningAgents()
+})
+
+// 选择目标目录（返回所选路径 + 是否非空，供前端确认）
+ipcMain.handle('dataDir:pickTarget', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory', 'createDirectory'],
+    title: 'SailFish'
+  })
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true }
+  }
+  const target = result.filePaths[0]
+  return { canceled: false, target, nonEmpty: isTargetNonEmpty(target) }
+})
+
+// 确认迁移到指定目录：写入待迁移标记并重启
+ipcMain.handle('dataDir:migrate', async (_e, target: string) => {
+  const res = requestDataDirMigration(target)
+  if (!res.ok) return res
+  setTimeout(() => { app.relaunch(); app.exit(0) }, 150)
+  return { ok: true }
+})
+
+// 恢复到默认数据目录：写入待迁移标记并重启
+ipcMain.handle('dataDir:reset', async () => {
+  const res = requestDataDirReset()
+  if (!res.ok) return res
+  setTimeout(() => { app.relaunch(); app.exit(0) }, 150)
+  return { ok: true }
 })
 
 // 获取存储统计

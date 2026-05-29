@@ -848,6 +848,14 @@ interface Window {
         daily: Array<{ date: string; prompt_tokens: number; completion_tokens: number; total_tokens: number; cache_hit_tokens: number; cache_miss_tokens: number; taskCount: number }>
       }>
     }
+    // 数据目录自定义 / 迁移
+    dataDir: {
+      getInfo: () => Promise<{ current: string; default: string; isCustom: boolean; lastError?: string }>
+      hasRunningAgents: () => Promise<boolean>
+      pickTarget: () => Promise<{ canceled: boolean; target?: string; nonEmpty?: boolean }>
+      migrate: (target: string) => Promise<{ ok: boolean; error?: string }>
+      reset: () => Promise<{ ok: boolean; error?: string }>
+    }
     // 主机档案操作
     hostProfile: {
       get: (hostId: string) => Promise<HostProfile | null>

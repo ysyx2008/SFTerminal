@@ -1276,6 +1276,24 @@ const electronAPI = {
     openDataFolder: () => ipcRenderer.invoke('history:openDataFolder')
   },
 
+  // 数据目录自定义 / 迁移
+  dataDir: {
+    getInfo: () => ipcRenderer.invoke('dataDir:getInfo') as Promise<{
+      current: string
+      default: string
+      isCustom: boolean
+      lastError?: string
+    }>,
+    hasRunningAgents: () => ipcRenderer.invoke('dataDir:hasRunningAgents') as Promise<boolean>,
+    pickTarget: () => ipcRenderer.invoke('dataDir:pickTarget') as Promise<{
+      canceled: boolean
+      target?: string
+      nonEmpty?: boolean
+    }>,
+    migrate: (target: string) => ipcRenderer.invoke('dataDir:migrate', target) as Promise<{ ok: boolean; error?: string }>,
+    reset: () => ipcRenderer.invoke('dataDir:reset') as Promise<{ ok: boolean; error?: string }>
+  },
+
   // 主机档案操作
   hostProfile: {
     // 获取主机档案
