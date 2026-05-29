@@ -30,6 +30,26 @@ updates:
       - dependency-type: "development"
         update-types: ["version-update:semver-patch", "version-update:semver-minor"]
 
+  # Website (Astro) 依赖
+  - package-ecosystem: "npm"
+    directory: "/website"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    target-branch: "develop"
+    labels:
+      - "dependencies"
+      - "website"
+    open-pull-requests-limit: 3
+    versioning-strategy: increase-if-necessary
+    allow:
+      - dependency-type: "production"
+        update-types: ["version-update:semver-patch", "version-update:semver-minor"]
+      - dependency-type: "development"
+        update-types: ["version-update:semver-patch", "version-update:semver-minor"]
+
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
