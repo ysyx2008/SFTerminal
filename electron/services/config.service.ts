@@ -156,8 +156,12 @@ interface StoreSchema {
   knowledgeSettings: KnowledgeSettings
   setupCompleted: boolean
   agentOnboardingCompleted: boolean
-  /** 诞生引导是否已展示过（与 completed 分离：用户跳过引导时也只展示一次） */
-  agentOnboardingShown: boolean
+  /**
+   * 诞生引导是否已展示过（与 completed 分离：用户跳过引导时也只展示一次）。
+   * 故意不设默认值：保持"未设置"状态可区分于显式 false，
+   * 使 getAgentOnboardingShown 能对老用户（仅有 completed）做向后兼容回退。
+   */
+  agentOnboardingShown?: boolean
   language: LocaleType
   sponsorStatus: boolean
   sessionSortBy: SessionSortBy
@@ -263,7 +267,7 @@ const defaultConfig: StoreSchema = {
   knowledgeSettings: DEFAULT_KNOWLEDGE_SETTINGS,
   setupCompleted: false,
   agentOnboardingCompleted: false,
-  agentOnboardingShown: false,
+  // agentOnboardingShown 故意不设默认：保持 undefined 以区分"未展示"与显式 false
   language: 'zh-CN',
   sponsorStatus: false,
   sessionSortBy: 'custom',
@@ -797,7 +801,13 @@ export class ConfigService {
   }
 
   getAgentOnboardingShown(): boolean {
-    return this.store.get('agentOnboardingShown') || this.getAgentOnboardingCompleted()
+    // 显式设置过（true/false）就以其为准；仅当从未设置（undefined）时，
+    // 才回退到 completed，兼容"引导完成字段早于 shown 字段存在"的老用户。
+    const shown = this.store.get('agentOnboardingShown')
+    if (typeof shown === 'boolean') {
+      return shown
+    }
+    return this.getAgentOnboardingCompleted()
   }
 
   setAgentOnboardingShown(shown: boolean): void {

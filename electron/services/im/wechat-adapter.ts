@@ -386,7 +386,7 @@ export class WeChatAdapter implements IMAdapter {
 
   async stop(): Promise<void> {
     this.cancelLogin()
-    this.stopPolling()
+    await this.stopPolling()
     this.connected = false
     this.onConnectionChange?.(false)
     // 清理 context tokens（内存 + 磁盘），避免 stop/重新登录 后旧 token 污染新会话。
@@ -575,13 +575,19 @@ export class WeChatAdapter implements IMAdapter {
     })()
   }
 
-  private stopPolling(): void {
+  private async stopPolling(): Promise<void> {
     this.polling = false
     this.abortController?.abort()
     this.abortController = null
-    for (const userId of [...this.outboundSessions.keys()]) {
-      void this.endOutboundSession({ userId })
-    }
+    // endOutboundSession 是异步的：会 drain 发送队列。关闭时必须等待其完成，
+    // 否则 fire-and-forget 可能在适配器关停前未跑完，导致待发消息丢失。
+    await Promise.all(
+      [...this.outboundSessions.keys()].map(userId =>
+        this.endOutboundSession({ userId }).catch(err =>
+          log.warn(`endOutboundSession failed during stop for ${userId}: ${String(err)}`)
+        )
+      )
+    )
     for (const userId of [...this.typingKeepalives.keys()]) {
       this.stopTypingKeepalive(userId)
     }
