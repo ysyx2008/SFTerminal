@@ -2,7 +2,22 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.41.0 (2026-05-29) (Latest)
+## v10.41.1 (2026-05-30) (Latest)
+
+> Canvas preview improvements with open button and macOS update experience optimization.
+
+### New Features
+- 🎯 **Canvas Preview "Open" Button**: Added an "Open" button to the Canvas preview panel with a dropdown option to reveal the file in Finder/Explorer.
+- 🎯 **macOS Update Optimization**: Update downloads now redirect to the official website and automatically select the correct version based on your interface language.
+
+### Improvements
+- 🎨 **Refined Canvas Open Button Style**: Polished the visual appearance of the open button in the preview panel.
+- 📝 **Simplified Save Label**: Streamlined the save button text in Canvas preview for clarity.
+
+### Bug Fixes
+- 🔧 **Fixed Canvas Preview Gap**: Eliminated the unwanted gap between the assistant's conversation area and the Canvas preview panel.
+
+## v10.41.0 (2026-05-29)
 
 > Custom data directory with auto-migration, comprehensive WeChat stability improvements, and various bug fixes.
 
