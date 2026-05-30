@@ -248,6 +248,9 @@ export default {
     saveFailed: 'Save failed',
     openFile: 'Open',
     openFailed: 'Failed to open file',
+    openMenu: 'More open options',
+    showInFolder: 'Show in folder',
+    showInFolderFailed: 'Failed to show in folder',
   },
 
   // MCP Status

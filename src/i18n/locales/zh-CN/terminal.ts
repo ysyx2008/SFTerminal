@@ -248,6 +248,9 @@ export default {
     saveFailed: '保存失败',
     openFile: '打开',
     openFailed: '打开失败',
+    openMenu: '更多打开选项',
+    showInFolder: '打开所在文件夹',
+    showInFolderFailed: '打开所在文件夹失败',
   },
 
   // MCP 状态

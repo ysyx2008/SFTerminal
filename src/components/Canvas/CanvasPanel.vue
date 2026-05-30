@@ -4,9 +4,9 @@
  *
  * 独立助手右侧的动态预览区域，根据 renderer 类型动态加载对应渲染组件。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X, TerminalSquare, FileText, Table2, FileCode, FolderOpen } from 'lucide-vue-next'
+import { X, TerminalSquare, FileText, Table2, FileCode, FolderOpen, ChevronDown, Folder } from 'lucide-vue-next'
 import { useCanvasStore } from '../../stores/canvas'
 import { useToast } from '../../composables/useToast'
 import TerminalRenderer from './TerminalRenderer.vue'
@@ -28,12 +28,15 @@ const filePath = computed(() => canvasStore.getFilePath(props.tabId))
 const canOpen = computed(() => typeof filePath.value === 'string' && filePath.value.length > 0)
 
 const rendererRef = ref<InstanceType<typeof TerminalRenderer> | null>(null)
+const openMenuRef = ref<HTMLElement | null>(null)
+const showOpenMenu = ref(false)
 
 function handleClose() {
   canvasStore.close(props.tabId)
 }
 
 async function openFile() {
+  closeOpenMenu()
   const path = filePath.value
   if (!path) return
   const api = window.electronAPI?.localFs
@@ -47,6 +50,46 @@ async function openFile() {
     toastError(err instanceof Error ? err.message : t('canvas.openFailed'))
   }
 }
+
+function toggleOpenMenu() {
+  showOpenMenu.value = !showOpenMenu.value
+}
+
+function closeOpenMenu() {
+  showOpenMenu.value = false
+}
+
+async function showInFolder() {
+  closeOpenMenu()
+  const path = filePath.value
+  if (!path) return
+  const api = window.electronAPI?.localFs
+  if (!api?.showInExplorer) {
+    toastError(t('canvas.showInFolderFailed'))
+    return
+  }
+  try {
+    await api.showInExplorer(path)
+  } catch (err) {
+    toastError(err instanceof Error ? err.message : t('canvas.showInFolderFailed'))
+  }
+}
+
+function onDocumentMouseDown(e: MouseEvent) {
+  if (!showOpenMenu.value) return
+  const el = openMenuRef.value
+  if (el && !el.contains(e.target as Node)) {
+    closeOpenMenu()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('mousedown', onDocumentMouseDown, true)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('mousedown', onDocumentMouseDown, true)
+})
 
 const rendererIcon = computed(() => {
   switch (renderer.value) {
@@ -73,16 +116,32 @@ defineExpose({
         <span>{{ title }}</span>
       </div>
       <div class="canvas-header-actions">
-        <button
-          v-if="canOpen"
-          type="button"
-          class="canvas-open-btn"
-          :title="t('canvas.openFile')"
-          @click="openFile"
-        >
-          <FolderOpen :size="14" />
-          <span>{{ t('canvas.openFile') }}</span>
-        </button>
+        <div v-if="canOpen" ref="openMenuRef" class="canvas-open-group">
+          <button
+            type="button"
+            class="canvas-open-btn canvas-open-main"
+            :title="t('canvas.openFile')"
+            @click="openFile"
+          >
+            <FolderOpen :size="14" />
+            <span>{{ t('canvas.openFile') }}</span>
+          </button>
+          <button
+            type="button"
+            class="canvas-open-btn canvas-open-chevron"
+            :title="t('canvas.openMenu')"
+            :aria-expanded="showOpenMenu"
+            @click="toggleOpenMenu"
+          >
+            <ChevronDown :size="12" />
+          </button>
+          <div v-if="showOpenMenu" class="canvas-open-menu" @click.stop>
+            <button type="button" class="canvas-open-menu-item" @click="showInFolder">
+              <Folder :size="14" />
+              <span>{{ t('canvas.showInFolder') }}</span>
+            </button>
+          </div>
+        </div>
         <button class="canvas-close" @click="handleClose" :title="t('common.close')">
           <X :size="14" />
         </button>
@@ -147,24 +206,79 @@ defineExpose({
   gap: 6px;
 }
 
-.canvas-open-btn {
+.canvas-open-group {
+  position: relative;
   display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  align-items: stretch;
   height: 22px;
-  padding: 0 8px;
   border: 1px solid rgba(var(--accent-rgb, 137, 180, 250), 0.35);
   border-radius: 4px;
   background: rgba(var(--accent-rgb, 137, 180, 250), 0.12);
-  color: var(--accent-primary, #89b4fa);
-  font-size: 11px;
-  cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
 
-.canvas-open-btn:hover {
+.canvas-open-group:hover {
   background: rgba(var(--accent-rgb, 137, 180, 250), 0.22);
   border-color: rgba(var(--accent-rgb, 137, 180, 250), 0.5);
+}
+
+.canvas-open-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--accent-primary, #89b4fa);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.canvas-open-main {
+  height: 100%;
+  padding: 0 8px;
+  border-radius: 4px 0 0 4px;
+}
+
+.canvas-open-chevron {
+  width: 20px;
+  height: 100%;
+  padding: 0;
+  border-left: 1px solid rgba(var(--accent-rgb, 137, 180, 250), 0.28);
+  border-radius: 0 4px 4px 0;
+}
+
+.canvas-open-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 148px;
+  padding: 4px;
+  background: var(--bg-secondary, #252525);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  z-index: 20;
+}
+
+.canvas-open-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-primary, #eee);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.canvas-open-menu-item:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.08));
 }
 
 .canvas-close {
