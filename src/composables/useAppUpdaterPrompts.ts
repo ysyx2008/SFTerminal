@@ -2,10 +2,10 @@ import { useI18n } from 'vue-i18n'
 import { showConfirm } from './useConfirm'
 import { toast } from './useToast'
 import { createLogger } from '../utils/logger'
+import type { LocaleType } from '../i18n'
+import { getDownloadPageUrl } from '../config/urls'
 
 const log = createLogger('AppUpdater')
-
-const RELEASES_URL = 'https://github.com/ysyx2008/SailFish/releases/latest'
 
 /**
  * 全局更新提醒
@@ -13,7 +13,7 @@ const RELEASES_URL = 'https://github.com/ysyx2008/SailFish/releases/latest'
  * - 下载完成：确认弹窗 —「立即安装」或「退出时安装」/「稍后提醒」
  */
 export function useAppUpdaterPrompts() {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const isMac = /Mac/i.test(navigator.platform)
   const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 
@@ -72,7 +72,7 @@ export function useAppUpdaterPrompts() {
         type: 'default',
       })
       if (goDownload) {
-        window.open(RELEASES_URL, '_blank')
+        window.open(getDownloadPageUrl(locale.value as LocaleType), '_blank')
       } else {
         await snoozeVersion(version)
       }
@@ -101,7 +101,7 @@ export function useAppUpdaterPrompts() {
           type: 'default',
         })
         if (goDownload) {
-          window.open(RELEASES_URL, '_blank')
+          window.open(getDownloadPageUrl(locale.value as LocaleType), '_blank')
         } else {
           await snoozeVersion(version)
         }

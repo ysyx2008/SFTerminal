@@ -4,7 +4,9 @@ import { useI18n } from 'vue-i18n'
 import { X } from 'lucide-vue-next'
 import { useConfigStore } from '../../stores/config'
 import { oemConfig } from '../../config/oem.config'
+import type { LocaleType } from '../../i18n'
 import { getLocale } from '../../i18n'
+import { getDownloadPageUrl, getWebsiteUrl } from '../../config/urls'
 import AiSettings from './AiSettings.vue'
 import AiRulesSettings from './AiRulesSettings.vue'
 import ThemeSettings from './ThemeSettings.vue'
@@ -23,7 +25,7 @@ import ShortcutSettings from './ShortcutSettings.vue'
 import PluginSettings from './PluginSettings.vue'
 import sailfishLogo from '../../../resources/logo.png'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 // Props
 const props = defineProps<{
@@ -87,6 +89,8 @@ const copyQQGroup = async () => {
 
 // 平台检测 - macOS 上仅支持检查更新 + 手动下载（无公证签名，不支持自动更新）
 const isMac = computed(() => navigator.platform.toLowerCase().includes('mac'))
+const downloadPageUrl = computed(() => getDownloadPageUrl(locale.value as LocaleType))
+const websiteUrl = computed(() => getWebsiteUrl(locale.value as LocaleType))
 
 // 品牌信息
 const brandName = computed(() => {
@@ -649,7 +653,7 @@ const onQrImageError = (event: Event) => {
                 <!-- macOS：前往下载页手动更新 -->
                 <template v-if="isMac">
                   <a 
-                    href="https://github.com/ysyx2008/SailFish/releases/latest" 
+                    :href="downloadPageUrl" 
                     target="_blank"
                     class="btn btn-outline update-btn"
                   >
@@ -741,7 +745,7 @@ const onQrImageError = (event: Event) => {
               {{ t('about.description') }}
             </p>
             <div class="about-links">
-              <a href="http://www.sfterm.com/" target="_blank" class="about-link">{{ t('about.website') }}</a>
+              <a :href="websiteUrl" target="_blank" class="about-link">{{ t('about.website') }}</a>
               <a href="mailto:nuoyan_cfan@163.com" class="about-link">{{ t('about.contact') }}</a>
               <button
                 type="button"
