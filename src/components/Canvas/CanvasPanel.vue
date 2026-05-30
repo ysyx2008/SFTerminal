@@ -6,7 +6,7 @@
  */
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X, TerminalSquare, FileText, Table2, FileCode, ExternalLink } from 'lucide-vue-next'
+import { X, TerminalSquare, FileText, Table2, FileCode, FolderOpen } from 'lucide-vue-next'
 import { useCanvasStore } from '../../stores/canvas'
 import { useToast } from '../../composables/useToast'
 import TerminalRenderer from './TerminalRenderer.vue'
@@ -80,7 +80,7 @@ defineExpose({
           :title="t('canvas.openFile')"
           @click="openFile"
         >
-          <ExternalLink :size="14" />
+          <FolderOpen :size="14" />
           <span>{{ t('canvas.openFile') }}</span>
         </button>
         <button class="canvas-close" @click="handleClose" :title="t('common.close')">
@@ -150,19 +150,21 @@ defineExpose({
 .canvas-open-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  border: none;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid rgba(var(--accent-rgb, 137, 180, 250), 0.35);
   border-radius: 4px;
-  background: var(--accent-bg, #3d5a80);
-  color: #fff;
+  background: rgba(var(--accent-rgb, 137, 180, 250), 0.12);
+  color: var(--accent-primary, #89b4fa);
   font-size: 11px;
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .canvas-open-btn:hover {
-  opacity: 0.92;
+  background: rgba(var(--accent-rgb, 137, 180, 250), 0.22);
+  border-color: rgba(var(--accent-rgb, 137, 180, 250), 0.5);
 }
 
 .canvas-close {
