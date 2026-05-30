@@ -1373,16 +1373,32 @@ onUnmounted(() => {
 
 .assistant-divider {
   flex-shrink: 0;
-  width: 4px;
+  width: 0;
+  position: relative;
+  z-index: 2;
   cursor: col-resize;
-  background: transparent;
-  transition: background 0.15s;
-  z-index: 1;
 }
 
-.assistant-divider:hover,
-.assistant-divider:active {
-  background: var(--accent-color, #4a9eff);
+/* 零宽占位，::before 提供 5px 拖拽热区，不占视觉间隙 */
+.assistant-divider::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -2px;
+  width: 5px;
+  background: transparent;
+  transition: background 0.25s ease;
+}
+
+.assistant-divider:hover::before,
+.assistant-divider:active::before {
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(var(--accent-rgb, 137, 180, 250), 0.35),
+    transparent
+  );
 }
 
 .assistant-canvas {
