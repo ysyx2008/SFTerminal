@@ -5,8 +5,10 @@
  * 独立助手右侧的动态预览区域，根据 renderer 类型动态加载对应渲染组件。
  */
 import { computed, ref } from 'vue'
-import { X, TerminalSquare, FileText, Table2, FileCode } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
+import { X, TerminalSquare, FileText, Table2, FileCode, ExternalLink } from 'lucide-vue-next'
 import { useCanvasStore } from '../../stores/canvas'
+import { useToast } from '../../composables/useToast'
 import TerminalRenderer from './TerminalRenderer.vue'
 import DocumentRenderer from './DocumentRenderer.vue'
 import SpreadsheetRenderer from './SpreadsheetRenderer.vue'
@@ -16,15 +18,34 @@ const props = defineProps<{
   tabId: string
 }>()
 
+const { t } = useI18n()
 const canvasStore = useCanvasStore()
+const { error: toastError } = useToast()
 
 const renderer = computed(() => canvasStore.getRenderer(props.tabId))
 const title = computed(() => canvasStore.getTitle(props.tabId))
+const filePath = computed(() => canvasStore.getFilePath(props.tabId))
+const canOpen = computed(() => typeof filePath.value === 'string' && filePath.value.length > 0)
 
 const rendererRef = ref<InstanceType<typeof TerminalRenderer> | null>(null)
 
 function handleClose() {
   canvasStore.close(props.tabId)
+}
+
+async function openFile() {
+  const path = filePath.value
+  if (!path) return
+  const api = window.electronAPI?.localFs
+  if (!api?.openFile) {
+    toastError(t('canvas.openFailed'))
+    return
+  }
+  try {
+    await api.openFile(path)
+  } catch (err) {
+    toastError(err instanceof Error ? err.message : t('canvas.openFailed'))
+  }
 }
 
 const rendererIcon = computed(() => {
@@ -51,9 +72,21 @@ defineExpose({
         <component :is="rendererIcon" :size="14" />
         <span>{{ title }}</span>
       </div>
-      <button class="canvas-close" @click="handleClose" title="Close">
-        <X :size="14" />
-      </button>
+      <div class="canvas-header-actions">
+        <button
+          v-if="canOpen"
+          type="button"
+          class="canvas-open-btn"
+          :title="t('canvas.openFile')"
+          @click="openFile"
+        >
+          <ExternalLink :size="14" />
+          <span>{{ t('canvas.openFile') }}</span>
+        </button>
+        <button class="canvas-close" @click="handleClose" :title="t('common.close')">
+          <X :size="14" />
+        </button>
+      </div>
     </div>
     <div class="canvas-body">
       <TerminalRenderer
@@ -106,6 +139,30 @@ defineExpose({
   font-size: 12px;
   color: var(--text-secondary, #aaa);
   font-weight: 500;
+}
+
+.canvas-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent-bg, #3d5a80);
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.canvas-open-btn:hover {
+  opacity: 0.92;
 }
 
 .canvas-close {

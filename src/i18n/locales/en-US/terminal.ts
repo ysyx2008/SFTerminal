@@ -241,11 +241,13 @@ export default {
     quoteHint: 'Ctrl/Cmd+L quotes selection into the AI input',
     quoteToComposer: 'Quote to AI chat',
     quoteToAiNeedSelection: 'Select text to quote first',
-    saveToDisk: 'Save to disk',
+    saveToDisk: 'Save',
     saveShortcut: 'Ctrl/Cmd+S to save',
     noPathHint: 'No file path yet—edit for preview only; saving links after Agent writes a .md file',
-    savedToDisk: 'Saved to disk',
+    savedToDisk: 'Saved',
     saveFailed: 'Save failed',
+    openFile: 'Open',
+    openFailed: 'Failed to open file',
   },
 
   // MCP Status

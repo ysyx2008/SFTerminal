@@ -836,7 +836,8 @@ async function wordCreate(
         action: 'open',
         renderer: 'document',
         title: path.basename(filePath),
-        content: '<p><em>(空文档)</em></p>'
+        content: '<p><em>(空文档)</em></p>',
+        filePath
       }
     })
 
@@ -914,7 +915,8 @@ async function wordOpen(
         action: 'open',
         renderer: 'document',
         title: path.basename(filePath),
-        content: enrichedHtml
+        content: enrichedHtml,
+        filePath
       }
     })
 
@@ -2642,7 +2644,8 @@ async function wordFromMarkdown(
         action: 'open',
         renderer: 'document',
         title: path.basename(filePath),
-        content: enrichedHtml
+        content: enrichedHtml,
+        filePath
       }
     } catch { /* ignore preview errors */ }
 
@@ -3357,7 +3360,8 @@ async function wordMergeTemplate(
         action: 'open',
         renderer: 'document',
         title: path.basename(outputPath),
-        content: previewHtml
+        content: previewHtml,
+        filePath: outputPath
       } : undefined
     })
 

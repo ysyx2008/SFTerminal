@@ -402,7 +402,8 @@ async function excelOpen(
         action: 'open',
         renderer: 'spreadsheet',
         title: path.basename(filePath),
-        content: previewHtml
+        content: previewHtml,
+        filePath
       }
     })
 
@@ -2625,7 +2626,8 @@ async function excelMergeTemplate(
         action: 'open',
         renderer: 'spreadsheet',
         title: path.basename(outputPath),
-        content: previewHtml
+        content: previewHtml,
+        filePath: outputPath
       } : undefined
     })
 

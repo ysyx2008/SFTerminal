@@ -241,11 +241,13 @@ export default {
     quoteHint: 'Ctrl/Cmd+L 将选中内容引用到下方 AI 对话',
     quoteToComposer: '引用到 AI 对话',
     quoteToAiNeedSelection: '请先选中要引用的文字',
-    saveToDisk: '保存到磁盘',
+    saveToDisk: '保存',
     saveShortcut: 'Ctrl/Cmd+S 保存',
     noPathHint: '无本地文件路径时仅可编辑预览；Agent 写入 .md 后会自动关联保存',
-    savedToDisk: '已保存到磁盘',
+    savedToDisk: '已保存',
     saveFailed: '保存失败',
+    openFile: '打开',
+    openFailed: '打开失败',
   },
 
   // MCP 状态

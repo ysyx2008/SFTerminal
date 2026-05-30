@@ -368,7 +368,7 @@ onUnmounted(() => {
           @click="saveToDisk"
         >
           <Save :size="14" />
-          <span>{{ saving ? t('common.saving') : t('canvas.saveToDisk') }}</span>
+          <span>{{ saving ? t('common.saving') : t('common.save') }}</span>
         </button>
       </div>
     </div>
