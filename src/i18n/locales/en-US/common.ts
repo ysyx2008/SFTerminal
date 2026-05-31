@@ -196,7 +196,7 @@ export default {
     autoCheckUpdate: 'Auto Check for Updates',
     autoCheckUpdateHint: 'Automatically check for new versions on startup',
     autoDownloadUpdate: 'Auto-download updates',
-    updateToastAvailable: 'New version {version} available',
+    updateAvailableMessageManual: 'Version {version} is available. Auto-download is off. Start download now? You will be prompted to install when ready.',
     updateReadyTitle: 'Update Ready',
     updateReadyMessage: 'Version {version} is ready. Install and restart now, or choose "Install on quit" to update when you close the app (system installer shows progress).',
     updateReadyMessageNoQuit: 'Version {version} has been downloaded. Install and restart now? The system installer will show progress.',

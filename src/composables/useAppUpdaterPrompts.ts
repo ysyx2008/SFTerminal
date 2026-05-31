@@ -9,7 +9,7 @@ const log = createLogger('AppUpdater')
 
 /**
  * 全局更新提醒
- * - 发现新版本：弹窗（macOS 手动下载）；Win/Linux 仅在未开启自动下载时 Toast 提示
+ * - 发现新版本：弹窗（macOS 前往下载；Win/Linux 未开自动下载时弹窗引导下载）
  * - 下载完成：确认弹窗 —「立即安装」或「退出时安装」/「稍后提醒」
  */
 export function useAppUpdaterPrompts() {
@@ -18,8 +18,8 @@ export function useAppUpdaterPrompts() {
   const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 
   let cleanup: (() => void) | null = null
-  let lastAvailableToastVersion = ''
   let lastMacAvailablePromptVersion = ''
+  let lastWinLinuxAvailablePromptVersion = ''
   let installPromptOpen = false
 
   async function isInstallOnQuitEnabled(): Promise<boolean> {
@@ -59,6 +59,35 @@ export function useAppUpdaterPrompts() {
     return (await isInstallOnQuitEnabled())
       ? t('about.installOnQuit')
       : t('about.updateLater')
+  }
+
+  async function promptWinLinuxUpdateAvailable(version: string, status: UpdateStatusInfo): Promise<void> {
+    if (installPromptOpen) return
+    if (await shouldSkipPrompt(version)) return
+    if (version === lastWinLinuxAvailablePromptVersion) return
+
+    installPromptOpen = true
+    lastWinLinuxAvailablePromptVersion = version
+    try {
+      const startDownload = await showConfirm({
+        title: t('about.newVersionAvailable', { version }),
+        message: t('about.updateAvailableMessageManual', { version }),
+        confirmText: t('about.downloadUpdate'),
+        cancelText: t('about.updateLater'),
+        type: 'default',
+      })
+      if (startDownload) {
+        const source = status.sources?.current ?? status.sources?.recommended
+        const result = await window.electronAPI.updater.downloadUpdate(source)
+        if (!result.success) {
+          toast.warning(result.error || t('about.updateError'))
+        }
+      } else {
+        await snoozeVersion(version)
+      }
+    } finally {
+      installPromptOpen = false
+    }
   }
 
   async function promptMacUpdateAvailable(version: string): Promise<void> {
@@ -140,9 +169,8 @@ export function useAppUpdaterPrompts() {
     if (status.status === 'available') {
       if (isMac) {
         await promptMacUpdateAvailable(version)
-      } else if (!(await isAutoDownloadEnabled()) && version !== lastAvailableToastVersion) {
-        lastAvailableToastVersion = version
-        toast.info(t('about.updateToastAvailable', { version }), 6000)
+      } else if (!(await isAutoDownloadEnabled())) {
+        await promptWinLinuxUpdateAvailable(version, status)
       }
       return
     }
