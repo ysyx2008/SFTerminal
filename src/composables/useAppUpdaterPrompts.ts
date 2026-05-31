@@ -9,7 +9,7 @@ const log = createLogger('AppUpdater')
 
 /**
  * 全局更新提醒
- * - 发现新版本：Toast（Win/Linux）或弹窗（macOS 手动下载）
+ * - 发现新版本：弹窗（macOS 手动下载）；Win/Linux 仅在未开启自动下载时 Toast 提示
  * - 下载完成：确认弹窗 —「立即安装」或「退出时安装」/「稍后提醒」
  */
 export function useAppUpdaterPrompts() {
@@ -24,6 +24,11 @@ export function useAppUpdaterPrompts() {
 
   async function isInstallOnQuitEnabled(): Promise<boolean> {
     const value = await window.electronAPI.config.get('installUpdateOnQuit') as boolean | undefined
+    return value !== false
+  }
+
+  async function isAutoDownloadEnabled(): Promise<boolean> {
+    const value = await window.electronAPI.config.get('autoDownloadUpdate') as boolean | undefined
     return value !== false
   }
 
@@ -135,7 +140,7 @@ export function useAppUpdaterPrompts() {
     if (status.status === 'available') {
       if (isMac) {
         await promptMacUpdateAvailable(version)
-      } else if (version !== lastAvailableToastVersion) {
+      } else if (!(await isAutoDownloadEnabled()) && version !== lastAvailableToastVersion) {
         lastAvailableToastVersion = version
         toast.info(t('about.updateToastAvailable', { version }), 6000)
       }
