@@ -349,6 +349,13 @@ export default {
       customName: '自定义'
     },
     getApiKey: '获取 Key',
+    testKey: '测试连接',
+    testKeyTesting: '测试中…',
+    testSuccess: '连接成功（{ms}ms）',
+    fetchModels: '获取模型列表',
+    fetchedModelsCount: '已获取 {count} 个模型，点击下拉选择',
+    toggleModelList: '展开模型列表',
+    supportsVision: '支持图片/视觉输入',
     // 助手调试模式
     agentDebugMode: '助手调试模式',
     agentDebugModeDesc: '开启后显示详细的工具调用步骤，关闭后交互更简洁自然',

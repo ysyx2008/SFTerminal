@@ -1027,6 +1027,201 @@ export class AiService {
   }
 
   /**
+   * 测试 API Key 是否可用（使用表单中的临时配置，不要求 profile 已保存）
+   * 发送极小请求（max_tokens=1），快速验证 Key + endpoint 连通性
+   */
+  async testApiKey(profile: Partial<AiProfile>): Promise<{ success: boolean; message: string; latencyMs?: number }> {
+    if (!profile.apiUrl || !profile.model) {
+      return { success: false, message: t('error.ai_no_config') }
+    }
+
+    const testProfile: AiProfile = {
+      id: '__test__',
+      name: '__test__',
+      apiUrl: profile.apiUrl,
+      apiKey: profile.apiKey ?? '',
+      model: profile.model,
+      proxy: profile.proxy,
+      apiFormat: profile.apiFormat ?? 'auto',
+      contextLength: 4096,
+      maxOutputTokens: 1,
+    }
+
+    const requestBody = {
+      model: testProfile.model,
+      messages: [{ role: 'user', content: 'Hi' }],
+      max_tokens: 1,
+    }
+
+    const start = Date.now()
+    try {
+      const data = await this.makeRequestOnce<{
+        choices?: { message?: { content?: string } }[]
+        content?: { type?: string; text?: string }[]
+        error?: { message?: string; code?: string; type?: string }
+      }>(testProfile, requestBody)
+
+      const latencyMs = Date.now() - start
+
+      if (data.error) {
+        const msg = data.error.message || t('error.api_error_generic')
+        return { success: false, message: msg, latencyMs }
+      }
+
+      return { success: true, message: '', latencyMs }
+    } catch (err) {
+      const latencyMs = Date.now() - start
+      const errMsg = err instanceof Error ? err.message : String(err)
+      const friendly = err instanceof Error ? tryFriendlyApiError(err, testProfile.model) : null
+      return { success: false, message: friendly || translateNetworkError(errMsg), latencyMs }
+    }
+  }
+
+  /**
+   * 从 provider 拉取可用模型列表（GET /v1/models）
+   * 同时尝试解析非标准能力字段以自动识别视觉模型
+   */
+  async fetchModels(profile: Partial<AiProfile>): Promise<{
+    models: Array<{ id: string; supportsVision: boolean; contextLength?: number }>
+    error?: string
+  }> {
+    if (!profile.apiUrl) {
+      return { models: [], error: t('error.ai_no_config') }
+    }
+
+    // 构造 /models 端点：将 /chat/completions 替换为 /models
+    // 其他路径形式：去掉最后一段然后加 /models（兜底方案）
+    let modelsUrl: string
+    try {
+      const cleaned = profile.apiUrl.replace(/\/chat\/completions(\?.*)?$/, '').replace(/\/messages(\?.*)?$/, '')
+      const base = new URL(cleaned)
+      // 如果路径已经以 /models 结尾则直接用
+      if (base.pathname.endsWith('/models')) {
+        modelsUrl = base.toString()
+      } else {
+        base.pathname = base.pathname.replace(/\/$/, '') + '/models'
+        modelsUrl = base.toString()
+      }
+    } catch {
+      return { models: [], error: t('error.ai_no_config') }
+    }
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+    if (profile.apiKey) {
+      // Anthropic 使用 x-api-key，其余用 Bearer
+      const isAnthropic = isAnthropicApi({ apiUrl: profile.apiUrl, apiFormat: profile.apiFormat })
+      if (isAnthropic) {
+        headers['x-api-key'] = profile.apiKey
+        headers['anthropic-version'] = '2023-06-01'
+      } else {
+        headers['Authorization'] = `Bearer ${profile.apiKey}`
+      }
+    }
+
+    return new Promise((resolve) => {
+      try {
+        const url = new URL(modelsUrl)
+        const isHttps = url.protocol === 'https:'
+        const httpModule = isHttps ? https : http
+        const proxyAgent = profile.proxy ? this.getProxyAgent(profile.proxy) : undefined
+
+        const options: https.RequestOptions = {
+          hostname: url.hostname,
+          port: url.port || (isHttps ? 443 : 80),
+          path: url.pathname + url.search,
+          method: 'GET',
+          headers,
+          timeout: 10000,
+          agent: proxyAgent ?? (isHttps ? this.httpsAgent : this.httpAgent),
+        }
+
+        type ModelEntry = {
+          id: string
+          input_modalities?: string[]
+          output_modalities?: string[]
+          capabilities?: { vision?: boolean; image_input?: boolean }
+          type?: string
+          modalities?: string[]
+          context_length?: number
+          context_window?: number
+          max_input_tokens?: number
+        }
+
+        const req = httpModule.request(options, (res) => {
+          let data = ''
+          res.on('data', (chunk) => { data += chunk })
+          res.on('end', () => {
+            const statusCode = res.statusCode ?? 0
+            const contentType = res.headers['content-type'] ?? ''
+
+            // 非 JSON 响应（HTML 错误页等）：先于 JSON.parse 拦截
+            if (!contentType.includes('application/json') && !contentType.includes('text/json')) {
+              if (statusCode === 404) {
+                resolve({ models: [], error: t('error.fetch_models_not_supported') })
+              } else if (statusCode === 401 || statusCode === 403) {
+                resolve({ models: [], error: t('error.api_invalid_key') })
+              } else {
+                resolve({ models: [], error: t('error.fetch_models_not_supported') })
+              }
+              return
+            }
+
+            try {
+              const json = JSON.parse(data) as {
+                data?: ModelEntry[]
+                models?: ModelEntry[]
+                error?: { message?: string }
+              }
+
+              // API 层面的错误（Key 无效、权限不足等）
+              if (json.error) {
+                const msg = json.error.message ?? t('error.api_error_generic')
+                const friendly = tryFriendlyApiError(new Error(msg), undefined)
+                resolve({ models: [], error: friendly || msg })
+                return
+              }
+
+              // 兼容标准格式（data[]）和部分厂商格式（models[]）
+              const rawList = json.data ?? json.models ?? []
+              const models = rawList.map((m) => {
+                // 视觉能力检测：仅依赖结构化能力字段，不做名称匹配
+                const inputModalities = m.input_modalities ?? m.modalities ?? []
+                const supportsVision =
+                  inputModalities.includes('image') ||
+                  m.capabilities?.vision === true ||
+                  m.capabilities?.image_input === true ||
+                  m.type === 'multimodal'
+
+                const contextLength = m.context_length ?? m.context_window ?? m.max_input_tokens
+
+                return { id: m.id, supportsVision, contextLength }
+              })
+
+              resolve({ models })
+            } catch {
+              resolve({ models: [], error: t('error.response_parse_failed') })
+            }
+          })
+        })
+
+        req.on('timeout', () => {
+          req.destroy()
+          resolve({ models: [], error: translateNetworkError('ETIMEDOUT') })
+        })
+        req.on('error', (err) => {
+          resolve({ models: [], error: translateNetworkError(err.message) })
+        })
+        req.end()
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        resolve({ models: [], error: msg })
+      }
+    })
+  }
+
+  /**
    * 发送单次 HTTP 请求（支持代理，带超时处理）
    * 抛出 ApiRequestError 携带 statusCode / retryAfter / apiErrorCode，供 withApiRetry 分类重试
    */

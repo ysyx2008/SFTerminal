@@ -349,6 +349,13 @@ export default {
       customName: 'Custom'
     },
     getApiKey: 'Get Key',
+    testKey: 'Test Connection',
+    testKeyTesting: 'Testing…',
+    testSuccess: 'Connected ({ms}ms)',
+    fetchModels: 'Fetch model list',
+    fetchedModelsCount: '{count} models fetched, click to select',
+    toggleModelList: 'Toggle model list',
+    supportsVision: 'Supports image/vision input',
     // Agent debug mode
     agentDebugMode: 'Agent Debug Mode',
     agentDebugModeDesc: 'Show detailed tool call steps when enabled, simpler interaction when disabled',

@@ -738,7 +738,14 @@ const electronAPI = {
         ipcRenderer.on(`ai:stream:${streamId}`, handler)
       })
     },
-    abort: (requestId?: string) => ipcRenderer.invoke('ai:abort', requestId)
+    abort: (requestId?: string) => ipcRenderer.invoke('ai:abort', requestId),
+    testApiKey: (profile: Partial<AiProfile>) =>
+      ipcRenderer.invoke('ai:testApiKey', profile) as Promise<{ success: boolean; message: string; latencyMs?: number }>,
+    fetchModels: (profile: Partial<AiProfile>) =>
+      ipcRenderer.invoke('ai:fetchModels', profile) as Promise<{
+        models: Array<{ id: string; supportsVision: boolean; contextLength?: number }>
+        error?: string
+      }>
   },
 
   // 配置操作

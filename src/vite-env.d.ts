@@ -427,6 +427,11 @@ interface Window {
         requestId?: string
       ) => void
       abort: (requestId?: string) => Promise<void>
+      testApiKey: (profile: Partial<import('@shared/types').AiProfile>) => Promise<{ success: boolean; message: string; latencyMs?: number }>
+      fetchModels: (profile: Partial<import('@shared/types').AiProfile>) => Promise<{
+        models: Array<{ id: string; supportsVision: boolean; contextLength?: number }>
+        error?: string
+      }>
     }
     config: {
       get: (key: string) => Promise<unknown>

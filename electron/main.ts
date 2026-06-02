@@ -1937,6 +1937,14 @@ ipcMain.handle('ai:chat', async (_event, messages, profileId?: string) => {
   return aiService.chat(messages, profileId)
 })
 
+ipcMain.handle('ai:testApiKey', async (_event, profile) => {
+  return aiService.testApiKey(profile)
+})
+
+ipcMain.handle('ai:fetchModels', async (_event, profile) => {
+  return aiService.fetchModels(profile)
+})
+
 ipcMain.handle('ai:chatStream', async (event, messages, profileId?: string, requestId?: string) => {
   // 使用传入的 requestId 或生成新的 streamId
   const streamId = requestId || Date.now().toString()

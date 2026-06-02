@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Pencil, Trash2, X, ExternalLink, Eye, Copy, GripVertical } from 'lucide-vue-next'
+import { Plus, Pencil, Trash2, X, ExternalLink, Eye, Copy, GripVertical, RefreshCw, ChevronDown, Camera } from 'lucide-vue-next'
 import { useConfigStore, type AiProfile, type AiModelType, type ApiFormat } from '../../stores/config'
 import { AI_TEMPLATES } from '../../config/ai-templates'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderId } from '@shared/types'
@@ -118,6 +118,92 @@ const openCopyProfile = (profile: AiProfile) => {
   isCopyMode.value = true
   showForm.value = true
 }
+
+// ==================== API Key 测试 ====================
+type TestState = 'idle' | 'testing' | 'success' | 'error'
+const testState = ref<TestState>('idle')
+const testMessage = ref('')
+
+const testApiKey = async () => {
+  if (testState.value === 'testing') return
+  testState.value = 'testing'
+  testMessage.value = ''
+  try {
+    const result = await window.electronAPI.ai.testApiKey({
+      apiUrl: formData.value.apiUrl,
+      apiKey: formData.value.apiKey,
+      model: formData.value.model,
+      proxy: formData.value.proxy,
+      apiFormat: formData.value.apiFormat,
+    })
+    testState.value = result.success ? 'success' : 'error'
+    testMessage.value = result.success
+      ? t('aiSettings.testSuccess', { ms: result.latencyMs ?? 0 })
+      : result.message
+  } catch (e) {
+    testState.value = 'error'
+    testMessage.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+// 表单字段变化时重置测试状态
+watch(
+  () => [formData.value.apiUrl, formData.value.apiKey, formData.value.model, formData.value.proxy],
+  () => {
+    testState.value = 'idle'
+    testMessage.value = ''
+  }
+)
+
+// ==================== 模型列表拉取 ====================
+interface FetchedModel { id: string; supportsVision: boolean; contextLength?: number }
+const fetchedModels = ref<FetchedModel[]>([])
+const isFetchingModels = ref(false)
+const fetchModelsError = ref('')
+const showModelDropdown = ref(false)
+
+const fetchModels = async () => {
+  if (isFetchingModels.value || !formData.value.apiUrl) return
+  isFetchingModels.value = true
+  fetchModelsError.value = ''
+  fetchedModels.value = []
+  try {
+    const result = await window.electronAPI.ai.fetchModels({
+      apiUrl: formData.value.apiUrl,
+      apiKey: formData.value.apiKey,
+      proxy: formData.value.proxy,
+      apiFormat: formData.value.apiFormat,
+    })
+    if (result.error) {
+      fetchModelsError.value = result.error
+    } else {
+      fetchedModels.value = result.models
+      if (result.models.length > 0) showModelDropdown.value = true
+    }
+  } catch (e) {
+    fetchModelsError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    isFetchingModels.value = false
+  }
+}
+
+const selectModel = (model: FetchedModel) => {
+  formData.value.model = model.id
+  if (model.supportsVision) {
+    formData.value.modelType = 'vision'
+  }
+  if (model.contextLength) {
+    formData.value.contextLength = model.contextLength
+  }
+  showModelDropdown.value = false
+}
+
+// 切换 apiUrl 时清空已拉取的列表
+watch(() => formData.value.apiUrl, () => {
+  fetchedModels.value = []
+  fetchModelsError.value = ''
+  showModelDropdown.value = false
+})
 
 const saveProfile = async () => {
   if (!formData.value.name || !formData.value.apiUrl || !formData.value.model) {
@@ -659,7 +745,53 @@ function openWebSearchKeyUrl() {
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('aiSettings.model') }} *</label>
-                <input v-model="formData.model" type="text" class="input" :placeholder="t('aiSettings.modelPlaceholder')" />
+                <div class="model-input-row">
+                  <div class="model-combobox" @mouseleave="() => {}">
+                    <input
+                      v-model="formData.model"
+                      type="text"
+                      class="input"
+                      :placeholder="t('aiSettings.modelPlaceholder')"
+                      @focus="showModelDropdown = fetchedModels.length > 0"
+                      @blur="setTimeout(() => { showModelDropdown = false }, 150)"
+                    />
+                    <button
+                      v-if="fetchedModels.length > 0"
+                      class="model-dropdown-toggle"
+                      @click="showModelDropdown = !showModelDropdown"
+                      :title="t('aiSettings.toggleModelList')"
+                    >
+                      <ChevronDown :size="14" />
+                    </button>
+                    <div v-if="showModelDropdown && fetchedModels.length > 0" class="model-dropdown">
+                      <div
+                        v-for="m in fetchedModels"
+                        :key="m.id"
+                        class="model-dropdown-item"
+                        :class="{ active: formData.model === m.id }"
+                        @click="selectModel(m)"
+                      >
+                        <span class="model-id">{{ m.id }}</span>
+                        <span v-if="m.supportsVision" class="model-vision-badge" :title="t('aiSettings.supportsVision')">
+                          <Camera :size="11" />
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    class="btn-fetch-models"
+                    :class="{ loading: isFetchingModels }"
+                    :disabled="isFetchingModels || !formData.apiUrl"
+                    @click="fetchModels"
+                    :title="t('aiSettings.fetchModels')"
+                  >
+                    <RefreshCw :size="14" :class="{ spinning: isFetchingModels }" />
+                  </button>
+                </div>
+                <span v-if="fetchModelsError" class="form-hint" style="color: var(--color-danger, #ef4444)">{{ fetchModelsError }}</span>
+                <span v-else-if="fetchedModels.length > 0 && !showModelDropdown" class="form-hint">
+                  {{ t('aiSettings.fetchedModelsCount', { count: fetchedModels.length }) }}
+                </span>
               </div>
               <div class="form-row">
                 <div class="form-group flex-1">
@@ -718,7 +850,19 @@ function openWebSearchKeyUrl() {
             </div>
             <div class="form-footer">
               <button class="btn" @click="showForm = false">{{ t('common.cancel') }}</button>
-              <button class="btn btn-primary" @click="saveProfile">{{ t('common.save') }}</button>
+              <span v-if="testMessage" class="test-result" :class="testState">{{ testMessage }}</span>
+              <div class="footer-right">
+                <button
+                  class="btn btn-test"
+                  :class="{ testing: testState === 'testing', success: testState === 'success', error: testState === 'error' }"
+                  :disabled="testState === 'testing' || !formData.apiUrl || !formData.model"
+                  @click="testApiKey"
+                >
+                  <span v-if="testState === 'testing'">{{ t('aiSettings.testKeyTesting') }}</span>
+                  <span v-else>{{ t('aiSettings.testKey') }}</span>
+                </button>
+                <button class="btn btn-primary" @click="saveProfile">{{ t('common.save') }}</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1307,10 +1451,179 @@ function openWebSearchKeyUrl() {
 
 .form-footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   gap: 8px;
   padding: 12px 16px;
   border-top: 1px solid var(--border-color);
+}
+
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.form-footer .test-result {
+  flex: 1;
+  text-align: right;
+}
+
+.btn-test {
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.btn-test:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+}
+
+.btn-test.testing {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.btn-test.success {
+  border-color: var(--color-success, #22c55e);
+  color: var(--color-success, #22c55e);
+}
+
+.btn-test.error {
+  border-color: var(--color-danger, #ef4444);
+  color: var(--color-danger, #ef4444);
+}
+
+.test-result {
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.test-result.success {
+  color: var(--color-success, #22c55e);
+}
+
+.test-result.error {
+  color: var(--color-danger, #ef4444);
+}
+
+/* 模型输入行 */
+.model-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.model-combobox {
+  position: relative;
+  flex: 1;
+}
+
+.model-combobox .input {
+  width: 100%;
+  padding-right: 28px;
+}
+
+.model-dropdown-toggle {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 2px;
+  display: flex;
+  align-items: center;
+}
+
+.model-dropdown-toggle:hover {
+  color: var(--text-primary);
+}
+
+.model-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 100;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.model-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  gap: 6px;
+}
+
+.model-dropdown-item:hover,
+.model-dropdown-item.active {
+  background: var(--bg-secondary);
+}
+
+.model-id {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.model-vision-badge {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  color: var(--accent-primary, #4a9eff);
+  opacity: 0.85;
+}
+
+.btn-fetch-models {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn-fetch-models:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.btn-fetch-models:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinning {
+  animation: spin 0.8s linear infinite;
 }
 
 /* Toggle Switch */
