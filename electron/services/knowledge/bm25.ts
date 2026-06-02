@@ -13,10 +13,26 @@ const log = createLogger('BM25')
 // 动态导入 jieba-wasm
 let jiebaModule: any = null
 
+// 模块加载时立即在后台触发 WASM 预热，使 BM25 首次 search 时 jieba 已就绪
+// fire-and-forget，不阻塞模块初始化，不影响主线程
+let jiebaPreloadPromise: Promise<any> | null = null
+if (typeof setImmediate !== 'undefined') {
+  setImmediate(() => {
+    jiebaPreloadPromise = import('jieba-wasm').then(m => {
+      jiebaModule = m
+      return m
+    }).catch(() => { /* 预加载失败无妨，loadJieba() 会重试 */ })
+  })
+}
+
 async function loadJieba() {
   if (!jiebaModule) {
-    jiebaModule = await import('jieba-wasm')
-    // Node.js 版本的 jieba-wasm 在模块加载时自动初始化 WASM，无需手动调用
+    if (jiebaPreloadPromise) {
+      jiebaModule = await jiebaPreloadPromise
+    } else {
+      jiebaModule = await import('jieba-wasm')
+      // Node.js 版本的 jieba-wasm 在模块加载时自动初始化 WASM，无需手动调用
+    }
   }
   return jiebaModule
 }
