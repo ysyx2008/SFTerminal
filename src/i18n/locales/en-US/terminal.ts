@@ -138,7 +138,8 @@ export default {
     confirmCloseAgentRunning: 'AI Agent is running a task. Closing the terminal will interrupt it. Are you sure?',
     confirmCloseWithChat: 'This terminal has AI chat history that will be lost. Are you sure you want to close?',
     needsAttentionConfirm: 'Needs your confirmation',
-    needsAttentionTaskFinished: 'Agent finished a task'
+    needsAttentionTaskFinished: 'Agent finished a task',
+    doubleClickToRename: 'Double-click to rename tab'
   },
 
 

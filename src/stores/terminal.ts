@@ -85,6 +85,8 @@ export interface ParsedDocument {
 export interface TerminalTab {
   id: string
   title: string
+  // 用户自定义的标签名称，设置后优先显示，清空则恢复自动标题
+  customTitle?: string
   type: TerminalType
   ptyId?: string
   sshConfig?: {
@@ -1002,12 +1004,22 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
-   * 更新标签标题
+   * 更新标签标题（系统自动更新，不影响用户自定义标题）
    */
   function updateTabTitle(tabId: string, title: string): void {
     const tab = tabs.value.find(t => t.id === tabId)
     if (tab) {
       tab.title = title
+    }
+  }
+
+  /**
+   * 用户手动重命名标签页。传入空字符串则清除自定义名称，恢复自动标题。
+   */
+  function renameTab(tabId: string, name: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (tab) {
+      tab.customTitle = name.trim() || undefined
     }
   }
 
@@ -2451,6 +2463,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     reconnectSsh,
     setActiveTab,
     updateTabTitle,
+    renameTab,
     updateConnectionStatus,
     updateSystemInfo,
     appendOutput,

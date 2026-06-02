@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, Radio, Bot } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, Radio, Bot, Pencil } from 'lucide-vue-next'
 import { useTerminalStore } from '../stores/terminal'
 import BatchCommandPanel from './BatchCommandPanel.vue'
 
@@ -215,6 +215,41 @@ const openBatchPanel = () => {
   batchPanelRef.value?.open()
 }
 
+// ==================== 内联重命名 ====================
+
+const editingTabId = ref<string | null>(null)
+const editingTitle = ref('')
+const editInputRef = ref<HTMLInputElement | null>(null)
+
+function startRename(tabId: string, currentTitle: string, event: MouseEvent) {
+  event.stopPropagation()
+  editingTabId.value = tabId
+  editingTitle.value = currentTitle
+  nextTick(() => {
+    editInputRef.value?.focus()
+    editInputRef.value?.select()
+  })
+}
+
+function commitRename() {
+  if (editingTabId.value) {
+    terminalStore.renameTab(editingTabId.value, editingTitle.value)
+  }
+  editingTabId.value = null
+}
+
+function cancelRename() {
+  editingTabId.value = null
+}
+
+function handleRenameKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter') {
+    commitRename()
+  } else if (event.key === 'Escape') {
+    cancelRename()
+  }
+}
+
 /** 非激活 tab 上的标签栏提示（待确认 / 后台任务已结束） */
 const tabAttentionTooltip = (tabId: string): string | undefined => {
   if (tabId === terminalStore.activeTabId) return undefined
@@ -267,7 +302,26 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
           <Terminal v-else-if="tab.type === 'local'" :size="14" />
           <Monitor v-else :size="14" />
         </span>
-        <span class="tab-title">{{ tab.title }}</span>
+        <!-- 内联重命名输入框 -->
+        <input
+          v-if="editingTabId === tab.id"
+          ref="editInputRef"
+          v-model="editingTitle"
+          class="tab-title-input"
+          @keydown="handleRenameKeydown"
+          @blur="commitRename"
+          @click.stop
+          @dblclick.stop
+          @mousedown.stop
+        />
+        <!-- 标题展示，双击进入编辑 -->
+        <span
+          v-else
+          class="tab-title"
+          :class="{ 'has-custom-title': tab.customTitle }"
+          :title="t('tabs.doubleClickToRename')"
+          @dblclick.stop="startRename(tab.id, tab.customTitle || tab.title, $event)"
+        >{{ tab.customTitle || tab.title }}</span>
         <span v-if="tab.isLoading" class="tab-loading">
           <Loader2 class="spinner" :size="12" />
         </span>
@@ -542,6 +596,7 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
   overflow: hidden;
   text-overflow: ellipsis;
   transition: all 0.2s ease;
+  cursor: text;
 }
 
 .tab:hover .tab-title {
@@ -551,6 +606,26 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
 .tab.active .tab-title {
   color: var(--text-primary);
   font-weight: 600;
+}
+
+/* 有自定义名称时用强调色细微区分 */
+.tab.active .tab-title.has-custom-title {
+  color: var(--accent-secondary, var(--text-primary));
+}
+
+.tab-title-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-family: inherit;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--accent-primary);
+  border-radius: 3px;
+  padding: 0 4px;
+  height: 20px;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 137, 180, 250), 0.25);
 }
 
 .tab-close {
