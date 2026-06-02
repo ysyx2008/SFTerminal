@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, Radio, Bot, Pencil } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, Radio, Bot } from 'lucide-vue-next'
 import { useTerminalStore } from '../stores/terminal'
 import BatchCommandPanel from './BatchCommandPanel.vue'
 
@@ -306,7 +306,7 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
         <!-- 内联重命名输入框 -->
         <input
           v-if="editingTabId === tab.id"
-          :ref="(el) => { if (el) editInputRef = el as HTMLInputElement }"
+          :ref="(el) => { if (el instanceof HTMLInputElement) editInputRef = el }"
           v-model="editingTitle"
           class="tab-title-input"
           @keydown="handleRenameKeydown"
