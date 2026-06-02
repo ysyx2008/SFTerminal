@@ -219,16 +219,17 @@ const openBatchPanel = () => {
 
 const editingTabId = ref<string | null>(null)
 const editingTitle = ref('')
-const editInputRef = ref<HTMLInputElement | null>(null)
+let editInputRef: HTMLInputElement | null = null
 
 function startRename(tabId: string, currentTitle: string, event: MouseEvent) {
   event.stopPropagation()
   editingTabId.value = tabId
   editingTitle.value = currentTitle
-  nextTick(() => {
-    editInputRef.value?.focus()
-    editInputRef.value?.select()
-  })
+  // 双层 nextTick：第一层等 v-if 挂载输入框，第二层等函数式 ref 赋值完成
+  nextTick(() => nextTick(() => {
+    editInputRef?.focus()
+    editInputRef?.select()
+  }))
 }
 
 function commitRename() {
@@ -305,7 +306,7 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
         <!-- 内联重命名输入框 -->
         <input
           v-if="editingTabId === tab.id"
-          ref="editInputRef"
+          :ref="(el) => { if (el) editInputRef = el as HTMLInputElement }"
           v-model="editingTitle"
           class="tab-title-input"
           @keydown="handleRenameKeydown"
