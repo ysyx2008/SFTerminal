@@ -6,6 +6,252 @@ import { marked } from 'marked'
 import { useTerminalStore } from '../stores/terminal'
 import { toast } from './useToast'
 
+// ==================== Mermaid 图表渲染 ====================
+// 设计：marked 把 ```mermaid 代码块渲染成占位 <div class="mermaid-block">（存 encodeURIComponent
+// 后的源码），真正画图由 renderMermaidBlocks 在 DOM 落地后懒加载 mermaid 完成。
+// - 懒加载：mermaid 包体积大（~3MB），首次见到 mermaid 块时才动态 import，后续命中模块缓存
+// - 固定白底主题：不跟随明暗 UI 主题，图表始终是干净的浅色背景（与 chart skill 默认 light 一致）
+// - 流式安全：AI 输出未完成时源码语法不完整，先用 mermaid.parse 校验，失败就跳过、等下次完整再渲染
+// - SVG 缓存：相同源码只 render 一次，缓存 SVG 字符串，避免虚拟滚动重建 DOM 时反复渲染（render 较重）
+
+type MermaidApi = typeof import('mermaid')['default']
+
+let mermaidPromise: Promise<MermaidApi> | null = null
+let mermaidInited = false
+
+const MERMAID_SVG_CACHE_MAX = 200
+// 完整图缓存：key = 完整源码（trim 后），value = SVG。命中即视为终态（done）
+const mermaidSvgCache = new Map<string, string>()
+
+// 部分图缓存：流式渐进渲染过程中每个「可成功渲染的前缀」的 SVG。
+// 作用：流式时 v-html 每来一个 token 就整段重建 DOM、清空已注入的 SVG，导致两次异步渲染
+// 之间出现空白闪烁。renderer.code 在重建时同步查这里、注入「当前源码的最长已渲染前缀」的
+// SVG 作为占位，让图不闪、只是滞后一帧；随后异步渲染再把它升级到更新的进度。
+const MERMAID_PARTIAL_CACHE_MAX = 80
+const mermaidPartialCache = new Map<string, string>()
+
+const getMermaid = async (): Promise<MermaidApi> => {
+  if (!mermaidPromise) {
+    mermaidPromise = import('mermaid').then((m) => m.default)
+  }
+  const mermaid = await mermaidPromise
+  if (!mermaidInited) {
+    mermaid.initialize({
+      startOnLoad: false,
+      // strict：移除内嵌 HTML / click 交互，AI 输出的图表内容不可信，必须 sanitize
+      securityLevel: 'strict',
+      theme: 'base',
+      fontFamily:
+        '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif',
+      themeVariables: {
+        background: '#ffffff',
+        primaryColor: '#eef2ff',
+        primaryBorderColor: '#a5b4fc',
+        primaryTextColor: '#1e293b',
+        secondaryColor: '#f1f5f9',
+        secondaryBorderColor: '#cbd5e1',
+        tertiaryColor: '#f8fafc',
+        tertiaryBorderColor: '#e2e8f0',
+        lineColor: '#94a3b8',
+        textColor: '#334155',
+        fontSize: '14px',
+      },
+      flowchart: {
+        curve: 'basis',
+        // 用 SVG 原生 <text> 而非 foreignObject(HTML) 渲染节点文字：界面上两者都正常，
+        // 但导出/复制时要把 SVG 光栅化成 PNG（<img> → canvas），foreignObject 里的 HTML
+        // 在光栅化时常渲染错位/被裁（"界面完美、导出遮挡"）。<text> 几何固定在 SVG 内，
+        // 光栅化前后完全一致，导出不再遮挡。
+        htmlLabels: false,
+        padding: 12,
+      },
+    })
+    mermaidInited = true
+  }
+  return mermaid
+}
+
+const cacheMermaidSvg = (src: string, svg: string): void => {
+  if (mermaidSvgCache.size >= MERMAID_SVG_CACHE_MAX) {
+    const oldest = mermaidSvgCache.keys().next().value
+    if (oldest !== undefined) mermaidSvgCache.delete(oldest)
+  }
+  mermaidSvgCache.set(src, svg)
+}
+
+const cacheMermaidPartial = (src: string, svg: string): void => {
+  // 重新插入到末尾，维持「越新越靠后」便于 LRU 式淘汰最旧（最短）的前缀
+  if (mermaidPartialCache.has(src)) mermaidPartialCache.delete(src)
+  if (mermaidPartialCache.size >= MERMAID_PARTIAL_CACHE_MAX) {
+    const oldest = mermaidPartialCache.keys().next().value
+    if (oldest !== undefined) mermaidPartialCache.delete(oldest)
+  }
+  mermaidPartialCache.set(src, svg)
+}
+
+/**
+ * 找出当前源码「最长的、已渲染过的前缀」对应的 SVG，用于流式重建时的同步占位。
+ * 流式中图源码单调增长，故此前渲染过的较短前缀必然是当前源码的前缀。
+ */
+const findLatestMermaidPartial = (current: string): string | undefined => {
+  let bestKey = ''
+  let bestSvg: string | undefined
+  for (const [key, svg] of mermaidPartialCache) {
+    if (key.length > bestKey.length && current.startsWith(key)) {
+      bestKey = key
+      bestSvg = svg
+    }
+  }
+  return bestSvg
+}
+
+let mermaidIdSeq = 0
+
+/**
+ * 把已渲染的 mermaid <svg> 元素序列化成 data URL（image/svg+xml）。
+ * - 从 viewBox/属性补齐显式宽高，让 useImageActions 栅格化时拿得到 naturalWidth（否则按比例失真）
+ * - 插入白色背景矩形：mermaid SVG 本身透明，导出 PNG / 复制到剪贴板时透明会被某些应用画成黑底
+ */
+export const mermaidSvgToDataUrl = (svgEl: SVGSVGElement): string => {
+  const clone = svgEl.cloneNode(true) as SVGSVGElement
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+
+  let w = svgEl.width?.baseVal?.value || 0
+  let h = svgEl.height?.baseVal?.value || 0
+  const vb = svgEl.viewBox?.baseVal
+  if ((!w || !h) && vb && vb.width && vb.height) {
+    w = vb.width
+    h = vb.height
+  }
+  if (w && h) {
+    clone.setAttribute('width', String(Math.round(w)))
+    clone.setAttribute('height', String(Math.round(h)))
+  }
+
+  const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+  bg.setAttribute('x', '0')
+  bg.setAttribute('y', '0')
+  bg.setAttribute('width', '100%')
+  bg.setAttribute('height', '100%')
+  bg.setAttribute('fill', '#ffffff')
+  clone.insertBefore(bg, clone.firstChild)
+
+  const xml = new XMLSerializer().serializeToString(clone)
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`
+}
+
+/**
+ * 渐进渲染：从完整源码开始，逐行回退找到「最长可成功渲染的前缀」。
+ * 流式输出时最后一行往往是半截语法（如 `B --> API Gat`），整段 parse 会失败；
+ * 去掉不完整的尾行后前面已输出的节点就能先画出来——实现「AI 输出到哪、图就画到哪」。
+ * 返回 complete 标记当前是否为完整图（用于决定是否标记 done + 缓存 + 显示工具栏）。
+ */
+const renderMermaidProgressive = async (
+  mermaid: MermaidApi,
+  src: string
+): Promise<{ svg: string; complete: boolean } | null> => {
+  const lines = src.split('\n')
+  for (let n = lines.length; n >= 1; n--) {
+    const sub = lines.slice(0, n).join('\n').trim()
+    if (!sub) continue
+    try {
+      await mermaid.parse(sub)
+    } catch {
+      continue
+    }
+    try {
+      const { svg } = await mermaid.render(`sf-mermaid-${++mermaidIdSeq}`, sub)
+      return { svg, complete: n === lines.length }
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+/**
+ * 扫描容器内所有 mermaid 占位块，懒加载 mermaid 后画成 SVG（支持流式渐进渲染）。
+ * - `data-mermaid-state="done"` 的块为终态，跳过
+ * - `data-mermaid-rendered` 记录上次渲染所用源码：与当前一致则跳过——既避免重复渲染，
+ *   也防止本函数写入 innerHTML 反过来触发 MutationObserver 造成死循环
+ * - 完整图：缓存 SVG + 标记 done + 挂复制/下载工具栏；部分图：标记 partial，不缓存、不挂工具栏
+ * - 调用方应自行 debounce
+ */
+const renderMermaidBlocks = async (root: HTMLElement | null): Promise<void> => {
+  if (!root) return
+  const blocks = Array.from(
+    root.querySelectorAll<HTMLElement>('.mermaid-block:not([data-mermaid-state="done"])')
+  )
+  if (blocks.length === 0) return
+
+  // 比较/记录统一用编码值（data-mermaid-src 原始属性值）：既安全（含引号/换行的源码不破坏
+  // HTML），也让 renderer.code 能在拼字符串时同步预注入完整图（见 renderer.code）而被这里识别跳过
+
+  // 先用缓存兜一遍（完整图），能命中的不必加载 mermaid
+  const pending: HTMLElement[] = []
+  for (const el of blocks) {
+    const srcEnc = el.getAttribute('data-mermaid-src') || ''
+    const src = decodeURIComponent(srcEnc).trim()
+    if (!src) continue
+    if (el.getAttribute('data-mermaid-rendered') === srcEnc) continue
+    const cached = mermaidSvgCache.get(src)
+    if (cached) {
+      el.innerHTML = cached
+      el.setAttribute('data-mermaid-state', 'done')
+      el.setAttribute('data-mermaid-rendered', srcEnc)
+      continue
+    }
+    pending.push(el)
+  }
+  if (pending.length === 0) return
+
+  let mermaid: MermaidApi
+  try {
+    mermaid = await getMermaid()
+  } catch {
+    return
+  }
+
+  for (const el of pending) {
+    const srcEnc = el.getAttribute('data-mermaid-src') || ''
+    const current = decodeURIComponent(srcEnc).trim()
+    if (!current) continue
+    if (el.getAttribute('data-mermaid-state') === 'done') continue
+    if (el.getAttribute('data-mermaid-rendered') === srcEnc) continue
+
+    const cached = mermaidSvgCache.get(current)
+    if (cached) {
+      el.innerHTML = cached
+      el.setAttribute('data-mermaid-state', 'done')
+      el.setAttribute('data-mermaid-rendered', srcEnc)
+      continue
+    }
+
+    const result = await renderMermaidProgressive(mermaid, current)
+
+    // 渲染期间源码可能又变了（流式），只在仍匹配时写入；不匹配则留待下次扫描
+    if ((el.getAttribute('data-mermaid-src') || '') !== srcEnc) continue
+
+    if (!result) {
+      // 一行都渲染不出（如刚冒头的 "flow"）：记下当前源码避免重复尝试，等新内容到来再试
+      el.setAttribute('data-mermaid-rendered', srcEnc)
+      continue
+    }
+
+    if (result.complete) {
+      cacheMermaidSvg(current, result.svg)
+      el.innerHTML = result.svg
+      el.setAttribute('data-mermaid-state', 'done')
+    } else {
+      // 缓存这一帧的部分图，供 renderer.code 在下次 v-html 重建时同步占位、避免闪空
+      cacheMermaidPartial(current, result.svg)
+      el.innerHTML = result.svg
+      el.setAttribute('data-mermaid-state', 'partial')
+    }
+    el.setAttribute('data-mermaid-rendered', srcEnc)
+  }
+}
+
 const writeClipboard = async (text: string): Promise<boolean> => {
   try {
     await navigator.clipboard.writeText(text)
@@ -206,6 +452,27 @@ export function useMarkdown() {
       lang = language || 'text'
     }
     
+    // Mermaid 图表：输出占位 div，真正渲染由 renderMermaidBlocks 在 DOM 落地后懒加载完成。
+    // 源码用 encodeURIComponent 存进 data 属性，避免 HTML 属性转义破坏语法（换行/引号等）。
+    // 关键：若该图此前已完整渲染过（命中缓存），直接把 SVG 同步拼进字符串——这样流式
+    // 时 v-html 反复重建 DOM 也不会闪空白（完整图随每次重渲染立即带出），renderMermaidBlocks
+    // 看到 data-mermaid-rendered === data-mermaid-src 会跳过，不重复渲染。
+    if (lang === 'mermaid') {
+      const trimmed = code.trim()
+      const enc = encodeURIComponent(code)
+      const cached = mermaidSvgCache.get(trimmed)
+      if (cached) {
+        return `<div class="mermaid-block" data-mermaid-src="${enc}" data-mermaid-rendered="${enc}" data-mermaid-state="done">${cached}</div>`
+      }
+      // 流式中：注入最近已渲染的部分图作占位（不设 data-mermaid-rendered，让异步渲染继续升级它），
+      // 避免每次 v-html 重建时闪成空白
+      const partial = findLatestMermaidPartial(trimmed)
+      if (partial) {
+        return `<div class="mermaid-block" data-mermaid-src="${enc}" data-mermaid-state="partial">${partial}</div>`
+      }
+      return `<div class="mermaid-block" data-mermaid-src="${enc}"></div>`
+    }
+
     // 转义 HTML 特殊字符用于显示
     const escapedCode = code
       .replace(/&/g, '&amp;')
@@ -494,6 +761,7 @@ export function useMarkdown() {
 
   return {
     renderMarkdown,
+    renderMermaidBlocks,
     handleCodeBlockClick,
     handleFilePathContextMenu,
     copyMessage

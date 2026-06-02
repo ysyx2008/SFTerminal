@@ -355,3 +355,27 @@
   background: var(--bg-tertiary);
   font-weight: 600;
 }
+
+/* Mermaid 图表块 —— 固定白底，不跟随明暗主题（与 chart skill 默认 light 一致）。
+   渲染前是空占位（无背景，避免流式时露出空白块）；渲染完成（带 data-mermaid-state）后
+   才显示白色卡片承载 SVG。 */
+.markdown-content .mermaid-block {
+  margin: 12px 0;
+  width: 100%;
+}
+
+.markdown-content .mermaid-block[data-mermaid-state] {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow-x: auto;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.markdown-content .mermaid-block[data-mermaid-state] svg {
+  max-width: 100%;
+  height: auto;
+}

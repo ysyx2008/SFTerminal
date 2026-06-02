@@ -36,6 +36,7 @@ import {
   useSpeechRecognition,
   toast
 } from '../composables'
+import { mermaidSvgToDataUrl } from '../composables/useMarkdown'
 import { showConfirm } from '../composables/useConfirm'
 import { planComposerPaste, ingestComposerAttachments } from '../composables/useComposerPaste'
 import {
@@ -403,9 +404,58 @@ const ingestAttachmentFiles = (files: FileList | File[]) =>
 // Markdown 渲染
 const {
   renderMarkdown,
+  renderMermaidBlocks,
   handleCodeBlockClick,
   handleFilePathContextMenu
 } = useMarkdown()
+
+// ==================== Mermaid 渲染调度 ====================
+// 消息正文经 v-html 注入，mermaid 代码块被渲染成占位 div，真正画图需在 DOM 落地后触发。
+// 用 MutationObserver 监听虚拟滚动容器的 DOM 变化（流式追加 / 滚动复用行 / 切 tab），
+// debounce 后扫描并渲染未完成的 mermaid 块。renderMermaidBlocks 自身写入 SVG 会再次触发
+// observer，但已渲染块带 data-mermaid-state="done" 不会重复 render，配合 debounce 不会死循环。
+let mermaidObserver: MutationObserver | null = null
+let mermaidScanTimer: ReturnType<typeof setTimeout> | null = null
+let mermaidLastScan = 0
+
+// 用 throttle（leading + trailing）而非纯 debounce：流式时 token 不断触发 MutationObserver，
+// 纯 debounce 会被反复重置、一直等到流式停顿才渲染（表现为全程空白）。throttle 保证持续
+// 流式中也按固定间隔出图，实现真正的「边出边画」。250ms 在跳动与即时性之间取平衡。
+const MERMAID_SCAN_INTERVAL_MS = 250
+
+const scheduleMermaidScan = (el: HTMLElement) => {
+  const now = Date.now()
+  const elapsed = now - mermaidLastScan
+  if (elapsed >= MERMAID_SCAN_INTERVAL_MS) {
+    mermaidLastScan = now
+    void renderMermaidBlocks(el)
+  } else if (!mermaidScanTimer) {
+    mermaidScanTimer = setTimeout(() => {
+      mermaidScanTimer = null
+      mermaidLastScan = Date.now()
+      void renderMermaidBlocks(el)
+    }, MERMAID_SCAN_INTERVAL_MS - elapsed)
+  }
+}
+
+const attachMermaidObserver = (el: HTMLElement) => {
+  detachMermaidObserver()
+  mermaidObserver = new MutationObserver(() => scheduleMermaidScan(el))
+  mermaidObserver.observe(el, { childList: true, subtree: true })
+  // 首次绑定时内容可能已存在（历史恢复 / 切回面板），主动扫一次
+  scheduleMermaidScan(el)
+}
+
+const detachMermaidObserver = () => {
+  if (mermaidObserver) {
+    mermaidObserver.disconnect()
+    mermaidObserver = null
+  }
+  if (mermaidScanTimer) {
+    clearTimeout(mermaidScanTimer)
+    mermaidScanTimer = null
+  }
+}
 
 // 主机档案
 const {
@@ -1242,17 +1292,28 @@ const closeImagePreview = () => {
 
 // ==================== 图片右键菜单 ====================
 const { copyImage } = useImageActions()
-const imageContextMenu = reactive<{ show: boolean; x: number; y: number; url: string | null }>({
-  show: false, x: 0, y: 0, url: null
+const imageContextMenu = reactive<{ show: boolean; x: number; y: number; url: string | null; defaultName: string }>({
+  show: false, x: 0, y: 0, url: null, defaultName: 'image'
 })
 
-const openImageContextMenu = (e: MouseEvent, url: string) => {
+const openImageContextMenu = (e: MouseEvent, url: string, defaultName = 'image') => {
   e.preventDefault()
   e.stopPropagation()
   imageContextMenu.show = true
   imageContextMenu.x = e.clientX
   imageContextMenu.y = e.clientY
   imageContextMenu.url = url
+  imageContextMenu.defaultName = defaultName
+}
+
+// Mermaid 图右键菜单：右击已渲染完成的图，把其 SVG 序列化成 data URL 后复用图片右键菜单（复制/下载）
+const handleMermaidContextMenu = (e: MouseEvent) => {
+  const target = e.target as HTMLElement
+  const block = target.closest('.mermaid-block[data-mermaid-state="done"]') as HTMLElement | null
+  if (!block) return
+  const svg = block.querySelector('svg') as SVGSVGElement | null
+  if (!svg) return
+  openImageContextMenu(e, mermaidSvgToDataUrl(svg), 'diagram')
 }
 
 // 「活图」EChartsCanvas 触发右键菜单时,组件 emit 的载荷形如 { event, dataUrl }——
@@ -1472,6 +1533,7 @@ watch(scrollerRef, (scroller, oldScroller) => {
     oldEl.removeEventListener('scroll', updateScrollPosition)
     oldEl.removeEventListener('click', handleCodeBlockClick)
     oldEl.removeEventListener('contextmenu', handleFilePathContextMenu)
+    oldEl.removeEventListener('contextmenu', handleMermaidContextMenu)
   }
   const el = scroller?.$el as HTMLDivElement | undefined
   messagesRef.value = el ?? null
@@ -1479,6 +1541,10 @@ watch(scrollerRef, (scroller, oldScroller) => {
     el.addEventListener('scroll', updateScrollPosition, { passive: true })
     el.addEventListener('click', handleCodeBlockClick)
     el.addEventListener('contextmenu', handleFilePathContextMenu)
+    el.addEventListener('contextmenu', handleMermaidContextMenu)
+    attachMermaidObserver(el)
+  } else {
+    detachMermaidObserver()
   }
 }, { flush: 'post' })
 
@@ -1558,7 +1624,9 @@ onUnmounted(() => {
     el.removeEventListener('scroll', updateScrollPosition)
     el.removeEventListener('click', handleCodeBlockClick)
     el.removeEventListener('contextmenu', handleFilePathContextMenu)
+    el.removeEventListener('contextmenu', handleMermaidContextMenu)
   }
+  detachMermaidObserver()
 })
 
 // 监听 visible 变化，保存和恢复滚动位置
@@ -2592,7 +2660,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
     :x="imageContextMenu.x"
     :y="imageContextMenu.y"
     :url="imageContextMenu.url"
-    default-name="image"
+    :default-name="imageContextMenu.defaultName"
     @close="closeImageContextMenu"
   />
 </template>
