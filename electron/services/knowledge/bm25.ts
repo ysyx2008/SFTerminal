@@ -340,11 +340,10 @@ export class BM25Index extends EventEmitter {
    * 这是用户感知"经常升级知识库模型"的主要根因之一。
    */
   async saveIndex(): Promise<void> {
+    const tempPath = this.indexPath + '.tmp'
     try {
       const dir = path.dirname(this.indexPath)
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true })
-      }
+      await fs.promises.mkdir(dir, { recursive: true })
 
       const data = {
         version: 2,
@@ -360,16 +359,16 @@ export class BM25Index extends EventEmitter {
         ])
       }
 
-      const tempPath = this.indexPath + '.tmp'
-      fs.writeFileSync(tempPath, JSON.stringify(data), 'utf-8')
-      fs.renameSync(tempPath, this.indexPath)
+      // 让出事件循环，避免 JSON.stringify 大索引时阻塞主线程太久
+      await new Promise<void>(resolve => setImmediate(resolve))
+      const json = JSON.stringify(data)
+      await new Promise<void>(resolve => setImmediate(resolve))
+
+      await fs.promises.writeFile(tempPath, json, 'utf-8')
+      await fs.promises.rename(tempPath, this.indexPath)
     } catch (error) {
       log.error('Failed to save index:', error)
-      // 清理可能残留的 .tmp 文件
-      const tempPath = this.indexPath + '.tmp'
-      if (fs.existsSync(tempPath)) {
-        try { fs.unlinkSync(tempPath) } catch { /* ignore */ }
-      }
+      try { await fs.promises.unlink(tempPath) } catch { /* ignore */ }
     }
   }
 
@@ -379,19 +378,20 @@ export class BM25Index extends EventEmitter {
   private async loadIndex(): Promise<void> {
     // 清理上次写入未完成留下的临时文件，避免占用磁盘
     const tempPath = this.indexPath + '.tmp'
-    if (fs.existsSync(tempPath)) {
-      try {
-        fs.unlinkSync(tempPath)
-        log.warn('清理了上次未完成写入的 BM25 索引临时文件')
-      } catch { /* ignore */ }
-    }
+    try {
+      await fs.promises.unlink(tempPath)
+      log.warn('清理了上次未完成写入的 BM25 索引临时文件')
+    } catch { /* ignore - 文件不存在是正常情况 */ }
 
     try {
-      if (!fs.existsSync(this.indexPath)) {
+      try {
+        await fs.promises.access(this.indexPath)
+      } catch {
         return
       }
 
-      const data = JSON.parse(fs.readFileSync(this.indexPath, 'utf-8'))
+      const raw = await fs.promises.readFile(this.indexPath, 'utf-8')
+      const data = JSON.parse(raw)
 
       if (data.version !== 2) {
         log.warn('Index version mismatch (v%d → v2), rebuilding', data.version || 1)
@@ -432,10 +432,7 @@ export class BM25Index extends EventEmitter {
     this.avgDocLength = 0
     this.totalDocuments = 0
 
-    // 删除索引文件
-    if (fs.existsSync(this.indexPath)) {
-      fs.unlinkSync(this.indexPath)
-    }
+    try { await fs.promises.unlink(this.indexPath) } catch { /* ignore */ }
   }
 
   /**
