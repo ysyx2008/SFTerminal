@@ -198,6 +198,11 @@ const selectModel = (model: FetchedModel) => {
   showModelDropdown.value = false
 }
 
+// 失焦时延迟关闭下拉：留出时间让下拉项的 click 先触发（否则 blur 先关闭会吞掉点击）
+const hideModelDropdownDelayed = () => {
+  setTimeout(() => { showModelDropdown.value = false }, 150)
+}
+
 // 切换 apiUrl 时清空已拉取的列表
 watch(() => formData.value.apiUrl, () => {
   fetchedModels.value = []
@@ -753,7 +758,7 @@ function openWebSearchKeyUrl() {
                       class="input"
                       :placeholder="t('aiSettings.modelPlaceholder')"
                       @focus="showModelDropdown = fetchedModels.length > 0"
-                      @blur="setTimeout(() => { showModelDropdown = false }, 150)"
+                      @blur="hideModelDropdownDelayed"
                     />
                     <button
                       v-if="fetchedModels.length > 0"
