@@ -189,3 +189,130 @@ describe('HistoryService - getRecentAgentRecords', () => {
     expect(results).toHaveLength(3)
   })
 })
+
+describe('HistoryService - searchAgentRecordsAdvanced', () => {
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-history-test-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('无关键字且无时间范围时返回空', async () => {
+    const svc = new HistoryService()
+    svc.saveAgentRecord(makeRecord({ id: 'a', timestamp: Date.now(), duration: 1, userTask: '随便' }))
+    const res = await svc.searchAgentRecordsAdvanced({})
+    expect(res).toEqual({ records: [], totalMatched: 0, hasMore: false })
+  })
+
+  it('full 模式命中 userTask / finalResult / steps 正文', async () => {
+    const svc = new HistoryService()
+    const t = new Date('2026-03-18T10:00:00').getTime()
+
+    svc.saveAgentRecord(makeRecord({
+      id: 'by-title', timestamp: t, duration: 1, userTask: '部署 nginx 服务'
+    }))
+    svc.saveAgentRecord(makeRecord({
+      id: 'by-result', timestamp: t + 1000, duration: 1, userTask: '查日志',
+      finalResult: '发现 nginx 配置错误已修复'
+    }))
+    svc.saveAgentRecord(makeRecord({
+      id: 'by-step', timestamp: t + 2000, duration: 1, userTask: '看看进程',
+      steps: [{ type: 'user_supplement', content: '顺便重启 nginx', timestamp: t } as any]
+    }))
+    svc.saveAgentRecord(makeRecord({
+      id: 'no-match', timestamp: t + 3000, duration: 1, userTask: '完全无关'
+    }))
+
+    const res = await svc.searchAgentRecordsAdvanced({ keyword: 'nginx', limit: 10 })
+    expect(res.totalMatched).toBe(3)
+    expect(new Set(res.records.map(r => r.id))).toEqual(new Set(['by-title', 'by-result', 'by-step']))
+  })
+
+  it('titleOnly 模式只匹配 userTask，不扫描正文', async () => {
+    const svc = new HistoryService()
+    const t = new Date('2026-03-18T10:00:00').getTime()
+
+    svc.saveAgentRecord(makeRecord({
+      id: 'title-hit', timestamp: t, duration: 1, userTask: 'nginx 部署'
+    }))
+    svc.saveAgentRecord(makeRecord({
+      id: 'body-only', timestamp: t + 1000, duration: 1, userTask: '查日志',
+      finalResult: 'nginx 配置错误'
+    }))
+
+    const res = await svc.searchAgentRecordsAdvanced({ keyword: 'nginx', titleOnly: true, limit: 10 })
+    expect(res.totalMatched).toBe(1)
+    expect(res.records.map(r => r.id)).toEqual(['title-hit'])
+  })
+
+  it('结果按最近优先排序', async () => {
+    const svc = new HistoryService()
+    const t = new Date('2026-03-18T10:00:00').getTime()
+
+    svc.saveAgentRecord(makeRecord({ id: 'old', timestamp: t, duration: 1, userTask: '任务 x' }))
+    svc.saveAgentRecord(makeRecord({ id: 'mid', timestamp: t + 1000, duration: 1, userTask: '任务 x' }))
+    svc.saveAgentRecord(makeRecord({ id: 'new', timestamp: t + 2000, duration: 1, userTask: '任务 x' }))
+
+    const res = await svc.searchAgentRecordsAdvanced({ keyword: '任务', limit: 10 })
+    expect(res.records.map(r => r.id)).toEqual(['new', 'mid', 'old'])
+  })
+
+  it('跨天命中不遗漏', async () => {
+    const svc = new HistoryService()
+    const day1 = new Date('2026-03-10T14:00:00').getTime()
+    const day2 = new Date('2026-03-18T09:00:00').getTime()
+
+    svc.saveAgentRecord(makeRecord({ id: 'd1', timestamp: day1, duration: 1, userTask: 'redis 调优' }))
+    svc.saveAgentRecord(makeRecord({ id: 'd2', timestamp: day2, duration: 1, userTask: 'redis 重启' }))
+
+    const res = await svc.searchAgentRecordsAdvanced({ keyword: 'redis', limit: 10 })
+    expect(res.records.map(r => r.id)).toEqual(['d2', 'd1'])
+  })
+
+  it('时间范围过滤', async () => {
+    const svc = new HistoryService()
+    const mar10 = new Date('2026-03-10T10:00:00').getTime()
+    const mar18 = new Date('2026-03-18T10:00:00').getTime()
+
+    svc.saveAgentRecord(makeRecord({ id: 'early', timestamp: mar10, duration: 1, userTask: 'redis' }))
+    svc.saveAgentRecord(makeRecord({ id: 'late', timestamp: mar18, duration: 1, userTask: 'redis' }))
+
+    const res = await svc.searchAgentRecordsAdvanced({ keyword: 'redis', startDate: '2026-03-15' })
+    expect(res.records.map(r => r.id)).toEqual(['late'])
+  })
+
+  it('filter 在索引条目上正确工作（excludeWakeup）', async () => {
+    const svc = new HistoryService()
+    const t = new Date('2026-03-18T10:00:00').getTime()
+
+    svc.saveAgentRecord(makeRecord({ id: 'normal', timestamp: t, duration: 1, userTask: '部署任务' }))
+    svc.saveAgentRecord(makeRecord({
+      id: 'wakeup', timestamp: t + 1000, duration: 1,
+      userTask: '[当前时间：2026-03-18] 触发事件：部署定时'
+    }))
+
+    const filter = (r: AgentRecord) =>
+      !(r.userTask.startsWith('[当前时间：') && r.userTask.includes('触发事件'))
+
+    const res = await svc.searchAgentRecordsAdvanced({ keyword: '部署', filter, limit: 10 })
+    expect(res.records.map(r => r.id)).toEqual(['normal'])
+  })
+
+  it('limit 截断时 totalMatched 与 hasMore 正确', async () => {
+    const svc = new HistoryService()
+    const t = new Date('2026-03-18T10:00:00').getTime()
+
+    for (let i = 0; i < 5; i++) {
+      svc.saveAgentRecord(makeRecord({
+        id: `r${i}`, timestamp: t + i * 1000, duration: 1, userTask: '批量任务'
+      }))
+    }
+
+    const res = await svc.searchAgentRecordsAdvanced({ keyword: '批量', limit: 2 })
+    expect(res.records).toHaveLength(2)
+    expect(res.totalMatched).toBe(5)
+    expect(res.hasMore).toBe(true)
+  })
+})

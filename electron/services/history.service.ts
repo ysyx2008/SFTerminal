@@ -202,6 +202,21 @@ export class HistoryService {
     return this.readJsonFile<AgentRecord>(filePath).map(normalizeAgentRecord)
   }
 
+  /** 异步读取 JSON 数组文件（fs.promises，await 让出事件循环，避免阻塞主进程） */
+  private async readJsonFileAsync<T>(filePath: string): Promise<T[]> {
+    try {
+      const content = await fs.promises.readFile(filePath, 'utf-8')
+      return JSON.parse(content) as T[]
+    } catch (e) {
+      log.error(`读取历史文件失败: ${filePath}`, e)
+      return []
+    }
+  }
+
+  private async readAgentRecordsAsync(filePath: string): Promise<AgentRecord[]> {
+    return (await this.readJsonFileAsync<AgentRecord>(filePath)).map(normalizeAgentRecord)
+  }
+
   // ==================== Agent 索引管理 ====================
 
   private getIndex(): AgentIndexEntry[] {
@@ -463,16 +478,26 @@ export class HistoryService {
    * 关键字搜索 Agent 历史记录
    * 搜索范围：userTask、finalResult、以及过程中用户追加的消息（user_task / user_supplement steps）
    */
-  searchAgentRecords(keyword: string, limit: number = 10): AgentRecord[] {
-    return this.searchAgentRecordsAdvanced({ keyword, limit }).records
+  async searchAgentRecords(keyword: string, limit: number = 10): Promise<AgentRecord[]> {
+    return (await this.searchAgentRecordsAdvanced({ keyword, limit })).records
   }
 
   /**
    * 高级搜索 Agent 历史记录
    * 支持关键字搜索、时间范围过滤，以及 hasMore 提示。
    * `titleOnly: true` 时仅匹配 userTask，不扫描 finalResult / steps，适合高频实时筛选。
+   *
+   * 性能：先用内存索引（含 userTask/timestamp 等）筛出候选，再按需异步读取日期文件。
+   * - titleOnly：关键字匹配在索引层完成，仅为前 limit 条命中读回完整记录，零全量扫描；
+   * - full：关键字可能命中 finalResult/steps 正文，须读完整记录二次匹配，但仅读「时间窗 +
+   *   filter 命中」的候选所在文件，且逐文件 `await`（fs.promises）让出事件循环，避免历史量大时
+   *   同步遍历阻塞主进程导致界面冻结。
+   *
+   * 索引为搜索唯一候选来源，与 `getRecentAgentRecords` / `listAgentHistorySummaries` 的假设一致
+   * （索引在 saveAgentRecord 时同步更新，缺失时 rebuildIndex 全量重建）。`filter` 直接作用于索引
+   * 条目（cast），与 `getRecentAgentRecords` 同款——现有 filter（excludeWakeup）仅依赖 userTask。
    */
-  searchAgentRecordsAdvanced(options: SearchAgentRecordsOptions): SearchAgentRecordsResult {
+  async searchAgentRecordsAdvanced(options: SearchAgentRecordsOptions): Promise<SearchAgentRecordsResult> {
     const keyword = options.keyword?.trim() ?? ''
     if (!keyword && !options.startDate && !options.endDate) {
       return { records: [], totalMatched: 0, hasMore: false }
@@ -481,39 +506,64 @@ export class HistoryService {
     const lowerKeyword = keyword.toLowerCase()
     const hasKeyword = lowerKeyword.length > 0
     const limit = Math.max(1, options.limit ?? 10)
-    const files = fs.readdirSync(this.agentDir).filter(f => f.endsWith('.json')).sort().reverse()
-    const results: AgentRecord[] = []
-    let totalMatched = 0
-
+    const titleOnly = options.titleOnly === true
     const startTs = this.parseDateBoundary(options.startDate, 'start')
     const endTs = this.parseDateBoundary(options.endDate, 'end')
 
-    for (const file of files) {
-      const filePath = path.join(this.agentDir, file)
-      const records = this.readAgentRecords(filePath)
+    // ── 候选筛选（零文件读）：时间窗 + filter；titleOnly 时关键字匹配也在此完成 ──
+    const candidates = [...this.getIndex()]
+      .sort((a, b) => b.timestamp - a.timestamp) // 最近优先，与旧实现的「最新日期 + 逆序记录」一致
+      .filter(e => {
+        const ts = e.timestamp || 0
+        if (startTs !== undefined && ts < startTs) return false
+        if (endTs !== undefined && ts > endTs) return false
+        if (options.filter && !options.filter(e as unknown as AgentRecord)) return false
+        if (titleOnly && hasKeyword && !e.userTask?.toLowerCase().includes(lowerKeyword)) return false
+        return true
+      })
+
+    // titleOnly：候选即命中集合，仅需为展示读回前 limit 条完整记录
+    if (titleOnly) {
+      const totalMatched = candidates.length
+      const records = await this.materializeRecords(candidates.slice(0, limit))
+      return { records, totalMatched, hasMore: totalMatched > records.length }
+    }
+
+    // full：按候选所在日期文件分组，异步逐文件读取，对完整记录做正文关键字匹配
+    const candidateIdsByDate = new Map<string, Set<string>>()
+    const dateOrder: string[] = []
+    for (const e of candidates) {
+      let idSet = candidateIdsByDate.get(e.dateStr)
+      if (!idSet) {
+        idSet = new Set()
+        candidateIdsByDate.set(e.dateStr, idSet)
+        dateOrder.push(e.dateStr) // candidates 已按时间倒序，首次出现顺序即最新日期优先
+      }
+      idSet.add(e.id)
+    }
+
+    const results: AgentRecord[] = []
+    let totalMatched = 0
+
+    for (const dateStr of dateOrder) {
+      const filePath = this.getAgentFilePath(dateStr)
+      if (!fs.existsSync(filePath)) continue
+      const records = await this.readAgentRecordsAsync(filePath)
+      const idSet = candidateIdsByDate.get(dateStr)!
       for (let i = records.length - 1; i >= 0; i--) {
         const r = records[i]
-        const ts = r.timestamp || 0
-        if (startTs !== undefined && ts < startTs) continue
-        if (endTs !== undefined && ts > endTs) continue
-
-        const titleOnly = options.titleOnly === true
-        const matchedByKeyword = hasKeyword
-          ? titleOnly
-            ? Boolean(r.userTask?.toLowerCase().includes(lowerKeyword))
-            : Boolean(
-                r.userTask?.toLowerCase().includes(lowerKeyword) ||
-                  r.finalResult?.toLowerCase().includes(lowerKeyword) ||
-                  r.steps?.some(s =>
-                    ((s.type === 'user_task' || s.type === 'user_supplement') &&
-                      s.content?.toLowerCase().includes(lowerKeyword)) ||
-                    (s.toolName === 'talk_to_user' &&
-                      (s.toolArgs as Record<string, unknown>)?.message?.toString().toLowerCase().includes(lowerKeyword))
-                  )
-              )
-          : true
-        const passesRecordFilter = !options.filter || options.filter(r)
-        if (matchedByKeyword && passesRecordFilter) {
+        if (!idSet.has(r.id)) continue // 不在候选集（被时间窗/filter 排除）
+        const matchedByKeyword = !hasKeyword || Boolean(
+          r.userTask?.toLowerCase().includes(lowerKeyword) ||
+            r.finalResult?.toLowerCase().includes(lowerKeyword) ||
+            r.steps?.some(s =>
+              ((s.type === 'user_task' || s.type === 'user_supplement') &&
+                s.content?.toLowerCase().includes(lowerKeyword)) ||
+              (s.toolName === 'talk_to_user' &&
+                (s.toolArgs as Record<string, unknown>)?.message?.toString().toLowerCase().includes(lowerKeyword))
+            )
+        )
+        if (matchedByKeyword) {
           totalMatched++
           if (results.length < limit) {
             results.push(r)
@@ -527,6 +577,40 @@ export class HistoryService {
       totalMatched,
       hasMore: totalMatched > results.length
     }
+  }
+
+  /**
+   * 把索引条目还原为完整 AgentRecord，按 dateStr 分组异步读取，保持入参顺序。
+   */
+  private async materializeRecords(entries: AgentIndexEntry[]): Promise<AgentRecord[]> {
+    if (entries.length === 0) return []
+
+    const idsByDate = new Map<string, Set<string>>()
+    for (const e of entries) {
+      let idSet = idsByDate.get(e.dateStr)
+      if (!idSet) {
+        idSet = new Set()
+        idsByDate.set(e.dateStr, idSet)
+      }
+      idSet.add(e.id)
+    }
+
+    const recordById = new Map<string, AgentRecord>()
+    for (const [dateStr, idSet] of idsByDate) {
+      const filePath = this.getAgentFilePath(dateStr)
+      if (!fs.existsSync(filePath)) continue
+      const records = await this.readAgentRecordsAsync(filePath)
+      for (const r of records) {
+        if (idSet.has(r.id)) recordById.set(r.id, r)
+      }
+    }
+
+    const out: AgentRecord[] = []
+    for (const e of entries) {
+      const r = recordById.get(e.id)
+      if (r) out.push(r)
+    }
+    return out
   }
 
   private parseDateBoundary(value: string | undefined, type: 'start' | 'end'): number | undefined {

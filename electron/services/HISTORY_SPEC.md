@@ -1,6 +1,6 @@
 # History Service SPEC
 
-> Last verified: 2026-05-07
+> Last verified: 2026-06-02（searchAgentRecordsAdvanced 改为索引候选 + 异步逐文件读取，根治历史量大时全量同步扫描冻结主进程）
 
 ## 职责
 
@@ -22,8 +22,8 @@ Agent 对话和聊天记录的持久化存储。按日期分文件存储 JSON �
 | `getAgentRecordById(id: string): AgentRecord \| undefined` | 按 ID 精确查找 Agent 记录 | 回放/详情查看 |
 | `getRecentAgentRecords(limit?, filter?): AgentRecord[]` | 获取最近的 Agent 记录（支持自定义过滤） | `agent/index.ts`、上下文构建 |
 | `listAgentHistorySummaries(excludeWakeup?): AgentHistorySummary[]` | 从索引列出全部摘要（首条 user_task 作标题，不读日文件） | IPC `history:listAgentSummaries`、`AiPanel` 历史弹窗（无搜索词时的列表） |
-| `searchAgentRecords(keyword: string, limit?): AgentRecord[]` | 关键词搜索 Agent 记录（遍历日 JSON） | 工具/记忆检索 |
-| `searchAgentRecordsAdvanced(options): SearchAgentRecordsResult` | 高级搜索：`userTask`、`finalResult`、`user_task`/`user_supplement` 步骤等；`titleOnly` 仅匹配标题 | IPC `history:searchAgentRecords`、`AiPanel` 历史弹窗在用户按回车/点搜索触发全文检索时 |
+| `searchAgentRecords(keyword: string, limit?): Promise<AgentRecord[]>` | 关键词搜索 Agent 记录（`searchAgentRecordsAdvanced` 的薄封装） | 工具/记忆检索 |
+| `searchAgentRecordsAdvanced(options): Promise<SearchAgentRecordsResult>` | 高级搜索：`userTask`、`finalResult`、`user_task`/`user_supplement` 步骤等；`titleOnly` 仅匹配标题 | IPC `history:searchAgentRecords`、`AiPanel` 历史弹窗在用户按回车/点搜索触发全文检索时 |
 | `getTokenUsageStats(): TokenUsageStatsResult` | 返回 Token 用量统计 | 设置 UI |
 | `getDataPath(): string` | 返回数据目录路径 | `cli/index.ts` 信息展示 |
 | `getHistoryPath(): string` | 返回历史记录目录路径 | `cli/index.ts` |
@@ -41,7 +41,7 @@ Agent 对话和聊天记录的持久化存储。按日期分文件存储 JSON �
 含 `id`、`sessionId`、`timestamp`、`summary`、`tokenUsage` 等完整执行信息。
 
 ### AgentIndexEntry（本文件内部）
-`{ id: string, timestamp: number, summary: string }`，用于加速跨文件搜索。
+`{ id, timestamp, duration, dateStr, userTask, terminalType, sshHost?, status, tokenUsage? }`，常驻内存（`_indexCache`），用于排序/过滤/搜索时避免读取完整日期文件。
 
 ## 依赖（跨 service）
 
@@ -51,7 +51,12 @@ Agent 对话和聊天记录的持久化存储。按日期分文件存储 JSON �
 
 **存储机制**：按日期分区——每天一个 JSON 文件（`YYYY-MM-DD.json`），追加写入。
 
-**索引机制**：Agent 记录额外维护月间索引（`agent/index.json`），记录 `{ id, timestamp, summary }` 以加速 `searchAgentRecords`。
+**索引机制**：Agent 记录额外维护索引文件（`history/agent-index.json`，常驻内存 `_indexCache`），`saveAgentRecord` 时同步更新、缺失时 `rebuildIndex` 全量重建。`getRecentAgentRecords` / `listAgentHistorySummaries` / `searchAgentRecordsAdvanced` 均以索引为候选来源，避免全量读日文件。
+
+**搜索性能（searchAgentRecordsAdvanced，async）**：先用内存索引按「时间窗 + filter（cast 到索引条目，与 `getRecentAgentRecords` 同款）」筛候选，`titleOnly` 时关键字匹配也在索引层完成。
+- `titleOnly`：候选即命中集，仅为前 `limit` 条读回完整记录，零全量扫描；
+- full：关键字可能命中 `finalResult`/steps 正文，须读完整记录二次匹配，但仅读候选所在日期文件，且逐文件 `await`（`fs.promises`）让出事件循环，避免历史量大时同步遍历阻塞主进程导致界面冻结。
+- 历史规模极大时的根治方案是迁移至 SQLite + FTS（当前未做）。
 
 **导入/导出**：
 - 导出：合并 `chat/`、`agent/`、配置文件、主机档案为文件夹

@@ -1412,8 +1412,33 @@ export abstract class Agent {
     }
 
     // ── Cold start path: 从零构建上下文 ──
-    const knowledgeResult = await this.loadKnowledgeContext(message, run.context.hostId)
-    
+
+    // 提前并行启动两个异步操作（均需 embedding + 向量搜索，相互独立）
+    const knowledgeResultPromise = this.loadKnowledgeContext(message, run.context.hostId)
+
+    const L3_RECALL_TIMEOUT_MS = 3000
+    const recallPromise: Promise<Array<{ userRequest: string; finalResult: string; status: string; timestamp: number; relevance: number }>> = (() => {
+      const ks = getKnowledgeService()
+      if (!ks || !ks.isEnabled() || message.trim().length < 5) return Promise.resolve([])
+      const searchPromise = ks.searchConversations(message, run.context.hostId, 3)
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('L3 recall timeout')), L3_RECALL_TIMEOUT_MS)
+      )
+      return Promise.race([searchPromise, timeoutPromise])
+        .then(results => results.map(r => ({
+          userRequest: r.userRequest,
+          finalResult: r.finalResult,
+          status: r.status,
+          timestamp: r.timestamp,
+          relevance: r.relevance ?? 0
+        })))
+        .catch(e => {
+          log.warn('L3 auto-recall error:', e)
+          return []
+        })
+    })()
+
+    // 同步操作在异步请求进行期间并发执行
     let taskSummaries = ''
     let relatedTaskDigests = ''
     let recentTaskMessages: AiMessage[] = []
@@ -1447,25 +1472,6 @@ export abstract class Agent {
       log.warn('ContextKnowledge load error:', e)
     }
 
-    let conversationHistory: Array<{ userRequest: string; finalResult: string; status: string; timestamp: number; relevance: number }> = []
-    try {
-      const ks = getKnowledgeService()
-      if (ks && ks.isEnabled() && message.trim().length >= 5) {
-        const results = await ks.searchConversations(message, run.context.hostId, 3)
-        if (results.length > 0) {
-          conversationHistory = results.map(r => ({
-            userRequest: r.userRequest,
-            finalResult: r.finalResult,
-            status: r.status,
-            timestamp: r.timestamp,
-            relevance: r.relevance ?? 0
-          }))
-        }
-      }
-    } catch (e) {
-      log.warn('L3 auto-recall error:', e)
-    }
-
     let watchListSummary = ''
     try {
       const watches = getWatchService().getAll()
@@ -1473,6 +1479,9 @@ export abstract class Agent {
     } catch (e) {
       log.warn('Watch list for prompt error:', e)
     }
+
+    // 等待两个异步操作同时完成
+    const [knowledgeResult, conversationHistory] = await Promise.all([knowledgeResultPromise, recallPromise])
 
     const isOnboarding = !(this.services.configService?.getAgentOnboardingCompleted() ?? true)
 

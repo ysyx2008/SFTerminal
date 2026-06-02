@@ -396,7 +396,7 @@ async function searchHistorySemantic(
       return { success: true, output: `未找到与"${query}"语义相关的历史记录` }
     }
 
-    const formatted = results.map((r, i) => {
+    const formatted = (await Promise.all(results.map(async (r, i) => {
       const date = new Date(r.timestamp || 0).toLocaleString('zh-CN')
       const statusIcon = r.status === 'success' ? '✅' : r.status === 'failed' ? '❌' : '⚠️'
       const relevancePercent = r.relevance != null ? ` (${(r.relevance * 100).toFixed(0)}% 相关)` : ''
@@ -408,10 +408,10 @@ async function searchHistorySemantic(
       ]
 
       if (detail === 'full' && executor.historyService) {
-        const fullRecord = executor.historyService.searchAgentRecordsAdvanced({
+        const fullRecord = (await executor.historyService.searchAgentRecordsAdvanced({
           keyword: r.userRequest.slice(0, 50),
           limit: 1
-        }).records[0]
+        })).records[0]
         if (fullRecord?.steps?.length > 0) {
           lines.push('', '**工具调用**:')
           const toolSteps = fullRecord.steps.filter(s => s.type === 'tool_call' && s.toolName)
@@ -427,7 +427,7 @@ async function searchHistorySemantic(
       }
 
       return lines.join('\n')
-    }).join('\n\n')
+    }))).join('\n\n')
 
     const output = `语义搜索找到 ${results.length} 条相关历史记录：\n\n${formatted}`
 
@@ -501,7 +501,7 @@ async function searchHistoryKeyword(
   }
 
   try {
-    const searchResult = historyService.searchAgentRecordsAdvanced({
+    const searchResult = await historyService.searchAgentRecordsAdvanced({
       keyword,
       limit,
       startDate: startDate || undefined,

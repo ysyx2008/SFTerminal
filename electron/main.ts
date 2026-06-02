@@ -551,6 +551,19 @@ terminalStateService.onCommandExecution((event: CommandExecutionEvent) => {
   mainWindow?.webContents.send('terminal:commandExecution', event)
 })
 
+// ==================== 首次启动引导向导延迟初始化 ====================
+//
+// 问题：Windows 首次启动时，Setup Wizard 出现后 ~500ms，initKnowledgeService()
+// 开始加载 @lancedb/lancedb（Rust 编译的大型原生 .node 模块）。Windows Defender
+// 等安全扫描在 LoadLibrary() 上同步阻塞 Node.js 主线程 5~30 秒，期间所有 IPC
+// 消息无法处理，UI 完全卡死。
+//
+// 解决方案：首次启动（setupCompleted = false）时，把知识库和后端服务的重量级
+// 初始化推迟到向导完成后再执行，向导期间主线程保持轻负载以保证 IPC 响应正常。
+let resolveSetupDone: (() => void) | null = null
+// 默认立即 resolve（非首次启动路径直接跳过等待）
+let setupDonePromise: Promise<void> = Promise.resolve()
+
 // 知识库服务（延迟初始化，需要其他服务已就绪）
 let knowledgeService: KnowledgeService | null = null
 
@@ -1206,6 +1219,17 @@ app.whenReady().then(async () => {
   createTray()
   log.info(`[startup] window created & tray ready (+${Date.now() - APP_START_TIME}ms)`)
 
+  // 首次启动检测：向导未完成时推迟重量级初始化（LanceDB / ONNX DLL 加载），
+  // 防止 Windows 安全扫描同步阻塞主线程，导致向导界面卡死。
+  // Steam 版无向导，视为已完成。
+  const isFirstLaunch = !configService.getSetupCompleted() && !IS_STEAM_BUILD
+  if (isFirstLaunch) {
+    log.info('[startup] 首次启动：重量级初始化将在向导完成后执行，避免 Windows 上 UI 卡死')
+    setupDonePromise = new Promise<void>(resolve => {
+      resolveSetupDone = resolve
+    })
+  }
+
   // webContents 加载完成日志：观测渲染端首屏 paint 完成时间（重要的低配机器诊断点）
   mainWindow?.webContents.once('did-finish-load', () => {
     log.info(`[startup] webContents did-finish-load (+${Date.now() - APP_START_TIME}ms)`)
@@ -1217,18 +1241,35 @@ app.whenReady().then(async () => {
     log.info('mainWindow did-finish-load fired')
     if (!knowledgeInitDone) {
       knowledgeInitDone = true
-      setTimeout(() => {
+      const startKnowledge = async () => {
+        if (isFirstLaunch) {
+          // 首次启动：等向导完成后再加载重量级原生模块（LanceDB），
+          // 避免 Windows 安全扫描同步阻塞主线程冻结向导 UI。
+          log.info('[startup] 首次启动：等待向导完成后再初始化知识库')
+          await setupDonePromise
+          // 让 config:setSetupCompleted IPC 先返回渲染端，再开始重量级工作
+          await new Promise<void>(r => setImmediate(r))
+          await new Promise<void>(r => setTimeout(r, 500))
+          log.info(`[startup] 首次启动：知识库初始化开始 (+${Date.now() - APP_START_TIME}ms)`)
+        } else {
+          await new Promise<void>(r => setTimeout(r, 500))
+        }
         initKnowledgeService().catch(e => {
           log.error('知识库服务初始化失败:', e)
         })
-      }, 500)
+      }
+      startKnowledge()
     }
   })
-  // 兜底：如果 did-finish-load 10s 内未触发，强制初始化
-  setTimeout(() => {
+  // 兜底：如果 did-finish-load 10s 内未触发，强制初始化（首次启动时同样等待向导完成）
+  setTimeout(async () => {
     if (!knowledgeInitDone) {
       knowledgeInitDone = true
       log.warn('did-finish-load 未触发，兜底初始化知识库')
+      if (isFirstLaunch) {
+        await setupDonePromise
+        await new Promise<void>(r => setImmediate(r))
+      }
       initKnowledgeService().catch(e => {
         log.error('知识库服务初始化失败:', e)
       })
@@ -1254,9 +1295,22 @@ app.whenReady().then(async () => {
     backendInitStarted = true
     clearBackendTimers()
     log.info(`[startup] backend init triggered (${reason}, +${Date.now() - APP_START_TIME}ms)`)
-    runBackendInit().catch(e => {
-      log.error('后端服务初始化失败:', e)
-    })
+    const doBackendInit = async () => {
+      if (isFirstLaunch) {
+        // 首次启动：等向导完成后再启动后端服务（Watch/Sensor/IM/MCP 等），
+        // 避免原生模块加载同步阻塞主线程冻结向导 UI。
+        log.info('[startup] 首次启动：等待向导完成后再初始化后端服务')
+        await setupDonePromise
+        // 让 config:setSetupCompleted IPC 先返回渲染端，再开始重量级工作
+        await new Promise<void>(r => setImmediate(r))
+        await new Promise<void>(r => setTimeout(r, 1000))
+        log.info(`[startup] 首次启动：后端服务初始化开始 (+${Date.now() - APP_START_TIME}ms)`)
+      }
+      runBackendInit().catch(e => {
+        log.error('后端服务初始化失败:', e)
+      })
+    }
+    doBackendInit()
   }
   mainWindow?.once('ready-to-show', () => {
     backendReadyTimer = setTimeout(() => startBackendInit('ready-to-show+800ms'), 800)
@@ -2602,6 +2656,15 @@ ipcMain.handle('config:getSetupCompleted', async () => {
 
 ipcMain.handle('config:setSetupCompleted', async (_event, completed: boolean) => {
   configService.setSetupCompleted(completed)
+  // 首次启动：向导完成后触发延迟的重量级初始化（LanceDB / 后端服务）。
+  // 用 setImmediate 让本次 IPC 先返回渲染端，再开始可能阻塞主线程的原生模块加载，
+  // 保证渲染端能收到响应并继续执行 initializeApp()，不会在 await 处死等。
+  if (completed && resolveSetupDone) {
+    const trigger = resolveSetupDone
+    resolveSetupDone = null
+    log.info('[startup] 引导向导完成，将在下一 tick 触发延迟初始化')
+    setImmediate(trigger)
+  }
 })
 
 // Agent 诞生引导
@@ -3739,7 +3802,7 @@ ipcMain.handle(
     const filter = options.excludeWakeup
       ? (r: AgentRecord) => !(r.userTask.startsWith('[当前时间：') && r.userTask.includes('触发事件'))
       : undefined
-    return historyService.searchAgentRecordsAdvanced({
+    return await historyService.searchAgentRecordsAdvanced({
       keyword: options.keyword,
       startDate: options.startDate,
       endDate: options.endDate,
