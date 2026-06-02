@@ -2,7 +2,23 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.41.1 (2026-05-30) (Latest)
+## v10.42.0 (2026-06-02) (Latest)
+
+> Customizable Tab names, Mermaid chart rendering in AI chat, API key test in AI settings, async history search, and several fixes.
+
+### New Features
+- 🎯 **Customizable Tab Names**: Double-click a tab title to enter inline editing mode. Press Enter/blur to save, Esc to cancel. Clearing the custom title restores the auto-generated title.
+- 🎯 **Mermaid Chart Rendering in AI Chat**: Render ` ```mermaid ` code blocks as architecture diagrams, flowcharts, sequence diagrams, etc. Supports streaming progressive rendering, right-click copy/save as PNG/SVG/JPG.
+- 🎯 **AI Settings: API Key Test & Model List**: Test API key and endpoint connectivity with latency display. Fetch available models from `/v1/models` and display in a dropdown. Auto-detect vision models and set modelType accordingly.
+
+### Improvements
+- ⚡ **Async History Search**: History search is now fully asynchronous, eliminating main thread freezing. Cold-start recall is parallelized for faster startup.
+
+### Bug Fixes
+- 🐛 Fixed Tab rename input focus and select-all failure caused by string refs in v-for.
+- 🐛 Fixed updater dialog logic: show confirmation dialog when auto-download is off; skip redundant toast when auto-download is on.
+
+## v10.41.1 (2026-05-30)
 
 > Canvas preview improvements with open button and macOS update experience optimization.
 
