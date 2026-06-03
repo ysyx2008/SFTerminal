@@ -24,6 +24,8 @@ export interface ContextStatsResult {
   percentage: number
   /** 最近一次 API 调用的缓存命中率（0-100），undefined 表示无数据 */
   cacheHitRate?: number
+  /** 本次实际使用的模型名称（视觉路由切换时与 activeAiProfile 不同） */
+  effectiveModel?: string
 }
 
 export function useContextStats(
@@ -54,27 +56,36 @@ export function useContextStats(
     // Agent 模式：优先使用后端返回的 contextTokens
     const allSteps = agentState.value?.steps || []
     
-    // 从最新的步骤中获取后端返回的 contextTokens 和 cacheHitRate
+    // 从最新的步骤中获取后端返回的 contextTokens、cacheHitRate、effectiveContextLength 和 effectiveModel
     let cacheHitRate: number | undefined
+    let effectiveContextLength: number | undefined
+    let effectiveModel: string | undefined
     for (let i = allSteps.length - 1; i >= 0; i--) {
       const step = allSteps[i]
       if (step.contextTokens !== undefined) {
         totalTokens = step.contextTokens!
         cacheHitRate = step.cacheHitRate
+        // 优先使用后端写入的实际模型信息（视觉路由切换时与 activeAiProfile 不同）
+        effectiveContextLength = step.effectiveContextLength
+        effectiveModel = step.effectiveModel
         break
       }
     }
     
     messageCount = allSteps.length
     
-    const maxTokens = activeAiProfile.value?.contextLength || 128000
+    // effectiveContextLength 优先：当发生视觉模型自动切换时，此值反映切换后模型的限制
+    const maxTokens = effectiveContextLength || activeAiProfile.value?.contextLength || 128000
+    // effectiveModel 优先，回退到当前配置的 profile 名称
+    const modelName = effectiveModel || activeAiProfile.value?.name
     
     return {
       messageCount,
       tokenEstimate: totalTokens,
       maxTokens,
       percentage: Math.min(100, Math.round((totalTokens / maxTokens) * 100)),
-      cacheHitRate
+      cacheHitRate,
+      effectiveModel: modelName
     }
   })
 

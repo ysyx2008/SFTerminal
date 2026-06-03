@@ -14,6 +14,7 @@ interface ContextStats {
   maxTokens: number
   percentage: number
   cacheHitRate?: number
+  effectiveModel?: string
 }
 
 interface PendingImage {
@@ -435,7 +436,11 @@ const handleSendClick = (event: MouseEvent) => {
   </div>
 
   <div class="ai-input">
-    <div v-if="contextStats.tokenEstimate > 0" class="context-mini">
+    <div
+      v-if="contextStats.tokenEstimate > 0"
+      class="context-mini"
+      :data-tooltip="contextStats.effectiveModel ? contextStats.effectiveModel : undefined"
+    >
       <template v-if="cacheBarWidth > 0">
         <div class="context-mini-bar cached" :style="{ width: cacheBarWidth + '%' }"></div>
         <div

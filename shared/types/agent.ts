@@ -166,6 +166,17 @@ export interface AgentStep {
   plan?: AgentPlan
   progress?: StepProgress
   contextTokens?: number
+  /**
+   * 本次 API 调用实际使用的模型上下文窗口大小（tokens）。
+   * 当发生视觉模型自动切换时，此值反映切换后模型的 contextLength，
+   * 而非前端 activeAiProfile 的 contextLength。
+   */
+  effectiveContextLength?: number
+  /**
+   * 本次 API 调用实际使用的模型 Profile 名称（用户自定义名）。
+   * 当发生视觉模型自动切换时，此值为切换后的 profile.name。
+   */
+  effectiveModel?: string
   /** 本次 API 调用的缓存命中率（0-100），由后端计算后推送 */
   cacheHitRate?: number
   /** Canvas 预览数据（仅 UI 消费，不发给 AI） */

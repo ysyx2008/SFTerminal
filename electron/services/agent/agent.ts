@@ -2144,6 +2144,15 @@ export abstract class Agent {
               }
               if (targetStep) {
                 targetStep.contextTokens = result.usage.prompt_tokens
+                // 记录本次调用实际使用的模型信息（视觉路由切换时与 activeAiProfile 不同）
+                const effectiveProfile = this.services.configService
+                  ?.getAiProfiles()?.find(p => p.id === effectiveProfileId)
+                if (effectiveProfile?.contextLength) {
+                  targetStep.effectiveContextLength = effectiveProfile.contextLength
+                }
+                if (effectiveProfile?.name) {
+                  targetStep.effectiveModel = effectiveProfile.name
+                }
                 const cacheTotal = (result.usage.cache_hit_tokens || 0) + (result.usage.cache_miss_tokens || 0)
                 if (cacheTotal > 0 && result.usage.prompt_tokens > 0) {
                   targetStep.cacheHitRate = Math.round((result.usage.cache_hit_tokens || 0) / result.usage.prompt_tokens * 100)
