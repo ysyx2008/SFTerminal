@@ -6,7 +6,7 @@
  */
 import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Upload, Trash2, X, Search, Loader2, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MoreHorizontal, Shuffle } from 'lucide-vue-next'
+import { Upload, Trash2, X, Search, Loader2, HelpCircle, ChevronDown, ChevronUp, MoreHorizontal, Shuffle } from 'lucide-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useConfigStore } from '../stores/config'
@@ -1218,43 +1218,30 @@ let dragStartY = 0
 let dragStartTranslateX = 0
 let dragStartTranslateY = 0
 
-// 当前预览在 allPreviewImages 中的位置，-1 表示不在对话图片列表中（如待发送的图片）
-const previewGroupIdx = ref(-1)
-const previewImageIdx = ref(-1)
+// 当前预览在 allPreviewImages 平铺列表中的位置，-1 表示不在对话图片列表中
+const previewIdx = ref(-1)
 
-// 预览模式每张图都附带可选的 echartsPayload——这样左右/上下方向键导航时也能恢复活图
-// 模式（之前因为只存 string[]，导航时丢了 payload 上下文，切到下一张就退化成 <img>）。
 interface PreviewItem {
   url: string
   echartsPayload?: import('@shared/types').EChartsStepPayload
 }
 
-interface PreviewImageGroup {
-  groupId: string
-  items: PreviewItem[]
-}
-
-// 收集所有对话中的图片，按任务分组（用户图片 + 步骤图片合并到同一组）。
+// 收集所有对话中的图片，平铺成一维列表（不再按任务分组），上下翻页遍历整个列表。
 // 一个 step 通常只有一张图但有一个 step.echartsOption——把 payload 关联到 step.images[0]，
-// 后续图（如果有）走纯 <img> 兜底（chart skill 当前是一 step 一图，不会触发；其它 skill
-// 多图时活图能力本来也没注入）。
-const allPreviewImages = computed((): PreviewImageGroup[] => {
-  const result: PreviewImageGroup[] = []
+// 后续图（如果有）走纯 <img> 兜底。
+const allPreviewImages = computed((): PreviewItem[] => {
+  const result: PreviewItem[] = []
   for (const group of agentTaskGroups.value) {
-    const items: PreviewItem[] = []
     if (group.images?.length) {
-      for (const url of group.images) items.push({ url })
+      for (const url of group.images) result.push({ url })
     }
     for (const step of group.steps) {
       if (!step.images?.length) continue
       const payload = step.echartsOption
-      items.push({ url: step.images[0], echartsPayload: payload })
+      result.push({ url: step.images[0], echartsPayload: payload })
       for (let i = 1; i < step.images.length; i++) {
-        items.push({ url: step.images[i] })
+        result.push({ url: step.images[i] })
       }
-    }
-    if (items.length > 0) {
-      result.push({ groupId: group.id, items })
     }
   }
   return result
@@ -1271,20 +1258,9 @@ const openImagePreview = (
   echartsPayload?: import('@shared/types').EChartsStepPayload
 ) => {
   previewImageUrl.value = url
-  // 仅当本次点击来自"活图"时填载荷；普通 SVG/PNG 图调用方传 undefined（不传也行），
-  // 模态自然走 <img> 路径
   previewEchartsPayload.value = echartsPayload ?? null
   resetPreviewTransform()
-  previewGroupIdx.value = -1
-  previewImageIdx.value = -1
-  for (let gi = 0; gi < allPreviewImages.value.length; gi++) {
-    const imgIdx = allPreviewImages.value[gi].items.findIndex(it => it.url === url)
-    if (imgIdx !== -1) {
-      previewGroupIdx.value = gi
-      previewImageIdx.value = imgIdx
-      return
-    }
-  }
+  previewIdx.value = allPreviewImages.value.findIndex(it => it.url === url)
 }
 
 const closeImagePreview = () => {
@@ -1332,40 +1308,21 @@ const closeImageContextMenu = () => {
   imageContextMenu.url = null
 }
 
-const navigatePreview = (groupIdx: number, imageIdx: number) => {
-  const groups = allPreviewImages.value
-  if (groupIdx < 0 || groupIdx >= groups.length) return
-  const group = groups[groupIdx]
-  if (imageIdx < 0 || imageIdx >= group.items.length) return
-  const item = group.items[imageIdx]
-  previewGroupIdx.value = groupIdx
-  previewImageIdx.value = imageIdx
+const navigatePreviewTo = (idx: number) => {
+  const list = allPreviewImages.value
+  if (idx < 0 || idx >= list.length) return
+  const item = list[idx]
+  previewIdx.value = idx
   previewImageUrl.value = item.url
-  // PreviewItem 同时携带 echartsPayload，导航到活图项时自动还原可交互模式；
-  // 普通图项 echartsPayload 为 undefined → null，模板自然走 <img> 路径。
   previewEchartsPayload.value = item.echartsPayload ?? null
   resetPreviewTransform()
 }
 
-// 同组内左右切换
-const canGoLeft = computed(() => previewImageIdx.value > 0)
-const canGoRight = computed(() => {
-  const g = allPreviewImages.value[previewGroupIdx.value]
-  return g ? previewImageIdx.value < g.items.length - 1 : false
-})
-const canGoUp = computed(() => previewGroupIdx.value > 0)
-const canGoDown = computed(() => previewGroupIdx.value >= 0 && previewGroupIdx.value < allPreviewImages.value.length - 1)
+const canGoUp = computed(() => previewIdx.value > 0)
+const canGoDown = computed(() => previewIdx.value >= 0 && previewIdx.value < allPreviewImages.value.length - 1)
 
-const goLeft = () => canGoLeft.value && navigatePreview(previewGroupIdx.value, previewImageIdx.value - 1)
-const goRight = () => canGoRight.value && navigatePreview(previewGroupIdx.value, previewImageIdx.value + 1)
-const goUp = () => {
-  if (!canGoUp.value) return
-  const prevGroup = allPreviewImages.value[previewGroupIdx.value - 1]
-  navigatePreview(previewGroupIdx.value - 1, prevGroup.items.length - 1)
-}
-const goDown = () => canGoDown.value && navigatePreview(previewGroupIdx.value + 1, 0)
-
-const currentGroupImageCount = computed(() => allPreviewImages.value[previewGroupIdx.value]?.items.length ?? 0)
+const goUp = () => navigatePreviewTo(previewIdx.value - 1)
+const goDown = () => navigatePreviewTo(previewIdx.value + 1)
 
 // 滚轮缩放
 const handlePreviewWheel = (e: WheelEvent) => {
@@ -1492,19 +1449,14 @@ const handleKeyDown = (e: KeyboardEvent) => {
         return
       }
     }
-    // 缩放状态下方向键用于平移，未缩放时用于图片导航
+    // 缩放状态下左右方向键用于平移；上下方向键始终用于切图（平铺列表上下翻页）
     if (previewScale.value !== 1) {
       const PAN_STEP = 50
       if (e.key === 'ArrowLeft') { e.preventDefault(); previewTranslateX.value += PAN_STEP; return }
       if (e.key === 'ArrowRight') { e.preventDefault(); previewTranslateX.value -= PAN_STEP; return }
-      if (e.key === 'ArrowUp') { e.preventDefault(); previewTranslateY.value += PAN_STEP; return }
-      if (e.key === 'ArrowDown') { e.preventDefault(); previewTranslateY.value -= PAN_STEP; return }
-    } else {
-      if (e.key === 'ArrowLeft') { e.preventDefault(); goLeft(); return }
-      if (e.key === 'ArrowRight') { e.preventDefault(); goRight(); return }
-      if (e.key === 'ArrowUp') { e.preventDefault(); goUp(); return }
-      if (e.key === 'ArrowDown') { e.preventDefault(); goDown(); return }
     }
+    if (e.key === 'ArrowUp') { e.preventDefault(); goUp(); return }
+    if (e.key === 'ArrowDown') { e.preventDefault(); goDown(); return }
     return
   }
   // ESC 键关闭弹窗
@@ -2611,20 +2563,12 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
       class="image-preview-modal" 
       @click="closeImagePreview"
     >
-      <!-- 上方导航箭头：历史对话 -->
-      <button v-if="canGoUp" class="image-preview-nav nav-up" @click.stop="goUp" :title="t('ai.imagePreview.prevConversation')">
+      <!-- 上方导航箭头：上一张 -->
+      <button v-if="canGoUp" class="image-preview-nav nav-up" @click.stop="goUp" :title="t('ai.imagePreview.prevImage')">
         <ChevronUp :size="24" />
       </button>
-      <!-- 左侧导航箭头：同组前一张 -->
-      <button v-if="canGoLeft" class="image-preview-nav nav-left" @click.stop="goLeft" :title="t('ai.imagePreview.prevImage')">
-        <ChevronLeft :size="24" />
-      </button>
-      <!-- 右侧导航箭头：同组后一张 -->
-      <button v-if="canGoRight" class="image-preview-nav nav-right" @click.stop="goRight" :title="t('ai.imagePreview.nextImage')">
-        <ChevronRight :size="24" />
-      </button>
-      <!-- 下方导航箭头：后续对话 -->
-      <button v-if="canGoDown" class="image-preview-nav nav-down" @click.stop="goDown" :title="t('ai.imagePreview.nextConversation')">
+      <!-- 下方导航箭头：下一张 -->
+      <button v-if="canGoDown" class="image-preview-nav nav-down" @click.stop="goDown" :title="t('ai.imagePreview.nextImage')">
         <ChevronDown :size="24" />
       </button>
 
@@ -2665,8 +2609,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         />
         <!-- 底部信息栏：图片位置 + 缩放比例 -->
         <div class="image-preview-info-bar">
-          <span v-if="currentGroupImageCount > 1" class="image-preview-counter">
-            {{ previewImageIdx + 1 }} / {{ currentGroupImageCount }}
+          <span v-if="allPreviewImages.length > 1 && previewIdx >= 0" class="image-preview-counter">
+            {{ previewIdx + 1 }} / {{ allPreviewImages.length }}
           </span>
           <span v-if="previewScale !== 1" class="image-preview-zoom-badge">
             {{ Math.round(previewScale * 100) }}%
