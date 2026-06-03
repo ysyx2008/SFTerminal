@@ -93,6 +93,7 @@ export class HistoryService {
   private historyDir: string
   private chatDir: string
   private agentDir: string
+  private imagesDir: string
   private _indexCache: AgentIndexEntry[] | null = null
 
   constructor() {
@@ -101,6 +102,7 @@ export class HistoryService {
     this.historyDir = path.join(userDataPath, 'history')
     this.chatDir = path.join(this.historyDir, 'chat')
     this.agentDir = path.join(this.historyDir, 'agent')
+    this.imagesDir = path.join(this.historyDir, 'images')
 
     // 确保目录存在
     this.ensureDirectories()
@@ -114,12 +116,57 @@ export class HistoryService {
    * 确保历史记录目录存在
    */
   private ensureDirectories(): void {
-    const dirs = [this.historyDir, this.chatDir, this.agentDir]
+    const dirs = [this.historyDir, this.chatDir, this.agentDir, this.imagesDir]
     for (const dir of dirs) {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true })
       }
     }
+  }
+
+  /**
+   * 把 AgentRecord 里所有步骤中内联的 base64 图片写到磁盘，替换为 file:// 路径。
+   * 解决长会话（大量截图）IPC 传输超大对象导致渲染进程崩溃的问题。
+   * @returns true 表示发生了替换（调用方需要回写记录文件）
+   */
+  private externalizeStepImages(record: AgentRecord): boolean {
+    let anyChanged = false
+    const dateStr = this.getDateString(record.timestamp)
+    const sessionImagesDir = path.join(this.imagesDir, dateStr, record.id)
+
+    for (const step of record.steps) {
+      if (!step.images || step.images.length === 0) continue
+
+      let stepChanged = false
+      const newImages: string[] = []
+      for (let i = 0; i < step.images.length; i++) {
+        const img = step.images[i]
+        // 只处理内联 base64 data URL
+        const match = img.match(/^data:(image\/(\w+));base64,(.+)$/)
+        if (!match) {
+          newImages.push(img)
+          continue
+        }
+        const [, , ext, base64Data] = match
+        // 确保 session 图片目录存在（懒建）
+        if (!fs.existsSync(sessionImagesDir)) {
+          fs.mkdirSync(sessionImagesDir, { recursive: true })
+        }
+        const filename = `${step.id}-${i}.${ext}`
+        const filePath = path.join(sessionImagesDir, filename)
+        if (!fs.existsSync(filePath)) {
+          fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'))
+        }
+        newImages.push(`file://${filePath}`)
+        stepChanged = true
+      }
+      if (stepChanged) {
+        step.images = newImages
+        anyChanged = true
+      }
+    }
+
+    return anyChanged
   }
 
   /**
@@ -366,6 +413,9 @@ export class HistoryService {
    * 保存 Agent 记录（支持更新：如果 id 相同则更新，否则追加）
    */
   saveAgentRecord(record: AgentRecord): void {
+    // 写入前把内联 base64 图片外化到磁盘，避免 JSON 文件膨胀和 IPC 传输超大对象
+    this.externalizeStepImages(record)
+
     const dateStr = this.getDateString(record.timestamp)
     const filePath = this.getAgentFilePath(dateStr)
     const records = this.readAgentRecords(filePath)
@@ -402,15 +452,27 @@ export class HistoryService {
   }
 
   /**
-   * 按 ID 查找 Agent 记录（跨日期文件查找）
+   * 按 ID 查找 Agent 记录（跨日期文件查找）。
+   * 对存量记录中内联的 base64 图片做 lazy 外化：首次访问时写到磁盘并回写 JSON，
+   * 后续访问直接读 file:// 路径，IPC 传输体积从几十 MB 降到几百 KB。
    */
   getAgentRecordById(id: string): AgentRecord | undefined {
     const files = fs.readdirSync(this.agentDir).filter(f => f.endsWith('.json')).sort().reverse()
     for (const file of files) {
       const filePath = path.join(this.agentDir, file)
       const records = this.readAgentRecords(filePath)
-      const found = records.find(r => r.id === id)
-      if (found) return found
+      const foundIndex = records.findIndex(r => r.id === id)
+      if (foundIndex === -1) continue
+
+      const found = records[foundIndex]
+      // 对历史存量记录中的内联 base64 图片做 lazy 外化并回写
+      const changed = this.externalizeStepImages(found)
+      if (changed) {
+        records[foundIndex] = found
+        this.writeJsonFile(filePath, records)
+        log.info(`Externalized inline images for record ${id}, saved back to ${file}`)
+      }
+      return found
     }
     return undefined
   }
