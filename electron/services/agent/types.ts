@@ -14,11 +14,12 @@ export type {
   AgentPlan,
   AgentStep,
   PendingConfirmation,
+  PendingSecureInput,
   AttachmentInfo,
   TokenUsage,
 } from '@shared/types'
 
-import type { TerminalType, ExecutionMode, RemoteChannel, PendingConfirmation, AgentStep, AgentPlan, AttachmentInfo, TokenUsage } from '@shared/types'
+import type { TerminalType, ExecutionMode, RemoteChannel, PendingConfirmation, PendingSecureInput, AgentStep, AgentPlan, AttachmentInfo, TokenUsage } from '@shared/types'
 
 // Agent 配置
 export interface AgentConfig {
@@ -37,6 +38,15 @@ export interface AgentConfig {
  */
 export interface PendingConfirmationInternal extends PendingConfirmation {
   resolve: (approved: boolean, modifiedArgs?: Record<string, unknown>) => void
+}
+
+/**
+ * 后端内部使用的 PendingSecureInput，包含 resolve 回调。
+ * IPC 传输时 resolve 会被剥离，前端使用 @shared/types 的 PendingSecureInput。
+ */
+export interface PendingSecureInputInternal extends PendingSecureInput {
+  /** 用户完成输入后调用：saved=true 表示已保存到凭证存储，false 表示已取消 */
+  resolve: (saved: boolean) => void
 }
 
 // 之前任务的执行步骤（用于上下文）
@@ -150,6 +160,7 @@ export interface AgentRun {
   isRunning: boolean
   aborted: boolean
   pendingConfirmation?: PendingConfirmationInternal
+  pendingSecureInput?: PendingSecureInputInternal
   pendingUserMessages: PendingUserMessage[]
   config: AgentConfig
   context: AgentContext  // 运行上下文
@@ -243,6 +254,8 @@ export interface AgentCallbacks {
   onStep?: (agentId: string, step: AgentStep) => void
   onStepRemoved?: (agentId: string, stepId: string) => void
   onNeedConfirm?: (confirmation: PendingConfirmationInternal) => void
+  /** 需要安全输入框时触发（如技能 API Key）。前端弹框，值直接写入加密存储，不经过 LLM。 */
+  onNeedSecureInput?: (request: PendingSecureInputInternal) => void
   onComplete?: (agentId: string, result: string, pendingUserMessages?: string[]) => void
   onError?: (agentId: string, error: string) => void
   onTextChunk?: (agentId: string, chunk: string) => void

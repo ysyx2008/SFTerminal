@@ -384,7 +384,8 @@ import { getWorkspacePath } from './services/agent/tools/file'
 import { getContextKnowledgeService } from './services/knowledge/context-knowledge'
 import {
   getEmailCredential, setEmailCredential, deleteEmailCredential,
-  getCalendarCredential, setCalendarCredential, deleteCalendarCredential
+  getCalendarCredential, setCalendarCredential, deleteCalendarCredential,
+  setSkillEnv, getSkillEnv, deleteSkillEnv, listSkillEnvNames
 } from './services/credential.service'
 import { getServerConfig } from './services/agent/skills/email/session'
 import { setEmailAccounts } from './services/agent/skills/email/executor'
@@ -3185,6 +3186,24 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
         body: buildConfirmNotifBody(confirmation.toolName, confirmation.toolArgs, confirmation.displayName)
       })
     },
+    onNeedSecureInput: (request: import('./services/agent/types').PendingSecureInputInternal) => {
+      if (!event.sender.isDestroyed()) {
+        // 只发送可序列化的字段，不包含 resolve 函数
+        event.sender.send('agent:needSecureInput', {
+          agentId: request.agentId,
+          ptyId,
+          requestId: request.requestId,
+          skillId: request.skillId,
+          envName: request.envName,
+          prompt: request.prompt,
+          isUpdate: request.isUpdate
+        })
+      }
+      attentionService.request({
+        title: 'SailFish 需要 API Key',
+        body: `请为技能配置 ${request.envName}`
+      })
+    },
     onComplete: (agentId: string, result: string, pendingUserMessages?: string[]) => {
       if (!event.sender.isDestroyed()) {
         event.sender.send('agent:complete', { agentId, ptyId, result, pendingUserMessages })
@@ -3235,6 +3254,47 @@ ipcMain.handle('agent:confirm', async (_event, { ptyId, toolCallId, approved, mo
   alwaysAllow?: boolean
 }) => {
   return agentService.confirmToolCall(ptyId, toolCallId, approved, modifiedArgs, alwaysAllow)
+})
+
+// 解决安全输入请求（前端弹框用户完成输入后调用）
+ipcMain.handle('agent:resolveSecureInput', async (_event, {
+  ptyId, requestId, value, cancelled
+}: {
+  ptyId: string
+  requestId: string
+  value?: string
+  cancelled?: boolean
+}) => {
+  if (cancelled || !value) {
+    return agentService.resolveSecureInput(ptyId, requestId, false)
+  }
+  // 取出 pendingSecureInput 的 skillId/envName，直接存到加密存储（值不经过 LLM）
+  const pending = agentService.getPendingSecureInput(ptyId)
+  if (pending && pending.requestId === requestId) {
+    await setSkillEnv(pending.skillId, pending.envName, value)
+  }
+  return agentService.resolveSecureInput(ptyId, requestId, true)
+})
+
+// ==================== 技能 env key 管理 IPC ====================
+
+ipcMain.handle('skill:setEnv', async (_event, skillId: string, envName: string, value: string) => {
+  await setSkillEnv(skillId, envName, value)
+  return { success: true }
+})
+
+ipcMain.handle('skill:getEnvNames', async (_event, skillId: string) => {
+  return listSkillEnvNames(skillId)
+})
+
+ipcMain.handle('skill:deleteEnv', async (_event, skillId: string, envName: string) => {
+  const removed = await deleteSkillEnv(skillId, envName)
+  return { success: removed }
+})
+
+ipcMain.handle('skill:getEnvStatus', async (_event, skillId: string) => {
+  const { getUserSkillService } = await import('./services/user-skill.service')
+  return getUserSkillService().getSkillEnvStatus(skillId)
 })
 
 // 获取 Agent 状态（改用 ptyId）
@@ -3320,6 +3380,22 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
       attentionService.request({
         title: `${riskEmoji2}SailFish 需要确认`,
         body: buildConfirmNotifBody(confirmation.toolName, confirmation.toolArgs, confirmation.displayName)
+      })
+    },
+    onNeedSecureInput: (request: import('./services/agent/types').PendingSecureInputInternal) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('agent:needSecureInput', {
+          agentId: request.agentId,
+          requestId: request.requestId,
+          skillId: request.skillId,
+          envName: request.envName,
+          prompt: request.prompt,
+          isUpdate: request.isUpdate
+        })
+      }
+      attentionService.request({
+        title: 'SailFish 需要 API Key',
+        body: `请为技能配置 ${request.envName}`
       })
     },
     onComplete: (_runId: string, result: string, pendingUserMessages?: string[]) => {

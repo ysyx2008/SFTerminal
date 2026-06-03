@@ -114,6 +114,8 @@ export interface SpawnOptions {
   cwd?: string
   /** 最长允许运行时间（秒），到点 SIGKILL */
   maxSeconds: number
+  /** 额外注入的环境变量（合并到 process.env，用于技能 API Key 等敏感配置） */
+  env?: Record<string, string>
 }
 
 export interface WaitOptions {
@@ -139,9 +141,10 @@ class BackgroundExecManager {
     const shell = getDefaultShell()
 
     // Windows 走 cmd shell，POSIX 走 /bin/sh -l -c（与原 exec.ts 行为一致）
+    const spawnEnv = opts.env ? { ...process.env, ...opts.env } : process.env
     const child = process.platform === 'win32'
-      ? spawn(opts.command, { shell, cwd: opts.cwd })
-      : spawn(shell, ['-l', '-c', opts.command], { cwd: opts.cwd })
+      ? spawn(opts.command, { shell, cwd: opts.cwd, env: spawnEnv })
+      : spawn(shell, ['-l', '-c', opts.command], { cwd: opts.cwd, env: spawnEnv })
 
     const buffer = new RingBuffer(RING_BUFFER_MAX)
     const task: InternalTask = {

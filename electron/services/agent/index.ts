@@ -459,6 +459,26 @@ export class AgentService {
     const agent = this.getAgent(ptyId)
     return agent?.confirmToolCall(toolCallId, approved, modifiedArgs, alwaysAllow) ?? false
   }
+
+  /**
+   * 解决安全输入请求（前端弹框完成后调用）
+   */
+  resolveSecureInput(ptyId: string, requestId: string, saved: boolean): boolean {
+    const agent = this.getAgent(ptyId)
+    return agent?.resolveSecureInput(requestId, saved) ?? false
+  }
+
+  /**
+   * 获取当前待处理的安全输入请求（供 main.ts IPC handler 取 skillId/envName）
+   */
+  getPendingSecureInput(ptyId: string): import('@shared/types').PendingSecureInput | undefined {
+    const agent = this.getAgent(ptyId)
+    if (!agent) return undefined
+    const run = (agent as any).currentRun
+    return run?.pendingSecureInput
+      ? { ...run.pendingSecureInput, resolve: undefined }
+      : undefined
+  }
   
   /**
    * 添加用户消息

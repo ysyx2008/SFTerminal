@@ -83,6 +83,7 @@ const handleClose = () => {
 const messagesRef = ref<HTMLDivElement | null>(null)
 const scrollerRef = ref<InstanceType<typeof DynamicScroller> | null>(null)
 const composerRef = ref<InstanceType<typeof AiComposer> | null>(null)
+const secureInputValue = ref('')
 
 // ==================== 独立助手能力示例网格 ====================
 // 欢迎区展示的 8 张场景卡片。首屏精选覆盖最广能力组合，"换一批"从 25 条池子洗牌。
@@ -485,6 +486,7 @@ const {
   agentState,
   isAgentRunning,
   pendingConfirm,
+  pendingSecureInput,
   agentUserTask,
   currentPlan,
   agentTaskGroups,
@@ -492,6 +494,8 @@ const {
   runAgent,
   abortAgent,
   confirmToolCall,
+  submitSecureInput,
+  cancelSecureInput,
   sendAgentReply,
   getStepIcon,
   getRiskClass,
@@ -2510,6 +2514,42 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                       @click="confirmToolCall(true)"
                     >
                       {{ t('ai.allowExecute') }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 安全输入框（API Key 等，内容不经过 LLM） -->
+              <div v-else-if="item.type === 'waiting_input' && pendingSecureInput" class="agent-step-virtual">
+                <div class="agent-secure-input-inline">
+                  <div class="secure-input-header">
+                    <span class="secure-input-icon">🔑</span>
+                    <span class="secure-input-title">{{ t('ai.secureInputTitle') }}</span>
+                  </div>
+                  <div class="secure-input-prompt">{{ pendingSecureInput.prompt }}</div>
+                  <div class="secure-input-body">
+                    <input
+                      type="password"
+                      class="secure-input-field"
+                      v-model="secureInputValue"
+                      :placeholder="t('ai.secureInputPlaceholder')"
+                      @keyup.enter="submitSecureInput(secureInputValue); secureInputValue = ''"
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                  </div>
+                  <div class="secure-input-actions">
+                    <button class="btn btn-sm btn-outline-secondary" @click="cancelSecureInput(); secureInputValue = ''">
+                      {{ t('ai.cancel') }}
+                    </button>
+                    <button
+                      class="btn btn-sm btn-primary"
+                      :disabled="!secureInputValue.trim()"
+                      @click="submitSecureInput(secureInputValue); secureInputValue = ''"
+                    >
+                      {{ t('ai.confirm') }}
                     </button>
                   </div>
                 </div>
@@ -5721,6 +5761,72 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 }
 
 .confirm-actions-inline {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+/* ===== 安全输入框（API Key 等） ===== */
+.agent-secure-input-inline {
+  padding: 14px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1a 100%);
+  border: 2px solid var(--accent-primary, #6c63ff);
+  box-shadow: 0 4px 20px rgba(108, 99, 255, 0.2);
+}
+
+.secure-input-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.secure-input-icon {
+  font-size: 18px;
+}
+
+.secure-input-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.secure-input-prompt {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.secure-input-body {
+  margin-bottom: 12px;
+}
+
+.secure-input-field {
+  width: 100%;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 14px;
+  font-family: var(--font-mono);
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+
+.secure-input-field:focus {
+  border-color: var(--accent-primary, #6c63ff);
+  box-shadow: 0 0 0 2px rgba(108, 99, 255, 0.25);
+}
+
+.secure-input-field::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.secure-input-actions {
   display: flex;
   gap: 10px;
   justify-content: flex-end;

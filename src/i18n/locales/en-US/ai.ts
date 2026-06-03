@@ -125,6 +125,10 @@ export default {
     alwaysAllow: 'Always Allow',
     alwaysAllowHint: 'Skip confirmation for same operation in this session',
     allowExecute: 'Allow Execute',
+    cancel: 'Cancel',
+    confirm: 'Confirm',
+    secureInputTitle: 'Secure Input (not visible to AI)',
+    secureInputPlaceholder: 'Enter value, press Enter to confirm',
     supplementInfo: 'Supplement Info',
     pendingProcess: 'Pending',
     welcome: {

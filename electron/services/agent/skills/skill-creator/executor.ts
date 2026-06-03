@@ -6,6 +6,7 @@ import * as path from 'path'
 import { getUserSkillService } from '../../../user-skill.service'
 import { getSkillMarketService, type SkillSource } from '../../../skill-market.service'
 import { getConfigService } from '../../../config.service'
+import { setSkillEnv, deleteSkillEnv, listSkillEnvNames } from '../../../credential.service'
 import { createLogger } from '../../../../utils/logger'
 import { t } from '../../i18n'
 import type { ToolResult, ToolExecutorConfig, AgentConfig } from '../../tools/types'
@@ -34,6 +35,12 @@ export async function executeSkillCreatorTool(
       return updateSkill(args, executor)
     case 'skill_get_path':
       return getSkillsPath()
+    case 'skill_set_env':
+      return setSkillEnvTool(args, toolCallId, executor)
+    case 'skill_list_env':
+      return listSkillEnvTool(args)
+    case 'skill_delete_env':
+      return deleteSkillEnvTool(args, executor)
     case 'skill_market_search':
       return marketSearch(args)
     case 'skill_preview':
@@ -433,6 +440,140 @@ enabled: true
       error: `获取技能目录失败: ${error instanceof Error ? error.message : String(error)}`
     }
   }
+}
+
+// ==================== 技能 env key 管理工具 ====================
+
+/**
+ * 设置技能 env key
+ */
+async function setSkillEnvTool(
+  args: Record<string, unknown>,
+  toolCallId: string,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  const skillId = (args.skill_id as string)?.trim()
+  const envName = (args.env_name as string)?.trim().toUpperCase()
+  const value = args.value as string | undefined
+
+  if (!skillId) return { success: false, output: '', error: '技能 ID 不能为空' }
+  if (!envName) return { success: false, output: '', error: 'env 变量名不能为空' }
+
+  const userSkillService = getUserSkillService()
+  const skill = userSkillService.getSkill(skillId)
+  if (!skill) return { success: false, output: '', error: `技能不存在: ${skillId}` }
+
+  // 检查是否已配置过（用于弹框提示"更新"还是"新建"）
+  const existing = (await listSkillEnvNames(skillId)).includes(envName)
+
+  if (value !== undefined && value !== '') {
+    // 用户已在对话中提供了值，直接存储
+    await setSkillEnv(skillId, envName, value)
+    log.info(`Skill env set via direct value: ${skillId}:${envName}`)
+    executor.addStep({
+      type: 'tool_result',
+      content: `✅ ${skill.name} 的 ${envName} 已配置`,
+      toolName: 'skill_set_env',
+      toolResult: `已为技能 ${skillId} 存储 ${envName}`
+    })
+    return { success: true, output: `✅ 已为技能 **${skill.name}** 配置 \`${envName}\`` }
+  }
+
+  // 没有提供值：触发前端安全输入框
+  executor.addStep({
+    type: 'waiting_input',
+    content: `请输入 **${skill.name}** 的 \`${envName}\``,
+    toolName: 'skill_set_env',
+    toolArgs: { skill_id: skillId, env_name: envName }
+  })
+
+  const saved = await executor.requestSecureInput(
+    skillId,
+    envName,
+    `请输入 ${skill.name} 的 ${envName}`,
+    existing
+  )
+
+  if (!saved) {
+    executor.addStep({
+      type: 'tool_result',
+      content: `⛔ 用户取消了 ${envName} 的输入`,
+      toolName: 'skill_set_env',
+      toolResult: '用户取消'
+    })
+    return { success: false, output: '', error: '用户取消了输入' }
+  }
+
+  log.info(`Skill env set via secure input: ${skillId}:${envName}`)
+  executor.addStep({
+    type: 'tool_result',
+    content: `✅ ${skill.name} 的 ${envName} 已配置`,
+    toolName: 'skill_set_env',
+    toolResult: `已为技能 ${skillId} 存储 ${envName}`
+  })
+  return { success: true, output: `✅ 已为技能 **${skill.name}** 配置 \`${envName}\`` }
+}
+
+/**
+ * 列出技能的 env key 配置状态
+ */
+async function listSkillEnvTool(args: Record<string, unknown>): Promise<ToolResult> {
+  const skillId = (args.skill_id as string)?.trim()
+  if (!skillId) return { success: false, output: '', error: '技能 ID 不能为空' }
+
+  const userSkillService = getUserSkillService()
+  const skill = userSkillService.getSkill(skillId)
+  if (!skill) return { success: false, output: '', error: `技能不存在: ${skillId}` }
+
+  const statuses = await userSkillService.getSkillEnvStatus(skillId)
+
+  if (statuses.length === 0) {
+    return {
+      success: true,
+      output: `技能 **${skill.name}** 未声明任何 env key（\`requires.env\` 为空）。\n\n如需在 SKILL.md 中声明，格式如下：\n\`\`\`yaml\nmetadata: {"clawdbot": {"requires": {"env": ["MY_API_KEY"]}}}\n\`\`\`\n注意：metadata 的值必须写在同一行，且是合法 JSON 格式。`
+    }
+  }
+
+  const lines = statuses.map(s =>
+    `- \`${s.name}\`: ${s.configured ? '✅ 已配置' : '❌ 未配置'}`
+  )
+  const missing = statuses.filter(s => !s.configured)
+  const hint = missing.length > 0
+    ? `\n\n缺少 ${missing.length} 个 key，使用 \`skill_set_env\` 配置，或用 \`exec(..., skill_id="${skillId}")\` 确认已注入。`
+    : '\n\n所有 key 均已配置，执行技能脚本时使用 `exec(..., skill_id="' + skillId + '")` 自动注入。'
+
+  return {
+    success: true,
+    output: `**${skill.name}** 的 env key 状态：\n\n${lines.join('\n')}${hint}`
+  }
+}
+
+/**
+ * 删除技能的某个 env key
+ */
+async function deleteSkillEnvTool(
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  const skillId = (args.skill_id as string)?.trim()
+  const envName = (args.env_name as string)?.trim().toUpperCase()
+
+  if (!skillId) return { success: false, output: '', error: '技能 ID 不能为空' }
+  if (!envName) return { success: false, output: '', error: 'env 变量名不能为空' }
+
+  const removed = await deleteSkillEnv(skillId, envName)
+  if (!removed) {
+    return { success: false, output: '', error: `${skillId} 的 ${envName} 未配置，无需删除` }
+  }
+
+  log.info(`Skill env deleted: ${skillId}:${envName}`)
+  executor.addStep({
+    type: 'tool_result',
+    content: `🗑️ 已删除 ${skillId} 的 ${envName}`,
+    toolName: 'skill_delete_env',
+    toolResult: `已删除 ${skillId}:${envName}`
+  })
+  return { success: true, output: `✅ 已删除技能 **${skillId}** 的 \`${envName}\` 配置` }
 }
 
 // ==================== 技能市场工具 ====================

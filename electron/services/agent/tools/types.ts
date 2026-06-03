@@ -46,6 +46,17 @@ export interface ToolExecutorConfig {
     /** 可选的人类可读动作名，用于前端确认卡片显示（如"覆盖生成 Word 文档"） */
     displayName?: string
   ) => Promise<boolean>
+  /**
+   * 请求安全输入框（如技能 API Key）。
+   * 前端弹原生输入框，用户输入的值直接写入加密存储，不经过 LLM。
+   * 返回 true=用户已保存，false=用户取消。
+   */
+  requestSecureInput: (
+    skillId: string,
+    envName: string,
+    prompt: string,
+    isUpdate?: boolean
+  ) => Promise<boolean>
   isAborted: () => boolean
   getHostId: () => string | undefined
   hasPendingUserMessage: () => boolean

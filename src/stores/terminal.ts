@@ -56,6 +56,7 @@ export interface AgentState {
   userTask?: string      // 用户任务描述
   steps: AgentStep[]
   pendingConfirm?: PendingConfirmation
+  pendingSecureInput?: import('@shared/types').PendingSecureInput & { ptyId?: string }
   /** 后台 tab：Agent 已结束（成功或报错）而用户当时不在该 tab，用于标签栏高亮引导 */
   agentCompletedUnseen?: boolean
   finalResult?: string   // Agent 完成后的最终回复
@@ -1777,8 +1778,16 @@ export const useTerminalStore = defineStore('terminal', () => {
   function setAgentPendingConfirm(tabId: string, confirmation: PendingConfirmation | undefined): void {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab?.agentState) return
-
     tab.agentState.pendingConfirm = confirmation
+  }
+
+  function setAgentPendingSecureInput(
+    tabId: string,
+    request: (import('@shared/types').PendingSecureInput & { ptyId?: string }) | undefined
+  ): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab?.agentState) return
+    tab.agentState.pendingSecureInput = request
   }
 
   /**
@@ -2501,6 +2510,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     addAgentStep,
     removeAgentStep,
     setAgentPendingConfirm,
+    setAgentPendingSecureInput,
     clearAgentState,
     setAgentFinalResult,
     restoreAgentHistory,

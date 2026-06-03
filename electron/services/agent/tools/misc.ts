@@ -668,14 +668,26 @@ export async function loadUserSkillTool(
 
   // 附属文件和运行环境信息（ClawHub 兼容技能包）
   const hasFiles = skill.files && skill.files.length > 0
+  const hasEnvRequirements = (skill.requires?.env?.length ?? 0) > 0
   if (hasFiles || skill.requires) {
     sections.push('\n### Skill Bundle Info')
     sections.push(`- **baseDir**: \`${skill.baseDir}\``)
     if (skill.requires?.bins?.length) {
       sections.push(`- **requires**: ${skill.requires.bins.map(b => `\`${b}\``).join(', ')}`)
     }
-    if (skill.requires?.env?.length) {
-      sections.push(`- **env vars**: ${skill.requires.env.map(e => `\`${e}\``).join(', ')}`)
+    if (hasEnvRequirements) {
+      // 显示每个 env key 的配置状态
+      const envStatuses = await userSkillService.getSkillEnvStatus(skillId)
+      const envLines = envStatuses.map(s =>
+        `\`${s.name}\` ${s.configured ? '✅已配置' : '❌未配置'}`
+      )
+      sections.push(`- **env keys**: ${envLines.join(', ')}`)
+      const missing = envStatuses.filter(s => !s.configured)
+      if (missing.length > 0) {
+        sections.push(`\n> ⚠️ 缺少 ${missing.length} 个 key：${missing.map(s => `\`${s.name}\``).join(', ')}。请用 \`skill_set_env("${skillId}", "KEY_NAME")\` 配置，或告诉 Agent key 的值。`)
+      } else {
+        sections.push(`\n> 💡 执行本技能脚本时请用 \`exec(command, skill_id="${skillId}")\` 自动注入 key，勿明文传递。`)
+      }
     }
     if (hasFiles) {
       sections.push(`- **files** (${skill.files!.length}): ${skill.files!.join(', ')}`)

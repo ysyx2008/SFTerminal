@@ -125,6 +125,10 @@ export default {
     alwaysAllow: '始终允许',
     alwaysAllowHint: '本次会话内不再询问相同操作',
     allowExecute: '允许执行',
+    cancel: '取消',
+    confirm: '确认',
+    secureInputTitle: '安全输入（内容不会传给 AI）',
+    secureInputPlaceholder: '请输入，按 Enter 确认',
     supplementInfo: '补充信息',
     pendingProcess: '等待处理',
     welcome: {

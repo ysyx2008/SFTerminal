@@ -27,7 +27,8 @@ import type {
   TerminalType,
   ExecutionMode,
   AgentExecutionPhase,
-  PendingConfirmationInternal
+  PendingConfirmationInternal,
+  PendingSecureInputInternal
 } from './types'
 import { DEFAULT_AGENT_CONFIG } from './types'
 import { TaskMemoryStore } from './task-memory'
@@ -407,6 +408,25 @@ export abstract class Agent {
    */
   hasPendingConfirmation(): boolean {
     return !!this.currentRun?.pendingConfirmation
+  }
+
+  /**
+   * 解决安全输入请求（前端弹框用户完成输入后调用）。
+   * @param requestId 请求 ID
+   * @param saved true=用户已保存 key，false=用户取消
+   */
+  resolveSecureInput(requestId: string, saved: boolean): boolean {
+    if (!this.currentRun?.pendingSecureInput) return false
+    if (this.currentRun.pendingSecureInput.requestId !== requestId) return false
+    this.currentRun.pendingSecureInput.resolve(saved)
+    return true
+  }
+
+  /**
+   * 是否有待处理的安全输入请求
+   */
+  hasPendingSecureInput(): boolean {
+    return !!this.currentRun?.pendingSecureInput
   }
 
   /**
@@ -2837,6 +2857,9 @@ export abstract class Agent {
         const result = await this.waitForConfirmation(run, toolCallId, toolName, toolArgs, riskLevel, displayName)
         return result.approved
       },
+      requestSecureInput: async (skillId, envName, prompt, isUpdate) => {
+        return this.requestSecureInput(run, skillId, envName, prompt, isUpdate)
+      },
       isAborted: () => run.aborted,
       getHostId: () => run.context.hostId,
       hasPendingUserMessage: () => run.pendingUserMessages.length > 0,
@@ -3059,6 +3082,40 @@ export abstract class Agent {
     })
   }
   
+  /**
+   * 请求安全输入（弹出前端安全输入框）。
+   *
+   * 前端弹框后，用户输入的值直接经 IPC 写入加密存储，Agent 只得到"已保存/已取消"。
+   * 值的明文**不经过 LLM 上下文**。
+   */
+  protected requestSecureInput(
+    run: AgentRun,
+    skillId: string,
+    envName: string,
+    prompt: string,
+    isUpdate?: boolean
+  ): Promise<boolean> {
+    return new Promise((resolve) => {
+      const requestId = this.generateId()
+      const request: PendingSecureInputInternal = {
+        agentId: run.id,
+        requestId,
+        skillId,
+        envName,
+        prompt,
+        isUpdate,
+        resolve: (saved) => {
+          run.pendingSecureInput = undefined
+          run.executionPhase = 'thinking'
+          resolve(saved)
+        }
+      }
+      run.pendingSecureInput = request
+      run.executionPhase = 'confirming'
+      this.callbacks?.onNeedSecureInput?.(request)
+    })
+  }
+
   // ==================== 私有方法 ====================
   
   /**

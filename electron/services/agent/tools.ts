@@ -447,6 +447,10 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
               max_seconds: {
                 type: 'number',
                 description: '命令最长允许运行时间（默认 3600 即 1 小时，最大 86400 即 24 小时）。到点会被 SIGKILL，防止僵尸进程'
+              },
+              skill_id: {
+                type: 'string',
+                description: '技能 ID（可选）。指定后会自动将该技能配置的 API Key 等 env 注入到子进程，无需明文传递 key'
               }
             },
             required: ['command']

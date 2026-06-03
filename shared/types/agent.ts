@@ -141,7 +141,7 @@ export interface EChartsStepPayload {
 
 export interface AgentStep {
   id: string
-  type: 'thinking' | 'tool_call' | 'tool_result' | 'message' | 'error' | 'confirm' | 'streaming' | 'user_supplement' | 'waiting' | 'asking' | 'waiting_password' | 'plan_created' | 'plan_updated' | 'plan_archived' | 'user_task' | 'final_result'
+  type: 'thinking' | 'tool_call' | 'tool_result' | 'message' | 'error' | 'confirm' | 'streaming' | 'user_supplement' | 'waiting' | 'asking' | 'waiting_password' | 'waiting_input' | 'plan_created' | 'plan_updated' | 'plan_archived' | 'user_task' | 'final_result'
   content: string
   images?: string[]
   /**
@@ -188,6 +188,25 @@ export interface AgentStep {
    * 避免正文里出现"拒绝"二字的 message step 被误判为拒绝步骤而整体变灰。
    */
   rejected?: boolean
+}
+
+/**
+ * 安全输入请求（IPC 安全版本，不含 resolve 回调）。
+ *
+ * Agent 通过 requestSecureInput 触发前端弹出安全输入框。用户输入的值
+ * 经 IPC 直接写入加密存储，**不经过 LLM 上下文**，Agent 只收到"已设置/已取消"。
+ */
+export interface PendingSecureInput {
+  agentId: string
+  requestId: string
+  /** 提示用户输入什么（如 "请输入 STOCK_API_KEY"） */
+  prompt: string
+  /** 技能 ID，用于存储时构建 credential key */
+  skillId: string
+  /** env 变量名（如 "STOCK_API_KEY"） */
+  envName: string
+  /** 可选：是否是更新（已配置过，本次覆盖） */
+  isUpdate?: boolean
 }
 
 /**

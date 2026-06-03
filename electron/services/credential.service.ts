@@ -334,6 +334,57 @@ export async function getOAuth2Token(accountId: string): Promise<OAuth2Token | n
   }
 }
 
+// ============ 技能 env 凭据 ============
+
+const SKILL_ENV_PREFIX = 'skill:'
+
+/**
+ * 存储技能 env 凭据（API Key 等）。
+ * key 格式：`skill:<skillId>:<envName>`
+ */
+export async function setSkillEnv(skillId: string, envName: string, value: string): Promise<void> {
+  await setCredential(`${SKILL_ENV_PREFIX}${skillId}:${envName}`, value)
+}
+
+/**
+ * 读取技能 env 凭据。不存在返回 null。
+ */
+export async function getSkillEnv(skillId: string, envName: string): Promise<string | null> {
+  return await getCredential(`${SKILL_ENV_PREFIX}${skillId}:${envName}`)
+}
+
+/**
+ * 删除技能 env 凭据。
+ */
+export async function deleteSkillEnv(skillId: string, envName: string): Promise<boolean> {
+  return await deleteCredential(`${SKILL_ENV_PREFIX}${skillId}:${envName}`)
+}
+
+/**
+ * 列出某个技能已存储的所有 env 名称（不含值）。
+ */
+export async function listSkillEnvNames(skillId: string): Promise<string[]> {
+  const prefix = `${SKILL_ENV_PREFIX}${skillId}:`
+  const keys = await listCredentials(prefix)
+  return keys.map(k => k.slice(prefix.length)).filter(Boolean)
+}
+
+/**
+ * 读取某个技能的所有 env 键值对（用于子进程注入）。
+ * 返回 `{ ENV_NAME: 'value', ... }`，只包含已配置的项。
+ */
+export async function getSkillEnvMap(skillId: string): Promise<Record<string, string>> {
+  const names = await listSkillEnvNames(skillId)
+  const result: Record<string, string> = {}
+  await Promise.all(
+    names.map(async (name) => {
+      const val = await getSkillEnv(skillId, name)
+      if (val !== null) result[name] = val
+    })
+  )
+  return result
+}
+
 // ============ 测试辅助：仅用于单元测试时重置内存状态 ============
 /** @internal */
 export function __resetCredentialCacheForTests(): void {

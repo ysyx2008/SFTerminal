@@ -223,6 +223,75 @@ export const skillCreatorTools: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'skill_set_env',
+      description: `为技能配置 API Key 或其他敏感环境变量。
+
+**两种情况**：
+- 用户已在对话中告知 key 值 → 直接调用设置
+- 用户未提供 key 值 → 调用此工具触发安全输入框（PC 端弹原生输入框，key 不经过 AI 对话）
+
+key 会加密存储，技能执行脚本时通过 \`exec(..., skill_id)\` 自动注入，**不会出现在对话中**。`,
+      parameters: {
+        type: 'object',
+        properties: {
+          skill_id: {
+            type: 'string',
+            description: '技能 ID'
+          },
+          env_name: {
+            type: 'string',
+            description: 'env 变量名（如 "STOCK_API_KEY"）'
+          },
+          value: {
+            type: 'string',
+            description: 'key 的值（可选）。提供则直接存储；不提供则触发前端安全输入框，key 不经过 AI 对话'
+          }
+        },
+        required: ['skill_id', 'env_name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'skill_list_env',
+      description: '列出技能需要的 env key 及其配置状态（已配置/未配置）。**只显示状态，不显示 key 值。**',
+      parameters: {
+        type: 'object',
+        properties: {
+          skill_id: {
+            type: 'string',
+            description: '技能 ID'
+          }
+        },
+        required: ['skill_id']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'skill_delete_env',
+      description: '删除技能的某个 env key 配置（如 key 泄露需要轮换时使用）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          skill_id: {
+            type: 'string',
+            description: '技能 ID'
+          },
+          env_name: {
+            type: 'string',
+            description: '要删除的 env 变量名'
+          }
+        },
+        required: ['skill_id', 'env_name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'skill_install_local',
       description: `从本地路径安装技能（ZIP 文件或目录）。内部自动执行安全扫描，含附属文件时要求用户确认。
 

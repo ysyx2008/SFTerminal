@@ -906,6 +906,14 @@ const electronAPI = {
       alwaysAllow?: boolean
     }) => ipcRenderer.invoke('agent:confirm', params) as Promise<boolean>,
 
+    // 解决安全输入请求（前端安全输入框完成后调用）
+    resolveSecureInput: (params: {
+      ptyId: string
+      requestId: string
+      value?: string
+      cancelled?: boolean
+    }) => ipcRenderer.invoke('agent:resolveSecureInput', params) as Promise<boolean>,
+
     // 获取 Agent 状态（使用 ptyId）
     getStatus: (ptyId: string) => ipcRenderer.invoke('agent:getStatus', ptyId),
 
@@ -972,6 +980,15 @@ const electronAPI = {
       ipcRenderer.on('agent:needConfirm', handler)
       return () => {
         ipcRenderer.removeListener('agent:needConfirm', handler)
+      }
+    },
+
+    // 监听安全输入请求（Agent 需要用户通过安全输入框填写 API Key 等）
+    onNeedSecureInput: (callback: (data: import('@shared/types').PendingSecureInput & { ptyId?: string }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: import('@shared/types').PendingSecureInput & { ptyId?: string }) => callback(data)
+      ipcRenderer.on('agent:needSecureInput', handler)
+      return () => {
+        ipcRenderer.removeListener('agent:needSecureInput', handler)
       }
     },
 
@@ -1895,7 +1912,20 @@ const electronAPI = {
 
     // 获取技能目录路径
     getSkillsDir: () =>
-      ipcRenderer.invoke('userSkill:getSkillsDir') as Promise<string>
+      ipcRenderer.invoke('userSkill:getSkillsDir') as Promise<string>,
+
+    // 技能 env key 管理
+    setEnv: (skillId: string, envName: string, value: string) =>
+      ipcRenderer.invoke('skill:setEnv', skillId, envName, value) as Promise<{ success: boolean }>,
+
+    getEnvNames: (skillId: string) =>
+      ipcRenderer.invoke('skill:getEnvNames', skillId) as Promise<string[]>,
+
+    deleteEnv: (skillId: string, envName: string) =>
+      ipcRenderer.invoke('skill:deleteEnv', skillId, envName) as Promise<{ success: boolean }>,
+
+    getEnvStatus: (skillId: string) =>
+      ipcRenderer.invoke('skill:getEnvStatus', skillId) as Promise<Array<{ name: string; configured: boolean }>>,
   },
 
   // 技能市场

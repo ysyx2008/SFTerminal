@@ -6,6 +6,7 @@ import { app, shell } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { createLogger } from '../utils/logger'
+import { listSkillEnvNames } from './credential.service'
 
 const log = createLogger('UserSkill')
 
@@ -15,6 +16,12 @@ export interface SkillRequires {
   bins?: string[]
   /** 需要的环境变量（如 ["API_KEY"]） */
   env?: string[]
+}
+
+/** 技能单个 env key 的配置状态 */
+export interface SkillEnvStatus {
+  name: string
+  configured: boolean
 }
 
 /**
@@ -126,8 +133,24 @@ export class UserSkillService {
 
     let currentKey = ''
     const listKeys = new Set(['permissions', 'commands'])
+    // 收集 metadata 的多行 JSON/YAML 块
+    let metadataLines: string[] = []
+    let collectingMetadata = false
 
     for (const line of lines) {
+      // 如果当前在收集 metadata 块（多行 JSON/YAML），累积缩进行
+      if (collectingMetadata) {
+        if (line.startsWith(' ') || line.startsWith('\t') || line.trim() === '') {
+          metadataLines.push(line)
+          continue
+        }
+        // 遇到非缩进行，结束 metadata 收集，尝试解析
+        const jsonStr = metadataLines.join('\n').trim()
+        try { frontmatter.metadata = JSON.parse(jsonStr) } catch { /* ignore */ }
+        collectingMetadata = false
+        metadataLines = []
+      }
+
       // YAML 列表项（  - value）
       const listItemMatch = line.match(/^\s+-\s+(.+)$/)
       if (listItemMatch && listKeys.has(currentKey)) {
@@ -177,10 +200,20 @@ export class UserSkillService {
           case 'metadata':
             if (value) {
               try { frontmatter.metadata = JSON.parse(value) } catch { /* ignore */ }
+            } else {
+              // 值为空，metadata 对象在下方的缩进行里
+              collectingMetadata = true
+              metadataLines = []
             }
             break
         }
       }
+    }
+
+    // 处理文件末尾还在收集中的 metadata 块
+    if (collectingMetadata && metadataLines.length > 0) {
+      const jsonStr = metadataLines.join('\n').trim()
+      try { frontmatter.metadata = JSON.parse(jsonStr) } catch { /* ignore */ }
     }
 
     return { frontmatter, body }
@@ -259,11 +292,13 @@ export class UserSkillService {
         commands: frontmatter.commands,
       }
 
-      // 从 metadata.clawdbot.requires 提取运行环境要求
+      // 从 metadata.clawdbot.requires 或 metadata.openclaw.requires 提取运行环境要求
       if (frontmatter.metadata) {
-        const clawdbot = (frontmatter.metadata as Record<string, unknown>).clawdbot as Record<string, unknown> | undefined
-        if (clawdbot?.requires) {
-          const req = clawdbot.requires as Record<string, unknown>
+        const meta = frontmatter.metadata as Record<string, unknown>
+        // 兼容 clawdbot（本地技能）和 openclaw（clawhub 技能）两种命名空间
+        const namespace = (meta.clawdbot ?? meta.openclaw) as Record<string, unknown> | undefined
+        if (namespace?.requires) {
+          const req = namespace.requires as Record<string, unknown>
           skill.requires = {
             bins: Array.isArray(req.bins) ? req.bins : undefined,
             env: Array.isArray(req.env) ? req.env : undefined,
@@ -495,6 +530,18 @@ export class UserSkillService {
   refresh(): UserSkill[] {
     this.cachedSkills = null
     return this.scanSkills()
+  }
+
+  /**
+   * 获取技能的 env key 配置状态。
+   * 把技能 `requires.env` 声明的 key 与凭证服务里已存的 key 对比，
+   * 返回每个 key 是否已配置，供 UI 和 Agent 判断缺少哪些 key。
+   */
+  async getSkillEnvStatus(skillId: string): Promise<SkillEnvStatus[]> {
+    const skill = this.getSkill(skillId)
+    const declaredEnvs = skill?.requires?.env ?? []
+    const configuredNames = new Set(await listSkillEnvNames(skillId))
+    return declaredEnvs.map(name => ({ name, configured: configuredNames.has(name) }))
   }
 
   /**

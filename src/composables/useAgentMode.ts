@@ -121,6 +121,7 @@ export function useAgentMode(
   let cleanupStepRemovedListener: (() => void) | null = null
   let cleanupConfirmListener: (() => void) | null = null
   let cleanupConfirmResolvedListener: (() => void) | null = null
+  let cleanupSecureInputListener: (() => void) | null = null
   let cleanupCompleteListener: (() => void) | null = null
   let cleanupErrorListener: (() => void) | null = null
 
@@ -489,6 +490,10 @@ export function useAgentMode(
 
   const pendingConfirm = computed(() => {
     return agentState.value?.pendingConfirm
+  })
+
+  const pendingSecureInput = computed(() => {
+    return agentState.value?.pendingSecureInput
   })
 
   const agentUserTask = computed(() => {
@@ -939,6 +944,44 @@ export function useAgentMode(
     }
   }
 
+  // 提交安全输入（用户在安全输入框里填了 key 并确认）
+  const submitSecureInput = async (value: string) => {
+    const req = pendingSecureInput.value
+    if (!req) return
+    const agentKey = getAgentKey()
+    if (!agentKey) return
+    try {
+      await window.electronAPI.agent.resolveSecureInput({
+        ptyId: req.ptyId || agentKey,
+        requestId: req.requestId,
+        value
+      })
+    } finally {
+      if (currentTabId.value) {
+        terminalStore.setAgentPendingSecureInput(currentTabId.value, undefined)
+      }
+    }
+  }
+
+  // 取消安全输入
+  const cancelSecureInput = async () => {
+    const req = pendingSecureInput.value
+    if (!req) return
+    const agentKey = getAgentKey()
+    if (!agentKey) return
+    try {
+      await window.electronAPI.agent.resolveSecureInput({
+        ptyId: req.ptyId || agentKey,
+        requestId: req.requestId,
+        cancelled: true
+      })
+    } finally {
+      if (currentTabId.value) {
+        terminalStore.setAgentPendingSecureInput(currentTabId.value, undefined)
+      }
+    }
+  }
+
   // 发送 Agent 回复（用于用户点击选项快速回复）
   const sendAgentReply = async (message: string) => {
     if (!message.trim() || !currentTabId.value) return
@@ -1110,6 +1153,14 @@ export function useAgentMode(
       }
     })
 
+    // 监听安全输入请求（技能 API Key 等）
+    cleanupSecureInputListener = window.electronAPI.agent.onNeedSecureInput((data) => {
+      if (!isEventForThisTab(data.agentId, data.ptyId)) return
+      terminalStore.setAgentPendingSecureInput(currentTabId.value, data)
+      scrollToBottom()
+      setTimeout(() => scrollToBottom(), 150)
+    })
+
     // 监听完成
     cleanupCompleteListener = window.electronAPI.agent.onComplete((data: { agentId: string; ptyId?: string; result: string; pendingUserMessages?: string[] }) => {
       const foundTabId = data.ptyId
@@ -1193,6 +1244,10 @@ export function useAgentMode(
     if (cleanupConfirmResolvedListener) {
       cleanupConfirmResolvedListener()
       cleanupConfirmResolvedListener = null
+    }
+    if (cleanupSecureInputListener) {
+      cleanupSecureInputListener()
+      cleanupSecureInputListener = null
     }
     if (cleanupCompleteListener) {
       cleanupCompleteListener()
@@ -1467,6 +1522,7 @@ export function useAgentMode(
     agentState,
     isAgentRunning,
     pendingConfirm,
+    pendingSecureInput,
     agentUserTask,
     currentPlan,
     agentTaskGroups,
@@ -1477,6 +1533,8 @@ export function useAgentMode(
     runAgent,
     abortAgent,
     confirmToolCall,
+    submitSecureInput,
+    cancelSecureInput,
     sendAgentReply,
     getStepIcon,
     getRiskClass,

@@ -16,6 +16,7 @@ import { t } from '../i18n'
 import { assessCommandRisk, analyzeCommand } from '../risk-assessor'
 import { truncateFromEnd, EXEC_MAX_COMMAND_LENGTH } from './utils'
 import { getExecManager, MAX_PATTERN_LENGTH } from './exec-manager'
+import { getSkillEnvMap } from '../../../services/credential.service'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 
 const DEFAULT_WAIT_SECONDS = 60
@@ -132,14 +133,18 @@ export async function executeCommandDirect(
   }
 
   const cwd = (args.cwd as string) || undefined
+  const skillId = (args.skill_id as string) || undefined
   const waitSeconds = clampNumber(args.wait_seconds, DEFAULT_WAIT_SECONDS, 1, MAX_WAIT_SECONDS)
   const maxSeconds = clampNumber(args.max_seconds, DEFAULT_MAX_SECONDS, 1, MAX_MAX_SECONDS)
 
   // 转后台时实际等待时间是 min(wait, max)——max 已经是硬上限，wait > max 没意义
   const effectiveWait = Math.min(waitSeconds, maxSeconds)
 
+  // 如果指定了 skill_id，注入该技能的 env（API Key 等）到子进程
+  const skillEnv = skillId ? await getSkillEnvMap(skillId) : undefined
+
   const manager = getExecManager()
-  const task = manager.spawn({ command, cwd, maxSeconds })
+  const task = manager.spawn({ command, cwd, maxSeconds, env: skillEnv })
 
   const reason = await manager.wait({
     task,
