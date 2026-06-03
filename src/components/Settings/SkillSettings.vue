@@ -97,7 +97,6 @@ const detailLoading = ref(false)
 
 // 技能 env key 管理
 const envStatuses = ref<Record<string, SkillEnvStatus[]>>({})
-const showEnvPanel = ref<string | null>(null) // 正在展开的技能 ID
 const envInputValues = ref<Record<string, string>>({}) // envName → 输入框值
 const envSaving = ref<Set<string>>(new Set()) // 正在保存的 envName
 
@@ -110,12 +109,11 @@ const loadEnvStatus = async (skillId: string) => {
   }
 }
 
-const toggleEnvPanel = async (skillId: string) => {
-  if (showEnvPanel.value === skillId) {
-    showEnvPanel.value = null
-  } else {
-    showEnvPanel.value = skillId
-    await loadEnvStatus(skillId)
+const loadAllEnvStatuses = async () => {
+  for (const skill of skills.value) {
+    if (skill.requires?.env?.length) {
+      await loadEnvStatus(skill.id)
+    }
   }
 }
 
@@ -222,6 +220,7 @@ const loadSkills = async () => {
   try {
     skills.value = await window.electronAPI.userSkill.list()
     skillsDir.value = await window.electronAPI.userSkill.getSkillsDir()
+    await loadAllEnvStatuses()
   } catch (error) {
     console.error('Failed to load skills:', error)
   } finally {
@@ -549,15 +548,6 @@ watch(() => props.pendingInstallSkillId, (newId) => {
                 <div class="skill-desc" v-if="skill.description" :title="skill.description">{{ skill.description }}</div>
               </div>
               <div class="skill-actions">
-                <button
-                  v-if="skill.requires?.env?.length"
-                  class="btn-icon btn-sm"
-                  :class="{ 'btn-active': showEnvPanel === skill.id }"
-                  @click.stop="toggleEnvPanel(skill.id)"
-                  :title="t('skillSettings.manageKeys')"
-                >
-                  🔑
-                </button>
                 <button class="btn-icon btn-sm" @click="viewSkill(skill)" :title="t('skillSettings.view')">
                   <Eye :size="14" />
                 </button>
@@ -567,8 +557,8 @@ watch(() => props.pendingInstallSkillId, (newId) => {
               </div>
             </div>
 
-            <!-- env key 管理面板 -->
-            <div v-if="showEnvPanel === skill.id" class="env-panel">
+            <!-- env key 管理面板（始终展示） -->
+            <div v-if="skill.requires?.env?.length" class="env-panel">
               <div class="env-panel-title">{{ t('skillSettings.apiKeys') }}</div>
               <div
                 v-for="envStatus in (envStatuses[skill.id] ?? skill.requires?.env?.map(n => ({ name: n, configured: false })) ?? [])"

@@ -553,7 +553,6 @@ export default {
     by: '作者',
     allCategories: '全部',
     // API Key 管理
-    manageKeys: '管理 API Key',
     apiKeys: 'API Key',
     keyConfigured: '✅ 已配置',
     keyMissing: '❌ 未配置',

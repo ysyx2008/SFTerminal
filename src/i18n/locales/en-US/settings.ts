@@ -553,7 +553,6 @@ export default {
     by: 'by',
     allCategories: 'All',
     // API Key management
-    manageKeys: 'Manage API Keys',
     apiKeys: 'API Keys',
     keyConfigured: '✅ Configured',
     keyMissing: '❌ Not configured',
