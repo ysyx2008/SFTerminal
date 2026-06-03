@@ -1379,6 +1379,15 @@ const translations = {
 
     // IM 工具（send_file_to_chat / send_image_to_chat / send_im_notification）
     'im.tool_file_path_required': '必须提供 file_path 参数',
+    'im.tool_file_task_id_required': '必须提供 task_id 参数',
+    'im.tool_file_task_not_found': '找不到文件传输任务: {taskId}，任务可能已过期或 task_id 有误',
+    'im.tool_file_uploading': '⏳ 文件上传中: {name}（task_id: {taskId}）',
+    'im.tool_file_upload_started': '文件上传已在后台启动: {name}，task_id={taskId}。请调用 await_file_transfer("{taskId}") 等待结果。',
+    'im.tool_file_awaiting': '⏳ 等待上传完成: {name}（{taskId}）',
+    'im.tool_file_transfer_done': '✅ 文件已发送: {name}（用时 {elapsed}）',
+    'im.tool_file_awaiting_aborted': '⏹️ 等待中断: {name}',
+    'im.tool_file_awaiting_timeout': '⏳ 仍在上传: {name}（已等 {elapsed}）',
+    'im.tool_file_still_uploading': '文件仍在上传中（task_id={taskId}），可继续调用 await_file_transfer 等待或稍后再查。',
     'im.tool_no_active_session': '当前没有活跃的 IM 会话，此工具仅在通过 IM 平台交互时可用',
     'im.tool_sending_file': '📤 发送文件: {name}{size}',
     'im.tool_file_sent': '✅ 文件已发送: {name}',
@@ -2799,6 +2808,15 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
 
     // IM tools (send_file_to_chat / send_image_to_chat / send_im_notification)
     'im.tool_file_path_required': 'file_path parameter is required',
+    'im.tool_file_task_id_required': 'task_id parameter is required',
+    'im.tool_file_task_not_found': 'File transfer task not found: {taskId}. The task may have expired or the task_id is invalid.',
+    'im.tool_file_uploading': '⏳ Uploading file: {name} (task_id: {taskId})',
+    'im.tool_file_upload_started': 'File upload started in background: {name}, task_id={taskId}. Call await_file_transfer("{taskId}") to wait for the result.',
+    'im.tool_file_awaiting': '⏳ Waiting for upload: {name} ({taskId})',
+    'im.tool_file_transfer_done': '✅ File sent: {name} (took {elapsed})',
+    'im.tool_file_awaiting_aborted': '⏹️ Wait aborted: {name}',
+    'im.tool_file_awaiting_timeout': '⏳ Still uploading: {name} (waited {elapsed})',
+    'im.tool_file_still_uploading': 'File is still uploading (task_id={taskId}). Call await_file_transfer again to continue waiting.',
     'im.tool_no_active_session': 'No active IM session. This tool is only available when interacting via an IM platform.',
     'im.tool_sending_file': '📤 Sending file: {name}{size}',
     'im.tool_file_sent': '✅ File sent: {name}',

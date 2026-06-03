@@ -24,7 +24,7 @@ import { rememberInfo, searchKnowledge, getKnowledgeDoc } from './knowledge'
 import { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 import { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
 import { compressContext, recallCompressed, manageMemory } from './context'
-import { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, messageUser, executeMcpTool, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
+import { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, awaitFileTransfer, messageUser, executeMcpTool, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
 import { dispatchSubAgents } from './sub-agent'
 import { executeWebSearch } from './web-search'
 import { executeWebFetch } from './web-fetch'
@@ -46,7 +46,7 @@ export { rememberInfo, searchKnowledge, getKnowledgeDoc } from './knowledge'
 export { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 export { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
 export { compressContext, recallCompressed, manageMemory } from './context'
-export { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, messageUser, executeMcpTool, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
+export { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, awaitFileTransfer, messageUser, executeMcpTool, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
 export { dispatchSubAgents, getSubAgentTools } from './sub-agent'
 export { executeWebSearch } from './web-search'
 export { executeWebFetch } from './web-fetch'
@@ -241,6 +241,8 @@ export async function executeTool(
       return sendFileToChat(args, executor)
     case 'send_image_to_chat':
       return sendImageToChat(args, executor)
+    case 'await_file_transfer':
+      return awaitFileTransfer(args, executor)
 
     case 'split_terminal':
       return splitTerminalTool(args, ptyId)

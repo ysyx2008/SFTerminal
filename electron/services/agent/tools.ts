@@ -1248,7 +1248,9 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
       type: 'function',
       function: {
         name: 'send_to_chat',
-        description: `发送本地文件或图片到当前${imMeta.name}聊天。图片会内联显示，其他文件作为附件发送。
+        description: `发送本地文件或图片到当前${imMeta.name}聊天。
+- image：同步发送，立即返回结果。
+- file：异步上传，返回 task_id，需调用 await_file_transfer 等待结果。
 
 **限制**：文件 ≤${imMeta.fileLimit}，图片 ≤${imMeta.imageLimit}，一次一个文件。`,
         parameters: {
@@ -1261,7 +1263,7 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
             type: {
               type: 'string',
               enum: ['file', 'image'],
-              description: '发送类型：image（图片，内联显示）或 file（文件，附件形式）。默认 file'
+              description: '发送类型：image（图片，内联显示）或 file（文件附件，异步上传）。默认 file'
             },
             file_name: {
               type: 'string',
@@ -1271,7 +1273,32 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
           required: ['file_path']
         }
       },
-      // 发送结果只是"已发送/失败"短消息，可清理；与其他动作型工具保持元数据一致性
+      _meta: { contextBudget: { toolResult: 'clearable' } }
+    } as ToolDefinitionWithMeta)
+
+    filteredTools.push({
+      type: 'function',
+      function: {
+        name: 'await_file_transfer',
+        description: `等待 send_to_chat(type=file) 返回的异步上传任务完成。
+- 任务完成（成功/失败）立即返回。
+- 若 wait_seconds 内仍在上传，返回 isRunning=true，可再次调用继续等待。
+- 整个上传只要有数据在流动就不会中断，wait_seconds 仅控制本次调用的阻塞时长。`,
+        parameters: {
+          type: 'object',
+          properties: {
+            task_id: {
+              type: 'string',
+              description: 'send_to_chat 返回的 task_id（格式 ft-N）'
+            },
+            wait_seconds: {
+              type: 'number',
+              description: '本次最多等待秒数（1-300，默认 30）'
+            }
+          },
+          required: ['task_id']
+        }
+      },
       _meta: { contextBudget: { toolResult: 'clearable' } }
     } as ToolDefinitionWithMeta)
   }

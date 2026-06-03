@@ -634,7 +634,8 @@ export class PromptBuilder {
     if (imMeta) {
       return [
         `**交互通道**：用户通过${imMeta.name}与你对话，你的回复将作为 IM 消息发送`,
-        `- 你可以使用 \`send_to_chat\` 发送文件或图片。type="image" 发送图片（限${imMeta.imageLimit}，内联显示），type="file" 发送文件（限${imMeta.fileLimit}）`,
+        `- 你可以使用 \`send_to_chat\` 发送文件或图片。type="image" 同步发送图片（限${imMeta.imageLimit}，内联显示），type="file" 异步上传文件（限${imMeta.fileLimit}），返回 task_id`,
+        '- 发送文件（type=file）后必须立刻调用 `await_file_transfer(task_id)` 等待上传完成，再告知用户结果',
         '- 当用户要求发送/查看文件时，必须使用 `send_to_chat` 真正发送文件，不要只读取内容',
       ].join('\n')
     }

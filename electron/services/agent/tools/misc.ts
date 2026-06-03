@@ -244,7 +244,8 @@ export async function askUser(
 }
 
 /**
- * 发送文件到当前 IM 聊天
+ * 发送文件到当前 IM 聊天（异步）
+ * 立即返回 task_id，Agent 通过 await_file_transfer 等待结果。
  */
 export async function sendFileToChat(
   args: Record<string, unknown>,
@@ -275,6 +276,8 @@ export async function sendFileToChat(
 
   const displayName = fileName || filePath.split('/').pop() || filePath
 
+  const taskId = imService.startFileSend(filePath, fileName)
+
   executor.addStep({
     type: 'tool_call',
     content: t('im.tool_sending_file', { name: displayName, size: fileSizeDisplay }),
@@ -282,25 +285,105 @@ export async function sendFileToChat(
     toolArgs: { file_path: filePath, file_name: fileName },
     riskLevel: 'safe'
   })
+  executor.addStep({
+    type: 'tool_result',
+    content: t('im.tool_file_uploading', { name: displayName, taskId }),
+    toolName: 'send_file_to_chat',
+    toolResult: t('im.tool_file_uploading', { name: displayName, taskId })
+  })
 
-  const result = await imService.sendFileForCurrentSession(filePath, fileName)
+  return {
+    success: true,
+    output: t('im.tool_file_upload_started', { name: displayName, taskId })
+  }
+}
 
-  if (result.success) {
+/**
+ * 等待异步文件传输任务完成
+ */
+export async function awaitFileTransfer(
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  const taskId = typeof args.task_id === 'string' ? args.task_id : ''
+  if (!taskId) {
+    return { success: false, output: '', error: t('im.tool_file_task_id_required') }
+  }
+
+  const waitSeconds = Math.min(Math.max(Number(args.wait_seconds) || 30, 1), 300)
+
+  const imService = getIMService()
+  const task = imService.getFileTransferTask(taskId)
+  if (!task) {
+    return { success: false, output: '', error: t('im.tool_file_task_not_found', { taskId }) }
+  }
+
+  executor.addStep({
+    type: 'tool_call',
+    content: t('im.tool_file_awaiting', { name: task.displayName, taskId }),
+    toolName: 'await_file_transfer',
+    toolArgs: { task_id: taskId, wait_seconds: waitSeconds },
+    riskLevel: 'safe'
+  })
+
+  const reason = await imService.waitFileTransfer(
+    taskId,
+    waitSeconds * 1000,
+    () => executor.isAborted()
+  )
+
+  const elapsed = task.finishedAt
+    ? `${((task.finishedAt - task.startedAt) / 1000).toFixed(1)}s`
+    : `>${waitSeconds}s`
+
+  if (reason === 'done') {
     executor.addStep({
       type: 'tool_result',
-      content: t('im.tool_file_sent', { name: displayName }),
-      toolName: 'send_file_to_chat',
-      toolResult: t('im.tool_file_sent_output', { name: displayName })
+      content: t('im.tool_file_sent', { name: task.displayName }),
+      toolName: 'await_file_transfer',
+      toolResult: t('im.tool_file_sent_output', { name: task.displayName })
     })
-    return { success: true, output: t('im.tool_file_sent_to_chat', { name: displayName }) }
-  } else {
+    return {
+      success: true,
+      output: t('im.tool_file_transfer_done', { name: task.displayName, elapsed })
+    }
+  }
+
+  if (reason === 'failed') {
     executor.addStep({
       type: 'tool_result',
-      content: t('im.tool_file_send_failed', { error: result.error || '' }),
-      toolName: 'send_file_to_chat',
-      toolResult: result.error || t('error.unknown')
+      content: t('im.tool_file_send_failed', { error: task.error || '' }),
+      toolName: 'await_file_transfer',
+      toolResult: task.error || t('error.unknown')
     })
-    return { success: false, output: '', error: result.error || t('im.tool_file_send_failed_output') }
+    return {
+      success: false,
+      output: '',
+      error: task.error || t('im.tool_file_send_failed_output')
+    }
+  }
+
+  if (reason === 'aborted') {
+    executor.addStep({
+      type: 'tool_result',
+      content: t('im.tool_file_awaiting_aborted', { name: task.displayName }),
+      toolName: 'await_file_transfer',
+      toolResult: t('im.tool_file_awaiting_aborted', { name: task.displayName })
+    })
+    return { success: false, output: '', error: t('error.operation_aborted') }
+  }
+
+  // timeout：任务仍在进行
+  executor.addStep({
+    type: 'tool_result',
+    content: t('im.tool_file_awaiting_timeout', { name: task.displayName, elapsed: `${waitSeconds}s` }),
+    toolName: 'await_file_transfer',
+    toolResult: t('im.tool_file_awaiting_timeout', { name: task.displayName, elapsed: `${waitSeconds}s` })
+  })
+  return {
+    success: true,
+    output: t('im.tool_file_still_uploading', { taskId }),
+    isRunning: true,
   }
 }
 

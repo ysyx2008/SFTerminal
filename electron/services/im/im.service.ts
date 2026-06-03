@@ -341,6 +341,22 @@ function formatThinkingForIM(thinking: string): string {
   return `**🤔 ${t('ai.thinking_process')}**\n\n${quoted}`
 }
 
+// ==================== 文件传输任务 ====================
+
+export interface FileTransferTask {
+  taskId: string
+  displayName: string
+  status: 'uploading' | 'done' | 'failed'
+  error?: string
+  startedAt: number
+  finishedAt?: number
+  /** 内部：等待完成的挂起回调 */
+  _waiters: Array<(status: 'done' | 'failed') => void>
+}
+
+/** 完成后在内存中保留任务状态的时长（让 Agent 还能查到结果） */
+const FILE_TRANSFER_KEEP_MS = 5 * 60 * 1000 // 5 分钟
+
 export class IMService {
   private static readonly CONTACT_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
 
@@ -375,6 +391,9 @@ export class IMService {
   private knownUsers = new Set<string>()
   /** 本次运行期间已发送过 im_connected 事件的平台（避免重连时重复触发） */
   private emittedConnectPlatforms = new Set<IMPlatform>()
+  /** 异步文件传输任务表（task_id → 任务状态） */
+  private fileTransferTasks = new Map<string, FileTransferTask>()
+  private fileTransferNextId = 1
   /** 防抖：多个平台短时间内连接时合并为一个 im_connected 事件 */
   private pendingConnectPlatforms = new Set<IMPlatform>()
   private connectDebounceTimer: NodeJS.Timeout | null = null
@@ -1570,6 +1589,83 @@ export class IMService {
     }
 
     return this.sendFileProactive(filePath, fileName)
+  }
+
+  /**
+   * 异步发送文件：立即返回 task_id，后台执行上传。
+   * Agent 通过 waitFileTransfer 轮询任务状态。
+   */
+  startFileSend(filePath: string, fileName?: string): string {
+    const taskId = `ft-${this.fileTransferNextId++}`
+    const displayName = fileName || filePath.split('/').pop() || filePath
+    const task: FileTransferTask = {
+      taskId,
+      displayName,
+      status: 'uploading',
+      startedAt: Date.now(),
+      _waiters: [],
+    }
+    this.fileTransferTasks.set(taskId, task)
+
+    // 后台执行，不 await
+    const completeTask = (status: 'done' | 'failed', error?: string) => {
+      task.status = status
+      task.error = error
+      task.finishedAt = Date.now()
+      const waiters = task._waiters.splice(0)
+      for (const w of waiters) w(status)
+      // 5 分钟后清理任务记录
+      setTimeout(() => this.fileTransferTasks.delete(taskId), FILE_TRANSFER_KEEP_MS)
+    }
+    void this.sendFileForCurrentSession(filePath, fileName)
+      .then((result) => completeTask(result.success ? 'done' : 'failed', result.error))
+      .catch((err: unknown) => {
+        log.error(`startFileSend ${taskId}: unexpected error`, err)
+        completeTask('failed', err instanceof Error ? err.message : String(err))
+      })
+
+    log.info(`startFileSend: task=${taskId} file=${displayName}`)
+    return taskId
+  }
+
+  getFileTransferTask(taskId: string): FileTransferTask | undefined {
+    return this.fileTransferTasks.get(taskId)
+  }
+
+  /**
+   * 等待文件传输任务完成，最多等 waitMs 毫秒。
+   * 返回原因：'done' | 'failed' | 'timeout' | 'aborted'
+   */
+  waitFileTransfer(
+    taskId: string,
+    waitMs: number,
+    isAborted: () => boolean
+  ): Promise<'done' | 'failed' | 'timeout' | 'aborted'> {
+    const task = this.fileTransferTasks.get(taskId)
+    if (!task) return Promise.resolve('failed')
+    if (task.status !== 'uploading') return Promise.resolve(task.status)
+
+    return new Promise<'done' | 'failed' | 'timeout' | 'aborted'>((resolve) => {
+      let settled = false
+      const settle = (reason: 'done' | 'failed' | 'timeout' | 'aborted') => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        clearInterval(abortPoller)
+        task._waiters = task._waiters.filter((w) => w !== waiter)
+        resolve(reason)
+      }
+
+      const timer = setTimeout(() => settle('timeout'), waitMs)
+
+      // 每 200ms 检查一次用户是否中断
+      const abortPoller = setInterval(() => {
+        if (isAborted()) settle('aborted')
+      }, 200)
+
+      const waiter = (status: 'done' | 'failed') => settle(status)
+      task._waiters.push(waiter)
+    })
   }
 
   /**
