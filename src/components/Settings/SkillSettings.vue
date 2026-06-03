@@ -528,72 +528,64 @@ watch(() => props.pendingInstallSkillId, (newId) => {
           <div
             v-for="skill in skills"
             :key="skill.id"
-            class="skill-item-wrapper"
+            class="skill-item"
+            :class="{ disabled: !skill.enabled }"
           >
-            <div class="skill-item" :class="{ disabled: !skill.enabled }">
-              <div class="skill-toggle">
-                <input
-                  type="checkbox"
-                  :checked="skill.enabled"
-                  @change="toggleSkill(skill)"
-                  :title="t('skillSettings.toggleEnable')"
-                />
+            <div class="skill-toggle">
+              <input
+                type="checkbox"
+                :checked="skill.enabled"
+                @change="toggleSkill(skill)"
+                :title="t('skillSettings.toggleEnable')"
+              />
+            </div>
+            <div class="skill-info">
+              <div class="skill-name">
+                {{ skill.name }}
+                <span class="skill-version" v-if="skill.version">v{{ skill.version }}</span>
+                <span v-if="skill.source === 'clawhub'" class="source-badge clawhub">ClawHub</span>
               </div>
-              <div class="skill-info">
-                <div class="skill-name">
-                  {{ skill.name }}
-                  <span class="skill-version" v-if="skill.version">v{{ skill.version }}</span>
-                  <span v-if="skill.source === 'clawhub'" class="source-badge clawhub">ClawHub</span>
+              <div class="skill-desc" v-if="skill.description" :title="skill.description">{{ skill.description }}</div>
+              <!-- env key 内联行 -->
+              <div v-if="skill.requires?.env?.length" class="env-inline">
+                <div
+                  v-for="envStatus in (envStatuses[skill.id] ?? skill.requires?.env?.map(n => ({ name: n, configured: false })) ?? [])"
+                  :key="envStatus.name"
+                  class="env-inline-row"
+                >
+                  <span class="env-key-name">{{ envStatus.name }}</span>
+                  <template v-if="envStatus.configured">
+                    <span class="env-dot-ok" title="已配置">●</span>
+                    <button
+                      class="env-reset-link"
+                      @click.stop="deleteEnv(skill.id, envStatus.name)"
+                    >{{ t('skillSettings.keyReset') }}</button>
+                  </template>
+                  <template v-else>
+                    <input
+                      :placeholder="t('skillSettings.keyPlaceholder')"
+                      class="env-input-inline"
+                      type="password"
+                      v-model="envInputValues[envStatus.name]"
+                      @keyup.enter="saveEnv(skill.id, envStatus.name)"
+                      @click.stop
+                    />
+                    <button
+                      class="btn btn-primary btn-xs"
+                      :disabled="!envInputValues[envStatus.name]?.trim() || envSaving.has(`${skill.id}:${envStatus.name}`)"
+                      @click.stop="saveEnv(skill.id, envStatus.name)"
+                    >{{ t('skillSettings.keySave') }}</button>
+                  </template>
                 </div>
-                <div class="skill-desc" v-if="skill.description" :title="skill.description">{{ skill.description }}</div>
-              </div>
-              <div class="skill-actions">
-                <button class="btn-icon btn-sm" @click="viewSkill(skill)" :title="t('skillSettings.view')">
-                  <Eye :size="14" />
-                </button>
-                <button class="btn-icon btn-sm btn-danger-ghost" @click.stop="removeUserSkill(skill)" :title="t('skillSettings.uninstall')">
-                  <Trash2 :size="14" />
-                </button>
               </div>
             </div>
-
-            <!-- env key 管理面板（始终展示） -->
-            <div v-if="skill.requires?.env?.length" class="env-panel">
-              <div class="env-panel-title">{{ t('skillSettings.apiKeys') }}</div>
-              <div
-                v-for="envStatus in (envStatuses[skill.id] ?? skill.requires?.env?.map(n => ({ name: n, configured: false })) ?? [])"
-                :key="envStatus.name"
-                class="env-row"
-              >
-                <span class="env-name">{{ envStatus.name }}</span>
-                <span class="env-status" :class="envStatus.configured ? 'configured' : 'missing'">
-                  {{ envStatus.configured ? t('skillSettings.keyConfigured') : t('skillSettings.keyMissing') }}
-                </span>
-                <input
-                  v-if="!envStatus.configured"
-                  :placeholder="t('skillSettings.keyPlaceholder')"
-                  class="env-input"
-                  type="password"
-                  v-model="envInputValues[envStatus.name]"
-                  @keyup.enter="saveEnv(skill.id, envStatus.name)"
-                />
-                <button
-                  v-if="!envStatus.configured"
-                  class="btn btn-primary btn-xs"
-                  :disabled="!envInputValues[envStatus.name]?.trim() || envSaving.has(`${skill.id}:${envStatus.name}`)"
-                  @click="saveEnv(skill.id, envStatus.name)"
-                >
-                  {{ t('skillSettings.keySave') }}
-                </button>
-                <button
-                  v-if="envStatus.configured"
-                  class="btn btn-outline btn-xs"
-                  @click="deleteEnv(skill.id, envStatus.name)"
-                  :title="t('skillSettings.keyDelete')"
-                >
-                  {{ t('skillSettings.keyReset') }}
-                </button>
-              </div>
+            <div class="skill-actions">
+              <button class="btn-icon btn-sm" @click="viewSkill(skill)" :title="t('skillSettings.view')">
+                <Eye :size="14" />
+              </button>
+              <button class="btn-icon btn-sm btn-danger-ghost" @click.stop="removeUserSkill(skill)" :title="t('skillSettings.uninstall')">
+                <Trash2 :size="14" />
+              </button>
             </div>
           </div>
 
@@ -1200,7 +1192,7 @@ enabled: true
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  transition: all 0.2s ease;
+  transition: border-color 0.2s ease;
 }
 
 .skill-item:hover {
@@ -1221,78 +1213,82 @@ enabled: true
   color: var(--accent, #6366f1);
 }
 
-.env-panel {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-top: none;
-  border-radius: 0 0 6px 6px;
-  padding: 10px 12px;
+/* env key 内联区域 */
+.env-inline {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 3px;
+  margin-top: 5px;
 }
 
-.env-panel-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 2px;
-}
-
-.env-row {
+.env-inline-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
+  height: 22px;
 }
 
-.env-name {
-  font-size: 12px;
-  font-family: var(--font-mono, monospace);
-  color: var(--text-primary);
-  min-width: 120px;
-}
-
-.env-status {
+.env-key-name {
   font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
-.env-status.configured {
-  background: rgba(34, 197, 94, 0.12);
-  color: #22c55e;
+.env-dot-ok {
+  font-size: 8px;
+  color: var(--accent-green, #22c55e);
+  flex-shrink: 0;
+  line-height: 1;
 }
 
-.env-status.missing {
-  background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
+.env-reset-link {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
 }
 
-.env-input {
+.skill-item:hover .env-reset-link {
+  opacity: 1;
+}
+
+.env-reset-link:hover {
+  color: var(--color-error, #ef4444);
+}
+
+.env-input-inline {
   flex: 1;
-  min-width: 140px;
-  height: 26px;
-  padding: 0 8px;
-  font-size: 12px;
+  min-width: 0;
+  max-width: 200px;
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
   border: 1px solid var(--border-color);
   border-radius: 4px;
   background: var(--bg-primary);
   color: var(--text-primary);
   outline: none;
+  transition: border-color 0.2s ease;
 }
 
-.env-input:focus {
-  border-color: var(--accent, #6366f1);
+.env-input-inline:focus {
+  border-color: var(--accent-primary);
+}
+
+.env-input-inline::placeholder {
+  color: var(--text-muted);
 }
 
 .btn-xs {
-  padding: 2px 8px;
+  padding: 0 8px;
   font-size: 11px;
   height: 22px;
+  flex-shrink: 0;
 }
 
 .skill-toggle input {
