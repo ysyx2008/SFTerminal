@@ -534,6 +534,14 @@ export function useMarkdown() {
     return `<a href="${escapeAttr(href)}"${titleAttr} target="_blank" rel="noopener noreferrer">${linkText}</a>`
   }
 
+  // 转义 markdown 文本中的原始 HTML 块/内联 HTML，防止 <meta refresh>、<script>
+  // 等危险标签被 v-html 注入 DOM 后执行（如 web_fetch 返回的 HTTP 错误页 HTML 片段）。
+  // 注意：此 override 仅影响输入文本里的 HTML token，不影响 renderer 自身输出的 HTML。
+  renderer.html = (htmlOrToken: string | { raw: string; block?: boolean }) => {
+    const raw = typeof htmlOrToken === 'object' ? (htmlOrToken.raw ?? '') : (htmlOrToken ?? '')
+    return raw.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  }
+
   // 配置 marked
   marked.setOptions({
     renderer,
