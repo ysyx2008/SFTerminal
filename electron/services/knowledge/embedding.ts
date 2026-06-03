@@ -155,18 +155,29 @@ export class EmbeddingService extends EventEmitter {
    * 16 是稳妥的折中：单批 attention 张量从 768MB 降到约 48MB，BFC arena
    * 触达 2GB 边界的概率极低；相对逐条推理仍有 5-10× 加速。
    *
-   * 注意：worker 模式下 BFC arena 与主进程 v8 堆不再共享地址空间，
-   * 此限制不再适用，请通过实例方法 getMaxBatchSize() 取动态值。
+   * 注意：worker 模式下 BFC arena 与主进程 v8 堆不再共享地址空间，地址冲突
+   * 风险消除，但 BFC arena 自身仍会指数扩张，请通过实例方法 getMaxBatchSize()
+   * 取动态值（worker=32 / in-process=16）。
    */
   static readonly MAX_BATCH_SIZE = 16
 
-  /** worker 模式下放宽的 batch 上限（独立进程，BFC arena 不再撞主进程 v8 堆） */
-  static readonly MAX_BATCH_SIZE_WORKER = 64
+  /**
+   * worker 模式下的 batch 上限。
+   *
+   * 注意：worker 进程虽与主进程 v8 堆地址空间隔离，但 onnxruntime BFC arena
+   * 本身仍会指数级扩张（每次扩张 2×）。BGE-small 在 batch=64 时单次 attention
+   * 张量 ≈ 768MB，连续推理几次后 BFC arena 累计请求超过 2GB，同样会触发
+   * macOS posix_memalign size sanity check → SIGTRAP（exit code 5）。
+   *
+   * batch=32 时单次 attention 张量 ≈ 384MB，BFC arena 累计扩张远低于 2GB 边界，
+   * 实测稳定，同时相对 in-process 的 16 仍有约 2× 吞吐提升。
+   */
+  static readonly MAX_BATCH_SIZE_WORKER = 32
 
   /**
    * 当前实例的批量上限（依据运行模式动态返回）
    *
-   * - worker 模式：64（独立进程，地址空间隔离）
+   * - worker 模式：32（独立进程，BFC arena 不撞主进程 v8 堆，但仍需限制防 SIGTRAP）
    * - in-process 模式：16（主进程内，受 BFC arena 与 v8 堆共享地址空间限制）
    */
   getMaxBatchSize(): number {
