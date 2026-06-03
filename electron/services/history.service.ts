@@ -141,7 +141,27 @@ export class HistoryService {
       const newImages: string[] = []
       for (let i = 0; i < step.images.length; i++) {
         const img = step.images[i]
-        // 只处理内联 base64 data URL
+
+        // 把旧的 file:// 绝对路径（上一版写入的格式）转为 sft-local:// 协议 URL
+        if (img.startsWith('file://')) {
+          const absPath = img.slice('file://'.length)
+          if (absPath.startsWith(this.imagesDir)) {
+            const relPath = path.relative(this.imagesDir, absPath).replace(/\\/g, '/')
+            newImages.push(`sft-local://history-image/${relPath}`)
+            stepChanged = true
+            continue
+          }
+          newImages.push(img)
+          continue
+        }
+
+        // 已是 sft-local:// 格式，直接保留
+        if (img.startsWith('sft-local://')) {
+          newImages.push(img)
+          continue
+        }
+
+        // 内联 base64 data URL：写出到磁盘，替换为 sft-local:// 路径
         const match = img.match(/^data:(image\/(\w+));base64,(.+)$/)
         if (!match) {
           newImages.push(img)
@@ -157,7 +177,8 @@ export class HistoryService {
         if (!fs.existsSync(filePath)) {
           fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'))
         }
-        newImages.push(`file://${filePath}`)
+        const relPath = path.relative(this.imagesDir, filePath).replace(/\\/g, '/')
+        newImages.push(`sft-local://history-image/${relPath}`)
         stepChanged = true
       }
       if (stepChanged) {

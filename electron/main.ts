@@ -1,6 +1,6 @@
 // ⚠️ 必须是第一个 import：在任何 service 实例化之前完成 userData 目录重定向
 import { runStartupMigrationIfNeeded, getDataDirInfo, requestDataDirMigration, requestDataDirReset, isTargetNonEmpty } from './utils/bootstrap'
-import { app, BrowserWindow, ipcMain, shell, dialog, session, Tray, Menu, nativeImage, nativeTheme, powerMonitor, clipboard } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, dialog, session, Tray, Menu, nativeImage, nativeTheme, powerMonitor, clipboard, protocol, net } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import type { GenericServerOptions, GithubOptions } from 'builder-util-runtime'
 import path, { join } from 'path'
@@ -44,6 +44,12 @@ function resolveOpenablePath(p: string): string {
 if (!app.isPackaged) {
   app.disableHardwareAcceleration()
 }
+
+// 注册 sft-local:// 为特权 scheme，用于安全地加载 userData 目录下的本地文件（如历史截图）
+// 必须在 app.whenReady() 之前调用
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'sft-local', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }
+])
 
 // 注册自定义协议，让系统将 sailfish:// 链接路由到本应用
 // 开发模式需要传入 Electron 可执行文件路径
@@ -1189,6 +1195,28 @@ app.whenReady().then(async () => {
   // 此刻源目录无任何运行时写入，复制数据保证一致；完成后会自动重启。
   const migrated = await runStartupMigrationIfNeeded()
   if (migrated) return // 已触发重启，停止后续初始化
+
+  // sft-local:// 协议处理器：安全代理 userData/history/images/ 目录下的截图文件
+  // URL 格式：sft-local://history-image/{dateStr}/{sessionId}/{filename}
+  // 只允许访问 history/images/ 子目录，防止路径穿越
+  protocol.handle('sft-local', (request) => {
+    try {
+      const url = new URL(request.url)
+      if (url.host !== 'history-image') {
+        return new Response('Not found', { status: 404 })
+      }
+      const segments = url.pathname.split('/').filter(Boolean)
+      const imagesBase = path.join(app.getPath('userData'), 'history', 'images')
+      const filePath = path.join(imagesBase, ...segments)
+      // 安全检查：确保解析后路径仍在 images 目录内（防路径穿越）
+      if (!filePath.startsWith(imagesBase + path.sep) && filePath !== imagesBase) {
+        return new Response('Forbidden', { status: 403 })
+      }
+      return net.fetch(`file://${filePath}`)
+    } catch {
+      return new Response('Bad request', { status: 400 })
+    }
+  })
 
   // 设置媒体设备权限处理器（用于语音识别等功能）
   // Windows 上必须显式授权麦克风访问，否则会报 "Requested device not found"
