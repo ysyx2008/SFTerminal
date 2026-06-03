@@ -20,6 +20,7 @@ import { executeFeishuTool } from '../skills/feishu/executor'
 import { executeWeComTool } from '../skills/wecom/executor'
 import { executeDingTalkTool } from '../skills/dingtalk/executor'
 import { getUserSkillService } from '../../user-skill.service'
+import { getSkillEnvMap } from '../../credential.service'
 import { getSkill } from '../skills/registry'
 import { addProactiveContext } from '../proactive-store'
 import { getIMService } from '../../im/im.service'
@@ -769,7 +770,29 @@ export async function loadUserSkillTool(
       if (missing.length > 0) {
         sections.push(`\n> ⚠️ 缺少 ${missing.length} 个 key：${missing.map(s => `\`${s.name}\``).join(', ')}。请用 \`skill_set_env("${skillId}", "KEY_NAME")\` 配置，或告诉 Agent key 的值。`)
       } else {
-        sections.push(`\n> 💡 执行本技能脚本时请用 \`exec(command, skill_id="${skillId}")\` 自动注入 key，勿明文传递。`)
+        // 有终端（local/ssh 模式）时，自动把已配置的 key export 进当前 shell session
+        const ptyId = executor.getCurrentPtyId?.()
+        if (ptyId) {
+          const envMap = await getSkillEnvMap(skillId)
+          const envEntries = Object.entries(envMap)
+          if (envEntries.length > 0) {
+            // 用单引号包裹值，处理特殊字符；export 多个 key 写成一行
+            const exportCmd = 'export ' + envEntries
+              .map(([k, v]) => `${k}='${v.replace(/'/g, "'\\''")}'`)
+              .join(' ')
+            executor.terminalService.write(ptyId, exportCmd + '\n')
+            executor.addStep({
+              type: 'tool_result',
+              content: `🔑 已注入 ${envEntries.length} 个环境变量`,
+              toolName: 'load_user_skill',
+              toolResult: `已将 ${envEntries.map(([k]) => `\`${k}\``).join(', ')} export 到当前 shell session`
+            })
+            sections.push(`\n> 💡 已自动 export ${envEntries.length} 个 key 到当前 shell，直接用 \`execute_command\` 运行脚本即可。`)
+          }
+        } else {
+          // assistant 模式：用 exec + skill_id 注入
+          sections.push(`\n> 💡 执行本技能脚本时请用 \`exec(command, skill_id="${skillId}")\` 自动注入 key，勿明文传递。`)
+        }
       }
     }
     if (hasFiles) {
