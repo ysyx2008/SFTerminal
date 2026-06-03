@@ -147,6 +147,8 @@ export function shouldShowToolResultStep(
   if (step.type === 'tool_result') {
     if (ALWAYS_SHOW_RESULT_TOOLS.has(step.toolName)) return true
     if (HIDE_RESULT_WHEN_SUCCESS_TOOLS.has(step.toolName)) return false
+    // MCP 工具（mcp_ 前缀）均属于外部信息检索/操作型，成功时在非调试模式下隐藏
+    if (step.toolName.startsWith('mcp_')) return false
   }
   // tool_call 默认展示（保留"知情权"——用户需要看到 Agent 准备做什么）
   return true

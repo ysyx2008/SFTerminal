@@ -330,6 +330,53 @@ describe('shouldShowToolResultStep', () => {
     })
   })
 
+  describe('MCP 工具（mcp_ 前缀）：非调试模式下成功结果隐藏', () => {
+    it('mcp_ 开头工具的 tool_result 在非调试模式 + 成功时隐藏', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_result', toolName: 'mcp_filesystem_read_file', success: true },
+          false
+        )
+      ).toBe(false)
+    })
+
+    it('mcp_ 开头工具的 tool_result 失败时始终展示', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_result', toolName: 'mcp_filesystem_read_file', success: false },
+          false
+        )
+      ).toBe(true)
+    })
+
+    it('mcp_ 开头工具的 tool_call 在非调试模式下仍展示（保留知情权）', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_call', toolName: 'mcp_filesystem_read_file', success: true },
+          false
+        )
+      ).toBe(true)
+    })
+
+    it('调试模式下 mcp_ 工具的 tool_result 展示', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_result', toolName: 'mcp_some_server_tool', success: true },
+          true
+        )
+      ).toBe(true)
+    })
+
+    it('mcp_ 工具携带富内容字段时始终展示', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_result', toolName: 'mcp_data_query', success: true, images: ['img'] },
+          false
+        )
+      ).toBe(true)
+    })
+  })
+
   describe('保守兜底：未登记的工具默认展示', () => {
     it('未知工具的 tool_call 展示', () => {
       expect(
