@@ -48,6 +48,7 @@ import { t } from './i18n'
 import { createSkillSession, SkillSession } from './skills'
 import { getAiDebugService } from '../ai-debug.service'
 import { createLogger } from '../../utils/logger'
+import { assembleUserMessageContent, wrapSystemContext } from './message-envelope'
 import { notifyFrontendConfigChanged } from './skills/config/executor'
 
 const log = createLogger('Agent')
@@ -1540,40 +1541,47 @@ export abstract class Agent {
    * @param injectKnowledge cache-reuse 路径下，知识检索结果不在 system prompt 中，需注入到 user 消息
    */
   private async buildUserMessage(run: AgentRun, message: string, injectKnowledge: boolean): Promise<AiMessage> {
-    let enhancedMessage = this.enhanceUserMessage(message)
+    const userBody = this.enhanceUserMessage(message)
 
-    // cache-reuse 路径：知识检索结果注入到 user 消息前缀
+    let knowledgeRefs = ''
     if (injectKnowledge) {
       const knowledgeResult = await this.loadKnowledgeContext(message, run.context.hostId)
-      if (knowledgeResult.context) {
-        enhancedMessage = knowledgeResult.context + '\n\n' + enhancedMessage
-      }
+      knowledgeRefs = knowledgeResult.context
     }
 
+    const systemContextParts: string[] = []
     if (run.context.contextHint?.trim()) {
-      enhancedMessage = run.context.contextHint.trim() + '\n' + enhancedMessage
+      systemContextParts.push(run.context.contextHint.trim())
     }
     const proactiveCtx = run.context.proactiveContext
       || (this._agentId ? consumeProactiveContext(this._agentId) : undefined)
     if (proactiveCtx?.trim()) {
-      enhancedMessage = proactiveCtx.trim() + '\n\n' + enhancedMessage
+      systemContextParts.push(proactiveCtx.trim())
     }
-    if (run.context.documentContext) {
-      enhancedMessage = enhancedMessage + '\n\n' + run.context.documentContext
-    }
+
     const hasImages = !!(run.context.images && run.context.images.length > 0)
     const visionAvailable = this.currentProfileHasVision()
+    let imageNote = ''
     if (hasImages) {
       const imageCount = run.context.images!.length
       const totalSize = run.context.images!.reduce((sum, img) => sum + img.length, 0)
       log.info(`User images: ${imageCount} image(s), total base64 size: ${(totalSize / 1024).toFixed(0)}KB, vision=${visionAvailable}`)
       if (visionAvailable) {
-        enhancedMessage += `\n\n${t('agent.images_attached', { count: imageCount })}`
+        imageNote = t('agent.images_attached', { count: imageCount })
       } else {
         log.warn(`Dropping ${imageCount} user image(s) due to no vision capability on current profile`)
-        enhancedMessage += `\n\n${t('agent.user_image_no_vision', { count: imageCount })}`
+        imageNote = t('agent.user_image_no_vision', { count: imageCount })
       }
     }
+
+    const enhancedMessage = assembleUserMessageContent({
+      knowledgeRefs,
+      systemContext: systemContextParts.length > 0 ? wrapSystemContext(systemContextParts.join('\n\n')) : undefined,
+      userMessage: userBody,
+      uploadedDocs: run.context.documentContext,
+      imageNote: imageNote || undefined,
+    })
+
     const userMsg: AiMessage = { role: 'user', content: enhancedMessage }
     if (hasImages && visionAvailable) {
       userMsg.images = run.context.images
@@ -2984,25 +2992,28 @@ export abstract class Agent {
     const visionAvailable = this.currentProfileHasVision()
 
     for (const pending of run.pendingUserMessages) {
-      let msgPart = Agent.formatTimestamp() + pending.message
-      if (pending.documentContext) {
-        msgPart += '\n\n' + pending.documentContext
-      }
+      const userBody = Agent.formatTimestamp() + pending.message
+      let imageNote = ''
       if (pending.images?.length) {
         const imageCount = pending.images.length
         log.info(`Supplement images: ${imageCount} image(s), vision=${visionAvailable}`)
         if (visionAvailable) {
-          msgPart += `\n\n${t('agent.images_attached', { count: imageCount })}`
+          imageNote = t('agent.images_attached', { count: imageCount })
           allImages.push(...pending.images)
         } else {
           log.warn(`Dropping ${imageCount} supplement image(s) due to no vision capability on current profile`)
-          msgPart += `\n\n${t('agent.user_image_no_vision', { count: imageCount })}`
+          imageNote = t('agent.user_image_no_vision', { count: imageCount })
         }
       }
-      combinedText += (combinedText ? '\n' : '') + msgPart
+      const msgPart = assembleUserMessageContent({
+        userMessage: userBody,
+        uploadedDocs: pending.documentContext,
+        imageNote: imageNote || undefined,
+      })
+      combinedText += (combinedText ? '\n\n' : '') + msgPart
     }
 
-    const userSupplementMsg: AiMessage = { role: 'user', content: Agent.formatTimestamp() + combinedText }
+    const userSupplementMsg: AiMessage = { role: 'user', content: combinedText }
     if (allImages.length > 0) {
       userSupplementMsg.images = allImages
     }

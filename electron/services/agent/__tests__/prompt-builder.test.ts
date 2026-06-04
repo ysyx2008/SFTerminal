@@ -299,6 +299,7 @@ describe('PromptBuilder', () => {
       expect(prompt).toContain('相关文档内容：这是测试内容')
       expect(prompt).toContain('知识库')
       expect(prompt).toContain('search_knowledge')
+      expect(prompt).toContain('sf_user_message')
     })
 
     it('should show tool hint when enabled without context', () => {

@@ -106,7 +106,7 @@ run(message, context, options)
 
 - **`_previousRunMessages`**：`finalizeRun` 时保存 `run.messages` + 最终 assistant 回复的快照
 - **Cache path 条件**：前序快照存在 && 非唤醒 run && token 用量 < 上下文的 70%
-- **Cache path 差异**：system prompt 不重建（AI 已持有完整对话）；知识检索结果注入到 user 消息而非 system prompt
+- **Cache path 差异**：system prompt 不重建（AI 已持有完整对话）；知识检索结果注入到 user 消息而非 system prompt（包裹在 `<sf_knowledge_refs>`，用户真实输入在 `<sf_user_message>`，避免与召回片段混淆）
 - **Cold start 降级**：首次任务、唤醒 run（Watch/Sensor）、上下文空间不足时走原有的 TaskMemory 压缩重建路径
 - **Anthropic 缓存断点**：前序消息的最后一条 assistant 上设置 `cache_control`（第 3 个断点），`_cacheBreakpoint` 标记在 `convertToAnthropicBody` 中消费
 - **DeepSeek/OpenAI**：自动前缀缓存天然命中，无需额外标记

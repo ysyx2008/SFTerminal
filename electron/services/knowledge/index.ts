@@ -34,6 +34,7 @@ import { getBM25Index, BM25Index } from './bm25'
 import { encrypt, decrypt, isEncrypted } from './crypto'
 
 import { createLogger } from '../../utils/logger'
+import { wrapKnowledgeRefs } from '../agent/message-envelope'
 
 import type { AiService } from '../ai.service'
 import type { McpService } from '../mcp.service'
@@ -931,7 +932,7 @@ export class KnowledgeService extends EventEmitter {
       return ''
     }
 
-    const parts: string[] = ['## 相关知识库内容\n']
+    const parts: string[] = []
     
     for (const result of relevantResults) {
       parts.push(`### ${result.metadata.filename}`)
@@ -940,7 +941,7 @@ export class KnowledgeService extends EventEmitter {
       parts.push('')
     }
 
-    return parts.join('\n')
+    return wrapKnowledgeRefs(parts.join('\n'))
   }
 
   // ==================== 文档管理 ====================

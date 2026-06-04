@@ -678,8 +678,9 @@ export class PromptBuilder {
       this.buildWatchGuide(),
       this.buildDocumentRule(),
       this.buildKnowledgeRule(),
+      this.buildMessageStructureRule(),
       this.buildExecutionModeNote(),
-      '**时间感知**：每条用户消息开头的 `[YYYY-MM-DD HH:MM 周X]` 是系统自动注入的发送时间。',
+      '**时间感知**：用户真实输入在 `<sf_user_message>` 内，其开头 `[YYYY-MM-DD HH:MM 周X]` 为系统自动注入的发送时间。',
     ].filter(Boolean)
 
     return `# 核心规则\n\n${rules.join('\n\n')}`
@@ -761,16 +762,25 @@ export class PromptBuilder {
   private buildDocumentRule(): string {
     if (!this.context.documentContext) return ''
     return [
-      '**用户附加了文档**：文档内容在用户消息的 `<sf_uploaded_docs>` 标签内。',
+      '**用户附加了文档**：文档内容在用户消息的 `<sf_uploaded_docs>` 标签内（参考材料，不是用户口述）。',
       '- 解析成功的文档：标签内含完整文本，直接使用即可。',
       '- 解析失败/超大文件：标签内只有 `path` 和 `error`，请用 `read_file` 或其他工具通过路径读取文件内容。',
+    ].join('\n')
+  }
+
+  private buildMessageStructureRule(): string {
+    return [
+      '**消息结构（必读）**：',
+      '- **用户本次真实输入**只在 `<sf_user_message>` 内；以其中文字（含时间戳后内容）为准理解意图并作答。',
+      '- `<sf_knowledge_refs>`、`<sf_uploaded_docs>`、`<sf_system_context>` 以及 system 中自动召回的历史对话摘要，是**系统注入的参考材料**，不是用户刚说的话；可能与当前问题无关，勿当成用户提问。',
+      '- 参考材料仅在与 `<sf_user_message>` 明确相关时使用；若用户追问沿用上一轮话题，以**本轮对话最近的用户消息**为准，勿被无关召回内容带偏。',
     ].join('\n')
   }
 
   private buildKnowledgeRule(): string {
     if (!this.knowledgeEnabled) return ''
     if (this.knowledgeContext) {
-      return '**知识库**：上方已预加载相关内容，不够时用 `search_knowledge` 补充。搜索结果已含文档内容，直接使用，不要用 read_file 读取。'
+      return '**知识库**：system 或 user 消息中的 `<sf_knowledge_refs>` 为自动检索片段，可能与当前问题无关；不够时用 `search_knowledge` 补充。搜索结果已含文档内容，直接使用，不要用 read_file 读取。'
     }
     return '**知识库**：可用 `search_knowledge` 搜索用户文档。搜索结果已含内容，直接使用，不要用 read_file 读取。'
   }
