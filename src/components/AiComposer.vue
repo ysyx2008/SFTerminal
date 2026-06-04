@@ -436,11 +436,7 @@ const handleSendClick = (event: MouseEvent) => {
   </div>
 
   <div class="ai-input">
-    <div
-      v-if="contextStats.tokenEstimate > 0"
-      class="context-mini"
-      :data-tooltip="contextStats.effectiveModel ? contextStats.effectiveModel : undefined"
-    >
+    <div v-if="contextStats.tokenEstimate > 0" class="context-mini">
       <template v-if="cacheBarWidth > 0">
         <div class="context-mini-bar cached" :style="{ width: cacheBarWidth + '%' }"></div>
         <div
@@ -456,7 +452,7 @@ const handleSendClick = (event: MouseEvent) => {
         :style="{ width: contextStats.percentage + '%' }"
       ></div>
       <span class="context-mini-tip">
-        {{ t('ai.context') }}: {{ contextStats.tokenEstimate.toLocaleString() }} / {{ (contextStats.maxTokens / 1000).toFixed(0) }}K ({{ contextStats.percentage }}%)<template v-if="contextStats.cacheHitRate !== undefined"> · Cache {{ contextStats.cacheHitRate }}%</template>
+        <template v-if="contextStats.effectiveModel">{{ contextStats.effectiveModel }} · </template>{{ t('ai.context') }}: {{ contextStats.tokenEstimate.toLocaleString() }} / {{ (contextStats.maxTokens / 1000).toFixed(0) }}K ({{ contextStats.percentage }}%)<template v-if="contextStats.cacheHitRate !== undefined"> · Cache {{ contextStats.cacheHitRate }}%</template>
       </span>
     </div>
 
