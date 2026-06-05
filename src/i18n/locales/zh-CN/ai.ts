@@ -330,7 +330,7 @@ export default {
         deckFromReport: {
           title: '报告转幻灯片',
           subtitle: 'HTML 预览 + PPTX',
-          prompt: '先 load_skill("ppt")，再按下面虚构要点写 5 页 slide HTML（title + 3 页 content + closing，theme=midnight），然后 ppt_from_html 导出到桌面「AI行业简报.pptx」：\n1. 2025 年全球 AI 融资创新高\n2. 推理成本下降推动应用落地\n3. 多模态 Agent 进入桌面工作流'
+          prompt: '先 load_skill("ppt")，再按下面虚构要点写 5 页幻灯片（封面 + 3 页内容 + 结尾，深蓝商务风），用 ppt_from_html 导出到桌面「AI行业简报.pptx」：\n1. 2025 年全球 AI 融资创新高\n2. 推理成本下降推动应用落地\n3. 多模态 Agent 进入桌面工作流'
         },
 
         // 自动化与关切

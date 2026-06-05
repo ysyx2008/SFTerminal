@@ -1,5 +1,5 @@
 /**
- * PPT 技能执行器
+ * PPT 技能执行器（html2pptx 路线）
  */
 
 import * as fs from 'fs'
@@ -9,8 +9,8 @@ import type { ToolResult, AgentConfig } from '../../types'
 import type { ToolExecutorConfig } from '../../tool-executor'
 import { getTerminalStateService } from '../../../terminal-state.service'
 import { t } from '../../i18n'
-import { buildPreviewDocument } from './html-parse'
-import { convertHtmlToPptx } from './html-to-pptx'
+import { buildPreviewDocument } from './preview'
+import { renderHtmlToPptx, PptValidationError, type DeckSize } from './html-render-pptx'
 import { createLogger } from '../../../../utils/logger'
 
 const log = createLogger('PptSkill')
@@ -45,19 +45,20 @@ async function pptFromHtml(
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
   const pathArg = args.path as string
-  const htmlArg = args.html as string | undefined
-  const htmlPathArg = args.html_path as string | undefined
-  const theme = (args.theme as string | undefined)?.toLowerCase()
+  const slidesArg = args.slides as unknown
+  const css = (args.css as string | undefined) || ''
+  const sizeArg = (args.size as string | undefined)?.toLowerCase()
+  const size: DeckSize = sizeArg === 'standard' ? 'standard' : 'widescreen'
   const docTitle = args.title as string | undefined
 
   if (!pathArg) {
     return { success: false, output: '', error: t('ppt.path_required') }
   }
-  if (htmlArg && htmlPathArg) {
-    return { success: false, output: '', error: t('ppt.html_input_conflict') }
-  }
-  if (!htmlArg && !htmlPathArg) {
-    return { success: false, output: '', error: t('ppt.html_input_required') }
+  const slides = Array.isArray(slidesArg)
+    ? (slidesArg as unknown[]).map((s) => String(s)).filter((s) => s.trim())
+    : []
+  if (slides.length === 0) {
+    return { success: false, output: '', error: t('ppt.slides_required') }
   }
 
   let pptxPath = resolvePath(ptyId, pathArg)
@@ -72,7 +73,7 @@ async function pptFromHtml(
     type: 'tool_call',
     content: `${t(tcKey)}: ${pptxPath}`,
     toolName: 'ppt_from_html',
-    toolArgs: { path: pptxPath, theme },
+    toolArgs: { path: pptxPath, slides: slides.length, size },
     riskLevel: fileExists ? 'moderate' : 'safe',
   })
 
@@ -89,55 +90,40 @@ async function pptFromHtml(
     }
   }
 
+  // 先把预览 deck.html 写盘（即使导出失败也能让用户/AI 看 HTML 改）
+  const deckHtmlPath = pptxPath.replace(/\.pptx$/i, '.html')
+  let previewDoc = ''
   try {
-    let html = htmlArg?.trim() || ''
-    let mediaBaseDir = getTerminalStateService().getCwd(ptyId)
+    previewDoc = buildPreviewDocument(slides, css, size)
+    fs.writeFileSync(deckHtmlPath, previewDoc, 'utf-8')
+  } catch (err) {
+    log.warn('Preview doc build failed:', err)
+  }
 
-    if (htmlPathArg) {
-      const htmlPath = resolvePath(ptyId, htmlPathArg)
-      if (!fs.existsSync(htmlPath)) {
-        return { success: false, output: '', error: t('error.file_not_found', { path: htmlPath }) }
-      }
-      html = fs.readFileSync(htmlPath, 'utf-8')
-      mediaBaseDir = path.dirname(htmlPath)
-      if (!html.trim()) {
-        return { success: false, output: '', error: t('ppt.html_empty', { path: htmlPath }) }
-      }
-    }
-
-    if (!html) {
-      return { success: false, output: '', error: t('ppt.html_input_required') }
-    }
-
-    const deckHtmlPath = pptxPath.replace(/\.pptx$/i, '.html')
-    fs.writeFileSync(deckHtmlPath, html, 'utf-8')
-
-    const result = await convertHtmlToPptx({
-      html,
+  try {
+    const result = await renderHtmlToPptx({
+      slides,
+      css,
       outputPath: pptxPath,
-      theme,
-      mediaBaseDir,
       title: docTitle,
+      size,
     })
 
     const output = t('ppt.created_from_html', {
       path: pptxPath,
       htmlPath: deckHtmlPath,
       slides: result.slideCount,
-      theme: theme || 'simple',
     })
 
     let canvasData: CanvasData | undefined
-    try {
+    if (previewDoc) {
       canvasData = {
         action: 'open',
         renderer: 'html',
         title: path.basename(pptxPath),
-        content: buildPreviewDocument(html),
+        content: previewDoc,
         filePath: deckHtmlPath,
       }
-    } catch (err) {
-      log.warn('Canvas preview build failed:', err)
     }
 
     executor.addStep({
@@ -150,7 +136,15 @@ async function pptFromHtml(
 
     return { success: true, output }
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : t('ppt.convert_failed')
+    if (error instanceof PptValidationError) {
+      // 校验失败：把每页问题清单回传，引导 AI 改 HTML 重试
+      const msg = t('ppt.validation_failed') + '\n' + error.issues.join('\n')
+      return { success: false, output: '', error: msg }
+    }
+    const raw = error instanceof Error ? error.message : String(error)
+    let errorMsg = raw
+    if (raw.includes('NO_BROWSER')) errorMsg = t('ppt.no_browser')
+    else if (raw.includes('NO_SLIDES')) errorMsg = t('ppt.slides_required')
     log.error('ppt_from_html failed:', error)
     return { success: false, output: '', error: errorMsg }
   }

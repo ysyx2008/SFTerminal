@@ -1,84 +1,48 @@
-# Slide HTML 契约
+# Slide HTML 契约（html2pptx 路线）
 
-> Agent 写 HTML、转换器 `html-to-pptx.ts` 均以此为准。修改须同步 `../SPEC.md` 与 skill `content`。
+> AI 运行时看 `index.ts` 的 skill `content`；本文件是开发侧的完整数据源。
 
-## 文档结构
+## 模型
 
-```html
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8" />
-  <title>演示文稿标题</title>
-  <!-- 可选：theme 默认由 ppt_from_html 的 theme 参数注入 -->
-</head>
-<body>
-  <section class="slide" data-layout="title" data-theme="midnight" style="width:1600px;height:900px;background:#1E2761">
-    <h1 style="color:#FFFFFF">主标题</h1>
-    <p class="subtitle" style="color:#CADCFC">副标题 · 2026.06</p>
-  </section>
+`ppt_from_html({ path, slides, css?, size?, title? })`
 
-  <section class="slide" data-layout="content" style="width:1600px;height:900px">
-    <h2>章节标题</h2>
-    <ul>
-      <li>要点一</li>
-      <li>要点二</li>
-    </ul>
-  </section>
-</body>
-</html>
-```
+- `slides[i]` = **第 i 页的 body 内联 HTML**（不写 `<html>/<head>/<body>`）。
+- `css` = 所有页共享的 `<style>` 文本。
+- 系统用 `wrapSlideHtml` 把每页包成完整文档，并把 `body` 固定为画幅尺寸：
+  - `widescreen`（默认，16:9）：`1280 × 720 px` = `13.333" × 7.5"`
+  - `standard`（4:3）：`960 × 720 px` = `10" × 7.5"`
+  - 换算：`96 px = 1 inch`。
 
-也可只提交 `<body>` 内多个 `section.slide`（executor 自动包全文档）。
+## 排版规则
 
-## 硬性规则
+1. **绝对定位**：元素用 `position:absolute; left/top/width`（px）。浏览器算最终坐标，映射时按 `getBoundingClientRect` 转英寸。
+2. **文字载体**：所有文字必须在 `<p>/<h1>-<h6>/<ul>/<ol>` 内。`<div>` 内不得有裸文本节点。
+3. **卡片/色块**：用 `<div>`，可带 `background` / `border`（统一边框→形状描边；非统一→四条线）/ `border-radius`（→ rectRadius）/ `box-shadow`（外阴影→ PPT 阴影）。文字放进 div 内的 `<p>/<h*>`。
+4. **整页底色**：每页第一个 `<div class="bg" style="background:#xxx"></div>`（`.bg` 已在 BASE_CSS 里 `position:absolute;inset:0`），或在 `css` 里写 `body{background:#xxx}`（→ slide.background）。
+5. **列表**：`<ul>/<ol><li>`，不要手敲「• - *」。`<li>` 内可用 `<b><i><u><span>` 行内格式。
+6. **图片**：`<img src="绝对路径或 file://">`；图表先 `load_skill("chart")` 出 PNG 再插入。
+7. **行内格式**：`<b>/<strong>` 粗体、`<i>/<em>` 斜体、`<u>` 下划线、`<span style="color/font-size">` 局部样式。
 
-| 规则 | 说明 |
-|------|------|
-| 分页 | 每页必须是 `section.slide` 或 `div.slide` |
-| 尺寸 | 每页 `style` 含 `width:1600px;height:900px`（16:9） |
-| 版式 | 必须 `data-layout`，见下表 |
-| 主题 | 可选 `data-theme`；与工具参数 `theme` 合并，页级优先 |
-| 图片 | **绝对路径**或 `data:image/...`；禁止相对路径、`http(s)`（v1） |
-| 禁止 | `<script>`、iframe、canvas、form、动画、`@keyframes` |
+## 渲染期会报错的情况（QA）
 
-## data-layout（v1）
+- 内容超出页面（横/纵向溢出，底部应留白 ≥ 0.5"）
+- body / div 用 **CSS 渐变**（不支持，用纯色）
+- **文本标签**（p/h*/ul/ol/li）带 `background` / `border` / `box-shadow`
+- `<div>` 里有未包裹的裸文本
+- 文本以项目符号字符开头（应用 `<ul>`）
+- div 用 `background-image`（用 `<img>` 或纯色）
 
-| 值 | 用途 |
-|----|------|
-| `title` | 封面 / 章节隔页 |
-| `content` | 标题 + 列表/段落 |
-| `two-column` | 左栏 `.col-left`，右栏 `.col-right`（文+图） |
-| `stat-callout` | `.stat` + `data-value` / `.stat-label` |
-| `image-bleed` | 半幅大图 + 文字区 |
-| `closing` | 结语 / Q&A |
+报错按页返回（「第 N 页：…」），AI 据此改对应页 HTML 重试。
 
-## 元素与样式（v1 支持子集）
+## 坐标速记（widescreen 1280×720）
 
-- 文本：`h1`–`h3`、`p`、`ul/ol/li`
-- 结构：`div.col-left`、`div.col-right`、`div.stat`
-- 表格：`table` / `thead` / `tbody` / `tr` / `th` / `td`
-- 图片：`img[src][alt]`
-- 样式：仅 `background`/`background-color`、`color`、`font-size`（px→pt）、`text-align`
-- **不支持**：flex/grid 自动排版、gradient、box-shadow、transform
+- 安全边距：四周 ~64px；标题区 top 64–120px；底部留白 ≥ 48px。
+- 三卡片墙：`left = 80 / 470 / 860`，`width = 340`，`gap = 50`。
+- 两栏：`left = 80 / 660`，`width = 540`，`gap = 40`。
 
-## 图表
+## 设计规范
 
-先 `load_skill("chart")` + `generate_chart`，将返回的 PNG **绝对路径**写入：
-
-```html
-<img src="/Users/.../agent-workspace/charts/q1.png" alt="Q1 营收" />
-```
-
-## 设计提醒（摘要）
-
-- 每页至少一个视觉元素（图、表、大数字、形状），避免纯白 bullet 页
-- 标题 36pt+、正文 14–16pt；正文左对齐，仅标题可居中
-- 勿在标题下加装饰线（AI 幻灯片常见丑点）
-- 配色用 `data-theme` 或 skill 预设，勿全用默认蓝
-
-完整配色表与 QA 流程见 skill `content`（摘录 Anthropic pptx SKILL.md）。
-
-## Canvas 预览
-
-同一份 HTML 即预览源：在助手模式右侧 Canvas 按 16:9 缩放纵向排列各 `.slide`。预览为浏览器渲染，与 PPTX 在字体换行上可能略有差异；以导出 `.pptx` 为准。
+- 三明治：封面/结尾深底，内容页浅底。
+- 每页一个视觉锚点（数字卡墙 / 图表 / 关键图），不要纯 bullet 墙。
+- 标题 34–44px（封面 56px+）、正文 18–22px；强调色克制。
+- 标题左侧短色条代替整条下划线；卡片对齐成网格，行列间距统一。

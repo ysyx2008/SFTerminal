@@ -330,7 +330,7 @@ export default {
         deckFromReport: {
           title: 'Report to slides',
           subtitle: 'HTML preview + PPTX',
-          prompt: 'First load_skill("ppt"), then write 5 slides as slide HTML (title + 3 content + closing, theme=midnight) for this fictional briefing, and ppt_from_html to ~/Desktop/AI-Briefing.pptx:\n1. Global AI funding hit a record in 2025\n2. Lower inference cost drives app adoption\n3. Multimodal agents reach desktop workflows'
+          prompt: 'First load_skill("ppt"), then write a 5-slide deck (cover + 3 content + closing, navy business style) for this fictional briefing, and ppt_from_html to ~/Desktop/AI-Briefing.pptx:\n1. Global AI funding hit a record in 2025\n2. Lower inference cost drives app adoption\n3. Multimodal agents reach desktop workflows'
         },
 
         // Automation & Watch
