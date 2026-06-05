@@ -22,6 +22,11 @@ export const pptTools: ToolDefinition[] = [
 - **不支持 CSS 渐变**（用纯色）；图片用 <img> + 绝对路径；图表先 chart 技能出 PNG
 - 内容不能超出页面（系统会报溢出错误让你精简）
 
+**逐页追加（应对长 PPT 被模型输出截断）**：
+- \`mode: "replace"\`（默认）从头生成整本；\`mode: "append"\` 把本次 slides 追加到同一 path 的已有 deck 末尾。
+- 页数多时，先 replace 写前几页，再多次 append 续写——每次只发一小批，避免单次输出超长被截断。
+- 同 path 旁会维护 \`<同名>.deck.json\`（slides 真相源），append 据此合并并整本重渲（已渲过的页走缓存，很快）。
+
 **工作流**：调研/写要点 → 写共享 css + 各页 slides → 本工具导出 → Canvas 翻页确认 → 用 PowerPoint/Keynote 打开`,
       parameters: {
         type: 'object',
@@ -37,11 +42,15 @@ export const pptTools: ToolDefinition[] = [
           },
           css: {
             type: 'string',
-            description: '所有页共享的 <style> 文本（配色/字体/卡片样式），可选但强烈建议',
+            description: '所有页共享的 <style> 文本（配色/字体/卡片样式），可选但强烈建议；append 时省略则沿用首批的 css',
+          },
+          mode: {
+            type: 'string',
+            description: 'replace（默认，整本重建）| append（把 slides 追加到同 path 的已有 deck 末尾，用于分批续写长 PPT）',
           },
           size: {
             type: 'string',
-            description: '画幅：widescreen（默认 16:9）| standard（4:3）',
+            description: '画幅：widescreen（默认 16:9）| standard（4:3）；append 时沿用首批',
           },
           title: {
             type: 'string',

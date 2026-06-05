@@ -13,6 +13,7 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import * as crypto from 'crypto'
 import { detectBrowser } from '../browser/detector'
 import { createLogger } from '../../../../utils/logger'
 
@@ -557,33 +558,75 @@ export class PptValidationError extends Error {
   }
 }
 
-/** 渲染所有 slide → 结构化数据（含校验错误聚合，不写盘） */
+export interface RenderProgress {
+  /** 已就绪页数（含缓存命中） */
+  done: number
+  /** 总页数 */
+  total: number
+}
+
+export interface RenderControls {
+  onProgress?: (p: RenderProgress) => void
+  isAborted?: () => boolean
+}
+
+// 按页渲染缓存：key = sha1(layout + css + slide html)。append 重渲整本时旧页秒回。
+const renderCache = new Map<string, SlideData>()
+const RENDER_CACHE_CAP = 300
+
+function cacheKey(size: SizeSpec, css: string, html: string): string {
+  return crypto.createHash('sha1').update(`${size.layout}\n${css}\n${html}`).digest('hex')
+}
+function cacheStore(key: string, data: SlideData): void {
+  renderCache.set(key, data)
+  if (renderCache.size > RENDER_CACHE_CAP) {
+    const oldest = renderCache.keys().next().value
+    if (oldest !== undefined) renderCache.delete(oldest)
+  }
+}
+
+/** 渲染所有 slide → 结构化数据（命中缓存的页不重渲；含校验错误聚合，不写盘） */
 export async function renderSlides(
   slides: string[],
   css: string,
-  size: SizeSpec
+  size: SizeSpec,
+  controls?: RenderControls
 ): Promise<SlideData[]> {
-  const backend = await createBackend(size)
-  const out: SlideData[] = []
-  try {
-    for (const inner of slides) {
-      const html = wrapSlideHtml(inner, css, size)
-      out.push(await backend.render(html))
+  const total = slides.length
+  const keys = slides.map((s) => cacheKey(size, css, s))
+  const results: (SlideData | undefined)[] = keys.map((k) => renderCache.get(k))
+  const todo = results.map((r, i) => (r ? -1 : i)).filter((i) => i >= 0)
+
+  let done = total - todo.length
+  controls?.onProgress?.({ done, total })
+
+  if (todo.length > 0) {
+    const backend = await createBackend(size)
+    try {
+      for (const i of todo) {
+        if (controls?.isAborted?.()) throw new Error('ABORTED')
+        const data = await backend.render(wrapSlideHtml(slides[i], css, size))
+        results[i] = data
+        cacheStore(keys[i], data)
+        done++
+        controls?.onProgress?.({ done, total })
+      }
+    } finally {
+      await backend.close()
     }
-  } finally {
-    await backend.close()
   }
-  return out
+  return results as SlideData[]
 }
 
 export async function renderHtmlToPptx(
-  options: RenderHtmlToPptxOptions
+  options: RenderHtmlToPptxOptions,
+  controls?: RenderControls
 ): Promise<RenderHtmlToPptxResult> {
   const slides = (options.slides || []).filter((s) => s && s.trim())
   if (slides.length === 0) throw new Error('NO_SLIDES')
 
   const size = DECK_SIZES[options.size || 'widescreen']
-  const datas = await renderSlides(slides, options.css || '', size)
+  const datas = await renderSlides(slides, options.css || '', size, controls)
 
   // 聚合校验错误（按页标注）
   const issues: string[] = []

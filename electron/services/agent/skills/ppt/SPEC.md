@@ -40,14 +40,21 @@
 
 **输入模型**：`slides` 每项是一页的 body 内联 HTML（不写 `<html>/<head>/<body>`）；`css` 是所有页共享的 `<style>` 文本。系统用 `wrapSlideHtml` 包成完整文档、把 body 固定为画幅尺寸（widescreen 1280×720px = 13.333"×7.5"，standard 960×720px = 10"×7.5"，96 px/in）。
 
+**逐页追加（防模型输出截断）**：`mode` = `replace`（默认，整本重建）| `append`（追加到同 path 已有 deck 末尾）。真相源是同名 `<deck>.deck.json`（`{title,size,css,slides[]}`）——append 读它合并新页、整本重渲、重写 pptx + deck.html + deck.json。长 PPT 可分多次 append，每次只发一小批，避免单次输出超长被截断。
+
+**渲染缓存 + 进度**：`renderSlides` 按 `sha1(layout+css+html)` 缓存每页 `SlideData`（上限 300，FIFO），append 整本重渲时旧页秒回、只渲新页。`RenderControls.onProgress({done,total})` 每页回调 → executor `updateStep` 显示「渲染中 i/N 页」；`isAborted()` 支持中途取消。
+
 ## 数据流
 
 ```
-AI 写 css + slides[]
-    ├─► 写 deck.html（预览文档，与 .pptx 同名）——即使导出失败也保留供改 HTML
-    ├─► renderSlides：每页 wrapSlideHtml → 隐藏浏览器渲染 → 提取脚本 → SlideData
+AI 写 css + slides[]（mode replace/append）
+    ├─► append 读 <deck>.deck.json 合并旧+新 slides
+    ├─► 写 deck.html（整本预览，即使导出失败也保留供改 HTML）
+    ├─► renderSlides：每页 wrapSlideHtml → playwright 渲染 → 提取脚本 → SlideData
+    │     （命中 sha1 缓存的页跳过渲染；onProgress 逐页回调更新进度 step）
     ├─► 聚合每页 errors；有错 → PptValidationError（逐页问题回传，AI 改后重试，不写 pptx）
     ├─► 无错 → PptxGenJS：每页 addSlide + applyBackground + applyElements → writeFile
+    ├─► 成功后写 <deck>.deck.json（真相源，供后续 append）
     └─► tool_result + canvasData { renderer:'html', content: 预览文档, filePath: deck.html }
 ```
 

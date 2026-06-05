@@ -6,6 +6,7 @@ import {
   applyBackground,
   applyElements,
   renderHtmlToPptx,
+  renderSlides,
   wrapSlideHtml,
   DECK_SIZES,
   type SlideData,
@@ -130,5 +131,24 @@ describe('renderHtmlToPptx', () => {
     expect(result.slideCount).toBe(2)
     expect(fs.existsSync(out)).toBe(true)
     expect(fs.statSync(out).size).toBeGreaterThan(1000)
+  }, 30000)
+
+  it.runIf(hasBrowser)('caches per-slide renders and reports progress', async () => {
+    const slide = `<div class="bg" style="background:#fff"></div>
+      <p style="position:absolute;left:80px;top:80px;width:800px;font-size:24px;color:#111">缓存测试 ${Date.now()}</p>`
+    const first: number[] = []
+    await renderSlides([slide], '', DECK_SIZES.widescreen, {
+      onProgress: ({ done }) => first.push(done),
+    })
+    // 首次：起始 done=0（未命中缓存），渲染后 done=1
+    expect(first[0]).toBe(0)
+    expect(first[first.length - 1]).toBe(1)
+
+    // 二次：同一页应命中缓存，首个进度事件 done 即为 total
+    const second: number[] = []
+    await renderSlides([slide], '', DECK_SIZES.widescreen, {
+      onProgress: ({ done, total }) => second.push(done === total ? total : done),
+    })
+    expect(second[0]).toBe(1)
   }, 30000)
 })
