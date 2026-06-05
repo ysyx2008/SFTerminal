@@ -40,7 +40,7 @@
 
 **输入模型**：`slides` 每项是一页的 body 内联 HTML（不写 `<html>/<head>/<body>`）；`css` 是所有页共享的 `<style>` 文本。系统用 `wrapSlideHtml` 包成完整文档、把 body 固定为画幅尺寸（widescreen 1280×720px = 13.333"×7.5"，standard 960×720px = 10"×7.5"，96 px/in）。
 
-**逐页追加（防模型输出截断）**：`mode` = `replace`（默认，整本重建）| `append`（追加到同 path 已有 deck 末尾）。真相源是同名 `<deck>.deck.json`（`{title,size,css,slides[]}`）——append 读它合并新页、整本重渲、重写 pptx + deck.html + deck.json。长 PPT 可分多次 append，每次只发一小批，避免单次输出超长被截断。
+**逐页追加（防模型输出截断）**：`mode` = `replace`（默认，整本重建）| `append`（追加到同 path 已有 deck 末尾）。真相源是隐藏点文件 `.<deck>.deck.json`（`{title,size,css,slides[]}`，Finder 默认不显示，不污染用户目录）——append 读它合并新页、整本重渲、重写 pptx + deck.json。长 PPT 可分多次 append，每次只发一小批，避免单次输出超长被截断。
 
 **渲染缓存 + 进度**：`renderSlides` 按 `sha1(layout+css+html)` 缓存每页 `SlideData`（上限 300，FIFO），append 整本重渲时旧页秒回、只渲新页。`RenderControls.onProgress({done,total})` 每页回调 → executor `updateStep` 显示「渲染中 i/N 页」；`isAborted()` 支持中途取消。
 
@@ -48,14 +48,14 @@
 
 ```
 AI 写 css + slides[]（mode replace/append）
-    ├─► append 读 <deck>.deck.json 合并旧+新 slides
-    ├─► 写 deck.html（整本预览，即使导出失败也保留供改 HTML）
+    ├─► append 读 .<deck>.deck.json 合并旧+新 slides
+    ├─► buildPreviewDocument（仅内存，供 Canvas 内联预览，不落盘）
     ├─► renderSlides：每页 wrapSlideHtml → playwright 渲染 → 提取脚本 → SlideData
     │     （命中 sha1 缓存的页跳过渲染；onProgress 逐页回调更新进度 step）
     ├─► 聚合每页 errors；有错 → PptValidationError（逐页问题回传，AI 改后重试，不写 pptx）
     ├─► 无错 → PptxGenJS：每页 addSlide + applyBackground + applyElements → writeFile
-    ├─► 成功后写 <deck>.deck.json（真相源，供后续 append）
-    └─► tool_result + canvasData { renderer:'html', content: 预览文档, filePath: deck.html }
+    ├─► 成功后写 .<deck>.deck.json（隐藏真相源，供后续 append）
+    └─► tool_result + canvasData { renderer:'html', content: 预览文档, filePath: pptx }
 ```
 
 ## 元素映射（提取脚本 → PptxGenJS）
@@ -72,8 +72,8 @@ AI 写 css + slides[]（mode replace/append）
 ## Canvas 预览
 
 - `renderer: 'html'`（`shared/types/canvas.ts`），前端 `SlidesRenderer.vue`（iframe srcdoc）+ `CanvasPanel.vue` 挂载
-- `content`：完整 HTML 文档，每页一个 `width×height` 的子 iframe（srcdoc = 与导出同 wrapper），JS 等比 `scale` 适配容器宽 → 所见即所得
-- `filePath`：保存的 `deck.html` 绝对路径 → 标题栏「打开 / 在文件夹中显示」
+- `content`：完整 HTML 文档（仅内联推送，不落盘），每页一个 `width×height` 的子 iframe（srcdoc = 与导出同 wrapper），纯 CSS 容器查询 `scale(calc(100cqw / 画幅宽))` 适配容器宽 → 所见即所得（无脚本，规避 iframe sandbox 拦截）
+- `filePath`：导出的 `.pptx` 绝对路径 → 标题栏「打开 / 在文件夹中显示」直接定位成品
 - WYSIWYG 边界：预览用真实浏览器渲染，与导出走同一 wrapper，偏差极小；最终以 PowerPoint 打开为准
 
 ## 依赖
@@ -82,7 +82,7 @@ AI 写 css + slides[]（mode replace/append）
 |------|------|
 | `pptxgenjs` | 写 `.pptx` |
 | `playwright-core` + `browser/detector` | 渲染后端（headless 系统浏览器，独立进程） |
-| `fs` / `os` / `path` | 临时 HTML、deck.html、pptx |
+| `fs` / `os` / `path` | 临时渲染 HTML、隐藏 deck.json、pptx |
 | chart skill（可选） | 幻灯片内图表 PNG |
 | `shared/types` `CanvasData` | 预览推送 |
 

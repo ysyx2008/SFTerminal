@@ -90,8 +90,11 @@ async function pptFromHtml(
   if (!pptxPath.toLowerCase().endsWith('.pptx')) {
     pptxPath += '.pptx'
   }
-  const deckHtmlPath = pptxPath.replace(/\.pptx$/i, '.html')
-  const deckJsonPath = pptxPath.replace(/\.pptx$/i, '.deck.json')
+  // deck 真相源：隐藏点文件，追加模式用。不污染用户目录、Finder 默认不显示。
+  const deckJsonPath = path.join(
+    path.dirname(pptxPath),
+    '.' + path.basename(pptxPath).replace(/\.pptx$/i, '') + '.deck.json'
+  )
 
   // 合并 deck 真相源：append 在已有 deck 末尾追加
   const prev = mode === 'append' ? readDeckSource(deckJsonPath) : null
@@ -133,11 +136,11 @@ async function pptFromHtml(
     }
   }
 
-  // 预览 deck.html（整本，即使导出失败也保留供改）
+  // 预览仅走 app 内 Canvas（内联 HTML），不落盘——它只是中间态，用户无需感知，
+  // 且单独用浏览器打开时容器查询缩放在非 Chromium 引擎表现不一致。
   let previewDoc = ''
   try {
     previewDoc = buildPreviewDocument(deck.slides, deck.css, deck.size)
-    fs.writeFileSync(deckHtmlPath, previewDoc, 'utf-8')
   } catch (err) {
     log.warn('Preview doc build failed:', err)
   }
@@ -173,12 +176,10 @@ async function pptFromHtml(
           path: pptxPath,
           added: newSlides.length,
           slides: result.slideCount,
-          htmlPath: deckHtmlPath,
         })
       : t('ppt.created_from_html', {
           path: pptxPath,
           slides: result.slideCount,
-          htmlPath: deckHtmlPath,
         })
 
     let canvasData: CanvasData | undefined
@@ -188,7 +189,8 @@ async function pptFromHtml(
         renderer: 'html',
         title: path.basename(pptxPath),
         content: previewDoc,
-        filePath: deckHtmlPath,
+        // Canvas 的"打开/在文件夹显示"指向真正的 .pptx 成品
+        filePath: pptxPath,
       }
     }
 
