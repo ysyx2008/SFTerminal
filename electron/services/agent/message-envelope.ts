@@ -34,9 +34,8 @@ export function assembleUserMessageContent(parts: {
   if (parts.systemContext?.trim()) blocks.push(parts.systemContext.trim())
   blocks.push(wrapUserMessage(parts.userMessage))
   if (parts.uploadedDocs?.trim()) blocks.push(parts.uploadedDocs.trim())
-  if (parts.imageNote?.trim()) {
-    const wrapped = wrapUserMessage(parts.imageNote.trim())
-    blocks.push(wrapped)
-  }
+  // imageNote 是系统生成的附注（如"🖼️ 用户提供了 1 张图片"），不是用户发言，
+  // 按纯文本追加，不能包进 <sf_user_message>
+  if (parts.imageNote?.trim()) blocks.push(parts.imageNote.trim())
   return blocks.join('\n\n')
 }
