@@ -1,6 +1,10 @@
 /**
  * Canvas 预览：把每页 slide 包成等比缩放的 iframe，所见即所得地展示导出前的 HTML。
  * 每个 iframe 用与导出完全相同的 wrapper 渲染，确保预览 ≈ 导出。
+ *
+ * 缩放用纯 CSS 容器查询（container query）实现，不依赖脚本——因为承载预览的
+ * SlidesRenderer iframe 是 sandbox="allow-same-origin"（无 allow-scripts），
+ * 任何 <script> 都会被拦截。scale = 100cqw / 画布宽。
  */
 
 import { DECK_SIZES, wrapSlideHtml, type DeckSize } from './html-render-pptx'
@@ -22,7 +26,7 @@ export function buildPreviewDocument(
       return `<div class="slide-card">
   <span class="slide-no">${i + 1} / ${slides.length}</span>
   <iframe class="slide-frame" width="${spec.px}" height="${spec.pxH}"
-    srcdoc="${doc}" sandbox="allow-same-origin" scrolling="no"></iframe>
+    srcdoc="${doc}" sandbox="allow-same-origin" scrolling="no" loading="lazy"></iframe>
 </div>`
     })
     .join('\n')
@@ -37,7 +41,7 @@ export function buildPreviewDocument(
   html,body{margin:0;padding:0;}
   body{background:#1a1a1e;padding:20px 16px 48px;font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;}
   .hint{text-align:center;color:#888;font-size:12px;margin:0 0 16px;}
-  .deck{max-width:920px;margin:0 auto;}
+  .deck{max-width:920px;margin:0 auto;container-type:inline-size;}
   .slide-card{
     position:relative;width:100%;aspect-ratio:${spec.px} / ${spec.pxH};
     margin:0 auto 20px;border-radius:10px;overflow:hidden;
@@ -49,29 +53,15 @@ export function buildPreviewDocument(
     background:rgba(0,0,0,.35);padding:2px 8px;border-radius:10px;
   }
   .slide-frame{
-    border:none;display:block;
+    width:${spec.px}px;height:${spec.pxH}px;border:none;display:block;
     transform-origin:top left;
-    /* 等比缩放：宽度自适应容器，scale 由 JS 计算 */
+    transform:scale(calc(100cqw / ${spec.px}px));
   }
 </style>
 </head>
 <body>
 <p class="hint">共 ${slides.length} 页 · 向下滚动预览 · 最终以 PowerPoint 打开导出文件为准</p>
 <div class="deck">${frames}</div>
-<script>
-  function fit(){
-    document.querySelectorAll('.slide-card').forEach(function(card){
-      var frame = card.querySelector('.slide-frame');
-      if(!frame) return;
-      var scale = card.clientWidth / ${spec.px};
-      frame.style.transform = 'scale(' + scale + ')';
-    });
-  }
-  window.addEventListener('resize', fit);
-  fit();
-  // iframe 内容/字体加载后再 fit 一次
-  setTimeout(fit, 120);
-</script>
 </body>
 </html>`
 }

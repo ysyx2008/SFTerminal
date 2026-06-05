@@ -469,6 +469,72 @@ function stripFile(p: string): string {
   return p.startsWith('file://') ? decodeURIComponent(p.replace('file://', '')) : p
 }
 
+const VALID_ALIGN = new Set(['left', 'center', 'right', 'justify'])
+
+/**
+ * 清洗 PptxGenJS option：剔除 null/undefined/NaN/空串，把非法 align、坏 margin 丢弃。
+ * 浏览器抽取出的 lineSpacing 可能为 null、fontSize 在缺省时可能 NaN——这些值
+ * 直传 pptxgenjs 会生成 LibreOffice 容忍、但 PowerPoint 判定损坏（"需要修复"）的 OOXML。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function cleanOpts(opt: Record<string, any>): Record<string, any> {
+  if (opt.align !== undefined && !VALID_ALIGN.has(opt.align)) delete opt.align
+  if (opt.fontFace !== undefined && (typeof opt.fontFace !== 'string' || !opt.fontFace.trim())) {
+    delete opt.fontFace
+  }
+  // lineSpacing / fontSize 必须为正，否则 PowerPoint 判损坏
+  if (opt.lineSpacing !== undefined && !(opt.lineSpacing > 0)) delete opt.lineSpacing
+  if (opt.fontSize !== undefined && !(opt.fontSize > 0)) delete opt.fontSize
+  // 段间距不能为负
+  for (const k of ['paraSpaceBefore', 'paraSpaceAfter']) {
+    if (typeof opt[k] === 'number' && opt[k] < 0) opt[k] = 0
+  }
+  if (opt.margin !== undefined) {
+    const sanitize = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) ? Math.max(0, n) : null)
+    if (Array.isArray(opt.margin)) {
+      const m = opt.margin.map(sanitize)
+      if (m.some((n: number | null) => n === null)) delete opt.margin
+      else opt.margin = m
+    } else {
+      const m = sanitize(opt.margin)
+      if (m === null) delete opt.margin
+      else opt.margin = m
+    }
+  }
+  for (const k of Object.keys(opt)) {
+    const v = opt[k]
+    if (v === null || v === undefined) delete opt[k]
+    else if (typeof v === 'number' && !Number.isFinite(v)) delete opt[k]
+  }
+  return opt
+}
+
+// pptxgenjs 把 shadow.blur/offset 当“点(pt)”，再 ×12700 转 EMU。正常阴影 blur≤~30pt、
+// offset≤~20pt。若上游（含历史脏缓存）误传了 EMU 量级的值（如 190500），会被再次 ×12700
+// 放大成数十亿 EMU，PowerPoint 判文件损坏、且超大阴影会盖住整张卡片。这里钳到合理点值区间。
+const SHADOW_MAX_BLUR_PT = 50
+const SHADOW_MAX_OFFSET_PT = 30
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function sanitizeShadow(s: any): any {
+  if (!s || typeof s !== 'object') return null
+  if (s.type && s.type !== 'outer' && s.type !== 'inner') return null
+  const num = (v: unknown, max: number, dflt: number) => {
+    const n = Number(v)
+    if (!Number.isFinite(n) || n < 0) return dflt
+    return Math.min(n, max)
+  }
+  const opacity = Number(s.opacity)
+  const angle = Number(s.angle)
+  return {
+    type: s.type === 'inner' ? 'inner' : 'outer',
+    blur: num(s.blur, SHADOW_MAX_BLUR_PT, 0),
+    offset: num(s.offset, SHADOW_MAX_OFFSET_PT, 0),
+    angle: Number.isFinite(angle) ? ((Math.round(angle) % 360) + 360) % 360 : 0,
+    color: typeof s.color === 'string' && /^[0-9A-Fa-f]{6}$/.test(s.color) ? s.color : '000000',
+    opacity: Number.isFinite(opacity) ? Math.min(Math.max(opacity, 0), 1) : 0.5,
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function applyBackground(slide: any, data: SlideData): void {
   if (data.background.type === 'image' && data.background.path) {
@@ -486,17 +552,35 @@ export function applyElements(slide: any, data: SlideData, pres: any): void {
     } else if (el.type === 'line') {
       slide.addShape(pres.ShapeType.line, { x: el.x1, y: el.y1, w: el.x2 - el.x1, h: el.y2 - el.y1, line: { color: el.color, width: el.width } })
     } else if (el.type === 'shape') {
+      // roundRect 的 adj = rectRadius/短边 × 100000，OOXML 合法区间 0~50000（0~50%）。
+      // 超出会让 PowerPoint 判文件损坏（border-radius:50% 的圆形、圆角大于半边的细条等）。
+      // 钳到短边的一半，确保 adj ≤ 50000。
+      const maxRadius = Math.min(el.position.w, el.position.h) / 2
+      const rectRadius =
+        Number.isFinite(el.shape.rectRadius) && el.shape.rectRadius > 0
+          ? Math.min(el.shape.rectRadius, maxRadius)
+          : 0
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const opt: any = {
         x: el.position.x, y: el.position.y, w: el.position.w, h: el.position.h,
-        shape: el.shape.rectRadius > 0 ? pres.ShapeType.roundRect : pres.ShapeType.rect,
+        shape: rectRadius > 0 ? pres.ShapeType.roundRect : pres.ShapeType.rect,
       }
-      if (el.shape.fill) { opt.fill = { color: el.shape.fill }; if (el.shape.transparency != null) opt.fill.transparency = el.shape.transparency }
-      if (el.shape.line) opt.line = el.shape.line
-      if (el.shape.rectRadius > 0) opt.rectRadius = el.shape.rectRadius
-      if (el.shape.shadow) opt.shadow = el.shape.shadow
-      slide.addText(el.text || '', opt)
+      if (el.shape.fill) {
+        opt.fill = { color: el.shape.fill }
+        if (el.shape.transparency != null && Number.isFinite(el.shape.transparency)) {
+          opt.fill.transparency = el.shape.transparency
+        }
+      }
+      if (el.shape.line && el.shape.line.color) {
+        opt.line = { color: el.shape.line.color }
+        if (Number.isFinite(el.shape.line.width)) opt.line.width = el.shape.line.width
+      }
+      if (rectRadius > 0) opt.rectRadius = rectRadius
+      const shadow = sanitizeShadow(el.shape.shadow)
+      if (shadow) opt.shadow = shadow
+      slide.addText(el.text || '', cleanOpts(opt))
     } else if (el.type === 'list') {
+      if (!Array.isArray(el.items) || el.items.length === 0) continue
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const opt: any = {
         x: el.position.x, y: el.position.y, w: el.position.w, h: el.position.h,
@@ -504,8 +588,9 @@ export function applyElements(slide: any, data: SlideData, pres: any): void {
         align: el.style.align, valign: 'top', lineSpacing: el.style.lineSpacing,
         paraSpaceBefore: el.style.paraSpaceBefore, paraSpaceAfter: el.style.paraSpaceAfter, margin: el.style.margin,
       }
-      slide.addText(el.items, opt)
+      slide.addText(el.items, cleanOpts(opt))
     } else {
+      if (Array.isArray(el.text) ? el.text.length === 0 : !el.text) continue
       const lineHeight = el.style.lineSpacing || el.style.fontSize * 1.2
       const isSingleLine = el.position.h <= lineHeight * 1.5
       let x = el.position.x, w = el.position.w
@@ -527,7 +612,7 @@ export function applyElements(slide: any, data: SlideData, pres: any): void {
       if (el.style.margin) opt.margin = el.style.margin
       if (el.style.rotate !== undefined) opt.rotate = el.style.rotate
       if (el.style.transparency != null) opt.transparency = el.style.transparency
-      slide.addText(el.text, opt)
+      slide.addText(el.text, cleanOpts(opt))
     }
   }
 }
@@ -570,12 +655,18 @@ export interface RenderControls {
   isAborted?: () => boolean
 }
 
-// 按页渲染缓存：key = sha1(layout + css + slide html)。append 重渲整本时旧页秒回。
+// 按页渲染缓存：key = sha1(version + layout + css + slide html)。append 重渲整本时旧页秒回。
+// EXTRACTION_VERSION 必须在每次改动提取脚本/SlideData 结构时 +1，否则长驻进程里旧版渲染结果
+// 会被复用（HMR 热更新代码但模块级 Map 残留），导致修复对未变内容不生效（曾因此让阴影脏数据残留）。
+const EXTRACTION_VERSION = 2
 const renderCache = new Map<string, SlideData>()
 const RENDER_CACHE_CAP = 300
 
 function cacheKey(size: SizeSpec, css: string, html: string): string {
-  return crypto.createHash('sha1').update(`${size.layout}\n${css}\n${html}`).digest('hex')
+  return crypto
+    .createHash('sha1')
+    .update(`v${EXTRACTION_VERSION}\n${size.layout}\n${css}\n${html}`)
+    .digest('hex')
 }
 function cacheStore(key: string, data: SlideData): void {
   renderCache.set(key, data)

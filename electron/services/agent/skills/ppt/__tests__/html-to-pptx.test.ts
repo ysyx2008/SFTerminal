@@ -81,6 +81,48 @@ describe('applyBackground / applyElements (纯映射器)', () => {
     // roundRect（rectRadius > 0）
     expect(calls.addText[0][1].shape).toBe('roundRect')
   })
+
+  it('clamps rectRadius to half the shorter side (adj ≤ 50% → 不让 PowerPoint 报损坏)', () => {
+    const { slide, calls } = makeFakeSlide()
+    const data: SlideData = {
+      width: 1280,
+      height: 720,
+      background: { type: 'color', value: 'FFFFFF' },
+      placeholders: [],
+      errors: [],
+      elements: [
+        // border-radius:50% 的圆点：rectRadius 远大于短边的一半，须钳到 0.25（短边 0.5 的一半）
+        { type: 'shape', text: '', position: { x: 1, y: 1, w: 0.5, h: 0.5 }, shape: { fill: 'D4A843', transparency: null, line: null, rectRadius: 1, shadow: null } },
+        // 正常卡片：rectRadius 不变
+        { type: 'shape', text: '', position: { x: 1, y: 3, w: 3, h: 2 }, shape: { fill: 'FFFFFF', transparency: null, line: null, rectRadius: 0.15, shadow: null } },
+      ],
+    }
+    applyElements(slide as never, data, fakePres as never)
+    expect(calls.addText[0][1].rectRadius).toBe(0.25)
+    expect(calls.addText[1][1].rectRadius).toBe(0.15)
+  })
+
+  it('clamps oversized shadow blur/offset（救回脏缓存的 EMU 量级阴影值）', () => {
+    const { slide, calls } = makeFakeSlide()
+    const data: SlideData = {
+      width: 1280,
+      height: 720,
+      background: { type: 'color', value: 'FFFFFF' },
+      placeholders: [],
+      errors: [],
+      elements: [
+        // 模拟旧代码/脏缓存：blur=190500、offset=38100（实为 EMU，被误当点值）
+        { type: 'shape', text: '', position: { x: 1, y: 1, w: 3, h: 2 }, shape: { fill: 'FFFFFF', transparency: null, line: null, rectRadius: 0, shadow: { type: 'outer', angle: 90, blur: 190500, color: '059669', offset: 38100, opacity: 0.06 } } },
+        // 正常阴影：保持不变
+        { type: 'shape', text: '', position: { x: 1, y: 4, w: 3, h: 2 }, shape: { fill: 'FFFFFF', transparency: null, line: null, rectRadius: 0, shadow: { type: 'outer', angle: 90, blur: 15, color: '000000', offset: 3, opacity: 0.3 } } },
+      ],
+    }
+    applyElements(slide as never, data, fakePres as never)
+    expect(calls.addText[0][1].shadow.blur).toBe(50)
+    expect(calls.addText[0][1].shadow.offset).toBe(30)
+    expect(calls.addText[1][1].shadow.blur).toBe(15)
+    expect(calls.addText[1][1].shadow.offset).toBe(3)
+  })
 })
 
 describe('wrapSlideHtml / buildPreviewDocument', () => {
