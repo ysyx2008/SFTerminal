@@ -141,6 +141,9 @@ try {
           <div class="slide" data-title={lang === 'zh' ? 'AI 助手' : 'AI Assistant'}>
             <img src={lang === 'zh' ? '/screenshot-assistant.png' : '/screenshot-assistant_en.png'} alt={lang === 'zh' ? 'AI 助手' : 'AI Assistant'} loading="lazy" />
           </div>
+          <div class="slide" data-title={lang === 'zh' ? 'PPT 演示文稿' : 'PPT Presentations'}>
+            <img src="/screenshot-ppt.png" alt={lang === 'zh' ? 'PPT 演示文稿生成' : 'PPT Presentation Generation'} loading="lazy" />
+          </div>
           <div class="slide" data-title={lang === 'zh' ? '技能市场' : 'Skill Market'}>
             <img src={lang === 'zh' ? '/screenshot-skills.png' : '/screenshot-skills_en.png'} alt={lang === 'zh' ? '技能市场' : 'Skill Market'} loading="lazy" />
           </div>
@@ -184,7 +187,8 @@ try {
         <button class="indicator" data-index="6" aria-label="Slide 7"></button>
         <button class="indicator" data-index="7" aria-label="Slide 8"></button>
         <button class="indicator" data-index="8" aria-label="Slide 9"></button>
-        {lang === 'zh' && <button class="indicator" data-index="9" aria-label="Slide 10"></button>}
+        <button class="indicator" data-index="9" aria-label="Slide 10"></button>
+        {lang === 'zh' && <button class="indicator" data-index="10" aria-label="Slide 11"></button>}
       </div>
     </div>
     

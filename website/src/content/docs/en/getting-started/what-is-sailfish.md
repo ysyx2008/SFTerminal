@@ -18,6 +18,7 @@ Here are some typical scenarios:
 ### Daily Office Work
 
 - "Write me a meeting minutes document for attendees John and Jane" → Automatically generates a Word document
+- "Create an 8-slide product intro PPT for me" → Generates an editable PowerPoint with real-time Canvas preview
 - "Check my unread emails today" → Connects to your inbox and lists unread messages
 - "Create a product review meeting for tomorrow at 10 AM" → Creates the event on your calendar
 
@@ -49,7 +50,7 @@ Here are some typical scenarios:
 | **Multi-Channel Access** | Desktop, DingTalk, Feishu, WeCom, Slack, Telegram, Web |
 | **Awaken Mode** | AI proactively monitors and pushes notifications; no need to watch the screen |
 | **Knowledge Base** | Import documents to build a private knowledge base; AI remembers what you teach it |
-| **Skill Extensions** | Rich skills for email, calendar, Word, Excel, browser, and more |
+| **Skill Extensions** | Rich skills for email, calendar, Word, Excel, PPT, browser, and more |
 | **MCP Ecosystem** | Connect databases, APIs, and external tools via standard protocol |
 
 ## How SailFish Differs from Other Tools

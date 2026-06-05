@@ -63,10 +63,15 @@
 | 🗄️ **Database** | Natural language SQL execution and analysis |
 | 🛒 **Skill Market** | Browse, install, and share community Agent skills with one click |
 | 📊 **Excel & Word** | Style themes, Markdown-to-Excel, institutional document formatting with multi-level numbering — all via natural language |
+| 📽️ **PPT Generation** | Natural language to native editable PowerPoint (.pptx), Canvas slide preview, streaming render progress, and append mode for long decks |
 | 🔊 **Text-to-Speech** | Agent responses read aloud with OpenAI, Volcengine, and Alibaba DashScope TTS providers |
 | 🔌 **Plugin System** | Extend Agent with custom tools, providers, routes, and IM channels via a lightweight plugin API |
 | 🔒 **System Tray** | Minimize to tray; Cmd+W hides window without quitting. Single instance. |
 | 🖥️ **CLI Mode** | Run all backend services without Electron — headless automation via `npm run sft` |
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-ppt.png" width="800" alt="PPT Generation">
+</p>
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-assistant_en.png" width="800" alt="AI Assistant">

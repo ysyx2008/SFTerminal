@@ -73,6 +73,7 @@ export function getDocsNav(lang: 'zh' | 'en'): NavGroup[] {
         label: '办公技能',
         items: [
           { slug: 'office/word', label: 'Word 文档生成' },
+          { slug: 'office/ppt', label: 'PPT 演示文稿' },
           { slug: 'office/email', label: '邮箱管理' },
           { slug: 'office/calendar', label: '日历与待办' },
         ],
@@ -150,6 +151,7 @@ export function getDocsNav(lang: 'zh' | 'en'): NavGroup[] {
       label: 'Office Skills',
       items: [
         { slug: 'office/word', label: 'Word Documents' },
+        { slug: 'office/ppt', label: 'PPT Presentations' },
         { slug: 'office/email', label: 'Email Management' },
         { slug: 'office/calendar', label: 'Calendar & Todos' },
       ],

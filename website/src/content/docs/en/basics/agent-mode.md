@@ -81,7 +81,7 @@ The Agent can use:
 - **File operations**: Read, create, edit, and delete files
 - **Knowledge base**: Search and use information from your knowledge base
 - **Memory management**: Store and recall important information
-- **Skills**: Email, calendar, Word, browser, and other extensions
+- **Skills**: Email, calendar, Word, PPT, browser, and other extensions
 - **MCP tools**: External tools connected via the Model Context Protocol
 
 ## Viewing the Execution Process

@@ -63,10 +63,15 @@
 | 🗄️ **数据库** | 自然语言执行 SQL 和分析 |
 | 🛒 **技能市场** | 浏览、安装、分享社区 Agent 技能，一键扩展 |
 | 📊 **Excel & Word** | 样式主题、Markdown 生成 Excel、一键生成多级编号制度文件 —— 全部通过自然语言完成 |
+| 📽️ **PPT 演示文稿** | 自然语言生成原生可编辑 PowerPoint（.pptx），Canvas 幻灯片预览、流式渲染进度，长 deck 支持逐页追加 |
 | 🔊 **语音合成** | Agent 回复自动朗读，支持 OpenAI、火山引擎、阿里 DashScope 多种 TTS 服务 |
 | 🔌 **插件系统** | 通过轻量插件 API 扩展 Agent 能力：自定义工具、Provider、路由、IM 渠道 |
 | 🔒 **系统托盘** | 最小化到托盘；Cmd+W 隐藏窗口不退出，单实例运行 |
 | 🖥️ **CLI 模式** | 无需 Electron 运行全部后端服务 —— 通过 `npm run sft` 实现无头自动化 |
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-ppt.png" width="800" alt="PPT 演示文稿">
+</p>
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-assistant.png" width="800" alt="AI 助手">

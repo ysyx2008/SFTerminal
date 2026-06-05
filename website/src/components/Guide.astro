@@ -28,6 +28,7 @@ const g = t.guide;
           <li><a href="#im-access" class="toc-link">{g.imAccess.title}</a></li>
           <li><a href="#wechat-guide" class="toc-link">{g.wechatGuide.title}</a></li>
           <li><a href="#word-skill" class="toc-link">{g.wordSkill.title}</a></li>
+          <li><a href="#ppt-skill" class="toc-link">{g.pptSkill.title}</a></li>
           <li><a href="#email-skill" class="toc-link">{g.emailSkill.title}</a></li>
           <li><a href="#calendar-skill" class="toc-link">{g.calendarSkill.title}</a></li>
           <li><a href="#feishu-skill" class="toc-link">{g.feishuSkill.title}</a></li>
@@ -287,6 +288,36 @@ const g = t.guide;
           <h3>{g.wordSkill.examples}</h3>
           <ul class="example-list">
             {g.wordSkill.exampleList.map(ex => <li>{ex}</li>)}
+          </ul>
+        </section>
+
+        {/* ==================== PPT 演示文稿 ==================== */}
+        <section id="ppt-skill" class="guide-article">
+          <h2 class="article-title">{g.pptSkill.title}</h2>
+          <p class="article-intro">{g.pptSkill.intro}</p>
+
+          <figure class="guide-screenshot">
+            <img src="/screenshot-ppt.png" alt={lang === 'zh' ? 'PPT 演示文稿生成' : 'PPT Presentation Generation'} loading="lazy" />
+          </figure>
+
+          <h3>{g.pptSkill.capabilities}</h3>
+          <div class="capability-grid">
+            {g.pptSkill.capabilityList.map(c => (
+              <div class="cap-card">
+                <div class="cap-name">{c.cap}</div>
+                <div class="cap-desc">{c.desc}</div>
+              </div>
+            ))}
+          </div>
+
+          <h3>{g.pptSkill.requirements}</h3>
+          <ul class="capability-list">
+            {g.pptSkill.requirementList.map(req => <li>{req}</li>)}
+          </ul>
+
+          <h3>{g.pptSkill.examples}</h3>
+          <ul class="example-list">
+            {g.pptSkill.exampleList.map(ex => <li>{ex}</li>)}
           </ul>
         </section>
 
@@ -601,6 +632,21 @@ const g = t.guide;
     color: var(--color-text-secondary);
     margin-bottom: 32px;
     line-height: 1.8;
+  }
+
+  .guide-screenshot {
+    margin: 0 0 32px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--color-bg-card);
+    box-shadow: var(--shadow-md, 0 8px 32px rgba(0, 0, 0, 0.24));
+  }
+
+  .guide-screenshot img {
+    display: block;
+    width: 100%;
+    height: auto;
   }
 
   .guide-article h3 {

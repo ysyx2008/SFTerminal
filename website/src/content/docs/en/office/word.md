@@ -124,11 +124,12 @@ Move the report we just generated to my desktop
 Send this document to me via Feishu
 ```
 
-## Working with Excel and PDF
+## Working with Excel, PPT, and PDF
 
-SailFish can also work with Excel and PDF:
+SailFish can also work with Excel, PPT, and PDF:
 
 - **Excel**: Read and create .xlsx files for data analysis and tables
+- **PPT**: Generate editable .pptx presentations with Canvas preview (see [PPT Presentations](/docs/office/ppt))
 - **PDF**: Read PDF content for analysis and extraction
 
 ```

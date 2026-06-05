@@ -124,11 +124,12 @@ AI 也可以读取和修改已有的 Word 文档：
 把这份文档通过飞书发给我
 ```
 
-## 与 Excel、PDF 配合
+## 与 Excel、PPT、PDF 配合
 
-旗鱼还支持操作 Excel 和 PDF 文件：
+旗鱼还支持操作 Excel、PPT 和 PDF 文件：
 
 - **Excel**：读取和创建 .xlsx 文件，适合数据统计和表格处理
+- **PPT**：生成可编辑 .pptx 演示文稿，Canvas 实时预览（详见 [PPT 演示文稿](/zh/docs/office/ppt)）
 - **PDF**：读取 PDF 内容进行分析，适合从 PDF 提取信息
 
 ```

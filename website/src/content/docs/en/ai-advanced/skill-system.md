@@ -15,6 +15,7 @@ SailFish includes multiple built-in skills for office, operations, and collabora
 |-------|----------|:----------------:|
 | Word | Create and edit .docx documents | No |
 | Excel | Read and write .xlsx files | No |
+| PPT | Generate editable .pptx with Canvas preview and append mode | No (requires local Chrome/Edge) |
 | PDF | Read and analyze PDF document content | No |
 | Browser | Web browsing, screenshots, form filling, and automation | No |
 | Email | View, send, and reply to email | Yes (email account) |
@@ -37,6 +38,7 @@ You do not need to manually activate skills. SailFish **automatically determines
 | What You Say | Skill Auto-Loaded |
 |--------------|-------------------|
 | "Help me write a report" | Word skill |
+| "Create a product pitch deck for me" | PPT skill |
 | "Check if I have new email" | Email skill |
 | "Open Baidu and search" | Browser skill |
 | "What's on my schedule today" | Calendar skill |
