@@ -14,14 +14,11 @@
 
 - **导出引擎**：PptxGenJS（本地 Node，无云端 API）
 
-## 渲染后端（自动选择）
+## 渲染后端
 
-| 运行环境 | 后端 | 依赖 |
-|---|---|---|
-| 真实 app（Electron 主进程，`process.versions.electron` 有值） | 隐藏 `BrowserWindow` + `executeJavaScript` | **零额外依赖**（Electron 内置 Chromium） |
-| CLI / 纯 Node（`sft` = `node …`） | `playwright-core` + 系统浏览器（`detectBrowser`） | 系统装有 Chrome/Edge/Chromium |
+统一用 **`playwright-core` 启动系统浏览器**（headless，独立进程），与 `browser` 技能同款做法（`detectBrowser` 找 Chrome/Edge/Chromium）。渲染发生在独立进程，**绝不阻塞 Electron 主进程事件循环**。
 
-Electron 后端不可用时（如被异常）自动回退 playwright。两后端跑**同一份提取脚本**，结果一致。
+> ⚠️ 早期版本曾在主进程开隐藏 `BrowserWindow` 渲染（想做到零依赖），实测会**冻住整个 app UI**（主进程被阻塞），已弃用。CLI 与真实 app 走同一条 playwright 路径。无系统浏览器时报 `NO_BROWSER`。
 
 ## 文件结构
 
@@ -77,8 +74,7 @@ AI 写 css + slides[]
 | 依赖 | 用途 |
 |------|------|
 | `pptxgenjs` | 写 `.pptx` |
-| `electron`（BrowserWindow） | 真实 app 渲染后端（内置 Chromium） |
-| `playwright-core` + `browser/detector` | CLI/Node 渲染后端（系统浏览器） |
+| `playwright-core` + `browser/detector` | 渲染后端（headless 系统浏览器，独立进程） |
 | `fs` / `os` / `path` | 临时 HTML、deck.html、pptx |
 | chart skill（可选） | 幻灯片内图表 PNG |
 | `shared/types` `CanvasData` | 预览推送 |

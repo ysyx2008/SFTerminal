@@ -405,58 +405,22 @@ interface RenderBackend {
   close(): Promise<void>
 }
 
-function isElectronRuntime(): boolean {
-  return !!process.versions.electron
-}
-
-/** Electron 内置 Chromium：隐藏 BrowserWindow + executeJavaScript */
-async function createElectronBackend(size: SizeSpec): Promise<RenderBackend> {
-  // 延迟 require，CLI（纯 node）下不会触发
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const electron = require('electron')
-  const { BrowserWindow } = electron
-  if (!BrowserWindow) throw new Error('NO_BROWSERWINDOW')
-
-  const win = new BrowserWindow({
-    width: size.px,
-    height: size.pxH,
-    show: false,
-    useContentSize: true,
-    webPreferences: {
-      offscreen: false,
-      javascript: true,
-      images: true,
-      sandbox: false,
-      backgroundThrottling: false,
-    },
-  })
-
-  return {
-    async render(html: string): Promise<SlideData> {
-      const tmp = await writeTempHtml(html)
-      try {
-        await win.loadFile(tmp)
-        const data = (await win.webContents.executeJavaScript(EXTRACTION_SCRIPT, true)) as SlideData
-        return data
-      } finally {
-        await safeUnlink(tmp)
-      }
-    },
-    async close() {
-      try { win.destroy() } catch { /* ignore */ }
-    },
-  }
-}
-
-/** playwright-core + 系统浏览器（CLI / 纯 node 兜底） */
-async function createPlaywrightBackend(size: SizeSpec): Promise<RenderBackend> {
+/**
+ * 统一用 playwright-core 启动系统浏览器（headless，独立进程）。
+ * 与 browser 技能同款做法：渲染在独立进程，绝不阻塞 Electron 主进程事件循环
+ * （早期试过在主进程开隐藏 BrowserWindow，会冻住整个 UI，已弃用）。
+ */
+async function createBackend(size: SizeSpec): Promise<RenderBackend> {
   const info = detectBrowser()
   if (!info || info.type !== 'chromium') {
     throw new Error('NO_BROWSER')
   }
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { chromium } = await import('playwright-core')
-  const browser = await chromium.launch({ executablePath: info.executablePath, headless: true })
+  const browser = await chromium.launch({
+    executablePath: info.executablePath,
+    headless: true,
+    args: ['--no-first-run', '--no-default-browser-check', '--disable-extensions'],
+  })
 
   return {
     async render(html: string): Promise<SlideData> {
@@ -475,20 +439,13 @@ async function createPlaywrightBackend(size: SizeSpec): Promise<RenderBackend> {
       }
     },
     async close() {
-      try { await browser.close() } catch { /* ignore */ }
+      try {
+        await browser.close()
+      } catch {
+        /* ignore */
+      }
     },
   }
-}
-
-async function createBackend(size: SizeSpec): Promise<RenderBackend> {
-  if (isElectronRuntime()) {
-    try {
-      return await createElectronBackend(size)
-    } catch (err) {
-      log.warn('Electron backend unavailable, fallback to playwright:', err)
-    }
-  }
-  return createPlaywrightBackend(size)
 }
 
 let tmpCounter = 0
