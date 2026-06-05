@@ -64,7 +64,17 @@ export const pptTools: ToolDefinition[] = [
       streamDisplay: {
         titleKey: 'ppt.generating_from_html',
         titleField: 'path',
-        progressFields: ['slides'],
+        // slides 是数组（progressFields 只统计 string 字段），用 customProgress
+        // 累加各页 HTML + css 的字符数，让 AI 流式写 slides 时进度可见。
+        customProgress: (args) => {
+          let chars = 0
+          const slides = args.slides
+          if (Array.isArray(slides)) {
+            for (const s of slides) if (typeof s === 'string') chars += s.length
+          }
+          if (typeof args.css === 'string') chars += args.css.length
+          return chars
+        },
       },
     },
   } as ToolDefinitionWithMeta,
