@@ -2,7 +2,30 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.42.0 (2026-06-02) (Latest)
+## v10.43.0 (2026-06-05) (Latest)
+
+> Agent 可以生成可编辑的 PowerPoint 了，技能 API Key 配置和文件发送等体验也打磨得更顺手。
+
+### New Features
+- 🎯 **PPT Generation**: Agent can now generate editable PowerPoint documents directly. HTML content is rendered via browser and mapped to native PPT elements (text, shapes, images), supporting real-time streaming progress, Canvas preview, and append-on-overflow.
+
+### Improvements
+- ⚡ **Skill API Key Management**: Configure API keys directly in skill cards with persistent status display. `load_user_skill` auto-injects keys into terminal environment, no more manual env vars.
+- ⚡ **Context Progress Bar**: Progress bar now shows the actual model name being used for the current conversation.
+- ⚡ **Async File Sending**: File uploads no longer block the UI. Agent asynchronously tracks progress and waits for results.
+- ⚡ **Cleaner Non-debug Mode**: Tool success logs are hidden by default in non-debug mode for a cleaner chat interface.
+- ⚡ **Improved Image Preview**: Multi-image preview reworked to a compact single-column list navigation.
+- ⚡ **Windows First-start Optimization**: LanceDB moved to a separate utility process, eliminating the first-launch freeze on Windows.
+- ⚡ **Non-blocking Knowledge Search**: BM25 index uses async I/O, no more UI stutter during knowledge base search.
+
+### Bug Fixes
+- 🐛 Fixed file message notification showing raw `{name}{size}` placeholders.
+- 🐛 Fixed unescaped raw HTML in Markdown causing Meta Refresh injection risk.
+- 🐛 Fixed base64 inline images in agent execution steps causing renderer crashes.
+- 🐛 Reduced embedding batch size to prevent knowledge base processing overload.
+- 🐛 WeChat CDN upload now uses idle detection instead of fixed timeout for more stable connections.
+
+## v10.42.0 (2026-06-02)
 
 > Customizable Tab names, Mermaid chart rendering in AI chat, API key test in AI settings, async history search, and several fixes.
 

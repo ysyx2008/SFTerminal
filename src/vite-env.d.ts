@@ -731,6 +731,8 @@ interface Window {
       onConfirmResolved: (callback: (data: { agentId: string }) => void) => () => void
       onComplete: (callback: (data: { agentId: string; ptyId?: string; result: string; pendingUserMessages?: string[] }) => void) => () => void
       onError: (callback: (data: { agentId: string; ptyId?: string; error: string }) => void) => () => void
+      resolveSecureInput: (params: { ptyId: string; requestId: string; value?: string; cancelled?: boolean }) => Promise<boolean>
+      onNeedSecureInput: (callback: (data: { agentId: string; requestId: string; prompt: string; skillId: string; envName: string; isUpdate?: boolean; ptyId?: string }) => void) => () => void
     }
     // 历史记录操作
     history: {
@@ -1715,6 +1717,9 @@ interface Window {
       openFolder: () => Promise<void>
       getContent: (skillId: string) => Promise<string | null>
       getSkillsDir: () => Promise<string>
+      getEnvStatus: (skillId: string) => Promise<Array<{ name: string; configured: boolean }>>
+      setEnv: (skillId: string, key: string, value: string) => Promise<void>
+      deleteEnv: (skillId: string, key: string) => Promise<void>
     }
     // 技能市场
     skillMarket: {

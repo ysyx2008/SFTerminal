@@ -306,7 +306,7 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
         <!-- 内联重命名输入框 -->
         <input
           v-if="editingTabId === tab.id"
-          :ref="(el) => { if (el instanceof HTMLInputElement) editInputRef = el }"
+          :ref="(el: any) => { if (el) editInputRef = el }"
           v-model="editingTitle"
           class="tab-title-input"
           @keydown="handleRenameKeydown"
