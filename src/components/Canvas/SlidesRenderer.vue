@@ -29,11 +29,11 @@ watch(content, () => {
       ref="iframeRef"
       class="slides-frame"
       :srcdoc="content"
-      :title="t('terminal.canvas.slidesPreview')"
+      :title="t('canvas.slidesPreview')"
       sandbox="allow-same-origin"
       referrerpolicy="no-referrer"
     />
-    <div v-else class="slides-empty">{{ t('terminal.canvas.slidesPreviewEmpty') }}</div>
+    <div v-else class="slides-empty">{{ t('canvas.slidesPreviewEmpty') }}</div>
   </div>
 </template>
 
