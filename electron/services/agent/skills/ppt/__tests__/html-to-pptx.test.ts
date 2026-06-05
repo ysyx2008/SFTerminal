@@ -133,10 +133,13 @@ describe('wrapSlideHtml / buildPreviewDocument', () => {
     expect(html).toContain('p{color:red}')
   })
 
-  it('builds a multi-slide preview document', () => {
+  it('builds a multi-slide preview document with no nested iframe / script', () => {
     const doc = buildPreviewDocument(['<p>a</p>', '<p>b</p>'], '', 'widescreen')
     expect(doc).toContain('共 2 页')
-    expect(doc.match(/class="slide-frame"/g)?.length).toBe(2)
+    // 单 iframe 渲染：每页一个 .stage，无内层 iframe、无脚本（沙箱友好）
+    expect(doc.match(/class="stage"/g)?.length).toBe(2)
+    expect(doc).not.toContain('<iframe')
+    expect(doc).not.toContain('<script')
   })
 })
 

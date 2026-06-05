@@ -10,7 +10,7 @@
 2. 用**真实 Chromium** 渲染该页，遍历 DOM 读 `getBoundingClientRect` + `getComputedStyle`
 3. 把每个元素映射成**原生 PptxGenJS 元素**（文本 / 列表 / 卡片 shape / 图片 / 边框线）——文字可编辑，布局由浏览器排版，从根上避免 AI 手算坐标导致的重叠/错乱
 4. 渲染期**内置校验即 QA**：内容溢出、CSS 渐变、文本元素带背景/边框/阴影、div 裸文本、手敲项目符号——全部按页报错，引导 AI 改 HTML 重试
-5. 同一份 HTML 通过 `CanvasData`（`renderer: 'html'` → `SlidesRenderer`）推送到助手 Canvas 预览（每页一个等比缩放 iframe，所见即所得）
+5. 同一份 HTML 通过 `CanvasData`（`renderer: 'html'` → `SlidesRenderer`）推送到助手 Canvas 预览（单个 sandbox iframe，每页一个等比缩放 `.stage`，所见即所得）
 
 - **导出引擎**：PptxGenJS（本地 Node，无云端 API）
 
@@ -28,7 +28,7 @@
 | `tools.ts` | `ppt_from_html` 工具 schema（`slides[]` / `css` / `size` / `path` / `title`） |
 | `executor.ts` | 工具分发、写盘、覆盖确认、Canvas 推送、校验错误回传 |
 | `html-render-pptx.ts` | **核心引擎**：提取脚本（字符串）+ 双后端渲染 + 纯映射器（`applyBackground`/`applyElements`）+ `renderHtmlToPptx` |
-| `preview.ts` | Canvas 预览文档：每页一个等比缩放 iframe（与导出同 wrapper，WYSIWYG） |
+| `preview.ts` | Canvas 预览文档：单文档内每页一个等比缩放 `.stage`（无内层 iframe、无脚本），本地图片内联为 data: URI |
 | `contracts/slide-html.md` | HTML 契约单一数据源（开发文档；AI 运行时看 `index.ts` content） |
 | `__tests__/html-to-pptx.test.ts` | 纯映射器单测 + 浏览器可用时的真渲染集成测试 |
 
@@ -72,7 +72,9 @@ AI 写 css + slides[]（mode replace/append）
 ## Canvas 预览
 
 - `renderer: 'html'`（`shared/types/canvas.ts`），前端 `SlidesRenderer.vue`（iframe srcdoc）+ `CanvasPanel.vue` 挂载
-- `content`：完整 HTML 文档（仅内联推送，不落盘），每页一个 `width×height` 的子 iframe（srcdoc = 与导出同 wrapper），纯 CSS 容器查询 `scale(calc(100cqw / 画幅宽))` 适配容器宽 → 所见即所得（无脚本，规避 iframe sandbox 拦截）
+- `content`：完整 HTML 文档（仅内联推送，不落盘）。**单文档单 iframe**：每页放进一个固定画幅的 `.stage`（`position:absolute`，幻灯片内的绝对定位以此为基准），纯 CSS 容器查询 `transform:scale(calc(100cqw / 画幅宽))` 适配容器宽 → 所见即所得
+- **不用内层 iframe**：所有页本就共享同一份 css，无隔离需求。外层 SlidesRenderer iframe 是 `sandbox="allow-same-origin"`（无 allow-scripts），若在其中再创建无 allow-scripts 的 srcdoc 子帧，Chromium 会对每个子帧发出 benign 的 "Blocked script execution in about:srcdoc"。单文档零嵌套 iframe + 零脚本 → 控制台干净
+- **本地图片内联**：sandbox iframe 无法加载 `/abs/path.png`/`file://` 本地路径（显示空白），`buildPreviewDocument` 在 Node 侧读盘把 `<img src>` 的本地图片转成 `data:` URI（单图上限 8MB，失败则原样保留）。导出 pptx 不受影响（pptxgenjs 直接读盘嵌入）
 - `filePath`：导出的 `.pptx` 绝对路径 → 标题栏「打开 / 在文件夹中显示」直接定位成品
 - WYSIWYG 边界：预览用真实浏览器渲染，与导出走同一 wrapper，偏差极小；最终以 PowerPoint 打开为准
 
