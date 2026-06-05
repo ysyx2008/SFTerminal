@@ -40,6 +40,8 @@ import { AgentService } from '../agent'
 import { getConfigService } from '../config.service'
 import { t } from '../agent/i18n'
 import { createLogger } from '../../utils/logger'
+import path from 'path'
+import fs from 'fs'
 
 const log = createLogger('IMService')
 
@@ -148,8 +150,31 @@ function truncate(text: string, maxLen = 100): string {
 function formatToolNotification(toolName: string, toolArgs?: Record<string, unknown>): string {
   const icon = TOOL_ICONS[toolName] || '🔧'
   const i18nKey = TOOL_I18N_MAP[toolName]
-  const label = i18nKey ? t(i18nKey) : toolName
   const args = toolArgs || {}
+
+  // 文件发送工具：直接传文件名和大小参数渲染 label
+  if (
+    (toolName === 'send_file_to_chat' || toolName === 'send_image_to_chat' || toolName === 'send_to_chat') &&
+    i18nKey &&
+    (args.file_name || args.file_path)
+  ) {
+    const filePath = args.file_path ? String(args.file_path) : ''
+    const name = args.file_name ? String(args.file_name) : path.basename(filePath)
+    let size = ''
+    try {
+      if (filePath) {
+        const bytes = fs.statSync(filePath).size
+        if (bytes < 1024) size = ` (${bytes} B)`
+        else if (bytes < 1024 * 1024) size = ` (${(bytes / 1024).toFixed(1)} KB)`
+        else size = ` (${(bytes / 1024 / 1024).toFixed(2)} MB)`
+      }
+    } catch {
+      // 文件不存在或无权限，忽略大小
+    }
+    return `${t(i18nKey, { name: truncate(name), size })}`
+  }
+
+  const label = i18nKey ? t(i18nKey) : toolName
 
   // 根据工具类型附加关键参数
   let detail = ''
