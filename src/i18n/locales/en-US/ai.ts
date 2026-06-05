@@ -327,6 +327,11 @@ export default {
           subtitle: 'Auto-browse + extract',
           prompt: 'Open GitHub Trending Python (today), extract the top 10 projects with name, description, stars, and primary language, output as a table'
         },
+        deckFromReport: {
+          title: 'Report to slides',
+          subtitle: 'HTML preview + PPTX',
+          prompt: 'First load_skill("ppt"), then write 5 slides as slide HTML (title + 3 content + closing, theme=midnight) for this fictional briefing, and ppt_from_html to ~/Desktop/AI-Briefing.pptx:\n1. Global AI funding hit a record in 2025\n2. Lower inference cost drives app adoption\n3. Multimodal agents reach desktop workflows'
+        },
 
         // Automation & Watch
         watchEmail: {
@@ -450,6 +455,7 @@ export default {
       word_set_page: 'Set Word Page',
       word_track_changes: 'Track Word Changes',
       word_from_markdown: 'Generate Word from Markdown',
+      ppt_from_html: 'Generate PPT from slide HTML',
       word_create_style: 'Create Word Style',
       word_edit_style: 'Edit Word Style',
       word_delete_style: 'Delete Word Style',

@@ -231,6 +231,8 @@ export default {
 
   // Assistant Canvas panel (Markdown, etc.)
   canvas: {
+    slidesPreview: 'Slide preview',
+    slidesPreviewEmpty: 'No slide preview content',
     markdownSource: 'Markdown',
     markdownPreview: 'Preview',
     modeEdit: 'Edit',

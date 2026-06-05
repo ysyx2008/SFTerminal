@@ -64,6 +64,7 @@ export const ASSISTANT_EXAMPLES: AssistantExample[] = [
   { id: 'calendarCheck',  icon: '📅', category: 'office' },
   { id: 'feishuDoc',      icon: '🪶', category: 'office' },
   { id: 'browserAuto',    icon: '🖱️', category: 'office' },
+  { id: 'deckFromReport', icon: '📽️', category: 'office' },
 
   // 自动化与关切（3）
   { id: 'watchEmail',     icon: '⏰', category: 'automation' },

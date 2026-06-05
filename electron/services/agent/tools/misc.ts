@@ -16,6 +16,7 @@ import { executeSkillCreatorTool } from '../skills/skill-creator/executor'
 import { executePersonalityTool } from '../skills/personality/executor'
 import { executePdfTool } from '../skills/pdf/executor'
 import { executeChartTool } from '../skills/chart/executor'
+import { executePptTool } from '../skills/ppt/executor'
 import { executeFeishuTool } from '../skills/feishu/executor'
 import { executeWeComTool } from '../skills/wecom/executor'
 import { executeDingTalkTool } from '../skills/dingtalk/executor'
@@ -1001,6 +1002,10 @@ export async function executeSkillTool(
 
   if (toolName.startsWith('word_')) {
     return executeWordTool(toolName, id, args, toolCallId, config, executor)
+  }
+
+  if (toolName.startsWith('ppt_')) {
+    return executePptTool(toolName, id, args, toolCallId, config, executor)
   }
 
   if (toolName.startsWith('calendar_') || toolName.startsWith('todo_')) {

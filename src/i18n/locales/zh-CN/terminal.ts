@@ -231,6 +231,8 @@ export default {
 
   // 独立助手右侧 Canvas（Markdown 等）
   canvas: {
+    slidesPreview: '幻灯片预览',
+    slidesPreviewEmpty: '暂无幻灯片预览内容',
     markdownSource: 'Markdown',
     markdownPreview: '预览',
     modeEdit: '编辑',

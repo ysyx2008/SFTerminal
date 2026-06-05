@@ -327,6 +327,11 @@ export default {
           subtitle: '自动浏览 + 提取',
           prompt: '帮我打开 GitHub Trending 的 Python 榜单（今日），提取前 10 个项目的名称、描述、star 数和主语言，输出为表格'
         },
+        deckFromReport: {
+          title: '报告转幻灯片',
+          subtitle: 'HTML 预览 + PPTX',
+          prompt: '先 load_skill("ppt")，再按下面虚构要点写 5 页 slide HTML（title + 3 页 content + closing，theme=midnight），然后 ppt_from_html 导出到桌面「AI行业简报.pptx」：\n1. 2025 年全球 AI 融资创新高\n2. 推理成本下降推动应用落地\n3. 多模态 Agent 进入桌面工作流'
+        },
 
         // 自动化与关切
         watchEmail: {
@@ -450,6 +455,7 @@ export default {
       word_set_page: '设置 Word 页面',
       word_track_changes: '追踪 Word 修改',
       word_from_markdown: '从 Markdown 生成 Word',
+      ppt_from_html: '从 Slide HTML 生成 PPT',
       word_create_style: '创建 Word 样式',
       word_edit_style: '编辑 Word 样式',
       word_delete_style: '删除 Word 样式',

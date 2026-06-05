@@ -6,13 +6,14 @@
  */
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X, TerminalSquare, FileText, Table2, FileCode, FolderOpen, ChevronDown, Folder } from 'lucide-vue-next'
+import { X, TerminalSquare, FileText, Table2, FileCode, Presentation, FolderOpen, ChevronDown, Folder } from 'lucide-vue-next'
 import { useCanvasStore } from '../../stores/canvas'
 import { useToast } from '../../composables/useToast'
 import TerminalRenderer from './TerminalRenderer.vue'
 import DocumentRenderer from './DocumentRenderer.vue'
 import SpreadsheetRenderer from './SpreadsheetRenderer.vue'
 import MarkdownRenderer from './MarkdownRenderer.vue'
+import SlidesRenderer from './SlidesRenderer.vue'
 
 const props = defineProps<{
   tabId: string
@@ -97,6 +98,7 @@ const rendererIcon = computed(() => {
     case 'document': return FileText
     case 'spreadsheet': return Table2
     case 'markdown': return FileCode
+    case 'html': return Presentation
     default: return TerminalSquare
   }
 })
@@ -163,6 +165,10 @@ defineExpose({
       />
       <MarkdownRenderer
         v-else-if="renderer === 'markdown'"
+        :tab-id="tabId"
+      />
+      <SlidesRenderer
+        v-else-if="renderer === 'html'"
         :tab-id="tabId"
       />
     </div>
