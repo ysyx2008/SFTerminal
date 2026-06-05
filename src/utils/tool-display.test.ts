@@ -216,28 +216,71 @@ describe('shouldShowToolResultStep', () => {
   })
 
   describe('ALWAYS_SHOW_RESULT_TOOLS：动作型工具结果始终展示', () => {
-    it('write_text_file 的 tool_result 在非调试模式下展示', () => {
+    it('remember_info 的 tool_result 在非调试模式下展示', () => {
       expect(
         shouldShowToolResultStep(
-          { type: 'tool_result', toolName: 'write_text_file', success: true },
-          false
-        )
-      ).toBe(true)
-    })
-
-    it('edit_file 的 tool_result 在非调试模式下展示', () => {
-      expect(
-        shouldShowToolResultStep(
-          { type: 'tool_result', toolName: 'edit_file', success: true },
+          { type: 'tool_result', toolName: 'remember_info', success: true },
           false
         )
       ).toBe(true)
     })
 
     it('集合内容和文档约定一致', () => {
-      expect(ALWAYS_SHOW_RESULT_TOOLS.has('edit_file')).toBe(true)
-      expect(ALWAYS_SHOW_RESULT_TOOLS.has('write_text_file')).toBe(true)
       expect(ALWAYS_SHOW_RESULT_TOOLS.has('remember_info')).toBe(true)
+      expect(ALWAYS_SHOW_RESULT_TOOLS.has('dispatch_agents')).toBe(true)
+    })
+  })
+
+  describe('写入/修改类：成功时 tool_result 隐藏（tool_call 绿条已表达结果）', () => {
+    it('edit_file 的 tool_result 成功时隐藏', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_result', toolName: 'edit_file', success: true },
+          false
+        )
+      ).toBe(false)
+    })
+
+    it('edit_file 的 tool_call 成功时仍展示', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_call', toolName: 'edit_file', success: true },
+          false
+        )
+      ).toBe(true)
+    })
+
+    it('edit_file 失败时 tool_result 仍展示', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_result', toolName: 'edit_file', success: false },
+          false
+        )
+      ).toBe(true)
+    })
+
+    it('write_text_file 的 tool_result 成功时隐藏', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_result', toolName: 'write_text_file', success: true },
+          false
+        )
+      ).toBe(false)
+    })
+
+    it('write_remote_text_file 的 tool_result 成功时隐藏', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_result', toolName: 'write_remote_text_file', success: true },
+          false
+        )
+      ).toBe(false)
+    })
+
+    it('集合归属 HIDE_RESULT_WHEN_SUCCESS_TOOLS', () => {
+      expect(HIDE_RESULT_WHEN_SUCCESS_TOOLS.has('edit_file')).toBe(true)
+      expect(HIDE_RESULT_WHEN_SUCCESS_TOOLS.has('write_text_file')).toBe(true)
+      expect(HIDE_RESULT_WHEN_SUCCESS_TOOLS.has('write_remote_text_file')).toBe(true)
     })
   })
 
@@ -309,6 +352,15 @@ describe('shouldShowToolResultStep', () => {
       expect(
         shouldShowToolResultStep(
           { type: 'tool_result', toolName: 'execute_command', success: true },
+          true
+        )
+      ).toBe(true)
+    })
+
+    it('edit_file 成功时 tool_result 也展示（调试模式可见完整链路）', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_result', toolName: 'edit_file', success: true },
           true
         )
       ).toBe(true)

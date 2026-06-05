@@ -40,10 +40,6 @@ export const TOOLS_WITH_DEDICATED_STEP_TYPE = new Set<string>([
 
 /** A 类：用户必看的"动作型"工具结果——任何模式下都展示 */
 export const ALWAYS_SHOW_RESULT_TOOLS = new Set<string>([
-  // 写入/修改类
-  'edit_file',
-  'write_text_file',
-  'write_remote_text_file',
   // 子 Agent / 计划 / 用户互动（多数有专用 step type，这里列出是为完备）
   'dispatch_agents',
   // 记忆类（用户应该看到记了什么）
@@ -78,6 +74,11 @@ export const HIDE_RESULT_WHEN_SUCCESS_TOOLS = new Set<string>([
   'exec',
   'send_input',
   'send_control_key',
+  // C2. 写入/修改类——tool_call 卡已含操作 + 路径 + 行号，成功时左竖条变绿即可，
+  //     再展示 tool_result（如「文件编辑成功」）与 tool_call 重复；调试模式下仍展示 tool_result。
+  'edit_file',
+  'write_text_file',
+  'write_remote_text_file',
   // D. 分屏管理类——窗格变化在 UI 上直观可见，不需要 tool_result 卡再复述；
   //    list_panes / list_ssh_sessions 是纯查询，结果只对 Agent 自身有意义。
   //    失败时（如 paneId 不存在）会按"失败始终展示"逻辑自动显示出来。
