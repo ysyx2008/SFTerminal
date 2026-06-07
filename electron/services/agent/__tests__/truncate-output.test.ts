@@ -1,13 +1,53 @@
 /**
  * exec 输出截断 helper 单元测试
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   truncateFromEndDetailed,
   truncateFromEndWithNotice,
   truncateSandwichDetailed,
   truncateSandwichWithNotice,
 } from '../tools/utils'
+import { executeCommandDirect } from '../tools/exec'
+import { getExecManager } from '../tools/exec-manager'
+import type { AgentConfig, ToolExecutorConfig } from '../tools/types'
+
+/** 与 exec.ts 中 OUTPUT_TRUNCATE 保持一致 */
+const EXEC_OUTPUT_TRUNCATE = 16_384
+
+const isWin = process.platform === 'win32'
+const itPosix = isWin ? it.skip : it
+
+function createMinimalExecutor(): ToolExecutorConfig {
+  return {
+    agentId: 'test-exec-output',
+    terminalService: {} as ToolExecutorConfig['terminalService'],
+    addStep: vi.fn((partial) => ({
+      id: 'step-1',
+      timestamp: Date.now(),
+      ...partial,
+    })),
+    updateStep: vi.fn(),
+    waitForConfirmation: vi.fn().mockResolvedValue(true),
+    requestSecureInput: vi.fn().mockResolvedValue(true),
+    isAborted: vi.fn().mockReturnValue(false),
+    getHostId: vi.fn().mockReturnValue(undefined),
+    hasPendingUserMessage: vi.fn().mockReturnValue(false),
+    peekPendingUserMessage: vi.fn().mockReturnValue(undefined),
+    consumePendingUserMessage: vi.fn().mockReturnValue(undefined),
+    getRealtimeTerminalOutput: vi.fn().mockReturnValue([]),
+    getCurrentPlan: vi.fn().mockReturnValue(undefined),
+    setCurrentPlan: vi.fn(),
+    getTaskMemory: vi.fn() as ToolExecutorConfig['getTaskMemory'],
+  }
+}
+
+const freeModeConfig: AgentConfig = {
+  executionMode: 'free',
+  commandTimeout: 30_000,
+  aiProfileId: 'test',
+  language: 'zh-CN',
+} as AgentConfig
 
 describe('truncateFromEndDetailed', () => {
   it('短文本不截断', () => {
@@ -85,5 +125,67 @@ describe('truncateSandwichWithNotice', () => {
     expect(out.startsWith('[total=')).toBe(true)
     expect(out).toContain('row-0')
     expect(out).toContain('row-99')
+  })
+})
+
+describe('truncateSandwichDetailed — exec 16KB 预算', () => {
+  it('grep 场景：首行命中与末行错误同时可见', () => {
+    const head = ['./src/foo.ts:42: first grep hit']
+    const middle = Array.from({ length: 800 }, (_, i) => `./src/file-${i}.ts:1: noise`)
+    const tail = ['npm error code ELIFECYCLE', 'npm error command failed']
+    const input = [...head, ...middle, ...tail].join('\n')
+    const result = truncateSandwichDetailed(input, EXEC_OUTPUT_TRUNCATE)
+    expect(result.truncated).toBe(true)
+    expect(result.text).toContain('first grep hit')
+    expect(result.text).toContain('npm error command failed')
+    expect(result.omittedLines).toBeGreaterThan(0)
+  })
+
+  it('截断后 shownLength 不超过预算（不含后续 notice 行）', () => {
+    const input = Array.from({ length: 4000 }, (_, i) => `log line ${i}`).join('\n')
+    const result = truncateSandwichDetailed(input, EXEC_OUTPUT_TRUNCATE)
+    expect(result.truncated).toBe(true)
+    expect(result.shownLength).toBeLessThanOrEqual(EXEC_OUTPUT_TRUNCATE)
+  })
+})
+
+describe('executeCommandDirect — 输出截断集成', () => {
+  beforeEach(() => {
+    getExecManager()._resetForTest()
+  })
+
+  afterEach(() => {
+    getExecManager()._resetForTest()
+  })
+
+  itPosix('短输出不附加截断 notice', async () => {
+    const result = await executeCommandDirect(
+      { command: 'echo hello-exec-truncate' },
+      'tc-short',
+      freeModeConfig,
+      createMinimalExecutor()
+    )
+    expect(result.success).toBe(true)
+    expect(result.output).toContain('hello-exec-truncate')
+    expect(result.output).not.toContain('输出已截断')
+    expect(result.output).not.toContain('Output truncated')
+  })
+
+  itPosix('超长多行输出附加截断 notice 并保留头尾', async () => {
+    const lineCount = 3000
+    const result = await executeCommandDirect(
+      {
+        command: `node -e "console.log(Array.from({length:${lineCount}}, (_, i) => 'line-' + i).join('\\n'))"`,
+        wait_seconds: 30,
+      },
+      'tc-long',
+      freeModeConfig,
+      createMinimalExecutor()
+    )
+    expect(result.success).toBe(true)
+    expect(result.output).toMatch(/输出已截断|Output truncated/)
+    expect(result.output).toContain('line-0')
+    expect(result.output).toContain(`line-${lineCount - 1}`)
+    expect(result.output).toContain('\n...\n')
   })
 })
