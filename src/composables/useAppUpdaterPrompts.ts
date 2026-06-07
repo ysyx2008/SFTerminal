@@ -1,9 +1,11 @@
 import { useI18n } from 'vue-i18n'
 import { showConfirm } from './useConfirm'
+import type { ConfirmDialogOptions } from './useConfirm'
 import { toast } from './useToast'
 import { createLogger } from '../utils/logger'
 import type { LocaleType } from '../i18n'
-import { getDownloadPageUrl } from '../config/urls'
+import { getChangelogPageUrl, getDownloadPageUrl } from '../config/urls'
+import { getReleaseSummary } from '../utils/releaseMeta'
 
 const log = createLogger('AppUpdater')
 
@@ -21,6 +23,23 @@ export function useAppUpdaterPrompts() {
   let lastMacAvailablePromptVersion = ''
   let lastWinLinuxAvailablePromptVersion = ''
   let installPromptOpen = false
+
+  function openChangelog(): void {
+    window.open(getChangelogPageUrl(locale.value as LocaleType), '_blank')
+  }
+
+  async function buildUpdatePromptOptions(
+    base: Omit<ConfirmDialogOptions, 'neutralText' | 'onNeutral' | 'detail'>,
+    version: string,
+  ): Promise<ConfirmDialogOptions> {
+    const summary = await getReleaseSummary(version, locale.value as LocaleType)
+    return {
+      ...base,
+      ...(summary ? { detail: summary } : {}),
+      neutralText: t('about.viewChangelog'),
+      onNeutral: openChangelog,
+    }
+  }
 
   async function isInstallOnQuitEnabled(): Promise<boolean> {
     const value = await window.electronAPI.config.get('installUpdateOnQuit') as boolean | undefined
@@ -69,13 +88,13 @@ export function useAppUpdaterPrompts() {
     installPromptOpen = true
     lastWinLinuxAvailablePromptVersion = version
     try {
-      const startDownload = await showConfirm({
+      const startDownload = await showConfirm(await buildUpdatePromptOptions({
         title: t('about.newVersionAvailable', { version }),
         message: t('about.updateAvailableMessageManual', { version }),
         confirmText: t('about.downloadUpdate'),
         cancelText: t('about.updateLater'),
         type: 'default',
-      })
+      }, version))
       if (startDownload) {
         const source = status.sources?.current ?? status.sources?.recommended
         const result = await window.electronAPI.updater.downloadUpdate(source)
@@ -98,13 +117,13 @@ export function useAppUpdaterPrompts() {
     installPromptOpen = true
     lastMacAvailablePromptVersion = version
     try {
-      const goDownload = await showConfirm({
+      const goDownload = await showConfirm(await buildUpdatePromptOptions({
         title: t('about.newVersionAvailable', { version }),
         message: t('about.updateReadyMessageMac', { version }),
         confirmText: t('about.goToDownload'),
         cancelText: t('about.updateLater'),
         type: 'default',
-      })
+      }, version))
       if (goDownload) {
         window.open(getDownloadPageUrl(locale.value as LocaleType), '_blank')
       } else {
@@ -127,13 +146,13 @@ export function useAppUpdaterPrompts() {
     installPromptOpen = true
     try {
       if (isMac) {
-        const goDownload = await showConfirm({
+        const goDownload = await showConfirm(await buildUpdatePromptOptions({
           title: t('about.updateReadyTitle'),
           message: t('about.updateReadyMessageMac', { version }),
           confirmText: t('about.goToDownload'),
           cancelText: t('about.updateLater'),
           type: 'default',
-        })
+        }, version))
         if (goDownload) {
           window.open(getDownloadPageUrl(locale.value as LocaleType), '_blank')
         } else {
@@ -143,7 +162,7 @@ export function useAppUpdaterPrompts() {
       }
 
       const installOnQuit = await isInstallOnQuitEnabled()
-      const installNow = await showConfirm({
+      const installNow = await showConfirm(await buildUpdatePromptOptions({
         title: t('about.updateReadyTitle'),
         message: installOnQuit
           ? t('about.updateReadyMessage', { version })
@@ -151,7 +170,7 @@ export function useAppUpdaterPrompts() {
         confirmText: t('about.installAndRestart'),
         cancelText: await laterButtonLabel(),
         type: 'default',
-      })
+      }, version))
       if (installNow) {
         await window.electronAPI.updater.quitAndInstall()
       } else {

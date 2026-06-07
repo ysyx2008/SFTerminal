@@ -6,7 +6,8 @@ import { useConfigStore } from '../../stores/config'
 import { oemConfig } from '../../config/oem.config'
 import type { LocaleType } from '../../i18n'
 import { getLocale } from '../../i18n'
-import { getDownloadPageUrl, getWebsiteUrl } from '../../config/urls'
+import { getDownloadPageUrl, getWebsiteUrl, getChangelogPageUrl } from '../../config/urls'
+import { getReleaseSummary } from '../../utils/releaseMeta'
 import AiSettings from './AiSettings.vue'
 import AiRulesSettings from './AiRulesSettings.vue'
 import ThemeSettings from './ThemeSettings.vue'
@@ -90,7 +91,9 @@ const copyQQGroup = async () => {
 // 平台检测 - macOS 上仅支持检查更新 + 手动下载（无公证签名，不支持自动更新）
 const isMac = computed(() => navigator.platform.toLowerCase().includes('mac'))
 const downloadPageUrl = computed(() => getDownloadPageUrl(locale.value as LocaleType))
+const changelogPageUrl = computed(() => getChangelogPageUrl(locale.value as LocaleType))
 const websiteUrl = computed(() => getWebsiteUrl(locale.value as LocaleType))
+const releaseSummary = ref('')
 
 // 品牌信息
 const brandName = computed(() => {
@@ -398,6 +401,18 @@ watch(() => props.initialTab, (newTab) => {
   applyInitialTab(newTab)
 })
 
+watch(
+  () => [updateStatus.value.status, updateStatus.value.info?.version, locale.value] as const,
+  async ([status, version]) => {
+    if ((status === 'available' || status === 'downloaded') && version) {
+      releaseSummary.value = (await getReleaseSummary(version, locale.value as LocaleType)) || ''
+    } else {
+      releaseSummary.value = ''
+    }
+  },
+  { immediate: true },
+)
+
 // 初始化时设置初始 tab 和获取版本号
 onMounted(async () => {
   applyInitialTab(props.initialTab)
@@ -650,6 +665,8 @@ const onQrImageError = (event: Event) => {
                   <span class="update-icon">🎉</span>
                   <span>{{ t('about.newVersionAvailable', { version: updateStatus.info?.version }) }}</span>
                 </div>
+                <p v-if="releaseSummary" class="update-summary">{{ releaseSummary }}</p>
+                <a :href="changelogPageUrl" target="_blank" class="update-changelog-link">{{ t('about.viewChangelog') }}</a>
                 <!-- macOS：前往下载页手动更新 -->
                 <template v-if="isMac">
                   <a 
@@ -707,6 +724,8 @@ const onQrImageError = (event: Event) => {
                   <span class="update-icon">✅</span>
                   <span>{{ t('about.updateReady', { version: updateStatus.info?.version }) }}</span>
                 </div>
+                <p v-if="releaseSummary" class="update-summary">{{ releaseSummary }}</p>
+                <a :href="changelogPageUrl" target="_blank" class="update-changelog-link">{{ t('about.viewChangelog') }}</a>
                 <button type="button" class="btn btn-primary update-btn" @click="installUpdate">
                   🚀 {{ t('about.installAndRestart') }}
                 </button>
@@ -1116,6 +1135,26 @@ const onQrImageError = (event: Event) => {
   align-items: center;
   gap: 8px;
   font-size: 14px;
+}
+
+.update-summary {
+  margin: 8px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.update-changelog-link {
+  display: inline-block;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+.update-changelog-link:hover {
+  text-decoration: underline;
 }
 
 .update-icon {

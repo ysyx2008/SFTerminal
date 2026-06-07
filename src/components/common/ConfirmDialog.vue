@@ -266,11 +266,13 @@ const getIcon = () => {
   white-space: nowrap;
 }
 
-/* 详细信息 */
+/* 详细信息（如更新摘要） */
 .dialog-detail {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin: 0 0 16px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: -8px 0 16px 0;
+  line-height: 1.5;
+  max-width: 100%;
 }
 
 /* 按钮 */

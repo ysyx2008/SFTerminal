@@ -18,3 +18,9 @@ export function getDownloadPageUrl(locale?: LocaleType): string {
   const path = websitePathForLocale(locale)
   return path ? `${WEBSITE_BASE}${path}/#download` : `${WEBSITE_BASE}/#download`
 }
+
+/** 官网更新日志页 */
+export function getChangelogPageUrl(locale?: LocaleType): string {
+  const path = websitePathForLocale(locale)
+  return path ? `${WEBSITE_BASE}${path}/changelog` : `${WEBSITE_BASE}/changelog`
+}

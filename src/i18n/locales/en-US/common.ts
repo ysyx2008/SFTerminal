@@ -208,6 +208,7 @@ export default {
     installUpdateOnQuit: 'Install updates when quitting',
     installUpdateOnQuitHint: 'After download, "Install on quit" applies the update when you close the app',
     goToDownload: 'Go to Download',
+    viewChangelog: 'View Changelog',
     downloadSource: 'Download Source',
     sourceRecommended: 'Best',
     sourceUnreachable: 'N/A',

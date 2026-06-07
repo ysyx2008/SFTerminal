@@ -208,6 +208,7 @@ export default {
     installUpdateOnQuit: '退出应用时安装更新',
     installUpdateOnQuitHint: '下载完成后可选「退出时安装」，关闭应用时自动完成更新',
     goToDownload: '前往下载',
+    viewChangelog: '查看更新日志',
     downloadSource: '下载源',
     sourceRecommended: '推荐',
     sourceUnreachable: '不可达',

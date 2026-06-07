@@ -153,6 +153,9 @@ jobs:
         id: get_version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
+      - name: Generate release-meta.json
+        run: node scripts/generate-release-meta.js ${GITHUB_REF#refs/tags/v} release-meta.json
+
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
@@ -183,6 +186,7 @@ jobs:
             ---
 
           files: |
+            release-meta.json
             artifacts/windows-release/*
             artifacts/macos-release/*
             artifacts/linux-release/*
@@ -196,6 +200,9 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -209,6 +216,9 @@ jobs:
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate release-meta.json
+        run: node scripts/generate-release-meta.js ${{ steps.get_version.outputs.VERSION }} release-meta.json
 
       - name: Setup aliyun ossutil
         run: |
@@ -265,6 +275,9 @@ jobs:
             $OSSUTIL cp ${LIN}/latest-linux.yml ${BUCKET}/releases/latest-linux.yml -f
             $OSSUTIL cp ${LIN}/SailFish-${VERSION}.AppImage ${BUCKET}/releases/SailFish-${VERSION}.AppImage -f
           fi
+
+          # 更新弹窗版本摘要
+          $OSSUTIL cp release-meta.json ${BUCKET}/releases/release-meta.json -f
           
           echo "✅ All files uploaded to OSS successfully!"
 

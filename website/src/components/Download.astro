@@ -2,8 +2,12 @@
 import { useTranslations, type Lang } from '../i18n/utils';
 import { defaultLanguage } from '../i18n/translations';
 import { readRootPackageVersion } from '../lib/app-version';
+import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
+
+const require = createRequire(import.meta.url);
+const { extractVersionSummary } = require('../../../scripts/extract-changelog-summary.js');
 
 interface Props {
   lang?: Lang;
@@ -42,11 +46,7 @@ try {
   const changelogFile = lang === 'zh' ? 'CHANGELOG_CN.md' : 'CHANGELOG.md';
   const changelogPath = path.resolve(process.cwd(), '..', changelogFile);
   const content = fs.readFileSync(changelogPath, 'utf-8');
-  const versionEscaped = version.replace(/\./g, '\\.');
-  const match = content.match(new RegExp(`^## v${versionEscaped}\\b[^\\n]*\\n\\n(.+)`, 'm'));
-  if (match) {
-    versionSummary = match[1].trim();
-  }
+  versionSummary = extractVersionSummary(content, version);
 } catch (error) {
   console.warn('Failed to read changelog for version summary');
 }
