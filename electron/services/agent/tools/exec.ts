@@ -28,7 +28,8 @@ const OUTPUT_TRUNCATE = 16_384      // 返回给 Agent 的输出截断（16KB）
 
 /**
  * 把后台任务原始输出整理为 Agent 可读形态：先 trim 掉首尾空白（与旧版 exec 行为一致，
- * 避免 LLM 看到无意义的尾部换行），再按行做 16KB 头尾 sandwich 截断；超长行在行内按字符截断。
+ * 避免 LLM 看到无意义的尾部换行），再按行做 16KB 头尾 sandwich（优先整行保留；
+ * 仅当单行超出段内预算时才行内字符截断）。
  */
 function formatTaskOutput(raw: string): string {
   return truncateSandwichWithNotice(

@@ -168,12 +168,7 @@ export interface TruncateSandwichResult extends TruncateFromEndResult, TruncateS
 
 const SANDWICH_GAP = '\n...\n'
 
-/** 单行超过此长度（相对预算）时按字符头尾截断，而非整行保留 */
-function longLineThreshold(maxLength: number): number {
-  return Math.max(256, Math.floor(maxLength / 4))
-}
-
-/** 在 budget 内对超长行做字符级头尾保留 */
+/** 在 budget 内对单行做字符级头尾保留（仅当整行放不下时） */
 function truncateLongLine(line: string, budget: number): string {
   if (line.length <= budget) return line
   if (budget <= 6) return line.slice(0, Math.max(0, budget))
@@ -221,75 +216,69 @@ interface LineSegment {
   length: number
 }
 
-/** 从开头按行累积，直到超出 halfBudget；遇超长行则行内字符截断 */
+/** 从开头按整行累积；仅当下一行整行放不下时才对该行做字符截断 */
 function takeHeadLines(lines: string[], halfBudget: number): LineSegment {
   const picked: string[] = []
   let used = 0
   let endIndex = -1
-  const threshold = longLineThreshold(halfBudget * 2)
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     const sep = picked.length > 0 ? 1 : 0
-    const thresholdHit = line.length > threshold
+    const add = sep + line.length
 
-    if (thresholdHit) {
-      const remaining = halfBudget - used - sep
-      if (remaining > 0) {
-        picked.push(truncateLongLine(line, remaining))
-        used += sep + picked[picked.length - 1].length
-      }
+    if (used + add <= halfBudget) {
+      picked.push(line)
+      used += add
       endIndex = i
-      break
+      continue
     }
 
-    const add = line.length + sep
-    if (used + add > halfBudget) break
-
-    picked.push(line)
-    used += add
-    endIndex = i
+    const remaining = halfBudget - used - sep
+    if (remaining > 0 && line.length > remaining) {
+      picked.push(truncateLongLine(line, remaining))
+      used += sep + picked[picked.length - 1].length
+      endIndex = i
+    }
+    break
   }
 
   return { lines: picked, endIndex, length: used }
 }
 
-/** 从末尾按行累积；minIndex 为 head 已占用的最后一行 index */
+/** 从末尾按整行累积；minIndex 为 head 已占用的最后一行 index */
 function takeTailLines(lines: string[], halfBudget: number, minIndex: number): LineSegment & { startIndex: number } {
   const picked: string[] = []
   let used = 0
   let startIndex = lines.length
-  const threshold = longLineThreshold(halfBudget * 2)
 
   for (let i = lines.length - 1; i > minIndex; i--) {
     const line = lines[i]
     const sep = picked.length > 0 ? 1 : 0
-    const thresholdHit = line.length > threshold
+    const add = sep + line.length
 
-    if (thresholdHit) {
-      const remaining = halfBudget - used - sep
-      if (remaining > 0) {
-        picked.unshift(truncateLongLine(line, remaining))
-        used += sep + picked[0].length
-      }
+    if (used + add <= halfBudget) {
+      picked.unshift(line)
+      used += add
       startIndex = i
-      break
+      continue
     }
 
-    const add = line.length + sep
-    if (used + add > halfBudget) break
-
-    picked.unshift(line)
-    used += add
-    startIndex = i
+    const remaining = halfBudget - used - sep
+    if (remaining > 0 && line.length > remaining) {
+      picked.unshift(truncateLongLine(line, remaining))
+      used += sep + picked[0].length
+      startIndex = i
+    }
+    break
   }
 
   return { lines: picked, endIndex: lines.length - 1, startIndex, length: used }
 }
 
 /**
- * 按行头尾 sandwich 截断；单行或行间无法切开时回退字符级 sandwich。
- * 超长行在段内按字符头尾截断，避免整行撑爆预算。
+ * 按行头尾 sandwich 截断：优先保留完整行，仅当单行超出段内预算时才行内字符截断。
+ * 仅一行或 head/tail 无法分行切开时回退字符级 sandwich。
  */
 export function truncateSandwichDetailed(text: string, maxLength: number): TruncateSandwichResult {
   const originalLength = text.length
@@ -306,11 +295,13 @@ export function truncateSandwichDetailed(text: string, maxLength: number): Trunc
     }
   }
 
-  if (!text.includes('\n')) {
+  const lines = text.split('\n')
+
+  // 无换行 / 仅一行：无法按行切分
+  if (lines.length === 1) {
     return truncateCharSandwich(text, maxLength)
   }
 
-  const lines = text.split('\n')
   const gapLen = SANDWICH_GAP.length
   const bodyBudget = Math.max(0, maxLength - gapLen)
   const halfBudget = Math.floor(bodyBudget / 2)

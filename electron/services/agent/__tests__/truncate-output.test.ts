@@ -103,15 +103,25 @@ describe('truncateSandwichDetailed', () => {
     expect(result.omittedChars).toBeGreaterThan(0)
   })
 
-  it('含一条超长行时行内截断而不撑爆预算', () => {
+  it('含一条超长行时优先保留前后整行', () => {
     const short = Array.from({ length: 5 }, (_, i) => `short-${i}`)
     const longLine = 'L'.repeat(10_000)
     const input = [...short, longLine, 'tail-line'].join('\n')
     const result = truncateSandwichDetailed(input, 600)
     expect(result.truncated).toBe(true)
     expect(result.text).toContain('short-0')
+    expect(result.text).toContain('short-4')
     expect(result.text).toContain('tail-line')
+    expect(result.text).toMatch(/^short-0\nshort-1/m)
     expect(result.shownLength).toBeLessThanOrEqual(600)
+  })
+
+  it('单行未超预算时整行保留，不因行较长而字符截断', () => {
+    const longButFits = 'x'.repeat(5000)
+    const input = ['head-line', longButFits, 'tail-line'].join('\n')
+    const result = truncateSandwichDetailed(input, EXEC_OUTPUT_TRUNCATE)
+    expect(result.truncated).toBe(false)
+    expect(result.text).toBe(input)
   })
 })
 
