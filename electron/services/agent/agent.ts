@@ -2180,6 +2180,19 @@ export abstract class Agent {
           this.discardPreToolCallSteps(run)
           // 重试最终失败时也要把 spinner 关掉，否则"正在重试"卡片会一直转
           finalizeRetryStep()
+          // 清理残留的流式步骤：最后一次重试若已收到部分 chunk，stream step 的
+          // isStreaming 还是 true，计时器会一直跑；移除它，避免"思考中 XXXs"僵在屏幕上
+          if (streamStepCreated) {
+            this.removeStep(streamStepId)
+            streamStepCreated = false
+          }
+          // 清理初始"正在准备..."占位步骤：首次请求就失败（无重试）或 onRetry 里
+          // retryInfo 为空（vision-fallback 等内部重试）时，initialStepId 不会在
+          // onRetry 中被清理，需要在这里兜底清理，否则计时器会一直跑
+          if (run.initialStepId) {
+            this.removeStep(run.initialStepId)
+            run.initialStepId = undefined
+          }
           reject(new Error(error))
         },
         effectiveProfileId, // 视觉路由：有新图片时自动切换到视觉模型
@@ -2283,6 +2296,13 @@ export abstract class Agent {
             })
             // waiting 卡已经"接班"显示状态，再移除初始"正在准备..."步骤
             // 顺序：先 add 再 remove，避免前端 steps 瞬时为 0 的中间态
+            if (run.initialStepId) {
+              this.removeStep(run.initialStepId)
+              run.initialStepId = undefined
+            }
+          } else {
+            // retryInfo 缺失（vision-fallback 等）：不展示 waiting 卡，但仍需清理
+            // 初始占位步骤，否则"正在准备..."会在无 waiting 接班时孤立显示
             if (run.initialStepId) {
               this.removeStep(run.initialStepId)
               run.initialStepId = undefined
