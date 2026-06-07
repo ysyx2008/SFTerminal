@@ -150,6 +150,245 @@ export function truncateFromEnd(text: string, maxLength: number): string {
   return result.join('\n')
 }
 
+export interface TruncateFromEndResult {
+  text: string
+  truncated: boolean
+  originalLength: number
+  shownLength: number
+}
+
+export interface TruncateSandwichStats {
+  headChars: number
+  tailChars: number
+  omittedLines: number
+  omittedChars: number
+}
+
+export interface TruncateSandwichResult extends TruncateFromEndResult, TruncateSandwichStats {}
+
+const SANDWICH_GAP = '\n...\n'
+
+/** 单行超过此长度（相对预算）时按字符头尾截断，而非整行保留 */
+function longLineThreshold(maxLength: number): number {
+  return Math.max(256, Math.floor(maxLength / 4))
+}
+
+/** 在 budget 内对超长行做字符级头尾保留 */
+function truncateLongLine(line: string, budget: number): string {
+  if (line.length <= budget) return line
+  if (budget <= 6) return line.slice(0, Math.max(0, budget))
+  const marker = '...'
+  const side = Math.floor((budget - marker.length) / 2)
+  if (side <= 0) return marker.slice(0, budget)
+  return line.slice(0, side) + marker + line.slice(-side)
+}
+
+function countNewlines(text: string): number {
+  if (!text) return 0
+  let count = 0
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\n') count++
+  }
+  return count
+}
+
+/** 字符级头尾 sandwich（用于单行 / 行 sandwich 放不下时） */
+function truncateCharSandwich(text: string, maxLength: number): TruncateSandwichResult {
+  const originalLength = text.length
+  const gapLen = SANDWICH_GAP.length
+  const bodyBudget = Math.max(0, maxLength - gapLen)
+  const half = Math.floor(bodyBudget / 2)
+  const head = text.slice(0, half)
+  const tail = text.slice(originalLength - half)
+  const body = head + SANDWICH_GAP + tail
+  const omittedChars = Math.max(0, originalLength - head.length - tail.length)
+  return {
+    text: body,
+    truncated: true,
+    originalLength,
+    shownLength: body.length,
+    headChars: head.length,
+    tailChars: tail.length,
+    omittedLines: countNewlines(text.slice(head.length, originalLength - tail.length)),
+    omittedChars,
+  }
+}
+
+interface LineSegment {
+  lines: string[]
+  /** 在原始 lines 数组中占用的最后一行 index（inclusive） */
+  endIndex: number
+  length: number
+}
+
+/** 从开头按行累积，直到超出 halfBudget；遇超长行则行内字符截断 */
+function takeHeadLines(lines: string[], halfBudget: number): LineSegment {
+  const picked: string[] = []
+  let used = 0
+  let endIndex = -1
+  const threshold = longLineThreshold(halfBudget * 2)
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const sep = picked.length > 0 ? 1 : 0
+    const thresholdHit = line.length > threshold
+
+    if (thresholdHit) {
+      const remaining = halfBudget - used - sep
+      if (remaining > 0) {
+        picked.push(truncateLongLine(line, remaining))
+        used += sep + picked[picked.length - 1].length
+      }
+      endIndex = i
+      break
+    }
+
+    const add = line.length + sep
+    if (used + add > halfBudget) break
+
+    picked.push(line)
+    used += add
+    endIndex = i
+  }
+
+  return { lines: picked, endIndex, length: used }
+}
+
+/** 从末尾按行累积；minIndex 为 head 已占用的最后一行 index */
+function takeTailLines(lines: string[], halfBudget: number, minIndex: number): LineSegment & { startIndex: number } {
+  const picked: string[] = []
+  let used = 0
+  let startIndex = lines.length
+  const threshold = longLineThreshold(halfBudget * 2)
+
+  for (let i = lines.length - 1; i > minIndex; i--) {
+    const line = lines[i]
+    const sep = picked.length > 0 ? 1 : 0
+    const thresholdHit = line.length > threshold
+
+    if (thresholdHit) {
+      const remaining = halfBudget - used - sep
+      if (remaining > 0) {
+        picked.unshift(truncateLongLine(line, remaining))
+        used += sep + picked[0].length
+      }
+      startIndex = i
+      break
+    }
+
+    const add = line.length + sep
+    if (used + add > halfBudget) break
+
+    picked.unshift(line)
+    used += add
+    startIndex = i
+  }
+
+  return { lines: picked, endIndex: lines.length - 1, startIndex, length: used }
+}
+
+/**
+ * 按行头尾 sandwich 截断；单行或行间无法切开时回退字符级 sandwich。
+ * 超长行在段内按字符头尾截断，避免整行撑爆预算。
+ */
+export function truncateSandwichDetailed(text: string, maxLength: number): TruncateSandwichResult {
+  const originalLength = text.length
+  if (originalLength <= maxLength) {
+    return {
+      text,
+      truncated: false,
+      originalLength,
+      shownLength: originalLength,
+      headChars: originalLength,
+      tailChars: 0,
+      omittedLines: 0,
+      omittedChars: 0,
+    }
+  }
+
+  if (!text.includes('\n')) {
+    return truncateCharSandwich(text, maxLength)
+  }
+
+  const lines = text.split('\n')
+  const gapLen = SANDWICH_GAP.length
+  const bodyBudget = Math.max(0, maxLength - gapLen)
+  const halfBudget = Math.floor(bodyBudget / 2)
+
+  const head = takeHeadLines(lines, halfBudget)
+  const tail = takeTailLines(lines, halfBudget, head.endIndex)
+
+  if (head.lines.length === 0 && tail.lines.length === 0) {
+    return truncateCharSandwich(text, maxLength)
+  }
+
+  // head/tail 行区间重叠或贴在一起 → 字符 sandwich
+  if (tail.startIndex <= head.endIndex + 1) {
+    return truncateCharSandwich(text, maxLength)
+  }
+
+  const headText = head.lines.join('\n')
+  const tailText = tail.lines.join('\n')
+  const body = headText + SANDWICH_GAP + tailText
+  const omittedLineCount = tail.startIndex - head.endIndex - 1
+  const shownChars = headText.length + tailText.length
+  const omittedChars = Math.max(0, originalLength - shownChars)
+
+  return {
+    text: body,
+    truncated: true,
+    originalLength,
+    shownLength: body.length,
+    headChars: headText.length,
+    tailChars: tailText.length,
+    omittedLines: omittedLineCount,
+    omittedChars,
+  }
+}
+
+/**
+ * 头尾 sandwich 截断；若发生截断，在正文前附加一行 notice。
+ */
+export function truncateSandwichWithNotice(
+  text: string,
+  maxLength: number,
+  formatNotice: (stats: TruncateSandwichStats & { originalLength: number; shownLength: number }) => string
+): string {
+  const result = truncateSandwichDetailed(text, maxLength)
+  if (!result.truncated) return result.text
+  return `${formatNotice(result)}\n${result.text}`
+}
+
+/**
+ * 从后向前截断，并返回是否截断及原始长度（供 exec 等工具附加元信息）。
+ */
+export function truncateFromEndDetailed(text: string, maxLength: number): TruncateFromEndResult {
+  const originalLength = text.length
+  if (originalLength <= maxLength) {
+    return { text, truncated: false, originalLength, shownLength: originalLength }
+  }
+  const truncatedText = truncateFromEnd(text, maxLength)
+  return {
+    text: truncatedText,
+    truncated: true,
+    originalLength,
+    shownLength: truncatedText.length,
+  }
+}
+
+/**
+ * 从后向前截断；若发生截断，在正文前附加一行 notice。
+ */
+export function truncateFromEndWithNotice(
+  text: string,
+  maxLength: number,
+  formatNotice: (originalLength: number, shownLength: number) => string
+): string {
+  const result = truncateFromEndDetailed(text, maxLength)
+  if (!result.truncated) return result.text
+  return `${formatNotice(result.originalLength, result.shownLength)}\n${result.text}`
+}
+
 /**
  * 格式化文件大小
  */

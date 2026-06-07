@@ -14,7 +14,7 @@
  */
 import { t } from '../i18n'
 import { assessCommandRisk, analyzeCommand } from '../risk-assessor'
-import { truncateFromEnd, EXEC_MAX_COMMAND_LENGTH } from './utils'
+import { truncateFromEnd, truncateSandwichWithNotice, EXEC_MAX_COMMAND_LENGTH } from './utils'
 import { getExecManager, MAX_PATTERN_LENGTH } from './exec-manager'
 import { getSkillEnvMap } from '../../../services/credential.service'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
@@ -24,14 +24,24 @@ const MAX_WAIT_SECONDS = 600        // 单次同步等待上限（防止 Agent �
 const DEFAULT_MAX_SECONDS = 3600    // 后台最长允许运行 1 小时（防僵尸进程）
 const MAX_MAX_SECONDS = 24 * 3600   // 最长 24 小时（极端长任务硬上限）
 
-const OUTPUT_TRUNCATE = 8000        // 返回给 Agent 的输出截断（与原实现一致）
+const OUTPUT_TRUNCATE = 16_384      // 返回给 Agent 的输出截断（16KB）
 
 /**
  * 把后台任务原始输出整理为 Agent 可读形态：先 trim 掉首尾空白（与旧版 exec 行为一致，
- * 避免 LLM 看到无意义的尾部换行），再做 8KB 截断。
+ * 避免 LLM 看到无意义的尾部换行），再按行做 16KB 头尾 sandwich 截断；超长行在行内按字符截断。
  */
 function formatTaskOutput(raw: string): string {
-  return truncateFromEnd(raw.trim(), OUTPUT_TRUNCATE)
+  return truncateSandwichWithNotice(
+    raw.trim(),
+    OUTPUT_TRUNCATE,
+    (stats) => t('exec.output_truncated', {
+      total: String(stats.originalLength),
+      head: String(stats.headChars),
+      tail: String(stats.tailChars),
+      omittedLines: String(stats.omittedLines),
+      omittedChars: String(stats.omittedChars),
+    })
+  )
 }
 
 /**
