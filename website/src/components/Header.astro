@@ -83,11 +83,10 @@ const isHomePage = currentPath === '/' || currentPath === '/zh/' || currentPath 
     transition: background 0.3s ease, border-color 0.3s ease;
   }
 
-  /* 浅色主题导航栏 */
+  /* 浅色主题导航栏 — 纯色背景，避免固定顶栏 backdrop-filter 持续重绘 */
   :root .header,
   [data-theme="light"] .header {
-    background: rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(20px);
+    background: rgba(255, 255, 255, 0.95);
   }
 
   /* 深色主题导航栏 - 完全不透明，无毛玻璃效果 */

@@ -87,6 +87,13 @@ const pageDescription = description || (currentLang === 'zh' ? '旗鱼 AI Agent 
         });
       });
 
+      // 标签页切到后台时暂停 CSS 动画，减少空闲 CPU 占用
+      function syncPageVisibility() {
+        document.documentElement.classList.toggle('page-hidden', document.hidden);
+      }
+      document.addEventListener('visibilitychange', syncPageVisibility);
+      syncPageVisibility();
+
       // 浏览器语言自动检测与跳转
       (function() {
         // 检查是否已经记住用户选择
