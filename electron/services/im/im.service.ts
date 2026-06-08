@@ -301,7 +301,7 @@ export function formatToolFailureNotification(step: {
   const i18nKey = TOOL_I18N_MAP[toolName]
   const label = i18nKey ? t(i18nKey) : toolName
   const raw = (step.toolResult || step.content || '').trim()
-  const firstLine = raw.split('\n')[0]?.replace(/^[\u274c\u26a0\ufe0f\ud83d\udeab]+\s*/u, '').trim() ?? ''
+  const firstLine = raw.split('\n')[0]?.replace(/^(?:\u274c|\u26a0\uFE0F?|\uD83D\uDEAB)+\s*/u, '').trim() ?? ''
   const detail = firstLine ? `：${truncate(firstLine, 120)}` : ''
   return `❌ ${label} 失败${detail}`
 }
