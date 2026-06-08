@@ -2,7 +2,20 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.43.0 (2026-06-05) (Latest)
+## v10.43.1 (2026-06-08) (Latest)
+
+> Improved exec output truncation and updater dialog experience, plus fixes for stale streaming placeholders after network failures.
+
+### Improvements
+- ⚡ **Updater Version Summary**: The auto-update dialog now shows the current version's changelog summary with a link to the full release notes.
+- ⚡ **Exec Output Truncation**: Command output uses 16KB line-level head/tail truncation with metadata; full lines are preserved when possible, falling back to character truncation only when necessary.
+- ⚡ **Hide Redundant Tool Result Cards**: Successful file write/edit operations no longer show redundant tool_result cards for a cleaner chat interface.
+- ⚡ **Website Performance**: Reduced CPU usage when the website page stays open.
+
+### Bug Fixes
+- 🐛 **Network Failure Placeholder Cleanup**: Stale streaming placeholder steps are now cleared after Agent network request failures, preventing the UI from getting stuck.
+
+## v10.43.0 (2026-06-05)
 
 > Agent 可以生成可编辑的 PowerPoint 了，技能 API Key 配置和文件发送等体验也打磨得更顺手。
 
