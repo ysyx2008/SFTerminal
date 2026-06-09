@@ -5,11 +5,9 @@ import { Monitor, Bot, Settings, X, Loader2, Heart, Menu as MenuIcon } from 'luc
 import { useTerminalStore } from './stores/terminal'
 import { initSplitPaneHandler, disposeSplitPaneHandler } from './services/split-pane-handler'
 import { useConfigStore, type SshSession } from './stores/config'
-import { useCanvasStore } from './stores/canvas'
 import TabBar from './components/TabBar.vue'
-import AiPanel from './components/AiPanel.vue'
-import CanvasPanel from './components/Canvas/CanvasPanel.vue'
 import TerminalTabView from './components/TerminalTabView.vue'
+import { resolveWorkbenchRenderer } from './workbench/registry'
 import SessionManager from './components/SessionManager.vue'
 import SettingsModal from './components/Settings/SettingsModal.vue'
 import FileExplorer from './components/FileExplorer/FileExplorer.vue'
@@ -56,7 +54,6 @@ const knowledgeUpgradeText = computed(() => {
 })
 const terminalStore = useTerminalStore()
 const configStore = useConfigStore()
-const canvasStore = useCanvasStore()
 
 // Steam 版使用独立品牌名
 const steamAppTitle = computed(() => {
@@ -121,34 +118,6 @@ const showSetupWizard = ref(false)
 
 // 每个终端 tab 对应的 TerminalTabView 实例引用（tabId -> instance）
 const tabViewRefs = ref<Record<string, InstanceType<typeof TerminalTabView> | null>>({})
-
-// Canvas 分割线拖拽
-function startCanvasResize(e: MouseEvent, _tabId: string) {
-  e.preventDefault()
-  const startX = e.clientX
-  const startRatio = canvasStore.splitRatio
-  const container = (e.target as HTMLElement).parentElement
-  if (!container) return
-  const containerWidth = container.getBoundingClientRect().width
-
-  const onMove = (ev: MouseEvent) => {
-    const delta = ev.clientX - startX
-    const newRatio = Math.max(0.2, Math.min(0.8, startRatio - delta / containerWidth))
-    canvasStore.splitRatio = newRatio
-  }
-
-  const onUp = () => {
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-  }
-
-  document.body.style.cursor = 'col-resize'
-  document.body.style.userSelect = 'none'
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
-}
 
 function onAwakenClose(awakened?: boolean) {
   showAwaken.value = false
@@ -800,9 +769,19 @@ const toggleSidebar = () => {
   showSidebar.value = !showSidebar.value
 }
 
-// 获取当前活跃终端 tab 的 TerminalTabView 实例
+// 是否为终端工作台 tab（仅 local/ssh 由 TerminalTabView 渲染，独有 AI 侧栏方法）。
+// 其它工作台（助手等）的 tabViewRefs 实例没有 toggleAiPanel/ensureAiPanel，需先过滤，
+// 否则在其上调用会触发 TypeError（?. 只挡 null，挡不住方法 undefined）。
+function isTerminalTab(id: string): boolean {
+  const tab = terminalStore.tabs.find(t => t.id === id)
+  return !!tab && (tab.type === 'local' || tab.type === 'ssh')
+}
+
+// 获取当前活跃终端 tab 的 TerminalTabView 实例（非终端工作台返回 null）
 function getActiveTabView() {
-  return tabViewRefs.value[terminalStore.activeTabId] as InstanceType<typeof TerminalTabView> | null
+  const id = terminalStore.activeTabId
+  if (!isTerminalTab(id)) return null
+  return tabViewRefs.value[id] as InstanceType<typeof TerminalTabView> | null
 }
 
 // 切换当前 tab 的 AI 面板
@@ -813,6 +792,7 @@ const toggleAiPanel = () => {
 // 确保指定 tab 的 AI 面板可见
 function ensureAiPanel(tabId?: string) {
   const id = tabId || terminalStore.activeTabId
+  if (!isTerminalTab(id)) return
   const view = tabViewRefs.value[id] as InstanceType<typeof TerminalTabView> | null
   view?.ensureAiPanel()
 }
@@ -1051,33 +1031,11 @@ onUnmounted(() => {
           @back="backFromSmartPatrol"
         />
         <!-- 每个 Tab 一个独立 div，始终挂载，v-show 控制可见性 -->
+        <!-- 工作台查表分发：渲染器由 registry 按 tab.type 决定。
+             新增工作台只需在 registry 登记，无需改动此处。 -->
         <template v-else v-for="tab in terminalStore.tabs" :key="tab.id">
-          <!-- ===== 助手 Tab（Steam 版不渲染） ===== -->
-          <div v-if="tab.type === 'assistant' && !isSteamBuild" v-show="tab.id === terminalStore.activeTabId" class="tab-view assistant-tab">
-            <div class="assistant-split">
-              <div class="assistant-chat" :style="canvasStore.isVisible(tab.id) ? { flex: `0 0 ${(1 - canvasStore.splitRatio) * 100}%` } : undefined">
-                <AiPanel
-                  :tab-id="tab.id"
-                  :visible="tab.id === terminalStore.activeTabId"
-                />
-              </div>
-              <div
-                v-show="canvasStore.isVisible(tab.id)"
-                class="assistant-divider"
-                @mousedown="startCanvasResize($event, tab.id)"
-              ></div>
-              <div
-                class="assistant-canvas"
-                :class="{ 'canvas-open': canvasStore.isVisible(tab.id) }"
-                :style="canvasStore.isVisible(tab.id) ? { flex: `0 0 ${canvasStore.splitRatio * 100}%` } : undefined"
-              >
-                <CanvasPanel v-if="canvasStore.isVisible(tab.id)" :tab-id="tab.id" />
-              </div>
-            </div>
-          </div>
-          <!-- ===== 终端 Tab (local / ssh) ===== -->
-          <TerminalTabView
-            v-else
+          <component
+            :is="resolveWorkbenchRenderer(tab.type)"
             v-show="tab.id === terminalStore.activeTabId"
             :ref="(el: any) => { tabViewRefs[tab.id] = el }"
             :tab="tab"
@@ -1348,75 +1306,6 @@ onUnmounted(() => {
   flex: 1;
   overflow: hidden;
 }
-
-.assistant-tab {
-  display: flex;
-  flex-direction: column;
-}
-
-/* Canvas 分割布局 */
-.assistant-split {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.assistant-chat {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 300px;
-  overflow: hidden;
-  transition: flex-basis 0.3s ease;
-}
-
-.assistant-divider {
-  flex-shrink: 0;
-  width: 0;
-  position: relative;
-  z-index: 2;
-  cursor: col-resize;
-}
-
-/* 零宽占位，::before 提供 5px 拖拽热区，不占视觉间隙 */
-.assistant-divider::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -2px;
-  width: 5px;
-  background: transparent;
-  transition: background 0.25s ease;
-}
-
-.assistant-divider:hover::before,
-.assistant-divider:active::before {
-  background: linear-gradient(
-    180deg,
-    transparent,
-    rgba(var(--accent-rgb, 137, 180, 250), 0.35),
-    transparent
-  );
-}
-
-.assistant-canvas {
-  display: flex;
-  flex-basis: 0;
-  max-width: 0;
-  min-width: 0;
-  overflow: hidden;
-  opacity: 0;
-  transition: flex-basis 0.3s ease, max-width 0.3s ease, opacity 0.25s ease;
-}
-
-.assistant-canvas.canvas-open {
-  min-width: 200px;
-  max-width: 100%;
-  opacity: 1;
-}
-
 
 /* 知识库升级进度条 */
 .knowledge-upgrade-bar {
