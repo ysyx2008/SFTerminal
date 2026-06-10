@@ -1348,10 +1348,20 @@ app.whenReady().then(async () => {
   // 应用退出时清理未触发的 timer，避免 shutdown 期间启动后端服务
   app.once('before-quit', clearBackendTimers)
 
+  /** 向渲染进程发送启动进度事件，用于诊断 Windows 无响应时卡在哪个阶段 */
+  function sendStartupProgress(stage: string): void {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('startup:progress', { stage })
+      }
+    } catch { /* ignore */ }
+  }
+
   async function runBackendInit() {
     log.info(`开始初始化后端服务 (+${Date.now() - APP_START_TIME}ms)`)
 
     // 初始化插件系统
+    sendStartupProgress('plugins')
     try {
       await pluginRegistry.loadAll()
       // 注册插件 provider 到 AI 服务
@@ -1389,6 +1399,7 @@ app.whenReady().then(async () => {
     }
 
     // 初始化 Web 搜索服务
+    sendStartupProgress('webSearch')
     try {
       const webSearch = await import('./services/web-search/index')
       const webSearchSettings = configService.get('webSearchSettings')
@@ -1399,6 +1410,7 @@ app.whenReady().then(async () => {
     }
 
     // 初始化定时任务调度服务
+    sendStartupProgress('scheduler')
     try {
       schedulerService.init({
         ptyService,
@@ -1415,6 +1427,7 @@ app.whenReady().then(async () => {
     }
 
     // 初始化 Watch & Sensor 服务（感知层）
+    sendStartupProgress('watchSensor')
     try {
       watchService.init({
         ptyService,
@@ -1431,6 +1444,7 @@ app.whenReady().then(async () => {
       })
 
       // Services phase migrations（需要后端服务就绪）
+      sendStartupProgress('migration')
       try {
         await getMigrationRunner().run('services', {
           configService,
@@ -1486,6 +1500,7 @@ app.whenReady().then(async () => {
         log.error('Calendar sensor 账户加载失败:', e)
       }
 
+      sendStartupProgress('sensors')
       sensorService.start({
         heartbeatEnabled: awakened,
         heartbeatIntervalMinutes: heartbeatInterval
@@ -1519,6 +1534,10 @@ app.whenReady().then(async () => {
     } catch (e) {
       log.error('Watch/Sensor 服务初始化失败:', e)
     }
+
+    // 后端服务初始化完成
+    sendStartupProgress('done')
+    log.info(`后端服务初始化完成 (+${Date.now() - APP_START_TIME}ms)`)
 
     // Gateway 远程访问自动启动
     if (configService.get('gatewayAutoStart')) {

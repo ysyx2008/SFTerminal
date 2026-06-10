@@ -1,6 +1,18 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { AiProfile, DocumentParseProgress, JumpHostConfig, PtyOptions, SftpConfig, SshConfig } from '@shared/types'
 
+// ── 启动进度缓冲 ──────────────────────────────────────────────────────────────
+// preload 加载后立即开始监听，将最新 stage 缓存下来。
+// Vue onMounted 注册回调时，若事件已提前发出（主进程跑得比渲染快），
+// 立即补发最后一条，确保 UI 能看到具体阶段名而不是兜底文字。
+let _latestStartupStage: string | null = null
+const _startupProgressCallbacks = new Set<(data: { stage: string }) => void>()
+ipcRenderer.on('startup:progress', (_event, data: { stage: string }) => {
+  _latestStartupStage = data.stage
+  _startupProgressCallbacks.forEach(cb => cb(data))
+})
+// ─────────────────────────────────────────────────────────────────────────────
+
 export type { AiProfile, JumpHostConfig, PtyOptions, SftpConfig, SshConfig }
 
 // 更新状态类型
@@ -289,6 +301,17 @@ const electronAPI = {
       ipcRenderer.on('app:install-skill', handler)
       return () => {
         ipcRenderer.removeListener('app:install-skill', handler)
+      }
+    },
+    // 后端服务启动进度（用于诊断 Windows 无响应时卡在哪个阶段）
+    onStartupProgress: (callback: (data: { stage: string }) => void) => {
+      _startupProgressCallbacks.add(callback)
+      // 补发：若事件在 renderer 订阅前已发出，立即回调最新 stage
+      if (_latestStartupStage !== null) {
+        callback({ stage: _latestStartupStage })
+      }
+      return () => {
+        _startupProgressCallbacks.delete(callback)
       }
     },
   },

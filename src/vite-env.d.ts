@@ -124,6 +124,7 @@ interface Window {
       notifyMounted: () => void
       onRunTask: (callback: (task: string) => void) => () => void
       onInstallSkill: (callback: (skillId: string) => void) => () => void
+      onStartupProgress: (callback: (data: { stage: string }) => void) => () => void
     }
     // PATH 环境变量状态
     path: {

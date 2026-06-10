@@ -41,6 +41,22 @@ const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 //   - data_corrupted    : 向量库损坏（manifest 指向不存在的 .lance 数据文件等）
 //   - missing           : 索引缺失（首次启用 / 用户删过 lancedb 目录 / BM25 .json 丢失）
 const knowledgeUpgrading = ref(false)
+
+// 后端启动进度（用于诊断 Windows 无响应时卡在哪个阶段）
+const startupLoading = ref(false)
+const startupStage = ref('')
+let cleanupStartupProgress: (() => void) | null = null
+let startupDoneTimer: ReturnType<typeof setTimeout> | null = null
+
+const STARTUP_STAGE_LABELS: Record<string, string> = {
+  plugins: '加载插件...',
+  webSearch: '初始化搜索服务...',
+  scheduler: '启动调度服务...',
+  watchSensor: '启动 Watch/Sensor 服务...',
+  migration: '执行数据迁移...',
+  sensors: '启动传感器...',
+  done: '初始化完成',
+}
 const knowledgeUpgradeCause = ref<'dimension_mismatch' | 'data_corrupted' | 'missing'>('missing')
 const knowledgeUpgradeProgress = ref({ current: 0, total: 0, filename: '' })
 
@@ -329,6 +345,24 @@ onMounted(async () => {
   cleanupTerminalCountListener = window.electronAPI.window.onRequestTerminalCount(() => {
     window.electronAPI.window.responseTerminalCount(terminalStore.tabs.length)
   })
+
+  // 监听后端启动进度（用于诊断 Windows 无响应时卡在哪个阶段）
+  startupLoading.value = true
+  cleanupStartupProgress = window.electronAPI.app.onStartupProgress(({ stage }) => {
+    if (stage === 'done') {
+      startupStage.value = ''
+      // 收到 done 后延迟隐藏，让用户看到"完成"状态
+      startupDoneTimer = setTimeout(() => {
+        startupLoading.value = false
+      }, 800)
+    } else {
+      startupStage.value = STARTUP_STAGE_LABELS[stage] ?? `${stage}...`
+    }
+  })
+  // 兜底：10 秒后无论如何隐藏（正常 init 远不到 10s，超时说明卡住）
+  startupDoneTimer = setTimeout(() => {
+    startupLoading.value = false
+  }, 10_000)
 
   // 监听知识库索引重建事件
   cleanupKnowledgeUpgrading = window.electronAPI.knowledge.onUpgrading((payload?: { cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing' }) => {
@@ -933,6 +967,8 @@ onUnmounted(() => {
   disposeSplitPaneHandler()
   // 清理监听器
   cleanupTerminalCountListener?.()
+  cleanupStartupProgress?.()
+  if (startupDoneTimer) { clearTimeout(startupDoneTimer); startupDoneTimer = null }
   cleanupKnowledgeUpgrading?.()
   cleanupKnowledgeProgress?.()
   cleanupKnowledgeReady?.()
@@ -1076,6 +1112,19 @@ onUnmounted(() => {
       @close="onAwakenClose"
       @awakened-change="isAwakened = $event"
     />
+
+    <!-- 后端服务启动进度提示（Steam 版不渲染，用于诊断 Windows 无响应） -->
+    <Transition name="slide-down">
+      <div v-if="startupLoading && !isSteamBuild" class="startup-progress-bar">
+        <div class="upgrade-content">
+          <Loader2 class="upgrade-icon" :size="16" />
+          <span class="upgrade-text">{{ startupStage || '后端服务启动中...' }}</span>
+        </div>
+        <div class="upgrade-progress">
+          <div class="startup-progress-indeterminate" />
+        </div>
+      </div>
+    </Transition>
 
     <!-- 知识库升级进度提示（Steam 版不渲染） -->
     <Transition name="slide-down">
@@ -1305,6 +1354,30 @@ onUnmounted(() => {
 .tab-view {
   flex: 1;
   overflow: hidden;
+}
+
+/* 后端启动进度条 */
+.startup-progress-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  z-index: 999;
+}
+
+/* 不确定进度动画（来回扫描） */
+.startup-progress-indeterminate {
+  height: 2px;
+  background: var(--accent-primary);
+  width: 40%;
+  animation: indeterminate-scan 1.4s cubic-bezier(0.65, 0.815, 0.735, 0.395) infinite;
+}
+
+@keyframes indeterminate-scan {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
 }
 
 /* 知识库升级进度条 */
