@@ -269,25 +269,246 @@ export class KnowledgeService extends EventEmitter {
   }
 
   /**
-   * 检查并重建索引
+   * 增量修复索引：只对向量库或 BM25 中缺失的文档重新 embed + 写入，
+   * 不清空任何已有数据。适合处理部分损坏而非全量重建的场景。
+   *
+   * @returns checked 总文档数、added 补充入库的文档数、durationMs 耗时
+   */
+  async repairIndex(): Promise<{
+    checked: number
+    added: number
+    durationMs: number
+  }> {
+    if (!this.isInitialized) {
+      await this.initialize()
+    }
+
+    const t0 = Date.now()
+    const allDocs = this.getDocuments()
+
+    if (allDocs.length === 0) {
+      return { checked: 0, added: 0, durationMs: Date.now() - t0 }
+    }
+
+    // 获取两个索引中已有的 docId 集合
+    const [vectorDocIds, bm25DocIds] = await Promise.all([
+      this.vectorStorage.getAllDocIds(),
+      Promise.resolve(this.bm25Index.getIndexedDocIds()),
+    ])
+
+    // 找出缺失的文档（在 documentsIndex 里有但索引里没有）
+    const missingDocs = allDocs.filter(
+      doc => !vectorDocIds.has(doc.id) || !bm25DocIds.has(doc.id)
+    )
+
+    log.info(
+      `repairIndex: 共 ${allDocs.length} 个文档，` +
+      `向量库已索引 ${vectorDocIds.size} 个，BM25 已索引 ${bm25DocIds.size} 个，` +
+      `需补充 ${missingDocs.length} 个`
+    )
+
+    if (missingDocs.length === 0) {
+      // 顺手清理孤儿，不影响速度（通常 O(1) 返回）
+      await this.cleanupOrphanData()
+      return { checked: allDocs.length, added: 0, durationMs: Date.now() - t0 }
+    }
+
+    this.emit('repairStarted', { total: missingDocs.length })
+
+    const EMBED_BATCH_SIZE = this.embeddingService.getMaxBatchSize()
+
+    interface PendingChunk {
+      doc: KnowledgeDocument
+      chunkId: string
+      chunkIndex: number
+      text: string
+      isHostMemory: boolean
+      needVector: boolean
+      needBm25: boolean
+    }
+    let pendingChunks: PendingChunk[] = []
+
+    const flushRepairBatch = async (): Promise<void> => {
+      if (pendingChunks.length === 0) return
+
+      const batch = pendingChunks
+      pendingChunks = []
+
+      let embeddings: number[][]
+      try {
+        embeddings = await this.embeddingService.embed(batch.map(p => p.text))
+      } catch (err) {
+        log.error(`repairIndex: embed 批量失败（${batch.length} 条），跳过此批:`, err)
+        return
+      }
+
+      const vectorRecords: VectorRecord[] = []
+      const bm25Docs: Array<{
+        id: string; docId: string; content: string
+        filename: string; hostId: string; tags: string
+      }> = []
+
+      for (let i = 0; i < batch.length; i++) {
+        const p = batch[i]
+        const tagsStr = (p.doc.tags || []).join(',')
+
+        if (p.needVector) {
+          vectorRecords.push({
+            id: p.chunkId,
+            docId: p.doc.id,
+            content: p.isHostMemory ? encrypt(p.text) : p.text,
+            vector: embeddings[i],
+            filename: p.doc.filename,
+            hostId: p.doc.hostId || '',
+            tags: tagsStr,
+            chunkIndex: p.chunkIndex,
+            createdAt: p.doc.createdAt,
+          })
+        }
+
+        if (p.needBm25) {
+          bm25Docs.push({
+            id: p.chunkId,
+            docId: p.doc.id,
+            content: p.text,
+            filename: p.doc.filename,
+            hostId: p.doc.hostId || '',
+            tags: tagsStr,
+          })
+        }
+      }
+
+      if (vectorRecords.length > 0) {
+        try {
+          await this.vectorStorage.addRecords(vectorRecords)
+        } catch (e) {
+          log.error('repairIndex: 向量写入失败，跳过此批:', e)
+        }
+      }
+
+      if (bm25Docs.length > 0) {
+        try {
+          await this.bm25Index.addDocuments(bm25Docs, { skipSave: true })
+        } catch (e) {
+          log.error('repairIndex: BM25 写入失败，跳过此批:', e)
+        }
+      }
+
+      await new Promise<void>(resolve => setImmediate(resolve))
+    }
+
+    let added = 0
+
+    for (let i = 0; i < missingDocs.length; i++) {
+      const doc = missingDocs[i]
+      if (!doc.content) continue
+
+      const needVector = !vectorDocIds.has(doc.id)
+      const needBm25 = !bm25DocIds.has(doc.id)
+
+      this.emit('repairProgress', {
+        current: i + 1,
+        total: missingDocs.length,
+        filename: doc.filename,
+      })
+
+      try {
+        let contentForIndex = doc.content
+        if (isEncrypted(doc.content)) {
+          try {
+            contentForIndex = decrypt(doc.content)
+          } catch (e) {
+            log.warn(`repairIndex: 解密失败，跳过: ${doc.filename}`)
+            continue
+          }
+        }
+
+        const chunks = this.chunker.chunk(contentForIndex, doc.id, {
+          filename: doc.filename,
+          tags: doc.tags || [],
+        })
+        const isHostMemory = doc.fileType === 'host-memory'
+
+        for (const chunk of chunks) {
+          pendingChunks.push({
+            doc,
+            chunkId: chunk.id,
+            chunkIndex: chunk.chunkIndex,
+            text: chunk.content,
+            isHostMemory,
+            needVector,
+            needBm25,
+          })
+          if (pendingChunks.length >= EMBED_BATCH_SIZE) {
+            await flushRepairBatch()
+          }
+        }
+        added++
+      } catch (error) {
+        log.error(`repairIndex: 处理 ${doc.filename} 失败:`, error)
+      }
+    }
+
+    await flushRepairBatch()
+
+    try {
+      await this.bm25Index.saveIndex()
+    } catch (e) {
+      log.warn('repairIndex: BM25 saveIndex 失败:', e)
+    }
+
+    // 清理孤儿数据（documentsIndex 里没有、但索引里多余的）
+    await this.cleanupOrphanData()
+
+    const durationMs = Date.now() - t0
+    log.info(`repairIndex 完成：补充了 ${added} 个文档，耗时 ${durationMs}ms`)
+    this.emit('repairCompleted', { added, checked: allDocs.length, durationMs })
+
+    return { checked: allDocs.length, added, durationMs }
+  }
+
+  /**
+   * 检查并（增量）重建索引。
+   *
+   * 原实现：只要任一索引完全为空，就对全部文档重新 embed + 写入。
+   * 新实现：先做差集比对，只处理在向量库或 BM25 中缺失的文档。
+   *   - 正常启动（索引完整）：仅做两次 O(N) 集合查询，毫秒级返回，不再触发进度条。
+   *   - 首次启用 / 模型升级 / 数据损坏（大量文档缺失）：行为与原实现完全相同，
+   *     进度条只反映真正需要处理的文档数，不含已有索引的文档。
    */
   private async checkAndRebuildIndex(): Promise<void> {
     const docs = this.getDocuments()
     if (docs.length === 0) return
-    
-    const stats = await this.vectorStorage.getStats()
-    const bm25Stats = this.bm25Index.getStats()
-    
-    // 如果向量库和 BM25 索引都有数据，跳过重建
-    if (stats.chunkCount > 0 && bm25Stats.documentCount > 0) return
-    
-    let needRebuildVector = stats.chunkCount === 0
-    const needRebuildBM25 = bm25Stats.documentCount === 0
-    
-    log.info(`开始重建索引，共 ${docs.length} 个文档 (vector=${needRebuildVector}, bm25=${needRebuildBM25}, cause=${this.lastClearReason || 'missing'})...`)
 
-    // 通知外层（main.ts）前端应当显示进度条。
-    // 不管触发原因是维度升级/数据损坏/BM25 缺失，只要真的会走重建流程就发。
+    // 并行获取两个索引的当前 docId 集合
+    const [vectorDocIds, bm25DocIds] = await Promise.all([
+      this.vectorStorage.getAllDocIds(),
+      Promise.resolve(this.bm25Index.getIndexedDocIds()),
+    ])
+
+    // 找出各自缺失的文档（per-doc 粒度，而非整库空/非空判断）
+    const missingDocs = docs.filter(doc => !vectorDocIds.has(doc.id) || !bm25DocIds.has(doc.id))
+
+    if (missingDocs.length === 0) {
+      // 索引完整，清掉上次遗留的 cause 标记，跳过重建
+      this.lastClearReason = undefined
+      return
+    }
+
+    // 统计各自需要补充的数量（用于日志和事件 reason）
+    const missingVector = missingDocs.filter(d => !vectorDocIds.has(d.id))
+    const missingBm25  = missingDocs.filter(d => !bm25DocIds.has(d.id))
+
+    let needRebuildVector = missingVector.length > 0
+    let needRebuildBM25  = missingBm25.length > 0
+
+    log.info(
+      `开始增量重建索引：共 ${docs.length} 个文档，` +
+      `需补充 vector=${missingVector.length} bm25=${missingBm25.length}` +
+      ` (cause=${this.lastClearReason || 'missing'})`
+    )
+
+    // 通知前端显示进度条，语义与原来一致
     const rebuildReason: 'vector' | 'bm25' | 'both' =
       needRebuildVector && needRebuildBM25 ? 'both'
       : needRebuildVector ? 'vector'
@@ -296,21 +517,12 @@ export class KnowledgeService extends EventEmitter {
     //   - 'dimension_mismatch': 真正的模型升级
     //   - 'data_corrupted'    : LanceDB 表损坏 / 物理 .lance 文件丢失
     //   - 'missing'           : 索引文件缺失（首次启用 / 用户删过 lancedb 目录 / BM25 .json 丢失）
-    // 前端据此显示不同文案，避免一律提示"正在升级模型"误导用户
     const cause = this.lastClearReason || 'missing'
-    this.emit('rebuildStarted', { total: docs.length, reason: rebuildReason, cause })
-    // 重建结束后清掉，让下次重启如果只是常规启动就能显示 "missing" 而非沿用上次值
+    this.emit('rebuildStarted', { total: missingDocs.length, reason: rebuildReason, cause })
     this.lastClearReason = undefined
 
-    // 跨文档 embedding 攒批：把多个 doc 的 chunks 合并成 ≤MAX_BATCH_SIZE 条
-    // 一起调 embed()，让 ONNX 走真正的 batch inference。对 conversation 这类
-    // 1-chunk 文档收益最大（避免 "1 doc 1 embed call" 的极端低效）。
-    //
-    // 单一数据源：复用 embeddingService.getMaxBatchSize()（依据当前是否走
-    // utilityProcess worker 动态返回），避免两边阈值漂移导致内部又触发一次
-    // 切片。worker 模式下批量从 16 放宽到 64，吞吐能再涨 1.5~2×。
+    // 跨文档 embedding 攒批
     const EMBED_BATCH_SIZE = this.embeddingService.getMaxBatchSize()
-    // 批量收集向量记录，最后一次性写入以减少 LanceDB manifest 版本数
     const VECTOR_BATCH_SIZE = 200
     let pendingVectorRecords: VectorRecord[] = []
 
@@ -318,8 +530,10 @@ export class KnowledgeService extends EventEmitter {
       doc: KnowledgeDocument
       chunkId: string
       chunkIndex: number
-      text: string          // 原文（BM25 用原文，向量 host-memory 需要加密）
+      text: string
       isHostMemory: boolean
+      needVector: boolean
+      needBm25: boolean
     }
     let pendingChunks: PendingChunk[] = []
 
@@ -346,28 +560,32 @@ export class KnowledgeService extends EventEmitter {
       for (let i = 0; i < batch.length; i++) {
         const p = batch[i]
         const tagsStr = (p.doc.tags || []).join(',')
-        batchRecords.push({
-          id: p.chunkId,
-          docId: p.doc.id,
-          content: p.isHostMemory ? encrypt(p.text) : p.text,
-          vector: embeddings[i],
-          filename: p.doc.filename,
-          hostId: p.doc.hostId || '',
-          tags: tagsStr,
-          chunkIndex: p.chunkIndex,
-          createdAt: p.doc.createdAt
-        })
-        batchBm25Docs.push({
-          id: p.chunkId,
-          docId: p.doc.id,
-          content: p.text,
-          filename: p.doc.filename,
-          hostId: p.doc.hostId || '',
-          tags: tagsStr
-        })
+        if (p.needVector) {
+          batchRecords.push({
+            id: p.chunkId,
+            docId: p.doc.id,
+            content: p.isHostMemory ? encrypt(p.text) : p.text,
+            vector: embeddings[i],
+            filename: p.doc.filename,
+            hostId: p.doc.hostId || '',
+            tags: tagsStr,
+            chunkIndex: p.chunkIndex,
+            createdAt: p.doc.createdAt
+          })
+        }
+        if (p.needBm25) {
+          batchBm25Docs.push({
+            id: p.chunkId,
+            docId: p.doc.id,
+            content: p.text,
+            filename: p.doc.filename,
+            hostId: p.doc.hostId || '',
+            tags: tagsStr
+          })
+        }
       }
 
-      if (needRebuildVector) {
+      if (needRebuildVector && batchRecords.length > 0) {
         pendingVectorRecords.push(...batchRecords)
         if (pendingVectorRecords.length >= VECTOR_BATCH_SIZE) {
           try {
@@ -381,30 +599,27 @@ export class KnowledgeService extends EventEmitter {
         }
       }
 
-      if (needRebuildBM25) {
+      if (needRebuildBM25 && batchBm25Docs.length > 0) {
         try {
-          // skipSave=true：重建过程中不每批都 saveIndex（避免 O(N²) 序列化），
-          // 由循环结束后统一 saveIndex 一次。
           await this.bm25Index.addDocuments(batchBm25Docs, { skipSave: true })
         } catch (e) {
-          log.error('BM25 批量写入(仅信息)失败，跳过此批:', e)
+          log.error('BM25 批量写入失败，跳过此批:', e)
         }
       }
 
-      // 让出事件循环：worker 模式下推理虽然在子进程，但每批结束后仍需要
-      // 让 libuv 处理 IPC 进度上报与 v8 GC；in-process 模式则更关键，避免
-      // onnxruntime 连续 forward 把主线程拖死。setImmediate yield 是
-      // 廉价的兜底，对两种模式都有益。
       await new Promise<void>(resolve => setImmediate(resolve))
     }
 
-    for (let i = 0; i < docs.length; i++) {
-      const doc = docs[i]
+    for (let i = 0; i < missingDocs.length; i++) {
+      const doc = missingDocs[i]
       if (!doc.content) continue
+
+      const needVector = !vectorDocIds.has(doc.id)
+      const needBm25   = !bm25DocIds.has(doc.id)
 
       this.emit('rebuildProgress', {
         current: i + 1,
-        total: docs.length,
+        total: missingDocs.length,
         filename: doc.filename
       })
 
@@ -431,25 +646,25 @@ export class KnowledgeService extends EventEmitter {
             chunkId: chunk.id,
             chunkIndex: chunk.chunkIndex,
             text: chunk.content,
-            isHostMemory
+            isHostMemory,
+            needVector,
+            needBm25,
           })
           if (pendingChunks.length >= EMBED_BATCH_SIZE) {
             await flushEmbedBatch()
           }
         }
 
-        if ((i + 1) % 100 === 0 || i === docs.length - 1) {
-          log.info(`已重建 ${i + 1}/${docs.length}: ${doc.filename}`)
+        if ((i + 1) % 100 === 0 || i === missingDocs.length - 1) {
+          log.info(`已重建 ${i + 1}/${missingDocs.length}: ${doc.filename}`)
         }
       } catch (error) {
         log.error(`Failed to rebuild index for ${doc.filename}:`, error)
       }
     }
 
-    // flush embedding 剩余未满一批的 chunks
     await flushEmbedBatch()
 
-    // 刷入剩余的向量记录（同样需要容错，避免最后一批失败冒泡导致整个 initialize 报错）
     if (pendingVectorRecords.length > 0) {
       try {
         await this.vectorStorage.addRecords(pendingVectorRecords)
@@ -459,7 +674,6 @@ export class KnowledgeService extends EventEmitter {
       }
     }
 
-    // BM25 重建期间跳过了每批的 saveIndex，循环结束后统一保存一次
     if (needRebuildBM25) {
       try {
         await this.bm25Index.saveIndex()
@@ -467,18 +681,17 @@ export class KnowledgeService extends EventEmitter {
         log.warn('BM25 saveIndex (重建结束) 失败:', e)
       }
     }
-    
-    // compact 合并 LanceDB manifest，防止版本文件膨胀导致下次启动读取失败
+
     if (needRebuildVector) {
       try {
-        log.info('索引重建完成，执行 compact...')
+        log.info('增量重建完成，执行 compact...')
         await this.vectorStorage.compact(true)
       } catch (e) {
         log.warn('Compact failed after rebuild:', e)
       }
     }
-    
-    log.info('索引重建完成')
+
+    log.info(`索引增量重建完成，补充了 ${missingDocs.length} 个文档`)
   }
 
   /**

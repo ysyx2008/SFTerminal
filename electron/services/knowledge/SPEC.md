@@ -37,6 +37,7 @@
 | `isEnabled(): boolean` | 配置中是否启用 |
 | `dispose(): void` / `async disposeAsync(timeoutMs?): Promise<void>` | 销毁服务 |
 | `async rebuildAllIndices(force?): Promise<{durationMs, documentCount, ...}>` | 重建所有索引 |
+| `async repairIndex(): Promise<{checked, added, durationMs}>` | 增量修复：只对向量库或 BM25 中缺失的文档重新 embed + 写入，不清空已有数据 |
 
 ### 文档管理
 

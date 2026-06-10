@@ -84,6 +84,8 @@ const batchDeleting = ref(false)
 const clearing = ref(false)
 const exporting = ref(false)
 const importing = ref(false)
+const repairing = ref(false)
+const repairProgress = ref<{ current: number; total: number; filename: string } | null>(null)
 
 const kbDocuments = computed(() => {
   return documents.value.filter(doc => doc.fileType !== 'host-memory' && doc.fileType !== 'conversation')
@@ -352,6 +354,39 @@ const importKnowledge = async () => {
   }
 }
 
+const repairKnowledge = async () => {
+  try {
+    repairing.value = true
+    repairProgress.value = null
+
+    const unsubProgress = api.knowledge.onRepairProgress?.((data) => {
+      repairProgress.value = data
+    })
+
+    const result = await api.knowledge.repairIndex()
+
+    unsubProgress?.()
+    repairProgress.value = null
+
+    if (result.success) {
+      const secs = ((result.durationMs || 0) / 1000).toFixed(1)
+      alert(t('knowledgeManager.repairSuccess', {
+        added: result.added ?? 0,
+        checked: result.checked ?? 0,
+        secs,
+      }))
+    } else {
+      alert(t('knowledgeManager.repairFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
+    }
+  } catch (error) {
+    console.error('Repair index failed:', error)
+    alert(t('knowledgeManager.repairFailed'))
+  } finally {
+    repairing.value = false
+    repairProgress.value = null
+  }
+}
+
 // ==================== 生命周期 ====================
 
 let unsubscribeKnowledgeReady: (() => void) | null = null
@@ -485,6 +520,12 @@ onUnmounted(() => {
                   </button>
                   <button class="btn btn-sm" @click="importKnowledge" :disabled="importing">
                     {{ importing ? t('knowledgeManager.importing') : `📥 ${t('knowledgeManager.import')}` }}
+                  </button>
+                  <button class="btn btn-sm" @click="repairKnowledge" :disabled="repairing" :title="t('knowledgeManager.repairTip')">
+                    <template v-if="repairing">
+                      🔧 {{ repairProgress ? `${repairProgress.current}/${repairProgress.total}` : t('knowledgeManager.repairing') }}
+                    </template>
+                    <template v-else>🔧 {{ t('knowledgeManager.repair') }}</template>
                   </button>
                   <button class="btn btn-sm" @click="loadKnowledgeDocs">🔄 {{ t('knowledgeManager.refresh') }}</button>
                 </div>

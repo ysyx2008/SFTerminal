@@ -463,6 +463,17 @@ export class BM25Index extends EventEmitter {
   }
 
   /**
+   * 返回当前已索引的文档 ID 集合（docId，非 chunk id）
+   */
+  getIndexedDocIds(): Set<string> {
+    const docIds = new Set<string>()
+    for (const doc of this.documents.values()) {
+      docIds.add(doc.docId)
+    }
+    return docIds
+  }
+
+  /**
    * 检查是否就绪
    */
   isReady(): boolean {

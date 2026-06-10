@@ -368,6 +368,29 @@ async function knowledgeRebuild(args: string[]): Promise<void> {
   printJSON(result)
 }
 
+async function knowledgeRepair(args: string[]): Promise<void> {
+  void args
+  const { getKnowledgeService } = require('../services/knowledge')
+  const config = getConfig()
+  const ai = getAi()
+  const { McpService } = require('../services/mcp.service')
+  const mcp = new McpService()
+
+  const service = getKnowledgeService(config, ai, mcp)
+  if (!service) {
+    console.error('Knowledge service not available')
+    process.exit(1)
+  }
+
+  console.log('Repairing index (incremental, only missing docs)...')
+  service.on('repairProgress', ({ current, total, filename }: { current: number; total: number; filename: string }) => {
+    process.stdout.write(`\r  [${current}/${total}] ${filename}`.padEnd(80))
+  })
+  const result = await service.repairIndex()
+  process.stdout.write('\n')
+  printJSON(result)
+}
+
 async function knowledgeAdd(args: string[]): Promise<void> {
   const { positional, flags } = parseArgs(args)
   const filePath = positional[0]
@@ -1510,6 +1533,7 @@ Knowledge Base:
   knowledge:stats            Show knowledge base statistics
   knowledge:rebuild          Rebuild vector + BM25 indices (with timing)
     --force                  Clear and re-embed all documents
+  knowledge:repair           Repair index (incremental: only re-embed missing docs)
 
 History:
   history:list               List recent records
@@ -1699,6 +1723,7 @@ async function main(): Promise<void> {
       case 'knowledge:add':     await knowledgeAdd(cmdArgs); break
       case 'knowledge:stats':   await knowledgeStats(); break
       case 'knowledge:rebuild': await knowledgeRebuild(cmdArgs); break
+      case 'knowledge:repair':  await knowledgeRepair(cmdArgs); break
 
       // History
       case 'history:list':   await historyList(cmdArgs); break

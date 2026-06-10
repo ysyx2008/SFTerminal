@@ -2258,6 +2258,35 @@ const electronAPI = {
       return () => {
         ipcRenderer.removeListener('knowledge:rebuildProgress', handler)
       }
+    },
+
+    // 增量修复索引（只补充缺失文档）
+    repairIndex: () =>
+      ipcRenderer.invoke('knowledge:repairIndex') as Promise<{
+        success: boolean
+        checked?: number
+        added?: number
+        durationMs?: number
+        error?: string
+      }>,
+
+    // 监听修复进度
+    onRepairStarted: (callback: (data: { total: number }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { total: number }) => callback(data)
+      ipcRenderer.on('knowledge:repairStarted', handler)
+      return () => { ipcRenderer.removeListener('knowledge:repairStarted', handler) }
+    },
+
+    onRepairProgress: (callback: (data: { current: number; total: number; filename: string }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { current: number; total: number; filename: string }) => callback(data)
+      ipcRenderer.on('knowledge:repairProgress', handler)
+      return () => { ipcRenderer.removeListener('knowledge:repairProgress', handler) }
+    },
+
+    onRepairCompleted: (callback: (data: { added: number; checked: number; durationMs: number }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { added: number; checked: number; durationMs: number }) => callback(data)
+      ipcRenderer.on('knowledge:repairCompleted', handler)
+      return () => { ipcRenderer.removeListener('knowledge:repairCompleted', handler) }
     }
   },
 

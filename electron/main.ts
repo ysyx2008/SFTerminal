@@ -637,6 +637,17 @@ async function initKnowledgeService(): Promise<void> {
       knowledgeService.on('rebuildProgress', (progress: { current: number; total: number; filename: string }) => {
         mainWindow?.webContents.send('knowledge:rebuildProgress', progress)
       })
+
+      // 监听增量修复进度
+      knowledgeService.on('repairStarted', (data: { total: number }) => {
+        mainWindow?.webContents.send('knowledge:repairStarted', data)
+      })
+      knowledgeService.on('repairProgress', (progress: { current: number; total: number; filename: string }) => {
+        mainWindow?.webContents.send('knowledge:repairProgress', progress)
+      })
+      knowledgeService.on('repairCompleted', (data: { added: number; checked: number; durationMs: number }) => {
+        mainWindow?.webContents.send('knowledge:repairCompleted', data)
+      })
       
       await knowledgeService.initialize()
 
@@ -5362,6 +5373,18 @@ ipcMain.handle('knowledge:isEnabled', async () => {
     return getKnowledge().isEnabled()
   } catch {
     return false
+  }
+})
+
+// 增量修复索引（只补充缺失文档，不清空已有数据）
+ipcMain.handle('knowledge:repairIndex', async () => {
+  try {
+    await waitForKnowledge()
+    const result = await getKnowledge().repairIndex()
+    return { success: true, ...result }
+  } catch (error) {
+    log.error('knowledge:repairIndex failed:', error)
+    return { success: false, error: (error as Error).message }
   }
 })
 
