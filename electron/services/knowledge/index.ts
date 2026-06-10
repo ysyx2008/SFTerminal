@@ -397,6 +397,8 @@ export class KnowledgeService extends EventEmitter {
       await new Promise<void>(resolve => setImmediate(resolve))
     }
 
+    // 每处理这么多文档就落盘一次 BM25，实现可中断续传
+    const REPAIR_CHECKPOINT_DOCS = 200
     let added = 0
 
     for (let i = 0; i < missingDocs.length; i++) {
@@ -444,6 +446,17 @@ export class KnowledgeService extends EventEmitter {
           }
         }
         added++
+
+        // 每 REPAIR_CHECKPOINT_DOCS 个文档落盘 BM25 一次（向量已每批落盘），
+        // 保证中途退出可续传，不会丢失已处理进度
+        if ((i + 1) % REPAIR_CHECKPOINT_DOCS === 0) {
+          await flushRepairBatch()
+          try {
+            await this.bm25Index.saveIndex()
+          } catch (e) {
+            log.warn('repairIndex: BM25 saveIndex (checkpoint) 失败:', e)
+          }
+        }
       } catch (error) {
         log.error(`repairIndex: 处理 ${doc.filename} 失败:`, error)
       }
@@ -473,8 +486,14 @@ export class KnowledgeService extends EventEmitter {
    * 原实现：只要任一索引完全为空，就对全部文档重新 embed + 写入。
    * 新实现：先做差集比对，只处理在向量库或 BM25 中缺失的文档。
    *   - 正常启动（索引完整）：仅做两次 O(N) 集合查询，毫秒级返回，不再触发进度条。
-   *   - 首次启用 / 模型升级 / 数据损坏（大量文档缺失）：行为与原实现完全相同，
+   *   - 首次启用 / 模型升级 / 数据损坏（大量文档缺失）：只补缺失的文档，
    *     进度条只反映真正需要处理的文档数，不含已有索引的文档。
+   *
+   * 可中断续传：向量库每批落盘、BM25 每 CHECKPOINT_DOCS 个文档落盘一次，
+   *   进程中途退出时已处理的文档不会丢失，下次启动只补剩余差集；补全后
+   *   差集归零，后续启动不再重建。这一点对 conversation（L3 对话记录，
+   *   数量可能上千）尤其关键——否则中途退出会让 BM25 进度全丢，导致每次
+   *   启动都重复重建。
    */
   private async checkAndRebuildIndex(): Promise<void> {
     const docs = this.getDocuments()
@@ -610,6 +629,31 @@ export class KnowledgeService extends EventEmitter {
       await new Promise<void>(resolve => setImmediate(resolve))
     }
 
+    // 检查点：把内存中已处理但未持久化的数据落盘，实现可中断续传。
+    // 向量库 addRecords 本就每批落盘，这里负责强制刷出攒批的剩余向量
+    // 并触发 BM25 saveIndex（BM25 平时用 skipSave 只进内存，不落盘）。
+    const CHECKPOINT_DOCS = 200
+    const persistCheckpoint = async (): Promise<void> => {
+      await flushEmbedBatch()
+      if (needRebuildVector && pendingVectorRecords.length > 0) {
+        try {
+          await this.vectorStorage.addRecords(pendingVectorRecords)
+        } catch (e) {
+          log.error('向量批量写入失败（checkpoint）:', e)
+          needRebuildVector = false
+        } finally {
+          pendingVectorRecords = []
+        }
+      }
+      if (needRebuildBM25) {
+        try {
+          await this.bm25Index.saveIndex()
+        } catch (e) {
+          log.warn('BM25 saveIndex (checkpoint) 失败:', e)
+        }
+      }
+    }
+
     for (let i = 0; i < missingDocs.length; i++) {
       const doc = missingDocs[i]
       if (!doc.content) continue
@@ -658,29 +702,18 @@ export class KnowledgeService extends EventEmitter {
         if ((i + 1) % 100 === 0 || i === missingDocs.length - 1) {
           log.info(`已重建 ${i + 1}/${missingDocs.length}: ${doc.filename}`)
         }
+
+        // 每 CHECKPOINT_DOCS 个文档落盘一次，保证中途退出可续传
+        if ((i + 1) % CHECKPOINT_DOCS === 0) {
+          await persistCheckpoint()
+        }
       } catch (error) {
         log.error(`Failed to rebuild index for ${doc.filename}:`, error)
       }
     }
 
-    await flushEmbedBatch()
-
-    if (pendingVectorRecords.length > 0) {
-      try {
-        await this.vectorStorage.addRecords(pendingVectorRecords)
-      } catch (batchError) {
-        log.error('向量批量写入失败（最后一批）:', batchError)
-        needRebuildVector = false
-      }
-    }
-
-    if (needRebuildBM25) {
-      try {
-        await this.bm25Index.saveIndex()
-      } catch (e) {
-        log.warn('BM25 saveIndex (重建结束) 失败:', e)
-      }
-    }
+    // 最后一次 checkpoint：刷出剩余 chunks/向量 + 保存 BM25
+    await persistCheckpoint()
 
     if (needRebuildVector) {
       try {
