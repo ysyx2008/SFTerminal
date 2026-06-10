@@ -2,7 +2,21 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.43.1 (2026-06-08) (Latest)
+## v10.43.2 (2026-06-10) (Latest)
+
+> Introduced the workbench architecture, abstracting terminal and assistant UIs into a composable region model to lay the foundation for future extensions such as a browser workbench; plus minor knowledge index and loading progress improvements and a few bug fixes.
+
+### Improvements
+- ⚡ **Workbench Architecture Refactor** (internal): Terminal and assistant UIs abstracted into a workbench model with composable, extensible regions—foundation for future workbench types
+- ⚡ **Incremental Knowledge Index Repair**: On startup, missing vector/BM25 entries are repaired incrementally instead of a full rebuild; checkpoint support allows resuming after interruption
+- ⚡ **Unified System Loading Progress**: Backend startup and knowledge index repair merged into a single loading bar
+- ⚡ **Loading Progress UI**: Multiple progress bars no longer overlap; index repair copy updated to "repair"
+
+### Bug Fixes
+- 🐛 **PPT Card Layout**: Fixed missing titles/badges inside cards and normalized in-card document flow
+- 🐛 **IM Duplicate Notifications**: `talk_to_user` no longer pushes duplicate tool-process notifications
+
+## v10.43.1 (2026-06-08)
 
 > Improved exec output truncation and updater dialog experience, plus fixes for stale streaming placeholders after network failures.
 
