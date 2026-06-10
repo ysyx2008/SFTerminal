@@ -40,12 +40,20 @@ const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 //   - dimension_mismatch: 真正的模型升级（首次见的概率最低，但确实存在）
 //   - data_corrupted    : 向量库损坏（manifest 指向不存在的 .lance 数据文件等）
 //   - missing           : 索引缺失（首次启用 / 用户删过 lancedb 目录 / BM25 .json 丢失）
-const knowledgeUpgrading = ref(false)
+// ── 统一系统加载进度条 ────────────────────────────────────────────────────────
+// 合并「后端启动」与「知识库重建」两种加载状态为同一条底部进度条，避免堆叠。
+// 两者都完成后才隐藏。
+const _startupDone = ref(false)   // 后端 init 是否已 done
+const _knowledgeDone = ref(true)  // 知识库是否空闲（默认不在重建）
 
-// 后端启动进度（用于诊断 Windows 无响应时卡在哪个阶段）
-const startupLoading = ref(false)
-const startupStage = ref('')
+const sysLoading = computed(() => !_startupDone.value || !_knowledgeDone.value)
+const sysLoadingText = ref('后端服务启动中...')
+const sysLoadingProgress = ref({ current: 0, total: 0, filename: '' })
+
 let cleanupStartupProgress: (() => void) | null = null
+let cleanupKnowledgeUpgrading: (() => void) | null = null
+let cleanupKnowledgeProgress: (() => void) | null = null
+let cleanupKnowledgeReady: (() => void) | null = null
 let startupDoneTimer: ReturnType<typeof setTimeout> | null = null
 
 const STARTUP_STAGE_LABELS: Record<string, string> = {
@@ -57,17 +65,16 @@ const STARTUP_STAGE_LABELS: Record<string, string> = {
   sensors: '启动传感器...',
   done: '初始化完成',
 }
-const knowledgeUpgradeCause = ref<'dimension_mismatch' | 'data_corrupted' | 'missing'>('missing')
-const knowledgeUpgradeProgress = ref({ current: 0, total: 0, filename: '' })
 
-const knowledgeUpgradeText = computed(() => {
-  switch (knowledgeUpgradeCause.value) {
+// 知识库原因文字复用原 computed 逻辑
+function knowledgeText(cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing') {
+  switch (cause) {
     case 'dimension_mismatch': return t('knowledge.upgrading')
     case 'data_corrupted':     return t('knowledge.repairing')
-    case 'missing':
     default:                   return t('knowledge.rebuilding')
   }
-})
+}
+// ─────────────────────────────────────────────────────────────────────────────
 const terminalStore = useTerminalStore()
 const configStore = useConfigStore()
 
@@ -287,9 +294,6 @@ const handleCloseShortcut = async () => {
 
 // 清理函数存储
 let cleanupTerminalCountListener: (() => void) | null = null
-let cleanupKnowledgeUpgrading: (() => void) | null = null
-let cleanupKnowledgeProgress: (() => void) | null = null
-let cleanupKnowledgeReady: (() => void) | null = null
 let cleanupMenuCommand: (() => void) | null = null
 let cleanupSchedulerTaskStarted: (() => void) | null = null
 let cleanupGatewayRemoteTab: (() => void) | null = null
@@ -346,35 +350,43 @@ onMounted(async () => {
     window.electronAPI.window.responseTerminalCount(terminalStore.tabs.length)
   })
 
-  // 监听后端启动进度（用于诊断 Windows 无响应时卡在哪个阶段）
-  startupLoading.value = true
+  // ── 统一系统加载监听 ───────────────────────────────────────────────────────
+  // 后端启动进度
   cleanupStartupProgress = window.electronAPI.app.onStartupProgress(({ stage }) => {
     if (stage === 'done') {
-      startupStage.value = ''
-      // 收到 done 后延迟隐藏，让用户看到"完成"状态
+      sysLoadingText.value = STARTUP_STAGE_LABELS.done
+      // 短暂显示"初始化完成"后标记 done，进度条由 sysLoading computed 决定是否隐藏
       startupDoneTimer = setTimeout(() => {
-        startupLoading.value = false
-      }, 800)
+        _startupDone.value = true
+        if (_knowledgeDone.value) sysLoadingText.value = ''
+      }, 600)
     } else {
-      startupStage.value = STARTUP_STAGE_LABELS[stage] ?? `${stage}...`
+      sysLoadingText.value = STARTUP_STAGE_LABELS[stage] ?? `${stage}...`
     }
   })
-  // 兜底：10 秒后无论如何隐藏（正常 init 远不到 10s，超时说明卡住）
-  startupDoneTimer = setTimeout(() => {
-    startupLoading.value = false
-  }, 10_000)
+  // 兜底：10 秒后强制标记 startup done（防止 done 事件丢失时条永远不消）
+  startupDoneTimer = setTimeout(() => { _startupDone.value = true }, 10_000)
 
-  // 监听知识库索引重建事件
+  // 知识库重建进度
   cleanupKnowledgeUpgrading = window.electronAPI.knowledge.onUpgrading((payload?: { cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing' }) => {
-    knowledgeUpgrading.value = true
-    knowledgeUpgradeCause.value = payload?.cause || 'missing'
+    _knowledgeDone.value = false
+    sysLoadingProgress.value = { current: 0, total: 0, filename: '' }
+    sysLoadingText.value = knowledgeText(payload?.cause)
   })
   cleanupKnowledgeProgress = window.electronAPI.knowledge.onRebuildProgress((data) => {
-    knowledgeUpgradeProgress.value = data
+    sysLoadingProgress.value = data
+    // 更新进度时同步文字（防止文字被 startup stage 覆盖）
+    if (!_knowledgeDone.value) {
+      const base = sysLoadingText.value.replace(/ \(\d+\/\d+\)$/, '')
+      sysLoadingText.value = base
+    }
   })
   cleanupKnowledgeReady = window.electronAPI.knowledge.onReady(() => {
-    knowledgeUpgrading.value = false
+    _knowledgeDone.value = true
+    sysLoadingProgress.value = { current: 0, total: 0, filename: '' }
+    if (_startupDone.value) sysLoadingText.value = ''
   })
+  // ──────────────────────────────────────────────────────────────────────────
 
   // 监听菜单命令
   cleanupMenuCommand = window.electronAPI.menu.onCommand(({ command }) => {
@@ -1113,39 +1125,32 @@ onUnmounted(() => {
       @awakened-change="isAwakened = $event"
     />
 
-    <!-- 后端服务启动进度提示（Steam 版不渲染，用于诊断 Windows 无响应） -->
+    <!-- 系统加载进度条：合并后端启动进度 + 知识库重建进度（Steam 版不渲染） -->
     <Transition name="slide-down">
-      <div v-if="startupLoading && !isSteamBuild" class="startup-progress-bar">
-        <div class="upgrade-content">
-          <Loader2 class="upgrade-icon" :size="16" />
-          <span class="upgrade-text">{{ startupStage || '后端服务启动中...' }}</span>
-        </div>
-        <div class="upgrade-progress">
-          <div class="startup-progress-indeterminate" />
-        </div>
-      </div>
-    </Transition>
-
-    <!-- 知识库升级进度提示（Steam 版不渲染） -->
-    <Transition name="slide-down">
-      <div v-if="knowledgeUpgrading && !isSteamBuild" class="knowledge-upgrade-bar" :class="{ 'above-startup-bar': startupLoading }">
+      <div v-if="sysLoading && !isSteamBuild" class="sys-loading-bar">
         <div class="upgrade-content">
           <Loader2 class="upgrade-icon" :size="16" />
           <span class="upgrade-text">
-            {{ knowledgeUpgradeText }}
-            <template v-if="knowledgeUpgradeProgress.total > 0">
-              ({{ knowledgeUpgradeProgress.current }}/{{ knowledgeUpgradeProgress.total }})
+            {{ sysLoadingText || '系统初始化中...' }}
+            <template v-if="sysLoadingProgress.total > 0">
+              ({{ sysLoadingProgress.current }}/{{ sysLoadingProgress.total }})
             </template>
           </span>
-          <span v-if="knowledgeUpgradeProgress.filename" class="upgrade-filename">
-            {{ knowledgeUpgradeProgress.filename }}
+          <span v-if="sysLoadingProgress.filename" class="upgrade-filename">
+            {{ sysLoadingProgress.filename }}
           </span>
         </div>
         <div class="upgrade-progress">
-          <div 
-            class="upgrade-progress-bar" 
-            :style="{ width: knowledgeUpgradeProgress.total > 0 ? (knowledgeUpgradeProgress.current / knowledgeUpgradeProgress.total * 100) + '%' : '0%' }"
-          ></div>
+          <!-- 知识库重建时显示确定进度条，否则显示不确定扫描动画 -->
+          <template v-if="!_knowledgeDone && sysLoadingProgress.total > 0">
+            <div
+              class="upgrade-progress-bar"
+              :style="{ width: (sysLoadingProgress.current / sysLoadingProgress.total * 100) + '%' }"
+            />
+          </template>
+          <template v-else>
+            <div class="sys-progress-indeterminate" />
+          </template>
         </div>
       </div>
     </Transition>
@@ -1356,19 +1361,19 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* 后端启动进度条 */
-.startup-progress-bar {
+/* 统一系统加载进度条（后端启动 + 知识库重建共用） */
+.sys-loading-bar {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border-color);
-  z-index: 999;
+  z-index: 1000;
 }
 
-/* 不确定进度动画（来回扫描） */
-.startup-progress-indeterminate {
+/* 不确定进度扫描动画（后端 init 阶段） */
+.sys-progress-indeterminate {
   height: 2px;
   background: var(--accent-primary);
   width: 40%;
@@ -1378,23 +1383,6 @@ onUnmounted(() => {
 @keyframes indeterminate-scan {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(300%); }
-}
-
-/* 知识库升级进度条 */
-.knowledge-upgrade-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: var(--bg-secondary);
-  border-top: 1px solid var(--border-color);
-  z-index: 1000;
-  transition: bottom 0.2s ease;
-}
-
-/* 启动进度条也可见时，知识库条上移避免重叠 */
-.knowledge-upgrade-bar.above-startup-bar {
-  bottom: 36px;
 }
 
 .upgrade-content {
