@@ -1128,7 +1128,7 @@ onUnmounted(() => {
 
     <!-- 知识库升级进度提示（Steam 版不渲染） -->
     <Transition name="slide-down">
-      <div v-if="knowledgeUpgrading && !isSteamBuild" class="knowledge-upgrade-bar">
+      <div v-if="knowledgeUpgrading && !isSteamBuild" class="knowledge-upgrade-bar" :class="{ 'above-startup-bar': startupLoading }">
         <div class="upgrade-content">
           <Loader2 class="upgrade-icon" :size="16" />
           <span class="upgrade-text">
@@ -1389,6 +1389,12 @@ onUnmounted(() => {
   background: var(--bg-secondary);
   border-top: 1px solid var(--border-color);
   z-index: 1000;
+  transition: bottom 0.2s ease;
+}
+
+/* 启动进度条也可见时，知识库条上移避免重叠 */
+.knowledge-upgrade-bar.above-startup-bar {
+  bottom: 36px;
 }
 
 .upgrade-content {
