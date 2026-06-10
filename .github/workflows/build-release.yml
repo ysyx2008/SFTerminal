@@ -274,10 +274,17 @@ jobs:
           if [ -f ${LIN}/latest-linux.yml ]; then
             $OSSUTIL cp ${LIN}/latest-linux.yml ${BUCKET}/releases/latest-linux.yml -f
             $OSSUTIL cp ${LIN}/SailFish-${VERSION}.AppImage ${BUCKET}/releases/SailFish-${VERSION}.AppImage -f
+            if [ -f "${LIN}/SailFish-${VERSION}.AppImage.blockmap" ]; then
+              $OSSUTIL cp "${LIN}/SailFish-${VERSION}.AppImage.blockmap" ${BUCKET}/releases/SailFish-${VERSION}.AppImage.blockmap -f
+            fi
           fi
 
           # 更新弹窗版本摘要
           $OSSUTIL cp release-meta.json ${BUCKET}/releases/release-meta.json -f
+
+          # 差分更新布局见 docs/auto-update-oss.md
+          chmod +x scripts/clean-oss-old-installers.sh
+          OSSUTIL=$OSSUTIL BUCKET=$BUCKET ./scripts/clean-oss-old-installers.sh "$VERSION"
           
           echo "✅ All files uploaded to OSS successfully!"
 

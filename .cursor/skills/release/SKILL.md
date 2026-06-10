@@ -146,3 +146,11 @@ git log v<当前版本>..HEAD --oneline
 - [ ] 更新日志及文档变更已提交
 - [ ] 当前在 develop 或 main，无未提交更改
 - [ ] 执行 `npm_config_yes=true npm version <patch|minor|major>` 完成发版（AI / 脚本场景必加前缀）
+
+---
+
+## OSS 与自动更新布局
+
+tag 推送后 CI 会上传 GitHub Releases + 阿里云 OSS。桶根目录（官网固定文件名）与 `releases/`（应用内更新、带版本号、blockmap 永久保留）**勿混用**。
+
+详见 **[docs/auto-update-oss.md](../../docs/auto-update-oss.md)**。

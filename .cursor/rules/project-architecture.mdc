@@ -227,7 +227,7 @@ Agent 的记忆分三层，模拟人类记忆的衰减梯度，三层协同在�
 - **开发**：`npm run dev`（Vite dev server + Electron）
 - **构建**：`npm run build`（Vite build → electron-builder）
 - **平台**：macOS (universal)、Windows (NSIS)、Linux (AppImage/deb)
-- **自动更新**：GitHub Releases + electron-updater
+- **自动更新**：GitHub Releases + electron-updater（国内 OSS 镜像与差分/blockmap 策略见 `docs/auto-update-oss.md`）
 - **模型**：构建前需 `npm run download:models` 下载嵌入/语音模型
 
 ## 常用命令
