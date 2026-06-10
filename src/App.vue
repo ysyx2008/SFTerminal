@@ -41,10 +41,10 @@ const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 //   - data_corrupted    : 向量库损坏（manifest 指向不存在的 .lance 数据文件等）
 //   - missing           : 索引缺失（首次启用 / 用户删过 lancedb 目录 / BM25 .json 丢失）
 // ── 统一系统加载进度条 ────────────────────────────────────────────────────────
-// 合并「后端启动」与「知识库重建」两种加载状态为同一条底部进度条，避免堆叠。
+// 合并「后端启动」与「知识库索引补全」两种加载状态为同一条底部进度条，避免堆叠。
 // 两者都完成后才隐藏。
 const _startupDone = ref(false)   // 后端 init 是否已 done
-const _knowledgeDone = ref(true)  // 知识库是否空闲（默认不在重建）
+const _knowledgeDone = ref(true)  // 知识库是否空闲（默认不在补全索引）
 
 const sysLoading = computed(() => !_startupDone.value || !_knowledgeDone.value)
 const sysLoadingText = ref('后端服务启动中...')
@@ -70,8 +70,7 @@ const STARTUP_STAGE_LABELS: Record<string, string> = {
 function knowledgeText(cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing') {
   switch (cause) {
     case 'dimension_mismatch': return t('knowledge.upgrading')
-    case 'data_corrupted':     return t('knowledge.repairing')
-    default:                   return t('knowledge.rebuilding')
+    default:                   return t('knowledge.repairing')
   }
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -367,7 +366,7 @@ onMounted(async () => {
   // 兜底：10 秒后强制标记 startup done（防止 done 事件丢失时条永远不消）
   startupDoneTimer = setTimeout(() => { _startupDone.value = true }, 10_000)
 
-  // 知识库重建进度
+  // 知识库索引补全进度（启动时增量修复缺失文档）
   cleanupKnowledgeUpgrading = window.electronAPI.knowledge.onUpgrading((payload?: { cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing' }) => {
     _knowledgeDone.value = false
     sysLoadingProgress.value = { current: 0, total: 0, filename: '' }
@@ -1141,7 +1140,7 @@ onUnmounted(() => {
           </span>
         </div>
         <div class="upgrade-progress">
-          <!-- 知识库重建时显示确定进度条，否则显示不确定扫描动画 -->
+          <!-- 知识库索引补全时显示确定进度条，否则显示不确定扫描动画 -->
           <template v-if="!_knowledgeDone && sysLoadingProgress.total > 0">
             <div
               class="upgrade-progress-bar"
