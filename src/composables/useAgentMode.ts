@@ -78,9 +78,19 @@ export function useAgentMode(
   const configStore = useConfigStore()
   const canvasStore = useCanvasStore()
   const tts = useTts()
-  if (configStore.ttsSettings.enabled && configStore.ttsSettings.autoSpeak) {
-    tts.isEnabled.value = true
-  }
+
+  watch(
+    () => [configStore.ttsSettings.enabled, configStore.ttsSettings.autoSpeak] as const,
+    ([enabled, autoSpeak]) => {
+      if (enabled && autoSpeak) {
+        tts.enable()
+      } else if (tts.isEnabled.value) {
+        tts.stop()
+        tts.isEnabled.value = false
+      }
+    },
+    { immediate: true },
+  )
 
   // 当前终端 ID（使用传入的 tabId，不再依赖 activeTabId）
   const currentTabId = tabId
@@ -129,6 +139,13 @@ export function useAgentMode(
   const currentTab = computed(() => {
     return terminalStore.tabs.find(t => t.id === currentTabId.value)
   })
+
+  /** 设置里「启用 TTS + 自动朗读」且非远程会话时，对话流才喂给 TTS */
+  const shouldAutoSpeak = computed(() =>
+    configStore.ttsSettings.enabled
+    && configStore.ttsSettings.autoSpeak
+    && !currentTab.value?.isRemote
+  )
 
   const isStandaloneAssistant = computed(() => currentTab.value?.type === 'assistant')
 
@@ -770,7 +787,7 @@ export function useAgentMode(
     inputText.value = ''
 
     // 新任务开始，重置 TTS（会停止旧播报）
-    if (tts.isEnabled.value) {
+    if (shouldAutoSpeak.value) {
       tts.startNewTask()
     }
 
@@ -1089,7 +1106,7 @@ export function useAgentMode(
       }
 
       // TTS: 流式 message / final_result 喂给语音合成（远程会话不播报）
-      if (tts.isEnabled.value && configStore.ttsSettings.enabled && !currentTab.value?.isRemote) {
+      if (shouldAutoSpeak.value && tts.isEnabled.value) {
         if (data.step.type === 'message' && data.step.content) {
           tts.feedContent(data.step.content)
         } else if (data.step.type === 'final_result' && data.step.content) {
@@ -1121,7 +1138,7 @@ export function useAgentMode(
       terminalStore.setAgentPendingConfirm(currentTabId.value, data)
 
       // TTS 播报确认请求
-      if (tts.isEnabled.value && configStore.ttsSettings.enabled && !currentTab.value?.isRemote) {
+      if (shouldAutoSpeak.value && tts.isEnabled.value) {
         tts.flush()
         const args = eventData.toolArgs
         const risk = eventData.riskLevel === 'dangerous' ? '注意，这是高风险操作。'

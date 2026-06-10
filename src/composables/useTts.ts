@@ -23,6 +23,8 @@ export interface TtsController {
   isSpeaking: ReturnType<typeof ref<boolean>>
   /** 是否已启用自动朗读 */
   isEnabled: ReturnType<typeof ref<boolean>>
+  /** 开启自动朗读（不清空已在播队列，仅解除 stop 态） */
+  enable(): void
   /** 切换启用状态 */
   toggle(): void
 }
@@ -288,6 +290,11 @@ export function useTts(): TtsController {
     resetSynthesisState()
   }
 
+  function enable(): void {
+    stopped = false
+    isEnabled.value = true
+  }
+
   function toggle(): void {
     isEnabled.value = !isEnabled.value
     if (!isEnabled.value) {
@@ -311,6 +318,7 @@ export function useTts(): TtsController {
     startNewTask,
     isSpeaking,
     isEnabled,
+    enable,
     toggle,
   }
 }
