@@ -10,6 +10,8 @@ const _startupProgressCallbacks = new Set<(data: { stage: string }) => void>()
 ipcRenderer.on('startup:progress', (_event, data: { stage: string }) => {
   _latestStartupStage = data.stage
   _startupProgressCallbacks.forEach(cb => cb(data))
+  // done 后清缓存：避免 HMR 热重载时 renderer 重挂载还拿到旧的 done 补发
+  if (data.stage === 'done') _latestStartupStage = null
 })
 // ─────────────────────────────────────────────────────────────────────────────
 
