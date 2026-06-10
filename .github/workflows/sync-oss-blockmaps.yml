@@ -1,0 +1,40 @@
+name: Sync OSS Blockmaps (one-off)
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: '最多处理多少个 release（0=全部）'
+        required: false
+        default: '0'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup ossutil
+        run: |
+          curl -o ossutil64.zip https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip -j ossutil64.zip -d /tmp/ossutil
+          chmod +x /tmp/ossutil/ossutil64
+          /tmp/ossutil/ossutil64 config -e oss-cn-wuhan-lr.aliyuncs.com \
+            -i ${{ secrets.OSS_ACCESS_KEY_ID }} \
+            -k ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+
+      - name: Sync blockmaps from GitHub Releases to OSS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OSSUTIL: /tmp/ossutil/ossutil64
+        run: |
+          ARGS=()
+          if [[ "${{ inputs.limit }}" != "0" && -n "${{ inputs.limit }}" ]]; then
+            ARGS+=(--limit "${{ inputs.limit }}")
+          fi
+          ./scripts/sync-blockmaps-github-to-oss.sh "${ARGS[@]}"
