@@ -257,6 +257,15 @@ export const IM_DELIVERY_TOOL_NAMES = new Set([
   'send_to_chat',
 ])
 
+/**
+ * 自带 IM 出站能力的工具，不再走「🔧 调用 …」过程通知。
+ * talk_to_user 已通过 sendNotification 投递正文，再发 tool_call 卡片会重复刷屏。
+ */
+export const IM_SKIP_PROCESS_NOTIFY_TOOLS = new Set([
+  'ask_user',
+  'talk_to_user',
+])
+
 /** 是否为 IM 投递类工具的失败结果（需同步到微信等渠道） */
 export function isImDeliveryToolFailure(step: {
   toolName?: string
@@ -1324,7 +1333,7 @@ export class IMService {
             }
             enqueueSend(sendAsk)
           } else if (step.type === 'tool_call' && step.toolName) {
-            if (step.toolName === 'ask_user') return
+            if (IM_SKIP_PROCESS_NOTIFY_TOOLS.has(step.toolName)) return
             if (!sendProcess) return
             // 流式 tool_call 会先以 isStreaming=true、无 toolArgs 回调；若此时发通知并记入
             // notifiedToolCalls，后续执行器 updateStep 带上 toolArgs 会因同 step.id 被去重跳过，
@@ -1367,7 +1376,7 @@ export class IMService {
             step.type === 'tool_result' &&
             sendProcess &&
             step.toolName &&
-            step.toolName !== 'ask_user' &&
+            !IM_SKIP_PROCESS_NOTIFY_TOOLS.has(step.toolName) &&
             step.success === false &&
             !isImDeliveryToolFailure(step)
           ) {

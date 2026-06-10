@@ -26,6 +26,7 @@ import {
   type IMLastContact,
   isImDeliveryToolFailure,
   formatImDeliveryToolFailure,
+  IM_SKIP_PROCESS_NOTIFY_TOOLS,
 } from '../im/im.service'
 
 type MockAdapter = {
@@ -53,6 +54,14 @@ function createAdapter(connected: boolean): MockAdapter {
     sendMarkdown: vi.fn().mockResolvedValue(undefined)
   }
 }
+
+describe('IM_SKIP_PROCESS_NOTIFY_TOOLS', () => {
+  it('excludes self-delivering tools from process notifications', () => {
+    expect(IM_SKIP_PROCESS_NOTIFY_TOOLS.has('talk_to_user')).toBe(true)
+    expect(IM_SKIP_PROCESS_NOTIFY_TOOLS.has('ask_user')).toBe(true)
+    expect(IM_SKIP_PROCESS_NOTIFY_TOOLS.has('load_skill')).toBe(false)
+  })
+})
 
 describe('IM delivery tool failure helpers', () => {
   it('detects send_file_to_chat failure by success flag', () => {
