@@ -178,6 +178,45 @@ describe('renderHtmlToPptx', () => {
     expect(fs.statSync(out).size).toBeGreaterThan(1000)
   }, 30000)
 
+  it.runIf(hasBrowser)('extracts card inner flow layout and common AI badge patterns', async () => {
+    const css =
+      'h1,h2,h3,p{margin:0;} .card{background:#F8FAFC;border-radius:14px;box-shadow:0 6px 18px rgba(0,0,0,.08);}'
+
+    const flowCard = `<div class="bg" style="background:#fff"></div>
+<div class="card" style="position:absolute;left:80px;top:180px;width:340px;height:240px;padding:20px">
+  <h3 style="font-size:22px;color:#1E2761">标题</h3>
+  <p style="margin-top:12px;font-size:16px;color:#6B7280">描述</p>
+  <div style="margin-top:16px;display:inline-block;padding:4px 12px;background:#C9A227;border-radius:4px">
+    <p style="font-size:14px;color:#fff">流程A</p>
+  </div>
+</div>`
+
+    const divTitleBadge = `<div class="bg" style="background:#fff"></div>
+<div class="card" style="position:absolute;left:80px;top:180px;width:340px;height:240px;padding:20px">
+  <div style="font-size:22px;font-weight:700;color:#1E2761">标题</div>
+  <p style="margin-top:12px;font-size:16px;color:#6B7280">描述</p>
+  <div style="margin-top:16px;display:inline-block;padding:4px 12px;background:#C9A227;border-radius:4px;font-size:14px;color:#fff">流程A</div>
+</div>`
+
+    const [flowData] = await renderSlides([flowCard], css, DECK_SIZES.widescreen)
+    const flowTexts = flowData.elements
+      .filter((e) => typeof e.text === 'string' && e.text)
+      .map((e) => e.text as string)
+    expect(flowTexts).toContain('标题')
+    expect(flowTexts).toContain('描述')
+    expect(flowTexts).toContain('流程A')
+    expect(flowData.errors).toEqual([])
+
+    const [divData] = await renderSlides([divTitleBadge], css, DECK_SIZES.widescreen)
+    const divTexts = divData.elements
+      .filter((e) => typeof e.text === 'string' && e.text)
+      .map((e) => e.text as string)
+    expect(divTexts).toContain('标题')
+    expect(divTexts).toContain('描述')
+    expect(divTexts).toContain('流程A')
+    expect(divData.errors).toEqual([])
+  }, 30000)
+
   it.runIf(hasBrowser)('caches per-slide renders and reports progress', async () => {
     const slide = `<div class="bg" style="background:#fff"></div>
       <p style="position:absolute;left:80px;top:80px;width:800px;font-size:24px;color:#111">缓存测试 ${Date.now()}</p>`

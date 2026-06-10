@@ -200,6 +200,97 @@ const EXTRACTION_SCRIPT = `(async () => {
   const textTags = ['P','H1','H2','H3','H4','H5','H6','UL','OL','LI'];
   const processed = new Set();
 
+  const getBareText = (el) => Array.from(el.childNodes)
+    .filter(n => n.nodeType === Node.TEXT_NODE)
+    .map(n => n.textContent.trim())
+    .filter(Boolean)
+    .join(' ');
+  const hasOnlyBareText = (el) => {
+    const bare = getBareText(el);
+    if (!bare) return false;
+    return !Array.from(el.children).some(c => c.textContent && c.textContent.trim());
+  };
+  const isInsideProcessedText = (el) => {
+    let p = el.parentElement;
+    while (p) {
+      if (processed.has(p) && textTags.includes(p.tagName)) return true;
+      p = p.parentElement;
+    }
+    return false;
+  };
+  const pushTextFromEl = (el, tagType) => {
+    const r = el.getBoundingClientRect();
+    const text = el.textContent.trim();
+    if (r.width === 0 || r.height === 0 || !text) return;
+    if (el.tagName !== 'LI' && /^[•\\-\\*▪▸○●◆◇■□]\\s/.test(text.trimStart())) {
+      errors.push('文本 <' + tagType + '> 以项目符号开头，请改用 <ul>/<ol> 列表。');
+      return;
+    }
+    const c = window.getComputedStyle(el);
+    const rotation = getRotation(c.transform, c.writingMode);
+    const ps = getPositionAndSize(el, r, rotation);
+    const baseStyle = {
+      fontSize: pxToPoints(c.fontSize),
+      fontFace: c.fontFamily.split(',')[0].replace(/['"]/g, '').trim(),
+      color: rgbToHex(c.color),
+      align: c.textAlign === 'start' ? 'left' : c.textAlign,
+      lineSpacing: pxToPoints(c.lineHeight),
+      paraSpaceBefore: pxToPoints(c.marginTop),
+      paraSpaceAfter: pxToPoints(c.marginBottom),
+      margin: [pxToPoints(c.paddingLeft), pxToPoints(c.paddingRight), pxToPoints(c.paddingBottom), pxToPoints(c.paddingTop)],
+    };
+    const tr = extractAlpha(c.color); if (tr !== null) baseStyle.transparency = tr;
+    if (rotation !== null) baseStyle.rotate = rotation;
+    const hasFmt = el.querySelector('b, i, u, strong, em, span, br');
+    if (hasFmt) {
+      const ts = c.textTransform;
+      const runs = parseInlineFormatting(el, {}, [], (s) => applyTextTransform(s, ts));
+      const adj = Object.assign({}, baseStyle);
+      if (adj.lineSpacing) {
+        const maxFs = Math.max(adj.fontSize, ...runs.map(rn => (rn.options && rn.options.fontSize) || 0));
+        if (maxFs > adj.fontSize) { const mult = adj.lineSpacing / adj.fontSize; adj.lineSpacing = maxFs * mult; }
+      }
+      elements.push({ type: tagType, text: runs, position: { x: pxToInch(ps.x), y: pxToInch(ps.y), w: pxToInch(ps.w), h: pxToInch(ps.h) }, style: adj });
+    } else {
+      const tt = c.textTransform;
+      const transformed = applyTextTransform(text, tt);
+      const isBold = c.fontWeight === 'bold' || parseInt(c.fontWeight) >= 600;
+      elements.push({
+        type: tagType, text: transformed,
+        position: { x: pxToInch(ps.x), y: pxToInch(ps.y), w: pxToInch(ps.w), h: pxToInch(ps.h) },
+        style: Object.assign({}, baseStyle, { bold: isBold && !shouldSkipBold(c.fontFamily), italic: c.fontStyle === 'italic', underline: c.textDecoration.includes('underline') }),
+      });
+    }
+  };
+  const pushShapeFromEl = (el, c) => {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return;
+    const hasBg = c.backgroundColor && c.backgroundColor !== 'rgba(0, 0, 0, 0)';
+    const bt = c.borderTopWidth, br = c.borderRightWidth, bb = c.borderBottomWidth, bl = c.borderLeftWidth;
+    const borders = [bt, br, bb, bl].map(b => parseFloat(b) || 0);
+    const hasBorder = borders.some(b => b > 0);
+    const hasUniformBorder = hasBorder && borders.every(b => b === borders[0]);
+    if (!hasBg && !hasUniformBorder) return;
+    const shadow = parseBoxShadow(c.boxShadow);
+    elements.push({
+      type: 'shape', text: '',
+      position: { x: pxToInch(r.left), y: pxToInch(r.top), w: pxToInch(r.width), h: pxToInch(r.height) },
+      shape: {
+        fill: hasBg ? rgbToHex(c.backgroundColor) : null,
+        transparency: hasBg ? extractAlpha(c.backgroundColor) : null,
+        line: hasUniformBorder ? { color: rgbToHex(c.borderColor), width: pxToPoints(c.borderWidth) } : null,
+        rectRadius: (() => {
+          const radius = c.borderRadius; const rv = parseFloat(radius);
+          if (rv === 0) return 0;
+          if (radius.includes('%')) { if (rv >= 50) return 1; const md = Math.min(r.width, r.height); return (rv / 100) * pxToInch(md); }
+          if (radius.includes('pt')) return rv / 72;
+          return rv / PX_PER_IN;
+        })(),
+        shadow: shadow,
+      },
+    });
+  };
+
   document.querySelectorAll('*').forEach((el) => {
     if (processed.has(el)) return;
 
@@ -209,7 +300,9 @@ const EXTRACTION_SCRIPT = `(async () => {
       const hasBorder = ['borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth'].some(k => parseFloat(c[k]) > 0);
       const hasShadow = c.boxShadow && c.boxShadow !== 'none';
       if (hasBg || hasBorder || hasShadow) {
-        errors.push('文本元素 <' + el.tagName.toLowerCase() + '> 带了背景/边框/阴影。卡片请用 <div> 容器，文字放在容器内的 <p>/<h*> 里。');
+        pushShapeFromEl(el, c);
+        pushTextFromEl(el, el.tagName.toLowerCase());
+        processed.add(el);
         return;
       }
     }
@@ -236,7 +329,9 @@ const EXTRACTION_SCRIPT = `(async () => {
       for (const node of el.childNodes) {
         if (node.nodeType === Node.TEXT_NODE) {
           const t = node.textContent.trim();
-          if (t) errors.push('DIV 里有未包裹的文本 "' + t.substring(0, 40) + '"。所有文字必须放进 <p>/<h1>-<h6>/<ul>/<ol>。');
+          if (t && el.children.length > 0) {
+            errors.push('DIV 里有未包裹的文本 "' + t.substring(0, 40) + '"。所有文字必须放进 <p>/<h1>-<h6>/<ul>/<ol>。');
+          }
         }
       }
       const bgi = c.backgroundImage;
@@ -288,9 +383,24 @@ const EXTRACTION_SCRIPT = `(async () => {
             });
           }
           for (const bln of borderLines) elements.push(bln);
+          if (hasOnlyBareText(el)) pushTextFromEl(el, 'p');
           processed.add(el); return;
         }
       }
+      if (hasOnlyBareText(el)) {
+        pushTextFromEl(el, 'p');
+        processed.add(el); return;
+      }
+    }
+
+    if (el.tagName === 'SPAN') {
+      if (isInsideProcessedText(el)) return;
+      const c = window.getComputedStyle(el);
+      const hasBg = c.backgroundColor && c.backgroundColor !== 'rgba(0, 0, 0, 0)';
+      const hasBorder = ['borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth'].some(k => parseFloat(c[k]) > 0);
+      if (hasBg || hasBorder) pushShapeFromEl(el, c);
+      pushTextFromEl(el, 'span');
+      processed.add(el); return;
     }
 
     if (el.tagName === 'UL' || el.tagName === 'OL') {
@@ -328,48 +438,7 @@ const EXTRACTION_SCRIPT = `(async () => {
     }
 
     if (!textTags.includes(el.tagName)) return;
-    const r = el.getBoundingClientRect();
-    const text = el.textContent.trim();
-    if (r.width === 0 || r.height === 0 || !text) return;
-    if (el.tagName !== 'LI' && /^[•\\-\\*▪▸○●◆◇■□]\\s/.test(text.trimStart())) {
-      errors.push('文本 <' + el.tagName.toLowerCase() + '> 以项目符号开头，请改用 <ul>/<ol> 列表。');
-      return;
-    }
-    const c = window.getComputedStyle(el);
-    const rotation = getRotation(c.transform, c.writingMode);
-    const ps = getPositionAndSize(el, r, rotation);
-    const baseStyle = {
-      fontSize: pxToPoints(c.fontSize),
-      fontFace: c.fontFamily.split(',')[0].replace(/['"]/g, '').trim(),
-      color: rgbToHex(c.color),
-      align: c.textAlign === 'start' ? 'left' : c.textAlign,
-      lineSpacing: pxToPoints(c.lineHeight),
-      paraSpaceBefore: pxToPoints(c.marginTop),
-      paraSpaceAfter: pxToPoints(c.marginBottom),
-      margin: [pxToPoints(c.paddingLeft), pxToPoints(c.paddingRight), pxToPoints(c.paddingBottom), pxToPoints(c.paddingTop)],
-    };
-    const tr = extractAlpha(c.color); if (tr !== null) baseStyle.transparency = tr;
-    if (rotation !== null) baseStyle.rotate = rotation;
-    const hasFmt = el.querySelector('b, i, u, strong, em, span, br');
-    if (hasFmt) {
-      const ts = c.textTransform;
-      const runs = parseInlineFormatting(el, {}, [], (s) => applyTextTransform(s, ts));
-      const adj = Object.assign({}, baseStyle);
-      if (adj.lineSpacing) {
-        const maxFs = Math.max(adj.fontSize, ...runs.map(rn => (rn.options && rn.options.fontSize) || 0));
-        if (maxFs > adj.fontSize) { const mult = adj.lineSpacing / adj.fontSize; adj.lineSpacing = maxFs * mult; }
-      }
-      elements.push({ type: el.tagName.toLowerCase(), text: runs, position: { x: pxToInch(ps.x), y: pxToInch(ps.y), w: pxToInch(ps.w), h: pxToInch(ps.h) }, style: adj });
-    } else {
-      const tt = c.textTransform;
-      const transformed = applyTextTransform(text, tt);
-      const isBold = c.fontWeight === 'bold' || parseInt(c.fontWeight) >= 600;
-      elements.push({
-        type: el.tagName.toLowerCase(), text: transformed,
-        position: { x: pxToInch(ps.x), y: pxToInch(ps.y), w: pxToInch(ps.w), h: pxToInch(ps.h) },
-        style: Object.assign({}, baseStyle, { bold: isBold && !shouldSkipBold(c.fontFamily), italic: c.fontStyle === 'italic', underline: c.textDecoration.includes('underline') }),
-      });
-    }
+    pushTextFromEl(el, el.tagName.toLowerCase());
     processed.add(el);
   });
 
@@ -658,7 +727,7 @@ export interface RenderControls {
 // 按页渲染缓存：key = sha1(version + layout + css + slide html)。append 重渲整本时旧页秒回。
 // EXTRACTION_VERSION 必须在每次改动提取脚本/SlideData 结构时 +1，否则长驻进程里旧版渲染结果
 // 会被复用（HMR 热更新代码但模块级 Map 残留），导致修复对未变内容不生效（曾因此让阴影脏数据残留）。
-const EXTRACTION_VERSION = 2
+const EXTRACTION_VERSION = 3
 const renderCache = new Map<string, SlideData>()
 const RENDER_CACHE_CAP = 300
 

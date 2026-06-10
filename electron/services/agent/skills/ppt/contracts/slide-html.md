@@ -15,13 +15,14 @@
 
 ## 排版规则
 
-1. **绝对定位**：元素用 `position:absolute; left/top/width`（px）。浏览器算最终坐标，映射时按 `getBoundingClientRect` 转英寸。
-2. **文字载体**：所有文字必须在 `<p>/<h1>-<h6>/<ul>/<ol>` 内。`<div>` 内不得有裸文本节点。
-3. **卡片/色块**：用 `<div>`，可带 `background` / `border`（统一边框→形状描边；非统一→四条线）/ `border-radius`（→ rectRadius）/ `box-shadow`（外阴影→ PPT 阴影）。文字放进 div 内的 `<p>/<h*>`。
-4. **整页底色**：每页第一个 `<div class="bg" style="background:#xxx"></div>`（`.bg` 已在 BASE_CSS 里 `position:absolute;inset:0`），或在 `css` 里写 `body{background:#xxx}`（→ slide.background）。
-5. **列表**：`<ul>/<ol><li>`，不要手敲「• - *」。`<li>` 内可用 `<b><i><u><span>` 行内格式。
-6. **图片**：`<img src="绝对路径或 file://">`；图表先 `load_skill("chart")` 出 PNG 再插入。
-7. **行内格式**：`<b>/<strong>` 粗体、`<i>/<em>` 斜体、`<u>` 下划线、`<span style="color/font-size">` 局部样式。
+1. **绝对定位（页面级）**：标题、卡片外壳、整页装饰用 `position:absolute; left/top/width`（px）。浏览器算最终坐标，映射时按 `getBoundingClientRect` 转英寸。
+2. **卡片内部**：用自然文档流 + `padding` 堆叠 `<h*>/<p>/<ul>`，**禁止在卡片内再套 `position:absolute`**（易导致标题/徽章在 PPT 中丢失）。
+3. **文字载体**：所有文字必须在 `<p>/<h1>-<h6>/<ul>/<ol>` 内。`<div>` 内不得**同时**有裸文本与子元素。
+4. **卡片/色块**：外壳用 `<div>`（页面级 absolute），可带 `background` / `border` / `border-radius` / `box-shadow`。徽章 = 色块 `<div>` + 内层 `<p style="margin:0">` 文字。
+5. **整页底色**：每页第一个 `<div class="bg" style="background:#xxx"></div>`（`.bg` 已在 BASE_CSS 里 `position:absolute;inset:0`），或在 `css` 里写 `body{background:#xxx}`（→ slide.background）。
+6. **列表**：`<ul>/<ol><li>`，不要手敲「• - *」。`<li>` 内可用 `<b><i><u><span>` 行内格式。
+7. **图片**：`<img src="绝对路径或 file://">`；图表先 `load_skill("chart")` 出 PNG 再插入。
+8. **行内格式**：`<b>/<strong>` 粗体、`<i>/<em>` 斜体、`<u>` 下划线、`<span style="color/font-size">` 仅用于行内局部样式（不要用来做徽章）。
 
 ## 渲染期会报错的情况（QA）
 

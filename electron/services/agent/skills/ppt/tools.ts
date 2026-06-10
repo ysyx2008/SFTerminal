@@ -16,8 +16,8 @@ export const pptTools: ToolDefinition[] = [
 **怎么写**（加载 ppt 技能后详见技能文档）：
 - \`slides\`：字符串数组，每个元素 = 一页的 body 内联 HTML（不要写 <html>/<body>/<head>，系统会包裹并把 body 固定为 16:9 1280×720px）
 - \`css\`：所有页共享的 <style> 文本（配色、字体、卡片样式都写这里，省 token）
-- 用**绝对定位**摆放元素（position:absolute; left/top/width 用 px）；文字必须放进 <p>/<h1>-<h6>/<ul>/<ol>
-- 卡片/色块用 <div>（可带 background/border/border-radius/box-shadow），文字放容器内
+- 页面级用**绝对定位**（position:absolute; left/top/width 用 px）；卡片**内部**用文档流+padding，禁止卡内再套 absolute
+- 卡片/徽章：外壳 <div> 做色块，文字放内层 <p>/<h*>；标题用 h2/h3 不要用 div
 - 背景：每页第一个 \`<div class="bg" style="background:#xxx">\` 做整页底色；或在 css 里 body{background}
 - **不支持 CSS 渐变**（用纯色）；图片用 <img> + 绝对路径；图表先 chart 技能出 PNG
 - 内容不能超出页面（系统会报溢出错误让你精简）

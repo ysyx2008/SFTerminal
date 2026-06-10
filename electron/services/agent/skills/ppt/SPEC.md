@@ -1,6 +1,6 @@
 # PPT 技能 (ppt skill)
 
-> Last verified: 2026-06-05
+> Last verified: 2026-06-10
 
 ## 职责
 
@@ -63,7 +63,9 @@ AI 写 css + slides[]（mode replace/append）
 | HTML | PPT 元素 | 说明 |
 |---|---|---|
 | body 背景色 | `slide.background` | CSS 渐变不支持（报错，用纯色或 `.bg` div） |
-| `<p>/<h1>-<h6>` | 文本框 | 读 font/color/align/lineSpacing/位置；支持 `<b><i><u><span>` 行内格式 |
+| `<p>/<h1>-<h6>` | 文本框 | 读 font/color/align/lineSpacing/位置；支持 `<b><i><u><span>` 行内格式；带 bg/border 时拆成形状+文字 |
+| `<span>`（独立徽章） | 文本框（可选形状底） | 行内 span 由父级文本吸收；独立 span 提取为文字 |
+| `<div>`（仅裸文本） | 文本框 | 无子元素时的裸文本 div（如 AI 用 div 做标题）按 `<p>` 提取 |
 | `<ul>/<ol>` | 项目符号文本块 | `<li>` → bullet run |
 | `<div>`（带 bg/border/radius/shadow） | 形状（rect/roundRect） + 可能的边框线 | 卡片/色块；子文本元素独立渲染在上层 |
 | `<img>` | 图片 | 绝对路径 / `file://`；图表先 chart 技能出 PNG |
