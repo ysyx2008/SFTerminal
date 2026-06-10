@@ -519,7 +519,7 @@ export class KnowledgeService extends EventEmitter {
     const missingBm25  = missingDocs.filter(d => !bm25DocIds.has(d.id))
 
     let needRebuildVector = missingVector.length > 0
-    let needRebuildBM25  = missingBm25.length > 0
+    const needRebuildBM25  = missingBm25.length > 0
 
     log.info(
       `开始增量重建索引：共 ${docs.length} 个文档，` +

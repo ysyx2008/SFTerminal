@@ -359,7 +359,7 @@ const repairKnowledge = async () => {
     repairing.value = true
     repairProgress.value = null
 
-    const unsubProgress = api.knowledge.onRepairProgress?.((data) => {
+    const unsubProgress = api.knowledge.onRepairProgress?.((data: { current: number; total: number; filename: string }) => {
       repairProgress.value = data
     })
 
