@@ -917,7 +917,7 @@ export function useAgentMode(
       }
       terminalStore.setAgentFinalResult(tabId, finalContent)
     } finally {
-      terminalStore.setAgentRunning(tabId, false)
+      terminalStore.finalizeAgentRunState(tabId)
     }
 
     // 完成后使用智能滚动
@@ -1173,7 +1173,7 @@ export function useAgentMode(
       // 只处理属于当前 AiPanel 绑定 tab 的事件（优先使用 ptyId 匹配）
       if (foundTabId !== currentTabId.value) return
 
-      terminalStore.setAgentRunning(currentTabId.value, false)
+      terminalStore.finalizeAgentRunState(currentTabId.value)
       // 通知 Canvas 任务完成
       if (isStandaloneAssistant.value) {
         canvasStore.handleAgentComplete(currentTabId.value)
@@ -1216,7 +1216,7 @@ export function useAgentMode(
         : terminalStore.findTabIdByAgentId(data.agentId)
       if (foundTabId !== currentTabId.value) return
 
-      terminalStore.setAgentRunning(currentTabId.value, false)
+      terminalStore.finalizeAgentRunState(currentTabId.value)
       queuedProactiveReply.value = null
       terminalStore.addAgentStep(currentTabId.value, {
         id: `error_${Date.now()}`,

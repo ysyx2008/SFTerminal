@@ -306,8 +306,6 @@ let cleanupWatchActivateMessage: (() => void) | null = null
 let cleanupAgentCompleteForProactive: (() => void) | null = null
 let cleanupAgentErrorForTabAttention: (() => void) | null = null
 let cleanupAgentNeedConfirmGlobal: (() => void) | null = null
-let cleanupAgentStepGlobal: (() => void) | null = null
-let cleanupAgentStepRemovedGlobal: (() => void) | null = null
 let cleanupFullScreenChange: (() => void) | null = null
 
 
@@ -589,36 +587,11 @@ onMounted(async () => {
     return terminalStore.findTabIdByAgentId(data.agentId)
   }
 
-  // 全局兜底：多助手 tab 并行时，将 needConfirm 写入正确 tab（不依赖 AiPanel 是否曾激活挂载）
+  // 全局兜底：多 tab 并行时将 needConfirm 写入正确 tab（与各 AiPanel 监听互补，避免路由遗漏）
   cleanupAgentNeedConfirmGlobal = window.electronAPI.agent.onNeedConfirm((data) => {
     const tabId = resolveAgentEventTabId(data)
     if (!tabId) return
     terminalStore.setAgentPendingConfirm(tabId, data)
-  })
-
-  // 欢迎页（activeTabId 为空）会卸载全部 AiPanel；步骤事件需全局写入 store
-  cleanupAgentStepGlobal = window.electronAPI.agent.onStep((data: {
-    agentId: string
-    ptyId?: string
-    step: import('@shared/types').AgentStep
-    wakeup?: boolean
-  }) => {
-    if (terminalStore.activeTabId) return
-    if (data.wakeup) return
-    const tabId = resolveAgentEventTabId(data)
-    if (!tabId) return
-    terminalStore.addAgentStep(tabId, data.step)
-  })
-
-  cleanupAgentStepRemovedGlobal = window.electronAPI.agent.onStepRemoved((data: {
-    agentId: string
-    ptyId?: string
-    stepId: string
-  }) => {
-    if (terminalStore.activeTabId) return
-    const tabId = resolveAgentEventTabId(data)
-    if (!tabId) return
-    terminalStore.removeAgentStep(tabId, data.stepId)
   })
 
   // 全局监听 agent 完成事件：刷新延迟的 proactive + 后台 tab 标签栏提醒（microtask 晚于各 AiPanel 同步逻辑，可配合 skip）
@@ -645,7 +618,7 @@ onMounted(async () => {
     })
   })
 
-  // 从未挂载 AiPanel 的 tab 上 Agent 报错时，仍要点亮标签（与完成兜底一致）
+  // 后台 tab Agent 报错：收口运行状态 + 点亮标签栏（与 complete 兜底一致）
   cleanupAgentErrorForTabAttention = window.electronAPI.agent.onError((data: { agentId: string; ptyId?: string }) => {
     const foundTabId = resolveAgentEventTabId(data)
     if (foundTabId) {
@@ -805,6 +778,10 @@ const initializeApp = async () => {
 // 是否显示欢迎页（无 tab，或从固定「首页」tab 返回时显示）
 const showWelcomePage = computed(() =>
   !showSmartPatrol.value && (terminalStore.tabs.length === 0 || !terminalStore.activeTabId)
+)
+/** 主工作区显示某个 tab 工作台（欢迎页 / 智能巡检时隐藏，但 tab 组件保持挂载） */
+const showTabWorkbench = computed(
+  () => !showSmartPatrol.value && !showWelcomePage.value
 )
 // 欢迎页最近对话侧栏：常驻，不可关闭
 const showRecallSidebar = computed(() => showWelcomePage.value && !isSteamBuild)
@@ -1059,8 +1036,6 @@ onUnmounted(() => {
   cleanupWatchActivateMessage?.()
   cleanupAgentCompleteForProactive?.()
   cleanupAgentNeedConfirmGlobal?.()
-  cleanupAgentStepGlobal?.()
-  cleanupAgentStepRemovedGlobal?.()
   cleanupAgentErrorForTabAttention?.()
   cleanupFullScreenChange?.()
   stopUpdaterPrompts()
@@ -1138,8 +1113,9 @@ onUnmounted(() => {
 
       <!-- 终端区域 / 欢迎页 / 智能巡检 -->
       <main class="terminal-area">
-        <WelcomePage 
-          v-if="showWelcomePage"
+        <WelcomePage
+          v-show="showWelcomePage"
+          class="main-surface"
           @open-assistant="openAssistantFromWelcome"
           @open-local="openLocalFromWelcome"
           @open-ssh="openSshFromWelcome"
@@ -1147,21 +1123,20 @@ onUnmounted(() => {
           @open-smart-patrol="openSmartPatrolFromWelcome"
           @open-watches="openWatchesFromWelcome"
         />
-        <SmartPatrolPage 
-          v-else-if="showSmartPatrol"
+        <SmartPatrolPage
+          v-if="showSmartPatrol"
+          class="main-surface"
           @back="backFromSmartPatrol"
         />
-        <!-- 每个 Tab 一个独立 div，始终挂载，v-show 控制可见性 -->
-        <!-- 工作台查表分发：渲染器由 registry 按 tab.type 决定。
-             新增工作台只需在 registry 登记，无需改动此处。 -->
-        <template v-else v-for="tab in terminalStore.tabs" :key="tab.id">
+        <!-- 有 tab 即挂载工作台；v-show 切换可见性，回首页不卸载 AiPanel / 终端 -->
+        <template v-for="tab in terminalStore.tabs" :key="tab.id">
           <component
             :is="resolveWorkbenchRenderer(tab.type)"
-            v-show="tab.id === terminalStore.activeTabId"
+            v-show="showTabWorkbench && tab.id === terminalStore.activeTabId"
             :ref="(el: any) => { tabViewRefs[tab.id] = el }"
             :tab="tab"
-            :is-active="tab.id === terminalStore.activeTabId"
-            class="tab-view"
+            :is-active="showTabWorkbench && tab.id === terminalStore.activeTabId"
+            class="tab-view main-surface"
           />
         </template>
       </main>
@@ -1450,11 +1425,18 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+}
+
+/* 欢迎页 / 巡检 / tab 工作台共用：隐藏时不占 flex 空间 */
+.main-surface {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* 每个 Tab 的独立容器 */
 .tab-view {
-  flex: 1;
   overflow: hidden;
 }
 

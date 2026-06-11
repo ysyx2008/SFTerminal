@@ -1852,7 +1852,7 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
-   * Agent run 结束后的 UI 状态收口（欢迎页卸载 AiPanel 时由 App 全局事件兜底调用）。
+   * Agent run 结束后的 UI 状态收口（App 全局 complete/error 兜底调用）。
    * 清除 isRunning / 待确认 / 流式标记，避免 tab 与历史侧栏长期卡在「运行中/思考中」。
    */
   function finalizeAgentRunState(tabId: string): void {
