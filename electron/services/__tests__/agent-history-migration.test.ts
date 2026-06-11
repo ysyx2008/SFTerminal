@@ -116,4 +116,20 @@ describe('agent history v5 migration', () => {
     const record = svc.getAgentRecordById('legacy-1')
     expect(record?.id).toBe('legacy-1')
   })
+
+  it('getStorageStats 的 agentFiles 统计有记录的天数而非会话文件数', async () => {
+    const agentDir = path.join(tmpDir, 'history', 'agent')
+    fs.writeFileSync(path.join(agentDir, '2026-03-18.json'), JSON.stringify([
+      makeRecord('legacy-1', new Date('2026-03-18T10:00:00').getTime()),
+      makeRecord('legacy-2', new Date('2026-03-18T11:00:00').getTime()),
+    ], null, 2))
+
+    await migrateLegacyAgentDayFiles(tmpDir, async () => {})
+
+    const svc = new HistoryService()
+    const stats = svc.getStorageStats()
+    expect(stats.agentFiles).toBe(1)
+    expect(stats.oldestRecord).toBe('2026-03-18')
+    expect(stats.newestRecord).toBe('2026-03-18')
+  })
 })

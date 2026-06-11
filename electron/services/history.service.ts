@@ -1231,7 +1231,8 @@ export class HistoryService {
 
     return {
       chatFiles: chatFiles.length,
-      agentFiles: agentStats.sessionFileCount + agentStats.legacyDayFileCount,
+      // 有记录的天数（v5 起按会话单文件存储，不能再用文件数代替天数）
+      agentFiles: agentStats.dateLabels.length,
       totalSize,
       oldestRecord: allDates[0],
       newestRecord: allDates[allDates.length - 1]
