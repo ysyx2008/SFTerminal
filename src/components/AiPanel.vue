@@ -365,6 +365,7 @@ const getSubAgentActivity = (sa: import('@shared/types').SubAgentResult): string
 
 // 当前终端 ID（使用 prop，每个实例固定绑定一个 tab）
 const currentTabId = toRef(props, 'tabId')
+const panelVisible = toRef(props, 'visible')
 
 // 文档上传（传入 currentTabId，每个终端独立管理文档）
 const {
@@ -479,6 +480,8 @@ const {
   // 滚动相关
   hasNewMessage,
   updateScrollPosition,
+  saveScrollTop,
+  restoreScrollTop,
   scrollToBottom,
   stopGeneration,
   // Agent 执行
@@ -552,7 +555,8 @@ const {
       })),
     clearAttachments: clearUploadedDocs
   },
-  scrollerRef
+  scrollerRef,
+  panelVisible
 )
 
 // 语音识别
@@ -1662,10 +1666,7 @@ onUnmounted(() => {
 watch(() => props.visible, async (visible, wasVisible) => {
   if (!visible && wasVisible) {
     // 面板隐藏时，保存当前滚动位置
-    if (messagesRef.value && currentTabId.value) {
-      const scrollTop = messagesRef.value.scrollTop
-      terminalStore.setAiScrollTop(currentTabId.value, scrollTop)
-    }
+    saveScrollTop()
   } else if (visible && !wasVisible) {
     // 面板显示时：有待确认/安全输入则滚到底部，否则恢复上次滚动位置
     warmupMessageList()
@@ -1673,11 +1674,8 @@ watch(() => props.visible, async (visible, wasVisible) => {
     if (pendingConfirm.value || pendingSecureInput.value) {
       scrollHistoryToBottom()
       setTimeout(() => scrollHistoryToBottom(), 150)
-    } else if (messagesRef.value && currentTabId.value) {
-      const savedScrollTop = terminalStore.getAiScrollTop(currentTabId.value)
-      if (savedScrollTop !== undefined) {
-        messagesRef.value.scrollTop = savedScrollTop
-      }
+    } else {
+      await restoreScrollTop()
     }
   }
 }, { flush: 'post' })
@@ -1685,20 +1683,12 @@ watch(() => props.visible, async (visible, wasVisible) => {
 // 监听 tabId 变化（用于分屏模式下切换激活窗格）
 watch(() => props.tabId, async (newTabId, oldTabId) => {
   if (oldTabId && messagesRef.value) {
-    // 保存旧 tab 的滚动位置
-    const scrollTop = messagesRef.value.scrollTop
-    terminalStore.setAiScrollTop(oldTabId, scrollTop)
+    terminalStore.setAiScrollTop(oldTabId, messagesRef.value.scrollTop)
   }
 
   if (newTabId) {
-    // 恢复新 tab 的滚动位置
     await nextTick()
-    if (messagesRef.value) {
-      const savedScrollTop = terminalStore.getAiScrollTop(newTabId)
-      if (savedScrollTop !== undefined) {
-        messagesRef.value.scrollTop = savedScrollTop
-      }
-    }
+    await restoreScrollTop()
   }
 }, { flush: 'post' })
 </script>

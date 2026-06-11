@@ -71,7 +71,8 @@ export function useAgentMode(
     getAttachments: () => AttachmentInfo[]  // 获取当前已上传文件的元信息
     clearAttachments: () => void            // 清空已上传文件列表
   },
-  scrollerRef?: Ref<{ scrollToBottom: () => void } | null>
+  scrollerRef?: Ref<{ scrollToBottom: () => void; forceUpdate?: (clear?: boolean) => void } | null>,
+  panelVisible?: Ref<boolean | undefined>
 ) {
   const { t } = useI18n()
   const terminalStore = useTerminalStore()
@@ -199,12 +200,45 @@ export function useAgentMode(
     return scrollHeight - scrollTop - clientHeight < SCROLL_THRESHOLD
   }
 
+  const saveScrollTop = () => {
+    const id = currentTabId.value
+    if (!id || !messagesRef.value) return
+    terminalStore.setAiScrollTop(id, messagesRef.value.scrollTop)
+  }
+
+  const restoreScrollTop = async () => {
+    const id = currentTabId.value
+    if (!id || !messagesRef.value) return
+    const saved = terminalStore.getAiScrollTop(id)
+    if (saved === undefined) return
+
+    const apply = () => {
+      if (messagesRef.value) {
+        messagesRef.value.scrollTop = saved
+      }
+    }
+
+    apply()
+    await nextTick()
+    apply()
+    requestAnimationFrame(() => {
+      apply()
+      setIsUserNearBottom(checkIsNearBottom())
+    })
+    setTimeout(() => {
+      apply()
+      setIsUserNearBottom(checkIsNearBottom())
+      scrollerRef?.value?.forceUpdate?.(false)
+    }, 150)
+  }
+
   // 更新用户滚动位置状态（由组件的 scroll 事件调用）
   const updateScrollPosition = () => {
     // 跳过强制滚动期间的状态更新，避免被 scroll 事件覆盖
     if (skipScrollUpdate) return
     const nearBottom = checkIsNearBottom()
     setIsUserNearBottom(nearBottom)
+    saveScrollTop()
     // 如果用户滚动到底部，清除新消息提示
     if (nearBottom) {
       hasNewMessage.value = false
@@ -413,6 +447,8 @@ export function useAgentMode(
     contentObservedTarget = wrapper
     prevWrapperHeight = wrapper.offsetHeight
     contentResizeObserver = new ResizeObserver((entries) => {
+      // 非当前可见面板不跟随贴底，避免后台 tab 改写 scrollTop、切回时与已存位置不一致
+      if (panelVisible?.value === false) return
       const el = messagesRef.value
       if (!el) return
       const newHeight = entries[0]?.contentRect.height ?? wrapper.offsetHeight
@@ -1520,6 +1556,8 @@ export function useAgentMode(
     hasNewMessage,
     isUserNearBottom,
     updateScrollPosition,
+    saveScrollTop,
+    restoreScrollTop,
     scrollToBottom,
     scrollToBottomIfNeeded,
     stopGeneration,
