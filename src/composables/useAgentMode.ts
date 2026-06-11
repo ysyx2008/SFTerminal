@@ -232,6 +232,29 @@ export function useAgentMode(
     }, 150)
   }
 
+  /** 历史对话滚到底部（Virtual Scroller 重试 + 500ms 等待 mermaid/活图渲染后对齐） */
+  const scrollToHistoryBottomWithRetry = () => {
+    const apply = () => {
+      if (scrollerRef?.value) {
+        scrollerRef.value.scrollToBottom()
+      } else {
+        void scrollToBottom()
+      }
+    }
+    void nextTick(() => {
+      apply()
+      setTimeout(() => {
+        apply()
+        saveScrollTop()
+      }, 150)
+      setTimeout(() => {
+        apply()
+        scrollerRef?.value?.forceUpdate?.(false)
+        saveScrollTop()
+      }, 500)
+    })
+  }
+
   // 更新用户滚动位置状态（由组件的 scroll 事件调用）
   const updateScrollPosition = () => {
     // 跳过强制滚动期间的状态更新，避免被 scroll 事件覆盖
@@ -271,6 +294,7 @@ export function useAgentMode(
     // 延迟恢复 scroll 事件更新，确保滚动完成后才开始监听用户滚动
     requestAnimationFrame(() => {
       skipScrollUpdate = false
+      saveScrollTop()
     })
   }
 
@@ -1490,14 +1514,7 @@ export function useAgentMode(
 
     // 等待 Vue 响应式更新完成（DynamicScroller 挂载 / 列表项更新）
     await nextTick()
-    // 优先使用 DynamicScroller 内置的 scrollToBottom，它通过 $_undefinedSizes 循环
-    // 确保所有项的真实尺寸测量完成后才停止，比固定延时可靠
-    if (scrollerRef?.value) {
-      scrollerRef.value.scrollToBottom()
-    } else {
-      scrollToBottom()
-      setTimeout(() => scrollToBottom(), 150)
-    }
+    scrollToHistoryBottomWithRetry()
   }
 
   // 检查是否有现有对话（用于确认是否覆盖）
@@ -1558,6 +1575,7 @@ export function useAgentMode(
     updateScrollPosition,
     saveScrollTop,
     restoreScrollTop,
+    scrollToHistoryBottomWithRetry,
     scrollToBottom,
     scrollToBottomIfNeeded,
     stopGeneration,

@@ -482,6 +482,7 @@ const {
   updateScrollPosition,
   saveScrollTop,
   restoreScrollTop,
+  scrollToHistoryBottomWithRetry,
   scrollToBottom,
   stopGeneration,
   // Agent 执行
@@ -1586,6 +1587,13 @@ const scrollHistoryToBottom = () => {
   }
 }
 
+/** 首次展示从历史恢复的对话（尚无已存滚动位置）→ 应滚到底部 */
+const shouldScrollHistoryOnShow = () =>
+  !!currentTabId.value &&
+  isLoadedFromHistory.value &&
+  terminalStore.getAiScrollTop(currentTabId.value) === undefined &&
+  flattenedItems.value.length > 0
+
 const warmupMessageList = () => {
   if (!import.meta.env.DEV) return
   requestAnimationFrame(() => {
@@ -1614,32 +1622,22 @@ onMounted(() => {
 
   warmupMessageList()
 
-  // 从历史记录打开时定位到最新内容（无保存的滚动位置且已有消息）
+  // 首次挂载且无已存滚动位置时滚到底部（含从历史打开的新 tab）
   const shouldInitialScrollBottom =
     !!currentTabId.value &&
     terminalStore.getAiScrollTop(currentTabId.value) === undefined &&
     flattenedItems.value.length > 0
 
   if (shouldInitialScrollBottom) {
-    // 与 loadHistoryRecord 一致：依赖 DynamicScroller 内置 scrollToBottom 循环测量真实高度，
-    // 禁止 forceUpdate(true)——过早清空尺寸缓存会导致历史消息全部叠在同一位置。
-    void nextTick(() => {
-      scrollHistoryToBottom()
-      setTimeout(scrollHistoryToBottom, 150)
-      // mermaid / 活图等异步渲染完成后再对齐；forceUpdate(false) 仅重测可见项，不清空尺寸缓存
-      setTimeout(() => {
-        scrollHistoryToBottom()
-        scrollerRef.value?.forceUpdate?.(false)
-      }, 500)
-    })
+    scrollToHistoryBottomWithRetry()
   }
 })
 
-// 远程任务：首条 step 到达后滚到底部
+// 远程任务：首条 step 到达后滚到底部（非历史恢复场景）
 watch(
   () => flattenedItems.value.length,
   (len, prev) => {
-    if (len > 0 && (prev ?? 0) === 0) {
+    if (len > 0 && (prev ?? 0) === 0 && !isLoadedFromHistory.value) {
       void nextTick(() => scrollHistoryToBottom())
     }
   }
@@ -1667,13 +1665,16 @@ watch(() => props.visible, async (visible, wasVisible) => {
   if (!visible && wasVisible) {
     // 面板隐藏时，保存当前滚动位置
     saveScrollTop()
-  } else if (visible && !wasVisible) {
-    // 面板显示时：有待确认/安全输入则滚到底部，否则恢复上次滚动位置
+  } else if (visible && wasVisible === false) {
+    // 面板显示时：确认框滚底；首次展示历史对话滚底；否则恢复上次滚动位置
     warmupMessageList()
     await nextTick()
     if (pendingConfirm.value || pendingSecureInput.value) {
+      // 确认框场景只滚不存，避免覆盖用户为阅读上下文手动上滚的位置
       scrollHistoryToBottom()
       setTimeout(() => scrollHistoryToBottom(), 150)
+    } else if (shouldScrollHistoryOnShow()) {
+      scrollToHistoryBottomWithRetry()
     } else {
       await restoreScrollTop()
     }

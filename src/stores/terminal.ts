@@ -2049,6 +2049,8 @@ export const useTerminalStore = defineStore('terminal', () => {
       steps: steps,
       loadedFromHistory: true
     }
+    // 从历史恢复视为新视图：清除已存滚动，由 AiPanel 滚到最新一条
+    delete tab.aiScrollTop
     // 确保从欢迎页首次打开历史时，AiPanel 能立即感知 steps 变化
     tabs.value = [...tabs.value]
   }
