@@ -29,6 +29,19 @@ export default {
     comingSoon: '即将推出',
     recentConnections: '最近连接',
     viewAllSessions: '查看全部会话',
+    conversations: {
+      searchPlaceholder: '搜索对话...',
+      newConversation: '新建对话',
+      loadMore: '加载更多',
+      noMatching: '没有匹配的对话',
+      emptyHint: '在下方输入框发起新对话',
+      earlier: '更早',
+      pinned: '置顶',
+      pin: '置顶此对话',
+      unpin: '取消置顶',
+      doubleClickRename: '双击可重命名',
+      renameClearHint: '留空并确认可恢复为原始首条消息',
+    },
     tip1: '按 Ctrl+T / Cmd+T 可快速新建终端标签页',
     tip2: '右键终端可将选中内容发送给 AI 分析',
     tip3: '开启助手模式，让 AI 自动执行复杂任务',
@@ -158,6 +171,7 @@ export default {
   // 头部工具栏
   header: {
     hostManager: '主机管理',
+    recentConversations: '最近对话',
     aiAssistant: 'AI 助手',
     settings: '控制面板',
     closeSidebar: '关闭侧边栏',

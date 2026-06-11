@@ -240,6 +240,10 @@ interface StoreSchema {
   ttsSettings: TtsSettings
   // Web 搜索
   webSearchSettings: WebSearchSettings
+  /** 首页最近对话侧栏：置顶的 Agent 历史记录 ID（顺序即展示顺序） */
+  pinnedConversationIds: string[]
+  /** 最近对话自定义显示标题（record id → 用户命名，空则回退 userTask） */
+  conversationDisplayTitles: Record<string, string>
 }
 
 const defaultConfig: StoreSchema = {
@@ -341,6 +345,8 @@ const defaultConfig: StoreSchema = {
   ttsSettings: DEFAULT_TTS_SETTINGS,
   // Web 搜索
   webSearchSettings: DEFAULT_WEB_SEARCH_SETTINGS,
+  pinnedConversationIds: [],
+  conversationDisplayTitles: {},
 }
 
 export class ConfigService {

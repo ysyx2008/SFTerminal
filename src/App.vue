@@ -9,6 +9,7 @@ import TabBar from './components/TabBar.vue'
 import TerminalTabView from './components/TerminalTabView.vue'
 import { resolveWorkbenchRenderer } from './workbench/registry'
 import SessionManager from './components/SessionManager.vue'
+import RecentConversationsPanel from './components/RecentConversationsPanel.vue'
 import SettingsModal from './components/Settings/SettingsModal.vue'
 import FileExplorer from './components/FileExplorer/FileExplorer.vue'
 import ConnectionStatusPopover from './components/ConnectionStatusPopover.vue'
@@ -748,6 +749,8 @@ const initializeApp = async () => {
 
 // 是否显示欢迎页（没有打开任何终端且不在智能巡检界面时显示）
 const showWelcomePage = computed(() => terminalStore.tabs.length === 0 && !showSmartPatrol.value)
+// 欢迎页最近对话侧栏：常驻，不可关闭
+const showRecallSidebar = computed(() => showWelcomePage.value && !isSteamBuild)
 // 从欢迎页打开助手（空对话）
 const openAssistantFromWelcome = () => {
   terminalStore.createAssistantTab()
@@ -781,7 +784,7 @@ const openSshFromWelcome = async (session: SshSession) => {
 
 // 从欢迎页打开会话管理器
 const openSessionManagerFromWelcome = () => {
-  showSidebar.value = true
+  openHostSidebar()
 }
 
 // 从欢迎页打开智能巡检
@@ -809,9 +812,13 @@ const onSetupComplete = async () => {
   ensureAiPanel()
 }
 
-// 切换侧边栏
+// 切换主机管理侧栏（欢迎页上以叠加层盖住最近对话侧栏）
 const toggleSidebar = () => {
   showSidebar.value = !showSidebar.value
+}
+
+const openHostSidebar = () => {
+  showSidebar.value = true
 }
 
 // 是否为终端工作台 tab（仅 local/ssh 由 TerminalTabView 渲染，独有 AI 侧栏方法）。
@@ -911,13 +918,13 @@ const handleMenuCommand = async (command: string) => {
       terminalStore.createAssistantTab()
       break
     case 'newSshConnection':
-      showSidebar.value = true
+      openHostSidebar()
       break
     case 'openFileManager':
       window.dispatchEvent(new CustomEvent('menu:open-file-manager'))
       break
     case 'importXshell':
-      showSidebar.value = true
+      openHostSidebar()
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('menu:import-xshell'))
       }, 100)
@@ -1021,7 +1028,7 @@ onUnmounted(() => {
         </span>
       </div>
       <div class="header-center">
-        <TabBar @open-ssh="showSidebar = true" />
+        <TabBar @open-ssh="openHostSidebar" />
       </div>
       <div class="header-right">
         <template v-if="!isSteamBuild">
@@ -1049,8 +1056,18 @@ onUnmounted(() => {
 
     <!-- 主体内容 -->
     <div class="app-body">
-      <!-- 左侧边栏 - 主机管理 -->
-      <aside v-show="showSidebar" class="sidebar">
+      <!-- 左侧边栏 - 最近对话（欢迎页常驻） -->
+      <aside v-if="showRecallSidebar" class="sidebar sidebar--recall">
+        <div class="sidebar-header sidebar-header--recall">
+          <span>{{ t('header.recentConversations') }}</span>
+        </div>
+        <div class="sidebar-content">
+          <RecentConversationsPanel :visible="showRecallSidebar" />
+        </div>
+      </aside>
+
+      <!-- 左侧边栏 - 主机管理（欢迎页上为叠加层） -->
+      <aside v-show="showSidebar" class="sidebar" :class="{ 'sidebar--overlay': showRecallSidebar }">
         <div class="sidebar-header">
           <span>{{ t('header.hostManager') }}</span>
           <button class="btn-icon btn-sm" @click="showSidebar = false" :title="t('header.closeSidebar')">
@@ -1281,6 +1298,7 @@ onUnmounted(() => {
   display: flex;
   flex: 1;
   overflow: hidden;
+  position: relative;
 }
 
 /* 侧边栏 */
@@ -1344,6 +1362,35 @@ onUnmounted(() => {
 .sidebar-content {
   flex: 1;
   overflow-y: auto;
+}
+
+/* 欢迎页「最近对话」侧栏：比主机管理更退后，避免抢主区视觉焦点 */
+.sidebar--recall {
+  background: var(--bg-secondary);
+}
+
+.sidebar--recall::after {
+  display: none;
+}
+
+.sidebar--recall .sidebar-header--recall {
+  height: 36px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-bottom-color: color-mix(in srgb, var(--border-color) 70%, transparent);
+}
+
+/* 欢迎页：主机管理叠加在最近对话侧栏之上，关掉后最近对话仍可见 */
+.sidebar--overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 20;
+  box-shadow: 6px 0 28px rgba(0, 0, 0, 0.28);
 }
 
 /* 终端区域 */

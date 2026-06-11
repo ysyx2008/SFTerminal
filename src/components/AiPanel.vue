@@ -729,6 +729,9 @@ const truncateText = (text: string, maxLength: number): string => {
   return text.slice(0, maxLength) + '...'
 }
 
+const historyDisplayTitle = (record: { id: string; userTask: string }): string =>
+  configStore.resolveConversationTitle(record.id, record.userTask)
+
 const escapeHtml = (s: string) =>
   s
     .replace(/&/g, '&amp;')
@@ -2013,7 +2016,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                     <span class="history-status-icon" :class="record.status">
                       {{ record.status === 'completed' ? '✓' : record.status === 'failed' ? '✗' : '!' }}
                     </span>
-                    <span class="history-task">{{ truncateText(record.userTask, 50) }}</span>
+                    <span class="history-task">{{ truncateText(historyDisplayTitle(record), 50) }}</span>
                     <span class="history-meta">
                       <span v-if="record.terminalType === 'ssh'" class="history-ssh">{{ record.sshHost }}</span>
                       <span class="history-time">{{ formatHistoryTime(record.timestamp + record.duration) }}</span>
@@ -2123,7 +2126,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                       </span>
                       <span
                         class="history-task"
-                        v-html="highlightHistoryTaskHtml(record.userTask, historySearchKeyword, 80)"
+                        v-html="highlightHistoryTaskHtml(historyDisplayTitle(record), historySearchKeyword, 80)"
                       />
                       <span class="history-meta">
                         <span v-if="record.terminalType === 'ssh'" class="history-ssh">{{ record.sshHost }}</span>

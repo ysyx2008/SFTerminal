@@ -1344,7 +1344,10 @@ export function useAgentMode(
     const kw = historySearchKeyword.value.trim().toLowerCase()
     const base = historyModalSummaries.value
     if (!kw) return base
-    return base.filter((s: AgentHistorySummary) => s.userTask.toLowerCase().includes(kw))
+    return base.filter((s: AgentHistorySummary) => {
+      const display = configStore.resolveConversationTitle(s.id, s.userTask)
+      return [s.userTask, display].join(' ').toLowerCase().includes(kw)
+    })
   })
 
   const allHistory = computed((): Array<AgentHistorySummary | AgentRecord> => {
@@ -1456,6 +1459,8 @@ export function useAgentMode(
 
   // 加载历史记录到当前会话
   const loadHistoryRecord = async (record: AgentRecord) => {
+    const title = configStore.resolveConversationTitle(record.id, record.userTask)
+    terminalStore.renameTab(currentTabId.value, title)
     terminalStore.restoreAgentHistory(currentTabId.value, record)
     // 关闭弹窗（如果是从弹窗中选择的）
     closeHistoryModal()

@@ -29,6 +29,19 @@ export default {
     comingSoon: 'Coming Soon',
     recentConnections: 'Recent Connections',
     viewAllSessions: 'View All Sessions',
+    conversations: {
+      searchPlaceholder: 'Search conversations...',
+      newConversation: 'New conversation',
+      loadMore: 'Load more',
+      noMatching: 'No matching conversations',
+      emptyHint: 'Start a new chat from the input below',
+      earlier: 'Earlier',
+      pinned: 'Pinned',
+      pin: 'Pin conversation',
+      unpin: 'Unpin',
+      doubleClickRename: 'Double-click to rename',
+      renameClearHint: 'Clear and confirm to restore the original first message',
+    },
     tip1: 'Press Ctrl+T / Cmd+T to quickly create a new terminal tab',
     tip2: 'Right-click terminal to send selected content to AI for analysis',
     tip3: 'Enable Agent mode to let AI automatically execute complex tasks',
@@ -158,6 +171,7 @@ export default {
   // Header toolbar
   header: {
     hostManager: 'Host Manager',
+    recentConversations: 'Recent Conversations',
     aiAssistant: 'AI Assistant',
     settings: 'Control Panel',
     closeSidebar: 'Close Sidebar',

@@ -409,6 +409,11 @@ export const useConfigStore = defineStore('config', () => {
     enabled: false, providerId: 'bocha', apiKeys: {},
   })
 
+  // 首页最近对话置顶（Agent 历史 record id）
+  const pinnedConversationIds = ref<string[]>([])
+  // 最近对话自定义标题
+  const conversationDisplayTitles = ref<Record<string, string>>({})
+
   // 计算属性
   const activeAiProfile = computed(() =>
     aiProfiles.value.find(p => p.id === activeAiProfileId.value)
@@ -428,7 +433,7 @@ export const useConfigStore = defineStore('config', () => {
         sortBy, defaultOrder, rules, personalityText,
         savedAgentName, savedAgentAvatar, savedLogLevel, savedTerminalSettings,
         accounts, savedShortcuts, savedAutoVision, calAccounts, savedTtsSettings, savedWebSearchSettings,
-        themeMode, sysScheme,
+        themeMode, sysScheme, savedPinnedConversationIds, savedConversationDisplayTitles,
       ] = await Promise.all([
         window.electronAPI.config.getAiProfiles(),
         window.electronAPI.config.getActiveAiProfile(),
@@ -459,6 +464,8 @@ export const useConfigStore = defineStore('config', () => {
         window.electronAPI.config.get('webSearchSettings') as Promise<import('@shared/types').WebSearchSettings | undefined>,
         window.electronAPI.config.getUiThemeMode(),
         window.electronAPI.config.getSystemColorScheme(),
+        window.electronAPI.config.get('pinnedConversationIds') as Promise<string[] | undefined>,
+        window.electronAPI.config.get('conversationDisplayTitles') as Promise<Record<string, string> | undefined>,
       ])
 
       // 批量赋值
@@ -505,6 +512,11 @@ export const useConfigStore = defineStore('config', () => {
       if (savedWebSearchSettings && typeof savedWebSearchSettings === 'object') {
         webSearchSettings.value = { ...webSearchSettings.value, ...savedWebSearchSettings }
       }
+      pinnedConversationIds.value = Array.isArray(savedPinnedConversationIds) ? savedPinnedConversationIds : []
+      conversationDisplayTitles.value =
+        savedConversationDisplayTitles && typeof savedConversationDisplayTitles === 'object'
+          ? { ...savedConversationDisplayTitles }
+          : {}
 
       // 后端同步（不阻塞主流程）
       if (emailAccounts.value.length > 0) {
@@ -1018,6 +1030,94 @@ export const useConfigStore = defineStore('config', () => {
     await window.electronAPI.webSearch.updateSettings(settings)
   }
 
+  // ==================== 最近对话置顶 ====================
+
+  async function loadConversationPreferences(): Promise<void> {
+    const [pins, titles] = await Promise.all([
+      window.electronAPI.config.get('pinnedConversationIds') as Promise<string[] | undefined>,
+      window.electronAPI.config.get('conversationDisplayTitles') as Promise<Record<string, string> | undefined>,
+    ])
+    pinnedConversationIds.value = Array.isArray(pins) ? [...pins] : []
+    conversationDisplayTitles.value =
+      titles && typeof titles === 'object' ? { ...titles } : {}
+  }
+
+  async function savePinnedConversationIds(ids: string[]): Promise<void> {
+    const plain = [...ids]
+    const previous = [...pinnedConversationIds.value]
+    pinnedConversationIds.value = plain
+    try {
+      await window.electronAPI.config.set('pinnedConversationIds', plain)
+    } catch (e) {
+      pinnedConversationIds.value = previous
+      throw e
+    }
+  }
+
+  async function togglePinConversation(id: string): Promise<void> {
+    const current = pinnedConversationIds.value
+    if (current.includes(id)) {
+      await savePinnedConversationIds(current.filter(x => x !== id))
+    } else {
+      await savePinnedConversationIds([id, ...current])
+    }
+  }
+
+  function isConversationPinned(id: string): boolean {
+    return pinnedConversationIds.value.includes(id)
+  }
+
+  function getConversationDisplayTitle(id: string): string | undefined {
+    const title = conversationDisplayTitles.value[id]?.trim()
+    return title || undefined
+  }
+
+  function resolveConversationTitle(id: string, userTask: string): string {
+    return getConversationDisplayTitle(id) || userTask.trim()
+  }
+
+  async function setConversationDisplayTitle(id: string, title: string): Promise<void> {
+    const trimmed = title.trim()
+    const next = { ...conversationDisplayTitles.value }
+    if (trimmed) {
+      next[id] = trimmed
+    } else {
+      delete next[id]
+    }
+    const previous = { ...conversationDisplayTitles.value }
+    conversationDisplayTitles.value = next
+    try {
+      await window.electronAPI.config.set('conversationDisplayTitles', next)
+    } catch (e) {
+      conversationDisplayTitles.value = previous
+      throw e
+    }
+  }
+
+  async function pruneConversationMetadata(validIds: Set<string>): Promise<void> {
+    // 历史索引尚未就绪时 list 可能为空，此时 prune 会把置顶/标题误删到磁盘
+    if (validIds.size === 0) return
+
+    const nextPins = pinnedConversationIds.value.filter(pid => validIds.has(pid))
+    if (nextPins.length !== pinnedConversationIds.value.length) {
+      await savePinnedConversationIds(nextPins)
+    }
+    const nextTitles: Record<string, string> = {}
+    for (const [id, title] of Object.entries(conversationDisplayTitles.value)) {
+      if (validIds.has(id) && title.trim()) nextTitles[id] = title.trim()
+    }
+    if (Object.keys(nextTitles).length !== Object.keys(conversationDisplayTitles.value).length) {
+      const previousTitles = { ...conversationDisplayTitles.value }
+      conversationDisplayTitles.value = nextTitles
+      try {
+        await window.electronAPI.config.set('conversationDisplayTitles', nextTitles)
+      } catch (e) {
+        conversationDisplayTitles.value = previousTitles
+        throw e
+      }
+    }
+  }
+
   return {
     // 状态
     aiProfiles,
@@ -1102,7 +1202,17 @@ export const useConfigStore = defineStore('config', () => {
     ttsSettings,
     saveTtsSettings,
     webSearchSettings,
-    saveWebSearchSettings
+    saveWebSearchSettings,
+    pinnedConversationIds,
+    togglePinConversation,
+    isConversationPinned,
+    savePinnedConversationIds,
+    loadConversationPreferences,
+    conversationDisplayTitles,
+    getConversationDisplayTitle,
+    resolveConversationTitle,
+    setConversationDisplayTitle,
+    pruneConversationMetadata,
   }
 })
 
