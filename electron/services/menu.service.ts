@@ -75,6 +75,13 @@ const menuI18n = {
     website: '官方网站',
     restartToUpdate: '重启并更新',
     downloadingUpdate: '正在下载更新…',
+
+    // 退出确认
+    quitConfirmTitle: '确认退出',
+    quitConfirmMessage: '确定要退出程序吗？',
+    quitConfirmDetail: '当前有 {count} 个标签页未关闭，退出将关闭所有标签页。',
+    quitConfirmCancel: '取消',
+    quitConfirmExit: '退出',
   },
   'en-US': {
     // App menu (macOS)
@@ -138,7 +145,14 @@ const menuI18n = {
     website: 'Website',
     restartToUpdate: 'Restart to Update',
     downloadingUpdate: 'Downloading Update…',
-  }
+
+    // Quit confirmation
+    quitConfirmTitle: 'Confirm Quit',
+    quitConfirmMessage: 'Are you sure you want to quit?',
+    quitConfirmDetail: '{count} tab(s) are still open. Quitting will close all tabs.',
+    quitConfirmCancel: 'Cancel',
+    quitConfirmExit: 'Quit',
+  },
 }
 
 type MenuKey = keyof typeof menuI18n['zh-CN']
@@ -575,6 +589,22 @@ export class MenuService {
     if (this.hasTerminal !== value) {
       this.hasTerminal = value
       this.applyMenu()
+    }
+  }
+
+  /**
+   * 退出确认对话框文案（跟随应用语言设置）
+   */
+  getQuitConfirmDialogOptions(tabCount: number) {
+    const detail = this.t('quitConfirmDetail').replace('{count}', String(tabCount))
+    return {
+      type: 'question' as const,
+      buttons: [this.t('quitConfirmCancel'), this.t('quitConfirmExit')],
+      defaultId: 0,
+      cancelId: 0,
+      title: this.t('quitConfirmTitle'),
+      message: this.t('quitConfirmMessage'),
+      detail,
     }
   }
 

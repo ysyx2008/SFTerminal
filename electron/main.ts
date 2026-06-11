@@ -472,15 +472,7 @@ async function proceedQuitAfterTerminalCount(terminalCount: number): Promise<voi
   quitTerminalCountHandled = true
   clearQuitTerminalCountWatchdog()
 
-  const messageBoxOptions = {
-    type: 'question' as const,
-    buttons: ['取消', '退出'],
-    defaultId: 0,
-    cancelId: 0,
-    title: '确认退出',
-    message: '确定要退出程序吗？',
-    detail: `当前有 ${terminalCount} 个终端会话正在运行，退出将关闭所有会话。`
-  }
+  const messageBoxOptions = menuService.getQuitConfirmDialogOptions(terminalCount)
 
   if (terminalCount > 0) {
     const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null

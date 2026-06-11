@@ -347,7 +347,7 @@ onMounted(async () => {
     isAwakened.value = !!(await window.electronAPI.config.get('agentAwakened'))
   } catch { /* ignore */ }
 
-  // 注册终端数量查询响应（用于退出确认）
+  // 注册标签页数量查询响应（用于退出确认）
   cleanupTerminalCountListener = window.electronAPI.window.onRequestTerminalCount(() => {
     window.electronAPI.window.responseTerminalCount(terminalStore.tabs.length)
   })
