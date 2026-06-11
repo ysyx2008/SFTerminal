@@ -307,6 +307,20 @@ export abstract class Agent {
     
     this.currentRun.aborted = true
     this.currentRun.isRunning = false
+
+    // 释放待确认/安全输入等待，避免 abort 后 Promise 永久挂起、阻塞同实例下一次 run
+    if (this.currentRun.pendingConfirmation) {
+      const pending = this.currentRun.pendingConfirmation
+      log.info(
+        `[confirm] aborted while waiting (agent=${this._agentId ?? 'unknown'}, run=${this.currentRun.id}, tool=${pending.toolName}, toolCallId=${pending.toolCallId})`
+      )
+      this.currentRun.pendingConfirmation.resolve(false)
+      this.currentRun.pendingConfirmation = undefined
+    }
+    if (this.currentRun.pendingSecureInput) {
+      this.currentRun.pendingSecureInput.resolve(false)
+      this.currentRun.pendingSecureInput = undefined
+    }
     
     // 中止 AI 请求
     if (this.currentRun.requestId) {
@@ -385,23 +399,60 @@ export abstract class Agent {
     modifiedArgs?: Record<string, unknown>,
     alwaysAllow?: boolean
   ): boolean {
+    const agentKey = this._agentId ?? 'unknown'
+    const runId = this.currentRun?.id
     if (!this.currentRun || !this.currentRun.pendingConfirmation) {
+      log.info(`[confirm] rejected: no pending (agent=${agentKey}, run=${runId}, toolCallId=${toolCallId ?? 'any'})`)
       return false
     }
-    
-    if (!toolCallId || this.currentRun.pendingConfirmation.toolCallId === toolCallId) {
-      // 如果用户选择"始终允许"，将工具+参数加入 Agent 级白名单（跨 Run 持久化）
-      if (approved && alwaysAllow) {
-        const { toolName, toolArgs } = this.currentRun.pendingConfirmation
-        const key = this.generateAllowedToolKey(toolName, modifiedArgs || toolArgs)
-        this.allowedTools.add(key)
-      }
-      
-      this.currentRun.pendingConfirmation.resolve(approved, modifiedArgs)
-      return true
+
+    const pending = this.currentRun.pendingConfirmation
+    if (toolCallId && pending.toolCallId !== toolCallId) {
+      log.info(
+        `[confirm] rejected: toolCallId mismatch (agent=${agentKey}, run=${runId}, expected=${pending.toolCallId}, got=${toolCallId})`
+      )
+      return false
     }
-    
-    return false
+
+    log.info(
+      `[confirm] resolved (agent=${agentKey}, run=${runId}, tool=${pending.toolName}, toolCallId=${pending.toolCallId}, approved=${approved}, alwaysAllow=${!!alwaysAllow})`
+    )
+    return this.resolvePendingConfirmation(approved, modifiedArgs, alwaysAllow)
+  }
+
+  /**
+   * 确认当前待处理的工具调用（不要求 toolCallId，仅供 IM Companion 等单实例场景）。
+   */
+  confirmPendingToolCall(
+    approved: boolean,
+    modifiedArgs?: Record<string, unknown>,
+    alwaysAllow?: boolean
+  ): boolean {
+    const agentKey = this._agentId ?? 'unknown'
+    const runId = this.currentRun?.id
+    if (!this.currentRun?.pendingConfirmation) {
+      log.info(`[confirm] rejected: no pending (agent=${agentKey}, run=${runId}, via=pendingToolCall)`)
+      return false
+    }
+    const pending = this.currentRun.pendingConfirmation
+    log.info(
+      `[confirm] resolved via pendingToolCall (agent=${agentKey}, run=${runId}, tool=${pending.toolName}, toolCallId=${pending.toolCallId}, approved=${approved})`
+    )
+    return this.resolvePendingConfirmation(approved, modifiedArgs, alwaysAllow)
+  }
+
+  private resolvePendingConfirmation(
+    approved: boolean,
+    modifiedArgs?: Record<string, unknown>,
+    alwaysAllow?: boolean
+  ): boolean {
+    const pending = this.currentRun!.pendingConfirmation!
+    if (approved && alwaysAllow) {
+      const key = this.generateAllowedToolKey(pending.toolName, modifiedArgs || pending.toolArgs)
+      this.allowedTools.add(key)
+    }
+    pending.resolve(approved, modifiedArgs)
+    return true
   }
   
   /**
@@ -3118,6 +3169,9 @@ export abstract class Agent {
       
       run.pendingConfirmation = confirmation
       run.executionPhase = 'confirming'
+      log.info(
+        `[confirm] waiting (agent=${this._agentId ?? 'unknown'}, run=${run.id}, tool=${toolName}, toolCallId=${toolCallId}, risk=${riskLevel})`
+      )
       this.callbacks?.onNeedConfirm?.(confirmation)
     })
   }
@@ -3162,7 +3216,8 @@ export abstract class Agent {
    * 生成唯一 ID
    */
   private generateId(): string {
-    return `${Date.now()}_${++this.idCounter}`
+    const prefix = this._agentId ?? 'agent'
+    return `${prefix}_${Date.now()}_${++this.idCounter}`
   }
   
   /**

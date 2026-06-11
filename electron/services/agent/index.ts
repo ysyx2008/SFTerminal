@@ -168,7 +168,8 @@ export class AgentService {
   getOrCreateAgent(ptyId: string): SailFish {
     let agent = this.agents.get(ptyId)
     if (!agent) {
-      agent = new SailFish(this.services, ptyId)
+      agent = new SailFish(this.services)
+      agent.setAgentId(ptyId)
       agent.setCallbacks(this.defaultCallbacks)
       this.agents.set(ptyId, agent)
       log.info(`Created agent: agentKey=${ptyId}`)
@@ -457,7 +458,11 @@ export class AgentService {
     alwaysAllow?: boolean
   ): boolean {
     const agent = this.getAgent(ptyId)
-    return agent?.confirmToolCall(toolCallId, approved, modifiedArgs, alwaysAllow) ?? false
+    if (!agent) {
+      log.info(`[confirm] rejected: agent not found (agentKey=${ptyId}, toolCallId=${toolCallId})`)
+      return false
+    }
+    return agent.confirmToolCall(toolCallId, approved, modifiedArgs, alwaysAllow)
   }
 
   /**

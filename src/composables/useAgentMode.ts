@@ -938,10 +938,11 @@ export function useAgentMode(
 
   // alwaysAllow: 如果为 true，将该工具+参数加入会话白名单，后续自动跳过确认
   const confirmToolCall = async (approved: boolean, alwaysAllow?: boolean) => {
-    const confirm = pendingConfirm.value
+    const confirm = pendingConfirm.value as (typeof pendingConfirm.value & { ptyId?: string }) | undefined
     if (!confirm) return
 
-    const agentKey = getAgentKey()
+    // 必须用 needConfirm 事件里的 agentKey（ptyId），不能依赖当前激活 tab 的 getAgentKey()
+    const agentKey = confirm.ptyId ?? confirm.agentId ?? getAgentKey()
     if (!agentKey) return
 
     try {
@@ -952,9 +953,11 @@ export function useAgentMode(
         modifiedArgs: undefined,
         alwaysAllow
       })
-      // 清除待确认状态
-      if (currentTabId.value) {
-        terminalStore.setAgentPendingConfirm(currentTabId.value, undefined)
+      const ownerTabId = terminalStore.findTabIdByPtyId(agentKey)
+        ?? terminalStore.findTabIdByAgentId(agentKey)
+        ?? currentTabId.value
+      if (ownerTabId) {
+        terminalStore.setAgentPendingConfirm(ownerTabId, undefined)
       }
     } catch (error) {
       log.error('确认工具调用失败:', error)
@@ -1060,38 +1063,18 @@ export function useAgentMode(
   const setupAgentListeners = () => {
     // 先清理旧的监听器，防止热重载时重复注册
     cleanupAgentListeners()
-    // 判断事件是否属于当前 tab（优先使用 ptyId 匹配，更可靠）
-    const isEventForThisTab = (agentId: string, ptyId?: string): boolean => {
-      // 优先使用 ptyId 匹配（最可靠，因为 ptyId 在启动前就已知）
+    // 将 agent 事件路由到 tab：终端 tab 用 ptyId（= tabId），助手 tab 用 tab.agentId
+    const resolveTabIdForAgentEvent = (agentId: string, ptyId?: string): string | undefined => {
       if (ptyId) {
-        const foundTabId = terminalStore.findTabIdByPtyId(ptyId)
-        if (foundTabId === currentTabId.value) {
-          // 确保 agentId 关联已设置
-          terminalStore.setAgentId(currentTabId.value, agentId)
-          return true
-        }
-        return false
+        return terminalStore.findTabIdByPtyId(ptyId)
+          ?? terminalStore.findTabIdByAgentId(ptyId)
       }
-      
-      // 降级：使用 agentId 匹配（助手 tab 的 agentId 在 tab.agentId 上，运行前 agentState 可能尚未写入）
-      if (currentTab.value?.agentId === agentId) {
-        terminalStore.setAgentId(currentTabId.value, agentId)
-        return true
-      }
-      const foundTabId = terminalStore.findTabIdByAgentId(agentId)
-      if (foundTabId) {
-        return foundTabId === currentTabId.value
-      }
-      
-      // 最后的降级：检查当前 tab 是否正在等待 Agent 启动
-      // 注意：这种情况在多 tab 同时启动时可能不可靠
-      const currentState = agentState.value
-      if (currentState?.isRunning && !currentState.agentId) {
-        terminalStore.setAgentId(currentTabId.value, agentId)
-        return true
-      }
-      
-      return false
+      return terminalStore.findTabIdByAgentId(agentId)
+    }
+
+    const isEventForThisTab = (agentId: string, ptyId?: string): boolean => {
+      const foundTabId = resolveTabIdForAgentEvent(agentId, ptyId)
+      return foundTabId === currentTabId.value
     }
     
     // 监听步骤更新

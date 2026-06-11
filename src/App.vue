@@ -305,6 +305,7 @@ let cleanupWatchProactiveMessage: (() => void) | null = null
 let cleanupWatchActivateMessage: (() => void) | null = null
 let cleanupAgentCompleteForProactive: (() => void) | null = null
 let cleanupAgentErrorForTabAttention: (() => void) | null = null
+let cleanupAgentNeedConfirmGlobal: (() => void) | null = null
 let cleanupFullScreenChange: (() => void) | null = null
 
 
@@ -578,6 +579,21 @@ onMounted(async () => {
     terminalStore.clearDeferredProactive(tab.id)
   }
 
+  const resolveAgentEventTabId = (data: { agentId: string; ptyId?: string }): string | undefined => {
+    if (data.ptyId) {
+      return terminalStore.findTabIdByPtyId(data.ptyId)
+        ?? terminalStore.findTabIdByAgentId(data.ptyId)
+    }
+    return terminalStore.findTabIdByAgentId(data.agentId)
+  }
+
+  // 全局兜底：多助手 tab 并行时，将 needConfirm 写入正确 tab（不依赖 AiPanel 是否曾激活挂载）
+  cleanupAgentNeedConfirmGlobal = window.electronAPI.agent.onNeedConfirm((data) => {
+    const tabId = resolveAgentEventTabId(data)
+    if (!tabId) return
+    terminalStore.setAgentPendingConfirm(tabId, data)
+  })
+
   // 全局监听 agent 完成事件：刷新延迟的 proactive + 后台 tab 标签栏提醒（microtask 晚于各 AiPanel 同步逻辑，可配合 skip）
   cleanupAgentCompleteForProactive = window.electronAPI.agent.onComplete((data: {
     agentId: string
@@ -589,9 +605,7 @@ onMounted(async () => {
       flushDeferredProactive(data.agentId)
     }
 
-    const foundTabId = data.ptyId
-      ? terminalStore.findTabIdByPtyId(data.ptyId)
-      : terminalStore.findTabIdByAgentId(data.agentId)
+    const foundTabId = resolveAgentEventTabId(data)
 
     queueMicrotask(() => {
       if (!foundTabId || foundTabId === terminalStore.activeTabId) return
@@ -603,9 +617,7 @@ onMounted(async () => {
 
   // 从未挂载 AiPanel 的 tab 上 Agent 报错时，仍要点亮标签（与完成兜底一致）
   cleanupAgentErrorForTabAttention = window.electronAPI.agent.onError((data: { agentId: string; ptyId?: string }) => {
-    const foundTabId = data.ptyId
-      ? terminalStore.findTabIdByPtyId(data.ptyId)
-      : terminalStore.findTabIdByAgentId(data.agentId)
+    const foundTabId = resolveAgentEventTabId(data)
     queueMicrotask(() => {
       if (!foundTabId || foundTabId === terminalStore.activeTabId) return
       terminalStore.setAgentCompletedUnseen(foundTabId, true)
@@ -1013,6 +1025,7 @@ onUnmounted(() => {
   cleanupWatchProactiveMessage?.()
   cleanupWatchActivateMessage?.()
   cleanupAgentCompleteForProactive?.()
+  cleanupAgentNeedConfirmGlobal?.()
   cleanupAgentErrorForTabAttention?.()
   cleanupFullScreenChange?.()
   stopUpdaterPrompts()

@@ -1646,10 +1646,11 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 根据 agentId 查找对应的终端 ID
    */
   function findTabIdByAgentId(agentId: string): string | undefined {
-    const tab = tabs.value.find(
-      t => t.agentState?.agentId === agentId || t.agentId === agentId
-    )
-    return tab?.id
+    const byTabAgentId = tabs.value.find(t => t.agentId === agentId)
+    if (byTabAgentId) return byTabAgentId.id
+    // 终端 tab 事件可能携带后端 run.id（存在 agentState.agentId）
+    const byState = tabs.value.find(t => t.agentState?.agentId === agentId)
+    return byState?.id
   }
 
   /**
@@ -1816,9 +1817,20 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 设置待确认的工具调用
    */
   function setAgentPendingConfirm(tabId: string, confirmation: PendingConfirmation | undefined): void {
-    const tab = tabs.value.find(t => t.id === tabId)
-    if (!tab?.agentState) return
-    tab.agentState.pendingConfirm = confirmation
+    const tabIndex = tabs.value.findIndex(t => t.id === tabId)
+    if (tabIndex === -1 || !tabs.value[tabIndex].agentState) return
+
+    const tab = tabs.value[tabIndex]
+    const steps = tab.agentState!.steps.map(s =>
+      s.isStreaming ? { ...s, isStreaming: false } : s
+    )
+
+    tab.agentState = {
+      ...tab.agentState!,
+      steps,
+      pendingConfirm: confirmation,
+    }
+    tabs.value = [...tabs.value]
   }
 
   function setAgentPendingSecureInput(
@@ -1983,6 +1995,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     // loadedFromHistory：标记当前 in-memory 状态来自历史；用户发起首次新任务后才会被清除
     tab.agentState = {
       isRunning: false,
+      agentId: tab.agentId,
       sessionId: record.id,
       sessionStartTime: record.timestamp,
       steps: steps,

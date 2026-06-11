@@ -1059,7 +1059,7 @@ export class IMService {
       return
     }
 
-    const success = companion.confirmToolCall(undefined, isApproved)
+    const success = companion.confirmPendingToolCall(isApproved)
 
     // 同步清除桌面 companion tab 的确认状态
     if (success) {

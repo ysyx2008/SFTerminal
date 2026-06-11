@@ -3240,8 +3240,9 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
     onNeedConfirm: (confirmation: PendingConfirmation) => {
       if (!event.sender.isDestroyed()) {
         // 只发送可序列化的字段，不包含 resolve 函数
+        // agentId 用 tab agentKey（ptyId），便于前端多 tab 精确路由；勿用 confirmation.agentId（run.id）
         event.sender.send('agent:needConfirm', {
-          agentId: confirmation.agentId,
+          agentId: ptyId,
           ptyId,
           toolCallId: confirmation.toolCallId,
           toolName: confirmation.toolName,
@@ -3426,19 +3427,20 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
     onStep: (_runId: string, step: AgentStep) => {
       if (!event.sender.isDestroyed()) {
         const serializedStep = JSON.parse(JSON.stringify(step))
-        event.sender.send('agent:step', { agentId, step: serializedStep })
+        event.sender.send('agent:step', { agentId, ptyId: agentId, step: serializedStep })
       }
       if (isRemote) wcs.onAgentStep(step)
     },
     onStepRemoved: (_runId: string, stepId: string) => {
       if (!event.sender.isDestroyed()) {
-        event.sender.send('agent:stepRemoved', { agentId, stepId })
+        event.sender.send('agent:stepRemoved', { agentId, ptyId: agentId, stepId })
       }
     },
     onNeedConfirm: (confirmation: PendingConfirmation) => {
       if (!event.sender.isDestroyed()) {
         event.sender.send('agent:needConfirm', {
           agentId,
+          ptyId: agentId,
           toolCallId: confirmation.toolCallId,
           toolName: confirmation.toolName,
           toolArgs: JSON.parse(JSON.stringify(confirmation.toolArgs)),
@@ -3456,7 +3458,8 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
     onNeedSecureInput: (request: import('./services/agent/types').PendingSecureInputInternal) => {
       if (!event.sender.isDestroyed()) {
         event.sender.send('agent:needSecureInput', {
-          agentId: request.agentId,
+          agentId,
+          ptyId: agentId,
           requestId: request.requestId,
           skillId: request.skillId,
           envName: request.envName,
