@@ -117,6 +117,7 @@ export default {
     add: '添加',
     new: '新建',
     close: '关闭',
+    view: '查看',
     back: '返回',
     next: '下一步',
     prev: '上一步',

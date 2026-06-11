@@ -117,6 +117,7 @@ export default {
     add: 'Add',
     new: 'New',
     close: 'Close',
+    view: 'View',
     back: 'Back',
     next: 'Next',
     prev: 'Previous',

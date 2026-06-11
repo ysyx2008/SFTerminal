@@ -470,7 +470,17 @@ onMounted(async () => {
     const preview = data.message.length > 60
       ? data.message.substring(0, 60) + '...'
       : data.message
-    toast.info(`📡 ${t('gateway.remoteTaskStarted')}: ${preview}`, 5000)
+    const focusRemoteTab = () => {
+      const tab = terminalStore.tabs.find(t => t.agentId === data.agentId)
+      if (tab) terminalStore.setActiveTab(tab.id)
+    }
+    toast.show(
+      `📡 ${t('gateway.remoteTaskStarted')}: ${preview}`,
+      'info',
+      5000,
+      true,
+      { onClick: focusRemoteTab, action: t('common.view') }
+    )
 
     // 找到或创建远程助手 tab
     let remoteTab = terminalStore.tabs.find(tab => tab.agentId === data.agentId)
@@ -482,6 +492,7 @@ onMounted(async () => {
         remoteChannel: data.remoteChannel,
         activate: false
       })
+      terminalStore.markAssistantSkipOnboarding(newTabId)
       remoteTab = terminalStore.tabs.find(tab => tab.id === newTabId)
     } else if (data.remoteChannel) {
       remoteTab.remoteChannel = data.remoteChannel

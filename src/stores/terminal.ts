@@ -1922,6 +1922,8 @@ export const useTerminalStore = defineStore('terminal', () => {
       steps: steps,
       loadedFromHistory: true
     }
+    // 确保从欢迎页首次打开历史时，AiPanel 能立即感知 steps 变化
+    tabs.value = [...tabs.value]
   }
 
   /**

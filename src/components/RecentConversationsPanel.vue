@@ -197,6 +197,7 @@ const openConversation = async (summary: AgentHistorySummary) => {
       return
     }
     const tabId = terminalStore.createAssistantTab()
+    terminalStore.markAssistantSkipOnboarding(tabId)
     const customTitle = configStore.getConversationDisplayTitle(summary.id)
     if (customTitle) {
       terminalStore.renameTab(tabId, customTitle)

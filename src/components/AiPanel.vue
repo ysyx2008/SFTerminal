@@ -82,8 +82,6 @@ const handleClose = () => {
 // Refs
 const messagesRef = ref<HTMLDivElement | null>(null)
 const scrollerRef = ref<InstanceType<typeof DynamicScroller> | null>(null)
-// 新建 tab 载入历史时，先隐藏列表、定位到底部后再淡入，避免「顶部→底部」的跳动闪烁
-const initialScrollHiding = ref(false)
 const composerRef = ref<InstanceType<typeof AiComposer> | null>(null)
 const secureInputValue = ref('')
 
@@ -1576,9 +1574,16 @@ const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
   return []
 }
 
+const scrollHistoryToBottom = () => {
+  if (scrollerRef.value) {
+    scrollerRef.value.scrollToBottom()
+  } else {
+    void scrollToBottom()
+  }
+}
+
 const warmupMessageList = () => {
   if (!import.meta.env.DEV) return
-
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       scrollerRef.value?.forceUpdate?.(true)
@@ -1605,33 +1610,36 @@ onMounted(() => {
 
   warmupMessageList()
 
-  // 新建 tab 载入历史对话（如从「最近对话」列表打开）时，初始定位到最新内容而非顶部。
-  // 仅当本 tab 没有保存过滚动位置（首次挂载）且已有历史内容时触发，避免覆盖正常的滚动位置恢复。
-  // 同步判断并先隐藏列表（首次绘制前生效），定位到底部后再淡入，消除「顶部→底部」的跳动闪烁。
+  // 从历史记录打开时定位到最新内容（无保存的滚动位置且已有消息）
   const shouldInitialScrollBottom =
     !!currentTabId.value &&
     terminalStore.getAiScrollTop(currentTabId.value) === undefined &&
     flattenedItems.value.length > 0
 
   if (shouldInitialScrollBottom) {
-    initialScrollHiding.value = true
-    const reveal = () => { initialScrollHiding.value = false }
+    // 与 loadHistoryRecord 一致：依赖 DynamicScroller 内置 scrollToBottom 循环测量真实高度，
+    // 禁止 forceUpdate(true)——过早清空尺寸缓存会导致历史消息全部叠在同一位置。
     void nextTick(() => {
-      if (scrollerRef.value) {
-        scrollerRef.value.scrollToBottom()
-      } else {
-        scrollToBottom()
-      }
-      // 再用两帧确保虚拟列表测量完真实尺寸、定位稳定后淡入
-      requestAnimationFrame(() => {
-        scrollerRef.value?.scrollToBottom?.() ?? scrollToBottom()
-        requestAnimationFrame(reveal)
-      })
-      // 兜底：无论如何最终都恢复可见，避免极端情况下列表一直隐藏
-      setTimeout(reveal, 300)
+      scrollHistoryToBottom()
+      setTimeout(scrollHistoryToBottom, 150)
+      // mermaid / 活图等异步渲染完成后再对齐；forceUpdate(false) 仅重测可见项，不清空尺寸缓存
+      setTimeout(() => {
+        scrollHistoryToBottom()
+        scrollerRef.value?.forceUpdate?.(false)
+      }, 500)
     })
   }
 })
+
+// 远程任务：首条 step 到达后滚到底部
+watch(
+  () => flattenedItems.value.length,
+  (len, prev) => {
+    if (len > 0 && (prev ?? 0) === 0) {
+      void nextTick(() => scrollHistoryToBottom())
+    }
+  }
+)
 
 onUnmounted(() => {
   clearPTTStopTimer()
@@ -1921,6 +1929,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           flattenedItems,
           agentTaskGroups.length,
           agentUserTask,
+          isAgentRunning,
           recentHistory,
           showHistoryModal,
           allHistory,
@@ -1946,12 +1955,17 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           :prerender="10"
           key-field="id"
           class="ai-messages"
-          :class="{ 'standalone-mode': isStandaloneAssistant, 'custom-avatar': isStandaloneAssistant && configStore.agentAvatar, 'initial-scroll-hiding': initialScrollHiding }"
+          :class="{ 'standalone-mode': isStandaloneAssistant, 'custom-avatar': isStandaloneAssistant && configStore.agentAvatar }"
           :style="isStandaloneAssistant ? { '--assistant-avatar': `url(${configStore.agentAvatar || sailfishLogo})` } : undefined"
         >
           <template #before>
+            <!-- Agent 已启动但 step 尚未到达（远程会话 / 任务刚发起） -->
+            <div v-if="isAgentRunning && agentTaskGroups.length === 0" class="agent-preparing-placeholder">
+              <Loader2 :size="20" class="preparing-spinner" />
+              <span>{{ t('ai.preparing') }}</span>
+            </div>
             <!-- 欢迎页（无任务且无历史对话时显示） -->
-            <div v-if="!agentUserTask && agentTaskGroups.length === 0" class="ai-welcome">
+            <div v-else-if="!agentUserTask && agentTaskGroups.length === 0" class="ai-welcome">
               <p>🤖 {{ t('ai.agentWelcome.enabled') }}</p>
 
               <p class="welcome-section-title">💡 {{ t('ai.agentWelcome.whatIsAgent') }}</p>
@@ -3271,12 +3285,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   transition: box-shadow 0.3s ease, opacity 0.15s ease;
 }
 
-/* 首次载入历史时先隐藏，定位到底部后淡入，避免「顶部→底部」跳动闪烁 */
-.ai-messages.initial-scroll-hiding {
-  opacity: 0;
-  transition: none;
-}
-
 .agent-step-virtual {
   padding: 0 14px 4px;
   border-left: 2px solid rgba(255, 255, 255, 0.06);
@@ -3503,6 +3511,20 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .context-bar-fill.danger {
   background: var(--color-error);
+}
+
+.agent-preparing-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.agent-preparing-placeholder .preparing-spinner {
+  animation: spin 1s linear infinite;
 }
 
 .ai-welcome {
