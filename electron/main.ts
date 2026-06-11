@@ -1207,6 +1207,19 @@ app.whenReady().then(async () => {
   const migrated = await runStartupMigrationIfNeeded()
   if (migrated) return // 已触发重启，停止后续初始化
 
+  // Agent 历史格式迁移（v5）：拆分旧日文件为按会话单文件，带进度窗
+  try {
+    const startupMigrations = await getMigrationRunner().run('startup', {
+      configService,
+      userDataPath: app.getPath('userData'),
+    })
+    if (startupMigrations > 0) {
+      historyService.rebuildAgentIndex()
+    }
+  } catch (e) {
+    log.error('Startup migration failed:', e)
+  }
+
   // sft-local:// 协议处理器：安全代理 userData/history/images/ 目录下的截图文件
   // URL 格式：sft-local://history-image/{dateStr}/{sessionId}/{filename}
   // 只允许访问 history/images/ 子目录，防止路径穿越

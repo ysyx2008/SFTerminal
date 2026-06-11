@@ -2,7 +2,20 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { app } from 'electron'
 import { createLogger } from '../utils/logger'
-import { normalizeAgentRecord } from '../utils/normalize'
+import { writeFileAtomic } from '../utils/atomic-write'
+import {
+  cleanupExpiredMigratedBackups,
+  collectAgentStorageStats,
+  getAgentRecordPath,
+  getLegacyAgentDayFilePath,
+  listAgentDateDirs,
+  listLegacyAgentDayFiles,
+  listSessionFilesInDateDir,
+  readAgentRecordFile,
+  readAgentRecordFileAsync,
+  readLegacyAgentDayRecords,
+  writeAgentRecordFile,
+} from './history/agent-storage'
 
 const log = createLogger('History')
 
@@ -106,6 +119,7 @@ export class HistoryService {
 
     // 确保目录存在
     this.ensureDirectories()
+    cleanupExpiredMigratedBackups(this.agentDir)
   }
 
   private get indexPath(): string {
@@ -244,11 +258,32 @@ export class HistoryService {
     return path.join(this.chatDir, `${dateStr}.json`)
   }
 
-  /**
-   * 获取指定日期的 Agent 记录文件路径
-   */
-  private getAgentFilePath(dateStr: string): string {
-    return path.join(this.agentDir, `${dateStr}.json`)
+  private onCorruptRecord(corruptPath: string | null, error: unknown): void {
+    log.error(`损坏记录已隔离: ${corruptPath ?? '(rename failed)'}`, error)
+  }
+
+  private readAgentRecordFromDisk(dateStr: string, id: string): AgentRecord | undefined {
+    const sessionPath = getAgentRecordPath(this.agentDir, dateStr, id)
+    const sessionRecord = readAgentRecordFile(sessionPath, (p, e) => this.onCorruptRecord(p, e))
+    if (sessionRecord) return sessionRecord
+
+    const legacyRecords = readLegacyAgentDayRecords(
+      getLegacyAgentDayFilePath(this.agentDir, dateStr),
+      (p, e) => this.onCorruptRecord(p, e)
+    )
+    return legacyRecords.find(r => r.id === id)
+  }
+
+  private async readAgentRecordFromDiskAsync(dateStr: string, id: string): Promise<AgentRecord | undefined> {
+    const sessionPath = getAgentRecordPath(this.agentDir, dateStr, id)
+    const sessionRecord = await readAgentRecordFileAsync(sessionPath, (p, e) => this.onCorruptRecord(p, e))
+    if (sessionRecord) return sessionRecord
+
+    const legacyRecords = readLegacyAgentDayRecords(
+      getLegacyAgentDayFilePath(this.agentDir, dateStr),
+      (p, e) => this.onCorruptRecord(p, e)
+    )
+    return legacyRecords.find(r => r.id === id)
   }
 
   /**
@@ -266,10 +301,6 @@ export class HistoryService {
     return []
   }
 
-  private readAgentRecords(filePath: string): AgentRecord[] {
-    return this.readJsonFile<AgentRecord>(filePath).map(normalizeAgentRecord)
-  }
-
   /** 异步读取 JSON 数组文件（fs.promises，await 让出事件循环，避免阻塞主进程） */
   private async readJsonFileAsync<T>(filePath: string): Promise<T[]> {
     try {
@@ -279,10 +310,6 @@ export class HistoryService {
       log.error(`读取历史文件失败: ${filePath}`, e)
       return []
     }
-  }
-
-  private async readAgentRecordsAsync(filePath: string): Promise<AgentRecord[]> {
-    return (await this.readJsonFileAsync<AgentRecord>(filePath)).map(normalizeAgentRecord)
   }
 
   // ==================== Agent 索引管理 ====================
@@ -306,21 +333,37 @@ export class HistoryService {
   private writeIndex(entries: AgentIndexEntry[]): void {
     this._indexCache = entries
     try {
-      fs.writeFileSync(this.indexPath, JSON.stringify(entries), 'utf-8')
+      writeFileAtomic(this.indexPath, JSON.stringify(entries))
     } catch (e) {
       log.error('写入 Agent 索引失败:', e)
     }
   }
 
-  /** 从所有日期文件重建索引（首次升级或索引损坏时触发） */
+  /** 从磁盘重建 Agent 索引（首次升级、索引损坏或 v5 迁移后触发） */
+  rebuildAgentIndex(): void {
+    this._indexCache = null
+    this.rebuildIndex()
+  }
+
+  /** 从所有会话文件重建索引（首次升级或索引损坏时触发） */
   private rebuildIndex(): AgentIndexEntry[] {
-    const files = fs.readdirSync(this.agentDir).filter(f => f.endsWith('.json')).sort()
     const entries: AgentIndexEntry[] = []
 
-    for (const file of files) {
+    for (const dateStr of listAgentDateDirs(this.agentDir)) {
+      const dateDir = path.join(this.agentDir, dateStr)
+      for (const file of listSessionFilesInDateDir(this.agentDir, dateStr)) {
+        const filePath = path.join(dateDir, file)
+        const record = readAgentRecordFile(filePath, (p, e) => this.onCorruptRecord(p, e))
+        if (record) entries.push(this.toIndexEntry(record, dateStr))
+      }
+    }
+
+    for (const file of listLegacyAgentDayFiles(this.agentDir)) {
       const dateStr = file.replace('.json', '')
-      const filePath = path.join(this.agentDir, file)
-      const records = this.readAgentRecords(filePath)
+      const records = readLegacyAgentDayRecords(
+        path.join(this.agentDir, file),
+        (p, e) => this.onCorruptRecord(p, e)
+      )
       for (const r of records) {
         entries.push(this.toIndexEntry(r, dateStr))
       }
@@ -368,7 +411,7 @@ export class HistoryService {
    */
   private writeJsonFile<T>(filePath: string, data: T[]): void {
     try {
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8')
+      writeFileAtomic(filePath, JSON.stringify(data, null, 2))
     } catch (e) {
       log.error(`写入历史文件失败: ${filePath}`, e)
     }
@@ -437,19 +480,7 @@ export class HistoryService {
     // 写入前把内联 base64 图片外化到磁盘，避免 JSON 文件膨胀和 IPC 传输超大对象
     this.externalizeStepImages(record)
 
-    const dateStr = this.getDateString(record.timestamp)
-    const filePath = this.getAgentFilePath(dateStr)
-    const records = this.readAgentRecords(filePath)
-    
-    // 查找是否存在相同 id 的记录
-    const existingIndex = records.findIndex(r => r.id === record.id)
-    if (existingIndex !== -1) {
-      records[existingIndex] = record
-    } else {
-      records.push(record)
-    }
-    
-    this.writeJsonFile(filePath, records)
+    writeAgentRecordFile(this.agentDir, record)
     this.updateIndexEntry(record)
   }
 
@@ -457,16 +488,30 @@ export class HistoryService {
    * 获取指定日期范围的 Agent 记录
    */
   getAgentRecords(startDate?: string, endDate?: string): AgentRecord[] {
-    const files = fs.readdirSync(this.agentDir).filter(f => f.endsWith('.json')).sort()
     const records: AgentRecord[] = []
 
-    for (const file of files) {
-      const dateStr = file.replace('.json', '')
+    for (const dateStr of listAgentDateDirs(this.agentDir)) {
       if (startDate && dateStr < startDate) continue
       if (endDate && dateStr > endDate) continue
 
-      const filePath = path.join(this.agentDir, file)
-      records.push(...this.readAgentRecords(filePath))
+      for (const file of listSessionFilesInDateDir(this.agentDir, dateStr)) {
+        const recordId = file.replace(/\.json$/, '')
+        const record = readAgentRecordFile(
+          getAgentRecordPath(this.agentDir, dateStr, recordId),
+          (p, e) => this.onCorruptRecord(p, e)
+        )
+        if (record) records.push(record)
+      }
+    }
+
+    for (const file of listLegacyAgentDayFiles(this.agentDir)) {
+      const dateStr = file.replace('.json', '')
+      if (startDate && dateStr < startDate) continue
+      if (endDate && dateStr > endDate) continue
+      records.push(...readLegacyAgentDayRecords(
+        path.join(this.agentDir, file),
+        (p, e) => this.onCorruptRecord(p, e)
+      ))
     }
 
     return records.sort((a, b) => a.timestamp - b.timestamp)
@@ -478,24 +523,36 @@ export class HistoryService {
    * 后续访问直接读 file:// 路径，IPC 传输体积从几十 MB 降到几百 KB。
    */
   getAgentRecordById(id: string): AgentRecord | undefined {
-    const files = fs.readdirSync(this.agentDir).filter(f => f.endsWith('.json')).sort().reverse()
-    for (const file of files) {
-      const filePath = path.join(this.agentDir, file)
-      const records = this.readAgentRecords(filePath)
-      const foundIndex = records.findIndex(r => r.id === id)
-      if (foundIndex === -1) continue
-
-      const found = records[foundIndex]
-      // 对历史存量记录中的内联 base64 图片做 lazy 外化并回写
-      const changed = this.externalizeStepImages(found)
-      if (changed) {
-        records[foundIndex] = found
-        this.writeJsonFile(filePath, records)
-        log.info(`Externalized inline images for record ${id}, saved back to ${file}`)
-      }
-      return found
+    const index = this.getIndex()
+    const entry = index.find(e => e.id === id)
+    if (entry) {
+      const found = this.readAgentRecordFromDisk(entry.dateStr, id)
+      if (!found) return undefined
+      return this.maybeExternalizeAndSaveRecord(found, entry.dateStr)
     }
+
+    for (const dateStr of [...listAgentDateDirs(this.agentDir)].reverse()) {
+      const found = this.readAgentRecordFromDisk(dateStr, id)
+      if (found) return this.maybeExternalizeAndSaveRecord(found, dateStr)
+    }
+
+    for (const file of [...listLegacyAgentDayFiles(this.agentDir)].reverse()) {
+      const dateStr = file.replace('.json', '')
+      const found = this.readAgentRecordFromDisk(dateStr, id)
+      if (found) return this.maybeExternalizeAndSaveRecord(found, dateStr)
+    }
+
     return undefined
+  }
+
+  private maybeExternalizeAndSaveRecord(found: AgentRecord, dateStr: string): AgentRecord {
+    const changed = this.externalizeStepImages(found)
+    if (changed) {
+      writeAgentRecordFile(this.agentDir, found)
+      this.updateIndexEntry(found)
+      log.info(`Externalized inline images for record ${found.id}, saved back to session file`)
+    }
+    return found
   }
 
   /**
@@ -508,18 +565,28 @@ export class HistoryService {
     if (entryIdx === -1) return false
 
     const entry = index[entryIdx]
-    const filePath = this.getAgentFilePath(entry.dateStr)
-
-    if (fs.existsSync(filePath)) {
-      const records = this.readAgentRecords(filePath)
-      const filtered = records.filter(r => r.id !== id)
-      if (filtered.length !== records.length) {
-        if (filtered.length === 0) {
-          fs.unlinkSync(filePath)
-        } else {
-          this.writeJsonFile(filePath, filtered)
+    const sessionPath = getAgentRecordPath(this.agentDir, entry.dateStr, id)
+    if (fs.existsSync(sessionPath)) {
+      fs.unlinkSync(sessionPath)
+    } else {
+      // 兼容尚未迁移的旧日文件：从数组中剔除该条记录
+      const legacyPath = getLegacyAgentDayFilePath(this.agentDir, entry.dateStr)
+      if (fs.existsSync(legacyPath)) {
+        const legacyRecords = readLegacyAgentDayRecords(legacyPath, (p, e) => this.onCorruptRecord(p, e))
+        const filtered = legacyRecords.filter(r => r.id !== id)
+        if (filtered.length !== legacyRecords.length) {
+          if (filtered.length === 0) {
+            fs.unlinkSync(legacyPath)
+          } else {
+            writeFileAtomic(legacyPath, JSON.stringify(filtered, null, 2))
+          }
         }
       }
+    }
+
+    const dateDir = path.join(this.agentDir, entry.dateStr)
+    if (fs.existsSync(dateDir) && fs.readdirSync(dateDir).length === 0) {
+      fs.rmdirSync(dateDir)
     }
 
     const newIndex = index.filter(e => e.id !== id)
@@ -553,17 +620,10 @@ export class HistoryService {
     if (candidates.length === 0) return []
 
     // 按 dateStr 分组，最小化文件读取次数
-    const neededIds = new Set(candidates.map(e => e.id))
-    const dateStrs = new Set(candidates.map(e => e.dateStr))
     const results: AgentRecord[] = []
-
-    for (const dateStr of dateStrs) {
-      const filePath = this.getAgentFilePath(dateStr)
-      if (!fs.existsSync(filePath)) continue
-      const records = this.readAgentRecords(filePath)
-      for (const r of records) {
-        if (neededIds.has(r.id)) results.push(r)
-      }
+    for (const entry of candidates) {
+      const record = this.readAgentRecordFromDisk(entry.dateStr, entry.id)
+      if (record) results.push(record)
     }
 
     return results.sort((a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration))
@@ -664,29 +724,24 @@ export class HistoryService {
     const results: AgentRecord[] = []
     let totalMatched = 0
 
-    for (const dateStr of dateOrder) {
-      const filePath = this.getAgentFilePath(dateStr)
-      if (!fs.existsSync(filePath)) continue
-      const records = await this.readAgentRecordsAsync(filePath)
-      const idSet = candidateIdsByDate.get(dateStr)!
-      for (let i = records.length - 1; i >= 0; i--) {
-        const r = records[i]
-        if (!idSet.has(r.id)) continue // 不在候选集（被时间窗/filter 排除）
-        const matchedByKeyword = !hasKeyword || Boolean(
-          r.userTask?.toLowerCase().includes(lowerKeyword) ||
-            r.finalResult?.toLowerCase().includes(lowerKeyword) ||
-            r.steps?.some(s =>
-              ((s.type === 'user_task' || s.type === 'user_supplement') &&
-                s.content?.toLowerCase().includes(lowerKeyword)) ||
-              (s.toolName === 'talk_to_user' &&
-                (s.toolArgs as Record<string, unknown>)?.message?.toString().toLowerCase().includes(lowerKeyword))
-            )
-        )
-        if (matchedByKeyword) {
-          totalMatched++
-          if (results.length < limit) {
-            results.push(r)
-          }
+    const candidateEntries = candidates.filter(e => candidateIdsByDate.has(e.dateStr))
+    for (const entry of candidateEntries) {
+      const r = await this.readAgentRecordFromDiskAsync(entry.dateStr, entry.id)
+      if (!r) continue
+      const matchedByKeyword = !hasKeyword || Boolean(
+        r.userTask?.toLowerCase().includes(lowerKeyword) ||
+          r.finalResult?.toLowerCase().includes(lowerKeyword) ||
+          r.steps?.some(s =>
+            ((s.type === 'user_task' || s.type === 'user_supplement') &&
+              s.content?.toLowerCase().includes(lowerKeyword)) ||
+            (s.toolName === 'talk_to_user' &&
+              (s.toolArgs as Record<string, unknown>)?.message?.toString().toLowerCase().includes(lowerKeyword))
+          )
+      )
+      if (matchedByKeyword) {
+        totalMatched++
+        if (results.length < limit) {
+          results.push(r)
         }
       }
     }
@@ -716,11 +771,9 @@ export class HistoryService {
 
     const recordById = new Map<string, AgentRecord>()
     for (const [dateStr, idSet] of idsByDate) {
-      const filePath = this.getAgentFilePath(dateStr)
-      if (!fs.existsSync(filePath)) continue
-      const records = await this.readAgentRecordsAsync(filePath)
-      for (const r of records) {
-        if (idSet.has(r.id)) recordById.set(r.id, r)
+      for (const id of idSet) {
+        const record = await this.readAgentRecordFromDiskAsync(dateStr, id)
+        if (record) recordById.set(id, record)
       }
     }
 
@@ -1101,11 +1154,18 @@ export class HistoryService {
         chatDeleted++
       }
 
-      // 清空所有 Agent 记录
-      const agentFiles = fs.readdirSync(this.agentDir).filter(f => f.endsWith('.json'))
-      for (const file of agentFiles) {
-        fs.unlinkSync(path.join(this.agentDir, file))
-        agentDeleted++
+      // 清空所有 Agent 记录（会话文件 + 旧日文件 + 日期目录）
+      if (fs.existsSync(this.agentDir)) {
+        for (const entry of fs.readdirSync(this.agentDir, { withFileTypes: true })) {
+          const entryPath = path.join(this.agentDir, entry.name)
+          if (entry.isDirectory()) {
+            fs.rmSync(entryPath, { recursive: true, force: true })
+            agentDeleted++
+          } else if (entry.isFile() && entry.name.endsWith('.json')) {
+            fs.unlinkSync(entryPath)
+            agentDeleted++
+          }
+        }
       }
     } else {
       // 按日期保留
@@ -1124,8 +1184,13 @@ export class HistoryService {
       }
 
       // 清理 Agent 记录
-      const agentFiles = fs.readdirSync(this.agentDir).filter(f => f.endsWith('.json'))
-      for (const file of agentFiles) {
+      for (const dateStr of listAgentDateDirs(this.agentDir)) {
+        if (dateStr < cutoffStr) {
+          fs.rmSync(path.join(this.agentDir, dateStr), { recursive: true, force: true })
+          agentDeleted++
+        }
+      }
+      for (const file of listLegacyAgentDayFiles(this.agentDir)) {
         const dateStr = file.replace('.json', '')
         if (dateStr < cutoffStr) {
           fs.unlinkSync(path.join(this.agentDir, file))
@@ -1152,24 +1217,24 @@ export class HistoryService {
     newestRecord?: string
   } {
     const chatFiles = fs.readdirSync(this.chatDir).filter(f => f.endsWith('.json')).sort()
-    const agentFiles = fs.readdirSync(this.agentDir).filter(f => f.endsWith('.json')).sort()
+    const agentStats = collectAgentStorageStats(this.agentDir)
 
-    let totalSize = 0
+    let totalSize = agentStats.totalSize
     for (const file of chatFiles) {
       totalSize += fs.statSync(path.join(this.chatDir, file)).size
     }
-    for (const file of agentFiles) {
-      totalSize += fs.statSync(path.join(this.agentDir, file)).size
-    }
 
-    const allFiles = [...chatFiles, ...agentFiles].sort()
+    const allDates = [...new Set([
+      ...chatFiles.map(f => f.replace('.json', '')),
+      ...agentStats.dateLabels,
+    ])].sort()
 
     return {
       chatFiles: chatFiles.length,
-      agentFiles: agentFiles.length,
+      agentFiles: agentStats.sessionFileCount + agentStats.legacyDayFileCount,
       totalSize,
-      oldestRecord: allFiles[0]?.replace('.json', ''),
-      newestRecord: allFiles[allFiles.length - 1]?.replace('.json', '')
+      oldestRecord: allDates[0],
+      newestRecord: allDates[allDates.length - 1]
     }
   }
 }

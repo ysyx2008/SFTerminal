@@ -8,7 +8,7 @@
 import type { ConfigService } from '../services/config.service'
 import type { HostProfileService } from '../services/host-profile.service'
 
-export type MigrationPhase = 'early' | 'services'
+export type MigrationPhase = 'early' | 'startup' | 'services'
 
 export interface MigrationContext {
   configService: ConfigService

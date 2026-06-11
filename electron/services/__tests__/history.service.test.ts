@@ -222,7 +222,25 @@ describe('HistoryService - deleteAgentRecord', () => {
     expect(indexContent[0].id).toBe('keep')
   })
 
-  it('删除日文件中最后一条记录时移除该日文件', () => {
+  it('saveAgentRecord 写入按会话单文件', () => {
+    const svc = new HistoryService()
+    const baseTime = new Date('2026-03-18T10:00:00').getTime()
+
+    svc.saveAgentRecord(makeRecord({
+      id: 'session-1', timestamp: baseTime, duration: 100, userTask: 'single file'
+    }))
+
+    const sessionFile = path.join(tmpDir, 'history', 'agent', '2026-03-18', 'session-1.json')
+    const legacyFile = path.join(tmpDir, 'history', 'agent', '2026-03-18.json')
+    expect(fs.existsSync(sessionFile)).toBe(true)
+    expect(fs.existsSync(legacyFile)).toBe(false)
+
+    const parsed = JSON.parse(fs.readFileSync(sessionFile, 'utf-8'))
+    expect(parsed.id).toBe('session-1')
+    expect(Array.isArray(parsed)).toBe(false)
+  })
+
+  it('删除日文件中最后一条记录时移除该日目录', () => {
     const svc = new HistoryService()
     const baseTime = new Date('2026-03-18T10:00:00').getTime()
 
@@ -230,11 +248,11 @@ describe('HistoryService - deleteAgentRecord', () => {
       id: 'only', timestamp: baseTime, duration: 100, userTask: 'only'
     }))
 
-    const dateFile = path.join(tmpDir, 'history', 'agent', '2026-03-18.json')
-    expect(fs.existsSync(dateFile)).toBe(true)
+    const sessionFile = path.join(tmpDir, 'history', 'agent', '2026-03-18', 'only.json')
+    expect(fs.existsSync(sessionFile)).toBe(true)
 
     expect(svc.deleteAgentRecord('only')).toBe(true)
-    expect(fs.existsSync(dateFile)).toBe(false)
+    expect(fs.existsSync(sessionFile)).toBe(false)
   })
 })
 

@@ -22,6 +22,8 @@ const BACKUP_TARGETS = [
   { src: 'knowledge/documents.json', type: 'file' as const },
   { src: 'knowledge/bm25-index.json', type: 'file' as const },
   { src: 'knowledge/context-docs', type: 'dir' as const },
+  { src: 'history/agent', type: 'dir' as const },
+  { src: 'history/agent-index.json', type: 'file' as const },
 ]
 
 function copyDirSync(src: string, dest: string): void {

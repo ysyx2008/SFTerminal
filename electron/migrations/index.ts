@@ -16,12 +16,14 @@ import { migrationV1 } from './v1-ssh-group-to-groupid'
 import { migrationV2 } from './v2-host-notes-to-knowledge'
 import { migrationV3 } from './v3-scheduler-to-watch'
 import { migrationV4 } from './v4-ui-theme-mode'
+import { migrationV5 } from './v5-agent-history-per-session'
 
 const allMigrations = [
   migrationV1,
   migrationV2,
   migrationV3,
   migrationV4,
+  migrationV5,
 ]
 
 let _runner: MigrationRunner | null = null

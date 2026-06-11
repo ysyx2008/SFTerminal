@@ -1,6 +1,6 @@
 # History Service SPEC
 
-> Last verified: 2026-06-02（searchAgentRecordsAdvanced 改为索引候选 + 异步逐文件读取，根治历史量大时全量同步扫描冻结主进程）
+> Last verified: 2026-06-11（Agent 记录改为按会话单文件 + 原子写入；v5 迁移拆分旧日文件）
 
 ## 职责
 
@@ -14,9 +14,10 @@ Agent 对话和聊天记录的持久化存储。按日期分文件存储 JSON �
 
 | 方法签名 | 用途 | 主要调用方 |
 |---------|------|-----------|
-| `saveChatRecord(record: ChatRecord): void` | 保存一条聊天记录 | `agent/index.ts` |
-| `saveChatRecords(records: ChatRecord[]): void` | 批量保存聊天记录 | 导入流程 |
-| `getChatRecords(startDate?, endDate?): ChatRecord[]` | 按日期范围查询聊天记录 | 前端历史面板 |
+| `saveChatRecord(record: ChatRecord): void` | 保存一条聊天记录（**已废弃**，无调用方） | 仅导入流程 |
+| `saveChatRecords(records: ChatRecord[]): void` | 批量保存聊天记录（**已废弃**） | 导入流程 |
+| `getChatRecords(startDate?, endDate?): ChatRecord[]` | 按日期范围查询聊天记录（**已废弃**） | 导出流程 |
+| `rebuildAgentIndex(): void` | 从磁盘重建 Agent 索引 | v5 迁移、维护 |
 | `saveAgentRecord(record: AgentRecord): void` | 保存 Agent 执行记录并更新索引 | `agent/index.ts` |
 | `getAgentRecords(startDate?, endDate?): AgentRecord[]` | 按日期范围查询 Agent 记录 | 前端历史面板 |
 | `getAgentRecordById(id: string): AgentRecord \| undefined` | 按 ID 精确查找 Agent 记录 | 回放/详情查看 |
@@ -50,7 +51,13 @@ Agent 对话和聊天记录的持久化存储。按日期分文件存储 JSON �
 
 ## 关键行为 / 数据流
 
-**存储机制**：按日期分区——每天一个 JSON 文件（`YYYY-MM-DD.json`），追加写入。
+**Agent 存储机制**（v5 起）：
+- 每条会话一个 JSON 文件：`history/agent/YYYY-MM-DD/{sessionId}.json`（单条 `AgentRecord` 对象，非数组）
+- 写入使用原子 rename（`electron/utils/atomic-write.ts`），崩溃时保留旧文件
+- 损坏单文件隔离为 `.corrupt.{timestamp}`，不影响同天其他会话
+- v5 迁移将旧 `agent/YYYY-MM-DD.json` 数组拆分为单文件，旧文件改名为 `.json.migrated` 保留 30 天
+
+**Chat 存储**（遗留）：`history/chat/YYYY-MM-DD.json`，当前无写入方，仅导出/导入兼容。
 
 **索引机制**：Agent 记录额外维护索引文件（`history/agent-index.json`，常驻内存 `_indexCache`），`saveAgentRecord` 时同步更新、缺失时 `rebuildIndex` 全量重建。`getRecentAgentRecords` / `listAgentHistorySummaries` / `searchAgentRecordsAdvanced` 均以索引为候选来源，避免全量读日文件。
 
