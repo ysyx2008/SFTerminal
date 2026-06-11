@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, Radio, Bot } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, Radio, Bot, Home } from 'lucide-vue-next'
 import { useTerminalStore } from '../stores/terminal'
 import BatchCommandPanel from './BatchCommandPanel.vue'
 
@@ -210,6 +210,9 @@ const hasMultipleTerminals = computed(() => {
   return terminalStore.tabs.filter(tab => tab.isConnected && tab.ptyId).length > 1
 })
 
+const hasTabs = computed(() => terminalStore.tabs.length > 0)
+const isOnHome = computed(() => hasTabs.value && !terminalStore.activeTabId)
+
 // 打开批量命令面板
 const openBatchPanel = () => {
   batchPanelRef.value?.open()
@@ -267,6 +270,20 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
 
 <template>
   <div class="tab-bar">
+    <!-- 固定首页 tab：有 tab 时显示，点击回到欢迎页 -->
+    <div
+      v-if="hasTabs"
+      class="tab tab-home"
+      :class="{ active: isOnHome }"
+      :title="t('tabs.home')"
+      @click="terminalStore.goToHome()"
+    >
+      <span class="tab-icon">
+        <Home :size="14" />
+      </span>
+      <span class="tab-title">{{ t('tabs.home') }}</span>
+    </div>
+
     <!-- 左滚动按钮 -->
     <button 
       v-show="canScrollLeft" 
@@ -537,6 +554,14 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
 .tab.drag-over {
   border-left: 2px solid var(--accent-primary);
   margin-left: -2px;
+}
+
+.tab-home {
+  min-width: auto;
+  max-width: none;
+  padding: 6px 12px;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 /* 需要注意的状态：有待确认操作，或后台 tab 上 Agent 任务刚结束 */

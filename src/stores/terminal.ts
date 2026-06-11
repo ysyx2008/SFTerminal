@@ -1026,6 +1026,13 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
   }
 
+  /** 回到首页（保留已打开的 tab，仅切换视图） */
+  function goToHome(): void {
+    if (tabs.value.length > 0) {
+      activeTabId.value = ''
+    }
+  }
+
   /**
    * 更新标签标题（系统自动更新，不影响用户自定义标题）
    */
@@ -2550,6 +2557,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     closeTab,
     reconnectSsh,
     setActiveTab,
+    goToHome,
     updateTabTitle,
     renameTab,
     updateConnectionStatus,

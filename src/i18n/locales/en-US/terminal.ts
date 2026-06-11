@@ -123,6 +123,7 @@ export default {
 
   // Tab Bar
   tabs: {
+    home: 'Home',
     newTab: 'New Terminal',
     closeTab: 'Close Tab',
     closeOtherTabs: 'Close Other Tabs',

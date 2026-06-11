@@ -283,13 +283,12 @@ const handleGlobalKeyup = (event: KeyboardEvent) => {
 
 // 处理关闭快捷键
 const handleCloseShortcut = async () => {
-  // 如果有活跃终端，关闭当前终端
-  if (terminalStore.tabs.length > 0 && terminalStore.activeTabId) {
+  if (terminalStore.activeTabId) {
     await terminalStore.closeTab(terminalStore.activeTabId)
-  } else {
-    // 没有活跃终端时关闭窗口
+  } else if (terminalStore.tabs.length === 0) {
     await window.electronAPI.window.close()
   }
+  // 在首页视图且有 tab 时，不关闭窗口
 }
 
 // 清理函数存储
@@ -758,8 +757,10 @@ const initializeApp = async () => {
   }
 }
 
-// 是否显示欢迎页（没有打开任何终端且不在智能巡检界面时显示）
-const showWelcomePage = computed(() => terminalStore.tabs.length === 0 && !showSmartPatrol.value)
+// 是否显示欢迎页（无 tab，或从固定「首页」tab 返回时显示）
+const showWelcomePage = computed(() =>
+  !showSmartPatrol.value && (terminalStore.tabs.length === 0 || !terminalStore.activeTabId)
+)
 // 欢迎页最近对话侧栏：常驻，不可关闭
 const showRecallSidebar = computed(() => showWelcomePage.value && !isSteamBuild)
 // 从欢迎页打开助手（空对话）
