@@ -41,7 +41,7 @@ export default {
       pinned: 'Pinned',
       pin: 'Pin conversation',
       unpin: 'Unpin',
-      doubleClickRename: 'Double-click to rename',
+      rename: 'Rename',
       renameClearHint: 'Clear and confirm to restore the original first message',
     },
     tip1: 'Press Ctrl+T / Cmd+T to quickly create a new terminal tab',

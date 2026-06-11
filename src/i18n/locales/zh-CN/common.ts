@@ -41,7 +41,7 @@ export default {
       pinned: '置顶',
       pin: '置顶此对话',
       unpin: '取消置顶',
-      doubleClickRename: '双击可重命名',
+      rename: '重命名',
       renameClearHint: '留空并确认可恢复为原始首条消息',
     },
     tip1: '按 Ctrl+T / Cmd+T 可快速新建终端标签页',

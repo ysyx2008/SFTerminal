@@ -26,6 +26,18 @@ const displayCount = ref(DISPLAY_LIMIT)
 const editingId = ref<string | null>(null)
 const editingTitle = ref('')
 
+const contextMenu = ref<{
+  show: boolean
+  x: number
+  y: number
+  record: AgentHistorySummary | null
+}>({
+  show: false,
+  x: 0,
+  y: 0,
+  record: null,
+})
+
 const summaryById = computed(() => {
   const map = new Map<string, AgentHistorySummary>()
   for (const s of summaries.value) map.set(s.id, s)
@@ -208,10 +220,41 @@ const togglePin = async (event: MouseEvent, id: string) => {
   }
 }
 
-const startRename = (record: AgentHistorySummary, event: MouseEvent) => {
-  event.stopPropagation()
+const openContextMenu = (record: AgentHistorySummary, event: MouseEvent) => {
+  contextMenu.value = {
+    show: true,
+    x: event.clientX,
+    y: event.clientY,
+    record,
+  }
+}
+
+const closeContextMenu = () => {
+  contextMenu.value.show = false
+  contextMenu.value.record = null
+}
+
+const startRename = (record: AgentHistorySummary) => {
   editingId.value = record.id
   editingTitle.value = configStore.resolveConversationTitle(record.id, record.userTask)
+}
+
+const onMenuRename = () => {
+  const record = contextMenu.value.record
+  closeContextMenu()
+  if (record) startRename(record)
+}
+
+const onMenuTogglePin = async () => {
+  const record = contextMenu.value.record
+  closeContextMenu()
+  if (!record) return
+  try {
+    await configStore.togglePinConversation(record.id)
+  } catch (e) {
+    console.error('Failed to toggle pin:', e)
+    toast.error(t('common.operationFailed'))
+  }
 }
 
 const commitRename = async () => {
@@ -285,7 +328,7 @@ const loadMore = () => {
               :formatted-time="formatTime(record.timestamp + record.duration)"
               @open="openConversation(record)"
               @toggle-pin="togglePin($event, record.id)"
-              @start-rename="startRename(record, $event)"
+              @context-menu="openContextMenu(record, $event)"
               @commit-rename="commitRename"
               @cancel-rename="cancelRename"
               @update:editing-title="editingTitle = $event"
@@ -312,7 +355,7 @@ const loadMore = () => {
               :formatted-time="formatTime(record.timestamp + record.duration)"
               @open="openConversation(record)"
               @toggle-pin="togglePin($event, record.id)"
-              @start-rename="startRename(record, $event)"
+              @context-menu="openContextMenu(record, $event)"
               @commit-rename="commitRename"
               @cancel-rename="cancelRename"
               @update:editing-title="editingTitle = $event"
@@ -335,6 +378,27 @@ const loadMore = () => {
         </template>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div v-if="contextMenu.show" class="context-menu-overlay" @click="closeContextMenu" />
+      <div
+        v-if="contextMenu.show"
+        class="context-menu"
+        :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+        @click.stop
+      >
+        <div class="context-menu-item" @click="onMenuRename">
+          {{ t('welcome.conversations.rename') }}
+        </div>
+        <div class="context-menu-item" @click="onMenuTogglePin">
+          {{
+            contextMenu.record && configStore.pinnedConversationIds.includes(contextMenu.record.id)
+              ? t('welcome.conversations.unpin')
+              : t('welcome.conversations.pin')
+          }}
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -509,5 +573,35 @@ const loadMore = () => {
   font-size: 11px;
   opacity: 0.7;
   line-height: 1.5;
+}
+
+.context-menu {
+  position: fixed;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  min-width: 140px;
+  padding: 4px 0;
+  z-index: 10000;
+}
+
+.context-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+}
+
+.context-menu-item {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.context-menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 </style>
