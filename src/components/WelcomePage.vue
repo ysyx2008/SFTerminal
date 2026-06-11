@@ -234,16 +234,16 @@ const formatHost = (session: SshSession) => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
+  justify-content: center;
   overflow-y: auto;
-  padding: 36px 20px 24px;
+  padding: 24px 20px;
 }
 
 .welcome-content {
   max-width: 780px;
   width: 100%;
-  /* 顶部对齐 + 水平居中，避免垂直居中时 logo 上方留白过大 */
-  margin: 0 auto;
+  /* margin:auto 在垂直方向居中，使上下留白平衡；内容超高时退化为正常滚动 */
+  margin: auto;
   /* 入场动画 */
   animation: pageEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -380,12 +380,11 @@ const formatHost = (session: SshSession) => {
   }
 }
 
-/* 卡片容器：默认 4 列等宽 grid，让「关切」始终与前 3 张同行不换行 */
+/* 卡片容器：4 列等宽 grid 填满内容宽度，与输入框、最近连接左右对齐 */
 .action-cards {
   display: grid;
-  grid-template-columns: repeat(4, 128px);
+  grid-template-columns: repeat(4, 1fr);
   gap: 14px;
-  justify-content: center;
 }
 
 @media (max-width: 640px) {
@@ -423,9 +422,9 @@ const formatHost = (session: SshSession) => {
   justify-content: center;
   text-align: center;
   gap: 8px;
-  /* 固定列宽 128px，配合 height 124px 保持接近正方的卡片比例 */
+  /* 填满宽度时每张约 175px，height 150px 维持不过扁的比例 */
   min-width: 0;
-  height: 124px;
+  height: 150px;
   overflow: hidden;
   /* 入场动画只用 opacity，让 hover transform 正常工作 */
   animation: cardFadeIn 0.25s ease-out both;

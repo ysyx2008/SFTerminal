@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted } from 'vue'
+import { computed, onUnmounted, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Pin, PinOff } from 'lucide-vue-next'
 import type { AgentHistorySummary } from '@shared/types'
@@ -61,15 +61,20 @@ const displayTitle = computed(() =>
   normalizeTitle(configStore.resolveConversationTitle(props.record.id, props.record.userTask))
 )
 
-const hasCustomTitle = computed(() => !!configStore.getConversationDisplayTitle(props.record.id))
+const editInputRef = ref<HTMLInputElement | null>(null)
 
-const setEditInputRef = (el: unknown) => {
-  const input = el as HTMLInputElement | null
-  if (input && props.isEditing) {
+watch(
+  () => props.isEditing,
+  async (editing) => {
+    if (!editing) return
+    await nextTick()
+    const input = editInputRef.value
+    if (!input) return
     input.focus()
     input.select()
-  }
-}
+  },
+  { flush: 'post' }
+)
 
 const handleRenameKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Enter') {
@@ -111,7 +116,7 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
     >
       <input
         v-if="isEditing"
-        :ref="setEditInputRef"
+        ref="editInputRef"
         :value="editingTitle"
         class="title-input"
         :placeholder="t('welcome.conversations.renameClearHint')"
@@ -124,7 +129,6 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
       <span
         v-else
         class="item-title"
-        :class="{ 'has-custom-title': hasCustomTitle }"
         :title="`${displayTitle}\n${t('welcome.conversations.doubleClickRename')}`"
       >{{ displayTitle }}</span>
       <span class="item-time">{{ formattedTime }}</span>
@@ -210,10 +214,6 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   opacity: 0.65;
 }
 
-.conversation-row.is-pinned .item-title {
-  color: var(--text-secondary);
-}
-
 .item-title {
   flex: 1;
   min-width: 0;
@@ -225,11 +225,6 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   overflow: hidden;
   text-overflow: ellipsis;
   transition: color 0.12s ease;
-}
-
-.item-title.has-custom-title {
-  color: var(--text-secondary);
-  font-weight: 500;
 }
 
 .title-input {
