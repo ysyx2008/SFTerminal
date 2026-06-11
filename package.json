@@ -117,8 +117,8 @@
     "@types/ssh2-sftp-client": "^9.0.6",
     "@types/uuid": "^9.0.8",
     "@vitejs/plugin-vue": "^6.0.6",
-    "@vitest/coverage-v8": "^4.0.16",
-    "@vitest/ui": "^4.0.16",
+    "@vitest/coverage-v8": "^4.1.8",
+    "@vitest/ui": "^4.1.8",
     "@vue/eslint-config-prettier": "^9.0.0",
     "@vue/eslint-config-typescript": "^12.0.0",
     "concurrently": "^9.2.1",
@@ -135,7 +135,7 @@
     "vite": "^6.4.2",
     "vite-plugin-electron": "^0.29.1",
     "vite-plugin-electron-renderer": "^0.14.7",
-    "vitest": "^4.0.16",
+    "vitest": "^4.1.8",
     "vue-tsc": "^2.0.6"
   },
   "overrides": {
