@@ -81,7 +81,6 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
     <button
       type="button"
       class="pin-btn"
-      :class="{ 'is-visible': isPinned }"
       :title="isPinned ? t('welcome.conversations.unpin') : t('welcome.conversations.pin')"
       @click="emit('toggle-pin', $event)"
     >
@@ -158,10 +157,6 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
-}
-
-.pin-btn.is-visible {
-  opacity: 0.55;
 }
 
 .pin-btn:hover {
