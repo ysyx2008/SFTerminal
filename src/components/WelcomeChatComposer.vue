@@ -42,6 +42,7 @@ const {
   handleDroppedImages,
   removeImage,
   clearImages,
+  loadPendingImages,
   hasImages
 } = useImageUpload()
 
@@ -252,29 +253,68 @@ const closeImagePreview = () => {
   previewImageUrl.value = null
 }
 
+const handlePreviewKeyDown = (event: KeyboardEvent) => {
+  if (!previewImageUrl.value || event.key !== 'Escape') return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  closeImagePreview()
+}
+
+watch(previewImageUrl, (url) => {
+  if (url) {
+    document.addEventListener('keydown', handlePreviewKeyDown, true)
+  } else {
+    document.removeEventListener('keydown', handlePreviewKeyDown, true)
+  }
+})
+
+/** 发送成功后跳过 onUnmounted 草稿回写（避免与 clearWelcomeComposerDraft 竞态） */
+let skipDraftPersist = false
+
+const persistWelcomeComposerDraft = () => {
+  terminalStore.setWelcomeComposerDraft(
+    composerRef.value?.getText() ?? '',
+    pendingImages.value.map(img => ({ ...img }))
+  )
+}
+
+const restoreWelcomeComposerDraft = () => {
+  const draft = terminalStore.getWelcomeComposerDraft()
+  loadPendingImages(draft.images)
+  nextTick(() => {
+    if (draft.text) composerRef.value?.setText(draft.text)
+    composerRef.value?.focusInput()
+  })
+}
+
 const noop = () => {}
 
 const handleComposerSubmit = async (message: string) => {
   if (!(await guardVisionBeforeSend())) return
 
   const imagesSnapshot = pendingImages.value.map(img => ({ ...img }))
+  skipDraftPersist = true
+  clearImages()
+  terminalStore.clearWelcomeComposerDraft()
   const tabId = terminalStore.createAssistantTab()
   terminalStore.transferUploadedDocs(WELCOME_COMPOSER_TAB_ID, tabId)
   terminalStore.setPendingComposerHandoff(tabId, { message, images: imagesSnapshot })
   terminalStore.markAssistantSkipOnboarding(tabId)
-  clearImages()
 }
 
 onMounted(() => {
   isMounted.value = true
+  skipDraftPersist = false
+  restoreWelcomeComposerDraft()
   document.addEventListener('keydown', handlePTTKeyDown, true)
   document.addEventListener('keyup', handlePTTKeyUp, true)
   window.addEventListener('blur', handlePTTWindowBlur)
-  nextTick(() => composerRef.value?.focusInput())
 })
 
 onUnmounted(() => {
   isMounted.value = false
+  if (!skipDraftPersist) persistWelcomeComposerDraft()
+  document.removeEventListener('keydown', handlePreviewKeyDown, true)
   document.removeEventListener('keydown', handlePTTKeyDown, true)
   document.removeEventListener('keyup', handlePTTKeyUp, true)
   window.removeEventListener('blur', handlePTTWindowBlur)
@@ -324,10 +364,14 @@ onUnmounted(() => {
       :clear-tab-error="noop"
     />
 
-    <div v-if="previewImageUrl" class="welcome-image-preview" @click.self="closeImagePreview">
-      <button type="button" class="welcome-image-preview-close" @click="closeImagePreview">×</button>
-      <img :src="previewImageUrl" alt="" class="welcome-image-preview-img" />
-    </div>
+    <!-- Teleport 到 body：父级 welcome-chat-composer 的 transform 动画会创建层叠上下文，
+         导致 position:fixed 预览被限制在 composer 区域内，无法盖住下方快速启动卡片 -->
+    <Teleport to="body">
+      <div v-if="previewImageUrl" class="welcome-image-preview" @click.self="closeImagePreview">
+        <button type="button" class="welcome-image-preview-close" @click="closeImagePreview">×</button>
+        <img :src="previewImageUrl" alt="" class="welcome-image-preview-img" />
+      </div>
+    </Teleport>
   </div>
 </template>
 

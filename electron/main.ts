@@ -3474,7 +3474,7 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
     },
     onComplete: (_runId: string, result: string, pendingUserMessages?: string[]) => {
       if (!event.sender.isDestroyed()) {
-        event.sender.send('agent:complete', { agentId, result, pendingUserMessages })
+        event.sender.send('agent:complete', { agentId, ptyId: agentId, result, pendingUserMessages })
       }
       if (isRemote) wcs.onAgentComplete(result)
       sensorService.appLifecycle.notifyConversationCompleted()
@@ -3483,7 +3483,7 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
     },
     onError: (_runId: string, error: string) => {
       if (!event.sender.isDestroyed()) {
-        event.sender.send('agent:error', { agentId, error })
+        event.sender.send('agent:error', { agentId, ptyId: agentId, error })
       }
       if (isRemote) wcs.onAgentError(error)
       if (!isRemote) attentionService.request()

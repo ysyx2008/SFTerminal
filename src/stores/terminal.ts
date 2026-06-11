@@ -260,6 +260,9 @@ export const useTerminalStore = defineStore('terminal', () => {
   const pendingComposerHandoffs = ref<Record<string, PendingComposerHandoff>>({})
   // 欢迎页 composer 文档暂存（无真实 tab）
   const welcomeComposerDocs = ref<ParsedDocument[]>([])
+  // 欢迎页 composer 输入框文字与图片暂存（切 tab 后回到首页恢复）
+  const welcomeComposerText = ref('')
+  const welcomeComposerImages = ref<PendingImage[]>([])
   // 欢迎页已发起首条对话的 tab，跳过 __onboarding__ 以免打断用户消息
   const assistantSkipOnboardingTabIds = ref<Set<string>>(new Set())
   
@@ -1849,6 +1852,29 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
+   * Agent run 结束后的 UI 状态收口（欢迎页卸载 AiPanel 时由 App 全局事件兜底调用）。
+   * 清除 isRunning / 待确认 / 流式标记，避免 tab 与历史侧栏长期卡在「运行中/思考中」。
+   */
+  function finalizeAgentRunState(tabId: string): void {
+    const tabIndex = tabs.value.findIndex(t => t.id === tabId)
+    if (tabIndex === -1 || !tabs.value[tabIndex].agentState) return
+
+    const tab = tabs.value[tabIndex]
+    const steps = tab.agentState!.steps.map(s =>
+      s.isStreaming ? { ...s, isStreaming: false } : s
+    )
+
+    tab.agentState = {
+      ...tab.agentState!,
+      isRunning: false,
+      pendingConfirm: undefined,
+      pendingSecureInput: undefined,
+      steps,
+    }
+    tabs.value = [...tabs.value]
+  }
+
+  /**
    * 标签栏「需要注意」：任务在后台 tab 结束，引导用户切回查看。
    */
   function setAgentCompletedUnseen(tabId: string, unseen: boolean): void {
@@ -2387,6 +2413,23 @@ export const useTerminalStore = defineStore('terminal', () => {
     clearUploadedDocs(fromTabId)
   }
 
+  function getWelcomeComposerDraft(): { text: string; images: PendingImage[] } {
+    return {
+      text: welcomeComposerText.value,
+      images: welcomeComposerImages.value.map(img => ({ ...img }))
+    }
+  }
+
+  function setWelcomeComposerDraft(text: string, images: PendingImage[]): void {
+    welcomeComposerText.value = text
+    welcomeComposerImages.value = images.map(img => ({ ...img }))
+  }
+
+  function clearWelcomeComposerDraft(): void {
+    welcomeComposerText.value = ''
+    welcomeComposerImages.value = []
+  }
+
   function setPendingComposerHandoff(tabId: string, handoff: PendingComposerHandoff): void {
     pendingComposerHandoffs.value[tabId] = handoff
   }
@@ -2646,6 +2689,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     markAssistantSkipOnboarding,
     consumeAssistantSkipOnboarding,
     transferUploadedDocs,
+    getWelcomeComposerDraft,
+    setWelcomeComposerDraft,
+    clearWelcomeComposerDraft,
     closeTab,
     reconnectSsh,
     setActiveTab,
@@ -2689,6 +2735,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     addAgentStep,
     removeAgentStep,
     setAgentPendingConfirm,
+    finalizeAgentRunState,
     setAgentPendingSecureInput,
     clearAgentState,
     setAgentFinalResult,
