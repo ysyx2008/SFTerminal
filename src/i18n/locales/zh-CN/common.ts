@@ -31,6 +31,8 @@ export default {
     viewAllSessions: '查看全部会话',
     conversations: {
       searchPlaceholder: '搜索对话...',
+      searchOpen: '搜索对话',
+      searchClose: '关闭搜索',
       newConversation: '新建对话',
       loadMore: '加载更多',
       noMatching: '没有匹配的对话',

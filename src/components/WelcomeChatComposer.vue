@@ -333,7 +333,7 @@ onUnmounted(() => {
 
 <style scoped>
 .welcome-chat-composer {
-  margin-bottom: 28px;
+  margin-bottom: 18px;
   animation: welcomeComposerEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1) 0.06s forwards;
   opacity: 0;
 }

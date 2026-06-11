@@ -64,6 +64,16 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   >
     <button
       type="button"
+      class="pin-btn"
+      :class="{ 'is-visible': isPinned }"
+      :title="isPinned ? t('welcome.conversations.unpin') : t('welcome.conversations.pin')"
+      @click="emit('toggle-pin', $event)"
+    >
+      <PinOff v-if="isPinned" :size="12" />
+      <Pin v-else :size="12" />
+    </button>
+    <button
+      type="button"
       class="conversation-item"
       :disabled="isOpening"
       :title="record.userTask"
@@ -89,15 +99,6 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
       >{{ displayTitle }}</span>
       <span class="item-time">{{ formattedTime }}</span>
     </button>
-    <button
-      type="button"
-      class="pin-btn"
-      :title="isPinned ? t('welcome.conversations.unpin') : t('welcome.conversations.pin')"
-      @click="emit('toggle-pin', $event)"
-    >
-      <PinOff v-if="isPinned" :size="13" />
-      <Pin v-else :size="13" />
-    </button>
   </div>
 </template>
 
@@ -105,7 +106,7 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
 .conversation-row {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   border-radius: 5px;
   transition: background 0.12s ease, opacity 0.12s ease;
 }
@@ -127,6 +128,33 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   color: var(--text-secondary);
 }
 
+.pin-btn {
+  flex-shrink: 0;
+  width: 20px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.pin-btn.is-visible {
+  opacity: 0.55;
+}
+
+.pin-btn:hover {
+  opacity: 1 !important;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-hover, var(--bg-surface)) 80%, transparent);
+}
+
 .conversation-item {
   flex: 1;
   min-width: 0;
@@ -134,7 +162,7 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   align-items: center;
   gap: 8px;
   height: 28px;
-  padding: 0 4px 0 2px;
+  padding: 0 4px 0 0;
   font-family: inherit;
   text-align: left;
   background: transparent;
@@ -194,28 +222,5 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   opacity: 0.6;
-}
-
-.pin-btn {
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  color: var(--text-muted);
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
-}
-
-.pin-btn:hover {
-  opacity: 1 !important;
-  color: var(--text-secondary);
-  background: color-mix(in srgb, var(--bg-hover, var(--bg-surface)) 80%, transparent);
 }
 </style>

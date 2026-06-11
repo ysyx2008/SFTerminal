@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Pin } from 'lucide-vue-next'
+import { Pin, Search, X } from 'lucide-vue-next'
 import type { AgentHistorySummary, AgentRecord } from '@shared/types'
 import ConversationRow from './ConversationRow.vue'
 import { useConfigStore } from '../stores/config'
@@ -12,15 +12,15 @@ const { t, locale } = useI18n()
 const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
 
-const props = defineProps<{
-  visible?: boolean
-}>()
-
 const searchText = ref('')
+const searchExpanded = ref(false)
+const searchInputRef = ref<HTMLInputElement | null>(null)
 const summaries = ref<AgentHistorySummary[]>([])
 const isLoading = ref(false)
 const openingId = ref<string | null>(null)
-const DISPLAY_LIMIT = 50
+const hasLoaded = ref(false)
+const DISPLAY_LIMIT = 20
+const LOAD_MORE_STEP = 20
 const displayCount = ref(DISPLAY_LIMIT)
 
 const editingId = ref<string | null>(null)
@@ -120,17 +120,49 @@ const loadSummaries = async () => {
   }
 }
 
-watch(
-  () => props.visible,
-  (show) => {
-    if (show) void loadSummaries()
-  },
-  { immediate: true }
-)
+const ensureLoaded = () => {
+  if (hasLoaded.value) return
+  hasLoaded.value = true
+  void loadSummaries()
+}
+
+onMounted(() => {
+  ensureLoaded()
+})
 
 watch(searchText, () => {
   displayCount.value = DISPLAY_LIMIT
 })
+
+const openSearch = async () => {
+  searchExpanded.value = true
+  await nextTick()
+  searchInputRef.value?.focus()
+}
+
+const closeSearch = () => {
+  searchExpanded.value = false
+  searchText.value = ''
+}
+
+const toggleSearch = () => {
+  if (searchExpanded.value) {
+    if (searchText.value.trim()) {
+      searchText.value = ''
+      searchInputRef.value?.focus()
+    } else {
+      closeSearch()
+    }
+  } else {
+    void openSearch()
+  }
+}
+
+const handleSearchBlur = () => {
+  if (!searchText.value.trim()) {
+    closeSearch()
+  }
+}
 
 const formatTime = (timestamp: number): string => {
   const date = new Date(timestamp)
@@ -201,19 +233,33 @@ const cancelRename = () => {
 }
 
 const loadMore = () => {
-  displayCount.value += DISPLAY_LIMIT
+  displayCount.value += LOAD_MORE_STEP
 }
 </script>
 
 <template>
   <div class="conversation-panel">
-    <div class="panel-toolbar">
+    <div class="panel-header" :class="{ 'is-search-open': searchExpanded }">
+      <span v-if="!searchExpanded" class="panel-title">{{ t('header.recentConversations') }}</span>
       <input
+        v-else
+        ref="searchInputRef"
         v-model="searchText"
         type="text"
         class="input search-input"
         :placeholder="t('welcome.conversations.searchPlaceholder')"
+        @blur="handleSearchBlur"
+        @keydown.escape.prevent="closeSearch()"
       />
+      <button
+        type="button"
+        class="search-toggle"
+        :title="searchExpanded ? t('welcome.conversations.searchClose') : t('welcome.conversations.searchOpen')"
+        @click="toggleSearch"
+      >
+        <X v-if="searchExpanded" :size="14" />
+        <Search v-else :size="14" />
+      </button>
     </div>
 
     <div class="conversation-list">
@@ -299,14 +345,37 @@ const loadMore = () => {
   height: 100%;
 }
 
-.panel-toolbar {
-  padding: 8px 10px;
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 8px 0 10px;
+  flex-shrink: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
 }
 
+.panel-header.is-search-open {
+  padding-left: 8px;
+}
+
+.panel-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .search-input {
-  width: 100%;
-  height: 28px;
+  flex: 1;
+  min-width: 0;
+  height: 26px;
   padding: 0 8px;
   font-size: 12px;
   color: var(--text-secondary);
@@ -320,15 +389,59 @@ const loadMore = () => {
   opacity: 0.85;
 }
 
+.search-toggle {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.search-toggle:hover {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-surface) 75%, transparent);
+}
+
 .conversation-list {
   flex: 1;
   overflow-y: auto;
-  padding: 6px 8px 12px;
+  padding: 4px 8px 10px;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.2s ease;
+}
+
+.conversation-list:hover {
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 40%, transparent) transparent;
+}
+
+.conversation-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.conversation-list::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.conversation-list:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 40%, transparent);
+  background-clip: padding-box;
 }
 
 .list-section {
-  margin-bottom: 4px;
-  padding-top: 8px;
+  margin-bottom: 2px;
+  padding-top: 6px;
   border-top: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
 }
 
@@ -341,9 +454,9 @@ const loadMore = () => {
   display: flex;
   align-items: center;
   gap: 5px;
-  height: 24px;
-  padding: 0 8px;
-  margin-bottom: 2px;
+  height: 22px;
+  padding: 0 4px;
+  margin-bottom: 1px;
 }
 
 .section-icon {
@@ -363,13 +476,12 @@ const loadMore = () => {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding-left: 10px;
 }
 
 .load-more-btn {
   display: block;
   width: 100%;
-  margin-top: 8px;
+  margin-top: 6px;
   padding: 4px;
   font-size: 11px;
   font-family: inherit;
@@ -385,7 +497,7 @@ const loadMore = () => {
 }
 
 .empty-state {
-  padding: 32px 16px;
+  padding: 28px 16px;
   text-align: center;
   color: var(--text-muted);
   font-size: 12px;

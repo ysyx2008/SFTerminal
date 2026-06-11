@@ -31,6 +31,8 @@ export default {
     viewAllSessions: 'View All Sessions',
     conversations: {
       searchPlaceholder: 'Search conversations...',
+      searchOpen: 'Search conversations',
+      searchClose: 'Close search',
       newConversation: 'New conversation',
       loadMore: 'Load more',
       noMatching: 'No matching conversations',

@@ -82,6 +82,8 @@ const handleClose = () => {
 // Refs
 const messagesRef = ref<HTMLDivElement | null>(null)
 const scrollerRef = ref<InstanceType<typeof DynamicScroller> | null>(null)
+// 新建 tab 载入历史时，先隐藏列表、定位到底部后再淡入，避免「顶部→底部」的跳动闪烁
+const initialScrollHiding = ref(false)
 const composerRef = ref<InstanceType<typeof AiComposer> | null>(null)
 const secureInputValue = ref('')
 
@@ -1602,6 +1604,33 @@ onMounted(() => {
   }
 
   warmupMessageList()
+
+  // 新建 tab 载入历史对话（如从「最近对话」列表打开）时，初始定位到最新内容而非顶部。
+  // 仅当本 tab 没有保存过滚动位置（首次挂载）且已有历史内容时触发，避免覆盖正常的滚动位置恢复。
+  // 同步判断并先隐藏列表（首次绘制前生效），定位到底部后再淡入，消除「顶部→底部」的跳动闪烁。
+  const shouldInitialScrollBottom =
+    !!currentTabId.value &&
+    terminalStore.getAiScrollTop(currentTabId.value) === undefined &&
+    flattenedItems.value.length > 0
+
+  if (shouldInitialScrollBottom) {
+    initialScrollHiding.value = true
+    const reveal = () => { initialScrollHiding.value = false }
+    void nextTick(() => {
+      if (scrollerRef.value) {
+        scrollerRef.value.scrollToBottom()
+      } else {
+        scrollToBottom()
+      }
+      // 再用两帧确保虚拟列表测量完真实尺寸、定位稳定后淡入
+      requestAnimationFrame(() => {
+        scrollerRef.value?.scrollToBottom?.() ?? scrollToBottom()
+        requestAnimationFrame(reveal)
+      })
+      // 兜底：无论如何最终都恢复可见，避免极端情况下列表一直隐藏
+      setTimeout(reveal, 300)
+    })
+  }
 })
 
 onUnmounted(() => {
@@ -1917,7 +1946,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           :prerender="10"
           key-field="id"
           class="ai-messages"
-          :class="{ 'standalone-mode': isStandaloneAssistant, 'custom-avatar': isStandaloneAssistant && configStore.agentAvatar }"
+          :class="{ 'standalone-mode': isStandaloneAssistant, 'custom-avatar': isStandaloneAssistant && configStore.agentAvatar, 'initial-scroll-hiding': initialScrollHiding }"
           :style="isStandaloneAssistant ? { '--assistant-avatar': `url(${configStore.agentAvatar || sailfishLogo})` } : undefined"
         >
           <template #before>
@@ -3239,7 +3268,13 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   user-select: text;
   position: relative;
   overflow-anchor: auto;
-  transition: box-shadow 0.3s ease;
+  transition: box-shadow 0.3s ease, opacity 0.15s ease;
+}
+
+/* 首次载入历史时先隐藏，定位到底部后淡入，避免「顶部→底部」跳动闪烁 */
+.ai-messages.initial-scroll-hiding {
+  opacity: 0;
+  transition: none;
 }
 
 .agent-step-virtual {

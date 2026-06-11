@@ -1057,12 +1057,9 @@ onUnmounted(() => {
     <!-- 主体内容 -->
     <div class="app-body">
       <!-- 左侧边栏 - 最近对话（欢迎页常驻） -->
-      <aside v-if="showRecallSidebar" class="sidebar sidebar--recall">
-        <div class="sidebar-header sidebar-header--recall">
-          <span>{{ t('header.recentConversations') }}</span>
-        </div>
-        <div class="sidebar-content">
-          <RecentConversationsPanel :visible="showRecallSidebar" />
+      <aside v-show="showRecallSidebar" class="sidebar sidebar--recall">
+        <div class="sidebar-content sidebar-content--recall">
+          <RecentConversationsPanel />
         </div>
       </aside>
 
@@ -1373,14 +1370,8 @@ onUnmounted(() => {
   display: none;
 }
 
-.sidebar--recall .sidebar-header--recall {
-  height: 36px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  border-bottom-color: color-mix(in srgb, var(--border-color) 70%, transparent);
+.sidebar-content--recall {
+  overflow-y: hidden;
 }
 
 /* 欢迎页：主机管理叠加在最近对话侧栏之上，关掉后最近对话仍可见 */

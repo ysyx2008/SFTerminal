@@ -133,7 +133,7 @@ const formatHost = (session: SshSession) => {
           <!-- AI 助手（Steam 版隐藏） -->
           <div v-if="!isSteamBuild" class="action-card" @click="openAssistant">
             <div class="card-icon assistant">
-              <Bot :size="32" :stroke-width="1.5" />
+              <Bot :size="24" :stroke-width="1.5" />
             </div>
             <div class="card-content">
               <div class="card-title">{{ t('welcome.assistant') }}</div>
@@ -144,7 +144,7 @@ const formatHost = (session: SshSession) => {
           <!-- 本地终端 -->
           <div class="action-card" @click="openLocalTerminal">
             <div class="card-icon local">
-              <SquareTerminal :size="32" :stroke-width="1.5" />
+              <SquareTerminal :size="24" :stroke-width="1.5" />
             </div>
             <div class="card-content">
               <div class="card-title">{{ t('welcome.localTerminal') }}</div>
@@ -155,7 +155,7 @@ const formatHost = (session: SshSession) => {
           <!-- SSH 连接 -->
           <div class="action-card" @click="openSessionManager">
             <div class="card-icon ssh">
-              <Monitor :size="32" :stroke-width="1.5" />
+              <Monitor :size="24" :stroke-width="1.5" />
             </div>
             <div class="card-content">
               <div class="card-title">{{ t('welcome.sshConnect') }}</div>
@@ -166,7 +166,7 @@ const formatHost = (session: SshSession) => {
           <!-- 关切总览（Steam 版隐藏，无 Agent 即无关切） -->
           <div v-if="!isSteamBuild" class="action-card" @click="openWatches">
             <div class="card-icon watch">
-              <Eye :size="32" :stroke-width="1.5" />
+              <Eye :size="24" :stroke-width="1.5" />
             </div>
             <div class="card-content">
               <div class="card-title">{{ t('welcome.watch') }}</div>
@@ -177,7 +177,7 @@ const formatHost = (session: SshSession) => {
           <!-- 智能巡检（暂时隐藏）
           <div class="action-card" @click="openSmartPatrol">
             <div class="card-icon patrol">
-              <Bot :size="32" :stroke-width="1.5" />
+              <Bot :size="24" :stroke-width="1.5" />
             </div>
             <div class="card-content">
               <div class="card-title">{{ t('welcome.smartPatrol') }}</div>
@@ -234,14 +234,16 @@ const formatHost = (session: SshSession) => {
   flex: 1;
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
   overflow-y: auto;
-  padding: 24px 20px;
+  padding: 36px 20px 24px;
 }
 
 .welcome-content {
   max-width: 780px;
   width: 100%;
-  margin: auto;
+  /* 顶部对齐 + 水平居中，避免垂直居中时 logo 上方留白过大 */
+  margin: 0 auto;
   /* 入场动画 */
   animation: pageEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -262,8 +264,8 @@ const formatHost = (session: SshSession) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 24px;
-  margin-bottom: 32px;
+  gap: 16px;
+  margin-bottom: 20px;
   animation: headerEnter 0.35s cubic-bezier(0.16, 1, 0.3, 1) 0.05s forwards;
   opacity: 0;
 }
@@ -305,8 +307,8 @@ const formatHost = (session: SshSession) => {
 }
 
 .sailfish-logo {
-  width: 112px;
-  height: 112px;
+  width: 88px;
+  height: 88px;
   object-fit: contain;
   filter: drop-shadow(0 4px 16px rgba(var(--accent-decorative-rgb), 0.4));
   transition: filter 0.3s ease;
@@ -322,10 +324,10 @@ const formatHost = (session: SshSession) => {
 }
 
 .welcome-title {
-  font-size: 30px;
+  font-size: 26px;
   font-weight: 800;
   color: var(--text-primary);
-  margin: 0 0 6px 0;
+  margin: 0 0 4px 0;
   letter-spacing: -0.5px;
   /* 渐变文字效果 */
   background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent-primary) 100%);
@@ -342,7 +344,7 @@ const formatHost = (session: SshSession) => {
 }
 
 .welcome-subtitle {
-  font-size: 15px;
+  font-size: 14px;
   color: var(--text-muted);
   margin: 0;
   opacity: 0.85;
@@ -354,7 +356,7 @@ const formatHost = (session: SshSession) => {
   font-size: 13px;
   font-weight: 700;
   color: var(--text-secondary);
-  margin: 0 0 16px 0;
+  margin: 0 0 10px 0;
   text-transform: uppercase;
   letter-spacing: 1px;
   opacity: 0.8;
@@ -362,7 +364,7 @@ const formatHost = (session: SshSession) => {
 
 /* Quick Start Cards */
 .quick-start {
-  margin-bottom: 28px;
+  margin-bottom: 18px;
   animation: sectionEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1) 0.08s forwards;
   opacity: 0;
 }
@@ -381,8 +383,8 @@ const formatHost = (session: SshSession) => {
 /* 卡片容器：默认 4 列等宽 grid，让「关切」始终与前 3 张同行不换行 */
 .action-cards {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
+  grid-template-columns: repeat(4, 128px);
+  gap: 14px;
   justify-content: center;
 }
 
@@ -407,8 +409,8 @@ const formatHost = (session: SshSession) => {
   position: relative;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 20px;
-  padding: 28px;
+  border-radius: 16px;
+  padding: 16px 12px;
   cursor: pointer;
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
               border-color 0.3s ease, 
@@ -420,10 +422,10 @@ const formatHost = (session: SshSession) => {
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 12px;
-  /* 宽度由 grid 列均分；保留 height 与 min-width 防止内容挤压 */
+  gap: 8px;
+  /* 固定列宽 128px，配合 height 124px 保持接近正方的卡片比例 */
   min-width: 0;
-  height: 165px;
+  height: 124px;
   overflow: hidden;
   /* 入场动画只用 opacity，让 hover transform 正常工作 */
   animation: cardFadeIn 0.25s ease-out both;
@@ -469,7 +471,7 @@ const formatHost = (session: SshSession) => {
   content: '';
   position: absolute;
   inset: -2px;
-  border-radius: 22px;
+  border-radius: 18px;
   background: linear-gradient(135deg,
     rgba(var(--card-glow-rgb), 1),
     rgba(var(--card-glow-rgb), 0.55));
@@ -508,11 +510,11 @@ const formatHost = (session: SshSession) => {
 .action-card:hover:not(.disabled) {
   border-color: var(--card-glow-color);
   border-width: 2px;
-  transform: translateY(-8px) scale(1.06);
+  transform: translateY(-4px) scale(1.03);
   background: color-mix(in srgb, var(--card-glow-color) 8%, var(--bg-secondary));
   box-shadow: 
-    0 20px 40px rgba(0, 0, 0, 0.18),
-    0 0 38px rgba(var(--card-glow-rgb), 0.32);
+    0 14px 28px rgba(0, 0, 0, 0.16),
+    0 0 28px rgba(var(--card-glow-rgb), 0.28);
 }
 
 .action-card:active:not(.disabled) {
@@ -530,12 +532,12 @@ const formatHost = (session: SshSession) => {
    都从这条变量取色，与卡片整体氛围保持同一色相。 */
 .card-icon {
   --icon-glow-rgb: var(--card-glow-rgb, var(--accent-decorative-rgb));
-  width: 60px;
-  height: 60px;
-  min-width: 60px;
-  min-height: 60px;
+  width: 46px;
+  height: 46px;
+  min-width: 46px;
+  min-height: 46px;
   flex-shrink: 0;
-  border-radius: 16px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -550,11 +552,11 @@ const formatHost = (session: SshSession) => {
    3. 柔和环境暗影：保留上浮层次感
    原先单一的 rgba(0,0,0,0.35) 阴影在浅色主题下会把鲜艳图标"拍灰"，故彻底替换。 */
 .action-card:hover:not(.disabled) .card-icon {
-  transform: scale(1.08) translateY(-4px);
+  transform: scale(1.05) translateY(-2px);
   filter: saturate(1.2) brightness(1.08);
   box-shadow:
-    0 16px 32px rgba(var(--icon-glow-rgb), 0.55),
-    0 6px 14px rgba(0, 0, 0, 0.15);
+    0 12px 24px rgba(var(--icon-glow-rgb), 0.5),
+    0 4px 10px rgba(0, 0, 0, 0.12);
 }
 
 .card-icon.assistant {
@@ -582,16 +584,16 @@ const formatHost = (session: SshSession) => {
    再给文字变色会在深色主题下形成"中性卡片 + 蓝色文字孤岛"的割裂感。
    保持 text-primary，让信息层级稳定、氛围内敛。 */
 .card-title {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .card-desc {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
-  line-height: 1.5;
+  line-height: 1.4;
 }
 
 .coming-soon-badge {
@@ -608,7 +610,7 @@ const formatHost = (session: SshSession) => {
 
 /* Recent Sessions */
 .recent-sessions {
-  margin-bottom: 20px;
+  margin-bottom: 12px;
   animation: sectionEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1) 0.2s forwards;
   opacity: 0;
 }
@@ -617,7 +619,7 @@ const formatHost = (session: SshSession) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 
 .section-header .section-title {
@@ -626,18 +628,18 @@ const formatHost = (session: SshSession) => {
 
 .session-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
 }
 
 .session-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: 10px;
+  padding: 10px 12px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
@@ -674,10 +676,10 @@ const formatHost = (session: SshSession) => {
    底板继续用装饰色半透明淡衬。整组 session 入口走"纯中性"风格，让
    主题色只在真正的功能锚点（btn-primary、激活 tab 条等）出现。 */
 .session-icon {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   background: linear-gradient(135deg, rgba(var(--accent-decorative-rgb), 0.2), rgba(var(--accent-decorative-rgb), 0.1));
-  border-radius: 10px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
