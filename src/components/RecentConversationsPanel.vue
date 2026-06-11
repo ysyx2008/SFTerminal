@@ -3,7 +3,11 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Pin, Search, X } from 'lucide-vue-next'
 import type { AgentHistorySummary, AgentRecord } from '@shared/types'
-import type { HistoryConversationMeta, HistoryConversationTabStatus } from '../stores/terminal'
+import type { HistoryConversationTabStatus } from '../stores/terminal'
+import {
+  CLOSED_HISTORY_CONVERSATION_META,
+  formatHistoryConversationTooltip,
+} from '../utils/agent-tab-ui-meta'
 import ConversationRow from './ConversationRow.vue'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
@@ -198,26 +202,13 @@ const displayedRecordIds = computed(() => {
   return ids
 })
 
-const formatStatusTooltip = (meta: HistoryConversationMeta): string => {
-  if (meta.status === 'closed') return t('welcome.conversations.statusClosed')
-  if (meta.status === 'running') return t('welcome.conversations.agentRunning')
-  if (meta.pendingConfirm && meta.agentCompletedUnseen) {
-    return `${t('tabs.needsAttentionConfirm')} · ${t('tabs.needsAttentionTaskFinished')}`
-  }
-  if (meta.pendingConfirm) return t('tabs.needsAttentionConfirm')
-  if (meta.agentCompletedUnseen) return t('tabs.needsAttentionTaskFinished')
-  return t('welcome.conversations.statusOpen')
-}
-
-/** 当前可见行的状态缓存（依赖 tabs / activeTabId，避免每行重复遍历） */
+/** 当前可见行的状态（读 store 派生索引，随 agentState 自动更新） */
 const conversationMetaById = computed(() => {
-  void terminalStore.tabs
-  void terminalStore.activeTabId
-
+  const historyMeta = terminalStore.historyConversationMetaBySessionId
   const map = new Map<string, { status: HistoryConversationTabStatus; tooltip: string }>()
   for (const id of displayedRecordIds.value) {
-    const meta = terminalStore.getHistoryConversationMeta(id)
-    map.set(id, { status: meta.status, tooltip: formatStatusTooltip(meta) })
+    const meta = historyMeta.get(id) ?? CLOSED_HISTORY_CONVERSATION_META
+    map.set(id, { status: meta.status, tooltip: formatHistoryConversationTooltip(meta, t) })
   }
   return map
 })
@@ -225,7 +216,7 @@ const conversationMetaById = computed(() => {
 const getRecordMeta = (id: string) =>
   conversationMetaById.value.get(id) ?? {
     status: 'closed' as const,
-    tooltip: t('welcome.conversations.statusClosed'),
+    tooltip: formatHistoryConversationTooltip(CLOSED_HISTORY_CONVERSATION_META, t),
   }
 
 const openConversation = async (summary: AgentHistorySummary) => {

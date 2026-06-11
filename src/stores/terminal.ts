@@ -17,6 +17,14 @@ import {
 } from './split-pane-tree'
 import { WELCOME_COMPOSER_TAB_ID } from '../constants/welcome-composer'
 import type { PendingImage } from '../composables/useImageUpload'
+import {
+  CLOSED_HISTORY_CONVERSATION_META,
+  deriveTabAgentUiMeta,
+  toHistoryConversationMeta,
+  type HistoryConversationMeta,
+  type HistoryConversationTabStatus,
+  type TabAgentUiMeta,
+} from '../utils/agent-tab-ui-meta'
 
 const log = createLogger('Store')
 
@@ -56,14 +64,12 @@ export type {
 
 import type { TerminalType, AgentStep, PendingConfirmation, RemoteChannel, AttachmentInfo, AgentRecord } from '@shared/types'
 
-/** 侧栏历史对话与 tab 的关联状态（用于状态图标） */
-export type HistoryConversationTabStatus = 'closed' | 'open' | 'running' | 'attention'
-
-export interface HistoryConversationMeta {
-  status: HistoryConversationTabStatus
-  pendingConfirm: boolean
-  agentCompletedUnseen: boolean
-}
+export type {
+  TabAgentUiStatus,
+  TabAgentUiMeta,
+  HistoryConversationTabStatus,
+  HistoryConversationMeta,
+} from '../utils/agent-tab-ui-meta'
 
 export interface AgentState {
   isRunning: boolean
@@ -1882,21 +1888,37 @@ export const useTerminalStore = defineStore('terminal', () => {
     return tabs.value.find(t => t.agentState?.sessionId === historyId)
   }
 
-  /** 侧栏历史对话元信息（单次 tab 查找，供状态图标与 tooltip 复用） */
+  /**
+   * 从 tabs.agentState 派生的 UI 状态索引（随 store 更新自动重算）。
+   * TabBar、历史侧栏等只读此索引，不各自维护规则。
+   */
+  const tabAgentUiMetaByTabId = computed(() => {
+    const map = new Map<string, TabAgentUiMeta>()
+    for (const tab of tabs.value) {
+      if (tab.agentState) {
+        map.set(tab.id, deriveTabAgentUiMeta(tab.agentState))
+      }
+    }
+    return map
+  })
+
+  const historyConversationMetaBySessionId = computed(() => {
+    const map = new Map<string, HistoryConversationMeta>()
+    for (const tab of tabs.value) {
+      const sessionId = tab.agentState?.sessionId
+      if (!sessionId || !tab.agentState) continue
+      map.set(sessionId, toHistoryConversationMeta(deriveTabAgentUiMeta(tab.agentState)))
+    }
+    return map
+  })
+
+  function getTabAgentUiMeta(tabId: string): TabAgentUiMeta {
+    return tabAgentUiMetaByTabId.value.get(tabId) ?? deriveTabAgentUiMeta(undefined)
+  }
+
+  /** 侧栏历史对话元信息（按 sessionId 查 tabAgentUiMeta 索引） */
   function getHistoryConversationMeta(historyId: string): HistoryConversationMeta {
-    const tab = findTabByHistoryId(historyId)
-    if (!tab) {
-      return { status: 'closed', pendingConfirm: false, agentCompletedUnseen: false }
-    }
-    const pendingConfirm = hasPendingConfirm(tab.id)
-    const agentCompletedUnseen = hasAgentCompletedUnseen(tab.id)
-    if (tab.agentState?.isRunning === true) {
-      return { status: 'running', pendingConfirm, agentCompletedUnseen }
-    }
-    if (pendingConfirm || agentCompletedUnseen) {
-      return { status: 'attention', pendingConfirm, agentCompletedUnseen }
-    }
-    return { status: 'open', pendingConfirm: false, agentCompletedUnseen: false }
+    return historyConversationMetaBySessionId.value.get(historyId) ?? CLOSED_HISTORY_CONVERSATION_META
   }
 
   function getHistoryConversationStatus(historyId: string): HistoryConversationTabStatus {
@@ -2549,18 +2571,16 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 检查指定终端是否有待确认操作
    */
   function hasPendingConfirm(tabId: string): boolean {
-    const tab = tabs.value.find(t => t.id === tabId)
-    return !!tab?.agentState?.pendingConfirm
+    return getTabAgentUiMeta(tabId).pendingConfirm
   }
 
   function hasAgentCompletedUnseen(tabId: string): boolean {
-    const tab = tabs.value.find(t => t.id === tabId)
-    return tab?.agentState?.agentCompletedUnseen === true
+    return getTabAgentUiMeta(tabId).agentCompletedUnseen
   }
 
   /** 标签栏 needs-attention：待确认 或 后台任务刚结束 */
   function hasTabAgentAttention(tabId: string): boolean {
-    return hasPendingConfirm(tabId) || hasAgentCompletedUnseen(tabId)
+    return getTabAgentUiMeta(tabId).needsAttention
   }
 
   // Proactive 消息延迟投递：agent 忙时暂存，完成后再注入 tab
@@ -2674,6 +2694,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     setAgentFinalResult,
     restoreAgentHistory,
     findTabByHistoryId,
+    tabAgentUiMetaByTabId,
+    historyConversationMetaBySessionId,
+    getTabAgentUiMeta,
     getHistoryConversationMeta,
     getHistoryConversationStatus,
     openHistoryConversation,

@@ -1,0 +1,88 @@
+import type { PendingConfirmation } from '@shared/types'
+
+/**
+ * Tab / 历史对话侧栏共用的 Agent UI 状态派生逻辑。
+ * 事件写入 terminalStore.agentState，展示层只读此模块，避免 TabBar 与历史面板各算一套。
+ */
+
+export type TabAgentUiStatus = 'open' | 'running' | 'attention'
+
+/** 历史行专用：无对应 tab 时为 closed */
+export type HistoryConversationTabStatus = TabAgentUiStatus | 'closed'
+
+export interface TabAgentUiMeta {
+  status: TabAgentUiStatus
+  pendingConfirm: boolean
+  agentCompletedUnseen: boolean
+  /** 待确认 或 后台任务完成未读 */
+  needsAttention: boolean
+  isRunning: boolean
+}
+
+export interface HistoryConversationMeta {
+  status: HistoryConversationTabStatus
+  pendingConfirm: boolean
+  agentCompletedUnseen: boolean
+}
+
+export const CLOSED_HISTORY_CONVERSATION_META: HistoryConversationMeta = {
+  status: 'closed',
+  pendingConfirm: false,
+  agentCompletedUnseen: false,
+}
+
+type AgentStateSlice = {
+  isRunning?: boolean
+  pendingConfirm?: PendingConfirmation
+  agentCompletedUnseen?: boolean
+}
+
+/** 从 tab.agentState 派生 UI 状态；attention 优先于 running */
+export function deriveTabAgentUiMeta(agentState?: AgentStateSlice): TabAgentUiMeta {
+  const pendingConfirm = !!agentState?.pendingConfirm
+  const agentCompletedUnseen = agentState?.agentCompletedUnseen === true
+  const isRunning = agentState?.isRunning === true
+  const needsAttention = pendingConfirm || agentCompletedUnseen
+  const status: TabAgentUiStatus = needsAttention
+    ? 'attention'
+    : isRunning
+      ? 'running'
+      : 'open'
+  return { status, pendingConfirm, agentCompletedUnseen, needsAttention, isRunning }
+}
+
+export function toHistoryConversationMeta(tabMeta: TabAgentUiMeta): HistoryConversationMeta {
+  return {
+    status: tabMeta.status,
+    pendingConfirm: tabMeta.pendingConfirm,
+    agentCompletedUnseen: tabMeta.agentCompletedUnseen,
+  }
+}
+
+/** TabBar：非激活 tab 的 attention 提示 */
+export function formatAgentAttentionTooltip(
+  meta: Pick<TabAgentUiMeta, 'pendingConfirm' | 'agentCompletedUnseen' | 'needsAttention'>,
+  t: (key: string) => string
+): string | undefined {
+  if (!meta.needsAttention) return undefined
+  if (meta.pendingConfirm && meta.agentCompletedUnseen) {
+    return `${t('tabs.needsAttentionConfirm')} · ${t('tabs.needsAttentionTaskFinished')}`
+  }
+  if (meta.pendingConfirm) return t('tabs.needsAttentionConfirm')
+  return t('tabs.needsAttentionTaskFinished')
+}
+
+/** 历史对话行状态图标 tooltip */
+export function formatHistoryConversationTooltip(
+  meta: HistoryConversationMeta,
+  t: (key: string) => string
+): string {
+  if (meta.status === 'closed') return t('welcome.conversations.statusClosed')
+  if (meta.status === 'running') return t('welcome.conversations.agentRunning')
+  if (meta.pendingConfirm && meta.agentCompletedUnseen) {
+    return `${t('tabs.needsAttentionConfirm')} · ${t('tabs.needsAttentionTaskFinished')}`
+  }
+  if (meta.pendingConfirm) return t('tabs.needsAttentionConfirm')
+  if (meta.agentCompletedUnseen) return t('tabs.needsAttentionTaskFinished')
+  return t('welcome.conversations.statusOpen')
+}

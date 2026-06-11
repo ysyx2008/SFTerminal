@@ -3,6 +3,7 @@ import { ref, watch, onMounted, nextTick, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, Radio, Bot, Home } from 'lucide-vue-next'
 import { useTerminalStore } from '../stores/terminal'
+import { formatAgentAttentionTooltip } from '../utils/agent-tab-ui-meta'
 import BatchCommandPanel from './BatchCommandPanel.vue'
 
 const { t } = useI18n()
@@ -257,14 +258,7 @@ function handleRenameKeydown(event: KeyboardEvent) {
 /** 非激活 tab 上的标签栏提示（待确认 / 后台任务已结束） */
 const tabAttentionTooltip = (tabId: string): string | undefined => {
   if (tabId === terminalStore.activeTabId) return undefined
-  const pending = terminalStore.hasPendingConfirm(tabId)
-  const unseen = terminalStore.hasAgentCompletedUnseen(tabId)
-  if (!pending && !unseen) return undefined
-  if (pending && unseen) {
-    return `${t('tabs.needsAttentionConfirm')} · ${t('tabs.needsAttentionTaskFinished')}`
-  }
-  if (pending) return t('tabs.needsAttentionConfirm')
-  return t('tabs.needsAttentionTaskFinished')
+  return formatAgentAttentionTooltip(terminalStore.getTabAgentUiMeta(tabId), t)
 }
 </script>
 
