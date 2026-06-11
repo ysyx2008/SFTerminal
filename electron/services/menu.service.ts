@@ -82,6 +82,10 @@ const menuI18n = {
     quitConfirmDetail: '当前有 {count} 个标签页未关闭，退出将关闭所有标签页。',
     quitConfirmCancel: '取消',
     quitConfirmExit: '退出',
+
+    // 托盘菜单
+    trayShowWindow: '显示窗口',
+    trayQuit: '退出',
   },
   'en-US': {
     // App menu (macOS)
@@ -152,6 +156,10 @@ const menuI18n = {
     quitConfirmDetail: '{count} tab(s) are still open. Quitting will close all tabs.',
     quitConfirmCancel: 'Cancel',
     quitConfirmExit: 'Quit',
+
+    // Tray menu
+    trayShowWindow: 'Show Window',
+    trayQuit: 'Quit',
   },
 }
 
@@ -606,6 +614,26 @@ export class MenuService {
       message: this.t('quitConfirmMessage'),
       detail,
     }
+  }
+
+  /**
+   * 托盘右键菜单项（跟随应用语言设置）
+   */
+  buildTrayContextMenu(options: {
+    onShowWindow: () => void
+    onQuit: () => void
+  }): MenuItemConstructorOptions[] {
+    return [
+      {
+        label: this.t('trayShowWindow'),
+        click: options.onShowWindow,
+      },
+      { type: 'separator' },
+      {
+        label: this.t('trayQuit'),
+        click: options.onQuit,
+      },
+    ]
   }
 
   /**

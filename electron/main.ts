@@ -162,6 +162,13 @@ function getAppTitle(language?: string): string {
   return `${name} v${APP_VERSION}`
 }
 
+/** 应用短名称（无版本号，用于通知标题等） */
+function getAppName(language?: string): string {
+  const lang = language || configService?.getLanguage() || 'zh-CN'
+  const names = IS_STEAM_BUILD ? APP_NAME_STEAM : APP_NAME
+  return lang.startsWith('zh') ? names.zh : names.en
+}
+
 /**
  * 修复 macOS/Linux GUI 应用的 PATH 环境变量问题
  * 当应用作为 GUI 应用启动时（双击 .app 或从 Dock/Spotlight 启动），
@@ -371,6 +378,7 @@ import { initTerminalStateService, type TerminalState, type CwdChangeEvent, type
 import { initTerminalAwarenessService, type TerminalAwareness } from './services/terminal-awareness'
 import { initScreenContentService } from './services/screen-content.service'
 import { menuService } from './services/menu.service'
+import { t, errMsg, setConfigService as setMainI18nConfig, updateLocale as updateMainI18nLocale } from './i18n/main-i18n'
 import { attentionService } from './services/attention.service'
 import { getAiDebugService } from './services/ai-debug.service'
 import { getSchedulerService, type CreateTaskParams } from './services/scheduler.service'
@@ -494,6 +502,7 @@ async function proceedQuitAfterTerminalCount(terminalCount: number): Promise<voi
 const aiService = new AiService()
 const configService = new ConfigService()
 setConfigServiceInstance(configService)
+setMainI18nConfig(configService)
 initLogging(configService.getLogLevel())
 // Early phase migrations（仅需 ConfigService）
 getMigrationRunner().run('early', {
@@ -766,21 +775,12 @@ function createTray() {
 
 function updateTrayMenu() {
   if (!tray) return
-  const lang = configService?.getLanguage() || 'zh-CN'
-  const isZh = lang.startsWith('zh')
-
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: isZh ? '显示窗口' : 'Show Window',
-      click: () => showMainWindow()
-    },
-    { type: 'separator' },
-    {
-      label: isZh ? '退出' : 'Quit',
-      click: () => app.quit()
-    }
-  ])
-  tray.setContextMenu(contextMenu)
+  tray.setContextMenu(Menu.buildFromTemplate(
+    menuService.buildTrayContextMenu({
+      onShowWindow: () => showMainWindow(),
+      onQuit: () => app.quit(),
+    })
+  ))
 }
 
 function showMainWindow() {
@@ -1084,7 +1084,7 @@ function createFileManagerWindow(params?: {
     height: 750,
     minWidth: 900,
     minHeight: 500,
-    title: '文件管理器',
+    title: t('window.fileManager'),
     icon: iconPath,
     frame: true,
     show: false,
@@ -1149,7 +1149,7 @@ function createAiDebugWindow(): void {
     height: 700,
     minWidth: 600,
     minHeight: 400,
-    title: 'AI Debug Console',
+    title: t('window.aiDebug'),
     icon: iconPath,
     frame: true,
     show: false,
@@ -2419,7 +2419,7 @@ autoUpdater.on('error', (error) => {
   log.error('AutoUpdater: 更新错误:', error)
   updateStatus = {
     status: 'error',
-    error: error.message || '未知错误'
+    error: error.message || t('error.unknown')
   }
   mainWindow?.webContents.send('updater:status-changed', updateStatus)
   menuService.setUpdateStatus('error')
@@ -2462,7 +2462,7 @@ ipcMain.handle('updater:checkForUpdates', async () => {
     return await performUpdateCheck()
   } catch (error) {
     log.error('AutoUpdater: 检查更新失败:', error)
-    return { success: false, error: error instanceof Error ? error.message : '检查更新失败' }
+    return { success: false, error: errMsg(error, 'error.checkUpdateFailed') }
   }
 })
 
@@ -2504,7 +2504,7 @@ function scheduleAutoUpdateCheck() {
 
 // 切换更新源（用户手动选择）
 ipcMain.handle('updater:setSource', async (_event, source: UpdateSource) => {
-  if (source !== 'github' && source !== 'oss') return { success: false, error: 'Invalid source' }
+  if (source !== 'github' && source !== 'oss') return { success: false, error: t('error.invalidSource') }
   currentUpdateSource = source
   applyUpdateSource(source)
   if (updateStatus.sources) {
@@ -2519,7 +2519,7 @@ ipcMain.handle('updater:downloadUpdate', async (_event, preferredSource?: Update
   try {
     if (!app.isPackaged) {
       log.info('AutoUpdater: 开发模式，模拟下载更新')
-      return { success: false, error: '开发模式不支持下载更新' }
+      return { success: false, error: t('error.devModeNoDownload') }
     }
 
     if (preferredSource && (preferredSource === 'github' || preferredSource === 'oss')) {
@@ -2546,7 +2546,7 @@ ipcMain.handle('updater:downloadUpdate', async (_event, preferredSource?: Update
     }
   } catch (error) {
     log.error('AutoUpdater: 下载更新失败:', error)
-    return { success: false, error: error instanceof Error ? error.message : '下载更新失败' }
+    return { success: false, error: errMsg(error, 'error.downloadUpdateFailed') }
   }
 })
 
@@ -2563,14 +2563,14 @@ ipcMain.handle('updater:quitAndInstall', async () => {
     return { success: true }
   } catch (error) {
     log.error('AutoUpdater: 安装更新失败:', error)
-    return { success: false, error: error instanceof Error ? error.message : '安装更新失败' }
+    return { success: false, error: errMsg(error, 'error.installUpdateFailed') }
   }
 })
 
 // 用户选择「退出时安装」：退出应用时再安装，不打断当前操作
 ipcMain.handle('updater:deferInstall', async () => {
   if (updateStatus.status !== 'downloaded') {
-    return { success: false, error: 'No downloaded update' }
+    return { success: false, error: t('error.noDownloadedUpdate') }
   }
   pendingInstallOnQuit = true
   syncAutoInstallOnAppQuit()
@@ -2757,6 +2757,8 @@ ipcMain.handle('config:setLanguage', async (_event, language: string) => {
   }
   // 更新菜单栏语言
   menuService.updateMenu(language)
+  updateMainI18nLocale(language.startsWith('zh') ? 'zh-CN' : 'en-US')
+  updateTrayMenu()
 })
 
 // 快捷键变更时重建菜单
@@ -3134,10 +3136,10 @@ ipcMain.handle('watch:resetHeartbeat', async () => {
 // Xshell 导入相关
 ipcMain.handle('xshell:selectFiles', async () => {
   const result = await dialog.showOpenDialog({
-    title: '选择 Xshell 会话文件',
+    title: t('dialog.selectXshellFile'),
     filters: [
-      { name: 'Xshell 会话文件', extensions: ['xsh'] },
-      { name: '所有文件', extensions: ['*'] }
+      { name: t('filter.xshellFiles'), extensions: ['xsh'] },
+      { name: t('filter.allFiles'), extensions: ['*'] }
     ],
     properties: ['openFile', 'multiSelections']
   })
@@ -3151,7 +3153,7 @@ ipcMain.handle('xshell:selectFiles', async () => {
 
 ipcMain.handle('xshell:selectDirectory', async () => {
   const result = await dialog.showOpenDialog({
-    title: '选择 Xshell 会话目录',
+    title: t('dialog.selectXshellDir'),
     properties: ['openDirectory']
   })
   
@@ -3246,7 +3248,7 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
       // 任务栏/Dock 提醒 + 系统通知（仅在窗口不在前台时触发）
       const riskEmoji1 = confirmation.riskLevel === 'dangerous' ? '⚠️ ' : ''
       attentionService.request({
-        title: `${riskEmoji1}SailFish 需要确认`,
+        title: `${riskEmoji1}${t('notification.confirmRequired', { appName: getAppName() })}`,
         body: buildConfirmNotifBody(confirmation.toolName, confirmation.toolArgs, confirmation.displayName)
       })
     },
@@ -3264,8 +3266,8 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
         })
       }
       attentionService.request({
-        title: 'SailFish 需要 API Key',
-        body: `请为技能配置 ${request.envName}`
+        title: t('notification.apiKeyRequired', { appName: getAppName() }),
+        body: t('notification.skillEnvBody', { envName: request.envName })
       })
     },
     onComplete: (agentId: string, result: string, pendingUserMessages?: string[]) => {
@@ -3443,7 +3445,7 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
       // 任务栏/Dock 提醒 + 系统通知（仅在窗口不在前台时触发）
       const riskEmoji2 = confirmation.riskLevel === 'dangerous' ? '⚠️ ' : ''
       attentionService.request({
-        title: `${riskEmoji2}SailFish 需要确认`,
+        title: `${riskEmoji2}${t('notification.confirmRequired', { appName: getAppName() })}`,
         body: buildConfirmNotifBody(confirmation.toolName, confirmation.toolArgs, confirmation.displayName)
       })
     },
@@ -3460,8 +3462,8 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
         })
       }
       attentionService.request({
-        title: 'SailFish 需要 API Key',
-        body: `请为技能配置 ${request.envName}`
+        title: t('notification.apiKeyRequired', { appName: getAppName() }),
+        body: t('notification.skillEnvBody', { envName: request.envName })
       })
     },
     onComplete: (_runId: string, result: string, pendingUserMessages?: string[]) => {
@@ -3993,7 +3995,7 @@ ipcMain.handle('dataDir:hasRunningAgents', async () => {
 ipcMain.handle('dataDir:pickTarget', async () => {
   const result = await dialog.showOpenDialog({
     properties: ['openDirectory', 'createDirectory'],
-    title: 'SailFish'
+    title: getAppName(),
   })
   if (result.canceled || result.filePaths.length === 0) {
     return { canceled: true }
@@ -4033,14 +4035,14 @@ ipcMain.handle('history:exportToFolder', async (_event, options?: { includeSshPa
   try {
     // 检查 mainWindow 是否存在
     if (!mainWindow) {
-      return { success: false, error: '窗口未就绪' }
+      return { success: false, error: t('error.windowNotReady') }
     }
     
     // 选择导出目录 - createDirectory 仅在 macOS 上有效
     const dialogOptions: Electron.OpenDialogOptions = {
-      title: '选择导出目录',
+      title: t('dialog.selectExportDir'),
       properties: ['openDirectory'],
-      buttonLabel: '导出到此目录'
+      buttonLabel: t('dialog.exportHere')
     }
     
     // macOS 上添加 createDirectory 选项
@@ -4063,7 +4065,7 @@ ipcMain.handle('history:exportToFolder', async (_event, options?: { includeSshPa
     return historyService.exportToFolder(exportDir, configData, hostProfiles, options)
   } catch (error) {
     log.error('导出到文件夹失败:', error)
-    return { success: false, error: error instanceof Error ? error.message : '导出失败' }
+    return { success: false, error: errMsg(error, 'error.exportFailed') }
   }
 })
 
@@ -4072,14 +4074,14 @@ ipcMain.handle('history:importFromFolder', async () => {
   try {
     // 检查 mainWindow 是否存在
     if (!mainWindow) {
-      return { success: false, error: '窗口未就绪' }
+      return { success: false, error: t('error.windowNotReady') }
     }
     
     // 选择导入目录
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择备份文件夹',
+      title: t('dialog.selectBackupFolder'),
       properties: ['openDirectory'],
-      buttonLabel: '导入此目录'
+      buttonLabel: t('dialog.importHere')
     })
     
     if (result.canceled || !result.filePaths[0]) {
@@ -4137,7 +4139,7 @@ ipcMain.handle('history:importFromFolder', async () => {
   return importResult
   } catch (error) {
     log.error('从文件夹导入失败:', error)
-    return { success: false, imported: [], error: error instanceof Error ? error.message : '导入失败' }
+    return { success: false, imported: [], error: errMsg(error, 'error.importFailed') }
   }
 })
 
@@ -4238,9 +4240,9 @@ ipcMain.handle('hostProfile:probeSsh', async (_event, sshId: string, hostId: str
 // 选择文件对话框
 ipcMain.handle('document:selectFiles', async () => {
   const result = await dialog.showOpenDialog({
-    title: '选择文件',
+    title: t('dialog.selectFile'),
     filters: [
-      { name: '所有文件', extensions: ['*'] }
+      { name: t('filter.allFiles'), extensions: ['*'] }
     ],
     properties: ['openFile', 'multiSelections']
   })
@@ -4320,7 +4322,7 @@ ipcMain.handle('localFs:list', async (_event, dirPath: string) => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '列出目录失败' 
+      error: errMsg(error, 'error.listDirFailed') 
     }
   }
 })
@@ -4333,7 +4335,7 @@ ipcMain.handle('localFs:stat', async (_event, filePath: string) => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '获取文件信息失败' 
+      error: errMsg(error, 'error.getFileInfoFailed') 
     }
   }
 })
@@ -4346,7 +4348,7 @@ ipcMain.handle('localFs:exists', async (_event, filePath: string) => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '检查路径失败' 
+      error: errMsg(error, 'error.checkPathFailed') 
     }
   }
 })
@@ -4359,7 +4361,7 @@ ipcMain.handle('localFs:mkdir', async (_event, dirPath: string) => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '创建目录失败' 
+      error: errMsg(error, 'error.createDirFailed') 
     }
   }
 })
@@ -4372,7 +4374,7 @@ ipcMain.handle('localFs:delete', async (_event, filePath: string) => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '删除文件失败' 
+      error: errMsg(error, 'error.deleteFileFailed') 
     }
   }
 })
@@ -4385,7 +4387,7 @@ ipcMain.handle('localFs:rmdir', async (_event, dirPath: string) => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '删除目录失败' 
+      error: errMsg(error, 'error.deleteDirFailed') 
     }
   }
 })
@@ -4398,7 +4400,7 @@ ipcMain.handle('localFs:rename', async (_event, oldPath: string, newPath: string
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '重命名失败' 
+      error: errMsg(error, 'error.renameFailed') 
     }
   }
 })
@@ -4411,7 +4413,7 @@ ipcMain.handle('localFs:copyFile', async (_event, src: string, dest: string) => 
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '复制文件失败' 
+      error: errMsg(error, 'error.copyFileFailed') 
     }
   }
 })
@@ -4424,7 +4426,7 @@ ipcMain.handle('localFs:copyDir', async (_event, src: string, dest: string) => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '复制目录失败' 
+      error: errMsg(error, 'error.copyDirFailed') 
     }
   }
 })
@@ -4437,7 +4439,7 @@ ipcMain.handle('localFs:readFile', async (_event, filePath: string) => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '读取文件失败' 
+      error: errMsg(error, 'error.readFileFailed') 
     }
   }
 })
@@ -4450,7 +4452,7 @@ ipcMain.handle('localFs:writeFile', async (_event, filePath: string, content: st
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '写入文件失败' 
+      error: errMsg(error, 'error.writeFileFailed') 
     }
   }
 })
@@ -4542,7 +4544,7 @@ ipcMain.handle('sftp:connect', async (_event, sessionId: string, config: SftpCon
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '连接失败' 
+      error: errMsg(error, 'error.connectFailed') 
     }
   }
 })
@@ -4568,7 +4570,7 @@ ipcMain.handle('sftp:list', async (_event, sessionId: string, remotePath: string
     log.error('SFTP list 失败:', error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : '列出目录失败'
+      error: errMsg(error, 'error.listDirFailed')
     }
   }
 })
@@ -4581,7 +4583,7 @@ ipcMain.handle('sftp:pwd', async (_event, sessionId: string) => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '获取工作目录失败' 
+      error: errMsg(error, 'error.getCwdFailed') 
     }
   }
 })
@@ -4594,7 +4596,7 @@ ipcMain.handle('sftp:exists', async (_event, sessionId: string, remotePath: stri
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '检查路径失败' 
+      error: errMsg(error, 'error.checkPathFailed') 
     }
   }
 })
@@ -4607,7 +4609,7 @@ ipcMain.handle('sftp:stat', async (_event, sessionId: string, remotePath: string
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '获取文件信息失败' 
+      error: errMsg(error, 'error.getFileInfoFailed') 
     }
   }
 })
@@ -4620,7 +4622,7 @@ ipcMain.handle('sftp:upload', async (_event, sessionId: string, localPath: strin
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '上传失败' 
+      error: errMsg(error, 'error.uploadFailed') 
     }
   }
 })
@@ -4633,7 +4635,7 @@ ipcMain.handle('sftp:download', async (_event, sessionId: string, remotePath: st
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '下载失败' 
+      error: errMsg(error, 'error.downloadFailed') 
     }
   }
 })
@@ -4646,7 +4648,7 @@ ipcMain.handle('sftp:uploadDir', async (_event, sessionId: string, localDir: str
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '上传目录失败' 
+      error: errMsg(error, 'error.uploadDirFailed') 
     }
   }
 })
@@ -4659,7 +4661,7 @@ ipcMain.handle('sftp:downloadDir', async (_event, sessionId: string, remoteDir: 
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '下载目录失败' 
+      error: errMsg(error, 'error.downloadDirFailed') 
     }
   }
 })
@@ -4672,7 +4674,7 @@ ipcMain.handle('sftp:mkdir', async (_event, sessionId: string, remotePath: strin
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '创建目录失败' 
+      error: errMsg(error, 'error.createDirFailed') 
     }
   }
 })
@@ -4685,7 +4687,7 @@ ipcMain.handle('sftp:delete', async (_event, sessionId: string, remotePath: stri
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '删除文件失败' 
+      error: errMsg(error, 'error.deleteFileFailed') 
     }
   }
 })
@@ -4698,7 +4700,7 @@ ipcMain.handle('sftp:rmdir', async (_event, sessionId: string, remotePath: strin
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '删除目录失败' 
+      error: errMsg(error, 'error.deleteDirFailed') 
     }
   }
 })
@@ -4711,7 +4713,7 @@ ipcMain.handle('sftp:rename', async (_event, sessionId: string, oldPath: string,
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '重命名失败' 
+      error: errMsg(error, 'error.renameFailed') 
     }
   }
 })
@@ -4724,7 +4726,7 @@ ipcMain.handle('sftp:chmod', async (_event, sessionId: string, remotePath: strin
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '修改权限失败' 
+      error: errMsg(error, 'error.chmodFailed') 
     }
   }
 })
@@ -4737,7 +4739,7 @@ ipcMain.handle('sftp:readFile', async (_event, sessionId: string, remotePath: st
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '读取文件失败' 
+      error: errMsg(error, 'error.readFileFailed') 
     }
   }
 })
@@ -4750,7 +4752,7 @@ ipcMain.handle('sftp:writeFile', async (_event, sessionId: string, remotePath: s
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '写入文件失败' 
+      error: errMsg(error, 'error.writeFileFailed') 
     }
   }
 })
@@ -4768,7 +4770,7 @@ ipcMain.handle('sftp:cancelTransfer', async (_event, transferId: string) => {
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : '取消失败'
+      error: errMsg(error, 'error.cancelFailed')
     }
   }
 })
@@ -4776,7 +4778,7 @@ ipcMain.handle('sftp:cancelTransfer', async (_event, transferId: string) => {
 // 选择本地文件（用于上传）
 ipcMain.handle('sftp:selectLocalFiles', async () => {
   const result = await dialog.showOpenDialog({
-    title: '选择要上传的文件',
+    title: t('dialog.selectUploadFiles'),
     properties: ['openFile', 'multiSelections']
   })
   
@@ -4800,7 +4802,7 @@ ipcMain.handle('sftp:selectLocalFiles', async () => {
 // 选择本地目录（用于上传或保存下载）
 ipcMain.handle('sftp:selectLocalDirectory', async (_event, options?: { title?: string; forSave?: boolean }) => {
   const dialogOptions: Electron.OpenDialogOptions = {
-    title: options?.title || '选择目录',
+    title: options?.title || t('dialog.selectDir'),
     properties: ['openDirectory']
   }
   
@@ -4821,7 +4823,7 @@ ipcMain.handle('sftp:selectLocalDirectory', async (_event, options?: { title?: s
 // 选择保存文件路径
 ipcMain.handle('sftp:selectSavePath', async (_event, defaultName: string) => {
   const result = await dialog.showSaveDialog({
-    title: '保存文件',
+    title: t('dialog.saveFile'),
     defaultPath: defaultName,
     properties: ['createDirectory', 'showOverwriteConfirmation']
   })
@@ -4870,7 +4872,7 @@ ipcMain.handle('mcp:connect', async (_event, config: McpServerConfig) => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '连接失败' 
+      error: errMsg(error, 'error.connectFailed') 
     }
   }
 })
@@ -4928,7 +4930,7 @@ ipcMain.handle('mcp:refreshServer', async (_event, serverId: string) => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '刷新失败' 
+      error: errMsg(error, 'error.refreshFailed') 
     }
   }
 })
@@ -4951,7 +4953,7 @@ ipcMain.handle('mcp:connectEnabledServers', async () => {
       results.push({ 
         id: server.id, 
         success: false, 
-        error: error instanceof Error ? error.message : '连接失败' 
+        error: errMsg(error, 'error.connectFailed') 
       })
     }
   }
@@ -5141,7 +5143,7 @@ ipcMain.handle('knowledge:initialize', async () => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '初始化失败' 
+      error: errMsg(error, 'error.initFailed') 
     }
   }
 })
@@ -5160,7 +5162,7 @@ ipcMain.handle('knowledge:updateSettings', async (_event, settings: Partial<Know
     log.error('Knowledge 更新设置失败:', error)
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '更新设置失败' 
+      error: errMsg(error, 'error.updateSettingsFailed') 
     }
   }
 })
@@ -5186,7 +5188,7 @@ ipcMain.handle('knowledge:addDocument', async (_event, doc: ParsedDocument, opti
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '添加文档失败' 
+      error: errMsg(error, 'error.addDocFailed') 
     }
   }
 })
@@ -5199,7 +5201,7 @@ ipcMain.handle('knowledge:removeDocument', async (_event, docId: string) => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '删除文档失败' 
+      error: errMsg(error, 'error.deleteDocFailed') 
     }
   }
 })
@@ -5213,12 +5215,12 @@ ipcMain.handle('knowledge:removeDocuments', async (_event, docIds: string[]) => 
       success: result.failed === 0, 
       deleted: result.success, 
       failed: result.failed,
-      error: result.failed > 0 ? `${result.failed} 个文档删除失败` : undefined
+      error: result.failed > 0 ? t('error.docsDeletePartialFailed', { count: result.failed }) : undefined
     }
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '批量删除文档失败' 
+      error: errMsg(error, 'error.batchDeleteDocFailed') 
     }
   }
 })
@@ -5231,7 +5233,7 @@ ipcMain.handle('knowledge:search', async (_event, query: string, options?: Parti
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '搜索失败',
+      error: errMsg(error, 'error.searchFailed'),
       results: []
     }
   }
@@ -5245,7 +5247,7 @@ ipcMain.handle('knowledge:getHostKnowledge', async (_event, hostId: string) => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '获取知识失败',
+      error: errMsg(error, 'error.getKnowledgeFailed'),
       results: []
     }
   }
@@ -5259,7 +5261,7 @@ ipcMain.handle('knowledge:buildContext', async (_event, query: string, options?:
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '构建上下文失败',
+      error: errMsg(error, 'error.buildContextFailed'),
       context: ''
     }
   }
@@ -5293,7 +5295,7 @@ ipcMain.handle('knowledge:getStats', async () => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '获取统计失败' 
+      error: errMsg(error, 'error.getStatsFailed') 
     }
   }
 })
@@ -5306,7 +5308,7 @@ ipcMain.handle('knowledge:clear', async () => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '清空失败' 
+      error: errMsg(error, 'error.clearFailed') 
     }
   }
 })
@@ -5316,7 +5318,7 @@ ipcMain.handle('knowledge:exportData', async () => {
   try {
     const { dialog } = require('electron')
     const result = await dialog.showOpenDialog({
-      title: '选择导出目录',
+      title: t('dialog.selectExportDir'),
       properties: ['openDirectory', 'createDirectory']
     })
     
@@ -5332,7 +5334,7 @@ ipcMain.handle('knowledge:exportData', async () => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '导出失败' 
+      error: errMsg(error, 'error.exportFailed') 
     }
   }
 })
@@ -5342,7 +5344,7 @@ ipcMain.handle('knowledge:importData', async () => {
   try {
     const { dialog } = require('electron')
     const result = await dialog.showOpenDialog({
-      title: '选择知识库备份目录',
+      title: t('dialog.selectKnowledgeBackupDir'),
       properties: ['openDirectory']
     })
     
@@ -5354,7 +5356,7 @@ ipcMain.handle('knowledge:importData', async () => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '导入失败' 
+      error: errMsg(error, 'error.importFailed') 
     }
   }
 })
@@ -5424,7 +5426,7 @@ ipcMain.handle('knowledge:downloadModel', async (event, modelId: ModelTier) => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '下载失败' 
+      error: errMsg(error, 'error.downloadFailed') 
     }
   }
 })
@@ -5437,7 +5439,7 @@ ipcMain.handle('knowledge:switchModel', async (_event, modelId: ModelTier) => {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '切换模型失败' 
+      error: errMsg(error, 'error.switchModelFailed') 
     }
   }
 })
@@ -5454,7 +5456,7 @@ ipcMain.handle('contextKnowledge:list', async () => {
     }))
     return { success: true, items, maxDocChars: service.getMaxDocChars() }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : '获取列表失败', items: [], maxDocChars: 5000 }
+    return { success: false, error: errMsg(error, 'error.getListFailed'), items: [], maxDocChars: 5000 }
   }
 })
 
@@ -5462,7 +5464,7 @@ ipcMain.handle('contextKnowledge:get', async (_event, contextId: string) => {
   try {
     return { success: true, content: getContextKnowledgeService().getDocument(contextId) }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : '获取文档失败', content: '' }
+    return { success: false, error: errMsg(error, 'error.getDocFailed'), content: '' }
   }
 })
 
@@ -5471,7 +5473,7 @@ ipcMain.handle('contextKnowledge:set', async (_event, contextId: string, content
     getContextKnowledgeService().setDocument(contextId, content)
     return { success: true }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : '保存文档失败' }
+    return { success: false, error: errMsg(error, 'error.saveDocFailed') }
   }
 })
 
@@ -5480,7 +5482,7 @@ ipcMain.handle('contextKnowledge:delete', async (_event, contextId: string) => {
     getContextKnowledgeService().deleteDocument(contextId)
     return { success: true }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : '删除文档失败' }
+    return { success: false, error: errMsg(error, 'error.deleteDocFailed') }
   }
 })
 
@@ -5574,11 +5576,11 @@ ipcMain.handle('email:testConnection', async (_event, config: {
     await client.connect()
     await client.logout()
 
-    return { success: true, message: '连接成功' }
+    return { success: true, message: t('msg.connectSuccess') }
   } catch (error) {
     return { 
       success: false, 
-      message: error instanceof Error ? error.message : '连接失败'
+      message: errMsg(error, 'error.connectFailed')
     }
   }
 })
@@ -5593,7 +5595,7 @@ ipcMain.handle('email:verifyAccount', async (_event, account: {
   rejectUnauthorized?: boolean
 }) => {
   if (!account.id || !account.email) {
-    return { success: false, message: '无效的账户信息' }
+    return { success: false, message: t('error.invalidAccount') }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -5601,7 +5603,7 @@ ipcMain.handle('email:verifyAccount', async (_event, account: {
   try {
     const password = await getEmailCredential(account.id)
     if (!password) {
-      return { success: false, message: '未找到保存的凭据，请重新编辑账户并输入密码' }
+      return { success: false, message: t('error.credentialsNotFound') }
     }
 
     const serverConfig = getServerConfig(account.provider || 'gmail', {
@@ -5625,11 +5627,11 @@ ipcMain.handle('email:verifyAccount', async (_event, account: {
     })
 
     await client.connect()
-    return { success: true, message: '连接正常' }
+    return { success: true, message: t('msg.connectOk') }
   } catch (error) {
     return {
       success: false,
-      message: error instanceof Error ? error.message : '连接失败'
+      message: errMsg(error, 'error.connectFailed')
     }
   } finally {
     try { await client?.logout() } catch { /* ignore logout errors */ }
@@ -5705,12 +5707,12 @@ ipcMain.handle('calendar:testConnection', async (_event, config: {
     
     return { 
       success: true, 
-      message: `连接成功，找到 ${calendars.length} 个日历` 
+      message: t('msg.calendarsConnectSuccess', { count: calendars.length }) 
     }
   } catch (error) {
     return { 
       success: false, 
-      message: error instanceof Error ? error.message : '连接失败'
+      message: errMsg(error, 'error.connectFailed')
     }
   }
 })
@@ -5723,13 +5725,13 @@ ipcMain.handle('calendar:verifyAccount', async (_event, account: {
   serverUrl?: string
 }) => {
   if (!account.id || !account.username) {
-    return { success: false, message: '无效的账户信息' }
+    return { success: false, message: t('error.invalidAccount') }
   }
 
   try {
     const password = await getCalendarCredential(account.id)
     if (!password) {
-      return { success: false, message: '未找到保存的凭据，请重新编辑账户并输入密码' }
+      return { success: false, message: t('error.credentialsNotFound') }
     }
 
     const tsdav = await import('tsdav')
@@ -5748,12 +5750,12 @@ ipcMain.handle('calendar:verifyAccount', async (_event, account: {
 
     return {
       success: true,
-      message: `连接正常，找到 ${calendars.length} 个日历`
+      message: t('msg.calendarsConnectOk', { count: calendars.length })
     }
   } catch (error) {
     return {
       success: false,
-      message: error instanceof Error ? error.message : '连接失败'
+      message: errMsg(error, 'error.connectFailed')
     }
   }
 })
@@ -5788,7 +5790,7 @@ ipcMain.handle('speech:transcribe', async (_event, audioData: number[], sampleRa
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : '转录失败' 
+      error: errMsg(error, 'error.transcribeFailed') 
     }
   }
 })
