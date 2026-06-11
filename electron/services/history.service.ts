@@ -499,6 +499,42 @@ export class HistoryService {
   }
 
   /**
+   * 按 ID 删除单条 Agent 记录（日文件、索引、关联截图目录）。
+   * @returns 是否成功删除（记录不存在时返回 false）
+   */
+  deleteAgentRecord(id: string): boolean {
+    const index = this.getIndex()
+    const entryIdx = index.findIndex(e => e.id === id)
+    if (entryIdx === -1) return false
+
+    const entry = index[entryIdx]
+    const filePath = this.getAgentFilePath(entry.dateStr)
+
+    if (fs.existsSync(filePath)) {
+      const records = this.readAgentRecords(filePath)
+      const filtered = records.filter(r => r.id !== id)
+      if (filtered.length !== records.length) {
+        if (filtered.length === 0) {
+          fs.unlinkSync(filePath)
+        } else {
+          this.writeJsonFile(filePath, filtered)
+        }
+      }
+    }
+
+    const newIndex = index.filter(e => e.id !== id)
+    this.writeIndex(newIndex)
+
+    const sessionImagesDir = path.join(this.imagesDir, entry.dateStr, id)
+    if (fs.existsSync(sessionImagesDir)) {
+      fs.rmSync(sessionImagesDir, { recursive: true, force: true })
+    }
+
+    log.info(`已删除 Agent 历史记录: ${id}`)
+    return true
+  }
+
+  /**
    * 获取最近的 N 条 Agent 记录，按最后更新时间（timestamp + duration）倒序排列。
    * 基于轻量级索引选出 top N，再只读取必要的日期文件获取完整记录。
    */

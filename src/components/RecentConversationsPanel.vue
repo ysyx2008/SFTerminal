@@ -7,6 +7,7 @@ import ConversationRow from './ConversationRow.vue'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import { toast } from '../composables/useToast'
+import { showConfirm } from '../composables/useConfirm'
 
 const { t, locale } = useI18n()
 const configStore = useConfigStore()
@@ -258,6 +259,38 @@ const onMenuTogglePin = async () => {
   }
 }
 
+const onMenuDelete = async () => {
+  const record = contextMenu.value.record
+  closeContextMenu()
+  if (!record) return
+
+  const title = configStore.resolveConversationTitle(record.id, record.userTask)
+  const confirmed = await showConfirm({
+    title: t('welcome.conversations.deleteTitle'),
+    message: t('welcome.conversations.confirmDelete', { title }),
+    type: 'danger',
+    confirmText: t('welcome.conversations.delete'),
+    cancelText: t('common.cancel'),
+  })
+  if (!confirmed) return
+
+  try {
+    const deleted = await window.electronAPI.history.deleteAgentRecord(record.id)
+    if (!deleted) {
+      toast.error(t('ai.agentWelcome.historyRecordMissing'))
+      return
+    }
+    summaries.value = summaries.value.filter(s => s.id !== record.id)
+    await configStore.pruneConversationMetadata(new Set(summaries.value.map(s => s.id)))
+    if (editingId.value === record.id) {
+      editingId.value = null
+    }
+  } catch (e) {
+    console.error('Failed to delete conversation:', e)
+    toast.error(t('common.operationFailed'))
+  }
+}
+
 const commitRename = async () => {
   const id = editingId.value
   if (!id) return
@@ -387,17 +420,22 @@ const loadMore = () => {
         class="context-menu"
         :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
         @click.stop
+        @contextmenu.prevent
       >
-        <div class="context-menu-item" @click="onMenuRename">
+        <button type="button" class="context-menu-item" @click="onMenuRename">
           {{ t('welcome.conversations.rename') }}
-        </div>
-        <div class="context-menu-item" @click="onMenuTogglePin">
+        </button>
+        <button type="button" class="context-menu-item" @click="onMenuTogglePin">
           {{
             contextMenu.record && configStore.pinnedConversationIds.includes(contextMenu.record.id)
               ? t('welcome.conversations.unpin')
               : t('welcome.conversations.pin')
           }}
-        </div>
+        </button>
+        <div class="context-menu-separator" role="separator" />
+        <button type="button" class="context-menu-item danger" @click="onMenuDelete">
+          {{ t('welcome.conversations.delete') }}
+        </button>
       </div>
     </Teleport>
   </div>
@@ -578,13 +616,25 @@ const loadMore = () => {
 
 .context-menu {
   position: fixed;
+  min-width: 120px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  min-width: 140px;
-  padding: 4px 0;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+  padding: 3px;
   z-index: 10000;
+  animation: contextMenuFadeIn 0.1s ease;
+}
+
+@keyframes contextMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .context-menu-overlay {
@@ -594,15 +644,38 @@ const loadMore = () => {
 }
 
 .context-menu-item {
-  padding: 8px 16px;
-  font-size: 13px;
-  color: var(--text-secondary);
+  display: block;
+  width: 100%;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  line-height: 1.25;
+  color: var(--text-primary);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
   cursor: pointer;
-  transition: background 0.15s;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
 .context-menu-item:hover {
   background: var(--bg-hover);
-  color: var(--text-primary);
+}
+
+.context-menu-item.danger {
+  color: var(--accent-error);
+}
+
+.context-menu-item.danger:hover {
+  background: rgba(244, 63, 94, 0.1);
+  color: var(--accent-error);
+}
+
+.context-menu-separator {
+  height: 1px;
+  margin: 2px 6px;
+  background: color-mix(in srgb, var(--border-color) 85%, transparent);
 }
 </style>

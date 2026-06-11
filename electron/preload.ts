@@ -1277,6 +1277,9 @@ const electronAPI = {
     getAgentRecordById: (id: string) =>
       ipcRenderer.invoke('history:getAgentRecordById', id),
 
+    deleteAgentRecord: (id: string) =>
+      ipcRenderer.invoke('history:deleteAgentRecord', id) as Promise<boolean>,
+
     // 获取数据目录路径
     getDataPath: () => ipcRenderer.invoke('history:getDataPath') as Promise<string>,
 

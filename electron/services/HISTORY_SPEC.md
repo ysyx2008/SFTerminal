@@ -20,6 +20,7 @@ Agent 对话和聊天记录的持久化存储。按日期分文件存储 JSON �
 | `saveAgentRecord(record: AgentRecord): void` | 保存 Agent 执行记录并更新索引 | `agent/index.ts` |
 | `getAgentRecords(startDate?, endDate?): AgentRecord[]` | 按日期范围查询 Agent 记录 | 前端历史面板 |
 | `getAgentRecordById(id: string): AgentRecord \| undefined` | 按 ID 精确查找 Agent 记录 | 回放/详情查看 |
+| `deleteAgentRecord(id: string): boolean` | 按 ID 删除单条 Agent 记录（日文件、索引、关联截图目录） | IPC `history:deleteAgentRecord`、最近对话侧栏删除 |
 | `getRecentAgentRecords(limit?, filter?): AgentRecord[]` | 获取最近的 Agent 记录（支持自定义过滤） | `agent/index.ts`、上下文构建 |
 | `listAgentHistorySummaries(excludeWakeup?): AgentHistorySummary[]` | 从索引列出全部摘要（首条 user_task 作标题，不读日文件） | IPC `history:listAgentSummaries`、`AiPanel` 历史弹窗（无搜索词时的列表） |
 | `searchAgentRecords(keyword: string, limit?): Promise<AgentRecord[]>` | 关键词搜索 Agent 记录（`searchAgentRecordsAdvanced` 的薄封装） | 工具/记忆检索 |

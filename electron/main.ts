@@ -3960,6 +3960,10 @@ ipcMain.handle('history:getAgentRecordById', async (_event, id: string) => {
   return historyService.getAgentRecordById(id)
 })
 
+ipcMain.handle('history:deleteAgentRecord', async (_event, id: string) => {
+  return historyService.deleteAgentRecord(id)
+})
+
 // 获取数据目录路径
 ipcMain.handle('history:getDataPath', async () => {
   return historyService.getDataPath()

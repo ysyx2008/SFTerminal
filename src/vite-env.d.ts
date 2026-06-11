@@ -814,6 +814,7 @@ interface Window {
         status: 'completed' | 'failed' | 'aborted'
         duration: number
       } | undefined>
+      deleteAgentRecord: (id: string) => Promise<boolean>
       getStorageStats: () => Promise<{
         chatFiles: number
         agentFiles: number

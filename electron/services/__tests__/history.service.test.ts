@@ -190,6 +190,54 @@ describe('HistoryService - getRecentAgentRecords', () => {
   })
 })
 
+describe('HistoryService - deleteAgentRecord', () => {
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-history-test-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('删除指定记录并同步更新索引', () => {
+    const svc = new HistoryService()
+    const baseTime = new Date('2026-03-18T10:00:00').getTime()
+
+    svc.saveAgentRecord(makeRecord({
+      id: 'keep', timestamp: baseTime, duration: 100, userTask: 'keep'
+    }))
+    svc.saveAgentRecord(makeRecord({
+      id: 'remove', timestamp: baseTime + 1000, duration: 200, userTask: 'remove'
+    }))
+
+    expect(svc.deleteAgentRecord('remove')).toBe(true)
+    expect(svc.deleteAgentRecord('missing')).toBe(false)
+    expect(svc.getAgentRecordById('remove')).toBeUndefined()
+    expect(svc.getRecentAgentRecords(10).map(r => r.id)).toEqual(['keep'])
+
+    const indexContent = JSON.parse(fs.readFileSync(
+      path.join(tmpDir, 'history', 'agent-index.json'), 'utf-8'
+    ))
+    expect(indexContent).toHaveLength(1)
+    expect(indexContent[0].id).toBe('keep')
+  })
+
+  it('删除日文件中最后一条记录时移除该日文件', () => {
+    const svc = new HistoryService()
+    const baseTime = new Date('2026-03-18T10:00:00').getTime()
+
+    svc.saveAgentRecord(makeRecord({
+      id: 'only', timestamp: baseTime, duration: 100, userTask: 'only'
+    }))
+
+    const dateFile = path.join(tmpDir, 'history', 'agent', '2026-03-18.json')
+    expect(fs.existsSync(dateFile)).toBe(true)
+
+    expect(svc.deleteAgentRecord('only')).toBe(true)
+    expect(fs.existsSync(dateFile)).toBe(false)
+  })
+})
+
 describe('HistoryService - searchAgentRecordsAdvanced', () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-history-test-'))
