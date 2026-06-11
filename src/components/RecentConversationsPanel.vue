@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch, TransitionGroup } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Pin, Search, X } from 'lucide-vue-next'
 import type { AgentHistorySummary, AgentRecord } from '@shared/types'
@@ -25,8 +25,8 @@ const summaries = ref<AgentHistorySummary[]>([])
 const isLoading = ref(false)
 const openingId = ref<string | null>(null)
 const hasLoaded = ref(false)
-const DISPLAY_LIMIT = 20
-const LOAD_MORE_STEP = 20
+const DISPLAY_LIMIT = 60
+const LOAD_MORE_STEP = 40
 const displayCount = ref(DISPLAY_LIMIT)
 
 const editingId = ref<string | null>(null)
@@ -120,7 +120,7 @@ const hasListContent = computed(
   () => pinnedItems.value.length > 0 || groupedSummaries.value.length > 0
 )
 
-/** 扁平列表（含分组标题），供 TransitionGroup 做「顶插 + 下方平移」动画 */
+/** 扁平列表（含分组标题） */
 type HistoryListEntry =
   | { type: 'header'; key: string; label: string; showPinIcon?: boolean; withDivider?: boolean }
   | { type: 'row'; key: string; record: AgentHistorySummary; pinned?: boolean }
@@ -452,8 +452,7 @@ const loadMore = () => {
       </div>
 
       <template v-else-if="hasListContent">
-        <!-- 与对话区 messageEnter 相反：新行从上方淡入，下方整表平移（TransitionGroup move） -->
-        <TransitionGroup name="history-row" tag="div" class="history-flat-list">
+        <div class="history-flat-list">
           <div
             v-for="entry in flatListEntries"
             :key="entry.key"
@@ -482,7 +481,7 @@ const loadMore = () => {
               @update:editing-title="editingTitle = $event"
             />
           </div>
-        </TransitionGroup>
+        </div>
 
         <button v-if="hasMore" type="button" class="load-more-btn" @click="loadMore">
           {{ t('welcome.conversations.loadMore') }}
@@ -639,22 +638,6 @@ const loadMore = () => {
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
-}
-
-/* 与 AiPanel messageEnter 同系缓动，方向相反（自上方进入）；列表位移略慢于单行淡入 */
-.history-row-enter-active {
-  transition:
-    opacity 0.64s cubic-bezier(0.32, 0.72, 0, 1),
-    transform 0.64s cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-.history-row-enter-from {
-  opacity: 0;
-  transform: translateY(-10px);
-}
-
-.history-row-move {
-  transition: transform 0.64s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .section-header {

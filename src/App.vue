@@ -138,6 +138,8 @@ const pendingInstallSkillId = ref<string | undefined>(undefined)
 const showFileExplorer = ref(false)
 const sftpConfig = ref<SftpConnectionConfig | null>(null)
 const showSetupWizard = ref(false)
+/** 启动流程（配置加载、向导判定）结束后才允许欢迎页入场动画 */
+const welcomeUiReady = ref(false)
 
 // 每个终端 tab 对应的 TerminalTabView 实例引用（tabId -> instance）
 const tabViewRefs = ref<Record<string, InstanceType<typeof TerminalTabView> | null>>({})
@@ -713,12 +715,14 @@ onMounted(async () => {
       await configStore.setSetupCompleted(true)
     } else {
       showSetupWizard.value = true
+      welcomeUiReady.value = true
       return // 显示向导，暂不创建终端
     }
   }
 
   // 已完成设置，正常启动
   await initializeApp()
+  welcomeUiReady.value = true
 
   // 全局更新提醒（Toast + 下载完成确认弹窗）
   startUpdaterPrompts()
@@ -785,6 +789,10 @@ const showTabWorkbench = computed(
 )
 // 欢迎页最近对话侧栏：常驻，不可关闭
 const showRecallSidebar = computed(() => showWelcomePage.value && !isSteamBuild)
+/** 欢迎页是否真正展示给用户（启动完成 + 无全屏遮挡），用于控制首次启动入场动画 */
+const welcomePageReady = computed(
+  () => welcomeUiReady.value && showWelcomePage.value && !isFullScreenOverlayOpen.value
+)
 // 从欢迎页打开助手（空对话）
 const openAssistantFromWelcome = () => {
   terminalStore.createAssistantTab()
@@ -1115,6 +1123,8 @@ onUnmounted(() => {
       <main class="terminal-area">
         <WelcomePage
           v-show="showWelcomePage"
+          :active="showWelcomePage"
+          :ready="welcomePageReady"
           class="main-surface"
           @open-assistant="openAssistantFromWelcome"
           @open-local="openLocalFromWelcome"
@@ -1399,6 +1409,8 @@ onUnmounted(() => {
 /* 欢迎页「最近对话」侧栏：比主机管理更退后，避免抢主区视觉焦点 */
 .sidebar--recall {
   background: var(--bg-secondary);
+  /* 常驻侧栏，回首页时不重复 slideInLeft */
+  animation: none;
 }
 
 .sidebar--recall::after {

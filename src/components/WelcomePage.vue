@@ -3,7 +3,7 @@
  * 欢迎页组件
  * 程序启动后显示，提供快速启动各类终端的入口
  */
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Bot, SquareTerminal, Monitor, Eye } from 'lucide-vue-next'
 import { useConfigStore, type SshSession } from '../stores/config'
@@ -59,6 +59,16 @@ const nextTip = () => {
   currentTipIndex.value = (currentTipIndex.value + 1) % tipKeys.length
 }
 
+/** 本次程序启动是否已播过欢迎页入场动画（进程级，重启后重置） */
+let welcomeEnterLocked = false
+
+const props = defineProps<{
+  /** 主区是否为欢迎页（切 tab 时为 false） */
+  active?: boolean
+  /** 欢迎页是否真正展示给用户（启动完成且无全屏遮挡） */
+  ready?: boolean
+}>()
+
 const emit = defineEmits<{
   'open-assistant': []
   'open-local': []
@@ -105,10 +115,73 @@ const openSessionManager = () => {
 const formatHost = (session: SshSession) => {
   return `${session.username}@${session.host}:${session.port}`
 }
+
+/** 跳过入场动画（回首页或动画已播完） */
+const enterAnimationDone = ref(welcomeEnterLocked)
+let enterLockTimer: ReturnType<typeof setTimeout> | null = null
+let hasStartedEnter = false
+
+const lockWelcomeEnter = () => {
+  if (welcomeEnterLocked) return
+  welcomeEnterLocked = true
+  enterAnimationDone.value = true
+  if (enterLockTimer) {
+    clearTimeout(enterLockTimer)
+    enterLockTimer = null
+  }
+}
+
+const scheduleEnterLock = () => {
+  if (welcomeEnterLocked || enterLockTimer) return
+  enterLockTimer = window.setTimeout(() => {
+    enterLockTimer = null
+    lockWelcomeEnter()
+  }, 700)
+}
+
+const startEnterAnimation = () => {
+  if (welcomeEnterLocked || !props.ready) return
+  hasStartedEnter = true
+  enterAnimationDone.value = false
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (!props.ready || welcomeEnterLocked) return
+      scheduleEnterLock()
+    })
+  })
+}
+
+watch(
+  () => props.active,
+  (active) => {
+    if (!active && hasStartedEnter) {
+      lockWelcomeEnter()
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.ready,
+  (ready) => {
+    if (welcomeEnterLocked) {
+      enterAnimationDone.value = true
+      return
+    }
+    if (ready) {
+      startEnterAnimation()
+    }
+  },
+  { immediate: true }
+)
+
+onUnmounted(() => {
+  if (enterLockTimer) clearTimeout(enterLockTimer)
+})
 </script>
 
 <template>
-  <div class="welcome-page">
+  <div class="welcome-page" :class="{ 'enter-done': enterAnimationDone }">
     <div class="welcome-content">
       <!-- Logo 和标题 -->
       <div class="welcome-header">
@@ -797,6 +870,24 @@ const formatHost = (session: SshSession) => {
   font-size: 18px;
   flex-shrink: 0;
   animation: tipPulse 2s ease-in-out infinite;
+}
+
+/* 回首页时跳过入场动画（组件用 v-show 保持挂载，否则会反复重播） */
+.welcome-page.enter-done .welcome-content,
+.welcome-page.enter-done .welcome-header,
+.welcome-page.enter-done .quick-start,
+.welcome-page.enter-done .recent-sessions,
+.welcome-page.enter-done .tips,
+.welcome-page.enter-done .action-card {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+.welcome-page.enter-done :deep(.welcome-chat-composer) {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
 }
 
 @keyframes tipPulse {
