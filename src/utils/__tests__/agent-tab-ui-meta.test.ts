@@ -34,7 +34,7 @@ describe('deriveTabAgentUiMeta', () => {
   it('returns attention when pending confirm even if running', () => {
     const meta = deriveTabAgentUiMeta({
       isRunning: true,
-      pendingConfirm: { toolCallId: 'x', toolName: 'exec', toolArgs: {}, riskLevel: 'dangerous' },
+      pendingConfirm: { agentId: 'agent-1', toolCallId: 'x', toolName: 'exec', toolArgs: {}, riskLevel: 'dangerous' },
     })
     expect(meta.status).toBe('attention')
     expect(meta.needsAttention).toBe(true)

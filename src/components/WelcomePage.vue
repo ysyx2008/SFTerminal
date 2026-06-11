@@ -118,7 +118,7 @@ const formatHost = (session: SshSession) => {
 
 /** 跳过入场动画（回首页或动画已播完） */
 const enterAnimationDone = ref(welcomeEnterLocked)
-let enterLockTimer: ReturnType<typeof setTimeout> | null = null
+let enterLockTimer: number | null = null
 let hasStartedEnter = false
 
 const lockWelcomeEnter = () => {

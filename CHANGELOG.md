@@ -2,7 +2,22 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v10.43.2 (2026-06-10) (Latest)
+## v11.0.0 (2026-06-12) (Latest)
+
+> A redesigned home page—start conversations, browse and manage recent history, and switch back to your workspace without losing progress.
+
+### New Features
+- 🎯 **Redesigned Home Page**: Integrated composer on the welcome page to start assistant chats without opening a tab first; recent conversations sidebar with browse, pin, custom titles, and right-click rename/delete
+- 🎯 **Persistent Home Entry**: Home button stays available while work is in progress; return to the welcome page anytime without losing conversation progress, with history linked to current work state
+
+### Improvements
+- ⚡ **Agent History Storage Hardening**: Per-session file storage with atomic writes; legacy data migrated automatically on startup
+
+### Bug Fixes
+- 🐛 **Main Process i18n**: Menu, quit confirmation, and other user-visible main-process strings now follow the selected language
+- 🐛 TTS auto-read did not sync when the setting was enabled
+
+## v10.43.2 (2026-06-10)
 
 > Introduced the workbench architecture, abstracting terminal and assistant UIs into a composable region model to lay the foundation for future extensions such as a browser workbench; plus minor knowledge index and loading progress improvements and a few bug fixes.
 
