@@ -15,8 +15,6 @@ const props = defineProps<{
   isEditing?: boolean
   editingTitle?: string
   formattedTime: string
-  /** 侧栏静默刷新后新出现的行：淡入动画 */
-  fadeIn?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -85,7 +83,6 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
       'is-failed': record.status === 'failed',
       'is-aborted': record.status === 'aborted',
       'needs-attention': tabStatus === 'attention',
-      'is-fade-in': fadeIn,
     }"
   >
     <div class="leading-slot">
@@ -153,21 +150,6 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
 .conversation-row.is-opening {
   opacity: 0.55;
   pointer-events: none;
-}
-
-.conversation-row.is-fade-in {
-  animation: conversation-row-fade-in 0.42s ease-out;
-}
-
-@keyframes conversation-row-fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(-5px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .conversation-row:hover {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, TransitionGroup } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Pin, Search, X } from 'lucide-vue-next'
 import type { AgentHistorySummary, AgentRecord } from '@shared/types'
@@ -22,7 +22,6 @@ const searchText = ref('')
 const searchExpanded = ref(false)
 const searchInputRef = ref<HTMLInputElement | null>(null)
 const summaries = ref<AgentHistorySummary[]>([])
-const fadeInIds = ref<Set<string>>(new Set())
 const isLoading = ref(false)
 const openingId = ref<string | null>(null)
 const hasLoaded = ref(false)
@@ -121,17 +120,42 @@ const hasListContent = computed(
   () => pinnedItems.value.length > 0 || groupedSummaries.value.length > 0
 )
 
-let fadeInClearTimer: ReturnType<typeof setTimeout> | null = null
+/** 扁平列表（含分组标题），供 TransitionGroup 做「顶插 + 下方平移」动画 */
+type HistoryListEntry =
+  | { type: 'header'; key: string; label: string; showPinIcon?: boolean; withDivider?: boolean }
+  | { type: 'row'; key: string; record: AgentHistorySummary; pinned?: boolean }
 
-const markFadeInIds = (ids: string[]) => {
-  if (ids.length === 0) return
-  fadeInIds.value = new Set(ids)
-  if (fadeInClearTimer) clearTimeout(fadeInClearTimer)
-  fadeInClearTimer = setTimeout(() => {
-    fadeInIds.value = new Set()
-    fadeInClearTimer = null
-  }, 450)
-}
+const flatListEntries = computed((): HistoryListEntry[] => {
+  const entries: HistoryListEntry[] = []
+  let headerCount = 0
+
+  if (pinnedItems.value.length > 0) {
+    entries.push({
+      type: 'header',
+      key: 'header-pinned',
+      label: t('welcome.conversations.pinned'),
+      showPinIcon: true,
+      withDivider: headerCount++ > 0,
+    })
+    for (const record of pinnedItems.value) {
+      entries.push({ type: 'row', key: record.id, record, pinned: true })
+    }
+  }
+
+  for (const group of groupedSummaries.value) {
+    entries.push({
+      type: 'header',
+      key: `header-${group.key}`,
+      label: group.label,
+      withDivider: headerCount++ > 0,
+    })
+    for (const record of group.items) {
+      entries.push({ type: 'row', key: record.id, record })
+    }
+  }
+
+  return entries
+})
 
 /** silent：后台增量刷新，不触发全屏 loading、不重置「加载更多」计数 */
 const loadSummaries = async (options?: { silent?: boolean }) => {
@@ -142,10 +166,6 @@ const loadSummaries = async (options?: { silent?: boolean }) => {
   try {
     if (!silent) await configStore.loadConversationPreferences()
     const next = await window.electronAPI.history.listAgentSummaries(true)
-    if (silent && summaries.value.length > 0) {
-      const prevIds = new Set(summaries.value.map(s => s.id))
-      markFadeInIds(next.filter(s => !prevIds.has(s.id)).map(s => s.id))
-    }
     summaries.value = next
     if (!silent) {
       displayCount.value = DISPLAY_LIMIT
@@ -192,7 +212,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (silentRefreshTimer) clearTimeout(silentRefreshTimer)
-  if (fadeInClearTimer) clearTimeout(fadeInClearTimer)
   cleanupAgentCompleteForHistory?.()
   cleanupAgentErrorForHistory?.()
 })
@@ -433,63 +452,37 @@ const loadMore = () => {
       </div>
 
       <template v-else-if="hasListContent">
-        <section v-if="pinnedItems.length > 0" class="list-section list-section--pinned">
-          <div class="section-header">
-            <Pin :size="11" class="section-icon" />
-            <span class="section-name">{{ t('welcome.conversations.pinned') }}</span>
-          </div>
-          <div class="section-items">
+        <!-- 与对话区 messageEnter 相反：新行从上方淡入，下方整表平移（TransitionGroup move） -->
+        <TransitionGroup name="history-row" tag="div" class="history-flat-list">
+          <div
+            v-for="entry in flatListEntries"
+            :key="entry.key"
+            class="history-flat-item"
+            :class="{ 'history-flat-item--section-start': entry.type === 'header' && entry.withDivider }"
+          >
+            <div v-if="entry.type === 'header'" class="section-header">
+              <Pin v-if="entry.showPinIcon" :size="11" class="section-icon" />
+              <span class="section-name">{{ entry.label }}</span>
+            </div>
             <ConversationRow
-              v-for="record in pinnedItems"
-              :key="`pin-${record.id}`"
-              :record="record"
-              is-pinned
-              :is-opening="openingId === record.id"
-              :tab-status="getRecordMeta(record.id).status"
-              :status-tooltip="getRecordMeta(record.id).tooltip"
-              :is-editing="editingId === record.id"
+              v-else
+              :record="entry.record"
+              :is-pinned="entry.pinned"
+              :is-opening="openingId === entry.record.id"
+              :tab-status="getRecordMeta(entry.record.id).status"
+              :status-tooltip="getRecordMeta(entry.record.id).tooltip"
+              :is-editing="editingId === entry.record.id"
               :editing-title="editingTitle"
-              :formatted-time="formatTime(record.timestamp + record.duration)"
-              :fade-in="fadeInIds.has(record.id)"
-              @open="openConversation(record)"
-              @toggle-pin="togglePin($event, record.id)"
-              @context-menu="openContextMenu(record, $event)"
+              :formatted-time="formatTime(entry.record.timestamp + entry.record.duration)"
+              @open="openConversation(entry.record)"
+              @toggle-pin="togglePin($event, entry.record.id)"
+              @context-menu="openContextMenu(entry.record, $event)"
               @commit-rename="commitRename"
               @cancel-rename="cancelRename"
               @update:editing-title="editingTitle = $event"
             />
           </div>
-        </section>
-
-        <section
-          v-for="group in groupedSummaries"
-          :key="group.key"
-          class="list-section"
-        >
-          <div class="section-header">
-            <span class="section-name">{{ group.label }}</span>
-          </div>
-          <div class="section-items">
-            <ConversationRow
-              v-for="record in group.items"
-              :key="record.id"
-              :record="record"
-              :is-opening="openingId === record.id"
-              :tab-status="getRecordMeta(record.id).status"
-              :status-tooltip="getRecordMeta(record.id).tooltip"
-              :is-editing="editingId === record.id"
-              :editing-title="editingTitle"
-              :formatted-time="formatTime(record.timestamp + record.duration)"
-              :fade-in="fadeInIds.has(record.id)"
-              @open="openConversation(record)"
-              @toggle-pin="togglePin($event, record.id)"
-              @context-menu="openContextMenu(record, $event)"
-              @commit-rename="commitRename"
-              @cancel-rename="cancelRename"
-              @update:editing-title="editingTitle = $event"
-            />
-          </div>
-        </section>
+        </TransitionGroup>
 
         <button v-if="hasMore" type="button" class="load-more-btn" @click="loadMore">
           {{ t('welcome.conversations.loadMore') }}
@@ -636,15 +629,32 @@ const loadMore = () => {
   background-clip: padding-box;
 }
 
-.list-section {
-  margin-bottom: 2px;
+.history-flat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.history-flat-item--section-start {
+  margin-top: 6px;
   padding-top: 6px;
   border-top: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
 }
 
-.list-section:first-child {
-  padding-top: 2px;
-  border-top: none;
+/* 与 AiPanel messageEnter 同系缓动，方向相反（自上方进入）；列表位移略慢于单行淡入 */
+.history-row-enter-active {
+  transition:
+    opacity 0.64s cubic-bezier(0.32, 0.72, 0, 1),
+    transform 0.64s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.history-row-enter-from {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.history-row-move {
+  transition: transform 0.64s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .section-header {
@@ -667,12 +677,6 @@ const loadMore = () => {
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--text-secondary);
-}
-
-.section-items {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
 }
 
 .load-more-btn {
