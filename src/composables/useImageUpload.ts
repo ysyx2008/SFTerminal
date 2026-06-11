@@ -131,6 +131,11 @@ export function useImageUpload() {
   const clearImages = () => {
     pendingImages.value = []
   }
+
+  /** 从欢迎页等外部暂存恢复待发送图片（进入助手 tab 前 handoff） */
+  const loadPendingImages = (images: PendingImage[]) => {
+    pendingImages.value = images.map(img => ({ ...img }))
+  }
   
   /**
    * 获取所有待发送图片的 data URL 列表
@@ -178,6 +183,7 @@ export function useImageUpload() {
     handleDroppedImages,
     removeImage,
     clearImages,
+    loadPendingImages,
     getImageDataUrls,
     hasImages,
     canAddMore,

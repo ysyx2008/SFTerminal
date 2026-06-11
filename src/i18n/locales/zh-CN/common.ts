@@ -15,6 +15,7 @@ export default {
     subtitle: 'AI 驱动的智能助手',
     subtitleSteam: '高效的终端与连接管理工具',
     quickStart: '快速开始',
+    chatLead: '有什么我可以帮你的？',
     assistant: 'AI 助手',
     assistantDesc: '与 AI 直接对话',
     localTerminal: '本地终端',

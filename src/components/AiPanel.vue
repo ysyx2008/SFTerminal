@@ -390,7 +390,8 @@ const {
   removeImage,
   clearImages,
   getImageDataUrls,
-  hasImages
+  hasImages,
+  loadPendingImages
 } = useImageUpload()
 
 const hasImagesComputed = computed(() => hasImages())
@@ -1102,6 +1103,37 @@ watch(
   { immediate: true }
 )
 
+// 欢迎页 composer handoff：文档已迁移到 tab，此处恢复图片并 runAgent
+watch(
+  [
+    () => terminalStore.activeTabId,
+    () => terminalStore.pendingComposerHandoffs[currentTabId.value],
+    isMounted,
+  ],
+  async ([activeId, _handoff, mounted]) => {
+    if (!mounted || activeId !== currentTabId.value) return
+    const tab = terminalStore.tabs.find(t => t.id === currentTabId.value)
+    if (tab?.type !== 'assistant') return
+    const handoff = terminalStore.consumePendingComposerHandoff(currentTabId.value)
+    if (!handoff) return
+
+    if (handoff.images.length > 0) {
+      loadPendingImages(handoff.images)
+    }
+    const latestProfileId = configStore.activeAiProfileId
+    if (latestProfileId) {
+      activeProfileId.value = latestProfileId
+    }
+    if (!(await guardVisionBeforeSend())) {
+      clearImages()
+      return
+    }
+    clearComposerDraft()
+    void runAgent(handoff.message)
+  },
+  { immediate: true }
+)
+
 // 诞生引导：全局仅自动触发一次（独立助手 tab）；用户跳过未完成 personality 也不再重复
 let onboardingTriggered = false
 watch(
@@ -1113,6 +1145,7 @@ watch(
   ],
   async ([mounted, shown, completed, isAssistant]) => {
     if (!mounted || shown || completed || !isAssistant || onboardingTriggered) return
+    if (terminalStore.consumeAssistantSkipOnboarding(currentTabId.value)) return
     if (!configStore.hasAiConfig) return
     onboardingTriggered = true
     await configStore.markAgentOnboardingShown()

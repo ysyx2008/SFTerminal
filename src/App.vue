@@ -748,7 +748,7 @@ const initializeApp = async () => {
 
 // 是否显示欢迎页（没有打开任何终端且不在智能巡检界面时显示）
 const showWelcomePage = computed(() => terminalStore.tabs.length === 0 && !showSmartPatrol.value)
-// 从欢迎页打开助手
+// 从欢迎页打开助手（空对话）
 const openAssistantFromWelcome = () => {
   terminalStore.createAssistantTab()
 }

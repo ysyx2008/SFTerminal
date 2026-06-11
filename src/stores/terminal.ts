@@ -15,8 +15,16 @@ import {
   getAllTerminalPanes,
   removePaneFromLayout
 } from './split-pane-tree'
+import { WELCOME_COMPOSER_TAB_ID } from '../constants/welcome-composer'
+import type { PendingImage } from '../composables/useImageUpload'
 
 const log = createLogger('Store')
+
+/** 欢迎页 composer 发送到助手 tab 时的 handoff 载荷 */
+export interface PendingComposerHandoff {
+  message: string
+  images: PendingImage[]
+}
 
 export type ShellType = 'powershell' | 'cmd' | 'bash' | 'zsh' | 'sh' | 'unknown'
 export type OSType = 'windows' | 'linux' | 'macos' | 'unknown'
@@ -233,6 +241,12 @@ export const useTerminalStore = defineStore('terminal', () => {
   const pendingFocusTabId = ref<string>('')
   // 定时任务待执行的 prompt（tabId -> prompt）
   const pendingSchedulerTasks = ref<Record<string, string>>({})
+  // 欢迎页 composer → 助手 tab 的 handoff（含附件图片）
+  const pendingComposerHandoffs = ref<Record<string, PendingComposerHandoff>>({})
+  // 欢迎页 composer 文档暂存（无真实 tab）
+  const welcomeComposerDocs = ref<ParsedDocument[]>([])
+  // 欢迎页已发起首条对话的 tab，跳过 __onboarding__ 以免打断用户消息
+  const assistantSkipOnboardingTabIds = ref<Set<string>>(new Set())
   
   // 屏幕服务实例存储（ptyId -> TerminalScreenService）
   // 使用普通对象而非 ref，因为 TerminalScreenService 实例不需要响应式
@@ -557,6 +571,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     isRemote?: boolean
     remoteChannel?: TerminalTab['remoteChannel']
     activate?: boolean
+    /** 首页快速发起对话时传入，由 AiPanel 挂载后自动 runAgent */
+    initialMessage?: string
   }): string {
     const id = uuidv4()
     const agentId = options?.agentId || `assistant-${id}`
@@ -590,6 +606,12 @@ export const useTerminalStore = defineStore('terminal', () => {
         activeTabId.value = id
       }
     }
+
+    const initialMessage = options?.initialMessage?.trim()
+    if (initialMessage) {
+      pendingSchedulerTasks.value[id] = initialMessage
+    }
+
     return id
   }
 
@@ -2188,6 +2210,7 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 获取终端的上传文档
    */
   function getUploadedDocs(tabId: string): ParsedDocument[] {
+    if (tabId === WELCOME_COMPOSER_TAB_ID) return welcomeComposerDocs.value
     const tab = tabs.value.find(t => t.id === tabId)
     return tab?.uploadedDocs || []
   }
@@ -2196,6 +2219,10 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 设置终端的上传文档（替换模式，不是追加）
    */
   function setUploadedDocs(tabId: string, docs: ParsedDocument[]): void {
+    if (tabId === WELCOME_COMPOSER_TAB_ID) {
+      welcomeComposerDocs.value = docs
+      return
+    }
     const tab = tabs.value.find(t => t.id === tabId)
     if (tab) {
       tab.uploadedDocs = docs
@@ -2206,6 +2233,10 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 添加文档到终端（追加到现有列表）
    */
   function addUploadedDocs(tabId: string, docs: ParsedDocument[]): void {
+    if (tabId === WELCOME_COMPOSER_TAB_ID) {
+      welcomeComposerDocs.value = [...welcomeComposerDocs.value, ...docs]
+      return
+    }
     const tab = tabs.value.find(t => t.id === tabId)
     if (tab) {
       if (!tab.uploadedDocs) {
@@ -2219,6 +2250,10 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 移除终端的指定文档
    */
   function removeUploadedDoc(tabId: string, index: number): void {
+    if (tabId === WELCOME_COMPOSER_TAB_ID) {
+      welcomeComposerDocs.value.splice(index, 1)
+      return
+    }
     const tab = tabs.value.find(t => t.id === tabId)
     if (tab?.uploadedDocs) {
       tab.uploadedDocs.splice(index, 1)
@@ -2229,10 +2264,46 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 清空终端的所有文档
    */
   function clearUploadedDocs(tabId: string): void {
+    if (tabId === WELCOME_COMPOSER_TAB_ID) {
+      welcomeComposerDocs.value = []
+      return
+    }
     const tab = tabs.value.find(t => t.id === tabId)
     if (tab) {
       tab.uploadedDocs = []
     }
+  }
+
+  /**
+   * 将某 tab（或欢迎页暂存）的上传文档迁移到目标 tab
+   */
+  function transferUploadedDocs(fromTabId: string, toTabId: string): void {
+    const docs = getUploadedDocs(fromTabId)
+    if (docs.length === 0) return
+    addUploadedDocs(toTabId, JSON.parse(JSON.stringify(docs)))
+    clearUploadedDocs(fromTabId)
+  }
+
+  function setPendingComposerHandoff(tabId: string, handoff: PendingComposerHandoff): void {
+    pendingComposerHandoffs.value[tabId] = handoff
+  }
+
+  function consumePendingComposerHandoff(tabId: string): PendingComposerHandoff | undefined {
+    const handoff = pendingComposerHandoffs.value[tabId]
+    if (handoff) {
+      delete pendingComposerHandoffs.value[tabId]
+    }
+    return handoff
+  }
+
+  function markAssistantSkipOnboarding(tabId: string): void {
+    assistantSkipOnboardingTabIds.value.add(tabId)
+  }
+
+  function consumeAssistantSkipOnboarding(tabId: string): boolean {
+    if (!assistantSkipOnboardingTabIds.value.has(tabId)) return false
+    assistantSkipOnboardingTabIds.value.delete(tabId)
+    return true
   }
 
   // ==================== 屏幕服务管理 ====================
@@ -2468,6 +2539,12 @@ export const useTerminalStore = defineStore('terminal', () => {
     createTabWithTask,
     pendingSchedulerTasks,
     consumePendingSchedulerTask,
+    pendingComposerHandoffs,
+    setPendingComposerHandoff,
+    consumePendingComposerHandoff,
+    markAssistantSkipOnboarding,
+    consumeAssistantSkipOnboarding,
+    transferUploadedDocs,
     closeTab,
     reconnectSsh,
     setActiveTab,

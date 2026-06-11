@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n'
 import { Bot, SquareTerminal, Monitor, Eye } from 'lucide-vue-next'
 import { useConfigStore, type SshSession } from '../stores/config'
 import MatrixRain from './EasterEgg/MatrixRain.vue'
+import WelcomeChatComposer from './WelcomeChatComposer.vue'
 import sailfishLogo from '../../resources/logo.png'
 
 const { t } = useI18n()
@@ -122,6 +123,9 @@ const formatHost = (session: SshSession) => {
         </div>
       </div>
 
+      <!-- AI 快速发起对话（Steam 版隐藏，复用 AiComposer） -->
+      <WelcomeChatComposer v-if="!isSteamBuild" />
+
       <!-- 快速启动卡片 -->
       <div class="quick-start">
         <h2 class="section-title">{{ t('welcome.quickStart') }}</h2>
@@ -210,8 +214,8 @@ const formatHost = (session: SshSession) => {
         </div>
       </div>
 
-      <!-- 提示信息 -->
-      <div class="tips" @click="nextTip" :title="t('welcome.clickToSwitchTip')">
+      <!-- 提示信息（非 Steam 版有对话入口，为节省纵向空间隐藏 tips） -->
+      <div v-if="isSteamBuild" class="tips" @click="nextTip" :title="t('welcome.clickToSwitchTip')">
         <div class="tip-item">
           <span class="tip-icon">💡</span>
           <span class="tip-text">{{ currentTip }}</span>
@@ -374,8 +378,7 @@ const formatHost = (session: SshSession) => {
   }
 }
 
-/* 卡片容器：默认 4 列等宽 grid，让"关切"始终与前 3 张同行不换行；
-   窗口很窄时（< 640px）降级为单列纵向堆叠。 */
+/* 卡片容器：默认 4 列等宽 grid，让「关切」始终与前 3 张同行不换行 */
 .action-cards {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

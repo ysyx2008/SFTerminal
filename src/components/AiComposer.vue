@@ -63,12 +63,31 @@ const props = defineProps<{
   submitMessage: (message: string) => void | Promise<void>
   submitEmptyMessage: () => void | Promise<void>
   clearTabError: () => void
+  /** 嵌入欢迎页等非面板场景：去掉顶部分割线，使用独立圆角容器 */
+  embedded?: boolean
+  /** 覆盖默认 placeholder（如欢迎页） */
+  placeholder?: string
 }>()
 
 const { t } = useI18n()
 
 const quoteStore = useComposerQuoteStore()
 const quoteSnippets = computed(() => quoteStore.getSnippets(props.currentTabId))
+
+const composerPlaceholder = computed(
+  () =>
+    props.placeholder ??
+    (props.isAgentRunning ? t('ai.inputPlaceholderSupplement') : t('ai.inputPlaceholderAgent'))
+)
+
+/** embedded 模式：有附件时才显示外层统一容器，避免空态双层边框 */
+const hasComposerAttachments = computed(
+  () =>
+    props.parsingDocs.length > 0 ||
+    props.uploadedDocs.length > 0 ||
+    quoteSnippets.value.length > 0 ||
+    props.pendingImages.length > 0
+)
 
 /** 输入框无文字时，有图片或引用摘录也可发送 */
 const canSubmitMessage = computed(
@@ -369,6 +388,13 @@ const handleSendClick = (event: MouseEvent) => {
 </script>
 
 <template>
+  <div
+    class="composer-root"
+    :class="{
+      'composer-root-embedded': embedded,
+      'composer-root-embedded-filled': embedded && hasComposerAttachments
+    }"
+  >
   <div v-if="parsingDocs.length > 0" class="parsing-docs">
     <div class="uploaded-docs-header">
       <span class="uploaded-docs-title">{{ t('ai.parsingDocs') }} · {{ parsingSummary }}</span>
@@ -435,7 +461,7 @@ const handleSendClick = (event: MouseEvent) => {
     </div>
   </div>
 
-  <div class="ai-input">
+  <div class="ai-input" :class="{ 'ai-input-embedded': embedded }">
     <div v-if="contextStats.tokenEstimate > 0" class="context-mini">
       <template v-if="cacheBarWidth > 0">
         <div class="context-mini-bar cached" :style="{ width: cacheBarWidth + '%' }"></div>
@@ -479,7 +505,7 @@ const handleSendClick = (event: MouseEvent) => {
       <textarea
         ref="mentionInputEl"
         v-model="inputText"
-        :placeholder="isAgentRunning ? t('ai.inputPlaceholderSupplement') : t('ai.inputPlaceholderAgent')"
+        :placeholder="composerPlaceholder"
         rows="1"
         @input="handleInputChange"
         @keydown="handleInputKeyDown"
@@ -607,6 +633,7 @@ const handleSendClick = (event: MouseEvent) => {
         <ArrowUp :size="18" />
       </button>
     </div>
+  </div>
   </div>
 </template>
 
@@ -966,6 +993,70 @@ const handleSendClick = (event: MouseEvent) => {
   background: linear-gradient(180deg, var(--bg-tertiary) 0%, var(--bg-primary) 100%);
 }
 
+/* embedded：空态仅保留内层 input-container；有附件时由 composer-root 统一外框 */
+.composer-root:not(.composer-root-embedded) {
+  display: contents;
+}
+
+.composer-root-embedded-filled {
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.composer-root-embedded-filled .parsing-docs,
+.composer-root-embedded-filled .uploaded-docs,
+.composer-root-embedded-filled .composer-quote-snips {
+  border-top: none;
+  background: transparent;
+  padding: 11px 11px 0;
+}
+
+/* 附件区与下方分割线之间留足间距（文档列表不要紧贴分隔线） */
+.composer-root-embedded-filled .parsing-docs:has(~ .ai-input-embedded),
+.composer-root-embedded-filled .uploaded-docs:has(~ .ai-input-embedded),
+.composer-root-embedded-filled .composer-quote-snips:has(~ .ai-input-embedded) {
+  padding-bottom: 11px;
+}
+
+.composer-root-embedded-filled .parsing-docs + .uploaded-docs,
+.composer-root-embedded-filled .parsing-docs + .composer-quote-snips,
+.composer-root-embedded-filled .uploaded-docs + .composer-quote-snips {
+  padding-top: 8px;
+}
+
+.composer-root-embedded-filled .parsing-docs ~ .ai-input-embedded,
+.composer-root-embedded-filled .uploaded-docs ~ .ai-input-embedded,
+.composer-root-embedded-filled .composer-quote-snips ~ .ai-input-embedded {
+  border-top: 1px solid var(--border-color);
+}
+
+.ai-input.ai-input-embedded {
+  border-top: none;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.composer-root-embedded-filled .ai-input-embedded {
+  padding: 11px 11px 11px;
+}
+
+.composer-root-embedded-filled .ai-input-embedded .image-preview-strip {
+  padding-top: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.ai-input-embedded textarea:focus,
+.ai-input-embedded textarea:focus-visible {
+  border: none;
+  outline: none;
+  box-shadow: none;
+}
+
 .input-container {
   position: relative;
   flex: 1;
@@ -1015,11 +1106,17 @@ const handleSendClick = (event: MouseEvent) => {
 .upload-btn,
 .voice-btn {
   flex-shrink: 0;
-  padding: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  box-sizing: border-box;
   background: transparent;
   border: none;
   color: var(--text-muted);
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -1074,7 +1171,8 @@ const handleSendClick = (event: MouseEvent) => {
 
 .ai-input textarea {
   flex: 1;
-  padding: 6px 4px;
+  align-self: center;
+  padding: 7px 4px;
   font-size: 14px;
   font-family: inherit;
   color: var(--text-primary);
@@ -1082,10 +1180,11 @@ const handleSendClick = (event: MouseEvent) => {
   border: none;
   resize: none;
   outline: none;
-  line-height: 1.5;
-  min-height: 24px;
+  line-height: 1.4286;
+  min-height: 20px;
   max-height: 360px;
   overflow-y: auto;
+  margin: 0;
 }
 
 .ai-input textarea::placeholder {
@@ -1104,6 +1203,7 @@ const handleSendClick = (event: MouseEvent) => {
 .send-btn,
 .stop-btn {
   flex-shrink: 0;
+  align-self: center;
   display: flex;
   align-items: center;
   justify-content: center;
