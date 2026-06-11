@@ -1287,6 +1287,7 @@ const electronAPI = {
     getStorageStats: () => ipcRenderer.invoke('history:getStorageStats') as Promise<{
       chatFiles: number
       agentFiles: number
+      agentSessions: number
       totalSize: number
       oldestRecord?: string
       newestRecord?: string

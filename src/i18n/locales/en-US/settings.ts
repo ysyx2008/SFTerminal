@@ -854,6 +854,7 @@ export default {
     storageStats: 'Storage Statistics',
     chatRecords: 'Chat Records',
     agentRecords: 'Agent Records',
+    agentSessionTotal: 'Total Sessions',
     totalSize: 'Total Size',
     recordRange: 'Record Range',
     days: 'days',

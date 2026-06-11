@@ -129,6 +129,7 @@ describe('agent history v5 migration', () => {
     const svc = new HistoryService()
     const stats = svc.getStorageStats()
     expect(stats.agentFiles).toBe(1)
+    expect(stats.agentSessions).toBe(2)
     expect(stats.oldestRecord).toBe('2026-03-18')
     expect(stats.newestRecord).toBe('2026-03-18')
   })

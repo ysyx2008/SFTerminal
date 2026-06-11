@@ -13,6 +13,7 @@ import type { AgentRecord } from '@shared/types'
 const storageStats = ref<{
   chatFiles: number
   agentFiles: number
+  agentSessions: number
   totalSize: number
   oldestRecord?: string
   newestRecord?: string
@@ -549,6 +550,15 @@ onUnmounted(() => {
             <span class="stat-label">{{ t('dataSettings.agentRecords') }} ({{ t('dataSettings.days') }})</span>
           </div>
         </div>
+        <div v-if="!isSteamBuild" class="stat-card stat-sessions">
+          <div class="stat-icon-wrap sessions">
+            <History :size="18" />
+          </div>
+          <div class="stat-body">
+            <span class="stat-value">{{ storageStats.agentSessions }}</span>
+            <span class="stat-label">{{ t('dataSettings.agentSessionTotal') }}</span>
+          </div>
+        </div>
         <div class="stat-card stat-size">
           <div class="stat-icon-wrap size">
             <HardDrive :size="18" />
@@ -912,6 +922,11 @@ onUnmounted(() => {
 .stat-icon-wrap.agent {
   background: rgba(var(--color-success-rgb), 0.12);
   color: var(--color-success);
+}
+
+.stat-icon-wrap.sessions {
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
 }
 
 .stat-icon-wrap.size {

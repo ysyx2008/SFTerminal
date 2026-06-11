@@ -854,6 +854,7 @@ export default {
     storageStats: '存储统计',
     chatRecords: '聊天记录',
     agentRecords: '助手记录',
+    agentSessionTotal: '会话总数',
     totalSize: '总大小',
     recordRange: '记录范围',
     days: '天',

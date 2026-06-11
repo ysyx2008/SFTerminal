@@ -818,6 +818,7 @@ interface Window {
       getStorageStats: () => Promise<{
         chatFiles: number
         agentFiles: number
+        agentSessions: number
         totalSize: number
         oldestRecord?: string
         newestRecord?: string

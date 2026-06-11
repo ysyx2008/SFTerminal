@@ -1212,6 +1212,7 @@ export class HistoryService {
   getStorageStats(): {
     chatFiles: number
     agentFiles: number
+    agentSessions: number
     totalSize: number
     oldestRecord?: string
     newestRecord?: string
@@ -1233,6 +1234,7 @@ export class HistoryService {
       chatFiles: chatFiles.length,
       // 有记录的天数（v5 起按会话单文件存储，不能再用文件数代替天数）
       agentFiles: agentStats.dateLabels.length,
+      agentSessions: this.getIndex().length,
       totalSize,
       oldestRecord: allDates[0],
       newestRecord: allDates[allDates.length - 1]

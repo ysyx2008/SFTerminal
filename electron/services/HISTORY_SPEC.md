@@ -32,7 +32,7 @@ Agent 对话和聊天记录的持久化存储。按日期分文件存储 JSON �
 | `exportToFolder(exportPath, configData, hostProfiles?, options?): {success, files[], error?}` | 导出数据到文件夹（含历史、配置、主机档案） | 前端导出功能 |
 | `importFromFolder(importPath): {success, imported[], error?}` | 从文件夹导入数据 | 前端导入功能 |
 | `cleanupOldRecords(daysToKeep?): {chatDeleted, agentDeleted}` | 清理过期记录 | 维护任务 |
-| `getStorageStats(): {chatFiles, agentFiles, totalSize}` | 返回存储统计信息；`agentFiles` = 有 Agent 记录的天数（非会话文件数） | 设置 UI |
+| `getStorageStats(): {chatFiles, agentFiles, agentSessions, totalSize}` | 返回存储统计信息；`agentFiles` = 有 Agent 记录的天数；`agentSessions` = 会话总数（来自索引） | 设置 UI |
 
 ## 核心类型 / 接口
 
