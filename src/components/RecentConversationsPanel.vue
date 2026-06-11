@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Pin, Search, X } from 'lucide-vue-next'
 import type { AgentHistorySummary, AgentRecord } from '@shared/types'
@@ -22,6 +22,7 @@ const searchText = ref('')
 const searchExpanded = ref(false)
 const searchInputRef = ref<HTMLInputElement | null>(null)
 const summaries = ref<AgentHistorySummary[]>([])
+const fadeInIds = ref<Set<string>>(new Set())
 const isLoading = ref(false)
 const openingId = ref<string | null>(null)
 const hasLoaded = ref(false)
@@ -120,21 +121,43 @@ const hasListContent = computed(
   () => pinnedItems.value.length > 0 || groupedSummaries.value.length > 0
 )
 
-const loadSummaries = async () => {
-  if (isLoading.value || editingId.value) return
-  isLoading.value = true
+let fadeInClearTimer: ReturnType<typeof setTimeout> | null = null
+
+const markFadeInIds = (ids: string[]) => {
+  if (ids.length === 0) return
+  fadeInIds.value = new Set(ids)
+  if (fadeInClearTimer) clearTimeout(fadeInClearTimer)
+  fadeInClearTimer = setTimeout(() => {
+    fadeInIds.value = new Set()
+    fadeInClearTimer = null
+  }, 450)
+}
+
+/** silent：后台增量刷新，不触发全屏 loading、不重置「加载更多」计数 */
+const loadSummaries = async (options?: { silent?: boolean }) => {
+  const silent = options?.silent ?? false
+  if (editingId.value) return
+  if (!silent && isLoading.value) return
+  if (!silent) isLoading.value = true
   try {
-    await configStore.loadConversationPreferences()
-    summaries.value = await window.electronAPI.history.listAgentSummaries(true)
-    displayCount.value = DISPLAY_LIMIT
-    if (summaries.value.length > 0) {
-      await configStore.pruneConversationMetadata(new Set(summaries.value.map(s => s.id)))
+    if (!silent) await configStore.loadConversationPreferences()
+    const next = await window.electronAPI.history.listAgentSummaries(true)
+    if (silent && summaries.value.length > 0) {
+      const prevIds = new Set(summaries.value.map(s => s.id))
+      markFadeInIds(next.filter(s => !prevIds.has(s.id)).map(s => s.id))
+    }
+    summaries.value = next
+    if (!silent) {
+      displayCount.value = DISPLAY_LIMIT
+    }
+    if (next.length > 0) {
+      await configStore.pruneConversationMetadata(new Set(next.map(s => s.id)))
     }
   } catch (e) {
     console.error('Failed to load conversation summaries:', e)
-    summaries.value = []
+    if (!silent) summaries.value = []
   } finally {
-    isLoading.value = false
+    if (!silent) isLoading.value = false
   }
 }
 
@@ -144,8 +167,34 @@ const ensureLoaded = () => {
   void loadSummaries()
 }
 
+let cleanupAgentCompleteForHistory: (() => void) | null = null
+let cleanupAgentErrorForHistory: (() => void) | null = null
+let silentRefreshTimer: ReturnType<typeof setTimeout> | null = null
+
+const scheduleSilentRefresh = () => {
+  if (silentRefreshTimer) clearTimeout(silentRefreshTimer)
+  silentRefreshTimer = setTimeout(() => {
+    silentRefreshTimer = null
+    void loadSummaries({ silent: true })
+  }, 200)
+}
+
 onMounted(() => {
   ensureLoaded()
+  // 新会话落盘后静默刷新侧栏，避免 isLoading 替换整表导致闪烁
+  cleanupAgentCompleteForHistory = window.electronAPI.agent.onComplete(() => {
+    scheduleSilentRefresh()
+  })
+  cleanupAgentErrorForHistory = window.electronAPI.agent.onError(() => {
+    scheduleSilentRefresh()
+  })
+})
+
+onUnmounted(() => {
+  if (silentRefreshTimer) clearTimeout(silentRefreshTimer)
+  if (fadeInClearTimer) clearTimeout(fadeInClearTimer)
+  cleanupAgentCompleteForHistory?.()
+  cleanupAgentErrorForHistory?.()
 })
 
 watch(searchText, () => {
@@ -379,7 +428,7 @@ const loadMore = () => {
     </div>
 
     <div class="conversation-list">
-      <div v-if="isLoading" class="empty-state">
+      <div v-if="isLoading && summaries.length === 0" class="empty-state">
         {{ t('ai.agentWelcome.historyLoading') }}
       </div>
 
@@ -401,6 +450,7 @@ const loadMore = () => {
               :is-editing="editingId === record.id"
               :editing-title="editingTitle"
               :formatted-time="formatTime(record.timestamp + record.duration)"
+              :fade-in="fadeInIds.has(record.id)"
               @open="openConversation(record)"
               @toggle-pin="togglePin($event, record.id)"
               @context-menu="openContextMenu(record, $event)"
@@ -430,6 +480,7 @@ const loadMore = () => {
               :is-editing="editingId === record.id"
               :editing-title="editingTitle"
               :formatted-time="formatTime(record.timestamp + record.duration)"
+              :fade-in="fadeInIds.has(record.id)"
               @open="openConversation(record)"
               @toggle-pin="togglePin($event, record.id)"
               @context-menu="openContextMenu(record, $event)"
