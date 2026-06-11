@@ -1667,10 +1667,13 @@ watch(() => props.visible, async (visible, wasVisible) => {
       terminalStore.setAiScrollTop(currentTabId.value, scrollTop)
     }
   } else if (visible && !wasVisible) {
-    // 面板显示时，恢复滚动位置
+    // 面板显示时：有待确认/安全输入则滚到底部，否则恢复上次滚动位置
     warmupMessageList()
     await nextTick()
-    if (messagesRef.value && currentTabId.value) {
+    if (pendingConfirm.value || pendingSecureInput.value) {
+      scrollHistoryToBottom()
+      setTimeout(() => scrollHistoryToBottom(), 150)
+    } else if (messagesRef.value && currentTabId.value) {
       const savedScrollTop = terminalStore.getAiScrollTop(currentTabId.value)
       if (savedScrollTop !== undefined) {
         messagesRef.value.scrollTop = savedScrollTop

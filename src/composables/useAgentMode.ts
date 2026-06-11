@@ -1073,7 +1073,11 @@ export function useAgentMode(
         return false
       }
       
-      // 降级：使用 agentId 匹配（兼容旧逻辑）
+      // 降级：使用 agentId 匹配（助手 tab 的 agentId 在 tab.agentId 上，运行前 agentState 可能尚未写入）
+      if (currentTab.value?.agentId === agentId) {
+        terminalStore.setAgentId(currentTabId.value, agentId)
+        return true
+      }
       const foundTabId = terminalStore.findTabIdByAgentId(agentId)
       if (foundTabId) {
         return foundTabId === currentTabId.value

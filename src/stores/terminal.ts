@@ -54,7 +54,16 @@ export type {
   PendingConfirmation,
 } from '@shared/types'
 
-import type { TerminalType, AgentStep, PendingConfirmation, RemoteChannel, AttachmentInfo } from '@shared/types'
+import type { TerminalType, AgentStep, PendingConfirmation, RemoteChannel, AttachmentInfo, AgentRecord } from '@shared/types'
+
+/** 侧栏历史对话与 tab 的关联状态（用于状态图标） */
+export type HistoryConversationTabStatus = 'closed' | 'open' | 'running' | 'attention'
+
+export interface HistoryConversationMeta {
+  status: HistoryConversationTabStatus
+  pendingConfirm: boolean
+  agentCompletedUnseen: boolean
+}
 
 export interface AgentState {
   isRunning: boolean
@@ -1637,7 +1646,9 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 根据 agentId 查找对应的终端 ID
    */
   function findTabIdByAgentId(agentId: string): string | undefined {
-    const tab = tabs.value.find(t => t.agentState?.agentId === agentId)
+    const tab = tabs.value.find(
+      t => t.agentState?.agentId === agentId || t.agentId === agentId
+    )
     return tab?.id
   }
 
@@ -1852,6 +1863,54 @@ export const useTerminalStore = defineStore('terminal', () => {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab?.agentState) return
     tab.agentState.finalResult = result
+  }
+
+  /** 根据历史记录 ID 查找已打开的 tab（agentState.sessionId 与 record.id 对应） */
+  function findTabByHistoryId(historyId: string): TerminalTab | undefined {
+    return tabs.value.find(t => t.agentState?.sessionId === historyId)
+  }
+
+  /** 侧栏历史对话元信息（单次 tab 查找，供状态图标与 tooltip 复用） */
+  function getHistoryConversationMeta(historyId: string): HistoryConversationMeta {
+    const tab = findTabByHistoryId(historyId)
+    if (!tab) {
+      return { status: 'closed', pendingConfirm: false, agentCompletedUnseen: false }
+    }
+    const pendingConfirm = hasPendingConfirm(tab.id)
+    const agentCompletedUnseen = hasAgentCompletedUnseen(tab.id)
+    if (tab.agentState?.isRunning === true) {
+      return { status: 'running', pendingConfirm, agentCompletedUnseen }
+    }
+    if (pendingConfirm || agentCompletedUnseen) {
+      return { status: 'attention', pendingConfirm, agentCompletedUnseen }
+    }
+    return { status: 'open', pendingConfirm: false, agentCompletedUnseen: false }
+  }
+
+  function getHistoryConversationStatus(historyId: string): HistoryConversationTabStatus {
+    return getHistoryConversationMeta(historyId).status
+  }
+
+  /**
+   * 打开历史对话：已有 tab 则聚焦，否则新建 assistant tab 并恢复历史。
+   * 分叉会话使用新的 sessionId，与源记录独立映射。
+   */
+  function openHistoryConversation(record: AgentRecord): string {
+    const existing = findTabByHistoryId(record.id)
+    if (existing) {
+      setActiveTab(existing.id)
+      return existing.id
+    }
+
+    const tabId = createAssistantTab()
+    markAssistantSkipOnboarding(tabId)
+    const configStore = useConfigStore()
+    const customTitle = configStore.getConversationDisplayTitle(record.id)
+    if (customTitle) {
+      renameTab(tabId, customTitle)
+    }
+    restoreAgentHistory(tabId, record)
+    return tabId
   }
 
   /**
@@ -2601,6 +2660,10 @@ export const useTerminalStore = defineStore('terminal', () => {
     clearAgentState,
     setAgentFinalResult,
     restoreAgentHistory,
+    findTabByHistoryId,
+    getHistoryConversationMeta,
+    getHistoryConversationStatus,
+    openHistoryConversation,
     getAgentContext,
     // 文档管理
     getUploadedDocs,

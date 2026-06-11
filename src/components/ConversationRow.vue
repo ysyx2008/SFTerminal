@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Pin, PinOff } from 'lucide-vue-next'
+import { Pin, PinOff, Loader2, CircleDot } from 'lucide-vue-next'
 import type { AgentHistorySummary } from '@shared/types'
+import type { HistoryConversationTabStatus } from '../stores/terminal'
 import { useConfigStore } from '../stores/config'
 
 const props = defineProps<{
   record: AgentHistorySummary
   isPinned?: boolean
   isOpening?: boolean
+  tabStatus?: HistoryConversationTabStatus
+  statusTooltip?: string
   isEditing?: boolean
   editingTitle?: string
   formattedTime: string
@@ -25,6 +28,9 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const configStore = useConfigStore()
+
+const tabStatus = computed(() => props.tabStatus ?? 'closed')
+const showStatusIcon = computed(() => tabStatus.value !== 'closed')
 
 const handleItemClick = () => {
   if (props.isOpening || props.isEditing) return
@@ -76,17 +82,33 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
       'is-opening': isOpening,
       'is-failed': record.status === 'failed',
       'is-aborted': record.status === 'aborted',
+      'needs-attention': tabStatus === 'attention',
     }"
   >
-    <button
-      type="button"
-      class="pin-btn"
-      :title="isPinned ? t('welcome.conversations.unpin') : t('welcome.conversations.pin')"
-      @click="emit('toggle-pin', $event)"
-    >
-      <PinOff v-if="isPinned" :size="12" />
-      <Pin v-else :size="12" />
-    </button>
+    <div class="leading-slot">
+      <button
+        type="button"
+        class="pin-btn"
+        :class="{ 'is-visible': isPinned }"
+        :title="isPinned ? t('welcome.conversations.unpin') : t('welcome.conversations.pin')"
+        @click="emit('toggle-pin', $event)"
+      >
+        <PinOff v-if="isPinned" :size="12" />
+        <Pin v-else :size="12" />
+      </button>
+      <span
+        v-if="showStatusIcon"
+        class="status-indicator"
+        :class="`status-${tabStatus}`"
+        :title="statusTooltip"
+        :aria-label="statusTooltip"
+        role="img"
+      >
+        <Loader2 v-if="tabStatus === 'running'" class="status-spinner" :size="11" />
+        <span v-else-if="tabStatus === 'attention'" class="attention-dot" />
+        <CircleDot v-else :size="11" :stroke-width="2" />
+      </span>
+    </div>
     <button
       type="button"
       class="conversation-item"
@@ -138,14 +160,34 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   opacity: 0.65;
 }
 
+.conversation-row:hover .status-indicator {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .conversation-row:hover .item-title {
   color: var(--text-secondary);
 }
 
-.pin-btn {
+.conversation-row.needs-attention {
+  background: rgba(var(--color-warning-rgb), 0.1);
+}
+
+.conversation-row.needs-attention .item-title {
+  color: var(--color-warning);
+}
+
+/* 置顶与状态图标共用左侧 20px 槽位（始终保留缩进，与改版前 pin 列一致） */
+.leading-slot {
+  position: relative;
   flex-shrink: 0;
   width: 20px;
   height: 28px;
+}
+
+.pin-btn {
+  position: absolute;
+  inset: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -156,13 +198,67 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   border-radius: 4px;
   cursor: pointer;
   opacity: 0;
+  z-index: 2;
   transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.pin-btn.is-visible {
+  opacity: 0.55;
 }
 
 .pin-btn:hover {
   opacity: 1 !important;
   color: var(--text-secondary);
   background: color-mix(in srgb, var(--bg-hover, var(--bg-surface)) 80%, transparent);
+}
+
+.status-indicator {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  transition: opacity 0.12s ease;
+}
+
+.status-open {
+  color: var(--accent-primary);
+  opacity: 0.85;
+}
+
+.status-running {
+  color: var(--accent-primary);
+}
+
+.status-attention {
+  color: var(--color-warning);
+}
+
+.status-spinner {
+  animation: spin 1s linear infinite;
+}
+
+.attention-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-warning);
+  animation: attention-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes attention-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(var(--color-warning-rgb), 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(var(--color-warning-rgb), 0);
+  }
 }
 
 .conversation-item {

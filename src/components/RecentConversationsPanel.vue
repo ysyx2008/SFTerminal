@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Pin, Search, X } from 'lucide-vue-next'
 import type { AgentHistorySummary, AgentRecord } from '@shared/types'
+import type { HistoryConversationMeta, HistoryConversationTabStatus } from '../stores/terminal'
 import ConversationRow from './ConversationRow.vue'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
@@ -188,8 +189,54 @@ const formatTime = (timestamp: number): string => {
   return date.toLocaleDateString(localeTag, { month: 'numeric', day: 'numeric' })
 }
 
+const displayedRecordIds = computed(() => {
+  const ids: string[] = []
+  for (const r of pinnedItems.value) ids.push(r.id)
+  for (const g of groupedSummaries.value) {
+    for (const r of g.items) ids.push(r.id)
+  }
+  return ids
+})
+
+const formatStatusTooltip = (meta: HistoryConversationMeta): string => {
+  if (meta.status === 'closed') return t('welcome.conversations.statusClosed')
+  if (meta.status === 'running') return t('welcome.conversations.agentRunning')
+  if (meta.pendingConfirm && meta.agentCompletedUnseen) {
+    return `${t('tabs.needsAttentionConfirm')} · ${t('tabs.needsAttentionTaskFinished')}`
+  }
+  if (meta.pendingConfirm) return t('tabs.needsAttentionConfirm')
+  if (meta.agentCompletedUnseen) return t('tabs.needsAttentionTaskFinished')
+  return t('welcome.conversations.statusOpen')
+}
+
+/** 当前可见行的状态缓存（依赖 tabs / activeTabId，避免每行重复遍历） */
+const conversationMetaById = computed(() => {
+  void terminalStore.tabs
+  void terminalStore.activeTabId
+
+  const map = new Map<string, { status: HistoryConversationTabStatus; tooltip: string }>()
+  for (const id of displayedRecordIds.value) {
+    const meta = terminalStore.getHistoryConversationMeta(id)
+    map.set(id, { status: meta.status, tooltip: formatStatusTooltip(meta) })
+  }
+  return map
+})
+
+const getRecordMeta = (id: string) =>
+  conversationMetaById.value.get(id) ?? {
+    status: 'closed' as const,
+    tooltip: t('welcome.conversations.statusClosed'),
+  }
+
 const openConversation = async (summary: AgentHistorySummary) => {
   if (editingId.value || openingId.value) return
+
+  const existingTab = terminalStore.findTabByHistoryId(summary.id)
+  if (existingTab) {
+    terminalStore.setActiveTab(existingTab.id)
+    return
+  }
+
   openingId.value = summary.id
   try {
     const record = (await window.electronAPI.history.getAgentRecordById(summary.id)) as AgentRecord | undefined
@@ -197,13 +244,7 @@ const openConversation = async (summary: AgentHistorySummary) => {
       toast.error(t('ai.agentWelcome.historyRecordMissing'))
       return
     }
-    const tabId = terminalStore.createAssistantTab()
-    terminalStore.markAssistantSkipOnboarding(tabId)
-    const customTitle = configStore.getConversationDisplayTitle(summary.id)
-    if (customTitle) {
-      terminalStore.renameTab(tabId, customTitle)
-    }
-    terminalStore.restoreAgentHistory(tabId, record)
+    terminalStore.openHistoryConversation(record)
   } catch (e) {
     console.error('Failed to open conversation:', e)
     toast.error(t('ai.agentWelcome.historyRecordMissing'))
@@ -259,10 +300,17 @@ const onMenuTogglePin = async () => {
   }
 }
 
+const isHistoryOpenInTab = (historyId: string) => !!terminalStore.findTabByHistoryId(historyId)
+
 const onMenuDelete = async () => {
   const record = contextMenu.value.record
   closeContextMenu()
   if (!record) return
+
+  if (isHistoryOpenInTab(record.id)) {
+    toast.warning(t('welcome.conversations.deleteBlockedTabOpen'))
+    return
+  }
 
   const title = configStore.resolveConversationTitle(record.id, record.userTask)
   const confirmed = await showConfirm({
@@ -357,6 +405,8 @@ const loadMore = () => {
               :record="record"
               is-pinned
               :is-opening="openingId === record.id"
+              :tab-status="getRecordMeta(record.id).status"
+              :status-tooltip="getRecordMeta(record.id).tooltip"
               :is-editing="editingId === record.id"
               :editing-title="editingTitle"
               :formatted-time="formatTime(record.timestamp + record.duration)"
@@ -384,6 +434,8 @@ const loadMore = () => {
               :key="record.id"
               :record="record"
               :is-opening="openingId === record.id"
+              :tab-status="getRecordMeta(record.id).status"
+              :status-tooltip="getRecordMeta(record.id).tooltip"
               :is-editing="editingId === record.id"
               :editing-title="editingTitle"
               :formatted-time="formatTime(record.timestamp + record.duration)"
