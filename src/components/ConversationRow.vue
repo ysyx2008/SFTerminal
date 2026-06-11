@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Pin, PinOff } from 'lucide-vue-next'
 import type { AgentHistorySummary } from '@shared/types'
@@ -25,6 +25,35 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const configStore = useConfigStore()
+
+// 单击打开、双击重命名：单击延迟一小段时间，期间若来了双击则取消打开、进入编辑。
+// 否则单击会立刻打开会话（切走欢迎页/侧栏），双击的第二下就没机会触发重命名。
+const CLICK_OPEN_DELAY = 220
+let openTimer: ReturnType<typeof setTimeout> | null = null
+
+const clearOpenTimer = () => {
+  if (openTimer) {
+    clearTimeout(openTimer)
+    openTimer = null
+  }
+}
+
+const handleItemClick = () => {
+  if (props.isOpening || props.isEditing) return
+  if (openTimer) return
+  openTimer = setTimeout(() => {
+    openTimer = null
+    emit('open')
+  }, CLICK_OPEN_DELAY)
+}
+
+const handleItemDblClick = (event: MouseEvent) => {
+  clearOpenTimer()
+  if (props.isEditing) return
+  emit('start-rename', event)
+}
+
+onUnmounted(clearOpenTimer)
 
 const normalizeTitle = (text: string): string => text.trim().replace(/\s+/g, ' ')
 
@@ -77,7 +106,8 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
       class="conversation-item"
       :disabled="isOpening"
       :title="record.userTask"
-      @click="emit('open')"
+      @click="handleItemClick"
+      @dblclick.stop="handleItemDblClick"
     >
       <input
         v-if="isEditing"
@@ -87,6 +117,7 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
         :placeholder="t('welcome.conversations.renameClearHint')"
         @input="emit('update:editingTitle', ($event.target as HTMLInputElement).value)"
         @click.stop
+        @dblclick.stop
         @keydown="handleRenameKeydown"
         @blur="emit('commit-rename')"
       />
@@ -95,7 +126,6 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
         class="item-title"
         :class="{ 'has-custom-title': hasCustomTitle }"
         :title="`${displayTitle}\n${t('welcome.conversations.doubleClickRename')}`"
-        @dblclick.stop="emit('start-rename', $event)"
       >{{ displayTitle }}</span>
       <span class="item-time">{{ formattedTime }}</span>
     </button>
