@@ -1,5 +1,13 @@
 # Dependabot 配置
-# 工作流：develop 开发 → main 发版，所有依赖升级走 develop 分支
+#
+# Git Flow：develop 开发 → main 发版
+# - 版本更新（下方 schedule）：target-branch: develop ✅
+# - 安全更新（Dependabot alerts）：只能打仓库「默认分支」⚠️
+#   → 仓库默认分支已设为 develop，安全 PR 会直达 develop
+#   → 若仍出现指向 main 的安全 PR，由 retarget-dependabot-to-develop.yml 自动改基线
+#
+# 注意：package-ecosystem 配置了 target-branch 时，该 ecosystem 的 security PR
+# 不会继承 labels/assignees 等选项（GitHub 平台行为），但仍会打到默认分支。
 
 version: 2
 updates:

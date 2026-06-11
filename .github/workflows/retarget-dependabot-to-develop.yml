@@ -1,0 +1,47 @@
+name: Retarget Dependabot to Develop
+
+# Dependabot 安全更新只能针对仓库「默认分支」开 PR（GitHub 平台限制，dependabot.yml
+# 的 target-branch 对安全更新无效）。本仓库 Git Flow 要求依赖变更先进 develop。
+# 兜底：若仍有 Dependabot PR 指向 main，自动改目标分支为 develop。
+on:
+  pull_request_target:
+    types: [opened, reopened]
+    branches:
+      - main
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  retarget:
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Retarget PR base to develop
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              base: 'develop',
+            });
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              body: [
+                '🤖 **自动改目标分支**',
+                '',
+                'Dependabot 安全更新只能针对仓库默认分支开 PR。本仓库遵循 Git Flow：',
+                '- 依赖变更 → 合并到 `develop`',
+                '- 发版 → `develop` → `main`',
+                '',
+                '已将此 PR 的目标分支从 `main` 改为 `develop`，请在此 review / merge。',
+              ].join('\n'),
+            });

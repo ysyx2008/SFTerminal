@@ -222,7 +222,7 @@ Agent 的记忆分三层，模拟人类记忆的衰减梯度，三层协同在�
 
 ## 构建与发布
 
-- **Git / 发版**：日常开发在 **`develop`**；发版（`main` + tag、CI 构建等）按 **`.claude/skills/release/SKILL.md`**。
+- **Git / 发版**：日常开发在 **`develop`**（亦为 GitHub **默认分支** — Dependabot 安全/版本更新、Dependency Graph 均以此为准）；`main` 仅发版用，只接受来自 `develop` 的 PR（`.github/workflows/protect-main.yml`）。发版流程见 **`.claude/skills/release/SKILL.md`**。若 Dependabot 安全 PR 误指向 `main`，`.github/workflows/retarget-dependabot-to-develop.yml` 会自动改到 `develop`。
 
 - **开发**：`npm run dev`（Vite dev server + Electron）
 - **构建**：`npm run build`（Vite build → electron-builder）
