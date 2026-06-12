@@ -18,17 +18,21 @@ export const browserTools: ToolDefinition[] = [
 - **attach（优先）**：浏览器助手已连接时自动启用；也可显式 \`{ "attach": true }\` 或 \`{ "mode": "attach" }\`
 - **launch（Playwright 独立窗口）**：\`{ "mode": "launch" }\` 或 \`{ "attach": false }\`；需要 headless / profile / **截图** 时自动或显式使用
 
-**模式能力差异**：
-- **attach 不支持** \`browser_screenshot\`（无法截取用户浏览器画面）；需要截图时先 \`browser_launch { "mode": "launch" }\` 开独立窗口，或用 \`browser_snapshot\` / \`browser_get_content\` 代替
-- **attach 的 evaluate（Firefox / Chrome 通用）**：
-- 扩展 CSP **永久禁止** \`eval\` / \`new Function()\`（上架商店也改变不了，见 Mozilla WONTFIX）
-- attach 仅支持 **CSP 安全子集**（经 content script 静态访问 DOM）：\`document.title\`、\`location.href\`、\`document.querySelector('…')\` 等
-- **任意复杂 JS** 必须 \`browser_launch { "mode": "launch" }\`（Playwright 独立窗口）
+**attach 能力边界（Chrome / Edge / Firefox 一致）**：
+- **不支持** \`browser_screenshot\`；需截图请 \`browser_launch { "mode": "launch" }\`，或用 \`browser_snapshot\` / \`browser_get_content\`
+- \`browser_wait\` **仅支持 delay**；不支持 selector 等待（需等元素请轮询 snapshot 或改用 launch）
+- \`browser_evaluate\` 仅 **safe-eval 白名单子集**（扩展 CSP 禁止 eval/Function，三浏览器相同）：
+  - ✅ \`document\` / \`location\` / \`window\` 属性链（如 \`document.title\`、\`document.body.scrollHeight\`、\`document.cookie\`、\`location.href\`、\`window.localStorage.length\`）
+  - ✅ \`document.querySelectorAll('…').length\`
+  - ✅ \`document.querySelector('…')\` 及 \`.textContent\` / \`.innerText\` / \`.innerHTML\` / \`.value\`
+  - ❌ \`querySelector\` 结果取 \`.href\` 等其它属性、返回 NodeList、方法调用（\`JSON.stringify\`、\`localStorage.getItem\`）、\`navigator\`、运算/函数式
+  - 复杂 JS 请 \`browser_launch { "mode": "launch" }\`
+- goto / snapshot / click / type / scroll / list_tabs / switch_tab 三浏览器无差异
 
 **注意**：
 - 每个终端最多一个浏览器会话
 - launch 模式 5 分钟无操作自动关闭；attach 模式 browser_close 仅断开连接
-- attach 需用户在设置中安装浏览器助手并加载扩展
+- attach 需安装浏览器助手：Chrome/Edge 扩展页；Firefox \`about:debugging\` 临时加载或签名 XPI。改扩展后需重载并刷新目标页
 
 **登录状态（launch 模式）**：
 - profile 参数可恢复持久化登录；attach 模式直接复用用户浏览器登录态`,
@@ -305,7 +309,9 @@ export const browserTools: ToolDefinition[] = [
       name: 'browser_wait',
       description: `等待元素出现或指定时间。
 
-**用法**：
+**attach 模式**：**仅支持 delay**（毫秒），不支持 selector 等待。需等元素出现请轮询 \`browser_snapshot\` 或 \`browser_launch { "mode": "launch" }\`。
+
+**launch 模式**：
 - 等待元素：指定 selector
 - 等待时间：指定 delay（毫秒）`,
       parameters: {
@@ -334,11 +340,12 @@ export const browserTools: ToolDefinition[] = [
       name: 'browser_evaluate',
       description: `在页面中执行 JavaScript 代码。
 
-**attach 模式**：扩展 CSP 禁止 eval/Function（Firefox MV3 硬性限制，上架商店也无法解除）。仅支持安全子集：
-- \`document.title\`、\`location.href\`、\`document.readyState\`
-- \`document.querySelector('…').textContent\`、\`document.querySelectorAll('…').length\`
-- \`document\` / \`location\` / \`window\` 上的属性链
-复杂或任意 JS 请 \`browser_launch { "mode": "launch" }\`。
+**attach 模式（Chrome / Edge / Firefox 相同）**：扩展 CSP 禁止 eval/Function，经 content script safe-eval 静态求值，仅支持：
+- ✅ \`document\` / \`location\` / \`window\` 属性链（\`document.title\`、\`document.body.scrollHeight\`、\`document.cookie\`、\`location.href\`、\`window.scrollY\`、\`window.localStorage.length\` 等）
+- ✅ \`document.querySelectorAll('…').length\`
+- ✅ \`document.querySelector('…')\` 及 \`.textContent\` / \`.innerText\` / \`.innerHTML\` / \`.value\`
+- ❌ \`querySelector('…').href\` 等链式取属性、返回集合对象、方法调用、\`navigator\`、运算/函数式（如 \`JSON.stringify\`、\`Array.from\`）
+复杂 JS 请 \`browser_launch { "mode": "launch" }\`。
 
 **launch 模式**：完整 JavaScript 执行（Playwright 页面上下文）。
 
