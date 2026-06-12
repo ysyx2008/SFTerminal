@@ -1150,7 +1150,7 @@ onUnmounted(() => {
             :ref="(el: any) => { tabViewRefs[tab.id] = el }"
             :tab="tab"
             :is-active="showTabWorkbench && tab.id === terminalStore.activeTabId"
-            class="tab-view-inner"
+            :class="tab.type === 'assistant' ? 'tab-view-workbench' : 'tab-view-inner'"
           />
         </div>
       </main>
@@ -1459,6 +1459,14 @@ onUnmounted(() => {
 .tab-view-inner {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+/* 助手工作台：仅撑满容器，水平/垂直分割由 WorkbenchShell 自行控制 */
+.tab-view-workbench {
+  display: flex;
   width: 100%;
   height: 100%;
   min-height: 0;

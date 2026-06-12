@@ -108,6 +108,7 @@ onUnmounted(() => activeCleanup?.())
 <style scoped>
 .workbench-shell {
   display: flex;
+  flex-direction: row;
   flex: 1;
   min-height: 0;
   overflow: hidden;
