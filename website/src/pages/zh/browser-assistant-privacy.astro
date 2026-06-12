@@ -1,0 +1,20 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Header from '../../components/Header.astro';
+import BrowserAssistantPrivacy from '../../components/BrowserAssistantPrivacy.astro';
+import Footer from '../../components/Footer.astro';
+
+const lang = 'zh';
+---
+
+<Layout
+  title="浏览器助手隐私政策 - 旗鱼"
+  description="旗鱼浏览器助手扩展隐私政策。仅本机 Native Messaging 通信，不向扩展作者服务器上传数据。"
+  lang={lang}
+>
+  <Header lang={lang} />
+  <main>
+    <BrowserAssistantPrivacy lang={lang} />
+  </main>
+  <Footer lang={lang} />
+</Layout>

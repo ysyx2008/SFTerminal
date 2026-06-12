@@ -1,0 +1,298 @@
+---
+import { type Lang } from '../i18n/utils';
+
+interface Props {
+  lang?: Lang;
+}
+
+const { lang = 'en' } = Astro.props;
+
+const isZh = lang === 'zh';
+
+const content = isZh
+  ? {
+      title: '旗鱼浏览器助手 — 隐私政策',
+      effective: '生效日期：2026 年 6 月 13 日',
+      sections: [
+        {
+          h: '1. 适用范围',
+          p: [
+            '本隐私政策适用于旗鱼浏览器助手（SailFish Browser Assistant）浏览器扩展，包括 Chromium 系与 Firefox 版本。本扩展是旗鱼桌面应用的伴侣组件，不能单独使用。',
+          ],
+        },
+        {
+          h: '2. 摘要',
+          ul: [
+            '扩展不会将您的数据发送至扩展作者的服务器。',
+            '扩展仅通过 Native Messaging 与您本机的旗鱼通信。',
+            '仅在您通过旗鱼发起浏览器任务时，扩展才会访问页面内容。',
+          ],
+        },
+        {
+          h: '3. 扩展可能访问的数据',
+          p: ['当您在旗鱼中使用 attach 模式时，扩展可能访问您正在使用的活动标签页中的：'],
+          table: [
+            ['页面 URL、标题', '列出标签、导航、向 Agent 提供上下文'],
+            ['页面 DOM 结构 / 文本', '供 Agent 理解页面并选择操作'],
+            ['按钮、链接、输入框等', '执行您要求的点击、输入等操作'],
+          ],
+          note: '扩展不会出于广告、用户画像或统计分析而在后台持续采集上述数据。',
+        },
+        {
+          h: '4. 数据如何流动',
+          flow: '浏览器标签页 → 扩展（本机）→ Native Host（本机）→ 旗鱼（本机）',
+          p: [
+            '以上环节均在您的设备上完成。扩展作者不运营接收该数据的云端服务。',
+            '数据进入旗鱼之后（例如您配置的 AI 服务商处理对话），由旗鱼主程序及该服务商的政策约束。关于 AI 服务商隐私对比，可参考我们的数据安全说明页（第三方 AI 科普，非本扩展政策）：',
+          ],
+          link: { href: '/zh/data-privacy/', text: '数据安全与隐私' },
+        },
+        {
+          h: '5. 权限说明',
+          table: [
+            ['nativeMessaging', '仅与本机旗鱼 Native Host 通信'],
+            ['tabs', '列出、切换浏览器标签页'],
+            ['scripting / activeTab', '在 Agent 请求时读取页面并执行操作'],
+            ['<all_urls>', '对您指定 Agent 操作的网页生效'],
+            ['storage / alarms', '本地连接状态与桥接保活'],
+          ],
+        },
+        {
+          h: '6. 我们不会',
+          ul: [
+            '出售您的数据',
+            '将扩展数据用于广告或跨站追踪',
+            '将页面内容上载至扩展作者服务器',
+            '在未通过旗鱼执行浏览器任务时采集数据',
+          ],
+        },
+        {
+          h: '7. 数据保留与您的选择',
+          p: [
+            '扩展不维护远程数据库。使用过程中的临时数据存在于浏览器内存及扩展本地存储中。旗鱼可能根据您的设置保留对话或任务历史。',
+            '您可随时禁用或卸载扩展；不安装 Native Host 即可不使用 attach 模式；也可使用旗鱼的 launch 模式（独立浏览器窗口）而无需本扩展。',
+          ],
+        },
+        {
+          h: '8. 儿童与政策变更',
+          p: [
+            '本扩展不面向 13 岁以下儿童。我们可能更新本政策，文首生效日期将随之变更。',
+          ],
+        },
+        {
+          h: '9. 联系我们',
+          p: ['官网 https://www.sfterm.com/ · 源码与反馈 https://github.com/ysyx2008/SailFish'],
+        },
+      ],
+      disclaimer: '本政策仅适用于旗鱼浏览器助手扩展，不构成法律意见。',
+    }
+  : {
+      title: 'SailFish Browser Assistant — Privacy Policy',
+      effective: 'Effective date: June 13, 2026',
+      sections: [
+        {
+          h: '1. Scope',
+          p: [
+            'This policy applies to the SailFish Browser Assistant browser extension (Chromium and Firefox). The Extension is a companion to the SailFish desktop app and does not work on its own.',
+          ],
+        },
+        {
+          h: '2. Summary',
+          ul: [
+            'The Extension does not send your data to the Extension author’s servers.',
+            'It communicates only with the SailFish app on your computer via Native Messaging.',
+            'Page content is accessed only when you run a browser task through SailFish.',
+          ],
+        },
+        {
+          h: '3. Data the Extension may access',
+          p: ['When you use attach mode in SailFish, the Extension may access on your active tab:'],
+          table: [
+            ['URL and title', 'List tabs, navigate, provide context to the Agent'],
+            ['DOM structure / text', 'Let the Agent understand the page'],
+            ['Buttons, links, inputs', 'Perform clicks and typing you request'],
+          ],
+          note: 'The Extension does not collect this data in the background for ads, profiling, or analytics.',
+        },
+        {
+          h: '4. How data flows',
+          flow: 'Browser tab → Extension (local) → Native Host (local) → SailFish app (local)',
+          p: [
+            'All steps run on your device. The Extension author does not operate a cloud service that receives this data.',
+            'What happens after data reaches SailFish (e.g. your configured AI provider) is governed by SailFish and that provider—not this Extension alone. For AI provider comparisons, see:',
+          ],
+          link: { href: '/data-privacy/', text: 'Data Privacy & Security' },
+        },
+        {
+          h: '5. Permissions',
+          table: [
+            ['nativeMessaging', 'Talk to the local SailFish Native Host only'],
+            ['tabs', 'List and switch tabs'],
+            ['scripting / activeTab', 'Read pages and run actions when the Agent requests'],
+            ['<all_urls>', 'Operate on pages you ask the Agent to control'],
+            ['storage / alarms', 'Local connection status and bridge keepalive'],
+          ],
+        },
+        {
+          h: '6. What we do not do',
+          ul: [
+            'Sell your data',
+            'Use Extension data for ads or cross-site tracking',
+            'Upload page content to Extension author servers',
+            'Collect data when SailFish is not running a browser task',
+          ],
+        },
+        {
+          h: '7. Retention and your choices',
+          p: [
+            'The Extension does not maintain a remote datastore. SailFish may retain history per your app settings.',
+            'You may uninstall the Extension anytime, skip Native Host install, or use SailFish launch mode without the Extension.',
+          ],
+        },
+        {
+          h: '8. Children and changes',
+          p: [
+            'The Extension is not directed at children under 13. We may update this policy; the effective date above will change.',
+          ],
+        },
+        {
+          h: '9. Contact',
+          p: ['https://www.sfterm.com/ · https://github.com/ysyx2008/SailFish'],
+        },
+      ],
+      disclaimer: 'This policy applies to the Browser Assistant extension only and is not legal advice.',
+    };
+---
+
+<section class="bap-section">
+  <div class="container">
+    <h1 class="section-title">{content.title}</h1>
+    <p class="bap-effective">{content.effective}</p>
+
+    <div class="bap-content">
+      {
+        content.sections.map((sec) => (
+          <div class="bap-block">
+            <h2>{sec.h}</h2>
+            {sec.p?.map((para) => <p>{para}</p>)}
+            {sec.ul && (
+              <ul>
+                {sec.ul.map((li) => (
+                  <li>{li}</li>
+                ))}
+              </ul>
+            )}
+            {sec.flow && <pre class="bap-flow">{sec.flow}</pre>}
+            {sec.table && (
+              <table class="bap-table">
+                <tbody>
+                  {sec.table.map(([a, b]) => (
+                    <tr>
+                      <th>{a}</th>
+                      <td>{b}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {sec.note && <p class="bap-note">{sec.note}</p>}
+            {sec.link && (
+              <p>
+                <a href={sec.link.href}>{sec.link.text}</a>
+              </p>
+            )}
+          </div>
+        ))
+      }
+      <p class="bap-disclaimer">{content.disclaimer}</p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .bap-section {
+    padding: 48px 0 80px;
+    min-height: 60vh;
+  }
+
+  .bap-effective {
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: 14px;
+    margin: -8px 0 32px;
+  }
+
+  .bap-content {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .bap-block {
+    margin-bottom: 32px;
+  }
+
+  .bap-content h2 {
+    font-size: 1.15rem;
+    margin: 0 0 12px;
+    color: var(--color-text-primary);
+  }
+
+  .bap-content p,
+  .bap-content li {
+    font-size: 15px;
+    line-height: 1.75;
+    color: var(--color-text-secondary);
+  }
+
+  .bap-content ul {
+    padding-left: 1.25rem;
+    margin: 8px 0;
+  }
+
+  .bap-flow {
+    background: var(--color-bg-secondary, #f4f4f5);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13px;
+    overflow-x: auto;
+    margin: 12px 0;
+  }
+
+  .bap-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 14px;
+  }
+
+  .bap-table th,
+  .bap-table td {
+    border: 1px solid var(--color-border, #e4e4e7);
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .bap-table th {
+    width: 38%;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    background: var(--color-bg-secondary, #fafafa);
+  }
+
+  .bap-note {
+    font-size: 14px;
+    font-style: italic;
+  }
+
+  .bap-content a {
+    color: var(--color-accent-primary);
+  }
+
+  .bap-disclaimer {
+    margin-top: 40px;
+    font-size: 13px;
+    color: var(--color-text-muted);
+    text-align: center;
+  }
+</style>
