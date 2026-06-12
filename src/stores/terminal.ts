@@ -144,6 +144,8 @@ export interface TerminalTab {
   aiScrollNearBottom?: boolean
   // AI 对话滚动位置（用于切换 tab 时恢复）
   aiScrollTop?: number
+  /** 滚动比例 0–1（scrollTop / maxScroll），虚拟列表重测高度后比绝对像素更稳 */
+  aiScrollRatio?: number
   // Agent 状态（每个终端独立）
   agentState?: AgentState
   // 上传的文档（每个终端独立）
@@ -1635,6 +1637,18 @@ export const useTerminalStore = defineStore('terminal', () => {
     return tab?.aiScrollTop
   }
 
+  function setAiScrollRatio(tabId: string, ratio: number): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (tab) {
+      tab.aiScrollRatio = ratio
+    }
+  }
+
+  function getAiScrollRatio(tabId: string): number | undefined {
+    const tab = tabs.value.find(t => t.id === tabId)
+    return tab?.aiScrollRatio
+  }
+
   /**
    * 请求终端获得焦点
    */
@@ -2051,6 +2065,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
     // 从历史恢复视为新视图：清除已存滚动，由 AiPanel 滚到最新一条
     delete tab.aiScrollTop
+    delete tab.aiScrollRatio
     // 确保从欢迎页首次打开历史时，AiPanel 能立即感知 steps 变化
     tabs.value = [...tabs.value]
   }
@@ -2725,6 +2740,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     getAiScrollNearBottom,
     setAiScrollTop,
     getAiScrollTop,
+    setAiScrollRatio,
+    getAiScrollRatio,
     focusTerminal,
     clearPendingFocus,
     // Agent 状态管理

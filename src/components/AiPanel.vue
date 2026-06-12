@@ -488,6 +488,7 @@ const {
   updateScrollPosition,
   saveScrollTop,
   restoreScrollTop,
+  restoreScrollPositionOnTabActivate,
   scrollToHistoryBottomWithRetry,
   scrollToBottom,
   stopGeneration,
@@ -1684,6 +1685,26 @@ watch(() => props.visible, async (visible, wasVisible) => {
     } else {
       await restoreScrollTop()
     }
+  }
+}, { flush: 'post' })
+
+// 切 tab：离开时在 DOM 仍可见阶段快照滚动（sync）；回到时在 v-show 展开后恢复（post）
+watch(() => props.tabActive, (active, wasActive) => {
+  if (!active && wasActive) {
+    saveScrollTop()
+  }
+}, { flush: 'sync' })
+
+watch(() => props.tabActive, async (active, wasActive) => {
+  if (!active || wasActive !== false) return
+  await nextTick()
+  if (pendingConfirm.value || pendingSecureInput.value) {
+    scrollHistoryToBottom()
+    setTimeout(() => scrollHistoryToBottom(), 150)
+  } else if (shouldScrollHistoryOnShow()) {
+    scrollToHistoryBottomWithRetry()
+  } else {
+    await restoreScrollPositionOnTabActivate()
   }
 }, { flush: 'post' })
 

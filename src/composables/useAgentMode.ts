@@ -203,19 +203,42 @@ export function useAgentMode(
   const saveScrollTop = () => {
     const id = currentTabId.value
     if (!id || !messagesRef.value) return
-    terminalStore.setAiScrollTop(id, messagesRef.value.scrollTop)
+    const el = messagesRef.value
+    const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight)
+    terminalStore.setAiScrollTop(id, el.scrollTop)
+    if (maxScroll > 0) {
+      terminalStore.setAiScrollRatio(id, el.scrollTop / maxScroll)
+    }
+    setIsUserNearBottom(checkIsNearBottom())
+  }
+
+  const applySavedScrollTop = () => {
+    if (!messagesRef.value) return
+    const id = currentTabId.value
+    if (!id) return
+    const el = messagesRef.value
+    const savedRatio = terminalStore.getAiScrollRatio(id)
+    const saved = terminalStore.getAiScrollTop(id)
+    const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight)
+    if (savedRatio !== undefined && maxScroll > 0) {
+      el.scrollTop = savedRatio * maxScroll
+    } else if (saved !== undefined) {
+      el.scrollTop = saved
+    }
   }
 
   const restoreScrollTop = async () => {
     const id = currentTabId.value
     if (!id || !messagesRef.value) return
-    const saved = terminalStore.getAiScrollTop(id)
-    if (saved === undefined) return
+    if (
+      terminalStore.getAiScrollTop(id) === undefined
+      && terminalStore.getAiScrollRatio(id) === undefined
+    ) return
+
+    scrollerRef?.value?.forceUpdate?.(false)
 
     const apply = () => {
-      if (messagesRef.value) {
-        messagesRef.value.scrollTop = saved
-      }
+      applySavedScrollTop()
     }
 
     apply()
@@ -230,6 +253,26 @@ export function useAgentMode(
       setIsUserNearBottom(checkIsNearBottom())
       scrollerRef?.value?.forceUpdate?.(false)
     }, 150)
+    // 虚拟列表 / Mermaid 等在 display:none 恢复后重测高度，晚到的 layout 需再对齐一次
+    setTimeout(() => {
+      apply()
+      setIsUserNearBottom(checkIsNearBottom())
+    }, 500)
+  }
+
+  /** 切回激活 tab：在底部则贴底重试，否则按比例恢复阅读位置 */
+  const restoreScrollPositionOnTabActivate = async () => {
+    const id = currentTabId.value
+    if (!id || !messagesRef.value) return
+
+    scrollerRef?.value?.forceUpdate?.(false)
+    await nextTick()
+
+    if (terminalStore.getAiScrollNearBottom(id)) {
+      scrollToHistoryBottomWithRetry()
+    } else {
+      await restoreScrollTop()
+    }
   }
 
   /** 历史对话滚到底部（Virtual Scroller 重试 + 500ms 等待 mermaid/活图渲染后对齐） */
@@ -1575,6 +1618,7 @@ export function useAgentMode(
     updateScrollPosition,
     saveScrollTop,
     restoreScrollTop,
+    restoreScrollPositionOnTabActivate,
     scrollToHistoryBottomWithRetry,
     scrollToBottom,
     scrollToBottomIfNeeded,
