@@ -822,6 +822,7 @@ function setupWindowServices() {
   imService.setMainWindow(mainWindow)
   menuService.setMainWindow(mainWindow)
   attentionService.setMainWindow(mainWindow)
+  getBrowserBridgeService().setMainWindow(mainWindow)
   // macOS 一次性触发通知权限请求，让 dock badge 在打包版上能正常显示
   attentionService.ensurePermission()
 

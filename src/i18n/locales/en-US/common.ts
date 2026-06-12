@@ -285,5 +285,8 @@ export default {
     start: 'Start',
     stop: 'Stop',
     settings: 'Settings',
+    browserBridge: 'Browser Assistant',
+    browserBridgeChromium: 'Chromium browser',
+    browserBridgeFirefox: 'Firefox browser',
   }
 }

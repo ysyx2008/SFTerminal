@@ -28,6 +28,7 @@ native-host/host.mjs (Chrome 按连接 spawn)
 | `browserBridge:install` | 复制扩展、写 manifest、注册 Native Host |
 | `browserBridge:uninstall` | 移除 Native Host 注册与本机扩展文件 |
 | `browserBridge:openExtensionGuide` | 用对应浏览器打开扩展管理页（`chrome://` 等内部 URL） |
+| `browserBridge:connectionsChanged`（主→渲染 push） | 扩展连上/断开或 install/uninstall 后推送最新 `BrowserBridgeStatus` |
 
 ### Agent 集成
 

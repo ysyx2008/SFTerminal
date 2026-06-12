@@ -285,5 +285,8 @@ export default {
     start: '启动',
     stop: '停止',
     settings: '设置',
+    browserBridge: '浏览器助手',
+    browserBridgeChromium: 'Chromium 浏览器',
+    browserBridgeFirefox: 'Firefox 浏览器',
   }
 }

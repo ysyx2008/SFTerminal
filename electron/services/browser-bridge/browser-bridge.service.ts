@@ -1,3 +1,4 @@
+import type { BrowserWindow } from 'electron'
 import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as net from 'net'
@@ -47,6 +48,11 @@ export class BrowserBridgeService {
   private pending = new Map<string, PendingRequest>()
   private lastInstall: BrowserBridgeInstallStatus | null = null
   private started = false
+  private mainWindow: BrowserWindow | null = null
+
+  setMainWindow(win: BrowserWindow | null): void {
+    this.mainWindow = win
+  }
 
   async start(): Promise<void> {
     if (this.started) return
@@ -117,6 +123,7 @@ export class BrowserBridgeService {
     } else {
       log.info('Browser bridge installed')
     }
+    this.notifyConnectionsChanged()
     return this.lastInstall
   }
 
@@ -128,6 +135,7 @@ export class BrowserBridgeService {
     } else {
       log.info('Browser bridge uninstalled')
     }
+    this.notifyConnectionsChanged()
     return result
   }
 
@@ -271,8 +279,9 @@ export class BrowserBridgeService {
       }
     })
     socket.on('close', () => {
-      const host = this.hosts.get(socket)
-      if (host) this.hosts.delete(socket)
+      const hadHost = this.hosts.has(socket)
+      this.hosts.delete(socket)
+      if (hadHost) this.notifyConnectionsChanged()
     })
     socket.on('error', (error) => {
       log.warn('Host socket error:', error.message)
@@ -296,6 +305,7 @@ export class BrowserBridgeService {
         buffer: '',
       })
       log.info(`Host registered: ${origin}`)
+      this.notifyConnectionsChanged()
       return
     }
 
@@ -314,6 +324,11 @@ export class BrowserBridgeService {
     this.pending.delete(result.id)
     if (result.success) pending.resolve(result.data)
     else pending.reject(new Error(result.error || 'Browser bridge command failed'))
+  }
+
+  private notifyConnectionsChanged(): void {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return
+    this.mainWindow.webContents.send('browserBridge:connectionsChanged', this.getStatus())
   }
 }
 

@@ -4,6 +4,9 @@ import { useI18n } from 'vue-i18n'
 import { Copy, RefreshCw } from 'lucide-vue-next'
 import {
   BROWSER_BRIDGE_FIREFOX_AMO_LISTING_URL,
+  isBrowserBridgeComponentsInstalled,
+  isChromiumBridgeConnection,
+  isFirefoxBridgeConnection,
   type BrowserBridgeStatus,
 } from '@shared/types/browser-bridge'
 
@@ -43,31 +46,11 @@ function parentFolder(filePath: string): string {
   return idx > 0 ? filePath.slice(0, idx) : filePath
 }
 
-function isChromiumConnection(conn: BrowserBridgeStatus['connections'][number]): boolean {
-  return (
-    conn.browser === 'chrome'
-    || conn.browser === 'edge'
-    || conn.origin.startsWith('chrome-extension://')
-  )
-}
-
-function isFirefoxConnection(conn: BrowserBridgeStatus['connections'][number]): boolean {
-  return (
-    conn.browser === 'firefox'
-    || conn.origin.startsWith('moz-extension://')
-    || (conn.origin.endsWith('.json') && /Mozilla\/NativeMessagingHosts/i.test(conn.origin))
-  )
-}
-
-const componentsInstalled = computed(() => {
-  const install = status.value?.install
-  if (!install) return false
-  return Boolean(install.chromiumExtensionPath) && install.registeredBrowsers.length > 0
-})
+const componentsInstalled = computed(() => isBrowserBridgeComponentsInstalled(status.value?.install))
 
 const connections = computed(() => status.value?.connections ?? [])
-const chromiumConnected = computed(() => connections.value.some(isChromiumConnection))
-const firefoxConnected = computed(() => connections.value.some(isFirefoxConnection))
+const chromiumConnected = computed(() => connections.value.some(isChromiumBridgeConnection))
+const firefoxConnected = computed(() => connections.value.some(isFirefoxBridgeConnection))
 const anyConnected = computed(() => chromiumConnected.value || firefoxConnected.value)
 
 function flashActionMsg(msg: string) {
@@ -196,9 +179,17 @@ async function startLoadFirefox() {
   flashLoadReady('firefox')
 }
 
-onMounted(refreshStatus)
+let unsubConnections: (() => void) | null = null
+
+onMounted(() => {
+  void refreshStatus()
+  unsubConnections = window.electronAPI.browserBridge.onConnectionsChanged((next) => {
+    status.value = next
+  })
+})
 
 onUnmounted(() => {
+  unsubConnections?.()
   if (actionMsgTimer) clearTimeout(actionMsgTimer)
   if (copiedPathTimer) clearTimeout(copiedPathTimer)
   if (loadReadyTimer) clearTimeout(loadReadyTimer)

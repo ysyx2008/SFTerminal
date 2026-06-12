@@ -73,17 +73,42 @@ export interface BrowserBridgeInstallStatus {
   errors: string[]
 }
 
+export interface BrowserBridgeConnection {
+  browser: BrowserBridgeBrowser
+  origin: string
+  state: BrowserBridgeConnectionState
+}
+
 export interface BrowserBridgeStatus {
   gatewayRunning: boolean
   port: number | null
-  connections: Array<{
-    browser: BrowserBridgeBrowser
-    origin: string
-    state: BrowserBridgeConnectionState
-  }>
+  connections: BrowserBridgeConnection[]
   install: BrowserBridgeInstallStatus | null
   extensionIds: {
     chromium: string
     firefox: string
   }
+}
+
+export function isBrowserBridgeComponentsInstalled(
+  install: BrowserBridgeInstallStatus | null | undefined,
+): boolean {
+  if (!install) return false
+  return Boolean(install.chromiumExtensionPath) && install.registeredBrowsers.length > 0
+}
+
+export function isChromiumBridgeConnection(conn: BrowserBridgeConnection): boolean {
+  return (
+    conn.browser === 'chrome'
+    || conn.browser === 'edge'
+    || conn.origin.startsWith('chrome-extension://')
+  )
+}
+
+export function isFirefoxBridgeConnection(conn: BrowserBridgeConnection): boolean {
+  return (
+    conn.browser === 'firefox'
+    || conn.origin.startsWith('moz-extension://')
+    || (conn.origin.endsWith('.json') && /Mozilla\/NativeMessagingHosts/i.test(conn.origin))
+  )
 }

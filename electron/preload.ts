@@ -3219,6 +3219,13 @@ const electronAPI = {
       ipcRenderer.invoke('browserBridge:uninstall') as Promise<{ errors: string[] }>,
     openExtensionGuide: (browser: import('@shared/types/browser-bridge').BrowserBridgeBrowser) =>
       ipcRenderer.invoke('browserBridge:openExtensionGuide', browser),
+    onConnectionsChanged: (callback: (status: import('@shared/types/browser-bridge').BrowserBridgeStatus) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, status: import('@shared/types/browser-bridge').BrowserBridgeStatus) => callback(status)
+      ipcRenderer.on('browserBridge:connectionsChanged', handler)
+      return () => {
+        ipcRenderer.removeListener('browserBridge:connectionsChanged', handler)
+      }
+    },
   }
 }
 
