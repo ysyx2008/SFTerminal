@@ -5,6 +5,7 @@ import * as path from 'path'
 import {
   BROWSER_BRIDGE_CHROMIUM_EXTENSION_ID,
   BROWSER_BRIDGE_FIREFOX_EXTENSION_ID,
+  type BrowserBridgeAttachTarget,
   type BrowserBridgeBrowser,
   type BrowserBridgeCommandResult,
   type BrowserBridgeInstallStatus,
@@ -13,7 +14,15 @@ import {
 import { createLogger } from '../../utils/logger'
 import { getBridgeRoot, getExtensionGuideUrls, installBrowserBridge, detectInstallStatus, uninstallBrowserBridge, writeBridgePointer } from './installer'
 import { openBrowserInternalUrl } from './browser-launcher'
-import { inferBrowserFromOrigin, isCommandResult, parseGatewayLines, serializeGatewayLine } from './protocol'
+import {
+  inferBrowserFromOrigin,
+  isChromiumOrigin,
+  isCommandResult,
+  isFirefoxOrigin,
+  normalizeAttachTargetInput,
+  parseGatewayLines,
+  serializeGatewayLine,
+} from './protocol'
 
 const log = createLogger('BrowserBridgeService')
 
@@ -150,12 +159,57 @@ export class BrowserBridgeService {
     openBrowserInternalUrl(browser, url)
   }
 
+  resolveConnection(browserInput: unknown = 'auto'): {
+    origin: string
+    browserTarget: BrowserBridgeAttachTarget
+  } {
+    const requested = normalizeAttachTargetInput(browserInput)
+    const all = [...this.hosts.values()]
+    const firefoxHosts = all.filter((h) => isFirefoxOrigin(h.origin))
+    const chromiumHosts = all.filter((h) => isChromiumOrigin(h.origin))
+
+    if (!firefoxHosts.length && !chromiumHosts.length) {
+      throw new Error(
+        '浏览器扩展未连接。请在 SailFish 设置 → 浏览器助手中安装组件，并在 Chrome/Edge/Firefox 中加载扩展。',
+      )
+    }
+
+    if (requested === 'auto') {
+      if (firefoxHosts.length && chromiumHosts.length) {
+        throw new Error(
+          'Chromium 与 Firefox 均已连接。请在 browser_launch 中指定 browser: "firefox" 或 "chromium"（用户说火狐/Firefox 用 firefox，Chrome/谷歌浏览器用 chromium）。',
+        )
+      }
+      if (firefoxHosts.length) {
+        return { origin: firefoxHosts[0].origin, browserTarget: 'firefox' }
+      }
+      return { origin: chromiumHosts[0].origin, browserTarget: 'chromium' }
+    }
+
+    if (requested === 'firefox') {
+      if (!firefoxHosts.length) {
+        throw new Error('Firefox 扩展未连接。请在 Firefox about:debugging 中加载 SailFish 浏览器助手扩展。')
+      }
+      return { origin: firefoxHosts[0].origin, browserTarget: 'firefox' }
+    }
+
+    if (!chromiumHosts.length) {
+      throw new Error(
+        'Chromium 浏览器扩展未连接。请在 Chrome/Edge 等 Chromium 浏览器的扩展页加载 SailFish 浏览器助手。',
+      )
+    }
+    if (chromiumHosts.length > 1) {
+      log.warn(`Multiple Chromium connections (${chromiumHosts.length}); using first`)
+    }
+    return { origin: chromiumHosts[0].origin, browserTarget: 'chromium' }
+  }
+
   async sendCommand(
     action: string,
     payload: Record<string, unknown> = {},
-    options: { origin?: string; timeoutMs?: number } = {},
+    options: { origin?: string; target?: BrowserBridgeAttachTarget; timeoutMs?: number } = {},
   ): Promise<unknown> {
-    const host = this.pickHost(options.origin)
+    const host = this.pickHost(options)
     if (!host) {
       throw new Error(
         'Browser extension not connected. Enable Browser Assistant in SailFish Settings and load the extension in Chrome/Edge/Firefox.',
@@ -187,12 +241,21 @@ export class BrowserBridgeService {
     })
   }
 
-  private pickHost(preferredOrigin?: string): HostConnection | undefined {
+  private pickHost(options: {
+    origin?: string
+    target?: BrowserBridgeAttachTarget
+  } = {}): HostConnection | undefined {
     const all = [...this.hosts.values()]
     if (!all.length) return undefined
-    if (preferredOrigin) {
-      const match = all.find((h) => h.origin === preferredOrigin)
+    if (options.origin) {
+      const match = all.find((h) => h.origin === options.origin)
       if (match) return match
+    }
+    if (options.target === 'firefox') {
+      return all.find((h) => isFirefoxOrigin(h.origin))
+    }
+    if (options.target === 'chromium') {
+      return all.find((h) => isChromiumOrigin(h.origin))
     }
     return all[0]
   }

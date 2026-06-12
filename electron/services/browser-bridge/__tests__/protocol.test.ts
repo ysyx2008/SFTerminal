@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  attachTargetLabel,
   inferBrowserFromOrigin,
   isCommand,
   isCommandResult,
+  normalizeAttachTargetInput,
   parseGatewayLines,
   serializeGatewayLine,
 } from '../protocol'
@@ -32,5 +34,19 @@ describe('browser-bridge protocol', () => {
   it('inferBrowserFromOrigin detects firefox', () => {
     expect(inferBrowserFromOrigin('moz-extension://abc/')).toBe('firefox')
     expect(inferBrowserFromOrigin('chrome-extension://abc/')).toBe('chrome')
+  })
+
+  it('normalizeAttachTargetInput maps browser aliases', () => {
+    expect(normalizeAttachTargetInput(undefined)).toBe('auto')
+    expect(normalizeAttachTargetInput('auto')).toBe('auto')
+    expect(normalizeAttachTargetInput('firefox')).toBe('firefox')
+    expect(normalizeAttachTargetInput('chrome')).toBe('chromium')
+    expect(normalizeAttachTargetInput('edge')).toBe('chromium')
+    expect(normalizeAttachTargetInput('chromium')).toBe('chromium')
+  })
+
+  it('attachTargetLabel returns user-facing names', () => {
+    expect(attachTargetLabel('firefox')).toContain('Firefox')
+    expect(attachTargetLabel('chromium')).toContain('Chromium')
   })
 })

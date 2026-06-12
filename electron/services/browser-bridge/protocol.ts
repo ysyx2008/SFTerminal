@@ -1,4 +1,8 @@
-import type { BrowserBridgeCommand, BrowserBridgeCommandResult } from '@shared/types/browser-bridge'
+import type {
+  BrowserBridgeAttachTarget,
+  BrowserBridgeCommand,
+  BrowserBridgeCommandResult,
+} from '@shared/types/browser-bridge'
 
 export function parseGatewayLines(buffer: string): { messages: unknown[]; rest: string } {
   const messages: unknown[] = []
@@ -40,3 +44,31 @@ export function inferBrowserFromOrigin(origin: string): 'chrome' | 'edge' | 'fir
   // Edge and Chrome share chrome-extension:// scheme; disambiguate via user-agent not available here
   return 'chrome'
 }
+
+export function isFirefoxOrigin(origin: string): boolean {
+  return origin.startsWith('moz-extension://')
+}
+
+export function isChromiumOrigin(origin: string): boolean {
+  return origin.startsWith('chrome-extension://')
+}
+
+export function normalizeAttachTargetInput(input: unknown): BrowserBridgeAttachTarget | 'auto' {
+  if (input === undefined || input === null || input === '') return 'auto'
+  const value = String(input).toLowerCase()
+  if (value === 'auto') return 'auto'
+  if (value === 'firefox' || value === 'ff') return 'firefox'
+  if (value === 'chromium' || value === 'chrome' || value === 'edge') return 'chromium'
+  return 'auto'
+}
+
+export function attachTargetLabel(target: BrowserBridgeAttachTarget): string {
+  return target === 'firefox' ? 'Firefox' : 'Chromium（Chrome/Edge 等）'
+}
+
+export function attachTargetFromOrigin(origin: string): BrowserBridgeAttachTarget | null {
+  if (isFirefoxOrigin(origin)) return 'firefox'
+  if (isChromiumOrigin(origin)) return 'chromium'
+  return null
+}
+

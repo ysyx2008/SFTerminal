@@ -32,7 +32,8 @@ native-host/host.mjs (Chrome 按连接 spawn)
 ### Agent 集成
 
 - `browser_launch` 增加 `attach: true` 或 `mode: 'attach'`：连接用户浏览器，不启动 Playwright
-- attach 会话存于 `bridge-session.ts`，与 Playwright `session.ts` 并行
+- `browser_launch.browser`：`auto` | `firefox` | `chromium`（`chrome`/`edge` 别名）；双开时必须显式指定；会话绑定后后续 `browser_*` 走同一路由
+- attach 会话存于 `bridge-session.ts`（含 `origin` + `browserTarget`），与 Playwright `session.ts` 并行
 - 未 attach 时行为不变
 
 ### Native Host 名

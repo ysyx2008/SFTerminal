@@ -2,12 +2,18 @@
  * Attach 模式会话 — 通过浏览器扩展操作用户已打开的 Chrome/Edge/Firefox
  */
 
-import type { BrowserBridgeRefMap, BrowserBridgeTabInfo } from '@shared/types/browser-bridge'
+import type {
+  BrowserBridgeAttachTarget,
+  BrowserBridgeRefMap,
+  BrowserBridgeTabInfo,
+} from '@shared/types/browser-bridge'
 import { getBrowserBridgeService } from '../../../browser-bridge/browser-bridge.service'
 
 export interface BridgeSession {
   mode: 'attach'
   ptyId: string
+  browserTarget: BrowserBridgeAttachTarget
+  origin: string
   createdAt: number
   lastActivityAt: number
   refs: BrowserBridgeRefMap
@@ -24,12 +30,18 @@ export function hasBridgeSession(ptyId: string): boolean {
   return sessions.has(ptyId)
 }
 
-export async function createBridgeSession(ptyId: string): Promise<BridgeSession> {
+export async function createBridgeSession(
+  ptyId: string,
+  browserInput?: unknown,
+): Promise<BridgeSession> {
   const bridge = getBrowserBridgeService()
-  await bridge.sendCommand('ping', {})
+  const { origin, browserTarget } = bridge.resolveConnection(browserInput)
+  await bridge.sendCommand('ping', {}, { origin })
   const session: BridgeSession = {
     mode: 'attach',
     ptyId,
+    browserTarget,
+    origin,
     createdAt: Date.now(),
     lastActivityAt: Date.now(),
     refs: {},
@@ -48,17 +60,21 @@ export function touchBridgeSession(ptyId: string): void {
   if (session) session.lastActivityAt = Date.now()
 }
 
-export async function bridgeListTabs(): Promise<BrowserBridgeTabInfo[]> {
-  const bridge = getBrowserBridgeService()
-  const tabs = await bridge.sendCommand('list_tabs', {})
+export async function bridgeListTabs(ptyId: string): Promise<BrowserBridgeTabInfo[]> {
+  const tabs = await bridgeSend(ptyId, 'list_tabs', {})
   return tabs as BrowserBridgeTabInfo[]
 }
 
 export async function bridgeSend(
+  ptyId: string,
   action: string,
   payload: Record<string, unknown> = {},
 ): Promise<unknown> {
-  return getBrowserBridgeService().sendCommand(action, payload)
+  const session = sessions.get(ptyId)
+  if (!session) {
+    throw new Error('浏览器未连接。请先 browser_launch attach 模式。')
+  }
+  return getBrowserBridgeService().sendCommand(action, payload, { origin: session.origin })
 }
 
 export function resolveBridgeRef(session: BridgeSession, ref: string): { ref: string } {

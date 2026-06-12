@@ -6,6 +6,7 @@ import type { ToolResult } from '../../types'
 import type { ToolExecutorConfig } from '../../tool-executor'
 import type { BrowserBridgeRefMap, BrowserBridgeSnapshotResult } from '@shared/types/browser-bridge'
 import { getBrowserBridgeService } from '../../../browser-bridge/browser-bridge.service'
+import { attachTargetLabel } from '../../../browser-bridge/protocol'
 import {
   bridgeListTabs,
   bridgeSend,
@@ -41,6 +42,7 @@ export async function bridgeBrowserLaunch(
   options: { auto?: boolean } = {},
 ): Promise<ToolResult> {
   const url = args.url as string | undefined
+  const browserArg = args.browser
   const autoLabel = options.auto ? '（自动检测到浏览器助手已连接）' : ''
   executor.addStep({
     type: 'tool_call',
@@ -53,12 +55,18 @@ export async function bridgeBrowserLaunch(
   })
 
   try {
-    await createBridgeSession(ptyId)
+    const session = await createBridgeSession(ptyId, browserArg)
+    const browserName = attachTargetLabel(session.browserTarget)
     let output = options.auto
-      ? '已自动连接到您的浏览器（attach 模式，复用当前登录态与标签页）'
-      : '已连接到您的浏览器（attach 模式，复用当前登录态与标签页）'
+      ? `已自动连接到 ${browserName}（attach 模式，复用当前登录态与标签页）`
+      : `已连接到 ${browserName}（attach 模式，复用当前登录态与标签页）`
+    const tabs = await bridgeListTabs(ptyId)
+    const activeTab = tabs.find((t) => t.active)
+    if (activeTab) {
+      output += `\n当前标签：${activeTab.title || '(无标题)'} — ${activeTab.url}`
+    }
     if (url) {
-      const nav = (await bridgeSend('goto', { url })) as { title?: string; url?: string }
+      const nav = (await bridgeSend(ptyId, 'goto', { url })) as { title?: string; url?: string }
       output += `\n已打开 ${nav.url || url}\n标题: ${nav.title || ''}`
     }
     output += '\n\n💡 使用 browser_snapshot 获取页面元素和 ref 编号'
@@ -91,13 +99,13 @@ export async function bridgeBrowserSnapshot(
   try {
     const session = getBridgeSession(ptyId)
     if (!session) throw new Error('浏览器未连接。请先 browser_launch attach 模式。')
-    const data = (await bridgeSend('snapshot', {
+    const data = (await bridgeSend(ptyId, 'snapshot', {
       interactive: args.interactive !== false,
       maxDepth: args.max_depth,
     })) as BrowserBridgeSnapshotResult
     session.refs = data.refs || {}
     touchBridgeSession(ptyId)
-    const tabs = await bridgeListTabs()
+    const tabs = await bridgeListTabs(ptyId)
     const tabsHint = tabs.length > 1 ? `\n(当前窗口 ${tabs.length} 个标签页)` : ''
     const output = formatSnapshotOutput(data, tabsHint)
     executor.addStep({ type: 'tool_result', content: '快照已获取', toolName: 'browser_snapshot' })
@@ -127,7 +135,7 @@ export async function bridgeBrowserGoto(
     const session = getBridgeSession(ptyId)
     if (!session) throw new Error('浏览器未连接')
     session.refs = {}
-    const nav = (await bridgeSend('goto', { url })) as { title?: string; url?: string }
+    const nav = (await bridgeSend(ptyId, 'goto', { url })) as { title?: string; url?: string }
     touchBridgeSession(ptyId)
     let output = `已导航到 ${nav.url || url}\n标题: ${nav.title || ''}`
     const snap = await bridgeBrowserSnapshot(ptyId, { interactive: true }, executor)
@@ -162,7 +170,7 @@ export async function bridgeBrowserClick(
     const payload = selector.startsWith('@')
       ? resolveBridgeRef(session, selector)
       : { selector }
-    await bridgeSend('click', payload)
+    await bridgeSend(ptyId, 'click', payload)
     touchBridgeSession(ptyId)
     executor.addStep({ type: 'tool_result', content: `已点击 ${selector}`, toolName: 'browser_click' })
     return { success: true, output: `已点击 ${selector}` }
@@ -191,7 +199,7 @@ export async function bridgeBrowserType(
     const session = getBridgeSession(ptyId)
     if (!session) throw new Error('浏览器未连接')
     const base = selector.startsWith('@') ? resolveBridgeRef(session, selector) : { selector }
-    await bridgeSend('type', {
+    await bridgeSend(ptyId, 'type', {
       ...base,
       text,
       clear: args.clear_first !== false,
@@ -216,7 +224,7 @@ export async function bridgeBrowserListTabs(
     riskLevel: 'safe',
   })
   try {
-    const tabs = await bridgeListTabs()
+    const tabs = await bridgeListTabs(ptyId)
     const lines = tabs.map(
       (t, i) => `[${i}]${t.active ? ' *' : ''} ${t.title || '(无标题)'} — ${t.url}`,
     )
@@ -244,7 +252,7 @@ export async function bridgeBrowserSwitchTab(
   try {
     const session = getBridgeSession(ptyId)
     if (!session) throw new Error('浏览器未连接')
-    const tab = (await bridgeSend('switch_tab', { index })) as { title?: string; url?: string }
+    const tab = (await bridgeSend(ptyId, 'switch_tab', { index })) as { title?: string; url?: string }
     session.activeTabIndex = index
     session.refs = {}
     touchBridgeSession(ptyId)
@@ -270,7 +278,7 @@ export async function bridgeBrowserScroll(
   if (direction === 'top') y = -999999
   if (direction === 'bottom') y = 999999
   try {
-    await bridgeSend('scroll', { y })
+    await bridgeSend(ptyId, 'scroll', { y })
     return { success: true, output: `已滚动 ${direction}` }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : '滚动失败'
@@ -283,7 +291,7 @@ export async function bridgeBrowserGetContent(
   args: Record<string, unknown>,
 ): Promise<ToolResult> {
   try {
-    const data = (await bridgeSend('get_content', {
+    const data = (await bridgeSend(ptyId, 'get_content', {
       mode: args.format === 'html' ? 'html' : 'text',
     })) as { content?: string }
     return { success: true, output: data.content || '' }
@@ -301,7 +309,7 @@ export async function bridgeBrowserEvaluate(
   if (!script) return { success: false, output: '', error: '缺少 script 参数' }
   try {
     touchBridgeSession(ptyId)
-    const data = (await bridgeSend('evaluate', { expression: script })) as { result?: unknown } | undefined
+    const data = (await bridgeSend(ptyId, 'evaluate', { expression: script })) as { result?: unknown } | undefined
     if (data == null || typeof data !== 'object') {
       return {
         success: false,
@@ -374,7 +382,7 @@ export async function ensureBridgeSessionIfPreferred(
   if (getBridgeSession(ptyId)) return true
   if (!shouldPreferAttach(args)) return false
   try {
-    await createBridgeSession(ptyId)
+    await createBridgeSession(ptyId, args.browser)
     return true
   } catch {
     return false

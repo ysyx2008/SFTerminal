@@ -10,6 +10,16 @@ export const BROWSER_BRIDGE_FIREFOX_EXTENSION_ID = 'sailfish-browser-bridge@yush
 
 export type BrowserBridgeBrowser = 'chrome' | 'edge' | 'firefox' | 'unknown'
 
+/** attach 路由目标：Chromium 系（Chrome/Edge/Arc 等）与 Firefox 两路 */
+export type BrowserBridgeAttachTarget = 'firefox' | 'chromium'
+
+/** browser_launch 的 browser 参数（chrome/edge 归并为 chromium） */
+export type BrowserBridgeAttachTargetInput =
+  | BrowserBridgeAttachTarget
+  | 'auto'
+  | 'chrome'
+  | 'edge'
+
 export type BrowserBridgeConnectionState = 'disconnected' | 'connected' | 'ready'
 
 export interface BrowserBridgeTabInfo {

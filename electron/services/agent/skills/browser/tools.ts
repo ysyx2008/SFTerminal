@@ -14,6 +14,8 @@ export const browserTools: ToolDefinition[] = [
 **默认策略**：若 SailFish 浏览器助手已连接（Chrome/Edge/Firefox 扩展在线），**自动 attach** 到用户当前浏览器，复用登录态与标签页，无需传参。
 仅当需要独立窗口、无头模式、**截图（browser_screenshot）** 或 profile 时才用 launch 模式。
 
+**双浏览器**：Chromium（Chrome/Edge）与 Firefox 可同时连接。仅连一个时 \`browser\` 可省略（auto）；两个都连时必须指定 \`browser: "firefox"\` 或 \`"chromium"\`（用户说火狐/Firefox → firefox，Chrome/谷歌 → chromium）。切换浏览器：\`browser_close\` 后重新 \`browser_launch\` 并指定 \`browser\`。
+
 **两种模式**：
 - **attach（优先）**：浏览器助手已连接时自动启用；也可显式 \`{ "attach": true }\` 或 \`{ "mode": "attach" }\`
 - **launch（Playwright 独立窗口）**：\`{ "mode": "launch" }\` 或 \`{ "attach": false }\`；需要 headless / profile / **截图** 时自动或显式使用
@@ -59,6 +61,11 @@ export const browserTools: ToolDefinition[] = [
           profile: {
             type: 'string',
             description: '登录配置名称。首次使用会创建新配置，关闭时自动保存登录状态；再次使用会恢复登录状态'
+          },
+          browser: {
+            type: 'string',
+            enum: ['auto', 'firefox', 'chromium', 'chrome', 'edge'],
+            description: 'attach 时选择浏览器：auto（默认，仅一个连接时自动）、firefox、chromium（含 chrome/edge）'
           }
         },
         required: []
