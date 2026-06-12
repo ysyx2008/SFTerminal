@@ -39,10 +39,18 @@ export function isCommand(value: unknown): value is BrowserBridgeCommand {
   return typeof obj.id === 'string' && typeof obj.action === 'string'
 }
 
+export function isLegacyFirefoxManifestOrigin(origin: string): boolean {
+  return origin.endsWith('.json') && /Mozilla\/NativeMessagingHosts/i.test(origin)
+}
+
+export function isFirefoxHostOrigin(origin: string): boolean {
+  return isFirefoxOrigin(origin) || isLegacyFirefoxManifestOrigin(origin)
+}
+
 export function inferBrowserFromOrigin(origin: string): 'chrome' | 'edge' | 'firefox' | 'unknown' {
-  if (origin.includes('moz-extension://')) return 'firefox'
-  // Edge and Chrome share chrome-extension:// scheme; disambiguate via user-agent not available here
-  return 'chrome'
+  if (isFirefoxHostOrigin(origin)) return 'firefox'
+  if (origin.includes('chrome-extension://')) return 'chrome'
+  return 'unknown'
 }
 
 export function isFirefoxOrigin(origin: string): boolean {

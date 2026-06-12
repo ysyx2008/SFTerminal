@@ -18,7 +18,7 @@ import {
   inferBrowserFromOrigin,
   isChromiumOrigin,
   isCommandResult,
-  isFirefoxOrigin,
+  isFirefoxHostOrigin,
   normalizeAttachTargetInput,
   parseGatewayLines,
   serializeGatewayLine,
@@ -165,7 +165,7 @@ export class BrowserBridgeService {
   } {
     const requested = normalizeAttachTargetInput(browserInput)
     const all = [...this.hosts.values()]
-    const firefoxHosts = all.filter((h) => isFirefoxOrigin(h.origin))
+    const firefoxHosts = all.filter((h) => isFirefoxHostOrigin(h.origin))
     const chromiumHosts = all.filter((h) => isChromiumOrigin(h.origin))
 
     if (!firefoxHosts.length && !chromiumHosts.length) {
@@ -252,7 +252,7 @@ export class BrowserBridgeService {
       if (match) return match
     }
     if (options.target === 'firefox') {
-      return all.find((h) => isFirefoxOrigin(h.origin))
+      return all.find((h) => isFirefoxHostOrigin(h.origin))
     }
     if (options.target === 'chromium') {
       return all.find((h) => isChromiumOrigin(h.origin))

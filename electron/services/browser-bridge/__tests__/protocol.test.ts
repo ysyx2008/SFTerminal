@@ -34,6 +34,11 @@ describe('browser-bridge protocol', () => {
   it('inferBrowserFromOrigin detects firefox', () => {
     expect(inferBrowserFromOrigin('moz-extension://abc/')).toBe('firefox')
     expect(inferBrowserFromOrigin('chrome-extension://abc/')).toBe('chrome')
+    expect(
+      inferBrowserFromOrigin(
+        '/Users/me/Library/Application Support/Mozilla/NativeMessagingHosts/com.sailfish.browser.json',
+      ),
+    ).toBe('firefox')
   })
 
   it('normalizeAttachTargetInput maps browser aliases', () => {
