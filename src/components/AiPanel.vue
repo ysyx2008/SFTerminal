@@ -8,6 +8,7 @@ import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef, 
 import { useI18n } from 'vue-i18n'
 import { Upload, Trash2, X, Search, Loader2, HelpCircle, ChevronDown, ChevronUp, MoreHorizontal, Shuffle } from 'lucide-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
+import type { DynamicScrollerExposed } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
@@ -87,7 +88,7 @@ const handleClose = () => {
 
 // Refs
 const messagesRef = ref<HTMLDivElement | null>(null)
-const scrollerRef = ref<InstanceType<typeof DynamicScroller> | null>(null)
+const scrollerRef = ref<DynamicScrollerExposed | null>(null)
 const composerRef = ref<InstanceType<typeof AiComposer> | null>(null)
 const secureInputValue = ref('')
 
@@ -1972,8 +1973,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           ref="scrollerRef"
           :items="flattenedItems"
           :min-item-size="36"
-          :buffer="800"
-          :prerender="10"
           key-field="id"
           class="ai-messages"
           :class="{ 'standalone-mode': isStandaloneAssistant, 'custom-avatar': isStandaloneAssistant && configStore.agentAvatar }"

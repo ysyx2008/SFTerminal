@@ -146,6 +146,8 @@ export interface TerminalTab {
   aiScrollTop?: number
   /** 滚动比例 0–1（scrollTop / maxScroll），虚拟列表重测高度后比绝对像素更稳 */
   aiScrollRatio?: number
+  /** vue-virtual-scroller v3 高度缓存，切 tab 后 restoreCache 避免重测闪烁 */
+  aiScrollCache?: { keys: (string | number)[]; sizes: Array<number | null> }
   // Agent 状态（每个终端独立）
   agentState?: AgentState
   // 上传的文档（每个终端独立）
@@ -1649,6 +1651,18 @@ export const useTerminalStore = defineStore('terminal', () => {
     return tab?.aiScrollRatio
   }
 
+  function setAiScrollCache(tabId: string, cache: TerminalTab['aiScrollCache']): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (tab && cache) {
+      tab.aiScrollCache = cache
+    }
+  }
+
+  function getAiScrollCache(tabId: string): TerminalTab['aiScrollCache'] {
+    const tab = tabs.value.find(t => t.id === tabId)
+    return tab?.aiScrollCache
+  }
+
   /**
    * 请求终端获得焦点
    */
@@ -2066,6 +2080,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     // 从历史恢复视为新视图：清除已存滚动，由 AiPanel 滚到最新一条
     delete tab.aiScrollTop
     delete tab.aiScrollRatio
+    delete tab.aiScrollCache
     // 确保从欢迎页首次打开历史时，AiPanel 能立即感知 steps 变化
     tabs.value = [...tabs.value]
   }
@@ -2742,6 +2757,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     getAiScrollTop,
     setAiScrollRatio,
     getAiScrollRatio,
+    setAiScrollCache,
+    getAiScrollCache,
     focusTerminal,
     clearPendingFocus,
     // Agent 状态管理

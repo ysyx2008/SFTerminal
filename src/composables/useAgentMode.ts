@@ -10,6 +10,7 @@ import { useConfigStore } from '../stores/config'
 import { useCanvasStore } from '../stores/canvas'
 import type { ExecutionMode, AttachmentInfo, AgentRecord, AgentHistorySummary } from '@shared/types'
 import type { AgentStep, AgentState } from '../stores/terminal'
+import type { CacheSnapshot, DynamicScrollerExposed } from 'vue-virtual-scroller'
 import { createLogger } from '../utils/logger'
 import { useTts } from './useTts'
 import { shouldShowToolResultStep } from '../utils/tool-display'
@@ -28,6 +29,14 @@ function getLocalSystemInfo() {
 
 const SCROLL_THRESHOLD = 100
 const SCROLL_THROTTLE_MS = 1000
+
+function readCacheSnapshot(scroller: DynamicScrollerExposed | null | undefined): CacheSnapshot | undefined {
+  if (!scroller?.cacheSnapshot) return undefined
+  const snap = scroller.cacheSnapshot
+  return typeof snap === 'object' && snap !== null && 'value' in snap
+    ? (snap as { value: CacheSnapshot }).value
+    : snap as CacheSnapshot
+}
 
 export interface AgentTaskGroup {
   id: string
@@ -71,7 +80,7 @@ export function useAgentMode(
     getAttachments: () => AttachmentInfo[]  // 获取当前已上传文件的元信息
     clearAttachments: () => void            // 清空已上传文件列表
   },
-  scrollerRef?: Ref<{ scrollToBottom: () => void; forceUpdate?: (clear?: boolean) => void } | null>,
+  scrollerRef?: Ref<DynamicScrollerExposed | null>,
   tabActive?: Ref<boolean | undefined>
 ) {
   const { t } = useI18n()
@@ -210,6 +219,18 @@ export function useAgentMode(
       terminalStore.setAiScrollRatio(id, el.scrollTop / maxScroll)
     }
     setIsUserNearBottom(checkIsNearBottom())
+
+    const cache = readCacheSnapshot(scrollerRef?.value)
+    if (cache?.keys.length) {
+      terminalStore.setAiScrollCache(id, cache)
+    }
+  }
+
+  const restoreScrollerCache = (): boolean => {
+    const id = currentTabId.value
+    const snapshot = id ? terminalStore.getAiScrollCache(id) : undefined
+    if (!snapshot || !scrollerRef?.value?.restoreCache) return false
+    return scrollerRef.value.restoreCache(snapshot)
   }
 
   const applySavedScrollTop = () => {
@@ -260,11 +281,12 @@ export function useAgentMode(
     }, 500)
   }
 
-  /** 切回激活 tab：在底部则贴底重试，否则按比例恢复阅读位置 */
+  /** 切回激活 tab：先 restoreCache 再恢复滚动，减少 v3 重测高度闪烁 */
   const restoreScrollPositionOnTabActivate = async () => {
     const id = currentTabId.value
     if (!id || !messagesRef.value) return
 
+    restoreScrollerCache()
     scrollerRef?.value?.forceUpdate?.(false)
     await nextTick()
 
