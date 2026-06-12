@@ -72,7 +72,7 @@ export function useAgentMode(
     clearAttachments: () => void            // 清空已上传文件列表
   },
   scrollerRef?: Ref<{ scrollToBottom: () => void; forceUpdate?: (clear?: boolean) => void } | null>,
-  panelVisible?: Ref<boolean | undefined>
+  tabActive?: Ref<boolean | undefined>
 ) {
   const { t } = useI18n()
   const terminalStore = useTerminalStore()
@@ -471,8 +471,8 @@ export function useAgentMode(
     contentObservedTarget = wrapper
     prevWrapperHeight = wrapper.offsetHeight
     contentResizeObserver = new ResizeObserver((entries) => {
-      // 非当前可见面板不跟随贴底，避免后台 tab 改写 scrollTop、切回时与已存位置不一致
-      if (panelVisible?.value === false) return
+      // 非当前激活 tab 不跟随贴底，避免后台 tab 改写 scrollTop、切回时与已存位置不一致
+      if (tabActive?.value === false) return
       const el = messagesRef.value
       if (!el) return
       const newHeight = entries[0]?.contentRect.height ?? wrapper.offsetHeight

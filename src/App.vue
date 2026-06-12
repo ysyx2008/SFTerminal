@@ -1138,17 +1138,21 @@ onUnmounted(() => {
           class="main-surface"
           @back="backFromSmartPatrol"
         />
-        <!-- 有 tab 即挂载工作台；v-show 切换可见性，回首页不卸载 AiPanel / 终端 -->
-        <template v-for="tab in terminalStore.tabs" :key="tab.id">
+        <!-- 有 tab 即挂载工作台；外层原生 div + v-show 控制显隐（component 上 v-show 的 scoped 样式不可靠） -->
+        <div
+          v-for="tab in terminalStore.tabs"
+          :key="tab.id"
+          v-show="showTabWorkbench && tab.id === terminalStore.activeTabId"
+          class="tab-view main-surface"
+        >
           <component
             :is="resolveWorkbenchRenderer(tab.type)"
-            v-show="showTabWorkbench && tab.id === terminalStore.activeTabId"
             :ref="(el: any) => { tabViewRefs[tab.id] = el }"
             :tab="tab"
             :is-active="showTabWorkbench && tab.id === terminalStore.activeTabId"
-            class="tab-view main-surface"
+            class="tab-view-inner"
           />
-        </template>
+        </div>
       </main>
     </div>
 
@@ -1450,6 +1454,14 @@ onUnmounted(() => {
 /* 每个 Tab 的独立容器 */
 .tab-view {
   overflow: hidden;
+}
+
+.tab-view-inner {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
 /* 统一系统加载进度条（后端启动 + 知识库重建共用） */

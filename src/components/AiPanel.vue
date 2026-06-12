@@ -4,7 +4,7 @@
  * 重构版本：使用 composables 模块化管理逻辑
  * 每个 tab 独立实例，通过 tabId prop 绑定
  */
-import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef, nextTick } from 'vue'
+import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef, nextTick, withDefaults } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Upload, Trash2, X, Search, Loader2, HelpCircle, ChevronDown, ChevronUp, MoreHorizontal, Shuffle } from 'lucide-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
@@ -47,10 +47,16 @@ import {
 import type { AgentRecord, AgentHistorySummary } from '@shared/types'
 
 // Props - 每个 AiPanel 实例绑定到特定的 tab
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   tabId: string
-  visible?: boolean  // 面板是否可见
-}>()
+  /** 用户是否展开 AI 侧栏（终端 tab 可折叠；助手 tab 恒为 true） */
+  visible?: boolean
+  /** 所属 tab 是否为当前激活 tab（与 visible 解耦，避免切 tab 触发虚拟列表重绘） */
+  tabActive?: boolean
+}>(), {
+  visible: true,
+  tabActive: true,
+})
 
 // Emits
 const emit = defineEmits<{
@@ -365,7 +371,7 @@ const getSubAgentActivity = (sa: import('@shared/types').SubAgentResult): string
 
 // 当前终端 ID（使用 prop，每个实例固定绑定一个 tab）
 const currentTabId = toRef(props, 'tabId')
-const panelVisible = toRef(props, 'visible')
+const tabActive = toRef(props, 'tabActive')
 
 // 文档上传（传入 currentTabId，每个终端独立管理文档）
 const {
@@ -557,7 +563,7 @@ const {
     clearAttachments: clearUploadedDocs
   },
   scrollerRef,
-  panelVisible
+  tabActive
 )
 
 // 语音识别
@@ -630,7 +636,7 @@ function hasOtherModifiers(event: KeyboardEvent, pttKey: string): boolean {
 
 const handlePTTKeyDown = (event: KeyboardEvent) => {
   const pttKey = configStore.keyboardShortcuts.voiceInput
-  if (!pttKey || !audioAvailable.value || !props.visible || terminalStore.activeTabId !== currentTabId.value) return
+  if (!pttKey || !audioAvailable.value || !props.visible || !props.tabActive) return
 
   // 如果按下的不是 PTT 键，且当前正在 PTT 状态（计时器或录音中），则中止 PTT
   if (event.key !== pttKey) {
@@ -1660,7 +1666,7 @@ onUnmounted(() => {
   detachMermaidObserver()
 })
 
-// 监听 visible 变化，保存和恢复滚动位置
+// 监听 visible 变化（用户折叠/展开 AI 侧栏），保存和恢复滚动位置
 watch(() => props.visible, async (visible, wasVisible) => {
   if (!visible && wasVisible) {
     // 面板隐藏时，保存当前滚动位置

@@ -35,7 +35,7 @@ const ratio = computed({
     toggle-side="right"
   >
     <template #anchor>
-      <AiPanel :tab-id="tab.id" :visible="isActive" />
+      <AiPanel :tab-id="tab.id" :tab-active="isActive" />
     </template>
     <template #toggle>
       <CanvasPanel v-if="docVisible" :tab-id="tab.id" />

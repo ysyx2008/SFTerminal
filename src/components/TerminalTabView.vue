@@ -97,8 +97,6 @@ onUnmounted(() => {
 
 // ==================== 对外暴露的方法 ====================
 
-const aiPanelVisible = computed(() => props.isActive && showAiPanel.value)
-
 function toggleAiPanel() {
   showAiPanel.value = !showAiPanel.value
   if (!showAiPanel.value) {
@@ -181,7 +179,8 @@ watch(terminalPanes, (panes) => {
         <AiPanel
           ref="aiPanelRef"
           :tab-id="tab.id"
-          :visible="aiPanelVisible"
+          :visible="showAiPanel"
+          :tab-active="isActive"
           @close="showAiPanel = false"
         />
         <!-- 拖拽手柄：绝对定位覆盖在 sidebar 朝 terminal 一侧的边缘，不占据 flex 流空间，
