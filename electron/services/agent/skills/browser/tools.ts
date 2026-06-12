@@ -11,14 +11,17 @@ export const browserTools: ToolDefinition[] = [
       name: 'browser_launch',
       description: `启动浏览器，建立会话。
 
+**默认策略**：若 SailFish 浏览器助手已连接（Chrome/Edge/Firefox 扩展在线），**自动 attach** 到用户当前浏览器，复用登录态与标签页，无需传参。
+仅当需要独立窗口、无头模式或 profile 时才用 launch 模式。
+
 **两种模式**：
-- **attach 模式（复用登录态）**：\`{ "attach": true }\` 或 \`{ "mode": "attach" }\` — 连接用户当前 Chrome/Edge/Firefox，复用标签页与登录态
-- **launch 模式（默认）**：独立 Playwright 窗口
+- **attach（优先）**：浏览器助手已连接时自动启用；也可显式 \`{ "attach": true }\` 或 \`{ "mode": "attach" }\`
+- **launch（Playwright 独立窗口）**：\`{ "mode": "launch" }\` 或 \`{ "attach": false }\`；需要 headless / profile 时自动使用
 
 **注意**：
 - 每个终端最多一个浏览器会话
 - launch 模式 5 分钟无操作自动关闭；attach 模式 browser_close 仅断开连接
-- attach 模式需用户在 SailFish 设置中启用浏览器助手并加载扩展
+- attach 需用户在设置中安装浏览器助手并加载扩展
 
 **登录状态（launch 模式）**：
 - profile 参数可恢复持久化登录；attach 模式直接复用用户浏览器登录态`,

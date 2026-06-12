@@ -38,7 +38,10 @@ import {
   bridgeBrowserClose,
   isAttachLaunch,
   shouldUseBridge,
+  shouldPreferAttach,
+  ensureBridgeSessionIfPreferred,
 } from './bridge-executor'
+import { closeBridgeSession, hasBridgeSession } from './bridge-session'
 
 /** ARIA 角色到用户可读中文的映射，用于展示「点击 按钮「提交」」而非「点击 @e48」 */
 const ROLE_LABELS: Record<string, string> = {
@@ -88,6 +91,16 @@ export async function executeBrowserTool(
   config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
+  if (
+    toolName.startsWith('browser_') &&
+    toolName !== 'browser_launch' &&
+    toolName !== 'browser_close' &&
+    toolName !== 'browser_list_profiles' &&
+    toolName !== 'browser_save_login'
+  ) {
+    await ensureBridgeSessionIfPreferred(ptyId, args)
+  }
+
   if (toolName !== 'browser_launch' && shouldUseBridge(ptyId)) {
     switch (toolName) {
       case 'browser_snapshot':
@@ -246,8 +259,21 @@ async function browserLaunch(
   args: Record<string, unknown>,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
-  if (isAttachLaunch(args)) {
-    return bridgeBrowserLaunch(ptyId, args, executor)
+  const preferAttach = shouldPreferAttach(args)
+  let attachFallbackNote = ''
+
+  if (preferAttach) {
+    const session = getSession(ptyId)
+    if (session) {
+      await closeSession(ptyId)
+    }
+    const auto = !isAttachLaunch(args)
+    const result = await bridgeBrowserLaunch(ptyId, args, executor, { auto })
+    if (result.success) return result
+    if (isAttachLaunch(args)) return result
+    attachFallbackNote = '\n\n💡 浏览器助手未连接或连接失败，已改用独立浏览器窗口。'
+  } else if (hasBridgeSession(ptyId)) {
+    closeBridgeSession(ptyId)
   }
 
   const url = args.url as string | undefined
@@ -277,7 +303,7 @@ async function browserLaunch(
     }
 
     // 构建返回给 AI 的完整信息
-    let output = `浏览器已启动 (${session.browserInfo.name})`
+    let output = `浏览器已启动 (${session.browserInfo.name})${attachFallbackNote}`
     if (hadStorageState) {
       if (profile) {
         output += `\n✅ 已恢复登录配置 "${profile}" 的登录状态`

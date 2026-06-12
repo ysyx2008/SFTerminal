@@ -15,7 +15,7 @@ const log = createLogger('BrowserSkill')
 const browserSkill: Skill = {
   id: 'browser',
   name: '浏览器自动化',
-  description: '浏览器自动化，通过无障碍树感知页面（非视觉渲染）。支持打开网页、点击、输入、截图、滚动等操作。',
+  description: '浏览器自动化。浏览器助手已连接时优先 attach 用户 Chrome/Edge/Firefox（复用登录态）；否则 Playwright 独立窗口。通过无障碍树感知页面。',
   tools: browserTools,
   
   async init() {

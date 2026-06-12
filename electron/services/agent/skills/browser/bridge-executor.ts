@@ -5,6 +5,7 @@
 import type { ToolResult } from '../../types'
 import type { ToolExecutorConfig } from '../../tool-executor'
 import type { BrowserBridgeRefMap, BrowserBridgeSnapshotResult } from '@shared/types/browser-bridge'
+import { getBrowserBridgeService } from '../../../browser-bridge/browser-bridge.service'
 import {
   bridgeListTabs,
   bridgeSend,
@@ -37,11 +38,15 @@ export async function bridgeBrowserLaunch(
   ptyId: string,
   args: Record<string, unknown>,
   executor: ToolExecutorConfig,
+  options: { auto?: boolean } = {},
 ): Promise<ToolResult> {
   const url = args.url as string | undefined
+  const autoLabel = options.auto ? '（自动检测到浏览器助手已连接）' : ''
   executor.addStep({
     type: 'tool_call',
-    content: url ? `连接浏览器并访问 ${url}` : '连接当前浏览器（复用登录态与标签页）',
+    content: url
+      ? `连接浏览器并访问 ${url}${autoLabel}`
+      : `连接当前浏览器（复用登录态与标签页）${autoLabel}`,
     toolName: 'browser_launch',
     toolArgs: args,
     riskLevel: 'safe',
@@ -49,7 +54,9 @@ export async function bridgeBrowserLaunch(
 
   try {
     await createBridgeSession(ptyId)
-    let output = '已连接到您的浏览器（attach 模式，复用当前登录态与标签页）'
+    let output = options.auto
+      ? '已自动连接到您的浏览器（attach 模式，复用当前登录态与标签页）'
+      : '已连接到您的浏览器（attach 模式，复用当前登录态与标签页）'
     if (url) {
       const nav = (await bridgeSend('goto', { url })) as { title?: string; url?: string }
       output += `\n已打开 ${nav.url || url}\n标题: ${nav.title || ''}`
@@ -318,6 +325,50 @@ export async function bridgeBrowserClose(ptyId: string): Promise<ToolResult> {
 
 export function isAttachLaunch(args: Record<string, unknown>): boolean {
   return args.attach === true || args.mode === 'attach'
+}
+
+/** 显式要求 Playwright 独立窗口（attach: false 或 mode: launch） */
+export function wantsExplicitLaunch(args: Record<string, unknown>): boolean {
+  return args.attach === false || args.mode === 'launch'
+}
+
+/** headless / profile 仅 launch 模式支持 */
+export function requiresPlaywrightLaunch(args: Record<string, unknown>): boolean {
+  return args.headless === true || (typeof args.profile === 'string' && args.profile.length > 0)
+}
+
+export function isBrowserBridgeConnected(): boolean {
+  try {
+    const status = getBrowserBridgeService().getStatus()
+    return status.gatewayRunning && status.connections.length > 0
+  } catch {
+    return false
+  }
+}
+
+/** 浏览器助手已连接时优先 attach；显式 launch 或需要 headless/profile 时除外 */
+export function shouldPreferAttach(
+  args: Record<string, unknown>,
+  bridgeConnected = isBrowserBridgeConnected(),
+): boolean {
+  if (isAttachLaunch(args)) return true
+  if (wantsExplicitLaunch(args)) return false
+  if (requiresPlaywrightLaunch(args)) return false
+  return bridgeConnected
+}
+
+export async function ensureBridgeSessionIfPreferred(
+  ptyId: string,
+  args: Record<string, unknown>,
+): Promise<boolean> {
+  if (getBridgeSession(ptyId)) return true
+  if (!shouldPreferAttach(args)) return false
+  try {
+    await createBridgeSession(ptyId)
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function shouldUseBridge(ptyId: string): boolean {
