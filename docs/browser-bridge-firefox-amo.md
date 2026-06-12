@@ -67,10 +67,12 @@ The extension is useless without the SailFish desktop app and native host. Data 
 
 ## 6. 隐私政策
 
-AMO 对 `<all_urls>` 通常要求隐私政策链接。可填：
+扩展专用隐私政策（**不是** `/data-privacy/` AI 服务商科普页）：
 
-- https://www.sfterm.com/zh/data-privacy/
-- 或 https://www.sfterm.com/data-privacy/
+- 英文：https://www.sfterm.com/browser-assistant-privacy/
+- 中文：https://www.sfterm.com/zh/browser-assistant-privacy/
+
+源码：`docs/browser-bridge-extension-privacy.md`（与官网同步）
 
 ## 7. 签名完成后
 

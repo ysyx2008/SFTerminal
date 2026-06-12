@@ -1,0 +1,20 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Header from '../components/Header.astro';
+import BrowserAssistantPrivacy from '../components/BrowserAssistantPrivacy.astro';
+import Footer from '../components/Footer.astro';
+
+const lang = 'en';
+---
+
+<Layout
+  title="Browser Assistant Privacy Policy - SailFish"
+  description="Privacy policy for the SailFish Browser Assistant extension. Local-only Native Messaging; no data sent to extension author servers."
+  lang={lang}
+>
+  <Header lang={lang} />
+  <main>
+    <BrowserAssistantPrivacy lang={lang} />
+  </main>
+  <Footer lang={lang} />
+</Layout>
