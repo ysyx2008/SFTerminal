@@ -15,7 +15,7 @@ const log = createLogger('BrowserSkill')
 const browserSkill: Skill = {
   id: 'browser',
   name: '浏览器自动化',
-  description: '浏览器自动化。浏览器助手已连接时优先 attach 用户 Chrome/Edge/Firefox（复用登录态）；否则 Playwright 独立窗口。通过无障碍树感知页面。',
+  description: '浏览器自动化。浏览器助手已连接时优先 attach（复用登录态）；launch 为 Playwright 独立窗口。attach 不支持 browser_screenshot，截图须 launch。页面感知主要靠无障碍树 browser_snapshot。',
   tools: browserTools,
   
   async init() {

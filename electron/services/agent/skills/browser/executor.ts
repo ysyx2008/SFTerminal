@@ -129,7 +129,7 @@ export async function executeBrowserTool(
         return {
           success: false,
           output: '',
-          error: 'attach 模式暂不支持 browser_screenshot，请使用 browser_snapshot 或 browser_get_content',
+          error: 'attach 模式不支持 browser_screenshot。需要截图请 browser_launch { "mode": "launch" } 开独立窗口后再截图，或用 browser_snapshot / browser_get_content 了解页面。',
         }
       case 'browser_save_login':
       case 'browser_list_profiles':

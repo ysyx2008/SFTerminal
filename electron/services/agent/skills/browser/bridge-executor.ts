@@ -30,7 +30,7 @@ function formatSnapshotOutput(data: BrowserBridgeSnapshotResult, tabsHint = ''):
   const stats = countRefs(data.refs)
   const statsLine = `[${stats.total} 个 ref, 其中 ${stats.interactive} 个可交互]`
   const snapshotNote =
-    '（以下是无障碍树，非视觉页面；颜色、图标等纯视觉信息不会出现；必填项标注为 [必填]；attach 模式复用您当前浏览器登录态）'
+    '（以下是无障碍树，非视觉页面；颜色、图标等纯视觉信息不会出现；必填项标注为 [必填]；attach 模式无法截图，需要视觉请 browser_snapshot 或 browser_launch launch 后用 browser_screenshot）'
   return `${snapshotNote}\n页面: ${data.title}\nURL: ${data.url}${tabsHint}\n${statsLine}\n\n${data.tree}`
 }
 

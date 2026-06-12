@@ -12,11 +12,15 @@ export const browserTools: ToolDefinition[] = [
       description: `启动浏览器，建立会话。
 
 **默认策略**：若 SailFish 浏览器助手已连接（Chrome/Edge/Firefox 扩展在线），**自动 attach** 到用户当前浏览器，复用登录态与标签页，无需传参。
-仅当需要独立窗口、无头模式或 profile 时才用 launch 模式。
+仅当需要独立窗口、无头模式、**截图（browser_screenshot）** 或 profile 时才用 launch 模式。
 
 **两种模式**：
 - **attach（优先）**：浏览器助手已连接时自动启用；也可显式 \`{ "attach": true }\` 或 \`{ "mode": "attach" }\`
-- **launch（Playwright 独立窗口）**：\`{ "mode": "launch" }\` 或 \`{ "attach": false }\`；需要 headless / profile 时自动使用
+- **launch（Playwright 独立窗口）**：\`{ "mode": "launch" }\` 或 \`{ "attach": false }\`；需要 headless / profile / **截图** 时自动或显式使用
+
+**模式能力差异**：
+- **attach 不支持** \`browser_screenshot\`（无法截取用户浏览器画面）；需要截图时先 \`browser_launch { "mode": "launch" }\` 开独立窗口，或用 \`browser_snapshot\` / \`browser_get_content\` 代替
+- attach 支持 evaluate、点击、输入、导航等其余 browser_* 工具
 
 **注意**：
 - 每个终端最多一个浏览器会话
@@ -67,6 +71,8 @@ export const browserTools: ToolDefinition[] = [
 - 无障碍名称缺失的输入框会补充 **[label=字段名]**，据此区分不同输入框
 - 后续操作可直接使用 ref，无需猜测 CSS 选择器
 - 比获取 HTML 内容**节省约 90% token**
+
+**attach 模式**：这是 attach 下了解页面的主要方式（**不能**用 browser_screenshot 截图，见 browser_launch 说明）
 
 **推荐工作流**：
 1. 首次可用 browser_snapshot 获取页面结构和 ref（或直接 browser_goto / browser_click，其返回会自带快照）
@@ -134,7 +140,10 @@ export const browserTools: ToolDefinition[] = [
       name: 'browser_screenshot',
       description: `对当前页面截图并保存。
 
-**💡 提示**：大多数情况下 browser_snapshot 比截图更高效。截图适用于需要视觉确认的场景。
+**⚠️ 仅 launch（Playwright 独立窗口）模式可用**；attach（吸附用户浏览器）模式**不支持**本工具。
+若当前为 attach 会话且用户要截图：先 \`browser_close\`，再 \`browser_launch { "mode": "launch" }\` 后调用本工具；或改用 \`browser_snapshot\` / \`browser_get_content\`。
+
+**💡 提示**：多数场景 browser_snapshot 比截图更高效。截图适用于 launch 模式下需要视觉确认的场景。
 
 **模式**：
 - 默认：截取可视区域
@@ -328,7 +337,7 @@ export const browserTools: ToolDefinition[] = [
 - 获取标题：\`document.title\`
 - 获取元素数量：\`document.querySelectorAll('img').length\`
 
-**attach 限制**：在 content script 上下文执行，无法访问页面闭包内的 JS 变量；仅 browser_screenshot 在 attach 下不可用。`,
+**attach 限制**：在 content script 上下文执行，无法访问页面闭包内的 JS 变量。attach 不支持 browser_screenshot，见 browser_screenshot 工具说明。`,
       parameters: {
         type: 'object',
         properties: {
