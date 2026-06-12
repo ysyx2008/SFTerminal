@@ -667,6 +667,7 @@ describe('Remote channel context', () => {
 
     expect(prompt).toContain('mermaid')
     expect(prompt).toContain('Mermaid 语法')
+    expect(prompt).toContain('浅色白底')
   })
 
   it('should include Mermaid hint when remoteChannel is omitted (defaults to desktop)', () => {

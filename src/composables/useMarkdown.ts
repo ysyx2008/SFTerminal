@@ -10,7 +10,7 @@ import { toast } from './useToast'
 // 设计：marked 把 ```mermaid 代码块渲染成占位 <div class="mermaid-block">（存 encodeURIComponent
 // 后的源码），真正画图由 renderMermaidBlocks 在 DOM 落地后懒加载 mermaid 完成。
 // - 懒加载：mermaid 包体积大（~3MB），首次见到 mermaid 块时才动态 import，后续命中模块缓存
-// - 固定白底主题：不跟随明暗 UI 主题，图表始终是干净的浅色背景（与 chart skill 默认 light 一致）
+// - 固定白底浅色主题：不跟随明暗 UI 主题，图表始终是干净的浅色背景（与 chart skill 默认 light 一致）
 // - 流式安全：AI 输出未完成时源码语法不完整，先用 mermaid.parse 校验，失败就跳过、等下次完整再渲染
 // - SVG 缓存：相同源码只 render 一次，缓存 SVG 字符串，避免虚拟滚动重建 DOM 时反复渲染（render 较重）
 

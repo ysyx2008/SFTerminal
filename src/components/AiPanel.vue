@@ -1335,14 +1335,30 @@ const openImageContextMenu = (e: MouseEvent, url: string, defaultName = 'image')
   imageContextMenu.defaultName = defaultName
 }
 
+const getMermaidPreviewUrl = (target: EventTarget | null): string | null => {
+  const block = (target as HTMLElement | null)?.closest?.(
+    '.mermaid-block[data-mermaid-state="done"]'
+  ) as HTMLElement | null
+  if (!block) return null
+  const svg = block.querySelector('svg') as SVGSVGElement | null
+  if (!svg) return null
+  return mermaidSvgToDataUrl(svg)
+}
+
+// Mermaid 图单击放大：复用图片预览弹窗（滚轮缩放、拖拽平移、双击重置）
+const handleMermaidClick = (e: MouseEvent) => {
+  const url = getMermaidPreviewUrl(e.target)
+  if (!url) return
+  e.preventDefault()
+  e.stopPropagation()
+  openImagePreview(url)
+}
+
 // Mermaid 图右键菜单：右击已渲染完成的图，把其 SVG 序列化成 data URL 后复用图片右键菜单（复制/下载）
 const handleMermaidContextMenu = (e: MouseEvent) => {
-  const target = e.target as HTMLElement
-  const block = target.closest('.mermaid-block[data-mermaid-state="done"]') as HTMLElement | null
-  if (!block) return
-  const svg = block.querySelector('svg') as SVGSVGElement | null
-  if (!svg) return
-  openImageContextMenu(e, mermaidSvgToDataUrl(svg), 'diagram')
+  const url = getMermaidPreviewUrl(e.target)
+  if (!url) return
+  openImageContextMenu(e, url, 'diagram')
 }
 
 // 「活图」EChartsCanvas 触发右键菜单时,组件 emit 的载荷形如 { event, dataUrl }——
@@ -1537,6 +1553,7 @@ watch(scrollerRef, (scroller, oldScroller) => {
   if (oldEl) {
     oldEl.removeEventListener('scroll', updateScrollPosition)
     oldEl.removeEventListener('click', handleCodeBlockClick)
+    oldEl.removeEventListener('click', handleMermaidClick)
     oldEl.removeEventListener('contextmenu', handleFilePathContextMenu)
     oldEl.removeEventListener('contextmenu', handleMermaidContextMenu)
   }
@@ -1545,6 +1562,7 @@ watch(scrollerRef, (scroller, oldScroller) => {
   if (el) {
     el.addEventListener('scroll', updateScrollPosition, { passive: true })
     el.addEventListener('click', handleCodeBlockClick)
+    el.addEventListener('click', handleMermaidClick)
     el.addEventListener('contextmenu', handleFilePathContextMenu)
     el.addEventListener('contextmenu', handleMermaidContextMenu)
     attachMermaidObserver(el)
@@ -1662,6 +1680,7 @@ onUnmounted(() => {
   if (el) {
     el.removeEventListener('scroll', updateScrollPosition)
     el.removeEventListener('click', handleCodeBlockClick)
+    el.removeEventListener('click', handleMermaidClick)
     el.removeEventListener('contextmenu', handleFilePathContextMenu)
     el.removeEventListener('contextmenu', handleMermaidContextMenu)
   }
