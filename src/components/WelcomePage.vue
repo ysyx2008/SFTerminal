@@ -197,7 +197,7 @@ onUnmounted(() => {
       </div>
 
       <!-- AI 快速发起对话（Steam 版隐藏，复用 AiComposer） -->
-      <WelcomeChatComposer v-if="!isSteamBuild" />
+      <WelcomeChatComposer v-if="!isSteamBuild" :active="!!active" />
 
       <!-- 快速启动卡片 -->
       <div class="quick-start">
