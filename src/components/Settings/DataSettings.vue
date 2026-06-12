@@ -140,7 +140,7 @@ const toggleAgentExpand = (id: string) => {
 // 渲染 markdown
 const renderMarkdown = (content: string) => {
   try {
-    return marked(content, { breaks: true })
+    return marked.parse(content, { breaks: true, async: false })
   } catch {
     return content
   }

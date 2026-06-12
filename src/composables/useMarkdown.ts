@@ -2,7 +2,7 @@
  * Markdown 渲染 composable
  * 处理 Markdown 解析、代码块交互和文件路径点击
  */
-import { marked } from 'marked'
+import { marked, type Token } from 'marked'
 import { useTerminalStore } from '../stores/terminal'
 import { toast } from './useToast'
 
@@ -507,14 +507,20 @@ export function useMarkdown() {
   }
 
   // 自定义链接渲染 - 检测文件路径链接
-  renderer.link = (hrefOrToken: string | { href: string; title?: string | null; text: string; tokens?: unknown[] }, title?: string | null, text?: string) => {
+  // marked v18+ 传入 token 对象，链接文本需通过 parser.parseInline(tokens) 解析
+  renderer.link = function (
+    hrefOrToken: string | { href: string; title?: string | null; text?: string; tokens?: unknown[] },
+    title?: string | null,
+    text?: string
+  ) {
     let href: string, linkTitle: string, linkText: string
 
     if (typeof hrefOrToken === 'object' && hrefOrToken !== null) {
       href = hrefOrToken.href || ''
       linkTitle = hrefOrToken.title || ''
-      // 新版 marked 的 text 可能包含已渲染的 HTML
-      linkText = hrefOrToken.text || ''
+      linkText = hrefOrToken.tokens
+        ? this.parser.parseInline(hrefOrToken.tokens as Token[])
+        : (hrefOrToken.text || '')
     } else {
       href = hrefOrToken as string
       linkTitle = title || ''
@@ -537,8 +543,10 @@ export function useMarkdown() {
   // 转义 markdown 文本中的原始 HTML 块/内联 HTML，防止 <meta refresh>、<script>
   // 等危险标签被 v-html 注入 DOM 后执行（如 web_fetch 返回的 HTTP 错误页 HTML 片段）。
   // 注意：此 override 仅影响输入文本里的 HTML token，不影响 renderer 自身输出的 HTML。
-  renderer.html = (htmlOrToken: string | { raw: string; block?: boolean }) => {
-    const raw = typeof htmlOrToken === 'object' ? (htmlOrToken.raw ?? '') : (htmlOrToken ?? '')
+  renderer.html = (htmlOrToken: string | { text?: string; raw?: string; block?: boolean }) => {
+    const raw = typeof htmlOrToken === 'object'
+      ? (htmlOrToken.text ?? htmlOrToken.raw ?? '')
+      : (htmlOrToken ?? '')
     return raw.replace(/</g, '&lt;').replace(/>/g, '&gt;')
   }
 
@@ -557,7 +565,7 @@ export function useMarkdown() {
 
     let html: string
     try {
-      html = marked.parse(text) as string
+      html = marked.parse(text, { async: false })
       // 先处理 URL（变成 <a>），再处理文件路径
       // 这样文件路径扫描会跳过已链接化的 URL，避免 "p://" 被误识别为 Windows 盘符
       html = wrapBareUrls(html)

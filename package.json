@@ -82,7 +82,7 @@
     "lucide-vue-next": "^0.562.0",
     "mailparser": "^3.9.1",
     "mammoth": "^1.11.0",
-    "marked": "^12.0.0",
+    "marked": "^18.0.5",
     "mermaid": "^11.15.0",
     "node-html-parser": "^7.1.0",
     "node-pty": "^1.0.0",
