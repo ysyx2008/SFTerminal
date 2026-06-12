@@ -1262,6 +1262,8 @@ const previewViewportRef = ref<HTMLDivElement | null>(null)
 const previewScale = ref(1)
 const previewTranslateX = ref(0)
 const previewTranslateY = ref(0)
+/** 用户是否改过缩放/平移（Esc 先还原，再关闭） */
+const previewViewModified = ref(false)
 const isDraggingImage = ref(false)
 let dragStartX = 0
 let dragStartY = 0
@@ -1299,20 +1301,57 @@ const allPreviewImages = computed((): PreviewItem[] => {
 
 const resetPreviewTransform = () => {
   previewScale.value = 1
-  previewTranslateX.value = 0
-  previewTranslateY.value = 0
-  nextTick(() => centerPreviewInViewport())
+  previewViewModified.value = false
+  nextTick(() => centerPreviewContent())
 }
 
-/** 将内容在 viewport 内居中（translate 为 viewport 坐标系下的左上角位置） */
-const centerPreviewInViewport = () => {
-  const viewport = previewViewportRef.value
-  const el = viewport?.querySelector('.image-preview-full') as HTMLElement | null
-  if (!viewport || !el) return
-  const scaledW = el.offsetWidth * previewScale.value
-  const scaledH = el.offsetHeight * previewScale.value
-  previewTranslateX.value = (viewport.clientWidth - scaledW) / 2
-  previewTranslateY.value = (viewport.clientHeight - scaledH) / 2
+const PREVIEW_MAX_WIDTH_VW = 0.9
+const PREVIEW_MAX_HEIGHT_VH = 0.9
+const PREVIEW_ABS_MAX_WIDTH = 1600
+
+/** contain 进 max 区域，返回像素尺寸（小图不放大） */
+const computePreviewContainSize = (contentW: number, contentH: number) => {
+  const ratio = contentW / Math.max(1, contentH)
+  const maxW = Math.min(winSize.value.w * PREVIEW_MAX_WIDTH_VW, PREVIEW_ABS_MAX_WIDTH, contentW)
+  const maxH = Math.min(winSize.value.h * PREVIEW_MAX_HEIGHT_VH, contentH)
+  let w = maxW
+  let h = w / ratio
+  if (h > maxH) {
+    h = maxH
+    w = h * ratio
+  }
+  return { w: Math.round(w), h: Math.round(h) }
+}
+
+/** 图片/活图在 viewport 内的 fit 尺寸（非 viewport 本身尺寸） */
+const previewImgContentSize = ref<{ w: number; h: number } | null>(null)
+
+const getPreviewContentSize = (): { w: number; h: number } | null => {
+  if (previewEchartsPayload.value) {
+    const { width: pw, height: ph } = previewEchartsPayload.value
+    return computePreviewContainSize(pw, ph)
+  }
+  return previewImgContentSize.value
+}
+
+/** 默认视图：viewport 与内容同尺寸，translate 为 0 */
+const centerPreviewContent = () => {
+  previewTranslateX.value = 0
+  previewTranslateY.value = 0
+}
+
+const updatePreviewImgContentSize = (img: HTMLImageElement) => {
+  if (!img.naturalWidth) return
+  previewImgContentSize.value = computePreviewContainSize(img.naturalWidth, img.naturalHeight)
+}
+
+const onPreviewImgLoad = (e: Event) => {
+  const img = e.target as HTMLImageElement
+  updatePreviewImgContentSize(img)
+  if (!previewViewModified.value) {
+    previewScale.value = 1
+    nextTick(() => centerPreviewContent())
+  }
 }
 
 const openImagePreview = (
@@ -1321,6 +1360,7 @@ const openImagePreview = (
 ) => {
   previewImageUrl.value = url
   previewEchartsPayload.value = echartsPayload ?? null
+  previewImgContentSize.value = null
   resetPreviewTransform()
   previewIdx.value = allPreviewImages.value.findIndex(it => it.url === url)
 }
@@ -1428,6 +1468,7 @@ const applyPreviewZoomAt = (newScale: number, clientX: number, clientY: number) 
   previewTranslateX.value = mx - (mx - previewTranslateX.value) * ratio
   previewTranslateY.value = my - (my - previewTranslateY.value) * ratio
   previewScale.value = newScale
+  previewViewModified.value = true
 }
 
 const handlePreviewWheel = (e: WheelEvent) => {
@@ -1444,6 +1485,7 @@ const handlePreviewWheel = (e: WheelEvent) => {
   if (e.deltaMode === WheelEvent.DOM_DELTA_PIXEL) {
     previewTranslateX.value -= e.deltaX
     previewTranslateY.value -= e.deltaY
+    previewViewModified.value = true
     return
   }
 
@@ -1487,6 +1529,7 @@ const handlePreviewMouseDown = (e: MouseEvent) => {
     if (!isDraggingImage.value) return
     previewTranslateX.value = dragStartTranslateX + (ev.clientX - dragStartX)
     previewTranslateY.value = dragStartTranslateY + (ev.clientY - dragStartY)
+    previewViewModified.value = true
   }
   const handleMouseUp = () => {
     isDraggingImage.value = false
@@ -1503,35 +1546,34 @@ const previewTransformStyle = computed<Record<string, string>>(() => ({
   transformOrigin: '0 0',
 }))
 
-// 活图预览容器的具体 width/height —— 按 viewport 90vw × 90vh 做 contain 算法，
-// 同时保留后端建议尺寸作为天花板（小图不放大）。父容器拿到具体尺寸后子组件
-// EChartsCanvas mode='preview' 用 width:100%/height:100% 跟随，echarts 实例内部
-// 的 ResizeObserver 会在 winSize 变化时自动 resize。
-const PREVIEW_MAX_WIDTH_VW = 0.9
-const PREVIEW_MAX_HEIGHT_VH = 0.9
-const PREVIEW_ABS_MAX_WIDTH = 1600
-const previewEchartsBoxStyle = computed<Record<string, string>>(() => {
-  if (!previewEchartsPayload.value) return {} as Record<string, string>
-  const { width: pw, height: ph } = previewEchartsPayload.value
-  const ratio = pw / Math.max(1, ph)
-  const maxW = Math.min(winSize.value.w * PREVIEW_MAX_WIDTH_VW, PREVIEW_ABS_MAX_WIDTH, pw)
-  const maxH = Math.min(winSize.value.h * PREVIEW_MAX_HEIGHT_VH, ph)
-  // contain：先按宽度满铺，若反推高度超 maxH 再翻转改用高度满铺
-  let w = maxW
-  let h = w / ratio
-  if (h > maxH) {
-    h = maxH
-    w = h * ratio
-  }
+// 内容层尺寸 + transform；viewport 随内容收缩，overflow:visible 保证放大不被裁切
+const previewViewportStyle = computed<Record<string, string>>(() => {
+  const size = getPreviewContentSize()
+  if (!size) return { width: 'min(90vw, 400px)', height: 'min(90vh, 400px)' }
+  return { width: `${size.w}px`, height: `${size.h}px` }
+})
+
+const previewContentBoxStyle = computed<Record<string, string>>(() => {
+  const size = getPreviewContentSize()
+  if (!size) return { ...previewTransformStyle.value }
   return {
-    width: `${Math.round(w)}px`,
-    height: `${Math.round(h)}px`,
+    width: `${size.w}px`,
+    height: `${size.h}px`,
     ...previewTransformStyle.value,
   }
 })
 
-watch(previewImageUrl, (url) => {
-  if (url) nextTick(() => centerPreviewInViewport())
+watch(winSize, () => {
+  if (!previewImageUrl.value || previewViewModified.value) return
+  const img = previewViewportRef.value?.querySelector('img.image-preview-full') as HTMLImageElement | null
+  if (img?.naturalWidth) updatePreviewImgContentSize(img)
+  nextTick(() => centerPreviewContent())
+})
+
+watch(previewEchartsPayload, () => {
+  if (previewImageUrl.value && !previewViewModified.value) {
+    nextTick(() => centerPreviewContent())
+  }
 })
 
 // 拖放放下（支持文档和图片）
@@ -1554,7 +1596,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault()
       e.stopImmediatePropagation()
-      if (previewScale.value !== 1 || previewTranslateX.value !== 0 || previewTranslateY.value !== 0) {
+      if (previewViewModified.value) {
         resetPreviewTransform()
       } else {
         closeImagePreview()
@@ -1577,8 +1619,8 @@ const handleKeyDown = (e: KeyboardEvent) => {
     // 缩放状态下左右方向键用于平移；上下方向键始终用于切图（平铺列表上下翻页）
     if (previewScale.value !== 1) {
       const PAN_STEP = 50
-      if (e.key === 'ArrowLeft') { e.preventDefault(); previewTranslateX.value += PAN_STEP; return }
-      if (e.key === 'ArrowRight') { e.preventDefault(); previewTranslateX.value -= PAN_STEP; return }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); previewTranslateX.value += PAN_STEP; previewViewModified.value = true; return }
+      if (e.key === 'ArrowRight') { e.preventDefault(); previewTranslateX.value -= PAN_STEP; previewViewModified.value = true; return }
     }
     if (e.key === 'ArrowUp') { e.preventDefault(); goUp(); return }
     if (e.key === 'ArrowDown') { e.preventDefault(); goDown(); return }
@@ -2751,10 +2793,10 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
       </button>
 
       <div class="image-preview-modal-content" @click.stop>
-        <button class="image-preview-close" @click="closeImagePreview">
+        <button v-show="previewScale === 1" class="image-preview-close" @click.stop="closeImagePreview">
           <X :size="20" />
         </button>
-        <div ref="previewViewportRef" class="image-preview-viewport">
+        <div ref="previewViewportRef" class="image-preview-viewport" :style="previewViewportStyle">
         <!-- 「活图」预览：当点击的是 chart skill 投递的活图时，模态里也用 EChartsCanvas 渲染，
              保留 tooltip / dataZoom / legend toggle 等所有交互能力。复制图片 / 另存为通过
              previewEchartsRef.getDataURL() 拿当前实时（含用户拖过的 dataZoom 范围）高清 PNG。
@@ -2764,7 +2806,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           v-if="previewEchartsPayload"
           class="image-preview-full image-preview-echarts"
           :class="{ 'dragging': isDraggingImage }"
-          :style="previewEchartsBoxStyle"
+          :style="previewContentBoxStyle"
           @mousedown="handlePreviewMouseDown"
           @dblclick="handlePreviewDblClick"
         >
@@ -2780,8 +2822,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           :src="previewImageUrl"
           class="image-preview-full"
           :class="{ 'dragging': isDraggingImage }"
-          :style="previewTransformStyle"
-          @load="centerPreviewInViewport"
+          :style="previewContentBoxStyle"
+          @load="onPreviewImgLoad"
           @mousedown="handlePreviewMouseDown"
           @dblclick="handlePreviewDblClick"
           @contextmenu="openImageContextMenu($event, previewImageUrl!)"
@@ -6375,24 +6417,20 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .image-preview-modal-content {
   position: relative;
-  width: 90vw;
-  height: 90vh;
+  max-width: 90vw;
+  max-height: 90vh;
   overflow: visible;
 }
 
 .image-preview-viewport {
-  width: 100%;
-  height: 100%;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .image-preview-full {
   position: absolute;
   top: 0;
   left: 0;
-  max-width: 100%;
-  max-height: 100%;
   object-fit: contain;
   border-radius: 8px;
   cursor: grab;
@@ -6425,7 +6463,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   display: flex;
   align-items: stretch;
   justify-content: stretch;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .image-preview-close {
@@ -6442,7 +6480,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s;
+  transition: background 0.15s, opacity 0.15s;
   z-index: 1;
 }
 
