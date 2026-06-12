@@ -16,9 +16,10 @@ This Privacy Policy applies to the **SailFish Browser Assistant** browser extens
 
 ### 2. Summary
 
-- The Extension **does not** send your data to the Extension author’s servers.
-- The Extension communicates **only** with the SailFish App on **your computer** via the browser’s Native Messaging API.
-- Page content is accessed **only when you** run a browser task through the SailFish App.
+- **Current design:** the Extension is built to talk to the SailFish App on **your computer** via Native Messaging, to support the browser tasks you start in SailFish.
+- **Our commitment:** we do **not** sell your data, use it for advertising or cross-site tracking, or otherwise **misuse** page data for purposes unrelated to your Agent tasks.
+- Page content is accessed **only when you** run a browser task through the SailFish App (not for background profiling).
+- If we ever add features that change how data is handled, we will **update this policy** and, where required, ask for your consent.
 
 ### 3. Data the Extension May Access
 
@@ -30,7 +31,7 @@ When you use browser automation (attach mode) in SailFish, the Extension may acc
 | DOM structure / text (accessibility-style snapshot) | Let the Agent understand the page and choose actions |
 | Interaction targets (buttons, links, inputs) | Perform clicks, typing, and form actions you request |
 
-The Extension does not run this access in the background for advertising, profiling, or analytics.
+We do not use this access in the background for advertising, profiling, or analytics.
 
 ### 4. How Data Flows
 
@@ -38,9 +39,11 @@ The Extension does not run this access in the background for advertising, profil
 Your browser tab → Extension (local) → Native Messaging Host (local) → SailFish App (local)
 ```
 
-All of the above runs on **your device**. The Extension author does not operate a cloud service that receives this data.
+In the **current version**, the steps above run on **your device**. We do not operate an Extension-owned cloud service whose purpose is to collect or store your browsing data.
 
 What happens **after** data reaches the SailFish App (for example, sending prompts to an AI provider you configured) is governed by the **SailFish App** and that provider’s policies—not by this Extension alone. For AI provider privacy comparisons, see [SailFish data privacy guide](https://www.sfterm.com/data-privacy/).
+
+If a future version introduces optional remote or synced features, we will describe them here and update this policy before they take effect.
 
 ### 5. Permissions
 
@@ -53,16 +56,18 @@ What happens **after** data reaches the SailFish App (for example, sending promp
 | `storage` | Remember local connection status (e.g. bridge connected) |
 | `alarms` | Keep the local bridge connection healthy |
 
-### 6. What We Do Not Do
+### 6. Our Commitments
 
-- We do **not** sell your data.
-- We do **not** use Extension data for advertising or cross-site tracking.
-- We do **not** upload page content to Extension author servers.
-- We do **not** collect data when the Extension is installed but SailFish is not running a browser task.
+Regardless of future feature changes, we commit to the following:
+
+- We will **not sell** your data.
+- We will **not** use Extension data for advertising or cross-site tracking.
+- We will **not misuse** page or browsing data for purposes **unrelated** to browser automation you request through SailFish.
+- We will **not** collect such data in the background while you are not running a browser task through SailFish (under the current design).
 
 ### 7. Retention
 
-The Extension does not maintain a remote datastore. Temporary data exists in browser memory and local extension storage during use. The SailFish App may retain conversation or task history according to **your** SailFish settings.
+In the **current version**, the Extension keeps data in browser memory and local extension storage during use; it does not maintain an Extension-operated remote database. The SailFish App may retain conversation or task history according to **your** SailFish settings.
 
 ### 8. Your Choices
 
@@ -77,7 +82,7 @@ The Extension is not directed at children under 13 (or the minimum age in your j
 
 ### 10. Changes
 
-We may update this policy. The “Effective date” at the top will change when we do. Continued use after an update means you accept the revised policy.
+We may update this policy when our practices or features change. The “Effective date” at the top will change when we do. Material changes to data handling will be described in the updated policy. Continued use after an update means you accept the revised policy.
 
 ### 11. Contact
 
@@ -94,9 +99,10 @@ We may update this policy. The “Effective date” at the top will change when 
 
 ### 2. 摘要
 
-- 扩展 **不会** 将您的数据发送至扩展作者的服务器。
-- 扩展仅通过浏览器 **Native Messaging**，与 **您本机** 的旗鱼通信。
-- 仅在 **您通过旗鱼发起浏览器任务** 时，扩展才会访问页面内容。
+- **当前设计：** 扩展通过浏览器 **Native Messaging** 与您 **本机** 的旗鱼通信，用于支持您在旗鱼中发起的浏览器任务。
+- **我们的承诺：** **不出售** 您的数据，不将数据用于 **广告或跨站追踪**，也不 **滥用** 页面数据用于与 Agent 任务无关的目的。
+- 仅在 **您通过旗鱼发起浏览器任务** 时，扩展才会访问页面内容（非后台画像采集）。
+- 若日后功能变更导致数据处理方式改变，我们将 **更新本政策**，并在需要时征得您的同意。
 
 ### 3. 扩展可能访问的数据
 
@@ -108,7 +114,7 @@ We may update this policy. The “Effective date” at the top will change when 
 | 页面 DOM 结构 / 文本（无障碍树式快照） | 供 Agent 理解页面并选择操作 |
 | 可交互元素（按钮、链接、输入框等） | 执行您要求的点击、输入等操作 |
 
-扩展不会出于广告、用户画像或统计分析而在后台持续采集上述数据。
+我们不会在后台出于广告、用户画像或统计分析而持续采集上述数据。
 
 ### 4. 数据如何流动
 
@@ -116,9 +122,11 @@ We may update this policy. The “Effective date” at the top will change when 
 浏览器标签页 → 扩展（本机）→ Native Host（本机）→ 旗鱼（本机）
 ```
 
-以上环节均在 **您的设备** 上完成。扩展作者不运营接收该数据的云端服务。
+在 **当前版本** 中，以上环节均在 **您的设备** 上完成。我们未运营以收集、存储您浏览数据为目的的扩展侧云端服务。
 
 数据进入旗鱼之后（例如您配置的 AI 服务商处理对话），由 **旗鱼主程序** 及该服务商的政策约束，不属于本扩展单独管辖。关于 AI 服务商隐私对比，可参考 [旗鱼数据安全与隐私说明](https://www.sfterm.com/zh/data-privacy/)（该页面为第三方 AI 服务商科普，非本扩展专用政策）。
+
+若未来版本增加可选的远程或同步类能力，我们会在生效前于本政策中说明并更新政策。
 
 ### 5. 权限说明
 
@@ -131,16 +139,18 @@ We may update this policy. The “Effective date” at the top will change when 
 | `storage` | 保存本地连接状态（如桥接已连接） |
 | `alarms` | 维持本地桥接连接 |
 
-### 6. 我们不会
+### 6. 我们的承诺
 
-- **出售** 您的数据；
-- 将扩展数据用于 **广告** 或跨站追踪；
-- 将页面内容上载至扩展作者服务器；
-- 在扩展已安装但未通过旗鱼执行浏览器任务时采集数据。
+无论日后功能如何演进，我们承诺：
+
+- **不出售** 您的数据；
+- 不将扩展数据用于 **广告** 或跨站追踪；
+- 不 **滥用** 页面或浏览数据用于您在旗鱼中 **未请求的** 浏览器自动化之外的目的；
+- 在您未通过旗鱼执行浏览器任务时，不在后台采集此类数据（**当前设计** 下）。
 
 ### 7. 数据保留
 
-扩展不维护远程数据库。使用过程中的临时数据存在于浏览器内存及扩展本地存储中。旗鱼可能根据 **您的设置** 保留对话或任务历史。
+在 **当前版本** 中，使用过程中的数据主要存在于浏览器内存及扩展本地存储；扩展侧不维护远程数据库。旗鱼可能根据 **您的设置** 保留对话或任务历史。
 
 ### 8. 您的选择
 
@@ -155,7 +165,7 @@ We may update this policy. The “Effective date” at the top will change when 
 
 ### 10. 政策变更
 
-我们可能更新本政策。更新时会修改文首「生效日期」。更新后继续使用即视为接受修订内容。
+我们可能随实践或功能变化更新本政策，并修改文首「生效日期」。涉及数据处理方式的重大变更将在更新后的政策中说明。更新后继续使用即视为接受修订内容。
 
 ### 11. 联系我们
 
