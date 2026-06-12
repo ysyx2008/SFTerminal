@@ -57,6 +57,10 @@ extraResources:
     to: "docs/messaging"
     filter:
       - "**/*.md"
+  - from: "resources/browser-bridge"
+    to: "browser-bridge"
+    filter:
+      - "**/*"
   # 不包含 embedding 模型、语音模型
 win:
   icon: resources/icon.ico

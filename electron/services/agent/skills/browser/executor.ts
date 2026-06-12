@@ -23,6 +23,22 @@ import {
 import { getSnapshot, resolveRef, getSnapshotStats } from './snapshot'
 import type { RefMap } from './snapshot'
 import type { Page } from 'playwright-core'
+import {
+  bridgeBrowserLaunch,
+  bridgeBrowserSnapshot,
+  bridgeBrowserGoto,
+  bridgeBrowserClick,
+  bridgeBrowserType,
+  bridgeBrowserListTabs,
+  bridgeBrowserSwitchTab,
+  bridgeBrowserScroll,
+  bridgeBrowserGetContent,
+  bridgeBrowserEvaluate,
+  bridgeBrowserWait,
+  bridgeBrowserClose,
+  isAttachLaunch,
+  shouldUseBridge,
+} from './bridge-executor'
 
 /** ARIA 角色到用户可读中文的映射，用于展示「点击 按钮「提交」」而非「点击 @e48」 */
 const ROLE_LABELS: Record<string, string> = {
@@ -72,6 +88,47 @@ export async function executeBrowserTool(
   config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
+  if (toolName !== 'browser_launch' && shouldUseBridge(ptyId)) {
+    switch (toolName) {
+      case 'browser_snapshot':
+        return bridgeBrowserSnapshot(ptyId, args, executor)
+      case 'browser_goto':
+        return bridgeBrowserGoto(ptyId, args, executor)
+      case 'browser_click':
+        return bridgeBrowserClick(ptyId, args, executor)
+      case 'browser_type':
+        return bridgeBrowserType(ptyId, args, executor)
+      case 'browser_list_tabs':
+        return bridgeBrowserListTabs(ptyId, executor)
+      case 'browser_switch_tab':
+        return bridgeBrowserSwitchTab(ptyId, args, executor)
+      case 'browser_scroll':
+        return bridgeBrowserScroll(ptyId, args, executor)
+      case 'browser_get_content':
+        return bridgeBrowserGetContent(ptyId, args)
+      case 'browser_evaluate':
+        return bridgeBrowserEvaluate(ptyId, args)
+      case 'browser_wait':
+        return bridgeBrowserWait(ptyId, args)
+      case 'browser_close':
+        return bridgeBrowserClose(ptyId)
+      case 'browser_screenshot':
+        return {
+          success: false,
+          output: '',
+          error: 'attach 模式暂不支持 browser_screenshot，请使用 browser_snapshot 或 browser_get_content',
+        }
+      case 'browser_save_login':
+      case 'browser_list_profiles':
+        return {
+          success: true,
+          output: 'attach 模式已复用您浏览器的登录态，无需单独保存 profile。',
+        }
+      default:
+        break
+    }
+  }
+
   switch (toolName) {
     case 'browser_launch':
       return await browserLaunch(ptyId, args, executor)
@@ -189,6 +246,10 @@ async function browserLaunch(
   args: Record<string, unknown>,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
+  if (isAttachLaunch(args)) {
+    return bridgeBrowserLaunch(ptyId, args, executor)
+  }
+
   const url = args.url as string | undefined
   const headless = args.headless as boolean | undefined
   const profile = args.profile as string | undefined

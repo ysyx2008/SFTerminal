@@ -377,6 +377,8 @@ import {
 import { initTerminalStateService, type TerminalState, type CwdChangeEvent, type CommandExecution, type CommandExecutionEvent } from './services/terminal-state.service'
 import { initTerminalAwarenessService, type TerminalAwareness } from './services/terminal-awareness'
 import { initScreenContentService } from './services/screen-content.service'
+import { initBrowserBridgeService, getBrowserBridgeService } from './services/browser-bridge/browser-bridge.service'
+import type { BrowserBridgeBrowser } from '@shared/types/browser-bridge'
 import { menuService } from './services/menu.service'
 import { t, errMsg, setConfigService as setMainI18nConfig, updateLocale as updateMainI18nLocale } from './i18n/main-i18n'
 import { attentionService } from './services/attention.service'
@@ -1257,6 +1259,9 @@ app.whenReady().then(async () => {
 
   // 初始化屏幕内容服务（轻量，可以同步初始化）
   initScreenContentService()
+
+  // 浏览器助手网关（扩展 Native Messaging）
+  initBrowserBridgeService().catch((e) => log.warn('Browser bridge init failed:', e))
 
   // 先创建窗口，让用户尽快看到界面
   createWindow()
@@ -5028,6 +5033,24 @@ ipcMain.handle('plugin:setConfig', async (_event, id: string, config: Record<str
   const entries = configService.get('pluginsEntries') || {}
   entries[id] = { ...entries[id], enabled: entries[id]?.enabled ?? true, config }
   configService.set('pluginsEntries', entries)
+})
+
+// ==================== 浏览器助手（扩展桥接） ====================
+
+ipcMain.handle('browserBridge:getStatus', async () => {
+  return getBrowserBridgeService().getStatus()
+})
+
+ipcMain.handle('browserBridge:install', async () => {
+  return getBrowserBridgeService().install()
+})
+
+ipcMain.handle('browserBridge:uninstall', async () => {
+  return getBrowserBridgeService().uninstall()
+})
+
+ipcMain.handle('browserBridge:openExtensionGuide', async (_event, browser: BrowserBridgeBrowser) => {
+  await getBrowserBridgeService().openExtensionGuide(browser)
 })
 
 // ==================== 内置技能相关 ====================

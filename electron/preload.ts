@@ -3208,6 +3208,17 @@ const electronAPI = {
     sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => {
       ipcRenderer.send('split-pane:result', { id, result })
     }
+  },
+
+  browserBridge: {
+    getStatus: () =>
+      ipcRenderer.invoke('browserBridge:getStatus') as Promise<import('@shared/types/browser-bridge').BrowserBridgeStatus>,
+    install: () =>
+      ipcRenderer.invoke('browserBridge:install') as Promise<import('@shared/types/browser-bridge').BrowserBridgeInstallStatus>,
+    uninstall: () =>
+      ipcRenderer.invoke('browserBridge:uninstall') as Promise<{ errors: string[] }>,
+    openExtensionGuide: (browser: import('@shared/types/browser-bridge').BrowserBridgeBrowser) =>
+      ipcRenderer.invoke('browserBridge:openExtensionGuide', browser),
   }
 }
 

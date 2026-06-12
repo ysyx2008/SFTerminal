@@ -9,21 +9,31 @@ export const browserTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'browser_launch',
-      description: `启动浏览器，建立会话。浏览器窗口会显示在屏幕上，用户可以看到操作过程。
+      description: `启动浏览器，建立会话。
+
+**两种模式**：
+- **attach 模式（复用登录态）**：\`{ "attach": true }\` 或 \`{ "mode": "attach" }\` — 连接用户当前 Chrome/Edge/Firefox，复用标签页与登录态
+- **launch 模式（默认）**：独立 Playwright 窗口
 
 **注意**：
 - 每个终端最多一个浏览器会话
-- 5 分钟无操作会自动关闭
-- 完成后请调用 browser_close 关闭
+- launch 模式 5 分钟无操作自动关闭；attach 模式 browser_close 仅断开连接
+- attach 模式需用户在 SailFish 设置中启用浏览器助手并加载扩展
 
-**登录状态管理**（使用持久化浏览器 profile，完整保存所有浏览器数据）：
-- 使用 profile 参数可恢复之前保存的登录状态（包括 cookies、localStorage、IndexedDB 等所有数据）
-- 关闭浏览器时会**自动保存**当前登录状态
-- 不指定 profile 也会使用默认 profile 自动保存和恢复
-- 例如：browser_launch { profile: "taobao" } 会恢复淘宝登录，关闭时自动保存最新状态`,
+**登录状态（launch 模式）**：
+- profile 参数可恢复持久化登录；attach 模式直接复用用户浏览器登录态`,
       parameters: {
         type: 'object',
         properties: {
+          attach: {
+            type: 'boolean',
+            description: 'true 时 attach 到用户当前浏览器'
+          },
+          mode: {
+            type: 'string',
+            enum: ['attach', 'launch'],
+            description: 'attach 或 launch（默认 launch）'
+          },
           url: {
             type: 'string',
             description: '启动后立即访问的 URL（可选）'

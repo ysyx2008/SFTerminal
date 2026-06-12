@@ -82,6 +82,11 @@ extraResources:
     to: "models/speech/punctuation"
     filter:
       - "**/*"
+  # 浏览器助手扩展与 Native Host
+  - from: "resources/browser-bridge"
+    to: "browser-bridge"
+    filter:
+      - "**/*"
 win:
   icon: resources/icon.ico
   target:

@@ -7,6 +7,7 @@ import { registerSkill } from '../registry'
 import type { Skill } from '../types'
 import { browserTools } from './tools'
 import { closeAllSessions } from './session'
+import { closeAllBridgeSessions } from './bridge-session'
 import { createLogger } from '../../../../utils/logger'
 
 const log = createLogger('BrowserSkill')
@@ -23,8 +24,8 @@ const browserSkill: Skill = {
   },
   
   async cleanup() {
-    // 关闭所有打开的浏览器
     await closeAllSessions()
+    closeAllBridgeSessions()
     log.info('Cleaned up')
   }
 }

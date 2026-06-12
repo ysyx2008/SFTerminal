@@ -418,7 +418,7 @@ run(message, context, options)
 | pdf | PDF 解析 |
 | email | 邮件收发（OAuth） |
 | calendar | 日历管理 |
-| browser | 浏览器操作 |
+| browser | 浏览器操作（launch=Playwright 独立窗口；attach=浏览器助手复用用户 Chrome/Edge/Firefox，见 `browser-bridge/SPEC.md`） |
 | feishu | 飞书集成（OAuth） |
 | chart | 数据可视化（默认输出活图 ECharts，PNG 兜底；详见 `skills/chart/SPEC.md`） |
 | watch | 关切管理 |
