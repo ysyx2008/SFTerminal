@@ -330,7 +330,6 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
         <span
           v-else
           class="tab-title"
-          :class="{ 'has-custom-title': tab.customTitle }"
           :title="t('tabs.doubleClickToRename')"
           @dblclick.stop="startRename(tab.id, tab.customTitle || tab.title, $event)"
         >{{ tab.customTitle || tab.title }}</span>
@@ -626,11 +625,6 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
 .tab.active .tab-title {
   color: var(--text-primary);
   font-weight: 600;
-}
-
-/* 有自定义名称时用强调色细微区分 */
-.tab.active .tab-title.has-custom-title {
-  color: var(--accent-secondary, var(--text-primary));
 }
 
 .tab-title-input {

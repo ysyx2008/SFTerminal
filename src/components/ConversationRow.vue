@@ -31,6 +31,7 @@ const configStore = useConfigStore()
 
 const tabStatus = computed(() => props.tabStatus ?? 'closed')
 const showStatusIcon = computed(() => tabStatus.value !== 'closed')
+const isOpenInTab = computed(() => tabStatus.value === 'open' || tabStatus.value === 'running')
 
 const handleItemClick = () => {
   if (props.isOpening || props.isEditing) return
@@ -82,6 +83,7 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
       'is-opening': isOpening,
       'is-failed': record.status === 'failed',
       'is-aborted': record.status === 'aborted',
+      'is-open-in-tab': isOpenInTab,
       'needs-attention': tabStatus === 'attention',
     }"
   >
@@ -167,6 +169,14 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
 
 .conversation-row:hover .item-title {
   color: var(--text-secondary);
+}
+
+.conversation-row.is-open-in-tab .item-title {
+  color: var(--text-primary);
+}
+
+.conversation-row.is-open-in-tab:hover .item-title {
+  color: var(--text-primary);
 }
 
 .conversation-row.needs-attention {
