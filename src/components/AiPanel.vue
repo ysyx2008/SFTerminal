@@ -1258,6 +1258,7 @@ const previewEchartsRef = ref<InstanceType<typeof EChartsCanvas> | null>(null)
 // 模板里 @wheel.prevent 会让 Chrome 报"non-passive scroll-blocking"警告，
 // 因为 Vue 的 patchEvent 不显式传 passive 参数。
 const previewModalRef = ref<HTMLDivElement | null>(null)
+const previewViewportRef = ref<HTMLDivElement | null>(null)
 const previewScale = ref(1)
 const previewTranslateX = ref(0)
 const previewTranslateY = ref(0)
@@ -1300,6 +1301,18 @@ const resetPreviewTransform = () => {
   previewScale.value = 1
   previewTranslateX.value = 0
   previewTranslateY.value = 0
+  nextTick(() => centerPreviewInViewport())
+}
+
+/** 将内容在 viewport 内居中（translate 为 viewport 坐标系下的左上角位置） */
+const centerPreviewInViewport = () => {
+  const viewport = previewViewportRef.value
+  const el = viewport?.querySelector('.image-preview-full') as HTMLElement | null
+  if (!viewport || !el) return
+  const scaledW = el.offsetWidth * previewScale.value
+  const scaledH = el.offsetHeight * previewScale.value
+  previewTranslateX.value = (viewport.clientWidth - scaledW) / 2
+  previewTranslateY.value = (viewport.clientHeight - scaledH) / 2
 }
 
 const openImagePreview = (
@@ -1390,10 +1403,32 @@ const goUp = () => navigatePreviewTo(previewIdx.value - 1)
 const goDown = () => navigatePreviewTo(previewIdx.value + 1)
 
 // 滚轮/触控板：Mac 双指滑动 → 平移；捏合（ctrlKey）或鼠标滚轮 → 缩放
-const PREVIEW_PINCH_ZOOM_SENSITIVITY = 0.008 // 捏合灵敏度（越小越慢）
+const PREVIEW_PINCH_ZOOM_SENSITIVITY = 0.01 // 捏合灵敏度（越小越慢）
 const PREVIEW_WHEEL_ZOOM_STEP = 0.1 // 鼠标滚轮每档缩放比例
 
 const clampPreviewScale = (scale: number) => Math.max(0.1, Math.min(10, scale))
+
+/** 以指针为锚点缩放（translate 与 mx/my 均在 previewViewport 坐标系内） */
+const applyPreviewZoomAt = (newScale: number, clientX: number, clientY: number) => {
+  const oldScale = previewScale.value
+  newScale = clampPreviewScale(newScale)
+  if (newScale === oldScale) return
+
+  const viewport = previewViewportRef.value
+  if (!viewport) {
+    previewScale.value = newScale
+    return
+  }
+
+  const vpRect = viewport.getBoundingClientRect()
+  const mx = clientX - vpRect.left
+  const my = clientY - vpRect.top
+  const ratio = newScale / oldScale
+
+  previewTranslateX.value = mx - (mx - previewTranslateX.value) * ratio
+  previewTranslateY.value = my - (my - previewTranslateY.value) * ratio
+  previewScale.value = newScale
+}
 
 const handlePreviewWheel = (e: WheelEvent) => {
   e.preventDefault()
@@ -1401,7 +1436,7 @@ const handlePreviewWheel = (e: WheelEvent) => {
   // macOS 双指捏合、Windows 精准触控板捏合、Ctrl+滚轮
   if (e.ctrlKey) {
     const factor = Math.exp(-e.deltaY * PREVIEW_PINCH_ZOOM_SENSITIVITY)
-    previewScale.value = clampPreviewScale(previewScale.value * factor)
+    applyPreviewZoomAt(previewScale.value * factor, e.clientX, e.clientY)
     return
   }
 
@@ -1414,7 +1449,7 @@ const handlePreviewWheel = (e: WheelEvent) => {
 
   // 鼠标滚轮（line/page 模式）：缩放
   const delta = e.deltaY > 0 ? -PREVIEW_WHEEL_ZOOM_STEP : PREVIEW_WHEEL_ZOOM_STEP
-  previewScale.value = clampPreviewScale(previewScale.value + delta * previewScale.value)
+  applyPreviewZoomAt(previewScale.value + delta * previewScale.value, e.clientX, e.clientY)
 }
 
 // 显式以 { passive: false } 绑定 wheel——告诉浏览器我们故意要 preventDefault（缩放/平移），
@@ -1462,10 +1497,11 @@ const handlePreviewMouseDown = (e: MouseEvent) => {
   document.addEventListener('mouseup', handleMouseUp)
 }
 
-// 预览图片的 transform 样式
-const previewTransform = computed(() => {
-  return `translate(${previewTranslateX.value}px, ${previewTranslateY.value}px) scale(${previewScale.value})`
-})
+// 预览 transform：origin 0 0 + viewport 坐标，与 applyPreviewZoomAt 同一套数学
+const previewTransformStyle = computed<Record<string, string>>(() => ({
+  transform: `translate(${previewTranslateX.value}px, ${previewTranslateY.value}px) scale(${previewScale.value})`,
+  transformOrigin: '0 0',
+}))
 
 // 活图预览容器的具体 width/height —— 按 viewport 90vw × 90vh 做 contain 算法，
 // 同时保留后端建议尺寸作为天花板（小图不放大）。父容器拿到具体尺寸后子组件
@@ -1490,8 +1526,12 @@ const previewEchartsBoxStyle = computed<Record<string, string>>(() => {
   return {
     width: `${Math.round(w)}px`,
     height: `${Math.round(h)}px`,
-    transform: previewTransform.value
+    ...previewTransformStyle.value,
   }
+})
+
+watch(previewImageUrl, (url) => {
+  if (url) nextTick(() => centerPreviewInViewport())
 })
 
 // 拖放放下（支持文档和图片）
@@ -2714,6 +2754,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         <button class="image-preview-close" @click="closeImagePreview">
           <X :size="20" />
         </button>
+        <div ref="previewViewportRef" class="image-preview-viewport">
         <!-- 「活图」预览：当点击的是 chart skill 投递的活图时，模态里也用 EChartsCanvas 渲染，
              保留 tooltip / dataZoom / legend toggle 等所有交互能力。复制图片 / 另存为通过
              previewEchartsRef.getDataURL() 拿当前实时（含用户拖过的 dataZoom 范围）高清 PNG。
@@ -2739,12 +2780,14 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           :src="previewImageUrl"
           class="image-preview-full"
           :class="{ 'dragging': isDraggingImage }"
-          :style="{ transform: previewTransform }"
+          :style="previewTransformStyle"
+          @load="centerPreviewInViewport"
           @mousedown="handlePreviewMouseDown"
           @dblclick="handlePreviewDblClick"
           @contextmenu="openImageContextMenu($event, previewImageUrl!)"
           draggable="false"
         />
+        </div>
         <!-- 底部信息栏：图片位置 + 缩放比例 -->
         <div class="image-preview-info-bar">
           <span v-if="allPreviewImages.length > 1 && previewIdx >= 0" class="image-preview-counter">
@@ -6332,18 +6375,28 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .image-preview-modal-content {
   position: relative;
-  max-width: 90vw;
-  max-height: 90vh;
+  width: 90vw;
+  height: 90vh;
   overflow: visible;
 }
 
+.image-preview-viewport {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
 .image-preview-full {
-  max-width: 90vw;
-  max-height: 90vh;
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
   border-radius: 8px;
   cursor: grab;
-  transform-origin: center center;
+  transform-origin: 0 0;
   transition: none;
   user-select: none;
   -webkit-user-drag: none;
@@ -6365,7 +6418,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .image-preview-echarts {
   border-radius: 8px;
   cursor: grab;
-  transform-origin: center center;
+  transform-origin: 0 0;
   transition: none;
   user-select: none;
   background: var(--bg-primary, #1a1a1a);
