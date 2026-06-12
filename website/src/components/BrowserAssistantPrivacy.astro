@@ -23,9 +23,10 @@ const content = isZh
         {
           h: '2. 摘要',
           ul: [
-            '扩展不会将您的数据发送至扩展作者的服务器。',
-            '扩展仅通过 Native Messaging 与您本机的旗鱼通信。',
-            '仅在您通过旗鱼发起浏览器任务时，扩展才会访问页面内容。',
+            '当前设计：扩展通过 Native Messaging 与您本机的旗鱼通信，支持您在旗鱼中发起的浏览器任务。',
+            '我们的承诺：不出售您的数据，不用于广告或跨站追踪，不滥用页面数据用于与 Agent 任务无关的目的。',
+            '仅在您通过旗鱼发起浏览器任务时访问页面内容（非后台画像采集）。',
+            '若日后数据处理方式变更，将更新本政策并在需要时征得同意。',
           ],
         },
         {
@@ -36,14 +37,15 @@ const content = isZh
             ['页面 DOM 结构 / 文本', '供 Agent 理解页面并选择操作'],
             ['按钮、链接、输入框等', '执行您要求的点击、输入等操作'],
           ],
-          note: '扩展不会出于广告、用户画像或统计分析而在后台持续采集上述数据。',
+          note: '我们不会在后台出于广告、用户画像或统计分析而持续采集上述数据。',
         },
         {
           h: '4. 数据如何流动',
           flow: '浏览器标签页 → 扩展（本机）→ Native Host（本机）→ 旗鱼（本机）',
           p: [
-            '以上环节均在您的设备上完成。扩展作者不运营接收该数据的云端服务。',
-            '数据进入旗鱼之后（例如您配置的 AI 服务商处理对话），由旗鱼主程序及该服务商的政策约束。关于 AI 服务商隐私对比，可参考我们的数据安全说明页（第三方 AI 科普，非本扩展政策）：',
+            '在当前版本中，以上环节均在您的设备上完成。我们未运营以收集、存储您浏览数据为目的的扩展侧云端服务。',
+            '数据进入旗鱼之后（例如您配置的 AI 服务商处理对话），由旗鱼主程序及该服务商的政策约束。若未来增加可选的远程或同步类能力，将在生效前于本政策中说明。',
+            '关于 AI 服务商隐私对比，可参考我们的数据安全说明页（第三方 AI 科普，非本扩展政策）：',
           ],
           link: { href: '/zh/data-privacy/', text: '数据安全与隐私' },
         },
@@ -58,25 +60,25 @@ const content = isZh
           ],
         },
         {
-          h: '6. 我们不会',
+          h: '6. 我们的承诺',
           ul: [
-            '出售您的数据',
-            '将扩展数据用于广告或跨站追踪',
-            '将页面内容上载至扩展作者服务器',
-            '在未通过旗鱼执行浏览器任务时采集数据',
+            '不出售您的数据',
+            '不将扩展数据用于广告或跨站追踪',
+            '不滥用页面或浏览数据用于您未请求的 Agent 任务之外的目的',
+            '在您未通过旗鱼执行浏览器任务时，不在后台采集此类数据（当前设计下）',
           ],
         },
         {
           h: '7. 数据保留与您的选择',
           p: [
-            '扩展不维护远程数据库。使用过程中的临时数据存在于浏览器内存及扩展本地存储中。旗鱼可能根据您的设置保留对话或任务历史。',
+            '在当前版本中，数据主要存在于浏览器内存及扩展本地存储；扩展侧不维护远程数据库。旗鱼可能根据您的设置保留对话或任务历史。',
             '您可随时禁用或卸载扩展；不安装 Native Host 即可不使用 attach 模式；也可使用旗鱼的 launch 模式（独立浏览器窗口）而无需本扩展。',
           ],
         },
         {
           h: '8. 儿童与政策变更',
           p: [
-            '本扩展不面向 13 岁以下儿童。我们可能更新本政策，文首生效日期将随之变更。',
+            '本扩展不面向 13 岁以下儿童。我们可能随实践或功能变化更新本政策；涉及数据处理的重大变更将在更新后的政策中说明。',
           ],
         },
         {
@@ -99,9 +101,10 @@ const content = isZh
         {
           h: '2. Summary',
           ul: [
-            'The Extension does not send your data to the Extension author’s servers.',
-            'It communicates only with the SailFish app on your computer via Native Messaging.',
-            'Page content is accessed only when you run a browser task through SailFish.',
+            'Current design: the Extension talks to SailFish on your computer via Native Messaging for browser tasks you start.',
+            'Our commitment: we do not sell your data, use it for ads or cross-site tracking, or misuse page data beyond your Agent tasks.',
+            'Page content is accessed only when you run a browser task through SailFish (not for background profiling).',
+            'If data practices change, we will update this policy and seek consent where required.',
           ],
         },
         {
@@ -112,14 +115,15 @@ const content = isZh
             ['DOM structure / text', 'Let the Agent understand the page'],
             ['Buttons, links, inputs', 'Perform clicks and typing you request'],
           ],
-          note: 'The Extension does not collect this data in the background for ads, profiling, or analytics.',
+          note: 'We do not collect this data in the background for ads, profiling, or analytics.',
         },
         {
           h: '4. How data flows',
           flow: 'Browser tab → Extension (local) → Native Host (local) → SailFish app (local)',
           p: [
-            'All steps run on your device. The Extension author does not operate a cloud service that receives this data.',
-            'What happens after data reaches SailFish (e.g. your configured AI provider) is governed by SailFish and that provider—not this Extension alone. For AI provider comparisons, see:',
+            'In the current version, these steps run on your device. We do not operate an Extension-owned cloud service to collect or store your browsing data.',
+            'What happens after data reaches SailFish (e.g. your configured AI provider) is governed by SailFish and that provider. Optional remote features in future versions will be described here before they take effect.',
+            'For AI provider comparisons, see:',
           ],
           link: { href: '/data-privacy/', text: 'Data Privacy & Security' },
         },
@@ -134,25 +138,25 @@ const content = isZh
           ],
         },
         {
-          h: '6. What we do not do',
+          h: '6. Our commitments',
           ul: [
-            'Sell your data',
-            'Use Extension data for ads or cross-site tracking',
-            'Upload page content to Extension author servers',
-            'Collect data when SailFish is not running a browser task',
+            'We will not sell your data',
+            'We will not use Extension data for ads or cross-site tracking',
+            'We will not misuse page data for purposes beyond browser automation you request',
+            'We will not collect such data in the background when you are not running a browser task (current design)',
           ],
         },
         {
           h: '7. Retention and your choices',
           p: [
-            'The Extension does not maintain a remote datastore. SailFish may retain history per your app settings.',
+            'In the current version, data stays in browser memory and local extension storage; no Extension-operated remote database.',
             'You may uninstall the Extension anytime, skip Native Host install, or use SailFish launch mode without the Extension.',
           ],
         },
         {
           h: '8. Children and changes',
           p: [
-            'The Extension is not directed at children under 13. We may update this policy; the effective date above will change.',
+            'The Extension is not directed at children under 13. We may update this policy when practices change; material data-handling changes will be described in the updated policy.',
           ],
         },
         {
