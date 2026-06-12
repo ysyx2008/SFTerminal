@@ -54,16 +54,11 @@
   }
 
   function evaluateScript(payload) {
-    let code = String(payload.expression || '').trim()
-    if (!code) return { result: null }
-    if (code.startsWith('return ')) {
-      code = code.slice(7)
+    const fn = globalThis.__sailfishSafeEval
+    if (typeof fn !== 'function') {
+      throw new Error('Safe eval engine not loaded')
     }
-    try {
-      return { result: new Function(`return (${code})`)() }
-    } catch {
-      return { result: new Function(code)() }
-    }
+    return { result: fn(payload.expression) }
   }
 
   window.__sailfishContentHandler = {
@@ -87,5 +82,19 @@
     scroll: scrollPage,
     get_content: getContent,
     evaluate: evaluateScript,
+  }
+
+  const runtime = globalThis.chrome?.runtime || globalThis.browser?.runtime
+  if (runtime?.onMessage) {
+    runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.type !== 'sailfish-evaluate') return undefined
+      try {
+        const result = evaluateScript({ expression: message.expression })
+        sendResponse({ success: true, data: result })
+      } catch (error) {
+        sendResponse({ success: false, error: error?.message || String(error) })
+      }
+      return true
+    })
   }
 })()

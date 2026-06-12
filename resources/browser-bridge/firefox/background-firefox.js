@@ -59,13 +59,13 @@ async function dispatchAction(action, payload) {
     case 'close_tab':
       return closeTab(payload)
     case 'evaluate':
-      return evaluateInActiveTab(payload)
+      return evaluateViaMessage(payload)
     default:
       return runInActiveTab(action, payload)
   }
 }
 
-async function evaluateInActiveTab(payload) {
+async function evaluateViaMessage(payload) {
   const expression = String(payload.expression || '').trim()
   if (!expression) return { result: null }
   const [tab] = await api.tabs.query({ active: true, currentWindow: true })
@@ -73,46 +73,21 @@ async function evaluateInActiveTab(payload) {
   if (tab.url?.startsWith('about:')) {
     throw new Error(`Cannot evaluate on internal page: ${tab.url}`)
   }
-
-  const worlds = ['ISOLATED', 'MAIN']
-  let lastError = null
-  for (const world of worlds) {
-    try {
-      const results = await api.scripting.executeScript({
-        target: { tabId: tab.id },
-        world,
-        func: (code) => {
-          let expr = code.trim()
-          if (expr.startsWith('return ')) expr = expr.slice(7)
-          try {
-            return new Function(`return (${expr})`)()
-          } catch (e1) {
-            return new Function(expr)()
-          }
-        },
-        args: [expression],
-      })
-      const entry = results?.[0]
-      if (!entry) {
-        lastError = new Error('Script injection returned no results')
-        continue
-      }
-      if (entry.error) {
-        lastError = new Error(String(entry.error))
-        continue
-      }
-      return { result: entry.result }
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error))
-    }
-  }
-
   try {
-    const fallback = await runInActiveTab('evaluate', payload)
-    if (fallback && typeof fallback === 'object' && 'result' in fallback) return fallback
-    return { result: fallback }
+    const response = await api.tabs.sendMessage(tab.id, {
+      type: 'sailfish-evaluate',
+      expression,
+    })
+    if (!response?.success) {
+      throw new Error(response?.error || 'Evaluate failed')
+    }
+    return response.data
   } catch (error) {
-    throw lastError || error
+    const msg = error instanceof Error ? error.message : String(error)
+    if (msg.includes('Could not establish connection') || msg.includes('Receiving end does not exist')) {
+      throw new Error('Content script not ready. Refresh the page and retry evaluate.')
+    }
+    throw error
   }
 }
 

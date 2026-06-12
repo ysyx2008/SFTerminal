@@ -20,7 +20,10 @@ export const browserTools: ToolDefinition[] = [
 
 **模式能力差异**：
 - **attach 不支持** \`browser_screenshot\`（无法截取用户浏览器画面）；需要截图时先 \`browser_launch { "mode": "launch" }\` 开独立窗口，或用 \`browser_snapshot\` / \`browser_get_content\` 代替
-- attach 支持 evaluate、点击、输入、导航等其余 browser_* 工具
+- **attach 的 evaluate（Firefox / Chrome 通用）**：
+- 扩展 CSP **永久禁止** \`eval\` / \`new Function()\`（上架商店也改变不了，见 Mozilla WONTFIX）
+- attach 仅支持 **CSP 安全子集**（经 content script 静态访问 DOM）：\`document.title\`、\`location.href\`、\`document.querySelector('…')\` 等
+- **任意复杂 JS** 必须 \`browser_launch { "mode": "launch" }\`（Playwright 独立窗口）
 
 **注意**：
 - 每个终端最多一个浏览器会话
@@ -329,16 +332,17 @@ export const browserTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'browser_evaluate',
-      description: `在页面中执行 JavaScript 代码（attach / launch 均支持）。
+      description: `在页面中执行 JavaScript 代码。
 
-**返回值**：脚本的返回值会被 JSON 序列化后返回
+**attach 模式**：扩展 CSP 禁止 eval/Function（Firefox MV3 硬性限制，上架商店也无法解除）。仅支持安全子集：
+- \`document.title\`、\`location.href\`、\`document.readyState\`
+- \`document.querySelector('…').textContent\`、\`document.querySelectorAll('…').length\`
+- \`document\` / \`location\` / \`window\` 上的属性链
+复杂或任意 JS 请 \`browser_launch { "mode": "launch" }\`。
 
-**示例**（表达式，推荐）：
-- \`document.title\`
-- \`document.querySelectorAll('img').length\`
-- \`location.href\`
+**launch 模式**：完整 JavaScript 执行（Playwright 页面上下文）。
 
-**attach 限制**：在页面脚本上下文执行，无法访问页面应用闭包内的变量。attach 不支持 browser_screenshot。`,
+**返回值**：脚本返回值 JSON 序列化后返回`,
       parameters: {
         type: 'object',
         properties: {

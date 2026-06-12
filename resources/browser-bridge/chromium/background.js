@@ -92,13 +92,13 @@ async function dispatchAction(action, payload) {
     case 'close_tab':
       return closeTab(payload)
     case 'evaluate':
-      return evaluateInActiveTab(payload)
+      return evaluateViaMessage(payload)
     default:
       return runInActiveTab(action, payload)
   }
 }
 
-async function evaluateInActiveTab(payload) {
+async function evaluateViaMessage(payload) {
   const expression = String(payload.expression || '').trim()
   if (!expression) return { result: null }
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
@@ -106,35 +106,22 @@ async function evaluateInActiveTab(payload) {
   if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('edge://') || tab.url?.startsWith('about:')) {
     throw new Error(`Cannot evaluate on internal page: ${tab.url}`)
   }
-
-  for (const world of ['ISOLATED', 'MAIN']) {
-    try {
-      const results = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        world,
-        func: (code) => {
-          let expr = code.trim()
-          if (expr.startsWith('return ')) expr = expr.slice(7)
-          try {
-            return new Function(`return (${expr})`)()
-          } catch {
-            return new Function(expr)()
-          }
-        },
-        args: [expression],
-      })
-      const entry = results?.[0]
-      if (!entry || entry.error) continue
-      return { result: entry.result }
-    } catch {
-      // try next world
+  try {
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      type: 'sailfish-evaluate',
+      expression,
+    })
+    if (!response?.success) {
+      throw new Error(response?.error || 'Evaluate failed')
     }
+    return response.data
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    if (msg.includes('Could not establish connection') || msg.includes('Receiving end does not exist')) {
+      throw new Error('Content script not ready. Refresh the page and retry evaluate.')
+    }
+    throw error
   }
-
-  // 回退：经 content handler
-  const fallback = await runInActiveTab('evaluate', payload)
-  if (fallback && typeof fallback === 'object' && 'result' in fallback) return fallback
-  return { result: fallback }
 }
 
 async function listTabs() {
