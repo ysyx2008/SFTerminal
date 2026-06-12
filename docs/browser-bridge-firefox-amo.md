@@ -20,8 +20,8 @@ AMO 专用 manifest 与图标在 `resources/browser-bridge/firefox-amo-publish/`
 2. **Submit a New Add-on** → 上传上面的 zip
 3. 选择分发方式（见下节）
 4. 填写版本说明、权限说明（见「审核说明模板」）
-5. `manifest.json` 须含 `browser_specific_settings.gecko.data_collection_permissions`（本扩展仅连本机旗鱼、不上传远程，填 `required: ["none"]`）
-6. 提交后等待签名（通常数小时；`<all_urls>` 可能触发人工审核）
+5. `manifest.json` 须含 `data_collection_permissions`（填 `required: ["none"]`），且 `strict_min_version` ≥ **140**（与 Mozilla 内置数据声明配套）
+6. 提交时一般只勾选 **Firefox 桌面版**（本扩展依赖 Native Host + 旗鱼桌面版，不支持 Android）
 
 ## 3. 分发方式怎么选
 
