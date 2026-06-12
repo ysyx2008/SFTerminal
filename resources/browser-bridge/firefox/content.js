@@ -60,8 +60,7 @@
       code = code.slice(7)
     }
     try {
-      // eslint-disable-next-line no-eval
-      return { result: eval(code) }
+      return { result: new Function(`return (${code})`)() }
     } catch {
       return { result: new Function(code)() }
     }

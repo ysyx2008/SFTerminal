@@ -91,9 +91,50 @@ async function dispatchAction(action, payload) {
       return gotoUrl(payload)
     case 'close_tab':
       return closeTab(payload)
+    case 'evaluate':
+      return evaluateInActiveTab(payload)
     default:
       return runInActiveTab(action, payload)
   }
+}
+
+async function evaluateInActiveTab(payload) {
+  const expression = String(payload.expression || '').trim()
+  if (!expression) return { result: null }
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+  if (!tab?.id) throw new Error('No active tab')
+  if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('edge://') || tab.url?.startsWith('about:')) {
+    throw new Error(`Cannot evaluate on internal page: ${tab.url}`)
+  }
+
+  for (const world of ['ISOLATED', 'MAIN']) {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        world,
+        func: (code) => {
+          let expr = code.trim()
+          if (expr.startsWith('return ')) expr = expr.slice(7)
+          try {
+            return new Function(`return (${expr})`)()
+          } catch {
+            return new Function(expr)()
+          }
+        },
+        args: [expression],
+      })
+      const entry = results?.[0]
+      if (!entry || entry.error) continue
+      return { result: entry.result }
+    } catch {
+      // try next world
+    }
+  }
+
+  // 回退：经 content handler
+  const fallback = await runInActiveTab('evaluate', payload)
+  if (fallback && typeof fallback === 'object' && 'result' in fallback) return fallback
+  return { result: fallback }
 }
 
 async function listTabs() {

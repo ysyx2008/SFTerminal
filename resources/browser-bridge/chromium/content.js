@@ -60,9 +60,7 @@
       code = code.slice(7)
     }
     try {
-      // 与 Playwright launch 模式一致：先当表达式求值
-      // eslint-disable-next-line no-eval
-      return { result: eval(code) }
+      return { result: new Function(`return (${code})`)() }
     } catch {
       return { result: new Function(code)() }
     }

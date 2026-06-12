@@ -333,11 +333,12 @@ export const browserTools: ToolDefinition[] = [
 
 **返回值**：脚本的返回值会被 JSON 序列化后返回
 
-**示例**：
-- 获取标题：\`document.title\`
-- 获取元素数量：\`document.querySelectorAll('img').length\`
+**示例**（表达式，推荐）：
+- \`document.title\`
+- \`document.querySelectorAll('img').length\`
+- \`location.href\`
 
-**attach 限制**：在 content script 上下文执行，无法访问页面闭包内的 JS 变量。attach 不支持 browser_screenshot，见 browser_screenshot 工具说明。`,
+**attach 限制**：在页面脚本上下文执行，无法访问页面应用闭包内的变量。attach 不支持 browser_screenshot。`,
       parameters: {
         type: 'object',
         properties: {
