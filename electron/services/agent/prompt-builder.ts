@@ -619,7 +619,10 @@ export class PromptBuilder {
   private buildRemoteChannelContext(): string {
     const channel = this.context.remoteChannel
     if (!channel || channel === 'desktop') {
-      return '**交互通道**：用户通过桌面应用与你对话，你的回复直接显示在对话界面中'
+      return [
+        '**交互通道**：用户通过桌面应用与你对话，你的回复直接显示在对话界面中',
+        '- 对话界面支持 Markdown 富文本渲染：` ```mermaid ` 代码块会被客户端渲染成交互式图表（流程图、时序图、架构图等）。需要画图时可以直接输出 Mermaid 语法。',
+      ].join('\n')
     }
 
     const imPlatforms: Record<string, { name: string; fileLimit: string; imageLimit: string }> = {

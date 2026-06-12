@@ -658,6 +658,41 @@ describe('Conversation History in Prompt', () => {
   })
 })
 
+// ==================== 交互通道测试 ====================
+
+describe('Remote channel context', () => {
+  it('should include Mermaid rendering hint for desktop channel', () => {
+    const builder = new PromptBuilder({ context: createMockContext({ remoteChannel: 'desktop' }) })
+    const prompt = builder.build()
+
+    expect(prompt).toContain('mermaid')
+    expect(prompt).toContain('Mermaid 语法')
+  })
+
+  it('should include Mermaid hint when remoteChannel is omitted (defaults to desktop)', () => {
+    const builder = new PromptBuilder({ context: createMockContext() })
+    const prompt = builder.build()
+
+    expect(prompt).toContain('Mermaid 语法')
+  })
+
+  it('should not include Mermaid hint for IM channels', () => {
+    const builder = new PromptBuilder({ context: createMockContext({ remoteChannel: 'feishu' }) })
+    const prompt = builder.build()
+
+    expect(prompt).toContain('飞书机器人')
+    expect(prompt).not.toContain('Mermaid 语法')
+  })
+
+  it('should not include Mermaid hint for web channel', () => {
+    const builder = new PromptBuilder({ context: createMockContext({ remoteChannel: 'web' }) })
+    const prompt = builder.build()
+
+    expect(prompt).toContain('Web 远程页面')
+    expect(prompt).not.toContain('Mermaid 语法')
+  })
+})
+
 // ==================== 边界情况测试 ====================
 
 describe('Edge cases', () => {
