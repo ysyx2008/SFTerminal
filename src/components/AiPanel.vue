@@ -1389,15 +1389,35 @@ const canGoDown = computed(() => previewIdx.value >= 0 && previewIdx.value < all
 const goUp = () => navigatePreviewTo(previewIdx.value - 1)
 const goDown = () => navigatePreviewTo(previewIdx.value + 1)
 
-// 滚轮缩放
+// 滚轮/触控板：Mac 双指滑动 → 平移；捏合（ctrlKey）或鼠标滚轮 → 缩放
+const PREVIEW_PINCH_ZOOM_SENSITIVITY = 0.008 // 捏合灵敏度（越小越慢）
+const PREVIEW_WHEEL_ZOOM_STEP = 0.1 // 鼠标滚轮每档缩放比例
+
+const clampPreviewScale = (scale: number) => Math.max(0.1, Math.min(10, scale))
+
 const handlePreviewWheel = (e: WheelEvent) => {
   e.preventDefault()
-  const delta = e.deltaY > 0 ? -0.1 : 0.1
-  const newScale = Math.max(0.1, Math.min(10, previewScale.value + delta * previewScale.value))
-  previewScale.value = newScale
+
+  // macOS 双指捏合、Windows 精准触控板捏合、Ctrl+滚轮
+  if (e.ctrlKey) {
+    const factor = Math.exp(-e.deltaY * PREVIEW_PINCH_ZOOM_SENSITIVITY)
+    previewScale.value = clampPreviewScale(previewScale.value * factor)
+    return
+  }
+
+  // 触控板双指滑动（pixel 模式）：平移，与 macOS 预览/地图惯例一致
+  if (e.deltaMode === WheelEvent.DOM_DELTA_PIXEL) {
+    previewTranslateX.value -= e.deltaX
+    previewTranslateY.value -= e.deltaY
+    return
+  }
+
+  // 鼠标滚轮（line/page 模式）：缩放
+  const delta = e.deltaY > 0 ? -PREVIEW_WHEEL_ZOOM_STEP : PREVIEW_WHEEL_ZOOM_STEP
+  previewScale.value = clampPreviewScale(previewScale.value + delta * previewScale.value)
 }
 
-// 显式以 { passive: false } 绑定 wheel——告诉浏览器我们故意要 preventDefault（缩放），
+// 显式以 { passive: false } 绑定 wheel——告诉浏览器我们故意要 preventDefault（缩放/平移），
 // 避免模板 @wheel.prevent 触发 "non-passive scroll-blocking" 警告。
 // previewModalRef 是 v-if 元素，每次弹窗出现/关闭都会重新挂载/卸载。
 watch(previewModalRef, (el, _old, onCleanup) => {
