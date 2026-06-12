@@ -384,7 +384,7 @@ export abstract class Agent {
       return true
     }
     
-    // 立即创建 user_supplement 步骤，让前端马上渲染为用户气泡
+    // 立即创建 user_supplement 步骤（追加到当前时间线末尾；流式输出会被 abort 打断，补充自然落在中断内容之后）
     this.addStep({
       type: 'user_supplement',
       content: message,

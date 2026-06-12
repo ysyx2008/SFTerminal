@@ -770,14 +770,6 @@ export function useAgentMode(
       }
     }
 
-    // 准备阶段补充早于 user_task 到达：挂到当前未完成任务组
-    if (leadingSupplements.length > 0 && groups.length > 0) {
-      const lastGroup = groups[groups.length - 1]
-      if (!lastGroup.finalResult) {
-        lastGroup.steps = [...leadingSupplements, ...lastGroup.steps]
-      }
-    }
-    
     // 标记最后一个未完成的任务为当前任务
     if (groups.length > 0) {
       const lastGroup = groups[groups.length - 1]
@@ -833,22 +825,16 @@ export function useAgentMode(
       // 初始等待提示由后端以 thinking step（"正在准备..."）承载，前端不再额外插入虚拟项
 
       if (group.steps.length > 0) {
+        // 调试模式 OFF 时，隐藏"成功且无用户必看产出"的 tool_call / tool_result step
+        // user_supplement 按 steps 时间顺序渲染，不整体提前到 user_task 之后
         const debugMode = configStore.agentDebugMode
-        const supplementSteps = group.steps.filter(s => s.type === 'user_supplement')
-        const agentSteps = group.steps.filter(
-          s => s.type !== 'user_supplement' && shouldShowToolResultStep(s, debugMode)
-        )
-
-        // 用户补充始终紧跟 user_task，避免出现在 Agent 回复之后
-        for (const step of supplementSteps) {
-          items.push({ id: step.id, type: 'step', step, group, size: 60, isFirstStep: false })
-        }
-
-        for (let i = 0; i < agentSteps.length; i++) {
-          const step = agentSteps[i]
+        const visibleSteps = group.steps.filter(s => shouldShowToolResultStep(s, debugMode))
+        for (let i = 0; i < visibleSteps.length; i++) {
+          const step = visibleSteps[i]
           const isFirst = i === 0
           const size = step.type === 'message'
             ? Math.max(80, Math.ceil(step.content.length / 4))
+            : step.type === 'user_supplement' ? 60
             : step.type === 'asking' ? 120 : isFirst ? 46 : 40
           items.push({ id: step.id, type: 'step', step, group, size, isFirstStep: isFirst })
         }

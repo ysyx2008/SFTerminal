@@ -311,6 +311,43 @@ describe('Agent', () => {
       expect(supplementIdx).toBeGreaterThan(userTaskIdx)
       expect(steps[supplementIdx].content).toBe('prep supplement')
     })
+
+    it('should append supplement after streaming message step (abort interrupts stream)', () => {
+      agent.injectCurrentRun({
+        id: 'run-1',
+        isRunning: true,
+        executionPhase: 'thinking',
+        requestId: 'req-1',
+        pendingUserMessages: [],
+        steps: [
+          { id: 'msg-1', type: 'message', content: 'streaming...', isStreaming: true, timestamp: 1 },
+        ],
+      })
+
+      agent.addUserMessage('mid-stream supplement')
+
+      const steps = agent.exposeCurrentRun()!.steps
+      expect(steps.map(s => s.type)).toEqual(['message', 'user_supplement'])
+      expect(steps[1].content).toBe('mid-stream supplement')
+    })
+
+    it('should append supplement after completed steps', () => {
+      agent.injectCurrentRun({
+        id: 'run-1',
+        isRunning: true,
+        executionPhase: 'executing_command',
+        pendingUserMessages: [],
+        steps: [
+          { id: 'msg-1', type: 'message', content: 'done', isStreaming: false, timestamp: 1 },
+          { id: 'tool-1', type: 'tool_call', content: 'browser_evaluate', timestamp: 2 },
+        ],
+      })
+
+      agent.addUserMessage('after tool supplement')
+
+      const steps = agent.exposeCurrentRun()!.steps
+      expect(steps.map(s => s.type)).toEqual(['message', 'tool_call', 'user_supplement'])
+    })
   })
 
   // ==================== 工具确认 ====================
