@@ -70,10 +70,6 @@
 | 🖥️ **CLI Mode** | Run all backend services without Electron — headless automation via `npm run sft` |
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-ppt.png" width="800" alt="PPT Generation">
-</p>
-
-<p align="center">
   <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-assistant_en.png" width="800" alt="AI Assistant">
 </p>
 
