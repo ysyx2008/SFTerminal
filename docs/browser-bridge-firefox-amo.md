@@ -74,7 +74,12 @@ The extension is useless without the SailFish desktop app and native host. Data 
 
 源码：`docs/browser-bridge-extension-privacy.md`（与官网同步）
 
-## 7. 签名完成后
+## 7. 商店页面
+
+- 列表页：https://addons.mozilla.org/firefox/addon/sailfish-browser-assistant/
+- 设置页按钮 URL：`shared/types/browser-bridge.ts` → `BROWSER_BRIDGE_FIREFOX_AMO_LISTING_URL`
+
+## 8. 签名完成后
 
 1. 从 AMO 下载 **signed .xpi**
 2. 可选：放入 `resources/browser-bridge/firefox/dist/` 并在后续版本安装器里支持一键安装
@@ -82,7 +87,7 @@ The extension is useless without the SailFish desktop app and native host. Data 
    - Firefox → 扩展 → 齿轮 → **Install Add-on From File…** 选 .xpi  
    - 或 `firefox -install-global-extension sailfish-browser-assistant.xpi`（企业部署）
 
-## 8. 更新版本
+## 9. 更新版本
 
 1. 改 `resources/browser-bridge/firefox-amo-publish/manifest.json` 的 `version`（开发目录 `firefox/manifest.json` 的 version 建议同步，扩展 ID 必须一致）
 2. 重新 `npm run pack:firefox-extension`

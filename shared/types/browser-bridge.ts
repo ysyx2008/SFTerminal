@@ -8,6 +8,10 @@ export const BROWSER_BRIDGE_CHROMIUM_EXTENSION_ID = 'ocdljfppijcjpgaaamgeailkgaj
 /** Firefox 扩展 ID（manifest gecko.id） */
 export const BROWSER_BRIDGE_FIREFOX_EXTENSION_ID = 'sailfish-browser-bridge@yushen.dev' as const
 
+/** Firefox AMO 商店列表页（设置页「从商店安装」按钮） */
+export const BROWSER_BRIDGE_FIREFOX_AMO_LISTING_URL =
+  'https://addons.mozilla.org/firefox/addon/sailfish-browser-assistant/' as const
+
 export type BrowserBridgeBrowser = 'chrome' | 'edge' | 'firefox' | 'unknown'
 
 /** attach 路由目标：Chromium 系（Chrome/Edge/Arc 等）与 Firefox 两路 */
