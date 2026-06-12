@@ -282,8 +282,34 @@ describe('Agent', () => {
   // ==================== 用户消息 ====================
 
   describe('addUserMessage', () => {
-    it('should return false when not running', () => {
-      expect(agent.addUserMessage('test message')).toBe(false)
+    it('should queue message before run starts', () => {
+      expect(agent.addUserMessage('test message')).toBe(true)
+      expect(agent.addUserMessage('second')).toBe(true)
+    })
+
+    it('should flush pre-run queue into user_supplement steps on initializeRun', async () => {
+      const steps: AgentStep[] = []
+      agent.setCallbacks({ onStep: (_id, step) => steps.push({ ...step }) })
+
+      agent.addUserMessage('prep supplement')
+
+      const aiService = agent.exposeServices().aiService as ReturnType<typeof createMockAiService>
+      aiService.chatWithToolsStream.mockImplementation(
+        (_messages, _tools, onChunk, _onToolCall, onDone) => {
+          onChunk('Done')
+          onDone({ content: 'Done', tool_calls: undefined })
+          return Promise.resolve()
+        }
+      )
+
+      await agent.run('Main task', createMockContext())
+
+      const types = steps.map(s => s.type)
+      const userTaskIdx = types.indexOf('user_task')
+      const supplementIdx = types.indexOf('user_supplement')
+      expect(userTaskIdx).toBeGreaterThanOrEqual(0)
+      expect(supplementIdx).toBeGreaterThan(userTaskIdx)
+      expect(steps[supplementIdx].content).toBe('prep supplement')
     })
   })
 

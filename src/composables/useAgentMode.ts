@@ -734,6 +734,8 @@ export function useAgentMode(
     const groups: AgentTaskGroup[] = []
     let currentGroup: AgentTaskGroup | null = null
     let orphanedStepCount = 0
+    // user_task 尚未到达时先到的 user_supplement（准备阶段竞态）
+    let leadingSupplements: AgentStep[] = []
     
     for (const step of allSteps) {
       if (step.type === 'user_task') {
@@ -745,23 +747,34 @@ export function useAgentMode(
           userTask: (isProactive || isOnboarding) ? '' : step.content,
           images: step.images,
           attachments: step.attachments,
-          steps: [],
+          steps: [...leadingSupplements],
           isCurrentTask: false,
           isProactive,
           isOnboarding,
         }
+        leadingSupplements = []
         groups.push(currentGroup)
       } else if (step.type === 'final_result') {
         if (currentGroup) {
           currentGroup.finalResult = step.content
           currentGroup = null
         }
+      } else if (step.type === 'user_supplement' && !currentGroup) {
+        leadingSupplements.push(step)
       } else if (step.type !== 'confirm') {
         if (currentGroup) {
           currentGroup.steps.push(step)
         } else {
           orphanedStepCount++
         }
+      }
+    }
+
+    // 准备阶段补充早于 user_task 到达：挂到当前未完成任务组
+    if (leadingSupplements.length > 0 && groups.length > 0) {
+      const lastGroup = groups[groups.length - 1]
+      if (!lastGroup.finalResult) {
+        lastGroup.steps = [...leadingSupplements, ...lastGroup.steps]
       }
     }
     
@@ -820,14 +833,19 @@ export function useAgentMode(
       // 初始等待提示由后端以 thinking step（"正在准备..."）承载，前端不再额外插入虚拟项
 
       if (group.steps.length > 0) {
-        // 调试模式 OFF 时，隐藏"成功且无用户必看产出"的 tool_call / tool_result step
-        // （详见 utils/tool-display.ts）。失败 / 写入类 / 携带富内容字段（图片、搜索结果、
-        // 子 Agent）的 step 永远展示；专用 step type 工具（plan/ask_user/wait）的双卡也会
-        // 一并隐藏，让位给专用卡。
         const debugMode = configStore.agentDebugMode
-        const visibleSteps = group.steps.filter(s => shouldShowToolResultStep(s, debugMode))
-        for (let i = 0; i < visibleSteps.length; i++) {
-          const step = visibleSteps[i]
+        const supplementSteps = group.steps.filter(s => s.type === 'user_supplement')
+        const agentSteps = group.steps.filter(
+          s => s.type !== 'user_supplement' && shouldShowToolResultStep(s, debugMode)
+        )
+
+        // 用户补充始终紧跟 user_task，避免出现在 Agent 回复之后
+        for (const step of supplementSteps) {
+          items.push({ id: step.id, type: 'step', step, group, size: 60, isFirstStep: false })
+        }
+
+        for (let i = 0; i < agentSteps.length; i++) {
+          const step = agentSteps[i]
           const isFirst = i === 0
           const size = step.type === 'message'
             ? Math.max(80, Math.ceil(step.content.length / 4))

@@ -28,7 +28,8 @@ import type {
   ExecutionMode,
   AgentExecutionPhase,
   PendingConfirmationInternal,
-  PendingSecureInputInternal
+  PendingSecureInputInternal,
+  PendingUserMessage
 } from './types'
 import { DEFAULT_AGENT_CONFIG } from './types'
 import { TaskMemoryStore } from './task-memory'
@@ -127,6 +128,9 @@ export abstract class Agent {
   
   /** 当前运行状态 */
   protected currentRun?: AgentRun
+
+  /** run() 尚未进入 initializeRun 时收到的用户补充（前端已显示 isRunning） */
+  private preRunUserMessages: PendingUserMessage[] = []
   
   /** 依赖服务 */
   protected services: AgentServices
@@ -282,7 +286,11 @@ export abstract class Agent {
       }
       
       await this.buildContext(run, message)
-      const result = await this.executeLoop(run)
+      let result = await this.executeLoop(run)
+      // 主循环返回后用户可能刚补充消息：继续处理直至队列清空
+      while (run.pendingUserMessages.length > 0 && !run.aborted) {
+        result = await this.executeLoop(run)
+      }
       this.finalizeRun(run, result)
       const elapsed = ((Date.now() - taskStartTime) / 1000).toFixed(1)
       log.info(`Task completed: runId=${run.id}, duration=${elapsed}s, steps=${run.steps.length}`)
@@ -363,8 +371,17 @@ export abstract class Agent {
    * 添加用户补充消息
    */
   addUserMessage(message: string, attachments?: import('@shared/types').AttachmentInfo[], documentContext?: string, images?: string[]): boolean {
-    if (!this.currentRun || !this.currentRun.isRunning) {
-      return false
+    const pending: PendingUserMessage = {
+      message,
+      attachments: attachments?.length ? attachments : undefined,
+      documentContext: documentContext || undefined,
+      images: images?.length ? images : undefined
+    }
+
+    if (!this.currentRun?.isRunning) {
+      // 前端已 setAgentRunning，但 run() 尚未 initializeRun — 先缓冲，initializeRun 时上墙
+      this.preRunUserMessages.push(pending)
+      return true
     }
     
     // 立即创建 user_supplement 步骤，让前端马上渲染为用户气泡
@@ -375,12 +392,7 @@ export abstract class Agent {
       images: images?.length ? images : undefined
     })
     
-    this.currentRun.pendingUserMessages.push({
-      message,
-      attachments: attachments?.length ? attachments : undefined,
-      documentContext: documentContext || undefined,
-      images: images?.length ? images : undefined
-    })
+    this.currentRun.pendingUserMessages.push(pending)
     
     // 如果 Agent 正在等待（AI 思考中），中断当前请求让它处理新消息
     if (this.currentRun.executionPhase === 'thinking' && this.currentRun.requestId) {
@@ -595,6 +607,20 @@ export abstract class Agent {
       images: context.previewImages || context.images,
       attachments: context.attachments
     })
+
+    // 准备阶段用户补充：run() IPC 往返期间缓冲的消息，紧跟 user_task 上墙
+    if (this.preRunUserMessages.length > 0) {
+      const queued = this.preRunUserMessages.splice(0)
+      for (const supplement of queued) {
+        run.pendingUserMessages.push(supplement)
+        this.addStep({
+          type: 'user_supplement',
+          content: supplement.message,
+          attachments: supplement.attachments,
+          images: supplement.images
+        })
+      }
+    }
     
     // 初始化 TaskMemory（仅首次 run 时，从 HistoryService 恢复）
     // 场景：用户恢复了历史对话，Agent 实例刚创建，TaskMemory 为空
@@ -1242,6 +1268,7 @@ export abstract class Agent {
    * 重置会话状态（前端"新对话"或终端重连时调用）
    */
   resetSession(): void {
+    this.preRunUserMessages = []
     this._sessionId = undefined
     this._sessionStartTime = undefined
     this._sessionSteps = []
