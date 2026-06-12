@@ -11,8 +11,19 @@ function connectNative() {
   if (nativePort) return
   try {
     nativePort = api.runtime.connectNative(NATIVE_HOST)
+    const connectError = api.runtime.lastError
+    if (connectError) {
+      console.error('[SailFish Bridge] connectNative failed:', connectError.message)
+      nativePort = null
+      setTimeout(connectNative, 3000)
+      return
+    }
     nativePort.onMessage.addListener(onNativeMessage)
     nativePort.onDisconnect.addListener(() => {
+      const disconnectError = api.runtime.lastError
+      if (disconnectError) {
+        console.error('[SailFish Bridge] native host disconnected:', disconnectError.message)
+      }
       nativePort = null
       api.storage.local.set({ bridgeConnected: false })
       setTimeout(connectNative, 3000)
@@ -124,7 +135,14 @@ async function runInActiveTab(action, payload) {
     },
     args: [action, payload],
   })
-  return results[0]?.result
+  const entry = results?.[0]
+  if (!entry) {
+    throw new Error('Script injection returned no results')
+  }
+  if (entry.error) {
+    throw new Error(String(entry.error))
+  }
+  return entry.result
 }
 
 connectNative()

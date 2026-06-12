@@ -320,13 +320,15 @@ export const browserTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'browser_evaluate',
-      description: `在页面中执行 JavaScript 代码。
+      description: `在页面中执行 JavaScript 代码（attach / launch 均支持）。
 
 **返回值**：脚本的返回值会被 JSON 序列化后返回
 
 **示例**：
 - 获取标题：\`document.title\`
-- 获取元素数量：\`document.querySelectorAll('img').length\``,
+- 获取元素数量：\`document.querySelectorAll('img').length\`
+
+**attach 限制**：在 content script 上下文执行，无法访问页面闭包内的 JS 变量；仅 browser_screenshot 在 attach 下不可用。`,
       parameters: {
         type: 'object',
         properties: {

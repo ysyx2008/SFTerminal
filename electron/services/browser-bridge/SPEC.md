@@ -48,6 +48,8 @@ native-host/host.mjs (Chrome 按连接 spawn)
 
 1. 从 `resources/browser-bridge/` 复制到 `{userData}/browser-bridge/`（`userData` 随「数据管理」自定义目录变化，见 `bootstrap.ts`）
 2. 写 `{userData}/browser-bridge/native-host/com.sailfish.browser.json` 并注册 NativeMessagingHosts（macOS 覆盖 Chrome / **Arc** / Brave / Edge / Chromium / Vivaldi / Opera 等各自目录）
+   - **Chromium 系**：manifest 用 `allowed_origins`（`chrome-extension://…/`）
+   - **Firefox**：manifest 用 `allowed_extensions`（扩展 ID 字符串，如 `sailfish-browser-bridge@yushen.dev`）
 3. 写 `$HOME/.sailfish-browser-bridge.json` 指针（供 Chrome 拉起的 host 进程定位当前 gateway，**不硬编码** SFTerm/SailFish 路径）
 4. macOS：`clang` 编译 `{Electron.app}/Contents/Helpers/sailfish-browser-host` Mach-O（与 Claude 同款路径；Chrome 无法稳定拉起 `$HOME` 下的 host）；manifest **按浏览器拆分**（Chrome 仅 `chrome-extension://`，Firefox 仅 `moz-extension://`）
 5. Windows host 启动：`ELECTRON_RUN_AS_NODE=1` + 应用可执行文件 + `host.mjs`

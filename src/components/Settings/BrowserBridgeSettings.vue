@@ -13,6 +13,7 @@ const status = ref<BrowserBridgeStatus | null>(null)
 const errorMsg = ref('')
 const actionMsg = ref('')
 const loadReadyMsg = ref('')
+const loadFirefoxReadyMsg = ref('')
 let actionMsgTimer: ReturnType<typeof setTimeout> | null = null
 
 function flashActionMsg(msg: string) {
@@ -34,6 +35,10 @@ const chromiumPath = computed(() => status.value?.install?.chromiumExtensionPath
 const firefoxPath = computed(() => status.value?.install?.firefoxExtensionPath ?? '')
 
 const chromiumFolderName = computed(() => folderBaseName(chromiumPath.value) || 'extension-chromium')
+const firefoxFolderName = computed(() => folderBaseName(firefoxPath.value) || 'extension-firefox')
+const firefoxManifestPath = computed(() =>
+  firefoxPath.value ? `${firefoxPath.value}/manifest.json` : '',
+)
 
 function folderBaseName(filePath: string): string {
   if (!filePath) return ''
@@ -146,7 +151,11 @@ async function copyExtensionPath(kind: 'chromium' | 'firefox') {
 async function revealExtensionFolder(kind: 'chromium' | 'firefox') {
   const folderPath = kind === 'chromium' ? chromiumPath.value : firefoxPath.value
   if (!folderPath) return
-  // macOS：打开上一级目录，方便用户看到 extension-chromium 文件夹并拖进 Chrome
+  if (kind === 'firefox' && isMac.value && firefoxManifestPath.value) {
+    await window.electronAPI.shell.showItemInFolder(firefoxManifestPath.value)
+    return
+  }
+  // macOS Chrome：打开上一级目录，方便用户看到 extension-chromium 文件夹并拖进 Chrome
   const openTarget = kind === 'chromium' && isMac.value
     ? parentFolder(folderPath)
     : folderPath
@@ -171,7 +180,7 @@ async function startLoadExtension(browser: 'chrome' | 'edge') {
 async function startLoadFirefox() {
   if (!firefoxPath.value) return
   errorMsg.value = ''
-  await copyExtensionPath('firefox')
+  if (!isMac.value) await copyExtensionPath('firefox')
   try {
     await window.electronAPI.browserBridge.openExtensionGuide('firefox')
   } catch {
@@ -179,8 +188,8 @@ async function startLoadFirefox() {
     return
   }
   await revealExtensionFolder('firefox')
-  loadReadyMsg.value = t('browserBridge.loadFirefoxReady')
-  setTimeout(() => { loadReadyMsg.value = '' }, 8000)
+  loadFirefoxReadyMsg.value = t(isMac.value ? 'browserBridge.loadFirefoxReadyMac' : 'browserBridge.loadFirefoxReady')
+  setTimeout(() => { loadFirefoxReadyMsg.value = '' }, 10000)
 }
 
 function toggleOnly(target: 'chrome' | 'edge' | 'firefox') {
@@ -365,6 +374,65 @@ onUnmounted(() => {
           </template>
         </div>
 
+        <!-- Firefox：与 Chrome 同级的一键引导 -->
+        <div v-if="firefoxPath" class="extension-path-panel firefox-panel">
+          <p class="path-panel-title">{{ t('browserBridge.firefoxPanelTitle') }}</p>
+          <div class="load-actions">
+            <button type="button" class="btn btn-primary load-cta firefox-cta" @click="startLoadFirefox">
+              {{ isMac ? t('browserBridge.startLoadFirefoxMac') : t('browserBridge.startLoadFirefox') }}
+            </button>
+          </div>
+          <p v-if="loadFirefoxReadyMsg" class="load-ready-msg">{{ loadFirefoxReadyMsg }}</p>
+
+          <div v-if="isMac" class="drag-method-box firefox-drag-box">
+            <span class="method-badge">{{ t('browserBridge.recommended') }}</span>
+            <p class="drag-method-title">{{ t('browserBridge.firefoxDragMethodTitle') }}</p>
+            <ol class="drag-steps">
+              <li>{{ t('browserBridge.firefoxDragStep1') }}</li>
+              <li>{{ t('browserBridge.firefoxDragStep2') }}</li>
+              <li>
+                {{ t('browserBridge.firefoxDragStep3Prefix') }}
+                <code class="folder-name">manifest.json</code>
+                {{ t('browserBridge.firefoxDragStep3Suffix') }}
+                <span class="firefox-folder-hint">
+                  （{{ t('browserBridge.firefoxDragFolderHint', { folder: firefoxFolderName }) }}）
+                </span>
+              </li>
+            </ol>
+          </div>
+
+          <details v-if="isMac" class="paste-method-fallback">
+            <summary>{{ t('browserBridge.firefoxPasteMethodTitle') }}</summary>
+            <p class="paste-method-note">{{ t('browserBridge.firefoxPasteMethodNote') }}</p>
+            <div class="path-row">
+              <code class="path-text path-text-sm" :title="firefoxManifestPath">{{ firefoxManifestPath }}</code>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline path-copy-btn"
+                @click="copyExtensionPath('firefox')"
+              >
+                <Copy :size="13" />
+                {{ copiedPathKey === 'firefox' ? t('browserBridge.copied') : t('browserBridge.copyPath') }}
+              </button>
+            </div>
+          </details>
+
+          <template v-else>
+            <p class="path-hint">{{ t('browserBridge.firefoxPasteHintWin') }}</p>
+            <div class="path-row">
+              <code class="path-text path-text-sm" :title="firefoxManifestPath">{{ firefoxManifestPath }}</code>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline path-copy-btn"
+                @click="copyExtensionPath('firefox')"
+              >
+                <Copy :size="13" />
+                {{ copiedPathKey === 'firefox' ? t('browserBridge.copied') : t('browserBridge.copyPath') }}
+              </button>
+            </div>
+          </template>
+        </div>
+
         <!-- Chrome -->
         <div class="browser-platform-card" :class="{ expanded: chromeExpanded }">
           <button type="button" class="browser-platform-header" @click="toggleOnly('chrome')">
@@ -410,14 +478,9 @@ onUnmounted(() => {
             <ol class="setup-steps">
               <li>{{ t('browserBridge.firefoxStep1') }}</li>
               <li>{{ t('browserBridge.firefoxStep2') }}</li>
-              <li>{{ t('browserBridge.firefoxStep3') }}</li>
+              <li>{{ isMac ? t('browserBridge.firefoxStep3Mac', { folder: firefoxFolderName }) : t('browserBridge.firefoxStep3') }}</li>
             </ol>
-            <div v-if="firefoxPath" class="firefox-path-block">
-              <code class="path-text path-text-sm">{{ firefoxPath }}/manifest.json</code>
-              <button type="button" class="btn btn-sm btn-outline-primary" @click="startLoadFirefox">
-                {{ t('browserBridge.startLoadFirefox') }}
-              </button>
-            </div>
+            <p class="firefox-temp-note">{{ t('browserBridge.firefoxTempNote') }}</p>
           </div>
         </div>
 
@@ -879,6 +942,34 @@ onUnmounted(() => {
 
 .paste-method-fallback .path-row {
   margin-top: 10px;
+}
+
+.extension-path-panel + .extension-path-panel {
+  margin-top: 16px;
+}
+
+.firefox-panel .firefox-cta {
+  background: var(--accent-orange, #ff7139);
+  border-color: var(--accent-orange, #ff7139);
+}
+
+.firefox-panel .firefox-cta:hover {
+  filter: brightness(1.05);
+}
+
+.firefox-drag-box {
+  border-color: rgba(255, 113, 57, 0.35);
+}
+
+.firefox-folder-hint {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.firefox-temp-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 .firefox-path-block {

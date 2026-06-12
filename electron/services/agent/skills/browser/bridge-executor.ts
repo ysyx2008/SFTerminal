@@ -300,8 +300,18 @@ export async function bridgeBrowserEvaluate(
   const script = args.script as string
   if (!script) return { success: false, output: '', error: '缺少 script 参数' }
   try {
-    const data = (await bridgeSend('evaluate', { expression: script })) as { result?: unknown }
-    return { success: true, output: JSON.stringify(data.result ?? null, null, 2) }
+    touchBridgeSession(ptyId)
+    const data = (await bridgeSend('evaluate', { expression: script })) as { result?: unknown } | undefined
+    if (data == null || typeof data !== 'object') {
+      return {
+        success: false,
+        output: '',
+        error: '脚本执行未返回结果（页面可能限制脚本注入，或当前标签不可操作）',
+      }
+    }
+    const result = 'result' in data ? data.result : data
+    const output = result !== undefined ? JSON.stringify(result, null, 2) : '(无返回值)'
+    return { success: true, output }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : '执行脚本失败'
     return { success: false, output: '', error: errorMsg }

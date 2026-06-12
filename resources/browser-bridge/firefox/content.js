@@ -54,9 +54,17 @@
   }
 
   function evaluateScript(payload) {
-    const fn = new Function(`return (${String(payload.expression || 'null')})`)
-    const result = fn()
-    return { result }
+    let code = String(payload.expression || '').trim()
+    if (!code) return { result: null }
+    if (code.startsWith('return ')) {
+      code = code.slice(7)
+    }
+    try {
+      // eslint-disable-next-line no-eval
+      return { result: eval(code) }
+    } catch {
+      return { result: new Function(code)() }
+    }
   }
 
   window.__sailfishContentHandler = {

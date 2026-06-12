@@ -9,7 +9,7 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 const HOST_DIR = path.dirname(fileURLToPath(import.meta.url))
-const ORIGIN = process.argv[2] || 'unknown'
+const ORIGIN = process.argv[2] || 'moz-extension://sailfish-browser-bridge@yushen.dev/'
 const HOST_NAME = 'com.sailfish.browser'
 
 let stdinBuffer = Buffer.alloc(0)

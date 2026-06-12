@@ -45,7 +45,8 @@
     "build:steam:current": "cross-env VITE_STEAM_BUILD=true vite build && electron-builder --dir --config electron-builder-steam.yml --publish never",
     "cli": "node electron/cli/main.js",
     "sft": "node electron/cli/main.js",
-    "cq": "npx tsx scripts/code-query.ts"
+    "cq": "npx tsx scripts/code-query.ts",
+    "pack:firefox-extension": "bash scripts/pack-firefox-extension.sh"
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.22.3",

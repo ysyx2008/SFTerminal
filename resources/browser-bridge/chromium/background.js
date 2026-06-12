@@ -158,7 +158,7 @@ async function runInActiveTab(action, payload) {
   if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('edge://') || tab.url?.startsWith('about:')) {
     throw new Error(`Cannot operate on browser internal page: ${tab.url}`)
   }
-  const [{ result }] = await chrome.scripting.executeScript({
+  const results = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     func: (actionName, actionPayload) => {
       const handler = globalThis.__sailfishContentHandler
@@ -169,8 +169,14 @@ async function runInActiveTab(action, payload) {
     },
     args: [action, payload],
   })
-  if (action === 'goto') return result
-  return result
+  const entry = results?.[0]
+  if (!entry) {
+    throw new Error('Script injection returned no results')
+  }
+  if (entry.error) {
+    throw new Error(String(entry.error))
+  }
+  return entry.result
 }
 
 function requestNative(action, payload) {
