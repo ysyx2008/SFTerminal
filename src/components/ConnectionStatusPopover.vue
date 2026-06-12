@@ -83,25 +83,14 @@ const mcpEnabledServers = computed(() => mcpServers.value.filter(s => s.enabled)
 const mcpConnectedCount = computed(() => mcpStatuses.value.length)
 const mcpEnabledCount = computed(() => mcpEnabledServers.value.length)
 
-const browserBridgeEnabledCount = computed(() => (browserBridgeInstalled.value ? 2 : 0))
-const browserBridgeConnectedCount = computed(() => {
-  if (!browserBridgeInstalled.value) return 0
-  let count = 0
-  if (browserBridgeChromiumConnected.value) count++
-  if (browserBridgeFirefoxConnected.value) count++
-  return count
-})
-
-const leftConnectedCount = computed(() => imConnectedCount.value + browserBridgeConnectedCount.value)
-const leftActiveCount = computed(() => imActiveCount.value + browserBridgeEnabledCount.value)
-
 const showGateway = computed(() => gatewayRunning.value)
 
+// 顶栏角标只统计 IM / Gateway / MCP；浏览器助手为可选能力，未连接不算「待办」
 const totalConnected = computed(() =>
-  leftConnectedCount.value + (showGateway.value ? 1 : 0) + mcpConnectedCount.value,
+  imConnectedCount.value + (showGateway.value ? 1 : 0) + mcpConnectedCount.value,
 )
 const totalEnabled = computed(() =>
-  leftActiveCount.value + (showGateway.value ? 1 : 0) + mcpEnabledCount.value,
+  imActiveCount.value + (showGateway.value ? 1 : 0) + mcpEnabledCount.value,
 )
 
 const statusType = computed(() => {
@@ -406,7 +395,7 @@ onUnmounted(() => {
           <div class="conn-col">
             <div class="col-header">
               <span class="col-title">📡 {{ t('conn.channels') }}</span>
-              <span class="col-count" :class="leftConnectedCount > 0 ? 'count-ok' : ''">{{ leftConnectedCount }}/{{ leftActiveCount }}</span>
+              <span class="col-count" :class="imConnectedCount > 0 ? 'count-ok' : ''">{{ imConnectedCount }}/{{ imActiveCount }}</span>
             </div>
             <div class="col-body">
               <!-- IM 渠道列表 -->
