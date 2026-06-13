@@ -91,6 +91,14 @@ const { show: showConfirmDialog, options: confirmOptions, handleConfirm, handleC
 const { start: startUpdaterPrompts, stop: stopUpdaterPrompts } = useAppUpdaterPrompts()
 
 const showSidebar = ref(false)
+
+// 欢迎页「最近对话」侧栏宽度（可拖拽调整，持久化到 config）
+const DEFAULT_RECALL_SIDEBAR_WIDTH = 320
+const MIN_RECALL_SIDEBAR_WIDTH = 240
+const recallSidebarWidth = ref(DEFAULT_RECALL_SIDEBAR_WIDTH)
+const isRecallSidebarResizing = ref(false)
+const getMaxRecallSidebarWidth = () => Math.max(MIN_RECALL_SIDEBAR_WIDTH, window.innerWidth - 480)
+
 const showSettings = ref(false)
 const showSmartPatrol = ref(false)
 const showAwaken = ref(false)
@@ -345,6 +353,14 @@ onMounted(async () => {
   // 加载觉醒状态
   try {
     isAwakened.value = !!(await window.electronAPI.config.get('agentAwakened'))
+  } catch { /* ignore */ }
+
+  // 加载最近对话侧栏宽度
+  try {
+    const savedWidth = await window.electronAPI.config.get('recallSidebarWidth') as number | undefined
+    if (typeof savedWidth === 'number' && Number.isFinite(savedWidth)) {
+      recallSidebarWidth.value = clampRecallSidebarWidth(savedWidth)
+    }
   } catch { /* ignore */ }
 
   // 注册标签页数量查询响应（用于退出确认）
@@ -863,6 +879,33 @@ const openHostSidebar = () => {
   showSidebar.value = true
 }
 
+function clampRecallSidebarWidth(width: number): number {
+  return Math.min(getMaxRecallSidebarWidth(), Math.max(MIN_RECALL_SIDEBAR_WIDTH, width))
+}
+
+const handleRecallSidebarResize = (e: MouseEvent) => {
+  if (!isRecallSidebarResizing.value) return
+  recallSidebarWidth.value = clampRecallSidebarWidth(e.clientX)
+}
+
+const stopRecallSidebarResize = () => {
+  if (!isRecallSidebarResizing.value) return
+  isRecallSidebarResizing.value = false
+  document.removeEventListener('mousemove', handleRecallSidebarResize)
+  document.removeEventListener('mouseup', stopRecallSidebarResize)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  window.electronAPI.config.set('recallSidebarWidth', recallSidebarWidth.value).catch(() => {})
+}
+
+const startRecallSidebarResize = (_e: MouseEvent) => {
+  isRecallSidebarResizing.value = true
+  document.addEventListener('mousemove', handleRecallSidebarResize)
+  document.addEventListener('mouseup', stopRecallSidebarResize)
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+}
+
 // 是否为终端工作台 tab（仅 local/ssh 由 TerminalTabView 渲染，独有 AI 侧栏方法）。
 // 其它工作台（助手等）的 tabViewRefs 实例没有 toggleAiPanel/ensureAiPanel，需先过滤，
 // 否则在其上调用会触发 TypeError（?. 只挡 null，挡不住方法 undefined）。
@@ -1046,6 +1089,7 @@ onUnmounted(() => {
   cleanupAgentNeedConfirmGlobal?.()
   cleanupAgentErrorForTabAttention?.()
   cleanupFullScreenChange?.()
+  stopRecallSidebarResize()
   stopUpdaterPrompts()
 })
 </script>
@@ -1100,14 +1144,28 @@ onUnmounted(() => {
     <!-- 主体内容 -->
     <div class="app-body">
       <!-- 左侧边栏 - 最近对话（欢迎页常驻） -->
-      <aside v-show="showRecallSidebar" class="sidebar sidebar--recall">
+      <aside
+        v-show="showRecallSidebar"
+        class="sidebar sidebar--recall"
+        :style="{ width: `${recallSidebarWidth}px` }"
+      >
         <div class="sidebar-content sidebar-content--recall">
           <RecentConversationsPanel />
         </div>
+        <div
+          class="recall-sidebar-resize-handle"
+          :class="{ resizing: isRecallSidebarResizing }"
+          @mousedown="startRecallSidebarResize"
+        />
       </aside>
 
       <!-- 左侧边栏 - 主机管理（欢迎页上为叠加层） -->
-      <aside v-show="showSidebar" class="sidebar" :class="{ 'sidebar--overlay': showRecallSidebar }">
+      <aside
+        v-show="showSidebar"
+        class="sidebar"
+        :class="{ 'sidebar--overlay': showRecallSidebar }"
+        :style="showRecallSidebar ? { width: `${recallSidebarWidth}px` } : undefined"
+      >
         <div class="sidebar-header">
           <span>{{ t('header.hostManager') }}</span>
           <button class="btn-icon btn-sm" @click="showSidebar = false" :title="t('header.closeSidebar')">
@@ -1412,9 +1470,51 @@ onUnmounted(() => {
 
 /* 欢迎页「最近对话」侧栏：比主机管理更退后，避免抢主区视觉焦点 */
 .sidebar--recall {
+  flex-shrink: 0;
   background: var(--bg-secondary);
   /* 常驻侧栏，回首页时不重复 slideInLeft */
   animation: none;
+}
+
+.recall-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.25s ease;
+  z-index: 5;
+}
+
+.recall-sidebar-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 40px;
+  background: var(--border-color);
+  border-radius: 2px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.recall-sidebar-resize-handle:hover::after,
+.recall-sidebar-resize-handle.resizing::after {
+  opacity: 1;
+}
+
+.recall-sidebar-resize-handle:hover,
+.recall-sidebar-resize-handle.resizing {
+  background: linear-gradient(180deg, transparent, rgba(var(--accent-rgb, 137, 180, 250), 0.3), transparent);
+}
+
+.recall-sidebar-resize-handle.resizing::after {
+  background: var(--accent-primary);
+  box-shadow: 0 0 10px var(--accent-primary);
 }
 
 .sidebar--recall::after {
