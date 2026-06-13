@@ -284,6 +284,50 @@ describe('shouldShowToolResultStep', () => {
     })
   })
 
+  describe('浏览器操作类：成功时 tool_result 隐藏（tool_call 绿条已表达结果）', () => {
+    it('browser_click 的 tool_result 成功时隐藏', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_result', toolName: 'browser_click', success: true },
+          false
+        )
+      ).toBe(false)
+    })
+
+    it('browser_click 的 tool_call 成功时仍展示', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_call', toolName: 'browser_click', success: true },
+          false
+        )
+      ).toBe(true)
+    })
+
+    it('browser_goto 的 tool_result 成功时隐藏', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_result', toolName: 'browser_goto', success: true },
+          false
+        )
+      ).toBe(false)
+    })
+
+    it('browser_type 失败时 tool_result 仍展示', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_result', toolName: 'browser_type', success: false },
+          false
+        )
+      ).toBe(true)
+    })
+
+    it('集合归属 HIDE_RESULT_WHEN_SUCCESS_TOOLS', () => {
+      expect(HIDE_RESULT_WHEN_SUCCESS_TOOLS.has('browser_click')).toBe(true)
+      expect(HIDE_RESULT_WHEN_SUCCESS_TOOLS.has('browser_goto')).toBe(true)
+      expect(HIDE_RESULT_WHEN_SUCCESS_TOOLS.has('browser_type')).toBe(true)
+    })
+  })
+
   describe('HIDE_RESULT_WHEN_SUCCESS_TOOLS：信息检索 / 命令型', () => {
     it('execute_command 的 tool_result 成功时隐藏', () => {
       expect(

@@ -87,6 +87,25 @@ export const HIDE_RESULT_WHEN_SUCCESS_TOOLS = new Set<string>([
   'focus_pane',
   'list_panes',
   'list_ssh_sessions',
+  // E. 浏览器操作类——tool_call 已含「点击 按钮「提交」」等动作描述，成功时绿条即可；
+  //    失败 / 调试模式下仍展示 tool_result（见 shouldShowToolResultStep）。
+  'browser_click',
+  'browser_type',
+  'browser_goto',
+  'browser_scroll',
+  'browser_wait',
+  'browser_launch',
+  'browser_close',
+  'browser_snapshot',
+  'browser_switch_tab',
+  'browser_list_tabs',
+  'browser_evaluate',
+  'browser_screenshot',
+  'browser_read_article',
+  'browser_read_page',
+  'browser_get_content',
+  'browser_save_login',
+  'browser_list_profiles',
 ])
 
 /**
