@@ -263,6 +263,22 @@ describe('PromptBuilder', () => {
     })
   })
 
+  describe('workbench prompt', () => {
+    it('should include workbenchPrompt verbatim when set on context', () => {
+      const snippet = '# 界面能力（产出物面板）\n\n测试工作台描述'
+      const prompt = new PromptBuilder({
+        context: createMockContext({ workbenchPrompt: snippet })
+      }).build()
+
+      expect(prompt).toContain(snippet)
+    })
+
+    it('should omit workbench section when workbenchPrompt absent', () => {
+      const prompt = new PromptBuilder({ context: createMockContext() }).build()
+      expect(prompt).not.toContain('# 界面能力（产出物面板）')
+    })
+  })
+
   describe('skills content', () => {
     it('should include skills content when provided', () => {
       const context = createMockContext()

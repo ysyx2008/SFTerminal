@@ -34,3 +34,7 @@
 
 - `AgentStepRecord.canvasData` 随会话持久化；`restoreAgentHistory` 调用 `hydrateFromSteps` 重放 steps 中的 canvasData。
 - 升级前已保存的历史无 canvasData 字段，Artifact 面板无法恢复（需重新生成产出物）。
+
+## Agent 认知
+
+- 工作台 UI 描述见 `src/workbench/assistant/prompt.ts`，经 `AgentContext.workbenchPrompt` 注入（仅桌面独立助手工作台对话）。

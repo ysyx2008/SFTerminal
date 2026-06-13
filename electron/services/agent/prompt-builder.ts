@@ -279,6 +279,7 @@ export class PromptBuilder {
 
       // ── Tier 2: 终端/主机级 ──
       this.buildHostEnvironment(),
+      this.buildWorkbenchPromptSection(),
       this.buildSplitPanesSection(),
       this.buildRemoteChannelContext(),
 
@@ -443,6 +444,11 @@ export class PromptBuilder {
 
   private buildHostEnvironment(): string {
     return PromptBuilder.buildHostEnvironment(this.context, this.hostProfileService)
+  }
+
+  /** 工作台 UI 描述：仅透传 context.workbenchPrompt，不做 terminalType 推断 */
+  private buildWorkbenchPromptSection(): string {
+    return this.context.workbenchPrompt?.trim() ?? ''
   }
 
   /**

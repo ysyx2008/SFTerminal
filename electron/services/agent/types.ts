@@ -105,6 +105,11 @@ export interface AgentContext {
   mode?: 'single' | 'split'
   panes?: AgentPaneInfo[]
   activePaneId?: string
+  /**
+   * 工作台 UI 描述（由前端在特定 workbench tab 对话时注入，prompt-builder 原样插入）。
+   * 例如独立助手工作台的 Artifact 产出物面板说明；IM/Web/Watch 不传。
+   */
+  workbenchPrompt?: string
 }
 
 // 工具执行结果

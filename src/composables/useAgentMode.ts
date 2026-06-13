@@ -14,6 +14,7 @@ import type { CacheSnapshot, DynamicScrollerExposed } from 'vue-virtual-scroller
 import { createLogger } from '../utils/logger'
 import { useTts } from './useTts'
 import { shouldShowToolResultStep } from '../utils/tool-display'
+import { resolveWorkbenchAgentPrompt } from '../workbench'
 
 const log = createLogger('Agent')
 
@@ -981,6 +982,9 @@ export function useAgentMode(
       let result: { success: boolean; result?: string; error?: string; aborted?: boolean }
       
       if (isAssistantMode && currentTab.value?.agentId) {
+        const workbenchPrompt = currentTab.value
+          ? resolveWorkbenchAgentPrompt(currentTab.value.type, currentTab.value)
+          : undefined
         result = await window.electronAPI.agent.runStandalone(
           currentTab.value.agentId,
           message,
@@ -993,7 +997,8 @@ export function useAgentMode(
             attachments: attachments.length > 0 ? attachments : undefined,
             remoteChannel: currentTab.value.remoteChannel,
             sessionId: agentState.value?.sessionId,
-            sessionStartTime: agentState.value?.sessionStartTime
+            sessionStartTime: agentState.value?.sessionStartTime,
+            ...(workbenchPrompt ? { workbenchPrompt } : {})
           },
           { executionMode: executionMode.value, commandTimeout: commandTimeout.value * 1000 },
           activeProfileId.value || undefined

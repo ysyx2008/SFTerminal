@@ -41,24 +41,58 @@
 
 「常驻锚点区 + 可显隐辅助区 + 可拖分隔条」布局。具名 slot：`#anchor`（常驻）、`#toggle`（可隐）。props：`toggleVisible` / `toggleRatio`(v-model) / `toggleSide` / `minRatio` / `maxRatio`。无特殊 chrome 的工作台都应基于它组合。
 
+## Kind 是什么
+
+`WorkbenchKind` = `TerminalType` = **`tab.type` 的字面值**（`'local' | 'ssh' | 'assistant'`）。不是 UI 壳的别名：local 与 ssh 是两个 kind，但共用 `TerminalTabView` 渲染器。
+
 ## 如何新增一个工作台（checklist）
 
 1. **扩类型**：`shared/types` 的 `TerminalType` 加新 kind（如 `'browser'`）。
-2. **写渲染器**：
-   - 无特殊 chrome → 写组件组合 `WorkbenchShell`（参考 `AssistantWorkbench.vue`）。
-   - 有特殊 chrome（如终端的 Terminal Teleport 保命池）→ 走 `renderer` 逃生口，提供专属组件。
-3. **登记**：在 `registry.ts` 的 `DESCRIPTORS` 加一条。
-4. **创建入口**：在 terminal store 的建 tab 逻辑与欢迎页/菜单加入口。
-5. **复查历史分支**：搜索现存 `tab.type === 'assistant'` / `'local'` / `'ssh'` 分支，确认新 kind 是否需要兼顾（文件树、Agent 工具集、批量命令等）。
+2. **建目录**：`src/workbench/<kind>/`（与类型字面量同名）。
+3. **descriptor**：`<kind>/descriptor.ts` 导出 `WorkbenchDescriptor`（renderer、availableInSteam 等）。
+4. **渲染器**：无特殊 chrome → `WorkbenchShell` 组合（参考 `AssistantWorkbench.vue`）；有特殊 chrome → 专属组件（参考 `TerminalTabView`）。
+5. **登记**：`registry.ts` import 该 descriptor 写入 `DESCRIPTORS`。
+6. **（可选）Agent UI 描述**：`<kind>/prompt.ts` + 在 `resolve-workbench-agent-prompt.ts` 注册。
+7. **创建入口**：terminal store 建 tab + 欢迎页/菜单入口。
+8. **复查分支**：搜索 `tab.type === '…'` 硬编码，确认新 kind 是否需要兼顾。
 
-> 第 1~3 步是工作台模块内成本；第 4~5 步是模块外集成点，是目前抽象尚未完全收敛的部分。
+> 第 1~5 步是 workbench 模块内成本；第 7~8 步是模块外集成点。
 
 ## 内置工作台
 
-| kind | 渲染方式 | 锚点区 | 可隐区 |
-|------|---------|--------|--------|
-| `local` / `ssh` | `renderer` = `TerminalTabView`（逃生口，含 Teleport 保命池） | 终端区（内含 SplitPane） | AI 侧栏 |
-| `assistant` | `AssistantWorkbench`（声明式 → WorkbenchShell） | 聊天（AiPanel） | Artifact 面板（CanvasPanel，多 tab；见 `src/canvas/SPEC.md`） |
+| kind | 目录 | 渲染方式 | 锚点区 | 可隐区 |
+|------|------|---------|--------|--------|
+| `local` | `local/` | `TerminalTabView` | 终端区 | AI 侧栏 |
+| `ssh` | `ssh/` | `TerminalTabView`（同 local） | 终端区 | AI 侧栏 |
+| `assistant` | `assistant/` | `AssistantWorkbench` | 聊天 | Artifact（见 `src/canvas/SPEC.md`） |
+
+## 目录约定
+
+```
+src/workbench/
+  SPEC.md
+  index.ts
+  types.ts
+  registry.ts                        # 聚合各 kind 的 descriptor
+  resolve-workbench-agent-prompt.ts  # 按 kind 路由 prompt
+  local/
+    descriptor.ts
+  ssh/
+    descriptor.ts
+  assistant/
+    descriptor.ts
+    prompt.ts
+  __tests__/
+```
+
+Vue 渲染器暂仍在 `src/components/`（`TerminalTabView`、`AssistantWorkbench`）；descriptor 引用之。**与 kind 绑定的契约**（descriptor、prompt）放在同名子目录。
+
+## Agent 工作台提示词
+
+- 文案：`<kind>/prompt.ts`（目前仅 `assistant/`）
+- 路由：`resolve-workbench-agent-prompt.ts`
+- 注入：桌面 App 内**非 remote** 的 assistant tab → `AgentContext.workbenchPrompt`；`PromptBuilder` 原样插入
+- 文案须与真实 UI 一致：产出物面板**按需出现**（首个文件类 artifact 才展开）；chart 仅在对话流展示，不注册 artifact；无空态展开控件
 
 ## 依赖与边界
 
