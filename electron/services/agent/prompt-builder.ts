@@ -707,7 +707,8 @@ export class PromptBuilder {
       '- 每个子任务的 prompt 须**自包含**：包含完整上下文（文件路径、目标、约束等），子 Agent 看不到你的对话历史',
       '- Agent 类型选择：`read`（默认，只读分析与调研）、`write`（可修改文件）',
       '- 每个子任务可单独指定 `agent_type` 覆盖全局设置',
-      '- 子 Agent 不能操作终端或向用户提问',
+      '- 子 Agent 只能使用 exec、读文件、搜索、知识库、web 等基础工具；不能使用技能（`skill`/`load_user_skill`）、MCP、终端交互或向用户提问',
+      '- 需要技能的子任务（如 browser/excel/email/chart）应由你亲自执行，不要分派给子 Agent',
     ].join('\n')
   }
 

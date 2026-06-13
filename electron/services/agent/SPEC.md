@@ -267,7 +267,7 @@ run(message, context, options)
 
 **byte-exact 一致性**：同一父 Agent 内所有子 Agent 共享相同 `context` / `aiRules` / `hostProfileService`，因此 system prompt 跨子 Agent byte-exact 一致；工具 schema 因为顺序约定（见「工具列表顺序约定」一节）天然共享前缀。两者都让 Anthropic/DeepSeek/OpenAI 的前缀缓存正常命中。
 
-**工具列表**：子 Agent 看到的是按类型白名单过滤后的工具列表（**不是父 Agent 的完整工具列表**）。父 Agent 专属工具（`dispatch_agents` / `talk_to_user` / `plan` / `ask_user` / `remember_info` 等）对子 Agent 完全不可见。
+**工具列表**：子 Agent 看到的是按类型白名单过滤后的工具列表（**不是父 Agent 的完整工具列表**）。父 Agent 专属工具（`dispatch_agents` / `talk_to_user` / `plan` / `ask_user` / `remember_info` / `skill` / `load_user_skill` 等）对子 Agent 完全不可见。父 Agent 的系统提示与 `dispatch_agents` 工具描述会明确告知：依赖技能的子任务（browser/excel/email 等）不得分派给子 Agent。
 
 **Agent 类型系统**：
 

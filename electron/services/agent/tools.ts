@@ -1025,7 +1025,7 @@ Agent 类型：
 - read（默认）：只读分析与调研，读文件/exec/搜索/查知识库
 - write：可修改文件（在 read 基础上增加 edit_file / write_text_file）
 
-⚠️ 子 Agent 看不到你的对话历史，每个子任务的 prompt 必须**自包含**（完整上下文：路径、目标、约束等）。子 Agent 不能操作终端、不能向用户提问、不能调用 MCP 工具。`,
+⚠️ 子 Agent 看不到你的对话历史，每个子任务的 prompt 必须**自包含**（完整上下文：路径、目标、约束等）。子 Agent 只能使用 exec、读文件、搜索、知识库、web 等基础工具；不能调用技能（skill/load_user_skill）、MCP、终端交互或向用户提问。需要 browser/excel/email 等技能的子任务请由主 Agent 亲自执行。`,
         parameters: {
           type: 'object',
           properties: {
