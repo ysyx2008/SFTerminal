@@ -3,17 +3,17 @@
  * Canvas DocumentRenderer
  *
  * 渲染 Word 文档的 HTML 预览（由 mammoth.js 转换）。
- * 白纸效果模拟 Word 文档版式。
  */
 import { computed } from 'vue'
 import { useCanvasStore } from '../../stores/canvas'
 
 const props = defineProps<{
   tabId: string
+  artifactId: string
 }>()
 
 const canvasStore = useCanvasStore()
-const content = computed(() => canvasStore.getState(props.tabId).content)
+const content = computed(() => canvasStore.getArtifactById(props.tabId, props.artifactId)?.content ?? '')
 </script>
 
 <template>
@@ -54,9 +54,6 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
   text-align: justify;
 }
 
-/* mammoth 输出的 HTML 元素样式 */
-
-/* 文档标题（Word Title 样式 → h1.document-title） */
 .document-content :deep(h1.document-title) {
   font-family: 'STXiaoBiaoSong', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
   font-size: 22px;
@@ -66,7 +63,6 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
   text-align: center;
 }
 
-/* 一级标题（Word Heading 1 → h1） */
 .document-content :deep(h1) {
   font-family: 'STHeiti', 'Heiti SC', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
   font-size: 18px;
@@ -75,7 +71,6 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
   color: #000;
 }
 
-/* 二级标题（Word Heading 2 → h2） */
 .document-content :deep(h2) {
   font-family: 'STKaiti', 'Kaiti SC', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
   font-size: 16px;
@@ -84,7 +79,6 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
   color: #111;
 }
 
-/* 三级标题（Word Heading 3 → h3） */
 .document-content :deep(h3) {
   font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
   font-size: 15px;

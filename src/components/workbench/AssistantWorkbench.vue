@@ -2,8 +2,8 @@
 /**
  * AssistantWorkbench —— 独立助手工作台（声明式区域，走通用 WorkbenchShell）
  *
- * 锚点区 = 聊天（AiPanel，常驻）；可隐区 = 文档/预览（CanvasPanel，按需显隐）。
- * 由 Agent step 的 canvasData 驱动 canvasStore 控制文档区显隐与内容（沿用原逻辑）。
+ * 锚点区 = 聊天（AiPanel，常驻）；可隐区 = Artifact 面板（CanvasPanel，按需显隐）。
+ * 由 Agent step 的 canvasData 驱动 canvasStore 注册/更新产出物。
  *
  * 统一渲染器 props 约定：{ tab, isActive }。
  */

@@ -1,108 +1,98 @@
 /**
- * Canvas 预览面板状态管理
+ * Canvas Artifact 面板 — Pinia 适配层
  *
- * 管理独立助手模式下右侧 Canvas 面板的显示状态。
- * Canvas 由 Agent step 事件驱动：exec 工具触发打开，任务完成触发关闭。
+ * 领域逻辑在 `src/canvas/artifact-registry.ts`（纯函数）；
+ * 本 store 只负责 tab 级 state 容器、布局比例与 Agent step 分发。
  */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { CanvasRendererType } from '@shared/types'
+import type { CanvasArtifact, CanvasData } from '@shared/types'
 import type { AgentStep } from '@shared/types'
-
-/** 写入 Canvas 的终端数据条目 */
-export interface TerminalEntry {
-  type: 'command' | 'output' | 'error' | 'info'
-  content: string
-  timestamp: number
-}
+import {
+  applyCanvasData,
+  clearTabArtifacts,
+  createTabArtifactState,
+  getActiveArtifact,
+  getArtifactById,
+  getArtifacts,
+  isPanelVisible,
+  removeArtifact,
+  setActiveArtifact,
+  updateArtifactContentById,
+  type TabArtifactState
+} from '../canvas/artifact-registry'
 
 export const useCanvasStore = defineStore('canvas', () => {
-  /** 各 tab 的 Canvas 状态（key = tabId） */
-  const states = ref<Map<string, {
-    visible: boolean
-    renderer: CanvasRendererType | null
-    title: string
-    /** 终端条目队列（TerminalRenderer 消费） */
-    terminalEntries: TerminalEntry[]
-    /** 通用内容（文档 HTML、图片 URL、Markdown 源码等） */
-    content: string
-    /** Markdown 保存目标（绝对路径），无则 Canvas 内编辑不落盘 */
-    filePath: string | null
-  }>>(new Map())
-
-  /** 分割比例（所有 tab 共用，0-1 范围，表示 Canvas 占比） */
+  const tabStates = ref<Map<string, TabArtifactState>>(new Map())
   const splitRatio = ref(0.5)
-
-  /** Canvas 关闭延迟定时器 */
   const closeTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
-  function getState(tabId: string) {
-    if (!states.value.has(tabId)) {
-      states.value.set(tabId, {
-        visible: false,
-        renderer: null,
-        title: '',
-        terminalEntries: [],
-        content: '',
-        filePath: null
-      })
+  function getTabState(tabId: string): TabArtifactState {
+    if (!tabStates.value.has(tabId)) {
+      tabStates.value.set(tabId, createTabArtifactState())
     }
-    return states.value.get(tabId)!
+    return tabStates.value.get(tabId)!
+  }
+
+  function commitTabState(tabId: string, next: TabArtifactState) {
+    tabStates.value.set(tabId, next)
+    tabStates.value = new Map(tabStates.value)
+  }
+
+  function mutateTab(tabId: string, reducer: (state: TabArtifactState) => TabArtifactState) {
+    commitTabState(tabId, reducer(getTabState(tabId)))
   }
 
   function isVisible(tabId: string): boolean {
-    return states.value.get(tabId)?.visible ?? false
+    return isPanelVisible(getTabState(tabId))
   }
 
-  function getRenderer(tabId: string): CanvasRendererType | null {
-    return states.value.get(tabId)?.renderer ?? null
+  function getArtifactsForTab(tabId: string): readonly CanvasArtifact[] {
+    return getArtifacts(getTabState(tabId))
   }
 
-  function getTitle(tabId: string): string {
-    return states.value.get(tabId)?.title ?? ''
+  function getActiveArtifactForTab(tabId: string): CanvasArtifact | null {
+    return getActiveArtifact(getTabState(tabId))
   }
 
-  function getFilePath(tabId: string): string | null {
-    return states.value.get(tabId)?.filePath ?? null
+  function getArtifactByIdForTab(tabId: string, artifactId: string): CanvasArtifact | null {
+    return getArtifactById(getTabState(tabId), artifactId)
   }
 
-  function getTerminalEntries(tabId: string): TerminalEntry[] {
-    return states.value.get(tabId)?.terminalEntries ?? []
+  function setActiveArtifactForTab(tabId: string, artifactId: string) {
+    mutateTab(tabId, state => setActiveArtifact(state, artifactId))
   }
 
-  /**
-   * 打开 Canvas
-   */
-  function open(tabId: string, renderer: CanvasRendererType, title: string, filePath?: string | null) {
+  function removeArtifactFromTab(tabId: string, artifactId: string) {
+    mutateTab(tabId, state => removeArtifact(state, artifactId))
+  }
+
+  function applyCanvasDataForTab(tabId: string, data: CanvasData) {
     cancelPendingClose(tabId)
-    const state = getState(tabId)
-    if (state.renderer !== renderer) {
-      state.terminalEntries = []
-      state.content = ''
-      state.filePath = null
-    }
-    state.visible = true
-    state.renderer = renderer
-    state.title = title
-    if (filePath !== undefined) {
-      state.filePath = filePath
-    }
+    mutateTab(tabId, state => applyCanvasData(state, data))
   }
 
-  /**
-   * 关闭 Canvas
-   */
-  function close(tabId: string) {
-    const state = states.value.get(tabId)
-    if (state) {
-      state.visible = false
-    }
+  function open(
+    tabId: string,
+    data: Omit<CanvasData, 'action'> & { action?: 'open' }
+  ) {
+    applyCanvasDataForTab(tabId, { action: 'open', ...data })
+  }
+
+  function close(tabId: string, artifactId?: string) {
     cancelPendingClose(tabId)
+    if (artifactId) {
+      removeArtifactFromTab(tabId, artifactId)
+      return
+    }
+    const state = getTabState(tabId)
+    if (state.activeArtifactId) {
+      removeArtifactFromTab(tabId, state.activeArtifactId)
+    } else {
+      commitTabState(tabId, clearTabArtifacts(state))
+    }
   }
 
-  /**
-   * 延迟关闭（任务完成后给用户留时间看最后输出）
-   */
   function closeDelayed(tabId: string, delayMs = 0) {
     if (delayMs <= 0) {
       close(tabId)
@@ -123,99 +113,48 @@ export const useCanvasStore = defineStore('canvas', () => {
     }
   }
 
-  /**
-   * 推送终端数据
-   */
-  function pushTerminalEntry(tabId: string, entry: Omit<TerminalEntry, 'timestamp'>) {
-    const state = getState(tabId)
-    state.terminalEntries.push({ ...entry, timestamp: Date.now() })
-  }
-
-  /**
-   * 更新通用内容（文档 HTML 等）
-   */
-  function updateContent(tabId: string, content: string) {
-    const state = getState(tabId)
-    state.content = content
-  }
-
-  /**
-   * 处理 Agent step 事件，自动驱动 Canvas
-   * 在 useAgentMode composable 中调用
-   * 
-   * 两种驱动方式：
-   * 1. canvasData: 后端 executor 主动推送（Word/Excel 等），自动打开/更新/关闭 Canvas
-   * 2. exec 工具: 仅在 Canvas 已打开时追加终端数据
-   */
-  function handleAgentStep(tabId: string, step: AgentStep) {
-    // 优先处理 canvasData（后端 executor 主动推送）
-    if (step.canvasData) {
-      const { action, renderer, title: canvasTitle, content: canvasContent, filePath: canvasFilePath } = step.canvasData
-      if (action === 'open' && renderer) {
-        open(
-          tabId,
-          renderer,
-          canvasTitle || '',
-          canvasFilePath !== undefined ? canvasFilePath ?? null : undefined
-        )
-        if (canvasContent) {
-          updateContent(tabId, canvasContent)
-        }
-      } else if (action === 'update' && canvasContent) {
-        updateContent(tabId, canvasContent)
-      } else if (action === 'close') {
-        close(tabId)
-      }
+  function updateContent(tabId: string, content: string, artifactId?: string) {
+    if (!artifactId) {
+      mutateTab(tabId, state => {
+        const active = getActiveArtifact(state)
+        if (!active) return state
+        return updateArtifactContentById(state, active.id, content)
+      })
       return
     }
+    mutateTab(tabId, state => updateArtifactContentById(state, artifactId, content))
+  }
 
-    if (!isVisible(tabId)) return
-
-    if (step.type === 'tool_call' && step.toolName === 'exec') {
-      const command = typeof step.toolArgs?.command === 'string' ? step.toolArgs.command : ''
-      if (command) {
-        pushTerminalEntry(tabId, { type: 'command', content: command })
-      }
-    }
-
-    if (step.type === 'tool_result' && step.toolName === 'exec') {
-      const output = step.toolResult ?? ''
-      if (output) {
-        pushTerminalEntry(tabId, { type: 'output', content: output })
-      }
+  function handleAgentStep(tabId: string, step: AgentStep) {
+    if (step.canvasData) {
+      applyCanvasDataForTab(tabId, step.canvasData)
     }
   }
 
-  /**
-   * 处理 Agent 完成事件
-   * 不自动关闭 Canvas —— 关闭由 word_close/excel_close 工具的 canvasData 或用户手动触发
-   */
   function handleAgentComplete(_tabId: string) {
-    // noop: 保持 Canvas 可见，让用户继续查看预览
+    // noop
   }
 
-  /**
-   * 清理 tab 状态
-   */
   function cleanup(tabId: string) {
     cancelPendingClose(tabId)
-    states.value.delete(tabId)
+    tabStates.value.delete(tabId)
+    tabStates.value = new Map(tabStates.value)
   }
 
   return {
-    states,
+    tabStates,
     splitRatio,
-    getState,
     isVisible,
-    getRenderer,
-    getTitle,
-    getFilePath,
-    getTerminalEntries,
+    getArtifacts: getArtifactsForTab,
+    getActiveArtifact: getActiveArtifactForTab,
+    getArtifactById: getArtifactByIdForTab,
+    setActiveArtifact: setActiveArtifactForTab,
+    removeArtifact: removeArtifactFromTab,
     open,
     close,
     closeDelayed,
-    pushTerminalEntry,
     updateContent,
+    applyCanvasData: applyCanvasDataForTab,
     handleAgentStep,
     handleAgentComplete,
     cleanup

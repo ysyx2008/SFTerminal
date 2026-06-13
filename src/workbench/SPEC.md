@@ -58,11 +58,11 @@
 | kind | 渲染方式 | 锚点区 | 可隐区 |
 |------|---------|--------|--------|
 | `local` / `ssh` | `renderer` = `TerminalTabView`（逃生口，含 Teleport 保命池） | 终端区（内含 SplitPane） | AI 侧栏 |
-| `assistant` | `AssistantWorkbench`（声明式 → WorkbenchShell） | 聊天（AiPanel） | 文档/预览（CanvasPanel，由 canvasStore 驱动显隐） |
+| `assistant` | `AssistantWorkbench`（声明式 → WorkbenchShell） | 聊天（AiPanel） | Artifact 面板（CanvasPanel，多 tab；见 `src/canvas/SPEC.md`） |
 
 ## 依赖与边界
 
-- 渲染器组件依赖各自的面板组件（`AiPanel` / `CanvasPanel` / `Terminal` 等）与相关 store（`canvasStore` 等）。
+- 渲染器组件依赖各自的面板组件（`AiPanel` / `CanvasPanel` / `Terminal` 等）与相关 store（`canvasStore` → `src/canvas/artifact-registry.ts`）。
 - **不参与**工作台抽象、保持独立的：`SplitPane` 树（终端分屏，`stores/split-pane-tree.ts`）、后端 Agent mode、`tab.type` 的后端语义。
 
 ## 尚未做（刻意留白）

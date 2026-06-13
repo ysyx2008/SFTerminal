@@ -230,8 +230,14 @@ export default {
     }
   },
 
-  // Assistant Canvas panel (Markdown, etc.)
+  // Assistant Canvas Artifact panel
   canvas: {
+    artifactUntitled: 'Untitled',
+    closeArtifact: 'Close artifact',
+    artifactOverflow: '+{count} more',
+    artifactPickerTitle: 'All artifacts',
+    artifactPickerSearch: 'Search files…',
+    artifactPickerEmpty: 'No matching artifacts',
     slidesPreview: 'Slide preview',
     slidesPreviewEmpty: 'No slide preview content',
     markdownSource: 'Markdown',

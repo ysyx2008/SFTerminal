@@ -1046,11 +1046,7 @@ async function excelClose(
     type: 'tool_result',
     content: output,
     toolName: 'excel_close',
-    toolResult: output,
-    canvasData: {
-      action: 'close',
-      renderer: 'spreadsheet'
-    }
+    toolResult: output
   })
 
   return { success: true, output }

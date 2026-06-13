@@ -1,20 +1,19 @@
 /**
- * Canvas 预览面板类型定义
- * 
- * Canvas 是独立助手右侧的动态预览面板，Agent 执行工具时自动展示相关内容，
- * 增加执行透明度。
+ * Canvas Artifact 面板类型定义
+ *
+ * Canvas 是独立助手右侧的产出物工作区：Agent 产出文件/文档时在面板注册 Artifact，
+ * 用户可在多个产出物之间切换查看。
  */
 
 /** Canvas 渲染器类型 */
 export type CanvasRendererType =
-  | 'terminal'      // xterm.js 命令执行展示
   | 'document'      // Word HTML 预览
   | 'spreadsheet'   // Excel 表格预览
-  | 'browser'       // 浏览器截图
-  | 'image'         // 图片展示
-  | 'html'          // 通用 HTML（沙盒 iframe）
+  | 'browser'       // 浏览器截图（预留）
+  | 'image'         // 图片展示（预留）
+  | 'html'          // 通用 HTML（沙盒 iframe，如 PPT 预览）
   | 'markdown'      // Markdown 渲染
-  | 'pdf'           // PDF 预览
+  | 'pdf'           // PDF 预览（预留）
 
 /** Canvas 打开事件 */
 export interface CanvasOpenPayload {
@@ -23,12 +22,10 @@ export interface CanvasOpenPayload {
   title: string
 }
 
-/** Canvas 内容更新事件（终端数据、文档内容等） */
+/** Canvas 内容更新事件 */
 export interface CanvasUpdatePayload {
   tabId: string
-  /** 写入 xterm / 替换 HTML 等 */
   data: string
-  /** 可选：对于文档类型，标记变更区域 */
   highlights?: CanvasHighlight[]
 }
 
@@ -43,19 +40,44 @@ export interface CanvasHighlight {
   type: 'added' | 'modified' | 'deleted'
 }
 
+/** 单个 Canvas 产出物 */
+export interface CanvasArtifact {
+  id: string
+  renderer: CanvasRendererType
+  title: string
+  /** HTML / Markdown 源码等 */
+  content: string
+  /** 磁盘锚点（绝对路径） */
+  filePath?: string | null
+  createdAt: number
+  updatedAt: number
+  pinned?: boolean
+}
+
+/** 定位已有 artifact 的键（open 之外的 action 使用） */
+export type CanvasArtifactTarget = Partial<Pick<CanvasData, 'artifactId' | 'filePath' | 'renderer'>>
+
 /**
  * AgentStep 中附带的 Canvas 数据
- * 搭 agent:step IPC 便车，由前端 canvas store 消费
+ * 搭 agent:step IPC 便车，由前端 canvas registry 消费
  */
 export interface CanvasData {
   action: 'open' | 'update' | 'close'
   renderer: CanvasRendererType
   title?: string
-  /** HTML 内容（Word 文档 / Excel 表格） */
   content?: string
-  /**
-   * Markdown 等文本类型：本地绝对路径，供 Canvas 内保存写回磁盘。
-   * 与 UI 展示路径（~/ 缩写）无关，必须为主进程可解析的绝对路径。
-   */
   filePath?: string
+  artifactId?: string
+  /** open 时是否切换到该 tab，默认 true */
+  activate?: boolean
+}
+
+/** 由 CanvasData 推导稳定 Artifact ID（open / upsert 用） */
+export function resolveCanvasArtifactId(
+  data: Pick<CanvasData, 'artifactId' | 'filePath' | 'renderer' | 'title'>
+): string {
+  if (data.artifactId) return data.artifactId
+  if (data.filePath) return `file:${data.filePath}`
+  const title = (data.title || 'untitled').trim()
+  return `ephemeral:${data.renderer}:${title}`
 }

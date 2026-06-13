@@ -8,11 +8,12 @@ import { useCanvasStore } from '../../stores/canvas'
 
 const props = defineProps<{
   tabId: string
+  artifactId: string
 }>()
 
 const { t } = useI18n()
 const canvasStore = useCanvasStore()
-const content = computed(() => canvasStore.getState(props.tabId).content)
+const content = computed(() => canvasStore.getArtifactById(props.tabId, props.artifactId)?.content ?? '')
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 
 watch(content, () => {
@@ -50,9 +51,8 @@ watch(content, () => {
 .slides-frame {
   flex: 1;
   width: 100%;
-  height: 100%;
   border: none;
-  background: #1a1a1e;
+  background: #fff;
 }
 
 .slides-empty {

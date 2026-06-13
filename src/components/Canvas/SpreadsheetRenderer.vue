@@ -9,10 +9,11 @@ import { useCanvasStore } from '../../stores/canvas'
 
 const props = defineProps<{
   tabId: string
+  artifactId: string
 }>()
 
 const canvasStore = useCanvasStore()
-const content = computed(() => canvasStore.getState(props.tabId).content)
+const content = computed(() => canvasStore.getArtifactById(props.tabId, props.artifactId)?.content ?? '')
 </script>
 
 <template>
@@ -54,7 +55,6 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
   height: 20px;
 }
 
-/* 行号列 */
 .spreadsheet-content :deep(th.row-header),
 .spreadsheet-content :deep(td.row-header) {
   background: #f8f8f8;
@@ -70,7 +70,6 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
   z-index: 1;
 }
 
-/* 列头 (A, B, C...) */
 .spreadsheet-content :deep(th) {
   background: #f8f8f8;
   color: #555;
@@ -83,30 +82,25 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
   z-index: 2;
 }
 
-/* 左上角 */
 .spreadsheet-content :deep(th.corner) {
   z-index: 3;
   background: #f0f0f0;
 }
 
-/* 数据单元格 */
 .spreadsheet-content :deep(td) {
   color: #1a1a1a;
   background: #fff;
 }
 
-/* 数字右对齐 */
 .spreadsheet-content :deep(td.num) {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-/* 新增 / 修改的单元格：静态蓝色底色 */
 .spreadsheet-content :deep(td.modified) {
   background-color: #e8f0fe;
 }
 
-/* 即将被删除的行：红色高亮（1 秒） */
 .spreadsheet-content :deep(td.deleting) {
   background-color: #fee2e2;
   animation: cell-deleting-flash 1s ease-out;
@@ -117,7 +111,6 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
   100% { background-color: #fee2e2; }
 }
 
-/* 删除行后上移填补：从下方滑入 */
 .spreadsheet-content :deep(td.shifted) {
   animation: cell-slide-up 0.75s ease-out;
 }
@@ -127,7 +120,6 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
   to { transform: translateY(0); opacity: 1; }
 }
 
-/* 删除列后左移填补：从右侧滑入 */
 .spreadsheet-content :deep(td.shifted-col) {
   animation: cell-slide-left 0.75s ease-out;
 }
@@ -137,7 +129,6 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
   to { transform: translateX(0); opacity: 1; }
 }
 
-/* 工作表标签栏 */
 .spreadsheet-content :deep(.sheet-tabs) {
   display: flex;
   gap: 0;
@@ -169,7 +160,6 @@ const content = computed(() => canvasStore.getState(props.tabId).content)
   margin-bottom: -1px;
 }
 
-/* 截断提示 */
 .spreadsheet-content :deep(p) {
   margin: 4px 8px;
   font-family: 'Calibri', Arial, sans-serif;

@@ -13,6 +13,7 @@ import { useToast } from '../../composables/useToast'
 
 const props = defineProps<{
   tabId: string
+  artifactId: string
 }>()
 
 const { t } = useI18n()
@@ -47,16 +48,16 @@ const lastPreviewQuoteMeta = ref<{
   endLine: number | null
 } | null>(null)
 
-const state = computed(() => canvasStore.getState(props.tabId))
-const filePath = computed(() => state.value.filePath)
+const artifact = computed(() => canvasStore.getArtifactById(props.tabId, props.artifactId))
+const filePath = computed(() => artifact.value?.filePath ?? null)
 const canSave = computed(() => typeof filePath.value === 'string' && filePath.value.length > 0)
 
 const previewHtml = computed(() => renderMarkdown(draft.value))
 
 watch(
-  () => state.value.content,
+  () => artifact.value?.content,
   (c) => {
-    draft.value = c
+    draft.value = c ?? ''
   },
   { immediate: true }
 )
@@ -88,7 +89,8 @@ function isMarkdownPanelActive(): boolean {
   const root = rootRef.value
   if (!root?.isConnected) return false
   if (!canvasStore.isVisible(props.tabId)) return false
-  if (canvasStore.getRenderer(props.tabId) !== 'markdown') return false
+  if (canvasStore.getActiveArtifact(props.tabId)?.id !== props.artifactId) return false
+  if (canvasStore.getActiveArtifact(props.tabId)?.renderer !== 'markdown') return false
   if (terminalStore.activeTabId !== props.tabId) return false
   const active = document.activeElement
   if (active && root.contains(active)) return true
@@ -161,7 +163,7 @@ function pushQuoteSnippet(meta: {
     return
   }
   const fp = filePath.value
-  const title = canvasStore.getTitle(props.tabId)
+  const title = artifact.value?.title ?? ''
   const label = fp ? basenamePath(fp) : (title || 'Markdown')
 
   composerQuoteStore.addSnippet(props.tabId, {
@@ -231,7 +233,7 @@ async function saveToDisk() {
   try {
     const res = await api.writeFile(path, draft.value)
     if (res.success) {
-      canvasStore.updateContent(props.tabId, draft.value)
+      canvasStore.updateContent(props.tabId, draft.value, props.artifactId)
       toastSuccess(t('canvas.savedToDisk'))
     } else {
       toastError(res.error || t('canvas.saveFailed'))

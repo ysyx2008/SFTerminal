@@ -230,8 +230,14 @@ export default {
     }
   },
 
-  // 独立助手右侧 Canvas（Markdown 等）
+  // 独立助手右侧 Canvas Artifact 面板
   canvas: {
+    artifactUntitled: '未命名',
+    closeArtifact: '关闭产出物',
+    artifactOverflow: '+{count} 更多',
+    artifactPickerTitle: '全部产出物',
+    artifactPickerSearch: '搜索文件名…',
+    artifactPickerEmpty: '无匹配产出物',
     slidesPreview: '幻灯片预览',
     slidesPreviewEmpty: '暂无幻灯片预览内容',
     markdownSource: 'Markdown',
