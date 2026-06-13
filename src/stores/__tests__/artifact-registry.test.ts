@@ -10,7 +10,8 @@ import {
   getArtifacts,
   isPanelVisible,
   removeArtifact,
-  setActiveArtifact
+  setActiveArtifact,
+  hydrateArtifactsFromSteps,
 } from '../../canvas/artifact-registry'
 
 describe('artifact-registry', () => {
@@ -108,5 +109,64 @@ describe('artifact-registry', () => {
     })
     state = setActiveArtifact(state, 'file:/b')
     expect(getActiveArtifact(state)?.id).toBe('file:/b')
+  })
+
+  it('hydrateArtifactsFromSteps 按顺序重放 canvasData', () => {
+    const state = hydrateArtifactsFromSteps([
+      {
+        canvasData: {
+          action: 'open',
+          renderer: 'document',
+          title: 'doc.docx',
+          filePath: '/tmp/doc.docx',
+          content: '<p>v1</p>'
+        }
+      },
+      {
+        canvasData: {
+          action: 'update',
+          renderer: 'document',
+          filePath: '/tmp/doc.docx',
+          content: '<p>v2</p>'
+        }
+      },
+      {
+        canvasData: {
+          action: 'open',
+          renderer: 'markdown',
+          title: 'note.md',
+          filePath: '/tmp/note.md',
+          content: '# hi',
+          activate: false
+        }
+      }
+    ])
+    expect(getArtifacts(state)).toHaveLength(2)
+    expect(getArtifactById(state, 'file:/tmp/doc.docx')?.content).toBe('<p>v2</p>')
+    expect(getActiveArtifact(state)?.id).toBe('file:/tmp/doc.docx')
+    expect(isPanelVisible(state)).toBe(true)
+  })
+
+  it('hydrateArtifactsFromSteps 处理 close action', () => {
+    const state = hydrateArtifactsFromSteps([
+      {
+        canvasData: {
+          action: 'open',
+          renderer: 'document',
+          title: 'a.docx',
+          filePath: '/tmp/a.docx',
+          content: '<p>a</p>'
+        }
+      },
+      {
+        canvasData: {
+          action: 'close',
+          renderer: 'document',
+          filePath: '/tmp/a.docx'
+        }
+      }
+    ])
+    expect(getArtifacts(state)).toHaveLength(0)
+    expect(isPanelVisible(state)).toBe(false)
   })
 })

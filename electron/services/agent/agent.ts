@@ -853,7 +853,8 @@ export abstract class Agent {
         timestamp: s.timestamp,
         webSearchResults: s.webSearchResults,
         success: s.success,
-        subAgents: s.subAgents
+        subAgents: s.subAgents,
+        canvasData: s.canvasData
       }
       
       if (s.type === 'user_task') {
@@ -1033,7 +1034,8 @@ export abstract class Agent {
       timestamp: s.timestamp,
       webSearchResults: s.webSearchResults,
       success: s.success,
-      subAgents: s.subAgents
+      subAgents: s.subAgents,
+      canvasData: s.canvasData
     }))
     
     const record: AgentRecord = {
@@ -1085,7 +1087,8 @@ export abstract class Agent {
       timestamp: s.timestamp,
       webSearchResults: s.webSearchResults,
       success: s.success,
-      subAgents: s.subAgents
+      subAgents: s.subAgents,
+      canvasData: s.canvasData
     }))
     
     // 合并 API 消息
@@ -1200,7 +1203,8 @@ export abstract class Agent {
       timestamp: s.timestamp,
       webSearchResults: s.webSearchResults,
       success: s.success,
-      subAgents: s.subAgents
+      subAgents: s.subAgents,
+      canvasData: s.canvasData
     }))
 
     const titleSuffix = opts?.titleSuffix ?? ''

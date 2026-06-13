@@ -15,6 +15,7 @@ import {
   getActiveArtifact,
   getArtifactById,
   getArtifacts,
+  hydrateArtifactsFromSteps,
   isPanelVisible,
   removeArtifact,
   setActiveArtifact,
@@ -125,6 +126,11 @@ export const useCanvasStore = defineStore('canvas', () => {
     mutateTab(tabId, state => updateArtifactContentById(state, artifactId, content))
   }
 
+  function hydrateFromSteps(tabId: string, steps: ReadonlyArray<{ canvasData?: CanvasData }>) {
+    cancelPendingClose(tabId)
+    commitTabState(tabId, hydrateArtifactsFromSteps(steps))
+  }
+
   function handleAgentStep(tabId: string, step: AgentStep) {
     if (step.canvasData) {
       applyCanvasDataForTab(tabId, step.canvasData)
@@ -155,6 +161,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     closeDelayed,
     updateContent,
     applyCanvasData: applyCanvasDataForTab,
+    hydrateFromSteps,
     handleAgentStep,
     handleAgentComplete,
     cleanup

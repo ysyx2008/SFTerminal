@@ -29,3 +29,8 @@
 ## 测试
 
 - `src/stores/__tests__/artifact-registry.test.ts`
+
+## 历史恢复
+
+- `AgentStepRecord.canvasData` 随会话持久化；`restoreAgentHistory` 调用 `hydrateFromSteps` 重放 steps 中的 canvasData。
+- 升级前已保存的历史无 canvasData 字段，Artifact 面板无法恢复（需重新生成产出物）。

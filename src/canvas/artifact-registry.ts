@@ -176,3 +176,16 @@ export function updateArtifactContentById(
 ): TabArtifactState {
   return updateArtifactContent(state, content, { artifactId })
 }
+
+/** 按 steps 顺序重放 canvasData，用于从历史对话恢复 Artifact 面板 */
+export function hydrateArtifactsFromSteps(
+  steps: ReadonlyArray<{ canvasData?: CanvasData }>
+): TabArtifactState {
+  let state = createTabArtifactState()
+  for (const step of steps) {
+    if (step.canvasData) {
+      state = applyCanvasData(state, step.canvasData)
+    }
+  }
+  return state
+}

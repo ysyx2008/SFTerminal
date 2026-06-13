@@ -6,6 +6,7 @@ export {
   getActiveArtifact,
   getArtifactById,
   getArtifacts,
+  hydrateArtifactsFromSteps,
   isPanelVisible,
   removeArtifact,
   setActiveArtifact,

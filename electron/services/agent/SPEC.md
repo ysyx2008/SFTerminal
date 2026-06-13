@@ -324,7 +324,7 @@ run(message, context, options)
 **`debugMode` 与持久化解耦**：`debugMode` 只是 **UI 渲染层** 的呈现开关，**不影响后端是否 emit step、不影响是否写入会话历史**。
 
 - 后端永远 emit 完整 step（tool_call + tool_result），永远写入 `run.steps` → `saveCheckpoint` / `finalizeRun` → `HistoryService` 持久化
-- `success`、`subAgents`、`echartsOption`（chart skill 投递的活图 ECharts option，类型见 `shared/types/agent.ts::EChartsStepPayload`）等富内容字段都必须随 `AgentStepRecord` 一起持久化（见 `shared/types/history.ts`），否则历史详情面板无法判定"失败步骤始终显示" / 历史里的图无法恢复成活图
+- `success`、`subAgents`、`echartsOption`（chart skill 投递的活图 ECharts option，类型见 `shared/types/agent.ts::EChartsStepPayload`）、`canvasData`（Artifact 面板，类型见 `shared/types/canvas.ts`）等富内容字段都必须随 `AgentStepRecord` 一起持久化（见 `shared/types/history.ts`），否则历史详情面板无法判定"失败步骤始终显示" / 历史里的图无法恢复成活图 / 重开历史时 Artifact 面板为空
 - 前端 `src/utils/tool-display.ts` 的 `shouldShowToolResultStep` 才是 UX 决策点（覆盖 `tool_call` 与 `tool_result` 两类）：非调试模式下**成功的 tool_result 默认隐藏**（tool_call 绿条已表达结果）；仅 `ALWAYS_SHOW_RESULT_TOOLS` 例外；用专用 step type 呈现的工具（`TOOLS_WITH_DEDICATED_STEP_TYPE`，如 `plan`）连其 `tool_call` 通告卡也一并隐藏；失败 / 携带 `images`/`echartsOption`/`webSearchResults`/`subAgents` 的步骤永远展示
 - 反例（已修复）：曾在 `tools/exec.ts` / `tools/command.ts` / `tools/terminal.ts` / `tools/misc.ts` 里写过 `if (config.debugMode) executor.addStep({type:'tool_result', ...})`——这导致非调试模式下命令输出**整条 step 都没产生**，既不进 messages、也不进会话历史，事后开调试模式也找不回来。这种耦合是错误的，新增工具时不要重蹈覆辙。
 

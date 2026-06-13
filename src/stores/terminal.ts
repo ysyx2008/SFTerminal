@@ -7,6 +7,7 @@ import type { JumpHostConfig } from './config'
 import { useConfigStore } from './config'
 import type { TerminalScreenService, ScreenContent } from '../services/terminal-screen.service'
 import type { TerminalSnapshotManager, TerminalSnapshot, TerminalDiff } from '../services/terminal-snapshot.service'
+import { useCanvasStore } from './canvas'
 import { createLogger } from '../utils/logger'
 import {
   findActivePaneInLayout,
@@ -2023,6 +2024,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       webSearchResults?: import('@shared/types').WebSearchResultItem[]
       success?: boolean
       subAgents?: import('@shared/types').SubAgentResult[]
+      canvasData?: import('@shared/types').CanvasData
     }>
     finalResult?: string
     duration: number
@@ -2046,7 +2048,8 @@ export const useTerminalStore = defineStore('terminal', () => {
       timestamp: s.timestamp,
       webSearchResults: s.webSearchResults,
       success: s.success,
-      subAgents: s.subAgents
+      subAgents: s.subAgents,
+      canvasData: s.canvasData
     }))
     
     // 兼容旧数据：确保有 user_task 和 final_result 步骤
@@ -2083,6 +2086,11 @@ export const useTerminalStore = defineStore('terminal', () => {
     delete tab.aiScrollCache
     // 确保从欢迎页首次打开历史时，AiPanel 能立即感知 steps 变化
     tabs.value = [...tabs.value]
+
+    // 重放 steps 中的 canvasData，恢复 Artifact 产出物面板（仅助手 tab）
+    if (tab.type === 'assistant') {
+      useCanvasStore().hydrateFromSteps(tabId, steps)
+    }
   }
 
   /**

@@ -31,6 +31,8 @@ export interface AgentStepRecord {
   success?: boolean
   /** 并行子 Agent 卡片组（dispatch_agents 工具专用） */
   subAgents?: import('./agent').SubAgentResult[]
+  /** Canvas 预览数据（仅 UI / Artifact 面板消费，不发给 AI；历史重开时重放） */
+  canvasData?: import('./canvas').CanvasData
 }
 
 export interface AgentRecord {
