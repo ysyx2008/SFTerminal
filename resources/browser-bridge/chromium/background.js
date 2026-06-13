@@ -82,7 +82,11 @@ async function handleHostCommand(message) {
 async function dispatchAction(action, payload) {
   switch (action) {
     case 'ping':
-      return { extension: 'sailfish-browser-bridge', version: chrome.runtime.getManifest().version }
+      return {
+        extension: 'sailfish-browser-bridge',
+        version: chrome.runtime.getManifest().version,
+        protocol: 1,
+      }
     case 'list_tabs':
       return listTabs()
     case 'switch_tab':

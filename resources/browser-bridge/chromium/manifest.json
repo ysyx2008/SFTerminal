@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "SailFish Browser Assistant",
   "description": "Connects your browser to SailFish Agent for tab and login reuse.",
-  "version": "1.0.6",
+  "version": "1.1.0",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnCXWO6N4MvktoKoUVMW5WF1pfJ+wXADbwXHTBfbbt4CnnlVpBz8ZC2rGoE7n//ZAM/SONor1gHNK+D17SSXNQk6JrPjNykvW+mXFsfZLS7F4YigErrVsT3kEpraOKm7qllVI6RF9joihbT3pzUbC7Q3g9rnZx+fdPPP8zFydSIzMmIrhbRXycnUvH6xLbys2R0pAjWXKa8FB8aRalpHh4fERQ5MHXk2pen/kYbtg3CnjkQYzZpQeDYoP/0XPKUzirXWgYIiWIZByOsns6j3k9FA0Qv3COlDVIJxfQiHw7Q6DPkt8pGEJoVjmtmse5/1CG2/8cKTv2PuFTqy8RsKAiwIDAQAB",
   "background": {
     "service_worker": "background.js"
@@ -25,7 +25,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["safe-eval.js", "snapshot.js", "article-extract.js", "content.js"],
+      "js": ["safe-eval.js", "snapshot.js", "content.js"],
       "run_at": "document_idle",
       "all_frames": false
     }

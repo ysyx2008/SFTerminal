@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "SailFish Browser Assistant",
   "description": "Connects your browser to SailFish Agent for tab and login reuse.",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "browser_specific_settings": {
     "gecko": {
       "id": "sailfish-browser-bridge@yushen.dev",
@@ -30,7 +30,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["safe-eval.js", "snapshot.js", "article-extract.js", "content.js"],
+      "js": ["safe-eval.js", "snapshot.js", "content.js"],
       "run_at": "document_idle",
       "all_frames": false
     }

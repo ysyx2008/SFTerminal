@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "SailFish Browser Assistant",
   "description": "Connects Firefox to the SailFish desktop Agent. Reuses your tabs and login sessions via Native Messaging (requires SailFish app).",
-  "version": "1.0.5",
+  "version": "1.1.0",
   "homepage_url": "https://www.sfterm.com/",
   "author": "SailFish",
   "browser_specific_settings": {
@@ -47,7 +47,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["safe-eval.js", "snapshot.js", "article-extract.js", "content.js"],
+      "js": ["safe-eval.js", "snapshot.js", "content.js"],
       "run_at": "document_idle",
       "all_frames": false
     }

@@ -2,7 +2,9 @@ import type {
   BrowserBridgeAttachTarget,
   BrowserBridgeCommand,
   BrowserBridgeCommandResult,
+  BrowserBridgePingResult,
 } from '@shared/types/browser-bridge'
+import { BROWSER_BRIDGE_PROTOCOL_VERSION } from '@shared/types/browser-bridge'
 
 export function parseGatewayLines(buffer: string): { messages: unknown[]; rest: string } {
   const messages: unknown[] = []
@@ -78,5 +80,19 @@ export function attachTargetFromOrigin(origin: string): BrowserBridgeAttachTarge
   if (isFirefoxOrigin(origin)) return 'firefox'
   if (isChromiumOrigin(origin)) return 'chromium'
   return null
+}
+
+export function parsePingResult(value: unknown): BrowserBridgePingResult | null {
+  if (!value || typeof value !== 'object') return null
+  const obj = value as Record<string, unknown>
+  if (typeof obj.extension !== 'string' || typeof obj.version !== 'string') return null
+  const protocol = typeof obj.protocol === 'number' ? obj.protocol : undefined
+  return { extension: obj.extension, version: obj.version, protocol }
+}
+
+/** protocol v1：扩展只传 HTML 原语，正文提取在桌面端 */
+export function supportsProtocolV1(ping: BrowserBridgePingResult | null | undefined): boolean {
+  if (!ping) return false
+  return (ping.protocol ?? 0) >= BROWSER_BRIDGE_PROTOCOL_VERSION
 }
 

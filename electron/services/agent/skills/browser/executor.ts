@@ -22,7 +22,7 @@ import {
 } from './session'
 import { getSnapshot, resolveRef, getSnapshotStats } from './snapshot'
 import type { RefMap } from './snapshot'
-import { extractArticleFromHtml, isReadabilityUsable } from '../../../../utils/readability-extract'
+import { extractPageContentFromHtml } from '../../../../utils/page-content-extract'
 import type { Page } from 'playwright-core'
 import {
   bridgeBrowserLaunch,
@@ -558,13 +558,11 @@ async function browserGetContent(
       const pageHtml = await page.content()
       const pageUrl = page.url()
       if (extract !== 'full' && (format === 'text' || format === 'markdown')) {
-        const readability = await extractArticleFromHtml(pageHtml, pageUrl)
-        if (isReadabilityUsable(readability)) {
-          content = format === 'markdown' ? readability!.content : readability!.textContent
-        } else if (format === 'html' || format === 'markdown') {
-          content = pageHtml
+        const extracted = await extractPageContentFromHtml(pageHtml, pageUrl)
+        if (format === 'markdown' && extracted.html) {
+          content = extracted.html
         } else {
-          content = await page.innerText('body')
+          content = extracted.text
         }
       } else if (format === 'html' || format === 'markdown') {
         content = pageHtml

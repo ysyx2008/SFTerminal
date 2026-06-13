@@ -16,7 +16,7 @@ import {
   resolveBridgeRef,
   touchBridgeSession,
 } from './bridge-session'
-import { extractArticleFromHtml, isReadabilityUsable } from '../../../../utils/readability-extract'
+import { extractPageContentFromHtml } from '../../../../utils/page-content-extract'
 
 function countRefs(refs: BrowserBridgeRefMap): { total: number; interactive: number } {
   const entries = Object.values(refs)
@@ -310,6 +310,31 @@ function htmlToSimpleMarkdown(html: string): string {
     .trim()
 }
 
+type ContentPayload = {
+  content?: string
+  html?: string
+  fallbackText?: string
+  title?: string
+  url?: string
+}
+
+/** 扩展回传 page_html；旧版无 html 字段时降级为整页 HTML */
+async function fetchPageHtmlFromExtension(ptyId: string): Promise<ContentPayload> {
+  const data = (await bridgeSend(ptyId, 'get_content', { mode: 'page_html' })) as ContentPayload
+  if (data.html) return data
+
+  const legacy = (await bridgeSend(ptyId, 'get_content', {
+    mode: 'html',
+    extract: 'full',
+  })) as ContentPayload
+  return {
+    title: legacy.title || data.title,
+    url: legacy.url || data.url,
+    html: legacy.content || '',
+    fallbackText: data.content || '',
+  }
+}
+
 export async function bridgeBrowserGetContent(
   ptyId: string,
   args: Record<string, unknown>,
@@ -320,14 +345,6 @@ export async function bridgeBrowserGetContent(
   const maxLength = typeof args.max_length === 'number' ? args.max_length : 16000
 
   try {
-    type ContentPayload = {
-      content?: string
-      html?: string
-      fallbackText?: string
-      title?: string
-      url?: string
-    }
-
     let title = ''
     let pageUrl = ''
     let content = ''
@@ -358,23 +375,19 @@ export async function bridgeBrowserGetContent(
       pageUrl = data.url || ''
       content = data.content || ''
     } else {
-      const data = (await bridgeSend(ptyId, 'get_content', {
-        mode: 'page_html',
-        extract,
-      })) as ContentPayload
+      const data = await fetchPageHtmlFromExtension(ptyId)
       title = data.title || ''
       pageUrl = data.url || ''
       const html = data.html || ''
-      const readability = html ? await extractArticleFromHtml(html, pageUrl || 'https://local.invalid/') : null
-      if (isReadabilityUsable(readability)) {
-        title = readability!.title || title
-        if (format === 'markdown') {
-          content = htmlToSimpleMarkdown(readability!.content)
-        } else {
-          content = readability!.textContent
-        }
+      const plainFallback = data.fallbackText || data.content || ''
+      const extracted = html
+        ? await extractPageContentFromHtml(html, pageUrl || 'https://local.invalid/', plainFallback)
+        : { title: null, text: plainFallback, html: null }
+      title = extracted.title || title
+      if (format === 'markdown' && extracted.html) {
+        content = htmlToSimpleMarkdown(extracted.html)
       } else {
-        content = data.fallbackText || data.content || ''
+        content = extracted.text
       }
     }
 

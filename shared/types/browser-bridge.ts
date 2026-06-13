@@ -2,6 +2,26 @@
 
 export const BROWSER_BRIDGE_NATIVE_HOST = 'com.sailfish.browser' as const
 
+/** 扩展 ↔ 桌面端协议版本（业务逻辑迭代在桌面端，扩展尽量 frozen） */
+export const BROWSER_BRIDGE_PROTOCOL_VERSION = 1 as const
+
+/** 冻结的 action 名单 — 新能力优先扩展 payload，而非新增 action */
+export const BROWSER_BRIDGE_ACTIONS = [
+  'ping',
+  'list_tabs',
+  'switch_tab',
+  'goto',
+  'close_tab',
+  'evaluate',
+  'snapshot',
+  'get_content',
+  'click',
+  'type',
+  'scroll',
+] as const
+
+export type BrowserBridgeAction = (typeof BROWSER_BRIDGE_ACTIONS)[number]
+
 /** Chromium 系固定扩展 ID（由 manifest key 推导） */
 export const BROWSER_BRIDGE_CHROMIUM_EXTENSION_ID = 'ocdljfppijcjpgaaamgeailkgajgjdml' as const
 
@@ -63,6 +83,13 @@ export interface BrowserBridgeCommandResult {
   success: boolean
   data?: unknown
   error?: string
+}
+
+/** 扩展 ping 响应 */
+export interface BrowserBridgePingResult {
+  extension: string
+  version: string
+  protocol?: number
 }
 
 export interface BrowserBridgeInstallStatus {

@@ -4,10 +4,12 @@
 
 import type {
   BrowserBridgeAttachTarget,
+  BrowserBridgePingResult,
   BrowserBridgeRefMap,
   BrowserBridgeTabInfo,
 } from '@shared/types/browser-bridge'
 import { getBrowserBridgeService } from '../../../browser-bridge/browser-bridge.service'
+import { parsePingResult } from '../../../browser-bridge/protocol'
 
 export interface BridgeSession {
   mode: 'attach'
@@ -18,6 +20,7 @@ export interface BridgeSession {
   lastActivityAt: number
   refs: BrowserBridgeRefMap
   activeTabIndex: number
+  extensionPing?: BrowserBridgePingResult
 }
 
 const sessions = new Map<string, BridgeSession>()
@@ -36,7 +39,8 @@ export async function createBridgeSession(
 ): Promise<BridgeSession> {
   const bridge = getBrowserBridgeService()
   const { origin, browserTarget } = bridge.resolveConnection(browserInput)
-  await bridge.sendCommand('ping', {}, { origin })
+  const pingRaw = await bridge.sendCommand('ping', {}, { origin })
+  const extensionPing = parsePingResult(pingRaw) ?? undefined
   const session: BridgeSession = {
     mode: 'attach',
     ptyId,
@@ -46,6 +50,7 @@ export async function createBridgeSession(
     lastActivityAt: Date.now(),
     refs: {},
     activeTabIndex: 0,
+    extensionPing,
   }
   sessions.set(ptyId, session)
   return session

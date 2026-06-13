@@ -1,5 +1,5 @@
 /**
- * Content script — 在页面内执行 DOM 操作
+ * Content script — 在页面内执行 DOM 原语（正文提取在 SailFish 桌面端）
  */
 (function () {
   function byRef(refId) {
@@ -50,15 +50,14 @@
   function getContent(payload) {
     const mode = payload.mode || 'text'
     const selector = payload.selector ? String(payload.selector) : ''
-    const extract = payload.extract || 'auto'
     const meta = { title: document.title, url: location.href }
 
+    // protocol v1：回传渲染后 HTML，正文提取由桌面端完成
     if (mode === 'page_html') {
-      const article = globalThis.__sailfishArticleExtract
       return {
         ...meta,
         html: document.documentElement.outerHTML,
-        fallbackText: article?.extractText?.(document, 'article') || '',
+        fallbackText: (document.body?.innerText || '').trim(),
       }
     }
 
@@ -71,20 +70,11 @@
       return { ...meta, content: (el.innerText || el.textContent || '').trim() }
     }
 
-    const article = globalThis.__sailfishArticleExtract
-    const extractMode = extract === 'full' ? 'full' : 'article'
-
     if (mode === 'html') {
-      const content = extract === 'full'
-        ? document.documentElement.outerHTML
-        : (article?.extractHtml?.(document, extractMode) || document.body?.innerHTML || '')
-      return { ...meta, content }
+      return { ...meta, content: document.documentElement.outerHTML }
     }
 
-    const content = extract === 'full'
-      ? (document.body?.innerText || '')
-      : (article?.extractText?.(document, extractMode) || document.body?.innerText || '')
-    return { ...meta, content: String(content).trim() }
+    return { ...meta, content: (document.body?.innerText || '').trim() }
   }
 
   function evaluateScript(payload) {
