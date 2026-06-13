@@ -3224,6 +3224,26 @@ const electronAPI = {
     }
   },
 
+  workbench: {
+    onExec: (
+      handler: (
+        id: string,
+        op: { type: 'list_artifacts' },
+        ownerAgentKey?: string
+      ) => void
+    ) => {
+      const fn = (_event: Electron.IpcRendererEvent, payload: { id: string; op: { type: 'list_artifacts' }; ownerAgentKey?: string }) => {
+        if (!payload || typeof payload.id !== 'string' || !payload.op) return
+        handler(payload.id, payload.op, payload.ownerAgentKey)
+      }
+      ipcRenderer.on('workbench:exec', fn)
+      return () => ipcRenderer.removeListener('workbench:exec', fn)
+    },
+    sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => {
+      ipcRenderer.send('workbench:result', { id, result })
+    }
+  },
+
   browserBridge: {
     getStatus: () =>
       ipcRenderer.invoke('browserBridge:getStatus') as Promise<import('@shared/types/browser-bridge').BrowserBridgeStatus>,

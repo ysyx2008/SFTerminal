@@ -37,4 +37,4 @@
 
 ## Agent 认知
 
-- 工作台 UI 描述见 `src/workbench/assistant/prompt.ts`，经 `AgentContext.workbenchPrompt` 注入（仅桌面独立助手工作台对话）。
+- 工作台 UI 描述见 `src/workbench/assistant/prompt.ts`；实时状态用 `list_workbench_artifacts`（见 `src/workbench/SPEC.md`）。

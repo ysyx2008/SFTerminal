@@ -17,6 +17,7 @@ import { getStreamPlaceholder } from './tool-metadata'
 export type { ToolDefinition }
 
 import type { TerminalType, RemoteChannel } from '@shared/types'
+import { ASSISTANT_WORKBENCH_AGENT_TOOLS } from '../../../src/workbench/assistant/agent-tools'
 
 /** @deprecated Use TerminalType from @shared/types */
 export type AgentMode = TerminalType
@@ -1306,6 +1307,10 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
   // 上下文管理工具：仅在用量超过阈值时注入，节省 token
   if (options?.includeContextTools) {
     filteredTools.push(...getContextManagementTools())
+  }
+
+  if (options?.mode === 'assistant') {
+    filteredTools.push(...(ASSISTANT_WORKBENCH_AGENT_TOOLS as unknown as ToolDefinitionWithMeta[]))
   }
 
   // 注意：保留 _meta 字段，让 Agent 基类能通过 getMetaByName 查到工具的元数据

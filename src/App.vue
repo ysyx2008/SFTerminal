@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { Monitor, Bot, Settings, X, Loader2, Heart, Menu as MenuIcon } from 'lucide-vue-next'
 import { useTerminalStore } from './stores/terminal'
 import { initSplitPaneHandler, disposeSplitPaneHandler } from './services/split-pane-handler'
+import { initWorkbenchHandler, disposeWorkbenchHandler } from './services/workbench-handler'
 import { useConfigStore, type SshSession } from './stores/config'
 import TabBar from './components/TabBar.vue'
 import TerminalTabView from './components/TerminalTabView.vue'
@@ -353,6 +354,7 @@ onMounted(async () => {
 
   // 注册分屏反向 IPC 处理器（响应主进程 Agent 工具的分屏调用）
   initSplitPaneHandler()
+  initWorkbenchHandler()
 
   try {
     appVersion.value = await window.electronAPI.app.getVersion()
@@ -1103,6 +1105,7 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleGlobalKeydown)
   document.removeEventListener('keyup', handleGlobalKeyup)
   disposeSplitPaneHandler()
+  disposeWorkbenchHandler()
   // 清理监听器
   cleanupTerminalCountListener?.()
   cleanupStartupProgress?.()

@@ -509,6 +509,8 @@ export default {
       watch_trigger: 'Trigger Watch',
       watch_history: 'Watch History',
       watch_state_update: 'Update Watch State',
+      // Workbench
+      list_workbench_artifacts: 'View output panel',
       // IM skills
       feishu_read: 'Read Feishu Message',
       feishu_write: 'Send Feishu Message',

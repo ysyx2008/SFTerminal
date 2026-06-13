@@ -10,7 +10,8 @@ describe('resolveWorkbenchAgentPrompt', () => {
     const prompt = resolveWorkbenchAgentPrompt('assistant', { type: 'assistant' })
     expect(prompt).toBe(AGENT_PROMPT)
     expect(prompt).toContain('generate_chart')
-    expect(prompt).toContain('不会出现')
+    expect(prompt).toContain('计数')
+    expect(prompt).toContain('list_workbench_artifacts')
   })
 
   it('远程 assistant tab 不注入', () => {

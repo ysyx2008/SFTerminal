@@ -82,6 +82,8 @@ src/workbench/
   assistant/
     descriptor.ts
     prompt.ts
+    agent-tools.ts
+    snapshot.ts
   __tests__/
 ```
 
@@ -90,9 +92,15 @@ Vue 渲染器暂仍在 `src/components/`（`TerminalTabView`、`AssistantWorkben
 ## Agent 工作台提示词
 
 - 文案：`<kind>/prompt.ts`（目前仅 `assistant/`）
-- 路由：`resolve-workbench-agent-prompt.ts`
-- 注入：桌面 App 内**非 remote** 的 assistant tab → `AgentContext.workbenchPrompt`；`PromptBuilder` 原样插入
+- 路由：`resolve-workbench-agent-prompt.ts` → `workbenchPrompt`
+- 注入：桌面 App 内**非 remote** 的 assistant tab → `AgentContext.workbenchPrompt`；`PromptBuilder` 原样插入 system prompt（同 session cache 路径沿用首条 system，仍含该段）
 - 文案须与真实 UI 一致：产出物面板**按需出现**（首个文件类 artifact 才展开）；chart 仅在对话流展示，不注册 artifact；无空态展开控件
+
+## Agent 工作台工具
+
+- 定义：`assistant/agent-tools.ts`（assistant 模式由 `getAgentTools` 注册）
+- 执行：`electron/services/agent/tools/workbench.ts` → `workbench-bridge` → `src/services/workbench-handler.ts` 读 `canvasStore` 真值
+- 目前：`list_workbench_artifacts` — 查询产出物面板实时状态（`shared/types/workbench.ts`）
 
 ## 依赖与边界
 

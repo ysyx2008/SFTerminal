@@ -2272,5 +2272,16 @@ interface Window {
       ) => () => void
       sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => void
     }
+
+    workbench: {
+      onExec: (
+        handler: (
+          id: string,
+          op: { type: 'list_artifacts' },
+          ownerAgentKey?: string
+        ) => void
+      ) => () => void
+      sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => void
+    }
   }
 }

@@ -154,6 +154,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     getArtifacts: getArtifactsForTab,
     getActiveArtifact: getActiveArtifactForTab,
     getArtifactById: getArtifactByIdForTab,
+    getTabState,
     setActiveArtifact: setActiveArtifactForTab,
     removeArtifact: removeArtifactFromTab,
     open,

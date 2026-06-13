@@ -1640,7 +1640,6 @@ export abstract class Agent {
     if (proactiveCtx?.trim()) {
       systemContextParts.push(proactiveCtx.trim())
     }
-
     const hasImages = !!(run.context.images && run.context.images.length > 0)
     const visionAvailable = this.currentProfileHasVision()
     let imageNote = ''
