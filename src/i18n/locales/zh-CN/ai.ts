@@ -566,7 +566,7 @@ export default {
   // 知识库
   knowledge: {
     upgrading: '正在升级知识库模型...',
-    repairing: '正在修复知识库索引...',
+    repairing: '正在增量修复知识库索引...',
     rebuilding: '正在重建知识库索引...'
   },
 

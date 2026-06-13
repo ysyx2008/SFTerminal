@@ -463,6 +463,16 @@ async function handleGetValidRecords(data) {
   }
 }
 
+async function handleGetChunkCount() {
+  if (!table) return { count: 0 }
+  try {
+    return { count: await table.countRows() }
+  } catch (error) {
+    console.error('[LanceDBWorker] getChunkCount failed:', error)
+    return { count: 0 }
+  }
+}
+
 async function handleGetAllDocIds() {
   if (!table) return { docIds: [] }
   try {
@@ -509,6 +519,7 @@ async function dispatch(message) {
       case 'dropTable':            result = await handleDropTable();                break
       case 'getValidRecords':      result = await handleGetValidRecords(data);      break
       case 'getAllDocIds':          result = await handleGetAllDocIds();             break
+      case 'getChunkCount':         result = await handleGetChunkCount();            break
       case 'compact':              result = await handleCompact(data);              break
       case 'ping':                 result = { ok: true };                           break
       default:

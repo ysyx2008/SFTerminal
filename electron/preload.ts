@@ -2243,11 +2243,13 @@ const electronAPI = {
       reason: 'vector' | 'bm25' | 'both' | string
       cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing'
       total?: number
+      libraryTotal?: number
     }) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: {
         reason: 'vector' | 'bm25' | 'both' | string
         cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing'
         total?: number
+        libraryTotal?: number
       }) => callback(data)
       ipcRenderer.on('knowledge:upgrading', handler)
       return () => {
@@ -2256,8 +2258,18 @@ const electronAPI = {
     },
 
     // 监听索引重建进度
-    onRebuildProgress: (callback: (data: { current: number; total: number; filename: string }) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, data: { current: number; total: number; filename: string }) => callback(data)
+    onRebuildProgress: (callback: (data: {
+      current: number
+      total: number
+      libraryTotal?: number
+      filename: string
+    }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: {
+        current: number
+        total: number
+        libraryTotal?: number
+        filename: string
+      }) => callback(data)
       ipcRenderer.on('knowledge:rebuildProgress', handler)
       return () => {
         ipcRenderer.removeListener('knowledge:rebuildProgress', handler)

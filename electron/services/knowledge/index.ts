@@ -500,10 +500,29 @@ export class KnowledgeService extends EventEmitter {
     if (docs.length === 0) return
 
     // 并行获取两个索引的当前 docId 集合
-    const [vectorDocIds, bm25DocIds] = await Promise.all([
+    let [vectorDocIds, bm25DocIds] = await Promise.all([
       this.vectorStorage.getAllDocIds(),
       Promise.resolve(this.bm25Index.getIndexedDocIds()),
     ])
+
+    // 防护：getAllDocIds 查询失败会返回空集，勿把「全库 5606 篇都缺失」误判为需全量补建
+    if (vectorDocIds.size === 0 && docs.length >= 50) {
+      const chunkCount = await this.vectorStorage.getChunkCount()
+      if (chunkCount > 0) {
+        log.warn(
+          `向量库仍有 ${chunkCount} 条 chunk 但 getAllDocIds 返回空，1s 后重试`
+        )
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        vectorDocIds = await this.vectorStorage.getAllDocIds()
+        if (vectorDocIds.size === 0) {
+          log.error(
+            `向量库有 ${chunkCount} 条 chunk 但无法枚举 docId，` +
+            `跳过启动时索引补全（避免误触发接近全量的重建）`
+          )
+          return
+        }
+      }
+    }
 
     // 找出各自缺失的文档（per-doc 粒度，而非整库空/非空判断）
     const missingDocs = docs.filter(doc => !vectorDocIds.has(doc.id) || !bm25DocIds.has(doc.id))
@@ -522,8 +541,8 @@ export class KnowledgeService extends EventEmitter {
     const needRebuildBM25  = missingBm25.length > 0
 
     log.info(
-      `开始增量重建索引：共 ${docs.length} 个文档，` +
-      `需补充 vector=${missingVector.length} bm25=${missingBm25.length}` +
+      `开始增量重建索引：文库共 ${docs.length} 篇，` +
+      `本次需补充 ${missingDocs.length} 篇（vector=${missingVector.length} bm25=${missingBm25.length}）` +
       ` (cause=${this.lastClearReason || 'missing'})`
     )
 
@@ -537,7 +556,12 @@ export class KnowledgeService extends EventEmitter {
     //   - 'data_corrupted'    : LanceDB 表损坏 / 物理 .lance 文件丢失
     //   - 'missing'           : 索引文件缺失（首次启用 / 用户删过 lancedb 目录 / BM25 .json 丢失）
     const cause = this.lastClearReason || 'missing'
-    this.emit('rebuildStarted', { total: missingDocs.length, reason: rebuildReason, cause })
+    this.emit('rebuildStarted', {
+      total: missingDocs.length,
+      libraryTotal: docs.length,
+      reason: rebuildReason,
+      cause,
+    })
     this.lastClearReason = undefined
 
     // 跨文档 embedding 攒批
@@ -664,6 +688,7 @@ export class KnowledgeService extends EventEmitter {
       this.emit('rebuildProgress', {
         current: i + 1,
         total: missingDocs.length,
+        libraryTotal: docs.length,
         filename: doc.filename
       })
 

@@ -566,7 +566,7 @@ export default {
   // Knowledge Base
   knowledge: {
     upgrading: 'Upgrading knowledge base model...',
-    repairing: 'Repairing knowledge base index...',
+    repairing: 'Incrementally repairing knowledge index...',
     rebuilding: 'Rebuilding knowledge base index...'
   },
 

@@ -389,15 +389,39 @@ export class BM25Index extends EventEmitter {
   }
 
   /**
+   * 将解析后的索引 JSON 载入内存
+   */
+  private applyIndexPayload(data: {
+    k1?: number
+    b?: number
+    avgDocLength?: number
+    totalDocuments?: number
+    documents?: Array<[string, BM25Document]>
+    docLengths?: Array<[string, number]>
+    invertedIndex?: Array<[string, Array<[string, number]>]>
+  }): void {
+    this.k1 = data.k1 || 1.2
+    this.b = data.b || 0.75
+    this.avgDocLength = data.avgDocLength || 0
+    this.totalDocuments = data.totalDocuments || 0
+    this.documents = new Map(data.documents || [])
+    this.docLengths = new Map(data.docLengths || [])
+    this.invertedIndex = new Map()
+    for (const [term, postings] of (data.invertedIndex || [])) {
+      this.invertedIndex.set(term, new Map(postings))
+    }
+  }
+
+  /**
    * 从磁盘加载索引
    */
   private async loadIndex(): Promise<void> {
-    // 清理上次写入未完成留下的临时文件，避免占用磁盘
     const tempPath = this.indexPath + '.tmp'
-    try {
-      await fs.promises.unlink(tempPath)
-      log.warn('清理了上次未完成写入的 BM25 索引临时文件')
-    } catch { /* ignore - 文件不存在是正常情况 */ }
+
+    // 原子写入在 rename 前被中断时，.tmp 往往比主文件更新——优先尝试恢复，勿直接删除
+    if (await this.tryRecoverIndexFromTemp(tempPath)) {
+      return
+    }
 
     try {
       try {
@@ -414,18 +438,7 @@ export class BM25Index extends EventEmitter {
         return
       }
 
-      this.k1 = data.k1 || 1.2
-      this.b = data.b || 0.75
-      this.avgDocLength = data.avgDocLength || 0
-      this.totalDocuments = data.totalDocuments || 0
-
-      this.documents = new Map(data.documents || [])
-      this.docLengths = new Map(data.docLengths || [])
-
-      this.invertedIndex = new Map()
-      for (const [term, postings] of (data.invertedIndex || [])) {
-        this.invertedIndex.set(term, new Map(postings))
-      }
+      this.applyIndexPayload(data)
     } catch (error) {
       // 损坏的 BM25 索引（半截 JSON / schema 异常）会导致整库重建，
       // 这里 warn 而不是 error，但要明确写出原因供排查。
@@ -435,6 +448,40 @@ export class BM25Index extends EventEmitter {
       this.docLengths.clear()
       this.avgDocLength = 0
       this.totalDocuments = 0
+    }
+  }
+
+  /**
+   * 从上次未完成的原子写入（.tmp）恢复 BM25 索引。
+   * write 完成但 rename 前进程退出时，.tmp 是更新的那份数据。
+   */
+  private async tryRecoverIndexFromTemp(tempPath: string): Promise<boolean> {
+    try {
+      await fs.promises.access(tempPath)
+    } catch {
+      return false
+    }
+
+    try {
+      const raw = await fs.promises.readFile(tempPath, 'utf-8')
+      const data = JSON.parse(raw)
+      if (data.version !== 2) {
+        log.warn('BM25 临时索引版本不匹配 (v%s)，删除', data.version || 'unknown')
+        await fs.promises.unlink(tempPath)
+        return false
+      }
+
+      this.applyIndexPayload(data)
+      await fs.promises.rename(tempPath, this.indexPath)
+      log.warn(
+        '已从 BM25 临时文件恢复索引（上次写入在 rename 前中断，文档数=%d）',
+        this.documents.size
+      )
+      return true
+    } catch (error) {
+      log.warn('BM25 临时索引无效，删除:', error)
+      try { await fs.promises.unlink(tempPath) } catch { /* ignore */ }
+      return false
     }
   }
 

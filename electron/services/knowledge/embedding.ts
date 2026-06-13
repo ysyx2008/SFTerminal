@@ -119,6 +119,8 @@ export class EmbeddingService extends EventEmitter {
   // ── Worker 模式（utilityProcess） ─────────────────────────────
   private worker: any = null // Electron UtilityProcess
   private useWorker: boolean = false
+  /** 连续成功的 worker embed 批次数，达上限后主动重启 worker 释放 BFC arena */
+  private successfulWorkerBatches = 0
   private nextMessageId: number = 0
   private pending: Map<number, PendingCall> = new Map()
   /**
@@ -157,27 +159,29 @@ export class EmbeddingService extends EventEmitter {
    *
    * 注意：worker 模式下 BFC arena 与主进程 v8 堆不再共享地址空间，地址冲突
    * 风险消除，但 BFC arena 自身仍会指数扩张，请通过实例方法 getMaxBatchSize()
-   * 取动态值（worker=32 / in-process=16）。
+   * 取动态值（worker=16 / in-process=16）。worker 虽在独立进程，BFC arena 仍会
+   * 随连续推理指数扩张，故 batch 与 in-process 对齐，并配合定期重启 worker。
    */
   static readonly MAX_BATCH_SIZE = 16
 
   /**
-   * worker 模式下的 batch 上限。
+   * worker 模式下的 batch 上限（与 in-process 对齐）。
    *
-   * 注意：worker 进程虽与主进程 v8 堆地址空间隔离，但 onnxruntime BFC arena
-   * 本身仍会指数级扩张（每次扩张 2×）。BGE-small 在 batch=64 时单次 attention
-   * 张量 ≈ 768MB，连续推理几次后 BFC arena 累计请求超过 2GB，同样会触发
-   * macOS posix_memalign size sanity check → SIGTRAP（exit code 5）。
-   *
-   * batch=32 时单次 attention 张量 ≈ 384MB，BFC arena 累计扩张远低于 2GB 边界，
-   * 实测稳定，同时相对 in-process 的 16 仍有约 2× 吞吐提升。
+   * 此前 batch=32 在长时索引重建中仍会触达 BFC arena 2GB 边界 → SIGTRAP(code=5)。
+   * 16 更稳；吞吐靠 utilityProcess 隔离 + 定期重启 worker 弥补。
    */
-  static readonly MAX_BATCH_SIZE_WORKER = 32
+  static readonly MAX_BATCH_SIZE_WORKER = 16
+
+  /** 每 N 次成功 embed 后主动重启 worker，重置 BFC arena，防 SIGTRAP */
+  static readonly WORKER_RESTART_INTERVAL = 15
+
+  /** worker embed 单次失败后的最大重试次数（每次重试前重启 worker） */
+  static readonly MAX_WORKER_EMBED_ATTEMPTS = 3
 
   /**
    * 当前实例的批量上限（依据运行模式动态返回）
    *
-   * - worker 模式：32（独立进程，BFC arena 不撞主进程 v8 堆，但仍需限制防 SIGTRAP）
+   * - worker 模式：16（独立进程，定期重启防 BFC arena 触顶）
    * - in-process 模式：16（主进程内，受 BFC arena 与 v8 堆共享地址空间限制）
    */
   getMaxBatchSize(): number {
@@ -323,7 +327,8 @@ export class EmbeddingService extends EventEmitter {
       log.info('Embedding worker 退出，code=%s', code)
       const isUnexpected = code !== null && code !== 0 && code !== 15 // 15 = SIGTERM 主动 kill
       if (isUnexpected) {
-        log.error('Embedding worker 异常退出，所有进行中的 embed 调用将失败')
+        log.warn('Embedding worker 异常退出（code=%s），将在下次 embed 时重启 worker', code)
+        this.useWorker = false
       }
       this.worker = null
       // 拒绝所有 pending
@@ -445,34 +450,81 @@ export class EmbeddingService extends EventEmitter {
   }
 
   private async embedBatchWorker(texts: string[]): Promise<number[][]> {
-    try {
-      const ret = await this.callWorker<{
-        flat?: Float32Array
-        vectors?: number[][]
-        dim: number
-        count?: number
-        fallback?: boolean
-      }>('embed', { texts })
-
-      // worker 内已发生形状异常 fallback，直接返回它给的 number[][]
-      if (ret.vectors) return ret.vectors
-
-      const flat = ret.flat
-      const dim = ret.dim
-      if (!flat || !dim) {
-        throw new Error('Embedding worker 返回数据异常（缺少 flat/dim）')
+    let lastError: Error | null = null
+    for (let attempt = 0; attempt < EmbeddingService.MAX_WORKER_EMBED_ATTEMPTS; attempt++) {
+      try {
+        const result = await this.embedBatchWorkerOnce(texts)
+        this.successfulWorkerBatches++
+        if (this.successfulWorkerBatches >= EmbeddingService.WORKER_RESTART_INTERVAL) {
+          this.successfulWorkerBatches = 0
+          log.info('Embedding worker 定期重启以释放 BFC arena')
+          await this.restartWorkerSession()
+        }
+        return result
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error))
+        log.warn(
+          `Worker embed 失败（第 ${attempt + 1}/${EmbeddingService.MAX_WORKER_EMBED_ATTEMPTS} 次），重启 worker 后重试：`,
+          lastError.message
+        )
+        await this.restartWorkerSession().catch((restartErr) => {
+          log.error('重启 Embedding worker 失败：', restartErr)
+        })
       }
-
-      // structured clone 后 flat 仍是 Float32Array，按行切回 number[]
-      const results: number[][] = new Array(texts.length)
-      for (let i = 0; i < texts.length; i++) {
-        results[i] = Array.from(flat.subarray(i * dim, (i + 1) * dim))
-      }
-      return results
-    } catch (error) {
-      log.error('Worker embed 失败：', error)
-      throw error
     }
+    throw lastError ?? new Error('Worker embed failed after retries')
+  }
+
+  private async embedBatchWorkerOnce(texts: string[]): Promise<number[][]> {
+    if (!this.worker || !this.useWorker) {
+      await this.restartWorkerSession()
+    }
+
+    const ret = await this.callWorker<{
+      flat?: Float32Array
+      vectors?: number[][]
+      dim: number
+      count?: number
+      fallback?: boolean
+    }>('embed', { texts })
+
+    // worker 内已发生形状异常 fallback，直接返回它给的 number[][]
+    if (ret.vectors) return ret.vectors
+
+    const flat = ret.flat
+    const dim = ret.dim
+    if (!flat || !dim) {
+      throw new Error('Embedding worker 返回数据异常（缺少 flat/dim）')
+    }
+
+    // structured clone 后 flat 仍是 Float32Array，按行切回 number[]
+    const results: number[][] = new Array(texts.length)
+    for (let i = 0; i < texts.length; i++) {
+      results[i] = Array.from(flat.subarray(i * dim, (i + 1) * dim))
+    }
+    return results
+  }
+
+  /**
+   * 杀掉并重新拉起 utilityProcess worker（保持当前模型，不走主进程推理）。
+   */
+  private async restartWorkerSession(): Promise<void> {
+    this.killWorker()
+    this.useWorker = false
+
+    const modelId = this.currentModelId
+    if (!modelId) {
+      throw new Error('Embedding 模型未加载，无法重启 worker')
+    }
+
+    const model = this.modelManager.getModel(modelId)
+    const modelPath = this.modelManager.getModelPath(model.id)
+    const modelDir = path.dirname(modelPath)
+    const modelName = path.basename(modelPath)
+
+    await this.startWorker()
+    await this.callWorker('initialize', { modelDir, modelName })
+    this.useWorker = true
   }
 
   private async embedBatchInProc(texts: string[]): Promise<number[][]> {

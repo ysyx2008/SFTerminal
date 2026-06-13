@@ -49,7 +49,7 @@ const _knowledgeDone = ref(true)  // 知识库是否空闲（默认不在补全�
 
 const sysLoading = computed(() => !_startupDone.value || !_knowledgeDone.value)
 const sysLoadingText = ref('后端服务启动中...')
-const sysLoadingProgress = ref({ current: 0, total: 0, filename: '' })
+const sysLoadingProgress = ref({ current: 0, total: 0, libraryTotal: 0, filename: '' })
 
 let cleanupStartupProgress: (() => void) | null = null
 let cleanupKnowledgeUpgrading: (() => void) | null = null
@@ -71,6 +71,7 @@ const STARTUP_STAGE_LABELS: Record<string, string> = {
 function knowledgeText(cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing') {
   switch (cause) {
     case 'dimension_mismatch': return t('knowledge.upgrading')
+    case 'data_corrupted':     return t('knowledge.rebuilding')
     default:                   return t('knowledge.repairing')
   }
 }
@@ -414,9 +415,18 @@ onMounted(async () => {
   startupDoneTimer = setTimeout(() => { _startupDone.value = true }, 10_000)
 
   // 知识库索引补全进度（启动时增量修复缺失文档）
-  cleanupKnowledgeUpgrading = window.electronAPI.knowledge.onUpgrading((payload?: { cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing' }) => {
+  cleanupKnowledgeUpgrading = window.electronAPI.knowledge.onUpgrading((payload?: {
+    cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing'
+    total?: number
+    libraryTotal?: number
+  }) => {
     _knowledgeDone.value = false
-    sysLoadingProgress.value = { current: 0, total: 0, filename: '' }
+    sysLoadingProgress.value = {
+      current: 0,
+      total: payload?.total ?? 0,
+      libraryTotal: payload?.libraryTotal ?? 0,
+      filename: '',
+    }
     sysLoadingText.value = knowledgeText(payload?.cause)
   })
   cleanupKnowledgeProgress = window.electronAPI.knowledge.onRebuildProgress((data) => {
@@ -429,7 +439,7 @@ onMounted(async () => {
   })
   cleanupKnowledgeReady = window.electronAPI.knowledge.onReady(() => {
     _knowledgeDone.value = true
-    sysLoadingProgress.value = { current: 0, total: 0, filename: '' }
+    sysLoadingProgress.value = { current: 0, total: 0, libraryTotal: 0, filename: '' }
     if (_startupDone.value) sysLoadingText.value = ''
   })
   // ──────────────────────────────────────────────────────────────────────────
@@ -1120,7 +1130,17 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-container" :class="{ 'sidebar-open': showSidebar, 'is-mac': isMac, 'is-win': isWin, 'is-fullscreen': isFullScreen }" :data-ui-theme="currentUiTheme" :data-color-scheme="currentColorScheme">
+  <div
+    class="app-container"
+    :class="{
+      'sidebar-open': showSidebar,
+      'is-mac': isMac,
+      'is-win': isWin,
+      'is-fullscreen': isFullScreen,
+    }"
+    :data-ui-theme="currentUiTheme"
+    :data-color-scheme="currentColorScheme"
+  >
     <!-- 顶部工具栏 -->
     <header class="app-header">
       <div class="header-left">
@@ -1239,6 +1259,36 @@ onUnmounted(() => {
       </main>
     </div>
 
+    <!-- 系统加载进度条：并入 flex 布局底部，避免 fixed + padding 产生空隙 -->
+    <Transition name="slide-down">
+      <div v-if="sysLoading && !isSteamBuild" class="sys-loading-bar">
+        <div class="upgrade-content">
+          <Loader2 class="upgrade-icon" :size="16" />
+          <span class="upgrade-text">
+            {{ sysLoadingText || '系统初始化中...' }}
+            <template v-if="sysLoadingProgress.total > 0">
+              ({{ sysLoadingProgress.current }}/{{ sysLoadingProgress.total }}<template v-if="sysLoadingProgress.libraryTotal > sysLoadingProgress.total">，文库共 {{ sysLoadingProgress.libraryTotal }} 篇</template>)
+            </template>
+          </span>
+          <span v-if="sysLoadingProgress.filename" class="upgrade-filename">
+            {{ sysLoadingProgress.filename }}
+          </span>
+        </div>
+        <div class="upgrade-progress">
+          <!-- 知识库索引补全时显示确定进度条，否则显示不确定扫描动画 -->
+          <template v-if="!_knowledgeDone && sysLoadingProgress.total > 0">
+            <div
+              class="upgrade-progress-bar"
+              :style="{ width: (sysLoadingProgress.current / sysLoadingProgress.total * 100) + '%' }"
+            />
+          </template>
+          <template v-else>
+            <div class="sys-progress-indeterminate" />
+          </template>
+        </div>
+      </div>
+    </Transition>
+
     <!-- 控制面板 -->
     <SettingsModal 
       v-if="showSettings" 
@@ -1269,36 +1319,6 @@ onUnmounted(() => {
       @close="onAwakenClose"
       @awakened-change="isAwakened = $event"
     />
-
-    <!-- 系统加载进度条：合并后端启动进度 + 知识库重建进度（Steam 版不渲染） -->
-    <Transition name="slide-down">
-      <div v-if="sysLoading && !isSteamBuild" class="sys-loading-bar">
-        <div class="upgrade-content">
-          <Loader2 class="upgrade-icon" :size="16" />
-          <span class="upgrade-text">
-            {{ sysLoadingText || '系统初始化中...' }}
-            <template v-if="sysLoadingProgress.total > 0">
-              ({{ sysLoadingProgress.current }}/{{ sysLoadingProgress.total }})
-            </template>
-          </span>
-          <span v-if="sysLoadingProgress.filename" class="upgrade-filename">
-            {{ sysLoadingProgress.filename }}
-          </span>
-        </div>
-        <div class="upgrade-progress">
-          <!-- 知识库索引补全时显示确定进度条，否则显示不确定扫描动画 -->
-          <template v-if="!_knowledgeDone && sysLoadingProgress.total > 0">
-            <div
-              class="upgrade-progress-bar"
-              :style="{ width: (sysLoadingProgress.current / sysLoadingProgress.total * 100) + '%' }"
-            />
-          </template>
-          <template v-else>
-            <div class="sys-progress-indeterminate" />
-          </template>
-        </div>
-      </div>
-    </Transition>
 
     <!-- 全局 Toast 提示 -->
     <Toast />
@@ -1599,13 +1619,10 @@ onUnmounted(() => {
 
 /* 统一系统加载进度条（后端启动 + 知识库重建共用） */
 .sys-loading-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  flex-shrink: 0;
+  width: 100%;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border-color);
-  z-index: 1000;
 }
 
 /* 不确定进度扫描动画（后端 init 阶段） */

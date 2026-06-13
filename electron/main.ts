@@ -625,14 +625,15 @@ async function initKnowledgeService(): Promise<void> {
       // 这是前端进度条出现的统一入口——indexCleared 只覆盖维度变化一种情况，
       // 数据损坏/BM25 缺失场景此前没有触发 upgrading 导致用户感觉 UI 纯卡住。
       knowledgeService.on('rebuildStarted', (
-        { total, reason, cause }:
-        { total: number; reason: string; cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing' }
+        { total, libraryTotal, reason, cause }:
+        { total: number; libraryTotal?: number; reason: string; cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing' }
       ) => {
-        log.info(`知识库开始重建: reason=${reason}, cause=${cause || 'missing'}, total=${total}`)
+        log.info(`知识库开始重建: reason=${reason}, cause=${cause || 'missing'}, total=${total}, libraryTotal=${libraryTotal ?? 'n/a'}`)
         mainWindow?.webContents.send('knowledge:upgrading', {
           reason,
           cause: cause || 'missing',
-          total
+          total,
+          libraryTotal,
         })
       })
 

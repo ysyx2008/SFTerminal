@@ -738,6 +738,25 @@ export class VectorStorage extends EventEmitter {
     }
   }
 
+  async getChunkCount(): Promise<number> {
+    if (this.workerReady) {
+      try {
+        const { count } = await this.callWorker<{ count: number }>('getChunkCount')
+        return count ?? 0
+      } catch (error) {
+        log.warn('getChunkCount via worker failed:', error)
+        return 0
+      }
+    }
+    if (!this.table) return 0
+    try {
+      return await this.table.countRows()
+    } catch (error) {
+      log.warn('getChunkCount failed:', error)
+      return 0
+    }
+  }
+
   async getAllDocIds(): Promise<Set<string>> {
     if (this.workerReady) {
       const { docIds } = await this.callWorker<{ docIds: string[] }>(

@@ -1394,9 +1394,15 @@ interface Window {
         reason: 'vector' | 'bm25' | 'both' | string
         cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing'
         total?: number
+        libraryTotal?: number
       }) => void) => () => void
       // 监听索引重建进度
-      onRebuildProgress: (callback: (data: { current: number; total: number; filename: string }) => void) => () => void
+      onRebuildProgress: (callback: (data: {
+        current: number
+        total: number
+        libraryTotal?: number
+        filename: string
+      }) => void) => () => void
     }
     // 协调器（智能巡检）
     orchestrator: {
