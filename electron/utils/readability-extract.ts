@@ -14,7 +14,7 @@ export interface ReadabilityArticle {
 const nodeRequire = createRequire(__filename)
 
 /**
- * 对已渲染页面的 HTML 运行 Readability（Firefox 阅读模式 / 印象笔记剪藏同类算法）
+ * 对已渲染页面的 HTML 运行 Readability 提取正文
  */
 export async function extractArticleFromHtml(
   html: string,

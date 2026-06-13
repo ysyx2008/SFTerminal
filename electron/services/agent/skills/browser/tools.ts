@@ -216,7 +216,7 @@ export const browserTools: ToolDefinition[] = [
 - html：HTML 片段
 
 **提取范围（extract）**：
-- auto（默认）：Mozilla Readability 剪藏算法（与 Firefox 阅读模式 / 印象笔记剪藏同类），过滤侧栏与导航
+- auto（默认）：智能提取正文，过滤侧栏与导航
 - article：同 auto
 - full：整页 body（噪声多，仅特殊场景）
 

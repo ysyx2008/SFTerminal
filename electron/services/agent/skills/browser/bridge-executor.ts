@@ -328,7 +328,6 @@ export async function bridgeBrowserGetContent(
       url?: string
     }
 
-    let extractMethod = extract !== 'full' ? 'Mozilla Readability（剪藏算法）' : '整页文本'
     let title = ''
     let pageUrl = ''
     let content = ''
@@ -342,7 +341,6 @@ export async function bridgeBrowserGetContent(
       title = data.title || ''
       pageUrl = data.url || ''
       content = data.content || ''
-      extractMethod = `选择器 ${selector}`
     } else if (extract === 'full' && format === 'html') {
       const data = (await bridgeSend(ptyId, 'get_content', {
         mode: 'html',
@@ -377,7 +375,6 @@ export async function bridgeBrowserGetContent(
         }
       } else {
         content = data.fallbackText || data.content || ''
-        extractMethod = 'DOM 启发式（Readability 未命中）'
       }
     }
 
@@ -393,7 +390,6 @@ export async function bridgeBrowserGetContent(
     const header = [
       title ? `标题: ${title}` : '',
       pageUrl ? `URL: ${pageUrl}` : '',
-      extractMethod ? `提取: ${extractMethod}` : '',
     ].filter(Boolean).join('\n')
 
     return {
