@@ -67,6 +67,8 @@ if (!gotTheLock) {
   app.quit()
 }
 
+registerGracefulShutdownSignals()
+
 // 深链 URL 队列：窗口未就绪时暂存，加载完成后依次发送
 const pendingDeepLinkUrls: string[] = []
 
@@ -839,7 +841,12 @@ function setupWindowServices() {
 /**
  * 退出时清理所有后端服务和连接
  */
+let shuttingDown = false
+let cleanupPromise: Promise<void> | null = null
+
 async function cleanupAllServices(): Promise<void> {
+  if (cleanupPromise) return cleanupPromise
+  cleanupPromise = (async () => {
   watchService.stop()
   sensorService.stop().catch(() => {})
   schedulerService.stop()
@@ -863,12 +870,36 @@ async function cleanupAllServices(): Promise<void> {
   // 避免被 OS SIGTERM 收尸时正好打断 LanceDB transaction / ORT session
   // 释放，留下 "manifest 已落盘但 .lance 数据文件未落盘" 的损坏状态
   // （曾导致 hybridSearch 整天反复报 LanceError(IO): Not found: …lance）。
-  // 给 worker 最多 800ms 优雅退出预算。
+  // 给 worker 最多 3s 优雅退出预算（含 LanceDB compact + embedding dispose）。
   try {
-    await knowledgeService?.disposeAsync(800)
+    await knowledgeService?.disposeAsync(3000)
   } catch (e) {
     log.warn('Knowledge dispose 失败:', e)
   }
+  })()
+  return cleanupPromise
+}
+
+/** dev Ctrl+C / 系统 SIGTERM 时尽量优雅收尾，避免 LanceDB transaction 半截退出 */
+function registerGracefulShutdownSignals(): void {
+  const shutdown = (signal: string) => {
+    if (shuttingDown) return
+    shuttingDown = true
+    log.info(`收到 ${signal}，正在优雅关闭后端服务...`)
+    forceQuit = true
+    isQuitting = true
+    cleanupAllServices()
+      .catch(err => log.warn('优雅关闭失败:', err))
+      .finally(() => {
+        if (app.isReady()) {
+          app.quit()
+        } else {
+          process.exit(0)
+        }
+      })
+  }
+  process.on('SIGINT', () => shutdown('SIGINT'))
+  process.on('SIGTERM', () => shutdown('SIGTERM'))
 }
 
 // ==================== 主窗口 ====================

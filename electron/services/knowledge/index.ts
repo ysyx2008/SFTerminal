@@ -198,10 +198,9 @@ export class KnowledgeService extends EventEmitter {
         this.emit('indexCleared', { reason: 'dimension_mismatch', oldDimensions: oldDim, newDimensions: newDim })
       })
 
-      // 监听数据损坏事件（LanceDB 无法读取，同步清空 BM25 保持一致）
-      this.vectorStorage.once('dataCorrupted', async () => {
-        log.warn('向量库数据损坏，同步清空 BM25 索引...')
-        await this.bm25Index.clear()
+      // 向量库损坏时仅清空向量侧；BM25 为独立 JSON，通常仍完好，保留可避免全量重建耗时翻倍
+      this.vectorStorage.once('dataCorrupted', () => {
+        log.warn('向量库数据损坏，将仅重建向量索引（保留 BM25）')
         this.lastClearReason = 'data_corrupted'
       })
       
@@ -229,8 +228,8 @@ export class KnowledgeService extends EventEmitter {
       // 检查是否需要重建索引（有文档但向量库是空的）
       await this.checkAndRebuildIndex()
       
-      // 清理孤儿数据（向量库和 BM25 中存在但 documentsIndex 中不存在的数据）
-      await this.cleanupOrphanData()
+      // 孤儿 chunk 清理放后台，不阻塞启动
+      this.scheduleOrphanCleanupAsync()
     } catch (error) {
       log.error('Initialization failed:', error)
       this.emit('error', error)
@@ -752,45 +751,79 @@ export class KnowledgeService extends EventEmitter {
     log.info(`索引增量重建完成，补充了 ${missingDocs.length} 个文档`)
   }
 
+  /** 整表重建进行中时，检索需等待或短暂让路，避免 clear 与 search 并发 */
+  private vectorRebuildPromise: Promise<void> | null = null
+
+  /**
+   * 后台清理孤儿 chunk（索引里有、documents.json 里没有的 docId）。
+   */
+  scheduleOrphanCleanupAsync(): void {
+    setImmediate(() => {
+      this.cleanupOrphanData().catch(err => {
+        log.warn('后台孤儿 chunk 清理失败:', err)
+      })
+    })
+  }
+
+  /** 软删除后仍查得到时，才考虑整表重建的孤儿 docId 数量下限 */
+  private static readonly ORPHAN_FULL_TABLE_REBUILD_THRESHOLD = 50
+
+  /** 定向删除 + compact 的最大重试轮数 */
+  private static readonly ORPHAN_DELETE_MAX_RETRIES = 3
+
   /**
    * 清理孤儿数据（向量库和 BM25 中存在但 documentsIndex 中不存在的数据）
-   * 
+   *
    * LanceDB 的 delete() 仅创建 deletion vector（软删除标记），数据文件并未立即清除。
-   * 如果 optimize/compact 未正确执行，旧数据在重启后仍可查到。
-   * 因此清理后必须强制 compact 并验证结果，必要时通过重建表彻底清除。
+   * 优先对每个孤儿 docId 定向 removeDocumentChunks；仅当残留很多且多轮删除无效时
+   * 才 fallback 到 rebuildVectorTable，避免为个位数孤儿 risk 整表 drop+写回。
    */
   private async cleanupOrphanData(): Promise<void> {
     try {
       const validDocIds = new Set(this.documentsIndex.keys())
 
-      const orphanDocIds = await this.findOrphanDocIds(validDocIds)
+      let orphanDocIds = await this.findOrphanDocIds(validDocIds)
       if (orphanDocIds.length === 0) {
         return
       }
 
-      log.info(`发现 ${orphanDocIds.length} 个孤儿文档，开始清理...`)
+      log.info(`发现 ${orphanDocIds.length} 个孤儿 docId（索引有 chunk、documents.json 无对应文档），开始定向清理...`)
 
-      // 第一轮：逐个删除 + 强制 aggressive compact
-      for (const docId of orphanDocIds) {
-        await this.vectorStorage.removeDocumentChunks(docId)
-        await this.bm25Index.removeDocumentChunks(docId)
+      const purgeOrphans = async (docIds: string[], aggressiveCompact: boolean): Promise<void> => {
+        for (const docId of docIds) {
+          await this.vectorStorage.removeDocumentChunks(docId, false)
+          await this.bm25Index.removeDocumentChunks(docId)
+        }
+        await this.vectorStorage.compact(aggressiveCompact)
       }
-      await this.vectorStorage.compact(true)
 
-      // 验证：compact 后重新检查是否还有孤儿
-      const remaining = await this.findOrphanDocIds(validDocIds)
+      await purgeOrphans(orphanDocIds, true)
+
+      let remaining = await this.findOrphanDocIds(validDocIds)
+      for (let retry = 0; retry < KnowledgeService.ORPHAN_DELETE_MAX_RETRIES && remaining.length > 0; retry++) {
+        log.info(`孤儿 chunk 残留 ${remaining.length} 个，定向删除重试 ${retry + 1}/${KnowledgeService.ORPHAN_DELETE_MAX_RETRIES}...`)
+        await purgeOrphans(remaining, true)
+        remaining = await this.findOrphanDocIds(validDocIds)
+      }
+
       if (remaining.length === 0) {
-        log.info(`清理了 ${orphanDocIds.length} 个孤儿文档`)
+        log.info(`已清理 ${orphanDocIds.length} 个孤儿 docId 的索引 chunk`)
         return
       }
 
-      // 如果软删除无效，通过重建表彻底清除
+      if (remaining.length >= KnowledgeService.ORPHAN_FULL_TABLE_REBUILD_THRESHOLD) {
+        log.warn(
+          `软删除后仍有 ${remaining.length} 个孤儿 docId 残留，` +
+          '将重建向量表彻底清除...'
+        )
+        await this.rebuildVectorTable(validDocIds)
+        log.info('向量表重建完成，孤儿数据已彻底清除')
+        return
+      }
+
       log.warn(
-        `软删除后仍有 ${remaining.length} 个孤儿残留，` +
-        '将重建向量表彻底清除...'
+        `仍有 ${remaining.length} 个孤儿 docId 的 chunk 残留，跳过整表重建（不影响正常文档检索与补建）`
       )
-      await this.rebuildVectorTable(validDocIds)
-      log.info('向量表重建完成，孤儿数据已彻底清除')
     } catch (error) {
       log.error('清理孤儿数据失败:', error)
     }
@@ -811,16 +844,25 @@ export class KnowledgeService extends EventEmitter {
    * 从向量表中读取有效数据，drop 后重建，彻底清除孤儿数据
    */
   private async rebuildVectorTable(validDocIds: Set<string>): Promise<void> {
-    // 一次全表查询，筛选有效记录（避免 N+1）
-    const validRecords = await this.vectorStorage.getValidRecords(validDocIds)
+    if (this.vectorRebuildPromise) {
+      await this.vectorRebuildPromise
+      return
+    }
 
-    // 先确认数据收集成功，再 clear
-    await this.vectorStorage.clear()
+    this.vectorRebuildPromise = (async () => {
+      const validRecords = await this.vectorStorage.getValidRecords(validDocIds)
+      await this.vectorStorage.clear()
+      if (validRecords.length > 0) {
+        const dimensions = this.embeddingService.getDimensions()
+        await this.vectorStorage.initialize(dimensions)
+        await this.vectorStorage.addRecords(validRecords)
+      }
+    })()
 
-    if (validRecords.length > 0) {
-      const dimensions = this.embeddingService.getDimensions()
-      await this.vectorStorage.initialize(dimensions)
-      await this.vectorStorage.addRecords(validRecords)
+    try {
+      await this.vectorRebuildPromise
+    } finally {
+      this.vectorRebuildPromise = null
     }
   }
 
@@ -1054,12 +1096,25 @@ export class KnowledgeService extends EventEmitter {
   }
 
   /**
+   * 整表重建进行中时短暂等待，避免 search 与 clear 并发。
+   */
+  private async awaitVectorRebuildIfNeeded(): Promise<void> {
+    if (!this.vectorRebuildPromise) return
+    await Promise.race([
+      this.vectorRebuildPromise,
+      new Promise<void>(resolve => setTimeout(resolve, 30_000)),
+    ])
+  }
+
+  /**
    * 搜索知识库
    */
   async search(query: string, options?: Partial<SearchOptions>): Promise<SearchResult[]> {
     if (!this.isInitialized) {
       await this.initialize()
     }
+
+    await this.awaitVectorRebuildIfNeeded()
 
     const searchOptions: SearchOptions = {
       query,
@@ -1574,7 +1629,10 @@ export class KnowledgeService extends EventEmitter {
    */
   async disposeAsync(timeoutMs: number = 500): Promise<void> {
     try {
-      await this.embeddingService.disposeAsync(timeoutMs)
+      await Promise.all([
+        this.embeddingService.disposeAsync(timeoutMs),
+        this.vectorStorage.disposeAsync(timeoutMs),
+      ])
     } finally {
       this.isInitialized = false
       this.emit('disposed')
@@ -1691,6 +1749,8 @@ export class KnowledgeService extends EventEmitter {
     if (!this.isInitialized) {
       await this.initialize()
     }
+
+    await this.awaitVectorRebuildIfNeeded()
 
     try {
       // 如果没有 query，返回该主机的最近记忆
@@ -2066,6 +2126,8 @@ export class KnowledgeService extends EventEmitter {
       if (!this.isInitialized) {
         await this.initialize()
       }
+
+      await this.awaitVectorRebuildIfNeeded()
 
       const queryEmbedding = await this.embeddingService.embedSingle(query)
       const results = await this.vectorStorage.hybridSearch(

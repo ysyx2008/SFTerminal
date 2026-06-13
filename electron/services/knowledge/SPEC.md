@@ -177,3 +177,6 @@ type MemoryVolatility = "stable" | "moderate" | "volatile"
 - **导入导出方法叫 `importData` / `exportData`**——不是 `importKnowledge` / `exportKnowledge`
 - **MCP 通过 `setMcpService` 延迟注入**——不能放进构造参数（循环依赖）
 - **主机记忆相关方法名都带 `HostMemory`**（如 `searchHostMemories`、`getHostMemoriesForPrompt`），不是 `getHostMemory` / `deleteHostMemory`
+- **`data_corrupted` 仅重建向量侧**——BM25 为独立 JSON，损坏时保留 BM25，启动增量补向量即可
+- **孤儿 chunk 后台清理**——`initialize()` 后 `setImmediate` 定向删 chunk；残留 &lt; 50 跳过整表重建
+- **退出时 `disposeAsync`**——主进程 `cleanupAllServices` / SIGINT·SIGTERM 会 compact LanceDB 并停 worker

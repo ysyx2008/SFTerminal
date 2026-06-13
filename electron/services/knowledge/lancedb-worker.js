@@ -316,14 +316,14 @@ async function handleRemoveDocumentChunks(data) {
 async function handleVectorSearch(data) {
   if (!table) return { hits: [] }
   const { embedding, limit } = data || {}
-  try {
+
+  const runSearch = async () => {
     const results = await table
       .vectorSearch(embedding)
       .distanceType('cosine')
       .limit(limit || 20)
       .toArray()
-    // 不返回 vector 字段以节省 IPC 带宽
-    const hits = results.map(r => ({
+    return results.map(r => ({
       id: r.id,
       docId: r.docId,
       content: r.content,
@@ -332,10 +332,21 @@ async function handleVectorSearch(data) {
       hostId: r.hostId,
       tags: r.tags
     }))
+  }
+
+  try {
+    const hits = await runSearch()
     return { hits }
   } catch (error) {
     if (isLanceCorruptionError(error)) {
-      markCorrupted(`vectorSearch: ${error.message}`)
+      console.warn('[LanceDBWorker] vectorSearch IO 错误，aggressive compact 后重试一次:', error.message)
+      try {
+        await compact(true)
+        const hits = await runSearch()
+        return { hits }
+      } catch (retryErr) {
+        markCorrupted(`vectorSearch: ${retryErr.message}`)
+      }
     }
     console.error('[LanceDBWorker] vectorSearch failed:', error)
     return { hits: [], error: error.message }
