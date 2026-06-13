@@ -20,6 +20,11 @@ export const browserTools: ToolDefinition[] = [
 - **attach（优先）**：浏览器助手已连接时自动启用；也可显式 \`{ "attach": true }\` 或 \`{ "mode": "attach" }\`
 - **launch（Playwright 独立窗口）**：\`{ "mode": "launch" }\` 或 \`{ "attach": false }\`；需要 headless / profile / **截图** 时自动或显式使用
 
+**阅读 vs 交互（attach 必读）**：
+- **读文章 / 总结当前页 / 提取正文** → \`browser_get_content\`（默认提取正文，过滤导航噪声）
+- **点按钮 / 填表 / 找可点击元素** → \`browser_snapshot\`（无障碍树 + ref）
+- 公开 URL 且无需登录态 → 也可 \`web_fetch\`（Readability/Jina，不占用浏览器标签）
+
 **attach 能力边界（Chrome / Edge / Firefox 一致）**：
 - **不支持** \`browser_screenshot\`；需截图请 \`browser_launch { "mode": "launch" }\`，或用 \`browser_snapshot\` / \`browser_get_content\`
 - \`browser_wait\` **仅支持 delay**；不支持 selector 等待（需等元素请轮询 snapshot 或改用 launch）
@@ -76,9 +81,17 @@ export const browserTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'browser_snapshot',
-      description: `获取页面的无障碍树快照。这是与页面交互前的**推荐第一步**。
+      description: `获取页面的无障碍树快照。**用于交互操作**（点击、填表），不是阅读正文的首选。
 
-**核心优势**：
+**何时用 snapshot**：
+- 需要点击按钮、链接、输入框
+- 需要 ref（@e1）做 browser_click / browser_type
+
+**何时不要用 snapshot**：
+- 用户要「读这篇文章 / 总结页面 / 提取正文」→ 用 \`browser_get_content\`
+- snapshot 会截断文本、偏向可交互元素，长正文会丢失
+
+**核心能力**：
 - 返回页面所有元素的结构化无障碍树
 - 每个可交互元素带有 ref 编号（如 @e1, @e2）
 - **必填项标注 [必填]**，提交前请先填完所有 [必填] 字段
@@ -88,10 +101,10 @@ export const browserTools: ToolDefinition[] = [
 
 **attach 模式**：这是 attach 下了解页面的主要方式（**不能**用 browser_screenshot 截图，见 browser_launch 说明）
 
-**推荐工作流**：
-1. 首次可用 browser_snapshot 获取页面结构和 ref（或直接 browser_goto / browser_click，其返回会自带快照）
-2. 使用 ref 执行操作：browser_click { selector: "@e2" }
-3. browser_click、browser_goto、browser_switch_tab 执行后会自动附带当前页面快照，通常无需再单独调用本工具；仅在需要不同参数（如 compact、selector）或仅想刷新快照时再调用
+**推荐工作流（交互）**：
+1. browser_snapshot 获取 ref（interactive: true 更省 token）
+2. browser_click / browser_type 使用 @eN
+3. 操作后返回会自动附带快照；读正文请单独 browser_get_content
 
 **模式**：
 - 默认：完整无障碍树
@@ -187,14 +200,27 @@ export const browserTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'browser_get_content',
-      description: `获取页面内容。
+      description: `获取**当前浏览器标签页**的正文内容。阅读文章、总结页面、提取信息时的**首选工具**（attach / launch 均可用）。
+
+**与 browser_snapshot 区别**：
+- get_content：返回可读正文（默认智能提取 article/main，过滤导航/页脚）
+- snapshot：返回无障碍树 + ref，供点击填表
+
+**与 web_fetch 区别**：
+- get_content：读**用户已打开**的标签（含登录态、动态渲染结果）
+- web_fetch：按 URL 后台抓取（公开页、无需浏览器时更合适）
 
 **格式**：
-- text：纯文本（默认，适合阅读）
-- html：HTML 源码
-- markdown：转换为 Markdown
+- text：纯文本（默认）
+- markdown：标题/段落转 Markdown
+- html：HTML 片段
 
-**限制**：默认最多返回 10000 字符`,
+**提取范围（extract）**：
+- auto（默认）：Mozilla Readability 剪藏算法（与 Firefox 阅读模式 / 印象笔记剪藏同类），过滤侧栏与导航
+- article：同 auto
+- full：整页 body（噪声多，仅特殊场景）
+
+**其它**：支持 selector 限定区域；默认最多 16000 字符`,
       parameters: {
         type: 'object',
         properties: {
@@ -203,13 +229,18 @@ export const browserTools: ToolDefinition[] = [
             enum: ['text', 'html', 'markdown'],
             description: '输出格式（默认 text）'
           },
+          extract: {
+            type: 'string',
+            enum: ['auto', 'article', 'full'],
+            description: '正文提取范围（默认 auto）'
+          },
           selector: {
             type: 'string',
             description: '只获取指定元素的内容（CSS 选择器）'
           },
           max_length: {
             type: 'number',
-            description: '最大字符数（默认 10000）'
+            description: '最大字符数（默认 16000）'
           }
         },
         required: []

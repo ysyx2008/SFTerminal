@@ -16,6 +16,7 @@ import {
   resolveBridgeRef,
   touchBridgeSession,
 } from './bridge-session'
+import { extractArticleFromHtml, isReadabilityUsable } from '../../../../utils/readability-extract'
 
 function countRefs(refs: BrowserBridgeRefMap): { total: number; interactive: number } {
   const entries = Object.values(refs)
@@ -286,15 +287,119 @@ export async function bridgeBrowserScroll(
   }
 }
 
+function htmlToSimpleMarkdown(html: string): string {
+  return html
+    .replace(/<h1[^>]*>(.*?)<\/h1>/gi, '# $1\n')
+    .replace(/<h2[^>]*>(.*?)<\/h2>/gi, '## $1\n')
+    .replace(/<h3[^>]*>(.*?)<\/h3>/gi, '### $1\n')
+    .replace(/<h4[^>]*>(.*?)<\/h4>/gi, '#### $1\n')
+    .replace(/<strong[^>]*>(.*?)<\/strong>/gi, '**$1**')
+    .replace(/<b[^>]*>(.*?)<\/b>/gi, '**$1**')
+    .replace(/<em[^>]*>(.*?)<\/em>/gi, '*$1*')
+    .replace(/<i[^>]*>(.*?)<\/i>/gi, '*$1*')
+    .replace(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, '[$2]($1)')
+    .replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<p[^>]*>(.*?)<\/p>/gi, '$1\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 export async function bridgeBrowserGetContent(
   ptyId: string,
   args: Record<string, unknown>,
 ): Promise<ToolResult> {
+  const format = (args.format as 'text' | 'html' | 'markdown') || 'text'
+  const selector = typeof args.selector === 'string' ? args.selector : undefined
+  const extract = (args.extract as 'auto' | 'article' | 'full') || 'auto'
+  const maxLength = typeof args.max_length === 'number' ? args.max_length : 16000
+
   try {
-    const data = (await bridgeSend(ptyId, 'get_content', {
-      mode: args.format === 'html' ? 'html' : 'text',
-    })) as { content?: string }
-    return { success: true, output: data.content || '' }
+    type ContentPayload = {
+      content?: string
+      html?: string
+      fallbackText?: string
+      title?: string
+      url?: string
+    }
+
+    let extractMethod = extract !== 'full' ? 'Mozilla Readability（剪藏算法）' : '整页文本'
+    let title = ''
+    let pageUrl = ''
+    let content = ''
+
+    if (selector) {
+      const data = (await bridgeSend(ptyId, 'get_content', {
+        mode: format === 'html' ? 'html' : 'text',
+        selector,
+        extract,
+      })) as ContentPayload
+      title = data.title || ''
+      pageUrl = data.url || ''
+      content = data.content || ''
+      extractMethod = `选择器 ${selector}`
+    } else if (extract === 'full' && format === 'html') {
+      const data = (await bridgeSend(ptyId, 'get_content', {
+        mode: 'html',
+        extract: 'full',
+      })) as ContentPayload
+      title = data.title || ''
+      pageUrl = data.url || ''
+      content = data.content || ''
+    } else if (extract === 'full') {
+      const data = (await bridgeSend(ptyId, 'get_content', {
+        mode: 'text',
+        extract: 'full',
+      })) as ContentPayload
+      title = data.title || ''
+      pageUrl = data.url || ''
+      content = data.content || ''
+    } else {
+      const data = (await bridgeSend(ptyId, 'get_content', {
+        mode: 'page_html',
+        extract,
+      })) as ContentPayload
+      title = data.title || ''
+      pageUrl = data.url || ''
+      const html = data.html || ''
+      const readability = html ? await extractArticleFromHtml(html, pageUrl || 'https://local.invalid/') : null
+      if (isReadabilityUsable(readability)) {
+        title = readability!.title || title
+        if (format === 'markdown') {
+          content = htmlToSimpleMarkdown(readability!.content)
+        } else {
+          content = readability!.textContent
+        }
+      } else {
+        content = data.fallbackText || data.content || ''
+        extractMethod = 'DOM 启发式（Readability 未命中）'
+      }
+    }
+
+    if (format === 'markdown' && selector && content) {
+      content = htmlToSimpleMarkdown(content)
+    }
+
+    const originalLength = content.length
+    if (content.length > maxLength) {
+      content = `${content.substring(0, maxLength)}\n\n... (内容过长，已截断，共 ${originalLength} 字符)`
+    }
+
+    const header = [
+      title ? `标题: ${title}` : '',
+      pageUrl ? `URL: ${pageUrl}` : '',
+      extractMethod ? `提取: ${extractMethod}` : '',
+    ].filter(Boolean).join('\n')
+
+    return {
+      success: true,
+      output: header ? `${header}\n\n${content}` : content,
+    }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : '获取内容失败'
     return { success: false, output: '', error: errorMsg }

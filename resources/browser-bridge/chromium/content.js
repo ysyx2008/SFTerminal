@@ -49,8 +49,42 @@
 
   function getContent(payload) {
     const mode = payload.mode || 'text'
-    if (mode === 'html') return { content: document.documentElement.outerHTML }
-    return { content: document.body?.innerText || '' }
+    const selector = payload.selector ? String(payload.selector) : ''
+    const extract = payload.extract || 'auto'
+    const meta = { title: document.title, url: location.href }
+
+    if (mode === 'page_html') {
+      const article = globalThis.__sailfishArticleExtract
+      return {
+        ...meta,
+        html: document.documentElement.outerHTML,
+        fallbackText: article?.extractText?.(document, 'article') || '',
+      }
+    }
+
+    if (selector) {
+      const el = document.querySelector(selector)
+      if (!el) throw new Error(`Element not found: ${selector}`)
+      if (mode === 'html') {
+        return { ...meta, content: el.innerHTML || '' }
+      }
+      return { ...meta, content: (el.innerText || el.textContent || '').trim() }
+    }
+
+    const article = globalThis.__sailfishArticleExtract
+    const extractMode = extract === 'full' ? 'full' : 'article'
+
+    if (mode === 'html') {
+      const content = extract === 'full'
+        ? document.documentElement.outerHTML
+        : (article?.extractHtml?.(document, extractMode) || document.body?.innerHTML || '')
+      return { ...meta, content }
+    }
+
+    const content = extract === 'full'
+      ? (document.body?.innerText || '')
+      : (article?.extractText?.(document, extractMode) || document.body?.innerText || '')
+    return { ...meta, content: String(content).trim() }
   }
 
   function evaluateScript(payload) {

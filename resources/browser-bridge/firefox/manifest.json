@@ -30,7 +30,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["safe-eval.js", "snapshot.js", "content.js"],
+      "js": ["safe-eval.js", "snapshot.js", "article-extract.js", "content.js"],
       "run_at": "document_idle",
       "all_frames": false
     }

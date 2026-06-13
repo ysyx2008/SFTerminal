@@ -173,7 +173,12 @@ export default defineConfig({
                 'sharp',
                 /^pdfjs-dist/,
                 'bufferutil',
-                'utf-8-validate'
+                'utf-8-validate',
+                // jsdom + Readability 体积大且含大量子依赖，rollup 会拆成 api-*.js 等 hash chunk。
+                // dev 热更新时 main 与 chunk hash 不同步会导致 Cannot find module './api-XXXX.js'。
+                // 标记 external 后首次调用时从 node_modules 加载，与 web_fetch 的 lazy 策略一致。
+                'jsdom',
+                '@mozilla/readability',
               ]
             }
           },

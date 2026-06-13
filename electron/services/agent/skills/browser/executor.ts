@@ -22,6 +22,7 @@ import {
 } from './session'
 import { getSnapshot, resolveRef, getSnapshotStats } from './snapshot'
 import type { RefMap } from './snapshot'
+import { extractArticleFromHtml, isReadabilityUsable } from '../../../../utils/readability-extract'
 import type { Page } from 'playwright-core'
 import {
   bridgeBrowserLaunch,
@@ -530,7 +531,8 @@ async function browserGetContent(
 ): Promise<ToolResult> {
   const format = (args.format as 'text' | 'html' | 'markdown') || 'text'
   const selector = args.selector as string | undefined
-  const maxLength = (args.max_length as number) || 10000
+  const extract = (args.extract as 'auto' | 'article' | 'full') || 'auto'
+  const maxLength = (args.max_length as number) || 16000
 
   executor.addStep({
     type: 'tool_call',
@@ -553,8 +555,19 @@ async function browserGetContent(
         content = await element.innerText()
       }
     } else {
-      if (format === 'html' || format === 'markdown') {
-        content = await page.content()
+      const pageHtml = await page.content()
+      const pageUrl = page.url()
+      if (extract !== 'full' && (format === 'text' || format === 'markdown')) {
+        const readability = await extractArticleFromHtml(pageHtml, pageUrl)
+        if (isReadabilityUsable(readability)) {
+          content = format === 'markdown' ? readability!.content : readability!.textContent
+        } else if (format === 'html' || format === 'markdown') {
+          content = pageHtml
+        } else {
+          content = await page.innerText('body')
+        }
+      } else if (format === 'html' || format === 'markdown') {
+        content = pageHtml
       } else {
         content = await page.innerText('body')
       }
