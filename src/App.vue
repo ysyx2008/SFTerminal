@@ -92,12 +92,38 @@ const { start: startUpdaterPrompts, stop: stopUpdaterPrompts } = useAppUpdaterPr
 
 const showSidebar = ref(false)
 
-// 欢迎页「最近对话」侧栏宽度（可拖拽调整，持久化到 config）
+// 欢迎页「最近对话」侧栏宽度（可拖拽调整，持久化到 config + localStorage 防 FOUC）
 const DEFAULT_RECALL_SIDEBAR_WIDTH = 320
 const MIN_RECALL_SIDEBAR_WIDTH = 240
-const recallSidebarWidth = ref(DEFAULT_RECALL_SIDEBAR_WIDTH)
-const isRecallSidebarResizing = ref(false)
+const RECALL_SIDEBAR_WIDTH_STORAGE_KEY = 'sft-recall-sidebar-width'
 const getMaxRecallSidebarWidth = () => Math.max(MIN_RECALL_SIDEBAR_WIDTH, window.innerWidth - 480)
+
+function clampRecallSidebarWidth(width: number): number {
+  return Math.min(getMaxRecallSidebarWidth(), Math.max(MIN_RECALL_SIDEBAR_WIDTH, width))
+}
+
+function readCachedRecallSidebarWidth(): number {
+  try {
+    if (typeof localStorage === 'undefined') return DEFAULT_RECALL_SIDEBAR_WIDTH
+    const raw = localStorage.getItem(RECALL_SIDEBAR_WIDTH_STORAGE_KEY)
+    if (raw == null) return DEFAULT_RECALL_SIDEBAR_WIDTH
+    const parsed = Number(raw)
+    if (!Number.isFinite(parsed)) return DEFAULT_RECALL_SIDEBAR_WIDTH
+    return clampRecallSidebarWidth(parsed)
+  } catch {
+    return DEFAULT_RECALL_SIDEBAR_WIDTH
+  }
+}
+
+function writeCachedRecallSidebarWidth(width: number): void {
+  try {
+    if (typeof localStorage === 'undefined') return
+    localStorage.setItem(RECALL_SIDEBAR_WIDTH_STORAGE_KEY, String(width))
+  } catch { /* localStorage 不可用时静默降级 */ }
+}
+
+const recallSidebarWidth = ref(readCachedRecallSidebarWidth())
+const isRecallSidebarResizing = ref(false)
 
 const showSettings = ref(false)
 const showSmartPatrol = ref(false)
@@ -355,11 +381,13 @@ onMounted(async () => {
     isAwakened.value = !!(await window.electronAPI.config.get('agentAwakened'))
   } catch { /* ignore */ }
 
-  // 加载最近对话侧栏宽度
+  // 加载最近对话侧栏宽度（config 为真值；localStorage 仅用于首帧同步，避免启动时宽度跳变）
   try {
     const savedWidth = await window.electronAPI.config.get('recallSidebarWidth') as number | undefined
     if (typeof savedWidth === 'number' && Number.isFinite(savedWidth)) {
-      recallSidebarWidth.value = clampRecallSidebarWidth(savedWidth)
+      const clamped = clampRecallSidebarWidth(savedWidth)
+      recallSidebarWidth.value = clamped
+      writeCachedRecallSidebarWidth(clamped)
     }
   } catch { /* ignore */ }
 
@@ -879,10 +907,6 @@ const openHostSidebar = () => {
   showSidebar.value = true
 }
 
-function clampRecallSidebarWidth(width: number): number {
-  return Math.min(getMaxRecallSidebarWidth(), Math.max(MIN_RECALL_SIDEBAR_WIDTH, width))
-}
-
 const handleRecallSidebarResize = (e: MouseEvent) => {
   if (!isRecallSidebarResizing.value) return
   recallSidebarWidth.value = clampRecallSidebarWidth(e.clientX)
@@ -895,6 +919,7 @@ const stopRecallSidebarResize = () => {
   document.removeEventListener('mouseup', stopRecallSidebarResize)
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
+  writeCachedRecallSidebarWidth(recallSidebarWidth.value)
   window.electronAPI.config.set('recallSidebarWidth', recallSidebarWidth.value).catch(() => {})
 }
 
