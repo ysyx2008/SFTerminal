@@ -16,6 +16,7 @@ import {
   resolveBridgeRef,
   touchBridgeSession,
 } from './bridge-session'
+import { selectorToHumanLabel } from './ref-label'
 import { extractPageContentFromHtml } from '../../../../utils/page-content-extract'
 
 function countRefs(refs: BrowserBridgeRefMap): { total: number; interactive: number } {
@@ -158,23 +159,24 @@ export async function bridgeBrowserClick(
 ): Promise<ToolResult> {
   const selector = args.selector as string
   if (!selector) return { success: false, output: '', error: '缺少 selector 参数' }
+  const session = getBridgeSession(ptyId)
+  const clickLabel = selectorToHumanLabel(selector, session?.refs)
   executor.addStep({
     type: 'tool_call',
-    content: `点击 ${selector}`,
+    content: `点击 ${clickLabel}`,
     toolName: 'browser_click',
     toolArgs: args,
     riskLevel: 'moderate',
   })
   try {
-    const session = getBridgeSession(ptyId)
     if (!session) throw new Error('浏览器未连接')
     const payload = selector.startsWith('@')
       ? resolveBridgeRef(session, selector)
       : { selector }
     await bridgeSend(ptyId, 'click', payload)
     touchBridgeSession(ptyId)
-    executor.addStep({ type: 'tool_result', content: `已点击 ${selector}`, toolName: 'browser_click' })
-    return { success: true, output: `已点击 ${selector}` }
+    executor.addStep({ type: 'tool_result', content: `已点击 ${clickLabel}`, toolName: 'browser_click' })
+    return { success: true, output: `已点击 ${clickLabel}` }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : '点击失败'
     return { success: false, output: '', error: errorMsg }
@@ -189,15 +191,16 @@ export async function bridgeBrowserType(
   const selector = args.selector as string
   const text = args.text as string
   if (!selector || text === undefined) return { success: false, output: '', error: '缺少 selector 或 text' }
+  const session = getBridgeSession(ptyId)
+  const typeLabel = selectorToHumanLabel(selector, session?.refs)
   executor.addStep({
     type: 'tool_call',
-    content: `在 ${selector} 输入文本`,
+    content: `在 ${typeLabel} 输入文本`,
     toolName: 'browser_type',
     toolArgs: args,
     riskLevel: 'moderate',
   })
   try {
-    const session = getBridgeSession(ptyId)
     if (!session) throw new Error('浏览器未连接')
     const base = selector.startsWith('@') ? resolveBridgeRef(session, selector) : { selector }
     await bridgeSend(ptyId, 'type', {
@@ -206,7 +209,9 @@ export async function bridgeBrowserType(
       clear: args.clear_first !== false,
     })
     touchBridgeSession(ptyId)
-    return { success: true, output: `已在 ${selector} 输入文本` }
+    const result = `已在 ${typeLabel} 输入文本`
+    executor.addStep({ type: 'tool_result', content: result, toolName: 'browser_type' })
+    return { success: true, output: result }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : '输入失败'
     return { success: false, output: '', error: errorMsg }
