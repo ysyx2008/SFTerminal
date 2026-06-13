@@ -33,6 +33,8 @@ import {
   bridgeBrowserListTabs,
   bridgeBrowserSwitchTab,
   bridgeBrowserScroll,
+  bridgeBrowserReadArticle,
+  bridgeBrowserReadPage,
   bridgeBrowserGetContent,
   bridgeBrowserEvaluate,
   bridgeBrowserWait,
@@ -118,6 +120,10 @@ export async function executeBrowserTool(
         return bridgeBrowserSwitchTab(ptyId, args, executor)
       case 'browser_scroll':
         return bridgeBrowserScroll(ptyId, args, executor)
+      case 'browser_read_article':
+        return bridgeBrowserReadArticle(ptyId, args)
+      case 'browser_read_page':
+        return bridgeBrowserReadPage(ptyId, args)
       case 'browser_get_content':
         return bridgeBrowserGetContent(ptyId, args)
       case 'browser_evaluate':
@@ -130,7 +136,7 @@ export async function executeBrowserTool(
         return {
           success: false,
           output: '',
-          error: 'attach 模式不支持 browser_screenshot。需要截图请 browser_launch { "mode": "launch" } 开独立窗口后再截图，或用 browser_snapshot / browser_get_content 了解页面。',
+          error: 'attach 模式不支持 browser_screenshot。需要截图请 browser_launch { "mode": "launch" } 开独立窗口后再截图，或用 browser_snapshot / browser_read_page 了解页面。',
         }
       case 'browser_save_login':
       case 'browser_list_profiles':
@@ -152,6 +158,10 @@ export async function executeBrowserTool(
       return await browserGoto(ptyId, args, executor)
     case 'browser_screenshot':
       return await browserScreenshot(ptyId, args, executor)
+    case 'browser_read_article':
+      return await browserReadArticle(ptyId, args, executor)
+    case 'browser_read_page':
+      return await browserReadPage(ptyId, args, executor)
     case 'browser_get_content':
       return await browserGetContent(ptyId, args, executor)
     case 'browser_click':
@@ -522,24 +532,23 @@ async function browserScreenshot(
 }
 
 /**
- * 获取页面内容
+ * 智能提取文章正文（Readability 类算法）
  */
-async function browserGetContent(
+async function browserReadArticle(
   ptyId: string,
   args: Record<string, unknown>,
-  executor: ToolExecutorConfig
+  executor: ToolExecutorConfig,
 ): Promise<ToolResult> {
   const format = (args.format as 'text' | 'html' | 'markdown') || 'text'
   const selector = args.selector as string | undefined
-  const extract = (args.extract as 'auto' | 'article' | 'full') || 'auto'
   const maxLength = (args.max_length as number) || 16000
 
   executor.addStep({
     type: 'tool_call',
-    content: selector ? `获取 ${selector} 的${format}内容` : `获取页面${format}内容`,
-    toolName: 'browser_get_content',
+    content: selector ? `读取文章 ${selector}` : '读取文章正文',
+    toolName: 'browser_read_article',
     toolArgs: args,
-    riskLevel: 'safe'
+    riskLevel: 'safe',
   })
 
   try {
@@ -549,68 +558,135 @@ async function browserGetContent(
 
     if (selector) {
       const element = resolveSelector(page, selector, ptyId) || page.locator(selector)
-      if (format === 'html' || format === 'markdown') {
-        content = await element.innerHTML()
-      } else {
-        content = await element.innerText()
-      }
+      content = format === 'html'
+        ? await element.innerHTML()
+        : await element.innerText()
     } else {
       const pageHtml = await page.content()
       const pageUrl = page.url()
-      if (extract !== 'full' && (format === 'text' || format === 'markdown')) {
-        const extracted = await extractPageContentFromHtml(pageHtml, pageUrl)
-        if (format === 'markdown' && extracted.html) {
-          content = extracted.html
-        } else {
-          content = extracted.text
-        }
-      } else if (format === 'html' || format === 'markdown') {
-        content = pageHtml
+      const extracted = await extractPageContentFromHtml(pageHtml, pageUrl)
+      if (format === 'markdown' && extracted.html) {
+        content = extracted.html
+      } else if (format === 'html' && extracted.html) {
+        content = extracted.html
       } else {
-        content = await page.innerText('body')
+        content = extracted.text
       }
     }
 
-    // 简单的 HTML 到 Markdown 转换
     if (format === 'markdown') {
       content = htmlToSimpleMarkdown(content)
     }
 
-    // 记录原始长度
     const originalLength = content.length
-
-    // 截断过长内容
     if (content.length > maxLength) {
-      content = content.substring(0, maxLength) + `\n\n... (内容过长，已截断，共 ${originalLength} 字符)`
+      content = `${content.substring(0, maxLength)}\n\n... (内容过长，已截断，共 ${originalLength} 字符)`
     }
 
     const title = await page.title()
     const currentUrl = page.url()
-    
-    // 显示标签页信息
-    const tabsInfo = await getTabsInfo(session)
-    const tabsHint = tabsInfo.length > 1 
-      ? `\n(当前第 ${session.currentPageIndex + 1}/${tabsInfo.length} 个标签页)` 
-      : ''
-    
-    const result = `页面: ${title}\nURL: ${currentUrl}${tabsHint}\n\n${content}`
+    const result = `标题: ${title}\nURL: ${currentUrl}\n\n${content}`
 
     executor.addStep({
       type: 'tool_result',
-      content: `获取了 ${originalLength} 字符的内容`,
-      toolName: 'browser_get_content'
+      content: `读取了 ${originalLength} 字符的文章正文`,
+      toolName: 'browser_read_article',
     })
-
     return { success: true, output: result }
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : '获取内容失败'
+    const errorMsg = error instanceof Error ? error.message : '读取文章失败'
     executor.addStep({
       type: 'tool_result',
       content: `错误: ${errorMsg}`,
-      toolName: 'browser_get_content'
+      toolName: 'browser_read_article',
     })
     return { success: false, output: '', error: errorMsg }
   }
+}
+
+async function browserReadPage(
+  ptyId: string,
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig,
+): Promise<ToolResult> {
+  const format = args.format === 'html' ? 'html' : 'text'
+  const selector = args.selector as string | undefined
+  const scrollSteps = typeof args.scroll_steps === 'number' ? Math.max(0, Math.min(args.scroll_steps, 20)) : 0
+  const scrollDelayMs = typeof args.scroll_delay_ms === 'number' ? args.scroll_delay_ms : 500
+  const maxLength = (args.max_length as number) || 32000
+
+  executor.addStep({
+    type: 'tool_call',
+    content: selector ? `读取页面区域 ${selector}` : format === 'html' ? '读取整页 HTML' : '读取整页可见文本',
+    toolName: 'browser_read_page',
+    toolArgs: args,
+    riskLevel: 'safe',
+  })
+
+  try {
+    const session = ensureSession(ptyId)
+    const page = getCurrentPage(session)
+
+    for (let i = 0; i < scrollSteps; i++) {
+      await page.evaluate(() => window.scrollBy(0, 800))
+      if (scrollDelayMs > 0) {
+        await new Promise((r) => setTimeout(r, scrollDelayMs))
+      }
+    }
+
+    let content: string
+    if (selector) {
+      const element = resolveSelector(page, selector, ptyId) || page.locator(selector)
+      content = format === 'html' ? await element.innerHTML() : await element.innerText()
+    } else {
+      content = format === 'html' ? await page.content() : await page.innerText('body')
+    }
+
+    const originalLength = content.length
+    if (content.length > maxLength) {
+      content = `${content.substring(0, maxLength)}\n\n... (内容过长，已截断，共 ${originalLength} 字符)`
+    }
+
+    const title = await page.title()
+    const currentUrl = page.url()
+    const rangeLabel = selector
+      ? `区域: ${selector}`
+      : format === 'html'
+        ? '范围: 整页 HTML 源码'
+        : '范围: 整页可见文本'
+    const result = `标题: ${title}\nURL: ${currentUrl}\n${rangeLabel}\n\n${content}`
+
+    executor.addStep({
+      type: 'tool_result',
+      content: `读取了 ${originalLength} 字符`,
+      toolName: 'browser_read_page',
+    })
+    return { success: true, output: result }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : '读取页面失败'
+    executor.addStep({
+      type: 'tool_result',
+      content: `错误: ${errorMsg}`,
+      toolName: 'browser_read_page',
+    })
+    return { success: false, output: '', error: errorMsg }
+  }
+}
+
+/** @deprecated 使用 browser_read_article；extract:full 转发到 browser_read_page */
+async function browserGetContent(
+  ptyId: string,
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  const extract = (args.extract as string) || 'auto'
+  if (extract === 'full') {
+    return browserReadPage(ptyId, {
+      ...args,
+      format: args.format === 'html' ? 'html' : 'text',
+    }, executor)
+  }
+  return browserReadArticle(ptyId, args, executor)
 }
 
 /**

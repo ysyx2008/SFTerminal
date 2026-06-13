@@ -468,6 +468,8 @@ export default {
       browser_goto: 'Browser Navigate',
       browser_screenshot: 'Browser Screenshot',
       browser_get_content: 'Get Page Content',
+      browser_read_article: 'Read Article',
+      browser_read_page: 'Read Page Content',
       browser_click: 'Browser Click',
       browser_type: 'Browser Type',
       browser_scroll: 'Browser Scroll',

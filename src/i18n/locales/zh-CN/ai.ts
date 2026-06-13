@@ -468,6 +468,8 @@ export default {
       browser_goto: '浏览器导航',
       browser_screenshot: '浏览器截图',
       browser_get_content: '获取网页内容',
+      browser_read_article: '读取文章正文',
+      browser_read_page: '读取整页内容',
       browser_click: '浏览器点击',
       browser_type: '浏览器输入',
       browser_scroll: '浏览器滚动',

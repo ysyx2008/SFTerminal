@@ -71,7 +71,7 @@ export async function bridgeBrowserLaunch(
       output += `\n已打开 ${nav.url || url}\n标题: ${nav.title || ''}`
     }
     output += '\n\n💡 使用 browser_snapshot 获取页面元素和 ref 编号'
-    output += '\n💡 使用 browser_list_tabs 查看所有标签页'
+    output += '\n💡 读文章用 browser_read_article；读整页/区域用 browser_read_page'
     executor.addStep({ type: 'tool_result', content: '已连接浏览器', toolName: 'browser_launch' })
     return { success: true, output }
   } catch (error) {
@@ -287,6 +287,10 @@ export async function bridgeBrowserScroll(
   }
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function htmlToSimpleMarkdown(html: string): string {
   return html
     .replace(/<h1[^>]*>(.*?)<\/h1>/gi, '# $1\n')
@@ -318,15 +322,25 @@ type ContentPayload = {
   url?: string
 }
 
+function formatContentHeader(title: string, pageUrl: string, extra?: string): string {
+  return [
+    title ? `标题: ${title}` : '',
+    pageUrl ? `URL: ${pageUrl}` : '',
+    extra || '',
+  ].filter(Boolean).join('\n')
+}
+
+function truncateContent(content: string, maxLength: number): string {
+  if (content.length <= maxLength) return content
+  return `${content.substring(0, maxLength)}\n\n... (内容过长，已截断，共 ${content.length} 字符)`
+}
+
 /** 扩展回传 page_html；旧版无 html 字段时降级为整页 HTML */
 async function fetchPageHtmlFromExtension(ptyId: string): Promise<ContentPayload> {
   const data = (await bridgeSend(ptyId, 'get_content', { mode: 'page_html' })) as ContentPayload
   if (data.html) return data
 
-  const legacy = (await bridgeSend(ptyId, 'get_content', {
-    mode: 'html',
-    extract: 'full',
-  })) as ContentPayload
+  const legacy = (await bridgeSend(ptyId, 'get_content', { mode: 'html' })) as ContentPayload
   return {
     title: legacy.title || data.title,
     url: legacy.url || data.url,
@@ -335,13 +349,13 @@ async function fetchPageHtmlFromExtension(ptyId: string): Promise<ContentPayload
   }
 }
 
-export async function bridgeBrowserGetContent(
+/** 智能提取文章正文（Readability 类算法，桌面端） */
+export async function bridgeBrowserReadArticle(
   ptyId: string,
   args: Record<string, unknown>,
 ): Promise<ToolResult> {
   const format = (args.format as 'text' | 'html' | 'markdown') || 'text'
   const selector = typeof args.selector === 'string' ? args.selector : undefined
-  const extract = (args.extract as 'auto' | 'article' | 'full') || 'auto'
   const maxLength = typeof args.max_length === 'number' ? args.max_length : 16000
 
   try {
@@ -353,23 +367,6 @@ export async function bridgeBrowserGetContent(
       const data = (await bridgeSend(ptyId, 'get_content', {
         mode: format === 'html' ? 'html' : 'text',
         selector,
-        extract,
-      })) as ContentPayload
-      title = data.title || ''
-      pageUrl = data.url || ''
-      content = data.content || ''
-    } else if (extract === 'full' && format === 'html') {
-      const data = (await bridgeSend(ptyId, 'get_content', {
-        mode: 'html',
-        extract: 'full',
-      })) as ContentPayload
-      title = data.title || ''
-      pageUrl = data.url || ''
-      content = data.content || ''
-    } else if (extract === 'full') {
-      const data = (await bridgeSend(ptyId, 'get_content', {
-        mode: 'text',
-        extract: 'full',
       })) as ContentPayload
       title = data.title || ''
       pageUrl = data.url || ''
@@ -386,6 +383,8 @@ export async function bridgeBrowserGetContent(
       title = extracted.title || title
       if (format === 'markdown' && extracted.html) {
         content = htmlToSimpleMarkdown(extracted.html)
+      } else if (format === 'html' && extracted.html) {
+        content = extracted.html
       } else {
         content = extracted.text
       }
@@ -395,22 +394,72 @@ export async function bridgeBrowserGetContent(
       content = htmlToSimpleMarkdown(content)
     }
 
-    const originalLength = content.length
-    if (content.length > maxLength) {
-      content = `${content.substring(0, maxLength)}\n\n... (内容过长，已截断，共 ${originalLength} 字符)`
+    content = truncateContent(content, maxLength)
+    const header = formatContentHeader(title, pageUrl)
+    return {
+      success: true,
+      output: header ? `${header}\n\n${content}` : content,
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : '读取文章失败'
+    return { success: false, output: '', error: errorMsg }
+  }
+}
+
+/** @deprecated 使用 browser_read_article */
+export async function bridgeBrowserGetContent(
+  ptyId: string,
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  const extract = (args.extract as string) || 'auto'
+  if (extract === 'full') {
+    return bridgeBrowserReadPage(ptyId, {
+      ...args,
+      format: args.format === 'html' ? 'html' : 'text',
+    })
+  }
+  return bridgeBrowserReadArticle(ptyId, args)
+}
+
+/** 读取页面上已渲染内容（可见文本或 HTML 源码），不做正文智能过滤 */
+export async function bridgeBrowserReadPage(
+  ptyId: string,
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  const format = args.format === 'html' ? 'html' : 'text'
+  const selector = typeof args.selector === 'string' ? args.selector : undefined
+  const scrollSteps = typeof args.scroll_steps === 'number' ? Math.max(0, Math.min(args.scroll_steps, 20)) : 0
+  const scrollDelayMs = typeof args.scroll_delay_ms === 'number' ? args.scroll_delay_ms : 500
+  const maxLength = typeof args.max_length === 'number' ? args.max_length : 32000
+
+  try {
+    for (let i = 0; i < scrollSteps; i++) {
+      await bridgeSend(ptyId, 'scroll', { y: 800 })
+      if (scrollDelayMs > 0) await delay(scrollDelayMs)
     }
 
-    const header = [
-      title ? `标题: ${title}` : '',
-      pageUrl ? `URL: ${pageUrl}` : '',
-    ].filter(Boolean).join('\n')
+    const payload: Record<string, unknown> = { mode: format }
+    if (selector) payload.selector = selector
+
+    const data = (await bridgeSend(ptyId, 'get_content', payload)) as ContentPayload
+    let content = data.content || ''
+    const title = data.title || ''
+    const pageUrl = data.url || ''
+
+    content = truncateContent(content, maxLength)
+    const rangeLabel = selector
+      ? `区域: ${selector}`
+      : format === 'html'
+        ? '范围: 整页 HTML 源码'
+        : '范围: 整页可见文本'
+    const header = formatContentHeader(title, pageUrl, rangeLabel)
 
     return {
       success: true,
       output: header ? `${header}\n\n${content}` : content,
     }
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : '获取内容失败'
+    const errorMsg = error instanceof Error ? error.message : '读取页面失败'
     return { success: false, output: '', error: errorMsg }
   }
 }
