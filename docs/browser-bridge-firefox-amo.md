@@ -8,7 +8,7 @@ SailFish 浏览器助手 Firefox 版需 **Mozilla 签名** 才能持久安装（
 
 ```bash
 npm run pack:firefox-extension
-# 输出：resources/browser-bridge/dist/sailfish-browser-assistant-firefox-1.0.0.zip
+# 输出：resources/browser-bridge/dist/sailfish-browser-assistant-firefox-1.1.0.zip
 ```
 
 打包**不会修改** `resources/browser-bridge/firefox/`（临时加载开发目录）。  
