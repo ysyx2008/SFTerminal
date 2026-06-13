@@ -180,3 +180,4 @@ type MemoryVolatility = "stable" | "moderate" | "volatile"
 - **`data_corrupted` 仅重建向量侧**——BM25 为独立 JSON，损坏时保留 BM25，启动增量补向量即可
 - **孤儿 chunk 后台清理**——`initialize()` 后 `setImmediate` 定向删 chunk；残留 &lt; 50 跳过整表重建
 - **退出时 `disposeAsync`**——主进程 `cleanupAllServices` / SIGINT·SIGTERM 会 compact LanceDB 并停 worker
+- **嵌入推理**——`@huggingface/transformers` v4 + `device: auto`（macOS CoreML / Linux CUDA / Win DirectML）；设置项 `embeddingDevice`

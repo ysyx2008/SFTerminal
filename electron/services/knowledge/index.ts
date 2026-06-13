@@ -132,6 +132,7 @@ export class KnowledgeService extends EventEmitter {
     // 初始化子服务
     this.modelManager = getModelManager()
     this.embeddingService = getEmbeddingService()
+    this.embeddingService.setDevice(this.settings.embeddingDevice)
     this.vectorStorage = getVectorStorage()
     this.chunker = getChunker()
     this.bm25Index = getBM25Index()
@@ -172,6 +173,7 @@ export class KnowledgeService extends EventEmitter {
     try {
       // 初始化 Embedding 服务
       if (this.settings.embeddingMode === 'local') {
+        this.embeddingService.setDevice(this.settings.embeddingDevice)
         const modelId = this.settings.localModel === 'auto' 
           ? undefined 
           : this.settings.localModel
@@ -1383,6 +1385,16 @@ export class KnowledgeService extends EventEmitter {
         this.reranker = createReranker(this.aiService)
       } else if (!settings.enableRerank) {
         this.reranker = null
+      }
+    }
+
+    if (settings.embeddingDevice !== undefined) {
+      this.embeddingService.setDevice(this.settings.embeddingDevice)
+      if (this.isInitialized && this.settings.embeddingMode === 'local') {
+        const modelId = this.settings.localModel === 'auto'
+          ? undefined
+          : this.settings.localModel
+        await this.embeddingService.initialize(modelId as ModelTier | undefined)
       }
     }
 

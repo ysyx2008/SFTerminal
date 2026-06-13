@@ -12,6 +12,7 @@ interface KnowledgeSettings {
   enabled: boolean
   embeddingMode: 'local' | 'mcp'
   localModel: 'auto' | 'lite' | 'standard' | 'large'
+  embeddingDevice?: 'auto' | 'cpu' | 'gpu' | 'coreml' | 'cuda' | 'dml' | 'webgpu'
   embeddingMcpServerId?: string
   autoSaveUploads: boolean
   chunkStrategy: 'fixed' | 'semantic' | 'paragraph'
@@ -51,6 +52,7 @@ const settings = ref<KnowledgeSettings>({
   enabled: true,
   embeddingMode: 'local',
   localModel: 'lite',
+  embeddingDevice: 'auto',
   autoSaveUploads: true,
   chunkStrategy: 'paragraph',
   searchTopK: 10,
@@ -615,6 +617,20 @@ onUnmounted(() => {
               <option v-for="server in mcpServers.filter(s => s.connected)" :key="server.id" :value="server.id">
                 {{ server.name }}
               </option>
+            </select>
+          </div>
+          <div class="bottom-item">
+            <label
+              class="setting-label"
+              :title="t('knowledgeSettings.embeddingDeviceDesc')"
+            >{{ t('knowledgeSettings.embeddingDevice') }}</label>
+            <select
+              v-model="settings.embeddingDevice"
+              class="select select-sm"
+              @change="saveSettings"
+            >
+              <option value="auto">{{ t('knowledgeSettings.embeddingDeviceAuto') }}</option>
+              <option value="cpu">{{ t('knowledgeSettings.embeddingDeviceCpu') }}</option>
             </select>
           </div>
         </div>

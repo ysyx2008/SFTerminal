@@ -39,7 +39,7 @@ asarUnpack:
   - dist-electron/services/pdf-worker.js
   - dist-electron/services/pdfjs-config.mjs
   - dist-electron/services/knowledge/**/*
-  - node_modules/@xenova/transformers/**/*
+  - node_modules/@huggingface/transformers/**/*
   # LanceDB 原生 Rust addon（lancedb-worker.js 在 utilityProcess 中 require，必须在 asar 外）
   - node_modules/@lancedb/lancedb/**/*
   - node_modules/@lancedb/lancedb-darwin-*/**/*

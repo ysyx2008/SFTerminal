@@ -2,8 +2,7 @@
  * Embedding 服务
  *
  * 优先把推理放到 utilityProcess（独立子进程），与主进程的 v8 堆 / partition
- * allocator 隔离。这样能避开 onnxruntime-node 1.14 的 BFC arena 扩张和主进程
- * 地址空间相互踩踏导致 SIGTRAP（详见下方 MAX_BATCH_SIZE 注释）。
+ * allocator 隔离。使用 @huggingface/transformers v4 + onnxruntime-node（CoreML/CUDA/DML）。
  *
  * 当 utilityProcess 不可用（例如 CLI 模式跑在纯 Node.js 下，electron shim
  * 把 utilityProcess.fork 桩成返回 null），自动退回到主进程内推理，对调用方
@@ -12,8 +11,13 @@
 import { EventEmitter } from 'events'
 import * as fs from 'fs'
 import * as path from 'path'
-import type { ModelTier, ModelInfo } from './types'
+import type { ModelTier, ModelInfo, EmbeddingDevice } from './types'
 import { getModelManager, ModelManager } from './model-manager'
+import {
+  normalizeEmbeddingDevice,
+  buildEmbeddingPipelineOptions,
+  usesAcceleratedEmbedding,
+} from './embedding-device'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('Embedding')
@@ -25,7 +29,7 @@ let inProcEnv: any = null
 
 async function loadTransformersInProc() {
   if (!inProcPipeline) {
-    const transformers = await import('@xenova/transformers')
+    const transformers = await import('@huggingface/transformers')
     inProcPipeline = transformers.pipeline
     inProcEnv = transformers.env
     inProcEnv.allowLocalModels = true
@@ -85,7 +89,7 @@ function detectUtilityProcessAvailable(): boolean {
 
 /**
  * 获取 unpacked 的 node_modules 路径，让 worker 进程的 require 能找到
- * @xenova/transformers 与其原生依赖 onnxruntime-node。
+ * @huggingface/transformers 与其原生依赖 onnxruntime-node。
  */
 function getUnpackedNodeModules(): string {
   try {
@@ -133,6 +137,7 @@ export class EmbeddingService extends EventEmitter {
 
   // ── In-process 模式（CLI / 测试 / fallback） ──────────────────
   private extractor: any = null
+  private embeddingDevice: EmbeddingDevice = 'auto'
 
   constructor() {
     super()
@@ -172,8 +177,14 @@ export class EmbeddingService extends EventEmitter {
    */
   static readonly MAX_BATCH_SIZE_WORKER = 16
 
+  /** GPU/CoreML/CUDA 路径下 worker batch 上限 */
+  static readonly MAX_BATCH_SIZE_WORKER_ACCEL = 32
+
   /** 每 N 次成功 embed 后主动重启 worker，重置 BFC arena，防 SIGTRAP */
   static readonly WORKER_RESTART_INTERVAL = 15
+
+  /** 加速设备下延长重启间隔（内存压力更小） */
+  static readonly WORKER_RESTART_INTERVAL_ACCEL = 30
 
   /** worker embed 单次失败后的最大重试次数（每次重试前重启 worker） */
   static readonly MAX_WORKER_EMBED_ATTEMPTS = 3
@@ -185,9 +196,42 @@ export class EmbeddingService extends EventEmitter {
    * - in-process 模式：16（主进程内，受 BFC arena 与 v8 堆共享地址空间限制）
    */
   getMaxBatchSize(): number {
-    return this.useWorker
-      ? EmbeddingService.MAX_BATCH_SIZE_WORKER
-      : EmbeddingService.MAX_BATCH_SIZE
+    if (this.useWorker) {
+      return usesAcceleratedEmbedding(this.embeddingDevice)
+        ? EmbeddingService.MAX_BATCH_SIZE_WORKER_ACCEL
+        : EmbeddingService.MAX_BATCH_SIZE_WORKER
+    }
+    return EmbeddingService.MAX_BATCH_SIZE
+  }
+
+  private getWorkerRestartInterval(): number {
+    return usesAcceleratedEmbedding(this.embeddingDevice)
+      ? EmbeddingService.WORKER_RESTART_INTERVAL_ACCEL
+      : EmbeddingService.WORKER_RESTART_INTERVAL
+  }
+
+  /** 设置嵌入推理设备（变更后下次 initialize 生效；若已加载则 dispose） */
+  setDevice(device?: string | null): void {
+    const next = normalizeEmbeddingDevice(device)
+    if (next === this.embeddingDevice) return
+    this.embeddingDevice = next
+    if (this.extractor || this.worker) {
+      this.dispose()
+    }
+  }
+
+  getDevice(): EmbeddingDevice {
+    return this.embeddingDevice
+  }
+
+  private buildWorkerInitPayload(modelDir: string, modelName: string) {
+    const opts = buildEmbeddingPipelineOptions(this.embeddingDevice)
+    return {
+      modelDir,
+      modelName,
+      device: opts.device,
+      dtype: opts.dtype,
+    }
   }
 
   /**
@@ -239,12 +283,14 @@ export class EmbeddingService extends EventEmitter {
       if (detectUtilityProcessAvailable()) {
         try {
           await this.startWorker()
-          await this.callWorker('initialize', { modelDir, modelName })
+          const initPayload = this.buildWorkerInitPayload(modelDir, modelName)
+          const initResult = await this.callWorker('initialize', initPayload)
           this.useWorker = true
           this.currentModelId = model.id
           log.info(
-            'Embedding 模型已加载到 worker 进程：%s（batch=%d）',
+            'Embedding 模型已加载到 worker 进程：%s（device=%s，batch=%d）',
             model.id,
+            initResult?.device ?? this.embeddingDevice,
             this.getMaxBatchSize()
           )
           this.emit('loaded', model.id)
@@ -260,15 +306,15 @@ export class EmbeddingService extends EventEmitter {
       env.allowRemoteModels = false
       env.localModelPath = modelDir
 
-      this.extractor = await pipeline('feature-extraction', modelName, {
-        local_files_only: true
-      })
+      const pipelineOpts = buildEmbeddingPipelineOptions(this.embeddingDevice)
+      this.extractor = await pipeline('feature-extraction', modelName, pipelineOpts)
 
       this.useWorker = false
       this.currentModelId = model.id
       log.info(
-        'Embedding 模型已加载到主进程：%s（batch=%d，建议在 Electron 环境下走 worker）',
+        'Embedding 模型已加载到主进程：%s（device=%s，batch=%d，建议在 Electron 环境下走 worker）',
         model.id,
+        this.embeddingDevice,
         this.getMaxBatchSize()
       )
       this.emit('loaded', model.id)
@@ -295,7 +341,7 @@ export class EmbeddingService extends EventEmitter {
     const unpackedNM = getUnpackedNodeModules()
     const workerEnv: NodeJS.ProcessEnv = { ...process.env }
 
-    // NODE_PATH 让 worker 能 require('@xenova/transformers') 与 onnxruntime-node
+    // NODE_PATH 让 worker 能 require('@huggingface/transformers') 与 onnxruntime-node
     workerEnv.NODE_PATH = workerEnv.NODE_PATH
       ? `${unpackedNM}${path.delimiter}${workerEnv.NODE_PATH}`
       : unpackedNM
@@ -455,7 +501,7 @@ export class EmbeddingService extends EventEmitter {
       try {
         const result = await this.embedBatchWorkerOnce(texts)
         this.successfulWorkerBatches++
-        if (this.successfulWorkerBatches >= EmbeddingService.WORKER_RESTART_INTERVAL) {
+        if (this.successfulWorkerBatches >= this.getWorkerRestartInterval()) {
           this.successfulWorkerBatches = 0
           log.info('Embedding worker 定期重启以释放 BFC arena')
           await this.restartWorkerSession()
@@ -523,7 +569,7 @@ export class EmbeddingService extends EventEmitter {
     const modelName = path.basename(modelPath)
 
     await this.startWorker()
-    await this.callWorker('initialize', { modelDir, modelName })
+    await this.callWorker('initialize', this.buildWorkerInitPayload(modelDir, modelName))
     this.useWorker = true
   }
 

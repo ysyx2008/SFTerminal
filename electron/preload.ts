@@ -2002,6 +2002,7 @@ const electronAPI = {
         enabled: boolean
         embeddingMode: 'local' | 'mcp'
         localModel: 'auto' | 'lite' | 'standard' | 'large'
+        embeddingDevice?: 'auto' | 'cpu' | 'gpu' | 'coreml' | 'cuda' | 'dml' | 'webgpu'
         embeddingMcpServerId?: string
         autoSaveUploads: boolean
         chunkStrategy: 'fixed' | 'semantic' | 'paragraph'
@@ -2016,6 +2017,7 @@ const electronAPI = {
       enabled: boolean
       embeddingMode: 'local' | 'mcp'
       localModel: 'auto' | 'lite' | 'standard' | 'large'
+      embeddingDevice?: 'auto' | 'cpu' | 'gpu' | 'coreml' | 'cuda' | 'dml' | 'webgpu'
       embeddingMcpServerId?: string
       autoSaveUploads: boolean
       chunkStrategy: 'fixed' | 'semantic' | 'paragraph'

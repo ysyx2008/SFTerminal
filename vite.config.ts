@@ -149,7 +149,7 @@ export default defineConfig({
                 'node-pty', 
                 'ssh2', 
                 'electron-store',
-                '@xenova/transformers',
+                '@huggingface/transformers',
                 '@lancedb/lancedb',
                 'apache-arrow',
                 'keytar',
@@ -240,7 +240,7 @@ export default defineConfig({
   },
   // 优化依赖
   optimizeDeps: {
-    exclude: ['@xenova/transformers'],  // 让 transformers.js 在 worker 中正确加载
+    exclude: ['@huggingface/transformers'],  // 让 transformers.js 在 worker 中正确加载
     include: ['vue-virtual-scroller', 'vue-resize', 'vue-observe-visibility']
   }
 })
