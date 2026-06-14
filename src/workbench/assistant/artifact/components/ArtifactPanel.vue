@@ -7,7 +7,6 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  X,
   FolderOpen,
   ChevronDown,
   ExternalLink,
@@ -285,12 +284,6 @@ function closeOthers(keepId: string) {
 function closeAllArtifacts() {
   flushActiveDraft()
   artifactStore.closeAll(props.tabId)
-}
-
-function handleCloseActive() {
-  if (activeArtifactId.value) {
-    artifactStore.close(props.tabId, activeArtifactId.value)
-  }
 }
 
 function jumpToSource(stepId?: string) {
@@ -670,15 +663,6 @@ onUnmounted(() => {
             </button>
           </div>
         </div>
-        <button
-          v-if="activeArtifactId"
-          type="button"
-          class="btn-icon btn-icon-sm"
-          @click="handleCloseActive()"
-          :title="t('canvas.closeArtifact')"
-        >
-          <X :size="13" />
-        </button>
       </div>
     </div>
 
