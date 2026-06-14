@@ -158,11 +158,11 @@ function writeTextFileSync(filePath: string, content: string, encoding: string):
   }
 }
 
-/** workspace 根目录系统配置文件 — 仅 personality 技能 / UI 可写 */
-const PROTECTED_CONFIG_FILENAMES = new Set(['IDENTITY.md', 'SOUL.md', 'USER.md', 'HEARTBEAT.md'])
+/** workspace 根目录个性文件 — 仅 personality 技能 / UI 可写 */
+const PROTECTED_CONFIG_FILENAMES = new Set(['IDENTITY.md', 'SOUL.md'])
 
 /** workspace 根目录用户数据文件 — Agent 可维护，免确认 */
-const AUTO_APPROVE_ROOT_FILENAMES = new Set(['TODO.md', 'CONTACTS.md'])
+const AUTO_APPROVE_ROOT_FILENAMES = new Set(['TODO.md', 'CONTACTS.md', 'USER.md', 'HEARTBEAT.md'])
 
 /**
  * 获取 Agent workspace 目录路径

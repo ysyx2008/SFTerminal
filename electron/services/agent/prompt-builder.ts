@@ -742,12 +742,13 @@ export class PromptBuilder {
 
   private buildWorkspaceRule(): string {
     const scratch = getScratchPath()
-    const workspace = getWorkspacePath()
     return `# 私有工作空间
 - \`${scratch}\` 是你的**默认工作目录**：临时脚本、草稿、中间产物、下载文件请放这里，读写无需确认。
-- \`${workspace}\` 根目录的 **IDENTITY.md / SOUL.md / USER.md / HEARTBEAT.md** 是系统配置，禁止用文件工具修改。
+- **USER.md**：用户画像，了解用户后主动补充。
 - **TODO.md**：用户待办（含日期、状态），心跳会定期读取并提醒你。
 - **CONTACTS.md**：联系人，遇到新联系人时主动补充。
+- **HEARTBEAT.md**：心跳唤醒指令，系统定期读取。
+- **IDENTITY.md / SOUL.md**：个性与行为准则。
 - **templates/**：Office 模板，只读复用；新建模板也放到 \`${scratch}/\`。
 - 按需创建，内容精炼。`
   }

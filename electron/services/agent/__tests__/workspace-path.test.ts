@@ -43,18 +43,23 @@ describe('agent workspace paths', () => {
     expect(fs.existsSync(scratch)).toBe(true)
   })
 
-  it('isProtectedWorkspacePath blocks root config files only', () => {
+  it('isProtectedWorkspacePath blocks IDENTITY/SOUL at root only', () => {
     const ws = getWorkspacePath()
     expect(isProtectedWorkspacePath(path.join(ws, 'SOUL.md'))).toBe(true)
+    expect(isProtectedWorkspacePath(path.join(ws, 'IDENTITY.md'))).toBe(true)
+    expect(isProtectedWorkspacePath(path.join(ws, 'USER.md'))).toBe(false)
+    expect(isProtectedWorkspacePath(path.join(ws, 'HEARTBEAT.md'))).toBe(false)
     expect(isProtectedWorkspacePath(path.join(ws, 'TODO.md'))).toBe(false)
     expect(isProtectedWorkspacePath(path.join(ws, 'scratch', 'SOUL.md'))).toBe(false)
   })
 
-  it('isAutoApproveWorkspacePath allows scratch, TODO, charts', () => {
+  it('isAutoApproveWorkspacePath allows scratch, TODO, USER, charts', () => {
     const ws = getWorkspacePath()
     const scratch = getScratchPath()
     expect(isAutoApproveWorkspacePath(path.join(scratch, 'draft.py'))).toBe(true)
     expect(isAutoApproveWorkspacePath(path.join(ws, 'TODO.md'))).toBe(true)
+    expect(isAutoApproveWorkspacePath(path.join(ws, 'USER.md'))).toBe(true)
+    expect(isAutoApproveWorkspacePath(path.join(ws, 'HEARTBEAT.md'))).toBe(true)
     expect(isAutoApproveWorkspacePath(path.join(ws, 'CONTACTS.md'))).toBe(true)
     expect(isAutoApproveWorkspacePath(path.join(ws, 'charts', 'pie-1.svg'))).toBe(true)
     expect(isAutoApproveWorkspacePath(path.join(ws, 'templates', 'report.docx'))).toBe(false)
