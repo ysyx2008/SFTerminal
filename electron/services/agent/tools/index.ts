@@ -41,7 +41,20 @@ import { resolveTargetPtyId } from './utils'
 export { executeCommand } from './command'
 export { executeCommandDirect, awaitExec } from './exec'
 export { getTerminalContext, checkTerminalStatus, sendControlKey, sendInput } from './terminal'
-export { fileSearch, readFile, editFile, writeTextFile, writeRemoteTextFile, getWorkspacePath, isInWorkspace } from './file'
+export {
+  fileSearch,
+  readFile,
+  editFile,
+  writeTextFile,
+  writeRemoteTextFile,
+  getWorkspacePath,
+  getScratchPath,
+  ensureAgentWorkspaceDirs,
+  isInWorkspace,
+  isScratchPath,
+  isProtectedWorkspacePath,
+  isAutoApproveWorkspacePath,
+} from './file'
 export { sftpPut, sftpGet } from './sftp'
 export { rememberInfo, searchKnowledge, getKnowledgeDoc } from './knowledge'
 export { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'

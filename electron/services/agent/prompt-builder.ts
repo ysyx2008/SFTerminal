@@ -11,7 +11,7 @@ import * as path from 'path'
 import type { AgentContext, HostProfileServiceInterface, ExecutionMode } from './types'
 import type { AgentMbtiType } from '../config.service'
 import { getUserSkillService } from '../user-skill.service'
-import { getWorkspacePath } from './tools/file'
+import { getWorkspacePath, getScratchPath } from './tools/file'
 import { createLogger } from '../../utils/logger'
 import { t } from './i18n'
 
@@ -741,9 +741,14 @@ export class PromptBuilder {
   }
 
   private buildWorkspaceRule(): string {
-    return `# 私有工作空间：\`${getWorkspacePath()}\` 是你的私有数据目录，读写无需用户确认。
-- **TODO.md**：用户的待办事项（含日期、状态），系统有心跳机制，会定期自动读取并唤醒你从而提醒用户。
-- **CONTACTS.md**：联系人（姓名 + 角色/联系方式），遇到新联系人时主动补充。
+    const scratch = getScratchPath()
+    const workspace = getWorkspacePath()
+    return `# 私有工作空间
+- \`${scratch}\` 是你的**默认工作目录**：临时脚本、草稿、中间产物、下载文件请放这里，读写无需确认。
+- \`${workspace}\` 根目录的 **IDENTITY.md / SOUL.md / USER.md / HEARTBEAT.md** 是系统配置，禁止用文件工具修改。
+- **TODO.md**：用户待办（含日期、状态），心跳会定期读取并提醒你。
+- **CONTACTS.md**：联系人，遇到新联系人时主动补充。
+- **templates/**：Office 模板，只读复用；新建模板也放到 \`${scratch}/\`。
 - 按需创建，内容精炼。`
   }
 

@@ -247,6 +247,7 @@ const translations = {
     'file.write_success': '文件写入成功',
     'file.write_failed': '文件写入失败',
     'file.user_rejected_write': '用户拒绝写入文件',
+    'file.protected_workspace_path': '受保护的系统配置文件，禁止通过文件工具修改：{path}（请使用 personality 技能或设置页）',
     'file.establishing_sftp': '正在建立 SFTP 连接...',
     'file.remote_write_failed': '远程文件写入失败',
 
@@ -1693,6 +1694,7 @@ Please output the summary in the following format:
     'file.write_success': 'File write success',
     'file.write_failed': 'File write failed',
     'file.user_rejected_write': 'User rejected file write',
+    'file.protected_workspace_path': 'Protected system config file, cannot modify via file tools: {path} (use personality skill or Settings)',
     'file.establishing_sftp': 'Establishing SFTP connection...',
     'file.remote_write_failed': 'Remote file write failed',
 

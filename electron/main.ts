@@ -399,7 +399,7 @@ import { getGatewayService, type GatewayConfig } from './services/gateway.servic
 import { BastionService } from './services/bastion.service'
 import { getIMService } from './services/im/im.service'
 import type { DingTalkConfig, FeishuConfig, SlackConfig, TelegramConfig, WeComConfig } from './services/im/types'
-import { getWorkspacePath } from './services/agent/tools/file'
+import { getWorkspacePath, ensureAgentWorkspaceDirs } from './services/agent/tools/file'
 import { getContextKnowledgeService } from './services/knowledge/context-knowledge'
 import {
   getEmailCredential, setEmailCredential, deleteEmailCredential,
@@ -1231,6 +1231,8 @@ function createAiDebugWindow(): void {
 // 应用准备就绪
 app.whenReady().then(async () => {
   log.info(`[startup] app.whenReady fired (+${Date.now() - APP_START_TIME}ms)`)
+
+  ensureAgentWorkspaceDirs()
 
   // 数据目录迁移：必须在创建窗口、初始化 sensor/watch/agent 等一切重活之前执行。
   // 此刻源目录无任何运行时写入，复制数据保证一致；完成后会自动重启。

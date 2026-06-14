@@ -158,6 +158,12 @@ function writeTextFileSync(filePath: string, content: string, encoding: string):
   }
 }
 
+/** workspace 根目录系统配置文件 — 仅 personality 技能 / UI 可写 */
+const PROTECTED_CONFIG_FILENAMES = new Set(['IDENTITY.md', 'SOUL.md', 'USER.md', 'HEARTBEAT.md'])
+
+/** workspace 根目录用户数据文件 — Agent 可维护，免确认 */
+const AUTO_APPROVE_ROOT_FILENAMES = new Set(['TODO.md', 'CONTACTS.md'])
+
 /**
  * 获取 Agent workspace 目录路径
  */
@@ -166,18 +172,26 @@ export function getWorkspacePath(): string {
 }
 
 /**
- * 判断文件路径是否在 Agent workspace 内
- * 使用 realpath 解析符号链接，防止通过 symlink 绕过
+ * Agent 默认工作目录（临时脚本、草稿、中间产物）
  */
-export function isInWorkspace(filePath: string): boolean {
-  const workspace = getWorkspacePath()
-  let resolved: string
+export function getScratchPath(): string {
+  const scratch = path.join(getWorkspacePath(), 'scratch')
+  fs.mkdirSync(scratch, { recursive: true })
+  return scratch
+}
+
+/** 启动时确保 workspace 目录结构存在 */
+export function ensureAgentWorkspaceDirs(): void {
+  fs.mkdirSync(getWorkspacePath(), { recursive: true })
+  fs.mkdirSync(getScratchPath(), { recursive: true })
+}
+
+/** 解析路径用于 workspace 边界检查（含符号链接；文件不存在时沿父目录链回退） */
+function resolvePathForWorkspaceCheck(filePath: string): string {
+  let resolved = path.resolve(filePath)
   try {
-    resolved = fs.realpathSync(path.resolve(filePath))
+    return fs.realpathSync(resolved)
   } catch {
-    // 文件不存在时 realpathSync 会抛异常，回退到 resolve 检查父目录链
-    resolved = path.resolve(filePath)
-    // 逐级向上查找已存在的祖先目录，用 realpath 验证
     let dir = path.dirname(resolved)
     while (dir !== path.dirname(dir)) {
       try {
@@ -188,10 +202,66 @@ export function isInWorkspace(filePath: string): boolean {
         dir = path.dirname(dir)
       }
     }
+    return resolved
   }
-  const normalizedResolved = resolved.replace(/\\/g, '/')
-  const normalizedWorkspace = workspace.replace(/\\/g, '/')
-  return normalizedResolved.startsWith(normalizedWorkspace + '/') || normalizedResolved === normalizedWorkspace
+}
+
+function isUnderDirectory(filePath: string, directory: string): boolean {
+  const resolved = resolvePathForWorkspaceCheck(filePath)
+  let normDir: string
+  try {
+    normDir = fs.realpathSync(directory).replace(/\\/g, '/')
+  } catch {
+    normDir = directory.replace(/\\/g, '/')
+  }
+  const normResolved = resolved.replace(/\\/g, '/')
+  return normResolved.startsWith(normDir + '/') || normResolved === normDir
+}
+
+function getRelativeWorkspacePath(filePath: string): string | null {
+  if (!isInWorkspace(filePath)) return null
+  let workspace: string
+  try {
+    workspace = fs.realpathSync(getWorkspacePath())
+  } catch {
+    workspace = getWorkspacePath()
+  }
+  const rel = path.relative(workspace, resolvePathForWorkspaceCheck(filePath))
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return null
+  return rel.replace(/\\/g, '/')
+}
+
+/**
+ * 判断文件路径是否在 Agent workspace 内
+ * 使用 realpath 解析符号链接，防止通过 symlink 绕过
+ */
+export function isInWorkspace(filePath: string): boolean {
+  return isUnderDirectory(filePath, getWorkspacePath())
+}
+
+/** 路径是否在 scratch/ 子目录内 */
+export function isScratchPath(filePath: string): boolean {
+  return isUnderDirectory(filePath, getScratchPath())
+}
+
+/** 系统配置文件 — 通用文件工具禁止写入 */
+export function isProtectedWorkspacePath(filePath: string): boolean {
+  const rel = getRelativeWorkspacePath(filePath)
+  if (!rel || rel.includes('/')) return false
+  return PROTECTED_CONFIG_FILENAMES.has(rel)
+}
+
+/**
+ * workspace 内免确认路径：scratch/、TODO/CONTACTS、charts/
+ * 其余 workspace 路径（含 templates/、根目录杂项）仍需确认
+ */
+export function isAutoApproveWorkspacePath(filePath: string): boolean {
+  if (!isInWorkspace(filePath) || isProtectedWorkspacePath(filePath)) return false
+  if (isScratchPath(filePath)) return true
+  const rel = getRelativeWorkspacePath(filePath)
+  if (!rel) return false
+  if (AUTO_APPROVE_ROOT_FILENAMES.has(rel)) return true
+  return rel.startsWith('charts/')
 }
 
 /**
@@ -1212,10 +1282,18 @@ export async function editFile(
     return { success: false, output: '', error: t('error.file_not_exists', { path: filePath }) }
   }
 
+  if (isProtectedWorkspacePath(filePath)) {
+    return {
+      success: false,
+      output: '',
+      error: t('file.protected_workspace_path', { path: formatDisplayPath(filePath, ptyId) })
+    }
+  }
+
   const oldTextPreview = oldText.length > 50 ? oldText.substring(0, 50) + '...' : oldText
   const newTextPreview = newText.length > 50 ? newText.substring(0, 50) + '...' : newText
   
-  const inWorkspace = isInWorkspace(filePath)
+  const inWorkspace = isAutoApproveWorkspacePath(filePath)
   const editDisplayPath = formatDisplayPath(filePath, ptyId)
 
   // tool_call 卡先发出占位标题（无行号）：此时还没读文件，不知道 oldText 在哪
@@ -1457,8 +1535,16 @@ export async function writeTextFile(
       break
   }
 
+  if (isProtectedWorkspacePath(filePath)) {
+    return {
+      success: false,
+      output: '',
+      error: t('file.protected_workspace_path', { path: formatDisplayPath(filePath, ptyId) })
+    }
+  }
+
   const fileExists = fs.existsSync(filePath)
-  const inWorkspace = isInWorkspace(filePath)
+  const inWorkspace = isAutoApproveWorkspacePath(filePath)
   const isDangerousOverwrite = mode === 'overwrite' && fileExists && !inWorkspace
   const isSafeWrite = mode === 'create' || mode === 'append' || mode === 'insert'
 

@@ -16,7 +16,12 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { t } from '../i18n'
 import { formatFileSize } from './utils'
-import { getWorkspacePath, isInWorkspace } from './file'
+import {
+  getWorkspacePath,
+  getScratchPath,
+  isAutoApproveWorkspacePath,
+  isProtectedWorkspacePath,
+} from './file'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 import type { TransferProgress } from '../../sftp.service'
 
@@ -32,7 +37,7 @@ function newTransferId(): string {
 }
 
 /**
- * 解析 sftp_get 的 local_path：未指定时落到 agent workspace 根目录，
+ * 解析 sftp_get 的 local_path：未指定时落到 scratch/，
  * 文件名取自 remote 的 basename。这样 AI 不必关心本地路径细节，
  * 后续 read_file 直接吃到 workspace 内的副本。
  */
@@ -42,7 +47,7 @@ function resolveLocalDownloadPath(remotePath: string, localPathArg: string | und
     return path.join(getWorkspacePath(), localPathArg)
   }
   const base = path.posix.basename(remotePath) || 'remote-file'
-  return path.join(getWorkspacePath(), base)
+  return path.join(getScratchPath(), base)
 }
 
 /**
@@ -221,8 +226,16 @@ export async function sftpGet(
   const localPath = resolveLocalDownloadPath(remotePath, localPathArg)
   const fileName = path.posix.basename(remotePath) || 'remote-file'
 
-  // 风险评估：落点在 workspace 内 = safe（agent 私有空间）；其它路径 = moderate（可能覆盖用户文件）
-  const inWorkspace = isInWorkspace(localPath)
+  if (isProtectedWorkspacePath(localPath)) {
+    return {
+      success: false,
+      output: '',
+      error: t('file.protected_workspace_path', { path: localPath })
+    }
+  }
+
+  // 风险评估：scratch 等免确认路径 = safe；其它 = moderate（可能覆盖用户文件）
+  const inWorkspace = isAutoApproveWorkspacePath(localPath)
   const riskLevel = inWorkspace ? 'safe' : 'moderate'
 
   executor.addStep({
