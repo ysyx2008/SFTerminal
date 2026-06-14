@@ -3019,8 +3019,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 /* 紧凑变体：嵌入 system-info-bar 时使用 */
 .model-select-sm {
   padding: 2px 4px;
-  font-size: 11px;
-  height: 22px;
+  font-size: var(--workbench-header-select-font-size, 12px);
+  height: var(--workbench-header-select-height, 22px);
   max-width: 140px;
   border-radius: 4px;
 }

@@ -10,7 +10,8 @@ import {
   X,
   FolderOpen,
   ChevronDown,
-  Folder
+  ExternalLink,
+  Download
 } from 'lucide-vue-next'
 import type { CanvasArtifact, CanvasRendererType } from '@shared/types'
 import {
@@ -574,24 +575,22 @@ onUnmounted(() => {
         <button
           v-if="showArtifactSwitcher"
           type="button"
-          class="artifact-title-btn"
+          class="artifact-file-select"
           :class="{ active: showArtifactPicker }"
           :title="t('canvas.artifactPickerTitle')"
           :aria-expanded="showArtifactPicker"
           @click="toggleArtifactPicker"
           @contextmenu="openCtxMenu($event, { kind: 'header' })"
         >
-          <component :is="rendererIcon(activeArtifact?.renderer ?? null)" :size="14" class="artifact-title-icon" />
-          <span class="artifact-title-label">{{ activeTitleLabel() }}</span>
-          <ChevronDown :size="13" class="artifact-title-chevron" />
+          <span class="artifact-file-select-label">{{ activeTitleLabel() }}</span>
+          <ChevronDown :size="12" class="artifact-file-select-chevron" />
         </button>
         <div
           v-else
-          class="artifact-title-static"
+          class="artifact-file-select artifact-file-select-static"
           @contextmenu="openCtxMenu($event, { kind: 'header' })"
         >
-          <component :is="rendererIcon(activeArtifact?.renderer ?? null)" :size="14" class="artifact-title-icon" />
-          <span class="artifact-title-label">{{ activeTitleLabel() }}</span>
+          <span class="artifact-file-select-label">{{ activeTitleLabel() }}</span>
         </div>
       </div>
       <div class="canvas-header-actions">
@@ -622,7 +621,7 @@ onUnmounted(() => {
               :disabled="!canOpenActive"
               @click="openFile(); closeFileMenu()"
             >
-              <FolderOpen :size="14" />
+              <ExternalLink :size="14" />
               <span>{{ t('canvas.openFile') }}</span>
             </button>
             <button
@@ -631,7 +630,7 @@ onUnmounted(() => {
               :disabled="!canOpenActive"
               @click="showInFolder(); closeFileMenu()"
             >
-              <Folder :size="14" />
+              <FolderOpen :size="14" />
               <span>{{ t('canvas.showInFolder') }}</span>
             </button>
             <div v-if="canSaveAsActive" class="canvas-dropdown-separator" />
@@ -642,6 +641,7 @@ onUnmounted(() => {
               :disabled="saving"
               @click="runSaveAsActive(); closeFileMenu()"
             >
+              <Download :size="14" />
               <span>{{ t('canvas.saveAs') }}</span>
             </button>
             <button
@@ -657,11 +657,12 @@ onUnmounted(() => {
         </div>
         <button
           v-if="activeArtifactId"
-          class="canvas-close"
+          type="button"
+          class="btn-icon btn-icon-sm"
           @click="handleCloseActive()"
           :title="t('canvas.closeArtifact')"
         >
-          <X :size="14" />
+          <X :size="13" />
         </button>
       </div>
     </div>
@@ -933,54 +934,20 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
+  max-width: min(240px, 55%);
 }
 
-.artifact-title-btn,
-.artifact-title-static {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  max-width: 100%;
-  height: 100%;
-  padding: 0 6px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-primary, #eee);
-  font-size: 13px;
-  text-align: left;
+/* 触发器 typography 与 AiPanel model-select-sm 对齐，见 WorkbenchShell 非 scoped 样式 */
+.artifact-file-select-static {
+  cursor: default;
+  padding-right: 8px;
 }
 
-.artifact-title-btn {
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-
-.artifact-title-btn:hover,
-.artifact-title-btn.active {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.06));
-}
-
-.artifact-title-icon {
-  flex-shrink: 0;
-  opacity: 0.85;
-  color: var(--accent-primary, #89b4fa);
-}
-
-.artifact-title-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.artifact-title-chevron {
-  flex-shrink: 0;
-  opacity: 0.7;
+@container artifact-header (max-width: 420px) {
+  .artifact-header-title {
+    max-width: min(160px, 45%);
+  }
 }
 
 .artifact-picker {
@@ -1128,6 +1095,11 @@ onUnmounted(() => {
   background: var(--hover-bg, rgba(255, 255, 255, 0.08));
 }
 
+.canvas-header-actions .canvas-save-text-btn:hover:not(:disabled) {
+  color: var(--accent-primary, #89b4fa);
+  border-color: rgba(var(--accent-rgb, 137, 180, 250), 0.35);
+}
+
 .canvas-text-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -1184,26 +1156,6 @@ onUnmounted(() => {
   height: 1px;
   margin: 4px 0;
   background: var(--border-color, rgba(255, 255, 255, 0.1));
-}
-
-.canvas-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 4px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-secondary, #aaa);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.canvas-close:hover {
-  background: var(--bg-surface, var(--hover-bg, rgba(255, 255, 255, 0.1)));
-  color: var(--text-primary, #fff);
 }
 
 .canvas-body {
