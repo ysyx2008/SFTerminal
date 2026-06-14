@@ -158,11 +158,10 @@ function writeTextFileSync(filePath: string, content: string, encoding: string):
   }
 }
 
-/** workspace 根目录个性文件 — 仅 personality 技能 / UI 可写 */
-const PROTECTED_CONFIG_FILENAMES = new Set(['IDENTITY.md', 'SOUL.md'])
-
-/** workspace 根目录用户数据文件 — Agent 可维护，免确认 */
-const AUTO_APPROVE_ROOT_FILENAMES = new Set(['TODO.md', 'CONTACTS.md', 'USER.md', 'HEARTBEAT.md'])
+/** workspace 根目录数据文件 — Agent 可维护，免确认 */
+const AUTO_APPROVE_ROOT_FILENAMES = new Set([
+  'TODO.md', 'CONTACTS.md', 'USER.md', 'HEARTBEAT.md', 'IDENTITY.md', 'SOUL.md',
+])
 
 /**
  * 获取 Agent workspace 目录路径
@@ -244,19 +243,12 @@ export function isScratchPath(filePath: string): boolean {
   return isUnderDirectory(filePath, getScratchPath())
 }
 
-/** 系统配置文件 — 通用文件工具禁止写入 */
-export function isProtectedWorkspacePath(filePath: string): boolean {
-  const rel = getRelativeWorkspacePath(filePath)
-  if (!rel || rel.includes('/')) return false
-  return PROTECTED_CONFIG_FILENAMES.has(rel)
-}
-
 /**
- * workspace 内免确认路径：scratch/、TODO/CONTACTS、charts/
+ * workspace 内免确认路径：scratch/、根目录 *.md、charts/
  * 其余 workspace 路径（含 templates/、根目录杂项）仍需确认
  */
 export function isAutoApproveWorkspacePath(filePath: string): boolean {
-  if (!isInWorkspace(filePath) || isProtectedWorkspacePath(filePath)) return false
+  if (!isInWorkspace(filePath)) return false
   if (isScratchPath(filePath)) return true
   const rel = getRelativeWorkspacePath(filePath)
   if (!rel) return false
@@ -1282,14 +1274,6 @@ export async function editFile(
     return { success: false, output: '', error: t('error.file_not_exists', { path: filePath }) }
   }
 
-  if (isProtectedWorkspacePath(filePath)) {
-    return {
-      success: false,
-      output: '',
-      error: t('file.protected_workspace_path', { path: formatDisplayPath(filePath, ptyId) })
-    }
-  }
-
   const oldTextPreview = oldText.length > 50 ? oldText.substring(0, 50) + '...' : oldText
   const newTextPreview = newText.length > 50 ? newText.substring(0, 50) + '...' : newText
   
@@ -1533,14 +1517,6 @@ export async function writeTextFile(
     case 'regex_replace':
       operationDesc = `${t('file.regex_replace', { scope: replaceAll ? t('file.regex_scope_all') : t('file.regex_scope_first') })}: ${filePath}`
       break
-  }
-
-  if (isProtectedWorkspacePath(filePath)) {
-    return {
-      success: false,
-      output: '',
-      error: t('file.protected_workspace_path', { path: formatDisplayPath(filePath, ptyId) })
-    }
   }
 
   const fileExists = fs.existsSync(filePath)

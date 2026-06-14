@@ -52,7 +52,6 @@ export {
   ensureAgentWorkspaceDirs,
   isInWorkspace,
   isScratchPath,
-  isProtectedWorkspacePath,
   isAutoApproveWorkspacePath,
 } from './file'
 export { sftpPut, sftpGet } from './sftp'

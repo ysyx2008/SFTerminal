@@ -20,7 +20,6 @@ import {
   getWorkspacePath,
   getScratchPath,
   isAutoApproveWorkspacePath,
-  isProtectedWorkspacePath,
 } from './file'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 import type { TransferProgress } from '../../sftp.service'
@@ -225,14 +224,6 @@ export async function sftpGet(
 
   const localPath = resolveLocalDownloadPath(remotePath, localPathArg)
   const fileName = path.posix.basename(remotePath) || 'remote-file'
-
-  if (isProtectedWorkspacePath(localPath)) {
-    return {
-      success: false,
-      output: '',
-      error: t('file.protected_workspace_path', { path: localPath })
-    }
-  }
 
   // 风险评估：scratch 等免确认路径 = safe；其它 = moderate（可能覆盖用户文件）
   const inWorkspace = isAutoApproveWorkspacePath(localPath)
