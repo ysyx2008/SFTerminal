@@ -98,7 +98,7 @@ export function buildPreviewDocument(
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
-    background:#16161a;
+    background:#1a1a1e;
     padding:28px 28px 60px;
     font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;
   }

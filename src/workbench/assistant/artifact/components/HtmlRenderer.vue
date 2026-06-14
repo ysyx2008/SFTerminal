@@ -61,7 +61,7 @@ async function openExternal() {
 
 <template>
   <div class="html-renderer">
-    <div class="html-toolbar">
+    <div class="html-toolbar" :class="{ 'html-toolbar--ppt': isPptPreview }">
       <button
         type="button"
         class="html-tool-btn"
@@ -71,7 +71,7 @@ async function openExternal() {
         <RotateCw :size="14" />
       </button>
       <button
-        v-if="canOpenExternal"
+        v-if="canOpenExternal && !isPptPreview"
         type="button"
         class="html-tool-btn"
         :title="t('canvas.htmlOpenExternal')"
@@ -114,6 +114,12 @@ async function openExternal() {
   padding: 5px 10px;
   background: var(--bg-tertiary, var(--bg-secondary, #252525));
   border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+}
+
+/* PPT 预览：工具栏与主体背景对齐，消除色差；外部打开由 ArtifactPanel 头部负责 */
+.html-toolbar--ppt {
+  background: #16161a;
+  border-bottom-color: rgba(255, 255, 255, 0.05);
 }
 
 .html-tool-btn {
