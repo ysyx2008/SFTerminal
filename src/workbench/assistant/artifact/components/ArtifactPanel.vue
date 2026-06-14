@@ -727,14 +727,6 @@ onUnmounted(() => {
               </span>
               <Check v-if="artifact.id === activeArtifactId" :size="13" class="artifact-picker-check" />
             </button>
-            <button
-              type="button"
-              class="artifact-picker-close-btn"
-              :title="t('canvas.closeArtifact')"
-              @click.stop="closeArtifact(artifact.id)"
-            >
-              <X :size="11" />
-            </button>
           </div>
           <div v-if="pickerArtifacts.length === 0" class="artifact-picker-empty">
             {{ t('canvas.artifactPickerEmpty') }}
@@ -1139,30 +1131,6 @@ onUnmounted(() => {
   opacity: 0.85;
 }
 
-.artifact-picker-close-btn {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-secondary, #888);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.1s, background 0.1s, color 0.1s;
-}
-
-.artifact-picker-row:hover .artifact-picker-close-btn {
-  opacity: 1;
-}
-
-.artifact-picker-close-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text-primary, #eee);
-}
 
 .canvas-ctx-header {
   padding: 6px 14px 2px;
