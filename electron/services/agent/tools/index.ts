@@ -29,7 +29,7 @@ import { dispatchSubAgents } from './sub-agent'
 import { executeWebSearch } from './web-search'
 import { executeWebFetch } from './web-fetch'
 import { splitTerminalTool, closePaneTool, focusPaneTool, listPanesTool, listSshSessionsTool } from './split-pane'
-import { listWorkbenchArtifactsTool } from './workbench'
+import { listWorkbenchArtifactsTool, manageWorkbenchArtifactsTool } from './workbench'
 
 // 重新导出类型
 export type { ToolExecutorConfig, AgentConfig, ToolResult, ErrorCategory } from './types'
@@ -262,6 +262,9 @@ export async function executeTool(
 
     case 'list_workbench_artifacts':
       return listWorkbenchArtifactsTool(executor)
+
+    case 'manage_workbench_artifacts':
+      return manageWorkbenchArtifactsTool(executor, args, ptyId)
 
     default:
       // MCP 工具有明确的 mcp_ 前缀，优先路由，避免被 skillSession 误认为技能工具

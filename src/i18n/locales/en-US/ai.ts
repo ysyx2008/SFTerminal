@@ -511,6 +511,7 @@ export default {
       watch_state_update: 'Update Watch State',
       // Workbench
       list_workbench_artifacts: 'View output panel',
+      manage_workbench_artifacts: 'Manage output panel',
       // IM skills
       feishu_read: 'Read Feishu Message',
       feishu_write: 'Send Feishu Message',

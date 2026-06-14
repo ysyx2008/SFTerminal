@@ -7,6 +7,12 @@ export default {
     description: 'AI-powered smart assistant'
   },
 
+  // Workbench tools (agent stream pre-card titles)
+  workbench: {
+    list_artifacts: 'View output panel',
+    manage_artifacts: 'Manage output panel',
+  },
+
 
   // Welcome page
   welcome: {

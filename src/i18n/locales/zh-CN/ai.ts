@@ -511,6 +511,7 @@ export default {
       watch_state_update: '更新关切状态',
       // 工作台
       list_workbench_artifacts: '查看产出物面板',
+      manage_workbench_artifacts: '维护产出物面板',
       // IM 技能
       feishu_read: '读取飞书消息',
       feishu_write: '发送飞书消息',

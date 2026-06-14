@@ -106,3 +106,7 @@ src/workbench/assistant/artifact/
 ## Agent 认知
 
 - 工作台 UI 描述见 `../prompt.ts`；实时状态用 `list_workbench_artifacts`（见 `src/workbench/SPEC.md`）。
+- 主动维护面板用 `manage_workbench_artifacts`（assistant 模式专属，执行器在 `electron/services/agent/tools/workbench.ts`）：
+  - `action:'open'` — 把已有本地文件打开进面板，仅支持可直接预览的文本类（`.md`/`.markdown`/`.html`/`.htm`）；`.docx`/`.xlsx`/PPT 各走专用工具。读盘后发 `canvasData{action:'open', contentFromFile:true}`，与文件写入工具同链路，随历史持久化、重开会话可恢复。
+  - `action:'close'` — 按 `filePath` 发 `canvasData{action:'close'}` 移除面板项。
+  - 路径解析：`expandTilde` + 相对路径按 `getTerminalStateService().getCwd(ptyId)` 解析。

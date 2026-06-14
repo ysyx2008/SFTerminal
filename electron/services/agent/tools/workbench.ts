@@ -1,7 +1,15 @@
 /**
- * 工作台 introspection 工具（状态在渲染进程，经 workbench-bridge 查询）
+ * 工作台工具
+ * - introspection（list_artifacts）：状态在渲染进程，经 workbench-bridge 查询
+ * - 维护（manage_workbench_artifacts）：通过 canvasData step 推送 open/close，
+ *   走与文件写入工具相同的链路，随历史持久化、重开会话可恢复
  */
+import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
 import { workbenchBridge } from '../../workbench-bridge.service'
+import { getTerminalStateService } from '../../terminal-state.service'
+import type { CanvasData, CanvasRendererType } from '@shared/types'
 import type { ToolExecutorConfig, ToolResult } from './types'
 
 function ok(output: string, data?: unknown): ToolResult {
@@ -13,6 +21,29 @@ function ok(output: string, data?: unknown): ToolResult {
 
 function fail(error: string): ToolResult {
   return { success: false, output: '', error }
+}
+
+function expandTilde(filePath: string): string {
+  if (filePath === '~') return os.homedir()
+  if (filePath.startsWith('~/') || filePath.startsWith('~\\')) {
+    return path.join(os.homedir(), filePath.slice(2))
+  }
+  return filePath
+}
+
+function resolveLocalPath(rawPath: string, ptyId: string): string {
+  let p = expandTilde(rawPath.trim())
+  if (!path.isAbsolute(p)) {
+    p = path.resolve(getTerminalStateService().getCwd(ptyId), p)
+  }
+  return p
+}
+
+/** 可在面板内直接预览的文本类文件 → 渲染器（content 即文件内容，contentFromFile） */
+function rendererForExtension(filePath: string): CanvasRendererType | undefined {
+  if (/\.(md|markdown)$/i.test(filePath)) return 'markdown'
+  if (/\.html?$/i.test(filePath)) return 'html'
+  return undefined
 }
 
 export async function listWorkbenchArtifactsTool(executor: ToolExecutorConfig): Promise<ToolResult> {
@@ -36,4 +67,80 @@ export async function listWorkbenchArtifactsTool(executor: ToolExecutorConfig): 
       : '产出物面板未展开，尚无文件类 artifact。'
 
   return ok(summary, result.data)
+}
+
+/**
+ * 维护产出物面板：打开本地文件 / 关闭已有产出物。
+ * 通过 canvasData step 推送（与文件写入工具同链路），随历史持久化，重开会话可恢复。
+ */
+export async function manageWorkbenchArtifactsTool(
+  executor: ToolExecutorConfig,
+  args: Record<string, unknown>,
+  ptyId: string
+): Promise<ToolResult> {
+  const action = String(args.action || '').trim()
+  const rawPath = typeof args.path === 'string' ? args.path : ''
+  if (!rawPath) return fail('缺少参数 path')
+  if (action !== 'open' && action !== 'close') {
+    return fail(`不支持的 action：${action}（仅 open / close）`)
+  }
+
+  const filePath = resolveLocalPath(rawPath, ptyId)
+
+  if (action === 'close') {
+    // 关闭按 filePath 匹配，renderer 仅为类型占位（推断不出时用 markdown 占位，不影响匹配）
+    const canvasData: CanvasData = {
+      action: 'close',
+      renderer: rendererForExtension(filePath) ?? 'markdown',
+      filePath
+    }
+    executor.addStep({
+      type: 'tool_result',
+      content: `已从产出物面板移除：${path.basename(filePath)}`,
+      toolName: 'manage_workbench_artifacts',
+      canvasData
+    })
+    return ok(`已从产出物面板关闭 ${filePath}`)
+  }
+
+  // action === 'open'
+  const renderer = rendererForExtension(filePath)
+  if (!renderer) {
+    return fail(
+      `暂不支持直接打开该类型文件到面板：${path.basename(filePath)}。` +
+      `Word(.docx) 用 word_open，Excel(.xlsx) 用 excel_open，PPT 用 ppt 工具；` +
+      `本工具仅支持 .md / .html 等可直接预览的文本文件。`
+    )
+  }
+  if (!fs.existsSync(filePath)) {
+    return fail(`文件不存在：${filePath}（请传绝对路径，或先创建文件）`)
+  }
+
+  let content: string
+  try {
+    content = fs.readFileSync(filePath, 'utf-8')
+  } catch (err) {
+    return fail(`读取文件失败：${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  const title = typeof args.title === 'string' && args.title.trim()
+    ? args.title.trim()
+    : path.basename(filePath)
+
+  const canvasData: CanvasData = {
+    action: 'open',
+    renderer,
+    title,
+    content,
+    filePath,
+    // content 即磁盘文件内容：历史持久化时剥离，恢复时按 filePath 读回
+    contentFromFile: true
+  }
+  executor.addStep({
+    type: 'tool_result',
+    content: `已在产出物面板打开：${title}`,
+    toolName: 'manage_workbench_artifacts',
+    canvasData
+  })
+  return ok(`已在产出物面板打开 ${filePath}`)
 }

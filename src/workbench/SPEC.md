@@ -107,8 +107,9 @@ Vue 渲染器暂仍在 `src/components/`（`TerminalTabView`、`AssistantWorkben
 ## Agent 工作台工具
 
 - 定义：`assistant/agent-tools.ts`（assistant 模式由 `getAgentTools` 注册）
-- 执行：`electron/services/agent/tools/workbench.ts` → `workbench-bridge` → `src/services/workbench-handler.ts` 读 `artifactStore` 真值
-- 目前：`list_workbench_artifacts` — 查询前先 `syncArtifactsWithDisk`（静默），再返回快照（`shared/types/workbench.ts`）
+- 执行：`electron/services/agent/tools/workbench.ts`
+- `list_workbench_artifacts`（只读、可并行）— 经 `workbench-bridge` → `src/services/workbench-handler.ts` 读 `artifactStore` 真值；查询前先 `syncArtifactsWithDisk`（静默），再返回快照（`shared/types/workbench.ts`）
+- `manage_workbench_artifacts`（`action: open | close`）— 不走 bridge，而是读盘后发 `canvasData` step（同文件写入工具链路），随历史持久化、重开会话可恢复。`open` 仅支持 `.md`/`.html` 等可直接预览文本；其余类型走各自专用工具
 
 ## 依赖与边界
 

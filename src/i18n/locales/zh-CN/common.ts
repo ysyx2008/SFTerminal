@@ -7,6 +7,12 @@ export default {
     description: 'AI 驱动的智能助手'
   },
 
+  // 工作台工具（Agent 流式预卡片标题）
+  workbench: {
+    list_artifacts: '查看产出物面板',
+    manage_artifacts: '维护产出物面板',
+  },
+
 
   // 欢迎页
   welcome: {
