@@ -947,6 +947,56 @@ describe('Agent run method', () => {
       expect(mockHistoryService.getAgentRecordById).toHaveBeenCalledWith(sessionId)
     })
 
+    it('续聊后保存的记录仍保留旧步骤的 canvasData（防产出物丢失回归）', async () => {
+      const sessionId = 'session_canvas_keep'
+      const savedRecords: any[] = []
+      const oldCanvas = { action: 'open', renderer: 'markdown', title: 'a.md', filePath: '/tmp/a.md', content: '# A', contentFromFile: true }
+      const mockHistoryService = {
+        getAgentRecordById: vi.fn().mockReturnValue({
+          id: sessionId,
+          timestamp: Date.now() - 5000,
+          terminalId: 'test-pty',
+          terminalType: 'local',
+          userTask: 'Previous task',
+          steps: [
+            { id: 'ut1', type: 'user_task', content: 'Previous task', timestamp: Date.now() - 5000 },
+            { id: 'tr1', type: 'tool_result', content: 'wrote a.md', toolName: 'write_text_file', timestamp: Date.now() - 4500, canvasData: oldCanvas },
+            { id: 'fr1', type: 'final_result', content: 'done', timestamp: Date.now() - 4000 }
+          ],
+          messages: [
+            { role: 'user', content: 'Previous task' },
+            { role: 'assistant', content: 'done' }
+          ],
+          finalResult: 'done',
+          duration: 1000,
+          status: 'completed'
+        }),
+        saveAgentRecord: vi.fn((r) => { savedRecords.push(JSON.parse(JSON.stringify(r))) })
+      }
+
+      const services = createMockServices({ historyService: mockHistoryService as any })
+      const agentWithHistory = new TestAgent(services)
+      mockAiService = services.aiService as any
+      mockAiService.chatWithToolsStream.mockImplementation(
+        (_m: any, _t: any, onChunk: any, _otc: any, onDone: any) => {
+          onChunk('Done'); onDone({ content: 'Done', tool_calls: undefined }); return Promise.resolve()
+        }
+      )
+
+      const context = createMockContext({ sessionId, sessionStartTime: Date.now() - 5000 })
+      await agentWithHistory.run('New task', context)
+
+      // 所有保存的记录里，旧的 a.md 步骤都应保留 canvasData（contentFromFile 标记 + filePath）
+      const stepsWithOldCanvas = savedRecords
+        .flatMap(r => r.steps)
+        .filter((s: any) => s.id === 'tr1')
+      expect(stepsWithOldCanvas.length).toBeGreaterThan(0)
+      for (const s of stepsWithOldCanvas) {
+        expect(s.canvasData?.filePath).toBe('/tmp/a.md')
+        expect(s.canvasData?.contentFromFile).toBe(true)
+      }
+    })
+
     /**
      * 防回归：新开 tab 的第一次对话不应被全局历史污染
      *

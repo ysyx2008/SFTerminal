@@ -723,7 +723,12 @@ export abstract class Agent {
         toolResult: s.toolResult,
         riskLevel: s.riskLevel as RiskLevel | undefined,
         timestamp: s.timestamp,
-        webSearchResults: s.webSearchResults
+        webSearchResults: s.webSearchResults,
+        // 必须保留：否则继续对话后下次 checkpoint 会把旧步骤的这些字段写没，
+        // 导致重开会话时产出物面板只剩续聊后新建的产出物（canvasData）。
+        success: s.success,
+        subAgents: s.subAgents,
+        canvasData: s.canvasData
       }))
     }
     
