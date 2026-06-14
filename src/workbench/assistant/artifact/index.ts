@@ -44,6 +44,7 @@ export {
 
 export {
   artifactBasename,
+  artifactDisplayLabel,
   canSaveArtifact,
   canSaveAsArtifact,
   defaultSaveFileName,

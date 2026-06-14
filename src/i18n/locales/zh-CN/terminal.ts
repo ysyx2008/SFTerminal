@@ -262,7 +262,7 @@ export default {
     saveNoChanges: '无未保存更改',
     saveNoPath: '尚未关联磁盘文件，请使用「另存为」',
     saveFileDeleted: '原文件已从磁盘删除，请使用「另存为」恢复',
-    fileMenu: '文件',
+    fileMenu: '打开',
     noPathShort: '无磁盘路径',
     unsavedChanges: '● 未保存',
     closeOthers: '关闭其他产出物',

@@ -26,6 +26,15 @@ export function defaultSaveFileName(
   return base
 }
 
+/** tab / 下拉显示名：有磁盘路径时用文件名（含扩展名），否则用 title */
+export function artifactDisplayLabel(
+  artifact: Pick<CanvasArtifact, 'title' | 'filePath'>,
+  untitled = 'Untitled'
+): string {
+  if (artifact.filePath) return artifactBasename(artifact.filePath)
+  return artifact.title?.trim() || untitled
+}
+
 /** 覆盖原路径（可编辑且已有 filePath） */
 export function canSaveArtifact(artifact: CanvasArtifact): boolean {
   return isArtifactEditable(artifact) && Boolean(artifact.filePath)

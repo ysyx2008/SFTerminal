@@ -9,12 +9,12 @@ import { useI18n } from 'vue-i18n'
 import {
   FolderOpen,
   ChevronDown,
-  ExternalLink,
   Download,
   Check
 } from 'lucide-vue-next'
 import type { CanvasArtifact, CanvasRendererType } from '@shared/types'
 import {
+  artifactDisplayLabel,
   canSaveAsArtifact,
   filterArtifactsByQuery,
   isArtifactEditable,
@@ -92,9 +92,11 @@ const saveActiveTitle = computed(() => {
   return t('canvas.saveShortcut')
 })
 
-const showFileMenu = computed(() =>
-  Boolean(filePath.value) || canSaveAsActive.value || canSaveAll.value
+const showOpenButton = computed(() => Boolean(filePath.value))
+const showFileOverflowMenu = computed(() =>
+  canOpenActive.value || canSaveAsActive.value || canSaveAll.value
 )
+const showFileActions = computed(() => showOpenButton.value || showFileOverflowMenu.value)
 
 const fileMenuRef = ref<HTMLElement | null>(null)
 const showFileMenuDropdown = ref(false)
@@ -157,22 +159,14 @@ function rendererTypeKey(type: CanvasRendererType | null): string {
   return type ?? 'document'
 }
 
-function pathDirname(filePath: string | null | undefined): string {
-  if (!filePath) return ''
-  const parts = filePath.replace(/\\/g, '/').split('/')
-  if (parts.length <= 1) return ''
-  parts.pop()
-  const dir = parts.join('/')
-  if (dir.length > 40) return '…' + dir.slice(-38)
-  return dir
-}
-
 function artifactTabTitle(artifact: CanvasArtifact) {
-  return artifactTabLabel(artifact.title)
+  return artifactTabLabel(artifact)
 }
 
 function activeTitleLabel() {
-  return artifactTabLabel(activeArtifact.value?.title ?? '')
+  return activeArtifact.value
+    ? artifactTabLabel(activeArtifact.value)
+    : artifactTabLabel({ title: '', filePath: null })
 }
 
 async function updateFileExistsMap() {
@@ -200,8 +194,8 @@ function closeFileMenu() {
   showFileMenuDropdown.value = false
 }
 
-function artifactTabLabel(artifactTitle: string) {
-  return artifactTitle || t('canvas.artifactUntitled')
+function artifactTabLabel(artifact: Pick<CanvasArtifact, 'title' | 'filePath'>) {
+  return artifactDisplayLabel(artifact, t('canvas.artifactUntitled'))
 }
 
 function getArtifactContent(artifact: CanvasArtifact): string {
@@ -612,55 +606,60 @@ onUnmounted(() => {
         >
           {{ saving ? t('common.saving') : t('canvas.saveToDisk') }}
         </button>
-        <div v-if="showFileMenu" ref="fileMenuRef" class="canvas-file-menu-wrap">
+        <div v-if="showFileActions" class="canvas-file-actions">
           <button
+            v-if="showOpenButton"
             type="button"
-            class="canvas-text-btn"
-            :aria-expanded="showFileMenuDropdown"
-            @click="toggleFileMenu"
+            class="canvas-text-btn canvas-open-btn"
+            :class="{ 'canvas-open-btn--with-menu': showFileOverflowMenu }"
+            :disabled="!canOpenActive"
+            :title="t('canvas.openFile')"
+            @click="openFile()"
           >
-            <span>{{ t('canvas.fileMenu') }}</span>
-            <ChevronDown :size="12" />
+            {{ t('canvas.openFile') }}
           </button>
-          <div v-if="showFileMenuDropdown" class="canvas-dropdown-menu" @click.stop>
+          <div v-if="showFileOverflowMenu" ref="fileMenuRef" class="canvas-file-menu-wrap">
             <button
               type="button"
-              class="canvas-dropdown-item"
-              :disabled="!canOpenActive"
-              @click="openFile(); closeFileMenu()"
+              class="canvas-text-btn canvas-file-overflow-btn"
+              :class="{ 'canvas-file-overflow-btn--solo': !showOpenButton }"
+              :aria-expanded="showFileMenuDropdown"
+              :title="t('canvas.openMenu')"
+              @click="toggleFileMenu"
             >
-              <ExternalLink :size="14" />
-              <span>{{ t('canvas.openFile') }}</span>
+              <ChevronDown :size="12" />
             </button>
-            <button
-              type="button"
-              class="canvas-dropdown-item"
-              :disabled="!canOpenActive"
-              @click="showInFolder(); closeFileMenu()"
-            >
-              <FolderOpen :size="14" />
-              <span>{{ t('canvas.showInFolder') }}</span>
-            </button>
-            <div v-if="canSaveAsActive" class="canvas-dropdown-separator" />
-            <button
-              v-if="canSaveAsActive"
-              type="button"
-              class="canvas-dropdown-item"
-              :disabled="saving"
-              @click="runSaveAsActive(); closeFileMenu()"
-            >
-              <Download :size="14" />
-              <span>{{ t('canvas.saveAs') }}</span>
-            </button>
-            <button
-              v-if="canSaveAll"
-              type="button"
-              class="canvas-dropdown-item"
-              :disabled="saving"
-              @click="runSaveAll(); closeFileMenu()"
-            >
-              <span>{{ t('canvas.saveAll') }}</span>
-            </button>
+            <div v-if="showFileMenuDropdown" class="canvas-dropdown-menu" @click.stop>
+              <button
+                v-if="canOpenActive"
+                type="button"
+                class="canvas-dropdown-item"
+                @click="showInFolder(); closeFileMenu()"
+              >
+                <FolderOpen :size="14" />
+                <span>{{ t('canvas.showInFolder') }}</span>
+              </button>
+              <div v-if="canOpenActive && canSaveAsActive" class="canvas-dropdown-separator" />
+              <button
+                v-if="canSaveAsActive"
+                type="button"
+                class="canvas-dropdown-item"
+                :disabled="saving"
+                @click="runSaveAsActive(); closeFileMenu()"
+              >
+                <Download :size="14" />
+                <span>{{ t('canvas.saveAs') }}</span>
+              </button>
+              <button
+                v-if="canSaveAll"
+                type="button"
+                class="canvas-dropdown-item"
+                :disabled="saving"
+                @click="runSaveAll(); closeFileMenu()"
+              >
+                <span>{{ t('canvas.saveAll') }}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -705,10 +704,7 @@ onUnmounted(() => {
               <span class="artifact-picker-icon-wrap" :data-type="rendererTypeKey(artifact.renderer)">
                 <component :is="rendererIcon(artifact.renderer)" :size="13" class="artifact-picker-icon" />
               </span>
-              <span class="artifact-picker-content">
-                <span class="artifact-picker-label">{{ artifactTabLabel(artifact.title) }}</span>
-                <span v-if="artifact.filePath" class="artifact-picker-dir">{{ pathDirname(artifact.filePath) }}</span>
-              </span>
+              <span class="artifact-picker-label">{{ artifactTabLabel(artifact) }}</span>
               <Check v-if="artifact.id === activeArtifactId" :size="13" class="artifact-picker-check" />
             </button>
           </div>
@@ -736,7 +732,7 @@ onUnmounted(() => {
         @contextmenu.prevent
       >
       <template v-if="ctxMenu.target?.kind === 'tab' && ctxArtifact && ctxMenuFlags">
-        <div class="canvas-ctx-header">{{ artifactTabLabel(ctxArtifact.title) }}</div>
+        <div class="canvas-ctx-header">{{ artifactTabLabel(ctxArtifact) }}</div>
         <div v-if="ctxArtifact.filePath" class="canvas-ctx-path" :title="ctxArtifact.filePath">
           {{ ctxArtifact.filePath }}
         </div>
@@ -1082,31 +1078,15 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.artifact-picker-content {
+.artifact-picker-label {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.artifact-picker-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
   font-weight: 500;
   line-height: 1.3;
-}
-
-.artifact-picker-dir {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  color: var(--text-secondary, #888);
-  line-height: 1.2;
-  opacity: 0.8;
 }
 
 .artifact-picker-check {
@@ -1184,6 +1164,28 @@ onUnmounted(() => {
 .canvas-save-text-btn:not(:disabled) {
   border-color: rgba(var(--accent-rgb, 137, 180, 250), 0.35);
   color: var(--accent-primary, #89b4fa);
+}
+
+.canvas-file-actions {
+  display: flex;
+  align-items: center;
+}
+
+.canvas-open-btn--with-menu {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+}
+
+.canvas-file-overflow-btn {
+  padding: 0 5px;
+  min-width: 22px;
+  justify-content: center;
+}
+
+.canvas-file-overflow-btn:not(.canvas-file-overflow-btn--solo) {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
 }
 
 .canvas-file-menu-wrap {

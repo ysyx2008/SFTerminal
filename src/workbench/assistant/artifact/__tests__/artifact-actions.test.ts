@@ -5,6 +5,7 @@ import { describe, it, expect, vi } from 'vitest'
 import type { CanvasArtifact } from '@shared/types'
 import {
   artifactBasename,
+  artifactDisplayLabel,
   canSaveArtifact,
   canSaveAsArtifact,
   defaultSaveFileName,
@@ -41,6 +42,16 @@ describe('artifact-actions', () => {
         renderer: 'spreadsheet'
       })
     ).toBe('data.xlsx')
+  })
+
+  it('artifactDisplayLabel 有 filePath 时显示文件名含扩展名', () => {
+    expect(
+      artifactDisplayLabel({
+        title: '华云信息介绍',
+        filePath: '/Users/yushen/Desktop/华云信息介绍.md'
+      })
+    ).toBe('华云信息介绍.md')
+    expect(artifactDisplayLabel({ title: '仅标题', filePath: null })).toBe('仅标题')
   })
 
   it('canSave 仅 markdown 且有 path', () => {

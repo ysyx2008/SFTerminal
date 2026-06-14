@@ -262,7 +262,7 @@ export default {
     saveNoChanges: 'No unsaved changes',
     saveNoPath: 'No file path yet — use Save As',
     saveFileDeleted: 'Original file was deleted — use Save As',
-    fileMenu: 'File',
+    fileMenu: 'Open',
     noPathShort: 'No file path',
     unsavedChanges: '● Unsaved',
     closeOthers: 'Close Other Artifacts',
