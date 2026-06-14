@@ -1,15 +1,12 @@
 /**
- * Canvas 预览：把整副 deck 渲染进「单个」iframe（SlidesRenderer 的 sandbox iframe）。
+ * Canvas 预览：把整副 deck 渲染进「单个」iframe（HtmlRenderer 的 sandbox iframe）。
  *
- * 为什么不再用「每页一个内层 iframe」：
- *   SlidesRenderer 外层 iframe 是 sandbox="allow-same-origin"（无 allow-scripts）。
- *   在这种沙箱文档里再创建无 allow-scripts 的 srcdoc 子帧，Chromium 会对每个子帧
- *   发出 "Blocked script execution in about:srcdoc" 的 benign 警告（与内容是否有脚本无关）。
+ * 为什么不用「每页一个内层 iframe」：
  *   所有页本就共享同一份 css，没有隔离需求，因此直接把每页放进一个缩放的 .stage 容器，
- *   全程零脚本、零嵌套 iframe，控制台干净。
+ *   全程零脚本、零嵌套 iframe，控制台干净（也避免嵌套 srcdoc 子帧的 benign 脚本拦截警告）。
  *
  * 缩放：.slide-card 用容器查询（container query），.stage 固定画幅尺寸后
- *   transform:scale(calc(100cqw / 画幅宽))，纯 CSS，不依赖脚本。
+ *   transform:scale(calc(100cqw / 画幅宽))，纯 CSS，不依赖脚本（也不依赖 allow-same-origin）。
  *
  * 图片：sandbox iframe 无法加载 `/abs/path.png` 这类本地文件路径，会显示空白。
  *   渲染在 Node 主进程，这里直接读盘把本地图片内联成 data: URI，确保预览能显示。

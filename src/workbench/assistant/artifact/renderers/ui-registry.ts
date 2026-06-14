@@ -4,7 +4,7 @@
  * 能力元数据来自 `renderers/registry.ts`。
  */
 import { defineAsyncComponent, type Component } from 'vue'
-import { FileText, Table2, FileCode, Presentation, Image, Globe, FileType } from 'lucide-vue-next'
+import { FileText, Table2, FileCode, FileCode2, Image, Globe, FileType } from 'lucide-vue-next'
 import type { CanvasRendererType } from '@shared/types'
 import {
   getRendererCapabilities,
@@ -19,13 +19,13 @@ export interface RendererUiDescriptor extends RendererCapabilities {
 const DocumentRenderer = defineAsyncComponent(() => import('../components/DocumentRenderer.vue'))
 const SpreadsheetRenderer = defineAsyncComponent(() => import('../components/SpreadsheetRenderer.vue'))
 const MarkdownRenderer = defineAsyncComponent(() => import('../components/MarkdownRenderer.vue'))
-const SlidesRenderer = defineAsyncComponent(() => import('../components/SlidesRenderer.vue'))
+const HtmlRenderer = defineAsyncComponent(() => import('../components/HtmlRenderer.vue'))
 
 const UI_REGISTRY: Record<CanvasRendererType, Omit<RendererUiDescriptor, keyof RendererCapabilities>> = {
   document: { component: DocumentRenderer, icon: FileText },
   spreadsheet: { component: SpreadsheetRenderer, icon: Table2 },
   markdown: { component: MarkdownRenderer, icon: FileCode },
-  html: { component: SlidesRenderer, icon: Presentation },
+  html: { component: HtmlRenderer, icon: FileCode2 },
   browser: { component: null, icon: Globe },
   image: { component: null, icon: Image },
   pdf: { component: null, icon: FileType }

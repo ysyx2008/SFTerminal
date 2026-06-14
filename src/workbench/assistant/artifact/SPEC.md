@@ -4,7 +4,7 @@
 
 ## 职责
 
-**assistant 工作台专属**：右侧产出物工作区，用户可 revisit 的文件类结果（Word / Excel / Markdown / PPT 预览；未来的图表、浏览器快照等）。
+**assistant 工作台专属**：右侧产出物工作区，用户可 revisit 的文件类结果（Word / Excel / Markdown / HTML 页面 / PPT 预览；未来的图表、浏览器快照等）。
 
 **定位**：本次助手会话产出的、可 revisit 的文件类成果索引 + 内嵌预览/轻编辑。不是文件管理器，不替代 Finder。
 
@@ -57,6 +57,8 @@ src/workbench/assistant/artifact/
 2. `renderers/ui-registry.ts` — 组件 + 图标
 
 `ArtifactPanel` 通过 `<component :is="getRendererComponent(type)">` 动态渲染。
+
+**HTML 渲染器**：`html` 类型用 `HtmlRenderer.vue`，以 iframe `srcdoc` 渲染 `content`，`sandbox="allow-scripts allow-popups allow-forms allow-modals"`（不开 `allow-same-origin`，脚本以不透明源运行、无法访问父页面），支持图表/动画等交互。Agent 写入/编辑 `.html`/`.htm` 时由 `tools/file.ts` 自动产出（同 `.md`）；PPT 技能也复用该渲染器（`content` 为内联 HTML，`filePath` 指向 `.pptx`）。不用 `file://` 直载：dev 模式 `webSecurity` 会拦截，且无法覆盖 PPT 场景。
 
 ## 头部与交互
 

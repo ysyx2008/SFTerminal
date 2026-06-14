@@ -11,7 +11,7 @@ export type CanvasRendererType =
   | 'spreadsheet'   // Excel 表格预览
   | 'browser'       // 浏览器截图（预留）
   | 'image'         // 图片展示（预留）
-  | 'html'          // 通用 HTML（沙盒 iframe，如 PPT 预览）
+  | 'html'          // 交互式 HTML 页面（iframe 启用脚本，如 dashboard / PPT 预览）
   | 'markdown'      // Markdown 渲染
   | 'pdf'           // PDF 预览（预留）
 

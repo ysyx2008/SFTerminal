@@ -73,9 +73,9 @@ AI 写 css + slides[]（mode replace/append）
 
 ## Canvas 预览
 
-- `renderer: 'html'`（`shared/types/canvas.ts`），前端 `SlidesRenderer.vue`（iframe srcdoc）+ `ArtifactPanel.vue` 挂载
+- `renderer: 'html'`（`shared/types/canvas.ts`），前端 `HtmlRenderer.vue`（iframe srcdoc）+ `ArtifactPanel.vue` 挂载
 - `content`：完整 HTML 文档（仅内联推送，不落盘）。**单文档单 iframe**：每页放进一个固定画幅的 `.stage`（`position:absolute`，幻灯片内的绝对定位以此为基准），纯 CSS 容器查询 `transform:scale(calc(100cqw / 画幅宽))` 适配容器宽 → 所见即所得
-- **不用内层 iframe**：所有页本就共享同一份 css，无隔离需求。外层 SlidesRenderer iframe 是 `sandbox="allow-same-origin"`（无 allow-scripts），若在其中再创建无 allow-scripts 的 srcdoc 子帧，Chromium 会对每个子帧发出 benign 的 "Blocked script execution in about:srcdoc"。单文档零嵌套 iframe + 零脚本 → 控制台干净
+- **不用内层 iframe**：所有页本就共享同一份 css，无隔离需求。预览文档本身零脚本，单文档零嵌套 iframe → 控制台干净（`HtmlRenderer` iframe 用 `sandbox="allow-scripts …"` 但不含 `allow-same-origin`，PPT 预览不依赖二者，渲染不受影响）
 - **本地图片内联**：sandbox iframe 无法加载 `/abs/path.png`/`file://` 本地路径（显示空白），`buildPreviewDocument` 在 Node 侧读盘把 `<img src>` 的本地图片转成 `data:` URI（单图上限 8MB，失败则原样保留）。导出 pptx 不受影响（pptxgenjs 直接读盘嵌入）
 - `filePath`：导出的 `.pptx` 绝对路径 → 标题栏「打开 / 在文件夹中显示」直接定位成品
 - WYSIWYG 边界：预览用真实浏览器渲染，与导出走同一 wrapper，偏差极小；最终以 PowerPoint 打开为准
