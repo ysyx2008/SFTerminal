@@ -100,7 +100,7 @@ Vue 渲染器暂仍在 `src/components/`（`TerminalTabView`、`AssistantWorkben
 
 - 定义：`assistant/agent-tools.ts`（assistant 模式由 `getAgentTools` 注册）
 - 执行：`electron/services/agent/tools/workbench.ts` → `workbench-bridge` → `src/services/workbench-handler.ts` 读 `canvasStore` 真值
-- 目前：`list_workbench_artifacts` — 查询产出物面板实时状态（`shared/types/workbench.ts`）
+- 目前：`list_workbench_artifacts` — 查询前先 `syncArtifactsWithDisk`（静默），再返回快照（`shared/types/workbench.ts`）
 
 ## 依赖与边界
 

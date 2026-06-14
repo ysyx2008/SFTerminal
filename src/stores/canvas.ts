@@ -22,11 +22,23 @@ import {
   updateArtifactContentById,
   type TabArtifactState
 } from '../canvas/artifact-registry'
+import {
+  findArtifactIdsWithMissingFiles,
+  refreshFilePathExistsMap
+} from '../canvas/artifact-file-status'
+import { shouldSyncArtifactsAfterStep } from '../canvas/artifact-disk-sync'
+
+export interface ArtifactDiskSyncEvent {
+  tabId: string
+  removed: CanvasArtifact[]
+  at: number
+}
 
 export const useCanvasStore = defineStore('canvas', () => {
   const tabStates = ref<Map<string, TabArtifactState>>(new Map())
   const splitRatio = ref(0.5)
   const closeTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const lastDiskSync = ref<ArtifactDiskSyncEvent | null>(null)
 
   function getTabState(tabId: string): TabArtifactState {
     if (!tabStates.value.has(tabId)) {
@@ -131,9 +143,37 @@ export const useCanvasStore = defineStore('canvas', () => {
     commitTabState(tabId, hydrateArtifactsFromSteps(steps))
   }
 
+  /** 用 localFs.exists 移除磁盘上已不存在的 filePath 锚点 */
+  async function syncArtifactsWithDisk(
+    tabId: string,
+    options?: { notify?: boolean }
+  ): Promise<readonly CanvasArtifact[]> {
+    const arts = getArtifactsForTab(tabId)
+    if (arts.length === 0) return []
+
+    const map = await refreshFilePathExistsMap(arts)
+    const missingIds = findArtifactIdsWithMissingFiles(arts, map)
+    if (missingIds.length === 0) return []
+
+    const removed: CanvasArtifact[] = []
+    for (const id of missingIds) {
+      const artifact = getArtifactByIdForTab(tabId, id)
+      if (artifact) removed.push(artifact)
+      removeArtifactFromTab(tabId, id)
+    }
+
+    if (options?.notify !== false) {
+      lastDiskSync.value = { tabId, removed, at: Date.now() }
+    }
+    return removed
+  }
+
   function handleAgentStep(tabId: string, step: AgentStep) {
     if (step.canvasData) {
       applyCanvasDataForTab(tabId, step.canvasData)
+    }
+    if (shouldSyncArtifactsAfterStep(step)) {
+      void syncArtifactsWithDisk(tabId)
     }
   }
 
@@ -147,9 +187,41 @@ export const useCanvasStore = defineStore('canvas', () => {
     tabStates.value = new Map(tabStates.value)
   }
 
+  function closeOthers(tabId: string, keepArtifactId: string) {
+    mutateTab(tabId, (state) => {
+      const kept = state.artifacts.filter(a => a.id === keepArtifactId)
+      if (kept.length === 0) return state
+      return { ...state, artifacts: kept, activeArtifactId: keepArtifactId, visible: true }
+    })
+  }
+
+  function closeAll(tabId: string) {
+    cancelPendingClose(tabId)
+    commitTabState(tabId, clearTabArtifacts(getTabState(tabId)))
+  }
+
+  function relocateArtifact(
+    tabId: string,
+    artifactId: string,
+    newFilePath: string,
+    content?: string
+  ) {
+    const artifact = getArtifactByIdForTab(tabId, artifactId)
+    if (!artifact) return
+    removeArtifactFromTab(tabId, artifactId)
+    open(tabId, {
+      renderer: artifact.renderer,
+      title: newFilePath.split(/[/\\]/).pop() || artifact.title,
+      content: content ?? artifact.content,
+      filePath: newFilePath,
+      activate: true
+    })
+  }
+
   return {
     tabStates,
     splitRatio,
+    lastDiskSync,
     isVisible,
     getArtifacts: getArtifactsForTab,
     getActiveArtifact: getActiveArtifactForTab,
@@ -163,8 +235,12 @@ export const useCanvasStore = defineStore('canvas', () => {
     updateContent,
     applyCanvasData: applyCanvasDataForTab,
     hydrateFromSteps,
+    syncArtifactsWithDisk,
     handleAgentStep,
     handleAgentComplete,
-    cleanup
+    cleanup,
+    closeOthers,
+    closeAll,
+    relocateArtifact
   }
 })

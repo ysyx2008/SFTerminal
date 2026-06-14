@@ -45,6 +45,7 @@ export function initWorkbenchHandler(): void {
             result = { ok: false, error: 'list_workbench_artifacts 仅适用于独立助手工作台 tab' }
           } else {
             const canvasStore = useCanvasStore()
+            await canvasStore.syncArtifactsWithDisk(tabId, { notify: false })
             const state = canvasStore.getTabState(tabId)
             result = {
               ok: true,

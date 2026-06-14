@@ -12,6 +12,7 @@ describe('resolveWorkbenchAgentPrompt', () => {
     expect(prompt).toContain('generate_chart')
     expect(prompt).toContain('计数')
     expect(prompt).toContain('list_workbench_artifacts')
+    expect(prompt).toContain('mv')
   })
 
   it('远程 assistant tab 不注入', () => {

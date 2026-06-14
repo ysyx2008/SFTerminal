@@ -4,8 +4,9 @@
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Eye, MessageSquareQuote, Save, SquarePen } from 'lucide-vue-next'
+import { Eye, MessageSquareQuote, SquarePen } from 'lucide-vue-next'
 import { useCanvasStore } from '../../stores/canvas'
+import { useArtifactSaveBridge } from '../../canvas/artifact-save-bridge'
 import { useComposerQuoteStore } from '../../stores/composer-quote'
 import { useTerminalStore } from '../../stores/terminal'
 import { useMarkdown } from '../../composables/useMarkdown'
@@ -18,6 +19,7 @@ const props = defineProps<{
 
 const { t } = useI18n()
 const canvasStore = useCanvasStore()
+const saveBridge = useArtifactSaveBridge()
 const composerQuoteStore = useComposerQuoteStore()
 const terminalStore = useTerminalStore()
 const { renderMarkdown, handleCodeBlockClick, handleFilePathContextMenu } = useMarkdown()
@@ -51,6 +53,7 @@ const lastPreviewQuoteMeta = ref<{
 const artifact = computed(() => canvasStore.getArtifactById(props.tabId, props.artifactId))
 const filePath = computed(() => artifact.value?.filePath ?? null)
 const canSave = computed(() => typeof filePath.value === 'string' && filePath.value.length > 0)
+const isDirty = computed(() => saveBridge?.isDirty(props.artifactId) ?? false)
 
 const previewHtml = computed(() => renderMarkdown(draft.value))
 
@@ -61,6 +64,26 @@ watch(
   },
   { immediate: true }
 )
+
+function flushDraftToStore() {
+  if (!artifact.value) return
+  if (draft.value !== artifact.value.content) {
+    canvasStore.updateContent(props.tabId, draft.value, props.artifactId)
+  }
+}
+
+watch(
+  () => props.artifactId,
+  (_next, prev) => {
+    if (prev) saveBridge?.flush(prev)
+  }
+)
+
+watch(draft, () => {
+  if (!artifact.value) return
+  const dirty = draft.value !== (artifact.value.content ?? '')
+  saveBridge?.setDirty(props.artifactId, dirty)
+}, { immediate: true })
 
 function focusEditorIfNeeded() {
   if (viewMode.value !== 'edit') return
@@ -234,6 +257,7 @@ async function saveToDisk() {
     const res = await api.writeFile(path, draft.value)
     if (res.success) {
       canvasStore.updateContent(props.tabId, draft.value, props.artifactId)
+      saveBridge?.clearDirty(props.artifactId)
       toastSuccess(t('canvas.savedToDisk'))
     } else {
       toastError(res.error || t('canvas.saveFailed'))
@@ -273,6 +297,10 @@ function onWindowKeydown(e: KeyboardEvent) {
   if (!canSave.value) return
   if (e.key === 's') {
     e.preventDefault()
+    if (!isDirty.value) {
+      toastInfo(t('canvas.saveNoChanges'))
+      return
+    }
     void saveToDisk()
   }
 }
@@ -307,6 +335,11 @@ watch(viewMode, (mode) => {
 })
 
 onMounted(() => {
+  saveBridge?.register(props.artifactId, {
+    getContent: () => draft.value,
+    flushToStore: flushDraftToStore,
+    isDirty: () => draft.value !== (artifact.value?.content ?? '')
+  })
   window.addEventListener('keydown', onWindowKeydown, true)
   window.addEventListener('keydown', onGlobalKeydown)
   document.addEventListener('mousedown', onGlobalMouseDown, true)
@@ -316,6 +349,8 @@ onMounted(() => {
   }
 })
 onUnmounted(() => {
+  flushDraftToStore()
+  saveBridge?.unregister(props.artifactId)
   unbindPreviewMarkdownInteractions()
   window.removeEventListener('keydown', onWindowKeydown, true)
   window.removeEventListener('keydown', onGlobalKeydown)
@@ -360,18 +395,10 @@ onUnmounted(() => {
         <span class="md-shortcut-hint quote">{{ t('canvas.quoteHint') }}</span>
       </div>
       <div class="md-toolbar-right">
-        <span v-if="!canSave" class="md-hint">{{ t('canvas.noPathHint') }}</span>
-        <button
-          v-else
-          type="button"
-          class="md-save-btn"
-          :disabled="saving"
-          :title="t('canvas.saveShortcut')"
-          @click="saveToDisk"
-        >
-          <Save :size="14" />
-          <span>{{ saving ? t('common.saving') : t('common.save') }}</span>
-        </button>
+        <span v-if="canSave && isDirty" class="md-dirty-hint">
+          {{ t('canvas.unsavedChanges') }}
+        </span>
+        <span v-else-if="!canSave" class="md-hint">{{ t('canvas.noPathHint') }}</span>
       </div>
     </div>
 
@@ -511,27 +538,10 @@ onUnmounted(() => {
   font-size: 10px;
 }
 
-.md-save-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border: none;
-  border-radius: 4px;
+.md-dirty-hint {
+  color: var(--accent-primary, #89b4fa);
   font-size: 11px;
-  cursor: pointer;
-  background: var(--accent-bg, #3d5a80);
-  color: #fff;
-  transition: opacity 0.15s, background 0.15s;
-}
-
-.md-save-btn:hover:not(:disabled) {
-  opacity: 0.92;
-}
-
-.md-save-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+  white-space: nowrap;
 }
 
 .md-body {

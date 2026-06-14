@@ -19,7 +19,9 @@ export const AGENT_PROMPT = [
   '',
   '**不含**：图表、普通 message、exec 输出。',
   '',
-  '描述面板**当前状态**时，先调用 `list_workbench_artifacts` 获取真值。',
+  '**磁盘同步**：每个 artifact 绑定一个 `filePath`。`rm` 或原路径不存在时，面板会自动移除对应 tab；`mv` 后旧路径 tab 也会移除，若需在新路径继续预览须重新 open 该文件。',
+  '',
+  '描述面板**当前状态**时，先调用 `list_workbench_artifacts`（会先与磁盘同步再返回真值）。',
   '',
   '用户可能从 Markdown 产出物中选中片段引用回对话。',
 ].join('\n')

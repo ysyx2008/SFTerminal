@@ -13,7 +13,7 @@ export const ASSISTANT_WORKBENCH_AGENT_TOOLS = [
 
 返回 panelVisible（面板是否展开）、artifacts（文件类产出物 tab 列表：title / renderer / filePath）、activeArtifactId。
 
-对话流中的 chart 不会出现在 artifacts 里。向用户描述「面板里现在有什么」前应优先调用本工具，勿凭推断作答。`,
+调用时会先与磁盘同步（移除 filePath 已不存在的 tab），再返回快照。chart 不会出现在 artifacts 里。向用户描述「面板里现在有什么」前应优先调用本工具，勿凭推断作答。`,
       parameters: {
         type: 'object',
         properties: {},
