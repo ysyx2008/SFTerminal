@@ -11,7 +11,8 @@ import {
   FolderOpen,
   ChevronDown,
   ExternalLink,
-  Download
+  Download,
+  Check
 } from 'lucide-vue-next'
 import type { CanvasArtifact, CanvasRendererType } from '@shared/types'
 import {
@@ -151,6 +152,20 @@ const ctxMenuFlags = computed(() => {
 function rendererIcon(type: CanvasRendererType | null) {
   if (!type) return getRendererIcon('document')
   return getRendererIcon(type)
+}
+
+function rendererTypeKey(type: CanvasRendererType | null): string {
+  return type ?? 'document'
+}
+
+function pathDirname(filePath: string | null | undefined): string {
+  if (!filePath) return ''
+  const parts = filePath.replace(/\\/g, '/').split('/')
+  if (parts.length <= 1) return ''
+  parts.pop()
+  const dir = parts.join('/')
+  if (dir.length > 40) return '…' + dir.slice(-38)
+  return dir
 }
 
 function artifactTabTitle(artifact: CanvasArtifact) {
@@ -703,8 +718,22 @@ onUnmounted(() => {
               class="artifact-picker-item"
               @click="selectArtifact(artifact.id)"
             >
-              <component :is="rendererIcon(artifact.renderer)" :size="15" class="artifact-picker-icon" />
-              <span class="artifact-picker-label">{{ artifactTabLabel(artifact.title) }}</span>
+              <span class="artifact-picker-icon-wrap" :data-type="rendererTypeKey(artifact.renderer)">
+                <component :is="rendererIcon(artifact.renderer)" :size="13" class="artifact-picker-icon" />
+              </span>
+              <span class="artifact-picker-content">
+                <span class="artifact-picker-label">{{ artifactTabLabel(artifact.title) }}</span>
+                <span v-if="artifact.filePath" class="artifact-picker-dir">{{ pathDirname(artifact.filePath) }}</span>
+              </span>
+              <Check v-if="artifact.id === activeArtifactId" :size="13" class="artifact-picker-check" />
+            </button>
+            <button
+              type="button"
+              class="artifact-picker-close-btn"
+              :title="t('canvas.closeArtifact')"
+              @click.stop="closeArtifact(artifact.id)"
+            >
+              <X :size="11" />
             </button>
           </div>
           <div v-if="pickerArtifacts.length === 0" class="artifact-picker-empty">
@@ -996,48 +1025,143 @@ onUnmounted(() => {
   align-items: center;
   gap: 2px;
   border-radius: 6px;
+  padding: 1px 2px;
 }
 
 .artifact-picker-row.active {
-  background: rgba(var(--accent-rgb, 137, 180, 250), 0.12);
+  background: rgba(var(--accent-rgb, 137, 180, 250), 0.1);
+}
+
+.artifact-picker-row.active .artifact-picker-item {
+  color: var(--accent-primary, #89b4fa);
 }
 
 .artifact-picker-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
+  gap: 9px;
+  flex: 1;
   min-width: 0;
-  min-height: 36px;
-  padding: 8px 10px;
+  min-height: 38px;
+  padding: 6px 8px;
   border: none;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
   color: var(--text-primary, #eee);
   font-size: 13px;
   line-height: 1.35;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background 0.1s;
 }
 
 .artifact-picker-item:hover {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.08));
+  background: var(--hover-bg, rgba(255, 255, 255, 0.07));
+}
+
+/* icon wrap with type-based color accent */
+.artifact-picker-icon-wrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary, #aaa);
+  transition: background 0.1s;
+}
+
+.artifact-picker-icon-wrap[data-type="markdown"] {
+  background: rgba(137, 180, 250, 0.14);
+  color: #89b4fa;
+}
+.artifact-picker-icon-wrap[data-type="html"] {
+  background: rgba(250, 179, 135, 0.14);
+  color: #fab387;
+}
+.artifact-picker-icon-wrap[data-type="spreadsheet"] {
+  background: rgba(166, 227, 161, 0.14);
+  color: #a6e3a1;
+}
+.artifact-picker-icon-wrap[data-type="document"] {
+  background: rgba(203, 166, 247, 0.14);
+  color: #cba6f7;
+}
+.artifact-picker-icon-wrap[data-type="pdf"] {
+  background: rgba(243, 139, 168, 0.14);
+  color: #f38ba8;
+}
+.artifact-picker-icon-wrap[data-type="image"] {
+  background: rgba(249, 226, 175, 0.14);
+  color: #f9e2af;
+}
+.artifact-picker-icon-wrap[data-type="browser"] {
+  background: rgba(148, 226, 213, 0.14);
+  color: #94e2d5;
 }
 
 .artifact-picker-icon {
   flex-shrink: 0;
-  opacity: 0.85;
+}
+
+.artifact-picker-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .artifact-picker-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-width: 0;
-  flex: 1;
   font-size: 13px;
   font-weight: 500;
+  line-height: 1.3;
+}
+
+.artifact-picker-dir {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+  line-height: 1.2;
+  opacity: 0.8;
+}
+
+.artifact-picker-check {
+  flex-shrink: 0;
+  color: var(--accent-primary, #89b4fa);
+  opacity: 0.85;
+}
+
+.artifact-picker-close-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary, #888);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+}
+
+.artifact-picker-row:hover .artifact-picker-close-btn {
+  opacity: 1;
+}
+
+.artifact-picker-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary, #eee);
 }
 
 .canvas-ctx-header {
