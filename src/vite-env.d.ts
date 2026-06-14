@@ -1528,6 +1528,10 @@ interface Window {
       copyFile: (src: string, dest: string) => Promise<{ success: boolean; error?: string }>
       copyDir: (src: string, dest: string) => Promise<{ success: boolean; error?: string }>
       readFile: (path: string) => Promise<{ success: boolean; data?: string; error?: string }>
+      previewArtifact: (
+        filePath: string,
+        renderer: import('@shared/types').CanvasRendererType
+      ) => Promise<{ success: boolean; data?: string; error?: string }>
       writeFile: (
         filePath: string,
         content: string

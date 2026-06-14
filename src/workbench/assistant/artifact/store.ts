@@ -6,8 +6,8 @@
  */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { CanvasArtifact, CanvasData } from '@shared/types'
-import type { AgentStep } from '@shared/types'
+import type { AgentStep, CanvasArtifact, CanvasData } from '@shared/types'
+import { resolveCanvasArtifactId } from '@shared/types/canvas'
 import {
   applyCanvasData,
   clearTabArtifacts,
@@ -154,29 +154,42 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
   function hydrateFromSteps(tabId: string, steps: ReadonlyArray<AgentStep>) {
     cancelPendingClose(tabId)
     commitTabState(tabId, hydrateArtifactsFromSteps(steps))
-    void reloadFileBackedContent(tabId)
+    void reloadArtifactContent(tabId)
   }
 
   /**
-   * 历史持久化会剥离 md/html 产出物的 content（可从磁盘重生）。
-   * 恢复后这些 artifact 的 content 为空，这里按 filePath 从磁盘异步读回，
-   * 失败（文件已删）则交给后续磁盘同步移除。
+   * 历史持久化会剥离 md/html 产出物的 content（contentFromFile）。
+   * 恢复后或 open 时 content 为空，这里按 filePath 异步读盘/重建预览。
    */
-  async function reloadFileBackedContent(tabId: string) {
-    const api = window.electronAPI?.localFs
-    if (!api?.readFile) return
-    const targets = getArtifactsForTab(tabId).filter(
-      a => a.contentFromFile && a.filePath && !a.content
-    )
+  async function reloadArtifactContent(tabId: string, artifactId?: string) {
+    const previewApi = window.electronAPI?.localFs?.previewArtifact
+    const readApi = window.electronAPI?.localFs?.readFile
+    if (!previewApi && !readApi) return
+
+    const targets = artifactId
+      ? [getArtifactByIdForTab(tabId, artifactId)].filter((a): a is CanvasArtifact => a != null)
+      : [...getArtifactsForTab(tabId)]
+
     await Promise.all(
       targets.map(async (a) => {
+        if (!a.filePath || a.content) return
         try {
-          const res = await api.readFile!(a.filePath!)
-          if (res.success && typeof res.data === 'string') {
-            updateContent(tabId, res.data, a.id)
+          if (previewApi && (a.renderer === 'document' || a.renderer === 'spreadsheet' ||
+            a.renderer === 'markdown' || a.renderer === 'html')) {
+            const res = await previewApi(a.filePath, a.renderer)
+            if (res.success && typeof res.data === 'string') {
+              updateContent(tabId, res.data, a.id)
+              return
+            }
+          }
+          if (a.contentFromFile && readApi) {
+            const res = await readApi(a.filePath)
+            if (res.success && typeof res.data === 'string') {
+              updateContent(tabId, res.data, a.id)
+            }
           }
         } catch {
-          /* 读盘失败：留空，由磁盘同步处理 */
+          /* 读盘/预览失败：留空，由磁盘同步处理 */
         }
       })
     )
@@ -210,6 +223,10 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
   function handleAgentStep(tabId: string, step: AgentStep, allSteps: readonly AgentStep[] = []) {
     if (step.canvasData) {
       applyCanvasDataForTab(tabId, enrichCanvasDataFromStep(step.canvasData, step, allSteps))
+      if (step.canvasData.action === 'open') {
+        const id = resolveCanvasArtifactId(step.canvasData)
+        void reloadArtifactContent(tabId, id)
+      }
     }
     if (shouldSyncArtifactsAfterStep(step)) {
       void syncArtifactsWithDisk(tabId)

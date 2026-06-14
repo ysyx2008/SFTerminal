@@ -172,4 +172,25 @@ describe('artifact-registry', () => {
     expect(isPanelVisible(state)).toBe(false)
     expect(isArtifactEmptyState(state)).toBe(false)
   })
+
+  it('renderer 变更时不继承 contentFromFile', () => {
+    let state = applyCanvasData(createTabArtifactState(), {
+      action: 'open',
+      renderer: 'markdown',
+      title: 'a.md',
+      filePath: '/tmp/shared',
+      content: '# md',
+      contentFromFile: true
+    })
+    state = applyCanvasData(state, {
+      action: 'open',
+      renderer: 'document',
+      title: 'a.docx',
+      filePath: '/tmp/shared',
+      content: '<p>doc</p>'
+    })
+    const art = getArtifactById(state, 'file:/tmp/shared')
+    expect(art?.renderer).toBe('document')
+    expect(art?.contentFromFile).toBeUndefined()
+  })
 })

@@ -4487,6 +4487,20 @@ ipcMain.handle('localFs:readFile', async (_event, filePath: string) => {
   }
 })
 
+// 产出物预览重建（Word/Excel/md/html 从磁盘再生 HTML/文本）
+ipcMain.handle('localFs:previewArtifact', async (_event, filePath: string, renderer: string) => {
+  try {
+    const { tryPreviewArtifactFromFile } = await import('./services/artifact-preview.service')
+    const data = await tryPreviewArtifactFromFile(filePath, renderer as import('@shared/types').CanvasRendererType)
+    if (data == null) {
+      return { success: false, error: 'Preview generation failed' }
+    }
+    return { success: true, data }
+  } catch (error) {
+    return { success: false, error: errMsg(error, 'error.readFileFailed') }
+  }
+})
+
 // 写入文本文件
 ipcMain.handle('localFs:writeFile', async (_event, filePath: string, content: string) => {
   try {

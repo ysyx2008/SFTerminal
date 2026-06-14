@@ -493,12 +493,13 @@ export class HistoryService {
    * 恢复时由前端按 `filePath` 读盘回填（见 artifact store hydrate）。
    */
   private stripRederivableCanvasContent(record: AgentRecord): void {
-    for (const step of record.steps) {
+    record.steps = record.steps.map((step) => {
       const cd = step.canvasData
-      if (cd?.contentFromFile && cd.filePath && cd.content !== undefined) {
-        step.canvasData = { ...cd, content: undefined }
+      if (!cd?.contentFromFile || !cd.filePath || cd.content === undefined) {
+        return step
       }
-    }
+      return { ...step, canvasData: { ...cd, content: undefined } }
+    })
   }
 
   /**

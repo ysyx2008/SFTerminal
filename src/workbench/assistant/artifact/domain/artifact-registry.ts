@@ -88,11 +88,14 @@ function artifactMetaFromData(
   prev?: CanvasArtifact
 ): Pick<CanvasArtifact, 'origin' | 'editable' | 'sourceStepId' | 'contentFromFile'> {
   const caps = getRendererCapabilities(data.renderer)
+  const contentFromFile =
+    data.contentFromFile ??
+    (prev && prev.renderer === data.renderer ? prev.contentFromFile : undefined)
   return {
     origin: data.origin ?? prev?.origin ?? 'agent',
     editable: caps.editable,
     sourceStepId: data.sourceStepId ?? prev?.sourceStepId,
-    contentFromFile: data.contentFromFile ?? prev?.contentFromFile
+    contentFromFile
   }
 }
 

@@ -2523,6 +2523,13 @@ const electronAPI = {
         error?: string
       }>,
 
+    previewArtifact: (filePath: string, renderer: string) =>
+      ipcRenderer.invoke('localFs:previewArtifact', filePath, renderer) as Promise<{
+        success: boolean
+        data?: string
+        error?: string
+      }>,
+
     // 写入文本文件
     writeFile: (filePath: string, content: string) =>
       ipcRenderer.invoke('localFs:writeFile', filePath, content) as Promise<{
