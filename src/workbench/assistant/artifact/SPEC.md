@@ -47,7 +47,7 @@ src/workbench/assistant/artifact/
 - `origin`: `'agent' | 'user'` — upsert 时填充，默认 agent
 - `editable`: 派生自 renderer 注册表，消除 UI 层 `renderer === 'markdown'` 硬判断
 - `sourceStepId`: 产生该产出物的 `AgentStep.id`，仅 UI 溯源，不复制 step 内容
-- `hadArtifacts`（Tab 级）：本会话是否曾出现产出物；全部关闭后保留轻量空态
+- `hadArtifacts`（Tab 级）：本会话是否曾出现过产出物（内部状态）；面板可见性仅取决于 `artifacts.length > 0`
 
 ## 渲染器注册表
 
@@ -60,16 +60,15 @@ src/workbench/assistant/artifact/
 
 ## 头部与交互
 
-- **布局**：tab 区横向滚动；右侧 **「保存」+「文件 ▾」** 文字按钮
-- **Tab 条**：全部 tab 横向滚动（隐藏滚动条）；≥2 个时在右侧固定「数量 ▾」打开完整列表（含搜索）
-- **Tab**：左键切换、中键关闭；**右键无「切换到此产出物」**
-- **列表内右键**：保持列表打开，右键菜单置于列表之上；Esc 分层关闭
+- **布局**：左侧当前文件名（≥2 个时为下拉切换）+ 右侧 **「保存」+「文件 ▾」+ 关闭当前**
+- **单预览**：同时只展示一个产出物；切换靠标题下拉（含搜索，≥4 项）
+- **下拉内右键**：保持列表打开；关闭产出物请用标题栏 × 或右键菜单（列表行内不设 ×）
 - **右键菜单**：标题/路径 → 打开组 → 保存组 → 关闭组（按 editable/dirty/文件是否存在显隐）
 - **保存**：editable 且有 path + 在盘 + dirty 才可「保存」；预览类仅「另存为」
 - **来源**：`sourceStepId` 指向 UI 可见的 `tool_call`（canvasData 多在隐藏的 `tool_result` 上，入库时按 `toolCallId` 解析）；右键「跳到生成处」滚动对话流并高亮
-- **空态**：全部 tab 关闭后会话内仍占位；用户可「关闭面板」恢复初始隐藏
-- **磁盘同步**：path 不存在则移除 tab。触发：exec 完成、切 tab、聚焦、`list_workbench_artifacts`（静默）
-- **mv**：旧 path tab 移除；新 path 须重新 open
+- **空面板**：全部产出物关闭或磁盘同步移除后，面板自动隐藏；有新产出时再展开
+- **磁盘同步**：path 不存在则移除项。触发：exec 完成、切 tab、聚焦、`list_workbench_artifacts`（静默）
+- **mv**：旧 path 项移除；新 path 须重新 open
 
 ## CanvasData.action
 

@@ -87,8 +87,8 @@ describe('artifact source & empty state', () => {
     state = removeArtifact(state, state.artifacts[0].id)
     expect(state.artifacts).toHaveLength(0)
     expect(state.hadArtifacts).toBe(true)
-    expect(isArtifactEmptyState(state)).toBe(true)
-    expect(isPanelVisible(state)).toBe(true)
+    expect(isArtifactEmptyState(state)).toBe(false)
+    expect(isPanelVisible(state)).toBe(false)
   })
 
   it('dismissEmptyPanel 重置面板', () => {

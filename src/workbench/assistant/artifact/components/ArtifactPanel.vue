@@ -2,7 +2,7 @@
 /**
  * 助手工作台产出物面板
  *
- * 独立助手右侧产出物工作区：多 tab 切换 + 按 renderer 动态加载视图。
+ * 单产出物预览；≥2 个时通过标题下拉切换。无产出物时由工作台自动隐藏面板。
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -46,7 +46,6 @@ const activeArtifact = computed(() => artifactStore.getActiveArtifact(props.tabI
 const activeArtifactId = computed(() => activeArtifact.value?.id ?? null)
 const renderer = computed(() => activeArtifact.value?.renderer ?? null)
 const filePath = computed(() => activeArtifact.value?.filePath ?? null)
-const isEmptyState = computed(() => artifactStore.isEmptyState(props.tabId))
 const isActiveEditable = computed(() =>
   activeArtifact.value ? isArtifactEditable(activeArtifact.value) : false
 )
@@ -96,7 +95,6 @@ const showFileMenu = computed(() =>
   Boolean(filePath.value) || canSaveAsActive.value || canSaveAll.value
 )
 
-const tabsScrollRef = ref<HTMLElement | null>(null)
 const fileMenuRef = ref<HTMLElement | null>(null)
 const showFileMenuDropdown = ref(false)
 const artifactPickerRef = ref<HTMLElement | null>(null)
@@ -126,9 +124,7 @@ const ctxMenu = ref<{
 /** 产出物列表仍打开时弹出的右键菜单（需保持列表可见且菜单置于列表之上） */
 const ctxMenuFromPicker = ref(false)
 
-const headerTabs = computed(() => sortArtifactsByRecent(artifacts.value))
-const showTabList = computed(() => artifacts.value.length >= 2)
-
+const showArtifactSwitcher = computed(() => artifacts.value.length >= 2)
 const allArtifactsSorted = computed(() => sortArtifactsByRecent(artifacts.value))
 const pickerArtifacts = computed(() =>
   filterArtifactsByQuery(allArtifactsSorted.value, artifactPickerQuery.value)
@@ -160,6 +156,10 @@ function artifactTabTitle(artifact: CanvasArtifact) {
   return artifactTabLabel(artifact.title)
 }
 
+function activeTitleLabel() {
+  return artifactTabLabel(activeArtifact.value?.title ?? '')
+}
+
 async function updateFileExistsMap() {
   const remaining = artifactStore.getArtifacts(props.tabId)
   fileExistsMap.value = remaining.length > 0
@@ -187,11 +187,6 @@ function closeFileMenu() {
 
 function artifactTabLabel(artifactTitle: string) {
   return artifactTitle || t('canvas.artifactUntitled')
-}
-
-function artifactPickerSubtitle(artifact: CanvasArtifact): string {
-  if (artifact.filePath) return artifact.filePath
-  return t('canvas.noPathShort')
 }
 
 function getArtifactContent(artifact: CanvasArtifact): string {
@@ -226,7 +221,6 @@ function selectArtifact(id: string) {
   }
   artifactStore.setActiveArtifact(props.tabId, id)
   closeArtifactPicker()
-  scrollActiveTabIntoView()
   void refreshFileStatus()
 }
 
@@ -236,7 +230,7 @@ function syncArtifactPickerPosition() {
   if (!anchor) return
   const rect = anchor.getBoundingClientRect()
   const width = Math.min(340, Math.max(260, window.innerWidth - 16))
-  let left = rect.right - width
+  let left = rect.left
   left = Math.max(8, Math.min(left, window.innerWidth - width - 8))
   artifactPickerPos.value = {
     top: rect.bottom + 4,
@@ -281,10 +275,6 @@ function handleCloseActive() {
   if (activeArtifactId.value) {
     artifactStore.close(props.tabId, activeArtifactId.value)
   }
-}
-
-function dismissEmptyPanel() {
-  artifactStore.dismissPanel(props.tabId)
 }
 
 function jumpToSource(stepId?: string) {
@@ -481,22 +471,6 @@ function closeCtxMenu() {
   ctxMenuFromPicker.value = false
 }
 
-function onTabAuxClick(e: MouseEvent, id: string) {
-  if (e.button === 1) {
-    e.preventDefault()
-    closeArtifact(id, e)
-  }
-}
-
-function scrollActiveTabIntoView() {
-  nextTick(() => {
-    const root = tabsScrollRef.value
-    if (!root) return
-    const activeEl = root.querySelector('.artifact-tab.active')
-    activeEl?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
-  })
-}
-
 function onDocumentMouseDown(e: MouseEvent) {
   const target = e.target as Node
   if (showFileMenuDropdown.value) {
@@ -547,10 +521,6 @@ watch(showArtifactPicker, (open) => {
   }
 })
 
-watch(activeArtifactId, () => {
-  scrollActiveTabIntoView()
-})
-
 watch(artifacts, () => {
   void refreshFileStatus()
 }, { deep: true })
@@ -582,7 +552,6 @@ onMounted(() => {
   window.addEventListener('focus', onWindowFocus)
   document.addEventListener('visibilitychange', onVisibilityChange)
   void refreshFileStatus()
-  scrollActiveTabIntoView()
 })
 
 onUnmounted(() => {
@@ -601,51 +570,29 @@ onUnmounted(() => {
       class="canvas-header"
       @contextmenu="openCtxMenu($event, { kind: 'header' })"
     >
-      <div v-if="artifacts.length > 0" class="artifact-tabs-bar">
-        <div ref="tabsScrollRef" class="artifact-tabs-scroll">
-          <div class="artifact-tabs" role="tablist">
-            <button
-              v-for="artifact in headerTabs"
-              :key="artifact.id"
-              type="button"
-              role="tab"
-              class="artifact-tab"
-              :class="{ active: artifact.id === activeArtifactId }"
-              :aria-selected="artifact.id === activeArtifactId"
-              :title="artifactTabTitle(artifact)"
-              @click="selectArtifact(artifact.id)"
-              @contextmenu="openCtxMenu($event, { kind: 'tab', artifactId: artifact.id })"
-              @auxclick="onTabAuxClick($event, artifact.id)"
-            >
-              <component :is="rendererIcon(artifact.renderer)" :size="13" class="artifact-tab-icon" />
-              <span class="artifact-tab-label">{{ artifactTabLabel(artifact.title) }}</span>
-              <span
-                class="artifact-tab-close"
-                role="button"
-                :title="t('canvas.closeArtifact')"
-                @click="closeArtifact(artifact.id, $event)"
-              >
-                <X :size="10" />
-              </span>
-            </button>
-          </div>
+      <div ref="artifactPickerRef" class="artifact-header-title">
+        <button
+          v-if="showArtifactSwitcher"
+          type="button"
+          class="artifact-title-btn"
+          :class="{ active: showArtifactPicker }"
+          :title="t('canvas.artifactPickerTitle')"
+          :aria-expanded="showArtifactPicker"
+          @click="toggleArtifactPicker"
+          @contextmenu="openCtxMenu($event, { kind: 'header' })"
+        >
+          <component :is="rendererIcon(activeArtifact?.renderer ?? null)" :size="14" class="artifact-title-icon" />
+          <span class="artifact-title-label">{{ activeTitleLabel() }}</span>
+          <ChevronDown :size="12" class="artifact-title-chevron" />
+        </button>
+        <div
+          v-else
+          class="artifact-title-static"
+          @contextmenu="openCtxMenu($event, { kind: 'header' })"
+        >
+          <component :is="rendererIcon(activeArtifact?.renderer ?? null)" :size="14" class="artifact-title-icon" />
+          <span class="artifact-title-label">{{ activeTitleLabel() }}</span>
         </div>
-        <div v-if="showTabList" ref="artifactPickerRef" class="artifact-list-wrap">
-          <button
-            type="button"
-            class="artifact-list-btn"
-            :class="{ active: showArtifactPicker }"
-            :title="t('canvas.artifactPickerTitle')"
-            :aria-expanded="showArtifactPicker"
-            @click="toggleArtifactPicker"
-          >
-            <span class="artifact-list-count">{{ artifacts.length }}</span>
-            <ChevronDown :size="12" />
-          </button>
-        </div>
-      </div>
-      <div v-else class="canvas-header-empty">
-        <span class="canvas-header-empty-label">{{ t('canvas.emptyStateTitle') }}</span>
       </div>
       <div class="canvas-header-actions">
         <button
@@ -709,10 +656,10 @@ onUnmounted(() => {
           </div>
         </div>
         <button
-          v-if="activeArtifactId || isEmptyState"
+          v-if="activeArtifactId"
           class="canvas-close"
-          @click="isEmptyState ? dismissEmptyPanel() : handleCloseActive()"
-          :title="isEmptyState ? t('canvas.dismissEmptyPanel') : t('canvas.closeArtifact')"
+          @click="handleCloseActive()"
+          :title="t('canvas.closeArtifact')"
         >
           <X :size="14" />
         </button>
@@ -756,20 +703,7 @@ onUnmounted(() => {
               @click="selectArtifact(artifact.id)"
             >
               <component :is="rendererIcon(artifact.renderer)" :size="14" class="artifact-picker-icon" />
-              <span class="artifact-picker-text">
-                <span class="artifact-picker-label">{{ artifactTabLabel(artifact.title) }}</span>
-                <span class="artifact-picker-sub" :title="artifactPickerSubtitle(artifact)">
-                  {{ artifactPickerSubtitle(artifact) }}
-                </span>
-              </span>
-            </button>
-            <button
-              type="button"
-              class="artifact-picker-close"
-              :title="t('canvas.closeArtifact')"
-              @click.stop="closeArtifact(artifact.id)"
-            >
-              <X :size="12" />
+              <span class="artifact-picker-label">{{ artifactTabLabel(artifact.title) }}</span>
             </button>
           </div>
           <div v-if="pickerArtifacts.length === 0" class="artifact-picker-empty">
@@ -951,14 +885,7 @@ onUnmounted(() => {
       </div>
     </Teleport>
 
-    <div v-if="isEmptyState" class="canvas-body canvas-empty-body">
-      <p class="canvas-empty-text">{{ t('canvas.emptyStateHint') }}</p>
-      <button type="button" class="canvas-empty-dismiss" @click="dismissEmptyPanel">
-        {{ t('canvas.dismissEmptyPanel') }}
-      </button>
-    </div>
-
-    <div v-else-if="activeArtifactId" class="canvas-body">
+    <div v-if="activeArtifactId" class="canvas-body">
       <div class="canvas-renderer-host">
         <component
           :is="activeRendererComponent"
@@ -999,152 +926,58 @@ onUnmounted(() => {
   min-height: 28px;
 }
 
-.artifact-tabs-bar {
+.artifact-header-title {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   min-width: 0;
   height: 28px;
+  padding: 0 2px;
 }
 
-.artifact-tabs-scroll {
-  flex: 1;
-  min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-}
-
-.artifact-tabs-scroll::-webkit-scrollbar {
-  display: none;
-}
-
-.artifact-tabs {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-  min-width: min-content;
-  height: 100%;
-}
-
-.artifact-tab {
-  position: relative;
+.artifact-title-btn,
+.artifact-title-static {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-width: 72px;
-  max-width: 120px;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
   height: 100%;
-  padding: 0 8px;
+  padding: 0 6px;
   border: none;
-  border-radius: 0;
+  border-radius: 4px;
   background: transparent;
-  color: var(--text-muted, #888);
+  color: var(--text-primary, #eee);
   font-size: 12px;
+  text-align: left;
+}
+
+.artifact-title-btn {
   cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.artifact-title-btn:hover,
+.artifact-title-btn.active {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.06));
+}
+
+.artifact-title-icon {
   flex-shrink: 0;
-  transition: color 0.2s ease;
-}
-
-.artifact-tab::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--accent-primary, #89b4fa), var(--accent-secondary, #74c7ec));
-  border-radius: 1px;
-  transform: translateX(-50%);
-  transition: width 0.2s ease;
-}
-
-.artifact-tab:hover {
-  color: var(--text-primary, #eee);
-}
-
-.artifact-tab.active {
-  color: var(--text-primary, #eee);
-  font-weight: 600;
-}
-
-.artifact-tab.active::after {
-  width: calc(100% - 16px);
-}
-
-.artifact-tab-icon {
-  flex-shrink: 0;
-  color: inherit;
   opacity: 0.85;
-}
-
-.artifact-tab.active .artifact-tab-icon {
   color: var(--accent-primary, #89b4fa);
 }
 
-.artifact-tab-label {
+.artifact-title-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-  flex: 1;
+  font-weight: 600;
 }
 
-.artifact-tab-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
+.artifact-title-chevron {
   flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.12s, background 0.12s;
-}
-
-.artifact-tab:hover .artifact-tab-close,
-.artifact-tab.active .artifact-tab-close {
-  opacity: 0.65;
-}
-
-.artifact-tab-close:hover {
-  opacity: 1;
-  background: var(--hover-bg, rgba(255, 255, 255, 0.1));
-}
-
-.artifact-list-wrap {
-  position: relative;
-  flex-shrink: 0;
-  display: flex;
-  align-items: stretch;
-  border-left: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
-}
-
-.artifact-list-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  height: 100%;
-  padding: 0 8px;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  color: var(--text-muted, #888);
-  font-size: 11px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 0.2s ease, background 0.12s;
-}
-
-.artifact-list-btn:hover,
-.artifact-list-btn.active {
-  color: var(--text-primary, #eee);
-  background: var(--hover-bg, rgba(255, 255, 255, 0.04));
-}
-
-.artifact-list-count {
-  min-width: 14px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
 }
 
 .artifact-picker {
@@ -1203,7 +1036,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1;
+  width: 100%;
   min-width: 0;
   padding: 6px 8px;
   border: none;
@@ -1220,32 +1053,6 @@ onUnmounted(() => {
   background: var(--hover-bg, rgba(255, 255, 255, 0.08));
 }
 
-.artifact-picker-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  margin-right: 2px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-secondary, #aaa);
-  cursor: pointer;
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.12s, background 0.12s, color 0.12s;
-}
-
-.artifact-picker-row:hover .artifact-picker-close {
-  opacity: 0.85;
-}
-
-.artifact-picker-close:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text-primary, #eee);
-}
-
 .artifact-picker-icon {
   flex-shrink: 0;
   opacity: 0.85;
@@ -1256,22 +1063,7 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-}
-
-.artifact-picker-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
   flex: 1;
-}
-
-.artifact-picker-sub {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 10px;
-  color: var(--text-secondary, #888);
 }
 
 .canvas-ctx-header {
@@ -1306,8 +1098,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-  padding-left: 4px;
-  border-left: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  padding-left: 8px;
 }
 
 .canvas-text-btn {
@@ -1479,48 +1270,6 @@ onUnmounted(() => {
   height: 1px;
   margin: 4px 0;
   background: var(--border-color, rgba(255, 255, 255, 0.1));
-}
-
-.canvas-header-empty {
-  min-width: 0;
-  padding: 0 4px;
-}
-
-.canvas-header-empty-label {
-  font-size: 12px;
-  color: var(--text-secondary, #aaa);
-}
-
-.canvas-empty-body {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 32px 24px;
-}
-
-.canvas-empty-text {
-  margin: 0;
-  max-width: 280px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text-secondary, #aaa);
-  text-align: center;
-}
-
-.canvas-empty-dismiss {
-  padding: 6px 12px;
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-primary, #eee);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.canvas-empty-dismiss:hover {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.06));
 }
 
 .canvas-unsupported {

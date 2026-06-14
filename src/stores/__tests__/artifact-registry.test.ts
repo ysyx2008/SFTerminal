@@ -70,7 +70,7 @@ describe('artifact-registry', () => {
       renderer: 'document',
       filePath: '/tmp/doc.docx'
     })
-    expect(isPanelVisible(state)).toBe(true)
+    expect(isPanelVisible(state)).toBe(false)
     expect(state.artifacts).toHaveLength(0)
   })
 
@@ -169,7 +169,7 @@ describe('artifact-registry', () => {
       }
     ])
     expect(getArtifacts(state)).toHaveLength(0)
-    expect(isPanelVisible(state)).toBe(true)
-    expect(isArtifactEmptyState(state)).toBe(true)
+    expect(isPanelVisible(state)).toBe(false)
+    expect(isArtifactEmptyState(state)).toBe(false)
   })
 })

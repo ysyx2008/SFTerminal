@@ -29,12 +29,12 @@ export function createTabArtifactState(): TabArtifactState {
 }
 
 export function isPanelVisible(state: TabArtifactState): boolean {
-  return state.visible && (state.artifacts.length > 0 || state.hadArtifacts)
+  return state.artifacts.length > 0
 }
 
-/** 产出物已全部关闭但面板仍占位 */
-export function isArtifactEmptyState(state: TabArtifactState): boolean {
-  return state.hadArtifacts && state.artifacts.length === 0 && state.visible
+/** @deprecated 产出物为空时面板自动隐藏，不再保留空态占位 */
+export function isArtifactEmptyState(_state: TabArtifactState): boolean {
+  return false
 }
 
 export function getArtifacts(state: TabArtifactState): readonly CanvasArtifact[] {
@@ -152,15 +152,6 @@ export function setActiveArtifact(state: TabArtifactState, artifactId: string): 
   return { ...state, visible: true, activeArtifactId: artifactId }
 }
 
-function emptyArtifactsState(state: TabArtifactState): TabArtifactState {
-  return {
-    visible: true,
-    activeArtifactId: null,
-    artifacts: [],
-    hadArtifacts: true
-  }
-}
-
 export function removeArtifact(state: TabArtifactState, artifactId: string): TabArtifactState {
   const idx = state.artifacts.findIndex(a => a.id === artifactId)
   if (idx < 0) return state
@@ -173,15 +164,14 @@ export function removeArtifact(state: TabArtifactState, artifactId: string): Tab
   }
 
   if (artifacts.length === 0) {
-    return emptyArtifactsState(state)
+    return { ...createTabArtifactState(), hadArtifacts: true }
   }
 
   return { ...state, visible: true, artifacts, activeArtifactId }
 }
 
-export function clearTabArtifacts(state: TabArtifactState): TabArtifactState {
-  const hadArtifacts = state.hadArtifacts || state.artifacts.length > 0
-  return { ...createTabArtifactState(), hadArtifacts }
+export function clearTabArtifacts(_state: TabArtifactState): TabArtifactState {
+  return createTabArtifactState()
 }
 
 /** 关闭空态面板，恢复为未出现产出物的初始态 */
