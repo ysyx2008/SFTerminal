@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Canvas Artifact 面板
+ * 助手工作台产出物面板
  *
  * 独立助手右侧产出物工作区：多 tab 切换 + 按 renderer 动态加载视图。
  */
@@ -21,36 +21,32 @@ import {
   saveArtifactAs,
   sortArtifactsByRecent,
   refreshFilePathExistsMap,
-  type ArtifactSaveDeps
-} from '../../canvas'
-import { getRendererComponent, getRendererIcon } from './renderer-ui-registry'
-import {
+  type ArtifactSaveDeps,
   getArtifactContextMenuFlags,
-  artifactHasFileActions
-} from '../../canvas/artifact-context-menu'
-import {
+  artifactHasFileActions,
   createArtifactSaveBridge,
-  provideArtifactSaveBridge
-} from '../../canvas/artifact-save-bridge'
-import { useCanvasStore } from '../../stores/canvas'
-import { useToast } from '../../composables/useToast'
+  provideArtifactSaveBridge,
+  useAssistantArtifactStore
+} from '../index'
+import { getRendererComponent, getRendererIcon } from '../renderers/ui-registry'
+import { useToast } from '../../../../composables/useToast'
 
 const props = defineProps<{
   tabId: string
 }>()
 
 const { t } = useI18n()
-const canvasStore = useCanvasStore()
+const artifactStore = useAssistantArtifactStore()
 const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
 const saveBridge = createArtifactSaveBridge()
 provideArtifactSaveBridge(saveBridge)
 
-const artifacts = computed(() => canvasStore.getArtifacts(props.tabId))
-const activeArtifact = computed(() => canvasStore.getActiveArtifact(props.tabId))
+const artifacts = computed(() => artifactStore.getArtifacts(props.tabId))
+const activeArtifact = computed(() => artifactStore.getActiveArtifact(props.tabId))
 const activeArtifactId = computed(() => activeArtifact.value?.id ?? null)
 const renderer = computed(() => activeArtifact.value?.renderer ?? null)
 const filePath = computed(() => activeArtifact.value?.filePath ?? null)
-const isEmptyState = computed(() => canvasStore.isEmptyState(props.tabId))
+const isEmptyState = computed(() => artifactStore.isEmptyState(props.tabId))
 const isActiveEditable = computed(() =>
   activeArtifact.value ? isArtifactEditable(activeArtifact.value) : false
 )
@@ -141,7 +137,7 @@ const showPickerSearch = computed(() => artifacts.value.length >= 4)
 
 const ctxArtifact = computed(() => {
   if (ctxMenu.value.target?.kind !== 'tab') return null
-  return canvasStore.getArtifactById(props.tabId, ctxMenu.value.target.artifactId)
+  return artifactStore.getArtifactById(props.tabId, ctxMenu.value.target.artifactId)
 })
 
 const ctxMenuFlags = computed(() => {
@@ -165,14 +161,14 @@ function artifactTabTitle(artifact: CanvasArtifact) {
 }
 
 async function updateFileExistsMap() {
-  const remaining = canvasStore.getArtifacts(props.tabId)
+  const remaining = artifactStore.getArtifacts(props.tabId)
   fileExistsMap.value = remaining.length > 0
     ? await refreshFilePathExistsMap(remaining)
     : new Map()
 }
 
 async function refreshFileStatus() {
-  await canvasStore.syncArtifactsWithDisk(props.tabId)
+  await artifactStore.syncArtifactsWithDisk(props.tabId)
   await updateFileExistsMap()
 }
 
@@ -212,7 +208,7 @@ function buildSaveDeps(): ArtifactSaveDeps | null {
     copyFile: (src, dest) => api.localFs!.copyFile(src, dest),
     selectSavePath: (defaultName) => api.sftp!.selectSavePath(defaultName),
     getContent: (artifactId) => {
-      const a = canvasStore.getArtifactById(props.tabId, artifactId)
+      const a = artifactStore.getArtifactById(props.tabId, artifactId)
       return a ? saveBridge.getContent(artifactId, a.content) : ''
     }
   }
@@ -228,7 +224,7 @@ function selectArtifact(id: string) {
   if (id !== activeArtifactId.value) {
     flushActiveDraft()
   }
-  canvasStore.setActiveArtifact(props.tabId, id)
+  artifactStore.setActiveArtifact(props.tabId, id)
   closeArtifactPicker()
   scrollActiveTabIntoView()
   void refreshFileStatus()
@@ -268,34 +264,34 @@ function closeArtifactPicker() {
 function closeArtifact(id: string, e?: Event) {
   e?.stopPropagation()
   saveBridge.flush(id)
-  canvasStore.removeArtifact(props.tabId, id)
+  artifactStore.removeArtifact(props.tabId, id)
 }
 
 function closeOthers(keepId: string) {
   flushActiveDraft()
-  canvasStore.closeOthers(props.tabId, keepId)
+  artifactStore.closeOthers(props.tabId, keepId)
 }
 
 function closeAllArtifacts() {
   flushActiveDraft()
-  canvasStore.closeAll(props.tabId)
+  artifactStore.closeAll(props.tabId)
 }
 
 function handleCloseActive() {
   if (activeArtifactId.value) {
-    canvasStore.close(props.tabId, activeArtifactId.value)
+    artifactStore.close(props.tabId, activeArtifactId.value)
   }
 }
 
 function dismissEmptyPanel() {
-  canvasStore.dismissPanel(props.tabId)
+  artifactStore.dismissPanel(props.tabId)
 }
 
 function jumpToSource(stepId?: string) {
   const id = stepId ?? activeSourceStepId.value
   if (!id) return
   closeAllMenus()
-  canvasStore.requestJumpToSource(props.tabId, id)
+  artifactStore.requestJumpToSource(props.tabId, id)
 }
 
 async function openFileFor(artifact: CanvasArtifact) {
@@ -349,7 +345,7 @@ async function runSave(artifact: CanvasArtifact) {
   try {
     const res = await saveArtifact(artifact, deps)
     if (res.ok) {
-      canvasStore.updateContent(props.tabId, getArtifactContent(artifact), artifact.id)
+      artifactStore.updateContent(props.tabId, getArtifactContent(artifact), artifact.id)
       saveBridge.clearDirty(artifact.id)
       if (artifact.filePath) {
         fileExistsMap.value = new Map(fileExistsMap.value).set(artifact.filePath, true)
@@ -374,7 +370,7 @@ async function runSaveAs(artifact: CanvasArtifact) {
   try {
     const res = await saveArtifactAs(artifact, deps)
     if (res.ok) {
-      canvasStore.relocateArtifact(
+      artifactStore.relocateArtifact(
         props.tabId,
         artifact.id,
         res.filePath,
@@ -421,7 +417,7 @@ async function runSaveAll() {
       if (a.renderer !== 'markdown' || !saveBridge.isDirty(a.id)) continue
       const res = await saveArtifact(a, deps)
       if (res.ok) {
-        canvasStore.updateContent(props.tabId, getArtifactContent(a), a.id)
+        artifactStore.updateContent(props.tabId, getArtifactContent(a), a.id)
         saveBridge.clearDirty(a.id)
         saved += 1
       } else {
@@ -560,7 +556,7 @@ watch(artifacts, () => {
 }, { deep: true })
 
 watch(
-  () => canvasStore.lastDiskSync,
+  () => artifactStore.lastDiskSync,
   (ev) => {
     if (!ev || ev.tabId !== props.tabId) return
     for (const artifact of ev.removed) {

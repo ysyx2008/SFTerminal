@@ -91,6 +91,7 @@ SailFish/
 │   │   ├── AiPanel.vue / Awaken.vue / SetupWizard.vue
 │   │   └── ...
 │   ├── stores/                  # Pinia 状态（terminal、config、agent 等）
+│   ├── workbench/               # 工作台抽象（local/ssh/assistant）；助手产出物见 assistant/artifact/
 │   ├── composables/             # 组合式函数
 │   ├── config/                  # 前端配置（AI 模板等）
 │   ├── i18n/                    # 国际化（中/英）
@@ -110,6 +111,11 @@ SailFish/
 - 前后端共用类型统一定义在 `shared/types/`（`@shared/types`），禁止重复定义
 - 后端通过 re-export 保持 import 路径兼容；仅后端使用的类型留在 `electron/services/` 中
 - 前端 `vite-env.d.ts` 通过 `type X = import('@shared/types').X` 保持全局可用
+
+### 工作台与助手产出物
+- **Workbench**（`src/workbench/`）：Tab 界面形态抽象；`local`/`ssh` 共用 `TerminalTabView`，`assistant` 用 `AssistantWorkbench`（聊天 + 产出物面板）
+- **产出物面板**（`src/workbench/assistant/artifact/`）：assistant 专属；Pinia `useAssistantArtifactStore`；Agent 协议仍用 `CanvasData`（`shared/types/canvas.ts`）
+- 旧路径 `src/canvas/`、`stores/canvas.ts` 保留 deprecated re-export
 
 ### 前后端通信
 - Electron IPC：`ipcMain.handle` ↔ `ipcRenderer.invoke`

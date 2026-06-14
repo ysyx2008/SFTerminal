@@ -5,15 +5,15 @@
  * 渲染 Word 文档的 HTML 预览（由 mammoth.js 转换）。
  */
 import { computed } from 'vue'
-import { useCanvasStore } from '../../stores/canvas'
+import { useAssistantArtifactStore } from '../store'
 
 const props = defineProps<{
   tabId: string
   artifactId: string
 }>()
 
-const canvasStore = useCanvasStore()
-const content = computed(() => canvasStore.getArtifactById(props.tabId, props.artifactId)?.content ?? '')
+const artifactStore = useAssistantArtifactStore()
+const content = computed(() => artifactStore.getArtifactById(props.tabId, props.artifactId)?.content ?? '')
 </script>
 
 <template>

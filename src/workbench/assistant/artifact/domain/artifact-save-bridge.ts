@@ -1,5 +1,5 @@
 /**
- * 活跃 Renderer 向 CanvasPanel 注册可编辑内容（如 Markdown draft）
+ * 活跃 Renderer 向 ArtifactPanel 注册可编辑内容（如 Markdown draft）
  */
 import { inject, provide, ref, type InjectionKey } from 'vue'
 

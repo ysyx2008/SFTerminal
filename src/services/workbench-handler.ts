@@ -2,7 +2,7 @@
  * 工作台反向 IPC 处理器（渲染进程）
  */
 import { useTerminalStore } from '../stores/terminal'
-import { useCanvasStore } from '../stores/canvas'
+import { useAssistantArtifactStore } from '../workbench/assistant/artifact/store'
 import { buildAssistantArtifactSnapshot } from '../workbench/assistant/snapshot'
 import { createLogger } from '../utils/logger'
 
@@ -44,9 +44,9 @@ export function initWorkbenchHandler(): void {
           if (!tab || tab.type !== 'assistant') {
             result = { ok: false, error: 'list_workbench_artifacts 仅适用于独立助手工作台 tab' }
           } else {
-            const canvasStore = useCanvasStore()
-            await canvasStore.syncArtifactsWithDisk(tabId, { notify: false })
-            const state = canvasStore.getTabState(tabId)
+            const artifactStore = useAssistantArtifactStore()
+            await artifactStore.syncArtifactsWithDisk(tabId, { notify: false })
+            const state = artifactStore.getTabState(tabId)
             result = {
               ok: true,
               data: buildAssistantArtifactSnapshot(tabId, state)

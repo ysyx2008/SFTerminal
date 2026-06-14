@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { shouldSyncArtifactsAfterStep } from '../artifact-disk-sync'
+import { shouldSyncArtifactsAfterStep } from '../domain/artifact-disk-sync'
 
 describe('shouldSyncArtifactsAfterStep', () => {
   it('exec / await_exec 的 tool_result 触发同步', () => {

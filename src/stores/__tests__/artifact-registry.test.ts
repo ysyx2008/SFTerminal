@@ -13,7 +13,7 @@ import {
   isPanelVisible,
   removeArtifact,
   setActiveArtifact,
-} from '../../canvas/artifact-registry'
+} from '../../workbench/assistant/artifact/domain/artifact-registry'
 
 describe('artifact-registry', () => {
   it('open 同 filePath 时 upsert 而非重复 tab', () => {

@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import type { CanvasArtifact } from '@shared/types'
-import { findArtifactIdsWithMissingFiles } from '../artifact-file-status'
+import { findArtifactIdsWithMissingFiles } from '../domain/artifact-file-status'
 
 function artifact(id: string, filePath?: string): CanvasArtifact {
   return {

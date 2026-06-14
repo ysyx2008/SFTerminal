@@ -1,7 +1,7 @@
 /**
- * Canvas 渲染器 UI 注册表（Vue 组件 + 图标）
+ * 产出物渲染器 UI 注册表（Vue 组件 + 图标）
  *
- * 能力元数据来自 `src/canvas/renderers/registry.ts`。
+ * 能力元数据来自 `renderers/registry.ts`。
  */
 import { defineAsyncComponent, type Component } from 'vue'
 import { FileText, Table2, FileCode, Presentation, Image, Globe, FileType } from 'lucide-vue-next'
@@ -9,17 +9,17 @@ import type { CanvasRendererType } from '@shared/types'
 import {
   getRendererCapabilities,
   type RendererCapabilities
-} from '../../canvas/renderers/registry'
+} from './registry'
 
 export interface RendererUiDescriptor extends RendererCapabilities {
   component: Component | null
   icon: Component
 }
 
-const DocumentRenderer = defineAsyncComponent(() => import('./DocumentRenderer.vue'))
-const SpreadsheetRenderer = defineAsyncComponent(() => import('./SpreadsheetRenderer.vue'))
-const MarkdownRenderer = defineAsyncComponent(() => import('./MarkdownRenderer.vue'))
-const SlidesRenderer = defineAsyncComponent(() => import('./SlidesRenderer.vue'))
+const DocumentRenderer = defineAsyncComponent(() => import('../components/DocumentRenderer.vue'))
+const SpreadsheetRenderer = defineAsyncComponent(() => import('../components/SpreadsheetRenderer.vue'))
+const MarkdownRenderer = defineAsyncComponent(() => import('../components/MarkdownRenderer.vue'))
+const SlidesRenderer = defineAsyncComponent(() => import('../components/SlidesRenderer.vue'))
 
 const UI_REGISTRY: Record<CanvasRendererType, Omit<RendererUiDescriptor, keyof RendererCapabilities>> = {
   document: { component: DocumentRenderer, icon: FileText },

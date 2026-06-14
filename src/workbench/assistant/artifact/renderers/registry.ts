@@ -1,8 +1,8 @@
 /**
- * Canvas 渲染器能力注册表（纯函数，无 Vue 依赖）
+ * 产出物渲染器能力注册表（纯函数，无 Vue 依赖）
  *
  * 新增 renderer 类型时在此声明 editable / saveStrategy / defaultExt；
- * UI 组件映射见 `src/components/Canvas/renderer-ui-registry.ts`。
+ * UI 组件映射见 `renderers/ui-registry.ts`。
  */
 import type { CanvasArtifact, CanvasRendererType } from '@shared/types'
 

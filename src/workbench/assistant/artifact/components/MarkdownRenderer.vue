@@ -5,12 +5,12 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Eye, MessageSquareQuote, SquarePen } from 'lucide-vue-next'
-import { useCanvasStore } from '../../stores/canvas'
-import { useArtifactSaveBridge } from '../../canvas/artifact-save-bridge'
-import { useComposerQuoteStore } from '../../stores/composer-quote'
-import { useTerminalStore } from '../../stores/terminal'
-import { useMarkdown } from '../../composables/useMarkdown'
-import { useToast } from '../../composables/useToast'
+import { useAssistantArtifactStore } from '../store'
+import { useArtifactSaveBridge } from '../domain/artifact-save-bridge'
+import { useComposerQuoteStore } from '../../../../stores/composer-quote'
+import { useTerminalStore } from '../../../../stores/terminal'
+import { useMarkdown } from '../../../../composables/useMarkdown'
+import { useToast } from '../../../../composables/useToast'
 
 const props = defineProps<{
   tabId: string
@@ -18,7 +18,7 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
-const canvasStore = useCanvasStore()
+const artifactStore = useAssistantArtifactStore()
 const saveBridge = useArtifactSaveBridge()
 const composerQuoteStore = useComposerQuoteStore()
 const terminalStore = useTerminalStore()
@@ -50,7 +50,7 @@ const lastPreviewQuoteMeta = ref<{
   endLine: number | null
 } | null>(null)
 
-const artifact = computed(() => canvasStore.getArtifactById(props.tabId, props.artifactId))
+const artifact = computed(() => artifactStore.getArtifactById(props.tabId, props.artifactId))
 const filePath = computed(() => artifact.value?.filePath ?? null)
 const canSave = computed(() => typeof filePath.value === 'string' && filePath.value.length > 0)
 const isDirty = computed(() => saveBridge?.isDirty(props.artifactId) ?? false)
@@ -68,7 +68,7 @@ watch(
 function flushDraftToStore() {
   if (!artifact.value) return
   if (draft.value !== artifact.value.content) {
-    canvasStore.updateContent(props.tabId, draft.value, props.artifactId)
+    artifactStore.updateContent(props.tabId, draft.value, props.artifactId)
   }
 }
 
@@ -111,9 +111,9 @@ type QuoteMeta = {
 function isMarkdownPanelActive(): boolean {
   const root = rootRef.value
   if (!root?.isConnected) return false
-  if (!canvasStore.isVisible(props.tabId)) return false
-  if (canvasStore.getActiveArtifact(props.tabId)?.id !== props.artifactId) return false
-  if (canvasStore.getActiveArtifact(props.tabId)?.renderer !== 'markdown') return false
+  if (!artifactStore.isVisible(props.tabId)) return false
+  if (artifactStore.getActiveArtifact(props.tabId)?.id !== props.artifactId) return false
+  if (artifactStore.getActiveArtifact(props.tabId)?.renderer !== 'markdown') return false
   if (terminalStore.activeTabId !== props.tabId) return false
   const active = document.activeElement
   if (active && root.contains(active)) return true
@@ -256,7 +256,7 @@ async function saveToDisk() {
   try {
     const res = await api.writeFile(path, draft.value)
     if (res.success) {
-      canvasStore.updateContent(props.tabId, draft.value, props.artifactId)
+      artifactStore.updateContent(props.tabId, draft.value, props.artifactId)
       saveBridge?.clearDirty(props.artifactId)
       toastSuccess(t('canvas.savedToDisk'))
     } else {

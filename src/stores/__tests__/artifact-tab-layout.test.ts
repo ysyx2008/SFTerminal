@@ -8,7 +8,7 @@ import {
   filterArtifactsByQuery,
   pickVisibleArtifactTabs,
   sortArtifactsByRecent
-} from '../../canvas/artifact-tab-layout'
+} from '../../workbench/assistant/artifact/domain/artifact-tab-layout'
 
 function artifact(id: string, title: string, updatedAt: number): CanvasArtifact {
   return {

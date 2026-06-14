@@ -64,7 +64,7 @@
 |------|------|---------|--------|--------|
 | `local` | `local/` | `TerminalTabView` | 终端区 | AI 侧栏 |
 | `ssh` | `ssh/` | `TerminalTabView`（同 local） | 终端区 | AI 侧栏 |
-| `assistant` | `assistant/` | `AssistantWorkbench` | 聊天 | Artifact（见 `src/canvas/SPEC.md`） |
+| `assistant` | `assistant/` | `AssistantWorkbench` | 聊天 | Artifact（见 `assistant/artifact/SPEC.md`） |
 
 ## 目录约定
 
@@ -84,6 +84,13 @@ src/workbench/
     prompt.ts
     agent-tools.ts
     snapshot.ts
+    artifact/                  # 产出物面板（原 src/canvas + components/Canvas）
+      SPEC.md
+      index.ts
+      store.ts
+      domain/
+      renderers/
+      components/
   __tests__/
 ```
 
@@ -100,16 +107,16 @@ Vue 渲染器暂仍在 `src/components/`（`TerminalTabView`、`AssistantWorkben
 ## Agent 工作台工具
 
 - 定义：`assistant/agent-tools.ts`（assistant 模式由 `getAgentTools` 注册）
-- 执行：`electron/services/agent/tools/workbench.ts` → `workbench-bridge` → `src/services/workbench-handler.ts` 读 `canvasStore` 真值
+- 执行：`electron/services/agent/tools/workbench.ts` → `workbench-bridge` → `src/services/workbench-handler.ts` 读 `artifactStore` 真值
 - 目前：`list_workbench_artifacts` — 查询前先 `syncArtifactsWithDisk`（静默），再返回快照（`shared/types/workbench.ts`）
 
 ## 依赖与边界
 
-- 渲染器组件依赖各自的面板组件（`AiPanel` / `CanvasPanel` / `Terminal` 等）与相关 store（`canvasStore` → `src/canvas/artifact-registry.ts`）。
+- 渲染器组件依赖各自的面板组件（`AiPanel` / `ArtifactPanel` / `Terminal` 等）与相关 store（`useAssistantArtifactStore` → `artifact/domain/artifact-registry.ts`）。
 - **不参与**工作台抽象、保持独立的：`SplitPane` 树（终端分屏，`stores/split-pane-tree.ts`）、后端 Agent mode、`tab.type` 的后端语义。
 
 ## 尚未做（刻意留白）
 
 - 区域部件（panel）词汇为宿主内置，**不做可扩展/插件化**——按需再说。
 - 声明式 `regions` 尚未由通用壳自动渲染（内置工作台都走 renderer / 手动组合 WorkbenchShell）；待出现「纯声明即可」的工作台时再实现。
-- 区域显隐 / 尺寸状态仍分散（终端在 TerminalTabView 局部 ref，助手在 canvasStore）。后续可归一到 workbench store，届时终端命令式 API 可退化为 store action。
+- 区域显隐 / 尺寸状态仍分散（终端在 TerminalTabView 局部 ref，助手在 artifactStore）。后续可归一到 workbench store，届时终端命令式 API 可退化为 store action。

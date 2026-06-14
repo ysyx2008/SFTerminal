@@ -4,7 +4,7 @@
  */
 import { computed, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useCanvasStore } from '../../stores/canvas'
+import { useAssistantArtifactStore } from '../store'
 
 const props = defineProps<{
   tabId: string
@@ -12,8 +12,8 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
-const canvasStore = useCanvasStore()
-const content = computed(() => canvasStore.getArtifactById(props.tabId, props.artifactId)?.content ?? '')
+const artifactStore = useAssistantArtifactStore()
+const content = computed(() => artifactStore.getArtifactById(props.tabId, props.artifactId)?.content ?? '')
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 
 watch(content, () => {

@@ -4,7 +4,7 @@ import {
   getArtifacts,
   isPanelVisible,
   type TabArtifactState
-} from '../../canvas/artifact-registry'
+} from './artifact/domain/artifact-registry'
 
 export function buildAssistantArtifactSnapshot(
   tabId: string,

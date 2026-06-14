@@ -7,7 +7,7 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted, Ref } from 'vue
 import { useI18n } from 'vue-i18n'
 import { useTerminalStore } from '../stores/terminal'
 import { useConfigStore } from '../stores/config'
-import { useCanvasStore } from '../stores/canvas'
+import { useAssistantArtifactStore } from '../workbench/assistant/artifact/store'
 import type { ExecutionMode, AttachmentInfo, AgentRecord, AgentHistorySummary } from '@shared/types'
 import type { AgentStep, AgentState } from '../stores/terminal'
 import type { CacheSnapshot, DynamicScrollerExposed } from 'vue-virtual-scroller'
@@ -87,7 +87,7 @@ export function useAgentMode(
   const { t } = useI18n()
   const terminalStore = useTerminalStore()
   const configStore = useConfigStore()
-  const canvasStore = useCanvasStore()
+  const artifactStore = useAssistantArtifactStore()
   const tts = useTts()
 
   watch(
@@ -1224,7 +1224,7 @@ export function useAgentMode(
       // 独立助手模式下，驱动 Canvas 预览面板
       if (isStandaloneAssistant.value) {
         const steps = agentState.value?.steps ?? []
-        canvasStore.handleAgentStep(tabId, data.step, steps)
+        artifactStore.handleAgentStep(tabId, data.step, steps)
       }
 
       // TTS: 流式 message / final_result 喂给语音合成（远程会话不播报）
@@ -1311,7 +1311,7 @@ export function useAgentMode(
       terminalStore.finalizeAgentRunState(currentTabId.value)
       // 通知 Canvas 任务完成
       if (isStandaloneAssistant.value) {
-        canvasStore.handleAgentComplete(currentTabId.value)
+        artifactStore.handleAgentComplete(currentTabId.value)
       }
       // 队列化的 proactive 回复优先：作为新任务启动（consumeProactiveContext 自动注入 Watch 上下文）
       if (queuedProactiveReply.value) {
@@ -1634,7 +1634,7 @@ export function useAgentMode(
   onUnmounted(() => {
     cleanupAgentListeners()
     uninstallContentResizeObserver()
-    canvasStore.cleanup(currentTabId.value)
+    artifactStore.cleanup(currentTabId.value)
   })
 
   return {

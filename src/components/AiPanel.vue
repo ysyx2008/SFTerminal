@@ -12,8 +12,8 @@ import type { DynamicScrollerExposed } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
-import { useCanvasStore } from '../stores/canvas'
-import { resolveSourceStepIdById } from '../canvas/artifact-source'
+import { useAssistantArtifactStore } from '../workbench/assistant/artifact/store'
+import { resolveSourceStepIdById } from '../workbench/assistant/artifact/domain/artifact-source'
 import { useComposerQuoteStore } from '../stores/composer-quote'
 import AgentPlanView from './AgentPlanView.vue'
 import AiComposer from './AiComposer.vue'
@@ -72,7 +72,7 @@ const { t } = useI18n()
 // Stores
 const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
-const canvasStore = useCanvasStore()
+const artifactStore = useAssistantArtifactStore()
 const composerQuoteStore = useComposerQuoteStore()
 const showSettings = inject<() => void>('showSettings')
 
@@ -1738,11 +1738,11 @@ async function scrollToAgentStep(stepId: string) {
 }
 
 watch(
-  () => canvasStore.sourceJumpRequest,
+  () => artifactStore.sourceJumpRequest,
   (req) => {
     if (!req || req.tabId !== props.tabId) return
     void scrollToAgentStep(req.stepId)
-    canvasStore.clearSourceJumpRequest()
+    artifactStore.clearSourceJumpRequest()
   }
 )
 

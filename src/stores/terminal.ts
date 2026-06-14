@@ -7,7 +7,7 @@ import type { JumpHostConfig } from './config'
 import { useConfigStore } from './config'
 import type { TerminalScreenService, ScreenContent } from '../services/terminal-screen.service'
 import type { TerminalSnapshotManager, TerminalSnapshot, TerminalDiff } from '../services/terminal-snapshot.service'
-import { useCanvasStore } from './canvas'
+import { useAssistantArtifactStore } from '../workbench/assistant/artifact/store'
 import { createLogger } from '../utils/logger'
 import {
   findActivePaneInLayout,
@@ -2089,7 +2089,7 @@ export const useTerminalStore = defineStore('terminal', () => {
 
     // 重放 steps 中的 canvasData，恢复 Artifact 产出物面板（仅助手 tab）
     if (tab.type === 'assistant') {
-      useCanvasStore().hydrateFromSteps(tabId, steps)
+      useAssistantArtifactStore().hydrateFromSteps(tabId, steps)
     }
   }
 

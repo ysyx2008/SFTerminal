@@ -3,7 +3,7 @@ import type { CanvasArtifact } from '@shared/types'
 import {
   artifactHasFileActions,
   getArtifactContextMenuFlags
-} from '../artifact-context-menu'
+} from '../domain/artifact-context-menu'
 
 function artifact(overrides: Partial<CanvasArtifact>): CanvasArtifact {
   return {

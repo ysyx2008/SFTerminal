@@ -1,12 +1,12 @@
 /**
- * Canvas Artifact 注册表（纯函数，无 Vue/Pinia 依赖）
+ * 助手工作台产出物注册表（纯函数，无 Vue/Pinia 依赖）
  *
- * 每个助手 tab 对应一份 TabArtifactState；所有变更返回新 state（immutable）。
+ * 每个 assistant tab 对应一份 TabArtifactState；所有变更返回新 state（immutable）。
  */
 import type { CanvasArtifact, CanvasArtifactTarget, CanvasData } from '@shared/types'
 import { resolveCanvasArtifactId } from '@shared/types/canvas'
 import { enrichCanvasDataFromStep, type SourceStepLike } from './artifact-source'
-import { getRendererCapabilities } from './renderers/registry'
+import { getRendererCapabilities } from '../renderers/registry'
 
 export type { SourceStepLike } from './artifact-source'
 export { enrichCanvasDataFromStep, resolveSourceStepIdById, resolveVisibleSourceStepId } from './artifact-source'

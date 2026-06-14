@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildAssistantArtifactSnapshot } from '../assistant/snapshot'
-import { applyCanvasData, createTabArtifactState } from '../../canvas/artifact-registry'
+import { applyCanvasData, createTabArtifactState } from '../assistant/artifact/domain/artifact-registry'
 
 describe('buildAssistantArtifactSnapshot', () => {
   it('无 artifact 时 panelVisible 为 false', () => {

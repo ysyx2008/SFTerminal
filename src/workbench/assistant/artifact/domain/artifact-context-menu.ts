@@ -3,7 +3,7 @@
  */
 import type { CanvasArtifact } from '@shared/types'
 import { canSaveAsArtifact } from './artifact-actions'
-import { isArtifactEditable } from './renderers/registry'
+import { isArtifactEditable } from '../renderers/registry'
 
 export interface ArtifactContextMenuFlags {
   showSave: boolean

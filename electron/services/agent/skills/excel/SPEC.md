@@ -7,7 +7,7 @@
 ## Canvas 产出物
 
 - `excel_open` / `excel_modify`（有预览 HTML 时 update）/ `excel_merge_template` / **`excel_from_markdown`** 成功时推送 `canvasData`（`renderer: 'spreadsheet'`）到独立助手产出物面板。
-- `excel_save` / `excel_close` 不推送（面板已由 open/modify/from_markdown 注册；close 不删 tab，见 `src/canvas/SPEC.md`）。
+- `excel_save` / `excel_close` 不推送（面板已由 open/modify/from_markdown 注册；close 不删 tab，见 `src/workbench/assistant/artifact/SPEC.md`）。
 
 ## 写前校验（`expected_originals`）
 

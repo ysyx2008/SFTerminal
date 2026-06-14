@@ -11,7 +11,7 @@ import {
   saveAllArtifacts,
   saveArtifact,
   saveArtifactAs
-} from '../artifact-actions'
+} from '../domain/artifact-actions'
 
 function artifact(
   overrides: Partial<CanvasArtifact> & Pick<CanvasArtifact, 'id' | 'renderer'>

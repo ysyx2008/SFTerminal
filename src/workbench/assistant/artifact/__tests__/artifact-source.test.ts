@@ -10,12 +10,12 @@ import {
   isArtifactEmptyState,
   isPanelVisible,
   removeArtifact
-} from '../artifact-registry'
+} from '../domain/artifact-registry'
 import {
   enrichCanvasDataFromStep,
   resolveSourceStepIdById,
   resolveVisibleSourceStepId
-} from '../artifact-source'
+} from '../domain/artifact-source'
 
 describe('artifact source & empty state', () => {
   it('open 时填充 origin / editable / sourceStepId', () => {

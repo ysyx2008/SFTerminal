@@ -6,7 +6,7 @@ import {
   getArtifactSaveStrategy,
   isArtifactEditable,
   saveExtensionForRenderer
-} from './renderers/registry'
+} from '../renderers/registry'
 
 export function artifactBasename(filePath: string): string {
   const normalized = filePath.replace(/\\/g, '/')
