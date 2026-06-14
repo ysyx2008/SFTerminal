@@ -25,6 +25,8 @@ const artifact = computed(() => artifactStore.getArtifactById(props.tabId, props
 const content = computed(() => artifact.value?.content ?? '')
 const filePath = computed(() => artifact.value?.filePath ?? null)
 const canOpenExternal = computed(() => Boolean(filePath.value))
+/** PPT 预览：iframe 内容是可滚动的幻灯片卡片列表，需要视觉留白；普通 HTML 产出物填满即可 */
+const isPptPreview = computed(() => filePath.value?.toLowerCase().endsWith('.pptx') ?? false)
 
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 /** 改变 key 强制重建 iframe → 重新加载页面（重跑动画/脚本） */
@@ -78,7 +80,7 @@ async function openExternal() {
         <ExternalLink :size="14" />
       </button>
     </div>
-    <div class="html-body">
+    <div class="html-body" :class="{ 'html-body--ppt': isPptPreview }">
       <iframe
         v-if="content"
         :key="reloadKey"
@@ -101,15 +103,15 @@ async function openExternal() {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #1a1a1e;
+  background: #16161a;
 }
 
 .html-toolbar {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   flex-shrink: 0;
-  padding: 4px 8px;
+  padding: 5px 10px;
   background: var(--bg-tertiary, var(--bg-secondary, #252525));
   border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
 }
@@ -118,19 +120,19 @@ async function openExternal() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border: none;
-  border-radius: 4px;
+  border-radius: 5px;
   background: transparent;
-  color: var(--text-secondary, #aaa);
+  color: var(--text-secondary, #888);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 
 .html-tool-btn:hover {
   background: var(--hover-bg, rgba(255, 255, 255, 0.08));
-  color: var(--text-primary, #eee);
+  color: var(--text-primary, #ddd);
 }
 
 .html-body {
@@ -138,13 +140,24 @@ async function openExternal() {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  background: #16161a;
+  overflow: hidden;
+}
+
+/* PPT 预览：iframe 周围加留白，让幻灯片卡片不贴边；滚动依然在 iframe 内部进行 */
+.html-body--ppt {
+  padding: 20px;
+}
+
+.html-body--ppt .html-frame {
+  border-radius: 8px;
 }
 
 .html-frame {
   flex: 1;
   width: 100%;
   border: none;
-  background: #fff;
+  background: #16161a;
 }
 
 .html-empty {

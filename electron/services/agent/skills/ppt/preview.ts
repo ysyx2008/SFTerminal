@@ -97,20 +97,34 @@ export function buildPreviewDocument(
 <style>
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
-  body{background:#1a1a1e;padding:20px 16px 48px;font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;}
-  .hint{text-align:center;color:#888;font-size:12px;margin:0 0 16px;}
-  .deck{max-width:920px;margin:0 auto;}
+  body{
+    background:#16161a;
+    padding:28px 28px 60px;
+    font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;
+  }
+  .hint{
+    display:flex;align-items:center;justify-content:center;gap:6px;
+    margin:0 0 24px;
+  }
+  .hint-badge{
+    display:inline-flex;align-items:center;gap:5px;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+    color:#999;font-size:11.5px;padding:4px 12px;border-radius:20px;
+    letter-spacing:.02em;
+  }
+  .hint-dot{width:4px;height:4px;border-radius:50%;background:#555;flex-shrink:0;}
+  .deck{max-width:900px;margin:0 auto;}
   .slide-card{
     position:relative;width:100%;aspect-ratio:${spec.px} / ${spec.pxH};
-    margin:0 auto 20px;border-radius:10px;overflow:hidden;
-    box-shadow:0 8px 32px rgba(0,0,0,.45);background:#fff;
-    container-type:inline-size;
+    margin:0 auto 28px;border-radius:12px;overflow:hidden;
+    box-shadow:0 2px 8px rgba(0,0,0,.4),0 12px 40px rgba(0,0,0,.5);
+    background:#fff;container-type:inline-size;
   }
   .slide-no{
-    position:absolute;top:10px;right:14px;z-index:9999;
-    font-size:12px;color:#fff;opacity:.65;
-    background:rgba(0,0,0,.35);padding:2px 8px;border-radius:10px;
-    pointer-events:none;
+    position:absolute;top:10px;right:12px;z-index:9999;
+    font-size:11px;color:rgba(255,255,255,.8);
+    background:rgba(0,0,0,.4);padding:2px 8px;border-radius:10px;
+    pointer-events:none;letter-spacing:.03em;
   }
   /* 固定画幅的舞台，等比缩放到卡片宽度；幻灯片内的 position:absolute 以此为基准 */
   .stage{
@@ -126,7 +140,15 @@ ${css || ''}
 </style>
 </head>
 <body>
-<p class="hint">共 ${slides.length} 页 · 向下滚动预览 · 最终以 PowerPoint 打开导出文件为准</p>
+<div class="hint">
+  <span class="hint-badge">
+    <span>共 ${slides.length} 页</span>
+    <span class="hint-dot"></span>
+    <span>向下滚动预览</span>
+    <span class="hint-dot"></span>
+    <span>最终以 PowerPoint 打开为准</span>
+  </span>
+</div>
 <div class="deck">${cards}</div>
 </body>
 </html>`
