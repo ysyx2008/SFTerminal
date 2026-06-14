@@ -112,6 +112,8 @@ onUnmounted(() => activeCleanup?.())
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  /* AiPanel system-info-bar 与 ArtifactPanel canvas-header 共用，保证分屏顶栏底边对齐 */
+  --workbench-panel-header-height: 38px;
 }
 
 /* 左侧辅助区：反转主轴，让 DOM 顺序 anchor→divider→region 在视觉上变成 region→divider→anchor */

@@ -67,8 +67,7 @@ src/workbench/assistant/artifact/
 - **保存**：editable 且有 path + 在盘 + dirty 才可「保存」；预览类仅「另存为」
 - **来源**：`sourceStepId` 指向 UI 可见的 `tool_call`（canvasData 多在隐藏的 `tool_result` 上，入库时按 `toolCallId` 解析）；右键「跳到生成处」滚动对话流并高亮
 - **空面板**：全部产出物关闭或磁盘同步移除后，面板自动隐藏；有新产出时再展开
-- **磁盘同步**：path 不存在则移除项。触发：exec 完成、切 tab、聚焦、`list_workbench_artifacts`（静默）
-- **mv**：旧 path 项移除；新 path 须重新 open
+- **磁盘同步**：path 不存在则移除项（含 `exec`/`await_exec` 后复检）。**不会**扫描目录或推断 `mv` 新路径；Shell 改名后须 Agent 用带 canvasData 的工具重新 open
 
 ## CanvasData.action
 

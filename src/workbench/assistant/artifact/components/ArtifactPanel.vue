@@ -583,7 +583,7 @@ onUnmounted(() => {
         >
           <component :is="rendererIcon(activeArtifact?.renderer ?? null)" :size="14" class="artifact-title-icon" />
           <span class="artifact-title-label">{{ activeTitleLabel() }}</span>
-          <ChevronDown :size="12" class="artifact-title-chevron" />
+          <ChevronDown :size="13" class="artifact-title-chevron" />
         </button>
         <div
           v-else
@@ -702,7 +702,7 @@ onUnmounted(() => {
               class="artifact-picker-item"
               @click="selectArtifact(artifact.id)"
             >
-              <component :is="rendererIcon(artifact.renderer)" :size="14" class="artifact-picker-icon" />
+              <component :is="rendererIcon(artifact.renderer)" :size="15" class="artifact-picker-icon" />
               <span class="artifact-picker-label">{{ artifactTabLabel(artifact.title) }}</span>
             </button>
           </div>
@@ -914,24 +914,26 @@ onUnmounted(() => {
 }
 
 .canvas-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 6px 4px 4px;
-  background: var(--bg-secondary, #252525);
+  gap: 12px;
+  box-sizing: border-box;
+  height: var(--workbench-panel-header-height, 38px);
+  min-height: var(--workbench-panel-header-height, 38px);
+  padding: 0 12px;
+  background: var(--bg-tertiary, var(--bg-secondary, #252525));
   border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
   flex-shrink: 0;
   user-select: none;
-  min-height: 28px;
+  container-type: inline-size;
+  container-name: artifact-header;
 }
 
 .artifact-header-title {
   display: flex;
   align-items: center;
   min-width: 0;
-  height: 28px;
-  padding: 0 2px;
+  flex: 1;
 }
 
 .artifact-title-btn,
@@ -947,7 +949,7 @@ onUnmounted(() => {
   border-radius: 4px;
   background: transparent;
   color: var(--text-primary, #eee);
-  font-size: 12px;
+  font-size: 13px;
   text-align: left;
 }
 
@@ -972,6 +974,7 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -981,7 +984,7 @@ onUnmounted(() => {
 }
 
 .artifact-picker {
-  padding: 4px;
+  padding: 6px;
   background: var(--bg-secondary, #252525);
   border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
   border-radius: 6px;
@@ -996,19 +999,19 @@ onUnmounted(() => {
 }
 
 .artifact-picker-search {
-  padding: 2px 2px 4px;
+  padding: 2px 2px 6px;
 }
 
 .artifact-picker-input {
   width: 100%;
   box-sizing: border-box;
-  height: 26px;
-  padding: 0 8px;
+  height: 30px;
+  padding: 0 10px;
   border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
   border-radius: 4px;
   background: var(--bg-primary, #1e1e1e);
   color: var(--text-primary, #eee);
-  font-size: 12px;
+  font-size: 13px;
   outline: none;
 }
 
@@ -1025,25 +1028,27 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 2px;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 .artifact-picker-row.active {
-  background: rgba(var(--accent-rgb, 137, 180, 250), 0.1);
+  background: rgba(var(--accent-rgb, 137, 180, 250), 0.12);
 }
 
 .artifact-picker-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
   min-width: 0;
-  padding: 6px 8px;
+  min-height: 36px;
+  padding: 8px 10px;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-primary, #eee);
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.35;
   text-align: left;
   cursor: pointer;
   transition: background 0.12s;
@@ -1064,6 +1069,8 @@ onUnmounted(() => {
   white-space: nowrap;
   min-width: 0;
   flex: 1;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .canvas-ctx-header {
@@ -1098,7 +1105,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-  padding-left: 8px;
+  margin-left: auto;
 }
 
 .canvas-text-btn {
@@ -1185,6 +1192,7 @@ onUnmounted(() => {
   justify-content: center;
   width: 22px;
   height: 22px;
+  padding: 4px;
   border: none;
   border-radius: 4px;
   background: transparent;
@@ -1194,7 +1202,7 @@ onUnmounted(() => {
 }
 
 .canvas-close:hover {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.1));
+  background: var(--bg-surface, var(--hover-bg, rgba(255, 255, 255, 0.1)));
   color: var(--text-primary, #fff);
 }
 

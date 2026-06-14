@@ -3061,7 +3061,10 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 6px 12px;
+  box-sizing: border-box;
+  height: var(--workbench-panel-header-height, 38px);
+  min-height: var(--workbench-panel-header-height, 38px);
+  padding: 0 12px;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
   font-size: 11px;
@@ -3070,6 +3073,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   container-name: infobar;
   white-space: nowrap;
   position: relative;
+  flex-shrink: 0;
 }
 
 /* ai-header-actions 固定在最右侧（无论 system-info-left 是否渲染） */

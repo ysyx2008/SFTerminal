@@ -19,7 +19,7 @@ export const AGENT_PROMPT = [
   '',
   '**不含**：图表、普通 message、exec 输出。',
   '',
-  '**磁盘同步**：每个 artifact 绑定一个 `filePath`。`rm` 或原路径不存在时，面板会自动移除对应项；全部移除后面板隐藏。`mv` 后旧路径项也会移除，若需在新路径继续预览须重新 open 该文件。',
+  '**磁盘同步**：每个 artifact 绑定一个 `filePath`。`rm` 或原路径不存在时，面板会自动移除对应项；全部移除后面板隐藏。`mv` / Shell 改名**不会**自动在新路径注册——旧路径项会移除，若需继续预览须用 `write_text_file` 等会推送预览的工具重新 open。',
   '',
   '描述面板**当前状态**时，先调用 `list_workbench_artifacts`（会先与磁盘同步再返回真值）。',
   '',

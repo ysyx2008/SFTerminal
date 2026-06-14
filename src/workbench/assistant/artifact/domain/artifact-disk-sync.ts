@@ -1,7 +1,8 @@
 /**
  * Agent 步骤完成后触发产出物磁盘同步的规则
  *
- * 不解析 exec 命令，仅在 shell 工具落地后用 localFs.exists 复检。
+ * 不解析 exec 命令，仅在 shell 工具落地后用 localFs.exists 复检已注册 path；
+ * 移除磁盘上已不存在的锚点，不会自动发现 mv/rename 后的新路径。
  */
 import type { AgentStep } from '@shared/types'
 
