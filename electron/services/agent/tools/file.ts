@@ -34,7 +34,9 @@ function previewCanvasDataForPath(filePath: string): CanvasData | undefined {
       renderer,
       title: path.basename(filePath),
       content: fs.readFileSync(filePath, 'utf-8'),
-      filePath
+      filePath,
+      // content 即磁盘文件内容：历史持久化时剥离，恢复时按 filePath 读回（避免大文件撑爆历史）
+      contentFromFile: true
     }
   } catch {
     return undefined

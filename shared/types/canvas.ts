@@ -54,6 +54,12 @@ export interface CanvasArtifact {
   filePath?: string | null
   /** 谁产生的（排序 / 来源区） */
   origin: CanvasArtifactOrigin
+  /**
+   * content 是否等于 `filePath` 磁盘文件的内容（如 md/html）。
+   * 为真时历史持久化会剥离 content（可从磁盘重生），恢复时按 filePath 读回，
+   * 避免大文件（如内联数据的 HTML dashboard）撑爆历史记录与 IPC。
+   */
+  contentFromFile?: boolean
   /** 是否可在面板内编辑回写（派生自 renderer，upsert 时填充） */
   editable: boolean
   /** 产生该产出物的 AgentStep.id（仅 UI 溯源，不复制 step 内容） */
@@ -77,6 +83,8 @@ export interface CanvasData {
   content?: string
   filePath?: string
   artifactId?: string
+  /** content 等于 filePath 磁盘文件内容（md/html）；持久化时剥离、恢复时读盘回填 */
+  contentFromFile?: boolean
   /** open 时是否切换到该 tab，默认 true */
   activate?: boolean
   origin?: CanvasArtifactOrigin

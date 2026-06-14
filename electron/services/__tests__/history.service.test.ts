@@ -382,3 +382,53 @@ describe('HistoryService - searchAgentRecordsAdvanced', () => {
     expect(res.hasMore).toBe(true)
   })
 })
+
+describe('HistoryService - Canvas content 外化', () => {
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-history-test-'))
+  })
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('contentFromFile 的 canvasData 存盘时剥离 content，可重生类不变', () => {
+    const svc = new HistoryService()
+    const t = new Date('2026-03-18T10:00:00').getTime()
+    const record = makeRecord({
+      id: 'canvas-1', timestamp: t, duration: 1, userTask: '生成 dashboard',
+      steps: [
+        {
+          id: 's1', type: 'tool_result', content: 'ok', timestamp: t,
+          // md/html：content 即磁盘文件内容 → 应被剥离
+          canvasData: { action: 'open', renderer: 'html', title: 'a.html', filePath: '/tmp/a.html', content: '<html>巨大内容</html>', contentFromFile: true },
+        },
+        {
+          id: 's2', type: 'tool_result', content: 'ok', timestamp: t,
+          // Word 预览：content 是派生 HTML（非文件本体）→ 应保留
+          canvasData: { action: 'open', renderer: 'document', title: 'b.docx', filePath: '/tmp/b.docx', content: '<p>预览</p>' },
+        },
+      ],
+    })
+
+    svc.saveAgentRecord(record)
+    const loaded = svc.getAgentRecordById('canvas-1')!
+    expect(loaded.steps[0].canvasData?.content).toBeUndefined()
+    expect(loaded.steps[0].canvasData?.filePath).toBe('/tmp/a.html')
+    expect(loaded.steps[0].canvasData?.contentFromFile).toBe(true)
+    expect(loaded.steps[1].canvasData?.content).toBe('<p>预览</p>')
+  })
+
+  it('不改动调用方持有的实时 canvasData 对象（克隆后删）', () => {
+    const svc = new HistoryService()
+    const t = new Date('2026-03-18T10:00:00').getTime()
+    const liveCanvas = { action: 'open' as const, renderer: 'markdown' as const, title: 'x.md', filePath: '/tmp/x.md', content: '# 实时内容', contentFromFile: true }
+    const record = makeRecord({
+      id: 'canvas-2', timestamp: t, duration: 1, userTask: 't',
+      steps: [{ id: 's1', type: 'tool_result', content: 'ok', timestamp: t, canvasData: liveCanvas }],
+    })
+
+    svc.saveAgentRecord(record)
+    // 实时会话仍持有完整 content
+    expect(liveCanvas.content).toBe('# 实时内容')
+  })
+})

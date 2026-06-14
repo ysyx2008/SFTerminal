@@ -86,12 +86,13 @@ function activateArtifact(
 function artifactMetaFromData(
   data: CanvasData,
   prev?: CanvasArtifact
-): Pick<CanvasArtifact, 'origin' | 'editable' | 'sourceStepId'> {
+): Pick<CanvasArtifact, 'origin' | 'editable' | 'sourceStepId' | 'contentFromFile'> {
   const caps = getRendererCapabilities(data.renderer)
   return {
     origin: data.origin ?? prev?.origin ?? 'agent',
     editable: caps.editable,
-    sourceStepId: data.sourceStepId ?? prev?.sourceStepId
+    sourceStepId: data.sourceStepId ?? prev?.sourceStepId,
+    contentFromFile: data.contentFromFile ?? prev?.contentFromFile
   }
 }
 

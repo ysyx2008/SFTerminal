@@ -101,6 +101,7 @@ src/workbench/assistant/artifact/
 
 - `AgentStepRecord.canvasData` 随会话持久化；`restoreAgentHistory` 调用 `hydrateFromSteps` 重放 steps 中的 canvasData，并从 `step.id` 回填 `sourceStepId`。
 - 升级前已保存的历史无 canvasData 字段，Artifact 面板无法恢复（需重新生成产出物）。
+- **content 外化**：`contentFromFile` 为真的产出物（md/html，content 即磁盘文件内容）持久化时由 `history.service.stripRederivableCanvasContent` 剥离 content（克隆后删，不动实时会话的共享对象），避免大文件（内联数据的 HTML dashboard）撑爆历史记录与 IPC。恢复后 `hydrateFromSteps` 调用 `reloadFileBackedContent` 按 `filePath` 异步读盘回填；文件已删则留空、交磁盘同步移除。Word/Excel 的 content 是派生预览（非文件本体），不带此标记、照常内联。
 
 ## Agent 认知
 

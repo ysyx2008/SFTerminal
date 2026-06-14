@@ -154,6 +154,32 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
   function hydrateFromSteps(tabId: string, steps: ReadonlyArray<AgentStep>) {
     cancelPendingClose(tabId)
     commitTabState(tabId, hydrateArtifactsFromSteps(steps))
+    void reloadFileBackedContent(tabId)
+  }
+
+  /**
+   * 历史持久化会剥离 md/html 产出物的 content（可从磁盘重生）。
+   * 恢复后这些 artifact 的 content 为空，这里按 filePath 从磁盘异步读回，
+   * 失败（文件已删）则交给后续磁盘同步移除。
+   */
+  async function reloadFileBackedContent(tabId: string) {
+    const api = window.electronAPI?.localFs
+    if (!api?.readFile) return
+    const targets = getArtifactsForTab(tabId).filter(
+      a => a.contentFromFile && a.filePath && !a.content
+    )
+    await Promise.all(
+      targets.map(async (a) => {
+        try {
+          const res = await api.readFile!(a.filePath!)
+          if (res.success && typeof res.data === 'string') {
+            updateContent(tabId, res.data, a.id)
+          }
+        } catch {
+          /* 读盘失败：留空，由磁盘同步处理 */
+        }
+      })
+    )
   }
 
   /** 用 localFs.exists 移除磁盘上已不存在的 filePath 锚点 */
