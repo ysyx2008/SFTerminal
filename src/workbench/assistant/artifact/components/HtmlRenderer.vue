@@ -28,6 +28,20 @@ const canOpenExternal = computed(() => Boolean(filePath.value))
 /** PPT 预览：iframe 内容是可滚动的幻灯片卡片列表，需要视觉留白；普通 HTML 产出物填满即可 */
 const isPptPreview = computed(() => filePath.value?.toLowerCase().endsWith('.pptx') ?? false)
 
+/**
+ * PPT 预览时，把宿主页面的 --bg-primary 注入 iframe <head>，
+ * 让 iframe body 背景与外层容器完全一致，消除色差。
+ */
+const iframeContent = computed(() => {
+  if (!isPptPreview.value || !content.value) return content.value
+  const bgPrimary = getComputedStyle(document.documentElement)
+    .getPropertyValue('--bg-primary').trim() || '#1a1a1e'
+  const override = `<style>html,body{background:${bgPrimary}!important;}</style>`
+  return content.value.includes('</head>')
+    ? content.value.replace('</head>', `${override}</head>`)
+    : override + content.value
+})
+
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 /** 改变 key 强制重建 iframe → 重新加载页面（重跑动画/脚本） */
 const reloadKey = ref(0)
@@ -86,7 +100,7 @@ async function openExternal() {
         :key="reloadKey"
         ref="iframeRef"
         class="html-frame"
-        :srcdoc="content"
+        :srcdoc="iframeContent"
         :title="t('canvas.htmlPreview')"
         sandbox="allow-scripts allow-popups allow-forms allow-modals"
         referrerpolicy="no-referrer"
@@ -103,7 +117,7 @@ async function openExternal() {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #16161a;
+  background: var(--bg-primary, #1a1a1e);
 }
 
 .html-toolbar {
@@ -118,7 +132,7 @@ async function openExternal() {
 
 /* PPT 预览：工具栏与主体背景对齐，消除色差；外部打开由 ArtifactPanel 头部负责 */
 .html-toolbar--ppt {
-  background: #16161a;
+  background: var(--bg-primary, #1a1a1e);
   border-bottom-color: rgba(255, 255, 255, 0.05);
 }
 
@@ -146,7 +160,7 @@ async function openExternal() {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #16161a;
+  background: var(--bg-primary, #1a1a1e);
   overflow: hidden;
 }
 
@@ -163,7 +177,7 @@ async function openExternal() {
   flex: 1;
   width: 100%;
   border: none;
-  background: #16161a;
+  background: var(--bg-primary, #1a1a1e);
 }
 
 .html-empty {

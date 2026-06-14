@@ -103,16 +103,12 @@ export function buildPreviewDocument(
     font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;
   }
   .hint{
-    display:flex;align-items:center;justify-content:center;gap:6px;
+    text-align:center;
     margin:0 0 24px;
+    color:#555;
+    font-size:11px;
+    letter-spacing:.03em;
   }
-  .hint-badge{
-    display:inline-flex;align-items:center;gap:5px;
-    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
-    color:#999;font-size:11.5px;padding:4px 12px;border-radius:20px;
-    letter-spacing:.02em;
-  }
-  .hint-dot{width:4px;height:4px;border-radius:50%;background:#555;flex-shrink:0;}
   .deck{max-width:900px;margin:0 auto;}
   .slide-card{
     position:relative;width:100%;aspect-ratio:${spec.px} / ${spec.pxH};
@@ -140,15 +136,7 @@ ${css || ''}
 </style>
 </head>
 <body>
-<div class="hint">
-  <span class="hint-badge">
-    <span>共 ${slides.length} 页</span>
-    <span class="hint-dot"></span>
-    <span>向下滚动预览</span>
-    <span class="hint-dot"></span>
-    <span>最终以 PowerPoint 打开为准</span>
-  </span>
-</div>
+<p class="hint">共 ${slides.length} 页 &middot; 向下滚动预览 &middot; 最终以 PowerPoint 打开为准</p>
 <div class="deck">${cards}</div>
 </body>
 </html>`
