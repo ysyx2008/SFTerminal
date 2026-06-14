@@ -1223,7 +1223,8 @@ export function useAgentMode(
 
       // 独立助手模式下，驱动 Canvas 预览面板
       if (isStandaloneAssistant.value) {
-        canvasStore.handleAgentStep(tabId, data.step)
+        const steps = agentState.value?.steps ?? []
+        canvasStore.handleAgentStep(tabId, data.step, steps)
       }
 
       // TTS: 流式 message / final_result 喂给语音合成（远程会话不播报）

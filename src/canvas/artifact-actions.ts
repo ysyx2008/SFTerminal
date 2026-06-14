@@ -1,7 +1,12 @@
 /**
  * Artifact 面板保存 / 路径相关纯函数与 IPC 封装
  */
-import type { CanvasArtifact, CanvasRendererType } from '@shared/types'
+import type { CanvasArtifact } from '@shared/types'
+import {
+  getArtifactSaveStrategy,
+  isArtifactEditable,
+  saveExtensionForRenderer
+} from './renderers/registry'
 
 export function artifactBasename(filePath: string): string {
   const normalized = filePath.replace(/\\/g, '/')
@@ -9,20 +14,7 @@ export function artifactBasename(filePath: string): string {
   return idx >= 0 ? normalized.slice(idx + 1) : normalized
 }
 
-export function saveExtensionForRenderer(renderer: CanvasRendererType): string {
-  switch (renderer) {
-    case 'markdown':
-      return '.md'
-    case 'document':
-      return '.docx'
-    case 'spreadsheet':
-      return '.xlsx'
-    case 'html':
-      return '.html'
-    default:
-      return ''
-  }
-}
+export { saveExtensionForRenderer }
 
 export function defaultSaveFileName(
   artifact: Pick<CanvasArtifact, 'title' | 'filePath' | 'renderer'>
@@ -34,14 +26,14 @@ export function defaultSaveFileName(
   return base
 }
 
-/** 覆盖原路径（仅 Markdown 且已有 filePath） */
+/** 覆盖原路径（可编辑且已有 filePath） */
 export function canSaveArtifact(artifact: CanvasArtifact): boolean {
-  return artifact.renderer === 'markdown' && Boolean(artifact.filePath)
+  return isArtifactEditable(artifact) && Boolean(artifact.filePath)
 }
 
-/** 另存为：Markdown 任意；其它类型需已有磁盘文件 */
+/** 另存为：可编辑类型任意；其它类型需已有磁盘文件 */
 export function canSaveAsArtifact(artifact: CanvasArtifact): boolean {
-  if (artifact.renderer === 'markdown') return true
+  if (isArtifactEditable(artifact)) return true
   return Boolean(artifact.filePath)
 }
 
@@ -62,11 +54,12 @@ export async function saveArtifactToPath(
   targetPath: string,
   deps: Pick<ArtifactSaveDeps, 'writeFile' | 'copyFile'>
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (artifact.renderer === 'markdown') {
+  const strategy = getArtifactSaveStrategy(artifact)
+  if (strategy === 'write') {
     const res = await deps.writeFile(targetPath, content)
     return res.success ? { ok: true } : { ok: false, error: res.error || 'write failed' }
   }
-  if (artifact.filePath) {
+  if (strategy === 'copy' && artifact.filePath) {
     const res = await deps.copyFile(artifact.filePath, targetPath)
     return res.success ? { ok: true } : { ok: false, error: res.error || 'copy failed' }
   }
@@ -108,7 +101,7 @@ export interface SaveAllResult {
   errors: string[]
 }
 
-/** 将全部可保存 artifact 写入各自 filePath（Markdown 覆盖；其它类型跳过无 path） */
+/** 将全部可保存 artifact 写入各自 filePath（可编辑类型覆盖；其它类型跳过无 path） */
 export async function saveAllArtifacts(
   artifacts: readonly CanvasArtifact[],
   deps: ArtifactSaveDeps

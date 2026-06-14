@@ -19,6 +19,8 @@ function artifact(
   return {
     title: 'test',
     content: 'body',
+    origin: 'agent',
+    editable: overrides.renderer === 'markdown',
     createdAt: 1,
     updatedAt: 1,
     ...overrides

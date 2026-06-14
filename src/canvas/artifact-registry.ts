@@ -5,23 +5,36 @@
  */
 import type { CanvasArtifact, CanvasArtifactTarget, CanvasData } from '@shared/types'
 import { resolveCanvasArtifactId } from '@shared/types/canvas'
+import { enrichCanvasDataFromStep, type SourceStepLike } from './artifact-source'
+import { getRendererCapabilities } from './renderers/registry'
+
+export type { SourceStepLike } from './artifact-source'
+export { enrichCanvasDataFromStep, resolveSourceStepIdById, resolveVisibleSourceStepId } from './artifact-source'
 
 export interface TabArtifactState {
   visible: boolean
   activeArtifactId: string | null
   artifacts: CanvasArtifact[]
+  /** 本会话是否曾出现过产出物（用于清空后的轻量空态） */
+  hadArtifacts: boolean
 }
 
 export function createTabArtifactState(): TabArtifactState {
   return {
     visible: false,
     activeArtifactId: null,
-    artifacts: []
+    artifacts: [],
+    hadArtifacts: false
   }
 }
 
 export function isPanelVisible(state: TabArtifactState): boolean {
-  return state.visible && state.artifacts.length > 0
+  return state.visible && (state.artifacts.length > 0 || state.hadArtifacts)
+}
+
+/** 产出物已全部关闭但面板仍占位 */
+export function isArtifactEmptyState(state: TabArtifactState): boolean {
+  return state.hadArtifacts && state.artifacts.length === 0 && state.visible
 }
 
 export function getArtifacts(state: TabArtifactState): readonly CanvasArtifact[] {
@@ -67,7 +80,19 @@ function activateArtifact(
   } else if (!activeArtifactId) {
     activeArtifactId = artifactId
   }
-  return { ...state, visible: true, activeArtifactId }
+  return { ...state, visible: true, hadArtifacts: true, activeArtifactId }
+}
+
+function artifactMetaFromData(
+  data: CanvasData,
+  prev?: CanvasArtifact
+): Pick<CanvasArtifact, 'origin' | 'editable' | 'sourceStepId'> {
+  const caps = getRendererCapabilities(data.renderer)
+  return {
+    origin: data.origin ?? prev?.origin ?? 'agent',
+    editable: caps.editable,
+    sourceStepId: data.sourceStepId ?? prev?.sourceStepId
+  }
 }
 
 function upsertArtifact(state: TabArtifactState, data: CanvasData): TabArtifactState {
@@ -85,6 +110,7 @@ function upsertArtifact(state: TabArtifactState, data: CanvasData): TabArtifactS
       title: data.title ?? prev.title,
       content: data.content ?? prev.content,
       filePath: data.filePath !== undefined ? data.filePath : prev.filePath,
+      ...artifactMetaFromData(data, prev),
       updatedAt: now
     }
   } else {
@@ -96,13 +122,14 @@ function upsertArtifact(state: TabArtifactState, data: CanvasData): TabArtifactS
         title: data.title ?? '',
         content: data.content ?? '',
         filePath: data.filePath ?? null,
+        ...artifactMetaFromData(data),
         createdAt: now,
         updatedAt: now
       }
     ]
   }
 
-  const next = { ...state, artifacts }
+  const next = { ...state, artifacts, hadArtifacts: true }
   return activateArtifact(next, id, data.activate !== false)
 }
 
@@ -125,6 +152,15 @@ export function setActiveArtifact(state: TabArtifactState, artifactId: string): 
   return { ...state, visible: true, activeArtifactId: artifactId }
 }
 
+function emptyArtifactsState(state: TabArtifactState): TabArtifactState {
+  return {
+    visible: true,
+    activeArtifactId: null,
+    artifacts: [],
+    hadArtifacts: true
+  }
+}
+
 export function removeArtifact(state: TabArtifactState, artifactId: string): TabArtifactState {
   const idx = state.artifacts.findIndex(a => a.id === artifactId)
   if (idx < 0) return state
@@ -137,13 +173,19 @@ export function removeArtifact(state: TabArtifactState, artifactId: string): Tab
   }
 
   if (artifacts.length === 0) {
-    return createTabArtifactState()
+    return emptyArtifactsState(state)
   }
 
   return { ...state, visible: true, artifacts, activeArtifactId }
 }
 
-export function clearTabArtifacts(_state: TabArtifactState): TabArtifactState {
+export function clearTabArtifacts(state: TabArtifactState): TabArtifactState {
+  const hadArtifacts = state.hadArtifacts || state.artifacts.length > 0
+  return { ...createTabArtifactState(), hadArtifacts }
+}
+
+/** 关闭空态面板，恢复为未出现产出物的初始态 */
+export function dismissEmptyPanel(_state: TabArtifactState): TabArtifactState {
   return createTabArtifactState()
 }
 
@@ -179,12 +221,16 @@ export function updateArtifactContentById(
 
 /** 按 steps 顺序重放 canvasData，用于从历史对话恢复 Artifact 面板 */
 export function hydrateArtifactsFromSteps(
-  steps: ReadonlyArray<{ canvasData?: CanvasData }>
+  steps: ReadonlyArray<SourceStepLike & { canvasData?: CanvasData }>
 ): TabArtifactState {
   let state = createTabArtifactState()
   for (const step of steps) {
     if (step.canvasData) {
-      state = applyCanvasData(state, step.canvasData)
+      const data =
+        step.canvasData.action === 'open' && step.id && !step.canvasData.sourceStepId
+          ? enrichCanvasDataFromStep(step.canvasData, step, steps)
+          : step.canvasData
+      state = applyCanvasData(state, data)
     }
   }
   return state

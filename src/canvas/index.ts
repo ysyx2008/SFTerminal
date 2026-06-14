@@ -2,11 +2,13 @@ export {
   applyCanvasData,
   clearTabArtifacts,
   createTabArtifactState,
+  dismissEmptyPanel,
   findArtifactForData,
   getActiveArtifact,
   getArtifactById,
   getArtifacts,
   hydrateArtifactsFromSteps,
+  isArtifactEmptyState,
   isPanelVisible,
   removeArtifact,
   setActiveArtifact,
@@ -62,3 +64,19 @@ export {
   type ArtifactSaveBridge,
   type ArtifactSaveHandler
 } from './artifact-save-bridge'
+
+export {
+  enrichCanvasDataFromStep,
+  resolveSourceStepIdById,
+  resolveVisibleSourceStepId,
+  type SourceStepLike
+} from './artifact-source'
+
+export {
+  getRendererCapabilities,
+  getArtifactSaveStrategy,
+  isArtifactEditable,
+  isRendererEditable,
+  type RendererCapabilities,
+  type RendererSaveStrategy
+} from './renderers/registry'

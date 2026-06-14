@@ -11,6 +11,8 @@ function artifact(overrides: Partial<CanvasArtifact>): CanvasArtifact {
     renderer: 'markdown',
     title: 'a',
     content: '',
+    origin: 'agent',
+    editable: overrides.renderer === 'markdown' || overrides.editable === true,
     createdAt: 1,
     updatedAt: 1,
     ...overrides
@@ -27,6 +29,15 @@ describe('artifact-context-menu', () => {
     expect(flags.showSave).toBe(false)
     expect(flags.showSaveAs).toBe(true)
     expect(flags.showOpen).toBe(true)
+  })
+
+  it('有 sourceStepId 时显示跳到生成处', () => {
+    const flags = getArtifactContextMenuFlags(
+      artifact({ sourceStepId: 'step-1' }),
+      1,
+      { isDirty: false, fileExists: true }
+    )
+    expect(flags.showJumpToSource).toBe(true)
   })
 
   it('文件不存在时不显示打开', () => {

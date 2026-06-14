@@ -94,7 +94,8 @@ Vue 渲染器暂仍在 `src/components/`（`TerminalTabView`、`AssistantWorkben
 - 文案：`<kind>/prompt.ts`（目前仅 `assistant/`）
 - 路由：`resolve-workbench-agent-prompt.ts` → `workbenchPrompt`
 - 注入：桌面 App 内**非 remote** 的 assistant tab → `AgentContext.workbenchPrompt`；`PromptBuilder` 原样插入 system prompt（同 session cache 路径沿用首条 system，仍含该段）
-- 文案须与真实 UI 一致：产出物面板**按需出现**（首个文件类 artifact 才展开）；chart 仅在对话流展示，不注册 artifact；无空态展开控件
+- 文案须与真实 UI 一致：产出物面板**按需出现**（首个文件类 artifact 才展开）；全部关闭后会话内保留轻量空态，用户可手动关闭面板；chart 仅在对话流展示，不注册 artifact
+- **来源**：artifact 携带 `sourceStepId`，右键菜单「跳到生成处」滚动对话流
 
 ## Agent 工作台工具
 

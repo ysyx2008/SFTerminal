@@ -260,8 +260,6 @@ export default {
     saveNoChanges: 'No unsaved changes',
     saveNoPath: 'No file path yet — use Save As',
     saveFileDeleted: 'Original file was deleted — use Save As',
-    autoRemovedOne: '"{name}" was deleted from disk and removed from the artifact panel',
-    autoRemovedMany: 'Removed {count} artifacts whose files were deleted from disk',
     fileMenu: 'File',
     noPathShort: 'No file path',
     unsavedChanges: '● Unsaved',
@@ -276,6 +274,11 @@ export default {
     openMenu: 'More open options',
     showInFolder: 'Show in folder',
     showInFolderFailed: 'Failed to show in folder',
+    emptyStateTitle: 'Artifacts',
+    emptyStateHint: 'All artifacts from this session are closed. The panel hides until new artifacts appear.',
+    dismissEmptyPanel: 'Close panel',
+    jumpToSource: 'Jump to source',
+    unsupportedRenderer: 'Preview for this type is not available yet',
   },
 
   // MCP Status

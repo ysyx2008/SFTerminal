@@ -8,10 +8,6 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   X,
-  FileText,
-  Table2,
-  FileCode,
-  Presentation,
   FolderOpen,
   ChevronDown,
   Folder
@@ -20,13 +16,14 @@ import type { CanvasArtifact, CanvasRendererType } from '@shared/types'
 import {
   canSaveAsArtifact,
   filterArtifactsByQuery,
-  pickVisibleArtifactTabs,
+  isArtifactEditable,
   saveArtifact,
   saveArtifactAs,
   sortArtifactsByRecent,
   refreshFilePathExistsMap,
   type ArtifactSaveDeps
 } from '../../canvas'
+import { getRendererComponent, getRendererIcon } from './renderer-ui-registry'
 import {
   getArtifactContextMenuFlags,
   artifactHasFileActions
@@ -37,10 +34,6 @@ import {
 } from '../../canvas/artifact-save-bridge'
 import { useCanvasStore } from '../../stores/canvas'
 import { useToast } from '../../composables/useToast'
-import DocumentRenderer from './DocumentRenderer.vue'
-import SpreadsheetRenderer from './SpreadsheetRenderer.vue'
-import MarkdownRenderer from './MarkdownRenderer.vue'
-import SlidesRenderer from './SlidesRenderer.vue'
 
 const props = defineProps<{
   tabId: string
@@ -57,7 +50,14 @@ const activeArtifact = computed(() => canvasStore.getActiveArtifact(props.tabId)
 const activeArtifactId = computed(() => activeArtifact.value?.id ?? null)
 const renderer = computed(() => activeArtifact.value?.renderer ?? null)
 const filePath = computed(() => activeArtifact.value?.filePath ?? null)
-const isMarkdownActive = computed(() => renderer.value === 'markdown')
+const isEmptyState = computed(() => canvasStore.isEmptyState(props.tabId))
+const isActiveEditable = computed(() =>
+  activeArtifact.value ? isArtifactEditable(activeArtifact.value) : false
+)
+const activeRendererComponent = computed(() =>
+  renderer.value ? getRendererComponent(renderer.value) : null
+)
+const activeSourceStepId = computed(() => activeArtifact.value?.sourceStepId ?? null)
 const fileExistsMap = ref<Map<string, boolean>>(new Map())
 
 function pathExistsOnDisk(path: string | null | undefined): boolean {
@@ -75,22 +75,22 @@ const canSaveAsActive = computed(() =>
 )
 const canSaveAll = computed(() =>
   artifacts.value.some(a =>
-    a.renderer === 'markdown' &&
+    isArtifactEditable(a) &&
     Boolean(a.filePath) &&
     fileExistsMap.value.get(a.filePath!) !== false &&
     saveBridge.isDirty(a.id)
   )
 )
-/** 保存：仅 Markdown、磁盘文件仍在、且有未保存编辑 */
+/** 保存：可编辑、磁盘文件仍在、且有未保存编辑 */
 const canSaveActive = computed(() =>
-  isMarkdownActive.value &&
+  isActiveEditable.value &&
   Boolean(filePath.value) &&
   pathExistsOnDisk(filePath.value) &&
   activeDirty.value
 )
 
 const saveActiveTitle = computed(() => {
-  if (!isMarkdownActive.value) return ''
+  if (!isActiveEditable.value) return ''
   if (!filePath.value) return t('canvas.saveNoPath')
   if (!activeDirty.value) return t('canvas.saveNoChanges')
   return t('canvas.saveShortcut')
@@ -104,8 +104,11 @@ const tabsScrollRef = ref<HTMLElement | null>(null)
 const fileMenuRef = ref<HTMLElement | null>(null)
 const showFileMenuDropdown = ref(false)
 const artifactPickerRef = ref<HTMLElement | null>(null)
+const artifactPickerDropdownRef = ref<HTMLElement | null>(null)
+const ctxMenuRef = ref<HTMLElement | null>(null)
 const showArtifactPicker = ref(false)
 const artifactPickerQuery = ref('')
+const artifactPickerPos = ref({ top: 0, left: 0, width: 300 })
 const saving = ref(false)
 
 type ContextTarget =
@@ -124,18 +127,17 @@ const ctxMenu = ref<{
   y: 0,
   target: null
 })
+/** 产出物列表仍打开时弹出的右键菜单（需保持列表可见且菜单置于列表之上） */
+const ctxMenuFromPicker = ref(false)
 
-const tabLayout = computed(() =>
-  pickVisibleArtifactTabs(artifacts.value, activeArtifactId.value)
-)
-const visibleTabs = computed(() => tabLayout.value.visible)
-const overflowCount = computed(() => tabLayout.value.overflowCount)
+const headerTabs = computed(() => sortArtifactsByRecent(artifacts.value))
+const showTabList = computed(() => artifacts.value.length >= 2)
 
 const allArtifactsSorted = computed(() => sortArtifactsByRecent(artifacts.value))
 const pickerArtifacts = computed(() =>
   filterArtifactsByQuery(allArtifactsSorted.value, artifactPickerQuery.value)
 )
-const showPickerSearch = computed(() => artifacts.value.length >= 6)
+const showPickerSearch = computed(() => artifacts.value.length >= 4)
 
 const ctxArtifact = computed(() => {
   if (ctxMenu.value.target?.kind !== 'tab') return null
@@ -154,25 +156,12 @@ const ctxMenuFlags = computed(() => {
 })
 
 function rendererIcon(type: CanvasRendererType | null) {
-  switch (type) {
-    case 'document': return FileText
-    case 'spreadsheet': return Table2
-    case 'markdown': return FileCode
-    case 'html': return Presentation
-    default: return FileText
-  }
+  if (!type) return getRendererIcon('document')
+  return getRendererIcon(type)
 }
 
 function artifactTabTitle(artifact: CanvasArtifact) {
   return artifactTabLabel(artifact.title)
-}
-
-function showRemovedToast(removed: readonly CanvasArtifact[]) {
-  if (removed.length === 1) {
-    toastInfo(t('canvas.autoRemovedOne', { name: artifactTabLabel(removed[0].title) }))
-  } else if (removed.length > 1) {
-    toastInfo(t('canvas.autoRemovedMany', { count: removed.length }))
-  }
 }
 
 async function updateFileExistsMap() {
@@ -188,7 +177,12 @@ async function refreshFileStatus() {
 }
 
 function toggleFileMenu() {
-  showFileMenuDropdown.value = !showFileMenuDropdown.value
+  const next = !showFileMenuDropdown.value
+  showFileMenuDropdown.value = next
+  if (next) {
+    closeArtifactPicker()
+    closeCtxMenu()
+  }
 }
 
 function closeFileMenu() {
@@ -240,9 +234,28 @@ function selectArtifact(id: string) {
   void refreshFileStatus()
 }
 
+function syncArtifactPickerPosition() {
+  if (!showArtifactPicker.value) return
+  const anchor = artifactPickerRef.value
+  if (!anchor) return
+  const rect = anchor.getBoundingClientRect()
+  const width = Math.min(340, Math.max(260, window.innerWidth - 16))
+  let left = rect.right - width
+  left = Math.max(8, Math.min(left, window.innerWidth - width - 8))
+  artifactPickerPos.value = {
+    top: rect.bottom + 4,
+    left,
+    width
+  }
+}
+
 function toggleArtifactPicker() {
   showArtifactPicker.value = !showArtifactPicker.value
-  if (!showArtifactPicker.value) {
+  if (showArtifactPicker.value) {
+    closeFileMenu()
+    closeCtxMenu()
+    void nextTick(syncArtifactPickerPosition)
+  } else {
     artifactPickerQuery.value = ''
   }
 }
@@ -274,8 +287,18 @@ function handleCloseActive() {
   }
 }
 
-async function openFileFor(artifact: CanvasArtifact) {
+function dismissEmptyPanel() {
+  canvasStore.dismissPanel(props.tabId)
+}
+
+function jumpToSource(stepId?: string) {
+  const id = stepId ?? activeSourceStepId.value
+  if (!id) return
   closeAllMenus()
+  canvasStore.requestJumpToSource(props.tabId, id)
+}
+
+async function openFileFor(artifact: CanvasArtifact) {
   const path = artifact.filePath
   if (!path) return
   const api = window.electronAPI?.localFs
@@ -296,7 +319,6 @@ async function openFile() {
 }
 
 async function showInFolderFor(artifact: CanvasArtifact) {
-  closeAllMenus()
   const path = artifact.filePath
   if (!path) return
   const api = window.electronAPI?.localFs
@@ -420,16 +442,31 @@ async function runSaveAll() {
   }
 }
 
-function closeAllMenus() {
+function closeOverlayMenus(options?: { keepArtifactPicker?: boolean }) {
   closeFileMenu()
-  closeArtifactPicker()
   closeCtxMenu()
+  if (!options?.keepArtifactPicker) {
+    closeArtifactPicker()
+  }
 }
 
-function openCtxMenu(e: MouseEvent, target: ContextTarget) {
+function closeAllMenus() {
+  closeOverlayMenus()
+}
+
+function openCtxMenu(
+  e: MouseEvent,
+  target: ContextTarget,
+  options?: { keepArtifactPicker?: boolean }
+) {
   e.preventDefault()
   e.stopPropagation()
-  closeAllMenus()
+  closeFileMenu()
+  closeCtxMenu()
+  if (!options?.keepArtifactPicker) {
+    closeArtifactPicker()
+  }
+  ctxMenuFromPicker.value = options?.keepArtifactPicker ?? false
   ctxMenu.value = {
     show: true,
     x: e.clientX,
@@ -438,9 +475,14 @@ function openCtxMenu(e: MouseEvent, target: ContextTarget) {
   }
 }
 
+function openArtifactPickerCtxMenu(e: MouseEvent, artifactId: string) {
+  openCtxMenu(e, { kind: 'tab', artifactId }, { keepArtifactPicker: true })
+}
+
 function closeCtxMenu() {
   ctxMenu.value.show = false
   ctxMenu.value.target = null
+  ctxMenuFromPicker.value = false
 }
 
 function onTabAuxClick(e: MouseEvent, id: string) {
@@ -466,14 +508,48 @@ function onDocumentMouseDown(e: MouseEvent) {
     if (el && !el.contains(target)) closeFileMenu()
   }
   if (showArtifactPicker.value) {
-    const el = artifactPickerRef.value
-    if (el && !el.contains(target)) closeArtifactPicker()
+    const anchor = artifactPickerRef.value
+    const dropdown = artifactPickerDropdownRef.value
+    if (
+      anchor && !anchor.contains(target) &&
+      dropdown && !dropdown.contains(target)
+    ) {
+      closeArtifactPicker()
+    }
   }
   if (ctxMenu.value.show) {
-    const menu = document.querySelector('.canvas-ctx-menu')
-    if (menu && !menu.contains(target)) closeCtxMenu()
+    const menu = ctxMenuRef.value
+    if (menu && !menu.contains(target)) {
+      closeCtxMenu()
+    }
   }
 }
+
+function onDocumentKeyDown(e: KeyboardEvent) {
+  if (e.key !== 'Escape') return
+  if (ctxMenu.value.show) {
+    closeCtxMenu()
+    return
+  }
+  if (showArtifactPicker.value) {
+    closeArtifactPicker()
+    return
+  }
+  if (showFileMenuDropdown.value) {
+    closeFileMenu()
+  }
+}
+
+watch(showArtifactPicker, (open) => {
+  if (open) {
+    void nextTick(syncArtifactPickerPosition)
+    window.addEventListener('resize', syncArtifactPickerPosition)
+    window.addEventListener('scroll', syncArtifactPickerPosition, true)
+  } else {
+    window.removeEventListener('resize', syncArtifactPickerPosition)
+    window.removeEventListener('scroll', syncArtifactPickerPosition, true)
+  }
+})
 
 watch(activeArtifactId, () => {
   scrollActiveTabIntoView()
@@ -490,7 +566,6 @@ watch(
     for (const artifact of ev.removed) {
       saveBridge.unregister(artifact.id)
     }
-    showRemovedToast(ev.removed)
     void updateFileExistsMap()
   }
 )
@@ -507,6 +582,7 @@ function onVisibilityChange() {
 
 onMounted(() => {
   document.addEventListener('mousedown', onDocumentMouseDown, true)
+  document.addEventListener('keydown', onDocumentKeyDown, true)
   window.addEventListener('focus', onWindowFocus)
   document.addEventListener('visibilitychange', onVisibilityChange)
   void refreshFileStatus()
@@ -515,8 +591,11 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('mousedown', onDocumentMouseDown, true)
+  document.removeEventListener('keydown', onDocumentKeyDown, true)
   window.removeEventListener('focus', onWindowFocus)
-  document.removeEventListener('visibilitychange', onVisibilityChange)
+  window.removeEventListener('visibilitychange', onVisibilityChange)
+  window.removeEventListener('resize', syncArtifactPickerPosition)
+  window.removeEventListener('scroll', syncArtifactPickerPosition, true)
 })
 </script>
 
@@ -526,99 +605,55 @@ onUnmounted(() => {
       class="canvas-header"
       @contextmenu="openCtxMenu($event, { kind: 'header' })"
     >
-      <div
-        v-if="artifacts.length > 0"
-        ref="tabsScrollRef"
-        class="artifact-tabs-scroll"
-      >
-        <div class="artifact-tabs" role="tablist">
-          <button
-            v-for="artifact in visibleTabs"
-            :key="artifact.id"
-            type="button"
-            role="tab"
-            class="artifact-tab"
-            :class="{ active: artifact.id === activeArtifactId }"
-            :aria-selected="artifact.id === activeArtifactId"
-            :title="artifactTabTitle(artifact)"
-            @click="selectArtifact(artifact.id)"
-            @contextmenu="openCtxMenu($event, { kind: 'tab', artifactId: artifact.id })"
-            @auxclick="onTabAuxClick($event, artifact.id)"
-          >
-            <component :is="rendererIcon(artifact.renderer)" :size="12" class="artifact-tab-icon" />
-            <span class="artifact-tab-label">{{ artifactTabLabel(artifact.title) }}</span>
-            <span
-              class="artifact-tab-close"
-              role="button"
-              :title="t('canvas.closeArtifact')"
-              @click="closeArtifact(artifact.id, $event)"
-            >
-              <X :size="10" />
-            </span>
-          </button>
-          <div v-if="overflowCount > 0" ref="artifactPickerRef" class="artifact-overflow-wrap">
+      <div v-if="artifacts.length > 0" class="artifact-tabs-bar">
+        <div ref="tabsScrollRef" class="artifact-tabs-scroll">
+          <div class="artifact-tabs" role="tablist">
             <button
+              v-for="artifact in headerTabs"
+              :key="artifact.id"
               type="button"
-              class="artifact-overflow-btn"
-              :class="{ active: showArtifactPicker }"
-              :title="t('canvas.artifactPickerTitle')"
-              :aria-expanded="showArtifactPicker"
-              @click="toggleArtifactPicker"
+              role="tab"
+              class="artifact-tab"
+              :class="{ active: artifact.id === activeArtifactId }"
+              :aria-selected="artifact.id === activeArtifactId"
+              :title="artifactTabTitle(artifact)"
+              @click="selectArtifact(artifact.id)"
+              @contextmenu="openCtxMenu($event, { kind: 'tab', artifactId: artifact.id })"
+              @auxclick="onTabAuxClick($event, artifact.id)"
             >
-              <span>{{ t('canvas.artifactOverflow', { count: overflowCount }) }}</span>
-              <ChevronDown :size="12" />
+              <component :is="rendererIcon(artifact.renderer)" :size="13" class="artifact-tab-icon" />
+              <span class="artifact-tab-label">{{ artifactTabLabel(artifact.title) }}</span>
+              <span
+                class="artifact-tab-close"
+                role="button"
+                :title="t('canvas.closeArtifact')"
+                @click="closeArtifact(artifact.id, $event)"
+              >
+                <X :size="10" />
+              </span>
             </button>
-            <div v-if="showArtifactPicker" class="artifact-picker" @click.stop>
-              <div v-if="showPickerSearch" class="artifact-picker-search">
-                <input
-                  v-model="artifactPickerQuery"
-                  type="search"
-                  class="artifact-picker-input"
-                  :placeholder="t('canvas.artifactPickerSearch')"
-                  @keydown.stop
-                />
-              </div>
-              <div class="artifact-picker-list" role="listbox">
-                <div
-                  v-for="artifact in pickerArtifacts"
-                  :key="artifact.id"
-                  role="option"
-                  class="artifact-picker-row"
-                  :class="{ active: artifact.id === activeArtifactId }"
-                  :aria-selected="artifact.id === activeArtifactId"
-                  @contextmenu="openCtxMenu($event, { kind: 'tab', artifactId: artifact.id })"
-                >
-                  <button
-                    type="button"
-                    class="artifact-picker-item"
-                    @click="selectArtifact(artifact.id)"
-                  >
-                    <component :is="rendererIcon(artifact.renderer)" :size="14" class="artifact-picker-icon" />
-                    <span class="artifact-picker-text">
-                      <span class="artifact-picker-label">{{ artifactTabLabel(artifact.title) }}</span>
-                      <span class="artifact-picker-sub">{{ artifactPickerSubtitle(artifact) }}</span>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    class="artifact-picker-close"
-                    :title="t('canvas.closeArtifact')"
-                    @click.stop="closeArtifact(artifact.id)"
-                  >
-                    <X :size="12" />
-                  </button>
-                </div>
-                <div v-if="pickerArtifacts.length === 0" class="artifact-picker-empty">
-                  {{ t('canvas.artifactPickerEmpty') }}
-                </div>
-              </div>
-            </div>
           </div>
         </div>
+        <div v-if="showTabList" ref="artifactPickerRef" class="artifact-list-wrap">
+          <button
+            type="button"
+            class="artifact-list-btn"
+            :class="{ active: showArtifactPicker }"
+            :title="t('canvas.artifactPickerTitle')"
+            :aria-expanded="showArtifactPicker"
+            @click="toggleArtifactPicker"
+          >
+            <span class="artifact-list-count">{{ artifacts.length }}</span>
+            <ChevronDown :size="12" />
+          </button>
+        </div>
+      </div>
+      <div v-else class="canvas-header-empty">
+        <span class="canvas-header-empty-label">{{ t('canvas.emptyStateTitle') }}</span>
       </div>
       <div class="canvas-header-actions">
         <button
-          v-if="isMarkdownActive"
+          v-if="isActiveEditable"
           type="button"
           class="canvas-text-btn canvas-save-text-btn"
           :disabled="saving || !canSaveActive"
@@ -678,35 +713,107 @@ onUnmounted(() => {
           </div>
         </div>
         <button
-          v-if="activeArtifactId"
+          v-if="activeArtifactId || isEmptyState"
           class="canvas-close"
-          @click="handleCloseActive"
-          :title="t('canvas.closeArtifact')"
+          @click="isEmptyState ? dismissEmptyPanel() : handleCloseActive()"
+          :title="isEmptyState ? t('canvas.dismissEmptyPanel') : t('canvas.closeArtifact')"
         >
           <X :size="14" />
         </button>
       </div>
     </div>
 
-    <div
-      v-if="ctxMenu.show"
-      class="canvas-ctx-overlay"
-      @mousedown="closeCtxMenu"
-      @contextmenu.prevent="closeCtxMenu"
-    />
-    <div
-      v-if="ctxMenu.show"
-      class="canvas-ctx-menu"
-      :style="{ left: `${ctxMenu.x}px`, top: `${ctxMenu.y}px` }"
-      @click.stop
-    >
+    <Teleport to="body">
+      <div
+        v-if="showArtifactPicker"
+        ref="artifactPickerDropdownRef"
+        class="artifact-picker artifact-picker--floating"
+        :style="{
+          top: `${artifactPickerPos.top}px`,
+          left: `${artifactPickerPos.left}px`,
+          width: `${artifactPickerPos.width}px`
+        }"
+        @click.stop
+      >
+        <div v-if="showPickerSearch" class="artifact-picker-search">
+          <input
+            v-model="artifactPickerQuery"
+            type="search"
+            class="artifact-picker-input"
+            :placeholder="t('canvas.artifactPickerSearch')"
+            @keydown.stop
+          />
+        </div>
+        <div class="artifact-picker-list" role="listbox">
+          <div
+            v-for="artifact in pickerArtifacts"
+            :key="artifact.id"
+            role="option"
+            class="artifact-picker-row"
+            :class="{ active: artifact.id === activeArtifactId }"
+            :aria-selected="artifact.id === activeArtifactId"
+            @contextmenu="openArtifactPickerCtxMenu($event, artifact.id)"
+          >
+            <button
+              type="button"
+              class="artifact-picker-item"
+              @click="selectArtifact(artifact.id)"
+            >
+              <component :is="rendererIcon(artifact.renderer)" :size="14" class="artifact-picker-icon" />
+              <span class="artifact-picker-text">
+                <span class="artifact-picker-label">{{ artifactTabLabel(artifact.title) }}</span>
+                <span class="artifact-picker-sub" :title="artifactPickerSubtitle(artifact)">
+                  {{ artifactPickerSubtitle(artifact) }}
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              class="artifact-picker-close"
+              :title="t('canvas.closeArtifact')"
+              @click.stop="closeArtifact(artifact.id)"
+            >
+              <X :size="12" />
+            </button>
+          </div>
+          <div v-if="pickerArtifacts.length === 0" class="artifact-picker-empty">
+            {{ t('canvas.artifactPickerEmpty') }}
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="ctxMenu.show && !ctxMenuFromPicker"
+        class="canvas-ctx-overlay"
+        @mousedown="closeCtxMenu"
+        @contextmenu.prevent="closeCtxMenu"
+      />
+      <div
+        v-if="ctxMenu.show"
+        ref="ctxMenuRef"
+        class="canvas-ctx-menu"
+        :class="{ 'canvas-ctx-menu--elevated': ctxMenuFromPicker }"
+        :style="{ left: `${ctxMenu.x}px`, top: `${ctxMenu.y}px` }"
+        @click.stop
+        @contextmenu.prevent
+      >
       <template v-if="ctxMenu.target?.kind === 'tab' && ctxArtifact && ctxMenuFlags">
         <div class="canvas-ctx-header">{{ artifactTabLabel(ctxArtifact.title) }}</div>
         <div v-if="ctxArtifact.filePath" class="canvas-ctx-path" :title="ctxArtifact.filePath">
           {{ ctxArtifact.filePath }}
         </div>
+        <button
+          v-if="ctxMenuFlags.showJumpToSource"
+          type="button"
+          class="canvas-ctx-item"
+          @click="jumpToSource(ctxArtifact.sourceStepId); closeCtxMenu()"
+        >
+          {{ t('canvas.jumpToSource') }}
+        </button>
         <div
-          v-if="ctxArtifact.filePath || artifactHasFileActions(ctxMenuFlags)"
+          v-if="ctxMenuFlags.showJumpToSource || ctxArtifact.filePath || artifactHasFileActions(ctxMenuFlags)"
           class="canvas-ctx-separator"
         />
         <button
@@ -773,6 +880,18 @@ onUnmounted(() => {
       </template>
       <template v-else-if="ctxMenu.target?.kind === 'header'">
         <button
+          v-if="activeSourceStepId"
+          type="button"
+          class="canvas-ctx-item"
+          @click="jumpToSource(); closeCtxMenu()"
+        >
+          {{ t('canvas.jumpToSource') }}
+        </button>
+        <div
+          v-if="activeSourceStepId && (canOpenActive || isActiveEditable || canSaveAsActive || canSaveAll)"
+          class="canvas-ctx-separator"
+        />
+        <button
           v-if="canOpenActive"
           type="button"
           class="canvas-ctx-item"
@@ -789,11 +908,11 @@ onUnmounted(() => {
           {{ t('canvas.showInFolder') }}
         </button>
         <div
-          v-if="canOpenActive && (isMarkdownActive || canSaveAsActive || canSaveAll)"
+          v-if="canOpenActive && (isActiveEditable || canSaveAsActive || canSaveAll)"
           class="canvas-ctx-separator"
         />
         <button
-          v-if="isMarkdownActive"
+          v-if="isActiveEditable"
           type="button"
           class="canvas-ctx-item"
           :disabled="saving || !canSaveActive"
@@ -821,7 +940,7 @@ onUnmounted(() => {
           {{ t('canvas.saveAll') }}
         </button>
         <div
-          v-if="isMarkdownActive || canSaveAsActive || canSaveAll"
+          v-if="isActiveEditable || canSaveAsActive || canSaveAll"
           class="canvas-ctx-separator"
         />
         <button
@@ -833,33 +952,29 @@ onUnmounted(() => {
           {{ t('canvas.closeAll') }}
         </button>
       </template>
+      </div>
+    </Teleport>
+
+    <div v-if="isEmptyState" class="canvas-body canvas-empty-body">
+      <p class="canvas-empty-text">{{ t('canvas.emptyStateHint') }}</p>
+      <button type="button" class="canvas-empty-dismiss" @click="dismissEmptyPanel">
+        {{ t('canvas.dismissEmptyPanel') }}
+      </button>
     </div>
 
-    <div v-if="activeArtifactId" class="canvas-body">
-      <DocumentRenderer
-        v-if="renderer === 'document'"
-        :key="activeArtifactId"
-        :tab-id="tabId"
-        :artifact-id="activeArtifactId"
-      />
-      <SpreadsheetRenderer
-        v-else-if="renderer === 'spreadsheet'"
-        :key="activeArtifactId"
-        :tab-id="tabId"
-        :artifact-id="activeArtifactId"
-      />
-      <MarkdownRenderer
-        v-else-if="renderer === 'markdown'"
-        :key="activeArtifactId"
-        :tab-id="tabId"
-        :artifact-id="activeArtifactId"
-      />
-      <SlidesRenderer
-        v-else-if="renderer === 'html'"
-        :key="activeArtifactId"
-        :tab-id="tabId"
-        :artifact-id="activeArtifactId"
-      />
+    <div v-else-if="activeArtifactId" class="canvas-body">
+      <div class="canvas-renderer-host">
+        <component
+          :is="activeRendererComponent"
+          v-if="activeRendererComponent"
+          :key="activeArtifactId"
+          :tab-id="tabId"
+          :artifact-id="activeArtifactId"
+        />
+        <div v-else class="canvas-unsupported">
+          {{ t('canvas.unsupportedRenderer') }}
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -885,55 +1000,89 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
   flex-shrink: 0;
   user-select: none;
-  min-height: 32px;
+  min-height: 28px;
+}
+
+.artifact-tabs-bar {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  height: 28px;
 }
 
 .artifact-tabs-scroll {
+  flex: 1;
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+
+.artifact-tabs-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .artifact-tabs {
   display: flex;
-  align-items: center;
-  gap: 2px;
+  align-items: stretch;
+  gap: 0;
   min-width: min-content;
-  padding-right: 2px;
+  height: 100%;
 }
 
 .artifact-tab {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  max-width: 140px;
-  height: 24px;
-  padding: 0 4px 0 6px;
-  border: 1px solid transparent;
-  border-radius: 4px;
+  gap: 5px;
+  min-width: 72px;
+  max-width: 120px;
+  height: 100%;
+  padding: 0 8px;
+  border: none;
+  border-radius: 0;
   background: transparent;
-  color: var(--text-secondary, #aaa);
-  font-size: 11px;
+  color: var(--text-muted, #888);
+  font-size: 12px;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  transition: color 0.2s ease;
+}
+
+.artifact-tab::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent-primary, #89b4fa), var(--accent-secondary, #74c7ec));
+  border-radius: 1px;
+  transform: translateX(-50%);
+  transition: width 0.2s ease;
 }
 
 .artifact-tab:hover {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.06));
   color: var(--text-primary, #eee);
 }
 
 .artifact-tab.active {
-  background: rgba(var(--accent-rgb, 137, 180, 250), 0.14);
-  border-color: rgba(var(--accent-rgb, 137, 180, 250), 0.35);
   color: var(--text-primary, #eee);
+  font-weight: 600;
+}
+
+.artifact-tab.active::after {
+  width: calc(100% - 16px);
 }
 
 .artifact-tab-icon {
   flex-shrink: 0;
+  color: inherit;
   opacity: 0.85;
+}
+
+.artifact-tab.active .artifact-tab-icon {
+  color: var(--accent-primary, #89b4fa);
 }
 
 .artifact-tab-label {
@@ -941,6 +1090,7 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  flex: 1;
 }
 
 .artifact-tab-close {
@@ -957,54 +1107,63 @@ onUnmounted(() => {
 
 .artifact-tab:hover .artifact-tab-close,
 .artifact-tab.active .artifact-tab-close {
-  opacity: 0.7;
+  opacity: 0.65;
 }
 
 .artifact-tab-close:hover {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--hover-bg, rgba(255, 255, 255, 0.1));
 }
 
-.artifact-overflow-wrap {
+.artifact-list-wrap {
   position: relative;
   flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  border-left: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
 }
 
-.artifact-overflow-btn {
+.artifact-list-btn {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  height: 24px;
-  padding: 0 6px;
-  border: 1px solid transparent;
-  border-radius: 4px;
+  height: 100%;
+  padding: 0 8px;
+  border: none;
+  border-radius: 0;
   background: transparent;
-  color: var(--text-secondary, #aaa);
+  color: var(--text-muted, #888);
   font-size: 11px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  transition: color 0.2s ease, background 0.12s;
 }
 
-.artifact-overflow-btn:hover,
-.artifact-overflow-btn.active {
-  background: rgba(var(--accent-rgb, 137, 180, 250), 0.14);
-  border-color: rgba(var(--accent-rgb, 137, 180, 250), 0.35);
+.artifact-list-btn:hover,
+.artifact-list-btn.active {
   color: var(--text-primary, #eee);
+  background: var(--hover-bg, rgba(255, 255, 255, 0.04));
+}
+
+.artifact-list-count {
+  min-width: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .artifact-picker {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 25;
-  min-width: 240px;
-  max-width: min(340px, 70vw);
   padding: 4px;
   background: var(--bg-secondary, #252525);
   border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
   border-radius: 6px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+}
+
+.artifact-picker--floating {
+  position: fixed;
+  z-index: 10000;
+  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
 }
 
 .artifact-picker-search {
@@ -1256,6 +1415,16 @@ onUnmounted(() => {
   flex: 1;
   overflow: hidden;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.canvas-renderer-host {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .canvas-ctx-overlay {
@@ -1273,6 +1442,10 @@ onUnmounted(() => {
   border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+}
+
+.canvas-ctx-menu--elevated {
+  z-index: 10001;
 }
 
 .canvas-ctx-item {
@@ -1310,5 +1483,57 @@ onUnmounted(() => {
   height: 1px;
   margin: 4px 0;
   background: var(--border-color, rgba(255, 255, 255, 0.1));
+}
+
+.canvas-header-empty {
+  min-width: 0;
+  padding: 0 4px;
+}
+
+.canvas-header-empty-label {
+  font-size: 12px;
+  color: var(--text-secondary, #aaa);
+}
+
+.canvas-empty-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 24px;
+}
+
+.canvas-empty-text {
+  margin: 0;
+  max-width: 280px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary, #aaa);
+  text-align: center;
+}
+
+.canvas-empty-dismiss {
+  padding: 6px 12px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary, #eee);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.canvas-empty-dismiss:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.06));
+}
+
+.canvas-unsupported {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 24px;
+  color: var(--text-secondary, #aaa);
+  font-size: 13px;
 }
 </style>

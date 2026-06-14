@@ -40,6 +40,9 @@ export interface CanvasHighlight {
   type: 'added' | 'modified' | 'deleted'
 }
 
+/** 产出物来源（Agent 写入 vs 用户操作） */
+export type CanvasArtifactOrigin = 'agent' | 'user'
+
 /** 单个 Canvas 产出物 */
 export interface CanvasArtifact {
   id: string
@@ -49,6 +52,12 @@ export interface CanvasArtifact {
   content: string
   /** 磁盘锚点（绝对路径） */
   filePath?: string | null
+  /** 谁产生的（排序 / 来源区） */
+  origin: CanvasArtifactOrigin
+  /** 是否可在面板内编辑回写（派生自 renderer，upsert 时填充） */
+  editable: boolean
+  /** 产生该产出物的 AgentStep.id（仅 UI 溯源，不复制 step 内容） */
+  sourceStepId?: string
   createdAt: number
   updatedAt: number
   pinned?: boolean
@@ -70,6 +79,9 @@ export interface CanvasData {
   artifactId?: string
   /** open 时是否切换到该 tab，默认 true */
   activate?: boolean
+  origin?: CanvasArtifactOrigin
+  /** 产生该产出物的 AgentStep.id（open 时由宿主注入） */
+  sourceStepId?: string
 }
 
 /** 由 CanvasData 推导稳定 Artifact ID（open / upsert 用） */

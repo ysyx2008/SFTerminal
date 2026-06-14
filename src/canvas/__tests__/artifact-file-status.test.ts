@@ -12,6 +12,8 @@ function artifact(id: string, filePath?: string): CanvasArtifact {
     title: id,
     content: '',
     filePath: filePath ?? null,
+    origin: 'agent',
+    editable: true,
     createdAt: 1,
     updatedAt: 1
   }

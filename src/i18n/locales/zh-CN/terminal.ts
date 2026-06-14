@@ -260,8 +260,6 @@ export default {
     saveNoChanges: '无未保存更改',
     saveNoPath: '尚未关联磁盘文件，请使用「另存为」',
     saveFileDeleted: '原文件已从磁盘删除，请使用「另存为」恢复',
-    autoRemovedOne: '「{name}」已从磁盘删除，已从产出物面板移除',
-    autoRemovedMany: '已移除 {count} 个已从磁盘删除的产出物',
     fileMenu: '文件',
     noPathShort: '无磁盘路径',
     unsavedChanges: '● 未保存',
@@ -276,6 +274,11 @@ export default {
     openMenu: '更多打开选项',
     showInFolder: '打开所在文件夹',
     showInFolderFailed: '打开所在文件夹失败',
+    emptyStateTitle: '产出物',
+    emptyStateHint: '本次会话的产出物已全部关闭。关闭面板后，有新产出时会再次显示。',
+    dismissEmptyPanel: '关闭面板',
+    jumpToSource: '跳到生成处',
+    unsupportedRenderer: '该类型预览尚未实现',
   },
 
   // MCP 状态

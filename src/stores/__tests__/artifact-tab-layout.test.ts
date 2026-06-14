@@ -16,6 +16,8 @@ function artifact(id: string, title: string, updatedAt: number): CanvasArtifact 
     renderer: 'markdown',
     title,
     content: '',
+    origin: 'agent',
+    editable: true,
     createdAt: updatedAt,
     updatedAt
   }

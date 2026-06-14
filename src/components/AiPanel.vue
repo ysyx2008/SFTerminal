@@ -12,6 +12,8 @@ import type { DynamicScrollerExposed } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
+import { useCanvasStore } from '../stores/canvas'
+import { resolveSourceStepIdById } from '../canvas/artifact-source'
 import { useComposerQuoteStore } from '../stores/composer-quote'
 import AgentPlanView from './AgentPlanView.vue'
 import AiComposer from './AiComposer.vue'
@@ -70,6 +72,7 @@ const { t } = useI18n()
 // Stores
 const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
+const canvasStore = useCanvasStore()
 const composerQuoteStore = useComposerQuoteStore()
 const showSettings = inject<() => void>('showSettings')
 
@@ -89,6 +92,7 @@ const handleClose = () => {
 // Refs
 const messagesRef = ref<HTMLDivElement | null>(null)
 const scrollerRef = ref<DynamicScrollerExposed | null>(null)
+const highlightedSourceStepId = ref<string | null>(null)
 const composerRef = ref<InstanceType<typeof AiComposer> | null>(null)
 const secureInputValue = ref('')
 
@@ -1715,6 +1719,33 @@ const scrollHistoryToBottom = () => {
   }
 }
 
+async function scrollToAgentStep(stepId: string) {
+  const allSteps = agentState.value?.steps ?? []
+  const visibleStepId = resolveSourceStepIdById(stepId, allSteps)
+  const index = flattenedItems.value.findIndex(
+    item => item.type === 'step' && item.step?.id === visibleStepId
+  )
+  if (index < 0) return
+
+  await nextTick()
+  scrollerRef.value?.scrollToItem?.(index)
+  highlightedSourceStepId.value = visibleStepId
+  window.setTimeout(() => {
+    if (highlightedSourceStepId.value === visibleStepId) {
+      highlightedSourceStepId.value = null
+    }
+  }, 2500)
+}
+
+watch(
+  () => canvasStore.sourceJumpRequest,
+  (req) => {
+    if (!req || req.tabId !== props.tabId) return
+    void scrollToAgentStep(req.stepId)
+    canvasStore.clearSourceJumpRequest()
+  }
+)
+
 /** 首次展示从历史恢复的对话（尚无已存滚动位置）→ 应滚到底部 */
 const shouldScrollHistoryOnShow = () =>
   !!currentTabId.value &&
@@ -2387,7 +2418,15 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                   - success === false      → 红色（exec-failed）
                 其他步骤类型保持现有风险色。
               -->
-              <div v-else-if="item.type === 'step'" class="agent-step-virtual" :class="{ 'first-step': item.isFirstStep }">
+              <div
+                v-else-if="item.type === 'step'"
+                class="agent-step-virtual"
+                :class="{
+                  'first-step': item.isFirstStep,
+                  'agent-step-source-highlight': item.step!.id === highlightedSourceStepId
+                }"
+                :data-agent-step-id="item.step!.id"
+              >
                 <div 
                   class="agent-step-inline"
                   :class="[
@@ -3432,6 +3471,21 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .agent-step-virtual {
   padding: 0 14px 4px;
   border-left: 2px solid rgba(255, 255, 255, 0.06);
+}
+
+.agent-step-virtual.agent-step-source-highlight {
+  animation: agent-step-source-flash 2.5s ease-out;
+}
+
+@keyframes agent-step-source-flash {
+  0%, 15% {
+    background: rgba(96, 165, 250, 0.18);
+    box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.35);
+  }
+  100% {
+    background: transparent;
+    box-shadow: none;
+  }
 }
 
 .standalone-mode .agent-step-virtual {

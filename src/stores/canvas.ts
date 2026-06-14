@@ -12,10 +12,13 @@ import {
   applyCanvasData,
   clearTabArtifacts,
   createTabArtifactState,
+  dismissEmptyPanel,
+  enrichCanvasDataFromStep,
   getActiveArtifact,
   getArtifactById,
   getArtifacts,
   hydrateArtifactsFromSteps,
+  isArtifactEmptyState,
   isPanelVisible,
   removeArtifact,
   setActiveArtifact,
@@ -34,11 +37,17 @@ export interface ArtifactDiskSyncEvent {
   at: number
 }
 
+export interface ArtifactSourceJumpRequest {
+  tabId: string
+  stepId: string
+}
+
 export const useCanvasStore = defineStore('canvas', () => {
   const tabStates = ref<Map<string, TabArtifactState>>(new Map())
   const splitRatio = ref(0.5)
   const closeTimers = new Map<string, ReturnType<typeof setTimeout>>()
   const lastDiskSync = ref<ArtifactDiskSyncEvent | null>(null)
+  const sourceJumpRequest = ref<ArtifactSourceJumpRequest | null>(null)
 
   function getTabState(tabId: string): TabArtifactState {
     if (!tabStates.value.has(tabId)) {
@@ -58,6 +67,10 @@ export const useCanvasStore = defineStore('canvas', () => {
 
   function isVisible(tabId: string): boolean {
     return isPanelVisible(getTabState(tabId))
+  }
+
+  function isEmptyState(tabId: string): boolean {
+    return isArtifactEmptyState(getTabState(tabId))
   }
 
   function getArtifactsForTab(tabId: string): readonly CanvasArtifact[] {
@@ -138,7 +151,7 @@ export const useCanvasStore = defineStore('canvas', () => {
     mutateTab(tabId, state => updateArtifactContentById(state, artifactId, content))
   }
 
-  function hydrateFromSteps(tabId: string, steps: ReadonlyArray<{ canvasData?: CanvasData }>) {
+  function hydrateFromSteps(tabId: string, steps: ReadonlyArray<AgentStep>) {
     cancelPendingClose(tabId)
     commitTabState(tabId, hydrateArtifactsFromSteps(steps))
   }
@@ -168,9 +181,9 @@ export const useCanvasStore = defineStore('canvas', () => {
     return removed
   }
 
-  function handleAgentStep(tabId: string, step: AgentStep) {
+  function handleAgentStep(tabId: string, step: AgentStep, allSteps: readonly AgentStep[] = []) {
     if (step.canvasData) {
-      applyCanvasDataForTab(tabId, step.canvasData)
+      applyCanvasDataForTab(tabId, enrichCanvasDataFromStep(step.canvasData, step, allSteps))
     }
     if (shouldSyncArtifactsAfterStep(step)) {
       void syncArtifactsWithDisk(tabId)
@@ -200,6 +213,19 @@ export const useCanvasStore = defineStore('canvas', () => {
     commitTabState(tabId, clearTabArtifacts(getTabState(tabId)))
   }
 
+  function dismissPanel(tabId: string) {
+    cancelPendingClose(tabId)
+    commitTabState(tabId, dismissEmptyPanel(getTabState(tabId)))
+  }
+
+  function requestJumpToSource(tabId: string, stepId: string) {
+    sourceJumpRequest.value = { tabId, stepId }
+  }
+
+  function clearSourceJumpRequest() {
+    sourceJumpRequest.value = null
+  }
+
   function relocateArtifact(
     tabId: string,
     artifactId: string,
@@ -214,6 +240,8 @@ export const useCanvasStore = defineStore('canvas', () => {
       title: newFilePath.split(/[/\\]/).pop() || artifact.title,
       content: content ?? artifact.content,
       filePath: newFilePath,
+      origin: artifact.origin,
+      sourceStepId: artifact.sourceStepId,
       activate: true
     })
   }
@@ -222,7 +250,9 @@ export const useCanvasStore = defineStore('canvas', () => {
     tabStates,
     splitRatio,
     lastDiskSync,
+    sourceJumpRequest,
     isVisible,
+    isEmptyState,
     getArtifacts: getArtifactsForTab,
     getActiveArtifact: getActiveArtifactForTab,
     getArtifactById: getArtifactByIdForTab,
@@ -241,6 +271,9 @@ export const useCanvasStore = defineStore('canvas', () => {
     cleanup,
     closeOthers,
     closeAll,
-    relocateArtifact
+    dismissPanel,
+    relocateArtifact,
+    requestJumpToSource,
+    clearSourceJumpRequest
   }
 })
