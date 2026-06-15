@@ -59,7 +59,7 @@ const STARTUP_STAGE_LABELS: Record<string, string> = {
   done: '初始化完成',
 }
 
-// ── 知识库索引重建进度条（flex 底部，耗时较长需可见进度）──────────────────────
+// ── 知识库索引重建进度条（fixed overlay，展示详细进度但不撑开布局）────────────
 const _knowledgeDone = ref(true)  // 知识库是否空闲（默认不在补全索引）
 
 const knowledgeLoading = computed(() => !_knowledgeDone.value)
@@ -1271,9 +1271,13 @@ onUnmounted(() => {
       </div>
     </Transition>
 
-    <!-- 知识库索引重建进度条：并入 flex 布局底部（耗时较长，需可见进度） -->
+    <!-- 知识库索引重建进度条（fixed overlay，与启动条叠放，不占 flex 空间） -->
     <Transition name="slide-down">
-      <div v-if="knowledgeLoading && !isSteamBuild" class="knowledge-loading-bar">
+      <div
+        v-if="knowledgeLoading && !isSteamBuild"
+        class="knowledge-loading-bar"
+        :class="{ 'above-startup-bar': startupLoading }"
+      >
         <div class="upgrade-content">
           <Loader2 class="upgrade-icon" :size="16" />
           <span class="upgrade-text">
@@ -1646,12 +1650,20 @@ onUnmounted(() => {
   100% { transform: translateX(300%); }
 }
 
-/* 知识库索引重建进度条：flex 底部占位 */
+/* 知识库索引重建进度条：fixed overlay，与启动条同时出现时上移叠放 */
 .knowledge-loading-bar {
-  flex-shrink: 0;
-  width: 100%;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border-color);
+  z-index: 1000;
+  transition: bottom 0.2s ease;
+}
+
+.knowledge-loading-bar.above-startup-bar {
+  bottom: 36px;
 }
 
 .upgrade-content {
