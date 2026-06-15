@@ -1154,6 +1154,43 @@ button:focus-visible {
   visibility: visible;
 }
 
+/* Teleport 悬浮提示（Electron 下原生 title 不可靠，且不受 overflow 裁切） */
+.hover-tip-floating {
+  position: fixed;
+  z-index: 10001;
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 6px 10px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+  background: var(--bg-secondary, #252525);
+  color: var(--text-primary, #eee);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  animation: hoverTipIn 0.12s ease;
+}
+
+@keyframes hoverTipIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.hover-tip-floating--left {
+  transform: translate(-100%, -50%);
+}
+
+.hover-tip-floating--top {
+  transform: translate(-50%, -100%);
+}
+
+.hover-tip-floating--bottom {
+  transform: translate(-50%, 0);
+}
+
 /* ============================= */
 /* 🎬 动画效果库                   */
 /* ============================= */

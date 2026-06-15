@@ -22,52 +22,39 @@ const props = defineProps<{
 
 const artifactStore = useAssistantArtifactStore()
 
-const docVisible = computed(() => artifactStore.isVisible(props.tab.id))
+const docExpanded = computed(() => artifactStore.isVisible(props.tab.id))
 const panelMinimized = computed(() => artifactStore.isPanelMinimized(props.tab.id))
+const toggleVisible = computed(() => docExpanded.value || panelMinimized.value)
 const ratio = computed({
   get: () => artifactStore.splitRatio,
   set: (v: number) => { artifactStore.splitRatio = v },
 })
 
-function expandPanel() {
+function expandPanel(artifactId?: string) {
   artifactStore.expandPanel(props.tab.id)
+  if (artifactId) {
+    artifactStore.setActiveArtifact(props.tab.id, artifactId)
+  }
 }
 </script>
 
 <template>
   <WorkbenchShell
-    :toggle-visible="docVisible"
+    :toggle-visible="toggleVisible"
+    :toggle-collapsed="panelMinimized"
     v-model:toggle-ratio="ratio"
     toggle-side="right"
   >
     <template #anchor>
-      <div class="assistant-anchor-wrap" :class="{ 'assistant-anchor-wrap--rail': panelMinimized }">
-        <AiPanel :tab-id="tab.id" :tab-active="isActive" />
-        <ArtifactPanelRail
-          v-if="panelMinimized"
-          :tab-id="tab.id"
-          @expand="expandPanel"
-        />
-      </div>
+      <AiPanel :tab-id="tab.id" :tab-active="isActive" />
     </template>
     <template #toggle>
-      <ArtifactPanel v-if="docVisible" :tab-id="tab.id" />
+      <ArtifactPanel v-if="docExpanded" :tab-id="tab.id" />
+      <ArtifactPanelRail
+        v-else-if="panelMinimized"
+        :tab-id="tab.id"
+        @expand="expandPanel"
+      />
     </template>
   </WorkbenchShell>
 </template>
-
-<style scoped>
-.assistant-anchor-wrap {
-  position: relative;
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.assistant-anchor-wrap--rail {
-  padding-right: 28px;
-}
-</style>

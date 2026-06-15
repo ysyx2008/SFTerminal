@@ -32,6 +32,8 @@ import {
 } from '../index'
 import { getRendererComponent, getRendererIcon } from '../renderers/ui-registry'
 import { useToast } from '../../../../composables/useToast'
+import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '../../../../composables/useHoverTip'
+import HoverTipOverlay from '../../../../components/HoverTipOverlay.vue'
 
 const props = defineProps<{
   tabId: string
@@ -42,6 +44,10 @@ const artifactStore = useAssistantArtifactStore()
 const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
 const saveBridge = createArtifactSaveBridge()
 provideArtifactSaveBridge(saveBridge)
+const { hoverTip, showTip, hideTip } = useHoverTip({
+  placement: 'bottom',
+  delayMs: BUTTON_HOVER_TIP_DELAY_MS
+})
 
 const artifacts = computed(() => artifactStore.getArtifacts(props.tabId))
 const activeArtifact = computed(() => artifactStore.getActiveArtifact(props.tabId))
@@ -287,6 +293,7 @@ function minimizePanel() {
     saveBridge.flush(artifact.id)
   }
   closeAllMenus()
+  hideTip()
   artifactStore.minimizePanel(props.tabId)
 }
 
@@ -680,8 +687,9 @@ onUnmounted(() => {
         <button
           type="button"
           class="canvas-icon-btn"
-          :title="t('canvas.minimizePanel')"
           :aria-label="t('canvas.minimizePanel')"
+          @mouseenter="showTip($event, t('canvas.minimizePanel'))"
+          @mouseleave="hideTip"
           @click="minimizePanel"
         >
           <PanelRightClose :size="14" />
@@ -932,6 +940,8 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <HoverTipOverlay :tip="hoverTip" />
   </div>
 </template>
 

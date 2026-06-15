@@ -17,6 +17,10 @@ const props = withDefaults(defineProps<{
   toggleVisible: boolean
   /** 辅助区占比（0-1） */
   toggleRatio: number
+  /** 辅助区是否处于收起态（固定窄宽，不可拖拽） */
+  toggleCollapsed?: boolean
+  /** 收起态宽度（px） */
+  collapsedWidth?: number
   /** 辅助区所在侧，默认右侧 */
   toggleSide?: 'left' | 'right'
   /** 拖拽比例下限 */
@@ -25,6 +29,8 @@ const props = withDefaults(defineProps<{
   maxRatio?: number
 }>(), {
   toggleSide: 'right',
+  toggleCollapsed: false,
+  collapsedWidth: 40,
   minRatio: 0.2,
   maxRatio: 0.8,
 })
@@ -39,6 +45,7 @@ const shellRef = ref<HTMLElement | null>(null)
 let activeCleanup: (() => void) | null = null
 
 function startResize(e: MouseEvent) {
+  if (props.toggleCollapsed) return
   e.preventDefault()
   const startX = e.clientX
   const startRatio = props.toggleRatio
@@ -86,19 +93,26 @@ onUnmounted(() => activeCleanup?.())
   >
     <div
       class="workbench-anchor"
-      :style="toggleVisible ? { flex: `0 0 ${(1 - toggleRatio) * 100}%` } : undefined"
+      :style="toggleVisible && !toggleCollapsed ? { flex: `0 0 ${(1 - toggleRatio) * 100}%` } : undefined"
     >
       <slot name="anchor" />
     </div>
     <div
-      v-show="toggleVisible"
+      v-show="toggleVisible && !toggleCollapsed"
       class="workbench-divider"
       @mousedown="startResize"
     ></div>
     <div
       class="workbench-region"
-      :class="{ 'region-open': toggleVisible }"
-      :style="toggleVisible ? { flex: `0 0 ${toggleRatio * 100}%` } : undefined"
+      :class="{
+        'region-open': toggleVisible && !toggleCollapsed,
+        'region-collapsed': toggleVisible && toggleCollapsed
+      }"
+      :style="toggleVisible
+        ? (toggleCollapsed
+          ? { flex: `0 0 ${collapsedWidth}px` }
+          : { flex: `0 0 ${toggleRatio * 100}%` })
+        : undefined"
     >
       <slot name="toggle" />
     </div>
@@ -176,6 +190,12 @@ onUnmounted(() => activeCleanup?.())
 .workbench-region.region-open {
   min-width: 200px;
   max-width: 100%;
+  opacity: 1;
+}
+
+.workbench-region.region-collapsed {
+  min-width: 0;
+  max-width: none;
   opacity: 1;
 }
 </style>
