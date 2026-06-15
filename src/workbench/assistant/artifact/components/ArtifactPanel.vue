@@ -167,10 +167,6 @@ function rendererTypeKey(type: CanvasRendererType | null): string {
   return type ?? 'document'
 }
 
-function artifactTabTitle(artifact: CanvasArtifact) {
-  return artifactTabLabel(artifact)
-}
-
 function activeTitleLabel() {
   return activeArtifact.value
     ? artifactTabLabel(activeArtifact.value)

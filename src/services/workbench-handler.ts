@@ -8,8 +8,6 @@ import { createLogger } from '../utils/logger'
 
 const log = createLogger('WorkbenchHandler')
 
-type WorkbenchOp = { type: 'list_artifacts' }
-
 let unsubscribe: (() => void) | null = null
 
 function resolveTabId(store: ReturnType<typeof useTerminalStore>, ownerAgentKey?: string): string | undefined {
@@ -31,7 +29,7 @@ export function initWorkbenchHandler(): void {
   }
 
   log.info('workbench handler initialized')
-  unsubscribe = window.electronAPI.workbench.onExec((id, op, ownerAgentKey) => {
+  unsubscribe = window.electronAPI.workbench.onExec((id, _op, ownerAgentKey) => {
     void (async () => {
       let result: { ok: boolean; data?: unknown; error?: string }
       try {

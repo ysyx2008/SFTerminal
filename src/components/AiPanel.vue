@@ -8,7 +8,7 @@ import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef, 
 import { useI18n } from 'vue-i18n'
 import { Upload, Trash2, X, Search, Loader2, HelpCircle, ChevronDown, ChevronUp, MoreHorizontal, Shuffle } from 'lucide-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
-import type { DynamicScrollerExposed } from 'vue-virtual-scroller'
+import type { MessageScrollerHandle } from '../types/message-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
@@ -91,7 +91,7 @@ const handleClose = () => {
 
 // Refs
 const messagesRef = ref<HTMLDivElement | null>(null)
-const scrollerRef = ref<DynamicScrollerExposed | null>(null)
+const scrollerRef = ref<MessageScrollerHandle | null>(null)
 const highlightedSourceStepId = ref<string | null>(null)
 const composerRef = ref<InstanceType<typeof AiComposer> | null>(null)
 const secureInputValue = ref('')
@@ -1713,7 +1713,7 @@ const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
 
 const scrollHistoryToBottom = () => {
   if (scrollerRef.value) {
-    scrollerRef.value.scrollToBottom()
+    scrollerRef.value.scrollToBottom?.()
   } else {
     void scrollToBottom()
   }

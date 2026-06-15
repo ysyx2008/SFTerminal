@@ -432,7 +432,10 @@ onMounted(async () => {
     knowledgeLoadingText.value = knowledgeText(payload?.cause)
   })
   cleanupKnowledgeProgress = window.electronAPI.knowledge.onRebuildProgress((data) => {
-    knowledgeLoadingProgress.value = data
+    knowledgeLoadingProgress.value = {
+      ...data,
+      libraryTotal: data.libraryTotal ?? 0,
+    }
   })
   cleanupKnowledgeReady = window.electronAPI.knowledge.onReady(() => {
     _knowledgeDone.value = true

@@ -10,7 +10,8 @@ import { useConfigStore } from '../stores/config'
 import { useAssistantArtifactStore } from '../workbench/assistant/artifact/store'
 import type { ExecutionMode, AttachmentInfo, AgentRecord, AgentHistorySummary } from '@shared/types'
 import type { AgentStep, AgentState } from '../stores/terminal'
-import type { CacheSnapshot, DynamicScrollerExposed } from 'vue-virtual-scroller'
+import type { MessageScrollerHandle } from '../types/message-scroller'
+import { readMessageScrollerCache } from '../types/message-scroller'
 import { createLogger } from '../utils/logger'
 import { useTts } from './useTts'
 import { shouldShowToolResultStep } from '../utils/tool-display'
@@ -31,12 +32,8 @@ function getLocalSystemInfo() {
 const SCROLL_THRESHOLD = 100
 const SCROLL_THROTTLE_MS = 1000
 
-function readCacheSnapshot(scroller: DynamicScrollerExposed | null | undefined): CacheSnapshot | undefined {
-  if (!scroller?.cacheSnapshot) return undefined
-  const snap = scroller.cacheSnapshot
-  return typeof snap === 'object' && snap !== null && 'value' in snap
-    ? (snap as { value: CacheSnapshot }).value
-    : snap as CacheSnapshot
+function readCacheSnapshot(scroller: MessageScrollerHandle | null | undefined) {
+  return readMessageScrollerCache(scroller)
 }
 
 export interface AgentTaskGroup {
@@ -58,7 +55,7 @@ export interface AgentTaskGroup {
 
 export interface VirtualItem {
   id: string
-  type: 'user_task' | 'step' | 'final_result' | 'proactive_message' | 'confirm'
+  type: 'user_task' | 'step' | 'final_result' | 'proactive_message' | 'confirm' | 'waiting_input'
   group?: AgentTaskGroup
   step?: AgentStep
   content?: string
@@ -81,7 +78,7 @@ export function useAgentMode(
     getAttachments: () => AttachmentInfo[]  // 获取当前已上传文件的元信息
     clearAttachments: () => void            // 清空已上传文件列表
   },
-  scrollerRef?: Ref<DynamicScrollerExposed | null>,
+  scrollerRef?: Ref<MessageScrollerHandle | null>,
   tabActive?: Ref<boolean | undefined>
 ) {
   const { t } = useI18n()
@@ -311,7 +308,7 @@ export function useAgentMode(
   const scrollToHistoryBottomWithRetry = () => {
     const apply = () => {
       if (scrollerRef?.value) {
-        scrollerRef.value.scrollToBottom()
+        scrollerRef.value.scrollToBottom?.()
       } else {
         void scrollToBottom()
       }

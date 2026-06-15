@@ -29,7 +29,6 @@ const isMac = computed(() => navigator.platform.toLowerCase().includes('mac'))
 const chromiumPath = computed(() => status.value?.install?.chromiumExtensionPath ?? '')
 const firefoxPath = computed(() => status.value?.install?.firefoxExtensionPath ?? '')
 const chromiumFolderName = computed(() => folderBaseName(chromiumPath.value) || 'extension-chromium')
-const firefoxFolderName = computed(() => folderBaseName(firefoxPath.value) || 'extension-firefox')
 const firefoxManifestPath = computed(() =>
   firefoxPath.value ? `${firefoxPath.value}/manifest.json` : '',
 )

@@ -1549,6 +1549,7 @@ interface Window {
       }>>
       showInExplorer: (path: string) => Promise<void>
       openFile: (path: string) => Promise<void>
+      exists: (filePath: string) => Promise<{ success: boolean; data?: boolean; error?: string }>
     }
     // 文件管理器窗口操作
     fileManager: {
@@ -2286,6 +2287,16 @@ interface Window {
         ) => void
       ) => () => void
       sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => void
+    }
+
+    browserBridge: {
+      getStatus: () => Promise<import('@shared/types/browser-bridge').BrowserBridgeStatus>
+      install: () => Promise<import('@shared/types/browser-bridge').BrowserBridgeInstallStatus>
+      uninstall: () => Promise<{ errors: string[] }>
+      openExtensionGuide: (browser: import('@shared/types/browser-bridge').BrowserBridgeBrowser) => Promise<void>
+      onConnectionsChanged: (
+        callback: (status: import('@shared/types/browser-bridge').BrowserBridgeStatus) => void
+      ) => () => void
     }
   }
 }
