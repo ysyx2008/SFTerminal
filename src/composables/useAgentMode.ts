@@ -120,6 +120,15 @@ export function useAgentMode(
   // 标志：是否跳过 scroll 事件的状态更新（用于避免强制滚动时被 scroll 事件覆盖）
   let skipScrollUpdate = false
 
+  // 用户主动跟底：发消息 / 点「新消息」后保持贴底跟随，直到用户明确上滚。
+  // 虚拟列表 scrollHeight 异步修正时，scroll 事件会短暂误判「不在底部」；
+  // 仅靠 checkIsNearBottom 会让 isUserNearBottom 抖动，hasNewMessage 闪烁并中断 ResizeObserver 跟底。
+  let stickyFollowBottom = false
+  let lastKnownScrollTop = 0
+  let lastAutoScrollAt = 0
+  let scrollGraceTimer: ReturnType<typeof setTimeout> | null = null
+  const AUTO_SCROLL_GRACE_MS = 150
+
   // 启动 / 主动跳底窗口期内 ResizeObserver 仍贴底但**跳过 FLIP 动画**的时间戳。
   // scrollToBottom 触发时设置（new Date.now() + N ms）。语义：用户主动发新消息那一刻
   // 几个相邻的 wrapper 高度变化（user_task step / 初始占位 message step / 真实
@@ -321,17 +330,52 @@ export function useAgentMode(
     })
   }
 
+  /** 延长程序化贴底保护窗口，避免 scroll 事件在虚拟列表高度修正前误判离底 */
+  const extendScrollGrace = () => {
+    skipScrollUpdate = true
+    if (scrollGraceTimer) clearTimeout(scrollGraceTimer)
+    scrollGraceTimer = setTimeout(() => {
+      scrollGraceTimer = null
+      skipScrollUpdate = false
+    }, AUTO_SCROLL_GRACE_MS)
+  }
+
+  /** ResizeObserver / scrollToBottom 程序化贴底后，短暂屏蔽 scroll 事件对跟底状态的污染 */
+  const guardAfterAutoScroll = () => {
+    lastAutoScrollAt = Date.now()
+    stickyFollowBottom = true
+    setIsUserNearBottom(true)
+    hasNewMessage.value = false
+    extendScrollGrace()
+  }
+
+  const shouldFollowBottom = () => stickyFollowBottom || isUserNearBottom.value
+
+  const shouldFollowResize = () => skipScrollUpdate || shouldFollowBottom()
+
   // 更新用户滚动位置状态（由组件的 scroll 事件调用）
   const updateScrollPosition = () => {
     // 跳过强制滚动期间的状态更新，避免被 scroll 事件覆盖
     if (skipScrollUpdate) return
+    const el = messagesRef.value
+    if (!el) return
+
+    const { scrollTop } = el
     const nearBottom = checkIsNearBottom()
-    setIsUserNearBottom(nearBottom)
-    saveScrollTop()
-    // 如果用户滚动到底部，清除新消息提示
+    const outsideAutoScrollGrace = Date.now() - lastAutoScrollAt > AUTO_SCROLL_GRACE_MS
+    const scrolledUpSignificantly =
+      outsideAutoScrollGrace && scrollTop < lastKnownScrollTop - SCROLL_THRESHOLD
+
     if (nearBottom) {
+      stickyFollowBottom = true
       hasNewMessage.value = false
+    } else if (scrolledUpSignificantly) {
+      stickyFollowBottom = false
     }
+
+    lastKnownScrollTop = scrollTop
+    setIsUserNearBottom(nearBottom || stickyFollowBottom)
+    saveScrollTop()
   }
 
   // 强制滚动到底部（用户主动发送消息或点击时调用）
@@ -346,22 +390,16 @@ export function useAgentMode(
   // 真正的流式 chunk 进来才进入 FLIP 平滑滑动。
   const FLIP_SUPPRESS_WINDOW_MS = 200
   const scrollToBottom = async () => {
-    // 先设置状态，防止被 scroll 事件覆盖
-    skipScrollUpdate = true
-    setIsUserNearBottom(true)
-    hasNewMessage.value = false
     suppressFlipUntil = Date.now() + FLIP_SUPPRESS_WINDOW_MS
 
     await nextTick()
     if (messagesRef.value) {
       messagesRef.value.scrollTop = messagesRef.value.scrollHeight
+      lastKnownScrollTop = messagesRef.value.scrollTop
     }
 
-    // 延迟恢复 scroll 事件更新，确保滚动完成后才开始监听用户滚动
-    requestAnimationFrame(() => {
-      skipScrollUpdate = false
-      saveScrollTop()
-    })
+    guardAfterAutoScroll()
+    requestAnimationFrame(() => saveScrollTop())
   }
 
   // 实际执行滚动
@@ -383,23 +421,19 @@ export function useAgentMode(
     lastScrollTime = Date.now()
     await nextTick()
 
-    // 仅依赖 isUserNearBottom（由用户真实滚动事件维护）
+    // 依赖 stickyFollowBottom / isUserNearBottom（由用户滚动 + 跟底意图维护）
     // 不做实时 checkIsNearBottom()：DynamicScroller 的 scrollHeight 基于估算，
     // 虚拟化的 off-screen 项高度远小于实际值，会导致误判"在底部附近"
-    if (isUserNearBottom.value) {
+    if (shouldFollowBottom()) {
       if (messagesRef.value) {
         // ⚠️ skipScrollUpdate 同时被 ResizeObserver 当作"正在贴底，跟随尺寸变化"信号
         //（见 installContentResizeObserver）。所以只能在确实要贴底的分支里置位，
         // 否则用户向上滚走后，新内容引发的 ResizeObserver 回调会被误触发为强制贴底，
         // 把用户从阅读位拽回最底（曾经的回归 bug）。
-        skipScrollUpdate = true
+        stickyFollowBottom = true
         setIsUserNearBottom(true)
         hasNewMessage.value = false
-
-        // 延迟恢复 scroll 事件监听，等待 DynamicScroller 布局稳定
-        setTimeout(() => {
-          skipScrollUpdate = false
-        }, 80)
+        extendScrollGrace()
       }
     } else {
       hasNewMessage.value = true
@@ -552,7 +586,7 @@ export function useAgentMode(
       // - isUserNearBottom：用户视觉在底部，常规流式 chunk 跟随
       // 两种场景都该走 FLIP 平滑滑动；用户主动滚走后 isUserNearBottom 为 false，
       // 不再越权强行贴底，避免和"用户翻看历史"的意图打架
-      if (!skipScrollUpdate && !isUserNearBottom.value) return
+      if (!shouldFollowResize()) return
 
       // wrapperDelta ≤ 0（wrapper 收缩，如图片渲染过程中的 markdown reflow 调整、
       // ThinkingBlock 折叠等）：完全不动 scrollTop，让浏览器自然 clamp。曾经在
@@ -569,6 +603,8 @@ export function useAgentMode(
       // 情况），跳过动画但仍贴底，避免长距离闪现
       if (Date.now() < suppressFlipUntil || wrapperDelta >= MAX_FLIP_DELTA) {
         el.scrollTop = el.scrollHeight
+        lastKnownScrollTop = el.scrollTop
+        guardAfterAutoScroll()
         return
       }
 
@@ -579,6 +615,8 @@ export function useAgentMode(
       const oldScrollTop = el.scrollTop
       el.scrollTop = el.scrollHeight
       const scrollDelta = el.scrollTop - oldScrollTop
+      lastKnownScrollTop = el.scrollTop
+      guardAfterAutoScroll()
 
       // ② FLIP 反向偏移：scrollDelta > 0 时给 wrapper 加反向 transform，下一帧归零
       applyFlipScroll(scrollDelta)
@@ -603,12 +641,27 @@ export function useAgentMode(
     prevWrapperHeight = 0
   }
 
+  const onMessagesWheel = (e: WheelEvent) => {
+    if (e.deltaY < 0) {
+      stickyFollowBottom = false
+      setIsUserNearBottom(false)
+      if (scrollGraceTimer) {
+        clearTimeout(scrollGraceTimer)
+        scrollGraceTimer = null
+      }
+      skipScrollUpdate = false
+    }
+  }
+
   // messagesRef 由 AiPanel 在 watch(scrollerRef) 中赋值；这里跟随它生命周期挂载/卸载
   // wrapper 是 DynamicScroller mount 后内部渲染的子节点，等一帧确保挂载完成
   watch(messagesRef, (el, oldEl) => {
     if (oldEl === el) return
+    oldEl?.removeEventListener('wheel', onMessagesWheel)
     uninstallContentResizeObserver()
     if (el) {
+      lastKnownScrollTop = el.scrollTop
+      el.addEventListener('wheel', onMessagesWheel, { passive: true })
       requestAnimationFrame(() => installContentResizeObserver())
     }
   }, { flush: 'post' })
