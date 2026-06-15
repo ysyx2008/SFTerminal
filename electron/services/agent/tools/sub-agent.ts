@@ -151,6 +151,7 @@ function buildSubAgentExecutorConfig(
 
   return {
     agentId: parentExecutor.agentId ? `${parentExecutor.agentId}:sub` : 'sub-agent',
+    isSubAgent: true,
     terminalService: parentExecutor.terminalService,
     hostProfileService: parentExecutor.hostProfileService,
     // 子 Agent 的 step 不推送到前端（由父 Agent 汇总推送）
