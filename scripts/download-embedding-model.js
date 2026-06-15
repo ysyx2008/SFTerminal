@@ -104,11 +104,24 @@ async function main() {
   console.log(`Destination: ${DEST_DIR}`)
   console.log()
 
+  // 检查所有文件是否已存在，全部存在则跳过下载
+  const allExist = FILES.every((rel) => fs.existsSync(path.join(DEST_DIR, rel)))
+  if (allExist) {
+    console.log('Embedding model already exists, skipping download')
+    console.log(`Model path: ${DEST_DIR}`)
+    return
+  }
+
   fs.mkdirSync(DEST_DIR, { recursive: true })
 
   for (const rel of FILES) {
     const url = `${HF_BASE}/${rel}`
     const dest = path.join(DEST_DIR, rel)
+    if (fs.existsSync(dest)) {
+      const stat = fs.statSync(dest)
+      console.log(`→ ${rel} (already exists, ${(stat.size / 1024 / 1024).toFixed(2)} MB, skipping)`)
+      continue
+    }
     console.log(`→ ${rel}`)
     await download(url, dest)
     const stat = fs.statSync(dest)

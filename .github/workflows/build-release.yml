@@ -35,6 +35,13 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Cache models
+        uses: actions/cache@v4
+        with:
+          path: resources/models
+          key: models-${{ hashFiles('scripts/download-models.js', 'scripts/download-embedding-model.js', 'scripts/download-speech-model.js', 'scripts/download-punct-model.js') }}
+          restore-keys: models-
+
       - name: Install dependencies
         run: npm ci
 
@@ -65,6 +72,13 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+
+      - name: Cache models
+        uses: actions/cache@v4
+        with:
+          path: resources/models
+          key: models-${{ hashFiles('scripts/download-models.js', 'scripts/download-embedding-model.js', 'scripts/download-speech-model.js', 'scripts/download-punct-model.js') }}
+          restore-keys: models-
 
       - name: Install dependencies
         run: npm ci
@@ -109,6 +123,13 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+
+      - name: Cache models
+        uses: actions/cache@v4
+        with:
+          path: resources/models
+          key: models-${{ hashFiles('scripts/download-models.js', 'scripts/download-embedding-model.js', 'scripts/download-speech-model.js', 'scripts/download-punct-model.js') }}
+          restore-keys: models-
 
       - name: Install dependencies
         run: npm ci
