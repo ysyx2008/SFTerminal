@@ -11,7 +11,8 @@ import {
   ChevronDown,
   Download,
   Check,
-  PanelRightClose
+  PanelRightClose,
+  X
 } from 'lucide-vue-next'
 import type { CanvasArtifact, CanvasRendererType } from '@shared/types'
 import {
@@ -134,12 +135,12 @@ const ctxMenu = ref<{
 /** 产出物列表仍打开时弹出的右键菜单（需保持列表可见且菜单置于列表之上） */
 const ctxMenuFromPicker = ref(false)
 
-const showArtifactSwitcher = computed(() => artifacts.value.length >= 2)
+const showArtifactSwitcher = computed(() => artifacts.value.length >= 1)
 const allArtifactsSorted = computed(() => sortArtifactsByRecent(artifacts.value))
 const pickerArtifacts = computed(() =>
   filterArtifactsByQuery(allArtifactsSorted.value, artifactPickerQuery.value)
 )
-const showPickerSearch = computed(() => artifacts.value.length >= 4)
+const showPickerSearch = computed(() => artifacts.value.length >= 5)
 
 const ctxArtifact = computed(() => {
   if (ctxMenu.value.target?.kind !== 'tab') return null
@@ -739,6 +740,14 @@ onUnmounted(() => {
               <span class="artifact-picker-label">{{ artifactTabLabel(artifact) }}</span>
               <Check v-if="artifact.id === activeArtifactId" :size="13" class="artifact-picker-check" />
             </button>
+            <button
+              type="button"
+              class="artifact-picker-close"
+              :title="t('canvas.closeArtifact')"
+              @click.stop="closeArtifact(artifact.id)"
+            >
+              <X :size="12" />
+            </button>
           </div>
           <div v-if="pickerArtifacts.length === 0" class="artifact-picker-empty">
             {{ t('canvas.artifactPickerEmpty') }}
@@ -897,13 +906,6 @@ onUnmounted(() => {
           v-if="isActiveEditable || canSaveAsActive || canSaveAll"
           class="canvas-ctx-separator"
         />
-        <button
-          type="button"
-          class="canvas-ctx-item"
-          @click="minimizePanel(); closeCtxMenu()"
-        >
-          {{ t('canvas.minimizePanel') }}
-        </button>
         <button
           v-if="artifacts.length > 0"
           type="button"
@@ -1135,6 +1137,32 @@ onUnmounted(() => {
   flex-shrink: 0;
   color: var(--accent-primary, #89b4fa);
   opacity: 0.85;
+}
+
+.artifact-picker-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+  cursor: pointer;
+  opacity: 0;
+  transition: background 0.1s, color 0.1s, opacity 0.1s;
+}
+
+.artifact-picker-row:hover .artifact-picker-close {
+  opacity: 1;
+}
+
+.artifact-picker-close:hover {
+  background: rgba(244, 63, 94, 0.12);
+  color: #f87171;
 }
 
 
