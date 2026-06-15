@@ -47,6 +47,8 @@ jobs:
 
       - name: Build application
         run: npm run build:win
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"  # vite build 内存密集，默认堆约 2GB 不够用
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v7
