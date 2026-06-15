@@ -41,7 +41,7 @@ const emit = defineEmits<{
 
 const shellRef = ref<HTMLElement | null>(null)
 
-// 当前拖拽的清理函数；拖拽中组件被卸载（如切换 tab）时用于兜底，避免 body 光标/选区状态残留
+// 当前拖拽的清理函数
 let activeCleanup: (() => void) | null = null
 
 function startResize(e: MouseEvent) {
@@ -90,10 +90,10 @@ onUnmounted(() => activeCleanup?.())
     ref="shellRef"
     class="workbench-shell"
     :class="`toggle-${toggleSide}`"
+    :style="{ '--workbench-collapsed-width': `${collapsedWidth}px` }"
   >
     <div
       class="workbench-anchor"
-      :style="toggleVisible && !toggleCollapsed ? { flex: `0 0 ${(1 - toggleRatio) * 100}%` } : undefined"
     >
       <slot name="anchor" />
     </div>
@@ -108,11 +108,7 @@ onUnmounted(() => activeCleanup?.())
         'region-open': toggleVisible && !toggleCollapsed,
         'region-collapsed': toggleVisible && toggleCollapsed
       }"
-      :style="toggleVisible
-        ? (toggleCollapsed
-          ? { flex: `0 0 ${collapsedWidth}px` }
-          : { flex: `0 0 ${toggleRatio * 100}%` })
-        : undefined"
+      :style="toggleVisible ? { flex: `0 0 ${toggleRatio * 100}%` } : undefined"
     >
       <slot name="toggle" />
     </div>
@@ -144,7 +140,6 @@ onUnmounted(() => activeCleanup?.())
   flex-direction: column;
   min-width: 300px;
   overflow: hidden;
-  transition: flex-basis 0.3s ease;
 }
 
 .workbench-divider {
@@ -182,23 +177,22 @@ onUnmounted(() => activeCleanup?.())
   flex-direction: column;
   align-self: stretch;
   flex-basis: 0;
+  /* max-width 是唯一的动画属性；flex-basis 始终等于目标比例，不参与过渡 */
   max-width: 0;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   opacity: 0;
-  transition: flex-basis 0.3s ease, max-width 0.3s ease, opacity 0.25s ease;
+  transition: max-width 0.3s ease, opacity 0.25s ease;
 }
 
 .workbench-region.region-open {
-  min-width: 200px;
   max-width: 100%;
   opacity: 1;
 }
 
 .workbench-region.region-collapsed {
-  min-width: 0;
-  max-width: none;
+  max-width: var(--workbench-collapsed-width, 40px);
   opacity: 1;
 }
 </style>
