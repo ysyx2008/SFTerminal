@@ -1007,7 +1007,11 @@ onUnmounted(() => {
   position: fixed;
   z-index: 10000;
   max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 120px);
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .artifact-picker-search {
@@ -1032,7 +1036,9 @@ onUnmounted(() => {
 }
 
 .artifact-picker-list {
-  max-height: 280px;
+  flex: 1;
+  min-height: 0;
+  max-height: 480px;
   overflow-y: auto;
 }
 
