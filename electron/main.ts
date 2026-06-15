@@ -8,6 +8,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import { getDefaultShell } from './utils/platform'
 import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, WebSearchSettings } from '@shared/types'
+import { getAppTitle as buildAppTitle, getBrandName } from '@shared/brand'
 
 /**
  * 展开路径开头的 `~` 为用户 home 目录。支持 `~`、`~/...`、`~\...`（兼容 Windows）。
@@ -147,28 +148,22 @@ const APP_START_TIME = Date.now()
 const packageJson = JSON.parse(fs.readFileSync(join(__dirname, '../package.json'), 'utf-8'))
 const APP_VERSION = packageJson.version
 
-// 应用名称（多语言支持）
-const APP_NAME = { zh: '旗鱼', en: 'SailFish' }
-
 // Steam 构建标识：主进程直接读环境变量，dev/build 均可靠
 const IS_STEAM_BUILD = process.env.VITE_STEAM_BUILD === 'true'
-const APP_NAME_STEAM = { zh: '旗鱼终端', en: 'SFTerm' }
 
-/**
- * 根据语言获取应用标题（Steam 版使用不同品牌名）
- */
+/** 根据语言获取应用标题（Steam 版使用不同品牌名） */
 function getAppTitle(language?: string): string {
   const lang = language || configService?.getLanguage() || 'zh-CN'
-  const names = IS_STEAM_BUILD ? APP_NAME_STEAM : APP_NAME
-  const name = lang.startsWith('zh') ? names.zh : names.en
-  return `${name} v${APP_VERSION}`
+  return buildAppTitle(lang, APP_VERSION, IS_STEAM_BUILD)
 }
 
 /** 应用短名称（无版本号，用于通知标题等） */
 function getAppName(language?: string): string {
   const lang = language || configService?.getLanguage() || 'zh-CN'
-  const names = IS_STEAM_BUILD ? APP_NAME_STEAM : APP_NAME
-  return lang.startsWith('zh') ? names.zh : names.en
+  if (IS_STEAM_BUILD) {
+    return lang.startsWith('zh') ? '旗鱼终端' : 'SFTerm'
+  }
+  return getBrandName(lang)
 }
 
 /**

@@ -1,4 +1,5 @@
 import { createI18n } from 'vue-i18n'
+import { applyOemBranding } from '@shared/brand'
 import zhCN from './locales/zh-CN'
 import enUS from './locales/en-US'
 
@@ -24,8 +25,8 @@ const i18n = createI18n({
   locale: getDefaultLocale(),
   fallbackLocale: 'en-US',
   messages: {
-    'zh-CN': zhCN,
-    'en-US': enUS
+    'zh-CN': applyOemBranding(zhCN, 'zh-CN'),
+    'en-US': applyOemBranding(enUS, 'en-US')
   }
 })
 
