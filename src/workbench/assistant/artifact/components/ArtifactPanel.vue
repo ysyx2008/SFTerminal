@@ -443,6 +443,11 @@ function closeAllMenus() {
   closeOverlayMenus()
 }
 
+/** 任意浮层菜单打开时屏蔽 canvas-body 的指针事件，防止 iframe 合成层吞掉点击，导致菜单无法关闭 */
+const anyMenuOpen = computed(() =>
+  ctxMenu.value.show || showArtifactPicker.value || showFileMenuDropdown.value
+)
+
 function openCtxMenu(
   e: MouseEvent,
   target: ContextTarget,
@@ -736,16 +741,8 @@ onUnmounted(() => {
         <div v-if="ctxArtifact.filePath" class="canvas-ctx-path" :title="ctxArtifact.filePath">
           {{ ctxArtifact.filePath }}
         </div>
-        <button
-          v-if="ctxMenuFlags.showJumpToSource"
-          type="button"
-          class="canvas-ctx-item"
-          @click="jumpToSource(ctxArtifact.sourceStepId); closeCtxMenu()"
-        >
-          {{ t('canvas.jumpToSource') }}
-        </button>
         <div
-          v-if="ctxMenuFlags.showJumpToSource || ctxArtifact.filePath || artifactHasFileActions(ctxMenuFlags)"
+          v-if="ctxArtifact.filePath || artifactHasFileActions(ctxMenuFlags)"
           class="canvas-ctx-separator"
         />
         <button
@@ -809,20 +806,18 @@ onUnmounted(() => {
         >
           {{ t('canvas.closeAll') }}
         </button>
+        <template v-if="ctxMenuFlags.showJumpToSource">
+          <div class="canvas-ctx-separator" />
+          <button
+            type="button"
+            class="canvas-ctx-item"
+            @click="jumpToSource(ctxArtifact.sourceStepId); closeCtxMenu()"
+          >
+            {{ t('canvas.jumpToSource') }}
+          </button>
+        </template>
       </template>
       <template v-else-if="ctxMenu.target?.kind === 'header'">
-        <button
-          v-if="activeSourceStepId"
-          type="button"
-          class="canvas-ctx-item"
-          @click="jumpToSource(); closeCtxMenu()"
-        >
-          {{ t('canvas.jumpToSource') }}
-        </button>
-        <div
-          v-if="activeSourceStepId && (canOpenActive || isActiveEditable || canSaveAsActive || canSaveAll)"
-          class="canvas-ctx-separator"
-        />
         <button
           v-if="canOpenActive"
           type="button"
@@ -883,11 +878,21 @@ onUnmounted(() => {
         >
           {{ t('canvas.closeAll') }}
         </button>
+        <template v-if="activeSourceStepId">
+          <div class="canvas-ctx-separator" />
+          <button
+            type="button"
+            class="canvas-ctx-item"
+            @click="jumpToSource(); closeCtxMenu()"
+          >
+            {{ t('canvas.jumpToSource') }}
+          </button>
+        </template>
       </template>
       </div>
     </Teleport>
 
-    <div v-if="activeArtifactId" class="canvas-body">
+    <div v-if="activeArtifactId" class="canvas-body" :class="{ 'canvas-body--no-pointer': anyMenuOpen }">
       <div class="canvas-renderer-host">
         <component
           :is="activeRendererComponent"
@@ -1242,6 +1247,10 @@ onUnmounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.canvas-body--no-pointer {
+  pointer-events: none;
 }
 
 .canvas-renderer-host {
