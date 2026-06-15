@@ -17,11 +17,14 @@ import {
   getActiveArtifact,
   getArtifactById,
   getArtifacts,
+  hasArtifacts,
+  hidePanel,
   hydrateArtifactsFromSteps,
   isArtifactEmptyState,
   isPanelVisible,
   removeArtifact,
   setActiveArtifact,
+  showPanel,
   updateArtifactContentById,
   type TabArtifactState
 } from './domain/artifact-registry'
@@ -67,6 +70,15 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
 
   function isVisible(tabId: string): boolean {
     return isPanelVisible(getTabState(tabId))
+  }
+
+  function hasArtifactsForTab(tabId: string): boolean {
+    return hasArtifacts(getTabState(tabId))
+  }
+
+  function isPanelMinimized(tabId: string): boolean {
+    const state = getTabState(tabId)
+    return hasArtifacts(state) && !state.visible
   }
 
   function isEmptyState(tabId: string): boolean {
@@ -261,6 +273,16 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     commitTabState(tabId, dismissEmptyPanel(getTabState(tabId)))
   }
 
+  function minimizePanel(tabId: string) {
+    cancelPendingClose(tabId)
+    commitTabState(tabId, hidePanel(getTabState(tabId)))
+  }
+
+  function expandPanel(tabId: string) {
+    cancelPendingClose(tabId)
+    commitTabState(tabId, showPanel(getTabState(tabId)))
+  }
+
   function requestJumpToSource(tabId: string, stepId: string) {
     sourceJumpRequest.value = { tabId, stepId }
   }
@@ -295,6 +317,8 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     lastDiskSync,
     sourceJumpRequest,
     isVisible,
+    hasArtifacts: hasArtifactsForTab,
+    isPanelMinimized,
     isEmptyState,
     getArtifacts: getArtifactsForTab,
     getActiveArtifact: getActiveArtifactForTab,
@@ -315,6 +339,8 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     closeOthers,
     closeAll,
     dismissPanel,
+    minimizePanel,
+    expandPanel,
     relocateArtifact,
     requestJumpToSource,
     clearSourceJumpRequest

@@ -28,8 +28,13 @@ export function createTabArtifactState(): TabArtifactState {
   }
 }
 
-export function isPanelVisible(state: TabArtifactState): boolean {
+export function hasArtifacts(state: TabArtifactState): boolean {
   return state.artifacts.length > 0
+}
+
+/** 面板是否展开（有产出物且未被用户最小化） */
+export function isPanelVisible(state: TabArtifactState): boolean {
+  return state.artifacts.length > 0 && state.visible
 }
 
 /** @deprecated 产出物为空时面板自动隐藏，不再保留空态占位 */
@@ -171,7 +176,7 @@ export function removeArtifact(state: TabArtifactState, artifactId: string): Tab
     return { ...createTabArtifactState(), hadArtifacts: true }
   }
 
-  return { ...state, visible: true, artifacts, activeArtifactId }
+  return { ...state, artifacts, activeArtifactId }
 }
 
 export function clearTabArtifacts(_state: TabArtifactState): TabArtifactState {
@@ -181,6 +186,18 @@ export function clearTabArtifacts(_state: TabArtifactState): TabArtifactState {
 /** 关闭空态面板，恢复为未出现产出物的初始态 */
 export function dismissEmptyPanel(_state: TabArtifactState): TabArtifactState {
   return createTabArtifactState()
+}
+
+/** 最小化面板：保留产出物数据，仅隐藏分屏区域 */
+export function hidePanel(state: TabArtifactState): TabArtifactState {
+  if (state.artifacts.length === 0) return state
+  return { ...state, visible: false }
+}
+
+/** 展开已最小化的产出物面板 */
+export function showPanel(state: TabArtifactState): TabArtifactState {
+  if (state.artifacts.length === 0) return state
+  return { ...state, visible: true }
 }
 
 export function applyCanvasData(state: TabArtifactState, data: CanvasData): TabArtifactState {

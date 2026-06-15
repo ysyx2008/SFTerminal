@@ -7,11 +7,14 @@ export {
   getActiveArtifact,
   getArtifactById,
   getArtifacts,
+  hasArtifacts,
+  hidePanel,
   hydrateArtifactsFromSteps,
   isArtifactEmptyState,
   isPanelVisible,
   removeArtifact,
   setActiveArtifact,
+  showPanel,
   updateArtifactContentById,
   type TabArtifactState
 } from './domain/artifact-registry'

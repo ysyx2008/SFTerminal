@@ -10,7 +10,8 @@ import {
   FolderOpen,
   ChevronDown,
   Download,
-  Check
+  Check,
+  PanelRightClose
 } from 'lucide-vue-next'
 import type { CanvasArtifact, CanvasRendererType } from '@shared/types'
 import {
@@ -278,6 +279,15 @@ function closeOthers(keepId: string) {
 function closeAllArtifacts() {
   flushActiveDraft()
   artifactStore.closeAll(props.tabId)
+}
+
+function minimizePanel() {
+  flushActiveDraft()
+  for (const artifact of artifacts.value) {
+    saveBridge.flush(artifact.id)
+  }
+  closeAllMenus()
+  artifactStore.minimizePanel(props.tabId)
 }
 
 function jumpToSource(stepId?: string) {
@@ -667,6 +677,15 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+        <button
+          type="button"
+          class="canvas-icon-btn"
+          :title="t('canvas.minimizePanel')"
+          :aria-label="t('canvas.minimizePanel')"
+          @click="minimizePanel"
+        >
+          <PanelRightClose :size="14" />
+        </button>
       </div>
     </div>
 
@@ -870,6 +889,13 @@ onUnmounted(() => {
           v-if="isActiveEditable || canSaveAsActive || canSaveAll"
           class="canvas-ctx-separator"
         />
+        <button
+          type="button"
+          class="canvas-ctx-item"
+          @click="minimizePanel(); closeCtxMenu()"
+        >
+          {{ t('canvas.minimizePanel') }}
+        </button>
         <button
           v-if="artifacts.length > 0"
           type="button"
@@ -1134,6 +1160,27 @@ onUnmounted(() => {
   gap: 4px;
   flex-shrink: 0;
   margin-left: auto;
+}
+
+.canvas-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+
+.canvas-icon-btn:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.08));
+  color: var(--text-primary, #eee);
 }
 
 .canvas-text-btn {

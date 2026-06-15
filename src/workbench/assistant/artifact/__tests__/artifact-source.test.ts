@@ -6,10 +6,12 @@ import {
   applyCanvasData,
   createTabArtifactState,
   dismissEmptyPanel,
+  hidePanel,
   hydrateArtifactsFromSteps,
   isArtifactEmptyState,
   isPanelVisible,
-  removeArtifact
+  removeArtifact,
+  showPanel
 } from '../domain/artifact-registry'
 import {
   enrichCanvasDataFromStep,
@@ -103,6 +105,35 @@ describe('artifact source & empty state', () => {
     state = dismissEmptyPanel(state)
     expect(isPanelVisible(state)).toBe(false)
     expect(isArtifactEmptyState(state)).toBe(false)
+  })
+
+  it('hidePanel 保留产出物但隐藏面板', () => {
+    let state = applyCanvasData(createTabArtifactState(), {
+      action: 'open',
+      renderer: 'markdown',
+      title: 'a.md',
+      filePath: '/a.md',
+      content: 'x'
+    })
+    expect(isPanelVisible(state)).toBe(true)
+    state = hidePanel(state)
+    expect(isPanelVisible(state)).toBe(false)
+    expect(state.artifacts).toHaveLength(1)
+    expect(state.visible).toBe(false)
+  })
+
+  it('showPanel 重新展开已最小化的面板', () => {
+    let state = applyCanvasData(createTabArtifactState(), {
+      action: 'open',
+      renderer: 'markdown',
+      title: 'a.md',
+      filePath: '/a.md',
+      content: 'x'
+    })
+    state = hidePanel(state)
+    state = showPanel(state)
+    expect(isPanelVisible(state)).toBe(true)
+    expect(state.artifacts).toHaveLength(1)
   })
 })
 
