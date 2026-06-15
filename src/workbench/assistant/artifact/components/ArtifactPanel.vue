@@ -949,9 +949,10 @@ onUnmounted(() => {
 .canvas-panel {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  height: 100%;
+  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
+  min-height: 0;
   background: var(--bg-primary, #1e1e1e);
   border-left: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
 }

@@ -179,9 +179,12 @@ onUnmounted(() => activeCleanup?.())
 
 .workbench-region {
   display: flex;
+  flex-direction: column;
+  align-self: stretch;
   flex-basis: 0;
   max-width: 0;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
   opacity: 0;
   transition: flex-basis 0.3s ease, max-width 0.3s ease, opacity 0.25s ease;
