@@ -230,18 +230,46 @@ function requestNative(action, payload) {
   })
 }
 
+function reconnectNative() {
+  if (nativePort) {
+    try { nativePort.disconnect() } catch { /* ignore */ }
+    nativePort = null
+  }
+  chrome.storage.local.set({ bridgeConnected: false })
+  setTimeout(connectNative, 1000)
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.source === 'sailfish-popup-test') {
-    requestNative(message.action, message.payload).then(sendResponse).catch((e) => sendResponse({ error: e.message }))
+    requestNative(message.action, message.payload)
+      .then(sendResponse)
+      .catch((e) => {
+        reconnectNative()
+        sendResponse({ error: e.message })
+      })
     return true
   }
 })
 
+chrome.runtime.onStartup.addListener(() => {
+  if (!nativePort) connectNative()
+})
+
+chrome.runtime.onInstalled.addListener(() => {
+  if (!nativePort) connectNative()
+})
+
 connectNative()
 chrome.alarms.create('keepalive', { periodInMinutes: 1 })
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'keepalive') {
-    if (!nativePort) connectNative()
-    else nativePort.postMessage({ id: 'ping', action: 'ping', payload: {} })
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== 'keepalive') return
+  if (!nativePort) {
+    connectNative()
+    return
+  }
+  try {
+    await requestNative('ping', {})
+  } catch {
+    reconnectNative()
   }
 })

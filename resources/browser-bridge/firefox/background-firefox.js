@@ -36,7 +36,16 @@ function connectNative() {
 }
 
 async function onNativeMessage(message) {
-  if (!message?.action) return
+  if (!message) return
+  // Response to a requestNative() call
+  if (message.id && pending.has(message.id)) {
+    const { resolve, reject } = pending.get(message.id)
+    pending.delete(message.id)
+    if (message.success) resolve(message.data)
+    else reject(new Error(message.error || 'Unknown error'))
+    return
+  }
+  if (!message.action) return
   const { id, action, payload = {} } = message
   try {
     const data = await dispatchAction(action, payload)
@@ -177,12 +186,71 @@ async function runInActiveTab(action, payload) {
   return entry.result
 }
 
+/** @type {Map<string, { resolve: Function, reject: Function }>} */
+const pending = new Map()
+
+function requestNative(action, payload) {
+  return new Promise((resolve, reject) => {
+    if (!nativePort) connectNative()
+    if (!nativePort) {
+      reject(new Error('Native host not connected'))
+      return
+    }
+    const id = `ext-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    pending.set(id, { resolve, reject })
+    nativePort.postMessage({ id, action, payload })
+    setTimeout(() => {
+      if (pending.has(id)) {
+        pending.delete(id)
+        reject(new Error(`Timeout: ${action}`))
+      }
+    }, 60000)
+  })
+}
+
+api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.source === 'sailfish-popup-test') {
+    requestNative(message.action, message.payload)
+      .then(sendResponse)
+      .catch((e) => {
+        // Gateway unreachable — disconnect stale native port and reconnect
+        reconnectNative()
+        sendResponse({ error: e.message })
+      })
+    return true
+  }
+})
+
+api.runtime.onStartup.addListener(() => {
+  if (!nativePort) connectNative()
+})
+
+api.runtime.onInstalled.addListener(() => {
+  if (!nativePort) connectNative()
+})
+
+function reconnectNative() {
+  if (nativePort) {
+    try { nativePort.disconnect() } catch { /* ignore */ }
+    nativePort = null
+  }
+  api.storage.local.set({ bridgeConnected: false })
+  setTimeout(connectNative, 1000)
+}
+
 connectNative()
 api.alarms.create('keepalive', { periodInMinutes: 1 })
-api.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'keepalive' && nativePort) {
-    nativePort.postMessage({ id: 'ping', action: 'ping', payload: {} })
-  } else if (alarm.name === 'keepalive') {
+api.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== 'keepalive') return
+  if (!nativePort) {
     connectNative()
+    return
+  }
+  // Verify the full pipeline (native port + TCP gateway) is healthy
+  try {
+    await requestNative('ping', {})
+  } catch {
+    // Native host alive but gateway unreachable, or host crashed — force reconnect
+    reconnectNative()
   }
 })

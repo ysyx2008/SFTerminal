@@ -179,11 +179,30 @@ async function startLoadFirefox() {
 }
 
 let unsubConnections: (() => void) | null = null
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function startPollingIfNeeded() {
+  if (pollTimer) return
+  // 如果有浏览器未连接，每 4s 自动刷新一次，最长 90s
+  let elapsed = 0
+  pollTimer = setInterval(async () => {
+    elapsed += 4
+    if (anyConnected.value || elapsed >= 90) {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+      return
+    }
+    await refreshStatus()
+  }, 4000)
+}
 
 onMounted(() => {
-  void refreshStatus()
+  void refreshStatus().then(startPollingIfNeeded)
   unsubConnections = window.electronAPI.browserBridge.onConnectionsChanged((next) => {
     status.value = next
+    if (anyConnected.value && pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
   })
 })
 
@@ -192,6 +211,7 @@ onUnmounted(() => {
   if (actionMsgTimer) clearTimeout(actionMsgTimer)
   if (copiedPathTimer) clearTimeout(copiedPathTimer)
   if (loadReadyTimer) clearTimeout(loadReadyTimer)
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
 })
 </script>
 
