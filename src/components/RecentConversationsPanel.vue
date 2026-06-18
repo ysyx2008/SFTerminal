@@ -284,16 +284,19 @@ const displayedRecordIds = computed(() => {
 })
 
 /**
- * 当前可见行的状态（只对已提升为独立 tab 的会话显示图标，Hub 焦点/未提升的显示为 closed）。
- * 未提升的会话在侧栏不显示运行中/已打开等状态，避免与 Hub 焦点高亮语义混淆。
+ * 当前可见行的状态：running / attention 对所有会话都显示；
+ * open（仅表示"已在 tab 中打开"）只对 isPromoted tab 显示，非提升会话降级为 closed。
  */
 const conversationMetaById = computed(() => {
   const historyMeta = terminalStore.historyConversationMetaBySessionId
   const map = new Map<string, { status: HistoryConversationTabStatus; tooltip: string }>()
   for (const id of displayedRecordIds.value) {
-    // 只有 isPromoted tab 才读真实 meta；其余始终显示 closed
+    const rawMeta = historyMeta.get(id) ?? CLOSED_HISTORY_CONVERSATION_META
     const tab = terminalStore.findTabByHistoryId(id)
-    const meta = (tab?.isPromoted ? historyMeta.get(id) : undefined) ?? CLOSED_HISTORY_CONVERSATION_META
+    // 非提升 tab 的 "open" 状态没有独立 tab 意义，降级为 closed；running/attention 保留
+    const meta = (!tab?.isPromoted && rawMeta.status === 'open')
+      ? CLOSED_HISTORY_CONVERSATION_META
+      : rawMeta
     map.set(id, { status: meta.status, tooltip: formatHistoryConversationTooltip(meta, t) })
   }
   return map

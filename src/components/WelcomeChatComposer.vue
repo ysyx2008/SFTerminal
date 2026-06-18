@@ -325,6 +325,17 @@ onMounted(() => {
   document.addEventListener('keydown', handlePTTKeyDown, true)
   document.addEventListener('keyup', handlePTTKeyUp, true)
   window.addEventListener('blur', handlePTTWindowBlur)
+  // 初始可见时自动聚焦
+  if (props.active) {
+    nextTick(() => composerRef.value?.focusInput())
+  }
+})
+
+// 每次切回欢迎页（active 变为 true）时聚焦输入框
+watch(() => props.active, (active) => {
+  if (active) {
+    nextTick(() => composerRef.value?.focusInput())
+  }
 })
 
 onUnmounted(() => {

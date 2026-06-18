@@ -333,17 +333,14 @@ const handleCloseShortcut = async () => {
   const activeTab = terminalStore.activeTab
   if (activeTab) {
     if (activeTab.type === 'assistant') {
-      // 助手 tab（不管是独立 promoted 还是远程助手）视为同一工作台，Cmd+W 隐藏窗口
+      // 助手工作台视为同一窗口，Cmd+W 隐藏窗口
       await window.electronAPI.window.close()
     } else {
-      // 终端 tab：关闭当前 tab；关完若无任何真实 tab 则隐藏窗口
+      // 终端 tab：只关 tab，不关窗口（用户再次 Cmd+W 时没有 activeTab 才关窗口）
       await terminalStore.closeTab(activeTab.id)
-      if (!hasDisplayedTabs.value) {
-        await window.electronAPI.window.close()
-      }
     }
   } else {
-    // 首页 / Hub 视图（无激活 tab）：无真实 tab 则隐藏窗口
+    // 无激活 tab（助手工作台或首页），且无任何真实 tab → 隐藏窗口
     if (!hasDisplayedTabs.value) {
       await window.electronAPI.window.close()
     }
