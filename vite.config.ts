@@ -4,6 +4,26 @@ import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import { resolve } from 'path'
 import { copyFileSync, existsSync, mkdirSync } from 'fs'
+import type { ChildProcess } from 'node:child_process'
+
+/** dev 主进程 rebuild 前给 Electron 最多 4s 优雅退出，避免 LanceDB 写入/compaction 被强杀 */
+const DEV_GRACEFUL_SHUTDOWN_MS = 4000
+
+async function restartElectronDev(
+  startup: (argv?: string[], options?: import('node:child_process').SpawnOptions, customElectronPkg?: string) => Promise<void>
+): Promise<void> {
+  const proc = (process as NodeJS.Process & { electronApp?: ChildProcess }).electronApp
+  if (proc && !proc.killed) {
+    proc.send?.({ type: 'graceful-shutdown' })
+    await Promise.race([
+      new Promise<void>(resolve => {
+        proc.once('exit', () => resolve())
+      }),
+      new Promise<void>(resolve => setTimeout(resolve, DEV_GRACEFUL_SHUTDOWN_MS)),
+    ])
+  }
+  await startup()
+}
 
 // 复制 jieba-wasm 的 WASM 文件到 dist-electron
 function copyJiebaWasm() {
@@ -131,6 +151,9 @@ export default defineConfig({
     electron([
       {
         entry: 'electron/main.ts',
+        onstart({ startup }) {
+          void restartElectronDev(startup)
+        },
         vite: {
           define: {
             __STEAM_BUILD__: isSteamBuild
@@ -149,7 +172,7 @@ export default defineConfig({
                 'node-pty', 
                 'ssh2', 
                 'electron-store',
-                '@xenova/transformers',
+                '@huggingface/transformers',
                 '@lancedb/lancedb',
                 'apache-arrow',
                 'keytar',
@@ -173,7 +196,12 @@ export default defineConfig({
                 'sharp',
                 /^pdfjs-dist/,
                 'bufferutil',
-                'utf-8-validate'
+                'utf-8-validate',
+                // jsdom + Readability 体积大且含大量子依赖，rollup 会拆成 api-*.js 等 hash chunk。
+                // dev 热更新时 main 与 chunk hash 不同步会导致 Cannot find module './api-XXXX.js'。
+                // 标记 external 后首次调用时从 node_modules 加载，与 web_fetch 的 lazy 策略一致。
+                'jsdom',
+                '@mozilla/readability',
               ]
             }
           },
@@ -235,7 +263,7 @@ export default defineConfig({
   },
   // 优化依赖
   optimizeDeps: {
-    exclude: ['@xenova/transformers'],  // 让 transformers.js 在 worker 中正确加载
+    exclude: ['@huggingface/transformers'],  // 让 transformers.js 在 worker 中正确加载
     include: ['vue-virtual-scroller', 'vue-resize', 'vue-observe-visibility']
   }
 })

@@ -10,6 +10,7 @@ import { useConfigStore, type SshSession } from '../stores/config'
 import MatrixRain from './EasterEgg/MatrixRain.vue'
 import WelcomeChatComposer from './WelcomeChatComposer.vue'
 import sailfishLogo from '../../resources/logo.png'
+import { useWatchAnomalyCount } from '../composables/useWatchAnomalyCount'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -85,6 +86,8 @@ const openAssistant = () => {
 const openWatches = () => {
   emit('open-watches')
 }
+
+const { anomalyCount: watchAnomalyCount } = useWatchAnomalyCount()
 
 // 最近连接的会话（最多显示 5 个，按最近使用时间逆序排序）
 const recentSessions = computed(() => {
@@ -197,7 +200,7 @@ onUnmounted(() => {
       </div>
 
       <!-- AI 快速发起对话（Steam 版隐藏，复用 AiComposer） -->
-      <WelcomeChatComposer v-if="!isSteamBuild" />
+      <WelcomeChatComposer v-if="!isSteamBuild" :active="!!active" />
 
       <!-- 快速启动卡片 -->
       <div class="quick-start">
@@ -245,6 +248,9 @@ onUnmounted(() => {
               <div class="card-title">{{ t('welcome.watch') }}</div>
               <div class="card-desc">{{ t('welcome.watchDesc') }}</div>
             </div>
+            <span v-if="watchAnomalyCount > 0" class="watch-anomaly-badge">
+              {{ watchAnomalyCount > 99 ? '99+' : watchAnomalyCount }}
+            </span>
           </div>
 
           <!-- 智能巡检（暂时隐藏）
@@ -616,6 +622,33 @@ onUnmounted(() => {
   color: white;
   box-shadow: 0 4px 15px rgba(var(--icon-glow-rgb), 0.3);
   transition: transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
+}
+
+/* 关切异常角标：定位在卡片右上角，像 app 图标角标一样自然 */
+.watch-anomaly-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.45);
+  pointer-events: none;
+  animation: badgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes badgePop {
+  from { transform: scale(0.4); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
 }
 
 /* hover：让图标"活过来"的三件套——

@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "SailFish Browser Assistant",
+  "description": "Connects Firefox to the SailFish desktop Agent. Reuses your tabs and login sessions via Native Messaging (requires SailFish app).",
+  "version": "1.1.1",
+  "homepage_url": "https://www.sfterm.com/",
+  "author": "SailFish",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "sailfish-browser-bridge@yushen.dev",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  },
+  "icons": {
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png",
+    "128": "icons/icon-128.png"
+  },
+  "background": {
+    "scripts": ["background-firefox.js"]
+  },
+  "action": {
+    "default_title": "SailFish Browser Assistant",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icons/icon-48.png",
+      "96": "icons/icon-96.png"
+    }
+  },
+  "permissions": [
+    "nativeMessaging",
+    "tabs",
+    "scripting",
+    "activeTab",
+    "alarms",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["safe-eval.js", "snapshot.js", "content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

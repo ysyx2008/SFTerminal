@@ -1,7 +1,7 @@
 # Steam 版专用构建配置
 # 基于 electron-builder.yml，去除 AI 相关模型和 native 模块以大幅缩减安装包体积
-# 排除项：embedding 模型(23M)、语音模型(293M)、sherpa-onnx(72M)、onnxruntime(74M)、
-#         @lancedb(80M)、@xenova/transformers(137M)，合计约 ~540M+
+# 排除项：embedding 模型(23M)、语音模型(293M)、sherpa-onnx(72M)、onnxruntime、
+#         @huggingface/transformers、@lancedb(80M)，合计约 ~400M+
 appId: com.sfterm.terminal
 productName: SailFish
 protocols:
@@ -25,7 +25,7 @@ files:
   - dist-electron
   # 排除 AI 相关 native 模块（全部懒加载，排除后不影响启动）
   - "!node_modules/@lancedb/**"
-  - "!node_modules/@xenova/**"
+  - "!node_modules/@huggingface/**"
   - "!node_modules/onnxruntime-node/**"
   - "!node_modules/onnxruntime-common/**"
   - "!node_modules/sherpa-onnx-node/**"
@@ -57,6 +57,10 @@ extraResources:
     to: "docs/messaging"
     filter:
       - "**/*.md"
+  - from: "resources/browser-bridge"
+    to: "browser-bridge"
+    filter:
+      - "**/*"
   # 不包含 embedding 模型、语音模型
 win:
   icon: resources/icon.ico

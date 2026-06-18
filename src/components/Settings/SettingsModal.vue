@@ -19,6 +19,7 @@ import LanguageSettings from './LanguageSettings.vue'
 import EmailSettings from './EmailSettings.vue'
 import CalendarSettings from './CalendarSettings.vue'
 import SkillSettings from './SkillSettings.vue'
+import BrowserBridgeSettings from './BrowserBridgeSettings.vue'
 import GatewaySettings from './GatewaySettings.vue'
 import IMSettings from './IMSettings.vue'
 import BastionSettings from './BastionSettings.vue'
@@ -41,7 +42,7 @@ const emit = defineEmits<{
 
 const configStore = useConfigStore()
 
-type SettingsTab = 'ai' | 'aiRules' | 'mcp' | 'plugins' | 'skills' | 'knowledge' | 'email' | 'calendar' | 'im' | 'bastion' | 'gateway' | 'theme' | 'terminal' | 'shortcuts' | 'data' | 'language' | 'about'
+type SettingsTab = 'ai' | 'aiRules' | 'mcp' | 'plugins' | 'skills' | 'knowledge' | 'email' | 'calendar' | 'im' | 'bastion' | 'gateway' | 'browserBridge' | 'theme' | 'terminal' | 'shortcuts' | 'data' | 'language' | 'about'
 // Steam 版不展示 AI 配置标签，默认选中「主题」；非 Steam 版默认「AI 模型配置」（__STEAM_BUILD__ 由 vite define 注入）
 const isSteamBuild = __STEAM_BUILD__
 const activeTab = ref<SettingsTab>(isSteamBuild ? 'theme' : 'ai')
@@ -387,7 +388,7 @@ let unsubscribeUpdater: (() => void) | null = null
 
 // Steam 版仅保留 theme/terminal/data/language/about，其它 initialTab 均 fallback 到 theme
 const STEAM_TABS: SettingsTab[] = ['theme', 'terminal', 'shortcuts', 'data', 'language', 'about']
-const ALL_TABS: SettingsTab[] = ['ai', 'aiRules', 'mcp', 'plugins', 'skills', 'knowledge', 'email', 'calendar', 'im', 'gateway', 'theme', 'terminal', 'shortcuts', 'data', 'language', 'about']
+const ALL_TABS: SettingsTab[] = ['ai', 'aiRules', 'mcp', 'plugins', 'skills', 'knowledge', 'email', 'calendar', 'im', 'gateway', 'browserBridge', 'bastion', 'theme', 'terminal', 'shortcuts', 'data', 'language', 'about']
 
 const applyInitialTab = (tabName?: string) => {
   if (tabName && ALL_TABS.includes(tabName as SettingsTab)) {
@@ -487,6 +488,7 @@ const tabGroups = computed(() => {
       tabs: [
         { id: 'im' as const, label: t('settings.tabs.im'), icon: '💬' },
         { id: 'gateway' as const, label: t('settings.tabs.gateway'), icon: '🌐' },
+        { id: 'browserBridge' as const, label: t('settings.tabs.browserBridge'), icon: '🌍' },
         { id: 'email' as const, label: t('settings.tabs.email'), icon: '📧' },
         { id: 'calendar' as const, label: t('settings.tabs.calendar'), icon: '📅' },
         { id: 'bastion' as const, label: t('settings.tabs.bastion'), icon: '🛡️' },
@@ -629,6 +631,7 @@ const onQrImageError = (event: Event) => {
           <IMSettings v-else-if="activeTab === 'im'" @close="emit('close')" />
           <BastionSettings v-else-if="activeTab === 'bastion'" />
           <GatewaySettings v-else-if="activeTab === 'gateway'" />
+          <BrowserBridgeSettings v-else-if="activeTab === 'browserBridge'" />
           <ThemeSettings v-else-if="activeTab === 'theme'" />
           <TerminalSettings v-else-if="activeTab === 'terminal'" />
           <ShortcutSettings v-else-if="activeTab === 'shortcuts'" />

@@ -32,6 +32,7 @@
  *   返回 charset。
  */
 import { createLogger } from '../utils/logger'
+import { extractArticleFromHtml, MIN_READABILITY_CHARS } from '../utils/readability-extract'
 import { getApiKey } from './web-search'
 import { Buffer } from 'buffer'
 
@@ -45,7 +46,6 @@ const MAX_TIMEOUT_SEC = 60
 const DEFAULT_MAX_BYTES = 3 * 1024 * 1024     // 3MB
 const MAX_MAX_BYTES = 10 * 1024 * 1024        // 10MB
 const TEXT_OUTPUT_TRUNCATE = 16_000           // 返回给 Agent 的文本上限
-const MIN_READABILITY_CHARS = 50              // Readability 提取结果短于此值视为提取失败
 const ERROR_PREVIEW_BYTES = 8 * 1024          // 错误响应体最多读 8KB 用于预览
 
 const JINA_READER_BASE = 'https://r.jina.ai/'
@@ -339,7 +339,7 @@ async function extractHtml(
   truncatedAtRead: boolean
 ): Promise<WebFetchResult> {
   try {
-    const article = await runReadability(rawHtml, finalUrl)
+    const article = await extractArticleFromHtml(rawHtml, finalUrl)
     if (article && article.textContent && article.textContent.trim().length > MIN_READABILITY_CHARS) {
       const body = article.textContent.trim()
       const out = article.title
@@ -373,29 +373,6 @@ async function extractHtml(
     title: fallback.title,
     truncated: truncatedAtRead || fallback.text.length > TEXT_OUTPUT_TRUNCATE,
     backend: 'fallback-text',
-  }
-}
-
-/**
- * 调用 Mozilla Readability 提取正文。
- * jsdom + Readability 用 lazy import，第一次调用时加载（~5MB），后续走模块缓存。
- */
-async function runReadability(html: string, baseUrl: string): Promise<{
-  title: string | null
-  textContent: string
-  content: string
-} | null> {
-  const { JSDOM } = await import('jsdom')
-  const { Readability } = await import('@mozilla/readability')
-
-  const dom = new JSDOM(html, { url: baseUrl })
-  const reader = new Readability(dom.window.document)
-  const article = reader.parse()
-  if (!article) return null
-  return {
-    title: article.title ?? null,
-    textContent: article.textContent ?? '',
-    content: article.content ?? '',
   }
 }
 

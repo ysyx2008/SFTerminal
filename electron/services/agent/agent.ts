@@ -28,7 +28,8 @@ import type {
   ExecutionMode,
   AgentExecutionPhase,
   PendingConfirmationInternal,
-  PendingSecureInputInternal
+  PendingSecureInputInternal,
+  PendingUserMessage
 } from './types'
 import { DEFAULT_AGENT_CONFIG } from './types'
 import { TaskMemoryStore } from './task-memory'
@@ -127,6 +128,9 @@ export abstract class Agent {
   
   /** 当前运行状态 */
   protected currentRun?: AgentRun
+
+  /** run() 尚未进入 initializeRun 时收到的用户补充（前端已显示 isRunning） */
+  private preRunUserMessages: PendingUserMessage[] = []
   
   /** 依赖服务 */
   protected services: AgentServices
@@ -282,7 +286,11 @@ export abstract class Agent {
       }
       
       await this.buildContext(run, message)
-      const result = await this.executeLoop(run)
+      let result = await this.executeLoop(run)
+      // 主循环返回后用户可能刚补充消息：继续处理直至队列清空
+      while (run.pendingUserMessages.length > 0 && !run.aborted) {
+        result = await this.executeLoop(run)
+      }
       this.finalizeRun(run, result)
       const elapsed = ((Date.now() - taskStartTime) / 1000).toFixed(1)
       log.info(`Task completed: runId=${run.id}, duration=${elapsed}s, steps=${run.steps.length}`)
@@ -363,11 +371,20 @@ export abstract class Agent {
    * 添加用户补充消息
    */
   addUserMessage(message: string, attachments?: import('@shared/types').AttachmentInfo[], documentContext?: string, images?: string[]): boolean {
-    if (!this.currentRun || !this.currentRun.isRunning) {
-      return false
+    const pending: PendingUserMessage = {
+      message,
+      attachments: attachments?.length ? attachments : undefined,
+      documentContext: documentContext || undefined,
+      images: images?.length ? images : undefined
+    }
+
+    if (!this.currentRun?.isRunning) {
+      // 前端已 setAgentRunning，但 run() 尚未 initializeRun — 先缓冲，initializeRun 时上墙
+      this.preRunUserMessages.push(pending)
+      return true
     }
     
-    // 立即创建 user_supplement 步骤，让前端马上渲染为用户气泡
+    // 立即创建 user_supplement 步骤（追加到当前时间线末尾；流式输出会被 abort 打断，补充自然落在中断内容之后）
     this.addStep({
       type: 'user_supplement',
       content: message,
@@ -375,12 +392,7 @@ export abstract class Agent {
       images: images?.length ? images : undefined
     })
     
-    this.currentRun.pendingUserMessages.push({
-      message,
-      attachments: attachments?.length ? attachments : undefined,
-      documentContext: documentContext || undefined,
-      images: images?.length ? images : undefined
-    })
+    this.currentRun.pendingUserMessages.push(pending)
     
     // 如果 Agent 正在等待（AI 思考中），中断当前请求让它处理新消息
     if (this.currentRun.executionPhase === 'thinking' && this.currentRun.requestId) {
@@ -595,6 +607,20 @@ export abstract class Agent {
       images: context.previewImages || context.images,
       attachments: context.attachments
     })
+
+    // 准备阶段用户补充：run() IPC 往返期间缓冲的消息，紧跟 user_task 上墙
+    if (this.preRunUserMessages.length > 0) {
+      const queued = this.preRunUserMessages.splice(0)
+      for (const supplement of queued) {
+        run.pendingUserMessages.push(supplement)
+        this.addStep({
+          type: 'user_supplement',
+          content: supplement.message,
+          attachments: supplement.attachments,
+          images: supplement.images
+        })
+      }
+    }
     
     // 初始化 TaskMemory（仅首次 run 时，从 HistoryService 恢复）
     // 场景：用户恢复了历史对话，Agent 实例刚创建，TaskMemory 为空
@@ -697,7 +723,12 @@ export abstract class Agent {
         toolResult: s.toolResult,
         riskLevel: s.riskLevel as RiskLevel | undefined,
         timestamp: s.timestamp,
-        webSearchResults: s.webSearchResults
+        webSearchResults: s.webSearchResults,
+        // 必须保留：否则继续对话后下次 checkpoint 会把旧步骤的这些字段写没，
+        // 导致重开会话时产出物面板只剩续聊后新建的产出物（canvasData）。
+        success: s.success,
+        subAgents: s.subAgents,
+        canvasData: s.canvasData
       }))
     }
     
@@ -827,7 +858,8 @@ export abstract class Agent {
         timestamp: s.timestamp,
         webSearchResults: s.webSearchResults,
         success: s.success,
-        subAgents: s.subAgents
+        subAgents: s.subAgents,
+        canvasData: s.canvasData
       }
       
       if (s.type === 'user_task') {
@@ -1007,7 +1039,8 @@ export abstract class Agent {
       timestamp: s.timestamp,
       webSearchResults: s.webSearchResults,
       success: s.success,
-      subAgents: s.subAgents
+      subAgents: s.subAgents,
+      canvasData: s.canvasData
     }))
     
     const record: AgentRecord = {
@@ -1059,7 +1092,8 @@ export abstract class Agent {
       timestamp: s.timestamp,
       webSearchResults: s.webSearchResults,
       success: s.success,
-      subAgents: s.subAgents
+      subAgents: s.subAgents,
+      canvasData: s.canvasData
     }))
     
     // 合并 API 消息
@@ -1174,7 +1208,8 @@ export abstract class Agent {
       timestamp: s.timestamp,
       webSearchResults: s.webSearchResults,
       success: s.success,
-      subAgents: s.subAgents
+      subAgents: s.subAgents,
+      canvasData: s.canvasData
     }))
 
     const titleSuffix = opts?.titleSuffix ?? ''
@@ -1242,6 +1277,7 @@ export abstract class Agent {
    * 重置会话状态（前端"新对话"或终端重连时调用）
    */
   resetSession(): void {
+    this.preRunUserMessages = []
     this._sessionId = undefined
     this._sessionStartTime = undefined
     this._sessionSteps = []
@@ -1272,24 +1308,35 @@ export abstract class Agent {
   
   /**
    * L2: 异步更新知识文档
-   * 收集执行记录，交给 LLM 判断是否有值得持久化的新信息
+   * 收集执行记录（或纯对话内容），交给 LLM 判断是否有值得持久化的新信息
    */
   private async updateContextKnowledgeAsync(run: AgentRun, result?: string): Promise<void> {
     const aiService = this.services.aiService
     if (!aiService) return
 
-    // 唤醒 run 跳过（短问候不产生值得持久化的系统知识）
+    // 唤醒 run 跳过（短问候不产生值得持久化的信息）
     if (run.context.wakeup) return
-
-    // 跳过纯对话（没有执行过工具的任务不太可能产生新的系统知识）
-    const toolSteps = run.steps.filter(s => s.type === 'tool_call' && s.toolName)
-    if (toolSteps.length === 0) return
 
     const contextId = run.context.hostId || 'personal'
     const MAX_ARG_DISPLAY = 200
     const MAX_RESULT_DISPLAY = 300
     const MAX_FINAL_RESULT_DISPLAY = 500
-    
+
+    const toolSteps = run.steps.filter(s => s.type === 'tool_call' && s.toolName)
+
+    // 纯对话（无工具调用）：把用户请求 + 最终回复一起交给 LLM 判断是否有值得记住的内容
+    if (toolSteps.length === 0) {
+      if (!result) return
+      const ckService = getContextKnowledgeService()
+      const profileId = this.services.configService?.getActiveAiProfile() ?? undefined
+      await ckService.updateWithLLM(contextId, aiService, profileId, {
+        userRequest: run.originalUserRequest,
+        commandRecords: [],
+        finalResponse: result.substring(0, MAX_FINAL_RESULT_DISPLAY)
+      })
+      return
+    }
+
     const commandRecords: string[] = []
     for (const step of run.steps) {
       if (step.type === 'tool_call' && step.toolName && step.toolArgs) {
@@ -1310,16 +1357,16 @@ export abstract class Agent {
         commandRecords.push(`  → ${step.toolResult.substring(0, MAX_RESULT_DISPLAY)}`)
       }
     }
-    
+
     if (result) {
       commandRecords.push(`\n最终结果: ${result.substring(0, MAX_FINAL_RESULT_DISPLAY)}`)
     }
-    
+
     if (commandRecords.length === 0) return
 
     const ckService = getContextKnowledgeService()
     const profileId = this.services.configService?.getActiveAiProfile() ?? undefined
-    
+
     await ckService.updateWithLLM(contextId, aiService, profileId, {
       userRequest: run.originalUserRequest,
       commandRecords
@@ -1592,7 +1639,7 @@ export abstract class Agent {
    * @param injectKnowledge cache-reuse 路径下，知识检索结果不在 system prompt 中，需注入到 user 消息
    */
   private async buildUserMessage(run: AgentRun, message: string, injectKnowledge: boolean): Promise<AiMessage> {
-    const userBody = this.enhanceUserMessage(message)
+    const userBody = this.enhanceUserMessage(message, run.context.terminalType)
 
     let knowledgeRefs = ''
     if (injectKnowledge) {
@@ -1609,7 +1656,6 @@ export abstract class Agent {
     if (proactiveCtx?.trim()) {
       systemContextParts.push(proactiveCtx.trim())
     }
-
     const hasImages = !!(run.context.images && run.context.images.length > 0)
     const visionAvailable = this.currentProfileHasVision()
     let imageNote = ''
@@ -3063,7 +3109,7 @@ export abstract class Agent {
     const visionAvailable = this.currentProfileHasVision()
 
     for (const pending of run.pendingUserMessages) {
-      const userBody = Agent.formatTimestamp() + pending.message
+      const userBody = Agent.formatTimestamp() + Agent.formatWorkbenchTag(run.context.terminalType) + pending.message
       let imageNote = ''
       if (pending.images?.length) {
         const imageCount = pending.images.length
@@ -3572,11 +3618,19 @@ export abstract class Agent {
   }
   
   /**
+   * 生成工作台标签前缀，格式如 <sf_workbench>local</sf_workbench>
+   * 注入到每条用户消息，让 AI 在多工作台对话历史中能识别运行环境
+   */
+  private static formatWorkbenchTag(terminalType?: string): string {
+    return terminalType ? `<sf_workbench>${terminalType}</sf_workbench> ` : ''
+  }
+
+  /**
    * 增强用户消息
    */
-  private enhanceUserMessage(message: string): string {
+  private enhanceUserMessage(message: string, terminalType?: string): string {
     const languageHint = this.getLanguageHint()
-    return languageHint + Agent.formatTimestamp() + message
+    return languageHint + Agent.formatTimestamp() + Agent.formatWorkbenchTag(terminalType) + message
   }
 
   /** 生成用户消息时间戳前缀，格式如 [2026-03-25 22:30 周二] */

@@ -1,15 +1,12 @@
 /**
- * Canvas 预览：把整副 deck 渲染进「单个」iframe（SlidesRenderer 的 sandbox iframe）。
+ * Canvas 预览：把整副 deck 渲染进「单个」iframe（HtmlRenderer 的 sandbox iframe）。
  *
- * 为什么不再用「每页一个内层 iframe」：
- *   SlidesRenderer 外层 iframe 是 sandbox="allow-same-origin"（无 allow-scripts）。
- *   在这种沙箱文档里再创建无 allow-scripts 的 srcdoc 子帧，Chromium 会对每个子帧
- *   发出 "Blocked script execution in about:srcdoc" 的 benign 警告（与内容是否有脚本无关）。
+ * 为什么不用「每页一个内层 iframe」：
  *   所有页本就共享同一份 css，没有隔离需求，因此直接把每页放进一个缩放的 .stage 容器，
- *   全程零脚本、零嵌套 iframe，控制台干净。
+ *   全程零脚本、零嵌套 iframe，控制台干净（也避免嵌套 srcdoc 子帧的 benign 脚本拦截警告）。
  *
  * 缩放：.slide-card 用容器查询（container query），.stage 固定画幅尺寸后
- *   transform:scale(calc(100cqw / 画幅宽))，纯 CSS，不依赖脚本。
+ *   transform:scale(calc(100cqw / 画幅宽))，纯 CSS，不依赖脚本（也不依赖 allow-same-origin）。
  *
  * 图片：sandbox iframe 无法加载 `/abs/path.png` 这类本地文件路径，会显示空白。
  *   渲染在 Node 主进程，这里直接读盘把本地图片内联成 data: URI，确保预览能显示。
@@ -100,20 +97,30 @@ export function buildPreviewDocument(
 <style>
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
-  body{background:#1a1a1e;padding:20px 16px 48px;font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;}
-  .hint{text-align:center;color:#888;font-size:12px;margin:0 0 16px;}
-  .deck{max-width:920px;margin:0 auto;}
+  body{
+    background:#1a1a1e;
+    padding:28px 28px 60px;
+    font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;
+  }
+  .hint{
+    text-align:center;
+    margin:0 0 24px;
+    color:#555;
+    font-size:11px;
+    letter-spacing:.03em;
+  }
+  .deck{max-width:900px;margin:0 auto;}
   .slide-card{
     position:relative;width:100%;aspect-ratio:${spec.px} / ${spec.pxH};
-    margin:0 auto 20px;border-radius:10px;overflow:hidden;
-    box-shadow:0 8px 32px rgba(0,0,0,.45);background:#fff;
-    container-type:inline-size;
+    margin:0 auto 28px;border-radius:12px;overflow:hidden;
+    box-shadow:0 2px 8px rgba(0,0,0,.4),0 12px 40px rgba(0,0,0,.5);
+    background:#fff;container-type:inline-size;
   }
   .slide-no{
-    position:absolute;top:10px;right:14px;z-index:9999;
-    font-size:12px;color:#fff;opacity:.65;
-    background:rgba(0,0,0,.35);padding:2px 8px;border-radius:10px;
-    pointer-events:none;
+    position:absolute;top:10px;right:12px;z-index:9999;
+    font-size:11px;color:rgba(255,255,255,.8);
+    background:rgba(0,0,0,.4);padding:2px 8px;border-radius:10px;
+    pointer-events:none;letter-spacing:.03em;
   }
   /* 固定画幅的舞台，等比缩放到卡片宽度；幻灯片内的 position:absolute 以此为基准 */
   .stage{
@@ -129,7 +136,7 @@ ${css || ''}
 </style>
 </head>
 <body>
-<p class="hint">共 ${slides.length} 页 · 向下滚动预览 · 最终以 PowerPoint 打开导出文件为准</p>
+<p class="hint">共 ${slides.length} 页 &middot; 向下滚动预览 &middot; 最终以 PowerPoint 打开为准</p>
 <div class="deck">${cards}</div>
 </body>
 </html>`

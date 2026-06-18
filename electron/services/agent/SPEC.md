@@ -57,7 +57,16 @@ Agent 实例自身**没有强绑定 ptyId 字段**——每次 `run()` 通过 `c
 
 ### SailFish (`sailfish.ts`) — Agent 实现
 
-继承 Agent，实现具体行为。绑定终端时自动加载 `terminal` 技能，诞生引导时自动加载 `personality` 技能。
+继承 Agent，实现具体行为。`personality` 技能在诞生引导时自动加载。
+
+**终端工具注入**：`execute_command` 等 PTY 终端工具不再通过技能系统加载，而是由 `getAgentTools(mode)` 按 `context.terminalType` 直接注入（`local`/`ssh` 模式）；assistant 模式注入 `exec` 工具。`getAgentMode()` 从 `currentRun?.context?.terminalType` 读取，而非依赖已废弃的 `ptyId` 字段。
+
+**工作台 prompt**：`context.workbenchPrompt` 由前端通过 `resolveWorkbenchAgentPrompt(kind, tab)` 填充：
+- `assistant`：注入产出物面板使用规范（`src/workbench/assistant/prompt.ts`）
+- `local`：注入本地终端操作规范（`src/workbench/local/prompt.ts`）
+- `ssh`：注入 SSH 远程终端操作规范（`src/workbench/ssh/prompt.ts`）
+
+**`<sf_workbench>` 标签**：`enhanceUserMessage` 在每条用户消息前注入 `<sf_workbench>{terminalType}</sf_workbench>`，让 AI 在多工作台对话历史中能识别每条消息的运行环境。
 
 ## 执行流程
 
@@ -211,7 +220,7 @@ run(message, context, options)
 |---|---|---|
 | 子 Agent 通用前缀（前 7 个） | `exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search, web_fetch` | `read` 类型子 Agent 工具列表 = 此段 |
 | `write` 类型追加（前 8-9 个） | `edit_file, write_text_file` | `write` 类型子 Agent 工具列表 = 上一段 + 此段 |
-| 父 Agent 专用尾部 | `write_remote_text_file, sftp_put, sftp_get, remember_info, ask_user, plan, skill, load_user_skill, recall, search_history, dispatch_agents, talk_to_user` | 仅父 Agent 可见；`write_remote_text_file` 仅 SSH 模式；`sftp_put/sftp_get` local+ssh 模式（local tab 通过 pane_id 指 SSH 窗格） |
+| 父 Agent 专用尾部 | `write_remote_text_file, sftp_put, sftp_get, ask_user, plan, skill, load_user_skill, recall, search_history, dispatch_agents, talk_to_user` | 仅父 Agent 可见；`write_remote_text_file` 仅 SSH 模式；`sftp_put/sftp_get` local+ssh 模式（local tab 通过 pane_id 指 SSH 窗格） |
 
 **保持前缀连续的红线**：
 
@@ -267,7 +276,7 @@ run(message, context, options)
 
 **byte-exact 一致性**：同一父 Agent 内所有子 Agent 共享相同 `context` / `aiRules` / `hostProfileService`，因此 system prompt 跨子 Agent byte-exact 一致；工具 schema 因为顺序约定（见「工具列表顺序约定」一节）天然共享前缀。两者都让 Anthropic/DeepSeek/OpenAI 的前缀缓存正常命中。
 
-**工具列表**：子 Agent 看到的是按类型白名单过滤后的工具列表（**不是父 Agent 的完整工具列表**）。父 Agent 专属工具（`dispatch_agents` / `talk_to_user` / `plan` / `ask_user` / `remember_info` 等）对子 Agent 完全不可见。
+**工具列表**：子 Agent 看到的是按类型白名单过滤后的工具列表（**不是父 Agent 的完整工具列表**）。父 Agent 专属工具（`dispatch_agents` / `talk_to_user` / `plan` / `ask_user` / `skill` / `load_user_skill` 等）对子 Agent 完全不可见。父 Agent 的系统提示与 `dispatch_agents` 工具描述会明确告知：依赖技能的子任务（browser/excel/email 等）不得分派给子 Agent。
 
 **Agent 类型系统**：
 
@@ -324,8 +333,8 @@ run(message, context, options)
 **`debugMode` 与持久化解耦**：`debugMode` 只是 **UI 渲染层** 的呈现开关，**不影响后端是否 emit step、不影响是否写入会话历史**。
 
 - 后端永远 emit 完整 step（tool_call + tool_result），永远写入 `run.steps` → `saveCheckpoint` / `finalizeRun` → `HistoryService` 持久化
-- `success`、`subAgents`、`echartsOption`（chart skill 投递的活图 ECharts option，类型见 `shared/types/agent.ts::EChartsStepPayload`）等富内容字段都必须随 `AgentStepRecord` 一起持久化（见 `shared/types/history.ts`），否则历史详情面板无法判定"失败步骤始终显示" / 历史里的图无法恢复成活图
-- 前端 `src/utils/tool-display.ts` 的 `shouldShowToolResultStep` 才是 UX 决策点（覆盖 `tool_call` 与 `tool_result` 两类）：非调试模式下隐藏"成功且无用户必看产出"的信息检索 / 命令类工具结果（如 `read_file`、`execute_command`）；用专用 step type 呈现的工具（`TOOLS_WITH_DEDICATED_STEP_TYPE`，如 `plan`）连其 `tool_call` 通告卡也一并隐藏，避免和专用卡重复；失败 / 写入类 / 携带 `images`/`echartsOption`/`webSearchResults`/`subAgents` 的步骤永远展示
+- `success`、`subAgents`、`echartsOption`（chart skill 投递的活图 ECharts option，类型见 `shared/types/agent.ts::EChartsStepPayload`）、`canvasData`（Artifact 面板，类型见 `shared/types/canvas.ts`）等富内容字段都必须随 `AgentStepRecord` 一起持久化（见 `shared/types/history.ts`），否则历史详情面板无法判定"失败步骤始终显示" / 历史里的图无法恢复成活图 / 重开历史时 Artifact 面板为空
+- 前端 `src/utils/tool-display.ts` 的 `shouldShowToolResultStep` 才是 UX 决策点（覆盖 `tool_call` 与 `tool_result` 两类）：非调试模式下**成功的 tool_result 默认隐藏**（tool_call 绿条已表达结果）；仅 `ALWAYS_SHOW_RESULT_TOOLS` 例外；用专用 step type 呈现的工具（`TOOLS_WITH_DEDICATED_STEP_TYPE`，如 `plan`）连其 `tool_call` 通告卡也一并隐藏；失败 / 携带 `images`/`echartsOption`/`webSearchResults`/`subAgents` 的步骤永远展示
 - 反例（已修复）：曾在 `tools/exec.ts` / `tools/command.ts` / `tools/terminal.ts` / `tools/misc.ts` 里写过 `if (config.debugMode) executor.addStep({type:'tool_result', ...})`——这导致非调试模式下命令输出**整条 step 都没产生**，既不进 messages、也不进会话历史，事后开调试模式也找不回来。这种耦合是错误的，新增工具时不要重蹈覆辙。
 
 **为什么重要**：用户读 Agent 输出的常见心智是「Agent 当前在干什么」。任何静默执行（卡片只在结束后才出现）都会让用户误以为 Agent 卡住，或对 AI 的实际行为缺乏控制感。这条原则是「不让用户怀疑 Agent 是否还活着」的最基本保障。同时，把"是否展示"与"是否记录"分离，保证调试时能回看任何过去发生过的工具执行。
@@ -379,11 +388,12 @@ run(message, context, options)
 
 **承诺**：`useAgentMode` 内挂 `ResizeObserver` 直接监听 DynamicScroller 的内容容器 `.vue-recycle-scroller__item-wrapper` 自身高度变化。该 wrapper 高度即虚拟列表的 totalSize；ResizeObserver 回调时机在 layout 之后、paint 之前，那一刻把 `scrollTop` 钉到最新 `scrollHeight`，浏览器同帧合成出来的画面已经是贴底状态。
 
-- **触发条件**：`isUserNearBottom === true`（用户视觉处于底部）或 `skipScrollUpdate` 期间（强制贴底窗口内）；用户主动滚走后 `isUserNearBottom = false`，ResizeObserver 不会越权强行贴底
+- **触发条件**：`stickyFollowBottom`（用户发消息/点新消息后主动跟底）或 `isUserNearBottom === true`（用户视觉处于底部）或 `skipScrollUpdate` 期间（强制贴底窗口内）；用户上滚（wheel 或显著 scrollTop 减小）后 `stickyFollowBottom = false`，ResizeObserver 不会越权强行贴底
 - **失败案例（修复前）**：`doScrollIfNeeded` 仅在 `nextTick` 后调一次 `scrollTop = scrollHeight`，但 DynamicScroller 的 totalSize 是 item 的 ResizeObserver 异步上报的，nextTick 时 totalSize 还是旧值，于是滚到的是"旧底"；浏览器 paint 出新内容、半行裸露在视区底外，下一波 chunk 才补上去
 - **修复（commit `274a2386`）**：在 `useAgentMode` 内 `installContentResizeObserver` 直接观察 wrapper 高度；`doScrollIfNeeded` 等粗粒度滚动入口保留，作为新 step 加入瞬间的初始贴底兜底
 - **回归保护**：禁止把 ResizeObserver 改成基于 step.content 长度等内容驱动的判断（脆弱，且重新引入"vue-virtual-scroller 内部 size 测量异步"的根本问题）；禁止改成 setTimeout/setInterval 轮询（错过 paint 窗口）
-- **`skipScrollUpdate` 语义陷阱**：该标志同时承担两件事——① 屏蔽强制贴底窗口内的 scroll 事件以免覆盖 `isUserNearBottom`；② 告诉 ResizeObserver "现在请跟随尺寸变化贴底"。**任何"决定不滚"的分支都不得置位 `skipScrollUpdate`**，否则用户向上滚阅读时，新 step 引发的 ResizeObserver 回调会被误解读为"请跟随贴底"，把用户从阅读位拽回最底（曾经的回归 bug）。`doScrollIfNeeded` 必须把 `skipScrollUpdate = true / setTimeout(... = false)` 收进 `if (isUserNearBottom)` 分支内
+- **`skipScrollUpdate` 语义陷阱**：该标志同时承担两件事——① 屏蔽强制贴底窗口内的 scroll 事件以免覆盖 `isUserNearBottom`；② 告诉 ResizeObserver "现在请跟随尺寸变化贴底"。**任何"决定不滚"的分支都不得置位 `skipScrollUpdate`**，否则用户向上滚阅读时，新 step 引发的 ResizeObserver 回调会被误解读为"请跟随贴底"，把用户从阅读位拽回最底（曾经的回归 bug）。`doScrollIfNeeded` 必须把 `extendScrollGrace()` 收进 `if (shouldFollowBottom())` 分支内
+- **`stickyFollowBottom` 跟底粘性**：虚拟列表 `scrollHeight` 异步修正时，ResizeObserver 程序化贴底触发的 scroll 事件会短暂误判「不在底部」，导致 `isUserNearBottom` 抖动、`hasNewMessage` 闪烁、跟底中断。发消息 / 点「新消息」后设 `stickyFollowBottom = true`，ResizeObserver 贴底后走 `guardAfterAutoScroll()`（150ms grace）；用户 wheel 上滚或显著上拖才清除粘性
 
 #### FLIP 平滑滑动（视觉层叠加）
 
@@ -418,7 +428,7 @@ run(message, context, options)
 | pdf | PDF 解析 |
 | email | 邮件收发（OAuth） |
 | calendar | 日历管理 |
-| browser | 浏览器操作 |
+| browser | 浏览器操作（launch=Playwright 独立窗口；attach=浏览器助手复用用户 Chrome/Edge/Firefox，见 `browser-bridge/SPEC.md`） |
 | feishu | 飞书集成（OAuth） |
 | chart | 数据可视化（默认输出活图 ECharts，PNG 兜底；详见 `skills/chart/SPEC.md`） |
 | watch | 关切管理 |

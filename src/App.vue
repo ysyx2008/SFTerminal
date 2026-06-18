@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { Monitor, Bot, Settings, X, Loader2, Heart, Menu as MenuIcon } from 'lucide-vue-next'
 import { useTerminalStore } from './stores/terminal'
 import { initSplitPaneHandler, disposeSplitPaneHandler } from './services/split-pane-handler'
+import { initWorkbenchHandler, disposeWorkbenchHandler } from './services/workbench-handler'
 import { useConfigStore, type SshSession } from './stores/config'
 import TabBar from './components/TabBar.vue'
 import TerminalTabView from './components/TerminalTabView.vue'
@@ -41,21 +42,12 @@ const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 //   - dimension_mismatch: 真正的模型升级（首次见的概率最低，但确实存在）
 //   - data_corrupted    : 向量库损坏（manifest 指向不存在的 .lance 数据文件等）
 //   - missing           : 索引缺失（首次启用 / 用户删过 lancedb 目录 / BM25 .json 丢失）
-// ── 统一系统加载进度条 ────────────────────────────────────────────────────────
-// 合并「后端启动」与「知识库索引补全」两种加载状态为同一条底部进度条，避免堆叠。
-// 两者都完成后才隐藏。
-const _startupDone = ref(false)   // 后端 init 是否已 done
-const _knowledgeDone = ref(true)  // 知识库是否空闲（默认不在补全索引）
-
-const sysLoading = computed(() => !_startupDone.value || !_knowledgeDone.value)
-const sysLoadingText = ref('后端服务启动中...')
-const sysLoadingProgress = ref({ current: 0, total: 0, filename: '' })
-
+// ── 后端启动进度条（fixed overlay，不占 flex 空间）────────────────────────────
+const startupLoading = ref(false)
+const startupStage = ref('')
 let cleanupStartupProgress: (() => void) | null = null
-let cleanupKnowledgeUpgrading: (() => void) | null = null
-let cleanupKnowledgeProgress: (() => void) | null = null
-let cleanupKnowledgeReady: (() => void) | null = null
 let startupDoneTimer: ReturnType<typeof setTimeout> | null = null
+let startupFallbackTimer: ReturnType<typeof setTimeout> | null = null
 
 const STARTUP_STAGE_LABELS: Record<string, string> = {
   plugins: '加载插件...',
@@ -67,10 +59,21 @@ const STARTUP_STAGE_LABELS: Record<string, string> = {
   done: '初始化完成',
 }
 
-// 知识库原因文字复用原 computed 逻辑
+// ── 知识库索引重建进度条（fixed overlay，展示详细进度但不撑开布局）────────────
+const _knowledgeDone = ref(true)  // 知识库是否空闲（默认不在补全索引）
+
+const knowledgeLoading = computed(() => !_knowledgeDone.value)
+const knowledgeLoadingText = ref('')
+const knowledgeLoadingProgress = ref({ current: 0, total: 0, libraryTotal: 0, filename: '' })
+
+let cleanupKnowledgeUpgrading: (() => void) | null = null
+let cleanupKnowledgeProgress: (() => void) | null = null
+let cleanupKnowledgeReady: (() => void) | null = null
+
 function knowledgeText(cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing') {
   switch (cause) {
     case 'dimension_mismatch': return t('knowledge.upgrading')
+    case 'data_corrupted':     return t('knowledge.rebuilding')
     default:                   return t('knowledge.repairing')
   }
 }
@@ -91,6 +94,40 @@ const { show: showConfirmDialog, options: confirmOptions, handleConfirm, handleC
 const { start: startUpdaterPrompts, stop: stopUpdaterPrompts } = useAppUpdaterPrompts()
 
 const showSidebar = ref(false)
+
+// 欢迎页「最近对话」侧栏宽度（可拖拽调整，持久化到 config + localStorage 防 FOUC）
+const DEFAULT_RECALL_SIDEBAR_WIDTH = 320
+const MIN_RECALL_SIDEBAR_WIDTH = 240
+const RECALL_SIDEBAR_WIDTH_STORAGE_KEY = 'sft-recall-sidebar-width'
+const getMaxRecallSidebarWidth = () => Math.max(MIN_RECALL_SIDEBAR_WIDTH, window.innerWidth - 480)
+
+function clampRecallSidebarWidth(width: number): number {
+  return Math.min(getMaxRecallSidebarWidth(), Math.max(MIN_RECALL_SIDEBAR_WIDTH, width))
+}
+
+function readCachedRecallSidebarWidth(): number {
+  try {
+    if (typeof localStorage === 'undefined') return DEFAULT_RECALL_SIDEBAR_WIDTH
+    const raw = localStorage.getItem(RECALL_SIDEBAR_WIDTH_STORAGE_KEY)
+    if (raw == null) return DEFAULT_RECALL_SIDEBAR_WIDTH
+    const parsed = Number(raw)
+    if (!Number.isFinite(parsed)) return DEFAULT_RECALL_SIDEBAR_WIDTH
+    return clampRecallSidebarWidth(parsed)
+  } catch {
+    return DEFAULT_RECALL_SIDEBAR_WIDTH
+  }
+}
+
+function writeCachedRecallSidebarWidth(width: number): void {
+  try {
+    if (typeof localStorage === 'undefined') return
+    localStorage.setItem(RECALL_SIDEBAR_WIDTH_STORAGE_KEY, String(width))
+  } catch { /* localStorage 不可用时静默降级 */ }
+}
+
+const recallSidebarWidth = ref(readCachedRecallSidebarWidth())
+const isRecallSidebarResizing = ref(false)
+
 const showSettings = ref(false)
 const showSmartPatrol = ref(false)
 const showAwaken = ref(false)
@@ -318,6 +355,7 @@ onMounted(async () => {
 
   // 注册分屏反向 IPC 处理器（响应主进程 Agent 工具的分屏调用）
   initSplitPaneHandler()
+  initWorkbenchHandler()
 
   try {
     appVersion.value = await window.electronAPI.app.getVersion()
@@ -347,46 +385,62 @@ onMounted(async () => {
     isAwakened.value = !!(await window.electronAPI.config.get('agentAwakened'))
   } catch { /* ignore */ }
 
+  // 加载最近对话侧栏宽度（config 为真值；localStorage 仅用于首帧同步，避免启动时宽度跳变）
+  try {
+    const savedWidth = await window.electronAPI.config.get('recallSidebarWidth') as number | undefined
+    if (typeof savedWidth === 'number' && Number.isFinite(savedWidth)) {
+      const clamped = clampRecallSidebarWidth(savedWidth)
+      recallSidebarWidth.value = clamped
+      writeCachedRecallSidebarWidth(clamped)
+    }
+  } catch { /* ignore */ }
+
   // 注册标签页数量查询响应（用于退出确认）
   cleanupTerminalCountListener = window.electronAPI.window.onRequestTerminalCount(() => {
     window.electronAPI.window.responseTerminalCount(terminalStore.tabs.length)
   })
 
-  // ── 统一系统加载监听 ───────────────────────────────────────────────────────
-  // 后端启动进度
+  // ── 后端启动进度（fixed overlay，不占布局空间）──────────────────────────────
+  startupLoading.value = true
   cleanupStartupProgress = window.electronAPI.app.onStartupProgress(({ stage }) => {
     if (stage === 'done') {
-      sysLoadingText.value = STARTUP_STAGE_LABELS.done
-      // 短暂显示"初始化完成"后标记 done，进度条由 sysLoading computed 决定是否隐藏
+      startupStage.value = STARTUP_STAGE_LABELS.done
+      if (startupDoneTimer) clearTimeout(startupDoneTimer)
       startupDoneTimer = setTimeout(() => {
-        _startupDone.value = true
-        if (_knowledgeDone.value) sysLoadingText.value = ''
+        startupLoading.value = false
+        startupStage.value = ''
       }, 600)
     } else {
-      sysLoadingText.value = STARTUP_STAGE_LABELS[stage] ?? `${stage}...`
+      startupStage.value = STARTUP_STAGE_LABELS[stage] ?? `${stage}...`
     }
   })
-  // 兜底：10 秒后强制标记 startup done（防止 done 事件丢失时条永远不消）
-  startupDoneTimer = setTimeout(() => { _startupDone.value = true }, 10_000)
+  startupFallbackTimer = setTimeout(() => { startupLoading.value = false }, 10_000)
 
-  // 知识库索引补全进度（启动时增量修复缺失文档）
-  cleanupKnowledgeUpgrading = window.electronAPI.knowledge.onUpgrading((payload?: { cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing' }) => {
+  // ── 知识库索引重建进度 ─────────────────────────────────────────────────────
+  cleanupKnowledgeUpgrading = window.electronAPI.knowledge.onUpgrading((payload?: {
+    cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing'
+    total?: number
+    libraryTotal?: number
+  }) => {
     _knowledgeDone.value = false
-    sysLoadingProgress.value = { current: 0, total: 0, filename: '' }
-    sysLoadingText.value = knowledgeText(payload?.cause)
+    knowledgeLoadingProgress.value = {
+      current: 0,
+      total: payload?.total ?? 0,
+      libraryTotal: payload?.libraryTotal ?? 0,
+      filename: '',
+    }
+    knowledgeLoadingText.value = knowledgeText(payload?.cause)
   })
   cleanupKnowledgeProgress = window.electronAPI.knowledge.onRebuildProgress((data) => {
-    sysLoadingProgress.value = data
-    // 更新进度时同步文字（防止文字被 startup stage 覆盖）
-    if (!_knowledgeDone.value) {
-      const base = sysLoadingText.value.replace(/ \(\d+\/\d+\)$/, '')
-      sysLoadingText.value = base
+    knowledgeLoadingProgress.value = {
+      ...data,
+      libraryTotal: data.libraryTotal ?? 0,
     }
   })
   cleanupKnowledgeReady = window.electronAPI.knowledge.onReady(() => {
     _knowledgeDone.value = true
-    sysLoadingProgress.value = { current: 0, total: 0, filename: '' }
-    if (_startupDone.value) sysLoadingText.value = ''
+    knowledgeLoadingProgress.value = { current: 0, total: 0, libraryTotal: 0, filename: '' }
+    knowledgeLoadingText.value = ''
   })
   // ──────────────────────────────────────────────────────────────────────────
 
@@ -863,6 +917,30 @@ const openHostSidebar = () => {
   showSidebar.value = true
 }
 
+const handleRecallSidebarResize = (e: MouseEvent) => {
+  if (!isRecallSidebarResizing.value) return
+  recallSidebarWidth.value = clampRecallSidebarWidth(e.clientX)
+}
+
+const stopRecallSidebarResize = () => {
+  if (!isRecallSidebarResizing.value) return
+  isRecallSidebarResizing.value = false
+  document.removeEventListener('mousemove', handleRecallSidebarResize)
+  document.removeEventListener('mouseup', stopRecallSidebarResize)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  writeCachedRecallSidebarWidth(recallSidebarWidth.value)
+  window.electronAPI.config.set('recallSidebarWidth', recallSidebarWidth.value).catch(() => {})
+}
+
+const startRecallSidebarResize = (_e: MouseEvent) => {
+  isRecallSidebarResizing.value = true
+  document.addEventListener('mousemove', handleRecallSidebarResize)
+  document.addEventListener('mouseup', stopRecallSidebarResize)
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+}
+
 // 是否为终端工作台 tab（仅 local/ssh 由 TerminalTabView 渲染，独有 AI 侧栏方法）。
 // 其它工作台（助手等）的 tabViewRefs 实例没有 toggleAiPanel/ensureAiPanel，需先过滤，
 // 否则在其上调用会触发 TypeError（?. 只挡 null，挡不住方法 undefined）。
@@ -1025,10 +1103,12 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleGlobalKeydown)
   document.removeEventListener('keyup', handleGlobalKeyup)
   disposeSplitPaneHandler()
+  disposeWorkbenchHandler()
   // 清理监听器
   cleanupTerminalCountListener?.()
   cleanupStartupProgress?.()
   if (startupDoneTimer) { clearTimeout(startupDoneTimer); startupDoneTimer = null }
+  if (startupFallbackTimer) { clearTimeout(startupFallbackTimer); startupFallbackTimer = null }
   cleanupKnowledgeUpgrading?.()
   cleanupKnowledgeProgress?.()
   cleanupKnowledgeReady?.()
@@ -1046,12 +1126,23 @@ onUnmounted(() => {
   cleanupAgentNeedConfirmGlobal?.()
   cleanupAgentErrorForTabAttention?.()
   cleanupFullScreenChange?.()
+  stopRecallSidebarResize()
   stopUpdaterPrompts()
 })
 </script>
 
 <template>
-  <div class="app-container" :class="{ 'sidebar-open': showSidebar, 'is-mac': isMac, 'is-win': isWin, 'is-fullscreen': isFullScreen }" :data-ui-theme="currentUiTheme" :data-color-scheme="currentColorScheme">
+  <div
+    class="app-container"
+    :class="{
+      'sidebar-open': showSidebar,
+      'is-mac': isMac,
+      'is-win': isWin,
+      'is-fullscreen': isFullScreen,
+    }"
+    :data-ui-theme="currentUiTheme"
+    :data-color-scheme="currentColorScheme"
+  >
     <!-- 顶部工具栏 -->
     <header class="app-header">
       <div class="header-left">
@@ -1100,14 +1191,28 @@ onUnmounted(() => {
     <!-- 主体内容 -->
     <div class="app-body">
       <!-- 左侧边栏 - 最近对话（欢迎页常驻） -->
-      <aside v-show="showRecallSidebar" class="sidebar sidebar--recall">
+      <aside
+        v-show="showRecallSidebar"
+        class="sidebar sidebar--recall"
+        :style="{ width: `${recallSidebarWidth}px` }"
+      >
         <div class="sidebar-content sidebar-content--recall">
           <RecentConversationsPanel />
         </div>
+        <div
+          class="recall-sidebar-resize-handle"
+          :class="{ resizing: isRecallSidebarResizing }"
+          @mousedown="startRecallSidebarResize"
+        />
       </aside>
 
       <!-- 左侧边栏 - 主机管理（欢迎页上为叠加层） -->
-      <aside v-show="showSidebar" class="sidebar" :class="{ 'sidebar--overlay': showRecallSidebar }">
+      <aside
+        v-show="showSidebar"
+        class="sidebar"
+        :class="{ 'sidebar--overlay': showRecallSidebar }"
+        :style="showRecallSidebar ? { width: `${recallSidebarWidth}px` } : undefined"
+      >
         <div class="sidebar-header">
           <span>{{ t('header.hostManager') }}</span>
           <button class="btn-icon btn-sm" @click="showSidebar = false" :title="t('header.closeSidebar')">
@@ -1138,19 +1243,64 @@ onUnmounted(() => {
           class="main-surface"
           @back="backFromSmartPatrol"
         />
-        <!-- 有 tab 即挂载工作台；v-show 切换可见性，回首页不卸载 AiPanel / 终端 -->
-        <template v-for="tab in terminalStore.tabs" :key="tab.id">
+        <!-- 有 tab 即挂载工作台；外层原生 div + v-show 控制显隐（component 上 v-show 的 scoped 样式不可靠） -->
+        <div
+          v-for="tab in terminalStore.tabs"
+          :key="tab.id"
+          v-show="showTabWorkbench && tab.id === terminalStore.activeTabId"
+          class="tab-view main-surface"
+        >
           <component
             :is="resolveWorkbenchRenderer(tab.type)"
-            v-show="showTabWorkbench && tab.id === terminalStore.activeTabId"
             :ref="(el: any) => { tabViewRefs[tab.id] = el }"
             :tab="tab"
             :is-active="showTabWorkbench && tab.id === terminalStore.activeTabId"
-            class="tab-view main-surface"
+            :class="tab.type === 'assistant' ? 'tab-view-workbench' : 'tab-view-inner'"
           />
-        </template>
+        </div>
       </main>
     </div>
+
+    <!-- 后端启动进度（fixed overlay，不占 flex 空间，避免界面弹跳） -->
+    <Transition name="slide-down">
+      <div v-if="startupLoading && !isSteamBuild" class="startup-progress-bar">
+        <div class="upgrade-content">
+          <Loader2 class="upgrade-icon" :size="16" />
+          <span class="upgrade-text">{{ startupStage || '后端服务启动中...' }}</span>
+        </div>
+        <div class="upgrade-progress">
+          <div class="startup-progress-indeterminate" />
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 知识库索引重建进度条（fixed overlay，与启动条叠放，不占 flex 空间） -->
+    <Transition name="slide-down">
+      <div
+        v-if="knowledgeLoading && !isSteamBuild"
+        class="knowledge-loading-bar"
+        :class="{ 'above-startup-bar': startupLoading }"
+      >
+        <div class="upgrade-content">
+          <Loader2 class="upgrade-icon" :size="16" />
+          <span class="upgrade-text">
+            {{ knowledgeLoadingText }}
+            <template v-if="knowledgeLoadingProgress.total > 0">
+              ({{ knowledgeLoadingProgress.current }}/{{ knowledgeLoadingProgress.total }}<template v-if="knowledgeLoadingProgress.libraryTotal > knowledgeLoadingProgress.total">，文库共 {{ knowledgeLoadingProgress.libraryTotal }} 篇</template>)
+            </template>
+          </span>
+          <span v-if="knowledgeLoadingProgress.filename" class="upgrade-filename">
+            {{ knowledgeLoadingProgress.filename }}
+          </span>
+        </div>
+        <div class="upgrade-progress">
+          <div
+            class="upgrade-progress-bar"
+            :style="{ width: knowledgeLoadingProgress.total > 0 ? (knowledgeLoadingProgress.current / knowledgeLoadingProgress.total * 100) + '%' : '0%' }"
+          />
+        </div>
+      </div>
+    </Transition>
 
     <!-- 控制面板 -->
     <SettingsModal 
@@ -1182,36 +1332,6 @@ onUnmounted(() => {
       @close="onAwakenClose"
       @awakened-change="isAwakened = $event"
     />
-
-    <!-- 系统加载进度条：合并后端启动进度 + 知识库重建进度（Steam 版不渲染） -->
-    <Transition name="slide-down">
-      <div v-if="sysLoading && !isSteamBuild" class="sys-loading-bar">
-        <div class="upgrade-content">
-          <Loader2 class="upgrade-icon" :size="16" />
-          <span class="upgrade-text">
-            {{ sysLoadingText || '系统初始化中...' }}
-            <template v-if="sysLoadingProgress.total > 0">
-              ({{ sysLoadingProgress.current }}/{{ sysLoadingProgress.total }})
-            </template>
-          </span>
-          <span v-if="sysLoadingProgress.filename" class="upgrade-filename">
-            {{ sysLoadingProgress.filename }}
-          </span>
-        </div>
-        <div class="upgrade-progress">
-          <!-- 知识库索引补全时显示确定进度条，否则显示不确定扫描动画 -->
-          <template v-if="!_knowledgeDone && sysLoadingProgress.total > 0">
-            <div
-              class="upgrade-progress-bar"
-              :style="{ width: (sysLoadingProgress.current / sysLoadingProgress.total * 100) + '%' }"
-            />
-          </template>
-          <template v-else>
-            <div class="sys-progress-indeterminate" />
-          </template>
-        </div>
-      </div>
-    </Transition>
 
     <!-- 全局 Toast 提示 -->
     <Toast />
@@ -1408,9 +1528,51 @@ onUnmounted(() => {
 
 /* 欢迎页「最近对话」侧栏：比主机管理更退后，避免抢主区视觉焦点 */
 .sidebar--recall {
+  flex-shrink: 0;
   background: var(--bg-secondary);
   /* 常驻侧栏，回首页时不重复 slideInLeft */
   animation: none;
+}
+
+.recall-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.25s ease;
+  z-index: 5;
+}
+
+.recall-sidebar-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 40px;
+  background: var(--border-color);
+  border-radius: 2px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.recall-sidebar-resize-handle:hover::after,
+.recall-sidebar-resize-handle.resizing::after {
+  opacity: 1;
+}
+
+.recall-sidebar-resize-handle:hover,
+.recall-sidebar-resize-handle.resizing {
+  background: linear-gradient(180deg, transparent, rgba(var(--accent-rgb, 137, 180, 250), 0.3), transparent);
+}
+
+.recall-sidebar-resize-handle.resizing::after {
+  background: var(--accent-primary);
+  box-shadow: 0 0 10px var(--accent-primary);
 }
 
 .sidebar--recall::after {
@@ -1452,19 +1614,34 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* 统一系统加载进度条（后端启动 + 知识库重建共用） */
-.sys-loading-bar {
+.tab-view-inner {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+/* 助手工作台：仅撑满容器，水平/垂直分割由 WorkbenchShell 自行控制 */
+.tab-view-workbench {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+/* 后端启动进度条：fixed overlay，不参与 flex 布局 */
+.startup-progress-bar {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border-color);
-  z-index: 1000;
+  z-index: 999;
 }
 
-/* 不确定进度扫描动画（后端 init 阶段） */
-.sys-progress-indeterminate {
+.startup-progress-indeterminate {
   height: 2px;
   background: var(--accent-primary);
   width: 40%;
@@ -1474,6 +1651,22 @@ onUnmounted(() => {
 @keyframes indeterminate-scan {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(300%); }
+}
+
+/* 知识库索引重建进度条：fixed overlay，与启动条同时出现时上移叠放 */
+.knowledge-loading-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  z-index: 1000;
+  transition: bottom 0.2s ease;
+}
+
+.knowledge-loading-bar.above-startup-bar {
+  bottom: 36px;
 }
 
 .upgrade-content {

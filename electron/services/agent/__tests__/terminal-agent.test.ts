@@ -118,6 +118,16 @@ function createMockContext(overrides?: Partial<AgentContext>): AgentContext {
   }
 }
 
+function setRunTerminalType(agent: SailFish, terminalType: 'local' | 'ssh') {
+  ;(agent as any).currentRun = {
+    context: { terminalType }
+  }
+}
+
+function toolNames(tools: ReturnType<SailFish['getAvailableTools']>): string[] {
+  return tools.map(t => t.function.name)
+}
+
 // ==================== SailFish 测试 ====================
 
 describe('SailFish', () => {
@@ -148,33 +158,23 @@ describe('SailFish', () => {
 
   describe('getAvailableTools', () => {
     it('should return tools for local mode', () => {
-      const mockUnifiedService = createMockUnifiedTerminalService()
-      mockUnifiedService.getTerminalType.mockReturnValue('local')
-      
-      const services = createMockServices({
-        unifiedTerminalService: mockUnifiedService as any
-      })
-      
-      agent = new SailFish(services, 'test-pty')
+      agent = new SailFish(createMockServices(), 'test-pty')
+      setRunTerminalType(agent, 'local')
       const tools = agent.getAvailableTools()
       
       expect(Array.isArray(tools)).toBe(true)
-      expect(mockUnifiedService.getTerminalType).toHaveBeenCalledWith('test-pty')
+      expect(toolNames(tools)).toContain('execute_command')
+      expect(toolNames(tools)).not.toContain('exec')
     })
 
     it('should return tools for ssh mode', () => {
-      const mockUnifiedService = createMockUnifiedTerminalService()
-      mockUnifiedService.getTerminalType.mockReturnValue('ssh')
-      
-      const services = createMockServices({
-        unifiedTerminalService: mockUnifiedService as any
-      })
-      
-      agent = new SailFish(services, 'ssh-pty')
+      agent = new SailFish(createMockServices(), 'ssh-pty')
+      setRunTerminalType(agent, 'ssh')
       const tools = agent.getAvailableTools()
       
       expect(Array.isArray(tools)).toBe(true)
-      expect(mockUnifiedService.getTerminalType).toHaveBeenCalledWith('ssh-pty')
+      expect(toolNames(tools)).toContain('execute_command')
+      expect(toolNames(tools)).not.toContain('exec')
     })
 
     it('should return base tools when no unified service', () => {
@@ -226,43 +226,31 @@ describe('SailFish', () => {
   })
 
   describe('terminal mode detection', () => {
-    it('should detect local terminal', () => {
-      const mockUnifiedService = createMockUnifiedTerminalService()
-      mockUnifiedService.getTerminalType.mockReturnValue('local')
+    it('should use local tools when context.terminalType is local', () => {
+      agent = new SailFish(createMockServices(), 'test-pty')
+      setRunTerminalType(agent, 'local')
+      const tools = agent.getAvailableTools()
       
-      const services = createMockServices({
-        unifiedTerminalService: mockUnifiedService as any
-      })
-      
-      agent = new SailFish(services, 'test-pty')
-      agent.getAvailableTools() // 触发模式检测
-      
-      expect(mockUnifiedService.getTerminalType).toHaveBeenCalledWith('test-pty')
+      expect(toolNames(tools)).toContain('execute_command')
     })
 
-    it('should detect ssh terminal', () => {
-      const mockUnifiedService = createMockUnifiedTerminalService()
-      mockUnifiedService.getTerminalType.mockReturnValue('ssh')
+    it('should use ssh tools when context.terminalType is ssh', () => {
+      agent = new SailFish(createMockServices(), 'ssh-pty')
+      setRunTerminalType(agent, 'ssh')
+      const tools = agent.getAvailableTools()
       
-      const services = createMockServices({
-        unifiedTerminalService: mockUnifiedService as any
-      })
-      
-      agent = new SailFish(services, 'ssh-pty')
-      agent.getAvailableTools() // 触发模式检测
-      
-      expect(mockUnifiedService.getTerminalType).toHaveBeenCalledWith('ssh-pty')
+      expect(toolNames(tools)).toContain('execute_command')
     })
 
-    it('should fallback to local when no unified service', () => {
+    it('should default to assistant tools when no run context', () => {
       const services = createMockServices()
       delete (services as any).unifiedTerminalService
       
       agent = new SailFish(services, 'test-pty')
       const tools = agent.getAvailableTools()
       
-      // 应该返回工具列表（默认为 local 模式）
-      expect(Array.isArray(tools)).toBe(true)
+      expect(toolNames(tools)).toContain('exec')
+      expect(toolNames(tools)).not.toContain('execute_command')
     })
   })
 

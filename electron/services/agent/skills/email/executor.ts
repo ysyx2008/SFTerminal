@@ -21,6 +21,12 @@ import {
   getAllSessions
 } from './session'
 import { getTerminalStateService } from '../../../terminal-state.service'
+import {
+  extractZipFile,
+  isZipAttachmentFilename,
+  resolveUniqueExtractDirForZip
+} from '../../../../utils/zip-extract'
+import { ensureUniquePath } from '../../../../utils/unique-path'
 
 // 动态导入的模块
 let ImapFlow: typeof import('imapflow').ImapFlow
@@ -453,6 +459,7 @@ async function emailDownloadAttachment(
   const uid = args.uid as number
   const attachmentIndex = args.attachment_index as number
   const saveDirArg = args.save_dir as string | undefined
+  const extractArg = args.extract as boolean | undefined
 
   if (!uid) {
     return { success: false, output: '', error: t('email.uid_required') }
@@ -511,14 +518,26 @@ async function emailDownloadAttachment(
       fs.mkdirSync(saveDir, { recursive: true })
 
       const attachmentName = getAttachmentFilename(attachment.filename, attachmentIndex)
-      const savePath = ensureUniqueFilePath(path.join(saveDir, attachmentName))
+      const savePath = ensureUniquePath(path.join(saveDir, attachmentName))
       const content = await attachmentContentToBuffer(attachment.content)
       fs.writeFileSync(savePath, content)
 
-      const output = t('email.attachment_downloaded', {
+      let output = t('email.attachment_downloaded', {
         filename: path.basename(savePath),
         path: savePath
       })
+
+      const shouldExtract = extractArg ?? isZipAttachmentFilename(path.basename(savePath))
+      if (shouldExtract && isZipAttachmentFilename(path.basename(savePath))) {
+        const extractDir = resolveUniqueExtractDirForZip(savePath)
+        const { files } = extractZipFile(savePath, extractDir)
+        const fileList = files.map(f => `- ${f}`).join('\n')
+        output += '\n\n' + t('email.attachment_extracted', {
+          count: files.length,
+          dir: extractDir,
+          files: fileList
+        })
+      }
 
       executor.addStep({
         type: 'tool_result',
@@ -938,26 +957,6 @@ function getTerminalCwd(ptyId: string): string | undefined {
 function getAttachmentFilename(filename: string | undefined, attachmentIndex: number): string {
   const safeName = filename ? path.basename(filename) : ''
   return safeName || `attachment-${attachmentIndex}`
-}
-
-/**
- * 避免覆盖现有文件
- */
-function ensureUniqueFilePath(filePath: string): string {
-  if (!fs.existsSync(filePath)) {
-    return filePath
-  }
-
-  const parsed = path.parse(filePath)
-  let counter = 1
-  let nextPath = path.join(parsed.dir, `${parsed.name} (${counter})${parsed.ext}`)
-
-  while (fs.existsSync(nextPath)) {
-    counter += 1
-    nextPath = path.join(parsed.dir, `${parsed.name} (${counter})${parsed.ext}`)
-  }
-
-  return nextPath
 }
 
 /**

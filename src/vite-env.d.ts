@@ -18,13 +18,6 @@ declare module '*.vue' {
   export default component
 }
 
-declare module 'vue-virtual-scroller' {
-  import type { DefineComponent } from 'vue'
-  export const DynamicScroller: DefineComponent<any, any, any>
-  export const DynamicScrollerItem: DefineComponent<any, any, any>
-  export const RecycleScroller: DefineComponent<any, any, any>
-}
-
 // 共享类型（从 @shared/types 导入，保持全局可用）
 type TerminalType = import('@shared/types').TerminalType
 type ExecutionMode = import('@shared/types').ExecutionMode
@@ -1401,9 +1394,15 @@ interface Window {
         reason: 'vector' | 'bm25' | 'both' | string
         cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing'
         total?: number
+        libraryTotal?: number
       }) => void) => () => void
       // 监听索引重建进度
-      onRebuildProgress: (callback: (data: { current: number; total: number; filename: string }) => void) => () => void
+      onRebuildProgress: (callback: (data: {
+        current: number
+        total: number
+        libraryTotal?: number
+        filename: string
+      }) => void) => () => void
     }
     // 协调器（智能巡检）
     orchestrator: {
@@ -1529,6 +1528,10 @@ interface Window {
       copyFile: (src: string, dest: string) => Promise<{ success: boolean; error?: string }>
       copyDir: (src: string, dest: string) => Promise<{ success: boolean; error?: string }>
       readFile: (path: string) => Promise<{ success: boolean; data?: string; error?: string }>
+      previewArtifact: (
+        filePath: string,
+        renderer: import('@shared/types').CanvasRendererType
+      ) => Promise<{ success: boolean; data?: string; error?: string }>
       writeFile: (
         filePath: string,
         content: string
@@ -1546,6 +1549,7 @@ interface Window {
       }>>
       showInExplorer: (path: string) => Promise<void>
       openFile: (path: string) => Promise<void>
+      exists: (filePath: string) => Promise<{ success: boolean; data?: boolean; error?: string }>
     }
     // 文件管理器窗口操作
     fileManager: {
@@ -2272,6 +2276,27 @@ interface Window {
         ) => void
       ) => () => void
       sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => void
+    }
+
+    workbench: {
+      onExec: (
+        handler: (
+          id: string,
+          op: { type: 'list_artifacts' },
+          ownerAgentKey?: string
+        ) => void
+      ) => () => void
+      sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => void
+    }
+
+    browserBridge: {
+      getStatus: () => Promise<import('@shared/types/browser-bridge').BrowserBridgeStatus>
+      install: () => Promise<import('@shared/types/browser-bridge').BrowserBridgeInstallStatus>
+      uninstall: () => Promise<{ errors: string[] }>
+      openExtensionGuide: (browser: import('@shared/types/browser-bridge').BrowserBridgeBrowser) => Promise<void>
+      onConnectionsChanged: (
+        callback: (status: import('@shared/types/browser-bridge').BrowserBridgeStatus) => void
+      ) => () => void
     }
   }
 }

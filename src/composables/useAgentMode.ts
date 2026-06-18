@@ -7,12 +7,15 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted, Ref } from 'vue
 import { useI18n } from 'vue-i18n'
 import { useTerminalStore } from '../stores/terminal'
 import { useConfigStore } from '../stores/config'
-import { useCanvasStore } from '../stores/canvas'
+import { useAssistantArtifactStore } from '../workbench/assistant/artifact/store'
 import type { ExecutionMode, AttachmentInfo, AgentRecord, AgentHistorySummary } from '@shared/types'
 import type { AgentStep, AgentState } from '../stores/terminal'
+import type { MessageScrollerHandle } from '../types/message-scroller'
+import { readMessageScrollerCache } from '../types/message-scroller'
 import { createLogger } from '../utils/logger'
 import { useTts } from './useTts'
 import { shouldShowToolResultStep } from '../utils/tool-display'
+import { resolveWorkbenchAgentPrompt } from '../workbench'
 
 const log = createLogger('Agent')
 
@@ -28,6 +31,10 @@ function getLocalSystemInfo() {
 
 const SCROLL_THRESHOLD = 100
 const SCROLL_THROTTLE_MS = 1000
+
+function readCacheSnapshot(scroller: MessageScrollerHandle | null | undefined) {
+  return readMessageScrollerCache(scroller)
+}
 
 export interface AgentTaskGroup {
   id: string
@@ -48,7 +55,7 @@ export interface AgentTaskGroup {
 
 export interface VirtualItem {
   id: string
-  type: 'user_task' | 'step' | 'final_result' | 'proactive_message' | 'confirm'
+  type: 'user_task' | 'step' | 'final_result' | 'proactive_message' | 'confirm' | 'waiting_input'
   group?: AgentTaskGroup
   step?: AgentStep
   content?: string
@@ -71,13 +78,13 @@ export function useAgentMode(
     getAttachments: () => AttachmentInfo[]  // 获取当前已上传文件的元信息
     clearAttachments: () => void            // 清空已上传文件列表
   },
-  scrollerRef?: Ref<{ scrollToBottom: () => void; forceUpdate?: (clear?: boolean) => void } | null>,
-  panelVisible?: Ref<boolean | undefined>
+  scrollerRef?: Ref<MessageScrollerHandle | null>,
+  tabActive?: Ref<boolean | undefined>
 ) {
   const { t } = useI18n()
   const terminalStore = useTerminalStore()
   const configStore = useConfigStore()
-  const canvasStore = useCanvasStore()
+  const artifactStore = useAssistantArtifactStore()
   const tts = useTts()
 
   watch(
@@ -109,6 +116,15 @@ export function useAgentMode(
   
   // 标志：是否跳过 scroll 事件的状态更新（用于避免强制滚动时被 scroll 事件覆盖）
   let skipScrollUpdate = false
+
+  // 用户主动跟底：发消息 / 点「新消息」后保持贴底跟随，直到用户明确上滚。
+  // 虚拟列表 scrollHeight 异步修正时，scroll 事件会短暂误判「不在底部」；
+  // 仅靠 checkIsNearBottom 会让 isUserNearBottom 抖动，hasNewMessage 闪烁并中断 ResizeObserver 跟底。
+  let stickyFollowBottom = false
+  let lastKnownScrollTop = 0
+  let lastAutoScrollAt = 0
+  let scrollGraceTimer: ReturnType<typeof setTimeout> | null = null
+  const AUTO_SCROLL_GRACE_MS = 150
 
   // 启动 / 主动跳底窗口期内 ResizeObserver 仍贴底但**跳过 FLIP 动画**的时间戳。
   // scrollToBottom 触发时设置（new Date.now() + N ms）。语义：用户主动发新消息那一刻
@@ -203,19 +219,54 @@ export function useAgentMode(
   const saveScrollTop = () => {
     const id = currentTabId.value
     if (!id || !messagesRef.value) return
-    terminalStore.setAiScrollTop(id, messagesRef.value.scrollTop)
+    const el = messagesRef.value
+    const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight)
+    terminalStore.setAiScrollTop(id, el.scrollTop)
+    if (maxScroll > 0) {
+      terminalStore.setAiScrollRatio(id, el.scrollTop / maxScroll)
+    }
+    setIsUserNearBottom(checkIsNearBottom())
+
+    const cache = readCacheSnapshot(scrollerRef?.value)
+    if (cache?.keys.length) {
+      terminalStore.setAiScrollCache(id, cache)
+    }
+  }
+
+  const restoreScrollerCache = (): boolean => {
+    const id = currentTabId.value
+    const snapshot = id ? terminalStore.getAiScrollCache(id) : undefined
+    if (!snapshot || !scrollerRef?.value?.restoreCache) return false
+    return scrollerRef.value.restoreCache(snapshot)
+  }
+
+  const applySavedScrollTop = () => {
+    if (!messagesRef.value) return
+    const id = currentTabId.value
+    if (!id) return
+    const el = messagesRef.value
+    const savedRatio = terminalStore.getAiScrollRatio(id)
+    const saved = terminalStore.getAiScrollTop(id)
+    const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight)
+    if (savedRatio !== undefined && maxScroll > 0) {
+      el.scrollTop = savedRatio * maxScroll
+    } else if (saved !== undefined) {
+      el.scrollTop = saved
+    }
   }
 
   const restoreScrollTop = async () => {
     const id = currentTabId.value
     if (!id || !messagesRef.value) return
-    const saved = terminalStore.getAiScrollTop(id)
-    if (saved === undefined) return
+    if (
+      terminalStore.getAiScrollTop(id) === undefined
+      && terminalStore.getAiScrollRatio(id) === undefined
+    ) return
+
+    scrollerRef?.value?.forceUpdate?.(false)
 
     const apply = () => {
-      if (messagesRef.value) {
-        messagesRef.value.scrollTop = saved
-      }
+      applySavedScrollTop()
     }
 
     apply()
@@ -230,13 +281,34 @@ export function useAgentMode(
       setIsUserNearBottom(checkIsNearBottom())
       scrollerRef?.value?.forceUpdate?.(false)
     }, 150)
+    // 虚拟列表 / Mermaid 等在 display:none 恢复后重测高度，晚到的 layout 需再对齐一次
+    setTimeout(() => {
+      apply()
+      setIsUserNearBottom(checkIsNearBottom())
+    }, 500)
+  }
+
+  /** 切回激活 tab：先 restoreCache 再恢复滚动，减少 v3 重测高度闪烁 */
+  const restoreScrollPositionOnTabActivate = async () => {
+    const id = currentTabId.value
+    if (!id || !messagesRef.value) return
+
+    restoreScrollerCache()
+    scrollerRef?.value?.forceUpdate?.(false)
+    await nextTick()
+
+    if (terminalStore.getAiScrollNearBottom(id)) {
+      scrollToHistoryBottomWithRetry()
+    } else {
+      await restoreScrollTop()
+    }
   }
 
   /** 历史对话滚到底部（Virtual Scroller 重试 + 500ms 等待 mermaid/活图渲染后对齐） */
   const scrollToHistoryBottomWithRetry = () => {
     const apply = () => {
       if (scrollerRef?.value) {
-        scrollerRef.value.scrollToBottom()
+        scrollerRef.value.scrollToBottom?.()
       } else {
         void scrollToBottom()
       }
@@ -255,17 +327,52 @@ export function useAgentMode(
     })
   }
 
+  /** 延长程序化贴底保护窗口，避免 scroll 事件在虚拟列表高度修正前误判离底 */
+  const extendScrollGrace = () => {
+    skipScrollUpdate = true
+    if (scrollGraceTimer) clearTimeout(scrollGraceTimer)
+    scrollGraceTimer = setTimeout(() => {
+      scrollGraceTimer = null
+      skipScrollUpdate = false
+    }, AUTO_SCROLL_GRACE_MS)
+  }
+
+  /** ResizeObserver / scrollToBottom 程序化贴底后，短暂屏蔽 scroll 事件对跟底状态的污染 */
+  const guardAfterAutoScroll = () => {
+    lastAutoScrollAt = Date.now()
+    stickyFollowBottom = true
+    setIsUserNearBottom(true)
+    hasNewMessage.value = false
+    extendScrollGrace()
+  }
+
+  const shouldFollowBottom = () => stickyFollowBottom || isUserNearBottom.value
+
+  const shouldFollowResize = () => skipScrollUpdate || shouldFollowBottom()
+
   // 更新用户滚动位置状态（由组件的 scroll 事件调用）
   const updateScrollPosition = () => {
     // 跳过强制滚动期间的状态更新，避免被 scroll 事件覆盖
     if (skipScrollUpdate) return
+    const el = messagesRef.value
+    if (!el) return
+
+    const { scrollTop } = el
     const nearBottom = checkIsNearBottom()
-    setIsUserNearBottom(nearBottom)
-    saveScrollTop()
-    // 如果用户滚动到底部，清除新消息提示
+    const outsideAutoScrollGrace = Date.now() - lastAutoScrollAt > AUTO_SCROLL_GRACE_MS
+    const scrolledUpSignificantly =
+      outsideAutoScrollGrace && scrollTop < lastKnownScrollTop - SCROLL_THRESHOLD
+
     if (nearBottom) {
+      stickyFollowBottom = true
       hasNewMessage.value = false
+    } else if (scrolledUpSignificantly) {
+      stickyFollowBottom = false
     }
+
+    lastKnownScrollTop = scrollTop
+    setIsUserNearBottom(nearBottom || stickyFollowBottom)
+    saveScrollTop()
   }
 
   // 强制滚动到底部（用户主动发送消息或点击时调用）
@@ -280,22 +387,16 @@ export function useAgentMode(
   // 真正的流式 chunk 进来才进入 FLIP 平滑滑动。
   const FLIP_SUPPRESS_WINDOW_MS = 200
   const scrollToBottom = async () => {
-    // 先设置状态，防止被 scroll 事件覆盖
-    skipScrollUpdate = true
-    setIsUserNearBottom(true)
-    hasNewMessage.value = false
     suppressFlipUntil = Date.now() + FLIP_SUPPRESS_WINDOW_MS
 
     await nextTick()
     if (messagesRef.value) {
       messagesRef.value.scrollTop = messagesRef.value.scrollHeight
+      lastKnownScrollTop = messagesRef.value.scrollTop
     }
 
-    // 延迟恢复 scroll 事件更新，确保滚动完成后才开始监听用户滚动
-    requestAnimationFrame(() => {
-      skipScrollUpdate = false
-      saveScrollTop()
-    })
+    guardAfterAutoScroll()
+    requestAnimationFrame(() => saveScrollTop())
   }
 
   // 实际执行滚动
@@ -317,23 +418,19 @@ export function useAgentMode(
     lastScrollTime = Date.now()
     await nextTick()
 
-    // 仅依赖 isUserNearBottom（由用户真实滚动事件维护）
+    // 依赖 stickyFollowBottom / isUserNearBottom（由用户滚动 + 跟底意图维护）
     // 不做实时 checkIsNearBottom()：DynamicScroller 的 scrollHeight 基于估算，
     // 虚拟化的 off-screen 项高度远小于实际值，会导致误判"在底部附近"
-    if (isUserNearBottom.value) {
+    if (shouldFollowBottom()) {
       if (messagesRef.value) {
         // ⚠️ skipScrollUpdate 同时被 ResizeObserver 当作"正在贴底，跟随尺寸变化"信号
         //（见 installContentResizeObserver）。所以只能在确实要贴底的分支里置位，
         // 否则用户向上滚走后，新内容引发的 ResizeObserver 回调会被误触发为强制贴底，
         // 把用户从阅读位拽回最底（曾经的回归 bug）。
-        skipScrollUpdate = true
+        stickyFollowBottom = true
         setIsUserNearBottom(true)
         hasNewMessage.value = false
-
-        // 延迟恢复 scroll 事件监听，等待 DynamicScroller 布局稳定
-        setTimeout(() => {
-          skipScrollUpdate = false
-        }, 80)
+        extendScrollGrace()
       }
     } else {
       hasNewMessage.value = true
@@ -471,8 +568,8 @@ export function useAgentMode(
     contentObservedTarget = wrapper
     prevWrapperHeight = wrapper.offsetHeight
     contentResizeObserver = new ResizeObserver((entries) => {
-      // 非当前可见面板不跟随贴底，避免后台 tab 改写 scrollTop、切回时与已存位置不一致
-      if (panelVisible?.value === false) return
+      // 非当前激活 tab 不跟随贴底，避免后台 tab 改写 scrollTop、切回时与已存位置不一致
+      if (tabActive?.value === false) return
       const el = messagesRef.value
       if (!el) return
       const newHeight = entries[0]?.contentRect.height ?? wrapper.offsetHeight
@@ -486,7 +583,7 @@ export function useAgentMode(
       // - isUserNearBottom：用户视觉在底部，常规流式 chunk 跟随
       // 两种场景都该走 FLIP 平滑滑动；用户主动滚走后 isUserNearBottom 为 false，
       // 不再越权强行贴底，避免和"用户翻看历史"的意图打架
-      if (!skipScrollUpdate && !isUserNearBottom.value) return
+      if (!shouldFollowResize()) return
 
       // wrapperDelta ≤ 0（wrapper 收缩，如图片渲染过程中的 markdown reflow 调整、
       // ThinkingBlock 折叠等）：完全不动 scrollTop，让浏览器自然 clamp。曾经在
@@ -503,6 +600,8 @@ export function useAgentMode(
       // 情况），跳过动画但仍贴底，避免长距离闪现
       if (Date.now() < suppressFlipUntil || wrapperDelta >= MAX_FLIP_DELTA) {
         el.scrollTop = el.scrollHeight
+        lastKnownScrollTop = el.scrollTop
+        guardAfterAutoScroll()
         return
       }
 
@@ -513,6 +612,8 @@ export function useAgentMode(
       const oldScrollTop = el.scrollTop
       el.scrollTop = el.scrollHeight
       const scrollDelta = el.scrollTop - oldScrollTop
+      lastKnownScrollTop = el.scrollTop
+      guardAfterAutoScroll()
 
       // ② FLIP 反向偏移：scrollDelta > 0 时给 wrapper 加反向 transform，下一帧归零
       applyFlipScroll(scrollDelta)
@@ -537,12 +638,27 @@ export function useAgentMode(
     prevWrapperHeight = 0
   }
 
+  const onMessagesWheel = (e: WheelEvent) => {
+    if (e.deltaY < 0) {
+      stickyFollowBottom = false
+      setIsUserNearBottom(false)
+      if (scrollGraceTimer) {
+        clearTimeout(scrollGraceTimer)
+        scrollGraceTimer = null
+      }
+      skipScrollUpdate = false
+    }
+  }
+
   // messagesRef 由 AiPanel 在 watch(scrollerRef) 中赋值；这里跟随它生命周期挂载/卸载
   // wrapper 是 DynamicScroller mount 后内部渲染的子节点，等一帧确保挂载完成
   watch(messagesRef, (el, oldEl) => {
     if (oldEl === el) return
+    oldEl?.removeEventListener('wheel', onMessagesWheel)
     uninstallContentResizeObserver()
     if (el) {
+      lastKnownScrollTop = el.scrollTop
+      el.addEventListener('wheel', onMessagesWheel, { passive: true })
       requestAnimationFrame(() => installContentResizeObserver())
     }
   }, { flush: 'post' })
@@ -669,6 +785,8 @@ export function useAgentMode(
     const groups: AgentTaskGroup[] = []
     let currentGroup: AgentTaskGroup | null = null
     let orphanedStepCount = 0
+    // user_task 尚未到达时先到的 user_supplement（准备阶段竞态）
+    let leadingSupplements: AgentStep[] = []
     
     for (const step of allSteps) {
       if (step.type === 'user_task') {
@@ -680,17 +798,20 @@ export function useAgentMode(
           userTask: (isProactive || isOnboarding) ? '' : step.content,
           images: step.images,
           attachments: step.attachments,
-          steps: [],
+          steps: [...leadingSupplements],
           isCurrentTask: false,
           isProactive,
           isOnboarding,
         }
+        leadingSupplements = []
         groups.push(currentGroup)
       } else if (step.type === 'final_result') {
         if (currentGroup) {
           currentGroup.finalResult = step.content
           currentGroup = null
         }
+      } else if (step.type === 'user_supplement' && !currentGroup) {
+        leadingSupplements.push(step)
       } else if (step.type !== 'confirm') {
         if (currentGroup) {
           currentGroup.steps.push(step)
@@ -699,7 +820,7 @@ export function useAgentMode(
         }
       }
     }
-    
+
     // 标记最后一个未完成的任务为当前任务
     if (groups.length > 0) {
       const lastGroup = groups[groups.length - 1]
@@ -756,9 +877,7 @@ export function useAgentMode(
 
       if (group.steps.length > 0) {
         // 调试模式 OFF 时，隐藏"成功且无用户必看产出"的 tool_call / tool_result step
-        // （详见 utils/tool-display.ts）。失败 / 写入类 / 携带富内容字段（图片、搜索结果、
-        // 子 Agent）的 step 永远展示；专用 step type 工具（plan/ask_user/wait）的双卡也会
-        // 一并隐藏，让位给专用卡。
+        // user_supplement 按 steps 时间顺序渲染，不整体提前到 user_task 之后
         const debugMode = configStore.agentDebugMode
         const visibleSteps = group.steps.filter(s => shouldShowToolResultStep(s, debugMode))
         for (let i = 0; i < visibleSteps.length; i++) {
@@ -766,6 +885,7 @@ export function useAgentMode(
           const isFirst = i === 0
           const size = step.type === 'message'
             ? Math.max(80, Math.ceil(step.content.length / 4))
+            : step.type === 'user_supplement' ? 60
             : step.type === 'asking' ? 120 : isFirst ? 46 : 40
           items.push({ id: step.id, type: 'step', step, group, size, isFirstStep: isFirst })
         }
@@ -910,7 +1030,12 @@ export function useAgentMode(
     try {
       // 根据模式选择 API
       let result: { success: boolean; result?: string; error?: string; aborted?: boolean }
-      
+
+      // workbenchPrompt 对所有工作台类型都需要注入（local/ssh/assistant 各有专属 prompt）
+      const workbenchPrompt = currentTab.value
+        ? resolveWorkbenchAgentPrompt(currentTab.value.type, currentTab.value)
+        : undefined
+
       if (isAssistantMode && currentTab.value?.agentId) {
         result = await window.electronAPI.agent.runStandalone(
           currentTab.value.agentId,
@@ -924,7 +1049,8 @@ export function useAgentMode(
             attachments: attachments.length > 0 ? attachments : undefined,
             remoteChannel: currentTab.value.remoteChannel,
             sessionId: agentState.value?.sessionId,
-            sessionStartTime: agentState.value?.sessionStartTime
+            sessionStartTime: agentState.value?.sessionStartTime,
+            ...(workbenchPrompt ? { workbenchPrompt } : {})
           },
           { executionMode: executionMode.value, commandTimeout: commandTimeout.value * 1000 },
           activeProfileId.value || undefined
@@ -944,7 +1070,8 @@ export function useAgentMode(
             previewImages: previewImages.length < images.length ? previewImages : undefined,
             attachments: attachments.length > 0 ? attachments : undefined,
             sessionId: agentState.value?.sessionId,
-            sessionStartTime: agentState.value?.sessionStartTime
+            sessionStartTime: agentState.value?.sessionStartTime,
+            ...(workbenchPrompt ? { workbenchPrompt } : {})
           },
           { executionMode: executionMode.value, commandTimeout: commandTimeout.value * 1000 },
           activeProfileId.value || undefined
@@ -1149,7 +1276,8 @@ export function useAgentMode(
 
       // 独立助手模式下，驱动 Canvas 预览面板
       if (isStandaloneAssistant.value) {
-        canvasStore.handleAgentStep(tabId, data.step)
+        const steps = agentState.value?.steps ?? []
+        artifactStore.handleAgentStep(tabId, data.step, steps)
       }
 
       // TTS: 流式 message / final_result 喂给语音合成（远程会话不播报）
@@ -1236,7 +1364,7 @@ export function useAgentMode(
       terminalStore.finalizeAgentRunState(currentTabId.value)
       // 通知 Canvas 任务完成
       if (isStandaloneAssistant.value) {
-        canvasStore.handleAgentComplete(currentTabId.value)
+        artifactStore.handleAgentComplete(currentTabId.value)
       }
       // 队列化的 proactive 回复优先：作为新任务启动（consumeProactiveContext 自动注入 Watch 上下文）
       if (queuedProactiveReply.value) {
@@ -1559,7 +1687,7 @@ export function useAgentMode(
   onUnmounted(() => {
     cleanupAgentListeners()
     uninstallContentResizeObserver()
-    canvasStore.cleanup(currentTabId.value)
+    artifactStore.cleanup(currentTabId.value)
   })
 
   return {
@@ -1575,6 +1703,7 @@ export function useAgentMode(
     updateScrollPosition,
     saveScrollTop,
     restoreScrollTop,
+    restoreScrollPositionOnTabActivate,
     scrollToHistoryBottomWithRetry,
     scrollToBottom,
     scrollToBottomIfNeeded,

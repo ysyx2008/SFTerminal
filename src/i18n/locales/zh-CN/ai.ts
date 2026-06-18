@@ -414,7 +414,6 @@ export default {
       edit_file: '编辑文件',
       get_terminal_context: '获取终端上下文',
       file_search: '搜索文件',
-      remember_info: '记住信息',
       search_knowledge: '搜索知识库',
       web_search: 'Web 搜索',
       get_knowledge_doc: '获取知识文档',
@@ -468,6 +467,8 @@ export default {
       browser_goto: '浏览器导航',
       browser_screenshot: '浏览器截图',
       browser_get_content: '获取网页内容',
+      browser_read_article: '读取文章正文',
+      browser_read_page: '读取整页内容',
       browser_click: '浏览器点击',
       browser_type: '浏览器输入',
       browser_scroll: '浏览器滚动',
@@ -507,6 +508,9 @@ export default {
       watch_trigger: '触发关切',
       watch_history: '关切历史',
       watch_state_update: '更新关切状态',
+      // 工作台
+      list_workbench_artifacts: '查看产出物面板',
+      manage_workbench_artifacts: '维护产出物面板',
       // IM 技能
       feishu_read: '读取飞书消息',
       feishu_write: '发送飞书消息',
@@ -564,7 +568,7 @@ export default {
   // 知识库
   knowledge: {
     upgrading: '正在升级知识库模型...',
-    repairing: '正在修复知识库索引...',
+    repairing: '正在增量修复知识库索引...',
     rebuilding: '正在重建知识库索引...'
   },
 

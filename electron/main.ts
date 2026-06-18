@@ -8,6 +8,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import { getDefaultShell } from './utils/platform'
 import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, WebSearchSettings } from '@shared/types'
+import { getAppTitle as buildAppTitle, getBrandName } from '@shared/brand'
 
 /**
  * 展开路径开头的 `~` 为用户 home 目录。支持 `~`、`~/...`、`~\...`（兼容 Windows）。
@@ -66,6 +67,9 @@ const gotTheLock = useSingleInstanceLock ? app.requestSingleInstanceLock() : tru
 if (!gotTheLock) {
   app.quit()
 }
+
+registerGracefulShutdownSignals()
+registerDevHotReloadGracefulShutdown()
 
 // 深链 URL 队列：窗口未就绪时暂存，加载完成后依次发送
 const pendingDeepLinkUrls: string[] = []
@@ -145,28 +149,22 @@ const APP_START_TIME = Date.now()
 const packageJson = JSON.parse(fs.readFileSync(join(__dirname, '../package.json'), 'utf-8'))
 const APP_VERSION = packageJson.version
 
-// 应用名称（多语言支持）
-const APP_NAME = { zh: '旗鱼', en: 'SailFish' }
-
 // Steam 构建标识：主进程直接读环境变量，dev/build 均可靠
 const IS_STEAM_BUILD = process.env.VITE_STEAM_BUILD === 'true'
-const APP_NAME_STEAM = { zh: '旗鱼终端', en: 'SFTerm' }
 
-/**
- * 根据语言获取应用标题（Steam 版使用不同品牌名）
- */
+/** 根据语言获取应用标题（Steam 版使用不同品牌名） */
 function getAppTitle(language?: string): string {
   const lang = language || configService?.getLanguage() || 'zh-CN'
-  const names = IS_STEAM_BUILD ? APP_NAME_STEAM : APP_NAME
-  const name = lang.startsWith('zh') ? names.zh : names.en
-  return `${name} v${APP_VERSION}`
+  return buildAppTitle(lang, APP_VERSION, IS_STEAM_BUILD)
 }
 
 /** 应用短名称（无版本号，用于通知标题等） */
 function getAppName(language?: string): string {
   const lang = language || configService?.getLanguage() || 'zh-CN'
-  const names = IS_STEAM_BUILD ? APP_NAME_STEAM : APP_NAME
-  return lang.startsWith('zh') ? names.zh : names.en
+  if (IS_STEAM_BUILD) {
+    return lang.startsWith('zh') ? '旗鱼终端' : 'SFTerm'
+  }
+  return getBrandName(lang)
 }
 
 /**
@@ -377,6 +375,8 @@ import {
 import { initTerminalStateService, type TerminalState, type CwdChangeEvent, type CommandExecution, type CommandExecutionEvent } from './services/terminal-state.service'
 import { initTerminalAwarenessService, type TerminalAwareness } from './services/terminal-awareness'
 import { initScreenContentService } from './services/screen-content.service'
+import { initBrowserBridgeService, getBrowserBridgeService } from './services/browser-bridge/browser-bridge.service'
+import type { BrowserBridgeBrowser } from '@shared/types/browser-bridge'
 import { menuService } from './services/menu.service'
 import { t, errMsg, setConfigService as setMainI18nConfig, updateLocale as updateMainI18nLocale } from './i18n/main-i18n'
 import { attentionService } from './services/attention.service'
@@ -387,6 +387,7 @@ import { getWatchService } from './services/watch/watch.service'
 import { getSensorService } from './services/sensor'
 import { getBondService } from './services/bond.service'
 import { splitPaneBridge } from './services/split-pane-bridge.service'
+import { workbenchBridge } from './services/workbench-bridge.service'
 import type { CreateWatchParams } from './services/watch/types'
 import { getWebChatService } from './services/web-chat.service'
 import { getMigrationRunner, createBackup } from './migrations'
@@ -394,7 +395,7 @@ import { getGatewayService, type GatewayConfig } from './services/gateway.servic
 import { BastionService } from './services/bastion.service'
 import { getIMService } from './services/im/im.service'
 import type { DingTalkConfig, FeishuConfig, SlackConfig, TelegramConfig, WeComConfig } from './services/im/types'
-import { getWorkspacePath } from './services/agent/tools/file'
+import { getWorkspacePath, ensureAgentWorkspaceDirs } from './services/agent/tools/file'
 import { getContextKnowledgeService } from './services/knowledge/context-knowledge'
 import {
   getEmailCredential, setEmailCredential, deleteEmailCredential,
@@ -623,14 +624,15 @@ async function initKnowledgeService(): Promise<void> {
       // 这是前端进度条出现的统一入口——indexCleared 只覆盖维度变化一种情况，
       // 数据损坏/BM25 缺失场景此前没有触发 upgrading 导致用户感觉 UI 纯卡住。
       knowledgeService.on('rebuildStarted', (
-        { total, reason, cause }:
-        { total: number; reason: string; cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing' }
+        { total, libraryTotal, reason, cause }:
+        { total: number; libraryTotal?: number; reason: string; cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing' }
       ) => {
-        log.info(`知识库开始重建: reason=${reason}, cause=${cause || 'missing'}, total=${total}`)
+        log.info(`知识库开始重建: reason=${reason}, cause=${cause || 'missing'}, total=${total}, libraryTotal=${libraryTotal ?? 'n/a'}`)
         mainWindow?.webContents.send('knowledge:upgrading', {
           reason,
           cause: cause || 'missing',
-          total
+          total,
+          libraryTotal,
         })
       })
 
@@ -820,6 +822,7 @@ function setupWindowServices() {
   imService.setMainWindow(mainWindow)
   menuService.setMainWindow(mainWindow)
   attentionService.setMainWindow(mainWindow)
+  getBrowserBridgeService().setMainWindow(mainWindow)
   // macOS 一次性触发通知权限请求，让 dock badge 在打包版上能正常显示
   attentionService.ensurePermission()
 
@@ -835,7 +838,12 @@ function setupWindowServices() {
 /**
  * 退出时清理所有后端服务和连接
  */
+let shuttingDown = false
+let cleanupPromise: Promise<void> | null = null
+
 async function cleanupAllServices(): Promise<void> {
+  if (cleanupPromise) return cleanupPromise
+  cleanupPromise = (async () => {
   watchService.stop()
   sensorService.stop().catch(() => {})
   schedulerService.stop()
@@ -859,12 +867,58 @@ async function cleanupAllServices(): Promise<void> {
   // 避免被 OS SIGTERM 收尸时正好打断 LanceDB transaction / ORT session
   // 释放，留下 "manifest 已落盘但 .lance 数据文件未落盘" 的损坏状态
   // （曾导致 hybridSearch 整天反复报 LanceError(IO): Not found: …lance）。
-  // 给 worker 最多 800ms 优雅退出预算。
+  // 给 worker 最多 3s 优雅退出预算（含 LanceDB compact + embedding dispose）。
   try {
-    await knowledgeService?.disposeAsync(800)
+    await knowledgeService?.disposeAsync(3000)
   } catch (e) {
     log.warn('Knowledge dispose 失败:', e)
   }
+  })()
+  return cleanupPromise
+}
+
+/** dev Ctrl+C / 系统 SIGTERM 时尽量优雅收尾，避免 LanceDB transaction 半截退出 */
+function registerGracefulShutdownSignals(): void {
+  const shutdown = (signal: string) => {
+    if (shuttingDown) return
+    shuttingDown = true
+    log.info(`收到 ${signal}，正在优雅关闭后端服务...`)
+    forceQuit = true
+    isQuitting = true
+    cleanupAllServices()
+      .catch(err => log.warn('优雅关闭失败:', err))
+      .finally(() => {
+        if (app.isReady()) {
+          app.quit()
+        } else {
+          process.exit(0)
+        }
+      })
+  }
+  process.on('SIGINT', () => shutdown('SIGINT'))
+  process.on('SIGTERM', () => shutdown('SIGTERM'))
+}
+
+/**
+ * dev 主进程热重载：vite-plugin-electron 默认 treeKillSync 先杀 LanceDB worker，
+ * 容易在 table.add / compact 半截时留下损坏的 .lance 文件。
+ * 在 vite 重启 Electron 前先收 graceful-shutdown，跑完 disposeAsync 再退出。
+ */
+function registerDevHotReloadGracefulShutdown(): void {
+  if (!process.env.VITE_DEV_SERVER_URL) return
+  process.on('message', (msg: unknown) => {
+    const type = typeof msg === 'object' && msg !== null && 'type' in msg
+      ? (msg as { type?: string }).type
+      : undefined
+    if (type !== 'graceful-shutdown') return
+    if (shuttingDown) return
+    shuttingDown = true
+    forceQuit = true
+    log.info('dev 热重载：收到 graceful-shutdown，正在释放知识库 worker...')
+    cleanupAllServices()
+      .catch(err => log.warn('dev graceful-shutdown 失败:', err))
+      .finally(() => process.exit(0))
+  })
 }
 
 // ==================== 主窗口 ====================
@@ -952,10 +1006,12 @@ function createWindow() {
     }
     ipcMain.removeListener('app:mounted', onAppMounted)
     splitPaneBridge.detachWindow()
+    workbenchBridge.detachWindow()
   })
 
-  // 分屏反向 IPC 桥接：让 Agent 工具可以从主进程触发渲染进程的分屏 store 操作
+  // 分屏 / 工作台反向 IPC 桥接
   splitPaneBridge.init(mainWindow)
+  workbenchBridge.init(mainWindow)
 
   // Windows 上窗口获得焦点时，确保 webContents 也获得键盘输入路由
   // 防止 setAlwaysOnTop 切换或通知交互后出现"窗口在前台但无法输入"的僵死状态
@@ -1194,6 +1250,8 @@ function createAiDebugWindow(): void {
 app.whenReady().then(async () => {
   log.info(`[startup] app.whenReady fired (+${Date.now() - APP_START_TIME}ms)`)
 
+  ensureAgentWorkspaceDirs()
+
   // 数据目录迁移：必须在创建窗口、初始化 sensor/watch/agent 等一切重活之前执行。
   // 此刻源目录无任何运行时写入，复制数据保证一致；完成后会自动重启。
   const migrated = await runStartupMigrationIfNeeded()
@@ -1257,6 +1315,9 @@ app.whenReady().then(async () => {
 
   // 初始化屏幕内容服务（轻量，可以同步初始化）
   initScreenContentService()
+
+  // 浏览器助手网关（扩展 Native Messaging）
+  initBrowserBridgeService().catch((e) => log.warn('Browser bridge init failed:', e))
 
   // 先创建窗口，让用户尽快看到界面
   createWindow()
@@ -4444,6 +4505,20 @@ ipcMain.handle('localFs:readFile', async (_event, filePath: string) => {
   }
 })
 
+// 产出物预览重建（Word/Excel/md/html 从磁盘再生 HTML/文本）
+ipcMain.handle('localFs:previewArtifact', async (_event, filePath: string, renderer: string) => {
+  try {
+    const { tryPreviewArtifactFromFile } = await import('./services/artifact-preview.service')
+    const data = await tryPreviewArtifactFromFile(filePath, renderer as import('@shared/types').CanvasRendererType)
+    if (data == null) {
+      return { success: false, error: 'Preview generation failed' }
+    }
+    return { success: true, data }
+  } catch (error) {
+    return { success: false, error: errMsg(error, 'error.readFileFailed') }
+  }
+})
+
 // 写入文本文件
 ipcMain.handle('localFs:writeFile', async (_event, filePath: string, content: string) => {
   try {
@@ -5028,6 +5103,24 @@ ipcMain.handle('plugin:setConfig', async (_event, id: string, config: Record<str
   const entries = configService.get('pluginsEntries') || {}
   entries[id] = { ...entries[id], enabled: entries[id]?.enabled ?? true, config }
   configService.set('pluginsEntries', entries)
+})
+
+// ==================== 浏览器助手（扩展桥接） ====================
+
+ipcMain.handle('browserBridge:getStatus', async () => {
+  return getBrowserBridgeService().getStatus()
+})
+
+ipcMain.handle('browserBridge:install', async () => {
+  return getBrowserBridgeService().install()
+})
+
+ipcMain.handle('browserBridge:uninstall', async () => {
+  return getBrowserBridgeService().uninstall()
+})
+
+ipcMain.handle('browserBridge:openExtensionGuide', async (_event, browser: BrowserBridgeBrowser) => {
+  await getBrowserBridgeService().openExtensionGuide(browser)
 })
 
 // ==================== 内置技能相关 ====================

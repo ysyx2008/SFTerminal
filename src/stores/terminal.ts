@@ -7,6 +7,7 @@ import type { JumpHostConfig } from './config'
 import { useConfigStore } from './config'
 import type { TerminalScreenService, ScreenContent } from '../services/terminal-screen.service'
 import type { TerminalSnapshotManager, TerminalSnapshot, TerminalDiff } from '../services/terminal-snapshot.service'
+import { useAssistantArtifactStore } from '../workbench/assistant/artifact/store'
 import { createLogger } from '../utils/logger'
 import {
   findActivePaneInLayout,
@@ -144,6 +145,10 @@ export interface TerminalTab {
   aiScrollNearBottom?: boolean
   // AI 对话滚动位置（用于切换 tab 时恢复）
   aiScrollTop?: number
+  /** 滚动比例 0–1（scrollTop / maxScroll），虚拟列表重测高度后比绝对像素更稳 */
+  aiScrollRatio?: number
+  /** vue-virtual-scroller v3 高度缓存，切 tab 后 restoreCache 避免重测闪烁 */
+  aiScrollCache?: { keys: (string | number)[]; sizes: Array<number | null> }
   // Agent 状态（每个终端独立）
   agentState?: AgentState
   // 上传的文档（每个终端独立）
@@ -1635,6 +1640,30 @@ export const useTerminalStore = defineStore('terminal', () => {
     return tab?.aiScrollTop
   }
 
+  function setAiScrollRatio(tabId: string, ratio: number): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (tab) {
+      tab.aiScrollRatio = ratio
+    }
+  }
+
+  function getAiScrollRatio(tabId: string): number | undefined {
+    const tab = tabs.value.find(t => t.id === tabId)
+    return tab?.aiScrollRatio
+  }
+
+  function setAiScrollCache(tabId: string, cache: TerminalTab['aiScrollCache']): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (tab && cache) {
+      tab.aiScrollCache = cache
+    }
+  }
+
+  function getAiScrollCache(tabId: string): TerminalTab['aiScrollCache'] {
+    const tab = tabs.value.find(t => t.id === tabId)
+    return tab?.aiScrollCache
+  }
+
   /**
    * 请求终端获得焦点
    */
@@ -1995,6 +2024,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       webSearchResults?: import('@shared/types').WebSearchResultItem[]
       success?: boolean
       subAgents?: import('@shared/types').SubAgentResult[]
+      canvasData?: import('@shared/types').CanvasData
     }>
     finalResult?: string
     duration: number
@@ -2018,7 +2048,8 @@ export const useTerminalStore = defineStore('terminal', () => {
       timestamp: s.timestamp,
       webSearchResults: s.webSearchResults,
       success: s.success,
-      subAgents: s.subAgents
+      subAgents: s.subAgents,
+      canvasData: s.canvasData
     }))
     
     // 兼容旧数据：确保有 user_task 和 final_result 步骤
@@ -2051,8 +2082,15 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
     // 从历史恢复视为新视图：清除已存滚动，由 AiPanel 滚到最新一条
     delete tab.aiScrollTop
+    delete tab.aiScrollRatio
+    delete tab.aiScrollCache
     // 确保从欢迎页首次打开历史时，AiPanel 能立即感知 steps 变化
     tabs.value = [...tabs.value]
+
+    // 重放 steps 中的 canvasData，恢复 Artifact 产出物面板（仅助手 tab）
+    if (tab.type === 'assistant') {
+      useAssistantArtifactStore().hydrateFromSteps(tabId, steps)
+    }
   }
 
   /**
@@ -2725,6 +2763,10 @@ export const useTerminalStore = defineStore('terminal', () => {
     getAiScrollNearBottom,
     setAiScrollTop,
     getAiScrollTop,
+    setAiScrollRatio,
+    getAiScrollRatio,
+    setAiScrollCache,
+    getAiScrollCache,
     focusTerminal,
     clearPendingFocus,
     // Agent 状态管理

@@ -2002,6 +2002,7 @@ const electronAPI = {
         enabled: boolean
         embeddingMode: 'local' | 'mcp'
         localModel: 'auto' | 'lite' | 'standard' | 'large'
+        embeddingDevice?: 'auto' | 'cpu' | 'gpu' | 'coreml' | 'cuda' | 'dml' | 'webgpu'
         embeddingMcpServerId?: string
         autoSaveUploads: boolean
         chunkStrategy: 'fixed' | 'semantic' | 'paragraph'
@@ -2016,6 +2017,7 @@ const electronAPI = {
       enabled: boolean
       embeddingMode: 'local' | 'mcp'
       localModel: 'auto' | 'lite' | 'standard' | 'large'
+      embeddingDevice?: 'auto' | 'cpu' | 'gpu' | 'coreml' | 'cuda' | 'dml' | 'webgpu'
       embeddingMcpServerId?: string
       autoSaveUploads: boolean
       chunkStrategy: 'fixed' | 'semantic' | 'paragraph'
@@ -2243,11 +2245,13 @@ const electronAPI = {
       reason: 'vector' | 'bm25' | 'both' | string
       cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing'
       total?: number
+      libraryTotal?: number
     }) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: {
         reason: 'vector' | 'bm25' | 'both' | string
         cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing'
         total?: number
+        libraryTotal?: number
       }) => callback(data)
       ipcRenderer.on('knowledge:upgrading', handler)
       return () => {
@@ -2256,8 +2260,18 @@ const electronAPI = {
     },
 
     // 监听索引重建进度
-    onRebuildProgress: (callback: (data: { current: number; total: number; filename: string }) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, data: { current: number; total: number; filename: string }) => callback(data)
+    onRebuildProgress: (callback: (data: {
+      current: number
+      total: number
+      libraryTotal?: number
+      filename: string
+    }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: {
+        current: number
+        total: number
+        libraryTotal?: number
+        filename: string
+      }) => callback(data)
       ipcRenderer.on('knowledge:rebuildProgress', handler)
       return () => {
         ipcRenderer.removeListener('knowledge:rebuildProgress', handler)
@@ -2504,6 +2518,13 @@ const electronAPI = {
     // 读取文本文件
     readFile: (filePath: string) =>
       ipcRenderer.invoke('localFs:readFile', filePath) as Promise<{
+        success: boolean
+        data?: string
+        error?: string
+      }>,
+
+    previewArtifact: (filePath: string, renderer: string) =>
+      ipcRenderer.invoke('localFs:previewArtifact', filePath, renderer) as Promise<{
         success: boolean
         data?: string
         error?: string
@@ -3208,6 +3229,44 @@ const electronAPI = {
     sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => {
       ipcRenderer.send('split-pane:result', { id, result })
     }
+  },
+
+  workbench: {
+    onExec: (
+      handler: (
+        id: string,
+        op: { type: 'list_artifacts' },
+        ownerAgentKey?: string
+      ) => void
+    ) => {
+      const fn = (_event: Electron.IpcRendererEvent, payload: { id: string; op: { type: 'list_artifacts' }; ownerAgentKey?: string }) => {
+        if (!payload || typeof payload.id !== 'string' || !payload.op) return
+        handler(payload.id, payload.op, payload.ownerAgentKey)
+      }
+      ipcRenderer.on('workbench:exec', fn)
+      return () => ipcRenderer.removeListener('workbench:exec', fn)
+    },
+    sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => {
+      ipcRenderer.send('workbench:result', { id, result })
+    }
+  },
+
+  browserBridge: {
+    getStatus: () =>
+      ipcRenderer.invoke('browserBridge:getStatus') as Promise<import('@shared/types/browser-bridge').BrowserBridgeStatus>,
+    install: () =>
+      ipcRenderer.invoke('browserBridge:install') as Promise<import('@shared/types/browser-bridge').BrowserBridgeInstallStatus>,
+    uninstall: () =>
+      ipcRenderer.invoke('browserBridge:uninstall') as Promise<{ errors: string[] }>,
+    openExtensionGuide: (browser: import('@shared/types/browser-bridge').BrowserBridgeBrowser) =>
+      ipcRenderer.invoke('browserBridge:openExtensionGuide', browser),
+    onConnectionsChanged: (callback: (status: import('@shared/types/browser-bridge').BrowserBridgeStatus) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, status: import('@shared/types/browser-bridge').BrowserBridgeStatus) => callback(status)
+      ipcRenderer.on('browserBridge:connectionsChanged', handler)
+      return () => {
+        ipcRenderer.removeListener('browserBridge:connectionsChanged', handler)
+      }
+    },
   }
 }
 

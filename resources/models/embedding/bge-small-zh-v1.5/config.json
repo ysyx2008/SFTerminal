@@ -1,10 +1,10 @@
 {
-  "_name_or_path": "BAAI/bge-small-zh-v1.5",
   "architectures": [
     "BertModel"
   ],
   "attention_probs_dropout_prob": 0.1,
   "classifier_dropout": null,
+  "dtype": "float32",
   "gradient_checkpointing": false,
   "hidden_act": "gelu",
   "hidden_dropout_prob": 0.1,
@@ -24,8 +24,17 @@
   "num_hidden_layers": 4,
   "pad_token_id": 0,
   "position_embedding_type": "absolute",
-  "transformers_version": "4.34.0.dev0",
+  "transformers_version": "5.0.0.dev0",
   "type_vocab_size": 2,
   "use_cache": true,
-  "vocab_size": 21128
+  "vocab_size": 21128,
+  "transformers.js_config": {
+    "use_external_data_format": {
+      "model.onnx": 1,
+      "model_fp16.onnx": 1,
+      "model_quantized.onnx": 1,
+      "model_q4.onnx": 1,
+      "model_q4f16.onnx": 1
+    }
+  }
 }

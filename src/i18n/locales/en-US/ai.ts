@@ -414,7 +414,6 @@ export default {
       edit_file: 'Edit File',
       get_terminal_context: 'Get Terminal Context',
       file_search: 'Search Files',
-      remember_info: 'Remember Info',
       search_knowledge: 'Search Knowledge',
       web_search: 'Web Search',
       get_knowledge_doc: 'Get Knowledge Doc',
@@ -468,6 +467,8 @@ export default {
       browser_goto: 'Browser Navigate',
       browser_screenshot: 'Browser Screenshot',
       browser_get_content: 'Get Page Content',
+      browser_read_article: 'Read Article',
+      browser_read_page: 'Read Page Content',
       browser_click: 'Browser Click',
       browser_type: 'Browser Type',
       browser_scroll: 'Browser Scroll',
@@ -507,6 +508,9 @@ export default {
       watch_trigger: 'Trigger Watch',
       watch_history: 'Watch History',
       watch_state_update: 'Update Watch State',
+      // Workbench
+      list_workbench_artifacts: 'View output panel',
+      manage_workbench_artifacts: 'Manage output panel',
       // IM skills
       feishu_read: 'Read Feishu Message',
       feishu_write: 'Send Feishu Message',
@@ -564,7 +568,7 @@ export default {
   // Knowledge Base
   knowledge: {
     upgrading: 'Upgrading knowledge base model...',
-    repairing: 'Repairing knowledge base index...',
+    repairing: 'Incrementally repairing knowledge index...',
     rebuilding: 'Rebuilding knowledge base index...'
   },
 

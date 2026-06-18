@@ -282,8 +282,71 @@ describe('Agent', () => {
   // ==================== 用户消息 ====================
 
   describe('addUserMessage', () => {
-    it('should return false when not running', () => {
-      expect(agent.addUserMessage('test message')).toBe(false)
+    it('should queue message before run starts', () => {
+      expect(agent.addUserMessage('test message')).toBe(true)
+      expect(agent.addUserMessage('second')).toBe(true)
+    })
+
+    it('should flush pre-run queue into user_supplement steps on initializeRun', async () => {
+      const steps: AgentStep[] = []
+      agent.setCallbacks({ onStep: (_id, step) => steps.push({ ...step }) })
+
+      agent.addUserMessage('prep supplement')
+
+      const aiService = agent.exposeServices().aiService as ReturnType<typeof createMockAiService>
+      aiService.chatWithToolsStream.mockImplementation(
+        (_messages, _tools, onChunk, _onToolCall, onDone) => {
+          onChunk('Done')
+          onDone({ content: 'Done', tool_calls: undefined })
+          return Promise.resolve()
+        }
+      )
+
+      await agent.run('Main task', createMockContext())
+
+      const types = steps.map(s => s.type)
+      const userTaskIdx = types.indexOf('user_task')
+      const supplementIdx = types.indexOf('user_supplement')
+      expect(userTaskIdx).toBeGreaterThanOrEqual(0)
+      expect(supplementIdx).toBeGreaterThan(userTaskIdx)
+      expect(steps[supplementIdx].content).toBe('prep supplement')
+    })
+
+    it('should append supplement after streaming message step (abort interrupts stream)', () => {
+      agent.injectCurrentRun({
+        id: 'run-1',
+        isRunning: true,
+        executionPhase: 'thinking',
+        requestId: 'req-1',
+        pendingUserMessages: [],
+        steps: [
+          { id: 'msg-1', type: 'message', content: 'streaming...', isStreaming: true, timestamp: 1 },
+        ],
+      })
+
+      agent.addUserMessage('mid-stream supplement')
+
+      const steps = agent.exposeCurrentRun()!.steps
+      expect(steps.map(s => s.type)).toEqual(['message', 'user_supplement'])
+      expect(steps[1].content).toBe('mid-stream supplement')
+    })
+
+    it('should append supplement after completed steps', () => {
+      agent.injectCurrentRun({
+        id: 'run-1',
+        isRunning: true,
+        executionPhase: 'executing_command',
+        pendingUserMessages: [],
+        steps: [
+          { id: 'msg-1', type: 'message', content: 'done', isStreaming: false, timestamp: 1 },
+          { id: 'tool-1', type: 'tool_call', content: 'browser_evaluate', timestamp: 2 },
+        ],
+      })
+
+      agent.addUserMessage('after tool supplement')
+
+      const steps = agent.exposeCurrentRun()!.steps
+      expect(steps.map(s => s.type)).toEqual(['message', 'tool_call', 'user_supplement'])
     })
   })
 
@@ -882,6 +945,56 @@ describe('Agent run method', () => {
       // 应该有 2 个任务：从 HistoryService 恢复的 + 当前的
       expect(taskMemory.getTaskCount()).toBe(2)
       expect(mockHistoryService.getAgentRecordById).toHaveBeenCalledWith(sessionId)
+    })
+
+    it('续聊后保存的记录仍保留旧步骤的 canvasData（防产出物丢失回归）', async () => {
+      const sessionId = 'session_canvas_keep'
+      const savedRecords: any[] = []
+      const oldCanvas = { action: 'open', renderer: 'markdown', title: 'a.md', filePath: '/tmp/a.md', content: '# A', contentFromFile: true }
+      const mockHistoryService = {
+        getAgentRecordById: vi.fn().mockReturnValue({
+          id: sessionId,
+          timestamp: Date.now() - 5000,
+          terminalId: 'test-pty',
+          terminalType: 'local',
+          userTask: 'Previous task',
+          steps: [
+            { id: 'ut1', type: 'user_task', content: 'Previous task', timestamp: Date.now() - 5000 },
+            { id: 'tr1', type: 'tool_result', content: 'wrote a.md', toolName: 'write_text_file', timestamp: Date.now() - 4500, canvasData: oldCanvas },
+            { id: 'fr1', type: 'final_result', content: 'done', timestamp: Date.now() - 4000 }
+          ],
+          messages: [
+            { role: 'user', content: 'Previous task' },
+            { role: 'assistant', content: 'done' }
+          ],
+          finalResult: 'done',
+          duration: 1000,
+          status: 'completed'
+        }),
+        saveAgentRecord: vi.fn((r) => { savedRecords.push(JSON.parse(JSON.stringify(r))) })
+      }
+
+      const services = createMockServices({ historyService: mockHistoryService as any })
+      const agentWithHistory = new TestAgent(services)
+      mockAiService = services.aiService as any
+      mockAiService.chatWithToolsStream.mockImplementation(
+        (_m: any, _t: any, onChunk: any, _otc: any, onDone: any) => {
+          onChunk('Done'); onDone({ content: 'Done', tool_calls: undefined }); return Promise.resolve()
+        }
+      )
+
+      const context = createMockContext({ sessionId, sessionStartTime: Date.now() - 5000 })
+      await agentWithHistory.run('New task', context)
+
+      // 所有保存的记录里，旧的 a.md 步骤都应保留 canvasData（contentFromFile 标记 + filePath）
+      const stepsWithOldCanvas = savedRecords
+        .flatMap(r => r.steps)
+        .filter((s: any) => s.id === 'tr1')
+      expect(stepsWithOldCanvas.length).toBeGreaterThan(0)
+      for (const s of stepsWithOldCanvas) {
+        expect(s.canvasData?.filePath).toBe('/tmp/a.md')
+        expect(s.canvasData?.contentFromFile).toBe(true)
+      }
     })
 
     /**

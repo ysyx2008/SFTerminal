@@ -479,9 +479,27 @@ export class HistoryService {
   saveAgentRecord(record: AgentRecord): void {
     // 写入前把内联 base64 图片外化到磁盘，避免 JSON 文件膨胀和 IPC 传输超大对象
     this.externalizeStepImages(record)
+    // 剥离可从磁盘重生的 Canvas content（md/html 文件），避免大文件撑爆历史记录
+    this.stripRederivableCanvasContent(record)
 
     writeAgentRecordFile(this.agentDir, record)
     this.updateIndexEntry(record)
+  }
+
+  /**
+   * 剥离 `canvasData.content` 中可从 `filePath` 磁盘文件重生的内容（`contentFromFile`）。
+   * 仅作用于待写盘的 record 副本：克隆 canvasData 后删除 content，绝不改动调用方
+   * （Agent 的 `_sessionSteps`）持有的共享对象，避免破坏正在进行会话的实时预览。
+   * 恢复时由前端按 `filePath` 读盘回填（见 artifact store hydrate）。
+   */
+  private stripRederivableCanvasContent(record: AgentRecord): void {
+    record.steps = record.steps.map((step) => {
+      const cd = step.canvasData
+      if (!cd?.contentFromFile || !cd.filePath || cd.content === undefined) {
+        return step
+      }
+      return { ...step, canvasData: { ...cd, content: undefined } }
+    })
   }
 
   /**

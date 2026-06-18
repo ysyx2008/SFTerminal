@@ -1681,11 +1681,7 @@ async function wordClose(
     type: 'tool_result',
     content: output,
     toolName: 'word_close',
-    toolResult: output,
-    canvasData: {
-      action: 'close',
-      renderer: 'document'
-    }
+    toolResult: output
   })
 
   return { success: true, output }

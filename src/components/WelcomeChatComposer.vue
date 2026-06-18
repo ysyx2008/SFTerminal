@@ -16,6 +16,11 @@ import { planComposerPaste, ingestComposerAttachments } from '../composables/use
 import { showConfirm } from '../composables/useConfirm'
 import { toast } from '../composables/useToast'
 
+const props = defineProps<{
+  /** 欢迎页是否为当前主界面（切到 tab 时为 false，用于禁用全局 PTT 监听） */
+  active?: boolean
+}>()
+
 const { t } = useI18n()
 const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
@@ -95,7 +100,17 @@ watch(speechError, (error) => {
   if (error) toast.error(t('ai.speechError', { error }))
 })
 
+watch(() => props.active, (active) => {
+  if (active) return
+  if (!isPushToTalk.value && !pttStartTimer && !isRecording.value) return
+  clearPTTStartTimer()
+  clearPTTStopTimer()
+  isPushToTalk.value = false
+  cancelRecording()
+})
+
 const handleRecordClick = async () => {
+  if (!props.active) return
   if (isRecording.value) {
     const result = await stopRecording()
     if (result?.text) composerRef.value?.appendText(result.text)
@@ -140,7 +155,7 @@ function hasOtherModifiers(event: KeyboardEvent, pttKey: string): boolean {
 
 const handlePTTKeyDown = (event: KeyboardEvent) => {
   const pttKey = configStore.keyboardShortcuts.voiceInput
-  if (!pttKey || !audioAvailable.value || !isMounted.value) return
+  if (!pttKey || !audioAvailable.value || !isMounted.value || !props.active) return
 
   if (event.key !== pttKey) {
     if (isPushToTalk.value || pttStartTimer || isRecording.value) {
@@ -178,7 +193,7 @@ const finishPTTRecording = async () => {
 
 const handlePTTKeyUp = (event: KeyboardEvent) => {
   const pttKey = configStore.keyboardShortcuts.voiceInput
-  if (event.key !== pttKey || !isPushToTalk.value) return
+  if (!props.active || event.key !== pttKey || !isPushToTalk.value) return
 
   if (pttStartTimer) {
     clearPTTStartTimer()

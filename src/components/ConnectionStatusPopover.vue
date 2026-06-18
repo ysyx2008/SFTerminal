@@ -2,6 +2,12 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Radio, Settings } from 'lucide-vue-next'
+import {
+  isBrowserBridgeComponentsInstalled,
+  isChromiumBridgeConnection,
+  isFirefoxBridgeConnection,
+  type BrowserBridgeStatus,
+} from '@shared/types/browser-bridge'
 
 const { t } = useI18n()
 
@@ -56,12 +62,16 @@ const imConnecting = ref<string | null>(null)
 // Gateway
 const gatewayRunning = ref(false)
 const gatewayPort = ref(0)
-const gatewayAutoStart = ref(false)
 
 // MCP
 const mcpServers = ref<McpServerConfig[]>([])
 const mcpStatuses = ref<McpServerStatus[]>([])
 const mcpConnecting = ref<string | null>(null)
+
+// Browser Bridge
+const browserBridgeInstalled = ref(false)
+const browserBridgeChromiumConnected = ref(false)
+const browserBridgeFirefoxConnected = ref(false)
 
 // ==================== 计算属性 ====================
 
@@ -73,9 +83,15 @@ const mcpEnabledServers = computed(() => mcpServers.value.filter(s => s.enabled)
 const mcpConnectedCount = computed(() => mcpStatuses.value.length)
 const mcpEnabledCount = computed(() => mcpEnabledServers.value.length)
 
-const gatewayActive = computed(() => gatewayRunning.value || gatewayAutoStart.value)
-const totalConnected = computed(() => imConnectedCount.value + (gatewayRunning.value ? 1 : 0) + mcpConnectedCount.value)
-const totalEnabled = computed(() => imActiveCount.value + (gatewayActive.value ? 1 : 0) + mcpEnabledCount.value)
+const showGateway = computed(() => gatewayRunning.value)
+
+// 顶栏角标只统计 IM / Gateway / MCP；浏览器助手为可选能力，未连接不算「待办」
+const totalConnected = computed(() =>
+  imConnectedCount.value + (showGateway.value ? 1 : 0) + mcpConnectedCount.value,
+)
+const totalEnabled = computed(() =>
+  imActiveCount.value + (showGateway.value ? 1 : 0) + mcpEnabledCount.value,
+)
 
 const statusType = computed(() => {
   if (totalEnabled.value === 0) return 'none'
@@ -158,14 +174,12 @@ const loadIMData = async () => {
 }
 
 const loadGatewayData = async () => {
-  const [running, config, autoStart] = await Promise.all([
+  const [running, config] = await Promise.all([
     window.electronAPI.gateway.isRunning(),
     window.electronAPI.gateway.getConfig(),
-    window.electronAPI.gateway.getAutoStart(),
   ])
   gatewayRunning.value = running
   gatewayPort.value = config.port
-  gatewayAutoStart.value = autoStart
 }
 
 const loadMcpData = async () => {
@@ -173,8 +187,19 @@ const loadMcpData = async () => {
   mcpStatuses.value = await window.electronAPI.mcp.getServerStatuses()
 }
 
+const applyBrowserBridgeStatus = (bridgeStatus: BrowserBridgeStatus) => {
+  browserBridgeInstalled.value = isBrowserBridgeComponentsInstalled(bridgeStatus.install)
+  const connections = bridgeStatus.connections ?? []
+  browserBridgeChromiumConnected.value = connections.some(isChromiumBridgeConnection)
+  browserBridgeFirefoxConnected.value = connections.some(isFirefoxBridgeConnection)
+}
+
+const loadBrowserBridgeData = async () => {
+  applyBrowserBridgeStatus(await window.electronAPI.browserBridge.getStatus())
+}
+
 const loadAll = async () => {
-  await Promise.all([loadIMData(), loadGatewayData(), loadMcpData()])
+  await Promise.all([loadIMData(), loadGatewayData(), loadMcpData(), loadBrowserBridgeData()])
 }
 
 // ==================== IM 操作 ====================
@@ -313,6 +338,7 @@ let unsubImChange: (() => void) | null = null
 let unsubMcpConnected: (() => void) | null = null
 let unsubMcpDisconnected: (() => void) | null = null
 let unsubMcpError: (() => void) | null = null
+let unsubBrowserBridge: (() => void) | null = null
 
 onMounted(async () => {
   await loadAll()
@@ -323,6 +349,9 @@ onMounted(async () => {
   unsubMcpConnected = window.electronAPI.mcp.onConnected(async () => { await loadMcpData() })
   unsubMcpDisconnected = window.electronAPI.mcp.onDisconnected(async () => { await loadMcpData() })
   unsubMcpError = window.electronAPI.mcp.onError(async () => { await loadMcpData() })
+  unsubBrowserBridge = window.electronAPI.browserBridge.onConnectionsChanged((next) => {
+    applyBrowserBridgeStatus(next)
+  })
 
   document.addEventListener('click', handleClickOutside)
   document.addEventListener('keydown', handleKeydown)
@@ -333,6 +362,7 @@ onUnmounted(() => {
   unsubMcpConnected?.()
   unsubMcpDisconnected?.()
   unsubMcpError?.()
+  unsubBrowserBridge?.()
   if (gatewayPollTimer) clearInterval(gatewayPollTimer)
   document.removeEventListener('click', handleClickOutside)
   document.removeEventListener('keydown', handleKeydown)
@@ -385,18 +415,48 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <!-- Gateway -->
-              <div class="section-divider"></div>
-              <div class="item" :class="{ connected: gatewayRunning }">
-                <span class="item-dot" :class="gatewayRunning ? 'dot-on' : 'dot-off'">{{ gatewayRunning ? '●' : '○' }}</span>
-                <span class="item-name">Gateway</span>
-                <span v-if="gatewayRunning" class="item-detail">:{{ gatewayPort }}</span>
+              <!-- Browser Bridge -->
+              <div v-if="imChannels.length > 0 || browserBridgeInstalled" class="section-divider"></div>
+              <div v-if="!browserBridgeInstalled" class="item">
+                <span class="item-dot dot-off">○</span>
+                <span class="item-name">{{ t('conn.browserBridge') }}</span>
                 <div class="item-actions">
-                  <button class="btn-sm" :class="gatewayRunning ? 'btn-disconnect' : 'btn-connect'" @click="toggleGateway">
-                    {{ gatewayRunning ? t('conn.stop') : t('conn.start') }}
-                  </button>
+                  <button class="btn-sm btn-connect" @click="openSettings('browserBridge')">{{ t('conn.connect') }}</button>
                 </div>
               </div>
+              <template v-else>
+                <div class="item" :class="{ connected: browserBridgeChromiumConnected }">
+                  <span class="item-dot" :class="browserBridgeChromiumConnected ? 'dot-on' : 'dot-off'">
+                    {{ browserBridgeChromiumConnected ? '●' : '○' }}
+                  </span>
+                  <span class="item-name">{{ t('conn.browserBridgeChromium') }}</span>
+                  <div v-if="!browserBridgeChromiumConnected" class="item-actions">
+                    <button class="btn-sm btn-connect" @click="openSettings('browserBridge')">{{ t('conn.connect') }}</button>
+                  </div>
+                </div>
+                <div class="item" :class="{ connected: browserBridgeFirefoxConnected }">
+                  <span class="item-dot" :class="browserBridgeFirefoxConnected ? 'dot-on' : 'dot-off'">
+                    {{ browserBridgeFirefoxConnected ? '●' : '○' }}
+                  </span>
+                  <span class="item-name">{{ t('conn.browserBridgeFirefox') }}</span>
+                  <div v-if="!browserBridgeFirefoxConnected" class="item-actions">
+                    <button class="btn-sm btn-connect" @click="openSettings('browserBridge')">{{ t('conn.connect') }}</button>
+                  </div>
+                </div>
+              </template>
+
+              <!-- Gateway：仅运行中显示，未启动时去 Web 服务设置页操作 -->
+              <template v-if="showGateway">
+                <div class="section-divider"></div>
+                <div class="item connected">
+                  <span class="item-dot dot-on">●</span>
+                  <span class="item-name">Gateway</span>
+                  <span class="item-detail">:{{ gatewayPort }}</span>
+                  <div class="item-actions">
+                    <button class="btn-sm btn-disconnect" @click="toggleGateway">{{ t('conn.stop') }}</button>
+                  </div>
+                </div>
+              </template>
             </div>
           </div>
 
@@ -563,11 +623,18 @@ onUnmounted(() => {
   color: var(--brand-vital);
 }
 
-/* 栏体 */
+/* 栏体：左栏随内容撑开（无滚动条）；右栏 MCP 列表可能较长，保留滚动 */
 .col-body {
-  max-height: 280px;
+  padding: 4px 0;
+}
+
+.conn-col:first-child .col-body {
+  overflow: visible;
+}
+
+.conn-col:last-child .col-body {
+  max-height: 300px;
   overflow-y: auto;
-  padding: 6px 0;
 }
 
 /* 列表项 */
@@ -575,7 +642,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 5px 12px;
   transition: background 0.15s ease;
 }
 
@@ -641,7 +708,7 @@ onUnmounted(() => {
 .section-divider {
   height: 1px;
   background: var(--border-color);
-  margin: 4px 12px;
+  margin: 2px 12px;
 }
 
 /* 按钮 */

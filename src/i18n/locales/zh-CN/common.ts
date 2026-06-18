@@ -7,6 +7,12 @@ export default {
     description: 'AI 驱动的智能助手'
   },
 
+  // 工作台工具（Agent 流式预卡片标题）
+  workbench: {
+    list_artifacts: '查看产出物面板',
+    manage_artifacts: '维护产出物面板',
+  },
+
 
   // 欢迎页
   welcome: {
@@ -285,5 +291,8 @@ export default {
     start: '启动',
     stop: '停止',
     settings: '设置',
+    browserBridge: '浏览器助手',
+    browserBridgeChromium: 'Chromium 浏览器',
+    browserBridgeFirefox: 'Firefox 浏览器',
   }
 }

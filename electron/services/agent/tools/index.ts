@@ -20,7 +20,7 @@ import { executeCommandDirect, awaitExec } from './exec'
 import { getTerminalContext, checkTerminalStatus, sendControlKey, sendInput } from './terminal'
 import { fileSearch, readFile, editFile, writeTextFile, writeRemoteTextFile } from './file'
 import { sftpPut, sftpGet } from './sftp'
-import { rememberInfo, searchKnowledge, getKnowledgeDoc } from './knowledge'
+import { searchKnowledge, getKnowledgeDoc } from './knowledge'
 import { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 import { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
 import { compressContext, recallCompressed, manageMemory } from './context'
@@ -29,6 +29,7 @@ import { dispatchSubAgents } from './sub-agent'
 import { executeWebSearch } from './web-search'
 import { executeWebFetch } from './web-fetch'
 import { splitTerminalTool, closePaneTool, focusPaneTool, listPanesTool, listSshSessionsTool } from './split-pane'
+import { listWorkbenchArtifactsTool, manageWorkbenchArtifactsTool } from './workbench'
 
 // 重新导出类型
 export type { ToolExecutorConfig, AgentConfig, ToolResult, ErrorCategory } from './types'
@@ -40,9 +41,21 @@ import { resolveTargetPtyId } from './utils'
 export { executeCommand } from './command'
 export { executeCommandDirect, awaitExec } from './exec'
 export { getTerminalContext, checkTerminalStatus, sendControlKey, sendInput } from './terminal'
-export { fileSearch, readFile, editFile, writeTextFile, writeRemoteTextFile, getWorkspacePath, isInWorkspace } from './file'
+export {
+  fileSearch,
+  readFile,
+  editFile,
+  writeTextFile,
+  writeRemoteTextFile,
+  getWorkspacePath,
+  getScratchPath,
+  ensureAgentWorkspaceDirs,
+  isInWorkspace,
+  isScratchPath,
+  isAutoApproveWorkspacePath,
+} from './file'
 export { sftpPut, sftpGet } from './sftp'
-export { rememberInfo, searchKnowledge, getKnowledgeDoc } from './knowledge'
+export { searchKnowledge, getKnowledgeDoc } from './knowledge'
 export { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 export { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
 export { compressContext, recallCompressed, manageMemory } from './context'
@@ -174,9 +187,6 @@ export async function executeTool(
       return sftpGet(resolveTargetPtyId(args, requiredPtyId), args, toolCall.id, config, executor)
     }
 
-    case 'remember_info':
-      return await rememberInfo(args, config, executor)
-
     case 'search_knowledge':
       return searchKnowledge(args, executor)
 
@@ -258,6 +268,12 @@ export async function executeTool(
       return listPanesTool(ptyId)
     case 'list_ssh_sessions':
       return listSshSessionsTool()
+
+    case 'list_workbench_artifacts':
+      return listWorkbenchArtifactsTool(executor)
+
+    case 'manage_workbench_artifacts':
+      return manageWorkbenchArtifactsTool(executor, args, ptyId)
 
     default:
       // MCP 工具有明确的 mcp_ 前缀，优先路由，避免被 skillSession 误认为技能工具

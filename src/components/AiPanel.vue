@@ -4,13 +4,16 @@
  * 重构版本：使用 composables 模块化管理逻辑
  * 每个 tab 独立实例，通过 tabId prop 绑定
  */
-import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef, nextTick } from 'vue'
+import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef, nextTick, withDefaults } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Upload, Trash2, X, Search, Loader2, HelpCircle, ChevronDown, ChevronUp, MoreHorizontal, Shuffle } from 'lucide-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
+import type { MessageScrollerHandle } from '../types/message-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
+import { useAssistantArtifactStore } from '../workbench/assistant/artifact/store'
+import { resolveSourceStepIdById } from '../workbench/assistant/artifact/domain/artifact-source'
 import { useComposerQuoteStore } from '../stores/composer-quote'
 import AgentPlanView from './AgentPlanView.vue'
 import AiComposer from './AiComposer.vue'
@@ -47,10 +50,16 @@ import {
 import type { AgentRecord, AgentHistorySummary } from '@shared/types'
 
 // Props - 每个 AiPanel 实例绑定到特定的 tab
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   tabId: string
-  visible?: boolean  // 面板是否可见
-}>()
+  /** 用户是否展开 AI 侧栏（终端 tab 可折叠；助手 tab 恒为 true） */
+  visible?: boolean
+  /** 所属 tab 是否为当前激活 tab（与 visible 解耦，避免切 tab 触发虚拟列表重绘） */
+  tabActive?: boolean
+}>(), {
+  visible: true,
+  tabActive: true,
+})
 
 // Emits
 const emit = defineEmits<{
@@ -63,6 +72,7 @@ const { t } = useI18n()
 // Stores
 const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
+const artifactStore = useAssistantArtifactStore()
 const composerQuoteStore = useComposerQuoteStore()
 const showSettings = inject<() => void>('showSettings')
 
@@ -81,7 +91,8 @@ const handleClose = () => {
 
 // Refs
 const messagesRef = ref<HTMLDivElement | null>(null)
-const scrollerRef = ref<InstanceType<typeof DynamicScroller> | null>(null)
+const scrollerRef = ref<MessageScrollerHandle | null>(null)
+const highlightedSourceStepId = ref<string | null>(null)
 const composerRef = ref<InstanceType<typeof AiComposer> | null>(null)
 const secureInputValue = ref('')
 
@@ -365,7 +376,7 @@ const getSubAgentActivity = (sa: import('@shared/types').SubAgentResult): string
 
 // 当前终端 ID（使用 prop，每个实例固定绑定一个 tab）
 const currentTabId = toRef(props, 'tabId')
-const panelVisible = toRef(props, 'visible')
+const tabActive = toRef(props, 'tabActive')
 
 // 文档上传（传入 currentTabId，每个终端独立管理文档）
 const {
@@ -482,6 +493,7 @@ const {
   updateScrollPosition,
   saveScrollTop,
   restoreScrollTop,
+  restoreScrollPositionOnTabActivate,
   scrollToHistoryBottomWithRetry,
   scrollToBottom,
   stopGeneration,
@@ -557,7 +569,7 @@ const {
     clearAttachments: clearUploadedDocs
   },
   scrollerRef,
-  panelVisible
+  tabActive
 )
 
 // 语音识别
@@ -630,7 +642,7 @@ function hasOtherModifiers(event: KeyboardEvent, pttKey: string): boolean {
 
 const handlePTTKeyDown = (event: KeyboardEvent) => {
   const pttKey = configStore.keyboardShortcuts.voiceInput
-  if (!pttKey || !audioAvailable.value || !props.visible || terminalStore.activeTabId !== currentTabId.value) return
+  if (!pttKey || !audioAvailable.value || !props.visible || !props.tabActive) return
 
   // 如果按下的不是 PTT 键，且当前正在 PTT 状态（计时器或录音中），则中止 PTT
   if (event.key !== pttKey) {
@@ -1250,9 +1262,12 @@ const previewEchartsRef = ref<InstanceType<typeof EChartsCanvas> | null>(null)
 // 模板里 @wheel.prevent 会让 Chrome 报"non-passive scroll-blocking"警告，
 // 因为 Vue 的 patchEvent 不显式传 passive 参数。
 const previewModalRef = ref<HTMLDivElement | null>(null)
+const previewViewportRef = ref<HTMLDivElement | null>(null)
 const previewScale = ref(1)
 const previewTranslateX = ref(0)
 const previewTranslateY = ref(0)
+/** 用户是否改过缩放/平移（Esc 先还原，再关闭） */
+const previewViewModified = ref(false)
 const isDraggingImage = ref(false)
 let dragStartX = 0
 let dragStartY = 0
@@ -1290,8 +1305,57 @@ const allPreviewImages = computed((): PreviewItem[] => {
 
 const resetPreviewTransform = () => {
   previewScale.value = 1
+  previewViewModified.value = false
+  nextTick(() => centerPreviewContent())
+}
+
+const PREVIEW_MAX_WIDTH_VW = 0.9
+const PREVIEW_MAX_HEIGHT_VH = 0.9
+const PREVIEW_ABS_MAX_WIDTH = 1600
+
+/** contain 进 max 区域，返回像素尺寸（小图不放大） */
+const computePreviewContainSize = (contentW: number, contentH: number) => {
+  const ratio = contentW / Math.max(1, contentH)
+  const maxW = Math.min(winSize.value.w * PREVIEW_MAX_WIDTH_VW, PREVIEW_ABS_MAX_WIDTH, contentW)
+  const maxH = Math.min(winSize.value.h * PREVIEW_MAX_HEIGHT_VH, contentH)
+  let w = maxW
+  let h = w / ratio
+  if (h > maxH) {
+    h = maxH
+    w = h * ratio
+  }
+  return { w: Math.round(w), h: Math.round(h) }
+}
+
+/** 图片/活图在 viewport 内的 fit 尺寸（非 viewport 本身尺寸） */
+const previewImgContentSize = ref<{ w: number; h: number } | null>(null)
+
+const getPreviewContentSize = (): { w: number; h: number } | null => {
+  if (previewEchartsPayload.value) {
+    const { width: pw, height: ph } = previewEchartsPayload.value
+    return computePreviewContainSize(pw, ph)
+  }
+  return previewImgContentSize.value
+}
+
+/** 默认视图：viewport 与内容同尺寸，translate 为 0 */
+const centerPreviewContent = () => {
   previewTranslateX.value = 0
   previewTranslateY.value = 0
+}
+
+const updatePreviewImgContentSize = (img: HTMLImageElement) => {
+  if (!img.naturalWidth) return
+  previewImgContentSize.value = computePreviewContainSize(img.naturalWidth, img.naturalHeight)
+}
+
+const onPreviewImgLoad = (e: Event) => {
+  const img = e.target as HTMLImageElement
+  updatePreviewImgContentSize(img)
+  if (!previewViewModified.value) {
+    previewScale.value = 1
+    nextTick(() => centerPreviewContent())
+  }
 }
 
 const openImagePreview = (
@@ -1300,6 +1364,7 @@ const openImagePreview = (
 ) => {
   previewImageUrl.value = url
   previewEchartsPayload.value = echartsPayload ?? null
+  previewImgContentSize.value = null
   resetPreviewTransform()
   previewIdx.value = allPreviewImages.value.findIndex(it => it.url === url)
 }
@@ -1327,14 +1392,30 @@ const openImageContextMenu = (e: MouseEvent, url: string, defaultName = 'image')
   imageContextMenu.defaultName = defaultName
 }
 
+const getMermaidPreviewUrl = (target: EventTarget | null): string | null => {
+  const block = (target as HTMLElement | null)?.closest?.(
+    '.mermaid-block[data-mermaid-state="done"]'
+  ) as HTMLElement | null
+  if (!block) return null
+  const svg = block.querySelector('svg') as SVGSVGElement | null
+  if (!svg) return null
+  return mermaidSvgToDataUrl(svg)
+}
+
+// Mermaid 图单击放大：复用图片预览弹窗（滚轮缩放、拖拽平移、双击重置）
+const handleMermaidClick = (e: MouseEvent) => {
+  const url = getMermaidPreviewUrl(e.target)
+  if (!url) return
+  e.preventDefault()
+  e.stopPropagation()
+  openImagePreview(url)
+}
+
 // Mermaid 图右键菜单：右击已渲染完成的图，把其 SVG 序列化成 data URL 后复用图片右键菜单（复制/下载）
 const handleMermaidContextMenu = (e: MouseEvent) => {
-  const target = e.target as HTMLElement
-  const block = target.closest('.mermaid-block[data-mermaid-state="done"]') as HTMLElement | null
-  if (!block) return
-  const svg = block.querySelector('svg') as SVGSVGElement | null
-  if (!svg) return
-  openImageContextMenu(e, mermaidSvgToDataUrl(svg), 'diagram')
+  const url = getMermaidPreviewUrl(e.target)
+  if (!url) return
+  openImageContextMenu(e, url, 'diagram')
 }
 
 // 「活图」EChartsCanvas 触发右键菜单时,组件 emit 的载荷形如 { event, dataUrl }——
@@ -1365,15 +1446,59 @@ const canGoDown = computed(() => previewIdx.value >= 0 && previewIdx.value < all
 const goUp = () => navigatePreviewTo(previewIdx.value - 1)
 const goDown = () => navigatePreviewTo(previewIdx.value + 1)
 
-// 滚轮缩放
-const handlePreviewWheel = (e: WheelEvent) => {
-  e.preventDefault()
-  const delta = e.deltaY > 0 ? -0.1 : 0.1
-  const newScale = Math.max(0.1, Math.min(10, previewScale.value + delta * previewScale.value))
+// 滚轮/触控板：Mac 双指滑动 → 平移；捏合（ctrlKey）或鼠标滚轮 → 缩放
+const PREVIEW_PINCH_ZOOM_SENSITIVITY = 0.01 // 捏合灵敏度（越小越慢）
+const PREVIEW_WHEEL_ZOOM_STEP = 0.1 // 鼠标滚轮每档缩放比例
+
+const clampPreviewScale = (scale: number) => Math.max(0.1, Math.min(10, scale))
+
+/** 以指针为锚点缩放（translate 与 mx/my 均在 previewViewport 坐标系内） */
+const applyPreviewZoomAt = (newScale: number, clientX: number, clientY: number) => {
+  const oldScale = previewScale.value
+  newScale = clampPreviewScale(newScale)
+  if (newScale === oldScale) return
+
+  const viewport = previewViewportRef.value
+  if (!viewport) {
+    previewScale.value = newScale
+    return
+  }
+
+  const vpRect = viewport.getBoundingClientRect()
+  const mx = clientX - vpRect.left
+  const my = clientY - vpRect.top
+  const ratio = newScale / oldScale
+
+  previewTranslateX.value = mx - (mx - previewTranslateX.value) * ratio
+  previewTranslateY.value = my - (my - previewTranslateY.value) * ratio
   previewScale.value = newScale
+  previewViewModified.value = true
 }
 
-// 显式以 { passive: false } 绑定 wheel——告诉浏览器我们故意要 preventDefault（缩放），
+const handlePreviewWheel = (e: WheelEvent) => {
+  e.preventDefault()
+
+  // macOS 双指捏合、Windows 精准触控板捏合、Ctrl+滚轮
+  if (e.ctrlKey) {
+    const factor = Math.exp(-e.deltaY * PREVIEW_PINCH_ZOOM_SENSITIVITY)
+    applyPreviewZoomAt(previewScale.value * factor, e.clientX, e.clientY)
+    return
+  }
+
+  // 触控板双指滑动（pixel 模式）：平移，与 macOS 预览/地图惯例一致
+  if (e.deltaMode === WheelEvent.DOM_DELTA_PIXEL) {
+    previewTranslateX.value -= e.deltaX
+    previewTranslateY.value -= e.deltaY
+    previewViewModified.value = true
+    return
+  }
+
+  // 鼠标滚轮（line/page 模式）：缩放
+  const delta = e.deltaY > 0 ? -PREVIEW_WHEEL_ZOOM_STEP : PREVIEW_WHEEL_ZOOM_STEP
+  applyPreviewZoomAt(previewScale.value + delta * previewScale.value, e.clientX, e.clientY)
+}
+
+// 显式以 { passive: false } 绑定 wheel——告诉浏览器我们故意要 preventDefault（缩放/平移），
 // 避免模板 @wheel.prevent 触发 "non-passive scroll-blocking" 警告。
 // previewModalRef 是 v-if 元素，每次弹窗出现/关闭都会重新挂载/卸载。
 watch(previewModalRef, (el, _old, onCleanup) => {
@@ -1408,6 +1533,7 @@ const handlePreviewMouseDown = (e: MouseEvent) => {
     if (!isDraggingImage.value) return
     previewTranslateX.value = dragStartTranslateX + (ev.clientX - dragStartX)
     previewTranslateY.value = dragStartTranslateY + (ev.clientY - dragStartY)
+    previewViewModified.value = true
   }
   const handleMouseUp = () => {
     isDraggingImage.value = false
@@ -1418,35 +1544,39 @@ const handlePreviewMouseDown = (e: MouseEvent) => {
   document.addEventListener('mouseup', handleMouseUp)
 }
 
-// 预览图片的 transform 样式
-const previewTransform = computed(() => {
-  return `translate(${previewTranslateX.value}px, ${previewTranslateY.value}px) scale(${previewScale.value})`
+// 预览 transform：origin 0 0 + viewport 坐标，与 applyPreviewZoomAt 同一套数学
+const previewTransformStyle = computed<Record<string, string>>(() => ({
+  transform: `translate(${previewTranslateX.value}px, ${previewTranslateY.value}px) scale(${previewScale.value})`,
+  transformOrigin: '0 0',
+}))
+
+// 内容层尺寸 + transform；viewport 随内容收缩，overflow:visible 保证放大不被裁切
+const previewViewportStyle = computed<Record<string, string>>(() => {
+  const size = getPreviewContentSize()
+  if (!size) return { width: 'min(90vw, 400px)', height: 'min(90vh, 400px)' }
+  return { width: `${size.w}px`, height: `${size.h}px` }
 })
 
-// 活图预览容器的具体 width/height —— 按 viewport 90vw × 90vh 做 contain 算法，
-// 同时保留后端建议尺寸作为天花板（小图不放大）。父容器拿到具体尺寸后子组件
-// EChartsCanvas mode='preview' 用 width:100%/height:100% 跟随，echarts 实例内部
-// 的 ResizeObserver 会在 winSize 变化时自动 resize。
-const PREVIEW_MAX_WIDTH_VW = 0.9
-const PREVIEW_MAX_HEIGHT_VH = 0.9
-const PREVIEW_ABS_MAX_WIDTH = 1600
-const previewEchartsBoxStyle = computed<Record<string, string>>(() => {
-  if (!previewEchartsPayload.value) return {} as Record<string, string>
-  const { width: pw, height: ph } = previewEchartsPayload.value
-  const ratio = pw / Math.max(1, ph)
-  const maxW = Math.min(winSize.value.w * PREVIEW_MAX_WIDTH_VW, PREVIEW_ABS_MAX_WIDTH, pw)
-  const maxH = Math.min(winSize.value.h * PREVIEW_MAX_HEIGHT_VH, ph)
-  // contain：先按宽度满铺，若反推高度超 maxH 再翻转改用高度满铺
-  let w = maxW
-  let h = w / ratio
-  if (h > maxH) {
-    h = maxH
-    w = h * ratio
-  }
+const previewContentBoxStyle = computed<Record<string, string>>(() => {
+  const size = getPreviewContentSize()
+  if (!size) return { ...previewTransformStyle.value }
   return {
-    width: `${Math.round(w)}px`,
-    height: `${Math.round(h)}px`,
-    transform: previewTransform.value
+    width: `${size.w}px`,
+    height: `${size.h}px`,
+    ...previewTransformStyle.value,
+  }
+})
+
+watch(winSize, () => {
+  if (!previewImageUrl.value || previewViewModified.value) return
+  const img = previewViewportRef.value?.querySelector('img.image-preview-full') as HTMLImageElement | null
+  if (img?.naturalWidth) updatePreviewImgContentSize(img)
+  nextTick(() => centerPreviewContent())
+})
+
+watch(previewEchartsPayload, () => {
+  if (previewImageUrl.value && !previewViewModified.value) {
+    nextTick(() => centerPreviewContent())
   }
 })
 
@@ -1470,7 +1600,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault()
       e.stopImmediatePropagation()
-      if (previewScale.value !== 1 || previewTranslateX.value !== 0 || previewTranslateY.value !== 0) {
+      if (previewViewModified.value) {
         resetPreviewTransform()
       } else {
         closeImagePreview()
@@ -1493,8 +1623,8 @@ const handleKeyDown = (e: KeyboardEvent) => {
     // 缩放状态下左右方向键用于平移；上下方向键始终用于切图（平铺列表上下翻页）
     if (previewScale.value !== 1) {
       const PAN_STEP = 50
-      if (e.key === 'ArrowLeft') { e.preventDefault(); previewTranslateX.value += PAN_STEP; return }
-      if (e.key === 'ArrowRight') { e.preventDefault(); previewTranslateX.value -= PAN_STEP; return }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); previewTranslateX.value += PAN_STEP; previewViewModified.value = true; return }
+      if (e.key === 'ArrowRight') { e.preventDefault(); previewTranslateX.value -= PAN_STEP; previewViewModified.value = true; return }
     }
     if (e.key === 'ArrowUp') { e.preventDefault(); goUp(); return }
     if (e.key === 'ArrowDown') { e.preventDefault(); goDown(); return }
@@ -1529,6 +1659,7 @@ watch(scrollerRef, (scroller, oldScroller) => {
   if (oldEl) {
     oldEl.removeEventListener('scroll', updateScrollPosition)
     oldEl.removeEventListener('click', handleCodeBlockClick)
+    oldEl.removeEventListener('click', handleMermaidClick)
     oldEl.removeEventListener('contextmenu', handleFilePathContextMenu)
     oldEl.removeEventListener('contextmenu', handleMermaidContextMenu)
   }
@@ -1537,6 +1668,7 @@ watch(scrollerRef, (scroller, oldScroller) => {
   if (el) {
     el.addEventListener('scroll', updateScrollPosition, { passive: true })
     el.addEventListener('click', handleCodeBlockClick)
+    el.addEventListener('click', handleMermaidClick)
     el.addEventListener('contextmenu', handleFilePathContextMenu)
     el.addEventListener('contextmenu', handleMermaidContextMenu)
     attachMermaidObserver(el)
@@ -1581,11 +1713,38 @@ const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
 
 const scrollHistoryToBottom = () => {
   if (scrollerRef.value) {
-    scrollerRef.value.scrollToBottom()
+    scrollerRef.value.scrollToBottom?.()
   } else {
     void scrollToBottom()
   }
 }
+
+async function scrollToAgentStep(stepId: string) {
+  const allSteps = agentState.value?.steps ?? []
+  const visibleStepId = resolveSourceStepIdById(stepId, allSteps)
+  const index = flattenedItems.value.findIndex(
+    item => item.type === 'step' && item.step?.id === visibleStepId
+  )
+  if (index < 0) return
+
+  await nextTick()
+  scrollerRef.value?.scrollToItem?.(index)
+  highlightedSourceStepId.value = visibleStepId
+  window.setTimeout(() => {
+    if (highlightedSourceStepId.value === visibleStepId) {
+      highlightedSourceStepId.value = null
+    }
+  }, 2500)
+}
+
+watch(
+  () => artifactStore.sourceJumpRequest,
+  (req) => {
+    if (!req || req.tabId !== props.tabId) return
+    void scrollToAgentStep(req.stepId)
+    artifactStore.clearSourceJumpRequest()
+  }
+)
 
 /** 首次展示从历史恢复的对话（尚无已存滚动位置）→ 应滚到底部 */
 const shouldScrollHistoryOnShow = () =>
@@ -1654,13 +1813,14 @@ onUnmounted(() => {
   if (el) {
     el.removeEventListener('scroll', updateScrollPosition)
     el.removeEventListener('click', handleCodeBlockClick)
+    el.removeEventListener('click', handleMermaidClick)
     el.removeEventListener('contextmenu', handleFilePathContextMenu)
     el.removeEventListener('contextmenu', handleMermaidContextMenu)
   }
   detachMermaidObserver()
 })
 
-// 监听 visible 变化，保存和恢复滚动位置
+// 监听 visible 变化（用户折叠/展开 AI 侧栏），保存和恢复滚动位置
 watch(() => props.visible, async (visible, wasVisible) => {
   if (!visible && wasVisible) {
     // 面板隐藏时，保存当前滚动位置
@@ -1678,6 +1838,26 @@ watch(() => props.visible, async (visible, wasVisible) => {
     } else {
       await restoreScrollTop()
     }
+  }
+}, { flush: 'post' })
+
+// 切 tab：离开时在 DOM 仍可见阶段快照滚动（sync）；回到时在 v-show 展开后恢复（post）
+watch(() => props.tabActive, (active, wasActive) => {
+  if (!active && wasActive) {
+    saveScrollTop()
+  }
+}, { flush: 'sync' })
+
+watch(() => props.tabActive, async (active, wasActive) => {
+  if (!active || wasActive !== false) return
+  await nextTick()
+  if (pendingConfirm.value || pendingSecureInput.value) {
+    scrollHistoryToBottom()
+    setTimeout(() => scrollHistoryToBottom(), 150)
+  } else if (shouldScrollHistoryOnShow()) {
+    scrollToHistoryBottomWithRetry()
+  } else {
+    await restoreScrollPositionOnTabActivate()
   }
 }, { flush: 'post' })
 
@@ -1945,8 +2125,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           ref="scrollerRef"
           :items="flattenedItems"
           :min-item-size="36"
-          :buffer="800"
-          :prerender="10"
           key-field="id"
           class="ai-messages"
           :class="{ 'standalone-mode': isStandaloneAssistant, 'custom-avatar': isStandaloneAssistant && configStore.agentAvatar }"
@@ -2240,7 +2418,15 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                   - success === false      → 红色（exec-failed）
                 其他步骤类型保持现有风险色。
               -->
-              <div v-else-if="item.type === 'step'" class="agent-step-virtual" :class="{ 'first-step': item.isFirstStep }">
+              <div
+                v-else-if="item.type === 'step'"
+                class="agent-step-virtual"
+                :class="{
+                  'first-step': item.isFirstStep,
+                  'agent-step-source-highlight': item.step!.id === highlightedSourceStepId
+                }"
+                :data-agent-step-id="item.step!.id"
+              >
                 <div 
                   class="agent-step-inline"
                   :class="[
@@ -2646,9 +2832,10 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
       </button>
 
       <div class="image-preview-modal-content" @click.stop>
-        <button class="image-preview-close" @click="closeImagePreview">
+        <button v-show="previewScale === 1" class="image-preview-close" @click.stop="closeImagePreview">
           <X :size="20" />
         </button>
+        <div ref="previewViewportRef" class="image-preview-viewport" :style="previewViewportStyle">
         <!-- 「活图」预览：当点击的是 chart skill 投递的活图时，模态里也用 EChartsCanvas 渲染，
              保留 tooltip / dataZoom / legend toggle 等所有交互能力。复制图片 / 另存为通过
              previewEchartsRef.getDataURL() 拿当前实时（含用户拖过的 dataZoom 范围）高清 PNG。
@@ -2658,7 +2845,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           v-if="previewEchartsPayload"
           class="image-preview-full image-preview-echarts"
           :class="{ 'dragging': isDraggingImage }"
-          :style="previewEchartsBoxStyle"
+          :style="previewContentBoxStyle"
           @mousedown="handlePreviewMouseDown"
           @dblclick="handlePreviewDblClick"
         >
@@ -2674,12 +2861,14 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           :src="previewImageUrl"
           class="image-preview-full"
           :class="{ 'dragging': isDraggingImage }"
-          :style="{ transform: previewTransform }"
+          :style="previewContentBoxStyle"
+          @load="onPreviewImgLoad"
           @mousedown="handlePreviewMouseDown"
           @dblclick="handlePreviewDblClick"
           @contextmenu="openImageContextMenu($event, previewImageUrl!)"
           draggable="false"
         />
+        </div>
         <!-- 底部信息栏：图片位置 + 缩放比例 -->
         <div class="image-preview-info-bar">
           <span v-if="allPreviewImages.length > 1 && previewIdx >= 0" class="image-preview-counter">
@@ -2830,8 +3019,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 /* 紧凑变体：嵌入 system-info-bar 时使用 */
 .model-select-sm {
   padding: 2px 4px;
-  font-size: 11px;
-  height: 22px;
+  font-size: var(--workbench-header-select-font-size, 12px);
+  height: var(--workbench-header-select-height, 22px);
   max-width: 140px;
   border-radius: 4px;
 }
@@ -2872,7 +3061,10 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 6px 12px;
+  box-sizing: border-box;
+  height: var(--workbench-panel-header-height, 38px);
+  min-height: var(--workbench-panel-header-height, 38px);
+  padding: 0 12px;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
   font-size: 11px;
@@ -2881,6 +3073,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   container-name: infobar;
   white-space: nowrap;
   position: relative;
+  flex-shrink: 0;
 }
 
 /* ai-header-actions 固定在最右侧（无论 system-info-left 是否渲染） */
@@ -3282,6 +3475,21 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .agent-step-virtual {
   padding: 0 14px 4px;
   border-left: 2px solid rgba(255, 255, 255, 0.06);
+}
+
+.agent-step-virtual.agent-step-source-highlight {
+  animation: agent-step-source-flash 2.5s ease-out;
+}
+
+@keyframes agent-step-source-flash {
+  0%, 15% {
+    background: rgba(96, 165, 250, 0.18);
+    box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.35);
+  }
+  100% {
+    background: transparent;
+    box-shadow: none;
+  }
 }
 
 .standalone-mode .agent-step-virtual {
@@ -6272,13 +6480,19 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   overflow: visible;
 }
 
+.image-preview-viewport {
+  position: relative;
+  overflow: visible;
+}
+
 .image-preview-full {
-  max-width: 90vw;
-  max-height: 90vh;
+  position: absolute;
+  top: 0;
+  left: 0;
   object-fit: contain;
   border-radius: 8px;
   cursor: grab;
-  transform-origin: center center;
+  transform-origin: 0 0;
   transition: none;
   user-select: none;
   -webkit-user-drag: none;
@@ -6300,14 +6514,14 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .image-preview-echarts {
   border-radius: 8px;
   cursor: grab;
-  transform-origin: center center;
+  transform-origin: 0 0;
   transition: none;
   user-select: none;
   background: var(--bg-primary, #1a1a1a);
   display: flex;
   align-items: stretch;
   justify-content: stretch;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .image-preview-close {
@@ -6324,7 +6538,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s;
+  transition: background 0.15s, opacity 0.15s;
   z-index: 1;
 }
 

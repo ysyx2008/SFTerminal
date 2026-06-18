@@ -105,7 +105,12 @@ export const emailTools: ToolDefinition[] = [
 **路径规则**：
 - 绝对路径会直接使用
 - 相对路径在本地终端下相对当前 cwd 解析
-- SSH 终端下的相对路径会回退到本机用户目录`,
+- SSH 终端下的相对路径会回退到本机用户目录
+
+**ZIP 解压**：
+- .zip 附件默认自动解压到同名目录（可用 extract: false 仅下载不解压）
+- 解压时正确处理 Windows 中文版 GBK 文件名，避免中文乱码
+- 请勿再用终端 unzip 命令解压邮件附件`,
       parameters: {
         type: 'object',
         properties: {
@@ -124,6 +129,10 @@ export const emailTools: ToolDefinition[] = [
           save_dir: {
             type: 'string',
             description: '附件保存目录（可选，支持相对路径）'
+          },
+          extract: {
+            type: 'boolean',
+            description: '是否解压 .zip 附件（默认 true；设为 false 则仅下载）'
           }
         },
         required: ['uid', 'attachment_index']
