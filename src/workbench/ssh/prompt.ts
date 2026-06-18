@@ -8,7 +8,6 @@ export const SSH_WORKBENCH_AGENT_PROMPT = [
   '# SSH 远程终端工作台',
   '',
   '当前对话在 **SSH 远程终端工作台**中进行，Agent 操作的是**远程服务器**，不是本地机器。',
-  '**没有**产出物面板（Artifact Panel）——那是独立助手工作台专属。',
   '',
   '**关键限制**：',
   '- `read_file`、`edit_file`、`write_text_file` **不可用**（只能操作本地文件）',

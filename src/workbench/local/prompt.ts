@@ -8,7 +8,6 @@ export const LOCAL_WORKBENCH_AGENT_PROMPT = [
   '# 本地终端工作台',
   '',
   '当前对话在**本地终端工作台**中进行。左侧是 PTY 终端，Agent 可直接执行本地命令、读写本地文件。',
-  '**没有**产出物面板（Artifact Panel）——那是独立助手工作台专属；文件生成后不会自动挂载预览。',
   '',
   '**禁止的命令**：vim/vi/nano/emacs（用 `write_text_file`）、tmux/screen、mc/ranger',
   '',

@@ -31,8 +31,6 @@ describe('resolveWorkbenchAgentPrompt', () => {
     expect(prompt).toContain('本地终端工作台')
     expect(prompt).toContain('write_text_file')
     expect(prompt).toContain('check_terminal_status')
-    expect(prompt).toContain('没有')
-    expect(prompt).toContain('Artifact Panel')
   })
 
   it('ssh 终端工作台注入 SSH 远程操作规范', () => {
@@ -41,7 +39,5 @@ describe('resolveWorkbenchAgentPrompt', () => {
     expect(prompt).toContain('SSH 远程终端工作台')
     expect(prompt).toContain('write_remote_text_file')
     expect(prompt).toContain('Password:')
-    expect(prompt).toContain('没有')
-    expect(prompt).toContain('Artifact Panel')
   })
 })
