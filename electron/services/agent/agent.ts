@@ -1308,24 +1308,35 @@ export abstract class Agent {
   
   /**
    * L2: 异步更新知识文档
-   * 收集执行记录，交给 LLM 判断是否有值得持久化的新信息
+   * 收集执行记录（或纯对话内容），交给 LLM 判断是否有值得持久化的新信息
    */
   private async updateContextKnowledgeAsync(run: AgentRun, result?: string): Promise<void> {
     const aiService = this.services.aiService
     if (!aiService) return
 
-    // 唤醒 run 跳过（短问候不产生值得持久化的系统知识）
+    // 唤醒 run 跳过（短问候不产生值得持久化的信息）
     if (run.context.wakeup) return
-
-    // 跳过纯对话（没有执行过工具的任务不太可能产生新的系统知识）
-    const toolSteps = run.steps.filter(s => s.type === 'tool_call' && s.toolName)
-    if (toolSteps.length === 0) return
 
     const contextId = run.context.hostId || 'personal'
     const MAX_ARG_DISPLAY = 200
     const MAX_RESULT_DISPLAY = 300
     const MAX_FINAL_RESULT_DISPLAY = 500
-    
+
+    const toolSteps = run.steps.filter(s => s.type === 'tool_call' && s.toolName)
+
+    // 纯对话（无工具调用）：把用户请求 + 最终回复一起交给 LLM 判断是否有值得记住的内容
+    if (toolSteps.length === 0) {
+      if (!result) return
+      const ckService = getContextKnowledgeService()
+      const profileId = this.services.configService?.getActiveAiProfile() ?? undefined
+      await ckService.updateWithLLM(contextId, aiService, profileId, {
+        userRequest: run.originalUserRequest,
+        commandRecords: [],
+        finalResponse: result.substring(0, MAX_FINAL_RESULT_DISPLAY)
+      })
+      return
+    }
+
     const commandRecords: string[] = []
     for (const step of run.steps) {
       if (step.type === 'tool_call' && step.toolName && step.toolArgs) {
@@ -1346,16 +1357,16 @@ export abstract class Agent {
         commandRecords.push(`  → ${step.toolResult.substring(0, MAX_RESULT_DISPLAY)}`)
       }
     }
-    
+
     if (result) {
       commandRecords.push(`\n最终结果: ${result.substring(0, MAX_FINAL_RESULT_DISPLAY)}`)
     }
-    
+
     if (commandRecords.length === 0) return
 
     const ckService = getContextKnowledgeService()
     const profileId = this.services.configService?.getActiveAiProfile() ?? undefined
-    
+
     await ckService.updateWithLLM(contextId, aiService, profileId, {
       userRequest: run.originalUserRequest,
       commandRecords

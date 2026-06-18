@@ -855,24 +855,6 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
     {
       type: 'function',
       function: {
-        name: 'remember_info',
-        description: '将信息整合到持久知识文档中，未来交互时自动提供。适用于用户要求记住的偏好、配置、约定等长期有效的信息。',
-        parameters: {
-          type: 'object',
-          properties: {
-            info: {
-              type: 'string',
-              description: '要记住的信息，关键细节必须完整准确'
-            }
-          },
-          required: ['info']
-        }
-      },
-      _meta: { contextBudget: { toolResult: 'protected' } }
-    } as ToolDefinitionWithMeta,
-    {
-      type: 'function',
-      function: {
         name: 'ask_user',
         description: `向用户提问并等待回复。只在制定计划时提问，执行中优先用合理默认值。调用后暂停执行直到用户回复。`,
         parameters: {

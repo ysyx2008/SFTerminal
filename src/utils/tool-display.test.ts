@@ -178,18 +178,18 @@ describe('shouldShowToolResultStep', () => {
   })
 
   describe('ALWAYS_SHOW_RESULT_TOOLS：少数 tool_result 仍需独立展示', () => {
-    it('remember_info 的 tool_result 在非调试模式下展示', () => {
+    it('dispatch_agents 的 tool_result 在非调试模式下展示', () => {
       expect(
         shouldShowToolResultStep(
-          { type: 'tool_result', toolName: 'remember_info', success: true },
+          { type: 'tool_result', toolName: 'dispatch_agents', success: true },
           false
         )
       ).toBe(true)
     })
 
     it('集合内容和文档约定一致', () => {
-      expect(ALWAYS_SHOW_RESULT_TOOLS.has('remember_info')).toBe(true)
       expect(ALWAYS_SHOW_RESULT_TOOLS.has('dispatch_agents')).toBe(true)
+      expect(ALWAYS_SHOW_RESULT_TOOLS.has('remember_info')).toBe(false)
     })
   })
 

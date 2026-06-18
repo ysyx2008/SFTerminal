@@ -121,8 +121,12 @@ export class ContextKnowledgeService {
   /**
    * 通过 LLM 更新知识文档
    *
-   * 将当前文档 + 新的任务执行记录交给 LLM，让它决定要不要更新文档。
+   * 将当前文档 + 任务执行记录（或纯对话内容）交给 LLM，让它决定要不要更新文档。
    * 如果 LLM 判断没有新信息，返回 { updated: false }。
+   *
+   * - 有工具调用：走 buildUpdatePrompt，基于执行记录提炼
+   * - 纯对话（无工具调用但有 finalResponse）：走 buildConversationUpdatePrompt，
+   *   让 LLM 判断对话中是否有用户明确表达的偏好/配置/约定值得持久化
    */
   async updateWithLLM(
     contextId: string,
@@ -131,29 +135,20 @@ export class ContextKnowledgeService {
     taskContext: {
       userRequest: string
       commandRecords: string[]
+      finalResponse?: string
     }
   ): Promise<DocumentUpdateResult> {
     const currentDoc = this.getDocument(contextId)
 
     if (taskContext.commandRecords.length === 0) {
-      return { updated: false, document: currentDoc }
+      if (!taskContext.finalResponse) {
+        return { updated: false, document: currentDoc }
+      }
+      const prompt = this.buildConversationUpdatePrompt(contextId, currentDoc, taskContext.userRequest, taskContext.finalResponse)
+      return this.callLLMAndApply(contextId, aiService, profileId, prompt, currentDoc)
     }
 
     const prompt = this.buildUpdatePrompt(contextId, currentDoc, taskContext)
-    return this.callLLMAndApply(contextId, aiService, profileId, prompt, currentDoc)
-  }
-
-  /**
-   * Agent 主动记住一条信息时触发更新
-   */
-  async rememberInfo(
-    contextId: string,
-    info: string,
-    aiService: AiService,
-    profileId: string | undefined
-  ): Promise<DocumentUpdateResult> {
-    const currentDoc = this.getDocument(contextId)
-    const prompt = this.buildRememberPrompt(contextId, currentDoc, info)
     return this.callLLMAndApply(contextId, aiService, profileId, prompt, currentDoc)
   }
 
@@ -230,31 +225,39 @@ ${taskContext.commandRecords.join('\n')}
 如果需要更新，直接输出完整的 Markdown 文档内容（不要用代码块包裹）`
   }
 
-  private buildRememberPrompt(
+  private buildConversationUpdatePrompt(
     contextId: string,
     currentDoc: string,
-    info: string
+    userRequest: string,
+    finalResponse: string
   ): string {
     const contextType = this.describeContextType(contextId)
     const isNewDoc = !currentDoc
     const docSection = isNewDoc
-      ? '（尚无知识文档）'
+      ? '（尚无知识文档，如有值得记录的信息请创建）'
       : `\`\`\`markdown\n${currentDoc}\n\`\`\``
 
-    return `你是一个知识文档维护助手。用户要求记住以下信息，请将其整合到${contextType}的知识文档中。
+    return `你是一个知识文档维护助手。以下是一次纯对话交互，判断其中是否有值得持久化到${contextType}知识文档中的信息。
 
 ## 当前知识文档
 ${docSection}
 
-## 要记住的信息
-${info}
+## 本次对话
+**用户**: ${userRequest}
+
+**助手**: ${finalResponse}
 
 ## 规则
-- 将新信息整合到文档的合适位置（按分类标题组织）
-- 如果已有相同或类似信息，更新为最新版本
-- 文档使用 Markdown 格式，用 ## 标题分类
-- 文档总长度控制在 ${this.maxDocChars} 字符以内
-- 直接输出完整的更新后文档内容（不要用代码块包裹）`
+- 只记录用户明确要求记住的偏好、配置、约定，或对话中揭示的长期有效事实
+- 不记录：一次性问答、临时查询结果、闲聊内容
+- 如果对话中没有值得持久化的新信息，直接回复 NO_CHANGE
+- 如果有新信息，输出完整的更新后文档（Markdown 格式，使用 ## 分类标题组织）
+- 更新已有信息时直接修改原文，不要追加重复内容
+- 文档总长度控制在 ${this.maxDocChars} 字符以内，超出时删减最不重要的信息
+
+## 输出格式
+如果无需更新，只回复: NO_CHANGE
+如果需要更新，直接输出完整的 Markdown 文档内容（不要用代码块包裹）`
   }
 
   private describeContextType(contextId: string): string {

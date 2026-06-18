@@ -36,8 +36,6 @@ export const TOOLS_WITH_DEDICATED_STEP_TYPE = new Set<string>([
 export const ALWAYS_SHOW_RESULT_TOOLS = new Set<string>([
   // 子 Agent / 计划 / 用户互动（多数有专用 step type，这里列出是为完备）
   'dispatch_agents',
-  // 记忆类（用户应该看到记了什么）
-  'remember_info',
   // 主动消息
   'send_file_to_chat',
   'send_image_to_chat',

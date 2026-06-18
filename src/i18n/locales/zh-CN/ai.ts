@@ -414,7 +414,6 @@ export default {
       edit_file: '编辑文件',
       get_terminal_context: '获取终端上下文',
       file_search: '搜索文件',
-      remember_info: '记住信息',
       search_knowledge: '搜索知识库',
       web_search: 'Web 搜索',
       get_knowledge_doc: '获取知识文档',

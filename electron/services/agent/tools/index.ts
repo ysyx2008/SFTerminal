@@ -20,7 +20,7 @@ import { executeCommandDirect, awaitExec } from './exec'
 import { getTerminalContext, checkTerminalStatus, sendControlKey, sendInput } from './terminal'
 import { fileSearch, readFile, editFile, writeTextFile, writeRemoteTextFile } from './file'
 import { sftpPut, sftpGet } from './sftp'
-import { rememberInfo, searchKnowledge, getKnowledgeDoc } from './knowledge'
+import { searchKnowledge, getKnowledgeDoc } from './knowledge'
 import { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 import { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
 import { compressContext, recallCompressed, manageMemory } from './context'
@@ -55,7 +55,7 @@ export {
   isAutoApproveWorkspacePath,
 } from './file'
 export { sftpPut, sftpGet } from './sftp'
-export { rememberInfo, searchKnowledge, getKnowledgeDoc } from './knowledge'
+export { searchKnowledge, getKnowledgeDoc } from './knowledge'
 export { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 export { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
 export { compressContext, recallCompressed, manageMemory } from './context'
@@ -186,9 +186,6 @@ export async function executeTool(
       if (typeof requiredPtyId !== 'string') return requiredPtyId
       return sftpGet(resolveTargetPtyId(args, requiredPtyId), args, toolCall.id, config, executor)
     }
-
-    case 'remember_info':
-      return await rememberInfo(args, config, executor)
 
     case 'search_knowledge':
       return searchKnowledge(args, executor)

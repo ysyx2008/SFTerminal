@@ -221,7 +221,6 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
 
 | 工具名称 | 功能描述 |
 |---------|---------|
-| `remember_info` | 保存发现到知识库 |
 | `search_knowledge` | 搜索知识库文档 |
 | `get_knowledge_doc` | 按 ID 获取完整文档 |
 
@@ -561,21 +560,9 @@ export type ExecutionMode = 'strict' | 'relaxed' | 'free'
 - 复用历史发现，避免重复探索
 - 越用越熟悉每台服务器
 
-### 记忆工具
+### 知识库工具
 
 ```typescript
-// remember_info - 保存信息到知识库
-{
-  name: 'remember_info',
-  description: `保存发现到知识库，下次交互时会基于语义相关性自动提供。
-  
-  积极记录以下内容：
-  - 目录和路径：项目目录、配置文件位置、日志位置
-  - 服务信息：端口号、启动命令、配置文件位置
-  - 环境配置：软件版本、环境变量
-  - 问题和方案：遇到的问题及解决方法`
-}
-
 // search_knowledge - 搜索知识库
 {
   name: 'search_knowledge',

@@ -414,7 +414,6 @@ export default {
       edit_file: 'Edit File',
       get_terminal_context: 'Get Terminal Context',
       file_search: 'Search Files',
-      remember_info: 'Remember Info',
       search_knowledge: 'Search Knowledge',
       web_search: 'Web Search',
       get_knowledge_doc: 'Get Knowledge Doc',

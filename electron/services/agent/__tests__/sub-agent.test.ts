@@ -145,7 +145,6 @@ describe('getSubAgentTools', () => {
     expect(toolNames).not.toContain('dispatch_agents')
     expect(toolNames).not.toContain('ask_user')
     expect(toolNames).not.toContain('get_terminal_context')
-    expect(toolNames).not.toContain('remember_info')
     expect(toolNames).not.toContain('plan')
     expect(toolNames).not.toContain('talk_to_user')
   })
@@ -166,7 +165,6 @@ describe('getSubAgentTools', () => {
     expect(toolNames).not.toContain('ask_user')
     expect(toolNames).not.toContain('talk_to_user')
     expect(toolNames).not.toContain('plan')
-    expect(toolNames).not.toContain('remember_info')
   })
 
   it('all sub-agent tool lists should be a contiguous prefix of parent tool list', () => {

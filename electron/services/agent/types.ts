@@ -441,7 +441,7 @@ export interface RunOptions {
 /**
  * 系统提示构建选项
  */
-/** 带元数据的主机记忆条目（观察日志模型）- 保留用于 remember_info 存储 */
+/** 带元数据的主机记忆条目（观察日志模型） */
 export interface HostMemoryEntry {
   content: string
   createdAt: number

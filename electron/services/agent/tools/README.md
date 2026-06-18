@@ -14,7 +14,7 @@ tools/
 ├── exec-manager.ts # 后台任务管理器（spawn / ring buffer / 自动清理）
 ├── terminal.ts     # 终端操作 (get_terminal_context, check_terminal_status 等)
 ├── file.ts         # 文件操作 (read_file, write_text_file, edit_file 等)
-├── knowledge.ts    # 知识库 (remember_info, search_knowledge 等)
+├── knowledge.ts    # 知识库 (search_knowledge, get_knowledge_doc)
 ├── plan.ts         # 计划/待办 (create_plan, update_plan, clear_plan)
 ├── memory.ts       # 任务记忆 (recall_task, deep_recall)
 ├── context.ts      # 上下文管理 (compress_context, recall_compressed, manage_memory)
@@ -53,7 +53,6 @@ tools/
 - `file_search` - 本地文件搜索
 
 ### 知识库 (knowledge.ts)
-- `remember_info` - 记忆信息到知识库
 - `search_knowledge` - 搜索知识库
 - `get_knowledge_doc` - 获取知识库文档
 

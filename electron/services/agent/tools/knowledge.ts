@@ -1,75 +1,11 @@
 /**
  * 知识库操作工具
- * 包括：记忆信息、搜索知识库、获取知识库文档
+ * 包括：搜索知识库、获取知识库文档
  */
 import { t } from '../i18n'
 import { getKnowledgeService } from '../../knowledge'
-import { getContextKnowledgeService } from '../../knowledge/context-knowledge'
 import { truncateFromEnd } from './utils'
-import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
-import { createLogger } from '../../../utils/logger'
-
-const log = createLogger('KnowledgeTool')
-
-/**
- * 记住信息 — 通过 LLM 将信息整合到知识文档中
- */
-export async function rememberInfo(
-  args: Record<string, unknown>,
-  config: AgentConfig,
-  executor: ToolExecutorConfig
-): Promise<ToolResult> {
-  const info = args.info as string
-  if (!info) {
-    return { success: false, output: '', error: t('error.info_required') }
-  }
-
-  executor.addStep({
-    type: 'tool_call',
-    content: `${t('memory.remember')}: ${info}`,
-    toolName: 'remember_info',
-    toolArgs: args,
-    riskLevel: 'safe'
-  })
-
-  const contextId = executor.getHostId() || 'personal'
-  const aiService = executor.getAiService?.()
-  const profileId = executor.getActiveProfileId?.()
-
-  if (!aiService) {
-    executor.addStep({
-      type: 'tool_result',
-      content: t('memory.cannot_save'),
-      toolName: 'remember_info'
-    })
-    return { success: false, output: '', error: t('error.knowledge_not_available') }
-  }
-
-  try {
-    const ckService = getContextKnowledgeService()
-    const result = await ckService.rememberInfo(contextId, info, aiService, profileId)
-
-    const resultMessage = result.updated
-      ? `已将信息整合到知识文档中（${contextId}）`
-      : `信息已存在或无需更新（${contextId}）`
-
-    executor.addStep({
-      type: 'tool_result',
-      content: resultMessage,
-      toolName: 'remember_info'
-    })
-
-    return { success: true, output: resultMessage }
-  } catch (error) {
-    log.error('更新知识文档失败:', error)
-    executor.addStep({
-      type: 'tool_result',
-      content: t('memory.cannot_save'),
-      toolName: 'remember_info'
-    })
-    return { success: false, output: '', error: t('error.knowledge_not_available') }
-  }
-}
+import type { ToolExecutorConfig, ToolResult } from './types'
 
 /**
  * 搜索知识库

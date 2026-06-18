@@ -10,7 +10,7 @@ alwaysApply: false
 
 `electron/services/agent/` 下的**抽象层文件**（agent.ts、streaming-tool-executor.ts、tool-result-budget.ts、task-memory.ts、context-builder.ts、tool-metadata.ts）**禁止包含具体工具名字符串字面量**。
 
-具体工具名包括：`'read_file'` / `'execute_command'` / `'write_text_file'` / `'edit_file'` / `'word_from_markdown'` / `'excel_from_markdown'` / `'dispatch_agents'` / `'ask_user'` / `'plan'` / `'recall'` / `'remember_info'` / `'personality_craft'` 等所有内置工具与技能工具的名字。
+具体工具名包括：`'read_file'` / `'execute_command'` / `'write_text_file'` / `'edit_file'` / `'word_from_markdown'` / `'excel_from_markdown'` / `'dispatch_agents'` / `'ask_user'` / `'plan'` / `'recall'` / `'personality_craft'` 等所有内置工具与技能工具的名字。
 
 ## 为什么
 
