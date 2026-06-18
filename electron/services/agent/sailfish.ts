@@ -25,13 +25,13 @@ const log = createLogger('SailfishAgent')
  * SailFish Agent
  * 
  * 旗鱼的核心 Agent 实现。默认拥有基础能力（文件操作、知识库、命令执行），
- * 终端交互能力通过 terminal 技能按需加载。
+ * 终端交互能力（execute_command 等）通过 getAgentTools 按 context.terminalType 注入。
  */
 export class SailFish extends Agent {
-  /** 终端 ID（可选，绑定终端后设置） */
+  /** 终端 ID（可选）。注意：仅作为向后兼容保留，不参与模式判断。
+   * 模式（local/ssh/assistant）由 currentRun.context.terminalType 决定。 */
   readonly ptyId?: string
   
-  private _terminalSkillLoaded = false
   private _personalitySkillLoaded = false
   
   constructor(services: AgentServices, ptyId?: string) {
@@ -40,16 +40,10 @@ export class SailFish extends Agent {
   }
   
   /**
-   * 获取技能会话，绑定终端时自动加载 terminal 技能
+   * 获取技能会话，诞生引导时自动加载 personality 技能
    */
   protected getSkillSession(): SkillSession {
     const session = super.getSkillSession()
-    if (this.ptyId && !this._terminalSkillLoaded) {
-      this._terminalSkillLoaded = true
-      session.loadSkill('terminal').catch(err => {
-        log.error('Failed to auto-load terminal skill:', err)
-      })
-    }
     // 诞生引导时自动加载 personality 技能
     if (this.currentRun && !this._personalitySkillLoaded) {
       const isOnboarding = !(this.services.configService?.getAgentOnboardingCompleted() ?? true)
@@ -141,15 +135,15 @@ export class SailFish extends Agent {
   // ==================== 模式判断 ====================
   
   /**
-   * 获取 Agent 运行模式
+   * 获取 Agent 运行模式。
+   * 从当前 run 的 context.terminalType 读取，与实例级 ptyId 完全解耦。
+   * agentKey（tabId）与操作目标 ptyId 解耦后，实例级 ptyId 不可靠，不得用于模式判断。
    */
   private getAgentMode(): AgentMode {
-    if (!this.ptyId) {
-      return 'assistant'
+    const terminalType = this.currentRun?.context?.terminalType
+    if (terminalType === 'local' || terminalType === 'ssh') {
+      return terminalType
     }
-    if (this.services.unifiedTerminalService) {
-      return this.services.unifiedTerminalService.getTerminalType(this.ptyId) as AgentMode
-    }
-    return 'local'
+    return 'assistant'
   }
 }
