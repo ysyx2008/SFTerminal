@@ -1030,11 +1030,13 @@ export function useAgentMode(
     try {
       // 根据模式选择 API
       let result: { success: boolean; result?: string; error?: string; aborted?: boolean }
-      
+
+      // workbenchPrompt 对所有工作台类型都需要注入（local/ssh/assistant 各有专属 prompt）
+      const workbenchPrompt = currentTab.value
+        ? resolveWorkbenchAgentPrompt(currentTab.value.type, currentTab.value)
+        : undefined
+
       if (isAssistantMode && currentTab.value?.agentId) {
-        const workbenchPrompt = currentTab.value
-          ? resolveWorkbenchAgentPrompt(currentTab.value.type, currentTab.value)
-          : undefined
         result = await window.electronAPI.agent.runStandalone(
           currentTab.value.agentId,
           message,
@@ -1068,7 +1070,8 @@ export function useAgentMode(
             previewImages: previewImages.length < images.length ? previewImages : undefined,
             attachments: attachments.length > 0 ? attachments : undefined,
             sessionId: agentState.value?.sessionId,
-            sessionStartTime: agentState.value?.sessionStartTime
+            sessionStartTime: agentState.value?.sessionStartTime,
+            ...(workbenchPrompt ? { workbenchPrompt } : {})
           },
           { executionMode: executionMode.value, commandTimeout: commandTimeout.value * 1000 },
           activeProfileId.value || undefined
