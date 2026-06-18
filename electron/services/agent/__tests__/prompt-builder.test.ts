@@ -511,7 +511,7 @@ describe('PromptBuilder', () => {
       expect(prompt).toContain('密码')
     })
 
-    it('should not include terminal-specific rules (moved to terminal skill)', () => {
+    it('should not include terminal-specific rules (moved to workbench prompt)', () => {
       const context = createMockContext()
       const builder = new PromptBuilder({ context })
       const prompt = builder.build()

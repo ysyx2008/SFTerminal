@@ -25,8 +25,19 @@ describe('resolveWorkbenchAgentPrompt', () => {
       .toBeUndefined()
   })
 
-  it('local / ssh 暂无工作台 Agent 描述', () => {
-    expect(resolveWorkbenchAgentPrompt('local', { type: 'local' })).toBeUndefined()
-    expect(resolveWorkbenchAgentPrompt('ssh', { type: 'ssh' })).toBeUndefined()
+  it('local 终端工作台注入本地终端操作规范', () => {
+    const prompt = resolveWorkbenchAgentPrompt('local', { type: 'local' })
+    expect(prompt).toBeDefined()
+    expect(prompt).toContain('本地终端工作台')
+    expect(prompt).toContain('write_text_file')
+    expect(prompt).toContain('check_terminal_status')
+  })
+
+  it('ssh 终端工作台注入 SSH 远程操作规范', () => {
+    const prompt = resolveWorkbenchAgentPrompt('ssh', { type: 'ssh' })
+    expect(prompt).toBeDefined()
+    expect(prompt).toContain('SSH 远程终端工作台')
+    expect(prompt).toContain('write_remote_text_file')
+    expect(prompt).toContain('Password:')
   })
 })

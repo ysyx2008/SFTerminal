@@ -1628,7 +1628,7 @@ export abstract class Agent {
    * @param injectKnowledge cache-reuse 路径下，知识检索结果不在 system prompt 中，需注入到 user 消息
    */
   private async buildUserMessage(run: AgentRun, message: string, injectKnowledge: boolean): Promise<AiMessage> {
-    const userBody = this.enhanceUserMessage(message)
+    const userBody = this.enhanceUserMessage(message, run.context.terminalType)
 
     let knowledgeRefs = ''
     if (injectKnowledge) {
@@ -3098,7 +3098,7 @@ export abstract class Agent {
     const visionAvailable = this.currentProfileHasVision()
 
     for (const pending of run.pendingUserMessages) {
-      const userBody = Agent.formatTimestamp() + pending.message
+      const userBody = Agent.formatTimestamp() + Agent.formatWorkbenchTag(run.context.terminalType) + pending.message
       let imageNote = ''
       if (pending.images?.length) {
         const imageCount = pending.images.length
@@ -3607,11 +3607,19 @@ export abstract class Agent {
   }
   
   /**
+   * 生成工作台标签前缀，格式如 <sf_workbench>local</sf_workbench>
+   * 注入到每条用户消息，让 AI 在多工作台对话历史中能识别运行环境
+   */
+  private static formatWorkbenchTag(terminalType?: string): string {
+    return terminalType ? `<sf_workbench>${terminalType}</sf_workbench> ` : ''
+  }
+
+  /**
    * 增强用户消息
    */
-  private enhanceUserMessage(message: string): string {
+  private enhanceUserMessage(message: string, terminalType?: string): string {
     const languageHint = this.getLanguageHint()
-    return languageHint + Agent.formatTimestamp() + message
+    return languageHint + Agent.formatTimestamp() + Agent.formatWorkbenchTag(terminalType) + message
   }
 
   /** 生成用户消息时间戳前缀，格式如 [2026-03-25 22:30 周二] */

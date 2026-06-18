@@ -18,6 +18,7 @@ export type { ToolDefinition }
 
 import type { TerminalType, RemoteChannel } from '@shared/types'
 import { ASSISTANT_WORKBENCH_AGENT_TOOLS } from '../../../src/workbench/assistant/agent-tools'
+import { getAllTerminalTools } from './skills/terminal/tools'
 
 /** @deprecated Use TerminalType from @shared/types */
 export type AgentMode = TerminalType
@@ -1311,6 +1312,12 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
 
   if (options?.mode === 'assistant') {
     filteredTools.push(...(ASSISTANT_WORKBENCH_AGENT_TOOLS as unknown as ToolDefinitionWithMeta[]))
+  }
+
+  // 终端工作台（local / ssh）：注入 PTY 终端工具（execute_command 等）
+  // 工具由 terminal 工作台贡献，等价于 assistant 工作台贡献 list_workbench_artifacts 等
+  if (options?.mode === 'local' || options?.mode === 'ssh') {
+    filteredTools.push(...(getAllTerminalTools() as ToolDefinitionWithMeta[]))
   }
 
   // 注意：保留 _meta 字段，让 Agent 基类能通过 getMetaByName 查到工具的元数据

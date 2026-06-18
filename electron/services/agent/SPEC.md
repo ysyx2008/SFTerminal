@@ -57,7 +57,16 @@ Agent 实例自身**没有强绑定 ptyId 字段**——每次 `run()` 通过 `c
 
 ### SailFish (`sailfish.ts`) — Agent 实现
 
-继承 Agent，实现具体行为。绑定终端时自动加载 `terminal` 技能，诞生引导时自动加载 `personality` 技能。
+继承 Agent，实现具体行为。`personality` 技能在诞生引导时自动加载。
+
+**终端工具注入**：`execute_command` 等 PTY 终端工具不再通过技能系统加载，而是由 `getAgentTools(mode)` 按 `context.terminalType` 直接注入（`local`/`ssh` 模式）；assistant 模式注入 `exec` 工具。`getAgentMode()` 从 `currentRun?.context?.terminalType` 读取，而非依赖已废弃的 `ptyId` 字段。
+
+**工作台 prompt**：`context.workbenchPrompt` 由前端通过 `resolveWorkbenchAgentPrompt(kind, tab)` 填充：
+- `assistant`：注入产出物面板使用规范（`src/workbench/assistant/prompt.ts`）
+- `local`：注入本地终端操作规范（`src/workbench/local/prompt.ts`）
+- `ssh`：注入 SSH 远程终端操作规范（`src/workbench/ssh/prompt.ts`）
+
+**`<sf_workbench>` 标签**：`enhanceUserMessage` 在每条用户消息前注入 `<sf_workbench>{terminalType}</sf_workbench>`，让 AI 在多工作台对话历史中能识别每条消息的运行环境。
 
 ## 执行流程
 

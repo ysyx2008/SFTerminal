@@ -141,8 +141,9 @@ export const terminalOnlyTools: ToolDefinition[] = [
         },
         required: ['key']
       }
-    }
-  },
+    },
+    _meta: { supportedModes: ['local', 'ssh'] }
+  } as ToolDefinitionWithMeta,
   {
     type: 'function',
     function: {
@@ -174,8 +175,9 @@ export const terminalOnlyTools: ToolDefinition[] = [
         },
         required: ['text']
       }
-    }
-  },
+    },
+    _meta: { supportedModes: ['local', 'ssh'] }
+  } as ToolDefinitionWithMeta,
   {
     type: 'function',
     function: {
