@@ -3,7 +3,9 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { execFileSync } from 'child_process'
 import {
-  BROWSER_BRIDGE_CHROMIUM_EXTENSION_ID,
+  BROWSER_BRIDGE_CHROMIUM_CWS_EXTENSION_ID,
+  BROWSER_BRIDGE_CHROMIUM_DEV_EXTENSION_ID,
+  BROWSER_BRIDGE_CHROMIUM_EXTENSION_IDS,
   BROWSER_BRIDGE_FIREFOX_EXTENSION_ID,
   BROWSER_BRIDGE_NATIVE_HOST,
   type BrowserBridgeBrowser,
@@ -82,13 +84,13 @@ function hostLauncherPath(hostDir: string): string {
 
 const MAC_NATIVE_HOST_HELPER_NAME = 'sailfish-browser-host'
 
-function buildChromiumNativeHostManifest(hostPath: string, extensionId: string): Record<string, unknown> {
+function buildChromiumNativeHostManifest(hostPath: string, extensionIds: readonly string[]): Record<string, unknown> {
   return {
     name: BROWSER_BRIDGE_NATIVE_HOST,
     description: 'SailFish Browser Assistant Native Host',
     path: hostPath,
     type: 'stdio',
-    allowed_origins: [`chrome-extension://${extensionId}/`],
+    allowed_origins: extensionIds.map((id) => `chrome-extension://${id}/`),
   }
 }
 
@@ -482,7 +484,7 @@ export function installBrowserBridge(): BrowserBridgeInstallStatus {
 
   const manifestPath = path.join(hostDest, `${BROWSER_BRIDGE_NATIVE_HOST}.json`)
   const hostPath = resolveManifestHostPath(hostDest)
-  const chromiumManifest = buildChromiumNativeHostManifest(hostPath, BROWSER_BRIDGE_CHROMIUM_EXTENSION_ID)
+  const chromiumManifest = buildChromiumNativeHostManifest(hostPath, BROWSER_BRIDGE_CHROMIUM_EXTENSION_IDS)
   const firefoxManifest = buildFirefoxNativeHostManifest(hostPath, BROWSER_BRIDGE_FIREFOX_EXTENSION_ID)
   // 供 detectInstallStatus 读取的副本（Chrome 版）
   writeJson(manifestPath, { ...chromiumManifest, path: hostPath })

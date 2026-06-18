@@ -68,7 +68,9 @@ native-host/host.mjs (Chrome 按连接 spawn)
 
 ### 扩展 ID
 
-- Chromium：`ocdljfppijcjpgaaamgeailkgajgjdml`（manifest `key` 固定）
+- Chromium 开发版（manifest `key`，临时加载）：`ocdljfppijcjpgaaamgeailkgajgjdml`
+- Chromium 商店版（Chrome Web Store）：`dgmhdapfpihhkboikpgfanpgnijbpdhd`
+- Native Host `allowed_origins` **同时包含**上述两个 ID
 - Firefox：`sailfish-browser-bridge@yushen.dev`
 
 ### 扩展 content_scripts（protocol v1 起不再增文件）

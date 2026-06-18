@@ -4,7 +4,8 @@ import * as fs from 'fs'
 import * as net from 'net'
 import * as path from 'path'
 import {
-  BROWSER_BRIDGE_CHROMIUM_EXTENSION_ID,
+  BROWSER_BRIDGE_CHROMIUM_CWS_EXTENSION_ID,
+  BROWSER_BRIDGE_CHROMIUM_DEV_EXTENSION_ID,
   BROWSER_BRIDGE_FIREFOX_EXTENSION_ID,
   type BrowserBridgeAttachTarget,
   type BrowserBridgeBrowser,
@@ -154,7 +155,8 @@ export class BrowserBridgeService {
       connections,
       install,
       extensionIds: {
-        chromium: BROWSER_BRIDGE_CHROMIUM_EXTENSION_ID,
+        chromium: BROWSER_BRIDGE_CHROMIUM_CWS_EXTENSION_ID,
+        chromiumDev: BROWSER_BRIDGE_CHROMIUM_DEV_EXTENSION_ID,
         firefox: BROWSER_BRIDGE_FIREFOX_EXTENSION_ID,
       },
     }
