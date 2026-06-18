@@ -966,6 +966,12 @@ export function useAgentMode(
     const startTime = Date.now()
     inputText.value = ''
 
+    // 并发软上限检查：超过 MAX_CONCURRENT_AGENTS 时提示用户，但不强制阻止
+    if (terminalStore.isAtConcurrencyLimit) {
+      log.warn(`[concurrency] running=${terminalStore.runningAgentCount}, at limit, continuing anyway`)
+      // toast 提示由调用方决定是否显示；这里仅记录日志，不阻塞手动操作
+    }
+
     // 新任务开始，重置 TTS（会停止旧播报）
     if (shouldAutoSpeak.value) {
       tts.startNewTask()

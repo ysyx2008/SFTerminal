@@ -202,6 +202,13 @@ onUnmounted(() => {
       <!-- AI 快速发起对话（Steam 版隐藏，复用 AiComposer） -->
       <WelcomeChatComposer v-if="!isSteamBuild" :active="!!active" />
 
+      <!-- 查看示例入口 -->
+      <div v-if="!isSteamBuild" class="examples-hint">
+        <button type="button" class="examples-hint-btn" @click="openAssistant">
+          💡 {{ t('welcome.viewExamples') }}
+        </button>
+      </div>
+
       <!-- 快速启动卡片 -->
       <div class="quick-start">
         <h2 class="section-title">{{ t('welcome.quickStart') }}</h2>
@@ -439,6 +446,32 @@ onUnmounted(() => {
   text-transform: uppercase;
   letter-spacing: 1px;
   opacity: 0.8;
+}
+
+/* 查看示例入口 */
+.examples-hint {
+  display: flex;
+  justify-content: center;
+  margin-top: -4px;
+  margin-bottom: 10px;
+}
+
+.examples-hint-btn {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 4px;
+  opacity: 0.75;
+  transition: opacity 0.15s ease, color 0.15s ease;
+  font-family: inherit;
+}
+
+.examples-hint-btn:hover {
+  opacity: 1;
+  color: var(--text-secondary);
 }
 
 /* Quick Start Cards */

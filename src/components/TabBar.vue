@@ -133,7 +133,7 @@ const handleNewTab = (shell?: string) => {
 }
 
 const handleNewAssistant = () => {
-  terminalStore.createAssistantTab()
+  terminalStore.goToHome()
   showNewMenu.value = false
 }
 
@@ -187,11 +187,18 @@ const handleDragLeave = () => {
   dragOverIndex.value = null
 }
 
+// 将 displayedTabs 中的显示索引转为 terminalStore.tabs 中的真实索引
+const toRealIndex = (displayIndex: number): number => {
+  const tab = displayedTabs.value[displayIndex]
+  if (!tab) return displayIndex
+  return terminalStore.tabs.findIndex(t => t.id === tab.id)
+}
+
 // 放置
 const handleDrop = (toIndex: number, event: DragEvent) => {
   event.preventDefault()
   if (dragIndex.value !== null && dragIndex.value !== toIndex) {
-    terminalStore.reorderTabs(dragIndex.value, toIndex)
+    terminalStore.reorderTabs(toRealIndex(dragIndex.value), toRealIndex(toIndex))
   }
   dragIndex.value = null
   dragOverIndex.value = null
@@ -211,8 +218,18 @@ const hasMultipleTerminals = computed(() => {
   return terminalStore.tabs.filter(tab => tab.isConnected && tab.ptyId).length > 1
 })
 
-const hasTabs = computed(() => terminalStore.tabs.length > 0)
-const isOnHome = computed(() => hasTabs.value && !terminalStore.activeTabId)
+/**
+ * Tab 栏显示的 tab 列表：过滤掉「未提升的本地助手」—— 这类会话在 Hub 主区（首页视图）
+ * 按焦点显示，不占 Tab 栏。远程助手（isRemote）和已提升（isPromoted）的助手仍显示。
+ */
+const displayedTabs = computed(() =>
+  terminalStore.tabs.filter(
+    tab => !(tab.type === 'assistant' && !tab.isRemote && !tab.isPromoted)
+  )
+)
+// 首页 tab 只在有"真实" tab（终端 / 已提升助手）时出现
+const hasTabs = computed(() => displayedTabs.value.length > 0)
+const isOnHome = computed(() => hasTabs.value && !terminalStore.activeTabId && !terminalStore.hubFocusedAssistantTabId)
 
 // 打开批量命令面板
 const openBatchPanel = () => {
@@ -290,7 +307,7 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
     
     <div ref="tabsContainerRef" class="tabs-container" @scroll="checkScrollState">
       <div
-        v-for="(tab, index) in terminalStore.tabs"
+        v-for="(tab, index) in displayedTabs"
         :key="tab.id"
         class="tab"
         :title="tabAttentionTooltip(tab.id)"

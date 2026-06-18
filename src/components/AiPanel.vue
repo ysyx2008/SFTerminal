@@ -2917,8 +2917,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   flex-direction: column;
   height: 100%;
   position: relative;
-  /* 入场动画 */
-  animation: panelEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes panelEnter {

@@ -159,6 +159,13 @@ export interface TerminalTab {
   remoteChannel?: RemoteChannel
   // 独立助手 Agent ID（仅 assistant 类型标签页使用）
   agentId?: string
+  /**
+   * 本地助手会话是否已「提升」为独立 tab（显示在 Tab 栏、豁免 LRU 回收）。
+   * 未提升的本地助手会话仅在 Hub 主区（首页视图）按焦点显示，不出现在 Tab 栏。
+   */
+  isPromoted?: boolean
+  /** 最近一次成为 Hub 焦点的时间戳（ms），用于 LRU 淘汰排序 */
+  lastFocusedAt?: number
   // 分屏布局（分屏模式时使用）
   splitLayout?: SplitPane
 }
@@ -253,6 +260,12 @@ export const useTerminalStore = defineStore('terminal', () => {
   // 状态
   const tabs = ref<TerminalTab[]>([])
   const activeTabId = ref<string>('')
+  /**
+   * Hub（首页视图）主区当前聚焦的本地助手会话 tab。
+   * 仅在 activeTabId 为空（首页视图）时生效：有值 → 主区显示该会话，为空 → 显示欢迎页。
+   * 已提升为独立 tab（isPromoted）或远程助手不走此焦点。
+   */
+  const hubFocusedAssistantTabId = ref<string>('')
 
   // 终端计数器（用于生成唯一标题）
   const localTerminalCounter = ref(0)
@@ -282,6 +295,18 @@ export const useTerminalStore = defineStore('terminal', () => {
   // 计算属性
   const activeTab = computed(() => tabs.value.find(t => t.id === activeTabId.value))
   const tabCount = computed(() => tabs.value.length)
+
+  /**
+   * Hub 主区当前应显示的助手会话（校验仍存在、是本地助手、且未提升为独立 tab）。
+   * 提升为独立 tab 的会话改由 Tab 栏 + activeTabId 驱动，不再算作 Hub 焦点。
+   */
+  const hubFocusedTab = computed(() => {
+    const id = hubFocusedAssistantTabId.value
+    if (!id) return undefined
+    const tab = tabs.value.find(t => t.id === id)
+    if (!tab || tab.type !== 'assistant' || tab.isRemote || tab.isPromoted) return undefined
+    return tab
+  })
 
   /**
    * 检测本地系统信息
@@ -817,12 +842,28 @@ export const useTerminalStore = defineStore('terminal', () => {
 
     // 如果关闭的是当前标签，切换到其他标签
     if (activeTabId.value === tabId) {
-      if (tabs.value.length > 0) {
-        const newIndex = Math.min(index, tabs.value.length - 1)
-        activeTabId.value = tabs.value[newIndex].id
-      } else {
+      // 本地助手 tab 关闭后回到 Hub 首页
+      if (tab.type === 'assistant' && !tab.isRemote) {
         activeTabId.value = ''
+        hubFocusedAssistantTabId.value = ''
+      } else {
+        // 终端 / 远程助手 tab：找下一个「真实」显示 tab（终端、已提升或远程助手）
+        // 避免跳到 Hub 内未提升助手 tab 导致 activeTabId 非空、侧栏消失
+        const nextDisplayed = tabs.value.find(
+          t => !(t.type === 'assistant' && !t.isRemote && !t.isPromoted)
+        )
+        if (nextDisplayed) {
+          activeTabId.value = nextDisplayed.id
+        } else {
+          // 没有真实 tab 了，回到 Hub 首页（侧栏重新出现）
+          activeTabId.value = ''
+          hubFocusedAssistantTabId.value = ''
+        }
       }
+    }
+    // 如果关闭的是 Hub 焦点会话，清除焦点（主区回欢迎页）
+    if (hubFocusedAssistantTabId.value === tabId) {
+      hubFocusedAssistantTabId.value = ''
     }
 
     return true
@@ -1049,11 +1090,77 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
   }
 
-  /** 回到首页（保留已打开的 tab，仅切换视图） */
-  function goToHome(): void {
-    if (tabs.value.length > 0) {
-      activeTabId.value = ''
+  /**
+   * LRU 会话池淘汰：Hub 内非提升助手 tab 上限 HUB_SESSION_LIMIT。
+   * 超出时淘汰「最久未聚焦 且 未运行 且 未待确认」的会话，触发 agent.cleanup + 移除 tab。
+   * 当前焦点 tab 和新建的 tab（tabId）豁免。
+   */
+  const HUB_SESSION_LIMIT = 5
+
+  function evictHubSessionsIfNeeded(keepTabId: string): void {
+    const candidates = tabs.value.filter(
+      t => t.type === 'assistant' && !t.isRemote && !t.isPromoted && t.id !== keepTabId
+    )
+    if (candidates.length < HUB_SESSION_LIMIT) return
+
+    const evictable = candidates.filter(t => {
+      const meta = deriveTabAgentUiMeta(t.agentState)
+      return !meta.isRunning && !meta.needsAttention
+    })
+
+    // 按最近聚焦时间升序（最久未聚焦优先）
+    evictable.sort((a, b) => (a.lastFocusedAt ?? 0) - (b.lastFocusedAt ?? 0))
+
+    const toEvict = evictable.slice(0, candidates.length - HUB_SESSION_LIMIT + 1)
+    for (const tab of toEvict) {
+      if (tab.agentId) {
+        window.electronAPI.agent.cleanup(tab.agentId).catch(() => {})
+      }
+      const idx = tabs.value.findIndex(t => t.id === tab.id)
+      if (idx >= 0) tabs.value.splice(idx, 1)
+      log.debug(`[LRU] Evicted hub session tab: ${tab.id}`)
     }
+  }
+
+  /**
+   * 在 Hub 主区（首页视图）聚焦某个本地助手会话，而非将其作为独立 tab 激活。
+   * 清空 activeTabId（停留首页视图）并设焦点，使主区渲染该会话的 AssistantWorkbench。
+   * 同时触发 LRU 淘汰，防止会话池无限增长。
+   */
+  function focusHubConversation(tabId: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab || tab.type !== 'assistant') return
+    tab.lastFocusedAt = Date.now()
+    hubFocusedAssistantTabId.value = tabId
+    activeTabId.value = ''
+    setAgentCompletedUnseen(tabId, false)
+    evictHubSessionsIfNeeded(tabId)
+  }
+
+  /** 清除 Hub 焦点会话，主区回到欢迎页 */
+  function clearHubFocus(): void {
+    hubFocusedAssistantTabId.value = ''
+  }
+
+  /**
+   * 将 Hub 内的本地助手会话提升为独立 Tab（出现在 Tab 栏、豁免 LRU 淘汰）。
+   * 若会话已是 isPromoted 则只激活；若不存在则用历史记录新建。
+   */
+  function promoteConversationToTab(tabId: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab) return
+    tab.isPromoted = true
+    // 清除 Hub 焦点（它将以独立 tab 形式存在），切换过去
+    if (hubFocusedAssistantTabId.value === tabId) {
+      hubFocusedAssistantTabId.value = ''
+    }
+    setActiveTab(tabId)
+  }
+
+  /** 回到首页欢迎页（保留已打开的 tab，仅切换视图，并清除 Hub 焦点会话） */
+  function goToHome(): void {
+    activeTabId.value = ''
+    hubFocusedAssistantTabId.value = ''
   }
 
   /**
@@ -1721,6 +1828,19 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
+   * 当前正在运行（前端发起）的 Agent 数量（排除远程 Watch/IM 后端直驱的会话）。
+   */
+  const runningAgentCount = computed(() =>
+    tabs.value.filter(t => t.agentState?.isRunning && !t.isRemote).length
+  )
+
+  /** 前端发起的并发 Agent 软上限（主要防 Watch/定时批量涌入） */
+  const MAX_CONCURRENT_AGENTS = 8
+
+  /** 是否已达并发软上限 */
+  const isAtConcurrencyLimit = computed(() => runningAgentCount.value >= MAX_CONCURRENT_AGENTS)
+
+  /**
    * 设置 Agent 运行状态
    */
   function setAgentRunning(tabId: string, isRunning: boolean, agentId?: string, userTask?: string): void {
@@ -1987,11 +2107,16 @@ export const useTerminalStore = defineStore('terminal', () => {
   function openHistoryConversation(record: AgentRecord): string {
     const existing = findTabByHistoryId(record.id)
     if (existing) {
-      setActiveTab(existing.id)
+      // 已提升为独立 tab → 激活该 tab；否则在 Hub 主区聚焦（不离开首页）
+      if (existing.isPromoted) {
+        setActiveTab(existing.id)
+      } else {
+        focusHubConversation(existing.id)
+      }
       return existing.id
     }
 
-    const tabId = createAssistantTab()
+    const tabId = createAssistantTab({ activate: false })
     markAssistantSkipOnboarding(tabId)
     const configStore = useConfigStore()
     const customTitle = configStore.getConversationDisplayTitle(record.id)
@@ -1999,6 +2124,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       renameTab(tabId, customTitle)
     }
     restoreAgentHistory(tabId, record)
+    focusHubConversation(tabId)
     return tabId
   }
 
@@ -2736,6 +2862,13 @@ export const useTerminalStore = defineStore('terminal', () => {
     reconnectSsh,
     setActiveTab,
     goToHome,
+    hubFocusedAssistantTabId,
+    hubFocusedTab,
+    focusHubConversation,
+    clearHubFocus,
+    promoteConversationToTab,
+    runningAgentCount,
+    isAtConcurrencyLimit,
     updateTabTitle,
     renameTab,
     updateConnectionStatus,

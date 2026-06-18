@@ -10,6 +10,7 @@ const props = defineProps<{
   record: AgentHistorySummary
   isPinned?: boolean
   isOpening?: boolean
+  isActive?: boolean
   tabStatus?: HistoryConversationTabStatus
   statusTooltip?: string
   isEditing?: boolean
@@ -81,6 +82,7 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
     :class="{
       'is-pinned': isPinned,
       'is-opening': isOpening,
+      'is-active': isActive,
       'is-failed': record.status === 'failed',
       'is-aborted': record.status === 'aborted',
       'is-open-in-tab': isOpenInTab,
@@ -156,6 +158,20 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
 
 .conversation-row:hover {
   background: color-mix(in srgb, var(--bg-surface) 75%, transparent);
+}
+
+.conversation-row.is-active {
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+}
+
+.conversation-row.is-active:hover {
+  background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+}
+
+.conversation-row.is-active .item-title,
+.conversation-row.is-active:hover .item-title {
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
 .conversation-row:hover .pin-btn {

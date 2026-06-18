@@ -1,12 +1,23 @@
 # Workbench（工作台）子系统 SPEC
 
-> Last verified: 2026-06-09
+> Last verified: 2026-06-18
 
 ## 职责
 
 把前端「一个 Tab 的界面形态」抽象为**工作台（Workbench）**：一种工作台 = 一组具名区域的固定组合 + 一套（可选的）专用工具贡献。终端、独立助手都是工作台；未来的浏览器工作台等按同一模型扩充。
 
 核心目标：**新增工作台时无需改动 `App.vue` 的渲染分发逻辑**，只在 registry 登记 + 提供渲染器即可。
+
+## 单助手工作台（Hub 模型，2026-06-18）
+
+本地 `assistant` 类型的 Tab 默认进入 **Hub 模式**：Tab 栏不显示，会话由左侧「最近对话」侧栏管理。
+
+- `terminalStore.hubFocusedAssistantTabId`：当前在 Hub 主区展示的会话 tab id。
+- `terminalStore.activeTabId` 为空时显示首页（欢迎页 + 侧栏）；`activeTabId` 为空但 `hubFocusedAssistantTabId` 非空时，首页后叠加 AssistantWorkbench（侧栏始终可见）。
+- **提升**：右键「在新标签页中打开」→ `tab.isPromoted = true`，该 tab 进入 Tab 栏，等价于旧版独立助手 tab。关闭 promoted tab 时自动降级（`isPromoted` 清除），可在侧栏重新打开。
+- **LRU 回收**：Hub 内非提升会话上限 5 个；焦点切换时淘汰最久未聚焦 & 空闲（不运行、不待确认）的会话（agent.cleanup + tab 移除）。
+- **并发软上限**：前端发起的并发 Agent 上限 8 个（`isAtConcurrencyLimit` computed），超出时记录警告，不阻止手动操作。
+- **远程助手**（`isRemote = true`）不受 Hub 模型影响，始终在 Tab 栏独立显示。
 
 ## 设计原则（不可随意推翻）
 

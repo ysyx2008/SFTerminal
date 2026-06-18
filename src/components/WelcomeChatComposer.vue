@@ -311,10 +311,11 @@ const handleComposerSubmit = async (message: string) => {
   skipDraftPersist = true
   clearImages()
   terminalStore.clearWelcomeComposerDraft()
-  const tabId = terminalStore.createAssistantTab()
+  const tabId = terminalStore.createAssistantTab({ activate: false })
   terminalStore.transferUploadedDocs(WELCOME_COMPOSER_TAB_ID, tabId)
   terminalStore.setPendingComposerHandoff(tabId, { message, images: imagesSnapshot })
   terminalStore.markAssistantSkipOnboarding(tabId)
+  terminalStore.focusHubConversation(tabId)
 }
 
 onMounted(() => {

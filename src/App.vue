@@ -127,6 +127,9 @@ function writeCachedRecallSidebarWidth(width: number): void {
 
 const recallSidebarWidth = ref(readCachedRecallSidebarWidth())
 const isRecallSidebarResizing = ref(false)
+const recallSidebarCollapsed = ref(
+  (() => { try { return localStorage.getItem('recallSidebarCollapsed') === '1' } catch { return false } })()
+)
 
 const showSettings = ref(false)
 const showSmartPatrol = ref(false)
@@ -161,6 +164,11 @@ function openAppMenuFromButton() {
 }
 
 const hasTerminalTab = computed(() => terminalStore.tabs.some(t => t.type === 'local' || t.type === 'ssh'))
+
+// Tab 栏"可见" tab 数：终端 + 已提升助手 + 远程助手（与 TabBar.displayedTabs 保持同步）
+const hasDisplayedTabs = computed(() =>
+  terminalStore.tabs.some(t => !(t.type === 'assistant' && !t.isRemote && !t.isPromoted))
+)
 
 // UI 主题：使用 effectiveUiTheme 而非 uiTheme，这样在"跟随系统"模式下
 // 系统外观切换时主题能立即反映出来（auto 下 effective = dark/light）
@@ -235,7 +243,7 @@ const handleGlobalKeydown = (event: KeyboardEvent) => {
 
   if (matchAccelerator(event, shortcuts.newAssistantTab)) {
     event.preventDefault()
-    terminalStore.createAssistantTab()
+    terminalStore.goToHome()
     return
   }
 
@@ -322,12 +330,24 @@ const handleGlobalKeyup = (event: KeyboardEvent) => {
 
 // 处理关闭快捷键
 const handleCloseShortcut = async () => {
-  if (terminalStore.activeTabId) {
-    await terminalStore.closeTab(terminalStore.activeTabId)
-  } else if (terminalStore.tabs.length === 0) {
-    await window.electronAPI.window.close()
+  const activeTab = terminalStore.activeTab
+  if (activeTab) {
+    if (activeTab.type === 'assistant') {
+      // 助手 tab（不管是独立 promoted 还是远程助手）视为同一工作台，Cmd+W 隐藏窗口
+      await window.electronAPI.window.close()
+    } else {
+      // 终端 tab：关闭当前 tab；关完若无任何真实 tab 则隐藏窗口
+      await terminalStore.closeTab(activeTab.id)
+      if (!hasDisplayedTabs.value) {
+        await window.electronAPI.window.close()
+      }
+    }
+  } else {
+    // 首页 / Hub 视图（无激活 tab）：无真实 tab 则隐藏窗口
+    if (!hasDisplayedTabs.value) {
+      await window.electronAPI.window.close()
+    }
   }
-  // 在首页视图且有 tab 时，不关闭窗口
 }
 
 // 清理函数存储
@@ -395,9 +415,23 @@ onMounted(async () => {
     }
   } catch { /* ignore */ }
 
+  // 加载最近对话侧栏折叠状态
+  try {
+    const savedCollapsed = await window.electronAPI.config.get('recallSidebarCollapsed') as boolean | undefined
+    if (typeof savedCollapsed === 'boolean') {
+      recallSidebarCollapsed.value = savedCollapsed
+    }
+  } catch { /* ignore */ }
+
   // 注册标签页数量查询响应（用于退出确认）
+  // 只计「有意义」的 tab：终端、已提升助手 tab、运行中的 Hub 助手；纯空闲的 Hub 助手不计
   cleanupTerminalCountListener = window.electronAPI.window.onRequestTerminalCount(() => {
-    window.electronAPI.window.responseTerminalCount(terminalStore.tabs.length)
+    const count = terminalStore.tabs.filter(t => {
+      if (t.type !== 'assistant') return true           // 终端 tab 始终计
+      if (t.isRemote || t.isPromoted) return true       // 远程 / 已提升助手计
+      return t.agentState?.isRunning === true           // Hub 内运行中的助手计
+    }).length
+    window.electronAPI.window.responseTerminalCount(count)
   })
 
   // ── 后端启动进度（fixed overlay，不占布局空间）──────────────────────────────
@@ -833,23 +867,31 @@ const initializeApp = async () => {
   }
 }
 
-// 是否显示欢迎页（无 tab，或从固定「首页」tab 返回时显示）
+/**
+ * Hub 主区当前渲染的 tab：activeTabId（终端/远程助手/已提升助手）优先，
+ * 其次是 Hub 焦点会话（本地未提升助手，停留首页视图）。
+ */
+const activeSurfaceTabId = computed(
+  () => terminalStore.activeTabId || terminalStore.hubFocusedTab?.id || ''
+)
+// 是否显示欢迎页：没有任何 surface tab 时显示（包含 Hub 焦点会话时隐藏）
 const showWelcomePage = computed(() =>
-  !showSmartPatrol.value && (terminalStore.tabs.length === 0 || !terminalStore.activeTabId)
+  !showSmartPatrol.value && !activeSurfaceTabId.value
 )
 /** 主工作区显示某个 tab 工作台（欢迎页 / 智能巡检时隐藏，但 tab 组件保持挂载） */
 const showTabWorkbench = computed(
   () => !showSmartPatrol.value && !showWelcomePage.value
 )
-// 欢迎页最近对话侧栏：常驻，不可关闭
-const showRecallSidebar = computed(() => showWelcomePage.value && !isSteamBuild)
+// 最近对话侧栏：Hub 视图（activeTabId 为空，即首页/会话态）常驻，独立终端/助手全屏 tab 时隐藏
+const showRecallSidebar = computed(() => !terminalStore.activeTabId && !showSmartPatrol.value && !isSteamBuild)
 /** 欢迎页是否真正展示给用户（启动完成 + 无全屏遮挡），用于控制首次启动入场动画 */
 const welcomePageReady = computed(
   () => welcomeUiReady.value && showWelcomePage.value && !isFullScreenOverlayOpen.value
 )
-// 从欢迎页打开助手（空对话）
+// 从欢迎页打开助手（空对话，在 Hub 主区聚焦，不创建独立 tab）
 const openAssistantFromWelcome = () => {
-  terminalStore.createAssistantTab()
+  const tabId = terminalStore.createAssistantTab({ activate: false })
+  terminalStore.focusHubConversation(tabId)
 }
 
 // 从欢迎页打开本地终端
@@ -915,6 +957,12 @@ const toggleSidebar = () => {
 
 const openHostSidebar = () => {
   showSidebar.value = true
+}
+
+const toggleRecallSidebarCollapsed = () => {
+  recallSidebarCollapsed.value = !recallSidebarCollapsed.value
+  try { localStorage.setItem('recallSidebarCollapsed', recallSidebarCollapsed.value ? '1' : '0') } catch { /* ignore */ }
+  window.electronAPI.config.set('recallSidebarCollapsed', recallSidebarCollapsed.value).catch(() => {})
 }
 
 const handleRecallSidebarResize = (e: MouseEvent) => {
@@ -1035,7 +1083,7 @@ const handleMenuCommand = async (command: string) => {
       terminalStore.createTab('local')
       break
     case 'newAssistantTab':
-      terminalStore.createAssistantTab()
+      terminalStore.goToHome()
       break
     case 'newSshConnection':
       openHostSidebar()
@@ -1190,16 +1238,21 @@ onUnmounted(() => {
 
     <!-- 主体内容 -->
     <div class="app-body">
-      <!-- 左侧边栏 - 最近对话（欢迎页常驻） -->
+      <!-- 左侧边栏 - 最近对话（Hub 视图常驻，可折叠） -->
       <aside
         v-show="showRecallSidebar"
         class="sidebar sidebar--recall"
-        :style="{ width: `${recallSidebarWidth}px` }"
+        :class="{ 'sidebar--recall-collapsed': recallSidebarCollapsed }"
+        :style="recallSidebarCollapsed ? undefined : { width: `${recallSidebarWidth}px` }"
       >
         <div class="sidebar-content sidebar-content--recall">
-          <RecentConversationsPanel />
+          <RecentConversationsPanel
+            :collapsed="recallSidebarCollapsed"
+            @toggle-collapse="toggleRecallSidebarCollapsed"
+          />
         </div>
         <div
+          v-if="!recallSidebarCollapsed"
           class="recall-sidebar-resize-handle"
           :class="{ resizing: isRecallSidebarResizing }"
           @mousedown="startRecallSidebarResize"
@@ -1247,14 +1300,14 @@ onUnmounted(() => {
         <div
           v-for="tab in terminalStore.tabs"
           :key="tab.id"
-          v-show="showTabWorkbench && tab.id === terminalStore.activeTabId"
+          v-show="showTabWorkbench && tab.id === activeSurfaceTabId"
           class="tab-view main-surface"
         >
           <component
             :is="resolveWorkbenchRenderer(tab.type)"
             :ref="(el: any) => { tabViewRefs[tab.id] = el }"
             :tab="tab"
-            :is-active="showTabWorkbench && tab.id === terminalStore.activeTabId"
+            :is-active="showTabWorkbench && tab.id === activeSurfaceTabId"
             :class="tab.type === 'assistant' ? 'tab-view-workbench' : 'tab-view-inner'"
           />
         </div>
@@ -1532,6 +1585,11 @@ onUnmounted(() => {
   background: var(--bg-secondary);
   /* 常驻侧栏，回首页时不重复 slideInLeft */
   animation: none;
+}
+
+.sidebar--recall-collapsed {
+  width: 36px !important;
+  overflow: hidden;
 }
 
 .recall-sidebar-resize-handle {

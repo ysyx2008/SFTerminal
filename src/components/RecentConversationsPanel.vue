@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Pin, Search, X } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, Pin, Plus, Search, X } from 'lucide-vue-next'
 import type { AgentHistorySummary, AgentRecord } from '@shared/types'
 import type { HistoryConversationTabStatus } from '../stores/terminal'
 import {
@@ -14,9 +14,22 @@ import { useTerminalStore } from '../stores/terminal'
 import { toast } from '../composables/useToast'
 import { showConfirm } from '../composables/useConfirm'
 
+const props = defineProps<{
+  collapsed?: boolean
+}>()
+
+const emit = defineEmits<{
+  'toggle-collapse': []
+}>()
+
 const { t, locale } = useI18n()
 const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
+
+/** 新建对话：回到欢迎页，右侧清空等待输入 */
+const handleNewConversation = () => {
+  terminalStore.goToHome()
+}
 
 const searchText = ref('')
 const searchExpanded = ref(false)
@@ -270,12 +283,17 @@ const displayedRecordIds = computed(() => {
   return ids
 })
 
-/** 当前可见行的状态（读 store 派生索引，随 agentState 自动更新） */
+/**
+ * 当前可见行的状态（只对已提升为独立 tab 的会话显示图标，Hub 焦点/未提升的显示为 closed）。
+ * 未提升的会话在侧栏不显示运行中/已打开等状态，避免与 Hub 焦点高亮语义混淆。
+ */
 const conversationMetaById = computed(() => {
   const historyMeta = terminalStore.historyConversationMetaBySessionId
   const map = new Map<string, { status: HistoryConversationTabStatus; tooltip: string }>()
   for (const id of displayedRecordIds.value) {
-    const meta = historyMeta.get(id) ?? CLOSED_HISTORY_CONVERSATION_META
+    // 只有 isPromoted tab 才读真实 meta；其余始终显示 closed
+    const tab = terminalStore.findTabByHistoryId(id)
+    const meta = (tab?.isPromoted ? historyMeta.get(id) : undefined) ?? CLOSED_HISTORY_CONVERSATION_META
     map.set(id, { status: meta.status, tooltip: formatHistoryConversationTooltip(meta, t) })
   }
   return map
@@ -287,12 +305,32 @@ const getRecordMeta = (id: string) =>
     tooltip: formatHistoryConversationTooltip(CLOSED_HISTORY_CONVERSATION_META, t),
   }
 
+/**
+ * 判断某条历史对话是否为当前"激活"状态：
+ * - Hub 焦点（非提升）：当前在主区展示的会话
+ * - promoted tab：当前 activeTabId 与该 tab 匹配
+ * 用于侧栏高亮，仅视觉，不含状态图标语义。
+ */
+const isActiveSurface = (historyId: string): boolean => {
+  const tab = terminalStore.findTabByHistoryId(historyId)
+  if (!tab) return false
+  if (tab.isPromoted) return terminalStore.activeTabId === tab.id
+  // Hub 焦点：agentState.sessionId 对应 historyId
+  const focused = terminalStore.hubFocusedTab
+  return !!focused && focused.agentState?.sessionId === historyId
+}
+
 const openConversation = async (summary: AgentHistorySummary) => {
   if (editingId.value || openingId.value) return
 
   const existingTab = terminalStore.findTabByHistoryId(summary.id)
   if (existingTab) {
-    terminalStore.setActiveTab(existingTab.id)
+    // 已提升为独立 tab → 激活该 tab；否则在 Hub 主区聚焦（停留首页视图，侧栏保留）
+    if (existingTab.isPromoted) {
+      terminalStore.setActiveTab(existingTab.id)
+    } else {
+      terminalStore.focusHubConversation(existingTab.id)
+    }
     return
   }
 
@@ -347,6 +385,36 @@ const onMenuRename = () => {
   if (record) startRename(record)
 }
 
+const onMenuOpenInTab = async () => {
+  const record = contextMenu.value.record
+  closeContextMenu()
+  if (!record) return
+
+  const existingTab = terminalStore.findTabByHistoryId(record.id)
+  if (existingTab) {
+    // 已有 tab（可能是 Hub 焦点），直接提升
+    terminalStore.promoteConversationToTab(existingTab.id)
+    return
+  }
+
+  // 没有 tab：先加载历史记录建 tab，再提升
+  openingId.value = record.id
+  try {
+    const fullRecord = (await window.electronAPI.history.getAgentRecordById(record.id)) as AgentRecord | undefined
+    if (!fullRecord) {
+      toast.error(t('ai.agentWelcome.historyRecordMissing'))
+      return
+    }
+    const tabId = terminalStore.openHistoryConversation(fullRecord)
+    terminalStore.promoteConversationToTab(tabId)
+  } catch (e) {
+    console.error('Failed to open conversation in tab:', e)
+    toast.error(t('ai.agentWelcome.historyRecordMissing'))
+  } finally {
+    openingId.value = null
+  }
+}
+
 const onMenuTogglePin = async () => {
   const record = contextMenu.value.record
   closeContextMenu()
@@ -361,12 +429,21 @@ const onMenuTogglePin = async () => {
 
 const isHistoryOpenInTab = (historyId: string) => !!terminalStore.findTabByHistoryId(historyId)
 
+/** 是否是当前在 Hub 主区聚焦的会话（用于高亮） */
+const isHubFocused = (historyId: string): boolean => {
+  const focused = terminalStore.hubFocusedTab
+  if (!focused) return false
+  return focused.agentState?.sessionId === historyId
+}
+
 const onMenuDelete = async () => {
   const record = contextMenu.value.record
   closeContextMenu()
   if (!record) return
 
-  if (isHistoryOpenInTab(record.id)) {
+  const existingTab = terminalStore.findTabByHistoryId(record.id)
+  // 已提升为独立 tab：阻止删除，让用户先关 tab
+  if (existingTab?.isPromoted) {
     toast.warning(t('welcome.conversations.deleteBlockedTabOpen'))
     return
   }
@@ -386,6 +463,10 @@ const onMenuDelete = async () => {
     if (!deleted) {
       toast.error(t('ai.agentWelcome.historyRecordMissing'))
       return
+    }
+    // 清理 Hub 焦点 tab（非提升的 runtime tab）
+    if (existingTab) {
+      await terminalStore.closeTab(existingTab.id, true)
     }
     summaries.value = summaries.value.filter(s => s.id !== record.id)
     await configStore.pruneConversationMetadata(new Set(summaries.value.map(s => s.id)))
@@ -422,29 +503,60 @@ const loadMore = () => {
 </script>
 
 <template>
-  <div class="conversation-panel">
-    <div class="panel-header" :class="{ 'is-search-open': searchExpanded }">
-      <span v-if="!searchExpanded" class="panel-title">{{ t('header.recentConversations') }}</span>
-      <input
-        v-else
-        ref="searchInputRef"
-        v-model="searchText"
-        type="text"
-        class="input search-input"
-        :placeholder="t('welcome.conversations.searchPlaceholder')"
-        @blur="handleSearchBlur"
-        @keydown.escape.prevent="closeSearch()"
-      />
+  <div class="conversation-panel" :class="{ 'is-collapsed': props.collapsed }">
+    <!-- 折叠态：只显示展开按钮 -->
+    <div v-if="props.collapsed" class="panel-header panel-header--collapsed">
       <button
         type="button"
-        class="search-toggle"
-        :title="searchExpanded ? t('welcome.conversations.searchClose') : t('welcome.conversations.searchOpen')"
-        @click="toggleSearch"
+        class="panel-action-btn"
+        :title="t('welcome.conversations.expandSidebar')"
+        @click="emit('toggle-collapse')"
       >
-        <X v-if="searchExpanded" :size="14" />
-        <Search v-else :size="14" />
+        <ChevronRight :size="14" />
       </button>
     </div>
+
+    <!-- 展开态：正常 header -->
+    <template v-else>
+      <div class="panel-header" :class="{ 'is-search-open': searchExpanded }">
+        <!-- 搜索展开时只显示输入框和关闭搜索按钮 -->
+        <template v-if="searchExpanded">
+          <input
+            ref="searchInputRef"
+            v-model="searchText"
+            type="text"
+            class="input search-input"
+            :placeholder="t('welcome.conversations.searchPlaceholder')"
+            @blur="handleSearchBlur"
+            @keydown.escape.prevent="closeSearch()"
+          />
+          <button type="button" class="search-toggle" :title="t('welcome.conversations.searchClose')" @click="toggleSearch">
+            <X :size="14" />
+          </button>
+        </template>
+        <!-- 正常态：新的对话按钮（主操作）+ 搜索 + 折叠 -->
+        <template v-else>
+          <button
+            type="button"
+            class="new-conversation-btn"
+            @click="handleNewConversation"
+          >
+            <Plus :size="13" />
+            <span>{{ t('welcome.conversations.newConversation') }}</span>
+          </button>
+          <button type="button" class="search-toggle" :title="t('welcome.conversations.searchOpen')" @click="toggleSearch">
+            <Search :size="14" />
+          </button>
+          <button
+            type="button"
+            class="panel-action-btn"
+            :title="t('welcome.conversations.collapseSidebar')"
+            @click="emit('toggle-collapse')"
+          >
+            <ChevronLeft :size="14" />
+          </button>
+        </template>
+      </div>
 
     <div class="conversation-list">
       <div v-if="isLoading && summaries.length === 0" class="empty-state">
@@ -468,6 +580,7 @@ const loadMore = () => {
               :record="entry.record"
               :is-pinned="entry.pinned"
               :is-opening="openingId === entry.record.id"
+              :is-active="isActiveSurface(entry.record.id)"
               :tab-status="getRecordMeta(entry.record.id).status"
               :status-tooltip="getRecordMeta(entry.record.id).tooltip"
               :is-editing="editingId === entry.record.id"
@@ -498,6 +611,7 @@ const loadMore = () => {
         </template>
       </div>
     </div>
+    </template><!-- end v-else (展开态) -->
 
     <Teleport to="body">
       <div v-if="contextMenu.show" class="context-menu-overlay" @click="closeContextMenu" />
@@ -508,6 +622,10 @@ const loadMore = () => {
         @click.stop
         @contextmenu.prevent
       >
+        <button type="button" class="context-menu-item" @click="onMenuOpenInTab">
+          {{ t('welcome.conversations.openInTab') }}
+        </button>
+        <div class="context-menu-separator" role="separator" />
         <button type="button" class="context-menu-item" @click="onMenuRename">
           {{ t('welcome.conversations.rename') }}
         </button>
@@ -537,15 +655,72 @@ const loadMore = () => {
 .panel-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   height: 36px;
-  padding: 0 8px 0 10px;
+  padding: 0 6px 0 8px;
   flex-shrink: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
 }
 
 .panel-header.is-search-open {
   padding-left: 8px;
+}
+
+.panel-header--collapsed {
+  justify-content: center;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+}
+
+.new-conversation-btn {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-surface) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.new-conversation-btn:hover {
+  background: color-mix(in srgb, var(--bg-surface) 90%, transparent);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+.panel-action-btn {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.panel-action-btn:hover {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-surface) 75%, transparent);
+}
+
+.conversation-panel.is-collapsed .conversation-list {
+  display: none;
 }
 
 .panel-title {
