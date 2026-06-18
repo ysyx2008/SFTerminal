@@ -69,6 +69,7 @@ if (!gotTheLock) {
 }
 
 registerGracefulShutdownSignals()
+registerDevHotReloadGracefulShutdown()
 
 // 深链 URL 队列：窗口未就绪时暂存，加载完成后依次发送
 const pendingDeepLinkUrls: string[] = []
@@ -896,6 +897,28 @@ function registerGracefulShutdownSignals(): void {
   }
   process.on('SIGINT', () => shutdown('SIGINT'))
   process.on('SIGTERM', () => shutdown('SIGTERM'))
+}
+
+/**
+ * dev 主进程热重载：vite-plugin-electron 默认 treeKillSync 先杀 LanceDB worker，
+ * 容易在 table.add / compact 半截时留下损坏的 .lance 文件。
+ * 在 vite 重启 Electron 前先收 graceful-shutdown，跑完 disposeAsync 再退出。
+ */
+function registerDevHotReloadGracefulShutdown(): void {
+  if (!process.env.VITE_DEV_SERVER_URL) return
+  process.on('message', (msg: unknown) => {
+    const type = typeof msg === 'object' && msg !== null && 'type' in msg
+      ? (msg as { type?: string }).type
+      : undefined
+    if (type !== 'graceful-shutdown') return
+    if (shuttingDown) return
+    shuttingDown = true
+    forceQuit = true
+    log.info('dev 热重载：收到 graceful-shutdown，正在释放知识库 worker...')
+    cleanupAllServices()
+      .catch(err => log.warn('dev graceful-shutdown 失败:', err))
+      .finally(() => process.exit(0))
+  })
 }
 
 // ==================== 主窗口 ====================

@@ -4,6 +4,26 @@ import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import { resolve } from 'path'
 import { copyFileSync, existsSync, mkdirSync } from 'fs'
+import type { ChildProcess } from 'node:child_process'
+
+/** dev 主进程 rebuild 前给 Electron 最多 4s 优雅退出，避免 LanceDB 写入/compaction 被强杀 */
+const DEV_GRACEFUL_SHUTDOWN_MS = 4000
+
+async function restartElectronDev(
+  startup: (argv?: string[], options?: import('node:child_process').SpawnOptions, customElectronPkg?: string) => Promise<void>
+): Promise<void> {
+  const proc = (process as NodeJS.Process & { electronApp?: ChildProcess }).electronApp
+  if (proc && !proc.killed) {
+    proc.send?.({ type: 'graceful-shutdown' })
+    await Promise.race([
+      new Promise<void>(resolve => {
+        proc.once('exit', () => resolve())
+      }),
+      new Promise<void>(resolve => setTimeout(resolve, DEV_GRACEFUL_SHUTDOWN_MS)),
+    ])
+  }
+  await startup()
+}
 
 // 复制 jieba-wasm 的 WASM 文件到 dist-electron
 function copyJiebaWasm() {
@@ -131,6 +151,9 @@ export default defineConfig({
     electron([
       {
         entry: 'electron/main.ts',
+        onstart({ startup }) {
+          void restartElectronDev(startup)
+        },
         vite: {
           define: {
             __STEAM_BUILD__: isSteamBuild
