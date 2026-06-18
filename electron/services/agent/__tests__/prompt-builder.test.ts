@@ -253,13 +253,13 @@ describe('PromptBuilder', () => {
       expect(prompt).toContain('🌐 SSH 远程终端')
     })
 
-    it('should not include SSH label for local terminal', () => {
+    it('should show local terminal type in host environment', () => {
       const context = createMockContext({ terminalType: 'local' })
       const builder = new PromptBuilder({ context })
       const prompt = builder.build()
       
-      expect(prompt).not.toContain('SSH')
-      expect(prompt).toContain('💻 本地终端')
+      expect(prompt).toContain('- **终端类型**: 💻 本地终端')
+      expect(prompt).not.toContain('🌐 SSH 远程终端')
     })
   })
 

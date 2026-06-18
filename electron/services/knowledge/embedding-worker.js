@@ -17,7 +17,6 @@ let pipelineFn = null
 let env = null
 let extractor = null
 let currentModelKey = null
-let currentDevice = 'auto'
 
 async function loadTransformers() {
   if (pipelineFn) return { pipeline: pipelineFn, env }
@@ -60,7 +59,6 @@ async function handleInitialize(data) {
     dtype: resolvedDtype,
   })
   currentModelKey = key
-  currentDevice = resolvedDevice
 
   return { loaded: true, modelName, device: resolvedDevice }
 }

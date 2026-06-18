@@ -501,10 +501,11 @@ export class KnowledgeService extends EventEmitter {
     if (docs.length === 0) return
 
     // 并行获取两个索引的当前 docId 集合
-    let [vectorDocIds, bm25DocIds] = await Promise.all([
+    const [vectorDocIdsInitial, bm25DocIds] = await Promise.all([
       this.vectorStorage.getAllDocIds(),
       Promise.resolve(this.bm25Index.getIndexedDocIds()),
     ])
+    let vectorDocIds = vectorDocIdsInitial
 
     // 防护：getAllDocIds 查询失败会返回空集，勿把「全库 5606 篇都缺失」误判为需全量补建
     if (vectorDocIds.size === 0 && docs.length >= 50) {
@@ -784,7 +785,7 @@ export class KnowledgeService extends EventEmitter {
     try {
       const validDocIds = new Set(this.documentsIndex.keys())
 
-      let orphanDocIds = await this.findOrphanDocIds(validDocIds)
+      const orphanDocIds = await this.findOrphanDocIds(validDocIds)
       if (orphanDocIds.length === 0) {
         return
       }
