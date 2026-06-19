@@ -348,16 +348,54 @@ export function useAgentMode(
 
   const shouldFollowBottom = () => stickyFollowBottom || isUserNearBottom.value
 
-  const shouldFollowResize = () => skipScrollUpdate || shouldFollowBottom()
+  // 仅跟底意图为真时 ResizeObserver 才贴底；不可单独依赖 skipScrollUpdate——
+  // grace 窗口内用户拖滚动条上滚时 skipScrollUpdate 仍为 true，会误把阅读位拽回底部（回归 bug）。
+  const shouldFollowResize = () => shouldFollowBottom()
+
+  const cancelFlipAnimation = () => {
+    if (pendingFlipFrame !== null) {
+      cancelAnimationFrame(pendingFlipFrame)
+      pendingFlipFrame = null
+    }
+    const wrapper = contentObservedTarget
+    if (wrapper) {
+      wrapper.style.transition = ''
+      wrapper.style.transform = ''
+    }
+  }
+
+  /** 用户主动上滚离开底部：清除跟底粘性、grace 窗口与 FLIP，避免流式 chunk 继续拽底或整列晃动 */
+  const userScrolledAway = () => {
+    stickyFollowBottom = false
+    setIsUserNearBottom(false)
+    hasNewMessage.value = true
+    if (scrollGraceTimer) {
+      clearTimeout(scrollGraceTimer)
+      scrollGraceTimer = null
+    }
+    skipScrollUpdate = false
+    cancelFlipAnimation()
+  }
 
   // 更新用户滚动位置状态（由组件的 scroll 事件调用）
   const updateScrollPosition = () => {
-    // 跳过强制滚动期间的状态更新，避免被 scroll 事件覆盖
-    if (skipScrollUpdate) return
     const el = messagesRef.value
     if (!el) return
 
     const { scrollTop } = el
+
+    // 不在底部且 scrollTop 减小 → 用户上滚阅读，须优先于 skipScrollUpdate 早退
+    // （拖滚动条上滚不会触发 wheel，但会触发 scroll；grace 期内早退会漏判）
+    if (scrollTop < lastKnownScrollTop - 10 && !checkIsNearBottom()) {
+      userScrolledAway()
+      lastKnownScrollTop = scrollTop
+      saveScrollTop()
+      return
+    }
+
+    // 跳过强制滚动期间的状态更新，避免被 scroll 事件覆盖
+    if (skipScrollUpdate) return
+
     const nearBottom = checkIsNearBottom()
     const outsideAutoScrollGrace = Date.now() - lastAutoScrollAt > AUTO_SCROLL_GRACE_MS
     const scrolledUpSignificantly =
@@ -367,7 +405,10 @@ export function useAgentMode(
       stickyFollowBottom = true
       hasNewMessage.value = false
     } else if (scrolledUpSignificantly) {
-      stickyFollowBottom = false
+      userScrolledAway()
+      lastKnownScrollTop = scrollTop
+      saveScrollTop()
+      return
     }
 
     lastKnownScrollTop = scrollTop
@@ -640,13 +681,7 @@ export function useAgentMode(
 
   const onMessagesWheel = (e: WheelEvent) => {
     if (e.deltaY < 0) {
-      stickyFollowBottom = false
-      setIsUserNearBottom(false)
-      if (scrollGraceTimer) {
-        clearTimeout(scrollGraceTimer)
-        scrollGraceTimer = null
-      }
-      skipScrollUpdate = false
+      userScrolledAway()
     }
   }
 

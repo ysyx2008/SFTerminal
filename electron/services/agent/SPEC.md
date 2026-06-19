@@ -388,7 +388,7 @@ run(message, context, options)
 
 **承诺**：`useAgentMode` 内挂 `ResizeObserver` 直接监听 DynamicScroller 的内容容器 `.vue-recycle-scroller__item-wrapper` 自身高度变化。该 wrapper 高度即虚拟列表的 totalSize；ResizeObserver 回调时机在 layout 之后、paint 之前，那一刻把 `scrollTop` 钉到最新 `scrollHeight`，浏览器同帧合成出来的画面已经是贴底状态。
 
-- **触发条件**：`stickyFollowBottom`（用户发消息/点新消息后主动跟底）或 `isUserNearBottom === true`（用户视觉处于底部）或 `skipScrollUpdate` 期间（强制贴底窗口内）；用户上滚（wheel 或显著 scrollTop 减小）后 `stickyFollowBottom = false`，ResizeObserver 不会越权强行贴底
+- **触发条件**：`stickyFollowBottom`（用户发消息/点新消息后主动跟底）或 `isUserNearBottom === true`（用户视觉处于底部）；**不可**单独用 `skipScrollUpdate` 触发贴底（grace 窗口内用户拖滚动条上滚会漏判）。用户上滚（wheel、拖滚动条离底、或显著 scrollTop 减小）后清除跟底粘性并取消 FLIP，`ResizeObserver` 不会越权强行贴底
 - **失败案例（修复前）**：`doScrollIfNeeded` 仅在 `nextTick` 后调一次 `scrollTop = scrollHeight`，但 DynamicScroller 的 totalSize 是 item 的 ResizeObserver 异步上报的，nextTick 时 totalSize 还是旧值，于是滚到的是"旧底"；浏览器 paint 出新内容、半行裸露在视区底外，下一波 chunk 才补上去
 - **修复（commit `274a2386`）**：在 `useAgentMode` 内 `installContentResizeObserver` 直接观察 wrapper 高度；`doScrollIfNeeded` 等粗粒度滚动入口保留，作为新 step 加入瞬间的初始贴底兜底
 - **回归保护**：禁止把 ResizeObserver 改成基于 step.content 长度等内容驱动的判断（脆弱，且重新引入"vue-virtual-scroller 内部 size 测量异步"的根本问题）；禁止改成 setTimeout/setInterval 轮询（错过 paint 窗口）

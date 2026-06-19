@@ -2099,31 +2099,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
       </div>
 
       <!-- 消息列表（虚拟滚动） -->
-      <!-- 隔离消息区渲染，避免 inputText 变化拖着整块历史列表一起重渲染 -->
-      <div
-        class="ai-messages-wrapper"
-        v-memo="[
-          flattenedItems,
-          agentTaskGroups.length,
-          agentUserTask,
-          isAgentRunning,
-          recentHistory,
-          showHistoryModal,
-          allHistory,
-          hasMoreHistory,
-          historySearchKeyword,
-          isLoadingHistory,
-          isLoadingAllHistory,
-          isHistorySearchLoading,
-          historyFullTextSearchActive,
-          historySearchTotalMatched,
-          executionMode,
-          isStandaloneAssistant,
-          hasNewMessage,
-          displayedExamples,
-          shuffleSpinning
-        ]"
-      >
+      <div class="ai-messages-wrapper">
         <DynamicScroller
           ref="scrollerRef"
           :items="flattenedItems"
