@@ -55,7 +55,7 @@ export const browserTools: ToolDefinition[] = [
           mode: {
             type: 'string',
             enum: ['attach', 'launch'],
-            description: 'attach 或 launch（默认 launch）'
+            description: 'attach 或 launch。未指定时：浏览器助手已连接则自动 attach，否则 launch'
           },
           url: {
             type: 'string',

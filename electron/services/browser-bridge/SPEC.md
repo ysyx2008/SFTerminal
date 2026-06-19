@@ -61,6 +61,7 @@ native-host/host.mjs (Chrome 按连接 spawn)
 - attach 会话存于 `bridge-session.ts`（含 `origin` + `browserTarget` + `extensionPing`），与 Playwright `session.ts` 并行
 - `browser_get_content`（auto/article）：扩展 `page_html` → 桌面端 `extractPageContentFromHtml`
 - 未 attach 时行为不变
+- Agent 系统提示在 Tier 2 注入 `buildBrowserBridgePromptSection()`（扩展在线时告知优先 attach、无需 browser_launch）
 
 ### Native Host 名
 

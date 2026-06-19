@@ -13,6 +13,8 @@ import type { AgentMbtiType } from '../config.service'
 import { getUserSkillService } from '../user-skill.service'
 import { getWorkspacePath, getScratchPath } from './tools/file'
 import { createLogger } from '../../utils/logger'
+import { buildBrowserBridgePromptSection } from '../browser-bridge/prompt-section'
+import { getBrowserBridgeService } from '../browser-bridge/browser-bridge.service'
 import { t } from './i18n'
 
 const log = createLogger('PromptBuilder')
@@ -279,6 +281,7 @@ export class PromptBuilder {
 
       // ── Tier 2: 终端/主机级 ──
       this.buildHostEnvironment(),
+      this.buildBrowserBridgeSection(),
       this.buildWorkbenchPromptSection(),
       this.buildSplitPanesSection(),
       this.buildRemoteChannelContext(),
@@ -662,6 +665,15 @@ export class PromptBuilder {
     const trimmed = this.watchListSummary?.trim()
     if (!trimmed) return ''
     return `# 已有关切\n\n${trimmed}\n\n创建新关切前先检查是否已有相同功能的。`
+  }
+
+  private buildBrowserBridgeSection(): string {
+    try {
+      return buildBrowserBridgePromptSection(getBrowserBridgeService().getStatus())
+    } catch (error) {
+      log.debug('Browser bridge status unavailable for prompt:', error)
+      return ''
+    }
   }
 
   private buildSkillsContentSection(): string {

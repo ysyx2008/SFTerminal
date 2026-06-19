@@ -234,7 +234,6 @@ async function browserLaunch(
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
   const preferAttach = shouldPreferAttach(args)
-  let attachFallbackNote = ''
 
   if (preferAttach) {
     const session = getSession(ptyId)
@@ -242,10 +241,7 @@ async function browserLaunch(
       await closeSession(ptyId)
     }
     const auto = !isAttachLaunch(args)
-    const result = await bridgeBrowserLaunch(ptyId, args, executor, { auto })
-    if (result.success) return result
-    if (isAttachLaunch(args)) return result
-    attachFallbackNote = '\n\n💡 浏览器助手未连接或连接失败，已改用独立浏览器窗口。'
+    return bridgeBrowserLaunch(ptyId, args, executor, { auto })
   } else if (hasBridgeSession(ptyId)) {
     closeBridgeSession(ptyId)
   }
@@ -277,7 +273,7 @@ async function browserLaunch(
     }
 
     // 构建返回给 AI 的完整信息
-    let output = `浏览器已启动 (${session.browserInfo.name})${attachFallbackNote}`
+    let output = `浏览器已启动 (${session.browserInfo.name})`
     if (hadStorageState) {
       if (profile) {
         output += `\n✅ 已恢复登录配置 "${profile}" 的登录状态`

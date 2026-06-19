@@ -28,6 +28,22 @@ vi.mock('fs', async (importOriginal) => {
   }
 })
 
+vi.mock('../../browser-bridge/browser-bridge.service', () => ({
+  getBrowserBridgeService: vi.fn().mockReturnValue({
+    getStatus: vi.fn().mockReturnValue({
+      gatewayRunning: true,
+      port: 12345,
+      connections: [],
+      install: null,
+      extensionIds: {
+        chromium: 'dgmhdapfpihhkboikpgfanpgnijbpdhd',
+        chromiumDev: 'ocdljfppijcjpgaaamgeailkgajgjdml',
+        firefox: 'sailfish-browser-bridge@yushen.dev',
+      },
+    }),
+  }),
+}))
+
 import * as fs from 'fs'
 import { 
   PromptBuilder, 
@@ -785,5 +801,27 @@ describe('Edge cases', () => {
     const prompt = builder.build()
     
     expect(prompt).not.toContain('用户自定义规则')
+  })
+
+  it('should include browser bridge section when extension connected', async () => {
+    const { getBrowserBridgeService } = await import('../../browser-bridge/browser-bridge.service')
+    vi.mocked(getBrowserBridgeService).mockReturnValue({
+      getStatus: vi.fn().mockReturnValue({
+        gatewayRunning: true,
+        port: 12345,
+        connections: [{ browser: 'chrome', origin: 'chrome-extension://abc/', state: 'ready' }],
+        install: null,
+        extensionIds: {
+          chromium: 'dgmhdapfpihhkboikpgfanpgnijbpdhd',
+          chromiumDev: 'ocdljfppijcjpgaaamgeailkgajgjdml',
+          firefox: 'sailfish-browser-bridge@yushen.dev',
+        },
+      }),
+    } as ReturnType<typeof getBrowserBridgeService>)
+
+    const prompt = new PromptBuilder({ context: createMockContext() }).build()
+    expect(prompt).toContain('# 浏览器助手')
+    expect(prompt).toContain('Chromium')
+    expect(prompt).toContain('browser_list_tabs')
   })
 })
