@@ -23,7 +23,7 @@ export default {
     freeModeWarning3: '仅建议在完全信任 AI 且了解风险时使用',
     enableFreeMode: '启用自由模式',
     inputPlaceholder: '输入问题或描述你想要的命令...',
-    inputPlaceholderAgent: '描述你想让助手完成的任务...',
+    inputPlaceholderAgent: '有什么我可以帮你的？',
     inputPlaceholderSupplement: '输入补充信息（将在下一步生效）...',
     sendMessage: '发送消息 (Enter)',
     executeTask: '执行任务 (Enter)',

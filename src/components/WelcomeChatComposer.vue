@@ -390,8 +390,9 @@ onUnmounted(() => {
       :submit-empty-message="noop"
       :clear-tab-error="noop"
     >
-      <template v-if="configStore.aiProfiles.length > 0" #footer-left>
+      <template #footer-left>
         <select
+          v-if="configStore.aiProfiles.length > 0"
           class="welcome-model-select"
           :value="configStore.activeAiProfileId"
           :title="t('ai.switchModel')"

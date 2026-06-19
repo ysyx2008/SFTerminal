@@ -2042,17 +2042,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         </div>
         <!-- 从原 ai-header 迁移的控件，保持"最右侧"的对齐 -->
         <div class="ai-header-actions">
-          <select
-            v-if="aiProfiles.length > 0"
-            class="model-select model-select-sm"
-            :value="activeAiProfile?.id || ''"
-            :title="t('ai.switchModel')"
-            @change="changeAiProfile(($event.target as HTMLSelectElement).value)"
-          >
-            <option v-for="profile in aiProfiles" :key="profile.id" :value="profile.id">
-              {{ profile.name }} ({{ profile.model }}){{ profile.modelType === 'vision' ? ` [${t('aiSettings.modelTypeVision')}]` : '' }}
-            </option>
-          </select>
           <button class="btn-icon btn-icon-sm" @click="clearMessages" :title="t('ai.clearChat')">
             <Trash2 :size="13" />
           </button>
@@ -2795,7 +2784,21 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         :submit-message="handleComposerSubmit"
         :submit-empty-message="handleComposerEmptySubmit"
         :clear-tab-error="clearTabError"
-      />
+      >
+        <template #footer-left>
+          <select
+            v-if="aiProfiles.length > 0"
+            class="model-select"
+            :value="activeAiProfile?.id || ''"
+            :title="t('ai.switchModel')"
+            @change="changeAiProfile(($event.target as HTMLSelectElement).value)"
+          >
+            <option v-for="profile in aiProfiles" :key="profile.id" :value="profile.id">
+              {{ profile.name }} ({{ profile.model }}){{ profile.modelType === 'vision' ? ` [${t('aiSettings.modelTypeVision')}]` : '' }}
+            </option>
+          </select>
+        </template>
+      </AiComposer>
     </template>
     <!-- 图片预览弹窗（支持缩放拖拽、键盘导航） -->
     <div 

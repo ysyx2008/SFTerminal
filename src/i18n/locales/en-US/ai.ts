@@ -23,7 +23,7 @@ export default {
     freeModeWarning3: 'Only recommended when you fully trust AI and understand the risks',
     enableFreeMode: 'Enable Free Mode',
     inputPlaceholder: 'Enter your question or describe the command you want...',
-    inputPlaceholderAgent: 'Describe the task you want Agent to complete...',
+    inputPlaceholderAgent: 'What can I help you with?',
     inputPlaceholderSupplement: 'Enter supplementary information (will take effect in next step)...',
     sendMessage: 'Send Message (Enter)',
     executeTask: 'Execute Task (Enter)',

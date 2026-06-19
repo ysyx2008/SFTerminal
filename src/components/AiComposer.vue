@@ -373,7 +373,7 @@ const getParsePhaseLabel = (doc: ParsingDocument) => {
 }
 
 const slots = useSlots()
-const isTwoRow = computed(() => !!props.embedded && !!slots['footer-left'])
+const isTwoRow = computed(() => !!slots['footer-left'])
 
 defineExpose({
   focusInput,
@@ -1128,7 +1128,7 @@ const handleSendClick = (event: MouseEvent) => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-/* 两行模式（embedded + footer-left slot 有内容） */
+/* 两行模式（footer-left slot 有内容时自动切换） */
 .input-container-two-row {
   flex-direction: column;
   align-items: stretch;
