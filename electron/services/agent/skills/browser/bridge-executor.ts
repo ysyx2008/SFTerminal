@@ -4,9 +4,18 @@
 
 import type { ToolResult } from '../../types'
 import type { ToolExecutorConfig } from '../../tool-executor'
-import type { BrowserBridgeRefMap, BrowserBridgeSnapshotResult } from '@shared/types/browser-bridge'
+import type {
+  BrowserBridgeRefMap,
+  BrowserBridgeSnapshotResult,
+} from '@shared/types/browser-bridge'
 import { getBrowserBridgeService } from '../../../browser-bridge/browser-bridge.service'
 import { attachTargetLabel } from '../../../browser-bridge/protocol'
+import { detectGotoTabOverwrite } from '../../../browser-bridge/goto-tab'
+import {
+  bridgeTabsNavigate,
+  bridgeTabsActivate,
+  bridgeTabsQuery,
+} from '../../../browser-bridge/tabs-bridge'
 import {
   bridgeListTabs,
   bridgeSend,
@@ -68,8 +77,8 @@ export async function bridgeBrowserLaunch(
       output += `\n当前标签：${activeTab.title || '(无标题)'} — ${activeTab.url}`
     }
     if (url) {
-      const nav = (await bridgeSend(ptyId, 'goto', { url })) as { title?: string; url?: string }
-      output += `\n已打开 ${nav.url || url}\n标题: ${nav.title || ''}`
+      const nav = await bridgeTabsNavigate(ptyId, { url, newTab: true })
+      output += `\n已在新标签页打开 ${nav.url || url}\n标题: ${nav.title || ''}`
     }
     output += '\n\n💡 使用 browser_snapshot 获取页面元素和 ref 编号'
     output += '\n💡 读文章用 browser_read_article；读整页/区域用 browser_read_page'
@@ -126,9 +135,11 @@ export async function bridgeBrowserGoto(
 ): Promise<ToolResult> {
   const url = args.url as string
   if (!url) return { success: false, output: '', error: '缺少 url 参数' }
+  // attach 默认新开标签页，避免覆盖用户正在浏览的页面；显式 new_tab: false 才在当前标签导航
+  const newTab = args.new_tab !== false
   executor.addStep({
     type: 'tool_call',
-    content: `导航到 ${url}`,
+    content: newTab ? `在新标签页打开 ${url}` : `导航到 ${url}`,
     toolName: 'browser_goto',
     toolArgs: args,
     riskLevel: 'safe',
@@ -137,9 +148,19 @@ export async function bridgeBrowserGoto(
     const session = getBridgeSession(ptyId)
     if (!session) throw new Error('浏览器未连接')
     session.refs = {}
-    const nav = (await bridgeSend(ptyId, 'goto', { url })) as { title?: string; url?: string }
+    const tabsBefore = newTab ? await bridgeTabsQuery(ptyId) : []
+    const nav = await bridgeTabsNavigate(ptyId, { url, newTab })
+    if (newTab) {
+      const tabsAfter = await bridgeTabsQuery(ptyId)
+      const overwriteError = detectGotoTabOverwrite(tabsBefore, tabsAfter, url, nav, newTab)
+      if (overwriteError) {
+        executor.addStep({ type: 'tool_result', content: `错误: ${overwriteError}`, toolName: 'browser_goto' })
+        return { success: false, output: '', error: overwriteError }
+      }
+    }
     touchBridgeSession(ptyId)
-    let output = `已导航到 ${nav.url || url}\n标题: ${nav.title || ''}`
+    const openLabel = nav.new_tab === true || newTab ? '已在新标签页打开' : '已导航到'
+    let output = `${openLabel} ${nav.url || url}\n标题: ${nav.title || ''}`
     const snap = await bridgeBrowserSnapshot(ptyId, { interactive: true }, executor)
     if (snap.success && snap.output) {
       output += `\n\n--- 当前页面无障碍树快照 ---\n${snap.output}`
@@ -258,7 +279,7 @@ export async function bridgeBrowserSwitchTab(
   try {
     const session = getBridgeSession(ptyId)
     if (!session) throw new Error('浏览器未连接')
-    const tab = (await bridgeSend(ptyId, 'switch_tab', { index })) as { title?: string; url?: string }
+    const tab = await bridgeTabsActivate(ptyId, index)
     session.activeTabIndex = index
     session.refs = {}
     touchBridgeSession(ptyId)

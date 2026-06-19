@@ -1,4 +1,7 @@
+importScripts('shared/tabs-api.js')
+
 const NATIVE_HOST = 'com.sailfish.browser'
+const tabsApi = globalThis.__sailfishTabsApi
 
 /** @type {chrome.runtime.Port | null} */
 let nativePort = null
@@ -86,15 +89,21 @@ async function dispatchAction(action, payload) {
         extension: 'sailfish-browser-bridge',
         version: chrome.runtime.getManifest().version,
         protocol: 1,
+        capabilities: ['tabs_manage', 'goto_new_tab'],
       }
+    case 'tabs':
+      return tabsApi.handleTabsOp(chrome.tabs, chrome.windows, payload)
     case 'list_tabs':
-      return listTabs()
+      return tabsApi.listTabs(chrome.tabs)
     case 'switch_tab':
-      return switchTab(payload)
+      return tabsApi.switchTab(chrome.tabs, chrome.windows, payload)
     case 'goto':
-      return gotoUrl(payload)
+      return tabsApi.gotoUrl(chrome.tabs, payload)
     case 'close_tab':
-      return closeTab(payload)
+      return tabsApi.closeTab(chrome.tabs, payload)
+    case 'reload':
+      chrome.runtime.reload()
+      return { reloaded: true }
     case 'evaluate':
       return evaluateViaMessage(payload)
     default:
@@ -126,62 +135,6 @@ async function evaluateViaMessage(payload) {
     }
     throw error
   }
-}
-
-async function listTabs() {
-  const tabs = await chrome.tabs.query({ currentWindow: true })
-  const active = tabs.find((t) => t.active)
-  return tabs.map((tab, index) => ({
-    index,
-    id: tab.id,
-    url: tab.url || '',
-    title: tab.title || '',
-    active: tab.id === active?.id,
-  }))
-}
-
-async function switchTab(payload) {
-  const index = Number(payload.index)
-  const tabs = await chrome.tabs.query({ currentWindow: true })
-  const tab = tabs[index]
-  if (!tab?.id) throw new Error(`Tab index ${index} not found`)
-  await chrome.tabs.update(tab.id, { active: true })
-  await chrome.windows.update(tab.windowId, { focused: true })
-  return { index, id: tab.id, url: tab.url, title: tab.title }
-}
-
-async function gotoUrl(payload) {
-  const url = String(payload.url || '')
-  if (!url) throw new Error('url is required')
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-  if (!tab?.id) throw new Error('No active tab')
-  await chrome.tabs.update(tab.id, { url })
-  await waitTabComplete(tab.id)
-  const updated = await chrome.tabs.get(tab.id)
-  return { url: updated.url, title: updated.title }
-}
-
-async function closeTab(payload) {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-  if (tab?.id) await chrome.tabs.remove(tab.id)
-  return { closed: true }
-}
-
-function waitTabComplete(tabId, timeoutMs = 30000) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(listener)
-      reject(new Error('Navigation timeout'))
-    }, timeoutMs)
-    function listener(id, info) {
-      if (id === tabId && info.status === 'complete') {
-        clearTimeout(timer)
-        chrome.tabs.onUpdated.removeListener(listener)
-        resolve(undefined)
-      }
-    }
-    chrome.tabs.onUpdated.addListener(listener)
-  })
 }
 
 async function runInActiveTab(action, payload) {

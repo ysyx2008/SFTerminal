@@ -81,6 +81,7 @@ export function buildBrowserBridgePromptSection(status: BrowserBridgeStatus): st
     lines.push('- 系统会自动 attach 到用户当前浏览器，复用登录态与已有标签页')
     lines.push('- 用户说「打开 XX 网页 / 在浏览器里看」时，不要开 Playwright 独立窗口（除非需要截图/无头）')
     lines.push('- 用户可能已打开目标页：先 `browser_list_tabs`，有则 `browser_switch_tab`，无则 `browser_goto`')
+    lines.push('- **`browser_goto` 默认新开标签页**，勿覆盖用户当前标签；仅用户要在当前页继续时才 `new_tab: false`')
     if (chromiumConnected && firefoxConnected) {
       lines.push('- **两个浏览器都在线**：须指定 `browser: "chromium"` 或 `"firefox"`')
     }

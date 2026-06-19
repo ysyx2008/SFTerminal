@@ -23,6 +23,8 @@ import {
   isFirefoxHostOrigin,
   normalizeAttachTargetInput,
   parseGatewayLines,
+  parsePingResult,
+  extensionSupportsTabsManage,
   serializeGatewayLine,
 } from './protocol'
 
@@ -128,6 +130,21 @@ export class BrowserBridgeService {
     return this.lastInstall
   }
 
+  /** 已连接但缺少 tabs_manage 的扩展；仅 install 时可选调用，不在 host_register 时自动 reload（Firefox 临时加载会被 reload 卸掉） */
+  async reloadOutdatedExtensions(): Promise<void> {
+    for (const host of [...this.hosts.values()]) {
+      try {
+        const pingRaw = await this.sendCommand('ping', {}, { origin: host.origin, timeoutMs: 5000 })
+        const ping = parsePingResult(pingRaw)
+        if (extensionSupportsTabsManage(ping)) continue
+        log.info(`Reloading outdated browser extension (${ping?.version ?? 'unknown'}) at ${host.origin}`)
+        await this.sendCommand('reload', {}, { origin: host.origin, timeoutMs: 5000 })
+      } catch (error) {
+        log.debug('Extension reload skipped:', error)
+      }
+    }
+  }
+
   uninstall(): { errors: string[] } {
     const result = uninstallBrowserBridge()
     this.lastInstall = null
@@ -141,6 +158,9 @@ export class BrowserBridgeService {
   }
 
   getStatus(): BrowserBridgeStatus {
+    if (this.started) {
+      this.persistGateway()
+    }
     const detected = detectInstallStatus()
     if (detected) this.lastInstall = detected
     const install = this.lastInstall

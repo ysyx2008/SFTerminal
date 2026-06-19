@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "SailFish Browser Assistant",
   "description": "Connects Chrome to the SailFish desktop Agent. Reuses your tabs and login sessions via Native Messaging (requires SailFish app).",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "homepage_url": "https://www.sfterm.com/",
   "icons": {
     "48": "icons/icon-48.png",

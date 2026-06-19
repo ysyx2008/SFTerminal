@@ -37,6 +37,7 @@ export const browserTools: ToolDefinition[] = [
   - ❌ \`querySelector\` 结果取 \`.href\` 等其它属性、返回 NodeList、方法调用（\`JSON.stringify\`、\`localStorage.getItem\`）、\`navigator\`、运算/函数式
   - 复杂 JS 请 \`browser_launch { "mode": "launch" }\`
 - goto / snapshot / click / type / scroll / list_tabs / switch_tab 三浏览器无差异
+- attach 下 \`browser_goto\` **默认新开标签页**，不覆盖用户当前标签
 
 **注意**：
 - 每个终端最多一个浏览器会话
@@ -143,6 +144,13 @@ export const browserTools: ToolDefinition[] = [
       name: 'browser_goto',
       description: `导航到指定网址。成功后会自动附带当前页面快照，无需再单独调用 browser_snapshot。
 
+**attach 模式（用户浏览器）**：
+- **默认在新标签页打开**（\`new_tab\` 默认为 true），**不要覆盖**用户当前正在看的标签
+- 仅当用户明确要在当前页继续、或你要在当前页刷新/跳转时，才传 \`new_tab: false\`
+- 用户已打开目标站时，优先 \`browser_list_tabs\` + \`browser_switch_tab\`，不要重复开 tab
+
+**launch 模式（Playwright 独立窗口）**：在当前会话标签页导航（无 new_tab 参数）。
+
 **等待策略**：
 - load：等待页面完全加载（默认）
 - domcontentloaded：DOM 加载完成即可
@@ -153,6 +161,10 @@ export const browserTools: ToolDefinition[] = [
           url: {
             type: 'string',
             description: '目标 URL'
+          },
+          new_tab: {
+            type: 'boolean',
+            description: 'attach 模式：true=新开标签页（默认）；false=在当前标签页导航。launch 模式忽略。'
           },
           wait_until: {
             type: 'string',

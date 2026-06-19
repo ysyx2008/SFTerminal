@@ -4,13 +4,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEV_SRC="$ROOT/resources/browser-bridge/firefox"
+SHARED_SRC="$ROOT/resources/browser-bridge/shared"
 AMO_OVERLAY="$ROOT/resources/browser-bridge/firefox-amo-publish"
 BUILD="$ROOT/resources/browser-bridge/.firefox-amo-build"
 DIST="$ROOT/resources/browser-bridge/dist"
 VERSION="$(node -pe "require('$AMO_OVERLAY/manifest.json').version")"
 OUT="$DIST/sailfish-browser-assistant-firefox-${VERSION}.zip"
 
-for dir in "$DEV_SRC" "$AMO_OVERLAY"; do
+for dir in "$DEV_SRC" "$SHARED_SRC" "$AMO_OVERLAY"; do
   if [[ ! -d "$dir" ]]; then
     echo "Missing $dir" >&2
     exit 1
@@ -22,6 +23,8 @@ mkdir -p "$BUILD" "$DIST"
 
 # 1) 开发版逻辑（临时加载测试用同一套 JS）
 cp -R "$DEV_SRC"/* "$BUILD/"
+mkdir -p "$BUILD/shared"
+cp -R "$SHARED_SRC"/* "$BUILD/shared/"
 
 # 2) AMO 专用 manifest + 图标覆盖
 cp "$AMO_OVERLAY/manifest.json" "$BUILD/manifest.json"

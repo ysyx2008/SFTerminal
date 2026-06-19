@@ -3,8 +3,15 @@ import type {
   BrowserBridgeCommand,
   BrowserBridgeCommandResult,
   BrowserBridgePingResult,
+  BrowserBridgeCapability,
 } from '@shared/types/browser-bridge'
-import { BROWSER_BRIDGE_PROTOCOL_VERSION } from '@shared/types/browser-bridge'
+import {
+  BROWSER_BRIDGE_CAPABILITY_GOTO_NEW_TAB,
+  BROWSER_BRIDGE_CAPABILITY_TABS_MANAGE,
+  BROWSER_BRIDGE_GOTO_NEW_TAB_MIN_VERSION,
+  BROWSER_BRIDGE_TABS_MANAGE_MIN_VERSION,
+  BROWSER_BRIDGE_PROTOCOL_VERSION,
+} from '@shared/types/browser-bridge'
 
 export function parseGatewayLines(buffer: string): { messages: unknown[]; rest: string } {
   const messages: unknown[] = []
@@ -87,7 +94,37 @@ export function parsePingResult(value: unknown): BrowserBridgePingResult | null 
   const obj = value as Record<string, unknown>
   if (typeof obj.extension !== 'string' || typeof obj.version !== 'string') return null
   const protocol = typeof obj.protocol === 'number' ? obj.protocol : undefined
-  return { extension: obj.extension, version: obj.version, protocol }
+  const capabilities = Array.isArray(obj.capabilities)
+    ? (obj.capabilities.filter(
+        (c) => c === BROWSER_BRIDGE_CAPABILITY_GOTO_NEW_TAB || c === BROWSER_BRIDGE_CAPABILITY_TABS_MANAGE,
+      ) as BrowserBridgeCapability[])
+    : undefined
+  return { extension: obj.extension, version: obj.version, protocol, capabilities }
+}
+
+function compareSemver(a: string, b: string): number {
+  const pa = a.split('.').map((n) => parseInt(n, 10) || 0)
+  const pb = b.split('.').map((n) => parseInt(n, 10) || 0)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0)
+    if (diff !== 0) return diff
+  }
+  return 0
+}
+
+/** 扩展是否支持通用 tabs 原语（1.2.0+ 或 capabilities） */
+export function extensionSupportsTabsManage(ping: BrowserBridgePingResult | null | undefined): boolean {
+  if (!ping) return false
+  if (ping.capabilities?.includes(BROWSER_BRIDGE_CAPABILITY_TABS_MANAGE)) return true
+  return compareSemver(ping.version, BROWSER_BRIDGE_TABS_MANAGE_MIN_VERSION) >= 0
+}
+
+/** 扩展是否支持 goto 默认新开标签页（tabs_manage 已包含；旧版 1.1.2 单独推断） */
+export function extensionSupportsGotoNewTab(ping: BrowserBridgePingResult | null | undefined): boolean {
+  if (extensionSupportsTabsManage(ping)) return true
+  if (!ping) return false
+  if (ping.capabilities?.includes(BROWSER_BRIDGE_CAPABILITY_GOTO_NEW_TAB)) return true
+  return compareSemver(ping.version, BROWSER_BRIDGE_GOTO_NEW_TAB_MIN_VERSION) >= 0
 }
 
 /** protocol v1：扩展只传 HTML 原语，正文提取在桌面端 */

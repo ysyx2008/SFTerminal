@@ -30,9 +30,30 @@ native-host/host.mjs (Chrome 按连接 spawn)
 
 ### 冻结 action 名单
 
-新能力**优先扩展 payload**，不新增 action：
+新能力**优先扩展 payload**，不新增 action（**例外**：`tabs` 为 1.2.0 最终 Tab 原语层，此后 Tab 相关策略均在桌面端组合 `tabs` op，扩展不再为 Tab 行为发版）：
 
-`ping` | `list_tabs` | `switch_tab` | `goto` | `close_tab` | `evaluate` | `snapshot` | `get_content` | `click` | `type` | `scroll`
+`ping` | `tabs` | `list_tabs` | `switch_tab` | `goto` | `close_tab` | `reload` | `evaluate` | `snapshot` | `get_content` | `click` | `type` | `scroll`
+
+legacy `list_tabs` / `switch_tab` / `goto` / `close_tab` 内部委托 `shared/tabs-api.js`，桌面端 1.2.0+ 优先直接发 `tabs`。
+
+### tabs payload（1.2.0+，Tab 原语最终版）
+
+| op | 说明 | 主要字段 |
+|----|------|---------|
+| `query` | 列出标签 | `query`（默认 `{ currentWindow: true }`） |
+| `create` | 新建标签 | `url`, `active`（默认 true）, `index`, `windowId`, `wait`（默认 true 当有 url） |
+| `update` | 更新标签（含当前标签导航） | `tabId` / `index` / 省略=活动标签, `url`, `active`, `wait` |
+| `activate` | 激活标签 | `tabId` / `index` |
+| `remove` | 关闭标签 | `tabId` / `index` / 省略=活动标签 |
+
+扩展 `ping` capabilities：`tabs_manage`, `goto_new_tab`。桌面端 `extensionSupportsTabsManage()` 做能力判断。
+
+### goto payload（legacy，委托 tabs）
+
+| 字段 | 说明 |
+|------|------|
+| `url` | 目标 URL（必填） |
+| `new_tab` | 省略或 `true` → `tabs.create`；**仅** `false` → 当前标签 `tabs.update` |
 
 ### get_content payload（protocol v1）
 
@@ -118,5 +139,6 @@ Firefox：安装器提供已解压扩展目录；正式持久安装需 Mozilla �
 ## 扩展发版策略
 
 - **1.1.0** = protocol v1 基线（薄扩展 + 桌面端提取）
-- 此后功能迭代优先改 SailFish App；扩展仅在 permissions / 浏览器 API breaking change 时发版
+- **1.2.0** = Tab 原语最终版（`tabs` action + `shared/tabs-api.js`）；此后 Tab 策略（默认新开、后台开 tab、按 id 关闭等）**只在桌面端改**，扩展不再为 Tab 行为发版
+- 此后功能迭代优先改 SailFish App；扩展仅在 permissions / 浏览器 API breaking change / DOM 原语（content script）时发版
 - AMO 建议 Unlisted 分发（见 `docs/browser-bridge-firefox-amo.md`）

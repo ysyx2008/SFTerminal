@@ -9,6 +9,7 @@ import type {
   BrowserBridgeTabInfo,
 } from '@shared/types/browser-bridge'
 import { getBrowserBridgeService } from '../../../browser-bridge/browser-bridge.service'
+import { extensionSupportsTabsManage } from '../../../browser-bridge/protocol'
 import { parsePingResult } from '../../../browser-bridge/protocol'
 
 export interface BridgeSession {
@@ -66,8 +67,14 @@ export function touchBridgeSession(ptyId: string): void {
 }
 
 export async function bridgeListTabs(ptyId: string): Promise<BrowserBridgeTabInfo[]> {
-  const tabs = await bridgeSend(ptyId, 'list_tabs', {})
-  return tabs as BrowserBridgeTabInfo[]
+  const session = sessions.get(ptyId)
+  if (extensionSupportsTabsManage(session?.extensionPing)) {
+    return (await bridgeSend(ptyId, 'tabs', {
+      op: 'query',
+      query: { currentWindow: true },
+    })) as BrowserBridgeTabInfo[]
+  }
+  return (await bridgeSend(ptyId, 'list_tabs', {})) as BrowserBridgeTabInfo[]
 }
 
 export async function bridgeSend(

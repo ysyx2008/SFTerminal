@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "SailFish Browser Assistant",
   "description": "Connects your browser to SailFish Agent for tab and login reuse.",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "browser_specific_settings": {
     "gecko": {
       "id": "sailfish-browser-bridge@yushen.dev",
@@ -10,7 +10,7 @@
     }
   },
   "background": {
-    "scripts": ["background-firefox.js"]
+    "scripts": ["shared/tabs-api.js", "background-firefox.js"]
   },
   "action": {
     "default_title": "SailFish Browser Assistant",

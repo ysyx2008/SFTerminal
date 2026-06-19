@@ -1,7 +1,9 @@
 /**
- * Firefox background — browser.* API wrapper around shared logic
+ * Firefox background — browser.* API wrapper around shared tabs-api
+ * tabs-api.js 由 manifest background.scripts 先行加载（比 importScripts 在 Firefox 临时加载更稳）
  */
 const api = globalThis.browser || globalThis.chrome
+const tabsApi = globalThis.__sailfishTabsApi
 const NATIVE_HOST = 'com.sailfish.browser'
 
 /** @type {browser.runtime.Port | null} */
@@ -37,7 +39,6 @@ function connectNative() {
 
 async function onNativeMessage(message) {
   if (!message) return
-  // Response to a requestNative() call
   if (message.id && pending.has(message.id)) {
     const { resolve, reject } = pending.get(message.id)
     pending.delete(message.id)
@@ -62,15 +63,21 @@ async function dispatchAction(action, payload) {
         extension: 'sailfish-browser-bridge',
         version: api.runtime.getManifest().version,
         protocol: 1,
+        capabilities: ['tabs_manage', 'goto_new_tab'],
       }
+    case 'tabs':
+      return tabsApi.handleTabsOp(api.tabs, api.windows, payload)
     case 'list_tabs':
-      return listTabs()
+      return tabsApi.listTabs(api.tabs)
     case 'switch_tab':
-      return switchTab(payload)
+      return tabsApi.switchTab(api.tabs, api.windows, payload)
     case 'goto':
-      return gotoUrl(payload)
+      return tabsApi.gotoUrl(api.tabs, payload)
     case 'close_tab':
-      return closeTab(payload)
+      return tabsApi.closeTab(api.tabs, payload)
+    case 'reload':
+      api.runtime.reload()
+      return { reloaded: true }
     case 'evaluate':
       return evaluateViaMessage(payload)
     default:
@@ -102,61 +109,6 @@ async function evaluateViaMessage(payload) {
     }
     throw error
   }
-}
-
-async function listTabs() {
-  const tabs = await api.tabs.query({ currentWindow: true })
-  const active = tabs.find((t) => t.active)
-  return tabs.map((tab, index) => ({
-    index,
-    id: tab.id,
-    url: tab.url || '',
-    title: tab.title || '',
-    active: tab.id === active?.id,
-  }))
-}
-
-async function switchTab(payload) {
-  const index = Number(payload.index)
-  const tabs = await api.tabs.query({ currentWindow: true })
-  const tab = tabs[index]
-  if (!tab?.id) throw new Error(`Tab index ${index} not found`)
-  await api.tabs.update(tab.id, { active: true })
-  await api.windows.update(tab.windowId, { focused: true })
-  return { index, id: tab.id, url: tab.url, title: tab.title }
-}
-
-async function gotoUrl(payload) {
-  const url = String(payload.url || '')
-  const [tab] = await api.tabs.query({ active: true, currentWindow: true })
-  if (!tab?.id) throw new Error('No active tab')
-  await api.tabs.update(tab.id, { url })
-  await waitTabComplete(tab.id)
-  const updated = await api.tabs.get(tab.id)
-  return { url: updated.url, title: updated.title }
-}
-
-async function closeTab() {
-  const [tab] = await api.tabs.query({ active: true, currentWindow: true })
-  if (tab?.id) await api.tabs.remove(tab.id)
-  return { closed: true }
-}
-
-function waitTabComplete(tabId, timeoutMs = 30000) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      api.tabs.onUpdated.removeListener(listener)
-      reject(new Error('Navigation timeout'))
-    }, timeoutMs)
-    function listener(id, info) {
-      if (id === tabId && info.status === 'complete') {
-        clearTimeout(timer)
-        api.tabs.onUpdated.removeListener(listener)
-        resolve(undefined)
-      }
-    }
-    api.tabs.onUpdated.addListener(listener)
-  })
 }
 
 async function runInActiveTab(action, payload) {
@@ -213,7 +165,6 @@ api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     requestNative(message.action, message.payload)
       .then(sendResponse)
       .catch((e) => {
-        // Gateway unreachable — disconnect stale native port and reconnect
         reconnectNative()
         sendResponse({ error: e.message })
       })
@@ -246,11 +197,9 @@ api.alarms.onAlarm.addListener(async (alarm) => {
     connectNative()
     return
   }
-  // Verify the full pipeline (native port + TCP gateway) is healthy
   try {
     await requestNative('ping', {})
   } catch {
-    // Native host alive but gateway unreachable, or host crashed — force reconnect
     reconnectNative()
   }
 })

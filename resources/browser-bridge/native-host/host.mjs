@@ -20,6 +20,7 @@ let gatewaySocket = null
 let gatewayConfig = null
 let reconnectTimer = null
 let reconnectAttempts = 0
+let lastGatewayPort = null
 // After ~30 s of failed reconnects, exit so Firefox restarts us with fresh gateway config
 const MAX_RECONNECT_ATTEMPTS = 20
 
@@ -181,6 +182,12 @@ function connectGateway() {
   if (!gatewayConfig?.port) {
     scheduleReconnect(2000)
     return
+  }
+
+  if (gatewayConfig.port !== lastGatewayPort) {
+    lastGatewayPort = gatewayConfig.port
+    reconnectAttempts = 0
+    debugLog(`gateway port changed, reset reconnect counter to ${lastGatewayPort}`)
   }
 
   const socket = net.createConnection({ host: '127.0.0.1', port: gatewayConfig.port }, () => {

@@ -465,6 +465,7 @@ export function installBrowserBridge(): BrowserBridgeInstallStatus {
 
   const chromiumSrc = path.join(bundled, 'chromium')
   const firefoxSrc = path.join(bundled, 'firefox')
+  const sharedSrc = path.join(bundled, 'shared')
   const hostSrc = path.join(bundled, 'native-host')
   const chromiumDest = path.join(root, 'extension-chromium')
   const firefoxDest = path.join(root, 'extension-firefox')
@@ -473,6 +474,10 @@ export function installBrowserBridge(): BrowserBridgeInstallStatus {
   try {
     if (fs.existsSync(chromiumSrc)) copyDir(chromiumSrc, chromiumDest)
     if (fs.existsSync(firefoxSrc)) copyDir(firefoxSrc, firefoxDest)
+    if (fs.existsSync(sharedSrc)) {
+      copyDir(sharedSrc, path.join(chromiumDest, 'shared'))
+      copyDir(sharedSrc, path.join(firefoxDest, 'shared'))
+    }
     if (fs.existsSync(hostSrc)) copyDir(hostSrc, hostDest)
   } catch (error) {
     errors.push(`Copy failed: ${error instanceof Error ? error.message : String(error)}`)

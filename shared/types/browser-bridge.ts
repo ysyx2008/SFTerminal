@@ -8,10 +8,12 @@ export const BROWSER_BRIDGE_PROTOCOL_VERSION = 1 as const
 /** 冻结的 action 名单 — 新能力优先扩展 payload，而非新增 action */
 export const BROWSER_BRIDGE_ACTIONS = [
   'ping',
+  'tabs',
   'list_tabs',
   'switch_tab',
   'goto',
   'close_tab',
+  'reload',
   'evaluate',
   'snapshot',
   'get_content',
@@ -101,11 +103,27 @@ export interface BrowserBridgeCommandResult {
   error?: string
 }
 
+/** 扩展 ping 上报的可选能力（新扩展通过 capabilities 声明，旧版靠版本号推断） */
+export const BROWSER_BRIDGE_CAPABILITY_GOTO_NEW_TAB = 'goto_new_tab' as const
+/** 通用 tabs 原语（create/update/query/activate/remove），桌面端组合策略，扩展不再为 Tab 行为发版 */
+export const BROWSER_BRIDGE_CAPABILITY_TABS_MANAGE = 'tabs_manage' as const
+
+export type BrowserBridgeCapability =
+  | typeof BROWSER_BRIDGE_CAPABILITY_GOTO_NEW_TAB
+  | typeof BROWSER_BRIDGE_CAPABILITY_TABS_MANAGE
+
+/** tabs 原语 + goto 默认新开标签所需最低扩展版本（与 manifest 同步，1.2.0 为 Tab 层最终版） */
+export const BROWSER_BRIDGE_TABS_MANAGE_MIN_VERSION = '1.2.0' as const
+
+/** @deprecated 用 BROWSER_BRIDGE_TABS_MANAGE_MIN_VERSION；1.1.2 仅兼容推断 */
+export const BROWSER_BRIDGE_GOTO_NEW_TAB_MIN_VERSION = '1.1.2' as const
+
 /** 扩展 ping 响应 */
 export interface BrowserBridgePingResult {
   extension: string
   version: string
   protocol?: number
+  capabilities?: BrowserBridgeCapability[]
 }
 
 export interface BrowserBridgeInstallStatus {
