@@ -1127,11 +1127,14 @@ watch(
 watch(
   [
     () => terminalStore.activeTabId,
+    () => terminalStore.hubFocusedAssistantTabId,
     () => terminalStore.pendingComposerHandoffs[currentTabId.value],
     isMounted,
   ],
-  async ([activeId, _handoff, mounted]) => {
-    if (!mounted || activeId !== currentTabId.value) return
+  async ([activeId, hubFocusedId, _handoff, mounted]) => {
+    // 兼容 Hub 焦点模式（activeTabId 为空，hubFocusedAssistantTabId 为当前 tab）
+    const isCurrentSurface = activeId === currentTabId.value || hubFocusedId === currentTabId.value
+    if (!mounted || !isCurrentSurface) return
     const tab = terminalStore.tabs.find(t => t.id === currentTabId.value)
     if (tab?.type !== 'assistant') return
     const handoff = terminalStore.consumePendingComposerHandoff(currentTabId.value)
