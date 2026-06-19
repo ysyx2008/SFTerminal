@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, useSlots, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2, Volume2 } from 'lucide-vue-next'
 import { useMentions } from '../composables/useMentions'
@@ -83,7 +83,29 @@ const pickRandomPlaceholder = () => {
   }
 }
 
-onMounted(pickRandomPlaceholder)
+let textareaResizeObserver: ResizeObserver | null = null
+
+const setupTextareaResizeObserver = () => {
+  textareaResizeObserver?.disconnect()
+  const target = textareaWrapEl.value
+  if (!target) return
+
+  textareaResizeObserver = new ResizeObserver(() => {
+    measureTextareaHeight()
+  })
+  textareaResizeObserver.observe(target)
+}
+
+onMounted(() => {
+  pickRandomPlaceholder()
+  syncTextareaSize()
+  nextTick(setupTextareaResizeObserver)
+})
+
+onBeforeUnmount(() => {
+  textareaResizeObserver?.disconnect()
+  textareaResizeObserver = null
+})
 
 const composerPlaceholder = computed(
   () =>
@@ -162,6 +184,7 @@ function formatQuotesAppendix(snippets: ComposerQuoteSnippet[]): string {
 const inputText = ref('')
 const isComposing = ref(false)
 const mentionInputEl = ref<HTMLTextAreaElement | null>(null)
+const textareaWrapEl = ref<HTMLDivElement | null>(null)
 const mentionListEl = ref<HTMLDivElement | null>(null)
 const currentTabIdRef = computed(() => props.currentTabId)
 const uploadedDocsRef = computed(() => props.uploadedDocs as ParsedDocument[])
@@ -188,12 +211,22 @@ const focusInput = () => {
   mentionInputEl.value?.focus()
 }
 
-const adjustTextareaHeight = () => {
+/** 两行 grid 布局下测量高度；勿用 flex-column + scrollHeight 组合 */
+const measureTextareaHeight = () => {
   const textarea = mentionInputEl.value
   if (!textarea) return
 
+  textarea.style.overflow = 'hidden'
+  textarea.style.minHeight = '0'
   textarea.style.height = 'auto'
-  textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`
+  const nextHeight = Math.min(Math.max(textarea.scrollHeight, 20), 360)
+  textarea.style.height = `${nextHeight}px`
+  textarea.style.minHeight = ''
+  textarea.style.overflow = nextHeight >= 360 ? 'auto' : 'hidden'
+}
+
+const syncTextareaSize = () => {
+  nextTick(measureTextareaHeight)
 }
 
 const appendText = (text: string) => {
@@ -201,23 +234,19 @@ const appendText = (text: string) => {
   inputText.value = inputText.value
     ? `${inputText.value} ${text}`.trim()
     : text
-  nextTick(() => {
-    focusInput()
-    adjustTextareaHeight()
-  })
+  syncTextareaSize()
+  nextTick(focusInput)
 }
 
 const setText = (text: string) => {
   inputText.value = text
-  nextTick(() => {
-    focusInput()
-    adjustTextareaHeight()
-  })
+  syncTextareaSize()
+  nextTick(focusInput)
 }
 
 const clearText = () => {
   inputText.value = ''
-  nextTick(adjustTextareaHeight)
+  syncTextareaSize()
 }
 
 // 一次性脉冲提示：让用户从场景卡片填入 prompt 后，注意到输入框已就绪。
@@ -246,7 +275,7 @@ watch(() => props.visible, (isVisible) => {
   if (isVisible) {
     nextTick(() => {
       focusInput()
-      adjustTextareaHeight()
+      measureTextareaHeight()
     })
   }
 }, { immediate: true })
@@ -257,14 +286,14 @@ watch(
     if (len > (prevLen ?? 0)) {
       nextTick(() => {
         focusInput()
-        adjustTextareaHeight()
+        measureTextareaHeight()
       })
     }
   }
 )
 
 watch(inputText, () => {
-  nextTick(adjustTextareaHeight)
+  syncTextareaSize()
 })
 
 watch(mentionSelectedIndex, (newIndex) => {
@@ -284,7 +313,7 @@ const handleInputChange = (event: Event) => {
   const textarea = event.target as HTMLTextAreaElement
   const cursorPos = textarea.selectionStart || 0
   detectTrigger(textarea.value, cursorPos)
-  adjustTextareaHeight()
+  measureTextareaHeight()
 }
 
 const handleInputBlur = () => {
@@ -295,7 +324,7 @@ const selectSuggestion = (suggestion: typeof mentionSuggestions.value[0]) => {
   doSelectSuggestion(suggestion)
   nextTick(() => {
     focusInput()
-    adjustTextareaHeight()
+    measureTextareaHeight()
   })
 }
 
@@ -520,18 +549,19 @@ const handleSendClick = (event: MouseEvent) => {
         <Plus v-else :size="18" />
       </button>
 
-      <textarea
-        ref="mentionInputEl"
-        v-model="inputText"
-        :placeholder="composerPlaceholder"
-        rows="1"
-        @input="handleInputChange"
-        @keydown="handleInputKeyDown"
-        @paste="handlePaste"
-        @compositionstart="isComposing = true"
-        @compositionend="isComposing = false"
-        @blur="handleInputBlur"
-      ></textarea>
+      <div ref="textareaWrapEl" class="input-textarea-wrap">
+        <textarea
+          ref="mentionInputEl"
+          v-model="inputText"
+          :placeholder="composerPlaceholder"
+          @input="handleInputChange"
+          @keydown="handleInputKeyDown"
+          @paste="handlePaste"
+          @compositionstart="isComposing = true"
+          @compositionend="isComposing = false"
+          @blur="handleInputBlur"
+        ></textarea>
+      </div>
 
       <div v-if="showMentionMenu" class="mention-menu">
         <div v-if="mentionMenuType === null" class="mention-menu-header">
@@ -1142,20 +1172,29 @@ const handleSendClick = (event: MouseEvent) => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-/* 两行模式（footer-left slot 有内容时自动切换） */
+/* 两行模式：grid 替代 flex-column，避免 textarea scrollHeight 测量失真 */
 .input-container-two-row {
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto auto;
   align-items: stretch;
   gap: 0;
   padding: 10px 10px 6px;
 }
 
+.input-container-two-row .input-textarea-wrap {
+  width: 100%;
+  flex: none;
+}
+
+.input-textarea-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
 .input-container-two-row textarea {
   width: 100%;
-  padding: 0 4px;
+  padding: 7px 4px;
   min-height: 24px;
-  align-self: stretch;
-  flex: none; /* let JS adjustTextareaHeight control height in column-flex */
 }
 
 .input-bottom-bar {
@@ -1279,8 +1318,8 @@ const handleSendClick = (event: MouseEvent) => {
 }
 
 .ai-input textarea {
-  flex: 1;
-  align-self: center;
+  display: block;
+  width: 100%;
   padding: 7px 4px;
   font-size: 14px;
   font-family: inherit;

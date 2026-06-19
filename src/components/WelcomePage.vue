@@ -320,7 +320,7 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  /* 不用 justify-content: center，避免 overflow-y: auto 下内容超出时顶部被裁掉无法滚回 */
   overflow-y: auto;
   padding: 24px 20px;
 }

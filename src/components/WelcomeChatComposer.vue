@@ -422,6 +422,11 @@ onUnmounted(() => {
   opacity: 0;
 }
 
+/* 欢迎页 textarea 最大高度比面板模式矮，避免把 logo 和卡片都撑出屏幕 */
+.welcome-chat-composer :deep(.ai-input textarea) {
+  max-height: 160px;
+}
+
 @keyframes welcomeComposerEnter {
   from {
     opacity: 0;
