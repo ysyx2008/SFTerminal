@@ -1045,6 +1045,7 @@ export default {
     dashboardChromiumTitle: 'Chromium（Chrome / Edge / Arc / Brave 等）',
     dashboardFirefoxTitle: 'Firefox',
     statusExtensionConnected: '已连接',
+    statusExtensionConnectedVersion: '已连接 · v{version}',
     statusExtensionDisconnected: '扩展未连接',
     readyHint: 'Agent 可直接操作已连接的浏览器。若 Chrome 与 Firefox 同时连接，说明要看哪个浏览器即可。',
     startLoadChromeMac: '打开 Chrome 扩展页',

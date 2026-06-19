@@ -69,7 +69,7 @@ legacy `list_tabs` / `switch_tab` / `goto` / `close_tab` 内部委托 `shared/ta
 
 | Channel | 说明 |
 |---------|------|
-| `browserBridge:getStatus` | 返回 `BrowserBridgeStatus` |
+| `browserBridge:getStatus` | 对已连接扩展 ping 后返回 `BrowserBridgeStatus`（含 `connections[].version`） |
 | `browserBridge:install` | 复制扩展、写 manifest、注册 Native Host |
 | `browserBridge:uninstall` | 移除 Native Host 注册与本机扩展文件 |
 | `browserBridge:openExtensionGuide` | 用对应浏览器打开扩展管理页（`chrome://` 等内部 URL） |

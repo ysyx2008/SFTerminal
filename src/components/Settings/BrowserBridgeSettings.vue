@@ -48,9 +48,18 @@ function parentFolder(filePath: string): string {
 const componentsInstalled = computed(() => isBrowserBridgeComponentsInstalled(status.value?.install))
 
 const connections = computed(() => status.value?.connections ?? [])
-const chromiumConnected = computed(() => connections.value.some(isChromiumBridgeConnection))
-const firefoxConnected = computed(() => connections.value.some(isFirefoxBridgeConnection))
+const chromiumConnection = computed(() => connections.value.find(isChromiumBridgeConnection))
+const firefoxConnection = computed(() => connections.value.find(isFirefoxBridgeConnection))
+const chromiumConnected = computed(() => Boolean(chromiumConnection.value))
+const firefoxConnected = computed(() => Boolean(firefoxConnection.value))
 const anyConnected = computed(() => chromiumConnected.value || firefoxConnected.value)
+
+function extensionStatusLabel(version?: string): string {
+  if (version) {
+    return t('browserBridge.statusExtensionConnectedVersion', { version })
+  }
+  return t('browserBridge.statusExtensionConnected')
+}
 
 function flashActionMsg(msg: string) {
   actionMsg.value = msg
@@ -270,7 +279,7 @@ onUnmounted(() => {
                 >
                   {{
                     chromiumConnected
-                      ? t('browserBridge.statusExtensionConnected')
+                      ? extensionStatusLabel(chromiumConnection?.version)
                       : t('browserBridge.statusExtensionDisconnected')
                   }}
                 </div>
@@ -338,7 +347,7 @@ onUnmounted(() => {
                 >
                   {{
                     firefoxConnected
-                      ? t('browserBridge.statusExtensionConnected')
+                      ? extensionStatusLabel(firefoxConnection?.version)
                       : t('browserBridge.statusExtensionDisconnected')
                   }}
                 </div>

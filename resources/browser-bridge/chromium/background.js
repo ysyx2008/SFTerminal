@@ -194,7 +194,11 @@ function reconnectNative() {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.source === 'sailfish-popup-test') {
-    requestNative(message.action, message.payload)
+    if (!nativePort) {
+      sendResponse({ error: 'Native host not connected' })
+      return true
+    }
+    dispatchAction(message.action || 'ping', message.payload || {})
       .then(sendResponse)
       .catch((e) => {
         reconnectNative()

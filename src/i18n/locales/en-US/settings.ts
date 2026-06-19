@@ -1045,6 +1045,7 @@ export default {
     dashboardChromiumTitle: 'Chromium (Chrome / Edge / Arc / Brave…)',
     dashboardFirefoxTitle: 'Firefox',
     statusExtensionConnected: 'Connected',
+    statusExtensionConnectedVersion: 'Connected · v{version}',
     statusExtensionDisconnected: 'Extension not connected',
     readyHint: 'The Agent can control connected browsers. If both Chrome and Firefox are connected, say which one you mean.',
     startLoadChromeMac: 'Open Chrome extensions',

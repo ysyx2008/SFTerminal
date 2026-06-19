@@ -93,6 +93,20 @@ The extension is useless without the SailFish desktop app and native host. Data 
 2. 重新 `npm run pack:firefox-extension`
 3. AMO 开发者中心 → 该扩展 → **Upload New Version**
 
+### ⚠️ Firefox MV3 与 `importScripts`
+
+Firefox MV3 的 background 使用 **event page**（`background.scripts`），**不是** Service Worker，因此 **`importScripts()` 不可用**。
+
+AMO 包的 `manifest.json` 必须同时列出：
+
+```json
+"background": {
+  "scripts": ["shared/tabs-api.js", "background-firefox.js"]
+}
+```
+
+若只列 `background-firefox.js` 并在其内 `importScripts('shared/tabs-api.js')`，background 会在启动时抛错，扩展完全无法连接 Native Host。打包脚本会在缺少双脚本时直接失败。
+
 ## 参考
 
 - [Signing and distribution overview](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/)

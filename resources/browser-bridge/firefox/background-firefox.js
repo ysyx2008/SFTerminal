@@ -1,10 +1,21 @@
 /**
  * Firefox background — browser.* API wrapper around shared tabs-api
- * tabs-api.js 由 manifest background.scripts 先行加载（比 importScripts 在 Firefox 临时加载更稳）
+ * 优先 manifest scripts 预加载；AMO/旧包仅单脚本时用 importScripts 兜底
  */
+if (!globalThis.__sailfishTabsApi) {
+  try {
+    importScripts('shared/tabs-api.js')
+  } catch (error) {
+    console.error('[SailFish Bridge] failed to load shared/tabs-api.js:', error)
+  }
+}
 const api = globalThis.browser || globalThis.chrome
 const tabsApi = globalThis.__sailfishTabsApi
 const NATIVE_HOST = 'com.sailfish.browser'
+
+if (!tabsApi) {
+  console.error('[SailFish Bridge] tabs-api unavailable — extension background cannot start bridge')
+}
 
 /** @type {browser.runtime.Port | null} */
 let nativePort = null
@@ -63,17 +74,24 @@ async function dispatchAction(action, payload) {
         extension: 'sailfish-browser-bridge',
         version: api.runtime.getManifest().version,
         protocol: 1,
-        capabilities: ['tabs_manage', 'goto_new_tab'],
+        capabilities: tabsApi ? ['tabs_manage', 'goto_new_tab'] : [],
+        tabsApiReady: Boolean(tabsApi),
+        nativeConnected: Boolean(nativePort),
       }
     case 'tabs':
+      if (!tabsApi) throw new Error('Browser bridge tabs-api not loaded. Reinstall SailFish Browser Assistant extension.')
       return tabsApi.handleTabsOp(api.tabs, api.windows, payload)
     case 'list_tabs':
+      if (!tabsApi) throw new Error('Browser bridge tabs-api not loaded. Reinstall SailFish Browser Assistant extension.')
       return tabsApi.listTabs(api.tabs)
     case 'switch_tab':
+      if (!tabsApi) throw new Error('Browser bridge tabs-api not loaded. Reinstall SailFish Browser Assistant extension.')
       return tabsApi.switchTab(api.tabs, api.windows, payload)
     case 'goto':
+      if (!tabsApi) throw new Error('Browser bridge tabs-api not loaded. Reinstall SailFish Browser Assistant extension.')
       return tabsApi.gotoUrl(api.tabs, payload)
     case 'close_tab':
+      if (!tabsApi) throw new Error('Browser bridge tabs-api not loaded. Reinstall SailFish Browser Assistant extension.')
       return tabsApi.closeTab(api.tabs, payload)
     case 'reload':
       api.runtime.reload()
@@ -162,7 +180,11 @@ function requestNative(action, payload) {
 
 api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.source === 'sailfish-popup-test') {
-    requestNative(message.action, message.payload)
+    if (!nativePort) {
+      sendResponse({ error: 'Native host not connected' })
+      return true
+    }
+    dispatchAction(message.action || 'ping', message.payload || {})
       .then(sendResponse)
       .catch((e) => {
         reconnectNative()

@@ -31,6 +31,24 @@ cp "$AMO_OVERLAY/manifest.json" "$BUILD/manifest.json"
 rm -rf "$BUILD/icons"
 cp -R "$AMO_OVERLAY/icons" "$BUILD/icons"
 
+# Firefox MV3 event page 无 importScripts；manifest 必须预加载 shared/tabs-api.js
+node -e "
+const fs = require('fs');
+const manifest = JSON.parse(fs.readFileSync('$BUILD/manifest.json', 'utf8'));
+const scripts = manifest.background?.scripts || [];
+const required = ['shared/tabs-api.js', 'background-firefox.js'];
+for (const file of required) {
+  if (!scripts.includes(file)) {
+    console.error('AMO manifest.background.scripts must include', file);
+    process.exit(1);
+  }
+}
+if (!fs.existsSync('$BUILD/shared/tabs-api.js')) {
+  console.error('Missing $BUILD/shared/tabs-api.js');
+  process.exit(1);
+}
+"
+
 rm -f "$OUT"
 (
   cd "$BUILD"

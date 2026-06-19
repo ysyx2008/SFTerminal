@@ -5108,7 +5108,7 @@ ipcMain.handle('plugin:setConfig', async (_event, id: string, config: Record<str
 // ==================== 浏览器助手（扩展桥接） ====================
 
 ipcMain.handle('browserBridge:getStatus', async () => {
-  return getBrowserBridgeService().getStatus()
+  return getBrowserBridgeService().refreshConnectionMetadata()
 })
 
 ipcMain.handle('browserBridge:install', async () => {

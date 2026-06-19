@@ -138,6 +138,9 @@ export interface BrowserBridgeConnection {
   browser: BrowserBridgeBrowser
   origin: string
   state: BrowserBridgeConnectionState
+  /** 扩展 ping 上报的版本（连接后异步探测） */
+  version?: string
+  capabilities?: BrowserBridgeCapability[]
 }
 
 export interface BrowserBridgeStatus {

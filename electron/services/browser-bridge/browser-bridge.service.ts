@@ -9,6 +9,7 @@ import {
   BROWSER_BRIDGE_FIREFOX_EXTENSION_ID,
   type BrowserBridgeAttachTarget,
   type BrowserBridgeBrowser,
+  type BrowserBridgeCapability,
   type BrowserBridgeCommandResult,
   type BrowserBridgeInstallStatus,
   type BrowserBridgeStatus,
@@ -35,6 +36,8 @@ interface HostConnection {
   browser: BrowserBridgeBrowser
   socket: net.Socket
   buffer: string
+  version?: string
+  capabilities?: BrowserBridgeCapability[]
 }
 
 interface PendingRequest {
@@ -163,11 +166,23 @@ export class BrowserBridgeService {
     }
     const detected = detectInstallStatus()
     if (detected) this.lastInstall = detected
+    return this.buildStatus()
+  }
+
+  /** 对已连接扩展发 ping，刷新版本号等元数据 */
+  async refreshConnectionMetadata(): Promise<BrowserBridgeStatus> {
+    await this.probeAllHosts()
+    return this.getStatus()
+  }
+
+  private buildStatus(): BrowserBridgeStatus {
     const install = this.lastInstall
     const connections = [...this.hosts.values()].map((host) => ({
       browser: host.browser,
       origin: host.origin,
       state: 'ready' as const,
+      version: host.version,
+      capabilities: host.capabilities,
     }))
     return {
       gatewayRunning: this.started,
@@ -179,6 +194,26 @@ export class BrowserBridgeService {
         chromiumDev: BROWSER_BRIDGE_CHROMIUM_DEV_EXTENSION_ID,
         firefox: BROWSER_BRIDGE_FIREFOX_EXTENSION_ID,
       },
+    }
+  }
+
+  private async probeAllHosts(): Promise<void> {
+    await Promise.all(
+      [...this.hosts.entries()].map(([socket]) => this.probeHost(socket)),
+    )
+  }
+
+  private async probeHost(socket: net.Socket): Promise<void> {
+    const host = this.hosts.get(socket)
+    if (!host) return
+    try {
+      const pingRaw = await this.sendCommand('ping', {}, { origin: host.origin, timeoutMs: 5000 })
+      const ping = parsePingResult(pingRaw)
+      if (!ping || !this.hosts.has(socket)) return
+      host.version = ping.version
+      host.capabilities = ping.capabilities
+    } catch (error) {
+      log.debug(`Extension ping failed (${host.origin}):`, error)
     }
   }
 
@@ -328,6 +363,7 @@ export class BrowserBridgeService {
       })
       log.info(`Host registered: ${origin}`)
       this.notifyConnectionsChanged()
+      void this.probeHost(socket).then(() => this.notifyConnectionsChanged())
       return
     }
 
@@ -350,7 +386,7 @@ export class BrowserBridgeService {
 
   private notifyConnectionsChanged(): void {
     if (!this.mainWindow || this.mainWindow.isDestroyed()) return
-    this.mainWindow.webContents.send('browserBridge:connectionsChanged', this.getStatus())
+    this.mainWindow.webContents.send('browserBridge:connectionsChanged', this.buildStatus())
   }
 }
 
