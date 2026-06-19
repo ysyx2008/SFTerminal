@@ -559,7 +559,12 @@ onMounted(async () => {
       : data.message
     const focusRemoteTab = () => {
       const tab = terminalStore.tabs.find(t => t.agentId === data.agentId)
-      if (tab) terminalStore.setActiveTab(tab.id)
+      if (!tab) return
+      if (tab.isPromoted || tab.isRemote) {
+        terminalStore.setActiveTab(tab.id)
+      } else {
+        terminalStore.focusHubConversation(tab.id)
+      }
     }
     toast.show(
       `📡 ${t('gateway.remoteTaskStarted')}: ${preview}`,
@@ -634,11 +639,14 @@ onMounted(async () => {
       const tabId = terminalStore.createAssistantTab({
         agentId,
         title: configStore.agentName || t('watch.assistantTabTitle'),
-        activate: true
+        activate: false
       })
+      terminalStore.focusHubConversation(tabId)
       tab = terminalStore.tabs.find(t => t.id === tabId)
-    } else {
+    } else if (tab.isPromoted || tab.isRemote) {
       terminalStore.setActiveTab(tab.id)
+    } else {
+      terminalStore.focusHubConversation(tab.id)
     }
 
     if (tab) {
@@ -729,6 +737,15 @@ onMounted(async () => {
     if (tab) {
       const tabId = tab.id
       // Agent 忙时延迟注入，防止用户误回复干扰正在执行的任务
+      const focusProactiveTab = (id: string) => {
+        const t = terminalStore.tabs.find(t => t.id === id)
+        if (!t) return
+        if (t.isPromoted || t.isRemote) {
+          terminalStore.setActiveTab(id)
+        } else {
+          terminalStore.focusHubConversation(id)
+        }
+      }
       if (tab.agentState?.isRunning) {
         pendingProactiveMessages.push({
           agentId: data.agentId,
@@ -737,18 +754,10 @@ onMounted(async () => {
           timestamp: Date.now()
         })
         terminalStore.markDeferredProactive(tabId)
-        toast.proactive(preview, () => {
-          if (terminalStore.tabs.find(t => t.id === tabId)) {
-            terminalStore.setActiveTab(tabId)
-          }
-        })
+        toast.proactive(preview, () => focusProactiveTab(tabId))
       } else {
         injectProactiveSteps(tabId, data.message)
-        toast.proactive(preview, () => {
-          if (terminalStore.tabs.find(t => t.id === tabId)) {
-            terminalStore.setActiveTab(tabId)
-          }
-        })
+        toast.proactive(preview, () => focusProactiveTab(tabId))
       }
     } else {
       pendingProactiveMessages.push({
