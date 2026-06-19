@@ -37,6 +37,7 @@ vi.mock('../../im/im.service', () => ({
 
 import { dispatchSubAgents, getSubAgentTools } from '../tools/sub-agent'
 import { getAgentTools } from '../tools'
+import * as toolMetadata from '../tool-metadata'
 import type { ToolDefinition } from '../../ai.service'
 import type { ToolExecutorConfig, AgentConfig } from '../tools/types'
 import type { AgentContext } from '../types'
@@ -519,6 +520,47 @@ describe('dispatchSubAgents', () => {
     expect(steps?.[0]).toMatchObject({
       tool: 'web_fetch',
       args: 'https://example.com/docs',
+    })
+  })
+
+  it('should fall back to switch arg extraction when tool metadata is unavailable', async () => {
+    const metaSpy = vi.spyOn(toolMetadata, 'getMetaByName').mockReturnValue(undefined)
+    const executor = createMockExecutor()
+    const mockAi = (executor as any)._mockAiService
+
+    let callCount = 0
+    mockAi.chatWithTools.mockImplementation(async () => {
+      callCount++
+      if (callCount === 1) {
+        return {
+          content: '',
+          tool_calls: [{
+            id: 'tc-read',
+            type: 'function',
+            function: { name: 'read_file', arguments: '{"path": "/test/file.ts"}' }
+          }],
+          finish_reason: 'tool_calls',
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+        }
+      }
+      return {
+        content: 'Done',
+        tool_calls: undefined,
+        finish_reason: 'stop',
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+      }
+    })
+
+    await dispatchSubAgents({
+      tasks: [{ description: '读文件', prompt: '请读取文件' }]
+    }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
+
+    metaSpy.mockRestore()
+
+    const steps = (executor.updateStep as any).mock.calls.at(-1)[1].subAgents?.[0]?.steps
+    expect(steps?.[0]).toMatchObject({
+      tool: 'read_file',
+      args: '/test/file.ts',
     })
   })
 

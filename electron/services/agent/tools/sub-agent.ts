@@ -581,14 +581,24 @@ function summarizeToolArgs(
     }
 
     switch (toolName) {
+      case 'read_file':
+      case 'edit_file':
       case 'write_text_file':
-        return typeof args.path === 'string' ? args.path : undefined
+        if (typeof args.path === 'string' && args.path) return args.path
+        return typeof args.file_path === 'string' ? args.file_path : undefined
       case 'file_search':
-        return typeof args.query === 'string' ? args.query : undefined
+        if (typeof args.query === 'string' && args.query) return args.query
+        return typeof args.pattern === 'string' ? args.pattern : undefined
+      case 'exec':
+        return typeof args.command === 'string' ? args.command : undefined
+      case 'web_fetch':
+        return typeof args.url === 'string' ? args.url : undefined
       case 'search_knowledge':
         return typeof args.query === 'string' ? args.query : undefined
       case 'get_knowledge_doc':
-        return typeof args.doc_id === 'string' ? args.doc_id : undefined
+        if (typeof args.doc_id === 'string' && args.doc_id) return args.doc_id
+        if (typeof args.title === 'string' && args.title) return args.title
+        return typeof args.id === 'string' ? args.id : undefined
       default:
         return undefined
     }
