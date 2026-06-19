@@ -2610,7 +2610,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                                 <span v-else class="sa-step-fail">✗</span>
                               </span>
                               <span class="sa-step-tool">{{ step.tool }}</span>
-                              <span v-if="step.args" class="sa-step-args">{{ step.args }}</span>
+                              <span v-if="step.args" class="sa-step-args" :title="step.args">{{ step.args }}</span>
                             </div>
                           </div>
                           <div v-if="sa.result" class="sub-agent-result">
@@ -5794,7 +5794,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .sa-step {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   font-size: 11px;
   line-height: 1.4;
@@ -5820,12 +5820,13 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 }
 
 .sa-step-args {
+  flex: 1;
+  min-width: 0;
   color: var(--text-muted);
+  font-family: var(--font-mono);
   font-size: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 280px;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .sub-agent-result {

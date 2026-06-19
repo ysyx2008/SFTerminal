@@ -483,6 +483,45 @@ describe('dispatchSubAgents', () => {
     expect(['completed', 'failed']).toContain(finalSubAgent.steps[0].status)
   })
 
+  it('should include tool args in sub-agent steps for web_fetch', async () => {
+    const executor = createMockExecutor()
+    const mockAi = (executor as any)._mockAiService
+
+    let callCount = 0
+    mockAi.chatWithTools.mockImplementation(async () => {
+      callCount++
+      if (callCount === 1) {
+        return {
+          content: '',
+          tool_calls: [{
+            id: 'tc-fetch',
+            type: 'function',
+            function: { name: 'web_fetch', arguments: '{"url": "https://example.com/docs"}' }
+          }],
+          finish_reason: 'tool_calls',
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+        }
+      }
+      return {
+        content: 'Research done',
+        tool_calls: undefined,
+        finish_reason: 'stop',
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+      }
+    })
+
+    await dispatchSubAgents({
+      tasks: [{ description: '调研', prompt: '请调研竞品' }]
+    }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
+
+    const finalUpdate = (executor.updateStep as any).mock.calls.at(-1)
+    const steps = finalUpdate[1].subAgents?.[0]?.steps
+    expect(steps?.[0]).toMatchObject({
+      tool: 'web_fetch',
+      args: 'https://example.com/docs',
+    })
+  })
+
   it('should use default description when not provided', async () => {
     const executor = createMockExecutor()
     const mockAi = (executor as any)._mockAiService

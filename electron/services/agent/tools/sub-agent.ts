@@ -19,6 +19,7 @@
  * / plan / ask_user 等不在自己白名单的工具，不断被运行时拦截卡死）。已撤回到独立模式。
  */
 import type { AiService, AiMessage, ToolDefinition, ChatWithToolsResult } from '../../ai.service'
+import { getMetaByName } from '../tool-metadata'
 import type { SubAgentTask, SubAgentResult, SubAgentToolStep, SubAgentTypeName, TokenUsage } from '@shared/types'
 import type { ToolExecutorConfig, ToolResult, AgentConfig } from './types'
 import { executeTool } from './index'
@@ -278,7 +279,7 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
         if (abortSignal.aborted || executorConfig.isAborted()) break
 
         const toolName = toolCall.function?.name || 'unknown'
-        const toolArgs = summarizeToolArgs(toolName, toolCall.function?.arguments)
+        const toolArgs = summarizeToolArgs(toolName, toolCall.function?.arguments, tools)
         const step: SubAgentToolStep = { tool: toolName, args: toolArgs, status: 'running' }
         toolSteps.push(step)
         onProgress({ steps: [...toolSteps] })
@@ -562,19 +563,34 @@ export async function dispatchSubAgents(
 
 // ==================== 辅助函数 ====================
 
-function summarizeToolArgs(toolName: string, argsStr?: string): string | undefined {
+/** 从工具参数中提取摘要，供子 Agent 步骤列表展示（完整保留，由 UI 控制换行/省略） */
+function summarizeToolArgs(
+  toolName: string,
+  argsStr: string | undefined,
+  tools: ToolDefinition[]
+): string | undefined {
   if (!argsStr) return undefined
   try {
-    const args = JSON.parse(argsStr)
+    const args = JSON.parse(argsStr) as Record<string, unknown>
+
+    const meta = getMetaByName(tools, toolName)
+    const metaField = meta?.argRole?.summaryLine ?? meta?.streamDisplay?.titleField
+    if (metaField && typeof args[metaField] === 'string') {
+      const val = args[metaField] as string
+      if (val) return val
+    }
+
     switch (toolName) {
-      case 'read_file': return args.path || args.file_path
-      case 'edit_file': return args.file_path || args.path
-      case 'write_text_file': return args.file_path || args.path
-      case 'file_search': return args.query || args.pattern
-      case 'exec': return args.command ? (args.command.length > 80 ? args.command.slice(0, 77) + '...' : args.command) : undefined
-      case 'search_knowledge': return args.query
-      case 'get_knowledge_doc': return args.title || args.id
-      default: return undefined
+      case 'write_text_file':
+        return typeof args.path === 'string' ? args.path : undefined
+      case 'file_search':
+        return typeof args.query === 'string' ? args.query : undefined
+      case 'search_knowledge':
+        return typeof args.query === 'string' ? args.query : undefined
+      case 'get_knowledge_doc':
+        return typeof args.doc_id === 'string' ? args.doc_id : undefined
+      default:
+        return undefined
     }
   } catch {
     return undefined
