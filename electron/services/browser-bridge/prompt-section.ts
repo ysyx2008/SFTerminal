@@ -5,6 +5,52 @@ import {
   isFirefoxBridgeConnection,
 } from '@shared/types/browser-bridge'
 
+/** 系统提示中浏览器助手章节的 Markdown 标题（与 buildBrowserBridgePromptSection 一致） */
+export const BROWSER_BRIDGE_PROMPT_HEADING = '# 浏览器助手'
+
+const HOST_ENV_HEADINGS = ['# 主机环境（命令必须匹配）', '# 运行环境'] as const
+
+function findMarkdownSectionBounds(content: string, heading: string): { start: number; end: number } | null {
+  const start = content.indexOf(heading)
+  if (start === -1) return null
+  const rest = content.slice(start + heading.length)
+  const nextMatch = rest.match(/\n\n# /)
+  const end = nextMatch?.index !== undefined ? start + heading.length + nextMatch.index : content.length
+  return { start, end }
+}
+
+/**
+ * 在已有 system prompt 中替换/插入/移除浏览器助手章节。
+ * 用于 prompt cache 复用时刷新连接状态，而不重建整段 system prompt。
+ */
+export function patchBrowserBridgeSectionInSystemPrompt(
+  systemPrompt: string,
+  status: BrowserBridgeStatus,
+): string {
+  const newSection = buildBrowserBridgePromptSection(status)
+  const bounds = findMarkdownSectionBounds(systemPrompt, BROWSER_BRIDGE_PROMPT_HEADING)
+
+  if (bounds) {
+    if (!newSection) {
+      let { start, end } = bounds
+      if (start >= 2 && systemPrompt.slice(start - 2, start) === '\n\n') start -= 2
+      return systemPrompt.slice(0, start) + systemPrompt.slice(end)
+    }
+    return systemPrompt.slice(0, bounds.start) + newSection + systemPrompt.slice(bounds.end)
+  }
+
+  if (!newSection) return systemPrompt
+
+  for (const hostHeading of HOST_ENV_HEADINGS) {
+    const hostBounds = findMarkdownSectionBounds(systemPrompt, hostHeading)
+    if (hostBounds) {
+      return systemPrompt.slice(0, hostBounds.end) + '\n\n' + newSection + systemPrompt.slice(hostBounds.end)
+    }
+  }
+
+  return `${newSection}\n\n${systemPrompt}`
+}
+
 /**
  * 将浏览器助手连接状态格式化为 Agent 系统提示章节。
  * 扩展未安装且未连接时返回空字符串（不占用 token）。
@@ -20,7 +66,7 @@ export function buildBrowserBridgePromptSection(status: BrowserBridgeStatus): st
     return ''
   }
 
-  const lines: string[] = ['# 浏览器助手']
+  const lines: string[] = [BROWSER_BRIDGE_PROMPT_HEADING]
 
   if (anyConnected) {
     const statusParts: string[] = []

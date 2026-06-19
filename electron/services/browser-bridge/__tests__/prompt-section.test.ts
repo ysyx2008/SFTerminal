@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildBrowserBridgePromptSection } from '../prompt-section'
+import { buildBrowserBridgePromptSection, patchBrowserBridgeSectionInSystemPrompt } from '../prompt-section'
 import type { BrowserBridgeStatus } from '@shared/types/browser-bridge'
 
 function baseStatus(overrides: Partial<BrowserBridgeStatus> = {}): BrowserBridgeStatus {
@@ -62,5 +62,46 @@ describe('buildBrowserBridgePromptSection', () => {
     )
     expect(section).toContain('扩展未连接')
     expect(section).toContain('browser_launch')
+  })
+})
+
+describe('patchBrowserBridgeSectionInSystemPrompt', () => {
+  const connectedStatus = baseStatus({
+    connections: [{ browser: 'chrome', origin: 'chrome-extension://abc/', state: 'ready' }],
+  })
+  const disconnectedStatus = baseStatus({
+    install: {
+      chromiumExtensionPath: '/tmp/ext',
+      firefoxExtensionPath: '/tmp/ff',
+      nativeHostPath: '/tmp/host.json',
+      registeredBrowsers: ['chrome'],
+      errors: [],
+    },
+  })
+
+  it('replaces existing browser section when connection state changes', () => {
+    const oldSection = buildBrowserBridgePromptSection(disconnectedStatus)
+    const systemPrompt = `# 运行环境\n\nOS: darwin\n\n${oldSection}\n\n# 核心规则\n\nrules`
+    const patched = patchBrowserBridgeSectionInSystemPrompt(systemPrompt, connectedStatus)
+    expect(patched).toContain('Chromium')
+    expect(patched).toContain('已连接')
+    expect(patched).not.toContain('扩展未连接')
+    expect(patched).toContain('# 核心规则')
+  })
+
+  it('inserts browser section after host environment when missing', () => {
+    const systemPrompt = '# 运行环境\n\nOS: darwin\n\n# 核心规则\n\nrules'
+    const patched = patchBrowserBridgeSectionInSystemPrompt(systemPrompt, connectedStatus)
+    expect(patched.indexOf('# 运行环境')).toBeLessThan(patched.indexOf('# 浏览器助手'))
+    expect(patched.indexOf('# 浏览器助手')).toBeLessThan(patched.indexOf('# 核心规则'))
+    expect(patched).toContain('browser_list_tabs')
+  })
+
+  it('removes browser section when extension uninstalled and disconnected', () => {
+    const oldSection = buildBrowserBridgePromptSection(connectedStatus)
+    const systemPrompt = `# 运行环境\n\nOS: darwin\n\n${oldSection}\n\n# 核心规则\n\nrules`
+    const patched = patchBrowserBridgeSectionInSystemPrompt(systemPrompt, baseStatus())
+    expect(patched).not.toContain('# 浏览器助手')
+    expect(patched).toContain('# 核心规则')
   })
 })

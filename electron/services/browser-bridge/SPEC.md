@@ -62,6 +62,7 @@ native-host/host.mjs (Chrome 按连接 spawn)
 - `browser_get_content`（auto/article）：扩展 `page_html` → 桌面端 `extractPageContentFromHtml`
 - 未 attach 时行为不变
 - Agent 系统提示在 Tier 2 注入 `buildBrowserBridgePromptSection()`（扩展在线时告知优先 attach、无需 browser_launch）
+- prompt cache 复用路径下，`agent.ts` 调用 `patchBrowserBridgeSectionInSystemPrompt()` 刷新 system 消息中的该章节，避免同会话追问时状态过期
 
 ### Native Host 名
 

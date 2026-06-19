@@ -51,6 +51,8 @@ import { getAiDebugService } from '../ai-debug.service'
 import { createLogger } from '../../utils/logger'
 import { assembleUserMessageContent, wrapSystemContext } from './message-envelope'
 import { notifyFrontendConfigChanged } from './skills/config/executor'
+import { getBrowserBridgeService } from '../browser-bridge/browser-bridge.service'
+import { patchBrowserBridgeSectionInSystemPrompt } from '../browser-bridge/prompt-section'
 
 const log = createLogger('Agent')
 
@@ -1512,6 +1514,8 @@ export abstract class Agent {
           return copy
         })
 
+        this.refreshBrowserBridgeSectionInMessages(run.messages)
+
         // 在前序消息末尾设置 Anthropic cache breakpoint（第 3 个断点）
         const lastPrevMsg = run.messages[run.messages.length - 1]
         if (lastPrevMsg) {
@@ -1632,6 +1636,22 @@ export abstract class Agent {
     const userMsg = await this.buildUserMessage(run, message, false)
     run.messages.push(userMsg)
     run.taskMessageLog.push({ ...userMsg })
+  }
+
+  /** prompt cache 复用时刷新 system 消息中的浏览器助手章节（连接状态可能已变） */
+  private refreshBrowserBridgeSectionInMessages(messages: AiMessage[]): void {
+    const systemIdx = messages.findIndex(m => m.role === 'system' && typeof m.content === 'string')
+    if (systemIdx === -1) return
+    try {
+      const status = getBrowserBridgeService().getStatus()
+      const current = messages[systemIdx].content as string
+      const patched = patchBrowserBridgeSectionInSystemPrompt(current, status)
+      if (patched !== current) {
+        messages[systemIdx] = { ...messages[systemIdx], content: patched }
+      }
+    } catch (error) {
+      log.debug('Browser bridge section refresh skipped:', error)
+    }
   }
 
   /**
