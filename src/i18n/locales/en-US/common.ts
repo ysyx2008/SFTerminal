@@ -40,7 +40,7 @@ export default {
       searchPlaceholder: 'Search conversations...',
       searchOpen: 'Search conversations',
       searchClose: 'Close search',
-      newConversation: 'New conversation',
+      newConversation: 'New Chat',
       collapseSidebar: 'Collapse sidebar',
       expandSidebar: 'Expand sidebar',
       loadMore: 'Load more',

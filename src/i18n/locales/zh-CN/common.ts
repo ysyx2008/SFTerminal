@@ -40,7 +40,7 @@ export default {
       searchPlaceholder: '搜索对话...',
       searchOpen: '搜索对话',
       searchClose: '关闭搜索',
-      newConversation: '新建对话',
+      newConversation: '新对话',
       collapseSidebar: '收起侧栏',
       expandSidebar: '展开侧栏',
       loadMore: '加载更多',
