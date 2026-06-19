@@ -284,8 +284,10 @@ const displayedRecordIds = computed(() => {
 })
 
 /**
- * 当前可见行的状态：running / attention 对所有会话都显示；
- * open（仅表示"已在 tab 中打开"）只对 isPromoted tab 显示，非提升会话降级为 closed。
+ * 当前可见行的状态规则：
+ * - 用户正在看的对话（Hub 焦点 / activeTab）：只显示 running 或无状态，不显示 attention
+ * - 后台运行的对话：正常显示 running / attention
+ * - 非提升 tab 的 open 状态：降级为 closed（无独立 tab 概念）
  */
 const conversationMetaById = computed(() => {
   const historyMeta = terminalStore.historyConversationMetaBySessionId
@@ -293,10 +295,24 @@ const conversationMetaById = computed(() => {
   for (const id of displayedRecordIds.value) {
     const rawMeta = historyMeta.get(id) ?? CLOSED_HISTORY_CONVERSATION_META
     const tab = terminalStore.findTabByHistoryId(id)
-    // 非提升 tab 的 "open" 状态没有独立 tab 意义，降级为 closed；running/attention 保留
-    const meta = (!tab?.isPromoted && rawMeta.status === 'open')
-      ? CLOSED_HISTORY_CONVERSATION_META
-      : rawMeta
+
+    const isVisible = tab && (
+      tab.id === terminalStore.activeTabId ||
+      tab.id === terminalStore.hubFocusedAssistantTabId
+    )
+
+    let meta: HistoryConversationMeta
+    if (isVisible) {
+      // 用户正在看：只显示 running，其余均无需提醒
+      const status: HistoryConversationTabStatus = rawMeta.status === 'running' ? 'running' : 'closed'
+      meta = { ...CLOSED_HISTORY_CONVERSATION_META, status }
+    } else if (!tab?.isPromoted && rawMeta.status === 'open') {
+      // 非提升 tab 的 open 状态无意义，降级
+      meta = CLOSED_HISTORY_CONVERSATION_META
+    } else {
+      meta = rawMeta
+    }
+
     map.set(id, { status: meta.status, tooltip: formatHistoryConversationTooltip(meta, t) })
   }
   return map
