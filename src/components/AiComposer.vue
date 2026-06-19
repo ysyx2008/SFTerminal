@@ -1141,6 +1141,7 @@ const handleSendClick = (event: MouseEvent) => {
   padding: 0 4px;
   min-height: 24px;
   align-self: stretch;
+  flex: none; /* let JS adjustTextareaHeight control height in column-flex */
 }
 
 .input-bottom-bar {
