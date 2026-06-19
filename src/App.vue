@@ -613,6 +613,7 @@ onMounted(async () => {
       terminalStore.createAssistantTab({
         agentId: data.agentId,
         title: t('watch.assistantTabTitle', '远程对话'),
+        isRemote: true,
         activate: false
       })
       log.debug(`[Watch] Created assistant tab: ${data.agentId}`)
@@ -649,9 +650,10 @@ onMounted(async () => {
       const tabId = terminalStore.createAssistantTab({
         agentId,
         title: configStore.agentName || t('watch.assistantTabTitle'),
+        isRemote: true,
         activate: false
       })
-      terminalStore.focusHubConversation(tabId)
+      terminalStore.setActiveTab(tabId)
       tab = terminalStore.tabs.find(t => t.id === tabId)
     } else if (tab.isPromoted || tab.isRemote) {
       terminalStore.setActiveTab(tab.id)
