@@ -389,8 +389,20 @@ onUnmounted(() => {
       :submit-message="handleComposerSubmit"
       :submit-empty-message="noop"
       :clear-tab-error="noop"
-    />
-
+    >
+      <template v-if="configStore.aiProfiles.length > 0" #footer-left>
+        <select
+          class="welcome-model-select"
+          :value="configStore.activeAiProfileId"
+          :title="t('ai.switchModel')"
+          @change="configStore.setActiveAiProfile(($event.target as HTMLSelectElement).value)"
+        >
+          <option v-for="profile in configStore.aiProfiles" :key="profile.id" :value="profile.id">
+            {{ profile.name }} ({{ profile.model }})
+          </option>
+        </select>
+      </template>
+    </AiComposer>
     <!-- Teleport 到 body：父级 welcome-chat-composer 的 transform 动画会创建层叠上下文，
          导致 position:fixed 预览被限制在 composer 区域内，无法盖住下方快速启动卡片 -->
     <Teleport to="body">
@@ -418,6 +430,25 @@ onUnmounted(() => {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.welcome-model-select {
+  padding: 2px 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  max-width: 200px;
+  outline: none;
+  opacity: 0.75;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.welcome-model-select:hover {
+  opacity: 1;
+  color: var(--text-secondary);
 }
 
 .welcome-image-preview {

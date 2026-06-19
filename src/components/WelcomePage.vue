@@ -202,11 +202,22 @@ onUnmounted(() => {
       <!-- AI 快速发起对话（Steam 版隐藏，复用 AiComposer） -->
       <WelcomeChatComposer v-if="!isSteamBuild" :active="!!active" />
 
-      <!-- 查看示例入口 -->
+      <!-- 查看示例入口 + 模型选择器 -->
       <div v-if="!isSteamBuild" class="examples-hint">
         <button type="button" class="examples-hint-btn" @click="openAssistant">
           💡 {{ t('welcome.viewExamples') }}
         </button>
+        <select
+          v-if="configStore.aiProfiles.length > 0"
+          class="examples-model-select"
+          :value="configStore.activeAiProfileId"
+          :title="t('ai.switchModel')"
+          @change="configStore.setActiveAiProfile(($event.target as HTMLSelectElement).value)"
+        >
+          <option v-for="profile in configStore.aiProfiles" :key="profile.id" :value="profile.id">
+            {{ profile.name }} ({{ profile.model }})
+          </option>
+        </select>
       </div>
 
       <!-- 快速启动卡片 -->
@@ -450,8 +461,10 @@ onUnmounted(() => {
 
 /* 查看示例入口 */
 .examples-hint {
+  position: relative;
   display: flex;
   justify-content: center;
+  align-items: center;
   margin-top: -4px;
   margin-bottom: 10px;
 }
@@ -472,6 +485,29 @@ onUnmounted(() => {
 .examples-hint-btn:hover {
   opacity: 1;
   color: var(--text-secondary);
+}
+
+.examples-model-select {
+  position: absolute;
+  right: 0;
+  padding: 2px 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  max-width: 160px;
+  outline: none;
+  opacity: 0.7;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.examples-model-select:hover {
+  opacity: 1;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border-color: var(--border-subtle, rgba(255, 255, 255, 0.08));
 }
 
 /* Quick Start Cards */

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, useSlots, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2, Volume2 } from 'lucide-vue-next'
 import { useMentions } from '../composables/useMentions'
@@ -372,6 +372,9 @@ const getParsePhaseLabel = (doc: ParsingDocument) => {
   return doc.message || t(`ai.documentParsePhase.${doc.phase}`)
 }
 
+const slots = useSlots()
+const isTwoRow = computed(() => !!props.embedded && !!slots['footer-left'])
+
 defineExpose({
   focusInput,
   appendText,
@@ -491,8 +494,9 @@ const handleSendClick = (event: MouseEvent) => {
       </div>
     </div>
 
-    <div class="input-container" :class="{ 'flash-hint': isFlashHint }">
+    <div class="input-container" :class="{ 'flash-hint': isFlashHint, 'input-container-two-row': isTwoRow }">
       <button
+        v-if="!isTwoRow"
         class="upload-btn"
         :disabled="isAttaching"
         :title="t('ai.attach')"
@@ -567,71 +571,124 @@ const handleSendClick = (event: MouseEvent) => {
         </div>
       </div>
 
-      <button
-        v-if="!isLoading || isAgentRunning"
-        class="voice-btn"
-        :class="{ recording: isRecording, transcribing: isTranscribing, ptt: isPushToTalk, unavailable: !audioAvailable }"
-        :disabled="!audioAvailable || isTranscribing || isSpeechInitializing"
-        :title="!audioAvailable ? t('ai.noAudioDevice') : isRecording ? t('ai.stopRecording') : (isTranscribing ? t('ai.transcribing') : t('ai.startRecording'))"
-        @click="handleRecordClick"
-      >
-        <Loader2 v-if="isTranscribing || isSpeechInitializing" :size="18" class="spin" />
-        <MicOff v-else-if="isRecording || !audioAvailable" :size="18" />
-        <Mic v-else :size="18" />
-      </button>
+      <!-- 两行模式底栏 -->
+      <div v-if="isTwoRow" class="input-bottom-bar">
+        <div class="input-footer-left">
+          <slot name="footer-left" />
+        </div>
+        <div class="input-footer-right">
+          <button
+            class="upload-btn"
+            :disabled="isAttaching"
+            :title="t('ai.attach')"
+            @click="selectAttachment"
+          >
+            <span v-if="isAttaching" class="upload-spinner"></span>
+            <Plus v-else :size="18" />
+          </button>
+          <button
+            v-if="!isLoading || isAgentRunning"
+            class="voice-btn"
+            :class="{ recording: isRecording, transcribing: isTranscribing, ptt: isPushToTalk, unavailable: !audioAvailable }"
+            :disabled="!audioAvailable || isTranscribing || isSpeechInitializing"
+            :title="!audioAvailable ? t('ai.noAudioDevice') : isRecording ? t('ai.stopRecording') : (isTranscribing ? t('ai.transcribing') : t('ai.startRecording'))"
+            @click="handleRecordClick"
+          >
+            <Loader2 v-if="isTranscribing || isSpeechInitializing" :size="18" class="spin" />
+            <MicOff v-else-if="isRecording || !audioAvailable" :size="18" />
+            <Mic v-else :size="18" />
+          </button>
+          <button v-if="ttsIsSpeaking" class="tts-stop-btn" @click="ttsStop" :title="t('ai.stopTts')">
+            <Volume2 :size="18" class="tts-speaking-icon" />
+          </button>
+          <button v-if="isLoading && !isAgentRunning" class="stop-btn" @click="stopGeneration" :title="t('ai.stopGeneration')">
+            <Square :size="16" fill="currentColor" />
+          </button>
+          <button v-else-if="isAgentRunning && canSubmitMessage" class="send-btn send-btn-supplement" :disabled="isAttaching" :title="t('ai.sendSupplement')" @click="handleSendClick">
+            <ArrowUp :size="18" />
+          </button>
+          <button v-else-if="isAgentRunning && canSendEmpty" class="send-btn send-btn-default" :disabled="isAttaching" :title="t('ai.useDefault')" @click="handleSendClick">
+            <Check :size="18" />
+          </button>
+          <button v-else-if="isAgentRunning" class="stop-btn" @click="abortAgent" :title="t('ai.stopAgent')">
+            <Square :size="16" fill="currentColor" />
+          </button>
+          <button v-else class="send-btn send-btn-agent" :disabled="isAttaching || !canSubmitMessage" :title="t('ai.executeTask')" @click="handleSendClick">
+            <ArrowUp :size="18" />
+          </button>
+        </div>
+      </div>
 
-      <button
-        v-if="ttsIsSpeaking"
-        class="tts-stop-btn"
-        @click="ttsStop"
-        :title="t('ai.stopTts')"
-      >
-        <Volume2 :size="18" class="tts-speaking-icon" />
-      </button>
+      <!-- 单行模式右侧按钮 -->
+      <template v-else>
+        <slot name="inner-right" />
 
-      <button
-        v-if="isLoading && !isAgentRunning"
-        class="stop-btn"
-        @click="stopGeneration"
-        :title="t('ai.stopGeneration')"
-      >
-        <Square :size="16" fill="currentColor" />
-      </button>
-      <button
-        v-else-if="isAgentRunning && canSubmitMessage"
-        class="send-btn send-btn-supplement"
-        :disabled="isAttaching"
-        :title="t('ai.sendSupplement')"
-        @click="handleSendClick"
-      >
-        <ArrowUp :size="18" />
-      </button>
-      <button
-        v-else-if="isAgentRunning && canSendEmpty"
-        class="send-btn send-btn-default"
-        :disabled="isAttaching"
-        :title="t('ai.useDefault')"
-        @click="handleSendClick"
-      >
-        <Check :size="18" />
-      </button>
-      <button
-        v-else-if="isAgentRunning"
-        class="stop-btn"
-        @click="abortAgent"
-        :title="t('ai.stopAgent')"
-      >
-        <Square :size="16" fill="currentColor" />
-      </button>
-      <button
-        v-else
-        class="send-btn send-btn-agent"
-        :disabled="isAttaching || !canSubmitMessage"
-        :title="t('ai.executeTask')"
-        @click="handleSendClick"
-      >
-        <ArrowUp :size="18" />
-      </button>
+        <button
+          v-if="!isLoading || isAgentRunning"
+          class="voice-btn"
+          :class="{ recording: isRecording, transcribing: isTranscribing, ptt: isPushToTalk, unavailable: !audioAvailable }"
+          :disabled="!audioAvailable || isTranscribing || isSpeechInitializing"
+          :title="!audioAvailable ? t('ai.noAudioDevice') : isRecording ? t('ai.stopRecording') : (isTranscribing ? t('ai.transcribing') : t('ai.startRecording'))"
+          @click="handleRecordClick"
+        >
+          <Loader2 v-if="isTranscribing || isSpeechInitializing" :size="18" class="spin" />
+          <MicOff v-else-if="isRecording || !audioAvailable" :size="18" />
+          <Mic v-else :size="18" />
+        </button>
+
+        <button
+          v-if="ttsIsSpeaking"
+          class="tts-stop-btn"
+          @click="ttsStop"
+          :title="t('ai.stopTts')"
+        >
+          <Volume2 :size="18" class="tts-speaking-icon" />
+        </button>
+
+        <button
+          v-if="isLoading && !isAgentRunning"
+          class="stop-btn"
+          @click="stopGeneration"
+          :title="t('ai.stopGeneration')"
+        >
+          <Square :size="16" fill="currentColor" />
+        </button>
+        <button
+          v-else-if="isAgentRunning && canSubmitMessage"
+          class="send-btn send-btn-supplement"
+          :disabled="isAttaching"
+          :title="t('ai.sendSupplement')"
+          @click="handleSendClick"
+        >
+          <ArrowUp :size="18" />
+        </button>
+        <button
+          v-else-if="isAgentRunning && canSendEmpty"
+          class="send-btn send-btn-default"
+          :disabled="isAttaching"
+          :title="t('ai.useDefault')"
+          @click="handleSendClick"
+        >
+          <Check :size="18" />
+        </button>
+        <button
+          v-else-if="isAgentRunning"
+          class="stop-btn"
+          @click="abortAgent"
+          :title="t('ai.stopAgent')"
+        >
+          <Square :size="16" fill="currentColor" />
+        </button>
+        <button
+          v-else
+          class="send-btn send-btn-agent"
+          :disabled="isAttaching || !canSubmitMessage"
+          :title="t('ai.executeTask')"
+          @click="handleSendClick"
+        >
+          <ArrowUp :size="18" />
+        </button>
+      </template>
     </div>
   </div>
   </div>
@@ -1069,6 +1126,46 @@ const handleSendClick = (event: MouseEvent) => {
   border-radius: 16px;
   transition: box-shadow 0.2s ease;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+/* 两行模式（embedded + footer-left slot 有内容） */
+.input-container-two-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 10px 10px 6px;
+}
+
+.input-container-two-row textarea {
+  padding: 0 4px;
+  min-height: 24px;
+}
+
+.input-bottom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.input-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.input-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.input-footer-right .upload-btn {
+  width: 28px;
+  height: 28px;
 }
 
 .input-container:focus-within {
