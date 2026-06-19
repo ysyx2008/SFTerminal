@@ -648,8 +648,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     tabs.value.push(tab)
     if (options?.activate !== false) {
       activeTabId.value = id
-    } else {
-      // 不抢焦点：仅当当前没有选中 tab 时才选中新 tab（例如首个 tab）
+    } else if (tab.isRemote) {
+      // 远程 tab（Gateway/IM）：无激活 tab 时才自动选中（让用户能看到频道入口）
       if (!activeTabId.value) {
         activeTabId.value = id
       }
