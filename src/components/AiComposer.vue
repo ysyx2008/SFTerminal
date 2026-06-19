@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useSlots, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, useSlots, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2, Volume2 } from 'lucide-vue-next'
 import { useMentions } from '../composables/useMentions'
@@ -69,15 +69,28 @@ const props = defineProps<{
   placeholder?: string
 }>()
 
-const { t } = useI18n()
+const { t, tm } = useI18n()
 
 const quoteStore = useComposerQuoteStore()
 const quoteSnippets = computed(() => quoteStore.getSnippets(props.currentTabId))
 
+const randomPlaceholder = ref('')
+
+const pickRandomPlaceholder = () => {
+  const list = tm('ai.inputPlaceholderAgentList') as string[]
+  if (Array.isArray(list) && list.length > 0) {
+    randomPlaceholder.value = list[Math.floor(Math.random() * list.length)]
+  }
+}
+
+onMounted(pickRandomPlaceholder)
+
 const composerPlaceholder = computed(
   () =>
     props.placeholder ??
-    (props.isAgentRunning ? t('ai.inputPlaceholderSupplement') : t('ai.inputPlaceholderAgent'))
+    (props.isAgentRunning
+      ? t('ai.inputPlaceholderSupplement')
+      : randomPlaceholder.value || t('ai.inputPlaceholderAgent'))
 )
 
 /** embedded 模式：有附件时才显示外层统一容器，避免空态双层边框 */
@@ -330,6 +343,7 @@ const handleSend = async () => {
 
   const rawInput = inputText.value.trim()
   inputText.value = ''
+  pickRandomPlaceholder()
   props.clearTabError()
 
   await new Promise(resolve => setTimeout(resolve, 0))
