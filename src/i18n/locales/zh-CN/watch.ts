@@ -148,6 +148,7 @@ export default {
     overviewShowMore: '展开剩余 {n} 项',
     overviewShowLess: '收起',
     sectionAnomalies: '异常关切',
+    retryWatch: '立即重试',
     sectionRunning: '正在执行',
     sectionUpcoming: '即将执行',
     sectionRecent: '最近执行流水',

@@ -1476,6 +1476,7 @@ onUnmounted(() => {
                   :running-watches="runningWatches"
                   @select-watch="(id) => { const w = userWatches.find(x => x.id === id); if (w) selectWatch(w) }"
                   @view-history-detail="viewHistoryDetail"
+                  @retry-watch="(id) => { const w = userWatches.find(x => x.id === id); if (w) triggerWatch(w) }"
                 />
                 <template v-else-if="selectedWatch">
                   <div class="detail-header">

@@ -145,6 +145,7 @@ export default {
     overviewShowMore: 'Show {n} more',
     overviewShowLess: 'Show less',
     sectionAnomalies: 'Anomalies',
+    retryWatch: 'Retry Now',
     sectionRunning: 'Running Now',
     sectionUpcoming: 'Upcoming',
     sectionRecent: 'Recent Activity',
