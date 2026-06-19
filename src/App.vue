@@ -651,13 +651,9 @@ onMounted(async () => {
         title: configStore.agentName || t('watch.assistantTabTitle'),
         activate: false
       })
-      terminalStore.focusHubConversation(tabId)
       tab = terminalStore.tabs.find(t => t.id === tabId)
-    } else if (tab.isPromoted || tab.isRemote) {
-      terminalStore.setActiveTab(tab.id)
-    } else {
-      terminalStore.focusHubConversation(tab.id)
     }
+    // Watch 结果静默注入，不主动切换视图——用户通过 toast 点击决定是否查看
 
     if (tab) {
       for (const msg of messages) {
