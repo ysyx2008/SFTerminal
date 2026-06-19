@@ -330,17 +330,27 @@ const handleGlobalKeyup = (event: KeyboardEvent) => {
 
 // 处理关闭快捷键
 const handleCloseShortcut = async () => {
+  // 全屏覆盖面板（觉醒 / 设置 / 控制面板）打开时，优先关闭它们
+  if (showAwaken.value) {
+    showAwaken.value = false
+    return
+  }
+  if (showSettings.value) {
+    showSettings.value = false
+    return
+  }
+  if (showSmartPatrol.value) {
+    showSmartPatrol.value = false
+    return
+  }
+
   const activeTab = terminalStore.activeTab
   if (activeTab) {
-    if (activeTab.type === 'assistant') {
-      // 助手工作台视为同一窗口，Cmd+W 隐藏窗口
-      await window.electronAPI.window.close()
-    } else {
-      // 终端 tab：只关 tab，不关窗口（用户再次 Cmd+W 时没有 activeTab 才关窗口）
-      await terminalStore.closeTab(activeTab.id)
-    }
+    // 任意激活 tab（终端或助手）：关闭 tab，回到首页，不直接关窗口
+    // 助手 tab 关闭后 activeTabId 清空，下次 Cmd+W 若无真实 tab 才关窗口
+    await terminalStore.closeTab(activeTab.id)
   } else {
-    // 无激活 tab（助手工作台或首页），且无任何真实 tab → 隐藏窗口
+    // 无激活 tab（首页视图），且无任何真实 tab → 隐藏窗口
     if (!hasDisplayedTabs.value) {
       await window.electronAPI.window.close()
     }
