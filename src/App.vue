@@ -716,7 +716,11 @@ onMounted(async () => {
     }
 
     queueMicrotask(() => {
-      if (!foundTabId || foundTabId === terminalStore.activeTabId) return
+      if (!foundTabId) return
+      // 用户正在看这个对话（activeTab 或 Hub 焦点），无需标记未读
+      const isVisible = foundTabId === terminalStore.activeTabId
+        || foundTabId === terminalStore.hubFocusedAssistantTabId
+      if (isVisible) return
       if (data.pendingUserMessages && data.pendingUserMessages.length > 0) return
       if (terminalStore.consumeAgentCompleteTabAttentionSkip(foundTabId)) return
       terminalStore.setAgentCompletedUnseen(foundTabId, true)
@@ -730,7 +734,10 @@ onMounted(async () => {
       terminalStore.finalizeAgentRunState(foundTabId)
     }
     queueMicrotask(() => {
-      if (!foundTabId || foundTabId === terminalStore.activeTabId) return
+      if (!foundTabId) return
+      const isVisible = foundTabId === terminalStore.activeTabId
+        || foundTabId === terminalStore.hubFocusedAssistantTabId
+      if (isVisible) return
       terminalStore.setAgentCompletedUnseen(foundTabId, true)
     })
   })
