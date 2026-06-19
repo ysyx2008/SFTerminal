@@ -574,9 +574,6 @@ const handleSendClick = (event: MouseEvent) => {
       <!-- 两行模式底栏 -->
       <div v-if="isTwoRow" class="input-bottom-bar">
         <div class="input-footer-left">
-          <slot name="footer-left" />
-        </div>
-        <div class="input-footer-right">
           <button
             class="upload-btn"
             :disabled="isAttaching"
@@ -586,6 +583,9 @@ const handleSendClick = (event: MouseEvent) => {
             <span v-if="isAttaching" class="upload-spinner"></span>
             <Plus v-else :size="18" />
           </button>
+          <slot name="footer-left" />
+        </div>
+        <div class="input-footer-right">
           <button
             v-if="!isLoading || isAgentRunning"
             class="voice-btn"
@@ -1137,8 +1137,10 @@ const handleSendClick = (event: MouseEvent) => {
 }
 
 .input-container-two-row textarea {
+  width: 100%;
   padding: 0 4px;
   min-height: 24px;
+  align-self: stretch;
 }
 
 .input-bottom-bar {
@@ -1163,17 +1165,12 @@ const handleSendClick = (event: MouseEvent) => {
   flex-shrink: 0;
 }
 
-.input-footer-right .upload-btn {
-  width: 28px;
-  height: 28px;
-}
-
-.input-container:focus-within {
+.input-container:has(textarea:focus) {
   box-shadow: 0 0 0 2px var(--accent-primary), 0 4px 12px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 /* flash-hint：场景卡片填入 prompt 后的一次性脉冲，提醒用户"输入框已就绪，按 Enter 发送"。
-   动画期间盖过 :focus-within 的 box-shadow（因 specificity + 动画在同 selector 上覆盖），
+   动画期间盖过 :has(textarea:focus) 的 box-shadow（因 specificity + 动画在同 selector 上覆盖），
    1.5s 后 class 自动移除，恢复默认 / focus 态外观。 */
 .input-container.flash-hint {
   animation: composerFlashHint 1.5s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1289,7 +1286,7 @@ const handleSendClick = (event: MouseEvent) => {
   opacity: 0.7;
 }
 
-/* 焦点环由外层 .input-container:focus-within 统一提供，
+/* 焦点环由外层 .input-container:has(textarea:focus) 统一提供，
    textarea 内部不再叠加全局 textarea:focus 光晕，避免出现两层焦点。 */
 .ai-input textarea:focus {
   border-color: transparent;
