@@ -218,8 +218,8 @@ const measureTextareaHeight = () => {
 
   textarea.style.overflow = 'hidden'
   textarea.style.minHeight = '0'
-  textarea.style.height = 'auto'
-  const nextHeight = Math.min(Math.max(textarea.scrollHeight, 20), 360)
+  textarea.style.height = '0'
+  const nextHeight = Math.min(textarea.scrollHeight, 360)
   textarea.style.height = `${nextHeight}px`
   textarea.style.minHeight = ''
   textarea.style.overflow = nextHeight >= 360 ? 'auto' : 'hidden'
@@ -1183,7 +1183,6 @@ const handleSendClick = (event: MouseEvent) => {
 
 .input-container-two-row .input-textarea-wrap {
   width: 100%;
-  flex: none;
 }
 
 .input-textarea-wrap {
@@ -1194,7 +1193,8 @@ const handleSendClick = (event: MouseEvent) => {
 .input-container-two-row textarea {
   width: 100%;
   padding: 7px 4px;
-  min-height: 24px;
+  min-height: 0;
+  height: 20px; /* 单行初始高度，mountd 后由 measureTextareaHeight 重算 */
 }
 
 .input-bottom-bar {

@@ -320,17 +320,16 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  /* 不用 justify-content: center，避免 overflow-y: auto 下内容超出时顶部被裁掉无法滚回 */
   overflow-y: auto;
-  padding: 24px 20px;
+  /* clamp(40px, calc(50vh - 300px), 150px) 在典型窗口高度下近似 margin:auto 的居中效果，
+     但不随内容高度变化而移动，确保 logo 和输入框顶部位置稳定 */
+  padding: clamp(40px, calc(50vh - 300px), 150px) 20px 24px;
 }
 
 .welcome-content {
   max-width: 780px;
   width: 100%;
-  /* margin:auto 在垂直方向居中，使上下留白平衡；内容超高时退化为正常滚动 */
-  margin: auto;
-  /* 入场动画 */
+  margin: 0 auto;
   animation: pageEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
