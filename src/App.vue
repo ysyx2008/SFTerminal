@@ -346,11 +346,18 @@ const handleCloseShortcut = async () => {
 
   const activeTab = terminalStore.activeTab
   if (activeTab) {
-    // 任意激活 tab（终端或助手）：关闭 tab，回到首页，不直接关窗口
-    // 助手 tab 关闭后 activeTabId 清空，下次 Cmd+W 若无真实 tab 才关窗口
-    await terminalStore.closeTab(activeTab.id)
+    if (activeTab.type === 'assistant') {
+      // 已提升/远程助手 tab：Cmd+W 隐藏窗口
+      await window.electronAPI.window.close()
+    } else {
+      // 终端 tab：只关 tab，不关窗口
+      await terminalStore.closeTab(activeTab.id)
+    }
+  } else if (terminalStore.hubFocusedAssistantTabId) {
+    // Hub 焦点模式（正在看某个对话）：Cmd+W 退回欢迎页，不关窗口
+    terminalStore.goToHome()
   } else {
-    // 无激活 tab（首页视图），且无任何真实 tab → 隐藏窗口
+    // 欢迎页且无任何真实 tab → 隐藏窗口
     if (!hasDisplayedTabs.value) {
       await window.electronAPI.window.close()
     }
