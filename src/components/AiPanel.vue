@@ -2110,8 +2110,11 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           :style="isStandaloneAssistant ? { '--assistant-avatar': `url(${configStore.agentAvatar || sailfishLogo})` } : undefined"
         >
           <template #before>
-            <!-- Agent 已启动但 step 尚未到达（远程会话 / 任务刚发起） -->
-            <div v-if="isAgentRunning && agentTaskGroups.length === 0" class="agent-preparing-placeholder">
+            <!-- Agent 已启动但 step 尚未到达（远程会话 / 任务刚发起）
+                 也包括：task group 已建（user_task 到了）但 group.steps 还为空的短暂窗口
+                 （后端在 user_task 和初始 thinking 步骤之间同步执行 restoreFromHistory，
+                 会造成几十毫秒的"group 存在但无 step"空白）-->
+            <div v-if="isAgentRunning && (agentTaskGroups.length === 0 || (agentTaskGroups[agentTaskGroups.length - 1]?.isCurrentTask && agentTaskGroups[agentTaskGroups.length - 1]?.steps.length === 0))" class="agent-preparing-placeholder">
               <Loader2 :size="20" class="preparing-spinner" />
               <span>{{ t('ai.preparing') }}</span>
             </div>
