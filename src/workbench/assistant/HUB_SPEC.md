@@ -117,6 +117,22 @@ sessionId 不在 summaryById 中（未落盘）
    - 否则 → `focusHubConversation`（Hub 焦点，侧栏保留）  
 2. 未找到 tab → 从历史加载 `openHistoryConversation(record)`
 
+### 另开一聊（Fork）
+
+`forkToAssistantTab` 创建的新会话**继承源会话的呈现形态**：
+
+| 源会话 | 新分支 |
+|---|---|
+| Hub 侧栏会话（`!isPromoted`） | `focusHubConversation`：留在 Hub，侧栏保留 |
+| 已提升独立 Tab（`isPromoted`） | `promoteConversationToTab`：新 Tab 出现在 Tab 栏 |
+| 终端 Tab 内 AI 面板 | 默认走 Hub（`focusHubConversation`） |
+
+**禁止**对 Hub 会话 fork 后直接 `activeTabId = newTabId`——会导致侧栏隐藏且 Tab 栏也不显示该会话（悬空面板）。
+
+侧栏即时可见：`restoreAgentHistory` 必须写入 `agentState.userTask`（`liveSessionSummaries` 依赖此字段；fork 落盘前靠实时列表展示，落盘后由 `summaries` 接管）。
+
+**会话标题稳定**：`agentState.userTask` = 首条 user_task（与 HistoryService `record.userTask` 一致）。`clearAgentState(preserveSession)` 与 `setAgentRunning` 均不得覆盖已有标题，避免侧栏在运行中显示当前输入、完成后又跳回。
+
 ### 搜索与分组
 
 - 搜索匹配：`userTask` + 用户自定义标题（`configStore.getConversationDisplayTitle`），不区分大小写

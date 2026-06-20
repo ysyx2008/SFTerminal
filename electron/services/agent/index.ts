@@ -24,6 +24,7 @@ import type {
   RunStatus,
   AgentExecutionPhase
 } from './types'
+import { Agent } from './agent'
 import { SailFish } from './sailfish'
 import { assessCommandRisk, analyzeCommand } from './risk-assessor'
 import type { CommandHandlingInfo } from './risk-assessor'
@@ -253,6 +254,8 @@ export class AgentService {
     untilTaskCount?: number
     targetMode?: 'assistant'
     titleSuffix?: string
+    /** 源 Agent 无 in-memory 会话时（如前端仅从 HistoryService 加载历史），用此 sessionId 从磁盘分叉 */
+    sourceSessionId?: string
   }): Promise<{
     newSessionId: string
     newAgentId: string
@@ -263,29 +266,43 @@ export class AgentService {
      */
     newRecord: import('../history.service').AgentRecord
   } | null> {
-    const sourceAgent = this.getAgent(opts.sourceAgentKey)
-    if (!sourceAgent) {
-      log.warn(`forkAgent: source agent not found: ${opts.sourceAgentKey}`)
-      return null
-    }
-    // 运行中仅允许按 task 截断分叉（已完成段落）；全量 fork 会带上进行中的半截 task
-    if (sourceAgent.isRunning() && opts.untilTaskCount === undefined) {
-      log.warn(`forkAgent: source agent is running, refuse full fork`)
-      return null
-    }
     const historyService = this.services.historyService
     if (!historyService) {
       log.warn(`forkAgent: historyService not available`)
       return null
     }
 
+    const sourceAgent = this.getAgent(opts.sourceAgentKey)
+    // 运行中仅允许按 task 截断分叉（已完成段落）；全量 fork 会带上进行中的半截 task
+    if (sourceAgent?.isRunning() && opts.untilTaskCount === undefined) {
+      log.warn(`forkAgent: source agent is running, refuse full fork`)
+      return null
+    }
+
     const newSessionId = `session_${Date.now()}_fork_${Math.random().toString(36).slice(2, 8)}`
-    const newRecord = sourceAgent.cloneRecordForFork(newSessionId, {
+    const forkOpts = {
       untilTaskCount: opts.untilTaskCount,
       titleSuffix: opts.titleSuffix ?? ''
-    })
+    }
+
+    let newRecord = sourceAgent?.cloneRecordForFork(newSessionId, forkOpts) ?? null
+    let sourceTerminalType = sourceAgent?.getTerminalType()
+
+    if (!newRecord && opts.sourceSessionId) {
+      const historyRecord = historyService.getAgentRecordById(opts.sourceSessionId)
+      if (historyRecord) {
+        newRecord = Agent.buildForkRecordFromStoredRecord(historyRecord, newSessionId, forkOpts)
+        sourceTerminalType = historyRecord.terminalType === 'assistant'
+          ? undefined
+          : historyRecord.terminalType
+      }
+    }
+
     if (!newRecord) {
-      log.warn(`forkAgent: source agent has no session data to fork: ${opts.sourceAgentKey}`)
+      log.warn(
+        `forkAgent: no session data to fork: sourceAgentKey=${opts.sourceAgentKey}, ` +
+        `sourceSessionId=${opts.sourceSessionId ?? 'none'}`
+      )
       return null
     }
 
@@ -294,7 +311,6 @@ export class AgentService {
     const newAgent = this.createAssistantAgent(opts.newAgentId)
 
     const targetMode = opts.targetMode ?? 'assistant'
-    const sourceTerminalType = sourceAgent.getTerminalType()
     const isSameMode = targetMode === 'assistant' && sourceTerminalType === undefined
 
     // 同模式 fork 时携带 cache snapshot 让下一次 run 命中 LLM provider 的前缀缓存。

@@ -954,6 +954,7 @@ const electronAPI = {
       untilTaskCount?: number
       targetMode?: 'assistant'
       titleSuffix?: string
+      sourceSessionId?: string
     }) => ipcRenderer.invoke('agent:fork', opts) as Promise<{
       newSessionId: string
       newAgentId: string

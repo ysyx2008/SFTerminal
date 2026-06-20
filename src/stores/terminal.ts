@@ -77,7 +77,7 @@ export interface AgentState {
   agentId?: string
   sessionId?: string     // 会话 ID（用于会话级保存，后端通过此 ID 从 HistoryService 加载历史数据）
   sessionStartTime?: number  // 会话开始时间
-  userTask?: string      // 用户任务描述
+  userTask?: string      // 会话级标题（首条 user_task / 历史 record.userTask；侧栏展示，不随每次新任务改变）
   steps: AgentStep[]
   pendingConfirm?: PendingConfirmation
   pendingSecureInput?: import('@shared/types').PendingSecureInput & { ptyId?: string }
@@ -86,8 +86,8 @@ export interface AgentState {
   finalResult?: string   // Agent 完成后的最终回复
   /**
    * 标记：当前 agentState 来自加载历史，且后端 Agent 实例尚未通过新任务把会话状态加载到 in-memory。
-   * 此状态下「另开一聊」无法工作（后端 in-memory _sessionId / _sessionMessages 为空），UI 应隐藏 fork 按钮。
-   * 用户发起首次新任务后清除（initializeRun 触发 restoreFromHistory，in-memory 状态就齐了）。
+   * fork 会 fallback 到 HistoryService（sourceSessionId）；用户发起首次新任务后清除
+   * （initializeRun 触发 restoreFromHistory，in-memory 状态就齐了）。
    */
   loadedFromHistory?: boolean
 }
@@ -696,7 +696,8 @@ export const useTerminalStore = defineStore('terminal', () => {
         newAgentId,
         untilTaskCount: opts?.untilTaskCount,
         targetMode: 'assistant',
-        titleSuffix
+        titleSuffix,
+        sourceSessionId: sourceTab.agentState?.sessionId,
       })
     } catch (err) {
       log.error('forkToAssistantTab: backend fork failed', err)
@@ -712,11 +713,14 @@ export const useTerminalStore = defineStore('terminal', () => {
       ? (configStore.agentName || t('tabs.assistant', '助手'))
       : sourceTab.title
 
+    const shouldPromote = sourceTab.type === 'assistant' && !!sourceTab.isPromoted
+
     const tab: TerminalTab = {
       id: newTabId,
       title: baseTitle + titleSuffix,
       type: 'assistant',
       agentId: newAgentId,
+      isPromoted: shouldPromote,
       isConnected: true,
       isLoading: false,
       agentState: {
@@ -726,15 +730,21 @@ export const useTerminalStore = defineStore('terminal', () => {
       }
     }
     tabs.value.push(tab)
-    activeTabId.value = newTabId
+    markAssistantSkipOnboarding(newTabId)
 
     // 用截断后的 newRecord 恢复 UI（与「加载历史」语义一致）：
-    // 显示截断点之前的对话历史 + loadedFromHistory=true 让二次 fork 按钮先隐藏，
-    // 直到用户在新 tab 发起首次任务后 in-memory 状态才齐全
+    // 显示截断点之前的对话历史 + loadedFromHistory=true（二次 fork 仍走 HistoryService fallback）
     restoreAgentHistory(newTabId, result.newRecord)
     // restoreAgentHistory 用 newRecord.id 设置了 sessionId，与后端 Agent 实例一致
 
-    log.info(`Forked assistant tab: source=${sourceTabId} → new=${newTabId}, sessionId=${result.newSessionId}, untilTaskCount=${opts?.untilTaskCount ?? 'all'}`)
+    // 继承源会话的呈现形态：Hub 侧栏会话 → focusHubConversation；已提升独立 Tab → promote
+    if (shouldPromote) {
+      promoteConversationToTab(newTabId)
+    } else {
+      focusHubConversation(newTabId)
+    }
+
+    log.info(`Forked assistant tab: source=${sourceTabId} → new=${newTabId}, sessionId=${result.newSessionId}, untilTaskCount=${opts?.untilTaskCount ?? 'all'}, promoted=${shouldPromote}`)
     return newTabId
   }
 
@@ -1867,7 +1877,8 @@ export const useTerminalStore = defineStore('terminal', () => {
       ...tab.agentState,
       isRunning,
       ...(agentId !== undefined && { agentId }),
-      ...(userTask !== undefined && { userTask }),
+      // 会话标题只在首次任务时写入，与 HistoryService 的 record.userTask（首条 user_task）保持一致
+      ...(userTask !== undefined && !tab.agentState.userTask && { userTask }),
       ...(!isRunning && { pendingConfirm: undefined }),
       ...(isRunning && { loadedFromHistory: false, agentCompletedUnseen: false })
     }
@@ -2044,6 +2055,7 @@ export const useTerminalStore = defineStore('terminal', () => {
         agentId: tab.agentState?.agentId,
         sessionId: preserveSession ? tab.agentState?.sessionId : undefined,
         sessionStartTime: preserveSession ? tab.agentState?.sessionStartTime : undefined,
+        userTask: preserveSession ? tab.agentState?.userTask : undefined,
         steps: preserveSession ? (tab.agentState?.steps || []) : []
       }
     }
@@ -2203,6 +2215,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       agentId: tab.agentId,
       sessionId: record.id,
       sessionStartTime: record.timestamp,
+      userTask: record.userTask,
       steps: steps,
       loadedFromHistory: true
     }

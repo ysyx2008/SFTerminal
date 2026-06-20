@@ -1176,16 +1176,89 @@ export abstract class Agent {
   ): AgentRecord | null {
     if (!this._sessionId) return null
 
-    let messages = this._sessionMessages.map(m => JSON.parse(JSON.stringify(m))) as AiMessage[]
-    let steps = [...this._sessionSteps]
+    return Agent.buildForkRecord(
+      {
+        messages: this._sessionMessages,
+        steps: this._sessionSteps,
+        terminalType: this._terminalMeta?.terminalType,
+        sshHost: this._terminalMeta?.sshHost,
+      },
+      newSessionId,
+      opts
+    )
+  }
+
+  /**
+   * 从 HistoryService 持久化记录构建 fork 产物（源 Agent 无 in-memory 会话时使用）。
+   */
+  static buildForkRecordFromStoredRecord(
+    record: AgentRecord,
+    newSessionId: string,
+    opts?: { untilTaskCount?: number; titleSuffix?: string }
+  ): AgentRecord | null {
+    if (!record.steps?.length) return null
+
+    const steps: AgentStep[] = record.steps.map(s => ({
+      id: s.id,
+      type: s.type as AgentStep['type'],
+      content: s.content,
+      images: s.images,
+      echartsOption: s.echartsOption,
+      attachments: s.attachments,
+      toolName: s.toolName,
+      toolArgs: s.toolArgs,
+      toolResult: s.toolResult,
+      riskLevel: s.riskLevel as RiskLevel | undefined,
+      timestamp: s.timestamp,
+      webSearchResults: s.webSearchResults,
+      success: s.success,
+      subAgents: s.subAgents,
+      canvasData: s.canvasData
+    }))
+
+    if (!steps.some(s => s.type === 'user_task') && record.userTask) {
+      steps.unshift({
+        id: `user_task_${record.timestamp}`,
+        type: 'user_task',
+        content: record.userTask,
+        timestamp: record.timestamp
+      })
+    }
+
+    const messages = (record.messages ?? []).map(m => JSON.parse(JSON.stringify(m))) as AiMessage[]
+
+    return Agent.buildForkRecord(
+      {
+        messages,
+        steps,
+        terminalType: record.terminalType,
+        sshHost: record.sshHost,
+      },
+      newSessionId,
+      opts
+    )
+  }
+
+  static buildForkRecord(
+    data: {
+      messages: AiMessage[]
+      steps: AgentStep[]
+      terminalType?: TerminalType
+      sshHost?: string
+    },
+    newSessionId: string,
+    opts?: { untilTaskCount?: number; titleSuffix?: string }
+  ): AgentRecord | null {
+    let messages = data.messages.map(m => JSON.parse(JSON.stringify(m))) as AiMessage[]
+    let steps = [...data.steps]
 
     if (opts?.untilTaskCount !== undefined && opts.untilTaskCount > 0) {
-      const tasks = this.splitMessagesIntoTasks(messages)
+      const tasks = Agent.splitMessagesIntoTasksForFork(messages)
       if (opts.untilTaskCount < tasks.length) {
         messages = tasks.slice(0, opts.untilTaskCount).flatMap(t => t.messages)
       }
 
-      const stepChunks = this.splitSessionStepsByUserTask(steps)
+      const stepChunks = Agent.splitSessionStepsByUserTaskForFork(steps)
       if (opts.untilTaskCount < stepChunks.length) {
         steps = stepChunks.slice(0, opts.untilTaskCount).flat()
       }
@@ -1219,8 +1292,8 @@ export abstract class Agent {
       id: newSessionId,
       timestamp: Date.now(),
       terminalId: '',
-      terminalType: this._terminalMeta?.terminalType || 'local',
-      sshHost: this._terminalMeta?.sshHost,
+      terminalType: data.terminalType || 'local',
+      sshHost: data.sshHost,
       userTask: firstUserTask.content + titleSuffix,
       steps: serializableSteps,
       messages,
@@ -1228,6 +1301,65 @@ export abstract class Agent {
       duration: 0,
       status: 'completed'
     }
+  }
+
+  private static splitMessagesIntoTasksForFork(messages: AiMessage[]): Array<{
+    id: string; userTask: string; finalResult: string; messages: AiMessage[]
+  }> {
+    const tasks: Array<{ id: string; userTask: string; finalResult: string; messages: AiMessage[] }> = []
+    let currentTaskMessages: AiMessage[] = []
+    let currentUserTask = ''
+
+    for (const msg of messages) {
+      const isRealUserBoundary = msg.role === 'user' && !msg._systemInjected
+
+      if (isRealUserBoundary && currentTaskMessages.length > 0) {
+        const lastAssistant = [...currentTaskMessages].reverse().find(
+          m => m.role === 'assistant' && !m.tool_calls
+        )
+        tasks.push({
+          id: `restored_${Date.now()}_${tasks.length}`,
+          userTask: currentUserTask,
+          finalResult: lastAssistant?.content || '',
+          messages: currentTaskMessages
+        })
+        currentTaskMessages = []
+      }
+
+      if (isRealUserBoundary) {
+        currentUserTask = msg.content || ''
+      }
+
+      currentTaskMessages.push(msg)
+    }
+
+    if (currentTaskMessages.length > 0) {
+      const lastAssistant = [...currentTaskMessages].reverse().find(
+        m => m.role === 'assistant' && !m.tool_calls
+      )
+      tasks.push({
+        id: `restored_${Date.now()}_${tasks.length}`,
+        userTask: currentUserTask,
+        finalResult: lastAssistant?.content || '',
+        messages: currentTaskMessages
+      })
+    }
+
+    return tasks
+  }
+
+  private static splitSessionStepsByUserTaskForFork(steps: AgentStep[]): AgentStep[][] {
+    const chunks: AgentStep[][] = []
+    let current: AgentStep[] = []
+    for (const s of steps) {
+      if (s.type === 'user_task' && current.length > 0) {
+        chunks.push(current)
+        current = []
+      }
+      current.push(s)
+    }
+    if (current.length > 0) chunks.push(current)
+    return chunks
   }
 
   /**

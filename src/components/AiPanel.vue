@@ -208,25 +208,23 @@ const markFooterAnimated = (groupId: string | undefined) => {
  * group 操作菜单（含「另开一聊」）的可见性条件：
  *   - group 已完成（成功 / 失败 / 中断都允许；进行中的当前 task 无 finalResult，自然不显示）
  *   - 非 proactive / 非 onboarding（这两类不是用户发起的真实对话）
- *   - 当前 tab 不是「加载历史」状态：加载历史时后端 Agent in-memory 没有会话数据，
- *     fork 必然失败；且 LLM provider 的 prompt cache 也大概率早已过期（5 分钟 TTL），
- *     即便绕路从 HistoryService 拉取也无性能收益。直接不显示菜单更诚实
  *
  * 注：Agent 运行中仍可对已完成 group 分叉（untilTaskCount 截断），与主对话并行探索。
+ * 从历史记录打开的 tab（loadedFromHistory）也可分叉：后端会 fallback 到 HistoryService 读取会话。
  * footer 高度由 min-height 锁定，按钮不因运行状态显隐引起列表重排（见 agent/SPEC.md）。
  */
-const isLoadedFromHistory = computed(() => {
-  const tab = terminalStore.tabs.find(t => t.id === currentTabId.value)
-  return !!tab?.agentState?.loadedFromHistory
-})
-
 const canShowGroupMenu = (group: import('../composables').AgentTaskGroup | undefined): boolean => {
   if (!group) return false
   if (!group.finalResult) return false
   if (group.isProactive || group.isOnboarding) return false
-  if (isLoadedFromHistory.value) return false
   return true
 }
+
+/** 当前 tab 的 agentState 来自历史恢复（用于滚动定位，与 fork 菜单可见性无关） */
+const isLoadedFromHistory = computed(() => {
+  const tab = terminalStore.tabs.find(t => t.id === currentTabId.value)
+  return !!tab?.agentState?.loadedFromHistory
+})
 
 // 正在 fork 的 group ID 集合：防止用户连续点击同一个按钮创建多个 fork tab
 const forkingGroupIds = ref<Set<string>>(new Set())
@@ -5042,7 +5040,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .agent-group-menu-trigger:hover,
 .agent-group-menu-trigger.is-open {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
 
@@ -6632,10 +6630,10 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   position: fixed;
   min-width: 140px;
   padding: 4px;
-  background: var(--bg-elevated, rgba(40, 40, 40, 0.98));
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
   z-index: 10000;
 }
 
@@ -6646,15 +6644,16 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: var(--text-primary, #e0e0e0);
+  color: var(--text-primary);
   font-size: 12px;
+  font-family: inherit;
   text-align: left;
   cursor: pointer;
   transition: background 0.12s ease;
 }
 
 .agent-group-menu-item:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-hover);
 }
 
 .agent-group-menu-item:disabled {

@@ -3502,6 +3502,7 @@ ipcMain.handle('agent:fork', async (_event, opts: {
   untilTaskCount?: number
   targetMode?: 'assistant'
   titleSuffix?: string
+  sourceSessionId?: string
 }) => {
   return await agentService.forkAgent(opts)
 })
