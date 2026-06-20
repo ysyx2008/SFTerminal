@@ -1062,9 +1062,7 @@ export function useAgentMode(
       imageCallbacks?.clearImages()
     }
     const attachments = attachmentCallbacks?.getAttachments() || []
-    if (attachments.length > 0) {
-      attachmentCallbacks?.clearAttachments()
-    }
+    // getDocumentContext 依赖 uploadedDocs，须在其完成后再 clearAttachments
 
     // 立即进入运行态 + 乐观 user_task，用户消息与「正在准备...」零等待上墙
     terminalStore.clearAgentState(tabId, true)
@@ -1090,6 +1088,10 @@ export function useAgentMode(
       getHostIdByTabId(tabId),
       getDocumentContext()
     ])
+
+    if (attachments.length > 0) {
+      attachmentCallbacks?.clearAttachments()
+    }
 
     // 首次运行时自动探测主机信息（后台执行，不阻塞）
     autoProbeHostProfile().catch(e => {
