@@ -48,7 +48,12 @@ import {
   type AssistantExample,
 } from '../config/assistantExamples'
 import type { AgentRecord, AgentHistorySummary } from '@shared/types'
-import { WAITING_FOR_MODEL_LABEL_IDS, WAITING_FOR_MODEL_EASTER_EGG_LABEL_IDS, WAITING_FOR_MODEL_SLOW_LABEL_IDS } from '@shared/types/ai'
+import {
+  WAITING_FOR_MODEL_LABEL_IDS,
+  WAITING_FOR_MODEL_EASTER_EGG_LABEL_IDS,
+  WAITING_FOR_MODEL_SLOW_LABEL_IDS,
+  waitingForModelI18nKey,
+} from '@shared/types/ai'
 
 // Props - 每个 AiPanel 实例绑定到特定的 tab
 const props = withDefaults(defineProps<{
@@ -311,9 +316,9 @@ const isInitialPreparingStep = (step: { type: string; isStreaming?: boolean }): 
 
 const startupPhaseLabels = computed(() => [
   t('ai.preparing'),
-  ...WAITING_FOR_MODEL_LABEL_IDS.map(id => t(`ai.waitingForModel.${id}`)),
-  ...WAITING_FOR_MODEL_EASTER_EGG_LABEL_IDS.map(id => t(`ai.waitingForModel.easter.${id}`)),
-  ...WAITING_FOR_MODEL_SLOW_LABEL_IDS.map(id => t(`ai.waitingForModel.slow.${id}`)),
+  ...WAITING_FOR_MODEL_LABEL_IDS.map(id => t(waitingForModelI18nKey(id))),
+  ...WAITING_FOR_MODEL_EASTER_EGG_LABEL_IDS.map(id => t(waitingForModelI18nKey(id, 'easter'))),
+  ...WAITING_FOR_MODEL_SLOW_LABEL_IDS.map(id => t(waitingForModelI18nKey(id, 'slow'))),
 ])
 
 const isStartupPhaseLabel = (text: string): boolean => {

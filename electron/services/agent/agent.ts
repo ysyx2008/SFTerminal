@@ -46,7 +46,7 @@ import { formatWatchListForPrompt } from './skills/watch/executor'
 import { consumeProactiveContext } from './proactive-store'
 import { applyToolResultBudget } from './tool-result-budget'
 import { applyParallelShare, computeToolOutputBudget } from './tool-output-budget'
-import { t } from './i18n'
+import { t, type TranslationKey } from './i18n'
 import { createSkillSession, SkillSession } from './skills'
 import { getAiDebugService } from '../ai-debug.service'
 import { createLogger } from '../../utils/logger'
@@ -60,6 +60,7 @@ import {
   WAITING_FOR_MODEL_SLOW_LABEL_IDS,
   WAITING_FOR_MODEL_EASTER_EGG_CHANCE,
   WAITING_FOR_MODEL_SLOW_TTFT_MS,
+  waitingForModelI18nKey,
 } from '@shared/types/ai'
 
 const log = createLogger('Agent')
@@ -2264,16 +2265,16 @@ export abstract class Agent {
     const useEasterEgg = Math.random() < WAITING_FOR_MODEL_EASTER_EGG_CHANCE
     if (useEasterEgg) {
       const id = this.pickRandomWaitingLabelId(WAITING_FOR_MODEL_EASTER_EGG_LABEL_IDS)
-      return t(`ai.waiting_for_model.easter.${id}`)
+      return t(waitingForModelI18nKey(id, 'easter') as TranslationKey)
     }
     const id = this.pickRandomWaitingLabelId(WAITING_FOR_MODEL_LABEL_IDS)
-    return t(`ai.waiting_for_model.${id}`)
+    return t(waitingForModelI18nKey(id) as TranslationKey)
   }
 
   /** TTFT 过长时切换为调侃文案 */
   private pickSlowWaitingForModelLabel(): string {
     const id = this.pickRandomWaitingLabelId(WAITING_FOR_MODEL_SLOW_LABEL_IDS)
-    return t(`ai.waiting_for_model.slow.${id}`)
+    return t(waitingForModelI18nKey(id, 'slow') as TranslationKey)
   }
 
   /** 上下文就绪、HTTP 即将发出：「正在准备…」→ 随机趣味等待文案 */
