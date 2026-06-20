@@ -83,8 +83,6 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
       'is-pinned': isPinned,
       'is-opening': isOpening,
       'is-active': isActive,
-      'is-failed': record.status === 'failed',
-      'is-aborted': record.status === 'aborted',
       'is-open-in-tab': isOpenInTab,
       'needs-attention': tabStatus === 'attention',
     }"
@@ -305,11 +303,6 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
 
 .conversation-item:disabled {
   cursor: wait;
-}
-
-.conversation-row.is-failed .item-title,
-.conversation-row.is-aborted .item-title {
-  opacity: 0.65;
 }
 
 .item-title {
