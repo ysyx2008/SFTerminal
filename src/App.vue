@@ -364,6 +364,10 @@ const handleCloseShortcut = async () => {
   }
 }
 
+// macOS ⌘Q 防误触提示
+const quitToastVisible = ref(false)
+let cleanupQuitToast: (() => void) | null = null
+
 // 清理函数存储
 let cleanupTerminalCountListener: (() => void) | null = null
 let cleanupMenuCommand: (() => void) | null = null
@@ -496,6 +500,13 @@ onMounted(async () => {
   cleanupMenuCommand = window.electronAPI.menu.onCommand(({ command }) => {
     handleMenuCommand(command)
   })
+
+  // macOS ⌘Q 防误触：监听主进程的 Toast 显示/隐藏信号
+  if (window.electronAPI.quit) {
+    cleanupQuitToast = window.electronAPI.quit.onToast(({ show }) => {
+      quitToastVisible.value = show
+    })
+  }
 
   // 监听定时任务开始事件，创建可见的终端 tab 并自动执行 Agent
   cleanupSchedulerTaskStarted = window.electronAPI.scheduler.onTaskStarted((data) => {
@@ -1187,6 +1198,7 @@ onUnmounted(() => {
   cleanupKnowledgeProgress?.()
   cleanupKnowledgeReady?.()
   cleanupMenuCommand?.()
+  cleanupQuitToast?.()
   cleanupSchedulerTaskStarted?.()
   cleanupGatewayRemoteTab?.()
   cleanupGatewayRemoteTask?.()
@@ -1414,6 +1426,15 @@ onUnmounted(() => {
 
     <!-- 全局 Toast 提示 -->
     <Toast />
+
+    <!-- macOS ⌘Q 防误触提示 -->
+    <Transition name="quit-toast">
+      <div v-if="quitToastVisible" class="quit-toast-overlay">
+        <span class="quit-toast-key">⌘Q</span>
+        <span class="quit-toast-text">再按一次退出</span>
+        <div class="quit-toast-progress" />
+      </div>
+    </Transition>
 
     <!-- 全局确认对话框 -->
     <ConfirmDialog
@@ -1806,6 +1827,68 @@ onUnmounted(() => {
 .slide-down-leave-to {
   transform: translateY(100%);
   opacity: 0;
+}
+
+/* ⌘Q 防误触提示条 */
+.quit-toast-overlay {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10002;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  background: rgba(30, 30, 34, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.quit-toast-key {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.quit-toast-text {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+}
+
+.quit-toast-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  width: 100%;
+  background: var(--accent-primary, #5b8af5);
+  transform-origin: left center;
+  animation: quit-toast-countdown 2s linear forwards;
+}
+
+@keyframes quit-toast-countdown {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+.quit-toast-enter-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.quit-toast-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.quit-toast-enter-from,
+.quit-toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-6px);
 }
 
 </style>

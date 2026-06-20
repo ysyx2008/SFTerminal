@@ -3251,6 +3251,15 @@ const electronAPI = {
     }
   },
 
+  quit: {
+    /** macOS ⌘Q 防误触提示，show=true 展示、false 隐藏 */
+    onToast: (callback: (payload: { show: boolean }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: { show: boolean }) => callback(payload)
+      ipcRenderer.on('quit:toast', handler)
+      return () => ipcRenderer.removeListener('quit:toast', handler)
+    },
+  },
+
   browserBridge: {
     getStatus: () =>
       ipcRenderer.invoke('browserBridge:getStatus') as Promise<import('@shared/types/browser-bridge').BrowserBridgeStatus>,

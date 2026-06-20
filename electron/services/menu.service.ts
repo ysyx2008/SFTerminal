@@ -175,6 +175,7 @@ export class MenuService {
   private shortcuts: KeyboardShortcuts = { ...DEFAULT_KEYBOARD_SHORTCUTS }
   private hasTerminal = false
   private _updateStatus: MenuUpdateStatus = 'idle'
+  private quitHandler: (() => void) | null = null
 
   /**
    * 获取翻译文本
@@ -202,6 +203,13 @@ export class MenuService {
    */
   setShortcuts(shortcuts: Partial<KeyboardShortcuts>): void {
     this.shortcuts = { ...DEFAULT_KEYBOARD_SHORTCUTS, ...shortcuts }
+  }
+
+  /**
+   * 设置 macOS ⌘Q 防误触退出回调（不设则直接 app.quit）
+   */
+  setQuitHandler(handler: () => void): void {
+    this.quitHandler = handler
   }
 
   /**
@@ -251,7 +259,14 @@ export class MenuService {
         { type: 'separator' },
         {
           label: this.t('quit'),
-          role: 'quit'
+          accelerator: 'Command+Q',
+          click: () => {
+            if (this.quitHandler) {
+              this.quitHandler()
+            } else {
+              app.quit()
+            }
+          }
         }
       ]
     }
