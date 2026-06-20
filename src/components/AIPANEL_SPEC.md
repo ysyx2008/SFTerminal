@@ -104,7 +104,7 @@ isAgentRunning &&
 | 新步骤到达（onStep） | `scrollToBottomIfNeeded`（智能：用户向上翻阅时不强制滚底） |
 | 需要确认（onNeedConfirm）| `scrollToBottom`（强制，两次，间隔 150ms） |
 | runAgent 发起时 | `scrollToBottom`（强制，确保用户任务气泡可见） |
-| 用户主动上翻 | 停止自动滚底，顶部/底部均显示「新消息↓」按钮 |
+| 用户主动上翻 | 停止自动滚底，列表区域**底部中央**显示「新消息↓」悬浮按钮 |
 | 用户点击「新消息↓」 | `scrollToBottom`（强制），恢复自动跟随 |
 
 **智能滚底判定**（`scrollToBottomIfNeeded`）：判断用户是否在底部附近（`aiScrollNearBottom` state），是则滚底，否则仅显示新消息提示。
