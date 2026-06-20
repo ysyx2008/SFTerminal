@@ -48,6 +48,7 @@ import {
   type AssistantExample,
 } from '../config/assistantExamples'
 import type { AgentRecord, AgentHistorySummary } from '@shared/types'
+import { WAITING_FOR_MODEL_LABEL_IDS } from '@shared/types/ai'
 
 // Props - 每个 AiPanel 实例绑定到特定的 tab
 const props = withDefaults(defineProps<{
@@ -301,12 +302,22 @@ onUnmounted(() => {
   document.removeEventListener('scroll', handleScrollForGroupMenu, true)
 })
 
-// 识别 createRun 一开始插入的"正在准备..." 占位步骤（type='thinking' + isStreaming=true）。
-// 让它借用 message step 的视觉壳（同一图标 + 同一 wrapper + ThinkingBlock 流式态），
-// 切换到真正的 message step 时外观无差，达到"持续往下呼呼输出"的稳定感。
+// 识别 createRun 一开始插入的 startup 占位步骤（type='thinking' + isStreaming=true）。
+// 含「正在准备…」及等待首 token 的随机趣味文案；借用 message step 视觉壳，首 chunk 到达后无缝切换。
 // 其它 thinking step（如截断警告、参数错误）isStreaming 为 undefined，不会被误判。
 const isInitialPreparingStep = (step: { type: string; isStreaming?: boolean }): boolean => {
   return step.type === 'thinking' && step.isStreaming === true
+}
+
+const startupPhaseLabels = computed(() => [
+  t('ai.preparing'),
+  ...WAITING_FOR_MODEL_LABEL_IDS.map(id => t(`ai.waitingForModel.${id}`)),
+])
+
+const isStartupPhaseLabel = (text: string): boolean => {
+  const trimmed = text.trim()
+  if (!trimmed) return true
+  return startupPhaseLabels.value.includes(trimmed)
 }
 
 /** message step 的思考行：含已解析 thinking 块，或流式首 chunk 尚未包装 🤔 前的过渡态 */
@@ -320,12 +331,11 @@ const getMessageStepThinkingView = (step: { content: string; isStreaming?: boole
     }
   }
   if (step.isStreaming && !step.content.includes('🤔')) {
-    const preparingText = t('ai.preparing')
-    const isPreparingOnly = !step.content.trim() || step.content === preparingText
+    const isPlaceholder = isStartupPhaseLabel(step.content)
     return {
       reasoning: '',
       isStreaming: true,
-      label: isPreparingOnly ? preparingText : undefined,
+      label: isPlaceholder ? (step.content.trim() || t('ai.preparing')) : undefined,
     }
   }
   return null
@@ -335,8 +345,7 @@ const getMessageStepBody = (step: { content: string; isStreaming?: boolean }): s
   const parsed = parseThinking(step.content)
   if (parsed.thinking) return parsed.body
   if (step.isStreaming && !step.content.includes('🤔')) {
-    const preparingText = t('ai.preparing')
-    if (!step.content.trim() || step.content === preparingText) return ''
+    if (isStartupPhaseLabel(step.content)) return ''
   }
   return parsed.body
 }

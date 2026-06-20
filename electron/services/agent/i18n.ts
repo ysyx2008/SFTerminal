@@ -1322,6 +1322,13 @@ const translations = {
     'ai.thinking_with_emoji': '🤔 **思考中...**\n\n> ',
     'ai.thinking_process': '思考过程',
     'ai.preparing': '正在准备...',
+    'ai.waiting_for_model.diving': '深潜中…',
+    'ai.waiting_for_model.scanning': '声呐扫描中…',
+    'ai.waiting_for_model.waitingWave': '等浪来…',
+    'ai.waiting_for_model.booting': '大脑开机中…',
+    'ai.waiting_for_model.neurons': '神经元连线中…',
+    'ai.waiting_for_model.inspiration': '灵感加载中…',
+    'ai.waiting_for_model.calling': '正在呼唤模型…',
 
     // IM 模块
     'im.help_title': '🐟 旗鱼 - IM 远程助手',
@@ -2758,6 +2765,13 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'ai.thinking_with_emoji': '🤔 **Thinking...**\n\n> ',
     'ai.thinking_process': 'Thinking Process',
     'ai.preparing': 'Preparing...',
+    'ai.waiting_for_model.diving': 'Diving…',
+    'ai.waiting_for_model.scanning': 'Scanning…',
+    'ai.waiting_for_model.waitingWave': 'Waiting for the wave…',
+    'ai.waiting_for_model.booting': 'Booting up…',
+    'ai.waiting_for_model.neurons': 'Neurons connecting…',
+    'ai.waiting_for_model.inspiration': 'Loading inspiration…',
+    'ai.waiting_for_model.calling': 'Calling the model…',
 
     // IM module
     'im.help_title': '🐟 SailFish - IM Remote Assistant',

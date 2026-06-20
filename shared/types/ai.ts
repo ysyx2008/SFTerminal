@@ -33,3 +33,16 @@ export interface AiProfile {
   /** API 协议格式，默认 auto（自动检测） */
   apiFormat?: ApiFormat
 }
+
+/** 等待模型首 token 时随机展示的文案子键（前后端 i18n 共用） */
+export const WAITING_FOR_MODEL_LABEL_IDS = [
+  'diving',
+  'scanning',
+  'waitingWave',
+  'booting',
+  'neurons',
+  'inspiration',
+  'calling',
+] as const
+
+export type WaitingForModelLabelId = (typeof WAITING_FOR_MODEL_LABEL_IDS)[number]

@@ -54,6 +54,7 @@ import { assembleUserMessageContent, wrapSystemContext } from './message-envelop
 import { notifyFrontendConfigChanged } from './skills/config/executor'
 import { getBrowserBridgeService } from '../browser-bridge/browser-bridge.service'
 import { patchBrowserBridgeSectionInSystemPrompt } from '../browser-bridge/prompt-section'
+import { WAITING_FOR_MODEL_LABEL_IDS } from '@shared/types/ai'
 
 const log = createLogger('Agent')
 
@@ -2247,6 +2248,25 @@ export abstract class Agent {
   }
   
   /**
+   * 从共享池随机挑选等待首 token 的展示文案
+   */
+  private pickWaitingForModelLabel(): string {
+    const id = WAITING_FOR_MODEL_LABEL_IDS[
+      Math.floor(Math.random() * WAITING_FOR_MODEL_LABEL_IDS.length)
+    ]
+    return t(`ai.waiting_for_model.${id}`)
+  }
+
+  /** 上下文就绪、HTTP 即将发出：「正在准备…」→ 随机趣味等待文案 */
+  private markWaitingForFirstToken(run: AgentRun): void {
+    if (!run.initialStepId) return
+    this.updateStep(run.initialStepId, {
+      content: this.pickWaitingForModelLabel(),
+      isStreaming: true,
+    })
+  }
+
+  /**
    * 流式调用 AI
    * @param streamingExecutor 可选的流式工具执行器，传入时会在流式过程中提前启动工具执行
    */
@@ -2315,7 +2335,9 @@ export abstract class Agent {
       run.requestId = run.id
       
       const effectiveProfileId = this.resolveEffectiveProfileId(run)
-      
+
+      this.markWaitingForFirstToken(run)
+
       this.services.aiService.chatWithToolsStream(
         run.messages,
         llmTools,
