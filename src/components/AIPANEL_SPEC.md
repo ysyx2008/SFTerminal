@@ -107,7 +107,7 @@ isAgentRunning &&
 | 用户主动上翻 | 停止自动滚底，列表区域**底部中央**显示「新消息↓」悬浮按钮 |
 | 用户点击「新消息↓」 | `scrollToBottom`（强制），恢复自动跟随 |
 
-**智能滚底判定**（`scrollToBottomIfNeeded`）：判断用户是否在底部附近（`aiScrollNearBottom` state），是则滚底，否则仅显示新消息提示。
+**智能滚底判定**（`scrollToBottomIfNeeded`）：判断用户是否处于底部区域（`SCROLL_THRESHOLD = 100px`，即 `scrollHeight - scrollTop - clientHeight < 100`），在此范围内则自动滚底，否则仅显示「新消息↓」提示。阈值设为 100px 而非 0，是为了容纳虚拟列表高度测量的误差和动态内容渲染的抖动。
 
 **已知行为**：上滚后触发「新消息」气泡的阈值要合理（不能上滚一点点就亮），防止用户滚动查看历史时频繁被打断。
 
