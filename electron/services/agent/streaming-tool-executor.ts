@@ -34,7 +34,15 @@ interface TrackedTool {
  * 工具执行函数签名（含安全检查：plugin hooks、风险评估、用户确认）。
  * 由 Agent 注入，StreamingToolExecutor 不直接依赖 Agent 内部实现。
  */
-export type ToolExecuteFn = (toolCall: ToolCall) => Promise<{ result: ToolResult; toolArgs: Record<string, unknown> }>
+export interface ToolExecuteOptions {
+  /** 与本批同时并行、共享 output 预算的只读工具数量（含自身） */
+  parallelShare?: number
+}
+
+export type ToolExecuteFn = (
+  toolCall: ToolCall,
+  options?: ToolExecuteOptions
+) => Promise<{ result: ToolResult; toolArgs: Record<string, unknown> }>
 
 export interface StreamingToolExecutorOptions {
   run: AgentRun
@@ -78,6 +86,8 @@ export class StreamingToolExecutor {
 
   /** 解析器：当有工具完成时唤醒 getRemainingResults */
   private completionResolve?: () => void
+  /** 合并同一 tick 内连续 addTool，以便准确估算 parallelShare */
+  private processQueueScheduled = false
 
   constructor(options: StreamingToolExecutorOptions) {
     this.run = options.run
@@ -102,7 +112,16 @@ export class StreamingToolExecutor {
       toolArgs: {}
     })
 
-    this.processQueue()
+    this.scheduleProcessQueue()
+  }
+
+  private scheduleProcessQueue(): void {
+    if (this.processQueueScheduled) return
+    this.processQueueScheduled = true
+    queueMicrotask(() => {
+      this.processQueueScheduled = false
+      this.processQueue()
+    })
   }
 
   /**
@@ -195,7 +214,9 @@ export class StreamingToolExecutor {
     tracked.status = 'executing'
     this.executingCount++
 
-    tracked.promise = this.executeOne(tracked)
+    const parallelShare = this.computeOutputBudgetShare()
+
+    tracked.promise = this.executeOne(tracked, parallelShare)
       .finally(() => {
         // executeOne 内部已设置 tracked.result；此处做防御性兜底
         if (!tracked.result) {
@@ -218,11 +239,22 @@ export class StreamingToolExecutor {
         }
 
         this.wakeWaiters()
-        this.processQueue()
+        this.scheduleProcessQueue()
       })
   }
 
-  private async executeOne(tracked: TrackedTool): Promise<void> {
+  /**
+   * 估算当前并行 wave 中共享 output 预算的只读工具数（queued + executing）。
+   * 流式阶段 tool_call 逐个到达，后到的工具会把 share 抬高；同 tick 内排队的工具共享同一 share。
+   */
+  private computeOutputBudgetShare(): number {
+    const peers = this.tools.filter(
+      t => t.isConcurrencySafe && (t.status === 'queued' || t.status === 'executing')
+    ).length
+    return Math.max(1, peers)
+  }
+
+  private async executeOne(tracked: TrackedTool, parallelShare: number): Promise<void> {
     const { toolCall } = tracked
 
     if (this.run.aborted || this.aborted) {
@@ -242,7 +274,8 @@ export class StreamingToolExecutor {
     }
 
     try {
-      const { result, toolArgs } = await this.executeFn(toolCall)
+      const execOptions = tracked.isConcurrencySafe ? { parallelShare } : undefined
+      const { result, toolArgs } = await this.executeFn(toolCall, execOptions)
       tracked.result = result
       tracked.toolArgs = toolArgs
     } catch (err) {

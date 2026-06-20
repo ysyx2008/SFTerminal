@@ -2002,7 +2002,14 @@ export abstract class Agent {
     const availableToolNames = new Set(this.getAvailableTools().map(t => t.function.name))
     const streamingExecutor = new StreamingToolExecutor({
       run,
-      executeFn: (toolCall) => this.executeToolWithChecks(run, toolCall, toolExecutorConfig),
+      executeFn: (toolCall, options) => {
+        const share = options?.parallelShare ?? 1
+        const config =
+          share > 1
+            ? this.withParallelToolOutputBudget(toolExecutorConfig, share)
+            : toolExecutorConfig
+        return this.executeToolWithChecks(run, toolCall, config)
+      },
       availableToolNames,
       isConcurrencySafe: (name) => this.isParallelizableTool(name),
       onToolCompleted: ({ toolCall, result }) => {

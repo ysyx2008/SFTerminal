@@ -206,7 +206,7 @@ run(message, context, options)
 
 - **计算**：`computeToolOutputBudget({ contextLength, currentTokens })` → `{ maxChars, maxLines, critical, usagePercent }`；档位上限 × 压力系数（70%/85%）与 `remaining − reserve` 取 min；reserve 为窗口 15%（最少 4K token）。
 - **注入**：`ToolExecutorConfig.getToolOutputBudget` 由 `agent.ts` 在 `createToolExecutorConfig` 提供；子 Agent 继承父配置。
-- **并行 batch**：`executeToolBatchParallel` 通过 `applyParallelShare(budget, N)` 分摊预算，避免 N 个只读工具各拿满额。
+- **并行 batch**：`executeToolBatchParallel` 与流式预执行 `StreamingToolExecutor` 均通过 `applyParallelShare(budget, N)` 分摊预算，避免 N 个只读工具各拿满额。
 - **消费方（v1）**：`tools/file.ts` 的 `read_file` / 文档解析结果在返回前按预算截断；`maxChars ≤ 0` 时仅返回摘要与 `compress_context` 指引。
 - **后续**：`exec` 等只读工具可复用同一预算函数。
 
@@ -319,6 +319,8 @@ run(message, context, options)
 - 有副作用的工具（execute_command、edit_file 等）独占执行，等前面的全部完成
 
 **流程**：`executeStep` 创建 `StreamingToolExecutor` → 传入 `callAiWithStreaming` → AI 流式输出中 `onToolCallReady` 回调触发 `addTool()` → 流结束后 `executeToolCallsWithStreaming` 收集预执行结果 + 执行剩余工具
+
+**Output 预算分摊**：启动只读工具时，`computeOutputBudgetShare()` 统计当前 queued+executing 的 parallelizable 工具数，经 `executeFn({ parallelShare })` 交给 Agent 的 `withParallelToolOutputBudget`。同一 event-loop tick 内连续 `addTool` 会合并到一次 `processQueue`（`queueMicrotask`），避免第一个 read 在后续 read 到达前就拿满额预算。
 
 **安全约束**：重试（onRetry）和截断（finish_reason=length）时会 abort 执行器；幻觉工具在执行器内部检测并拒绝；结果按原始 tool_calls 顺序写入消息历史。
 
