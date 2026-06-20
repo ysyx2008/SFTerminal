@@ -1,6 +1,6 @@
 ---
 description: Agent 抽象层禁止硬编码具体工具名（OOP 边界护栏）
-globs: electron/services/agent/agent.ts, electron/services/agent/streaming-tool-executor.ts, electron/services/agent/tool-result-budget.ts, electron/services/agent/task-memory.ts, electron/services/agent/context-builder.ts, electron/services/agent/tool-metadata.ts
+globs: electron/services/agent/agent.ts, electron/services/agent/streaming-tool-executor.ts, electron/services/agent/tool-result-budget.ts, electron/services/agent/tool-output-budget.ts, electron/services/agent/task-memory.ts, electron/services/agent/context-builder.ts, electron/services/agent/tool-metadata.ts
 alwaysApply: false
 ---
 
@@ -8,7 +8,7 @@ alwaysApply: false
 
 ## 规则
 
-`electron/services/agent/` 下的**抽象层文件**（agent.ts、streaming-tool-executor.ts、tool-result-budget.ts、task-memory.ts、context-builder.ts、tool-metadata.ts）**禁止包含具体工具名字符串字面量**。
+`electron/services/agent/` 下的**抽象层文件**（agent.ts、streaming-tool-executor.ts、tool-result-budget.ts、tool-output-budget.ts、task-memory.ts、context-builder.ts、tool-metadata.ts）**禁止包含具体工具名字符串字面量**。
 
 具体工具名包括：`'read_file'` / `'execute_command'` / `'write_text_file'` / `'edit_file'` / `'word_from_markdown'` / `'excel_from_markdown'` / `'dispatch_agents'` / `'ask_user'` / `'plan'` / `'recall'` / `'personality_craft'` 等所有内置工具与技能工具的名字。
 

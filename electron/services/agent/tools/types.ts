@@ -123,6 +123,12 @@ export interface ToolExecutorConfig {
    * 不能依赖入参里那个目标 ptyId，因为它可能恰好就是已死的那个。
    */
   getCurrentPtyId?: () => string | undefined
+  /**
+   * 单次工具 output 字符/行预算（基于模型 contextLength 与当前上下文用量）。
+   * read_file 等在返回前据此截断，防止最后一读撑爆上下文窗口。
+   * @param currentTokensOverride 子 Agent 等独立消息链可传入自己的 prompt_tokens
+   */
+  getToolOutputBudget?: (currentTokensOverride?: number) => import('../tool-output-budget').ToolOutputBudget
 }
 
 /** 常见图片扩展名（AI Vision 模型可直接处理的格式） */

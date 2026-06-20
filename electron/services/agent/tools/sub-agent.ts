@@ -182,6 +182,7 @@ function buildSubAgentExecutorConfig(
     getAiService: parentExecutor.getAiService,
     getActiveProfileId: parentExecutor.getActiveProfileId,
     historyService: parentExecutor.historyService,
+    getToolOutputBudget: parentExecutor.getToolOutputBudget,
   }
 }
 
@@ -275,6 +276,16 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
       }
       messages.push(assistantMsg)
 
+      const subPromptTokens = result.usage?.prompt_tokens
+      const toolExecutorForStep: ToolExecutorConfig =
+        subPromptTokens !== undefined && executorConfig.getToolOutputBudget
+          ? {
+              ...executorConfig,
+              getToolOutputBudget: () =>
+                executorConfig.getToolOutputBudget!(subPromptTokens),
+            }
+          : executorConfig
+
       for (const toolCall of result.tool_calls) {
         if (abortSignal.aborted || executorConfig.isAborted()) break
 
@@ -307,7 +318,7 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
           toolCall,
           agentConfig,
           [],
-          executorConfig
+          toolExecutorForStep
         )
 
         step.status = toolResult.success ? 'completed' : 'failed'

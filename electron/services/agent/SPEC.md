@@ -181,7 +181,7 @@ run(message, context, options)
 
 以下文件构成 Agent 抽象层 / 跨工具横切关注点，**禁止包含具体工具名字符串字面量**：
 
-- `agent.ts`、`streaming-tool-executor.ts`、`tool-result-budget.ts`、`task-memory.ts`、`context-builder.ts`、`tool-metadata.ts`
+- `agent.ts`、`streaming-tool-executor.ts`、`tool-result-budget.ts`、`tool-output-budget.ts`、`task-memory.ts`、`context-builder.ts`、`tool-metadata.ts`
 
 ### 机械护栏
 
@@ -199,6 +199,16 @@ run(message, context, options)
 4. 默认更激进等于更省 token，符合上下文预算的整体目标
 
 如果有插件作者希望给自己的工具默认改回保护语义，请在 ToolDefinition 上显式声明，不要修改本节的默认值。
+
+### 工具 output 预算（`tool-output-budget.ts`）
+
+与 `tool-result-budget.ts`（清理**旧** tool 消息）互补：在工具结果**写入 `run.messages` 前**，按模型 `contextLength` 与当前已用量计算单次 output 字符/行上限，防止「最后一读把窗口撑爆」。
+
+- **计算**：`computeToolOutputBudget({ contextLength, currentTokens })` → `{ maxChars, maxLines, critical, usagePercent }`；档位上限 × 压力系数（70%/85%）与 `remaining − reserve` 取 min；reserve 为窗口 15%（最少 4K token）。
+- **注入**：`ToolExecutorConfig.getToolOutputBudget` 由 `agent.ts` 在 `createToolExecutorConfig` 提供；子 Agent 继承父配置。
+- **并行 batch**：`executeToolBatchParallel` 通过 `applyParallelShare(budget, N)` 分摊预算，避免 N 个只读工具各拿满额。
+- **消费方（v1）**：`tools/file.ts` 的 `read_file` / 文档解析结果在返回前按预算截断；`maxChars ≤ 0` 时仅返回摘要与 `compress_context` 指引。
+- **后续**：`exec` 等只读工具可复用同一预算函数。
 
 ### 历史教训
 

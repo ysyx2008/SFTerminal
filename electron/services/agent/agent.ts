@@ -45,6 +45,7 @@ import { getWatchService } from '../watch/watch.service'
 import { formatWatchListForPrompt } from './skills/watch/executor'
 import { consumeProactiveContext } from './proactive-store'
 import { applyToolResultBudget } from './tool-result-budget'
+import { applyParallelShare, computeToolOutputBudget } from './tool-output-budget'
 import { t } from './i18n'
 import { createSkillSession, SkillSession } from './skills'
 import { getAiDebugService } from '../ai-debug.service'
@@ -2744,6 +2745,10 @@ export abstract class Agent {
 
     const batchStartTime = Date.now()
     const stepCountBefore = run.steps.length
+    const batchExecutorConfig = this.withParallelToolOutputBudget(
+      toolExecutorConfig,
+      toolCalls.length
+    )
     const parallelPromises = toolCalls.map(async (toolCall) => {
       if (run.aborted) {
         const aborted = {
@@ -2755,7 +2760,7 @@ export abstract class Agent {
         this.finalizeToolCallStep(run, toolCall.id, aborted.result.success)
         return { toolCall, ...aborted }
       }
-      const out = await this.executeToolWithChecks(run, toolCall, toolExecutorConfig)
+      const out = await this.executeToolWithChecks(run, toolCall, batchExecutorConfig)
       // 完成即回填 UI（视觉层面"完成一个显示一个"）
       this.ensureToolResultStep(run, stepCountBefore, toolCall, out.result)
       this.finalizeToolCallStep(run, toolCall.id, out.result.success)
@@ -3122,6 +3127,21 @@ export abstract class Agent {
   }
 
   /**
+   * 并行 tool batch 内分摊单次 output 预算（见 tool-output-budget.applyParallelShare）。
+   */
+  private withParallelToolOutputBudget(
+    base: ToolExecutorConfig,
+    parallelShare: number
+  ): ToolExecutorConfig {
+    if (parallelShare <= 1 || !base.getToolOutputBudget) return base
+    return {
+      ...base,
+      getToolOutputBudget: (override?: number) =>
+        applyParallelShare(base.getToolOutputBudget!(override), parallelShare),
+    }
+  }
+
+  /**
    * 创建工具执行器配置
    */
   protected createToolExecutorConfig(run: AgentRun): ToolExecutorConfig {
@@ -3187,7 +3207,15 @@ export abstract class Agent {
         run.context.ptyId = ptyId
         log.info(`Agent currentPtyId switched: ${before} → ${ptyId}`)
       },
-      getCurrentPtyId: () => run.ptyId
+      getCurrentPtyId: () => run.ptyId,
+      getToolOutputBudget: (currentTokensOverride?: number) => {
+        const contextLength = this.getContextLength()
+        const currentTokens =
+          currentTokensOverride ??
+          this._lastPromptTokens ??
+          this.estimateTotalTokens(run.messages)
+        return computeToolOutputBudget({ contextLength, currentTokens })
+      },
     }
   }
   

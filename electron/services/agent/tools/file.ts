@@ -13,10 +13,85 @@ import { getDocumentParserService } from '../../document-parser.service'
 import { getConfigService } from '../../config.service'
 import iconv from 'iconv-lite'
 import { decodeBuffer, detectEncoding } from '../../../utils/encoding'
-import { categorizeError, getErrorRecoverySuggestion, truncateFromEnd, formatFileSize } from './utils'
+import { categorizeError, getErrorRecoverySuggestion, truncateFromEnd, truncateSandwichWithNotice, formatFileSize } from './utils'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
+import type { ToolOutputBudget } from '../tool-output-budget'
 import type { CanvasData } from '@shared/types'
 import { VISION_IMAGE_EXTENSIONS, IMAGE_MIME_TYPES, CONVERTIBLE_IMAGE_EXTENSIONS } from './types'
+
+const DEFAULT_READ_OUTPUT_BUDGET: ToolOutputBudget = {
+  maxChars: 24_576,
+  maxLines: 500,
+  critical: false,
+  usagePercent: 0,
+}
+
+function getReadOutputBudget(executor: ToolExecutorConfig): ToolOutputBudget {
+  return executor.getToolOutputBudget?.() ?? DEFAULT_READ_OUTPUT_BUDGET
+}
+
+type ReadLineCapMode = 'head' | 'tail' | 'range'
+
+function capReadLines(
+  lines: string[],
+  budget: ToolOutputBudget,
+  mode: ReadLineCapMode
+): { lines: string[]; capped: boolean } {
+  if (lines.length <= budget.maxLines) {
+    return { lines, capped: false }
+  }
+  if (mode === 'tail') {
+    return { lines: lines.slice(-budget.maxLines), capped: true }
+  }
+  return { lines: lines.slice(0, budget.maxLines), capped: true }
+}
+
+/** 按上下文预算截断 read_file 返回给 AI 的正文（含行号） */
+function applyReadFileOutputBudget(
+  numberedContent: string,
+  filePath: string,
+  executor: ToolExecutorConfig
+): string {
+  const budget = getReadOutputBudget(executor)
+
+  if (budget.maxChars <= 0) {
+    return t('file.read_context_exhausted', {
+      usagePercent: budget.usagePercent,
+      path: filePath,
+    })
+  }
+
+  if (numberedContent.length <= budget.maxChars) {
+    if (budget.critical) {
+      return `${numberedContent}\n\n${t('file.read_context_critical_hint', {
+        usagePercent: budget.usagePercent,
+      })}`
+    }
+    return numberedContent
+  }
+
+  return truncateSandwichWithNotice(
+    numberedContent,
+    budget.maxChars,
+    (stats) => t('file.read_output_truncated', {
+      path: filePath,
+      total: String(stats.originalLength),
+      head: String(stats.headChars),
+      tail: String(stats.tailChars),
+      omittedLines: String(stats.omittedLines),
+      omittedChars: String(stats.omittedChars),
+      usagePercent: budget.usagePercent,
+    })
+  )
+}
+
+function applyDocumentOutputBudget(
+  content: string,
+  filePath: string,
+  executor: ToolExecutorConfig
+): string {
+  return applyReadFileOutputBudget(content, filePath, executor)
+}
 
 /**
  * Agent 写入/编辑文本类文件后推送到独立助手 Canvas，供用户预览与本地保存。
@@ -937,7 +1012,7 @@ async function readDocumentFile(
       images: hasImages ? result.images : undefined
     })
 
-    return { success: true, output: result.content, images: hasImages ? result.images : undefined }
+    return { success: true, output: applyDocumentOutputBudget(result.content, filePath, executor), images: hasImages ? result.images : undefined }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : t('file.parse_failed')
     executor.addStep({
@@ -1138,6 +1213,9 @@ ${sampleContent ? `### ${t('file.info_preview')}\n\`\`\`\n${sampleContent}\n\`\`
     let actualLines: string[] = []
     let totalLines: number | undefined
     let isPartialRead = false
+    let linesCapped = false
+    const readBudget = getReadOutputBudget(executor)
+    let readLineCapMode: ReadLineCapMode = 'head'
 
     const formatBytes = (bytes: number): string => {
       if (bytes < 1024) return `${bytes} B`
@@ -1151,23 +1229,35 @@ ${sampleContent ? `### ${t('file.info_preview')}\n\`\`\`\n${sampleContent}\n\`\`
       totalLines = allLines.length
       const start = startLine !== undefined ? Math.max(1, startLine) - 1 : 0
       const end = endLine !== undefined ? Math.min(allLines.length, endLine) : allLines.length
-      actualLines = allLines.slice(start, end)
+      readLineCapMode = 'range'
+      const sliced = allLines.slice(start, end)
+      const capped = capReadLines(sliced, readBudget, readLineCapMode)
+      actualLines = capped.lines
+      linesCapped = capped.capped
       content = actualLines.join('\n')
-      isPartialRead = actualLines.length < allLines.length
+      isPartialRead = actualLines.length < allLines.length || linesCapped
     } else if (maxLines !== undefined) {
       const fullContent = readTextFileSync(filePath)
       const allLines = fullContent.split('\n')
       totalLines = allLines.length
-      actualLines = allLines.slice(0, maxLines)
+      readLineCapMode = 'head'
+      const sliced = allLines.slice(0, maxLines)
+      const capped = capReadLines(sliced, readBudget, readLineCapMode)
+      actualLines = capped.lines
+      linesCapped = capped.capped
       content = actualLines.join('\n')
-      isPartialRead = actualLines.length < allLines.length
+      isPartialRead = actualLines.length < allLines.length || linesCapped
     } else if (tailLines !== undefined) {
       const fullContent = readTextFileSync(filePath)
       const allLines = fullContent.split('\n')
       totalLines = allLines.length
-      actualLines = allLines.slice(-tailLines)
+      readLineCapMode = 'tail'
+      const sliced = allLines.slice(-tailLines)
+      const capped = capReadLines(sliced, readBudget, readLineCapMode)
+      actualLines = capped.lines
+      linesCapped = capped.capped
       content = actualLines.join('\n')
-      isPartialRead = actualLines.length < allLines.length
+      isPartialRead = actualLines.length < allLines.length || linesCapped
     } else {
       const maxFileSize = 500 * 1024
       if (fileSize > maxFileSize) {
@@ -1182,6 +1272,15 @@ ${sampleContent ? `### ${t('file.info_preview')}\n\`\`\`\n${sampleContent}\n\`\`
       }
       content = readTextFileSync(filePath)
       actualLines = content.split('\n')
+      totalLines = actualLines.length
+      readLineCapMode = 'head'
+      const capped = capReadLines(actualLines, readBudget, readLineCapMode)
+      if (capped.capped) {
+        actualLines = capped.lines
+        content = actualLines.join('\n')
+        isPartialRead = true
+        linesCapped = true
+      }
     }
 
     const displayPath = formatDisplayPath(filePath, ptyId)
@@ -1196,6 +1295,10 @@ ${sampleContent ? `### ${t('file.info_preview')}\n\`\`\`\n${sampleContent}\n\`\`
       readMeta.push(t('file.read_last_n', { count: tailLines }))
     } else {
       readMeta.push(t('file.full_read'))
+    }
+
+    if (linesCapped) {
+      readMeta.push(t('file.read_lines_capped', { cap: readBudget.maxLines }))
     }
 
     if (isPartialRead && totalLines !== undefined) {
@@ -1213,15 +1316,16 @@ ${sampleContent ? `### ${t('file.info_preview')}\n\`\`\`\n${sampleContent}\n\`\`
       : tailLines !== undefined && totalLines !== undefined ? totalLines - actualLines.length + 1
       : 1
     const numberedContent = addLineNumbers(content, lineOffset)
+    const outputForAi = applyReadFileOutputBudget(numberedContent, filePath, executor)
 
     executor.addStep({
       type: 'tool_result',
       content: `${t('file.read_success')} (${readMeta.join(', ')}): ${displayPath}`,
       toolName: 'read_file',
-      toolResult: truncateFromEnd(numberedContent, 500)
+      toolResult: truncateFromEnd(outputForAi, 500)
     })
     
-    return { success: true, output: numberedContent }
+    return { success: true, output: outputForAi }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : '读取失败'
     const errorCategory = categorizeError(errorMsg)
