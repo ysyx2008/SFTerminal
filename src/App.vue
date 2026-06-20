@@ -570,7 +570,7 @@ onMounted(async () => {
     if (!existingTab) {
       terminalStore.createAssistantTab({
         agentId: data.agentId,
-        title: data.title || `📡 ${t('gateway.remoteChat', '远程对话')}`,
+        title: data.title || t('gateway.remoteChat', '远程对话'),
         isRemote: true,
         activate: false
       })
@@ -607,7 +607,7 @@ onMounted(async () => {
     if (!remoteTab) {
       const newTabId = terminalStore.createAssistantTab({
         agentId: data.agentId,
-        title: `📡 ${t('gateway.remoteChat', '远程对话')}`,
+        title: t('gateway.remoteChat', '远程对话'),
         isRemote: true,
         remoteChannel: data.remoteChannel,
         activate: false
@@ -683,7 +683,7 @@ onMounted(async () => {
       // companion tab 不存在时按远程对话创建，唯一性由 agentId 保证
       const tabId = terminalStore.createAssistantTab({
         agentId,
-        title: `📡 ${t('gateway.remoteChat', '远程对话')}`,
+        title: t('gateway.remoteChat', '远程对话'),
         isRemote: true,
         activate: false
       })

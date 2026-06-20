@@ -1,13 +1,19 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, Radio, Bot, Home } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, SatelliteDish, Bot, Home } from 'lucide-vue-next'
 import { useTerminalStore } from '../stores/terminal'
 import { formatAgentAttentionTooltip } from '../utils/agent-tab-ui-meta'
 import BatchCommandPanel from './BatchCommandPanel.vue'
 
 const { t } = useI18n()
 const terminalStore = useTerminalStore()
+
+/** 远程 Tab 已有 SatelliteDish 图标，标题里去掉历史遗留的 📡 前缀避免重复 */
+function displayTabTitle(tab: { customTitle?: string; title: string; isRemote?: boolean }): string {
+  const raw = tab.customTitle || tab.title
+  return tab.isRemote ? raw.replace(/^📡\s*/, '') : raw
+}
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 
 const emit = defineEmits<{
@@ -326,7 +332,7 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
         @dragend="handleDragEnd"
       >
         <span class="tab-icon">
-          <Radio v-if="tab.isRemote" :size="14" class="remote-icon" />
+          <SatelliteDish v-if="tab.isRemote" :size="14" class="remote-icon" />
           <Bot v-else-if="tab.type === 'assistant'" :size="14" />
           <Terminal v-else-if="tab.type === 'local'" :size="14" />
           <Monitor v-else :size="14" />
@@ -348,8 +354,8 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
           v-else
           class="tab-title"
           :title="t('tabs.doubleClickToRename')"
-          @dblclick.stop="startRename(tab.id, tab.customTitle || tab.title, $event)"
-        >{{ tab.customTitle || tab.title }}</span>
+          @dblclick.stop="startRename(tab.id, displayTabTitle(tab), $event)"
+        >{{ displayTabTitle(tab) }}</span>
         <span v-if="tab.isLoading" class="tab-loading">
           <Loader2 class="spinner" :size="12" />
         </span>

@@ -139,7 +139,7 @@ export class WebChatService {
       this._tabCreated = true
       this.sendToDesktop('gateway:remoteTabCreated', {
         agentId: this.agentId,
-        title: '📡 远程对话'
+        title: '远程对话'
       })
     }
   }
