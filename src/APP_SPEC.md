@@ -1,11 +1,32 @@
 # App.vue 全局交互规则 SPEC
 
 > Last verified: 2026-06-20  
-> 涵盖范围：`src/App.vue` 中与视图无关的全局快捷键、覆盖层、窗口生命周期相关规则。
+> 涵盖范围：`src/App.vue` 中的全局快捷键、覆盖层、窗口生命周期相关规则。  
+> Hub 助手模型的交互规则见 `src/workbench/assistant/HUB_SPEC.md`。
 
 ---
 
-## 一、Cmd+W（关闭/隐藏）决策树
+## 一、全局快捷键清单
+
+所有快捷键在 `handleGlobalKeydown` 中按以下顺序处理（**有顺序依赖，不可随意调换**）：
+
+| 快捷键 | 默认值 | 行为 | 是否可自定义 |
+|---|---|---|---|
+| 新建助手对话 | `Cmd+T`（可改） | `terminalStore.goToHome()` | ✅ |
+| 新建本地终端 | `Cmd+Shift+T`（可改） | `terminalStore.createTab('local')` | ✅ |
+| ESC | 固定 | 关闭 SSH 凭证侧栏（须让路给模态弹窗） | ❌ |
+| Ctrl/Cmd+W | 固定 | 见第二节决策树 | ❌ |
+| 分屏横向 | `Cmd+D`（可改） | `splitTerminal('horizontal')`，**仅终端 tab** | ✅ |
+| 分屏纵向 | `Cmd+Shift+D`（可改） | `splitTerminal('vertical')`，**仅终端 tab** | ✅ |
+| 关闭窗格 | `Cmd+Shift+W`（可改） | 关闭激活分屏窗格，**仅已分屏终端 tab** | ✅ |
+
+**分屏快捷键约束**：`tab.type === 'assistant'` 时整组分屏快捷键不生效（`handleSplitShortcut` 直接 return）。
+
+**Windows Alt 键**：单独按下并松开 Alt（不与其他键组合）→ 弹出汉堡菜单（模拟 Windows 系统菜单栏行为）。全屏 overlay 打开时不响应，避免菜单位置异常。
+
+---
+
+## 二、Cmd+W（关闭/隐藏）决策树
 
 `handleCloseShortcut` 的完整优先顺序，**从上到下依次判断，命中即止**：
 
@@ -32,7 +53,19 @@
 
 ---
 
-## 二、覆盖层（全屏 UI）优先级
+## 三、macOS ⌘Q 防误触
+
+主进程检测 ⌘Q 事件后，不立即退出，而是先向渲染进程发送 `quit.onToast` 信号：
+- 渲染进程显示顶部 Toast 提示条（`quitToastVisible`）
+- 用户**在提示条消失前再次按 ⌘Q** → 主进程才真正执行退出
+- 提示条自动消失后，再次按 ⌘Q 重新走同一流程
+
+**目的**：防止用户在终端内操作时误触 ⌘Q 退出整个应用。  
+**实现**：`window.electronAPI.quit.onToast` IPC 事件 + `quitToastVisible` ref。
+
+---
+
+## 四、覆盖层（全屏 UI）优先级
 
 以下覆盖层互斥，打开任意一个后 Cmd+W 只关该覆盖层：
 
@@ -46,7 +79,7 @@
 
 ---
 
-## 三、退出确认计数
+## 五、退出确认计数
 
 应用退出时（`window.electronAPI.window.requestTerminalCount` IPC），向主进程上报"有意义的开放会话数"：
 
@@ -64,7 +97,7 @@
 
 ---
 
-## 四、视图状态说明
+## 六、视图状态说明
 
 > 详细视图状态机（Hub 焦点 / 欢迎页 / 侧栏可见性等）见  
 > `src/workbench/assistant/HUB_SPEC.md` 第三节。
