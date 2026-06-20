@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { AiProfile, DocumentParseProgress, JumpHostConfig, PtyOptions, SftpConfig, SshConfig } from '@shared/types'
+import type { AiProfile, BondMetrics, DocumentParseProgress, JumpHostConfig, PtyOptions, SftpConfig, SshConfig } from '@shared/types'
 
 // ── 启动进度缓冲 ──────────────────────────────────────────────────────────────
 // preload 加载后立即开始监听，将最新 stage 缓存下来。
@@ -1027,9 +1027,23 @@ const electronAPI = {
       }
     },
 
-    // 监听 Agent 完成（携带 ptyId 用于可靠匹配 tab，可能附带未处理的用户消息）
-    onComplete: (callback: (data: { agentId: string; ptyId?: string; result: string; pendingUserMessages?: string[] }) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string; ptyId?: string; result: string; pendingUserMessages?: string[] }) => callback(data)
+    // 监听 Agent 完成（携带 ptyId 用于可靠匹配 tab，可能附带未处理的用户消息与羁绊里程碑）
+    onComplete: (callback: (data: {
+      agentId: string
+      ptyId?: string
+      result: string
+      pendingUserMessages?: string[]
+      newBondMilestones?: string[]
+      bondMetrics?: BondMetrics
+    }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: {
+        agentId: string
+        ptyId?: string
+        result: string
+        pendingUserMessages?: string[]
+        newBondMilestones?: string[]
+        bondMetrics?: BondMetrics
+      }) => callback(data)
       ipcRenderer.on('agent:complete', handler)
       return () => {
         ipcRenderer.removeListener('agent:complete', handler)

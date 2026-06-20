@@ -13,6 +13,36 @@ export default {
     manage_artifacts: 'Manage output panel',
   },
 
+  // Bond milestones (unlock toast)
+  bond: {
+    milestone: {
+      bond_first_meet: {
+        title: 'Bond · First Meeting',
+        body: 'Day one — Sailfish remembers.',
+      },
+      bond_getting_along: {
+        title: 'Bond · Getting Along',
+        body: "We're finding our rhythm.",
+      },
+      bond_trusted_partner: {
+        title: 'Bond · Trusted Partner',
+        body: "Hand off the annoying stuff — I've got you.",
+      },
+      bond_old_friend: {
+        title: 'Bond · Old Friend',
+        body: '{days} days together — worth it.',
+      },
+      bond_soulmate: {
+        title: 'Bond · Soulmates',
+        body: "You say the first half — I'll take the rest.",
+      },
+      bond_unbreakable: {
+        title: 'Bond · Unbreakable',
+        body: "Trust that won't wash away.",
+      },
+    },
+  },
+
 
   // Welcome page
   welcome: {

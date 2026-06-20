@@ -6,7 +6,7 @@
  * 无需新增数据采集，纯数学计算。
  */
 import { getConfigService, type ConfigService } from './config.service'
-import type { BondMetrics, BondTrustLevel } from '@shared/types'
+import { BOND_MILESTONES, type BondMetrics, type BondTrustLevel } from '@shared/types'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('BondService')
@@ -16,15 +16,6 @@ const TRUST_THRESHOLDS: Array<{ max: number; level: BondTrustLevel }> = [
   { max: 40, level: 'acquaintance' },
   { max: 70, level: 'companion' },
   { max: Infinity, level: 'soulmate' },
-]
-
-const BOND_MILESTONES = [
-  { id: 'bond_first_meet',     threshold: 1,  label_zh: '初次相见',     label_en: 'First Meeting' },
-  { id: 'bond_getting_along',  threshold: 20, label_zh: '渐入佳境',     label_en: 'Getting Along' },
-  { id: 'bond_trusted_partner',threshold: 40, label_zh: '信赖伙伴',     label_en: 'Trusted Partner' },
-  { id: 'bond_old_friend',     threshold: 60, label_zh: '莫逆之交',     label_en: 'Old Friend' },
-  { id: 'bond_soulmate',       threshold: 80, label_zh: '心意相通',     label_en: 'Soulmates' },
-  { id: 'bond_unbreakable',    threshold: 95, label_zh: '坚不可摧',     label_en: 'Unbreakable' },
 ]
 
 const TRUST_LABELS: Record<BondTrustLevel, { zh: string; en: string }> = {

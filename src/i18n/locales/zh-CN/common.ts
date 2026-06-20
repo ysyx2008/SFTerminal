@@ -13,6 +13,36 @@ export default {
     manage_artifacts: '维护产出物面板',
   },
 
+  // 羁绊里程碑（解锁 toast）
+  bond: {
+    milestone: {
+      bond_first_meet: {
+        title: '羁绊 · 初次相见',
+        body: '第一天，旗鱼记住了。',
+      },
+      bond_getting_along: {
+        title: '羁绊 · 渐入佳境',
+        body: '默契在涨，继续保持。',
+      },
+      bond_trusted_partner: {
+        title: '羁绊 · 信赖伙伴',
+        body: '可以放心把烦人的事交给我。',
+      },
+      bond_old_friend: {
+        title: '羁绊 · 莫逆之交',
+        body: '相伴 {days} 天，这羁绊值了。',
+      },
+      bond_soulmate: {
+        title: '羁绊 · 心意相通',
+        body: '你说上半句，下半句我来。',
+      },
+      bond_unbreakable: {
+        title: '羁绊 · 坚不可摧',
+        body: '海枯石烂级别的信任。',
+      },
+    },
+  },
+
 
   // 欢迎页
   welcome: {

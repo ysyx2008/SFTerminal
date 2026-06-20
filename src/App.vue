@@ -29,6 +29,10 @@ import { uiThemes } from './themes/ui-themes'
 import { createLogger } from './utils/logger'
 import { matchAccelerator } from './utils/shortcut'
 import { useAppUpdaterPrompts } from './composables/useAppUpdaterPrompts'
+import {
+  checkBondMilestonesOnStartup,
+  showBondMilestoneToasts,
+} from './composables/useBondMilestoneToasts'
 
 const log = createLogger('App')
 
@@ -738,7 +742,13 @@ onMounted(async () => {
     agentId: string
     ptyId?: string
     pendingUserMessages?: string[]
+    newBondMilestones?: string[]
+    bondMetrics?: BondMetrics
   }) => {
+    if (data.newBondMilestones?.length && data.bondMetrics) {
+      void showBondMilestoneToasts(t, data.newBondMilestones, data.bondMetrics)
+    }
+
     const tab = terminalStore.tabs.find(t => t.agentId === data.agentId)
     if (tab && terminalStore.hasDeferredProactive(tab.id)) {
       flushDeferredProactive(data.agentId)
@@ -864,6 +874,8 @@ onMounted(async () => {
   // 已完成设置，正常启动
   await initializeApp()
   welcomeUiReady.value = true
+
+  void checkBondMilestonesOnStartup(t)
 
   // 全局更新提醒（Toast + 下载完成确认弹窗）
   startUpdaterPrompts()

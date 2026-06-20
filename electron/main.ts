@@ -1636,7 +1636,6 @@ app.whenReady().then(async () => {
       // AppLifecycleSensor.start() 是同步的，在 sensorService.start() 的 for 循环中已完成
       // 不能放在 .then() 里，因为 EmailSensor 的 IDLE 循环会阻塞 Promise.allSettled
       sensorService.appLifecycle.notifyAppStarted()
-      bondService.recalculate()
 
       // 觉醒模式：确保内置「唤醒」关切存在
       if (awakened) {
@@ -3388,10 +3387,17 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
       })
     },
     onComplete: (agentId: string, result: string, pendingUserMessages?: string[]) => {
+      const newBondMilestones = sensorService.appLifecycle.notifyConversationCompleted()
       if (!event.sender.isDestroyed()) {
-        event.sender.send('agent:complete', { agentId, ptyId, result, pendingUserMessages })
+        event.sender.send('agent:complete', {
+          agentId,
+          ptyId,
+          result,
+          pendingUserMessages,
+          newBondMilestones,
+          bondMetrics: bondService.calculate(),
+        })
       }
-      sensorService.appLifecycle.notifyConversationCompleted()
       attentionService.request()
     },
     onError: (agentId: string, error: string) => {
@@ -3585,11 +3591,18 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
       })
     },
     onComplete: (_runId: string, result: string, pendingUserMessages?: string[]) => {
+      const newBondMilestones = sensorService.appLifecycle.notifyConversationCompleted()
       if (!event.sender.isDestroyed()) {
-        event.sender.send('agent:complete', { agentId, ptyId: agentId, result, pendingUserMessages })
+        event.sender.send('agent:complete', {
+          agentId,
+          ptyId: agentId,
+          result,
+          pendingUserMessages,
+          newBondMilestones,
+          bondMetrics: bondService.calculate(),
+        })
       }
       if (isRemote) wcs.onAgentComplete(result)
-      sensorService.appLifecycle.notifyConversationCompleted()
       // 远程会话由 Web 端用户在用，桌面用户没参与，不应打扰
       if (!isRemote) attentionService.request()
     },
