@@ -177,4 +177,48 @@ describe('formatMessageForApi - DeepSeek thinking mode compliance', () => {
       expect(out.reasoning_content).toBe('')
     })
   })
+
+  describe('omitReasoningContent（跨模型路由场景）', () => {
+    it('普通 assistant 消息：omitReasoningContent=true 时不应携带 reasoning_content', () => {
+      const msg: AiMessage = { role: 'assistant', content: '已完成' }
+      const out = formatMessageForApi(msg, false, true)
+      expect(out).not.toHaveProperty('reasoning_content')
+    })
+
+    it('带实际 reasoning_content 的 assistant 消息：omitReasoningContent=true 时应丢弃', () => {
+      const msg: AiMessage = { role: 'assistant', content: '答案是 42', reasoning_content: '让我想想...' }
+      const out = formatMessageForApi(msg, false, true)
+      expect(out).not.toHaveProperty('reasoning_content')
+      expect(out.content).toBe('答案是 42')
+    })
+
+    it('带 tool_calls 的 assistant 消息：omitReasoningContent=true 时不应携带 reasoning_content', () => {
+      const toolCalls = [{ id: 'c1', type: 'function' as const, function: { name: 'exec', arguments: '{}' } }]
+      const msg: AiMessage = { role: 'assistant', content: '', tool_calls: toolCalls, reasoning_content: '我来调用工具' }
+      const out = formatMessageForApi(msg, false, true)
+      expect(out).not.toHaveProperty('reasoning_content')
+      expect(out.tool_calls).toEqual(toolCalls)
+    })
+
+    it('omitReasoningContent=false（默认）时行为不变，仍补空串', () => {
+      const msg: AiMessage = { role: 'assistant', content: '答复' }
+      const out = formatMessageForApi(msg, false, false)
+      expect(out.reasoning_content).toBe('')
+    })
+
+    it('user/system 消息不受 omitReasoningContent 影响', () => {
+      const user: AiMessage = { role: 'user', content: '你好', images: ['data:image/png;base64,abc'] }
+      const outUser = formatMessageForApi(user, false, true)
+      expect(outUser).not.toHaveProperty('reasoning_content')
+      // 图片仍正常格式化
+      expect(Array.isArray(outUser.content)).toBe(true)
+    })
+
+    it('omitReasoningContent=true 时 _cacheBreakpoint 仍正常设置', () => {
+      const msg: AiMessage = { role: 'assistant', content: 'done', _cacheBreakpoint: true }
+      const out = formatMessageForApi(msg, false, true)
+      expect(out).not.toHaveProperty('reasoning_content')
+      expect(out._cacheBreakpoint).toBe(true)
+    })
+  })
 })
