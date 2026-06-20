@@ -53,6 +53,12 @@ export default {
         'Soulmates — just command…',
         'More reliable than that lobster, right…',
       ],
+      lore: [
+        'Sailfish are among the fastest fish in the sea — what\'s the task…',
+        'Fin can stay down — just say the word…',
+        'Sails are up — just need a destination…',
+        'We know each other now — tortoises are slow, not me…',
+      ],
     },
     assistant: 'AI Assistant',
     assistantDesc: 'Chat with AI directly',

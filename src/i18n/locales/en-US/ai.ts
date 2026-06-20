@@ -64,6 +64,13 @@ export default {
         'More reliable than that lobster, right…',
         "Give me a task — I'll handle the rest…",
       ],
+      lore: [
+        'Sailfish are among the fastest fish in the sea — what\'s the task…',
+        'Fin can stay down until you give the word…',
+        'Sails are up — just need a destination…',
+        'Other fish are still warming up — we can go…',
+        'We know each other now — tortoises are slow, not me…',
+      ],
     },
     inputPlaceholderSupplement: 'Enter supplementary information (will take effect in next step)...',
     sendMessage: 'Send Message (Enter)',

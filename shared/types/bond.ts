@@ -27,6 +27,7 @@ export const COMPOSER_PLACEHOLDER_POOL_GATES: Record<string, BondTrustLevel> = {
   rivals: 'acquaintance',
   bondCompanion: 'companion',
   bondSoulmate: 'soulmate',
+  lore: 'companion',
 }
 
 /** 羁绊度量数据 */

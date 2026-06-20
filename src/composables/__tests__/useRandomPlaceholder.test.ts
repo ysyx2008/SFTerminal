@@ -7,6 +7,7 @@ describe('collectEligiblePlaceholders', () => {
     rivals: ['隔壁龙虾会夹手…'],
     bondCompanion: ['老搭档了…'],
     bondSoulmate: ['心意相通…'],
+    lore: ['背鳍收着也行…'],
   }
 
   it('stranger only gets ocean pool', () => {
@@ -20,13 +21,14 @@ describe('collectEligiblePlaceholders', () => {
     ])
   })
 
-  it('companion unlocks bondCompanion', () => {
+  it('companion unlocks bondCompanion and lore', () => {
     const result = collectEligiblePlaceholders(pools, 'companion')
     expect(result).toContain('老搭档了…')
+    expect(result).toContain('背鳍收着也行…')
     expect(result).not.toContain('心意相通…')
   })
 
   it('soulmate gets all pools', () => {
-    expect(collectEligiblePlaceholders(pools, 'soulmate')).toHaveLength(4)
+    expect(collectEligiblePlaceholders(pools, 'soulmate')).toHaveLength(5)
   })
 })
