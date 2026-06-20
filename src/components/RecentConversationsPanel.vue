@@ -63,6 +63,30 @@ const summaryById = computed(() => {
   return map
 })
 
+/**
+ * 正在进行中但尚未落盘到历史的"实时"会话（来自 terminalStore.tabs）。
+ * 对话一启动就出现在列表中，完成后由 summaries 接管（sessionId 相同，两者不重复）。
+ */
+const liveSessionSummaries = computed((): AgentHistorySummary[] => {
+  return terminalStore.tabs
+    .filter(tab =>
+      tab.type === 'assistant' &&
+      !tab.isRemote &&
+      !!tab.agentState?.userTask &&
+      !!tab.agentState?.sessionId &&
+      !summaryById.value.has(tab.agentState.sessionId)
+    )
+    .map(tab => ({
+      id: tab.agentState!.sessionId!,
+      timestamp: tab.agentState!.sessionStartTime ?? Date.now(),
+      duration: 0,
+      userTask: tab.agentState!.userTask!,
+      terminalType: tab.type,
+      status: 'completed' as const, // 运行状态来自 meta，status 字段不用于显示
+    }))
+    .sort((a, b) => b.timestamp - a.timestamp)
+})
+
 const matchesSearch = (record: AgentHistorySummary, kw: string): boolean => {
   if (!kw) return true
   const display = configStore.getConversationDisplayTitle(record.id)
@@ -72,11 +96,15 @@ const matchesSearch = (record: AgentHistorySummary, kw: string): boolean => {
 
 const filteredSummaries = computed(() => {
   const kw = searchText.value.trim().toLowerCase()
+  // 实时会话放最前面，已完成历史按时间倒序排在后面
+  const liveSorted = kw
+    ? liveSessionSummaries.value.filter(s => matchesSearch(s, kw))
+    : [...liveSessionSummaries.value]
   const sorted = [...summaries.value].sort(
     (a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration)
   )
-  if (!kw) return sorted
-  return sorted.filter(s => matchesSearch(s, kw))
+  const histSorted = kw ? sorted.filter(s => matchesSearch(s, kw)) : sorted
+  return [...liveSorted, ...histSorted]
 })
 
 const pinnedItems = computed(() => {
@@ -464,6 +492,25 @@ const onMenuDelete = async () => {
   // 已提升为独立 tab：阻止删除，让用户先关 tab
   if (existingTab?.isPromoted) {
     toast.warning(t('welcome.conversations.deleteBlockedTabOpen'))
+    return
+  }
+
+  // 实时会话（尚未落盘）：直接关闭 tab 即可，无需调 history.delete
+  const isLiveSession = liveSessionSummaries.value.some(s => s.id === record.id)
+  if (isLiveSession) {
+    if (existingTab) {
+      const title = configStore.resolveConversationTitle(record.id, record.userTask)
+      const confirmed = await showConfirm({
+        title: t('welcome.conversations.deleteTitle'),
+        message: t('welcome.conversations.confirmDelete', { title }),
+        type: 'danger',
+        confirmText: t('welcome.conversations.delete'),
+        cancelText: t('common.cancel'),
+      })
+      if (confirmed) {
+        await terminalStore.closeTab(existingTab.id, true)
+      }
+    }
     return
   }
 
