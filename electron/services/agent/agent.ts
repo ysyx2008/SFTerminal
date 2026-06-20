@@ -2143,11 +2143,6 @@ export abstract class Agent {
       run.requestId = run.id
       
       const effectiveProfileId = this.resolveEffectiveProfileId(run)
-      // 跨模型路由标记：vision 路由切到了不同于主模型的 profile。
-      // 此时需省略 reasoning_content 字段，避免主模型（如 DeepSeek Flash 思考模型）产生的
-      // reasoning_content 发给视觉模型（如 DeepSeek Pro 多模态模型）时触发参数错误并剥图降级。
-      const mainProfileId = this.profileId || this.services.configService?.getActiveAiProfile()
-      const isCrossModelRouting = !!(effectiveProfileId && effectiveProfileId !== mainProfileId)
       
       this.services.aiService.chatWithToolsStream(
         run.messages,
@@ -2437,8 +2432,7 @@ export abstract class Agent {
               log.info(`Streaming tool ready: ${toolCall.function.name} (id=${toolCall.id})`)
               streamingExecutor.addTool(toolCall)
             }
-          : undefined,
-        isCrossModelRouting  // 跨模型路由时省略 reasoning_content，避免剥图降级
+          : undefined
       )
     })
   }

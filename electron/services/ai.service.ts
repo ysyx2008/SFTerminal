@@ -470,13 +470,10 @@ function messagesContainImages(messages: AiMessage[]): boolean {
  * 将 AiMessage 转换为 API 请求格式
  * 如果消息包含图片，content 会转为多模态数组格式（OpenAI Vision API）
  * @param stripImages 为 true 时忽略图片（用于 API 不支持视觉时的降级）
- * @param omitReasoningContent 为 true 时完全省略 reasoning_content 字段（跨模型路由时使用）。
- *   DeepSeek 思考模型（Flash 等）产生的 reasoning_content 不适合发给其他模型（如 DeepSeek Pro
- *   多模态模型），否则会触发参数错误进而剥图降级。
  *
  * 导出仅用于单元测试（DeepSeek 思考模式合规性回归）。运行时仅本文件内部使用。
  */
-export function formatMessageForApi(msg: AiMessage, stripImages = false, omitReasoningContent = false): Record<string, unknown> {
+export function formatMessageForApi(msg: AiMessage, stripImages = false): Record<string, unknown> {
   if (msg.role === 'tool') {
     return {
       role: 'tool' as const,
@@ -489,11 +486,9 @@ export function formatMessageForApi(msg: AiMessage, stripImages = false, omitRea
       role: 'assistant' as const,
       content: msg.content || null,
       tool_calls: msg.tool_calls,
-    }
-    if (!omitReasoningContent) {
       // DeepSeek V3.2+ 思考模式：带 tool_calls 的 assistant 消息必须回传 reasoning_content
       // 字段不存在（历史消息 / 非思考模型）时补空串，兼容其余 OpenAI 兼容 API（忽略未知字段）
-      assistantMsg.reasoning_content = msg.reasoning_content ?? ''
+      reasoning_content: msg.reasoning_content ?? ''
     }
     return assistantMsg
   }
@@ -516,14 +511,12 @@ export function formatMessageForApi(msg: AiMessage, stripImages = false, omitRea
   // vLLM 等推理引擎拒绝空 content，纯 assistant 文本消息也需保护
   const content = msg.content || (msg.role === 'assistant' ? '[no response]' : ' ')
   const result: Record<string, unknown> = { role: msg.role, content }
+  // DeepSeek V3.2+/V4 思考模式要求所有 assistant 消息必须带 reasoning_content（缺一即拒）。
+  // 与 tool_calls 分支一致，这里对纯文本 assistant 也无条件补字段（缺失补空串），
+  // 兜底所有可能漏字段的来源（TaskMemory L1/L2 压缩重建、跨会话恢复的老 record、模型切换等）。
+  // 其余 OpenAI 兼容 API 会忽略未知字段，不会受影响。
   if (msg.role === 'assistant') {
-    if (!omitReasoningContent) {
-      // DeepSeek V3.2+/V4 思考模式要求所有 assistant 消息必须带 reasoning_content（缺一即拒）。
-      // 与 tool_calls 分支一致，这里对纯文本 assistant 也无条件补字段（缺失补空串），
-      // 兜底所有可能漏字段的来源（TaskMemory L1/L2 压缩重建、跨会话恢复的老 record、模型切换等）。
-      // 其余 OpenAI 兼容 API 会忽略未知字段，不会受影响。
-      result.reasoning_content = msg.reasoning_content ?? ''
-    }
+    result.reasoning_content = msg.reasoning_content ?? ''
   }
   if (msg._cacheBreakpoint) result._cacheBreakpoint = true
   return result
@@ -1857,13 +1850,7 @@ export class AiService {
      * 避免用户以为应用卡住了。
      */
     onRetry?: (retryInfo?: RetryInfo) => void,
-    onToolCallReady?: (toolCall: ToolCall) => void,  // 流式中某个 tool_call 参数完整时回调
-    /**
-     * 跨模型路由时设为 true，完全省略 reasoning_content 字段。
-     * 使用场景：Flash（思考模型）作为主模型，Pro（多模态视觉模型）作为关联视觉模型时，
-     * Flash 产生的 reasoning_content 不能发给 Pro，否则 Pro 返回参数错误并触发剥图降级。
-     */
-    omitReasoningContent = false
+    onToolCallReady?: (toolCall: ToolCall) => void  // 流式中某个 tool_call 参数完整时回调
   ): Promise<void> {
     const profile = await this.getCurrentProfile(profileId)
     if (!profile) {
@@ -1992,7 +1979,7 @@ export class AiService {
     const hasImages = messagesContainImages(messages)
 
     const rebuildRequestBody = () => {
-      const fmtMsgs = messages.map(msg => formatMessageForApi(msg, stripImages, omitReasoningContent))
+      const fmtMsgs = messages.map(msg => formatMessageForApi(msg, stripImages))
       const body: Record<string, unknown> = {
         model: profile.model,
         messages: fmtMsgs,
