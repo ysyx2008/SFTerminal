@@ -159,7 +159,7 @@ export async function bridgeBrowserGoto(
       }
     }
     touchBridgeSession(ptyId)
-    const openLabel = nav.new_tab === true || newTab ? '已在新标签页打开' : '已导航到'
+    const openLabel = nav.new_tab === true ? '已在新标签页打开' : '已导航到'
     let output = `${openLabel} ${nav.url || url}\n标题: ${nav.title || ''}`
     const snap = await bridgeBrowserSnapshot(ptyId, { interactive: true }, executor)
     if (snap.success && snap.output) {

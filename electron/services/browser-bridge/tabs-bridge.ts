@@ -42,7 +42,8 @@ export async function bridgeTabsCreate(
     })) as GotoNavResult
     return { ...r, new_tab: true }
   }
-  return (await bridgeSend(ptyId, 'goto', { url: options.url, new_tab: true })) as GotoNavResult
+  const r = (await bridgeSend(ptyId, 'goto', { url: options.url, new_tab: true })) as GotoNavResult
+  return { ...r, new_tab: true }
 }
 
 export async function bridgeTabsNavigate(

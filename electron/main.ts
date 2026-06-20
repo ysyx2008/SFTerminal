@@ -448,6 +448,42 @@ let fileManagerParams: {  // 文件管理器窗口初始化参数
 let forceQuit = false  // 是否强制退出（跳过确认）
 let isQuitting = false  // 是否正在退出应用（Cmd+Q 触发，区分于 Cmd+W 关闭窗口）
 
+// macOS ⌘Q 防误触：首次按下展示提示，2 秒内再次按下才真正退出
+let quitConfirmTimer: ReturnType<typeof setTimeout> | null = null
+
+function sendQuitToast(show: boolean): void {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('quit:toast', { show })
+    }
+  } catch { /* ignore */ }
+}
+
+function handleQuitAttempt(): void {
+  if (quitConfirmTimer) {
+    // 2 秒内再次按下：正式退出
+    clearTimeout(quitConfirmTimer)
+    quitConfirmTimer = null
+    sendQuitToast(false)
+    isQuitting = true
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (process.platform === 'darwin') app.dock?.show()
+      mainWindow.show()
+      mainWindow.close()
+    } else {
+      forceQuit = true
+      app.quit()
+    }
+  } else {
+    // 首次按下：显示提示，等待二次确认
+    sendQuitToast(true)
+    quitConfirmTimer = setTimeout(() => {
+      quitConfirmTimer = null
+      sendQuitToast(false)
+    }, 2000)
+  }
+}
+
 // Cmd+Q 退出确认：若渲染进程未及时回复终端数量，避免主窗口 close 永久被 preventDefault 卡住
 let quitTerminalCountTimer: ReturnType<typeof setTimeout> | null = null
 let quitTerminalCountHandled = false
@@ -821,6 +857,9 @@ function setupWindowServices() {
   gatewayService.setMainWindow(mainWindow)
   imService.setMainWindow(mainWindow)
   menuService.setMainWindow(mainWindow)
+  if (process.platform === 'darwin') {
+    menuService.setQuitHandler(handleQuitAttempt)
+  }
   attentionService.setMainWindow(mainWindow)
   getBrowserBridgeService().setMainWindow(mainWindow)
   // macOS 一次性触发通知权限请求，让 dock badge 在打包版上能正常显示
@@ -1747,6 +1786,13 @@ app.whenReady().then(async () => {
 
 // 处理 Cmd+Q / 托盘退出
 app.on('before-quit', (event) => {
+  // 清理 macOS 防误触等待状态（托盘/Dock 退出时直接进入此流程）
+  if (quitConfirmTimer) {
+    clearTimeout(quitConfirmTimer)
+    quitConfirmTimer = null
+    sendQuitToast(false)
+  }
+
   isQuitting = true
 
   if (forceQuit) {
@@ -5108,7 +5154,7 @@ ipcMain.handle('plugin:setConfig', async (_event, id: string, config: Record<str
 // ==================== 浏览器助手（扩展桥接） ====================
 
 ipcMain.handle('browserBridge:getStatus', async () => {
-  return getBrowserBridgeService().refreshConnectionMetadata()
+  return getBrowserBridgeService().getStatus()
 })
 
 ipcMain.handle('browserBridge:install', async () => {
