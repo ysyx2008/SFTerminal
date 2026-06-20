@@ -346,11 +346,11 @@ const handleCloseShortcut = async () => {
 
   const activeTab = terminalStore.activeTab
   if (activeTab) {
-    if (activeTab.type === 'assistant') {
-      // 已提升/远程助手 tab：Cmd+W 隐藏窗口
+    if (activeTab.type === 'assistant' && !activeTab.isPromoted && !activeTab.isRemote) {
+      // 普通本地助手 tab（未提升，理论上不应成为 activeTab）：隐藏窗口兜底
       await window.electronAPI.window.close()
     } else {
-      // 终端 tab：只关 tab，不关窗口
+      // 终端 tab、已提升助手 tab、远程助手 tab：只关 tab，不关窗口
       await terminalStore.closeTab(activeTab.id)
     }
   } else if (terminalStore.hubFocusedAssistantTabId) {
