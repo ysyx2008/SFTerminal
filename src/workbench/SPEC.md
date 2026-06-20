@@ -19,6 +19,8 @@
 - **并发软上限**：前端发起的并发 Agent 上限 8 个（`isAtConcurrencyLimit` computed），超出时记录警告，不阻止手动操作。
 - **远程助手**（`isRemote = true`）不受 Hub 模型影响，始终在 Tab 栏独立显示。
 
+> **详细交互规则**（视图状态机 / Cmd+W 决策树 / 侧栏规则 / 后台任务约束等）见 `src/workbench/assistant/HUB_SPEC.md`。
+
 ## 设计原则（不可随意推翻）
 
 - **组合 + 贡献，不是开关 + 枚举**：工作台由区域拼成，不用 `hasFileTree` 之类能力位描述；工具以叠加为主、允许覆盖（核心工具是基线）。

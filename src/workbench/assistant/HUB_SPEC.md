@@ -1,0 +1,256 @@
+# 助手 Hub 交互模型 SPEC
+
+> Last verified: 2026-06-20  
+> 涵盖范围：`App.vue` / `TabBar.vue` / `RecentConversationsPanel.vue` / `terminal.ts` 中与助手 Hub 相关的所有交互规则。
+
+---
+
+## 一、设计目标
+
+将过去"每个对话独占一个 Tab"的模型，改为**单一助手工作台（Hub）+ 最近对话侧栏**，使：
+- 任意数量的本地助手对话共用一个工作台区域，通过侧栏切换
+- 终端 Tab（local/ssh）保持独立全屏，不受影响
+- 用户可将任意会话"提升"为独立 Tab，兼顾重度多任务需求
+
+---
+
+## 二、Tab 分类规则（⚠️ 新增功能必读）
+
+所有 `TerminalTab` 按以下规则分为两类：
+
+### A. TabBar 可见 Tab（`displayedTabs`）
+
+出现在顶部 Tab 栏，全屏独占主区：
+
+| 类型 | 条件 |
+|---|---|
+| 终端 Tab | `tab.type === 'local'` 或 `'ssh'` |
+| 已提升助手 | `tab.type === 'assistant' && tab.isPromoted === true && !tab.isRemote` |
+| 远程助手 | `tab.type === 'assistant' && tab.isRemote === true` |
+
+### B. Hub 会话（不在 TabBar）
+
+不在 Tab 栏，由侧栏管理：
+
+| 条件 |
+|---|
+| `tab.type === 'assistant' && !tab.isRemote && !tab.isPromoted` |
+
+**判断公式（TabBar 过滤逻辑）**：
+```
+isDisplayed = !(tab.type === 'assistant' && !tab.isRemote && !tab.isPromoted)
+```
+
+---
+
+## 三、视图状态机
+
+前端主区的显示状态由两个 Store 字段决定：
+
+```
+terminalStore.activeTabId          // TabBar 可见 tab 的 id（空字符串 = 无）
+terminalStore.hubFocusedAssistantTabId  // Hub 当前聚焦会话的 tab id（空字符串 = 无）
+```
+
+### 状态优先级（从高到低）
+
+```
+1. 覆盖层（觉醒/设置/智能巡检）— 叠加在所有状态上，优先关闭
+2. activeTabId 非空 → 全屏展示该 Tab（终端/提升助手/远程助手），侧栏隐藏
+3. activeTabId 为空 && hubFocusedAssistantTabId 非空 → Hub 焦点模式（欢迎页 + 助手对话叠加），侧栏可见
+4. activeTabId 为空 && hubFocusedAssistantTabId 为空 → 欢迎页，侧栏可见
+```
+
+### 关键 computed（`App.vue`）
+
+```ts
+// 主区当前渲染的 tab（activeTab 优先，否则是 Hub 焦点会话）
+activeSurfaceTabId = activeTabId || hubFocusedTab?.id || ''
+
+// 欢迎页：没有任何 surface tab 时显示
+showWelcomePage = !showSmartPatrol && !activeSurfaceTabId
+
+// 侧栏：activeTabId 为空时常驻（Hub 视图始终可见）
+showRecallSidebar = !activeTabId && !showSmartPatrol && !isSteamBuild
+```
+
+---
+
+## 四、Cmd+W 行为决策树
+
+```
+有覆盖层（觉醒/设置/巡检）
+  └→ 关闭覆盖层，结束
+
+有 activeTab（TabBar 可见）
+  ├─ tab.type === 'assistant' && !isPromoted && !isRemote（理论兜底，不应出现）
+  │   └→ 隐藏窗口
+  └─ 终端 / 已提升助手 / 远程助手
+      └→ 关闭该 tab（closeTab），不关窗口
+
+无 activeTab，有 hubFocusedAssistantTabId（Hub 焦点模式）
+  └→ goToHome()，退回欢迎页（侧栏保留），不关窗口
+
+无 activeTab，无 Hub 焦点（欢迎页）
+  ├─ hasDisplayedTabs（有终端/提升/远程 tab）→ 不做任何事
+  └─ 无任何真实 tab → 隐藏窗口
+```
+
+---
+
+## 五、侧栏（RecentConversationsPanel）规则
+
+### 可见性
+
+`showRecallSidebar = !activeTabId`（有 TabBar 可见 Tab 时隐藏，Hub 视图时常驻）
+
+### 列表数据来源
+
+两路合并，自动去重：
+
+| 来源 | 说明 |
+|---|---|
+| `liveSessionSummaries`（computed from `terminalStore.tabs`） | 已启动但尚未落盘的进行中会话，显示在列表最前面；对话完成后由 summaries 接管，无重复 |
+| `summaries`（后端 `history.listAgentSummaries`） | 已完成对话；`agent.onComplete` / `agent.onError` 时静默刷新 |
+
+**实时会话条件**（出现在 liveSessionSummaries）：
+```
+tab.type === 'assistant' && !tab.isRemote && 
+tab.agentState.userTask 非空 && 
+tab.agentState.sessionId 非空 && 
+sessionId 不在 summaryById 中（未落盘）
+```
+
+### 活跃高亮规则
+
+| 状态 | 高亮方式 |
+|---|---|
+| Hub 焦点会话（当前可见）| 行背景高亮 + hover 时文字也高亮 |
+| 已提升为独立 Tab | 显示「独立 tab」图标 |
+| 后台运行中（用户看不见）| 显示运行中动画图标 |
+| 后台需要确认（用户看不见）| 显示 attention 图标 |
+
+**规则：当前用户正在看的会话（Hub 焦点 / 已提升活跃 tab）不显示运行中/attention 图标**，因为用户已经看到了。
+
+### 点击行为
+
+1. `findTabByHistoryId(summary.id)` 找到现有 tab  
+   - `isPromoted` → `setActiveTab`（激活独立 Tab）  
+   - 否则 → `focusHubConversation`（Hub 焦点，侧栏保留）  
+2. 未找到 tab → 从历史加载 `openHistoryConversation(record)`
+
+---
+
+## 六、新对话流程
+
+```
+欢迎页 Composer 提交 / TabBar「+」按钮
+  └→ goToHome()（清空 activeTabId + hubFocusedAssistantTabId）
+      欢迎页出现，输入框自动聚焦
+
+用户在 Composer 输入内容并提交
+  └→ createAssistantTab({ activate: false })  // 不激活，不进 TabBar
+      focusHubConversation(newTabId)           // Hub 焦点，侧栏保留
+      会话立即出现在侧栏（liveSessionSummaries）
+      Agent run 发起，AiPanel 展示进行中状态
+```
+
+---
+
+## 七、后台任务（Watch / Gateway）规则
+
+**规则：后台任务不得自动切换用户视图。**
+
+Watch 触发、Gateway 远程任务、IM 消息等触发的助手任务：
+- 静默注入步骤到对应助手 tab（`addAgentStep` 但不激活）
+- 不调用 `setActiveTab` / `focusHubConversation`
+- 任务完成后通过 Toast 通知引导用户主动查看
+- 侧栏 attention 图标（用户不在看该会话时）引导导航
+
+违反此规则的改动会打断用户当前工作，严禁。
+
+---
+
+## 八、会话提升与降级
+
+### 提升（Hub → 独立 Tab）
+
+触发：侧栏右键「在新标签页中打开」
+```
+tab.isPromoted = true
+hubFocusedAssistantTabId = ''（清空 Hub 焦点）
+setActiveTab(tabId)（激活独立 Tab）
+```
+- 提升后豁免 LRU 淘汰
+- Tab 栏出现该会话
+
+### 降级（关闭独立 Tab）
+
+关闭已提升 Tab 时：
+```
+tab.isPromoted = false（降级，非删除）
+tab 从 TabBar 消失，但仍存在于 terminalStore.tabs
+侧栏可重新打开该会话（历史记录仍在）
+```
+
+---
+
+## 九、资源管理
+
+### LRU 会话池
+
+- **上限**：`HUB_SESSION_LIMIT = 5`（Hub 内非提升助手 tab）
+- **触发**：`focusHubConversation` 时自动淘汰
+- **豁免**：正在运行（`isRunning`）/ 待确认（`pendingConfirm`）/ 已提升（`isPromoted`）
+- **淘汰策略**：按 `lastFocusedAt` 升序，最久未聚焦 & 空闲优先
+
+### 并发软上限
+
+- **上限**：`MAX_CONCURRENT_AGENTS = 8`
+- **性质**：软限制（警告，不阻止手动操作），主要防 Watch/IM 批量涌入
+- **`isAtConcurrencyLimit` computed**：超出时可用于提示 UI
+
+---
+
+## 十、退出确认计数
+
+退出时弹框中"有意义的开放 tab"计数规则：
+
+```
+有意义 = t.type !== 'assistant'          // 终端 tab
+        || t.isRemote                    // 远程助手
+        || t.isPromoted                  // 已提升助手
+        || (t.type === 'assistant' 
+            && !t.isRemote 
+            && !t.isPromoted 
+            && t.agentState?.isRunning)  // Hub 中正在运行的助手
+```
+
+未提升、未运行的 Hub 会话不计入（用户随时可从历史恢复，无丢失风险）。
+
+---
+
+## 十一、关键 Store Actions 速查
+
+| Action | 作用 |
+|---|---|
+| `focusHubConversation(tabId)` | Hub 焦点切到指定会话，触发 LRU |
+| `clearHubFocus()` | 清空 Hub 焦点，回欢迎页 |
+| `goToHome()` | 清空 activeTabId + hubFocusedAssistantTabId，完全回欢迎页 |
+| `promoteConversationToTab(tabId)` | 提升为独立 Tab |
+| `openHistoryConversation(record)` | 从历史记录恢复会话到 Hub |
+| `createAssistantTab({ activate })` | 创建新本地助手 tab；`activate: false` = 不进 TabBar |
+| `setActiveTab(tabId)` | 激活 TabBar 可见 Tab |
+| `closeTab(tabId, force?)` | 关 tab；非提升助手 = 降级；提升/终端 = 销毁 |
+
+---
+
+## 十二、常见错误与防范
+
+| 错误 | 后果 | 防范 |
+|---|---|---|
+| 后台任务调用 `setActiveTab` / `focusHubConversation` | 打断用户当前操作 | 后台路径只调 `addAgentStep` |
+| 为 Hub 会话创建 tab 时传 `activate: true` | 会话意外出现在 TabBar | 本地助手 tab 创建一律 `activate: false` |
+| Cmd+W 逻辑新增分支时忘记覆盖层优先 | 关键操作被跳过 | 始终遵循决策树顺序 |
+| 侧栏 attention 显示条件不过滤当前可见会话 | 干扰用户正在看的对话 | attention 图标仅对后台会话有效 |
+| 删除实时会话时调用 `history.deleteAgentRecord` | 接口报错（记录未落盘）| 先检查 `liveSessionSummaries`，实时会话只关 tab |
