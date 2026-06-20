@@ -600,8 +600,16 @@ const loadMore = () => {
             <X :size="14" />
           </button>
         </template>
-        <!-- 正常态：新的对话按钮（主操作）+ 搜索 + 折叠 -->
+        <!-- 正常态：折叠（左侧固定）+ 新的对话按钮 + 搜索 -->
         <template v-else>
+          <button
+            type="button"
+            class="panel-action-btn"
+            :title="t('welcome.conversations.collapseSidebar')"
+            @click="emit('toggle-collapse')"
+          >
+            <ChevronLeft :size="14" />
+          </button>
           <button
             type="button"
             class="new-conversation-btn"
@@ -612,14 +620,6 @@ const loadMore = () => {
           </button>
           <button type="button" class="search-toggle" :title="t('welcome.conversations.searchOpen')" @click="toggleSearch">
             <Search :size="14" />
-          </button>
-          <button
-            type="button"
-            class="panel-action-btn"
-            :title="t('welcome.conversations.collapseSidebar')"
-            @click="emit('toggle-collapse')"
-          >
-            <ChevronLeft :size="14" />
           </button>
         </template>
       </div>
@@ -733,7 +733,6 @@ const loadMore = () => {
 }
 
 .panel-header--collapsed {
-  justify-content: center;
   border-bottom: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
 }
 
