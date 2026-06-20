@@ -128,9 +128,28 @@ export class BrowserBridgeService {
       log.warn('Browser bridge install completed with errors:', this.lastInstall.errors)
     } else {
       log.info('Browser bridge installed')
+      // 重载旧版扩展，使其重新连接并获得新 Tab API 能力
+      void this.reloadOutdatedExtensions().catch(err =>
+        log.debug('Post-install extension reload failed:', err),
+      )
     }
     this.notifyConnectionsChanged()
     return this.lastInstall
+  }
+
+  /**
+   * 返回指定 origin 的实时连接能力（从 hosts 读取，无磁盘 I/O）。
+   * 供 bridge-session / tabs-bridge 校验时优先读此值，避免 BridgeSession.extensionPing 过期。
+   */
+  getConnectionCapabilities(
+    origin: string,
+  ): { version?: string; capabilities?: BrowserBridgeCapability[] } | null {
+    for (const host of this.hosts.values()) {
+      if (host.origin === origin) {
+        return { version: host.version, capabilities: host.capabilities }
+      }
+    }
+    return null
   }
 
   /** 已连接但缺少 tabs_manage 的扩展；仅 install 时可选调用，不在 host_register 时自动 reload（Firefox 临时加载会被 reload 卸掉） */

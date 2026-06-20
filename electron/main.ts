@@ -460,6 +460,8 @@ function sendQuitToast(show: boolean): void {
 }
 
 function handleQuitAttempt(): void {
+  // 已进入退出流程（二次确认或终端计数对话框期间），忽略后续按键
+  if (isQuitting) return
   if (quitConfirmTimer) {
     // 2 秒内再次按下：正式退出
     clearTimeout(quitConfirmTimer)
@@ -1787,6 +1789,7 @@ app.whenReady().then(async () => {
 // 处理 Cmd+Q / 托盘退出
 app.on('before-quit', (event) => {
   // 清理 macOS 防误触等待状态（托盘/Dock 退出时直接进入此流程）
+  const hadPendingTimer = !!quitConfirmTimer
   if (quitConfirmTimer) {
     clearTimeout(quitConfirmTimer)
     quitConfirmTimer = null
@@ -1796,6 +1799,13 @@ app.on('before-quit', (event) => {
   isQuitting = true
 
   if (forceQuit) {
+    return
+  }
+
+  // 用户已看过防误触提示（Cmd+Q 首次按下），此时托盘/Dock 再次退出视为明确确认
+  // 跳过终端计数对话框，直接退出
+  if (hadPendingTimer) {
+    forceQuit = true
     return
   }
   

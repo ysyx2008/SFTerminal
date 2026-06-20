@@ -68,7 +68,10 @@ export function touchBridgeSession(ptyId: string): void {
 
 export async function bridgeListTabs(ptyId: string): Promise<BrowserBridgeTabInfo[]> {
   const session = sessions.get(ptyId)
-  if (extensionSupportsTabsManage(session?.extensionPing)) {
+  // 优先读 service 的实时能力（extension reload 后 probeHost 会更新），
+  // 避免 session.extensionPing 在 install 后长期过期
+  const live = session ? getBrowserBridgeService().getConnectionCapabilities(session.origin) : null
+  if (extensionSupportsTabsManage(live ?? session?.extensionPing)) {
     return (await bridgeSend(ptyId, 'tabs', {
       op: 'query',
       query: { currentWindow: true },

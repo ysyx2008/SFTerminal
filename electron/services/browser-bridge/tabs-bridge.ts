@@ -5,6 +5,7 @@
 import type { BrowserBridgeTabInfo } from '@shared/types/browser-bridge'
 import { bridgeSend, getBridgeSession } from '../agent/skills/browser/bridge-session'
 import { extensionSupportsTabsManage } from './protocol'
+import { getBrowserBridgeService } from './browser-bridge.service'
 
 export type BrowserBridgeTabsOp = 'query' | 'create' | 'update' | 'activate' | 'remove'
 
@@ -16,7 +17,11 @@ export interface GotoNavResult {
 
 function sessionSupportsTabs(ptyId: string): boolean {
   const session = getBridgeSession(ptyId)
-  return extensionSupportsTabsManage(session?.extensionPing)
+  if (!session) return false
+  // 优先读 service 的实时能力（extension reload 后 probeHost 会更新），
+  // 避免 BridgeSession.extensionPing 在 install 后长期过期
+  const live = getBrowserBridgeService().getConnectionCapabilities(session.origin)
+  return extensionSupportsTabsManage(live ?? session.extensionPing)
 }
 
 export async function bridgeTabsQuery(
