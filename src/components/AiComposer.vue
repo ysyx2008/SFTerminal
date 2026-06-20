@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRandomPlaceholder } from '../composables/useRandomPlaceholder'
 import { X, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2, Volume2 } from 'lucide-vue-next'
 import { useMentions } from '../composables/useMentions'
 import { toast } from '../composables/useToast'
@@ -65,23 +66,40 @@ const props = defineProps<{
   clearTabError: () => void
   /** 嵌入欢迎页等非面板场景：去掉顶部分割线，使用独立圆角容器 */
   embedded?: boolean
-  /** 覆盖默认 placeholder（如欢迎页） */
+  /** 覆盖默认 placeholder（如欢迎页传入随机值） */
   placeholder?: string
+  /** 覆盖默认随机池 i18n 键（默认 ai.inputPlaceholderPools） */
+  placeholderPoolsKey?: string
+  /** 随机池为空时的 fallback i18n 键 */
+  placeholderFallbackKey?: string
 }>()
 
-const { t, tm } = useI18n()
+const { t } = useI18n()
 
 const quoteStore = useComposerQuoteStore()
 const quoteSnippets = computed(() => quoteStore.getSnippets(props.currentTabId))
 
-const randomPlaceholder = ref('')
+const { value: randomPlaceholder, pick: pickRandomPlaceholder } = useRandomPlaceholder(
+  () => props.placeholderPoolsKey ?? 'ai.inputPlaceholderPools',
+  () => props.placeholderFallbackKey ?? 'ai.inputPlaceholderAgent'
+)
 
-const pickRandomPlaceholder = () => {
-  const list = tm('ai.inputPlaceholderAgentList') as string[]
-  if (Array.isArray(list) && list.length > 0) {
-    randomPlaceholder.value = list[Math.floor(Math.random() * list.length)]
-  }
-}
+const composerPlaceholder = computed(
+  () =>
+    props.placeholder ??
+    (props.isAgentRunning
+      ? t('ai.inputPlaceholderSupplement')
+      : randomPlaceholder.value || t(props.placeholderFallbackKey ?? 'ai.inputPlaceholderAgent'))
+)
+
+/** embedded 模式：有附件时才显示外层统一容器，避免空态双层边框 */
+const hasComposerAttachments = computed(
+  () =>
+    props.parsingDocs.length > 0 ||
+    props.uploadedDocs.length > 0 ||
+    quoteSnippets.value.length > 0 ||
+    props.pendingImages.length > 0
+)
 
 let textareaResizeObserver: ResizeObserver | null = null
 
@@ -97,7 +115,6 @@ const setupTextareaResizeObserver = () => {
 }
 
 onMounted(() => {
-  pickRandomPlaceholder()
   syncTextareaSize()
   nextTick(setupTextareaResizeObserver)
 })
@@ -106,23 +123,6 @@ onBeforeUnmount(() => {
   textareaResizeObserver?.disconnect()
   textareaResizeObserver = null
 })
-
-const composerPlaceholder = computed(
-  () =>
-    props.placeholder ??
-    (props.isAgentRunning
-      ? t('ai.inputPlaceholderSupplement')
-      : randomPlaceholder.value || t('ai.inputPlaceholderAgent'))
-)
-
-/** embedded 模式：有附件时才显示外层统一容器，避免空态双层边框 */
-const hasComposerAttachments = computed(
-  () =>
-    props.parsingDocs.length > 0 ||
-    props.uploadedDocs.length > 0 ||
-    quoteSnippets.value.length > 0 ||
-    props.pendingImages.length > 0
-)
 
 /** 输入框无文字时，有图片或引用摘录也可发送 */
 const canSubmitMessage = computed(
@@ -372,7 +372,7 @@ const handleSend = async () => {
 
   const rawInput = inputText.value.trim()
   inputText.value = ''
-  pickRandomPlaceholder()
+  void pickRandomPlaceholder()
   props.clearTabError()
 
   await new Promise(resolve => setTimeout(resolve, 0))
@@ -424,7 +424,8 @@ defineExpose({
   setText,
   clearText,
   flashHint,
-  getText: () => inputText.value
+  getText: () => inputText.value,
+  refreshPlaceholder: () => { void pickRandomPlaceholder() },
 })
 
 const handleSendClick = (event: MouseEvent) => {

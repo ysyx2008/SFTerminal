@@ -334,7 +334,10 @@ onMounted(() => {
 // 每次切回欢迎页（active 变为 true）时聚焦输入框
 watch(() => props.active, (active) => {
   if (active) {
-    nextTick(() => composerRef.value?.focusInput())
+    nextTick(() => {
+      composerRef.value?.focusInput()
+      composerRef.value?.refreshPlaceholder?.()
+    })
   }
 })
 
@@ -356,7 +359,8 @@ onUnmounted(() => {
     <AiComposer
       ref="composerRef"
       embedded
-      :placeholder="t('welcome.chatLead')"
+      placeholder-pools-key="welcome.chatLeadPools"
+      placeholder-fallback-key="welcome.chatLead"
       :current-tab-id="composerTabId"
       :visible="true"
       :context-stats="contextStats"
