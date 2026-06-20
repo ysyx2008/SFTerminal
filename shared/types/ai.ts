@@ -34,12 +34,12 @@ export interface AiProfile {
   apiFormat?: ApiFormat
 }
 
-/** 等待模型首 token 文案的 i18n 键前缀（前后端统一 camelCase） */
+/** 等待模型首 token 文案的 i18n 键前缀（后端 flat key，camelCase） */
 export const WAITING_FOR_MODEL_I18N_PREFIX = 'ai.waitingForModel' as const
 
 export type WaitingForModelI18nVariant = 'default' | 'easter' | 'slow'
 
-/** 构建 waiting-for-model 文案 i18n 键（前后端共用，避免 snake_case / camelCase 漂移） */
+/** 构建 waiting-for-model 文案 i18n 键（后端 agent/i18n.ts 使用） */
 export function waitingForModelI18nKey(
   id: string,
   variant: WaitingForModelI18nVariant = 'default',
