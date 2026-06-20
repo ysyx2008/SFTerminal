@@ -90,5 +90,8 @@ export type WaitingForModelSlowLabelId = (typeof WAITING_FOR_MODEL_SLOW_LABEL_ID
 /** 彩蛋文案出现概率 */
 export const WAITING_FOR_MODEL_EASTER_EGG_CHANCE = 0.05
 
+/** 任务完成 footer 偶发趣味文案概率（其余走 default 池） */
+export const TASK_COMPLETE_FUN_CHANCE = 0.08
+
 /** 超过此 TTFT（ms）后切换为 slow 调侃文案 */
 export const WAITING_FOR_MODEL_SLOW_TTFT_MS = 10_000

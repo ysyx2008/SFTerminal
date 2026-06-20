@@ -47,7 +47,8 @@ import {
   shuffleExamples as shuffleExamplePool,
   type AssistantExample,
 } from '../config/assistantExamples'
-import type { AgentRecord, AgentHistorySummary } from '@shared/types'
+import { pickTaskCompleteLabel } from '../composables/useTaskCompleteLabel'
+import type { BondTrustLevel } from '@shared/types/bond'
 
 // Props - 每个 AiPanel 实例绑定到特定的 tab
 const props = withDefaults(defineProps<{
@@ -67,7 +68,7 @@ const emit = defineEmits<{
 }>()
 
 // i18n
-const { t } = useI18n()
+const { t, tm } = useI18n()
 
 // Stores
 const configStore = useConfigStore()
@@ -204,6 +205,20 @@ const markFooterAnimated = (groupId: string | undefined) => {
   if (groupId) animatedFooters.add(groupId)
 }
 
+const taskCompleteFooterLabels = new Map<string, string>()
+let cachedBondTrustForFooter: BondTrustLevel = 'stranger'
+
+const getTaskCompleteFooterLabel = (groupId: string | undefined): string => {
+  if (!groupId) return t('ai.taskComplete')
+  if (!taskCompleteFooterLabels.has(groupId)) {
+    taskCompleteFooterLabels.set(
+      groupId,
+      pickTaskCompleteLabel(tm('ai.taskCompletePools'), cachedBondTrustForFooter, t)
+    )
+  }
+  return taskCompleteFooterLabels.get(groupId)!
+}
+
 /**
  * group 操作菜单（含「另开一聊」）的可见性条件：
  *   - group 已完成（成功 / 失败 / 中断都允许；进行中的当前 task 无 finalResult，自然不显示）
@@ -290,6 +305,9 @@ const handleGlobalClickForGroupMenu = (e: MouseEvent) => {
 const handleScrollForGroupMenu = () => closeGroupMenu()
 
 onMounted(() => {
+  void window.electronAPI?.bond?.getMetrics?.().then(m => {
+    if (m?.trustLevel) cachedBondTrustForFooter = m.trustLevel
+  }).catch(() => {})
   document.addEventListener('mousedown', handleGlobalClickForGroupMenu)
   window.addEventListener('resize', closeGroupMenu)
   // 监听虚拟滚动容器的 scroll 事件（capture 阶段，覆盖各种内部滚动场景）
@@ -2471,7 +2489,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         @animationend="markFooterAnimated(item.group?.id)"
                       >
                         <span class="agent-final-footer-icon">✓</span>
-                        <span>{{ t('ai.taskComplete') }}</span>
+                        <span>{{ getTaskCompleteFooterLabel(item.group?.id) }}</span>
                         <button
                           v-if="canShowGroupMenu(item.group)"
                           type="button"
