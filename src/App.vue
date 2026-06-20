@@ -1856,11 +1856,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   padding: 8px 18px;
-  background: rgba(30, 30, 34, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
   border-radius: 20px;
   backdrop-filter: blur(12px);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   pointer-events: none;
   overflow: hidden;
 }
@@ -1868,14 +1868,14 @@ onUnmounted(() => {
 .quit-toast-key {
   font-size: 13px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-muted);
   letter-spacing: 0.02em;
   flex-shrink: 0;
 }
 
 .quit-toast-text {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
   white-space: nowrap;
 }
 
