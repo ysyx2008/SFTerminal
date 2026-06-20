@@ -1,0 +1,159 @@
+# useAgentMode 组合式函数 SPEC
+
+> Last verified: 2026-06-20  
+> 文件：`src/composables/useAgentMode.ts`  
+> 职责：管理单个 AiPanel（tab）的 Agent 运行生命周期、步骤分组、IPC 事件路由。
+
+---
+
+## 一、核心职责
+
+`useAgentMode` 是每个 `AiPanel` 实例私有的"业务大脑"：
+- 封装 `runAgent`（发起 AI 任务）
+- 订阅后端 Agent IPC 事件（step / confirm / complete / error 等）
+- 把原始步骤流转换为 `agentTaskGroups`（用于 UI 渲染）
+- 将状态写回 `terminalStore`（其他组件通过 store 读取，不直接访问 useAgentMode）
+
+每个 `AiPanel` 实例挂载时调用，卸载时清理全部监听器。**多个 AiPanel 同时存在时各自独立运行，互不干扰。**
+
+---
+
+## 二、Agent Run 完整生命周期
+
+```
+用户提交（runAgent 调用）
+  │
+  ├─ clearAgentState(tabId, keepSteps=true)    // 清理上一次 run 的瞬态状态（pendingConfirm 等），保留 steps
+  │
+  ├─ setAgentSession(tabId, sessionId, startTime)  // 首次 run：生成 session_${startTime} 作为会话 ID
+  │   （多轮对话复用：sessionId 已存在时跳过）
+  │
+  ├─ setAgentRunning(tabId, true, agentKey, message)   // 标记运行中 + 记录 userTask
+  │
+  ├─ IPC 调用（await）
+  │   ├─ 助手模式：agent.runStandalone(agentId, ...)
+  │   └─ 终端模式：agent.run(tabId, ...)
+  │
+  │   （后端异步推送步骤，前端通过 IPC 监听器接收，见第三节）
+  │
+  └─ IPC 返回（run 完成，无论成功/失败/中止）
+      └─ finalizeAgentRunState(tabId)    // 清理运行标记，由 onComplete/onError 监听器触发
+```
+
+### agentKey（Agent 实例定位主键）
+
+- **终端 tab**：`agentKey = tabId`（Agent 实例以 tabId 为 key）
+- **助手 tab**：`agentKey = tab.agentId`（UUID，创建 tab 时分配，跨多轮稳定）
+
+---
+
+## 三、IPC 事件路由（isEventForThisTab）
+
+后端所有 Agent 事件携带 `agentId` 和可选的 `ptyId`。前端每个 AiPanel 都注册了全局监听，**必须过滤出属于自己 tab 的事件**。
+
+### 路由逻辑
+
+```ts
+resolveTabIdForAgentEvent(agentId, ptyId):
+  if ptyId:
+    return findTabIdByPtyId(ptyId) ?? findTabIdByAgentId(ptyId)
+  return findTabIdByAgentId(agentId)
+
+isEventForThisTab = resolvedTabId === currentTabId
+```
+
+### 监听器清单
+
+| 事件 | 触发操作 |
+|---|---|
+| `agent.onStep` | `addAgentStep` + artifact 同步 + TTS 投喂 + 智能滚底 |
+| `agent.onStepRemoved` | `removeAgentStep`（后端撤销占位步骤时） |
+| `agent.onNeedConfirm` | `setAgentPendingConfirm` + 强制滚底（两次，等待 DynamicScroller 测高）|
+| `agent.onConfirmResolved` | `setAgentPendingConfirm(undefined)`（远程确认同步到本地）|
+| `agent.onNeedSecureInput` | `setAgentPendingSecureInput` + 强制滚底 |
+| `agent.onComplete` | `finalizeAgentRunState` + 处理后续排队任务 + setAgentCompletedUnseen |
+| `agent.onError` | `finalizeAgentRunState` + 注入 error step + setAgentCompletedUnseen |
+
+**注意**：监听器在 AiPanel `onMounted` 时通过 `setupAgentListeners()` 注册，`onUnmounted` 时通过 `cleanupAgentListeners()` 全部清理。热重载时先 cleanup 再重新注册，防止重复。
+
+---
+
+## 四、agentTaskGroups 计算规则
+
+`agentTaskGroups` 是 AiPanel 渲染的核心数据源，从 `agentState.steps` 扁平列表中派生：
+
+### 分组逻辑
+
+```
+遍历 steps：
+  user_task      → 开启新 group（proactive/onboarding 特殊标记）
+  final_result   → 关闭当前 group（写入 finalResult，currentGroup = null）
+  user_supplement（在 user_task 之前到达）→ 暂存为 leadingSupplements，user_task 到达后追加
+  confirm        → 不进入 group（由 pendingConfirm 单独管理）
+  其他 step      → 追加到当前 group.steps
+```
+
+### isCurrentTask 标记
+
+最后一个 group 且没有 `finalResult` → `isCurrentTask = true`  
+含义：正在执行中的任务，AiPanel 据此显示流式状态、preparing placeholder 等。
+
+### 特殊 group 类型
+
+| 类型 | 触发条件 | 渲染方式 |
+|---|---|---|
+| 普通任务 | 默认 | user_task 气泡 + steps 列表 |
+| proactive（`isProactive = true`）| `userTask === '__proactive__'` | 只在有 finalResult 时渲染单条消息卡片，无 user_task 气泡 |
+| onboarding（`isOnboarding = true`）| `userTask === '__onboarding__'` | 无 user_task 气泡，steps 正常渲染 |
+
+---
+
+## 五、pendingComposerHandoff 机制
+
+用于将欢迎页 Composer 中的内容（文本 + 图片）交给新建的助手 tab 自动发起 run。
+
+### 流程
+
+```
+WelcomeChatComposer.handleComposerSubmit:
+  1. createAssistantTab({ activate: false })       → 创建新 tab（不激活）
+  2. transferUploadedDocs(WELCOME_COMPOSER_TAB_ID, tabId)  → 转移文档附件
+  3. setPendingComposerHandoff(tabId, { message, images }) → 写入待交接内容
+  4. markAssistantSkipOnboarding(tabId)            → 跳过引导流程
+  5. focusHubConversation(tabId)                   → Hub 焦点切到新 tab
+
+AiPanel（新 tab）watch hubFocusedAssistantTabId 或 active：
+  → consumePendingComposerHandoff(tabId)           → 取出并清空 handoff
+  → runAgent(handoff.message, handoff.images)      → 自动发起 run
+```
+
+`pendingComposerHandoff` 是一次性的（consume 后清空），防止重入。
+
+---
+
+## 六、onComplete 后续处理
+
+`onComplete` 不只是标记完成，还处理以下后续情况（按优先级）：
+
+1. **队列化 proactive 回复**（Watch 任务完成后接着回复用户）→ 100ms 后自动作为新任务 runAgent
+2. **用户在 Agent 总结期间发送的消息**（pendingUserMessages）→ 合并后 100ms 内自动 runAgent
+3. **后台 tab 完成**（非当前 activeTabId）→ `setAgentCompletedUnseen(true)`，触发 TabBar 高亮
+
+---
+
+## 七、配置实时同步
+
+运行中 Agent 的配置变化会实时同步到后端：
+
+| 配置变化 | 同步动作 |
+|---|---|
+| `commandTimeout` 变化 | `agent.updateConfig(key, { commandTimeout })` |
+| `activeProfileId`（AI 模型）变化 | `agent.updateConfig(key, { profileId })` |
+
+---
+
+## 八、注意事项
+
+- **不要在 useAgentMode 外部直接调用 `runAgent`**：应通过 AiPanel 暴露的接口（如 `submitMessage`）触发，保证 Tab 上下文、滚动、handoff 等逻辑完整执行。
+- **终端 tab 与助手 tab 走不同 IPC**：终端用 `agent.run(tabId, ...)`，助手用 `agent.runStandalone(agentId, ...)`，两者后端 Agent 键也不同（tabId vs agentId UUID）。
+- **clearAgentState 保留 steps**：新任务开始时调用 `clearAgentState(tabId, true)`，`true` 表示保留历史步骤，实现多轮对话的步骤累积显示。

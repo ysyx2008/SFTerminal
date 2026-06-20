@@ -117,6 +117,30 @@ sessionId 不在 summaryById 中（未落盘）
    - 否则 → `focusHubConversation`（Hub 焦点，侧栏保留）  
 2. 未找到 tab → 从历史加载 `openHistoryConversation(record)`
 
+### 搜索与分组
+
+- 搜索匹配：`userTask` + 用户自定义标题（`configStore.getConversationDisplayTitle`），不区分大小写
+- 分组：按对话结束时间（`timestamp + duration`）倒序，按日期段分为"今天 / 昨天 / 具体日期"组
+- 实时会话（liveSessionSummaries）始终排在所有历史条目前面，不受日期分组约束
+- 置顶（pinned）会话单独提前展示，不进入日期分组
+
+### 删除行为
+
+| 场景 | 处理方式 |
+|---|---|
+| 已提升为独立 Tab | 阻止删除，提示用户先关闭 Tab |
+| 实时会话（liveSession，尚未落盘）| 确认后只关闭 Tab（`closeTab`），不调 `history.deleteAgentRecord` |
+| 已完成历史记录 | 确认后调 `history.deleteAgentRecord` + 清理 Hub 焦点 Tab（若存在）|
+
+### 右键菜单
+
+| 操作 | 行为 |
+|---|---|
+| 在新标签页中打开 | `promoteConversationToTab`（已有 tab 直接提升；无 tab 则先加载历史再提升）|
+| 重命名 | 写入 `configStore` 自定义标题（以 summary.id 为 key） |
+| 置顶 / 取消置顶 | `configStore.togglePinConversation` |
+| 删除 | 见删除行为表格 |
+
 ---
 
 ## 五、新对话流程
