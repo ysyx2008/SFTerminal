@@ -1447,7 +1447,7 @@ onUnmounted(() => {
     <Transition name="quit-toast">
       <div v-if="quitToastVisible" class="quit-toast-overlay">
         <span class="quit-toast-key">⌘Q</span>
-        <span class="quit-toast-text">{{ $t('common.quitToastHint') }}</span>
+        <span class="quit-toast-text">{{ $t('quitToastHint') }}</span>
         <div class="quit-toast-progress" />
       </div>
     </Transition>
