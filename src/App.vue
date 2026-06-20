@@ -630,8 +630,8 @@ onMounted(async () => {
     if (!existing) {
       const tabId = terminalStore.createAssistantTab({
         agentId: data.agentId,
-        title: `📡 ${t('gateway.remoteChat', '远程对话')}`,
-        isRemote: true,
+        title: `📡 ${t('watch.watchTabTitle', '关切')}`,
+        isRemote: false,
         activate: false
       })
       terminalStore.markAssistantSkipOnboarding(tabId)
@@ -1447,7 +1447,7 @@ onUnmounted(() => {
     <Transition name="quit-toast">
       <div v-if="quitToastVisible" class="quit-toast-overlay">
         <span class="quit-toast-key">⌘Q</span>
-        <span class="quit-toast-text">再按一次退出</span>
+        <span class="quit-toast-text">{{ $t('common.quitToastHint') }}</span>
         <div class="quit-toast-progress" />
       </div>
     </Transition>

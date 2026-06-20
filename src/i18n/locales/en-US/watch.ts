@@ -359,6 +359,8 @@ export default {
   },
 
 
+  watchTabTitle: 'Watch',
+
   heartbeat: {
     title: 'Awakening',
     description: 'When enabled, AI becomes proactive.',

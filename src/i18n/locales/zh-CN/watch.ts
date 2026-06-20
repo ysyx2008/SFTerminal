@@ -375,6 +375,8 @@ export default {
   },
 
 
+  watchTabTitle: '关切',
+
   // 保留旧 key 以防其他地方引用
   heartbeat: {
     title: '觉醒',

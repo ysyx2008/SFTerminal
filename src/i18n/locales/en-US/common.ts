@@ -283,6 +283,8 @@ export default {
   },
 
 
+  quitToastHint: 'Press again to quit',
+
   // Connection status panel
   conn: {
     connected: 'connected',

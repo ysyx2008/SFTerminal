@@ -283,6 +283,8 @@ export default {
   },
 
 
+  quitToastHint: '再按一次退出',
+
   // 连接状态面板
   conn: {
     connected: '已连接',
