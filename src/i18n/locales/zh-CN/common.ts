@@ -50,6 +50,30 @@ export default {
     titleSteam: '欢迎使用旗鱼终端',
     subtitle: 'AI 驱动的智能助手',
     subtitleSteam: '高效的终端与连接管理工具',
+    subtitlePools: {
+      ocean: [
+        'AI 驱动的智能助手',
+        '深潜就绪，等你开口',
+        '终端与助手，同一处出发',
+        '你的水下智能搭档',
+      ],
+      rivals: [
+        '比龙虾会游的智能助手',
+        '别的 AI 在上班，旗鱼在等你',
+      ],
+      bondCompanion: [
+        '老伙计，又回来了',
+        '相伴 {days} 天，继续一起游',
+      ],
+      bondSoulmate: [
+        '知根知底的水下搭档',
+        '心意相通，从这一屏开始',
+      ],
+      lore: [
+        '旗鱼是海里游得最快的鱼之一',
+        '最快的鱼，最顺手的助手',
+      ],
+    },
     quickStart: '快速开始',
     chatLead: '有什么我可以帮你的？',
     chatLeadPools: {

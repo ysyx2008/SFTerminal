@@ -11,10 +11,12 @@ import MatrixRain from './EasterEgg/MatrixRain.vue'
 import WelcomeChatComposer from './WelcomeChatComposer.vue'
 import sailfishLogo from '../../resources/logo.png'
 import { useWatchAnomalyCount } from '../composables/useWatchAnomalyCount'
+import { useWelcomeSubtitle } from '../composables/useWelcomeSubtitle'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
+const welcomeSubtitle = useWelcomeSubtitle(isSteamBuild)
 
 // 彩蛋：连续点击 Logo 20 次触发 Matrix 数字雨
 const showMatrixEasterEgg = ref(false)
@@ -195,7 +197,7 @@ onUnmounted(() => {
         </div>
         <div class="header-text">
           <h1 class="welcome-title">{{ t(isSteamBuild ? 'welcome.titleSteam' : 'welcome.title') }}</h1>
-          <p class="welcome-subtitle">{{ t(isSteamBuild ? 'welcome.subtitleSteam' : 'welcome.subtitle') }}</p>
+          <p class="welcome-subtitle">{{ welcomeSubtitle }}</p>
         </div>
       </div>
 

@@ -50,6 +50,30 @@ export default {
     titleSteam: 'Welcome to SFTerm',
     subtitle: 'AI-powered smart assistant',
     subtitleSteam: 'Efficient terminal & connection manager',
+    subtitlePools: {
+      ocean: [
+        'AI-powered smart assistant',
+        'Deep dive ready when you are',
+        'Terminal and assistant, one workspace',
+        'Your underwater AI partner',
+      ],
+      rivals: [
+        'Smarter than the neighbor lobster',
+        'Other AIs clock in — Sailfish waits for you',
+      ],
+      bondCompanion: [
+        'Welcome back, old partner',
+        '{days} days in — let\'s keep swimming',
+      ],
+      bondSoulmate: [
+        'Your partner who knows the depths',
+        'Kindred spirits start on this screen',
+      ],
+      lore: [
+        'Sailfish are among the fastest fish in the sea',
+        'The fastest fish, the handiest assistant',
+      ],
+    },
     quickStart: 'Quick Start',
     chatLead: 'What can I help you with?',
     chatLeadPools: {

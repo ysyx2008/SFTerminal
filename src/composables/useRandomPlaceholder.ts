@@ -6,7 +6,7 @@ import {
   type BondTrustLevel,
 } from '@shared/types/bond'
 
-async function loadBondTrustLevel(): Promise<BondTrustLevel> {
+export async function loadBondTrustLevel(): Promise<BondTrustLevel> {
   try {
     const metrics = await window.electronAPI?.bond?.getMetrics?.()
     return metrics?.trustLevel ?? 'stranger'
