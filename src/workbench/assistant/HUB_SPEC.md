@@ -7,7 +7,7 @@
 
 ## 一、设计目标
 
-将过去"每个对话独占一个 Tab"的模型，改为**单一助手工作台（Hub）+ 最近对话侧栏**，使：
+将过去"每个本地助手对话独占一个独立 Tab"的模型，改为**单一助手工作台（Hub）+ 最近对话侧栏**，使：
 - 任意数量的本地助手对话共用一个工作台区域，通过侧栏切换
 - 终端 Tab（local/ssh）保持独立全屏，不受影响
 - 用户可将任意会话"提升"为独立 Tab，兼顾重度多任务需求
@@ -76,29 +76,7 @@ showRecallSidebar = !activeTabId && !showSmartPatrol && !isSteamBuild
 
 ---
 
-## 四、Cmd+W 行为决策树
-
-```
-有覆盖层（觉醒/设置/巡检）
-  └→ 关闭覆盖层，结束
-
-有 activeTab（TabBar 可见）
-  ├─ tab.type === 'assistant' && !isPromoted && !isRemote（理论兜底，不应出现）
-  │   └→ 隐藏窗口
-  └─ 终端 / 已提升助手 / 远程助手
-      └→ 关闭该 tab（closeTab），不关窗口
-
-无 activeTab，有 hubFocusedAssistantTabId（Hub 焦点模式）
-  └→ goToHome()，退回欢迎页（侧栏保留），不关窗口
-
-无 activeTab，无 Hub 焦点（欢迎页）
-  ├─ hasDisplayedTabs（有终端/提升/远程 tab）→ 不做任何事
-  └─ 无任何真实 tab → 隐藏窗口
-```
-
----
-
-## 五、侧栏（RecentConversationsPanel）规则
+## 四、侧栏（RecentConversationsPanel）规则
 
 ### 可见性
 
@@ -141,7 +119,7 @@ sessionId 不在 summaryById 中（未落盘）
 
 ---
 
-## 六、新对话流程
+## 五、新对话流程
 
 ```
 欢迎页 Composer 提交 / TabBar「+」按钮
@@ -157,7 +135,7 @@ sessionId 不在 summaryById 中（未落盘）
 
 ---
 
-## 七、后台任务（Watch / Gateway）规则
+## 六、后台任务（Watch / Gateway）规则
 
 **规则：后台任务不得自动切换用户视图。**
 
@@ -171,7 +149,7 @@ Watch 触发、Gateway 远程任务、IM 消息等触发的助手任务：
 
 ---
 
-## 八、会话提升与降级
+## 七、会话提升与降级
 
 ### 提升（Hub → 独立 Tab）
 
@@ -195,7 +173,7 @@ tab 从 TabBar 消失，但仍存在于 terminalStore.tabs
 
 ---
 
-## 九、资源管理
+## 八、资源管理
 
 ### LRU 会话池
 
@@ -212,7 +190,7 @@ tab 从 TabBar 消失，但仍存在于 terminalStore.tabs
 
 ---
 
-## 十、退出确认计数
+## 九、退出确认计数
 
 退出时弹框中"有意义的开放 tab"计数规则：
 
@@ -230,7 +208,7 @@ tab 从 TabBar 消失，但仍存在于 terminalStore.tabs
 
 ---
 
-## 十一、关键 Store Actions 速查
+## 十、关键 Store Actions 速查
 
 | Action | 作用 |
 |---|---|
@@ -245,12 +223,12 @@ tab 从 TabBar 消失，但仍存在于 terminalStore.tabs
 
 ---
 
-## 十二、常见错误与防范
+## 十一、常见错误与防范
 
 | 错误 | 后果 | 防范 |
 |---|---|---|
 | 后台任务调用 `setActiveTab` / `focusHubConversation` | 打断用户当前操作 | 后台路径只调 `addAgentStep` |
 | 为 Hub 会话创建 tab 时传 `activate: true` | 会话意外出现在 TabBar | 本地助手 tab 创建一律 `activate: false` |
-| Cmd+W 逻辑新增分支时忘记覆盖层优先 | 关键操作被跳过 | 始终遵循决策树顺序 |
+| 修改 Cmd+W 逻辑 | 影响全局快捷键行为 | 见 `src/APP_SPEC.md`，Cmd+W 是全局规则，不属于 Hub 模型 |
 | 侧栏 attention 显示条件不过滤当前可见会话 | 干扰用户正在看的对话 | attention 图标仅对后台会话有效 |
 | 删除实时会话时调用 `history.deleteAgentRecord` | 接口报错（记录未落盘）| 先检查 `liveSessionSummaries`，实时会话只关 tab |
