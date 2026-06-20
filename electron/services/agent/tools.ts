@@ -356,7 +356,7 @@ function buildWebFetchTool(): ToolDefinitionWithMeta {
 - 需要登录的页面（通常会拿到登录墙，不是目标内容；注意辨别）
 - PDF / 图片 / 视频等二进制 → 改用 exec 下载到本地后再 read_file
 
-参数 max_bytes / timeout 通常用默认即可。`
+只需传 url；timeout 通常不必指定（默认 30 秒）。`
   const jinaHint = hasJina
     ? '\n\n当前提取后端：Jina Reader（已配置 API key）——SPA 渲染的页面也能读，如飞书 API 文档、Notion 公开页、现代 SaaS docs。'
     : '\n\n当前提取后端：本地 Readability——静态页面 OK，但 JS 渲染的 SPA（如飞书 API 文档、Notion 公开页）通常拿不到内容；如需读 SPA 请提示用户在 设置 → 联网搜索 配置 Jina API key。'
@@ -377,10 +377,6 @@ function buildWebFetchTool(): ToolDefinitionWithMeta {
           timeout: {
             type: 'number',
             description: '总耗时上限（秒），默认 30，最大 60'
-          },
-          max_bytes: {
-            type: 'number',
-            description: '响应体大小上限（字节），默认 3MB，最大 10MB。超出会截断'
           }
         },
         required: ['url']

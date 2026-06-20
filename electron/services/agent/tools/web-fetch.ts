@@ -19,7 +19,7 @@ export async function executeWebFetch(
   }
 
   const timeoutSec = typeof args.timeout === 'number' ? args.timeout : undefined
-  const maxBytes = typeof args.max_bytes === 'number' ? args.max_bytes : undefined
+  // 不暴露 max_bytes 给 LLM——模型常误传极小值（如 10000），触发 Content-Length 预判拒绝
 
   executor.addStep({
     type: 'tool_call',
@@ -29,7 +29,7 @@ export async function executeWebFetch(
   })
 
   try {
-    const result = await webFetch({ url, timeoutSec, maxBytes })
+    const result = await webFetch({ url, timeoutSec })
 
     const header = t('web.fetch.header', {
       url: result.finalUrl !== result.url ? `${result.url} → ${result.finalUrl}` : result.url,

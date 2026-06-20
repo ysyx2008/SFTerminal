@@ -223,6 +223,13 @@ describe('SailFish', () => {
         expect(tool.function.name).toBeDefined()
       }
     })
+
+    it('web_fetch should not expose max_bytes to LLM', () => {
+      const tool = agent.getAvailableTools().find((t) => t.function.name === 'web_fetch')
+      expect(tool).toBeDefined()
+      const props = tool!.function.parameters?.properties as Record<string, unknown> | undefined
+      expect(props?.max_bytes).toBeUndefined()
+    })
   })
 
   describe('terminal mode detection', () => {
