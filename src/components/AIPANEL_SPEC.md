@@ -12,7 +12,6 @@
 AiPanel
 ├── DynamicScroller（vue-virtual-scroller v3，虚拟列表）
 │   ├── #before slot
-│   │   ├── agent-preparing-placeholder（运行中且无步骤时）
 │   │   └── ai-welcome（空会话欢迎页）
 │   └── VirtualItem（每个可见行）
 │       ├── user_task（用户消息气泡）
@@ -29,27 +28,7 @@ AiPanel
 
 ---
 
-## 二、agent-preparing-placeholder（正在准备）
-
-**显示条件**（精确，必须同时满足）：
-
-```
-isAgentRunning &&
-(
-  agentTaskGroups.length === 0              // user_task 步骤尚未到达
-  ||
-  (
-    agentTaskGroups[last].isCurrentTask &&  // 当前任务 group 存在
-    agentTaskGroups[last].steps.length === 0  // 但 group 内还没有任何步骤
-  )
-)
-```
-
-**设计原因**：后端在发送 `user_task` 步骤和第一个 `thinking` 步骤之间，会同步执行 `restoreFromHistory()`（可能耗时数十毫秒）。这段时间内 `agentTaskGroups.length > 0` 但 `steps` 为空，如果只判断 `length === 0` 会出现短暂空白。第二个条件确保 placeholder 持续显示直到第一个步骤到达。
-
----
-
-## 三、步骤类型 → 视觉组件映射
+## 二、步骤类型 → 视觉组件映射
 
 | step.type | 渲染组件 | 备注 |
 |---|---|---|
@@ -73,7 +52,7 @@ isAgentRunning &&
 
 ---
 
-## 四、ThinkingBlock（思考块）渲染
+## 三、ThinkingBlock（思考块）渲染
 
 思考内容以特定 HTML 结构内嵌在 `message` step 的 `content` 中：
 
@@ -95,9 +74,11 @@ isAgentRunning &&
 **流式态**：`details open` → ThinkingBlock 展开；完成后可由用户折叠。  
 **虚拟列表限制**：DynamicScroller 会在 ThinkingBlock 滚出视口时 unmount，`open` 状态会被重置。ThinkingBlock 内部通过 `keepAlive` 机制（实际是自身 ref）保存折叠状态，滚回时恢复。
 
+**「正在准备...」**：仅由左侧 ThinkingBlock 单行呈现（无居中 fallback）。后端 initial thinking step 到达前，`useAgentMode.flattenedItems` 在步骤流末尾注入虚拟 step（`type='thinking'` + `isStreaming=true`）；step 从 `thinking` 变为 `message` 但 content 尚无 🤔 时，`getMessageStepPresentation` 仍保持 ThinkingBlock 流式行，避免切换空白。
+
 ---
 
-## 五、自动滚底行为
+## 四、自动滚底行为
 
 | 场景 | 行为 |
 |---|---|
@@ -113,7 +94,7 @@ isAgentRunning &&
 
 ---
 
-## 六、空会话欢迎页（ai-welcome）
+## 五、空会话欢迎页（ai-welcome）
 
 显示条件：`!isAgentRunning && !agentUserTask && agentTaskGroups.length === 0`
 
@@ -126,7 +107,7 @@ isAgentRunning &&
 
 ---
 
-## 七、WelcomeChatComposer 设计规则
+## 六、WelcomeChatComposer 设计规则
 
 > 文件：`src/components/WelcomeChatComposer.vue`
 
@@ -164,7 +145,7 @@ AiPanel（新 tab 激活后）检测到 handoff
 
 ---
 
-## 八、多轮对话的步骤保留
+## 七、多轮对话的步骤保留
 
 `clearAgentState(tabId, keepSteps=true)` 每次新任务发起时调用，**保留**已有的 steps。
 

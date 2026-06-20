@@ -894,6 +894,16 @@ export function useAgentMode(
     return false
   }
 
+  /** 当前任务尚无 Agent 产出步骤时，在列表内注入虚拟「正在准备...」（非居中） */
+  const shouldInjectPreparingStep = (group: AgentTaskGroup): boolean => {
+    if (!group.isCurrentTask || group.finalResult || !isAgentRunning.value) return false
+    return !group.steps.some(s =>
+      s.type === 'thinking' || s.type === 'message' || s.type === 'tool_call' ||
+      s.type === 'waiting' || s.type === 'asking' || s.type === 'waiting_password' ||
+      s.type === 'error'
+    )
+  }
+
   const flattenedItems = computed((): VirtualItem[] => {
     const items: VirtualItem[] = []
 
@@ -909,8 +919,6 @@ export function useAgentMode(
         items.push({ id: `user_${group.id}`, type: 'user_task', group, size: 60 })
       }
 
-      // 初始等待提示由后端以 thinking step（"正在准备..."）承载，前端不再额外插入虚拟项
-
       if (group.steps.length > 0) {
         // 调试模式 OFF 时，隐藏"成功且无用户必看产出"的 tool_call / tool_result step
         // user_supplement 按 steps 时间顺序渲染，不整体提前到 user_task 之后
@@ -925,6 +933,27 @@ export function useAgentMode(
             : step.type === 'asking' ? 120 : isFirst ? 46 : 40
           items.push({ id: step.id, type: 'step', step, group, size, isFirstStep: isFirst })
         }
+      }
+
+      // 后端 initial thinking step 到达前，在步骤流末尾补虚拟「正在准备...」（左侧 ThinkingBlock）
+      if (shouldInjectPreparingStep(group)) {
+        const userTaskStep = agentState.value?.steps.find(s => s.id === group.id)
+        const preparingStep: AgentStep = {
+          id: `__preparing_${group.id}`,
+          type: 'thinking',
+          content: t('ai.preparing'),
+          isStreaming: true,
+          timestamp: userTaskStep?.timestamp ?? Date.now(),
+        }
+        const hasPriorAgentStep = group.steps.some(s => s.type !== 'user_supplement')
+        items.push({
+          id: preparingStep.id,
+          type: 'step',
+          step: preparingStep,
+          group,
+          size: 46,
+          isFirstStep: !hasPriorAgentStep,
+        })
       }
 
       if (group.finalResult) {

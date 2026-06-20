@@ -311,6 +311,43 @@ const isInitialPreparingStep = (step: { type: string; isStreaming?: boolean }): 
   return step.type === 'thinking' && step.isStreaming === true
 }
 
+/** message step 的思考行：含已解析 thinking 块，或流式首 chunk 尚未包装 🤔 前的过渡态 */
+const getMessageStepThinkingView = (step: { content: string; isStreaming?: boolean }) => {
+  const parsed = parseThinking(step.content)
+  if (parsed.thinking) {
+    return {
+      reasoning: parsed.thinking.reasoning,
+      isStreaming: !parsed.thinking.isDone,
+      label: undefined as string | undefined,
+    }
+  }
+  if (step.isStreaming && !step.content.includes('🤔')) {
+    const preparingText = t('ai.preparing')
+    const isPreparingOnly = !step.content.trim() || step.content === preparingText
+    return {
+      reasoning: '',
+      isStreaming: true,
+      label: isPreparingOnly ? preparingText : undefined,
+    }
+  }
+  return null
+}
+
+const getMessageStepBody = (step: { content: string; isStreaming?: boolean }): string => {
+  const parsed = parseThinking(step.content)
+  if (parsed.thinking) return parsed.body
+  if (step.isStreaming && !step.content.includes('🤔')) {
+    const preparingText = t('ai.preparing')
+    if (!step.content.trim() || step.content === preparingText) return ''
+  }
+  return parsed.body
+}
+
+const getMessageStepPresentation = (step: { content: string; isStreaming?: boolean }) => ({
+  thinking: getMessageStepThinkingView(step),
+  body: getMessageStepBody(step),
+})
+
 // 思考块完成时长缓存（按 stepId 索引）
 // DynamicScroller 是虚拟列表，已完成的 ThinkingBlock 滚出视区后会被 unmount、滚回时 remount，
 // 仅用 step.timestamp 重算会得到"从起点到现在"的错乱时长（变成几十~上百秒）。
@@ -1691,9 +1728,14 @@ const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
     // reasoning 文本流式刷新不会改变列表项高度。仅在用户主动切换思考块展开/收起时才参与重算
     let contentForSize: string | undefined = item.step.content
     let thinkingExpandedForSize: boolean | undefined
-    if (item.step.type === 'message' && contentForSize?.includes('🤔')) {
-      contentForSize = parseThinking(contentForSize).body
-      thinkingExpandedForSize = expandedThinkingSteps.value.has(item.step.id)
+    if (item.step.type === 'message' && contentForSize) {
+      if (contentForSize.includes('🤔')) {
+        contentForSize = parseThinking(contentForSize).body
+        thinkingExpandedForSize = expandedThinkingSteps.value.has(item.step.id)
+      } else if (item.step.isStreaming) {
+        // 首 chunk 尚未包装 thinking 块时，高度由单行 ThinkingBlock 决定
+        contentForSize = ''
+      }
     }
     return [
       contentForSize,
@@ -2099,16 +2141,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           :style="isStandaloneAssistant ? { '--assistant-avatar': `url(${configStore.agentAvatar || sailfishLogo})` } : undefined"
         >
           <template #before>
-            <!-- Agent 已启动但 step 尚未到达（远程会话 / 任务刚发起）
-                 也包括：task group 已建（user_task 到了）但 group.steps 还为空的短暂窗口
-                 （后端在 user_task 和初始 thinking 步骤之间同步执行 restoreFromHistory，
-                 会造成几十毫秒的"group 存在但无 step"空白）-->
-            <div v-if="isAgentRunning && (agentTaskGroups.length === 0 || (agentTaskGroups[agentTaskGroups.length - 1]?.isCurrentTask && agentTaskGroups[agentTaskGroups.length - 1]?.steps.length === 0))" class="agent-preparing-placeholder">
-              <Loader2 :size="20" class="preparing-spinner" />
-              <span>{{ t('ai.preparing') }}</span>
-            </div>
             <!-- 欢迎页（无任务且无历史对话时显示） -->
-            <div v-else-if="!agentUserTask && agentTaskGroups.length === 0" class="ai-welcome">
+            <div v-if="!isAgentRunning && !agentUserTask && agentTaskGroups.length === 0" class="ai-welcome">
               <p>🤖 {{ t('ai.agentWelcome.enabled') }}</p>
 
               <p class="welcome-section-title">💡 {{ t('ai.agentWelcome.whatIsAgent') }}</p>
@@ -2423,10 +2457,12 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                       />
                     </div>
                     <div v-else-if="item.step!.type === 'message'" class="agent-message-stack">
+                      <template v-for="pres in [getMessageStepPresentation(item.step!)]" :key="item.step!.id + '-pres'">
                       <ThinkingBlock
-                        v-if="parseThinking(item.step!.content).thinking"
-                        :reasoning="parseThinking(item.step!.content).thinking!.reasoning"
-                        :is-streaming="!parseThinking(item.step!.content).thinking!.isDone"
+                        v-if="pres.thinking"
+                        :reasoning="pres.thinking.reasoning"
+                        :is-streaming="pres.thinking.isStreaming"
+                        :label="pres.thinking.label"
                         :expanded="isThinkingExpanded(item.step!.id)"
                         :started-at="item.step!.timestamp"
                         :cached-duration-ms="getCachedThinkingDuration(item.step!.id)"
@@ -2434,11 +2470,12 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         @finalize="cacheThinkingDuration(item.step!.id, $event)"
                       />
                       <div
-                        v-if="parseThinking(item.step!.content).body"
+                        v-if="pres.body"
                         class="step-text step-analysis markdown-content"
                         :class="{ 'is-streaming': item.step!.isStreaming }"
-                        v-html="renderMarkdown(parseThinking(item.step!.content).body)"
+                        v-html="renderMarkdown(pres.body)"
                       ></div>
+                      </template>
                       <!-- 任务完成尾注：作为 message step 的尾巴，仅在 group 完成且这是 group 的最后一个
                            message step 时显示。任务完成那一刻 group.finalResult 设置 → 尾注从 stack 末尾
                            "长出"几像素，不引起独立 item 出现/消失，避免列表重排跳动。
@@ -3696,20 +3733,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .context-bar-fill.danger {
   background: var(--color-error);
-}
-
-.agent-preparing-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 32px 16px;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.agent-preparing-placeholder .preparing-spinner {
-  animation: spin 1s linear infinite;
 }
 
 .ai-welcome {
