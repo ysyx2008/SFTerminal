@@ -628,11 +628,13 @@ onMounted(async () => {
   cleanupWatchEnsureTab = window.electronAPI.watch.onEnsureTab((data) => {
     const existing = terminalStore.tabs.find(t => t.agentId === data.agentId)
     if (!existing) {
-      terminalStore.createAssistantTab({
+      const tabId = terminalStore.createAssistantTab({
         agentId: data.agentId,
-        title: t('watch.assistantTabTitle', '远程对话'),
+        title: `📡 ${t('gateway.remoteChat', '远程对话')}`,
+        isRemote: true,
         activate: false
       })
+      terminalStore.markAssistantSkipOnboarding(tabId)
       log.debug(`[Watch] Created assistant tab: ${data.agentId}`)
     }
   })
@@ -658,25 +660,43 @@ onMounted(async () => {
     })
   }
 
+  const navigateToAgentTab = (tab: { id: string; isPromoted?: boolean; isRemote?: boolean }) => {
+    if (tab.isPromoted || tab.isRemote) {
+      terminalStore.setActiveTab(tab.id)
+    } else {
+      terminalStore.focusHubConversation(tab.id)
+    }
+  }
+
   const activateProactiveMessages = (agentId: string) => {
     const messages = pendingProactiveMessages.filter(m => m.agentId === agentId)
-    if (messages.length === 0) return
+    if (messages.length === 0) {
+      // 无待注入消息（消息已被 flushDeferredProactive 消费），但用户通过系统通知点击进来
+      // 仍需导航到已有 tab，让用户能看到对话（否则点通知什么都不发生）
+      const tab = terminalStore.tabs.find(t => t.agentId === agentId)
+      if (tab) navigateToAgentTab(tab)
+      return
+    }
 
     let tab = terminalStore.tabs.find(t => t.agentId === agentId)
     if (!tab) {
+      // companion tab 不存在时按远程对话创建，唯一性由 agentId 保证
       const tabId = terminalStore.createAssistantTab({
         agentId,
-        title: configStore.agentName || t('watch.assistantTabTitle'),
+        title: `📡 ${t('gateway.remoteChat', '远程对话')}`,
+        isRemote: true,
         activate: false
       })
+      terminalStore.markAssistantSkipOnboarding(tabId)
       tab = terminalStore.tabs.find(t => t.id === tabId)
     }
-    // Watch 结果静默注入，不主动切换视图——用户通过 toast 点击决定是否查看
 
     if (tab) {
       for (const msg of messages) {
         injectProactiveSteps(tab.id, msg.message, msg.timestamp)
       }
+      // 用户主动点击 toast "查看"，注入后立即导航到对话
+      navigateToAgentTab(tab)
     }
 
     // 清除已展示的消息
@@ -771,11 +791,7 @@ onMounted(async () => {
       const focusProactiveTab = (id: string) => {
         const t = terminalStore.tabs.find(t => t.id === id)
         if (!t) return
-        if (t.isPromoted || t.isRemote) {
-          terminalStore.setActiveTab(id)
-        } else {
-          terminalStore.focusHubConversation(id)
-        }
+        navigateToAgentTab(t)
       }
       if (tab.agentState?.isRunning) {
         pendingProactiveMessages.push({
