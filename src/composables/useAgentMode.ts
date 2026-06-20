@@ -368,7 +368,8 @@ export function useAgentMode(
   const userScrolledAway = () => {
     stickyFollowBottom = false
     setIsUserNearBottom(false)
-    hasNewMessage.value = true
+    // 不在这里亮起「新消息」：用户上滚不代表有新内容，只有 doScrollIfNeeded 发现
+    // 实际有新内容到来且用户不在底部时才显示提示。
     if (scrollGraceTimer) {
       clearTimeout(scrollGraceTimer)
       scrollGraceTimer = null
