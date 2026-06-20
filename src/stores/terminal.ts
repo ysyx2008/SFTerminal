@@ -1935,6 +1935,35 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
+   * 移除乐观插入的 user_task（后端真实步骤到达后替换）
+   */
+  function removeOptimisticAgentSteps(tabId: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab?.agentState?.steps.length) return
+    const filtered = tab.agentState.steps.filter(s => !s.id.startsWith('__optimistic_'))
+    if (filtered.length === tab.agentState.steps.length) return
+    tab.agentState = { ...tab.agentState, steps: filtered }
+    tabs.value = [...tabs.value]
+  }
+
+  /**
+   * IPC 异常结束且后端未推送 user_task 时，将乐观步骤固化为正式 user_task（去掉前缀）
+   */
+  function commitOptimisticAgentSteps(tabId: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab?.agentState?.steps.length) return
+    let changed = false
+    const steps = tab.agentState.steps.map(s => {
+      if (!s.id.startsWith('__optimistic_')) return s
+      changed = true
+      return { ...s, id: s.id.slice('__optimistic_'.length) }
+    })
+    if (!changed) return
+    tab.agentState = { ...tab.agentState, steps }
+    tabs.value = [...tabs.value]
+  }
+
+  /**
    * 添加或更新 Agent 执行步骤
    * 如果步骤 id 已存在，则更新；否则添加新步骤
    */
@@ -2923,6 +2952,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     setAgentSession,
     setAgentId,
     addAgentStep,
+    removeOptimisticAgentSteps,
+    commitOptimisticAgentSteps,
     removeAgentStep,
     setAgentPendingConfirm,
     finalizeAgentRunState,

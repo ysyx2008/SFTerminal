@@ -278,17 +278,16 @@ export abstract class Agent {
     const taskStartTime = Date.now()
     
     try {
-      // 延迟解析 CWD：user_task 已发出，此时再刷新 CWD 不阻塞消息上墙
-      if (options?.cwdResolver) {
-        try {
-          const cwd = await options.cwdResolver()
-          run.context = { ...run.context, cwd }
-        } catch (e) {
-          log.warn('CWD resolve failed, using fallback:', e)
-        }
-      }
-      
-      await this.buildContext(run, message)
+      // CWD 刷新与上下文构建互不依赖，并行执行以缩短「正在准备...」阶段
+      const cwdPromise = options?.cwdResolver
+        ? options.cwdResolver().then(cwd => {
+            run.context = { ...run.context, cwd }
+          }).catch(e => {
+            log.warn('CWD resolve failed, using fallback:', e)
+          })
+        : Promise.resolve()
+
+      await Promise.all([cwdPromise, this.buildContext(run, message)])
       let result = await this.executeLoop(run)
       // 主循环返回后用户可能刚补充消息：继续处理直至队列清空
       while (run.pendingUserMessages.length > 0 && !run.aborted) {
@@ -625,6 +624,14 @@ export abstract class Agent {
       }
     }
     
+    // 先推送「正在准备...」，再做可能较慢的历史恢复，避免 UI 长时间无反馈
+    const initialStep = this.addStep({
+      type: 'thinking',
+      content: t('ai.preparing'),
+      isStreaming: true
+    })
+    run.initialStepId = initialStep.id
+
     // 初始化 TaskMemory（仅首次 run 时，从 HistoryService 恢复）
     // 场景：用户恢复了历史对话，Agent 实例刚创建，TaskMemory 为空
     // 通过 sessionId 从 HistoryService 加载完整记录，避免前端反复传递大量数据
@@ -636,14 +643,6 @@ export abstract class Agent {
         this._isRestoring = false
       }
     }
-    
-    // 添加初始步骤
-    const initialStep = this.addStep({
-      type: 'thinking',
-      content: t('ai.preparing'),
-      isStreaming: true
-    })
-    run.initialStepId = initialStep.id
     
     // 设置终端输出监听器
     this.setupOutputListener(run)
@@ -1670,9 +1669,9 @@ export abstract class Agent {
     // ── Cold start path: 从零构建上下文 ──
 
     // 提前并行启动两个异步操作（均需 embedding + 向量搜索，相互独立）
-    const knowledgeResultPromise = this.loadKnowledgeContext(message, run.context.hostId)
+    const knowledgeResultPromise = this.loadKnowledgeContextWithTimeout(message, run.context.hostId)
 
-    const L3_RECALL_TIMEOUT_MS = 3000
+    const L3_RECALL_TIMEOUT_MS = 2000
     const recallPromise: Promise<Array<{ userRequest: string; finalResult: string; status: string; timestamp: number; relevance: number }>> = (() => {
       const ks = getKnowledgeService()
       if (!ks || !ks.isEnabled() || message.trim().length < 5) return Promise.resolve([])
@@ -1796,7 +1795,7 @@ export abstract class Agent {
 
     let knowledgeRefs = ''
     if (injectKnowledge) {
-      const knowledgeResult = await this.loadKnowledgeContext(message, run.context.hostId)
+      const knowledgeResult = await this.loadKnowledgeContextWithTimeout(message, run.context.hostId)
       knowledgeRefs = knowledgeResult.context
     }
 
@@ -1839,6 +1838,39 @@ export abstract class Agent {
     return userMsg
   }
   
+  /** L2 知识检索超时：不阻塞首 token，超时则跳过召回 */
+  private static readonly L2_KNOWLEDGE_TIMEOUT_MS = 2500
+
+  private loadKnowledgeContextWithTimeout(
+    message: string,
+    hostId?: string,
+    timeoutMs = Agent.L2_KNOWLEDGE_TIMEOUT_MS
+  ): Promise<KnowledgeContextResult> {
+    return new Promise(resolve => {
+      let settled = false
+      const timer = setTimeout(() => {
+        if (settled) return
+        settled = true
+        log.warn(`L2 knowledge context timeout (${timeoutMs}ms), skipping recall`)
+        resolve({ context: '', enabled: false, conversationHistory: [] })
+      }, timeoutMs)
+      this.loadKnowledgeContext(message, hostId)
+        .then(result => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          resolve(result)
+        })
+        .catch(e => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          log.warn('Knowledge service error:', e)
+          resolve({ context: '', enabled: false, conversationHistory: [] })
+        })
+    })
+  }
+
   /**
    * 加载知识库上下文
    */

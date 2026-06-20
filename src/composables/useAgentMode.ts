@@ -1054,7 +1054,38 @@ export function useAgentMode(
       log.error('无法获取终端上下文')
       return
     }
-    // 并行获取异步上下文，减少等待时间
+
+    // 同步收集附件/图片（不阻塞 UI）
+    const images = imageCallbacks?.getImages() || []
+    const previewImages = imageCallbacks?.getPreviewImages?.() || images
+    if (images.length > 0) {
+      imageCallbacks?.clearImages()
+    }
+    const attachments = attachmentCallbacks?.getAttachments() || []
+    if (attachments.length > 0) {
+      attachmentCallbacks?.clearAttachments()
+    }
+
+    // 立即进入运行态 + 乐观 user_task，用户消息与「正在准备...」零等待上墙
+    terminalStore.clearAgentState(tabId, true)
+    if (!agentState.value?.sessionId) {
+      terminalStore.setAgentSession(tabId, `session_${startTime}`, startTime)
+    }
+    const stableAgentKey = isAssistantMode
+      ? currentTab.value?.agentId
+      : tabId
+    terminalStore.setAgentRunning(tabId, true, stableAgentKey, message)
+    terminalStore.addAgentStep(tabId, {
+      id: `__optimistic_user_task_${startTime}`,
+      type: 'user_task',
+      content: message,
+      images: previewImages.length > 0 ? previewImages : undefined,
+      attachments: attachments.length > 0 ? attachments : undefined,
+      timestamp: startTime,
+    })
+    void scrollToBottom()
+
+    // 异步上下文在 UI 反馈之后并行获取，不阻塞首屏
     const [hostId, documentContext] = await Promise.all([
       getHostIdByTabId(tabId),
       getDocumentContext()
@@ -1064,39 +1095,6 @@ export function useAgentMode(
     autoProbeHostProfile().catch(e => {
       log.warn('主机探测失败:', e)
     })
-
-    // 准备新任务（保留之前的步骤）
-    terminalStore.clearAgentState(tabId, true)
-    
-    // 如果是新会话（没有 sessionId），设置会话 ID 和开始时间
-    if (!agentState.value?.sessionId) {
-      terminalStore.setAgentSession(tabId, `session_${startTime}`, startTime)
-    }
-    
-    // 获取图片：全部图片传给 AI，预览图片存入步骤供 UI 展示
-    const images = imageCallbacks?.getImages() || []
-    const previewImages = imageCallbacks?.getPreviewImages?.() || images
-
-    if (images.length > 0) {
-      imageCallbacks?.clearImages()
-    }
-
-    // 获取当前已上传文件的元信息（用于 user_task 步骤展示）
-    const attachments = attachmentCallbacks?.getAttachments() || []
-
-    // 清空已上传的文件列表
-    if (attachments.length > 0) {
-      attachmentCallbacks?.clearAttachments()
-    }
-
-    // 设置 Agent 状态：正在运行 + 用户任务。
-    // 第三个参数 agentId 在 agentState 上记录 Agent 的稳定 key（终端 = tabId，助手 = agentId UUID）。
-    // 后续的 addUserMessage / abort / confirm 都通过 getAgentKey() 拿到 key 定位 Agent 实例。
-    const stableAgentKey = isAssistantMode
-      ? currentTab.value?.agentId
-      : tabId
-    terminalStore.setAgentRunning(tabId, true, stableAgentKey, message)
-    await scrollToBottom()
 
     try {
       // 根据模式选择 API
@@ -1175,6 +1173,8 @@ export function useAgentMode(
       }
       terminalStore.setAgentFinalResult(tabId, finalContent)
     } finally {
+      // 后端未推送 user_task（IPC 失败等）时固化乐观步骤，避免 __optimistic_ 前缀残留
+      terminalStore.commitOptimisticAgentSteps(tabId)
       terminalStore.finalizeAgentRunState(tabId)
     }
 
@@ -1343,6 +1343,10 @@ export function useAgentMode(
       if (!isEventForThisTab(data.agentId, data.ptyId)) return
       
       const tabId = currentTabId.value
+      // 后端 user_task 到达后替换乐观步骤（避免重复分组）
+      if (data.step.type === 'user_task' && !data.step.id.startsWith('__optimistic_')) {
+        terminalStore.removeOptimisticAgentSteps(tabId)
+      }
       terminalStore.addAgentStep(tabId, data.step)
 
       // 独立助手模式下，驱动 Canvas 预览面板
