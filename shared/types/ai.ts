@@ -45,4 +45,30 @@ export const WAITING_FOR_MODEL_LABEL_IDS = [
   'calling',
 ] as const
 
+/** 5% 概率出现的彩蛋文案 */
+export const WAITING_FOR_MODEL_EASTER_EGG_LABEL_IDS = [
+  'coffee',
+  'bribingGpu',
+  'quantum',
+  'yoda',
+  'haggling',
+] as const
+
+/** TTFT 超过阈值后切换的调侃文案 */
+export const WAITING_FOR_MODEL_SLOW_LABEL_IDS = [
+  'slacking',
+  'patience',
+  'deepBreath',
+  'novel',
+  'almostThere',
+] as const
+
 export type WaitingForModelLabelId = (typeof WAITING_FOR_MODEL_LABEL_IDS)[number]
+export type WaitingForModelEasterEggLabelId = (typeof WAITING_FOR_MODEL_EASTER_EGG_LABEL_IDS)[number]
+export type WaitingForModelSlowLabelId = (typeof WAITING_FOR_MODEL_SLOW_LABEL_IDS)[number]
+
+/** 彩蛋文案出现概率 */
+export const WAITING_FOR_MODEL_EASTER_EGG_CHANCE = 0.05
+
+/** 超过此 TTFT（ms）后切换为 slow 调侃文案 */
+export const WAITING_FOR_MODEL_SLOW_TTFT_MS = 10_000

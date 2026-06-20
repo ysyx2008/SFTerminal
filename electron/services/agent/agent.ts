@@ -54,7 +54,13 @@ import { assembleUserMessageContent, wrapSystemContext } from './message-envelop
 import { notifyFrontendConfigChanged } from './skills/config/executor'
 import { getBrowserBridgeService } from '../browser-bridge/browser-bridge.service'
 import { patchBrowserBridgeSectionInSystemPrompt } from '../browser-bridge/prompt-section'
-import { WAITING_FOR_MODEL_LABEL_IDS } from '@shared/types/ai'
+import {
+  WAITING_FOR_MODEL_LABEL_IDS,
+  WAITING_FOR_MODEL_EASTER_EGG_LABEL_IDS,
+  WAITING_FOR_MODEL_SLOW_LABEL_IDS,
+  WAITING_FOR_MODEL_EASTER_EGG_CHANCE,
+  WAITING_FOR_MODEL_SLOW_TTFT_MS,
+} from '@shared/types/ai'
 
 const log = createLogger('Agent')
 
@@ -2247,14 +2253,27 @@ export abstract class Agent {
     return this.profileId
   }
   
+  private pickRandomWaitingLabelId(ids: readonly string[]): string {
+    return ids[Math.floor(Math.random() * ids.length)]
+  }
+
   /**
-   * 从共享池随机挑选等待首 token 的展示文案
+   * 从共享池随机挑选等待首 token 的展示文案（5% 彩蛋池）
    */
   private pickWaitingForModelLabel(): string {
-    const id = WAITING_FOR_MODEL_LABEL_IDS[
-      Math.floor(Math.random() * WAITING_FOR_MODEL_LABEL_IDS.length)
-    ]
+    const useEasterEgg = Math.random() < WAITING_FOR_MODEL_EASTER_EGG_CHANCE
+    if (useEasterEgg) {
+      const id = this.pickRandomWaitingLabelId(WAITING_FOR_MODEL_EASTER_EGG_LABEL_IDS)
+      return t(`ai.waiting_for_model.easter.${id}`)
+    }
+    const id = this.pickRandomWaitingLabelId(WAITING_FOR_MODEL_LABEL_IDS)
     return t(`ai.waiting_for_model.${id}`)
+  }
+
+  /** TTFT 过长时切换为调侃文案 */
+  private pickSlowWaitingForModelLabel(): string {
+    const id = this.pickRandomWaitingLabelId(WAITING_FOR_MODEL_SLOW_LABEL_IDS)
+    return t(`ai.waiting_for_model.slow.${id}`)
   }
 
   /** 上下文就绪、HTTP 即将发出：「正在准备…」→ 随机趣味等待文案 */
@@ -2262,6 +2281,15 @@ export abstract class Agent {
     if (!run.initialStepId) return
     this.updateStep(run.initialStepId, {
       content: this.pickWaitingForModelLabel(),
+      isStreaming: true,
+    })
+  }
+
+  /** 首 token 仍未到达且占位步骤仍在时，切换为 slow 调侃文案 */
+  private markSlowWaitingForFirstToken(run: AgentRun): void {
+    if (!run.initialStepId) return
+    this.updateStep(run.initialStepId, {
+      content: this.pickSlowWaitingForModelLabel(),
       isStreaming: true,
     })
   }
@@ -2285,6 +2313,21 @@ export abstract class Agent {
     const toolProgressThrottle = new Map<string, number>()
     const STREAM_THROTTLE_MS = 100
     const TOOL_PROGRESS_THROTTLE_MS = 120
+    let slowTtftTimer: ReturnType<typeof setTimeout> | undefined
+    const clearSlowTtftTimer = () => {
+      if (slowTtftTimer !== undefined) {
+        clearTimeout(slowTtftTimer)
+        slowTtftTimer = undefined
+      }
+    }
+    const scheduleSlowTtftHint = () => {
+      clearSlowTtftTimer()
+      slowTtftTimer = setTimeout(() => {
+        slowTtftTimer = undefined
+        if (streamStepCreated || !run.initialStepId) return
+        this.markSlowWaitingForFirstToken(run)
+      }, WAITING_FOR_MODEL_SLOW_TTFT_MS)
+    }
 
     // 把当前"正在重试"卡片定稿（关闭 spinner），保留卡片作为审计痕迹。
     // 触发时机：重试成功（首次 onChunk）/ 整体完成（onDone）/ 最终失败（onError）/ 下一轮重试开始
@@ -2337,6 +2380,7 @@ export abstract class Agent {
       const effectiveProfileId = this.resolveEffectiveProfileId(run)
 
       this.markWaitingForFirstToken(run)
+      scheduleSlowTtftHint()
 
       this.services.aiService.chatWithToolsStream(
         run.messages,
@@ -2353,6 +2397,7 @@ export abstract class Agent {
           // 用户感知到的就是文字"正在准备..." → "思考中 N.Ns"无缝切换，整体持续往下输出。
           if (!streamStepCreated) {
             streamStepCreated = true
+            clearSlowTtftTimer()
             // 重试成功：把上一次的"正在重试..."提示定稿（保留卡片但停掉 spinner）
             finalizeRetryStep()
             if (run.initialStepId) {
@@ -2393,6 +2438,7 @@ export abstract class Agent {
         },
         // onDone
         (result) => {
+          clearSlowTtftTimer()
           pendingUpdate = false
           // 预创建的 tool_call 卡片保留、稍后由工具执行器接管（见 executeToolWithChecks 中的 addStep 拦截）
           // 此处只把仍处于 isStreaming 的预卡片停掉光标，避免"参数没来得及更新但模型已结束"的极端情况下卡片一直抖
@@ -2487,6 +2533,7 @@ export abstract class Agent {
         },
         // onError
         (error) => {
+          clearSlowTtftTimer()
           // 出错时把预创建的 tool_call 卡片移除，避免留下没有结果的空卡
           this.discardPreToolCallSteps(run)
           // 重试最终失败时也要把 spinner 关掉，否则"正在重试"卡片会一直转
@@ -2567,6 +2614,7 @@ export abstract class Agent {
         // onRetry - 重试时重置流状态，避免 reasoning 块重复
         // retryInfo 由 ai.service 提供，用来在 UI 上显示"正在重试"，避免用户以为应用卡死
         (retryInfo?: RetryInfo) => {
+          clearSlowTtftTimer()
           log.info(`AI request retrying (reason=${retryInfo?.reason ?? 'unknown'}), resetting stream state`)
           streamContent = ''
           pendingUpdate = false

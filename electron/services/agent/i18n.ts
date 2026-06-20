@@ -1329,6 +1329,16 @@ const translations = {
     'ai.waiting_for_model.neurons': '神经元连线中…',
     'ai.waiting_for_model.inspiration': '灵感加载中…',
     'ai.waiting_for_model.calling': '正在呼唤模型…',
+    'ai.waiting_for_model.easter.coffee': '旗鱼在喝咖啡…',
+    'ai.waiting_for_model.easter.bribingGpu': '正在贿赂 GPU…',
+    'ai.waiting_for_model.easter.quantum': '量子纠缠中…',
+    'ai.waiting_for_model.easter.yoda': '召唤尤达大师…',
+    'ai.waiting_for_model.easter.haggling': '和模型砍价中…',
+    'ai.waiting_for_model.slow.slacking': '模型可能在摸鱼…',
+    'ai.waiting_for_model.slow.patience': '仍在等待，耐心是美德…',
+    'ai.waiting_for_model.slow.deepBreath': '对方正在深呼吸…',
+    'ai.waiting_for_model.slow.novel': '也许它在写长篇大论…',
+    'ai.waiting_for_model.slow.almostThere': '快好了，真的…',
 
     // IM 模块
     'im.help_title': '🐟 旗鱼 - IM 远程助手',
@@ -2772,6 +2782,16 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'ai.waiting_for_model.neurons': 'Neurons connecting…',
     'ai.waiting_for_model.inspiration': 'Loading inspiration…',
     'ai.waiting_for_model.calling': 'Calling the model…',
+    'ai.waiting_for_model.easter.coffee': 'Sailfish is having coffee…',
+    'ai.waiting_for_model.easter.bribingGpu': 'Bribing the GPU…',
+    'ai.waiting_for_model.easter.quantum': 'Quantum entangling…',
+    'ai.waiting_for_model.easter.yoda': 'Summoning Yoda…',
+    'ai.waiting_for_model.easter.haggling': 'Haggling with the model…',
+    'ai.waiting_for_model.slow.slacking': 'The model might be slacking…',
+    'ai.waiting_for_model.slow.patience': 'Still waiting—patience is a virtue…',
+    'ai.waiting_for_model.slow.deepBreath': 'It\'s taking a deep breath…',
+    'ai.waiting_for_model.slow.novel': 'Maybe it\'s writing a novel…',
+    'ai.waiting_for_model.slow.almostThere': 'Almost there, really…',
 
     // IM module
     'im.help_title': '🐟 SailFish - IM Remote Assistant',
