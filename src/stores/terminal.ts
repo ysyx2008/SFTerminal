@@ -256,6 +256,27 @@ export interface AgentTerminalContextSplit {
 
 export type AgentTerminalContext = AgentTerminalContextSingle | AgentTerminalContextSplit
 
+/** Tab 栏可见 tab：终端、已提升本地助手、远程助手（与 TabBar.displayedTabs 一致） */
+function isDisplayedInTabBar(tab: TerminalTab): boolean {
+  return !(tab.type === 'assistant' && !tab.isRemote && !tab.isPromoted)
+}
+
+/**
+ * 关闭 tab 后选择下一个激活 tab：优先右侧相邻，否则左侧（浏览器 / Chrome 标准行为）。
+ * `closedIndex` 为 splice 前的索引；调用时 tab 已从数组移除。
+ */
+function findAdjacentDisplayedTab(closedIndex: number, tabList: TerminalTab[]): TerminalTab | undefined {
+  for (let i = closedIndex; i < tabList.length; i++) {
+    const t = tabList[i]
+    if (isDisplayedInTabBar(t)) return t
+  }
+  for (let i = closedIndex - 1; i >= 0; i--) {
+    const t = tabList[i]
+    if (isDisplayedInTabBar(t)) return t
+  }
+  return undefined
+}
+
 export const useTerminalStore = defineStore('terminal', () => {
   // 状态
   const tabs = ref<TerminalTab[]>([])
@@ -860,11 +881,8 @@ export const useTerminalStore = defineStore('terminal', () => {
         activeTabId.value = ''
         hubFocusedAssistantTabId.value = ''
       } else {
-        // 终端 / 远程助手 tab：找下一个「真实」显示 tab（终端、已提升或远程助手）
-        // 避免跳到 Hub 内未提升助手 tab 导致 activeTabId 非空、侧栏消失
-        const nextDisplayed = tabs.value.find(
-          t => !(t.type === 'assistant' && !t.isRemote && !t.isPromoted)
-        )
+        // 终端 / 远程助手 tab：激活相邻可见 tab（右优先，否则左），跳过 Hub 内未提升助手
+        const nextDisplayed = findAdjacentDisplayedTab(index, tabs.value)
         if (nextDisplayed) {
           activeTabId.value = nextDisplayed.id
         } else {
