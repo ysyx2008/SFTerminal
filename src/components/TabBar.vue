@@ -5,7 +5,6 @@ import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, 
 import { useTerminalStore } from '../stores/terminal'
 import { formatAgentAttentionTooltip } from '../utils/agent-tab-ui-meta'
 import BatchCommandPanel from './BatchCommandPanel.vue'
-import DropOverlay from './DropOverlay.vue'
 import {
   isConversationDragEvent,
   useConversationDropTarget,
@@ -22,6 +21,37 @@ const {
   handleDragLeave: handleConversationDragLeave,
   handleDrop: handleConversationDrop,
 } = useConversationDropTarget(openConversationInTab)
+
+const tabBarRef = ref<HTMLElement | null>(null)
+const conversationDropHintStyle = ref<Record<string, string>>({})
+
+const updateConversationDropHintPosition = () => {
+  const rect = tabBarRef.value?.getBoundingClientRect()
+  if (!rect) return
+  conversationDropHintStyle.value = {
+    top: `${rect.bottom + 8}px`,
+    left: `${rect.left + rect.width / 2}px`,
+    transform: 'translateX(-50%)',
+  }
+}
+
+const onConversationDragEnter = (event: DragEvent) => {
+  handleConversationDragEnter(event)
+  if (isConversationDragEvent(event)) {
+    nextTick(updateConversationDropHintPosition)
+  }
+}
+
+const onConversationDragOver = (event: DragEvent) => {
+  handleConversationDragOver(event)
+  if (isConversationDragEvent(event)) {
+    updateConversationDropHintPosition()
+  }
+}
+
+watch(isConversationDragOver, (over) => {
+  if (over) nextTick(updateConversationDropHintPosition)
+})
 
 /** 远程 Tab 已有 SatelliteDish 图标，标题里去掉历史遗留的 📡 前缀避免重复 */
 function displayTabTitle(tab: { customTitle?: string; title: string; isRemote?: boolean }): string {
@@ -303,21 +333,24 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
 
 <template>
   <div
+    ref="tabBarRef"
     class="tab-bar"
-    @dragenter="handleConversationDragEnter"
-    @dragover="handleConversationDragOver"
+    :class="{ 'conversation-drag-over': isConversationDragOver }"
+    @dragenter="onConversationDragEnter"
+    @dragover="onConversationDragOver"
     @dragleave="handleConversationDragLeave"
     @drop="handleConversationDrop"
   >
-    <DropOverlay
-      v-if="isConversationDragOver"
-      compact
-      :title="t('welcome.conversations.dropToOpenInTab')"
-    >
-      <template #icon>
-        <PanelTopOpen :size="16" :stroke-width="1.5" />
-      </template>
-    </DropOverlay>
+    <Teleport to="body">
+      <div
+        v-if="isConversationDragOver"
+        class="tab-conversation-drop-hint"
+        :style="conversationDropHintStyle"
+      >
+        <PanelTopOpen :size="14" :stroke-width="1.5" />
+        <span>{{ t('welcome.conversations.dropToOpenInTab') }}</span>
+      </div>
+    </Teleport>
 
     <!-- 固定首页 tab：有 tab 时显示，点击回到欢迎页 -->
     <div
@@ -482,6 +515,38 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
   max-width: 100%;
   overflow: hidden;
   /* 空白区域继承父级 drag，使 TabBar 两侧/间隙可拖动窗口与双击最大化 */
+}
+
+.tab-bar.conversation-drag-over {
+  background: rgba(var(--accent-rgb), 0.1);
+  box-shadow: inset 0 -2px 0 var(--accent-primary);
+  outline: 2px dashed color-mix(in srgb, var(--accent-primary) 55%, transparent);
+  outline-offset: -2px;
+}
+
+.tab-conversation-drop-hint {
+  position: fixed;
+  z-index: 10000;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--accent-primary);
+  background: var(--bg-primary);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 45%, var(--border-color));
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+  white-space: nowrap;
+  animation: tabDropHintFadeIn 0.15s ease;
+}
+
+@keyframes tabDropHintFadeIn {
+  from { opacity: 0; translate: 0 -4px; }
+  to { opacity: 1; translate: 0 0; }
 }
 
 .scroll-btn {
