@@ -272,6 +272,9 @@ export const useTerminalStore = defineStore('terminal', () => {
   const sshTerminalCounters = ref<Record<string, number>>({})
   // 需要获得焦点的终端 ID（用于从 AI 助手发送代码后自动聚焦）
   const pendingFocusTabId = ref<string>('')
+  /** 助手 composer 聚焦请求（tabId + 递增 seq，供 AiPanel 在打开/切换会话后聚焦输入框） */
+  const assistantComposerFocusTabId = ref('')
+  const assistantComposerFocusSeq = ref(0)
   // 定时任务待执行的 prompt（tabId -> prompt）
   const pendingSchedulerTasks = ref<Record<string, string>>({})
   // 欢迎页 composer → 助手 tab 的 handoff（含附件图片）
@@ -1094,10 +1097,18 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 切换标签页
    */
   function setActiveTab(tabId: string): void {
-    if (tabs.value.find(t => t.id === tabId)) {
-      activeTabId.value = tabId
-      setAgentCompletedUnseen(tabId, false)
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab) return
+    activeTabId.value = tabId
+    setAgentCompletedUnseen(tabId, false)
+    if (tab.type === 'assistant') {
+      requestAssistantComposerFocus(tabId)
     }
+  }
+
+  function requestAssistantComposerFocus(tabId: string): void {
+    assistantComposerFocusTabId.value = tabId
+    assistantComposerFocusSeq.value += 1
   }
 
   /**
@@ -1145,6 +1156,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     activeTabId.value = ''
     setAgentCompletedUnseen(tabId, false)
     evictHubSessionsIfNeeded(tabId)
+    requestAssistantComposerFocus(tabId)
   }
 
   /** 清除 Hub 焦点会话，主区回到欢迎页 */
@@ -2944,6 +2956,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     getAiScrollCache,
     focusTerminal,
     clearPendingFocus,
+    assistantComposerFocusTabId,
+    assistantComposerFocusSeq,
+    requestAssistantComposerFocus,
     // Agent 状态管理
     findTabIdByAgentId,
     findTabIdByPtyId,

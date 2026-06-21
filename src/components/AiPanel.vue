@@ -100,6 +100,18 @@ const highlightedSourceStepId = ref<string | null>(null)
 const composerRef = ref<InstanceType<typeof AiComposer> | null>(null)
 const secureInputValue = ref('')
 
+const tryFocusComposer = () => {
+  nextTick(() => composerRef.value?.focusInput())
+}
+
+watch(
+  () => terminalStore.assistantComposerFocusSeq,
+  () => {
+    if (!props.tabActive || terminalStore.assistantComposerFocusTabId !== props.tabId) return
+    tryFocusComposer()
+  }
+)
+
 // ==================== 独立助手能力示例网格 ====================
 // 欢迎区展示的 8 张场景卡片。首屏精选覆盖最广能力组合，"换一批"从 25 条池子洗牌。
 // 仅独立助手 tab 使用，因此普通终端 tab 上 displayedExamples 不会被读取，开销可忽略。
@@ -1801,6 +1813,13 @@ onMounted(() => {
   }
 
   warmupMessageList()
+
+  if (
+    props.tabActive &&
+    terminalStore.assistantComposerFocusTabId === props.tabId
+  ) {
+    tryFocusComposer()
+  }
 
   // 首次挂载且无已存滚动位置时滚到底部（含从历史打开的新 tab）
   const shouldInitialScrollBottom =
