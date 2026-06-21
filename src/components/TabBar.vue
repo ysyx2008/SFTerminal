@@ -334,7 +334,7 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
 <template>
   <div
     ref="tabBarRef"
-    class="tab-bar"
+    class="tab-bar-host"
     :class="{ 'conversation-drag-over': isConversationDragOver }"
     @dragenter="onConversationDragEnter"
     @dragover="onConversationDragOver"
@@ -352,6 +352,7 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
       </div>
     </Teleport>
 
+    <div class="tab-bar">
     <!-- 固定首页 tab：有 tab 时显示，点击回到欢迎页 -->
     <div
       v-if="hasTabs"
@@ -503,10 +504,29 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
     
     <!-- 批量命令面板 -->
     <BatchCommandPanel ref="batchPanelRef" />
+    </div>
   </div>
 </template>
 
 <style scoped>
+.tab-bar-host {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.tab-bar-host.conversation-drag-over {
+  background: rgba(var(--accent-rgb), 0.1);
+  box-shadow: inset 0 -2px 0 var(--accent-primary);
+  outline: 2px dashed color-mix(in srgb, var(--accent-primary) 55%, transparent);
+  outline-offset: -2px;
+}
+
 .tab-bar {
   position: relative;
   display: flex;
@@ -514,14 +534,7 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
   gap: 2px;
   max-width: 100%;
   overflow: hidden;
-  /* 空白区域继承父级 drag，使 TabBar 两侧/间隙可拖动窗口与双击最大化 */
-}
-
-.tab-bar.conversation-drag-over {
-  background: rgba(var(--accent-rgb), 0.1);
-  box-shadow: inset 0 -2px 0 var(--accent-primary);
-  outline: 2px dashed color-mix(in srgb, var(--accent-primary) 55%, transparent);
-  outline-offset: -2px;
+  /* 内容宽度居中；拖放由外层 tab-bar-host 全宽接收 */
 }
 
 .tab-conversation-drop-hint {
