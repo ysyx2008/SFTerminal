@@ -182,7 +182,7 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
 }
 
 .conversation-row:hover .item-title {
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 
 .conversation-row.is-open-in-tab .item-title {
@@ -311,7 +311,7 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   font-size: 12.5px;
   font-weight: 400;
   line-height: 1.2;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -337,6 +337,5 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   font-size: 10.5px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
-  opacity: 0.6;
 }
 </style>
