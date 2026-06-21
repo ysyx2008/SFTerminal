@@ -570,6 +570,11 @@ onMounted(async () => {
   // 监听远程 Gateway 助手标签页创建事件
   cleanupGatewayRemoteTab = window.electronAPI.gateway.onRemoteTabCreated((data) => {
     if (!data.agentId) return
+    // Gateway Web 统一路由到联络常驻 tab
+    if (data.agentId === '__companion__') {
+      terminalStore.ensureCompanionTab()
+      return
+    }
     const existingTab = terminalStore.tabs.find(tab => tab.agentId === data.agentId)
     if (!existingTab) {
       terminalStore.createAssistantTab({
@@ -630,6 +635,11 @@ onMounted(async () => {
 
   // Watch desktop 输出：确保助手 tab 存在，后续 steps 通过标准 agent:step 事件流入
   cleanupWatchEnsureTab = window.electronAPI.watch.onEnsureTab((data) => {
+    // 联络常驻 tab 已在 initializeApp 时创建，直接复用
+    if (data.agentId === '__companion__') {
+      terminalStore.ensureCompanionTab()
+      return
+    }
     const existing = terminalStore.tabs.find(t => t.agentId === data.agentId)
     if (!existing) {
       const tabId = terminalStore.createAssistantTab({

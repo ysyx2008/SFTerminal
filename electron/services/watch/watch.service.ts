@@ -487,6 +487,7 @@ export class WatchService {
     const mainWindow = this.config.mainWindow
     let hasError = false
     let errorMessage = ''
+    const steps: AgentStep[] = []
 
     // 每次 Watch 执行使用独立 session，保留工作记忆但分开存储步骤
     this.config.agentService.startNewSession(agentId)
@@ -498,6 +499,7 @@ export class WatchService {
 
     const callbacks: AgentCallbacks = {
       onStep: (_runId: string, step: AgentStep) => {
+        steps.push(step)
         if (shouldSendSteps && mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('agent:step', {
             agentId, step: JSON.parse(JSON.stringify(step)),
@@ -550,7 +552,9 @@ export class WatchService {
         success: !hasError,
         output: (agentResult || '').trim(),
         error: hasError ? errorMessage : undefined,
-        duration: Date.now() - startTime
+        duration: Date.now() - startTime,
+        steps,
+        userMessage: this.extractUserMessage(steps)
       }
     } catch (error) {
       try { this.config.agentService.abort(agentId) } catch { /* ignore */ }
@@ -558,7 +562,9 @@ export class WatchService {
         success: false,
         output: '',
         error: error instanceof Error ? error.message : String(error),
-        duration: Date.now() - startTime
+        duration: Date.now() - startTime,
+        steps: [],
+        userMessage: undefined
       }
     }
   }
@@ -879,7 +885,10 @@ export class WatchService {
 
   // ==================== 输出投递 ====================
 
+  /** 内部 Agent 执行 ID，用于 session 隔离；不用于前端 Tab 路由 */
   private static readonly WATCH_ASSISTANT_AGENT_ID = '__watch__'
+  /** 前端联络常驻 tab 的 agentId，与 AgentService.COMPANION_AGENT_ID 保持一致 */
+  private static readonly COMPANION_AGENT_ID = '__companion__'
 
   /**
    * 关切执行失败：作为生命周期事件发射到 EventBus。
@@ -977,33 +986,35 @@ export class WatchService {
   }
 
   /**
-   * 将 Watch 执行结果推送到应用内：
-   * 1. 确保助手 tab 存在
-   * 2. 发送 proactive-message 事件，由 App.vue 负责注入 step 并弹 toast
+   * 将 Watch 执行结果推送到应用内联络 tab。
+   * 只在 Agent 明确调用 talk_to_user（result.userMessage 非空）时推送，
+   * 避免将内部执行日志/静默结束等噪音暴露给用户。
    */
   private deliverProactiveMessage(watch: WatchDefinition, result: WatchExecutionResult): void {
+    if (!result.userMessage) return
+
     const mainWindow = this.config?.mainWindow
     if (!mainWindow || mainWindow.isDestroyed()) return
 
-    const agentId = WatchService.WATCH_ASSISTANT_AGENT_ID
+    const agentId = WatchService.COMPANION_AGENT_ID
 
     mainWindow.webContents.send('watch:ensureTab', { agentId })
     mainWindow.webContents.send('watch:proactive-message', {
       agentId,
-      message: result.userMessage || result.output,
+      message: result.userMessage,
       watchName: watch.name
     })
 
     log.info(`Proactive message delivered for: ${watch.name}`)
   }
 
-  /** 通知前端确保 companion tab 存在（Agent 执行前调用） */
+  /** 通知前端确保联络 tab 存在（Agent 执行前调用） */
   private ensureDesktopTab(): boolean {
     if (!this.config?.mainWindow || this.config.mainWindow.isDestroyed()) {
       return false
     }
     this.config.mainWindow.webContents.send('watch:ensureTab', {
-      agentId: WatchService.WATCH_ASSISTANT_AGENT_ID
+      agentId: WatchService.COMPANION_AGENT_ID
     })
     return true
   }
@@ -1025,7 +1036,10 @@ export class WatchService {
         if (process.platform === 'win32') {
           mainWindow.webContents.focus()
         }
-        this.deliverProactiveMessage(watch, result)
+        // 只在有 talk_to_user 消息时才注入联络 tab，否则仅激活窗口
+        if (result.userMessage) {
+          this.deliverProactiveMessage(watch, result)
+        }
       })
       notification.show()
     } catch (err) {
