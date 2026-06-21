@@ -5,6 +5,7 @@ import { Pin, PinOff, Loader2, CircleDot } from 'lucide-vue-next'
 import type { AgentHistorySummary } from '@shared/types'
 import type { HistoryConversationTabStatus } from '../stores/terminal'
 import { useConfigStore } from '../stores/config'
+import { beginConversationDrag } from '../composables/useConversationDragDrop'
 
 const props = defineProps<{
   record: AgentHistorySummary
@@ -43,6 +44,14 @@ const handleContextMenu = (event: MouseEvent) => {
   if (props.isEditing) return
   event.preventDefault()
   emit('context-menu', event)
+}
+
+const handleDragStart = (event: DragEvent) => {
+  if (props.isEditing || props.isOpening) {
+    event.preventDefault()
+    return
+  }
+  beginConversationDrag(event, props.record.id)
 }
 
 const normalizeTitle = (text: string): string => text.trim().replace(/\s+/g, ' ')
@@ -86,6 +95,8 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
       'is-open-in-tab': isOpenInTab,
       'needs-attention': tabStatus === 'attention',
     }"
+    draggable="true"
+    @dragstart="handleDragStart"
   >
     <div class="leading-slot">
       <button
@@ -146,6 +157,7 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   align-items: center;
   gap: 0;
   border-radius: 5px;
+  cursor: grab;
   transition: background 0.12s ease, opacity 0.12s ease;
 }
 

@@ -143,6 +143,8 @@ export default {
       pin: '置顶此对话',
       unpin: '取消置顶',
       openInTab: '在新标签页中打开',
+      dropToOpenInTab: '释放以在新标签页打开',
+      dropToOpenInTabHint: '从历史对话拖入',
       rename: '重命名',
       delete: '删除',
       deleteTitle: '删除对话',

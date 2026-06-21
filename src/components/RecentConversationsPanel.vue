@@ -13,6 +13,7 @@ import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import { toast } from '../composables/useToast'
 import { showConfirm } from '../composables/useConfirm'
+import { useOpenConversationInTab } from '../composables/useConversationDragDrop'
 
 const props = defineProps<{
   collapsed?: boolean
@@ -26,18 +27,19 @@ const { t, locale } = useI18n()
 const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
 
-/** 新建对话：回到欢迎页，右侧清空等待输入 */
-const handleNewConversation = () => {
-  terminalStore.goToHome()
-}
-
 const searchText = ref('')
 const searchExpanded = ref(false)
 const searchInputRef = ref<HTMLInputElement | null>(null)
 const summaries = ref<AgentHistorySummary[]>([])
 const isLoading = ref(false)
 const openingId = ref<string | null>(null)
+const { openConversationInTab } = useOpenConversationInTab(openingId)
 const hasLoaded = ref(false)
+
+/** 新建对话：回到欢迎页，右侧清空等待输入 */
+const handleNewConversation = () => {
+  terminalStore.goToHome()
+}
 const DISPLAY_LIMIT = 60
 const LOAD_MORE_STEP = 40
 const displayCount = ref(DISPLAY_LIMIT)
@@ -436,30 +438,7 @@ const onMenuOpenInTab = async () => {
   const record = contextMenu.value.record
   closeContextMenu()
   if (!record) return
-
-  const existingTab = terminalStore.findTabByHistoryId(record.id)
-  if (existingTab) {
-    // 已有 tab（可能是 Hub 焦点），直接提升
-    terminalStore.promoteConversationToTab(existingTab.id)
-    return
-  }
-
-  // 没有 tab：先加载历史记录建 tab，再提升
-  openingId.value = record.id
-  try {
-    const fullRecord = (await window.electronAPI.history.getAgentRecordById(record.id)) as AgentRecord | undefined
-    if (!fullRecord) {
-      toast.error(t('ai.agentWelcome.historyRecordMissing'))
-      return
-    }
-    const tabId = terminalStore.openHistoryConversation(fullRecord)
-    terminalStore.promoteConversationToTab(tabId)
-  } catch (e) {
-    console.error('Failed to open conversation in tab:', e)
-    toast.error(t('ai.agentWelcome.historyRecordMissing'))
-  } finally {
-    openingId.value = null
-  }
+  await openConversationInTab(record.id)
 }
 
 const onMenuTogglePin = async () => {

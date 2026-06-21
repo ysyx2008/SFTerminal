@@ -5,7 +5,9 @@
  */
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Upload } from 'lucide-vue-next'
 import AiComposer from './AiComposer.vue'
+import DropOverlay from './DropOverlay.vue'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import { WELCOME_COMPOSER_TAB_ID } from '../constants/welcome-composer'
@@ -13,6 +15,7 @@ import { useDocumentUpload } from '../composables/useDocumentUpload'
 import { useImageUpload } from '../composables/useImageUpload'
 import { useSpeechRecognition } from '../composables/useSpeechRecognition'
 import { planComposerPaste, ingestComposerAttachments } from '../composables/useComposerPaste'
+import { useFileDropTarget } from '../composables/useFileDropTarget'
 import { showConfirm } from '../composables/useConfirm'
 import { toast } from '../composables/useToast'
 
@@ -65,6 +68,8 @@ const ingestAttachmentFiles = (files: FileList | File[]) =>
     ingestImages: handleDroppedImages,
     ingestDocuments: handleDroppedFiles
   })
+
+const fileDrop = useFileDropTarget(ingestAttachmentFiles)
 
 const selectAttachment = () => {
   const input = document.createElement('input')
@@ -355,7 +360,24 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="welcome-chat-composer" :class="{ 'has-attachments': hasComposerAttachments }">
+  <div
+    class="welcome-chat-composer"
+    :class="{ 'has-attachments': hasComposerAttachments }"
+    @dragenter="fileDrop.handleDragEnter"
+    @dragover="fileDrop.handleDragOver"
+    @dragleave="fileDrop.handleDragLeave"
+    @drop="fileDrop.handleDrop"
+  >
+    <DropOverlay
+      v-if="fileDrop.isDragOver"
+      :title="t('ai.dropToUpload')"
+      :hint="t('ai.dropHint')"
+    >
+      <template #icon>
+        <Upload :size="48" :stroke-width="1.5" />
+      </template>
+    </DropOverlay>
+
     <AiComposer
       ref="composerRef"
       embedded
@@ -421,6 +443,7 @@ onUnmounted(() => {
 
 <style scoped>
 .welcome-chat-composer {
+  position: relative;
   margin-bottom: 18px;
   animation: welcomeComposerEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1) 0.06s forwards;
   opacity: 0;

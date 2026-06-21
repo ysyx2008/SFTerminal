@@ -5,18 +5,26 @@
  */
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Bot, SquareTerminal, Monitor, Eye } from 'lucide-vue-next'
+import { Bot, SquareTerminal, Monitor, Eye, PanelTopOpen } from 'lucide-vue-next'
 import { useConfigStore, type SshSession } from '../stores/config'
 import MatrixRain from './EasterEgg/MatrixRain.vue'
 import WelcomeChatComposer from './WelcomeChatComposer.vue'
+import DropOverlay from './DropOverlay.vue'
 import sailfishLogo from '../../resources/logo.png'
 import { useWatchAnomalyCount } from '../composables/useWatchAnomalyCount'
 import { useWelcomeSubtitle } from '../composables/useWelcomeSubtitle'
+import {
+  useConversationDropTarget,
+  useOpenConversationInTab,
+} from '../composables/useConversationDragDrop'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 const welcomeSubtitle = useWelcomeSubtitle(isSteamBuild)
+
+const { openConversationInTab } = useOpenConversationInTab()
+const conversationDrop = useConversationDropTarget(openConversationInTab)
 
 // 彩蛋：连续点击 Logo 20 次触发 Matrix 数字雨
 const showMatrixEasterEgg = ref(false)
@@ -186,7 +194,24 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="welcome-page" :class="{ 'enter-done': enterAnimationDone }">
+  <div
+    class="welcome-page"
+    :class="{ 'enter-done': enterAnimationDone }"
+    @dragenter="conversationDrop.handleDragEnter"
+    @dragover="conversationDrop.handleDragOver"
+    @dragleave="conversationDrop.handleDragLeave"
+    @drop="conversationDrop.handleDrop"
+  >
+    <DropOverlay
+      v-if="conversationDrop.isDragOver"
+      :title="t('welcome.conversations.dropToOpenInTab')"
+      :hint="t('welcome.conversations.dropToOpenInTabHint')"
+    >
+      <template #icon>
+        <PanelTopOpen :size="48" :stroke-width="1.5" />
+      </template>
+    </DropOverlay>
+
     <div class="welcome-content">
       <!-- Logo 和标题 -->
       <div class="welcome-header">
@@ -319,6 +344,7 @@ onUnmounted(() => {
 
 <style scoped>
 .welcome-page {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;

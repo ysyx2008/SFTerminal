@@ -143,6 +143,8 @@ export default {
       pin: 'Pin conversation',
       unpin: 'Unpin',
       openInTab: 'Open in new tab',
+      dropToOpenInTab: 'Release to open in new tab',
+      dropToOpenInTabHint: 'Drop a conversation from the sidebar',
       rename: 'Rename',
       delete: 'Delete',
       deleteTitle: 'Delete Conversation',

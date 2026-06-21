@@ -1,13 +1,21 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, SatelliteDish, Bot, Home } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, SatelliteDish, Bot, Home, PanelTopOpen } from 'lucide-vue-next'
 import { useTerminalStore } from '../stores/terminal'
 import { formatAgentAttentionTooltip } from '../utils/agent-tab-ui-meta'
 import BatchCommandPanel from './BatchCommandPanel.vue'
+import DropOverlay from './DropOverlay.vue'
+import {
+  isConversationDragEvent,
+  useConversationDropTarget,
+  useOpenConversationInTab,
+} from '../composables/useConversationDragDrop'
 
 const { t } = useI18n()
 const terminalStore = useTerminalStore()
+const { openConversationInTab } = useOpenConversationInTab()
+const conversationDrop = useConversationDropTarget(openConversationInTab)
 
 /** 远程 Tab 已有 SatelliteDish 图标，标题里去掉历史遗留的 📡 前缀避免重复 */
 function displayTabTitle(tab: { customTitle?: string; title: string; isRemote?: boolean }): string {
@@ -181,6 +189,7 @@ const handleDragStart = (index: number, event: DragEvent) => {
 
 // 拖拽经过
 const handleDragOver = (index: number, event: DragEvent) => {
+  if (isConversationDragEvent(event)) return
   event.preventDefault()
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = 'move'
@@ -202,6 +211,7 @@ const toRealIndex = (displayIndex: number): number => {
 
 // 放置
 const handleDrop = (toIndex: number, event: DragEvent) => {
+  if (isConversationDragEvent(event)) return
   event.preventDefault()
   if (dragIndex.value !== null && dragIndex.value !== toIndex) {
     terminalStore.reorderTabs(toRealIndex(dragIndex.value), toRealIndex(toIndex))
@@ -286,7 +296,23 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
 </script>
 
 <template>
-  <div class="tab-bar">
+  <div
+    class="tab-bar"
+    @dragenter="conversationDrop.handleDragEnter"
+    @dragover="conversationDrop.handleDragOver"
+    @dragleave="conversationDrop.handleDragLeave"
+    @drop="conversationDrop.handleDrop"
+  >
+    <DropOverlay
+      v-if="conversationDrop.isDragOver"
+      compact
+      :title="t('welcome.conversations.dropToOpenInTab')"
+    >
+      <template #icon>
+        <PanelTopOpen :size="16" :stroke-width="1.5" />
+      </template>
+    </DropOverlay>
+
     <!-- 固定首页 tab：有 tab 时显示，点击回到欢迎页 -->
     <div
       v-if="hasTabs"
@@ -443,6 +469,7 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
 
 <style scoped>
 .tab-bar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 2px;

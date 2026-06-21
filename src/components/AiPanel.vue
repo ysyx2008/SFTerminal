@@ -17,6 +17,7 @@ import { resolveSourceStepIdById } from '../workbench/assistant/artifact/domain/
 import { useComposerQuoteStore } from '../stores/composer-quote'
 import AgentPlanView from './AgentPlanView.vue'
 import AiComposer from './AiComposer.vue'
+import DropOverlay from './DropOverlay.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
 import ToolCallContent from './ToolCallContent.vue'
 import ImageContextMenu from './ImageContextMenu.vue'
@@ -42,6 +43,7 @@ import {
 import { mermaidSvgToDataUrl } from '../composables/useMarkdown'
 import { showConfirm } from '../composables/useConfirm'
 import { planComposerPaste, ingestComposerAttachments } from '../composables/useComposerPaste'
+import { useFileDropTarget } from '../composables/useFileDropTarget'
 import {
   getFeaturedExamples,
   shuffleExamples as shuffleExamplePool,
@@ -430,7 +432,6 @@ const {
   uploadedDocs,
   parsingDocs,
   isUploadingDocs,
-  isDraggingOver,
   handleDroppedFiles,
   removeUploadedDoc,
   clearUploadedDocs,
@@ -461,6 +462,8 @@ const ingestAttachmentFiles = (files: FileList | File[]) =>
     ingestImages: handleDroppedImages,
     ingestDocuments: handleDroppedFiles
   })
+
+const fileDrop = useFileDropTarget(ingestAttachmentFiles)
 
 // Markdown 渲染
 const {
@@ -1256,39 +1259,12 @@ const handleAnalyzeSelection = () => {
   void runAgent(`${t('ai.analyzeOutputPrompt')}\n\`\`\`\n${selection}\n\`\`\``)
 }
 
-// ==================== 拖放处理 ====================
+// ==================== 拖放处理（文档 / 图片附件） ====================
 
-// 拖放进入
-const handleDragEnter = (e: DragEvent) => {
-  e.preventDefault()
-  e.stopPropagation()
-  // 检查是否有文件
-  if (e.dataTransfer?.types.includes('Files')) {
-    isDraggingOver.value = true
-  }
-}
-
-// 拖放悬停
-const handleDragOver = (e: DragEvent) => {
-  e.preventDefault()
-  e.stopPropagation()
-  if (e.dataTransfer) {
-    e.dataTransfer.dropEffect = 'copy'
-  }
-}
-
-// 拖放离开
-const handleDragLeave = (e: DragEvent) => {
-  e.preventDefault()
-  e.stopPropagation()
-  // 检查是否真的离开了容器（而不是进入子元素）
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  const x = e.clientX
-  const y = e.clientY
-  if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
-    isDraggingOver.value = false
-  }
-}
+const handleDragEnter = fileDrop.handleDragEnter
+const handleDragOver = fileDrop.handleDragOver
+const handleDragLeave = fileDrop.handleDragLeave
+const handleDrop = fileDrop.handleDrop
 
 // ==================== 图片预览（支持缩放、拖拽、键盘导航） ====================
 const previewImageUrl = ref<string | null>(null)
@@ -1630,17 +1606,7 @@ watch(previewEchartsPayload, () => {
   }
 })
 
-// 拖放放下（支持文档和图片）
-const handleDrop = async (e: DragEvent) => {
-  e.preventDefault()
-  e.stopPropagation()
-  isDraggingOver.value = false
-  
-  const files = e.dataTransfer?.files
-  if (files && files.length > 0) {
-    await ingestAttachmentFiles(files)
-  }
-}
+// 拖放放下（支持文档和图片）—— 由 useFileDropTarget 处理
 
 // ==================== 键盘事件处理 ====================
 
@@ -1943,13 +1909,15 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
     @drop="handleDrop"
   >
     <!-- 拖放提示覆盖层 -->
-    <div v-if="isDraggingOver" class="drop-overlay">
-      <div class="drop-content">
+    <DropOverlay
+      v-if="fileDrop.isDragOver"
+      :title="t('ai.dropToUpload')"
+      :hint="t('ai.dropHint')"
+    >
+      <template #icon>
         <Upload :size="48" :stroke-width="1.5" />
-        <p>{{ t('ai.dropToUpload') }}</p>
-        <span class="drop-hint">{{ t('ai.dropHint') }}</span>
-      </div>
-    </div>
+      </template>
+    </DropOverlay>
 
     <!-- 未配置 AI 提示 -->
     <div v-if="!hasAiConfig" class="ai-no-config">
@@ -2960,70 +2928,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
     opacity: 1;
     transform: translateX(0);
   }
-}
-
-/* 拖放覆盖层 */
-.drop-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(var(--accent-rgb), 0.15);
-  backdrop-filter: blur(4px);
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 3px dashed var(--accent-primary);
-  border-radius: 8px;
-  animation: dropOverlayFadeIn 0.2s ease;
-}
-
-@keyframes dropOverlayFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.drop-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  color: var(--accent-primary);
-  text-align: center;
-  padding: 24px;
-  background: var(--bg-primary);
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-}
-
-.drop-content svg {
-  animation: dropIconBounce 0.5s ease infinite alternate;
-}
-
-@keyframes dropIconBounce {
-  from {
-    transform: translateY(0);
-  }
-  to {
-    transform: translateY(-8px);
-  }
-}
-
-.drop-content p {
-  font-size: 16px;
-  font-weight: 600;
-  margin: 0;
-}
-
-.drop-hint {
-  font-size: 12px;
-  color: var(--text-muted);
 }
 
 .model-select {
