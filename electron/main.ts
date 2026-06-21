@@ -2674,8 +2674,8 @@ ipcMain.handle('updater:quitAndInstall', async () => {
     const version = app.getVersion()
     createBackup(app.getPath('userData'), `pre-update-v${version}`)
 
-    // 使用非静默安装，让系统安装器显示可见进度
-    autoUpdater.quitAndInstall(false, true)
+    // Windows：静默安装（与「退出时安装」一致），跳过 NSIS 安装模式选择页；initMultiUser 从注册表沿用 per-user/per-machine
+    autoUpdater.quitAndInstall(process.platform === 'win32', true)
     return { success: true }
   } catch (error) {
     log.error('AutoUpdater: 安装更新失败:', error)
