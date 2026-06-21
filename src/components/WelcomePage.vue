@@ -24,7 +24,13 @@ const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 const welcomeSubtitle = useWelcomeSubtitle(isSteamBuild)
 
 const { openConversationInTab } = useOpenConversationInTab()
-const conversationDrop = useConversationDropTarget(openConversationInTab)
+const {
+  isDragOver: isConversationDragOver,
+  handleDragEnter: handleConversationDragEnter,
+  handleDragOver: handleConversationDragOver,
+  handleDragLeave: handleConversationDragLeave,
+  handleDrop: handleConversationDrop,
+} = useConversationDropTarget(openConversationInTab)
 
 // 彩蛋：连续点击 Logo 20 次触发 Matrix 数字雨
 const showMatrixEasterEgg = ref(false)
@@ -197,13 +203,13 @@ onUnmounted(() => {
   <div
     class="welcome-page"
     :class="{ 'enter-done': enterAnimationDone }"
-    @dragenter="conversationDrop.handleDragEnter"
-    @dragover="conversationDrop.handleDragOver"
-    @dragleave="conversationDrop.handleDragLeave"
-    @drop="conversationDrop.handleDrop"
+    @dragenter="handleConversationDragEnter"
+    @dragover="handleConversationDragOver"
+    @dragleave="handleConversationDragLeave"
+    @drop="handleConversationDrop"
   >
     <DropOverlay
-      v-if="conversationDrop.isDragOver"
+      v-if="isConversationDragOver"
       :title="t('welcome.conversations.dropToOpenInTab')"
       :hint="t('welcome.conversations.dropToOpenInTabHint')"
     >

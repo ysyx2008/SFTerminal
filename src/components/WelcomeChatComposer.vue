@@ -70,7 +70,13 @@ const ingestAttachmentFiles = (files: FileList | File[]) =>
     ingestDocuments: handleDroppedFiles
   })
 
-const fileDrop = useFileDropTarget(ingestAttachmentFiles)
+const {
+  isDragOver: isFileDragOver,
+  handleDragEnter: handleFileDragEnter,
+  handleDragOver: handleFileDragOver,
+  handleDragLeave: handleFileDragLeave,
+  handleDrop: handleFileDrop,
+} = useFileDropTarget(ingestAttachmentFiles)
 
 const selectAttachment = () => {
   const input = document.createElement('input')
@@ -364,13 +370,13 @@ onUnmounted(() => {
   <div
     class="welcome-chat-composer"
     :class="{ 'has-attachments': hasComposerAttachments }"
-    @dragenter="fileDrop.handleDragEnter"
-    @dragover="fileDrop.handleDragOver"
-    @dragleave="fileDrop.handleDragLeave"
-    @drop="fileDrop.handleDrop"
+    @dragenter="handleFileDragEnter"
+    @dragover="handleFileDragOver"
+    @dragleave="handleFileDragLeave"
+    @drop="handleFileDrop"
   >
     <DropOverlay
-      v-if="fileDrop.isDragOver"
+      v-if="isFileDragOver"
       :title="t('ai.dropToUpload')"
       :hint="t('ai.dropHint')"
     >

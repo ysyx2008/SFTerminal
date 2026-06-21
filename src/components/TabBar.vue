@@ -15,7 +15,13 @@ import {
 const { t } = useI18n()
 const terminalStore = useTerminalStore()
 const { openConversationInTab } = useOpenConversationInTab()
-const conversationDrop = useConversationDropTarget(openConversationInTab)
+const {
+  isDragOver: isConversationDragOver,
+  handleDragEnter: handleConversationDragEnter,
+  handleDragOver: handleConversationDragOver,
+  handleDragLeave: handleConversationDragLeave,
+  handleDrop: handleConversationDrop,
+} = useConversationDropTarget(openConversationInTab)
 
 /** 远程 Tab 已有 SatelliteDish 图标，标题里去掉历史遗留的 📡 前缀避免重复 */
 function displayTabTitle(tab: { customTitle?: string; title: string; isRemote?: boolean }): string {
@@ -298,13 +304,13 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
 <template>
   <div
     class="tab-bar"
-    @dragenter="conversationDrop.handleDragEnter"
-    @dragover="conversationDrop.handleDragOver"
-    @dragleave="conversationDrop.handleDragLeave"
-    @drop="conversationDrop.handleDrop"
+    @dragenter="handleConversationDragEnter"
+    @dragover="handleConversationDragOver"
+    @dragleave="handleConversationDragLeave"
+    @drop="handleConversationDrop"
   >
     <DropOverlay
-      v-if="conversationDrop.isDragOver"
+      v-if="isConversationDragOver"
       compact
       :title="t('welcome.conversations.dropToOpenInTab')"
     >

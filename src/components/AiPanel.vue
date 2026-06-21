@@ -476,7 +476,13 @@ const ingestAttachmentFiles = (files: FileList | File[]) =>
     ingestDocuments: handleDroppedFiles
   })
 
-const fileDrop = useFileDropTarget(ingestAttachmentFiles)
+const {
+  isDragOver: isFileDragOver,
+  handleDragEnter,
+  handleDragOver,
+  handleDragLeave,
+  handleDrop,
+} = useFileDropTarget(ingestAttachmentFiles)
 
 // Markdown 渲染
 const {
@@ -1274,11 +1280,6 @@ const handleAnalyzeSelection = () => {
 
 // ==================== 拖放处理（文档 / 图片附件） ====================
 
-const handleDragEnter = fileDrop.handleDragEnter
-const handleDragOver = fileDrop.handleDragOver
-const handleDragLeave = fileDrop.handleDragLeave
-const handleDrop = fileDrop.handleDrop
-
 // ==================== 图片预览（支持缩放、拖拽、键盘导航） ====================
 const previewImageUrl = ref<string | null>(null)
 // 活图预览载荷：当点击"活图"（chart skill 投递的 echartsOption）时填入；
@@ -1930,7 +1931,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   >
     <!-- 拖放提示覆盖层 -->
     <DropOverlay
-      v-if="fileDrop.isDragOver"
+      v-if="isFileDragOver"
       :title="t('ai.dropToUpload')"
       :hint="t('ai.dropHint')"
     >
