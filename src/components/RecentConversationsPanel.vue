@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, ChevronRight, Pin, Plus, Search, X } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, Pin, Plus, Search, X, Radio } from 'lucide-vue-next'
 import type { AgentHistorySummary, AgentRecord } from '@shared/types'
 import type { HistoryConversationTabStatus } from '../stores/terminal'
 import {
@@ -10,7 +10,7 @@ import {
 } from '../utils/agent-tab-ui-meta'
 import ConversationRow from './ConversationRow.vue'
 import { useConfigStore } from '../stores/config'
-import { useTerminalStore } from '../stores/terminal'
+import { useTerminalStore, COMPANION_TAB_AGENT_ID } from '../stores/terminal'
 import { toast } from '../composables/useToast'
 import { showConfirm } from '../composables/useConfirm'
 import { useOpenConversationInTab } from '../composables/useConversationDragDrop'
@@ -39,6 +39,20 @@ const hasLoaded = ref(false)
 /** 新建对话：回到欢迎页，右侧清空等待输入 */
 const handleNewConversation = () => {
   terminalStore.goToHome()
+}
+
+/** 联络常驻 tab */
+const companionTab = computed(() =>
+  terminalStore.tabs.find(t => t.agentId === COMPANION_TAB_AGENT_ID) ?? null
+)
+
+const isCompanionActive = computed(() =>
+  !!companionTab.value && companionTab.value.id === terminalStore.activeTabId
+)
+
+const handleOpenCompanion = () => {
+  if (!companionTab.value) return
+  terminalStore.setActiveTab(companionTab.value.id)
 }
 const DISPLAY_LIMIT = 60
 const LOAD_MORE_STEP = 40
@@ -604,6 +618,20 @@ const loadMore = () => {
       </div>
 
     <div class="conversation-list">
+      <!-- 联络常驻入口 -->
+      <div
+        v-if="companionTab"
+        class="companion-entry"
+        :class="{ active: isCompanionActive, 'needs-attention': !isCompanionActive && terminalStore.hasTabAgentAttention(companionTab.id) }"
+        @click="handleOpenCompanion"
+      >
+        <span class="companion-entry-icon">
+          <Radio :size="13" />
+        </span>
+        <span class="companion-entry-label">{{ t('tabs.reach', '联络') }}</span>
+        <span v-if="terminalStore.hasTabAgentAttention(companionTab.id)" class="companion-entry-badge" />
+      </div>
+
       <div v-if="isLoading && summaries.length === 0" class="empty-state">
         {{ t('ai.agentWelcome.historyLoading') }}
       </div>
@@ -825,6 +853,73 @@ const loadMore = () => {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
   transition: scrollbar-color 0.2s ease;
+}
+
+/* 联络常驻入口 */
+.companion-entry {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+  user-select: none;
+  position: relative;
+}
+
+.companion-entry:hover {
+  background: color-mix(in srgb, var(--bg-surface) 80%, transparent);
+}
+
+.companion-entry.active {
+  background: color-mix(in srgb, var(--accent-primary) 12%, var(--bg-surface));
+  color: var(--accent-primary);
+}
+
+.companion-entry.needs-attention {
+  animation: tab-attention-pulse-sidebar 1.5s ease-in-out infinite;
+}
+
+@keyframes tab-attention-pulse-sidebar {
+  0%, 100% { background: transparent; }
+  50% { background: rgba(var(--color-warning-rgb), 0.1); }
+}
+
+.companion-entry-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  color: var(--accent-primary);
+  opacity: 0.8;
+}
+
+.companion-entry.active .companion-entry-icon {
+  opacity: 1;
+}
+
+.companion-entry-label {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.companion-entry.active .companion-entry-label {
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
+.companion-entry-badge {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-warning);
+  flex-shrink: 0;
 }
 
 .conversation-list:hover {

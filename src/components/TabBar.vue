@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, SatelliteDish, Bot, Home, PanelTopOpen } from 'lucide-vue-next'
-import { useTerminalStore } from '../stores/terminal'
+import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, SatelliteDish, Bot, Home, PanelTopOpen, Radio } from 'lucide-vue-next'
+import { useTerminalStore, COMPANION_TAB_AGENT_ID } from '../stores/terminal'
 import { formatAgentAttentionTooltip } from '../utils/agent-tab-ui-meta'
 import BatchCommandPanel from './BatchCommandPanel.vue'
 import {
@@ -271,17 +271,22 @@ const hasMultipleTerminals = computed(() => {
 })
 
 /**
- * Tab 栏显示的 tab 列表：过滤掉「未提升的本地助手」—— 这类会话在 Hub 主区（首页视图）
- * 按焦点显示，不占 Tab 栏。远程助手（isRemote）和已提升（isPromoted）的助手仍显示。
+ * Tab 栏显示的 tab 列表：过滤掉「未提升的本地助手」和「联络常驻 tab」——
+ * 本地助手在 Hub 主区按焦点显示，联络 tab 单独固定渲染（不参与拖拽排序）。
  */
 const displayedTabs = computed(() =>
   terminalStore.tabs.filter(
-    tab => !(tab.type === 'assistant' && !tab.isRemote && !tab.isPromoted)
+    tab =>
+      !(tab.type === 'assistant' && !tab.isRemote && !tab.isPromoted) &&
+      tab.agentId !== COMPANION_TAB_AGENT_ID
   )
+)
+// 联络常驻 tab
+const companionTab = computed(() =>
+  terminalStore.tabs.find(t => t.agentId === COMPANION_TAB_AGENT_ID) ?? null
 )
 // 首页 tab 只在有"真实" tab（终端 / 已提升助手）时出现
 const hasTabs = computed(() => displayedTabs.value.length > 0)
-const isOnHome = computed(() => hasTabs.value && !terminalStore.activeTabId && !terminalStore.hubFocusedAssistantTabId)
 
 // 打开批量命令面板
 const openBatchPanel = () => {
@@ -353,18 +358,36 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
     </Teleport>
 
     <div class="tab-bar">
-    <!-- 固定首页 tab：有 tab 时显示，点击回到欢迎页 -->
+    <!-- 任务按钮：始终可见，无激活态，点击回到欢迎页 -->
     <div
-      v-if="hasTabs"
       class="tab tab-home"
-      :class="{ active: isOnHome }"
-      :title="t('tabs.home')"
+      :title="t('tabs.tasks', '任务')"
       @click="terminalStore.goToHome()"
     >
       <span class="tab-icon">
         <Home :size="14" />
       </span>
-      <span class="tab-title">{{ t('tabs.home') }}</span>
+      <span class="tab-title">{{ t('tabs.tasks', '任务') }}</span>
+    </div>
+
+    <!-- 联络常驻 tab：不可关闭，固定在任务按钮之后 -->
+    <div
+      v-if="companionTab"
+      class="tab tab-pinned"
+      :class="{
+        active: companionTab.id === terminalStore.activeTabId,
+        'needs-attention': companionTab.id !== terminalStore.activeTabId && terminalStore.hasTabAgentAttention(companionTab.id)
+      }"
+      :title="tabAttentionTooltip(companionTab.id)"
+      @click="terminalStore.setActiveTab(companionTab.id)"
+    >
+      <span class="tab-icon">
+        <Radio :size="14" class="companion-icon" />
+      </span>
+      <span class="tab-title">{{ displayTabTitle(companionTab) }}</span>
+      <span v-if="companionTab.isLoading" class="tab-loading">
+        <Loader2 class="spinner" :size="12" />
+      </span>
     </div>
 
     <!-- 左滚动按钮 -->
@@ -689,6 +712,31 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
   padding: 6px 12px;
   cursor: pointer;
   flex-shrink: 0;
+}
+
+/* 任务按钮永不显示激活态指示线 */
+.tab-home::before,
+.tab-home::after {
+  display: none !important;
+}
+
+.tab-home:hover {
+  background: var(--bg-surface);
+  box-shadow: none;
+}
+
+/* 联络常驻 tab：固定在可滚动区域外，不可拖拽 */
+.tab-pinned {
+  min-width: auto;
+  max-width: 140px;
+  padding: 6px 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tab-pinned .companion-icon {
+  color: var(--accent-primary);
+  opacity: 0.8;
 }
 
 /* 需要注意的状态：有待确认操作，或后台 tab 上 Agent 任务刚结束 */

@@ -883,6 +883,9 @@ onMounted(async () => {
 
 // 初始化应用（正常启动流程）
 const initializeApp = async () => {
+  // 确保「联络」常驻 tab 存在
+  terminalStore.ensureCompanionTab()
+
   // 不再自动创建本地终端，显示欢迎页让用户选择
 
   // 延迟连接 MCP 服务器，不阻塞首屏渲染

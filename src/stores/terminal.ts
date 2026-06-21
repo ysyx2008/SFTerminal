@@ -256,8 +256,9 @@ export interface AgentTerminalContextSplit {
 
 export type AgentTerminalContext = AgentTerminalContextSingle | AgentTerminalContextSplit
 
-/** Tab 栏可见 tab：终端、已提升本地助手、远程助手（与 TabBar.displayedTabs 一致） */
+/** Tab 栏可见 tab：终端、已提升本地助手、远程助手，但不含联络常驻 tab（与 TabBar.displayedTabs 一致） */
 function isDisplayedInTabBar(tab: TerminalTab): boolean {
+  if (tab.agentId === COMPANION_TAB_AGENT_ID) return false
   return !(tab.type === 'assistant' && !tab.isRemote && !tab.isPromoted)
 }
 
@@ -276,6 +277,8 @@ function findAdjacentDisplayedTab(closedIndex: number, tabList: TerminalTab[]): 
   }
   return undefined
 }
+
+export const COMPANION_TAB_AGENT_ID = '__companion__'
 
 export const useTerminalStore = defineStore('terminal', () => {
   // 状态
@@ -817,6 +820,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab) return false
 
+    // 联络 tab 常驻不可关闭
+    if (tab.agentId === COMPANION_TAB_AGENT_ID) return false
+
     const t = i18n.global.t
 
     // 如果不跳过确认，检查是否需要确认
@@ -1118,6 +1124,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab) return
     activeTabId.value = tabId
+    // 激活独立 tab 时清除 hub 焦点，保持状态一致
+    hubFocusedAssistantTabId.value = ''
     setAgentCompletedUnseen(tabId, false)
     if (tab.type === 'assistant') {
       requestAssistantComposerFocus(tabId)
@@ -2900,6 +2908,30 @@ export const useTerminalStore = defineStore('terminal', () => {
     deferredProactiveTabs.value = next
   }
 
+  /**
+   * 确保「联络」常驻 tab 存在（agentId = __companion__, isRemote = true）。
+   * 启动时调用；已存在则直接返回其 id，不重复创建，也不抢夺 activeTabId。
+   */
+  function ensureCompanionTab(): string {
+    const existing = tabs.value.find(t => t.agentId === COMPANION_TAB_AGENT_ID)
+    if (existing) {
+      existing.isRemote = true
+      return existing.id
+    }
+    const t = i18n.global.t
+    const prevActive = activeTabId.value
+    const id = createAssistantTab({
+      agentId: COMPANION_TAB_AGENT_ID,
+      title: t('tabs.reach', '联络'),
+      isRemote: true,
+      activate: false,
+    })
+    markAssistantSkipOnboarding(id)
+    // createAssistantTab 在 isRemote && !activeTabId 时会自动激活，还原原值防止抢首页
+    activeTabId.value = prevActive
+    return id
+  }
+
   return {
     tabs,
     activeTabId,
@@ -3034,6 +3066,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     markDeferredProactive,
     hasDeferredProactive,
     clearDeferredProactive,
+    ensureCompanionTab,
     requestAgentCompleteTabAttentionSkip,
     consumeAgentCompleteTabAttentionSkip
   }

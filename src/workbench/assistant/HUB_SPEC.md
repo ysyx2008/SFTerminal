@@ -1,6 +1,6 @@
 # 助手 Hub 交互模型 SPEC
 
-> Last verified: 2026-06-20  
+> Last verified: 2026-06-21  
 > 涵盖范围：`App.vue` / `TabBar.vue` / `RecentConversationsPanel.vue` / `terminal.ts` 中与助手 Hub 相关的所有交互规则。
 
 ---
@@ -11,24 +11,50 @@
 - 任意数量的本地助手对话共用一个工作台区域，通过侧栏切换
 - 终端 Tab（local/ssh）保持独立全屏，不受影响
 - 用户可将任意会话"提升"为独立 Tab，兼顾重度多任务需求
+- 外部渠道（IM/Watch 通知）统一汇集到**联络常驻 Tab**（`__companion__`）
+
+---
+
+## 一·A. 任务 / 联络双入口模型（2026-06-21 新增）
+
+TabBar 左侧固定两个入口：
+
+| 入口 | 行为 |
+|---|---|
+| **任务**（`tab-home` 按钮） | 始终可见，无激活态，点击 `goToHome()` 回到欢迎页/Hub |
+| **联络**（`tab-pinned`，`agentId = __companion__`） | 常驻不可关闭，点击激活 `__companion__` tab；IM / Watch `talk_to_user` 消息均路由到此 tab |
+
+`displayedTabs` 同时排除：
+1. 未提升的本地助手（`!tab.isRemote && !tab.isPromoted`）
+2. `__companion__` tab（单独固定渲染）
+
+`ensureCompanionTab()` 在 `initializeApp()` 最早调用，保证 `__companion__` tab 在整个 session 生命周期内始终存在。`closeTab` 对 `__companion__` 进行保护，永远返回 false。
 
 ---
 
 ## 二、Tab 分类规则（⚠️ 新增功能必读）
 
-所有 `TerminalTab` 按以下规则分为两类：
+所有 `TerminalTab` 按以下规则分为三类：
 
 ### A. TabBar 可见 Tab（`displayedTabs`）
 
-出现在顶部 Tab 栏，全屏独占主区：
+出现在顶部 Tab 栏（滚动区），全屏独占主区：
 
 | 类型 | 条件 |
 |---|---|
 | 终端 Tab | `tab.type === 'local'` 或 `'ssh'` |
 | 已提升助手 | `tab.type === 'assistant' && tab.isPromoted === true && !tab.isRemote` |
-| 远程助手 | `tab.type === 'assistant' && tab.isRemote === true` |
+| 远程助手（非联络） | `tab.type === 'assistant' && tab.isRemote === true && tab.agentId !== '__companion__'` |
 
-### B. Hub 会话（不在 TabBar）
+### B. 联络常驻 Tab（固定在 TabBar，不进入滚动区）
+
+```
+tab.agentId === '__companion__'
+```
+
+由 `COMPANION_TAB_AGENT_ID` 常量标识，在 TabBar 中单独渲染于 `tab-pinned`，不可拖拽、不可关闭。
+
+### C. Hub 会话（不在 TabBar）
 
 不在 Tab 栏，由侧栏管理：
 
@@ -39,6 +65,7 @@
 **判断公式（TabBar 过滤逻辑）**：
 ```
 isDisplayed = !(tab.type === 'assistant' && !tab.isRemote && !tab.isPromoted)
+              && tab.agentId !== '__companion__'
 ```
 
 ---
