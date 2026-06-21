@@ -681,10 +681,76 @@ export class WatchService {
       parts.push(`[预加载技能：${watch.skills.join(', ')}]`)
     }
 
+    const recentContext = this.buildRecentCompanionContext()
+    if (recentContext) {
+      parts.push(recentContext)
+    }
+
     parts.push('[通知用户时，必须调用 talk_to_user 工具发送消息。最终文本回复仅作为内部日志，不会作为通知正文。]')
     parts.push(watch.prompt)
 
     return parts.join('\n')
+  }
+
+  /** 最近联络上下文短期缓存：避免每次 Watch 触发都同步读盘解析整条会话记录 */
+  private companionContextCache?: { text: string; expires: number }
+  private static readonly COMPANION_CONTEXT_TTL_MS = 10_000
+
+  /**
+   * 构建最近联络上下文：让 Watch 发消息前知道最近跟用户聊了什么，避免重复通知 / 保持连贯。
+   * 数据源是 __companion__ 的最近会话记录——与 IM/Gateway/桌面/主动通知共享同一条联络对话。
+   * 带 10s TTL 缓存：联络记录可能很大，频繁触发的 Watch 不必每次都同步读盘解析。
+   */
+  private buildRecentCompanionContext(): string {
+    const now = Date.now()
+    if (this.companionContextCache && this.companionContextCache.expires > now) {
+      return this.companionContextCache.text
+    }
+    const text = this.computeRecentCompanionContext()
+    this.companionContextCache = { text, expires: now + WatchService.COMPANION_CONTEXT_TTL_MS }
+    return text
+  }
+
+  private computeRecentCompanionContext(): string {
+    try {
+      const historyService = this.config?.historyService
+      if (!historyService) return ''
+      const record = historyService.getLatestRecordByAgentKey(WatchService.COMPANION_AGENT_ID)
+      if (!record) return ''
+
+      // 优先用 API messages 还原对话；缺失时回退到 steps。仅取用户↔AI 的纯文本轮次。
+      const turns: Array<{ role: string; content: string }> = []
+      if (record.messages && record.messages.length > 0) {
+        for (const m of record.messages) {
+          const isPlainUser = m.role === 'user' && typeof m.content === 'string' && m.content.trim().length > 0
+          const isPlainAssistant = m.role === 'assistant'
+            && typeof m.content === 'string' && m.content.trim().length > 0
+            && !(Array.isArray(m.tool_calls) && m.tool_calls.length > 0)
+          if (isPlainUser || isPlainAssistant) {
+            turns.push({ role: m.role, content: m.content as string })
+          }
+        }
+      } else if (record.steps && record.steps.length > 0) {
+        for (const s of record.steps) {
+          if (s.type === 'user_task' && s.content && s.content !== '__proactive__') {
+            turns.push({ role: 'user', content: s.content })
+          } else if ((s.type === 'final_result' || s.type === 'message') && s.content) {
+            turns.push({ role: 'assistant', content: s.content })
+          }
+        }
+      }
+
+      const recent = turns.slice(-8)
+      if (recent.length === 0) return ''
+      const lines = recent.map(m => {
+        const who = m.role === 'user' ? '用户' : '你'
+        const text = m.content.length > 200 ? m.content.substring(0, 200) + '…' : m.content
+        return `${who}：${text}`
+      })
+      return `[最近与用户的联络记录（避免重复通知、保持连贯）：\n${lines.join('\n')}]`
+    } catch {
+      return ''
+    }
   }
 
   /** 解析心跳模板变量，缺失的必要变量自动追加到开头 */

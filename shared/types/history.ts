@@ -39,6 +39,8 @@ export interface AgentRecord {
   id: string
   timestamp: number
   terminalId: string
+  /** Agent 的身份 key（如 '__companion__'、'__watch__'，或 tabId）。存盘时由 agent._agentId 写入 */
+  agentKey?: string
   terminalType: TerminalType
   sshHost?: string
   userTask: string

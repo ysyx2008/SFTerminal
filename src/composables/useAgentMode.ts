@@ -5,7 +5,7 @@
  */
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useTerminalStore } from '../stores/terminal'
+import { useTerminalStore, COMPANION_TAB_AGENT_ID } from '../stores/terminal'
 import { useConfigStore } from '../stores/config'
 import { useAssistantArtifactStore } from '../workbench/assistant/artifact/store'
 import type { ExecutionMode, AttachmentInfo, AgentRecord, AgentHistorySummary } from '@shared/types'
@@ -1754,11 +1754,31 @@ export function useAgentMode(
     }
   }
 
+  // 联络常驻 tab：重启后会话为空时，载入上次 __companion__ 对话，避免一片空白。
+  // 同一次运行内若已有 live steps（IM/Gateway 流入），则跳过，不覆盖现有对话。
+  // 注意：这是「展示层」恢复（steps 上墙）。后端会话连续性由持久命名 Agent 自己的
+  // restoreFromHistory/TaskMemory 负责——桌面续聊会新开 session 但带着恢复的工作记忆，
+  // 因此前端这里无需关心 record.messages。
+  const restoreCompanionHistoryIfNeeded = async () => {
+    if (currentTab.value?.agentId !== COMPANION_TAB_AGENT_ID) return
+    if ((agentState.value?.steps?.length ?? 0) > 0) return
+    try {
+      const record = await window.electronAPI.history.getLatestByAgentKey(COMPANION_TAB_AGENT_ID)
+      // await 期间可能有 live step 流入，再次确认仍为空才恢复，避免覆盖
+      if (!record || !record.steps?.length) return
+      if ((agentState.value?.steps?.length ?? 0) > 0) return
+      terminalStore.restoreAgentHistory(currentTabId.value, record as AgentRecord)
+    } catch (err) {
+      log.warn('[Companion] 恢复历史会话失败:', err)
+    }
+  }
+
   // 生命周期
   onMounted(() => {
     setupAgentListeners()
     loadRecentHistory()
     loadRemoteExecutionMode()
+    void restoreCompanionHistoryIfNeeded()
   })
 
   onUnmounted(() => {

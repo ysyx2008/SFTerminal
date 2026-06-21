@@ -30,6 +30,8 @@ TabBar 左侧固定两个入口：
 
 `ensureCompanionTab()` 在 `initializeApp()` 最早调用，保证 `__companion__` tab 在整个 session 生命周期内始终存在。`closeTab` 对 `__companion__` 进行保护，永远返回 false。
 
+**渲染与历史恢复**：联络 tab 与普通助手 tab 一样走 `AssistantWorkbench → AiPanel`（无特殊只读视图），样式一致且可从桌面直接续聊。IM/Gateway/桌面/Watch `talk_to_user` 的步骤都以 `agentId = __companion__` 通过标准 `agent:step` 流入同一会话。重启后联络 tab 为空时，`useAgentMode` 挂载阶段调 `history.getLatestByAgentKey('__companion__')` 载入上次会话（展示层恢复，带 await 前后双重空检查防覆盖 live steps）；后端会话连续性由持久命名 Agent 自身的 `restoreFromHistory`/`restoreRecentTaskMemory` 负责。
+
 ---
 
 ## 二、Tab 分类规则（⚠️ 新增功能必读）

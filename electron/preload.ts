@@ -1292,6 +1292,10 @@ const electronAPI = {
     getAgentRecordById: (id: string) =>
       ipcRenderer.invoke('history:getAgentRecordById', id),
 
+    // 取某 agentKey 最近一条完整会话记录（联络常驻 tab 恢复上次对话）
+    getLatestByAgentKey: (agentKey: string) =>
+      ipcRenderer.invoke('history:getLatestByAgentKey', agentKey),
+
     deleteAgentRecord: (id: string) =>
       ipcRenderer.invoke('history:deleteAgentRecord', id) as Promise<boolean>,
 

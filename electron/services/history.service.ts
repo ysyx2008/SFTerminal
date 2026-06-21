@@ -43,6 +43,8 @@ interface AgentIndexEntry {
   dateStr: string
   userTask: string
   terminalType: TerminalType
+  /** Agent 的身份 key，来自 AgentRecord.agentKey（如 '__companion__'、'__watch__'） */
+  agentKey?: string
   sshHost?: string
   status: 'completed' | 'failed' | 'aborted'
   tokenUsage?: TokenUsage
@@ -382,6 +384,7 @@ export class HistoryService {
       dateStr,
       userTask: record.userTask,
       terminalType: record.terminalType,
+      agentKey: record.agentKey,
       sshHost: record.sshHost,
       status: record.status,
     }
@@ -645,6 +648,14 @@ export class HistoryService {
     }
 
     return results.sort((a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration))
+  }
+
+  /**
+   * 取某个 agentKey（如 '__companion__'）最近的一条完整会话记录。
+   * 用于联络常驻 tab 打开/重启后恢复上次对话。无匹配返回 undefined。
+   */
+  getLatestRecordByAgentKey(agentKey: string): AgentRecord | undefined {
+    return this.getRecentAgentRecords(1, r => r.agentKey === agentKey)[0]
   }
 
   /**
