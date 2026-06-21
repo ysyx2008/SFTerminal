@@ -48,6 +48,7 @@ import {
   type AssistantExample,
 } from '../config/assistantExamples'
 import { pickTaskCompleteLabel } from '../composables/useTaskCompleteLabel'
+import { loadBondTrustLevel } from '../composables/useRandomPlaceholder'
 import type { BondTrustLevel } from '@shared/types/bond'
 
 // Props - 每个 AiPanel 实例绑定到特定的 tab
@@ -206,14 +207,26 @@ const markFooterAnimated = (groupId: string | undefined) => {
 }
 
 const taskCompleteFooterLabels = new Map<string, string>()
-let cachedBondTrustForFooter: BondTrustLevel = 'stranger'
+const bondTrustForFooter = ref<BondTrustLevel>('stranger')
+const bondTrustForFooterReady = ref(false)
+/** 羁绊等级就绪时递增，驱动已渲染尾注用正确 trust 池重算文案 */
+const taskCompleteFooterLabelEpoch = ref(0)
+
+void loadBondTrustLevel().then(level => {
+  bondTrustForFooter.value = level
+  bondTrustForFooterReady.value = true
+  taskCompleteFooterLabels.clear()
+  taskCompleteFooterLabelEpoch.value++
+})
 
 const getTaskCompleteFooterLabel = (groupId: string | undefined): string => {
+  void taskCompleteFooterLabelEpoch.value
   if (!groupId) return t('ai.taskComplete')
+  if (!bondTrustForFooterReady.value) return t('ai.taskComplete')
   if (!taskCompleteFooterLabels.has(groupId)) {
     taskCompleteFooterLabels.set(
       groupId,
-      pickTaskCompleteLabel(tm('ai.taskCompletePools'), cachedBondTrustForFooter, t)
+      pickTaskCompleteLabel(tm('ai.taskCompletePools'), bondTrustForFooter.value, t)
     )
   }
   return taskCompleteFooterLabels.get(groupId)!
@@ -305,9 +318,6 @@ const handleGlobalClickForGroupMenu = (e: MouseEvent) => {
 const handleScrollForGroupMenu = () => closeGroupMenu()
 
 onMounted(() => {
-  void window.electronAPI?.bond?.getMetrics?.().then(m => {
-    if (m?.trustLevel) cachedBondTrustForFooter = m.trustLevel
-  }).catch(() => {})
   document.addEventListener('mousedown', handleGlobalClickForGroupMenu)
   window.addEventListener('resize', closeGroupMenu)
   // 监听虚拟滚动容器的 scroll 事件（capture 阶段，覆盖各种内部滚动场景）
