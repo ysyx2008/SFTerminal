@@ -604,7 +604,7 @@ const loadMore = () => {
       </div>
 
     <div class="conversation-list">
-      <div v-if="isLoading && summaries.length === 0" class="empty-state">      <div v-if="isLoading && summaries.length === 0" class="empty-state">
+      <div v-if="isLoading && summaries.length === 0" class="empty-state">
         {{ t('ai.agentWelcome.historyLoading') }}
       </div>
 
