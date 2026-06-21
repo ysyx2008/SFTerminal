@@ -211,10 +211,10 @@ export class StreamingToolExecutor {
   }
 
   private startExecution(tracked: TrackedTool): void {
+    const parallelShare = this.computeOutputBudgetShare(tracked)
+
     tracked.status = 'executing'
     this.executingCount++
-
-    const parallelShare = this.computeOutputBudgetShare()
 
     tracked.promise = this.executeOne(tracked, parallelShare)
       .finally(() => {
@@ -244,14 +244,24 @@ export class StreamingToolExecutor {
   }
 
   /**
-   * 估算当前并行 wave 中共享 output 预算的只读工具数（queued + executing）。
-   * 流式阶段 tool_call 逐个到达，后到的工具会把 share 抬高；同 tick 内排队的工具共享同一 share。
+   * 估算当前并行 wave 中共享 output 预算的只读工具数。
+   * 在将 `starting` 标为 executing 之前调用：executing 为已在跑的同伴，queued 按剩余并发槽位封顶，
+   * 避免把尚未启动（或受 maxConcurrency 挡住的）排队工具算进 share。
    */
-  private computeOutputBudgetShare(): number {
-    const peers = this.tools.filter(
-      t => t.isConcurrencySafe && (t.status === 'queued' || t.status === 'executing')
+  private computeOutputBudgetShare(starting: TrackedTool): number {
+    if (!starting.isConcurrencySafe) return 1
+
+    const executingSafeCount = this.tools.filter(
+      t => t.isConcurrencySafe && t.status === 'executing'
     ).length
-    return Math.max(1, peers)
+    const queuedSafeCount = this.tools.filter(
+      t => t.isConcurrencySafe && t.status === 'queued'
+    ).length
+
+    const slotsAvailable = Math.max(0, this.maxConcurrency - executingSafeCount)
+    const queuedStarting = Math.min(queuedSafeCount, slotsAvailable)
+
+    return Math.max(1, executingSafeCount + queuedStarting)
   }
 
   private async executeOne(tracked: TrackedTool, parallelShare: number): Promise<void> {

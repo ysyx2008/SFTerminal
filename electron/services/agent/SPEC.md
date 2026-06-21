@@ -320,7 +320,7 @@ run(message, context, options)
 
 **流程**：`executeStep` 创建 `StreamingToolExecutor` → 传入 `callAiWithStreaming` → AI 流式输出中 `onToolCallReady` 回调触发 `addTool()` → 流结束后 `executeToolCallsWithStreaming` 收集预执行结果 + 执行剩余工具
 
-**Output 预算分摊**：启动只读工具时，`computeOutputBudgetShare()` 统计当前 queued+executing 的 parallelizable 工具数，经 `executeFn({ parallelShare })` 交给 Agent 的 `withParallelToolOutputBudget`。同一 event-loop tick 内连续 `addTool` 会合并到一次 `processQueue`（`queueMicrotask`），避免第一个 read 在后续 read 到达前就拿满额预算。
+**Output 预算分摊**：启动只读工具时，在将工具标为 `executing` 之前调用 `computeOutputBudgetShare(starting)`：已 executing 的同伴 + 受 `maxConcurrency` 限制的 queued 槽位，避免把尚未启动的排队工具或超限并发算进 share。经 `executeFn({ parallelShare })` 交给 Agent 的 `withParallelToolOutputBudget`。同一 event-loop tick 内连续 `addTool` 会合并到一次 `processQueue`（`queueMicrotask`），避免第一个 read 在后续 read 到达前就拿满额预算。
 
 **安全约束**：重试（onRetry）和截断（finish_reason=length）时会 abort 执行器；幻觉工具在执行器内部检测并拒绝；结果按原始 tool_calls 顺序写入消息历史。
 

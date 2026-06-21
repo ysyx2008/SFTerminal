@@ -105,4 +105,49 @@ describe('StreamingToolExecutor parallelShare', () => {
 
     expect(shares).toEqual([2, 2])
   })
+
+  it('caps parallelShare by maxConcurrency when more safe tools are queued', async () => {
+    const shares: number[] = []
+    const gates = new Map<string, { promise: Promise<void>; release: () => void }>()
+    const makeGate = (id: string) => {
+      let release!: () => void
+      const promise = new Promise<void>(resolve => {
+        release = resolve
+      })
+      gates.set(id, { promise, release })
+    }
+
+    const executor = new StreamingToolExecutor({
+      run: createRun(),
+      availableToolNames: new Set(['read_file']),
+      isConcurrencySafe: () => true,
+      maxConcurrency: 2,
+      executeFn: async (tc, opts) => {
+        shares.push(opts?.parallelShare ?? 0)
+        const gate = gates.get(tc.id)
+        if (gate) await gate.promise
+        return { result: { success: true, output: tc.id }, toolArgs: {} }
+      },
+    })
+
+    makeGate('tc1')
+    makeGate('tc2')
+
+    executor.addTool(makeToolCall('tc1'))
+    executor.addTool(makeToolCall('tc2'))
+    executor.addTool(makeToolCall('tc3'))
+
+    await vi.waitFor(() => {
+      expect(shares).toEqual([2, 2])
+    })
+
+    gates.get('tc1')!.release()
+
+    await vi.waitFor(() => {
+      expect(shares).toEqual([2, 2, 2])
+    })
+
+    gates.get('tc2')!.release()
+    await executor.waitForAll()
+  })
 })
