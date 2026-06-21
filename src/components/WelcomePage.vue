@@ -5,7 +5,7 @@
  */
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Bot, SquareTerminal, Monitor, Eye, PanelTopOpen } from 'lucide-vue-next'
+import { Bot, SquareTerminal, Monitor, Eye, PanelTopOpen, Upload } from 'lucide-vue-next'
 import { useConfigStore, type SshSession } from '../stores/config'
 import MatrixRain from './EasterEgg/MatrixRain.vue'
 import WelcomeChatComposer from './WelcomeChatComposer.vue'
@@ -17,6 +17,7 @@ import {
   useConversationDropTarget,
   useOpenConversationInTab,
 } from '../composables/useConversationDragDrop'
+import { useFileDropTarget } from '../composables/useFileDropTarget'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -31,6 +32,41 @@ const {
   handleDragLeave: handleConversationDragLeave,
   handleDrop: handleConversationDrop,
 } = useConversationDropTarget(openConversationInTab)
+
+const welcomeComposerRef = ref<InstanceType<typeof WelcomeChatComposer> | null>(null)
+
+const ingestWelcomeFiles = async (files: FileList) => {
+  await welcomeComposerRef.value?.ingestAttachmentFiles(files)
+  welcomeComposerRef.value?.focusComposer()
+}
+
+const {
+  isDragOver: isFileDragOver,
+  handleDragEnter: handleFileDragEnter,
+  handleDragOver: handleFileDragOver,
+  handleDragLeave: handleFileDragLeave,
+  handleDrop: handleFileDrop,
+} = useFileDropTarget(ingestWelcomeFiles)
+
+const onWelcomeDragEnter = (event: DragEvent) => {
+  if (!isSteamBuild) handleFileDragEnter(event)
+  handleConversationDragEnter(event)
+}
+
+const onWelcomeDragOver = (event: DragEvent) => {
+  if (!isSteamBuild) handleFileDragOver(event)
+  handleConversationDragOver(event)
+}
+
+const onWelcomeDragLeave = (event: DragEvent) => {
+  if (!isSteamBuild) handleFileDragLeave(event)
+  handleConversationDragLeave(event)
+}
+
+const onWelcomeDrop = (event: DragEvent) => {
+  if (!isSteamBuild) handleFileDrop(event)
+  handleConversationDrop(event)
+}
 
 // 彩蛋：连续点击 Logo 20 次触发 Matrix 数字雨
 const showMatrixEasterEgg = ref(false)
@@ -203,11 +239,21 @@ onUnmounted(() => {
   <div
     class="welcome-page"
     :class="{ 'enter-done': enterAnimationDone }"
-    @dragenter="handleConversationDragEnter"
-    @dragover="handleConversationDragOver"
-    @dragleave="handleConversationDragLeave"
-    @drop="handleConversationDrop"
+    @dragenter="onWelcomeDragEnter"
+    @dragover="onWelcomeDragOver"
+    @dragleave="onWelcomeDragLeave"
+    @drop="onWelcomeDrop"
   >
+    <DropOverlay
+      v-if="!isSteamBuild && isFileDragOver"
+      :title="t('ai.dropToUpload')"
+      :hint="t('ai.dropHint')"
+    >
+      <template #icon>
+        <Upload :size="48" :stroke-width="1.5" />
+      </template>
+    </DropOverlay>
+
     <DropOverlay
       v-if="isConversationDragOver"
       :title="t('welcome.conversations.dropToOpenInTab')"
@@ -233,7 +279,7 @@ onUnmounted(() => {
       </div>
 
       <!-- AI 快速发起对话（Steam 版隐藏，复用 AiComposer） -->
-      <WelcomeChatComposer v-if="!isSteamBuild" :active="!!active" />
+      <WelcomeChatComposer v-if="!isSteamBuild" ref="welcomeComposerRef" :active="!!active" />
 
       <!-- 查看示例入口 -->
       <div v-if="!isSteamBuild" class="examples-hint">
