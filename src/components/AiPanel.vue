@@ -18,6 +18,7 @@ import { useComposerQuoteStore } from '../stores/composer-quote'
 import AgentPlanView from './AgentPlanView.vue'
 import AiComposer from './AiComposer.vue'
 import DropOverlay from './DropOverlay.vue'
+import AiProfileSelect from './AiProfileSelect.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
 import ToolCallContent from './ToolCallContent.vue'
 import ImageContextMenu from './ImageContextMenu.vue'
@@ -2820,17 +2821,13 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         :clear-tab-error="clearTabError"
       >
         <template #footer-left>
-          <select
+          <AiProfileSelect
             v-if="aiProfiles.length > 0"
-            class="model-select"
-            :value="activeAiProfile?.id || ''"
-            :title="t('ai.switchModel')"
-            @change="changeAiProfile(($event.target as HTMLSelectElement).value)"
-          >
-            <option v-for="profile in aiProfiles" :key="profile.id" :value="profile.id">
-              {{ profile.name }} ({{ profile.model }}){{ profile.modelType === 'vision' ? ` [${t('aiSettings.modelTypeVision')}]` : '' }}
-            </option>
-          </select>
+            compact
+            :profiles="aiProfiles"
+            :model-value="activeAiProfile?.id || ''"
+            @update:model-value="changeAiProfile"
+          />
         </template>
       </AiComposer>
     </template>

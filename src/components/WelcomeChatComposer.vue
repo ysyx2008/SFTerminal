@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n'
 import { Upload } from 'lucide-vue-next'
 import AiComposer from './AiComposer.vue'
 import DropOverlay from './DropOverlay.vue'
+import AiProfileSelect from './AiProfileSelect.vue'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import { WELCOME_COMPOSER_TAB_ID } from '../constants/welcome-composer'
@@ -417,17 +418,13 @@ onUnmounted(() => {
       :clear-tab-error="noop"
     >
       <template #footer-left>
-        <select
+        <AiProfileSelect
           v-if="configStore.aiProfiles.length > 0"
-          class="welcome-model-select"
-          :value="configStore.activeAiProfileId"
-          :title="t('ai.switchModel')"
-          @change="configStore.setActiveAiProfile(($event.target as HTMLSelectElement).value)"
-        >
-          <option v-for="profile in configStore.aiProfiles" :key="profile.id" :value="profile.id">
-            {{ profile.name }} ({{ profile.model }})
-          </option>
-        </select>
+          embedded
+          :profiles="configStore.aiProfiles"
+          :model-value="configStore.activeAiProfileId"
+          @update:model-value="configStore.setActiveAiProfile"
+        />
       </template>
     </AiComposer>
     <!-- Teleport 到 body：父级 welcome-chat-composer 的 transform 动画会创建层叠上下文，
@@ -465,24 +462,6 @@ onUnmounted(() => {
   }
 }
 
-.welcome-model-select {
-  padding: 2px 6px;
-  font-size: 12px;
-  color: var(--text-muted);
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  max-width: 200px;
-  outline: none;
-  opacity: 0.75;
-  transition: opacity 0.15s ease, color 0.15s ease;
-}
-
-.welcome-model-select:hover {
-  opacity: 1;
-  color: var(--text-secondary);
-}
 
 .welcome-image-preview {
   position: fixed;
