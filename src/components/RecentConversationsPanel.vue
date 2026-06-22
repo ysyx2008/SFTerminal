@@ -209,7 +209,8 @@ const loadSummaries = async (options?: { silent?: boolean }) => {
   try {
     if (!silent) await configStore.loadConversationPreferences()
     const next = await window.electronAPI.history.listAgentSummaries(true)
-    summaries.value = next
+    // 「联络」(__companion__) 与「关切」(__watch__) 会话有各自的常驻入口，不进任务侧栏
+    summaries.value = next.filter(s => s.agentKey !== '__companion__' && s.agentKey !== '__watch__')
     if (!silent) {
       displayCount.value = DISPLAY_LIMIT
     }

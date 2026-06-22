@@ -62,6 +62,8 @@ export interface AgentHistorySummary {
   duration: number
   userTask: string
   terminalType: TerminalType
+  /** Agent 身份 key（如 '__companion__'、'__watch__'）。用于把联络/关切会话从「任务」侧栏剔除 */
+  agentKey?: string
   sshHost?: string
   status: 'completed' | 'failed' | 'aborted'
 }

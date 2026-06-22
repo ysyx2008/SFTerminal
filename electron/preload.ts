@@ -1249,6 +1249,7 @@ const electronAPI = {
           duration: number
           userTask: string
           terminalType: 'local' | 'ssh'
+          agentKey?: string
           sshHost?: string
           status: 'completed' | 'failed' | 'aborted'
         }>

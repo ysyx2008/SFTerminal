@@ -677,6 +677,7 @@ export class HistoryService {
       duration: e.duration,
       userTask: e.userTask,
       terminalType: e.terminalType,
+      agentKey: e.agentKey,
       sshHost: e.sshHost,
       status: e.status,
     }))
