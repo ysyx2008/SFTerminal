@@ -93,7 +93,11 @@ const steamAppTitle = computed(() => {
 
 // 应用版本号（异步从主进程拉取）
 const appVersion = ref('')
-const appTitleText = computed(() => isSteamBuild ? steamAppTitle.value : t('app.title'))
+const appTitleText = computed(() => {
+  const customName = configStore.agentName?.trim()
+  if (customName) return customName
+  return isSteamBuild ? steamAppTitle.value : t('app.title')
+})
 const { show: showConfirmDialog, options: confirmOptions, handleConfirm, handleCancel, handleNeutral, handleClose } = useConfirm()
 const { start: startUpdaterPrompts, stop: stopUpdaterPrompts } = useAppUpdaterPrompts()
 
