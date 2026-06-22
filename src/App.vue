@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Monitor, Bot, Settings, X, Loader2, Heart, Menu as MenuIcon } from 'lucide-vue-next'
-import { useTerminalStore } from './stores/terminal'
+import { useTerminalStore, COMPANION_TAB_AGENT_ID } from './stores/terminal'
 import { initSplitPaneHandler, disposeSplitPaneHandler } from './services/split-pane-handler'
 import { initWorkbenchHandler, disposeWorkbenchHandler } from './services/workbench-handler'
 import { useConfigStore, type SshSession } from './stores/config'
@@ -350,7 +350,10 @@ const handleCloseShortcut = async () => {
 
   const activeTab = terminalStore.activeTab
   if (activeTab) {
-    if (activeTab.type === 'assistant' && !activeTab.isPromoted && !activeTab.isRemote) {
+    if (activeTab.agentId === COMPANION_TAB_AGENT_ID) {
+      // 联络常驻 tab 不可关闭：Cmd+W 退回欢迎页，不关窗口
+      terminalStore.goToHome()
+    } else if (activeTab.type === 'assistant' && !activeTab.isPromoted && !activeTab.isRemote) {
       // 普通本地助手 tab（未提升，理论上不应成为 activeTab）：隐藏窗口兜底
       await window.electronAPI.window.close()
     } else {

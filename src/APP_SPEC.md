@@ -35,10 +35,12 @@
       └→ 关闭覆盖层，结束
 
 2. 有 activeTab（TabBar 可见 Tab）
+   ├─ tab.agentId === '__companion__'（联络常驻 tab，不可关闭）
+   │     └→ goToHome()，退回欢迎页，不关窗口
    ├─ tab.type === 'assistant' && !isPromoted && !isRemote
    │     （理论兜底，正常流程不应出现此情况）
    │     └→ 隐藏窗口
-   └─ 终端 Tab / 已提升助手 Tab / 远程助手 Tab
+   └─ 终端 Tab / 已提升助手 Tab / 其他远程助手 Tab
          └→ closeTab(activeTab.id)，不关窗口
 
 3. 无 activeTab，有 hubFocusedAssistantTabId（Hub 焦点模式）
