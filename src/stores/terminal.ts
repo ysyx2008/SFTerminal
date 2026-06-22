@@ -646,6 +646,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     isRemote?: boolean
     remoteChannel?: TerminalTab['remoteChannel']
     activate?: boolean
+    /** 直接作为独立 tab 显示在 Tab 栏（而非进入 Hub 焦点流） */
+    isPromoted?: boolean
     /** 首页快速发起对话时传入，由 AiPanel 挂载后自动 runAgent */
     initialMessage?: string
   }): string {
@@ -664,6 +666,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       isConnected: true,
       isLoading: false,
       isRemote: options?.isRemote,
+      isPromoted: options?.isPromoted,
       remoteChannel: options?.remoteChannel,
       agentState: {
         isRunning: false,

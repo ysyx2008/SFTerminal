@@ -86,16 +86,18 @@
 应用退出时（`window.electronAPI.window.requestTerminalCount` IPC），向主进程上报"有意义的开放会话数"：
 
 ```
-有意义 = tab.type !== 'assistant'           // 终端 Tab（local/ssh）
-        || tab.isRemote                      // 远程助手 Tab
-        || tab.isPromoted                    // 已提升的本地助手 Tab
-        || (tab.type === 'assistant'
-            && !tab.isRemote
-            && !tab.isPromoted
-            && tab.agentState?.isRunning)    // Hub 中正在运行的助手会话
+有意义 = agentId !== '__companion__'         // 联络常驻 tab 不可关闭，永不计入
+        && ( tab.type !== 'assistant'        // 终端 Tab（local/ssh）
+          || tab.isRemote                    // 远程助手 Tab
+          || tab.isPromoted                  // 已提升的本地助手 Tab
+          || (tab.type === 'assistant'
+              && !tab.isRemote
+              && !tab.isPromoted
+              && tab.agentState?.isRunning) ) // Hub 中正在运行的助手会话
 ```
 
-未提升、未运行的 Hub 会话**不计入**（随时可从历史恢复，无丢失风险）。
+- 未提升、未运行的 Hub 会话**不计入**（随时可从历史恢复，无丢失风险）。
+- **联络常驻 tab**（`agentId === '__companion__'`，虽 `isRemote=true`）**永不计入**——它不可关闭，否则退出时会恒提示"有 1 个标签未关闭"。
 
 ---
 

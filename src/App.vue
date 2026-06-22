@@ -452,6 +452,7 @@ onMounted(async () => {
   // 只计「有意义」的 tab：终端、已提升助手 tab、运行中的 Hub 助手；纯空闲的 Hub 助手不计
   cleanupTerminalCountListener = window.electronAPI.window.onRequestTerminalCount(() => {
     const count = terminalStore.tabs.filter(t => {
+      if (t.agentId === COMPANION_TAB_AGENT_ID) return false // 联络常驻 tab 不可关闭，不计入退出确认
       if (t.type !== 'assistant') return true           // 终端 tab 始终计
       if (t.isRemote || t.isPromoted) return true       // 远程 / 已提升助手计
       return t.agentState?.isRunning === true           // Hub 内运行中的助手计

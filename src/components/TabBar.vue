@@ -183,7 +183,8 @@ const handleNewTab = (shell?: string) => {
 }
 
 const handleNewAssistant = () => {
-  terminalStore.goToHome()
+  // 新建一个空白的独立助手 tab（isPromoted 直接进 Tab 栏并激活），而非回欢迎页
+  terminalStore.createAssistantTab({ isPromoted: true, activate: true })
   showNewMenu.value = false
 }
 
@@ -370,26 +371,6 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
       <span class="tab-title">{{ t('tabs.tasks', '任务') }}</span>
     </div>
 
-    <!-- 联络常驻 tab：不可关闭，固定在任务按钮之后 -->
-    <div
-      v-if="companionTab"
-      class="tab tab-pinned"
-      :class="{
-        active: companionTab.id === terminalStore.activeTabId,
-        'needs-attention': companionTab.id !== terminalStore.activeTabId && terminalStore.hasTabAgentAttention(companionTab.id)
-      }"
-      :title="tabAttentionTooltip(companionTab.id)"
-      @click="terminalStore.setActiveTab(companionTab.id)"
-    >
-      <span class="tab-icon">
-        <Radio :size="14" class="companion-icon" />
-      </span>
-      <span class="tab-title">{{ displayTabTitle(companionTab) }}</span>
-      <span v-if="companionTab.isLoading" class="tab-loading">
-        <Loader2 class="spinner" :size="12" />
-      </span>
-    </div>
-
     <!-- 左滚动按钮 -->
     <button 
       v-show="canScrollLeft" 
@@ -478,7 +459,27 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
     >
       <Layers :size="14" />
     </button>
-    
+
+    <!-- 联络常驻 tab：次要入口，固定在新建按钮之前、滚动区之外，不隐藏 -->
+    <div
+      v-if="companionTab"
+      class="tab tab-pinned"
+      :class="{
+        active: companionTab.id === terminalStore.activeTabId,
+        'needs-attention': companionTab.id !== terminalStore.activeTabId && terminalStore.hasTabAgentAttention(companionTab.id)
+      }"
+      :title="tabAttentionTooltip(companionTab.id)"
+      @click="terminalStore.setActiveTab(companionTab.id)"
+    >
+      <span class="tab-icon">
+        <Radio :size="14" class="companion-icon" />
+      </span>
+      <span class="tab-title">{{ displayTabTitle(companionTab) }}</span>
+      <span v-if="companionTab.isLoading" class="tab-loading">
+        <Loader2 class="spinner" :size="12" />
+      </span>
+    </div>
+
     <!-- 新建终端按钮（带下拉菜单） -->
     <div class="new-tab-wrapper">
       <button

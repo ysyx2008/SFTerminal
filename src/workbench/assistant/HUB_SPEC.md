@@ -19,12 +19,13 @@
 
 > 产品级定位（任务 vs 联络的关系形态、为何不合并、联络上下文设计）见 `.cursor/rules/project-architecture.mdc`「任务 / 联络 双入口模型」。本节只描述 TabBar 交互机制。
 
-TabBar 左侧固定两个入口：
+TabBar 顺序：`[任务] [可滚动普通 tab 区] [批量按钮] [联络] [新建+]`。
 
-| 入口 | 行为 |
-|---|---|
-| **任务**（`tab-home` 按钮） | 始终可见，无激活态，点击 `goToHome()` 回到欢迎页/Hub |
-| **联络**（`tab-pinned`，`agentId = __companion__`） | 常驻不可关闭，点击激活 `__companion__` tab；IM / Watch `talk_to_user` 消息均路由到此 tab |
+| 入口 | 位置 | 行为 |
+|---|---|---|
+| **任务**（`tab-home` 按钮） | 最左端 | 始终可见，无激活态，点击 `goToHome()` 回到欢迎页/Hub |
+| **联络**（`tab-pinned`，`agentId = __companion__`） | 次要入口，固定在**新建按钮之前**、滚动区之外、不隐藏 | 常驻不可关闭，点击激活 `__companion__` tab；IM / Watch `talk_to_user` 消息均路由到此 tab |
+| **新建 +**（`btn-new-tab`） | 最右端 | 点击 `handleNewAssistant()` 新建一个**空白独立助手 tab**（`createAssistantTab({ isPromoted: true })`，直接进 Tab 栏并激活，不走 Hub 焦点）；下拉菜单可选新建终端/SSH |
 
 `displayedTabs` 同时排除：
 1. 未提升的本地助手（`!tab.isRemote && !tab.isPromoted`）
