@@ -118,6 +118,29 @@ SailFish/
 - 旧路径 `src/canvas/`、`stores/canvas.ts` 保留 deprecated re-export
 - **单助手 Hub 模型**（2026-06-18）：本地 assistant Tab 默认不显示在 Tab 栏，通过左侧「最近对话」侧栏聚焦切换（`hubFocusedAssistantTabId`）；右键「在新标签页中打开」标记 `isPromoted=true` 后进入 Tab 栏；LRU 回收上限 5 个 Hub 会话，并发软上限 8 个；远程助手（`isRemote=true`）不受影响
 
+### 任务 / 联络 双入口模型（用户心智模型）
+
+桌面有两个常驻入口，对应 Agent 的两种使用关系。两者底层都是对同一类 Agent「下任务」，分界**不看"是不是任务"，而看入口与关系形态**：
+
+| 维度 | 任务（Tasks） | 联络（Reach / `__companion__`） |
+|---|---|---|
+| 关系 | 我**支使** AI——被动、一次性 | 我和觉醒后的 AI **互相找**——常驻、连续、双向 |
+| 触发 | 仅用户主动发起 | 用户发起 **或** AI 主动（`talk_to_user`／Watch 通知） |
+| 隔离 | 每个 Tab 一个独立 Agent，可并行、可隔离 | 全渠道（IM/Gateway/桌面）汇入**同一个** `__companion__`，一条连续关系线 |
+| 归属 | 看入口：从任务侧栏进 = 任务 | 看入口：从联络 tab / IM / 主动消息进 = 联络 |
+| 侧栏 | 进「最近对话」任务侧栏 | **不进**任务侧栏（有独立常驻 tab，按 `agentKey` 过滤排除） |
+
+- **为什么不强行合并**：任务是桌面主力（专注、可并行）；联络承载「觉醒」——让 Agent 能主动找人、跨渠道连续对话。重叠（联络里也能下任务）是自然的，不必消除。
+- **关键标识**：`AgentRecord.agentKey` 区分常驻命名 Agent（`__companion__` / `__watch__`）与普通 tab Agent；联络历史恢复、Watch 上下文、侧栏过滤都依赖它。
+
+#### 联络的上下文设计（多渠道 · 常驻 · 主动消息）
+
+- **一条 session 多渠道汇流**：IM/Gateway/桌面共用一个 `__companion__`，所有对话进同一条 `_sessionMessages`。代价是渠道间会"串味"，符合"联络=一条连续关系线"定位。
+- **每次对话取上下文**（`agent.ts buildContext`）：session 内热路径直接复用上次完整 messages 做前缀（命中 prompt cache）；前缀超上下文 70% 转 cold start，走 L1 TaskMemory 的 L0–L4 渐进压缩重建 + L2 知识文档 + L3 向量检索。
+- **跨重启**：`restoreRecentTaskMemory` 从**全局**最近 N 条历史重建工作记忆（companion 专属 fallback，有意跨 Agent 借记忆，见 `agent/SPEC.md`）。
+- **主动消息衔接**：`talk_to_user`（含 Watch 的对外通知）经 `proactive-store.ts` 按 `'__companion__'` 暂存（30min TTL），用户回复时 `consumeProactiveContext` 注入——这是 companion 知道"我刚才主动说了啥"的唯一通道。Watch 自身执行是**内心独白**（`wakeup` 模式，进 `__watch__`、刻意跳过 cache path、不累积会话），只有 `talk_to_user` 这一条对外消息才进 companion。
+- **固有损耗（非 bug，无需特殊优化）**：联络访问稀疏 + 间隔长，而 prompt cache 是 provider 侧分钟级 TTL，故联络多数时候走 cold start 重建，实际靠 L1 压缩 + L3 检索撑上下文，cache 命中率天然偏低。
+
 ### 前后端通信
 - Electron IPC：`ipcMain.handle` ↔ `ipcRenderer.invoke`
 - 前端通过 `preload.ts` 暴露的 API 调用后端服务
