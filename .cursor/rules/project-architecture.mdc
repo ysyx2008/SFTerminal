@@ -139,7 +139,7 @@ SailFish/
 - **每次对话取上下文**（`agent.ts buildContext`）：session 内热路径直接复用上次完整 messages 做前缀（命中 prompt cache）；前缀超上下文 70% 转 cold start，走 L1 TaskMemory 的 L0–L4 渐进压缩重建 + L2 知识文档 + L3 向量检索。
 - **跨重启**：`restoreRecentTaskMemory` 从**全局**最近 N 条历史重建工作记忆（companion 专属 fallback，有意跨 Agent 借记忆，见 `agent/SPEC.md`）。
 - **主动消息衔接**：`talk_to_user`（含 Watch 的对外通知）经 `proactive-store.ts` 按 `'__companion__'` 暂存（30min TTL），用户回复时 `consumeProactiveContext` 注入——这是 companion 知道"我刚才主动说了啥"的唯一通道。Watch 自身执行是**内心独白**（`wakeup` 模式，进 `__watch__`、刻意跳过 cache path、不累积会话），只有 `talk_to_user` 这一条对外消息才进 companion。
-- **固有损耗（非 bug，无需特殊优化）**：联络访问稀疏 + 间隔长，而 prompt cache 是 provider 侧分钟级 TTL，故联络多数时候走 cold start 重建，实际靠 L1 压缩 + L3 检索撑上下文，cache 命中率天然偏低。
+- **cache 利用分两层**：① **cache path**（复用 `_previousRunMessages` 做前缀、省掉 cold start 重建）只要进程内有快照、非 wakeup、前缀 <70% 就走，**与时间间隔无关**——cold start 只在首次对话、跨重启首条、超 70%、`resetSession` 后发生，所以"冷启动之后的连续对话"都走 cache path。② **provider 端 prompt cache 命中**（真正省 token）取决于本次前缀是否还在 provider 分钟级 TTL 内：连着聊命中，长间隔后的首条 miss 但会重建缓存、之后又命中。联络访问"间隔两极化"——长间隔首条命中率低、连续段正常，并非每条都冷启动；这是场景本质，无需特殊优化。
 
 ### 前后端通信
 - Electron IPC：`ipcMain.handle` ↔ `ipcRenderer.invoke`
