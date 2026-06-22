@@ -1127,8 +1127,6 @@ export const useTerminalStore = defineStore('terminal', () => {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab) return
     activeTabId.value = tabId
-    // 激活独立 tab 时清除 hub 焦点，保持状态一致
-    hubFocusedAssistantTabId.value = ''
     setAgentCompletedUnseen(tabId, false)
     if (tab.type === 'assistant') {
       requestAssistantComposerFocus(tabId)
@@ -1212,6 +1210,20 @@ export const useTerminalStore = defineStore('terminal', () => {
   function goToHome(): void {
     activeTabId.value = ''
     hubFocusedAssistantTabId.value = ''
+  }
+
+  /** 切回任务区：仅退出 TabBar 可见 tab，保留 Hub 焦点会话（侧栏「新建对话」等仍用 goToHome） */
+  function focusTaskArea(): void {
+    if (!activeTabId.value) return
+    activeTabId.value = ''
+    const hubId = hubFocusedAssistantTabId.value
+    if (!hubId) return
+    const tab = tabs.value.find(t => t.id === hubId)
+    if (!tab || tab.type !== 'assistant' || tab.isRemote || tab.isPromoted) {
+      hubFocusedAssistantTabId.value = ''
+      return
+    }
+    requestAssistantComposerFocus(hubId)
   }
 
   /**
@@ -2969,6 +2981,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     reconnectSsh,
     setActiveTab,
     goToHome,
+    focusTaskArea,
     hubFocusedAssistantTabId,
     hubFocusedTab,
     focusHubConversation,

@@ -335,6 +335,9 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
   if (tabId === terminalStore.activeTabId) return undefined
   return formatAgentAttentionTooltip(terminalStore.getTabAgentUiMeta(tabId), t)
 }
+
+/** 任务区激活：无 TabBar 可见 tab 时为激活（含欢迎页与 Hub 侧栏焦点会话） */
+const isTasksHomeActive = computed(() => !terminalStore.activeTabId)
 </script>
 
 <template>
@@ -359,11 +362,12 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
     </Teleport>
 
     <div class="tab-bar">
-    <!-- 任务按钮：始终可见，无激活态，点击回到欢迎页 -->
+    <!-- 任务按钮：切回任务区（保留 Hub 焦点），激活态与 hover 与其他 tab 一致 -->
     <div
       class="tab tab-home"
+      :class="{ active: isTasksHomeActive }"
       :title="t('tabs.tasks', '任务')"
-      @click="terminalStore.goToHome()"
+      @click="terminalStore.focusTaskArea()"
     >
       <span class="tab-icon">
         <Home :size="14" />
@@ -707,37 +711,20 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
   margin-left: -2px;
 }
 
-.tab-home {
-  min-width: auto;
-  max-width: none;
-  padding: 6px 12px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-/* 任务按钮永不显示激活态指示线 */
-.tab-home::before,
-.tab-home::after {
-  display: none !important;
-}
-
-.tab-home:hover {
-  background: var(--bg-surface);
-  box-shadow: none;
-}
-
-/* 联络常驻 tab：固定在可滚动区域外，不可拖拽 */
+.tab-home,
 .tab-pinned {
   min-width: auto;
-  max-width: 140px;
   padding: 6px 12px;
   cursor: pointer;
   flex-shrink: 0;
 }
 
-.tab-pinned .companion-icon {
-  color: var(--accent-primary);
-  opacity: 0.8;
+.tab-home {
+  max-width: none;
+}
+
+.tab-pinned {
+  max-width: 140px;
 }
 
 /* 需要注意的状态：有待确认操作，或后台 tab 上 Agent 任务刚结束 */
