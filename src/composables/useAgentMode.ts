@@ -1763,13 +1763,37 @@ export function useAgentMode(
     if (currentTab.value?.agentId !== COMPANION_TAB_AGENT_ID) return
     if ((agentState.value?.steps?.length ?? 0) > 0) return
     try {
-      const record = await window.electronAPI.history.getLatestByAgentKey(COMPANION_TAB_AGENT_ID)
+      // 取最近 N 条 companion 会话合并展示，避免重启后只看到最后一条
+      const records = await window.electronAPI.history.getRecentByAgentKey(COMPANION_TAB_AGENT_ID, 10)
       // await 期间可能有 live step 流入，再次确认仍为空才恢复，避免覆盖
-      if (!record || !record.steps?.length) return
+      if (!records?.length) return
       if ((agentState.value?.steps?.length ?? 0) > 0) return
-      terminalStore.restoreAgentHistory(currentTabId.value, record as AgentRecord)
+      const merged = mergeCompanionRecords(records as AgentRecord[])
+      if (!merged) return
+      terminalStore.restoreAgentHistory(currentTabId.value, merged)
     } catch (err) {
       log.warn('[Companion] 恢复历史会话失败:', err)
+    }
+  }
+
+  // 把多条 companion 会话记录合成一条「展示用」记录：steps 按时间升序拼接，
+  // id 用最新一条（续聊时后端按此 sessionId 加载最近上下文），timestamp/userTask 用最早一条。
+  const mergeCompanionRecords = (records: AgentRecord[]): AgentRecord | null => {
+    if (!records.length) return null
+    const ordered = [...records].sort((a, b) => a.timestamp - b.timestamp)
+    const earliest = ordered[0]
+    const latest = ordered[ordered.length - 1]
+    const seen = new Set<string>()
+    const steps = ordered
+      .flatMap(r => r.steps ?? [])
+      .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
+      .filter(s => (s.id && !seen.has(s.id) ? (seen.add(s.id), true) : !s.id))
+    return {
+      ...latest,
+      id: latest.id,
+      timestamp: earliest.timestamp,
+      userTask: earliest.userTask,
+      steps,
     }
   }
 

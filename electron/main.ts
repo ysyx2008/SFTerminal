@@ -4101,9 +4101,9 @@ ipcMain.handle('history:getAgentRecordById', async (_event, id: string) => {
   return historyService.getAgentRecordById(id)
 })
 
-// 取某 agentKey 最近一条完整会话记录（联络常驻 tab 重启后恢复上次对话）
-ipcMain.handle('history:getLatestByAgentKey', async (_event, agentKey: string) => {
-  return historyService.getLatestRecordByAgentKey(agentKey)
+// 取某 agentKey 最近 N 条完整会话记录（联络常驻 tab 重启后合并恢复历史对话）
+ipcMain.handle('history:getRecentByAgentKey', async (_event, agentKey: string, limit?: number) => {
+  return historyService.getRecentRecordsByAgentKey(agentKey, limit ?? 10)
 })
 
 ipcMain.handle('history:deleteAgentRecord', async (_event, id: string) => {

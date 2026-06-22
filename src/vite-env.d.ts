@@ -808,7 +808,7 @@ interface Window {
         status: 'completed' | 'failed' | 'aborted'
         duration: number
       } | undefined>
-      getLatestByAgentKey: (agentKey: string) => Promise<import('@shared/types').AgentRecord | undefined>
+      getRecentByAgentKey: (agentKey: string, limit?: number) => Promise<Array<import('@shared/types').AgentRecord>>
       deleteAgentRecord: (id: string) => Promise<boolean>
       getStorageStats: () => Promise<{
         chatFiles: number

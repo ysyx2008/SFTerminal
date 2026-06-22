@@ -157,4 +157,4 @@ AiPanel（新 tab）watch hubFocusedAssistantTabId 或 active：
 - **不要在 useAgentMode 外部直接调用 `runAgent`**：应通过 AiPanel 暴露的接口（如 `submitMessage`）触发，保证 Tab 上下文、滚动、handoff 等逻辑完整执行。
 - **终端 tab 与助手 tab 走不同 IPC**：终端用 `agent.run(tabId, ...)`，助手用 `agent.runStandalone(agentId, ...)`，两者后端 Agent 键也不同（tabId vs agentId UUID）。
 - **clearAgentState 保留 steps**：新任务开始时调用 `clearAgentState(tabId, true)`，`true` 表示保留历史步骤，实现多轮对话的步骤累积显示。
-- **联络 tab 挂载时恢复历史**：`onMounted` 调 `restoreCompanionHistoryIfNeeded()`——仅当本 tab `agentId === '__companion__'` 且会话为空时，拉 `history.getLatestByAgentKey('__companion__')` 把上次对话步骤上墙。await 前后各做一次 `steps.length === 0` 检查，防止覆盖 await 期间流入的 live step（IM/Gateway）。纯展示层恢复，不影响后端会话。
+- **联络 tab 挂载时恢复历史**：`onMounted` 调 `restoreCompanionHistoryIfNeeded()`——仅当本 tab `agentId === '__companion__'` 且会话为空时，拉 `history.getRecentByAgentKey('__companion__', 10)` 取最近 N 条会话经 `mergeCompanionRecords` 合并（steps 按时间升序拼接，`id` 用最新一条对齐续聊上下文）后上墙。await 前后各做一次 `steps.length === 0` 检查，防止覆盖 await 期间流入的 live step（IM/Gateway）。纯展示层恢复，不影响后端会话。

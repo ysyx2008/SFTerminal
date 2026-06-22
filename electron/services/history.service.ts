@@ -659,6 +659,14 @@ export class HistoryService {
   }
 
   /**
+   * 取某个 agentKey 最近的 N 条完整会话记录（按最后活跃时间倒序）。
+   * 联络常驻 tab 恢复时合并展示，避免重启后只看到最后一条会话。
+   */
+  getRecentRecordsByAgentKey(agentKey: string, limit: number = 10): AgentRecord[] {
+    return this.getRecentAgentRecords(limit, r => r.agentKey === agentKey)
+  }
+
+  /**
    * 列出全部 Agent 历史的轻量摘要（来自 agent-index.json，不读各日 JSON）。
    * 按「最后活跃时间」timestamp + duration 倒序。
    */
