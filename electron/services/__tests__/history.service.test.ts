@@ -383,6 +383,95 @@ describe('HistoryService - searchAgentRecordsAdvanced', () => {
   })
 })
 
+describe('HistoryService - watch 历史隔离', () => {
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-history-test-'))
+  })
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('agentKey=__watch__ 的记录存到独立 watch 树/索引，不进主索引', () => {
+    const svc = new HistoryService()
+    const t = new Date('2026-03-18T10:00:00').getTime()
+
+    svc.saveAgentRecord(makeRecord({ id: 'user-1', timestamp: t, duration: 1, userTask: '用户任务' }))
+    svc.saveAgentRecord(makeRecord({
+      id: 'watch-1', timestamp: t + 1000, duration: 1, userTask: '心跳触发', agentKey: '__watch__'
+    }))
+
+    // 正文落到 watch 树，不在 agent 树
+    expect(fs.existsSync(path.join(tmpDir, 'history', 'watch', '2026-03-18', 'watch-1.json'))).toBe(true)
+    expect(fs.existsSync(path.join(tmpDir, 'history', 'agent', '2026-03-18', 'watch-1.json'))).toBe(false)
+
+    // 两套独立索引
+    expect(fs.existsSync(path.join(tmpDir, 'history', 'agent-index.json'))).toBe(true)
+    expect(fs.existsSync(path.join(tmpDir, 'history', 'watch-index.json'))).toBe(true)
+
+    // 主历史接口不含 watch
+    expect(svc.getRecentAgentRecords(10).map(r => r.id)).toEqual(['user-1'])
+    expect(svc.listAgentHistorySummaries(true).map(s => s.id)).toEqual(['user-1'])
+    // by-id 两树通吃
+    expect(svc.getAgentRecordById('watch-1')?.id).toBe('watch-1')
+    // watch 专用读取
+    expect(svc.getRecentWatchRecords(10).map(r => r.id)).toEqual(['watch-1'])
+  })
+
+  it('getTokenUsageStats 合并主 + watch 索引（watch 成本不漏算）', () => {
+    const svc = new HistoryService()
+    const t = Date.now()
+    const usage = { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150, cache_hit_tokens: 0, cache_miss_tokens: 0 }
+
+    svc.saveAgentRecord(makeRecord({ id: 'u', timestamp: t, duration: 1, userTask: '任务', tokenUsage: usage }))
+    svc.saveAgentRecord(makeRecord({ id: 'w', timestamp: t, duration: 1, userTask: '心跳', agentKey: '__watch__', tokenUsage: usage }))
+
+    const stats = svc.getTokenUsageStats()
+    expect(stats.total.total_tokens).toBe(300)
+    expect(stats.total.taskCount).toBe(2)
+  })
+
+  it('deleteAgentRecord 能删除 watch 记录（文件 + watch 索引）', () => {
+    const svc = new HistoryService()
+    const t = new Date('2026-03-18T10:00:00').getTime()
+    svc.saveAgentRecord(makeRecord({ id: 'w', timestamp: t, duration: 1, userTask: '心跳', agentKey: '__watch__' }))
+
+    expect(fs.existsSync(path.join(tmpDir, 'history', 'watch', '2026-03-18', 'w.json'))).toBe(true)
+    expect(svc.deleteAgentRecord('w')).toBe(true)
+    expect(fs.existsSync(path.join(tmpDir, 'history', 'watch', '2026-03-18', 'w.json'))).toBe(false)
+    expect(svc.getRecentWatchRecords(10)).toHaveLength(0)
+    const idx = JSON.parse(fs.readFileSync(path.join(tmpDir, 'history', 'watch-index.json'), 'utf-8'))
+    expect(idx).toHaveLength(0)
+  })
+
+  it('rebuildAgentIndex 后两套索引各自一致', () => {
+    const svc = new HistoryService()
+    const t = new Date('2026-03-18T10:00:00').getTime()
+    svc.saveAgentRecord(makeRecord({ id: 'u', timestamp: t, duration: 1, userTask: '用户' }))
+    svc.saveAgentRecord(makeRecord({ id: 'w', timestamp: t, duration: 1, userTask: '心跳', agentKey: '__watch__' }))
+
+    // 删索引文件模拟损坏/老版本，强制从磁盘重建两套
+    fs.unlinkSync(path.join(tmpDir, 'history', 'agent-index.json'))
+    fs.unlinkSync(path.join(tmpDir, 'history', 'watch-index.json'))
+    svc.rebuildAgentIndex()
+
+    expect(svc.getRecentAgentRecords(10).map(r => r.id)).toEqual(['u'])
+    expect(svc.getRecentWatchRecords(10).map(r => r.id)).toEqual(['w'])
+  })
+
+  it('watch 索引 userTask 截断、正文完整保留', () => {
+    const svc = new HistoryService()
+    const t = new Date('2026-03-18T10:00:00').getTime()
+    const longTask = '[当前时间：x] 触发事件：' + 'a'.repeat(1000)
+
+    svc.saveAgentRecord(makeRecord({ id: 'w', timestamp: t, duration: 1, userTask: longTask, agentKey: '__watch__' }))
+
+    const idx = JSON.parse(fs.readFileSync(path.join(tmpDir, 'history', 'watch-index.json'), 'utf-8'))
+    expect(idx[0].userTask.length).toBe(200)
+    // 正文未截断
+    expect(svc.getRecentWatchRecords(1)[0].userTask).toBe(longTask)
+  })
+})
+
 describe('HistoryService - Canvas content 外化', () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-history-test-'))

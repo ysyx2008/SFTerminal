@@ -1,10 +1,12 @@
 # History Service SPEC
 
-> Last verified: 2026-06-11（Agent 记录改为按会话单文件 + 原子写入；v5 迁移拆分旧日文件）
+> Last verified: 2026-06-23（watch 内心独白拆分到独立历史树 + 独立索引；v6 迁移 rename 拆分）
 
 ## 职责
 
 Agent 对话和聊天记录的持久化存储。按日期分文件存储 JSON 记录，提供按时间、关键词等维度检索，以及完整的导出/导入/清理功能。同时维护 Agent 记录索引以加速搜索。
+
+**双历史树**：用户/联络/终端任务记录存 `history/agent/`（主索引 `agent-index.json`）；watch（关切）的「内心独白」执行记录存 `history/watch/`（独立索引 `watch-index.json`）。两者**物理隔离**，避免高频内心独白（曾占主索引 93%、把它压到 ~149MB）压舱主索引、拖慢每次写盘。归属由 `AgentRecord.agentKey === '__watch__'` 结构化判定（不再用 userTask 关键词匹配）。
 
 ## 文件 / 规模
 
@@ -17,12 +19,13 @@ Agent 对话和聊天记录的持久化存储。按日期分文件存储 JSON �
 | `saveChatRecord(record: ChatRecord): void` | 保存一条聊天记录（**已废弃**，无调用方） | 仅导入流程 |
 | `saveChatRecords(records: ChatRecord[]): void` | 批量保存聊天记录（**已废弃**） | 导入流程 |
 | `getChatRecords(startDate?, endDate?): ChatRecord[]` | 按日期范围查询聊天记录（**已废弃**） | 导出流程 |
-| `rebuildAgentIndex(): void` | 从磁盘重建 Agent 索引 | v5 迁移、维护 |
-| `saveAgentRecord(record: AgentRecord): void` | 保存 Agent 执行记录并更新索引 | `agent/index.ts` |
+| `rebuildAgentIndex(): void` | 从磁盘重建**全部**索引（主 agent + watch 两套） | v5/v6 迁移、清理后、维护 |
+| `saveAgentRecord(record: AgentRecord): void` | 保存 Agent 执行记录并更新索引；按 `agentKey` 路由到 agent 或 watch 树/索引 | `agent/index.ts` |
 | `getAgentRecords(startDate?, endDate?): AgentRecord[]` | 按日期范围查询 Agent 记录 | 前端历史面板 |
 | `getAgentRecordById(id: string): AgentRecord \| undefined` | 按 ID 精确查找 Agent 记录 | 回放/详情查看 |
 | `deleteAgentRecord(id: string): boolean` | 按 ID 删除单条 Agent 记录（日文件、索引、关联截图目录） | IPC `history:deleteAgentRecord`、最近对话侧栏删除 |
-| `getRecentAgentRecords(limit?, filter?): AgentRecord[]` | 获取最近的 Agent 记录（支持自定义过滤） | `agent/index.ts`、上下文构建 |
+| `getRecentAgentRecords(limit?, filter?): AgentRecord[]` | 获取最近的 Agent 记录（**主索引**，不含 watch；支持自定义过滤） | `agent/index.ts`、上下文构建 |
+| `getRecentWatchRecords(limit?, filter?): AgentRecord[]` | 获取最近的 watch 执行记录（**watch 索引/树**，供关切审计） | 审计 / 统计 |
 | `listAgentHistorySummaries(excludeWakeup?): AgentHistorySummary[]` | 从索引列出全部摘要（首条 user_task 作标题，不读日文件） | IPC `history:listAgentSummaries`、`AiPanel` 历史弹窗（无搜索词时的列表） |
 | `searchAgentRecords(keyword: string, limit?): Promise<AgentRecord[]>` | 关键词搜索 Agent 记录（`searchAgentRecordsAdvanced` 的薄封装） | 工具/记忆检索 |
 | `searchAgentRecordsAdvanced(options): Promise<SearchAgentRecordsResult>` | 高级搜索：`userTask`、`finalResult`、`user_task`/`user_supplement` 步骤等；`titleOnly` 仅匹配标题 | IPC `history:searchAgentRecords`、`AiPanel` 历史弹窗在用户按回车/点搜索触发全文检索时 |
@@ -32,7 +35,7 @@ Agent 对话和聊天记录的持久化存储。按日期分文件存储 JSON �
 | `exportToFolder(exportPath, configData, hostProfiles?, options?): {success, files[], error?}` | 导出数据到文件夹（含历史、配置、主机档案） | 前端导出功能 |
 | `importFromFolder(importPath): {success, imported[], error?}` | 从文件夹导入数据 | 前端导入功能 |
 | `cleanupOldRecords(daysToKeep?): {chatDeleted, agentDeleted}` | 清理过期记录 | 维护任务 |
-| `getStorageStats(): {chatFiles, agentFiles, agentSessions, totalSize}` | 返回存储统计信息；`agentFiles` = 有 Agent 记录的天数；`agentSessions` = 会话总数（来自索引） | 设置 UI |
+| `getStorageStats(): {chatFiles, agentFiles, agentSessions, totalSize}` | 返回存储统计信息（含 watch 树）；`agentFiles` = 有记录的天数；`agentSessions` = 主+watch 索引会话总数 | 设置 UI |
 
 ## 核心类型 / 接口
 
@@ -43,7 +46,7 @@ Agent 对话和聊天记录的持久化存储。按日期分文件存储 JSON �
 含 `id`、`sessionId`、`timestamp`、`summary`、`tokenUsage` 等完整执行信息。
 
 ### AgentIndexEntry（本文件内部）
-`{ id, timestamp, duration, dateStr, userTask, terminalType, sshHost?, status, tokenUsage? }`，常驻内存（`_indexCache`），用于排序/过滤/搜索时避免读取完整日期文件。
+`{ id, timestamp, duration, dateStr, userTask, terminalType, agentKey?, sshHost?, status, tokenUsage? }`，常驻内存（每个 `AgentIndexStore.cache`），用于排序/过滤/搜索时避免读取完整日期文件。
 
 ## 依赖（跨 service）
 
@@ -57,9 +60,16 @@ Agent 对话和聊天记录的持久化存储。按日期分文件存储 JSON �
 - 损坏单文件隔离为 `.corrupt.{timestamp}`，不影响同天其他会话
 - v5 迁移将旧 `agent/YYYY-MM-DD.json` 数组拆分为单文件，旧文件改名为 `.json.migrated` 保留 30 天
 
+**Watch 历史隔离机制**（v6 起）：
+- watch 内心独白记录（`agentKey === '__watch__'`）存到**独立树** `history/watch/YYYY-MM-DD/{sessionId}.json`，正文格式与 agent 树完全一致、同样按日期拆分、可长期审计
+- 维护独立索引 `watch-index.json`；其条目 userTask 截断到 200 字（心跳模板展开后很长，索引只用作审计标题，正文完整保存在日文件里）
+- `saveAgentRecord` 用 `storeForRecord()` 按 agentKey 路由；`readAgentRecordFromDisk` / `getAgentRecordById` 先查 agent 树再查 watch 树，by-id 查找两树通吃
+- v6 迁移把 agent 树里属于 watch 的正文 **rename**（仅改目录、不读写内容、正文逐字节不变）到 watch 树。旧记录（agentKey 字段引入前、无结构化标记）靠 userTask 心跳前缀识别，该启发式**仅迁移期一次性使用**，运行时一律 agentKey 结构化判定
+- **设计动机**：watch 高频写入曾让单一 agent-index 膨胀到 149MB（2.6w 条占 93%）、每次写盘全量重写（O(N)）。隔离后主索引只剩真实任务、瘦回几 MB；watch 成本仍由 `getTokenUsageStats` 合并两索引计入，不漏算
+
 **Chat 存储**（遗留）：`history/chat/YYYY-MM-DD.json`，当前无写入方，仅导出/导入兼容。
 
-**索引机制**：Agent 记录额外维护索引文件（`history/agent-index.json`，常驻内存 `_indexCache`），`saveAgentRecord` 时同步更新、缺失时 `rebuildIndex` 全量重建。`getRecentAgentRecords` / `listAgentHistorySummaries` / `searchAgentRecordsAdvanced` 均以索引为候选来源，避免全量读日文件。
+**索引机制**：每棵历史树各维护一个索引文件（主 `agent-index.json` / watch `watch-index.json`，各自常驻内存缓存），抽象为 `AgentIndexStore { dir, indexPath, cache, userTaskMaxLen? }`，索引方法（`getIndexFor` / `writeIndexFor` / `rebuildIndexFor` / `updateIndexEntryFor`）统一按 store 参数化。`saveAgentRecord` 时同步更新对应索引、缺失时按 store 全量重建。`getRecentAgentRecords` / `listAgentHistorySummaries` / `searchAgentRecordsAdvanced` 仅以**主索引**为候选来源（天然排除 watch）；`getTokenUsageStats` 合并主 + watch 两索引（watch 也耗 token，须计入）。`rebuildAgentIndex()` 重建两套索引。
 
 **搜索性能（searchAgentRecordsAdvanced，async）**：先用内存索引按「时间窗 + filter（cast 到索引条目，与 `getRecentAgentRecords` 同款）」筛候选，`titleOnly` 时关键字匹配也在索引层完成。
 - `titleOnly`：候选即命中集，仅为前 `limit` 条读回完整记录，零全量扫描；

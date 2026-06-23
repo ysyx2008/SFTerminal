@@ -17,6 +17,7 @@ import { migrationV2 } from './v2-host-notes-to-knowledge'
 import { migrationV3 } from './v3-scheduler-to-watch'
 import { migrationV4 } from './v4-ui-theme-mode'
 import { migrationV5 } from './v5-agent-history-per-session'
+import { migrationV6 } from './v6-watch-history-split'
 
 const allMigrations = [
   migrationV1,
@@ -24,6 +25,7 @@ const allMigrations = [
   migrationV3,
   migrationV4,
   migrationV5,
+  migrationV6,
 ]
 
 let _runner: MigrationRunner | null = null
