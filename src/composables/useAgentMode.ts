@@ -1777,8 +1777,12 @@ export function useAgentMode(
     }
   }
 
-  // 把多条 companion 会话记录合成一条「展示用」记录：steps 按时间升序拼接，
-  // id 用最新一条（续聊时后端按此 sessionId 加载最近上下文），timestamp/userTask 用最早一条。
+  // 把多条 companion 会话记录合成一条「展示用」记录：steps 按时间升序拼接。
+  // ⚠️ id 与 timestamp 必须成对取「最新一条」：restoreAgentHistory 会把它们写成
+  // agentState.sessionId / sessionStartTime 传给后端，续聊时 checkpoint 据此存盘。
+  // 若像旧版那样 id 取最新、timestamp 取最早，后端会把记录存成「id 最新、timestamp
+  // 最早」的错配记录——这正是联络「裂成两条 session、两条 timestamp 撞成一样」的放大器。
+  // userTask（标题）仍取最早一条，展示合并对话从头开始，不影响 session 身份。
   const mergeCompanionRecords = (records: AgentRecord[]): AgentRecord | null => {
     if (!records.length) return null
     const ordered = [...records].sort((a, b) => a.timestamp - b.timestamp)
@@ -1792,7 +1796,7 @@ export function useAgentMode(
     return {
       ...latest,
       id: latest.id,
-      timestamp: earliest.timestamp,
+      timestamp: latest.timestamp,
       userTask: earliest.userTask,
       steps,
     }

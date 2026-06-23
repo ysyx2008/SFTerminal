@@ -145,9 +145,19 @@ run(message, context, options)
 
 > **装载量与预算**：`restoreRecentTaskMemory` 从宽装载（最多 6 条记录 / 40 个任务进 TaskMemory，仅防内存膨胀）；真正进上下文的量由 `buildTaskHistoryContext` 按 token 预算动态裁剪（Level 0→4 渐进降级、预算用尽即停），装多少都不会撑爆上下文。
 
+### sessionId 回种：防止 Companion「裂成两条 session」
+
+Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，但它的 sessionId 此前是「谁先碰谁定」：
+
+- IM / Gateway / 主动消息等入口 `runAssistant('__companion__', ...)` 时 **context 不带 sessionId**；重启后若它们在桌面 tab 把 sessionId 写回后端单例之前先碰到 companion（此时 `_sessionId` 还空），`run()` 旧逻辑会新起一条 `session_${Date.now()}` ——建出与历史**断链的并行记录**，这就是「联络裂成两条 session」的源头。
+- **修复**：`run()` 在 `!_sessionId && !context.sessionId` 且 `_persistentNamedAgent` 时，从 `getLatestRecordByAgentKey(agentId)` **回种** sessionId/startTime，让所有入口续写到同一条会话。
+- **抑制位 `_suppressSessionSeed`**：`startNewSession()`（Watch 每次执行要独立记录）/ `resetSession()`（用户「清空对话」要全新会话）会置位，使下一次 run **跳过回种**、生成全新 session。consume 后自动清零。这样 Watch 的「每次独立记录」与 Companion 的「连续会话」都成立。
+
+> **配套（前端）**：`mergeCompanionRecords`（`useAgentMode.ts`）合并展示多条 companion 记录时，`id` 与 `timestamp` 必须**成对取最新一条**。旧版「id 取最新、timestamp 取最早」会经 `restoreAgentHistory` 写成错配的 `sessionId/sessionStartTime`，导致 checkpoint 把记录存成「id 最新、timestamp 最早」——是分裂的放大器（两条记录 timestamp 撞成一样）。
+
 **实现**：`Agent._persistentNamedAgent: boolean`（默认 false）。`AgentService.createAssistantAgent(agentId)` 内部根据 `agentId === COMPANION_AGENT_ID || WATCH_AGENT_ID` 自动调 `markAsPersistentNamed()`——调用方（IM service / Watch service）无需感知。`getOrCreateAgent`（终端 Agent）和 createAssistantAgent 的非命名分支默认就是 false。
 
-**回归保护**：`__tests__/agent.test.ts` 三条用例锁定边界——① "should NOT restore global recent history for normal agent ..."（普通 tab 不借历史）；② "should restore global recent history for persistent named agent when sessionId record missing"（命名 Agent 找不到 record 时借历史）；③ "should merge recent records into memory for persistent named agent even when sessionId record is found"（命名 Agent 即便精确命中 latest 也合并最近多条——本次修复的核心）。新增类似的固定 ID Agent 时记得在 `isPersistentNamedAgentId` 里登记。
+**回归保护**：`__tests__/agent.test.ts` 五条用例锁定边界——① "should NOT restore global recent history for normal agent ..."（普通 tab 不借历史）；② "should restore global recent history for persistent named agent when sessionId record missing"（命名 Agent 找不到 record 时借历史）；③ "should merge recent records into memory for persistent named agent even when sessionId record is found"（命名 Agent 即便精确命中 latest 也合并最近多条）；④ "should seed sessionId from latest record ... when context has no sessionId"（无 sessionId 入口回种、防分裂）；⑤ "should NOT seed sessionId after startNewSession (suppressed) ..."（Watch/清空对话 抑制回种）。新增类似的固定 ID Agent 时记得在 `isPersistentNamedAgentId` 里登记。
 
 ## 工具元数据驱动模型（核心 OOP 边界承诺）
 

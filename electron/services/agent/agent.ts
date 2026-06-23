@@ -178,6 +178,10 @@ export abstract class Agent {
   /** 恢复任务 id 的实例级单调序号：保证 split* 在同一毫秒内多次调用（如 restoreRecentTaskMemory
    *  + restoreFromSessionRecord 接连执行）生成的 task id 不碰撞，避免 saveTask 互相覆盖丢任务。 */
   private _restoreTaskSeq = 0
+
+  /** 抑制下一次 run 从历史回种 sessionId：resetSession（清空对话）/ startNewSession（Watch 每次
+   *  独立记录）时置位，表示「本次有意要全新会话」，不要续写到历史最近一条。consume 后自动清零。 */
+  private _suppressSessionSeed = false
   
   /** 终端元数据（从首次 run 的 context 获取） */
   private _terminalMeta?: { terminalType: TerminalType; sshHost?: string }
@@ -595,9 +599,28 @@ export abstract class Agent {
     
     // 初始化会话追踪（首次 run 时创建 session 或从历史恢复）
     if (!this._sessionId) {
+      const suppressSeed = this._suppressSessionSeed
+      this._suppressSessionSeed = false
       if (context.sessionId) {
         this._sessionId = context.sessionId
         this._sessionStartTime = context.sessionStartTime || Date.now()
+      } else if (this._persistentNamedAgent && !suppressSeed) {
+        // 持久命名 Agent（联络）是「同一条长期关系线」。重启后若 IM/网关/主动消息等
+        // 不带 sessionId 的入口先碰到它（此时 _sessionId 还空），绝不能新起一条
+        // session_${Date.now()}——那会建出与历史断链的并行记录，正是「联络裂成两条
+        // session」的源头。应从最近一条同 agentKey 历史回种，让所有入口续写到同一条会话。
+        //（Watch 每次执行走 startNewSession，会经 suppressSeed 跳过，仍保持独立记录。）
+        const latest = this._agentId
+          ? this.services.historyService?.getLatestRecordByAgentKey?.(this._agentId)
+          : undefined
+        if (latest) {
+          this._sessionId = latest.id
+          this._sessionStartTime = latest.timestamp
+          log.info(`Seeded sessionId from history for persistent agent ${this._agentId}: ${latest.id} (no context.sessionId, avoid forking a disconnected session)`)
+        } else {
+          this._sessionId = `session_${Date.now()}`
+          this._sessionStartTime = Date.now()
+        }
       } else {
         this._sessionId = `session_${Date.now()}`
         this._sessionStartTime = Date.now()
@@ -1466,6 +1489,7 @@ export abstract class Agent {
     this.preRunUserMessages = []
     this._sessionId = undefined
     this._sessionStartTime = undefined
+    this._suppressSessionSeed = true
     this._sessionSteps = []
     this._sessionMessages = []
     this._sessionTokenUsage = undefined
@@ -1484,6 +1508,7 @@ export abstract class Agent {
   startNewSession(): void {
     this._sessionId = undefined
     this._sessionStartTime = undefined
+    this._suppressSessionSeed = true
     this._sessionSteps = []
     this._sessionMessages = []
     this._sessionTokenUsage = undefined

@@ -1186,6 +1186,96 @@ describe('Agent run method', () => {
       expect(taskMemory.getTaskCount()).toBe(3)
     })
 
+    /**
+     * 防回归（联络分裂根因①）：持久命名 Agent 在「无 context.sessionId」时（IM/网关/主动
+     * 消息等入口），不能新起 session_${Date.now()}，而应从最近一条同 agentKey 历史回种
+     * sessionId，让所有入口续写到同一条会话，避免建出与历史断链的并行记录。
+     */
+    it('should seed sessionId from latest record for persistent named agent when context has no sessionId', async () => {
+      const persistedRecord = {
+        id: 'session_persisted_companion',
+        timestamp: Date.now() - 100000,
+        terminalId: 'companion-pty',
+        terminalType: 'assistant',
+        userTask: '昨天聊的事',
+        steps: [
+          { id: 'ut1', type: 'user_task', content: '昨天聊的事', timestamp: Date.now() - 100000 },
+          { id: 'fr1', type: 'final_result', content: '记得', timestamp: Date.now() - 99000 }
+        ],
+        messages: [
+          { role: 'user', content: '昨天聊的事' },
+          { role: 'assistant', content: '记得' }
+        ],
+        finalResult: '记得',
+        duration: 1000,
+        status: 'completed'
+      }
+      const mockHistoryService = {
+        getAgentRecordById: vi.fn().mockReturnValue(persistedRecord),
+        getRecentAgentRecords: vi.fn().mockReturnValue([]),
+        getLatestRecordByAgentKey: vi.fn().mockReturnValue(persistedRecord),
+        saveAgentRecord: vi.fn()
+      }
+
+      const services = createMockServices({ historyService: mockHistoryService as any })
+      const companion = new TestAgent(services)
+      companion.setAgentId('__companion__')
+      companion.markAsPersistentNamed()
+
+      const ai = services.aiService as any
+      ai.chatWithToolsStream.mockImplementation(
+        (_m: any, _t: any, onChunk: any, _otc: any, onDone: any) => {
+          onChunk('好'); onDone({ content: '好', tool_calls: undefined }); return Promise.resolve()
+        }
+      )
+
+      // 关键：context 不带 sessionId（模拟 IM/主动消息入口）
+      const context = createMockContext({ terminalType: 'assistant' })
+      await companion.run('在吗', context)
+
+      expect(mockHistoryService.getLatestRecordByAgentKey).toHaveBeenCalledWith('__companion__')
+      // 回种到历史最近一条，而不是新起 session_${Date.now()}
+      expect(companion.getSessionId()).toBe('session_persisted_companion')
+    })
+
+    /**
+     * 防回归（根因①的边界）：startNewSession（Watch 每次独立记录）/ resetSession（清空对话）
+     * 后，本次有意要全新会话，必须抑制回种，避免覆盖历史最近一条记录。
+     */
+    it('should NOT seed sessionId after startNewSession (suppressed) even for persistent named agent', async () => {
+      const persistedRecord = {
+        id: 'session_persisted_x', timestamp: Date.now() - 100000, terminalId: 'p',
+        terminalType: 'assistant', userTask: 'x', steps: [], messages: [],
+        finalResult: 'x', duration: 1, status: 'completed'
+      }
+      const mockHistoryService = {
+        getAgentRecordById: vi.fn().mockReturnValue(undefined),
+        getRecentAgentRecords: vi.fn().mockReturnValue([]),
+        getLatestRecordByAgentKey: vi.fn().mockReturnValue(persistedRecord),
+        saveAgentRecord: vi.fn()
+      }
+      const services = createMockServices({ historyService: mockHistoryService as any })
+      const watchLike = new TestAgent(services)
+      watchLike.setAgentId('__watch__')
+      watchLike.markAsPersistentNamed()
+
+      const ai = services.aiService as any
+      ai.chatWithToolsStream.mockImplementation(
+        (_m: any, _t: any, onChunk: any, _otc: any, onDone: any) => {
+          onChunk('ok'); onDone({ content: 'ok', tool_calls: undefined }); return Promise.resolve()
+        }
+      )
+
+      watchLike.startNewSession() // 有意要独立会话
+      const context = createMockContext({ terminalType: 'assistant' })
+      await watchLike.run('wakeup', context)
+
+      // 抑制生效：不回种，生成新 session_，且不等于历史那条
+      expect(mockHistoryService.getLatestRecordByAgentKey).not.toHaveBeenCalled()
+      expect(watchLike.getSessionId()).not.toBe('session_persisted_x')
+      expect(watchLike.getSessionId()).toMatch(/^session_\d+$/)
+    })
+
     it('should restore from steps when messages field is missing (old records)', async () => {
       const sessionId = 'session_old_record'
       const mockHistoryService = {
