@@ -46,9 +46,8 @@
 3. 无 activeTab，有 hubFocusedAssistantTabId（Hub 焦点模式）
       └→ goToHome()，退回欢迎页（侧栏保留），不关窗口
 
-4. 无 activeTab，无 Hub 焦点（欢迎页）
-   ├─ hasDisplayedTabs（有终端/提升/远程 Tab）→ 不做任何事
-   └─ 无任何真实 Tab → 隐藏窗口（window.close）
+4. 无 activeTab，无 Hub 焦点（任务首页 / 欢迎页）
+      └→ 隐藏窗口（window.close）；后台 tab 保留，下次打开恢复
 ```
 
 **修改此逻辑时必须保证覆盖层始终第一优先，且所有新增的 Tab 类型都在第 2 步内明确处理。**
@@ -117,7 +116,4 @@ showWelcomePage = !showSmartPatrol && !activeSurfaceTabId
 
 // 侧栏：activeTabId 为空时常驻（Hub 视图始终可见）
 showRecallSidebar = !activeTabId && !showSmartPatrol && !isSteamBuild
-
-// Tab 栏"有意义"tab 存在（决定 Cmd+W 最后一步是否隐藏窗口）
-hasDisplayedTabs = tabs.some(t => !(t.type === 'assistant' && !t.isRemote && !t.isPromoted))
 ```

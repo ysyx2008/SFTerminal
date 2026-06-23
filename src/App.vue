@@ -173,11 +173,6 @@ function openAppMenuFromButton() {
 
 const hasTerminalTab = computed(() => terminalStore.tabs.some(t => t.type === 'local' || t.type === 'ssh'))
 
-// Tab 栏"可见" tab 数：终端 + 已提升助手 + 远程助手（与 TabBar.displayedTabs 保持同步）
-const hasDisplayedTabs = computed(() =>
-  terminalStore.tabs.some(t => !(t.type === 'assistant' && !t.isRemote && !t.isPromoted))
-)
-
 // UI 主题：使用 effectiveUiTheme 而非 uiTheme，这样在"跟随系统"模式下
 // 系统外观切换时主题能立即反映出来（auto 下 effective = dark/light）
 const currentUiTheme = computed(() => configStore.effectiveUiTheme)
@@ -368,10 +363,8 @@ const handleCloseShortcut = async () => {
     // Hub 焦点模式（正在看某个对话）：Cmd+W 退回欢迎页，不关窗口
     terminalStore.goToHome()
   } else {
-    // 欢迎页且无任何真实 tab → 隐藏窗口
-    if (!hasDisplayedTabs.value) {
-      await window.electronAPI.window.close()
-    }
+    // 任务首页（TabBar「任务」激活、无 Hub 焦点）→ 隐藏窗口
+    await window.electronAPI.window.close()
   }
 }
 
