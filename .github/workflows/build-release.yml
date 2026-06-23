@@ -60,6 +60,7 @@ jobs:
             release/latest.yml
             release/*.blockmap
           if-no-files-found: error
+          retention-days: 3
 
   # macOS 构建
   build-macos:
@@ -111,6 +112,7 @@ jobs:
             release/latest-mac.yml
             release/*.blockmap
           if-no-files-found: error
+          retention-days: 3
 
   # Linux 构建
   build-linux:
@@ -150,6 +152,7 @@ jobs:
             release/latest-linux.yml
             release/*.blockmap
           if-no-files-found: warn
+          retention-days: 3
 
   # 创建 GitHub Release 并上传构建产物
   create-release:

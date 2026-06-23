@@ -28,7 +28,7 @@ jobs:
         with:
           name: steam-windows
           path: release/win-unpacked/
-          retention-days: 7  # 保留7天，方便调试
+          retention-days: 3
 
   build-macos:
     runs-on: macos-latest
@@ -57,7 +57,7 @@ jobs:
         with:
           name: steam-macos
           path: release/mac-universal/
-          retention-days: 7
+          retention-days: 3
 
   build-linux:
     runs-on: ubuntu-latest
@@ -83,4 +83,4 @@ jobs:
         with:
           name: steam-linux
           path: release/linux-unpacked/
-          retention-days: 7
+          retention-days: 3

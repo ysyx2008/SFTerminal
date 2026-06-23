@@ -48,7 +48,7 @@ jobs:
           path: |
             release/*.exe
             release/*.zip
-          retention-days: 14
+          retention-days: 3
           if-no-files-found: error
 
   upload-oss:
