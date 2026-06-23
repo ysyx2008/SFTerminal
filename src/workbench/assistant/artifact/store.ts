@@ -170,6 +170,26 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
   }
 
   /**
+   * 直接从持久化清单恢复产出物面板（新方式，优先于 hydrateFromSteps replay）。
+   * 清单来自 AgentRecord.artifacts，已剥离 contentFromFile 的 content，恢复后按 filePath 读盘回填。
+   */
+  function restoreFromArtifacts(tabId: string, artifacts: CanvasArtifact[]) {
+    cancelPendingClose(tabId)
+    if (artifacts.length === 0) {
+      commitTabState(tabId, createTabArtifactState())
+      return
+    }
+    const activeArtifactId = artifacts[artifacts.length - 1].id
+    commitTabState(tabId, {
+      visible: true,
+      activeArtifactId,
+      artifacts: [...artifacts],
+      hadArtifacts: true
+    })
+    void reloadArtifactContent(tabId)
+  }
+
+  /**
    * 历史持久化会剥离 md/html 产出物的 content（contentFromFile）。
    * 恢复后或 open 时 content 为空，这里按 filePath 异步读盘/重建预览。
    */
@@ -332,6 +352,7 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     updateContent,
     applyCanvasData: applyCanvasDataForTab,
     hydrateFromSteps,
+    restoreFromArtifacts,
     syncArtifactsWithDisk,
     handleAgentStep,
     handleAgentComplete,

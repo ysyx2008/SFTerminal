@@ -4053,6 +4053,11 @@ ipcMain.handle('history:saveAgentRecord', async (_event, record: AgentRecord) =>
   historyService.saveAgentRecord(record)
 })
 
+// 保存（更新）产出物面板清单
+ipcMain.handle('history:saveArtifacts', async (_event, recordId: string, artifacts: AgentRecord['artifacts']) => {
+  historyService.saveArtifacts(recordId, artifacts ?? [])
+})
+
 // 获取 Agent 记录
 ipcMain.handle('history:getAgentRecords', async (_event, startDate?: string, endDate?: string) => {
   return historyService.getAgentRecords(startDate, endDate)

@@ -35,6 +35,7 @@ import { getRendererComponent, getRendererIcon } from '../renderers/ui-registry'
 import { useToast } from '../../../../composables/useToast'
 import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '../../../../composables/useHoverTip'
 import HoverTipOverlay from '../../../../components/HoverTipOverlay.vue'
+import { useTerminalStore } from '../../../../stores/terminal'
 
 const props = defineProps<{
   tabId: string
@@ -42,6 +43,7 @@ const props = defineProps<{
 
 const { t } = useI18n()
 const artifactStore = useAssistantArtifactStore()
+const terminalStore = useTerminalStore()
 const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
 const saveBridge = createArtifactSaveBridge()
 provideArtifactSaveBridge(saveBridge)
@@ -272,16 +274,19 @@ function closeArtifact(id: string, e?: Event) {
   e?.stopPropagation()
   saveBridge.flush(id)
   artifactStore.removeArtifact(props.tabId, id)
+  terminalStore.saveArtifactsToHistory(props.tabId)
 }
 
 function closeOthers(keepId: string) {
   flushActiveDraft()
   artifactStore.closeOthers(props.tabId, keepId)
+  terminalStore.saveArtifactsToHistory(props.tabId)
 }
 
 function closeAllArtifacts() {
   flushActiveDraft()
   artifactStore.closeAll(props.tabId)
+  terminalStore.saveArtifactsToHistory(props.tabId)
 }
 
 function minimizePanel() {

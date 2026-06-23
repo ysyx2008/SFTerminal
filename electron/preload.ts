@@ -1300,6 +1300,9 @@ const electronAPI = {
     deleteAgentRecord: (id: string) =>
       ipcRenderer.invoke('history:deleteAgentRecord', id) as Promise<boolean>,
 
+    saveArtifacts: (recordId: string, artifacts: import('@shared/types').CanvasArtifact[]) =>
+      ipcRenderer.invoke('history:saveArtifacts', recordId, artifacts) as Promise<void>,
+
     // 获取数据目录路径
     getDataPath: () => ipcRenderer.invoke('history:getDataPath') as Promise<string>,
 

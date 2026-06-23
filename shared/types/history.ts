@@ -50,6 +50,12 @@ export interface AgentRecord {
   duration: number
   status: 'completed' | 'failed' | 'aborted'
   tokenUsage?: TokenUsage
+  /**
+   * 产出物面板的持久化清单。
+   * 由 Agent 完成后或用户在面板做增删操作时写入，加载历史时直接恢复（不再 replay steps）。
+   * 字段缺失时（老记录）退化为按 steps 重放，保持向后兼容。
+   */
+  artifacts?: import('./canvas').CanvasArtifact[]
 }
 
 /**

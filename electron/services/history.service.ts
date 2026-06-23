@@ -490,6 +490,20 @@ export class HistoryService {
   }
 
   /**
+   * 保存（或更新）产出物面板清单到指定记录。
+   * 自动剥离 contentFromFile 的 content（可从磁盘重生），避免大文件撑爆历史记录。
+   */
+  saveArtifacts(recordId: string, artifacts: import('@shared/types').CanvasArtifact[]): void {
+    const record = this.getAgentRecordById(recordId)
+    if (!record) return
+    record.artifacts = artifacts.map(a => {
+      if (a.contentFromFile) return { ...a, content: '' }
+      return a
+    })
+    this.saveAgentRecord(record)
+  }
+
+  /**
    * 剥离 `canvasData.content` 中可从 `filePath` 磁盘文件重生的内容（`contentFromFile`）。
    * 仅作用于待写盘的 record 副本：克隆 canvasData 后删除 content，绝不改动调用方
    * （Agent 的 `_sessionSteps`）持有的共享对象，避免破坏正在进行会话的实时预览。

@@ -2114,6 +2114,11 @@ export const useTerminalStore = defineStore('terminal', () => {
       steps,
     }
     tabs.value = [...tabs.value]
+
+    // Agent 完成后将当前产出物清单写入历史记录，保证后续加载时直接恢复（不需要 replay）
+    if (tab.type === 'assistant') {
+      saveArtifactsToHistory(tabId)
+    }
   }
 
   /**
@@ -2195,6 +2200,18 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
+   * 将当前产出物清单持久化到对应的历史记录中。
+   * 在 Agent 完成、用户关闭产出物等场景调用，确保下次加载历史时直接恢复（无需 replay）。
+   */
+  function saveArtifactsToHistory(tabId: string) {
+    const tab = tabs.value.find(t => t.id === tabId)
+    const sessionId = tab?.agentState?.sessionId
+    if (!sessionId) return
+    const artifacts = [...useAssistantArtifactStore().getArtifacts(tabId)]
+    window.electronAPI?.history?.saveArtifacts?.(sessionId, artifacts)
+  }
+
+  /**
    * 打开历史对话：已有 tab 则聚焦，否则新建 assistant tab 并恢复历史。
    * 分叉会话使用新的 sessionId，与源记录独立映射。
    */
@@ -2249,6 +2266,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     finalResult?: string
     duration: number
     status: 'completed' | 'failed' | 'aborted'
+    artifacts?: import('@shared/types').CanvasArtifact[]
   }): void {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab) return
@@ -2308,9 +2326,16 @@ export const useTerminalStore = defineStore('terminal', () => {
     // 确保从欢迎页首次打开历史时，AiPanel 能立即感知 steps 变化
     tabs.value = [...tabs.value]
 
-    // 重放 steps 中的 canvasData，恢复 Artifact 产出物面板（仅助手 tab）
+    // 恢复 Artifact 产出物面板（仅助手 tab）
+    // 优先从持久化清单 record.artifacts 直接恢复（无需 replay）；
+    // 清单缺失时（老记录）退化为按 steps 重放，保持向后兼容。
     if (tab.type === 'assistant') {
-      useAssistantArtifactStore().hydrateFromSteps(tabId, steps)
+      const artifactStore = useAssistantArtifactStore()
+      if (record.artifacts?.length) {
+        artifactStore.restoreFromArtifacts(tabId, record.artifacts)
+      } else {
+        artifactStore.hydrateFromSteps(tabId, steps)
+      }
     }
   }
 
@@ -3049,6 +3074,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     getHistoryConversationMeta,
     getHistoryConversationStatus,
     openHistoryConversation,
+    saveArtifactsToHistory,
     getAgentContext,
     // 文档管理
     getUploadedDocs,
