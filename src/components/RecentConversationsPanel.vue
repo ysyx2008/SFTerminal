@@ -40,6 +40,11 @@ const hasLoaded = ref(false)
 const handleNewConversation = () => {
   terminalStore.goToHome()
 }
+
+/** 欢迎页态：无全屏 tab、无 Hub 焦点会话，主区展示欢迎输入 */
+const isWelcomeHomeActive = computed(
+  () => !terminalStore.activeTabId && !terminalStore.hubFocusedAssistantTabId
+)
 const DISPLAY_LIMIT = 60
 const LOAD_MORE_STEP = 40
 const displayCount = ref(DISPLAY_LIMIT)
@@ -593,6 +598,7 @@ const loadMore = () => {
           <button
             type="button"
             class="new-conversation-btn"
+            :class="{ 'is-active': isWelcomeHomeActive }"
             @click="handleNewConversation"
           >
             <Plus :size="13" />
@@ -741,6 +747,17 @@ const loadMore = () => {
   background: color-mix(in srgb, var(--bg-surface) 90%, transparent);
   color: var(--text-primary);
   border-color: var(--border-color);
+}
+
+.new-conversation-btn.is-active {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-primary) 28%, var(--border-color));
+}
+
+.new-conversation-btn.is-active:hover {
+  background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent-primary) 35%, var(--border-color));
 }
 
 .panel-action-btn {
