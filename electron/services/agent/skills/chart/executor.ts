@@ -7,6 +7,7 @@ import { t } from '../../i18n'
 import { createLogger } from '../../../../utils/logger'
 import { buildOption, getRequiredMapIds, type ChartType, type ChartInput, type EChartsOption } from './render'
 import type { ChartMapId } from '../../../../../shared/chart-maps'
+import { extractBuiltinMapIdsFromOption } from '../../../../../shared/chart-maps'
 import { resolveChartBackground, type ChartTheme } from './presets'
 import { renderToSvg, renderToPng, type RenderSize } from './ssr'
 import { sanitizeOptionForIpc, stripFormatterMarkers } from './ipc-sanitize'
@@ -226,6 +227,7 @@ async function renderEchartsOption(
   const title = typeof args.title === 'string' ? args.title : ''
   const format = parseFormat(args.format)
   const pixelRatio = clampPixelRatio(args.pixel_ratio, format, size)
+  const mapIds = extractBuiltinMapIdsFromOption(option)
 
   // 2) 步骤卡片只展示 size + 可选 title，避免把整个 option（可能很大）塞进 toolArgs
   const toolArgs: Record<string, unknown> = { width: size.width, height: size.height, title }
@@ -243,7 +245,7 @@ async function renderEchartsOption(
 
   let rendered: { dataUrl: string; payload: string | Buffer }
   try {
-    rendered = await renderChart(option, size, format, pixelRatio)
+    rendered = await renderChart(option, size, format, pixelRatio, mapIds)
   } catch (err) {
     // 关键设计：把 ECharts / sharp 的原始报错原样返给 AI，让它能定位到具体问题
     // （ECharts 报错通常带路径，如 "Invalid series.0.data"；sharp 报错通常是 SVG 解析问题）。
@@ -284,11 +286,16 @@ async function renderEchartsOption(
   //       structuredClone 通得过 IPC 检查、原样到前端 reify 后会把内置 K 线 formatter 装到
   //       散点/柱状图上，跑出怪异 tooltip。投递前先调 stripFormatterMarkers 清理——marker
   //       协议仅供后端 generate_chart 内部使用，自由路径上 AI 永远碰不到 marker 还原能力。
-  let echartsPayload: { option: EChartsOption; width: number; height: number } | undefined
+  let echartsPayload: { option: EChartsOption; width: number; height: number; registeredMaps?: ChartMapId[] } | undefined
   if (format === 'svg') {
     const cleaned = stripFormatterMarkers(option) as EChartsOption
     if (isIpcSafeForChart(cleaned)) {
-      echartsPayload = { option: cleaned, width: size.width, height: size.height }
+      echartsPayload = {
+        option: cleaned,
+        width: size.width,
+        height: size.height,
+        ...(mapIds.length > 0 ? { registeredMaps: mapIds } : {})
+      }
     } else {
       log.warn('render_echarts_option: option contains non-cloneable values (function formatters); falling back to SVG-only delivery')
     }

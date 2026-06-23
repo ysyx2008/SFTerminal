@@ -13,10 +13,49 @@
  */
 
 import * as fs from 'fs'
+import * as path from 'path'
+import { app } from 'electron'
 import { DECK_SIZES, type DeckSize } from './html-render-pptx'
 import { createLogger } from '../../../../utils/logger'
 
 const log = createLogger('PptPreview')
+
+let cachedEchartsInline: string | null = null
+
+function resolveEchartsBundlePath(): string | null {
+  const candidates = [
+    path.join(process.cwd(), 'node_modules/echarts/dist/echarts.min.js'),
+    path.join(app.getAppPath(), 'node_modules/echarts/dist/echarts.min.js'),
+  ]
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p
+  }
+  return null
+}
+
+/** sandbox iframe CSP 禁止外链脚本；幻灯片若引用 CDN echarts，改由预览文档内联注入 */
+function getInlineEchartsScript(): string {
+  if (cachedEchartsInline) return cachedEchartsInline
+  const bundlePath = resolveEchartsBundlePath()
+  if (!bundlePath) {
+    log.warn('echarts.min.js not found; PPT slides using CDN echarts will fail in preview')
+    return ''
+  }
+  cachedEchartsInline = fs.readFileSync(bundlePath, 'utf8')
+  return cachedEchartsInline
+}
+
+function slideUsesEcharts(html: string): boolean {
+  return /echarts|registerMap|type\s*:\s*['"]map['"]/i.test(html)
+}
+
+/** 去掉外链 <script src="https://...">，避免 CSP 报错与重复加载 */
+function stripExternalScriptTags(html: string): string {
+  return html.replace(
+    /<script\b[^>]*\bsrc\s*=\s*["']https?:\/\/[^"']+["'][^>]*>\s*<\/script>/gi,
+    ''
+  )
+}
 
 const MIME_BY_EXT: Record<string, string> = {
   '.png': 'image/png',
@@ -81,13 +120,19 @@ export function buildPreviewDocument(
 
   const cards = slides
     .map((inner, i) => {
-      const body = inlineLocalImages(inner || '')
+      const body = stripExternalScriptTags(inlineLocalImages(inner || ''))
       return `<div class="slide-card">
   <span class="slide-no">${i + 1} / ${slides.length}</span>
   <div class="stage">${body}</div>
 </div>`
     })
     .join('\n')
+
+  const needsEcharts = slides.some(s => slideUsesEcharts(s))
+  const echartsScript = needsEcharts ? getInlineEchartsScript() : ''
+  const echartsTag = echartsScript
+    ? `<script>${echartsScript}<\/script>`
+    : ''
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -134,6 +179,7 @@ export function buildPreviewDocument(
   .stage .bg{position:absolute;inset:0;}
 ${css || ''}
 </style>
+${echartsTag}
 </head>
 <body>
 <p class="hint">共 ${slides.length} 页 &middot; 向下滚动预览 &middot; 最终以 PowerPoint 打开为准</p>

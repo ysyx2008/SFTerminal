@@ -3,10 +3,12 @@
  * 纯逻辑，不含 GeoJSON 文件 I/O——前后端共用。
  */
 
-/** 内置地图注册名（传给 echarts.registerMap / series.map） */
-export type ChartMapId = 'world' | 'china' | `p${string}`
+import { CHINA_CITIES } from './cities-index'
 
-export type ChartMapLevel = 'world' | 'china_provinces' | 'province_cities'
+/** 内置地图注册名（传给 echarts.registerMap / series.map） */
+export type ChartMapId = 'world' | 'china' | `p${string}` | `c${string}`
+
+export type ChartMapLevel = 'world' | 'china_provinces' | 'province_cities' | 'city_districts'
 
 export interface ResolvedChartMap {
   /** echarts.registerMap 使用的名称 */
@@ -84,20 +86,26 @@ export function resolveChartMapRegion(region: unknown): ResolvedChartMap {
 
   if (/^\d{6}$/.test(raw)) {
     const prov = CHINA_PROVINCES.find(p => p.adcode === raw)
-    if (!prov) {
-      throw new Error(`Unsupported province adcode "${raw}"; built-in maps cover 34 provincial regions only`)
+    if (prov) {
+      if (raw === '710000') {
+        throw new Error(
+          'City-level map for Taiwan (710000) is not available in built-in data; use region "china" for provincial view'
+        )
+      }
+      return {
+        mapId: `p${raw}` as ChartMapId,
+        file: `provinces/${raw}.json`,
+        level: 'province_cities',
+        label: prov.names[1] ?? prov.names[0]
+      }
     }
-    if (raw === '710000') {
-      throw new Error(
-        'City-level map for Taiwan (710000) is not available in built-in data; use region "china" for provincial view'
-      )
-    }
-    return {
-      mapId: `p${raw}` as ChartMapId,
-      file: `provinces/${raw}.json`,
-      level: 'province_cities',
-      label: prov.names[1] ?? prov.names[0]
-    }
+
+    const city = resolveCityByAdcode(raw)
+    if (city) return city
+
+    throw new Error(
+      `Unsupported adcode "${raw}"; use province adcode (e.g. "340000"), city adcode (e.g. "340100"), or a region name`
+    )
   }
 
   const matched = CHINA_PROVINCES.find(p =>
@@ -117,9 +125,28 @@ export function resolveChartMapRegion(region: unknown): ResolvedChartMap {
     }
   }
 
-  throw new Error(
-    `Unknown map region "${raw}". Use "world", "china", a province name (e.g. "安徽"), or 6-digit adcode (e.g. "340000")`
+  const matchedCity = CHINA_CITIES.find(c =>
+    c.names.some(n => n === raw || normalizeToken(n) === token)
   )
+  if (matchedCity) {
+    return resolveCityByAdcode(matchedCity.adcode)!
+  }
+
+  throw new Error(
+    `Unknown map region "${raw}". Use "world", "china", province/city name (e.g. "安徽", "合肥"), or adcode (e.g. "340000", "340100")`
+  )
+}
+
+function resolveCityByAdcode(adcode: string): ResolvedChartMap | undefined {
+  const city = CHINA_CITIES.find(c => c.adcode === adcode)
+  if (!city) return undefined
+  const label = city.names[city.names.length - 1] ?? city.names[0]
+  return {
+    mapId: `c${adcode}` as ChartMapId,
+    file: `cities/${adcode}.json`,
+    level: 'city_districts',
+    label
+  }
 }
 
 /** GeoJSON Feature 常见属性字段 */
@@ -152,8 +179,13 @@ export function matchFeatureName(inputName: string, featureNames: string[]): str
     '壮族自治区',
     '回族自治区',
     '自治区',
+    '自治州',
+    '地区',
+    '盟',
     '省',
-    '市'
+    '市',
+    '区',
+    '县'
   ]
   for (const suf of suffixes) {
     const candidate = trimmed + suf

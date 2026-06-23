@@ -4,6 +4,7 @@
  */
 
 import type { ChartMapId } from '@shared/chart-maps'
+import { extractBuiltinMapIdsFromOption } from '@shared/chart-maps'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('ChartMapLoader')
@@ -13,13 +14,22 @@ type GeoJsonMap = Record<string, unknown>
 const cache = new Map<ChartMapId, GeoJsonMap>()
 const inflight = new Map<ChartMapId, Promise<GeoJsonMap>>()
 
+/**
+ * 解析 chart-maps 资源 URL。
+ * 不能用 `new URL(rel, import.meta.env.BASE_URL)`——Electron 打包后 BASE_URL 常为 `./`，
+ * 不是合法 absolute base，会抛 "Invalid base URL"。始终相对当前页面 URL 解析。
+ */
 function mapIdToUrl(mapId: ChartMapId): string {
-  if (mapId === 'world') return '/chart-maps/world.json'
-  if (mapId === 'china') return '/chart-maps/china.json'
-  if (mapId.startsWith('p') && mapId.length === 7) {
-    return `/chart-maps/provinces/${mapId.slice(1)}.json`
-  }
-  throw new Error(`Unknown mapId: ${mapId}`)
+  let rel: string
+  if (mapId === 'world') rel = 'world.json'
+  else if (mapId === 'china') rel = 'china.json'
+  else if (mapId.startsWith('p') && mapId.length === 7) rel = `provinces/${mapId.slice(1)}.json`
+  else if (mapId.startsWith('c') && mapId.length === 7) rel = `cities/${mapId.slice(1)}.json`
+  else throw new Error(`Unknown mapId: ${mapId}`)
+
+  const basePath = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/')
+  const docHref = typeof window !== 'undefined' ? window.location.href : 'http://localhost/'
+  return new URL(`${basePath}chart-maps/${rel}`.replace(/\/+/g, '/'), docHref).href
 }
 
 async function fetchMap(mapId: ChartMapId): Promise<GeoJsonMap> {
@@ -29,15 +39,18 @@ async function fetchMap(mapId: ChartMapId): Promise<GeoJsonMap> {
   let pending = inflight.get(mapId)
   if (!pending) {
     pending = (async () => {
-      const url = mapIdToUrl(mapId)
-      const res = await fetch(url)
-      if (!res.ok) {
-        throw new Error(`Failed to load map ${mapId}: HTTP ${res.status}`)
+      try {
+        const url = mapIdToUrl(mapId)
+        const res = await fetch(url)
+        if (!res.ok) {
+          throw new Error(`Failed to load map ${mapId}: HTTP ${res.status}`)
+        }
+        const geo = (await res.json()) as GeoJsonMap
+        cache.set(mapId, geo)
+        return geo
+      } finally {
+        inflight.delete(mapId)
       }
-      const geo = (await res.json()) as GeoJsonMap
-      cache.set(mapId, geo)
-      inflight.delete(mapId)
-      return geo
     })()
     inflight.set(mapId, pending)
   }
@@ -47,6 +60,17 @@ async function fetchMap(mapId: ChartMapId): Promise<GeoJsonMap> {
 interface EChartsRegisterable {
   registerMap(mapName: string, geoJson: GeoJsonMap, specialAreas?: Record<string, unknown>): void
   getMap?(mapName: string): unknown
+}
+
+/** 从 payload 推断需注册的地图（兼容历史记录无 registeredMaps 字段） */
+export function resolveMapIdsForPayload(payload: {
+  registeredMaps?: string[]
+  option: Record<string, unknown>
+}): ChartMapId[] {
+  if (payload.registeredMaps?.length) {
+    return payload.registeredMaps as ChartMapId[]
+  }
+  return extractBuiltinMapIdsFromOption(payload.option)
 }
 
 /** 活图渲染前注册地图（与后端 SSR 对齐） */

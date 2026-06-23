@@ -102,6 +102,9 @@ function mapIdToFile(mapId: ChartMapId): string {
   if (mapId.startsWith('p') && mapId.length === 7) {
     return `provinces/${mapId.slice(1)}.json`
   }
+  if (mapId.startsWith('c') && mapId.length === 7) {
+    return `cities/${mapId.slice(1)}.json`
+  }
   throw new Error(`Unknown mapId: ${mapId}`)
 }
 

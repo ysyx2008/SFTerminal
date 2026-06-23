@@ -23,6 +23,7 @@ import ThinkingBlock from './ThinkingBlock.vue'
 import ToolCallContent from './ToolCallContent.vue'
 import ImageContextMenu from './ImageContextMenu.vue'
 import EChartsCanvas from './EChartsCanvas.vue'
+import { optionHasMapSeries } from '@shared/chart-maps'
 import { useImageActions } from '../composables/useImageActions'
 import { parseThinking } from '../utils/thinking-block'
 import { createLogger } from '../utils/logger'
@@ -1281,6 +1282,12 @@ const handleAnalyzeSelection = () => {
 // ==================== 拖放处理（文档 / 图片附件） ====================
 
 // ==================== 图片预览（支持缩放、拖拽、键盘导航） ====================
+/** 活图渲染失败的 step id → 降级展示 step.images 静态 SVG 兜底 */
+const echartsLiveFailedStepIds = reactive(new Set<string>())
+const onEchartsLiveFailed = (stepId: string) => {
+  echartsLiveFailedStepIds.add(stepId)
+}
+
 const previewImageUrl = ref<string | null>(null)
 // 活图预览载荷：当点击"活图"（chart skill 投递的 echartsOption）时填入；
 // 模态优先用 EChartsCanvas 渲染（保留 tooltip / dataZoom 等交互），否则降级到 <img>。
@@ -1557,9 +1564,16 @@ const handlePreviewMouseDown = (e: MouseEvent) => {
   // mousedown 启动 dataZoom 拖动 / brush 框选 / legend 点击等核心交互，外层包装的
   // 「拖动平移」一旦抢断这个事件就把活图最值钱的能力废掉了。空白区域（图表四周的
   // padding）仍然走拖动平移，保持普通预览的视觉操作惯例。
+  // 地图（map series）缩放/平移走外层 CSS transform（与 PNG/JPG 一致），不在 echarts roam。
   // 注意：用 closest 而不是 ===，因为 echarts SVG renderer 渲染出来的 <g><path> 等
   // 子节点是真正的事件 target，不是 .echarts-canvas 这个父容器
-  if (previewEchartsPayload.value && (e.target as HTMLElement | null)?.closest?.('.echarts-canvas')) {
+  const payload = previewEchartsPayload.value
+  const isMapLiveChart = payload ? optionHasMapSeries(payload.option) : false
+  if (
+    payload &&
+    !isMapLiveChart &&
+    (e.target as HTMLElement | null)?.closest?.('.echarts-canvas')
+  ) {
     return
   }
   e.preventDefault()
@@ -2645,13 +2659,14 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                     <!-- 「活图」优先：chart skill 在 svg 模式下投递 echartsOption（同时也带 SVG 兜底到 step.images），
                          前端把它实例化成可交互的 ECharts，单击放大/右键复制走 EChartsCanvas 内部 getDataURL 的高清 PNG。
                          单击时把 step.images[0]（SVG dataURL）一起传给 openImagePreview，让导航定位能在 group 中找到当前位置。 -->
-                    <div v-if="item.step!.echartsOption" class="step-images">
+                    <div v-if="item.step!.echartsOption && !echartsLiveFailedStepIds.has(item.step!.id)" class="step-images">
                       <EChartsCanvas
                         :payload="item.step!.echartsOption"
                         :alt="item.step!.toolResult || 'chart'"
                         mode="thumb"
                         @preview="openImagePreview(item.step!.images?.[0] ?? '', item.step!.echartsOption)"
                         @contextmenu="onEchartsContextMenu"
+                        @failed="onEchartsLiveFailed(item.step!.id)"
                       />
                     </div>
                     <div v-else-if="item.step!.images && item.step!.images.length > 0" class="step-images">

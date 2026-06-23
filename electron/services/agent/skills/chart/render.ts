@@ -1176,7 +1176,7 @@ function buildMap(input: ChartInput, theme: ThemePreset, scale: number): ECharts
     series: [{
       type: 'map',
       map: resolved.mapId,
-      roam: true,
+      roam: false,
       name: resolved.label,
       data: seriesData,
       label: {

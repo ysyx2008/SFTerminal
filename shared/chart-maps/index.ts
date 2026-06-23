@@ -1,3 +1,5 @@
+export { CHINA_CITIES } from './cities-index'
+
 export {
   CHINA_PROVINCES,
   resolveChartMapRegion,
@@ -8,3 +10,5 @@ export {
   type ChartMapLevel,
   type ResolvedChartMap
 } from './manifest'
+
+export { extractBuiltinMapIdsFromOption, optionHasMapSeries } from './option-utils'

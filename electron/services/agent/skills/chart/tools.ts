@@ -7,7 +7,7 @@ export const chartTools: ToolDefinition[] = [
       name: 'generate_chart',
       description: `生成数据可视化图表，直接显示在对话流中给**用户**看。默认输出 SVG 矢量图；通过 format=png 可直接生成 PNG 位图（嵌入 Word/PDF/IM 等位图场景用，服务端 sharp 栅格化、自带中文字体）。
 支持 9 种类型：bar (柱状)、line (折线)、area (面积)、pie (饼图)、scatter (散点)、radar (雷达)、heatmap (热力)、candlestick (K线)、map (地图)。
-map 类型内置世界地图、中国省级地图、各省下辖市级地图（GeoJSON 离线打包，region 传 "world"/"china"/省名/adcode）。
+map 类型内置世界地图、中国省级地图、各省下辖市级地图、各地级市下辖区县地图（GeoJSON 离线打包，region 传 "world"/"china"/省名/市名/adcode）。
 K 线采用通达信/同花顺专业风格——cn 空心阳线 + 实心阴线、实线网格、黄色十字光标、自动叠加 MA5/10/20/60 均线。
 K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (红涨绿跌)，美股/欧股/海外市场用 'us' (绿涨红跌)，无明确上下文时默认 'cn'。
 不同 type 的 data 字段格式不同，详见技能说明文档。
@@ -230,6 +230,7 @@ candlestick:
 | \`"world"\` / \`"世界"\` | 世界各国 | **英文国名**（如 China, United States, Japan） |
 | \`"china"\` / \`"中国"\` | 中国省级 | 省名全称或简称（如 广东 / 广东省） |
 | \`"安徽"\` / \`"340000"\` | 该省下辖市 | 市名（如 合肥 / 合肥市） |
+| \`"合肥"\` / \`"340100"\` | 该市下辖区县 | 区县名（如 瑶海区 / 蜀山区） |
 
 \`\`\`
 map:
@@ -244,12 +245,17 @@ map:
 
   // 安徽省各市：
   data = { region: "安徽", values: [{ name: "合肥市", value: 100 }, { name: "芜湖市", value: 80 }] }
+
+  // 合肥市区县：
+  data = { region: "合肥", values: [{ name: "瑶海区", value: 50 }, { name: "蜀山区", value: 80 }] }
 \`\`\`
 
 注意：
+- 直辖市（北京/上海/天津/重庆）的区县在省级地图 \`region:"北京"\` 等即可展示，无需再下钻到 \`c110100\`
 - 台湾省可在 \`region:"china"\` 国家级地图中展示；**暂无台湾省内市级内置地图**
 - 世界地图国名必须用英文（GeoJSON 数据源决定）
 - 支持 roam（缩放拖动）；visualMap 可拖拽调整色阶
+- **缩放**：地图不在 echarts 内 roam；对话里单击打开大图预览后，用与 PNG/JPG 相同的触控板/滚轮缩放与拖拽（外层 CSS transform）
 
 ### K 线必读：中美差异 + 通达信风格
 

@@ -29,16 +29,19 @@
 
 ## 内置地图（map 类型）
 
-离线 GeoJSON 打包在 `resources/chart-maps/`（~5MB，34 省市级 + 世界 + 中国省级），构建时复制到 `public/chart-maps/`（前端 fetch）和 `extraResources/chart-maps/`（Electron SSR）。
+离线 GeoJSON 打包在 `resources/chart-maps/`（~45MB，世界 + 中国省级 + 34 省市级 + ~363 地级市下辖区县），构建时复制到 `public/chart-maps/`（前端 fetch）和 `extraResources/chart-maps/`（Electron SSR）。
 
 | `region` | 层级 | `values[].name` |
 |---|---|---|
 | `world` / `世界` | 世界各国 | 英文国名（China, Japan…） |
 | `china` / `中国` | 省级 | 省名简称或全称 |
 | 省名 / `{adcode}` | 该省下辖市 | 市名（合肥 / 合肥市） |
+| 市名 / `{cityAdcode}` | 该市下辖区县 | 区县名（瑶海区 / 蜀山区） |
 
-- 渲染前由 `maps.ts` → `echarts.registerMap`；活图 IPC 只传 `registeredMaps: ['china'|'world'|'p{adcode}']`，不传 GeoJSON 本体
+- 渲染前由 `maps.ts` → `echarts.registerMap`；活图 IPC 只传 `registeredMaps: ['china'|'world'|'p{adcode}'|'c{adcode}']`，不传 GeoJSON 本体
+- 直辖市（110000/310000 等）省级文件已是区县级；地级市（如 340100 合肥）用 `c{adcode}` 下钻
 - 台湾省在 `china` 国家级地图可展示；DataV 无 `710000_full`，**无台湾省内市级地图**
+- **34 个地级市** DataV 无下辖区县 GeoJSON（东莞/中山等直筒子市、海南部分县级市、新疆兵团城市等），`region` 解析会报错，请改用省级地图
 - 数据源：DataV GeoAtlas（中国）+ Apache ECharts examples（世界）；`npm run download:chart-maps` 重新拉取
 
 ## K 线风格（通达信 / 同花顺专业风格）

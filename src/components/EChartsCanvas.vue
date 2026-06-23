@@ -21,7 +21,7 @@ import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { EChartsStepPayload } from '@shared/types'
 import { reifyFormattersForRender } from '@shared/utils/echarts-formatters'
-import { registerChartMaps } from '@/utils/chart-map-loader'
+import { registerChartMaps, resolveMapIdsForPayload } from '@/utils/chart-map-loader'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('EChartsCanvas')
@@ -63,6 +63,8 @@ const emit = defineEmits<{
   preview: [dataUrl: string]
   /** 右键触发图片菜单，dataUrl 同上 —— 父组件用 useImageActions 复制 / 另存为 */
   contextmenu: [data: { event: MouseEvent; dataUrl: string }]
+  /** 活图渲染失败（父组件可降级到 step.images 静态 SVG） */
+  failed: [message: string]
 }>()
 
 // 锁宽高比，让容器即使在父级没明确高度时也有可量算的尺寸（echarts.init 依赖 offsetHeight）
@@ -106,9 +108,9 @@ async function ensureChart(): Promise<void> {
     if (!chartInstance) {
       chartInstance = echarts.init(containerRef.value, null, { renderer: 'svg' })
     }
-    const mapIds = props.payload.registeredMaps
-    if (mapIds?.length) {
-      await registerChartMaps(echarts, mapIds as import('@shared/chart-maps').ChartMapId[])
+    const mapIds = resolveMapIdsForPayload(props.payload)
+    if (mapIds.length) {
+      await registerChartMaps(echarts, mapIds)
     }
     // reify：后端 sanitizeOptionForIpc 把 tagged function 转成了 { __echartsFn: id } marker
     // （IPC 通道不支持 function），这里按 marker id 在 FORMATTER_REGISTRY 里查表还原成
@@ -123,6 +125,7 @@ async function ensureChart(): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err)
     log.error('Failed to render echarts:', msg)
     renderError.value = msg
+    emit('failed', msg)
   }
 }
 

@@ -65,6 +65,21 @@ describe('chart map rendering', () => {
     expect(svg).toMatch(/^<svg/)
   })
 
+  it('renders city district map', async () => {
+    const input = {
+      type: 'map' as const,
+      data: {
+        region: '合肥',
+        values: [{ name: '瑶海区', value: 10 }, { name: '蜀山区', value: 8 }]
+      }
+    }
+    const mapIds = getRequiredMapIds(input)
+    expect(mapIds).toEqual(['c340100'])
+    const opt = buildOption(input, SIZE)
+    const svg = await renderToSvg(opt, SIZE, { mapIds })
+    expect(svg).toMatch(/^<svg/)
+  })
+
   it('renders world map', async () => {
     const input = {
       type: 'map' as const,
