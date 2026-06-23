@@ -9,6 +9,7 @@ import {
 } from './assistant/prompt'
 import { LOCAL_WORKBENCH_AGENT_PROMPT } from './local/prompt'
 import { SSH_WORKBENCH_AGENT_PROMPT } from './ssh/prompt'
+import { COMPANION_WORKBENCH_AGENT_PROMPT } from './companion/prompt'
 
 export type { WorkbenchAgentPromptTab } from './assistant/prompt'
 
@@ -24,6 +25,10 @@ export function resolveWorkbenchAgentPrompt(
   }
   if (kind === 'ssh') {
     return SSH_WORKBENCH_AGENT_PROMPT
+  }
+  if (kind === 'companion') {
+    // 联络只含聊天区，当前无界面能力 prompt（占位为 undefined，见 companion/prompt.ts）
+    return COMPANION_WORKBENCH_AGENT_PROMPT
   }
   return undefined
 }

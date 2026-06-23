@@ -40,4 +40,9 @@ describe('resolveWorkbenchAgentPrompt', () => {
     expect(prompt).toContain('write_remote_text_file')
     expect(prompt).toContain('Password:')
   })
+
+  it('联络（companion）工作台不注入界面能力 prompt', () => {
+    expect(resolveWorkbenchAgentPrompt('companion', { type: 'assistant' }))
+      .toBeUndefined()
+  })
 })

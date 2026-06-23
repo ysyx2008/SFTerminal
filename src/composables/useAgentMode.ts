@@ -15,7 +15,7 @@ import { readMessageScrollerCache } from '../types/message-scroller'
 import { createLogger } from '../utils/logger'
 import { useTts } from './useTts'
 import { shouldShowToolResultStep } from '../utils/tool-display'
-import { resolveWorkbenchAgentPrompt } from '../workbench'
+import { resolveWorkbenchAgentPrompt, resolveWorkbenchKind } from '../workbench'
 
 const log = createLogger('Agent')
 
@@ -1102,9 +1102,10 @@ export function useAgentMode(
       // 根据模式选择 API
       let result: { success: boolean; result?: string; error?: string; aborted?: boolean }
 
-      // workbenchPrompt 对所有工作台类型都需要注入（local/ssh/assistant 各有专属 prompt）
+      // workbenchPrompt 对所有工作台类型都需要注入（local/ssh/assistant 各有专属 prompt；
+      // companion 当前无）。先经 resolveWorkbenchKind 把 tab 映射成工作台类型再解析。
       const workbenchPrompt = currentTab.value
-        ? resolveWorkbenchAgentPrompt(currentTab.value.type, currentTab.value)
+        ? resolveWorkbenchAgentPrompt(resolveWorkbenchKind(currentTab.value), currentTab.value)
         : undefined
 
       if (isAssistantMode && currentTab.value?.agentId) {

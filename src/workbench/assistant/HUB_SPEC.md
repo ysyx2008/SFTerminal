@@ -33,7 +33,7 @@ TabBar 顺序：`[任务] [可滚动普通 tab 区] [批量按钮] [联络] [新
 
 `ensureCompanionTab()` 在 `initializeApp()` 最早调用，保证 `__companion__` tab 在整个 session 生命周期内始终存在。`closeTab` 对 `__companion__` 进行保护，永远返回 false。
 
-**渲染与历史恢复**：联络 tab 与普通助手 tab 一样走 `AssistantWorkbench → AiPanel`（无特殊只读视图），样式一致且可从桌面直接续聊。IM/Gateway/桌面/Watch `talk_to_user` 的步骤都以 `agentId = __companion__` 通过标准 `agent:step` 流入同一会话。重启后联络 tab 为空时，`useAgentMode` 挂载阶段调 `history.getRecentByAgentKey('__companion__', 10)` 取最近 N 条 companion 会话**合并展示**（steps 按时间升序拼接，`id` 取最新一条以对齐续聊上下文；带 await 前后双重空检查防覆盖 live steps）；后端会话连续性由持久命名 Agent 自身的 `restoreFromHistory`/`restoreRecentTaskMemory` 负责。<br/>**已知局限**：仅能恢复带 `agentKey` 的记录（2026-06-21 引入字段之后产生的）；更早的联络对话与普通助手任务在历史里无字段可区分，无法回填，不出现在联络 tab。
+**渲染与历史恢复**：联络 tab 走专属的 `CompanionWorkbench → AiPanel`（`kind='companion'`，与 assistant 平级；**只含聊天，无产出物面板/历史侧栏**，契约见 `workbench/companion/SPEC.md`），样式与普通助手一致且可从桌面直接续聊。IM/Gateway/桌面/Watch `talk_to_user` 的步骤都以 `agentId = __companion__` 通过标准 `agent:step` 流入同一会话。重启后联络 tab 为空时，`useAgentMode` 挂载阶段调 `history.getRecentByAgentKey('__companion__', 10)` 取最近 N 条 companion 会话**合并展示**（steps 按时间升序拼接，`id` 取最新一条以对齐续聊上下文；带 await 前后双重空检查防覆盖 live steps）；后端会话连续性由持久命名 Agent 自身的 `restoreFromHistory`/`restoreRecentTaskMemory` 负责。<br/>**已知局限**：仅能恢复带 `agentKey` 的记录（2026-06-21 引入字段之后产生的）；更早的联络对话与普通助手任务在历史里无字段可区分，无法回填，不出现在联络 tab。
 
 ---
 

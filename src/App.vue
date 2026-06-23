@@ -8,7 +8,7 @@ import { initWorkbenchHandler, disposeWorkbenchHandler } from './services/workbe
 import { useConfigStore, type SshSession } from './stores/config'
 import TabBar from './components/TabBar.vue'
 import TerminalTabView from './components/TerminalTabView.vue'
-import { resolveWorkbenchRenderer } from './workbench/registry'
+import { resolveWorkbenchRenderer, resolveWorkbenchKind } from './workbench/registry'
 import SessionManager from './components/SessionManager.vue'
 import RecentConversationsPanel from './components/RecentConversationsPanel.vue'
 import SettingsModal from './components/Settings/SettingsModal.vue'
@@ -1391,7 +1391,7 @@ onUnmounted(() => {
           class="tab-view main-surface"
         >
           <component
-            :is="resolveWorkbenchRenderer(tab.type)"
+            :is="resolveWorkbenchRenderer(resolveWorkbenchKind(tab))"
             :ref="(el: any) => { tabViewRefs[tab.id] = el }"
             :tab="tab"
             :is-active="showTabWorkbench && tab.id === activeSurfaceTabId"

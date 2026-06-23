@@ -1,4 +1,4 @@
-export { getWorkbenchDescriptor, resolveWorkbenchRenderer } from './registry'
+export { getWorkbenchDescriptor, resolveWorkbenchRenderer, resolveWorkbenchKind } from './registry'
 export type { WorkbenchDescriptor, WorkbenchKind, RegionSpec } from './types'
 export {
   resolveWorkbenchAgentPrompt,
