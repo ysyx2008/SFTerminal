@@ -1314,6 +1314,61 @@ export abstract class Agent {
     )
   }
 
+  /**
+   * 从多条 AgentRecord（如 companion 合并视图）构建 fork 产物。
+   *
+   * companion tab 是多条历史 record 按时间合并后的展示，group.index（前端传来的
+   * untilTaskCount）是合并视图里的位置，无法映射到任何单条 record 的 task 索引。
+   * 这里把所有 records 的 steps 按时间排序合并，用非 proactive record 的 messages
+   * 拼接出 LLM 上下文，再走标准 buildForkRecord 截断路径。
+   *
+   * messages 策略：proactive record（userTask='__proactive__'）没有 API messages；
+   * 只拼接真实对话 record 的 messages（按 timestamp 升序），保证 LLM 前缀连贯。
+   */
+  static buildForkRecordFromMergedRecords(
+    records: AgentRecord[],
+    newSessionId: string,
+    opts?: { untilTaskCount?: number; titleSuffix?: string }
+  ): AgentRecord | null {
+    if (!records.length) return null
+
+    const ordered = [...records].sort((a, b) => a.timestamp - b.timestamp)
+
+    // 合并 steps：按 timestamp 升序，去重（同 id 只保留一次）
+    const seen = new Set<string>()
+    const mergedSteps: AgentStep[] = ordered
+      .flatMap(r => (r.steps ?? []).map(s => ({
+        id: s.id,
+        type: s.type as AgentStep['type'],
+        content: s.content,
+        images: s.images,
+        echartsOption: s.echartsOption,
+        attachments: s.attachments,
+        toolName: s.toolName,
+        toolArgs: s.toolArgs,
+        toolResult: s.toolResult,
+        riskLevel: s.riskLevel as RiskLevel | undefined,
+        timestamp: s.timestamp,
+        webSearchResults: s.webSearchResults,
+        success: s.success,
+        subAgents: s.subAgents,
+        canvasData: s.canvasData,
+      })))
+      .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
+      .filter(s => (s.id && !seen.has(s.id) ? (seen.add(s.id), true) : !s.id))
+
+    // 合并 messages：只取真实对话 record（非 __proactive__），按 timestamp 升序拼接
+    const realRecords = ordered.filter(r => r.userTask !== '__proactive__')
+    const mergedMessages: AiMessage[] = realRecords
+      .flatMap(r => (r.messages ?? []).map(m => JSON.parse(JSON.stringify(m)) as AiMessage))
+
+    return Agent.buildForkRecord(
+      { messages: mergedMessages, steps: mergedSteps, terminalType: 'assistant' },
+      newSessionId,
+      opts
+    )
+  }
+
   static buildForkRecord(
     data: {
       messages: AiMessage[]

@@ -288,6 +288,20 @@ export class AgentService {
     let newRecord = sourceAgent?.cloneRecordForFork(newSessionId, forkOpts) ?? null
     let sourceTerminalType = sourceAgent?.getTerminalType()
 
+    // companion 是多条 record 合并展示，group.index 是合并视图中的位置，
+    // in-memory session 只含最近一次真实对话，不含 Watch 主动消息等其它 record。
+    // 对 companion fork 必须从磁盘加载全部近期记录重新合并，才能正确截断。
+    if (opts.sourceAgentKey === AgentService.COMPANION_AGENT_ID) {
+      const recentRecords = historyService.getRecentRecordsByAgentKey(AgentService.COMPANION_AGENT_ID, 10)
+      if (recentRecords.length > 0) {
+        const merged = Agent.buildForkRecordFromMergedRecords(recentRecords, newSessionId, forkOpts)
+        if (merged) {
+          newRecord = merged
+          sourceTerminalType = undefined // companion 始终视为 assistant 模式
+        }
+      }
+    }
+
     if (!newRecord && opts.sourceSessionId) {
       const historyRecord = historyService.getAgentRecordById(opts.sourceSessionId)
       if (historyRecord) {
