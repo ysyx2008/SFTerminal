@@ -3,13 +3,34 @@
 <head>
   <meta charset="utf-8" />
   <style>
-    body { font-family: system-ui, sans-serif; margin: 12px; min-width: 220px; font-size: 13px; }
+    body { font-family: system-ui, sans-serif; margin: 12px; min-width: 240px; font-size: 13px; }
     .ok { color: #0a7; }
     .bad { color: #c33; }
+    .warn { color: #b45309; }
+    #perm-panel { margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd; }
+    #perm-panel.hidden { display: none; }
+    #perm-msg { margin: 0 0 10px; line-height: 1.45; color: #444; }
+    #grant-btn {
+      width: 100%;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 6px;
+      background: #ff7139;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #grant-btn:hover { filter: brightness(1.05); }
+    #grant-btn:disabled { opacity: 0.6; cursor: default; }
   </style>
 </head>
 <body>
   <div id="status">Checking…</div>
+  <div id="perm-panel" class="hidden">
+    <p id="perm-msg">Firefox requires permission to access all websites before SailFish can read pages or control tabs.</p>
+    <button id="grant-btn" type="button">Grant site access</button>
+  </div>
   <script src="popup.js"></script>
 </body>
 </html>

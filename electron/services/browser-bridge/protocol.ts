@@ -99,7 +99,9 @@ export function parsePingResult(value: unknown): BrowserBridgePingResult | null 
         (c) => c === BROWSER_BRIDGE_CAPABILITY_GOTO_NEW_TAB || c === BROWSER_BRIDGE_CAPABILITY_TABS_MANAGE,
       ) as BrowserBridgeCapability[])
     : undefined
-  return { extension: obj.extension, version: obj.version, protocol, capabilities }
+  const hostPermissionsGranted =
+    typeof obj.hostPermissionsGranted === 'boolean' ? obj.hostPermissionsGranted : undefined
+  return { extension: obj.extension, version: obj.version, protocol, capabilities, hostPermissionsGranted }
 }
 
 function compareSemver(a: string, b: string): number {

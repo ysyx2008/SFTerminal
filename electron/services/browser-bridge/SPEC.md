@@ -27,6 +27,7 @@ native-host/host.mjs (Chrome 按连接 spawn)
 - `BROWSER_BRIDGE_PROTOCOL_VERSION = 1`（`shared/types/browser-bridge.ts`）
 - 扩展 `ping` 响应：`{ extension, version, protocol: 1 }`
 - 桌面端 `parsePingResult` / `supportsProtocolV1` 做能力判断；旧扩展无 `protocol` 时 `get_content` 降级为 `mode: html` 整页抓取
+- Firefox MV3：`host_permissions` 为可选权限；扩展 ping 上报 `hostPermissionsGranted`（v1.2.2+），设置页据此提示用户授权
 
 ### 冻结 action 名单
 

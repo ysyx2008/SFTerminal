@@ -124,6 +124,8 @@ export interface BrowserBridgePingResult {
   version: string
   protocol?: number
   capabilities?: BrowserBridgeCapability[]
+  /** Firefox MV3：host_permissions 为可选权限，扩展上报是否已授予 <all_urls> */
+  hostPermissionsGranted?: boolean
 }
 
 export interface BrowserBridgeInstallStatus {
@@ -141,6 +143,8 @@ export interface BrowserBridgeConnection {
   /** 扩展 ping 上报的版本（连接后异步探测） */
   version?: string
   capabilities?: BrowserBridgeCapability[]
+  /** Firefox MV3：是否已授予「访问所有网站数据」；旧版扩展未上报时为 undefined */
+  hostPermissionsGranted?: boolean
 }
 
 export interface BrowserBridgeStatus {

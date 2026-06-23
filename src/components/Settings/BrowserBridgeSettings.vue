@@ -52,6 +52,9 @@ const chromiumConnection = computed(() => connections.value.find(isChromiumBridg
 const firefoxConnection = computed(() => connections.value.find(isFirefoxBridgeConnection))
 const chromiumConnected = computed(() => Boolean(chromiumConnection.value))
 const firefoxConnected = computed(() => Boolean(firefoxConnection.value))
+const firefoxHostPermissionsMissing = computed(
+  () => firefoxConnected.value && firefoxConnection.value?.hostPermissionsGranted === false,
+)
 const anyConnected = computed(() => chromiumConnected.value || firefoxConnected.value)
 
 function extensionStatusLabel(version?: string): string {
@@ -372,6 +375,11 @@ onUnmounted(() => {
             </div>
           </div>
 
+          <p class="guide-note firefox-perm-note">{{ t('browserBridge.firefoxHostPermissionNote') }}</p>
+          <p v-if="firefoxHostPermissionsMissing" class="firefox-perm-warning">
+            {{ t('browserBridge.firefoxHostPermissionMissing') }}
+          </p>
+
           <template v-if="!firefoxConnected">
             <p v-if="loadReadyMsg === 'firefox'" class="load-ready-msg">
               {{ isMac ? t('browserBridge.loadFirefoxReadyMac') : t('browserBridge.loadFirefoxReady') }}
@@ -442,6 +450,16 @@ onUnmounted(() => {
             <li>{{ t('browserBridge.troubleshootStep3') }}</li>
             <li>{{ t('browserBridge.troubleshootStep4') }}</li>
             <li>{{ t('browserBridge.troubleshootStep5') }}</li>
+          </ol>
+        </div>
+      </details>
+
+      <details class="settings-section fold-section">
+        <summary class="fold-summary">{{ t('browserBridge.firefoxTroubleshootTitle') }}</summary>
+        <div class="fold-body">
+          <ol class="troubleshoot-steps">
+            <li>{{ t('browserBridge.firefoxTroubleshootPermStep') }}</li>
+            <li>{{ t('browserBridge.firefoxTroubleshootReloadStep') }}</li>
           </ol>
         </div>
       </details>
@@ -618,6 +636,21 @@ onUnmounted(() => {
   margin: 10px 0 0;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.firefox-perm-note {
+  margin-top: 10px;
+}
+
+.firefox-perm-warning {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--accent-orange, #ff7139);
+  background: rgba(255, 113, 57, 0.08);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent-orange, #ff7139);
 }
 
 .card-actions {

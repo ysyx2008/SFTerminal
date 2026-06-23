@@ -87,6 +87,24 @@ The extension is useless without the SailFish desktop app and native host. Data 
    - Firefox → 扩展 → 齿轮 → **Install Add-on From File…** 选 .xpi  
    - 或 `firefox -install-global-extension sailfish-browser-assistant.xpi`（企业部署）
 
+### ⚠️ 安装后须开启「访问所有网站数据」
+
+Firefox MV3 将 `host_permissions`（含 `<all_urls>`）视为**可选权限**，安装后**默认可能未授予**。未开启时 Native Messaging 仍可连通（设置页可能显示「已连接」），但 Agent **无法**读取页面、快照、点击或跨标签操作。
+
+**方式 A — 扩展弹出窗口（推荐，v1.2.2+）**
+
+1. 点击工具栏上的 SailFish Browser Assistant 图标
+2. 若提示 *Site access required*，点击 **Grant site access** 并在浏览器确认
+
+**方式 B — 扩展管理页**
+
+1. 地址栏打开 `about:addons`
+2. 进入 **SailFish Browser Assistant** → **权限（Permissions）**
+3. 开启 **访问您在所有网站的数据**（*Access your data for all websites*）
+4. 回到旗鱼 **设置 → 浏览器助手** 点「刷新状态」；刷新需要 Agent 操作的标签页
+
+旗鱼设置页 Firefox 卡片与故障排查章节也有相同说明；扩展 `ping` 会上报 `hostPermissionsGranted`，桌面端可检测并提示。
+
 ## 9. 更新版本
 
 1. 改 `resources/browser-bridge/firefox-amo-publish/manifest.json` 的 `version`（开发目录 `firefox/manifest.json` 的 version 建议同步，扩展 ID 必须一致）

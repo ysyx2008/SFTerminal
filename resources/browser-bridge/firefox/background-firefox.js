@@ -12,9 +12,19 @@ if (!globalThis.__sailfishTabsApi) {
 const api = globalThis.browser || globalThis.chrome
 const tabsApi = globalThis.__sailfishTabsApi
 const NATIVE_HOST = 'com.sailfish.browser'
+const ALL_URLS_ORIGIN = '<all_urls>'
 
 if (!tabsApi) {
   console.error('[SailFish Bridge] tabs-api unavailable — extension background cannot start bridge')
+}
+
+async function hasAllUrlsHostPermission() {
+  try {
+    return await api.permissions.contains({ origins: [ALL_URLS_ORIGIN] })
+  } catch (error) {
+    console.warn('[SailFish Bridge] permissions.contains failed:', error)
+    return true
+  }
 }
 
 /** @type {browser.runtime.Port | null} */
@@ -77,6 +87,7 @@ async function dispatchAction(action, payload) {
         capabilities: tabsApi ? ['tabs_manage', 'goto_new_tab'] : [],
         tabsApiReady: Boolean(tabsApi),
         nativeConnected: Boolean(nativePort),
+        hostPermissionsGranted: await hasAllUrlsHostPermission(),
       }
     case 'tabs':
       if (!tabsApi) throw new Error('Browser bridge tabs-api not loaded. Reinstall SailFish Browser Assistant extension.')

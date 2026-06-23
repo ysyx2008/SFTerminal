@@ -38,6 +38,7 @@ interface HostConnection {
   buffer: string
   version?: string
   capabilities?: BrowserBridgeCapability[]
+  hostPermissionsGranted?: boolean
 }
 
 interface PendingRequest {
@@ -202,6 +203,7 @@ export class BrowserBridgeService {
       state: 'ready' as const,
       version: host.version,
       capabilities: host.capabilities,
+      hostPermissionsGranted: host.hostPermissionsGranted,
     }))
     return {
       gatewayRunning: this.started,
@@ -231,6 +233,7 @@ export class BrowserBridgeService {
       if (!ping || !this.hosts.has(socket)) return
       host.version = ping.version
       host.capabilities = ping.capabilities
+      host.hostPermissionsGranted = ping.hostPermissionsGranted
     } catch (error) {
       log.debug(`Extension ping failed (${host.origin}):`, error)
     }

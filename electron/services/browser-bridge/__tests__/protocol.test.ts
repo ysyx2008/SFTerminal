@@ -64,6 +64,19 @@ describe('browser-bridge protocol', () => {
       version: '1.1.0',
       protocol: 1,
     })
+    expect(
+      parsePingResult({
+        extension: 'sailfish-browser-bridge',
+        version: '1.2.2',
+        protocol: 1,
+        hostPermissionsGranted: false,
+      }),
+    ).toEqual({
+      extension: 'sailfish-browser-bridge',
+      version: '1.2.2',
+      protocol: 1,
+      hostPermissionsGranted: false,
+    })
     expect(parsePingResult({ extension: 'x', version: '1.0.0' })).toEqual({
       extension: 'x',
       version: '1.0.0',
