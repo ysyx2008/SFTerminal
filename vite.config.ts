@@ -108,6 +108,36 @@ function copyEmbeddingWorker() {
   }
 }
 
+// 复制 chart-maps GeoJSON 到 public/（前端 fetch）和 dist/chart-maps（生产构建）
+function copyChartMaps() {
+  return {
+    name: 'copy-chart-maps',
+    configureServer(server) {
+      const src = resolve(__dirname, 'resources/chart-maps')
+      const dest = resolve(__dirname, 'public/chart-maps')
+      if (!existsSync(src)) return
+      const { cpSync } = require('fs') as typeof import('fs')
+      cpSync(src, dest, { recursive: true })
+      server.watcher.add(src)
+      server.watcher.on('change', (file: string) => {
+        if (file.startsWith(src)) {
+          cpSync(src, dest, { recursive: true })
+        }
+      })
+    },
+    closeBundle() {
+      const src = resolve(__dirname, 'resources/chart-maps')
+      const publicDest = resolve(__dirname, 'public/chart-maps')
+      const distDest = resolve(__dirname, 'dist/chart-maps')
+      if (!existsSync(src)) return
+      const { cpSync } = require('fs') as typeof import('fs')
+      cpSync(src, publicDest, { recursive: true })
+      cpSync(src, distDest, { recursive: true })
+      console.log('[copy-chart-maps] Copied chart-maps to public/ and dist/')
+    }
+  }
+}
+
 // 复制 lancedb-worker.js 到 dist-electron/services/knowledge
 function copyLanceDBWorker() {
   return {
@@ -148,6 +178,7 @@ export default defineConfig({
   },
   plugins: [
     vue(),
+    copyChartMaps(),
     electron([
       {
         entry: 'electron/main.ts',

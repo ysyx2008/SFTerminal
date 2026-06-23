@@ -15,7 +15,7 @@
 
 两个工具的关系是 **DSL ↔ raw**——90% 高频图用前者（有数据校验和容错），后者是 escape hatch。判断准则在 `tools.ts` 的 `chartSkillContent` 文档里给 AI 写明了。
 
-`generate_chart` 支持 8 种 `type`：
+`generate_chart` 支持 9 种 `type`：
 
 | type | 数据格式 |
 |---|---|
@@ -25,6 +25,21 @@
 | `radar` | `{ indicators: [{ name, max }], series: [{ name?, value: number[] }] }` |
 | `heatmap` | `{ x_categories: string[], y_categories: string[], values: [[x_idx, y_idx, value], ...] }` |
 | `candlestick` | `{ categories: string[], values: [[open, close, low, high], ...], volumes?: number[] }` |
+| `map` | `{ region: string, values: [{ name, value }] }` — 见下方「内置地图」 |
+
+## 内置地图（map 类型）
+
+离线 GeoJSON 打包在 `resources/chart-maps/`（~5MB，34 省市级 + 世界 + 中国省级），构建时复制到 `public/chart-maps/`（前端 fetch）和 `extraResources/chart-maps/`（Electron SSR）。
+
+| `region` | 层级 | `values[].name` |
+|---|---|---|
+| `world` / `世界` | 世界各国 | 英文国名（China, Japan…） |
+| `china` / `中国` | 省级 | 省名简称或全称 |
+| 省名 / `{adcode}` | 该省下辖市 | 市名（合肥 / 合肥市） |
+
+- 渲染前由 `maps.ts` → `echarts.registerMap`；活图 IPC 只传 `registeredMaps: ['china'|'world'|'p{adcode}']`，不传 GeoJSON 本体
+- 台湾省在 `china` 国家级地图可展示；DataV 无 `710000_full`，**无台湾省内市级地图**
+- 数据源：DataV GeoAtlas（中国）+ Apache ECharts examples（世界）；`npm run download:chart-maps` 重新拉取
 
 ## K 线风格（通达信 / 同花顺专业风格）
 
@@ -75,8 +90,9 @@ K 线**整体走专业行情软件视觉**而不是商务图表样式：
 | 文件 | 职责 |
 |------|------|
 | `presets.ts` | 通用主题（light/dark）+ K 线专业主题 `getKlineProTheme(style, mode)`（含蜡烛配色、十字线、MA 调色板、空心阳线策略） |
-| `render.ts` | `buildOption(input)` —— 把统一参数转换成 ECharts option，含数据校验、SMA 计算、MA 周期自动过滤 |
-| `ssr.ts` | `loadEcharts()` 懒加载 + `renderToSvg(option, size)` SSR 渲染 + `renderToPng(option, size, { pixelRatio })` 复用 SVG 后用 sharp 栅格化为 PNG（中文走系统字体；通过 sharp `density` 参数控制栅格化 DPI，实现"布局尺寸 / 像素密度"解耦） |
+| `render.ts` | `buildOption(input)` —— 把统一参数转换成 ECharts option，含数据校验、SMA 计算、MA 周期自动过滤；`map` 类型走 `buildMap` + `getRequiredMapIds` |
+| `maps.ts` | 内置 GeoJSON 加载（fs）+ `ensureMapsRegistered`（SSR 渲染前 registerMap） |
+| `ssr.ts` | `loadEcharts()` 懒加载 + `renderToSvg(option, size, { mapIds })` SSR 渲染 + `renderToPng` |
 | `tools.ts` | `chartTools` 工具定义（generate_chart + render_echarts_option）+ `chartSkillContent` 技能说明文档 |
 | `executor.ts` | `executeChartTool` 执行入口，分发到 `generateChart`（DSL）或 `renderEchartsOption`（自由路径），参数归一化、按 `format` 选 SVG/PNG → data URL、可选写盘（扩展名跟 format 走）；SVG 模式同时投递 `echartsOption` 给前端实例化活图 |
 | `ipc-sanitize.ts` | 后端 formatter marker 协议：`tagFormatter(id, fn)` 给 function 挂 Symbol 标签、`sanitizeOptionForIpc(option)` 把 tagged function 替换成 `{ __echartsFn: id }` marker 让 option 过 Electron IPC（详见下文活图协议章节） |
@@ -87,7 +103,7 @@ K 线**整体走专业行情软件视觉**而不是商务图表样式：
 
 | 通道 | 内容 | 给谁看 | 原因 |
 |---|---|---|---|
-| `step.echartsOption` | ECharts option JSON（仅 svg 模式） | **用户**，活图 | 前端 `AiPanel.vue` 用 `EChartsCanvas` 实例化为可交互图表（hover tooltip / 拖 dataZoom / 点击 legend 切换 series / 右键以任意倍率高清复制／另存为）。`Awaken.vue` 暂未支持，自然降级到 `step.images` |
+| `step.echartsOption` | ECharts option JSON + 可选 `registeredMaps`（仅 svg 模式） | **用户**，活图 | 前端 `EChartsCanvas` 先 `registerChartMaps` 再 `setOption` |
 | `step.images` | SVG 或 PNG 的 dataURL | **用户**，静态兜底 | 旧历史会话恢复、Awaken 关切面板等不实例化 echarts 的视图沿用此路径渲染 `<img>`；同时让 `tool-display.ts::hasRichPayload` 这类「按是否带图判断展示」的逻辑在新老路径下行为一致 |
 | `ToolResult.images` | ❌ 不带 | ~~AI~~ | 此通道经 `flushPendingToolImages` 注入到 user 消息当视觉输入，但主流多模态模型（OpenAI/Anthropic/Gemini）不识别 SVG 格式，发过去要么被拒、要么静默丢，还会让 AI 误以为「我看过图了」从而脑补图的内容 |
 

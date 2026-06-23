@@ -87,6 +87,11 @@ extraResources:
     to: "browser-bridge"
     filter:
       - "**/*"
+  # Chart 技能内置地图 GeoJSON
+  - from: "resources/chart-maps"
+    to: "chart-maps"
+    filter:
+      - "**/*"
 win:
   icon: resources/icon.ico
   target:

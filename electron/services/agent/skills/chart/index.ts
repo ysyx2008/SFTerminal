@@ -14,7 +14,7 @@ const log = createLogger('ChartSkill')
 const chartSkill: Skill = {
   id: 'chart',
   name: '图表生成',
-  description: '生成柱状/折线/饼/散点/雷达/热力图/K线等 8 种数据可视化图表，输出 SVG。K 线支持中式（红涨绿跌）和美式（绿涨红跌）。适合金融分析、数据汇报、概念示意。',
+  description: '生成柱状/折线/饼/散点/雷达/热力/K线/地图等 9 种数据可视化图表，输出 SVG。K 线支持中式（红涨绿跌）和美式（绿涨红跌）。地图内置世界/中国省/各市 GeoJSON。适合金融分析、数据汇报、概念示意。',
   tools: chartTools,
   content: chartSkillContent,
 

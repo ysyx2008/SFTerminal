@@ -6,7 +6,8 @@ export const chartTools: ToolDefinition[] = [
     function: {
       name: 'generate_chart',
       description: `生成数据可视化图表，直接显示在对话流中给**用户**看。默认输出 SVG 矢量图；通过 format=png 可直接生成 PNG 位图（嵌入 Word/PDF/IM 等位图场景用，服务端 sharp 栅格化、自带中文字体）。
-支持 8 种类型：bar (柱状)、line (折线)、area (面积)、pie (饼图)、scatter (散点)、radar (雷达)、heatmap (热力)、candlestick (K线)。
+支持 9 种类型：bar (柱状)、line (折线)、area (面积)、pie (饼图)、scatter (散点)、radar (雷达)、heatmap (热力)、candlestick (K线)、map (地图)。
+map 类型内置世界地图、中国省级地图、各省下辖市级地图（GeoJSON 离线打包，region 传 "world"/"china"/省名/adcode）。
 K 线采用通达信/同花顺专业风格——cn 空心阳线 + 实心阴线、实线网格、黄色十字光标、自动叠加 MA5/10/20/60 均线。
 K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (红涨绿跌)，美股/欧股/海外市场用 'us' (绿涨红跌)，无明确上下文时默认 'cn'。
 不同 type 的 data 字段格式不同，详见技能说明文档。
@@ -20,7 +21,7 @@ K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (�
         properties: {
           type: {
             type: 'string',
-            enum: ['bar', 'line', 'area', 'pie', 'scatter', 'radar', 'heatmap', 'candlestick'],
+            enum: ['bar', 'line', 'area', 'pie', 'scatter', 'radar', 'heatmap', 'candlestick', 'map'],
             description: '图表类型'
           },
           title: { type: 'string', description: '图表主标题（可选）' },
@@ -35,7 +36,11 @@ K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (�
 - heatmap:        { x_categories: string[], y_categories: string[], values: [[x_idx, y_idx, value], ...] }
 - candlestick:    { categories: string[], values: [[open, close, low, high], ...], volumes?: number[] }
                   // volumes 可选；传了会自动渲染"K 线主图 + 成交量副图"双 grid 布局，
-                  // 成交量 bar 颜色按当日涨跌（close>=open 用涨色，否则跌色）`
+                  // 成交量 bar 颜色按当日涨跌（close>=open 用涨色，否则跌色）
+- map:            { region: string, values: [{ name: string, value: number }] }
+                  // region: "world" | "china" | 省名（如"安徽"）| adcode（如"340000"）
+                  // 中国省级地图 name 用全称或简称（如"广东"/"广东省"）；世界地图 name 用英文国名
+                  // 市级地图传省名/adcode，values 的 name 用市名（如"合肥"/"合肥市"）`
           },
           x_label: { type: 'string', description: 'X 轴标签（可选，pie/radar 无效）' },
           y_label: { type: 'string', description: 'Y 轴标签（可选，pie/radar 无效）' },
@@ -159,7 +164,7 @@ K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (�
 /** 技能说明文档（加载技能时注入到 system prompt） */
 export const chartSkillContent = `## 图表生成技能（chart）
 
-调用 \`generate_chart\` 工具可生成 8 种数据可视化图表，返回 SVG 矢量图给用户看。
+调用 \`generate_chart\` 工具可生成 9 种数据可视化图表，返回 SVG 矢量图给用户看。
 
 ### ⚠️ 关于"谁能看到图"
 
@@ -215,6 +220,36 @@ candlestick:
   # 成交量 bar 颜色自动按涨跌（close>=open 涨色，否则跌色），无需自己指定
   # MA 均线 (5/10/20/60) 默认自动叠加在主图上；想关闭传 kline_ma: []，自定义传 kline_ma: [7,25,99]
 \`\`\`
+
+### 地图（map）必读
+
+内置三级离线地图（无需外部 GeoJSON）：
+
+| region 示例 | 层级 | values[].name 格式 |
+|---|---|---|
+| \`"world"\` / \`"世界"\` | 世界各国 | **英文国名**（如 China, United States, Japan） |
+| \`"china"\` / \`"中国"\` | 中国省级 | 省名全称或简称（如 广东 / 广东省） |
+| \`"安徽"\` / \`"340000"\` | 该省下辖市 | 市名（如 合肥 / 合肥市） |
+
+\`\`\`
+map:
+  data = {
+    region: "china",
+    values: [
+      { name: "广东省", value: 1200 },
+      { name: "浙江省", value: 980 },
+      { name: "江苏省", value: 850 }
+    ]
+  }
+
+  // 安徽省各市：
+  data = { region: "安徽", values: [{ name: "合肥市", value: 100 }, { name: "芜湖市", value: 80 }] }
+\`\`\`
+
+注意：
+- 台湾省可在 \`region:"china"\` 国家级地图中展示；**暂无台湾省内市级内置地图**
+- 世界地图国名必须用英文（GeoJSON 数据源决定）
+- 支持 roam（缩放拖动）；visualMap 可拖拽调整色阶
 
 ### K 线必读：中美差异 + 通达信风格
 

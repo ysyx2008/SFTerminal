@@ -137,6 +137,11 @@ export interface EChartsStepPayload {
   width: number
   /** 后端建议的画布逻辑高度（px） */
   height: number
+  /**
+   * 渲染前需 registerMap 的内置地图 id（world / china / p{adcode}）。
+   * GeoJSON 文件不进 IPC，前后端各自从 resources/chart-maps 加载。
+   */
+  registeredMaps?: string[]
 }
 
 export interface AgentStep {

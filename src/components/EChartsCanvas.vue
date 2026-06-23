@@ -21,6 +21,7 @@ import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { EChartsStepPayload } from '@shared/types'
 import { reifyFormattersForRender } from '@shared/utils/echarts-formatters'
+import { registerChartMaps } from '@/utils/chart-map-loader'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('EChartsCanvas')
@@ -104,6 +105,10 @@ async function ensureChart(): Promise<void> {
 
     if (!chartInstance) {
       chartInstance = echarts.init(containerRef.value, null, { renderer: 'svg' })
+    }
+    const mapIds = props.payload.registeredMaps
+    if (mapIds?.length) {
+      await registerChartMaps(echarts, mapIds as import('@shared/chart-maps').ChartMapId[])
     }
     // reify：后端 sanitizeOptionForIpc 把 tagged function 转成了 { __echartsFn: id } marker
     // （IPC 通道不支持 function），这里按 marker id 在 FORMATTER_REGISTRY 里查表还原成

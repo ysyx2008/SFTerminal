@@ -5,7 +5,8 @@ import type { ToolResult, AgentConfig } from '../../types'
 import type { ToolExecutorConfig } from '../../tools/types'
 import { t } from '../../i18n'
 import { createLogger } from '../../../../utils/logger'
-import { buildOption, type ChartType, type ChartInput, type EChartsOption } from './render'
+import { buildOption, getRequiredMapIds, type ChartType, type ChartInput, type EChartsOption } from './render'
+import type { ChartMapId } from '../../../../../shared/chart-maps'
 import { resolveChartBackground, type ChartTheme } from './presets'
 import { renderToSvg, renderToPng, type RenderSize } from './ssr'
 import { sanitizeOptionForIpc, stripFormatterMarkers } from './ipc-sanitize'
@@ -56,7 +57,7 @@ const MAX_PIXEL_RATIO = 4
 const MAX_PIXEL_DIM = 16384
 
 const VALID_TYPES: readonly ChartType[] = [
-  'bar', 'line', 'area', 'pie', 'scatter', 'radar', 'heatmap', 'candlestick'
+  'bar', 'line', 'area', 'pie', 'scatter', 'radar', 'heatmap', 'candlestick', 'map'
 ]
 
 function isChartType(v: unknown): v is ChartType {
@@ -112,10 +113,12 @@ async function generateChart(
   })
 
   let option: EChartsOption
+  let mapIds: ChartMapId[] = []
   let rendered: { dataUrl: string; payload: string | Buffer }
   try {
+    mapIds = getRequiredMapIds(input)
     option = buildOption(input, size)
-    rendered = await renderChart(option, size, format, pixelRatio)
+    rendered = await renderChart(option, size, format, pixelRatio, mapIds)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     log.error('Failed to build/render chart:', msg)
@@ -157,12 +160,13 @@ async function generateChart(
   // svg 模式投递活图：sanitize 把 tagFormatter 标记过的 function 转成 marker，前端 reify
   // 还原。build* 出来的 option 完全在掌控之下（K 线 formatVolume 是唯一 function，已经 tag），
   // sanitize 后必然 IPC 安全，不再需要 isIpcSafeForChart 兜底。
-  let echartsPayload: { option: unknown; width: number; height: number } | undefined
+  let echartsPayload: { option: unknown; width: number; height: number; registeredMaps?: ChartMapId[] } | undefined
   if (format === 'svg') {
     echartsPayload = {
       option: sanitizeOptionForIpc(option),
       width: size.width,
-      height: size.height
+      height: size.height,
+      ...(mapIds.length > 0 ? { registeredMaps: mapIds } : {})
     }
   }
 
@@ -414,13 +418,14 @@ async function renderChart(
   option: EChartsOption,
   size: RenderSize,
   format: ChartFormat,
-  pixelRatio: number
+  pixelRatio: number,
+  mapIds: ChartMapId[] = []
 ): Promise<{ dataUrl: string; payload: string | Buffer }> {
   if (format === 'png') {
-    const buf = await renderToPng(option, size, { pixelRatio })
+    const buf = await renderToPng(option, size, { pixelRatio, mapIds })
     return { dataUrl: `data:image/png;base64,${buf.toString('base64')}`, payload: buf }
   }
-  const svg = await renderToSvg(option, size)
+  const svg = await renderToSvg(option, size, { mapIds })
   return { dataUrl: `data:image/svg+xml;base64,${Buffer.from(svg, 'utf-8').toString('base64')}`, payload: svg }
 }
 
