@@ -21,16 +21,37 @@ import { createLogger } from '../../../../utils/logger'
 const log = createLogger('PptPreview')
 
 let cachedEchartsInline: string | null = null
+let cachedChinaMapBootstrap: string | null = null
 
 function resolveEchartsBundlePath(): string | null {
   const candidates = [
     path.join(process.cwd(), 'node_modules/echarts/dist/echarts.min.js'),
-    path.join(app.getAppPath(), 'node_modules/echarts/dist/echarts.min.js'),
   ]
+  try {
+    candidates.push(path.join(app.getAppPath(), 'node_modules/echarts/dist/echarts.min.js'))
+    if (app.isPackaged) {
+      candidates.push(
+        path.join(process.resourcesPath, 'app.asar/node_modules/echarts/dist/echarts.min.js')
+      )
+    }
+  } catch {
+    // CLI / 单元测试
+  }
   for (const p of candidates) {
     if (fs.existsSync(p)) return p
   }
   return null
+}
+
+function resolveChartMapsDir(): string {
+  try {
+    if (app.isPackaged) {
+      return path.join(process.resourcesPath, 'chart-maps')
+    }
+    return path.join(app.getAppPath(), 'resources', 'chart-maps')
+  } catch {
+    return path.join(process.cwd(), 'resources', 'chart-maps')
+  }
 }
 
 /** sandbox iframe CSP 禁止外链脚本；幻灯片若引用 CDN echarts，改由预览文档内联注入 */
@@ -49,12 +70,75 @@ function slideUsesEcharts(html: string): boolean {
   return /echarts|registerMap|type\s*:\s*['"]map['"]/i.test(html)
 }
 
-/** 去掉外链 <script src="https://...">，避免 CSP 报错与重复加载 */
+function needsChinaMap(html: string): boolean {
+  return /map\/js\/china|map\s*:\s*['"]china['"]|registerMap\s*\(\s*['"]china['"]/i.test(html)
+}
+
+/** 预览文档是否已内联 echarts 主包（>80KB 的无 src 脚本） */
+function docHasEchartsBundle(html: string): boolean {
+  const scripts = html.match(/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/gi) || []
+  return scripts.some(s => s.length > 80_000 && /echarts/i.test(s))
+}
+
+/** 去掉外链 <script src="https://...">，避免 sandbox iframe CSP 拦截 */
 function stripExternalScriptTags(html: string): string {
   return html.replace(
-    /<script\b[^>]*\bsrc\s*=\s*["']https?:\/\/[^"']+["'][^>]*>\s*<\/script>/gi,
+    /<script\b[^>]*\bsrc\s*=\s*["'](?:https?:)?\/\/[^"']+["'][^>]*>\s*<\/script>/gi,
     ''
   )
+}
+
+/** DataV china.json → registerMap('china')，替代旧版 echarts china.js CDN */
+function getChinaMapBootstrapScript(): string {
+  if (cachedChinaMapBootstrap !== null) return cachedChinaMapBootstrap
+  const chinaPath = path.join(resolveChartMapsDir(), 'china.json')
+  if (!fs.existsSync(chinaPath)) {
+    cachedChinaMapBootstrap = ''
+    return ''
+  }
+  const geoJson = fs.readFileSync(chinaPath, 'utf8')
+  cachedChinaMapBootstrap =
+    `(function(){try{var g=${geoJson};` +
+    `if(typeof echarts!=="undefined")` +
+    `echarts.registerMap("china",g,{南海诸岛:{left:124,top:28,width:10}});` +
+    `}catch(e){}})();`
+  return cachedChinaMapBootstrap
+}
+
+function injectBeforeHeadClose(html: string, tags: string): string {
+  if (!tags) return html
+  return html.includes('</head>')
+    ? html.replace('</head>', `${tags}\n</head>`)
+    : `${tags}\n${html}`
+}
+
+/**
+ * 修复已落盘 / 历史记录中的预览 HTML：去 CDN、内联 echarts、注册中国地图。
+ * sandbox iframe 的 CSP 只允许 inline script，外链 jsDelivr 必失败。
+ */
+export function sanitizePreviewHtml(html: string): string {
+  if (!html?.trim()) return html
+  const needsEchartsLib = slideUsesEcharts(html)
+  const needsChina = needsChinaMap(html)
+  let out = stripExternalScriptTags(html)
+
+  const headInject: string[] = []
+  if (needsEchartsLib && !docHasEchartsBundle(out)) {
+    const echartsScript = getInlineEchartsScript()
+    if (echartsScript) {
+      headInject.push(`<script>${echartsScript}<\/script>`)
+    }
+  }
+  if (needsChina) {
+    const chinaBootstrap = getChinaMapBootstrapScript()
+    if (chinaBootstrap) {
+      headInject.push(`<script>${chinaBootstrap}<\/script>`)
+    }
+  }
+  if (headInject.length) {
+    out = injectBeforeHeadClose(out, headInject.join('\n'))
+  }
+  return out
 }
 
 const MIME_BY_EXT: Record<string, string> = {
@@ -129,10 +213,13 @@ export function buildPreviewDocument(
     .join('\n')
 
   const needsEcharts = slides.some(s => slideUsesEcharts(s))
+  const needsChina = slides.some(s => needsChinaMap(s))
   const echartsScript = needsEcharts ? getInlineEchartsScript() : ''
-  const echartsTag = echartsScript
-    ? `<script>${echartsScript}<\/script>`
-    : ''
+  const chinaBootstrap = needsChina ? getChinaMapBootstrapScript() : ''
+  const headScripts = [
+    echartsScript ? `<script>${echartsScript}<\/script>` : '',
+    chinaBootstrap ? `<script>${chinaBootstrap}<\/script>` : '',
+  ].filter(Boolean).join('\n')
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -179,7 +266,7 @@ export function buildPreviewDocument(
   .stage .bg{position:absolute;inset:0;}
 ${css || ''}
 </style>
-${echartsTag}
+${headScripts}
 </head>
 <body>
 <p class="hint">共 ${slides.length} 页 &middot; 向下滚动预览 &middot; 最终以 PowerPoint 打开为准</p>

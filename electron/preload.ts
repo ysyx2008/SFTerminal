@@ -2436,6 +2436,12 @@ const electronAPI = {
     }
   },
 
+  // PPT / HTML 产出物预览（sandbox iframe CSP 兼容）
+  ppt: {
+    sanitizePreview: (html: string) =>
+      ipcRenderer.invoke('ppt:sanitizePreview', html) as Promise<string>,
+  },
+
   // 本地文件系统操作
   localFs: {
     // 获取主目录

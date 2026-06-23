@@ -11,7 +11,7 @@ import {
   DECK_SIZES,
   type SlideData,
 } from '../html-render-pptx'
-import { buildPreviewDocument } from '../preview'
+import { buildPreviewDocument, sanitizePreviewHtml } from '../preview'
 import { detectBrowser } from '../../browser/detector'
 
 // --- 假的 PptxGenJS slide / pres，用来断言纯映射器的行为 ---
@@ -133,13 +133,25 @@ describe('wrapSlideHtml / buildPreviewDocument', () => {
     expect(html).toContain('p{color:red}')
   })
 
-  it('builds a multi-slide preview document with no nested iframe / script', () => {
+  it('builds a multi-slide preview document with no nested iframe', () => {
     const doc = buildPreviewDocument(['<p>a</p>', '<p>b</p>'], '', 'widescreen')
     expect(doc).toContain('共 2 页')
-    // 单 iframe 渲染：每页一个 .stage，无内层 iframe、无脚本（沙箱友好）
     expect(doc.match(/class="stage"/g)?.length).toBe(2)
     expect(doc).not.toContain('<iframe')
-    expect(doc).not.toContain('<script')
+    expect(doc).not.toContain('jsdelivr')
+  })
+
+  it('sanitizePreviewHtml strips CDN echarts and inlines bundle for history replay', () => {
+    const stale = `<!DOCTYPE html><html><head></head><body>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/map/js/china.js"></script>
+<div id="c"></div>
+<script>echarts.init(document.getElementById('c')).setOption({series:[{type:'map',map:'china'}]});</script>
+</body></html>`
+    const fixed = sanitizePreviewHtml(stale)
+    expect(fixed).not.toContain('jsdelivr')
+    expect(fixed).toMatch(/<script[^>]*>[\s\S]{80000,}/)
+    expect(fixed).toContain('registerMap("china"')
   })
 })
 

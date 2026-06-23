@@ -4438,6 +4438,13 @@ ipcMain.handle('document:getSupportedTypes', async () => {
   return documentParserService.getSupportedTypes()
 })
 
+// ==================== PPT 预览修复（历史 HTML 去 CDN + 内联 echarts） ====================
+
+ipcMain.handle('ppt:sanitizePreview', async (_event, html: unknown) => {
+  const { sanitizePreviewHtml } = await import('./services/agent/skills/ppt/preview')
+  return sanitizePreviewHtml(typeof html === 'string' ? html : '')
+})
+
 // ==================== 本地文件系统相关 ====================
 
 // 获取主目录

@@ -28,25 +28,59 @@ const canOpenExternal = computed(() => Boolean(filePath.value))
 /** PPT 预览：iframe 内容是可滚动的幻灯片卡片列表，需要视觉留白；普通 HTML 产出物填满即可 */
 const isPptPreview = computed(() => filePath.value?.toLowerCase().endsWith('.pptx') ?? false)
 
+/** 历史 PPT 预览若仍引用 jsDelivr echarts，sandbox CSP 会拦截；主进程内联修复 */
+function previewNeedsSanitize(html: string): boolean {
+  if (/src\s*=\s*["'](?:https?:)?\/\/[^"']*echarts/i.test(html)) return true
+  if (/echarts\.(init|registerMap)/i.test(html)) {
+    const hasInlineBundle = /<script(?![^>]*\bsrc=)[^>]*>[\s\S]{50000,}/i.test(html)
+    if (!hasInlineBundle) return true
+  }
+  return false
+}
+
+const sanitizedBase = ref('')
+
+watch(
+  [content, isPptPreview],
+  async () => {
+    const raw = content.value
+    if (!raw) {
+      sanitizedBase.value = ''
+      return
+    }
+    if (isPptPreview.value && previewNeedsSanitize(raw)) {
+      try {
+        sanitizedBase.value = await window.electronAPI.ppt.sanitizePreview(raw)
+      } catch {
+        sanitizedBase.value = raw
+      }
+    } else {
+      sanitizedBase.value = raw
+    }
+  },
+  { immediate: true }
+)
+
 /**
  * PPT 预览时，把宿主页面的 --bg-primary 注入 iframe <head>，
  * 让 iframe body 背景与外层容器完全一致，消除色差。
  */
 const iframeContent = computed(() => {
-  if (!isPptPreview.value || !content.value) return content.value
+  const base = sanitizedBase.value
+  if (!isPptPreview.value || !base) return base
   const bgPrimary = getComputedStyle(document.documentElement)
     .getPropertyValue('--bg-primary').trim() || '#1a1a1e'
   const override = `<style>html,body{background:${bgPrimary}!important;}</style>`
-  return content.value.includes('</head>')
-    ? content.value.replace('</head>', `${override}</head>`)
-    : override + content.value
+  return base.includes('</head>')
+    ? base.replace('</head>', `${override}</head>`)
+    : override + base
 })
 
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 /** 改变 key 强制重建 iframe → 重新加载页面（重跑动画/脚本） */
 const reloadKey = ref(0)
 
-watch(content, () => {
+watch(iframeContent, () => {
   reloadKey.value += 1
   nextTick(() => {
     iframeRef.value?.contentWindow?.scrollTo(0, 0)
@@ -96,7 +130,7 @@ async function openExternal() {
     </div>
     <div class="html-body" :class="{ 'html-body--ppt': isPptPreview }">
       <iframe
-        v-if="content"
+        v-if="iframeContent"
         :key="reloadKey"
         ref="iframeRef"
         class="html-frame"

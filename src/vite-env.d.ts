@@ -1499,6 +1499,10 @@ interface Window {
         error: string
       }) => void) => () => void
     }
+    // PPT / HTML 产出物预览
+    ppt: {
+      sanitizePreview: (html: string) => Promise<string>
+    }
     // 本地文件系统操作
     localFs: {
       getSeparator: () => Promise<string>
