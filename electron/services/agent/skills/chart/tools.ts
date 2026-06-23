@@ -39,7 +39,8 @@ K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (�
                   // 成交量 bar 颜色按当日涨跌（close>=open 用涨色，否则跌色）
 - map:            { region: string, values: [{ name: string, value: number }] }
                   // region: "world" | "china" | 省名（如"安徽"）| adcode（如"340000"）
-                  // 中国省级地图 name 用全称或简称（如"广东"/"广东省"）；世界地图 name 用英文国名
+                  // 中国省级地图 name 用全称或简称（如"广东"/"广东省"）；世界地图 name 用 GeoJSON 英文国名
+                  // 世界地图：只传有数据的主要国家（约 8~15 个），勿塞满 100+ 国；详见技能说明「世界地图最佳实践」
                   // 市级地图传省名/adcode，values 的 name 用市名（如"合肥"/"合肥市"）`
           },
           x_label: { type: 'string', description: 'X 轴标签（可选，pie/radar 无效）' },
@@ -251,11 +252,75 @@ map:
 \`\`\`
 
 注意：
-- 直辖市（北京/上海/天津/重庆）的区县在省级地图 \`region:"北京"\` 等即可展示，无需再下钻到 \`c110100\`
+- 直辖市（北京/上海/天津/重庆）的区县在省级地图 \`region:"china"\` 或 \`region:"北京"\` 等即可展示，无需再下钻到 \`c110100\`
 - 台湾省可在 \`region:"china"\` 国家级地图中展示；**暂无台湾省内市级内置地图**
-- 世界地图国名必须用英文（GeoJSON 数据源决定）
-- 支持 roam（缩放拖动）；visualMap 可拖拽调整色阶
-- **缩放**：地图不在 echarts 内 roam；对话里单击打开大图预览后，用与 PNG/JPG 相同的触控板/滚轮缩放与拖拽（外层 CSS transform）
+- 世界地图国名必须用 GeoJSON 内置英文名（见下方对照表），不要用媒体常用别名
+- visualMap 色阶可拖拽调整；**缩放**：对话里单击打开大图预览后，用与 PNG/JPG 相同的触控板/滚轮缩放与拖拽（外层 CSS transform）
+
+### 世界地图（region: world）最佳实践 ⚠️
+
+世界 GeoJSON 含 **200+** 国家/地区。下列做法经实测可读性最好——**默认按此生成**，除非用户明确要求「全球每一国都要上色」：
+
+**1. 只传有数据的主要国家（约 8~15 个）**
+
+\`values\` 里**只放你要展示的国家**，没数据的国家留空（不着色）。不要试图把 IMF/世界银行表格里 180 个国家全塞进去——数据点多时标签会叠成一片，欧洲/西非/中美洲几乎无法辨认。
+
+\`\`\`
+// ✅ 好：主要经济体 GDP 分布
+data = {
+  region: "world",
+  values: [
+    { name: "United States", value: 30.5 },
+    { name: "China", value: 19.2 },
+    { name: "Germany", value: 4.7 },
+    { name: "Japan", value: 4.2 },
+    { name: "India", value: 4.0 },
+    { name: "United Kingdom", value: 3.5 },
+    { name: "France", value: 3.2 },
+    { name: "Korea", value: 1.9 },
+    { name: "Brazil", value: 2.3 },
+    { name: "Canada", value: 2.2 }
+  ]
+}
+subtitle: "单位：万亿美元（2025）"
+
+// ❌ 差：塞 50+ 国 + 指望地图上能看清每个国名
+\`\`\`
+
+**2. 数值跨度大时（GDP、人口等）优先「主要国家地图 + 柱状图补全」**
+
+美国/中国与中小国家往往差 1~2 个数量级，线性色阶会把其余国家压成同一浅蓝。做法：
+- 地图上只展示 **Top 10~15** 主要经济体（用户看全球格局）
+- 完整排名用 **bar** 柱状图（categories 按值排序）——可读性远好于强行塞满世界地图
+- 若用户只要一张图、且指标跨度极大，优先 bar 而非 map
+
+**3. 国名必须用 GeoJSON 内置英文名**
+
+AI 常写的媒体名与内置 GeoJSON **对不上**，会导致该国不着色并在副标题出现 \`unmatched\` 提示。常见对照：
+
+| 你常写的 | GeoJSON 正确名 |
+|---|---|
+| South Korea / 韩国 | **Korea** |
+| North Korea / 朝鲜 | **Dem. Rep. Korea** |
+| USA / US | **United States** |
+| UK / Britain | **United Kingdom** |
+| Czech Republic | **Czech Rep.** |
+| Bosnia and Herzegovina | **Bosnia and Herz.** |
+| Dominican Republic | **Dominican Rep.** |
+| Ivory Coast / Cote d'Ivoire | **Côte d'Ivoire** |
+| Laos | **Lao PDR** |
+| DRC / Congo-Kinshasa | **Dem. Rep. Congo** |
+| Congo / Congo-Brazzaville | **Congo** |
+| UAE | **United Arab Emirates** |
+| Russia | **Russia**（Russia 即可） |
+
+不确定时宁可少传几个、也不要瞎猜国名——未匹配的国家会漏色。
+
+**4. 其他细节**
+
+- 单位、年份、数据来源放 \`subtitle\`，不要指望从图上读
+- 细节靠用户 **hover tooltip**（活图可交互），你不需要在回复里描述颜色深浅
+- 中国境内数据用 \`region:"china"\`，不要用 world 地图里的 \`China\`
 
 ### K 线必读：中美差异 + 通达信风格
 

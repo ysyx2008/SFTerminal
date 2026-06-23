@@ -33,10 +33,14 @@
 
 | `region` | 层级 | `values[].name` |
 |---|---|---|
-| `world` / `世界` | 世界各国 | 英文国名（China, Japan…） |
+| `world` / `世界` | 世界各国 | GeoJSON 内置英文国名（China, Korea, United States…） |
 | `china` / `中国` | 省级 | 省名简称或全称 |
 | 省名 / `{adcode}` | 该省下辖市 | 市名（合肥 / 合肥市） |
 | 市名 / `{cityAdcode}` | 该市下辖区县 | 区县名（瑶海区 / 蜀山区） |
+
+### 世界地图 AI 指引（`tools.ts` → `chartSkillContent`）
+
+世界 GeoJSON 含 200+ 区域，**默认只传 8~15 个有数据的主要国家**（`values` 仅含目标国，其余留空不着色）；GDP/人口等跨度大的指标：地图展示 Top 经济体 + 完整排名用 `bar`。国名必须用 GeoJSON 内置名（如 `Korea` 非 `South Korea`），常见别名对照表见技能说明。
 
 - 渲染前由 `maps.ts` → `echarts.registerMap`；活图 IPC 只传 `registeredMaps: ['china'|'world'|'p{adcode}'|'c{adcode}']`，不传 GeoJSON 本体
 - 直辖市（110000/310000 等）省级文件已是区县级；地级市（如 340100 合肥）用 `c{adcode}` 下钻
