@@ -174,6 +174,10 @@ export abstract class Agent {
   
   /** 会话内累积的所有 API 消息（跨多次 run 的 taskMessageLog 合并） */
   private _sessionMessages: AiMessage[] = []
+
+  /** 恢复任务 id 的实例级单调序号：保证 split* 在同一毫秒内多次调用（如 restoreRecentTaskMemory
+   *  + restoreFromSessionRecord 接连执行）生成的 task id 不碰撞，避免 saveTask 互相覆盖丢任务。 */
+  private _restoreTaskSeq = 0
   
   /** 终端元数据（从首次 run 的 context 获取） */
   private _terminalMeta?: { terminalType: TerminalType; sshHost?: string }
@@ -673,19 +677,34 @@ export abstract class Agent {
   private restoreFromHistory(): void {
     const historyService = this.services.historyService
     if (!historyService || !this._sessionId) return
-    
+
+    // 持久命名 Agent（Companion / Watch）：重启后前端传回的 sessionId 只是「最新一条」
+    // 记录，并非用户主动选择恢复某次会话。若只按它精确命中单条，会丢掉同期其它会话
+    //（典型：另一条 companion 线刚写完的文档）——这正是「屏幕合并展示看得见、AI 上下文
+    // 只有单条记不住」的根因。这类 Agent 语义上是「同一个长期 Agent」，应从最近 N 条
+    // 历史重建工作记忆（跨 Agent 借记忆，见 SPEC），与前端 getRecentByAgentKey 的合并
+    // 展示对齐。同时仍恢复「最新单条」的完整会话状态，保证后续 checkpoint 续写到这条
+    // 记录、不覆盖丢历史。
+    if (this._persistentNamedAgent) {
+      const latest = historyService.getAgentRecordById(this._sessionId)
+      // 先补「除最新外」的最近会话进工作记忆（更旧/并行，插入在前，排到较早位置）
+      this.restoreRecentTaskMemory(historyService, latest?.id)
+      // 再恢复最新单条：其任务插入在后（排到 taskIndex 0 最近位），并复位
+      // _sessionSteps / _sessionMessages 供 checkpoint 续写
+      if (latest) {
+        this.restoreFromSessionRecord(latest)
+      }
+      return
+    }
+
+    // 普通 tab Agent：精确恢复用户指定的那次历史会话；找不到则保持空白（新任务）。
+    // 不走 recent fallback——新 tab 第一次对话本就是新任务，注入历史会造成工具名幻觉。
     const record = historyService.getAgentRecordById(this._sessionId)
     if (record) {
       this.restoreFromSessionRecord(record)
       return
     }
-
-    if (!this._persistentNamedAgent) {
-      log.info(`No record for sessionId=${this._sessionId}; skipping global recent fallback (not a persistent named agent)`)
-      return
-    }
-
-    this.restoreRecentTaskMemory(historyService)
+    log.info(`No record for sessionId=${this._sessionId}; skipping recent fallback (not a persistent named agent)`)
   }
 
   /**
@@ -751,27 +770,49 @@ export abstract class Agent {
    * 从最近历史记录恢复工作记忆（仅 TaskMemory，不恢复 session 状态）
    * 场景：App 重启后 Companion 等命名 Agent 的首次 run，提取最近 5 个任务作为工作记忆
    */
-  private restoreRecentTaskMemory(historyService: { getRecentAgentRecords(limit: number): AgentRecord[] }): void {
-    const MAX_RECENT_TASKS = 5
-    const MAX_RECENT_RECORDS = 3
-    const recentRecords = historyService.getRecentAgentRecords(MAX_RECENT_RECORDS)
+  private restoreRecentTaskMemory(
+    historyService: {
+      getRecentAgentRecords(limit: number, filter?: (r: AgentRecord) => boolean): AgentRecord[]
+    },
+    excludeId?: string
+  ): void {
+    const MAX_RECENT_RECORDS = 6
+    // 仅限制装入工作记忆的「任务数」以防内存膨胀；真正进上下文的量由
+    // buildTaskHistoryContext 按 token 预算动态裁剪（Level 0→4 渐进降级），
+    // 装多少都不会撑爆上下文，这里从宽装载即可。
+    const MAX_RESTORE_TASKS = 40
+
+    // 排除两类记录：
+    //  - wakeup「内心独白」：Watch 自我循环的噪声，SPEC 明确不应被借作工作记忆
+    //  - excludeId：调用方已单独精确恢复的「最新单条」，避免重复
+    const isWakeupNoise = (r: AgentRecord): boolean =>
+      typeof r.userTask === 'string' &&
+      r.userTask.startsWith('[当前时间：') &&
+      r.userTask.includes('触发事件')
+
+    const recentRecords = historyService.getRecentAgentRecords(
+      MAX_RECENT_RECORDS,
+      r => !isWakeupNoise(r) && r.id !== excludeId
+    )
     if (recentRecords.length === 0) return
 
-    const allTasks: Array<{ id: string; userTask: string; finalResult: string; messages?: AiMessage[]; steps?: AgentStep[] }> = []
+    // 按「最后活跃时间」升序：旧记录在前。saveTask 依插入顺序累积，
+    // getTasksInOrder 取「最近」时才能正确把刚发生的任务排到 taskIndex 0。
+    const ordered = [...recentRecords].sort(
+      (a, b) => (a.timestamp + (a.duration || 0)) - (b.timestamp + (b.duration || 0))
+    )
 
-    for (const rec of recentRecords) {
+    const allTasks: Array<{ id: string; userTask: string; finalResult: string; messages?: AiMessage[]; steps?: AgentStep[] }> = []
+    for (const rec of ordered) {
       if (rec.messages && rec.messages.length > 0) {
-        const tasks = this.splitMessagesIntoTasks(rec.messages as AiMessage[])
-        allTasks.push(...tasks)
+        allTasks.push(...this.splitMessagesIntoTasks(rec.messages as AiMessage[]))
       } else if (rec.steps && rec.steps.length > 0) {
-        const tasks = this.splitStepsIntoTasks(rec.steps)
-        allTasks.push(...tasks)
+        allTasks.push(...this.splitStepsIntoTasks(rec.steps))
       }
     }
-
     if (allTasks.length === 0) return
 
-    const recentTasks = allTasks.slice(-MAX_RECENT_TASKS)
+    const recentTasks = allTasks.slice(-MAX_RESTORE_TASKS)
     for (const task of recentTasks) {
       if (task.messages) {
         this.taskMemory.saveTask(task.id, task.userTask, [], 'success', task.finalResult, task.messages as AiMessage[])
@@ -780,7 +821,7 @@ export abstract class Agent {
       }
     }
 
-    log.info(`Restored ${recentTasks.length} recent tasks from history (fallback, from ${recentRecords.length} records)`)
+    log.info(`Restored ${recentTasks.length} recent tasks into working memory (from ${recentRecords.length} records, wakeup${excludeId ? ' + latest' : ''} excluded)`)
   }
   
   /**
@@ -804,7 +845,8 @@ export abstract class Agent {
           m => m.role === 'assistant' && !m.tool_calls
         )
         tasks.push({
-          id: `restored_${Date.now()}_${tasks.length}`,
+          // 用实例级单调序号，避免同毫秒内多次 split（恢复时多记录 + latest）id 碰撞覆盖
+          id: `restored_${Date.now()}_${this._restoreTaskSeq++}`,
           userTask: currentUserTask,
           finalResult: lastAssistant?.content || '',
           messages: currentTaskMessages
@@ -825,7 +867,7 @@ export abstract class Agent {
         m => m.role === 'assistant' && !m.tool_calls
       )
       tasks.push({
-        id: `restored_${Date.now()}_${tasks.length}`,
+        id: `restored_${Date.now()}_${this._restoreTaskSeq++}`,
         userTask: currentUserTask,
         finalResult: lastAssistant?.content || '',
         messages: currentTaskMessages

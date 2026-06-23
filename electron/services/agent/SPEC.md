@@ -134,16 +134,20 @@ run(message, context, options)
 
 ### 持久命名 Agent vs 普通 tab Agent（`restoreFromHistory` fallback 边界）
 
-`restoreFromHistory` 在 sessionId 找不到 record 时分两种路径：
+`restoreFromHistory`（仅首次 run、TaskMemory 为空时触发）按 Agent 类型分两条路径：
 
-- **持久命名 Agent**（Companion `__companion__` / Watch `__watch__`）：走 `restoreRecentTaskMemory` fallback——从全局最近 N 条历史提取任务恢复工作记忆。这些 Agent 重启后用 `session_${Date.now()}` 找不到 record，但语义上是「同一个长期 Agent」，必须靠这条 fallback 才能"记得最近聊过什么"
-- **普通 tab Agent**（terminal / SSH / 独立助手）：直接返回，TaskMemory 保持空白。新开 tab 的第一次对话本就是新任务，注入全局历史会让 LLM 误以为是连续对话，沿用历史里的工具名（甚至当前 tab 工具表里没有的工具——例如上次对话用过 chart 技能里的 `candlestick`，新 tab 第一次说"画个图"，AI 会捏造出 `generate_chart` 而不是先 `load skill`），造成 `Unknown tool` 幻觉调用
+- **持久命名 Agent**（Companion `__companion__` / Watch `__watch__`）：**无条件**从最近 N 条历史重建工作记忆（`restoreRecentTaskMemory`），**不**因 sessionId 精确命中而短路。原因：重启后前端传回的 sessionId 只是「最新一条」记录，并非用户主动选择恢复某次会话。若只精确恢复这单条，会丢掉同期其它并行会话（典型：联络分裂成两条 session，「继续」落到只含菜单的那条、写文档的内容在另一条里），造成「前端 `getRecentByAgentKey` 合并展示看得见、但 AI 上下文只有单条记不住」。
+  - 同时仍 `restoreFromSessionRecord(latest)` 恢复「最新单条」的完整会话状态（`_sessionSteps` / `_sessionMessages`），保证后续 checkpoint 续写到这条记录、不覆盖丢历史；`restoreRecentTaskMemory` 用 `excludeId` 排除这条避免重复。
+  - 任务按「最后活跃时间」升序装入（旧在前），保证 `getTasksInOrder` 把刚发生的任务排到 taskIndex 0。
+- **普通 tab Agent**（terminal / SSH / 独立助手）：仅 `getAgentRecordById(sessionId)` 精确恢复用户指定的那次会话；找不到则直接返回、TaskMemory 保持空白。新开 tab 的第一次对话本就是新任务，注入历史会让 LLM 误以为是连续对话，沿用历史里的工具名（甚至当前 tab 工具表里没有的工具——例如上次用过 chart 技能里的 `candlestick`，新 tab 第一次说"画个图"，AI 会捏造出 `generate_chart` 而不是先 `load skill`），造成 `Unknown tool` 幻觉调用。
 
-**关于 Companion fallback 的"跨 Agent"语义**：`restoreRecentTaskMemory` 取的是**全局**最近 N 条 `AgentRecord`，不区分这些记录原本属于哪个 Agent / 哪个 tab。这是有意设计，不是 bug：Companion 是用户的"贴身助手"，肩负主动通知（proactive message）、IM 推送、桌面唤起等任务，需要随时能在通知里参考用户「最近在做什么」——无论用户是在哪个终端 tab 操作、还是和独立助手聊天，最近的活动都应作为 Companion 的工作记忆。Watch Agent 同理（关切的执行决策也常常需要参考最近上下文）。如果未来某些命名 Agent 不希望"跨 Agent 借记忆"，应在该 Agent 自身加过滤逻辑，而非改这条全局 fallback。
+**关于持久命名 Agent 的"跨 Agent"语义**：`restoreRecentTaskMemory` 取**全局**最近 N 条 `AgentRecord`（不区分原属哪个 Agent / tab），但**排除 wakeup「内心独白」记录**（`userTask` 以 `[当前时间：` 开头且含 `触发事件`）。全局借记忆是有意设计：Companion 是"贴身助手"，肩负主动通知、IM 推送、桌面唤起，需要随时参考用户「最近在做什么」，无论用户在哪个 tab 操作。排除 wakeup 是因为 Watch 的自我循环唤醒只是内心独白噪声、不应被借作工作记忆（否则会把一堆 `[当前时间…触发事件]` 当成"最近活动"，且 Watch 心跳量极大会挤掉真正的用户活动）。
+
+> **装载量与预算**：`restoreRecentTaskMemory` 从宽装载（最多 6 条记录 / 40 个任务进 TaskMemory，仅防内存膨胀）；真正进上下文的量由 `buildTaskHistoryContext` 按 token 预算动态裁剪（Level 0→4 渐进降级、预算用尽即停），装多少都不会撑爆上下文。
 
 **实现**：`Agent._persistentNamedAgent: boolean`（默认 false）。`AgentService.createAssistantAgent(agentId)` 内部根据 `agentId === COMPANION_AGENT_ID || WATCH_AGENT_ID` 自动调 `markAsPersistentNamed()`——调用方（IM service / Watch service）无需感知。`getOrCreateAgent`（终端 Agent）和 createAssistantAgent 的非命名分支默认就是 false。
 
-**回归保护**：`__tests__/agent.test.ts` 的 "should NOT restore global recent history for normal agent when sessionId record missing" 与 "should restore global recent history for persistent named agent ..." 两条用例锁定了边界。新增类似的固定 ID Agent 时记得在 `isPersistentNamedAgentId` 里登记。
+**回归保护**：`__tests__/agent.test.ts` 三条用例锁定边界——① "should NOT restore global recent history for normal agent ..."（普通 tab 不借历史）；② "should restore global recent history for persistent named agent when sessionId record missing"（命名 Agent 找不到 record 时借历史）；③ "should merge recent records into memory for persistent named agent even when sessionId record is found"（命名 Agent 即便精确命中 latest 也合并最近多条——本次修复的核心）。新增类似的固定 ID Agent 时记得在 `isPersistentNamedAgentId` 里登记。
 
 ## 工具元数据驱动模型（核心 OOP 边界承诺）
 
