@@ -251,7 +251,9 @@ const getTaskCompleteFooterLabel = (groupId: string | undefined): string => {
 /**
  * group 操作菜单（含「另开一聊」）的可见性条件：
  *   - group 已完成（成功 / 失败 / 中断都允许；进行中的当前 task 无 finalResult，自然不显示）
- *   - 非 proactive / 非 onboarding（这两类不是用户发起的真实对话）
+ *   - 非 onboarding（引导对话不允许分叉）
+ *
+ * talk_to_user 主动消息（isProactive）完成后同样允许分叉。
  *
  * 注：Agent 运行中仍可对已完成 group 分叉（untilTaskCount 截断），与主对话并行探索。
  * 从历史记录打开的 tab（loadedFromHistory）也可分叉：后端会 fallback 到 HistoryService 读取会话。
@@ -260,7 +262,7 @@ const getTaskCompleteFooterLabel = (groupId: string | undefined): string => {
 const canShowGroupMenu = (group: import('../composables').AgentTaskGroup | undefined): boolean => {
   if (!group) return false
   if (!group.finalResult) return false
-  if (group.isProactive || group.isOnboarding) return false
+  if (group.isOnboarding) return false
   return true
 }
 
@@ -2384,10 +2386,21 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           <template #default="{ item, index, active }">
             <DynamicScrollerItem :item="item" :active="active" :data-index="index" :size-dependencies="getItemSizeDeps(item)">
 
-              <!-- 主动消息 -->
+              <!-- 主动消息（talk_to_user） -->
               <div v-if="item.type === 'proactive_message'" class="message assistant">
                 <div class="message-wrapper">
                   <div class="message-content markdown-content" v-html="renderMarkdown(item.group!.finalResult!)"></div>
+                  <div v-if="canShowGroupMenu(item.group)" class="agent-final-footer agent-final-footer--proactive">
+                    <button
+                      type="button"
+                      class="agent-group-menu-trigger"
+                      :class="{ 'is-open': openGroupMenuId === item.group!.id }"
+                      :title="t('ai.fork.tooltip')"
+                      @click.stop="toggleGroupMenu(item.group, $event)"
+                    >
+                      <MoreHorizontal :size="14" />
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -4979,9 +4992,10 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
 
-/* 鼠标 hover 到尾注/卡片任意位置时，按钮淡入显现 */
+/* 鼠标 hover 到尾注/卡片/主动消息气泡任意位置时，按钮淡入显现 */
 .agent-final-footer:hover .agent-group-menu-trigger,
-.agent-final-content:hover .agent-group-menu-trigger {
+.agent-final-content:hover .agent-group-menu-trigger,
+.message.assistant .message-wrapper:hover .agent-group-menu-trigger {
   opacity: 0.7;
 }
 
@@ -4998,6 +5012,12 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   margin-top: 0;
   display: flex;
   justify-content: flex-end;
+}
+
+/* talk_to_user 主动消息气泡下方的操作菜单 */
+.agent-final-footer--proactive {
+  justify-content: flex-end;
+  margin-top: 2px;
 }
 
 .agent-running-dot {
