@@ -1793,11 +1793,15 @@ export function useAgentMode(
       .flatMap(r => r.steps ?? [])
       .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
       .filter(s => (s.id && !seen.has(s.id) ? (seen.add(s.id), true) : !s.id))
+    // userTask 作为侧栏标题：优先取最早一条非 proactive 的记录标题；
+    // 若全都是 proactive（纯主动消息、用户还未主动发言），回退到 earliest.userTask
+    const firstRealRecord = ordered.find(r => r.userTask !== '__proactive__')
+    const displayUserTask = firstRealRecord?.userTask ?? earliest.userTask
     return {
       ...latest,
       id: latest.id,
       timestamp: latest.timestamp,
-      userTask: earliest.userTask,
+      userTask: displayUserTask,
       steps,
     }
   }

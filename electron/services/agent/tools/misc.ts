@@ -940,6 +940,34 @@ export async function messageUser(
 
   if (deliveredVia.length > 0) {
     addProactiveContext(companionAgentId, message, title)
+
+    // 将主动消息持久化到 __companion__ 历史：重启后 restoreCompanionHistoryIfNeeded
+    // 从 history.getRecentByAgentKey('__companion__') 恢复时才能看到这条消息。
+    // 不依赖 companion Agent 是否正在运行，直接写一条最小 AgentRecord。
+    if (executor.historyService) {
+      try {
+        const ts = Date.now()
+        const uid = `proactive-${ts}-${Math.random().toString(36).slice(2, 8)}`
+        executor.historyService.saveAgentRecord({
+          id: `${uid}-session`,
+          timestamp: ts,
+          terminalId: '',
+          agentKey: companionAgentId,
+          terminalType: 'assistant',
+          userTask: '__proactive__',
+          steps: [
+            { id: `${uid}-task`, type: 'user_task', content: '__proactive__', timestamp: ts },
+            { id: `${uid}-result`, type: 'final_result', content: message, timestamp: ts },
+          ],
+          finalResult: message,
+          duration: 0,
+          status: 'completed',
+        })
+      } catch (e) {
+        log.debug('messageUser: 保存主动消息历史失败:', e)
+      }
+    }
+
     const channels = deliveredVia.join(', ')
     const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
     const truncatedMsg = message.length > 200 ? message.substring(0, 200) + '...' : message
