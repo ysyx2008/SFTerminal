@@ -23,7 +23,7 @@ import type { WeixinApiOptions } from './wechat/api/api'
 import { WeixinConfigManager } from './wechat/api/config-cache'
 import { TypingStatus } from './wechat/api/types'
 import {
-  SESSION_EXPIRED_ERRCODE,
+  STALE_TOKEN_ERRCODE,
   assertSessionActive,
   pauseSession,
   getRemainingPauseMs,
@@ -606,12 +606,12 @@ export class WeChatAdapter implements IMAdapter {
         if (signal.aborted) break
 
         const code = resp.ret ?? resp.errcode
-        if (code === SESSION_EXPIRED_ERRCODE) {
+        if (code === STALE_TOKEN_ERRCODE) {
           // 上游 monitor.ts：sleep(pauseMs) → continue，session pause 到期后自动恢复。
           // 原先 this.polling = false + break 会导致 loop 永久停止，需要重启才能恢复接收。
           pauseSession(this.accountKey)
           const pauseMs = getRemainingPauseMs(this.accountKey)
-          log.warn(`Session expired (errcode=${SESSION_EXPIRED_ERRCODE}), pausing ${Math.ceil(pauseMs / 60_000)} min then resuming`)
+          log.warn(`Stale token (errcode=${STALE_TOKEN_ERRCODE}), pausing ${Math.ceil(pauseMs / 60_000)} min then resuming`)
           this.setConnected(false)
           await this.sleep(pauseMs, signal)
           if (!signal.aborted) this.setConnected(true)

@@ -5,9 +5,9 @@ Do not edit files listed under "Vendored files" by hand — modify
 `scripts/vendor-wechat-transforms.mjs` and re-run `node scripts/vendor-wechat.mjs`.
 
 - Package: `@tencent-weixin/openclaw-weixin`
-- Version: `2.4.4`
+- Version: `2.4.6`
 - License: MIT
-- Synced: 2026-05-26T06:39:07.467Z
+- Synced: 2026-06-23T10:32:44.199Z
 
 ## Vendored files
 
@@ -38,3 +38,4 @@ Do not edit files listed under "Vendored files" by hand — modify
 
 - `util/logger.ts`
 - `auth/accounts.ts`
+- `weixin-meta.ts`

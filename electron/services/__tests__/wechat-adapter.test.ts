@@ -51,7 +51,7 @@ vi.mock('../im/wechat/api/config-cache', () => ({
   },
 }))
 vi.mock('../im/wechat/api/session-guard', () => ({
-  SESSION_EXPIRED_ERRCODE: -14,
+  STALE_TOKEN_ERRCODE: -14,
   assertSessionActive: mocks.assertSessionActive,
   pauseSession: mocks.pauseSession,
 }))

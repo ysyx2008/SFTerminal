@@ -38,6 +38,7 @@ export const FILE_LIST = [
 export const SHIM_FILES = [
   "util/logger.ts",
   "auth/accounts.ts",
+  "weixin-meta.ts",
 ];
 
 /**
@@ -71,6 +72,76 @@ export const TRANSFORMS = [
         /^function bodyFromItemList\(/m,
         "export function bodyFromItemList(",
       );
+    },
+  },
+  {
+    // Vendored 源码不在 npm 包目录内，readPackageJsonFromDir 找不到 ilink_appid，
+    // 导致 iLink-App-Id 为空 / ClientVersion=0。文本消息可能侥幸成功，但 CDN
+    // 上传会因签名/鉴权不匹配返回 500。
+    name: "api/api.ts: fallback ilink metadata for vendored layout",
+    match: "api/api.ts",
+    apply(content) {
+      if (content.includes("weixin-meta.js")) return content;
+      let out = content.replace(
+        'import { loadConfigBotAgent, loadConfigRouteTag } from "../auth/accounts.js";',
+        'import { loadConfigBotAgent, loadConfigRouteTag } from "../auth/accounts.js";\nimport { WEIXIN_PACKAGE_META } from "../weixin-meta.js";',
+      );
+      out = out.replace(
+        "function readPackageJson(): PackageJson {\n  return readPackageJsonFromDir(path.dirname(fileURLToPath(import.meta.url)));\n}",
+        `function readPackageJson(): PackageJson {
+  const found = readPackageJsonFromDir(path.dirname(fileURLToPath(import.meta.url)));
+  if (found.ilink_appid !== undefined) return found;
+  return { ...WEIXIN_PACKAGE_META };
+}`,
+      );
+      return out;
+    },
+  },
+  {
+    // Weixin CDN 拒绝 chunked/duplex 流式 body（会立即 500）。用整包 Buffer +
+    // AbortSignal.timeout 防止大文件无响应时永久卡死。
+    name: "cdn/cdn-upload.ts: buffer upload with wall-clock timeout",
+    match: "cdn/cdn-upload.ts",
+    apply(content) {
+      if (content.includes("uploadAttemptTimeoutMs")) return content;
+      let out = content.replace(
+        /(\/\*\* Maximum retry attempts for CDN upload\. \*\/\nconst UPLOAD_MAX_RETRIES = 3;\n)/,
+        `$1
+/** Minimum wall-clock timeout per upload attempt. */
+const UPLOAD_TIMEOUT_MIN_MS = 60_000;
+/** Extra timeout budget per 64 KB of ciphertext (upload + server processing). */
+const UPLOAD_TIMEOUT_PER_64K_MS = 5_000;
+/** Response wait slack after the full body is sent. */
+const UPLOAD_TIMEOUT_RESPONSE_MS = 30_000;
+
+function uploadAttemptTimeoutMs(ciphertextSize: number): number {
+  const chunks = Math.max(1, Math.ceil(ciphertextSize / (64 * 1024)));
+  return Math.max(
+    UPLOAD_TIMEOUT_MIN_MS,
+    chunks * UPLOAD_TIMEOUT_PER_64K_MS + UPLOAD_TIMEOUT_RESPONSE_MS,
+  );
+}
+`,
+      );
+      out = out.replace(
+        /      const res = await fetch\(cdnUrl, \{\n        method: "POST",\n        headers: \{ "Content-Type": "application\/octet-stream" \},\n        body: new Uint8Array\(ciphertext\),\n      \}\);/,
+        `      const timeoutMs = uploadAttemptTimeoutMs(ciphertext.length);
+      const res = await fetch(cdnUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: ciphertext,
+        signal: AbortSignal.timeout(timeoutMs),
+      });`,
+      );
+      // Upgrade error logging if upstream still has simple status-only message.
+      out = out.replace(
+        `const errMsg = res.headers.get("x-error-message") ?? \`status \${res.status}\`;`,
+        `const bodySnippet = (await res.text()).slice(0, 200);
+        const errMsg =
+          res.headers.get("x-error-message") ??
+          (bodySnippet ? \`status \${res.status} body=\${bodySnippet}\` : \`status \${res.status}\`);`,
+      );
+      return out;
     },
   },
   {
