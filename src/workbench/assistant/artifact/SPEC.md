@@ -58,7 +58,7 @@ src/workbench/assistant/artifact/
 
 `ArtifactPanel` 通过 `<component :is="getRendererComponent(type)">` 动态渲染。
 
-**HTML 渲染器**：`html` 类型用 `HtmlRenderer.vue`，以 iframe `srcdoc` 渲染 `content`，`sandbox="allow-scripts allow-popups allow-forms allow-modals"`（不开 `allow-same-origin`，脚本以不透明源运行、无法访问父页面），支持图表/动画等交互。Agent 写入/编辑 `.html`/`.htm` 时由 `tools/file.ts` 自动产出（同 `.md`）；PPT 技能也复用该渲染器（`content` 为内联 HTML，`filePath` 指向 `.pptx`）。不用 `file://` 直载：dev 模式 `webSecurity` 会拦截，且无法覆盖 PPT 场景。
+**HTML 渲染器**：`html` 类型用 `HtmlRenderer.vue`，以 iframe `srcdoc` 渲染 `content`（**不用** `blob:` URL——宿主 `index.html` CSP 的 `default-src 'self'` 会拦截 iframe 导航到 `blob:`），`sandbox="allow-scripts allow-popups allow-forms allow-modals"`（不开 `allow-same-origin`，脚本以不透明源运行、无法访问父页面）。预览前会去掉 sandbox 下常失效的外部 CSS `@import`；`content` 为空时组件与 store 均会按 `filePath` 读盘回填。Agent 写入/编辑 `.html`/`.htm` 时由 `tools/file.ts` 自动产出（同 `.md`）；PPT 技能也复用该渲染器（`content` 为内联 HTML，`filePath` 指向 `.pptx`）。不用 `file://` 直载：dev 模式 `webSecurity` 会拦截，且无法覆盖 PPT 场景。
 
 ## 头部与交互
 

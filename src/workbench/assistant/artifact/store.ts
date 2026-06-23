@@ -204,19 +204,19 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
 
     await Promise.all(
       targets.map(async (a) => {
-        if (!a.filePath || a.content) return
+        if (!a.filePath || a.content?.trim()) return
         try {
           if (previewApi && (a.renderer === 'document' || a.renderer === 'spreadsheet' ||
             a.renderer === 'markdown' || a.renderer === 'html')) {
             const res = await previewApi(a.filePath, a.renderer)
-            if (res.success && typeof res.data === 'string') {
+            if (res.success && typeof res.data === 'string' && res.data.trim()) {
               updateContent(tabId, res.data, a.id)
               return
             }
           }
-          if (a.contentFromFile && readApi) {
+          if (readApi && (a.contentFromFile || a.renderer === 'html' || a.renderer === 'markdown')) {
             const res = await readApi(a.filePath)
-            if (res.success && typeof res.data === 'string') {
+            if (res.success && typeof res.data === 'string' && res.data.trim()) {
               updateContent(tabId, res.data, a.id)
             }
           }

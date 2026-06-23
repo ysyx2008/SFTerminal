@@ -242,6 +242,7 @@ export default {
     artifactPickerEmpty: 'No matching artifacts',
     htmlPreview: 'Web preview',
     htmlPreviewEmpty: 'No web preview content',
+    htmlPreviewLoading: 'Loading web preview…',
     htmlRefresh: 'Refresh',
     htmlOpenExternal: 'Open in browser',
     markdownSource: 'Markdown',

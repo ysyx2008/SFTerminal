@@ -2,7 +2,8 @@
 /**
  * Canvas HtmlRenderer — 交互式 HTML 产出物预览
  *
- * 用 iframe srcdoc 渲染产出物的 HTML 源码，开启脚本以支持图表/动画/Tab 等交互。
+ * 用 iframe srcdoc 渲染产出物 HTML，开启脚本以支持图表/动画/Tab 等交互。
+ * 不用 blob: URL —— 宿主 CSP（default-src 'self'）会拦截 iframe 导航到 blob:。
  * 出于安全考虑不加 allow-same-origin：iframe 以不透明源运行，脚本无法访问父页面。
  * 注：复用 html 渲染器的 PPT 预览也走此组件（content 为内联 HTML，filePath 指向 .pptx）。
  */
@@ -11,6 +12,7 @@ import { useI18n } from 'vue-i18n'
 import { RotateCw, ExternalLink } from 'lucide-vue-next'
 import { useAssistantArtifactStore } from '../store'
 import { useToast } from '../../../../composables/useToast'
+import { normalizeHtmlPreviewContent } from '../domain/html-preview'
 
 const props = defineProps<{
   tabId: string
@@ -39,12 +41,54 @@ function previewNeedsSanitize(html: string): boolean {
 }
 
 const sanitizedBase = ref('')
+const loadingFromDisk = ref(false)
+
+async function loadContentFromDisk(path: string): Promise<string | null> {
+  const previewApi = window.electronAPI?.localFs?.previewArtifact
+  const readApi = window.electronAPI?.localFs?.readFile
+  try {
+    if (previewApi) {
+      const res = await previewApi(path, 'html')
+      if (res.success && typeof res.data === 'string' && res.data.trim()) {
+        return res.data
+      }
+    }
+    if (readApi) {
+      const res = await readApi(path)
+      if (res.success && typeof res.data === 'string' && res.data.trim()) {
+        return res.data
+      }
+    }
+  } catch {
+    /* 读盘失败由空态提示 */
+  }
+  return null
+}
+
+async function ensureContentLoaded() {
+  const path = filePath.value
+  if (!path || content.value.trim()) return
+
+  loadingFromDisk.value = true
+  try {
+    const data = await loadContentFromDisk(path)
+    if (data) {
+      artifactStore.updateContent(props.tabId, data, props.artifactId)
+    }
+  } finally {
+    loadingFromDisk.value = false
+  }
+}
+
+watch([content, filePath], () => {
+  void ensureContentLoaded()
+}, { immediate: true })
 
 watch(
   [content, isPptPreview],
   async () => {
     const raw = content.value
-    if (!raw) {
+    if (!raw.trim()) {
       sanitizedBase.value = ''
       return
     }
@@ -55,7 +99,7 @@ watch(
         sanitizedBase.value = raw
       }
     } else {
-      sanitizedBase.value = raw
+      sanitizedBase.value = normalizeHtmlPreviewContent(raw, isPptPreview.value)
     }
   },
   { immediate: true }
@@ -139,6 +183,7 @@ async function openExternal() {
         sandbox="allow-scripts allow-popups allow-forms allow-modals"
         referrerpolicy="no-referrer"
       />
+      <div v-else-if="loadingFromDisk" class="html-empty">{{ t('canvas.htmlPreviewLoading') }}</div>
       <div v-else class="html-empty">{{ t('canvas.htmlPreviewEmpty') }}</div>
     </div>
   </div>

@@ -242,6 +242,7 @@ export default {
     artifactPickerEmpty: '无匹配产出物',
     htmlPreview: '网页预览',
     htmlPreviewEmpty: '暂无网页预览内容',
+    htmlPreviewLoading: '正在加载网页预览…',
     htmlRefresh: '刷新',
     htmlOpenExternal: '在浏览器打开',
     markdownSource: 'Markdown',
