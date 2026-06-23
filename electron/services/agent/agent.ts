@@ -1399,22 +1399,25 @@ export abstract class Agent {
 
     const lastFinalResult = [...steps].reverse().find(s => s.type === 'final_result')
 
+    const safeClone = <T>(v: T): T | undefined =>
+      v !== undefined ? (JSON.parse(JSON.stringify(v)) as T) : undefined
+
     const serializableSteps: AgentStepRecord[] = steps.map(s => ({
       id: s.id,
       type: s.type,
       content: s.content || '',
       images: s.images,
-      echartsOption: s.echartsOption,
+      echartsOption: safeClone(s.echartsOption),
       attachments: s.attachments,
       toolName: s.toolName,
       toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,
       toolResult: s.toolResult,
       riskLevel: s.riskLevel,
       timestamp: s.timestamp,
-      webSearchResults: s.webSearchResults,
+      webSearchResults: safeClone(s.webSearchResults),
       success: s.success,
-      subAgents: s.subAgents,
-      canvasData: s.canvasData
+      subAgents: safeClone(s.subAgents),
+      canvasData: safeClone(s.canvasData)
     }))
 
     const titleSuffix = opts?.titleSuffix ?? ''
