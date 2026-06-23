@@ -5,15 +5,68 @@
  */
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Bot, SquareTerminal, Monitor, Eye } from 'lucide-vue-next'
+import { Bot, SquareTerminal, Monitor, Eye, PanelTopOpen, Upload } from 'lucide-vue-next'
 import { useConfigStore, type SshSession } from '../stores/config'
 import MatrixRain from './EasterEgg/MatrixRain.vue'
 import WelcomeChatComposer from './WelcomeChatComposer.vue'
+import DropOverlay from './DropOverlay.vue'
 import sailfishLogo from '../../resources/logo.png'
+import { useWatchAnomalyCount } from '../composables/useWatchAnomalyCount'
+import { useWelcomeSubtitle } from '../composables/useWelcomeSubtitle'
+import {
+  useConversationDropTarget,
+  useOpenConversationInTab,
+} from '../composables/useConversationDragDrop'
+import { useFileDropTarget } from '../composables/useFileDropTarget'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
+const welcomeSubtitle = useWelcomeSubtitle(isSteamBuild)
+
+const { openConversationInTab } = useOpenConversationInTab()
+const {
+  isDragOver: isConversationDragOver,
+  handleDragEnter: handleConversationDragEnter,
+  handleDragOver: handleConversationDragOver,
+  handleDragLeave: handleConversationDragLeave,
+  handleDrop: handleConversationDrop,
+} = useConversationDropTarget(openConversationInTab)
+
+const welcomeComposerRef = ref<InstanceType<typeof WelcomeChatComposer> | null>(null)
+
+const ingestWelcomeFiles = async (files: FileList) => {
+  await welcomeComposerRef.value?.ingestAttachmentFiles(files)
+  welcomeComposerRef.value?.focusComposer()
+}
+
+const {
+  isDragOver: isFileDragOver,
+  handleDragEnter: handleFileDragEnter,
+  handleDragOver: handleFileDragOver,
+  handleDragLeave: handleFileDragLeave,
+  handleDrop: handleFileDrop,
+} = useFileDropTarget(ingestWelcomeFiles)
+
+const onWelcomeDragEnter = (event: DragEvent) => {
+  if (!isSteamBuild) handleFileDragEnter(event)
+  handleConversationDragEnter(event)
+}
+
+const onWelcomeDragOver = (event: DragEvent) => {
+  if (!isSteamBuild) handleFileDragOver(event)
+  handleConversationDragOver(event)
+}
+
+const onWelcomeDragLeave = (event: DragEvent) => {
+  if (!isSteamBuild) handleFileDragLeave(event)
+  handleConversationDragLeave(event)
+}
+
+const onWelcomeDrop = (event: DragEvent) => {
+  if (!isSteamBuild) handleFileDrop(event)
+  handleConversationDrop(event)
+}
 
 // 彩蛋：连续点击 Logo 20 次触发 Matrix 数字雨
 const showMatrixEasterEgg = ref(false)
@@ -85,6 +138,8 @@ const openAssistant = () => {
 const openWatches = () => {
   emit('open-watches')
 }
+
+const { anomalyCount: watchAnomalyCount } = useWatchAnomalyCount()
 
 // 最近连接的会话（最多显示 5 个，按最近使用时间逆序排序）
 const recentSessions = computed(() => {
@@ -181,7 +236,34 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="welcome-page" :class="{ 'enter-done': enterAnimationDone }">
+  <div
+    class="welcome-page"
+    :class="{ 'enter-done': enterAnimationDone }"
+    @dragenter="onWelcomeDragEnter"
+    @dragover="onWelcomeDragOver"
+    @dragleave="onWelcomeDragLeave"
+    @drop="onWelcomeDrop"
+  >
+    <DropOverlay
+      v-if="!isSteamBuild && isFileDragOver"
+      :title="t('ai.dropToUpload')"
+      :hint="t('ai.dropHint')"
+    >
+      <template #icon>
+        <Upload :size="48" :stroke-width="1.5" />
+      </template>
+    </DropOverlay>
+
+    <DropOverlay
+      v-if="isConversationDragOver"
+      :title="t('welcome.conversations.dropToOpenInTab')"
+      :hint="t('welcome.conversations.dropToOpenInTabHint')"
+    >
+      <template #icon>
+        <PanelTopOpen :size="48" :stroke-width="1.5" />
+      </template>
+    </DropOverlay>
+
     <div class="welcome-content">
       <!-- Logo 和标题 -->
       <div class="welcome-header">
@@ -192,12 +274,19 @@ onUnmounted(() => {
         </div>
         <div class="header-text">
           <h1 class="welcome-title">{{ t(isSteamBuild ? 'welcome.titleSteam' : 'welcome.title') }}</h1>
-          <p class="welcome-subtitle">{{ t(isSteamBuild ? 'welcome.subtitleSteam' : 'welcome.subtitle') }}</p>
+          <p class="welcome-subtitle">{{ welcomeSubtitle }}</p>
         </div>
       </div>
 
       <!-- AI 快速发起对话（Steam 版隐藏，复用 AiComposer） -->
-      <WelcomeChatComposer v-if="!isSteamBuild" :active="!!active" />
+      <WelcomeChatComposer v-if="!isSteamBuild" ref="welcomeComposerRef" :active="!!active" />
+
+      <!-- 查看示例入口 -->
+      <div v-if="!isSteamBuild" class="examples-hint">
+        <button type="button" class="examples-hint-btn" @click="openAssistant">
+          💡 {{ t('welcome.viewExamples') }}
+        </button>
+      </div>
 
       <!-- 快速启动卡片 -->
       <div class="quick-start">
@@ -245,6 +334,9 @@ onUnmounted(() => {
               <div class="card-title">{{ t('welcome.watch') }}</div>
               <div class="card-desc">{{ t('welcome.watchDesc') }}</div>
             </div>
+            <span v-if="watchAnomalyCount > 0" class="watch-anomaly-badge">
+              {{ watchAnomalyCount > 99 ? '99+' : watchAnomalyCount }}
+            </span>
           </div>
 
           <!-- 智能巡检（暂时隐藏）
@@ -304,20 +396,20 @@ onUnmounted(() => {
 
 <style scoped>
 .welcome-page {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   overflow-y: auto;
-  padding: 24px 20px;
+  /* clamp(40px, calc(50vh - 300px), 150px) 在典型窗口高度下近似 margin:auto 的居中效果，
+     但不随内容高度变化而移动，确保 logo 和输入框顶部位置稳定 */
+  padding: clamp(40px, calc(50vh - 300px), 150px) 20px 24px;
 }
 
 .welcome-content {
   max-width: 780px;
   width: 100%;
-  /* margin:auto 在垂直方向居中，使上下留白平衡；内容超高时退化为正常滚动 */
-  margin: auto;
-  /* 入场动画 */
+  margin: 0 auto;
   animation: pageEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
@@ -433,6 +525,32 @@ onUnmounted(() => {
   text-transform: uppercase;
   letter-spacing: 1px;
   opacity: 0.8;
+}
+
+/* 查看示例入口 */
+.examples-hint {
+  display: flex;
+  justify-content: center;
+  margin-top: -4px;
+  margin-bottom: 10px;
+}
+
+.examples-hint-btn {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 4px;
+  opacity: 0.75;
+  transition: opacity 0.15s ease, color 0.15s ease;
+  font-family: inherit;
+}
+
+.examples-hint-btn:hover {
+  opacity: 1;
+  color: var(--text-secondary);
 }
 
 /* Quick Start Cards */
@@ -616,6 +734,33 @@ onUnmounted(() => {
   color: white;
   box-shadow: 0 4px 15px rgba(var(--icon-glow-rgb), 0.3);
   transition: transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
+}
+
+/* 关切异常角标：定位在卡片右上角，像 app 图标角标一样自然 */
+.watch-anomaly-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.45);
+  pointer-events: none;
+  animation: badgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes badgePop {
+  from { transform: scale(0.4); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
 }
 
 /* hover：让图标"活过来"的三件套——

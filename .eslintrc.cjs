@@ -21,7 +21,8 @@ module.exports = {
     'node_modules/',
     'steam/',
     'scripts/',
-    'website/'
+    'website/',
+    'resources/browser-bridge/'
   ],
   rules: {
     'vue/multi-word-component-names': 'off',

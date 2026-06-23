@@ -17,6 +17,8 @@ import { getStreamPlaceholder } from './tool-metadata'
 export type { ToolDefinition }
 
 import type { TerminalType, RemoteChannel } from '@shared/types'
+import { ASSISTANT_WORKBENCH_AGENT_TOOLS } from '../../../src/workbench/assistant/agent-tools'
+import { getAllTerminalTools } from './skills/terminal/tools'
 
 /** @deprecated Use TerminalType from @shared/types */
 export type AgentMode = TerminalType
@@ -354,7 +356,7 @@ function buildWebFetchTool(): ToolDefinitionWithMeta {
 - 需要登录的页面（通常会拿到登录墙，不是目标内容；注意辨别）
 - PDF / 图片 / 视频等二进制 → 改用 exec 下载到本地后再 read_file
 
-参数 max_bytes / timeout 通常用默认即可。`
+只需传 url；timeout 通常不必指定（默认 30 秒）。`
   const jinaHint = hasJina
     ? '\n\n当前提取后端：Jina Reader（已配置 API key）——SPA 渲染的页面也能读，如飞书 API 文档、Notion 公开页、现代 SaaS docs。'
     : '\n\n当前提取后端：本地 Readability——静态页面 OK，但 JS 渲染的 SPA（如飞书 API 文档、Notion 公开页）通常拿不到内容；如需读 SPA 请提示用户在 设置 → 联网搜索 配置 Jina API key。'
@@ -375,10 +377,6 @@ function buildWebFetchTool(): ToolDefinitionWithMeta {
           timeout: {
             type: 'number',
             description: '总耗时上限（秒），默认 30，最大 60'
-          },
-          max_bytes: {
-            type: 'number',
-            description: '响应体大小上限（字节），默认 3MB，最大 10MB。超出会截断'
           }
         },
         required: ['url']
@@ -853,24 +851,6 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
     {
       type: 'function',
       function: {
-        name: 'remember_info',
-        description: '将信息整合到持久知识文档中，未来交互时自动提供。适用于用户要求记住的偏好、配置、约定等长期有效的信息。',
-        parameters: {
-          type: 'object',
-          properties: {
-            info: {
-              type: 'string',
-              description: '要记住的信息，关键细节必须完整准确'
-            }
-          },
-          required: ['info']
-        }
-      },
-      _meta: { contextBudget: { toolResult: 'protected' } }
-    } as ToolDefinitionWithMeta,
-    {
-      type: 'function',
-      function: {
         name: 'ask_user',
         description: `向用户提问并等待回复。只在制定计划时提问，执行中优先用合理默认值。调用后暂停执行直到用户回复。`,
         parameters: {
@@ -1025,7 +1005,7 @@ Agent 类型：
 - read（默认）：只读分析与调研，读文件/exec/搜索/查知识库
 - write：可修改文件（在 read 基础上增加 edit_file / write_text_file）
 
-⚠️ 子 Agent 看不到你的对话历史，每个子任务的 prompt 必须**自包含**（完整上下文：路径、目标、约束等）。子 Agent 不能操作终端、不能向用户提问、不能调用 MCP 工具。`,
+⚠️ 子 Agent 看不到你的对话历史，每个子任务的 prompt 必须**自包含**（完整上下文：路径、目标、约束等）。子 Agent 只能使用 exec、读文件、搜索、知识库、web 等基础工具；不能调用技能（skill/load_user_skill）、MCP、终端交互或向用户提问。需要 browser/excel/email 等技能的子任务请由主 Agent 亲自执行。`,
         parameters: {
           type: 'object',
           properties: {
@@ -1306,6 +1286,16 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
   // 上下文管理工具：仅在用量超过阈值时注入，节省 token
   if (options?.includeContextTools) {
     filteredTools.push(...getContextManagementTools())
+  }
+
+  if (options?.mode === 'assistant') {
+    filteredTools.push(...(ASSISTANT_WORKBENCH_AGENT_TOOLS as unknown as ToolDefinitionWithMeta[]))
+  }
+
+  // 终端工作台（local / ssh）：注入 PTY 终端工具（execute_command 等）
+  // 工具由 terminal 工作台贡献，等价于 assistant 工作台贡献 list_workbench_artifacts 等
+  if (options?.mode === 'local' || options?.mode === 'ssh') {
+    filteredTools.push(...(getAllTerminalTools() as ToolDefinitionWithMeta[]))
   }
 
   // 注意：保留 _meta 字段，让 Agent 基类能通过 getMetaByName 查到工具的元数据

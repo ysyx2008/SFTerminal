@@ -21,7 +21,8 @@ import {
   DEFAULT_PROFILE
 } from './session'
 import { getSnapshot, resolveRef, getSnapshotStats } from './snapshot'
-import type { RefMap } from './snapshot'
+import { selectorToHumanLabel } from './ref-label'
+import { extractPageContentFromHtml } from '../../../../utils/page-content-extract'
 import type { Page } from 'playwright-core'
 import {
   bridgeBrowserLaunch,
@@ -32,6 +33,8 @@ import {
   bridgeBrowserListTabs,
   bridgeBrowserSwitchTab,
   bridgeBrowserScroll,
+  bridgeBrowserReadArticle,
+  bridgeBrowserReadPage,
   bridgeBrowserGetContent,
   bridgeBrowserEvaluate,
   bridgeBrowserWait,
@@ -42,43 +45,6 @@ import {
   ensureBridgeSessionIfPreferred,
 } from './bridge-executor'
 import { closeBridgeSession, hasBridgeSession } from './bridge-session'
-
-/** ARIA 角色到用户可读中文的映射，用于展示「点击 按钮「提交」」而非「点击 @e48」 */
-const ROLE_LABELS: Record<string, string> = {
-  button: '按钮',
-  link: '链接',
-  textbox: '输入框',
-  searchbox: '搜索框',
-  heading: '标题',
-  paragraph: '段落',
-  img: '图片',
-  checkbox: '复选框',
-  radio: '单选框',
-  combobox: '下拉框',
-  listbox: '列表',
-  menuitem: '菜单项',
-  option: '选项',
-  switch: '开关',
-  tab: '标签',
-  cell: '单元格',
-  article: '文章',
-  region: '区域',
-  navigation: '导航',
-  main: '主内容',
-}
-
-/**
- * 将选择器转为用户可读描述。若为 @ref 且在 refs 中有对应项，返回如「按钮「提交」」；否则返回原选择器。
- */
-function selectorToHumanLabel(selector: string, refs: RefMap | undefined): string {
-  if (!selector.startsWith('@') || !refs) return selector
-  const refId = selector.slice(1)
-  const info = refs[refId]
-  if (!info) return selector
-  const roleLabel = ROLE_LABELS[info.role] ?? info.role
-  const namePart = info.name ? `「${info.name}」` : ''
-  return `${roleLabel}${namePart}`.trim() || selector
-}
 
 /**
  * 执行浏览器技能工具
@@ -117,6 +83,10 @@ export async function executeBrowserTool(
         return bridgeBrowserSwitchTab(ptyId, args, executor)
       case 'browser_scroll':
         return bridgeBrowserScroll(ptyId, args, executor)
+      case 'browser_read_article':
+        return bridgeBrowserReadArticle(ptyId, args)
+      case 'browser_read_page':
+        return bridgeBrowserReadPage(ptyId, args)
       case 'browser_get_content':
         return bridgeBrowserGetContent(ptyId, args)
       case 'browser_evaluate':
@@ -129,7 +99,7 @@ export async function executeBrowserTool(
         return {
           success: false,
           output: '',
-          error: 'attach 模式不支持 browser_screenshot。需要截图请 browser_launch { "mode": "launch" } 开独立窗口后再截图，或用 browser_snapshot / browser_get_content 了解页面。',
+          error: 'attach 模式不支持 browser_screenshot。需要截图请 browser_launch { "mode": "launch" } 开独立窗口后再截图，或用 browser_snapshot / browser_read_page 了解页面。',
         }
       case 'browser_save_login':
       case 'browser_list_profiles':
@@ -151,6 +121,10 @@ export async function executeBrowserTool(
       return await browserGoto(ptyId, args, executor)
     case 'browser_screenshot':
       return await browserScreenshot(ptyId, args, executor)
+    case 'browser_read_article':
+      return await browserReadArticle(ptyId, args, executor)
+    case 'browser_read_page':
+      return await browserReadPage(ptyId, args, executor)
     case 'browser_get_content':
       return await browserGetContent(ptyId, args, executor)
     case 'browser_click':
@@ -260,7 +234,6 @@ async function browserLaunch(
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
   const preferAttach = shouldPreferAttach(args)
-  let attachFallbackNote = ''
 
   if (preferAttach) {
     const session = getSession(ptyId)
@@ -268,10 +241,7 @@ async function browserLaunch(
       await closeSession(ptyId)
     }
     const auto = !isAttachLaunch(args)
-    const result = await bridgeBrowserLaunch(ptyId, args, executor, { auto })
-    if (result.success) return result
-    if (isAttachLaunch(args)) return result
-    attachFallbackNote = '\n\n💡 浏览器助手未连接或连接失败，已改用独立浏览器窗口。'
+    return bridgeBrowserLaunch(ptyId, args, executor, { auto })
   } else if (hasBridgeSession(ptyId)) {
     closeBridgeSession(ptyId)
   }
@@ -303,7 +273,7 @@ async function browserLaunch(
     }
 
     // 构建返回给 AI 的完整信息
-    let output = `浏览器已启动 (${session.browserInfo.name})${attachFallbackNote}`
+    let output = `浏览器已启动 (${session.browserInfo.name})`
     if (hadStorageState) {
       if (profile) {
         output += `\n✅ 已恢复登录配置 "${profile}" 的登录状态`
@@ -521,23 +491,23 @@ async function browserScreenshot(
 }
 
 /**
- * 获取页面内容
+ * 智能提取文章正文（Readability 类算法）
  */
-async function browserGetContent(
+async function browserReadArticle(
   ptyId: string,
   args: Record<string, unknown>,
-  executor: ToolExecutorConfig
+  executor: ToolExecutorConfig,
 ): Promise<ToolResult> {
   const format = (args.format as 'text' | 'html' | 'markdown') || 'text'
   const selector = args.selector as string | undefined
-  const maxLength = (args.max_length as number) || 10000
+  const maxLength = (args.max_length as number) || 16000
 
   executor.addStep({
     type: 'tool_call',
-    content: selector ? `获取 ${selector} 的${format}内容` : `获取页面${format}内容`,
-    toolName: 'browser_get_content',
+    content: selector ? `读取文章 ${selector}` : '读取文章正文',
+    toolName: 'browser_read_article',
     toolArgs: args,
-    riskLevel: 'safe'
+    riskLevel: 'safe',
   })
 
   try {
@@ -547,59 +517,135 @@ async function browserGetContent(
 
     if (selector) {
       const element = resolveSelector(page, selector, ptyId) || page.locator(selector)
-      if (format === 'html' || format === 'markdown') {
-        content = await element.innerHTML()
-      } else {
-        content = await element.innerText()
-      }
+      content = format === 'html'
+        ? await element.innerHTML()
+        : await element.innerText()
     } else {
-      if (format === 'html' || format === 'markdown') {
-        content = await page.content()
+      const pageHtml = await page.content()
+      const pageUrl = page.url()
+      const extracted = await extractPageContentFromHtml(pageHtml, pageUrl)
+      if (format === 'markdown' && extracted.html) {
+        content = extracted.html
+      } else if (format === 'html' && extracted.html) {
+        content = extracted.html
       } else {
-        content = await page.innerText('body')
+        content = extracted.text
       }
     }
 
-    // 简单的 HTML 到 Markdown 转换
     if (format === 'markdown') {
       content = htmlToSimpleMarkdown(content)
     }
 
-    // 记录原始长度
     const originalLength = content.length
-
-    // 截断过长内容
     if (content.length > maxLength) {
-      content = content.substring(0, maxLength) + `\n\n... (内容过长，已截断，共 ${originalLength} 字符)`
+      content = `${content.substring(0, maxLength)}\n\n... (内容过长，已截断，共 ${originalLength} 字符)`
     }
 
     const title = await page.title()
     const currentUrl = page.url()
-    
-    // 显示标签页信息
-    const tabsInfo = await getTabsInfo(session)
-    const tabsHint = tabsInfo.length > 1 
-      ? `\n(当前第 ${session.currentPageIndex + 1}/${tabsInfo.length} 个标签页)` 
-      : ''
-    
-    const result = `页面: ${title}\nURL: ${currentUrl}${tabsHint}\n\n${content}`
+    const result = `标题: ${title}\nURL: ${currentUrl}\n\n${content}`
 
     executor.addStep({
       type: 'tool_result',
-      content: `获取了 ${originalLength} 字符的内容`,
-      toolName: 'browser_get_content'
+      content: `读取了 ${originalLength} 字符的文章正文`,
+      toolName: 'browser_read_article',
     })
-
     return { success: true, output: result }
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : '获取内容失败'
+    const errorMsg = error instanceof Error ? error.message : '读取文章失败'
     executor.addStep({
       type: 'tool_result',
       content: `错误: ${errorMsg}`,
-      toolName: 'browser_get_content'
+      toolName: 'browser_read_article',
     })
     return { success: false, output: '', error: errorMsg }
   }
+}
+
+async function browserReadPage(
+  ptyId: string,
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig,
+): Promise<ToolResult> {
+  const format = args.format === 'html' ? 'html' : 'text'
+  const selector = args.selector as string | undefined
+  const scrollSteps = typeof args.scroll_steps === 'number' ? Math.max(0, Math.min(args.scroll_steps, 20)) : 0
+  const scrollDelayMs = typeof args.scroll_delay_ms === 'number' ? args.scroll_delay_ms : 500
+  const maxLength = (args.max_length as number) || 32000
+
+  executor.addStep({
+    type: 'tool_call',
+    content: selector ? `读取页面区域 ${selector}` : format === 'html' ? '读取整页 HTML' : '读取整页可见文本',
+    toolName: 'browser_read_page',
+    toolArgs: args,
+    riskLevel: 'safe',
+  })
+
+  try {
+    const session = ensureSession(ptyId)
+    const page = getCurrentPage(session)
+
+    for (let i = 0; i < scrollSteps; i++) {
+      await page.evaluate(() => window.scrollBy(0, 800))
+      if (scrollDelayMs > 0) {
+        await new Promise((r) => setTimeout(r, scrollDelayMs))
+      }
+    }
+
+    let content: string
+    if (selector) {
+      const element = resolveSelector(page, selector, ptyId) || page.locator(selector)
+      content = format === 'html' ? await element.innerHTML() : await element.innerText()
+    } else {
+      content = format === 'html' ? await page.content() : await page.innerText('body')
+    }
+
+    const originalLength = content.length
+    if (content.length > maxLength) {
+      content = `${content.substring(0, maxLength)}\n\n... (内容过长，已截断，共 ${originalLength} 字符)`
+    }
+
+    const title = await page.title()
+    const currentUrl = page.url()
+    const rangeLabel = selector
+      ? `区域: ${selector}`
+      : format === 'html'
+        ? '范围: 整页 HTML 源码'
+        : '范围: 整页可见文本'
+    const result = `标题: ${title}\nURL: ${currentUrl}\n${rangeLabel}\n\n${content}`
+
+    executor.addStep({
+      type: 'tool_result',
+      content: `读取了 ${originalLength} 字符`,
+      toolName: 'browser_read_page',
+    })
+    return { success: true, output: result }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : '读取页面失败'
+    executor.addStep({
+      type: 'tool_result',
+      content: `错误: ${errorMsg}`,
+      toolName: 'browser_read_page',
+    })
+    return { success: false, output: '', error: errorMsg }
+  }
+}
+
+/** @deprecated 使用 browser_read_article；extract:full 转发到 browser_read_page */
+async function browserGetContent(
+  ptyId: string,
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  const extract = (args.extract as string) || 'auto'
+  if (extract === 'full') {
+    return browserReadPage(ptyId, {
+      ...args,
+      format: args.format === 'html' ? 'html' : 'text',
+    }, executor)
+  }
+  return browserReadArticle(ptyId, args, executor)
 }
 
 /**

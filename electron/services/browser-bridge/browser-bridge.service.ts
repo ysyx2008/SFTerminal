@@ -4,10 +4,12 @@ import * as fs from 'fs'
 import * as net from 'net'
 import * as path from 'path'
 import {
-  BROWSER_BRIDGE_CHROMIUM_EXTENSION_ID,
+  BROWSER_BRIDGE_CHROMIUM_CWS_EXTENSION_ID,
+  BROWSER_BRIDGE_CHROMIUM_DEV_EXTENSION_ID,
   BROWSER_BRIDGE_FIREFOX_EXTENSION_ID,
   type BrowserBridgeAttachTarget,
   type BrowserBridgeBrowser,
+  type BrowserBridgeCapability,
   type BrowserBridgeCommandResult,
   type BrowserBridgeInstallStatus,
   type BrowserBridgeStatus,
@@ -22,6 +24,8 @@ import {
   isFirefoxHostOrigin,
   normalizeAttachTargetInput,
   parseGatewayLines,
+  parsePingResult,
+  extensionSupportsTabsManage,
   serializeGatewayLine,
 } from './protocol'
 
@@ -32,6 +36,8 @@ interface HostConnection {
   browser: BrowserBridgeBrowser
   socket: net.Socket
   buffer: string
+  version?: string
+  capabilities?: BrowserBridgeCapability[]
 }
 
 interface PendingRequest {
@@ -122,9 +128,43 @@ export class BrowserBridgeService {
       log.warn('Browser bridge install completed with errors:', this.lastInstall.errors)
     } else {
       log.info('Browser bridge installed')
+      // 重载旧版扩展，使其重新连接并获得新 Tab API 能力
+      void this.reloadOutdatedExtensions().catch(err =>
+        log.debug('Post-install extension reload failed:', err),
+      )
     }
     this.notifyConnectionsChanged()
     return this.lastInstall
+  }
+
+  /**
+   * 返回指定 origin 的实时连接能力（从 hosts 读取，无磁盘 I/O）。
+   * 供 bridge-session / tabs-bridge 校验时优先读此值，避免 BridgeSession.extensionPing 过期。
+   */
+  getConnectionCapabilities(
+    origin: string,
+  ): { version?: string; capabilities?: BrowserBridgeCapability[] } | null {
+    for (const host of this.hosts.values()) {
+      if (host.origin === origin) {
+        return { version: host.version, capabilities: host.capabilities }
+      }
+    }
+    return null
+  }
+
+  /** 已连接但缺少 tabs_manage 的扩展；仅 install 时可选调用，不在 host_register 时自动 reload（Firefox 临时加载会被 reload 卸掉） */
+  async reloadOutdatedExtensions(): Promise<void> {
+    for (const host of [...this.hosts.values()]) {
+      try {
+        const pingRaw = await this.sendCommand('ping', {}, { origin: host.origin, timeoutMs: 5000 })
+        const ping = parsePingResult(pingRaw)
+        if (extensionSupportsTabsManage(ping)) continue
+        log.info(`Reloading outdated browser extension (${ping?.version ?? 'unknown'}) at ${host.origin}`)
+        await this.sendCommand('reload', {}, { origin: host.origin, timeoutMs: 5000 })
+      } catch (error) {
+        log.debug('Extension reload skipped:', error)
+      }
+    }
   }
 
   uninstall(): { errors: string[] } {
@@ -140,13 +180,28 @@ export class BrowserBridgeService {
   }
 
   getStatus(): BrowserBridgeStatus {
+    if (this.started) {
+      this.persistGateway()
+    }
     const detected = detectInstallStatus()
     if (detected) this.lastInstall = detected
+    return this.buildStatus()
+  }
+
+  /** 对已连接扩展发 ping，刷新版本号等元数据 */
+  async refreshConnectionMetadata(): Promise<BrowserBridgeStatus> {
+    await this.probeAllHosts()
+    return this.getStatus()
+  }
+
+  private buildStatus(): BrowserBridgeStatus {
     const install = this.lastInstall
     const connections = [...this.hosts.values()].map((host) => ({
       browser: host.browser,
       origin: host.origin,
       state: 'ready' as const,
+      version: host.version,
+      capabilities: host.capabilities,
     }))
     return {
       gatewayRunning: this.started,
@@ -154,9 +209,30 @@ export class BrowserBridgeService {
       connections,
       install,
       extensionIds: {
-        chromium: BROWSER_BRIDGE_CHROMIUM_EXTENSION_ID,
+        chromium: BROWSER_BRIDGE_CHROMIUM_CWS_EXTENSION_ID,
+        chromiumDev: BROWSER_BRIDGE_CHROMIUM_DEV_EXTENSION_ID,
         firefox: BROWSER_BRIDGE_FIREFOX_EXTENSION_ID,
       },
+    }
+  }
+
+  private async probeAllHosts(): Promise<void> {
+    await Promise.all(
+      [...this.hosts.entries()].map(([socket]) => this.probeHost(socket)),
+    )
+  }
+
+  private async probeHost(socket: net.Socket): Promise<void> {
+    const host = this.hosts.get(socket)
+    if (!host) return
+    try {
+      const pingRaw = await this.sendCommand('ping', {}, { origin: host.origin, timeoutMs: 5000 })
+      const ping = parsePingResult(pingRaw)
+      if (!ping || !this.hosts.has(socket)) return
+      host.version = ping.version
+      host.capabilities = ping.capabilities
+    } catch (error) {
+      log.debug(`Extension ping failed (${host.origin}):`, error)
     }
   }
 
@@ -306,6 +382,7 @@ export class BrowserBridgeService {
       })
       log.info(`Host registered: ${origin}`)
       this.notifyConnectionsChanged()
+      void this.probeHost(socket).then(() => this.notifyConnectionsChanged())
       return
     }
 
@@ -328,7 +405,7 @@ export class BrowserBridgeService {
 
   private notifyConnectionsChanged(): void {
     if (!this.mainWindow || this.mainWindow.isDestroyed()) return
-    this.mainWindow.webContents.send('browserBridge:connectionsChanged', this.getStatus())
+    this.mainWindow.webContents.send('browserBridge:connectionsChanged', this.buildStatus())
   }
 }
 

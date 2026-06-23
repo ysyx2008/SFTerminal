@@ -1,8 +1,21 @@
 /**
- * Firefox background — browser.* API wrapper around shared logic
+ * Firefox background — browser.* API wrapper around shared tabs-api
+ * 优先 manifest scripts 预加载；AMO/旧包仅单脚本时用 importScripts 兜底
  */
+if (!globalThis.__sailfishTabsApi) {
+  try {
+    importScripts('shared/tabs-api.js')
+  } catch (error) {
+    console.error('[SailFish Bridge] failed to load shared/tabs-api.js:', error)
+  }
+}
 const api = globalThis.browser || globalThis.chrome
+const tabsApi = globalThis.__sailfishTabsApi
 const NATIVE_HOST = 'com.sailfish.browser'
+
+if (!tabsApi) {
+  console.error('[SailFish Bridge] tabs-api unavailable — extension background cannot start bridge')
+}
 
 /** @type {browser.runtime.Port | null} */
 let nativePort = null
@@ -36,7 +49,15 @@ function connectNative() {
 }
 
 async function onNativeMessage(message) {
-  if (!message?.action) return
+  if (!message) return
+  if (message.id && pending.has(message.id)) {
+    const { resolve, reject } = pending.get(message.id)
+    pending.delete(message.id)
+    if (message.success) resolve(message.data)
+    else reject(new Error(message.error || 'Unknown error'))
+    return
+  }
+  if (!message.action) return
   const { id, action, payload = {} } = message
   try {
     const data = await dispatchAction(action, payload)
@@ -49,15 +70,32 @@ async function onNativeMessage(message) {
 async function dispatchAction(action, payload) {
   switch (action) {
     case 'ping':
-      return { extension: 'sailfish-browser-bridge', version: api.runtime.getManifest().version }
+      return {
+        extension: 'sailfish-browser-bridge',
+        version: api.runtime.getManifest().version,
+        protocol: 1,
+        capabilities: tabsApi ? ['tabs_manage', 'goto_new_tab'] : [],
+        tabsApiReady: Boolean(tabsApi),
+        nativeConnected: Boolean(nativePort),
+      }
+    case 'tabs':
+      if (!tabsApi) throw new Error('Browser bridge tabs-api not loaded. Reinstall SailFish Browser Assistant extension.')
+      return tabsApi.handleTabsOp(api.tabs, api.windows, payload)
     case 'list_tabs':
-      return listTabs()
+      if (!tabsApi) throw new Error('Browser bridge tabs-api not loaded. Reinstall SailFish Browser Assistant extension.')
+      return tabsApi.listTabs(api.tabs)
     case 'switch_tab':
-      return switchTab(payload)
+      if (!tabsApi) throw new Error('Browser bridge tabs-api not loaded. Reinstall SailFish Browser Assistant extension.')
+      return tabsApi.switchTab(api.tabs, api.windows, payload)
     case 'goto':
-      return gotoUrl(payload)
+      if (!tabsApi) throw new Error('Browser bridge tabs-api not loaded. Reinstall SailFish Browser Assistant extension.')
+      return tabsApi.gotoUrl(api.tabs, payload)
     case 'close_tab':
-      return closeTab(payload)
+      if (!tabsApi) throw new Error('Browser bridge tabs-api not loaded. Reinstall SailFish Browser Assistant extension.')
+      return tabsApi.closeTab(api.tabs, payload)
+    case 'reload':
+      api.runtime.reload()
+      return { reloaded: true }
     case 'evaluate':
       return evaluateViaMessage(payload)
     default:
@@ -91,61 +129,6 @@ async function evaluateViaMessage(payload) {
   }
 }
 
-async function listTabs() {
-  const tabs = await api.tabs.query({ currentWindow: true })
-  const active = tabs.find((t) => t.active)
-  return tabs.map((tab, index) => ({
-    index,
-    id: tab.id,
-    url: tab.url || '',
-    title: tab.title || '',
-    active: tab.id === active?.id,
-  }))
-}
-
-async function switchTab(payload) {
-  const index = Number(payload.index)
-  const tabs = await api.tabs.query({ currentWindow: true })
-  const tab = tabs[index]
-  if (!tab?.id) throw new Error(`Tab index ${index} not found`)
-  await api.tabs.update(tab.id, { active: true })
-  await api.windows.update(tab.windowId, { focused: true })
-  return { index, id: tab.id, url: tab.url, title: tab.title }
-}
-
-async function gotoUrl(payload) {
-  const url = String(payload.url || '')
-  const [tab] = await api.tabs.query({ active: true, currentWindow: true })
-  if (!tab?.id) throw new Error('No active tab')
-  await api.tabs.update(tab.id, { url })
-  await waitTabComplete(tab.id)
-  const updated = await api.tabs.get(tab.id)
-  return { url: updated.url, title: updated.title }
-}
-
-async function closeTab() {
-  const [tab] = await api.tabs.query({ active: true, currentWindow: true })
-  if (tab?.id) await api.tabs.remove(tab.id)
-  return { closed: true }
-}
-
-function waitTabComplete(tabId, timeoutMs = 30000) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      api.tabs.onUpdated.removeListener(listener)
-      reject(new Error('Navigation timeout'))
-    }, timeoutMs)
-    function listener(id, info) {
-      if (id === tabId && info.status === 'complete') {
-        clearTimeout(timer)
-        api.tabs.onUpdated.removeListener(listener)
-        resolve(undefined)
-      }
-    }
-    api.tabs.onUpdated.addListener(listener)
-  })
-}
-
 async function runInActiveTab(action, payload) {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true })
   if (!tab?.id) throw new Error('No active tab')
@@ -173,12 +156,72 @@ async function runInActiveTab(action, payload) {
   return entry.result
 }
 
+/** @type {Map<string, { resolve: Function, reject: Function }>} */
+const pending = new Map()
+
+function requestNative(action, payload) {
+  return new Promise((resolve, reject) => {
+    if (!nativePort) connectNative()
+    if (!nativePort) {
+      reject(new Error('Native host not connected'))
+      return
+    }
+    const id = `ext-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    pending.set(id, { resolve, reject })
+    nativePort.postMessage({ id, action, payload })
+    setTimeout(() => {
+      if (pending.has(id)) {
+        pending.delete(id)
+        reject(new Error(`Timeout: ${action}`))
+      }
+    }, 60000)
+  })
+}
+
+api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.source === 'sailfish-popup-test') {
+    if (!nativePort) {
+      sendResponse({ error: 'Native host not connected' })
+      return true
+    }
+    dispatchAction(message.action || 'ping', message.payload || {})
+      .then(sendResponse)
+      .catch((e) => {
+        reconnectNative()
+        sendResponse({ error: e.message })
+      })
+    return true
+  }
+})
+
+api.runtime.onStartup.addListener(() => {
+  if (!nativePort) connectNative()
+})
+
+api.runtime.onInstalled.addListener(() => {
+  if (!nativePort) connectNative()
+})
+
+function reconnectNative() {
+  if (nativePort) {
+    try { nativePort.disconnect() } catch { /* ignore */ }
+    nativePort = null
+  }
+  api.storage.local.set({ bridgeConnected: false })
+  setTimeout(connectNative, 1000)
+}
+
 connectNative()
 api.alarms.create('keepalive', { periodInMinutes: 1 })
-api.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'keepalive' && nativePort) {
-    nativePort.postMessage({ id: 'ping', action: 'ping', payload: {} })
-  } else if (alarm.name === 'keepalive') {
+api.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== 'keepalive') return
+  if (!nativePort) {
     connectNative()
+    return
+  }
+  try {
+    await requestNative('ping', {})
+  } catch {
+    reconnectNative()
   }
 })

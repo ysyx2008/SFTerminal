@@ -487,6 +487,7 @@ export class WatchService {
     const mainWindow = this.config.mainWindow
     let hasError = false
     let errorMessage = ''
+    const steps: AgentStep[] = []
 
     // 每次 Watch 执行使用独立 session，保留工作记忆但分开存储步骤
     this.config.agentService.startNewSession(agentId)
@@ -498,6 +499,7 @@ export class WatchService {
 
     const callbacks: AgentCallbacks = {
       onStep: (_runId: string, step: AgentStep) => {
+        steps.push(step)
         if (shouldSendSteps && mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('agent:step', {
             agentId, step: JSON.parse(JSON.stringify(step)),
@@ -550,7 +552,9 @@ export class WatchService {
         success: !hasError,
         output: (agentResult || '').trim(),
         error: hasError ? errorMessage : undefined,
-        duration: Date.now() - startTime
+        duration: Date.now() - startTime,
+        steps,
+        userMessage: this.extractUserMessage(steps)
       }
     } catch (error) {
       try { this.config.agentService.abort(agentId) } catch { /* ignore */ }
@@ -558,7 +562,9 @@ export class WatchService {
         success: false,
         output: '',
         error: error instanceof Error ? error.message : String(error),
-        duration: Date.now() - startTime
+        duration: Date.now() - startTime,
+        steps: [],
+        userMessage: undefined
       }
     }
   }
@@ -675,10 +681,76 @@ export class WatchService {
       parts.push(`[预加载技能：${watch.skills.join(', ')}]`)
     }
 
+    const recentContext = this.buildRecentCompanionContext()
+    if (recentContext) {
+      parts.push(recentContext)
+    }
+
     parts.push('[通知用户时，必须调用 talk_to_user 工具发送消息。最终文本回复仅作为内部日志，不会作为通知正文。]')
     parts.push(watch.prompt)
 
     return parts.join('\n')
+  }
+
+  /** 最近联络上下文短期缓存：避免每次 Watch 触发都同步读盘解析整条会话记录 */
+  private companionContextCache?: { text: string; expires: number }
+  private static readonly COMPANION_CONTEXT_TTL_MS = 10_000
+
+  /**
+   * 构建最近联络上下文：让 Watch 发消息前知道最近跟用户聊了什么，避免重复通知 / 保持连贯。
+   * 数据源是 __companion__ 的最近会话记录——与 IM/Gateway/桌面/主动通知共享同一条联络对话。
+   * 带 10s TTL 缓存：联络记录可能很大，频繁触发的 Watch 不必每次都同步读盘解析。
+   */
+  private buildRecentCompanionContext(): string {
+    const now = Date.now()
+    if (this.companionContextCache && this.companionContextCache.expires > now) {
+      return this.companionContextCache.text
+    }
+    const text = this.computeRecentCompanionContext()
+    this.companionContextCache = { text, expires: now + WatchService.COMPANION_CONTEXT_TTL_MS }
+    return text
+  }
+
+  private computeRecentCompanionContext(): string {
+    try {
+      const historyService = this.config?.historyService
+      if (!historyService) return ''
+      const record = historyService.getLatestRecordByAgentKey(WatchService.COMPANION_AGENT_ID)
+      if (!record) return ''
+
+      // 优先用 API messages 还原对话；缺失时回退到 steps。仅取用户↔AI 的纯文本轮次。
+      const turns: Array<{ role: string; content: string }> = []
+      if (record.messages && record.messages.length > 0) {
+        for (const m of record.messages) {
+          const isPlainUser = m.role === 'user' && typeof m.content === 'string' && m.content.trim().length > 0
+          const isPlainAssistant = m.role === 'assistant'
+            && typeof m.content === 'string' && m.content.trim().length > 0
+            && !(Array.isArray(m.tool_calls) && m.tool_calls.length > 0)
+          if (isPlainUser || isPlainAssistant) {
+            turns.push({ role: m.role, content: m.content as string })
+          }
+        }
+      } else if (record.steps && record.steps.length > 0) {
+        for (const s of record.steps) {
+          if (s.type === 'user_task' && s.content && s.content !== '__proactive__') {
+            turns.push({ role: 'user', content: s.content })
+          } else if ((s.type === 'final_result' || s.type === 'message') && s.content) {
+            turns.push({ role: 'assistant', content: s.content })
+          }
+        }
+      }
+
+      const recent = turns.slice(-8)
+      if (recent.length === 0) return ''
+      const lines = recent.map(m => {
+        const who = m.role === 'user' ? '用户' : '你'
+        const text = m.content.length > 200 ? m.content.substring(0, 200) + '…' : m.content
+        return `${who}：${text}`
+      })
+      return `[最近与用户的联络记录（避免重复通知、保持连贯）：\n${lines.join('\n')}]`
+    } catch {
+      return ''
+    }
   }
 
   /** 解析心跳模板变量，缺失的必要变量自动追加到开头 */
@@ -879,7 +951,10 @@ export class WatchService {
 
   // ==================== 输出投递 ====================
 
+  /** 内部 Agent 执行 ID，用于 session 隔离；不用于前端 Tab 路由 */
   private static readonly WATCH_ASSISTANT_AGENT_ID = '__watch__'
+  /** 前端联络常驻 tab 的 agentId，与 AgentService.COMPANION_AGENT_ID 保持一致 */
+  private static readonly COMPANION_AGENT_ID = '__companion__'
 
   /**
    * 关切执行失败：作为生命周期事件发射到 EventBus。
@@ -977,33 +1052,35 @@ export class WatchService {
   }
 
   /**
-   * 将 Watch 执行结果推送到应用内：
-   * 1. 确保助手 tab 存在
-   * 2. 发送 proactive-message 事件，由 App.vue 负责注入 step 并弹 toast
+   * 将 Watch 执行结果推送到应用内联络 tab。
+   * 只在 Agent 明确调用 talk_to_user（result.userMessage 非空）时推送，
+   * 避免将内部执行日志/静默结束等噪音暴露给用户。
    */
   private deliverProactiveMessage(watch: WatchDefinition, result: WatchExecutionResult): void {
+    if (!result.userMessage) return
+
     const mainWindow = this.config?.mainWindow
     if (!mainWindow || mainWindow.isDestroyed()) return
 
-    const agentId = WatchService.WATCH_ASSISTANT_AGENT_ID
+    const agentId = WatchService.COMPANION_AGENT_ID
 
     mainWindow.webContents.send('watch:ensureTab', { agentId })
     mainWindow.webContents.send('watch:proactive-message', {
       agentId,
-      message: result.userMessage || result.output,
+      message: result.userMessage,
       watchName: watch.name
     })
 
     log.info(`Proactive message delivered for: ${watch.name}`)
   }
 
-  /** 通知前端确保 companion tab 存在（Agent 执行前调用） */
+  /** 通知前端确保联络 tab 存在（Agent 执行前调用） */
   private ensureDesktopTab(): boolean {
     if (!this.config?.mainWindow || this.config.mainWindow.isDestroyed()) {
       return false
     }
     this.config.mainWindow.webContents.send('watch:ensureTab', {
-      agentId: WatchService.WATCH_ASSISTANT_AGENT_ID
+      agentId: WatchService.COMPANION_AGENT_ID
     })
     return true
   }
@@ -1025,7 +1102,10 @@ export class WatchService {
         if (process.platform === 'win32') {
           mainWindow.webContents.focus()
         }
-        this.deliverProactiveMessage(watch, result)
+        // 只在有 talk_to_user 消息时才注入联络 tab，否则仅激活窗口
+        if (result.userMessage) {
+          this.deliverProactiveMessage(watch, result)
+        }
       })
       notification.show()
     } catch (err) {

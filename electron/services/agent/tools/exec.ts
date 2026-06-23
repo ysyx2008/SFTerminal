@@ -110,6 +110,10 @@ export async function executeCommandDirect(
     return { success: false, output: '', error: t('hint.security_blocked') }
   }
 
+  if (riskLevel === 'dangerous' && executor.isSubAgent) {
+    return { success: false, output: '', error: '高危命令在子任务模式下被系统自动阻止。' }
+  }
+
   let needConfirm = false
   if (config.executionMode === 'strict') {
     needConfirm = true

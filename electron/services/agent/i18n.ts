@@ -6,7 +6,7 @@
 import { ConfigService } from '../config.service'
 
 // 翻译键类型
-type TranslationKey = keyof typeof translations['zh-CN']
+export type TranslationKey = keyof typeof translations['zh-CN']
 
 // 翻译文本
 const translations = {
@@ -19,7 +19,6 @@ const translations = {
     'tool.send_input': '发送输入',
     'tool.read_file': '读取文件',
     'tool.write_file': '写入文件',
-    'tool.remember_info': '记住信息',
     'tool.search_knowledge': '搜索知识库',
     'tool.get_knowledge_doc': '获取知识库文档',
     'tool.ask_user': '询问用户',
@@ -209,6 +208,10 @@ const translations = {
     'file.reading_info_only': '读取文件 (仅查询信息)',
     'file.read_success': '文件读取成功',
     'file.read_failed': '文件读取失败',
+    'file.read_output_truncated': '⚠️ 读取结果已截断（原 {total} 字符，省略 {omittedLines} 行 / {omittedChars} 字符；当前上下文已用约 {usagePercent}%）。路径: {path}\n以下仅展示开头 {head} + 末尾 {tail} 字符。请用 start_line/end_line、max_lines 或 grep 分段读取同一文件。',
+    'file.read_context_exhausted': '⚠️ 上下文余量不足（已用约 {usagePercent}%），无法返回文件正文。\n路径: {path}\n请先调用 compress_context 释放空间，再用 read_file(path, start_line=..., end_line=...) 分段读取。',
+    'file.read_context_critical_hint': '⚠️ 上下文用量较高（约 {usagePercent}%）。建议先调用 compress_context，再用 start_line/end_line 或 max_lines 分段读取同一文件。',
+    'file.read_lines_capped': '单次最多 {cap} 行（已截断）',
     'file.file_info': '文件信息',
     'file.file_too_large': '文件过大',
     'file.writing': '写入文件',
@@ -1130,17 +1133,6 @@ const translations = {
     'error.permission': '权限不足。建议：1) 检查文件/目录权限；2) 尝试使用 sudo（如果合适）；3) 确认用户是否有相应权限。',
     'error.not_found': '资源不存在。建议：1) 检查路径是否正确；2) 使用 ls 或 find 确认文件位置；3) 检查命令是否已安装。',
     'error.timeout': '命令执行超时，但可能仍在运行中。建议：1) 先用 check_terminal_status 确认是否还在执行；2)  再用 get_terminal_context 查看终端最新输出，了解执行进度；3) 如果确实卡住了再用 send_control_key 发送 Ctrl+C。',
-    'error.knowledge_not_available': '知识库未启用，无法保存记忆',
-
-    // 记忆功能
-    'memory.remember': '记住信息',
-    'memory.remembered': '已记住',
-    'memory.remembered_knowledge': '已记住 (知识库, 共 {count} 条记忆)',
-    'memory.cannot_save': '无法保存: 知识库未启用',
-    'memory.skip_dynamic': '跳过 (纯动态数据)',
-    'memory.skip_duplicate': '跳过 (与已有记忆重复)',
-    'memory.merged': '记忆已合并更新',
-    'memory.replaced': '记忆已更新替换',
 
     // 知识库搜索
     'knowledge.search': '搜索知识库',
@@ -1270,8 +1262,6 @@ const translations = {
     'hint.old_text_multiple_matches': '请提供更多上下文（如包含前后几行）使 old_text 在文件中唯一匹配，或使用 replace_all=true。',
     'hint.closest_match': '文件中最相似的内容',
 
-    // 记忆错误
-    'error.info_required': '信息不能为空',
     'error.cannot_save_unknown_host': '无法保存：主机ID未知',
     'error.query_required': '查询内容不能为空',
     'error.file_search_ssh_not_supported': 'file_search 仅支持本地终端。SSH 远程主机请使用 find 命令，例如: find /path -name "*.txt"',
@@ -1332,6 +1322,23 @@ const translations = {
     'ai.thinking_with_emoji': '🤔 **思考中...**\n\n> ',
     'ai.thinking_process': '思考过程',
     'ai.preparing': '正在准备...',
+    'ai.waitingForModel.diving': '深潜中',
+    'ai.waitingForModel.scanning': '声呐扫描中',
+    'ai.waitingForModel.waitingWave': '等浪来',
+    'ai.waitingForModel.booting': '大脑开机中',
+    'ai.waitingForModel.neurons': '神经元连线中',
+    'ai.waitingForModel.inspiration': '灵感加载中',
+    'ai.waitingForModel.calling': '正在呼唤模型',
+    'ai.waitingForModel.easter.coffee': '旗鱼在喝咖啡',
+    'ai.waitingForModel.easter.bribingGpu': '正在贿赂 GPU',
+    'ai.waitingForModel.easter.quantum': '量子纠缠中',
+    'ai.waitingForModel.easter.yoda': '召唤尤达大师',
+    'ai.waitingForModel.easter.haggling': '和模型砍价中',
+    'ai.waitingForModel.slow.slacking': '模型可能在摸鱼',
+    'ai.waitingForModel.slow.patience': '仍在等待，耐心是美德',
+    'ai.waitingForModel.slow.deepBreath': '对方正在深呼吸',
+    'ai.waitingForModel.slow.novel': '也许它在写长篇大论',
+    'ai.waitingForModel.slow.almostThere': '快好了，真的…',
 
     // IM 模块
     'im.help_title': '🐟 旗鱼 - IM 远程助手',
@@ -1438,6 +1445,7 @@ const translations = {
     'web.fetch.url_required': '必须提供 url 参数',
     'web.fetch.empty_body': '响应体为空',
     'web.fetch.header': '[fetched: {url}, status {status}, content-type: {contentType}, {size}, backend: {backend}]',
+    'workbench.list_artifacts': '查看产出物面板',
 
     // exec 后台任务（assistant 模式 exec/await_exec 工具）
     'exec.task_id_required': '必须提供 task_id',
@@ -1464,7 +1472,6 @@ const translations = {
     'tool.send_input': 'Send Input',
     'tool.read_file': 'Read File',
     'tool.write_file': 'Write File',
-    'tool.remember_info': 'Remember Info',
     'tool.search_knowledge': 'Search Knowledge',
     'tool.get_knowledge_doc': 'Get Knowledge Doc',
     'tool.ask_user': 'Ask User',
@@ -1654,6 +1661,10 @@ Please output the summary in the following format:
     'file.reading_info_only': 'Reading file (info only)',
     'file.read_success': 'File read success',
     'file.read_failed': 'File read failed',
+    'file.read_output_truncated': '⚠️ Read output truncated ({total} chars total; {omittedLines} lines / {omittedChars} chars omitted; context ~{usagePercent}% used). Path: {path}\nShowing first {head} + last {tail} chars only. Use start_line/end_line, max_lines, or grep to read the same file in parts.',
+    'file.read_context_exhausted': '⚠️ Insufficient context headroom (~{usagePercent}% used); file body not returned.\nPath: {path}\nCall compress_context first, then read_file(path, start_line=..., end_line=...) in smaller chunks.',
+    'file.read_context_critical_hint': '⚠️ Context usage is high (~{usagePercent}%). Consider compress_context first, then read the same file in parts with start_line/end_line or max_lines.',
+    'file.read_lines_capped': 'max {cap} lines per read (truncated)',
     'file.file_info': 'File info',
     'file.file_too_large': 'File too large',
     'file.writing': 'Writing file',
@@ -2575,17 +2586,6 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'error.permission': 'Permission denied. Suggestions: 1) Check file/directory permissions; 2) Try using sudo (if appropriate); 3) Confirm user has required permissions.',
     'error.not_found': 'Resource not found. Suggestions: 1) Check if the path is correct; 2) Use ls or find to confirm file location; 3) Check if the command is installed.',
     'error.timeout': 'Command execution timeout, but may still be running. Suggestions: 1) Use check_terminal_status to confirm if still executing; 2) Use get_terminal_context to check latest terminal output; 3) Use send_control_key to send Ctrl+C if really stuck.',
-    'error.knowledge_not_available': 'Knowledge base not enabled, cannot save memory',
-
-    // Memory
-    'memory.remember': 'Remember info',
-    'memory.remembered': 'Remembered',
-    'memory.remembered_knowledge': 'Remembered (Knowledge base, {count} memories)',
-    'memory.cannot_save': 'Cannot save: Knowledge base not enabled',
-    'memory.skip_dynamic': 'Skipped (dynamic data only)',
-    'memory.skip_duplicate': 'Skipped (duplicate memory)',
-    'memory.merged': 'Memory merged and updated',
-    'memory.replaced': 'Memory replaced',
 
     // Knowledge search
     'knowledge.search': 'Search knowledge',
@@ -2715,8 +2715,6 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'hint.old_text_multiple_matches': 'Please provide more context (e.g. include surrounding lines) to make old_text unique in the file, or use replace_all=true.',
     'hint.closest_match': 'Most similar content in file',
 
-    // Memory errors
-    'error.info_required': 'Info cannot be empty',
     'error.cannot_save_unknown_host': 'Cannot save: Unknown host ID',
     'error.query_required': 'Query cannot be empty',
     'error.file_search_ssh_not_supported': 'file_search only works on local terminal. For SSH remote hosts, use find command, e.g.: find /path -name "*.txt"',
@@ -2777,6 +2775,23 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'ai.thinking_with_emoji': '🤔 **Thinking...**\n\n> ',
     'ai.thinking_process': 'Thinking Process',
     'ai.preparing': 'Preparing...',
+    'ai.waitingForModel.diving': 'Diving',
+    'ai.waitingForModel.scanning': 'Scanning',
+    'ai.waitingForModel.waitingWave': 'Waiting for the wave',
+    'ai.waitingForModel.booting': 'Booting up',
+    'ai.waitingForModel.neurons': 'Neurons connecting',
+    'ai.waitingForModel.inspiration': 'Loading inspiration',
+    'ai.waitingForModel.calling': 'Calling the model',
+    'ai.waitingForModel.easter.coffee': 'Sailfish is having coffee',
+    'ai.waitingForModel.easter.bribingGpu': 'Bribing the GPU',
+    'ai.waitingForModel.easter.quantum': 'Quantum entangling',
+    'ai.waitingForModel.easter.yoda': 'Summoning Yoda',
+    'ai.waitingForModel.easter.haggling': 'Haggling with the model',
+    'ai.waitingForModel.slow.slacking': 'The model might be slacking',
+    'ai.waitingForModel.slow.patience': 'Still waiting—patience is a virtue',
+    'ai.waitingForModel.slow.deepBreath': 'It\'s taking a deep breath',
+    'ai.waitingForModel.slow.novel': 'Maybe it\'s writing a novel',
+    'ai.waitingForModel.slow.almostThere': 'Almost there, really…',
 
     // IM module
     'im.help_title': '🐟 SailFish - IM Remote Assistant',
@@ -2883,6 +2898,7 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'web.fetch.url_required': 'url parameter is required',
     'web.fetch.empty_body': 'response body is empty',
     'web.fetch.header': '[fetched: {url}, status {status}, content-type: {contentType}, {size}, backend: {backend}]',
+    'workbench.list_artifacts': 'View output panel',
 
     // exec background tasks (assistant mode exec/await_exec tools)
     'exec.task_id_required': 'task_id is required',

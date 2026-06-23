@@ -13,7 +13,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   AlertTriangle, RefreshCw, Clock, History,
-  CheckCircle2, ChevronRight, AlertCircle
+  CheckCircle2, ChevronRight, AlertCircle, RotateCcw
 } from 'lucide-vue-next'
 import type { WatchDefinition, WatchHistoryRecord } from '@shared/types'
 
@@ -26,6 +26,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'select-watch': [id: string]
   'view-history-detail': [record: WatchHistoryRecord]
+  'retry-watch': [id: string]
 }>()
 
 const { t, locale } = useI18n()
@@ -250,22 +251,28 @@ function selectWatchById(id: string) {
         <span class="section-count count-error">{{ anomalies.length }}</span>
       </div>
       <div class="section-body">
-        <button
+        <div
           v-for="w in anomalies"
           :key="w.id"
           class="ov-row ov-row-error"
-          @click="selectWatchById(w.id)"
         >
           <span class="ov-row-dot"></span>
-          <div class="ov-row-main">
+          <button class="ov-row-main ov-row-clickable" @click="selectWatchById(w.id)">
             <div class="ov-row-line1">
               <span class="ov-row-name">{{ w.name }}</span>
               <span class="ov-row-time">{{ w.lastRun ? formatTimeAgo(w.lastRun.at) : '' }}</span>
             </div>
             <div class="ov-row-line2" v-if="anomalySummary(w)">{{ anomalySummary(w) }}</div>
-          </div>
-          <ChevronRight :size="14" class="ov-row-arrow" />
-        </button>
+          </button>
+          <button
+            class="ov-retry-btn"
+            :disabled="runningWatches.has(w.id)"
+            :title="t('watch.retryWatch')"
+            @click.stop="emit('retry-watch', w.id)"
+          >
+            <RotateCcw :size="13" :class="{ spinning: runningWatches.has(w.id) }" />
+          </button>
+        </div>
       </div>
     </section>
 
@@ -590,6 +597,7 @@ button.health-pill:hover { filter: brightness(1.08); }
   transition: background 0.12s;
   width: 100%;
   color: inherit;
+  box-sizing: border-box;
 }
 .ov-row:first-of-type { border-top: 0; }
 .ov-row:hover { background: var(--bg-hover); }
@@ -655,6 +663,44 @@ button.health-pill:hover { filter: brightness(1.08); }
   opacity: 0.6;
 }
 .ov-row:hover .ov-row-arrow { opacity: 1; }
+
+.ov-row-clickable {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.ov-retry-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--brand-alert, #e74c3c);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, border-color 0.12s;
+  margin-top: 2px;
+}
+.ov-row:hover .ov-retry-btn { opacity: 0.7; }
+.ov-retry-btn:hover {
+  opacity: 1 !important;
+  background: rgba(231, 76, 60, 0.12);
+  border-color: rgba(231, 76, 60, 0.32);
+}
+.ov-retry-btn:disabled {
+  opacity: 0.35 !important;
+  cursor: not-allowed;
+}
 
 /* "展开剩余 N 项" 按钮 */
 .ov-row-toggle {

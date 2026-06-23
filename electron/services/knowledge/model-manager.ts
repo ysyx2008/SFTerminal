@@ -20,7 +20,8 @@ const MODELS: Record<ModelTier, ModelInfo> = {
   lite: {
     id: 'lite',
     name: '轻量模型',
-    huggingfaceId: 'Xenova/bge-small-zh-v1.5',
+    huggingfaceId: 'onnx-community/bge-small-zh-v1.5-ONNX',
+    localDirName: 'bge-small-zh-v1.5',
     size: 24_000_000,  // ~24MB (量化版)
     dimensions: 512,
     maxTokens: 512,    // max_position_embeddings
@@ -30,23 +31,25 @@ const MODELS: Record<ModelTier, ModelInfo> = {
   standard: {
     id: 'standard',
     name: '标准模型',
-    huggingfaceId: 'Xenova/bge-base-zh-v1.5',
+    huggingfaceId: 'onnx-community/bge-base-zh-v1.5-ONNX',
+    localDirName: 'bge-base-zh-v1.5',
     size: 98_000_000,  // ~98MB (量化版)
     dimensions: 768,
     maxTokens: 512,    // max_position_embeddings
     bundled: false,
-    downloadUrl: 'https://huggingface.co/Xenova/bge-base-zh-v1.5/resolve/main',
+    downloadUrl: 'https://huggingface.co/onnx-community/bge-base-zh-v1.5-ONNX/resolve/main',
     sha256: undefined
   },
   large: {
     id: 'large',
     name: '高精模型',
-    huggingfaceId: 'Xenova/bge-large-zh-v1.5',
+    huggingfaceId: 'onnx-community/bge-large-zh-v1.5-ONNX',
+    localDirName: 'bge-large-zh-v1.5',
     size: 650_000_000,  // ~650MB (量化版估算)
     dimensions: 1024,
     maxTokens: 512,    // max_position_embeddings
     bundled: false,
-    downloadUrl: 'https://huggingface.co/Xenova/bge-large-zh-v1.5/resolve/main',
+    downloadUrl: 'https://huggingface.co/onnx-community/bge-large-zh-v1.5-ONNX/resolve/main',
     sha256: undefined
   }
 }
@@ -130,7 +133,7 @@ export class ModelManager extends EventEmitter {
    */
   private getModelDirName(id: ModelTier): string {
     const model = MODELS[id]
-    // 使用 HuggingFace ID 的最后一部分作为目录名
+    if (model.localDirName) return model.localDirName
     return model.huggingfaceId.split('/').pop() || id
   }
 

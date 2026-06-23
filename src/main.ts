@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import i18n from './i18n'
+import { getBrandName } from '@shared/brand'
 import { oemConfig } from './config/oem.config'
 import './styles/main.css'
 import './styles/markdown-content.css'
@@ -26,6 +27,5 @@ window.electronAPI?.app?.notifyMounted?.()
 
 window.electronAPI?.app.getVersion().then((version: string) => {
   const displayVersion = oemConfig.brand.version || version
-  const brandName = oemConfig.brand.name.zh
-  document.title = `${brandName} v${displayVersion}`
+  document.title = `${getBrandName('zh-CN')} v${displayVersion}`
 })

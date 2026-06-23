@@ -297,6 +297,47 @@ describe('AgentService.forkAgent', () => {
     expect(result).toBeNull()
   })
 
+  it('forks from HistoryService when source agent is missing but sourceSessionId is provided', async () => {
+    const ai = { chatWithToolsStream: vi.fn(), abort: vi.fn() } as any
+    const pty = { onData: vi.fn().mockReturnValue(() => {}), write: vi.fn() } as any
+    const service = new AgentService(ai, pty)
+
+    const { messages, steps } = buildThreeTaskSession()
+    const historyRecord = {
+      id: 'history-session',
+      timestamp: Date.now() - 20000,
+      terminalId: '',
+      terminalType: 'local' as const,
+      userTask: 'Task 1 question',
+      steps,
+      messages,
+      duration: 1000,
+      status: 'completed' as const,
+    }
+
+    const savedRecords: any[] = []
+    const historyService = {
+      saveAgentRecord: vi.fn((r) => { savedRecords.push(r) }),
+      getAgentRecordById: vi.fn((id: string) => id === 'history-session' ? historyRecord : undefined),
+      getRecentAgentRecords: vi.fn().mockReturnValue([])
+    }
+    service.setHistoryService(historyService as any)
+
+    const result = await service.forkAgent({
+      sourceAgentKey: 'nonexistent',
+      newAgentId: 'new-from-history',
+      sourceSessionId: 'history-session',
+      untilTaskCount: 2,
+      titleSuffix: ' · 分支'
+    })
+
+    expect(result).not.toBeNull()
+    expect(result!.newAgentId).toBe('new-from-history')
+    expect(result!.sourceUserTask).toBe('Task 1 question · 分支')
+    expect(savedRecords[0].messages?.length).toBe(4)
+    expect(historyService.getAgentRecordById).toHaveBeenCalledWith('history-session')
+  })
+
   it('returns null when historyService is not configured', async () => {
     const ai = { chatWithToolsStream: vi.fn(), abort: vi.fn() } as any
     const pty = { onData: vi.fn().mockReturnValue(() => {}), write: vi.fn() } as any

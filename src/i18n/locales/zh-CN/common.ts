@@ -7,6 +7,42 @@ export default {
     description: 'AI 驱动的智能助手'
   },
 
+  // 工作台工具（Agent 流式预卡片标题）
+  workbench: {
+    list_artifacts: '查看产出物面板',
+    manage_artifacts: '维护产出物面板',
+  },
+
+  // 羁绊里程碑（解锁 toast）
+  bond: {
+    milestone: {
+      bond_first_meet: {
+        title: '羁绊 · 初次相见',
+        body: '第一天，旗鱼记住了。',
+      },
+      bond_getting_along: {
+        title: '羁绊 · 渐入佳境',
+        body: '默契在涨，继续保持。',
+      },
+      bond_trusted_partner: {
+        title: '羁绊 · 信赖伙伴',
+        body: '可以放心把烦人的事交给我。',
+      },
+      bond_old_friend: {
+        title: '羁绊 · 莫逆之交',
+        body: '相伴 {days} 天，这羁绊值了。',
+      },
+      bond_soulmate: {
+        title: '羁绊 · 心意相通',
+        body: '你说上半句，下半句我来。',
+      },
+      bond_unbreakable: {
+        title: '羁绊 · 坚不可摧',
+        body: '海枯石烂级别的信任。',
+      },
+    },
+  },
+
 
   // 欢迎页
   welcome: {
@@ -14,10 +50,73 @@ export default {
     titleSteam: '欢迎使用旗鱼终端',
     subtitle: 'AI 驱动的智能助手',
     subtitleSteam: '高效的终端与连接管理工具',
+    subtitlePools: {
+      ocean: [
+        'AI 驱动的智能助手',
+        '深潜就绪，等你开口',
+        '终端与助手，同一处出发',
+        '你的水下智能搭档',
+      ],
+      rivals: [
+        '比龙虾会游的智能助手',
+        '别的 AI 在上班，旗鱼在等你',
+      ],
+      bondCompanion: [
+        '老伙计，又回来了',
+        '相伴 {days} 天，继续一起游',
+      ],
+      bondSoulmate: [
+        '知根知底的水下搭档',
+        '心意相通，从这一屏开始',
+      ],
+      lore: [
+        '旗鱼是海里游得最快的鱼之一',
+        '最快的鱼，最顺手的助手',
+      ],
+    },
     quickStart: '快速开始',
     chatLead: '有什么我可以帮你的？',
+    chatLeadPools: {
+      ocean: [
+        '说个任务，旗鱼来游',
+        '今天想搞定什么事？',
+        '深海听你的',
+        '随便问，从简单问题开始',
+        '想到什么就写什么',
+        '不必组织语言，先说再说',
+        '今日目标：____（你填）',
+        '旗鱼已就绪，等你开口',
+        '卡住了？说出来就好',
+        '随便开个头就行',
+      ],
+      rivals: [
+        '隔壁龙虾会夹手，旗鱼只冲刺',
+        'OpenClaw 的钳子挺大，但游不快',
+        'WorkBuddy 有 buddy，这边有羁绊',
+        'Codex 能写码，旗鱼帮你游完全程',
+        'Cowork 是合租，这里是深海 solo',
+        '别的 AI 在上班，旗鱼在潜泳等你',
+      ],
+      bondCompanion: [
+        '老搭档了，今天游去哪？',
+        '信赖伙伴上线，说吧',
+        '把烦人的重复劳动交给我',
+      ],
+      bondSoulmate: [
+        '心意相通，上半句你来说',
+        '知己了，随便吩咐',
+        '比那只龙虾靠谱多了，对不对',
+      ],
+      lore: [
+        '旗鱼是海洋里游得最快的鱼之一——说个任务',
+        '背鳍收着也行，开口我就冲',
+        '帆已经升好了，缺个目的地',
+        '熟了就不科普了——慢的不是我',
+      ],
+    },
     assistant: 'AI 助手',
     assistantDesc: '与 AI 直接对话',
+    viewExamples: '查看示例',
     localTerminal: '本地终端',
     localTerminalDesc: '打开本机命令行终端',
     sshConnect: 'SSH 连接',
@@ -33,7 +132,9 @@ export default {
       searchPlaceholder: '搜索对话...',
       searchOpen: '搜索对话',
       searchClose: '关闭搜索',
-      newConversation: '新建对话',
+      newConversation: '新对话',
+      collapseSidebar: '收起侧栏',
+      expandSidebar: '展开侧栏',
       loadMore: '加载更多',
       noMatching: '没有匹配的对话',
       emptyHint: '在下方输入框发起新对话',
@@ -41,6 +142,9 @@ export default {
       pinned: '置顶',
       pin: '置顶此对话',
       unpin: '取消置顶',
+      openInTab: '在新标签页中打开',
+      dropToOpenInTab: '释放以在新标签页打开',
+      dropToOpenInTabHint: '从历史对话拖入',
       rename: '重命名',
       delete: '删除',
       deleteTitle: '删除对话',
@@ -223,8 +327,8 @@ export default {
     autoDownloadUpdate: '自动下载更新',
     updateAvailableMessageManual: '版本 {version} 已发布。您已关闭自动下载，是否现在开始下载？下载完成后将提示安装。',
     updateReadyTitle: '更新已就绪',
-    updateReadyMessage: '版本 {version} 已下载完成。可立即安装并重启，或选择「退出时安装」——关闭应用后自动完成更新（安装过程会显示系统进度）。',
-    updateReadyMessageNoQuit: '版本 {version} 已下载完成。是否立即安装并重启？安装过程会显示系统进度。',
+    updateReadyMessage: '版本 {version} 已下载完成。可立即安装并重启，或选择「退出时安装」——关闭应用后自动完成更新。',
+    updateReadyMessageNoQuit: '版本 {version} 已下载完成。是否立即安装并重启？',
     updateReadyMessageMac: '版本 {version} 已发布。请前往下载页面获取安装包（macOS 需手动更新）。',
     installOnQuit: '退出时安装',
     updateLater: '稍后提醒',
@@ -272,6 +376,8 @@ export default {
     restartHint: '部分更改可能需要重启应用才能生效'
   },
 
+
+  quitToastHint: '再按一次退出',
 
   // 连接状态面板
   conn: {

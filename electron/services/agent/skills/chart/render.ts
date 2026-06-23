@@ -9,6 +9,13 @@
 
 import { getTheme, getKlineProTheme, type ChartTheme, type KlineStyle, type ThemePreset, type KlineProTheme } from './presets'
 import {
+  extractFeatureNames,
+  matchFeatureName,
+  resolveChartMapRegion,
+  type ChartMapId
+} from '../../../../../shared/chart-maps'
+import { loadMapForRegion } from './maps'
+import {
   formatVolume as _formatVolume,
   formatKlineTooltip as _formatKlineTooltip
 } from '../../../../../shared/utils/echarts-formatters'
@@ -30,6 +37,7 @@ export type ChartType =
   | 'radar'
   | 'heatmap'
   | 'candlestick'
+  | 'map'
 
 export interface ChartInput {
   type: ChartType
@@ -83,6 +91,7 @@ export function buildOption(input: ChartInput, hint?: BuildHint): EChartsOption 
     case 'radar':       option = buildRadar(input, theme, scale); break
     case 'heatmap':     option = buildHeatmap(input, theme, scale); break
     case 'candlestick': option = buildCandlestick(input, theme, hint); break
+    case 'map':         option = buildMap(input, theme, scale); break
     default:
       throw new Error(`Unsupported chart type: ${(input as ChartInput).type}`)
   }
@@ -1038,6 +1047,152 @@ function buildCandlestick(input: ChartInput, _baseTheme: ThemePreset, hint?: Bui
         barWidth: '60%'
       }
     ]
+  }
+}
+
+/** map 类型渲染前需 registerMap 的 mapId 列表 */
+export function getRequiredMapIds(input: ChartInput): ChartMapId[] {
+  if (input.type !== 'map') return []
+  const region = parseMapData(input.data).region
+  return [resolveChartMapRegion(region).mapId]
+}
+
+// ============================================================================
+// map（choropleth 地图）
+// ============================================================================
+
+interface MapValueItem { name: string; value: number }
+
+interface MapChartData {
+  region: string
+  values: MapValueItem[]
+}
+
+function parseMapData(raw: unknown): MapChartData {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(
+      `map data must be { region: string, values: [{ name, value }] }, got ${describe(raw)}`
+    )
+  }
+  const obj = raw as Record<string, unknown>
+  const region = obj.region
+  if (typeof region !== 'string' || !region.trim()) {
+    throw new Error(
+      `map data.region must be non-empty string, got ${describe(region)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
+  }
+  const values = obj.values
+  if (!Array.isArray(values) || values.length === 0) {
+    throw new Error(
+      `map data.values must be a non-empty array, got ${describe(values)} ` +
+      `(received data: ${dataShape(raw)})`
+    )
+  }
+  const items: MapValueItem[] = values.map((v, i) => {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) {
+      throw new Error(`map values[${i}] must be { name, value } object`)
+    }
+    const o = v as Record<string, unknown>
+    const name = pickString(o, ['name', 'label', 'region', 'area'])
+    const val = pickNumber(o, ['value', 'amount', 'count', 'v'])
+    if (name === undefined) {
+      throw new Error(`map values[${i}] missing string field "name"`)
+    }
+    if (val === undefined) {
+      throw new Error(`map values[${i}] missing number field "value"`)
+    }
+    return { name, value: val }
+  })
+  return { region: region.trim(), values: items }
+}
+
+function buildMap(input: ChartInput, theme: ThemePreset, scale: number): EChartsOption {
+  const { region, values } = parseMapData(input.data)
+  const { resolved, geoJson } = loadMapForRegion(region)
+  const featureNames = extractFeatureNames(geoJson as { features?: Array<{ properties?: Record<string, unknown> }> })
+
+  const seriesData: Array<{ name: string; value: number }> = []
+  const unmatched: string[] = []
+  for (const item of values) {
+    const matched = matchFeatureName(item.name, featureNames)
+    if (matched) {
+      seriesData.push({ name: matched, value: item.value })
+    } else {
+      unmatched.push(item.name)
+    }
+  }
+  if (seriesData.length === 0) {
+    throw new Error(
+      `map: none of the ${values.length} value names matched map features for region "${region}". ` +
+      `Expected names like: ${featureNames.slice(0, 5).join(', ')}${featureNames.length > 5 ? '...' : ''}. ` +
+      `Got: ${values.map(v => v.name).slice(0, 5).join(', ')}`
+    )
+  }
+
+  let minV = Infinity
+  let maxV = -Infinity
+  for (const d of seriesData) {
+    if (d.value < minV) minV = d.value
+    if (d.value > maxV) maxV = d.value
+  }
+  if (minV === maxV) {
+    minV = minV * 0.9
+    maxV = maxV * 1.1 || 1
+  }
+
+  const warnNote = unmatched.length > 0
+    ? ` (${unmatched.length} unmatched: ${unmatched.slice(0, 3).join(', ')}${unmatched.length > 3 ? '...' : ''})`
+    : ''
+
+  return {
+    title: (input.title || input.subtitle || warnNote)
+      ? {
+          text: input.title ?? '',
+          subtext: (input.subtitle ?? '') + warnNote,
+          left: 'center',
+          textStyle: { color: theme.textColor, fontSize: fs(16, scale), fontWeight: 'bold' },
+          subtextStyle: { color: theme.axisLabelColor, fontSize: fs(11, scale) }
+        }
+      : undefined,
+    tooltip: {
+      trigger: 'item',
+      formatter: '{b}: {c}'
+    },
+    visualMap: {
+      min: minV,
+      max: maxV,
+      left: 16,
+      bottom: 24,
+      calculable: true,
+      text: ['高', '低'],
+      textStyle: { color: theme.axisLabelColor, fontSize: fs(11, scale) },
+      inRange: {
+        color: resolved.level === 'world'
+          ? ['#dbeafe', '#3b82f6', '#1e3a8a']
+          : ['#fef3c7', '#f59e0b', '#b45309']
+      }
+    },
+    series: [{
+      type: 'map',
+      map: resolved.mapId,
+      roam: false,
+      name: resolved.label,
+      data: seriesData,
+      label: {
+        show: seriesData.length <= 20,
+        color: theme.textColor,
+        fontSize: fs(10, scale)
+      },
+      emphasis: {
+        label: { show: true, fontSize: fs(11, scale) },
+        itemStyle: { areaColor: theme.palette[2] ?? '#f59e0b' }
+      },
+      itemStyle: {
+        borderColor: theme.axisLineColor,
+        borderWidth: 0.6
+      }
+    }]
   }
 }
 

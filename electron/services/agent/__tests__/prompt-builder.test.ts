@@ -28,6 +28,22 @@ vi.mock('fs', async (importOriginal) => {
   }
 })
 
+vi.mock('../../browser-bridge/browser-bridge.service', () => ({
+  getBrowserBridgeService: vi.fn().mockReturnValue({
+    getStatus: vi.fn().mockReturnValue({
+      gatewayRunning: true,
+      port: 12345,
+      connections: [],
+      install: null,
+      extensionIds: {
+        chromium: 'dgmhdapfpihhkboikpgfanpgnijbpdhd',
+        chromiumDev: 'ocdljfppijcjpgaaamgeailkgajgjdml',
+        firefox: 'sailfish-browser-bridge@yushen.dev',
+      },
+    }),
+  }),
+}))
+
 import * as fs from 'fs'
 import { 
   PromptBuilder, 
@@ -253,13 +269,29 @@ describe('PromptBuilder', () => {
       expect(prompt).toContain('🌐 SSH 远程终端')
     })
 
-    it('should not include SSH label for local terminal', () => {
+    it('should show local terminal type in host environment', () => {
       const context = createMockContext({ terminalType: 'local' })
       const builder = new PromptBuilder({ context })
       const prompt = builder.build()
       
-      expect(prompt).not.toContain('SSH')
-      expect(prompt).toContain('💻 本地终端')
+      expect(prompt).toContain('- **终端类型**: 💻 本地终端')
+      expect(prompt).not.toContain('🌐 SSH 远程终端')
+    })
+  })
+
+  describe('workbench prompt', () => {
+    it('should include workbenchPrompt verbatim when set on context', () => {
+      const snippet = '# 界面能力（产出物面板）\n\n测试工作台描述'
+      const prompt = new PromptBuilder({
+        context: createMockContext({ workbenchPrompt: snippet })
+      }).build()
+
+      expect(prompt).toContain(snippet)
+    })
+
+    it('should omit workbench section when workbenchPrompt absent', () => {
+      const prompt = new PromptBuilder({ context: createMockContext() }).build()
+      expect(prompt).not.toContain('# 界面能力（产出物面板）')
     })
   })
 
@@ -495,7 +527,7 @@ describe('PromptBuilder', () => {
       expect(prompt).toContain('密码')
     })
 
-    it('should not include terminal-specific rules (moved to terminal skill)', () => {
+    it('should not include terminal-specific rules (moved to workbench prompt)', () => {
       const context = createMockContext()
       const builder = new PromptBuilder({ context })
       const prompt = builder.build()
@@ -769,5 +801,27 @@ describe('Edge cases', () => {
     const prompt = builder.build()
     
     expect(prompt).not.toContain('用户自定义规则')
+  })
+
+  it('should include browser bridge section when extension connected', async () => {
+    const { getBrowserBridgeService } = await import('../../browser-bridge/browser-bridge.service')
+    vi.mocked(getBrowserBridgeService).mockReturnValue({
+      getStatus: vi.fn().mockReturnValue({
+        gatewayRunning: true,
+        port: 12345,
+        connections: [{ browser: 'chrome', origin: 'chrome-extension://abc/', state: 'ready' }],
+        install: null,
+        extensionIds: {
+          chromium: 'dgmhdapfpihhkboikpgfanpgnijbpdhd',
+          chromiumDev: 'ocdljfppijcjpgaaamgeailkgajgjdml',
+          firefox: 'sailfish-browser-bridge@yushen.dev',
+        },
+      }),
+    } as ReturnType<typeof getBrowserBridgeService>)
+
+    const prompt = new PromptBuilder({ context: createMockContext() }).build()
+    expect(prompt).toContain('# 浏览器助手')
+    expect(prompt).toContain('Chromium')
+    expect(prompt).toContain('browser_list_tabs')
   })
 })

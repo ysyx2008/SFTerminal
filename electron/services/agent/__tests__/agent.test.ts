@@ -947,6 +947,56 @@ describe('Agent run method', () => {
       expect(mockHistoryService.getAgentRecordById).toHaveBeenCalledWith(sessionId)
     })
 
+    it('续聊后保存的记录仍保留旧步骤的 canvasData（防产出物丢失回归）', async () => {
+      const sessionId = 'session_canvas_keep'
+      const savedRecords: any[] = []
+      const oldCanvas = { action: 'open', renderer: 'markdown', title: 'a.md', filePath: '/tmp/a.md', content: '# A', contentFromFile: true }
+      const mockHistoryService = {
+        getAgentRecordById: vi.fn().mockReturnValue({
+          id: sessionId,
+          timestamp: Date.now() - 5000,
+          terminalId: 'test-pty',
+          terminalType: 'local',
+          userTask: 'Previous task',
+          steps: [
+            { id: 'ut1', type: 'user_task', content: 'Previous task', timestamp: Date.now() - 5000 },
+            { id: 'tr1', type: 'tool_result', content: 'wrote a.md', toolName: 'write_text_file', timestamp: Date.now() - 4500, canvasData: oldCanvas },
+            { id: 'fr1', type: 'final_result', content: 'done', timestamp: Date.now() - 4000 }
+          ],
+          messages: [
+            { role: 'user', content: 'Previous task' },
+            { role: 'assistant', content: 'done' }
+          ],
+          finalResult: 'done',
+          duration: 1000,
+          status: 'completed'
+        }),
+        saveAgentRecord: vi.fn((r) => { savedRecords.push(JSON.parse(JSON.stringify(r))) })
+      }
+
+      const services = createMockServices({ historyService: mockHistoryService as any })
+      const agentWithHistory = new TestAgent(services)
+      mockAiService = services.aiService as any
+      mockAiService.chatWithToolsStream.mockImplementation(
+        (_m: any, _t: any, onChunk: any, _otc: any, onDone: any) => {
+          onChunk('Done'); onDone({ content: 'Done', tool_calls: undefined }); return Promise.resolve()
+        }
+      )
+
+      const context = createMockContext({ sessionId, sessionStartTime: Date.now() - 5000 })
+      await agentWithHistory.run('New task', context)
+
+      // 所有保存的记录里，旧的 a.md 步骤都应保留 canvasData（contentFromFile 标记 + filePath）
+      const stepsWithOldCanvas = savedRecords
+        .flatMap(r => r.steps)
+        .filter((s: any) => s.id === 'tr1')
+      expect(stepsWithOldCanvas.length).toBeGreaterThan(0)
+      for (const s of stepsWithOldCanvas) {
+        expect(s.canvasData?.filePath).toBe('/tmp/a.md')
+        expect(s.canvasData?.contentFromFile).toBe(true)
+      }
+    })
+
     /**
      * 防回归：新开 tab 的第一次对话不应被全局历史污染
      *
@@ -1061,6 +1111,169 @@ describe('Agent run method', () => {
       expect(mockHistoryService.getRecentAgentRecords).toHaveBeenCalled()
       const taskMemory = persistentAgent.exposeTaskMemory()
       expect(taskMemory.getTaskCount()).toBe(2)
+    })
+
+    /**
+     * 防回归（本次修复的核心）：持久命名 Agent 即使 sessionId 精确命中了「最新单条」，
+     * 也必须再从最近多条历史重建工作记忆——否则会丢掉同期其它并行会话（典型：另一条
+     * companion 线刚写完的文档），导致「屏幕合并展示看得见、AI 上下文只有单条记不住」。
+     */
+    it('should merge recent records into memory for persistent named agent even when sessionId record is found', async () => {
+      const latestId = 'session_companion_latest'
+      const latestRecord = {
+        id: latestId,
+        timestamp: Date.now() - 5000,
+        terminalId: 'companion-pty',
+        terminalType: 'assistant',
+        userTask: '继续',
+        steps: [
+          { id: 'ut1', type: 'user_task', content: '继续', timestamp: Date.now() - 5000 },
+          { id: 'fr1', type: 'final_result', content: '哪个方向？', timestamp: Date.now() - 4500 }
+        ],
+        messages: [
+          { role: 'user', content: '继续' },
+          { role: 'assistant', content: '哪个方向？' }
+        ],
+        finalResult: '哪个方向？',
+        duration: 500,
+        status: 'completed'
+      }
+      // 另一条并行 companion 会话（写文档那条），不应被「精确命中单条」漏掉
+      const otherRecord = {
+        id: 'session_companion_other',
+        timestamp: Date.now() - 60000,
+        terminalId: 'companion-pty',
+        terminalType: 'assistant',
+        userTask: '写中证协案例文档',
+        steps: [
+          { id: 'ut2', type: 'user_task', content: '写中证协案例文档', timestamp: Date.now() - 60000 },
+          { id: 'fr2', type: 'final_result', content: '已写完 docx', timestamp: Date.now() - 59000 }
+        ],
+        messages: [
+          { role: 'user', content: '写中证协案例文档' },
+          { role: 'assistant', content: '已写完 docx' }
+        ],
+        finalResult: '已写完 docx',
+        duration: 1000,
+        status: 'completed'
+      }
+      const mockHistoryService = {
+        getAgentRecordById: vi.fn().mockReturnValue(latestRecord),
+        getRecentAgentRecords: vi.fn().mockReturnValue([otherRecord]),
+        saveAgentRecord: vi.fn()
+      }
+
+      const services = createMockServices({ historyService: mockHistoryService as any })
+      const persistentAgent = new TestAgent(services)
+      persistentAgent.markAsPersistentNamed()
+
+      const ai = services.aiService as any
+      ai.chatWithToolsStream.mockImplementation(
+        (_messages: any, _tools: any, onChunk: any, _onToolCall: any, onDone: any) => {
+          onChunk('好的')
+          onDone({ content: '好的', tool_calls: undefined })
+          return Promise.resolve()
+        }
+      )
+
+      const context = createMockContext({ sessionId: latestId, sessionStartTime: Date.now() })
+      await persistentAgent.run('就上次那个，继续', context)
+
+      // 即使命中 latest，也调用了 recent fallback（排除 latest 后取其它最近会话）
+      expect(mockHistoryService.getRecentAgentRecords).toHaveBeenCalled()
+      // 工作记忆 = 其它会话 1 条 + latest 1 条 + 当前 1 条 = 3
+      const taskMemory = persistentAgent.exposeTaskMemory()
+      expect(taskMemory.getTaskCount()).toBe(3)
+    })
+
+    /**
+     * 防回归（联络分裂根因①）：持久命名 Agent 在「无 context.sessionId」时（IM/网关/主动
+     * 消息等入口），不能新起 session_${Date.now()}，而应从最近一条同 agentKey 历史回种
+     * sessionId，让所有入口续写到同一条会话，避免建出与历史断链的并行记录。
+     */
+    it('should seed sessionId from latest record for persistent named agent when context has no sessionId', async () => {
+      const persistedRecord = {
+        id: 'session_persisted_companion',
+        timestamp: Date.now() - 100000,
+        terminalId: 'companion-pty',
+        terminalType: 'assistant',
+        userTask: '昨天聊的事',
+        steps: [
+          { id: 'ut1', type: 'user_task', content: '昨天聊的事', timestamp: Date.now() - 100000 },
+          { id: 'fr1', type: 'final_result', content: '记得', timestamp: Date.now() - 99000 }
+        ],
+        messages: [
+          { role: 'user', content: '昨天聊的事' },
+          { role: 'assistant', content: '记得' }
+        ],
+        finalResult: '记得',
+        duration: 1000,
+        status: 'completed'
+      }
+      const mockHistoryService = {
+        getAgentRecordById: vi.fn().mockReturnValue(persistedRecord),
+        getRecentAgentRecords: vi.fn().mockReturnValue([]),
+        getLatestRecordByAgentKey: vi.fn().mockReturnValue(persistedRecord),
+        saveAgentRecord: vi.fn()
+      }
+
+      const services = createMockServices({ historyService: mockHistoryService as any })
+      const companion = new TestAgent(services)
+      companion.setAgentId('__companion__')
+      companion.markAsPersistentNamed()
+
+      const ai = services.aiService as any
+      ai.chatWithToolsStream.mockImplementation(
+        (_m: any, _t: any, onChunk: any, _otc: any, onDone: any) => {
+          onChunk('好'); onDone({ content: '好', tool_calls: undefined }); return Promise.resolve()
+        }
+      )
+
+      // 关键：context 不带 sessionId（模拟 IM/主动消息入口）
+      const context = createMockContext({ terminalType: 'assistant' })
+      await companion.run('在吗', context)
+
+      expect(mockHistoryService.getLatestRecordByAgentKey).toHaveBeenCalledWith('__companion__')
+      // 回种到历史最近一条，而不是新起 session_${Date.now()}
+      expect(companion.getSessionId()).toBe('session_persisted_companion')
+    })
+
+    /**
+     * 防回归（根因①的边界）：startNewSession（Watch 每次独立记录）/ resetSession（清空对话）
+     * 后，本次有意要全新会话，必须抑制回种，避免覆盖历史最近一条记录。
+     */
+    it('should NOT seed sessionId after startNewSession (suppressed) even for persistent named agent', async () => {
+      const persistedRecord = {
+        id: 'session_persisted_x', timestamp: Date.now() - 100000, terminalId: 'p',
+        terminalType: 'assistant', userTask: 'x', steps: [], messages: [],
+        finalResult: 'x', duration: 1, status: 'completed'
+      }
+      const mockHistoryService = {
+        getAgentRecordById: vi.fn().mockReturnValue(undefined),
+        getRecentAgentRecords: vi.fn().mockReturnValue([]),
+        getLatestRecordByAgentKey: vi.fn().mockReturnValue(persistedRecord),
+        saveAgentRecord: vi.fn()
+      }
+      const services = createMockServices({ historyService: mockHistoryService as any })
+      const watchLike = new TestAgent(services)
+      watchLike.setAgentId('__watch__')
+      watchLike.markAsPersistentNamed()
+
+      const ai = services.aiService as any
+      ai.chatWithToolsStream.mockImplementation(
+        (_m: any, _t: any, onChunk: any, _otc: any, onDone: any) => {
+          onChunk('ok'); onDone({ content: 'ok', tool_calls: undefined }); return Promise.resolve()
+        }
+      )
+
+      watchLike.startNewSession() // 有意要独立会话
+      const context = createMockContext({ terminalType: 'assistant' })
+      await watchLike.run('wakeup', context)
+
+      // 抑制生效：不回种，生成新 session_，且不等于历史那条
+      expect(mockHistoryService.getLatestRecordByAgentKey).not.toHaveBeenCalled()
+      expect(watchLike.getSessionId()).not.toBe('session_persisted_x')
+      expect(watchLike.getSessionId()).toMatch(/^session_\d+$/)
     })
 
     it('should restore from steps when messages field is missing (old records)', async () => {

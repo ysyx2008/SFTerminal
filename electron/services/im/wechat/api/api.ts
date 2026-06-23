@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { loadConfigBotAgent, loadConfigRouteTag } from "../auth/accounts.js";
+import { WEIXIN_PACKAGE_META } from "../weixin-meta.js";
 import { logger } from "../util/logger.js";
 import { redactBody, redactUrl } from "../util/redact.js";
 
@@ -16,6 +17,7 @@ import type {
   NotifyStopResp,
   NotifyStartResp,
   SendMessageReq,
+  SendMessageResp,
   SendTypingReq,
   GetConfigResp,
 } from "./types.js";
@@ -80,7 +82,9 @@ export function readPackageJsonFromDir(startDir: string): PackageJson {
 }
 
 function readPackageJson(): PackageJson {
-  return readPackageJsonFromDir(path.dirname(fileURLToPath(import.meta.url)));
+  const found = readPackageJsonFromDir(path.dirname(fileURLToPath(import.meta.url)));
+  if (found.ilink_appid !== undefined) return found;
+  return { ...WEIXIN_PACKAGE_META };
 }
 
 const pkg = readPackageJson();
@@ -133,7 +137,7 @@ export function sanitizeBotAgent(raw: string | undefined): string {
   const trimmed = raw.trim();
   if (!trimmed) return DEFAULT_BOT_AGENT;
 
-  const productRe = /^[A-Za-z0-9_.-]{1,32}\/[A-Za-z0-9_.+-]{1,32}$/;
+  const productRe = /^[A-Za-z0-9_.\-]{1,32}\/[A-Za-z0-9_.+\-]{1,32}$/;
   const commentCharRe = /^[\x20-\x27\x2A-\x7E]{1,64}$/;
 
   // Tokenize on whitespace, but keep `(comment)` glued to the preceding product.
@@ -253,6 +257,40 @@ function buildHeaders(opts: { token?: string }): Record<string, string> {
 }
 
 /**
+ * Classify a fetch-level error into a category for logging / diagnostics.
+ * This does NOT cover HTTP-level errors (4xx/5xx) — those are thrown separately.
+ */
+export function classifyFetchError(err: unknown): {
+  type: "dns" | "tcp" | "tls" | "timeout" | "unknown";
+  description: string;
+  code?: string;
+} {
+  if (err instanceof Error && err.name === "AbortError") {
+    return { type: "timeout", description: "request timeout" };
+  }
+
+  const cause = (err as NodeJS.ErrnoException)?.cause;
+  const causeCode = (cause as any)?.code ?? "";
+  const causeStr = String(cause ?? err ?? "") + " " + String(causeCode);
+  const matchedCode = causeCode || (typeof cause === "string" ? cause : "");
+
+  if (/ENOTFOUND|EAI_AGAIN|getaddrinfo/i.test(causeStr)) {
+    return { type: "dns", description: "DNS resolution failed, check DNS configuration", ...(matchedCode ? { code: matchedCode } : {}) };
+  }
+  if (/ECONNREFUSED/i.test(causeStr)) {
+    return { type: "tcp", description: "TCP connection refused", ...(matchedCode ? { code: matchedCode } : {}) };
+  }
+  if (/UND_ERR_CONNECT_TIMEOUT|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH/i.test(causeStr)) {
+    return { type: "tcp", description: "TCP connection timeout or unreachable", ...(matchedCode ? { code: matchedCode } : {}) };
+  }
+  if (/UND_ERR_SOCKET|SSL|TLS|CERT|UNABLE_TO_VERIFY|DEPTH_ZERO/i.test(causeStr)) {
+    return { type: "tls", description: "TLS handshake error", ...(matchedCode ? { code: matchedCode } : {}) };
+  }
+
+  return { type: "unknown", description: "network request failed" };
+}
+
+/**
  * GET fetch wrapper: send a GET request to a Weixin API endpoint.
  * When `timeoutMs` is set, the request is aborted after that many milliseconds.
  * Query parameters should already be encoded in `endpoint`.
@@ -291,6 +329,10 @@ export async function apiGetFetch(params: {
     return rawText;
   } catch (err) {
     if (t !== undefined) clearTimeout(t);
+    const classified = classifyFetchError(err);
+    logger.error(
+      `${params.label}: GET fetch failed url=${redactUrl(url.toString())} timeoutMs=${timeoutMs ?? "none"} type=${classified.type} description=${classified.description}${classified.code ? ` code=${classified.code}` : ""} error=${String(err)}`,
+    );
     throw err;
   }
 }
@@ -372,6 +414,10 @@ export async function apiPostFetch(params: {
     return rawText;
   } catch (err) {
     if (t !== undefined) clearTimeout(t);
+    const classified = classifyFetchError(err);
+    logger.error(
+      `${params.label}: POST fetch failed url=${redactUrl(url.toString())} timeoutMs=${params.timeoutMs ?? "none"} type=${classified.type} description=${classified.description}${classified.code ? ` code=${classified.code}` : ""} error=${String(err)}`,
+    );
     throw err;
   } finally {
     cleanup();
@@ -460,7 +506,7 @@ export async function getUploadUrl(
 export async function sendMessage(
   params: WeixinApiOptions & { body: SendMessageReq },
 ): Promise<void> {
-  await apiPostFetch({
+  const rawText = await apiPostFetch({
     baseUrl: params.baseUrl,
     endpoint: "ilink/bot/sendmessage",
     body: JSON.stringify({ ...params.body, base_info: buildBaseInfo() }),
@@ -468,6 +514,12 @@ export async function sendMessage(
     timeoutMs: params.timeoutMs ?? DEFAULT_API_TIMEOUT_MS,
     label: "sendMessage",
   });
+  const resp: SendMessageResp = JSON.parse(rawText);
+  if (resp.ret && resp.ret !== 0) {
+    throw new Error(
+      `sendMessage ret=${resp.ret} errmsg=${resp.errmsg ?? "(none)"}`,
+    );
+  }
 }
 
 /** Fetch bot config (includes typing_ticket) for a given user. */

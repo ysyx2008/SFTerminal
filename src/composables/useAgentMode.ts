@@ -5,15 +5,17 @@
  */
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useTerminalStore } from '../stores/terminal'
+import { useTerminalStore, COMPANION_TAB_AGENT_ID } from '../stores/terminal'
 import { useConfigStore } from '../stores/config'
-import { useCanvasStore } from '../stores/canvas'
+import { useAssistantArtifactStore } from '../workbench/assistant/artifact/store'
 import type { ExecutionMode, AttachmentInfo, AgentRecord, AgentHistorySummary } from '@shared/types'
 import type { AgentStep, AgentState } from '../stores/terminal'
-import type { CacheSnapshot, DynamicScrollerExposed } from 'vue-virtual-scroller'
+import type { MessageScrollerHandle } from '../types/message-scroller'
+import { readMessageScrollerCache } from '../types/message-scroller'
 import { createLogger } from '../utils/logger'
 import { useTts } from './useTts'
 import { shouldShowToolResultStep } from '../utils/tool-display'
+import { resolveWorkbenchAgentPrompt, resolveWorkbenchKind } from '../workbench'
 
 const log = createLogger('Agent')
 
@@ -30,12 +32,8 @@ function getLocalSystemInfo() {
 const SCROLL_THRESHOLD = 100
 const SCROLL_THROTTLE_MS = 1000
 
-function readCacheSnapshot(scroller: DynamicScrollerExposed | null | undefined): CacheSnapshot | undefined {
-  if (!scroller?.cacheSnapshot) return undefined
-  const snap = scroller.cacheSnapshot
-  return typeof snap === 'object' && snap !== null && 'value' in snap
-    ? (snap as { value: CacheSnapshot }).value
-    : snap as CacheSnapshot
+function readCacheSnapshot(scroller: MessageScrollerHandle | null | undefined) {
+  return readMessageScrollerCache(scroller)
 }
 
 export interface AgentTaskGroup {
@@ -57,7 +55,7 @@ export interface AgentTaskGroup {
 
 export interface VirtualItem {
   id: string
-  type: 'user_task' | 'step' | 'final_result' | 'proactive_message' | 'confirm'
+  type: 'user_task' | 'step' | 'final_result' | 'proactive_message' | 'confirm' | 'waiting_input'
   group?: AgentTaskGroup
   step?: AgentStep
   content?: string
@@ -80,13 +78,13 @@ export function useAgentMode(
     getAttachments: () => AttachmentInfo[]  // 获取当前已上传文件的元信息
     clearAttachments: () => void            // 清空已上传文件列表
   },
-  scrollerRef?: Ref<DynamicScrollerExposed | null>,
+  scrollerRef?: Ref<MessageScrollerHandle | null>,
   tabActive?: Ref<boolean | undefined>
 ) {
   const { t } = useI18n()
   const terminalStore = useTerminalStore()
   const configStore = useConfigStore()
-  const canvasStore = useCanvasStore()
+  const artifactStore = useAssistantArtifactStore()
   const tts = useTts()
 
   watch(
@@ -118,6 +116,15 @@ export function useAgentMode(
   
   // 标志：是否跳过 scroll 事件的状态更新（用于避免强制滚动时被 scroll 事件覆盖）
   let skipScrollUpdate = false
+
+  // 用户主动跟底：发消息 / 点「新消息」后保持贴底跟随，直到用户明确上滚。
+  // 虚拟列表 scrollHeight 异步修正时，scroll 事件会短暂误判「不在底部」；
+  // 仅靠 checkIsNearBottom 会让 isUserNearBottom 抖动，hasNewMessage 闪烁并中断 ResizeObserver 跟底。
+  let stickyFollowBottom = false
+  let lastKnownScrollTop = 0
+  let lastAutoScrollAt = 0
+  let scrollGraceTimer: ReturnType<typeof setTimeout> | null = null
+  const AUTO_SCROLL_GRACE_MS = 150
 
   // 启动 / 主动跳底窗口期内 ResizeObserver 仍贴底但**跳过 FLIP 动画**的时间戳。
   // scrollToBottom 触发时设置（new Date.now() + N ms）。语义：用户主动发新消息那一刻
@@ -301,7 +308,7 @@ export function useAgentMode(
   const scrollToHistoryBottomWithRetry = () => {
     const apply = () => {
       if (scrollerRef?.value) {
-        scrollerRef.value.scrollToBottom()
+        scrollerRef.value.scrollToBottom?.()
       } else {
         void scrollToBottom()
       }
@@ -320,17 +327,94 @@ export function useAgentMode(
     })
   }
 
+  /** 延长程序化贴底保护窗口，避免 scroll 事件在虚拟列表高度修正前误判离底 */
+  const extendScrollGrace = () => {
+    skipScrollUpdate = true
+    if (scrollGraceTimer) clearTimeout(scrollGraceTimer)
+    scrollGraceTimer = setTimeout(() => {
+      scrollGraceTimer = null
+      skipScrollUpdate = false
+    }, AUTO_SCROLL_GRACE_MS)
+  }
+
+  /** ResizeObserver / scrollToBottom 程序化贴底后，短暂屏蔽 scroll 事件对跟底状态的污染 */
+  const guardAfterAutoScroll = () => {
+    lastAutoScrollAt = Date.now()
+    stickyFollowBottom = true
+    setIsUserNearBottom(true)
+    hasNewMessage.value = false
+    extendScrollGrace()
+  }
+
+  const shouldFollowBottom = () => stickyFollowBottom || isUserNearBottom.value
+
+  // 仅跟底意图为真时 ResizeObserver 才贴底；不可单独依赖 skipScrollUpdate——
+  // grace 窗口内用户拖滚动条上滚时 skipScrollUpdate 仍为 true，会误把阅读位拽回底部（回归 bug）。
+  const shouldFollowResize = () => shouldFollowBottom()
+
+  const cancelFlipAnimation = () => {
+    if (pendingFlipFrame !== null) {
+      cancelAnimationFrame(pendingFlipFrame)
+      pendingFlipFrame = null
+    }
+    const wrapper = contentObservedTarget
+    if (wrapper) {
+      wrapper.style.transition = ''
+      wrapper.style.transform = ''
+    }
+  }
+
+  /** 用户主动上滚离开底部：清除跟底粘性、grace 窗口与 FLIP，避免流式 chunk 继续拽底或整列晃动 */
+  const userScrolledAway = () => {
+    stickyFollowBottom = false
+    setIsUserNearBottom(false)
+    // 不在这里亮起「新消息」：用户上滚不代表有新内容，只有 doScrollIfNeeded 发现
+    // 实际有新内容到来且用户不在底部时才显示提示。
+    if (scrollGraceTimer) {
+      clearTimeout(scrollGraceTimer)
+      scrollGraceTimer = null
+    }
+    skipScrollUpdate = false
+    cancelFlipAnimation()
+  }
+
   // 更新用户滚动位置状态（由组件的 scroll 事件调用）
   const updateScrollPosition = () => {
+    const el = messagesRef.value
+    if (!el) return
+
+    const { scrollTop } = el
+
+    // 不在底部且 scrollTop 减小 → 用户上滚阅读，须优先于 skipScrollUpdate 早退
+    // （拖滚动条上滚不会触发 wheel，但会触发 scroll；grace 期内早退会漏判）
+    if (scrollTop < lastKnownScrollTop - 10 && !checkIsNearBottom()) {
+      userScrolledAway()
+      lastKnownScrollTop = scrollTop
+      saveScrollTop()
+      return
+    }
+
     // 跳过强制滚动期间的状态更新，避免被 scroll 事件覆盖
     if (skipScrollUpdate) return
+
     const nearBottom = checkIsNearBottom()
-    setIsUserNearBottom(nearBottom)
-    saveScrollTop()
-    // 如果用户滚动到底部，清除新消息提示
+    const outsideAutoScrollGrace = Date.now() - lastAutoScrollAt > AUTO_SCROLL_GRACE_MS
+    const scrolledUpSignificantly =
+      outsideAutoScrollGrace && scrollTop < lastKnownScrollTop - SCROLL_THRESHOLD
+
     if (nearBottom) {
+      stickyFollowBottom = true
       hasNewMessage.value = false
+    } else if (scrolledUpSignificantly) {
+      userScrolledAway()
+      lastKnownScrollTop = scrollTop
+      saveScrollTop()
+      return
     }
+
+    lastKnownScrollTop = scrollTop
+    setIsUserNearBottom(nearBottom || stickyFollowBottom)
+    saveScrollTop()
   }
 
   // 强制滚动到底部（用户主动发送消息或点击时调用）
@@ -345,22 +429,16 @@ export function useAgentMode(
   // 真正的流式 chunk 进来才进入 FLIP 平滑滑动。
   const FLIP_SUPPRESS_WINDOW_MS = 200
   const scrollToBottom = async () => {
-    // 先设置状态，防止被 scroll 事件覆盖
-    skipScrollUpdate = true
-    setIsUserNearBottom(true)
-    hasNewMessage.value = false
     suppressFlipUntil = Date.now() + FLIP_SUPPRESS_WINDOW_MS
 
     await nextTick()
     if (messagesRef.value) {
       messagesRef.value.scrollTop = messagesRef.value.scrollHeight
+      lastKnownScrollTop = messagesRef.value.scrollTop
     }
 
-    // 延迟恢复 scroll 事件更新，确保滚动完成后才开始监听用户滚动
-    requestAnimationFrame(() => {
-      skipScrollUpdate = false
-      saveScrollTop()
-    })
+    guardAfterAutoScroll()
+    requestAnimationFrame(() => saveScrollTop())
   }
 
   // 实际执行滚动
@@ -382,23 +460,19 @@ export function useAgentMode(
     lastScrollTime = Date.now()
     await nextTick()
 
-    // 仅依赖 isUserNearBottom（由用户真实滚动事件维护）
+    // 依赖 stickyFollowBottom / isUserNearBottom（由用户滚动 + 跟底意图维护）
     // 不做实时 checkIsNearBottom()：DynamicScroller 的 scrollHeight 基于估算，
     // 虚拟化的 off-screen 项高度远小于实际值，会导致误判"在底部附近"
-    if (isUserNearBottom.value) {
+    if (shouldFollowBottom()) {
       if (messagesRef.value) {
         // ⚠️ skipScrollUpdate 同时被 ResizeObserver 当作"正在贴底，跟随尺寸变化"信号
         //（见 installContentResizeObserver）。所以只能在确实要贴底的分支里置位，
         // 否则用户向上滚走后，新内容引发的 ResizeObserver 回调会被误触发为强制贴底，
         // 把用户从阅读位拽回最底（曾经的回归 bug）。
-        skipScrollUpdate = true
+        stickyFollowBottom = true
         setIsUserNearBottom(true)
         hasNewMessage.value = false
-
-        // 延迟恢复 scroll 事件监听，等待 DynamicScroller 布局稳定
-        setTimeout(() => {
-          skipScrollUpdate = false
-        }, 80)
+        extendScrollGrace()
       }
     } else {
       hasNewMessage.value = true
@@ -551,7 +625,7 @@ export function useAgentMode(
       // - isUserNearBottom：用户视觉在底部，常规流式 chunk 跟随
       // 两种场景都该走 FLIP 平滑滑动；用户主动滚走后 isUserNearBottom 为 false，
       // 不再越权强行贴底，避免和"用户翻看历史"的意图打架
-      if (!skipScrollUpdate && !isUserNearBottom.value) return
+      if (!shouldFollowResize()) return
 
       // wrapperDelta ≤ 0（wrapper 收缩，如图片渲染过程中的 markdown reflow 调整、
       // ThinkingBlock 折叠等）：完全不动 scrollTop，让浏览器自然 clamp。曾经在
@@ -568,6 +642,8 @@ export function useAgentMode(
       // 情况），跳过动画但仍贴底，避免长距离闪现
       if (Date.now() < suppressFlipUntil || wrapperDelta >= MAX_FLIP_DELTA) {
         el.scrollTop = el.scrollHeight
+        lastKnownScrollTop = el.scrollTop
+        guardAfterAutoScroll()
         return
       }
 
@@ -578,6 +654,8 @@ export function useAgentMode(
       const oldScrollTop = el.scrollTop
       el.scrollTop = el.scrollHeight
       const scrollDelta = el.scrollTop - oldScrollTop
+      lastKnownScrollTop = el.scrollTop
+      guardAfterAutoScroll()
 
       // ② FLIP 反向偏移：scrollDelta > 0 时给 wrapper 加反向 transform，下一帧归零
       applyFlipScroll(scrollDelta)
@@ -602,12 +680,21 @@ export function useAgentMode(
     prevWrapperHeight = 0
   }
 
+  const onMessagesWheel = (e: WheelEvent) => {
+    if (e.deltaY < 0) {
+      userScrolledAway()
+    }
+  }
+
   // messagesRef 由 AiPanel 在 watch(scrollerRef) 中赋值；这里跟随它生命周期挂载/卸载
   // wrapper 是 DynamicScroller mount 后内部渲染的子节点，等一帧确保挂载完成
   watch(messagesRef, (el, oldEl) => {
     if (oldEl === el) return
+    oldEl?.removeEventListener('wheel', onMessagesWheel)
     uninstallContentResizeObserver()
     if (el) {
+      lastKnownScrollTop = el.scrollTop
+      el.addEventListener('wheel', onMessagesWheel, { passive: true })
       requestAnimationFrame(() => installContentResizeObserver())
     }
   }, { flush: 'post' })
@@ -807,6 +894,16 @@ export function useAgentMode(
     return false
   }
 
+  /** 当前任务尚无 Agent 产出步骤时，在列表内注入虚拟「正在准备...」（非居中） */
+  const shouldInjectPreparingStep = (group: AgentTaskGroup): boolean => {
+    if (!group.isCurrentTask || group.finalResult || !isAgentRunning.value) return false
+    return !group.steps.some(s =>
+      s.type === 'thinking' || s.type === 'message' || s.type === 'tool_call' ||
+      s.type === 'waiting' || s.type === 'asking' || s.type === 'waiting_password' ||
+      s.type === 'error'
+    )
+  }
+
   const flattenedItems = computed((): VirtualItem[] => {
     const items: VirtualItem[] = []
 
@@ -822,8 +919,6 @@ export function useAgentMode(
         items.push({ id: `user_${group.id}`, type: 'user_task', group, size: 60 })
       }
 
-      // 初始等待提示由后端以 thinking step（"正在准备..."）承载，前端不再额外插入虚拟项
-
       if (group.steps.length > 0) {
         // 调试模式 OFF 时，隐藏"成功且无用户必看产出"的 tool_call / tool_result step
         // user_supplement 按 steps 时间顺序渲染，不整体提前到 user_task 之后
@@ -838,6 +933,27 @@ export function useAgentMode(
             : step.type === 'asking' ? 120 : isFirst ? 46 : 40
           items.push({ id: step.id, type: 'step', step, group, size, isFirstStep: isFirst })
         }
+      }
+
+      // 后端 initial thinking step 到达前，在步骤流末尾补虚拟「正在准备...」（左侧 ThinkingBlock）
+      if (shouldInjectPreparingStep(group)) {
+        const userTaskStep = agentState.value?.steps.find(s => s.id === group.id)
+        const preparingStep: AgentStep = {
+          id: `__preparing_${group.id}`,
+          type: 'thinking',
+          content: t('ai.preparing'),
+          isStreaming: true,
+          timestamp: userTaskStep?.timestamp ?? Date.now(),
+        }
+        const hasPriorAgentStep = group.steps.some(s => s.type !== 'user_supplement')
+        items.push({
+          id: preparingStep.id,
+          type: 'step',
+          step: preparingStep,
+          group,
+          size: 46,
+          isFirstStep: !hasPriorAgentStep,
+        })
       }
 
       if (group.finalResult) {
@@ -915,6 +1031,12 @@ export function useAgentMode(
     const startTime = Date.now()
     inputText.value = ''
 
+    // 并发软上限检查：超过 MAX_CONCURRENT_AGENTS 时提示用户，但不强制阻止
+    if (terminalStore.isAtConcurrencyLimit) {
+      log.warn(`[concurrency] running=${terminalStore.runningAgentCount}, at limit, continuing anyway`)
+      // toast 提示由调用方决定是否显示；这里仅记录日志，不阻塞手动操作
+    }
+
     // 新任务开始，重置 TTS（会停止旧播报）
     if (shouldAutoSpeak.value) {
       tts.startNewTask()
@@ -932,54 +1054,60 @@ export function useAgentMode(
       log.error('无法获取终端上下文')
       return
     }
-    // 并行获取异步上下文，减少等待时间
+
+    // 同步收集附件/图片（不阻塞 UI）
+    const images = imageCallbacks?.getImages() || []
+    const previewImages = imageCallbacks?.getPreviewImages?.() || images
+    if (images.length > 0) {
+      imageCallbacks?.clearImages()
+    }
+    const attachments = attachmentCallbacks?.getAttachments() || []
+    // getDocumentContext 依赖 uploadedDocs，须在其完成后再 clearAttachments
+
+    // 立即进入运行态 + 乐观 user_task，用户消息与「正在准备...」零等待上墙
+    terminalStore.clearAgentState(tabId, true)
+    if (!agentState.value?.sessionId) {
+      terminalStore.setAgentSession(tabId, `session_${startTime}`, startTime)
+    }
+    const stableAgentKey = isAssistantMode
+      ? currentTab.value?.agentId
+      : tabId
+    terminalStore.setAgentRunning(tabId, true, stableAgentKey, message)
+    terminalStore.addAgentStep(tabId, {
+      id: `__optimistic_user_task_${startTime}`,
+      type: 'user_task',
+      content: message,
+      images: previewImages.length > 0 ? previewImages : undefined,
+      attachments: attachments.length > 0 ? attachments : undefined,
+      timestamp: startTime,
+    })
+    void scrollToBottom()
+
+    // 异步上下文在 UI 反馈之后并行获取，不阻塞首屏
     const [hostId, documentContext] = await Promise.all([
       getHostIdByTabId(tabId),
       getDocumentContext()
     ])
+
+    if (attachments.length > 0) {
+      attachmentCallbacks?.clearAttachments()
+    }
 
     // 首次运行时自动探测主机信息（后台执行，不阻塞）
     autoProbeHostProfile().catch(e => {
       log.warn('主机探测失败:', e)
     })
 
-    // 准备新任务（保留之前的步骤）
-    terminalStore.clearAgentState(tabId, true)
-    
-    // 如果是新会话（没有 sessionId），设置会话 ID 和开始时间
-    if (!agentState.value?.sessionId) {
-      terminalStore.setAgentSession(tabId, `session_${startTime}`, startTime)
-    }
-    
-    // 获取图片：全部图片传给 AI，预览图片存入步骤供 UI 展示
-    const images = imageCallbacks?.getImages() || []
-    const previewImages = imageCallbacks?.getPreviewImages?.() || images
-
-    if (images.length > 0) {
-      imageCallbacks?.clearImages()
-    }
-
-    // 获取当前已上传文件的元信息（用于 user_task 步骤展示）
-    const attachments = attachmentCallbacks?.getAttachments() || []
-
-    // 清空已上传的文件列表
-    if (attachments.length > 0) {
-      attachmentCallbacks?.clearAttachments()
-    }
-
-    // 设置 Agent 状态：正在运行 + 用户任务。
-    // 第三个参数 agentId 在 agentState 上记录 Agent 的稳定 key（终端 = tabId，助手 = agentId UUID）。
-    // 后续的 addUserMessage / abort / confirm 都通过 getAgentKey() 拿到 key 定位 Agent 实例。
-    const stableAgentKey = isAssistantMode
-      ? currentTab.value?.agentId
-      : tabId
-    terminalStore.setAgentRunning(tabId, true, stableAgentKey, message)
-    await scrollToBottom()
-
     try {
       // 根据模式选择 API
       let result: { success: boolean; result?: string; error?: string; aborted?: boolean }
-      
+
+      // workbenchPrompt 对所有工作台类型都需要注入（local/ssh/assistant 各有专属 prompt；
+      // companion 当前无）。先经 resolveWorkbenchKind 把 tab 映射成工作台类型再解析。
+      const workbenchPrompt = currentTab.value
+        ? resolveWorkbenchAgentPrompt(resolveWorkbenchKind(currentTab.value), currentTab.value)
+        : undefined
+
       if (isAssistantMode && currentTab.value?.agentId) {
         result = await window.electronAPI.agent.runStandalone(
           currentTab.value.agentId,
@@ -993,7 +1121,8 @@ export function useAgentMode(
             attachments: attachments.length > 0 ? attachments : undefined,
             remoteChannel: currentTab.value.remoteChannel,
             sessionId: agentState.value?.sessionId,
-            sessionStartTime: agentState.value?.sessionStartTime
+            sessionStartTime: agentState.value?.sessionStartTime,
+            ...(workbenchPrompt ? { workbenchPrompt } : {})
           },
           { executionMode: executionMode.value, commandTimeout: commandTimeout.value * 1000 },
           activeProfileId.value || undefined
@@ -1013,7 +1142,8 @@ export function useAgentMode(
             previewImages: previewImages.length < images.length ? previewImages : undefined,
             attachments: attachments.length > 0 ? attachments : undefined,
             sessionId: agentState.value?.sessionId,
-            sessionStartTime: agentState.value?.sessionStartTime
+            sessionStartTime: agentState.value?.sessionStartTime,
+            ...(workbenchPrompt ? { workbenchPrompt } : {})
           },
           { executionMode: executionMode.value, commandTimeout: commandTimeout.value * 1000 },
           activeProfileId.value || undefined
@@ -1046,6 +1176,8 @@ export function useAgentMode(
       }
       terminalStore.setAgentFinalResult(tabId, finalContent)
     } finally {
+      // 后端未推送 user_task（IPC 失败等）时固化乐观步骤，避免 __optimistic_ 前缀残留
+      terminalStore.commitOptimisticAgentSteps(tabId)
       terminalStore.finalizeAgentRunState(tabId)
     }
 
@@ -1214,11 +1346,16 @@ export function useAgentMode(
       if (!isEventForThisTab(data.agentId, data.ptyId)) return
       
       const tabId = currentTabId.value
+      // 后端 user_task 到达后替换乐观步骤（避免重复分组）
+      if (data.step.type === 'user_task' && !data.step.id.startsWith('__optimistic_')) {
+        terminalStore.removeOptimisticAgentSteps(tabId)
+      }
       terminalStore.addAgentStep(tabId, data.step)
 
       // 独立助手模式下，驱动 Canvas 预览面板
       if (isStandaloneAssistant.value) {
-        canvasStore.handleAgentStep(tabId, data.step)
+        const steps = agentState.value?.steps ?? []
+        artifactStore.handleAgentStep(tabId, data.step, steps)
       }
 
       // TTS: 流式 message / final_result 喂给语音合成（远程会话不播报）
@@ -1305,7 +1442,7 @@ export function useAgentMode(
       terminalStore.finalizeAgentRunState(currentTabId.value)
       // 通知 Canvas 任务完成
       if (isStandaloneAssistant.value) {
-        canvasStore.handleAgentComplete(currentTabId.value)
+        artifactStore.handleAgentComplete(currentTabId.value)
       }
       // 队列化的 proactive 回复优先：作为新任务启动（consumeProactiveContext 自动注入 Watch 上下文）
       if (queuedProactiveReply.value) {
@@ -1618,17 +1755,69 @@ export function useAgentMode(
     }
   }
 
+  // 联络常驻 tab：重启后会话为空时，载入上次 __companion__ 对话，避免一片空白。
+  // 同一次运行内若已有 live steps（IM/Gateway 流入），则跳过，不覆盖现有对话。
+  // 注意：这是「展示层」恢复（steps 上墙）。后端会话连续性由持久命名 Agent 自己的
+  // restoreFromHistory/TaskMemory 负责——桌面续聊会新开 session 但带着恢复的工作记忆，
+  // 因此前端这里无需关心 record.messages。
+  const restoreCompanionHistoryIfNeeded = async () => {
+    if (currentTab.value?.agentId !== COMPANION_TAB_AGENT_ID) return
+    if ((agentState.value?.steps?.length ?? 0) > 0) return
+    try {
+      // 取最近 N 条 companion 会话合并展示，避免重启后只看到最后一条
+      const records = await window.electronAPI.history.getRecentByAgentKey(COMPANION_TAB_AGENT_ID, 10)
+      // await 期间可能有 live step 流入，再次确认仍为空才恢复，避免覆盖
+      if (!records?.length) return
+      if ((agentState.value?.steps?.length ?? 0) > 0) return
+      const merged = mergeCompanionRecords(records as AgentRecord[])
+      if (!merged) return
+      terminalStore.restoreAgentHistory(currentTabId.value, merged)
+    } catch (err) {
+      log.warn('[Companion] 恢复历史会话失败:', err)
+    }
+  }
+
+  // 把多条 companion 会话记录合成一条「展示用」记录：steps 按时间升序拼接。
+  // ⚠️ id 与 timestamp 必须成对取「最新一条」：restoreAgentHistory 会把它们写成
+  // agentState.sessionId / sessionStartTime 传给后端，续聊时 checkpoint 据此存盘。
+  // 若像旧版那样 id 取最新、timestamp 取最早，后端会把记录存成「id 最新、timestamp
+  // 最早」的错配记录——这正是联络「裂成两条 session、两条 timestamp 撞成一样」的放大器。
+  // userTask（标题）仍取最早一条，展示合并对话从头开始，不影响 session 身份。
+  const mergeCompanionRecords = (records: AgentRecord[]): AgentRecord | null => {
+    if (!records.length) return null
+    const ordered = [...records].sort((a, b) => a.timestamp - b.timestamp)
+    const earliest = ordered[0]
+    const latest = ordered[ordered.length - 1]
+    const seen = new Set<string>()
+    const steps = ordered
+      .flatMap(r => r.steps ?? [])
+      .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
+      .filter(s => (s.id && !seen.has(s.id) ? (seen.add(s.id), true) : !s.id))
+    // userTask 作为侧栏标题：优先取最早一条非 proactive 的记录标题；
+    // 若全都是 proactive（纯主动消息、用户还未主动发言），回退到 earliest.userTask
+    const firstRealRecord = ordered.find(r => r.userTask !== '__proactive__')
+    const displayUserTask = firstRealRecord?.userTask ?? earliest.userTask
+    return {
+      ...latest,
+      id: latest.id,
+      timestamp: latest.timestamp,
+      userTask: displayUserTask,
+      steps,
+    }
+  }
+
   // 生命周期
   onMounted(() => {
     setupAgentListeners()
     loadRecentHistory()
     loadRemoteExecutionMode()
+    void restoreCompanionHistoryIfNeeded()
   })
 
   onUnmounted(() => {
     cleanupAgentListeners()
     uninstallContentResizeObserver()
-    canvasStore.cleanup(currentTabId.value)
+    artifactStore.cleanup(currentTabId.value)
   })
 
   return {

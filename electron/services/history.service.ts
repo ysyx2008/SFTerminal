@@ -35,6 +35,22 @@ export interface ChatRecord {
   content: string
 }
 
+/**
+ * Watch（关切）Agent 的身份 key。规范来源是 `AgentService.WATCH_AGENT_ID`，
+ * 但 history.service 是底层叶子服务，反向 import AgentService 会成环，故按
+ * 既有惯例（registry.ts / terminal.ts 各自定义 '__companion__' 常量）本地定义。
+ * 用途：把 watch 的「内心独白」执行记录与用户/联络任务**物理隔离**到独立的
+ * 历史树和索引，避免高频内心独白把主索引压舱（曾达 149MB）。
+ */
+const WATCH_AGENT_KEY = '__watch__'
+
+/**
+ * watch 索引条目里 userTask 的截断长度。watch 的 userTask 是心跳模板展开的长 prompt
+ * （平均 ~2.6KB），但索引里只用作审计列表标题，整段存会让 watch-index 重新膨胀。
+ * 正文完整保存在 watch 树日文件中，索引只留可读的标题前缀。
+ */
+const WATCH_INDEX_USERTASK_MAX = 200
+
 /** 索引条目：每条 AgentRecord 的轻量摘要，用于排序和过滤，避免读取完整日期文件 */
 interface AgentIndexEntry {
   id: string
@@ -43,9 +59,27 @@ interface AgentIndexEntry {
   dateStr: string
   userTask: string
   terminalType: TerminalType
+  /** Agent 的身份 key，来自 AgentRecord.agentKey（如 '__companion__'、'__watch__'） */
+  agentKey?: string
   sshHost?: string
   status: 'completed' | 'failed' | 'aborted'
   tokenUsage?: TokenUsage
+}
+
+/**
+ * 一个独立的「记录树 + 索引文件 + 内存缓存」三元组。
+ * 主索引（agentStore）放用户/联络/终端任务；watch 索引（watchStore）放关切内心独白。
+ * 两者结构相同、方法复用，只是目录/索引路径/缓存不同。
+ */
+interface AgentIndexStore {
+  /** 记录正文所在目录（history/agent 或 history/watch） */
+  dir: string
+  /** 索引文件路径 */
+  indexPath: string
+  /** 常驻内存索引缓存 */
+  cache: AgentIndexEntry[] | null
+  /** 写索引条目时截断 userTask 的长度（仅 watch 用，避免内心独白长 prompt 撑大索引） */
+  userTaskMaxLen?: number
 }
 
 /** Token 用量统计时段数据 */
@@ -106,8 +140,13 @@ export class HistoryService {
   private historyDir: string
   private chatDir: string
   private agentDir: string
+  /** watch（关切）内心独白记录的独立历史树，与 agentDir 隔离 */
+  private watchDir: string
   private imagesDir: string
-  private _indexCache: AgentIndexEntry[] | null = null
+  /** 主索引存储：用户/联络/终端任务记录（不含 watch 内心独白） */
+  private agentStore!: AgentIndexStore
+  /** watch 索引存储：关切执行记录，与主索引隔离，避免内心独白压舱主索引 */
+  private watchStore!: AgentIndexStore
 
   constructor() {
     // 获取用户数据目录
@@ -115,22 +154,31 @@ export class HistoryService {
     this.historyDir = path.join(userDataPath, 'history')
     this.chatDir = path.join(this.historyDir, 'chat')
     this.agentDir = path.join(this.historyDir, 'agent')
+    this.watchDir = path.join(this.historyDir, 'watch')
     this.imagesDir = path.join(this.historyDir, 'images')
+
+    this.agentStore = {
+      dir: this.agentDir,
+      indexPath: path.join(this.historyDir, 'agent-index.json'),
+      cache: null,
+    }
+    this.watchStore = {
+      dir: this.watchDir,
+      indexPath: path.join(this.historyDir, 'watch-index.json'),
+      cache: null,
+      userTaskMaxLen: WATCH_INDEX_USERTASK_MAX,
+    }
 
     // 确保目录存在
     this.ensureDirectories()
     cleanupExpiredMigratedBackups(this.agentDir)
   }
 
-  private get indexPath(): string {
-    return path.join(this.historyDir, 'agent-index.json')
-  }
-
   /**
    * 确保历史记录目录存在
    */
   private ensureDirectories(): void {
-    const dirs = [this.historyDir, this.chatDir, this.agentDir, this.imagesDir]
+    const dirs = [this.historyDir, this.chatDir, this.agentDir, this.watchDir, this.imagesDir]
     for (const dir of dirs) {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true })
@@ -263,9 +311,14 @@ export class HistoryService {
   }
 
   private readAgentRecordFromDisk(dateStr: string, id: string): AgentRecord | undefined {
-    const sessionPath = getAgentRecordPath(this.agentDir, dateStr, id)
-    const sessionRecord = readAgentRecordFile(sessionPath, (p, e) => this.onCorruptRecord(p, e))
-    if (sessionRecord) return sessionRecord
+    // 先查主 agent 树，再查 watch 树（watch 记录已拆分到独立目录）
+    for (const dir of [this.agentDir, this.watchDir]) {
+      const record = readAgentRecordFile(
+        getAgentRecordPath(dir, dateStr, id),
+        (p, e) => this.onCorruptRecord(p, e)
+      )
+      if (record) return record
+    }
 
     const legacyRecords = readLegacyAgentDayRecords(
       getLegacyAgentDayFilePath(this.agentDir, dateStr),
@@ -275,9 +328,13 @@ export class HistoryService {
   }
 
   private async readAgentRecordFromDiskAsync(dateStr: string, id: string): Promise<AgentRecord | undefined> {
-    const sessionPath = getAgentRecordPath(this.agentDir, dateStr, id)
-    const sessionRecord = await readAgentRecordFileAsync(sessionPath, (p, e) => this.onCorruptRecord(p, e))
-    if (sessionRecord) return sessionRecord
+    for (const dir of [this.agentDir, this.watchDir]) {
+      const record = await readAgentRecordFileAsync(
+        getAgentRecordPath(dir, dateStr, id),
+        (p, e) => this.onCorruptRecord(p, e)
+      )
+      if (record) return record
+    }
 
     const legacyRecords = readLegacyAgentDayRecords(
       getLegacyAgentDayFilePath(this.agentDir, dateStr),
@@ -314,74 +371,95 @@ export class HistoryService {
 
   // ==================== Agent 索引管理 ====================
 
-  private getIndex(): AgentIndexEntry[] {
-    if (this._indexCache) return this._indexCache
+  /** 选择记录归属的索引存储：watch 内心独白进独立索引，其余进主索引 */
+  private storeForRecord(record: AgentRecord): AgentIndexStore {
+    return record.agentKey === WATCH_AGENT_KEY ? this.watchStore : this.agentStore
+  }
+
+  private getIndexFor(store: AgentIndexStore): AgentIndexEntry[] {
+    if (store.cache) return store.cache
 
     try {
-      if (fs.existsSync(this.indexPath)) {
-        const content = fs.readFileSync(this.indexPath, 'utf-8')
-        this._indexCache = JSON.parse(content) as AgentIndexEntry[]
-        return this._indexCache
+      if (fs.existsSync(store.indexPath)) {
+        store.cache = JSON.parse(fs.readFileSync(store.indexPath, 'utf-8')) as AgentIndexEntry[]
+        return store.cache
       }
     } catch (e) {
-      log.warn('读取 Agent 索引失败，将重建:', e)
+      log.warn(`读取索引失败，将重建 (${path.basename(store.indexPath)}):`, e)
     }
 
-    return this.rebuildIndex()
+    return this.rebuildIndexFor(store)
   }
 
-  private writeIndex(entries: AgentIndexEntry[]): void {
-    this._indexCache = entries
+  private writeIndexFor(store: AgentIndexStore, entries: AgentIndexEntry[]): void {
+    store.cache = entries
     try {
-      writeFileAtomic(this.indexPath, JSON.stringify(entries))
+      writeFileAtomic(store.indexPath, JSON.stringify(entries))
     } catch (e) {
-      log.error('写入 Agent 索引失败:', e)
+      log.error(`写入索引失败 (${path.basename(store.indexPath)}):`, e)
     }
   }
 
-  /** 从磁盘重建 Agent 索引（首次升级、索引损坏或 v5 迁移后触发） */
-  rebuildAgentIndex(): void {
-    this._indexCache = null
-    this.rebuildIndex()
-  }
-
-  /** 从所有会话文件重建索引（首次升级或索引损坏时触发） */
-  private rebuildIndex(): AgentIndexEntry[] {
+  /** 从某个存储的所有会话文件重建其索引 */
+  private rebuildIndexFor(store: AgentIndexStore): AgentIndexEntry[] {
     const entries: AgentIndexEntry[] = []
 
-    for (const dateStr of listAgentDateDirs(this.agentDir)) {
-      const dateDir = path.join(this.agentDir, dateStr)
-      for (const file of listSessionFilesInDateDir(this.agentDir, dateStr)) {
+    for (const dateStr of listAgentDateDirs(store.dir)) {
+      const dateDir = path.join(store.dir, dateStr)
+      for (const file of listSessionFilesInDateDir(store.dir, dateStr)) {
         const filePath = path.join(dateDir, file)
         const record = readAgentRecordFile(filePath, (p, e) => this.onCorruptRecord(p, e))
-        if (record) entries.push(this.toIndexEntry(record, dateStr))
+        if (record) entries.push(this.toIndexEntry(record, dateStr, store.userTaskMaxLen))
       }
     }
 
-    for (const file of listLegacyAgentDayFiles(this.agentDir)) {
+    // 旧格式日文件只可能出现在主 agent 目录（v5 之前）；watch 目录由 v6 拆分得来，无旧日文件
+    for (const file of listLegacyAgentDayFiles(store.dir)) {
       const dateStr = file.replace('.json', '')
       const records = readLegacyAgentDayRecords(
-        path.join(this.agentDir, file),
+        path.join(store.dir, file),
         (p, e) => this.onCorruptRecord(p, e)
       )
       for (const r of records) {
-        entries.push(this.toIndexEntry(r, dateStr))
+        entries.push(this.toIndexEntry(r, dateStr, store.userTaskMaxLen))
       }
     }
 
-    this.writeIndex(entries)
-    log.info(`Agent 索引已重建，共 ${entries.length} 条记录`)
+    this.writeIndexFor(store, entries)
+    log.info(`索引已重建 (${path.basename(store.indexPath)})，共 ${entries.length} 条记录`)
     return entries
   }
 
-  private toIndexEntry(record: AgentRecord, dateStr: string): AgentIndexEntry {
+  /** 兼容旧调用：默认作用于主 agent 索引 */
+  private getIndex(): AgentIndexEntry[] {
+    return this.getIndexFor(this.agentStore)
+  }
+
+  /** 兼容旧调用：默认写主 agent 索引 */
+  private writeIndex(entries: AgentIndexEntry[]): void {
+    this.writeIndexFor(this.agentStore, entries)
+  }
+
+  /** 从磁盘重建全部索引（主 + watch）。首次升级、索引损坏或 v6 迁移后触发 */
+  rebuildAgentIndex(): void {
+    this.agentStore.cache = null
+    this.watchStore.cache = null
+    this.rebuildIndexFor(this.agentStore)
+    this.rebuildIndexFor(this.watchStore)
+  }
+
+  private toIndexEntry(record: AgentRecord, dateStr: string, userTaskMaxLen?: number): AgentIndexEntry {
+    const userTask = userTaskMaxLen && record.userTask.length > userTaskMaxLen
+      ? record.userTask.slice(0, userTaskMaxLen)
+      : record.userTask
     const entry: AgentIndexEntry = {
       id: record.id,
       timestamp: record.timestamp,
       duration: record.duration,
       dateStr,
-      userTask: record.userTask,
+      userTask,
       terminalType: record.terminalType,
+      agentKey: record.agentKey,
       sshHost: record.sshHost,
       status: record.status,
     }
@@ -391,10 +469,10 @@ export class HistoryService {
     return entry
   }
 
-  private updateIndexEntry(record: AgentRecord): void {
-    const entries = this.getIndex()
+  private updateIndexEntryFor(store: AgentIndexStore, record: AgentRecord): void {
+    const entries = this.getIndexFor(store)
     const dateStr = this.getDateString(record.timestamp)
-    const entry = this.toIndexEntry(record, dateStr)
+    const entry = this.toIndexEntry(record, dateStr, store.userTaskMaxLen)
 
     const idx = entries.findIndex(e => e.id === record.id)
     if (idx !== -1) {
@@ -403,7 +481,7 @@ export class HistoryService {
       entries.push(entry)
     }
 
-    this.writeIndex(entries)
+    this.writeIndexFor(store, entries)
   }
 
   /**
@@ -479,9 +557,42 @@ export class HistoryService {
   saveAgentRecord(record: AgentRecord): void {
     // 写入前把内联 base64 图片外化到磁盘，避免 JSON 文件膨胀和 IPC 传输超大对象
     this.externalizeStepImages(record)
+    // 剥离可从磁盘重生的 Canvas content（md/html 文件），避免大文件撑爆历史记录
+    this.stripRederivableCanvasContent(record)
 
-    writeAgentRecordFile(this.agentDir, record)
-    this.updateIndexEntry(record)
+    const store = this.storeForRecord(record)
+    writeAgentRecordFile(store.dir, record)
+    this.updateIndexEntryFor(store, record)
+  }
+
+  /**
+   * 保存（或更新）产出物面板清单到指定记录。
+   * 自动剥离 contentFromFile 的 content（可从磁盘重生），避免大文件撑爆历史记录。
+   */
+  saveArtifacts(recordId: string, artifacts: import('@shared/types').CanvasArtifact[]): void {
+    const record = this.getAgentRecordById(recordId)
+    if (!record) return
+    record.artifacts = artifacts.map(a => {
+      if (a.contentFromFile) return { ...a, content: '' }
+      return a
+    })
+    this.saveAgentRecord(record)
+  }
+
+  /**
+   * 剥离 `canvasData.content` 中可从 `filePath` 磁盘文件重生的内容（`contentFromFile`）。
+   * 仅作用于待写盘的 record 副本：克隆 canvasData 后删除 content，绝不改动调用方
+   * （Agent 的 `_sessionSteps`）持有的共享对象，避免破坏正在进行会话的实时预览。
+   * 恢复时由前端按 `filePath` 读盘回填（见 artifact store hydrate）。
+   */
+  private stripRederivableCanvasContent(record: AgentRecord): void {
+    record.steps = record.steps.map((step) => {
+      const cd = step.canvasData
+      if (!cd?.contentFromFile || !cd.filePath || cd.content === undefined) {
+        return step
+      }
+      return { ...step, canvasData: { ...cd, content: undefined } }
+    })
   }
 
   /**
@@ -523,15 +634,21 @@ export class HistoryService {
    * 后续访问直接读 file:// 路径，IPC 传输体积从几十 MB 降到几百 KB。
    */
   getAgentRecordById(id: string): AgentRecord | undefined {
-    const index = this.getIndex()
-    const entry = index.find(e => e.id === id)
+    // 主索引优先，未命中再查 watch 索引（watch 记录在独立索引中）
+    const entry = this.getIndex().find(e => e.id === id)
+      ?? this.getIndexFor(this.watchStore).find(e => e.id === id)
     if (entry) {
       const found = this.readAgentRecordFromDisk(entry.dateStr, id)
       if (!found) return undefined
       return this.maybeExternalizeAndSaveRecord(found, entry.dateStr)
     }
 
-    for (const dateStr of [...listAgentDateDirs(this.agentDir)].reverse()) {
+    // 兜底全盘扫描：合并两棵树的日期目录，按日期倒序找
+    const dateDirs = new Set<string>([
+      ...listAgentDateDirs(this.agentDir),
+      ...listAgentDateDirs(this.watchDir),
+    ])
+    for (const dateStr of [...dateDirs].sort().reverse()) {
       const found = this.readAgentRecordFromDisk(dateStr, id)
       if (found) return this.maybeExternalizeAndSaveRecord(found, dateStr)
     }
@@ -548,8 +665,9 @@ export class HistoryService {
   private maybeExternalizeAndSaveRecord(found: AgentRecord, dateStr: string): AgentRecord {
     const changed = this.externalizeStepImages(found)
     if (changed) {
-      writeAgentRecordFile(this.agentDir, found)
-      this.updateIndexEntry(found)
+      const store = this.storeForRecord(found)
+      writeAgentRecordFile(store.dir, found)
+      this.updateIndexEntryFor(store, found)
       log.info(`Externalized inline images for record ${found.id}, saved back to session file`)
     }
     return found
@@ -560,17 +678,23 @@ export class HistoryService {
    * @returns 是否成功删除（记录不存在时返回 false）
    */
   deleteAgentRecord(id: string): boolean {
-    const index = this.getIndex()
-    const entryIdx = index.findIndex(e => e.id === id)
-    if (entryIdx === -1) return false
+    // 主索引优先，未命中再查 watch 索引——确保 watch 记录也能正确删除文件/索引/截图
+    let store = this.agentStore
+    let index = this.getIndexFor(store)
+    let entry = index.find(e => e.id === id)
+    if (!entry) {
+      store = this.watchStore
+      index = this.getIndexFor(store)
+      entry = index.find(e => e.id === id)
+    }
+    if (!entry) return false
 
-    const entry = index[entryIdx]
-    const sessionPath = getAgentRecordPath(this.agentDir, entry.dateStr, id)
+    const sessionPath = getAgentRecordPath(store.dir, entry.dateStr, id)
     if (fs.existsSync(sessionPath)) {
       fs.unlinkSync(sessionPath)
     } else {
-      // 兼容尚未迁移的旧日文件：从数组中剔除该条记录
-      const legacyPath = getLegacyAgentDayFilePath(this.agentDir, entry.dateStr)
+      // 兼容尚未迁移的旧日文件：从数组中剔除该条记录（仅主 agent 树可能有旧日文件）
+      const legacyPath = getLegacyAgentDayFilePath(store.dir, entry.dateStr)
       if (fs.existsSync(legacyPath)) {
         const legacyRecords = readLegacyAgentDayRecords(legacyPath, (p, e) => this.onCorruptRecord(p, e))
         const filtered = legacyRecords.filter(r => r.id !== id)
@@ -584,13 +708,12 @@ export class HistoryService {
       }
     }
 
-    const dateDir = path.join(this.agentDir, entry.dateStr)
+    const dateDir = path.join(store.dir, entry.dateStr)
     if (fs.existsSync(dateDir) && fs.readdirSync(dateDir).length === 0) {
       fs.rmdirSync(dateDir)
     }
 
-    const newIndex = index.filter(e => e.id !== id)
-    this.writeIndex(newIndex)
+    this.writeIndexFor(store, index.filter(e => e.id !== id))
 
     const sessionImagesDir = path.join(this.imagesDir, entry.dateStr, id)
     if (fs.existsSync(sessionImagesDir)) {
@@ -630,6 +753,43 @@ export class HistoryService {
   }
 
   /**
+   * 取某个 agentKey（如 '__companion__'）最近的一条完整会话记录。
+   * 用于联络常驻 tab 打开/重启后恢复上次对话。无匹配返回 undefined。
+   */
+  getLatestRecordByAgentKey(agentKey: string): AgentRecord | undefined {
+    return this.getRecentAgentRecords(1, r => r.agentKey === agentKey)[0]
+  }
+
+  /**
+   * 取某个 agentKey 最近的 N 条完整会话记录（按最后活跃时间倒序）。
+   * 联络常驻 tab 恢复时合并展示，避免重启后只看到最后一条会话。
+   */
+  getRecentRecordsByAgentKey(agentKey: string, limit: number = 10): AgentRecord[] {
+    return this.getRecentAgentRecords(limit, r => r.agentKey === agentKey)
+  }
+
+  /**
+   * 取最近 N 条 watch（关切）执行记录，按最后活跃时间倒序。
+   * 数据源是独立的 watch 索引/树（与主历史隔离），供关切执行审计使用，不进主历史列表。
+   */
+  getRecentWatchRecords(limit: number = 20, filter?: (r: AgentRecord) => boolean): AgentRecord[] {
+    let candidates = this.getIndexFor(this.watchStore)
+    if (filter) {
+      candidates = candidates.filter(e => filter(e as unknown as AgentRecord))
+    }
+    const top = [...candidates]
+      .sort((a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration))
+      .slice(0, limit)
+
+    const records: AgentRecord[] = []
+    for (const entry of top) {
+      const record = this.readAgentRecordFromDisk(entry.dateStr, entry.id)
+      if (record) records.push(record)
+    }
+    return records
+  }
+
+  /**
    * 列出全部 Agent 历史的轻量摘要（来自 agent-index.json，不读各日 JSON）。
    * 按「最后活跃时间」timestamp + duration 倒序。
    */
@@ -637,9 +797,9 @@ export class HistoryService {
     const index = this.getIndex()
     let entries = [...index]
     if (excludeWakeup) {
-      entries = entries.filter(
-        e => !(e.userTask.startsWith('[当前时间：') && e.userTask.includes('触发事件'))
-      )
+      // watch 内心独白已存独立索引、本就不在主索引中；此处保留为结构化防御过滤
+      // （取代旧的 userTask 关键词前缀匹配），万一有遗留也能挡住。
+      entries = entries.filter(e => e.agentKey !== WATCH_AGENT_KEY)
     }
     entries.sort((a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration))
     return entries.map(e => ({
@@ -648,6 +808,7 @@ export class HistoryService {
       duration: e.duration,
       userTask: e.userTask,
       terminalType: e.terminalType,
+      agentKey: e.agentKey,
       sshHost: e.sshHost,
       status: e.status,
     }))
@@ -871,7 +1032,8 @@ export class HistoryService {
    * 从索引聚合 Token 用量统计（纯内存操作，零磁盘 IO）
    */
   getTokenUsageStats(): TokenUsageStatsResult {
-    const index = this.getIndex()
+    // 合并主索引 + watch 索引：watch 内心独白同样消耗 token，统计必须计入，否则漏算成本
+    const index = [...this.getIndex(), ...this.getIndexFor(this.watchStore)]
     const now = new Date()
     const todayStr = this.getDateString()
     const day7Ago = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).getTime()
@@ -1154,10 +1316,11 @@ export class HistoryService {
         chatDeleted++
       }
 
-      // 清空所有 Agent 记录（会话文件 + 旧日文件 + 日期目录）
-      if (fs.existsSync(this.agentDir)) {
-        for (const entry of fs.readdirSync(this.agentDir, { withFileTypes: true })) {
-          const entryPath = path.join(this.agentDir, entry.name)
+      // 清空所有 Agent 记录（会话文件 + 旧日文件 + 日期目录），主树 + watch 树
+      for (const dir of [this.agentDir, this.watchDir]) {
+        if (!fs.existsSync(dir)) continue
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const entryPath = path.join(dir, entry.name)
           if (entry.isDirectory()) {
             fs.rmSync(entryPath, { recursive: true, force: true })
             agentDeleted++
@@ -1183,24 +1346,26 @@ export class HistoryService {
         }
       }
 
-      // 清理 Agent 记录
-      for (const dateStr of listAgentDateDirs(this.agentDir)) {
-        if (dateStr < cutoffStr) {
-          fs.rmSync(path.join(this.agentDir, dateStr), { recursive: true, force: true })
-          agentDeleted++
+      // 清理 Agent 记录（主树 + watch 树）
+      for (const dir of [this.agentDir, this.watchDir]) {
+        for (const dateStr of listAgentDateDirs(dir)) {
+          if (dateStr < cutoffStr) {
+            fs.rmSync(path.join(dir, dateStr), { recursive: true, force: true })
+            agentDeleted++
+          }
         }
-      }
-      for (const file of listLegacyAgentDayFiles(this.agentDir)) {
-        const dateStr = file.replace('.json', '')
-        if (dateStr < cutoffStr) {
-          fs.unlinkSync(path.join(this.agentDir, file))
-          agentDeleted++
+        for (const file of listLegacyAgentDayFiles(dir)) {
+          const dateStr = file.replace('.json', '')
+          if (dateStr < cutoffStr) {
+            fs.unlinkSync(path.join(dir, file))
+            agentDeleted++
+          }
         }
       }
     }
 
     if (chatDeleted > 0 || agentDeleted > 0) {
-      this.rebuildIndex()
+      this.rebuildAgentIndex()
     }
 
     return { chatDeleted, agentDeleted }
@@ -1219,22 +1384,24 @@ export class HistoryService {
   } {
     const chatFiles = fs.readdirSync(this.chatDir).filter(f => f.endsWith('.json')).sort()
     const agentStats = collectAgentStorageStats(this.agentDir)
+    const watchStats = collectAgentStorageStats(this.watchDir)
 
-    let totalSize = agentStats.totalSize
+    let totalSize = agentStats.totalSize + watchStats.totalSize
     for (const file of chatFiles) {
       totalSize += fs.statSync(path.join(this.chatDir, file)).size
     }
 
+    const agentDateLabels = new Set([...agentStats.dateLabels, ...watchStats.dateLabels])
     const allDates = [...new Set([
       ...chatFiles.map(f => f.replace('.json', '')),
-      ...agentStats.dateLabels,
+      ...agentDateLabels,
     ])].sort()
 
     return {
       chatFiles: chatFiles.length,
       // 有记录的天数（v5 起按会话单文件存储，不能再用文件数代替天数）
-      agentFiles: agentStats.dateLabels.length,
-      agentSessions: this.getIndex().length,
+      agentFiles: agentDateLabels.size,
+      agentSessions: this.getIndex().length + this.getIndexFor(this.watchStore).length,
       totalSize,
       oldestRecord: allDates[0],
       newestRecord: allDates[allDates.length - 1]

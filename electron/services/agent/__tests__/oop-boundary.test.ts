@@ -117,6 +117,7 @@ describe('OOP 边界护栏：抽象层不应硬编码任何具体工具名', () 
     'agent.ts',
     'streaming-tool-executor.ts',
     'tool-result-budget.ts',
+    'tool-output-budget.ts',
     'task-memory.ts',
     'context-builder.ts',
     'tool-metadata.ts'

@@ -124,6 +124,8 @@ export default {
   // 标签栏
   tabs: {
     home: '首页',
+    tasks: '任务',
+    reach: '联络',
     newTab: '新建终端',
     closeTab: '关闭标签',
     closeOtherTabs: '关闭其他标签页',
@@ -230,10 +232,18 @@ export default {
     }
   },
 
-  // 独立助手右侧 Canvas（Markdown 等）
+  // 独立助手右侧 Canvas Artifact 面板
   canvas: {
-    slidesPreview: '幻灯片预览',
-    slidesPreviewEmpty: '暂无幻灯片预览内容',
+    artifactUntitled: '未命名',
+    closeArtifact: '关闭产出物',
+    artifactOverflow: '+{count} 更多',
+    artifactPickerTitle: '全部产出物',
+    artifactPickerSearch: '搜索文件名…',
+    artifactPickerEmpty: '无匹配产出物',
+    htmlPreview: '网页预览',
+    htmlPreviewEmpty: '暂无网页预览内容',
+    htmlRefresh: '刷新',
+    htmlOpenExternal: '在浏览器打开',
     markdownSource: 'Markdown',
     markdownPreview: '预览',
     modeEdit: '编辑',
@@ -246,6 +256,19 @@ export default {
     quoteToComposer: '引用到 AI 对话',
     quoteToAiNeedSelection: '请先选中要引用的文字',
     saveToDisk: '保存',
+    saveAs: '另存为…',
+    saveAll: '全部保存',
+    saveAllDone: '已保存 {count} 个文件',
+    saveAllPartial: '已保存 {saved} 个，{failed} 个失败',
+    saveAllNone: '没有未保存的更改',
+    saveNoChanges: '无未保存更改',
+    saveNoPath: '尚未关联磁盘文件，请使用「另存为」',
+    saveFileDeleted: '原文件已从磁盘删除，请使用「另存为」恢复',
+    fileMenu: '打开',
+    noPathShort: '无磁盘路径',
+    unsavedChanges: '● 未保存',
+    closeOthers: '关闭其他产出物',
+    closeAll: '关闭全部产出物',
     saveShortcut: 'Ctrl/Cmd+S 保存',
     noPathHint: '无本地文件路径时仅可编辑预览；Agent 写入 .md 后会自动关联保存',
     savedToDisk: '已保存',
@@ -255,6 +278,15 @@ export default {
     openMenu: '更多打开选项',
     showInFolder: '打开所在文件夹',
     showInFolderFailed: '打开所在文件夹失败',
+    emptyStateTitle: '产出物',
+    emptyStateHint: '本次会话的产出物已全部关闭。关闭面板后，有新产出时会再次显示。',
+    dismissEmptyPanel: '关闭面板',
+    minimizePanel: '收起面板',
+    expandPanel: '展开产出物面板',
+    expandPanelWithTitle: '展开产出物：{title}',
+    expandPanelWithCount: '展开产出物：{title}（共 {count} 个）',
+    jumpToSource: '跳到生成处',
+    unsupportedRenderer: '该类型预览尚未实现',
   },
 
   // MCP 状态

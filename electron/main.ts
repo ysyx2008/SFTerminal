@@ -8,6 +8,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import { getDefaultShell } from './utils/platform'
 import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, WebSearchSettings } from '@shared/types'
+import { getAppTitle as buildAppTitle, getBrandName } from '@shared/brand'
 
 /**
  * 展开路径开头的 `~` 为用户 home 目录。支持 `~`、`~/...`、`~\...`（兼容 Windows）。
@@ -66,6 +67,9 @@ const gotTheLock = useSingleInstanceLock ? app.requestSingleInstanceLock() : tru
 if (!gotTheLock) {
   app.quit()
 }
+
+registerGracefulShutdownSignals()
+registerDevHotReloadGracefulShutdown()
 
 // 深链 URL 队列：窗口未就绪时暂存，加载完成后依次发送
 const pendingDeepLinkUrls: string[] = []
@@ -145,28 +149,22 @@ const APP_START_TIME = Date.now()
 const packageJson = JSON.parse(fs.readFileSync(join(__dirname, '../package.json'), 'utf-8'))
 const APP_VERSION = packageJson.version
 
-// 应用名称（多语言支持）
-const APP_NAME = { zh: '旗鱼', en: 'SailFish' }
-
 // Steam 构建标识：主进程直接读环境变量，dev/build 均可靠
 const IS_STEAM_BUILD = process.env.VITE_STEAM_BUILD === 'true'
-const APP_NAME_STEAM = { zh: '旗鱼终端', en: 'SFTerm' }
 
-/**
- * 根据语言获取应用标题（Steam 版使用不同品牌名）
- */
+/** 根据语言获取应用标题（Steam 版使用不同品牌名） */
 function getAppTitle(language?: string): string {
   const lang = language || configService?.getLanguage() || 'zh-CN'
-  const names = IS_STEAM_BUILD ? APP_NAME_STEAM : APP_NAME
-  const name = lang.startsWith('zh') ? names.zh : names.en
-  return `${name} v${APP_VERSION}`
+  return buildAppTitle(lang, APP_VERSION, IS_STEAM_BUILD)
 }
 
 /** 应用短名称（无版本号，用于通知标题等） */
 function getAppName(language?: string): string {
   const lang = language || configService?.getLanguage() || 'zh-CN'
-  const names = IS_STEAM_BUILD ? APP_NAME_STEAM : APP_NAME
-  return lang.startsWith('zh') ? names.zh : names.en
+  if (IS_STEAM_BUILD) {
+    return lang.startsWith('zh') ? '旗鱼终端' : 'SFTerm'
+  }
+  return getBrandName(lang)
 }
 
 /**
@@ -389,6 +387,7 @@ import { getWatchService } from './services/watch/watch.service'
 import { getSensorService } from './services/sensor'
 import { getBondService } from './services/bond.service'
 import { splitPaneBridge } from './services/split-pane-bridge.service'
+import { workbenchBridge } from './services/workbench-bridge.service'
 import type { CreateWatchParams } from './services/watch/types'
 import { getWebChatService } from './services/web-chat.service'
 import { getMigrationRunner, createBackup } from './migrations'
@@ -396,7 +395,7 @@ import { getGatewayService, type GatewayConfig } from './services/gateway.servic
 import { BastionService } from './services/bastion.service'
 import { getIMService } from './services/im/im.service'
 import type { DingTalkConfig, FeishuConfig, SlackConfig, TelegramConfig, WeComConfig } from './services/im/types'
-import { getWorkspacePath } from './services/agent/tools/file'
+import { getWorkspacePath, ensureAgentWorkspaceDirs } from './services/agent/tools/file'
 import { getContextKnowledgeService } from './services/knowledge/context-knowledge'
 import {
   getEmailCredential, setEmailCredential, deleteEmailCredential,
@@ -448,6 +447,44 @@ let fileManagerParams: {  // 文件管理器窗口初始化参数
 } | null = null
 let forceQuit = false  // 是否强制退出（跳过确认）
 let isQuitting = false  // 是否正在退出应用（Cmd+Q 触发，区分于 Cmd+W 关闭窗口）
+
+// macOS ⌘Q 防误触：首次按下展示提示，2 秒内再次按下才真正退出
+let quitConfirmTimer: ReturnType<typeof setTimeout> | null = null
+
+function sendQuitToast(show: boolean): void {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('quit:toast', { show })
+    }
+  } catch { /* ignore */ }
+}
+
+function handleQuitAttempt(): void {
+  // 已进入退出流程（二次确认或终端计数对话框期间），忽略后续按键
+  if (isQuitting) return
+  if (quitConfirmTimer) {
+    // 2 秒内再次按下：正式退出
+    clearTimeout(quitConfirmTimer)
+    quitConfirmTimer = null
+    sendQuitToast(false)
+    isQuitting = true
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (process.platform === 'darwin') app.dock?.show()
+      mainWindow.show()
+      mainWindow.close()
+    } else {
+      forceQuit = true
+      app.quit()
+    }
+  } else {
+    // 首次按下：显示提示，等待二次确认
+    sendQuitToast(true)
+    quitConfirmTimer = setTimeout(() => {
+      quitConfirmTimer = null
+      sendQuitToast(false)
+    }, 2000)
+  }
+}
 
 // Cmd+Q 退出确认：若渲染进程未及时回复终端数量，避免主窗口 close 永久被 preventDefault 卡住
 let quitTerminalCountTimer: ReturnType<typeof setTimeout> | null = null
@@ -625,14 +662,15 @@ async function initKnowledgeService(): Promise<void> {
       // 这是前端进度条出现的统一入口——indexCleared 只覆盖维度变化一种情况，
       // 数据损坏/BM25 缺失场景此前没有触发 upgrading 导致用户感觉 UI 纯卡住。
       knowledgeService.on('rebuildStarted', (
-        { total, reason, cause }:
-        { total: number; reason: string; cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing' }
+        { total, libraryTotal, reason, cause }:
+        { total: number; libraryTotal?: number; reason: string; cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing' }
       ) => {
-        log.info(`知识库开始重建: reason=${reason}, cause=${cause || 'missing'}, total=${total}`)
+        log.info(`知识库开始重建: reason=${reason}, cause=${cause || 'missing'}, total=${total}, libraryTotal=${libraryTotal ?? 'n/a'}`)
         mainWindow?.webContents.send('knowledge:upgrading', {
           reason,
           cause: cause || 'missing',
-          total
+          total,
+          libraryTotal,
         })
       })
 
@@ -821,6 +859,9 @@ function setupWindowServices() {
   gatewayService.setMainWindow(mainWindow)
   imService.setMainWindow(mainWindow)
   menuService.setMainWindow(mainWindow)
+  if (process.platform === 'darwin') {
+    menuService.setQuitHandler(handleQuitAttempt)
+  }
   attentionService.setMainWindow(mainWindow)
   getBrowserBridgeService().setMainWindow(mainWindow)
   // macOS 一次性触发通知权限请求，让 dock badge 在打包版上能正常显示
@@ -838,7 +879,12 @@ function setupWindowServices() {
 /**
  * 退出时清理所有后端服务和连接
  */
+let shuttingDown = false
+let cleanupPromise: Promise<void> | null = null
+
 async function cleanupAllServices(): Promise<void> {
+  if (cleanupPromise) return cleanupPromise
+  cleanupPromise = (async () => {
   watchService.stop()
   sensorService.stop().catch(() => {})
   schedulerService.stop()
@@ -862,12 +908,58 @@ async function cleanupAllServices(): Promise<void> {
   // 避免被 OS SIGTERM 收尸时正好打断 LanceDB transaction / ORT session
   // 释放，留下 "manifest 已落盘但 .lance 数据文件未落盘" 的损坏状态
   // （曾导致 hybridSearch 整天反复报 LanceError(IO): Not found: …lance）。
-  // 给 worker 最多 800ms 优雅退出预算。
+  // 给 worker 最多 3s 优雅退出预算（含 LanceDB compact + embedding dispose）。
   try {
-    await knowledgeService?.disposeAsync(800)
+    await knowledgeService?.disposeAsync(3000)
   } catch (e) {
     log.warn('Knowledge dispose 失败:', e)
   }
+  })()
+  return cleanupPromise
+}
+
+/** dev Ctrl+C / 系统 SIGTERM 时尽量优雅收尾，避免 LanceDB transaction 半截退出 */
+function registerGracefulShutdownSignals(): void {
+  const shutdown = (signal: string) => {
+    if (shuttingDown) return
+    shuttingDown = true
+    log.info(`收到 ${signal}，正在优雅关闭后端服务...`)
+    forceQuit = true
+    isQuitting = true
+    cleanupAllServices()
+      .catch(err => log.warn('优雅关闭失败:', err))
+      .finally(() => {
+        if (app.isReady()) {
+          app.quit()
+        } else {
+          process.exit(0)
+        }
+      })
+  }
+  process.on('SIGINT', () => shutdown('SIGINT'))
+  process.on('SIGTERM', () => shutdown('SIGTERM'))
+}
+
+/**
+ * dev 主进程热重载：vite-plugin-electron 默认 treeKillSync 先杀 LanceDB worker，
+ * 容易在 table.add / compact 半截时留下损坏的 .lance 文件。
+ * 在 vite 重启 Electron 前先收 graceful-shutdown，跑完 disposeAsync 再退出。
+ */
+function registerDevHotReloadGracefulShutdown(): void {
+  if (!process.env.VITE_DEV_SERVER_URL) return
+  process.on('message', (msg: unknown) => {
+    const type = typeof msg === 'object' && msg !== null && 'type' in msg
+      ? (msg as { type?: string }).type
+      : undefined
+    if (type !== 'graceful-shutdown') return
+    if (shuttingDown) return
+    shuttingDown = true
+    forceQuit = true
+    log.info('dev 热重载：收到 graceful-shutdown，正在释放知识库 worker...')
+    cleanupAllServices()
+      .catch(err => log.warn('dev graceful-shutdown 失败:', err))
+      .finally(() => process.exit(0))
+  })
 }
 
 // ==================== 主窗口 ====================
@@ -955,10 +1047,12 @@ function createWindow() {
     }
     ipcMain.removeListener('app:mounted', onAppMounted)
     splitPaneBridge.detachWindow()
+    workbenchBridge.detachWindow()
   })
 
-  // 分屏反向 IPC 桥接：让 Agent 工具可以从主进程触发渲染进程的分屏 store 操作
+  // 分屏 / 工作台反向 IPC 桥接
   splitPaneBridge.init(mainWindow)
+  workbenchBridge.init(mainWindow)
 
   // Windows 上窗口获得焦点时，确保 webContents 也获得键盘输入路由
   // 防止 setAlwaysOnTop 切换或通知交互后出现"窗口在前台但无法输入"的僵死状态
@@ -1196,6 +1290,8 @@ function createAiDebugWindow(): void {
 // 应用准备就绪
 app.whenReady().then(async () => {
   log.info(`[startup] app.whenReady fired (+${Date.now() - APP_START_TIME}ms)`)
+
+  ensureAgentWorkspaceDirs()
 
   // 数据目录迁移：必须在创建窗口、初始化 sensor/watch/agent 等一切重活之前执行。
   // 此刻源目录无任何运行时写入，复制数据保证一致；完成后会自动重启。
@@ -1540,7 +1636,6 @@ app.whenReady().then(async () => {
       // AppLifecycleSensor.start() 是同步的，在 sensorService.start() 的 for 循环中已完成
       // 不能放在 .then() 里，因为 EmailSensor 的 IDLE 循环会阻塞 Promise.allSettled
       sensorService.appLifecycle.notifyAppStarted()
-      bondService.recalculate()
 
       // 觉醒模式：确保内置「唤醒」关切存在
       if (awakened) {
@@ -1692,9 +1787,24 @@ app.whenReady().then(async () => {
 
 // 处理 Cmd+Q / 托盘退出
 app.on('before-quit', (event) => {
+  // 清理 macOS 防误触等待状态（托盘/Dock 退出时直接进入此流程）
+  const hadPendingTimer = !!quitConfirmTimer
+  if (quitConfirmTimer) {
+    clearTimeout(quitConfirmTimer)
+    quitConfirmTimer = null
+    sendQuitToast(false)
+  }
+
   isQuitting = true
 
   if (forceQuit) {
+    return
+  }
+
+  // 用户已看过防误触提示（Cmd+Q 首次按下），此时托盘/Dock 再次退出视为明确确认
+  // 跳过终端计数对话框，直接退出
+  if (hadPendingTimer) {
+    forceQuit = true
     return
   }
   
@@ -2564,8 +2674,8 @@ ipcMain.handle('updater:quitAndInstall', async () => {
     const version = app.getVersion()
     createBackup(app.getPath('userData'), `pre-update-v${version}`)
 
-    // 使用非静默安装，让系统安装器显示可见进度
-    autoUpdater.quitAndInstall(false, true)
+    // Windows：静默安装（与「退出时安装」一致），跳过 NSIS 安装模式选择页；initMultiUser 从注册表沿用 per-user/per-machine
+    autoUpdater.quitAndInstall(process.platform === 'win32', true)
     return { success: true }
   } catch (error) {
     log.error('AutoUpdater: 安装更新失败:', error)
@@ -3277,10 +3387,17 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
       })
     },
     onComplete: (agentId: string, result: string, pendingUserMessages?: string[]) => {
+      const newBondMilestones = sensorService.appLifecycle.notifyConversationCompleted()
       if (!event.sender.isDestroyed()) {
-        event.sender.send('agent:complete', { agentId, ptyId, result, pendingUserMessages })
+        event.sender.send('agent:complete', {
+          agentId,
+          ptyId,
+          result,
+          pendingUserMessages,
+          newBondMilestones,
+          bondMetrics: bondService.calculate(),
+        })
       }
-      sensorService.appLifecycle.notifyConversationCompleted()
       attentionService.request()
     },
     onError: (agentId: string, error: string) => {
@@ -3391,6 +3508,7 @@ ipcMain.handle('agent:fork', async (_event, opts: {
   untilTaskCount?: number
   targetMode?: 'assistant'
   titleSuffix?: string
+  sourceSessionId?: string
 }) => {
   return await agentService.forkAgent(opts)
 })
@@ -3473,11 +3591,18 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
       })
     },
     onComplete: (_runId: string, result: string, pendingUserMessages?: string[]) => {
+      const newBondMilestones = sensorService.appLifecycle.notifyConversationCompleted()
       if (!event.sender.isDestroyed()) {
-        event.sender.send('agent:complete', { agentId, ptyId: agentId, result, pendingUserMessages })
+        event.sender.send('agent:complete', {
+          agentId,
+          ptyId: agentId,
+          result,
+          pendingUserMessages,
+          newBondMilestones,
+          bondMetrics: bondService.calculate(),
+        })
       }
       if (isRemote) wcs.onAgentComplete(result)
-      sensorService.appLifecycle.notifyConversationCompleted()
       // 远程会话由 Web 端用户在用，桌面用户没参与，不应打扰
       if (!isRemote) attentionService.request()
     },
@@ -3928,14 +4053,20 @@ ipcMain.handle('history:saveAgentRecord', async (_event, record: AgentRecord) =>
   historyService.saveAgentRecord(record)
 })
 
+// 保存（更新）产出物面板清单
+ipcMain.handle('history:saveArtifacts', async (_event, recordId: string, artifacts: AgentRecord['artifacts']) => {
+  historyService.saveArtifacts(recordId, artifacts ?? [])
+})
+
 // 获取 Agent 记录
 ipcMain.handle('history:getAgentRecords', async (_event, startDate?: string, endDate?: string) => {
   return historyService.getAgentRecords(startDate, endDate)
 })
 
 ipcMain.handle('history:getRecentAgentRecords', async (_event, limit?: number, excludeWakeup?: boolean) => {
+  // watch 内心独白已存独立索引、不在主索引中；结构化按 agentKey 防御过滤（取代旧 userTask 关键词匹配）
   const filter = excludeWakeup
-    ? (r: AgentRecord) => !(r.userTask.startsWith('[当前时间：') && r.userTask.includes('触发事件'))
+    ? (r: AgentRecord) => r.agentKey !== '__watch__'
     : undefined
   return historyService.getRecentAgentRecords(limit ?? 5, filter)
 })
@@ -3957,8 +4088,9 @@ ipcMain.handle(
       titleOnly?: boolean
     }
   ) => {
+    // watch 内心独白已存独立索引、不在主索引中；结构化按 agentKey 防御过滤（取代旧 userTask 关键词匹配）
     const filter = options.excludeWakeup
-      ? (r: AgentRecord) => !(r.userTask.startsWith('[当前时间：') && r.userTask.includes('触发事件'))
+      ? (r: AgentRecord) => r.agentKey !== '__watch__'
       : undefined
     return await historyService.searchAgentRecordsAdvanced({
       keyword: options.keyword,
@@ -3974,6 +4106,11 @@ ipcMain.handle(
 // 按 ID 获取单条 Agent 记录（用于 Watch 执行详情查看）
 ipcMain.handle('history:getAgentRecordById', async (_event, id: string) => {
   return historyService.getAgentRecordById(id)
+})
+
+// 取某 agentKey 最近 N 条完整会话记录（联络常驻 tab 重启后合并恢复历史对话）
+ipcMain.handle('history:getRecentByAgentKey', async (_event, agentKey: string, limit?: number) => {
+  return historyService.getRecentRecordsByAgentKey(agentKey, limit ?? 10)
 })
 
 ipcMain.handle('history:deleteAgentRecord', async (_event, id: string) => {
@@ -4308,6 +4445,13 @@ ipcMain.handle('document:getSupportedTypes', async () => {
   return documentParserService.getSupportedTypes()
 })
 
+// ==================== PPT 预览修复（历史 HTML 去 CDN + 内联 echarts） ====================
+
+ipcMain.handle('ppt:sanitizePreview', async (_event, html: unknown) => {
+  const { sanitizePreviewHtml } = await import('./services/agent/skills/ppt/preview')
+  return sanitizePreviewHtml(typeof html === 'string' ? html : '')
+})
+
 // ==================== 本地文件系统相关 ====================
 
 // 获取主目录
@@ -4447,6 +4591,20 @@ ipcMain.handle('localFs:readFile', async (_event, filePath: string) => {
       success: false, 
       error: errMsg(error, 'error.readFileFailed') 
     }
+  }
+})
+
+// 产出物预览重建（Word/Excel/md/html 从磁盘再生 HTML/文本）
+ipcMain.handle('localFs:previewArtifact', async (_event, filePath: string, renderer: string) => {
+  try {
+    const { tryPreviewArtifactFromFile } = await import('./services/artifact-preview.service')
+    const data = await tryPreviewArtifactFromFile(filePath, renderer as import('@shared/types').CanvasRendererType)
+    if (data == null) {
+      return { success: false, error: 'Preview generation failed' }
+    }
+    return { success: true, data }
+  } catch (error) {
+    return { success: false, error: errMsg(error, 'error.readFileFailed') }
   }
 })
 

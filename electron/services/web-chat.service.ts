@@ -73,7 +73,10 @@ export type WebChatEventListener = (event: any) => void
 
 export class WebChatService {
   private deps: WebChatDependencies | null = null
+  /** 内部 Agent 执行 ID（每次 clearHistory 更新），保证多次 Web 会话隔离 */
   private agentId: string = `remote-agent-${uuidv4()}`
+  /** 前端 IPC 目标 agentId — 固定路由到联络常驻 tab */
+  private static readonly DESKTOP_AGENT_ID = '__companion__'
   private _isRunning = false
   private history: ChatMessage[] = []
   private _pendingConfirm: any | null = null
@@ -138,8 +141,8 @@ export class WebChatService {
     if (!this._tabCreated) {
       this._tabCreated = true
       this.sendToDesktop('gateway:remoteTabCreated', {
-        agentId: this.agentId,
-        title: '📡 远程对话'
+        agentId: WebChatService.DESKTOP_AGENT_ID,
+        title: '远程对话'
       })
     }
   }
@@ -184,7 +187,7 @@ export class WebChatService {
 
     // 通知前端显示任务开始（前端仅设置 running 状态，不驱动执行）
     this.sendToDesktop('gateway:remoteTaskStarted', {
-      agentId: this.agentId,
+      agentId: WebChatService.DESKTOP_AGENT_ID,
       message: message.trim(),
       remoteChannel: remoteChannelValue
     })
@@ -204,13 +207,13 @@ export class WebChatService {
       onStep: (_runId: string, step: any) => {
         this.onAgentStep(step)
         this.sendToDesktop('agent:step', {
-          agentId: this.agentId,
+          agentId: WebChatService.DESKTOP_AGENT_ID,
           step: JSON.parse(JSON.stringify(step))
         })
       },
       onNeedConfirm: (confirmation: any) => {
         this.sendToDesktop('agent:needConfirm', {
-          agentId: this.agentId,
+          agentId: WebChatService.DESKTOP_AGENT_ID,
           toolCallId: confirmation.toolCallId,
           toolName: confirmation.toolName,
           toolArgs: JSON.parse(JSON.stringify(confirmation.toolArgs)),
@@ -220,11 +223,11 @@ export class WebChatService {
       },
       onComplete: (_runId: string, result: string, pendingUserMessages?: string[]) => {
         this.onAgentComplete(result)
-        this.sendToDesktop('agent:complete', { agentId: this.agentId, result, pendingUserMessages })
+        this.sendToDesktop('agent:complete', { agentId: WebChatService.DESKTOP_AGENT_ID, result, pendingUserMessages })
       },
       onError: (_runId: string, error: string) => {
         this.onAgentError(error)
-        this.sendToDesktop('agent:error', { agentId: this.agentId, error })
+        this.sendToDesktop('agent:error', { agentId: WebChatService.DESKTOP_AGENT_ID, error })
       }
     }
 
@@ -248,7 +251,7 @@ export class WebChatService {
       const errorMsg = error instanceof Error ? error.message : String(error)
       if (this._isRunning) {
         this.onAgentError(errorMsg)
-        this.sendToDesktop('agent:error', { agentId: this.agentId, error: errorMsg })
+        this.sendToDesktop('agent:error', { agentId: WebChatService.DESKTOP_AGENT_ID, error: errorMsg })
       }
     }
   }

@@ -12,6 +12,7 @@ console.log('==================================================')
 console.log()
 
 const scripts = [
+  'download-embedding-model.js',
   'download-speech-model.js',
   'download-punct-model.js'
 ]

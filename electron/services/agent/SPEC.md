@@ -57,7 +57,16 @@ Agent 实例自身**没有强绑定 ptyId 字段**——每次 `run()` 通过 `c
 
 ### SailFish (`sailfish.ts`) — Agent 实现
 
-继承 Agent，实现具体行为。绑定终端时自动加载 `terminal` 技能，诞生引导时自动加载 `personality` 技能。
+继承 Agent，实现具体行为。`personality` 技能在诞生引导时自动加载。
+
+**终端工具注入**：`execute_command` 等 PTY 终端工具不再通过技能系统加载，而是由 `getAgentTools(mode)` 按 `context.terminalType` 直接注入（`local`/`ssh` 模式）；assistant 模式注入 `exec` 工具。`getAgentMode()` 从 `currentRun?.context?.terminalType` 读取，而非依赖已废弃的 `ptyId` 字段。
+
+**工作台 prompt**：`context.workbenchPrompt` 由前端通过 `resolveWorkbenchAgentPrompt(kind, tab)` 填充：
+- `assistant`：注入产出物面板使用规范（`src/workbench/assistant/prompt.ts`）
+- `local`：注入本地终端操作规范（`src/workbench/local/prompt.ts`）
+- `ssh`：注入 SSH 远程终端操作规范（`src/workbench/ssh/prompt.ts`）
+
+**`<sf_workbench>` 标签**：`enhanceUserMessage` 在每条用户消息前注入 `<sf_workbench>{terminalType}</sf_workbench>`，让 AI 在多工作台对话历史中能识别每条消息的运行环境。
 
 ## 执行流程
 
@@ -125,16 +134,30 @@ run(message, context, options)
 
 ### 持久命名 Agent vs 普通 tab Agent（`restoreFromHistory` fallback 边界）
 
-`restoreFromHistory` 在 sessionId 找不到 record 时分两种路径：
+`restoreFromHistory`（仅首次 run、TaskMemory 为空时触发）按 Agent 类型分两条路径：
 
-- **持久命名 Agent**（Companion `__companion__` / Watch `__watch__`）：走 `restoreRecentTaskMemory` fallback——从全局最近 N 条历史提取任务恢复工作记忆。这些 Agent 重启后用 `session_${Date.now()}` 找不到 record，但语义上是「同一个长期 Agent」，必须靠这条 fallback 才能"记得最近聊过什么"
-- **普通 tab Agent**（terminal / SSH / 独立助手）：直接返回，TaskMemory 保持空白。新开 tab 的第一次对话本就是新任务，注入全局历史会让 LLM 误以为是连续对话，沿用历史里的工具名（甚至当前 tab 工具表里没有的工具——例如上次对话用过 chart 技能里的 `candlestick`，新 tab 第一次说"画个图"，AI 会捏造出 `generate_chart` 而不是先 `load skill`），造成 `Unknown tool` 幻觉调用
+- **持久命名 Agent**（Companion `__companion__` / Watch `__watch__`）：**无条件**从最近 N 条历史重建工作记忆（`restoreRecentTaskMemory`），**不**因 sessionId 精确命中而短路。原因：重启后前端传回的 sessionId 只是「最新一条」记录，并非用户主动选择恢复某次会话。若只精确恢复这单条，会丢掉同期其它并行会话（典型：联络分裂成两条 session，「继续」落到只含菜单的那条、写文档的内容在另一条里），造成「前端 `getRecentByAgentKey` 合并展示看得见、但 AI 上下文只有单条记不住」。
+  - 同时仍 `restoreFromSessionRecord(latest)` 恢复「最新单条」的完整会话状态（`_sessionSteps` / `_sessionMessages`），保证后续 checkpoint 续写到这条记录、不覆盖丢历史；`restoreRecentTaskMemory` 用 `excludeId` 排除这条避免重复。
+  - 任务按「最后活跃时间」升序装入（旧在前），保证 `getTasksInOrder` 把刚发生的任务排到 taskIndex 0。
+- **普通 tab Agent**（terminal / SSH / 独立助手）：仅 `getAgentRecordById(sessionId)` 精确恢复用户指定的那次会话；找不到则直接返回、TaskMemory 保持空白。新开 tab 的第一次对话本就是新任务，注入历史会让 LLM 误以为是连续对话，沿用历史里的工具名（甚至当前 tab 工具表里没有的工具——例如上次用过 chart 技能里的 `candlestick`，新 tab 第一次说"画个图"，AI 会捏造出 `generate_chart` 而不是先 `load skill`），造成 `Unknown tool` 幻觉调用。
 
-**关于 Companion fallback 的"跨 Agent"语义**：`restoreRecentTaskMemory` 取的是**全局**最近 N 条 `AgentRecord`，不区分这些记录原本属于哪个 Agent / 哪个 tab。这是有意设计，不是 bug：Companion 是用户的"贴身助手"，肩负主动通知（proactive message）、IM 推送、桌面唤起等任务，需要随时能在通知里参考用户「最近在做什么」——无论用户是在哪个终端 tab 操作、还是和独立助手聊天，最近的活动都应作为 Companion 的工作记忆。Watch Agent 同理（关切的执行决策也常常需要参考最近上下文）。如果未来某些命名 Agent 不希望"跨 Agent 借记忆"，应在该 Agent 自身加过滤逻辑，而非改这条全局 fallback。
+**关于持久命名 Agent 的"跨 Agent"语义**：`restoreRecentTaskMemory` 取**全局**最近 N 条 `AgentRecord`（不区分原属哪个 Agent / tab），但**排除 wakeup「内心独白」记录**（`userTask` 以 `[当前时间：` 开头且含 `触发事件`）。全局借记忆是有意设计：Companion 是"贴身助手"，肩负主动通知、IM 推送、桌面唤起，需要随时参考用户「最近在做什么」，无论用户在哪个 tab 操作。排除 wakeup 是因为 Watch 的自我循环唤醒只是内心独白噪声、不应被借作工作记忆（否则会把一堆 `[当前时间…触发事件]` 当成"最近活动"，且 Watch 心跳量极大会挤掉真正的用户活动）。
+
+> **装载量与预算**：`restoreRecentTaskMemory` 从宽装载（最多 6 条记录 / 40 个任务进 TaskMemory，仅防内存膨胀）；真正进上下文的量由 `buildTaskHistoryContext` 按 token 预算动态裁剪（Level 0→4 渐进降级、预算用尽即停），装多少都不会撑爆上下文。
+
+### sessionId 回种：防止 Companion「裂成两条 session」
+
+Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，但它的 sessionId 此前是「谁先碰谁定」：
+
+- IM / Gateway / 主动消息等入口 `runAssistant('__companion__', ...)` 时 **context 不带 sessionId**；重启后若它们在桌面 tab 把 sessionId 写回后端单例之前先碰到 companion（此时 `_sessionId` 还空），`run()` 旧逻辑会新起一条 `session_${Date.now()}` ——建出与历史**断链的并行记录**，这就是「联络裂成两条 session」的源头。
+- **修复**：`run()` 在 `!_sessionId && !context.sessionId` 且 `_persistentNamedAgent` 时，从 `getLatestRecordByAgentKey(agentId)` **回种** sessionId/startTime，让所有入口续写到同一条会话。
+- **抑制位 `_suppressSessionSeed`**：`startNewSession()`（Watch 每次执行要独立记录）/ `resetSession()`（用户「清空对话」要全新会话）会置位，使下一次 run **跳过回种**、生成全新 session。consume 后自动清零。这样 Watch 的「每次独立记录」与 Companion 的「连续会话」都成立。
+
+> **配套（前端）**：`mergeCompanionRecords`（`useAgentMode.ts`）合并展示多条 companion 记录时，`id` 与 `timestamp` 必须**成对取最新一条**。旧版「id 取最新、timestamp 取最早」会经 `restoreAgentHistory` 写成错配的 `sessionId/sessionStartTime`，导致 checkpoint 把记录存成「id 最新、timestamp 最早」——是分裂的放大器（两条记录 timestamp 撞成一样）。
 
 **实现**：`Agent._persistentNamedAgent: boolean`（默认 false）。`AgentService.createAssistantAgent(agentId)` 内部根据 `agentId === COMPANION_AGENT_ID || WATCH_AGENT_ID` 自动调 `markAsPersistentNamed()`——调用方（IM service / Watch service）无需感知。`getOrCreateAgent`（终端 Agent）和 createAssistantAgent 的非命名分支默认就是 false。
 
-**回归保护**：`__tests__/agent.test.ts` 的 "should NOT restore global recent history for normal agent when sessionId record missing" 与 "should restore global recent history for persistent named agent ..." 两条用例锁定了边界。新增类似的固定 ID Agent 时记得在 `isPersistentNamedAgentId` 里登记。
+**回归保护**：`__tests__/agent.test.ts` 五条用例锁定边界——① "should NOT restore global recent history for normal agent ..."（普通 tab 不借历史）；② "should restore global recent history for persistent named agent when sessionId record missing"（命名 Agent 找不到 record 时借历史）；③ "should merge recent records into memory for persistent named agent even when sessionId record is found"（命名 Agent 即便精确命中 latest 也合并最近多条）；④ "should seed sessionId from latest record ... when context has no sessionId"（无 sessionId 入口回种、防分裂）；⑤ "should NOT seed sessionId after startNewSession (suppressed) ..."（Watch/清空对话 抑制回种）。新增类似的固定 ID Agent 时记得在 `isPersistentNamedAgentId` 里登记。
 
 ## 工具元数据驱动模型（核心 OOP 边界承诺）
 
@@ -172,7 +195,7 @@ run(message, context, options)
 
 以下文件构成 Agent 抽象层 / 跨工具横切关注点，**禁止包含具体工具名字符串字面量**：
 
-- `agent.ts`、`streaming-tool-executor.ts`、`tool-result-budget.ts`、`task-memory.ts`、`context-builder.ts`、`tool-metadata.ts`
+- `agent.ts`、`streaming-tool-executor.ts`、`tool-result-budget.ts`、`tool-output-budget.ts`、`task-memory.ts`、`context-builder.ts`、`tool-metadata.ts`
 
 ### 机械护栏
 
@@ -190,6 +213,16 @@ run(message, context, options)
 4. 默认更激进等于更省 token，符合上下文预算的整体目标
 
 如果有插件作者希望给自己的工具默认改回保护语义，请在 ToolDefinition 上显式声明，不要修改本节的默认值。
+
+### 工具 output 预算（`tool-output-budget.ts`）
+
+与 `tool-result-budget.ts`（清理**旧** tool 消息）互补：在工具结果**写入 `run.messages` 前**，按模型 `contextLength` 与当前已用量计算单次 output 字符/行上限，防止「最后一读把窗口撑爆」。
+
+- **计算**：`computeToolOutputBudget({ contextLength, currentTokens })` → `{ maxChars, maxLines, critical, usagePercent }`；档位上限 × 压力系数（70%/85%）与 `remaining − reserve` 取 min；reserve 为窗口 15%（最少 4K token）。
+- **注入**：`ToolExecutorConfig.getToolOutputBudget` 由 `agent.ts` 在 `createToolExecutorConfig` 提供；子 Agent 继承父配置。
+- **并行 batch**：`executeToolBatchParallel` 与流式预执行 `StreamingToolExecutor` 均通过 `applyParallelShare(budget, N)` 分摊预算，避免 N 个只读工具各拿满额。
+- **消费方（v1）**：`tools/file.ts` 的 `read_file` / 文档解析结果在返回前按预算截断；`maxChars ≤ 0` 时仅返回摘要与 `compress_context` 指引。
+- **后续**：`exec` 等只读工具可复用同一预算函数。
 
 ### 历史教训
 
@@ -211,7 +244,7 @@ run(message, context, options)
 |---|---|---|
 | 子 Agent 通用前缀（前 7 个） | `exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search, web_fetch` | `read` 类型子 Agent 工具列表 = 此段 |
 | `write` 类型追加（前 8-9 个） | `edit_file, write_text_file` | `write` 类型子 Agent 工具列表 = 上一段 + 此段 |
-| 父 Agent 专用尾部 | `write_remote_text_file, sftp_put, sftp_get, remember_info, ask_user, plan, skill, load_user_skill, recall, search_history, dispatch_agents, talk_to_user` | 仅父 Agent 可见；`write_remote_text_file` 仅 SSH 模式；`sftp_put/sftp_get` local+ssh 模式（local tab 通过 pane_id 指 SSH 窗格） |
+| 父 Agent 专用尾部 | `write_remote_text_file, sftp_put, sftp_get, ask_user, plan, skill, load_user_skill, recall, search_history, dispatch_agents, talk_to_user` | 仅父 Agent 可见；`write_remote_text_file` 仅 SSH 模式；`sftp_put/sftp_get` local+ssh 模式（local tab 通过 pane_id 指 SSH 窗格） |
 
 **保持前缀连续的红线**：
 
@@ -267,7 +300,7 @@ run(message, context, options)
 
 **byte-exact 一致性**：同一父 Agent 内所有子 Agent 共享相同 `context` / `aiRules` / `hostProfileService`，因此 system prompt 跨子 Agent byte-exact 一致；工具 schema 因为顺序约定（见「工具列表顺序约定」一节）天然共享前缀。两者都让 Anthropic/DeepSeek/OpenAI 的前缀缓存正常命中。
 
-**工具列表**：子 Agent 看到的是按类型白名单过滤后的工具列表（**不是父 Agent 的完整工具列表**）。父 Agent 专属工具（`dispatch_agents` / `talk_to_user` / `plan` / `ask_user` / `remember_info` 等）对子 Agent 完全不可见。
+**工具列表**：子 Agent 看到的是按类型白名单过滤后的工具列表（**不是父 Agent 的完整工具列表**）。父 Agent 专属工具（`dispatch_agents` / `talk_to_user` / `plan` / `ask_user` / `skill` / `load_user_skill` 等）对子 Agent 完全不可见。父 Agent 的系统提示与 `dispatch_agents` 工具描述会明确告知：依赖技能的子任务（browser/excel/email 等）不得分派给子 Agent。
 
 **Agent 类型系统**：
 
@@ -301,6 +334,8 @@ run(message, context, options)
 
 **流程**：`executeStep` 创建 `StreamingToolExecutor` → 传入 `callAiWithStreaming` → AI 流式输出中 `onToolCallReady` 回调触发 `addTool()` → 流结束后 `executeToolCallsWithStreaming` 收集预执行结果 + 执行剩余工具
 
+**Output 预算分摊**：启动只读工具时，在将工具标为 `executing` 之前调用 `computeOutputBudgetShare(starting)`：已 executing 的同伴 + 受 `maxConcurrency` 限制的 queued 槽位，避免把尚未启动的排队工具或超限并发算进 share。经 `executeFn({ parallelShare })` 交给 Agent 的 `withParallelToolOutputBudget`。同一 event-loop tick 内连续 `addTool` 会合并到一次 `processQueue`（`queueMicrotask`），避免第一个 read 在后续 read 到达前就拿满额预算。
+
 **安全约束**：重试（onRetry）和截断（finish_reason=length）时会 abort 执行器；幻觉工具在执行器内部检测并拒绝；结果按原始 tool_calls 顺序写入消息历史。
 
 ### 工具执行透明原则（UX 承诺）
@@ -324,8 +359,8 @@ run(message, context, options)
 **`debugMode` 与持久化解耦**：`debugMode` 只是 **UI 渲染层** 的呈现开关，**不影响后端是否 emit step、不影响是否写入会话历史**。
 
 - 后端永远 emit 完整 step（tool_call + tool_result），永远写入 `run.steps` → `saveCheckpoint` / `finalizeRun` → `HistoryService` 持久化
-- `success`、`subAgents`、`echartsOption`（chart skill 投递的活图 ECharts option，类型见 `shared/types/agent.ts::EChartsStepPayload`）等富内容字段都必须随 `AgentStepRecord` 一起持久化（见 `shared/types/history.ts`），否则历史详情面板无法判定"失败步骤始终显示" / 历史里的图无法恢复成活图
-- 前端 `src/utils/tool-display.ts` 的 `shouldShowToolResultStep` 才是 UX 决策点（覆盖 `tool_call` 与 `tool_result` 两类）：非调试模式下隐藏"成功且无用户必看产出"的信息检索 / 命令类工具结果（如 `read_file`、`execute_command`）；用专用 step type 呈现的工具（`TOOLS_WITH_DEDICATED_STEP_TYPE`，如 `plan`）连其 `tool_call` 通告卡也一并隐藏，避免和专用卡重复；失败 / 写入类 / 携带 `images`/`echartsOption`/`webSearchResults`/`subAgents` 的步骤永远展示
+- `success`、`subAgents`、`echartsOption`（chart skill 投递的活图 ECharts option，类型见 `shared/types/agent.ts::EChartsStepPayload`）、`canvasData`（Artifact 面板，类型见 `shared/types/canvas.ts`）等富内容字段都必须随 `AgentStepRecord` 一起持久化（见 `shared/types/history.ts`），否则历史详情面板无法判定"失败步骤始终显示" / 历史里的图无法恢复成活图 / 重开历史时 Artifact 面板为空
+- 前端 `src/utils/tool-display.ts` 的 `shouldShowToolResultStep` 才是 UX 决策点（覆盖 `tool_call` 与 `tool_result` 两类）：非调试模式下**成功的 tool_result 默认隐藏**（tool_call 绿条已表达结果）；仅 `ALWAYS_SHOW_RESULT_TOOLS` 例外；用专用 step type 呈现的工具（`TOOLS_WITH_DEDICATED_STEP_TYPE`，如 `plan`）连其 `tool_call` 通告卡也一并隐藏；失败 / 携带 `images`/`echartsOption`/`webSearchResults`/`subAgents` 的步骤永远展示
 - 反例（已修复）：曾在 `tools/exec.ts` / `tools/command.ts` / `tools/terminal.ts` / `tools/misc.ts` 里写过 `if (config.debugMode) executor.addStep({type:'tool_result', ...})`——这导致非调试模式下命令输出**整条 step 都没产生**，既不进 messages、也不进会话历史，事后开调试模式也找不回来。这种耦合是错误的，新增工具时不要重蹈覆辙。
 
 **为什么重要**：用户读 Agent 输出的常见心智是「Agent 当前在干什么」。任何静默执行（卡片只在结束后才出现）都会让用户误以为 Agent 卡住，或对 AI 的实际行为缺乏控制感。这条原则是「不让用户怀疑 Agent 是否还活着」的最基本保障。同时，把"是否展示"与"是否记录"分离，保证调试时能回看任何过去发生过的工具执行。
@@ -379,11 +414,12 @@ run(message, context, options)
 
 **承诺**：`useAgentMode` 内挂 `ResizeObserver` 直接监听 DynamicScroller 的内容容器 `.vue-recycle-scroller__item-wrapper` 自身高度变化。该 wrapper 高度即虚拟列表的 totalSize；ResizeObserver 回调时机在 layout 之后、paint 之前，那一刻把 `scrollTop` 钉到最新 `scrollHeight`，浏览器同帧合成出来的画面已经是贴底状态。
 
-- **触发条件**：`isUserNearBottom === true`（用户视觉处于底部）或 `skipScrollUpdate` 期间（强制贴底窗口内）；用户主动滚走后 `isUserNearBottom = false`，ResizeObserver 不会越权强行贴底
+- **触发条件**：`stickyFollowBottom`（用户发消息/点新消息后主动跟底）或 `isUserNearBottom === true`（用户视觉处于底部）；**不可**单独用 `skipScrollUpdate` 触发贴底（grace 窗口内用户拖滚动条上滚会漏判）。用户上滚（wheel、拖滚动条离底、或显著 scrollTop 减小）后清除跟底粘性并取消 FLIP，`ResizeObserver` 不会越权强行贴底
 - **失败案例（修复前）**：`doScrollIfNeeded` 仅在 `nextTick` 后调一次 `scrollTop = scrollHeight`，但 DynamicScroller 的 totalSize 是 item 的 ResizeObserver 异步上报的，nextTick 时 totalSize 还是旧值，于是滚到的是"旧底"；浏览器 paint 出新内容、半行裸露在视区底外，下一波 chunk 才补上去
 - **修复（commit `274a2386`）**：在 `useAgentMode` 内 `installContentResizeObserver` 直接观察 wrapper 高度；`doScrollIfNeeded` 等粗粒度滚动入口保留，作为新 step 加入瞬间的初始贴底兜底
 - **回归保护**：禁止把 ResizeObserver 改成基于 step.content 长度等内容驱动的判断（脆弱，且重新引入"vue-virtual-scroller 内部 size 测量异步"的根本问题）；禁止改成 setTimeout/setInterval 轮询（错过 paint 窗口）
-- **`skipScrollUpdate` 语义陷阱**：该标志同时承担两件事——① 屏蔽强制贴底窗口内的 scroll 事件以免覆盖 `isUserNearBottom`；② 告诉 ResizeObserver "现在请跟随尺寸变化贴底"。**任何"决定不滚"的分支都不得置位 `skipScrollUpdate`**，否则用户向上滚阅读时，新 step 引发的 ResizeObserver 回调会被误解读为"请跟随贴底"，把用户从阅读位拽回最底（曾经的回归 bug）。`doScrollIfNeeded` 必须把 `skipScrollUpdate = true / setTimeout(... = false)` 收进 `if (isUserNearBottom)` 分支内
+- **`skipScrollUpdate` 语义陷阱**：该标志同时承担两件事——① 屏蔽强制贴底窗口内的 scroll 事件以免覆盖 `isUserNearBottom`；② 告诉 ResizeObserver "现在请跟随尺寸变化贴底"。**任何"决定不滚"的分支都不得置位 `skipScrollUpdate`**，否则用户向上滚阅读时，新 step 引发的 ResizeObserver 回调会被误解读为"请跟随贴底"，把用户从阅读位拽回最底（曾经的回归 bug）。`doScrollIfNeeded` 必须把 `extendScrollGrace()` 收进 `if (shouldFollowBottom())` 分支内
+- **`stickyFollowBottom` 跟底粘性**：虚拟列表 `scrollHeight` 异步修正时，ResizeObserver 程序化贴底触发的 scroll 事件会短暂误判「不在底部」，导致 `isUserNearBottom` 抖动、`hasNewMessage` 闪烁、跟底中断。发消息 / 点「新消息」后设 `stickyFollowBottom = true`，ResizeObserver 贴底后走 `guardAfterAutoScroll()`（150ms grace）；用户 wheel 上滚或显著上拖才清除粘性
 
 #### FLIP 平滑滑动（视觉层叠加）
 

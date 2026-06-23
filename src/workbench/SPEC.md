@@ -1,72 +1,75 @@
-# Workbench（工作台）子系统 SPEC
+# 工作台（Workbench）体系 SPEC
 
-> Last verified: 2026-06-09
+> Last verified: 2026-06-23
+> 范围：`src/workbench/`（体系类型、注册、prompt 解析）+ `src/components/workbench/`（渲染组件）。
+> 单个工作台的契约见各自子目录的 SPEC（assistant 见 `assistant/HUB_SPEC.md` + `assistant/artifact/SPEC.md`；联络见 `companion/SPEC.md`）。
 
-## 职责
+---
 
-把前端「一个 Tab 的界面形态」抽象为**工作台（Workbench）**：一种工作台 = 一组具名区域的固定组合 + 一套（可选的）专用工具贡献。终端、独立助手都是工作台；未来的浏览器工作台等按同一模型扩充。
+## 一、心智模型
 
-核心目标：**新增工作台时无需改动 `App.vue` 的渲染分发逻辑**，只在 registry 登记 + 提供渲染器即可。
+- **一个 Tab = 一个工作台实例**。工作台 = 一个常驻**锚点区** + 若干可显隐的**辅助区**，区域间可拖分隔条调比例。
+- **工作台类型 ≠ 终端类型**。`WorkbenchKind` 是 `TerminalType`（`local`/`ssh`/`assistant`）的**超集**：同一 `tab.type='assistant'` 可以映射到不同工作台（如普通助手 `assistant` vs 联络 `companion`）。这就是为什么需要一个 `tab → kind` 映射函数，而不能直接拿 `tab.type` 当工作台类型。
+- **渲染两种方式**（见 `types.ts`）：
+  - **renderer（逃生口）**：工作台有特殊 chrome 时给一个专属组件，直接渲染整个工作台。当前所有内置工作台都走这条。
+  - **regions（声明式）**：无特殊 chrome 时只声明区域，交给通用 `WorkbenchShell` 渲染（预留）。
 
-## 设计原则（不可随意推翻）
+---
 
-- **组合 + 贡献，不是开关 + 枚举**：工作台由区域拼成，不用 `hasFileTree` 之类能力位描述；工具以叠加为主、允许覆盖（核心工具是基线）。
-- **布局是固定模板**：区域只显隐 / 拖比例，不带焦点高亮、不带递归分割。带焦点的递归分屏（`SplitPane`）是**终端 panel 私有**实现，不属于工作台抽象。
-- **后端不受影响**：工作台是纯前端壳概念。后端 Agent 的 `mode`（local/ssh/assistant）与 `tab.type` 不因工作台抽象而改变。
+## 二、核心概念（`types.ts`）
 
-## 公开契约
+| 概念 | 说明 |
+|---|---|
+| `WorkbenchKind` | 工作台类型，`TerminalType \| 'companion'`。registry 的查表 key。 |
+| `WorkbenchDescriptor` | 一种工作台一条：`{ kind, renderer?, regions?, availableInSteam? }`，集中登记在 registry。 |
+| `RegionSpec` | 区域声明（anchor / toggle、左右侧、默认显隐、可否调尺寸），声明式工作台用。 |
 
-### 类型（`src/workbench/types.ts`）
+---
 
-- `WorkbenchKind`：复用 `@shared/types` 的 `TerminalType`，**唯一数据源**，不另立枚举。新增工作台先在 `TerminalType` 扩展。
-- `RegionSpec`：区域声明（`id` / `role: anchor|toggle` / `side` / `defaultVisible` / `resizable`）。当前为声明式工作台预留，内置工作台暂未使用。
-- `WorkbenchDescriptor`：一种工作台一条。字段：`kind`、`renderer?`（自定义渲染器逃生口）、`regions?`（声明式区域）、`availableInSteam?`。
+## 三、两个注入入口（最易漏）
 
-### Registry（`src/workbench/registry.ts`）
+新增工作台**必须**接通这两处，否则只是建了个孤岛：
 
-- `getWorkbenchDescriptor(kind)`：取描述。
-- `resolveWorkbenchRenderer(kind): Component`：查表返回渲染器组件，供 `App.vue` 的 `<component :is>` 分发。Steam 构建下不可用的工作台（如助手）回退到终端渲染器，复刻原 `v-if/v-else` 行为。
+| 入口 | 函数 | 调用点 | 作用 |
+|---|---|---|---|
+| **渲染** | `resolveWorkbenchRenderer(kind)` (`registry.ts`) | `App.vue`（`<component :is>`） | 决定 tab 用哪个组件渲染 |
+| **Prompt** | `resolveWorkbenchAgentPrompt(kind, tab)` (`resolve-workbench-agent-prompt.ts`) | `useAgentMode.ts` | 注入工作台专属 system prompt 片段（→ `AgentContext.workbenchPrompt`，后端 `prompt-builder.ts` 原样透传） |
 
-### 渲染器 props 约定（契约）
+两处调用点都先经 **`resolveWorkbenchKind(tab)`**（`registry.ts`）把 tab 映射成 `WorkbenchKind`——这是"tab → 工作台类型"的**唯一**映射点，所有按身份分流的逻辑都收敛于此，不散落到组件里。
 
-所有工作台渲染器组件统一接收：
+---
 
-```ts
-{ tab: TerminalTab; isActive: boolean }
-```
+## 四、目录约定
 
-`App.vue` 还会绑定 `ref`（写入 `tabViewRefs`）和 `class="tab-view"`。注意：`tabViewRefs` 的命令式方法（`toggleAiPanel` / `ensureAiPanel`）**仅终端渲染器（TerminalTabView）暴露**，调用侧必须先用 `isTerminalTab()` 过滤，否则在助手等实例上调用会 TypeError。
+| 层 | 位置 | 内容 |
+|---|---|---|
+| **逻辑 / 描述符** | `src/workbench/<kind>/` | `descriptor.ts`（注册）+ `prompt.ts`（Agent prompt 片段）+ 子 `SPEC.md` |
+| **渲染组件** | `src/components/workbench/` | `<Kind>Workbench.vue`（与 `WorkbenchShell.vue` 同级） |
 
-### 通用布局外壳（`src/components/workbench/WorkbenchShell.vue`）
+> 终端类工作台（local/ssh）的 renderer 复用 `TerminalTabView`（Terminal 实例 Teleport 保命池所需），不在 `components/workbench/` 下。
 
-「常驻锚点区 + 可显隐辅助区 + 可拖分隔条」布局。具名 slot：`#anchor`（常驻）、`#toggle`（可隐）。props：`toggleVisible` / `toggleRatio`(v-model) / `toggleSide` / `minRatio` / `maxRatio`。无特殊 chrome 的工作台都应基于它组合。
+---
 
-## 如何新增一个工作台（checklist）
+## 五、新增一个工作台 Checklist
 
-1. **扩类型**：`shared/types` 的 `TerminalType` 加新 kind（如 `'browser'`）。
-2. **写渲染器**：
-   - 无特殊 chrome → 写组件组合 `WorkbenchShell`（参考 `AssistantWorkbench.vue`）。
-   - 有特殊 chrome（如终端的 Terminal Teleport 保命池）→ 走 `renderer` 逃生口，提供专属组件。
-3. **登记**：在 `registry.ts` 的 `DESCRIPTORS` 加一条。
-4. **创建入口**：在 terminal store 的建 tab 逻辑与欢迎页/菜单加入口。
-5. **复查历史分支**：搜索现存 `tab.type === 'assistant'` / `'local'` / `'ssh'` 分支，确认新 kind 是否需要兼顾（文件树、Agent 工具集、批量命令等）。
+以新增 `companion` 为例（一种 `tab.type='assistant'` 但外观独立的工作台）：
 
-> 第 1~3 步是工作台模块内成本；第 4~5 步是模块外集成点，是目前抽象尚未完全收敛的部分。
+1. **建目录** `src/workbench/companion/`。
+2. **`descriptor.ts`** — `{ kind: 'companion', renderer: CompanionWorkbench, availableInSteam: false }`。
+3. **`prompt.ts`** — 导出 prompt 片段与注入判据；若无界面能力可注入，让 `resolveWorkbenchAgentPrompt` 对该 kind 返回 `undefined`。
+4. **渲染组件** `src/components/workbench/CompanionWorkbench.vue`。
+5. **注册** `registry.ts`：加入 `DESCRIPTORS`。
+6. **映射**（仅当 `kind ≠ tab.type`）：在 `resolveWorkbenchKind(tab)` 里按稳定身份（如 `agentId === '__companion__'`）返回该 kind。
+7. **prompt 解析** `resolve-workbench-agent-prompt.ts`：处理新 kind 分支。
+8. **导出** `index.ts`：按需 re-export descriptor / prompt 常量。
+9. **测试** `__tests__/prompts.test.ts`：补该 kind 的注入用例。
+10. **文档**：写 `companion/SPEC.md`（指向类型而非复制），必要时同步 `assistant/HUB_SPEC.md`。
 
-## 内置工作台
+---
 
-| kind | 渲染方式 | 锚点区 | 可隐区 |
-|------|---------|--------|--------|
-| `local` / `ssh` | `renderer` = `TerminalTabView`（逃生口，含 Teleport 保命池） | 终端区（内含 SplitPane） | AI 侧栏 |
-| `assistant` | `AssistantWorkbench`（声明式 → WorkbenchShell） | 聊天（AiPanel） | 文档/预览（CanvasPanel，由 canvasStore 驱动显隐） |
+## 六、约定与注意
 
-## 依赖与边界
-
-- 渲染器组件依赖各自的面板组件（`AiPanel` / `CanvasPanel` / `Terminal` 等）与相关 store（`canvasStore` 等）。
-- **不参与**工作台抽象、保持独立的：`SplitPane` 树（终端分屏，`stores/split-pane-tree.ts`）、后端 Agent mode、`tab.type` 的后端语义。
-
-## 尚未做（刻意留白）
-
-- 区域部件（panel）词汇为宿主内置，**不做可扩展/插件化**——按需再说。
-- 声明式 `regions` 尚未由通用壳自动渲染（内置工作台都走 renderer / 手动组合 WorkbenchShell）；待出现「纯声明即可」的工作台时再实现。
-- 区域显隐 / 尺寸状态仍分散（终端在 TerminalTabView 局部 ref，助手在 canvasStore）。后续可归一到 workbench store，届时终端命令式 API 可退化为 store action。
+- **Steam 构建回退**：`availableInSteam: false` 的工作台在 Steam 版回退到 `TerminalTabView`（见 `resolveWorkbenchRenderer`）。助手类（assistant/companion）均为 false。
+- **不要为 tab.type 复制第二套枚举**：`WorkbenchKind` 只在"工作台外观确实独立于终端类型"时才扩展（如 companion），扩展后必须配套 `resolveWorkbenchKind` 映射，否则 `tab.type` 永远查不到它。
+- **prompt 注入条件改动**需同步 `prompts.test.ts`。
+- **身份判断用稳定常量**（如 `COMPANION_TAB_AGENT_ID`），不要用标题/关键词等脆弱匹配。

@@ -6,6 +6,7 @@
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AiComposer from './AiComposer.vue'
+import AiProfileSelect from './AiProfileSelect.vue'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import { WELCOME_COMPOSER_TAB_ID } from '../constants/welcome-composer'
@@ -65,6 +66,12 @@ const ingestAttachmentFiles = (files: FileList | File[]) =>
     ingestImages: handleDroppedImages,
     ingestDocuments: handleDroppedFiles
   })
+
+const focusComposer = () => {
+  composerRef.value?.focusInput()
+}
+
+defineExpose({ ingestAttachmentFiles, focusComposer })
 
 const selectAttachment = () => {
   const input = document.createElement('input')
@@ -311,10 +318,11 @@ const handleComposerSubmit = async (message: string) => {
   skipDraftPersist = true
   clearImages()
   terminalStore.clearWelcomeComposerDraft()
-  const tabId = terminalStore.createAssistantTab()
+  const tabId = terminalStore.createAssistantTab({ activate: false })
   terminalStore.transferUploadedDocs(WELCOME_COMPOSER_TAB_ID, tabId)
   terminalStore.setPendingComposerHandoff(tabId, { message, images: imagesSnapshot })
   terminalStore.markAssistantSkipOnboarding(tabId)
+  terminalStore.focusHubConversation(tabId)
 }
 
 onMounted(() => {
@@ -324,6 +332,20 @@ onMounted(() => {
   document.addEventListener('keydown', handlePTTKeyDown, true)
   document.addEventListener('keyup', handlePTTKeyUp, true)
   window.addEventListener('blur', handlePTTWindowBlur)
+  // 初始可见时自动聚焦
+  if (props.active) {
+    nextTick(() => composerRef.value?.focusInput())
+  }
+})
+
+// 每次切回欢迎页（active 变为 true）时聚焦输入框
+watch(() => props.active, (active) => {
+  if (active) {
+    nextTick(() => {
+      composerRef.value?.focusInput()
+      composerRef.value?.refreshPlaceholder?.()
+    })
+  }
 })
 
 onUnmounted(() => {
@@ -340,11 +362,15 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="welcome-chat-composer" :class="{ 'has-attachments': hasComposerAttachments }">
+  <div
+    class="welcome-chat-composer"
+    :class="{ 'has-attachments': hasComposerAttachments }"
+  >
     <AiComposer
       ref="composerRef"
       embedded
-      :placeholder="t('welcome.chatLead')"
+      placeholder-pools-key="welcome.chatLeadPools"
+      placeholder-fallback-key="welcome.chatLead"
       :current-tab-id="composerTabId"
       :visible="true"
       :context-stats="contextStats"
@@ -377,8 +403,17 @@ onUnmounted(() => {
       :submit-message="handleComposerSubmit"
       :submit-empty-message="noop"
       :clear-tab-error="noop"
-    />
-
+    >
+      <template #footer-left>
+        <AiProfileSelect
+          v-if="configStore.aiProfiles.length > 0"
+          embedded
+          :profiles="configStore.aiProfiles"
+          :model-value="configStore.activeAiProfileId"
+          @update:model-value="configStore.setActiveAiProfile"
+        />
+      </template>
+    </AiComposer>
     <!-- Teleport 到 body：父级 welcome-chat-composer 的 transform 动画会创建层叠上下文，
          导致 position:fixed 预览被限制在 composer 区域内，无法盖住下方快速启动卡片 -->
     <Teleport to="body">
@@ -397,6 +432,11 @@ onUnmounted(() => {
   opacity: 0;
 }
 
+/* 欢迎页 textarea 最大高度比面板模式矮，避免把 logo 和卡片都撑出屏幕 */
+.welcome-chat-composer :deep(.ai-input textarea) {
+  max-height: 160px;
+}
+
 @keyframes welcomeComposerEnter {
   from {
     opacity: 0;
@@ -407,6 +447,7 @@ onUnmounted(() => {
     transform: translateY(0);
   }
 }
+
 
 .welcome-image-preview {
   position: fixed;

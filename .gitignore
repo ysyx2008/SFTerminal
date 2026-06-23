@@ -3,7 +3,11 @@ node_modules/
 
 # Build outputs
 dist/
+!resources/browser-bridge/dist/
+resources/browser-bridge/dist/*
+!resources/browser-bridge/dist/*.zip
 dist-electron/
+/public/chart-maps/
 /release/
 electron-cache/
 steam/

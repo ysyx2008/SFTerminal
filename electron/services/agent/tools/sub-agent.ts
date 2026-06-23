@@ -19,6 +19,7 @@
  * / plan / ask_user 等不在自己白名单的工具，不断被运行时拦截卡死）。已撤回到独立模式。
  */
 import type { AiService, AiMessage, ToolDefinition, ChatWithToolsResult } from '../../ai.service'
+import { getMetaByName } from '../tool-metadata'
 import type { SubAgentTask, SubAgentResult, SubAgentToolStep, SubAgentTypeName, TokenUsage } from '@shared/types'
 import type { ToolExecutorConfig, ToolResult, AgentConfig } from './types'
 import { executeTool } from './index'
@@ -151,6 +152,7 @@ function buildSubAgentExecutorConfig(
 
   return {
     agentId: parentExecutor.agentId ? `${parentExecutor.agentId}:sub` : 'sub-agent',
+    isSubAgent: true,
     terminalService: parentExecutor.terminalService,
     hostProfileService: parentExecutor.hostProfileService,
     // 子 Agent 的 step 不推送到前端（由父 Agent 汇总推送）
@@ -180,6 +182,7 @@ function buildSubAgentExecutorConfig(
     getAiService: parentExecutor.getAiService,
     getActiveProfileId: parentExecutor.getActiveProfileId,
     historyService: parentExecutor.historyService,
+    getToolOutputBudget: parentExecutor.getToolOutputBudget,
   }
 }
 
@@ -273,11 +276,21 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
       }
       messages.push(assistantMsg)
 
+      const subPromptTokens = result.usage?.prompt_tokens
+      const toolExecutorForStep: ToolExecutorConfig =
+        subPromptTokens !== undefined && executorConfig.getToolOutputBudget
+          ? {
+              ...executorConfig,
+              getToolOutputBudget: () =>
+                executorConfig.getToolOutputBudget!(subPromptTokens),
+            }
+          : executorConfig
+
       for (const toolCall of result.tool_calls) {
         if (abortSignal.aborted || executorConfig.isAborted()) break
 
         const toolName = toolCall.function?.name || 'unknown'
-        const toolArgs = summarizeToolArgs(toolName, toolCall.function?.arguments)
+        const toolArgs = summarizeToolArgs(toolName, toolCall.function?.arguments, tools)
         const step: SubAgentToolStep = { tool: toolName, args: toolArgs, status: 'running' }
         toolSteps.push(step)
         onProgress({ steps: [...toolSteps] })
@@ -305,7 +318,7 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
           toolCall,
           agentConfig,
           [],
-          executorConfig
+          toolExecutorForStep
         )
 
         step.status = toolResult.success ? 'completed' : 'failed'
@@ -561,19 +574,44 @@ export async function dispatchSubAgents(
 
 // ==================== 辅助函数 ====================
 
-function summarizeToolArgs(toolName: string, argsStr?: string): string | undefined {
+/** 从工具参数中提取摘要，供子 Agent 步骤列表展示（完整保留，由 UI 控制换行/省略） */
+function summarizeToolArgs(
+  toolName: string,
+  argsStr: string | undefined,
+  tools: ToolDefinition[]
+): string | undefined {
   if (!argsStr) return undefined
   try {
-    const args = JSON.parse(argsStr)
+    const args = JSON.parse(argsStr) as Record<string, unknown>
+
+    const meta = getMetaByName(tools, toolName)
+    const metaField = meta?.argRole?.summaryLine ?? meta?.streamDisplay?.titleField
+    if (metaField && typeof args[metaField] === 'string') {
+      const val = args[metaField] as string
+      if (val) return val
+    }
+
     switch (toolName) {
-      case 'read_file': return args.path || args.file_path
-      case 'edit_file': return args.file_path || args.path
-      case 'write_text_file': return args.file_path || args.path
-      case 'file_search': return args.query || args.pattern
-      case 'exec': return args.command ? (args.command.length > 80 ? args.command.slice(0, 77) + '...' : args.command) : undefined
-      case 'search_knowledge': return args.query
-      case 'get_knowledge_doc': return args.title || args.id
-      default: return undefined
+      case 'read_file':
+      case 'edit_file':
+      case 'write_text_file':
+        if (typeof args.path === 'string' && args.path) return args.path
+        return typeof args.file_path === 'string' ? args.file_path : undefined
+      case 'file_search':
+        if (typeof args.query === 'string' && args.query) return args.query
+        return typeof args.pattern === 'string' ? args.pattern : undefined
+      case 'exec':
+        return typeof args.command === 'string' ? args.command : undefined
+      case 'web_fetch':
+        return typeof args.url === 'string' ? args.url : undefined
+      case 'search_knowledge':
+        return typeof args.query === 'string' ? args.query : undefined
+      case 'get_knowledge_doc':
+        if (typeof args.doc_id === 'string' && args.doc_id) return args.doc_id
+        if (typeof args.title === 'string' && args.title) return args.title
+        return typeof args.id === 'string' ? args.id : undefined
+      default:
+        return undefined
     }
   } catch {
     return undefined

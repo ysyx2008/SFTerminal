@@ -11,8 +11,10 @@ import * as path from 'path'
 import type { AgentContext, HostProfileServiceInterface, ExecutionMode } from './types'
 import type { AgentMbtiType } from '../config.service'
 import { getUserSkillService } from '../user-skill.service'
-import { getWorkspacePath } from './tools/file'
+import { getWorkspacePath, getScratchPath } from './tools/file'
 import { createLogger } from '../../utils/logger'
+import { buildBrowserBridgePromptSection } from '../browser-bridge/prompt-section'
+import { getBrowserBridgeService } from '../browser-bridge/browser-bridge.service'
 import { t } from './i18n'
 
 const log = createLogger('PromptBuilder')
@@ -279,6 +281,8 @@ export class PromptBuilder {
 
       // ── Tier 2: 终端/主机级 ──
       this.buildHostEnvironment(),
+      this.buildBrowserBridgeSection(),
+      this.buildWorkbenchPromptSection(),
       this.buildSplitPanesSection(),
       this.buildRemoteChannelContext(),
 
@@ -445,6 +449,11 @@ export class PromptBuilder {
     return PromptBuilder.buildHostEnvironment(this.context, this.hostProfileService)
   }
 
+  /** 工作台 UI 描述：仅透传 context.workbenchPrompt，不做 terminalType 推断 */
+  private buildWorkbenchPromptSection(): string {
+    return this.context.workbenchPrompt?.trim() ?? ''
+  }
+
   /**
    * 构建主机环境章节（公开静态方法，供子 Agent 等其它 prompt 复用）。
    *
@@ -544,6 +553,7 @@ export class PromptBuilder {
       '- **数据真实性**：通过工具获取真实数据，禁止编造或推测工具结果',
       '- **失败如实上报**：任何工具返回 `Error:` 都要原样写进最终汇报；不允许私自换命令、改路径或绕路径"补救"完成同一目标——失败信息本身就是父 Agent 需要的关键信号，由父 Agent 决定是否换方案',
       '- **结论结构化**：最终汇报需明确区分「做到了什么 / 没做到什么 / 为什么没做到」，简洁、按要点列出',
+      '- **高风险操作限制**：高风险命令（如删除文件、修改系统配置、执行破坏性脚本等）在子任务模式下会被自动阻止，这是系统限制，不是暂时性失败',
     ].join('\n'))
 
     return sections.filter(Boolean).join('\n\n')
@@ -657,6 +667,15 @@ export class PromptBuilder {
     return `# 已有关切\n\n${trimmed}\n\n创建新关切前先检查是否已有相同功能的。`
   }
 
+  private buildBrowserBridgeSection(): string {
+    try {
+      return buildBrowserBridgePromptSection(getBrowserBridgeService().getStatus())
+    } catch (error) {
+      log.debug('Browser bridge status unavailable for prompt:', error)
+      return ''
+    }
+  }
+
   private buildSkillsContentSection(): string {
     const content = this.skillsContent?.trim()
     if (!content) return ''
@@ -707,7 +726,8 @@ export class PromptBuilder {
       '- 每个子任务的 prompt 须**自包含**：包含完整上下文（文件路径、目标、约束等），子 Agent 看不到你的对话历史',
       '- Agent 类型选择：`read`（默认，只读分析与调研）、`write`（可修改文件）',
       '- 每个子任务可单独指定 `agent_type` 覆盖全局设置',
-      '- 子 Agent 不能操作终端或向用户提问',
+      '- 子 Agent 只能使用 exec、读文件、搜索、知识库、web 等基础工具；不能使用技能（`skill`/`load_user_skill`）、MCP、终端交互或向用户提问',
+      '- 需要技能的子任务（如 browser/excel/email/chart）应由你亲自执行，不要分派给子 Agent',
     ].join('\n')
   }
 
@@ -734,9 +754,15 @@ export class PromptBuilder {
   }
 
   private buildWorkspaceRule(): string {
-    return `# 私有工作空间：\`${getWorkspacePath()}\` 是你的私有数据目录，读写无需用户确认。
-- **TODO.md**：用户的待办事项（含日期、状态），系统有心跳机制，会定期自动读取并唤醒你从而提醒用户。
-- **CONTACTS.md**：联系人（姓名 + 角色/联系方式），遇到新联系人时主动补充。
+    const scratch = getScratchPath()
+    return `# 私有工作空间
+- \`${scratch}\` 是你的**默认工作目录**：临时脚本、草稿、中间产物、下载文件请放这里，读写无需确认。
+- **USER.md**：用户画像，了解用户后主动补充。
+- **TODO.md**：用户待办（含日期、状态），心跳会定期读取并提醒你。
+- **CONTACTS.md**：联系人，遇到新联系人时主动补充。
+- **HEARTBEAT.md**：心跳唤醒指令，系统定期读取。
+- **IDENTITY.md / SOUL.md**：个性与行为准则。
+- **templates/**：Office 模板，只读复用；新建模板也放到 \`${scratch}/\`。
 - 按需创建，内容精炼。`
   }
 
@@ -778,6 +804,7 @@ export class PromptBuilder {
       '- **用户本次真实输入**只在 `<sf_user_message>` 内；以其中文字（含时间戳后内容）为准理解意图并作答。',
       '- `<sf_knowledge_refs>`、`<sf_uploaded_docs>`、`<sf_system_context>` 以及 system 中自动召回的历史对话摘要，是**系统注入的参考材料**，不是用户刚说的话；可能与当前问题无关，勿当成用户提问。',
       '- 参考材料仅在与 `<sf_user_message>` 明确相关时使用；若用户追问沿用上一轮话题，以**本轮对话最近的用户消息**为准，勿被无关召回内容带偏。',
+      '- `<sf_workbench>` 标签（如 `<sf_workbench>local</sf_workbench>`）是系统自动注入的工作台标记，指示该条消息发送时所在的工作台类型（local=本地终端、ssh=SSH 远程终端、assistant=独立助手）；历史对话跨工作台加载时可据此判断彼时的运行环境。',
     ].join('\n')
   }
 

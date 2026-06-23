@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { AiProfile, DocumentParseProgress, JumpHostConfig, PtyOptions, SftpConfig, SshConfig } from '@shared/types'
+import type { AiProfile, BondMetrics, DocumentParseProgress, JumpHostConfig, PtyOptions, SftpConfig, SshConfig } from '@shared/types'
 
 // ── 启动进度缓冲 ──────────────────────────────────────────────────────────────
 // preload 加载后立即开始监听，将最新 stage 缓存下来。
@@ -954,6 +954,7 @@ const electronAPI = {
       untilTaskCount?: number
       targetMode?: 'assistant'
       titleSuffix?: string
+      sourceSessionId?: string
     }) => ipcRenderer.invoke('agent:fork', opts) as Promise<{
       newSessionId: string
       newAgentId: string
@@ -1026,9 +1027,23 @@ const electronAPI = {
       }
     },
 
-    // 监听 Agent 完成（携带 ptyId 用于可靠匹配 tab，可能附带未处理的用户消息）
-    onComplete: (callback: (data: { agentId: string; ptyId?: string; result: string; pendingUserMessages?: string[] }) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string; ptyId?: string; result: string; pendingUserMessages?: string[] }) => callback(data)
+    // 监听 Agent 完成（携带 ptyId 用于可靠匹配 tab，可能附带未处理的用户消息与羁绊里程碑）
+    onComplete: (callback: (data: {
+      agentId: string
+      ptyId?: string
+      result: string
+      pendingUserMessages?: string[]
+      newBondMilestones?: string[]
+      bondMetrics?: BondMetrics
+    }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: {
+        agentId: string
+        ptyId?: string
+        result: string
+        pendingUserMessages?: string[]
+        newBondMilestones?: string[]
+        bondMetrics?: BondMetrics
+      }) => callback(data)
       ipcRenderer.on('agent:complete', handler)
       return () => {
         ipcRenderer.removeListener('agent:complete', handler)
@@ -1234,6 +1249,7 @@ const electronAPI = {
           duration: number
           userTask: string
           terminalType: 'local' | 'ssh'
+          agentKey?: string
           sshHost?: string
           status: 'completed' | 'failed' | 'aborted'
         }>
@@ -1277,8 +1293,15 @@ const electronAPI = {
     getAgentRecordById: (id: string) =>
       ipcRenderer.invoke('history:getAgentRecordById', id),
 
+    // 取某 agentKey 最近 N 条完整会话记录（联络常驻 tab 合并恢复历史对话）
+    getRecentByAgentKey: (agentKey: string, limit?: number) =>
+      ipcRenderer.invoke('history:getRecentByAgentKey', agentKey, limit),
+
     deleteAgentRecord: (id: string) =>
       ipcRenderer.invoke('history:deleteAgentRecord', id) as Promise<boolean>,
+
+    saveArtifacts: (recordId: string, artifacts: import('@shared/types').CanvasArtifact[]) =>
+      ipcRenderer.invoke('history:saveArtifacts', recordId, artifacts) as Promise<void>,
 
     // 获取数据目录路径
     getDataPath: () => ipcRenderer.invoke('history:getDataPath') as Promise<string>,
@@ -2002,6 +2025,7 @@ const electronAPI = {
         enabled: boolean
         embeddingMode: 'local' | 'mcp'
         localModel: 'auto' | 'lite' | 'standard' | 'large'
+        embeddingDevice?: 'auto' | 'cpu' | 'gpu' | 'coreml' | 'cuda' | 'dml' | 'webgpu'
         embeddingMcpServerId?: string
         autoSaveUploads: boolean
         chunkStrategy: 'fixed' | 'semantic' | 'paragraph'
@@ -2016,6 +2040,7 @@ const electronAPI = {
       enabled: boolean
       embeddingMode: 'local' | 'mcp'
       localModel: 'auto' | 'lite' | 'standard' | 'large'
+      embeddingDevice?: 'auto' | 'cpu' | 'gpu' | 'coreml' | 'cuda' | 'dml' | 'webgpu'
       embeddingMcpServerId?: string
       autoSaveUploads: boolean
       chunkStrategy: 'fixed' | 'semantic' | 'paragraph'
@@ -2243,11 +2268,13 @@ const electronAPI = {
       reason: 'vector' | 'bm25' | 'both' | string
       cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing'
       total?: number
+      libraryTotal?: number
     }) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: {
         reason: 'vector' | 'bm25' | 'both' | string
         cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing'
         total?: number
+        libraryTotal?: number
       }) => callback(data)
       ipcRenderer.on('knowledge:upgrading', handler)
       return () => {
@@ -2256,8 +2283,18 @@ const electronAPI = {
     },
 
     // 监听索引重建进度
-    onRebuildProgress: (callback: (data: { current: number; total: number; filename: string }) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, data: { current: number; total: number; filename: string }) => callback(data)
+    onRebuildProgress: (callback: (data: {
+      current: number
+      total: number
+      libraryTotal?: number
+      filename: string
+    }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: {
+        current: number
+        total: number
+        libraryTotal?: number
+        filename: string
+      }) => callback(data)
       ipcRenderer.on('knowledge:rebuildProgress', handler)
       return () => {
         ipcRenderer.removeListener('knowledge:rebuildProgress', handler)
@@ -2402,6 +2439,12 @@ const electronAPI = {
     }
   },
 
+  // PPT / HTML 产出物预览（sandbox iframe CSP 兼容）
+  ppt: {
+    sanitizePreview: (html: string) =>
+      ipcRenderer.invoke('ppt:sanitizePreview', html) as Promise<string>,
+  },
+
   // 本地文件系统操作
   localFs: {
     // 获取主目录
@@ -2504,6 +2547,13 @@ const electronAPI = {
     // 读取文本文件
     readFile: (filePath: string) =>
       ipcRenderer.invoke('localFs:readFile', filePath) as Promise<{
+        success: boolean
+        data?: string
+        error?: string
+      }>,
+
+    previewArtifact: (filePath: string, renderer: string) =>
+      ipcRenderer.invoke('localFs:previewArtifact', filePath, renderer) as Promise<{
         success: boolean
         data?: string
         error?: string
@@ -3208,6 +3258,35 @@ const electronAPI = {
     sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => {
       ipcRenderer.send('split-pane:result', { id, result })
     }
+  },
+
+  workbench: {
+    onExec: (
+      handler: (
+        id: string,
+        op: { type: 'list_artifacts' },
+        ownerAgentKey?: string
+      ) => void
+    ) => {
+      const fn = (_event: Electron.IpcRendererEvent, payload: { id: string; op: { type: 'list_artifacts' }; ownerAgentKey?: string }) => {
+        if (!payload || typeof payload.id !== 'string' || !payload.op) return
+        handler(payload.id, payload.op, payload.ownerAgentKey)
+      }
+      ipcRenderer.on('workbench:exec', fn)
+      return () => ipcRenderer.removeListener('workbench:exec', fn)
+    },
+    sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => {
+      ipcRenderer.send('workbench:result', { id, result })
+    }
+  },
+
+  quit: {
+    /** macOS ⌘Q 防误触提示，show=true 展示、false 隐藏 */
+    onToast: (callback: (payload: { show: boolean }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: { show: boolean }) => callback(payload)
+      ipcRenderer.on('quit:toast', handler)
+      return () => ipcRenderer.removeListener('quit:toast', handler)
+    },
   },
 
   browserBridge: {

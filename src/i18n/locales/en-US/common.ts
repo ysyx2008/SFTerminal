@@ -7,6 +7,42 @@ export default {
     description: 'AI-powered smart assistant'
   },
 
+  // Workbench tools (agent stream pre-card titles)
+  workbench: {
+    list_artifacts: 'View output panel',
+    manage_artifacts: 'Manage output panel',
+  },
+
+  // Bond milestones (unlock toast)
+  bond: {
+    milestone: {
+      bond_first_meet: {
+        title: 'Bond · First Meeting',
+        body: 'Day one — Sailfish remembers.',
+      },
+      bond_getting_along: {
+        title: 'Bond · Getting Along',
+        body: "We're finding our rhythm.",
+      },
+      bond_trusted_partner: {
+        title: 'Bond · Trusted Partner',
+        body: "Hand off the annoying stuff — I've got you.",
+      },
+      bond_old_friend: {
+        title: 'Bond · Old Friend',
+        body: '{days} days together — worth it.',
+      },
+      bond_soulmate: {
+        title: 'Bond · Soulmates',
+        body: "You say the first half — I'll take the rest.",
+      },
+      bond_unbreakable: {
+        title: 'Bond · Unbreakable',
+        body: "Trust that won't wash away.",
+      },
+    },
+  },
+
 
   // Welcome page
   welcome: {
@@ -14,10 +50,73 @@ export default {
     titleSteam: 'Welcome to SFTerm',
     subtitle: 'AI-powered smart assistant',
     subtitleSteam: 'Efficient terminal & connection manager',
+    subtitlePools: {
+      ocean: [
+        'AI-powered smart assistant',
+        'Deep dive ready when you are',
+        'Terminal and assistant, one workspace',
+        'Your underwater AI partner',
+      ],
+      rivals: [
+        'Smarter than the neighbor lobster',
+        'Other AIs clock in — Sailfish waits for you',
+      ],
+      bondCompanion: [
+        'Welcome back, old partner',
+        '{days} days in — let\'s keep swimming',
+      ],
+      bondSoulmate: [
+        'Your partner who knows the depths',
+        'Kindred spirits start on this screen',
+      ],
+      lore: [
+        'Sailfish are among the fastest fish in the sea',
+        'The fastest fish, the handiest assistant',
+      ],
+    },
     quickStart: 'Quick Start',
     chatLead: 'What can I help you with?',
+    chatLeadPools: {
+      ocean: [
+        'Tell me a task — Sailfish is ready to swim',
+        'What do you want to get done today?',
+        'The deep sea is listening',
+        'Ask anything — start simple',
+        'Write whatever comes to mind',
+        'No need to polish it — just start',
+        "Today's goal: ____ (you fill in)",
+        'Sailfish is ready when you are',
+        'Stuck? Say it out loud',
+        'Just get the conversation started',
+      ],
+      rivals: [
+        'The neighbor lobster pinches — Sailfish sprints',
+        "OpenClaw's claws are big, but it can't swim fast",
+        'WorkBuddy has a buddy — we have a bond',
+        'Codex writes code — Sailfish swims the whole way',
+        'Cowork is co-working — this is deep-sea solo',
+        'Other AIs are on the clock — Sailfish is diving for you',
+      ],
+      bondCompanion: [
+        'Old partner — where are we swimming today?',
+        'Trusted partner online — your move',
+        'Hand off the boring repetitive stuff',
+      ],
+      bondSoulmate: [
+        'Kindred spirits — you say the first half',
+        'Soulmates — just command',
+        'More reliable than that lobster, right',
+      ],
+      lore: [
+        'Sailfish are among the fastest fish in the sea — what\'s the task',
+        'Fin can stay down — just say the word',
+        'Sails are up — just need a destination',
+        'We know each other now — tortoises are slow, not me',
+      ],
+    },
     assistant: 'AI Assistant',
     assistantDesc: 'Chat with AI directly',
+    viewExamples: 'View examples',
     localTerminal: 'Local Terminal',
     localTerminalDesc: 'Open local command line',
     sshConnect: 'SSH Connect',
@@ -33,7 +132,9 @@ export default {
       searchPlaceholder: 'Search conversations...',
       searchOpen: 'Search conversations',
       searchClose: 'Close search',
-      newConversation: 'New conversation',
+      newConversation: 'New Chat',
+      collapseSidebar: 'Collapse sidebar',
+      expandSidebar: 'Expand sidebar',
       loadMore: 'Load more',
       noMatching: 'No matching conversations',
       emptyHint: 'Start a new chat from the input below',
@@ -41,6 +142,9 @@ export default {
       pinned: 'Pinned',
       pin: 'Pin conversation',
       unpin: 'Unpin',
+      openInTab: 'Open in new tab',
+      dropToOpenInTab: 'Release to open in new tab',
+      dropToOpenInTabHint: 'Drop a conversation from the sidebar',
       rename: 'Rename',
       delete: 'Delete',
       deleteTitle: 'Delete Conversation',
@@ -223,8 +327,8 @@ export default {
     autoDownloadUpdate: 'Auto-download updates',
     updateAvailableMessageManual: 'Version {version} is available. Auto-download is off. Start download now? You will be prompted to install when ready.',
     updateReadyTitle: 'Update Ready',
-    updateReadyMessage: 'Version {version} is ready. Install and restart now, or choose "Install on quit" to update when you close the app (system installer shows progress).',
-    updateReadyMessageNoQuit: 'Version {version} has been downloaded. Install and restart now? The system installer will show progress.',
+    updateReadyMessage: 'Version {version} is ready. Install and restart now, or choose "Install on quit" to update when you close the app.',
+    updateReadyMessageNoQuit: 'Version {version} has been downloaded. Install and restart now?',
     updateReadyMessageMac: 'Version {version} is available. Please download the installer from the releases page (manual update on macOS).',
     installOnQuit: 'Install on quit',
     updateLater: 'Remind me later',
@@ -272,6 +376,8 @@ export default {
     restartHint: 'Some changes may require restarting the app to take effect'
   },
 
+
+  quitToastHint: 'Press again to quit',
 
   // Connection status panel
   conn: {

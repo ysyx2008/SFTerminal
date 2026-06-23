@@ -19,6 +19,10 @@ let tcpBuffer = Buffer.alloc(0)
 let gatewaySocket = null
 let gatewayConfig = null
 let reconnectTimer = null
+let reconnectAttempts = 0
+let lastGatewayPort = null
+// After ~30 s of failed reconnects, exit so Firefox restarts us with fresh gateway config
+const MAX_RECONNECT_ATTEMPTS = 20
 
 function log(...args) {
   console.error(`[${HOST_NAME}]`, ...args)
@@ -180,8 +184,16 @@ function connectGateway() {
     return
   }
 
+  if (gatewayConfig.port !== lastGatewayPort) {
+    lastGatewayPort = gatewayConfig.port
+    reconnectAttempts = 0
+    debugLog(`gateway port changed, reset reconnect counter to ${lastGatewayPort}`)
+  }
+
   const socket = net.createConnection({ host: '127.0.0.1', port: gatewayConfig.port }, () => {
     gatewaySocket = socket
+    reconnectAttempts = 0
+    debugLog(`tcp connected port=${gatewayConfig.port} origin=${ORIGIN}`)
     socket.write(`${JSON.stringify({
       type: 'host_register',
       origin: ORIGIN,
@@ -191,6 +203,7 @@ function connectGateway() {
   })
 
   socket.on('data', (chunk) => {
+    debugLog(`tcp data len=${chunk.length}`)
     tcpBuffer = Buffer.concat([tcpBuffer, chunk])
     let idx
     while ((idx = tcpBuffer.indexOf(10)) >= 0) {
@@ -208,18 +221,26 @@ function connectGateway() {
     }
   })
 
-  socket.on('close', () => {
+  socket.on('close', (hadError) => {
+    debugLog(`tcp closed hadError=${hadError} origin=${ORIGIN}`)
     if (gatewaySocket === socket) gatewaySocket = null
     scheduleReconnect(1500)
   })
 
   socket.on('error', (error) => {
+    debugLog(`tcp error: ${error.message}`)
     log('Gateway socket error:', error.message)
   })
 }
 
 function scheduleReconnect(ms) {
   if (reconnectTimer) return
+  reconnectAttempts++
+  if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+    // Gateway unreachable for ~30 s. Exit so Firefox restarts us and we pick up fresh gateway config.
+    debugLog(`too many reconnect attempts (${reconnectAttempts}), exiting to force restart`)
+    process.exit(0)
+  }
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
     connectGateway()

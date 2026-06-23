@@ -7,11 +7,23 @@
 /** 模型级别 */
 export type ModelTier = 'lite' | 'standard' | 'large'
 
+/** 嵌入推理设备（Transformers.js v4） */
+export type EmbeddingDevice =
+  | 'auto'
+  | 'cpu'
+  | 'gpu'
+  | 'coreml'
+  | 'cuda'
+  | 'dml'
+  | 'webgpu'
+
 /** 模型信息 */
 export interface ModelInfo {
   id: ModelTier
   name: string
   huggingfaceId: string
+  /** 本地目录名；与 huggingfaceId 末段不同时指定（兼容旧版打包路径） */
+  localDirName?: string
   size: number           // 字节
   dimensions: number
   maxTokens: number      // 模型支持的最大 token 数
@@ -129,6 +141,8 @@ export interface KnowledgeSettings {
   // Embedding 配置
   embeddingMode: 'local' | 'mcp'
   localModel: 'auto' | ModelTier
+  /** 本地嵌入推理设备，默认 auto（macOS→CoreML，Linux→CUDA，Windows→DirectML） */
+  embeddingDevice?: EmbeddingDevice
   embeddingMcpServerId?: string
   // 搜索配置
   autoSaveUploads: boolean
@@ -146,6 +160,7 @@ export const DEFAULT_KNOWLEDGE_SETTINGS: KnowledgeSettings = {
   enabled: true,
   embeddingMode: 'local',
   localModel: 'auto',
+  embeddingDevice: 'auto',
   autoSaveUploads: true,
   chunkStrategy: 'paragraph',
   searchTopK: 10,

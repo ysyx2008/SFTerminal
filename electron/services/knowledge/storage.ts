@@ -738,6 +738,25 @@ export class VectorStorage extends EventEmitter {
     }
   }
 
+  async getChunkCount(): Promise<number> {
+    if (this.workerReady) {
+      try {
+        const { count } = await this.callWorker<{ count: number }>('getChunkCount')
+        return count ?? 0
+      } catch (error) {
+        log.warn('getChunkCount via worker failed:', error)
+        return 0
+      }
+    }
+    if (!this.table) return 0
+    try {
+      return await this.table.countRows()
+    } catch (error) {
+      log.warn('getChunkCount failed:', error)
+      return 0
+    }
+  }
+
   async getAllDocIds(): Promise<Set<string>> {
     if (this.workerReady) {
       const { docIds } = await this.callWorker<{ docIds: string[] }>(
@@ -770,6 +789,25 @@ export class VectorStorage extends EventEmitter {
 
   getStoragePath(): string {
     return this.storagePath
+  }
+
+  /**
+   * 优雅释放 LanceDB worker：先 compact 落盘，再结束子进程。
+   * 供主进程 quit / SIGTERM 路径调用，降低 transaction 半截退出导致损坏的概率。
+   */
+  async disposeAsync(timeoutMs: number = 500): Promise<void> {
+    try {
+      if (this.workerReady) {
+        await this.callWorker('compact', { aggressive: false }, timeoutMs).catch(err => {
+          log.warn('LanceDB dispose compact 失败或超时:', err)
+        })
+      } else if (this.table) {
+        await this.compactInProc()
+      }
+    } finally {
+      this.killWorker()
+      this.isInitialized = false
+    }
   }
 
   // ────────────────────────── 搜索结果处理（本地纯计算） ──────────────────────────

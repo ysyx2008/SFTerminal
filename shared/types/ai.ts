@@ -33,3 +33,65 @@ export interface AiProfile {
   /** API 协议格式，默认 auto（自动检测） */
   apiFormat?: ApiFormat
 }
+
+/** 等待模型首 token 文案的 i18n 键前缀（后端 flat key，camelCase） */
+export const WAITING_FOR_MODEL_I18N_PREFIX = 'ai.waitingForModel' as const
+
+export type WaitingForModelI18nVariant = 'default' | 'easter' | 'slow'
+
+/** 构建 waiting-for-model 文案 i18n 键（后端 agent/i18n.ts 使用） */
+export function waitingForModelI18nKey(
+  id: string,
+  variant: WaitingForModelI18nVariant = 'default',
+): string {
+  switch (variant) {
+    case 'easter':
+      return `${WAITING_FOR_MODEL_I18N_PREFIX}.easter.${id}`
+    case 'slow':
+      return `${WAITING_FOR_MODEL_I18N_PREFIX}.slow.${id}`
+    default:
+      return `${WAITING_FOR_MODEL_I18N_PREFIX}.${id}`
+  }
+}
+
+/** 等待模型首 token 时随机展示的文案子键（前后端 i18n 共用） */
+export const WAITING_FOR_MODEL_LABEL_IDS = [
+  'diving',
+  'scanning',
+  'waitingWave',
+  'booting',
+  'neurons',
+  'inspiration',
+  'calling',
+] as const
+
+/** 5% 概率出现的彩蛋文案 */
+export const WAITING_FOR_MODEL_EASTER_EGG_LABEL_IDS = [
+  'coffee',
+  'bribingGpu',
+  'quantum',
+  'yoda',
+  'haggling',
+] as const
+
+/** TTFT 超过阈值后切换的调侃文案 */
+export const WAITING_FOR_MODEL_SLOW_LABEL_IDS = [
+  'slacking',
+  'patience',
+  'deepBreath',
+  'novel',
+  'almostThere',
+] as const
+
+export type WaitingForModelLabelId = (typeof WAITING_FOR_MODEL_LABEL_IDS)[number]
+export type WaitingForModelEasterEggLabelId = (typeof WAITING_FOR_MODEL_EASTER_EGG_LABEL_IDS)[number]
+export type WaitingForModelSlowLabelId = (typeof WAITING_FOR_MODEL_SLOW_LABEL_IDS)[number]
+
+/** 彩蛋文案出现概率 */
+export const WAITING_FOR_MODEL_EASTER_EGG_CHANCE = 0.05
+
+/** 任务完成 footer 偶发趣味文案概率（其余走 default 池） */
+export const TASK_COMPLETE_FUN_CHANCE = 0.08
+
+/** 超过此 TTFT（ms）后切换为 slow 调侃文案 */
+export const WAITING_FOR_MODEL_SLOW_TTFT_MS = 10_000

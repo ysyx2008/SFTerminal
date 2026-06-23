@@ -101,7 +101,7 @@ const TOOL_ICONS: Record<string, string> = {
   recall: '🧠', recall_task: '🧠', deep_recall: '🧠', wait: '⏳',
   plan: '📋', create_plan: '📋', update_plan: '📋', clear_plan: '📋',
   send_to_chat: '📤', send_file_to_chat: '📤', send_image_to_chat: '🖼️', send_im_notification: '📢',
-  remember_info: '💾', check_terminal_status: '🖥️', get_terminal_context: '🖥️',
+  check_terminal_status: '🖥️', get_terminal_context: '🖥️',
   send_control_key: '⌨️', send_input: '⌨️', skill: '📦', load_skill: '📦', load_user_skill: '📦',
 }
 
@@ -118,7 +118,6 @@ const TOOL_I18N_MAP: Record<string, Parameters<typeof t>[0]> = {
   write_text_file: 'tool.write_file',
   write_remote_text_file: 'tool.write_file',
   file_search: 'file.searching',
-  remember_info: 'tool.remember_info',
   search_knowledge: 'tool.search_knowledge',
   get_knowledge_doc: 'tool.get_knowledge_doc',
   recall: 'memory.task_recall',
@@ -216,8 +215,6 @@ function formatToolNotification(toolName: string, toolArgs?: Record<string, unkn
     detail = `  ${truncate(String(args.url))}`
   } else if (toolName === 'send_input' && args.text) {
     detail = `  ${truncate(String(args.text))}`
-  } else if (toolName === 'remember_info' && args.info) {
-    detail = `  ${truncate(String(args.info))}`
   } else if (toolName === 'ask_user' && args.question) {
     detail = `  ${truncate(String(args.question))}`
   } else if (toolName === 'talk_to_user') {

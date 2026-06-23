@@ -4,10 +4,13 @@
 
 import type {
   BrowserBridgeAttachTarget,
+  BrowserBridgePingResult,
   BrowserBridgeRefMap,
   BrowserBridgeTabInfo,
 } from '@shared/types/browser-bridge'
 import { getBrowserBridgeService } from '../../../browser-bridge/browser-bridge.service'
+import { extensionSupportsTabsManage } from '../../../browser-bridge/protocol'
+import { parsePingResult } from '../../../browser-bridge/protocol'
 
 export interface BridgeSession {
   mode: 'attach'
@@ -18,6 +21,7 @@ export interface BridgeSession {
   lastActivityAt: number
   refs: BrowserBridgeRefMap
   activeTabIndex: number
+  extensionPing?: BrowserBridgePingResult
 }
 
 const sessions = new Map<string, BridgeSession>()
@@ -36,7 +40,8 @@ export async function createBridgeSession(
 ): Promise<BridgeSession> {
   const bridge = getBrowserBridgeService()
   const { origin, browserTarget } = bridge.resolveConnection(browserInput)
-  await bridge.sendCommand('ping', {}, { origin })
+  const pingRaw = await bridge.sendCommand('ping', {}, { origin })
+  const extensionPing = parsePingResult(pingRaw) ?? undefined
   const session: BridgeSession = {
     mode: 'attach',
     ptyId,
@@ -46,6 +51,7 @@ export async function createBridgeSession(
     lastActivityAt: Date.now(),
     refs: {},
     activeTabIndex: 0,
+    extensionPing,
   }
   sessions.set(ptyId, session)
   return session
@@ -61,8 +67,17 @@ export function touchBridgeSession(ptyId: string): void {
 }
 
 export async function bridgeListTabs(ptyId: string): Promise<BrowserBridgeTabInfo[]> {
-  const tabs = await bridgeSend(ptyId, 'list_tabs', {})
-  return tabs as BrowserBridgeTabInfo[]
+  const session = sessions.get(ptyId)
+  // 优先读 service 的实时能力（extension reload 后 probeHost 会更新），
+  // 避免 session.extensionPing 在 install 后长期过期
+  const live = session ? getBrowserBridgeService().getConnectionCapabilities(session.origin) : null
+  if (extensionSupportsTabsManage(live ?? session?.extensionPing)) {
+    return (await bridgeSend(ptyId, 'tabs', {
+      op: 'query',
+      query: { currentWindow: true },
+    })) as BrowserBridgeTabInfo[]
+  }
+  return (await bridgeSend(ptyId, 'list_tabs', {})) as BrowserBridgeTabInfo[]
 }
 
 export async function bridgeSend(

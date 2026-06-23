@@ -8,7 +8,7 @@ SailFish 浏览器助手 Firefox 版需 **Mozilla 签名** 才能持久安装（
 
 ```bash
 npm run pack:firefox-extension
-# 输出：resources/browser-bridge/dist/sailfish-browser-assistant-firefox-1.0.0.zip
+# 输出：resources/browser-bridge/dist/sailfish-browser-assistant-firefox-1.1.0.zip
 ```
 
 打包**不会修改** `resources/browser-bridge/firefox/`（临时加载开发目录）。  
@@ -92,6 +92,20 @@ The extension is useless without the SailFish desktop app and native host. Data 
 1. 改 `resources/browser-bridge/firefox-amo-publish/manifest.json` 的 `version`（开发目录 `firefox/manifest.json` 的 version 建议同步，扩展 ID 必须一致）
 2. 重新 `npm run pack:firefox-extension`
 3. AMO 开发者中心 → 该扩展 → **Upload New Version**
+
+### ⚠️ Firefox MV3 与 `importScripts`
+
+Firefox MV3 的 background 使用 **event page**（`background.scripts`），**不是** Service Worker，因此 **`importScripts()` 不可用**。
+
+AMO 包的 `manifest.json` 必须同时列出：
+
+```json
+"background": {
+  "scripts": ["shared/tabs-api.js", "background-firefox.js"]
+}
+```
+
+若只列 `background-firefox.js` 并在其内 `importScripts('shared/tabs-api.js')`，background 会在启动时抛错，扩展完全无法连接 Native Host。打包脚本会在缺少双脚本时直接失败。
 
 ## 参考
 

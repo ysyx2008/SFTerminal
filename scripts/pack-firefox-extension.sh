@@ -4,13 +4,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEV_SRC="$ROOT/resources/browser-bridge/firefox"
+SHARED_SRC="$ROOT/resources/browser-bridge/shared"
 AMO_OVERLAY="$ROOT/resources/browser-bridge/firefox-amo-publish"
 BUILD="$ROOT/resources/browser-bridge/.firefox-amo-build"
 DIST="$ROOT/resources/browser-bridge/dist"
 VERSION="$(node -pe "require('$AMO_OVERLAY/manifest.json').version")"
 OUT="$DIST/sailfish-browser-assistant-firefox-${VERSION}.zip"
 
-for dir in "$DEV_SRC" "$AMO_OVERLAY"; do
+for dir in "$DEV_SRC" "$SHARED_SRC" "$AMO_OVERLAY"; do
   if [[ ! -d "$dir" ]]; then
     echo "Missing $dir" >&2
     exit 1
@@ -22,11 +23,31 @@ mkdir -p "$BUILD" "$DIST"
 
 # 1) 开发版逻辑（临时加载测试用同一套 JS）
 cp -R "$DEV_SRC"/* "$BUILD/"
+mkdir -p "$BUILD/shared"
+cp -R "$SHARED_SRC"/* "$BUILD/shared/"
 
 # 2) AMO 专用 manifest + 图标覆盖
 cp "$AMO_OVERLAY/manifest.json" "$BUILD/manifest.json"
 rm -rf "$BUILD/icons"
 cp -R "$AMO_OVERLAY/icons" "$BUILD/icons"
+
+# Firefox MV3 event page 无 importScripts；manifest 必须预加载 shared/tabs-api.js
+node -e "
+const fs = require('fs');
+const manifest = JSON.parse(fs.readFileSync('$BUILD/manifest.json', 'utf8'));
+const scripts = manifest.background?.scripts || [];
+const required = ['shared/tabs-api.js', 'background-firefox.js'];
+for (const file of required) {
+  if (!scripts.includes(file)) {
+    console.error('AMO manifest.background.scripts must include', file);
+    process.exit(1);
+  }
+}
+if (!fs.existsSync('$BUILD/shared/tabs-api.js')) {
+  console.error('Missing $BUILD/shared/tabs-api.js');
+  process.exit(1);
+}
+"
 
 rm -f "$OUT"
 (

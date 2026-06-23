@@ -131,6 +131,10 @@ export async function executeCommand(
     }
   }
 
+  if (riskLevel === 'dangerous' && executor.isSubAgent) {
+    return { success: false, output: '', error: '高危命令在子任务模式下被系统自动阻止。' }
+  }
+
   // 根据执行模式决定是否需要确认
   let needConfirm = false
   if (config.executionMode === 'strict') {

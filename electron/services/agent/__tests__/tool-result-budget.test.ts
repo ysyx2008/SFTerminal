@@ -39,7 +39,7 @@ const CLEARABLE_NAMES = new Set([
 ])
 const PROTECTED_NAMES = new Set([
   'edit_file', 'write_text_file', 'write_remote_text_file', 'ask_user', 'plan',
-  'create_plan', 'update_plan', 'remember_info', 'compress_context',
+  'create_plan', 'update_plan', 'compress_context',
   'recall_compressed', 'manage_memory', 'dispatch_agents'
 ])
 

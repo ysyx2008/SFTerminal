@@ -8,10 +8,17 @@
  */
 
 import type { EChartsOption } from './render'
+import type { ChartMapId } from '../../../../../shared/chart-maps'
+import { ensureMapsRegistered } from './maps'
 
 export interface RenderSize {
   width: number
   height: number
+}
+
+export interface RenderOptions {
+  /** 渲染前需 echarts.registerMap 的内置地图 id */
+  mapIds?: ChartMapId[]
 }
 
 /**
@@ -56,8 +63,15 @@ export async function loadEcharts(): Promise<EChartsLike> {
  * 把一份 ECharts option 渲染成 SVG 字符串。
  * 调用方负责把 option 构造正确，本函数只做渲染 + 资源回收。
  */
-export async function renderToSvg(option: EChartsOption, size: RenderSize): Promise<string> {
+export async function renderToSvg(
+  option: EChartsOption,
+  size: RenderSize,
+  opts: RenderOptions = {}
+): Promise<string> {
   const echarts = await loadEcharts()
+  if (opts.mapIds?.length) {
+    await ensureMapsRegistered(echarts, opts.mapIds)
+  }
   const chart = echarts.init(null, null, {
     renderer: 'svg',
     ssr: true,
@@ -122,9 +136,9 @@ export interface PngRenderOptions {
 export async function renderToPng(
   option: EChartsOption,
   size: RenderSize,
-  opts: PngRenderOptions = {}
+  opts: PngRenderOptions & RenderOptions = {}
 ): Promise<Buffer> {
-  const svg = await renderToSvg(option, size)
+  const svg = await renderToSvg(option, size, { mapIds: opts.mapIds })
   const sharpMod = await import('sharp')
   // sharp 的 default export 行为在 CJS/ESM 下不一致，做一次容错探测
   const sharp = (typeof sharpMod === 'function' ? sharpMod : sharpMod.default) as

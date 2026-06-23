@@ -2,35 +2,46 @@
 /**
  * AssistantWorkbench —— 独立助手工作台（声明式区域，走通用 WorkbenchShell）
  *
- * 锚点区 = 聊天（AiPanel，常驻）；可隐区 = 文档/预览（CanvasPanel，按需显隐）。
- * 由 Agent step 的 canvasData 驱动 canvasStore 控制文档区显隐与内容（沿用原逻辑）。
+ * 锚点区 = 聊天（AiPanel，常驻）；可隐区 = 产出物面板（ArtifactPanel，按需显隐）。
+ * 由 Agent step 的 canvasData 驱动 artifactStore 注册/更新产出物。
  *
  * 统一渲染器 props 约定：{ tab, isActive }。
  */
 import { computed } from 'vue'
 import type { TerminalTab } from '../../stores/terminal'
-import { useCanvasStore } from '../../stores/canvas'
+import { useAssistantArtifactStore } from '../../workbench/assistant/artifact/store'
 import WorkbenchShell from './WorkbenchShell.vue'
 import AiPanel from '../AiPanel.vue'
-import CanvasPanel from '../Canvas/CanvasPanel.vue'
+import ArtifactPanel from '../../workbench/assistant/artifact/components/ArtifactPanel.vue'
+import ArtifactPanelRail from '../../workbench/assistant/artifact/components/ArtifactPanelRail.vue'
 
 const props = defineProps<{
   tab: TerminalTab
   isActive: boolean
 }>()
 
-const canvasStore = useCanvasStore()
+const artifactStore = useAssistantArtifactStore()
 
-const docVisible = computed(() => canvasStore.isVisible(props.tab.id))
+const docExpanded = computed(() => artifactStore.isVisible(props.tab.id))
+const panelMinimized = computed(() => artifactStore.isPanelMinimized(props.tab.id))
+const toggleVisible = computed(() => docExpanded.value || panelMinimized.value)
 const ratio = computed({
-  get: () => canvasStore.splitRatio,
-  set: (v: number) => { canvasStore.splitRatio = v },
+  get: () => artifactStore.splitRatio,
+  set: (v: number) => { artifactStore.splitRatio = v },
 })
+
+function expandPanel(artifactId?: string) {
+  artifactStore.expandPanel(props.tab.id)
+  if (artifactId) {
+    artifactStore.setActiveArtifact(props.tab.id, artifactId)
+  }
+}
 </script>
 
 <template>
   <WorkbenchShell
-    :toggle-visible="docVisible"
+    :toggle-visible="toggleVisible"
+    :toggle-collapsed="panelMinimized"
     v-model:toggle-ratio="ratio"
     toggle-side="right"
   >
@@ -38,7 +49,12 @@ const ratio = computed({
       <AiPanel :tab-id="tab.id" :tab-active="isActive" />
     </template>
     <template #toggle>
-      <CanvasPanel v-if="docVisible" :tab-id="tab.id" />
+      <ArtifactPanel v-if="docExpanded" :tab-id="tab.id" />
+      <ArtifactPanelRail
+        v-else-if="panelMinimized"
+        :tab-id="tab.id"
+        @expand="expandPanel"
+      />
     </template>
   </WorkbenchShell>
 </template>

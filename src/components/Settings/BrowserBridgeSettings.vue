@@ -29,7 +29,6 @@ const isMac = computed(() => navigator.platform.toLowerCase().includes('mac'))
 const chromiumPath = computed(() => status.value?.install?.chromiumExtensionPath ?? '')
 const firefoxPath = computed(() => status.value?.install?.firefoxExtensionPath ?? '')
 const chromiumFolderName = computed(() => folderBaseName(chromiumPath.value) || 'extension-chromium')
-const firefoxFolderName = computed(() => folderBaseName(firefoxPath.value) || 'extension-firefox')
 const firefoxManifestPath = computed(() =>
   firefoxPath.value ? `${firefoxPath.value}/manifest.json` : '',
 )
@@ -49,9 +48,18 @@ function parentFolder(filePath: string): string {
 const componentsInstalled = computed(() => isBrowserBridgeComponentsInstalled(status.value?.install))
 
 const connections = computed(() => status.value?.connections ?? [])
-const chromiumConnected = computed(() => connections.value.some(isChromiumBridgeConnection))
-const firefoxConnected = computed(() => connections.value.some(isFirefoxBridgeConnection))
+const chromiumConnection = computed(() => connections.value.find(isChromiumBridgeConnection))
+const firefoxConnection = computed(() => connections.value.find(isFirefoxBridgeConnection))
+const chromiumConnected = computed(() => Boolean(chromiumConnection.value))
+const firefoxConnected = computed(() => Boolean(firefoxConnection.value))
 const anyConnected = computed(() => chromiumConnected.value || firefoxConnected.value)
+
+function extensionStatusLabel(version?: string): string {
+  if (version) {
+    return t('browserBridge.statusExtensionConnectedVersion', { version })
+  }
+  return t('browserBridge.statusExtensionConnected')
+}
 
 function flashActionMsg(msg: string) {
   actionMsg.value = msg
@@ -180,11 +188,30 @@ async function startLoadFirefox() {
 }
 
 let unsubConnections: (() => void) | null = null
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function startPollingIfNeeded() {
+  if (pollTimer) return
+  // 如果有浏览器未连接，每 4s 自动刷新一次，最长 90s
+  let elapsed = 0
+  pollTimer = setInterval(async () => {
+    elapsed += 4
+    if (anyConnected.value || elapsed >= 90) {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+      return
+    }
+    await refreshStatus()
+  }, 4000)
+}
 
 onMounted(() => {
-  void refreshStatus()
+  void refreshStatus().then(startPollingIfNeeded)
   unsubConnections = window.electronAPI.browserBridge.onConnectionsChanged((next) => {
     status.value = next
+    if (anyConnected.value && pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
   })
 })
 
@@ -193,6 +220,7 @@ onUnmounted(() => {
   if (actionMsgTimer) clearTimeout(actionMsgTimer)
   if (copiedPathTimer) clearTimeout(copiedPathTimer)
   if (loadReadyTimer) clearTimeout(loadReadyTimer)
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
 })
 </script>
 
@@ -251,7 +279,7 @@ onUnmounted(() => {
                 >
                   {{
                     chromiumConnected
-                      ? t('browserBridge.statusExtensionConnected')
+                      ? extensionStatusLabel(chromiumConnection?.version)
                       : t('browserBridge.statusExtensionDisconnected')
                   }}
                 </div>
@@ -319,7 +347,7 @@ onUnmounted(() => {
                 >
                   {{
                     firefoxConnected
-                      ? t('browserBridge.statusExtensionConnected')
+                      ? extensionStatusLabel(firefoxConnection?.version)
                       : t('browserBridge.statusExtensionDisconnected')
                   }}
                 </div>

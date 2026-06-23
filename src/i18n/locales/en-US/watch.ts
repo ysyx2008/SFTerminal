@@ -145,6 +145,7 @@ export default {
     overviewShowMore: 'Show {n} more',
     overviewShowLess: 'Show less',
     sectionAnomalies: 'Anomalies',
+    retryWatch: 'Retry Now',
     sectionRunning: 'Running Now',
     sectionUpcoming: 'Upcoming',
     sectionRecent: 'Recent Activity',
@@ -357,6 +358,8 @@ export default {
     personalitySaveFailed: 'Failed to save. Please try again.',
   },
 
+
+  watchTabTitle: 'Watch',
 
   heartbeat: {
     title: 'Awakening',

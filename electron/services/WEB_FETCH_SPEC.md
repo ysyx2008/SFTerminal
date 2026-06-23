@@ -16,7 +16,7 @@
 
 | 函数签名 | 用途 | 主要调用方 |
 |---------|------|-----------|
-| `async webFetch(options: WebFetchOptions): Promise<WebFetchResult>` | 主入口：URL → 可读文本提取 | `agent/tools/web-fetch.ts` |
+| `async webFetch(options: WebFetchOptions): Promise<WebFetchResult>` | 主入口：URL → 可读文本提取 | `agent/tools/web-fetch.ts`（Agent 工具不暴露 `maxBytes`，固定服务默认 10MB） |
 | `jinaAvailable(): boolean` | 检查 Jina API 是否已配置 | 调用方决策后端 |
 
 ## 核心类型 / 接口
@@ -26,7 +26,7 @@
 interface WebFetchOptions {
   url: string
   timeoutSec?: number     // 超时秒数
-  maxBytes?: number       // 响应体大小上限（默认 3MB，硬上限 10MB）
+  maxBytes?: number       // 响应体大小上限（默认 10MB，硬上限 10MB）
   backend?: "auto" | "jina" | "readability" | "raw"
 }
 ```
@@ -63,7 +63,7 @@ type WebFetchBackend = "jina" | "readability" | "raw" | "fallback-text"
 
 **SSRF 防���**：`ensureNotInternal` 在请求前解析目标 IP，拦截所有内网地址（127.0.0.0/8、10.0.0.0/8、172.16.0.0/12、192.168.0.0/16）。
 
-**大小限制**：`maxBytes` 默认 3MB，超出截断并标记 `truncated: true`，硬上限 10MB。注意：若服务器声明的 `Content-Length` 已超过 `maxBytes`，会直接抛 `Response too large` 错误而不是截断（避免下载浪费）。
+**大小限制**：`maxBytes` 默认 10MB（与硬上限相同），超出截断并标记 `truncated: true`。注意：若服务器声明的 `Content-Length` 已超过 `maxBytes`，会直接抛 `Response too large` 错误而不是截断（避免下载浪费）。
 
 ## 关键约束
 

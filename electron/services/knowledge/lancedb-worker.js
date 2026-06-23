@@ -316,14 +316,14 @@ async function handleRemoveDocumentChunks(data) {
 async function handleVectorSearch(data) {
   if (!table) return { hits: [] }
   const { embedding, limit } = data || {}
-  try {
+
+  const runSearch = async () => {
     const results = await table
       .vectorSearch(embedding)
       .distanceType('cosine')
       .limit(limit || 20)
       .toArray()
-    // 不返回 vector 字段以节省 IPC 带宽
-    const hits = results.map(r => ({
+    return results.map(r => ({
       id: r.id,
       docId: r.docId,
       content: r.content,
@@ -332,10 +332,21 @@ async function handleVectorSearch(data) {
       hostId: r.hostId,
       tags: r.tags
     }))
+  }
+
+  try {
+    const hits = await runSearch()
     return { hits }
   } catch (error) {
     if (isLanceCorruptionError(error)) {
-      markCorrupted(`vectorSearch: ${error.message}`)
+      console.warn('[LanceDBWorker] vectorSearch IO 错误，aggressive compact 后重试一次:', error.message)
+      try {
+        await compact(true)
+        const hits = await runSearch()
+        return { hits }
+      } catch (retryErr) {
+        markCorrupted(`vectorSearch: ${retryErr.message}`)
+      }
     }
     console.error('[LanceDBWorker] vectorSearch failed:', error)
     return { hits: [], error: error.message }
@@ -463,6 +474,16 @@ async function handleGetValidRecords(data) {
   }
 }
 
+async function handleGetChunkCount() {
+  if (!table) return { count: 0 }
+  try {
+    return { count: await table.countRows() }
+  } catch (error) {
+    console.error('[LanceDBWorker] getChunkCount failed:', error)
+    return { count: 0 }
+  }
+}
+
 async function handleGetAllDocIds() {
   if (!table) return { docIds: [] }
   try {
@@ -509,6 +530,7 @@ async function dispatch(message) {
       case 'dropTable':            result = await handleDropTable();                break
       case 'getValidRecords':      result = await handleGetValidRecords(data);      break
       case 'getAllDocIds':          result = await handleGetAllDocIds();             break
+      case 'getChunkCount':         result = await handleGetChunkCount();            break
       case 'compact':              result = await handleCompact(data);              break
       case 'ping':                 result = { ok: true };                           break
       default:

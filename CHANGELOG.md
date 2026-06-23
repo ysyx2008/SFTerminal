@@ -2,7 +2,39 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v11.0.0 (2026-06-12) (Latest)
+## v11.1.0 (2026-06-18) (Latest)
+
+> The assistant artifact panel is now fully available—preview and switch between generated documents, charts, and more in the sidebar, with a collapsible layout that stays out of your way. The browser bridge can control your existing Chrome or Firefox session without opening a new window, keeping site logins intact.
+
+### New Features
+- 🎯 **Artifact Panel**: Collapse/expand, interactive HTML preview, single preview with title dropdown; Agent can open/close the panel explicitly; artifacts stored by kind with Agent awareness synced
+- 🎯 **Browser Bridge Attach Mode**: Control your open Chrome or Firefox directly—no new window, logins preserved; connection status dashboard; Chrome Web Store listing
+- 🎯 **Knowledge GPU Acceleration**: Migrated to Transformers.js v4 with GPU embedding acceleration; improved index rebuild stability and orphan chunk cleanup
+- 🎯 **Agent Scratch Workspace**: New `scratch/` temp directory; workspace protection narrowed to IDENTITY/SOUL only
+- 🎯 **Home Watch Anomaly Badge**: Welcome page watch cards show anomaly count
+- 🎯 **Mermaid Zoom**: Click to enlarge with fixed white background
+- 🎯 **Resizable Welcome Sidebar**: Drag to resize recent conversations sidebar; width cached in localStorage to avoid layout jump on startup
+- 🎯 **Sub-Agent Safety**: Block dangerous commands and clearly communicate system limits to sub-agents
+
+### Improvements
+- ⚡ **Browser Bridge Protocol v1**: Thin extension architecture; content extraction moved to desktop Readability
+- ⚡ **Artifact History Externalization**: Persist regenerable content; canvasData no longer lost after resume
+- ⚡ **UI Polish**: Successful tool_result hidden by default; knowledge/startup progress bars split and fixed to avoid layout bounce; AiPanel scroll position saved across tabs
+- ⚡ **OEM Brand Override**: Unified window title and i18n strings
+- ⚡ **Data Management**: Added assistant session count in storage stats
+- ⚡ **CI**: Windows build heap limit, model file caching, Dependabot security PR routing fix
+
+### Bug Fixes
+- 🐛 **Terminal Tool Regression**: Fixed v11 terminal tools not working
+- 🐛 **Browser Bridge Reconnect**: Auto-reconnect after restart
+- 🐛 **Streaming Messages**: Scroll-to-bottom interruption and "new message" flicker; user supplement messages out of order or lost
+- 🐛 **Artifact Panel**: Lost on resume, collapse bar icons, animation, PPT preview color mismatch, Electron tooltip, etc.
+- 🐛 **Email Attachments**: ZIP GBK extraction and overwrite protection
+- 🐛 **Image Preview**: Mac trackpad gestures, pointer-anchored zoom
+- 🐛 **Build**: vue-tsc errors breaking Windows installer build
+- 🐛 **Website**: Browser bridge privacy policy page title hidden under navbar
+
+## v11.0.0 (2026-06-12)
 
 > A redesigned home page—start conversations, browse and manage recent history, and switch back to your workspace without losing progress.
 

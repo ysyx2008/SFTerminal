@@ -9,6 +9,7 @@ import { ArrowLeft, Trash2, ChevronDown, Play, Square, User } from 'lucide-vue-n
 import { useSmartPatrol, type ConfirmStrategy } from '../composables/useSmartPatrol'
 import { useConfigStore } from '../stores/config'
 import AgentPlanView from './AgentPlanView.vue'
+import AiProfileSelect from './AiProfileSelect.vue'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -117,17 +118,12 @@ onUnmounted(() => {
       </h1>
       <div class="header-actions">
         <!-- 模型选择 -->
-        <select 
+        <AiProfileSelect
           v-if="aiProfiles.length > 0"
           v-model="selectedProfileId"
-          class="model-select"
+          :profiles="aiProfiles"
           :disabled="isRunning"
-          :title="t('ai.switchModel')"
-        >
-          <option v-for="profile in aiProfiles" :key="profile.id" :value="profile.id">
-            {{ profile.name }} ({{ profile.model }}){{ profile.modelType === 'vision' ? ` [${t('aiSettings.modelTypeVision')}]` : '' }}
-          </option>
-        </select>
+        />
         <button class="btn-icon" @click="clearMessages" :title="t('common.clear')">
           <Trash2 :size="18" />
         </button>

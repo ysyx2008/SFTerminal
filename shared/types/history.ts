@@ -31,12 +31,16 @@ export interface AgentStepRecord {
   success?: boolean
   /** 并行子 Agent 卡片组（dispatch_agents 工具专用） */
   subAgents?: import('./agent').SubAgentResult[]
+  /** Canvas 预览数据（仅 UI / Artifact 面板消费，不发给 AI；历史重开时重放） */
+  canvasData?: import('./canvas').CanvasData
 }
 
 export interface AgentRecord {
   id: string
   timestamp: number
   terminalId: string
+  /** Agent 的身份 key（如 '__companion__'、'__watch__'，或 tabId）。存盘时由 agent._agentId 写入 */
+  agentKey?: string
   terminalType: TerminalType
   sshHost?: string
   userTask: string
@@ -46,6 +50,12 @@ export interface AgentRecord {
   duration: number
   status: 'completed' | 'failed' | 'aborted'
   tokenUsage?: TokenUsage
+  /**
+   * 产出物面板的持久化清单。
+   * 由 Agent 完成后或用户在面板做增删操作时写入，加载历史时直接恢复（不再 replay steps）。
+   * 字段缺失时（老记录）退化为按 steps 重放，保持向后兼容。
+   */
+  artifacts?: import('./canvas').CanvasArtifact[]
 }
 
 /**
@@ -58,6 +68,8 @@ export interface AgentHistorySummary {
   duration: number
   userTask: string
   terminalType: TerminalType
+  /** Agent 身份 key（如 '__companion__'、'__watch__'）。用于把联络/关切会话从「任务」侧栏剔除 */
+  agentKey?: string
   sshHost?: string
   status: 'completed' | 'failed' | 'aborted'
 }

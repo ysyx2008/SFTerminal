@@ -772,6 +772,7 @@ interface Window {
         duration: number
         userTask: string
         terminalType: 'local' | 'ssh'
+        agentKey?: string
         sshHost?: string
         status: 'completed' | 'failed' | 'aborted'
       }>>
@@ -807,7 +808,9 @@ interface Window {
         status: 'completed' | 'failed' | 'aborted'
         duration: number
       } | undefined>
+      getRecentByAgentKey: (agentKey: string, limit?: number) => Promise<Array<import('@shared/types').AgentRecord>>
       deleteAgentRecord: (id: string) => Promise<boolean>
+      saveArtifacts: (recordId: string, artifacts: import('@shared/types').CanvasArtifact[]) => Promise<void>
       getStorageStats: () => Promise<{
         chatFiles: number
         agentFiles: number
@@ -1394,9 +1397,15 @@ interface Window {
         reason: 'vector' | 'bm25' | 'both' | string
         cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing'
         total?: number
+        libraryTotal?: number
       }) => void) => () => void
       // 监听索引重建进度
-      onRebuildProgress: (callback: (data: { current: number; total: number; filename: string }) => void) => () => void
+      onRebuildProgress: (callback: (data: {
+        current: number
+        total: number
+        libraryTotal?: number
+        filename: string
+      }) => void) => () => void
     }
     // 协调器（智能巡检）
     orchestrator: {
@@ -1491,6 +1500,10 @@ interface Window {
         error: string
       }) => void) => () => void
     }
+    // PPT / HTML 产出物预览
+    ppt: {
+      sanitizePreview: (html: string) => Promise<string>
+    }
     // 本地文件系统操作
     localFs: {
       getSeparator: () => Promise<string>
@@ -1522,6 +1535,10 @@ interface Window {
       copyFile: (src: string, dest: string) => Promise<{ success: boolean; error?: string }>
       copyDir: (src: string, dest: string) => Promise<{ success: boolean; error?: string }>
       readFile: (path: string) => Promise<{ success: boolean; data?: string; error?: string }>
+      previewArtifact: (
+        filePath: string,
+        renderer: import('@shared/types').CanvasRendererType
+      ) => Promise<{ success: boolean; data?: string; error?: string }>
       writeFile: (
         filePath: string,
         content: string
@@ -1539,6 +1556,7 @@ interface Window {
       }>>
       showInExplorer: (path: string) => Promise<void>
       openFile: (path: string) => Promise<void>
+      exists: (filePath: string) => Promise<{ success: boolean; data?: boolean; error?: string }>
     }
     // 文件管理器窗口操作
     fileManager: {
@@ -2265,6 +2283,27 @@ interface Window {
         ) => void
       ) => () => void
       sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => void
+    }
+
+    workbench: {
+      onExec: (
+        handler: (
+          id: string,
+          op: { type: 'list_artifacts' },
+          ownerAgentKey?: string
+        ) => void
+      ) => () => void
+      sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => void
+    }
+
+    browserBridge: {
+      getStatus: () => Promise<import('@shared/types/browser-bridge').BrowserBridgeStatus>
+      install: () => Promise<import('@shared/types/browser-bridge').BrowserBridgeInstallStatus>
+      uninstall: () => Promise<{ errors: string[] }>
+      openExtensionGuide: (browser: import('@shared/types/browser-bridge').BrowserBridgeBrowser) => Promise<void>
+      onConnectionsChanged: (
+        callback: (status: import('@shared/types/browser-bridge').BrowserBridgeStatus) => void
+      ) => () => void
     }
   }
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRandomPlaceholder } from '../composables/useRandomPlaceholder'
 import { X, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2, Volume2 } from 'lucide-vue-next'
 import { useMentions } from '../composables/useMentions'
 import { toast } from '../composables/useToast'
@@ -65,8 +66,12 @@ const props = defineProps<{
   clearTabError: () => void
   /** 嵌入欢迎页等非面板场景：去掉顶部分割线，使用独立圆角容器 */
   embedded?: boolean
-  /** 覆盖默认 placeholder（如欢迎页） */
+  /** 覆盖默认 placeholder（如欢迎页传入随机值） */
   placeholder?: string
+  /** 覆盖默认随机池 i18n 键（默认 ai.inputPlaceholderPools） */
+  placeholderPoolsKey?: string
+  /** 随机池为空时的 fallback i18n 键 */
+  placeholderFallbackKey?: string
 }>()
 
 const { t } = useI18n()
@@ -74,10 +79,17 @@ const { t } = useI18n()
 const quoteStore = useComposerQuoteStore()
 const quoteSnippets = computed(() => quoteStore.getSnippets(props.currentTabId))
 
+const { value: randomPlaceholder, pick: pickRandomPlaceholder } = useRandomPlaceholder(
+  () => props.placeholderPoolsKey ?? 'ai.inputPlaceholderPools',
+  () => props.placeholderFallbackKey ?? 'ai.inputPlaceholderAgent'
+)
+
 const composerPlaceholder = computed(
   () =>
     props.placeholder ??
-    (props.isAgentRunning ? t('ai.inputPlaceholderSupplement') : t('ai.inputPlaceholderAgent'))
+    (props.isAgentRunning
+      ? t('ai.inputPlaceholderSupplement')
+      : randomPlaceholder.value || t(props.placeholderFallbackKey ?? 'ai.inputPlaceholderAgent'))
 )
 
 /** embedded 模式：有附件时才显示外层统一容器，避免空态双层边框 */
@@ -88,6 +100,29 @@ const hasComposerAttachments = computed(
     quoteSnippets.value.length > 0 ||
     props.pendingImages.length > 0
 )
+
+let textareaResizeObserver: ResizeObserver | null = null
+
+const setupTextareaResizeObserver = () => {
+  textareaResizeObserver?.disconnect()
+  const target = textareaWrapEl.value
+  if (!target) return
+
+  textareaResizeObserver = new ResizeObserver(() => {
+    measureTextareaHeight()
+  })
+  textareaResizeObserver.observe(target)
+}
+
+onMounted(() => {
+  syncTextareaSize()
+  nextTick(setupTextareaResizeObserver)
+})
+
+onBeforeUnmount(() => {
+  textareaResizeObserver?.disconnect()
+  textareaResizeObserver = null
+})
 
 /** 输入框无文字时，有图片或引用摘录也可发送 */
 const canSubmitMessage = computed(
@@ -149,6 +184,7 @@ function formatQuotesAppendix(snippets: ComposerQuoteSnippet[]): string {
 const inputText = ref('')
 const isComposing = ref(false)
 const mentionInputEl = ref<HTMLTextAreaElement | null>(null)
+const textareaWrapEl = ref<HTMLDivElement | null>(null)
 const mentionListEl = ref<HTMLDivElement | null>(null)
 const currentTabIdRef = computed(() => props.currentTabId)
 const uploadedDocsRef = computed(() => props.uploadedDocs as ParsedDocument[])
@@ -175,12 +211,22 @@ const focusInput = () => {
   mentionInputEl.value?.focus()
 }
 
-const adjustTextareaHeight = () => {
+/** 两行 grid 布局下测量高度；勿用 flex-column + scrollHeight 组合 */
+const measureTextareaHeight = () => {
   const textarea = mentionInputEl.value
   if (!textarea) return
 
-  textarea.style.height = 'auto'
-  textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`
+  textarea.style.overflow = 'hidden'
+  textarea.style.minHeight = '0'
+  textarea.style.height = '0'
+  const nextHeight = Math.min(textarea.scrollHeight, 360)
+  textarea.style.height = `${nextHeight}px`
+  textarea.style.minHeight = ''
+  textarea.style.overflow = nextHeight >= 360 ? 'auto' : 'hidden'
+}
+
+const syncTextareaSize = () => {
+  nextTick(measureTextareaHeight)
 }
 
 const appendText = (text: string) => {
@@ -188,23 +234,19 @@ const appendText = (text: string) => {
   inputText.value = inputText.value
     ? `${inputText.value} ${text}`.trim()
     : text
-  nextTick(() => {
-    focusInput()
-    adjustTextareaHeight()
-  })
+  syncTextareaSize()
+  nextTick(focusInput)
 }
 
 const setText = (text: string) => {
   inputText.value = text
-  nextTick(() => {
-    focusInput()
-    adjustTextareaHeight()
-  })
+  syncTextareaSize()
+  nextTick(focusInput)
 }
 
 const clearText = () => {
   inputText.value = ''
-  nextTick(adjustTextareaHeight)
+  syncTextareaSize()
 }
 
 // 一次性脉冲提示：让用户从场景卡片填入 prompt 后，注意到输入框已就绪。
@@ -233,7 +275,7 @@ watch(() => props.visible, (isVisible) => {
   if (isVisible) {
     nextTick(() => {
       focusInput()
-      adjustTextareaHeight()
+      measureTextareaHeight()
     })
   }
 }, { immediate: true })
@@ -244,14 +286,14 @@ watch(
     if (len > (prevLen ?? 0)) {
       nextTick(() => {
         focusInput()
-        adjustTextareaHeight()
+        measureTextareaHeight()
       })
     }
   }
 )
 
 watch(inputText, () => {
-  nextTick(adjustTextareaHeight)
+  syncTextareaSize()
 })
 
 watch(mentionSelectedIndex, (newIndex) => {
@@ -271,7 +313,7 @@ const handleInputChange = (event: Event) => {
   const textarea = event.target as HTMLTextAreaElement
   const cursorPos = textarea.selectionStart || 0
   detectTrigger(textarea.value, cursorPos)
-  adjustTextareaHeight()
+  measureTextareaHeight()
 }
 
 const handleInputBlur = () => {
@@ -282,7 +324,7 @@ const selectSuggestion = (suggestion: typeof mentionSuggestions.value[0]) => {
   doSelectSuggestion(suggestion)
   nextTick(() => {
     focusInput()
-    adjustTextareaHeight()
+    measureTextareaHeight()
   })
 }
 
@@ -330,6 +372,7 @@ const handleSend = async () => {
 
   const rawInput = inputText.value.trim()
   inputText.value = ''
+  void pickRandomPlaceholder()
   props.clearTabError()
 
   await new Promise(resolve => setTimeout(resolve, 0))
@@ -372,13 +415,17 @@ const getParsePhaseLabel = (doc: ParsingDocument) => {
   return doc.message || t(`ai.documentParsePhase.${doc.phase}`)
 }
 
+const slots = useSlots()
+const isTwoRow = computed(() => !!slots['footer-left'])
+
 defineExpose({
   focusInput,
   appendText,
   setText,
   clearText,
   flashHint,
-  getText: () => inputText.value
+  getText: () => inputText.value,
+  refreshPlaceholder: () => { void pickRandomPlaceholder() },
 })
 
 const handleSendClick = (event: MouseEvent) => {
@@ -491,8 +538,9 @@ const handleSendClick = (event: MouseEvent) => {
       </div>
     </div>
 
-    <div class="input-container" :class="{ 'flash-hint': isFlashHint }">
+    <div class="input-container" :class="{ 'flash-hint': isFlashHint, 'input-container-two-row': isTwoRow }">
       <button
+        v-if="!isTwoRow"
         class="upload-btn"
         :disabled="isAttaching"
         :title="t('ai.attach')"
@@ -502,18 +550,19 @@ const handleSendClick = (event: MouseEvent) => {
         <Plus v-else :size="18" />
       </button>
 
-      <textarea
-        ref="mentionInputEl"
-        v-model="inputText"
-        :placeholder="composerPlaceholder"
-        rows="1"
-        @input="handleInputChange"
-        @keydown="handleInputKeyDown"
-        @paste="handlePaste"
-        @compositionstart="isComposing = true"
-        @compositionend="isComposing = false"
-        @blur="handleInputBlur"
-      ></textarea>
+      <div ref="textareaWrapEl" class="input-textarea-wrap">
+        <textarea
+          ref="mentionInputEl"
+          v-model="inputText"
+          :placeholder="composerPlaceholder"
+          @input="handleInputChange"
+          @keydown="handleInputKeyDown"
+          @paste="handlePaste"
+          @compositionstart="isComposing = true"
+          @compositionend="isComposing = false"
+          @blur="handleInputBlur"
+        ></textarea>
+      </div>
 
       <div v-if="showMentionMenu" class="mention-menu">
         <div v-if="mentionMenuType === null" class="mention-menu-header">
@@ -567,71 +616,124 @@ const handleSendClick = (event: MouseEvent) => {
         </div>
       </div>
 
-      <button
-        v-if="!isLoading || isAgentRunning"
-        class="voice-btn"
-        :class="{ recording: isRecording, transcribing: isTranscribing, ptt: isPushToTalk, unavailable: !audioAvailable }"
-        :disabled="!audioAvailable || isTranscribing || isSpeechInitializing"
-        :title="!audioAvailable ? t('ai.noAudioDevice') : isRecording ? t('ai.stopRecording') : (isTranscribing ? t('ai.transcribing') : t('ai.startRecording'))"
-        @click="handleRecordClick"
-      >
-        <Loader2 v-if="isTranscribing || isSpeechInitializing" :size="18" class="spin" />
-        <MicOff v-else-if="isRecording || !audioAvailable" :size="18" />
-        <Mic v-else :size="18" />
-      </button>
+      <!-- 两行模式底栏 -->
+      <div v-if="isTwoRow" class="input-bottom-bar">
+        <div class="input-footer-left">
+          <button
+            class="upload-btn"
+            :disabled="isAttaching"
+            :title="t('ai.attach')"
+            @click="selectAttachment"
+          >
+            <span v-if="isAttaching" class="upload-spinner"></span>
+            <Plus v-else :size="18" />
+          </button>
+          <slot name="footer-left" />
+        </div>
+        <div class="input-footer-right">
+          <button
+            v-if="!isLoading || isAgentRunning"
+            class="voice-btn"
+            :class="{ recording: isRecording, transcribing: isTranscribing, ptt: isPushToTalk, unavailable: !audioAvailable }"
+            :disabled="!audioAvailable || isTranscribing || isSpeechInitializing"
+            :title="!audioAvailable ? t('ai.noAudioDevice') : isRecording ? t('ai.stopRecording') : (isTranscribing ? t('ai.transcribing') : t('ai.startRecording'))"
+            @click="handleRecordClick"
+          >
+            <Loader2 v-if="isTranscribing || isSpeechInitializing" :size="18" class="spin" />
+            <MicOff v-else-if="isRecording || !audioAvailable" :size="18" />
+            <Mic v-else :size="18" />
+          </button>
+          <button v-if="ttsIsSpeaking" class="tts-stop-btn" @click="ttsStop" :title="t('ai.stopTts')">
+            <Volume2 :size="18" class="tts-speaking-icon" />
+          </button>
+          <button v-if="isLoading && !isAgentRunning" class="stop-btn" @click="stopGeneration" :title="t('ai.stopGeneration')">
+            <Square :size="16" fill="currentColor" />
+          </button>
+          <button v-else-if="isAgentRunning && canSubmitMessage" class="send-btn send-btn-supplement" :disabled="isAttaching" :title="t('ai.sendSupplement')" @click="handleSendClick">
+            <ArrowUp :size="18" />
+          </button>
+          <button v-else-if="isAgentRunning && canSendEmpty" class="send-btn send-btn-default" :disabled="isAttaching" :title="t('ai.useDefault')" @click="handleSendClick">
+            <Check :size="18" />
+          </button>
+          <button v-else-if="isAgentRunning" class="stop-btn" @click="abortAgent" :title="t('ai.stopAgent')">
+            <Square :size="16" fill="currentColor" />
+          </button>
+          <button v-else class="send-btn send-btn-agent" :disabled="isAttaching || !canSubmitMessage" :title="t('ai.executeTask')" @click="handleSendClick">
+            <ArrowUp :size="18" />
+          </button>
+        </div>
+      </div>
 
-      <button
-        v-if="ttsIsSpeaking"
-        class="tts-stop-btn"
-        @click="ttsStop"
-        :title="t('ai.stopTts')"
-      >
-        <Volume2 :size="18" class="tts-speaking-icon" />
-      </button>
+      <!-- 单行模式右侧按钮 -->
+      <template v-else>
+        <slot name="inner-right" />
 
-      <button
-        v-if="isLoading && !isAgentRunning"
-        class="stop-btn"
-        @click="stopGeneration"
-        :title="t('ai.stopGeneration')"
-      >
-        <Square :size="16" fill="currentColor" />
-      </button>
-      <button
-        v-else-if="isAgentRunning && canSubmitMessage"
-        class="send-btn send-btn-supplement"
-        :disabled="isAttaching"
-        :title="t('ai.sendSupplement')"
-        @click="handleSendClick"
-      >
-        <ArrowUp :size="18" />
-      </button>
-      <button
-        v-else-if="isAgentRunning && canSendEmpty"
-        class="send-btn send-btn-default"
-        :disabled="isAttaching"
-        :title="t('ai.useDefault')"
-        @click="handleSendClick"
-      >
-        <Check :size="18" />
-      </button>
-      <button
-        v-else-if="isAgentRunning"
-        class="stop-btn"
-        @click="abortAgent"
-        :title="t('ai.stopAgent')"
-      >
-        <Square :size="16" fill="currentColor" />
-      </button>
-      <button
-        v-else
-        class="send-btn send-btn-agent"
-        :disabled="isAttaching || !canSubmitMessage"
-        :title="t('ai.executeTask')"
-        @click="handleSendClick"
-      >
-        <ArrowUp :size="18" />
-      </button>
+        <button
+          v-if="!isLoading || isAgentRunning"
+          class="voice-btn"
+          :class="{ recording: isRecording, transcribing: isTranscribing, ptt: isPushToTalk, unavailable: !audioAvailable }"
+          :disabled="!audioAvailable || isTranscribing || isSpeechInitializing"
+          :title="!audioAvailable ? t('ai.noAudioDevice') : isRecording ? t('ai.stopRecording') : (isTranscribing ? t('ai.transcribing') : t('ai.startRecording'))"
+          @click="handleRecordClick"
+        >
+          <Loader2 v-if="isTranscribing || isSpeechInitializing" :size="18" class="spin" />
+          <MicOff v-else-if="isRecording || !audioAvailable" :size="18" />
+          <Mic v-else :size="18" />
+        </button>
+
+        <button
+          v-if="ttsIsSpeaking"
+          class="tts-stop-btn"
+          @click="ttsStop"
+          :title="t('ai.stopTts')"
+        >
+          <Volume2 :size="18" class="tts-speaking-icon" />
+        </button>
+
+        <button
+          v-if="isLoading && !isAgentRunning"
+          class="stop-btn"
+          @click="stopGeneration"
+          :title="t('ai.stopGeneration')"
+        >
+          <Square :size="16" fill="currentColor" />
+        </button>
+        <button
+          v-else-if="isAgentRunning && canSubmitMessage"
+          class="send-btn send-btn-supplement"
+          :disabled="isAttaching"
+          :title="t('ai.sendSupplement')"
+          @click="handleSendClick"
+        >
+          <ArrowUp :size="18" />
+        </button>
+        <button
+          v-else-if="isAgentRunning && canSendEmpty"
+          class="send-btn send-btn-default"
+          :disabled="isAttaching"
+          :title="t('ai.useDefault')"
+          @click="handleSendClick"
+        >
+          <Check :size="18" />
+        </button>
+        <button
+          v-else-if="isAgentRunning"
+          class="stop-btn"
+          @click="abortAgent"
+          :title="t('ai.stopAgent')"
+        >
+          <Square :size="16" fill="currentColor" />
+        </button>
+        <button
+          v-else
+          class="send-btn send-btn-agent"
+          :disabled="isAttaching || !canSubmitMessage"
+          :title="t('ai.executeTask')"
+          @click="handleSendClick"
+        >
+          <ArrowUp :size="18" />
+        </button>
+      </template>
     </div>
   </div>
   </div>
@@ -1071,12 +1173,59 @@ const handleSendClick = (event: MouseEvent) => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-.input-container:focus-within {
+/* 两行模式：grid 替代 flex-column，避免 textarea scrollHeight 测量失真 */
+.input-container-two-row {
+  display: grid;
+  grid-template-rows: auto auto;
+  align-items: stretch;
+  gap: 0;
+  padding: 10px 10px 6px;
+}
+
+.input-container-two-row .input-textarea-wrap {
+  width: 100%;
+}
+
+.input-textarea-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.input-container-two-row textarea {
+  width: 100%;
+  padding: 7px 4px;
+  min-height: 0;
+  height: 20px; /* 单行初始高度，mountd 后由 measureTextareaHeight 重算 */
+}
+
+.input-bottom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.input-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.input-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.input-container:has(textarea:focus) {
   box-shadow: 0 0 0 2px var(--accent-primary), 0 4px 12px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 /* flash-hint：场景卡片填入 prompt 后的一次性脉冲，提醒用户"输入框已就绪，按 Enter 发送"。
-   动画期间盖过 :focus-within 的 box-shadow（因 specificity + 动画在同 selector 上覆盖），
+   动画期间盖过 :has(textarea:focus) 的 box-shadow（因 specificity + 动画在同 selector 上覆盖），
    1.5s 后 class 自动移除，恢复默认 / focus 态外观。 */
 .input-container.flash-hint {
   animation: composerFlashHint 1.5s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1170,8 +1319,8 @@ const handleSendClick = (event: MouseEvent) => {
 }
 
 .ai-input textarea {
-  flex: 1;
-  align-self: center;
+  display: block;
+  width: 100%;
   padding: 7px 4px;
   font-size: 14px;
   font-family: inherit;
@@ -1192,7 +1341,7 @@ const handleSendClick = (event: MouseEvent) => {
   opacity: 0.7;
 }
 
-/* 焦点环由外层 .input-container:focus-within 统一提供，
+/* 焦点环由外层 .input-container:has(textarea:focus) 统一提供，
    textarea 内部不再叠加全局 textarea:focus 光晕，避免出现两层焦点。 */
 .ai-input textarea:focus {
   border-color: transparent;

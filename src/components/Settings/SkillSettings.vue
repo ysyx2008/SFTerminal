@@ -7,7 +7,17 @@ const props = defineProps<{
   pendingInstallSkillId?: string
 }>()
 
-const { t, locale } = useI18n()
+const { t, te, locale } = useI18n()
+
+function localizedBuiltinSkillName(skill: BuiltinSkill): string {
+  const key = `skillSettings.builtinSkillNames.${skill.id}`
+  return te(key) ? String(t(key)) : skill.name
+}
+
+function localizedBuiltinSkillDesc(skill: BuiltinSkill): string {
+  const key = `skillSettings.builtinSkillDescs.${skill.id}`
+  return te(key) ? String(t(key)) : skill.description
+}
 
 interface BuiltinSkill {
   id: string
@@ -496,8 +506,8 @@ watch(() => props.pendingInstallSkillId, (newId) => {
               />
             </div>
             <div class="skill-info">
-              <div class="skill-name">{{ t(`skillSettings.builtinSkillNames.${skill.id}`, skill.name) }}</div>
-              <div class="skill-desc" v-if="skill.description" :title="t(`skillSettings.builtinSkillDescs.${skill.id}`, skill.description)">{{ t(`skillSettings.builtinSkillDescs.${skill.id}`, skill.description) }}</div>
+              <div class="skill-name">{{ localizedBuiltinSkillName(skill) }}</div>
+              <div class="skill-desc" v-if="skill.description" :title="localizedBuiltinSkillDesc(skill)">{{ localizedBuiltinSkillDesc(skill) }}</div>
             </div>
           </div>
         </div>

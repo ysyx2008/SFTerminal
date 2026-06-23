@@ -23,8 +23,8 @@
  * 设计要点：
  * - jsdom + Readability 用 lazy import，不影响 main 进程启动
  * - jsdom 在主进程同步执行，对 1MB HTML 占用 ~10-25MB 内存 + 数百 ms CPU；
- *   默认 max_bytes 设 3MB（覆盖绝大多数长文档 / Confluence / Notion 公开页 /
- *   现代 SaaS docs SPA 渲染产物），上限 10MB 留给极端页面
+ *   默认 max_bytes 设 10MB（与硬上限相同，覆盖 Confluence / Notion 公开页 /
+ *   现代 SaaS docs SPA 渲染产物等偏重 HTML）
  * - 流式读取 + Content-Length 检查，超过 max_bytes 立即中断
  * - charset：从 response content-type 解析；UTF-8 走 TextDecoder，其他
  *   （GBK / Shift_JIS / Big5 等）lazy import iconv-lite 解码；不识别就回落
@@ -32,6 +32,7 @@
  *   返回 charset。
  */
 import { createLogger } from '../utils/logger'
+import { extractArticleFromHtml, MIN_READABILITY_CHARS } from '../utils/readability-extract'
 import { getApiKey } from './web-search'
 import { Buffer } from 'buffer'
 
@@ -39,13 +40,11 @@ const log = createLogger('WebFetch')
 
 const DEFAULT_TIMEOUT_SEC = 30
 const MAX_TIMEOUT_SEC = 60
-// 主进程跑 jsdom，HTML 越大 CPU 阻塞越久。3MB 能覆盖绝大多数长文档（含 Confluence
-// / Notion 公开页 / SaaS docs SPA 渲染产物）；上限 10MB 留给极端长页面。
-// 提示：jsdom 处理 3MB HTML 大约 30-75MB 内存 + 1-3s CPU，已是可接受范围。
-const DEFAULT_MAX_BYTES = 3 * 1024 * 1024     // 3MB
+// 主进程跑 jsdom，HTML 越大 CPU 阻塞越久。默认与硬上限同为 10MB。
+// 提示：jsdom 处理 10MB HTML 大约 100-250MB 内存 + 3-10s CPU，偶发大页可接受。
+const DEFAULT_MAX_BYTES = 10 * 1024 * 1024    // 10MB
 const MAX_MAX_BYTES = 10 * 1024 * 1024        // 10MB
 const TEXT_OUTPUT_TRUNCATE = 16_000           // 返回给 Agent 的文本上限
-const MIN_READABILITY_CHARS = 50              // Readability 提取结果短于此值视为提取失败
 const ERROR_PREVIEW_BYTES = 8 * 1024          // 错误响应体最多读 8KB 用于预览
 
 const JINA_READER_BASE = 'https://r.jina.ai/'
@@ -339,7 +338,7 @@ async function extractHtml(
   truncatedAtRead: boolean
 ): Promise<WebFetchResult> {
   try {
-    const article = await runReadability(rawHtml, finalUrl)
+    const article = await extractArticleFromHtml(rawHtml, finalUrl)
     if (article && article.textContent && article.textContent.trim().length > MIN_READABILITY_CHARS) {
       const body = article.textContent.trim()
       const out = article.title
@@ -373,29 +372,6 @@ async function extractHtml(
     title: fallback.title,
     truncated: truncatedAtRead || fallback.text.length > TEXT_OUTPUT_TRUNCATE,
     backend: 'fallback-text',
-  }
-}
-
-/**
- * 调用 Mozilla Readability 提取正文。
- * jsdom + Readability 用 lazy import，第一次调用时加载（~5MB），后续走模块缓存。
- */
-async function runReadability(html: string, baseUrl: string): Promise<{
-  title: string | null
-  textContent: string
-  content: string
-} | null> {
-  const { JSDOM } = await import('jsdom')
-  const { Readability } = await import('@mozilla/readability')
-
-  const dom = new JSDOM(html, { url: baseUrl })
-  const reader = new Readability(dom.window.document)
-  const article = reader.parse()
-  if (!article) return null
-  return {
-    title: article.title ?? null,
-    textContent: article.textContent ?? '',
-    content: article.content ?? '',
   }
 }
 

@@ -1,13 +1,63 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, Radio, Bot, Home } from 'lucide-vue-next'
-import { useTerminalStore } from '../stores/terminal'
+import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, SatelliteDish, Bot, Home, PanelTopOpen, Radio } from 'lucide-vue-next'
+import { useTerminalStore, COMPANION_TAB_AGENT_ID } from '../stores/terminal'
 import { formatAgentAttentionTooltip } from '../utils/agent-tab-ui-meta'
 import BatchCommandPanel from './BatchCommandPanel.vue'
+import {
+  isConversationDragEvent,
+  useConversationDropTarget,
+  useOpenConversationInTab,
+} from '../composables/useConversationDragDrop'
 
 const { t } = useI18n()
 const terminalStore = useTerminalStore()
+const { openConversationInTab } = useOpenConversationInTab()
+const {
+  isDragOver: isConversationDragOver,
+  handleDragEnter: handleConversationDragEnter,
+  handleDragOver: handleConversationDragOver,
+  handleDragLeave: handleConversationDragLeave,
+  handleDrop: handleConversationDrop,
+} = useConversationDropTarget(openConversationInTab)
+
+const tabBarRef = ref<HTMLElement | null>(null)
+const conversationDropHintStyle = ref<Record<string, string>>({})
+
+const updateConversationDropHintPosition = () => {
+  const rect = tabBarRef.value?.getBoundingClientRect()
+  if (!rect) return
+  conversationDropHintStyle.value = {
+    top: `${rect.bottom + 8}px`,
+    left: `${rect.left + rect.width / 2}px`,
+    transform: 'translateX(-50%)',
+  }
+}
+
+const onConversationDragEnter = (event: DragEvent) => {
+  handleConversationDragEnter(event)
+  if (isConversationDragEvent(event)) {
+    nextTick(updateConversationDropHintPosition)
+  }
+}
+
+const onConversationDragOver = (event: DragEvent) => {
+  handleConversationDragOver(event)
+  if (isConversationDragEvent(event)) {
+    updateConversationDropHintPosition()
+  }
+}
+
+watch(isConversationDragOver, (over) => {
+  if (over) nextTick(updateConversationDropHintPosition)
+})
+
+/** 远程 Tab 已有 SatelliteDish 图标，标题里去掉历史遗留的 📡 前缀避免重复 */
+function displayTabTitle(tab: { customTitle?: string; title: string; isRemote?: boolean }): string {
+  const raw = tab.customTitle || tab.title
+  return tab.isRemote ? raw.replace(/^📡\s*/, '') : raw
+}
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 
 const emit = defineEmits<{
@@ -133,7 +183,8 @@ const handleNewTab = (shell?: string) => {
 }
 
 const handleNewAssistant = () => {
-  terminalStore.createAssistantTab()
+  // 新建一个空白的独立助手 tab（isPromoted 直接进 Tab 栏并激活），而非回欢迎页
+  terminalStore.createAssistantTab({ isPromoted: true, activate: true })
   showNewMenu.value = false
 }
 
@@ -175,6 +226,7 @@ const handleDragStart = (index: number, event: DragEvent) => {
 
 // 拖拽经过
 const handleDragOver = (index: number, event: DragEvent) => {
+  if (isConversationDragEvent(event)) return
   event.preventDefault()
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = 'move'
@@ -187,11 +239,19 @@ const handleDragLeave = () => {
   dragOverIndex.value = null
 }
 
+// 将 displayedTabs 中的显示索引转为 terminalStore.tabs 中的真实索引
+const toRealIndex = (displayIndex: number): number => {
+  const tab = displayedTabs.value[displayIndex]
+  if (!tab) return displayIndex
+  return terminalStore.tabs.findIndex(t => t.id === tab.id)
+}
+
 // 放置
 const handleDrop = (toIndex: number, event: DragEvent) => {
+  if (isConversationDragEvent(event)) return
   event.preventDefault()
   if (dragIndex.value !== null && dragIndex.value !== toIndex) {
-    terminalStore.reorderTabs(dragIndex.value, toIndex)
+    terminalStore.reorderTabs(toRealIndex(dragIndex.value), toRealIndex(toIndex))
   }
   dragIndex.value = null
   dragOverIndex.value = null
@@ -211,8 +271,23 @@ const hasMultipleTerminals = computed(() => {
   return terminalStore.tabs.filter(tab => tab.isConnected && tab.ptyId).length > 1
 })
 
-const hasTabs = computed(() => terminalStore.tabs.length > 0)
-const isOnHome = computed(() => hasTabs.value && !terminalStore.activeTabId)
+/**
+ * Tab 栏显示的 tab 列表：过滤掉「未提升的本地助手」和「联络常驻 tab」——
+ * 本地助手在 Hub 主区按焦点显示，联络 tab 单独固定渲染（不参与拖拽排序）。
+ */
+const displayedTabs = computed(() =>
+  terminalStore.tabs.filter(
+    tab =>
+      !(tab.type === 'assistant' && !tab.isRemote && !tab.isPromoted) &&
+      tab.agentId !== COMPANION_TAB_AGENT_ID
+  )
+)
+// 联络常驻 tab
+const companionTab = computed(() =>
+  terminalStore.tabs.find(t => t.agentId === COMPANION_TAB_AGENT_ID) ?? null
+)
+// 首页 tab 只在有"真实" tab（终端 / 已提升助手）时出现
+const hasTabs = computed(() => displayedTabs.value.length > 0)
 
 // 打开批量命令面板
 const openBatchPanel = () => {
@@ -260,22 +335,44 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
   if (tabId === terminalStore.activeTabId) return undefined
   return formatAgentAttentionTooltip(terminalStore.getTabAgentUiMeta(tabId), t)
 }
+
+/** 任务区激活：无 TabBar 可见 tab 时为激活（含欢迎页与 Hub 侧栏焦点会话） */
+const isTasksHomeActive = computed(() => !terminalStore.activeTabId)
 </script>
 
 <template>
-  <div class="tab-bar">
-    <!-- 固定首页 tab：有 tab 时显示，点击回到欢迎页 -->
+  <div
+    ref="tabBarRef"
+    class="tab-bar-host"
+    :class="{ 'conversation-drag-over': isConversationDragOver }"
+    @dragenter="onConversationDragEnter"
+    @dragover="onConversationDragOver"
+    @dragleave="handleConversationDragLeave"
+    @drop="handleConversationDrop"
+  >
+    <Teleport to="body">
+      <div
+        v-if="isConversationDragOver"
+        class="tab-conversation-drop-hint"
+        :style="conversationDropHintStyle"
+      >
+        <PanelTopOpen :size="14" :stroke-width="1.5" />
+        <span>{{ t('welcome.conversations.dropToOpenInTab') }}</span>
+      </div>
+    </Teleport>
+
+    <div class="tab-bar">
+    <!-- 任务按钮：切回任务区（保留 Hub 焦点），激活态与 hover 与其他 tab 一致 -->
     <div
-      v-if="hasTabs"
       class="tab tab-home"
-      :class="{ active: isOnHome }"
-      :title="t('tabs.home')"
-      @click="terminalStore.goToHome()"
+      :class="{ active: isTasksHomeActive }"
+      :title="t('tabs.tasks', '任务')"
+      @click="terminalStore.focusTaskArea()"
     >
       <span class="tab-icon">
         <Home :size="14" />
       </span>
-      <span class="tab-title">{{ t('tabs.home') }}</span>
+      <span class="tab-title">{{ t('tabs.tasks', '任务') }}</span>
     </div>
 
     <!-- 左滚动按钮 -->
@@ -290,7 +387,7 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
     
     <div ref="tabsContainerRef" class="tabs-container" @scroll="checkScrollState">
       <div
-        v-for="(tab, index) in terminalStore.tabs"
+        v-for="(tab, index) in displayedTabs"
         :key="tab.id"
         class="tab"
         :title="tabAttentionTooltip(tab.id)"
@@ -309,7 +406,7 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
         @dragend="handleDragEnd"
       >
         <span class="tab-icon">
-          <Radio v-if="tab.isRemote" :size="14" class="remote-icon" />
+          <SatelliteDish v-if="tab.isRemote" :size="14" class="remote-icon" />
           <Bot v-else-if="tab.type === 'assistant'" :size="14" />
           <Terminal v-else-if="tab.type === 'local'" :size="14" />
           <Monitor v-else :size="14" />
@@ -331,8 +428,8 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
           v-else
           class="tab-title"
           :title="t('tabs.doubleClickToRename')"
-          @dblclick.stop="startRename(tab.id, tab.customTitle || tab.title, $event)"
-        >{{ tab.customTitle || tab.title }}</span>
+          @dblclick.stop="startRename(tab.id, displayTabTitle(tab), $event)"
+        >{{ displayTabTitle(tab) }}</span>
         <span v-if="tab.isLoading" class="tab-loading">
           <Loader2 class="spinner" :size="12" />
         </span>
@@ -366,7 +463,27 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
     >
       <Layers :size="14" />
     </button>
-    
+
+    <!-- 联络常驻 tab：次要入口，固定在新建按钮之前、滚动区之外，不隐藏 -->
+    <div
+      v-if="companionTab"
+      class="tab tab-pinned"
+      :class="{
+        active: companionTab.id === terminalStore.activeTabId,
+        'needs-attention': companionTab.id !== terminalStore.activeTabId && terminalStore.hasTabAgentAttention(companionTab.id)
+      }"
+      :title="tabAttentionTooltip(companionTab.id)"
+      @click="terminalStore.setActiveTab(companionTab.id)"
+    >
+      <span class="tab-icon">
+        <Radio :size="14" class="companion-icon" />
+      </span>
+      <span class="tab-title">{{ displayTabTitle(companionTab) }}</span>
+      <span v-if="companionTab.isLoading" class="tab-loading">
+        <Loader2 class="spinner" :size="12" />
+      </span>
+    </div>
+
     <!-- 新建终端按钮（带下拉菜单） -->
     <div class="new-tab-wrapper">
       <button
@@ -415,17 +532,62 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
     
     <!-- 批量命令面板 -->
     <BatchCommandPanel ref="batchPanelRef" />
+    </div>
   </div>
 </template>
 
 <style scoped>
+.tab-bar-host {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.tab-bar-host.conversation-drag-over {
+  background: rgba(var(--accent-rgb), 0.1);
+  box-shadow: inset 0 -2px 0 var(--accent-primary);
+  outline: 2px dashed color-mix(in srgb, var(--accent-primary) 55%, transparent);
+  outline-offset: -2px;
+}
+
 .tab-bar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 2px;
   max-width: 100%;
   overflow: hidden;
-  /* 空白区域继承父级 drag，使 TabBar 两侧/间隙可拖动窗口与双击最大化 */
+  /* 内容宽度居中；拖放由外层 tab-bar-host 全宽接收 */
+}
+
+.tab-conversation-drop-hint {
+  position: fixed;
+  z-index: 10000;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--accent-primary);
+  background: var(--bg-primary);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 45%, var(--border-color));
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+  white-space: nowrap;
+  animation: tabDropHintFadeIn 0.15s ease;
+}
+
+@keyframes tabDropHintFadeIn {
+  from { opacity: 0; translate: 0 -4px; }
+  to { opacity: 1; translate: 0 0; }
 }
 
 .scroll-btn {
@@ -549,12 +711,20 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
   margin-left: -2px;
 }
 
-.tab-home {
+.tab-home,
+.tab-pinned {
   min-width: auto;
-  max-width: none;
   padding: 6px 12px;
   cursor: pointer;
   flex-shrink: 0;
+}
+
+.tab-home {
+  max-width: none;
+}
+
+.tab-pinned {
+  max-width: 140px;
 }
 
 /* 需要注意的状态：有待确认操作，或后台 tab 上 Agent 任务刚结束 */

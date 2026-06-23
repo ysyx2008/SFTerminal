@@ -8,17 +8,22 @@ import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef, 
 import { useI18n } from 'vue-i18n'
 import { Upload, Trash2, X, Search, Loader2, HelpCircle, ChevronDown, ChevronUp, MoreHorizontal, Shuffle } from 'lucide-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
-import type { DynamicScrollerExposed } from 'vue-virtual-scroller'
+import type { MessageScrollerHandle } from '../types/message-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
+import { useAssistantArtifactStore } from '../workbench/assistant/artifact/store'
+import { resolveSourceStepIdById } from '../workbench/assistant/artifact/domain/artifact-source'
 import { useComposerQuoteStore } from '../stores/composer-quote'
 import AgentPlanView from './AgentPlanView.vue'
 import AiComposer from './AiComposer.vue'
+import DropOverlay from './DropOverlay.vue'
+import AiProfileSelect from './AiProfileSelect.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
 import ToolCallContent from './ToolCallContent.vue'
 import ImageContextMenu from './ImageContextMenu.vue'
 import EChartsCanvas from './EChartsCanvas.vue'
+import { optionHasMapSeries } from '@shared/chart-maps'
 import { useImageActions } from '../composables/useImageActions'
 import { parseThinking } from '../utils/thinking-block'
 import { createLogger } from '../utils/logger'
@@ -40,12 +45,15 @@ import {
 import { mermaidSvgToDataUrl } from '../composables/useMarkdown'
 import { showConfirm } from '../composables/useConfirm'
 import { planComposerPaste, ingestComposerAttachments } from '../composables/useComposerPaste'
+import { useFileDropTarget } from '../composables/useFileDropTarget'
 import {
   getFeaturedExamples,
   shuffleExamples as shuffleExamplePool,
   type AssistantExample,
 } from '../config/assistantExamples'
-import type { AgentRecord, AgentHistorySummary } from '@shared/types'
+import { pickTaskCompleteLabel } from '../composables/useTaskCompleteLabel'
+import { loadBondTrustLevel } from '../composables/useRandomPlaceholder'
+import type { BondTrustLevel } from '@shared/types/bond'
 
 // Props - 每个 AiPanel 实例绑定到特定的 tab
 const props = withDefaults(defineProps<{
@@ -65,11 +73,12 @@ const emit = defineEmits<{
 }>()
 
 // i18n
-const { t } = useI18n()
+const { t, tm } = useI18n()
 
 // Stores
 const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
+const artifactStore = useAssistantArtifactStore()
 const composerQuoteStore = useComposerQuoteStore()
 const showSettings = inject<() => void>('showSettings')
 
@@ -88,9 +97,22 @@ const handleClose = () => {
 
 // Refs
 const messagesRef = ref<HTMLDivElement | null>(null)
-const scrollerRef = ref<DynamicScrollerExposed | null>(null)
+const scrollerRef = ref<MessageScrollerHandle | null>(null)
+const highlightedSourceStepId = ref<string | null>(null)
 const composerRef = ref<InstanceType<typeof AiComposer> | null>(null)
 const secureInputValue = ref('')
+
+const tryFocusComposer = () => {
+  nextTick(() => composerRef.value?.focusInput())
+}
+
+watch(
+  () => terminalStore.assistantComposerFocusSeq,
+  () => {
+    if (!props.tabActive || terminalStore.assistantComposerFocusTabId !== props.tabId) return
+    tryFocusComposer()
+  }
+)
 
 // ==================== 独立助手能力示例网格 ====================
 // 欢迎区展示的 8 张场景卡片。首屏精选覆盖最广能力组合，"换一批"从 25 条池子洗牌。
@@ -200,29 +222,55 @@ const markFooterAnimated = (groupId: string | undefined) => {
   if (groupId) animatedFooters.add(groupId)
 }
 
+const taskCompleteFooterLabels = new Map<string, string>()
+const bondTrustForFooter = ref<BondTrustLevel>('stranger')
+const bondTrustForFooterReady = ref(false)
+/** 羁绊等级就绪时递增，驱动已渲染尾注用正确 trust 池重算文案 */
+const taskCompleteFooterLabelEpoch = ref(0)
+
+void loadBondTrustLevel().then(level => {
+  bondTrustForFooter.value = level
+  bondTrustForFooterReady.value = true
+  taskCompleteFooterLabels.clear()
+  taskCompleteFooterLabelEpoch.value++
+})
+
+const getTaskCompleteFooterLabel = (groupId: string | undefined): string => {
+  void taskCompleteFooterLabelEpoch.value
+  if (!groupId) return t('ai.taskComplete')
+  if (!bondTrustForFooterReady.value) return t('ai.taskComplete')
+  if (!taskCompleteFooterLabels.has(groupId)) {
+    taskCompleteFooterLabels.set(
+      groupId,
+      pickTaskCompleteLabel(tm('ai.taskCompletePools'), bondTrustForFooter.value, t)
+    )
+  }
+  return taskCompleteFooterLabels.get(groupId)!
+}
+
 /**
  * group 操作菜单（含「另开一聊」）的可见性条件：
  *   - group 已完成（成功 / 失败 / 中断都允许；进行中的当前 task 无 finalResult，自然不显示）
- *   - 非 proactive / 非 onboarding（这两类不是用户发起的真实对话）
- *   - 当前 tab 不是「加载历史」状态：加载历史时后端 Agent in-memory 没有会话数据，
- *     fork 必然失败；且 LLM provider 的 prompt cache 也大概率早已过期（5 分钟 TTL），
- *     即便绕路从 HistoryService 拉取也无性能收益。直接不显示菜单更诚实
+ *   - 非 onboarding（引导对话不允许分叉）
+ *
+ * talk_to_user 主动消息（isProactive）完成后同样允许分叉。
  *
  * 注：Agent 运行中仍可对已完成 group 分叉（untilTaskCount 截断），与主对话并行探索。
+ * 从历史记录打开的 tab（loadedFromHistory）也可分叉：后端会 fallback 到 HistoryService 读取会话。
  * footer 高度由 min-height 锁定，按钮不因运行状态显隐引起列表重排（见 agent/SPEC.md）。
  */
+const canShowGroupMenu = (group: import('../composables').AgentTaskGroup | undefined): boolean => {
+  if (!group) return false
+  if (!group.finalResult) return false
+  if (group.isOnboarding) return false
+  return true
+}
+
+/** 当前 tab 的 agentState 来自历史恢复（用于滚动定位，与 fork 菜单可见性无关） */
 const isLoadedFromHistory = computed(() => {
   const tab = terminalStore.tabs.find(t => t.id === currentTabId.value)
   return !!tab?.agentState?.loadedFromHistory
 })
-
-const canShowGroupMenu = (group: import('../composables').AgentTaskGroup | undefined): boolean => {
-  if (!group) return false
-  if (!group.finalResult) return false
-  if (group.isProactive || group.isOnboarding) return false
-  if (isLoadedFromHistory.value) return false
-  return true
-}
 
 // 正在 fork 的 group ID 集合：防止用户连续点击同一个按钮创建多个 fork tab
 const forkingGroupIds = ref<Set<string>>(new Set())
@@ -299,13 +347,34 @@ onUnmounted(() => {
   document.removeEventListener('scroll', handleScrollForGroupMenu, true)
 })
 
-// 识别 createRun 一开始插入的"正在准备..." 占位步骤（type='thinking' + isStreaming=true）。
-// 让它借用 message step 的视觉壳（同一图标 + 同一 wrapper + ThinkingBlock 流式态），
-// 切换到真正的 message step 时外观无差，达到"持续往下呼呼输出"的稳定感。
+// 识别 createRun 一开始插入的 startup 占位步骤（type='thinking' + isStreaming=true）。
+// 文案由后端翻译后经 step.content 推送，前端只认结构、不再维护译文白名单。
 // 其它 thinking step（如截断警告、参数错误）isStreaming 为 undefined，不会被误判。
 const isInitialPreparingStep = (step: { type: string; isStreaming?: boolean }): boolean => {
   return step.type === 'thinking' && step.isStreaming === true
 }
+
+/** message step 的思考行：含已解析 thinking 块，或流式首 chunk 尚未包装 🤔 前的过渡态 */
+const getMessageStepThinkingView = (step: { content: string; isStreaming?: boolean }) => {
+  const parsed = parseThinking(step.content)
+  if (parsed.thinking) {
+    return {
+      reasoning: parsed.thinking.reasoning,
+      isStreaming: !parsed.thinking.isDone,
+      label: undefined as string | undefined,
+    }
+  }
+  return null
+}
+
+const getMessageStepBody = (step: { content: string }): string => {
+  return parseThinking(step.content).body
+}
+
+const getMessageStepPresentation = (step: { content: string; isStreaming?: boolean }) => ({
+  thinking: getMessageStepThinkingView(step),
+  body: getMessageStepBody(step),
+})
 
 // 思考块完成时长缓存（按 stepId 索引）
 // DynamicScroller 是虚拟列表，已完成的 ThinkingBlock 滚出视区后会被 unmount、滚回时 remount，
@@ -379,7 +448,6 @@ const {
   uploadedDocs,
   parsingDocs,
   isUploadingDocs,
-  isDraggingOver,
   handleDroppedFiles,
   removeUploadedDoc,
   clearUploadedDocs,
@@ -410,6 +478,14 @@ const ingestAttachmentFiles = (files: FileList | File[]) =>
     ingestImages: handleDroppedImages,
     ingestDocuments: handleDroppedFiles
   })
+
+const {
+  isDragOver: isFileDragOver,
+  handleDragEnter,
+  handleDragOver,
+  handleDragLeave,
+  handleDrop,
+} = useFileDropTarget(ingestAttachmentFiles)
 
 // Markdown 渲染
 const {
@@ -1123,11 +1199,14 @@ watch(
 watch(
   [
     () => terminalStore.activeTabId,
+    () => terminalStore.hubFocusedAssistantTabId,
     () => terminalStore.pendingComposerHandoffs[currentTabId.value],
     isMounted,
   ],
-  async ([activeId, _handoff, mounted]) => {
-    if (!mounted || activeId !== currentTabId.value) return
+  async ([activeId, hubFocusedId, _handoff, mounted]) => {
+    // 兼容 Hub 焦点模式（activeTabId 为空，hubFocusedAssistantTabId 为当前 tab）
+    const isCurrentSurface = activeId === currentTabId.value || hubFocusedId === currentTabId.value
+    if (!mounted || !isCurrentSurface) return
     const tab = terminalStore.tabs.find(t => t.id === currentTabId.value)
     if (tab?.type !== 'assistant') return
     const handoff = terminalStore.consumePendingComposerHandoff(currentTabId.value)
@@ -1202,41 +1281,15 @@ const handleAnalyzeSelection = () => {
   void runAgent(`${t('ai.analyzeOutputPrompt')}\n\`\`\`\n${selection}\n\`\`\``)
 }
 
-// ==================== 拖放处理 ====================
-
-// 拖放进入
-const handleDragEnter = (e: DragEvent) => {
-  e.preventDefault()
-  e.stopPropagation()
-  // 检查是否有文件
-  if (e.dataTransfer?.types.includes('Files')) {
-    isDraggingOver.value = true
-  }
-}
-
-// 拖放悬停
-const handleDragOver = (e: DragEvent) => {
-  e.preventDefault()
-  e.stopPropagation()
-  if (e.dataTransfer) {
-    e.dataTransfer.dropEffect = 'copy'
-  }
-}
-
-// 拖放离开
-const handleDragLeave = (e: DragEvent) => {
-  e.preventDefault()
-  e.stopPropagation()
-  // 检查是否真的离开了容器（而不是进入子元素）
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  const x = e.clientX
-  const y = e.clientY
-  if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
-    isDraggingOver.value = false
-  }
-}
+// ==================== 拖放处理（文档 / 图片附件） ====================
 
 // ==================== 图片预览（支持缩放、拖拽、键盘导航） ====================
+/** 活图渲染失败的 step id → 降级展示 step.images 静态 SVG 兜底 */
+const echartsLiveFailedStepIds = reactive(new Set<string>())
+const onEchartsLiveFailed = (stepId: string) => {
+  echartsLiveFailedStepIds.add(stepId)
+}
+
 const previewImageUrl = ref<string | null>(null)
 // 活图预览载荷：当点击"活图"（chart skill 投递的 echartsOption）时填入；
 // 模态优先用 EChartsCanvas 渲染（保留 tooltip / dataZoom 等交互），否则降级到 <img>。
@@ -1513,9 +1566,16 @@ const handlePreviewMouseDown = (e: MouseEvent) => {
   // mousedown 启动 dataZoom 拖动 / brush 框选 / legend 点击等核心交互，外层包装的
   // 「拖动平移」一旦抢断这个事件就把活图最值钱的能力废掉了。空白区域（图表四周的
   // padding）仍然走拖动平移，保持普通预览的视觉操作惯例。
+  // 地图（map series）缩放/平移走外层 CSS transform（与 PNG/JPG 一致），不在 echarts roam。
   // 注意：用 closest 而不是 ===，因为 echarts SVG renderer 渲染出来的 <g><path> 等
   // 子节点是真正的事件 target，不是 .echarts-canvas 这个父容器
-  if (previewEchartsPayload.value && (e.target as HTMLElement | null)?.closest?.('.echarts-canvas')) {
+  const payload = previewEchartsPayload.value
+  const isMapLiveChart = payload ? optionHasMapSeries(payload.option) : false
+  if (
+    payload &&
+    !isMapLiveChart &&
+    (e.target as HTMLElement | null)?.closest?.('.echarts-canvas')
+  ) {
     return
   }
   e.preventDefault()
@@ -1576,17 +1636,7 @@ watch(previewEchartsPayload, () => {
   }
 })
 
-// 拖放放下（支持文档和图片）
-const handleDrop = async (e: DragEvent) => {
-  e.preventDefault()
-  e.stopPropagation()
-  isDraggingOver.value = false
-  
-  const files = e.dataTransfer?.files
-  if (files && files.length > 0) {
-    await ingestAttachmentFiles(files)
-  }
-}
+// 拖放放下（支持文档和图片）—— 由 useFileDropTarget 处理
 
 // ==================== 键盘事件处理 ====================
 
@@ -1684,9 +1734,14 @@ const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
     // reasoning 文本流式刷新不会改变列表项高度。仅在用户主动切换思考块展开/收起时才参与重算
     let contentForSize: string | undefined = item.step.content
     let thinkingExpandedForSize: boolean | undefined
-    if (item.step.type === 'message' && contentForSize?.includes('🤔')) {
-      contentForSize = parseThinking(contentForSize).body
-      thinkingExpandedForSize = expandedThinkingSteps.value.has(item.step.id)
+    if (item.step.type === 'message' && contentForSize) {
+      if (contentForSize.includes('🤔')) {
+        contentForSize = parseThinking(contentForSize).body
+        thinkingExpandedForSize = expandedThinkingSteps.value.has(item.step.id)
+      } else if (item.step.isStreaming) {
+        // 首 chunk 尚未包装 thinking 块时，高度由单行 ThinkingBlock 决定
+        contentForSize = ''
+      }
     }
     return [
       contentForSize,
@@ -1709,11 +1764,38 @@ const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
 
 const scrollHistoryToBottom = () => {
   if (scrollerRef.value) {
-    scrollerRef.value.scrollToBottom()
+    scrollerRef.value.scrollToBottom?.()
   } else {
     void scrollToBottom()
   }
 }
+
+async function scrollToAgentStep(stepId: string) {
+  const allSteps = agentState.value?.steps ?? []
+  const visibleStepId = resolveSourceStepIdById(stepId, allSteps)
+  const index = flattenedItems.value.findIndex(
+    item => item.type === 'step' && item.step?.id === visibleStepId
+  )
+  if (index < 0) return
+
+  await nextTick()
+  scrollerRef.value?.scrollToItem?.(index)
+  highlightedSourceStepId.value = visibleStepId
+  window.setTimeout(() => {
+    if (highlightedSourceStepId.value === visibleStepId) {
+      highlightedSourceStepId.value = null
+    }
+  }, 2500)
+}
+
+watch(
+  () => artifactStore.sourceJumpRequest,
+  (req) => {
+    if (!req || req.tabId !== props.tabId) return
+    void scrollToAgentStep(req.stepId)
+    artifactStore.clearSourceJumpRequest()
+  }
+)
 
 /** 首次展示从历史恢复的对话（尚无已存滚动位置）→ 应滚到底部 */
 const shouldScrollHistoryOnShow = () =>
@@ -1749,6 +1831,13 @@ onMounted(() => {
   }
 
   warmupMessageList()
+
+  if (
+    props.tabActive &&
+    terminalStore.assistantComposerFocusTabId === props.tabId
+  ) {
+    tryFocusComposer()
+  }
 
   // 首次挂载且无已存滚动位置时滚到底部（含从历史打开的新 tab）
   const shouldInitialScrollBottom =
@@ -1857,13 +1946,15 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
     @drop="handleDrop"
   >
     <!-- 拖放提示覆盖层 -->
-    <div v-if="isDraggingOver" class="drop-overlay">
-      <div class="drop-content">
+    <DropOverlay
+      v-if="isFileDragOver"
+      :title="t('ai.dropToUpload')"
+      :hint="t('ai.dropHint')"
+    >
+      <template #icon>
         <Upload :size="48" :stroke-width="1.5" />
-        <p>{{ t('ai.dropToUpload') }}</p>
-        <span class="drop-hint">{{ t('ai.dropHint') }}</span>
-      </div>
-    </div>
+      </template>
+    </DropOverlay>
 
     <!-- 未配置 AI 提示 -->
     <div v-if="!hasAiConfig" class="ai-no-config">
@@ -2008,17 +2099,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         </div>
         <!-- 从原 ai-header 迁移的控件，保持"最右侧"的对齐 -->
         <div class="ai-header-actions">
-          <select
-            v-if="aiProfiles.length > 0"
-            class="model-select model-select-sm"
-            :value="activeAiProfile?.id || ''"
-            :title="t('ai.switchModel')"
-            @change="changeAiProfile(($event.target as HTMLSelectElement).value)"
-          >
-            <option v-for="profile in aiProfiles" :key="profile.id" :value="profile.id">
-              {{ profile.name }} ({{ profile.model }}){{ profile.modelType === 'vision' ? ` [${t('aiSettings.modelTypeVision')}]` : '' }}
-            </option>
-          </select>
           <button class="btn-icon btn-icon-sm" @click="clearMessages" :title="t('ai.clearChat')">
             <Trash2 :size="13" />
           </button>
@@ -2065,31 +2145,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
       </div>
 
       <!-- 消息列表（虚拟滚动） -->
-      <!-- 隔离消息区渲染，避免 inputText 变化拖着整块历史列表一起重渲染 -->
-      <div
-        class="ai-messages-wrapper"
-        v-memo="[
-          flattenedItems,
-          agentTaskGroups.length,
-          agentUserTask,
-          isAgentRunning,
-          recentHistory,
-          showHistoryModal,
-          allHistory,
-          hasMoreHistory,
-          historySearchKeyword,
-          isLoadingHistory,
-          isLoadingAllHistory,
-          isHistorySearchLoading,
-          historyFullTextSearchActive,
-          historySearchTotalMatched,
-          executionMode,
-          isStandaloneAssistant,
-          hasNewMessage,
-          displayedExamples,
-          shuffleSpinning
-        ]"
-      >
+      <div class="ai-messages-wrapper">
         <DynamicScroller
           ref="scrollerRef"
           :items="flattenedItems"
@@ -2100,13 +2156,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           :style="isStandaloneAssistant ? { '--assistant-avatar': `url(${configStore.agentAvatar || sailfishLogo})` } : undefined"
         >
           <template #before>
-            <!-- Agent 已启动但 step 尚未到达（远程会话 / 任务刚发起） -->
-            <div v-if="isAgentRunning && agentTaskGroups.length === 0" class="agent-preparing-placeholder">
-              <Loader2 :size="20" class="preparing-spinner" />
-              <span>{{ t('ai.preparing') }}</span>
-            </div>
             <!-- 欢迎页（无任务且无历史对话时显示） -->
-            <div v-else-if="!agentUserTask && agentTaskGroups.length === 0" class="ai-welcome">
+            <div v-if="!isAgentRunning && !agentUserTask && agentTaskGroups.length === 0" class="ai-welcome">
               <p>🤖 {{ t('ai.agentWelcome.enabled') }}</p>
 
               <p class="welcome-section-title">💡 {{ t('ai.agentWelcome.whatIsAgent') }}</p>
@@ -2335,10 +2386,21 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           <template #default="{ item, index, active }">
             <DynamicScrollerItem :item="item" :active="active" :data-index="index" :size-dependencies="getItemSizeDeps(item)">
 
-              <!-- 主动消息 -->
+              <!-- 主动消息（talk_to_user） -->
               <div v-if="item.type === 'proactive_message'" class="message assistant">
                 <div class="message-wrapper">
                   <div class="message-content markdown-content" v-html="renderMarkdown(item.group!.finalResult!)"></div>
+                  <div v-if="canShowGroupMenu(item.group)" class="agent-final-footer agent-final-footer--proactive">
+                    <button
+                      type="button"
+                      class="agent-group-menu-trigger"
+                      :class="{ 'is-open': openGroupMenuId === item.group!.id }"
+                      :title="t('ai.fork.tooltip')"
+                      @click.stop="toggleGroupMenu(item.group, $event)"
+                    >
+                      <MoreHorizontal :size="14" />
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -2387,7 +2449,15 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                   - success === false      → 红色（exec-failed）
                 其他步骤类型保持现有风险色。
               -->
-              <div v-else-if="item.type === 'step'" class="agent-step-virtual" :class="{ 'first-step': item.isFirstStep }">
+              <div
+                v-else-if="item.type === 'step'"
+                class="agent-step-virtual"
+                :class="{
+                  'first-step': item.isFirstStep,
+                  'agent-step-source-highlight': item.step!.id === highlightedSourceStepId
+                }"
+                :data-agent-step-id="item.step!.id"
+              >
                 <div 
                   class="agent-step-inline"
                   :class="[
@@ -2413,10 +2483,12 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                       />
                     </div>
                     <div v-else-if="item.step!.type === 'message'" class="agent-message-stack">
+                      <template v-for="pres in [getMessageStepPresentation(item.step!)]" :key="item.step!.id + '-pres'">
                       <ThinkingBlock
-                        v-if="parseThinking(item.step!.content).thinking"
-                        :reasoning="parseThinking(item.step!.content).thinking!.reasoning"
-                        :is-streaming="!parseThinking(item.step!.content).thinking!.isDone"
+                        v-if="pres.thinking"
+                        :reasoning="pres.thinking.reasoning"
+                        :is-streaming="pres.thinking.isStreaming"
+                        :label="pres.thinking.label"
                         :expanded="isThinkingExpanded(item.step!.id)"
                         :started-at="item.step!.timestamp"
                         :cached-duration-ms="getCachedThinkingDuration(item.step!.id)"
@@ -2424,11 +2496,12 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         @finalize="cacheThinkingDuration(item.step!.id, $event)"
                       />
                       <div
-                        v-if="parseThinking(item.step!.content).body"
+                        v-if="pres.body"
                         class="step-text step-analysis markdown-content"
                         :class="{ 'is-streaming': item.step!.isStreaming }"
-                        v-html="renderMarkdown(parseThinking(item.step!.content).body)"
+                        v-html="renderMarkdown(pres.body)"
                       ></div>
+                      </template>
                       <!-- 任务完成尾注：作为 message step 的尾巴，仅在 group 完成且这是 group 的最后一个
                            message step 时显示。任务完成那一刻 group.finalResult 设置 → 尾注从 stack 末尾
                            "长出"几像素，不引起独立 item 出现/消失，避免列表重排跳动。
@@ -2442,7 +2515,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         @animationend="markFooterAnimated(item.group?.id)"
                       >
                         <span class="agent-final-footer-icon">✓</span>
-                        <span>{{ t('ai.taskComplete') }}</span>
+                        <span>{{ getTaskCompleteFooterLabel(item.group?.id) }}</span>
                         <button
                           v-if="canShowGroupMenu(item.group)"
                           type="button"
@@ -2568,7 +2641,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                                 <span v-else class="sa-step-fail">✗</span>
                               </span>
                               <span class="sa-step-tool">{{ step.tool }}</span>
-                              <span v-if="step.args" class="sa-step-args">{{ step.args }}</span>
+                              <span v-if="step.args" class="sa-step-args" :title="step.args">{{ step.args }}</span>
                             </div>
                           </div>
                           <div v-if="sa.result" class="sub-agent-result">
@@ -2599,13 +2672,14 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                     <!-- 「活图」优先：chart skill 在 svg 模式下投递 echartsOption（同时也带 SVG 兜底到 step.images），
                          前端把它实例化成可交互的 ECharts，单击放大/右键复制走 EChartsCanvas 内部 getDataURL 的高清 PNG。
                          单击时把 step.images[0]（SVG dataURL）一起传给 openImagePreview，让导航定位能在 group 中找到当前位置。 -->
-                    <div v-if="item.step!.echartsOption" class="step-images">
+                    <div v-if="item.step!.echartsOption && !echartsLiveFailedStepIds.has(item.step!.id)" class="step-images">
                       <EChartsCanvas
                         :payload="item.step!.echartsOption"
                         :alt="item.step!.toolResult || 'chart'"
                         mode="thumb"
                         @preview="openImagePreview(item.step!.images?.[0] ?? '', item.step!.echartsOption)"
                         @contextmenu="onEchartsContextMenu"
+                        @failed="onEchartsLiveFailed(item.step!.id)"
                       />
                     </div>
                     <div v-else-if="item.step!.images && item.step!.images.length > 0" class="step-images">
@@ -2774,7 +2848,17 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         :submit-message="handleComposerSubmit"
         :submit-empty-message="handleComposerEmptySubmit"
         :clear-tab-error="clearTabError"
-      />
+      >
+        <template #footer-left>
+          <AiProfileSelect
+            v-if="aiProfiles.length > 0"
+            compact
+            :profiles="aiProfiles"
+            :model-value="activeAiProfile?.id || ''"
+            @update:model-value="changeAiProfile"
+          />
+        </template>
+      </AiComposer>
     </template>
     <!-- 图片预览弹窗（支持缩放拖拽、键盘导航） -->
     <div 
@@ -2878,8 +2962,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   flex-direction: column;
   height: 100%;
   position: relative;
-  /* 入场动画 */
-  animation: panelEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes panelEnter {
@@ -2891,70 +2973,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
     opacity: 1;
     transform: translateX(0);
   }
-}
-
-/* 拖放覆盖层 */
-.drop-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(var(--accent-rgb), 0.15);
-  backdrop-filter: blur(4px);
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 3px dashed var(--accent-primary);
-  border-radius: 8px;
-  animation: dropOverlayFadeIn 0.2s ease;
-}
-
-@keyframes dropOverlayFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.drop-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  color: var(--accent-primary);
-  text-align: center;
-  padding: 24px;
-  background: var(--bg-primary);
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-}
-
-.drop-content svg {
-  animation: dropIconBounce 0.5s ease infinite alternate;
-}
-
-@keyframes dropIconBounce {
-  from {
-    transform: translateY(0);
-  }
-  to {
-    transform: translateY(-8px);
-  }
-}
-
-.drop-content p {
-  font-size: 16px;
-  font-weight: 600;
-  margin: 0;
-}
-
-.drop-hint {
-  font-size: 12px;
-  color: var(--text-muted);
 }
 
 .model-select {
@@ -2980,8 +2998,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 /* 紧凑变体：嵌入 system-info-bar 时使用 */
 .model-select-sm {
   padding: 2px 4px;
-  font-size: 11px;
-  height: 22px;
+  font-size: var(--workbench-header-select-font-size, 12px);
+  height: var(--workbench-header-select-height, 22px);
   max-width: 140px;
   border-radius: 4px;
 }
@@ -3022,7 +3040,10 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 6px 12px;
+  box-sizing: border-box;
+  height: var(--workbench-panel-header-height, 38px);
+  min-height: var(--workbench-panel-header-height, 38px);
+  padding: 0 12px;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
   font-size: 11px;
@@ -3031,6 +3052,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   container-name: infobar;
   white-space: nowrap;
   position: relative;
+  flex-shrink: 0;
 }
 
 /* ai-header-actions 固定在最右侧（无论 system-info-left 是否渲染） */
@@ -3434,6 +3456,21 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   border-left: 2px solid rgba(255, 255, 255, 0.06);
 }
 
+.agent-step-virtual.agent-step-source-highlight {
+  animation: agent-step-source-flash 2.5s ease-out;
+}
+
+@keyframes agent-step-source-flash {
+  0%, 15% {
+    background: rgba(96, 165, 250, 0.18);
+    box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.35);
+  }
+  100% {
+    background: transparent;
+    box-shadow: none;
+  }
+}
+
 .standalone-mode .agent-step-virtual {
   margin-left: 48px;
 }
@@ -3655,20 +3692,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .context-bar-fill.danger {
   background: var(--color-error);
-}
-
-.agent-preparing-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 32px 16px;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.agent-preparing-placeholder .preparing-spinner {
-  animation: spin 1s linear infinite;
 }
 
 .ai-welcome {
@@ -4969,16 +4992,17 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
 
-/* 鼠标 hover 到尾注/卡片任意位置时，按钮淡入显现 */
+/* 鼠标 hover 到尾注/卡片/主动消息气泡任意位置时，按钮淡入显现 */
 .agent-final-footer:hover .agent-group-menu-trigger,
-.agent-final-content:hover .agent-group-menu-trigger {
+.agent-final-content:hover .agent-group-menu-trigger,
+.message.assistant .message-wrapper:hover .agent-group-menu-trigger {
   opacity: 0.7;
 }
 
 .agent-group-menu-trigger:hover,
 .agent-group-menu-trigger.is-open {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
 
@@ -4988,6 +5012,12 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   margin-top: 0;
   display: flex;
   justify-content: flex-end;
+}
+
+/* talk_to_user 主动消息气泡下方的操作菜单 */
+.agent-final-footer--proactive {
+  justify-content: flex-end;
+  margin-top: 2px;
 }
 
 .agent-running-dot {
@@ -5735,7 +5765,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .sa-step {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   font-size: 11px;
   line-height: 1.4;
@@ -5761,12 +5791,13 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 }
 
 .sa-step-args {
+  flex: 1;
+  min-width: 0;
   color: var(--text-muted);
+  font-family: var(--font-mono);
   font-size: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 280px;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .sub-agent-result {
@@ -6567,10 +6598,10 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   position: fixed;
   min-width: 140px;
   padding: 4px;
-  background: var(--bg-elevated, rgba(40, 40, 40, 0.98));
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
   z-index: 10000;
 }
 
@@ -6581,15 +6612,16 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: var(--text-primary, #e0e0e0);
+  color: var(--text-primary);
   font-size: 12px;
+  font-family: inherit;
   text-align: left;
   cursor: pointer;
   transition: background 0.12s ease;
 }
 
 .agent-group-menu-item:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-hover);
 }
 
 .agent-group-menu-item:disabled {

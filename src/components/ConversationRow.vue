@@ -5,11 +5,13 @@ import { Pin, PinOff, Loader2, CircleDot } from 'lucide-vue-next'
 import type { AgentHistorySummary } from '@shared/types'
 import type { HistoryConversationTabStatus } from '../stores/terminal'
 import { useConfigStore } from '../stores/config'
+import { beginConversationDrag } from '../composables/useConversationDragDrop'
 
 const props = defineProps<{
   record: AgentHistorySummary
   isPinned?: boolean
   isOpening?: boolean
+  isActive?: boolean
   tabStatus?: HistoryConversationTabStatus
   statusTooltip?: string
   isEditing?: boolean
@@ -42,6 +44,14 @@ const handleContextMenu = (event: MouseEvent) => {
   if (props.isEditing) return
   event.preventDefault()
   emit('context-menu', event)
+}
+
+const handleDragStart = (event: DragEvent) => {
+  if (props.isEditing || props.isOpening) {
+    event.preventDefault()
+    return
+  }
+  beginConversationDrag(event, props.record.id)
 }
 
 const normalizeTitle = (text: string): string => text.trim().replace(/\s+/g, ' ')
@@ -81,11 +91,12 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
     :class="{
       'is-pinned': isPinned,
       'is-opening': isOpening,
-      'is-failed': record.status === 'failed',
-      'is-aborted': record.status === 'aborted',
+      'is-active': isActive,
       'is-open-in-tab': isOpenInTab,
       'needs-attention': tabStatus === 'attention',
     }"
+    draggable="true"
+    @dragstart="handleDragStart"
   >
     <div class="leading-slot">
       <button
@@ -146,6 +157,7 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   align-items: center;
   gap: 0;
   border-radius: 5px;
+  cursor: grab;
   transition: background 0.12s ease, opacity 0.12s ease;
 }
 
@@ -158,6 +170,20 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   background: color-mix(in srgb, var(--bg-surface) 75%, transparent);
 }
 
+.conversation-row.is-active {
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+}
+
+.conversation-row.is-active:hover {
+  background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+}
+
+.conversation-row.is-active .item-title,
+.conversation-row.is-active:hover .item-title {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
 .conversation-row:hover .pin-btn {
   opacity: 0.65;
 }
@@ -168,7 +194,7 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
 }
 
 .conversation-row:hover .item-title {
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 
 .conversation-row.is-open-in-tab .item-title {
@@ -291,18 +317,13 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   cursor: wait;
 }
 
-.conversation-row.is-failed .item-title,
-.conversation-row.is-aborted .item-title {
-  opacity: 0.65;
-}
-
 .item-title {
   flex: 1;
   min-width: 0;
   font-size: 12.5px;
   font-weight: 400;
   line-height: 1.2;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -328,6 +349,5 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   font-size: 10.5px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
-  opacity: 0.6;
 }
 </style>

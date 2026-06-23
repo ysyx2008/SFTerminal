@@ -20,8 +20,15 @@ export const browserTools: ToolDefinition[] = [
 - **attach（优先）**：浏览器助手已连接时自动启用；也可显式 \`{ "attach": true }\` 或 \`{ "mode": "attach" }\`
 - **launch（Playwright 独立窗口）**：\`{ "mode": "launch" }\` 或 \`{ "attach": false }\`；需要 headless / profile / **截图** 时自动或显式使用
 
+**阅读 vs 交互（attach 必读）**：
+- **读文章 / 新闻 / 博客正文** → \`browser_read_article\`（Readability 类智能提取，过滤导航噪声）
+- **读整页可见内容 / 含导航侧栏的页面** → \`browser_read_page\`（body 可见文本；需要 HTML 源码时 \`format: html\`）
+- **点按钮 / 填表 / 找可点击元素** → \`browser_snapshot\`（无障碍树 + ref）
+- 公开 URL 且无需登录态 → \`web_fetch\`
+- \`browser_get_content\` 已废弃，等价于 \`browser_read_article\`
+
 **attach 能力边界（Chrome / Edge / Firefox 一致）**：
-- **不支持** \`browser_screenshot\`；需截图请 \`browser_launch { "mode": "launch" }\`，或用 \`browser_snapshot\` / \`browser_get_content\`
+- **不支持** \`browser_screenshot\`；需截图请 \`browser_launch { "mode": "launch" }\`，或用 \`browser_snapshot\` / \`browser_read_page\`
 - \`browser_wait\` **仅支持 delay**；不支持 selector 等待（需等元素请轮询 snapshot 或改用 launch）
 - \`browser_evaluate\` 仅 **safe-eval 白名单子集**（扩展 CSP 禁止 eval/Function，三浏览器相同）：
   - ✅ \`document\` / \`location\` / \`window\` 属性链（如 \`document.title\`、\`document.body.scrollHeight\`、\`document.cookie\`、\`location.href\`、\`window.localStorage.length\`）
@@ -30,6 +37,7 @@ export const browserTools: ToolDefinition[] = [
   - ❌ \`querySelector\` 结果取 \`.href\` 等其它属性、返回 NodeList、方法调用（\`JSON.stringify\`、\`localStorage.getItem\`）、\`navigator\`、运算/函数式
   - 复杂 JS 请 \`browser_launch { "mode": "launch" }\`
 - goto / snapshot / click / type / scroll / list_tabs / switch_tab 三浏览器无差异
+- attach 下 \`browser_goto\` **默认新开标签页**，不覆盖用户当前标签
 
 **注意**：
 - 每个终端最多一个浏览器会话
@@ -48,7 +56,7 @@ export const browserTools: ToolDefinition[] = [
           mode: {
             type: 'string',
             enum: ['attach', 'launch'],
-            description: 'attach 或 launch（默认 launch）'
+            description: 'attach 或 launch。未指定时：浏览器助手已连接则自动 attach，否则 launch'
           },
           url: {
             type: 'string',
@@ -76,9 +84,18 @@ export const browserTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'browser_snapshot',
-      description: `获取页面的无障碍树快照。这是与页面交互前的**推荐第一步**。
+      description: `获取页面的无障碍树快照。**用于交互操作**（点击、填表），不是阅读正文的首选。
 
-**核心优势**：
+**何时用 snapshot**：
+- 需要点击按钮、链接、输入框
+- 需要 ref（@e1）做 browser_click / browser_type
+
+**何时不要用 snapshot**：
+- 用户要「读这篇文章 / 总结新闻」→ 用 \`browser_read_article\`
+- 用户要「看这页显示了什么 / 读某块区域」→ 用 \`browser_read_page\`
+- snapshot 会截断文本、偏向可交互元素，长正文会丢失
+
+**核心能力**：
 - 返回页面所有元素的结构化无障碍树
 - 每个可交互元素带有 ref 编号（如 @e1, @e2）
 - **必填项标注 [必填]**，提交前请先填完所有 [必填] 字段
@@ -88,10 +105,10 @@ export const browserTools: ToolDefinition[] = [
 
 **attach 模式**：这是 attach 下了解页面的主要方式（**不能**用 browser_screenshot 截图，见 browser_launch 说明）
 
-**推荐工作流**：
-1. 首次可用 browser_snapshot 获取页面结构和 ref（或直接 browser_goto / browser_click，其返回会自带快照）
-2. 使用 ref 执行操作：browser_click { selector: "@e2" }
-3. browser_click、browser_goto、browser_switch_tab 执行后会自动附带当前页面快照，通常无需再单独调用本工具；仅在需要不同参数（如 compact、selector）或仅想刷新快照时再调用
+**推荐工作流（交互）**：
+1. browser_snapshot 获取 ref（interactive: true 更省 token）
+2. browser_click / browser_type 使用 @eN
+3. 操作后返回会自动附带快照；读内容请用 browser_read_article / browser_read_page
 
 **模式**：
 - 默认：完整无障碍树
@@ -127,6 +144,13 @@ export const browserTools: ToolDefinition[] = [
       name: 'browser_goto',
       description: `导航到指定网址。成功后会自动附带当前页面快照，无需再单独调用 browser_snapshot。
 
+**attach 模式（用户浏览器）**：
+- **默认在新标签页打开**（\`new_tab\` 默认为 true），**不要覆盖**用户当前正在看的标签
+- 仅当用户明确要在当前页继续、或你要在当前页刷新/跳转时，才传 \`new_tab: false\`
+- 用户已打开目标站时，优先 \`browser_list_tabs\` + \`browser_switch_tab\`，不要重复开 tab
+
+**launch 模式（Playwright 独立窗口）**：在当前会话标签页导航（无 new_tab 参数）。
+
 **等待策略**：
 - load：等待页面完全加载（默认）
 - domcontentloaded：DOM 加载完成即可
@@ -137,6 +161,10 @@ export const browserTools: ToolDefinition[] = [
           url: {
             type: 'string',
             description: '目标 URL'
+          },
+          new_tab: {
+            type: 'boolean',
+            description: 'attach 模式：true=新开标签页（默认）；false=在当前标签页导航。launch 模式忽略。'
           },
           wait_until: {
             type: 'string',
@@ -155,7 +183,7 @@ export const browserTools: ToolDefinition[] = [
       description: `对当前页面截图并保存。
 
 **⚠️ 仅 launch（Playwright 独立窗口）模式可用**；attach（吸附用户浏览器）模式**不支持**本工具。
-若当前为 attach 会话且用户要截图：先 \`browser_close\`，再 \`browser_launch { "mode": "launch" }\` 后调用本工具；或改用 \`browser_snapshot\` / \`browser_get_content\`。
+若当前为 attach 会话且用户要截图：先 \`browser_close\`，再 \`browser_launch { "mode": "launch" }\` 后调用本工具；或改用 \`browser_snapshot\` / \`browser_read_page\`。
 
 **💡 提示**：多数场景 browser_snapshot 比截图更高效。截图适用于 launch 模式下需要视觉确认的场景。
 
@@ -186,15 +214,22 @@ export const browserTools: ToolDefinition[] = [
   {
     type: 'function',
     function: {
-      name: 'browser_get_content',
-      description: `获取页面内容。
+      name: 'browser_read_article',
+      description: `读取**当前标签页的文章型正文**（新闻、博客、视频简介等）。attach / launch 均可用。
+
+**何时用**：
+- 用户要「总结这篇文章 / 这条新闻讲了什么 / 提取正文」
+- 需要过滤导航、侧栏、页脚噪声
+
+**何时不要用**（请改用 \`browser_read_page\`）：
+- 需要整页可见文字或页面某块区域，而非只要干净正文
+
+**实现**：桌面端 Readability 类算法 + 启发式 fallback（Firefox 阅读模式同类思路）。
 
 **格式**：
-- text：纯文本（默认，适合阅读）
-- html：HTML 源码
-- markdown：转换为 Markdown
+- text（默认）、markdown、html（提取后的正文 HTML 片段）
 
-**限制**：默认最多返回 10000 字符`,
+**其它**：可选 \`selector\` 限定区域；默认最多 16000 字符。`,
       parameters: {
         type: 'object',
         properties: {
@@ -205,11 +240,90 @@ export const browserTools: ToolDefinition[] = [
           },
           selector: {
             type: 'string',
-            description: '只获取指定元素的内容（CSS 选择器）'
+            description: '只提取指定 CSS 选择器区域（可选）'
           },
           max_length: {
             type: 'number',
-            description: '最大字符数（默认 10000）'
+            description: '最大字符数（默认 16000）'
+          }
+        },
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_read_page',
+      description: `读取**页面上已显示的内容**（整页或指定区域），不做正文智能过滤。attach / launch 均可用。
+
+**何时用**：
+- 需要整页或某区域的可见文字（含导航、侧栏等，未做过滤）
+- 用户问「这页上显示了什么」
+- 需要渲染后的 HTML 源码（\`format: html\`，高 token，仅结构分析时用）
+
+**何时不要用**（请改用 \`browser_read_article\`）：
+- 只要干净的文章正文
+
+**能力边界**：
+- \`format: text\`（默认）：\`body.innerText\` 语义
+- 懒加载内容：可先 \`scroll_steps\` 再读
+- Shadow DOM / 封闭组件内的文字可能无法完整获取 → 可试 \`selector\` 限定区域；仍不够请 \`browser_launch\` 全量 JS
+- **不要**用 \`format: html\` 代替读文章（噪声极大）`,
+      parameters: {
+        type: 'object',
+        properties: {
+          format: {
+            type: 'string',
+            enum: ['text', 'html'],
+            description: 'text=可见文本（默认）；html=渲染后 HTML 源码（高 token）'
+          },
+          selector: {
+            type: 'string',
+            description: '只读取指定 CSS 选择器区域（可选）'
+          },
+          scroll_steps: {
+            type: 'number',
+            description: '读取前先向下滚动次数，触发懒加载（默认 0）'
+          },
+          scroll_delay_ms: {
+            type: 'number',
+            description: '每次滚动后等待毫秒数（默认 500）'
+          },
+          max_length: {
+            type: 'number',
+            description: '最大字符数（默认 32000）'
+          }
+        },
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_get_content',
+      description: `【已废弃，请用 browser_read_article】获取当前标签页正文。等价于 browser_read_article；\`extract: full\` 时转发到 browser_read_page。`,
+      parameters: {
+        type: 'object',
+        properties: {
+          format: {
+            type: 'string',
+            enum: ['text', 'html', 'markdown'],
+            description: '输出格式（默认 text）'
+          },
+          extract: {
+            type: 'string',
+            enum: ['auto', 'article', 'full'],
+            description: 'full 时等价 browser_read_page，其余等价 browser_read_article'
+          },
+          selector: {
+            type: 'string',
+            description: 'CSS 选择器（可选）'
+          },
+          max_length: {
+            type: 'number',
+            description: '最大字符数（默认 16000）'
           }
         },
         required: []

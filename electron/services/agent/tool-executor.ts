@@ -56,7 +56,6 @@ export {
 
 // 知识库
 export {
-  rememberInfo,
   searchKnowledge,
   getKnowledgeDoc
 } from './tools/index'

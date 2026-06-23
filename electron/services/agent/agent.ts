@@ -45,12 +45,23 @@ import { getWatchService } from '../watch/watch.service'
 import { formatWatchListForPrompt } from './skills/watch/executor'
 import { consumeProactiveContext } from './proactive-store'
 import { applyToolResultBudget } from './tool-result-budget'
-import { t } from './i18n'
+import { applyParallelShare, computeToolOutputBudget } from './tool-output-budget'
+import { t, type TranslationKey } from './i18n'
 import { createSkillSession, SkillSession } from './skills'
 import { getAiDebugService } from '../ai-debug.service'
 import { createLogger } from '../../utils/logger'
 import { assembleUserMessageContent, wrapSystemContext } from './message-envelope'
 import { notifyFrontendConfigChanged } from './skills/config/executor'
+import { getBrowserBridgeService } from '../browser-bridge/browser-bridge.service'
+import { patchBrowserBridgeSectionInSystemPrompt } from '../browser-bridge/prompt-section'
+import {
+  WAITING_FOR_MODEL_LABEL_IDS,
+  WAITING_FOR_MODEL_EASTER_EGG_LABEL_IDS,
+  WAITING_FOR_MODEL_SLOW_LABEL_IDS,
+  WAITING_FOR_MODEL_EASTER_EGG_CHANCE,
+  WAITING_FOR_MODEL_SLOW_TTFT_MS,
+  waitingForModelI18nKey,
+} from '@shared/types/ai'
 
 const log = createLogger('Agent')
 
@@ -163,6 +174,14 @@ export abstract class Agent {
   
   /** 会话内累积的所有 API 消息（跨多次 run 的 taskMessageLog 合并） */
   private _sessionMessages: AiMessage[] = []
+
+  /** 恢复任务 id 的实例级单调序号：保证 split* 在同一毫秒内多次调用（如 restoreRecentTaskMemory
+   *  + restoreFromSessionRecord 接连执行）生成的 task id 不碰撞，避免 saveTask 互相覆盖丢任务。 */
+  private _restoreTaskSeq = 0
+
+  /** 抑制下一次 run 从历史回种 sessionId：resetSession（清空对话）/ startNewSession（Watch 每次
+   *  独立记录）时置位，表示「本次有意要全新会话」，不要续写到历史最近一条。consume 后自动清零。 */
+  private _suppressSessionSeed = false
   
   /** 终端元数据（从首次 run 的 context 获取） */
   private _terminalMeta?: { terminalType: TerminalType; sshHost?: string }
@@ -275,17 +294,16 @@ export abstract class Agent {
     const taskStartTime = Date.now()
     
     try {
-      // 延迟解析 CWD：user_task 已发出，此时再刷新 CWD 不阻塞消息上墙
-      if (options?.cwdResolver) {
-        try {
-          const cwd = await options.cwdResolver()
-          run.context = { ...run.context, cwd }
-        } catch (e) {
-          log.warn('CWD resolve failed, using fallback:', e)
-        }
-      }
-      
-      await this.buildContext(run, message)
+      // CWD 刷新与上下文构建互不依赖，并行执行以缩短「正在准备...」阶段
+      const cwdPromise = options?.cwdResolver
+        ? options.cwdResolver().then(cwd => {
+            run.context = { ...run.context, cwd }
+          }).catch(e => {
+            log.warn('CWD resolve failed, using fallback:', e)
+          })
+        : Promise.resolve()
+
+      await Promise.all([cwdPromise, this.buildContext(run, message)])
       let result = await this.executeLoop(run)
       // 主循环返回后用户可能刚补充消息：继续处理直至队列清空
       while (run.pendingUserMessages.length > 0 && !run.aborted) {
@@ -581,9 +599,28 @@ export abstract class Agent {
     
     // 初始化会话追踪（首次 run 时创建 session 或从历史恢复）
     if (!this._sessionId) {
+      const suppressSeed = this._suppressSessionSeed
+      this._suppressSessionSeed = false
       if (context.sessionId) {
         this._sessionId = context.sessionId
         this._sessionStartTime = context.sessionStartTime || Date.now()
+      } else if (this._persistentNamedAgent && !suppressSeed) {
+        // 持久命名 Agent（联络）是「同一条长期关系线」。重启后若 IM/网关/主动消息等
+        // 不带 sessionId 的入口先碰到它（此时 _sessionId 还空），绝不能新起一条
+        // session_${Date.now()}——那会建出与历史断链的并行记录，正是「联络裂成两条
+        // session」的源头。应从最近一条同 agentKey 历史回种，让所有入口续写到同一条会话。
+        //（Watch 每次执行走 startNewSession，会经 suppressSeed 跳过，仍保持独立记录。）
+        const latest = this._agentId
+          ? this.services.historyService?.getLatestRecordByAgentKey?.(this._agentId)
+          : undefined
+        if (latest) {
+          this._sessionId = latest.id
+          this._sessionStartTime = latest.timestamp
+          log.info(`Seeded sessionId from history for persistent agent ${this._agentId}: ${latest.id} (no context.sessionId, avoid forking a disconnected session)`)
+        } else {
+          this._sessionId = `session_${Date.now()}`
+          this._sessionStartTime = Date.now()
+        }
       } else {
         this._sessionId = `session_${Date.now()}`
         this._sessionStartTime = Date.now()
@@ -622,6 +659,14 @@ export abstract class Agent {
       }
     }
     
+    // 先推送「正在准备...」，再做可能较慢的历史恢复，避免 UI 长时间无反馈
+    const initialStep = this.addStep({
+      type: 'thinking',
+      content: t('ai.preparing'),
+      isStreaming: true
+    })
+    run.initialStepId = initialStep.id
+
     // 初始化 TaskMemory（仅首次 run 时，从 HistoryService 恢复）
     // 场景：用户恢复了历史对话，Agent 实例刚创建，TaskMemory 为空
     // 通过 sessionId 从 HistoryService 加载完整记录，避免前端反复传递大量数据
@@ -633,14 +678,6 @@ export abstract class Agent {
         this._isRestoring = false
       }
     }
-    
-    // 添加初始步骤
-    const initialStep = this.addStep({
-      type: 'thinking',
-      content: t('ai.preparing'),
-      isStreaming: true
-    })
-    run.initialStepId = initialStep.id
     
     // 设置终端输出监听器
     this.setupOutputListener(run)
@@ -663,19 +700,34 @@ export abstract class Agent {
   private restoreFromHistory(): void {
     const historyService = this.services.historyService
     if (!historyService || !this._sessionId) return
-    
+
+    // 持久命名 Agent（Companion / Watch）：重启后前端传回的 sessionId 只是「最新一条」
+    // 记录，并非用户主动选择恢复某次会话。若只按它精确命中单条，会丢掉同期其它会话
+    //（典型：另一条 companion 线刚写完的文档）——这正是「屏幕合并展示看得见、AI 上下文
+    // 只有单条记不住」的根因。这类 Agent 语义上是「同一个长期 Agent」，应从最近 N 条
+    // 历史重建工作记忆（跨 Agent 借记忆，见 SPEC），与前端 getRecentByAgentKey 的合并
+    // 展示对齐。同时仍恢复「最新单条」的完整会话状态，保证后续 checkpoint 续写到这条
+    // 记录、不覆盖丢历史。
+    if (this._persistentNamedAgent) {
+      const latest = historyService.getAgentRecordById(this._sessionId)
+      // 先补「除最新外」的最近会话进工作记忆（更旧/并行，插入在前，排到较早位置）
+      this.restoreRecentTaskMemory(historyService, latest?.id)
+      // 再恢复最新单条：其任务插入在后（排到 taskIndex 0 最近位），并复位
+      // _sessionSteps / _sessionMessages 供 checkpoint 续写
+      if (latest) {
+        this.restoreFromSessionRecord(latest)
+      }
+      return
+    }
+
+    // 普通 tab Agent：精确恢复用户指定的那次历史会话；找不到则保持空白（新任务）。
+    // 不走 recent fallback——新 tab 第一次对话本就是新任务，注入历史会造成工具名幻觉。
     const record = historyService.getAgentRecordById(this._sessionId)
     if (record) {
       this.restoreFromSessionRecord(record)
       return
     }
-
-    if (!this._persistentNamedAgent) {
-      log.info(`No record for sessionId=${this._sessionId}; skipping global recent fallback (not a persistent named agent)`)
-      return
-    }
-
-    this.restoreRecentTaskMemory(historyService)
+    log.info(`No record for sessionId=${this._sessionId}; skipping recent fallback (not a persistent named agent)`)
   }
 
   /**
@@ -723,7 +775,12 @@ export abstract class Agent {
         toolResult: s.toolResult,
         riskLevel: s.riskLevel as RiskLevel | undefined,
         timestamp: s.timestamp,
-        webSearchResults: s.webSearchResults
+        webSearchResults: s.webSearchResults,
+        // 必须保留：否则继续对话后下次 checkpoint 会把旧步骤的这些字段写没，
+        // 导致重开会话时产出物面板只剩续聊后新建的产出物（canvasData）。
+        success: s.success,
+        subAgents: s.subAgents,
+        canvasData: s.canvasData
       }))
     }
     
@@ -736,27 +793,49 @@ export abstract class Agent {
    * 从最近历史记录恢复工作记忆（仅 TaskMemory，不恢复 session 状态）
    * 场景：App 重启后 Companion 等命名 Agent 的首次 run，提取最近 5 个任务作为工作记忆
    */
-  private restoreRecentTaskMemory(historyService: { getRecentAgentRecords(limit: number): AgentRecord[] }): void {
-    const MAX_RECENT_TASKS = 5
-    const MAX_RECENT_RECORDS = 3
-    const recentRecords = historyService.getRecentAgentRecords(MAX_RECENT_RECORDS)
+  private restoreRecentTaskMemory(
+    historyService: {
+      getRecentAgentRecords(limit: number, filter?: (r: AgentRecord) => boolean): AgentRecord[]
+    },
+    excludeId?: string
+  ): void {
+    const MAX_RECENT_RECORDS = 6
+    // 仅限制装入工作记忆的「任务数」以防内存膨胀；真正进上下文的量由
+    // buildTaskHistoryContext 按 token 预算动态裁剪（Level 0→4 渐进降级），
+    // 装多少都不会撑爆上下文，这里从宽装载即可。
+    const MAX_RESTORE_TASKS = 40
+
+    // 排除两类记录：
+    //  - wakeup「内心独白」：Watch 自我循环的噪声，SPEC 明确不应被借作工作记忆
+    //  - excludeId：调用方已单独精确恢复的「最新单条」，避免重复
+    const isWakeupNoise = (r: AgentRecord): boolean =>
+      typeof r.userTask === 'string' &&
+      r.userTask.startsWith('[当前时间：') &&
+      r.userTask.includes('触发事件')
+
+    const recentRecords = historyService.getRecentAgentRecords(
+      MAX_RECENT_RECORDS,
+      r => !isWakeupNoise(r) && r.id !== excludeId
+    )
     if (recentRecords.length === 0) return
 
-    const allTasks: Array<{ id: string; userTask: string; finalResult: string; messages?: AiMessage[]; steps?: AgentStep[] }> = []
+    // 按「最后活跃时间」升序：旧记录在前。saveTask 依插入顺序累积，
+    // getTasksInOrder 取「最近」时才能正确把刚发生的任务排到 taskIndex 0。
+    const ordered = [...recentRecords].sort(
+      (a, b) => (a.timestamp + (a.duration || 0)) - (b.timestamp + (b.duration || 0))
+    )
 
-    for (const rec of recentRecords) {
+    const allTasks: Array<{ id: string; userTask: string; finalResult: string; messages?: AiMessage[]; steps?: AgentStep[] }> = []
+    for (const rec of ordered) {
       if (rec.messages && rec.messages.length > 0) {
-        const tasks = this.splitMessagesIntoTasks(rec.messages as AiMessage[])
-        allTasks.push(...tasks)
+        allTasks.push(...this.splitMessagesIntoTasks(rec.messages as AiMessage[]))
       } else if (rec.steps && rec.steps.length > 0) {
-        const tasks = this.splitStepsIntoTasks(rec.steps)
-        allTasks.push(...tasks)
+        allTasks.push(...this.splitStepsIntoTasks(rec.steps))
       }
     }
-
     if (allTasks.length === 0) return
 
-    const recentTasks = allTasks.slice(-MAX_RECENT_TASKS)
+    const recentTasks = allTasks.slice(-MAX_RESTORE_TASKS)
     for (const task of recentTasks) {
       if (task.messages) {
         this.taskMemory.saveTask(task.id, task.userTask, [], 'success', task.finalResult, task.messages as AiMessage[])
@@ -765,7 +844,7 @@ export abstract class Agent {
       }
     }
 
-    log.info(`Restored ${recentTasks.length} recent tasks from history (fallback, from ${recentRecords.length} records)`)
+    log.info(`Restored ${recentTasks.length} recent tasks into working memory (from ${recentRecords.length} records, wakeup${excludeId ? ' + latest' : ''} excluded)`)
   }
   
   /**
@@ -789,7 +868,8 @@ export abstract class Agent {
           m => m.role === 'assistant' && !m.tool_calls
         )
         tasks.push({
-          id: `restored_${Date.now()}_${tasks.length}`,
+          // 用实例级单调序号，避免同毫秒内多次 split（恢复时多记录 + latest）id 碰撞覆盖
+          id: `restored_${Date.now()}_${this._restoreTaskSeq++}`,
           userTask: currentUserTask,
           finalResult: lastAssistant?.content || '',
           messages: currentTaskMessages
@@ -810,7 +890,7 @@ export abstract class Agent {
         m => m.role === 'assistant' && !m.tool_calls
       )
       tasks.push({
-        id: `restored_${Date.now()}_${tasks.length}`,
+        id: `restored_${Date.now()}_${this._restoreTaskSeq++}`,
         userTask: currentUserTask,
         finalResult: lastAssistant?.content || '',
         messages: currentTaskMessages
@@ -853,7 +933,8 @@ export abstract class Agent {
         timestamp: s.timestamp,
         webSearchResults: s.webSearchResults,
         success: s.success,
-        subAgents: s.subAgents
+        subAgents: s.subAgents,
+        canvasData: s.canvasData
       }
       
       if (s.type === 'user_task') {
@@ -1033,13 +1114,15 @@ export abstract class Agent {
       timestamp: s.timestamp,
       webSearchResults: s.webSearchResults,
       success: s.success,
-      subAgents: s.subAgents
+      subAgents: s.subAgents,
+      canvasData: s.canvasData
     }))
     
     const record: AgentRecord = {
       id: this._sessionId,
       timestamp: this._sessionStartTime,
       terminalId: this.currentRun?.context.ptyId || '',
+      agentKey: this._agentId,
       terminalType: this._terminalMeta?.terminalType || 'local',
       sshHost: this._terminalMeta?.sshHost,
       userTask: firstUserTask.content,
@@ -1085,7 +1168,8 @@ export abstract class Agent {
       timestamp: s.timestamp,
       webSearchResults: s.webSearchResults,
       success: s.success,
-      subAgents: s.subAgents
+      subAgents: s.subAgents,
+      canvasData: s.canvasData
     }))
     
     // 合并 API 消息
@@ -1113,6 +1197,7 @@ export abstract class Agent {
       id: this._sessionId,
       timestamp: this._sessionStartTime,
       terminalId: run.context.ptyId || '',
+      agentKey: this._agentId,
       terminalType: this._terminalMeta?.terminalType || 'local',
       sshHost: this._terminalMeta?.sshHost,
       userTask: firstUserTask.content,
@@ -1166,16 +1251,144 @@ export abstract class Agent {
   ): AgentRecord | null {
     if (!this._sessionId) return null
 
-    let messages = this._sessionMessages.map(m => JSON.parse(JSON.stringify(m))) as AiMessage[]
-    let steps = [...this._sessionSteps]
+    return Agent.buildForkRecord(
+      {
+        messages: this._sessionMessages,
+        steps: this._sessionSteps,
+        terminalType: this._terminalMeta?.terminalType,
+        sshHost: this._terminalMeta?.sshHost,
+      },
+      newSessionId,
+      opts
+    )
+  }
+
+  /**
+   * 从 HistoryService 持久化记录构建 fork 产物（源 Agent 无 in-memory 会话时使用）。
+   */
+  static buildForkRecordFromStoredRecord(
+    record: AgentRecord,
+    newSessionId: string,
+    opts?: { untilTaskCount?: number; titleSuffix?: string }
+  ): AgentRecord | null {
+    if (!record.steps?.length) return null
+
+    const steps: AgentStep[] = record.steps.map(s => ({
+      id: s.id,
+      type: s.type as AgentStep['type'],
+      content: s.content,
+      images: s.images,
+      echartsOption: s.echartsOption,
+      attachments: s.attachments,
+      toolName: s.toolName,
+      toolArgs: s.toolArgs,
+      toolResult: s.toolResult,
+      riskLevel: s.riskLevel as RiskLevel | undefined,
+      timestamp: s.timestamp,
+      webSearchResults: s.webSearchResults,
+      success: s.success,
+      subAgents: s.subAgents,
+      canvasData: s.canvasData
+    }))
+
+    if (!steps.some(s => s.type === 'user_task') && record.userTask) {
+      steps.unshift({
+        id: `user_task_${record.timestamp}`,
+        type: 'user_task',
+        content: record.userTask,
+        timestamp: record.timestamp
+      })
+    }
+
+    const messages = (record.messages ?? []).map(m => JSON.parse(JSON.stringify(m))) as AiMessage[]
+
+    return Agent.buildForkRecord(
+      {
+        messages,
+        steps,
+        terminalType: record.terminalType,
+        sshHost: record.sshHost,
+      },
+      newSessionId,
+      opts
+    )
+  }
+
+  /**
+   * 从多条 AgentRecord（如 companion 合并视图）构建 fork 产物。
+   *
+   * companion tab 是多条历史 record 按时间合并后的展示，group.index（前端传来的
+   * untilTaskCount）是合并视图里的位置，无法映射到任何单条 record 的 task 索引。
+   * 这里把所有 records 的 steps 按时间排序合并，用非 proactive record 的 messages
+   * 拼接出 LLM 上下文，再走标准 buildForkRecord 截断路径。
+   *
+   * messages 策略：proactive record（userTask='__proactive__'）没有 API messages；
+   * 只拼接真实对话 record 的 messages（按 timestamp 升序），保证 LLM 前缀连贯。
+   */
+  static buildForkRecordFromMergedRecords(
+    records: AgentRecord[],
+    newSessionId: string,
+    opts?: { untilTaskCount?: number; titleSuffix?: string }
+  ): AgentRecord | null {
+    if (!records.length) return null
+
+    const ordered = [...records].sort((a, b) => a.timestamp - b.timestamp)
+
+    // 合并 steps：按 timestamp 升序，去重（同 id 只保留一次）
+    const seen = new Set<string>()
+    const mergedSteps: AgentStep[] = ordered
+      .flatMap(r => (r.steps ?? []).map(s => ({
+        id: s.id,
+        type: s.type as AgentStep['type'],
+        content: s.content,
+        images: s.images,
+        echartsOption: s.echartsOption,
+        attachments: s.attachments,
+        toolName: s.toolName,
+        toolArgs: s.toolArgs,
+        toolResult: s.toolResult,
+        riskLevel: s.riskLevel as RiskLevel | undefined,
+        timestamp: s.timestamp,
+        webSearchResults: s.webSearchResults,
+        success: s.success,
+        subAgents: s.subAgents,
+        canvasData: s.canvasData,
+      })))
+      .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
+      .filter(s => (s.id && !seen.has(s.id) ? (seen.add(s.id), true) : !s.id))
+
+    // 合并 messages：只取真实对话 record（非 __proactive__），按 timestamp 升序拼接
+    const realRecords = ordered.filter(r => r.userTask !== '__proactive__')
+    const mergedMessages: AiMessage[] = realRecords
+      .flatMap(r => (r.messages ?? []).map(m => JSON.parse(JSON.stringify(m)) as AiMessage))
+
+    return Agent.buildForkRecord(
+      { messages: mergedMessages, steps: mergedSteps, terminalType: 'assistant' },
+      newSessionId,
+      opts
+    )
+  }
+
+  static buildForkRecord(
+    data: {
+      messages: AiMessage[]
+      steps: AgentStep[]
+      terminalType?: TerminalType
+      sshHost?: string
+    },
+    newSessionId: string,
+    opts?: { untilTaskCount?: number; titleSuffix?: string }
+  ): AgentRecord | null {
+    let messages = data.messages.map(m => JSON.parse(JSON.stringify(m))) as AiMessage[]
+    let steps = [...data.steps]
 
     if (opts?.untilTaskCount !== undefined && opts.untilTaskCount > 0) {
-      const tasks = this.splitMessagesIntoTasks(messages)
+      const tasks = Agent.splitMessagesIntoTasksForFork(messages)
       if (opts.untilTaskCount < tasks.length) {
         messages = tasks.slice(0, opts.untilTaskCount).flatMap(t => t.messages)
       }
 
-      const stepChunks = this.splitSessionStepsByUserTask(steps)
+      const stepChunks = Agent.splitSessionStepsByUserTaskForFork(steps)
       if (opts.untilTaskCount < stepChunks.length) {
         steps = stepChunks.slice(0, opts.untilTaskCount).flat()
       }
@@ -1186,21 +1399,25 @@ export abstract class Agent {
 
     const lastFinalResult = [...steps].reverse().find(s => s.type === 'final_result')
 
+    const safeClone = <T>(v: T): T | undefined =>
+      v !== undefined ? (JSON.parse(JSON.stringify(v)) as T) : undefined
+
     const serializableSteps: AgentStepRecord[] = steps.map(s => ({
       id: s.id,
       type: s.type,
       content: s.content || '',
       images: s.images,
-      echartsOption: s.echartsOption,
+      echartsOption: safeClone(s.echartsOption),
       attachments: s.attachments,
       toolName: s.toolName,
       toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,
       toolResult: s.toolResult,
       riskLevel: s.riskLevel,
       timestamp: s.timestamp,
-      webSearchResults: s.webSearchResults,
+      webSearchResults: safeClone(s.webSearchResults),
       success: s.success,
-      subAgents: s.subAgents
+      subAgents: safeClone(s.subAgents),
+      canvasData: safeClone(s.canvasData)
     }))
 
     const titleSuffix = opts?.titleSuffix ?? ''
@@ -1208,8 +1425,8 @@ export abstract class Agent {
       id: newSessionId,
       timestamp: Date.now(),
       terminalId: '',
-      terminalType: this._terminalMeta?.terminalType || 'local',
-      sshHost: this._terminalMeta?.sshHost,
+      terminalType: data.terminalType || 'local',
+      sshHost: data.sshHost,
       userTask: firstUserTask.content + titleSuffix,
       steps: serializableSteps,
       messages,
@@ -1217,6 +1434,65 @@ export abstract class Agent {
       duration: 0,
       status: 'completed'
     }
+  }
+
+  private static splitMessagesIntoTasksForFork(messages: AiMessage[]): Array<{
+    id: string; userTask: string; finalResult: string; messages: AiMessage[]
+  }> {
+    const tasks: Array<{ id: string; userTask: string; finalResult: string; messages: AiMessage[] }> = []
+    let currentTaskMessages: AiMessage[] = []
+    let currentUserTask = ''
+
+    for (const msg of messages) {
+      const isRealUserBoundary = msg.role === 'user' && !msg._systemInjected
+
+      if (isRealUserBoundary && currentTaskMessages.length > 0) {
+        const lastAssistant = [...currentTaskMessages].reverse().find(
+          m => m.role === 'assistant' && !m.tool_calls
+        )
+        tasks.push({
+          id: `restored_${Date.now()}_${tasks.length}`,
+          userTask: currentUserTask,
+          finalResult: lastAssistant?.content || '',
+          messages: currentTaskMessages
+        })
+        currentTaskMessages = []
+      }
+
+      if (isRealUserBoundary) {
+        currentUserTask = msg.content || ''
+      }
+
+      currentTaskMessages.push(msg)
+    }
+
+    if (currentTaskMessages.length > 0) {
+      const lastAssistant = [...currentTaskMessages].reverse().find(
+        m => m.role === 'assistant' && !m.tool_calls
+      )
+      tasks.push({
+        id: `restored_${Date.now()}_${tasks.length}`,
+        userTask: currentUserTask,
+        finalResult: lastAssistant?.content || '',
+        messages: currentTaskMessages
+      })
+    }
+
+    return tasks
+  }
+
+  private static splitSessionStepsByUserTaskForFork(steps: AgentStep[]): AgentStep[][] {
+    const chunks: AgentStep[][] = []
+    let current: AgentStep[] = []
+    for (const s of steps) {
+      if (s.type === 'user_task' && current.length > 0) {
+        chunks.push(current)
+        current = []
+      }
+      current.push(s)
+    }
+    if (current.length > 0) chunks.push(current)
+    return chunks
   }
 
   /**
@@ -1271,6 +1547,7 @@ export abstract class Agent {
     this.preRunUserMessages = []
     this._sessionId = undefined
     this._sessionStartTime = undefined
+    this._suppressSessionSeed = true
     this._sessionSteps = []
     this._sessionMessages = []
     this._sessionTokenUsage = undefined
@@ -1289,6 +1566,7 @@ export abstract class Agent {
   startNewSession(): void {
     this._sessionId = undefined
     this._sessionStartTime = undefined
+    this._suppressSessionSeed = true
     this._sessionSteps = []
     this._sessionMessages = []
     this._sessionTokenUsage = undefined
@@ -1299,24 +1577,35 @@ export abstract class Agent {
   
   /**
    * L2: 异步更新知识文档
-   * 收集执行记录，交给 LLM 判断是否有值得持久化的新信息
+   * 收集执行记录（或纯对话内容），交给 LLM 判断是否有值得持久化的新信息
    */
   private async updateContextKnowledgeAsync(run: AgentRun, result?: string): Promise<void> {
     const aiService = this.services.aiService
     if (!aiService) return
 
-    // 唤醒 run 跳过（短问候不产生值得持久化的系统知识）
+    // 唤醒 run 跳过（短问候不产生值得持久化的信息）
     if (run.context.wakeup) return
-
-    // 跳过纯对话（没有执行过工具的任务不太可能产生新的系统知识）
-    const toolSteps = run.steps.filter(s => s.type === 'tool_call' && s.toolName)
-    if (toolSteps.length === 0) return
 
     const contextId = run.context.hostId || 'personal'
     const MAX_ARG_DISPLAY = 200
     const MAX_RESULT_DISPLAY = 300
     const MAX_FINAL_RESULT_DISPLAY = 500
-    
+
+    const toolSteps = run.steps.filter(s => s.type === 'tool_call' && s.toolName)
+
+    // 纯对话（无工具调用）：把用户请求 + 最终回复一起交给 LLM 判断是否有值得记住的内容
+    if (toolSteps.length === 0) {
+      if (!result) return
+      const ckService = getContextKnowledgeService()
+      const profileId = this.services.configService?.getActiveAiProfile() ?? undefined
+      await ckService.updateWithLLM(contextId, aiService, profileId, {
+        userRequest: run.originalUserRequest,
+        commandRecords: [],
+        finalResponse: result.substring(0, MAX_FINAL_RESULT_DISPLAY)
+      })
+      return
+    }
+
     const commandRecords: string[] = []
     for (const step of run.steps) {
       if (step.type === 'tool_call' && step.toolName && step.toolArgs) {
@@ -1337,16 +1626,16 @@ export abstract class Agent {
         commandRecords.push(`  → ${step.toolResult.substring(0, MAX_RESULT_DISPLAY)}`)
       }
     }
-    
+
     if (result) {
       commandRecords.push(`\n最终结果: ${result.substring(0, MAX_FINAL_RESULT_DISPLAY)}`)
     }
-    
+
     if (commandRecords.length === 0) return
 
     const ckService = getContextKnowledgeService()
     const profileId = this.services.configService?.getActiveAiProfile() ?? undefined
-    
+
     await ckService.updateWithLLM(contextId, aiService, profileId, {
       userRequest: run.originalUserRequest,
       commandRecords
@@ -1492,6 +1781,8 @@ export abstract class Agent {
           return copy
         })
 
+        this.refreshBrowserBridgeSectionInMessages(run.messages)
+
         // 在前序消息末尾设置 Anthropic cache breakpoint（第 3 个断点）
         const lastPrevMsg = run.messages[run.messages.length - 1]
         if (lastPrevMsg) {
@@ -1513,9 +1804,9 @@ export abstract class Agent {
     // ── Cold start path: 从零构建上下文 ──
 
     // 提前并行启动两个异步操作（均需 embedding + 向量搜索，相互独立）
-    const knowledgeResultPromise = this.loadKnowledgeContext(message, run.context.hostId)
+    const knowledgeResultPromise = this.loadKnowledgeContextWithTimeout(message, run.context.hostId)
 
-    const L3_RECALL_TIMEOUT_MS = 3000
+    const L3_RECALL_TIMEOUT_MS = 2000
     const recallPromise: Promise<Array<{ userRequest: string; finalResult: string; status: string; timestamp: number; relevance: number }>> = (() => {
       const ks = getKnowledgeService()
       if (!ks || !ks.isEnabled() || message.trim().length < 5) return Promise.resolve([])
@@ -1614,16 +1905,32 @@ export abstract class Agent {
     run.taskMessageLog.push({ ...userMsg })
   }
 
+  /** prompt cache 复用时刷新 system 消息中的浏览器助手章节（连接状态可能已变） */
+  private refreshBrowserBridgeSectionInMessages(messages: AiMessage[]): void {
+    const systemIdx = messages.findIndex(m => m.role === 'system' && typeof m.content === 'string')
+    if (systemIdx === -1) return
+    try {
+      const status = getBrowserBridgeService().getStatus()
+      const current = messages[systemIdx].content as string
+      const patched = patchBrowserBridgeSectionInSystemPrompt(current, status)
+      if (patched !== current) {
+        messages[systemIdx] = { ...messages[systemIdx], content: patched }
+      }
+    } catch (error) {
+      log.debug('Browser bridge section refresh skipped:', error)
+    }
+  }
+
   /**
    * 组装增强后的用户消息
    * @param injectKnowledge cache-reuse 路径下，知识检索结果不在 system prompt 中，需注入到 user 消息
    */
   private async buildUserMessage(run: AgentRun, message: string, injectKnowledge: boolean): Promise<AiMessage> {
-    const userBody = this.enhanceUserMessage(message)
+    const userBody = this.enhanceUserMessage(message, run.context.terminalType)
 
     let knowledgeRefs = ''
     if (injectKnowledge) {
-      const knowledgeResult = await this.loadKnowledgeContext(message, run.context.hostId)
+      const knowledgeResult = await this.loadKnowledgeContextWithTimeout(message, run.context.hostId)
       knowledgeRefs = knowledgeResult.context
     }
 
@@ -1636,7 +1943,6 @@ export abstract class Agent {
     if (proactiveCtx?.trim()) {
       systemContextParts.push(proactiveCtx.trim())
     }
-
     const hasImages = !!(run.context.images && run.context.images.length > 0)
     const visionAvailable = this.currentProfileHasVision()
     let imageNote = ''
@@ -1667,6 +1973,39 @@ export abstract class Agent {
     return userMsg
   }
   
+  /** L2 知识检索超时：不阻塞首 token，超时则跳过召回 */
+  private static readonly L2_KNOWLEDGE_TIMEOUT_MS = 2500
+
+  private loadKnowledgeContextWithTimeout(
+    message: string,
+    hostId?: string,
+    timeoutMs = Agent.L2_KNOWLEDGE_TIMEOUT_MS
+  ): Promise<KnowledgeContextResult> {
+    return new Promise(resolve => {
+      let settled = false
+      const timer = setTimeout(() => {
+        if (settled) return
+        settled = true
+        log.warn(`L2 knowledge context timeout (${timeoutMs}ms), skipping recall`)
+        resolve({ context: '', enabled: false, conversationHistory: [] })
+      }, timeoutMs)
+      this.loadKnowledgeContext(message, hostId)
+        .then(result => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          resolve(result)
+        })
+        .catch(e => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          log.warn('Knowledge service error:', e)
+          resolve({ context: '', enabled: false, conversationHistory: [] })
+        })
+    })
+  }
+
   /**
    * 加载知识库上下文
    */
@@ -1830,7 +2169,14 @@ export abstract class Agent {
     const availableToolNames = new Set(this.getAvailableTools().map(t => t.function.name))
     const streamingExecutor = new StreamingToolExecutor({
       run,
-      executeFn: (toolCall) => this.executeToolWithChecks(run, toolCall, toolExecutorConfig),
+      executeFn: (toolCall, options) => {
+        const share = options?.parallelShare ?? 1
+        const config =
+          share > 1
+            ? this.withParallelToolOutputBudget(toolExecutorConfig, share)
+            : toolExecutorConfig
+        return this.executeToolWithChecks(run, toolCall, config)
+      },
       availableToolNames,
       isConcurrencySafe: (name) => this.isParallelizableTool(name),
       onToolCompleted: ({ toolCall, result }) => {
@@ -2035,6 +2381,47 @@ export abstract class Agent {
     return this.profileId
   }
   
+  private pickRandomWaitingLabelId(ids: readonly string[]): string {
+    return ids[Math.floor(Math.random() * ids.length)]
+  }
+
+  /**
+   * 从共享池随机挑选等待首 token 的展示文案（5% 彩蛋池）
+   */
+  private pickWaitingForModelLabel(): string {
+    const useEasterEgg = Math.random() < WAITING_FOR_MODEL_EASTER_EGG_CHANCE
+    if (useEasterEgg) {
+      const id = this.pickRandomWaitingLabelId(WAITING_FOR_MODEL_EASTER_EGG_LABEL_IDS)
+      return t(waitingForModelI18nKey(id, 'easter') as TranslationKey)
+    }
+    const id = this.pickRandomWaitingLabelId(WAITING_FOR_MODEL_LABEL_IDS)
+    return t(waitingForModelI18nKey(id) as TranslationKey)
+  }
+
+  /** TTFT 过长时切换为调侃文案 */
+  private pickSlowWaitingForModelLabel(): string {
+    const id = this.pickRandomWaitingLabelId(WAITING_FOR_MODEL_SLOW_LABEL_IDS)
+    return t(waitingForModelI18nKey(id, 'slow') as TranslationKey)
+  }
+
+  /** 上下文就绪、HTTP 即将发出：「正在准备…」→ 随机趣味等待文案 */
+  private markWaitingForFirstToken(run: AgentRun): void {
+    if (!run.initialStepId) return
+    this.updateStep(run.initialStepId, {
+      content: this.pickWaitingForModelLabel(),
+      isStreaming: true,
+    })
+  }
+
+  /** 首 token 仍未到达且占位步骤仍在时，切换为 slow 调侃文案 */
+  private markSlowWaitingForFirstToken(run: AgentRun): void {
+    if (!run.initialStepId) return
+    this.updateStep(run.initialStepId, {
+      content: this.pickSlowWaitingForModelLabel(),
+      isStreaming: true,
+    })
+  }
+
   /**
    * 流式调用 AI
    * @param streamingExecutor 可选的流式工具执行器，传入时会在流式过程中提前启动工具执行
@@ -2054,6 +2441,21 @@ export abstract class Agent {
     const toolProgressThrottle = new Map<string, number>()
     const STREAM_THROTTLE_MS = 100
     const TOOL_PROGRESS_THROTTLE_MS = 120
+    let slowTtftTimer: ReturnType<typeof setTimeout> | undefined
+    const clearSlowTtftTimer = () => {
+      if (slowTtftTimer !== undefined) {
+        clearTimeout(slowTtftTimer)
+        slowTtftTimer = undefined
+      }
+    }
+    const scheduleSlowTtftHint = () => {
+      clearSlowTtftTimer()
+      slowTtftTimer = setTimeout(() => {
+        slowTtftTimer = undefined
+        if (streamStepCreated || !run.initialStepId) return
+        this.markSlowWaitingForFirstToken(run)
+      }, WAITING_FOR_MODEL_SLOW_TTFT_MS)
+    }
 
     // 把当前"正在重试"卡片定稿（关闭 spinner），保留卡片作为审计痕迹。
     // 触发时机：重试成功（首次 onChunk）/ 整体完成（onDone）/ 最终失败（onError）/ 下一轮重试开始
@@ -2104,7 +2506,10 @@ export abstract class Agent {
       run.requestId = run.id
       
       const effectiveProfileId = this.resolveEffectiveProfileId(run)
-      
+
+      this.markWaitingForFirstToken(run)
+      scheduleSlowTtftHint()
+
       this.services.aiService.chatWithToolsStream(
         run.messages,
         llmTools,
@@ -2120,6 +2525,7 @@ export abstract class Agent {
           // 用户感知到的就是文字"正在准备..." → "思考中 N.Ns"无缝切换，整体持续往下输出。
           if (!streamStepCreated) {
             streamStepCreated = true
+            clearSlowTtftTimer()
             // 重试成功：把上一次的"正在重试..."提示定稿（保留卡片但停掉 spinner）
             finalizeRetryStep()
             if (run.initialStepId) {
@@ -2160,6 +2566,7 @@ export abstract class Agent {
         },
         // onDone
         (result) => {
+          clearSlowTtftTimer()
           pendingUpdate = false
           // 预创建的 tool_call 卡片保留、稍后由工具执行器接管（见 executeToolWithChecks 中的 addStep 拦截）
           // 此处只把仍处于 isStreaming 的预卡片停掉光标，避免"参数没来得及更新但模型已结束"的极端情况下卡片一直抖
@@ -2254,6 +2661,7 @@ export abstract class Agent {
         },
         // onError
         (error) => {
+          clearSlowTtftTimer()
           // 出错时把预创建的 tool_call 卡片移除，避免留下没有结果的空卡
           this.discardPreToolCallSteps(run)
           // 重试最终失败时也要把 spinner 关掉，否则"正在重试"卡片会一直转
@@ -2334,6 +2742,7 @@ export abstract class Agent {
         // onRetry - 重试时重置流状态，避免 reasoning 块重复
         // retryInfo 由 ai.service 提供，用来在 UI 上显示"正在重试"，避免用户以为应用卡死
         (retryInfo?: RetryInfo) => {
+          clearSlowTtftTimer()
           log.info(`AI request retrying (reason=${retryInfo?.reason ?? 'unknown'}), resetting stream state`)
           streamContent = ''
           pendingUpdate = false
@@ -2573,6 +2982,10 @@ export abstract class Agent {
 
     const batchStartTime = Date.now()
     const stepCountBefore = run.steps.length
+    const batchExecutorConfig = this.withParallelToolOutputBudget(
+      toolExecutorConfig,
+      toolCalls.length
+    )
     const parallelPromises = toolCalls.map(async (toolCall) => {
       if (run.aborted) {
         const aborted = {
@@ -2584,7 +2997,7 @@ export abstract class Agent {
         this.finalizeToolCallStep(run, toolCall.id, aborted.result.success)
         return { toolCall, ...aborted }
       }
-      const out = await this.executeToolWithChecks(run, toolCall, toolExecutorConfig)
+      const out = await this.executeToolWithChecks(run, toolCall, batchExecutorConfig)
       // 完成即回填 UI（视觉层面"完成一个显示一个"）
       this.ensureToolResultStep(run, stepCountBefore, toolCall, out.result)
       this.finalizeToolCallStep(run, toolCall.id, out.result.success)
@@ -2951,6 +3364,21 @@ export abstract class Agent {
   }
 
   /**
+   * 并行 tool batch 内分摊单次 output 预算（见 tool-output-budget.applyParallelShare）。
+   */
+  private withParallelToolOutputBudget(
+    base: ToolExecutorConfig,
+    parallelShare: number
+  ): ToolExecutorConfig {
+    if (parallelShare <= 1 || !base.getToolOutputBudget) return base
+    return {
+      ...base,
+      getToolOutputBudget: (override?: number) =>
+        applyParallelShare(base.getToolOutputBudget!(override), parallelShare),
+    }
+  }
+
+  /**
    * 创建工具执行器配置
    */
   protected createToolExecutorConfig(run: AgentRun): ToolExecutorConfig {
@@ -3016,7 +3444,15 @@ export abstract class Agent {
         run.context.ptyId = ptyId
         log.info(`Agent currentPtyId switched: ${before} → ${ptyId}`)
       },
-      getCurrentPtyId: () => run.ptyId
+      getCurrentPtyId: () => run.ptyId,
+      getToolOutputBudget: (currentTokensOverride?: number) => {
+        const contextLength = this.getContextLength()
+        const currentTokens =
+          currentTokensOverride ??
+          this._lastPromptTokens ??
+          this.estimateTotalTokens(run.messages)
+        return computeToolOutputBudget({ contextLength, currentTokens })
+      },
     }
   }
   
@@ -3090,7 +3526,7 @@ export abstract class Agent {
     const visionAvailable = this.currentProfileHasVision()
 
     for (const pending of run.pendingUserMessages) {
-      const userBody = Agent.formatTimestamp() + pending.message
+      const userBody = Agent.formatTimestamp() + Agent.formatWorkbenchTag(run.context.terminalType) + pending.message
       let imageNote = ''
       if (pending.images?.length) {
         const imageCount = pending.images.length
@@ -3599,11 +4035,19 @@ export abstract class Agent {
   }
   
   /**
+   * 生成工作台标签前缀，格式如 <sf_workbench>local</sf_workbench>
+   * 注入到每条用户消息，让 AI 在多工作台对话历史中能识别运行环境
+   */
+  private static formatWorkbenchTag(terminalType?: string): string {
+    return terminalType ? `<sf_workbench>${terminalType}</sf_workbench> ` : ''
+  }
+
+  /**
    * 增强用户消息
    */
-  private enhanceUserMessage(message: string): string {
+  private enhanceUserMessage(message: string, terminalType?: string): string {
     const languageHint = this.getLanguageHint()
-    return languageHint + Agent.formatTimestamp() + message
+    return languageHint + Agent.formatTimestamp() + Agent.formatWorkbenchTag(terminalType) + message
   }
 
   /** 生成用户消息时间戳前缀，格式如 [2026-03-25 22:30 周二] */

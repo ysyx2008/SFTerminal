@@ -1,5 +1,5 @@
 /**
- * Content script — 在页面内执行 DOM 操作
+ * Content script — 在页面内执行 DOM 原语（正文提取在 SailFish 桌面端）
  */
 (function () {
   function byRef(refId) {
@@ -49,8 +49,32 @@
 
   function getContent(payload) {
     const mode = payload.mode || 'text'
-    if (mode === 'html') return { content: document.documentElement.outerHTML }
-    return { content: document.body?.innerText || '' }
+    const selector = payload.selector ? String(payload.selector) : ''
+    const meta = { title: document.title, url: location.href }
+
+    // protocol v1：回传渲染后 HTML，正文提取由桌面端完成
+    if (mode === 'page_html') {
+      return {
+        ...meta,
+        html: document.documentElement.outerHTML,
+        fallbackText: (document.body?.innerText || '').trim(),
+      }
+    }
+
+    if (selector) {
+      const el = document.querySelector(selector)
+      if (!el) throw new Error(`Element not found: ${selector}`)
+      if (mode === 'html') {
+        return { ...meta, content: el.innerHTML || '' }
+      }
+      return { ...meta, content: (el.innerText || el.textContent || '').trim() }
+    }
+
+    if (mode === 'html') {
+      return { ...meta, content: document.documentElement.outerHTML }
+    }
+
+    return { ...meta, content: (document.body?.innerText || '').trim() }
   }
 
   function evaluateScript(payload) {

@@ -1046,11 +1046,7 @@ async function excelClose(
     type: 'tool_result',
     content: output,
     toolName: 'excel_close',
-    toolResult: output,
-    canvasData: {
-      action: 'close',
-      renderer: 'spreadsheet'
-    }
+    toolResult: output
   })
 
   return { success: true, output }
@@ -1225,11 +1221,30 @@ async function excelFromMarkdown(
 
     const output = t('excel.created_from_md', { path: filePath, sheets: sheets.length }) + '\n\n' + sheetSummaries.join('\n')
 
+    let previewHtml = ''
+    try {
+      createSession(filePath, workbook)
+      previewHtml = generateExcelPreviewHtml(filePath)
+    } catch (e) {
+      log.warn('Failed to generate Excel from-markdown preview:', e)
+    } finally {
+      if (isSessionOpen(filePath)) {
+        closeSession(filePath, true)
+      }
+    }
+
     executor.addStep({
       type: 'tool_result',
       content: output,
       toolName: 'excel_from_markdown',
-      toolResult: output
+      toolResult: output,
+      canvasData: previewHtml ? {
+        action: 'open',
+        renderer: 'spreadsheet',
+        title: path.basename(filePath),
+        content: previewHtml,
+        filePath
+      } : undefined
     })
 
     return { success: true, output }

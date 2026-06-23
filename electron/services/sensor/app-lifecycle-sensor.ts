@@ -118,12 +118,17 @@ export class AppLifecycleSensor implements Sensor {
 
   // ==================== 对话计数（由 main.ts 在 agent 完成时调用） ====================
 
-  notifyConversationCompleted(): void {
+  notifyConversationCompleted(): string[] {
     this.ensureInit()
     this.totalConversations++
     this.configService?.set('appLifecycleTotalConversations', this.totalConversations)
     this.checkConversationMilestone()
-    try { getBondService().recalculate() } catch (e) { log.warn('Bond recalculate failed:', e) }
+    try {
+      return getBondService().recalculate()
+    } catch (e) {
+      log.warn('Bond recalculate failed:', e)
+      return []
+    }
   }
 
   // ==================== 里程碑检查 ====================
