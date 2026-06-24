@@ -139,7 +139,8 @@ const STRUCTURAL_ROLES = new Set([
  */
 function buildSelector(role: string, name?: string): string {
   if (name) {
-    const escapedName = name.replace(/"/g, '\\"')
+    // 先转义反斜杠，再转义双引号，防止输入中已有的 \ 导致转义失效
+    const escapedName = name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
     return `getByRole('${role}', { name: "${escapedName}", exact: true })`
   }
   return `getByRole('${role}')`

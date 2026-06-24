@@ -920,7 +920,8 @@ export class DocumentParserService {
       // 生成 Markdown 表格
       if (rows.length > 0) {
         const escapeCell = (cell: string) => 
-          cell.replace(/\|/g, '\\|').replace(/\n/g, ' ').trim()
+          // 先转义反斜杠，再转义管道符，防止输入中已有的 \ 导致转义失效
+          cell.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, ' ').trim()
 
         // 如果第一行看起来像表头（通常第一行是表头）
         const headerRow = rows[0]
@@ -1046,8 +1047,8 @@ export class DocumentParserService {
     }
 
     if (displayRows.length > 0) {
-      // 转义特殊字符
-      const escapeCell = (cell: string) => cell.replace(/\|/g, '\\|').replace(/\n/g, ' ')
+      // 转义特殊字符（先转义反斜杠，再转义管道符）
+      const escapeCell = (cell: string) => cell.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, ' ')
       
       // 表头
       markdown += '| ' + displayRows[0].map(escapeCell).join(' | ') + ' |\n'

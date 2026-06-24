@@ -384,12 +384,21 @@ function simpleHtmlToText(html: string): { title?: string; text: string } {
   const title = titleMatch ? decodeEntities(titleMatch[1]).trim() : undefined
 
   let cleaned = html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
-    .replace(/<iframe[\s\S]*?<\/iframe>/gi, ' ')
-    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
-    .replace(/<!--[\s\S]*?-->/g, ' ')
+  // 循环移除危险标签直到稳定（防嵌套绕过如 <<script>script>，并支持 </script > 带空格变体）
+  .replace(/<!--[\s\S]*?-->/g, ' ')
+
+  const dangerousTags = ['script', 'style', 'noscript', 'iframe', 'svg', 'object', 'embed', 'template']
+  for (let safety = 0; safety < 10; safety++) {
+    const before = cleaned
+    for (const tag of dangerousTags) {
+      cleaned = cleaned.replace(new RegExp(`<${tag}(\\s[^>]*)?>[\\s\\S]*?<\\/${tag}\\s*>`, 'gi'), ' ')
+    }
+    for (const tag of dangerousTags) {
+      cleaned = cleaned.replace(new RegExp(`<${tag}(\\s[^>]*)?>`, 'gi'), ' ')
+      cleaned = cleaned.replace(new RegExp(`<\\/${tag}\\s*>`, 'gi'), ' ')
+    }
+    if (cleaned === before) break
+  }
 
   cleaned = cleaned
     .replace(/<\/(p|div|li|h[1-6]|tr|br|hr)>/gi, '\n')

@@ -25,6 +25,8 @@ const AI_RETRY = {
   RATE_LIMIT_BASE_DELAY: 5000, // Rate limit 基础退避：5 秒
   SERVER_ERROR_MAX_RETRIES: 3, // 5xx 服务端错误最大重试次数
   SERVER_ERROR_BASE_DELAY: 3000, // 5xx 基础退避：3 秒
+  MAX_DELAY_MS: 60000,       // 单次重试最大延迟：60 秒（防止指数退避无限增长）
+  MAX_RETRY_AFTER_MS: 120000, // Retry-After 最大接受值：120 秒（超过则不重试）
   JITTER_FACTOR: 0.2,        // 退避抖动因子（±20%），避免 thundering herd
   // Node.js 网络错误码（稳定常量，非关键词匹配）
   RETRYABLE_ERRORS: ['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNREFUSED', 'EPIPE', 'EAI_AGAIN', 'socket hang up'],
@@ -47,7 +49,8 @@ function isRetryableStatusCode(statusCode: number): boolean {
 function calculateBackoff(baseDelay: number, attempt: number): number {
   const expDelay = baseDelay * Math.pow(2, attempt)
   const jitter = expDelay * AI_RETRY.JITTER_FACTOR * (2 * Math.random() - 1)
-  return Math.max(0, Math.round(expDelay + jitter))
+  // 加上限，防止指数退避无限增长导致资源耗尽
+  return Math.min(AI_RETRY.MAX_DELAY_MS, Math.max(0, Math.round(expDelay + jitter)))
 }
 
 /**
@@ -133,7 +136,12 @@ async function withApiRetry<T>(
       // 429 Rate Limit
       if (apiErr.statusCode === 429 && rateLimitAttempt < AI_RETRY.RATE_LIMIT_MAX_RETRIES) {
         rateLimitAttempt++
-        const delay = apiErr.retryAfter ?? calculateBackoff(AI_RETRY.RATE_LIMIT_BASE_DELAY, rateLimitAttempt - 1)
+        const rawDelay = apiErr.retryAfter ?? calculateBackoff(AI_RETRY.RATE_LIMIT_BASE_DELAY, rateLimitAttempt - 1)
+        // 限制 Retry-After 最大值，防止服务器返回过大值导致长时间阻塞
+        const delay = Math.min(AI_RETRY.MAX_RETRY_AFTER_MS, rawDelay)
+        if (rawDelay > AI_RETRY.MAX_RETRY_AFTER_MS) {
+          log.warn(`Retry-After ${rawDelay}ms exceeds cap, using ${AI_RETRY.MAX_RETRY_AFTER_MS}ms`)
+        }
         log.warn(`Rate limited (429), retry ${rateLimitAttempt}/${AI_RETRY.RATE_LIMIT_MAX_RETRIES} in ${(delay / 1000).toFixed(1)}s`)
         options?.onRetry?.(rateLimitAttempt, delay, '429')
         await new Promise(resolve => setTimeout(resolve, delay))

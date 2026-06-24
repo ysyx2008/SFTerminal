@@ -685,7 +685,7 @@ try {
   $word.Quit()
 }
 `
-  await execAsync(`powershell -Command "${script.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, { timeout: 60000 })
+  await execAsync(`powershell -Command "${script.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, { timeout: 60000 })
 }
 
 /**
@@ -999,10 +999,32 @@ function parseHtmlToSections(html: string, sections: SectionContent[]): void {
 }
 
 /**
- * 简单去除 HTML 标签（用于 word_open 的 HTML 解析）
+ * 去除 HTML 标签（用于 word_open 的 HTML 解析）
+ * 先安全移除 script/style 等危险标签（循环兜底防嵌套绕过），再剥离所有标签
  */
 function stripHtmlTagsSimple(html: string): string {
-  return html.replace(/<[^>]+>/g, '')
+  if (!html) return ''
+  let text = String(html)
+  // 移除 HTML 注释
+  text = text.replace(/<!--[\s\S]*?-->/g, '')
+  // 循环移除危险标签块直到稳定（防嵌套绕过如 <<script>script>）
+  const dangerous = ['script', 'style', 'noscript', 'iframe', 'svg', 'object', 'embed']
+  for (let safety = 0; safety < 10; safety++) {
+    const before = text
+    for (const tag of dangerous) {
+      text = text.replace(new RegExp(`<${tag}(\\s[^>]*)?>[\\s\\S]*?<\\/${tag}\\s*>`, 'gi'), ' ')
+    }
+    for (const tag of dangerous) {
+      text = text.replace(new RegExp(`<${tag}(\\s[^>]*)?>`, 'gi'), ' ')
+      text = text.replace(new RegExp(`<\\/${tag}\\s*>`, 'gi'), ' ')
+    }
+    if (text === before) break
+  }
+  // 剥离所有剩余标签
+  text = text.replace(/<[^>]+>/g, '')
+  // 解码常见实体
+  text = text.replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+  return text
 }
 
 /**

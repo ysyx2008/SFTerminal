@@ -41,7 +41,10 @@ export function formatCellValue(value: unknown): string {
 
     return JSON.stringify(value)
   }
-  return String(value).replace(/\|/g, '\\|').replace(/\n/g, ' ')
+  return String(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/\n/g, ' ')
 }
 
 function formatExpectedValue(value: unknown): string {

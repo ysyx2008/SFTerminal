@@ -1,7 +1,17 @@
 import { v4 as uuidv4 } from 'uuid'
+import { Agent } from 'undici'
 import type { BastionConfig, BastionSyncResult } from '@shared/types'
 import type { ConfigService, SshSession, SessionGroup, JumpHostConfig } from './config.service'
 import { createLogger } from '../utils/logger'
+
+// 复用一个不校验证书的 dispatcher（仅在用户显式开启 ignoreSsl 时使用）
+let _tlsSkipDispatcher: Agent | null = null
+function getTlsSkipDispatcher(): Agent {
+  if (!_tlsSkipDispatcher) {
+    _tlsSkipDispatcher = new Agent({ connect: { rejectUnauthorized: false } })
+  }
+  return _tlsSkipDispatcher
+}
 
 const log = createLogger('Bastion')
 
@@ -37,21 +47,18 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 export class BastionService {
   constructor(private configService: ConfigService) {}
 
-  private withTlsOverride<T>(ignoreSsl: boolean, fn: () => Promise<T>): Promise<T> {
-    if (!ignoreSsl) return fn()
-    const prev = process.env.NODE_TLS_REJECT_UNAUTHORIZED
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
-    return fn().finally(() => {
-      if (prev === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
-      else process.env.NODE_TLS_REJECT_UNAUTHORIZED = prev
-    })
+  private withTlsOverride<T>(ignoreSsl: boolean, fn: (opts: { dispatcher?: Agent }) => Promise<T>): Promise<T> {
+    // 不再使用 NODE_TLS_REJECT_UNAUTHORIZED 全局变量（会影响整个进程的所有 TLS 连接）
+    // 改为通过 dispatcher 仅对当前请求禁用证书校验
+    const opts = ignoreSsl ? { dispatcher: getTlsSkipDispatcher() } : {}
+    return fn(opts)
   }
 
   async testConnection(config: BastionConfig): Promise<{ success: boolean; message: string; assetCount?: number }> {
-    return this.withTlsOverride(config.rejectUnauthorized === false, async () => {
+    return this.withTlsOverride(config.rejectUnauthorized === false, async (opts) => {
     try {
-      const token = await this.authenticate(config.url, config.username, config.password)
-      const firstPage = await this.fetchAssetsPage(config.url, token, 10, 0)
+      const token = await this.authenticate(config.url, config.username, config.password, opts)
+      const firstPage = await this.fetchAssetsPage(config.url, token, 10, 0, opts)
       if (firstPage.results?.length > 0) {
         log.info('Sample asset structure:', JSON.stringify(firstPage.results[0], null, 2))
       }
@@ -70,11 +77,11 @@ export class BastionService {
   }
 
   async syncAssets(config: BastionConfig): Promise<BastionSyncResult> {
-    return this.withTlsOverride(config.rejectUnauthorized === false, async () => {
+    return this.withTlsOverride(config.rejectUnauthorized === false, async (opts) => {
     try {
-      const token = await this.authenticate(config.url, config.username, config.password)
+      const token = await this.authenticate(config.url, config.username, config.password, opts)
 
-      const allAssets = await this.fetchAllAssets(config.url, token)
+      const allAssets = await this.fetchAllAssets(config.url, token, opts)
       const sshAssets = allAssets.filter(a => this.isSshAsset(a))
 
       if (sshAssets.length === 0) {
@@ -152,10 +159,10 @@ export class BastionService {
     })
   }
 
-  private async authenticate(baseUrl: string, username: string, password: string): Promise<string> {
+  private async authenticate(baseUrl: string, username: string, password: string, opts: { dispatcher?: Agent } = {}): Promise<string> {
     const url = `${this.normalizeUrl(baseUrl)}/api/v1/authentication/auth/`
     log.info('Authenticating:', url)
-    const resp = await this.httpPost<JumpServerAuthResponse>(url, { username, password })
+    const resp = await this.httpPost<JumpServerAuthResponse>(url, { username, password }, opts)
     if (!resp.token) {
       throw new Error('认证失败：未返回 token（可能需要 MFA 验证）')
     }
@@ -164,12 +171,12 @@ export class BastionService {
 
   private assetsApiPath = ''
 
-  private async fetchAssetsPage(baseUrl: string, token: string, limit: number, offset: number): Promise<{ count?: number; results: JumpServerAsset[] }> {
+  private async fetchAssetsPage(baseUrl: string, token: string, limit: number, offset: number, opts: { dispatcher?: Agent } = {}): Promise<{ count?: number; results: JumpServerAsset[] }> {
     const base = this.normalizeUrl(baseUrl)
     const qs = `?limit=${limit}&offset=${offset}`
 
     if (this.assetsApiPath) {
-      return this.httpGet(`${base}${this.assetsApiPath}${qs}`, token)
+      return this.httpGet(`${base}${this.assetsApiPath}${qs}`, token, opts)
     }
 
     const candidates = [
@@ -179,7 +186,7 @@ export class BastionService {
     let lastError: Error | undefined
     for (const path of candidates) {
       try {
-        const result = await this.httpGet<{ count?: number; results: JumpServerAsset[] }>(`${base}${path}${qs}`, token)
+        const result = await this.httpGet<{ count?: number; results: JumpServerAsset[] }>(`${base}${path}${qs}`, token, opts)
         this.assetsApiPath = path
         log.info('Using assets API path:', path)
         return result
@@ -191,14 +198,14 @@ export class BastionService {
     throw lastError!
   }
 
-  private async fetchAllAssets(baseUrl: string, token: string): Promise<JumpServerAsset[]> {
+  private async fetchAllAssets(baseUrl: string, token: string, opts: { dispatcher?: Agent } = {}): Promise<JumpServerAsset[]> {
     const pageSize = 100
     const maxPages = 100
     const all: JumpServerAsset[] = []
     let offset = 0
 
     for (let page = 0; page < maxPages; page++) {
-      const resp = await this.fetchAssetsPage(baseUrl, token, pageSize, offset)
+      const resp = await this.fetchAssetsPage(baseUrl, token, pageSize, offset, opts)
       if (!resp.results?.length) break
       all.push(...resp.results)
 
@@ -245,14 +252,15 @@ export class BastionService {
     return assets.filter(a => this.isSshAsset(a)).length
   }
 
-  private async httpGet<T>(url: string, token: string): Promise<T> {
+  private async httpGet<T>(url: string, token: string, opts: { dispatcher?: Agent } = {}): Promise<T> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 15000)
     try {
       const resp = await fetch(url, {
         signal: controller.signal,
+        dispatcher: opts.dispatcher,
         headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json', 'User-Agent': UA }
-      })
+      } as RequestInit)
       if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText} [${url}]`)
       return await resp.json() as T
     } finally {
@@ -260,16 +268,17 @@ export class BastionService {
     }
   }
 
-  private async httpPost<T>(url: string, body: Record<string, unknown>): Promise<T> {
+  private async httpPost<T>(url: string, body: Record<string, unknown>, opts: { dispatcher?: Agent } = {}): Promise<T> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 15000)
     try {
       const resp = await fetch(url, {
         method: 'POST',
         signal: controller.signal,
+        dispatcher: opts.dispatcher,
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': UA },
         body: JSON.stringify(body)
-      })
+      } as RequestInit)
       if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText} [${url}]`)
       return await resp.json() as T
     } finally {

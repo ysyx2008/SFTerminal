@@ -27,6 +27,7 @@ import {
 } from './bridge-session'
 import { selectorToHumanLabel } from './ref-label'
 import { extractPageContentFromHtml } from '../../../../utils/page-content-extract'
+import { htmlToSimpleMarkdown as _htmlToSimpleMarkdown } from '../../../../utils/html-sanitize'
 
 function countRefs(refs: BrowserBridgeRefMap): { total: number; interactive: number } {
   const entries = Object.values(refs)
@@ -318,26 +319,7 @@ function delay(ms: number): Promise<void> {
 }
 
 function htmlToSimpleMarkdown(html: string): string {
-  return html
-    .replace(/<h1[^>]*>(.*?)<\/h1>/gi, '# $1\n')
-    .replace(/<h2[^>]*>(.*?)<\/h2>/gi, '## $1\n')
-    .replace(/<h3[^>]*>(.*?)<\/h3>/gi, '### $1\n')
-    .replace(/<h4[^>]*>(.*?)<\/h4>/gi, '#### $1\n')
-    .replace(/<strong[^>]*>(.*?)<\/strong>/gi, '**$1**')
-    .replace(/<b[^>]*>(.*?)<\/b>/gi, '**$1**')
-    .replace(/<em[^>]*>(.*?)<\/em>/gi, '*$1*')
-    .replace(/<i[^>]*>(.*?)<\/i>/gi, '*$1*')
-    .replace(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, '[$2]($1)')
-    .replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<p[^>]*>(.*?)<\/p>/gi, '$1\n\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
+  return _htmlToSimpleMarkdown(html)
 }
 
 type ContentPayload = {

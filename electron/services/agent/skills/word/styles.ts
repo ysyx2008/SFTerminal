@@ -2260,9 +2260,26 @@ function createParagraphFromHtml(
     return null
   }
   
-  // 提取内容（去除 HTML 标签）
-  const content = html
+  // 提取内容（先安全移除危险标签，再去除 HTML 标签）
+  let content = html
+  // 移除 HTML 注释
+  content = content.replace(/<!--[\s\S]*?-->/g, '')
+  // 循环移除危险标签块直到稳定（防嵌套绕过）
+  const _dangerous = ['script', 'style', 'noscript', 'iframe', 'svg', 'object', 'embed']
+  for (let _s = 0; _s < 10; _s++) {
+    const _before = content
+    for (const tag of _dangerous) {
+      content = content.replace(new RegExp(`<${tag}(\\s[^>]*)?>[\\s\\S]*?<\\/${tag}\\s*>`, 'gi'), ' ')
+    }
+    for (const tag of _dangerous) {
+      content = content.replace(new RegExp(`<${tag}(\\s[^>]*)?>`, 'gi'), ' ')
+      content = content.replace(new RegExp(`<\\/${tag}\\s*>`, 'gi'), ' ')
+    }
+    if (content === _before) break
+  }
+  content = content
     .replace(/<[^>]+>/g, '')  // 移除所有 HTML 标签
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
     .trim()
   
   if (!content) {

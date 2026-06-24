@@ -83,7 +83,7 @@
       }
 
       let line = `- ${role}`
-      if (name) line += ` "${name.replace(/"/g, '\\"')}"`
+      if (name) line += ` "${name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
       let refId = null
       if (isInteractive || role === 'heading' || role === 'textbox' || role === 'link') {
         refId = nextRef()

@@ -226,7 +226,9 @@ export function replaceTextInParagraphXml(
     // 如果新文本为空且原始有 space preserve，保留属性
     let newTag: string
     if (newText === '' && !prefix.includes('xml:space')) {
-      newTag = prefix.replace('>', ' xml:space="preserve">') + suffix
+      // 用 lastIndexOf 找到标签结束的 >，避免替换属性值中的 >
+      const lastGt = prefix.lastIndexOf('>')
+      newTag = prefix.substring(0, lastGt) + ' xml:space="preserve">' + suffix
     } else if (newText !== '' && !prefix.includes('xml:space')) {
       newTag = prefix + newText + suffix
     } else {
@@ -396,7 +398,9 @@ export function modifyParagraphText(documentXml: string, index: number, newConte
       const text = i === 0 ? escapeXml(newContent) : ''
       let newTag: string
       if (!prefix.includes('xml:space')) {
-        newTag = prefix.replace('>', ' xml:space="preserve">') + text + suffix
+        // 用 lastIndexOf 找到标签结束的 >，避免替换属性值中的 >
+        const lastGt = prefix.lastIndexOf('>')
+        newTag = prefix.substring(0, lastGt) + ' xml:space="preserve">' + text + suffix
       } else {
         newTag = prefix + text + suffix
       }

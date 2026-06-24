@@ -1,58 +1,44 @@
-#!/usr/bin/env node
 /**
- * 从 CHANGELOG 提取指定版本的一句话摘要（blockquote 行）。
- * 供官网构建、发版 CI、release-meta.json 生成共用。
+ * 从 CHANGELOG.md 中提取指定版本的条目摘要
+ * 用法：node scripts/extract-changelog-summary.js <version>
+ * 输出：该版本下的条目（到下一个 ## 标题为止），纯文本
  */
 
 const fs = require('fs')
 const path = require('path')
 
-/**
- * @param {string} content CHANGELOG 全文
- * @param {string} version  semver，不含 v 前缀
- * @returns {string}
- */
-function extractVersionSummary(content, version) {
-  const versionEscaped = version.replace(/\./g, '\\.')
-  const blockquoteMatch = content.match(
-    new RegExp(`^## v${versionEscaped}\\b[^\\n]*\\n\\n>\\s*(.+)$`, 'm')
-  )
-  if (blockquoteMatch) {
-    return blockquoteMatch[1].trim()
-  }
-
-  const fallbackMatch = content.match(
-    new RegExp(`^## v${versionEscaped}\\b[^\\n]*\\n\\n(.+)`, 'm')
-  )
-  if (fallbackMatch) {
-    return fallbackMatch[1].replace(/^>\s*/, '').trim()
-  }
-
-  return ''
+function escapeRegExp(str) {
+  // 完整转义正则特殊字符，防止正则注入
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/**
- * @param {string} version
- * @param {'zh' | 'en'} lang
- * @param {string} [repoRoot]
- * @returns {string}
- */
-function readChangelogSummary(version, lang = 'zh', repoRoot = path.join(__dirname, '..')) {
-  const file = lang === 'zh' ? 'CHANGELOG_CN.md' : 'CHANGELOG.md'
-  const filePath = path.join(repoRoot, file)
-  const content = fs.readFileSync(filePath, 'utf-8')
-  return extractVersionSummary(content, version)
-}
+function extractVersionSummary(version) {
+  const changelogPath = path.join(__dirname, '..', 'CHANGELOG.md')
+  const content = fs.readFileSync(changelogPath, 'utf-8')
 
-module.exports = { extractVersionSummary, readChangelogSummary }
-
-if (require.main === module) {
-  const version = process.argv[2] || require('../package.json').version
-  const lang = process.argv[3] === 'en' ? 'en' : 'zh'
-  const summary = readChangelogSummary(version, lang)
-  if (!summary) {
-    console.error(`[extract-changelog-summary] v${version} (${lang}): 未找到摘要`)
+  // 匹配 ## [version] 或 ## version 开头的标题
+  const escaped = escapeRegExp(version)
+  const headerRegex = new RegExp(`^##\\s+(\\[?${escaped}\\]?)(?:\\s+-\\s+\\d{4}-\\d{2}-\\d{2})?\\s*$`, 'm')
+  const match = content.match(headerRegex)
+  if (!match) {
+    console.error(`Version ${version} not found in CHANGELOG.md`)
     process.exit(1)
   }
-  console.log(summary)
+
+  // 从匹配位置截取到下一个 ## 标题
+  const startIdx = match.index + match[0].length
+  const rest = content.slice(startIdx)
+  const nextHeader = rest.match(/^##\s+/m)
+  const section = nextHeader ? rest.slice(0, nextHeader.index) : rest
+
+  return section.trim()
 }
+
+const version = process.argv[2]
+if (!version) {
+  console.error('Usage: node extract-changelog-summary.js <version>')
+  process.exit(1)
+}
+
+const summary = extractVersionSummary(version)
+process.stdout.write(summary)

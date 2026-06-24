@@ -300,7 +300,8 @@ export class FileSearchService {
    * 转义 Spotlight 查询中的单引号，防止查询语法被破坏
    */
   private escapeSpotlightQuery(query: string): string {
-    return query.replace(/'/g, "\\'")
+    // 先转义反斜杠，再转义单引号，防止输入中已有的 \ 导致转义失效
+    return query.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
   }
 
   /**
