@@ -1,5 +1,7 @@
 import Store from 'electron-store'
-import { safeStorage } from 'electron'
+import fs from 'fs'
+import path from 'path'
+import { app, safeStorage } from 'electron'
 import type { AiModelType, AiProfile, ApiFormat, ExecutionMode, JumpHostConfig } from '@shared/types'
 import type { KnowledgeSettings } from './knowledge/types'
 import { DEFAULT_KNOWLEDGE_SETTINGS } from './knowledge/types'
@@ -353,34 +355,92 @@ export class ConfigService {
   private store: Store<StoreSchema>
 
   constructor() {
-    // 使用 safeStorage 生成加密密钥
-    let encryptionKey: string | undefined
-    
+    // CLI 模式使用独立的配置文件，避免与 Electron 配置冲突
+    const isCli = !!process.env.SFT_CLI_MODE
+    const storeName = isCli ? 'qiyu-terminal-config-cli' : 'qiyu-terminal-config'
+
+    // config 文件不含敏感数据（SSH 密码/API Key 由 credential.service 管理），
+    // 目标状态：明文存储，不使用 safeStorage 加密。
+    // 原因：safeStorage Keychain ACL 绑定二进制签名，跨版本升级后 ACL 失效、
+    // 密钥变化，导致旧加密配置无法解密而崩溃（v10→v11 Intel Mac 复现）。
+    this.store = this.createStore(storeName)
+  }
+
+  private createStore(storeName: string): Store<StoreSchema> {
+    // 步骤 1：尝试明文读取（新安装或已完成迁移的用户，正常路径）
+    try {
+      return new Store<StoreSchema>({ name: storeName, defaults: defaultConfig })
+    } catch (_plainErr) {
+      // 明文读取失败，说明文件是旧版加密的，进入迁移流程
+    }
+
+    // 步骤 2：尝试用当前机器的 safeStorage 密钥解密旧文件，并迁移为明文
+    // （适用于 v11 正常升级的用户：Keychain 未变，能解密，迁移后不再依赖 safeStorage）
+    const encryptionKey = this.deriveEncryptionKey()
+    if (encryptionKey) {
+      try {
+        const encryptedStore = new Store<StoreSchema>({
+          name: storeName,
+          defaults: defaultConfig,
+          encryptionKey,
+        })
+        const allData = encryptedStore.store
+        if (allData && typeof allData === 'object' && Object.keys(allData).length > 0) {
+          // 原子性保障：先备份旧文件，再删除，再写明文。
+          // 若写入中途崩溃，备份文件仍在，下次启动步骤 2 可重试。
+          const filePath = this.getStorePath(storeName)
+          const backupPath = `${filePath}.enc.${Date.now()}`
+          fs.copyFileSync(filePath, backupPath)
+          fs.unlinkSync(filePath)
+          const plainStore = new Store<StoreSchema>({ name: storeName, defaults: defaultConfig })
+          plainStore.store = allData
+          log.info(`已将配置从加密格式迁移为明文存储（共 ${Object.keys(allData).length} 项），加密备份保留于 ${backupPath}`)
+          return plainStore
+        }
+      } catch (_decryptErr) {
+        // Keychain 密钥已变（跨签名升级），无法解密，走 fallback
+      }
+    }
+
+    // 步骤 3：无法解密，备份旧文件后以默认值重建
+    const reason = encryptionKey
+      ? 'Keychain 密钥已变（跨版本 app 签名不一致）'
+      : 'safeStorage 不可用'
+    log.warn(`配置文件无法解密（${reason}），将备份旧文件并重置为默认值`)
+    this.backupCorruptedConfig(storeName)
+    return new Store<StoreSchema>({ name: storeName, defaults: defaultConfig })
+  }
+
+  /** config 文件绝对路径 */
+  private getStorePath(storeName: string): string {
+    return path.join(app.getPath('userData'), `${storeName}.json`)
+  }
+
+  /** 生成与旧版相同的 safeStorage 派生密钥，用于读取旧加密文件 */
+  private deriveEncryptionKey(): string | undefined {
     try {
       if (safeStorage.isEncryptionAvailable()) {
-        // 使用固定标识符生成一致的加密密钥
         const keyBuffer = safeStorage.encryptString('qiyu-terminal-encryption-key-v1')
-        encryptionKey = keyBuffer.toString('hex').substring(0, 32) // 取前32字符作为密钥
+        return keyBuffer.toString('hex').substring(0, 32)
       }
-    } catch (e) {
-      log.warn('safeStorage not available, using unencrypted storage')
+    } catch {
+      // ignore
     }
+    return undefined
+  }
 
-    // CLI 模式使用独立的配置文件，避免读取 Electron 加密的配置
-    const isCli = !!process.env.SFT_CLI_MODE
-    const storeName = isCli
-      ? 'qiyu-terminal-config-cli'
-      : 'qiyu-terminal-config'
-
-    if (isCli) {
-      log.warn('配置文件未加密存储，请勿在共享环境中保存敏感信息（如 API Key）')
+  private backupCorruptedConfig(storeName: string): void {
+    try {
+      const filePath = this.getStorePath(storeName)
+      const backupPath = `${filePath}.bak.${Date.now()}`
+      if (fs.existsSync(filePath)) {
+        fs.copyFileSync(filePath, backupPath)
+        fs.unlinkSync(filePath)
+        log.info(`旧配置已备份至 ${backupPath}`)
+      }
+    } catch (backupErr) {
+      log.warn(`备份旧配置文件失败: ${backupErr}`)
     }
-
-    this.store = new Store<StoreSchema>({
-      name: storeName,
-      defaults: defaultConfig,
-      encryptionKey // 启用加密存储（CLI 模式下 encryptionKey 为 undefined）
-    })
   }
 
   /**
