@@ -1,11 +1,13 @@
 ---
 title: '下载与安装'
-description: '在 macOS、Windows 或 Linux 上下载并安装旗鱼'
+description: '在 macOS 或 Windows 上下载并安装旗鱼'
 ---
 
 # 下载与安装
 
-旗鱼支持 macOS、Windows 和 Linux 三大平台。安装过程非常简单，和安装其他桌面应用没有区别。
+旗鱼支持 macOS 和 Windows。安装过程非常简单，和安装其他桌面应用没有区别。
+
+> Linux 桌面版暂未提供官方支持与下载。
 
 ## 系统要求
 
@@ -13,7 +15,6 @@ description: '在 macOS、Windows 或 Linux 上下载并安装旗鱼'
 |------|---------|
 | macOS | 10.15 (Catalina) 及以上，支持 Intel 和 Apple Silicon |
 | Windows | Windows 10 / 11，Server 2016 及以上 |
-| Linux | 主流 64 位发行版（Ubuntu 20.04+、Debian 11+、Fedora 36+ 等） |
 
 ## 下载
 
@@ -34,11 +35,6 @@ description: '在 macOS、Windows 或 Linux 上下载并安装旗鱼'
 ### Windows
 
 - 下载 `SailFish-x.x.x-x64-setup.exe`（64 位安装包）
-
-### Linux
-
-- **AppImage**（通用）：下载 `SailFish-x.x.x-x86_64.AppImage`
-- **deb 包**（Debian/Ubuntu）：下载 `SailFish-x.x.x-amd64.deb`
 
 ## 安装步骤
 
@@ -61,24 +57,6 @@ description: '在 macOS、Windows 或 Linux 上下载并安装旗鱼'
 3. 按照安装向导完成安装（建议使用默认路径）
 4. 安装完成后，在开始菜单或桌面找到旗鱼图标，双击启动
 
-### Linux 安装
-
-**AppImage 方式（推荐）：**
-
-```bash
-# 赋予执行权限
-chmod +x SailFish-*.AppImage
-
-# 直接运行
-./SailFish-*.AppImage
-```
-
-**deb 包方式：**
-
-```bash
-sudo dpkg -i SailFish-*-amd64.deb
-```
-
 ## 启动与首次见面
 
 安装完成并启动旗鱼后，你会看到主界面。此时 AI 还无法工作，因为还没有配置 AI 服务的 API。
@@ -93,7 +71,6 @@ sudo dpkg -i SailFish-*-amd64.deb
 
 - **macOS 提示「已损坏」**：在终端执行 `xattr -cr /Applications/SailFish.app`
 - **Windows 杀毒软件拦截**：将旗鱼加入白名单，这是误报
-- **Linux 无法启动**：确保系统已安装 `libgtk-3-0`、`libnotify4`、`libnss3` 等依赖
 
 如果仍有问题，可以到 [GitHub Issues](https://github.com/ysyx2008/SailFish/issues) 反馈，或加入 QQ 交流群寻求帮助。
 

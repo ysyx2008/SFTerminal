@@ -1,11 +1,13 @@
 ---
 title: "Download & Install"
-description: "Download and install SailFish on macOS, Windows, or Linux"
+description: "Download and install SailFish on macOS or Windows"
 ---
 
 # Download & Install
 
-SailFish supports macOS, Windows, and Linux. Installation is straightforward and similar to other desktop apps.
+SailFish supports macOS and Windows. Installation is straightforward and similar to other desktop apps.
+
+> The Linux desktop build is not officially supported or offered for download at this time.
 
 ## System Requirements
 
@@ -13,7 +15,6 @@ SailFish supports macOS, Windows, and Linux. Installation is straightforward and
 |----------|---------------------|
 | macOS | 10.15 (Catalina) or later; supports Intel and Apple Silicon |
 | Windows | Windows 10 / 11, Server 2016 or later |
-| Linux | Mainstream 64-bit distributions (Ubuntu 20.04+, Debian 11+, Fedora 36+, etc.) |
 
 ## Download
 
@@ -34,11 +35,6 @@ You can download the latest version from either of these sources:
 ### Windows
 
 - Download `SailFish-x.x.x-x64-setup.exe` (64-bit installer)
-
-### Linux
-
-- **AppImage** (universal): Download `SailFish-x.x.x-x86_64.AppImage`
-- **deb package** (Debian/Ubuntu): Download `SailFish-x.x.x-amd64.deb`
 
 ## Installation Steps
 
@@ -61,24 +57,6 @@ You can download the latest version from either of these sources:
 3. Complete the installation wizard (default path is recommended)
 4. After installation, find the SailFish icon in the Start menu or on the desktop and double-click to launch
 
-### Linux Installation
-
-**AppImage (recommended):**
-
-```bash
-# Grant execute permission
-chmod +x SailFish-*.AppImage
-
-# Run
-./SailFish-*.AppImage
-```
-
-**deb package:**
-
-```bash
-sudo dpkg -i SailFish-*-amd64.deb
-```
-
 ## Launch and First Run
 
 After installation and launch, you will see the main interface. AI is not yet functional because the AI service API has not been configured.
@@ -93,7 +71,6 @@ SailFish has built-in auto update. When a new version is available, the app will
 
 - **macOS says app is "damaged"**: Run `xattr -cr /Applications/SailFish.app` in Terminal
 - **Windows antivirus blocks it**: Add SailFish to the allowlist; this is a false positive
-- **Linux won't start**: Ensure the system has `libgtk-3-0`, `libnotify4`, `libnss3`, and similar dependencies installed
 
 If you still have issues, report them at [GitHub Issues](https://github.com/ysyx2008/SailFish/issues), or ask for help in the QQ community group.
 

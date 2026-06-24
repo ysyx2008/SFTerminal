@@ -123,20 +123,4 @@ dmg:
       y: 370
       type: file
       path: resources/dmg/安装说明.txt
-linux:
-  icon: resources
-  target:
-    - target: AppImage
-      arch:
-        - x64
-    - target: deb
-      arch:
-        - x64
-  category: Development
-  executableName: sfterm
-  desktop:
-    entry:
-      Name: SailFish
-      Name[zh_CN]: 旗鱼终端
-      Comment: Terminal & Connection Manager
-      Comment[zh_CN]: 高效的终端与连接管理工具
+linux: false

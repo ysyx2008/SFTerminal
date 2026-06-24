@@ -36,7 +36,6 @@ export const translations = {
       platforms: {
         macOS: 'macOS',
         Windows: 'Windows',
-        Linux: 'Linux',
       },
       screenshot: {
         production: '🖥️ 生产服务器',
@@ -184,14 +183,6 @@ export const translations = {
           variants: {
             installer64: '64 位安装包',
             portable64: '64 位便携版 (ZIP)',
-          },
-        },
-        Linux: {
-          name: 'Linux',
-          description: '支持主流 Linux 发行版',
-          variants: {
-            appImage: 'AppImage',
-            deb: 'deb 包',
           },
         },
       },
@@ -940,7 +931,6 @@ export const translations = {
       platforms: {
         macOS: 'macOS',
         Windows: 'Windows',
-        Linux: 'Linux',
       },
       screenshot: {
         production: '🖥️ Production Server',
@@ -1088,14 +1078,6 @@ export const translations = {
           variants: {
             installer64: '64-bit Installer',
             portable64: '64-bit Portable (ZIP)',
-          },
-        },
-        Linux: {
-          name: 'Linux',
-          description: 'Supports major Linux distributions',
-          variants: {
-            appImage: 'AppImage',
-            deb: 'deb Package',
           },
         },
       },

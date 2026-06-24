@@ -103,7 +103,6 @@ npm run dev
 # 构建应用
 npm run build:mac    # macOS
 npm run build:win    # Windows
-npm run build:linux  # Linux
 ```
 
 > **开发版 Windows 安装包**（仅供作者跨平台测试用）：本地执行 `npm run build:win:remote` 即可触发 GitHub Actions 远程构建，约 8-10 分钟后产物会覆盖到 OSS 固定路径。不保证稳定。

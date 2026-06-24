@@ -114,49 +114,9 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-  # Linux 构建
-  build-linux:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Cache models
-        uses: actions/cache@v4
-        with:
-          path: resources/models
-          key: models-${{ hashFiles('scripts/download-models.js', 'scripts/download-embedding-model.js', 'scripts/download-speech-model.js', 'scripts/download-punct-model.js') }}
-          restore-keys: models-
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build application
-        run: npm run build:linux
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: linux-release
-          path: |
-            release/*.AppImage
-            release/*.deb
-            release/*.snap
-            release/latest-linux.yml
-            release/*.blockmap
-          if-no-files-found: warn
-          retention-days: 3
-
   # 创建 GitHub Release 并上传构建产物
   create-release:
-    needs: [build-windows, build-macos, build-linux]
+    needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     
@@ -205,23 +165,18 @@ jobs:
             ```
             然后重新打开应用即可。
 
-            ### Linux
-            - **AppImage**: 下载后添加执行权限 `chmod +x *.AppImage`，然后双击运行
-            - **deb**: 使用 `sudo dpkg -i *.deb` 安装
-
             ---
 
           files: |
             release-meta.json
             artifacts/windows-release/*
             artifacts/macos-release/*
-            artifacts/linux-release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # 上传到阿里云 OSS（国内加速下载）
   upload-oss:
-    needs: [build-windows, build-macos, build-linux]
+    needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     
@@ -260,7 +215,6 @@ jobs:
           BUCKET=oss://sfterm-download
           WIN=artifacts/windows-release
           MAC=artifacts/macos-release
-          LIN=artifacts/linux-release
           
           # 官网下载用（固定文件名，不带版本号）
           # Windows
@@ -271,9 +225,6 @@ jobs:
           # macOS
           $OSSUTIL cp ${MAC}/SailFish-${VERSION}-arm64.dmg ${BUCKET}/SailFish-arm64.dmg -f
           $OSSUTIL cp ${MAC}/SailFish-${VERSION}.dmg ${BUCKET}/SailFish-x64.dmg -f
-          # Linux
-          $OSSUTIL cp ${LIN}/SailFish-${VERSION}.AppImage ${BUCKET}/SailFish.AppImage -f
-          $OSSUTIL cp ${LIN}/SFTerm_${VERSION}_amd64.deb ${BUCKET}/SailFish.deb -f
           
           # electron-updater 自动更新用（版本化文件 + 元数据 yml）
           # Windows
@@ -295,14 +246,6 @@ jobs:
             for f in ${MAC}/*.blockmap; do
               [ -f "$f" ] && $OSSUTIL cp "$f" ${BUCKET}/releases/$(basename "$f") -f
             done
-          fi
-          # Linux
-          if [ -f ${LIN}/latest-linux.yml ]; then
-            $OSSUTIL cp ${LIN}/latest-linux.yml ${BUCKET}/releases/latest-linux.yml -f
-            $OSSUTIL cp ${LIN}/SailFish-${VERSION}.AppImage ${BUCKET}/releases/SailFish-${VERSION}.AppImage -f
-            if [ -f "${LIN}/SailFish-${VERSION}.AppImage.blockmap" ]; then
-              $OSSUTIL cp "${LIN}/SailFish-${VERSION}.AppImage.blockmap" ${BUCKET}/releases/SailFish-${VERSION}.AppImage.blockmap -f
-            fi
           fi
 
           # 更新弹窗版本摘要

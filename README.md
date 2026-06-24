@@ -99,7 +99,6 @@ npm run dev
 # Build
 npm run build:mac    # macOS
 npm run build:win    # Windows
-npm run build:linux  # Linux
 ```
 
 > **Dev Windows build** (for the author's cross-platform testing only): run `npm run build:win:remote` locally to trigger a GitHub Actions build; the artifact overwrites a fixed OSS path in 8-10 minutes. Stability is not guaranteed.

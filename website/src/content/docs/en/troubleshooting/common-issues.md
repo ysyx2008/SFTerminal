@@ -17,7 +17,6 @@ SailFish logs are the first place to look.
 |----|------|
 | macOS | `~/Library/Application Support/SailFish/logs/` |
 | Windows | `%APPDATA%/SailFish/logs/` |
-| Linux | `~/.config/SailFish/logs/` |
 
 Logs are named by date (e.g. `2026-03-13.log`). Open the latest file.
 

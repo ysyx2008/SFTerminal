@@ -177,22 +177,4 @@ dmg:
       y: 370
       type: file
       path: resources/dmg/安装说明.txt
-linux:
-  icon: resources
-  target:
-    - target: AppImage
-      arch:
-        - x64
-    - target: deb
-      arch:
-        - x64
-  category: Development
-  # 本地化应用名称支持
-  executableName: sfterm
-  desktop:
-    entry:
-      Name: SailFish
-      Name[zh_CN]: 旗鱼
-      Comment: AI-Powered Smart Assistant
-      Comment[zh_CN]: AI 驱动的智能助手
-
+linux: false

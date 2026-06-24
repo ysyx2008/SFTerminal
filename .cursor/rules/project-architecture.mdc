@@ -19,7 +19,7 @@ SailFish（旗鱼）是一个私人 AI Agent 桌面应用。用户用自然语�
 | 后端服务 | TypeScript (Node.js) | 业务逻辑核心 |
 | CLI | Node.js + tsx | 纯命令行模式，复用后端服务 |
 | AI | Transformers.js + LanceDB | 本地向量嵌入、知识库 |
-| 构建 | Vite + electron-builder | 多平台打包（macOS/Win/Linux） |
+| 构建 | Vite + electron-builder | 多平台打包（macOS/Windows） |
 
 ## 目录结构
 
@@ -258,7 +258,7 @@ Agent 的记忆分三层，模拟人类记忆的衰减梯度，三层协同在�
 
 - **开发**：`npm run dev`（Vite dev server + Electron）
 - **构建**：`npm run build`（Vite build → electron-builder）
-- **平台**：macOS (universal)、Windows (NSIS)、Linux (AppImage/deb)
+- **平台**：macOS (universal)、Windows (NSIS)
 - **自动更新**：GitHub Releases + electron-updater（国内 OSS 镜像与差分/blockmap 策略见 `docs/auto-update-oss.md`）
 - **模型**：构建前需 `npm run download:models` 下载嵌入/语音模型
 

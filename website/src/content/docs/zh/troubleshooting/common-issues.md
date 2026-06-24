@@ -17,7 +17,6 @@ description: '系统化排查旗鱼使用中遇到的问题'
 |------|------|
 | macOS | `~/Library/Application Support/SailFish/logs/` |
 | Windows | `%APPDATA%/SailFish/logs/` |
-| Linux | `~/.config/SailFish/logs/` |
 
 日志按日期命名（如 `2026-03-13.log`），打开最新的文件查看。
 

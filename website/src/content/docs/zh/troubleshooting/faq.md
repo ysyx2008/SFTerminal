@@ -30,7 +30,6 @@ xattr -cr /Applications/SailFish.app
 1. 尝试删除配置文件后重启：
    - macOS: `~/Library/Application Support/SailFish/`
    - Windows: `%APPDATA%/SailFish/`
-   - Linux: `~/.config/SailFish/`
 2. 查看日志文件定位问题（同目录下的 `logs/` 文件夹）
 
 ## AI 相关

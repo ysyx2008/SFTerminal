@@ -26,7 +26,6 @@ npm run build:steam:current
 # 指定平台
 npm run build:steam:win
 npm run build:steam:mac
-npm run build:steam:linux
 ```
 
 产物在对应平台的 `dist/` 目录下，可用于 Steam 上传，**不要**与普通渠道的安装包混用。

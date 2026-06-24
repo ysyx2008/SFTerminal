@@ -30,7 +30,6 @@ Click **More info** → **Run anyway**.
 1. Try removing config and restarting:
    - macOS: `~/Library/Application Support/SailFish/`
    - Windows: `%APPDATA%/SailFish/`
-   - Linux: `~/.config/SailFish/`
 2. Check the log files in the `logs/` folder in the same directory
 
 ## AI
