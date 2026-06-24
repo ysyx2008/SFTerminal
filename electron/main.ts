@@ -353,6 +353,7 @@ import { SshService } from './services/ssh.service'
 import { AiService } from './services/ai.service'
 import { ConfigService, McpServerConfig, setConfigServiceInstance, DEFAULT_KEYBOARD_SHORTCUTS, type KeyboardShortcuts } from './services/config.service'
 import { initLogging, setLogLevel as setBackendLogLevel, getLogDir, createLogger } from './utils/logger'
+import { serializeAgentStepForIpc } from './utils/agent-step-ipc'
 import { XshellImportService } from './services/xshell-import.service'
 import { AgentService, AgentStep, AgentContext } from './services/agent'
 import type { PendingConfirmation, ExecutionMode } from './services/agent/types'
@@ -3337,9 +3338,10 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
   const callbacks = {
     onStep: (agentId: string, step: AgentStep) => {
       if (!event.sender.isDestroyed()) {
-        // 序列化 step 对象，确保可以通过 IPC 传递
-        const serializedStep = JSON.parse(JSON.stringify(step))
-        event.sender.send('agent:step', { agentId, ptyId, step: serializedStep })
+        const serializedStep = serializeAgentStepForIpc(step)
+        if (serializedStep) {
+          event.sender.send('agent:step', { agentId, ptyId, step: serializedStep })
+        }
       }
     },
     onStepRemoved: (agentId: string, stepId: string) => {
@@ -3544,8 +3546,10 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
   const callbacks = {
     onStep: (_runId: string, step: AgentStep) => {
       if (!event.sender.isDestroyed()) {
-        const serializedStep = JSON.parse(JSON.stringify(step))
-        event.sender.send('agent:step', { agentId, ptyId: agentId, step: serializedStep })
+        const serializedStep = serializeAgentStepForIpc(step)
+        if (serializedStep) {
+          event.sender.send('agent:step', { agentId, ptyId: agentId, step: serializedStep })
+        }
       }
       if (isRemote) wcs.onAgentStep(step)
     },

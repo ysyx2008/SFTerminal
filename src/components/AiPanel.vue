@@ -1730,8 +1730,8 @@ const getPreviewHints = (attachments?: { totalPages?: number; previewPages?: num
 
 const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
   if (item.type === 'step' && item.step) {
-    // message step 把思考块剥离后再作为 size dep——思考块单行呈现且展开容器为固定高度，
-    // reasoning 文本流式刷新不会改变列表项高度。仅在用户主动切换思考块展开/收起时才参与重算
+    // message step 把思考块剥离后再作为 size dep——reasoning 文本不纳入，
+    // 仅在用户主动切换思考块展开/收起时才参与重算（DynamicScroller v3 已用 ResizeObserver 感知高度变化）
     let contentForSize: string | undefined = item.step.content
     let thinkingExpandedForSize: boolean | undefined
     if (item.step.type === 'message' && contentForSize) {

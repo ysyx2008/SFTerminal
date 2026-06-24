@@ -286,9 +286,8 @@ watch(
   max-height: 360px;
 }
 
-/* 流式中展开：固定高度，让外层 list 项总高度不随 reasoning 增长抖动 */
+/* 流式中展开：限制最大高度，内容随 reasoning 增长自然撑开 */
 .thinking-full.streaming-full {
-  height: 200px;
   max-height: 200px;
 }
 

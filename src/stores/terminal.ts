@@ -2040,10 +2040,17 @@ export const useTerminalStore = defineStore('terminal', () => {
     
     if (existingIndex >= 0) {
       // 更新现有步骤（用于流式输出）
-      tab.agentState.steps[existingIndex] = step
+      // 必须用不可变方式替换 steps 数组引用，原地 steps[i]=step 不会改变 agentState
+      // 对象引用，导致 flattenedItems computed 不重算，ThinkingBlock 收不到新 reasoning。
+      const newSteps = tab.agentState.steps.slice()
+      newSteps[existingIndex] = step
+      tab.agentState = { ...tab.agentState, steps: newSteps }
     } else {
       // 添加新步骤
-      tab.agentState.steps.push(step)
+      tab.agentState = {
+        ...tab.agentState,
+        steps: [...tab.agentState.steps, step],
+      }
       // 对关键步骤类型打印日志（user_task 和 final_result 是分组依据）
       if (step.type === 'user_task' || step.type === 'final_result') {
         log.debug(`addAgentStep 新增关键步骤: tabId=${tabId}, type=${step.type}, totalSteps=${tab.agentState.steps.length}, isRemote=${tab.isRemote}`)
@@ -2207,8 +2214,15 @@ export const useTerminalStore = defineStore('terminal', () => {
     const tab = tabs.value.find(t => t.id === tabId)
     const sessionId = tab?.agentState?.sessionId
     if (!sessionId) return
-    const artifacts = [...useAssistantArtifactStore().getArtifacts(tabId)]
-    window.electronAPI?.history?.saveArtifacts?.(sessionId, artifacts)
+    // Pinia store 返回的是 Vue Proxy 对象，IPC 结构化克隆无法处理 Proxy。
+    // 用 JSON 往返剥离包装，得到可序列化的纯对象再发送。
+    try {
+      const raw = [...useAssistantArtifactStore().getArtifacts(tabId)]
+      const artifacts = JSON.parse(JSON.stringify(raw))
+      window.electronAPI?.history?.saveArtifacts?.(sessionId, artifacts)
+    } catch (e) {
+      log.warn(`saveArtifactsToHistory: 序列化失败，跳过持久化 tabId=${tabId}`, e)
+    }
   }
 
   /**
