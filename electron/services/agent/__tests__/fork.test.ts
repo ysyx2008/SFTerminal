@@ -246,6 +246,82 @@ describe('Agent.cloneRecordForFork', () => {
     record!.messages![0].content = 'MUTATED'
     expect(messages[0].content).toBe('Task 1 question')
   })
+
+  it('supplement message with _systemInjected does not create extra task boundary', () => {
+    // Task 2 包含一条用户追加消息（supplement）。
+    // supplement 带 _systemInjected: true，不应被计为新 task 边界，
+    // 否则 tasks.length(4) > stepChunks.length(3)，fork 截断会错误丢掉 Task 3。
+    const messages: AiMessage[] = [
+      { role: 'user', content: 'Task 1 question' },
+      { role: 'assistant', content: 'Task 1 answer' },
+      { role: 'user', content: 'Task 2 question' },
+      { role: 'assistant', content: '...' },
+      { role: 'user', content: 'Task 2 supplement', _systemInjected: true },  // supplement
+      { role: 'assistant', content: 'Task 2 answer' },
+      { role: 'user', content: 'Task 3 question' },
+      { role: 'assistant', content: 'Task 3 answer' }
+    ]
+    const baseTs = Date.now() - 10000
+    const steps: AgentStep[] = [
+      { id: 'ut1', type: 'user_task', content: 'Task 1 question', timestamp: baseTs },
+      { id: 'fr1', type: 'final_result', content: 'Task 1 answer', timestamp: baseTs + 200 },
+      { id: 'ut2', type: 'user_task', content: 'Task 2 question', timestamp: baseTs + 300 },
+      { id: 'us2', type: 'user_supplement', content: 'Task 2 supplement', timestamp: baseTs + 450 },
+      { id: 'fr2', type: 'final_result', content: 'Task 2 answer', timestamp: baseTs + 500 },
+      { id: 'ut3', type: 'user_task', content: 'Task 3 question', timestamp: baseTs + 600 },
+      { id: 'fr3', type: 'final_result', content: 'Task 3 answer', timestamp: baseTs + 800 }
+    ]
+    agent.injectSession({ sessionId: 'src', sessionMessages: messages, sessionSteps: steps })
+
+    // fork 最后一个 group（index=2，untilTaskCount=3）
+    const record = agent.cloneRecordForFork('new-session', { untilTaskCount: 3 })
+    expect(record).not.toBeNull()
+    // 3 个 step chunks，untilTaskCount=3 → 不截断，全量保留
+    expect(record!.steps.length).toBe(7)
+    // 3 个真实 task 边界（supplement 带 _systemInjected，不算），不截断 → 全量 8 messages
+    expect(record!.messages?.length).toBe(8)
+    // Task 3 的内容必须存在
+    const content = JSON.stringify(record!.messages)
+    expect(content).toContain('Task 3 question')
+    expect(content).toContain('Task 3 answer')
+  })
+
+  it('supplement without _systemInjected creates extra task boundary causing truncation', () => {
+    // 无 _systemInjected 的 supplement 会被误算为 task 边界，
+    // 导致 tasks.length=4 > stepChunks.length=3，fork 截断丢 Task 3。
+    // 此测试记录 bug 行为，保证有人移除 _systemInjected 时测试会红。
+    const messages: AiMessage[] = [
+      { role: 'user', content: 'Task 1 question' },
+      { role: 'assistant', content: 'Task 1 answer' },
+      { role: 'user', content: 'Task 2 question' },
+      { role: 'assistant', content: '...' },
+      { role: 'user', content: 'Task 2 supplement' },  // 没有 _systemInjected → 误算边界
+      { role: 'assistant', content: 'Task 2 answer' },
+      { role: 'user', content: 'Task 3 question' },
+      { role: 'assistant', content: 'Task 3 answer' }
+    ]
+    const baseTs = Date.now() - 10000
+    const steps: AgentStep[] = [
+      { id: 'ut1', type: 'user_task', content: 'Task 1 question', timestamp: baseTs },
+      { id: 'fr1', type: 'final_result', content: 'Task 1 answer', timestamp: baseTs + 200 },
+      { id: 'ut2', type: 'user_task', content: 'Task 2 question', timestamp: baseTs + 300 },
+      { id: 'us2', type: 'user_supplement', content: 'Task 2 supplement', timestamp: baseTs + 450 },
+      { id: 'fr2', type: 'final_result', content: 'Task 2 answer', timestamp: baseTs + 500 },
+      { id: 'ut3', type: 'user_task', content: 'Task 3 question', timestamp: baseTs + 600 },
+      { id: 'fr3', type: 'final_result', content: 'Task 3 answer', timestamp: baseTs + 800 }
+    ]
+    agent.injectSession({ sessionId: 'src', sessionMessages: messages, sessionSteps: steps })
+
+    const record = agent.cloneRecordForFork('new-session', { untilTaskCount: 3 })
+    expect(record).not.toBeNull()
+    // steps 不受影响：3 chunks，untilTaskCount=3 → 全量保留
+    expect(record!.steps.length).toBe(7)
+    // messages 被误截：4 message tasks（supplement 误算为边界），untilTaskCount=3 < 4 → 截断！
+    // 只取前 3 个 message tasks，丢失 Task 3
+    expect(record!.messages?.length).toBe(6)  // Task 1(2) + Task 2 first half(2) + supplement onward(2) = 6，Task 3 丢失
+    const content = JSON.stringify(record!.messages)
+    expect(content).not.toContain('Task 3 question')  // Task 3 被截掉
+  })
 })
 
 describe('Agent.applyForkSnapshot', () => {

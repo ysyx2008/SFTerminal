@@ -3552,7 +3552,10 @@ export abstract class Agent {
       userSupplementMsg.images = allImages
     }
     run.messages.push(userSupplementMsg)
-    run.taskMessageLog.push({ role: 'user', content: combinedText })
+    // _systemInjected: supplement 是任务中途的追加消息，不是新 task 的起点。
+    // 不加此标记会让 splitMessagesIntoTasksForFork / splitMessagesIntoTasks 把它误计为
+    // 新 task 边界，使 message task 数 > step chunk 数，fork 截断时丢失最近 task 的上下文。
+    run.taskMessageLog.push({ role: 'user', content: combinedText, _systemInjected: true })
 
     if (this.currentPlan && !this.currentPlan.paused && this.currentPlan.steps.some(s => s.status === 'pending')) {
       const planHintMsg: AiMessage = { role: 'user', content: t('agent.user_supplement_with_plan'), _systemInjected: true }
