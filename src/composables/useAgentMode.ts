@@ -973,6 +973,10 @@ export function useAgentMode(
       items.push({ id: '__confirm__', type: 'confirm', size: 280 })
     }
 
+    if (pendingSecureInput.value) {
+      items.push({ id: '__secure_input__', type: 'waiting_input', size: 220 })
+    }
+
     return items
   })
 

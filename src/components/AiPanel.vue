@@ -1759,6 +1759,7 @@ const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
   if (item.type === 'final_result' && item.group) return [item.group.finalResult]
   if (item.type === 'proactive_message' && item.group) return [item.group.finalResult]
   if (item.type === 'confirm') return [pendingConfirm.value?.toolCallId, pendingConfirm.value?.toolArgs]
+  if (item.type === 'waiting_input') return [pendingSecureInput.value?.requestId]
   return []
 }
 
