@@ -2779,6 +2779,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                       type="password"
                       class="secure-input-field"
                       v-model="secureInputValue"
+                      :ref="(el) => { if (el) (el as HTMLInputElement).focus() }"
                       :placeholder="t('ai.secureInputPlaceholder')"
                       @keyup.enter="submitSecureInput(secureInputValue); secureInputValue = ''"
                       autocomplete="off"
