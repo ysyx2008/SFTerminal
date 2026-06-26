@@ -974,10 +974,9 @@ const showRecallSidebar = computed(() => !terminalStore.activeTabId && !showSmar
 const welcomePageReady = computed(
   () => welcomeUiReady.value && showWelcomePage.value && !isFullScreenOverlayOpen.value
 )
-// 从欢迎页打开助手（空对话，在 Hub 主区聚焦，不创建独立 tab）
+// 从欢迎页打开助手（新建独立 tab 并激活，与 Tab 栏「新建助手」一致）
 const openAssistantFromWelcome = () => {
-  const tabId = terminalStore.createAssistantTab({ activate: false })
-  terminalStore.focusHubConversation(tabId)
+  terminalStore.createAssistantTab({ isPromoted: true, activate: true })
 }
 
 // 从欢迎页打开本地终端
