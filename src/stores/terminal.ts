@@ -738,10 +738,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       return null
     }
 
-    const configStore = useConfigStore()
-    const baseTitle = sourceTab.type === 'assistant'
-      ? (configStore.agentName || t('tabs.assistant', '助手'))
-      : sourceTab.title
+    const baseTitle = sourceTab.title
 
     const shouldPromote = sourceTab.type === 'assistant' && !!sourceTab.isPromoted
 

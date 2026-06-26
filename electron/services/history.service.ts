@@ -43,6 +43,10 @@ export interface ChatRecord {
  * 历史树和索引，避免高频内心独白把主索引压舱（曾达 149MB）。
  */
 const WATCH_AGENT_KEY = '__watch__'
+/** 联络常驻 Agent key，联络会话不进任务侧栏。与 AgentService.COMPANION_AGENT_ID 保持一致。 */
+const COMPANION_AGENT_KEY = '__companion__'
+/** Watch 服务生成的 session ID 前缀：watch_<watchId>_<timestamp> */
+const WATCH_SESSION_ID_PREFIX = 'watch_'
 
 /**
  * watch 索引条目里 userTask 的截断长度。watch 的 userTask 是心跳模板展开的长 prompt
@@ -373,7 +377,12 @@ export class HistoryService {
 
   /** 选择记录归属的索引存储：watch 内心独白进独立索引，其余进主索引 */
   private storeForRecord(record: AgentRecord): AgentIndexStore {
-    return record.agentKey === WATCH_AGENT_KEY ? this.watchStore : this.agentStore
+    if (record.agentKey === WATCH_AGENT_KEY) return this.watchStore
+    // 兜底：Watch 服务生成的 session ID 格式固定为 watch_<watchId>_<timestamp>，
+    // 若 agentKey 因异常未正确设置，前缀检测仍能路由到 watchStore。
+    // 前提假设：非 Watch 记录的 ID 不会以 "watch_" 开头（系统内无其他代码使用此前缀）。
+    if (record.id.startsWith(WATCH_SESSION_ID_PREFIX)) return this.watchStore
+    return this.agentStore
   }
 
   private getIndexFor(store: AgentIndexStore): AgentIndexEntry[] {
@@ -797,9 +806,16 @@ export class HistoryService {
     const index = this.getIndex()
     let entries = [...index]
     if (excludeWakeup) {
-      // watch 内心独白已存独立索引、本就不在主索引中；此处保留为结构化防御过滤
-      // （取代旧的 userTask 关键词前缀匹配），万一有遗留也能挡住。
-      entries = entries.filter(e => e.agentKey !== WATCH_AGENT_KEY)
+      // 主索引已通过 storeForRecord 隔离 watch 数据到独立 watchStore，此处为防御兜底：
+      // 同时过滤三类不应出现在任务侧栏的记录：
+      // 1. watch 内心独白（agentKey='__watch__'）：正常走 watchStore，此处二次防御
+      // 2. 联络会话（agentKey='__companion__'）：有独立的联络 tab，不进任务侧栏
+      // 3. watch session ID 前缀（'watch_'）：agentKey 未正确设置时的最终兜底
+      entries = entries.filter(e =>
+        e.agentKey !== WATCH_AGENT_KEY &&
+        e.agentKey !== COMPANION_AGENT_KEY &&
+        !e.id.startsWith(WATCH_SESSION_ID_PREFIX)
+      )
     }
     entries.sort((a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration))
     return entries.map(e => ({

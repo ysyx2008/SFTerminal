@@ -4068,9 +4068,10 @@ ipcMain.handle('history:getAgentRecords', async (_event, startDate?: string, end
 })
 
 ipcMain.handle('history:getRecentAgentRecords', async (_event, limit?: number, excludeWakeup?: boolean) => {
-  // watch 内心独白已存独立索引、不在主索引中；结构化按 agentKey 防御过滤（取代旧 userTask 关键词匹配）
+  // 结构化过滤：watch 内心独白（agentKey='__watch__'）已存独立索引，联络会话（agentKey='__companion__'）
+  // 有独立常驻 tab，均不应出现在任务侧栏的「最近记录」里。
   const filter = excludeWakeup
-    ? (r: AgentRecord) => r.agentKey !== '__watch__'
+    ? (r: AgentRecord) => r.agentKey !== '__watch__' && r.agentKey !== '__companion__' && !r.id.startsWith('watch_')
     : undefined
   return historyService.getRecentAgentRecords(limit ?? 5, filter)
 })
@@ -4092,9 +4093,9 @@ ipcMain.handle(
       titleOnly?: boolean
     }
   ) => {
-    // watch 内心独白已存独立索引、不在主索引中；结构化按 agentKey 防御过滤（取代旧 userTask 关键词匹配）
+    // 结构化过滤：watch 内心独白和联络会话均不应出现在任务搜索结果中。
     const filter = options.excludeWakeup
-      ? (r: AgentRecord) => r.agentKey !== '__watch__'
+      ? (r: AgentRecord) => r.agentKey !== '__watch__' && r.agentKey !== '__companion__' && !r.id.startsWith('watch_')
       : undefined
     return await historyService.searchAgentRecordsAdvanced({
       keyword: options.keyword,
