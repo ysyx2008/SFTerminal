@@ -1091,8 +1091,13 @@ export class IMService {
     const fullMessage = this.buildAgentMessage(msg)
     const agentId = AgentService.COMPANION_AGENT_ID
 
+    const sendProcess = this.config.sendProcessMessages
+    const sendThinking = this.config.sendThinkingProcess
+
     try {
-      await adapter.beginOutboundSession?.(replyContext)
+      await adapter.beginOutboundSession?.(replyContext, sendProcess && adapter.sendProgressText
+        ? { bufferProgress: true, progressDigestHeader: t('im.wechat_progress_digest') }
+        : undefined)
     } catch (err) {
       log.warn('beginOutboundSession failed (ignored):', err)
     }
@@ -1151,8 +1156,32 @@ export class IMService {
       userName: msg.userName, message: fullMessage
     })
 
-    const sendProcess = this.config.sendProcessMessages
-    const sendThinking = this.config.sendThinkingProcess
+    /** 过程类出站：有能力的适配器可缓冲合并，否则回退直发 */
+    const sendProgressText = async (text: string): Promise<void> => {
+      if (sendProcess && adapter.sendProgressText) {
+        await adapter.sendProgressText(replyContext, text)
+      } else {
+        await adapter.sendText(replyContext, text)
+      }
+    }
+
+    const sendProcessMarkdown = async (title: string, content: string): Promise<void> => {
+      if (sendProcess && adapter.sendProgressMarkdown) {
+        await adapter.sendProgressMarkdown(replyContext, title, content)
+      } else {
+        await adapter.sendMarkdown(replyContext, title, content)
+      }
+    }
+
+    const flushOutboundProgress = async (): Promise<void> => {
+      try {
+        await adapter.flushProgress?.(replyContext)
+      } catch (err) {
+        log.error('Failed to flush outbound progress:', err)
+        await notifyWechatSendFailure(err)
+      }
+    }
+
     let textBuffer = ''
     let hasSentText = false
     /** 已发送过的"正文"（不含思考过程），用于流式 partial flush 与 onDone final flush 的去重 */
@@ -1243,7 +1272,7 @@ export class IMService {
         ? `${formatThinkingForIM(thinking)}\n\n${body}`
         : body
       try {
-        await adapter.sendMarkdown(replyContext, '旗鱼', toSend)
+        await sendProcessMarkdown('旗鱼', toSend)
         hasSentText = true
         lastFlushedBody = body
       } catch (err) {
@@ -1309,6 +1338,7 @@ export class IMService {
               } else {
                 textBuffer = ''
               }
+              await flushOutboundProgress()
               const question = step.toolArgs.question || step.content || ''
               const options = step.toolArgs.options as string[] | undefined
               const allowMultiple = step.toolArgs.allow_multiple as boolean | undefined
@@ -1360,7 +1390,7 @@ export class IMService {
                     toolCallId: progressCallId,
                   })
                 } else {
-                  await adapter.sendText(replyContext,
+                  await sendProgressText(
                     formatToolNotification(step.toolName, step.toolArgs as Record<string, unknown>))
                 }
               } catch (err) {
@@ -1391,8 +1421,7 @@ export class IMService {
               const sendToolStartRetro = async () => {
                 await flushTextBuffer()
                 try {
-                  await adapter.sendText(
-                    replyContext,
+                  await sendProgressText(
                     formatToolNotification(startToolName, startToolArgs),
                   )
                 } catch (err) {
@@ -1411,7 +1440,7 @@ export class IMService {
 
             const sendToolFailure = async () => {
               try {
-                await adapter.sendText(replyContext, formatToolFailureNotification(step))
+                await sendProgressText(formatToolFailureNotification(step))
               } catch (err) {
                 log.error('Failed to send tool failure notification:', err)
                 await notifyWechatSendFailure(err)
@@ -1455,6 +1484,7 @@ export class IMService {
             } else {
               textBuffer = ''
             }
+            await flushOutboundProgress()
             const argsText = JSON.stringify(confirmation.toolArgs, null, 2)
               .substring(0, 500)
             try {
@@ -1498,6 +1528,7 @@ export class IMService {
               textBuffer = ''
               lastFlushedBody = ''
             }
+            await flushOutboundProgress()
             // result 可能本身就是 fallback 占位（AI 没产出 content 时 executeLoop 给的兜底文本）。
             // 这种情况不当作"实质回复"发出去，转而走思考过程兜底。
             const trimmedResult = result?.trim() || ''
@@ -1566,6 +1597,7 @@ export class IMService {
               textBuffer = ''
               lastFlushedBody = ''
             }
+            await flushOutboundProgress()
             try {
               await adapter.sendText(replyContext, t('im.task_error', { error }))
             } catch (sendErr) {

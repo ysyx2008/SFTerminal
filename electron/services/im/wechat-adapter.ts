@@ -8,7 +8,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 
-import type { IMAdapter, IMIncomingMessage, IMPlatform, WeChatConfig, IMAttachment } from './types'
+import type { IMAdapter, IMIncomingMessage, IMPlatform, WeChatConfig, IMAttachment, IMOutboundSessionOptions, IMProgressOutboundCapable } from './types'
 import { IM_TEXT_MAX_LENGTH } from './types'
 import { createLogger } from '../../utils/logger'
 
@@ -32,6 +32,7 @@ import { sendMessageWeixin, StreamingMarkdownFilter } from './wechat/messaging/s
 import { sendWeixinMediaFile } from './wechat/messaging/send-media'
 import { sendWeixinErrorNotice } from './wechat/messaging/error-notice'
 import { WeixinOutboundSession } from './wechat/outbound-session'
+import { WechatOutboundProgress } from './wechat/outbound-progress'
 import { generateId } from './wechat/util/random'
 import {
   setContextToken,
@@ -85,7 +86,7 @@ interface QRStatusResp {
   redirect_host?: string
 }
 
-export class WeChatAdapter implements IMAdapter {
+export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
   readonly platform: IMPlatform = 'wechat'
 
   onMessage: ((msg: IMIncomingMessage) => void) | null = null
@@ -137,6 +138,9 @@ export class WeChatAdapter implements IMAdapter {
    * WeixinReplyProgressSender 串行 deliver 链。
    */
   private outboundSessions = new Map<string, WeixinOutboundSession>()
+
+  /** 按 userId 的过程消息 digest 缓冲（beginOutboundSession bufferProgress 时创建） */
+  private progressByUser = new Map<string, WechatOutboundProgress>()
 
   constructor(private config: WeChatConfig) {
     this.token = config.token || ''
@@ -203,7 +207,10 @@ export class WeChatAdapter implements IMAdapter {
   }
 
   /** IMAdapter：Agent 长任务开始时启动出站 lane + typing keepalive */
-  async beginOutboundSession(replyContext: WeChatReplyContext): Promise<void> {
+  async beginOutboundSession(
+    replyContext: WeChatReplyContext,
+    options?: IMOutboundSessionOptions,
+  ): Promise<void> {
     const userId = replyContext.userId
     if (!userId) return
     const contextToken = this.resolveContextToken(replyContext)
@@ -226,6 +233,14 @@ export class WeChatAdapter implements IMAdapter {
     })
     this.outboundSessions.set(userId, session)
 
+    if (options?.bufferProgress) {
+      const ctx = replyContext
+      this.progressByUser.set(userId, new WechatOutboundProgress({
+        header: options.progressDigestHeader ?? '⏳ …',
+        sendDigest: (text) => this.sendText(ctx, text),
+      }))
+    }
+
     await this.startTypingKeepalive(userId, contextToken)
   }
 
@@ -247,6 +262,17 @@ export class WeChatAdapter implements IMAdapter {
   async endOutboundSession(replyContext: { userId: string }): Promise<void> {
     const userId = replyContext.userId
     if (!userId) return
+
+    const progress = this.progressByUser.get(userId)
+    if (progress) {
+      try {
+        await progress.dispose()
+      } catch (err) {
+        log.warn(`endOutboundSession progress dispose failed for ${userId}: ${String(err)}`)
+      }
+      this.progressByUser.delete(userId)
+    }
+
     const session = this.outboundSessions.get(userId)
     if (session) {
       try {
@@ -448,6 +474,34 @@ export class WeChatAdapter implements IMAdapter {
 
   async sendMarkdown(replyContext: any, _title: string, content: string): Promise<void> {
     await this.sendText(replyContext, content)
+  }
+
+  /** @see IMProgressOutboundCapable */
+  async sendProgressText(replyContext: WeChatReplyContext, text: string): Promise<void> {
+    const progress = this.progressByUser.get(replyContext.userId)
+    if (progress) {
+      progress.push(text)
+      return
+    }
+    await this.sendText(replyContext, text)
+  }
+
+  /** @see IMProgressOutboundCapable */
+  async sendProgressMarkdown(replyContext: WeChatReplyContext, _title: string, content: string): Promise<void> {
+    const progress = this.progressByUser.get(replyContext.userId)
+    if (progress) {
+      progress.push(content)
+      return
+    }
+    await this.sendMarkdown(replyContext, _title, content)
+  }
+
+  /** @see IMProgressOutboundCapable */
+  async flushProgress(replyContext: WeChatReplyContext): Promise<void> {
+    const progress = this.progressByUser.get(replyContext.userId)
+    if (progress) {
+      await progress.flush()
+    }
   }
 
   async sendImage(replyContext: any, filePath: string): Promise<void> {

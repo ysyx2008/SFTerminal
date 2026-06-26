@@ -303,4 +303,28 @@ describe('WeChatAdapter', () => {
 
     adapter.endOutboundSession({ userId: 'u1' })
   })
+
+  it('sendProgressText buffers until flushProgress when bufferProgress enabled', async () => {
+    vi.useFakeTimers()
+    const adapter = new WeChatAdapter({ token: 'tok' } as any)
+    await adapter.beginOutboundSession(
+      { userId: 'u1', contextToken: 'ctx-1' },
+      { bufferProgress: true, progressDigestHeader: '⏳ H' },
+    )
+    await Promise.resolve()
+
+    await adapter.sendProgressText({ userId: 'u1' }, '🔧 a')
+    await adapter.sendProgressText({ userId: 'u1' }, '🔧 b')
+    expect(sendMessageWeixinMock).not.toHaveBeenCalled()
+
+    await adapter.flushProgress({ userId: 'u1' })
+    await Promise.resolve()
+
+    expect(sendMessageWeixinMock).toHaveBeenCalledTimes(1)
+    expect(sendMessageWeixinMock.mock.calls[0][0].text).toContain('⏳ H')
+    expect(sendMessageWeixinMock.mock.calls[0][0].text).toContain('🔧 a')
+
+    adapter.endOutboundSession({ userId: 'u1' })
+    vi.useRealTimers()
+  })
 })

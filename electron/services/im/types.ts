@@ -99,6 +99,24 @@ export interface IMIncomingMessage {
   isFirstContact?: boolean
 }
 
+/** beginOutboundSession 可选参数 */
+export interface IMOutboundSessionOptions {
+  /** 是否缓冲合并过程消息（微信等风控渠道）；默认 false */
+  bufferProgress?: boolean
+  /** 过程消息 digest 标题（bufferProgress 时由 IMService 传入 i18n 文案） */
+  progressDigestHeader?: string
+}
+
+/**
+ * 支持过程消息缓冲出站的可选适配器能力（WeChatAdapter 实现）。
+ * IMService 通过 IMAdapter 上的同名可选方法调用，不依赖具体平台类型。
+ */
+export interface IMProgressOutboundCapable {
+  sendProgressText(replyContext: any, text: string): Promise<void>
+  sendProgressMarkdown(replyContext: any, title: string, content: string): Promise<void>
+  flushProgress(replyContext: any): Promise<void>
+}
+
 /**
  * IM 适配器通用接口
  */
@@ -130,10 +148,21 @@ export interface IMAdapter {
   /**
    * 开始长出站会话（可选，微信实现）。
    * 在 Agent 任务全程维持 typing keepalive，避免 context_token 中途失效。
+   * `bufferProgress` 为 true 时，适配器可启用过程消息合并（见 sendProgressText 等）。
    */
-  beginOutboundSession?(replyContext: any): Promise<void>
+  beginOutboundSession?(replyContext: any, options?: IMOutboundSessionOptions): Promise<void>
   /** 结束长出站会话（与 beginOutboundSession 配对） */
   endOutboundSession?(replyContext: any): void | Promise<void>
+  /**
+   * 发送过程类纯文本（工具进度等）。实现方可缓冲合并后再出站，未实现则 IMService 回退 sendText。
+   */
+  sendProgressText?(replyContext: any, text: string): Promise<void>
+  /**
+   * 发送过程类 Markdown 正文（中间 message step 等）。实现方可缓冲合并，未实现则回退 sendMarkdown。
+   */
+  sendProgressMarkdown?(replyContext: any, title: string, content: string): Promise<void>
+  /** 立即 flush 缓冲中的过程消息（ask/confirm/任务结束前由 IMService 调用） */
+  flushProgress?(replyContext: any): Promise<void>
   /**
    * 微信：发送结构化工具进度（TOOL_CALL_START/RESULT），替代纯文本刷屏。
    * 须在 beginOutboundSession 之后、endOutboundSession 之前调用。
@@ -142,7 +171,7 @@ export interface IMAdapter {
     replyContext: any,
     event: { phase: 'start' | 'end'; toolName: string; toolCallId?: string; success?: boolean },
   ): void
-  /** 微信：出站失败时向用户发一条纯文本提示（对齐上游 sendWeixinErrorNotice） */
+  /** 微信：出站失败时向用户发一条纯文本提示（对齐 upstream sendWeixinErrorNotice） */
   sendErrorNotice?(replyContext: any, message: string): Promise<void>
 
   /** 消息到达回调 */
