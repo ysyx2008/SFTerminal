@@ -338,6 +338,11 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
 
 /** 任务区激活：无 TabBar 可见 tab 时为激活（含欢迎页与 Hub 侧栏焦点会话） */
 const isTasksHomeActive = computed(() => !terminalStore.activeTabId)
+
+const tasksAreaAttentionTooltip = computed(() => {
+  if (!terminalStore.hasTasksAreaAttention) return t('tabs.tasks', '任务')
+  return t('tabs.tasksNeedsAttention')
+})
 </script>
 
 <template>
@@ -365,12 +370,16 @@ const isTasksHomeActive = computed(() => !terminalStore.activeTabId)
     <!-- 任务按钮：切回任务区（保留 Hub 焦点），激活态与 hover 与其他 tab 一致 -->
     <div
       class="tab tab-home"
-      :class="{ active: isTasksHomeActive }"
-      :title="t('tabs.tasks', '任务')"
+      :class="{
+        active: isTasksHomeActive,
+        'needs-attention': terminalStore.hasTasksAreaAttention,
+      }"
+      :title="tasksAreaAttentionTooltip"
       @click="terminalStore.focusTaskArea()"
     >
-      <span class="tab-icon">
+      <span class="tab-icon tab-icon-with-badge">
         <Home :size="14" />
+        <span v-if="terminalStore.hasTasksAreaAttention" class="tab-attention-dot" aria-hidden="true" />
       </span>
       <span class="tab-title">{{ t('tabs.tasks', '任务') }}</span>
     </div>
@@ -721,6 +730,31 @@ const isTasksHomeActive = computed(() => !terminalStore.activeTabId)
 
 .tab-home {
   max-width: none;
+}
+
+.tab-icon-with-badge {
+  position: relative;
+}
+
+.tab-attention-dot {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-warning);
+  box-shadow: 0 0 0 1px var(--bg-primary);
+  animation: tab-attention-dot-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes tab-attention-dot-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 1px var(--bg-primary), 0 0 0 0 rgba(var(--color-warning-rgb), 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 1px var(--bg-primary), 0 0 0 4px rgba(var(--color-warning-rgb), 0);
+  }
 }
 
 .tab-pinned {

@@ -72,6 +72,33 @@ export function formatAgentAttentionTooltip(
   return t('tabs.needsAttentionTaskFinished')
 }
 
+type HubAttentionTabSlice = {
+  type: string
+  isRemote?: boolean
+  isPromoted?: boolean
+  agentId?: string
+  agentState?: AgentStateSlice
+}
+
+/**
+ * Hub 任务区入口（TabBar「任务」按钮）是否需要 attention：
+ * 用户已离开任务区（activeTabId 非空），且存在未提升的本地助手会话待查看/待确认。
+ */
+export function hasHubTasksAreaAttention(
+  tabs: HubAttentionTabSlice[],
+  activeTabId: string,
+  companionAgentId: string
+): boolean {
+  if (activeTabId) {
+    return tabs.some(tab => {
+      if (tab.type !== 'assistant' || tab.isRemote || tab.isPromoted) return false
+      if (tab.agentId === companionAgentId) return false
+      return deriveTabAgentUiMeta(tab.agentState).needsAttention
+    })
+  }
+  return false
+}
+
 /** 历史对话行状态图标 tooltip */
 export function formatHistoryConversationTooltip(
   meta: HistoryConversationMeta,

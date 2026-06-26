@@ -21,6 +21,7 @@ import type { PendingImage } from '../composables/useImageUpload'
 import {
   CLOSED_HISTORY_CONVERSATION_META,
   deriveTabAgentUiMeta,
+  hasHubTasksAreaAttention,
   toHistoryConversationMeta,
   type HistoryConversationMeta,
   type HistoryConversationTabStatus,
@@ -2937,6 +2938,11 @@ export const useTerminalStore = defineStore('terminal', () => {
     return getTabAgentUiMeta(tabId).needsAttention
   }
 
+  /** Hub 任务区入口：用户在其他 Tab 时，汇总侧栏会话的 attention（完成/待确认） */
+  const hasTasksAreaAttention = computed(() =>
+    hasHubTasksAreaAttention(tabs.value, activeTabId.value, COMPANION_TAB_AGENT_ID)
+  )
+
   // Proactive 消息延迟投递：agent 忙时暂存，完成后再注入 tab
   const deferredProactiveTabs = ref(new Set<string>())
 
@@ -3128,6 +3134,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     hasPendingConfirm,
     hasAgentCompletedUnseen,
     hasTabAgentAttention,
+    hasTasksAreaAttention,
     setAgentCompletedUnseen,
     // Proactive 消息延迟投递
     markDeferredProactive,

@@ -142,6 +142,7 @@ export default {
     confirmCloseWithChat: '当前终端有 AI 对话记录，关闭后将丢失。确定要关闭吗？',
     needsAttentionConfirm: '需要您的确认',
     needsAttentionTaskFinished: 'Agent 已完成任务',
+    tasksNeedsAttention: '有任务需要查看',
     doubleClickToRename: '双击重命名标签页'
   },
 

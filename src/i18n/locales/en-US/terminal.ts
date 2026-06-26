@@ -142,6 +142,7 @@ export default {
     confirmCloseWithChat: 'This terminal has AI chat history that will be lost. Are you sure you want to close?',
     needsAttentionConfirm: 'Needs your confirmation',
     needsAttentionTaskFinished: 'Agent finished a task',
+    tasksNeedsAttention: 'Tasks need your attention',
     doubleClickToRename: 'Double-click to rename tab'
   },
 

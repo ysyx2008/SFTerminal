@@ -3,7 +3,10 @@ import {
   deriveTabAgentUiMeta,
   formatAgentAttentionTooltip,
   formatHistoryConversationTooltip,
+  hasHubTasksAreaAttention,
 } from '../agent-tab-ui-meta'
+
+const COMPANION = '__companion__'
 
 const t = (key: string) => key
 
@@ -62,5 +65,41 @@ describe('formatHistoryConversationTooltip', () => {
   it('returns running label for running status', () => {
     expect(formatHistoryConversationTooltip({ status: 'running', pendingConfirm: false, agentCompletedUnseen: false }, t))
       .toBe('welcome.conversations.agentRunning')
+  })
+})
+
+describe('hasHubTasksAreaAttention', () => {
+  const hubTab = {
+    type: 'assistant',
+    agentId: 'tab-1',
+    agentState: { agentCompletedUnseen: true },
+  }
+
+  it('returns false when user is already in task area', () => {
+    expect(hasHubTasksAreaAttention([hubTab], '', COMPANION)).toBe(false)
+  })
+
+  it('returns true when hub session needs attention and user is on another tab', () => {
+    expect(hasHubTasksAreaAttention([hubTab], 'ssh-tab', COMPANION)).toBe(true)
+  })
+
+  it('ignores promoted assistant tabs (they have their own TabBar attention)', () => {
+    expect(
+      hasHubTasksAreaAttention(
+        [{ ...hubTab, isPromoted: true }],
+        'ssh-tab',
+        COMPANION
+      )
+    ).toBe(false)
+  })
+
+  it('ignores companion tab', () => {
+    expect(
+      hasHubTasksAreaAttention(
+        [{ type: 'assistant', agentId: COMPANION, agentState: { agentCompletedUnseen: true } }],
+        'ssh-tab',
+        COMPANION
+      )
+    ).toBe(false)
   })
 })
