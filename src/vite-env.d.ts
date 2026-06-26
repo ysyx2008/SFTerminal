@@ -704,6 +704,7 @@ interface Window {
         untilTaskCount?: number
         targetMode?: 'assistant'
         titleSuffix?: string
+        sourceSessionId?: string
       }) => Promise<{
         newSessionId: string
         newAgentId: string
