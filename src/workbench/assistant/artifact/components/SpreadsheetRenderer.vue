@@ -4,21 +4,28 @@
  *
  * 渲染 Excel 表格的 HTML 预览，仿 Excel 白底绿色主题。
  */
-import { computed } from 'vue'
+import { computed, toRef } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useAssistantArtifactStore } from '../store'
+import { useArtifactContentHydration } from '../composables/useArtifactContentHydration'
 
 const props = defineProps<{
   tabId: string
   artifactId: string
 }>()
 
+const { t } = useI18n()
 const artifactStore = useAssistantArtifactStore()
+const { loadingFromDisk } = useArtifactContentHydration(props.tabId, toRef(props, 'artifactId'))
 const content = computed(() => artifactStore.getArtifactById(props.tabId, props.artifactId)?.content ?? '')
 </script>
 
 <template>
   <div class="spreadsheet-renderer">
-    <div class="spreadsheet-content" v-html="content"></div>
+    <div v-if="loadingFromDisk && !content.trim()" class="spreadsheet-loading">
+      {{ t('canvas.htmlPreviewLoading') }}
+    </div>
+    <div v-else class="spreadsheet-content" v-html="content"></div>
   </div>
 </template>
 
@@ -28,6 +35,15 @@ const content = computed(() => artifactStore.getArtifactById(props.tabId, props.
   height: 100%;
   overflow: auto;
   background: #f3f3f3;
+}
+
+.spreadsheet-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: #666;
+  font-size: 13px;
 }
 
 .spreadsheet-content {

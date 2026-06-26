@@ -33,6 +33,12 @@ import {
   refreshFilePathExistsMap
 } from './domain/artifact-file-status'
 import { shouldSyncArtifactsAfterStep } from './domain/artifact-disk-sync'
+import {
+  ARTIFACT_CONTENT_RELOAD_DELAYS_MS,
+  artifactNeedsContentReload,
+  loadArtifactContentFromDisk,
+  sleep
+} from './domain/artifact-content-loader'
 
 export interface ArtifactDiskSyncEvent {
   tabId: string
@@ -99,6 +105,10 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
 
   function setActiveArtifactForTab(tabId: string, artifactId: string) {
     mutateTab(tabId, state => setActiveArtifact(state, artifactId))
+    const art = getArtifactByIdForTab(tabId, artifactId)
+    if (art && artifactNeedsContentReload(art)) {
+      void reloadArtifactContent(tabId, artifactId)
+    }
   }
 
   function removeArtifactFromTab(tabId: string, artifactId: string) {
@@ -192,8 +202,13 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
   /**
    * 历史持久化会剥离 md/html 产出物的 content（contentFromFile）。
    * 恢复后或 open 时 content 为空，这里按 filePath 异步读盘/重建预览。
+   * 写入磁盘与 step 到达存在竞态，失败时会退避重试。
    */
-  async function reloadArtifactContent(tabId: string, artifactId?: string) {
+  async function reloadArtifactContent(
+    tabId: string,
+    artifactId?: string,
+    attempt = 0
+  ): Promise<void> {
     const previewApi = window.electronAPI?.localFs?.previewArtifact
     const readApi = window.electronAPI?.localFs?.readFile
     if (!previewApi && !readApi) return
@@ -202,29 +217,35 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
       ? [getArtifactByIdForTab(tabId, artifactId)].filter((a): a is CanvasArtifact => a != null)
       : [...getArtifactsForTab(tabId)]
 
+    const pending = targets.filter(artifactNeedsContentReload)
+    if (pending.length === 0) return
+
+    let anyStillEmpty = false
     await Promise.all(
-      targets.map(async (a) => {
-        if (!a.filePath || a.content?.trim()) return
+      pending.map(async (a) => {
         try {
-          if (previewApi && (a.renderer === 'document' || a.renderer === 'spreadsheet' ||
-            a.renderer === 'markdown' || a.renderer === 'html')) {
-            const res = await previewApi(a.filePath, a.renderer)
-            if (res.success && typeof res.data === 'string' && res.data.trim()) {
-              updateContent(tabId, res.data, a.id)
-              return
-            }
-          }
-          if (readApi && (a.contentFromFile || a.renderer === 'html' || a.renderer === 'markdown')) {
-            const res = await readApi(a.filePath)
-            if (res.success && typeof res.data === 'string' && res.data.trim()) {
-              updateContent(tabId, res.data, a.id)
-            }
+          const data = await loadArtifactContentFromDisk(a, {
+            previewArtifact: previewApi,
+            readFile: readApi
+          })
+          if (data) {
+            updateContent(tabId, data, a.id)
+            return
           }
         } catch {
-          /* 读盘/预览失败：留空，由磁盘同步处理 */
+          /* 读盘/预览失败：留空，由退避重试或磁盘同步处理 */
+        }
+        if (artifactNeedsContentReload(getArtifactByIdForTab(tabId, a.id) ?? a)) {
+          anyStillEmpty = true
         }
       })
     )
+
+    const retryDelay = ARTIFACT_CONTENT_RELOAD_DELAYS_MS[attempt]
+    if (anyStillEmpty && retryDelay !== undefined) {
+      await sleep(retryDelay)
+      await reloadArtifactContent(tabId, artifactId, attempt + 1)
+    }
   }
 
   /** 用 localFs.exists 移除磁盘上已不存在的 filePath 锚点 */
@@ -301,6 +322,7 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
   function expandPanel(tabId: string) {
     cancelPendingClose(tabId)
     commitTabState(tabId, showPanel(getTabState(tabId)))
+    void reloadArtifactContent(tabId)
   }
 
   function requestJumpToSource(tabId: string, stepId: string) {
@@ -353,6 +375,7 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     applyCanvasData: applyCanvasDataForTab,
     hydrateFromSteps,
     restoreFromArtifacts,
+    reloadArtifactContent,
     syncArtifactsWithDisk,
     handleAgentStep,
     handleAgentComplete,

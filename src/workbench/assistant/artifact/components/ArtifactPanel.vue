@@ -579,6 +579,10 @@ onMounted(() => {
   window.addEventListener('focus', onWindowFocus)
   document.addEventListener('visibilitychange', onVisibilityChange)
   void refreshFileStatus()
+  const active = artifactStore.getActiveArtifact(props.tabId)
+  if (active && !active.content?.trim() && active.filePath) {
+    void artifactStore.reloadArtifactContent(props.tabId, active.id)
+  }
 })
 
 onUnmounted(() => {

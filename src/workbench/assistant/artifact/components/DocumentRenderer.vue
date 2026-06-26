@@ -4,21 +4,28 @@
  *
  * 渲染 Word 文档的 HTML 预览（由 mammoth.js 转换）。
  */
-import { computed } from 'vue'
+import { computed, toRef } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useAssistantArtifactStore } from '../store'
+import { useArtifactContentHydration } from '../composables/useArtifactContentHydration'
 
 const props = defineProps<{
   tabId: string
   artifactId: string
 }>()
 
+const { t } = useI18n()
 const artifactStore = useAssistantArtifactStore()
+const { loadingFromDisk } = useArtifactContentHydration(props.tabId, toRef(props, 'artifactId'))
 const content = computed(() => artifactStore.getArtifactById(props.tabId, props.artifactId)?.content ?? '')
 </script>
 
 <template>
   <div class="document-renderer">
-    <div class="document-page">
+    <div v-if="loadingFromDisk && !content.trim()" class="document-loading">
+      {{ t('canvas.htmlPreviewLoading') }}
+    </div>
+    <div v-else class="document-page">
       <div class="document-content" v-html="content"></div>
     </div>
   </div>
@@ -32,6 +39,15 @@ const content = computed(() => artifactStore.getArtifactById(props.tabId, props.
   overflow-x: hidden;
   background: #2a2a2a;
   padding: 20px 16px;
+}
+
+.document-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--text-secondary, #888);
+  font-size: 13px;
 }
 
 /* 白纸容器 */

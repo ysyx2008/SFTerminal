@@ -2,11 +2,12 @@
 /**
  * Canvas Markdown：默认预览渲染，可切换编辑；选中内容可引用到同 Tab 的 AI 输入框。
  */
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Eye, MessageSquareQuote, SquarePen } from 'lucide-vue-next'
 import { useAssistantArtifactStore } from '../store'
 import { useArtifactSaveBridge } from '../domain/artifact-save-bridge'
+import { useArtifactContentHydration } from '../composables/useArtifactContentHydration'
 import { useComposerQuoteStore } from '../../../../stores/composer-quote'
 import { useTerminalStore } from '../../../../stores/terminal'
 import { useMarkdown } from '../../../../composables/useMarkdown'
@@ -20,6 +21,7 @@ const props = defineProps<{
 const { t } = useI18n()
 const artifactStore = useAssistantArtifactStore()
 const saveBridge = useArtifactSaveBridge()
+const { loadingFromDisk } = useArtifactContentHydration(props.tabId, toRef(props, 'artifactId'))
 const composerQuoteStore = useComposerQuoteStore()
 const terminalStore = useTerminalStore()
 const { renderMarkdown, handleCodeBlockClick, handleFilePathContextMenu } = useMarkdown()
@@ -403,8 +405,9 @@ onUnmounted(() => {
     </div>
 
     <div class="md-body">
+      <div v-if="loadingFromDisk && !draft.trim()" class="md-loading">{{ t('canvas.htmlPreviewLoading') }}</div>
       <textarea
-        v-show="viewMode === 'edit'"
+        v-show="viewMode === 'edit' && !(loadingFromDisk && !draft.trim())"
         id="canvas-md-editor"
         ref="textareaRef"
         v-model="draft"
@@ -415,7 +418,7 @@ onUnmounted(() => {
         @contextmenu="openCtxMenu"
       />
       <div
-        v-show="viewMode === 'preview'"
+        v-show="viewMode === 'preview' && !(loadingFromDisk && !draft.trim())"
         ref="previewWrapRef"
         class="md-preview-wrap md-preview-full"
         :aria-label="t('canvas.modePreview')"
@@ -550,6 +553,15 @@ onUnmounted(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+.md-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary, #888);
+  font-size: 13px;
 }
 
 .md-editor {
