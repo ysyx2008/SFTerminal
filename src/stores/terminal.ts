@@ -741,7 +741,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     // 优先级：① 用户在 Tab 栏手动重命名（customTitle）
     //         ② 用户在侧栏重命名（conversationDisplayTitles）
     //         ③ tab 默认标题（通常是 agentName）
+    // 注：conversationDisplayTitles 仅在侧栏面板打开时加载，这里先确保数据就绪
     const configStore = useConfigStore()
+    await configStore.loadConversationPreferences()
     const sessionId = sourceTab.agentState?.sessionId
     const sidebarTitle = sessionId ? configStore.getConversationDisplayTitle(sessionId) : undefined
     const baseTitle = sourceTab.customTitle || sidebarTitle || sourceTab.title
