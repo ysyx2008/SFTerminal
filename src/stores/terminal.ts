@@ -776,17 +776,20 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   // 当助手名字变更时，同步更新非远程助手标签页的标题。
-  // 只更新标题与"旧 agentName 默认值"完全相同的 tab——
-  // 带后缀（如 fork 的「· 分支」）或用户自定义标题（customTitle）的 tab 不受影响。
+  // 以「旧名字」为前缀替换为「新名字」，后缀（如 fork 的「· 分支」）保留。
+  // 标题不以旧名字开头的 tab（用户完全自定义的 baseTitle）不受影响。
+  // 有 customTitle（用户手动重命名）的 tab 跳过，customTitle 优先显示。
   {
     const configStore = useConfigStore()
     watch(() => configStore.agentName, (newName, oldName) => {
       const t = i18n.global.t
-      const newTitle = newName || t('tabs.assistant', '助手')
-      const oldTitle = oldName || t('tabs.assistant', '助手')
+      const newBase = newName || t('tabs.assistant', '助手')
+      const oldBase = oldName || t('tabs.assistant', '助手')
       for (const tab of tabs.value) {
-        if (tab.type === 'assistant' && !tab.isRemote && !tab.customTitle && tab.title === oldTitle) {
-          tab.title = newTitle
+        if (tab.type === 'assistant' && !tab.isRemote && !tab.customTitle) {
+          if (tab.title.startsWith(oldBase)) {
+            tab.title = newBase + tab.title.slice(oldBase.length)
+          }
         }
       }
     })
