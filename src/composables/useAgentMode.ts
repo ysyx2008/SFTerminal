@@ -13,6 +13,7 @@ import type { AgentStep, AgentState } from '../stores/terminal'
 import type { MessageScrollerHandle } from '../types/message-scroller'
 import { readMessageScrollerCache } from '../types/message-scroller'
 import { createLogger } from '../utils/logger'
+import { isAssistantConversationSurfaceVisible } from '../utils/agent-tab-ui-meta'
 import { useTts } from './useTts'
 import { shouldShowToolResultStep } from '../utils/tool-display'
 import { resolveWorkbenchAgentPrompt, resolveWorkbenchKind } from '../workbench'
@@ -1474,7 +1475,14 @@ export function useAgentMode(
       }
 
       // 任务在后台 tab 结束时，标签栏高亮（与待确认一致），便于多 tab 定位
-      if (foundTabId && foundTabId !== terminalStore.activeTabId) {
+      if (
+        foundTabId &&
+        !isAssistantConversationSurfaceVisible(
+          foundTabId,
+          terminalStore.activeTabId,
+          terminalStore.hubFocusedAssistantTabId
+        )
+      ) {
         terminalStore.setAgentCompletedUnseen(foundTabId, true)
       }
     })
@@ -1495,7 +1503,14 @@ export function useAgentMode(
         timestamp: Date.now()
       })
 
-      if (foundTabId && foundTabId !== terminalStore.activeTabId) {
+      if (
+        foundTabId &&
+        !isAssistantConversationSurfaceVisible(
+          foundTabId,
+          terminalStore.activeTabId,
+          terminalStore.hubFocusedAssistantTabId
+        )
+      ) {
         terminalStore.setAgentCompletedUnseen(foundTabId, true)
       }
     })

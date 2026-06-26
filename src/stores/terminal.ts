@@ -1190,6 +1190,10 @@ export const useTerminalStore = defineStore('terminal', () => {
   function focusHubConversation(tabId: string): void {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab || tab.type !== 'assistant') return
+    const previousHubId = hubFocusedAssistantTabId.value
+    if (previousHubId && previousHubId !== tabId) {
+      setAgentCompletedUnseen(previousHubId, false)
+    }
     tab.lastFocusedAt = Date.now()
     hubFocusedAssistantTabId.value = tabId
     activeTabId.value = ''
@@ -1235,6 +1239,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       hubFocusedAssistantTabId.value = ''
       return
     }
+    setAgentCompletedUnseen(hubId, false)
     requestAssistantComposerFocus(hubId)
   }
 

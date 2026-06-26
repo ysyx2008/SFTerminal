@@ -72,6 +72,20 @@ export function formatAgentAttentionTooltip(
   return t('tabs.needsAttentionTaskFinished')
 }
 
+/**
+ * 用户是否正在看该助手会话（attention / 未读判断）。
+ * Hub 焦点仅在任务区（activeTabId 为空）时生效；切到联络/终端 Tab 后不算「正在看」。
+ */
+export function isAssistantConversationSurfaceVisible(
+  tabId: string,
+  activeTabId: string,
+  hubFocusedAssistantTabId: string
+): boolean {
+  if (activeTabId && tabId === activeTabId) return true
+  if (!activeTabId && hubFocusedAssistantTabId && tabId === hubFocusedAssistantTabId) return true
+  return false
+}
+
 type HubAttentionTabSlice = {
   type: string
   isRemote?: boolean

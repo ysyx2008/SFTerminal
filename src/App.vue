@@ -28,6 +28,7 @@ import type { SftpConnectionConfig } from './composables/useSftp'
 import { uiThemes } from './themes/ui-themes'
 import { createLogger } from './utils/logger'
 import { matchAccelerator } from './utils/shortcut'
+import { isAssistantConversationSurfaceVisible } from './utils/agent-tab-ui-meta'
 import { useAppUpdaterPrompts } from './composables/useAppUpdaterPrompts'
 import {
   checkBondMilestonesOnStartup,
@@ -772,9 +773,12 @@ onMounted(async () => {
 
     queueMicrotask(() => {
       if (!foundTabId) return
-      // 用户正在看这个对话（activeTab 或 Hub 焦点），无需标记未读
-      const isVisible = foundTabId === terminalStore.activeTabId
-        || foundTabId === terminalStore.hubFocusedAssistantTabId
+      // 用户正在看这个对话（活跃 Tab 或任务区内 Hub 焦点），无需标记未读
+      const isVisible = isAssistantConversationSurfaceVisible(
+        foundTabId,
+        terminalStore.activeTabId,
+        terminalStore.hubFocusedAssistantTabId
+      )
       if (isVisible) return
       if (data.pendingUserMessages && data.pendingUserMessages.length > 0) return
       if (terminalStore.consumeAgentCompleteTabAttentionSkip(foundTabId)) return
@@ -790,8 +794,11 @@ onMounted(async () => {
     }
     queueMicrotask(() => {
       if (!foundTabId) return
-      const isVisible = foundTabId === terminalStore.activeTabId
-        || foundTabId === terminalStore.hubFocusedAssistantTabId
+      const isVisible = isAssistantConversationSurfaceVisible(
+        foundTabId,
+        terminalStore.activeTabId,
+        terminalStore.hubFocusedAssistantTabId
+      )
       if (isVisible) return
       terminalStore.setAgentCompletedUnseen(foundTabId, true)
     })

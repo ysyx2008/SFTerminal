@@ -377,9 +377,8 @@ const tasksAreaAttentionTooltip = computed(() => {
       :title="tasksAreaAttentionTooltip"
       @click="terminalStore.focusTaskArea()"
     >
-      <span class="tab-icon tab-icon-with-badge">
+      <span class="tab-icon">
         <Home :size="14" />
-        <span v-if="terminalStore.hasTasksAreaAttention" class="tab-attention-dot" aria-hidden="true" />
       </span>
       <span class="tab-title">{{ t('tabs.tasks', '任务') }}</span>
     </div>
@@ -730,31 +729,6 @@ const tasksAreaAttentionTooltip = computed(() => {
 
 .tab-home {
   max-width: none;
-}
-
-.tab-icon-with-badge {
-  position: relative;
-}
-
-.tab-attention-dot {
-  position: absolute;
-  top: -2px;
-  right: -4px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--color-warning);
-  box-shadow: 0 0 0 1px var(--bg-primary);
-  animation: tab-attention-dot-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes tab-attention-dot-pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 1px var(--bg-primary), 0 0 0 0 rgba(var(--color-warning-rgb), 0.45);
-  }
-  50% {
-    box-shadow: 0 0 0 1px var(--bg-primary), 0 0 0 4px rgba(var(--color-warning-rgb), 0);
-  }
 }
 
 .tab-pinned {

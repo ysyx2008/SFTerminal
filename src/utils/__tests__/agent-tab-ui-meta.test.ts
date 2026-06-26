@@ -4,6 +4,7 @@ import {
   formatAgentAttentionTooltip,
   formatHistoryConversationTooltip,
   hasHubTasksAreaAttention,
+  isAssistantConversationSurfaceVisible,
 } from '../agent-tab-ui-meta'
 
 const COMPANION = '__companion__'
@@ -65,6 +66,21 @@ describe('formatHistoryConversationTooltip', () => {
   it('returns running label for running status', () => {
     expect(formatHistoryConversationTooltip({ status: 'running', pendingConfirm: false, agentCompletedUnseen: false }, t))
       .toBe('welcome.conversations.agentRunning')
+  })
+})
+
+describe('isAssistantConversationSurfaceVisible', () => {
+  it('returns true for active TabBar tab', () => {
+    expect(isAssistantConversationSurfaceVisible('tab-a', 'tab-a', 'tab-b')).toBe(true)
+  })
+
+  it('returns true for hub focus only when in task area', () => {
+    expect(isAssistantConversationSurfaceVisible('hub-tab', '', 'hub-tab')).toBe(true)
+    expect(isAssistantConversationSurfaceVisible('hub-tab', 'companion-tab', 'hub-tab')).toBe(false)
+  })
+
+  it('returns false when neither active nor visible hub focus', () => {
+    expect(isAssistantConversationSurfaceVisible('hub-tab', 'ssh-tab', 'other-hub')).toBe(false)
   })
 })
 

@@ -7,6 +7,7 @@ import type { HistoryConversationTabStatus } from '../stores/terminal'
 import {
   CLOSED_HISTORY_CONVERSATION_META,
   formatHistoryConversationTooltip,
+  isAssistantConversationSurfaceVisible,
 } from '../utils/agent-tab-ui-meta'
 import ConversationRow from './ConversationRow.vue'
 import { useConfigStore } from '../stores/config'
@@ -333,9 +334,10 @@ const conversationMetaById = computed(() => {
     const rawMeta = historyMeta.get(id) ?? CLOSED_HISTORY_CONVERSATION_META
     const tab = terminalStore.findTabByHistoryId(id)
 
-    const isVisible = tab && (
-      tab.id === terminalStore.activeTabId ||
-      tab.id === terminalStore.hubFocusedAssistantTabId
+    const isVisible = tab && isAssistantConversationSurfaceVisible(
+      tab.id,
+      terminalStore.activeTabId,
+      terminalStore.hubFocusedAssistantTabId
     )
 
     let meta: HistoryConversationMeta
