@@ -13,9 +13,9 @@
 
 **SailFish**
 
-**Your Personal AI Agent**
+**Your Personal Desktop Secretary**
 
-*Tell AI what you need. It plans and executes autonomously — even from your phone.*
+*Knows your habits, acts proactively, and truly operates your computer — local terminal, remote servers, email, calendar, and more*
 
 [![Build](https://github.com/ysyx2008/SailFish/actions/workflows/build-release.yml/badge.svg)](https://github.com/ysyx2008/SailFish/actions)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](./LICENSE)
@@ -28,49 +28,57 @@
 
 ---
 
-## Why SailFish?
+## Why a Secretary, Not Just a Tool
 
-| Pain Point | SailFish Solution |
+SailFish isn't a chatbot waiting for commands. It's a **personal secretary** living on your desktop — with its own rhythm, proactive monitoring, the ability to reach out to you, memory of who you are and what you discussed, and the power to actually operate your computer.
+
+| Pain Point | SailFish Approach |
 |------------|-------------------|
-| 🤯 Don't know the command? | Describe in natural language, AI executes for you |
-| 😵 Confused by errors? | AI analyzes and provides solutions |
-| 🔁 Repetitive tasks? | Agent automates multi-step operations |
-| 🏢 Intranet restrictions? | Supports private AI models and proxies |
-| 🛠️ CLI config too complex? | GUI-based, ready out of the box |
-| 📱 Away from your desk? | Access Agent remotely via Web, WeChat, DingTalk, Feishu, WeCom, Slack, or Telegram |
+| Chat-only AI can't act | Your secretary runs commands, reads/writes files, controls the browser, sends email |
+| Every conversation starts from zero | Three-tier memory + knowledge base: knows you (L2), recalls past work (L3), file archive on demand |
+| You have to watch and wait | Awaken mode + Watch: proactive monitoring, scheduled tasks, push notifications |
+| Tied to your desk | Reach your same secretary via WeChat, DingTalk, Feishu, Slack, Telegram, or Web |
+| Don't know the command? | Describe in natural language; your secretary plans and executes |
+| Intranet restrictions? | Supports private AI models and proxies |
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-welcome_en.jpg" width="800" alt="SailFish">
 </p>
 
-## ✨ Features
+## Two Ways to Work: Tasks & Reach
+
+| Entry | Relationship | Character |
+|-------|--------------|-----------|
+| **Tasks** | You delegate specific work to your secretary | One-off, parallel, isolated; the desktop mainstay |
+| **Reach** | Your ongoing relationship with your secretary | Always-on, multi-channel; your secretary can reach out first |
+
+Tasks come first on desktop; Reach sits at the end — all IM channels flow into one continuous relationship, not a different bot each time.
+
+## ✨ Core Capabilities
 
 | Feature | Description |
 |---------|-------------|
-| 🤖 **AI Agent** | Describe tasks, Agent plans and executes automatically |
-| 🧬 **Identity System** | Agent personality driven by IDENTITY.md, SOUL.md, USER.md — deep personalization with birth conversation on first launch |
-| 🌅 **Awaken Mode** | AI becomes a proactive assistant — personality-driven conversations, background monitoring, push notifications |
-| 🧠 **Watch & Sensors** | Heartbeat, file-watch, calendar, and email sensors trigger automated workflows with stateful context |
-| 🌐 **Remote Agent** | Access your Agent from anywhere — Web UI, WeChat, DingTalk, Feishu, WeCom, Slack, or Telegram |
-| 🐦 **Feishu (Lark)** | Read/write Bitable, Docs, Sheets, Calendar, Tasks, Drive; OAuth lets Agent operate on behalf of the user |
-| 📌 **DingTalk** | Calendar events, to-do tasks, attendance records, contacts, approval workflows, Bitable, DingDisk, and Wiki |
-| 💼 **WeCom** | Calendar management, approval processes, check-in records, contact directory, meetings, WeDrive, and documents |
-| 🖥️ **SSH/SFTP** | Full remote connection and file management with JumpServer bastion host sync |
-| 📁 **File Manager** | Dual-pane file manager for local & remote |
-| 📚 **Knowledge Base** | Local RAG with L3 conversation vector search for long-term memory, completely offline |
-| 🔍 **Web Search** | Built-in web search with Bocha, Tavily, Google Custom Search, and Jina engines |
-| 🔌 **MCP Extension** | Connect external tools via Model Context Protocol |
-| 🗄️ **Database** | Natural language SQL execution and analysis |
-| 🛒 **Skill Market** | Browse, install, and share community Agent skills with one click |
-| 📊 **Excel & Word** | Style themes, Markdown-to-Excel, institutional document formatting with multi-level numbering — all via natural language |
-| 📽️ **PPT Generation** | Natural language to native editable PowerPoint (.pptx), Canvas slide preview, streaming render progress, and append mode for long decks |
-| 🔊 **Text-to-Speech** | Agent responses read aloud with OpenAI, Volcengine, and Alibaba DashScope TTS providers |
-| 🔌 **Plugin System** | Extend Agent with custom tools, providers, routes, and IM channels via a lightweight plugin API |
-| 🔒 **System Tray** | Minimize to tray; Cmd+W hides window without quitting. Single instance. |
-| 🖥️ **CLI Mode** | Run all backend services without Electron — headless automation via `npm run sft` |
+| 🧬 **Identity & Personality** | IDENTITY/SOUL/USER shape your secretary's character; birth conversation on first launch |
+| 🧠 **Three-Tier Memory** | L2 knows you (habits & facts), L3 recalls past work on demand; knowledge base is your secretary's archive |
+| 🌅 **Awaken Mode** | Your secretary becomes proactive — personality-driven chat, background monitoring, reaching out to you |
+| 👁️ **Watch & Sensors** | Heartbeat, file-watch, calendar, and email sensors; anomaly badges on the home screen at a glance |
+| 💬 **Multi-Channel Reach** | WeChat, DingTalk, Feishu, WeCom, Slack, Telegram, Web — one secretary, one relationship |
+| 🖥️ **Local & SSH Terminal** | Your secretary operates your machine and remote servers; JumpServer bastion sync |
+| 🌐 **Browser Bridge** | Control your open Chrome or Firefox — no new window, logins preserved |
+| 📦 **Artifact Panel** | Preview and switch documents, charts, PPT, and other outputs in the sidebar |
+| 📁 **File Manager** | Dual-pane local and remote file management |
+| 🐦 **Feishu / DingTalk / WeCom** | Calendar, tasks, approvals, docs, Bitable, and other enterprise office skills |
+| 📊 **Office Skills** | Excel, Word, PPT generation and editing via natural language |
+| 📧 **Email & Calendar** | Your secretary reads/sends email and manages your schedule |
+| 🔍 **Web Search** | Bocha, Tavily, Google, Jina multi-engine search |
+| 🛒 **Skill Market & Plugins** | One-click community skills; plugins extend tools, providers, and IM channels |
+| 🔌 **MCP Extension** | Connect databases, APIs, and external tools |
+| 🔊 **Text-to-Speech** | Secretary responses read aloud |
+| 🔒 **System Tray** | Minimize to tray, always available in the background |
+| 🖥️ **CLI Mode** | Headless backend via `npm run sft` |
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-assistant_en.png" width="800" alt="AI Assistant">
+  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-assistant_en.png" width="800" alt="Desktop Secretary">
 </p>
 
 <p align="center">
@@ -78,7 +86,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-im_en.png" width="800" alt="Remote Agent via IM">
+  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-im_en.png" width="800" alt="Multi-Channel Reach">
 </p>
 
 ## 🚀 Quick Start
@@ -110,19 +118,19 @@ SailFish supports OpenAI-compatible APIs. Configure in Settings:
 
 ```json
 {
-  "name": "Your AI",
-  "apiUrl": "https://api.openai.com/v1/chat/completions",
+  "name": "Daily DeepSeek",
+  "apiUrl": "https://api.deepseek.com/chat/completions",
   "apiKey": "sk-xxx",
-  "model": "gpt-4o"
+  "model": "deepseek-v4-flash"
 }
 ```
 
-**Recommended models for Agent mode** (requires Function Calling):
-- OpenAI GPT-4o / GPT-4o-mini
-- Claude 4.5 Sonnet (native Anthropic API supported)
-- DeepSeek V3
-- Qwen qwen-plus / qwen-max
-- Gemini, Grok, Mistral, Doubao, Zhipu GLM, Kimi (presets included)
+**Recommended models for secretary mode** (requires Function Calling; configure multiple profiles and switch anytime):
+
+- **Daily use** (fast, affordable): DeepSeek V4 Flash · Qwen 3.5 Plus · Claude Sonnet 4.6 · Gemini Flash
+- **Complex tasks** (long reasoning, multi-step): DeepSeek V4 Pro · GPT-5.5 · Claude Opus 4.7 · Gemini 3.1 Pro
+- **Vision tasks** (screenshots, image analysis, scanned PDFs): Doubao Seed 2.0 · Qwen 3.5 Plus · GPT-5.5 · Gemini Flash · Claude Sonnet 4.6
+- **More providers**: Doubao Seed 2.0, Zhipu GLM-5, Kimi K2.6, MiniMax M2.7, Grok, Mistral, and more (one-click presets in Settings)
 
 ## 🏗️ Architecture
 

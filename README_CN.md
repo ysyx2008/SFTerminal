@@ -13,9 +13,9 @@
 
 **旗鱼 SailFish**
 
-**你的私人 AI Agent**
+**你的私人桌面秘书**
 
-*说出你的需求，AI 自主规划执行——手机也能遥控*
+*了解你的习惯，主动帮你办事——本地终端、远程服务器、邮件日历，真正上手操作电脑*
 
 [![Build](https://github.com/ysyx2008/SailFish/actions/workflows/build-release.yml/badge.svg)](https://github.com/ysyx2008/SailFish/actions)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](./LICENSE)
@@ -28,53 +28,61 @@
 
 ---
 
-## 为什么选择旗鱼？
+## 为什么是秘书，不只是工具
 
-| 痛点 | 旗鱼方案 |
+旗鱼不是被动等指令的聊天机器人，而是住在你电脑里的**私人秘书**——有自己的节奏，能主动监控和找你，记得住你是谁、上次聊过什么，并且能真正动手操作。
+
+| 痛点 | 旗鱼的做法 |
 |------|---------|
-| 🤯 不会写命令？ | 用自然语言描述，AI 帮你执行 |
-| 😵 看不懂报错？ | AI 分析原因并给出解决方案 |
-| 🔁 重复性操作？ | Agent 自动化执行多步任务 |
-| 🏢 内网环境？ | 支持私有化 AI 模型和代理 |
-| 🛠️ CLI 配置太复杂？ | 图形界面，开箱即用 |
-| 📱 不在电脑旁？ | 通过 Web、微信、钉钉、飞书、企业微信、Slack、Telegram 远程访问 Agent |
+| 纯聊天 AI 只会说不会做 | 秘书能运行命令、读写文件、操控浏览器、收发邮件 |
+| 每次对话都从零开始 | 三层记忆 + 知识库：认识你（L2）、能回忆（L3）、档案室按需取用 |
+| 需要你主动守着 | 觉醒模式 + 关切：秘书自己监控、定时执行、主动通知 |
+| 只能坐在电脑前 | 微信、钉钉、飞书、Slack、Telegram 等渠道随时联络同一位秘书 |
+| 不会写命令、看不懂报错 | 用自然语言描述，秘书规划步骤并执行 |
+| 内网环境 | 支持私有化 AI 模型和代理 |
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-welcome.jpg" width="800" alt="旗鱼">
 </p>
 
-## ✨ 核心功能
+## 两种用法：任务与联络
+
+| 入口 | 关系 | 特点 |
+|------|------|------|
+| **任务** | 你支使秘书完成具体工作 | 一次性、可并行、彼此隔离；桌面端主力 |
+| **联络** | 你与秘书的持续关系线 | 常驻、多渠道汇流；秘书也能主动找你 |
+
+桌面以任务为主，联络在末尾——所有 IM 渠道汇入同一条关系线，秘书不会「换个人」。
+
+## ✨ 核心能力
 
 | 功能 | 说明 |
 |------|------|
-| 🤖 **AI Agent** | 描述任务，Agent 自动规划执行 |
-| 🧬 **身份体系** | Agent 人格由 IDENTITY.md、SOUL.md、USER.md 驱动，支持深度人格定制，首次启动自动发起诞生对话 |
-| 🌅 **觉醒模式** | AI 变为主动助手 —— 个性驱动的对话、后台监控、推送通知 |
-| 🧠 **关切与传感器** | 心跳、文件变化、日历、邮件四种传感器触发自动化工作流，支持有状态上下文 |
-| 🌐 **远程 Agent** | 随时随地访问你的 Agent——Web、微信、钉钉、飞书、企业微信、Slack、Telegram |
-| 🐦 **飞书技能** | 读写多维表格、云文档、电子表格、日历、任务、云空间；OAuth 授权让 Agent 以用户身份操作飞书 |
-| 📌 **钉钉技能** | 日历日程、待办任务、考勤打卡、通讯录、审批流程、多维表格、钉盘、知识库 |
-| 💼 **企微技能** | 日历管理、审批流程、打卡记录、通讯录操作、会议、微盘、文档 |
-| 🖥️ **SSH/SFTP** | 完整的远程连接和文件管理，支持 JumpServer 堡垒机资产同步 |
-| 📁 **文件管理器** | 双栏文件管理器，支持本地与远程 |
-| 📚 **知识库** | 本地 RAG + L3 对话向量检索实现跨会话长期记忆，完全离线运行 |
-| 🔍 **Web 搜索** | 内置联网搜索，支持 Bocha、Tavily、Google Custom Search、Jina 四种引擎 |
-| 🔌 **MCP 扩展** | 通过 MCP 协议接入外部工具 |
-| 🗄️ **数据库** | 自然语言执行 SQL 和分析 |
-| 🛒 **技能市场** | 浏览、安装、分享社区 Agent 技能，一键扩展 |
-| 📊 **Excel & Word** | 样式主题、Markdown 生成 Excel、一键生成多级编号制度文件 —— 全部通过自然语言完成 |
-| 📽️ **PPT 演示文稿** | 自然语言生成原生可编辑 PowerPoint（.pptx），Canvas 幻灯片预览、流式渲染进度，长 deck 支持逐页追加 |
-| 🔊 **语音合成** | Agent 回复自动朗读，支持 OpenAI、火山引擎、阿里 DashScope 多种 TTS 服务 |
-| 🔌 **插件系统** | 通过轻量插件 API 扩展 Agent 能力：自定义工具、Provider、路由、IM 渠道 |
-| 🔒 **系统托盘** | 最小化到托盘；Cmd+W 隐藏窗口不退出，单实例运行 |
-| 🖥️ **CLI 模式** | 无需 Electron 运行全部后端服务 —— 通过 `npm run sft` 实现无头自动化 |
+| 🧬 **身份与人格** | IDENTITY/SOUL/USER 驱动秘书人格；首次启动诞生对话，越用越像「你的」秘书 |
+| 🧠 **三层记忆** | L2 秘书认识你（习惯与事实）、L3 秘书能回忆（完整经历按需检索）；知识库是交给秘书的档案室 |
+| 🌅 **觉醒模式** | 秘书变为主动角色——个性对话、后台监控、主动找你 |
+| 👁️ **关切与传感器** | 心跳、文件变化、日历、邮件触发自动化；首页一眼看到有没有出问题 |
+| 💬 **多渠道联络** | 微信、钉钉、飞书、企业微信、Slack、Telegram、Web——汇入同一位秘书 |
+| 🖥️ **本地 & SSH 终端** | 秘书真正上手操作本机与远程服务器；JumpServer 堡垒机同步 |
+| 🌐 **浏览器助手** | 接管已有 Chrome/Firefox，保留登录态，无需另开窗口 |
+| 📦 **产出物面板** | 文档、图表、PPT 等生成物侧边预览与切换 |
+| 📁 **文件管理器** | 双栏管理本地与远程文件 |
+| 🐦 **飞书 / 钉钉 / 企微** | 日历、待办、审批、文档、多维表格等企业办公技能 |
+| 📊 **Office 技能** | Excel、Word、PPT 通过自然语言生成与编辑 |
+| 📧 **邮件 & 日历** | 秘书帮你读写邮件、管理日程 |
+| 🔍 **Web 搜索** | Bocha、Tavily、Google、Jina 多引擎 |
+| 🛒 **技能市场 & 插件** | 社区技能一键安装；插件扩展工具、Provider、IM 渠道 |
+| 🔌 **MCP 扩展** | 接入数据库、API 等外部工具 |
+| 🔊 **语音合成** | 秘书回复自动朗读 |
+| 🔒 **系统托盘** | 最小化到托盘，常驻后台 |
+| 🖥️ **CLI 模式** | `npm run sft` 无头运行全部后端服务 |
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-ppt.png" width="800" alt="PPT 演示文稿">
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-assistant.png" width="800" alt="AI 助手">
+  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-assistant.png" width="800" alt="桌面秘书">
 </p>
 
 <p align="center">
@@ -82,7 +90,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-im.png" width="800" alt="远程 Agent">
+  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-im.png" width="800" alt="多渠道联络">
 </p>
 
 ## 🚀 快速开始
@@ -114,19 +122,19 @@ npm run build:win    # Windows
 
 ```json
 {
-  "name": "你的 AI",
-  "apiUrl": "https://api.openai.com/v1/chat/completions",
+  "name": "日常 DeepSeek",
+  "apiUrl": "https://api.deepseek.com/chat/completions",
   "apiKey": "sk-xxx",
-  "model": "gpt-4o"
+  "model": "deepseek-v4-flash"
 }
 ```
 
-**Agent 模式推荐模型**（需支持 Function Calling）：
-- DeepSeek V3
-- 通义千问 qwen-plus / qwen-max
-- OpenAI GPT-4o / GPT-4o-mini
-- Claude 4.5 Sonnet（支持 Anthropic 原生 API）
-- Gemini、Grok、Mistral、豆包、智谱 GLM、Kimi（内置预设模板）
+**推荐模型**（需支持 Function Calling，可配置多个、随时切换）：
+
+- **日常**（快、省、够用）：DeepSeek V4 Flash · Qwen 3.5 Plus · Claude Sonnet 4.6 · Gemini Flash
+- **复杂任务**（长推理、多步骤）：DeepSeek V4 Pro · GPT-5.5 · Claude Opus 4.8 · Gemini 3.1 Pro
+- **视觉任务**（截图、识图、扫描件）：豆包 Seed 2.0 · Qwen 3.5 Plus · GPT-5.5 · Gemini Flash · Claude Sonnet 4.6
+- **更多厂商**：豆包 Seed 2.0、智谱 GLM-5、Kimi K2.6、MiniMax M2.7、Grok、Mistral 等（设置页一键添加预设）
 
 ## 🏗️ 系统架构
 
