@@ -127,6 +127,21 @@ export function useAgentMode(
   let scrollGraceTimer: ReturnType<typeof setTimeout> | null = null
   const AUTO_SCROLL_GRACE_MS = 150
 
+  // hideUntilSettled 期间用 rAF 探测 scrollHeight 稳定后淡入；记录帧 / 定时器 id，
+  // 组件卸载或重新触发时取消，避免卸载后 messagesRef 变 null 导致 tick 空转到兜底定时器。
+  let pendingRevealFrame: number | null = null
+  let pendingRevealTimer: ReturnType<typeof setTimeout> | null = null
+  const cancelPendingReveal = () => {
+    if (pendingRevealFrame !== null) {
+      cancelAnimationFrame(pendingRevealFrame)
+      pendingRevealFrame = null
+    }
+    if (pendingRevealTimer !== null) {
+      clearTimeout(pendingRevealTimer)
+      pendingRevealTimer = null
+    }
+  }
+
   // 启动 / 主动跳底窗口期内 ResizeObserver 仍贴底但**跳过 FLIP 动画**的时间戳。
   // scrollToBottom 触发时设置（new Date.now() + N ms）。语义：用户主动发新消息那一刻
   // 几个相邻的 wrapper 高度变化（user_task step / 初始占位 message step / 真实
@@ -392,29 +407,36 @@ export function useAgentMode(
 
       // 提前 reveal：scrollHeight 连续 2 rAF 不变即视为尺寸稳定（底部 items 已实测、
       // mermaid/活图已渲染）。兜底 520ms 与最后一次重试对齐，防止异步渲染过慢时永久隐身。
+      // 重新触发时先清掉上一轮的帧 / 定时器，避免多轮 hide 叠加；卸载时由 onUnmounted 兜底取消。
+      cancelPendingReveal()
       let revealed = false
       let lastH = -1
       let stable = 0
       const doReveal = () => {
         if (revealed) return
         revealed = true
+        pendingRevealFrame = null
+        pendingRevealTimer = null
         isHistoryScrollPending.value = false
       }
-      setTimeout(doReveal, 520)
+      pendingRevealTimer = setTimeout(doReveal, 520)
       const tick = () => {
+        pendingRevealFrame = null
         if (revealed) return
         const el = messagesRef.value
-        const h = el ? el.scrollHeight : 0
+        // 卸载后 messagesRef 为 null：不再继续探测，直接结束（不再写状态），由兜底定时器 / 卸载清理复位。
+        if (!el) return
+        const h = el.scrollHeight
         if (h > 0 && h === lastH) stable++
         else stable = 0
         lastH = h
         if (stable >= 2) {
           doReveal()
         } else {
-          requestAnimationFrame(tick)
+          pendingRevealFrame = requestAnimationFrame(tick)
         }
       }
-      requestAnimationFrame(tick)
+      pendingRevealFrame = requestAnimationFrame(tick)
     })
   }
 
@@ -1927,6 +1949,7 @@ export function useAgentMode(
     cleanupAgentListeners()
     uninstallContentResizeObserver()
     artifactStore.cleanup(currentTabId.value)
+    cancelPendingReveal()
   })
 
   return {
