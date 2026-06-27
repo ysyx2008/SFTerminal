@@ -6,6 +6,8 @@
 import type { AiMessage } from '../ai.service'
 import type { TaskMemory, AgentStep } from './types'
 import type { TaskMemoryStore } from './task-memory'
+// token 估算共享纯函数(与 ContextWindowManager 共用同一实现,消除逐字节重复)
+import { estimateTextTokens as estimateTokens } from './token-estimate'
 
 // ==================== 类型定义 ====================
 
@@ -492,18 +494,6 @@ function formatDigest(task: TaskMemory): string {
 }
 
 // ==================== Token 估算 ====================
-
-/**
- * 估算文本的 token 数
- */
-function estimateTokens(text: string | null | undefined): number {
-  if (!text) return 0
-  // 中文字符约 1.5 tokens/字
-  // 非中文内容约 0.5 tokens/字符（URL、JSON、特殊字符等 tokenizer 切分较碎）
-  const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length
-  const otherChars = text.length - chineseChars
-  return Math.ceil(chineseChars * 1.5 + otherChars * 0.5)
-}
 
 /**
  * 估算消息数组的 token 数

@@ -34,6 +34,7 @@ import type {
 import { DEFAULT_AGENT_CONFIG } from './types'
 import { TaskMemoryStore } from './task-memory'
 import { Conversation, conversationPolicy } from '../conversation'
+import { ContextWindowManager } from './context-window'
 import {
   splitMessagesIntoTasks as splitMessagesIntoTasksShared,
   splitStepsIntoTasks as splitStepsIntoTasksShared,
@@ -175,8 +176,12 @@ export abstract class Agent {
   /** "始终允许"工具白名单（Agent 实例级别，跨 Run 持久化，重启后清空） */
   private allowedTools = new Set<string>()
 
-  /** 上下文管理功能是否已激活（用量超过 50% 时启用） */
-  protected contextManagementEnabled = false
+  /** 上下文窗口管理协作者(token估算/压力/压缩/工具序列修复)。构造时装配,见 _contextWindow。 */
+  private _contextWindow!: ContextWindowManager
+
+  /** 上下文管理功能是否已激活:委托给 ContextWindowManager(用量 >= 85% 时激活,且不回退)。
+   *  SailFish.getAvailableTools 读此标志决定是否注册 compress_context 等工具。 */
+  protected get contextManagementEnabled(): boolean { return this._contextWindow.enabled }
   
   // ==================== 会话追踪（跨 Run 持久化） ====================
   
@@ -229,6 +234,25 @@ export abstract class Agent {
   constructor(services: AgentServices) {
     this.services = services
     this.taskMemory = this.createTaskMemory()
+    this._contextWindow = new ContextWindowManager({
+      config: this.services.configService,
+      getProfileId: () => this.profileId,
+      getLastPromptTokens: () => this._lastPromptTokens,
+      getLastCacheHitRate: () => this._lastCacheHitRate,
+      reportUsage: (tokens, cacheHitRate) => {
+        // 把精确的 token 用量推到当前 run 的 lastStep + onStep 回调(UI 展示)。
+        // 仅在 updatePressure 拿到 API 精确值时被调,避免估算值误导用户。
+        const steps = this.currentRun?.steps
+        if (steps && steps.length > 0) {
+          const lastStep = steps[steps.length - 1]
+          lastStep.contextTokens = tokens
+          if (cacheHitRate !== undefined) {
+            lastStep.cacheHitRate = cacheHitRate
+          }
+          this.callbacks?.onStep?.(this.currentRun?.id || '', lastStep)
+        }
+      }
+    })
   }
   
   /**
@@ -1431,7 +1455,7 @@ export abstract class Agent {
     // 修复运行抛错时可能遗留的悬空 tool_calls：assistant 已宣告调用工具但 tool result
     // 还没产生（典型场景：工具执行中崩溃、AI 流式输出后调下一轮 API 时网络超时）。
     // fixIncompleteToolCalls 会同步补占位到 run.messages 与 run.taskMessageLog
-    this.fixIncompleteToolCalls(run, `[执行中断: ${errorMessage}]`)
+    this._contextWindow.fixIncompleteToolCalls(run, `[执行中断: ${errorMessage}]`)
 
     // 把错误作为一条 assistant 回复追加到对话日志（与 finalizeRun 的成功路径对称）
     const errorAssistantMsg: AiMessage = {
@@ -1485,8 +1509,8 @@ export abstract class Agent {
     // LLM 的前缀缓存（Anthropic explicit / DeepSeek·OpenAI automatic）可命中整段前缀。
     // 跳过条件：首次任务、唤醒 run（Watch 等，上下文差异大）、上下文预算不足。
     if (this._previousRunMessages && this._previousRunMessages.length > 0 && !run.context.wakeup) {
-      const contextLength = this.getContextLength()
-      const prevTokens = this._lastPromptTokens || this.estimateTotalTokens(this._previousRunMessages)
+      const contextLength = this._contextWindow.getContextLength()
+      const prevTokens = this._lastPromptTokens || this._contextWindow.estimateTotalTokens(this._previousRunMessages)
 
       if (prevTokens < contextLength * 0.7) {
         // 复用前序消息，清除旧的缓存断点标记
@@ -1550,7 +1574,7 @@ export abstract class Agent {
     let availableTaskIds: Array<{ id: string; summary: string }> = []
     
     if (this.taskMemory.getTaskCount() > 0) {
-      const contextLength = this.getContextLength()
+      const contextLength = this._contextWindow.getContextLength()
       const historyOptions: TaskHistoryOptions | undefined = run.context.wakeup
         ? { maxTasks: 5, minCompressionLevel: 3 }
         : undefined
@@ -1846,7 +1870,7 @@ export abstract class Agent {
           log.info('AI 输出被用户消息中断，继续循环处理')
           // 修复不完整的 tool_calls 消息序列
           // 当 abort 发生在工具执行过程中时，可能存在 assistant 消息（含 tool_calls）但缺少对应的 tool result
-          this.fixIncompleteToolCalls(run)
+          this._contextWindow.fixIncompleteToolCalls(run)
           continue executionLoop
         }
         
@@ -1874,7 +1898,7 @@ export abstract class Agent {
     applyToolResultBudget(run.messages, (name) => getMetaByName(this.getAvailableTools(), name))
 
     // 更新上下文状态（注入 Context Status + 渐进式提醒）
-    this.updateContextPressure(run)
+    this._contextWindow.updatePressure(run)
     
     // 记录流式执行前的步骤数，用于后续 ensureToolResultStep 正确检测预执行工具的步骤
     const stepCountBeforeStreaming = run.steps.length
@@ -3130,7 +3154,7 @@ export abstract class Agent {
       getSshConfig: (terminalId) => this.services.sshService?.getConfig(terminalId) || null,
       // 上下文管理
       compressCurrentContext: (summary: string, keepRecent: number) => {
-        return this.compressCurrentContext(run, summary, keepRecent)
+        return this._contextWindow.compress(run, summary, keepRecent)
       },
       getCompressedArchives: () => {
         return (run.compressedArchives || []).map(a => ({
@@ -3158,11 +3182,11 @@ export abstract class Agent {
       },
       getCurrentPtyId: () => run.ptyId,
       getToolOutputBudget: (currentTokensOverride?: number) => {
-        const contextLength = this.getContextLength()
+        const contextLength = this._contextWindow.getContextLength()
         const currentTokens =
           currentTokensOverride ??
           this._lastPromptTokens ??
-          this.estimateTotalTokens(run.messages)
+          this._contextWindow.estimateTotalTokens(run.messages)
         return computeToolOutputBudget({ contextLength, currentTokens })
       },
     }
@@ -3437,306 +3461,10 @@ export abstract class Agent {
     })
   }
   
-  /**
-   * 获取上下文长度
-   */
-  private getContextLength(): number {
-    const configService = this.services.configService
-    if (!configService) {
-      return 128000  // 默认 128K
-    }
-    
-    const profiles = configService.getAiProfiles()
-    if (profiles.length === 0) {
-      return 128000
-    }
-    
-    let profile
-    if (this.profileId) {
-      profile = profiles.find(p => p.id === this.profileId)
-    }
-    if (!profile) {
-      const activeId = configService.getActiveAiProfile()
-      profile = profiles.find(p => p.id === activeId) || profiles[0]
-    }
-    
-    // 返回配置的上下文长度，默认 128000
-    return profile?.contextLength || 128000
-  }
-  
-  /**
-   * 估算文本的 token 数量
-   */
-  private estimateTokens(text: string | null | undefined): number {
-    if (!text) return 0
-    // 中文字符约 1.5 tokens/字
-    // 非中文内容约 0.5 tokens/字符
-    //   - 纯英文单词约 0.25，但实际内容含大量 URL、路径、标点、JSON、特殊符号，
-    //     tokenizer 对这些切分很碎（每字符 0.5-1 token），取 0.5 作为均值
-    //   - 实测：Excel 混合数据（URL + 中文 + 数字）0.5 系数与 API 实际计数误差 < 10%
-    const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length
-    const otherChars = text.length - chineseChars
-    return Math.ceil(chineseChars * 1.5 + otherChars * 0.5)
-  }
-  
-  /**
-   * 估算消息列表的总 token 数量
-   */
-  private estimateTotalTokens(messages: AiMessage[]): number {
-    const MESSAGE_OVERHEAD = 4
-    
-    const messageTokens = messages.reduce((sum, msg) => {
-      let tokens = this.estimateTokens(msg.content) + MESSAGE_OVERHEAD
-      if (msg.tool_calls) {
-        tokens += msg.tool_calls.reduce((t, tc) => 
-          t + this.estimateTokens(tc.function.name) + this.estimateTokens(tc.function.arguments), 0)
-      }
-      if (msg.reasoning_content) {
-        tokens += this.estimateTokens(msg.reasoning_content)
-      }
-      return sum + tokens
-    }, 0)
-    
-    return messageTokens + 4000
-  }
-  
-  /** 上下文管理功能激活阈值（用量百分比）
-   *  与 85% 警告消息对齐：到了需要警告的时候才注册 compress_context 等工具，
-   *  避免过早注册导致工具列表变化破坏前缀缓存。 */
-  private static readonly CONTEXT_MGMT_THRESHOLD = 85
-
-  // [缓存优化] 动态章节标题已禁用，见 updateContextPressure 中的注释
-  // private static readonly CONTEXT_MGMT_HEADING = '\n\n## 运行环境'
-  // private static readonly CONTEXT_STATUS_HEADING = '\n\n## 上下文状态'
-
-  /**
-   * 更新上下文压力状态：注入上下文状态 + 渐进式提醒
-   * 
-   * 设计原则：程序只提供信息，所有压缩决策由 AI 做。
-   * - < 85%: 不干预（最大化前缀缓存命中）
-   * - >= 85%: 注册上下文管理工具（compress_context 等）+ 注入警告消息到 messages 末尾
-   * - API 自然报错: 最终兜底
-   */
-  private updateContextPressure(run: AgentRun): void {
-    const contextLength = this.getContextLength()
-    // 优先用 API 返回的精确值，无精确值时用估算值（仅用于内部上下文管理决策）
-    const hasRealData = this._lastPromptTokens !== undefined
-    const totalTokens = hasRealData ? this._lastPromptTokens! : this.estimateTotalTokens(run.messages)
-    const usagePercent = Math.round((totalTokens / contextLength) * 100)
-    const remaining = Math.max(0, contextLength - totalTokens)
-
-    // 仅当有 API 返回的精确数据时才推送到前端，避免不准确的估算值误导用户
-    if (hasRealData) {
-      const steps = this.currentRun?.steps
-      if (steps && steps.length > 0) {
-        const lastStep = steps[steps.length - 1]
-        lastStep.contextTokens = totalTokens
-        if (this._lastCacheHitRate !== undefined) {
-          lastStep.cacheHitRate = this._lastCacheHitRate
-        }
-        this.callbacks?.onStep?.(this.currentRun?.id || '', lastStep)
-      }
-    }
-
-    // 超过阈值时激活上下文管理功能（一旦激活不会关闭，因为压缩后用量可能降低）
-    if (!this.contextManagementEnabled && usagePercent >= Agent.CONTEXT_MGMT_THRESHOLD) {
-      this.contextManagementEnabled = true
-    }
-
-    // [缓存优化] 以下「上下文状态注入系统提示词」已禁用。
-    // 每轮 ReAct 循环中 token 用量数字都会变化，注入到系统提示词会破坏
-    // DeepSeek/OpenAI/Anthropic 的前缀缓存（系统提示在所有历史消息之前，
-    // 一旦变化会导致后续数万 tokens 的历史消息全部缓存未命中）。
-    // 上下文压力由 85% 警告消息（注入到 messages 末尾）兜底。
-    // 如需恢复：取消以下注释，并取消 prompt-builder.ts build() 中的 CACHE_BREAK_MARKER。
-    //
-    // const statusLines = [
-    //   '## 上下文状态',
-    //   `- 上下文窗口：${contextLength.toLocaleString()} tokens`,
-    //   `- 当前用量：~${totalTokens.toLocaleString()} tokens（${usagePercent}%）`,
-    //   `- 剩余容量：~${remaining.toLocaleString()} tokens`,
-    //   `- 当前任务消息数：${taskMessageCount}`,
-    // ]
-    // if (usagePercent >= 85) {
-    //   statusLines.push(`- ⚠️ 警告：...`)
-    // } else if (usagePercent >= 70) {
-    //   statusLines.push(`- 建议：...`)
-    // }
-    // if (run.messages.length > 0 && run.messages[0].role === 'system') {
-    //   const systemContent = run.messages[0].content || ''
-    //   const mgmtIdx = systemContent.indexOf(Agent.CONTEXT_MGMT_HEADING)
-    //   const statusIdx = systemContent.indexOf(Agent.CONTEXT_STATUS_HEADING)
-    //   const cutPoints = [mgmtIdx, statusIdx].filter(i => i !== -1)
-    //   const cutPoint = cutPoints.length > 0 ? Math.min(...cutPoints) : -1
-    //   let content = cutPoint !== -1 ? systemContent.substring(0, cutPoint) : systemContent
-    //   if (this.contextManagementEnabled) {
-    //     content += PromptBuilder.buildContextManagementSection()
-    //     content += '\n\n' + statusLines.join('\n')
-    //   }
-    //   run.messages[0].content = content
-    // }
-
-    // 85%+ 额外注入警告消息（避免重复注入）
-    if (usagePercent >= 85) {
-      const lastMsg = run.messages[run.messages.length - 1]
-      const isAlreadyWarned = lastMsg?.role === 'user' && 
-        typeof lastMsg.content === 'string' && 
-        lastMsg.content.includes('[系统] 上下文用量告警')
-      
-      if (!isAlreadyWarned) {
-        run.messages.push({
-          role: 'user',
-          content: t('agent.context_pressure_warning', {
-            percentage: usagePercent,
-            remaining: remaining.toLocaleString()
-          }),
-          _systemInjected: true
-        })
-      }
-    }
-  }
-  
-  /**
-   * 压缩当前任务的对话上下文
-   * 将早期的 assistant + tool 消息归档，替换为 AI 提供的摘要
-   */
-  private compressCurrentContext(
-    run: AgentRun,
-    summary: string,
-    keepRecent: number
-  ): { beforeTokens: number; afterTokens: number; freedTokens: number; archiveId: string } | null {
-    // 找到当前任务的消息范围（最后一条 user 消息之后的部分）
-    let lastUserIndex = -1
-    for (let i = run.messages.length - 1; i >= 0; i--) {
-      if (run.messages[i].role === 'user') {
-        // 跳过系统注入的警告消息
-        if (typeof run.messages[i].content === 'string' &&
-            run.messages[i].content!.includes('[系统] 上下文用量告警')) {
-          continue
-        }
-        lastUserIndex = i
-        break
-      }
-    }
-
-    if (lastUserIndex === -1) return null
-
-    // 当前任务的消息（user 消息之后到末尾）
-    const taskMessages = run.messages.slice(lastUserIndex + 1)
-
-    // 计算需要保留的消息数量
-    // 一组 = assistant 消息 + 对应的 tool result 消息
-    // 从后往前数 keepRecent 组
-    let keepFromIndex = taskMessages.length
-    let groupCount = 0
-    for (let i = taskMessages.length - 1; i >= 0; i--) {
-      if (taskMessages[i].role === 'assistant') {
-        groupCount++
-        if (groupCount >= keepRecent) {
-          keepFromIndex = i
-          break
-        }
-      }
-    }
-
-    // 需要压缩的消息
-    const toCompress = taskMessages.slice(0, keepFromIndex)
-    if (toCompress.length === 0) return null
-
-    const beforeTokens = this.estimateTotalTokens(run.messages)
-
-    // 生成归档 ID
-    if (!run.compressedArchives) {
-      run.compressedArchives = []
-    }
-    const archiveId = `ca-${run.compressedArchives.length + 1}`
-
-    // 归档原始消息（深拷贝，防止后续 run.messages 修改影响归档）
-    run.compressedArchives.push({
-      id: archiveId,
-      messages: JSON.parse(JSON.stringify(toCompress)),
-      summary,
-      timestamp: Date.now()
-    })
-
-    // 替换：用一条摘要消息替换被压缩的消息
-    const summaryMessage: AiMessage = {
-      role: 'assistant',
-      content: `[早期对话已压缩，归档 ID: "${archiveId}"。如需查看原始内容，请调用 recall_compressed(archive_id: "${archiveId}")。]\n\n${summary}`
-    }
-
-    // 重建 messages: system + 历史任务消息 + user + 摘要 + 保留的最近消息
-    const preserved = taskMessages.slice(keepFromIndex)
-    run.messages = [
-      ...run.messages.slice(0, lastUserIndex + 1),
-      summaryMessage,
-      ...preserved
-    ]
-
-    const afterTokens = this.estimateTotalTokens(run.messages)
-
-    return {
-      beforeTokens,
-      afterTokens,
-      freedTokens: beforeTokens - afterTokens,
-      archiveId
-    }
-  }
-
-  /**
-   * 修复不完整的工具调用序列
-   * 当用户中断或运行抛错时，可能存在 assistant 消息（含 tool_calls）但缺少对应的 tool result。
-   * 同时镜像写入 taskMessageLog，确保下次任务的 cache path / cold start 看到的对话序列合法。
-   *
-   * @param placeholder 占位 tool result 的内容（默认按"用户中断"语义；错误路径应传入更具体的描述）
-   */
-  private fixIncompleteToolCalls(run: AgentRun, placeholder: string = '[操作被用户中断]'): void {
-    const { messages } = run
-    if (messages.length === 0) return
-
-    // 从后往前查找最后一个带有 tool_calls 的 assistant 消息
-    let lastAssistantWithToolCallsIndex = -1
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i]
-      if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
-        lastAssistantWithToolCallsIndex = i
-        break
-      }
-      // 如果遇到 user 消息，说明之前的对话是完整的
-      if (msg.role === 'user') break
-    }
-
-    if (lastAssistantWithToolCallsIndex === -1) return
-
-    const assistantMsg = messages[lastAssistantWithToolCallsIndex]
-    const toolCalls = assistantMsg.tool_calls!
-
-    // 收集该 assistant 消息之后已有的 tool result
-    const existingToolCallIds = new Set<string>()
-    for (let i = lastAssistantWithToolCallsIndex + 1; i < messages.length; i++) {
-      const msg = messages[i]
-      if (msg.role === 'tool' && msg.tool_call_id) {
-        existingToolCallIds.add(msg.tool_call_id)
-      }
-    }
-
-    // 为缺失的 tool_call_id 添加占位的 tool result
-    const missingToolCalls = toolCalls.filter(tc => !existingToolCallIds.has(tc.id))
-    if (missingToolCalls.length > 0) {
-      log.info(`修复 ${missingToolCalls.length} 个缺失的 tool result 消息`)
-      for (const tc of missingToolCalls) {
-        const toolMsg: AiMessage = {
-          role: 'tool',
-          content: placeholder,
-          tool_call_id: tc.id
-        }
-        messages.push(toolMsg)
-        // 镜像写入 taskMessageLog：保持 append-only 的对话日志与 messages 同步，
-        // 否则 TaskMemory 持久化的 messages 会缺失 tool result，下次任务复用时序列违法
-        run.taskMessageLog.push({ ...toolMsg })
-      }
-    }
-  }
+  // ==================== 上下文窗口管理 ====================
+  // 以下逻辑（token 估算 / 用量压力 / 上下文压缩 / 工具调用序列修复）已抽到
+  // ContextWindowManager 协作者（./context-window.ts），Agent 通过 this._contextWindow 调用。
+  // contextManagementEnabled 也委托给该管理器的 enabled getter。
   
   /**
    * 根据程序设置的语言生成语言提示
