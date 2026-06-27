@@ -155,7 +155,7 @@ export default {
       statusOpen: 'Open in a tab',
       deleteBlockedTabOpen: 'This conversation is still open in a tab. Close the tab before deleting.',
     },
-    tip1: 'Press Ctrl+T / Cmd+T to quickly create a new terminal tab',
+    tip1: 'Press Ctrl+T / Cmd+T to quickly create a new AI assistant tab',
     tip2: 'Right-click terminal to send selected content to AI for analysis',
     tip3: 'Enable Agent mode to let AI automatically execute complex tasks',
     tip4: 'Import Xshell session configs with one click for easy migration',

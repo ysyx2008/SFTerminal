@@ -12,7 +12,7 @@
 
 | 快捷键 | 默认值 | 行为 | 是否可自定义 |
 |---|---|---|---|
-| 新建助手对话 | `Cmd+T`（可改） | `terminalStore.goToHome()` | ✅ |
+| 新建助手对话 | `Cmd+T`（可改） | `createAssistantTab({ isPromoted: true, activate: true })` | ✅ |
 | 新建本地终端 | `Cmd+Shift+T`（可改） | `terminalStore.createTab('local')` | ✅ |
 | ESC | 固定 | 关闭 SSH 凭证侧栏（须让路给模态弹窗） | ❌ |
 | Ctrl/Cmd+W | 固定 | 见第二节决策树 | ❌ |

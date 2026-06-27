@@ -247,7 +247,7 @@ const handleGlobalKeydown = (event: KeyboardEvent) => {
 
   if (matchAccelerator(event, shortcuts.newAssistantTab)) {
     event.preventDefault()
-    terminalStore.goToHome()
+    if (!isSteamBuild) openAssistantFromWelcome()
     return
   }
 
@@ -1168,7 +1168,7 @@ const handleMenuCommand = async (command: string) => {
       terminalStore.createTab('local')
       break
     case 'newAssistantTab':
-      terminalStore.goToHome()
+      if (!isSteamBuild) openAssistantFromWelcome()
       break
     case 'newSshConnection':
       openHostSidebar()
