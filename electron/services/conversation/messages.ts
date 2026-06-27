@@ -1,0 +1,166 @@
+/**
+ * 会话 transcript 切分纯函数 —— Agent 与 Conversation 共用的**唯一**实现。
+ *
+ * 背景：历史上「把一段连续 transcript 按真实 user 边界切成独立任务」这套逻辑在
+ * `agent.ts`（恢复 / fork）和 `conversation.ts`（loadFromRecord）各抄了一份，是
+ * 「改一处忘另一处」的典型裂缝。这里收敛成一组纯函数，两边都来调。
+ *
+ * 纯净：无实例状态、无 IO。task id 的生成方案由调用方通过 `makeId` 注入——
+ * Agent 恢复路径用实例级单调序号（跨多次调用防同毫秒碰撞），fork / steps 路径用
+ * 数组下标，行为与各自历史实现逐字节一致。
+ */
+import type { AgentStep, AgentStepRecord } from '@shared/types'
+import type { RiskLevel } from '../agent/types'
+import type { AiMessage } from '../ai.service'
+
+/**
+ * task id 生成策略。`index` = 当前已切出的任务数（即将 push 的这条的下标）。
+ * - 实例单调序号方案：`() => `restored_${Date.now()}_${seq++}``（忽略 index）。
+ * - 下标方案：`(i) => `restored_${baseTs}_${i}``。
+ */
+export type TaskIdFactory = (index: number) => string
+
+export interface MessageTask {
+  id: string
+  userTask: string
+  finalResult: string
+  messages: AiMessage[]
+}
+
+export interface StepTask {
+  id: string
+  userTask: string
+  finalResult: string
+  steps: AgentStep[]
+}
+
+/**
+ * 将连续 API 消息按「真实 user 边界」切分为独立任务。
+ * `_systemInjected` 的 user 消息（图片占位 / 上下文压力警告等）不构成边界，并入当前任务。
+ */
+export function splitMessagesIntoTasks(messages: AiMessage[], makeId: TaskIdFactory): MessageTask[] {
+  const tasks: MessageTask[] = []
+  let currentTaskMessages: AiMessage[] = []
+  let currentUserTask = ''
+
+  for (const msg of messages) {
+    const isRealUserBoundary = msg.role === 'user' && !msg._systemInjected
+
+    if (isRealUserBoundary && currentTaskMessages.length > 0) {
+      const lastAssistant = [...currentTaskMessages].reverse().find(
+        m => m.role === 'assistant' && !m.tool_calls
+      )
+      tasks.push({
+        id: makeId(tasks.length),
+        userTask: currentUserTask,
+        finalResult: lastAssistant?.content || '',
+        messages: currentTaskMessages
+      })
+      currentTaskMessages = []
+    }
+
+    if (isRealUserBoundary) {
+      currentUserTask = msg.content || ''
+    }
+
+    currentTaskMessages.push(msg)
+  }
+
+  if (currentTaskMessages.length > 0) {
+    const lastAssistant = [...currentTaskMessages].reverse().find(
+      m => m.role === 'assistant' && !m.tool_calls
+    )
+    tasks.push({
+      id: makeId(tasks.length),
+      userTask: currentUserTask,
+      finalResult: lastAssistant?.content || '',
+      messages: currentTaskMessages
+    })
+  }
+
+  return tasks
+}
+
+/** 持久化 step 记录 → 运行时 step（补齐 images / subAgents / canvasData 等富内容字段）。 */
+export function stepRecordToStep(s: AgentStepRecord): AgentStep {
+  return {
+    id: s.id,
+    type: s.type as AgentStep['type'],
+    content: s.content,
+    images: s.images,
+    echartsOption: s.echartsOption,
+    attachments: s.attachments,
+    toolName: s.toolName,
+    toolArgs: s.toolArgs,
+    toolResult: s.toolResult,
+    riskLevel: s.riskLevel as RiskLevel | undefined,
+    timestamp: s.timestamp,
+    webSearchResults: s.webSearchResults,
+    success: s.success,
+    subAgents: s.subAgents,
+    canvasData: s.canvasData
+  }
+}
+
+/**
+ * 降级路径：旧记录没有 messages 时，从 steps 按 `user_task` 切分重建任务列表。
+ */
+export function splitStepsIntoTasks(stepRecords: AgentStepRecord[], makeId: TaskIdFactory): StepTask[] {
+  if (!stepRecords || stepRecords.length === 0) return []
+
+  const tasks: StepTask[] = []
+  let currentSteps: AgentStep[] = []
+  let currentUserTask = ''
+
+  for (const s of stepRecords) {
+    const step = stepRecordToStep(s)
+
+    if (s.type === 'user_task') {
+      if (currentSteps.length > 0 && currentUserTask) {
+        const lastFinal = [...currentSteps].reverse().find(st => st.type === 'final_result')
+        tasks.push({
+          id: makeId(tasks.length),
+          userTask: currentUserTask,
+          finalResult: lastFinal?.content || '',
+          steps: currentSteps
+        })
+      }
+      currentSteps = []
+      currentUserTask = s.content || ''
+    }
+
+    currentSteps.push(step)
+  }
+
+  if (currentSteps.length > 0 && currentUserTask) {
+    const lastFinal = [...currentSteps].reverse().find(st => st.type === 'final_result')
+    tasks.push({
+      id: makeId(tasks.length),
+      userTask: currentUserTask,
+      finalResult: lastFinal?.content || '',
+      steps: currentSteps
+    })
+  }
+
+  return tasks
+}
+
+/**
+ * 按 `user_task` step 把会话步骤切成 chunk（每个 chunk = 一个任务的全部步骤）。
+ * 用于 fork 截断到第 N 个 task。前置条件：steps 首元素为 user_task（由 initializeRun 保证）。
+ *
+ * 与 split* 不同，本函数**不接受 `makeId`**：chunk 仅用于按数量截断，不需要 task 身份/id。
+ */
+export function chunkStepsByUserTask(steps: AgentStep[]): AgentStep[][] {
+  const chunks: AgentStep[][] = []
+  let current: AgentStep[] = []
+  for (const s of steps) {
+    if (s.type === 'user_task' && current.length > 0) {
+      chunks.push(current)
+      current = []
+    }
+    current.push(s)
+  }
+  if (current.length > 0) chunks.push(current)
+  return chunks
+}

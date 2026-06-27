@@ -30,7 +30,7 @@ import type {
 import { inferConversationKind } from '@shared/types'
 import type { AiMessage } from '../ai.service'
 import { TaskMemoryStore, type LookupToolMeta } from '../agent/task-memory'
-import type { RiskLevel } from '../agent/types'
+import { splitMessagesIntoTasks, splitStepsIntoTasks, stepRecordToStep } from './messages'
 
 export interface ConversationCreateOptions {
   /** 显式指定会话 id（恢复/漫游续写既有会话）；省略则生成 `session_<ts>` */
@@ -179,12 +179,16 @@ export class Conversation {
    */
   loadFromRecord(record: AgentRecord): void {
     if (record.messages && record.messages.length > 0) {
-      const tasks = this.splitMessagesIntoTasks(record.messages as AiMessage[])
+      const tasks = splitMessagesIntoTasks(
+        record.messages as AiMessage[],
+        () => `restored_${Date.now()}_${this._restoreTaskSeq++}`
+      )
       for (const task of tasks) {
         this._taskMemory.saveTask(task.id, task.userTask, [], 'success', task.finalResult, task.messages)
       }
     } else if (record.steps && record.steps.length > 0) {
-      const tasks = this.splitStepsIntoTasks(record.steps)
+      const baseTs = record.steps[0]?.timestamp || Date.now()
+      const tasks = splitStepsIntoTasks(record.steps, i => `restored_${baseTs}_${i}`)
       for (const task of tasks) {
         this._taskMemory.saveTask(task.id, task.userTask, task.steps, 'success', task.finalResult)
       }
@@ -201,7 +205,7 @@ export class Conversation {
    */
   setRestoredTranscript(messages?: AiMessage[], stepRecords?: AgentStepRecord[]): void {
     if (stepRecords && stepRecords.length > 0 && this._steps.length === 0) {
-      this._steps = stepRecords.map(s => Conversation.stepRecordToStep(s))
+      this._steps = stepRecords.map(s => stepRecordToStep(s))
     }
     if (messages && messages.length > 0 && this._messages.length === 0) {
       this._messages = messages.map(m => ({ ...m }))
@@ -424,126 +428,8 @@ export class Conversation {
   get isDirty(): boolean { return this._dirty }
   markClean(): void { this._dirty = false }
 
-  // ==================== 私有：切分（忠实移植 agent.ts） ====================
-
-  /**
-   * 将连续的 API 消息按「真实 user 边界」切分为独立任务。
-   * `_systemInjected` 的 user 消息（图片占位 / 上下文压力警告等）不构成边界，并入当前任务。
-   * 移植自 Agent.splitMessagesIntoTasks（含实例级单调 _restoreTaskSeq 防 id 碰撞）。
-   */
-  private splitMessagesIntoTasks(messages: AiMessage[]): Array<{
-    id: string; userTask: string; finalResult: string; messages: AiMessage[]
-  }> {
-    const tasks: Array<{ id: string; userTask: string; finalResult: string; messages: AiMessage[] }> = []
-    let currentTaskMessages: AiMessage[] = []
-    let currentUserTask = ''
-
-    for (const msg of messages) {
-      const isRealUserBoundary = msg.role === 'user' && !(msg as { _systemInjected?: boolean })._systemInjected
-
-      if (isRealUserBoundary && currentTaskMessages.length > 0) {
-        const lastAssistant = [...currentTaskMessages].reverse().find(
-          m => m.role === 'assistant' && !m.tool_calls
-        )
-        tasks.push({
-          id: `restored_${Date.now()}_${this._restoreTaskSeq++}`,
-          userTask: currentUserTask,
-          finalResult: lastAssistant?.content || '',
-          messages: currentTaskMessages
-        })
-        currentTaskMessages = []
-      }
-
-      if (isRealUserBoundary) {
-        currentUserTask = msg.content || ''
-      }
-
-      currentTaskMessages.push(msg)
-    }
-
-    if (currentTaskMessages.length > 0) {
-      const lastAssistant = [...currentTaskMessages].reverse().find(
-        m => m.role === 'assistant' && !m.tool_calls
-      )
-      tasks.push({
-        id: `restored_${Date.now()}_${this._restoreTaskSeq++}`,
-        userTask: currentUserTask,
-        finalResult: lastAssistant?.content || '',
-        messages: currentTaskMessages
-      })
-    }
-
-    return tasks
-  }
-
-  /**
-   * 降级路径：旧记录没有 messages 时，从 steps 重建任务列表（按 user_task 切分）。
-   * 移植自 Agent.splitStepsIntoTasks。
-   */
-  private splitStepsIntoTasks(stepRecords: AgentStepRecord[]): Array<{
-    id: string; userTask: string; finalResult: string; steps: AgentStep[]
-  }> {
-    if (!stepRecords || stepRecords.length === 0) return []
-
-    const tasks: Array<{ id: string; userTask: string; finalResult: string; steps: AgentStep[] }> = []
-    let currentSteps: AgentStep[] = []
-    let currentUserTask = ''
-    const baseTs = stepRecords[0]?.timestamp || Date.now()
-
-    for (const s of stepRecords) {
-      const step = Conversation.stepRecordToStep(s)
-
-      if (s.type === 'user_task') {
-        if (currentSteps.length > 0 && currentUserTask) {
-          const lastFinal = [...currentSteps].reverse().find(st => st.type === 'final_result')
-          tasks.push({
-            id: `restored_${baseTs}_${tasks.length}`,
-            userTask: currentUserTask,
-            finalResult: lastFinal?.content || '',
-            steps: currentSteps
-          })
-        }
-        currentSteps = []
-        currentUserTask = s.content || ''
-      }
-
-      currentSteps.push(step)
-    }
-
-    if (currentSteps.length > 0 && currentUserTask) {
-      const lastFinal = [...currentSteps].reverse().find(st => st.type === 'final_result')
-      tasks.push({
-        id: `restored_${baseTs}_${tasks.length}`,
-        userTask: currentUserTask,
-        finalResult: lastFinal?.content || '',
-        steps: currentSteps
-      })
-    }
-
-    return tasks
-  }
-
-  // ==================== 私有：step 记录 ↔ 运行时 step（忠实移植） ====================
-
-  private static stepRecordToStep(s: AgentStepRecord): AgentStep {
-    return {
-      id: s.id,
-      type: s.type as AgentStep['type'],
-      content: s.content,
-      images: s.images,
-      echartsOption: s.echartsOption,
-      attachments: s.attachments,
-      toolName: s.toolName,
-      toolArgs: s.toolArgs,
-      toolResult: s.toolResult,
-      riskLevel: s.riskLevel as RiskLevel | undefined,
-      timestamp: s.timestamp,
-      webSearchResults: s.webSearchResults,
-      success: s.success,
-      subAgents: s.subAgents,
-      canvasData: s.canvasData
-    }
-  }
+  // ==================== 私有：step 运行时 → 持久化记录（序列化，toRecord 用） ====================
+  // 切分逻辑（split*）与 record→step 转换已抽到 ./messages 纯函数，Agent 与本类共用。
 
   private static stepToStepRecord(s: AgentStep): AgentStepRecord {
     return {

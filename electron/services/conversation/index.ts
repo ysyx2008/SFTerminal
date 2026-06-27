@@ -16,3 +16,10 @@ export { ConversationManager } from './manager'
 export { CONVERSATION_POLICY, conversationPolicy } from './policy'
 export type { ConversationPolicy } from './policy'
 export type { ConversationCreateOptions, ConversationDeps, CommitRunInput } from './conversation'
+export {
+  splitMessagesIntoTasks,
+  splitStepsIntoTasks,
+  stepRecordToStep,
+  chunkStepsByUserTask
+} from './messages'
+export type { TaskIdFactory, MessageTask, StepTask } from './messages'

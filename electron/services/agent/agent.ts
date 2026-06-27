@@ -34,6 +34,11 @@ import type {
 import { DEFAULT_AGENT_CONFIG } from './types'
 import { TaskMemoryStore } from './task-memory'
 import { Conversation, conversationPolicy } from '../conversation'
+import {
+  splitMessagesIntoTasks as splitMessagesIntoTasksShared,
+  splitStepsIntoTasks as splitStepsIntoTasksShared,
+  chunkStepsByUserTask
+} from '../conversation/messages'
 import { inferConversationKind } from '@shared/types'
 import { getBondService } from '../bond.service'
 import type { ToolExecutorConfig, ToolResult } from './tools/types'
@@ -769,7 +774,10 @@ export abstract class Agent {
    */
   private restoreFromSessionRecord(record: AgentRecord): void {
     if (record.messages && record.messages.length > 0) {
-      const tasks = this.splitMessagesIntoTasks(record.messages as AiMessage[])
+      const tasks = splitMessagesIntoTasksShared(
+        record.messages as AiMessage[],
+        () => `restored_${Date.now()}_${this._restoreTaskSeq++}`
+      )
       for (const task of tasks) {
         this.taskMemory.saveTask(
           task.id,
@@ -782,7 +790,8 @@ export abstract class Agent {
       }
       log.info(`Restored TaskMemory from session record: ${tasks.length} tasks (from messages)`)
     } else if (record.steps && record.steps.length > 0) {
-      const tasks = this.splitStepsIntoTasks(record.steps)
+      const baseTs = record.steps[0]?.timestamp || Date.now()
+      const tasks = splitStepsIntoTasksShared(record.steps, i => `restored_${baseTs}_${i}`)
       for (const task of tasks) {
         this.taskMemory.saveTask(
           task.id,
@@ -840,9 +849,13 @@ export abstract class Agent {
     const allTasks: Array<{ id: string; userTask: string; finalResult: string; messages?: AiMessage[]; steps?: AgentStep[] }> = []
     for (const rec of ordered) {
       if (rec.messages && rec.messages.length > 0) {
-        allTasks.push(...this.splitMessagesIntoTasks(rec.messages as AiMessage[]))
+        allTasks.push(...splitMessagesIntoTasksShared(
+          rec.messages as AiMessage[],
+          () => `restored_${Date.now()}_${this._restoreTaskSeq++}`
+        ))
       } else if (rec.steps && rec.steps.length > 0) {
-        allTasks.push(...this.splitStepsIntoTasks(rec.steps))
+        const baseTs = rec.steps[0]?.timestamp || Date.now()
+        allTasks.push(...splitStepsIntoTasksShared(rec.steps, i => `restored_${baseTs}_${i}`))
       }
     }
     if (allTasks.length === 0) return
@@ -859,126 +872,9 @@ export abstract class Agent {
     log.info(`Restored ${recentTasks.length} recent tasks into working memory (from ${recentRecords.length} records, wakeup${excludeId ? ' + latest' : ''} excluded)`)
   }
   
-  /**
-   * 将连续的 API 消息按 user 消息分割为独立任务
-   */
-  private splitMessagesIntoTasks(messages: AiMessage[]): Array<{
-    id: string; userTask: string; finalResult: string; messages: AiMessage[]
-  }> {
-    const tasks: Array<{ id: string; userTask: string; finalResult: string; messages: AiMessage[] }> = []
-    let currentTaskMessages: AiMessage[] = []
-    let currentUserTask = ''
-    
-    for (const msg of messages) {
-      // 系统在 task 内部主动注入的 user 消息（如「工具读取图片占位」「上下文压力警告」）
-      // 不构成任务边界，仅作为当前 task 的内部对话累积。
-      const isRealUserBoundary = msg.role === 'user' && !msg._systemInjected
+  // splitMessagesIntoTasks / splitStepsIntoTasks 已抽到 ../conversation/messages 纯函数，
+  // 与 Conversation 共用同一份实现（见顶部 splitMessagesIntoTasksShared / splitStepsIntoTasksShared）。
 
-      if (isRealUserBoundary && currentTaskMessages.length > 0) {
-        // 新的 user 消息 → 结束当前任务
-        const lastAssistant = [...currentTaskMessages].reverse().find(
-          m => m.role === 'assistant' && !m.tool_calls
-        )
-        tasks.push({
-          // 用实例级单调序号，避免同毫秒内多次 split（恢复时多记录 + latest）id 碰撞覆盖
-          id: `restored_${Date.now()}_${this._restoreTaskSeq++}`,
-          userTask: currentUserTask,
-          finalResult: lastAssistant?.content || '',
-          messages: currentTaskMessages
-        })
-        currentTaskMessages = []
-      }
-
-      if (isRealUserBoundary) {
-        currentUserTask = msg.content || ''
-      }
-
-      currentTaskMessages.push(msg)
-    }
-    
-    // 最后一组
-    if (currentTaskMessages.length > 0) {
-      const lastAssistant = [...currentTaskMessages].reverse().find(
-        m => m.role === 'assistant' && !m.tool_calls
-      )
-      tasks.push({
-        id: `restored_${Date.now()}_${this._restoreTaskSeq++}`,
-        userTask: currentUserTask,
-        finalResult: lastAssistant?.content || '',
-        messages: currentTaskMessages
-      })
-    }
-    
-    return tasks
-  }
-  
-  /**
-   * 从 steps 重建基本任务列表（降级路径：旧记录没有 messages 时使用）
-   * 通过 user_task 和 final_result 步骤分割
-   */
-  private splitStepsIntoTasks(stepRecords: import('../history.service').AgentStepRecord[]): Array<{
-    id: string; userTask: string; finalResult: string; steps: AgentStep[]
-  }> {
-    if (!stepRecords || stepRecords.length === 0) return []
-    
-    const tasks: Array<{ id: string; userTask: string; finalResult: string; steps: AgentStep[] }> = []
-    let currentSteps: AgentStep[] = []
-    let currentUserTask = ''
-    const baseTs = stepRecords[0]?.timestamp || Date.now()
-    
-    for (const s of stepRecords) {
-      // 注意：除 user_task 入口外，其它 record → step 重建路径（restoreFromSession /
-      // saveSession / saveCheckpoint / forkSession）都已带富内容字段；此降级路径之前
-      // 漏带 images / subAgents / success / echartsOption，导致仅有 steps 没有 messages
-      // 的旧记录恢复时图表/子 Agent 卡片显示空白，本次一并补齐，与其它路径保持一致。
-      const step: AgentStep = {
-        id: s.id,
-        type: s.type as AgentStep['type'],
-        content: s.content,
-        images: s.images,
-        echartsOption: s.echartsOption,
-        attachments: s.attachments,
-        toolName: s.toolName,
-        toolArgs: s.toolArgs,
-        toolResult: s.toolResult,
-        riskLevel: s.riskLevel as RiskLevel | undefined,
-        timestamp: s.timestamp,
-        webSearchResults: s.webSearchResults,
-        success: s.success,
-        subAgents: s.subAgents,
-        canvasData: s.canvasData
-      }
-      
-      if (s.type === 'user_task') {
-        if (currentSteps.length > 0 && currentUserTask) {
-          const lastFinal = [...currentSteps].reverse().find(st => st.type === 'final_result')
-          tasks.push({
-            id: `restored_${baseTs}_${tasks.length}`,
-            userTask: currentUserTask,
-            finalResult: lastFinal?.content || '',
-            steps: currentSteps
-          })
-        }
-        currentSteps = []
-        currentUserTask = s.content || ''
-      }
-      
-      currentSteps.push(step)
-    }
-    
-    if (currentSteps.length > 0 && currentUserTask) {
-      const lastFinal = [...currentSteps].reverse().find(st => st.type === 'final_result')
-      tasks.push({
-        id: `restored_${baseTs}_${tasks.length}`,
-        userTask: currentUserTask,
-        finalResult: lastFinal?.content || '',
-        steps: currentSteps
-      })
-    }
-    
-    return tasks
-  }
-  
   /**
    * 完成运行，保存任务记忆
    */
@@ -1303,12 +1199,12 @@ export abstract class Agent {
     let steps = [...data.steps]
 
     if (opts?.untilTaskCount !== undefined && opts.untilTaskCount > 0) {
-      const tasks = Agent.splitMessagesIntoTasksForFork(messages)
+      const tasks = splitMessagesIntoTasksShared(messages, i => `restored_${Date.now()}_${i}`)
       if (opts.untilTaskCount < tasks.length) {
         messages = tasks.slice(0, opts.untilTaskCount).flatMap(t => t.messages)
       }
 
-      const stepChunks = Agent.splitSessionStepsByUserTaskForFork(steps)
+      const stepChunks = chunkStepsByUserTask(steps)
       if (opts.untilTaskCount < stepChunks.length) {
         steps = stepChunks.slice(0, opts.untilTaskCount).flat()
       }
@@ -1356,87 +1252,8 @@ export abstract class Agent {
     }
   }
 
-  private static splitMessagesIntoTasksForFork(messages: AiMessage[]): Array<{
-    id: string; userTask: string; finalResult: string; messages: AiMessage[]
-  }> {
-    const tasks: Array<{ id: string; userTask: string; finalResult: string; messages: AiMessage[] }> = []
-    let currentTaskMessages: AiMessage[] = []
-    let currentUserTask = ''
-
-    for (const msg of messages) {
-      const isRealUserBoundary = msg.role === 'user' && !msg._systemInjected
-
-      if (isRealUserBoundary && currentTaskMessages.length > 0) {
-        const lastAssistant = [...currentTaskMessages].reverse().find(
-          m => m.role === 'assistant' && !m.tool_calls
-        )
-        tasks.push({
-          id: `restored_${Date.now()}_${tasks.length}`,
-          userTask: currentUserTask,
-          finalResult: lastAssistant?.content || '',
-          messages: currentTaskMessages
-        })
-        currentTaskMessages = []
-      }
-
-      if (isRealUserBoundary) {
-        currentUserTask = msg.content || ''
-      }
-
-      currentTaskMessages.push(msg)
-    }
-
-    if (currentTaskMessages.length > 0) {
-      const lastAssistant = [...currentTaskMessages].reverse().find(
-        m => m.role === 'assistant' && !m.tool_calls
-      )
-      tasks.push({
-        id: `restored_${Date.now()}_${tasks.length}`,
-        userTask: currentUserTask,
-        finalResult: lastAssistant?.content || '',
-        messages: currentTaskMessages
-      })
-    }
-
-    return tasks
-  }
-
-  private static splitSessionStepsByUserTaskForFork(steps: AgentStep[]): AgentStep[][] {
-    const chunks: AgentStep[][] = []
-    let current: AgentStep[] = []
-    for (const s of steps) {
-      if (s.type === 'user_task' && current.length > 0) {
-        chunks.push(current)
-        current = []
-      }
-      current.push(s)
-    }
-    if (current.length > 0) chunks.push(current)
-    return chunks
-  }
-
-  /**
-   * 按 user_task step 切分会话步骤（每个 chunk 是一个 task 的所有步骤）
-   * 用于 fork 时截断到第 N 个 task
-   *
-   * 前置条件：steps 的第一个元素必须是 user_task —— 由 initializeRun() 保证
-   * （它在 run.steps 上推入的第一条永远是 type='user_task'）。如果未来允许
-   * 在 user_task 之前注入任何 step，会导致第一个 chunk 不以 user_task 开头，
-   * 进而让 untilTaskCount 的 1-based 语义错位。
-   */
-  private splitSessionStepsByUserTask(steps: AgentStep[]): AgentStep[][] {
-    const chunks: AgentStep[][] = []
-    let current: AgentStep[] = []
-    for (const s of steps) {
-      if (s.type === 'user_task' && current.length > 0) {
-        chunks.push(current)
-        current = []
-      }
-      current.push(s)
-    }
-    if (current.length > 0) chunks.push(current)
-    return chunks
-  }
+  // fork 用的 splitMessagesIntoTasksForFork / splitSessionStepsByUserTask(ForFork) 已抽到
+  // ../conversation/messages（splitMessagesIntoTasksShared / chunkStepsByUserTask），三处重复合一。
 
   /**
    * 装载 fork 数据到新 Agent 实例上。
@@ -3460,7 +3277,7 @@ export abstract class Agent {
     }
     run.messages.push(userSupplementMsg)
     // _systemInjected: supplement 是任务中途的追加消息，不是新 task 的起点。
-    // 不加此标记会让 splitMessagesIntoTasksForFork / splitMessagesIntoTasks 把它误计为
+    // 不加此标记会让 splitMessagesIntoTasks（../conversation/messages）把它误计为
     // 新 task 边界，使 message task 数 > step chunk 数，fork 截断时丢失最近 task 的上下文。
     run.taskMessageLog.push({ role: 'user', content: combinedText, _systemInjected: true })
 

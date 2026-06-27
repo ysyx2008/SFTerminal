@@ -391,7 +391,7 @@ electron/services/conversation/
 ├── manager.ts        # ConversationManager
 ├── storage.ts        # ConversationStore（纯 IO）
 ├── policy.ts         # ConversationKind + CONVERSATION_POLICY
-├── messages.ts       # 消息纯函数（复用 @shared/types）
+├── messages.ts       # transcript 切分纯函数（split*/chunk/stepRecordToStep，Agent 与 Conversation 共用）
 └── __tests__/
     ├── characterization.test.ts  # 阶段 0 特征测试网
     ├── conversation.test.ts
@@ -417,9 +417,19 @@ electron/services/conversation/
 - `storage.ts` —— §4.3 薄封装 `ConversationStore`（委托 `HistoryService`，含 main/watch 路由，**不重新实现 IO**）
 - `policy.ts` —— §3.4 `CONVERSATION_POLICY`（kind→行为策略，含预留 `perWatchContinuity`）
 - `manager.ts` —— §4.2 `ConversationManager`（持有 `ConversationStore` + policy）：回种决策 `resolveSeedSessionId` + **会话读侧权威**（`getRecord`/`byDateRange`/`recentRecords`/`listSummaries`/`search`/`recentByAgentKey`/`delete`，`taskScoped` 谓词封装 kind 过滤）；`Map<id,Conversation>` 所有权反转留阶段 4B
-- `index.ts` —— 导出 `Conversation`/`ConversationStore`/`ConversationManager`/`CONVERSATION_POLICY` + 类型
+- `messages.ts` —— transcript 切分纯函数：`splitMessagesIntoTasks`/`splitStepsIntoTasks`/`stepRecordToStep`/`chunkStepsByUserTask`。**Agent 与 Conversation 共用唯一实现**，id 生成方案由调用方经 `makeId` 注入（恢复路径=实例单调序号，fork/steps=数组下标），行为与各自旧实现逐字节一致。收敛了原先散在 `agent.ts`（恢复×2 + fork 静态×2）与 `conversation.ts`（私有×2）的 5 处重复切分逻辑——「改一处忘另一处」裂缝消除。
+- `index.ts` —— 导出 `Conversation`/`ConversationStore`/`ConversationManager`/`CONVERSATION_POLICY`/切分纯函数 + 类型
 - `__tests__/conversation.test.ts`、`__tests__/storage.test.ts`、`__tests__/policy.test.ts`、`__tests__/manager.test.ts`
-- **待建（阶段 4）**：Manager 拥有 `Map<id,Conversation>` + `resolveForRun` 所有权反转、list/search 上移、`taskMemory` 所有权转移、Conversation 事件→IPC
+
+### taskMemory 所有权说明（澄清，避免误判为 bug）
+`Conversation._taskMemory` 与 `Agent.taskMemory` 在生产中是**同一注入实例**——这是**有意的生命周期机制**，非疏漏：
+- `startNewSession()`（Watch 每次执行）置空 `_conversation` 但**保留** taskMemory，让"换 session 但记得做过什么"成立；
+- `restoreRecentTaskMemory()` 跨**多条不同历史会话**聚合进工作记忆，是 Agent 级（跨会话）编排，天然不属于单个 Conversation；
+- `createTaskMemory()` 是子类/测试的 mock 注入点。
+
+故 taskMemory **真正的所有权转移留待阶段 4B**（与 `Map<id,Conversation>` 所有权反转一并做）。生产中只有 Agent 写 taskMemory；`Conversation.loadFromRecord`（也写 taskMemory）仅单测使用。本轮已通过 `messages.ts` 让两条写路径共用同一份切分逻辑，消除了"两份代码"的具体隐患。
+
+- **待建（阶段 4B）**：Manager 拥有 `Map<id,Conversation>` + `resolveForRun` 所有权反转、list/search 上移、`taskMemory` 所有权转移、Conversation 事件→IPC
 
 ### 待办（非本次重构强约束，择期）
 - [ ] **移除联络（companion）的"清空对话"功能**：让用户轻易清空长期关系线是设计失误且危险。至少应提高操作门槛或取消。改动点：`AiPanel.vue` 的清空按钮在 companion 入口的可见性（`CompanionWorkbench` 内嵌 `AiPanel`，按钮当前无条件渲染于 header）。

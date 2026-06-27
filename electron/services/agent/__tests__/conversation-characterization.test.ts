@@ -28,6 +28,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { splitMessagesIntoTasks } from '../../conversation/messages'
 
 let tmpDir: string
 
@@ -69,9 +70,10 @@ class TestAgent extends Agent {
   public exposeTaskMemory() {
     return this.taskMemory
   }
-  /** 暴露 restore 路径的私有切分函数，供 ⑦ 直接钉「真实用户边界 vs 系统注入」不变量 */
+  /** 暴露 restore 路径的切分函数（现为 ../../conversation/messages 共享纯函数），
+   *  供 ⑦ 直接钉「真实用户边界 vs 系统注入」不变量 */
   public exposeSplitTasks(messages: any[]) {
-    return (this as any).splitMessagesIntoTasks(messages)
+    return splitMessagesIntoTasks(messages, i => `restored_${Date.now()}_${i}`)
   }
 }
 
