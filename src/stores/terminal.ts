@@ -65,6 +65,7 @@ export type {
 } from '@shared/types'
 
 import type { TerminalType, AgentStep, PendingConfirmation, RemoteChannel, AttachmentInfo, AgentRecord } from '@shared/types'
+import { COMPANION_AGENT_KEY } from '@shared/types'
 
 export type {
   TabAgentUiStatus,
@@ -279,7 +280,8 @@ function findAdjacentDisplayedTab(closedIndex: number, tabList: TerminalTab[]): 
   return undefined
 }
 
-export const COMPANION_TAB_AGENT_ID = '__companion__'
+/** 联络常驻 tab 的 agentId，等同后端 `__companion__`（单一来源：@shared/types） */
+export const COMPANION_TAB_AGENT_ID = COMPANION_AGENT_KEY
 
 export const useTerminalStore = defineStore('terminal', () => {
   // 状态

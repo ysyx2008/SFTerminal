@@ -372,9 +372,15 @@ export interface AgentRecord {
 - **触发条件**：当出现"会话需脱离 Agent 实例独立存活/被多实例并发接管"等明确需求时再做；否则保持现状（Agent 持有 Conversation，Manager 管策略+读侧）
 - **验证**：全量回归
 
-### 阶段 5：前端收尾
-- [ ] IPC 仍是 plain object（AgentRecord），前端不感知 Conversation 类
-- [ ] 逐步将"前端直接改 record"改为调 IPC 方法
+### 阶段 5：前端收尾 ✅
+> 复盘发现痛点⑤的核心其实已被前序阶段化解：前端**只读** `AgentRecord`（全程经 `window.electronAPI.history.*` IPC，阶段 4 已把这些读侧 handler 上移到 Manager），**无任何** `saveAgentRecord` 调用——record 的唯一写者是后端 `Conversation.toRecord`。前端既不写 record、也不感知 `Conversation` 类。
+- [x] IPC 仍是 plain object（AgentRecord），前端不感知 Conversation 类（**复盘确认**：前端无写侧、无 Conversation 引用）
+- [x] **消除前端散落的 agentKey 字面量**：`'__companion__'`/`'__watch__'` 不再在 `src/` 重复硬编码，统一取 `@shared/types` 的 `COMPANION_AGENT_KEY`/`WATCH_AGENT_KEY` 单一来源——
+  - `stores/terminal.ts`：`COMPANION_TAB_AGENT_ID = COMPANION_AGENT_KEY`
+  - `workbench/registry.ts`：`COMPANION_AGENT_ID = COMPANION_AGENT_KEY`（从 @shared/types 取值，不引入对 stores 层的反向依赖）
+  - `App.vue`：3 处内联 `'__companion__'` 改用已导入的 `COMPANION_TAB_AGENT_ID`
+  - `Awaken.vue`：`WATCH_AGENT_ID = WATCH_AGENT_KEY`
+- **验证**：vue-tsc 无新增错误（value import 解析正常）、lint 干净；纯前端字面量收敛，不触及后端
 
 ## 七、文件结构
 

@@ -27,6 +27,7 @@ import type {
   WatchTriggerType, WatchRunStatus, WatchTrigger,
   WatchDefinition, WatchHistoryRecord, WatchPriority
 } from '@shared/types'
+import { WATCH_AGENT_KEY } from '@shared/types'
 
 type WatchOutputType = 'desktop' | 'im' | 'notification' | 'log' | 'silent'
 
@@ -104,8 +105,8 @@ const selectedWatch = ref<WatchDefinition | null>(null)
 const selectedView = ref<'overview' | 'watch'>('overview')
 const runningWatches = ref<Set<string>>(new Set())
 
-// 手动触发时的 Agent 实时输出（内心独白）
-const WATCH_AGENT_ID = '__watch__'
+// 手动触发时的 Agent 实时输出（内心独白）——单一来源：@shared/types
+const WATCH_AGENT_ID = WATCH_AGENT_KEY
 const liveExecutionWatchId = ref<string | null>(null)
 // 字段需要包含 success / images / webSearchResults / subAgents，
 // 以便 shouldShowToolResultStep 能正确判定"失败 / 富内容"步骤始终展示

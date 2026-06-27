@@ -5,6 +5,7 @@
  */
 import type { Component } from 'vue'
 import type { TerminalType } from '@shared/types'
+import { COMPANION_AGENT_KEY } from '@shared/types'
 import TerminalTabView from '../components/TerminalTabView.vue'
 import type { WorkbenchDescriptor, WorkbenchKind } from './types'
 import { descriptor as localDescriptor } from './local/descriptor'
@@ -15,10 +16,11 @@ import { descriptor as companionDescriptor } from './companion/descriptor'
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 
 /**
- * 联络 tab 的身份标识。与 `stores/terminal.ts` 的 `COMPANION_TAB_AGENT_ID`、
- * 后端 `__companion__` 一致；此处用字面量避免 workbench 层反向依赖 stores 层（分层方向：stores → workbench）。
+ * 联络 tab 的身份标识。单一来源为 `@shared/types` 的 `COMPANION_AGENT_KEY`
+ * （亦即 `stores/terminal.ts` 的 `COMPANION_TAB_AGENT_ID` 与后端 `__companion__`）。
+ * 从 @shared/types 取值，既不重复字面量，也不引入对 stores 层的反向依赖。
  */
-const COMPANION_AGENT_ID = '__companion__'
+const COMPANION_AGENT_ID = COMPANION_AGENT_KEY
 
 const DESCRIPTORS: Record<WorkbenchKind, WorkbenchDescriptor> = {
   local: localDescriptor,

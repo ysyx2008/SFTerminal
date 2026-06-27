@@ -573,7 +573,7 @@ onMounted(async () => {
   cleanupGatewayRemoteTab = window.electronAPI.gateway.onRemoteTabCreated((data) => {
     if (!data.agentId) return
     // Gateway Web 统一路由到联络常驻 tab
-    if (data.agentId === '__companion__') {
+    if (data.agentId === COMPANION_TAB_AGENT_ID) {
       terminalStore.ensureCompanionTab()
       return
     }
@@ -638,7 +638,7 @@ onMounted(async () => {
   // Watch desktop 输出：确保助手 tab 存在，后续 steps 通过标准 agent:step 事件流入
   cleanupWatchEnsureTab = window.electronAPI.watch.onEnsureTab((data) => {
     // 联络常驻 tab 已在 initializeApp 时创建，直接复用
-    if (data.agentId === '__companion__') {
+    if (data.agentId === COMPANION_TAB_AGENT_ID) {
       terminalStore.ensureCompanionTab()
       return
     }
@@ -811,7 +811,7 @@ onMounted(async () => {
 
     // 优先精确匹配 agentId，回退到 companion tab（IM 对话镜像）
     const tab = terminalStore.tabs.find(t => t.agentId === data.agentId)
-      || terminalStore.tabs.find(t => t.agentId === '__companion__')
+      || terminalStore.tabs.find(t => t.agentId === COMPANION_TAB_AGENT_ID)
 
     if (tab) {
       const tabId = tab.id
