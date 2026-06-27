@@ -16,7 +16,8 @@
  *
  * 重构现状：本类的状态字段与序列化/切分/commit/cache 决策从 `agent.ts` 的 `_session*` +
  * finalizeRun/saveSessionToHistory/restoreFromSessionRecord/buildContext 忠实移植而来。
- * 阶段 2b 第 2 步会让 Agent 持有一个 Conversation 实例并逐字段委托，届时删除 Agent 上的副本。
+ * Agent 已持有一个 Conversation 实例并把 `_session*` 退化为只读委托视图（阶段 2b）；
+ * taskMemory 仍由 Agent 注入（共享实例），其完整所有权转移留待阶段 3 的 Manager 策略层。
  */
 import type {
   AgentRecord,
@@ -182,9 +183,6 @@ export class Conversation {
       for (const task of tasks) {
         this._taskMemory.saveTask(task.id, task.userTask, [], 'success', task.finalResult, task.messages)
       }
-      if (this._messages.length === 0) {
-        this._messages = (record.messages as AiMessage[]).map(m => ({ ...m }))
-      }
     } else if (record.steps && record.steps.length > 0) {
       const tasks = this.splitStepsIntoTasks(record.steps)
       for (const task of tasks) {
@@ -192,8 +190,21 @@ export class Conversation {
       }
     }
 
-    if (record.steps && record.steps.length > 0 && this._steps.length === 0) {
-      this._steps = record.steps.map(s => Conversation.stepRecordToStep(s))
+    this.setRestoredTranscript(record.messages as AiMessage[] | undefined, record.steps)
+  }
+
+  /**
+   * 仅装载 transcript（_messages / _steps），不碰 taskMemory。
+   * 供 Agent 的 restoreFromSessionRecord 复用——那里 taskMemory 由 Agent 用**自己的** split/seq
+   * 写入（与 restoreRecentTaskMemory 共享单调序号，防同毫秒 task id 碰撞），transcript 则交本方法。
+   * 守卫 `length === 0`：与现状一致，已有 transcript 时不覆盖（续写续聊保留旧产出物字段）。
+   */
+  setRestoredTranscript(messages?: AiMessage[], stepRecords?: AgentStepRecord[]): void {
+    if (stepRecords && stepRecords.length > 0 && this._steps.length === 0) {
+      this._steps = stepRecords.map(s => Conversation.stepRecordToStep(s))
+    }
+    if (messages && messages.length > 0 && this._messages.length === 0) {
+      this._messages = messages.map(m => ({ ...m }))
     }
   }
 
@@ -265,23 +276,59 @@ export class Conversation {
     if (finalMsg) snapshot.push(finalMsg)
     this._cachePrefix = snapshot
 
-    // 累积 transcript
-    this._steps.push(...input.steps)
+    this.accumulate(input.steps, taskLog, input.tokenUsage)
+  }
+
+  /**
+   * 提交一次**失败** run（Agent.handleError 的状态部分）。与成功路径不对称：
+   * 错误 assistant 回复已由 Agent 先 push 进 run.messages / taskMessageLog（保证悬空 tool_calls 被补全），
+   * 故 taskLog 已含最终回复、不再补；cache 前缀由调用方按「run.messages 是否含 user」决定传入或 null
+   *（buildContext 阶段就抛错时不更新前缀，保留上次成功快照走冷启动）。
+   */
+  commitFailedRun(input: {
+    runId: string
+    userRequest: string
+    steps: AgentStep[]
+    /** 完整失败现场日志（**已含**错误 assistant 回复） */
+    taskLog: AiMessage[]
+    /** 新 cache 前缀（已含错误回复）；null = 不更新前缀（保留上次成功快照） */
+    cachePrefix: AiMessage[] | null
+    errorMessage: string
+    tokenUsage?: TokenUsage
+  }): void {
+    this._taskMemory.saveTask(
+      input.runId,
+      input.userRequest,
+      input.steps,
+      'failed',
+      input.errorMessage,
+      input.taskLog
+    )
+
+    if (input.cachePrefix) {
+      this._cachePrefix = input.cachePrefix.map(m => ({ ...m }))
+    }
+
+    this.accumulate(input.steps, input.taskLog, input.tokenUsage)
+  }
+
+  /** 累积 transcript（_steps / _messages）与 token 账——成功/失败路径共用。 */
+  private accumulate(steps: AgentStep[], taskLog: AiMessage[], tokenUsage?: TokenUsage): void {
+    this._steps.push(...steps)
     this._messages.push(...taskLog)
 
-    // 累积 token 用量（含缓存统计）
-    if (input.tokenUsage) {
+    if (tokenUsage) {
       if (!this._tokenUsage) {
         this._tokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
       }
-      this._tokenUsage.prompt_tokens += input.tokenUsage.prompt_tokens
-      this._tokenUsage.completion_tokens += input.tokenUsage.completion_tokens
-      this._tokenUsage.total_tokens += input.tokenUsage.total_tokens
-      if (input.tokenUsage.cache_hit_tokens !== undefined) {
-        this._tokenUsage.cache_hit_tokens = (this._tokenUsage.cache_hit_tokens || 0) + input.tokenUsage.cache_hit_tokens
+      this._tokenUsage.prompt_tokens += tokenUsage.prompt_tokens
+      this._tokenUsage.completion_tokens += tokenUsage.completion_tokens
+      this._tokenUsage.total_tokens += tokenUsage.total_tokens
+      if (tokenUsage.cache_hit_tokens !== undefined) {
+        this._tokenUsage.cache_hit_tokens = (this._tokenUsage.cache_hit_tokens || 0) + tokenUsage.cache_hit_tokens
       }
-      if (input.tokenUsage.cache_miss_tokens !== undefined) {
-        this._tokenUsage.cache_miss_tokens = (this._tokenUsage.cache_miss_tokens || 0) + input.tokenUsage.cache_miss_tokens
+      if (tokenUsage.cache_miss_tokens !== undefined) {
+        this._tokenUsage.cache_miss_tokens = (this._tokenUsage.cache_miss_tokens || 0) + tokenUsage.cache_miss_tokens
       }
     }
 

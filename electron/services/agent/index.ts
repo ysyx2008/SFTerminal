@@ -325,7 +325,10 @@ export class AgentService {
     const newAgent = this.createAssistantAgent(opts.newAgentId)
 
     const targetMode = opts.targetMode ?? 'assistant'
-    const isSameMode = targetMode === 'assistant' && sourceTerminalType === undefined
+    // 助手模式的源 terminalType 既可能是显式 'assistant'（会话聚合根的形态属性恒有值），
+    // 也可能是 undefined（companion 合并路径刻意置空、或更早期无 in-memory 会话）。两者都算助手模式。
+    const sourceIsAssistant = sourceTerminalType === undefined || sourceTerminalType === 'assistant'
+    const isSameMode = targetMode === 'assistant' && sourceIsAssistant
 
     // 同模式 fork 时携带 cache snapshot 让下一次 run 命中 LLM provider 的前缀缓存。
     // 关键洞察：cache snapshot 必须与新 record.messages 一致——直接用 newRecord.messages

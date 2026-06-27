@@ -33,6 +33,7 @@ import type {
 } from './types'
 import { DEFAULT_AGENT_CONFIG } from './types'
 import { TaskMemoryStore } from './task-memory'
+import { Conversation } from '../conversation'
 import { getBondService } from '../bond.service'
 import type { ToolExecutorConfig, ToolResult } from './tools/types'
 import { executeTool } from './tools/index'
@@ -163,17 +164,14 @@ export abstract class Agent {
   
   // ==================== 会话追踪（跨 Run 持久化） ====================
   
-  /** 会话 ID */
-  private _sessionId?: string
-  
-  /** 会话开始时间 */
-  private _sessionStartTime?: number
-  
-  /** 会话内累积的所有 steps（跨多次 run） */
-  private _sessionSteps: AgentStep[] = []
-  
-  /** 会话内累积的所有 API 消息（跨多次 run 的 taskMessageLog 合并） */
-  private _sessionMessages: AiMessage[] = []
+  /**
+   * 当前会话聚合根——唯一真相源（transcript / 工作记忆 / cache 前缀 / token 账）。
+   * 首次 run（或 applyForkSnapshot）时创建或从历史恢复，跨多次 run 累积；
+   * resetSession / startNewSession 时置空，下一次 run 重建。
+   * 下方 `_session*` 系列已退化为它的**只读委托视图**（getter），赋值/累积统一走
+   * Conversation 的 commitRun / commitFailedRun / setRestoredTranscript 等方法。
+   */
+  private _conversation?: Conversation
 
   /** 恢复任务 id 的实例级单调序号：保证 split* 在同一毫秒内多次调用（如 restoreRecentTaskMemory
    *  + restoreFromSessionRecord 接连执行）生成的 task id 不碰撞，避免 saveTask 互相覆盖丢任务。 */
@@ -182,23 +180,33 @@ export abstract class Agent {
   /** 抑制下一次 run 从历史回种 sessionId：resetSession（清空对话）/ startNewSession（Watch 每次
    *  独立记录）时置位，表示「本次有意要全新会话」，不要续写到历史最近一条。consume 后自动清零。 */
   private _suppressSessionSeed = false
-  
-  /** 终端元数据（从首次 run 的 context 获取） */
-  private _terminalMeta?: { terminalType: TerminalType; sshHost?: string }
+
   /** 是否正在从 HistoryService 恢复（防止并发竞态） */
   private _isRestoring = false
 
+  // ===== 会话状态委托视图：唯一真相源是 _conversation，以下 getter 只读转发 =====
+  /** 会话 ID */
+  private get _sessionId(): string | undefined { return this._conversation?.id }
+  /** 会话开始时间 */
+  private get _sessionStartTime(): number | undefined { return this._conversation?.createdAt }
+  /** 会话内累积的所有 steps（跨多次 run） */
+  private get _sessionSteps(): AgentStep[] { return (this._conversation?.steps as AgentStep[] | undefined) ?? [] }
+  /** 会话内累积的所有 API 消息（跨多次 run 的 taskMessageLog 合并） */
+  private get _sessionMessages(): AiMessage[] { return (this._conversation?.messages as AiMessage[] | undefined) ?? [] }
+  /** 终端元数据（形态，会话创建时定、不可变） */
+  private get _terminalMeta(): { terminalType: TerminalType; sshHost?: string } | undefined {
+    return this._conversation
+      ? { terminalType: this._conversation.terminalType, sshHost: this._conversation.sshHost }
+      : undefined
+  }
   /** 会话内累积的 token 用量（跨多次 run 汇总） */
-  private _sessionTokenUsage?: import('@shared/types').TokenUsage
-
+  private get _sessionTokenUsage(): import('@shared/types').TokenUsage | undefined { return this._conversation?.tokenUsage }
   /** 最近一次 API 调用返回的 prompt_tokens（用于精确的上下文压力估算） */
-  private _lastPromptTokens?: number
+  private get _lastPromptTokens(): number | undefined { return this._conversation?.lastPromptTokens }
   /** 最近一次 API 调用计算出的缓存命中率（0-100），用于跨步骤保持显示 */
-  private _lastCacheHitRate?: number
-
-  /** 上一次 run 结束时的完整 messages 快照（用于跨任务 prompt cache 复用）
-   *  下一个 run 直接沿用此前缀 + 追加新 user 消息，使 LLM 的前缀缓存命中。 */
-  private _previousRunMessages?: AiMessage[]
+  private get _lastCacheHitRate(): number | undefined { return this._conversation?.lastCacheHitRate }
+  /** 上一次 run 结束时的完整 messages 快照（用于跨任务 prompt cache 复用） */
+  private get _previousRunMessages(): AiMessage[] | undefined { return this._conversation?.getCachePrefix() }
   
   // ==================== 构造函数 ====================
   
@@ -286,7 +294,7 @@ export abstract class Agent {
     }
 
     // 清除上一轮 run 的缓存显示数据，避免跨 run 显示旧值（加载历史、切换模型等场景）
-    this._lastCacheHitRate = undefined
+    this._conversation?.setLastCacheHitRate(undefined)
     
     const run = this.initializeRun(message, context, options)
     const taskPreview = message.length > 80 ? message.slice(0, 80) + '...' : message
@@ -597,16 +605,18 @@ export abstract class Agent {
       this.callbacks = options.callbacks
     }
     
-    // 初始化会话追踪（首次 run 时创建 session 或从历史恢复）
-    if (!this._sessionId) {
+    // 初始化会话聚合根（首次 run 时创建；applyForkSnapshot 已建则沿用，随后由 restoreFromHistory 装载）
+    if (!this._conversation) {
       const suppressSeed = this._suppressSessionSeed
       this._suppressSessionSeed = false
+      let sessionId: string
+      let startTime: number
       if (context.sessionId) {
-        this._sessionId = context.sessionId
-        this._sessionStartTime = context.sessionStartTime || Date.now()
+        sessionId = context.sessionId
+        startTime = context.sessionStartTime || Date.now()
       } else if (this._persistentNamedAgent && !suppressSeed) {
         // 持久命名 Agent（联络）是「同一条长期关系线」。重启后若 IM/网关/主动消息等
-        // 不带 sessionId 的入口先碰到它（此时 _sessionId 还空），绝不能新起一条
+        // 不带 sessionId 的入口先碰到它（此时还没有会话），绝不能新起一条
         // session_${Date.now()}——那会建出与历史断链的并行记录，正是「联络裂成两条
         // session」的源头。应从最近一条同 agentKey 历史回种，让所有入口续写到同一条会话。
         //（Watch 每次执行走 startNewSession，会经 suppressSeed 跳过，仍保持独立记录。）
@@ -614,27 +624,24 @@ export abstract class Agent {
           ? this.services.historyService?.getLatestRecordByAgentKey?.(this._agentId)
           : undefined
         if (latest) {
-          this._sessionId = latest.id
-          this._sessionStartTime = latest.timestamp
+          sessionId = latest.id
+          startTime = latest.timestamp
           log.info(`Seeded sessionId from history for persistent agent ${this._agentId}: ${latest.id} (no context.sessionId, avoid forking a disconnected session)`)
         } else {
-          this._sessionId = `session_${Date.now()}`
-          this._sessionStartTime = Date.now()
+          sessionId = `session_${Date.now()}`
+          startTime = Date.now()
         }
       } else {
-        this._sessionId = `session_${Date.now()}`
-        this._sessionStartTime = Date.now()
+        sessionId = `session_${Date.now()}`
+        startTime = Date.now()
       }
-      this._sessionSteps = []
-      this._sessionMessages = []
-    }
-    
-    // 记录终端元数据（从首次 run 的 context 获取）
-    if (!this._terminalMeta) {
-      this._terminalMeta = {
-        terminalType: context.terminalType,
-        sshHost: context.sshHost
-      }
+      // 形态（terminalType/sshHost）创建时定、不可变；工作记忆注入 Agent 持有的 taskMemory 实例，
+      // 保持 startNewSession（换 session 但保留记忆，如 Watch）的现状语义。
+      this._conversation = Conversation.create(
+        { agentKey: this._agentId ?? '', terminalType: context.terminalType },
+        { id: sessionId, createdAt: startTime, sshHost: context.sshHost },
+        { taskMemory: this.taskMemory }
+      )
     }
 
     // 先推送 user_task 步骤，让用户消息立即上墙，再做耗时的初始化
@@ -762,31 +769,10 @@ export abstract class Agent {
       log.info(`Restored TaskMemory from session record: ${tasks.length} tasks (from steps, no messages)`)
     }
     
-    if (record.steps && record.steps.length > 0 && this._sessionSteps.length === 0) {
-      this._sessionSteps = record.steps.map(s => ({
-        id: s.id,
-        type: s.type as AgentStep['type'],
-        content: s.content,
-        images: s.images,
-        echartsOption: s.echartsOption,
-        attachments: s.attachments,
-        toolName: s.toolName,
-        toolArgs: s.toolArgs,
-        toolResult: s.toolResult,
-        riskLevel: s.riskLevel as RiskLevel | undefined,
-        timestamp: s.timestamp,
-        webSearchResults: s.webSearchResults,
-        // 必须保留：否则继续对话后下次 checkpoint 会把旧步骤的这些字段写没，
-        // 导致重开会话时产出物面板只剩续聊后新建的产出物（canvasData）。
-        success: s.success,
-        subAgents: s.subAgents,
-        canvasData: s.canvasData
-      }))
-    }
-    
-    if (record.messages && record.messages.length > 0 && this._sessionMessages.length === 0) {
-      this._sessionMessages = (record.messages as AiMessage[]).map(m => ({ ...m }))
-    }
+    // transcript 交给会话聚合根装载（含「已有则不覆盖」守卫，保留续聊旧产出物字段）。
+    // taskMemory 上面已由 Agent 用自己的 split/seq 写入（与 restoreRecentTaskMemory 共享单调
+    // 序号防同毫秒 task id 碰撞），故此处只补 transcript。
+    this._conversation?.setRestoredTranscript(record.messages as AiMessage[] | undefined, record.steps)
   }
 
   /**
@@ -973,51 +959,30 @@ export abstract class Agent {
   protected finalizeRun(run: AgentRun, result: string): void {
     run.isRunning = false
 
-    // 补录最终 assistant 回复到完整对话日志
-    // （纯文本回复不经过 executeStep 的 tool_calls 分支，不会被自动记录）
-    // 思考模式：带上最近一次响应的 reasoning_content，避免下轮任务复用该消息时 DeepSeek V3.2+ 报错
-    if (result != null) {
-      const finalMsg: AiMessage = { role: 'assistant', content: result }
-      if (run.lastAssistantReasoningContent !== undefined) {
-        finalMsg.reasoning_content = run.lastAssistantReasoningContent
-      }
-      run.taskMessageLog.push(finalMsg)
-    }
-    
-    // 先添加 final_result 步骤到 run.steps，确保后续保存包含完整数据
+    // 先添加 final_result 步骤到 run.steps，确保后续 commitRun 时 run.steps 已含完整数据
+    // （纯文本最终回复的「补录到对话日志 / cache 快照」由 Conversation.commitRun 统一负责，
+    //  含 reasoning_content 空串保留——思考模式下 DeepSeek V3.2+ 必需）
     if (result) {
       this.addStep({
         type: 'final_result',
         content: result
       })
     }
-    
-    // 保存任务到记忆（此时 run.steps 已包含 final_result）
-    const status = run.aborted ? 'aborted' : 'success'
-    
-    this.taskMemory.saveTask(
-      run.id,
-      run.originalUserRequest,
-      run.steps,
-      status,
-      result,
-      run.taskMessageLog
-    )
 
-    // 保存 messages 快照供下一个任务复用（prompt cache 优化）
-    // run.messages 不含最终纯文本回复（只有 tool_calls 时才 push），需要补上
-    // 思考模式：保留 reasoning_content，确保下轮任务复用时 DeepSeek V3.2+ 不会因字段缺失拒绝
-    const snapshot = run.messages.map(m => ({ ...m }))
-    if (result != null) {
-      const finalMsg: AiMessage = { role: 'assistant', content: result }
-      if (run.lastAssistantReasoningContent !== undefined) {
-        finalMsg.reasoning_content = run.lastAssistantReasoningContent
-      }
-      snapshot.push(finalMsg)
-    }
-    this._previousRunMessages = snapshot
-    
-    this.accumulateSessionData(run, status, result)
+    const status = run.aborted ? 'aborted' : 'success'
+
+    // 提交本次 run 到会话聚合根：补最终回复 → 存工作记忆 → 刷新 cache 前缀 → 累积 transcript / token
+    this._conversation?.commitRun({
+      runId: run.id,
+      userRequest: run.originalUserRequest,
+      steps: run.steps,
+      taskMessageLog: run.taskMessageLog,
+      runMessages: run.messages,
+      taskStatus: status,
+      result: result ?? null,
+      reasoningContent: run.lastAssistantReasoningContent,
+      tokenUsage: run.tokenUsage
+    })
     this.saveSessionToHistory()
 
     // 诞生引导完成判定：调用了任何被标注 lifecycle.marksOnboardingComplete 的工具
@@ -1052,88 +1017,17 @@ export abstract class Agent {
   // ==================== 会话持久化 ====================
   
   /**
-   * 将单次 run 的数据累积到会话级别
-   */
-  private accumulateSessionData(run: AgentRun, _status: string, _result?: string): void {
-    // run.steps 已包含 user_task、执行步骤和 final_result（由 addStep 统一管理）
-    this._sessionSteps.push(...run.steps)
-    
-    // 累积 API 消息
-    this._sessionMessages.push(...run.taskMessageLog)
-
-    // 累积 token 用量（含缓存统计）
-    if (run.tokenUsage) {
-      if (!this._sessionTokenUsage) {
-        this._sessionTokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
-      }
-      this._sessionTokenUsage.prompt_tokens += run.tokenUsage.prompt_tokens
-      this._sessionTokenUsage.completion_tokens += run.tokenUsage.completion_tokens
-      this._sessionTokenUsage.total_tokens += run.tokenUsage.total_tokens
-      if (run.tokenUsage.cache_hit_tokens !== undefined) {
-        this._sessionTokenUsage.cache_hit_tokens = (this._sessionTokenUsage.cache_hit_tokens || 0) + run.tokenUsage.cache_hit_tokens
-      }
-      if (run.tokenUsage.cache_miss_tokens !== undefined) {
-        this._sessionTokenUsage.cache_miss_tokens = (this._sessionTokenUsage.cache_miss_tokens || 0) + run.tokenUsage.cache_miss_tokens
-      }
-    }
-  }
-  
-  /**
-   * 将会话数据保存到 HistoryService
+   * 将会话数据保存到 HistoryService。
+   * 记录的构建（首个 user_task 标题、taskMemory 末态决定整体状态、steps/messages 序列化、kind/形态/token）
+   * 全部由 Conversation.toRecord 负责；空会话（无 user_task）返回 null，与现状一致跳过。
    */
   private saveSessionToHistory(): void {
     const historyService = this.services.historyService
-    if (!historyService || !this._sessionId || !this._sessionStartTime) return
-    
-    // 找到第一个 user_task 作为会话标题
-    const firstUserTask = this._sessionSteps.find(s => s.type === 'user_task')
-    if (!firstUserTask) return
-    
-    // 最后一个 final_result 的状态决定整个会话状态
-    const lastFinalResult = [...this._sessionSteps].reverse().find(s => s.type === 'final_result')
-    let status: 'completed' | 'failed' | 'aborted' = 'completed'
-    // 根据 taskMemory 中最后一个任务的状态判断（比关键词匹配更准确）
-    const lastTask = this.taskMemory.getSummaries(1)[0]
-    if (lastTask) {
-      if (lastTask.status === 'aborted') status = 'aborted'
-      else if (lastTask.status === 'failed') status = 'failed'
-    }
-    
-    // 序列化 steps
-    const serializableSteps: AgentStepRecord[] = this._sessionSteps.map(s => ({
-      id: s.id,
-      type: s.type,
-      content: s.content || '',
-      images: s.images,
-      echartsOption: s.echartsOption,
-      attachments: s.attachments,
-      toolName: s.toolName,
-      toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,
-      toolResult: s.toolResult,
-      riskLevel: s.riskLevel,
-      timestamp: s.timestamp,
-      webSearchResults: s.webSearchResults,
-      success: s.success,
-      subAgents: s.subAgents,
-      canvasData: s.canvasData
-    }))
-    
-    const record: AgentRecord = {
-      id: this._sessionId,
-      timestamp: this._sessionStartTime,
-      terminalId: this.currentRun?.context.ptyId || '',
-      agentKey: this._agentId,
-      terminalType: this._terminalMeta?.terminalType || 'local',
-      sshHost: this._terminalMeta?.sshHost,
-      userTask: firstUserTask.content,
-      steps: serializableSteps,
-      messages: this._sessionMessages.map(m => JSON.parse(JSON.stringify(m))),
-      finalResult: lastFinalResult?.content,
-      duration: Date.now() - this._sessionStartTime,
-      status,
-      tokenUsage: this._sessionTokenUsage
-    }
-    
+    if (!historyService || !this._conversation) return
+
+    const record = this._conversation.toRecord({ terminalId: this.currentRun?.context.ptyId || '' })
+    if (!record) return
+
     try {
       historyService.saveAgentRecord(record)
     } catch (err) {
@@ -1529,14 +1423,19 @@ export abstract class Agent {
   applyForkSnapshot(opts: {
     sessionId: string
     previousRunMessages?: AiMessage[]
+    terminalType?: TerminalType
+    sshHost?: string
   }): void {
-    this._sessionId = opts.sessionId
-    this._sessionStartTime = Date.now()
-    this._sessionSteps = []
-    this._sessionMessages = []
+    // 直接建好 fork 会话（fork 始终是 assistant Agent）。首次 run 见 _conversation 已存在
+    // 即跳过新建，转由 restoreFromHistory(sessionId) 把已保存的 fork record 装载进来。
+    this._conversation = Conversation.create(
+      { agentKey: this._agentId ?? '', terminalType: opts.terminalType ?? 'assistant' },
+      { id: opts.sessionId, createdAt: Date.now(), sshHost: opts.sshHost },
+      { taskMemory: this.taskMemory }
+    )
     if (opts.previousRunMessages && opts.previousRunMessages.length > 0) {
-      // AiMessage 含 tool_calls 等嵌套数组，必须深拷贝避免与源 Agent 共享引用
-      this._previousRunMessages = opts.previousRunMessages.map(m => JSON.parse(JSON.stringify(m))) as AiMessage[]
+      // setCachePrefix 内部深拷贝，避免与源 Agent 共享引用
+      this._conversation.setCachePrefix(opts.previousRunMessages)
     }
   }
 
@@ -1545,16 +1444,10 @@ export abstract class Agent {
    */
   resetSession(): void {
     this.preRunUserMessages = []
-    this._sessionId = undefined
-    this._sessionStartTime = undefined
     this._suppressSessionSeed = true
-    this._sessionSteps = []
-    this._sessionMessages = []
-    this._sessionTokenUsage = undefined
-    this._lastPromptTokens = undefined
-    this._lastCacheHitRate = undefined
-    this._terminalMeta = undefined
-    this._previousRunMessages = undefined
+    // 置空会话聚合根（身份/transcript/cache/token 随之全部失效），并清空 Agent 持有的工作记忆。
+    // 下一次 run 会以全新 session 重建会话。
+    this._conversation = undefined
     this.taskMemory.clear()
   }
 
@@ -1564,14 +1457,10 @@ export abstract class Agent {
    * 用途：Watch 每次执行需要独立的历史记录，但 Agent 需要记住之前做过什么
    */
   startNewSession(): void {
-    this._sessionId = undefined
-    this._sessionStartTime = undefined
     this._suppressSessionSeed = true
-    this._sessionSteps = []
-    this._sessionMessages = []
-    this._sessionTokenUsage = undefined
-    this._lastPromptTokens = undefined
-    this._lastCacheHitRate = undefined
+    // 仅置空会话聚合根（下次 run 建新 session 记录）；**不**清 taskMemory——
+    // 下次 run 创建新会话时注入同一个（保留的）store，维持「跨 session 记忆」语义。
+    this._conversation = undefined
   }
 
   
@@ -1727,28 +1616,20 @@ export abstract class Agent {
       content: `❌ ${errorMessage}`
     })
 
-    // 保存失败的任务（此时 taskMessageLog 已包含完整的失败现场，含错误回复）
-    this.taskMemory.saveTask(
-      run.id,
-      run.originalUserRequest,
-      run.steps,
-      'failed',
-      errorMessage,
-      run.taskMessageLog
-    )
-
-    // 更新 prompt cache 快照：让下个任务的 cache path 看到失败现场，
-    // 而不是沿用更早一次成功 run 的快照（导致整个失败任务被遗忘）。
-    // 仅当 run.messages 至少包含一条 user 消息时才更新——否则说明 buildContext
-    // 阶段就抛错了（system/user 都没装入），用这种半成品快照会让下次任务复用
-    // 一段无 system 无 user 的不合法序列。这种异常情况让 _previousRunMessages
-    // 保持原值（上次成功 run），下次任务走 cold start 重建即可。
+    // 提交失败 run 到会话聚合根：错误回复已在上面 push 进 taskMessageLog / run.messages，
+    // commitFailedRun 据此存工作记忆（failed）+ 累积 transcript / token。
+    // cache 前缀：仅当 run.messages 含 user 消息时才更新（让下个任务的 cache path 看到失败现场）；
+    // 否则说明 buildContext 阶段就抛错（半成品序列不合法），传 null 保留上次成功快照、下次走冷启动。
     const hasUserMessage = run.messages.some(m => m.role === 'user')
-    if (hasUserMessage) {
-      this._previousRunMessages = run.messages.map(m => ({ ...m }))
-    }
-
-    this.accumulateSessionData(run, 'failed', errorMessage)
+    this._conversation?.commitFailedRun({
+      runId: run.id,
+      userRequest: run.originalUserRequest,
+      steps: run.steps,
+      taskLog: run.taskMessageLog,
+      cachePrefix: hasUserMessage ? run.messages : null,
+      errorMessage,
+      tokenUsage: run.tokenUsage
+    })
     this.saveSessionToHistory()
 
     // L3: 异步索引失败的对话（失败经验同样有检索价值）
@@ -2592,7 +2473,7 @@ export abstract class Agent {
             if (result.usage.cache_miss_tokens !== undefined) {
               run.tokenUsage.cache_miss_tokens = (run.tokenUsage.cache_miss_tokens || 0) + result.usage.cache_miss_tokens
             }
-            this._lastPromptTokens = result.usage.prompt_tokens
+            this._conversation?.setLastPromptTokens(result.usage.prompt_tokens)
           }
 
           // 先定稿流式步骤
@@ -2649,9 +2530,9 @@ export abstract class Agent {
                 const cacheTotal = (result.usage.cache_hit_tokens || 0) + (result.usage.cache_miss_tokens || 0)
                 if (cacheTotal > 0 && result.usage.prompt_tokens > 0) {
                   targetStep.cacheHitRate = Math.round((result.usage.cache_hit_tokens || 0) / result.usage.prompt_tokens * 100)
-                  this._lastCacheHitRate = targetStep.cacheHitRate
+                  this._conversation?.setLastCacheHitRate(targetStep.cacheHitRate)
                 } else {
-                  this._lastCacheHitRate = undefined
+                  this._conversation?.setLastCacheHitRate(undefined)
                 }
                 this.callbacks?.onStep?.(this.currentRun?.id || '', targetStep)
               }

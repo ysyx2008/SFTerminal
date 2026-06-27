@@ -39,6 +39,7 @@ vi.mock('../../im/im.service', () => ({
 
 import { Agent } from '../agent'
 import { AgentService } from '../index'
+import { Conversation } from '../../conversation'
 import type { ToolDefinition, AiMessage } from '../../ai.service'
 import type { AgentContext, AgentServices, PromptOptions, AgentStep } from '../types'
 
@@ -63,19 +64,17 @@ class TestAgent extends Agent {
     terminalType?: 'local' | 'ssh'
     sshHost?: string
   }): void {
-    ;(this as any)._sessionId = opts.sessionId
-    ;(this as any)._sessionStartTime = opts.sessionStartTime ?? Date.now()
-    ;(this as any)._sessionMessages = opts.sessionMessages
-    ;(this as any)._sessionSteps = opts.sessionSteps
+    // 会话状态现由 Conversation 聚合根持有：构建一个并装载 transcript（跳过 taskMemory 重建）
+    const conv = Conversation.create(
+      { agentKey: (this as any)._agentId ?? 'test-agent', terminalType: opts.terminalType ?? 'assistant' },
+      { id: opts.sessionId, createdAt: opts.sessionStartTime ?? Date.now(), sshHost: opts.sshHost },
+      { taskMemory: (this as any).taskMemory }
+    )
+    conv.setRestoredTranscript(opts.sessionMessages, opts.sessionSteps as any)
     if (opts.previousRunMessages) {
-      ;(this as any)._previousRunMessages = opts.previousRunMessages
+      conv.setCachePrefix(opts.previousRunMessages)
     }
-    if (opts.terminalType) {
-      ;(this as any)._terminalMeta = {
-        terminalType: opts.terminalType,
-        sshHost: opts.sshHost
-      }
-    }
+    ;(this as any)._conversation = conv
   }
 
   exposeSessionId() {
