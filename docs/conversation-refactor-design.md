@@ -263,7 +263,20 @@ export class ConversationManager extends EventEmitter {
 
 ### 4.3 存储层（已模块化，无需新类）
 
-文件 IO 原语已在 `electron/services/history/agent-storage.ts` 抽成纯函数（`readAgentRecordFile` / `writeAgentRecordFile` / `listAgentDateDirs` / `collectAgentStorageStats` 等）。`HistoryService` 组合这些纯函数 + 索引缓存 + `storeForRecord` 的 main/watch 路由。**结论：不再另造 `ConversationStore` 类**——ConversationManager 直接复用 HistoryService（或其底层纯函数）作为存储后端即可。
+文件 IO 原语已在 `electron/services/history/agent-storage.ts` 抽成纯函数（`readAgentRecordFile` / `writeAgentRecordFile` / `listAgentDateDirs` / `collectAgentStorageStats` 等），`HistoryService` 组合这些纯函数 + 索引缓存 + `storeForRecord` 的 main/watch 路由。
+
+**结论：保留 `ConversationStore` 作为「薄封装命名类」**（不重新实现 IO，只组合上述纯函数）。理由是 OOP 可理解性 + 边界清晰：让 `ConversationManager` 只跟一个名字达意的 `ConversationStore` 打交道（`save/load/delete/loadIndex/loadAll`，内含 main/watch 树路由），而不是伸手进 `HistoryService` 这个「什么都管」的大类。它就是存储后端的**接缝**——内部委托 `agent-storage.ts` 纯函数（或过渡期直接委托 `HistoryService`），将来要换索引实现/换盘格式只动这一处。
+
+```ts
+// electron/services/conversation/storage.ts —— 薄封装，复用 agent-storage.ts 纯函数 + 索引 + watch 路由
+export class ConversationStore {
+  async save(record: AgentRecord): Promise<void>          // 内部按 kind/agentKey 路由 main/watch 树
+  async load(id: string): Promise<AgentRecord | null>
+  async delete(id: string): Promise<boolean>
+  async loadIndex(): Promise<IndexEntry[]>
+  async loadAll(tree?: 'main' | 'watch'): Promise<AgentRecord[]>
+}
+```
 
 ### 4.4 messages.ts（纯函数，保留现有实现）
 
@@ -307,13 +320,22 @@ export interface AgentRecord {
 
 > 在 `_session*` + cache + restore 这段最反直觉的代码上重构，没有测试网必然招回老 bug。
 
-### 阶段 0：织特征测试网（最关键的前置，不改生产代码）
-- [ ] 锁定当前行为：**会话漫游**、**联络回种**（跨重启续上同一条）、**cache 前缀复用**、**reset 后全新会话**、**watch 不累积/独立历史**、**fork**
-- [ ] 已有 `companion-restore.integration.test.ts` 是底子，补齐其余
-- **验证**：测试覆盖上述不变量并全绿（作为后续重构的红线）
+### 阶段 0：织特征测试网（最关键的前置，不改生产代码）✅
+- [x] `conversation-characterization.test.ts`（真实 HistoryService 磁盘往返）锁定 8 条不变量：
+  - ① cache 前缀复用（同 session 第二轮复用上一轮完整 messages）
+  - ② 内心独白隔离（wakeup 不复用上一轮原始对话作前缀）
+  - ③ 会话漫游（同形态：同 sessionId 换 Agent 续写、不裂记录）
+  - ④ reset 后全新会话（清空工作记忆）
+  - ⑤ watch 历史隔离（`__watch__` 进独立树、不污染主索引）
+  - ⑥ **reasoning_content 回传**（带 tool_calls 的 assistant 下一轮仍带该字段，空串保留）—— commitRun/finalizeRun 搬迁最易丢
+  - ⑦ **任务切分边界**（`_systemInjected` 不构成 user 边界，且经磁盘序列化存活）
+  - ⑧ **任务分支 fork 完整拷贝到 fork 点**（`buildForkRecord` 无 untilTaskCount=全拷贝 / 有则截断，源记录不破坏）
+- [x] 联络回种（跨重启续上同一条）+ reset 抑制回种由 `companion-restore.integration.test.ts` 覆盖
+- 注：`createTaskFrom`（跨 kind 种子起头）是全新操作、无可观测旧行为可钉，留待其实现阶段 TDD（种子策略按 §2.5 延后）。
+- **验证**：特征网 8/8 + companion 集成全绿（作为后续重构的红线）
 
 ### 阶段 1：模型补字段（存储 IO 已模块化，无需再拆）✅
-- [x] 文件 IO 原语**已抽成纯函数** `electron/services/history/agent-storage.ts`（read/write/list/stats），`HistoryService` 只组合它们 + 索引 + watch 路由——故**不再另造冗余的 `ConversationStore` 类**。
+- [x] 文件 IO 原语**已抽成纯函数** `electron/services/history/agent-storage.ts`（read/write/list/stats）；`ConversationStore` 将作为**薄封装命名类**复用它们 + 索引 + watch 路由（见 §4.3），而非重新实现 IO。
 - [x] `shared/types`：加 `ConversationKind` + `COMPANION_AGENT_KEY`/`WATCH_AGENT_KEY` + `inferConversationKind`
 - [x] `AgentRecord.kind` / `AgentHistorySummary.kind`（可选），`normalizeAgentRecord` 读盘时按 agentKey 推断补默认（向后兼容；写盘显式 kind 由阶段 2 `Conversation.toRecord` 负责）
 - **验证**：history.service / 特征网 / companion 集成 / v6 迁移测试全绿（36/36）
@@ -370,6 +392,7 @@ electron/services/conversation/
 `electron/services/conversation/` 下 `conversation.ts`/`manager.ts`/`storage.ts`/`messages.ts`/`index.ts` 已存在，但**基于"AgentRecord 是单任务"的误判**，建了平行的 `ConversationRecord`/扁平 messages 模型。重构落地时：
 - **保留** `messages.ts` 纯函数（改用 `@shared/types`）
 - **重写** `conversation.ts` 为本文档 §4.1 的聚合根（真实 transcript + taskMemory + cachePrefix，`terminalType` 不可变、`agentKey` 可变）
+- **重写** `storage.ts` 为薄封装 `ConversationStore`（§4.3：复用 `agent-storage.ts` 纯函数 + 索引 + watch 路由，**不重新实现 IO**，去掉平行 `ConversationRecord` 依赖）
 - **删除**平行类型 `ConversationRecord`/`ConversationMessage`/`ConversationStep`
 - **新增** `policy.ts`
 
