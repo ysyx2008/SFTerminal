@@ -165,7 +165,7 @@ function createMockServices(overrides?: Partial<AgentServices>): AgentServices {
   // 有 historyService 即自动装配 ConversationManager，让会话回种/恢复走生产路径
   //（馆长发证）。无 historyService 的纯单测仍走 Agent 内部退化路径。
   if (services.historyService && !services.conversationManager) {
-    services.conversationManager = new ConversationManager(new ConversationStore(services.historyService))
+    services.conversationManager = new ConversationManager(new ConversationStore(services.historyService.getAgentRecordStore()))
   }
   return services
 }
@@ -930,7 +930,8 @@ describe('Agent run method', () => {
           duration: 1000,
           status: 'completed'
         }),
-        saveAgentRecord: vi.fn()
+        saveAgentRecord: vi.fn(),
+        getAgentRecordStore: vi.fn(() => mockHistoryService)
       }
 
       const services = createMockServices({ historyService: mockHistoryService as any })
@@ -978,7 +979,8 @@ describe('Agent run method', () => {
           duration: 1000,
           status: 'completed'
         }),
-        saveAgentRecord: vi.fn((r) => { savedRecords.push(JSON.parse(JSON.stringify(r))) })
+        saveAgentRecord: vi.fn((r) => { savedRecords.push(JSON.parse(JSON.stringify(r))) }),
+        getAgentRecordStore: vi.fn(() => mockHistoryService)
       }
 
       const services = createMockServices({ historyService: mockHistoryService as any })
@@ -1038,7 +1040,8 @@ describe('Agent run method', () => {
             status: 'completed'
           }
         ]),
-        saveAgentRecord: vi.fn()
+        saveAgentRecord: vi.fn(),
+        getAgentRecordStore: vi.fn(() => mockHistoryService)
       }
 
       const services = createMockServices({ historyService: mockHistoryService as any })
@@ -1094,7 +1097,8 @@ describe('Agent run method', () => {
       const mockHistoryService = {
         getAgentRecordById: vi.fn().mockReturnValue(undefined),
         getRecentAgentRecords: vi.fn().mockReturnValue([recentRecord]),
-        saveAgentRecord: vi.fn()
+        saveAgentRecord: vi.fn(),
+        getAgentRecordStore: vi.fn(() => mockHistoryService)
       }
 
       const services = createMockServices({ historyService: mockHistoryService as any })
@@ -1167,7 +1171,8 @@ describe('Agent run method', () => {
       const mockHistoryService = {
         getAgentRecordById: vi.fn().mockReturnValue(latestRecord),
         getRecentAgentRecords: vi.fn().mockReturnValue([otherRecord]),
-        saveAgentRecord: vi.fn()
+        saveAgentRecord: vi.fn(),
+        getAgentRecordStore: vi.fn(() => mockHistoryService)
       }
 
       const services = createMockServices({ historyService: mockHistoryService as any })
@@ -1221,7 +1226,8 @@ describe('Agent run method', () => {
         getAgentRecordById: vi.fn().mockReturnValue(persistedRecord),
         getRecentAgentRecords: vi.fn().mockReturnValue([]),
         getLatestRecordByAgentKey: vi.fn().mockReturnValue(persistedRecord),
-        saveAgentRecord: vi.fn()
+        saveAgentRecord: vi.fn(),
+        getAgentRecordStore: vi.fn(() => mockHistoryService)
       }
 
       const services = createMockServices({ historyService: mockHistoryService as any })
@@ -1259,7 +1265,8 @@ describe('Agent run method', () => {
         getAgentRecordById: vi.fn().mockReturnValue(undefined),
         getRecentAgentRecords: vi.fn().mockReturnValue([]),
         getLatestRecordByAgentKey: vi.fn().mockReturnValue(persistedRecord),
-        saveAgentRecord: vi.fn()
+        saveAgentRecord: vi.fn(),
+        getAgentRecordStore: vi.fn(() => mockHistoryService)
       }
       const services = createMockServices({ historyService: mockHistoryService as any })
       const watchLike = new TestAgent(services)
@@ -1305,7 +1312,8 @@ describe('Agent run method', () => {
           duration: 3000,
           status: 'completed'
         }),
-        saveAgentRecord: vi.fn()
+        saveAgentRecord: vi.fn(),
+        getAgentRecordStore: vi.fn(() => mockHistoryService)
       }
 
       const services = createMockServices({ historyService: mockHistoryService as any })

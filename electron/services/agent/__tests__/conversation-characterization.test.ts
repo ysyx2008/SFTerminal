@@ -115,7 +115,7 @@ function makeServices(history: HistoryService, responder: Responder = defaultRes
     } as any,
     historyService: history as any,
     // 馆长发证：会话创建/回种走生产路径（与 setHistoryService 装配的一致）
-    conversationManager: new ConversationManager(new ConversationStore(history))
+    conversationManager: new ConversationManager(new ConversationStore(history.getAgentRecordStore()))
   }
 }
 

@@ -151,7 +151,10 @@ export class AgentService {
   setHistoryService(historyService: import('../history.service').HistoryService): void {
     this.services.historyService = historyService
     // 随 historyService 一并装配会话策略 / 查询接缝（按 kind 决策回种、会话查询委托）。
-    this.services.conversationManager = new ConversationManager(new ConversationStore(historyService))
+    // ConversationStore 现在直接包 AgentRecordStore（会话存储聚合），不再伸手进 HistoryService 这个大类。
+    this.services.conversationManager = new ConversationManager(
+      new ConversationStore(historyService.getAgentRecordStore())
+    )
   }
 
   /**

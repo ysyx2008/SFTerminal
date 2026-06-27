@@ -44,7 +44,11 @@ SailFish/
 │       ├── sftp.service.ts      # SFTP 文件传输
 │       ├── unified-terminal.service.ts # local/ssh 统一终端抽象
 │       ├── host-profile.service.ts     # 主机画像
-│       ├── history.service.ts   # 对话/Agent 历史（L3 对话记录）
+│       ├── history.service.ts   # 历史运维：聊天记录(ChatRecord) + Token 统计 + 导入导出 + 清理；组合 AgentRecordStore
+│       ├── history/             # 会话存储底层
+│       │   ├── agent-record-store.ts # AgentRecordStore——会话记录存储聚合（agent/watch 两棵历史树+索引+图片外化），ConversationStore 的真相源
+│       │   ├── agent-storage.ts      # 会话记录文件 IO 纯函数
+│       │   └── date-util.ts          # 历史日期工具纯函数
 │       ├── conversation/        # 会话领域模型（Conversation 聚合根 + Store + Manager + 策略表）
 │       │                        # —— 重构中，见 docs/conversation-refactor-design.md
 │       ├── mcp.service.ts       # MCP 服务器管理

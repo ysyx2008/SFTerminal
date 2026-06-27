@@ -21,7 +21,7 @@ import { inferConversationKind } from '@shared/types'
 import { ConversationStore } from './storage'
 import { Conversation } from './conversation'
 import { conversationPolicy, type ConversationPolicy } from './policy'
-import type { SearchAgentRecordsResult } from '../history.service'
+import type { SearchAgentRecordsResult } from '../history/agent-record-store'
 import type { TaskMemoryStore } from '../agent/task-memory'
 import { createLogger } from '../../utils/logger'
 

@@ -1,16 +1,25 @@
 # History Service SPEC
 
-> Last verified: 2026-06-23（watch 内心独白拆分到独立历史树 + 独立索引；v6 迁移 rename 拆分）
+> Last verified: 2026-06-27（会话存储抽取为 `AgentRecordStore`：HistoryService 瘦身为运维聚合，会话记录 CRUD/索引/图片外化下沉到 `history/agent-record-store.ts`）
 
 ## 职责
 
-Agent 对话和聊天记录的持久化存储。按日期分文件存储 JSON 记录，提供按时间、关键词等维度检索，以及完整的导出/导入/清理功能。同时维护 Agent 记录索引以加速搜索。
+历史数据的运维聚合服务。组合 `AgentRecordStore`（会话记录存储聚合，见下），并保留以下非会话域职责：
+- 聊天记录（ChatRecord，遗留，仅导入导出兼容）
+- Token 用量统计（跨主树 + watch 树的索引聚合）
+- 数据导出/导入备份
+- 清理 + 存储统计
+
+**会话记录存储已下沉到 `AgentRecordStore`**（`history/agent-record-store.ts`）：拥有 agent/watch 两棵历史树 + 索引机器 + 步骤内联图片外化 + main/watch 路由。`HistoryService` 的 AgentRecord 相关公开方法（`saveAgentRecord` 等）保留为**委派转发**，向后兼容现有调用方（main.ts IPC / AgentService / Agent / 前端）；读侧新代码应走 `ConversationManager` → `ConversationStore` → `AgentRecordStore` 接缝（见 `conversation/`）。
 
 **双历史树**：用户/联络/终端任务记录存 `history/agent/`（主索引 `agent-index.json`）；watch（关切）的「内心独白」执行记录存 `history/watch/`（独立索引 `watch-index.json`）。两者**物理隔离**，避免高频内心独白（曾占主索引 93%、把它压到 ~149MB）压舱主索引、拖慢每次写盘。归属由 `AgentRecord.agentKey === '__watch__'` 结构化判定（不再用 userTask 关键词匹配）。
 
 ## 文件 / 规模
 
-单文件：`electron/services/history.service.ts`（~938 行）
+- `electron/services/history.service.ts`（~530 行，瘦身后）：ChatRecord + Token 统计 + 导入导出 + 清理；组合 `AgentRecordStore` 并委派会话记录方法。
+- `electron/services/history/agent-record-store.ts`（~940 行）：`AgentRecordStore`——会话记录存储聚合（CRUD + 索引机器 + 图片外化 + canvas 剥离 + main/watch 路由），`ConversationStore` 的真相源。
+- `electron/services/history/agent-storage.ts`：会话记录文件 IO 纯函数（读/写/列举/损坏隔离）。
+- `electron/services/history/date-util.ts`：`getDateString()` 纯函数，供 store 与 service 共用。
 
 ## 公开 API
 
@@ -32,6 +41,7 @@ Agent 对话和聊天记录的持久化存储。按日期分文件存储 JSON �
 | `getTokenUsageStats(): TokenUsageStatsResult` | 返回 Token 用量统计 | 设置 UI |
 | `getDataPath(): string` | 返回数据目录路径 | `cli/index.ts` 信息展示 |
 | `getHistoryPath(): string` | 返回历史记录目录路径 | `cli/index.ts` |
+| `getAgentRecordStore(): AgentRecordStore` | 暴露会话存储聚合，供 `ConversationManager`/`ConversationStore` 装配为读侧接缝 | `agent/index.ts` 装配 |
 | `exportToFolder(exportPath, configData, hostProfiles?, options?): {success, files[], error?}` | 导出数据到文件夹（含历史、配置、主机档案） | 前端导出功能 |
 | `importFromFolder(importPath): {success, imported[], error?}` | 从文件夹导入数据 | 前端导入功能 |
 | `cleanupOldRecords(daysToKeep?): {chatDeleted, agentDeleted}` | 清理过期记录 | 维护任务 |
@@ -45,8 +55,11 @@ Agent 对话和聊天记录的持久化存储。按日期分文件存储 JSON �
 ### AgentRecord（@shared 共享类型）
 含 `id`、`sessionId`、`timestamp`、`summary`、`tokenUsage` 等完整执行信息。
 
-### AgentIndexEntry（本文件内部）
+### AgentIndexEntry（`history/agent-record-store.ts` 导出）
 `{ id, timestamp, duration, dateStr, userTask, terminalType, agentKey?, sshHost?, status, tokenUsage? }`，常驻内存（每个 `AgentIndexStore.cache`），用于排序/过滤/搜索时避免读取完整日期文件。
+
+### AgentRecordStore（`history/agent-record-store.ts`）
+会话记录存储聚合。构造接收 `historyDir`，自建 `agent/`/`watch/`/`images/` 目录。公开：会话 CRUD（`saveAgentRecord`/`getAgentRecordById`/`deleteAgentRecord`/`getAgentRecords`）、最近/按 agentKey/watch 查询、`listAgentHistorySummaries`、`searchAgentRecords(Advanced)`、`rebuildAgentIndex`、`cleanupOldAgentRecords`、索引读侧暴露（`getMainIndex`/`getWatchIndex`/`getAllIndexEntries`，供 Token 统计/存储统计复用）、`getStorageStatsForBoth`/`totalSessionCount`。内部 `AgentIndexStore { dir, indexPath, cache, userTaskMaxLen? }` 三元组按 store 参数化索引方法。
 
 ## 依赖（跨 service）
 

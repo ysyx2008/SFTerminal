@@ -81,7 +81,7 @@ function makeServices(history: HistoryService): AgentServices {
     } as any,
     historyService: history as any,
     // 馆长发证：companion 回种走生产路径（resolveSeedSessionId 按 agentKey policy 决策）
-    conversationManager: new ConversationManager(new ConversationStore(history))
+    conversationManager: new ConversationManager(new ConversationStore(history.getAgentRecordStore()))
   }
 }
 

@@ -394,7 +394,8 @@ describe('AgentService.forkAgent', () => {
     const historyService = {
       saveAgentRecord: vi.fn((r) => { savedRecords.push(r) }),
       getAgentRecordById: vi.fn((id: string) => id === 'history-session' ? historyRecord : undefined),
-      getRecentAgentRecords: vi.fn().mockReturnValue([])
+      getRecentAgentRecords: vi.fn().mockReturnValue([]),
+      getAgentRecordStore: vi.fn(() => historyService)
     }
     service.setHistoryService(historyService as any)
 
@@ -440,7 +441,8 @@ describe('AgentService.forkAgent', () => {
     const historyService = {
       saveAgentRecord: vi.fn((r) => { savedRecords.push(r) }),
       getAgentRecordById: vi.fn().mockReturnValue(undefined),
-      getRecentAgentRecords: vi.fn().mockReturnValue([])
+      getRecentAgentRecords: vi.fn().mockReturnValue([]),
+      getAgentRecordStore: vi.fn(() => historyService)
     }
     service.setHistoryService(historyService as any)
 
@@ -483,7 +485,8 @@ describe('AgentService.forkAgent', () => {
     const historyService = {
       saveAgentRecord: vi.fn(),
       getAgentRecordById: vi.fn().mockReturnValue(undefined),
-      getRecentAgentRecords: vi.fn().mockReturnValue([])
+      getRecentAgentRecords: vi.fn().mockReturnValue([]),
+      getAgentRecordStore: vi.fn(() => historyService)
     }
     service.setHistoryService(historyService as any)
 
@@ -522,7 +525,8 @@ describe('AgentService.forkAgent', () => {
     const historyService = {
       saveAgentRecord: vi.fn((r) => { savedRecords.push(r) }),
       getAgentRecordById: vi.fn().mockReturnValue(undefined),
-      getRecentAgentRecords: vi.fn().mockReturnValue([])
+      getRecentAgentRecords: vi.fn().mockReturnValue([]),
+      getAgentRecordStore: vi.fn(() => historyService)
     }
     service.setHistoryService(historyService as any)
 
@@ -565,7 +569,8 @@ describe('AgentService.forkAgent', () => {
     const historyService = {
       saveAgentRecord: vi.fn((r) => { savedRecords.push(r) }),
       getAgentRecordById: vi.fn().mockReturnValue(undefined),
-      getRecentAgentRecords: vi.fn().mockReturnValue([])
+      getRecentAgentRecords: vi.fn().mockReturnValue([]),
+      getAgentRecordStore: vi.fn(() => historyService)
     }
     service.setHistoryService(historyService as any)
 
@@ -597,7 +602,8 @@ describe('AgentService.forkAgent', () => {
     const historyService = {
       saveAgentRecord: vi.fn(),
       getAgentRecordById: vi.fn().mockReturnValue(undefined),
-      getRecentAgentRecords: vi.fn().mockReturnValue([])
+      getRecentAgentRecords: vi.fn().mockReturnValue([]),
+      getAgentRecordStore: vi.fn(() => historyService)
     }
     service.setHistoryService(historyService as any)
 
@@ -624,7 +630,8 @@ describe('AgentService.forkAgent', () => {
     const historyService = {
       saveAgentRecord: vi.fn((r) => { savedRecords.push(r) }),
       getAgentRecordById: vi.fn().mockReturnValue(undefined),
-      getRecentAgentRecords: vi.fn().mockReturnValue([])
+      getRecentAgentRecords: vi.fn().mockReturnValue([]),
+      getAgentRecordStore: vi.fn(() => historyService)
     }
     service.setHistoryService(historyService as any)
 

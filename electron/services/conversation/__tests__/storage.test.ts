@@ -56,11 +56,11 @@ describe('ConversationStore（HistoryService 之上的薄存储接缝）', () =>
   })
 
   it('save/load：真实磁盘往返，按 id 精确读回', () => {
-    const store = new ConversationStore(new HistoryService())
+    const store = new ConversationStore(new HistoryService().getAgentRecordStore())
     store.save(rec('sess_a'))
 
     // 换一个 HistoryService 实例读（强制走盘，不吃内存缓存）
-    const loaded = new ConversationStore(new HistoryService()).load('sess_a')
+    const loaded = new ConversationStore(new HistoryService().getAgentRecordStore()).load('sess_a')
     expect(loaded).toBeTruthy()
     expect(loaded!.id).toBe('sess_a')
     expect(loaded!.userTask).toBe('任务 sess_a')
@@ -68,29 +68,29 @@ describe('ConversationStore（HistoryService 之上的薄存储接缝）', () =>
   })
 
   it('save 会话粒度：同 id 覆盖、不新增', () => {
-    const store = new ConversationStore(new HistoryService())
+    const store = new ConversationStore(new HistoryService().getAgentRecordStore())
     store.save(rec('sess_dup', { userTask: '旧标题' }))
     store.save(rec('sess_dup', { userTask: '新标题' }))
 
-    const fresh = new ConversationStore(new HistoryService())
+    const fresh = new ConversationStore(new HistoryService().getAgentRecordStore())
     const matches = fresh.recent(50).filter(r => r.id === 'sess_dup')
     expect(matches.length).toBe(1)
     expect(matches[0].userTask).toBe('新标题')
   })
 
   it('delete：删除后读不到', () => {
-    const store = new ConversationStore(new HistoryService())
+    const store = new ConversationStore(new HistoryService().getAgentRecordStore())
     store.save(rec('sess_del'))
     expect(store.delete('sess_del')).toBe(true)
-    expect(new ConversationStore(new HistoryService()).load('sess_del')).toBeUndefined()
+    expect(new ConversationStore(new HistoryService().getAgentRecordStore()).load('sess_del')).toBeUndefined()
   })
 
   it('main/watch 路由：__watch__ 进独立树，不污染主历史/任务侧栏', () => {
-    const store = new ConversationStore(new HistoryService())
+    const store = new ConversationStore(new HistoryService().getAgentRecordStore())
     store.save(rec('sess_task', { agentKey: 'tab-1' }))
     store.save(rec('watch_w1_123', { agentKey: '__watch__' }))
 
-    const fresh = new ConversationStore(new HistoryService())
+    const fresh = new ConversationStore(new HistoryService().getAgentRecordStore())
     // watch 记录进 watch 树
     expect(fresh.recentWatch(20).some(r => r.id === 'watch_w1_123')).toBe(true)
     // 不进主历史
@@ -102,11 +102,11 @@ describe('ConversationStore（HistoryService 之上的薄存储接缝）', () =>
   })
 
   it('latestByAgentKey / recentByAgentKey：按 agentKey 取最近会话', () => {
-    const store = new ConversationStore(new HistoryService())
+    const store = new ConversationStore(new HistoryService().getAgentRecordStore())
     store.save(rec('sess_c1', { agentKey: '__companion__', timestamp: Date.now() - 2000 }))
     store.save(rec('sess_c2', { agentKey: '__companion__', timestamp: Date.now() }))
 
-    const fresh = new ConversationStore(new HistoryService())
+    const fresh = new ConversationStore(new HistoryService().getAgentRecordStore())
     expect(fresh.latestByAgentKey('__companion__')!.id).toBe('sess_c2')
     const recent = fresh.recentByAgentKey('__companion__', 10)
     expect(recent.map(r => r.id).sort()).toEqual(['sess_c1', 'sess_c2'])

@@ -45,7 +45,7 @@ function rec(id: string, overrides?: Partial<AgentRecord>): AgentRecord {
 }
 
 function mgr(): ConversationManager {
-  return new ConversationManager(new ConversationStore(new HistoryService()))
+  return new ConversationManager(new ConversationStore(new HistoryService().getAgentRecordStore()))
 }
 
 describe('ConversationManager', () => {
