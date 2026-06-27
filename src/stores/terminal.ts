@@ -2249,11 +2249,14 @@ export const useTerminalStore = defineStore('terminal', () => {
   function openHistoryConversation(record: AgentRecord): string {
     const existing = findTabByHistoryId(record.id)
     if (existing) {
-      // 已提升为独立 tab → 激活该 tab；否则在 Hub 主区聚焦（不离开首页）
-      if (existing.isPromoted) {
-        setActiveTab(existing.id)
-      } else {
+      // 终端 tab / 已提升独立 tab / 远程助手 → 激活该 tab；
+      // 仅本地未提升的助手会话走 Hub 主区聚焦（不离开首页）
+      const isHubAssistant =
+        existing.type === 'assistant' && !existing.isPromoted && !existing.isRemote
+      if (isHubAssistant) {
         focusHubConversation(existing.id)
+      } else {
+        setActiveTab(existing.id)
       }
       return existing.id
     }

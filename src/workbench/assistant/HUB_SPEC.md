@@ -145,8 +145,8 @@ sessionId 不在 summaryById 中（未落盘）
 ### 点击行为
 
 1. `findTabByHistoryId(summary.id)` 找到现有 tab  
-   - `isPromoted` → `setActiveTab`（激活独立 Tab）  
-   - 否则 → `focusHubConversation`（Hub 焦点，侧栏保留）  
+   - 本地未提升助手会话（`type==='assistant' && !isPromoted && !isRemote`）→ `focusHubConversation`（Hub 焦点，侧栏保留）  
+   - 其余（终端 tab / 已提升独立 Tab / 远程助手）→ `setActiveTab`（激活该 Tab）  
 2. 未找到 tab → 从历史加载 `openHistoryConversation(record)`
 
 ### 另开一聊（Fork）

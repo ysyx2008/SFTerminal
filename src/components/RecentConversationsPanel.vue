@@ -383,11 +383,14 @@ const openConversation = async (summary: AgentHistorySummary) => {
 
   const existingTab = terminalStore.findTabByHistoryId(summary.id)
   if (existingTab) {
-    // 已提升为独立 tab → 激活该 tab；否则在 Hub 主区聚焦（停留首页视图，侧栏保留）
-    if (existingTab.isPromoted) {
-      terminalStore.setActiveTab(existingTab.id)
-    } else {
+    // 终端 tab / 已提升独立 tab / 远程助手 → 激活该 tab；
+    // 仅本地未提升的助手会话走 Hub 主区聚焦（停留首页视图，侧栏保留）
+    const isHubAssistant =
+      existingTab.type === 'assistant' && !existingTab.isPromoted && !existingTab.isRemote
+    if (isHubAssistant) {
       terminalStore.focusHubConversation(existingTab.id)
+    } else {
+      terminalStore.setActiveTab(existingTab.id)
     }
     return
   }
