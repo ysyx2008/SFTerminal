@@ -9,9 +9,7 @@ import {
   calculateKeywordOverlap,
   detectPendingConfirmation,
   generateSummary,
-  extractDigest,
-  getTaskMemoryStore,
-  clearTaskMemoryStore
+  extractDigest
 } from '../task-memory'
 import type { AgentStep } from '../types'
 import type { ToolMeta } from '../tools'
@@ -603,31 +601,5 @@ describe('TaskMemoryStore', () => {
     it('should return empty string for empty digests', () => {
       expect(store.formatRelatedDigestsForContext([])).toBe('')
     })
-  })
-})
-
-// ==================== Global store functions ====================
-
-describe('Global TaskMemoryStore functions', () => {
-  it('getTaskMemoryStore should return store for ptyId', () => {
-    const store1 = getTaskMemoryStore('pty1')
-    const store2 = getTaskMemoryStore('pty1')
-    expect(store1).toBe(store2) // Same instance
-  })
-
-  it('getTaskMemoryStore should return different stores for different ptyIds', () => {
-    const store1 = getTaskMemoryStore('pty1')
-    const store2 = getTaskMemoryStore('pty2')
-    expect(store1).not.toBe(store2)
-  })
-
-  it('clearTaskMemoryStore should remove store', () => {
-    const store1 = getTaskMemoryStore('pty-clear-test')
-    store1.saveTask('task1', 'Task', [], 'success')
-    
-    clearTaskMemoryStore('pty-clear-test')
-    
-    const store2 = getTaskMemoryStore('pty-clear-test')
-    expect(store2.getTaskCount()).toBe(0)
   })
 })

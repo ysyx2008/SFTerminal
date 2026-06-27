@@ -6,7 +6,6 @@
 import type { AiMessage } from '../ai.service'
 import type { AgentStep, TaskMemory, TaskDigest, TaskSummary, RelatedTaskDigest } from './types'
 import type { ToolMeta } from './tools'
-import { createLogger } from '../../utils/logger'
 
 /**
  * 调用方注入的 ToolMeta 查询函数（按工具名查 _meta）。
@@ -16,8 +15,6 @@ import { createLogger } from '../../utils/logger'
 export type LookupToolMeta = (toolName: string) => ToolMeta | undefined
 
 const NO_LOOKUP: LookupToolMeta = () => undefined
-
-const log = createLogger('TaskMemory')
 
 /**
  * 从文本中提取关键词
@@ -598,52 +595,6 @@ export class TaskMemoryStore {
     
     return sections.join('\n\n')
   }
-}
-
-// 按终端 ID 隔离的多实例存储
-const taskMemoryStores: Map<string, TaskMemoryStore> = new Map()
-
-/**
- * 获取指定终端的 TaskMemoryStore 实例（按 ptyId 隔离）。
- *
- * 注意：本工厂创建的 store 不带 `lookupMeta` 回调，detectPendingConfirmation /
- * extractDigest 会按"无声明"降级（保守不识别阻塞工具与命令字段）。Agent 实例
- * 自己的 `this.taskMemory`（由 `Agent.createTaskMemory()` 构造）会注入正确的
- * lookupMeta，应优先使用那个实例。本工厂主要是兼容历史调用点 / 测试用，
- * 当前已无生产代码消费——如果将来需要从这个全局路径访问 meta-sensitive 功能，
- * 在此注入 lookupMeta（或考虑彻底废弃此工厂）。
- *
- * @param ptyId 终端 ID（必须提供以确保隔离）
- */
-export function getTaskMemoryStore(ptyId: string): TaskMemoryStore {
-  if (!ptyId) {
-    log.warn('getTaskMemoryStore called without ptyId, using fallback')
-    ptyId = '__fallback__'
-  }
-
-  let store = taskMemoryStores.get(ptyId)
-  if (!store) {
-    store = new TaskMemoryStore()
-    taskMemoryStores.set(ptyId, store)
-  }
-  return store
-}
-
-/**
- * 清理指定终端的 TaskMemoryStore（当终端关闭时调用）
- * @param ptyId 终端 ID
- */
-export function clearTaskMemoryStore(ptyId: string): void {
-  if (ptyId) {
-    taskMemoryStores.delete(ptyId)
-  }
-}
-
-/**
- * 获取所有终端的 TaskMemoryStore（用于调试）
- */
-export function getAllTaskMemoryStores(): Map<string, TaskMemoryStore> {
-  return taskMemoryStores
 }
 
 // 也导出类，方便测试或创建独立实例
