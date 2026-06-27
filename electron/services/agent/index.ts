@@ -26,6 +26,7 @@ import type {
 } from './types'
 import { Agent } from './agent'
 import { SailFish } from './sailfish'
+import { ConversationStore, ConversationManager } from '../conversation'
 import { assessCommandRisk, analyzeCommand } from './risk-assessor'
 import type { CommandHandlingInfo } from './risk-assessor'
 import { setConfigService as setI18nConfigService } from './i18n'
@@ -149,6 +150,8 @@ export class AgentService {
    */
   setHistoryService(historyService: import('../history.service').HistoryService): void {
     this.services.historyService = historyService
+    // 随 historyService 一并装配会话策略 / 查询接缝（按 kind 决策回种、会话查询委托）。
+    this.services.conversationManager = new ConversationManager(new ConversationStore(historyService))
   }
 
   /**
@@ -204,30 +207,19 @@ export class AgentService {
   }
   
   /**
-   * 判断 agentId 是否为「持久命名 Agent」——固定 ID、跨 App 重启复用、需要从全局
-   * 最近历史恢复工作记忆的 Agent。仅 AgentService 自己定义和识别这些 ID。
-   *
-   * 影响 `Agent.restoreFromHistory` 的全局 fallback 行为，详见 agent.ts 的字段注释。
-   */
-  private isPersistentNamedAgentId(agentId: string): boolean {
-    return agentId === AgentService.COMPANION_AGENT_ID
-        || agentId === AgentService.WATCH_AGENT_ID
-  }
-
-  /**
    * 创建独立助手 Agent（无终端绑定）
+   *
+   * 注：是否为「持久命名 Agent」（固定 ID、跨重启回种历史）不再由这里手动 mark，而是由
+   * Agent 按 `agentId → inferConversationKind → CONVERSATION_POLICY` 自决（companion/watch=true）。
    */
   createAssistantAgent(agentId: string): SailFish {
     let agent = this.agents.get(agentId)
     if (!agent) {
       agent = new SailFish(this.services)
       agent.setAgentId(agentId)
-      if (this.isPersistentNamedAgentId(agentId)) {
-        agent.markAsPersistentNamed()
-      }
       agent.setCallbacks(this.defaultCallbacks)
       this.agents.set(agentId, agent)
-      log.info(`Created assistant agent: ${agentId} (persistentNamed=${this.isPersistentNamedAgentId(agentId)})`)
+      log.info(`Created assistant agent: ${agentId} (persistentNamed=${agent.isPersistentNamedAgent()})`)
     }
     return agent
   }

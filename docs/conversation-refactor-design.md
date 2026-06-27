@@ -349,14 +349,18 @@ export interface AgentRecord {
   - 关键防回归：restoreRecent + restoreFromSessionRecord 共用 Agent 单调 `_restoreTaskSeq` 防 task id 碰撞；`terminalType` 成不可变形态后 forkAgent 同模式判定改为「undefined 或 'assistant'」
 - **验证**：阶段 0 全部不变量保持（agent+conversation 815/815、services/watch 1314、CLI 53/0、真实 agent run 端到端、claude-review 无行为回归）
 
-### 阶段 3：抽 ConversationManager + 策略表
-- [ ] 生命周期（create/reset/fork/resolveForRun/list/search）从 Agent/AgentService 上移
-- [ ] `_persistentNamedAgent`/`_suppressSessionSeed`/wakeup 分支 → `CONVERSATION_POLICY`
-- [ ] Conversation 事件 → Manager → IPC 转发
-- **验证**：Manager 正确加载现有会话；侧栏过滤 watch；联络回种走 policy
+### 阶段 3：策略表 + ConversationManager 接缝（数据驱动 kind 行为）✅（有界实现）
+- [x] `policy.ts`：`CONVERSATION_POLICY` 表（`accumulates`/`seedFromHistoryOnColdStart`/`visibleInList`/`historyTree`）+ 预留 `perWatchContinuity` 钩子（每个 watch 是否跨执行连续，默认 false=保真现状，心跳永远 false）
+- [x] `manager.ts`：`ConversationManager` 持有 `ConversationStore` + policy，承接「回种 sessionId 决策」（`seedsFromHistory`/`resolveSeedSessionId`）与会话查询委托；`AgentService.setHistoryService` 时装配进 `services.conversationManager`
+- [x] 收敛旧 `_persistentNamedAgent`：从「外部 `markAsPersistentNamed` 布尔」改为 `agentId→inferConversationKind→CONVERSATION_POLICY[kind].seedFromHistoryOnColdStart` **派生**（保留 `_persistentNamedOverride` 仅供测试）；删除 `AgentService.isPersistentNamedAgentId` 铺线
+- [x] `Agent.run` 初始化回种决策：有 manager 走 `resolveSeedSessionId`，无（测试直注 services）回退等价内联——两路径行为一致
+- **关键保真**：`watch` 的 `seedFromHistoryOnColdStart=**true**`（不是 false）——桌面 watch 经 `runAssistant→createAssistantAgent('__watch__')` 被标持久命名，旧布尔对 watch 即 true，必须保真；watch 的「逐次隔离」由 accumulates/visibleInList/historyTree 三轴 + watch 历史独立树（`latestByAgentKey` 只查主树恒 undefined）保证。是否让 watch 也不回种属待拍板的连续性议题（`perWatchContinuity`），不在重构内动
+- **验证**：阶段 0 全部不变量保持（agent+conversation 1064、watch+services 281、CLI 53/0、typecheck 无新增错误、claude-review LGTM 无行为回归）
+- **本阶段刻意不做（与阶段 4 强耦合，一并做）**：Manager 拥有 `Map<id,Conversation>` + `resolveForRun` 所有权反转、list/search 从 HistoryService 上移、Conversation 事件→Manager→IPC、`taskMemory` 所有权转移。现阶段 Conversation 仍由 Agent 持有，Manager 只做「策略 + 查询接缝」
 
-### 阶段 4：Agent 去状态化
-- [ ] 删除 Agent 上已迁空的 `_session*` 字段，`run(conversation, …)`
+### 阶段 4：Agent 去状态化 + Manager 所有权反转
+- [ ] Manager 拥有 `Map<id,Conversation>`，`run(conversation, …)`，删除 Agent 上的 `_conversation`/`taskMemory` 所有权
+- [ ] 生命周期（create/reset/fork/list/search）+ `_suppressSessionSeed`/wakeup 完全上移 Manager；Conversation 事件 → Manager → IPC
 - **验证**：全量回归
 
 ### 阶段 5：前端收尾
@@ -396,9 +400,11 @@ electron/services/conversation/
 早期基于"AgentRecord 是单任务"误判的平行脚手架（`ConversationRecord`/扁平 messages、`manager.ts`/`messages.ts`）**已删除并重写**。当前 `electron/services/conversation/` 下：
 - `conversation.ts` —— §4.1 聚合根：真实 transcript（`_messages`/`_steps`）+ taskMemory（可注入）+ cachePrefix + token 账；`terminalType`/`sshHost` 不可变形态、`agentKey` 可变；`create`/`fromRecord`/`loadFromRecord`/`setRestoredTranscript`/`toRecord`/`commitRun`/`commitFailedRun`/`shouldReuseCachePrefix`/`reset`/`rebind`
 - `storage.ts` —— §4.3 薄封装 `ConversationStore`（委托 `HistoryService`，含 main/watch 路由，**不重新实现 IO**）
-- `index.ts` —— 导出 `Conversation`/`ConversationStore` + 类型
-- `__tests__/conversation.test.ts`、`__tests__/storage.test.ts`
-- **待建（阶段 3）**：`manager.ts`（ConversationManager）、`policy.ts`（kind + `CONVERSATION_POLICY`，承接 `_persistentNamedAgent`/`_suppressSessionSeed`/wakeup 分支 + taskMemory 所有权）
+- `policy.ts` —— §3.4 `CONVERSATION_POLICY`（kind→行为策略，含预留 `perWatchContinuity`）
+- `manager.ts` —— §4.2 `ConversationManager`（持有 `ConversationStore` + policy；本阶段承接回种决策 `resolveSeedSessionId` + 会话查询委托；所有权反转留阶段 4）
+- `index.ts` —— 导出 `Conversation`/`ConversationStore`/`ConversationManager`/`CONVERSATION_POLICY` + 类型
+- `__tests__/conversation.test.ts`、`__tests__/storage.test.ts`、`__tests__/policy.test.ts`、`__tests__/manager.test.ts`
+- **待建（阶段 4）**：Manager 拥有 `Map<id,Conversation>` + `resolveForRun` 所有权反转、list/search 上移、`taskMemory` 所有权转移、Conversation 事件→IPC
 
 ### 待办（非本次重构强约束，择期）
 - [ ] **移除联络（companion）的"清空对话"功能**：让用户轻易清空长期关系线是设计失误且危险。至少应提高操作门槛或取消。改动点：`AiPanel.vue` 的清空按钮在 companion 入口的可见性（`CompanionWorkbench` 内嵌 `AiPanel`，按钮当前无条件渲染于 header）。

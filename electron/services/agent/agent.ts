@@ -33,7 +33,8 @@ import type {
 } from './types'
 import { DEFAULT_AGENT_CONFIG } from './types'
 import { TaskMemoryStore } from './task-memory'
-import { Conversation } from '../conversation'
+import { Conversation, conversationPolicy } from '../conversation'
+import { inferConversationKind } from '@shared/types'
 import { getBondService } from '../bond.service'
 import type { ToolExecutorConfig, ToolResult } from './tools/types'
 import { executeTool } from './tools/index'
@@ -115,18 +116,28 @@ export abstract class Agent {
   private _agentId?: string
 
   /**
+   * 「持久命名 Agent」的显式覆盖位（仅测试 / 特殊场景用）。
+   * 生产代码不再手动 mark——是否持久命名由 `agentId → kind → CONVERSATION_POLICY` 自决，见
+   * 下方 `_persistentNamedAgent` getter。
+   */
+  private _persistentNamedOverride?: boolean
+
+  /**
    * 是否为「持久命名 Agent」（如 Companion / Watch 这类固定 ID、跨重启复用的 Agent）。
    *
-   * 仅影响 `restoreFromHistory` 的全局历史 fallback：
-   *   - true：sessionId 找不到 record 时，从全局最近 N 条历史提取任务恢复工作记忆
-   *           （Companion/Watch 重启后第一次 run 用 `session_${Date.now()}` 找不到 record，
-   *            必须靠这条 fallback 才能"记得最近聊过什么"）
-   *   - false（默认）：普通 tab Agent 第一次对话本就是新任务，不应被全局历史污染，
-   *           直接保持 TaskMemory 空白
+   * 影响两处：
+   *   - run 初始化回种 sessionId（无 sessionId 入口从最近一条历史回种，再经 suppressSeed 门控）
+   *   - `restoreFromHistory` 的全局历史 fallback（sessionId 找不到 record 时从全局最近 N 条
+   *     历史提取任务恢复工作记忆，让 Companion/Watch 重启后"记得最近聊过什么"）
    *
-   * 由 `AgentService` 在创建命名 Agent 时通过 `markAsPersistentNamed()` 设置。
+   * 取值由 `CONVERSATION_POLICY[kind].seedFromHistoryOnColdStart` 数据驱动：
+   * companion + watch（持久命名）= true，普通 tab Agent（task）= false。
+   * `_persistentNamedOverride` 优先（供测试显式指定）。
    */
-  private _persistentNamedAgent: boolean = false
+  private get _persistentNamedAgent(): boolean {
+    return this._persistentNamedOverride
+      ?? conversationPolicy(inferConversationKind(this._agentId)).seedFromHistoryOnColdStart
+  }
   
   // ==================== 状态（持久化） ====================
   
@@ -233,12 +244,12 @@ export abstract class Agent {
   }
 
   /**
-   * 标记为「持久命名 Agent」（Companion / Watch 这类固定 ID、跨重启复用的 Agent）。
-   * 仅 AgentService 工厂方法调用，普通 tab Agent 不应调用此方法。
-   * 详见字段注释 `_persistentNamedAgent`。
+   * 显式标记为「持久命名 Agent」（覆盖 kind→policy 自决）。
+   * 生产代码不再需要调用——companion/watch 由 agentId 推断的 kind 自动判定。
+   * 保留此方法主要供测试构造无 companion agentId 的持久命名场景。
    */
   markAsPersistentNamed(): void {
-    this._persistentNamedAgent = true
+    this._persistentNamedOverride = true
   }
 
   /**
@@ -609,9 +620,24 @@ export abstract class Agent {
     if (!this._conversation) {
       const suppressSeed = this._suppressSessionSeed
       this._suppressSessionSeed = false
+
+      // 回种决策（无 sessionId 入口是否从历史回种 sessionId）上移到 ConversationManager，
+      // 按 kind policy 决定，收敛旧 `_persistentNamedAgent` 分支。生产环境 setHistoryService 时
+      // 已装配 manager；测试可能直接注入 services 而无 manager，则回退到等价内联逻辑
+      //（用 policy 派生的 `_persistentNamedAgent` getter + historyService，行为一致）。
+      const manager = this.services.conversationManager
       let sessionId: string
       let startTime: number
-      if (context.sessionId) {
+      if (manager) {
+        const seed = manager.resolveSeedSessionId({
+          agentKey: this._agentId,
+          contextSessionId: context.sessionId,
+          contextStartTime: context.sessionStartTime,
+          suppressSeed
+        })
+        sessionId = seed.sessionId
+        startTime = seed.startTime
+      } else if (context.sessionId) {
         sessionId = context.sessionId
         startTime = context.sessionStartTime || Date.now()
       } else if (this._persistentNamedAgent && !suppressSeed) {

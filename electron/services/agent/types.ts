@@ -421,6 +421,8 @@ export interface AgentServices {
   mcpService?: import('../mcp.service').McpService
   configService?: import('../config.service').ConfigService
   historyService?: import('../history.service').HistoryService
+  /** 会话生命周期 / kind 策略接缝（按 kind 决策回种、会话查询委托）。随 historyService 装配。 */
+  conversationManager?: import('../conversation').ConversationManager
   pluginRegistry?: import('../plugin/registry').PluginRegistry
 }
 
