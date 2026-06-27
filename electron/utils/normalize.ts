@@ -12,6 +12,7 @@
 
 import type { HostProfile } from '@shared/types'
 import type { AgentRecord } from '@shared/types'
+import { inferConversationKind } from '@shared/types'
 import type { WatchDefinition } from '../services/watch/types'
 import type {
   TerminalSettings,
@@ -94,6 +95,8 @@ export function normalizeAgentRecord(raw: AgentRecord): AgentRecord {
     duration: typeof raw.duration === 'number' ? raw.duration : 0,
     status: raw.status || 'completed',
     terminalType: raw.terminalType || 'local',
+    // 老记录缺 kind：按 agentKey 推断（companion/watch/task），保持向后兼容
+    kind: raw.kind || inferConversationKind(raw.agentKey),
     timestamp: typeof raw.timestamp === 'number' ? raw.timestamp : 0,
     userTask: raw.userTask || '',
   }

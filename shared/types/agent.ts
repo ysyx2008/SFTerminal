@@ -6,6 +6,30 @@
 /** 终端/执行环境类型：本地终端、SSH 远程终端、纯助手模式（无终端） */
 export type TerminalType = 'local' | 'ssh' | 'assistant'
 
+/**
+ * 会话类别——对应 Agent 的三种存在方式（互斥）：
+ * - task：直接接受指令干活，可并行、可隔离（普通 tab）
+ * - companion：与用户的对话，一条长期关系线，多渠道汇流（联络 `__companion__`）
+ * - watch：内心独白 / 独自做事（心跳、Watch `__watch__`），独立历史树、不进会话列表
+ * 详见 docs/conversation-refactor-design.md 与 project-architecture.mdc。
+ */
+export type ConversationKind = 'task' | 'companion' | 'watch'
+
+/** 联络常驻 Agent key（一条长期关系线，全渠道汇流） */
+export const COMPANION_AGENT_KEY = '__companion__'
+/** 关切（Watch）常驻 Agent key（内心独白，独立历史树） */
+export const WATCH_AGENT_KEY = '__watch__'
+
+/**
+ * 从 agentKey 推断会话类别。常驻命名 Agent 用固定 key，其余皆为普通任务。
+ * 这是 kind 的唯一推断口径——历史记录缺 `kind` 字段时按此补默认（向后兼容）。
+ */
+export function inferConversationKind(agentKey?: string): ConversationKind {
+  if (agentKey === COMPANION_AGENT_KEY) return 'companion'
+  if (agentKey === WATCH_AGENT_KEY) return 'watch'
+  return 'task'
+}
+
 /** Agent 执行模式：strict=所有命令需确认，relaxed=仅危险命令需确认，free=全自动 */
 export type ExecutionMode = 'strict' | 'relaxed' | 'free'
 

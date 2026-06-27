@@ -261,19 +261,9 @@ export class ConversationManager extends EventEmitter {
 }
 ```
 
-### 4.3 ConversationStore（纯 IO，从 HistoryService 剥离）
+### 4.3 存储层（已模块化，无需新类）
 
-```ts
-// electron/services/conversation/storage.ts
-export class ConversationStore {
-  async save(record: AgentRecord, tree: 'main' | 'watch'): Promise<void>
-  async load(id: string): Promise<AgentRecord | null>
-  async delete(id: string): Promise<boolean>
-  async loadIndex(): Promise<IndexEntry[]>
-  async saveIndex(entries: IndexEntry[]): Promise<void>
-  async loadAll(tree?: 'main' | 'watch'): Promise<AgentRecord[]>
-}
-```
+文件 IO 原语已在 `electron/services/history/agent-storage.ts` 抽成纯函数（`readAgentRecordFile` / `writeAgentRecordFile` / `listAgentDateDirs` / `collectAgentStorageStats` 等）。`HistoryService` 组合这些纯函数 + 索引缓存 + `storeForRecord` 的 main/watch 路由。**结论：不再另造 `ConversationStore` 类**——ConversationManager 直接复用 HistoryService（或其底层纯函数）作为存储后端即可。
 
 ### 4.4 messages.ts（纯函数，保留现有实现）
 
@@ -322,10 +312,11 @@ export interface AgentRecord {
 - [ ] 已有 `companion-restore.integration.test.ts` 是底子，补齐其余
 - **验证**：测试覆盖上述不变量并全绿（作为后续重构的红线）
 
-### 阶段 1：存储层拆分（低风险，与记忆解耦）
-- [ ] 抽 `ConversationStore`，`HistoryService` 暂留为适配器（对外接口不变）
-- [ ] `AgentRecord` 加 `kind` + normalize 默认值（形态复用现有 `terminalType`，不加 `title`/`workbenchType`）
-- **验证**：现有数据读写不破坏，CLI 回归 + 阶段 0 测试全绿
+### 阶段 1：模型补字段（存储 IO 已模块化，无需再拆）✅
+- [x] 文件 IO 原语**已抽成纯函数** `electron/services/history/agent-storage.ts`（read/write/list/stats），`HistoryService` 只组合它们 + 索引 + watch 路由——故**不再另造冗余的 `ConversationStore` 类**。
+- [x] `shared/types`：加 `ConversationKind` + `COMPANION_AGENT_KEY`/`WATCH_AGENT_KEY` + `inferConversationKind`
+- [x] `AgentRecord.kind` / `AgentHistorySummary.kind`（可选），`normalizeAgentRecord` 读盘时按 agentKey 推断补默认（向后兼容；写盘显式 kind 由阶段 2 `Conversation.toRecord` 负责）
+- **验证**：history.service / 特征网 / companion 集成 / v6 迁移测试全绿（36/36）
 
 ### 阶段 2：抽 Conversation 聚合根（高价值高风险，在测试网下逐字段搬）
 - [ ] 把 `_session*` + `buildLLMContext`(纯部分) + `commitRun` + `fromRecord/toRecord` 搬进 `Conversation`

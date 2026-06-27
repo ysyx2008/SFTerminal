@@ -2,7 +2,7 @@
  * 历史记录共享类型定义
  */
 
-import type { TerminalType, TokenUsage } from './agent'
+import type { ConversationKind, TerminalType, TokenUsage } from './agent'
 
 export interface AgentStepRecord {
   id: string
@@ -41,6 +41,11 @@ export interface AgentRecord {
   terminalId: string
   /** Agent 的身份 key（如 '__companion__'、'__watch__'，或 tabId）。存盘时由 agent._agentId 写入 */
   agentKey?: string
+  /**
+   * 会话类别（task/companion/watch）。缺失（老记录）时由 `inferConversationKind(agentKey)`
+   * 推断补默认，见 normalizeAgentRecord。形态用 terminalType 表达，不另设 workbenchType。
+   */
+  kind?: ConversationKind
   terminalType: TerminalType
   sshHost?: string
   userTask: string
@@ -70,6 +75,8 @@ export interface AgentHistorySummary {
   terminalType: TerminalType
   /** Agent 身份 key（如 '__companion__'、'__watch__'）。用于把联络/关切会话从「任务」侧栏剔除 */
   agentKey?: string
+  /** 会话类别（task/companion/watch）。缺失时由 inferConversationKind(agentKey) 推断 */
+  kind?: ConversationKind
   sshHost?: string
   status: 'completed' | 'failed' | 'aborted'
 }
