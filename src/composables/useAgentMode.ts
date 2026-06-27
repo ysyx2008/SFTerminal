@@ -232,6 +232,18 @@ export function useAgentMode(
     if (cache?.keys.length) {
       terminalStore.setAiScrollCache(id, cache)
     }
+
+    // 锚定复原：记"视口顶部那条 item 的 id + 距视口顶的 offset"。
+    // findItemIndex 是 O(log n) 二分，每次 scroll 调用代价可忽略。
+    const scroller = scrollerRef?.value
+    if (scroller?.findItemIndex && scroller?.getItemOffset) {
+      const idx = scroller.findItemIndex(el.scrollTop)
+      const itemTop = scroller.getItemOffset(idx)
+      const item = flattenedItems.value[idx]
+      if (item?.id != null) {
+        terminalStore.setAiScrollAnchor(id, { id: item.id, offset: el.scrollTop - itemTop })
+      }
+    }
   }
 
   const restoreScrollerCache = (): boolean => {
@@ -256,18 +268,39 @@ export function useAgentMode(
     }
   }
 
+  /**
+   * 锚定复原：用保存时的"视口顶 item id + offset"把那条消息钉回原视口位置。
+   * scrollToItem 内部用当前尺寸表算 itemPosition 再 scrollTop = itemPosition + offset，
+   * offset 与上方 item 尺寸无关 → 即使上方估算→实测高度修正也不漂移。
+   * 返回 false 时调用方回退到 ratio 复原。
+   */
+  const applyAnchorScrollTop = (): boolean => {
+    const id = currentTabId.value
+    if (!id) return false
+    const anchor = terminalStore.getAiScrollAnchor(id)
+    const scroller = scrollerRef?.value
+    if (!anchor || !scroller?.scrollToItem) return false
+    const idx = flattenedItems.value.findIndex(i => i.id === anchor.id)
+    if (idx < 0) return false
+    scroller.scrollToItem(idx, { align: 'start', offset: anchor.offset })
+    return true
+  }
+
   const restoreScrollTop = async () => {
     const id = currentTabId.value
     if (!id || !messagesRef.value) return
-    if (
-      terminalStore.getAiScrollTop(id) === undefined
-      && terminalStore.getAiScrollRatio(id) === undefined
-    ) return
+    const hasAnchor = !!terminalStore.getAiScrollAnchor(id)
+    const hasRatio = terminalStore.getAiScrollTop(id) !== undefined
+      || terminalStore.getAiScrollRatio(id) !== undefined
+    if (!hasAnchor && !hasRatio) return
 
     scrollerRef?.value?.forceUpdate?.(false)
 
+    // 优先锚定复原（精确钉回原视口 item）；锚点失效（item 被删 / 库方法缺失）时回退 ratio
     const apply = () => {
-      applySavedScrollTop()
+      if (!applyAnchorScrollTop()) {
+        applySavedScrollTop()
+      }
     }
 
     apply()
