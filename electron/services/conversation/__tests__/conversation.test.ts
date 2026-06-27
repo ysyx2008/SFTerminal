@@ -74,6 +74,18 @@ describe('Conversation 聚合根（领域模型）', () => {
     expect(Conversation.fromRecord(record).kind).toBe('companion')
   })
 
+  it('fromRecord：刻意不恢复 token 账（与现状 restoreFromSessionRecord 对齐，重开从零累积）', () => {
+    const record: AgentRecord = {
+      id: 'sess_tok', timestamp: Date.now(), terminalId: '', agentKey: 'tab-1',
+      terminalType: 'assistant', userTask: 'q', steps: [],
+      messages: [{ role: 'user', content: 'q' }, { role: 'assistant', content: 'a' }],
+      duration: 0, status: 'completed',
+      tokenUsage: { prompt_tokens: 99, completion_tokens: 11, total_tokens: 110 }
+    } as AgentRecord
+    // 历史记录带 tokenUsage，但恢复后会话 token 账保持空白（保留当前行为）
+    expect(Conversation.fromRecord(record).tokenUsage).toBeUndefined()
+  })
+
   it('toRecord：空会话（无 user_task）返回 null', () => {
     const conv = Conversation.create({ agentKey: 'tab-1', terminalType: 'local' })
     expect(conv.toRecord()).toBeNull()

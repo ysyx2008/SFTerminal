@@ -12,4 +12,4 @@
  */
 export { ConversationStore } from './storage'
 export { Conversation } from './conversation'
-export type { ConversationCreateOptions, CommitRunInput } from './conversation'
+export type { ConversationCreateOptions, ConversationDeps, CommitRunInput } from './conversation'

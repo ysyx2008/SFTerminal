@@ -39,6 +39,19 @@ export interface ConversationCreateOptions {
   sshHost?: string
 }
 
+/**
+ * 工作记忆（taskMemory）的来源。
+ * - `taskMemory`：注入一个**现成实例**。Agent 用此在 startNewSession（换 session 但保留工作记忆，
+ *   如 Watch）时把同一个 store 传给新 Conversation，保持现状的「跨 session 记忆」语义。
+ * - `lookupMeta`：未注入实例时，新建一个 TaskMemoryStore 并用此回调查工具元数据（纯函数，保持纯净）。
+ *
+ * taskMemory 完全归 Conversation 所有权的转移，留待阶段 3（Manager 策略层）。
+ */
+export interface ConversationDeps {
+  taskMemory?: TaskMemoryStore
+  lookupMeta?: LookupToolMeta
+}
+
 /** finalizeRun 的状态部分入参（与 Agent 的 AgentRun 解耦：只传纯数据） */
 export interface CommitRunInput {
   /** run.id（作为 taskMemory 的 taskId） */
@@ -99,7 +112,7 @@ export class Conversation {
     terminalType: TerminalType,
     sshHost: string | undefined,
     agentKey: string,
-    lookupMeta?: LookupToolMeta
+    taskMemory: TaskMemoryStore
   ) {
     this.id = id
     this.kind = kind
@@ -107,7 +120,7 @@ export class Conversation {
     this.terminalType = terminalType
     this.sshHost = sshHost
     this._agentKey = agentKey
-    this._taskMemory = new TaskMemoryStore(lookupMeta)
+    this._taskMemory = taskMemory
   }
 
   // ==================== 工厂 / 序列化 ====================
@@ -122,7 +135,7 @@ export class Conversation {
       kind?: ConversationKind
     },
     opts?: ConversationCreateOptions,
-    lookupMeta?: LookupToolMeta
+    deps?: ConversationDeps
   ): Conversation {
     const kind = params.kind ?? inferConversationKind(params.agentKey)
     return new Conversation(
@@ -132,7 +145,7 @@ export class Conversation {
       params.terminalType,
       opts?.sshHost,
       params.agentKey,
-      lookupMeta
+      deps?.taskMemory ?? new TaskMemoryStore(deps?.lookupMeta)
     )
   }
 
@@ -141,7 +154,7 @@ export class Conversation {
    * 忠实移植 Agent.restoreFromSessionRecord：优先用 messages 切分，缺 messages 的老记录降级用 steps。
    * 注意：**不**恢复 `_cachePrefix`——cache 前缀仅由 commitRun 设置，恢复后的首个 run 走冷启动（与现状一致）。
    */
-  static fromRecord(record: AgentRecord, lookupMeta?: LookupToolMeta): Conversation {
+  static fromRecord(record: AgentRecord, deps?: ConversationDeps): Conversation {
     const conv = new Conversation(
       record.id,
       record.kind ?? inferConversationKind(record.agentKey),
@@ -149,28 +162,39 @@ export class Conversation {
       record.terminalType,
       record.sshHost,
       record.agentKey ?? '',
-      lookupMeta
+      deps?.taskMemory ?? new TaskMemoryStore(deps?.lookupMeta)
     )
-
-    if (record.messages && record.messages.length > 0) {
-      const tasks = conv.splitMessagesIntoTasks(record.messages as AiMessage[])
-      for (const task of tasks) {
-        conv._taskMemory.saveTask(task.id, task.userTask, [], 'success', task.finalResult, task.messages)
-      }
-      conv._messages = (record.messages as AiMessage[]).map(m => ({ ...m }))
-    } else if (record.steps && record.steps.length > 0) {
-      const tasks = conv.splitStepsIntoTasks(record.steps)
-      for (const task of tasks) {
-        conv._taskMemory.saveTask(task.id, task.userTask, task.steps, 'success', task.finalResult)
-      }
-    }
-
-    if (record.steps && record.steps.length > 0) {
-      conv._steps = record.steps.map(s => Conversation.stepRecordToStep(s))
-    }
-
-    conv._tokenUsage = record.tokenUsage
+    conv.loadFromRecord(record)
     return conv
+  }
+
+  /**
+   * 把一条记录的 transcript 装载进**本实例**并重建工作记忆。
+   * 移植自 Agent.restoreFromSessionRecord，供 Agent 在已建会话后从 latest 记录恢复续写状态
+   *（持久命名 Agent 的 restoreRecentTaskMemory 另写同一注入 taskMemory，两者叠加）。
+   *
+   * **刻意不恢复 token 账**：与现状 restoreFromSessionRecord 对齐——重开会话后 _sessionTokenUsage
+   * 保持空白、从零累积（保留当前行为；是否改为持久化累积是另一项独立决策，不在本次重构内）。
+   */
+  loadFromRecord(record: AgentRecord): void {
+    if (record.messages && record.messages.length > 0) {
+      const tasks = this.splitMessagesIntoTasks(record.messages as AiMessage[])
+      for (const task of tasks) {
+        this._taskMemory.saveTask(task.id, task.userTask, [], 'success', task.finalResult, task.messages)
+      }
+      if (this._messages.length === 0) {
+        this._messages = (record.messages as AiMessage[]).map(m => ({ ...m }))
+      }
+    } else if (record.steps && record.steps.length > 0) {
+      const tasks = this.splitStepsIntoTasks(record.steps)
+      for (const task of tasks) {
+        this._taskMemory.saveTask(task.id, task.userTask, task.steps, 'success', task.finalResult)
+      }
+    }
+
+    if (record.steps && record.steps.length > 0 && this._steps.length === 0) {
+      this._steps = record.steps.map(s => Conversation.stepRecordToStep(s))
+    }
   }
 
   /**
