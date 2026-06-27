@@ -131,8 +131,8 @@ Agent 有三种存在方式，对应三类**互斥**的会话（`kind`）。把�
 
 - **为什么这么分**：任务是桌面主力（专注、可并行）；联络承载「觉醒」——主动找人、跨渠道连续；关切是 Agent 自己的循环，不该污染用户视野。
 - **关键标识**：`AgentRecord.agentKey` 区分常驻命名 Agent（`__companion__` / `__watch__`）与普通 tab Agent；联络历史恢复、Watch 上下文、侧栏过滤都依赖它。
-- **身份 vs 运行时绑定**：会话身份 = `id`(sessionId) + `kind`，**不可变**；`agentKey` / `workbenchType`(local/ssh/assistant) 是**可变的运行时绑定**（当前谁在跑、什么形态）。
-- **会话漫游**：任务历史在 local/ssh/独立助手间共享，用户点开旧会话续聊采用**会话漫游**——同一个 `sessionId` 继续、改由当前 tab 的 Agent 跑、id 与历史保持一条线，**不自动 fork**；需要另起一聊由用户**手动 fork**（联络→任务亦然：fork 出 `kind=task` 新会话、拷贝 transcript、原线只读保留）。
+- **身份 vs 运行时绑定 vs 形态**：会话身份 = `id`(sessionId) + `kind`，**不可变**；形态 = `terminalType`(local/ssh/assistant) + ssh 的 `sshHost`，会话创建时确定、**不可变**；`agentKey`（当前哪个 tab/实例在跑）是**可变的运行时绑定**。
+- **会话漫游（限同形态）**：用户点开旧会话续聊——同一个 `sessionId` 继续、改由当前 tab 的 Agent 跑、`agentKey` 更新但 `terminalType` 不变、id 与历史保持一条线，**不自动 fork**。**跨形态**（local↔ssh↔assistant）续聊不漫游，走"从历史创建任务"（避免把 ssh 历史的命令/工具名带进本地形态造成幻觉）；用户**手动 fork** 另起一聊（联络→任务亦然：新建 `kind=task` 会话、种子/拷贝起头、原线只读保留）。
 
 #### 联络的上下文设计（多渠道 · 常驻 · 主动消息）
 
