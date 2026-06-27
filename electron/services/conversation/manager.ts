@@ -11,7 +11,7 @@
  *   `openConversation()`（显式 id 建会话，供 fork）。Agent 不再自己 `Conversation.create` + 内联回种。
  * - **查询委托**：给 `AgentService` / `Agent` / IPC 一个名字达意的会话读侧权威，不再各处直伸手进 `HistoryService`。
  *
- * 边界（完整阶段 4B 暂缓/可能不做）：
+ * 边界（完整 4B 已决定不做，当前即终态）：
  * - **不**拥有 `Map<id, Conversation>`、**不**做 `taskMemory` 所有权反转——会话仍由 Agent 持有、
  *   taskMemory 仍是 Agent 级跨会话记忆（一个会话只由单个 Agent 独占记录，且 Agent 需跨多条会话
  *   读历史以维持记忆持续性，故 taskMemory 留在 Agent 才正确）。Manager 只「发证」不「总账」。

@@ -360,17 +360,17 @@ export interface AgentRecord {
 
 ### 阶段 4：Manager 成为会话读侧权威 ✅（A，已落地）
 > 决策：Phase 2-3 已解决"会话状态散落、改一处崩一片"的核心痛点（真相归 Conversation、kind 行为归策略表）。
-> 完整所有权反转（B）在此基础上增量价值低、却要动 ~70 个最热路径触点，故**只做高价值低风险的 A**，B 暂缓。
+> 完整所有权反转（B）在此基础上增量价值低、却要动 ~70 个最热路径触点，故**只做高价值低风险的 A**；B 后续**已决定不做**（见下方「阶段 4B」）。
 - [x] `ConversationManager` 补齐会话读侧 API（`getRecord`/`byDateRange`/`recentRecords`/`listSummaries`/`search`/`recentByAgentKey`/`delete`），`ConversationStore` 增 `byDateRange`/`search` 透传
 - [x] **封装散落的 kind 字面量过滤**：`taskScoped` 谓词（`inferConversationKind(agentKey)==='task' && !id.startsWith('watch_')`）取代 main.ts 各 IPC handler 里重复的 `agentKey !== '__watch__' && agentKey !== '__companion__' && …`
 - [x] `AgentService.getConversationManager()`；main.ts 的 `history:getAgentRecords`/`getRecentAgentRecords`/`listAgentSummaries`/`searchAgentRecords`/`getAgentRecordById`/`getRecentByAgentKey`/`deleteAgentRecord` 七个读侧 handler 统一走 Manager（带 historyService 防御 fallback）
 - **验证**：agent+conversation+services 1350、CLI 53/0、typecheck 无新增错误、行为等价（`taskScoped` 与旧字面量过滤逐项等价）
 
-### 阶段 4B（暂缓）：完整所有权反转 / Agent 去状态化
-- [ ] Manager 拥有 `Map<id,Conversation>`，`run(conversation, …)`，删除 Agent 上的 `_conversation`/`taskMemory` 所有权
-- [ ] 生命周期（create/reset/fork）+ `_suppressSessionSeed`/wakeup 完全上移 Manager；Conversation 事件 → Manager → IPC
-- **触发条件**：当出现"会话需脱离 Agent 实例独立存活/被多实例并发接管"等明确需求时再做；否则保持现状（Agent 持有 Conversation，Manager 管策略+读侧）
-- **验证**：全量回归
+### 阶段 4B：完整所有权反转 / Agent 去状态化 —— ❌ 已决定不做（当前形态即终态）
+> **结论**：会话只由**单个 Agent** 独占使用/记录（无并发接管需求），且 Agent 为保证记忆持续性需**跨多条会话**读历史——`taskMemory` 是 Agent 级（跨会话）记忆，留在 Agent 才正确。完整 4B 把 `Map<id,Conversation>` + `taskMemory` 所有权搬给单本会话，与这两条相悖，属过度设计。已落地的「4B 精简版（馆长发证）」只搬「谁来建会话」、不搬所有权总账，即为终态。
+- ~~Manager 拥有 `Map<id,Conversation>`、删除 Agent 的 `_conversation`/`taskMemory` 所有权~~ → 不做
+- ~~生命周期完全上移 Manager、Conversation 事件→Manager→IPC~~ → 不做
+- **若将来真出现**「会话需脱离 Agent 独立存活/被多实例并发接管」的明确需求，再重新评估；在此之前不要把本节当作待办。
 
 ### 阶段 5：前端收尾 ✅
 > 复盘发现痛点⑤的核心其实已被前序阶段化解：前端**只读** `AgentRecord`（全程经 `window.electronAPI.history.*` IPC，阶段 4 已把这些读侧 handler 上移到 Manager），**无任何** `saveAgentRecord` 调用——record 的唯一写者是后端 `Conversation.toRecord`。前端既不写 record、也不感知 `Conversation` 类。
@@ -416,7 +416,7 @@ electron/services/conversation/
 - `conversation.ts` —— §4.1 聚合根：真实 transcript（`_messages`/`_steps`）+ taskMemory（可注入）+ cachePrefix + token 账；`terminalType`/`sshHost` 不可变形态、`agentKey` 可变；`create`/`fromRecord`/`loadFromRecord`/`setRestoredTranscript`/`toRecord`/`commitRun`/`commitFailedRun`/`shouldReuseCachePrefix`/`reset`/`rebind`
 - `storage.ts` —— §4.3 薄封装 `ConversationStore`（委托 `HistoryService`，含 main/watch 路由，**不重新实现 IO**）
 - `policy.ts` —— §3.4 `CONVERSATION_POLICY`（kind→行为策略，含预留 `perWatchContinuity`）
-- `manager.ts` —— §4.2 `ConversationManager`（持有 `ConversationStore` + policy）：回种决策 `resolveSeedSessionId` + **会话工厂**（`openConversationForRun`=回种决策+建会话一次完成、`openConversation`=显式 id 建会话，供 fork）+ **会话读侧权威**（`getRecord`/`byDateRange`/`recentRecords`/`listSummaries`/`search`/`recentByAgentKey`/`delete`，`taskScoped` 谓词封装 kind 过滤）；`Map<id,Conversation>` 所有权反转留阶段 4B
+- `manager.ts` —— §4.2 `ConversationManager`（持有 `ConversationStore` + policy）：回种决策 `resolveSeedSessionId` + **会话工厂**（`openConversationForRun`=回种决策+建会话一次完成、`openConversation`=显式 id 建会话，供 fork）+ **会话读侧权威**（`getRecord`/`byDateRange`/`recentRecords`/`listSummaries`/`search`/`recentByAgentKey`/`delete`，`taskScoped` 谓词封装 kind 过滤）；`Map<id,Conversation>` 所有权反转（4B）已决定不做
 - `messages.ts` —— transcript 切分纯函数：`splitMessagesIntoTasks`/`splitStepsIntoTasks`/`stepRecordToStep`/`chunkStepsByUserTask`。**Agent 与 Conversation 共用唯一实现**，id 生成方案由调用方经 `makeId` 注入（恢复路径=实例单调序号，fork/steps=数组下标），行为与各自旧实现逐字节一致。收敛了原先散在 `agent.ts`（恢复×2 + fork 静态×2）与 `conversation.ts`（私有×2）的 5 处重复切分逻辑——「改一处忘另一处」裂缝消除。
 - `index.ts` —— 导出 `Conversation`/`ConversationStore`/`ConversationManager`/`CONVERSATION_POLICY`/切分纯函数 + 类型
 - `__tests__/conversation.test.ts`、`__tests__/storage.test.ts`、`__tests__/policy.test.ts`、`__tests__/manager.test.ts`
@@ -427,7 +427,7 @@ electron/services/conversation/
 - `restoreRecentTaskMemory()` 跨**多条不同历史会话**聚合进工作记忆，是 Agent 级（跨会话）编排，天然不属于单个 Conversation；
 - `createTaskMemory()` 是子类/测试的 mock 注入点。
 
-故 taskMemory **真正的所有权转移留待阶段 4B**（与 `Map<id,Conversation>` 所有权反转一并做）。生产中只有 Agent 写 taskMemory；`Conversation.loadFromRecord`（也写 taskMemory）仅单测使用。本轮已通过 `messages.ts` 让两条写路径共用同一份切分逻辑，消除了"两份代码"的具体隐患。
+故 taskMemory **所有权不转移（完整 4B 已决定不做，见下）**——它本就该是 Agent 级跨会话记忆。生产中只有 Agent 写 taskMemory；`Conversation.loadFromRecord`（也写 taskMemory）仅单测使用。本轮已通过 `messages.ts` 让两条写路径共用同一份切分逻辑，消除了"两份代码"的具体隐患。
 
 > **结论（不做完整 4B 的依据）**：一个会话只由**单个 Agent** 独占使用/记录（无并发接管需求），且 Agent 为保证记忆持续性需**跨多条会话**读取历史——这说明 `taskMemory` 是 Agent 级（跨会话）的，留在 Agent 身上才正确。完整 4B 把 taskMemory 强行搬进单本 Conversation 反而与这一正当需求相悖，属过度设计。故采用下方"4B 精简版"。
 
@@ -438,7 +438,7 @@ electron/services/conversation/
 - **退化路径**：仅无 `historyService` 的纯单测（无法装配 Manager）走 Agent 内一段最小 `Conversation.create`（仅认 `context.sessionId`/新建，不回种）。所有带 historyService 的测试 service builder 已自动装配 Manager，让回种/恢复走**生产路径**。
 - **taskMemory 不动**：仍由 Agent 注入、Agent 级跨会话持有（见上）。
 
-- **待建（完整阶段 4B，暂缓/可能不做）**：Manager 拥有 `Map<id,Conversation>` + `resolveForRun` 所有权反转、`taskMemory` 所有权转移、Conversation 事件→IPC
+- **完整阶段 4B（Manager 拥有 `Map<id,Conversation>` + `taskMemory` 所有权反转、Conversation 事件→IPC）：❌ 已决定不做**，理由同上，当前形态即终态。
 
 ### 待办（非本次重构强约束，择期）
 - [ ] **移除联络（companion）的"清空对话"功能**：让用户轻易清空长期关系线是设计失误且危险。至少应提高操作门槛或取消。改动点：`AiPanel.vue` 的清空按钮在 companion 入口的可见性（`CompanionWorkbench` 内嵌 `AiPanel`，按钮当前无条件渲染于 header）。

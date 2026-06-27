@@ -75,7 +75,8 @@ export interface HostProfileData {
  *
  * 对外的 AgentRecord 相关方法（saveAgentRecord 等）**保留为委派转发**，向后兼容现有调用方
  * （main.ts IPC handler / AgentService / Agent / 前端 IPC）。新代码应优先走 ConversationManager
- * 的读侧接缝；写侧目前仍经此处转发，完整所有权反转见重构阶段 4B。
+ * 的读侧接缝；写侧仍经此处委派转发（向后兼容）。完整所有权反转（4B）**已决定不做**
+ * （会话只由单个 Agent 独占记录、taskMemory 是 Agent 级跨会话记忆，反转与之相悖），委派转发即终态。
  */
 export class HistoryService {
   private historyDir: string

@@ -714,24 +714,13 @@ export class AgentRecordStore {
       return { records, totalMatched, hasMore: totalMatched > records.length }
     }
 
-    // full：按候选所在日期文件分组，异步逐文件读取，对完整记录做正文关键字匹配
-    const candidateIdsByDate = new Map<string, Set<string>>()
-    const dateOrder: string[] = []
-    for (const e of candidates) {
-      let idSet = candidateIdsByDate.get(e.dateStr)
-      if (!idSet) {
-        idSet = new Set()
-        candidateIdsByDate.set(e.dateStr, idSet)
-        dateOrder.push(e.dateStr) // candidates 已按时间倒序，首次出现顺序即最新日期优先
-      }
-      idSet.add(e.id)
-    }
-
+    // full：候选已按时间倒序（最新优先），逐条异步读回完整记录做正文关键字匹配。
+    // 每条单文件存储，按候选顺序逐个读即可；fs.promises 逐文件 await 让出事件循环，
+    // 避免历史量大时同步遍历阻塞主进程导致界面冻结。
     const results: AgentRecord[] = []
     let totalMatched = 0
 
-    const candidateEntries = candidates.filter(e => candidateIdsByDate.has(e.dateStr))
-    for (const entry of candidateEntries) {
+    for (const entry of candidates) {
       const r = await this.readAgentRecordFromDiskAsync(entry.dateStr, entry.id)
       if (!r) continue
       const matchedByKeyword = !hasKeyword || Boolean(
