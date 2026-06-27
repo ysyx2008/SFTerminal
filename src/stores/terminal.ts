@@ -750,12 +750,23 @@ export const useTerminalStore = defineStore('terminal', () => {
     const sessionId = sourceTab.agentState?.sessionId
     const sidebarTitle = sessionId ? configStore.getConversationDisplayTitle(sessionId) : undefined
     const baseTitle = sourceTab.customTitle || sidebarTitle || sourceTab.title
+    const forkTitle = baseTitle + titleSuffix
+
+    // 把后缀写进会话显示标题覆盖层（resolveConversationTitle 优先取它，高于 record.userTask）。
+    // 后端 record.userTask 由 saveCheckpoint / Conversation.toRecord 从首条 user_task step.content
+    // 重建（不带后缀）；不写这里的话，分叉会话一旦继续对话触发保存，侧栏后缀就会被覆盖丢失。
+    // 只覆盖显示标题，不动 step.content（保持用户原文消息气泡不变），也不新增 schema 字段。
+    try {
+      await configStore.setConversationDisplayTitle(result.newSessionId, forkTitle)
+    } catch (e) {
+      log.warn('forkToAssistantTab: failed to persist fork display title', e)
+    }
 
     const shouldPromote = sourceTab.type === 'assistant' && !!sourceTab.isPromoted
 
     const tab: TerminalTab = {
       id: newTabId,
-      title: baseTitle + titleSuffix,
+      title: forkTitle,
       type: 'assistant',
       agentId: newAgentId,
       isPromoted: shouldPromote,
