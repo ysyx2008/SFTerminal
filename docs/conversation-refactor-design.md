@@ -340,10 +340,14 @@ export interface AgentRecord {
 - [x] `AgentRecord.kind` / `AgentHistorySummary.kind`（可选），`normalizeAgentRecord` 读盘时按 agentKey 推断补默认（向后兼容；写盘显式 kind 由阶段 2 `Conversation.toRecord` 负责）
 - **验证**：history.service / 特征网 / companion 集成 / v6 迁移测试全绿（36/36）
 
-### 阶段 2：抽 Conversation 聚合根（高价值高风险，在测试网下逐字段搬）
-- [ ] 把 `_session*` + `buildLLMContext`(纯部分) + `commitRun` + `fromRecord/toRecord` 搬进 `Conversation`
-- [ ] Agent 改为持有/委托一个 `Conversation`，逐字段迁移，每步测试全绿
-- **验证**：阶段 0 全部不变量保持
+### 阶段 2：抽 Conversation 聚合根（高价值高风险，在测试网下逐字段搬）✅
+- [x] **2a** `ConversationStore` 薄封装（`HistoryService` 之上的存储接缝，复用 `agent-storage.ts`，含 watch 路由）
+- [x] **2b-1** 把 `_session*` + `commitRun` + `fromRecord/toRecord` + 切分/cache 决策搬进 `Conversation`（数据模型 + 序列化），独立单测覆盖
+- [x] **2b-2** Agent 持有/委托一个 `Conversation`：9 个 `_session*` 字段退化为只读委托 getter，唯一真相源归 Conversation
+  - finalizeRun→`commitRun`、handleError→`commitFailedRun`、saveSessionToHistory→`toRecord`、restore→`setRestoredTranscript`、reset/startNew/fork→Conversation 生命周期；删除 `accumulateSessionData`
+  - taskMemory 仍由 Agent **注入**（共享实例），保留 startNewSession 跨 session 记忆语义；完整所有权转移见阶段 3
+  - 关键防回归：restoreRecent + restoreFromSessionRecord 共用 Agent 单调 `_restoreTaskSeq` 防 task id 碰撞；`terminalType` 成不可变形态后 forkAgent 同模式判定改为「undefined 或 'assistant'」
+- **验证**：阶段 0 全部不变量保持（agent+conversation 815/815、services/watch 1314、CLI 53/0、真实 agent run 端到端、claude-review 无行为回归）
 
 ### 阶段 3：抽 ConversationManager + 策略表
 - [ ] 生命周期（create/reset/fork/resolveForRun/list/search）从 Agent/AgentService 上移
@@ -388,13 +392,13 @@ electron/services/conversation/
 
 ## 九、实现状态与待办
 
-### 已建文件（阶段 0–3 早期产物，需重对齐）
-`electron/services/conversation/` 下 `conversation.ts`/`manager.ts`/`storage.ts`/`messages.ts`/`index.ts` 已存在，但**基于"AgentRecord 是单任务"的误判**，建了平行的 `ConversationRecord`/扁平 messages 模型。重构落地时：
-- **保留** `messages.ts` 纯函数（改用 `@shared/types`）
-- **重写** `conversation.ts` 为本文档 §4.1 的聚合根（真实 transcript + taskMemory + cachePrefix，`terminalType` 不可变、`agentKey` 可变）
-- **重写** `storage.ts` 为薄封装 `ConversationStore`（§4.3：复用 `agent-storage.ts` 纯函数 + 索引 + watch 路由，**不重新实现 IO**，去掉平行 `ConversationRecord` 依赖）
-- **删除**平行类型 `ConversationRecord`/`ConversationMessage`/`ConversationStep`
-- **新增** `policy.ts`
+### 已建文件（现状）
+早期基于"AgentRecord 是单任务"误判的平行脚手架（`ConversationRecord`/扁平 messages、`manager.ts`/`messages.ts`）**已删除并重写**。当前 `electron/services/conversation/` 下：
+- `conversation.ts` —— §4.1 聚合根：真实 transcript（`_messages`/`_steps`）+ taskMemory（可注入）+ cachePrefix + token 账；`terminalType`/`sshHost` 不可变形态、`agentKey` 可变；`create`/`fromRecord`/`loadFromRecord`/`setRestoredTranscript`/`toRecord`/`commitRun`/`commitFailedRun`/`shouldReuseCachePrefix`/`reset`/`rebind`
+- `storage.ts` —— §4.3 薄封装 `ConversationStore`（委托 `HistoryService`，含 main/watch 路由，**不重新实现 IO**）
+- `index.ts` —— 导出 `Conversation`/`ConversationStore` + 类型
+- `__tests__/conversation.test.ts`、`__tests__/storage.test.ts`
+- **待建（阶段 3）**：`manager.ts`（ConversationManager）、`policy.ts`（kind + `CONVERSATION_POLICY`，承接 `_persistentNamedAgent`/`_suppressSessionSeed`/wakeup 分支 + taskMemory 所有权）
 
 ### 待办（非本次重构强约束，择期）
 - [ ] **移除联络（companion）的"清空对话"功能**：让用户轻易清空长期关系线是设计失误且危险。至少应提高操作门槛或取消。改动点：`AiPanel.vue` 的清空按钮在 companion 入口的可见性（`CompanionWorkbench` 内嵌 `AiPanel`，按钮当前无条件渲染于 header）。
