@@ -14,10 +14,10 @@
 
 **双历史树**：用户/联络/终端任务记录存 `history/agent/`（主索引 `agent-index.json`）；watch（关切）的「内心独白」执行记录存 `history/watch/`（独立索引 `watch-index.json`）。两者**物理隔离**，避免高频内心独白（曾占主索引 93%、把它压到 ~149MB）压舱主索引、拖慢每次写盘。归属由 `AgentRecord.agentKey === '__watch__'` 结构化判定（不再用 userTask 关键词匹配）。
 
-## 文件 / 规模
+## 文件
 
-- `electron/services/history.service.ts`（~530 行，瘦身后）：ChatRecord + Token 统计 + 导入导出 + 清理；组合 `AgentRecordStore` 并委派会话记录方法。
-- `electron/services/history/agent-record-store.ts`（~940 行）：`AgentRecordStore`——会话记录存储聚合（CRUD + 索引机器 + 图片外化 + canvas 剥离 + main/watch 路由），`ConversationStore` 的真相源。
+- `electron/services/history.service.ts`：ChatRecord + Token 统计 + 导入导出 + 清理；组合 `AgentRecordStore` 并委派会话记录方法。
+- `electron/services/history/agent-record-store.ts`：`AgentRecordStore`——会话记录存储聚合（CRUD + 索引机器 + 图片外化 + canvas 剥离 + main/watch 路由），`ConversationStore` 的真相源。
 - `electron/services/history/agent-storage.ts`：会话记录文件 IO 纯函数（读/写/列举/损坏隔离）。
 - `electron/services/history/date-util.ts`：`getDateString()` 纯函数，供 store 与 service 共用。
 
@@ -30,6 +30,7 @@
 | `getChatRecords(startDate?, endDate?): ChatRecord[]` | 按日期范围查询聊天记录（**已废弃**） | 导出流程 |
 | `rebuildAgentIndex(): void` | 从磁盘重建**全部**索引（主 agent + watch 两套） | v5/v6 迁移、清理后、维护 |
 | `saveAgentRecord(record: AgentRecord): void` | 保存 Agent 执行记录并更新索引；按 `agentKey` 路由到 agent 或 watch 树/索引 | `agent/index.ts` |
+| `saveArtifacts(recordId: string, artifacts: CanvasArtifact[]): void` | 保存（或更新）产出物面板清单到指定记录；自动剥离 `contentFromFile` 的 content（可从磁盘重生） | IPC `history:saveArtifacts` |
 | `getAgentRecords(startDate?, endDate?): AgentRecord[]` | 按日期范围查询 Agent 记录 | 前端历史面板 |
 | `getAgentRecordById(id: string): AgentRecord \| undefined` | 按 ID 精确查找 Agent 记录 | 回放/详情查看 |
 | `deleteAgentRecord(id: string): boolean` | 按 ID 删除单条 Agent 记录（日文件、索引、关联截图目录） | IPC `history:deleteAgentRecord`、最近对话侧栏删除 |
