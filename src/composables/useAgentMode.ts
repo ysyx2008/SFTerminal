@@ -1730,9 +1730,10 @@ export function useAgentMode(
   }
 
   // 加载历史记录到当前会话
+  // 注意：仅把对话内容恢复到当前 tab 的 AiPanel，不改写 tab 标题。
+  // 终端 tab 标题代表主机（本地/SSH），助手 tab 标题代表助手身份或用户手动重命名，
+  // 加载历史对话不应覆盖既有标题；对话标题由侧栏/历史列表单独呈现。
   const loadHistoryRecord = async (record: AgentRecord) => {
-    const title = configStore.resolveConversationTitle(record.id, record.userTask)
-    terminalStore.renameTab(currentTabId.value, title)
     terminalStore.restoreAgentHistory(currentTabId.value, record)
     // 关闭弹窗（如果是从弹窗中选择的）
     closeHistoryModal()
