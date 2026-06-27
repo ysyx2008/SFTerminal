@@ -155,6 +155,15 @@ export class AgentService {
   }
 
   /**
+   * 取会话管理器（读侧权威：会话 list/search/get/delete + kind 策略）。
+   * 供 main.ts 的 history:* 读侧 IPC handler 走统一接缝，而非各处直接调 HistoryService。
+   * 仅在 `setHistoryService` 后可用。
+   */
+  getConversationManager(): ConversationManager | undefined {
+    return this.services.conversationManager
+  }
+
+  /**
    * 设置插件注册表
    */
   setPluginRegistry(pluginRegistry: import('../plugin/registry').PluginRegistry): void {

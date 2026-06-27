@@ -4062,22 +4062,30 @@ ipcMain.handle('history:saveArtifacts', async (_event, recordId: string, artifac
   historyService.saveArtifacts(recordId, artifacts ?? [])
 })
 
-// 获取 Agent 记录
+// 会话读侧 IPC 统一走 ConversationManager（读侧权威）：list/search/get/delete + kind 策略过滤
+// 都收口到 Manager，不再在各 handler 里散布 agentKey 字面量过滤。
+// Manager 在 setHistoryService（启动早期、IPC 注册前）必装配，故此处缺失属配置错误——
+// 宁可显式抛错（前端可见的失败），也不静默退化到丢 filter/参数的 historyService 调用（会返回错误结果）。
+const conv = () => {
+  const manager = agentService.getConversationManager()
+  if (!manager) throw new Error('ConversationManager not initialized (setHistoryService must run before IPC)')
+  return manager
+}
+
+// 获取 Agent 记录（纯透传，无 kind 过滤需求）
 ipcMain.handle('history:getAgentRecords', async (_event, startDate?: string, endDate?: string) => {
-  return historyService.getAgentRecords(startDate, endDate)
+  return conv().byDateRange(startDate, endDate)
 })
 
 ipcMain.handle('history:getRecentAgentRecords', async (_event, limit?: number, excludeWakeup?: boolean) => {
-  // 结构化过滤：watch 内心独白（agentKey='__watch__'）已存独立索引，联络会话（agentKey='__companion__'）
-  // 有独立常驻 tab，均不应出现在任务侧栏的「最近记录」里。
-  const filter = excludeWakeup
-    ? (r: AgentRecord) => r.agentKey !== '__watch__' && r.agentKey !== '__companion__' && !r.id.startsWith('watch_')
-    : undefined
-  return historyService.getRecentAgentRecords(limit ?? 5, filter)
+  // excludeWakeup=true 为任务侧栏口径（仅 task；watch 内心独白进独立索引、联络有独立常驻 tab，均剔除）。
+  return conv().recentRecords(limit ?? 5, excludeWakeup ?? false)
 })
 
 ipcMain.handle('history:listAgentSummaries', async (_event, excludeWakeup?: boolean) => {
-  return historyService.listAgentHistorySummaries(excludeWakeup)
+  // 注：摘要级 excludeWakeup 过滤当前由 HistoryService 内部维护（与 taskScoped 同口径但另一处实现，
+  // 因摘要类型与读盘路径不同）。后续可考虑统一收敛进 Manager，记为 debt。
+  return conv().listSummaries(excludeWakeup)
 })
 
 ipcMain.handle(
@@ -4093,33 +4101,22 @@ ipcMain.handle(
       titleOnly?: boolean
     }
   ) => {
-    // 结构化过滤：watch 内心独白和联络会话均不应出现在任务搜索结果中。
-    const filter = options.excludeWakeup
-      ? (r: AgentRecord) => r.agentKey !== '__watch__' && r.agentKey !== '__companion__' && !r.id.startsWith('watch_')
-      : undefined
-    return await historyService.searchAgentRecordsAdvanced({
-      keyword: options.keyword,
-      startDate: options.startDate,
-      endDate: options.endDate,
-      limit: options.limit ?? 50,
-      filter,
-      titleOnly: options.titleOnly
-    })
+    return conv().search(options)
   }
 )
 
 // 按 ID 获取单条 Agent 记录（用于 Watch 执行详情查看）
 ipcMain.handle('history:getAgentRecordById', async (_event, id: string) => {
-  return historyService.getAgentRecordById(id)
+  return conv().getRecord(id)
 })
 
 // 取某 agentKey 最近 N 条完整会话记录（联络常驻 tab 重启后合并恢复历史对话）
 ipcMain.handle('history:getRecentByAgentKey', async (_event, agentKey: string, limit?: number) => {
-  return historyService.getRecentRecordsByAgentKey(agentKey, limit ?? 10)
+  return conv().recentByAgentKey(agentKey, limit ?? 10)
 })
 
 ipcMain.handle('history:deleteAgentRecord', async (_event, id: string) => {
-  return historyService.deleteAgentRecord(id)
+  return conv().delete(id)
 })
 
 // 获取数据目录路径

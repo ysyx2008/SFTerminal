@@ -358,9 +358,18 @@ export interface AgentRecord {
 - **验证**：阶段 0 全部不变量保持（agent+conversation 1064、watch+services 281、CLI 53/0、typecheck 无新增错误、claude-review LGTM 无行为回归）
 - **本阶段刻意不做（与阶段 4 强耦合，一并做）**：Manager 拥有 `Map<id,Conversation>` + `resolveForRun` 所有权反转、list/search 从 HistoryService 上移、Conversation 事件→Manager→IPC、`taskMemory` 所有权转移。现阶段 Conversation 仍由 Agent 持有，Manager 只做「策略 + 查询接缝」
 
-### 阶段 4：Agent 去状态化 + Manager 所有权反转
+### 阶段 4：Manager 成为会话读侧权威 ✅（A，已落地）
+> 决策：Phase 2-3 已解决"会话状态散落、改一处崩一片"的核心痛点（真相归 Conversation、kind 行为归策略表）。
+> 完整所有权反转（B）在此基础上增量价值低、却要动 ~70 个最热路径触点，故**只做高价值低风险的 A**，B 暂缓。
+- [x] `ConversationManager` 补齐会话读侧 API（`getRecord`/`byDateRange`/`recentRecords`/`listSummaries`/`search`/`recentByAgentKey`/`delete`），`ConversationStore` 增 `byDateRange`/`search` 透传
+- [x] **封装散落的 kind 字面量过滤**：`taskScoped` 谓词（`inferConversationKind(agentKey)==='task' && !id.startsWith('watch_')`）取代 main.ts 各 IPC handler 里重复的 `agentKey !== '__watch__' && agentKey !== '__companion__' && …`
+- [x] `AgentService.getConversationManager()`；main.ts 的 `history:getAgentRecords`/`getRecentAgentRecords`/`listAgentSummaries`/`searchAgentRecords`/`getAgentRecordById`/`getRecentByAgentKey`/`deleteAgentRecord` 七个读侧 handler 统一走 Manager（带 historyService 防御 fallback）
+- **验证**：agent+conversation+services 1350、CLI 53/0、typecheck 无新增错误、行为等价（`taskScoped` 与旧字面量过滤逐项等价）
+
+### 阶段 4B（暂缓）：完整所有权反转 / Agent 去状态化
 - [ ] Manager 拥有 `Map<id,Conversation>`，`run(conversation, …)`，删除 Agent 上的 `_conversation`/`taskMemory` 所有权
-- [ ] 生命周期（create/reset/fork/list/search）+ `_suppressSessionSeed`/wakeup 完全上移 Manager；Conversation 事件 → Manager → IPC
+- [ ] 生命周期（create/reset/fork）+ `_suppressSessionSeed`/wakeup 完全上移 Manager；Conversation 事件 → Manager → IPC
+- **触发条件**：当出现"会话需脱离 Agent 实例独立存活/被多实例并发接管"等明确需求时再做；否则保持现状（Agent 持有 Conversation，Manager 管策略+读侧）
 - **验证**：全量回归
 
 ### 阶段 5：前端收尾
@@ -401,7 +410,7 @@ electron/services/conversation/
 - `conversation.ts` —— §4.1 聚合根：真实 transcript（`_messages`/`_steps`）+ taskMemory（可注入）+ cachePrefix + token 账；`terminalType`/`sshHost` 不可变形态、`agentKey` 可变；`create`/`fromRecord`/`loadFromRecord`/`setRestoredTranscript`/`toRecord`/`commitRun`/`commitFailedRun`/`shouldReuseCachePrefix`/`reset`/`rebind`
 - `storage.ts` —— §4.3 薄封装 `ConversationStore`（委托 `HistoryService`，含 main/watch 路由，**不重新实现 IO**）
 - `policy.ts` —— §3.4 `CONVERSATION_POLICY`（kind→行为策略，含预留 `perWatchContinuity`）
-- `manager.ts` —— §4.2 `ConversationManager`（持有 `ConversationStore` + policy；本阶段承接回种决策 `resolveSeedSessionId` + 会话查询委托；所有权反转留阶段 4）
+- `manager.ts` —— §4.2 `ConversationManager`（持有 `ConversationStore` + policy）：回种决策 `resolveSeedSessionId` + **会话读侧权威**（`getRecord`/`byDateRange`/`recentRecords`/`listSummaries`/`search`/`recentByAgentKey`/`delete`，`taskScoped` 谓词封装 kind 过滤）；`Map<id,Conversation>` 所有权反转留阶段 4B
 - `index.ts` —— 导出 `Conversation`/`ConversationStore`/`ConversationManager`/`CONVERSATION_POLICY` + 类型
 - `__tests__/conversation.test.ts`、`__tests__/storage.test.ts`、`__tests__/policy.test.ts`、`__tests__/manager.test.ts`
 - **待建（阶段 4）**：Manager 拥有 `Map<id,Conversation>` + `resolveForRun` 所有权反转、list/search 上移、`taskMemory` 所有权转移、Conversation 事件→IPC

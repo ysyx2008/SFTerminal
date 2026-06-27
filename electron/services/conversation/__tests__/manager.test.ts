@@ -154,4 +154,51 @@ describe('ConversationManager', () => {
       expect(mgr().getRecord('sess_del')).toBeUndefined()
     })
   })
+
+  describe('读侧权威：recentRecords / search 的任务侧栏过滤（封装旧 agentKey 字面量）', () => {
+    function seedMixed(m: ConversationManager) {
+      m.conversationStore.save(rec('sess_task', { agentKey: 'tab-1', userTask: '任务记录' }))
+      m.conversationStore.save(rec('sess_comp', { agentKey: '__companion__', userTask: '联络记录' }))
+      m.conversationStore.save(rec('watch_run_1', { agentKey: '__watch__', userTask: '关切记录' }))
+    }
+
+    it('recentRecords(excludeWakeup=false)：含 task + companion（不含独立树的 watch）', () => {
+      const m = mgr()
+      seedMixed(m)
+      const ids = mgr().recentRecords(50, false).map(r => r.id)
+      expect(ids).toContain('sess_task')
+      expect(ids).toContain('sess_comp')
+      expect(ids).not.toContain('watch_run_1') // watch 在独立树
+    })
+
+    it('recentRecords(excludeWakeup=true)：任务侧栏口径，仅 task（剔除 companion + watch）', () => {
+      const m = mgr()
+      seedMixed(m)
+      const ids = mgr().recentRecords(50, true).map(r => r.id)
+      expect(ids).toEqual(['sess_task'])
+    })
+
+    it('search(excludeWakeup=true)：companion 记录不进任务搜索结果', async () => {
+      const m = mgr()
+      seedMixed(m)
+      const res = await mgr().search({ keyword: '记录', excludeWakeup: true })
+      const ids = res.records.map(r => r.id)
+      expect(ids).toContain('sess_task')
+      expect(ids).not.toContain('sess_comp')
+      expect(ids).not.toContain('watch_run_1')
+    })
+
+    it('search(excludeWakeup=false)：companion 记录可被搜到', async () => {
+      const m = mgr()
+      seedMixed(m)
+      const res = await mgr().search({ keyword: '联络', excludeWakeup: false })
+      expect(res.records.some(r => r.id === 'sess_comp')).toBe(true)
+    })
+
+    it('byDateRange 透传：取完整记录', () => {
+      const m = mgr()
+      m.conversationStore.save(rec('sess_d1', { agentKey: 'tab-1' }))
+      expect(mgr().byDateRange().some(r => r.id === 'sess_d1')).toBe(true)
+    })
+  })
 })

@@ -18,7 +18,18 @@ import type { AgentRecord, AgentHistorySummary, ConversationKind } from '@shared
 import { inferConversationKind } from '@shared/types'
 import { ConversationStore } from './storage'
 import { conversationPolicy, type ConversationPolicy } from './policy'
+import type { SearchAgentRecordsResult } from '../history.service'
 import { createLogger } from '../../utils/logger'
+
+/** 会话搜索入参（IPC 口径：excludeWakeup 表示「任务侧栏」过滤，由 Manager 翻译成 policy filter）。 */
+export interface ConversationSearchOptions {
+  keyword?: string
+  startDate?: string
+  endDate?: string
+  limit?: number
+  excludeWakeup?: boolean
+  titleOnly?: boolean
+}
 
 const log = createLogger('ConversationManager')
 
@@ -81,11 +92,46 @@ export class ConversationManager {
     return { sessionId: `session_${Date.now()}`, startTime: Date.now() }
   }
 
-  // ==================== 查询委托（单一入口，未来 list/search 之家） ====================
+  // ==================== 查询委托（会话读侧权威：list / search / get / delete） ====================
+
+  /**
+   * 「任务侧栏」可见性谓词：只有 `kind=task` 进任务侧栏。
+   * 封装原本散落在 main.ts IPC handler 里的 `agentKey !== '__watch__' && agentKey !== '__companion__'
+   * && !id.startsWith('watch_')` 字面量过滤——companion 有独立常驻 tab、watch 是内心独白，都排除。
+   * `!id.startsWith('watch_')` 是对缺 agentKey 的旧 watch 记录的防御兜底。
+   */
+  private readonly taskScoped = (r: AgentRecord): boolean =>
+    inferConversationKind(r.agentKey) === 'task' && !r.id.startsWith('watch_')
 
   /** 按 id（sessionId）精确读取一条会话。 */
   getRecord(id: string): AgentRecord | undefined {
     return this.store.load(id)
+  }
+
+  /** 按日期范围取完整会话记录。 */
+  byDateRange(startDate?: string, endDate?: string): AgentRecord[] {
+    return this.store.byDateRange(startDate, endDate)
+  }
+
+  /**
+   * 最近 N 条会话记录。`excludeWakeup=true` 为任务侧栏口径（仅 task，剔除 companion/watch）。
+   */
+  recentRecords(limit = 5, excludeWakeup = false): AgentRecord[] {
+    return this.store.recent(limit, excludeWakeup ? this.taskScoped : undefined)
+  }
+
+  /**
+   * 高级搜索。`excludeWakeup=true` 时按任务侧栏口径过滤（仅 task）。
+   */
+  search(options: ConversationSearchOptions): Promise<SearchAgentRecordsResult> {
+    return this.store.search({
+      keyword: options.keyword,
+      startDate: options.startDate,
+      endDate: options.endDate,
+      limit: options.limit ?? 50,
+      titleOnly: options.titleOnly,
+      filter: options.excludeWakeup ? this.taskScoped : undefined
+    })
   }
 
   /** 取某 agentKey 最近一条会话（联络/关切重启回种用）。 */

@@ -16,7 +16,11 @@
  * HistoryService 这个「什么都管」的大类。
  */
 import type { AgentRecord, AgentHistorySummary } from '@shared/types'
-import type { HistoryService } from '../history.service'
+import type {
+  HistoryService,
+  SearchAgentRecordsOptions,
+  SearchAgentRecordsResult
+} from '../history.service'
 
 export class ConversationStore {
   constructor(private readonly history: HistoryService) {}
@@ -77,5 +81,15 @@ export class ConversationStore {
    */
   listSummaries(excludeWakeup?: boolean): AgentHistorySummary[] {
     return this.history.listAgentHistorySummaries(excludeWakeup)
+  }
+
+  /** 按日期范围取完整会话记录（读各日 JSON）。 */
+  byDateRange(startDate?: string, endDate?: string): AgentRecord[] {
+    return this.history.getAgentRecords(startDate, endDate)
+  }
+
+  /** 高级搜索（关键字 / 日期 / 可选 filter / titleOnly）。 */
+  search(options: SearchAgentRecordsOptions): Promise<SearchAgentRecordsResult> {
+    return this.history.searchAgentRecordsAdvanced(options)
   }
 }
