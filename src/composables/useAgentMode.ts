@@ -922,7 +922,6 @@ export function useAgentMode(
 
       if (group.steps.length > 0) {
         // 调试模式 OFF 时，隐藏"成功且无用户必看产出"的 tool_call / tool_result step
-        // user_supplement 按 steps 时间顺序渲染，不整体提前到 user_task 之后
         const debugMode = configStore.agentDebugMode
         const visibleSteps = group.steps.filter(s => shouldShowToolResultStep(s, debugMode))
         for (let i = 0; i < visibleSteps.length; i++) {

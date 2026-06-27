@@ -2233,32 +2233,29 @@ export abstract class Agent {
           streamContent += chunk
           const now = Date.now()
           
-          // 第一次收到内容：优先复用 initial "正在准备..." step 的 id 把它原地改造为 message
-          // 流式态。这样前端只看到一次 updateStep（type/content 变化），list item identity 不变，
-          // 不会经历"先 add new + 再 remove old"两步 reactive 更新带来的 unmount/mount 闪动。
-          // 配合前端把 initial preparing 渲染成跟 message + ThinkingBlock 完全一致的视觉壳，
-          // 用户感知到的就是文字"正在准备..." → "思考中 N.Ns"无缝切换，整体持续往下输出。
+          // 第一次收到内容：把 initial "正在准备..." step 和"思考中"拆成两个 step——
+          // 新 addStep 一个 message step 到步骤流**末尾**，再 removeStep(initial 占位)。
+          // 拆分（而非原地复用占位 step）的原因：占位 step 在 initializeRun 时就已创建在
+          // 步骤流前部，准备阶段追加的 user_supplement 落在它之后；若复用它的位置改成
+          // message，思考/消息就会出现在补充消息之前——与"agent 已收到补充消息才开始思考"
+          // 的时序相反。拆分后思考 step 自然追加到末尾，补充消息留在它之前。
+          // 先 add 新 message 再 remove 旧占位，避免前端 steps 出现瞬时为 0 的中间态。
+          // 不继承占位 step 的 timestamp：思考中只计思考时长（从首 token 起），等待首 token
+          // 的时长由占位 step 自己在等待期间显示（趣味用语 + N.Ns），随占位 step 一并移除。
           if (!streamStepCreated) {
             streamStepCreated = true
             clearSlowTtftTimer()
             // 重试成功：把上一次的"正在重试..."提示定稿（保留卡片但停掉 spinner）
             finalizeRetryStep()
+            this.addStep({
+              id: streamStepId,
+              type: 'message',
+              content: streamContent,
+              isStreaming: true,
+            })
             if (run.initialStepId) {
-              streamStepId = run.initialStepId
-              this.updateStep(streamStepId, {
-                type: 'message',
-                content: streamContent,
-                isStreaming: true
-              })
+              this.removeStep(run.initialStepId)
               run.initialStepId = undefined
-            } else {
-              // initial step 不存在的边角场景（如未来某个分支提前清理过）：退化为 addStep
-              this.addStep({
-                id: streamStepId,
-                type: 'message',
-                content: streamContent,
-                isStreaming: true
-              })
             }
             lastContentUpdate = Date.now()
             return
