@@ -130,10 +130,10 @@ export abstract class Agent {
   /**
    * 是否为「持久命名 Agent」（如 Companion / Watch 这类固定 ID、跨重启复用的 Agent）。
    *
-   * 影响两处：
-   *   - run 初始化回种 sessionId（无 sessionId 入口从最近一条历史回种，再经 suppressSeed 门控）
-   *   - `restoreFromHistory` 的全局历史 fallback（sessionId 找不到 record 时从全局最近 N 条
-   *     历史提取任务恢复工作记忆，让 Companion/Watch 重启后"记得最近聊过什么"）
+   * 现仅影响 `restoreFromHistory` 的全局历史 fallback（sessionId 找不到 record 时从全局最近 N 条
+   * 历史提取任务恢复工作记忆，让 Companion/Watch 重启后"记得最近聊过什么"）+ `isPersistentNamedAgent()`
+   * 对外查询。run 初始化的 sessionId 回种决策已上移至 `ConversationManager.seedsFromHistory`
+   * （经 `openConversationForRun`），不再走本 getter。
    *
    * 取值由 `CONVERSATION_POLICY[kind].seedFromHistoryOnColdStart` 数据驱动：
    * companion + watch（持久命名）= true，普通 tab Agent（task）= false。
@@ -626,53 +626,33 @@ export abstract class Agent {
       const suppressSeed = this._suppressSessionSeed
       this._suppressSessionSeed = false
 
-      // 回种决策（无 sessionId 入口是否从历史回种 sessionId）上移到 ConversationManager，
-      // 按 kind policy 决定，收敛旧 `_persistentNamedAgent` 分支。生产环境 setHistoryService 时
-      // 已装配 manager；测试可能直接注入 services 而无 manager，则回退到等价内联逻辑
-      //（用 policy 派生的 `_persistentNamedAgent` getter + historyService，行为一致）。
+      // 「馆长发证」：回种决策（无 sessionId 入口是否从历史回种）+ 建会话一次完成，交还现成聚合根。
+      // Agent 不再自己做回种分支 + `Conversation.create`——这套逻辑统一收口在 ConversationManager。
+      // 生产环境 setHistoryService 时已装配 manager。
       const manager = this.services.conversationManager
-      let sessionId: string
-      let startTime: number
       if (manager) {
-        const seed = manager.resolveSeedSessionId({
+        this._conversation = manager.openConversationForRun({
           agentKey: this._agentId,
+          terminalType: context.terminalType,
+          sshHost: context.sshHost,
           contextSessionId: context.sessionId,
           contextStartTime: context.sessionStartTime,
-          suppressSeed
+          suppressSeed,
+          taskMemory: this.taskMemory
         })
-        sessionId = seed.sessionId
-        startTime = seed.startTime
-      } else if (context.sessionId) {
-        sessionId = context.sessionId
-        startTime = context.sessionStartTime || Date.now()
-      } else if (this._persistentNamedAgent && !suppressSeed) {
-        // 持久命名 Agent（联络）是「同一条长期关系线」。重启后若 IM/网关/主动消息等
-        // 不带 sessionId 的入口先碰到它（此时还没有会话），绝不能新起一条
-        // session_${Date.now()}——那会建出与历史断链的并行记录，正是「联络裂成两条
-        // session」的源头。应从最近一条同 agentKey 历史回种，让所有入口续写到同一条会话。
-        //（Watch 每次执行走 startNewSession，会经 suppressSeed 跳过，仍保持独立记录。）
-        const latest = this._agentId
-          ? this.services.historyService?.getLatestRecordByAgentKey?.(this._agentId)
-          : undefined
-        if (latest) {
-          sessionId = latest.id
-          startTime = latest.timestamp
-          log.info(`Seeded sessionId from history for persistent agent ${this._agentId}: ${latest.id} (no context.sessionId, avoid forking a disconnected session)`)
-        } else {
-          sessionId = `session_${Date.now()}`
-          startTime = Date.now()
-        }
       } else {
-        sessionId = `session_${Date.now()}`
-        startTime = Date.now()
+        // 退化路径：无 manager（仅部分无 historyService 的纯单测）。按 context.sessionId 或新建，
+        // **不**做 companion 回种——回种需 manager + 历史，相关行为由带 manager 的测试覆盖。
+        this._conversation = Conversation.create(
+          { agentKey: this._agentId ?? '', terminalType: context.terminalType },
+          {
+            id: context.sessionId ?? `session_${Date.now()}`,
+            createdAt: context.sessionStartTime ?? Date.now(),
+            sshHost: context.sshHost
+          },
+          { taskMemory: this.taskMemory }
+        )
       }
-      // 形态（terminalType/sshHost）创建时定、不可变；工作记忆注入 Agent 持有的 taskMemory 实例，
-      // 保持 startNewSession（换 session 但保留记忆，如 Watch）的现状语义。
-      this._conversation = Conversation.create(
-        { agentKey: this._agentId ?? '', terminalType: context.terminalType },
-        { id: sessionId, createdAt: startTime, sshHost: context.sshHost },
-        { taskMemory: this.taskMemory }
-      )
     }
 
     // 先推送 user_task 步骤，让用户消息立即上墙，再做耗时的初始化
@@ -1271,11 +1251,22 @@ export abstract class Agent {
   }): void {
     // 直接建好 fork 会话（fork 始终是 assistant Agent）。首次 run 见 _conversation 已存在
     // 即跳过新建，转由 restoreFromHistory(sessionId) 把已保存的 fork record 装载进来。
-    this._conversation = Conversation.create(
-      { agentKey: this._agentId ?? '', terminalType: opts.terminalType ?? 'assistant' },
-      { id: opts.sessionId, createdAt: Date.now(), sshHost: opts.sshHost },
-      { taskMemory: this.taskMemory }
-    )
+    // 同样经馆长发证（显式 sessionId，不做回种）；无 manager 的退化路径直接建。
+    const manager = this.services.conversationManager
+    const forkParams = {
+      agentKey: this._agentId ?? '',
+      terminalType: opts.terminalType ?? 'assistant' as TerminalType,
+      sshHost: opts.sshHost,
+      sessionId: opts.sessionId,
+      taskMemory: this.taskMemory
+    }
+    this._conversation = manager
+      ? manager.openConversation(forkParams)
+      : Conversation.create(
+          { agentKey: forkParams.agentKey, terminalType: forkParams.terminalType },
+          { id: opts.sessionId, createdAt: Date.now(), sshHost: opts.sshHost },
+          { taskMemory: this.taskMemory }
+        )
     if (opts.previousRunMessages && opts.previousRunMessages.length > 0) {
       // setCachePrefix 内部深拷贝，避免与源 Agent 共享引用
       this._conversation.setCachePrefix(opts.previousRunMessages)

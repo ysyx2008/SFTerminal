@@ -1,24 +1,28 @@
 /**
- * ConversationManager —— 会话生命周期 / 策略接缝
+ * ConversationManager —— 策略决策 + 会话工厂 + 查询委托
  *
- * 设计依据：docs/conversation-refactor-design.md §3.1 / §3.4 / §4.2。
+ * 设计依据：docs/conversation-refactor-design.md §3.1 / §3.4 / §4.2 + 「4B 精简版：馆长发证」。
  *
- * 职责（本阶段 = 策略 + 查询接缝）：
+ * 职责：
  * - 持有 `ConversationStore` + `CONVERSATION_POLICY`，作为「按 kind 决策 + 会话查询」的唯一入口。
- * - 把今天散在 `Agent` 上的回种分支（旧 `_persistentNamedAgent`）收敛成读策略表：
+ * - **策略决策**：把旧散在 `Agent` 上的回种分支（旧 `_persistentNamedAgent`）收敛成读策略表：
  *   `seedsFromHistory()` / `resolveSeedSessionId()`。
- * - 给 `AgentService` / `Agent` 一个名字达意的接缝，不再各处直接伸手进 `HistoryService`。
+ * - **会话工厂（馆长发证）**：`openConversationForRun()`（回种决策 + 建会话一次完成）/
+ *   `openConversation()`（显式 id 建会话，供 fork）。Agent 不再自己 `Conversation.create` + 内联回种。
+ * - **查询委托**：给 `AgentService` / `Agent` / IPC 一个名字达意的会话读侧权威，不再各处直伸手进 `HistoryService`。
  *
- * 边界（本阶段刻意不做，留待 Phase 4 与「Agent 去状态化」一并做）：
- * - **不**拥有 `Map<id, Conversation>`、**不**做 `resolveForRun` 的所有权反转——那会大面积
- *   改动 Agent 的 run 流程与 historyService 直调，与 taskMemory 所有权转移强耦合。
- *   现阶段 Conversation 仍由 Agent 持有，Manager 只承接「按 kind 的决策」与「会话查询委托」。
+ * 边界（完整阶段 4B 暂缓/可能不做）：
+ * - **不**拥有 `Map<id, Conversation>`、**不**做 `taskMemory` 所有权反转——会话仍由 Agent 持有、
+ *   taskMemory 仍是 Agent 级跨会话记忆（一个会话只由单个 Agent 独占记录，且 Agent 需跨多条会话
+ *   读历史以维持记忆持续性，故 taskMemory 留在 Agent 才正确）。Manager 只「发证」不「总账」。
  */
-import type { AgentRecord, AgentHistorySummary, ConversationKind } from '@shared/types'
+import type { AgentRecord, AgentHistorySummary, ConversationKind, TerminalType } from '@shared/types'
 import { inferConversationKind } from '@shared/types'
 import { ConversationStore } from './storage'
+import { Conversation } from './conversation'
 import { conversationPolicy, type ConversationPolicy } from './policy'
 import type { SearchAgentRecordsResult } from '../history.service'
+import type { TaskMemoryStore } from '../agent/task-memory'
 import { createLogger } from '../../utils/logger'
 
 /** 会话搜索入参（IPC 口径：excludeWakeup 表示「任务侧栏」过滤，由 Manager 翻译成 policy filter）。 */
@@ -90,6 +94,58 @@ export class ConversationManager {
     }
 
     return { sessionId: `session_${Date.now()}`, startTime: Date.now() }
+  }
+
+  // ==================== 会话工厂（Manager 发证：Agent 不再自己 new Conversation） ====================
+
+  /**
+   * 为一次 run「开一本会话」：把"决定用哪个 sessionId（回种 / 新建）"与"建 Conversation"
+   * 合成一次调用，交还一个现成的聚合根。这样 Agent 只管用，不再自己做回种决策 + `Conversation.create`
+   *（旧 run 初始化里那段 `_persistentNamedAgent` 内联分支由此收口）。
+   *
+   * 形态（terminalType/sshHost）创建时定、不可变；工作记忆按需注入（Agent 传它持有的实例，
+   * 维持「换 session 保留记忆」语义——taskMemory 仍是 Agent 级跨会话记忆，所有权不在本步转移）。
+   */
+  openConversationForRun(params: {
+    agentKey: string | undefined
+    terminalType: TerminalType
+    sshHost?: string
+    contextSessionId?: string
+    contextStartTime?: number
+    suppressSeed?: boolean
+    taskMemory?: TaskMemoryStore
+  }): Conversation {
+    const seed = this.resolveSeedSessionId({
+      agentKey: params.agentKey,
+      contextSessionId: params.contextSessionId,
+      contextStartTime: params.contextStartTime,
+      suppressSeed: params.suppressSeed
+    })
+    return Conversation.create(
+      { agentKey: params.agentKey ?? '', terminalType: params.terminalType },
+      { id: seed.sessionId, createdAt: seed.startTime, sshHost: params.sshHost },
+      { taskMemory: params.taskMemory }
+    )
+  }
+
+  /**
+   * 用**显式** sessionId 开一本会话（不做回种决策）。供 fork 等"会话 id 已定"的场景，
+   * 让 Agent 同样不必直接 `Conversation.create`。
+   * @param params.startTime 会话开始时间戳；省略则 `Date.now()`（fork 取当前时刻即可）。
+   */
+  openConversation(params: {
+    agentKey: string | undefined
+    terminalType: TerminalType
+    sshHost?: string
+    sessionId: string
+    startTime?: number
+    taskMemory?: TaskMemoryStore
+  }): Conversation {
+    return Conversation.create(
+      { agentKey: params.agentKey ?? '', terminalType: params.terminalType },
+      { id: params.sessionId, createdAt: params.startTime ?? Date.now(), sshHost: params.sshHost },
+      { taskMemory: params.taskMemory }
+    )
   }
 
   // ==================== 查询委托（会话读侧权威：list / search / get / delete） ====================

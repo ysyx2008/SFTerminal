@@ -35,6 +35,7 @@ vi.mock('../../im/im.service', () => ({
 
 import { Agent } from '../agent'
 import { HistoryService } from '../../history.service'
+import { ConversationManager, ConversationStore } from '../../conversation'
 import type { ToolDefinition } from '../../ai.service'
 import type { AgentContext, AgentServices } from '../types'
 
@@ -78,7 +79,9 @@ function makeServices(history: HistoryService): AgentServices {
       getAgentOnboardingCompleted: vi.fn().mockReturnValue(true),
       hasVisionCapability: vi.fn().mockReturnValue(true)
     } as any,
-    historyService: history as any
+    historyService: history as any,
+    // 馆长发证：companion 回种走生产路径（resolveSeedSessionId 按 agentKey policy 决策）
+    conversationManager: new ConversationManager(new ConversationStore(history))
   }
 }
 

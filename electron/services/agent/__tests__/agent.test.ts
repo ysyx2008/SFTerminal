@@ -43,6 +43,7 @@ import type {
   AgentStep
 } from '../types'
 import { TaskMemoryStore } from '../task-memory'
+import { ConversationManager, ConversationStore } from '../../conversation'
 
 // ==================== Mock 实现 ====================
 
@@ -155,12 +156,18 @@ function createMockConfigService() {
 
 // 创建基础的 AgentServices mock
 function createMockServices(overrides?: Partial<AgentServices>): AgentServices {
-  return {
+  const services: AgentServices = {
     aiService: createMockAiService() as any,
     ptyService: createMockPtyService() as any,
     configService: createMockConfigService() as any,
     ...overrides
   }
+  // 有 historyService 即自动装配 ConversationManager，让会话回种/恢复走生产路径
+  //（馆长发证）。无 historyService 的纯单测仍走 Agent 内部退化路径。
+  if (services.historyService && !services.conversationManager) {
+    services.conversationManager = new ConversationManager(new ConversationStore(services.historyService))
+  }
+  return services
 }
 
 // 创建基础的 AgentContext

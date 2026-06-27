@@ -29,6 +29,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { splitMessagesIntoTasks } from '../../conversation/messages'
+import { ConversationManager, ConversationStore } from '../../conversation'
 
 let tmpDir: string
 
@@ -112,7 +113,9 @@ function makeServices(history: HistoryService, responder: Responder = defaultRes
       getAgentOnboardingCompleted: vi.fn().mockReturnValue(true),
       hasVisionCapability: vi.fn().mockReturnValue(true)
     } as any,
-    historyService: history as any
+    historyService: history as any,
+    // 馆长发证：会话创建/回种走生产路径（与 setHistoryService 装配的一致）
+    conversationManager: new ConversationManager(new ConversationStore(history))
   }
 }
 
