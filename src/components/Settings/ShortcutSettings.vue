@@ -37,6 +37,10 @@ function isHoldKeyAction(action: ShortcutAction): boolean {
   return HOLD_KEY_ACTIONS.includes(action)
 }
 
+function isVoiceInput(action: ShortcutAction): boolean {
+  return action === 'voiceInput'
+}
+
 const recordingAction = ref<ShortcutAction | null>(null)
 const conflictMessage = ref<string>('')
 
@@ -227,8 +231,11 @@ function isActionModified(action: ShortcutAction): boolean {
         :class="{ modified: isActionModified(action) }"
       >
           <div class="shortcut-label-wrap">
-            <span class="shortcut-label">{{ t(`shortcutSettings.actions.${action}`) }}</span>
-            <span v-if="isHoldKeyAction(action)" class="shortcut-hint">{{ t('shortcutSettings.holdToTalk') }}</span>
+            <span
+              class="shortcut-label"
+              :title="isVoiceInput(action) ? t('shortcutSettings.voiceInputHint') : undefined"
+            >{{ t(`shortcutSettings.actions.${action}`) }}</span>
+            <span v-if="isHoldKeyAction(action) && configStore.keyboardShortcuts[action]" class="shortcut-hint">{{ t('shortcutSettings.holdToTalk') }}</span>
           </div>
           <div class="shortcut-right">
             <div class="shortcut-actions">
@@ -266,6 +273,9 @@ function isActionModified(action: ShortcutAction): boolean {
                     class="keycap"
                   >{{ key }}</kbd>
                 </span>
+              </template>
+              <template v-else-if="isVoiceInput(action)">
+                <span class="empty-text">{{ t('shortcutSettings.voiceInputOff') }}</span>
               </template>
               <template v-else>
                 <span class="empty-text">{{ t('shortcutSettings.clickToSet') }}</span>

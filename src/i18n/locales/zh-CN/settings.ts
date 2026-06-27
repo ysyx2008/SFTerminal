@@ -753,6 +753,8 @@ export default {
     recording: '请按下快捷键...',
     recordingModifier: '请按下修饰键...',
     holdToTalk: '长按说话',
+    voiceInputHint: '可与系统听写（Win+H / macOS 听写）二选一；启用后请选不与输入法冲突的按键',
+    voiceInputOff: '已关闭',
     clickToSet: '点击设置',
     reset: '恢复默认',
     resetAll: '全部恢复默认',

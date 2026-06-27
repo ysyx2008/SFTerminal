@@ -46,7 +46,10 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   clearTerminal: 'CmdOrCtrl+K',
   openSettings: 'CmdOrCtrl+,',
   aiDebugConsole: 'F12',
-  voiceInput: 'Control',
+  // Windows 下裸 Ctrl 与输入法切换（Ctrl+Space/Ctrl+Shift）冲突，且无干净的纯键盘 hold 键，
+  // 故 Win 默认关闭；macOS 输入法不依赖 Ctrl，保留 'Control' 默认。
+  // 快捷键为空字符串即视为功能关闭（不下模型、不监听按键）。
+  voiceInput: _isMac ? 'Control' : '',
   splitHorizontal: _isMac ? 'Cmd+D' : 'Ctrl+Shift+D',
   splitVertical: _isMac ? 'Cmd+Shift+D' : 'Ctrl+Shift+E',
   closePane: _isMac ? 'Cmd+Shift+W' : 'Ctrl+Shift+W',

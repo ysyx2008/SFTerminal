@@ -133,7 +133,9 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   clearTerminal: 'CmdOrCtrl+K',
   openSettings: 'CmdOrCtrl+,',
   aiDebugConsole: 'F12',
-  voiceInput: 'Control',
+  // Windows 默认关闭（裸 Ctrl 与输入法切换冲突，无干净 hold 键）；macOS 保留 Control。
+  // 空字符串 = 功能关闭，与前端 src/stores/config.ts 保持一致。
+  voiceInput: _isMac ? 'Control' : '',
   splitHorizontal: _isMac ? 'Cmd+D' : 'Ctrl+Shift+D',
   splitVertical: _isMac ? 'Cmd+Shift+D' : 'Ctrl+Shift+E',
   closePane: _isMac ? 'Cmd+Shift+W' : 'Ctrl+Shift+W',

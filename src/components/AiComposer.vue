@@ -49,6 +49,8 @@ const props = defineProps<{
   isPushToTalk: boolean
   audioAvailable: boolean
   isSpeechInitializing: boolean
+  /** 语音输入功能总开关（快捷键非空即启用）；关闭时隐藏麦克风按钮 */
+  voiceInputEnabled: boolean
   formatFileSize: (size?: number) => string
   openImagePreview: (url: string) => void
   removeImage: (id: string) => void
@@ -632,7 +634,7 @@ const handleSendClick = (event: MouseEvent) => {
         </div>
         <div class="input-footer-right">
           <button
-            v-if="!isLoading || isAgentRunning"
+            v-if="voiceInputEnabled && (!isLoading || isAgentRunning)"
             class="voice-btn"
             :class="{ recording: isRecording, transcribing: isTranscribing, ptt: isPushToTalk, unavailable: !audioAvailable }"
             :disabled="!audioAvailable || isTranscribing || isSpeechInitializing"
@@ -669,7 +671,7 @@ const handleSendClick = (event: MouseEvent) => {
         <slot name="inner-right" />
 
         <button
-          v-if="!isLoading || isAgentRunning"
+          v-if="voiceInputEnabled && (!isLoading || isAgentRunning)"
           class="voice-btn"
           :class="{ recording: isRecording, transcribing: isTranscribing, ptt: isPushToTalk, unavailable: !audioAvailable }"
           :disabled="!audioAvailable || isTranscribing || isSpeechInitializing"

@@ -753,6 +753,8 @@ export default {
     recording: 'Press a shortcut...',
     recordingModifier: 'Press a modifier key...',
     holdToTalk: 'Hold to talk',
+    voiceInputHint: "Optional vs system dictation (Win+H / macOS Dictation); pick a key that doesn't clash with your IME",
+    voiceInputOff: 'Off',
     clickToSet: 'Click to set',
     reset: 'Reset',
     resetAll: 'Reset All',

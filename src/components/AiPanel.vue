@@ -2839,6 +2839,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         :is-push-to-talk="isPushToTalk"
         :audio-available="audioAvailable"
         :is-speech-initializing="isSpeechInitializing"
+        :voice-input-enabled="!!configStore.keyboardShortcuts.voiceInput"
         :format-file-size="(size?: number) => formatFileSize(size ?? 0)"
         :open-image-preview="openImagePreview"
         :remove-image="removeImage"
