@@ -313,22 +313,28 @@ export function useAgentMode(
 
   /**
    * 历史对话滚到底部（Virtual Scroller 重试 + 500ms 等待 mermaid/活图渲染后对齐）。
-   * @param opts.hideUntilSettled 历史"冷加载"路径传 true：贴底期间 opacity:0，
-   *        等 scrollHeight 连续 2 rAF 稳定（或 520ms 兜底）后淡入，消除弹跳。
+   * 默认启用同帧贴底（stickyFollowBottom + suppressFlipUntil），wrapper 重排时底部
+   * 恒定，消除估算→实测高度修正造成的弹跳 / 切 tab 漂移。
+   * @param opts.hideUntilSettled 历史"冷加载"路径传 true：额外 opacity:0，等 scrollHeight
+   *        连续 2 rAF 稳定（或 520ms 兜底）后淡入，遮住新挂载场景 observer 未装上时的首次重排。
    *        pendingConfirm / 切 tab 等热路径不传，保持即时可见。
    */
   const scrollToHistoryBottomWithRetry = (opts?: { hideUntilSettled?: boolean }) => {
     const hide = opts?.hideUntilSettled === true
     if (hide) {
       isHistoryScrollPending.value = true
-      // 启用同帧贴底跟随：wrapper ResizeObserver 在 item 估算→实测高度重排时，
-      // 于 layout 后 / paint 前把 scrollTop 钉到新底——等价于"以底部为锚点渲染"，
-      // 底部恒定不动，高度修正全部发生在视区上方，视觉无弹跳。
-      // suppressFlipUntil 跳过 FLIP 动画：重排 delta 通常 ≥ MAX_FLIP_DELTA 本就硬切，
-      // 小 delta（mermaid/活图晚到）也强制硬切，避免历史冷加载出现滑动。
-      suppressFlipUntil = Date.now() + 600
-      guardAfterAutoScroll()
     }
+    // 默认启用同帧贴底跟随：wrapper ResizeObserver 在 item 估算→实测高度重排时，
+    // 于 layout 后 / paint 前把 scrollTop 钉到新底——等价于"以底部为锚点渲染"，
+    // 底部恒定不动，高度修正全部发生在视区上方。
+    // 切 tab 回到底部分支同样依赖此钉底：restoreScrollerCache 只能恢复此前测过的
+    // item 尺寸，未测过的仍是 minItemSize 估算，scrollToBottom 会落在"估算底"；
+    // 没有同帧钉底则 scrollTop 不跟随重排 → 停在距底几十 px，且 saveScrollTop 捕获
+    // nearBottom=false / ratio<1.0，快速切换几次后稳态漂移到"上面一点"。
+    // suppressFlipUntil 跳过 FLIP 动画：重排 delta 通常 ≥ MAX_FLIP_DELTA 本就硬切，
+    // 小 delta（mermaid/活图、tab 切回的零星重测）也强制硬切，避免出现滑动。
+    suppressFlipUntil = Date.now() + 600
+    guardAfterAutoScroll()
 
     const apply = () => {
       if (scrollerRef?.value) {
