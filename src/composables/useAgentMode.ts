@@ -305,8 +305,31 @@ export function useAgentMode(
     }
   }
 
-  /** 历史对话滚到底部（Virtual Scroller 重试 + 500ms 等待 mermaid/活图渲染后对齐） */
-  const scrollToHistoryBottomWithRetry = () => {
+  /**
+   * 历史恢复贴底期间隐藏消息列表，避免虚拟滚动尺寸重排造成的视觉弹跳。
+   * opacity:0 不影响布局 / ResizeObserver 测量，待 scrollHeight 稳定后淡入。
+   */
+  const isHistoryScrollPending = ref(false)
+
+  /**
+   * 历史对话滚到底部（Virtual Scroller 重试 + 500ms 等待 mermaid/活图渲染后对齐）。
+   * @param opts.hideUntilSettled 历史"冷加载"路径传 true：贴底期间 opacity:0，
+   *        等 scrollHeight 连续 2 rAF 稳定（或 520ms 兜底）后淡入，消除弹跳。
+   *        pendingConfirm / 切 tab 等热路径不传，保持即时可见。
+   */
+  const scrollToHistoryBottomWithRetry = (opts?: { hideUntilSettled?: boolean }) => {
+    const hide = opts?.hideUntilSettled === true
+    if (hide) {
+      isHistoryScrollPending.value = true
+      // 启用同帧贴底跟随：wrapper ResizeObserver 在 item 估算→实测高度重排时，
+      // 于 layout 后 / paint 前把 scrollTop 钉到新底——等价于"以底部为锚点渲染"，
+      // 底部恒定不动，高度修正全部发生在视区上方，视觉无弹跳。
+      // suppressFlipUntil 跳过 FLIP 动画：重排 delta 通常 ≥ MAX_FLIP_DELTA 本就硬切，
+      // 小 delta（mermaid/活图晚到）也强制硬切，避免历史冷加载出现滑动。
+      suppressFlipUntil = Date.now() + 600
+      guardAfterAutoScroll()
+    }
+
     const apply = () => {
       if (scrollerRef?.value) {
         scrollerRef.value.scrollToBottom?.()
@@ -325,6 +348,34 @@ export function useAgentMode(
         scrollerRef?.value?.forceUpdate?.(false)
         saveScrollTop()
       }, 500)
+
+      if (!hide) return
+
+      // 提前 reveal：scrollHeight 连续 2 rAF 不变即视为尺寸稳定（底部 items 已实测、
+      // mermaid/活图已渲染）。兜底 520ms 与最后一次重试对齐，防止异步渲染过慢时永久隐身。
+      let revealed = false
+      let lastH = -1
+      let stable = 0
+      const doReveal = () => {
+        if (revealed) return
+        revealed = true
+        isHistoryScrollPending.value = false
+      }
+      setTimeout(doReveal, 520)
+      const tick = () => {
+        if (revealed) return
+        const el = messagesRef.value
+        const h = el ? el.scrollHeight : 0
+        if (h > 0 && h === lastH) stable++
+        else stable = 0
+        lastH = h
+        if (stable >= 2) {
+          doReveal()
+        } else {
+          requestAnimationFrame(tick)
+        }
+      }
+      requestAnimationFrame(tick)
     })
   }
 
@@ -1739,7 +1790,7 @@ export function useAgentMode(
 
     // 等待 Vue 响应式更新完成（DynamicScroller 挂载 / 列表项更新）
     await nextTick()
-    scrollToHistoryBottomWithRetry()
+    scrollToHistoryBottomWithRetry({ hideUntilSettled: true })
   }
 
   // 检查是否有现有对话（用于确认是否覆盖）
@@ -1849,6 +1900,7 @@ export function useAgentMode(
     // 滚动相关
     hasNewMessage,
     isUserNearBottom,
+    isHistoryScrollPending,
     updateScrollPosition,
     saveScrollTop,
     restoreScrollTop,

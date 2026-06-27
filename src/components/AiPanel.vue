@@ -562,6 +562,7 @@ const {
   lastError,
   // 滚动相关
   hasNewMessage,
+  isHistoryScrollPending,
   updateScrollPosition,
   saveScrollTop,
   restoreScrollTop,
@@ -1847,7 +1848,7 @@ onMounted(() => {
     flattenedItems.value.length > 0
 
   if (shouldInitialScrollBottom) {
-    scrollToHistoryBottomWithRetry()
+    scrollToHistoryBottomWithRetry({ hideUntilSettled: true })
   }
 })
 
@@ -1893,7 +1894,7 @@ watch(() => props.visible, async (visible, wasVisible) => {
       scrollHistoryToBottom()
       setTimeout(() => scrollHistoryToBottom(), 150)
     } else if (shouldScrollHistoryOnShow()) {
-      scrollToHistoryBottomWithRetry()
+      scrollToHistoryBottomWithRetry({ hideUntilSettled: true })
     } else {
       await restoreScrollTop()
     }
@@ -1914,7 +1915,7 @@ watch(() => props.tabActive, async (active, wasActive) => {
     scrollHistoryToBottom()
     setTimeout(() => scrollHistoryToBottom(), 150)
   } else if (shouldScrollHistoryOnShow()) {
-    scrollToHistoryBottomWithRetry()
+    scrollToHistoryBottomWithRetry({ hideUntilSettled: true })
   } else {
     await restoreScrollPositionOnTabActivate()
   }
@@ -2154,7 +2155,10 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           key-field="id"
           class="ai-messages"
           :class="{ 'standalone-mode': isStandaloneAssistant, 'custom-avatar': isStandaloneAssistant && configStore.agentAvatar }"
-          :style="isStandaloneAssistant ? { '--assistant-avatar': `url(${configStore.agentAvatar || sailfishLogo})` } : undefined"
+          :style="{
+            '--assistant-avatar': isStandaloneAssistant ? `url(${configStore.agentAvatar || sailfishLogo})` : undefined,
+            opacity: isHistoryScrollPending ? 0 : undefined,
+          }"
         >
           <template #before>
             <!-- 欢迎页（无任务且无历史对话时显示） -->
