@@ -348,21 +348,18 @@ addCommonPaths()
 
 // 异步获取 shell 完整环境变量（后台执行）
 fixShellEnvAsync()
-import { PtyService } from './services/pty.service'
-import { SshService } from './services/ssh.service'
 import { AiService } from './services/ai.service'
 import { ConfigService, McpServerConfig, setConfigServiceInstance, DEFAULT_KEYBOARD_SHORTCUTS, type KeyboardShortcuts } from './services/config.service'
 import { initLogging, setLogLevel as setBackendLogLevel, getLogDir, createLogger } from './utils/logger'
 import { serializeAgentStepForIpc } from './utils/agent-step-ipc'
 import { XshellImportService } from './services/xshell-import.service'
-import { AgentService, AgentStep, AgentContext } from './services/agent'
+import type { AgentStep, AgentContext } from './services/agent/types'
 import type { PendingConfirmation, ExecutionMode } from './services/agent/types'
-import { orchestratorService } from './services/agent/orchestrator'
 import type { OrchestratorConfig } from './services/agent/orchestrator-types'
 import { HistoryService, AgentRecord } from './services/history.service'
 import { HostProfileService, HostProfile } from './services/host-profile.service'
-import { getDocumentParserService, UploadedFile, ParseOptions, ParsedDocument } from './services/document-parser.service'
-import { SftpService, SftpConfig } from './services/sftp.service'
+import type { UploadedFile, ParseOptions, ParsedDocument } from './services/document-parser.service'
+import type { SftpConfig } from './services/sftp.service'
 import { LocalFsService } from './services/local-fs.service'
 import { McpService } from './services/mcp.service'
 import { getUserSkillService, UserSkill } from './services/user-skill.service'
@@ -373,8 +370,8 @@ import type { KnowledgeSettings, SearchOptions, AddDocumentOptions, ModelTier } 
 import {
   decrypt
 } from './services/knowledge/crypto'
-import { initTerminalStateService, type TerminalState, type CwdChangeEvent, type CommandExecution, type CommandExecutionEvent } from './services/terminal-state.service'
-import { initTerminalAwarenessService, type TerminalAwareness } from './services/terminal-awareness'
+import type { TerminalState, CwdChangeEvent, CommandExecution, CommandExecutionEvent } from './services/terminal-state.service'
+import type { TerminalAwareness } from './services/terminal-awareness'
 import { initScreenContentService } from './services/screen-content.service'
 import { initBrowserBridgeService, getBrowserBridgeService } from './services/browser-bridge/browser-bridge.service'
 import type { BrowserBridgeBrowser } from '@shared/types/browser-bridge'
@@ -382,22 +379,33 @@ import { menuService } from './services/menu.service'
 import { t, errMsg, setConfigService as setMainI18nConfig, updateLocale as updateMainI18nLocale } from './i18n/main-i18n'
 import { attentionService } from './services/attention.service'
 import { getAiDebugService } from './services/ai-debug.service'
-import { getSchedulerService, type CreateTaskParams } from './services/scheduler.service'
+import type { CreateTaskParams } from './services/scheduler.service'
 import { getSchedulerStore } from './services/scheduler.store'
-import { getWatchService } from './services/watch/watch.service'
-import { getSensorService } from './services/sensor'
+import type { SensorService } from './services/sensor'
+import type { WatchService } from './services/watch/watch.service'
+import type { SchedulerService } from './services/scheduler.service'
 import { getBondService } from './services/bond.service'
 import { splitPaneBridge } from './services/split-pane-bridge.service'
 import { workbenchBridge } from './services/workbench-bridge.service'
 import type { CreateWatchParams } from './services/watch/types'
-import { getWebChatService } from './services/web-chat.service'
+import type { WebChatService } from './services/web-chat.service'
 import { getMigrationRunner, createBackup } from './migrations'
-import { getGatewayService, type GatewayConfig } from './services/gateway.service'
+import type { GatewayConfig } from './services/gateway.service'
+import type { GatewayService } from './services/gateway.service'
 import { BastionService } from './services/bastion.service'
-import { getIMService } from './services/im/im.service'
+import type { IMService } from './services/im/im.service'
 import type { DingTalkConfig, FeishuConfig, SlackConfig, TelegramConfig, WeComConfig } from './services/im/types'
 import { getWorkspacePath, ensureAgentWorkspaceDirs } from './services/agent/tools/file'
 import { getContextKnowledgeService } from './services/knowledge/context-knowledge'
+import {
+  ensureAgentRuntime,
+  getAgentRuntimeOrNull,
+  disposeAgentRuntimeIfLoaded,
+  registerSftpWindowGetter,
+  ensureSftpProgressBridge,
+  setTerminalEventSender,
+  type AgentRuntimeDeps,
+} from './services/startup-registry'
 import {
   getEmailCredential, setEmailCredential, deleteEmailCredential,
   getCalendarCredential, setCalendarCredential, deleteCalendarCredential,
@@ -502,9 +510,160 @@ function handleQuitAttempt(): void {
 let quitTerminalCountTimer: ReturnType<typeof setTimeout> | null = null
 let quitTerminalCountHandled = false
 
-// 服务实例
-const ptyService = new PtyService()
-const sshService = new SshService()
+// ==================== 核心服务（启动期同步加载，无重型原生模块） ====================
+
+const aiService = new AiService()
+const configService = new ConfigService()
+setConfigServiceInstance(configService)
+setMainI18nConfig(configService)
+initLogging(configService.getLogLevel())
+// Early phase migrations（仅需 ConfigService）
+getMigrationRunner().run('early', {
+  configService,
+  userDataPath: app.getPath('userData'),
+}).catch(err => log.error('Early migration failed:', err))
+
+const xshellImportService = new XshellImportService()
+const hostProfileService = new HostProfileService()
+const mcpService = new McpService()
+const historyService = new HistoryService()
+const localFsService = new LocalFsService()
+
+// 插件系统（配置读取，loadAll 仍在 backend init）
+import { createPluginRegistry } from './services/plugin/registry'
+const pluginRegistry = createPluginRegistry({
+  enabled: configService.get('pluginsEnabled'),
+  allow: configService.get('pluginsAllow'),
+  deny: configService.get('pluginsDeny'),
+  loadPaths: configService.get('pluginsLoadPaths'),
+  entries: configService.get('pluginsEntries'),
+  userDataPath: app.getPath('userData')
+})
+
+const bondService = getBondService()
+
+// Agent / 终端 / SSH / SFTP：首次 IPC 或 backend init 时 lazy load（见 startup-registry.ts）
+function agentRuntimeDeps(): AgentRuntimeDeps {
+  return {
+    aiService,
+    hostProfileService,
+    mcpService,
+    configService,
+    historyService,
+    pluginRegistry,
+    appStartTime: APP_START_TIME,
+  }
+}
+
+/** 懒加载 Agent + 终端运行时（node-pty / ssh2） */
+const rt = () => ensureAgentRuntime(agentRuntimeDeps())
+
+const imSvc = async () => (await ensureRemoteSessionStack()).im
+const remoteWebChat = async () => (await ensureRemoteSessionStack()).webChat
+
+async function sftpRt() {
+  await ensureSftpProgressBridge(agentRuntimeDeps())
+  return (await rt()).sftpService
+}
+
+async function docParser() {
+  const { getDocumentParserService } = await import('./services/document-parser.service')
+  return getDocumentParserService()
+}
+
+// 关切 / 传感器 / 调度：backend init 或首次 IPC 时加载
+let schedulerService: SchedulerService | null = null
+let sensorService: SensorService | null = null
+let watchService: WatchService | null = null
+
+async function ensureSchedulerService(): Promise<SchedulerService> {
+  if (!schedulerService) {
+    const { getSchedulerService } = await import('./services/scheduler.service')
+    schedulerService = getSchedulerService()
+  }
+  return schedulerService
+}
+
+async function ensureSensorService(): Promise<SensorService> {
+  if (!sensorService) {
+    const { getSensorService } = await import('./services/sensor')
+    sensorService = getSensorService()
+  }
+  return sensorService
+}
+
+async function ensureWatchService(): Promise<WatchService> {
+  if (!watchService) {
+    const { getWatchService } = await import('./services/watch/watch.service')
+    watchService = getWatchService()
+  }
+  return watchService
+}
+
+// 远程会话 / Gateway / IM：backend init 或首次 IPC 时加载
+let webChatService: WebChatService | null = null
+let gatewayService: GatewayService | null = null
+let imService: IMService | null = null
+
+async function ensureRemoteSessionStack(): Promise<{
+  webChat: WebChatService
+  gateway: GatewayService
+  im: IMService
+}> {
+  const { agentService } = await rt()
+  if (!webChatService) {
+    const { getWebChatService } = await import('./services/web-chat.service')
+    webChatService = getWebChatService()
+    webChatService.setDependencies({
+      agentService,
+      configService,
+      mainWindow: mainWindow && !mainWindow.isDestroyed() ? mainWindow : null,
+    })
+  }
+  if (!gatewayService) {
+    const { getGatewayService } = await import('./services/gateway.service')
+    gatewayService = getGatewayService()
+    gatewayService.setDependencies({
+      webChatService,
+      mainWindow: mainWindow && !mainWindow.isDestroyed() ? mainWindow : null,
+    })
+  }
+  if (!imService) {
+    const { getIMService } = await import('./services/im/im.service')
+    imService = getIMService()
+    imService.setDependencies({
+      agentService,
+      mainWindow: mainWindow && !mainWindow.isDestroyed() ? mainWindow : null,
+    })
+    const savedImExecutionMode = configService.get('imExecutionMode') as string | undefined
+    if (savedImExecutionMode && ['strict', 'relaxed', 'free'].includes(savedImExecutionMode)) {
+      imService.setExecutionMode(savedImExecutionMode as ExecutionMode)
+    }
+    const savedImSendProcess = configService.get('imSendProcessMessages')
+    if (savedImSendProcess === false) {
+      imService.setSendProcessMessages(false)
+    }
+    const savedImSendThinking = configService.get('imSendThinkingProcess')
+    if (savedImSendThinking === true) {
+      imService.setSendThinkingProcess(true)
+    }
+  }
+  return { webChat: webChatService!, gateway: gatewayService!, im: imService! }
+}
+
+registerSftpWindowGetter(() => ({
+  main: mainWindow && !mainWindow.isDestroyed() ? mainWindow : null,
+  fileManager: fileManagerWindow && !fileManagerWindow.isDestroyed() ? fileManagerWindow : null,
+}))
+
+setTerminalEventSender({
+  sendTerminalCwdChange: (event) => {
+    mainWindow?.webContents.send('terminal:cwdChange', event)
+  },
+  sendCommandExecution: (event) => {
+    mainWindow?.webContents.send('terminal:commandExecution', event)
+  },
+})
 
 function clearQuitTerminalCountWatchdog(): void {
   if (quitTerminalCountTimer !== null) {
@@ -518,7 +677,9 @@ function beginQuitTerminalCountRequest(): void {
   quitTerminalCountHandled = false
   quitTerminalCountTimer = setTimeout(() => {
     quitTerminalCountTimer = null
-    const n = ptyService.getActiveInstanceCount() + sshService.getActiveInstanceCount()
+    const loaded = getAgentRuntimeOrNull()
+    const n = (loaded?.ptyService.getActiveInstanceCount() ?? 0)
+      + (loaded?.sshService.getActiveInstanceCount() ?? 0)
     log.warn('[Quit] 渲染进程未及时返回终端数量，使用主进程会话数兜底:', n)
     void proceedQuitAfterTerminalCount(n)
   }, 2500)
@@ -562,65 +723,6 @@ async function proceedQuitAfterTerminalCount(terminalCount: number): Promise<voi
     app.quit()
   }
 }
-const aiService = new AiService()
-const configService = new ConfigService()
-setConfigServiceInstance(configService)
-setMainI18nConfig(configService)
-initLogging(configService.getLogLevel())
-// Early phase migrations（仅需 ConfigService）
-getMigrationRunner().run('early', {
-  configService,
-  userDataPath: app.getPath('userData'),
-}).catch(err => log.error('Early migration failed:', err))
-
-const xshellImportService = new XshellImportService()
-const hostProfileService = new HostProfileService()
-const mcpService = new McpService()
-const agentService = new AgentService(aiService, ptyService, hostProfileService, mcpService, configService, sshService)
-const historyService = new HistoryService()
-agentService.setHistoryService(historyService)
-const documentParserService = getDocumentParserService()
-const sftpService = new SftpService()
-const localFsService = new LocalFsService()
-
-// 设置 SFTP 服务到 Agent（用于 SSH 终端的文件写入）
-agentService.setSftpService(sftpService)
-
-// 插件系统
-import { createPluginRegistry } from './services/plugin/registry'
-const pluginRegistry = createPluginRegistry({
-  enabled: configService.get('pluginsEnabled'),
-  allow: configService.get('pluginsAllow'),
-  deny: configService.get('pluginsDeny'),
-  loadPaths: configService.get('pluginsLoadPaths'),
-  entries: configService.get('pluginsEntries'),
-  userDataPath: app.getPath('userData')
-})
-agentService.setPluginRegistry(pluginRegistry)
-
-// 定时任务调度服务
-const schedulerService = getSchedulerService()
-
-// Watch & Sensor 服务（感知层）
-const sensorService = getSensorService()
-const watchService = getWatchService()
-const bondService = getBondService()
-
-// 终端状态服务（CWD 追踪、命令状态等）
-const terminalStateService = initTerminalStateService(ptyService, sshService)
-
-// 终端感知服务（整合屏幕分析和进程监控）
-const terminalAwarenessService = initTerminalAwarenessService(ptyService, terminalStateService, sshService)
-
-// 监听 CWD 变化，转发到前端
-terminalStateService.onCwdChange((event: CwdChangeEvent) => {
-  mainWindow?.webContents.send('terminal:cwdChange', event)
-})
-
-// 监听命令执行事件，转发到前端
-terminalStateService.onCommandExecution((event: CommandExecutionEvent) => {
-  mainWindow?.webContents.send('terminal:commandExecution', event)
-})
 
 // ==================== 首次启动引导向导延迟初始化 ====================
 //
@@ -879,9 +981,9 @@ function showMainWindow() {
 function setupWindowServices() {
   if (!mainWindow) return
 
-  webChatService.setMainWindow(mainWindow)
-  gatewayService.setMainWindow(mainWindow)
-  imService.setMainWindow(mainWindow)
+  webChatService?.setMainWindow(mainWindow)
+  gatewayService?.setMainWindow(mainWindow)
+  imService?.setMainWindow(mainWindow)
   menuService.setMainWindow(mainWindow)
   if (process.platform === 'darwin') {
     menuService.setQuitHandler(handleQuitAttempt)
@@ -909,15 +1011,13 @@ let cleanupPromise: Promise<void> | null = null
 async function cleanupAllServices(): Promise<void> {
   if (cleanupPromise) return cleanupPromise
   cleanupPromise = (async () => {
-  watchService.stop()
-  sensorService.stop().catch(() => {})
-  schedulerService.stop()
-  gatewayService.stop().catch(() => {})
-  imService.stopAll().catch(() => {})
-  webChatService.dispose().catch(() => {})
-  ptyService.disposeAll()
-  sshService.disposeAll()
-  sftpService.disconnectAll()
+  if (watchService) watchService.stop()
+  if (sensorService) await sensorService.stop().catch(() => {})
+  if (schedulerService) schedulerService.stop()
+  if (gatewayService) await gatewayService.stop().catch(() => {})
+  if (imService) await imService.stopAll().catch(() => {})
+  if (webChatService) await webChatService.dispose().catch(() => {})
+  disposeAgentRuntimeIfLoaded()
   mcpService.disconnectAll()
   // 杀掉 assistant 模式 exec 工具留下的后台子进程。
   // beforeExit 在 Electron app.quit() 时不会触发，必须在这里显式调用，
@@ -1494,6 +1594,15 @@ app.whenReady().then(async () => {
   async function runBackendInit() {
     log.info(`开始初始化后端服务 (+${Date.now() - APP_START_TIME}ms)`)
 
+    // 后端 init 才加载 Agent/终端原生模块与远程会话栈（首屏不触发）
+    const { ptyService, sshService, agentService } = await rt()
+    await ensureSftpProgressBridge(agentRuntimeDeps())
+    schedulerService = await ensureSchedulerService()
+    sensorService = await ensureSensorService()
+    watchService = await ensureWatchService()
+    await ensureRemoteSessionStack()
+    if (mainWindow) setupWindowServices()
+
     // 初始化插件系统
     sendStartupProgress('plugins')
     try {
@@ -1511,19 +1620,17 @@ app.whenReady().then(async () => {
       }
       // 注册插件 HTTP 路由到 Gateway
       const pluginRoutes = pluginRegistry.getAllHttpRoutes()
-      if (pluginRoutes.length > 0) {
+      if (pluginRoutes.length > 0 && gatewayService) {
         gatewayService.registerPluginRoutes(pluginRoutes)
       }
       // 注册插件 IM channels
       const pluginChannels = pluginRegistry.getAllChannels()
-      if (pluginChannels.length > 0) {
-        const { getIMService } = require('./services/im/im.service')
+      if (pluginChannels.length > 0 && imService) {
         try {
-          const imService = getIMService()
           for (const channel of pluginChannels) {
             const pluginConfig = configService.get('pluginsEntries')?.[channel.id]?.config || {}
             const adapter = channel.createAdapter(pluginConfig)
-            imService.registerAdapter(adapter)
+            imService!.registerAdapter(adapter)
           }
         } catch { /* IM service may not be available */ }
       }
@@ -1692,7 +1799,7 @@ app.whenReady().then(async () => {
       const dtClientId = configService.get('imDingTalkClientId') as string
       const dtClientSecret = configService.get('imDingTalkClientSecret') as string
       if (dtClientId && dtClientSecret) {
-        imService.startDingTalk({ enabled: true, clientId: dtClientId, clientSecret: dtClientSecret }).then(result => {
+        (await imSvc()).startDingTalk({ enabled: true, clientId: dtClientId, clientSecret: dtClientSecret }).then(result => {
           if (result.success) {
             log.info('IM: DingTalk auto-connect started')
           } else {
@@ -1705,7 +1812,7 @@ app.whenReady().then(async () => {
       const fsAppId = configService.get('imFeishuAppId') as string
       const fsAppSecret = configService.get('imFeishuAppSecret') as string
       if (fsAppId && fsAppSecret) {
-        imService.startFeishu({ enabled: true, appId: fsAppId, appSecret: fsAppSecret }).then(result => {
+        (await imSvc()).startFeishu({ enabled: true, appId: fsAppId, appSecret: fsAppSecret }).then(result => {
           if (result.success) {
             log.info('IM: Feishu auto-connect started')
           } else {
@@ -1718,7 +1825,7 @@ app.whenReady().then(async () => {
       const slackBotToken = (configService.get('imSlackBotToken') as string) || ''
       const slackAppToken = (configService.get('imSlackAppToken') as string) || ''
       if (slackBotToken && slackAppToken) {
-        imService.startSlack({ enabled: true, botToken: slackBotToken, appToken: slackAppToken }).then(result => {
+        (await imSvc()).startSlack({ enabled: true, botToken: slackBotToken, appToken: slackAppToken }).then(result => {
           if (result.success) {
             log.info('IM: Slack auto-connect started')
           } else {
@@ -1730,7 +1837,7 @@ app.whenReady().then(async () => {
     if (configService.get('imTelegramAutoConnect')) {
       const tgBotToken = (configService.get('imTelegramBotToken') as string) || ''
       if (tgBotToken) {
-        imService.startTelegram({ enabled: true, botToken: tgBotToken }).then(result => {
+        (await imSvc()).startTelegram({ enabled: true, botToken: tgBotToken }).then(result => {
           if (result.success) {
             log.info('IM: Telegram auto-connect started')
           } else {
@@ -1743,7 +1850,7 @@ app.whenReady().then(async () => {
       const wcBotId = (configService.get('imWeComBotId') as string) || ''
       const wcSecret = (configService.get('imWeComSecret') as string) || ''
       if (wcBotId && wcSecret) {
-        imService.startWeCom({ enabled: true, botId: wcBotId, secret: wcSecret }).then(result => {
+        (await imSvc()).startWeCom({ enabled: true, botId: wcBotId, secret: wcSecret }).then(result => {
           if (result.success) {
             log.info('IM: WeCom auto-connect started')
           } else {
@@ -1756,7 +1863,7 @@ app.whenReady().then(async () => {
       const wxToken = (configService.get('imWeChatToken') as string) || ''
       const wxBaseUrl = (configService.get('imWeChatBaseUrl') as string) || ''
       if (wxToken) {
-        imService.startWeChat({ enabled: true, token: wxToken, baseUrl: wxBaseUrl }).then(result => {
+        (await imSvc()).startWeChat({ enabled: true, token: wxToken, baseUrl: wxBaseUrl }).then(result => {
           if (result.success) {
             log.info('IM: WeChat auto-connect started')
           } else {
@@ -1840,31 +1947,33 @@ app.on('window-all-closed', async () => {
 
 // PTY 相关
 ipcMain.handle('pty:create', async (_event, options) => {
-  // 等待 PATH 就绪后再创建终端
   await waitForPath()
+  const { ptyService } = await rt()
   return ptyService.create(options)
 })
 
 ipcMain.handle('pty:write', async (_event, id: string, data: string) => {
+  const { ptyService } = await rt()
   ptyService.write(id, data)
 })
 
 ipcMain.handle('pty:resize', async (_event, id: string, cols: number, rows: number) => {
+  const { ptyService } = await rt()
   ptyService.resize(id, cols, rows)
 })
 
 ipcMain.handle('pty:executeInTerminal', async (_event, id: string, command: string, timeout?: number) => {
+  const { ptyService } = await rt()
   return ptyService.executeInTerminal(id, command, timeout)
 })
 
 ipcMain.handle('pty:dispose', async (_event, id: string) => {
+  const { ptyService } = await rt()
   ptyService.dispose(id)
-  // 注意：不在此处 cleanupAgent。
-  // Agent 实例归 tab 所有（agentKey = tabId），PTY 只是其当前操作的某个窗格。
-  // 关闭窗格不应销毁 Agent。Agent cleanup 走独立的 'agent:cleanup' 入口（关 tab 时由前端触发）。
 })
 
 ipcMain.handle('pty:getAvailableShells', async () => {
+  const { ptyService } = await rt()
   return ptyService.getAvailableShells()
 })
 
@@ -1873,32 +1982,33 @@ const ptyDataUnsubscribes = new Map<string, () => void>()
 
 // PTY 数据输出 - 转发到渲染进程
 ipcMain.on('pty:subscribe', (event, id: string) => {
-  // 先取消旧的订阅，防止重复订阅导致数据多次发送
-  const oldUnsubscribe = ptyDataUnsubscribes.get(id)
-  if (oldUnsubscribe) {
-    oldUnsubscribe()
-    ptyDataUnsubscribes.delete(id)
-  }
-
-  const unsubscribe = ptyService.onData(id, (data: string) => {
-    try {
-      if (!event.sender.isDestroyed()) {
-        event.sender.send(`pty:data:${id}`, data)
-      }
-      // 追踪本地终端输出（用于检测命令是否在运行）
-      // 计算行数（包括 \n 和 \r 都算换行，适用于 curl 进度条等）
-      const lineCount = (data.match(/[\n\r]/g) || []).length
-      terminalAwarenessService.trackOutput(id, lineCount, data.length)
-    } catch (e) {
-      // 忽略发送错误（窗口可能已关闭）
+  void (async () => {
+    const { ptyService, terminalAwarenessService } = await rt()
+    const oldUnsubscribe = ptyDataUnsubscribes.get(id)
+    if (oldUnsubscribe) {
+      oldUnsubscribe()
+      ptyDataUnsubscribes.delete(id)
     }
-  })
-  ptyDataUnsubscribes.set(id, unsubscribe)
+
+    const unsubscribe = ptyService.onData(id, (data: string) => {
+      try {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send(`pty:data:${id}`, data)
+        }
+        const lineCount = (data.match(/[\n\r]/g) || []).length
+        terminalAwarenessService.trackOutput(id, lineCount, data.length)
+      } catch {
+        // 忽略发送错误（窗口可能已关闭）
+      }
+    })
+    ptyDataUnsubscribes.set(id, unsubscribe)
+  })()
 })
 
 // SSH 相关
 ipcMain.handle('ssh:connect', async (_event, config) => {
   try {
+    const { sshService } = await rt()
     return await sshService.connect(config)
   } catch (err) {
     throw new Error(err instanceof Error ? err.message : String(err))
@@ -1906,15 +2016,16 @@ ipcMain.handle('ssh:connect', async (_event, config) => {
 })
 
 ipcMain.handle('ssh:write', async (_event, id: string, data: string) => {
+  const { sshService } = await rt()
   sshService.write(id, data)
 })
 
 ipcMain.handle('ssh:resize', async (_event, id: string, cols: number, rows: number) => {
+  const { sshService } = await rt()
   sshService.resize(id, cols, rows)
 })
 
 ipcMain.handle('ssh:disconnect', async (_event, id: string) => {
-  // 清理订阅
   const unsubscribe = sshDataUnsubscribes.get(id)
   if (unsubscribe) {
     unsubscribe()
@@ -1925,8 +2036,8 @@ ipcMain.handle('ssh:disconnect', async (_event, id: string) => {
     disconnectUnsub()
     sshDisconnectUnsubscribes.delete(id)
   }
+  const { sshService } = await rt()
   sshService.disconnect(id)
-  // 注意：不在此处 cleanupAgent，原因同 pty:dispose。
 })
 
 // SSH 数据订阅的取消函数存储
@@ -1935,52 +2046,48 @@ const sshDataUnsubscribes = new Map<string, () => void>()
 const sshDisconnectUnsubscribes = new Map<string, () => void>()
 
 ipcMain.on('ssh:subscribe', (event, id: string) => {
-  // 先取消旧的订阅，防止重复订阅导致数据多次发送
-  const oldDataUnsubscribe = sshDataUnsubscribes.get(id)
-  if (oldDataUnsubscribe) {
-    oldDataUnsubscribe()
-    sshDataUnsubscribes.delete(id)
-  }
-  const oldDisconnectUnsubscribe = sshDisconnectUnsubscribes.get(id)
-  if (oldDisconnectUnsubscribe) {
-    oldDisconnectUnsubscribe()
-    sshDisconnectUnsubscribes.delete(id)
-  }
-
-  // 注册数据回调
-  const dataUnsubscribe = sshService.onData(id, (data: string) => {
-    try {
-      if (!event.sender.isDestroyed()) {
-        event.sender.send(`ssh:data:${id}`, data)
-      }
-      // 追踪 SSH 终端输出（用于检测命令是否在运行）
-      // 计算行数（包括 \n 和 \r 都算换行，适用于 curl 进度条等）
-      const lineCount = (data.match(/[\n\r]/g) || []).length
-      terminalAwarenessService.trackOutput(id, lineCount, data.length)
-    } catch (e) {
-      // 忽略发送错误（窗口可能已关闭）
+  void (async () => {
+    const { sshService, terminalAwarenessService } = await rt()
+    const oldDataUnsubscribe = sshDataUnsubscribes.get(id)
+    if (oldDataUnsubscribe) {
+      oldDataUnsubscribe()
+      sshDataUnsubscribes.delete(id)
     }
-  })
-  sshDataUnsubscribes.set(id, dataUnsubscribe)
-
-  // 注册断开连接回调，通知前端
-  const disconnectUnsubscribe = sshService.onDisconnect(id, (disconnectEvent) => {
-    try {
-      if (!event.sender.isDestroyed()) {
-        event.sender.send(`ssh:disconnected:${id}`, {
-          reason: disconnectEvent.reason,
-          error: disconnectEvent.error?.message
-        })
-      }
-    } catch (e) {
-      // 忽略发送错误
+    const oldDisconnectUnsubscribe = sshDisconnectUnsubscribes.get(id)
+    if (oldDisconnectUnsubscribe) {
+      oldDisconnectUnsubscribe()
+      sshDisconnectUnsubscribes.delete(id)
     }
-    // 清理订阅
-    sshDataUnsubscribes.delete(id)
-    sshDisconnectUnsubscribes.delete(id)
-    // 注意：SSH 被动断开不再 cleanupAgent；Agent 归 tab 所有，由 tab 关闭走 'agent:cleanup' 触发。
-  })
-  sshDisconnectUnsubscribes.set(id, disconnectUnsubscribe)
+
+    const dataUnsubscribe = sshService.onData(id, (data: string) => {
+      try {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send(`ssh:data:${id}`, data)
+        }
+        const lineCount = (data.match(/[\n\r]/g) || []).length
+        terminalAwarenessService.trackOutput(id, lineCount, data.length)
+      } catch {
+        // 忽略发送错误
+      }
+    })
+    sshDataUnsubscribes.set(id, dataUnsubscribe)
+
+    const disconnectUnsubscribe = sshService.onDisconnect(id, (disconnectEvent) => {
+      try {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send(`ssh:disconnected:${id}`, {
+            reason: disconnectEvent.reason,
+            error: disconnectEvent.error?.message
+          })
+        }
+      } catch {
+        // 忽略发送错误
+      }
+      sshDataUnsubscribes.delete(id)
+      sshDisconnectUnsubscribes.delete(id)
+    })
+    sshDisconnectUnsubscribes.set(id, disconnectUnsubscribe)
+  })()
 })
 
 // SSH 取消订阅
@@ -1999,124 +2106,123 @@ ipcMain.on('ssh:unsubscribe', (_event, id: string) => {
 
 // ==================== 终端状态服务 ====================
 
-// 初始化终端状态
 ipcMain.handle('terminalState:init', async (_event, id: string, type: 'local' | 'ssh', initialCwd?: string) => {
+  const { terminalStateService } = await rt()
   terminalStateService.initTerminal(id, type, initialCwd)
 })
 
-// 移除终端状态
 ipcMain.handle('terminalState:remove', async (_event, id: string) => {
+  const { terminalStateService } = await rt()
   terminalStateService.removeTerminal(id)
 })
 
-// 获取终端状态
 ipcMain.handle('terminalState:get', async (_event, id: string): Promise<TerminalState | undefined> => {
+  const { terminalStateService } = await rt()
   return terminalStateService.getState(id)
 })
 
-// 获取当前工作目录
 ipcMain.handle('terminalState:getCwd', async (_event, id: string): Promise<string> => {
+  const { terminalStateService } = await rt()
   return terminalStateService.getCwd(id)
 })
 
-// 刷新 CWD（强制刷新，用于打开文件管理器等场景）
 ipcMain.handle('terminalState:refreshCwd', async (_event, id: string): Promise<string> => {
-  // 使用 'command' trigger 绕过时间间隔检查，强制获取最新 CWD
+  const { terminalStateService } = await rt()
   return terminalStateService.refreshCwd(id, 'command')
 })
 
-// 手动更新 CWD
 ipcMain.handle('terminalState:updateCwd', async (_event, id: string, newCwd: string) => {
+  const { terminalStateService } = await rt()
   terminalStateService.updateCwd(id, newCwd)
 })
 
-// 处理用户输入（追踪可能的 CWD 变化）
 ipcMain.handle('terminalState:handleInput', async (_event, id: string, input: string) => {
+  const { terminalStateService } = await rt()
   terminalStateService.handleInput(id, input)
 })
 
-// 获取终端空闲状态
 ipcMain.handle('terminalState:getIdleState', async (_event, id: string): Promise<boolean> => {
+  const { terminalStateService } = await rt()
   const state = terminalStateService.getState(id)
   return state?.isIdle ?? true
 })
 
 // ==================== 命令执行追踪 ====================
 
-// 开始追踪命令执行
 ipcMain.handle('terminalState:startExecution', async (
-  _event, 
-  id: string, 
+  _event,
+  id: string,
   command: string,
   options?: { source?: 'user' | 'agent'; agentStepTitle?: string }
 ): Promise<CommandExecution | null> => {
+  const { terminalStateService } = await rt()
   return terminalStateService.startCommandExecution(id, command, options)
 })
 
-// 追加命令输出
 ipcMain.handle('terminalState:appendOutput', async (_event, id: string, output: string) => {
+  const { terminalStateService } = await rt()
   terminalStateService.appendCommandOutput(id, output)
 })
 
-// 完成命令执行
 ipcMain.handle('terminalState:completeExecution', async (
   _event,
   id: string,
   exitCode?: number,
   status?: 'completed' | 'failed' | 'timeout' | 'cancelled'
 ): Promise<CommandExecution | null> => {
+  const { terminalStateService } = await rt()
   return terminalStateService.completeCommandExecution(id, exitCode, status)
 })
 
-// 获取当前正在执行的命令
 ipcMain.handle('terminalState:getCurrentExecution', async (_event, id: string): Promise<CommandExecution | undefined> => {
+  const { terminalStateService } = await rt()
   return terminalStateService.getCurrentExecution(id)
 })
 
-// 获取命令执行历史
 ipcMain.handle('terminalState:getExecutionHistory', async (_event, id: string, limit?: number): Promise<CommandExecution[]> => {
+  const { terminalStateService } = await rt()
   return terminalStateService.getExecutionHistory(id, limit)
 })
 
-// 获取最后一次命令执行
 ipcMain.handle('terminalState:getLastExecution', async (_event, id: string): Promise<CommandExecution | undefined> => {
+  const { terminalStateService } = await rt()
   return terminalStateService.getLastExecution(id)
 })
 
-// 清除命令执行历史
 ipcMain.handle('terminalState:clearExecutionHistory', async (_event, id: string) => {
+  const { terminalStateService } = await rt()
   terminalStateService.clearExecutionHistory(id)
 })
 
 // ==================== 终端感知服务 ====================
 
-// 获取终端感知状态（综合分析）
 ipcMain.handle('terminalAwareness:getAwareness', async (_event, ptyId: string): Promise<TerminalAwareness> => {
+  const { terminalAwarenessService } = await rt()
   return terminalAwarenessService.getAwareness(ptyId)
 })
 
-// 追踪输出（用于输出速率计算）
 ipcMain.handle('terminalAwareness:trackOutput', async (_event, ptyId: string, lineCount: number) => {
+  const { terminalAwarenessService } = await rt()
   terminalAwarenessService.trackOutput(ptyId, lineCount)
 })
 
-// 获取终端可视区域内容
 ipcMain.handle('terminalAwareness:getVisibleContent', async (_event, ptyId: string): Promise<string[] | null> => {
+  const { terminalAwarenessService } = await rt()
   return terminalAwarenessService.getVisibleContent(ptyId)
 })
 
-// 检查是否可以执行命令
 ipcMain.handle('terminalAwareness:canExecute', async (_event, ptyId: string): Promise<boolean> => {
+  const { terminalAwarenessService } = await rt()
   return terminalAwarenessService.canExecute(ptyId)
 })
 
-// 获取执行命令前的建议
 ipcMain.handle('terminalAwareness:getPreExecutionAdvice', async (_event, ptyId: string, command: string) => {
+  const { terminalAwarenessService } = await rt()
   return terminalAwarenessService.getPreExecutionAdvice(ptyId, command)
 })
 
-// 清理终端感知数据
 ipcMain.handle('terminalAwareness:clear', async (_event, ptyId: string) => {
+  const { terminalAwarenessService } = await rt()
   terminalAwarenessService.clearTerminal(ptyId)
 })
 
@@ -3035,133 +3141,132 @@ ipcMain.handle('config:openLogDir', async () => {
 // ==================== 定时任务调度相关 ====================
 
 ipcMain.handle('scheduler:getTasks', async () => {
-  return schedulerService.getTasks()
+  return (await ensureSchedulerService()).getTasks()
 })
 
 ipcMain.handle('scheduler:getTask', async (_event, id: string) => {
-  return schedulerService.getTask(id)
+  return (await ensureSchedulerService()).getTask(id)
 })
 
 ipcMain.handle('scheduler:createTask', async (_event, params: CreateTaskParams) => {
-  return schedulerService.createTask(params)
+  return (await ensureSchedulerService()).createTask(params)
 })
 
 ipcMain.handle('scheduler:updateTask', async (_event, id: string, updates: Partial<CreateTaskParams>) => {
-  return schedulerService.updateTask(id, updates)
+  return (await ensureSchedulerService()).updateTask(id, updates)
 })
 
 ipcMain.handle('scheduler:deleteTask', async (_event, id: string) => {
-  return schedulerService.deleteTask(id)
+  return (await ensureSchedulerService()).deleteTask(id)
 })
 
 ipcMain.handle('scheduler:toggleTask', async (_event, id: string) => {
-  return schedulerService.toggleTask(id)
+  return (await ensureSchedulerService()).toggleTask(id)
 })
 
 ipcMain.handle('scheduler:runTask', async (_event, id: string) => {
-  return schedulerService.runTask(id)
+  return (await ensureSchedulerService()).runTask(id)
 })
 
 ipcMain.handle('scheduler:getHistory', async (_event, taskId?: string, limit?: number) => {
-  return schedulerService.getHistory(taskId, limit)
+  return (await ensureSchedulerService()).getHistory(taskId, limit)
 })
 
 ipcMain.handle('scheduler:clearHistory', async (_event, taskId?: string) => {
-  return schedulerService.clearHistory(taskId)
+  return (await ensureSchedulerService()).clearHistory(taskId)
 })
 
 ipcMain.handle('scheduler:getSshSessions', async () => {
-  return schedulerService.getSshSessions()
+  return (await ensureSchedulerService()).getSshSessions()
 })
 
 ipcMain.handle('scheduler:isTaskRunning', async (_event, taskId: string) => {
-  return schedulerService.isTaskRunning(taskId)
+  return (await ensureSchedulerService()).isTaskRunning(taskId)
 })
 
 ipcMain.handle('scheduler:getRunningTasks', async () => {
-  return schedulerService.getRunningTasks()
+  return (await ensureSchedulerService()).getRunningTasks()
 })
 
 // ==================== Watch & Sensor IPC ====================
 
 ipcMain.handle('watch:getAll', async () => {
-  return watchService.getAll()
+  return (await ensureWatchService()).getAll()
 })
 
 ipcMain.handle('watch:get', async (_event, id: string) => {
-  return watchService.get(id)
+  return (await ensureWatchService()).get(id)
 })
 
 ipcMain.handle('watch:create', async (_event, params: CreateWatchParams) => {
-  return watchService.create(params)
+  return (await ensureWatchService()).create(params)
 })
 
 ipcMain.handle('watch:update', async (_event, id: string, updates: Partial<CreateWatchParams>) => {
-  return watchService.update(id, updates)
+  return (await ensureWatchService()).update(id, updates)
 })
 
 ipcMain.handle('watch:delete', async (_event, id: string) => {
-  return watchService.delete(id)
+  return (await ensureWatchService()).delete(id)
 })
 
 ipcMain.handle('watch:toggle', async (_event, id: string) => {
-  return watchService.toggle(id)
+  return (await ensureWatchService()).toggle(id)
 })
 
 ipcMain.handle('watch:trigger', async (_event, id: string) => {
-  // Fire-and-forget: 不阻塞前端等待执行完成，通过 IPC 事件推送状态
-  watchService.triggerWatch(id).catch(e => {
+  void (await ensureWatchService()).triggerWatch(id).catch(e => {
     log.error('Watch trigger failed:', e)
   })
   return { triggered: true }
 })
 
 ipcMain.handle('watch:getHistory', async (_event, watchId?: string, limit?: number) => {
-  return watchService.getHistory(watchId, limit)
+  return (await ensureWatchService()).getHistory(watchId, limit)
 })
 
 ipcMain.handle('watch:clearHistory', async (_event, watchId?: string) => {
-  return watchService.clearHistory(watchId)
+  return (await ensureWatchService()).clearHistory(watchId)
 })
 
 ipcMain.handle('watch:isRunning', async (_event, id: string) => {
-  return watchService.isWatchRunning(id)
+  return (await ensureWatchService()).isWatchRunning(id)
 })
 
 ipcMain.handle('watch:getRunning', async () => {
-  return watchService.getRunningWatches()
+  return (await ensureWatchService()).getRunningWatches()
 })
 
 ipcMain.handle('watch:getSshSessions', async () => {
-  return watchService.getSshSessions()
+  return (await ensureWatchService()).getSshSessions()
 })
 
-// Sensor 相关
 ipcMain.handle('sensor:getStatus', async () => {
-  return sensorService.getSensorStatus()
+  return (await ensureSensorService()).getSensorStatus()
 })
 
 ipcMain.handle('sensor:getStatusDetailed', async () => {
   try {
-    return sensorService.getSensorStatusDetailed()
+    return (await ensureSensorService()).getSensorStatusDetailed()
   } catch (error) {
     log.error('sensor:getStatusDetailed', error)
-    return sensorService.getSensorStatus()
+    return (await ensureSensorService()).getSensorStatus()
   }
 })
 
 ipcMain.handle('sensor:getRecentEvents', async (_event, limit?: number) => {
-  return sensorService.getRecentEvents(limit)
+  return (await ensureSensorService()).getRecentEvents(limit)
 })
 
 type AwakenedApplyResult = { awakened: boolean; intervalMinutes: number }
 
 async function applyAwakenedState(awakened: boolean, intervalMinutes?: number): Promise<AwakenedApplyResult> {
+  const sensor = await ensureSensorService()
+  const watch = await ensureWatchService()
   const validInterval = (intervalMinutes && intervalMinutes > 0 && intervalMinutes <= 1440)
     ? intervalMinutes
     : undefined
 
-  // 先写配置，避免快速 OFF→ON 时后完成的 stop 覆盖 enable 结果
   configService.set('agentAwakened', awakened)
   configService.set('watchHeartbeatEnabled', awakened)
   if (validInterval) {
@@ -3170,26 +3275,25 @@ async function applyAwakenedState(awakened: boolean, intervalMinutes?: number): 
 
   if (awakened) {
     if (validInterval) {
-      sensorService.heartbeat.setInterval(validInterval)
+      sensor.heartbeat.setInterval(validInterval)
     }
-    await sensorService.heartbeat.start()
-    // 如果 email/calendar sensor 已配置账户，跟随觉醒模式一起启动
-    if (sensorService.email.shouldAutoStart() && !sensorService.email.running) {
-      await sensorService.email.start()
+    await sensor.heartbeat.start()
+    if (sensor.email.shouldAutoStart() && !sensor.email.running) {
+      await sensor.email.start()
     }
-    if (sensorService.calendar.shouldAutoStart() && !sensorService.calendar.running) {
-      await sensorService.calendar.start()
+    if (sensor.calendar.shouldAutoStart() && !sensor.calendar.running) {
+      await sensor.calendar.start()
     }
-    watchService.ensureWakeup()
+    watch.ensureWakeup()
   } else {
-    await sensorService.heartbeat.stop()
-    await sensorService.email.stop()
-    await sensorService.calendar.stop()
-    watchService.removeWakeup()
+    await sensor.heartbeat.stop()
+    await sensor.email.stop()
+    await sensor.calendar.stop()
+    watch.removeWakeup()
   }
 
-  sensorService.appLifecycle.notifyAwakeningChanged(awakened)
-  return { awakened, intervalMinutes: sensorService.heartbeat.getIntervalMinutes() }
+  sensor.appLifecycle.notifyAwakeningChanged(awakened)
+  return { awakened, intervalMinutes: sensor.heartbeat.getIntervalMinutes() }
 }
 
 let awakenedApplyChain: Promise<AwakenedApplyResult> = Promise.resolve({
@@ -3214,7 +3318,7 @@ ipcMain.handle('sensor:setHeartbeat', async (_event, enabled: boolean, intervalM
 })
 
 ipcMain.handle('sensor:triggerHeartbeat', async () => {
-  sensorService.heartbeat.beat()
+  (await ensureSensorService()).heartbeat.beat()
   return { success: true }
 })
 
@@ -3234,7 +3338,7 @@ ipcMain.handle('bond:recalculate', async () => {
 
 // Watch 模板
 ipcMain.handle('watch:getTemplates', async () => {
-  return watchService.getTemplates().map(t => ({
+  return (await ensureWatchService()).getTemplates().map(t => ({
     id: t.id,
     name: t.name,
     nameEn: t.nameEn,
@@ -3246,15 +3350,15 @@ ipcMain.handle('watch:getTemplates', async () => {
 })
 
 ipcMain.handle('watch:getTemplateCategories', async () => {
-  return watchService.getTemplateCategories()
+  return (await ensureWatchService()).getTemplateCategories()
 })
 
 ipcMain.handle('watch:createFromTemplate', async (_event, templateId: string, options?: Record<string, unknown>) => {
-  return watchService.createFromTemplate(templateId, options)
+  return (await ensureWatchService()).createFromTemplate(templateId, options)
 })
 
 ipcMain.handle('watch:resetHeartbeat', async () => {
-  return watchService.resetHeartbeatFile()
+  return (await ensureWatchService()).resetHeartbeatFile()
 })
 
 // Xshell 导入相关
@@ -3396,7 +3500,7 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
       })
     },
     onComplete: (agentId: string, result: string, pendingUserMessages?: string[]) => {
-      const newBondMilestones = sensorService.appLifecycle.notifyConversationCompleted()
+      const newBondMilestones = sensorService?.appLifecycle.notifyConversationCompleted()
       if (!event.sender.isDestroyed()) {
         event.sender.send('agent:complete', {
           agentId,
@@ -3418,7 +3522,7 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
   }
 
   try {
-    // 传入回调参数，确保每个 run 有独立的回调（解决多终端同时运行时步骤串台问题）
+    const { agentService } = await rt()
     const result = await agentService.run(ptyId, message, context, fullConfig, profileId, undefined, callbacks)
     return { success: true, result }
   } catch (error) {
@@ -3434,16 +3538,15 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
 
 // 中止 Agent（改用 ptyId）
 ipcMain.handle('agent:abort', async (_event, ptyId: string) => {
+  const { agentService } = await rt()
   return agentService.abort(ptyId)
 })
 
-// 清空指定终端的任务历史记忆（用于"清空对话"功能）
-// 只重置会话状态和记忆，保留 Agent 实例（避免销毁后重建的开销）
 ipcMain.handle('agent:clearHistory', async (_event, ptyId: string) => {
+  const { agentService } = await rt()
   agentService.resetSession(ptyId)
 })
 
-// 确认工具调用（改用 ptyId）
 ipcMain.handle('agent:confirm', async (_event, { ptyId, toolCallId, approved, modifiedArgs, alwaysAllow }: {
   ptyId: string
   toolCallId: string
@@ -3451,10 +3554,10 @@ ipcMain.handle('agent:confirm', async (_event, { ptyId, toolCallId, approved, mo
   modifiedArgs?: Record<string, unknown>
   alwaysAllow?: boolean
 }) => {
+  const { agentService } = await rt()
   return agentService.confirmToolCall(ptyId, toolCallId, approved, modifiedArgs, alwaysAllow)
 })
 
-// 解决安全输入请求（前端弹框用户完成输入后调用）
 ipcMain.handle('agent:resolveSecureInput', async (_event, {
   ptyId, requestId, value, cancelled
 }: {
@@ -3463,10 +3566,10 @@ ipcMain.handle('agent:resolveSecureInput', async (_event, {
   value?: string
   cancelled?: boolean
 }) => {
+  const { agentService } = await rt()
   if (cancelled || !value) {
     return agentService.resolveSecureInput(ptyId, requestId, false)
   }
-  // 取出 pendingSecureInput 的 skillId/envName，直接存到加密存储（值不经过 LLM）
   const pending = agentService.getPendingSecureInput(ptyId)
   if (pending && pending.requestId === requestId) {
     await setSkillEnv(pending.skillId, pending.envName, value)
@@ -3497,20 +3600,20 @@ ipcMain.handle('skill:getEnvStatus', async (_event, skillId: string) => {
 
 // 获取 Agent 状态（改用 ptyId）
 ipcMain.handle('agent:getStatus', async (_event, ptyId: string) => {
+  const { agentService } = await rt()
   return agentService.getRunStatus(ptyId)
 })
 
-// 获取 Agent 执行阶段状态（用于智能打断判断，改用 ptyId）
 ipcMain.handle('agent:getExecutionPhase', async (_event, ptyId: string) => {
+  const { agentService } = await rt()
   return agentService.getExecutionPhase(ptyId)
 })
 
-// 清理 Agent 运行记录（改用 ptyId）
 ipcMain.handle('agent:cleanup', async (_event, ptyId: string) => {
+  const { agentService } = await rt()
   agentService.cleanupAgent(ptyId)
 })
 
-// Fork Agent：从一个已存在的 Agent 会话分叉出新的助手 Agent（"另开一聊"）
 ipcMain.handle('agent:fork', async (_event, opts: {
   sourceAgentKey: string
   newAgentId: string
@@ -3519,16 +3622,17 @@ ipcMain.handle('agent:fork', async (_event, opts: {
   titleSuffix?: string
   sourceSessionId?: string
 }) => {
+  const { agentService } = await rt()
   return await agentService.forkAgent(opts)
 })
 
-// 更新 Agent 配置（如执行模式、超时时间，改用 ptyId）
 ipcMain.handle('agent:updateConfig', async (_event, ptyId: string, config: { executionMode?: ExecutionMode; commandTimeout?: number; profileId?: string }) => {
+  const { agentService } = await rt()
   return agentService.updateConfig(ptyId, config)
 })
 
-// 添加用户补充消息（Agent 执行过程中，改用 ptyId）
 ipcMain.handle('agent:addMessage', async (_event, ptyId: string, message: string, attachments?: AttachmentInfo[], documentContext?: string, images?: string[]) => {
+  const { agentService } = await rt()
   return agentService.addUserMessage(ptyId, message, attachments, documentContext, images)
 })
 
@@ -3545,9 +3649,8 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
   const debugMode = configService.getAgentDebugMode()
   const fullConfig = { ...config, debugMode }
 
-  // WebChatService 已改为后端直驱，不再需要 runStandalone 转发
-  // 但桌面用户仍可通过远程 tab UI 发送消息，此时需要同步事件到 WebChatService
-  const wcs = getWebChatService()
+  const { agentService } = await rt()
+  const { webChat: wcs } = await ensureRemoteSessionStack()
   const isRemote = agentId === wcs.getAgentId()
 
   const callbacks = {
@@ -3602,7 +3705,7 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
       })
     },
     onComplete: (_runId: string, result: string, pendingUserMessages?: string[]) => {
-      const newBondMilestones = sensorService.appLifecycle.notifyConversationCompleted()
+      const newBondMilestones = sensorService?.appLifecycle.notifyConversationCompleted()
       if (!event.sender.isDestroyed()) {
         event.sender.send('agent:complete', {
           agentId,
@@ -3641,25 +3744,11 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
   }
 })
 
-// ==================== 远程会话共享服务 ====================
-
-const webChatService = getWebChatService()
-webChatService.setDependencies({
-  agentService,
-  configService,
-  mainWindow: null
-})
-
 // ==================== Gateway 远程访问 ====================
 
-const gatewayService = getGatewayService()
-gatewayService.setDependencies({
-  webChatService,
-  mainWindow: null
-})
-
 ipcMain.handle('gateway:start', async (_event, config: GatewayConfig) => {
-  const result = await gatewayService.start(config)
+  const { gateway } = await ensureRemoteSessionStack()
+  const result = await gateway.start(config)
   if (result.success) {
     // 保存端口和监听地址到配置
     configService.set('gatewayPort', config.port || 3721)
@@ -3669,16 +3758,19 @@ ipcMain.handle('gateway:start', async (_event, config: GatewayConfig) => {
 })
 
 ipcMain.handle('gateway:stop', async () => {
-  await gatewayService.stop()
+  const { gateway } = await ensureRemoteSessionStack()
+  await gateway.stop()
   return { success: true }
 })
 
 ipcMain.handle('gateway:getConfig', async () => {
-  return gatewayService.getConfig()
+  const { gateway } = await ensureRemoteSessionStack()
+  return gateway.getConfig()
 })
 
 ipcMain.handle('gateway:isRunning', async () => {
-  return gatewayService.isRunning()
+  const { gateway } = await ensureRemoteSessionStack()
+  return gateway.isRunning()
 })
 
 ipcMain.handle('gateway:getAutoStart', async () => {
@@ -3690,41 +3782,21 @@ ipcMain.handle('gateway:setAutoStart', async (_event, enabled: boolean) => {
 })
 
 ipcMain.handle('gateway:getAuditLog', async (_event, limit?: number) => {
-  return gatewayService.getAuditLog(limit)
+  const { gateway } = await ensureRemoteSessionStack()
+  return gateway.getAuditLog(limit)
 })
 
 // ==================== IM 集成服务 ====================
 
-const imService = getIMService()
-imService.setDependencies({
-  agentService,
-  mainWindow: null
-})
-// 从持久化配置恢复 IM 执行模式
-const savedImExecutionMode = configService.get('imExecutionMode') as string | undefined
-if (savedImExecutionMode && ['strict', 'relaxed', 'free'].includes(savedImExecutionMode)) {
-  imService.setExecutionMode(savedImExecutionMode as ExecutionMode)
-}
-// 从持久化配置恢复 IM 过程消息设置
-const savedImSendProcess = configService.get('imSendProcessMessages')
-if (savedImSendProcess === false) {
-  imService.setSendProcessMessages(false)
-}
-// 从持久化配置恢复 IM 思考过程开关（默认 false）
-const savedImSendThinking = configService.get('imSendThinkingProcess')
-if (savedImSendThinking === true) {
-  imService.setSendThinkingProcess(true)
-}
-
 ipcMain.handle('im:startDingTalk', async (_event, config: DingTalkConfig) => {
-  // 保存配置
   configService.set('imDingTalkClientId', config.clientId)
   configService.set('imDingTalkClientSecret', config.clientSecret)
-  return await imService.startDingTalk(config)
+  const { im } = await ensureRemoteSessionStack()
+  return await im.startDingTalk(config)
 })
 
 ipcMain.handle('im:stopDingTalk', async () => {
-  await imService.stopDingTalk()
+  await (await imSvc()).stopDingTalk()
   return { success: true }
 })
 
@@ -3732,11 +3804,11 @@ ipcMain.handle('im:startFeishu', async (_event, config: FeishuConfig) => {
   // 保存配置
   configService.set('imFeishuAppId', config.appId)
   configService.set('imFeishuAppSecret', config.appSecret)
-  return await imService.startFeishu(config)
+  return await (await imSvc()).startFeishu(config)
 })
 
 ipcMain.handle('im:stopFeishu', async () => {
-  await imService.stopFeishu()
+  await (await imSvc()).stopFeishu()
   return { success: true }
 })
 
@@ -3770,37 +3842,37 @@ ipcMain.handle('feishu:getOAuthStatus', async () => {
 ipcMain.handle('im:startSlack', async (_event, config: SlackConfig) => {
   configService.set('imSlackBotToken', config.botToken)
   configService.set('imSlackAppToken', config.appToken)
-  return await imService.startSlack(config)
+  return await (await imSvc()).startSlack(config)
 })
 
 ipcMain.handle('im:stopSlack', async () => {
-  await imService.stopSlack()
+  await (await imSvc()).stopSlack()
   return { success: true }
 })
 
 ipcMain.handle('im:startTelegram', async (_event, config: TelegramConfig) => {
   configService.set('imTelegramBotToken', config.botToken)
-  return await imService.startTelegram(config)
+  return await (await imSvc()).startTelegram(config)
 })
 
 ipcMain.handle('im:stopTelegram', async () => {
-  await imService.stopTelegram()
+  await (await imSvc()).stopTelegram()
   return { success: true }
 })
 
 ipcMain.handle('im:startWeCom', async (_event, config: WeComConfig) => {
   configService.set('imWeComBotId', config.botId)
   configService.set('imWeComSecret', config.secret)
-  return await imService.startWeCom(config)
+  return await (await imSvc()).startWeCom(config)
 })
 
 ipcMain.handle('im:stopWeCom', async () => {
-  await imService.stopWeCom()
+  await (await imSvc()).stopWeCom()
   return { success: true }
 })
 
 ipcMain.handle('im:wechatLogin', async () => {
-  return await imService.loginWeChat((creds) => {
+  return await (await imSvc()).loginWeChat((creds) => {
     configService.set('imWeChatToken', creds.token)
     configService.set('imWeChatBaseUrl', creds.baseUrl)
   })
@@ -3809,16 +3881,16 @@ ipcMain.handle('im:wechatLogin', async () => {
 ipcMain.handle('im:startWeChat', async () => {
   const token = (configService.get('imWeChatToken') as string) || ''
   const baseUrl = (configService.get('imWeChatBaseUrl') as string) || ''
-  return await imService.startWeChat({ enabled: true, token, baseUrl })
+  return await (await imSvc()).startWeChat({ enabled: true, token, baseUrl })
 })
 
 ipcMain.handle('im:stopWeChat', async () => {
-  await imService.stopWeChat()
+  await (await imSvc()).stopWeChat()
   return { success: true }
 })
 
 ipcMain.handle('im:wechatLogout', async () => {
-  await imService.stopWeChat()
+  await (await imSvc()).stopWeChat()
   configService.set('imWeChatToken', '')
   configService.set('imWeChatBaseUrl', '')
   configService.set('imWeChatAutoConnect', false)
@@ -3826,7 +3898,7 @@ ipcMain.handle('im:wechatLogout', async () => {
 })
 
 ipcMain.handle('im:getStatus', async () => {
-  return imService.getStatus()
+  return (await imSvc()).getStatus()
 })
 
 ipcMain.handle('im:getConfig', async () => {
@@ -3883,27 +3955,27 @@ ipcMain.handle('im:setAutoConnect', async (_event, platform: string, enabled: bo
 
 ipcMain.handle('im:setExecutionMode', async (_event, mode: ExecutionMode) => {
   configService.set('imExecutionMode', mode)
-  imService.setExecutionMode(mode)
+  (await imSvc()).setExecutionMode(mode)
 })
 
 ipcMain.handle('im:setSendProcessMessages', async (_event, enabled: boolean) => {
   configService.set('imSendProcessMessages', enabled)
-  imService.setSendProcessMessages(enabled)
+  (await imSvc()).setSendProcessMessages(enabled)
 })
 
 ipcMain.handle('im:setSendThinkingProcess', async (_event, enabled: boolean) => {
   configService.set('imSendThinkingProcess', enabled)
-  imService.setSendThinkingProcess(enabled)
+  (await imSvc()).setSendThinkingProcess(enabled)
 })
 
 // 更新远程 Agent 运行时执行模式（仅运行时，不持久化，用于 tab 界面手动切换）
 ipcMain.handle('web-chat:setExecutionMode', async (_event, mode: ExecutionMode) => {
   if (!['strict', 'relaxed', 'free'].includes(mode)) return
-  webChatService.executionMode = mode
+  ;(await remoteWebChat()).executionMode = mode
 })
 
 ipcMain.handle('im:sendNotification', async (_event, text: string, options?: { markdown?: boolean; title?: string }) => {
-  return await imService.sendNotification(text, options)
+  return await (await imSvc()).sendNotification(text, options)
 })
 
 // ==================== 堡垒机（JumpServer）集成 ====================
@@ -3944,19 +4016,19 @@ ipcMain.handle('bastion:syncAssets', async () => {
 // 记录终端类型（用于 Worker Agent 获取正确的上下文）
 const terminalTypes = new Map<string, 'local' | 'ssh'>()
 
-function initOrchestratorService() {
+async function getOrchestratorService() {
+  const { orchestratorService } = await import('./services/agent/orchestrator')
+  const { ptyService, sshService, agentService, terminalStateService } = await rt()
   orchestratorService.setServices({
     aiService,
     getSshSessions: () => configService.getSshSessions(),
     createLocalTerminal: async () => {
-      // 创建本地终端
       const tabId = ptyService.create({})
       terminalTypes.set(tabId, 'local')
       terminalStateService.initTerminal(tabId, 'local')
       return tabId
     },
     createSshTerminal: async (sshConfig) => {
-      // 创建 SSH 终端
       const config = sshConfig as {
         host: string
         port: number
@@ -3984,8 +4056,6 @@ function initOrchestratorService() {
       }
       terminalTypes.delete(terminalId)
       terminalStateService.removeTerminal(terminalId)
-      // Worker Agent 与终端是 1:1 绑定（agentKey = terminalId），随终端一起清理是合理的。
-      // 这跟用户 tab 的多窗格场景不同（用户 tab 的 Agent 归 tab 所有，与 PTY 解耦）。
       agentService.cleanupAgent(terminalId)
     },
     getTerminalType: (terminalId) => {
@@ -3993,32 +4063,29 @@ function initOrchestratorService() {
     },
     runWorkerAgent: async (ptyId, task, workerOptions) => {
       const type = terminalTypes.get(ptyId) || 'ssh'
-      
-      // Worker Agent 的上下文：初始输出为空，Agent 运行时会通过工具获取最新输出
       const context: AgentContext = {
         ptyId,
-        terminalOutput: [],  // Worker 启动时输出为空，实际输出会在运行时获取
-        systemInfo: { 
-          os: type === 'local' ? process.platform : 'linux', 
-          shell: type === 'local' ? getDefaultShell() : 'bash' 
+        terminalOutput: [],
+        systemInfo: {
+          os: type === 'local' ? process.platform : 'linux',
+          shell: type === 'local' ? getDefaultShell() : 'bash'
         },
         terminalType: type
       }
-      // 运行 Worker Agent（使用严格模式）
       return agentService.run(ptyId, task, context, { executionMode: 'strict' }, undefined, workerOptions)
     }
   })
+  return orchestratorService
 }
 
-// 启动智能巡检任务
 ipcMain.handle('orchestrator:start', async (_event, task: string, config?: Partial<OrchestratorConfig>) => {
-  // 确保协调器服务已初始化
-  initOrchestratorService()
+  const orchestratorService = await getOrchestratorService()
   return orchestratorService.startTask(task, config)
 })
 
 // 停止智能巡检任务
 ipcMain.handle('orchestrator:stop', async (_event, orchestratorId: string) => {
+  const orchestratorService = await getOrchestratorService()
   return orchestratorService.stopTask(orchestratorId)
 })
 
@@ -4043,11 +4110,12 @@ ipcMain.handle('orchestrator:batchConfirmResponse', async (
   action: 'cancel' | 'current' | 'all',
   selectedTerminals?: string[]
 ) => {
+  const orchestratorService = await getOrchestratorService()
   orchestratorService.respondBatchConfirm(orchestratorId, action, selectedTerminals)
 })
 
-// 获取协调器状态
 ipcMain.handle('orchestrator:getStatus', async (_event, orchestratorId: string) => {
+  const orchestratorService = await getOrchestratorService()
   const status = orchestratorService.getStatus(orchestratorId)
   if (!status) return null
   // 序列化 Map 为数组
@@ -4073,26 +4141,23 @@ ipcMain.handle('history:saveArtifacts', async (_event, recordId: string, artifac
 // 都收口到 Manager，不再在各 handler 里散布 agentKey 字面量过滤。
 // Manager 在 setHistoryService（启动早期、IPC 注册前）必装配，故此处缺失属配置错误——
 // 宁可显式抛错（前端可见的失败），也不静默退化到丢 filter/参数的 historyService 调用（会返回错误结果）。
-const conv = () => {
+const conv = async () => {
+  const { agentService } = await rt()
   const manager = agentService.getConversationManager()
   if (!manager) throw new Error('ConversationManager not initialized (setHistoryService must run before IPC)')
   return manager
 }
 
-// 获取 Agent 记录（纯透传，无 kind 过滤需求）
 ipcMain.handle('history:getAgentRecords', async (_event, startDate?: string, endDate?: string) => {
-  return conv().byDateRange(startDate, endDate)
+  return (await conv()).byDateRange(startDate, endDate)
 })
 
 ipcMain.handle('history:getRecentAgentRecords', async (_event, limit?: number, excludeWakeup?: boolean) => {
-  // excludeWakeup=true 为任务侧栏口径（仅 task；watch 内心独白进独立索引、联络有独立常驻 tab，均剔除）。
-  return conv().recentRecords(limit ?? 5, excludeWakeup ?? false)
+  return (await conv()).recentRecords(limit ?? 5, excludeWakeup ?? false)
 })
 
 ipcMain.handle('history:listAgentSummaries', async (_event, excludeWakeup?: boolean) => {
-  // 注：摘要级 excludeWakeup 过滤当前由 HistoryService 内部维护（与 taskScoped 同口径但另一处实现，
-  // 因摘要类型与读盘路径不同）。后续可考虑统一收敛进 Manager，记为 debt。
-  return conv().listSummaries(excludeWakeup)
+  return (await conv()).listSummaries(excludeWakeup)
 })
 
 ipcMain.handle(
@@ -4108,22 +4173,20 @@ ipcMain.handle(
       titleOnly?: boolean
     }
   ) => {
-    return conv().search(options)
+    return (await conv()).search(options)
   }
 )
 
-// 按 ID 获取单条 Agent 记录（用于 Watch 执行详情查看）
 ipcMain.handle('history:getAgentRecordById', async (_event, id: string) => {
-  return conv().getRecord(id)
+  return (await conv()).getRecord(id)
 })
 
-// 取某 agentKey 最近 N 条完整会话记录（联络常驻 tab 重启后合并恢复历史对话）
 ipcMain.handle('history:getRecentByAgentKey', async (_event, agentKey: string, limit?: number) => {
-  return conv().recentByAgentKey(agentKey, limit ?? 10)
+  return (await conv()).recentByAgentKey(agentKey, limit ?? 10)
 })
 
 ipcMain.handle('history:deleteAgentRecord', async (_event, id: string) => {
-  return conv().delete(id)
+  return (await conv()).delete(id)
 })
 
 // 获取数据目录路径
@@ -4140,7 +4203,9 @@ ipcMain.handle('dataDir:getInfo', async () => {
 
 // 是否有 Agent 正在运行（迁移前提示用户重启会中断任务）
 ipcMain.handle('dataDir:hasRunningAgents', async () => {
-  return agentService.hasRunningAgents()
+  const loaded = getAgentRuntimeOrNull()
+  if (!loaded) return false
+  return loaded.agentService.hasRunningAgents()
 })
 
 // 选择目标目录（返回所选路径 + 是否非空，供前端确认）
@@ -4368,6 +4433,7 @@ ipcMain.handle('hostProfile:generateContext', async (_event, hostId: string) => 
 ipcMain.handle('hostProfile:probeSsh', async (_event, sshId: string, hostId: string) => {
   try {
     // 通过 SSH 执行探测命令
+    const { sshService } = await rt()
     const probeOutput = await sshService.probe(sshId)
     
     // 解析探测结果
@@ -4419,10 +4485,9 @@ ipcMain.handle('document:selectFiles', async () => {
 // 解析单个文档（extractImages 由后端根据视觉模型配置自动决定）
 ipcMain.handle('document:parse', async (_event, file: UploadedFile, options?: ParseOptions) => {
   const extractImages = options?.extractImages ?? configService.hasVisionCapability()
-  return documentParserService.parseDocument(file, { ...options, extractImages })
+  return (await docParser()).parseDocument(file, { ...options, extractImages })
 })
 
-// 批量解析文档（extractImages 由后端根据视觉模型配置自动决定）
 ipcMain.handle('document:parseMultiple', async (event, files: UploadedFile[], options?: ParseOptions) => {
   const extractImages = options?.extractImages ?? configService.hasVisionCapability()
   const requestId = options?.requestId || `doc_parse_${Date.now()}`
@@ -4431,27 +4496,23 @@ ipcMain.handle('document:parseMultiple', async (event, files: UploadedFile[], op
       event.sender.send('document:parseProgress', progress)
     }
   }
-  return documentParserService.parseDocuments(files, { ...options, requestId, extractImages, onProgress: sendProgress })
+  return (await docParser()).parseDocuments(files, { ...options, requestId, extractImages, onProgress: sendProgress })
 })
 
-// 格式化为 AI 上下文
 ipcMain.handle('document:formatAsContext', async (_event, docs: ParsedDocument[]) => {
-  return documentParserService.formatAsContext(docs)
+  return (await docParser()).formatAsContext(docs)
 })
 
-// 生成文档摘要
 ipcMain.handle('document:generateSummary', async (_event, doc: ParsedDocument) => {
-  return documentParserService.generateSummary(doc)
+  return (await docParser()).generateSummary(doc)
 })
 
-// 检查解析能力
 ipcMain.handle('document:checkCapabilities', async () => {
-  return documentParserService.checkCapabilities()
+  return (await docParser()).checkCapabilities()
 })
 
-// 获取支持的文件类型
 ipcMain.handle('document:getSupportedTypes', async () => {
-  return documentParserService.getSupportedTypes()
+  return (await docParser()).getSupportedTypes()
 })
 
 // ==================== PPT 预览修复（历史 HTML 去 CDN + 内联 echarts） ====================
@@ -4687,32 +4748,9 @@ ipcMain.handle('fileManager:getInitParams', async () => {
 
 // ==================== SFTP 相关 ====================
 
-// SFTP 传输进度事件转发（发送到主窗口和文件管理器窗口）
-sftpService.on('transfer-start', (progress) => {
-  mainWindow?.webContents.send('sftp:transfer-start', progress)
-  fileManagerWindow?.webContents.send('sftp:transfer-start', progress)
-})
-sftpService.on('transfer-progress', (progress) => {
-  mainWindow?.webContents.send('sftp:transfer-progress', progress)
-  fileManagerWindow?.webContents.send('sftp:transfer-progress', progress)
-})
-sftpService.on('transfer-complete', (progress) => {
-  mainWindow?.webContents.send('sftp:transfer-complete', progress)
-  fileManagerWindow?.webContents.send('sftp:transfer-complete', progress)
-})
-sftpService.on('transfer-error', (progress) => {
-  mainWindow?.webContents.send('sftp:transfer-error', progress)
-  fileManagerWindow?.webContents.send('sftp:transfer-error', progress)
-})
-sftpService.on('transfer-cancelled', (progress) => {
-  mainWindow?.webContents.send('sftp:transfer-cancelled', progress)
-  fileManagerWindow?.webContents.send('sftp:transfer-cancelled', progress)
-})
-
-// 连接 SFTP
 ipcMain.handle('sftp:connect', async (_event, sessionId: string, config: SftpConfig) => {
   try {
-    await sftpService.connect(sessionId, config)
+    await (await sftpRt()).connect(sessionId, config)
     return { success: true }
   } catch (error) {
     return { 
@@ -4724,19 +4762,19 @@ ipcMain.handle('sftp:connect', async (_event, sessionId: string, config: SftpCon
 
 // 断开 SFTP 连接
 ipcMain.handle('sftp:disconnect', async (_event, sessionId: string) => {
-  await sftpService.disconnect(sessionId)
+  await (await sftpRt()).disconnect(sessionId)
 })
 
 // 检查连接是否存在
 ipcMain.handle('sftp:hasSession', async (_event, sessionId: string) => {
-  return sftpService.hasSession(sessionId)
+  return (await sftpRt()).hasSession(sessionId)
 })
 
 // 列出目录内容
 ipcMain.handle('sftp:list', async (_event, sessionId: string, remotePath: string) => {
   log.info(`SFTP list 请求: sessionId=${sessionId}, remotePath=${remotePath}`)
   try {
-    const { files, resolvedPath } = await sftpService.list(sessionId, remotePath)
+    const { files, resolvedPath } = await (await sftpRt()).list(sessionId, remotePath)
     log.info(`SFTP list 结果: resolvedPath=${resolvedPath}, 文件数=${files.length}`)
     return { success: true, data: files, resolvedPath }
   } catch (error) {
@@ -4751,7 +4789,7 @@ ipcMain.handle('sftp:list', async (_event, sessionId: string, remotePath: string
 // 获取当前工作目录
 ipcMain.handle('sftp:pwd', async (_event, sessionId: string) => {
   try {
-    const cwd = await sftpService.pwd(sessionId)
+    const cwd = await (await sftpRt()).pwd(sessionId)
     return { success: true, data: cwd }
   } catch (error) {
     return { 
@@ -4764,7 +4802,7 @@ ipcMain.handle('sftp:pwd', async (_event, sessionId: string) => {
 // 检查路径是否存在
 ipcMain.handle('sftp:exists', async (_event, sessionId: string, remotePath: string) => {
   try {
-    const result = await sftpService.exists(sessionId, remotePath)
+    const result = await (await sftpRt()).exists(sessionId, remotePath)
     return { success: true, data: result }
   } catch (error) {
     return { 
@@ -4777,7 +4815,7 @@ ipcMain.handle('sftp:exists', async (_event, sessionId: string, remotePath: stri
 // 获取文件/目录信息
 ipcMain.handle('sftp:stat', async (_event, sessionId: string, remotePath: string) => {
   try {
-    const stats = await sftpService.stat(sessionId, remotePath)
+    const stats = await (await sftpRt()).stat(sessionId, remotePath)
     return { success: true, data: stats }
   } catch (error) {
     return { 
@@ -4790,7 +4828,7 @@ ipcMain.handle('sftp:stat', async (_event, sessionId: string, remotePath: string
 // 上传文件
 ipcMain.handle('sftp:upload', async (_event, sessionId: string, localPath: string, remotePath: string, transferId: string) => {
   try {
-    await sftpService.upload(sessionId, localPath, remotePath, transferId)
+    await (await sftpRt()).upload(sessionId, localPath, remotePath, transferId)
     return { success: true }
   } catch (error) {
     return { 
@@ -4803,7 +4841,7 @@ ipcMain.handle('sftp:upload', async (_event, sessionId: string, localPath: strin
 // 下载文件
 ipcMain.handle('sftp:download', async (_event, sessionId: string, remotePath: string, localPath: string, transferId: string) => {
   try {
-    await sftpService.download(sessionId, remotePath, localPath, transferId)
+    await (await sftpRt()).download(sessionId, remotePath, localPath, transferId)
     return { success: true }
   } catch (error) {
     return { 
@@ -4816,7 +4854,7 @@ ipcMain.handle('sftp:download', async (_event, sessionId: string, remotePath: st
 // 上传目录
 ipcMain.handle('sftp:uploadDir', async (_event, sessionId: string, localDir: string, remoteDir: string) => {
   try {
-    await sftpService.uploadDir(sessionId, localDir, remoteDir)
+    await (await sftpRt()).uploadDir(sessionId, localDir, remoteDir)
     return { success: true }
   } catch (error) {
     return { 
@@ -4829,7 +4867,7 @@ ipcMain.handle('sftp:uploadDir', async (_event, sessionId: string, localDir: str
 // 下载目录
 ipcMain.handle('sftp:downloadDir', async (_event, sessionId: string, remoteDir: string, localDir: string) => {
   try {
-    await sftpService.downloadDir(sessionId, remoteDir, localDir)
+    await (await sftpRt()).downloadDir(sessionId, remoteDir, localDir)
     return { success: true }
   } catch (error) {
     return { 
@@ -4842,7 +4880,7 @@ ipcMain.handle('sftp:downloadDir', async (_event, sessionId: string, remoteDir: 
 // 创建目录
 ipcMain.handle('sftp:mkdir', async (_event, sessionId: string, remotePath: string) => {
   try {
-    await sftpService.mkdir(sessionId, remotePath)
+    await (await sftpRt()).mkdir(sessionId, remotePath)
     return { success: true }
   } catch (error) {
     return { 
@@ -4855,7 +4893,7 @@ ipcMain.handle('sftp:mkdir', async (_event, sessionId: string, remotePath: strin
 // 删除文件
 ipcMain.handle('sftp:delete', async (_event, sessionId: string, remotePath: string) => {
   try {
-    await sftpService.delete(sessionId, remotePath)
+    await (await sftpRt()).delete(sessionId, remotePath)
     return { success: true }
   } catch (error) {
     return { 
@@ -4868,7 +4906,7 @@ ipcMain.handle('sftp:delete', async (_event, sessionId: string, remotePath: stri
 // 删除目录
 ipcMain.handle('sftp:rmdir', async (_event, sessionId: string, remotePath: string) => {
   try {
-    await sftpService.rmdir(sessionId, remotePath)
+    await (await sftpRt()).rmdir(sessionId, remotePath)
     return { success: true }
   } catch (error) {
     return { 
@@ -4881,7 +4919,7 @@ ipcMain.handle('sftp:rmdir', async (_event, sessionId: string, remotePath: strin
 // 重命名/移动
 ipcMain.handle('sftp:rename', async (_event, sessionId: string, oldPath: string, newPath: string) => {
   try {
-    await sftpService.rename(sessionId, oldPath, newPath)
+    await (await sftpRt()).rename(sessionId, oldPath, newPath)
     return { success: true }
   } catch (error) {
     return { 
@@ -4894,7 +4932,7 @@ ipcMain.handle('sftp:rename', async (_event, sessionId: string, oldPath: string,
 // 修改权限
 ipcMain.handle('sftp:chmod', async (_event, sessionId: string, remotePath: string, mode: string | number) => {
   try {
-    await sftpService.chmod(sessionId, remotePath, mode)
+    await (await sftpRt()).chmod(sessionId, remotePath, mode)
     return { success: true }
   } catch (error) {
     return { 
@@ -4907,7 +4945,7 @@ ipcMain.handle('sftp:chmod', async (_event, sessionId: string, remotePath: strin
 // 读取文本文件
 ipcMain.handle('sftp:readFile', async (_event, sessionId: string, remotePath: string) => {
   try {
-    const content = await sftpService.readFile(sessionId, remotePath)
+    const content = await (await sftpRt()).readFile(sessionId, remotePath)
     return { success: true, data: content }
   } catch (error) {
     return { 
@@ -4920,7 +4958,7 @@ ipcMain.handle('sftp:readFile', async (_event, sessionId: string, remotePath: st
 // 写入文本文件
 ipcMain.handle('sftp:writeFile', async (_event, sessionId: string, remotePath: string, content: string) => {
   try {
-    await sftpService.writeFile(sessionId, remotePath, content)
+    await (await sftpRt()).writeFile(sessionId, remotePath, content)
     return { success: true }
   } catch (error) {
     return { 
@@ -4932,13 +4970,13 @@ ipcMain.handle('sftp:writeFile', async (_event, sessionId: string, remotePath: s
 
 // 获取当前传输列表
 ipcMain.handle('sftp:getTransfers', async () => {
-  return sftpService.getTransfers()
+  return (await sftpRt()).getTransfers()
 })
 
 // 取消传输
 ipcMain.handle('sftp:cancelTransfer', async (_event, transferId: string) => {
   try {
-    const cancelled = sftpService.cancelTransfer(transferId)
+    const cancelled = (await sftpRt()).cancelTransfer(transferId)
     return { success: cancelled }
   } catch (error) {
     return {
@@ -5174,7 +5212,10 @@ ipcMain.handle('plugin:install', async (_event, spec: string) => {
     const providers = pluginRegistry.getAllProviders()
     if (providers.length > 0) aiService.setPluginProviders(providers)
     const routes = pluginRegistry.getAllHttpRoutes()
-    if (routes.length > 0) gatewayService.registerPluginRoutes(routes)
+    if (routes.length > 0) {
+      const { gateway } = await ensureRemoteSessionStack()
+      gateway.registerPluginRoutes(routes)
+    }
     const ttsPs = pluginRegistry.getAllTtsProviders()
     if (ttsPs.length > 0) {
       const tts = await import('./services/tts')
@@ -5723,7 +5764,7 @@ ipcMain.handle('email:syncAccounts', async (_event, accounts: Array<{
       }
     }).filter(a => a.imapHost)
 
-    await sensorService.email.configureAccounts(
+    await (await ensureSensorService()).email.configureAccounts(
       sensorAccounts,
       (accountId) => getEmailCredential(accountId)
     )
@@ -5862,7 +5903,7 @@ ipcMain.handle('calendar:syncAccounts', async (_event, accounts: Array<{
       serverUrl: a.serverUrl
     }))
 
-    await sensorService.calendar.configureAccounts(
+    await (await ensureSensorService()).calendar.configureAccounts(
       sensorAccounts,
       (accountId) => getCalendarCredential(accountId)
     )

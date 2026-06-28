@@ -7,12 +7,13 @@
  * 架构：
  *   IM 平台 ──→ Adapter ──→ IMService.handleMessage()
  *                                   │
- *                          AgentService.runAssistant(COMPANION_AGENT_ID)
+ *                          AgentService.runAssistant(COMPANION_AGENT_KEY)
  *                                   │
  *                          callbacks 聚合文本 ──→ Adapter.sendMarkdown()
  */
 
 import type { ExecutionMode, RemoteChannel } from '@shared/types'
+import { COMPANION_AGENT_KEY } from '@shared/types'
 import { getDefaultShell, getLocalOS } from '../../utils/platform'
 import { getEventBus } from '../sensor/event-bus'
 import type {
@@ -36,7 +37,7 @@ import { SlackAdapter } from './slack-adapter'
 import { TelegramAdapter } from './telegram-adapter'
 import { WeComAdapter } from './wecom-adapter'
 import { WeChatAdapter } from './wechat-adapter'
-import { AgentService } from '../agent'
+import type { AgentService } from '../agent'
 import { getConfigService } from '../config.service'
 import { t } from '../agent/i18n'
 import { createLogger } from '../../utils/logger'
@@ -990,7 +991,7 @@ export class IMService {
     const fullMessage = this.buildAgentMessage(msg)
 
     // Companion Agent 实例
-    const companion = this.deps.agentService.createAssistantAgent(AgentService.COMPANION_AGENT_ID)
+    const companion = this.deps.agentService.createAssistantAgent(COMPANION_AGENT_KEY)
 
     // 检查是否有待确认的工具调用（仅对纯文本消息生效）
     if (companion.hasPendingConfirmation() && !msg.attachments?.length) {
@@ -1039,7 +1040,7 @@ export class IMService {
    * 处理确认/拒绝回复
    */
   private async handleConfirmResponse(adapter: IMAdapter, replyContext: any, text: string) {
-    const companion = this.deps!.agentService.createAssistantAgent(AgentService.COMPANION_AGENT_ID)
+    const companion = this.deps!.agentService.createAssistantAgent(COMPANION_AGENT_KEY)
     const lowerText = text.toLowerCase().trim()
     const isApproved = CONFIRM_KEYWORDS.some(kw => lowerText === kw)
     const isRejected = REJECT_KEYWORDS.some(kw => lowerText === kw)
@@ -1063,7 +1064,7 @@ export class IMService {
       const mainWindow = this.deps?.mainWindow
       if (mainWindow && !mainWindow.webContents.isDestroyed()) {
         mainWindow.webContents.send('agent:confirmResolved', {
-          agentId: AgentService.COMPANION_AGENT_ID
+          agentId: COMPANION_AGENT_KEY
         })
       }
     }
@@ -1089,7 +1090,7 @@ export class IMService {
 
     this.activeSession = { adapter, replyContext }
     const fullMessage = this.buildAgentMessage(msg)
-    const agentId = AgentService.COMPANION_AGENT_ID
+    const agentId = COMPANION_AGENT_KEY
 
     const sendProcess = this.config.sendProcessMessages
     const sendThinking = this.config.sendThinkingProcess
@@ -1999,7 +2000,7 @@ export class IMService {
   }
 
   private getSessionStatus(): string {
-    const companion = this.deps?.agentService?.createAssistantAgent(AgentService.COMPANION_AGENT_ID)
+    const companion = this.deps?.agentService?.createAssistantAgent(COMPANION_AGENT_KEY)
     const runStatus = companion?.getRunStatus()
     const connected = (name: string, isConn: boolean) =>
       `${name}: ${isConn ? '✅' : '❌'}`
