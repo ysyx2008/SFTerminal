@@ -2286,6 +2286,10 @@ interface Window {
       sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => void
     }
 
+    quit: {
+      onToast: (callback: (payload: { show: boolean }) => void) => () => void
+    }
+
     workbench: {
       onExec: (
         handler: (

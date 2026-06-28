@@ -449,8 +449,10 @@ let fileManagerParams: {  // 文件管理器窗口初始化参数
 let forceQuit = false  // 是否强制退出（跳过确认）
 let isQuitting = false  // 是否正在退出应用（Cmd+Q 触发，区分于 Cmd+W 关闭窗口）
 
-// macOS ⌘Q 防误触：首次按下展示提示，2 秒内再次按下才真正退出
+// macOS ⌘Q 防误触：无终端时首次按下展示提示，2 秒内再次按下才真正退出
 let quitConfirmTimer: ReturnType<typeof setTimeout> | null = null
+// 是否需要防误触（仅 Cmd+Q 首次按下，托盘/Dock 退出不需要）
+let quitNeedsAntiMistouch = false
 
 function sendQuitToast(show: boolean): void {
   try {
@@ -460,31 +462,40 @@ function sendQuitToast(show: boolean): void {
   } catch { /* ignore */ }
 }
 
+/** 请求渲染进程返回终端数量，并启动超时兜底 */
+function requestTerminalCountForQuit(): void {
+  try {
+    beginQuitTerminalCountRequest()
+    mainWindow?.webContents.send('window:requestTerminalCount')
+  } catch (e) {
+    clearQuitTerminalCountWatchdog()
+    forceQuit = true
+    app.quit()
+  }
+}
+
 function handleQuitAttempt(): void {
-  // 已进入退出流程（二次确认或终端计数对话框期间），忽略后续按键
+  // 已进入退出流程（终端计数/对话框期间），忽略后续按键
   if (isQuitting) return
+
   if (quitConfirmTimer) {
-    // 2 秒内再次按下：正式退出
+    // 防误触二次确认：2 秒内再次按下，直接退出
     clearTimeout(quitConfirmTimer)
     quitConfirmTimer = null
     sendQuitToast(false)
-    isQuitting = true
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      if (process.platform === 'darwin') app.dock?.show()
-      mainWindow.show()
-      mainWindow.close()
-    } else {
-      forceQuit = true
-      app.quit()
-    }
-  } else {
-    // 首次按下：显示提示，等待二次确认
-    sendQuitToast(true)
-    quitConfirmTimer = setTimeout(() => {
-      quitConfirmTimer = null
-      sendQuitToast(false)
-    }, 2000)
+    forceQuit = true
+    app.quit()
+    return
   }
+
+  // 首次按下：直接检测终端数量
+  isQuitting = true
+  quitNeedsAntiMistouch = true
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (process.platform === 'darwin') app.dock?.show()
+    mainWindow.show()
+  }
+  requestTerminalCountForQuit()
 }
 
 // Cmd+Q 退出确认：若渲染进程未及时回复终端数量，避免主窗口 close 永久被 preventDefault 卡住
@@ -523,6 +534,7 @@ async function proceedQuitAfterTerminalCount(terminalCount: number): Promise<voi
   const messageBoxOptions = menuService.getQuitConfirmDialogOptions(terminalCount)
 
   if (terminalCount > 0) {
+    // 有终端：弹确认对话框，用户确认后直接退出
     const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
     const result = parent
       ? await dialog.showMessageBox(parent, messageBoxOptions)
@@ -530,13 +542,24 @@ async function proceedQuitAfterTerminalCount(terminalCount: number): Promise<voi
 
     if (result.response === 1) {
       forceQuit = true
-      mainWindow?.close()
+      app.quit()
     } else {
       isQuitting = false
+      quitNeedsAntiMistouch = false
     }
+  } else if (quitNeedsAntiMistouch) {
+    // 无终端 + Cmd+Q 首次：进入防误触等待
+    isQuitting = false
+    quitNeedsAntiMistouch = false
+    sendQuitToast(true)
+    quitConfirmTimer = setTimeout(() => {
+      quitConfirmTimer = null
+      sendQuitToast(false)
+    }, 2000)
   } else {
+    // 无终端 + 托盘/Dock 退出：直接退出
     forceQuit = true
-    mainWindow?.close()
+    app.quit()
   }
 }
 const aiService = new AiService()
@@ -1126,16 +1149,8 @@ function createWindow() {
     }
 
     if (isQuitting) {
-      // Cmd+Q 退出：走终端确认逻辑
+      // 正在退出流程中（等待终端计数/对话框），阻止窗口关闭
       event.preventDefault()
-      try {
-        beginQuitTerminalCountRequest()
-        mainWindow?.webContents.send('window:requestTerminalCount')
-      } catch (e) {
-        clearQuitTerminalCountWatchdog()
-        forceQuit = true
-        mainWindow?.close()
-      }
       return
     }
 
@@ -1786,38 +1801,30 @@ app.whenReady().then(async () => {
   })
 })
 
-// 处理 Cmd+Q / 托盘退出
+// 处理托盘/Dock 退出
 app.on('before-quit', (event) => {
-  // 清理 macOS 防误触等待状态（托盘/Dock 退出时直接进入此流程）
-  const hadPendingTimer = !!quitConfirmTimer
-  if (quitConfirmTimer) {
-    clearTimeout(quitConfirmTimer)
-    quitConfirmTimer = null
-    sendQuitToast(false)
-  }
-
-  isQuitting = true
-
   if (forceQuit) {
     return
   }
 
-  // 用户已看过防误触提示（Cmd+Q 首次按下），此时托盘/Dock 再次退出视为明确确认
-  // 跳过终端计数对话框，直接退出
-  if (hadPendingTimer) {
-    forceQuit = true
+  if (isQuitting) {
+    // 已在退出流程中（Cmd+Q 已触发），阻止重复
+    event.preventDefault()
     return
   }
-  
-  // 窗口可能是隐藏状态，需要先显示再走确认流程
+
+  // 托盘/Dock 退出：走终端确认逻辑（不需要防误触）
+  isQuitting = true
+  quitNeedsAntiMistouch = false
+  event.preventDefault()
+
   if (mainWindow && !mainWindow.isDestroyed()) {
-    event.preventDefault()
     if (process.platform === 'darwin') {
       app.dock?.show()
     }
     mainWindow.show()
-    mainWindow.close()  // 触发窗口的 close 事件，走终端确认逻辑
   }
+  requestTerminalCountForQuit()
 })
 
 // 所有窗口关闭时的处理

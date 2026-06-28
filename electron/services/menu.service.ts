@@ -206,7 +206,7 @@ export class MenuService {
   }
 
   /**
-   * 设置 macOS ⌘Q 防误触退出回调（不设则直接 app.quit）
+   * 设置 ⌘Q 退出回调（不设则直接 app.quit）
    */
   setQuitHandler(handler: () => void): void {
     this.quitHandler = handler
