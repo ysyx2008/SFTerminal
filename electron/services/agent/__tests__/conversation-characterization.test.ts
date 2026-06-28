@@ -20,6 +20,10 @@
  *   ⑧ 两种 fork 中的「任务分支完整拷贝到 fork 点」：buildForkRecord 无 untilTaskCount=全拷贝、
  *      有则截断到第 N 个任务，源记录不被破坏（文档 §2.5）。createTaskFrom（跨 kind 种子起头）是
  *      全新操作、现无可观测行为可钉，留待其实现阶段 TDD（种子策略按 §2.5 延后）。
+ *   ⑨ checkpoint 序列化字段完整性：每轮工具调用后 saveCheckpoint 写盘的 record 必须含 `kind`
+ *      字段（非空）+ steps 的 `toolCallId`（精确配对 tool_call↔tool_result 的钥匙）。原 saveCheckpoint
+ *      内联映射与 Conversation.stepToStepRecord 是两份平行实现，各自漏了 toolCallId、且前者漏了 kind；
+ *      本次把 checkpoint 序列化收口到 Conversation.toCheckpointRecord 后，两份合一，此测试钉死该收敛。
  *
  * 联络（companion）跨重启回种、reset 抑制回种由 companion-restore.integration.test.ts 覆盖，
  * 此处不重复。
@@ -57,6 +61,7 @@ import { Agent } from '../agent'
 import { HistoryService } from '../../history.service'
 import type { ToolDefinition } from '../../ai.service'
 import type { AgentContext, AgentServices } from '../types'
+import type { AgentRecord } from '@shared/types'
 
 class TestAgent extends Agent {
   getAvailableTools(): ToolDefinition[] {
@@ -387,5 +392,63 @@ describe('会话/记忆特征测试网（characterization · 真实 HistoryServi
     // 源记录不受影响（fork 不破坏原线）
     const srcAfter = new HistoryService().getAgentRecordById('sess_fork_src')!
     expect(srcAfter.messages!.length).toBe(messages.length)
+  })
+
+  it('⑨ checkpoint 序列化含 kind + toolCallId：每轮工具调用后写盘的 record 字段完整', async () => {
+    const history = new HistoryService()
+    // 拦截 saveAgentRecord，捕获所有写盘调用（checkpoint 在工具循环中触发、finalizeRun 在结束时触发）
+    const savedRecords: { record: AgentRecord }[] = []
+    const origSave = history.saveAgentRecord.bind(history)
+    vi.spyOn(history, 'saveAgentRecord').mockImplementation((record: AgentRecord) => {
+      savedRecords.push({ record })
+      return origSave(record)
+    })
+
+    // 第 1 轮：返回带 tool_calls 的 assistant（触发工具循环 → 触发 saveCheckpoint）
+    // 第 2 轮：无 tool_calls，结束 ReAct 循环
+    const agent = newTabAgent(history, 'tab-ckpt', (i) =>
+      i === 0
+        ? {
+            content: '',
+            reasoning_content: '',
+            tool_calls: [
+              { id: 'call_ckpt_1', type: 'function', function: { name: 'fake_tool', arguments: '{}' } }
+            ]
+          }
+        : { content: '完成' }
+    )
+
+    await agent.run('触发一次工具调用', ctx({ sessionId: 'sess_ckpt', sessionStartTime: Date.now() - 1000 }))
+
+    // checkpoint 在工具循环中触发（至少 1 次），finalizeRun 结束时再触发 1 次。
+    // 用 >= 2 显式确认 checkpoint 路径确实被触发（而非只有 finalizeRun 写盘）——
+    // 若未来某次重构误删了 saveCheckpoint 调用，>= 1 不会报警，>= 2 会。
+    expect(savedRecords.length).toBeGreaterThanOrEqual(2)
+
+    // 红线 1：所有写盘的 record（含 checkpoint）必须含 kind 字段（非空）。
+    // 原 saveCheckpoint 内联拼装的 record 漏了 kind，靠 normalize 读盘兜底；本次收敛到
+    // Conversation.toCheckpointRecord 后写盘显式带 kind（与 toRecord 一致）。
+    for (const { record } of savedRecords) {
+      expect(record.kind).toBeDefined()
+      expect(record.kind).not.toBe('')
+    }
+
+    // 红线 2：checkpoint record 的 tool_result 步骤必须保留 toolCallId。
+    // toolCallId 是精确配对 tool_call ↔ tool_result 的钥匙（tool_result 用它反向找到 tool_call）。
+    // 原两份字段映射（saveCheckpoint 内联 + Conversation.stepToStepRecord）都漏了 toolCallId，
+    // 导致存盘后配对退化为按 toolName 匹配——并发同名工具调用会相互覆盖。本次补全后，
+    // 新记录的 tool_result 步骤带 toolCallId，老记录读盘仍走「缺字段退化按 toolName」兼容路径。
+    const checkpointRecords = savedRecords.filter(({ record }) =>
+      // checkpoint record 含 tool_result 步骤（说明经历了工具循环）
+      (record.steps as any[]).some(s => s.type === 'tool_result')
+    )
+    expect(checkpointRecords.length).toBeGreaterThanOrEqual(1)
+    for (const { record } of checkpointRecords) {
+      const toolResultSteps = (record.steps as any[]).filter(s => s.type === 'tool_result')
+      expect(toolResultSteps.length).toBeGreaterThanOrEqual(1)
+      expect(toolResultSteps.every(s => s.toolCallId !== undefined)).toBe(true)
+      // 具体值校验：我们传的 call_ckpt_1 应该能找到
+      expect(toolResultSteps.some(s => s.toolCallId === 'call_ckpt_1')).toBe(true)
+    }
   })
 })

@@ -962,72 +962,26 @@ export abstract class Agent {
   }
   
   /**
-   * 保存执行检查点：将当前 session + 进行中 run 的数据写入 HistoryService
-   * 每完成一轮工具调用后自动触发，确保程序意外退出时不丢失对话记录
+   * 保存执行检查点：将「会话累积态 + 当前 run 进行态」合并写入 HistoryService。
+   * 每完成一轮工具调用后自动触发，确保程序意外退出时不丢失对话记录。
+   *
+   * record 构建委托给 `Conversation.toCheckpointRecord`——字段映射（stepToStepRecord）、
+   * token 合并、kind/形态/身份等全部由 Conversation 唯一负责，本方法只做薄转发。
+   * 这消除了原实现里与 `Conversation.stepToStepRecord` 重复的第二份字段映射，
+   * 以及原 record 缺 `kind` 字段、两份实现都漏 `toolCallId` 字段的问题。
    */
   private saveCheckpoint(run: AgentRun): void {
     const historyService = this.services.historyService
-    if (!historyService || !this._sessionId || !this._sessionStartTime) return
-    
-    // 合并：已累积的 session 步骤 + 当前 run 的执行步骤（已包含 user_task）
-    const allSteps: AgentStep[] = [
-      ...this._sessionSteps,
-      ...run.steps
-    ]
-    const checkpointSteps: AgentStepRecord[] = allSteps.map(s => ({
-      id: s.id,
-      type: s.type,
-      content: s.content || '',
-      images: s.images,
-      echartsOption: s.echartsOption,
-      attachments: s.attachments,
-      toolName: s.toolName,
-      toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,
-      toolResult: s.toolResult,
-      riskLevel: s.riskLevel,
-      timestamp: s.timestamp,
-      webSearchResults: s.webSearchResults,
-      success: s.success,
-      subAgents: s.subAgents,
-      canvasData: s.canvasData
-    }))
-    
-    // 合并 API 消息
-    const checkpointMessages = [...this._sessionMessages, ...run.taskMessageLog]
-    
-    const firstUserTask = this._sessionSteps.find(s => s.type === 'user_task') || { content: run.originalUserRequest }
-    
-    // 合并 session 和当前 run 的 token 用量（含缓存统计）
-    let checkpointTokenUsage = this._sessionTokenUsage
-    if (run.tokenUsage) {
-      checkpointTokenUsage = {
-        prompt_tokens: (checkpointTokenUsage?.prompt_tokens || 0) + run.tokenUsage.prompt_tokens,
-        completion_tokens: (checkpointTokenUsage?.completion_tokens || 0) + run.tokenUsage.completion_tokens,
-        total_tokens: (checkpointTokenUsage?.total_tokens || 0) + run.tokenUsage.total_tokens,
-        ...(run.tokenUsage.cache_hit_tokens !== undefined || checkpointTokenUsage?.cache_hit_tokens !== undefined
-          ? { cache_hit_tokens: (checkpointTokenUsage?.cache_hit_tokens || 0) + (run.tokenUsage.cache_hit_tokens || 0) }
-          : {}),
-        ...(run.tokenUsage.cache_miss_tokens !== undefined || checkpointTokenUsage?.cache_miss_tokens !== undefined
-          ? { cache_miss_tokens: (checkpointTokenUsage?.cache_miss_tokens || 0) + (run.tokenUsage.cache_miss_tokens || 0) }
-          : {})
-      }
-    }
+    if (!historyService || !this._conversation) return
 
-    const record: AgentRecord = {
-      id: this._sessionId,
-      timestamp: this._sessionStartTime,
-      terminalId: run.context.ptyId || '',
-      agentKey: this._agentId,
-      terminalType: this._terminalMeta?.terminalType || 'local',
-      sshHost: this._terminalMeta?.sshHost,
-      userTask: firstUserTask.content,
-      steps: checkpointSteps,
-      messages: checkpointMessages.map(m => JSON.parse(JSON.stringify(m))),
-      duration: Date.now() - this._sessionStartTime,
-      status: 'completed',  // 检查点视为进行中但有效的记录
-      tokenUsage: checkpointTokenUsage
-    }
-    
+    const record = this._conversation.toCheckpointRecord({
+      steps: run.steps,
+      taskMessageLog: run.taskMessageLog,
+      tokenUsage: run.tokenUsage,
+      contextPtyId: run.context.ptyId
+    })
+    if (!record) return
+
     try {
       historyService.saveAgentRecord(record)
     } catch (err) {

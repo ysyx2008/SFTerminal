@@ -250,6 +250,51 @@ export class Conversation {
     }
   }
 
+  /**
+   * 序列化「检查点」记录：会话累积态 + 当前 run 进行态合并（防意外退出丢对话）。
+   *
+   * 与 `toRecord` 的差异：checkpoint 在 **commitRun 之前** 触发（每轮工具调用后），
+   * Conversation 自己的 `_steps`/`_messages` 还不含当前 run 的内容，故需把
+   * `run.steps` / `run.taskMessageLog` 合并进来。字段映射复用同一份 `stepToStepRecord`，
+   * 避免重复实现（原 Agent.saveCheckpoint 的内联映射曾是第二份实现，已收敛于此）。
+   *
+   * `status` 恒为 `'completed'`——与原实现一致：检查点视为「进行中但有效的记录」，
+   * 读侧无运行中状态（`AgentRecord.status` 类型不含 running），靠最近 timestamp 区分。
+   *
+   * 返回 null 的场景：会话与当前 run 都没有 user_task（空会话首_run 首轮前）。
+   */
+  toCheckpointRecord(run: {
+    steps: AgentStep[]
+    taskMessageLog: AiMessage[]
+    tokenUsage?: TokenUsage
+    contextPtyId?: string
+  }): AgentRecord | null {
+    const firstUserTask =
+      this._steps.find(s => s.type === 'user_task') ??
+      run.steps.find(s => s.type === 'user_task')
+    if (!firstUserTask) return null
+
+    const mergedSteps = [...this._steps, ...run.steps]
+    const mergedMessages = [...this._messages, ...run.taskMessageLog]
+    const checkpointTokenUsage = Conversation.mergeTokenUsage(this._tokenUsage, run.tokenUsage)
+
+    return {
+      id: this.id,
+      kind: this.kind,
+      timestamp: this.createdAt,
+      terminalId: run.contextPtyId || '',
+      agentKey: this._agentKey,
+      terminalType: this.terminalType,
+      sshHost: this.sshHost,
+      userTask: firstUserTask.content,
+      steps: mergedSteps.map(s => Conversation.stepToStepRecord(s)),
+      messages: mergedMessages.map(m => JSON.parse(JSON.stringify(m))),
+      duration: Date.now() - this.createdAt,
+      status: 'completed',
+      tokenUsage: checkpointTokenUsage
+    }
+  }
+
   // ==================== run 提交（finalizeRun 的状态部分） ====================
 
   /**
@@ -428,7 +473,7 @@ export class Conversation {
   get isDirty(): boolean { return this._dirty }
   markClean(): void { this._dirty = false }
 
-  // ==================== 私有：step 运行时 → 持久化记录（序列化，toRecord 用） ====================
+  // ==================== 私有：step 运行时 → 持久化记录（序列化，toRecord/toCheckpointRecord 用） ====================
   // 切分逻辑（split*）与 record→step 转换已抽到 ./messages 纯函数，Agent 与本类共用。
 
   private static stepToStepRecord(s: AgentStep): AgentStepRecord {
@@ -440,6 +485,13 @@ export class Conversation {
       echartsOption: s.echartsOption,
       attachments: s.attachments,
       toolName: s.toolName,
+      /**
+       * 关联的 tool_call ID——精确配对 tool_call ↔ tool_result 的钥匙。
+       * 历史实现（saveCheckpoint 内联映射 + 本方法）都漏了这个字段，导致存盘后
+       * 配对退化为按 toolName 匹配，并发同名工具调用会相互覆盖。此处补全，
+       * 老记录读盘仍走「缺 toolCallId 退化按 toolName」兼容路径，新记录精确配对。
+       */
+      toolCallId: s.toolCallId,
       toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,
       toolResult: s.toolResult,
       riskLevel: s.riskLevel,
@@ -449,5 +501,32 @@ export class Conversation {
       subAgents: s.subAgents,
       canvasData: s.canvasData
     }
+  }
+
+  /**
+   * 合并 token 用量（会话累积态 + 本次 run）。忠实移植 Agent.saveCheckpoint 的合并逻辑：
+   * cache_hit/cache_miss 字段按「任一侧有则保留」策略，与 accumulate 的「两侧相加」不同——
+   * accumulate 是 commitRun 时把 run 完整并入会话；checkpoint 是「快照 = 累积 + run 进行中」，
+   * 不并入、只合并视图，故 cache 字段保持「存在即传递」而非累加。
+   */
+  private static mergeTokenUsage(
+    base: TokenUsage | undefined,
+    run: TokenUsage | undefined
+  ): TokenUsage | undefined {
+    if (!base && !run) return undefined
+    if (!run) return base
+    if (!base) return run
+    const merged: TokenUsage = {
+      prompt_tokens: (base.prompt_tokens || 0) + run.prompt_tokens,
+      completion_tokens: (base.completion_tokens || 0) + run.completion_tokens,
+      total_tokens: (base.total_tokens || 0) + run.total_tokens
+    }
+    if (run.cache_hit_tokens !== undefined || base.cache_hit_tokens !== undefined) {
+      merged.cache_hit_tokens = (base.cache_hit_tokens || 0) + (run.cache_hit_tokens || 0)
+    }
+    if (run.cache_miss_tokens !== undefined || base.cache_miss_tokens !== undefined) {
+      merged.cache_miss_tokens = (base.cache_miss_tokens || 0) + (run.cache_miss_tokens || 0)
+    }
+    return merged
   }
 }
