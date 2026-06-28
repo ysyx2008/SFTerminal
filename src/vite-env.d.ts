@@ -711,6 +711,28 @@ interface Window {
         sourceUserTask: string
         newRecord: import('@shared/types').AgentRecord
       } | null>
+      forkTask: (opts: {
+        sourceAgentKey: string
+        newAgentId: string
+        untilTaskCount?: number
+        titleSuffix?: string
+        sourceSessionId?: string
+      }) => Promise<{
+        newSessionId: string
+        newAgentId: string
+        sourceUserTask: string
+        newRecord: import('@shared/types').AgentRecord
+      } | null>
+      extractTaskFromCompanion: (opts: {
+        newAgentId: string
+        untilTaskCount?: number
+        titleSuffix?: string
+      }) => Promise<{
+        newSessionId: string
+        newAgentId: string
+        sourceUserTask: string
+        newRecord: import('@shared/types').AgentRecord
+      } | null>
       updateConfig: (ptyId: string, config: { executionMode?: ExecutionMode; commandTimeout?: number; profileId?: string }) => Promise<boolean>
       addMessage: (ptyId: string, message: string, attachments?: import('@shared/types').AttachmentInfo[], documentContext?: string, images?: string[]) => Promise<boolean>
       getExecutionPhase: (ptyId: string) => Promise<{

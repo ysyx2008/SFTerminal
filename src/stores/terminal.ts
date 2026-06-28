@@ -730,14 +730,24 @@ export const useTerminalStore = defineStore('terminal', () => {
 
     let result
     try {
-      result = await window.electronAPI.agent.fork({
-        sourceAgentKey,
-        newAgentId,
-        untilTaskCount: opts?.untilTaskCount,
-        targetMode: 'assistant',
-        titleSuffix,
-        sourceSessionId: sourceTab.agentState?.sessionId,
-      })
+      // 按 source kind 分流：companion 是 N 条 record 合并的关系线，走 extractTaskFromCompanion
+      //（异质转化）；其它走 forkTask（task → task 同质分叉）。语义清晰，后端不再靠 if 猜。
+      const isCompanionSource = sourceAgentKey === '__companion__'
+      if (isCompanionSource) {
+        result = await window.electronAPI.agent.extractTaskFromCompanion({
+          newAgentId,
+          untilTaskCount: opts?.untilTaskCount,
+          titleSuffix,
+        })
+      } else {
+        result = await window.electronAPI.agent.forkTask({
+          sourceAgentKey,
+          newAgentId,
+          untilTaskCount: opts?.untilTaskCount,
+          titleSuffix,
+          sourceSessionId: sourceTab.agentState?.sessionId,
+        })
+      }
     } catch (err) {
       log.error('forkToAssistantTab: backend fork failed', err)
       return null

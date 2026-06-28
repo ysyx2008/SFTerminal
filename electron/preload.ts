@@ -962,6 +962,34 @@ const electronAPI = {
       newRecord: import('@shared/types').AgentRecord
     } | null>,
 
+    // Fork Task（task → task 同质分叉）：从源 task Agent 会话分叉出新助手 Agent。
+    // 与 fork 的区别：语义明确，不走 companion 分支。companion 走 extractTaskFromCompanion。
+    forkTask: (opts: {
+      sourceAgentKey: string
+      newAgentId: string
+      untilTaskCount?: number
+      titleSuffix?: string
+      sourceSessionId?: string
+    }) => ipcRenderer.invoke('agent:forkTask', opts) as Promise<{
+      newSessionId: string
+      newAgentId: string
+      sourceUserTask: string
+      newRecord: import('@shared/types').AgentRecord
+    } | null>,
+
+    // Extract Task From Companion（companion → task 异质转化）：从 companion 关系线
+    // 抽取一段开新任务。与 forkTask 的区别：源是 N 条 record 合并的关系线，不是单条会话。
+    extractTaskFromCompanion: (opts: {
+      newAgentId: string
+      untilTaskCount?: number
+      titleSuffix?: string
+    }) => ipcRenderer.invoke('agent:extractTaskFromCompanion', opts) as Promise<{
+      newSessionId: string
+      newAgentId: string
+      sourceUserTask: string
+      newRecord: import('@shared/types').AgentRecord
+    } | null>,
+
     // 清空指定终端的任务历史记忆（用于"清空对话"功能）
     clearHistory: (ptyId: string) => ipcRenderer.invoke('agent:clearHistory', ptyId) as Promise<void>,
 

@@ -91,6 +91,13 @@ export function stepRecordToStep(s: AgentStepRecord): AgentStep {
     echartsOption: s.echartsOption,
     attachments: s.attachments,
     toolName: s.toolName,
+    /**
+     * 关联的 tool_call ID——精确配对 tool_call ↔ tool_result 的钥匙。
+     * 老记录可能缺失（字段后加），读侧按「缺 toolCallId 退化按 toolName」兼容。
+     * 这里必须透传，否则 fork/restore 走 stepRecord→step→stepRecord 往返会丢字段，
+     * 导致存盘后配对退化为按 toolName 匹配，并发同名工具调用会相互覆盖。
+     */
+    toolCallId: s.toolCallId,
     toolArgs: s.toolArgs,
     toolResult: s.toolResult,
     riskLevel: s.riskLevel as RiskLevel | undefined,

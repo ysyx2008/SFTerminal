@@ -37,8 +37,7 @@ import { Conversation, conversationPolicy } from '../conversation'
 import { ContextWindowManager } from './context-window'
 import {
   splitMessagesIntoTasks as splitMessagesIntoTasksShared,
-  splitStepsIntoTasks as splitStepsIntoTasksShared,
-  chunkStepsByUserTask
+  splitStepsIntoTasks as splitStepsIntoTasksShared
 } from '../conversation/messages'
 import { inferConversationKind } from '@shared/types'
 import { getBondService } from '../bond.service'
@@ -1019,202 +1018,42 @@ export abstract class Agent {
    * @param opts.untilTaskCount 截断到第 N 个 task（包含），undefined / >= 总数 = 不截断
    * @param opts.titleSuffix userTask 后缀（如「· 分支」）
    */
+  /**
+   * 取当前会话的持久化 record，供 fork 用。
+   *
+   * @deprecated 新代码请由 AgentService 直接调 `Conversation.forkFromRecord`——它会
+   * 内部完成截断 + 产新 Conversation。本方法保留为薄转发，兼容现有测试。
+   *
+   * 返回 null：会话无 user_task（空会话首_run 首轮前）。
+   */
+  toRecordForFork(): AgentRecord | null {
+    if (!this._conversation) return null
+    return this._conversation.toRecord()
+  }
+
+  /**
+   * 为 fork 生成截断后的新 AgentRecord。
+   *
+   * @deprecated 新代码请由 AgentService 直接调 `Conversation.forkFromRecord`。本方法
+   * 保留为薄转发，兼容现有测试。逻辑已收口到 `Conversation.forkFromRecord` +
+   * `Conversation.buildForkedRecord`（含 toolCallId 字段，修复了本方法旧实现的漏字段 bug）。
+   */
   cloneRecordForFork(
     newSessionId: string,
     opts?: { untilTaskCount?: number; titleSuffix?: string }
   ): AgentRecord | null {
-    if (!this._sessionId) return null
-
-    return Agent.buildForkRecord(
-      {
-        messages: this._sessionMessages,
-        steps: this._sessionSteps,
-        terminalType: this._terminalMeta?.terminalType,
-        sshHost: this._terminalMeta?.sshHost,
-      },
-      newSessionId,
-      opts
-    )
+    const sourceRecord = this.toRecordForFork()
+    if (!sourceRecord) return null
+    const forked = Conversation.forkFromRecord(sourceRecord, newSessionId, opts)
+    return forked ? forked.record : null
   }
-
-  /**
-   * 从 HistoryService 持久化记录构建 fork 产物（源 Agent 无 in-memory 会话时使用）。
-   */
-  static buildForkRecordFromStoredRecord(
-    record: AgentRecord,
-    newSessionId: string,
-    opts?: { untilTaskCount?: number; titleSuffix?: string }
-  ): AgentRecord | null {
-    if (!record.steps?.length) return null
-
-    const steps: AgentStep[] = record.steps.map(s => ({
-      id: s.id,
-      type: s.type as AgentStep['type'],
-      content: s.content,
-      images: s.images,
-      echartsOption: s.echartsOption,
-      attachments: s.attachments,
-      toolName: s.toolName,
-      toolArgs: s.toolArgs,
-      toolResult: s.toolResult,
-      riskLevel: s.riskLevel as RiskLevel | undefined,
-      timestamp: s.timestamp,
-      webSearchResults: s.webSearchResults,
-      success: s.success,
-      subAgents: s.subAgents,
-      canvasData: s.canvasData
-    }))
-
-    if (!steps.some(s => s.type === 'user_task') && record.userTask) {
-      steps.unshift({
-        id: `user_task_${record.timestamp}`,
-        type: 'user_task',
-        content: record.userTask,
-        timestamp: record.timestamp
-      })
-    }
-
-    const messages = (record.messages ?? []).map(m => JSON.parse(JSON.stringify(m))) as AiMessage[]
-
-    return Agent.buildForkRecord(
-      {
-        messages,
-        steps,
-        terminalType: record.terminalType,
-        sshHost: record.sshHost,
-      },
-      newSessionId,
-      opts
-    )
-  }
-
-  /**
-   * 从多条 AgentRecord（如 companion 合并视图）构建 fork 产物。
-   *
-   * companion tab 是多条历史 record 按时间合并后的展示，group.index（前端传来的
-   * untilTaskCount）是合并视图里的位置，无法映射到任何单条 record 的 task 索引。
-   * 这里把所有 records 的 steps 按时间排序合并，用非 proactive record 的 messages
-   * 拼接出 LLM 上下文，再走标准 buildForkRecord 截断路径。
-   *
-   * messages 策略：proactive record（userTask='__proactive__'）没有 API messages；
-   * 只拼接真实对话 record 的 messages（按 timestamp 升序），保证 LLM 前缀连贯。
-   */
-  static buildForkRecordFromMergedRecords(
-    records: AgentRecord[],
-    newSessionId: string,
-    opts?: { untilTaskCount?: number; titleSuffix?: string }
-  ): AgentRecord | null {
-    if (!records.length) return null
-
-    const ordered = [...records].sort((a, b) => a.timestamp - b.timestamp)
-
-    // 合并 steps：按 timestamp 升序，去重（同 id 只保留一次）
-    const seen = new Set<string>()
-    const mergedSteps: AgentStep[] = ordered
-      .flatMap(r => (r.steps ?? []).map(s => ({
-        id: s.id,
-        type: s.type as AgentStep['type'],
-        content: s.content,
-        images: s.images,
-        echartsOption: s.echartsOption,
-        attachments: s.attachments,
-        toolName: s.toolName,
-        toolArgs: s.toolArgs,
-        toolResult: s.toolResult,
-        riskLevel: s.riskLevel as RiskLevel | undefined,
-        timestamp: s.timestamp,
-        webSearchResults: s.webSearchResults,
-        success: s.success,
-        subAgents: s.subAgents,
-        canvasData: s.canvasData,
-      })))
-      .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
-      .filter(s => (s.id && !seen.has(s.id) ? (seen.add(s.id), true) : !s.id))
-
-    // 合并 messages：只取真实对话 record（非 __proactive__），按 timestamp 升序拼接
-    const realRecords = ordered.filter(r => r.userTask !== '__proactive__')
-    const mergedMessages: AiMessage[] = realRecords
-      .flatMap(r => (r.messages ?? []).map(m => JSON.parse(JSON.stringify(m)) as AiMessage))
-
-    return Agent.buildForkRecord(
-      { messages: mergedMessages, steps: mergedSteps, terminalType: 'assistant' },
-      newSessionId,
-      opts
-    )
-  }
-
-  static buildForkRecord(
-    data: {
-      messages: AiMessage[]
-      steps: AgentStep[]
-      terminalType?: TerminalType
-      sshHost?: string
-    },
-    newSessionId: string,
-    opts?: { untilTaskCount?: number; titleSuffix?: string }
-  ): AgentRecord | null {
-    let messages = data.messages.map(m => JSON.parse(JSON.stringify(m))) as AiMessage[]
-    let steps = [...data.steps]
-
-    if (opts?.untilTaskCount !== undefined && opts.untilTaskCount > 0) {
-      const tasks = splitMessagesIntoTasksShared(messages, i => `restored_${Date.now()}_${i}`)
-      if (opts.untilTaskCount < tasks.length) {
-        messages = tasks.slice(0, opts.untilTaskCount).flatMap(t => t.messages)
-      }
-
-      const stepChunks = chunkStepsByUserTask(steps)
-      if (opts.untilTaskCount < stepChunks.length) {
-        steps = stepChunks.slice(0, opts.untilTaskCount).flat()
-      }
-    }
-
-    const firstUserTask = steps.find(s => s.type === 'user_task')
-    if (!firstUserTask) return null
-
-    const lastFinalResult = [...steps].reverse().find(s => s.type === 'final_result')
-
-    const safeClone = <T>(v: T): T | undefined =>
-      v !== undefined ? (JSON.parse(JSON.stringify(v)) as T) : undefined
-
-    const serializableSteps: AgentStepRecord[] = steps.map(s => ({
-      id: s.id,
-      type: s.type,
-      content: s.content || '',
-      images: s.images,
-      echartsOption: safeClone(s.echartsOption),
-      attachments: s.attachments,
-      toolName: s.toolName,
-      toolArgs: s.toolArgs ? JSON.parse(JSON.stringify(s.toolArgs)) : undefined,
-      toolResult: s.toolResult,
-      riskLevel: s.riskLevel,
-      timestamp: s.timestamp,
-      webSearchResults: safeClone(s.webSearchResults),
-      success: s.success,
-      subAgents: safeClone(s.subAgents),
-      canvasData: safeClone(s.canvasData)
-    }))
-
-    const titleSuffix = opts?.titleSuffix ?? ''
-    return {
-      id: newSessionId,
-      timestamp: Date.now(),
-      terminalId: '',
-      terminalType: data.terminalType || 'local',
-      sshHost: data.sshHost,
-      userTask: firstUserTask.content + titleSuffix,
-      steps: serializableSteps,
-      messages,
-      finalResult: lastFinalResult?.content,
-      duration: 0,
-      status: 'completed'
-    }
-  }
-
-  // fork 用的 splitMessagesIntoTasksForFork / splitSessionStepsByUserTask(ForFork) 已抽到
-  // ../conversation/messages（splitMessagesIntoTasksShared / chunkStepsByUserTask），三处重复合一。
 
   /**
    * 装载 fork 数据到新 Agent 实例上。
+   *
+   * @deprecated 新代码请用 `attachConversation`——它直接注入已构造好的 Conversation
+   *（含 transcript），不再需要「建空壳 + restoreFromHistory 从磁盘装载」的两步走。
+   * 本方法保留为薄转发，兼容现有测试。
    *
    * - sessionId：必须，让首次 run 走 restoreFromHistory(sessionId) 路径而非生成新 id
    * - previousRunMessages：可选 cache snapshot。同模式 fork 时由 AgentService.forkAgent
@@ -1227,7 +1066,7 @@ export abstract class Agent {
     terminalType?: TerminalType
     sshHost?: string
   }): void {
-    // 直接建好 fork 会话（fork 始终是 assistant Agent）。首次 run 见 _conversation 已存在
+    // 建空壳会话（fork 始终是 assistant Agent）。首次 run 见 _conversation 已存在
     // 即跳过新建，转由 restoreFromHistory(sessionId) 把已保存的 fork record 装载进来。
     // 同样经馆长发证（显式 sessionId，不做回种）；无 manager 的退化路径直接建。
     const manager = this.services.conversationManager
@@ -1238,16 +1077,36 @@ export abstract class Agent {
       sessionId: opts.sessionId,
       taskMemory: this.taskMemory
     }
-    this._conversation = manager
+    const conv = manager
       ? manager.openConversation(forkParams)
       : Conversation.create(
           { agentKey: forkParams.agentKey, terminalType: forkParams.terminalType },
           { id: opts.sessionId, createdAt: Date.now(), sshHost: opts.sshHost },
           { taskMemory: this.taskMemory }
         )
-    if (opts.previousRunMessages && opts.previousRunMessages.length > 0) {
+    this.attachConversation(conv, { cachePrefix: opts.previousRunMessages })
+  }
+
+  /**
+   * 把一个已构造好的 Conversation（通常由 `Conversation.forkFromRecord` /
+   * `extractTaskFromRecords` 产出）直接注入 Agent，作为它的当前会话。
+   *
+   * 与旧 `applyForkSnapshot` 的区别：
+   * - 不建空壳 + 等 `restoreFromHistory` 从磁盘装载——传入的 Conversation 已含完整 transcript
+   *   （`fromRecord` 在 fork 静态方法里已完成装载）
+   * - 首次 run 时 `initializeRun` 发现 `_conversation` 已存在跳过新建；`restoreFromHistory`
+   *   因 taskMemory 非空跳过重建——fork 产物不再走磁盘往返
+   *
+   * @param conversation 已构造好的会话（身份/transcript 已就绪）
+   * @param opts.cachePrefix 可选的 LLM 前缀缓存快照。同模式 fork 时由 AgentService 传入
+   *   newRecord.messages（与落盘 record 字节一致），让下次 run 命中 provider 前缀缓存；
+   *   跨模式不传，新 Agent 走 cold start
+   */
+  attachConversation(conversation: Conversation, opts?: { cachePrefix?: AiMessage[] }): void {
+    this._conversation = conversation
+    if (opts?.cachePrefix && opts.cachePrefix.length > 0) {
       // setCachePrefix 内部深拷贝，避免与源 Agent 共享引用
-      this._conversation.setCachePrefix(opts.previousRunMessages)
+      this._conversation.setCachePrefix(opts.cachePrefix)
     }
   }
 

@@ -26,7 +26,7 @@ import type {
 } from './types'
 import { Agent } from './agent'
 import { SailFish } from './sailfish'
-import { ConversationStore, ConversationManager } from '../conversation'
+import { ConversationStore, ConversationManager, Companion, Conversation } from '../conversation'
 import { assessCommandRisk, analyzeCommand } from './risk-assessor'
 import type { CommandHandlingInfo } from './risk-assessor'
 import { setConfigService as setI18nConfigService } from './i18n'
@@ -76,7 +76,10 @@ export class AgentService {
 
   /** Agent 实例映射（按 agentKey 索引：终端 Agent 用 tabId，助手/固定 Agent 用 agentId） */
   private agents: Map<string, SailFish> = new Map()
-  
+
+  /** Companion 单例（关系线领域对象，setHistoryService 时装配）。 */
+  private _companion?: Companion
+
   /** 依赖服务集合 */
   private services: AgentServices
   
@@ -155,6 +158,9 @@ export class AgentService {
     this.services.conversationManager = new ConversationManager(
       new ConversationStore(historyService.getAgentRecordStore())
     )
+    // 装配 Companion 单例（关系线领域对象，封装 companion → task 抽取等流程）。
+    // 当前为轻量版，只收口 fork 重构所需的 extractTask；后续工程搬迁合并视图/主动消息至此。
+    this._companion = new Companion(historyService)
   }
 
   /**
@@ -237,20 +243,10 @@ export class AgentService {
   }
 
   /**
-   * Fork：从一个已存在的 Agent 会话分叉出一个新的助手 Agent。
+   * Fork（同质分叉）：从一个已存在的 task Agent 会话分叉出一个新的助手 Agent。
    *
-   * 流程：
-   *  1. 从源 Agent in-memory 状态生成截断后的 AgentRecord（按 task 边界）
-   *  2. 写入 HistoryService（持久化为新 sessionId 的独立记录）
-   *  3. 创建新助手 Agent，applyForkSnapshot 装载 sessionId（+ 同模式 fork 时的 cache snapshot）
-   *  4. 新 Agent 首次 run 时通过 restoreFromHistory(newSessionId) 自动重建 TaskMemory / sessionMessages
-   *
-   * 安全约束：
-   *  - 源 Agent 不存在 / 在运行中 / 无会话数据时直接返回 null
-   *  - HistoryService 未注入时也返回 null（fork 必须能持久化）
-   *  - 跨模式 fork（终端→助手）不传 _previousRunMessages：源 system prompt 含终端工具，
-   *    新 Agent system prompt 不同，cache 不会命中且历史 messages 中残留的终端 tool_call
-   *    在新工具列表里"看起来不存在"——保守起见走 cold start
+   * @deprecated 新代码请用 `forkTask`——语义更清晰（task → task 同质分叉，区别于
+   * companion → task 的 `extractTaskFromCompanion`）。本方法保留为薄转发，兼容现有调用点。
    */
   async forkAgent(opts: {
     sourceAgentKey: string
@@ -258,28 +254,103 @@ export class AgentService {
     untilTaskCount?: number
     targetMode?: 'assistant'
     titleSuffix?: string
+    sourceSessionId?: string
+  }): Promise<{
+    newSessionId: string
+    newAgentId: string
+    sourceUserTask: string
+    newRecord: import('../history.service').AgentRecord
+  } | null> {
+    // companion 走 extractTaskFromCompanion（异质转化）；task 走 forkTask（同质分叉）。
+    if (opts.sourceAgentKey === AgentService.COMPANION_AGENT_ID) {
+      const result = await this.extractTaskFromCompanion({
+        newAgentId: opts.newAgentId,
+        untilTaskCount: opts.untilTaskCount,
+        titleSuffix: opts.titleSuffix
+      })
+      if (!result) return null
+      return {
+        newSessionId: result.newSessionId,
+        newAgentId: result.newAgentId,
+        sourceUserTask: result.sourceUserTask,
+        newRecord: result.newRecord
+      }
+    }
+    return this.forkTask({
+      sourceAgentKey: opts.sourceAgentKey,
+      newAgentId: opts.newAgentId,
+      untilTaskCount: opts.untilTaskCount,
+      titleSuffix: opts.titleSuffix,
+      sourceSessionId: opts.sourceSessionId
+    })
+  }
+
+  /**
+   * 同质分叉（task → task）：从一个已存在的 task Agent 会话分叉出新助手 Agent。
+   *
+   * 流程：
+   *  1. 取源 record：in-memory（`toCheckpointRecord`）优先；in-memory 空时从磁盘读
+   *     `sourceSessionId`（lazy Agent 尚未通过首条消息装载会话的时序差场景）
+   *  2. `Conversation.forkFromRecord` 截断产出新 Conversation（含 transcript）
+   *  3. `startTaskFromConversation` 落盘 + 建 Agent + 装载
+   *
+   * 安全约束：
+   *  - 源 Agent 不存在 / 在运行中（且未指定 untilTaskCount）/ 无会话数据时返回 null
+   *  - HistoryService 未注入时返回 null（fork 必须能持久化）
+   *  - 跨模式 fork（终端→助手）不传 cache snapshot：源 system prompt 含终端工具，
+   *    新 Agent system prompt 不同，cache 不会命中且历史 messages 中残留的终端 tool_call
+   *    在新工具列表里"看起来不存在"——保守起见走 cold start
+   */
+  async forkTask(opts: {
+    sourceAgentKey: string
+    newAgentId: string
+    untilTaskCount?: number
+    titleSuffix?: string
     /** 源 Agent 无 in-memory 会话时（如前端仅从 HistoryService 加载历史），用此 sessionId 从磁盘分叉 */
     sourceSessionId?: string
   }): Promise<{
     newSessionId: string
     newAgentId: string
     sourceUserTask: string
-    /**
-     * 截断后的完整 AgentRecord——前端用它调 restoreAgentHistory 把 steps 填到新 tab
-     * 的 agentState 里，避免新 tab 显示成空白欢迎页
-     */
+    /** 截断后的完整 AgentRecord——前端用它调 restoreAgentHistory 把 steps 填到新 tab */
     newRecord: import('../history.service').AgentRecord
   } | null> {
     const historyService = this.services.historyService
     if (!historyService) {
-      log.warn(`forkAgent: historyService not available`)
+      log.warn(`forkTask: historyService not available`)
       return null
     }
 
     const sourceAgent = this.getAgent(opts.sourceAgentKey)
     // 运行中仅允许按 task 截断分叉（已完成段落）；全量 fork 会带上进行中的半截 task
     if (sourceAgent?.isRunning() && opts.untilTaskCount === undefined) {
-      log.warn(`forkAgent: source agent is running, refuse full fork`)
+      log.warn(`forkTask: source agent is running, refuse full fork`)
+      return null
+    }
+
+    // 取源 record：in-memory 优先（toCheckpointRecord 含进行中状态，比磁盘更全）；
+    // in-memory 空（lazy Agent 尚未装载）时从磁盘读 sourceSessionId。
+    let sourceRecord: import('../history.service').AgentRecord | null = null
+    let sourceTerminalType: import('@shared/types').TerminalType | undefined
+
+    if (sourceAgent) {
+      sourceRecord = sourceAgent.toRecordForFork()
+      sourceTerminalType = sourceAgent.getTerminalType()
+    }
+
+    if (!sourceRecord && opts.sourceSessionId) {
+      const historyRecord = historyService.getAgentRecordById(opts.sourceSessionId)
+      if (historyRecord) {
+        sourceRecord = historyRecord
+        sourceTerminalType = historyRecord.terminalType
+      }
+    }
+
+    if (!sourceRecord) {
+      log.warn(
+        `forkTask: no session data to fork: sourceAgentKey=${opts.sourceAgentKey}, ` +
+        `sourceSessionId=${opts.sourceSessionId ?? 'none'}`
+      )
       return null
     }
 
@@ -289,70 +360,29 @@ export class AgentService {
       titleSuffix: opts.titleSuffix ?? ''
     }
 
-    let newRecord = sourceAgent?.cloneRecordForFork(newSessionId, forkOpts) ?? null
-    let sourceTerminalType = sourceAgent?.getTerminalType()
-
-    // companion 是多条 record 合并展示，group.index 是合并视图中的位置，
-    // in-memory session 只含最近一次真实对话，不含 Watch 主动消息等其它 record。
-    // 对 companion fork 必须从磁盘加载全部近期记录重新合并，才能正确截断。
-    if (opts.sourceAgentKey === AgentService.COMPANION_AGENT_ID) {
-      const recentRecords = historyService.getRecentRecordsByAgentKey(AgentService.COMPANION_AGENT_ID, 10)
-      if (recentRecords.length > 0) {
-        const merged = Agent.buildForkRecordFromMergedRecords(recentRecords, newSessionId, forkOpts)
-        if (merged) {
-          newRecord = merged
-          sourceTerminalType = undefined // companion 始终视为 assistant 模式
-        }
-      }
-    }
-
-    if (!newRecord && opts.sourceSessionId) {
-      const historyRecord = historyService.getAgentRecordById(opts.sourceSessionId)
-      if (historyRecord) {
-        newRecord = Agent.buildForkRecordFromStoredRecord(historyRecord, newSessionId, forkOpts)
-        sourceTerminalType = historyRecord.terminalType === 'assistant'
-          ? undefined
-          : historyRecord.terminalType
-      }
-    }
-
-    if (!newRecord) {
-      log.warn(
-        `forkAgent: no session data to fork: sourceAgentKey=${opts.sourceAgentKey}, ` +
-        `sourceSessionId=${opts.sourceSessionId ?? 'none'}`
-      )
+    const forked = Conversation.forkFromRecord(sourceRecord, newSessionId, forkOpts)
+    if (!forked) {
+      log.warn(`forkTask: forkFromRecord returned null (no user_task in source)`)
       return null
     }
-
-    historyService.saveAgentRecord(newRecord)
-
-    const newAgent = this.createAssistantAgent(opts.newAgentId)
-
-    const targetMode = opts.targetMode ?? 'assistant'
-    // 助手模式的源 terminalType 既可能是显式 'assistant'（会话聚合根的形态属性恒有值），
-    // 也可能是 undefined（companion 合并路径刻意置空、或更早期无 in-memory 会话）。两者都算助手模式。
-    const sourceIsAssistant = sourceTerminalType === undefined || sourceTerminalType === 'assistant'
-    const isSameMode = targetMode === 'assistant' && sourceIsAssistant
+    const { conversation: newConversation, record: newRecord } = forked
 
     // 同模式 fork 时携带 cache snapshot 让下一次 run 命中 LLM provider 的前缀缓存。
-    // 关键洞察：cache snapshot 必须与新 record.messages 一致——直接用 newRecord.messages
-    // 作为 snapshot 即可：
-    //   - 全量 fork：snapshot = 完整对话，与源 _previousRunMessages 等价
-    //   - 截断 fork：snapshot = 截断后的对话，与新 record 一致；source Agent 跑到该 task
-    //     时也曾对这段相同字节请求过 LLM，所以 prefix cache 同样命中
-    // 跨模式 fork（terminal→assistant）system prompt 必然不同，cache 物理上无法命中，
-    // 此时不传 snapshot 让新 Agent 走 cold start 即可。
-    const canCarryCacheSnapshot = isSameMode && newRecord.messages && newRecord.messages.length > 0
+    // cache snapshot 必须与新 record.messages 一致——直接用 newRecord.messages 作为 snapshot。
+    // 跨模式 fork（terminal→assistant）system prompt 必然不同，cache 物理上无法命中，走 cold start。
+    const targetMode = 'assistant'
+    const sourceIsAssistant = sourceTerminalType === undefined || sourceTerminalType === 'assistant'
+    const isSameMode = targetMode === 'assistant' && sourceIsAssistant
+    const cachePrefix = isSameMode && newRecord.messages && newRecord.messages.length > 0
+      ? (newRecord.messages as AiMessage[])
+      : undefined
 
-    newAgent.applyForkSnapshot({
-      sessionId: newSessionId,
-      previousRunMessages: canCarryCacheSnapshot ? (newRecord.messages as AiMessage[]) : undefined
-    })
+    this.startTaskFromConversation(newConversation, newRecord, opts.newAgentId, { cachePrefix })
 
     log.info(
-      `Forked agent: source=${opts.sourceAgentKey} → new=${opts.newAgentId}, ` +
+      `Forked task: source=${opts.sourceAgentKey} → new=${opts.newAgentId}, ` +
       `sessionId=${newSessionId}, untilTaskCount=${opts.untilTaskCount ?? 'all'}, ` +
-      `cacheSnapshotCarried=${canCarryCacheSnapshot}, ` +
+      `cacheSnapshotCarried=${!!cachePrefix}, ` +
       `titleSuffix="${opts.titleSuffix ?? ''}", newRecord.userTask="${newRecord.userTask}"`
     )
 
@@ -362,6 +392,106 @@ export class AgentService {
       sourceUserTask: newRecord.userTask,
       newRecord
     }
+  }
+
+  /**
+   * 异质转化（companion → task）：从 companion 关系线抽取一段开新任务。
+   *
+   * 与 `forkTask` 的语义差异：
+   * - forkTask：同质分叉，单条 record 截断（task → task）
+   * - extractTaskFromCompanion：异质转化，N 条 record 合并后截断（companion → task）
+   *
+   * companion 是「N 条物理 record 拼成的逻辑关系线」，in-memory 只装最近一段，
+   * fork 必须从磁盘拉全部近期 record 合并才能正确截断。详见 `Companion` 类。
+   *
+   * 流程：
+   *  1. `Companion.extractTask` 拉最近 N 条 record 合并 + 截断产出新 Conversation
+   *  2. `startTaskFromConversation` 落盘 + 建 Agent + 装载
+   *  3. companion 始终视为 assistant 模式，cache snapshot 恒传递
+   */
+  async extractTaskFromCompanion(opts: {
+    newAgentId: string
+    untilTaskCount?: number
+    titleSuffix?: string
+  }): Promise<{
+    newSessionId: string
+    newAgentId: string
+    sourceUserTask: string
+    newRecord: import('../history.service').AgentRecord
+  } | null> {
+    const historyService = this.services.historyService
+    if (!historyService) {
+      log.warn(`extractTaskFromCompanion: historyService not available`)
+      return null
+    }
+    if (!this._companion) {
+      log.warn(`extractTaskFromCompanion: companion not assembled (setHistoryService not called)`)
+      return null
+    }
+
+    const newSessionId = `session_${Date.now()}_extract_${Math.random().toString(36).slice(2, 8)}`
+    const forkOpts = {
+      untilTaskCount: opts.untilTaskCount,
+      titleSuffix: opts.titleSuffix ?? ''
+    }
+
+    const forked = this._companion.extractTask(newSessionId, forkOpts)
+    if (!forked) {
+      log.warn(
+        `extractTaskFromCompanion: companion.extractTask returned null ` +
+        `(no recent records or no user_task after merge)`
+      )
+      return null
+    }
+    const { conversation: newConversation, record: newRecord } = forked
+
+    // companion 恒为 assistant 模式，cache snapshot 总能传递
+    const cachePrefix = newRecord.messages && newRecord.messages.length > 0
+      ? (newRecord.messages as AiMessage[])
+      : undefined
+
+    this.startTaskFromConversation(newConversation, newRecord, opts.newAgentId, { cachePrefix })
+
+    log.info(
+      `Extracted task from companion: new=${opts.newAgentId}, ` +
+      `sessionId=${newSessionId}, untilTaskCount=${opts.untilTaskCount ?? 'all'}, ` +
+      `titleSuffix="${opts.titleSuffix ?? ''}", newRecord.userTask="${newRecord.userTask}"`
+    )
+
+    return {
+      newSessionId,
+      newAgentId: opts.newAgentId,
+      sourceUserTask: newRecord.userTask,
+      newRecord
+    }
+  }
+
+  /**
+   * 把一个已构造好的 Conversation 落盘 + 建 Agent + 装载。
+   *
+   * `forkTask` / `extractTaskFromCompanion` 的共用编排底层。三步：
+   *  1. `saveAgentRecord(newRecord)` 持久化为新 sessionId 的独立记录
+   *  2. `createAssistantAgent(newAgentId)` 建新助手 Agent
+   *  3. `attachConversation(newConversation)` 直接注入（含 transcript + 可选 cachePrefix）
+   *
+   * 新 Agent 首次 run 时 `initializeRun` 发现 `_conversation` 已存在跳过新建，`restoreFromHistory`
+   * 因 taskMemory 非空跳过重建——fork 产物不再走磁盘往返。
+   *
+   * @param conversation 已构造好的会话（身份/transcript 已就绪）
+   * @param record 与 conversation 配套的 record（含带后缀的 userTask，落盘用）
+   * @param opts.cachePrefix 可选的 LLM 前缀缓存快照
+   */
+  private startTaskFromConversation(
+    conversation: Conversation,
+    record: import('../history.service').AgentRecord,
+    newAgentId: string,
+    opts?: { cachePrefix?: AiMessage[] }
+  ): SailFish {
+    const historyService = this.services.historyService!
+    historyService.saveAgentRecord(record)
+    const newAgent = this.createAssistantAgent(newAgentId)
+    newAgent.attachConversation(conversation, { cachePrefix: opts?.cachePrefix })
+    return newAgent
   }
 
   /**

@@ -3626,6 +3626,26 @@ ipcMain.handle('agent:fork', async (_event, opts: {
   return await agentService.forkAgent(opts)
 })
 
+ipcMain.handle('agent:forkTask', async (_event, opts: {
+  sourceAgentKey: string
+  newAgentId: string
+  untilTaskCount?: number
+  titleSuffix?: string
+  sourceSessionId?: string
+}) => {
+  const { agentService } = await rt()
+  return await agentService.forkTask(opts)
+})
+
+ipcMain.handle('agent:extractTaskFromCompanion', async (_event, opts: {
+  newAgentId: string
+  untilTaskCount?: number
+  titleSuffix?: string
+}) => {
+  const { agentService } = await rt()
+  return await agentService.extractTaskFromCompanion(opts)
+})
+
 ipcMain.handle('agent:updateConfig', async (_event, ptyId: string, config: { executionMode?: ExecutionMode; commandTimeout?: number; profileId?: string }) => {
   const { agentService } = await rt()
   return agentService.updateConfig(ptyId, config)

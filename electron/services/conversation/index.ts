@@ -15,9 +15,11 @@
 export { ConversationStore } from './storage'
 export { Conversation } from './conversation'
 export { ConversationManager } from './manager'
+export { Companion } from './companion'
 export { CONVERSATION_POLICY, conversationPolicy } from './policy'
 export type { ConversationPolicy } from './policy'
 export type { ConversationCreateOptions, ConversationDeps, CommitRunInput } from './conversation'
+export type { CompanionExtractTaskOptions } from './companion'
 export {
   splitMessagesIntoTasks,
   splitStepsIntoTasks,

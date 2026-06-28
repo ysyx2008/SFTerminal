@@ -30,7 +30,7 @@ import type {
 import { inferConversationKind } from '@shared/types'
 import type { AiMessage } from '../ai.service'
 import { TaskMemoryStore, type LookupToolMeta } from '../agent/task-memory'
-import { splitMessagesIntoTasks, splitStepsIntoTasks, stepRecordToStep } from './messages'
+import { splitMessagesIntoTasks, splitStepsIntoTasks, stepRecordToStep, chunkStepsByUserTask } from './messages'
 
 export interface ConversationCreateOptions {
   /** 显式指定会话 id（恢复/漫游续写既有会话）；省略则生成 `session_<ts>` */
@@ -292,6 +292,158 @@ export class Conversation {
       duration: Date.now() - this.createdAt,
       status: 'completed',
       tokenUsage: checkpointTokenUsage
+    }
+  }
+
+  // ==================== fork / extractTask（数据变换：产新会话） ====================
+
+  /**
+   * 同质分叉（task → task）：从单条 record 截断产出一个新会话。
+   *
+   * 与 `extractTaskFromRecords`（companion 多 record 合并抽取）共用 `buildForkedRecord` 内核；
+   * 区别仅在数据来源——本方法接收**已就绪的单条 record**，调用方负责把它从 in-memory
+   *（`toCheckpointRecord`）或磁盘读出来。
+   *
+   * 返回的 Conversation：
+   * - 身份：新 sessionId（由调用方生成）；kind 始终为 `'task'`（fork 产物是独立任务会话）
+   * - 形态：继承源 record 的 terminalType / sshHost（同模式 fork 的 cache 前缀才能命中）
+   * - transcript：按 `untilTaskCount` 截断后的 steps / messages
+   * - taskMemory：用截断后的 messages 重建（`loadFromRecord` 内部完成）
+   * - cachePrefix：刻意**不设**——fork 后首次 run 走冷启动重建，由 AgentService 按同/跨模式
+   *   决定是否把 newRecord.messages 作为 snapshot 注入（`applyForkSnapshot` / `attachConversation`）
+   *
+   * @param sourceRecord 源会话记录（in-memory 的 toCheckpointRecord 产物，或磁盘读出的 AgentRecord）
+   * @param newSessionId 新 session ID（由调用方生成）
+   * @param opts.untilTaskCount 截断到第 N 个 task（包含），undefined / >= 总数 = 不截断
+   * @param opts.titleSuffix userTask 后缀（如「· 分支」）
+   */
+  static forkFromRecord(
+    sourceRecord: AgentRecord,
+    newSessionId: string,
+    opts?: { untilTaskCount?: number; titleSuffix?: string }
+  ): { conversation: Conversation; record: AgentRecord } | null {
+    const record = Conversation.buildForkedRecord(sourceRecord, newSessionId, opts)
+    if (!record) return null
+    // fork 产物恒为 task（从 task 或 companion 派生出的独立任务会话）
+    record.kind = 'task'
+    const conversation = Conversation.fromRecord(record)
+    return { conversation, record }
+  }
+
+  /**
+   * 异质转化（companion → task）：从多条 record 合并抽取一个新会话。
+   *
+   * companion 是「N 条物理 record 拼成的逻辑关系线」，前端展示用合并视图，group.index
+   *（前端传来的 untilTaskCount）是合并视图里的位置，无法映射到任何单条 record 的 task 索引。
+   * 故需把所有 records 的 steps 按时间排序合并、用非 proactive record 的 messages 拼出
+   * LLM 上下文，再走标准 `buildForkedRecord` 截断路径。
+   *
+   * messages 策略：proactive record（userTask='__proactive__'）没有 API messages；
+   * 只拼接真实对话 record 的 messages（按 timestamp 升序），保证 LLM 前缀连贯。
+   */
+  static extractTaskFromRecords(
+    records: AgentRecord[],
+    newSessionId: string,
+    opts?: { untilTaskCount?: number; titleSuffix?: string }
+  ): { conversation: Conversation; record: AgentRecord } | null {
+    if (!records.length) return null
+
+    const ordered = [...records].sort((a, b) => a.timestamp - b.timestamp)
+
+    // 合并 steps：按 timestamp 升序，去重（同 id 只保留一次）
+    const seen = new Set<string>()
+    const mergedSteps: AgentStep[] = ordered
+      .flatMap(r => (r.steps ?? []).map(s => stepRecordToStep(s)))
+      .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
+      .filter(s => (s.id && !seen.has(s.id) ? (seen.add(s.id), true) : !s.id))
+
+    // 合并 messages：只取真实对话 record（非 __proactive__），按 timestamp 升序拼接
+    const realRecords = ordered.filter(r => r.userTask !== '__proactive__')
+    const mergedMessages: AiMessage[] = realRecords
+      .flatMap(r => (r.messages ?? []).map(m => JSON.parse(JSON.stringify(m)) as AiMessage))
+
+    // 用最早的 record 身份 + assistant 形态构造一个虚拟 record，交给 buildForkedRecord 截断
+    //（companion 始终视为 assistant 模式；kind 在 forkFromRecord 里会被强制为 'task'）
+    const earliest = ordered[0]
+    const virtualRecord: AgentRecord = {
+      ...earliest,
+      id: newSessionId,
+      timestamp: Date.now(),
+      terminalType: 'assistant',
+      sshHost: undefined,
+      steps: mergedSteps.map(s => Conversation.stepToStepRecord(s)),
+      messages: mergedMessages
+    }
+
+    const record = Conversation.buildForkedRecord(virtualRecord, newSessionId, opts)
+    if (!record) return null
+    record.kind = 'task'
+    const conversation = Conversation.fromRecord(record)
+    return { conversation, record }
+  }
+
+  /**
+   * fork 内核：按 task 边界截断 record 的 steps / messages，产出一个新的 `AgentRecord`。
+   *
+   * 收敛自原 `Agent.buildForkRecord`（已删除）。三处旧实现（`cloneRecordForFork` /
+   * `buildForkRecordFromStoredRecord` / `buildForkRecordFromMergedRecords`）共享同一份截断逻辑，
+   * 现统一收口于此。字段映射复用 `stepToStepRecord`（含 `toolCallId`），避免重复实现漏字段。
+   *
+   * 返回 null：源 record 没有 user_task step 且无法从 userTask 字段补出来——空会话无法 fork。
+   */
+  private static buildForkedRecord(
+    source: AgentRecord,
+    newSessionId: string,
+    opts?: { untilTaskCount?: number; titleSuffix?: string }
+  ): AgentRecord | null {
+    // 把持久化 step 记录转成运行时 step（补齐 images / subAgents / canvasData 等富字段）
+    let steps: AgentStep[] = (source.steps ?? []).map(s => stepRecordToStep(s))
+
+    // 老记录可能没有 user_task step（仅 record.userTask 字段），补一条保证截断/标题可用
+    if (!steps.some(s => s.type === 'user_task') && source.userTask) {
+      steps = [{
+        id: `user_task_${source.timestamp}`,
+        type: 'user_task',
+        content: source.userTask,
+        timestamp: source.timestamp
+      }, ...steps]
+    }
+
+    let messages = (source.messages ?? []).map(m => JSON.parse(JSON.stringify(m)) as AiMessage)
+
+    // 按 task 边界截断（messages 用 splitMessagesIntoTasks，steps 用 chunkStepsByUserTask）
+    if (opts?.untilTaskCount !== undefined && opts.untilTaskCount > 0) {
+      const tasks = splitMessagesIntoTasks(messages, i => `restored_${Date.now()}_${i}`)
+      if (opts.untilTaskCount < tasks.length) {
+        messages = tasks.slice(0, opts.untilTaskCount).flatMap(t => t.messages)
+      }
+      const stepChunks = chunkStepsByUserTask(steps)
+      if (opts.untilTaskCount < stepChunks.length) {
+        steps = stepChunks.slice(0, opts.untilTaskCount).flat()
+      }
+    }
+
+    const firstUserTask = steps.find(s => s.type === 'user_task')
+    if (!firstUserTask) return null
+
+    const lastFinalResult = [...steps].reverse().find(s => s.type === 'final_result')
+    const serializableSteps: AgentStepRecord[] = steps.map(s => Conversation.stepToStepRecord(s))
+
+    return {
+      id: newSessionId,
+      // fork 产物恒为 task（从 task 或 companion 派生出的独立任务会话）；
+      // 上层 forkFromRecord / extractTaskFromRecords 也会强制覆盖为 'task'，此处直接写死
+      kind: 'task',
+      timestamp: Date.now(),
+      terminalId: '',
+      terminalType: source.terminalType || 'local',
+      sshHost: source.sshHost,
+      userTask: firstUserTask.content + (opts?.titleSuffix ?? ''),
+      steps: serializableSteps,
+      messages,
+      finalResult: lastFinalResult?.content,
+      duration: 0,
+      status: 'completed'
     }
   }
 

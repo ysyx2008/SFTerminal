@@ -33,7 +33,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { splitMessagesIntoTasks } from '../../conversation/messages'
-import { ConversationManager, ConversationStore } from '../../conversation'
+import { ConversationManager, ConversationStore, Conversation } from '../../conversation'
 
 let tmpDir: string
 
@@ -370,24 +370,24 @@ describe('会话/记忆特征测试网（characterization · 真实 HistoryServi
     expect(src).toBeTruthy()
 
     // (a) 完整拷贝：不传 untilTaskCount → 新记录 messages 与源逐字相同（任务分支语义）
-    const full = Agent.buildForkRecord(
-      { messages: src.messages as any[], steps: src.steps as any[], terminalType: src.terminalType },
+    const full = Conversation.forkFromRecord(
+      src,
       'sess_fork_full'
     )!
     expect(full).toBeTruthy()
-    expect(full.id).toBe('sess_fork_full')
-    expect(full.messages!.length).toBe(messages.length)
-    expect(full.messages).toEqual(messages)
+    expect(full.record.id).toBe('sess_fork_full')
+    expect(full.record.messages!.length).toBe(messages.length)
+    expect(full.record.messages).toEqual(messages)
 
     // (b) 截断到 fork 点：untilTaskCount=1 → 只拷贝第一个任务的 messages
-    const partial = Agent.buildForkRecord(
-      { messages: src.messages as any[], steps: src.steps as any[], terminalType: src.terminalType },
+    const partial = Conversation.forkFromRecord(
+      src,
       'sess_fork_partial',
       { untilTaskCount: 1 }
     )!
     expect(partial).toBeTruthy()
-    expect(partial.messages!.length).toBe(2)
-    expect(partial.messages).toEqual(messages.slice(0, 2))
+    expect(partial.record.messages!.length).toBe(2)
+    expect(partial.record.messages).toEqual(messages.slice(0, 2))
 
     // 源记录不受影响（fork 不破坏原线）
     const srcAfter = new HistoryService().getAgentRecordById('sess_fork_src')!
