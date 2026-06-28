@@ -916,12 +916,14 @@ export const useTerminalStore = defineStore('terminal', () => {
 
     // 如果关闭的是当前标签，切换到其他标签
     if (activeTabId.value === tabId) {
-      // 本地助手 tab 关闭后回到 Hub 首页
-      if (tab.type === 'assistant' && !tab.isRemote) {
+      // 未提升本地助手 tab 属于 Hub 内会话，关闭后回到 Hub 首页；
+      // 终端 / 远程助手 / 已提升本地助手 tab 都是 Tab 栏可见的「真实 tab」，
+      // 关闭后激活相邻可见 tab（右优先，否则左），与浏览器/Chrome 标准一致。
+      const isHubInternalAssistant = tab.type === 'assistant' && !tab.isRemote && !tab.isPromoted
+      if (isHubInternalAssistant) {
         activeTabId.value = ''
         hubFocusedAssistantTabId.value = ''
       } else {
-        // 终端 / 远程助手 tab：激活相邻可见 tab（右优先，否则左），跳过 Hub 内未提升助手
         const nextDisplayed = findAdjacentDisplayedTab(index, tabs.value)
         if (nextDisplayed) {
           activeTabId.value = nextDisplayed.id
