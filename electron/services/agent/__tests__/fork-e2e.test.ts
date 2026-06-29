@@ -318,10 +318,10 @@ describe('Fork 端到端（真实 run() + 真实磁盘写盘）', () => {
     const agentService = new AgentService(services.aiService, services.ptyService)
     agentService.setHistoryService(history)
 
-    // extractTask：合并两条 record，截断到第 1 个 task
+    // extractTask：锚点在第 0 个 task（早段），向前无连续 → 只带早段
     const result = await agentService.extractTaskFromCompanion({
       newAgentId: 'extracted-tab',
-      untilTaskCount: 1,
+      anchorTaskIndex: 0,
       titleSuffix: ' · 抽取'
     })
     expect(result).not.toBeNull()

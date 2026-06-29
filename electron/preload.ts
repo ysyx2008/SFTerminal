@@ -979,9 +979,12 @@ const electronAPI = {
 
     // Extract Task From Companion（companion → task 异质转化）：从 companion 关系线
     // 抽取一段开新任务。与 forkTask 的区别：源是 N 条 record 合并的关系线，不是单条会话。
+    // anchorTaskIndex = 用户点的 group 在合并视图里的 0-based 索引；后端以此为锚向前取
+    // 「同天 + 6h 跨夜连续」的 task 集合作为新任务上下文（最多 10 段兜底）。
     extractTaskFromCompanion: (opts: {
       newAgentId: string
-      untilTaskCount?: number
+      anchorTaskIndex?: number
+      anchorTaskStepId?: string
       titleSuffix?: string
     }) => ipcRenderer.invoke('agent:extractTaskFromCompanion', opts) as Promise<{
       newSessionId: string

@@ -266,6 +266,15 @@ const canShowGroupMenu = (group: import('../composables').AgentTaskGroup | undef
   return true
 }
 
+/** 当前 tab 是否为联络（companion）tab——决定 fork 菜单文案：companion 用「从这里创建任务」，
+ *  task 用「另开一聊」。语义区分：companion 是升格成正式任务，task 是同质分叉。 */
+const isCompanionSourceTab = computed(() => {
+  const tab = terminalStore.tabs.find(t => t.id === currentTabId.value)
+  if (!tab) return false
+  const sourceAgentKey = tab.type === 'assistant' ? (tab.agentId || tab.id) : tab.id
+  return sourceAgentKey === '__companion__'
+})
+
 /** 当前 tab 的 agentState 来自历史恢复（用于滚动定位，与 fork 菜单可见性无关） */
 const isLoadedFromHistory = computed(() => {
   const tab = terminalStore.tabs.find(t => t.id === currentTabId.value)
@@ -309,10 +318,11 @@ const handleForkFromGroup = async (group: import('../composables').AgentTaskGrou
   forkingGroupIds.value.add(group.id)
   try {
     const newTabId = await terminalStore.forkToAssistantTab(currentTabId.value, {
-      untilTaskCount: group.index + 1
+      groupIndex: group.index,
+      anchorTaskStepId: group.id,
     })
     if (!newTabId) {
-      log.warn('Fork from group failed', { groupId: group.id, untilTaskCount: group.index + 1 })
+      log.warn('Fork from group failed', { groupId: group.id, groupIndex: group.index })
       window.alert(t('ai.fork.failed'))
     }
   } finally {
@@ -2947,7 +2957,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         :disabled="forkingGroupIds.has(openGroupMenuGroup.id)"
         @click="handleForkFromGroup(openGroupMenuGroup)"
       >
-        {{ t('ai.fork.action') }}
+        {{ isCompanionSourceTab ? t('ai.fork.extractTaskAction', '从这里创建任务') : t('ai.fork.action') }}
       </button>
     </div>
   </Teleport>

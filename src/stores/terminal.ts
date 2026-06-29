@@ -703,15 +703,17 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
-   * 从指定 tab 的 Agent 会话分叉出一个新的助手 tab（"另开一聊"）。
+   * 从指定 tab 的 Agent 会话分叉出一个新的助手 tab（"另开一聊" / "从这里创建任务"）。
    * 后端 fork 完成后再创建前端 tab，确保 Agent 实例和会话历史已经就绪。
    *
    * @param sourceTabId 源 tab ID
-   * @param opts.untilTaskCount 截断到第 N 个完成 task（包含），undefined = 全部
+   * @param opts.groupIndex 用户点的 group 在 agentTaskGroups 里的 0-based 索引（task fork 用）
+   * @param opts.anchorTaskStepId user_task step.id（companion 创建任务用，精确锚定）
    * @returns 新 tab ID，失败返回 null
    */
   async function forkToAssistantTab(sourceTabId: string, opts?: {
-    untilTaskCount?: number
+    groupIndex?: number
+    anchorTaskStepId?: string
   }): Promise<string | null> {
     const sourceTab = tabs.value.find(t => t.id === sourceTabId)
     if (!sourceTab) {
@@ -727,23 +729,24 @@ export const useTerminalStore = defineStore('terminal', () => {
     const newAgentId = `assistant-${newTabId}`
     const t = i18n.global.t
     const titleSuffix = ' · ' + t('ai.fork.titleSuffix', '分支')
+    const isCompanionSource = sourceAgentKey === '__companion__'
 
     let result
     try {
       // 按 source kind 分流：companion 是 N 条 record 合并的关系线，走 extractTaskFromCompanion
-      //（异质转化）；其它走 forkTask（task → task 同质分叉）。语义清晰，后端不再靠 if 猜。
-      const isCompanionSource = sourceAgentKey === '__companion__'
+      //（异质转化，时间窗口语义）；其它走 forkTask（task → task 同质分叉，截止语义）。
       if (isCompanionSource) {
         result = await window.electronAPI.agent.extractTaskFromCompanion({
           newAgentId,
-          untilTaskCount: opts?.untilTaskCount,
+          anchorTaskIndex: opts?.groupIndex,
+          anchorTaskStepId: opts?.anchorTaskStepId,
           titleSuffix,
         })
       } else {
         result = await window.electronAPI.agent.forkTask({
           sourceAgentKey,
           newAgentId,
-          untilTaskCount: opts?.untilTaskCount,
+          untilTaskCount: opts?.groupIndex !== undefined ? opts.groupIndex + 1 : undefined,
           titleSuffix,
           sourceSessionId: sourceTab.agentState?.sessionId,
         })
@@ -763,10 +766,15 @@ export const useTerminalStore = defineStore('terminal', () => {
     // 注：conversationDisplayTitles 仅在侧栏面板打开时加载，这里先确保数据就绪
     const configStore = useConfigStore()
     await configStore.loadConversationPreferences()
-    const sessionId = sourceTab.agentState?.sessionId
-    const sidebarTitle = sessionId ? configStore.getConversationDisplayTitle(sessionId) : undefined
-    const baseTitle = sourceTab.customTitle || sidebarTitle || sourceTab.title
-    const forkTitle = baseTitle + titleSuffix
+    // companion 升格：标题用锚点那段内容（后端 sourceUserTask 已含后缀），不用「联络 · 分支」
+    const forkTitle = isCompanionSource
+      ? result.sourceUserTask
+      : (() => {
+          const sessionId = sourceTab.agentState?.sessionId
+          const sidebarTitle = sessionId ? configStore.getConversationDisplayTitle(sessionId) : undefined
+          const baseTitle = sourceTab.customTitle || sidebarTitle || sourceTab.title
+          return baseTitle + titleSuffix
+        })()
 
     // 把后缀写进会话显示标题覆盖层（resolveConversationTitle 优先取它，高于 record.userTask）。
     // 后端 record.userTask 由 saveCheckpoint / Conversation.toRecord 从首条 user_task step.content
@@ -809,7 +817,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       focusHubConversation(newTabId)
     }
 
-    log.info(`Forked assistant tab: source=${sourceTabId} → new=${newTabId}, sessionId=${result.newSessionId}, untilTaskCount=${opts?.untilTaskCount ?? 'all'}, promoted=${shouldPromote}`)
+    log.info(`Forked assistant tab: source=${sourceTabId} → new=${newTabId}, sessionId=${result.newSessionId}, groupIndex=${opts?.groupIndex ?? 'n/a'}, anchorTaskStepId=${opts?.anchorTaskStepId ?? 'n/a'}, promoted=${shouldPromote}`)
     return newTabId
   }
 

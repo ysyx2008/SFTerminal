@@ -23,8 +23,12 @@ import { Conversation } from './conversation'
 
 /** companion 抽取新任务的选项 */
 export interface CompanionExtractTaskOptions {
-  /** 截断到合并视图里第 N 个 task（包含）；undefined / >= 总数 = 不截断 */
-  untilTaskCount?: number
+  /**
+   * 锚点 task 索引（0-based，合并视图位置）。仅作 fallback；优先用 anchorTaskStepId。
+   */
+  anchorTaskIndex?: number
+  /** user_task step.id（与前端 AgentTaskGroup.id 一致），精确锚定用户点的那一段 */
+  anchorTaskStepId?: string
   /** userTask 后缀（如「· 分支」） */
   titleSuffix?: string
 }
@@ -42,8 +46,8 @@ export class Companion {
    * 从 companion 关系线抽取一段开新任务（companion → task 异质转化）。
    *
    * 与 task 之间的 fork（`Conversation.forkFromRecord`）语义不同：
-   * - fork：同质分叉，单条 record 截断
-   * extractTask：异质转化，N 条 record 合并后截断
+   * - fork：同质分叉，单条 record 截止到第 N 个 task（连续工作流，带全量合理）
+   * - extractTask：异质转化，N 条 record 合并后按时间窗口取最近连续段（升格种子，带最近这段即可）
    *
    * 返回的二元组（与 `Conversation.forkFromRecord` 一致）：
    * - `conversation`：新会话实例，transcript 已装载；kind = `'task'`（脱离关系线）

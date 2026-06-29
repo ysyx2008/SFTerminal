@@ -300,8 +300,10 @@ export class Conversation {
   /**
    * 同质分叉（task → task）：从单条 record 截断产出一个新会话。
    *
-   * 与 `extractTaskFromRecords`（companion 多 record 合并抽取）共用 `buildForkedRecord` 内核；
-   * 区别仅在数据来源——本方法接收**已就绪的单条 record**，调用方负责把它从 in-memory
+   * 与 `extractTaskFromRecords`（companion 多 record 合并抽取）的区别：
+   * - 本方法用 `untilTaskCount` 截止语义（截止到第 N 个 task 全量），适合 task 连续工作流
+   * - `extractTaskFromRecords` 用时间窗口语义（同天 + 6h 跨夜，cap 兜底），适合 companion 升格种子
+   * 两者数据来源不同——本方法接收**已就绪的单条 record**，调用方负责把它从 in-memory
    *（`toCheckpointRecord`）或磁盘读出来。
    *
    * 返回的 Conversation：
@@ -334,17 +336,21 @@ export class Conversation {
    * 异质转化（companion → task）：从多条 record 合并抽取一个新会话。
    *
    * companion 是「N 条物理 record 拼成的逻辑关系线」，前端展示用合并视图，group.index
-   *（前端传来的 untilTaskCount）是合并视图里的位置，无法映射到任何单条 record 的 task 索引。
+   *（前端传来的 anchorTaskIndex）是合并视图里的位置，无法映射到任何单条 record 的 task 索引。
    * 故需把所有 records 的 steps 按时间排序合并、用非 proactive record 的 messages 拼出
-   * LLM 上下文，再走标准 `buildForkedRecord` 截断路径。
+   * LLM 上下文，再走「时间窗口」选择路径。
    *
    * messages 策略：proactive record（userTask='__proactive__'）没有 API messages；
    * 只拼接真实对话 record 的 messages（按 timestamp 升序），保证 LLM 前缀连贯。
+   *
+   * 窗口语义（见 `selectCompanionTaskWindow`）：以锚点为基准向前取「同天 + 6h 跨夜连续」的
+   * task 集合，最多 cap 段兜底。区别于 task 之间 fork 的 `untilTaskCount` 截止语义——
+   * companion 是「升格种子」，带最近这段在聊啥即可，不是整个关系线的追溯。
    */
   static extractTaskFromRecords(
     records: AgentRecord[],
     newSessionId: string,
-    opts?: { untilTaskCount?: number; titleSuffix?: string }
+    opts?: { anchorTaskIndex?: number; anchorTaskStepId?: string; titleSuffix?: string }
   ): { conversation: Conversation; record: AgentRecord } | null {
     if (!records.length) return null
 
@@ -362,24 +368,151 @@ export class Conversation {
     const mergedMessages: AiMessage[] = realRecords
       .flatMap(r => (r.messages ?? []).map(m => JSON.parse(JSON.stringify(m)) as AiMessage))
 
-    // 用最早的 record 身份 + assistant 形态构造一个虚拟 record，交给 buildForkedRecord 截断
-    //（companion 始终视为 assistant 模式；kind 在 forkFromRecord 里会被强制为 'task'）
+    // 时间窗口选择：以锚点为基准向前取连续 task（同天 + 6h 跨夜，cap 兜底）
+    const stepChunks = chunkStepsByUserTask(mergedSteps)
+    const messageTasks = splitMessagesIntoTasks(mergedMessages, i => `restored_${Date.now()}_${i}`)
+    const anchorIndex = Conversation.resolveAnchorChunkIndex(stepChunks, opts)
+    const selectedIndices = Conversation.selectCompanionTaskWindow(stepChunks, anchorIndex)
+
+    const selectedSteps: AgentStep[] = selectedIndices
+      .map(i => stepChunks[i] ?? [])
+      .flat()
+    const selectedMessages: AiMessage[] = selectedIndices
+      .flatMap(i => {
+        const fromApi = messageTasks[i]?.messages
+        if (fromApi && fromApi.length > 0) return fromApi
+        // proactive 等 record 无 API messages：从 steps 重建，避免 steps/messages 错位
+        return Conversation.messagesFromStepChunk(stepChunks[i] ?? [])
+      })
+
+    if (selectedSteps.length === 0) return null
+
+    const anchorChunk = stepChunks[anchorIndex]
+    if (!anchorChunk?.some(s => s.type === 'user_task')) return null
+    const anchorTitle = Conversation.chunkDisplayTitle(anchorChunk)
+    if (!anchorTitle) return null
+    const lastFinalResult = [...selectedSteps].reverse().find(s => s.type === 'final_result')
+
+    // 用最早的 record 身份 + assistant 形态构造虚拟 record（companion 始终视为 assistant 模式）
+    // 保留 earliest 的额外字段（如 images 等），但核心字段用窗口选择后的结果
     const earliest = ordered[0]
-    const virtualRecord: AgentRecord = {
+    const record: AgentRecord = {
       ...earliest,
       id: newSessionId,
+      kind: 'task', // fork 产物恒为 task（脱离关系线）
       timestamp: Date.now(),
+      terminalId: '',
       terminalType: 'assistant',
       sshHost: undefined,
-      steps: mergedSteps.map(s => Conversation.stepToStepRecord(s)),
-      messages: mergedMessages
+      userTask: anchorTitle + (opts?.titleSuffix ?? ''),
+      steps: selectedSteps.map(s => Conversation.stepToStepRecord(s)),
+      messages: selectedMessages,
+      finalResult: lastFinalResult?.content,
+      duration: 0,
+      status: 'completed'
     }
 
-    const record = Conversation.buildForkedRecord(virtualRecord, newSessionId, opts)
-    if (!record) return null
-    record.kind = 'task'
     const conversation = Conversation.fromRecord(record)
     return { conversation, record }
+  }
+
+  /**
+   * 解析锚点 chunk 索引。优先用 `anchorTaskStepId`（user_task step.id，与前端 group.id 一致），
+   * 避免前端 group.index 与磁盘合并视图 task 数不一致时 clamp 到最后一条（典型：联络 UI 比磁盘多段）。
+   */
+  private static resolveAnchorChunkIndex(
+    stepChunks: AgentStep[][],
+    opts?: { anchorTaskIndex?: number; anchorTaskStepId?: string }
+  ): number {
+    if (stepChunks.length === 0) return 0
+
+    if (opts?.anchorTaskStepId) {
+      const byId = stepChunks.findIndex(chunk =>
+        chunk.some(s => s.id === opts.anchorTaskStepId)
+      )
+      if (byId >= 0) return byId
+    }
+
+    if (
+      opts?.anchorTaskIndex !== undefined &&
+      opts.anchorTaskIndex >= 0 &&
+      opts.anchorTaskIndex < stepChunks.length
+    ) {
+      return opts.anchorTaskIndex
+    }
+
+    return stepChunks.length - 1
+  }
+
+  /** 锚点 chunk 的展示标题（侧栏 / tab 用）。proactive 取 finalResult 摘要，不用 __proactive__。 */
+  private static chunkDisplayTitle(chunk: AgentStep[]): string {
+    const ut = chunk.find(s => s.type === 'user_task')
+    if (!ut) return ''
+    if (ut.content === '__proactive__' || ut.content === '__onboarding__') {
+      const fr = chunk.find(s => s.type === 'final_result')
+      const text = (fr?.content ?? chunk.find(s => s.type === 'message')?.content ?? '').trim()
+      if (!text) return '主动消息'
+      return text.length > 80 ? text.slice(0, 80) + '…' : text
+    }
+    return ut.content
+  }
+
+  /**
+   * proactive record 无 API messages 时，从 steps 重建 LLM 上下文（与 UI 展示一致）。
+   */
+  private static messagesFromStepChunk(chunk: AgentStep[]): AiMessage[] {
+    const msgs: AiMessage[] = []
+    const ut = chunk.find(s => s.type === 'user_task')
+    if (ut && ut.content !== '__proactive__' && ut.content !== '__onboarding__') {
+      msgs.push({ role: 'user', content: ut.content })
+    }
+    for (const s of chunk) {
+      if (s.type === 'message' && s.content) {
+        msgs.push({ role: 'assistant', content: s.content })
+      }
+    }
+    const fr = chunk.find(s => s.type === 'final_result')
+    if (fr?.content && !msgs.some(m => m.role === 'assistant')) {
+      msgs.push({ role: 'assistant', content: fr.content })
+    }
+    return msgs
+  }
+
+  /**
+   * companion → task 的时间窗口选择：以锚点为基准向前取连续 task。
+   *
+   * 「连续」定义：相邻两 task 的起始时间间隔 < 6h（覆盖跨夜同一话题，切断「睡一觉第二天再聊」）。
+   * 主动消息（`__proactive__`）锚点：只带锚点本身——每条 talk_to_user 是独立通知，不应把同晨其它通知并进来。
+   * 用户发起的 task 锚点：从锚点向前扫，遇间隔 ≥ 6h 即断，最多 `CAP` 段兜底。
+   */
+  private static selectCompanionTaskWindow(
+    stepChunks: AgentStep[][],
+    anchorIndex: number
+  ): number[] {
+    if (stepChunks.length === 0) return []
+
+    const anchorChunk = stepChunks[anchorIndex] ?? []
+    const anchorUt = anchorChunk.find(s => s.type === 'user_task')
+    if (anchorUt?.content === '__proactive__') {
+      return [anchorIndex]
+    }
+
+    const taskTimes = stepChunks.map(chunk => chunk[0]?.timestamp ?? 0)
+    const GAP_MS = 6 * 60 * 60 * 1000
+    const CAP = 10
+
+    const selected: number[] = [anchorIndex]
+    for (let i = anchorIndex - 1; i >= 0; i--) {
+      const prevUt = stepChunks[i]?.find(s => s.type === 'user_task')
+      // 用户发起的对话：向前不跨越主动消息（talk_to_user 是独立通知，不是同一话题的上下文）
+      if (prevUt?.content === '__proactive__') break
+      const gap = taskTimes[i + 1] - taskTimes[i]
+      if (gap >= GAP_MS) break
+      selected.unshift(i)
+      if (selected.length >= CAP) break
+    }
+
+    return selected
   }
 
   /**

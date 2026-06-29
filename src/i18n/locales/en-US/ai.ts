@@ -190,6 +190,7 @@ export default {
     taskAbortedMessage: '⚠️ User aborted execution',
     fork: {
       action: 'Branch off',
+      extractTaskAction: 'Create task from here',
       tooltip: 'Open a new chat from here; the original conversation stays untouched',
       titleSuffix: 'branch',
       failed: 'Branch off failed: no session data or service unavailable'

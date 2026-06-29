@@ -3639,7 +3639,8 @@ ipcMain.handle('agent:forkTask', async (_event, opts: {
 
 ipcMain.handle('agent:extractTaskFromCompanion', async (_event, opts: {
   newAgentId: string
-  untilTaskCount?: number
+  anchorTaskIndex?: number
+  anchorTaskStepId?: string
   titleSuffix?: string
 }) => {
   const { agentService } = await rt()

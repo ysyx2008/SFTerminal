@@ -725,7 +725,8 @@ interface Window {
       } | null>
       extractTaskFromCompanion: (opts: {
         newAgentId: string
-        untilTaskCount?: number
+        anchorTaskIndex?: number
+        anchorTaskStepId?: string
         titleSuffix?: string
       }) => Promise<{
         newSessionId: string

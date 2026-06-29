@@ -263,9 +263,12 @@ export class AgentService {
   } | null> {
     // companion 走 extractTaskFromCompanion（异质转化）；task 走 forkTask（同质分叉）。
     if (opts.sourceAgentKey === AgentService.COMPANION_AGENT_ID) {
+      // untilTaskCount 是旧语义（截止到第 N 个，1-based）；新语义 anchorTaskIndex 是 0-based 锚点位置。
+      // untilTaskCount = group.index + 1 → anchorTaskIndex = untilTaskCount - 1
+      const anchorTaskIndex = opts.untilTaskCount !== undefined ? opts.untilTaskCount - 1 : undefined
       const result = await this.extractTaskFromCompanion({
         newAgentId: opts.newAgentId,
-        untilTaskCount: opts.untilTaskCount,
+        anchorTaskIndex,
         titleSuffix: opts.titleSuffix
       })
       if (!result) return null
@@ -398,20 +401,22 @@ export class AgentService {
    * 异质转化（companion → task）：从 companion 关系线抽取一段开新任务。
    *
    * 与 `forkTask` 的语义差异：
-   * - forkTask：同质分叉，单条 record 截断（task → task）
-   * - extractTaskFromCompanion：异质转化，N 条 record 合并后截断（companion → task）
+   * - forkTask：同质分叉，单条 record 按 `untilTaskCount` 截止（task → task，连续工作流）
+   * - extractTaskFromCompanion：异质转化，N 条 record 合并后按时间窗口取最近连续段
+   *   （companion → task，升格种子，带最近这段在聊啥即可）
    *
    * companion 是「N 条物理 record 拼成的逻辑关系线」，in-memory 只装最近一段，
-   * fork 必须从磁盘拉全部近期 record 合并才能正确截断。详见 `Companion` 类。
+   * fork 必须从磁盘拉全部近期 record 合并才能正确选择窗口。详见 `Companion` 类。
    *
    * 流程：
-   *  1. `Companion.extractTask` 拉最近 N 条 record 合并 + 截断产出新 Conversation
+   *  1. `Companion.extractTask` 拉最近 N 条 record 合并 + 时间窗口选择产出新 Conversation
    *  2. `startTaskFromConversation` 落盘 + 建 Agent + 装载
    *  3. companion 始终视为 assistant 模式，cache snapshot 恒传递
    */
   async extractTaskFromCompanion(opts: {
     newAgentId: string
-    untilTaskCount?: number
+    anchorTaskIndex?: number
+    anchorTaskStepId?: string
     titleSuffix?: string
   }): Promise<{
     newSessionId: string
@@ -431,7 +436,8 @@ export class AgentService {
 
     const newSessionId = `session_${Date.now()}_extract_${Math.random().toString(36).slice(2, 8)}`
     const forkOpts = {
-      untilTaskCount: opts.untilTaskCount,
+      anchorTaskIndex: opts.anchorTaskIndex,
+      anchorTaskStepId: opts.anchorTaskStepId,
       titleSuffix: opts.titleSuffix ?? ''
     }
 
@@ -454,7 +460,8 @@ export class AgentService {
 
     log.info(
       `Extracted task from companion: new=${opts.newAgentId}, ` +
-      `sessionId=${newSessionId}, untilTaskCount=${opts.untilTaskCount ?? 'all'}, ` +
+      `sessionId=${newSessionId}, anchorTaskStepId=${opts.anchorTaskStepId ?? 'n/a'}, ` +
+      `anchorTaskIndex=${opts.anchorTaskIndex ?? 'n/a'}, ` +
       `titleSuffix="${opts.titleSuffix ?? ''}", newRecord.userTask="${newRecord.userTask}"`
     )
 

@@ -689,8 +689,8 @@ describe('Conversation.extractTaskFromRecords', () => {
     expect(result).toBeNull()
   })
 
-  it('merges multiple records by timestamp and truncates by untilTaskCount', () => {
-    // 两条 companion record，各含 1 个 task；合并后是 2 个 task
+  it('merges multiple records by timestamp; anchor at last takes all continuous tasks', () => {
+    // 两条 companion record，各含 1 个 task；合并后是 2 个 task，间隔 1s（< 6h，连续）
     const rec1 = buildCompanionRecord({
       id: 'sess_c1',
       timestamp: 1000,
@@ -718,7 +718,7 @@ describe('Conversation.extractTaskFromRecords', () => {
       ]
     })
 
-    // (a) 全量合并：untilTaskCount undefined → 4 messages（2 user + 2 assistant）
+    // (a) 默认锚点 = 最后一个 task → 两段连续（间隔 1s < 6h），全带
     const full = Conversation.extractTaskFromRecords([rec2, rec1], 'sess_extract_full')!
     expect(full).not.toBeNull()
     expect(full.record.id).toBe('sess_extract_full')
@@ -726,16 +726,123 @@ describe('Conversation.extractTaskFromRecords', () => {
     expect(full.record.messages!.length).toBe(4)
     expect(full.record.messages![0].content).toBe('早段问题') // 按 timestamp 升序
 
-    // (b) 截断到第 1 个 task → 只含早段
+    // (b) 锚点 = 第 0 个 task（最早那段）→ 只含早段
     const partial = Conversation.extractTaskFromRecords(
       [rec2, rec1],
       'sess_extract_partial',
-      { untilTaskCount: 1 }
+      { anchorTaskIndex: 0 }
     )!
     expect(partial).not.toBeNull()
     expect(partial.record.messages!.length).toBe(2)
     expect(partial.record.messages![0].content).toBe('早段问题')
     expect(partial.record.messages![1].content).toBe('早段回答')
+  })
+
+  it('time window: 6h gap breaks continuity (anchored at later task drops earlier)', () => {
+    // 两条 record 间隔 7h（> 6h 阈值）→ 不连续
+    const baseTs = Date.now()
+    const rec1 = buildCompanionRecord({
+      id: 'sess_old',
+      timestamp: baseTs,
+      userTask: '昨天的话题',
+      messages: [
+        { role: 'user', content: '昨天的话题' },
+        { role: 'assistant', content: '昨天的回答' }
+      ],
+      steps: [
+        { id: 'ut1', type: 'user_task', content: '昨天的话题', timestamp: baseTs },
+        { id: 'fr1', type: 'final_result', content: '昨天的回答', timestamp: baseTs + 100 }
+      ]
+    })
+    const rec2 = buildCompanionRecord({
+      id: 'sess_new',
+      timestamp: baseTs + 7 * 60 * 60 * 1000, // 7h 后（> 6h 阈值）
+      userTask: '今天的话题',
+      messages: [
+        { role: 'user', content: '今天的话题' },
+        { role: 'assistant', content: '今天的回答' }
+      ],
+      steps: [
+        { id: 'ut2', type: 'user_task', content: '今天的话题', timestamp: baseTs + 7 * 60 * 60 * 1000 },
+        { id: 'fr2', type: 'final_result', content: '今天的回答', timestamp: baseTs + 7 * 60 * 60 * 1000 + 100 }
+      ]
+    })
+
+    // 锚点 = 最后一个 task（今天）→ 间隔 7h ≥ 6h，昨天那段不带
+    const result = Conversation.extractTaskFromRecords([rec1, rec2], 'sess_window')!
+    expect(result).not.toBeNull()
+    expect(result.record.messages!.length).toBe(2)
+    expect(result.record.messages![0].content).toBe('今天的话题')
+    expect(result.record.messages![1].content).toBe('今天的回答')
+  })
+
+  it('time window: cross-night continuity (< 6h gap keeps both)', () => {
+    // 周日 23:50 → 周一 00:10，间隔 20 分钟 < 6h → 跨夜连续，都带
+    const sundayNight = new Date('2026-06-28T23:50:00').getTime()
+    const mondayEarly = sundayNight + 20 * 60 * 1000 // +20min
+    const rec1 = buildCompanionRecord({
+      id: 'sess_sun',
+      timestamp: sundayNight,
+      userTask: '周日夜聊',
+      messages: [
+        { role: 'user', content: '周日夜聊' },
+        { role: 'assistant', content: '周日夜答' }
+      ],
+      steps: [
+        { id: 'ut1', type: 'user_task', content: '周日夜聊', timestamp: sundayNight },
+        { id: 'fr1', type: 'final_result', content: '周日夜答', timestamp: sundayNight + 100 }
+      ]
+    })
+    const rec2 = buildCompanionRecord({
+      id: 'sess_mon',
+      timestamp: mondayEarly,
+      userTask: '周一凌晨续聊',
+      messages: [
+        { role: 'user', content: '周一凌晨续聊' },
+        { role: 'assistant', content: '周一凌晨回答' }
+      ],
+      steps: [
+        { id: 'ut2', type: 'user_task', content: '周一凌晨续聊', timestamp: mondayEarly },
+        { id: 'fr2', type: 'final_result', content: '周一凌晨回答', timestamp: mondayEarly + 100 }
+      ]
+    })
+
+    // 锚点 = 最后一个 task（周一凌晨）→ 间隔 20min < 6h，周日夜那段也带
+    const result = Conversation.extractTaskFromRecords([rec1, rec2], 'sess_cross_night')!
+    expect(result).not.toBeNull()
+    expect(result.record.messages!.length).toBe(4)
+    expect(result.record.messages![0].content).toBe('周日夜聊')
+    expect(result.record.messages![2].content).toBe('周一凌晨续聊')
+  })
+
+  it('time window: cap at 10 tasks (anchored at last drops older beyond cap)', () => {
+    // 12 条 record，每条间隔 1 分钟（< 6h，全连续），锚点取最后一个 → cap=10 截断到最近 10 段
+    const baseTs = Date.now()
+    const records: AgentRecord[] = []
+    for (let i = 0; i < 12; i++) {
+      const ts = baseTs + i * 60 * 1000 // 1 分钟间隔
+      records.push(buildCompanionRecord({
+        id: `sess_cap_${i}`,
+        timestamp: ts,
+        userTask: `第${i + 1}段`,
+        messages: [
+          { role: 'user', content: `第${i + 1}段问题` },
+          { role: 'assistant', content: `第${i + 1}段回答` }
+        ],
+        steps: [
+          { id: `ut_${i}`, type: 'user_task', content: `第${i + 1}段`, timestamp: ts },
+          { id: `fr_${i}`, type: 'final_result', content: `第${i + 1}段回答`, timestamp: ts + 100 }
+        ]
+      }))
+    }
+
+    // 锚点默认 = 最后一个 task（第 12 段）→ 12 段全连续，但 cap=10，取最近 10 段（第 3-12 段）
+    const result = Conversation.extractTaskFromRecords(records, 'sess_cap')!
+    expect(result).not.toBeNull()
+    expect(result.record.messages!.length).toBe(20) // 10 段 × 2 messages
+    // 第一段应是第 3 段（index 2），不是第 1 段
+    expect(result.record.messages![0].content).toBe('第3段问题')
+    expect(result.record.messages![18].content).toBe('第12段问题')
   })
 
   it('skips proactive records when merging messages (proactive has no API messages)', () => {
@@ -763,10 +870,77 @@ describe('Conversation.extractTaskFromRecords', () => {
       ]
     })
 
-    const result = Conversation.extractTaskFromRecords([proactive, real], 'sess_extract')!
-    // messages 只含真实对话 record 的 messages（proactive 被跳过）
+    const result = Conversation.extractTaskFromRecords([proactive, real], 'sess_extract', {
+      anchorTaskStepId: 'ut_r'
+    })!
+    // messages 只含真实对话（proactive record 无 API messages；锚点为用户对话）
     expect(result.record.messages!.length).toBe(2)
     expect(result.record.messages![0].content).toBe('真实对话')
+  })
+
+  it('resolves anchor by anchorTaskStepId when index would mismatch', () => {
+    const baseTs = Date.now()
+    const records: AgentRecord[] = []
+    for (let i = 0; i < 5; i++) {
+      const ts = baseTs + i * 60 * 1000
+      records.push(buildCompanionRecord({
+        id: `sess_${i}`,
+        timestamp: ts,
+        userTask: `第${i + 1}段`,
+        messages: [
+          { role: 'user', content: `第${i + 1}段问题` },
+          { role: 'assistant', content: `第${i + 1}段回答` }
+        ],
+        steps: [
+          { id: `ut_${i}`, type: 'user_task', content: `第${i + 1}段`, timestamp: ts },
+          { id: `fr_${i}`, type: 'final_result', content: `第${i + 1}段回答`, timestamp: ts + 100 }
+        ]
+      }))
+    }
+
+    const result = Conversation.extractTaskFromRecords(records, 'sess_by_id', {
+      anchorTaskIndex: 99,
+      anchorTaskStepId: 'ut_2'
+    })!
+    // 锚在第 3 段，向前连续含第 1–3 段（均在 6h 内）
+    expect(result.record.messages!.length).toBe(6)
+    expect(result.record.messages![0].content).toBe('第1段问题')
+    expect(result.record.userTask).toBe('第3段')
+  })
+
+  it('proactive anchor only includes that notification, not earlier proactive within 6h', () => {
+    const baseTs = Date.now()
+    const rec1 = buildCompanionRecord({
+      id: 'sess_p1',
+      timestamp: baseTs,
+      userTask: '主动通知',
+      messages: [],
+      steps: [
+        { id: 'ut_p1', type: 'user_task', content: '__proactive__', timestamp: baseTs },
+        { id: 'fr_p1', type: 'final_result', content: '邮件提醒内容', timestamp: baseTs + 100 }
+      ],
+      proactive: true
+    })
+    const rec2 = buildCompanionRecord({
+      id: 'sess_p2',
+      timestamp: baseTs + 30 * 60 * 1000,
+      userTask: '主动通知',
+      messages: [],
+      steps: [
+        { id: 'ut_p2', type: 'user_task', content: '__proactive__', timestamp: baseTs + 30 * 60 * 1000 },
+        { id: 'fr_p2', type: 'final_result', content: '截止提醒内容', timestamp: baseTs + 30 * 60 * 1000 + 100 }
+      ],
+      proactive: true
+    })
+
+    const result = Conversation.extractTaskFromRecords([rec1, rec2], 'sess_proactive_only', {
+      anchorTaskStepId: 'ut_p2'
+    })!
+    expect(result.record.steps!.filter(s => s.type === 'user_task').length).toBe(1)
+    expect(result.record.userTask).toContain('截止提醒')
+    expect(result.record.userTask).not.toContain('邮件提醒')
+    expect(result.record.messages!.length).toBe(1)
+    expect(result.record.messages![0].content).toBe('截止提醒内容')
   })
 
   it('appends titleSuffix to userTask', () => {
