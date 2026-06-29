@@ -3975,17 +3975,17 @@ ipcMain.handle('im:setAutoConnect', async (_event, platform: string, enabled: bo
 })
 
 ipcMain.handle('im:setExecutionMode', async (_event, mode: ExecutionMode) => {
-  configService.set('imExecutionMode', mode)
+  configService.set('imExecutionMode', mode);
   (await imSvc()).setExecutionMode(mode)
 })
 
 ipcMain.handle('im:setSendProcessMessages', async (_event, enabled: boolean) => {
-  configService.set('imSendProcessMessages', enabled)
+  configService.set('imSendProcessMessages', enabled);
   (await imSvc()).setSendProcessMessages(enabled)
 })
 
 ipcMain.handle('im:setSendThinkingProcess', async (_event, enabled: boolean) => {
-  configService.set('imSendThinkingProcess', enabled)
+  configService.set('imSendThinkingProcess', enabled);
   (await imSvc()).setSendThinkingProcess(enabled)
 })
 
