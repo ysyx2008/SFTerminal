@@ -848,6 +848,7 @@ const loadMore = () => {
   flex: 1;
   overflow-y: auto;
   padding: 4px 8px 10px;
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
   transition: scrollbar-color 0.2s ease;

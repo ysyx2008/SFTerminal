@@ -156,6 +156,8 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   display: flex;
   align-items: center;
   gap: 0;
+  padding: 0 6px 0 0;
+  box-sizing: border-box;
   border-radius: 5px;
   cursor: grab;
   transition: background 0.12s ease, opacity 0.12s ease;
@@ -304,7 +306,7 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   align-items: center;
   gap: 4px;
   height: 28px;
-  padding: 0 2px 0 0;
+  padding: 0;
   font-family: inherit;
   text-align: left;
   background: transparent;
