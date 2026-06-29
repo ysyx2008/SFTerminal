@@ -400,6 +400,9 @@ export class Conversation {
       ...earliest,
       id: newSessionId,
       kind: 'task', // fork 产物恒为 task（脱离关系线）
+      // agentKey 不继承 earliest（companion 源会带 '__companion__'，与 task kind 矛盾）；
+      // 由 startTaskFromConversation 落盘前 rebind 到新 Agent。此处置空避免脏值流出
+      agentKey: '',
       timestamp: Date.now(),
       terminalId: '',
       terminalType: 'assistant',

@@ -494,6 +494,13 @@ export class AgentService {
     newAgentId: string,
     opts?: { cachePrefix?: AiMessage[] }
   ): SailFish {
+    // fork 产物的 agentKey 必须绑定到新 Agent，而非继承源会话：
+    // 从 companion fork 时 record 会带 agentKey='__companion__'（见 extractTaskFromRecords
+    // 的 ...earliest 展开），若不修正，listAgentHistorySummaries(excludeWakeup=true) 会把
+    // 这条 task 记录误判为联络会话过滤掉，导致前端 pruneConversationMetadata 删除其自定义标题。
+    conversation.rebind(newAgentId)
+    record.agentKey = newAgentId
+
     const historyService = this.services.historyService!
     historyService.saveAgentRecord(record)
     const newAgent = this.createAssistantAgent(newAgentId)

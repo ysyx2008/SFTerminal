@@ -331,6 +331,13 @@ describe('Fork 端到端（真实 run() + 真实磁盘写盘）', () => {
     expect(result!.newRecord.messages!.length).toBe(2)
     expect(result!.newRecord.messages![0].content).toBe('早段对话')
 
+    // 回归：fork 产物的 agentKey 必须绑定到新 Agent，不能继承源 companion 的 '__companion__'。
+    // 否则 listAgentHistorySummaries(excludeWakeup=true) 会把这条 task 误判为联络会话过滤掉，
+    // 前端 pruneConversationMetadata 随之删除其自定义标题（用户重命名丢失）。
+    expect(result!.newRecord.agentKey).toBe('extracted-tab')
+    const persisted = history.getAgentRecordById(result!.newSessionId)
+    expect(persisted?.agentKey).toBe('extracted-tab')
+
     // 新 Agent 续聊
     const extractedAgent = agentService.getAgent('extracted-tab') as unknown as TestAgent
     Object.setPrototypeOf(extractedAgent, TestAgent.prototype)
@@ -343,5 +350,9 @@ describe('Fork 端到端（真实 run() + 真实磁盘写盘）', () => {
     const content = JSON.stringify(messagesByCall[0])
     expect(content).toContain('早段对话')
     expect(content).not.toContain('晚段对话')
+
+    // 回归：续聊 checkpoint 落盘后 agentKey 仍是新 Agent，不被 companion 污染
+    const afterRun = history.getAgentRecordById(result!.newSessionId)
+    expect(afterRun?.agentKey).toBe('extracted-tab')
   })
 })
