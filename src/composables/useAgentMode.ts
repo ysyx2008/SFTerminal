@@ -127,6 +127,14 @@ export function useAgentMode(
   let scrollGraceTimer: ReturnType<typeof setTimeout> | null = null
   const AUTO_SCROLL_GRACE_MS = 150
 
+  // 容器宽度变化驱动的 reflow 保护期截止时间戳。任何改变 AiPanel 宽度的操作
+  // （产出物面板展开/收起、侧边栏、拖拽分隔条、窗口 resize、分屏）都会让聊天内容
+  // reflow：同样内容变窄→变高，scrollHeight 变大但 scrollTop 不动，checkIsNearBottom()
+  // 误判"离底"→污染 isUserNearBottom / 清掉 stickyFollowBottom → 流式 chunk 再来时
+  // 停在上面一点并亮起「新消息」。reflow 期间 updateScrollPosition 跳过状态更新避免误判。
+  let containerReflowGuardUntil = 0
+  const CONTAINER_REFLOW_GUARD_MS = 500
+
   // hideUntilSettled 期间用 rAF 探测 scrollHeight 稳定后淡入；记录帧 / 定时器 id，
   // 组件卸载或重新触发时取消，避免卸载后 messagesRef 变 null 导致 tick 空转到兜底定时器。
   let pendingRevealFrame: number | null = null
@@ -465,6 +473,10 @@ export function useAgentMode(
   // grace 窗口内用户拖滚动条上滚时 skipScrollUpdate 仍为 true，会误把阅读位拽回底部（回归 bug）。
   const shouldFollowResize = () => shouldFollowBottom()
 
+  // 容器宽度变化驱动的 reflow 进行中：此期间 scroll 事件算出的 checkIsNearBottom() 不可信
+  // （scrollHeight 因宽度变化而变，与用户滚动意图无关），updateScrollPosition 应跳过状态更新。
+  const isInContainerReflow = () => Date.now() < containerReflowGuardUntil
+
   const cancelFlipAnimation = () => {
     if (pendingFlipFrame !== null) {
       cancelAnimationFrame(pendingFlipFrame)
@@ -509,6 +521,19 @@ export function useAgentMode(
 
     // 跳过强制滚动期间的状态更新，避免被 scroll 事件覆盖
     if (skipScrollUpdate) return
+
+    // 容器宽度变化驱动的 reflow 进行中：scrollHeight 因内容 reflow 而变，与用户滚动意图无关。
+    // 此期间 checkIsNearBottom() 不可信，跳过状态更新，避免误判"离底"清掉 stickyFollowBottom。
+    // 但保留"用户主动滚到底部→恢复跟底"的通道：reflow 期间用户仍可能主动滚到底，此时应恢复
+    // stickyFollowBottom，避免 reflow 结束后第一次流式 chunk 因 sticky=false 而不贴底。
+    if (isInContainerReflow()) {
+      if (checkIsNearBottom()) {
+        stickyFollowBottom = true
+        setIsUserNearBottom(true)
+      }
+      lastKnownScrollTop = scrollTop
+      return
+    }
 
     const nearBottom = checkIsNearBottom()
     const outsideAutoScrollGrace = Date.now() - lastAutoScrollAt > AUTO_SCROLL_GRACE_MS
@@ -652,6 +677,15 @@ export function useAgentMode(
   let prevWrapperHeight = 0
   let pendingFlipFrame: number | null = null
 
+  // ===== 容器宽度变化感知 =====
+  // 任何改变 AiPanel 可用宽度的操作（产出物面板展开/收起、侧边栏、拖拽分隔条、窗口 resize、
+  // 分屏切换）都会让聊天内容 reflow。这里单独监听 messagesRef 自身的宽度变化（与监听
+  // wrapper 高度的 contentResizeObserver 职责分离，不冲突）：宽度变化即布局驱动 reflow，
+  // 此时若用户处于贴底跟随态，主动维持贴底并延长 grace 窗口覆盖整个过渡（过渡通常 300ms，
+  // CONTAINER_REFLOW_GUARD_MS 给 500ms 余量），不让 scroll 事件污染状态。
+  let containerWidthObserver: ResizeObserver | null = null
+  let prevContainerWidth = 0
+
   // FLIP 动画参数
   // - cubic-bezier(0.32, 0.72, 0, 1)：iOS spring，慢启动 + 快收尾，符合"内容惯性归位"的物理直觉
   // - 基础 320ms 适合 1-3 行正文滑动；大 delta（图片、长段落）按比例延长到上限 560ms，
@@ -793,6 +827,52 @@ export function useAgentMode(
     prevWrapperHeight = 0
   }
 
+  // 监听 messagesRef 自身宽度变化（布局驱动 reflow 的统一信号）。
+  // - 宽度变化时，若用户处于贴底跟随态，主动维持 stickyFollowBottom 并延长 grace 窗口，
+  //   让 contentResizeObserver 在过渡期间持续把 scrollTop 钉到新底（同帧贴底逻辑天然处理
+  //   wrapper 变高的情况）。
+  // - 同时设置 containerReflowGuardUntil，让 updateScrollPosition 在过渡期间跳过状态更新，
+  //   避免误判"离底"清掉 stickyFollowBottom。
+  // - 非激活 tab 不处理，避免后台 tab 改写 scrollTop。
+  const installContainerWidthObserver = () => {
+    uninstallContainerWidthObserver()
+    const el = messagesRef.value
+    if (!el) return
+    prevContainerWidth = el.clientWidth
+    containerWidthObserver = new ResizeObserver((entries) => {
+      if (tabActive?.value === false) return
+      // 用 clientWidth 而非 contentRect.width：前者含 padding，与 prevContainerWidth
+      // 初始值同维度，避免首次 observe 回调因维度不一致误触发 reflow。
+      const newWidth = el.clientWidth
+      if (newWidth === prevContainerWidth) return
+      prevContainerWidth = newWidth
+
+      // 宽度变化即布局 reflow 信号。无论用户是否在底部，都先标记 reflow 进行中，
+      // 让 updateScrollPosition 跳过 checkIsNearBottom 判断（避免误判离底污染状态）。
+      containerReflowGuardUntil = Date.now() + CONTAINER_REFLOW_GUARD_MS
+
+      // 仅当用户处于贴底跟随态时维持贴底；用户主动上滚阅读时不越权拽回底部。
+      if (!shouldFollowBottom()) return
+
+      // 先同步 guardAfterAutoScroll：立即把 stickyFollowBottom 设为 true，
+      // 确保紧接着触发的 contentResizeObserver（wrapper 高度因 reflow 变化）走
+      // shouldFollowResize() = true 分支同帧贴底。scrollToBottom 是 async（await nextTick），
+      // 其内部的 guardAfterAutoScroll 来得太晚，会漏掉第一帧 observer。
+      guardAfterAutoScroll()
+      // scrollToBottom 兜底立即贴一次底 + 设 suppressFlipUntil 跳过 FLIP
+      // （宽度变化场景不需要 FLIP 动画，避免和 reflow 打架）。
+      void scrollToBottom()
+    })
+    containerWidthObserver.observe(el)
+  }
+
+  const uninstallContainerWidthObserver = () => {
+    containerWidthObserver?.disconnect()
+    containerWidthObserver = null
+    prevContainerWidth = 0
+    containerReflowGuardUntil = 0
+  }
+
   const onMessagesWheel = (e: WheelEvent) => {
     if (e.deltaY < 0) {
       userScrolledAway()
@@ -805,10 +885,14 @@ export function useAgentMode(
     if (oldEl === el) return
     oldEl?.removeEventListener('wheel', onMessagesWheel)
     uninstallContentResizeObserver()
+    uninstallContainerWidthObserver()
     if (el) {
       lastKnownScrollTop = el.scrollTop
       el.addEventListener('wheel', onMessagesWheel, { passive: true })
-      requestAnimationFrame(() => installContentResizeObserver())
+      requestAnimationFrame(() => {
+        installContentResizeObserver()
+        installContainerWidthObserver()
+      })
     }
   }, { flush: 'post' })
 
@@ -1948,6 +2032,7 @@ export function useAgentMode(
   onUnmounted(() => {
     cleanupAgentListeners()
     uninstallContentResizeObserver()
+    uninstallContainerWidthObserver()
     artifactStore.cleanup(currentTabId.value)
     cancelPendingReveal()
   })
