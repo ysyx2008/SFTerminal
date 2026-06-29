@@ -302,9 +302,9 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   height: 28px;
-  padding: 0 4px 0 0;
+  padding: 0 2px 0 0;
   font-family: inherit;
   text-align: left;
   background: transparent;
