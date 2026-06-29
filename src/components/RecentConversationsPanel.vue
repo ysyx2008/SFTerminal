@@ -714,7 +714,9 @@ const loadMore = () => {
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 36px;
+  box-sizing: border-box;
+  height: var(--workbench-panel-header-height, 38px);
+  min-height: var(--workbench-panel-header-height, 38px);
   padding: 0 6px 0 8px;
   flex-shrink: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);

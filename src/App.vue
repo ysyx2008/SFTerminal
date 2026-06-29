@@ -1609,6 +1609,8 @@ onUnmounted(() => {
   flex: 1;
   overflow: hidden;
   position: relative;
+  /* 最近对话侧栏 panel-header 与 AiPanel system-info-bar 共用，保证顶栏底边对齐 */
+  --workbench-panel-header-height: 38px;
 }
 
 /* 侧边栏 */
