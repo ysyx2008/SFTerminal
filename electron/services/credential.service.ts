@@ -86,24 +86,54 @@ async function loadStore(): Promise<CredentialStoreFile> {
   if (_cachePromise) return _cachePromise
   _cachePromise = (async () => {
     const filePath = getStorePath()
+    let loadedFromDisk = false
+    let store: CredentialStoreFile
     try {
       const raw = await fs.readFile(filePath, 'utf-8')
       const parsed = JSON.parse(raw)
       if (parsed && typeof parsed === 'object' && parsed.items && typeof parsed.items === 'object') {
-        _cache = {
+        store = {
           schemaVersion: typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : 1,
           items: parsed.items as Record<string, string>
         }
-        return _cache
+        loadedFromDisk = true
+      } else {
+        log.warn(`Credential store at ${filePath} has unexpected shape, treating as empty`)
+        store = { schemaVersion: SKILL_ENV_SCHEMA_VERSION, items: {} }
       }
-      log.warn(`Credential store at ${filePath} has unexpected shape, treating as empty`)
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code
       if (code !== 'ENOENT') {
         log.warn(`Failed to read credential store, treating as empty`, err)
       }
+      store = { schemaVersion: SKILL_ENV_SCHEMA_VERSION, items: {} }
     }
-    _cache = { schemaVersion: 1, items: {} }
+    // 首次从磁盘加载到旧版本时，立刻迁移；保证 _cache 落定时就是迁移后状态，
+    // 并发的 loadStore 调用 await 同一个 promise 拿到的也是迁移后的 store。
+    if (loadedFromDisk && store.schemaVersion < SKILL_ENV_SCHEMA_VERSION) {
+      let changed = false
+      if (store.schemaVersion < 2) {
+        if (migrateSkillEnvToUpperCase(store)) changed = true
+        store.schemaVersion = 2
+      }
+      if (changed) {
+        try {
+          await persistStore(store)
+          log.info(`Credential store migrated to schema v${SKILL_ENV_SCHEMA_VERSION}`)
+        } catch (err) {
+          log.error('Failed to persist migrated credential store', err)
+          // 内存里的 store 已迁移，后续读写仍正确，只是磁盘滞后
+        }
+      } else {
+        // 即使没数据变化，也把 schemaVersion 标记为最新并落盘一次，避免下次启动重复扫描
+        try {
+          await persistStore(store)
+        } catch (err) {
+          log.error('Failed to persist schema version bump', err)
+        }
+      }
+    }
+    _cache = store
     return _cache
   })()
   try {
@@ -337,31 +367,34 @@ export async function getOAuth2Token(accountId: string): Promise<OAuth2Token | n
 // ============ 技能 env 凭据 ============
 
 const SKILL_ENV_PREFIX = 'skill:'
+/** skill env 凭据的 schema 版本：2 = envName 强制大写存储（v1→v2 时一次性迁移） */
+const SKILL_ENV_SCHEMA_VERSION = 2
 
 /**
  * 存储技能 env 凭据（API Key 等）。
- * key 格式：`skill:<skillId>:<envName>`
+ * key 格式：`skill:<skillId>:<ENV_NAME>`，envName 统一转大写后再落盘，
+ * 避免前端 IPC / Agent 工具 / 老数据混用大小写导致同一变量名分裂成两条记录。
  */
 export async function setSkillEnv(skillId: string, envName: string, value: string): Promise<void> {
-  await setCredential(`${SKILL_ENV_PREFIX}${skillId}:${envName}`, value)
+  await setCredential(`${SKILL_ENV_PREFIX}${skillId}:${envName.toUpperCase()}`, value)
 }
 
 /**
  * 读取技能 env 凭据。不存在返回 null。
  */
 export async function getSkillEnv(skillId: string, envName: string): Promise<string | null> {
-  return await getCredential(`${SKILL_ENV_PREFIX}${skillId}:${envName}`)
+  return await getCredential(`${SKILL_ENV_PREFIX}${skillId}:${envName.toUpperCase()}`)
 }
 
 /**
  * 删除技能 env 凭据。
  */
 export async function deleteSkillEnv(skillId: string, envName: string): Promise<boolean> {
-  return await deleteCredential(`${SKILL_ENV_PREFIX}${skillId}:${envName}`)
+  return await deleteCredential(`${SKILL_ENV_PREFIX}${skillId}:${envName.toUpperCase()}`)
 }
 
 /**
- * 列出某个技能已存储的所有 env 名称（不含值）。
+ * 列出某个技能已存储的所有 env 名称（不含值，已是大写）。
  */
 export async function listSkillEnvNames(skillId: string): Promise<string[]> {
   const prefix = `${SKILL_ENV_PREFIX}${skillId}:`
@@ -371,6 +404,7 @@ export async function listSkillEnvNames(skillId: string): Promise<string[]> {
 
 /**
  * 读取某个技能的所有 env 键值对（用于子进程注入）。
+ * 返回的 key 是存储时的大写名；调用方负责按 SKILL.md 声明的大小写映射后再注入。
  * 返回 `{ ENV_NAME: 'value', ... }`，只包含已配置的项。
  */
 export async function getSkillEnvMap(skillId: string): Promise<Record<string, string>> {
@@ -383,6 +417,78 @@ export async function getSkillEnvMap(skillId: string): Promise<Record<string, st
     })
   )
   return result
+}
+
+/**
+ * 把 getSkillEnvMap 返回的「大写 key」映射回 SKILL.md 声明的原始大小写。
+ * 用于注入子进程环境变量：credential 层统一大写存储，但技能脚本里读的是
+ * 声明的变量名（可能是 api_key 而非 API_KEY），所以注入前要还原。
+ * 未在 declaredEnvs 里声明的大写 key 原样保留（兼容老数据/未声明但已存的 key）。
+ */
+export function mapSkillEnvToDeclaredCase(
+  envMap: Record<string, string>,
+  declaredEnvs: string[]
+): Record<string, string> {
+  const upperToDeclared = new Map(declaredEnvs.map(n => [n.toUpperCase(), n]))
+  const result: Record<string, string> = {}
+  for (const [upperName, val] of Object.entries(envMap)) {
+    result[upperToDeclared.get(upperName) ?? upperName] = val
+  }
+  return result
+}
+
+/**
+ * 一次性迁移：把所有 `skill:<id>:<envName>` 的 envName 归一化为大写。
+ * 处理 v1（混合大小写）→ v2（统一大写）的升级场景。同一 (skillId, UPPER_ENV) 下若已有
+ * 大写记录，小写记录直接丢弃（以大写为准，避免覆盖用户最新配置）。
+ * 幂等：已是 v2 的 store 不会再扫描。
+ */
+function migrateSkillEnvToUpperCase(store: CredentialStoreFile): boolean {
+  if (store.schemaVersion >= SKILL_ENV_SCHEMA_VERSION) return false
+  const items = store.items
+  // key 形如 `skill:<skillId>:<envName>`，按 (skillId, UPPER_ENV) 分桶收集需要迁移的小写条目
+  const grouped = new Map<string, { skillId: string; upperEnv: string; originalKeys: string[] }>()
+  for (const key of Object.keys(items)) {
+    if (!key.startsWith(SKILL_ENV_PREFIX)) continue
+    const rest = key.slice(SKILL_ENV_PREFIX.length)
+    const colonIdx = rest.indexOf(':')
+    if (colonIdx < 0) continue // 不符合 skill:id:name 结构
+    const skillId = rest.slice(0, colonIdx)
+    const envName = rest.slice(colonIdx + 1)
+    if (!envName) continue
+    const upperEnv = envName.toUpperCase()
+    if (envName === upperEnv) continue // 已是大写，无需迁移
+    const bucketKey = `${skillId}:${upperEnv}`
+    let bucket = grouped.get(bucketKey)
+    if (!bucket) {
+      bucket = { skillId, upperEnv, originalKeys: [] }
+      grouped.set(bucketKey, bucket)
+    }
+    bucket.originalKeys.push(key)
+  }
+
+  let changed = false
+  for (const { skillId, upperEnv, originalKeys } of grouped.values()) {
+    const upperKey = `${SKILL_ENV_PREFIX}${skillId}:${upperEnv}`
+    const hasUpperAlready = items[upperKey] !== undefined
+    if (originalKeys.length > 1) {
+      log.warn(`Skill ${skillId} has ${originalKeys.length} lowercase variants for ${upperEnv} (${originalKeys.map(k => k.slice(SKILL_ENV_PREFIX.length + skillId.length + 1)).join(', ')}); keeping ${hasUpperAlready ? 'existing uppercase record' : 'first lowercase value'}, discarding the rest`)
+    }
+    for (const originalKey of originalKeys) {
+      if (!hasUpperAlready) {
+        // 没有大写版本：把第一条小写记录升级为大写
+        items[upperKey] = items[originalKey]
+      }
+      // 已有大写版本则直接丢弃小写记录（大写优先，避免覆盖）
+      delete items[originalKey]
+      changed = true
+    }
+  }
+
+  if (changed) {
+    log.info(`Migrated skill env keys to uppercase (schema v1→v2)`)
+  }
+  return changed
 }
 
 // ============ 测试辅助：仅用于单元测试时重置内存状态 ============

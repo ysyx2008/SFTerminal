@@ -72,6 +72,11 @@ import {
   getCalendarCredential,
   setOAuth2Token,
   getOAuth2Token,
+  setSkillEnv,
+  getSkillEnv,
+  deleteSkillEnv,
+  listSkillEnvNames,
+  getSkillEnvMap,
   __resetCredentialCacheForTests
 } from '../credential.service'
 
@@ -101,7 +106,7 @@ describe('credential.service - 基本读写', () => {
     const filePath = path.join(tmpDir, 'credentials.json')
     expect(fs.existsSync(filePath)).toBe(true)
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
-    expect(raw.schemaVersion).toBe(1)
+    expect(raw.schemaVersion).toBe(2)
     expect(raw.items['feishu:user_oauth']).toMatch(/^e1:/)
     // 密文应该不包含明文
     expect(raw.items['feishu:user_oauth']).not.toContain('token-xyz')
@@ -307,5 +312,140 @@ describe('credential.service - 持久化失败回滚', () => {
     } finally {
       spy.mockRestore()
     }
+  })
+})
+
+describe('credential.service - 技能 env 凭据（大小写归一化）', () => {
+  it('setSkillEnv 无论传入什么大小写，存储的 envName 都是大写', async () => {
+    await setSkillEnv('weather', 'api_key', 'val-1')
+    // 直接读磁盘验证 key 是大写
+    const filePath = path.join(tmpDir, 'credentials.json')
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+    expect(raw.items['skill:weather:API_KEY']).toBeDefined()
+    expect(raw.items['skill:weather:api_key']).toBeUndefined()
+  })
+
+  it('getSkillEnv 用小写/大写/混合大小写都能读到同一份值', async () => {
+    await setSkillEnv('weather', 'api_key', 'val-2')
+    expect(await getSkillEnv('weather', 'api_key')).toBe('val-2')
+    expect(await getSkillEnv('weather', 'API_KEY')).toBe('val-2')
+    expect(await getSkillEnv('weather', 'Api_Key')).toBe('val-2')
+  })
+
+  it('deleteSkillEnv 用小写删除大写存储的 key 能成功', async () => {
+    await setSkillEnv('weather', 'API_KEY', 'val-3')
+    expect(await deleteSkillEnv('weather', 'api_key')).toBe(true)
+    expect(await getSkillEnv('weather', 'API_KEY')).toBeNull()
+  })
+
+  it('listSkillEnvNames 返回的都是大写名', async () => {
+    await setSkillEnv('weather', 'api_key', 'v')
+    await setSkillEnv('weather', 'Secret_Token', 'v')
+    const names = await listSkillEnvNames('weather')
+    expect(names.sort()).toEqual(['API_KEY', 'SECRET_TOKEN'])
+  })
+
+  it('getSkillEnvMap 返回的 key 是大写，由调用方负责映射回声明大小写', async () => {
+    await setSkillEnv('weather', 'api_key', 'v1')
+    await setSkillEnv('weather', 'API_KEY', 'v2') // 覆盖
+    const map = await getSkillEnvMap('weather')
+    expect(Object.keys(map)).toEqual(['API_KEY'])
+    expect(map['API_KEY']).toBe('v2')
+  })
+})
+
+describe('credential.service - skill env v1→v2 一次性迁移', () => {
+  it('磁盘上存在小写 envName 的旧记录，loadStore 时自动归一化为大写', async () => {
+    // 手工构造一个 v1 格式的旧 store 文件，含混合大小写的 skill env key
+    const filePath = path.join(tmpDir, 'credentials.json')
+    // 用 p: 前缀（base64 明文）构造，让 decryptValue 能正常解密
+    const enc = (plain: string) => 'p:' + Buffer.from(plain, 'utf-8').toString('base64')
+    const legacyStore = {
+      schemaVersion: 1,
+      items: {
+        'skill:weather:api_key': enc('low-val'),    // 纯小写
+        'skill:weather:Secret': enc('mixed-val'),   // 混合大小写
+        'email:user1': enc('email-val'),            // 非_skill_前缀，不应被动
+      }
+    }
+    fs.writeFileSync(filePath, JSON.stringify(legacyStore), 'utf-8')
+
+    // 触发 loadStore（任意 credential 读取都会触发）
+    expect(await getSkillEnv('weather', 'api_key')).toBe('low-val')
+
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+    expect(raw.schemaVersion).toBe(2)
+    // 小写/混合都已归一化为大写
+    expect(raw.items['skill:weather:API_KEY']).toBe(enc('low-val'))
+    expect(raw.items['skill:weather:SECRET']).toBe(enc('mixed-val'))
+    // 旧的小写 key 已删除
+    expect(raw.items['skill:weather:api_key']).toBeUndefined()
+    expect(raw.items['skill:weather:Secret']).toBeUndefined()
+    // 非_skill_前缀的记录不受影响
+    expect(raw.items['email:user1']).toBe(enc('email-val'))
+  })
+
+  it('同一 (skillId, UPPER_ENV) 下既有小写又已有大写记录时，以大写为准，小写丢弃', async () => {
+    const filePath = path.join(tmpDir, 'credentials.json')
+    // 用 p: 前缀（base64 明文）构造旧数据，让 decryptValue 能正常解密
+    const enc = (plain: string) => 'p:' + Buffer.from(plain, 'utf-8').toString('base64')
+    const legacyStore = {
+      schemaVersion: 1,
+      items: {
+        'skill:weather:api_key': enc('lower-value'),  // 小写
+        'skill:weather:API_KEY': enc('upper-value'),  // 大写已存在
+      }
+    }
+    fs.writeFileSync(filePath, JSON.stringify(legacyStore), 'utf-8')
+
+    expect(await getSkillEnv('weather', 'api_key')).toBe('upper-value')
+
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+    expect(raw.schemaVersion).toBe(2)
+    // 大写记录的值保留，小写记录被丢弃
+    expect(raw.items['skill:weather:API_KEY']).toBe(enc('upper-value'))
+    expect(raw.items['skill:weather:api_key']).toBeUndefined()
+  })
+
+  it('已是 v2 的 store 不会重复扫描（幂等）', async () => {
+    // 先正常写入一条（v2）
+    await setSkillEnv('weather', 'api_key', 'v')
+    const filePath = path.join(tmpDir, 'credentials.json')
+    const afterFirst = fs.readFileSync(filePath, 'utf-8')
+
+    // 重置缓存后再读，不应改动文件内容（除了可能的 mtime）
+    __resetCredentialCacheForTests()
+    await getSkillEnv('weather', 'API_KEY')
+    const afterSecond = fs.readFileSync(filePath, 'utf-8')
+    expect(afterSecond).toBe(afterFirst)
+  })
+
+  it('多个 skillId 的小写 key 互不干扰地各自迁移', async () => {
+    const filePath = path.join(tmpDir, 'credentials.json')
+    const enc = (plain: string) => 'p:' + Buffer.from(plain, 'utf-8').toString('base64')
+    const legacyStore = {
+      schemaVersion: 1,
+      items: {
+        'skill:weather:api_key': enc('w-key'),
+        'skill:stock:token': enc('s-token'),
+        'skill:weather:token': enc('w-token'),
+      }
+    }
+    fs.writeFileSync(filePath, JSON.stringify(legacyStore), 'utf-8')
+
+    expect(await getSkillEnv('weather', 'API_KEY')).toBe('w-key')
+
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+    expect(raw.items['skill:weather:API_KEY']).toBe(enc('w-key'))
+    expect(raw.items['skill:weather:TOKEN']).toBe(enc('w-token'))
+    expect(raw.items['skill:stock:TOKEN']).toBe(enc('s-token'))
+    // 旧 key 全部清除（排序后比较，避免顺序敏感）
+    expect(
+      Object.keys(raw.items).filter(k => k.startsWith('skill:')).sort()
+    ).toEqual([
+      'skill:stock:TOKEN',
+      'skill:weather:API_KEY',
+      'skill:weather:TOKEN',
+    ])
   })
 })

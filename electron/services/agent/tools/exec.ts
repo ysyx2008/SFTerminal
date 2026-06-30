@@ -16,7 +16,8 @@ import { t } from '../i18n'
 import { assessCommandRisk, analyzeCommand } from '../risk-assessor'
 import { truncateFromEnd, truncateSandwichWithNotice, EXEC_MAX_COMMAND_LENGTH } from './utils'
 import { getExecManager, MAX_PATTERN_LENGTH } from './exec-manager'
-import { getSkillEnvMap } from '../../../services/credential.service'
+import { getSkillEnvMap, mapSkillEnvToDeclaredCase } from '../../../services/credential.service'
+import { getUserSkillService } from '../../../services/user-skill.service'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 
 const DEFAULT_WAIT_SECONDS = 60
@@ -155,8 +156,17 @@ export async function executeCommandDirect(
   // 转后台时实际等待时间是 min(wait, max)——max 已经是硬上限，wait > max 没意义
   const effectiveWait = Math.min(waitSeconds, maxSeconds)
 
-  // 如果指定了 skill_id，注入该技能的 env（API Key 等）到子进程
-  const skillEnv = skillId ? await getSkillEnvMap(skillId) : undefined
+  // 如果指定了 skill_id，注入该技能的 env（API Key 等）到子进程。
+  // credential 层统一大写存储，这里按 SKILL.md 声明的原始大小写映射后再注入，
+  // 保证技能脚本能用声明的变量名（可能是 api_key 而非 API_KEY）读到。
+  let skillEnv: Record<string, string> | undefined
+  if (skillId) {
+    const envMap = await getSkillEnvMap(skillId) // key 已是大写
+    if (Object.keys(envMap).length > 0) {
+      const declaredEnvs = getUserSkillService().getSkill(skillId)?.requires?.env ?? []
+      skillEnv = mapSkillEnvToDeclaredCase(envMap, declaredEnvs)
+    }
+  }
 
   const manager = getExecManager()
   const task = manager.spawn({ command, cwd, maxSeconds, env: skillEnv })

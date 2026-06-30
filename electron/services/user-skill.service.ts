@@ -536,12 +536,20 @@ export class UserSkillService {
    * 获取技能的 env key 配置状态。
    * 把技能 `requires.env` 声明的 key 与凭证服务里已存的 key 对比，
    * 返回每个 key 是否已配置，供 UI 和 Agent 判断缺少哪些 key。
+   *
+   * 大小写：credential 层统一大写存储（见 credential.service.ts 迁移），
+   * 这里比较时按大写归一，但返回给 UI 的 name 保留 SKILL.md 声明的原始大小写。
    */
   async getSkillEnvStatus(skillId: string): Promise<SkillEnvStatus[]> {
     const skill = this.getSkill(skillId)
     const declaredEnvs = skill?.requires?.env ?? []
-    const configuredNames = new Set(await listSkillEnvNames(skillId))
-    return declaredEnvs.map(name => ({ name, configured: configuredNames.has(name) }))
+    const configuredNames = new Set(
+      (await listSkillEnvNames(skillId)).map(n => n.toUpperCase())
+    )
+    return declaredEnvs.map(name => ({
+      name,
+      configured: configuredNames.has(name.toUpperCase()),
+    }))
   }
 
   /**

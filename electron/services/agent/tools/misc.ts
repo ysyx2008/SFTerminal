@@ -21,7 +21,7 @@ import { executeFeishuTool } from '../skills/feishu/executor'
 import { executeWeComTool } from '../skills/wecom/executor'
 import { executeDingTalkTool } from '../skills/dingtalk/executor'
 import { getUserSkillService } from '../../user-skill.service'
-import { getSkillEnvMap } from '../../credential.service'
+import { getSkillEnvMap, mapSkillEnvToDeclaredCase } from '../../credential.service'
 import { getSkill } from '../skills/registry'
 import { addProactiveContext } from '../proactive-store'
 import { getIMService } from '../../im/im.service'
@@ -774,8 +774,13 @@ export async function loadUserSkillTool(
         // 有终端（local/ssh 模式）时，自动把已配置的 key export 进当前 shell session
         const ptyId = executor.getCurrentPtyId?.()
         if (ptyId) {
+          // credential 层统一大写存储，按 SKILL.md 声明的原始大小写映射后再 export，
+          // 保证技能脚本能用声明的变量名（可能是 api_key 而非 API_KEY）读到
+          const declaredEnvs = skill.requires?.env ?? []
           const envMap = await getSkillEnvMap(skillId)
-          const envEntries = Object.entries(envMap)
+          const envEntries = Object.entries(
+            mapSkillEnvToDeclaredCase(envMap, declaredEnvs)
+          )
           if (envEntries.length > 0) {
             // 用单引号包裹值，处理特殊字符；export 多个 key 写成一行
             const exportCmd = 'export ' + envEntries
