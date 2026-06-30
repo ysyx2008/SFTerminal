@@ -123,6 +123,7 @@ export function useAgentMode(
   // 仅靠 checkIsNearBottom 会让 isUserNearBottom 抖动，hasNewMessage 闪烁并中断 ResizeObserver 跟底。
   let stickyFollowBottom = false
   let lastKnownScrollTop = 0
+  let lastKnownScrollHeight = 0
   let lastAutoScrollAt = 0
   let scrollGraceTimer: ReturnType<typeof setTimeout> | null = null
   const AUTO_SCROLL_GRACE_MS = 150
@@ -240,6 +241,31 @@ export function useAgentMode(
     return scrollHeight - scrollTop - clientHeight < SCROLL_THRESHOLD
   }
 
+  /**
+   * scrollTop 下降是否由布局收缩/虚拟列表重测引起（浏览器 clamp scrollTop），
+   * 而非用户主动上滚。ThinkingBlock 折叠、图片 reflow、item 估算→实测修正时常见。
+   */
+  const isLayoutInducedScrollUp = (el: HTMLElement): boolean => {
+    const scrollTopDrop = lastKnownScrollTop - el.scrollTop
+    if (scrollTopDrop <= 10) return false
+
+    const scrollHeightDrop = lastKnownScrollHeight - el.scrollHeight
+    if (scrollHeightDrop > 5 && scrollTopDrop <= scrollHeightDrop + 15) {
+      return true
+    }
+
+    // sticky 跟底 / 程序化贴底后，scrollHeight 仍在变化时的 scroll 抖动，不计为用户离开
+    if (
+      stickyFollowBottom
+      && Date.now() - lastAutoScrollAt < AUTO_SCROLL_GRACE_MS * 4
+      && Math.abs(el.scrollHeight - lastKnownScrollHeight) > 5
+    ) {
+      return true
+    }
+
+    return false
+  }
+
   const saveScrollTop = () => {
     const id = currentTabId.value
     if (!id || !messagesRef.value) return
@@ -249,7 +275,7 @@ export function useAgentMode(
     if (maxScroll > 0) {
       terminalStore.setAiScrollRatio(id, el.scrollTop / maxScroll)
     }
-    setIsUserNearBottom(checkIsNearBottom())
+    setIsUserNearBottom(checkIsNearBottom() || stickyFollowBottom)
 
     const cache = readCacheSnapshot(scrollerRef?.value)
     if (cache?.keys.length) {
@@ -508,14 +534,21 @@ export function useAgentMode(
     const el = messagesRef.value
     if (!el) return
 
-    const { scrollTop } = el
+    const { scrollTop, scrollHeight } = el
 
     // 不在底部且 scrollTop 减小 → 用户上滚阅读，须优先于 skipScrollUpdate 早退
     // （拖滚动条上滚不会触发 wheel，但会触发 scroll；grace 期内早退会漏判）
+    // 布局收缩/虚拟列表重测导致的 scrollTop clamp 不算用户上滚，避免误清 stickyFollowBottom。
     if (scrollTop < lastKnownScrollTop - 10 && !checkIsNearBottom()) {
-      userScrolledAway()
+      if (!isLayoutInducedScrollUp(el)) {
+        userScrolledAway()
+        lastKnownScrollTop = scrollTop
+        lastKnownScrollHeight = scrollHeight
+        saveScrollTop()
+        return
+      }
       lastKnownScrollTop = scrollTop
-      saveScrollTop()
+      lastKnownScrollHeight = scrollHeight
       return
     }
 
@@ -532,6 +565,7 @@ export function useAgentMode(
         setIsUserNearBottom(true)
       }
       lastKnownScrollTop = scrollTop
+      lastKnownScrollHeight = scrollHeight
       return
     }
 
@@ -544,13 +578,17 @@ export function useAgentMode(
       stickyFollowBottom = true
       hasNewMessage.value = false
     } else if (scrolledUpSignificantly) {
-      userScrolledAway()
-      lastKnownScrollTop = scrollTop
-      saveScrollTop()
-      return
+      if (!isLayoutInducedScrollUp(el)) {
+        userScrolledAway()
+        lastKnownScrollTop = scrollTop
+        lastKnownScrollHeight = scrollHeight
+        saveScrollTop()
+        return
+      }
     }
 
     lastKnownScrollTop = scrollTop
+    lastKnownScrollHeight = scrollHeight
     setIsUserNearBottom(nearBottom || stickyFollowBottom)
     saveScrollTop()
   }
@@ -568,11 +606,14 @@ export function useAgentMode(
   const FLIP_SUPPRESS_WINDOW_MS = 200
   const scrollToBottom = async () => {
     suppressFlipUntil = Date.now() + FLIP_SUPPRESS_WINDOW_MS
+    // 同步先设 sticky，避免 nextTick 前到达的 step 因 sticky=false 误判离底
+    guardAfterAutoScroll()
 
     await nextTick()
     if (messagesRef.value) {
       messagesRef.value.scrollTop = messagesRef.value.scrollHeight
       lastKnownScrollTop = messagesRef.value.scrollTop
+      lastKnownScrollHeight = messagesRef.value.scrollHeight
     }
 
     guardAfterAutoScroll()
@@ -611,6 +652,15 @@ export function useAgentMode(
         setIsUserNearBottom(true)
         hasNewMessage.value = false
         extendScrollGrace()
+        // 兜底：ResizeObserver 可能尚未触发（wrapper 高度未上报 / wrapperDelta≤0），
+        // 但 scrollHeight 已变大导致离底 → 主动钉一次底，避免亮「新消息」却不再跟随。
+        const el = messagesRef.value
+        if (!checkIsNearBottom()) {
+          suppressFlipUntil = Date.now() + FLIP_SUPPRESS_WINDOW_MS
+          el.scrollTop = el.scrollHeight
+          lastKnownScrollTop = el.scrollTop
+          lastKnownScrollHeight = el.scrollHeight
+        }
       }
     } else {
       hasNewMessage.value = true
@@ -790,6 +840,7 @@ export function useAgentMode(
       if (Date.now() < suppressFlipUntil || wrapperDelta >= MAX_FLIP_DELTA) {
         el.scrollTop = el.scrollHeight
         lastKnownScrollTop = el.scrollTop
+        lastKnownScrollHeight = el.scrollHeight
         guardAfterAutoScroll()
         return
       }
@@ -802,6 +853,7 @@ export function useAgentMode(
       el.scrollTop = el.scrollHeight
       const scrollDelta = el.scrollTop - oldScrollTop
       lastKnownScrollTop = el.scrollTop
+      lastKnownScrollHeight = el.scrollHeight
       guardAfterAutoScroll()
 
       // ② FLIP 反向偏移：scrollDelta > 0 时给 wrapper 加反向 transform，下一帧归零
@@ -888,6 +940,7 @@ export function useAgentMode(
     uninstallContainerWidthObserver()
     if (el) {
       lastKnownScrollTop = el.scrollTop
+      lastKnownScrollHeight = el.scrollHeight
       el.addEventListener('wheel', onMessagesWheel, { passive: true })
       requestAnimationFrame(() => {
         installContentResizeObserver()
@@ -1281,6 +1334,7 @@ export function useAgentMode(
       attachments: attachments.length > 0 ? attachments : undefined,
       timestamp: startTime,
     })
+    guardAfterAutoScroll()
     void scrollToBottom()
 
     // 异步上下文在 UI 反馈之后并行获取，不阻塞首屏
