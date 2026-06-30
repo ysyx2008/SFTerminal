@@ -650,7 +650,10 @@ export default {
   knowledge: {
     upgrading: 'Upgrading knowledge base model...',
     repairing: 'Incrementally repairing knowledge index...',
-    rebuilding: 'Rebuilding knowledge base index...'
+    rebuilding: 'Rebuilding knowledge base index...',
+    backup: 'Backing up knowledge base...',
+    restore: 'Restoring from backup...',
+    restoreDone: 'Backup restored, incrementally patching index...'
   },
 
 
@@ -704,6 +707,24 @@ export default {
     repairTip: 'Incremental repair: only re-embeds documents missing from the vector store or BM25, much faster than a full rebuild',
     repairSuccess: 'Repair complete: checked {checked} docs, added {added}, took {secs}s',
     repairFailed: 'Repair failed',
+    backup: 'Backup',
+    backupTip: 'Create a snapshot of knowledge data (vectors + BM25 + document metadata)',
+    backupSuccess: 'Backup created: {path}',
+    backupFailed: 'Backup failed',
+    backingUp: 'Backing up...',
+    restore: 'Restore from Backup',
+    restoreTip: 'Restore from backup then incrementally patch missing docs — much faster than full rebuild',
+    restoreSuccess: 'Restored from backup: {path}',
+    restoreFailed: 'Restore failed',
+    restoring: 'Restoring...',
+    confirmRestore: 'Restoring from backup will overwrite current knowledge data (current data is preserved in knowledge.broken-* for debugging), then incrementally rebuild the diff. Continue?',
+    noBackups: 'No backups available',
+    backupsTitle: 'Knowledge Backups',
+    backupAutomatic: 'auto',
+    backupManual: 'manual',
+    deleteBackup: 'Delete',
+    confirmDeleteBackup: 'Delete this backup?',
+    autoBackupInfo: 'Auto-backup on exit (max once per 30 min, keeps last 3)',
     memoryCharCount: '{current} / {max} characters',
     memoryTab: '💡 Memory ({count})',
     knowledgeTab: '📚 Knowledge base ({count})',

@@ -651,7 +651,10 @@ export default {
   knowledge: {
     upgrading: '正在升级知识库模型...',
     repairing: '正在增量修复知识库索引...',
-    rebuilding: '正在重建知识库索引...'
+    rebuilding: '正在重建知识库索引...',
+    backup: '正在备份知识库...',
+    restore: '正在从备份恢复...',
+    restoreDone: '备份恢复完成，正在增量补建索引...'
   },
 
 
@@ -705,6 +708,24 @@ export default {
     repairTip: '增量修复：只对向量库或 BM25 中缺失的文档重新建立索引，比全量重建快得多',
     repairSuccess: '修复完成：检查了 {checked} 个文档，补充了 {added} 个，耗时 {secs}s',
     repairFailed: '修复失败',
+    backup: '备份',
+    backupTip: '创建知识库数据快照（含向量库 + BM25 + 文档元数据）',
+    backupSuccess: '备份成功：{path}',
+    backupFailed: '备份失败',
+    backingUp: '备份中...',
+    restore: '从备份恢复',
+    restoreTip: '从备份恢复后自动增量补差集，比全量重建快得多',
+    restoreSuccess: '已从备份恢复：{path}',
+    restoreFailed: '恢复失败',
+    restoring: '恢复中...',
+    confirmRestore: '从备份恢复会用备份覆盖当前知识库数据（当前数据会保留到 knowledge.broken-* 目录便于排查），并自动增量补建差集。确定继续吗？',
+    noBackups: '暂无备份',
+    backupsTitle: '知识库备份',
+    backupAutomatic: '自动',
+    backupManual: '手动',
+    deleteBackup: '删除',
+    confirmDeleteBackup: '确定删除这份备份吗？',
+    autoBackupInfo: '退出时自动备份（每 30 分钟最多一次，保留最近 3 份）',
     memoryCharCount: '{current} / {max} 字符',
     memoryTab: '💡 记忆 ({count})',
     knowledgeTab: '📚 知识库 ({count})',

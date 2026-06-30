@@ -32,6 +32,13 @@ import { deduplicateByEmbeddingCluster as deduplicateMemories } from './memory-u
 import { createReranker, Reranker } from './reranker'
 import { getBM25Index, BM25Index } from './bm25'
 import { encrypt, decrypt, isEncrypted } from './crypto'
+import {
+  createBackup as doCreateBackup,
+  listBackups as doListBackups,
+  restoreBackup as doRestoreBackup,
+  deleteBackup as doDeleteBackup,
+  type BackupEntry
+} from './backup'
 
 import { createLogger } from '../../utils/logger'
 import { wrapKnowledgeRefs } from '../agent/message-envelope'
@@ -169,6 +176,11 @@ export class KnowledgeService extends EventEmitter {
     if (this.isInitialized) {
       return
     }
+
+    // 后台触发自动备份（距上次 > 30min 才真正复制）。
+    // 放在 initialize 开头、worker 启动前：此刻磁盘是上次退出时的状态，
+    // 文件级复制最安全；备份在后台异步执行，不阻塞启动。
+    this.scheduleAutoBackup()
 
     try {
       // 初始化 Embedding 服务
@@ -1639,6 +1651,9 @@ export class KnowledgeService extends EventEmitter {
   /**
    * 优雅释放（主进程 quit 路径）：在 SIGTERM 之前给 worker 一段时间
    * 处理 dispose 消息，减少 ORT session 被强制中断带来的副作用。
+   *
+   * 注意：自动备份不在退出时做（同步文件复制会阻塞退出），而是放到
+   * 下次 initialize() 时后台异步执行——见 initialize() 中的 scheduleAutoBackup。
    */
   async disposeAsync(timeoutMs: number = 500): Promise<void> {
     try {
@@ -1650,6 +1665,121 @@ export class KnowledgeService extends EventEmitter {
       this.isInitialized = false
       this.emit('disposed')
     }
+  }
+
+  /**
+   * 后台调度自动备份。
+   *
+   * 时机：initialize() 开头调用，此刻 worker 尚未启动、LanceDB 未连接，
+   *      磁盘上是上次退出时的状态，文件级复制安全。
+   * 频率：受 MIN_BACKUP_INTERVAL_MS（30min）限制，dev 频繁热重载时不会每次都复制。
+   * 阻塞：完全不阻塞启动，setImmediate 推到下一个 tick。
+   */
+  private scheduleAutoBackup(): void {
+    setImmediate(() => {
+      this.emit('backupStarted', { automatic: true })
+      try {
+        const result = doCreateBackup(true)
+        // 自动备份被时间间隔跳过时 backupPath 为 undefined，不当作错误
+        this.emit('backupCompleted', {
+          success: result.success,
+          backupPath: result.backupPath,
+          error: result.backupPath === undefined ? undefined : result.error,
+          skipped: result.backupPath === undefined,
+        })
+      } catch (e) {
+        log.warn('自动备份失败:', e)
+        this.emit('backupCompleted', {
+          success: false,
+          error: e instanceof Error ? e.message : String(e),
+        })
+      }
+    })
+  }
+
+  // ==================== 备份 / 恢复 ====================
+
+  /**
+   * 创建一份知识库备份（手动触发，不受时间间隔限制）
+   */
+  async createBackup(): Promise<{ success: boolean; backupPath?: string; error?: string }> {
+    this.emit('backupStarted', { automatic: false })
+    try {
+      const result = doCreateBackup(false)
+      this.emit('backupCompleted', { success: result.success, backupPath: result.backupPath, error: result.error })
+      return result
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e)
+      this.emit('backupCompleted', { success: false, error })
+      throw e
+    }
+  }
+
+  /**
+   * 列出所有备份
+   */
+  listBackups(): BackupEntry[] {
+    return doListBackups()
+  }
+
+  /**
+   * 从备份恢复
+   *
+   * 恢复流程：
+   * 1. 调 backup.restoreBackup 把磁盘文件换回来（保留损坏现场到 knowledge.broken-{ts}）
+   * 2. 强制 vectorStorage 和 embeddingService 丢弃内存中的 worker / db 句柄
+   * 3. 重新 initialize（会触发 tryRestoreFromBackupBeforeInit 但已无 .corrupted 标记，跳过）
+   * 4. checkAndRebuildIndex 自动比对 docIds 差集，增量补建缺失文档
+   *
+   * 这样即便备份比当前旧几天，也只需补差集，不用全量重建。
+   */
+  async restoreBackup(backupPath?: string): Promise<{ success: boolean; backupPath?: string; error?: string }> {
+    this.emit('restoreStarted', { backupPath })
+    const result = doRestoreBackup(backupPath)
+    if (!result.success) {
+      this.emit('restoreCompleted', { success: false, error: result.error })
+      return result
+    }
+
+    try {
+      // 重新加载文档元数据（documents.json 已被备份覆盖）
+      this.loadDocumentsIndex()
+
+      // 强制 vectorStorage 和 embeddingService 重新初始化
+      // embeddingService 必须先 dispose：initialize() 会重新 startWorker，
+      // 不 dispose 的话旧 worker 还在跑、isDisposing 标记会拦截新调用
+      await this.vectorStorage.forceReinitialize()
+      try {
+        await this.embeddingService.disposeAsync(1000)
+      } catch (e) {
+        log.warn('恢复时 dispose embeddingService 失败:', e)
+      }
+      this.isInitialized = false
+
+      // 重新 initialize（含 checkAndRebuildIndex 增量补差集）
+      await this.initialize()
+
+      log.info('从备份恢复并增量补建完成')
+      this.emit('restoreCompleted', { success: true, backupPath: result.backupPath })
+    } catch (e) {
+      log.error('恢复后重新初始化失败:', e)
+      const error = `恢复成功但重新初始化失败: ${e instanceof Error ? e.message : String(e)}`
+      this.emit('restoreCompleted', { success: false, error })
+      return {
+        success: false,
+        backupPath: result.backupPath,
+        error,
+      }
+    }
+
+    return result
+  }
+
+  /**
+   * 删除指定备份
+   */
+  deleteBackup(backupPath: string): boolean {
+    return doDeleteBackup(backupPath)
   }
 
   // ==================== 主机记忆功能 ====================

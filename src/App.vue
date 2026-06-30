@@ -74,6 +74,10 @@ const knowledgeLoadingProgress = ref({ current: 0, total: 0, libraryTotal: 0, fi
 let cleanupKnowledgeUpgrading: (() => void) | null = null
 let cleanupKnowledgeProgress: (() => void) | null = null
 let cleanupKnowledgeReady: (() => void) | null = null
+let cleanupBackupStarted: (() => void) | null = null
+let cleanupBackupCompleted: (() => void) | null = null
+let cleanupRestoreStarted: (() => void) | null = null
+let cleanupRestoreCompleted: (() => void) | null = null
 
 function knowledgeText(cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing') {
   switch (cause) {
@@ -499,6 +503,41 @@ onMounted(async () => {
     _knowledgeDone.value = true
     knowledgeLoadingProgress.value = { current: 0, total: 0, libraryTotal: 0, filename: '' }
     knowledgeLoadingText.value = ''
+  })
+
+  // ── 备份 / 恢复进度（复用知识库进度条，无百分比，只显示文字）──────────────
+  // 备份是文件级复制，无法中途报百分比；total 设为 0 时模板只显示文字
+  cleanupBackupStarted = window.electronAPI.knowledge.onBackupStarted(() => {
+    _knowledgeDone.value = false
+    knowledgeLoadingProgress.value = { current: 0, total: 0, libraryTotal: 0, filename: '' }
+    knowledgeLoadingText.value = t('knowledge.backup')
+  })
+  cleanupBackupCompleted = window.electronAPI.knowledge.onBackupCompleted((data) => {
+    // 自动备份被 30min 间隔跳过时 skipped=true，静默关闭提示
+    if (data.skipped) {
+      _knowledgeDone.value = true
+      knowledgeLoadingText.value = ''
+      return
+    }
+    _knowledgeDone.value = true
+    knowledgeLoadingProgress.value = { current: 0, total: 0, libraryTotal: 0, filename: '' }
+    knowledgeLoadingText.value = ''
+  })
+  cleanupRestoreStarted = window.electronAPI.knowledge.onRestoreStarted(() => {
+    _knowledgeDone.value = false
+    knowledgeLoadingProgress.value = { current: 0, total: 0, libraryTotal: 0, filename: '' }
+    knowledgeLoadingText.value = t('knowledge.restore')
+  })
+  cleanupRestoreCompleted = window.electronAPI.knowledge.onRestoreCompleted((data) => {
+    if (data.success) {
+      // 恢复成功后 initialize 会触发 rebuildStarted/rebuildProgress 继续显示增量补建进度，
+      // 这里切到"恢复完成，正在补建"文案，等 rebuild/ready 事件接管
+      knowledgeLoadingText.value = t('knowledge.restoreDone')
+    } else {
+      _knowledgeDone.value = true
+      knowledgeLoadingProgress.value = { current: 0, total: 0, libraryTotal: 0, filename: '' }
+      knowledgeLoadingText.value = ''
+    }
   })
   // ──────────────────────────────────────────────────────────────────────────
 
@@ -1245,6 +1284,10 @@ onUnmounted(() => {
   cleanupKnowledgeUpgrading?.()
   cleanupKnowledgeProgress?.()
   cleanupKnowledgeReady?.()
+  cleanupBackupStarted?.()
+  cleanupBackupCompleted?.()
+  cleanupRestoreStarted?.()
+  cleanupRestoreCompleted?.()
   cleanupMenuCommand?.()
   cleanupQuitToast?.()
   cleanupSchedulerTaskStarted?.()

@@ -18,6 +18,7 @@ import type {
   KnowledgeStats
 } from './types'
 import { getBM25Index, type BM25SearchResult } from './bm25'
+import { restoreBackup as doRestoreBackup } from './backup'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('KnowledgeStorage')
@@ -242,6 +243,11 @@ export class VectorStorage extends EventEmitter {
     if (this.isInitialized) return
     this.dimensions = dimensions
 
+    // 启动 worker / in-process 之前，先尝试从备份恢复损坏的向量库。
+    // 这样 worker 启动时磁盘已是恢复后的状态，不需要走 dropTable 重建路径；
+    // 恢复失败则保留原状，让 worker 的兜底逻辑（dropTable + dataCorrupted 事件）处理。
+    await this.tryRestoreFromBackupBeforeInit()
+
     if (detectUtilityProcessAvailable()) {
       try {
         await this.startWorker()
@@ -268,6 +274,39 @@ export class VectorStorage extends EventEmitter {
 
     // In-process 降级（CLI / worker 启动失败）
     await this.initializeInProcess(dimensions)
+  }
+
+  /**
+   * 启动前检查 .corrupted 标记：有标记则尝试从最近备份恢复。
+   * 恢复成功后删除标记，worker 启动时就不会触发 dropTable。
+   * 恢复失败保留标记，worker 兜底逻辑会清表并触发全量重建。
+   *
+   * 注意：这里只能恢复「上一次运行结束时被标记为损坏」的情况——
+   * 运行期被标记的损坏（如 hybridSearch 报 IO 错）需要下次启动才生效。
+   */
+  private async tryRestoreFromBackupBeforeInit(): Promise<void> {
+    if (!fs.existsSync(this.corruptionMarkerPath)) return
+
+    let reason = 'unknown'
+    try {
+      const data = JSON.parse(fs.readFileSync(this.corruptionMarkerPath, 'utf-8'))
+      reason = data?.reason || reason
+    } catch { /* ignore */ }
+
+    log.warn(`检测到损坏标记 (${reason})，尝试从备份恢复...`)
+
+    try {
+      const result = doRestoreBackup()
+      if (result.success) {
+        log.info(`从备份恢复成功: ${result.backupPath}，删除损坏标记`)
+        try { fs.unlinkSync(this.corruptionMarkerPath) } catch { /* ignore */ }
+        this.emit('restoredFromBackup', { backupPath: result.backupPath, reason })
+      } else {
+        log.warn(`从备份恢复失败: ${result.error}，将走清表重建路径`)
+      }
+    } catch (e) {
+      log.warn('调用 restoreBackup 异常，将走清表重建路径:', e)
+    }
   }
 
   // ────────────────────────── In-process helpers ──────────────────────────
@@ -789,6 +828,22 @@ export class VectorStorage extends EventEmitter {
 
   getStoragePath(): string {
     return this.storagePath
+  }
+
+  /**
+   * 强制重新初始化：用于从备份恢复后，丢弃内存中的 worker / db 句柄，
+   * 下次 initialize() 会重新连接磁盘上恢复后的数据。
+   */
+  async forceReinitialize(): Promise<void> {
+    try {
+      await this.disposeAsync(1000)
+    } catch (e) {
+      log.warn('forceReinitialize: disposeAsync 失败:', e)
+    }
+    this.isInitialized = false
+    this.workerReady = false
+    this.db = null
+    this.table = null
   }
 
   /**

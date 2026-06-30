@@ -1,6 +1,6 @@
 # Knowledge Service SPEC
 
-> Last verified: 2026-05-07
+> Last verified: 2026-06-29
 
 ## 职责
 
@@ -12,8 +12,9 @@
 
 | 文件 | 行数 | 说明 |
 |------|:---:|------|
-| `index.ts` | 1916 | 核心：文档/记忆/对话索引、搜索、设置、导入导出 |
-| `storage.ts` | 679 | 向量存储（LanceDB） |
+| `index.ts` | 1916 | 核心：文档/记忆/对话索引、搜索、设置、导入导出、备份恢复 |
+| `storage.ts` | 679 | 向量存储（LanceDB），启动时检测损坏先尝试备份恢复 |
+| `backup.ts` | 230 | 备份/恢复/列表/轮转纯函数（含 .corrupted 标记联动） |
 | `embedding.ts` | 564 | 嵌入计算（本地 Transformers.js / 远程 API） |
 | `chunker.ts` | 441 | 文档分块（固定/语义/段落） |
 | `bm25.ts` | 334 | BM25 关键词检索 |
@@ -38,6 +39,15 @@
 | `dispose(): void` / `async disposeAsync(timeoutMs?): Promise<void>` | 销毁服务 |
 | `async rebuildAllIndices(force?): Promise<{durationMs, documentCount, ...}>` | 重建所有索引 |
 | `async repairIndex(): Promise<{checked, added, durationMs}>` | 增量修复：只对向量库或 BM25 中缺失的文档重新 embed + 写入，不清空已有数据 |
+
+### 备份 / 恢复
+
+| 方法签名 | 用途 |
+|---------|------|
+| `async createBackup(): Promise<{success, backupPath?, error?}>` | 手动创建一份备份（不受时间间隔限制） |
+| `listBackups(): BackupEntry[]` | 列出所有备份（按时间倒序） |
+| `async restoreBackup(backupPath?): Promise<{success, backupPath?, error?}>` | 从备份恢复，恢复后自动重新 initialize + 增量补差集 |
+| `deleteBackup(backupPath): boolean` | 删除指定备份（安全检查：只允许删 backups 目录内） |
 
 ### 文档管理
 
@@ -178,6 +188,8 @@ type MemoryVolatility = "stable" | "moderate" | "volatile"
 - **MCP 通过 `setMcpService` 延迟注入**——不能放进构造参数（循环依赖）
 - **主机记忆相关方法名都带 `HostMemory`**（如 `searchHostMemories`、`getHostMemoriesForPrompt`），不是 `getHostMemory` / `deleteHostMemory`
 - **`data_corrupted` 仅重建向量侧**——BM25 为独立 JSON，损坏时保留 BM25，启动增量补向量即可
+- **备份恢复优先于清表重建**——`VectorStorage.initialize` 启动时若检测到 `.corrupted` 标记，先调 `backup.restoreBackup()` 从最近备份恢复；恢复成功删除标记、worker 启动即用恢复数据；恢复失败才走 dropTable + 全量重建。自动备份在 `KnowledgeService.initialize()` 开头后台异步触发（worker 启动前，磁盘是上次退出状态，文件级复制安全），受 30min 间隔限制，保留最近 3 份。备份时跳过 `.corrupted` 标记避免恢复后误触发
+- **恢复后增量补差集**——`restoreBackup()` 恢复磁盘文件后调 `vectorStorage.forceReinitialize()` 丢弃内存句柄，再 `initialize()` 触发 `checkAndRebuildIndex` 自动比对 docIds 差集，只补备份与当前 documents.json 的差集，不全量重 embed
 - **孤儿 chunk 后台清理**——`initialize()` 后 `setImmediate` 定向删 chunk；残留 &lt; 50 跳过整表重建
 - **退出时 `disposeAsync`**——主进程 `cleanupAllServices` / SIGINT·SIGTERM 会 compact LanceDB 并停 worker
 - **嵌入推理**——`@huggingface/transformers` v4 + `device: auto`（macOS CoreML / Linux CUDA / Win DirectML）；设置项 `embeddingDevice`

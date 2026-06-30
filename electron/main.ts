@@ -815,6 +815,22 @@ async function initKnowledgeService(): Promise<void> {
       knowledgeService.on('repairCompleted', (data: { added: number; checked: number; durationMs: number }) => {
         mainWindow?.webContents.send('knowledge:repairCompleted', data)
       })
+
+      // 监听备份进度（启动时自动备份 + 手动备份）
+      knowledgeService.on('backupStarted', (data: { automatic: boolean }) => {
+        mainWindow?.webContents.send('knowledge:backupStarted', data)
+      })
+      knowledgeService.on('backupCompleted', (data: { success: boolean; backupPath?: string; error?: string; skipped?: boolean }) => {
+        mainWindow?.webContents.send('knowledge:backupCompleted', data)
+      })
+
+      // 监听恢复进度（恢复后会接着触发 initialize 的 rebuild/repair 进度）
+      knowledgeService.on('restoreStarted', (data: { backupPath?: string }) => {
+        mainWindow?.webContents.send('knowledge:restoreStarted', data)
+      })
+      knowledgeService.on('restoreCompleted', (data: { success: boolean; backupPath?: string; error?: string }) => {
+        mainWindow?.webContents.send('knowledge:restoreCompleted', data)
+      })
       
       await knowledgeService.initialize()
 
@@ -5651,6 +5667,56 @@ ipcMain.handle('knowledge:repairIndex', async () => {
     return { success: true, ...result }
   } catch (error) {
     log.error('knowledge:repairIndex failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// ==================== 知识库备份 / 恢复 ====================
+
+// 创建备份（手动触发，不受时间间隔限制）
+ipcMain.handle('knowledge:createBackup', async () => {
+  try {
+    await waitForKnowledge()
+    const result = await getKnowledge().createBackup()
+    return result
+  } catch (error) {
+    log.error('knowledge:createBackup failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 列出所有备份
+ipcMain.handle('knowledge:listBackups', async () => {
+  try {
+    await waitForKnowledge()
+    const backups = getKnowledge().listBackups()
+    return { success: true, backups }
+  } catch (error) {
+    log.error('knowledge:listBackups failed:', error)
+    return { success: false, backups: [], error: (error as Error).message }
+  }
+})
+
+// 从备份恢复（恢复后自动增量补差集）
+ipcMain.handle('knowledge:restoreBackup', async (_event, backupPath?: string) => {
+  try {
+    await waitForKnowledge()
+    const result = await getKnowledge().restoreBackup(backupPath)
+    return result
+  } catch (error) {
+    log.error('knowledge:restoreBackup failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 删除指定备份
+ipcMain.handle('knowledge:deleteBackup', async (_event, backupPath: string) => {
+  try {
+    await waitForKnowledge()
+    const ok = getKnowledge().deleteBackup(backupPath)
+    return { success: ok }
+  } catch (error) {
+    log.error('knowledge:deleteBackup failed:', error)
     return { success: false, error: (error as Error).message }
   }
 })

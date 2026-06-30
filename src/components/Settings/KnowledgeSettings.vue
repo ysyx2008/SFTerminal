@@ -89,6 +89,19 @@ const importing = ref(false)
 const repairing = ref(false)
 const repairProgress = ref<{ current: number; total: number; filename: string } | null>(null)
 
+// 备份 / 恢复
+interface BackupEntry {
+  name: string
+  path: string
+  createdAt: number
+  sizeBytes: number
+  automatic: boolean
+}
+const backups = ref<BackupEntry[]>([])
+const backingUp = ref(false)
+const restoring = ref(false)
+const showBackupsPanel = ref(false)
+
 const kbDocuments = computed(() => {
   return documents.value.filter(doc => doc.fileType !== 'host-memory' && doc.fileType !== 'conversation')
 })
@@ -116,6 +129,13 @@ const formatSize = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const formatBytes = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
 const formatDate = (timestamp: number): string => {
@@ -389,6 +409,81 @@ const repairKnowledge = async () => {
   }
 }
 
+// ==================== 备份 / 恢复 ====================
+
+const loadBackups = async () => {
+  try {
+    const result = await api.knowledge.listBackups()
+    if (result.success) {
+      backups.value = result.backups || []
+    }
+  } catch (error) {
+    console.error('Load backups failed:', error)
+  }
+}
+
+const createBackup = async () => {
+  try {
+    backingUp.value = true
+    const result = await api.knowledge.createBackup()
+    if (result.success) {
+      if (result.backupPath) {
+        alert(t('knowledgeManager.backupSuccess', { path: result.backupPath }))
+      }
+      await loadBackups()
+      await loadKnowledgeDocs()
+    } else {
+      alert(t('knowledgeManager.backupFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
+    }
+  } catch (error) {
+    console.error('Create backup failed:', error)
+    alert(t('knowledgeManager.backupFailed'))
+  } finally {
+    backingUp.value = false
+  }
+}
+
+const restoreFromBackup = async (backupPath: string) => {
+  if (!confirm(t('knowledgeManager.confirmRestore'))) return
+  try {
+    restoring.value = true
+    const result = await api.knowledge.restoreBackup(backupPath)
+    if (result.success) {
+      alert(t('knowledgeManager.restoreSuccess', { path: result.backupPath || backupPath }))
+      await loadKnowledgeDocs()
+      showBackupsPanel.value = false
+    } else {
+      alert(t('knowledgeManager.restoreFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
+    }
+  } catch (error) {
+    console.error('Restore backup failed:', error)
+    alert(t('knowledgeManager.restoreFailed'))
+  } finally {
+    restoring.value = false
+  }
+}
+
+const deleteBackupEntry = async (backupPath: string) => {
+  if (!confirm(t('knowledgeManager.confirmDeleteBackup'))) return
+  try {
+    const result = await api.knowledge.deleteBackup(backupPath)
+    if (result.success) {
+      await loadBackups()
+    } else {
+      alert(result.error || t('knowledgeManager.unknownError'))
+    }
+  } catch (error) {
+    console.error('Delete backup failed:', error)
+  }
+}
+
+const toggleBackupsPanel = async () => {
+  showBackupsPanel.value = !showBackupsPanel.value
+  if (showBackupsPanel.value) {
+    await loadBackups()
+  }
+}
+
 // ==================== 生命周期 ====================
 
 let unsubscribeKnowledgeReady: (() => void) | null = null
@@ -529,7 +624,43 @@ onUnmounted(() => {
                     </template>
                     <template v-else>🔧 {{ t('knowledgeManager.repair') }}</template>
                   </button>
+                  <button class="btn btn-sm" @click="createBackup" :disabled="backingUp || restoring" :title="t('knowledgeManager.backupTip')">
+                    {{ backingUp ? t('knowledgeManager.backingUp') : `💾 ${t('knowledgeManager.backup')}` }}
+                  </button>
+                  <button class="btn btn-sm" @click="toggleBackupsPanel" :disabled="backingUp || restoring" :title="t('knowledgeManager.restoreTip')">
+                    {{ restoring ? t('knowledgeManager.restoring') : `♻️ ${t('knowledgeManager.restore')}` }}
+                  </button>
                   <button class="btn btn-sm" @click="loadKnowledgeDocs">🔄 {{ t('knowledgeManager.refresh') }}</button>
+                </div>
+
+                <!-- 备份列表 / 恢复面板 -->
+                <div v-if="showBackupsPanel" class="backups-panel">
+                  <div class="backups-panel-header">
+                    <span class="backups-title">{{ t('knowledgeManager.backupsTitle') }}</span>
+                    <span class="backups-info">{{ t('knowledgeManager.autoBackupInfo') }}</span>
+                  </div>
+                  <div v-if="backups.length === 0" class="backups-empty">
+                    {{ t('knowledgeManager.noBackups') }}
+                  </div>
+                  <div v-else class="backups-list">
+                    <div v-for="b in backups" :key="b.path" class="backup-item">
+                      <div class="backup-info">
+                        <span class="backup-badge" :class="{ 'auto': b.automatic, 'manual': !b.automatic }">
+                          {{ b.automatic ? t('knowledgeManager.backupAutomatic') : t('knowledgeManager.backupManual') }}
+                        </span>
+                        <span class="backup-date">{{ formatDate(b.createdAt) }}</span>
+                        <span class="backup-size">{{ formatBytes(b.sizeBytes) }}</span>
+                      </div>
+                      <div class="backup-actions">
+                        <button class="btn btn-sm" @click="restoreFromBackup(b.path)" :disabled="restoring">
+                          {{ t('knowledgeManager.restore') }}
+                        </button>
+                        <button class="btn btn-danger btn-sm" @click="deleteBackupEntry(b.path)">
+                          {{ t('knowledgeManager.deleteBackup') }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </template>
             </div>
@@ -924,4 +1055,53 @@ input:checked + .slider:before { transform: translateX(20px); }
 .editor-textarea:focus { outline: none; border-color: var(--accent-primary); }
 .editor-actions { display: flex; align-items: center; gap: 10px; padding-top: 8px; }
 .editor-hint { font-size: 11px; color: var(--text-muted); }
+
+/* 备份 / 恢复面板 */
+.backups-panel {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-primary, #333);
+  border-radius: 6px;
+  background: var(--bg-secondary, #1e1e1e);
+}
+.backups-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.backups-title { font-weight: 600; font-size: 13px; color: var(--text-primary); }
+.backups-info { font-size: 11px; color: var(--text-muted); }
+.backups-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.backups-list { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
+.backup-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--bg-tertiary, #181818);
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.backup-info { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-wrap: wrap; }
+.backup-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.backup-badge.auto { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+.backup-badge.manual { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+.backup-date { color: var(--text-primary); }
+.backup-size { color: var(--text-muted); }
+.backup-actions { display: flex; gap: 6px; flex-shrink: 0; }
 </style>

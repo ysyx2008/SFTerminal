@@ -2359,6 +2359,71 @@ const electronAPI = {
       const handler = (_event: Electron.IpcRendererEvent, data: { added: number; checked: number; durationMs: number }) => callback(data)
       ipcRenderer.on('knowledge:repairCompleted', handler)
       return () => { ipcRenderer.removeListener('knowledge:repairCompleted', handler) }
+    },
+
+    // ==================== 备份 / 恢复 ====================
+
+    // 创建备份（手动，不受时间间隔限制）
+    createBackup: () =>
+      ipcRenderer.invoke('knowledge:createBackup') as Promise<{
+        success: boolean
+        backupPath?: string
+        error?: string
+      }>,
+
+    // 列出所有备份
+    listBackups: () =>
+      ipcRenderer.invoke('knowledge:listBackups') as Promise<{
+        success: boolean
+        backups: Array<{
+          name: string
+          path: string
+          createdAt: number
+          sizeBytes: number
+          automatic: boolean
+        }>
+        error?: string
+      }>,
+
+    // 从备份恢复（恢复后自动增量补差集）
+    restoreBackup: (backupPath?: string) =>
+      ipcRenderer.invoke('knowledge:restoreBackup', backupPath) as Promise<{
+        success: boolean
+        backupPath?: string
+        error?: string
+      }>,
+
+    // 删除指定备份
+    deleteBackup: (backupPath: string) =>
+      ipcRenderer.invoke('knowledge:deleteBackup', backupPath) as Promise<{
+        success: boolean
+        error?: string
+      }>,
+
+    // ==================== 备份/恢复进度事件 ====================
+
+    onBackupStarted: (callback: (data: { automatic: boolean }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { automatic: boolean }) => callback(data)
+      ipcRenderer.on('knowledge:backupStarted', handler)
+      return () => { ipcRenderer.removeListener('knowledge:backupStarted', handler) }
+    },
+
+    onBackupCompleted: (callback: (data: { success: boolean; backupPath?: string; error?: string; skipped?: boolean }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { success: boolean; backupPath?: string; error?: string; skipped?: boolean }) => callback(data)
+      ipcRenderer.on('knowledge:backupCompleted', handler)
+      return () => { ipcRenderer.removeListener('knowledge:backupCompleted', handler) }
+    },
+
+    onRestoreStarted: (callback: (data: { backupPath?: string }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { backupPath?: string }) => callback(data)
+      ipcRenderer.on('knowledge:restoreStarted', handler)
+      return () => { ipcRenderer.removeListener('knowledge:restoreStarted', handler) }
+    },
+
+    onRestoreCompleted: (callback: (data: { success: boolean; backupPath?: string; error?: string }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { success: boolean; backupPath?: string; error?: string }) => callback(data)
+      ipcRenderer.on('knowledge:restoreCompleted', handler)
+      return () => { ipcRenderer.removeListener('knowledge:restoreCompleted', handler) }
     }
   },
 
