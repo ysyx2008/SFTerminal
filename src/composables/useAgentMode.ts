@@ -824,12 +824,19 @@ export function useAgentMode(
       // 不再越权强行贴底，避免和"用户翻看历史"的意图打架
       if (!shouldFollowResize()) return
 
-      // wrapperDelta ≤ 0（wrapper 收缩，如图片渲染过程中的 markdown reflow 调整、
-      // ThinkingBlock 折叠等）：完全不动 scrollTop，让浏览器自然 clamp。曾经在
-      // 这里也 set scrollTop = scrollHeight，看似无害，但 scrollHeight 已变小，
-      // scrollTop 被 clamp 到更小值 → 视区向下"塌"几像素 → 图片渲染时来回正负的
-      // wrapperDelta 序列让用户看到"上下弹跳"。
-      if (wrapperDelta <= 0) return
+      // wrapperDelta ≤ 0（wrapper 收缩，如 ThinkingBlock 折叠、markdown reflow）。
+      // 跟底态 + 小幅收缩时仍钉在新底：否则 scrollTop 被浏览器 clamp 下降，
+      // 视区相对内容「往上跑」；老版本叠加 sticky 被误清后还会逐步漂移到更上方。
+      // 大幅负 delta（虚拟化重排 / 图片加载）仍跳过，避免正负震荡来回弹跳。
+      if (wrapperDelta <= 0) {
+        if (shouldFollowResize() && wrapperDelta > -MAX_FLIP_DELTA) {
+          el.scrollTop = el.scrollHeight
+          lastKnownScrollTop = el.scrollTop
+          lastKnownScrollHeight = el.scrollHeight
+          guardAfterAutoScroll()
+        }
+        return
+      }
 
       // suppressFlipUntil 窗口期内（scrollToBottom 触发后短暂 200ms）跳过 FLIP，
       // 仍贴底——启动 Agent 那一刻几个相邻 wrapper 高度变化（user_task / 占位 /
