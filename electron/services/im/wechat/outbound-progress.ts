@@ -18,8 +18,14 @@ export class WechatOutboundProgress {
     this.buffer = new WechatProgressBuffer(options.sendDigest, { header: options.header })
   }
 
+  /** 入队一行工具进度文本（🔧/❌） */
   push(text: string): void {
     this.buffer.push(text)
+  }
+
+  /** 入队一段正文（AI 写给用户的消息内容），触发 body 边界感知 flush */
+  pushBody(text: string): void {
+    this.buffer.pushBody(text)
   }
 
   flush(): Promise<void> {

@@ -258,8 +258,8 @@ export interface UserSkill {
 }
 
 // Agent 相关类型（从共享类型导入）
-import type { ExecutionMode, RemoteChannel, AgentStep, PendingConfirmation } from '@shared/types'
-export type { ExecutionMode, RemoteChannel, RiskLevel, AgentStep, PendingConfirmation } from '@shared/types'
+import type { ExecutionMode, RemoteChannel, AgentStep, PendingConfirmation, IMProcessMode } from '@shared/types'
+export type { ExecutionMode, RemoteChannel, RiskLevel, AgentStep, PendingConfirmation, IMProcessMode } from '@shared/types'
 
 export interface AgentContext {
   ptyId: string
@@ -3298,15 +3298,15 @@ const electronAPI = {
         wecom: { botId: string; secret: string; autoConnect: boolean }
         wechat: { hasToken: boolean; autoConnect: boolean }
         executionMode: ExecutionMode
-        sendProcessMessages: boolean
+        processMode: IMProcessMode
         sendThinkingProcess: boolean
       }>,
     setAutoConnect: (platform: string, enabled: boolean) =>
       ipcRenderer.invoke('im:setAutoConnect', platform, enabled) as Promise<void>,
     setExecutionMode: (mode: ExecutionMode) =>
       ipcRenderer.invoke('im:setExecutionMode', mode) as Promise<void>,
-    setSendProcessMessages: (enabled: boolean) =>
-      ipcRenderer.invoke('im:setSendProcessMessages', enabled) as Promise<void>,
+    setProcessMode: (mode: IMProcessMode) =>
+      ipcRenderer.invoke('im:setProcessMode', mode) as Promise<void>,
     setSendThinkingProcess: (enabled: boolean) =>
       ipcRenderer.invoke('im:setSendThinkingProcess', enabled) as Promise<void>,
     sendNotification: (text: string, options?: { markdown?: boolean; title?: string }) =>

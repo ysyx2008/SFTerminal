@@ -2,7 +2,7 @@ import Store from 'electron-store'
 import fs from 'fs'
 import path from 'path'
 import { app, safeStorage } from 'electron'
-import type { AiModelType, AiProfile, ApiFormat, ExecutionMode, JumpHostConfig } from '@shared/types'
+import type { AiModelType, AiProfile, ApiFormat, ExecutionMode, IMProcessMode, JumpHostConfig } from '@shared/types'
 import type { KnowledgeSettings } from './knowledge/types'
 import { DEFAULT_KNOWLEDGE_SETTINGS } from './knowledge/types'
 import type { TtsSettings, UiThemeMode, UiThemeName, WebSearchSettings } from '@shared/types'
@@ -204,7 +204,7 @@ interface StoreSchema {
   imWeChatToken: string           // 微信 bot token（扫码登录获得）
   imWeChatBaseUrl: string         // 微信 API base URL
   imExecutionMode: ExecutionMode  // IM Agent 执行模式，默认 relaxed
-  imSendProcessMessages: boolean  // IM 是否发送过程消息（工具调用、中间文本），默认 true
+  imProcessMode: IMProcessMode   // IM 过程消息投递模式，默认 'messages'
   imSendThinkingProcess: boolean  // IM 是否发送 AI 思考过程，默认 false
   imLastContacts: Record<string, unknown> // IM 各平台最近联系人（主动推送使用）
   imKnownUsers: string[] // IM 已知用户（platform:userId），用于首次联系检测
@@ -312,7 +312,7 @@ const defaultConfig: StoreSchema = {
   imWeChatToken: '',
   imWeChatBaseUrl: '',
   imExecutionMode: 'relaxed',
-  imSendProcessMessages: true,
+  imProcessMode: 'messages',
   imSendThinkingProcess: false,
   imLastContacts: {},
   imKnownUsers: [],

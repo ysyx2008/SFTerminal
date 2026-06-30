@@ -490,7 +490,7 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
   async sendProgressMarkdown(replyContext: WeChatReplyContext, _title: string, content: string): Promise<void> {
     const progress = this.progressByUser.get(replyContext.userId)
     if (progress) {
-      progress.push(content)
+      progress.pushBody(content)
       return
     }
     await this.sendMarkdown(replyContext, _title, content)

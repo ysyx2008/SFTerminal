@@ -21,6 +21,7 @@ declare module '*.vue' {
 // 共享类型（从 @shared/types 导入，保持全局可用）
 type TerminalType = import('@shared/types').TerminalType
 type ExecutionMode = import('@shared/types').ExecutionMode
+type IMProcessMode = import('@shared/types').IMProcessMode
 type RemoteChannel = import('@shared/types').RemoteChannel
 type RiskLevel = import('@shared/types').RiskLevel
 type StepProgress = import('@shared/types').StepProgress
@@ -2276,12 +2277,12 @@ interface Window {
         wecom: { botId: string; secret: string; autoConnect: boolean }
         wechat: { hasToken: boolean; autoConnect: boolean }
         executionMode: ExecutionMode
-        sendProcessMessages: boolean
+        processMode: IMProcessMode
         sendThinkingProcess: boolean
       }>
       setAutoConnect: (platform: string, enabled: boolean) => Promise<void>
       setExecutionMode: (mode: ExecutionMode) => Promise<void>
-      setSendProcessMessages: (enabled: boolean) => Promise<void>
+      setProcessMode: (mode: IMProcessMode) => Promise<void>
       setSendThinkingProcess: (enabled: boolean) => Promise<void>
       sendNotification: (text: string, options?: { markdown?: boolean; title?: string }) => Promise<{ success: boolean; platform?: string; error?: string }>
       onConnectionChange: (callback: (data: { platform: string; connected: boolean }) => void) => () => void

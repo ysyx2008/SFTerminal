@@ -2,7 +2,10 @@
  * IM Service Types - 即时通讯平台集成类型定义
  */
 
-import type { ExecutionMode } from '@shared/types'
+import type { ExecutionMode, IMProcessMode } from '@shared/types'
+
+// re-export 让后端内部 import 路径稳定
+export type { IMProcessMode }
 
 // ==================== 配置类型 ====================
 
@@ -52,8 +55,15 @@ export interface IMServiceConfig {
   executionMode: ExecutionMode
   /** 空闲会话超时（分钟），默认 60 */
   sessionTimeoutMinutes: number
-  /** 是否发送过程消息（工具调用、中间文本等），关闭后仅发送最终结果和错误，默认 true */
-  sendProcessMessages: boolean
+  /**
+   * 过程消息投递模式，默认 'messages'：
+   * - 'final'：仅发送最终结果和错误，执行过程完全静默
+   * - 'messages'：发送 AI 写给用户的消息内容，但不发工具调用记录（🔧/❌）。
+   *   微信渠道走 digest buffer 合并，其他渠道逐条直发
+   * - 'all'：消息内容 + 工具调用记录都发。微信渠道用 digest buffer 节流防风控，
+   *   其他渠道正常逐条发
+   */
+  processMode: IMProcessMode
   /**
    * 是否把 AI 的思考过程（reasoning）一并发到 IM。默认 false：
    * - 关闭：仅发正文，思考过程被剥离，避免给 IM 用户刷屏

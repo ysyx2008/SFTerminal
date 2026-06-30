@@ -7,7 +7,7 @@ import path, { join } from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
 import { getDefaultShell } from './utils/platform'
-import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, WebSearchSettings } from '@shared/types'
+import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, WebSearchSettings, IMProcessMode } from '@shared/types'
 import { getAppTitle as buildAppTitle, getBrandName } from '@shared/brand'
 
 /**
@@ -639,9 +639,15 @@ async function ensureRemoteSessionStack(): Promise<{
     if (savedImExecutionMode && ['strict', 'relaxed', 'free'].includes(savedImExecutionMode)) {
       imService.setExecutionMode(savedImExecutionMode as ExecutionMode)
     }
-    const savedImSendProcess = configService.get('imSendProcessMessages')
-    if (savedImSendProcess === false) {
-      imService.setSendProcessMessages(false)
+    const savedImProcessMode = configService.get('imProcessMode') as string | undefined
+    if (savedImProcessMode && ['final', 'messages', 'all'].includes(savedImProcessMode)) {
+      imService.setProcessMode(savedImProcessMode as IMProcessMode)
+    } else {
+      // 隐式迁移：旧 imSendProcessMessages=false → 'final'，旧 true 或未设置 → 'messages'
+      const legacySendProcess = configService.get('imSendProcessMessages')
+      const migrated: IMProcessMode = legacySendProcess === false ? 'final' : 'messages'
+      imService.setProcessMode(migrated)
+      configService.set('imProcessMode', migrated)
     }
     const savedImSendThinking = configService.get('imSendThinkingProcess')
     if (savedImSendThinking === true) {
@@ -3969,7 +3975,16 @@ ipcMain.handle('im:getConfig', async () => {
       autoConnect: configService.get('imWeChatAutoConnect') || false,
     },
     executionMode: (configService.get('imExecutionMode') as string) || 'relaxed',
-    sendProcessMessages: configService.get('imSendProcessMessages') !== false,
+    processMode: (() => {
+      const saved = configService.get('imProcessMode') as string | undefined
+      if (saved && ['final', 'messages', 'all'].includes(saved)) return saved
+      // 隐式迁移：旧 imSendProcessMessages=false → 'final'，旧 true 或未设置 → 'messages'
+      // 写回新字段，与启动迁移逻辑保持一致，下次直接命中新字段分支
+      const legacySendProcess = configService.get('imSendProcessMessages')
+      const migrated: IMProcessMode = legacySendProcess === false ? 'final' : 'messages'
+      configService.set('imProcessMode', migrated)
+      return migrated
+    })(),
     sendThinkingProcess: configService.get('imSendThinkingProcess') === true,
   }
 })
@@ -3995,9 +4010,9 @@ ipcMain.handle('im:setExecutionMode', async (_event, mode: ExecutionMode) => {
   (await imSvc()).setExecutionMode(mode)
 })
 
-ipcMain.handle('im:setSendProcessMessages', async (_event, enabled: boolean) => {
-  configService.set('imSendProcessMessages', enabled);
-  (await imSvc()).setSendProcessMessages(enabled)
+ipcMain.handle('im:setProcessMode', async (_event, mode: IMProcessMode) => {
+  configService.set('imProcessMode', mode);
+  (await imSvc()).setProcessMode(mode)
 })
 
 ipcMain.handle('im:setSendThinkingProcess', async (_event, enabled: boolean) => {

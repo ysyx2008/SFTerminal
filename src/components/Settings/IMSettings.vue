@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { ExecutionMode } from '@shared/types'
+import type { ExecutionMode, IMProcessMode } from '@shared/types'
 import { useTerminalStore } from '../../stores/terminal'
 
 const { t, locale } = useI18n()
@@ -90,8 +90,8 @@ const wcAutoConnect = ref(false)
 const wxAutoConnect = ref(false)
 // 执行模式
 const executionMode = ref<ExecutionMode>('relaxed')
-// 发送过程消息
-const sendProcessMessages = ref(true)
+// 过程消息投递模式
+const processMode = ref<IMProcessMode>('messages')
 // 发送思考过程
 const sendThinkingProcess = ref(false)
 // 自由模式二次确认弹窗
@@ -161,7 +161,7 @@ async function loadIMSettings() {
     wxHasToken.value = config.wechat?.hasToken || false
     wxAutoConnect.value = config.wechat?.autoConnect || false
     executionMode.value = config.executionMode || 'relaxed'
-    sendProcessMessages.value = config.sendProcessMessages !== false
+    processMode.value = config.processMode || 'messages'
     sendThinkingProcess.value = config.sendThinkingProcess === true
 
     try {
@@ -454,11 +454,14 @@ async function toggleWxAutoConnect() {
   }
 }
 
-async function toggleSendProcessMessages() {
+async function changeProcessMode(mode: IMProcessMode) {
+  const oldMode = processMode.value
+  processMode.value = mode
   try {
-    await window.electronAPI.im.setSendProcessMessages(sendProcessMessages.value)
-  } catch {
-    sendProcessMessages.value = !sendProcessMessages.value
+    await window.electronAPI.im.setProcessMode(mode)
+  } catch (err) {
+    processMode.value = oldMode
+    console.error('Failed to set IM process mode:', err)
   }
 }
 
@@ -963,11 +966,30 @@ function cancelFreeMode() {
       </div>
 
       <div class="process-messages-section">
-        <label class="process-messages-label">
-          <input type="checkbox" v-model="sendProcessMessages" @change="toggleSendProcessMessages" />
-          <span class="process-messages-title">{{ t('settings.im.sendProcessMessages') }}</span>
-        </label>
-        <span class="process-messages-desc">{{ t('settings.im.sendProcessMessagesDesc') }}</span>
+        <div class="execution-mode-section">
+          <span class="execution-mode-title">{{ t('settings.im.processMode') }}</span>
+          <div class="execution-mode-selector">
+            <button
+              class="mode-option"
+              :class="{ active: processMode === 'final' }"
+              @click="changeProcessMode('final')"
+              :title="t('settings.im.processModeFinalDesc')"
+            >{{ t('settings.im.processModeFinal') }}</button>
+            <button
+              class="mode-option"
+              :class="{ active: processMode === 'messages' }"
+              @click="changeProcessMode('messages')"
+              :title="t('settings.im.processModeMessagesDesc')"
+            >{{ t('settings.im.processModeMessages') }}</button>
+            <button
+              class="mode-option"
+              :class="{ active: processMode === 'all' }"
+              @click="changeProcessMode('all')"
+              :title="t('settings.im.processModeAllDesc')"
+            >{{ t('settings.im.processModeAll') }}</button>
+          </div>
+          <span class="execution-mode-desc">{{ t('settings.im.processModeDesc') }}</span>
+        </div>
       </div>
 
       <div class="process-messages-section">

@@ -28,7 +28,8 @@ import type {
   TelegramConfig,
   WeComConfig,
   WeChatConfig,
-  SendFileResult
+  SendFileResult,
+  IMProcessMode
 } from './types'
 import { CONFIRM_KEYWORDS, REJECT_KEYWORDS, IM_TEXT_MAX_LENGTH } from './types'
 import { DingTalkAdapter } from './dingtalk-adapter'
@@ -408,7 +409,7 @@ export class IMService {
     wechat: { enabled: false, token: '', baseUrl: '' },
     executionMode: 'relaxed',
     sessionTimeoutMinutes: 60,
-    sendProcessMessages: true,
+    processMode: 'messages',
     sendThinkingProcess: false,
   }
 
@@ -462,10 +463,10 @@ export class IMService {
   }
 
   /**
-   * 设置是否发送过程消息
+   * 设置过程消息投递模式
    */
-  setSendProcessMessages(enabled: boolean) {
-    this.config.sendProcessMessages = enabled
+  setProcessMode(mode: IMProcessMode) {
+    this.config.processMode = mode
   }
 
   /**
@@ -1092,11 +1093,20 @@ export class IMService {
     const fullMessage = this.buildAgentMessage(msg)
     const agentId = COMPANION_AGENT_KEY
 
-    const sendProcess = this.config.sendProcessMessages
+    const processMode = this.config.processMode
+    // sendMessages：是否把 AI 写给用户的中间正文发到 IM（'final' 不发，'messages'/'all' 发）
+    const sendMessages = processMode !== 'final'
+    // sendToolProgress：是否发工具调用记录（🔧/❌）。仅 'all' 发，'messages' 不发以减少噪音与风控压力
+    const sendToolProgress = processMode === 'all'
     const sendThinking = this.config.sendThinkingProcess
 
     try {
-      await adapter.beginOutboundSession?.(replyContext, sendProcess && adapter.sendProgressText
+      // bufferProgress 在 'messages' 和 'all' 都开启：
+      // - 'all'：合并工具进度 + 正文，靠 body 边界感知防腰斩
+      // - 'messages'：只有正文，body 边界感知让正文并入下一条 digest 完整发出
+      // 用 adapter.sendProgressText 作为 IMProgressOutboundCapable 的代理检查
+      // （三个方法 sendProgressText/sendProgressMarkdown/flushProgress 总是成组实现）
+      await adapter.beginOutboundSession?.(replyContext, sendMessages && adapter.sendProgressText
         ? { bufferProgress: true, progressDigestHeader: t('im.wechat_progress_digest') }
         : undefined)
     } catch (err) {
@@ -1157,17 +1167,28 @@ export class IMService {
       userName: msg.userName, message: fullMessage
     })
 
-    /** 过程类出站：有能力的适配器可缓冲合并，否则回退直发 */
+    /**
+     * 过程类出站：有能力的适配器可缓冲合并，否则回退直发。
+     * sendProgressText 仅用于工具调用通知（🔧/❌），受 sendToolProgress 控制。
+     * else 分支是「适配器无 buffer 能力」的 fallback（sendText 直发）；
+     * sendToolProgress=false 时调用点已被 `if (!sendToolProgress) return` 守卫，不会走到这里。
+     */
     const sendProgressText = async (text: string): Promise<void> => {
-      if (sendProcess && adapter.sendProgressText) {
+      if (sendToolProgress && adapter.sendProgressText) {
         await adapter.sendProgressText(replyContext, text)
       } else {
         await adapter.sendText(replyContext, text)
       }
     }
 
+    /**
+     * 正文出站：受 sendMessages 控制。
+     * 'final' 模式不走此通道（正文仅在 onComplete 时通过 sendMarkdown 直发最终结果）。
+     * 'messages'/'all' 模式经 adapter.sendProgressMarkdown 进入 digest buffer（若有），
+     * buffer 内部用 pushBody 标记正文，触发边界感知 flush 防止腰斩。
+     */
     const sendProcessMarkdown = async (title: string, content: string): Promise<void> => {
-      if (sendProcess && adapter.sendProgressMarkdown) {
+      if (sendMessages && adapter.sendProgressMarkdown) {
         await adapter.sendProgressMarkdown(replyContext, title, content)
       } else {
         await adapter.sendMarkdown(replyContext, title, content)
@@ -1317,7 +1338,7 @@ export class IMService {
               sentMessageStepIds.add(step.id)
               messageStreaming = false
               textBuffer = step.content
-              if (sendProcess) {
+              if (sendMessages) {
                 enqueueSend(() => flushTextBuffer())
               }
               // message 定稿那一刻，把流式期间挂起的工具通知刷入 sendQueue，
@@ -1334,7 +1355,7 @@ export class IMService {
             notifiedToolCalls.add(askKey)
 
             const sendAsk = async () => {
-              if (sendProcess) {
+              if (sendMessages) {
                 await flushTextBuffer()
               } else {
                 textBuffer = ''
@@ -1362,7 +1383,7 @@ export class IMService {
             enqueueSend(sendAsk)
           } else if (step.type === 'tool_call' && step.toolName) {
             if (IM_SKIP_PROCESS_NOTIFY_TOOLS.has(step.toolName)) return
-            if (!sendProcess) return
+            if (!sendToolProgress) return
             // 流式 tool_call 会先以 isStreaming=true、无 toolArgs 回调；若此时发通知并记入
             // notifiedToolCalls，后续执行器 updateStep 带上 toolArgs 会因同 step.id 被去重跳过，
             // IM 侧就只剩工具名。等非流式态（执行器认领卡片后）再通知。
@@ -1402,7 +1423,7 @@ export class IMService {
             enqueueAfterMessage(sendToolNotify)
           } else if (
             step.type === 'tool_result' &&
-            sendProcess &&
+            sendToolProgress &&
             step.toolName &&
             !IM_SKIP_PROCESS_NOTIFY_TOOLS.has(step.toolName) &&
             step.success === false &&
@@ -1449,7 +1470,7 @@ export class IMService {
             }
             enqueueAfterMessage(sendToolFailure)
           } else if (step.type === 'tool_result' && isImDeliveryToolFailure(step)) {
-            // 投递类工具失败必须推到 IM（与 sendProcess 无关），避免用户只在桌面看到错误
+            // 投递类工具失败必须推到 IM（与 processMode 无关），避免用户只在桌面看到错误
             const resultKey = step.id || `tool_result:${step.toolCallId ?? ''}:${step.toolName}`
             if (notifiedToolCalls.has(resultKey)) return
             notifiedToolCalls.add(resultKey)
@@ -1480,7 +1501,7 @@ export class IMService {
           }
 
           const sendConfirm = async () => {
-            if (sendProcess) {
+            if (sendMessages) {
               await flushTextBuffer()
             } else {
               textBuffer = ''
@@ -1523,7 +1544,7 @@ export class IMService {
           messageStreaming = false
           flushPendingAfterMessage()
           const finish = async () => {
-            if (sendProcess) {
+            if (sendMessages) {
               await flushTextBuffer()
             } else {
               textBuffer = ''
@@ -1592,7 +1613,7 @@ export class IMService {
           messageStreaming = false
           flushPendingAfterMessage()
           const finish = async () => {
-            if (sendProcess) {
+            if (sendMessages) {
               await flushTextBuffer()
             } else {
               textBuffer = ''
