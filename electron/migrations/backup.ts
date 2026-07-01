@@ -24,6 +24,9 @@ const BACKUP_TARGETS = [
   { src: 'knowledge/context-docs', type: 'dir' as const },
   { src: 'history/agent', type: 'dir' as const },
   { src: 'history/agent-index.json', type: 'file' as const },
+  // 凭证：credentials.json 和 master.key 必须一起备份（缺一不可解密）
+  { src: 'credentials.json', type: 'file' as const },
+  { src: 'master.key', type: 'file' as const },
 ]
 
 function copyDirSync(src: string, dest: string): void {
