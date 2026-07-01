@@ -121,6 +121,30 @@ mapSkillEnvToDeclaredCase(envMap, declaredEnvs): Record<string, string>
 | `p:` (base64 明文) | 直接读 |
 | skill env v1 混合大小写 | `loadStore` 时一次性归一化为大写（schema v1→v2） |
 
+### Migration v7：明文 → g1: + e1: → g1:
+
+`electron/migrations/v7-im-bastion-and-e1-to-g1.ts`（phase=early）启动时一次性完成：
+
+1. **明文 → g1:** config.json 里 8 个明文敏感字段（IM 6 平台 + Slack App Token + 堡垒机密码）
+   非空且 credential 里没有对应 key 时，加密写入 credential；成功后清空 config 字段
+2. **e1: → g1:** credential store 里所有 e1: 项，能用 safeStorage 解开的重新加密为 g1:；
+   解不开的保留原值（safeStorage 不可用时不阻塞）
+
+字段映射（config key → credential key）：
+
+| config.json 字段 | credential key |
+|-----------------|---------------|
+| `imDingTalkClientSecret` | `im:dingtalk:clientSecret` |
+| `imFeishuAppSecret` | `im:feishu:appSecret` |
+| `imWeComSecret` | `im:wecom:secret` |
+| `imSlackBotToken` | `im:slack:botToken` |
+| `imSlackAppToken` | `im:slack:appToken` |
+| `imTelegramBotToken` | `im:telegram:botToken` |
+| `imWeChatToken` | `im:wechat:token` |
+| `bastionPassword` | `bastion:password` |
+
+幂等：再次运行时 config 字段已空、credential 已是 g1:，扫描结果为空直接返回。
+
 ## 不变量
 
 - `setCredential` 持久化失败时回滚内存缓存，保证与磁盘一致

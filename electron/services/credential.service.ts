@@ -461,6 +461,17 @@ export class CredentialService {
     return result
   }
 
+  /**
+   * 读取某个 key 在 store 里的原始密文字符串（含 scheme 前缀）。
+   * 仅用于 migration 判断 scheme（e1: → g1: 升级扫描）；正常运行时调用方
+   * 应使用 `getCredential` 拿明文。
+   * @internal
+   */
+  async __getRawValueForMigration(key: string): Promise<string | undefined> {
+    const store = await this.loadStore()
+    return store.items[key]
+  }
+
   // ============ 一次性迁移：skill env v1→v2 大小写归一化 ============
 
   /**
