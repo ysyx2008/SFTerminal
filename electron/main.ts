@@ -1765,15 +1765,16 @@ app.whenReady().then(async () => {
       }
 
       sendStartupProgress('sensors')
-      sensorService.start({
+      const sensors = sensorService
+      sensors.start({
         heartbeatEnabled: awakened,
         heartbeatIntervalMinutes: heartbeatInterval
       }).then(async () => {
         // 安全保障：如果觉醒模式开启但心跳未启动，强制启动
-        if (awakened && !sensorService.heartbeat.running) {
+        if (awakened && !sensors.heartbeat.running) {
           log.warn('觉醒模式已开启但心跳未启动，强制启动心跳')
-          sensorService.heartbeat.setInterval(heartbeatInterval)
-          await sensorService.heartbeat.start()
+          sensors.heartbeat.setInterval(heartbeatInterval)
+          await sensors.heartbeat.start()
         }
       }).catch(e => {
         log.error('Sensor 服务启动失败:', e)
@@ -1781,7 +1782,7 @@ app.whenReady().then(async () => {
 
       // AppLifecycleSensor.start() 是同步的，在 sensorService.start() 的 for 循环中已完成
       // 不能放在 .then() 里，因为 EmailSensor 的 IDLE 循环会阻塞 Promise.allSettled
-      sensorService.appLifecycle.notifyAppStarted()
+      sensors.appLifecycle.notifyAppStarted()
 
       // 觉醒模式：确保内置「唤醒」关切存在
       if (awakened) {
@@ -1791,8 +1792,9 @@ app.whenReady().then(async () => {
       }
 
       // 系统电源事件：休眠恢复
+      const appLifecycle = sensors.appLifecycle
       powerMonitor.on('resume', () => {
-        sensorService.appLifecycle.notifyResumed()
+        appLifecycle.notifyResumed()
       })
     } catch (e) {
       log.error('Watch/Sensor 服务初始化失败:', e)
@@ -1803,7 +1805,7 @@ app.whenReady().then(async () => {
     log.info(`后端服务初始化完成 (+${Date.now() - APP_START_TIME}ms)`)
 
     // Gateway 远程访问自动启动
-    if (configService.get('gatewayAutoStart')) {
+    if (configService.get('gatewayAutoStart') && gatewayService) {
       const port = configService.get('gatewayPort') || 3721
       const host = configService.get('gatewayHost') || '0.0.0.0'
       gatewayService.start({ enabled: true, port, host, apiToken: '' }).then(result => {

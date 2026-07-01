@@ -205,6 +205,8 @@ interface StoreSchema {
   imWeChatBaseUrl: string         // 微信 API base URL
   imExecutionMode: ExecutionMode  // IM Agent 执行模式，默认 relaxed
   imProcessMode: IMProcessMode   // IM 过程消息投递模式，默认 'messages'
+  /** @deprecated 已迁移至 imProcessMode，仅用于读取旧配置做隐式迁移 */
+  imSendProcessMessages?: boolean
   imSendThinkingProcess: boolean  // IM 是否发送 AI 思考过程，默认 false
   imLastContacts: Record<string, unknown> // IM 各平台最近联系人（主动推送使用）
   imKnownUsers: string[] // IM 已知用户（platform:userId），用于首次联系检测
