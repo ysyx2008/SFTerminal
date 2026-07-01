@@ -2469,7 +2469,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                 class="agent-step-virtual"
                 :class="{
                   'first-step': item.isFirstStep,
-                  'agent-step-source-highlight': item.step!.id === highlightedSourceStepId
+                  'agent-step-source-highlight': item.step!.id === highlightedSourceStepId,
+                  'agent-step-virtual--tool-call': item.step!.type === 'tool_call'
                 }"
                 :data-agent-step-id="item.step!.id"
               >
@@ -3471,6 +3472,11 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .agent-step-virtual {
   padding: 0 14px 4px;
   border-left: 2px solid rgba(255, 255, 255, 0.06);
+}
+
+/* 工具调用：外层 virtual 行距是卡片高度的主要来源，单独压到 0 */
+.agent-step-virtual--tool-call {
+  padding-bottom: 0;
 }
 
 .agent-step-virtual.agent-step-source-highlight {
@@ -5229,6 +5235,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .agent-step-inline.tool_call {
   color: var(--accent-primary);
+  /* 仅收窄上下留白；勿用 padding 简写，否则会覆盖 exec-/risk-* 的 padding-left */
+  padding-top: 2px;
 }
 
 .agent-step-inline.tool_call .step-text {
