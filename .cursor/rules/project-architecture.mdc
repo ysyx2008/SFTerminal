@@ -55,7 +55,9 @@ SailFish/
 │       ├── gateway.service.ts   # HTTP 网关（Webhook、Web 会话接入）
 │       ├── web-chat.service.ts  # Web 远程会话（后端直驱 Agent）
 │       ├── web-fetch.service.ts # 网页拉取与正文提取（Jina Reader / Readability + jsdom，给 web_fetch 工具用）
-│       ├── credential.service.ts # 凭证存储
+│       ├── credential.service.ts # 凭证存储（OOP：CredentialService 类 + 模块级单例）
+│       ├── credential/           # 凭证加密底层
+│       │   └── master-key.ts     # MasterKey 类：salt 文件 + PBKDF2 + AES-256-GCM（g1: 格式）
 │       ├── document-parser.service.ts  # 文档解析（PDF/Word/Excel）
 │       ├── local-fs.service.ts  # 本地文件系统
 │       ├── bastion.service.ts   # 堡垒机/跳板机
@@ -245,6 +247,18 @@ Agent 的记忆分三层，模拟人类记忆的衰减梯度，三层协同在�
 - **迁移框架**（`electron/migrations/`）：`schemaVersion` 追踪版本，按 phase 顺序执行，失败可断点续传；迁移前和 auto-update 前自动备份到 `{userData}/backups/`
 - **Normalize 层**（`electron/utils/normalize.ts`）：各 service 读取磁盘数据时补齐新增字段的默认值，防止 undefined 崩溃
 - 新增 migration：创建 `vN-xxx.ts` 实现 `Migration` 接口，在 `index.ts` 注册即可
+
+### 凭证加密（C 方案：自管主密钥）
+
+所有敏感凭证（邮箱密码、OAuth2 token、IM secret、堡垒机密码、skill env）统一存 `{userData}/credentials.json`，加密方案从 Electron `safeStorage` 切换为代码自管主密钥，解决跨 build/跨产品共用 userData 时 Keychain ACL 反复失效导致凭证丢失的问题。详见 `electron/services/CREDENTIAL_SPEC.md`。
+
+- **g1: 格式**（当前推荐）：`MasterKey` 类用 PBKDF2(SEED, salt, 200k, 32B, sha256) 派生 AES-256 key，AES-256-GCM 加密；密文含随机 IV + GCM 认证标签，篡改时解密失败
+- **SEED**：硬编码 64 字节 ASCII 串，编译进二进制（所有用户共享）；提供"反盗用单文件"门槛
+- **salt**：每 userData 独有的 16 字节随机盐，存 `{userData}/master.key`（权限 0o600）；跨机器迁移只需把 `credentials.json` 和 `master.key` 一起拷走
+- **e1: 兼容**：旧 safeStorage 加密数据仍能读（safeStorage 不可用时返回 null 不抛错），migration v7 升级存量 e1: 为 g1:
+- **p: 兜底**：master.key 初始化失败时降级 base64 明文
+- **CredentialService**（OOP）：类实例封装 cache/写队列/keytar 句柄/MasterKey；模块级单例 + 函数式 re-export 兼容现有调用方
+- **migration v7**（phase=early）：把 config.json 里 IM/堡垒机 8 个明文 secret 字段迁入 credential（g1: 加密），并升级存量 e1: 为 g1:；幂等，safeStorage 不可用时跳过 e1 升级不阻塞
 
 ### 自定义数据目录（`electron/utils/bootstrap.ts`）
 
