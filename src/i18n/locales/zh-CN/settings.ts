@@ -1109,4 +1109,17 @@ export default {
       firefox: '无法打开 Firefox 调试页，请确认已安装 Firefox，或手动在地址栏输入 about:debugging',
     },
   },
+
+  // 技能（能力档案）Tab —— 让"秘书会什么"成为可见的身份属性
+  // subtitle 不含主语，由 SkillWorkbench.vue 拼接「<agentName> + subtitle」（默认 agentName='助手'）
+  skillTab: {
+    title: '能力档案',
+    subtitle: '当前掌握的本事',
+    profile: '能力',
+    market: '市场',
+    builtinEnabled: '内置已启用',
+    extensionEnabled: '扩展已启用',
+    builtinHint: '内置能力，Agent 按需加载',
+    disabled: '未启用',
+  },
 }

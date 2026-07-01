@@ -45,4 +45,9 @@ describe('resolveWorkbenchAgentPrompt', () => {
     expect(resolveWorkbenchAgentPrompt('companion', { type: 'assistant' }))
       .toBeUndefined()
   })
+
+  it('技能（skill）工作台不注入界面能力 prompt（纯档案面板，无 Agent 运行）', () => {
+    expect(resolveWorkbenchAgentPrompt('skill', { type: 'assistant' }))
+      .toBeUndefined()
+  })
 })

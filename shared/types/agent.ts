@@ -19,14 +19,32 @@ export type ConversationKind = 'task' | 'companion' | 'watch'
 export const COMPANION_AGENT_KEY = '__companion__'
 /** 关切（Watch）常驻 Agent key（内心独白，独立历史树） */
 export const WATCH_AGENT_KEY = '__watch__'
+/**
+ * 技能（能力档案）常驻 Tab 的稳定 agentId。
+ *
+ * 注意：技能 Tab 是纯前端档案面板，**不对应后端 Agent 实例、无会话/历史**。
+ * 这里只是借用「常驻命名 Agent」模式给 tab 一个稳定身份，让 `resolveWorkbenchKind`
+ * 能据此映射到 skill 工作台。它不应进入会话列表、不应进历史、不应被 `inferConversationKind`
+ * 当作 task/companion/watch 任一类。
+ */
+export const SKILL_AGENT_KEY = '__skill__'
 
 /**
  * 从 agentKey 推断会话类别。常驻命名 Agent 用固定 key，其余皆为普通任务。
  * 这是 kind 的唯一推断口径——历史记录缺 `kind` 字段时按此补默认（向后兼容）。
+ *
+ * 注意：`__skill__` 不在此函数的判断范围内——技能 tab 是纯前端档案面板，
+ * **不对应后端 Agent、无会话/历史**，理论上不应进入会话路径。若误传进来，
+ * 会落入默认 'task' 分支并留下 warning，便于排查。
  */
 export function inferConversationKind(agentKey?: string): ConversationKind {
   if (agentKey === COMPANION_AGENT_KEY) return 'companion'
   if (agentKey === WATCH_AGENT_KEY) return 'watch'
+  if (agentKey === SKILL_AGENT_KEY) {
+    // 技能 tab 不应进入会话路径；落到 'task' 是兜底，便于排查数据流。
+    console.warn('[inferConversationKind] skill agent key entered conversation path, falling back to task')
+    return 'task'
+  }
   return 'task'
 }
 

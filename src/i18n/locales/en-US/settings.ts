@@ -1109,4 +1109,18 @@ export default {
       firefox: 'Could not open Firefox debugging. Install Firefox or visit about:debugging manually.',
     },
   },
+
+  // Skill (capability profile) Tab — make "what the secretary knows" a visible identity
+  // subtitle omits the subject; SkillWorkbench.vue concatenates `<agentName> + subtitle`
+  // (default agentName falls back to i18n 'tabs.assistant')
+  skillTab: {
+    title: 'Capability Profile',
+    subtitle: ' — capabilities at a glance',
+    profile: 'Profile',
+    market: 'Market',
+    builtinEnabled: 'Builtin enabled',
+    extensionEnabled: 'Extension enabled',
+    builtinHint: 'Builtin capabilities, loaded on demand by Agent',
+    disabled: 'Disabled',
+  },
 }

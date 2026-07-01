@@ -10,6 +10,7 @@ import {
 import { LOCAL_WORKBENCH_AGENT_PROMPT } from './local/prompt'
 import { SSH_WORKBENCH_AGENT_PROMPT } from './ssh/prompt'
 import { COMPANION_WORKBENCH_AGENT_PROMPT } from './companion/prompt'
+import { SKILL_WORKBENCH_AGENT_PROMPT } from './skill/prompt'
 
 export type { WorkbenchAgentPromptTab } from './assistant/prompt'
 
@@ -29,6 +30,10 @@ export function resolveWorkbenchAgentPrompt(
   if (kind === 'companion') {
     // 联络只含聊天区，当前无界面能力 prompt（占位为 undefined，见 companion/prompt.ts）
     return COMPANION_WORKBENCH_AGENT_PROMPT
+  }
+  if (kind === 'skill') {
+    // 技能 tab 是纯档案面板，无 Agent 运行；占位为 undefined，见 skill/prompt.ts
+    return SKILL_WORKBENCH_AGENT_PROMPT
   }
   return undefined
 }

@@ -6,4 +6,5 @@ export {
 } from './resolve-workbench-agent-prompt'
 export { AGENT_PROMPT as ASSISTANT_WORKBENCH_AGENT_PROMPT } from './assistant/prompt'
 export { descriptor as assistantWorkbenchDescriptor } from './assistant/descriptor'
+export { descriptor as skillWorkbenchDescriptor } from './skill/descriptor'
 export { useAssistantArtifactStore, useCanvasStore } from './assistant/artifact/store'

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, SatelliteDish, Bot, Home, PanelTopOpen, Radio } from 'lucide-vue-next'
-import { useTerminalStore, COMPANION_TAB_AGENT_ID } from '../stores/terminal'
+import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, SatelliteDish, Bot, Home, PanelTopOpen, Radio, Boxes } from 'lucide-vue-next'
+import { useTerminalStore, COMPANION_TAB_AGENT_ID, SKILL_TAB_AGENT_ID } from '../stores/terminal'
 import { formatAgentAttentionTooltip } from '../utils/agent-tab-ui-meta'
 import BatchCommandPanel from './BatchCommandPanel.vue'
 import {
@@ -272,19 +272,24 @@ const hasMultipleTerminals = computed(() => {
 })
 
 /**
- * Tab 栏显示的 tab 列表：过滤掉「未提升的本地助手」和「联络常驻 tab」——
- * 本地助手在 Hub 主区按焦点显示，联络 tab 单独固定渲染（不参与拖拽排序）。
+ * Tab 栏显示的 tab 列表：过滤掉「未提升的本地助手」和「联络 / 技能常驻 tab」——
+ * 本地助手在 Hub 主区按焦点显示，联络 / 技能 tab 单独固定渲染（不参与拖拽排序）。
  */
 const displayedTabs = computed(() =>
   terminalStore.tabs.filter(
     tab =>
       !(tab.type === 'assistant' && !tab.isRemote && !tab.isPromoted) &&
-      tab.agentId !== COMPANION_TAB_AGENT_ID
+      tab.agentId !== COMPANION_TAB_AGENT_ID &&
+      tab.agentId !== SKILL_TAB_AGENT_ID
   )
 )
 // 联络常驻 tab
 const companionTab = computed(() =>
   terminalStore.tabs.find(t => t.agentId === COMPANION_TAB_AGENT_ID) ?? null
+)
+// 技能常驻 tab
+const skillTab = computed(() =>
+  terminalStore.tabs.find(t => t.agentId === SKILL_TAB_AGENT_ID) ?? null
 )
 // 首页 tab 只在有"真实" tab（终端 / 已提升助手）时出现
 const hasTabs = computed(() => displayedTabs.value.length > 0)
@@ -490,6 +495,22 @@ const tasksAreaAttentionTooltip = computed(() => {
       <span v-if="companionTab.isLoading" class="tab-loading">
         <Loader2 class="spinner" :size="12" />
       </span>
+    </div>
+
+    <!-- 技能（能力档案）常驻 tab：固定渲染，不参与拖拽排序、不可关闭 -->
+    <div
+      v-if="skillTab"
+      class="tab tab-pinned tab-skill"
+      :class="{
+        active: skillTab.id === terminalStore.activeTabId
+      }"
+      :title="t('tabs.skill', '能力')"
+      @click="terminalStore.setActiveTab(skillTab.id)"
+    >
+      <span class="tab-icon">
+        <Boxes :size="14" class="skill-icon" />
+      </span>
+      <span class="tab-title">{{ displayTabTitle(skillTab) }}</span>
     </div>
 
     <!-- 新建终端按钮（带下拉菜单） -->
@@ -784,6 +805,10 @@ const tasksAreaAttentionTooltip = computed(() => {
   color: var(--brand-vital);
   filter: drop-shadow(0 0 4px var(--brand-vital));
 }
+
+/* 技能（能力档案）tab 图标 —— 与联络一致：无独立样式，颜色完全继承 .tab-icon
+   （未激活 muted，hover text-secondary，激活 accent-primary）。
+   保留 .skill-icon class 仅作语义标记，便于未来按需扩展。 */
 
 .tab-title {
   flex: 1;

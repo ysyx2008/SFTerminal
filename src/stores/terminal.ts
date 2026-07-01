@@ -65,7 +65,7 @@ export type {
 } from '@shared/types'
 
 import type { TerminalType, AgentStep, PendingConfirmation, RemoteChannel, AttachmentInfo, AgentRecord } from '@shared/types'
-import { COMPANION_AGENT_KEY } from '@shared/types'
+import { COMPANION_AGENT_KEY, SKILL_AGENT_KEY } from '@shared/types'
 
 export type {
   TabAgentUiStatus,
@@ -264,9 +264,10 @@ export interface AgentTerminalContextSplit {
 
 export type AgentTerminalContext = AgentTerminalContextSingle | AgentTerminalContextSplit
 
-/** Tab 栏可见 tab：终端、已提升本地助手、远程助手，但不含联络常驻 tab（与 TabBar.displayedTabs 一致） */
+/** Tab 栏可见 tab：终端、已提升本地助手、远程助手，但不含联络 / 技能常驻 tab（与 TabBar.displayedTabs 一致） */
 function isDisplayedInTabBar(tab: TerminalTab): boolean {
   if (tab.agentId === COMPANION_TAB_AGENT_ID) return false
+  if (tab.agentId === SKILL_TAB_AGENT_ID) return false
   return !(tab.type === 'assistant' && !tab.isRemote && !tab.isPromoted)
 }
 
@@ -288,6 +289,15 @@ function findAdjacentDisplayedTab(closedIndex: number, tabList: TerminalTab[]): 
 
 /** 联络常驻 tab 的 agentId，等同后端 `__companion__`（单一来源：@shared/types） */
 export const COMPANION_TAB_AGENT_ID = COMPANION_AGENT_KEY
+
+/**
+ * 技能常驻 tab 的 agentId，等同 `__skill__`（单一来源：@shared/types）。
+ *
+ * 注意：技能 tab 是纯前端档案面板，**不对应后端 Agent 实例**。
+ * 这里只是借用「常驻命名 Agent」模式给 tab 一个稳定身份，让 `resolveWorkbenchKind`
+ * 能据此映射到 skill 工作台。不进会话列表、不进历史。
+ */
+export const SKILL_TAB_AGENT_ID = SKILL_AGENT_KEY
 
 export const useTerminalStore = defineStore('terminal', () => {
   // 状态
@@ -832,7 +842,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       const newBase = newName || t('tabs.assistant', '助手')
       const oldBase = oldName || t('tabs.assistant', '助手')
       for (const tab of tabs.value) {
-        if (tab.type === 'assistant' && !tab.isRemote && !tab.customTitle) {
+        if (tab.type === 'assistant' && !tab.isRemote && !tab.customTitle && tab.agentId !== SKILL_TAB_AGENT_ID) {
           if (tab.title.startsWith(oldBase)) {
             tab.title = newBase + tab.title.slice(oldBase.length)
           }
@@ -872,8 +882,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab) return false
 
-    // 联络 tab 常驻不可关闭
+    // 联络 / 技能 tab 常驻不可关闭
     if (tab.agentId === COMPANION_TAB_AGENT_ID) return false
+    if (tab.agentId === SKILL_TAB_AGENT_ID) return false
 
     const t = i18n.global.t
 
@@ -3063,6 +3074,33 @@ export const useTerminalStore = defineStore('terminal', () => {
     return id
   }
 
+  /**
+   * 确保「技能」常驻 tab 存在（agentId = __skill__）。
+   *
+   * 与联络一样是常驻、不可关闭、启动时不抢首页激活。
+   * 区别：技能 tab **不对应后端 Agent 实例**——它纯前端档案面板，
+   * 不进会话列表 / 历史。`isRemote=false`（不是远程 Gateway 入口），
+   * 但 `isPromoted=true`，让它进 Tab 栏可见（而非 Hub 焦点流）。
+   */
+  function ensureSkillTab(): string {
+    const existing = tabs.value.find(t => t.agentId === SKILL_TAB_AGENT_ID)
+    if (existing) {
+      return existing.id
+    }
+    const t = i18n.global.t
+    const prevActive = activeTabId.value
+    const id = createAssistantTab({
+      agentId: SKILL_TAB_AGENT_ID,
+      title: t('tabs.skill', '能力'),
+      isRemote: false,
+      isPromoted: true,
+      activate: false,
+    })
+    markAssistantSkipOnboarding(id)
+    activeTabId.value = prevActive
+    return id
+  }
+
   return {
     tabs,
     activeTabId,
@@ -3203,6 +3241,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     hasDeferredProactive,
     clearDeferredProactive,
     ensureCompanionTab,
+    ensureSkillTab,
     requestAgentCompleteTabAttentionSkip,
     consumeAgentCompleteTabAttentionSkip
   }

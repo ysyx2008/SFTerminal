@@ -126,6 +126,7 @@ export default {
     home: '首页',
     tasks: '任务',
     reach: '联络',
+    skill: '能力',
     newTab: '新建终端',
     closeTab: '关闭标签',
     closeOtherTabs: '关闭其他标签页',

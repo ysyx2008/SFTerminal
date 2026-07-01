@@ -940,8 +940,9 @@ onMounted(async () => {
 
 // 初始化应用（正常启动流程）
 const initializeApp = async () => {
-  // 确保「联络」常驻 tab 存在
+  // 确保「联络」「技能」常驻 tab 存在
   terminalStore.ensureCompanionTab()
+  terminalStore.ensureSkillTab()
 
   // 不再自动创建本地终端，显示欢迎页让用户选择
 

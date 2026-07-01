@@ -28,7 +28,7 @@ import type { TerminalType } from '@shared/types'
  * 关键约定：`tab.type` 不等于 `WorkbenchKind`，二者通过 `resolveWorkbenchKind(tab)`（registry.ts）
  * 映射。新增独立工作台后必须配套该映射，否则 `tab.type` 永远查不到它。
  */
-export type WorkbenchKind = TerminalType | 'companion'
+export type WorkbenchKind = TerminalType | 'companion' | 'skill'
 
 /** 区域角色：anchor=常驻锚点区；toggle=可显隐辅助区 */
 export type RegionRole = 'anchor' | 'toggle'

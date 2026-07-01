@@ -125,6 +125,10 @@ SailFish/
 - **产出物面板**（`src/workbench/assistant/artifact/`）：assistant 专属；Pinia `useAssistantArtifactStore`；Agent 协议仍用 `CanvasData`（`shared/types/canvas.ts`）
 - 旧路径 `src/canvas/`、`stores/canvas.ts` 保留 deprecated re-export
 - **单助手 Hub 模型**（2026-06-18）：本地 assistant Tab 默认不显示在 Tab 栏，通过左侧「最近对话」侧栏聚焦切换（`hubFocusedAssistantTabId`）；右键「在新标签页中打开」标记 `isPromoted=true` 后进入 Tab 栏；LRU 回收上限 5 个 Hub 会话，并发软上限 8 个；远程助手（`isRemote=true`）不受影响
+- **常驻 Tab 类型**：除「任务区」（Hub）外，桌面端有 3 个常驻 Tab，均不可关闭、启动时不抢首页激活，各自独立固定渲染（不参与拖拽排序）：
+  - **联络**（`__companion__`，`kind=companion`）—— 多渠道汇流的对话关系线，有后端 Agent 实例与会话历史；`ensureCompanionTab`
+  - **技能**（`__skill__`，`kind=skill`）—— 「秘书会什么」能力档案仪表盘，**纯前端视图、无后端 Agent、无会话/历史**；复用现有 IPC（builtinSkill/userSkill/skillMarket），后端服务层不动；`ensureSkillTab` + `useSkillCatalog` composable
+  - 注：关切（`__watch__`）是 Agent 的内心独白会话，目前走 Awaken modal 面板，**不**是 Tab
 
 ### 任务 / 联络 / 关切 三类会话（用户心智模型）
 

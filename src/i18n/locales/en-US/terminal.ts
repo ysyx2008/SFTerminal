@@ -126,6 +126,7 @@ export default {
     home: 'Home',
     tasks: 'Tasks',
     reach: 'Reach',
+    skill: 'Skills',
     newTab: 'New Terminal',
     closeTab: 'Close Tab',
     closeOtherTabs: 'Close Other Tabs',
