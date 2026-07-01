@@ -409,7 +409,8 @@ import {
 import {
   getEmailCredential, setEmailCredential, deleteEmailCredential,
   getCalendarCredential, setCalendarCredential, deleteCalendarCredential,
-  setSkillEnv, getSkillEnv, deleteSkillEnv, listSkillEnvNames
+  setSkillEnv, getSkillEnv, deleteSkillEnv, listSkillEnvNames,
+  getDefaultCredentialService
 } from './services/credential.service'
 import { getServerConfig } from './services/agent/skills/email/session'
 import { setEmailAccounts } from './services/agent/skills/email/executor'
@@ -1817,9 +1818,12 @@ app.whenReady().then(async () => {
     }
 
     // IM 集成自动连接（每平台独立控制）
+    // IM secret/token 走 credential.service（g1: 加密），config 里只保留非敏感字段
+    // （clientId / appId / botId / autoConnect / baseUrl 等）
+    const credentialSvc = getDefaultCredentialService()
     if (configService.get('imDingTalkAutoConnect')) {
       const dtClientId = configService.get('imDingTalkClientId') as string
-      const dtClientSecret = configService.get('imDingTalkClientSecret') as string
+      const dtClientSecret = (await credentialSvc.getCredential('im:dingtalk:clientSecret')) || ''
       if (dtClientId && dtClientSecret) {
         (await imSvc()).startDingTalk({ enabled: true, clientId: dtClientId, clientSecret: dtClientSecret }).then(result => {
           if (result.success) {
@@ -1832,7 +1836,7 @@ app.whenReady().then(async () => {
     }
     if (configService.get('imFeishuAutoConnect')) {
       const fsAppId = configService.get('imFeishuAppId') as string
-      const fsAppSecret = configService.get('imFeishuAppSecret') as string
+      const fsAppSecret = (await credentialSvc.getCredential('im:feishu:appSecret')) || ''
       if (fsAppId && fsAppSecret) {
         (await imSvc()).startFeishu({ enabled: true, appId: fsAppId, appSecret: fsAppSecret }).then(result => {
           if (result.success) {
@@ -1844,8 +1848,8 @@ app.whenReady().then(async () => {
       }
     }
     if (configService.get('imSlackAutoConnect')) {
-      const slackBotToken = (configService.get('imSlackBotToken') as string) || ''
-      const slackAppToken = (configService.get('imSlackAppToken') as string) || ''
+      const slackBotToken = (await credentialSvc.getCredential('im:slack:botToken')) || ''
+      const slackAppToken = (await credentialSvc.getCredential('im:slack:appToken')) || ''
       if (slackBotToken && slackAppToken) {
         (await imSvc()).startSlack({ enabled: true, botToken: slackBotToken, appToken: slackAppToken }).then(result => {
           if (result.success) {
@@ -1857,7 +1861,7 @@ app.whenReady().then(async () => {
       }
     }
     if (configService.get('imTelegramAutoConnect')) {
-      const tgBotToken = (configService.get('imTelegramBotToken') as string) || ''
+      const tgBotToken = (await credentialSvc.getCredential('im:telegram:botToken')) || ''
       if (tgBotToken) {
         (await imSvc()).startTelegram({ enabled: true, botToken: tgBotToken }).then(result => {
           if (result.success) {
@@ -1870,7 +1874,7 @@ app.whenReady().then(async () => {
     }
     if (configService.get('imWeComAutoConnect')) {
       const wcBotId = (configService.get('imWeComBotId') as string) || ''
-      const wcSecret = (configService.get('imWeComSecret') as string) || ''
+      const wcSecret = (await credentialSvc.getCredential('im:wecom:secret')) || ''
       if (wcBotId && wcSecret) {
         (await imSvc()).startWeCom({ enabled: true, botId: wcBotId, secret: wcSecret }).then(result => {
           if (result.success) {
@@ -1882,7 +1886,7 @@ app.whenReady().then(async () => {
       }
     }
     if (configService.get('imWeChatAutoConnect')) {
-      const wxToken = (configService.get('imWeChatToken') as string) || ''
+      const wxToken = (await credentialSvc.getCredential('im:wechat:token')) || ''
       const wxBaseUrl = (configService.get('imWeChatBaseUrl') as string) || ''
       if (wxToken) {
         (await imSvc()).startWeChat({ enabled: true, token: wxToken, baseUrl: wxBaseUrl }).then(result => {
@@ -3833,7 +3837,12 @@ ipcMain.handle('gateway:getAuditLog', async (_event, limit?: number) => {
 
 ipcMain.handle('im:startDingTalk', async (_event, config: DingTalkConfig) => {
   configService.set('imDingTalkClientId', config.clientId)
-  configService.set('imDingTalkClientSecret', config.clientSecret)
+  // secret 走 credential.service（g1: 加密）
+  if (config.clientSecret) {
+    await getDefaultCredentialService().setCredential('im:dingtalk:clientSecret', config.clientSecret)
+  } else {
+    await getDefaultCredentialService().deleteCredential('im:dingtalk:clientSecret')
+  }
   const { im } = await ensureRemoteSessionStack()
   return await im.startDingTalk(config)
 })
@@ -3844,9 +3853,13 @@ ipcMain.handle('im:stopDingTalk', async () => {
 })
 
 ipcMain.handle('im:startFeishu', async (_event, config: FeishuConfig) => {
-  // 保存配置
+  // 保存配置：非敏感字段进 config，secret 进 credential
   configService.set('imFeishuAppId', config.appId)
-  configService.set('imFeishuAppSecret', config.appSecret)
+  if (config.appSecret) {
+    await getDefaultCredentialService().setCredential('im:feishu:appSecret', config.appSecret)
+  } else {
+    await getDefaultCredentialService().deleteCredential('im:feishu:appSecret')
+  }
   return await (await imSvc()).startFeishu(config)
 })
 
@@ -3883,8 +3896,16 @@ ipcMain.handle('feishu:getOAuthStatus', async () => {
 })
 
 ipcMain.handle('im:startSlack', async (_event, config: SlackConfig) => {
-  configService.set('imSlackBotToken', config.botToken)
-  configService.set('imSlackAppToken', config.appToken)
+  if (config.botToken) {
+    await getDefaultCredentialService().setCredential('im:slack:botToken', config.botToken)
+  } else {
+    await getDefaultCredentialService().deleteCredential('im:slack:botToken')
+  }
+  if (config.appToken) {
+    await getDefaultCredentialService().setCredential('im:slack:appToken', config.appToken)
+  } else {
+    await getDefaultCredentialService().deleteCredential('im:slack:appToken')
+  }
   return await (await imSvc()).startSlack(config)
 })
 
@@ -3894,7 +3915,11 @@ ipcMain.handle('im:stopSlack', async () => {
 })
 
 ipcMain.handle('im:startTelegram', async (_event, config: TelegramConfig) => {
-  configService.set('imTelegramBotToken', config.botToken)
+  if (config.botToken) {
+    await getDefaultCredentialService().setCredential('im:telegram:botToken', config.botToken)
+  } else {
+    await getDefaultCredentialService().deleteCredential('im:telegram:botToken')
+  }
   return await (await imSvc()).startTelegram(config)
 })
 
@@ -3905,7 +3930,11 @@ ipcMain.handle('im:stopTelegram', async () => {
 
 ipcMain.handle('im:startWeCom', async (_event, config: WeComConfig) => {
   configService.set('imWeComBotId', config.botId)
-  configService.set('imWeComSecret', config.secret)
+  if (config.secret) {
+    await getDefaultCredentialService().setCredential('im:wecom:secret', config.secret)
+  } else {
+    await getDefaultCredentialService().deleteCredential('im:wecom:secret')
+  }
   return await (await imSvc()).startWeCom(config)
 })
 
@@ -3915,14 +3944,26 @@ ipcMain.handle('im:stopWeCom', async () => {
 })
 
 ipcMain.handle('im:wechatLogin', async () => {
-  return await (await imSvc()).loginWeChat((creds) => {
-    configService.set('imWeChatToken', creds.token)
-    configService.set('imWeChatBaseUrl', creds.baseUrl)
+  // loginWeChat 的回调签名是同步的，所以先收集 creds 再异步写 credential
+  // 用数组容器绕过 TS 对闭包赋值的控制流分析（直接 let captured 会被推断为 never）
+  const captured: Array<{ token: string; baseUrl: string }> = []
+  const result = await (await imSvc()).loginWeChat((creds) => {
+    captured.push(creds)
   })
+  if (captured.length > 0) {
+    const { token, baseUrl } = captured[0]
+    if (token) {
+      await getDefaultCredentialService().setCredential('im:wechat:token', token)
+    } else {
+      await getDefaultCredentialService().deleteCredential('im:wechat:token')
+    }
+    configService.set('imWeChatBaseUrl', baseUrl)
+  }
+  return result
 })
 
 ipcMain.handle('im:startWeChat', async () => {
-  const token = (configService.get('imWeChatToken') as string) || ''
+  const token = (await getDefaultCredentialService().getCredential('im:wechat:token')) || ''
   const baseUrl = (configService.get('imWeChatBaseUrl') as string) || ''
   return await (await imSvc()).startWeChat({ enabled: true, token, baseUrl })
 })
@@ -3934,7 +3975,7 @@ ipcMain.handle('im:stopWeChat', async () => {
 
 ipcMain.handle('im:wechatLogout', async () => {
   await (await imSvc()).stopWeChat()
-  configService.set('imWeChatToken', '')
+  await getDefaultCredentialService().deleteCredential('im:wechat:token')
   configService.set('imWeChatBaseUrl', '')
   configService.set('imWeChatAutoConnect', false)
   return { success: true }
@@ -3945,33 +3986,35 @@ ipcMain.handle('im:getStatus', async () => {
 })
 
 ipcMain.handle('im:getConfig', async () => {
+  // secret/token 从 credential.service 读取（g1: 加密），其余从 config 读
+  const credentialSvc = getDefaultCredentialService()
   return {
     dingtalk: {
       clientId: (configService.get('imDingTalkClientId') as string) || '',
-      clientSecret: (configService.get('imDingTalkClientSecret') as string) || '',
+      clientSecret: (await credentialSvc.getCredential('im:dingtalk:clientSecret')) || '',
       autoConnect: configService.get('imDingTalkAutoConnect') || false,
     },
     feishu: {
       appId: (configService.get('imFeishuAppId') as string) || '',
-      appSecret: (configService.get('imFeishuAppSecret') as string) || '',
+      appSecret: (await credentialSvc.getCredential('im:feishu:appSecret')) || '',
       autoConnect: configService.get('imFeishuAutoConnect') || false,
     },
     slack: {
-      botToken: (configService.get('imSlackBotToken') as string) || '',
-      appToken: (configService.get('imSlackAppToken') as string) || '',
+      botToken: (await credentialSvc.getCredential('im:slack:botToken')) || '',
+      appToken: (await credentialSvc.getCredential('im:slack:appToken')) || '',
       autoConnect: configService.get('imSlackAutoConnect') || false,
     },
     telegram: {
-      botToken: (configService.get('imTelegramBotToken') as string) || '',
+      botToken: (await credentialSvc.getCredential('im:telegram:botToken')) || '',
       autoConnect: configService.get('imTelegramAutoConnect') || false,
     },
     wecom: {
       botId: (configService.get('imWeComBotId') as string) || '',
-      secret: (configService.get('imWeComSecret') as string) || '',
+      secret: (await credentialSvc.getCredential('im:wecom:secret')) || '',
       autoConnect: configService.get('imWeComAutoConnect') || false,
     },
     wechat: {
-      hasToken: !!(configService.get('imWeChatToken') as string),
+      hasToken: !!(await credentialSvc.getCredential('im:wechat:token')),
       autoConnect: configService.get('imWeChatAutoConnect') || false,
     },
     executionMode: (configService.get('imExecutionMode') as string) || 'relaxed',
@@ -4034,10 +4077,10 @@ ipcMain.handle('im:sendNotification', async (_event, text: string, options?: { m
 
 const bastionService = new BastionService(configService)
 
-const getBastionConfig = () => ({
+const getBastionConfig = async () => ({
   url: (configService.get('bastionUrl') as string) || '',
   username: (configService.get('bastionUsername') as string) || '',
-  password: (configService.get('bastionPassword') as string) || '',
+  password: (await getDefaultCredentialService().getCredential('bastion:password')) || '',
   autoJumpHost: configService.get('bastionAutoJumpHost') ?? true,
   jumpHostPort: configService.get('bastionJumpHostPort') || 2222,
   rejectUnauthorized: configService.get('bastionRejectUnauthorized') ?? true
@@ -4048,7 +4091,12 @@ ipcMain.handle('bastion:getConfig', async () => getBastionConfig())
 ipcMain.handle('bastion:saveConfig', async (_event, config: { url: string; username: string; password: string; autoJumpHost: boolean; jumpHostPort: number; rejectUnauthorized: boolean }) => {
   configService.set('bastionUrl', config.url)
   configService.set('bastionUsername', config.username)
-  configService.set('bastionPassword', config.password)
+  // 密码走 credential.service（g1: 加密），不再明文存 config.json
+  if (config.password) {
+    await getDefaultCredentialService().setCredential('bastion:password', config.password)
+  } else {
+    await getDefaultCredentialService().deleteCredential('bastion:password')
+  }
   configService.set('bastionAutoJumpHost', config.autoJumpHost)
   configService.set('bastionJumpHostPort', config.jumpHostPort)
   configService.set('bastionRejectUnauthorized', config.rejectUnauthorized)
@@ -4059,7 +4107,7 @@ ipcMain.handle('bastion:testConnection', async (_event, config: { url: string; u
 })
 
 ipcMain.handle('bastion:syncAssets', async () => {
-  return bastionService.syncAssets(getBastionConfig())
+  return bastionService.syncAssets(await getBastionConfig())
 })
 
 // ==================== 智能巡检协调器相关 ====================
