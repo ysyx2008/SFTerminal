@@ -815,91 +815,95 @@ export function useAgentMode(
       const wrapperDelta = newHeight - prevWrapperHeight
       prevWrapperHeight = newHeight
 
-      // 是否需要跟随贴底：
-      // - skipScrollUpdate（强制贴底窗口期）：doScrollIfNeeded / scrollToBottom 等
-      //   主动入口设置，新增 step / 工具卡的尺寸上报都在这 80ms 窗口内到来，需要继续
-      //   跟随纠正 totalSize 异步上报引起的"旧底"
-      // - isUserNearBottom：用户视觉在底部，常规流式 chunk 跟随
-      // 两种场景都该走 FLIP 平滑滑动；用户主动滚走后 isUserNearBottom 为 false，
-      // 不再越权强行贴底，避免和"用户翻看历史"的意图打架
-      if (!shouldFollowResize()) {
-        // ⚠️ 非跟底视区锚定（修复"上滚阅读时画面持续向上滚动"回归）：
-        // 新内容 append 使 wrapper 变高，浏览器维持 scrollTop 数值不变 → 视区相对
-        // 内容下移 → 用户看到的内容往上涌入，等于被强行拽离阅读位置。
-        // 反向补偿 scrollTop += wrapperDelta，让视区看到的还是同一条历史。
-        //
-        // 边界处理：
-        // - wrapperDelta ≤ 0（收缩）：不补偿，由浏览器自然 clamp scrollTop；
-        //   跟底态的收缩钉底另由下方 wrapperDelta ≤ 0 分支处理。
-        // - 顶部附近（scrollTop < SCROLL_THRESHOLD）：不补偿。用户在看最早几条
-        //   消息时 wrapper 增长不会改变顶部视区（scrollTop=0 维持），补偿反而会让
-        //   视区往上漂，与"静止阅读"初衷相反。
-        // - 异常大跳变（wrapperDelta >= MAX_FLIP_DELTA，虚拟列表 item 估算高度
-        //   突然修正等）：跳过，避免一次性把 scrollTop 推走很多。
-        //
-        // ⚠️ 不调 guardAfterAutoScroll：那会把 stickyFollowBottom 设回 true，
-        //    破坏用户的"阅读"态——这是该 bug 前两次回归的隐患根源。
-        // ⚠️ 不设 skipScrollUpdate：补偿是即时一次性操作，不需要 grace 窗口；
-        //    吞掉 scroll 事件会漏掉用户在补偿后立刻手动滚动的意图。
-        if (
-          wrapperDelta > 0
-          && wrapperDelta < MAX_FLIP_DELTA
-          && el.scrollTop >= SCROLL_THRESHOLD
-        ) {
-          const maxScroll = el.scrollHeight - el.clientHeight
-          const target = Math.min(el.scrollTop + wrapperDelta, maxScroll)
-          if (target !== el.scrollTop) {
-            el.scrollTop = target
-            lastKnownScrollTop = el.scrollTop
-            lastKnownScrollHeight = el.scrollHeight
-          }
-        }
-        return
+      // ┌──────────────────────────────────────────────────────────────────────┐
+      // │ ResizeObserver 副作用策略表（漏一格 = 一次回归，三次回归的教训）       │
+      // │ 列「区间+条件」含 wrapperDelta 数值区间 + 时间维度条件（suppress）     │
+      // ├──────────────┬───────────────────────┬──────────────────────────────┤
+      // │ 模式         │ 区间+条件              │ 副作用                        │
+      // ├──────────────┼───────────────────────┼──────────────────────────────┤
+      // │ following    │ ≤ 0 且 > -MAX_FLIP     │ 钉新底 + guard（避免 clamp 漂移）│
+      // │ following    │ ≤ -MAX_FLIP            │ 不动（防图片加载震荡）        │
+      // │ following    │ > 0 且 suppress 窗口内 │ 钉新底 + guard（硬切，无 FLIP）│
+      // │              │   或 ≥ MAX_FLIP        │                              │
+      // │ following    │ > 0 且小增长           │ 钉新底 + guard + FLIP 平滑   │
+      // ├──────────────┼───────────────────────┼──────────────────────────────┤
+      // │ reading      │ ≤ 0                   │ 不动（浏览器自然 clamp）      │
+      // │ reading      │ (0, MAX_FLIP)         │ 视区锚定：scrollTop += delta │
+      // │              │   且 scrollTop≥TH     │   （顶部附近不动，防往上漂）  │
+      // │ reading      │ (0, MAX_FLIP)         │ 不动（顶部附近，wrapper 增长 │
+      // │              │   且 scrollTop<TH     │   不影响顶部视区）            │
+      // │ reading      │ ≥ MAX_FLIP           │ 不动（虚拟列表重排，避免推走）│
+      // └──────────────┴───────────────────────┴──────────────────────────────┘
+      // TH = SCROLL_THRESHOLD；MAX = MAX_FLIP_DELTA；suppress = scrollToBottom 后
+      // 短暂 200ms 窗口（Date.now() < suppressFlipUntil）。漏副作用 = 漏表格一格。
+      if (shouldFollowResize()) {
+        applyFollowingResize(el, wrapperDelta)
+      } else {
+        applyReadingResize(el, wrapperDelta)
       }
-
-      // wrapperDelta ≤ 0（wrapper 收缩，如 ThinkingBlock 折叠、markdown reflow）。
-      // 跟底态 + 小幅收缩时仍钉在新底：否则 scrollTop 被浏览器 clamp 下降，
-      // 视区相对内容「往上跑」；老版本叠加 sticky 被误清后还会逐步漂移到更上方。
-      // 大幅负 delta（虚拟化重排 / 图片加载）仍跳过，避免正负震荡来回弹跳。
-      if (wrapperDelta <= 0) {
-        if (shouldFollowResize() && wrapperDelta > -MAX_FLIP_DELTA) {
-          el.scrollTop = el.scrollHeight
-          lastKnownScrollTop = el.scrollTop
-          lastKnownScrollHeight = el.scrollHeight
-          guardAfterAutoScroll()
-        }
-        return
-      }
-
-      // suppressFlipUntil 窗口期内（scrollToBottom 触发后短暂 200ms）跳过 FLIP，
-      // 仍贴底——启动 Agent 那一刻几个相邻 wrapper 高度变化（user_task / 占位 /
-      // 真实 message step）彼此 FLIP 容易打架弹跳，且主动跳底本就无动画语义。
-      // 窗口过后第一个真正的流式 chunk 才进入 FLIP 平滑滑动。
-      // wrapperDelta ≥ MAX_FLIP_DELTA：视为虚拟化重排（item 估算高度突然修正等异常
-      // 情况），跳过动画但仍贴底，避免长距离闪现
-      if (Date.now() < suppressFlipUntil || wrapperDelta >= MAX_FLIP_DELTA) {
-        el.scrollTop = el.scrollHeight
-        lastKnownScrollTop = el.scrollTop
-        lastKnownScrollHeight = el.scrollHeight
-        guardAfterAutoScroll()
-        return
-      }
-
-      // ① 同帧贴底：layout 后、paint 前完成 scrollTop = scrollHeight，无半行抖动
-      //    用 scrollDelta 而非 wrapperDelta 作为 FLIP 的实际偏移量——这才是用户真正
-      //    感受到的"上方内容上移"距离。两者在标准贴底场景下一致；在"还没产生滚动条
-      //    （内容不满视区）"场景下 scrollDelta=0 → 无 FLIP（修复"刚启动凭空抖动"）
-      const oldScrollTop = el.scrollTop
-      el.scrollTop = el.scrollHeight
-      const scrollDelta = el.scrollTop - oldScrollTop
-      lastKnownScrollTop = el.scrollTop
-      lastKnownScrollHeight = el.scrollHeight
-      guardAfterAutoScroll()
-
-      // ② FLIP 反向偏移：scrollDelta > 0 时给 wrapper 加反向 transform，下一帧归零
-      applyFlipScroll(scrollDelta)
     })
     contentResizeObserver.observe(wrapper)
+  }
+
+  /**
+   * 跟底态：wrapper 尺寸变化时维持贴底。
+   * - 收缩（≤0）：钉新底防 clamp 漂移（971f19a6）；大幅负跳变跳过防震荡
+   * - 增长 + suppressFlipUntil 窗口 / 大跳变：钉新底不 FLIP（硬切）
+   * - 增长 + 其他：钉新底 + FLIP 平滑滑动（同帧贴底 + 反向 transform）
+   */
+  const applyFollowingResize = (el: HTMLElement, wrapperDelta: number) => {
+    if (wrapperDelta <= 0) {
+      if (wrapperDelta > -MAX_FLIP_DELTA) {
+        pinToBottom(el)
+        guardAfterAutoScroll()
+      }
+      return
+    }
+    if (Date.now() < suppressFlipUntil || wrapperDelta >= MAX_FLIP_DELTA) {
+      pinToBottom(el)
+      guardAfterAutoScroll()
+      return
+    }
+    // 同帧贴底：layout 后、paint 前完成 scrollTop = scrollHeight，无半行抖动。
+    // 用 scrollDelta 而非 wrapperDelta 作为 FLIP 实际偏移——这才是用户真正感受到的
+    // "上方内容上移"距离。两者在标准贴底场景一致；在"内容不满视区"场景 scrollDelta=0
+    // → 无 FLIP（修复"刚启动凭空抖动"）
+    const oldScrollTop = el.scrollTop
+    pinToBottom(el)
+    const scrollDelta = el.scrollTop - oldScrollTop
+    guardAfterAutoScroll()
+    applyFlipScroll(scrollDelta)
+  }
+
+  /**
+   * 非跟底态（用户上滚阅读）：维持视区锚点，不让新内容把阅读位置顶走。
+   * - 收缩（≤0）：不动，浏览器自然 clamp（跟底态的钉底另由 applyFollowingResize 处理）
+   * - 增长 + 顶部附近：不动，顶部视区不受 wrapper 增长影响，补偿反而往上漂
+   * - 增长 + 中部：scrollTop += delta 维持视区（8bb6222c 修复第三次回归）
+   * - 增长 + 大跳变：不动，虚拟列表重排避免一次性推走很多
+   *
+   * ⚠️ 不调 guardAfterAutoScroll：会把 stickyFollowBottom 设回 true 破坏阅读态
+   *    ——这是前两次回归（42ff929a / 971f19a6）的隐患根源。
+   * ⚠️ 不设 skipScrollUpdate：补偿是即时一次性，吞 scroll 事件会漏用户后续手动滚动。
+   */
+  const applyReadingResize = (el: HTMLElement, wrapperDelta: number) => {
+    if (wrapperDelta <= 0) return
+    if (wrapperDelta >= MAX_FLIP_DELTA) return
+    if (el.scrollTop < SCROLL_THRESHOLD) return
+    const maxScroll = el.scrollHeight - el.clientHeight
+    const target = Math.min(el.scrollTop + wrapperDelta, maxScroll)
+    if (target !== el.scrollTop) {
+      el.scrollTop = target
+      lastKnownScrollTop = el.scrollTop
+      lastKnownScrollHeight = el.scrollHeight
+    }
+  }
+
+  /** 钉到底部并同步已知状态（跟底态收缩/硬切/FLIP 共用） */
+  const pinToBottom = (el: HTMLElement) => {
+    el.scrollTop = el.scrollHeight
+    lastKnownScrollTop = el.scrollTop
+    lastKnownScrollHeight = el.scrollHeight
   }
 
   const uninstallContentResizeObserver = () => {
