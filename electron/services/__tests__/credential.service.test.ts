@@ -101,23 +101,37 @@ describe('credential.service - 基本读写', () => {
     expect(got).toBe('super-secret')
   })
 
-  it('磁盘文件落到 credentials.json 并使用 e1: 前缀（safeStorage 可用时）', async () => {
+  it('磁盘文件落到 credentials.json 并使用 g1: 前缀（自管主密钥）', async () => {
     await setCredential('feishu:user_oauth', 'token-xyz')
     const filePath = path.join(tmpDir, 'credentials.json')
     expect(fs.existsSync(filePath)).toBe(true)
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
     expect(raw.schemaVersion).toBe(2)
-    expect(raw.items['feishu:user_oauth']).toMatch(/^e1:/)
+    expect(raw.items['feishu:user_oauth']).toMatch(/^g1:/)
     // 密文应该不包含明文
     expect(raw.items['feishu:user_oauth']).not.toContain('token-xyz')
+    // master.key 也应该被创建在 userData 下
+    expect(fs.existsSync(path.join(tmpDir, 'master.key'))).toBe(true)
   })
 
-  it('safeStorage 不可用时降级为 base64 明文（p: 前缀），仍能读回', async () => {
+  it('g1: 加密结果每次都不同（IV 随机）', async () => {
+    await setCredential('k1', 'same-value')
+    await setCredential('k2', 'same-value')
+    const filePath = path.join(tmpDir, 'credentials.json')
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+    // 同明文，不同密文（IV 随机）
+    expect(raw.items['k1']).not.toBe(raw.items['k2'])
+    // 但都能解回同一个明文
+    expect(await getCredential('k1')).toBe('same-value')
+    expect(await getCredential('k2')).toBe('same-value')
+  })
+
+  it('safeStorage 不可用时 g1: 仍能正常工作（不依赖 safeStorage）', async () => {
     safeStorageEnabled = false
     await setCredential('email:linux', 'plain-pwd')
     const filePath = path.join(tmpDir, 'credentials.json')
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
-    expect(raw.items['email:linux']).toMatch(/^p:/)
+    expect(raw.items['email:linux']).toMatch(/^g1:/)
     expect(await getCredential('email:linux')).toBe('plain-pwd')
   })
 
@@ -198,7 +212,7 @@ describe('credential.service - 旧 keytar 数据懒迁移', () => {
     const filePath = path.join(tmpDir, 'credentials.json')
     expect(fs.existsSync(filePath)).toBe(true)
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
-    expect(raw.items['email:legacy']).toMatch(/^e1:/)
+    expect(raw.items['email:legacy']).toMatch(/^g1:/)
     // 不主动 delete keytar，避免再次触发 ACL 弹窗
     expect(legacyDeleteCalls).not.toContain('email:legacy')
   })
@@ -221,6 +235,91 @@ describe('credential.service - 旧 keytar 数据懒迁移', () => {
   })
 })
 
+describe('credential.service - 旧 e1:（safeStorage）数据向后兼容', () => {
+  it('磁盘上存在旧 e1: 数据时，仍能读出明文（safeStorage 可用）', async () => {
+    safeStorageEnabled = true
+    // 直接构造 mock safeStorage 能解开的 e1: 数据：
+    // mock 的 encryptString = ENC: + (xor 0x42)，对应解密时取 4 字节后 XOR 0x42
+    const enc = (plain: string) => {
+      const buf = Buffer.from(plain, 'utf-8')
+      const xored = Buffer.from(buf.map(b => b ^ 0x42))
+      const combined = Buffer.concat([Buffer.from('ENC:'), xored])
+      return 'e1:' + combined.toString('base64')
+    }
+    const filePath = path.join(tmpDir, 'credentials.json')
+    const oldStore = {
+      schemaVersion: 2,
+      items: {
+        'email:e1user': enc('legacy-e1-pwd'),
+      }
+    }
+    fs.writeFileSync(filePath, JSON.stringify(oldStore), 'utf-8')
+
+    expect(await getCredential('email:e1user')).toBe('legacy-e1-pwd')
+  })
+
+  it('safeStorage 不可用时读 e1: 凭证返回 null（不抛错）', async () => {
+    safeStorageEnabled = false
+    const filePath = path.join(tmpDir, 'credentials.json')
+    // 伪造一条 e1: 数据（内容无关，因为 safeStorage 不可用根本解不开）
+    const oldStore = {
+      schemaVersion: 2,
+      items: {
+        'email:broken': 'e1:AAAA',
+      }
+    }
+    fs.writeFileSync(filePath, JSON.stringify(oldStore), 'utf-8')
+
+    // 解不开时 getCredential 返回 null，不抛错（吞掉 + 记日志）
+    expect(await getCredential('email:broken')).toBeNull()
+  })
+
+  it('旧的 p:（base64 明文）数据仍能读出', async () => {
+    const enc = (plain: string) => 'p:' + Buffer.from(plain, 'utf-8').toString('base64')
+    const filePath = path.join(tmpDir, 'credentials.json')
+    const oldStore = {
+      schemaVersion: 2,
+      items: {
+        'email:puser': enc('plain-pwd'),
+      }
+    }
+    fs.writeFileSync(filePath, JSON.stringify(oldStore), 'utf-8')
+
+    expect(await getCredential('email:puser')).toBe('plain-pwd')
+  })
+})
+
+describe('credential.service - master.key 跨实例一致性', () => {
+  it('同一 userData 下两个 CredentialService 实例共享同一 master.key', async () => {
+    const { CredentialService } = await import('../credential.service')
+    const svc1 = new CredentialService()
+    await svc1.setCredential('k', 'v1')
+
+    // 新实例：master.key 已存在，应复用同一 salt 派生同一 key
+    const svc2 = new CredentialService()
+    __resetCredentialCacheForTests() // 清掉 svc1 的影响
+    expect(await svc2.getCredential('k')).toBe('v1')
+  })
+
+  it('不同 userData 下 master.key 不同，无法互相解密', async () => {
+    const { CredentialService } = await import('../credential.service')
+    const svc1 = new CredentialService()
+    await svc1.setCredential('k', 'v1')
+
+    // 切到另一个 tmpDir（不同 salt）
+    const oldTmp = tmpDir
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sft-cred-test2-'))
+    __resetCredentialCacheForTests()
+    try {
+      const svc2 = new CredentialService()
+      // svc2 在新目录下没有 k 这条记录，返回 null（不应该是 v1）
+      expect(await svc2.getCredential('k')).toBeNull()
+    } finally {
+      tmpDir = oldTmp
+    }
+  })
+})
+
 describe('credential.service - 写并发', () => {
   it('并发 set 不会互相覆盖', async () => {
     await Promise.all([
@@ -234,16 +333,19 @@ describe('credential.service - 写并发', () => {
   })
 
   it('并发 get（首次）不会触发多次磁盘读取', async () => {
-    // 先写一条记录到磁盘
+    // 先写一条记录到磁盘（同时也会创建 master.key）
     await setCredential('k', 'v')
     __resetCredentialCacheForTests()
 
-    // 监视 readFile 的调用次数
+    // 监视 readFile 的调用次数，分别统计 credentials.json 和 master.key
     const fsModule = await import('fs')
     const realReadFile = fsModule.promises.readFile
-    let readCount = 0
+    let credReadCount = 0
+    let masterKeyReadCount = 0
     const spy = vi.spyOn(fsModule.promises, 'readFile').mockImplementation((async (...args: Parameters<typeof realReadFile>) => {
-      readCount++
+      const filePath = String(args[0])
+      if (filePath.endsWith('credentials.json')) credReadCount++
+      else if (filePath.endsWith('master.key')) masterKeyReadCount++
       return await realReadFile(...args)
     }) as typeof realReadFile)
 
@@ -256,7 +358,10 @@ describe('credential.service - 写并发', () => {
       expect(a).toBe('v')
       expect(b).toBe('v')
       expect(c).toBe('v')
-      expect(readCount).toBe(1)
+      // credentials.json 只读 1 次（loadStore 并发去重）
+      expect(credReadCount).toBe(1)
+      // master.key 只读 1 次（getOrCreateKey 并发去重）
+      expect(masterKeyReadCount).toBe(1)
     } finally {
       spy.mockRestore()
     }
