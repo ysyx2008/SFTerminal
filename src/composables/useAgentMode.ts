@@ -822,7 +822,40 @@ export function useAgentMode(
       // - isUserNearBottom：用户视觉在底部，常规流式 chunk 跟随
       // 两种场景都该走 FLIP 平滑滑动；用户主动滚走后 isUserNearBottom 为 false，
       // 不再越权强行贴底，避免和"用户翻看历史"的意图打架
-      if (!shouldFollowResize()) return
+      if (!shouldFollowResize()) {
+        // ⚠️ 非跟底视区锚定（修复"上滚阅读时画面持续向上滚动"回归）：
+        // 新内容 append 使 wrapper 变高，浏览器维持 scrollTop 数值不变 → 视区相对
+        // 内容下移 → 用户看到的内容往上涌入，等于被强行拽离阅读位置。
+        // 反向补偿 scrollTop += wrapperDelta，让视区看到的还是同一条历史。
+        //
+        // 边界处理：
+        // - wrapperDelta ≤ 0（收缩）：不补偿，由浏览器自然 clamp scrollTop；
+        //   跟底态的收缩钉底另由下方 wrapperDelta ≤ 0 分支处理。
+        // - 顶部附近（scrollTop < SCROLL_THRESHOLD）：不补偿。用户在看最早几条
+        //   消息时 wrapper 增长不会改变顶部视区（scrollTop=0 维持），补偿反而会让
+        //   视区往上漂，与"静止阅读"初衷相反。
+        // - 异常大跳变（wrapperDelta >= MAX_FLIP_DELTA，虚拟列表 item 估算高度
+        //   突然修正等）：跳过，避免一次性把 scrollTop 推走很多。
+        //
+        // ⚠️ 不调 guardAfterAutoScroll：那会把 stickyFollowBottom 设回 true，
+        //    破坏用户的"阅读"态——这是该 bug 前两次回归的隐患根源。
+        // ⚠️ 不设 skipScrollUpdate：补偿是即时一次性操作，不需要 grace 窗口；
+        //    吞掉 scroll 事件会漏掉用户在补偿后立刻手动滚动的意图。
+        if (
+          wrapperDelta > 0
+          && wrapperDelta < MAX_FLIP_DELTA
+          && el.scrollTop >= SCROLL_THRESHOLD
+        ) {
+          const maxScroll = el.scrollHeight - el.clientHeight
+          const target = Math.min(el.scrollTop + wrapperDelta, maxScroll)
+          if (target !== el.scrollTop) {
+            el.scrollTop = target
+            lastKnownScrollTop = el.scrollTop
+            lastKnownScrollHeight = el.scrollHeight
+          }
+        }
+        return
+      }
 
       // wrapperDelta ≤ 0（wrapper 收缩，如 ThinkingBlock 折叠、markdown reflow）。
       // 跟底态 + 小幅收缩时仍钉在新底：否则 scrollTop 被浏览器 clamp 下降，
