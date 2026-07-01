@@ -35,7 +35,7 @@ const IV_LEN = 12 // GCM 推荐 12 字节
 const TAG_LEN = 16
 
 /**
- * 内嵌种子。32 字节随机串，编译进二进制。
+ * 内嵌种子。64 字节 ASCII 字符串，编译进二进制。
  *
  * 安全模型：本种子不是"主密钥"，只是 PBKDF2 的 password 之一；真正的主密钥
  * 由本种子 + 用户目录独有的 `master.key` salt 共同派生。盗走 `credentials.json`
@@ -183,7 +183,8 @@ export class MasterKey {
         try { await fs.unlink(filePath) } catch { /* ignore */ }
       }
       salt = crypto.randomBytes(SALT_LEN)
-      await this.persistSalt(filePath, salt)
+      // persistSalt 在 EEXIST 分支可能复用对方进程的 salt；返回最终真正落盘的值
+      salt = await this.persistSalt(filePath, salt)
     }
 
     this._salt = salt
@@ -193,8 +194,9 @@ export class MasterKey {
   /**
    * 原子写入 salt 文件，权限 0o600。
    * 写入前再次确认文件不存在（防并发进程重复写），存在则读取对方的盐以保持一致。
+   * @returns 最终真正落盘并被本实例采用的 salt（可能是新生成的，也可能是已存在的）
    */
-  private async persistSalt(filePath: string, salt: Buffer): Promise<void> {
+  private async persistSalt(filePath: string, salt: Buffer): Promise<Buffer> {
     const dir = path.dirname(filePath)
     await fs.mkdir(dir, { recursive: true })
 
@@ -204,27 +206,38 @@ export class MasterKey {
       await handle.writeFile(salt)
       await handle.close()
       log.info(`Created new master.key at ${filePath}`)
+      return salt
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code
-      if (code === 'EEXIST') {
-        // 另一个进程刚写好，读取它的 salt 保证一致
-        try {
-          const existing = await fs.readFile(filePath)
-          if (existing.length === SALT_LEN) {
-            this._salt = existing
-            // 同步派生 key，避免后续读到内存里不一致
-            this._key = crypto.pbkdf2Sync(SEED, existing, PBKDF2_ITERATIONS, KEY_LEN, 'sha256')
-            return
-          }
-        } catch (readErr) {
-          log.warn('Failed to read existing master.key after EEXIST', readErr)
-        }
-        // 读取失败或长度异常：尝试覆盖（best-effort，权限校验在 loadOrCreateSalt 入口保证）
-        await fs.writeFile(filePath, salt, { mode: 0o600 })
-      } else {
+      if (code !== 'EEXIST') {
         throw err
       }
     }
+
+    // EEXIST：另一个进程刚创建。可能写入尚未完成，读到 0 字节或长度异常。
+    // 短暂重试，等待对方写入完成；重试耗尽才覆盖（降级处理，概率极低）。
+    const retries = 3
+    for (let i = 0; i < retries; i++) {
+      try {
+        const existing = await fs.readFile(filePath)
+        if (existing.length === SALT_LEN) {
+          // 同步派生 key，避免后续 getOrCreateKey 重复 PBKDF2
+          this._salt = existing
+          this._key = crypto.pbkdf2Sync(SEED, existing, PBKDF2_ITERATIONS, KEY_LEN, 'sha256')
+          return existing
+        }
+        // 长度异常：可能是对方还没写完，等一会再读
+      } catch (readErr) {
+        log.warn('Failed to read existing master.key on EEXIST retry', readErr)
+      }
+      if (i < retries - 1) {
+        await new Promise<void>(r => setTimeout(r, 50))
+      }
+    }
+    // 重试耗尽：覆盖写（best-effort，权限校验在 loadOrCreateSalt 入口保证）
+    log.warn(`master.key EEXIST but unreadable after ${retries} retries, overwriting`)
+    await fs.writeFile(filePath, salt, { mode: 0o600 })
+    return salt
   }
 
   private _getUserDataPath(): string {

@@ -27,7 +27,7 @@ salt = 16B 随机盐，存 {userData}/master.key（权限 0o600，每 userData �
 key  = PBKDF2(SEED, salt, 200000 iters, 32B, sha256)
 ```
 
-- **SEED**：硬编码在二进制里的 32B 字符串（编译期常量，所有用户共享）。提供"反盗用单文件"门槛——
+- **SEED**：硬编码在二进制里的 64 字节 ASCII 字符串（编译期常量，所有用户共享）。提供"反盗用单文件"门槛——
   盗走 `credentials.json` 单文件无法解密，必须同时拿到 `master.key` 或反编译二进制。
 - **salt**：每个 userData 目录独有。保证"全用户统一 SEED"不会导致统一密钥。
 - **派生缓存**：`MasterKey` 实例内 `_key` 缓存派生结果，每进程只派生一次。
