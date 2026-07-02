@@ -228,6 +228,24 @@ export interface AgentStep {
    * 避免正文里出现"拒绝"二字的 message step 被误判为拒绝步骤而整体变灰。
    */
   rejected?: boolean
+  /**
+   * 临时 UI 占位标记。`startup` = run 开头「正在准备…/等待首 token」步骤，
+   * 首条 message 或 tool_call 产出后由后端 removeStep，不应落盘或留在历史。
+   */
+  placeholder?: 'startup'
+}
+
+/** Agent 启动阶段的临时占位步骤（等待首 token 前，不应落盘） */
+export function isStartupPlaceholderStep(
+  step: Pick<AgentStep, 'type' | 'isStreaming' | 'placeholder'>,
+): boolean {
+  if (step.placeholder === 'startup') return true
+  return step.type === 'thinking' && step.isStreaming === true
+}
+
+/** 持久化时剔除 startup 占位 */
+export function filterPersistableSteps<T extends AgentStep>(steps: T[]): T[] {
+  return steps.filter(s => !isStartupPlaceholderStep(s))
 }
 
 /**

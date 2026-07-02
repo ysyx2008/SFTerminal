@@ -27,7 +27,7 @@ import type {
   TerminalType,
   ConversationKind
 } from '@shared/types'
-import { inferConversationKind } from '@shared/types'
+import { inferConversationKind, filterPersistableSteps } from '@shared/types'
 import type { AiMessage } from '../ai.service'
 import { TaskMemoryStore, type LookupToolMeta } from '../agent/task-memory'
 import { splitMessagesIntoTasks, splitStepsIntoTasks, stepRecordToStep, chunkStepsByUserTask } from './messages'
@@ -230,7 +230,8 @@ export class Conversation {
       else if (lastTask.status === 'failed') status = 'failed'
     }
 
-    const serializableSteps: AgentStepRecord[] = this._steps.map(s => Conversation.stepToStepRecord(s))
+    const serializableSteps: AgentStepRecord[] = filterPersistableSteps(this._steps)
+      .map(s => Conversation.stepToStepRecord(s))
 
     return {
       id: this.id,
@@ -274,7 +275,7 @@ export class Conversation {
       run.steps.find(s => s.type === 'user_task')
     if (!firstUserTask) return null
 
-    const mergedSteps = [...this._steps, ...run.steps]
+    const mergedSteps = filterPersistableSteps([...this._steps, ...run.steps])
     const mergedMessages = [...this._messages, ...run.taskMessageLog]
     const checkpointTokenUsage = Conversation.mergeTokenUsage(this._tokenUsage, run.tokenUsage)
 

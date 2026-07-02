@@ -211,6 +211,12 @@ export class WebChatService {
           step: JSON.parse(JSON.stringify(step))
         })
       },
+      onStepRemoved: (_runId: string, stepId: string) => {
+        this.sendToDesktop('agent:stepRemoved', {
+          agentId: WebChatService.DESKTOP_AGENT_ID,
+          stepId,
+        })
+      },
       onNeedConfirm: (confirmation: any) => {
         this.sendToDesktop('agent:needConfirm', {
           agentId: WebChatService.DESKTOP_AGENT_ID,

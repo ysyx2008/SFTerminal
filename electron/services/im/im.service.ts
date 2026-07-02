@@ -1488,6 +1488,12 @@ export class IMService {
           }
         },
 
+        onStepRemoved: (_runId: string, stepId: string) => {
+          if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+            mainWindow.webContents.send('agent:stepRemoved', { agentId, stepId })
+          }
+        },
+
         onNeedConfirm: (confirmation: any) => {
           // 同步到桌面 companion tab（与 onStep/onComplete/onError 对齐）
           if (mainWindow && !mainWindow.webContents.isDestroyed()) {

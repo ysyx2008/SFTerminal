@@ -704,7 +704,8 @@ export abstract class Agent {
     const initialStep = this.addStep({
       type: 'thinking',
       content: t('ai.preparing'),
-      isStreaming: true
+      isStreaming: true,
+      placeholder: 'startup',
     })
     run.initialStepId = initialStep.id
 
