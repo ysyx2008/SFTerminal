@@ -990,8 +990,10 @@ export class WatchService {
   }
 
   private isNoAction(output: string): boolean {
-    const lastLine = output.trim().split('\n').pop()?.trim().toUpperCase() || ''
-    return lastLine === 'NO_ACTION'
+    const lastLine = output.trim().split('\n').pop()?.trim() ?? ''
+    if (!lastLine) return false
+    const normalized = lastLine.replace(/[.。\s]+$/u, '').toUpperCase()
+    return normalized === 'NO_ACTION'
   }
 
   private async deliverOutput(watch: WatchDefinition, result: WatchExecutionResult, silent: boolean = false): Promise<void> {
@@ -1016,9 +1018,12 @@ export class WatchService {
     // talk_to_user 已执行：messageUser 负责 IM + 应用内，此处不再派发
     if (result.userMessage) return
 
-    // 以下仅处理 Agent 未调用 talk_to_user 时的渠道兜底（执行摘要 / 失败通知）
+    // 静默执行（唤醒 / desktop 自动触发）：用户可见消息仅经 talk_to_user，框架不兜底通知
+    if (silent) return
+
+    // 以下仅处理非静默、且 Agent 未调用 talk_to_user 时的渠道兜底（如手动触发且应用不在前台）
     if (outputType === 'desktop') {
-      if (!silent && !windowAvailable) {
+      if (!windowAvailable) {
         const imOk = await this.sendIMNotification(watch, result)
         if (!imOk) this.sendNotification(watch, result)
       }
@@ -1033,13 +1038,7 @@ export class WatchService {
       return
     }
 
-    if (outputType === 'im') {
-      const imResult = await this.sendIMNotification(watch, result)
-      if (!imResult && !windowAvailable) {
-        this.sendNotification(watch, result)
-      }
-      return
-    }
+    // output.type === 'im'：未调 talk_to_user 即表示无需打扰用户，不发「已完成」类通知
   }
 
   /** 从 steps 提取 talk_to_user 正文，供 deliverOutput 判断 messageUser 是否已投递 */
