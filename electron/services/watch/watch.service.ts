@@ -499,7 +499,12 @@ export class WatchService {
 
     const callbacks: AgentCallbacks = {
       onStep: (_runId: string, step: AgentStep) => {
-        steps.push(step)
+        const existingIdx = steps.findIndex(s => s.id === step.id)
+        if (existingIdx >= 0) {
+          steps[existingIdx] = step
+        } else {
+          steps.push(step)
+        }
         if (shouldSendSteps && mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('agent:step', {
             agentId, step: JSON.parse(JSON.stringify(step)),
@@ -1008,6 +1013,10 @@ export class WatchService {
     // 唤醒 Watch：消息投递由 Agent 通过 talk_to_user 工具完成，此处不重复投递
     if (watch.id === WatchService.WAKEUP_ID) return
 
+    // talk_to_user 执行时 messageUser 已同步投递 IM + 应用内（watch:proactive-message），
+    // 与 outputType==='im' 分支同理，避免桌面联络 tab 出现重复气泡。
+    if (result.userMessage) return
+
     if (outputType === 'desktop') {
       if (silent) {
         this.deliverProactiveMessage(watch, result)
@@ -1029,8 +1038,6 @@ export class WatchService {
     }
 
     if (outputType === 'im') {
-      if (result.userMessage) return
-
       const imResult = await this.sendIMNotification(watch, result)
       if (!imResult) {
         if (windowAvailable) {
@@ -1043,12 +1050,19 @@ export class WatchService {
     }
   }
 
-  /** 从 Agent 执行步骤中提取 talk_to_user 的消息内容 */
+  /** 从 Agent 执行步骤中提取 talk_to_user 的消息内容（按 toolCallId 去重，避免流式 updateStep 重复） */
   private extractUserMessage(steps?: AgentStep[]): string | undefined {
     if (!steps || steps.length === 0) return undefined
-    const talkSteps = steps.filter(s => s.toolName === 'talk_to_user' && s.toolArgs)
-    if (talkSteps.length === 0) return undefined
-    return talkSteps.map(s => (s.toolArgs as Record<string, unknown>)?.message as string).filter(Boolean).join('\n')
+    const byCall = new Map<string, string>()
+    for (const s of steps) {
+      if (s.toolName !== 'talk_to_user' || !s.toolArgs) continue
+      const msg = (s.toolArgs as Record<string, unknown>)?.message as string
+      if (!msg) continue
+      const key = s.toolCallId || s.id
+      byCall.set(key, msg)
+    }
+    if (byCall.size === 0) return undefined
+    return [...byCall.values()].join('\n')
   }
 
   /**
