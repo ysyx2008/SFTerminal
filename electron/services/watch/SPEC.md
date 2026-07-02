@@ -123,10 +123,10 @@ interface WatchTemplate {
 3. → 对每个 Watch 调用 `executeWatch(watch, event)` → 按 mode 分支：
    - **assistant**：`executeWithAssistantAgent` → Agent 用 `__watch__` 守护 ID 执行
    - **pty**：`executeWithPtyAgent` → 在指定 PTY/SSH 会话执行命令
-4. → `WatchExecutionResult` → `deliverOutput(watch, result)` 派发：
-   - 桌面终端标签页（`ensureDesktopTab` → 创建/复用 tab）
-   - 桌面通知（`sendNotification` → `mainWindow.webContents.send`）
-   - 主动消息（`deliverProactiveMessage` → IM 渠道）
+4. → `WatchExecutionResult` → `deliverOutput(watch, result)` 派发（**仅 Agent 未调 `talk_to_user` 时的兜底**）：
+   - IM 通知（`sendIMNotification`）
+   - 系统通知（`sendNotification`，点击激活联络 tab）
+   - 用户可见主动消息统一由 Agent 调 `talk_to_user` → `messageUser` 投递，不经 `deliverOutput`
 
 **事件消抖**：`EventPool` 在静默窗口内合并同类型事件，触发后清空。
 

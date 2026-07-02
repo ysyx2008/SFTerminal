@@ -1013,14 +1013,12 @@ export class WatchService {
     // 唤醒 Watch：消息投递由 Agent 通过 talk_to_user 工具完成，此处不重复投递
     if (watch.id === WatchService.WAKEUP_ID) return
 
-    // talk_to_user 执行时 messageUser 已同步投递 IM + 应用内（watch:proactive-message），
-    // 与 outputType==='im' 分支同理，避免桌面联络 tab 出现重复气泡。
+    // talk_to_user 已执行：messageUser 负责 IM + 应用内，此处不再派发
     if (result.userMessage) return
 
+    // 以下仅处理 Agent 未调用 talk_to_user 时的渠道兜底（执行摘要 / 失败通知）
     if (outputType === 'desktop') {
-      if (silent) {
-        this.deliverProactiveMessage(watch, result)
-      } else if (!windowAvailable) {
+      if (!silent && !windowAvailable) {
         const imOk = await this.sendIMNotification(watch, result)
         if (!imOk) this.sendNotification(watch, result)
       }
@@ -1028,9 +1026,7 @@ export class WatchService {
     }
 
     if (outputType === 'notification') {
-      if (windowAvailable) {
-        this.deliverProactiveMessage(watch, result)
-      } else {
+      if (!windowAvailable) {
         const imOk = await this.sendIMNotification(watch, result)
         if (!imOk) this.sendNotification(watch, result)
       }
@@ -1039,18 +1035,14 @@ export class WatchService {
 
     if (outputType === 'im') {
       const imResult = await this.sendIMNotification(watch, result)
-      if (!imResult) {
-        if (windowAvailable) {
-          this.deliverProactiveMessage(watch, result)
-        } else {
-          this.sendNotification(watch, result)
-        }
+      if (!imResult && !windowAvailable) {
+        this.sendNotification(watch, result)
       }
       return
     }
   }
 
-  /** 从 Agent 执行步骤中提取 talk_to_user 的消息内容（按 toolCallId 去重，避免流式 updateStep 重复） */
+  /** 从 steps 提取 talk_to_user 正文，供 deliverOutput 判断 messageUser 是否已投递 */
   private extractUserMessage(steps?: AgentStep[]): string | undefined {
     if (!steps || steps.length === 0) return undefined
     const byCall = new Map<string, string>()
@@ -1063,29 +1055,6 @@ export class WatchService {
     }
     if (byCall.size === 0) return undefined
     return [...byCall.values()].join('\n')
-  }
-
-  /**
-   * 将 Watch 执行结果推送到应用内联络 tab。
-   * 只在 Agent 明确调用 talk_to_user（result.userMessage 非空）时推送，
-   * 避免将内部执行日志/静默结束等噪音暴露给用户。
-   */
-  private deliverProactiveMessage(watch: WatchDefinition, result: WatchExecutionResult): void {
-    if (!result.userMessage) return
-
-    const mainWindow = this.config?.mainWindow
-    if (!mainWindow || mainWindow.isDestroyed()) return
-
-    const agentId = WatchService.COMPANION_AGENT_ID
-
-    mainWindow.webContents.send('watch:ensureTab', { agentId })
-    mainWindow.webContents.send('watch:proactive-message', {
-      agentId,
-      message: result.userMessage,
-      watchName: watch.name
-    })
-
-    log.info(`Proactive message delivered for: ${watch.name}`)
   }
 
   /** 通知前端确保联络 tab 存在（Agent 执行前调用） */
@@ -1116,10 +1085,9 @@ export class WatchService {
         if (process.platform === 'win32') {
           mainWindow.webContents.focus()
         }
-        // 只在有 talk_to_user 消息时才注入联络 tab，否则仅激活窗口
-        if (result.userMessage) {
-          this.deliverProactiveMessage(watch, result)
-        }
+        mainWindow.webContents.send('watch:activate-message', {
+          agentId: WatchService.COMPANION_AGENT_ID,
+        })
       })
       notification.show()
     } catch (err) {
