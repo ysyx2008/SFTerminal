@@ -2492,8 +2492,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                 class="agent-step-virtual"
                 :class="{
                   'first-step': item.isFirstStep,
-                  'agent-step-source-highlight': item.step!.id === highlightedSourceStepId,
-                  'agent-step-virtual--tool-call': item.step!.type === 'tool_call'
+                  'agent-step-source-highlight': item.step!.id === highlightedSourceStepId
                 }"
                 :data-agent-step-id="item.step!.id"
               >
@@ -3495,11 +3494,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .agent-step-virtual {
   padding: 0 14px 4px;
   border-left: 2px solid rgba(255, 255, 255, 0.06);
-}
-
-/* 工具调用：外层 virtual 底部不留 padding，行间断条由 tool_call ::before 负责 */
-.agent-step-virtual--tool-call {
-  padding-bottom: 0;
 }
 
 .agent-step-virtual.agent-step-source-highlight {
@@ -5258,46 +5252,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .agent-step-inline.tool_call {
   color: var(--accent-primary);
-  /* 仅收窄上下留白；勿用 padding 简写，否则会覆盖 exec-/risk-* 的 padding-left */
-  padding-top: 2px;
-}
-
-/* tool_call 状态条：border-left 在紧凑行距下会连成一线，改 ::before 并在底部留 2px 断口 */
-.agent-step-inline.tool_call.exec-success,
-.agent-step-inline.tool_call.exec-failed,
-.agent-step-inline.tool_call.risk-pending,
-.agent-step-inline.tool_call.step-rejected {
-  position: relative;
-  border-left-color: transparent !important;
-}
-
-.agent-step-inline.tool_call.exec-success::before,
-.agent-step-inline.tool_call.exec-failed::before,
-.agent-step-inline.tool_call.risk-pending::before,
-.agent-step-inline.tool_call.step-rejected::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -3px;
-  width: 3px;
-  height: calc(100% - 2px);
-  border-radius: 1px;
-}
-
-.agent-step-inline.tool_call.exec-success::before {
-  background: var(--color-success);
-}
-
-.agent-step-inline.tool_call.exec-failed::before {
-  background: var(--color-error);
-}
-
-.agent-step-inline.tool_call.risk-pending::before {
-  background: var(--border-color);
-}
-
-.agent-step-inline.tool_call.step-rejected::before {
-  background: #6b7280;
 }
 
 .agent-step-inline.tool_call .step-text {
