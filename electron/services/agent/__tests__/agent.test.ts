@@ -1074,13 +1074,14 @@ describe('Agent run method', () => {
      * 这些 Agent 重启后用 `session_${Date.now()}` 找不到 record，但语义上是「同一个
      * 长期 Agent」，需要从全局最近历史恢复工作记忆才能记得最近聊过什么。
      */
-    it('should restore global recent history for persistent named agent when sessionId record missing', async () => {
+    it('should restore companion recent history for persistent named agent when sessionId record missing', async () => {
       const newSessionId = 'session_companion_after_restart'
       const recentRecord = {
         id: 'session_previous',
         timestamp: Date.now() - 10000,
         terminalId: 'companion-pty',
         terminalType: 'assistant',
+        agentKey: '__companion__',
         userTask: 'Previous companion chat',
         steps: [
           { id: 'ut1', type: 'user_task', content: 'Previous companion chat', timestamp: Date.now() - 10000 },
@@ -1097,14 +1098,15 @@ describe('Agent run method', () => {
       const mockHistoryService = {
         getAgentRecordById: vi.fn().mockReturnValue(undefined),
         getRecentAgentRecords: vi.fn().mockReturnValue([recentRecord]),
+        getRecentRecordsByAgentKey: vi.fn().mockReturnValue([recentRecord]),
         saveAgentRecord: vi.fn(),
         getAgentRecordStore: vi.fn(() => mockHistoryService)
       }
 
       const services = createMockServices({ historyService: mockHistoryService as any })
-      const persistentAgent = new TestAgent(services)
-      persistentAgent.markAsPersistentNamed()
-      expect(persistentAgent.isPersistentNamedAgent()).toBe(true)
+      const companion = new TestAgent(services)
+      companion.setAgentId('__companion__')
+      expect(companion.isPersistentNamedAgent()).toBe(true)
 
       const ai = services.aiService as any
       ai.chatWithToolsStream.mockImplementation(
@@ -1116,26 +1118,29 @@ describe('Agent run method', () => {
       )
 
       const context = createMockContext({ sessionId: newSessionId, sessionStartTime: Date.now() })
-      await persistentAgent.run('Hello after restart', context)
+      await companion.run('Hello after restart', context)
 
-      // 持久命名 Agent 走 fallback，TaskMemory 含恢复的 1 条 + 当前 1 条
-      expect(mockHistoryService.getRecentAgentRecords).toHaveBeenCalled()
-      const taskMemory = persistentAgent.exposeTaskMemory()
+      // companion 走同 agentKey 的最近历史（getRecentRecordsByAgentKey），不走全局 fallback
+      expect(mockHistoryService.getRecentRecordsByAgentKey).toHaveBeenCalledWith('__companion__', expect.any(Number))
+      expect(mockHistoryService.getRecentAgentRecords).not.toHaveBeenCalled()
+      // 工作记忆 = 恢复的 1 条 + 当前 1 条
+      const taskMemory = companion.exposeTaskMemory()
       expect(taskMemory.getTaskCount()).toBe(2)
     })
 
     /**
-     * 防回归（本次修复的核心）：持久命名 Agent 即使 sessionId 精确命中了「最新单条」，
-     * 也必须再从最近多条历史重建工作记忆——否则会丢掉同期其它并行会话（典型：另一条
-     * companion 线刚写完的文档），导致「屏幕合并展示看得见、AI 上下文只有单条记不住」。
+     * 防回归（本次修复的核心）：companion 即使 sessionId 精确命中「最新单条」，也必须再从
+     * 同 agentKey 最近多条历史重建工作记忆——否则会丢掉同期其它并行 companion 会话（典型：
+     * 另一条 companion 线刚写完的文档），导致「屏幕合并展示看得见、AI 上下文只有单条记不住」。
      */
-    it('should merge recent records into memory for persistent named agent even when sessionId record is found', async () => {
+    it('should merge companion recent records into memory even when sessionId record is found', async () => {
       const latestId = 'session_companion_latest'
       const latestRecord = {
         id: latestId,
         timestamp: Date.now() - 5000,
         terminalId: 'companion-pty',
         terminalType: 'assistant',
+        agentKey: '__companion__',
         userTask: '继续',
         steps: [
           { id: 'ut1', type: 'user_task', content: '继续', timestamp: Date.now() - 5000 },
@@ -1155,6 +1160,7 @@ describe('Agent run method', () => {
         timestamp: Date.now() - 60000,
         terminalId: 'companion-pty',
         terminalType: 'assistant',
+        agentKey: '__companion__',
         userTask: '写中证协案例文档',
         steps: [
           { id: 'ut2', type: 'user_task', content: '写中证协案例文档', timestamp: Date.now() - 60000 },
@@ -1171,13 +1177,14 @@ describe('Agent run method', () => {
       const mockHistoryService = {
         getAgentRecordById: vi.fn().mockReturnValue(latestRecord),
         getRecentAgentRecords: vi.fn().mockReturnValue([otherRecord]),
+        getRecentRecordsByAgentKey: vi.fn().mockReturnValue([latestRecord, otherRecord]),
         saveAgentRecord: vi.fn(),
         getAgentRecordStore: vi.fn(() => mockHistoryService)
       }
 
       const services = createMockServices({ historyService: mockHistoryService as any })
-      const persistentAgent = new TestAgent(services)
-      persistentAgent.markAsPersistentNamed()
+      const companion = new TestAgent(services)
+      companion.setAgentId('__companion__')
 
       const ai = services.aiService as any
       ai.chatWithToolsStream.mockImplementation(
@@ -1189,13 +1196,173 @@ describe('Agent run method', () => {
       )
 
       const context = createMockContext({ sessionId: latestId, sessionStartTime: Date.now() })
-      await persistentAgent.run('就上次那个，继续', context)
+      await companion.run('就上次那个，继续', context)
 
-      // 即使命中 latest，也调用了 recent fallback（排除 latest 后取其它最近会话）
-      expect(mockHistoryService.getRecentAgentRecords).toHaveBeenCalled()
-      // 工作记忆 = 其它会话 1 条 + latest 1 条 + 当前 1 条 = 3
-      const taskMemory = persistentAgent.exposeTaskMemory()
+      // companion 走同 agentKey 的最近历史；即命中 latest 也调用（excludeId 排除 latest 后取其它并行线）
+      expect(mockHistoryService.getRecentRecordsByAgentKey).toHaveBeenCalledWith('__companion__', expect.any(Number))
+      expect(mockHistoryService.getRecentAgentRecords).not.toHaveBeenCalled()
+      // 工作记忆 = 其它并行线 1 条 + latest 1 条 + 当前 1 条 = 3
+      const taskMemory = companion.exposeTaskMemory()
       expect(taskMemory.getTaskCount()).toBe(3)
+    })
+
+    /**
+     * 防回归（本次调整的核心）：companion 恢复工作记忆时**不得**装入 task tab 的记录。
+     * 旧实现取全局最近 N 条（不区分 agentKey），会把刚在任务 tab 做的事灌进联络的 AI 上下文，
+     * 让用户在联络里感觉「Agent 在串台」。新实现按 agentKey 过滤，task record 一律不进 companion 工作记忆。
+     */
+    it('should NOT load task tab records into companion working memory (isolation)', async () => {
+      const latestCompanion = {
+        id: 'session_companion_a',
+        timestamp: Date.now() - 5000,
+        terminalId: 'companion-pty',
+        terminalType: 'assistant',
+        agentKey: '__companion__',
+        userTask: '在吗',
+        steps: [
+          { id: 'ut1', type: 'user_task', content: '在吗', timestamp: Date.now() - 5000 },
+          { id: 'fr1', type: 'final_result', content: '在的', timestamp: Date.now() - 4500 }
+        ],
+        messages: [
+          { role: 'user', content: '在吗' },
+          { role: 'assistant', content: '在的' }
+        ],
+        finalResult: '在的',
+        duration: 500,
+        status: 'completed'
+      }
+      // 任务 tab 刚跑的记录——必须被排除
+      const taskRecord = {
+        id: 'session_task_x',
+        timestamp: Date.now() - 3000,
+        terminalId: 'task-pty',
+        terminalType: 'local',
+        agentKey: 'task-tab-1',
+        userTask: '部署 nginx 到生产环境',
+        steps: [
+          { id: 'ut2', type: 'user_task', content: '部署 nginx 到生产环境', timestamp: Date.now() - 3000 },
+          { id: 'fr2', type: 'final_result', content: '已部署', timestamp: Date.now() - 2500 }
+        ],
+        messages: [
+          { role: 'user', content: '部署 nginx 到生产环境' },
+          { role: 'assistant', content: '已部署' }
+        ],
+        finalResult: '已部署',
+        duration: 500,
+        status: 'completed'
+      }
+      const mockHistoryService = {
+        getAgentRecordById: vi.fn().mockReturnValue(latestCompanion),
+        // 全局 fallback 即使被调用也会返回含 taskRecord；companion 不应走这条路径
+        getRecentAgentRecords: vi.fn().mockReturnValue([taskRecord, latestCompanion]),
+        // companion 走这条：只返回同 agentKey 的（不含 taskRecord）
+        getRecentRecordsByAgentKey: vi.fn().mockReturnValue([latestCompanion]),
+        saveAgentRecord: vi.fn(),
+        getAgentRecordStore: vi.fn(() => mockHistoryService)
+      }
+
+      const services = createMockServices({ historyService: mockHistoryService as any })
+      const companion = new TestAgent(services)
+      companion.setAgentId('__companion__')
+
+      const ai = services.aiService as any
+      ai.chatWithToolsStream.mockImplementation(
+        (_messages: any, _tools: any, onChunk: any, _onToolCall: any, onDone: any) => {
+          onChunk('在')
+          onDone({ content: '在', tool_calls: undefined })
+          return Promise.resolve()
+        }
+      )
+
+      const context = createMockContext({ sessionId: latestCompanion.id, sessionStartTime: Date.now() })
+      await companion.run('在吗', context)
+
+      // companion 走同 agentKey 路径，**不**走全局 getRecentAgentRecords
+      expect(mockHistoryService.getRecentRecordsByAgentKey).toHaveBeenCalledWith('__companion__', expect.any(Number))
+      expect(mockHistoryService.getRecentAgentRecords).not.toHaveBeenCalled()
+      // 工作记忆里**不应**出现任务 tab 的 userRequest
+      const taskMemory = companion.exposeTaskMemory()
+      const allTasks = taskMemory.getTasksInOrder()
+      expect(allTasks.some(t => t.userRequest.includes('部署 nginx'))).toBe(false)
+    })
+
+    /**
+     * 防回归：watch 仍走全局 main 树（排除 wakeup），不进 companion 的同 agentKey 路径。
+     * Watch 是「内心独白」，需参考用户在任意 tab 的最近活动做决策——全局借记忆对 watch 成立。
+     */
+    it('should restore global recent history for watch agent (not companion-scoped)', async () => {
+      const watchLatest = {
+        id: 'session_watch_latest',
+        timestamp: Date.now() - 5000,
+        terminalId: 'watch-pty',
+        terminalType: 'assistant',
+        agentKey: '__watch__',
+        userTask: '[当前时间：06:00] 触发事件：心跳',
+        steps: [
+          { id: 'ut1', type: 'user_task', content: '[当前时间：06:00] 触发事件：心跳', timestamp: Date.now() - 5000 },
+          { id: 'fr1', type: 'final_result', content: 'NO_ACTION', timestamp: Date.now() - 4500 }
+        ],
+        messages: [
+          { role: 'user', content: '[当前时间：06:00] 触发事件：心跳' },
+          { role: 'assistant', content: 'NO_ACTION' }
+        ],
+        finalResult: 'NO_ACTION',
+        duration: 500,
+        status: 'completed'
+      }
+      // 用户在任务 tab 的活动——watch 应能借作工作记忆（全局路径）
+      const taskActivity = {
+        id: 'session_task_y',
+        timestamp: Date.now() - 3000,
+        terminalId: 'task-pty',
+        terminalType: 'local',
+        agentKey: 'task-tab-2',
+        userTask: '排查磁盘满',
+        steps: [
+          { id: 'ut2', type: 'user_task', content: '排查磁盘满', timestamp: Date.now() - 3000 },
+          { id: 'fr2', type: 'final_result', content: '已清理日志', timestamp: Date.now() - 2500 }
+        ],
+        messages: [
+          { role: 'user', content: '排查磁盘满' },
+          { role: 'assistant', content: '已清理日志' }
+        ],
+        finalResult: '已清理日志',
+        duration: 500,
+        status: 'completed'
+      }
+      const mockHistoryService = {
+        getAgentRecordById: vi.fn().mockReturnValue(watchLatest),
+        // 全局路径返回 [taskActivity]——watch 命中的 latest 是 wakeup 噪声，会被 isWakeupNoise 排除，
+        // 再 excludeId 排除 latest 自身，所以 getRecentAgentRecords 应返回 taskActivity
+        getRecentAgentRecords: vi.fn().mockReturnValue([taskActivity]),
+        getRecentRecordsByAgentKey: vi.fn().mockReturnValue([watchLatest]),
+        saveAgentRecord: vi.fn(),
+        getAgentRecordStore: vi.fn(() => mockHistoryService)
+      }
+
+      const services = createMockServices({ historyService: mockHistoryService as any })
+      const watch = new TestAgent(services)
+      watch.setAgentId('__watch__')
+
+      const ai = services.aiService as any
+      ai.chatWithToolsStream.mockImplementation(
+        (_m: any, _t: any, onChunk: any, _otc: any, onDone: any) => {
+          onChunk('ok'); onDone({ content: 'ok', tool_calls: undefined }); return Promise.resolve()
+        }
+      )
+
+      const context = createMockContext({ sessionId: watchLatest.id, sessionStartTime: Date.now() })
+      await watch.run('wakeup', context)
+
+      // watch 走全局 getRecentAgentRecords，不进 companion 的同 agentKey 路径
+      expect(mockHistoryService.getRecentAgentRecords).toHaveBeenCalled()
+      expect(mockHistoryService.getRecentRecordsByAgentKey).not.toHaveBeenCalled()
+      // 工作记忆含任务 tab 的活动（全局借记忆对 watch 成立）。
+      // 注：latest 自身（wakeup 那条）由 restoreFromSessionRecord 恢复供 checkpoint 续写，
+      // restoreRecentTaskMemory 的全局路径已用 isWakeupNoise 排除它（不会再加一份）。
+      const taskMemory = watch.exposeTaskMemory()
+      const allTasks = taskMemory.getTasksInOrder()
+      expect(allTasks.some(t => t.userRequest.includes('排查磁盘满'))).toBe(true)
     })
 
     /**
@@ -1233,7 +1400,6 @@ describe('Agent run method', () => {
       const services = createMockServices({ historyService: mockHistoryService as any })
       const companion = new TestAgent(services)
       companion.setAgentId('__companion__')
-      companion.markAsPersistentNamed()
 
       const ai = services.aiService as any
       ai.chatWithToolsStream.mockImplementation(
@@ -1271,7 +1437,6 @@ describe('Agent run method', () => {
       const services = createMockServices({ historyService: mockHistoryService as any })
       const watchLike = new TestAgent(services)
       watchLike.setAgentId('__watch__')
-      watchLike.markAsPersistentNamed()
 
       const ai = services.aiService as any
       ai.chatWithToolsStream.mockImplementation(

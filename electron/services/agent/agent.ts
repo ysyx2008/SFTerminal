@@ -746,7 +746,7 @@ export abstract class Agent {
     // 记录，并非用户主动选择恢复某次会话。若只按它精确命中单条，会丢掉同期其它会话
     //（典型：另一条 companion 线刚写完的文档）——这正是「屏幕合并展示看得见、AI 上下文
     // 只有单条记不住」的根因。这类 Agent 语义上是「同一个长期 Agent」，应从最近 N 条
-    // 历史重建工作记忆（跨 Agent 借记忆，见 SPEC），与前端 getRecentByAgentKey 的合并
+    // 历史重建工作记忆（数据 scope 见 restoreRecentTaskMemory），与前端 getRecentByAgentKey 的合并
     // 展示对齐。同时仍恢复「最新单条」的完整会话状态，保证后续 checkpoint 续写到这条
     // 记录、不覆盖丢历史。
     if (this._persistentNamedAgent) {
@@ -815,11 +815,23 @@ export abstract class Agent {
 
   /**
    * 从最近历史记录恢复工作记忆（仅 TaskMemory，不恢复 session 状态）
-   * 场景：App 重启后 Companion 等命名 Agent 的首次 run，提取最近 5 个任务作为工作记忆
+   * 场景：App 重启后 Companion 等命名 Agent 的首次 run，提取最近若干任务作为工作记忆
+   *
+   * 数据 scope 按 kind 分流（与前端展示口径对齐）：
+   *  - companion：仅同 agentKey（`__companion__`）的最近 N 条。联络是独立常驻 tab，
+   *    UI 只展示联络线，AI 上下文也应只含联络线——若灌入任务 tab 的 transcript 会让
+   *    AI 在联络里「串台」（沿用任务里的工具/话题，像在接另一场对话）。
+   *    多条 companion 线合并的语义保留：重启后前端传回的 sessionId 只是「最新一条」，
+   *    其它并行 companion 线仍需从同 agentKey 最近历史补齐，避免「记得屏幕看得见、
+   *    AI 记不住」。
+   *  - watch：维持全局 main 树（排除 wakeup 噪声）——Watch 是 Agent 的「内心独白」，
+   *    需要参考用户在任意 tab 的最近活动做决策，全局借记忆对 watch 仍成立。
+   *  - task：本方法不会被调用（`_persistentNamedAgent` 为 false 时不进 fallback）。
    */
   private restoreRecentTaskMemory(
     historyService: {
       getRecentAgentRecords(limit: number, filter?: (r: AgentRecord) => boolean): AgentRecord[]
+      getRecentRecordsByAgentKey?(agentKey: string, limit: number): AgentRecord[]
     },
     excludeId?: string
   ): void {
@@ -837,10 +849,15 @@ export abstract class Agent {
       r.userTask.startsWith('[当前时间：') &&
       r.userTask.includes('触发事件')
 
-    const recentRecords = historyService.getRecentAgentRecords(
-      MAX_RECENT_RECORDS,
-      r => !isWakeupNoise(r) && r.id !== excludeId
-    )
+    const kind = inferConversationKind(this._agentId)
+    const recentRecords: AgentRecord[] =
+      kind === 'companion' && historyService.getRecentRecordsByAgentKey && this._agentId
+        ? historyService.getRecentRecordsByAgentKey(this._agentId, MAX_RECENT_RECORDS)
+            .filter(r => r.id !== excludeId)
+        : historyService.getRecentAgentRecords(
+            MAX_RECENT_RECORDS,
+            r => !isWakeupNoise(r) && r.id !== excludeId
+          )
     if (recentRecords.length === 0) return
 
     // 按「最后活跃时间」升序：旧记录在前。saveTask 依插入顺序累积，

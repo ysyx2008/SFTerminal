@@ -1,6 +1,6 @@
 # Agent 子系统 SPEC
 
-> Last verified: 2026-05-09（持久命名 Agent vs 普通 tab Agent 边界：`restoreFromHistory` 的全局 fallback 仅对 `__companion__` / `__watch__` 生效，普通 tab 第一次对话不再被全局历史污染，根除"新开 tab 第一句话就捏造历史里用过但本 tab 没加载的工具名"幻觉）
+> Last verified: 2026-07-02（`restoreRecentTaskMemory` 数据 scope 按 kind 分流：companion 仅取同 agentKey 的最近 N 条，与前端 `mergeCompanionRecords` 同源——联络 tab 的 AI 上下文不再被任务 tab transcript 污染；watch 维持全局 main 树 + wakeup 过滤。普通 tab Agent 不进 fallback 不变，根除"新开 tab 第一句话就捏造历史里用过但本 tab 没加载的工具名"幻觉）
 
 ## 职责
 
@@ -141,7 +141,13 @@ run(message, context, options)
   - 任务按「最后活跃时间」升序装入（旧在前），保证 `getTasksInOrder` 把刚发生的任务排到 taskIndex 0。
 - **普通 tab Agent**（terminal / SSH / 独立助手）：仅 `getAgentRecordById(sessionId)` 精确恢复用户指定的那次会话；找不到则直接返回、TaskMemory 保持空白。新开 tab 的第一次对话本就是新任务，注入历史会让 LLM 误以为是连续对话，沿用历史里的工具名（甚至当前 tab 工具表里没有的工具——例如上次用过 chart 技能里的 `candlestick`，新 tab 第一次说"画个图"，AI 会捏造出 `generate_chart` 而不是先 `load skill`），造成 `Unknown tool` 幻觉调用。
 
-**关于持久命名 Agent 的"跨 Agent"语义**：`restoreRecentTaskMemory` 取**全局**最近 N 条 `AgentRecord`（不区分原属哪个 Agent / tab），但**排除 wakeup「内心独白」记录**（`userTask` 以 `[当前时间：` 开头且含 `触发事件`）。全局借记忆是有意设计：Companion 是"贴身助手"，肩负主动通知、IM 推送、桌面唤起，需要随时参考用户「最近在做什么」，无论用户在哪个 tab 操作。排除 wakeup 是因为 Watch 的自我循环唤醒只是内心独白噪声、不应被借作工作记忆（否则会把一堆 `[当前时间…触发事件]` 当成"最近活动"，且 Watch 心跳量极大会挤掉真正的用户活动）。
+**`restoreRecentTaskMemory` 的数据 scope 按 kind 分流（与前端展示口径对齐）**：
+
+- **companion**：仅取同 agentKey（`__companion__`）的最近 N 条（`getRecentRecordsByAgentKey`），与前端 `mergeCompanionRecords` 用同一个查询——UI 只展示联络线，AI 上下文也只含联络线。联络是独立常驻 tab，若灌入任务 tab 的 transcript 会让 AI 在联络里「串台」（沿用任务里的工具/话题，像在接另一场对话）。多条 companion 线合并的语义仍保留：重启后 sessionId 只是「最新一条」，其它并行 companion 线从同 agentKey 最近历史补齐，避免「屏幕看得见、AI 记不住」。
+- **watch**：维持全局 main 树（`getRecentAgentRecords`，排除 wakeup 噪声）。Watch 是 Agent 的「内心独白」，需要参考用户在任意 tab 的最近活动做决策，全局借记忆对 watch 仍成立。
+- **task**：本方法不会被调用（`_persistentNamedAgent` 为 false 时不进 fallback）。
+
+排除 wakeup「内心独白」记录（`userTask` 以 `[当前时间：` 开头且含 `触发事件`）的原因：Watch 自我循环唤醒只是噪声、不应被借作工作记忆（否则会把一堆 `[当前时间…触发事件]` 当成"最近活动"，且 Watch 心跳量极大会挤掉真正的用户活动）。companion 走同 agentKey 路径时不会命中 wakeup（wakeup 走 `__watch__`），过滤逻辑保留是安全兜底。
 
 > **装载量与预算**：`restoreRecentTaskMemory` 从宽装载（最多 6 条记录 / 40 个任务进 TaskMemory，仅防内存膨胀）；真正进上下文的量由 `buildTaskHistoryContext` 按 token 预算动态裁剪（Level 0→4 渐进降级、预算用尽即停），装多少都不会撑爆上下文。
 
@@ -157,7 +163,7 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 
 **实现**：`Agent._persistentNamedAgent: boolean`（默认 false）。`AgentService.createAssistantAgent(agentId)` 内部根据 `agentId === COMPANION_AGENT_ID || WATCH_AGENT_ID` 自动调 `markAsPersistentNamed()`——调用方（IM service / Watch service）无需感知。`getOrCreateAgent`（终端 Agent）和 createAssistantAgent 的非命名分支默认就是 false。
 
-**回归保护**：`__tests__/agent.test.ts` 五条用例锁定边界——① "should NOT restore global recent history for normal agent ..."（普通 tab 不借历史）；② "should restore global recent history for persistent named agent when sessionId record missing"（命名 Agent 找不到 record 时借历史）；③ "should merge recent records into memory for persistent named agent even when sessionId record is found"（命名 Agent 即便精确命中 latest 也合并最近多条）；④ "should seed sessionId from latest record ... when context has no sessionId"（无 sessionId 入口回种、防分裂）；⑤ "should NOT seed sessionId after startNewSession (suppressed) ..."（Watch/清空对话 抑制回种）。新增类似的固定 ID Agent 时记得在 `isPersistentNamedAgentId` 里登记。
+**回归保护**：`__tests__/agent.test.ts` 六条用例锁定边界——① "should NOT restore global recent history for normal agent ..."（普通 tab 不借历史）；② "should restore companion recent history for persistent named agent when sessionId record missing"（companion 找不到 record 时从同 agentKey 最近历史借记忆，不走全局）；③ "should merge companion recent records into memory even when sessionId record is found"（companion 即便精确命中 latest 也合并同 agentKey 的其它并行线）；④ "should NOT load task tab records into companion working memory (isolation)"（companion 工作记忆里不含 task tab 的 transcript，防串台）；⑤ "should seed sessionId from latest record ... when context has no sessionId"（无 sessionId 入口回种、防分裂）；⑥ "should NOT seed sessionId after startNewSession (suppressed) ..."（Watch/清空对话 抑制回种）。新增类似的固定 ID Agent 时记得在 `isPersistentNamedAgentId` 里登记。
 
 ## 工具元数据驱动模型（核心 OOP 边界承诺）
 
