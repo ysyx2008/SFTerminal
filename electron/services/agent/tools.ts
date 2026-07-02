@@ -1197,8 +1197,11 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
           },
           required: ['message']
         }
+      },
+      _meta: {
+        streamDisplay: { titleKey: 'im.tool_send_notification', titleField: 'message' }
       }
-    }
+    } as ToolDefinitionWithMeta
   ]
 
   // 根据运行模式过滤工具

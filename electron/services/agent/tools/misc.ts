@@ -28,7 +28,23 @@ import { getIMService } from '../../im/im.service'
 import { getConfigService } from '../../config.service'
 import { formatRemainingTime, formatTotalTime, truncateFromEnd } from './utils'
 import { formatMcpToolCallContent } from '../../mcp-tool-display'
+import { formatToolCallPrefixFromMeta } from '../tool-metadata'
+import type { ToolMeta } from '../tools'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
+
+/** talk_to_user 流式/执行卡片标题（与 tools.ts _meta.streamDisplay 对齐） */
+const TALK_TO_USER_STREAM_META: ToolMeta = {
+  streamDisplay: { titleKey: 'im.tool_send_notification', titleField: 'message' },
+}
+
+function buildTalkToUserDisplayContent(message: string, title?: string): string {
+  return title ? `${title}\n\n${message}` : message
+}
+
+function buildTalkToUserToolCallContent(args: Record<string, unknown>): string {
+  return formatToolCallPrefixFromMeta(TALK_TO_USER_STREAM_META, args)
+    ?? t('im.tool_send_notification')
+}
 
 /**
  * 等待指定时间
@@ -832,11 +848,21 @@ export async function messageUser(
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
   const message = args.message as string
-  const title = typeof args.title === 'string' ? args.title : undefined
+  const title = typeof args.title === 'string' && args.title.trim() ? args.title : undefined
 
   if (!message || typeof message !== 'string') {
     return { success: false, output: '', error: t('im.tool_message_required') }
   }
+
+  const toolArgs: Record<string, unknown> = title ? { message, title } : { message }
+  const displayContent = buildTalkToUserDisplayContent(message, title)
+  executor.addStep({
+    type: 'tool_call',
+    content: buildTalkToUserToolCallContent(toolArgs),
+    toolName: 'talk_to_user',
+    toolArgs,
+    riskLevel: 'safe',
+  })
 
   const deliveredVia: string[] = []
   const failedChannels: { platform: string; error: string }[] = []
@@ -849,14 +875,6 @@ export async function messageUser(
     const lastContact = imService.getLastContact()
 
     if (lastContact) {
-      executor.addStep({
-        type: 'tool_call',
-        content: t('im.tool_sending_notification', { platform: lastContact.platform }),
-        toolName: 'talk_to_user',
-        toolArgs: { message: message.substring(0, 100), title },
-        riskLevel: 'safe'
-      })
-
       const result = await imService.sendNotification(message, {
         markdown: !!title,
         title,
@@ -989,7 +1007,7 @@ export async function messageUser(
       type: 'tool_result',
       content: t('im.tool_notification_sent_step', { platform: channels }),
       toolName: 'talk_to_user',
-      toolResult: output
+      toolResult: displayContent,
     })
     return { success: true, output }
   } else {

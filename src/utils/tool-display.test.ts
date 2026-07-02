@@ -187,8 +187,18 @@ describe('shouldShowToolResultStep', () => {
       ).toBe(true)
     })
 
+    it('talk_to_user 的 tool_result 在非调试模式下展示（发送正文用户必看）', () => {
+      expect(
+        shouldShowToolResultStep(
+          { type: 'tool_result', toolName: 'talk_to_user', success: true },
+          false
+        )
+      ).toBe(true)
+    })
+
     it('集合内容和文档约定一致', () => {
       expect(ALWAYS_SHOW_RESULT_TOOLS.has('dispatch_agents')).toBe(true)
+      expect(ALWAYS_SHOW_RESULT_TOOLS.has('talk_to_user')).toBe(true)
       expect(ALWAYS_SHOW_RESULT_TOOLS.has('remember_info')).toBe(false)
     })
   })
