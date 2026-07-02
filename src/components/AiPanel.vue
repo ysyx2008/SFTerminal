@@ -176,15 +176,36 @@ const toggleWebSearchExpand = (stepId: string) => {
 
 // 思考块展开状态（默认收起，按 stepId 管理；让 DynamicScroller 的 size dep 能感知切换）
 const expandedThinkingSteps = ref<Set<string>>(new Set())
+const THINKING_EXPAND_TRANSITION_MS = 280
 const isThinkingExpanded = (stepId: string): boolean => {
   return expandedThinkingSteps.value.has(stepId)
 }
-const toggleThinkingExpand = (stepId: string) => {
-  if (expandedThinkingSteps.value.has(stepId)) {
-    expandedThinkingSteps.value.delete(stepId)
-  } else {
-    expandedThinkingSteps.value.add(stepId)
+const toggleThinkingExpand = async (stepId: string, anchorEl?: HTMLElement) => {
+  const viewportTop = anchorEl?.getBoundingClientRect().top
+  const willExpand = !expandedThinkingSteps.value.has(stepId)
+
+  if (anchorEl && viewportTop !== undefined) {
+    suppressLayoutResizeCompensation(THINKING_EXPAND_TRANSITION_MS + 120)
   }
+
+  const next = new Set(expandedThinkingSteps.value)
+  if (willExpand) {
+    next.add(stepId)
+  } else {
+    next.delete(stepId)
+  }
+  expandedThinkingSteps.value = next
+
+  if (!anchorEl || viewportTop === undefined) return
+
+  const stabilize = () => anchorElementViewportY(anchorEl, viewportTop)
+
+  await nextTick()
+  requestAnimationFrame(() => {
+    stabilize()
+    requestAnimationFrame(stabilize)
+  })
+  window.setTimeout(stabilize, THINKING_EXPAND_TRANSITION_MS + 20)
 }
 
 // 任务完成尾注的显示条件：group 完成（finalResult 存在且非失败/中断）+ 当前是 group 内最后一个
@@ -579,6 +600,8 @@ const {
   restoreScrollPositionOnTabActivate,
   scrollToHistoryBottomWithRetry,
   scrollToBottom,
+  suppressLayoutResizeCompensation,
+  anchorElementViewportY,
   stopGeneration,
   // Agent 执行
   executionMode,
@@ -2508,7 +2531,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         :expanded="isThinkingExpanded(item.step!.id)"
                         :started-at="item.step!.timestamp"
                         :cached-duration-ms="getCachedThinkingDuration(item.step!.id)"
-                        @toggle="toggleThinkingExpand(item.step!.id)"
+                        @toggle="toggleThinkingExpand(item.step!.id, $event)"
                         @finalize="cacheThinkingDuration(item.step!.id, $event)"
                       />
                       <div

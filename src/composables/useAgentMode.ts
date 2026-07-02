@@ -158,6 +158,11 @@ export function useAgentMode(
   // 干脆这一段时间统一硬切贴底，之后才进入流式 FLIP。
   let suppressFlipUntil = 0
 
+  // 用户主动展开/收起思考块等「局部高度变化」期间，跳过 ResizeObserver 的贴底/视区补偿，
+  // 改由调用方用 anchorElementViewportY 把点击行钉回原位，避免 applyReadingResize
+  // 把视区往下推或 applyFollowingResize 把视区拽回底部。
+  let suppressLayoutResizeUntil = 0
+
   // 智能滚动节流状态
   let scrollPending = false
   let lastScrollTime = 0
@@ -499,6 +504,22 @@ export function useAgentMode(
   // grace 窗口内用户拖滚动条上滚时 skipScrollUpdate 仍为 true，会误把阅读位拽回底部（回归 bug）。
   const shouldFollowResize = () => shouldFollowBottom()
 
+  /** 短暂屏蔽 wrapper ResizeObserver 的贴底/阅读补偿（思考块展开等局部布局变化） */
+  const suppressLayoutResizeCompensation = (ms: number) => {
+    suppressLayoutResizeUntil = Date.now() + ms
+  }
+
+  /** 把 anchorEl 钉回切换前的视口纵坐标，保持用户点击的那一行画面稳定 */
+  const anchorElementViewportY = (anchorEl: HTMLElement, targetViewportTop: number) => {
+    const el = messagesRef.value
+    if (!el) return
+    const delta = anchorEl.getBoundingClientRect().top - targetViewportTop
+    if (Math.abs(delta) < 0.5) return
+    el.scrollTop += delta
+    lastKnownScrollTop = el.scrollTop
+    lastKnownScrollHeight = el.scrollHeight
+  }
+
   // 容器宽度变化驱动的 reflow 进行中：此期间 scroll 事件算出的 checkIsNearBottom() 不可信
   // （scrollHeight 因宽度变化而变，与用户滚动意图无关），updateScrollPosition 应跳过状态更新。
   const isInContainerReflow = () => Date.now() < containerReflowGuardUntil
@@ -814,6 +835,8 @@ export function useAgentMode(
       const newHeight = entries[0]?.contentRect.height ?? wrapper.offsetHeight
       const wrapperDelta = newHeight - prevWrapperHeight
       prevWrapperHeight = newHeight
+
+      if (Date.now() < suppressLayoutResizeUntil) return
 
       // ┌──────────────────────────────────────────────────────────────────────┐
       // │ ResizeObserver 副作用策略表（漏一格 = 一次回归，三次回归的教训）       │
@@ -2153,6 +2176,8 @@ export function useAgentMode(
     scrollToHistoryBottomWithRetry,
     scrollToBottom,
     scrollToBottomIfNeeded,
+    suppressLayoutResizeCompensation,
+    anchorElementViewportY,
     stopGeneration,
     // Agent 执行
     executionMode,

@@ -44,7 +44,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'toggle': []
+  'toggle': [anchorEl: HTMLElement]
   'finalize': [durationMs: number]
 }>()
 
@@ -121,10 +121,12 @@ const renderedReasoning = computed(() => renderMarkdown(props.reasoning))
 const hasReasoning = computed(() => !!props.reasoning)
 const streamingLabel = computed(() => props.label || t('ai.thinking.streaming'))
 
-const handleClick = () => {
+const handleClick = (event: MouseEvent) => {
   // reasoning 为空时（如初始"正在准备..."占位）不响应点击：没东西可展开
   if (!hasReasoning.value) return
-  emit('toggle')
+  const anchorEl = event.currentTarget
+  if (!(anchorEl instanceof HTMLElement)) return
+  emit('toggle', anchorEl)
 }
 
 watch(
@@ -141,7 +143,7 @@ watch(
 
 <template>
   <div class="thinking-block" :class="{ streaming: isStreaming, expanded, 'no-content': !hasReasoning }">
-    <div class="thinking-line" @click="handleClick">
+    <div class="thinking-line" @click="handleClick($event)">
       <span v-if="isStreaming" class="thinking-spinner-inline" aria-hidden="true"></span>
       <span v-else class="thinking-icon-done" aria-hidden="true">{{ expanded ? '▾' : '▸' }}</span>
       <span class="thinking-status" :class="{ 'streaming-text': isStreaming }">
