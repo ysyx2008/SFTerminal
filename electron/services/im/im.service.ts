@@ -1104,10 +1104,11 @@ export class IMService {
       // bufferProgress 在 'messages' 和 'all' 都开启：
       // - 'all'：合并工具进度 + 正文，靠 body 边界感知防腰斩
       // - 'messages'：只有正文，body 边界感知让正文并入下一条 digest 完整发出
+      // digest 不带标题前缀——微信原生"输入中"状态已能表达进行中，digest 只发内容本身
       // 用 adapter.sendProgressText 作为 IMProgressOutboundCapable 的代理检查
       // （三个方法 sendProgressText/sendProgressMarkdown/flushProgress 总是成组实现）
       await adapter.beginOutboundSession?.(replyContext, sendMessages && adapter.sendProgressText
-        ? { bufferProgress: true, progressDigestHeader: t('im.wechat_progress_digest') }
+        ? { bufferProgress: true }
         : undefined)
     } catch (err) {
       log.warn('beginOutboundSession failed (ignored):', err)

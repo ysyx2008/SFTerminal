@@ -309,7 +309,7 @@ describe('WeChatAdapter', () => {
     const adapter = new WeChatAdapter({ token: 'tok' } as any)
     await adapter.beginOutboundSession(
       { userId: 'u1', contextToken: 'ctx-1' },
-      { bufferProgress: true, progressDigestHeader: '⏳ H' },
+      { bufferProgress: true },
     )
     await Promise.resolve()
 
@@ -321,7 +321,6 @@ describe('WeChatAdapter', () => {
     await Promise.resolve()
 
     expect(sendMessageWeixinMock).toHaveBeenCalledTimes(1)
-    expect(sendMessageWeixinMock.mock.calls[0][0].text).toContain('⏳ H')
     expect(sendMessageWeixinMock.mock.calls[0][0].text).toContain('🔧 a')
 
     adapter.endOutboundSession({ userId: 'u1' })

@@ -7,7 +7,6 @@ import { WechatProgressBuffer } from './progress-buffer.js'
 export type WechatOutboundProgressSend = (text: string) => Promise<void>
 
 export type WechatOutboundProgressOptions = {
-  header: string
   sendDigest: WechatOutboundProgressSend
 }
 
@@ -15,7 +14,7 @@ export class WechatOutboundProgress {
   private readonly buffer: WechatProgressBuffer
 
   constructor(options: WechatOutboundProgressOptions) {
-    this.buffer = new WechatProgressBuffer(options.sendDigest, { header: options.header })
+    this.buffer = new WechatProgressBuffer(options.sendDigest, {})
   }
 
   /** 入队一行工具进度文本（🔧/❌） */

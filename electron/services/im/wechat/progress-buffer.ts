@@ -22,25 +22,22 @@ export const WECHAT_PROGRESS_MAX_LINES = 12
 export type WechatProgressBufferOptions = {
   flushIntervalMs?: number
   maxLines?: number
-  header: string
 }
 
 type Entry =
   | { kind: 'tool'; text: string }
   | { kind: 'body'; text: string }
 
-export function formatWechatProgressDigest(entries: readonly Entry[], header: string): string {
+export function formatWechatProgressDigest(entries: readonly Entry[]): string {
   if (entries.length === 0) return ''
-  const body = entries
+  return entries
     .map((entry) => (entry.kind === 'body' ? entry.text : `· ${entry.text}`))
     .join('\n')
-  return `${header}\n${body}`
 }
 
 export class WechatProgressBuffer {
   private readonly flushIntervalMs: number
   private readonly maxLines: number
-  private readonly header: string
 
   private entries: Entry[] = []
   private timer: ReturnType<typeof setTimeout> | null = null
@@ -53,7 +50,6 @@ export class WechatProgressBuffer {
   ) {
     this.flushIntervalMs = options.flushIntervalMs ?? WECHAT_PROGRESS_FLUSH_INTERVAL_MS
     this.maxLines = options.maxLines ?? WECHAT_PROGRESS_MAX_LINES
-    this.header = options.header
   }
 
   /**
@@ -127,7 +123,7 @@ export class WechatProgressBuffer {
       return this.flushChain
     }
 
-    const text = formatWechatProgressDigest(this.entries, this.header)
+    const text = formatWechatProgressDigest(this.entries)
     this.entries = []
 
     const run = async () => {

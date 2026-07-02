@@ -236,7 +236,6 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
     if (options?.bufferProgress) {
       const ctx = replyContext
       this.progressByUser.set(userId, new WechatOutboundProgress({
-        header: options.progressDigestHeader ?? '⏳ …',
         sendDigest: (text) => this.sendText(ctx, text),
       }))
     }

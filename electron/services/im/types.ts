@@ -113,8 +113,6 @@ export interface IMIncomingMessage {
 export interface IMOutboundSessionOptions {
   /** 是否缓冲合并过程消息（微信等风控渠道）；默认 false */
   bufferProgress?: boolean
-  /** 过程消息 digest 标题（bufferProgress 时由 IMService 传入 i18n 文案） */
-  progressDigestHeader?: string
 }
 
 /**
