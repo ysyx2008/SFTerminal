@@ -1026,7 +1026,7 @@ export function useAgentMode(
     const el = messagesRef.value
     if (!el) return
     prevContainerWidth = el.clientWidth
-    containerWidthObserver = new ResizeObserver((entries) => {
+    containerWidthObserver = new ResizeObserver(() => {
       if (tabActive?.value === false) return
       // 用 clientWidth 而非 contentRect.width：前者含 padding，与 prevContainerWidth
       // 初始值同维度，避免首次 observe 回调因维度不一致误触发 reflow。
