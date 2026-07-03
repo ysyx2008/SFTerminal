@@ -493,14 +493,35 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 
 ## 风险评估
 
-`risk-assessor.ts` 对命令进行分级：
+命令审计采用**双通道**架构（`electron/services/agent/command-audit/`）：
+
+| 通道 | 工具 | 执行方式 | 审计 |
+|---|---|---|---|
+| **argv**（优先） | `exec_argv` | `spawn(cmd, args, { shell: false })` | 白名单 + 路径分区，无 shell 解析 |
+| **shell**（兜底） | `exec` / `execute_command` | shell 字符串 / PTY | `@questi0nm4rk/shell-ast`（mvdan/sh WASM）拆复合命令 + 白名单 |
+
+**Fail-Closed + 路径优先**：
+
+- 不在白名单 / AST 解析失败 / 动态命令（`sudo $CMD`、`bash -c $script`）→ `dangerous` 起步
+- 写操作先看**工作区路径分区**（C 方案），再定级：
+  - **free**（`scratch/`、`charts/`）：读写删自动放行
+  - **protected**（`templates/`、根目录人格 md）：写删需确认
+  - **workspace**：工作区内其他写删需确认
+  - **outside**：工作区外写删 `dangerous`；系统关键路径写删 `blocked`
+- 只读命令（`cat`、`ls`）读系统路径仍为 `safe`
+
+`risk-assessor.ts` 对 shell 命令调用 `assessShellRisk()`（async）；Windows 原生 PowerShell/CMD 回退 regex（`assessCommandRiskLegacy`）。
+
+风险等级：
 
 - **safe**：只读命令（ls, cat, pwd...）
 - **moderate**：有副作用但可恢复（mkdir, cp, apt install...）
 - **dangerous**：不可逆操作（rm -rf, dd, 格式化...）
-- **blocked**：交互式编辑器（vim, nano...），有更好的工具替代
+- **blocked**：交互式编辑器（vim, nano...），或系统关键路径写删
 
 处理策略：`allow` / `auto_fix`（如自动加 -y）/ `timed_execution` / `fire_and_forget` / `block`
+
+启动时 `main.ts` 预热 shell-ast WASM（`ensureShellAstReady`），避免首条 shell 命令审计卡顿。
 
 ## 执行模式
 

@@ -3,6 +3,9 @@
  */
 import type { RiskLevel } from './types'
 import { t } from './i18n'
+import type { AuditContext, CommandRiskAssessment } from './command-audit/types'
+import { defaultAuditContext } from './command-audit/assess-argv'
+import { assessShellRisk } from './command-audit/assess-shell'
 
 /**
  * 命令处理信息
@@ -326,9 +329,11 @@ export function assessDatabaseRisk(command: string): RiskLevel {
 }
 
 /**
- * 评估命令风险等级
+ * 评估命令风险等级（regex 回退 / Windows 原生 shell）
+ *
+ * shell 通道优先走 AST 审计（assessShellRisk）；此函数用于 legacy 回退。
  */
-export function assessCommandRisk(command: string): RiskLevel {
+export function assessCommandRiskLegacy(command: string): RiskLevel {
   const cmd = command.toLowerCase().trim()
 
   // 黑名单 - 直接拒绝
@@ -446,4 +451,25 @@ export function assessCommandRisk(command: string): RiskLevel {
 
   // 安全 - 直接执行
   return 'safe'
+}
+
+/**
+ * 评估命令风险等级（shell AST 优先，Fail-Closed）
+ */
+export async function assessCommandRisk(
+  command: string,
+  ctx?: AuditContext,
+): Promise<RiskLevel> {
+  const detailed = await assessCommandRiskDetailed(command, ctx)
+  return detailed.level
+}
+
+/** 带逐子命令详情的风险评估 */
+export async function assessCommandRiskDetailed(
+  command: string,
+  ctx?: AuditContext,
+): Promise<CommandRiskAssessment> {
+  return assessShellRisk(command, ctx ?? defaultAuditContext(), {
+    legacyAssess: assessCommandRiskLegacy,
+  })
 }

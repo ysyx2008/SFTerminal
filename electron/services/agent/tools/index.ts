@@ -17,6 +17,7 @@ import { normalizeToolArgs } from './utils'
 // 导入各模块的工具函数
 import { executeCommand } from './command'
 import { executeCommandDirect, awaitExec } from './exec'
+import { executeArgvDirect } from './exec-argv'
 import { getTerminalContext, checkTerminalStatus, sendControlKey, sendInput } from './terminal'
 import { fileSearch, readFile, editFile, writeTextFile, writeRemoteTextFile } from './file'
 import { sftpPut, sftpGet } from './sftp'
@@ -40,6 +41,7 @@ import { resolveTargetPtyId } from './utils'
 // 导出工具函数供外部使用
 export { executeCommand } from './command'
 export { executeCommandDirect, awaitExec } from './exec'
+export { executeArgvDirect } from './exec-argv'
 export { getTerminalContext, checkTerminalStatus, sendControlKey, sendInput } from './terminal'
 export {
   fileSearch,
@@ -131,6 +133,9 @@ export async function executeTool(
 
     case 'exec':
       return executeCommandDirect(args, toolCall.id, config, executor)
+
+    case 'exec_argv':
+      return executeArgvDirect(args, toolCall.id, config, executor)
 
     case 'await_exec':
       return awaitExec(args, executor)

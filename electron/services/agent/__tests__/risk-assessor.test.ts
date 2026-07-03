@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest'
 import {
   analyzeCommand,
   assessCommandRisk,
+  assessCommandRiskLegacy,
   assessDatabaseRisk,
   isSudoCommand,
   detectPasswordPrompt,
@@ -13,9 +14,9 @@ import {
   PASSWORD_PROMPT_PATTERNS
 } from '../risk-assessor'
 
-// ==================== assessCommandRisk ====================
+// ==================== assessCommandRiskLegacy (regex) ====================
 
-describe('assessCommandRisk', () => {
+describe('assessCommandRiskLegacy', () => {
   describe('blocked commands (should never execute)', () => {
     it.each([
       // Unix
@@ -42,7 +43,7 @@ describe('assessCommandRisk', () => {
       ['Remove-Item C:\\ -Recurse -Force', 'Remove-Item drive root'],
       ['Remove-Item -Recurse -Force C:\\', 'Remove-Item drive root reversed params'],
     ])('should block: %s (%s)', (cmd) => {
-      expect(assessCommandRisk(cmd)).toBe('blocked')
+      expect(assessCommandRiskLegacy(cmd)).toBe('blocked')
     })
   })
 
@@ -99,7 +100,7 @@ describe('assessCommandRisk', () => {
       ['Remove-Service myservice', 'Remove-Service'],
       ['Clear-Content logfile.txt', 'Clear-Content'],
     ])('should flag as dangerous: %s (%s)', (cmd) => {
-      expect(assessCommandRisk(cmd)).toBe('dangerous')
+      expect(assessCommandRiskLegacy(cmd)).toBe('dangerous')
     })
   })
 
@@ -144,7 +145,7 @@ describe('assessCommandRisk', () => {
       ['Install-Module PSReadLine', 'Install-Module'],
       ['Install-Package nuget', 'Install-Package'],
     ])('should flag as moderate: %s (%s)', (cmd) => {
-      expect(assessCommandRisk(cmd)).toBe('moderate')
+      expect(assessCommandRiskLegacy(cmd)).toBe('moderate')
     })
   })
 
@@ -191,29 +192,29 @@ describe('assessCommandRisk', () => {
       ['Get-Content file.txt', 'Get-Content'],
       ['Test-Connection -Count 4 google.com', 'Test-Connection'],
     ])('should allow safe command: %s (%s)', (cmd) => {
-      expect(assessCommandRisk(cmd)).toBe('safe')
+      expect(assessCommandRiskLegacy(cmd)).toBe('safe')
     })
   })
 
   describe('Windows: blocked vs dangerous boundary', () => {
     it('rd /s on drive root should be blocked', () => {
-      expect(assessCommandRisk('rd /s /q C:\\')).toBe('blocked')
+      expect(assessCommandRiskLegacy('rd /s /q C:\\')).toBe('blocked')
     })
 
     it('rd /s on non-root path should be dangerous (not blocked)', () => {
-      expect(assessCommandRisk('rd /s /q C:\\Users\\test')).toBe('dangerous')
+      expect(assessCommandRiskLegacy('rd /s /q C:\\Users\\test')).toBe('dangerous')
     })
 
     it('rd without /s should be safe (empty dir only)', () => {
-      expect(assessCommandRisk('rd emptydir')).toBe('safe')
+      expect(assessCommandRiskLegacy('rd emptydir')).toBe('safe')
     })
 
     it('Remove-Item with -Recurse on drive root should be blocked', () => {
-      expect(assessCommandRisk('Remove-Item C:\\ -Recurse -Force')).toBe('blocked')
+      expect(assessCommandRiskLegacy('Remove-Item C:\\ -Recurse -Force')).toBe('blocked')
     })
 
     it('Remove-Item with -Recurse on non-root should be dangerous', () => {
-      expect(assessCommandRisk('Remove-Item C:\\temp -Recurse')).toBe('dangerous')
+      expect(assessCommandRiskLegacy('Remove-Item C:\\temp -Recurse')).toBe('dangerous')
     })
   })
 })

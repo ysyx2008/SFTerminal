@@ -55,6 +55,7 @@
     "@modelcontextprotocol/sdk": "^1.24.3",
     "@mozilla/readability": "^0.6.0",
     "@napi-rs/canvas": "^0.1.95",
+    "@questi0nm4rk/shell-ast": "^0.8.0",
     "@slack/bolt": "^4.6.0",
     "@wecom/aibot-node-sdk": "^1.0.1",
     "@xterm/addon-fit": "^0.10.0",

@@ -1432,6 +1432,11 @@ app.whenReady().then(async () => {
 
   ensureAgentWorkspaceDirs()
 
+  // shell-ast WASM 预热（命令审计首条 shell 命令不卡顿）
+  void import('./services/agent/command-audit/parser').then(({ ensureShellAstReady }) =>
+    ensureShellAstReady().catch(err => log.warn('[startup] shell-ast preload failed:', err))
+  )
+
   // 数据目录迁移：必须在创建窗口、初始化 sensor/watch/agent 等一切重活之前执行。
   // 此刻源目录无任何运行时写入，复制数据保证一致；完成后会自动重启。
   const migrated = await runStartupMigrationIfNeeded()

@@ -118,6 +118,15 @@ export interface SpawnOptions {
   env?: Record<string, string>
 }
 
+/** argv 通道：spawn(cmd, args, { shell: false })，不经 shell 解释 */
+export interface SpawnArgvOptions {
+  cmd: string
+  args: string[]
+  cwd?: string
+  maxSeconds: number
+  env?: Record<string, string>
+}
+
 export interface WaitOptions {
   task: InternalTask
   /** 最长等待时长（秒） */
@@ -133,23 +142,57 @@ class BackgroundExecManager {
   private nextId = 1
 
   /**
-   * 启动命令，立即返回 task 句柄。
-   * 注意：成功启动 ≠ 命令成功执行，调用方需通过 wait() 拿状态。
+   * 启动 shell 字符串命令（legacy exec 工具）
    */
   spawn(opts: SpawnOptions): InternalTask {
-    const taskId = `exec-${this.nextId++}`
     const shell = getDefaultShell()
-
-    // Windows 走 cmd shell，POSIX 走 /bin/sh -l -c（与原 exec.ts 行为一致）
     const spawnEnv = opts.env ? { ...process.env, ...opts.env } : process.env
     const child = process.platform === 'win32'
       ? spawn(opts.command, { shell, cwd: opts.cwd, env: spawnEnv })
       : spawn(shell, ['-l', '-c', opts.command], { cwd: opts.cwd, env: spawnEnv })
 
+    return this.startTask({
+      command: opts.command,
+      child,
+      cwd: opts.cwd,
+      maxSeconds: opts.maxSeconds,
+    })
+  }
+
+  /**
+   * 启动 argv 命令（exec_argv 工具）：不经 shell，审计对象为结构化 argv
+   */
+  spawnArgv(opts: SpawnArgvOptions): InternalTask {
+    const spawnEnv = opts.env ? { ...process.env, ...opts.env } : process.env
+    const display = [opts.cmd, ...opts.args].join(' ')
+    const child = spawn(opts.cmd, opts.args, {
+      cwd: opts.cwd,
+      env: spawnEnv,
+      shell: false,
+      windowsHide: true,
+    })
+
+    return this.startTask({
+      command: display,
+      child,
+      cwd: opts.cwd,
+      maxSeconds: opts.maxSeconds,
+    })
+  }
+
+  private startTask(opts: {
+    command: string
+    child: ChildProcess
+    cwd?: string
+    maxSeconds: number
+  }): InternalTask {
+    const taskId = `exec-${this.nextId++}`
+    const { child, command, maxSeconds } = opts
+
     const buffer = new RingBuffer(RING_BUFFER_MAX)
     const task: InternalTask = {
       taskId,
-      command: opts.command,
+      command,
       child,
       buffer,
       startedAt: Date.now(),
@@ -159,7 +202,6 @@ class BackgroundExecManager {
       waiters: new Set(),
     }
 
-    // stdout/stderr 都进同一个 buffer（与同步路径一致：合并按时序输出）
     const onData = (chunk: Buffer) => {
       const text = decodeBuffer(chunk, true).content
       buffer.append(text)
@@ -173,7 +215,6 @@ class BackgroundExecManager {
       task.signal = signal
       task.finishedAt = Date.now()
       if (task.status === 'running') {
-        // 信号杀掉视为 killed；exit code 非 0 视为 failed；否则 completed
         task.status = signal ? 'killed' : (code === 0 ? 'completed' : 'failed')
       }
       if (task.killTimer) {
@@ -187,7 +228,6 @@ class BackgroundExecManager {
     child.on('error', (err) => {
       log.warn(`exec ${taskId} spawn error: ${err.message}`)
       buffer.append(`\n[exec error] ${err.message}\n`)
-      // spawn 本身失败（如命令找不到），exit 事件可能不会触发，主动收尾
       if (task.status === 'running') {
         task.status = 'failed'
         task.finishedAt = Date.now()
@@ -196,16 +236,15 @@ class BackgroundExecManager {
       this.scheduleCleanup(task)
     })
 
-    // max_seconds 安全网：防止 Agent 启了死循环忘了 kill
     task.killTimer = setTimeout(() => {
       if (task.status === 'running') {
-        log.info(`exec ${taskId} hit max_seconds (${opts.maxSeconds}s), sending SIGKILL`)
+        log.info(`exec ${taskId} hit max_seconds (${maxSeconds}s), sending SIGKILL`)
         try { child.kill('SIGKILL') } catch { /* 进程可能已结束 */ }
       }
-    }, opts.maxSeconds * 1000)
+    }, maxSeconds * 1000)
 
     this.tasks.set(taskId, task)
-    log.info(`exec ${taskId} started, pid=${child.pid}, cmd=${opts.command.slice(0, 80)}`)
+    log.info(`exec ${taskId} started, pid=${child.pid}, cmd=${command.slice(0, 80)}`)
     return task
   }
 

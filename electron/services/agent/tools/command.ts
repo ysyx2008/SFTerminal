@@ -153,7 +153,7 @@ export async function executeCommand(
   }
 
   // 评估风险
-  const riskLevel = assessCommandRisk(command)
+  const riskLevel = await assessCommandRisk(command)
 
   if (riskLevel === 'blocked') {
     return { 

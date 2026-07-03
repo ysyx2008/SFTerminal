@@ -413,7 +413,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         type: 'function',
         function: {
           name: 'exec',
-          description: `运行 shell 命令并返回输出。不支持交互式命令(vim/nano/tmux)。
+          description: `运行 shell 命令并返回输出（需要管道/&&/重定向时用此工具；单条命令请优先 exec_argv）。不支持交互式命令(vim/nano/tmux)。
 
 **等待与转后台**：
 - wait_seconds 内结束 → 返回完整结果
@@ -460,6 +460,66 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           argRole: { summaryLine: 'command' },
           // 流式预卡片：标题 + command 字段；命令文本本身在流式增长，不加字符数尾缀
           streamDisplay: { titleKey: 'status.executing', titleField: 'command' }
+        }
+      }
+    : null
+
+  const execArgvTool: ToolDefinitionWithMeta | null = options?.mode === 'assistant'
+    ? {
+        type: 'function',
+        function: {
+          name: 'exec_argv',
+          description: `以结构化 argv 执行命令（不经 shell 解释，**优先使用**）。
+
+**何时用 exec_argv**（单条可执行程序 + 参数，无管道/无 &&）：
+- ls / cat / grep / rm / mv / cp / mkdir / node script.js 等
+- 默认 cwd 为 agent-workspace/scratch/
+
+**何时用 exec**（需要 shell 特性）：
+- 管道：\`ls | grep foo\`
+- 复合：\`cmd1 && cmd2\`
+- 重定向：\`echo x > file\`
+
+**工作区沙箱**：scratch/、charts/ 内读写删自动放行；templates/ 与人格配置 md 需确认；工作区外需确认。
+
+参数 wait_seconds / max_seconds / skill_id / await_exec 语义与 exec 相同。`,
+          parameters: {
+            type: 'object',
+            properties: {
+              cmd: {
+                type: 'string',
+                description: '可执行程序名或路径，如 "ls"、"grep"、"/usr/bin/node"'
+              },
+              args: {
+                type: 'array',
+                items: { type: 'string' },
+                description: '参数数组，每个元素对应 argv 的一个参数（不含 cmd 本身）'
+              },
+              cwd: {
+                type: 'string',
+                description: '工作目录（可选，默认 agent-workspace/scratch/）'
+              },
+              wait_seconds: {
+                type: 'number',
+                description: '同步等待秒数（默认 60，最大 600）'
+              },
+              max_seconds: {
+                type: 'number',
+                description: '最长运行秒数（默认 3600，最大 86400）'
+              },
+              skill_id: {
+                type: 'string',
+                description: '技能 ID（可选），注入该技能 env'
+              }
+            },
+            required: ['cmd', 'args']
+          }
+        },
+        _meta: {
+          idempotencyKey: ['cmd', 'args'],
+          contextBudget: { toolResult: 'clearable' },
+          argRole: { summaryLine: 'cmd' },
+          streamDisplay: { titleKey: 'status.executing', titleField: 'cmd' }
         }
       }
     : null
@@ -514,6 +574,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
   // 改动顺序时请同步检查子 Agent 工具白名单。
   const builtinTools: ToolDefinition[] = [
     // ==================== 子 Agent 通用前缀（read / write 都用） ====================
+    ...(execArgvTool ? [execArgvTool as ToolDefinition] : []),
     ...(execTool ? [execTool as ToolDefinition] : []),
     {
       type: 'function',

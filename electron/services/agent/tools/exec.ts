@@ -116,7 +116,7 @@ export async function executeCommandDirect(
     return { success: false, output: '', error: errorMsg }
   }
 
-  const riskLevel = assessCommandRisk(command)
+  const riskLevel = await assessCommandRisk(command)
   if (riskLevel === 'blocked') {
     return { success: false, output: '', error: t('hint.security_blocked') }
   }

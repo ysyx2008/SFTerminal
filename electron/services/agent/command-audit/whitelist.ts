@@ -1,0 +1,258 @@
+/**
+ * argv 通道命令白名单
+ *
+ * 设计原则：
+ * - Allowlist：不在白名单的命令 → dangerous（Fail-Closed）
+ * - safe 级别只放只读命令（ls/cat/grep/find...）
+ * - 副作用命令（rm/mv/cp/mkdir...）永远不进 safe 白名单
+ *   但可被路径分区降级（路径在 scratch/ 时整体降到 safe）
+ * - flags 白名单：不认识的 flag → moderate（保守）
+ *
+ * 注意：此白名单只用于 argv 通道（exec_argv 工具）。
+ * shell 通道的审计在 Phase 2 加入，复用同一套规则结构。
+ */
+
+import type { RiskLevel } from '@shared/types/agent'
+import * as path from 'path'
+
+/**
+ * 命令的白名单规则
+ */
+export interface CommandRule {
+  /** 命令名 */
+  cmd: string
+  /** 命令本身的风险等级（未经路径调整） */
+  baseLevel: RiskLevel
+  /** 安全的 flags（合并后的短 flag 也认：-rf 拆成 -r -f 后匹配） */
+  safeFlags: Set<string>
+  /** 接值的 flags（这些 flag 后面跟一个值，不当作路径） */
+  valueFlags?: Set<string>
+  /**
+   * 路径参数的位置规则：
+   * - 'all'    所有非 flag、非 value-flag 的参数都是路径
+   * - 'fixed'  固定位置的参数是路径（见 pathArgIndices）
+   */
+  pathMode: 'all' | 'fixed' | 'none'
+  /** 当 pathMode='fixed' 时，这些 index 是路径 */
+  pathArgIndices?: number[]
+  /**
+   * 该命令是否会写文件（影响路径分区判断）：
+   * - true  写/删操作，路径分区会调整风险
+   * - false 只读，路径分区不影响
+   */
+  writesTo: boolean
+}
+
+/**
+ * 规范化 flag：拆开合并的短 flag（-rf → -r -f），保留长 flag（--recursive）
+ *
+ * 注意：只处理短 flag 合并。--flag=value 形式由调用方传入时已拆开。
+ */
+export function normalizeFlags(rawFlags: string[]): string[] {
+  const result: string[] = []
+  for (const f of rawFlags) {
+    if (f.startsWith('--')) {
+      // 长选项，去掉 =value 部分
+      const eq = f.indexOf('=')
+      result.push(eq >= 0 ? f.slice(0, eq) : f)
+    } else if (f.startsWith('-') && !f.startsWith('--') && f.length > 2) {
+      // 短 flag 合并：-rf → -r -f
+      for (const ch of f.slice(1)) result.push(`-${ch}`)
+    } else {
+      // 单个 - 或非 flag，原样保留
+      result.push(f)
+    }
+  }
+  return result
+}
+
+/**
+ * 从 argv 中分离 flags、value-flags、路径参数、其他参数
+ *
+ * 返回的 paths 是按出现顺序的路径位置参数（不含 flag、不含 value-flag 的值）
+ */
+export interface ParsedArgv {
+  flags: string[]          // 规范化后的 flags
+  paths: string[]          // 路径位置参数
+  otherArgs: string[]      // 非路径的其他参数
+  /** 解析失败原因（如某个 value-flag 没拿到值） */
+  parseError?: string
+}
+
+export function splitArgv(args: string[], rule: CommandRule): ParsedArgv {
+  const flags: string[] = []
+  const paths: string[] = []
+  const otherArgs: string[] = []
+  const valueFlags = rule.valueFlags ?? new Set()
+  const rawFlags: string[] = []
+  let pathArgIdx = 0
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a === undefined || a === '') continue
+
+    // 是 flag
+    if (a.startsWith('-') && a.length > 1) {
+      // 长选项 --flag=value 形式：拆出 flag 和 value
+      if (a.startsWith('--') && a.includes('=')) {
+        const eq = a.indexOf('=')
+        const flagName = a.slice(0, eq)
+        const value = a.slice(eq + 1)
+        rawFlags.push(flagName)
+        // --flag=value 的 value 不进 paths
+        void value
+        continue
+      }
+      rawFlags.push(a)
+      // 如果是 value-flag，下一个参数是它的值（不当作路径）
+      if (valueFlags.has(a) || (a.startsWith('--') && a.includes('='))) {
+        const next = args[i + 1]
+        if (next !== undefined && !next.startsWith('-')) {
+          i++  // 跳过值
+        }
+      }
+      continue
+    }
+
+    // 非 flag 参数：根据 pathMode 判断
+    if (rule.pathMode === 'all') {
+      paths.push(a)
+    } else if (rule.pathMode === 'fixed' && rule.pathArgIndices?.includes(pathArgIdx)) {
+      paths.push(a)
+    } else {
+      otherArgs.push(a)
+    }
+    pathArgIdx++
+  }
+
+  return {
+    flags: normalizeFlags(rawFlags),
+    paths,
+    otherArgs,
+  }
+}
+
+function rule(
+  cmd: string,
+  baseLevel: RiskLevel,
+  opts: Partial<Omit<CommandRule, 'cmd' | 'baseLevel'>> = {},
+): CommandRule {
+  return {
+    cmd,
+    baseLevel,
+    safeFlags: opts.safeFlags ?? new Set(),
+    valueFlags: opts.valueFlags,
+    pathMode: opts.pathMode ?? 'all',
+    pathArgIndices: opts.pathArgIndices,
+    writesTo: opts.writesTo ?? false,
+  }
+}
+
+/** argv 通道命令白名单（Fail-Closed：未列出 → dangerous） */
+export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
+  // —— 只读 / 查询 ——
+  ls: rule('ls', 'safe', {
+    safeFlags: new Set(['-l', '-a', '-h', '-R', '-t', '-1', '-la', '-lah', '-al', '-ahl']),
+    pathMode: 'all',
+  }),
+  cat: rule('cat', 'safe', { safeFlags: new Set(['-n', '-b', '-s']), pathMode: 'all' }),
+  head: rule('head', 'safe', { safeFlags: new Set(['-n', '-c']), pathMode: 'all' }),
+  tail: rule('tail', 'safe', { safeFlags: new Set(['-n', '-c']), pathMode: 'all' }),
+  grep: rule('grep', 'safe', {
+    safeFlags: new Set(['-i', '-v', '-r', '-n', '-c', '-l', '-E', '-F', '-w', '-h', '--color']),
+    pathMode: 'all',
+  }),
+  find: rule('find', 'safe', {
+    safeFlags: new Set(['-name', '-type', '-maxdepth', '-mindepth', '-mtime', '-size', '-print']),
+    valueFlags: new Set(['-name', '-type', '-maxdepth', '-mindepth', '-mtime', '-size']),
+    pathMode: 'fixed',
+    pathArgIndices: [0],
+  }),
+  pwd: rule('pwd', 'safe', { pathMode: 'none' }),
+  echo: rule('echo', 'safe', { pathMode: 'none' }),
+  date: rule('date', 'safe', { safeFlags: new Set(['-u', '-I']), pathMode: 'none' }),
+  whoami: rule('whoami', 'safe', { pathMode: 'none' }),
+  id: rule('id', 'safe', { pathMode: 'none' }),
+  wc: rule('wc', 'safe', { safeFlags: new Set(['-l', '-w', '-c']), pathMode: 'all' }),
+  sort: rule('sort', 'safe', { safeFlags: new Set(['-n', '-r', '-u']), pathMode: 'all' }),
+  uniq: rule('uniq', 'safe', { safeFlags: new Set(['-c', '-d']), pathMode: 'all' }),
+  diff: rule('diff', 'safe', { safeFlags: new Set(['-u', '-r', '-q']), pathMode: 'all' }),
+  file: rule('file', 'safe', { pathMode: 'all' }),
+  stat: rule('stat', 'safe', { pathMode: 'all' }),
+  test: rule('test', 'safe', { pathMode: 'none' }),
+  '[': rule('[', 'safe', { pathMode: 'none' }),
+  which: rule('which', 'safe', { pathMode: 'all' }),
+  type: rule('type', 'safe', { pathMode: 'all' }),
+  env: rule('env', 'safe', { pathMode: 'none' }),
+  printenv: rule('printenv', 'safe', { pathMode: 'none' }),
+  git: rule('git', 'safe', {
+    safeFlags: new Set(['-C', '--git-dir', '--work-tree', '-c']),
+    valueFlags: new Set(['-C', '--git-dir', '--work-tree', '-c']),
+    pathMode: 'none',
+  }),
+  node: rule('node', 'safe', {
+    safeFlags: new Set(['-e', '-v', '--version', '--eval']),
+    valueFlags: new Set(['-e', '--eval']),
+    pathMode: 'all',
+  }),
+  python: rule('python', 'safe', {
+    safeFlags: new Set(['-c', '-m', '-V', '--version']),
+    valueFlags: new Set(['-c', '-m']),
+    pathMode: 'all',
+  }),
+  python3: rule('python3', 'safe', {
+    safeFlags: new Set(['-c', '-m', '-V', '--version']),
+    valueFlags: new Set(['-c', '-m']),
+    pathMode: 'all' }),
+  npm: rule('npm', 'moderate', {
+    safeFlags: new Set(['run', 'test', 'ci', 'ls', 'list', 'view', 'outdated', '--']),
+    pathMode: 'none',
+  }),
+
+  // —— 写/删/改（baseLevel 至少 moderate；路径分区可降级或升级） ——
+  rm: rule('rm', 'dangerous', {
+    safeFlags: new Set(['-r', '-f', '-rf', '-fr', '-R', '-v', '-i']),
+    pathMode: 'all',
+    writesTo: true,
+  }),
+  mv: rule('mv', 'moderate', { safeFlags: new Set(['-f', '-n', '-v']), pathMode: 'all', writesTo: true }),
+  cp: rule('cp', 'moderate', {
+    safeFlags: new Set(['-r', '-R', '-f', '-p', '-v', '-a']),
+    pathMode: 'all',
+    writesTo: true,
+  }),
+  mkdir: rule('mkdir', 'moderate', { safeFlags: new Set(['-p', '-m']), valueFlags: new Set(['-m']), pathMode: 'all', writesTo: true }),
+  touch: rule('touch', 'moderate', { pathMode: 'all', writesTo: true }),
+  chmod: rule('chmod', 'dangerous', { pathMode: 'all', writesTo: true }),
+  chown: rule('chown', 'dangerous', { pathMode: 'all', writesTo: true }),
+  ln: rule('ln', 'moderate', { safeFlags: new Set(['-s', '-f']), pathMode: 'all', writesTo: true }),
+}
+
+/** 从 cmd 路径提取命令名（/usr/bin/grep → grep） */
+export function basenameCommand(cmd: string): string {
+  const base = path.basename(cmd.trim())
+  if (process.platform === 'win32' && base.toLowerCase().endsWith('.exe')) {
+    return base.slice(0, -4)
+  }
+  return base
+}
+
+/** 查找白名单规则；未命中返回 undefined（调用方 Fail-Closed） */
+export function getArgvCommandRule(cmd: string): CommandRule | undefined {
+  const name = basenameCommand(cmd).toLowerCase()
+  return ARGV_COMMAND_RULES[name]
+}
+
+/** 未知 flag → moderate；已知危险 flag 组合可升级 */
+export function assessCommandFlags(rule: CommandRule, flags: string[]): RiskLevel {
+  const allowed = rule.safeFlags
+  for (const f of flags) {
+    if (!allowed.has(f)) {
+      return 'moderate'
+    }
+  }
+  // rm -rf 在工作区外仍由路径守卫处理；命令级保持 dangerous
+  return rule.baseLevel
+}
+
+
