@@ -239,6 +239,17 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 - **重试上限**：`MAX_CONTEXT_OVERFLOW_RETRIES = 1`，防死循环。仅压缩成功时消耗配额（压缩失败不消耗，避免下次循环跳过本可救的请求）。
 - **压缩失败**（如无 user 消息可压缩）：注入失败提示后正常抛错到 `handleError`。
 
+### 上下文超限本地预测压缩（proactiveCompress）
+
+`ContextWindowManager.proactiveCompress` 是「本地预测触发」的前置压缩，与 `emergencyCompress`（API 报错兜底）分工互补：
+
+- **触发**：`executeStep` 开头，`shouldProactiveCompress` 检测到上一轮 API 返回的真实 `prompt_tokens >= contextLength * 95%`（`PROACTIVE_THRESHOLD = 0.95`，留 5% 余量给本轮新增）。
+- **为什么用真实值不用估算**：`estimateTextTokens` 误差 <10% 是均值，单次可能 20%+；用上一轮真实 `prompt_tokens` 预测本轮，精度只受"本轮新增内容大小"影响（而新增内容由 `tool-result-budget` 控制着）。
+- **为什么需要它**：DeepSeek 等provider 上下文超限时**默默截断不报错**，`emergencyCompress`（依赖 `context_length_exceeded`）对它们无效。proactiveCompress 在 API 调用前主动压缩，覆盖这类 provider。
+- **流程**：`proactiveCompress`（复用 `compressAggressively`：先 keepRecent=2，仍 >90% 降到 1）→ 注入 `_systemInjected` 提示（`agent.context_proactive_compressed`，文案区分"系统主动压缩"vs emergency 的"系统自动压缩"）→ 直接继续 `executeStep`（不重试，压缩后正常调 AI）。
+- **同一 run 只压一次**：`_proactiveCompressedThisRun` 标记，避免连续压缩。
+- **与 emergencyCompress 的配额关系**：两者独立。proactive 用 `_proactiveCompressedThisRun` 限制 1 次；emergency 用 `MAX_CONTEXT_OVERFLOW_RETRIES = 1` 限制 1 次。最坏情况：先 proactive 压一次，API 仍报错再 emergency 压一次。
+
 ### 历史教训
 
 抽象层曾积累 11 处 OOP 违反：`buildPreToolCallDisplay` 的 switch / `PARALLELIZABLE_TOOLS` 的 Set / `setExecutionPhase` 的 if-else / `generateAllowedToolKey` 的三元 / `tool-result-budget` 的两份白名单 + mcp_/plugin_ 前缀启发式 / `task-memory` 的 ask_user 与 execute_command 硬编码 / `personality_craft` 引导判断 / `streaming-tool-executor` 的 CONCURRENCY_SAFE_TOOLS 复制粘贴。每一处都是"看起来很合理"的小妥协，每一次都让抽象与具体的边界往基类里塌一点；一次性重构修完后，机械护栏 + 规则 + 文档三层防护防止再次堆积。

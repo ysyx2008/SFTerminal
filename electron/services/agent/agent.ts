@@ -1767,7 +1767,27 @@ export abstract class Agent {
 
     // 更新上下文状态（注入 Context Status + 渐进式提醒）
     this._contextWindow.updatePressure(run)
-    
+
+    // 主动压缩（本地触发路径）：基于上一轮 API 返回的真实 prompt_tokens 预测本轮会超限，
+    // 在调用 API 前主动压缩。与 catch 里的 emergencyCompress（API 报错兜底）分工：
+    // - 本方法：DeepSeek 等"不报 context_length_exceeded 但会默默截断"的 provider 主力
+    // - emergencyCompress：OpenAI 等"会真报错"的 provider 兜底
+    // 同一 run 只主动压缩一次（_proactiveCompressedThisRun 标记），避免连续压缩
+    if (this._contextWindow.shouldProactiveCompress(run)) {
+      const compressed = this._contextWindow.proactiveCompress(run)
+      if (compressed) {
+        log.warn(`Proactive compress triggered (lastPromptTokens=${this._lastPromptTokens}, threshold=${Math.round(this._contextWindow.getContextLength() * 0.95)}), kept recent ${compressed.keepRecent}, freed ${compressed.freedTokens} tokens`)
+        run.messages.push({
+          role: 'user',
+          content: t('agent.context_proactive_compressed', {
+            keepRecent: compressed.keepRecent,
+            freed: compressed.freedTokens.toLocaleString()
+          }),
+          _systemInjected: true
+        })
+      }
+    }
+
     // 记录流式执行前的步骤数，用于后续 ensureToolResultStep 正确检测预执行工具的步骤
     const stepCountBeforeStreaming = run.steps.length
 

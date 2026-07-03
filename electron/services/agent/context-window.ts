@@ -46,6 +46,8 @@ export interface CompressResult {
 export class ContextWindowManager {
   /** 上下文管理功能激活阈值(用量百分比)。与 85% 警告消息对齐。 */
   static readonly THRESHOLD = 85
+  /** 主动压缩阈值(基于上一轮真实 prompt_tokens 的占比)。留 5% 余量给本轮新增内容。 */
+  static readonly PROACTIVE_THRESHOLD = 0.95
 
   /**
    * 判断错误是否为上下文超限错误。
@@ -69,6 +71,8 @@ export class ContextWindowManager {
   }
 
   private _enabled = false
+  /** 本轮 run 是否已主动压缩过（同一 run 只主动压缩一次，避免连续压缩） */
+  private _proactiveCompressedThisRun = false
 
   constructor(private deps: ContextWindowDeps) {}
 
@@ -272,20 +276,68 @@ export class ContextWindowManager {
    * @returns 压缩结果；若 messages 结构不允许压缩（如无 user 消息）返回 null
    */
   emergencyCompress(run: AgentRun): CompressResult | null {
-    let result = this.compress(run, this.buildEmergencySummary(), 2)
+    const result = this.compressAggressively(run, this.buildEmergencySummary())
+    if (result) {
+      log.info(`Emergency compress: freed ${result.freedTokens} tokens, kept recent ${result.keepRecent} rounds (archive ${result.archiveId})`)
+    }
+    return result
+  }
+
+  /**
+   * 是否应该主动压缩（本地触发路径，不等 API 报错）。
+   *
+   * 触发条件：上一轮 API 返回的真实 prompt_tokens >= contextLength * 95%。
+   * 仅用真实值，无真实值（首次对话 / cold start）时不触发——让 emergencyCompress
+   * 兜底，避免估算误差导致误压缩。
+   *
+   * 与 emergencyCompress 的分工：
+   * - 本方法在 API 调用前主动压缩（基于上一轮真实值预测本轮会超限）
+   * - emergencyCompress 在 API 调用失败后兜底（针对真报 context_length_exceeded 的 provider）
+   * - DeepSeek 等不报错的 provider：本方法能在"超限但 API 默默截断"前主动压缩，保住上下文质量
+   */
+  shouldProactiveCompress(run: AgentRun): boolean {
+    if (this._proactiveCompressedThisRun) return false  // 同一 run 只主动压缩一次，避免连续压缩
+    const lastPromptTokens = this.deps.getLastPromptTokens()
+    if (lastPromptTokens === undefined) return false  // 无真实值，不赌估算
+    const contextLength = this.getContextLength()
+    return lastPromptTokens >= contextLength * ContextWindowManager.PROACTIVE_THRESHOLD
+  }
+
+  /**
+   * 主动压缩（本地触发）：复用 emergencyCompress 的激进压缩逻辑，但用不同文案
+   * 让 AI 知道这是"预测性压缩"而非"API 报错后的紧急压缩"。
+   *
+   * 同一 run 只压一次（_proactiveCompressedThisRun 标记），防止绕过 shouldProactiveCompress
+   * 直接调用导致重复压缩。
+   *
+   * @returns 压缩结果；若已压缩过或 messages 结构不允许压缩返回 null
+   */
+  proactiveCompress(run: AgentRun): CompressResult | null {
+    if (this._proactiveCompressedThisRun) return null
+    const result = this.compressAggressively(run, this.buildProactiveSummary())
+    if (result) {
+      this._proactiveCompressedThisRun = true
+      log.info(`Proactive compress: freed ${result.freedTokens} tokens, kept recent ${result.keepRecent} rounds (archive ${result.archiveId})`)
+    }
+    return result
+  }
+
+  /**
+   * 激进压缩的共享实现：先 keepRecent=2，若压缩后仍 >90% 再降到 keepRecent=1。
+   * emergencyCompress（API 报错兜底）与 proactiveCompress（本地预测触发）共用此逻辑。
+   */
+  private compressAggressively(run: AgentRun, summary: string): CompressResult | null {
+    let result = this.compress(run, summary, 2)
     if (result) {
       const contextLength = this.getContextLength()
       const afterUsage = this.estimateTotalTokens(run.messages) / contextLength
       if (afterUsage > 0.9) {
-        const result2 = this.compress(run, this.buildEmergencySummary(), 1)
+        const result2 = this.compress(run, summary, 1)
         if (result2) {
           result = result2
         }
       }
-    }
-    if (result) {
       this._enabled = true
-      log.info(`Emergency compress: freed ${result.freedTokens} tokens, kept recent ${result.keepRecent} rounds (archive ${result.archiveId})`)
     }
     return result
   }
@@ -297,6 +349,16 @@ export class ContextWindowManager {
   private buildEmergencySummary(): string {
     return '【系统自动压缩】此前的对话因超出模型上下文限制已被紧急归档。' +
       '关键信息摘要请参考上方的 task_memory / 知识文档；如需原始对话细节，请调用 recall_compressed 工具按 archive_id 找回。'
+  }
+
+  /**
+   * 构建主动压缩的摘要文本。与紧急压缩不同——此时 API 尚未报错，是基于上一轮真实
+   * token 用量预测本轮会超限而提前压缩。文案上让 AI 知道这是"预防性"而非"事后补救"。
+   */
+  private buildProactiveSummary(): string {
+    return '【系统主动压缩】检测到上下文用量即将达到模型上限（基于上一轮真实 token 用量），' +
+      '为避免本轮请求超限，已提前归档早期对话。关键信息摘要请参考上方的 task_memory / 知识文档；' +
+      '如需原始对话细节，请调用 recall_compressed 工具按 archive_id 找回。'
   }
 
   /**

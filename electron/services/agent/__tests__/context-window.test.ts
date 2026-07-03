@@ -506,3 +506,171 @@ describe('ContextWindowManager.emergencyCompress', () => {
     expect((summaryMsg.content as string).includes('系统自动压缩')).toBe(true)
   })
 })
+
+// ==================== shouldProactiveCompress ====================
+
+describe('ContextWindowManager.shouldProactiveCompress', () => {
+  it('无 lastPromptTokens（首次对话/cold start）→ false（不赌估算）', () => {
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => undefined }))
+    const run = makeRun([user('do'), asst('a1'), asst('a2')])
+    expect(m.shouldProactiveCompress(run)).toBe(false)
+  })
+
+  it('lastPromptTokens < 95% contextLength → false', () => {
+    // contextLength=128000, 95% = 121600；给 100000（78%）不触发
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 100000 }))
+    const run = makeRun([user('do'), asst('a1')])
+    expect(m.shouldProactiveCompress(run)).toBe(false)
+  })
+
+  it('lastPromptTokens >= 95% contextLength → true（触发）', () => {
+    // contextLength=128000, 95% = 121600；给 122000（刚过线）触发
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    const run = makeRun([user('do'), asst('a1'), asst('a2'), asst('a3')])
+    expect(m.shouldProactiveCompress(run)).toBe(true)
+  })
+
+  it('lastPromptTokens 远超 contextLength（如 DeepSeek 默默接受 113K 但 profile 是 128K）→ 触发', () => {
+    // 模拟 DeepSeek 场景：profile contextLength=64000，但上一轮 API 真实用了 62000（>95%）
+    const m = new ContextWindowManager(makeDeps({
+      config: {
+        getAiProfiles: () => [{ id: 'p1', contextLength: 64000 } as AiProfile],
+        getActiveAiProfile: () => 'p1'
+      },
+      getLastPromptTokens: () => 62000
+    }))
+    const run = makeRun([user('do'), asst('a1'), asst('a2')])
+    expect(m.shouldProactiveCompress(run)).toBe(true)
+  })
+
+  it('proactiveCompress 后再调 shouldProactiveCompress → false（同一 run 只压一次）', () => {
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    const run = makeRun([
+      user('do'),
+      asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
+      asst('a2', [tc('c2', 'bar')]), tool('c2', 'r2'),
+      asst('a3', [tc('c3', 'baz')]), tool('c3', 'r3'),
+      asst('a4', [tc('c4', 'qux')]), tool('c4', 'r4')
+    ])
+    expect(m.shouldProactiveCompress(run)).toBe(true)
+    m.proactiveCompress(run)
+    // 压缩后即使 lastPromptTokens 仍高，也不再触发
+    expect(m.shouldProactiveCompress(run)).toBe(false)
+  })
+})
+
+// ==================== proactiveCompress ====================
+
+describe('ContextWindowManager.proactiveCompress', () => {
+  it('无 user 消息 → null（无法压缩）', () => {
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    expect(m.proactiveCompress(makeRun([asst('hi')]))).toBeNull()
+  })
+
+  it('成功压缩：归档早期对话、保留最近 2 组、enabled 翻 true', () => {
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    const beforeMsgCount: number[] = []
+    const run = makeRun([
+      user('do task'),
+      asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
+      asst('a2', [tc('c2', 'bar')]), tool('c2', 'r2'),
+      asst('a3', [tc('c3', 'baz')]), tool('c3', 'r3'),
+      asst('a4', [tc('c4', 'qux')]), tool('c4', 'r4')
+    ])
+    beforeMsgCount.push(run.messages.length)
+    const result = m.proactiveCompress(run)
+    expect(result).not.toBeNull()
+    expect(result!.keepRecent).toBe(2)
+    expect(result!.archiveId).toBe('ca-1')
+    expect(m.enabled).toBe(true)
+    expect(run.compressedArchives).toHaveLength(1)
+    // messages 条数减少：9 → 6（user + summary + a3 + c3 + a4 + c4）
+    expect(run.messages.length).toBeLessThan(beforeMsgCount[0])
+    expect(run.messages.length).toBe(6)
+  })
+
+  it('摘要文案含"系统主动压缩"（区分 emergency 的"系统自动压缩"）', () => {
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    const run = makeRun([
+      user('do'),
+      asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
+      asst('a2', [tc('c2', 'bar')]), tool('c2', 'r2'),
+      asst('a3', [tc('c3', 'baz')]), tool('c3', 'r3'),
+      asst('a4', [tc('c4', 'qux')]), tool('c4', 'r4')
+    ])
+    m.proactiveCompress(run)
+    const summaryMsg = run.messages[1]
+    expect(summaryMsg.role).toBe('assistant')
+    expect((summaryMsg.content as string).includes('系统主动压缩')).toBe(true)
+    expect((summaryMsg.content as string).includes('系统自动压缩')).toBe(false)  // 不能是 emergency 文案
+    expect((summaryMsg.content as string).includes('recall_compressed')).toBe(true)
+  })
+
+  it('keepRecent=2 后仍超 90% → 自动降到 keepRecent=1', () => {
+    // 用小 contextLength 让 keepRecent=2 压缩后 afterUsage 仍 > 90%
+    const m = new ContextWindowManager(makeDeps({
+      config: {
+        getAiProfiles: () => [{ id: 'p1', contextLength: 4200 } as AiProfile],
+        getActiveAiProfile: () => 'p1'
+      },
+      getLastPromptTokens: () => 4100  // > 95% of 4200
+    }))
+    const run = makeRun([
+      user('do'),
+      asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
+      asst('a2', [tc('c2', 'bar')]), tool('c2', 'r2'),
+      asst('a3', [tc('c3', 'baz')]), tool('c3', 'r3'),
+      asst('a4', [tc('c4', 'qux')]), tool('c4', 'r4')
+    ])
+    const result = m.proactiveCompress(run)
+    expect(result).not.toBeNull()
+    expect(result!.keepRecent).toBe(1)
+  })
+
+  it('恰好 keepRecent 组 assistant（toCompress 为空）→ null', () => {
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    const run = makeRun([
+      user('do'),
+      asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
+      asst('a2', [tc('c2', 'bar')]), tool('c2', 'r2')
+    ])
+    expect(m.proactiveCompress(run)).toBeNull()
+  })
+
+  it('同一 run 多次调用 proactiveCompress → 第二次返回 null（已压缩标记）', () => {
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    const run = makeRun([
+      user('do'),
+      asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
+      asst('a2', [tc('c2', 'bar')]), tool('c2', 'r2'),
+      asst('a3', [tc('c3', 'baz')]), tool('c3', 'r3'),
+      asst('a4', [tc('c4', 'qux')]), tool('c4', 'r4')
+    ])
+    const r1 = m.proactiveCompress(run)
+    expect(r1).not.toBeNull()
+    // 第二次：即使 messages 又积累了很多（这里没加新消息，但逻辑上应被 _proactiveCompressedThisRun 挡住）
+    const r2 = m.proactiveCompress(run)
+    expect(r2).toBeNull()
+  })
+
+  it('proactiveCompress 与 emergencyCompress 独立（emergency 仍可触发）', () => {
+    // 验证：proactive 压缩后，emergency 仍能工作（两者配额独立）
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    const run = makeRun([
+      user('do'),
+      asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
+      asst('a2', [tc('c2', 'bar')]), tool('c2', 'r2'),
+      asst('a3', [tc('c3', 'baz')]), tool('c3', 'r3'),
+      asst('a4', [tc('c4', 'qux')]), tool('c4', 'r4')
+    ])
+    // proactive 先压一次
+    const r1 = m.proactiveCompress(run)
+    expect(r1).not.toBeNull()
+    // 模拟后续又积累，emergency 仍能压（不同入口，不受 _proactiveCompressedThisRun 限制）
+    run.messages.push(asst('a5', [tc('c5', 'extra')]), tool('c5', 'r5'))
+    run.messages.push(asst('a6', [tc('c6', 'more')]), tool('c6', 'r6'))
+    const r2 = m.emergencyCompress(run)
+    expect(r2).not.toBeNull()
+    expect(run.compressedArchives!.length).toBeGreaterThanOrEqual(2)
+  })
+})
