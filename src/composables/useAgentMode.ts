@@ -870,6 +870,7 @@ export function useAgentMode(
       // ┌──────────────────────────────────────────────────────────────────────┐
       // │ ResizeObserver 副作用策略表（漏一格 = 一次回归，三次回归的教训）       │
       // │ 列「区间+条件」含 wrapperDelta 数值区间 + 时间维度条件（suppress）     │
+      // │ 详细分支条件见下方 applyReadingResize 注释 + AIPANEL_SPEC.md 四·补节   │
       // ├──────────────┬───────────────────────┬──────────────────────────────┤
       // │ 模式         │ 区间+条件              │ 副作用                        │
       // ├──────────────┼───────────────────────┼──────────────────────────────┤
@@ -880,8 +881,10 @@ export function useAgentMode(
       // │ following    │ > 0 且小增长           │ 钉新底 + guard + FLIP 平滑   │
       // ├──────────────┼───────────────────────┼──────────────────────────────┤
       // │ reading      │ ≤ 0                   │ 不动（浏览器自然 clamp）      │
-      // │ reading      │ (0, MAX_FLIP)         │ 视区锚定：scrollTop += delta │
-      // │              │   且 scrollTop≥TH     │   （顶部附近不动，防往上漂）  │
+      // │ reading      │ (0, MAX_FLIP)         │ 视增长来源相对视区位置而定：  │
+      // │              │   且 scrollTop≥TH     │   下方 → 不动（流式/append）  │
+      // │              │                       │   上方 → scrollTop += delta   │
+      // │              │                       │   判定见 isGrowthBelowViewport│
       // │ reading      │ (0, MAX_FLIP)         │ 不动（顶部附近，wrapper 增长 │
       // │              │   且 scrollTop<TH     │   不影响顶部视区）            │
       // │ reading      │ ≥ MAX_FLIP           │ 不动（虚拟列表重排，避免推走）│
@@ -931,19 +934,40 @@ export function useAgentMode(
   }
 
   /**
+   * 判断 wrapper 增长来源是否在视区下方。
+   *
+   * 用 `getItemOffset(lastIndex)` 取最后一个 item 顶距 wrapper 顶的距离，
+   * 与视区底（scrollTop + clientHeight）比较。最后一个 item 在视区下方 → 增长来自下方。
+   *
+   * 这是「增长来源相对视区位置」的显式判定，替代之前的 isAgentRunning 代理指标
+   * （后者是侧面推断，已知边界：AI 运行时若上方历史 item 实测高度修正会被误判）。
+   * 代理指标仍作为兜底：getItemOffset 不可用时回退到 itemsAppended / isAgentRunning。
+   */
+  const isGrowthBelowViewport = (el: HTMLElement, itemsAppended: boolean): boolean => {
+    // 快速短路：新 item append 必在下方
+    if (itemsAppended) return true
+    // 代理指标兜底：AI 运行中（含 grace 期）视为流式输出在下方
+    const withinAgentGrace = isAgentRunning.value
+      || (Date.now() - lastAgentRunningAt < AGENT_RUNNING_GRACE_MS)
+    if (withinAgentGrace) return true
+    // 显式判定：最后一个 item 是否在视区下方
+    const scroller = scrollerRef?.value
+    const items = flattenedItems.value
+    if (!scroller?.getItemOffset || items.length === 0) return false
+    const lastItemTop = scroller.getItemOffset(items.length - 1)
+    const viewportBottom = el.scrollTop + el.clientHeight
+    return lastItemTop >= viewportBottom
+  }
+
+  /**
    * 非跟底态（用户上滚阅读）：维持视区锚点，不让新内容把阅读位置顶走。
    * - 收缩（≤0）：不动，浏览器自然 clamp（跟底态的钉底另由 applyFollowingResize 处理）
    * - 增长 + 顶部附近：不动，顶部视区不受 wrapper 增长影响，补偿反而往上漂
-   * - 增长 + 中部 + 新 item append：不动。新内容 append 在视区下方，浏览器保持
-   *   scrollTop 不变即正确视区锚定；补偿 scrollTop += delta 反而把视区往下推，
+   * - 增长 + 中部 + 增长来自视区下方：不动。新 item append / 流式最后一项长高都在下方，
+   *   浏览器保持 scrollTop 不变即正确视区锚定；补偿 scrollTop += delta 反而把视区往下推，
    *   让用户正在阅读的历史内容往上跳——即「上滚阅读时画面持续一行一行向上跳动」。
-   * - 增长 + 中部 + AI 运行中（含停止后 grace 期）：不动。流式输出时最后一个 step 项
-   *   高度持续增长（content 追加，length 不变，itemsAppended=false），增长同样发生在
-   *   视区下方，浏览器保持 scrollTop 不变即正确；补偿会让画面一行一行向上跳。AI 运行时
-   *   wrapper 增长几乎全来自流式输出，历史 item 实测高度修正在打开对话时已基本完成。
-   *   grace 期覆盖 AI 刚停止后流式收尾的高度变化（isAgentRunning 可能先于最后一行
-   *   高度修正变 false）。
-   * - 增长 + 中部 + 已有 item 高度变化（非运行态）：scrollTop += delta 维持视区
+   *   判定见 isGrowthBelowViewport（getItemOffset 显式 + 代理指标兜底）。
+   * - 增长 + 中部 + 增长来自视区上方：scrollTop += delta 维持视区
    *   （8bb6222c 修复第三次回归，仅此分支真正需要补偿）
    * - 增长 + 大跳变：不动，虚拟列表重排避免一次性推走很多
    *
@@ -955,10 +979,7 @@ export function useAgentMode(
     if (wrapperDelta <= 0) return
     if (wrapperDelta >= MAX_FLIP_DELTA) return
     if (el.scrollTop < SCROLL_THRESHOLD) return
-    if (itemsAppended) return
-    const withinAgentGrace = isAgentRunning.value
-      || (Date.now() - lastAgentRunningAt < AGENT_RUNNING_GRACE_MS)
-    if (withinAgentGrace) return
+    if (isGrowthBelowViewport(el, itemsAppended)) return
     const maxScroll = el.scrollHeight - el.clientHeight
     const target = Math.min(el.scrollTop + wrapperDelta, maxScroll)
     if (target !== el.scrollTop) {

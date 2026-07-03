@@ -1,6 +1,6 @@
 # AiPanel 渲染规则 SPEC
 
-> Last verified: 2026-06-20  
+> Last verified: 2026-07-03  
 > 文件：`src/components/AiPanel.vue`  
 > 职责：将 agentTaskGroups 渲染为可交互的对话流 UI，管理滚动、确认框、输入框等。
 
@@ -91,6 +91,57 @@ AiPanel
 **智能滚底判定**（`scrollToBottomIfNeeded`）：判断用户是否处于底部区域（`SCROLL_THRESHOLD = 100px`，即 `scrollHeight - scrollTop - clientHeight < 100`），在此范围内则自动滚底，否则仅显示「新消息↓」提示。阈值设为 100px 而非 0，是为了容纳虚拟列表高度测量的误差和动态内容渲染的抖动。
 
 **已知行为**：上滚后触发「新消息」气泡的阈值要合理（不能上滚一点点就亮），防止用户滚动查看历史时频繁被打断。
+
+---
+
+## 四·补、ResizeObserver 滚动补偿策略
+
+> 文件：`src/composables/useAgentMode.ts`
+> 为什么单独成节：这是滚动 bug 反复回归的重灾区（6 次提交、3 次回归）。补偿逻辑若不看「增长来源相对视区的位置」，必然在「上方 item 实测高度修正」和「下方流式 item 长高」之间混淆——两者对 `scrollTop` 的正确行为恰好相反。
+
+### 背景：为什么需要补偿
+
+`DynamicScroller`（vue-virtual-scroller）的 wrapper `.vue-recycle-scroller__item-wrapper` 高度会因 item 内容变化而变。`ResizeObserver` 监听 wrapper 高度，在 `wrapperDelta = newHeight - prevHeight` 非零时触发补偿逻辑，决定是否调整 `scrollTop` 以维持视区锚点。
+
+### 两个关键判定维度
+
+1. **模式（mode）**：`shouldFollowResize()` 返回 true → 跟底态（用户在底部跟随新内容）；false → 阅读态（用户上滚离开底部）。
+2. **增长来源相对视区的位置**（仅阅读态需要细分）：
+   - **视区上方**：如历史 item 从估算高度 → 实测高度（首次滚动时虚拟列表测量）。此时应 `scrollTop += wrapperDelta` 维持视区，否则内容会漂。
+   - **视区下方**：如新 item append、正在流式的最后一个 step 项高度增长。此时浏览器默认保持 `scrollTop` 不变即正确锚定，**补偿反而把视区下推 → 视区内容相对上移 → 画面一行一行向上跳**。
+
+### 补偿策略表
+
+| 模式 | wrapperDelta 区间 + 条件 | 副作用 |
+|---|---|---|
+| following（跟底） | ≤ 0 且 > -MAX_FLIP | 钉新底 + guard（防 clamp 漂移） |
+| following | ≤ -MAX_FLIP | 不动（防图片加载震荡） |
+| following | > 0 且 suppress 窗口内 或 ≥ MAX_FLIP | 钉新底 + guard（硬切，无 FLIP） |
+| following | > 0 且小增长 | 钉新底 + guard + FLIP 平滑 |
+| reading（阅读） | ≤ 0 | 不动（浏览器自然 clamp） |
+| reading | (0, MAX_FLIP) 且 scrollTop < THRESHOLD | 不动（顶部附近，wrapper 增长不影响顶部视区） |
+| reading | (0, MAX_FLIP) 且 scrollTop≥TH 且增长来自视区下方 | **不动**（浏览器保持 scrollTop 不变即正确） |
+| reading | (0, MAX_FLIP) 且 scrollTop≥TH 且增长来自视区上方 | `scrollTop += delta` 维持视区锚定 |
+| reading | ≥ MAX_FLIP | 不动（虚拟列表重排，避免一次性推走很多） |
+
+- `TH` = `SCROLL_THRESHOLD`（100px）；`MAX` = `MAX_FLIP_DELTA`（600px）
+- `suppress` 窗口 = `scrollToBottom` 后短暂 200ms（`Date.now() < suppressFlipUntil`），避免补偿与强制滚底打架
+
+### 「增长来源相对视区位置」如何判定
+
+**实现**：`isGrowthBelowViewport(el, itemsAppended)` 函数（`useAgentMode.ts`）。
+1. `itemsAppended === true`（`flattenedItems.length` 增加）→ 新 item append，必在下方，直接返回 true
+2. AI 运行中或停止后 300ms grace 期内 → 流式输出在下方，返回 true（兜底，覆盖 `getItemOffset` 尚未就绪的初始帧）
+3. 用 `scroller.getItemOffset(lastIndex)` 取最后一个 item 顶距 wrapper 顶的距离，与视区底（`scrollTop + clientHeight`）比较，最后一个 item 在视区下方则返回 true
+
+> 优先用显式判定（步骤 3），代理指标（步骤 1/2）作快速短路和兜底。当 `getItemOffset` 不可用时回退到代理指标——此时已知边界：AI 运行时若上方历史 item 真的发生实测高度修正会被误判为下方增长而漏补偿，历史 item 通常在打开对话时已实测完成，运行时少见。
+
+### 改这块代码前必读
+
+1. **先判模式，再判增长位置**。两个维度缺一不可——只看 `wrapperDelta` 数值/符号会混淆上方/下方增长。
+2. **不要在 `applyReadingResize` 里调 `guardAfterAutoScroll`**：会把 `stickyFollowBottom` 设回 true 破坏阅读态（回归 42ff929a / 971f19a6 的隐患根源）。
+3. **不要设 `skipScrollUpdate`**：补偿是即时一次性，吞 scroll 事件会漏用户后续手动滚动。
+4. **改完更新本节策略表**：任何新增/修改分支条件，同步更新上面的表格。
 
 ---
 
