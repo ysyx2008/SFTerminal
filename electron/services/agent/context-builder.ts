@@ -9,6 +9,14 @@ import type { TaskMemoryStore } from './task-memory'
 // token 估算共享纯函数(与 ContextWindowManager 共用同一实现,消除逐字节重复)
 import { estimateTextTokens as estimateTokens } from './token-estimate'
 
+/**
+ * 格式化任务时间戳（对齐 AI 消息包体中的时间格式，如文件列表/待办截止时间）。
+ * 使用 new Date(ts).toLocaleString() 默认输出，含年月日时分秒。
+ */
+function formatTaskTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleString()
+}
+
 // ==================== 类型定义 ====================
 
 /**
@@ -466,7 +474,8 @@ function getSimplifiedMessages(task: TaskMemory): AiMessage[] {
  */
 function formatDigest(task: TaskMemory): string {
   const { digest } = task
-  const lines: string[] = [`[${task.id}] ${task.userRequest}`]
+  const timePrefix = `[${formatTaskTime(task.timestamp)}] `
+  const lines: string[] = [`${timePrefix}[${task.id}] ${task.userRequest}`]
   
   if (digest.commands.length > 0) {
     lines.push(`• 命令: ${digest.commands.slice(0, 5).join(', ')}`)

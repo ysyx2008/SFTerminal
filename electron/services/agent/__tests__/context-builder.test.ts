@@ -245,6 +245,32 @@ describe('buildTaskHistoryContext', () => {
     expect(result.taskSummarySection).toBe('')
     expect(result.stats.totalTasks).toBe(0)
   })
+
+  it('should load up to 100 tasks at L3+ under wakeup options', () => {
+    // wakeup run（心跳/Watch）采用广度优先策略：maxTasks:100 + minCompressionLevel:4
+    // 验证 100 条任务能装入且全部压到 L3 或 L4（摘要级，不混入完整对话 L0-L2）
+    // watch agent 的 TaskMemoryStore 上限为 100（setAgentId 时重建），测试用构造器直接创建 100 上限的 store
+    const watchStore = new TaskMemoryStore(undefined, 100)
+    for (let i = 0; i < 100; i++) {
+      watchStore.saveTask(`task_${i}`, `用户任务 ${i} 的描述`, [], 'success', `完成结果 ${i}`)
+    }
+
+    const result = buildTaskHistoryContext(watchStore, 128000, '心跳检查', {
+      maxTasks: 100,
+      minCompressionLevel: 4
+    })
+
+    expect(result.stats.totalTasks).toBe(100)
+    // 所有任务至少 L3（minCompressionLevel:4 实际效果是跳过 L0-L2，
+    // buildRecentTasksContext 优先尝试可放置的最低级别，L3 放得下就用 L3）
+    expect(result.stats.level0Count).toBe(0)
+    expect(result.stats.level1Count).toBe(0)
+    expect(result.stats.level2Count).toBe(0)
+    // L3 + L4 数应 = 100（全部进摘要区，不进完整对话区）
+    expect(result.stats.level3Count + result.stats.level4Count).toBe(100)
+    // taskSummarySection 应非空（L3/L4 进摘要区）
+    expect(result.taskSummarySection.length).toBeGreaterThan(0)
+  })
 })
 
 // ==================== Integration scenarios ====================
@@ -313,12 +339,26 @@ describe('Context builder integration', () => {
       ]
       store.saveTask(`task${i}`, `Task ${i}`, steps, 'success', `Result ${i}`)
     }
-    
+
     const result = buildRecentTasksContext(store, 5000) // Small budget forces compression
-    
+
     // Some tasks should be compressed to Level 3-4 (summary)
     if (result.stats.level3Count + result.stats.level4Count > 0) {
       expect(result.taskSummarySection.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('should include time prefix in L3/L4 summary section', () => {
+    // L3 digest 和 L4 summary 都应带时间前缀，
+    // 让 AI 在压缩历史中能看到任务发生的时间
+    // 格式对齐 AI 消息包体（new Date(ts).toLocaleString()，跟随系统 locale）
+    store.saveTask('task1', '检查 nginx 状态', [], 'success', '服务正常')
+    // 用小预算强制压到 L3/L4
+    const result = buildRecentTasksContext(store, 200)
+
+    if (result.stats.level3Count + result.stats.level4Count > 0) {
+      // 前缀以 [ 开头 ] 结尾，含时分秒（locale 无关的结构性断言）
+      expect(result.taskSummarySection).toMatch(/\[.*\d{1,2}:\d{2}:\d{2}.*\]/)
     }
   })
 })

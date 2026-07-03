@@ -269,6 +269,24 @@ describe('generateSummary', () => {
     const summary = generateSummary('查询', 'success', '找到 10 条记录')
     expect(summary).toContain('找到 10 条记录')
   })
+
+  it('should include time prefix when timestamp provided', () => {
+    // L4 摘要带时间前缀，让 AI 在压缩历史中能看到任务发生的时间
+    // 格式对齐 AI 消息包体（new Date(ts).toLocaleString()，跟随系统 locale）
+    const ts = new Date(2026, 6, 3, 14, 25, 30).getTime() // 2026-07-03 14:25:30
+    const summary = generateSummary('检查 nginx', 'success', '服务正常', undefined, ts)
+    // 前缀以 [ 开头 ] 结尾，含年份 2026 和时分秒（locale 无关的结构性断言）
+    expect(summary).toMatch(/^\[.*2026.*\d{1,2}:\d{2}:\d{2}.*\] /)
+    expect(summary).toContain('✓')
+    expect(summary).toContain('检查 nginx')
+  })
+
+  it('should omit time prefix when timestamp omitted (backward compat)', () => {
+    // 旧调用方不传 timestamp 时，summary 不带时间前缀，保持向后兼容
+    const summary = generateSummary('检查 nginx', 'success', '服务正常')
+    expect(summary).not.toMatch(/^\[/) // 不以 [ 开头
+    expect(summary).toContain('✓')
+  })
 })
 
 // ==================== extractDigest ====================

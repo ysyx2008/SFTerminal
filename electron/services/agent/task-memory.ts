@@ -17,6 +17,14 @@ export type LookupToolMeta = (toolName: string) => ToolMeta | undefined
 const NO_LOOKUP: LookupToolMeta = () => undefined
 
 /**
+ * 格式化任务时间戳（对齐 AI 消息包体中的时间格式，如文件列表/待办截止时间）。
+ * 使用 new Date(ts).toLocaleString() 默认输出，含年月日时分秒。
+ */
+function formatTaskTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleString()
+}
+
+/**
  * 从文本中提取关键词
  * 用于语义匹配
  */
@@ -257,22 +265,25 @@ function extractDigest(
  * 生成 L1 总结
  */
 function generateSummary(
-  userRequest: string, 
+  userRequest: string,
   status: 'success' | 'failed' | 'aborted' | 'pending_confirmation',
   finalResult?: string,
-  pendingAction?: string
+  pendingAction?: string,
+  timestamp?: number
 ): string {
+  // 时间前缀（无 timestamp 时降级为空，保持向后兼容）
+  const timePrefix = timestamp ? `[${formatTaskTime(timestamp)}] ` : ''
   // 状态图标
-  const statusIcon = status === 'success' ? '✓' 
-    : status === 'failed' ? '✗' 
+  const statusIcon = status === 'success' ? '✓'
+    : status === 'failed' ? '✗'
     : status === 'pending_confirmation' ? '⏳'
     : '⊘'
-  
+
   // 截断用户请求
-  const shortRequest = userRequest.length > 30 
-    ? userRequest.substring(0, 30) + '...' 
+  const shortRequest = userRequest.length > 30
+    ? userRequest.substring(0, 30) + '...'
     : userRequest
-  
+
   // 从最终结果中提取关键信息
   let resultSummary = ''
   if (finalResult) {
@@ -283,21 +294,21 @@ function generateSummary(
       resultSummary = firstLine.length > 50 ? firstLine.substring(0, 50) + '...' : firstLine
     }
   }
-  
+
   if (status === 'aborted') {
-    return `${statusIcon} ${shortRequest} → 已中止`
+    return `${timePrefix}${statusIcon} ${shortRequest} → 已中止`
   }
-  
+
   if (status === 'pending_confirmation') {
     const action = pendingAction ? `: ${pendingAction}` : ''
-    return `${statusIcon} ${shortRequest} → 等待确认${action}`
+    return `${timePrefix}${statusIcon} ${shortRequest} → 等待确认${action}`
   }
-  
+
   if (resultSummary) {
-    return `${statusIcon} ${shortRequest} → ${resultSummary}`
+    return `${timePrefix}${statusIcon} ${shortRequest} → ${resultSummary}`
   }
-  
-  return `${statusIcon} ${shortRequest}`
+
+  return `${timePrefix}${statusIcon} ${shortRequest}`
 }
 
 /**
@@ -313,8 +324,15 @@ export class TaskMemoryStore {
    * @param lookupMeta 按工具名查 ToolMeta 的回调（由 Agent 注入）。
    * 不传入时降级为"返回 undefined"——所有 metadata 检查都拿到 undefined，
    * `detectPendingConfirmation` / `extractDigest` 会按"无声明"处理（保守不识别）。
+   * @param maxMemories 最大存储任务数（默认 50）。watch agent 需要更广的用户活动
+   * 概览时传入更大值（如 100），配合 wakeup 的 maxTasks:100 + L4 策略。
    */
-  constructor(private readonly lookupMeta: LookupToolMeta = NO_LOOKUP) {}
+  constructor(
+    private readonly lookupMeta: LookupToolMeta = NO_LOOKUP,
+    maxMemories?: number
+  ) {
+    if (maxMemories !== undefined) this.maxMemories = maxMemories
+  }
 
   /**
    * 保存任务记忆
@@ -334,9 +352,12 @@ export class TaskMemoryStore {
   ): TaskMemory {
     // 生成 L2 摘要（先提取，因为 pendingAction 会用到）
     const digest = extractDigest(steps, userRequest, this.lookupMeta)
-    
-    // 生成 L1 总结
-    const summary = generateSummary(userRequest, status, finalResult, digest.pendingAction)
+
+    // 任务时间戳（summary 生成要用，所以先算）
+    const timestamp = Date.now()
+
+    // 生成 L1 总结（带时间前缀，让 AI 在摘要中看到任务时间）
+    const summary = generateSummary(userRequest, status, finalResult, digest.pendingAction, timestamp)
     
     // 提取关键词（从用户请求 + 摘要内容）
     const keywordSource = [
@@ -352,7 +373,7 @@ export class TaskMemoryStore {
     const memory: TaskMemory = {
       id: taskId,
       userRequest,
-      timestamp: Date.now(),
+      timestamp,
       status,
       summary,
       digest,
