@@ -765,6 +765,16 @@ export function useAgentMode(
   let contentObservedTarget: HTMLElement | null = null
   let prevWrapperHeight = 0
   let pendingFlipFrame: number | null = null
+  // 上一次 ResizeObserver 触发时 flattenedItems 的长度。用于区分 wrapper 增长来源：
+  // length 增加 → 新 item append（流式新 step 进来），length 不变 → 已有 item 高度变化
+  // （item 估算→实测修正、内容 reflow）。前者在用户上滚阅读时不应补偿 scrollTop
+  // （新内容在视区下方，浏览器保持 scrollTop 不变即正确），补偿会让画面往上跳。
+  // -1 确保首次回调 itemsAppended=true，跳过初始挂载时的补偿。
+  let prevItemsLength = -1
+  // 最后一次 isAgentRunning=true 的时间戳。AI 停止后流式收尾的高度变化仍可能持续一小段，
+  // grace 期内继续跳过补偿，避免「AI 刚停、最后一行高度修正」导致画面跳动。
+  let lastAgentRunningAt = 0
+  const AGENT_RUNNING_GRACE_MS = 300
 
   // ===== 容器宽度变化感知 =====
   // 任何改变 AiPanel 可用宽度的操作（产出物面板展开/收起、侧边栏、拖拽分隔条、窗口 resize、
@@ -845,6 +855,7 @@ export function useAgentMode(
     if (!wrapper) return
     contentObservedTarget = wrapper
     prevWrapperHeight = wrapper.offsetHeight
+    prevItemsLength = flattenedItems.value.length
     contentResizeObserver = new ResizeObserver((entries) => {
       // 非当前激活 tab 不跟随贴底，避免后台 tab 改写 scrollTop、切回时与已存位置不一致
       if (tabActive?.value === false) return
@@ -877,10 +888,13 @@ export function useAgentMode(
       // └──────────────┴───────────────────────┴──────────────────────────────┘
       // TH = SCROLL_THRESHOLD；MAX = MAX_FLIP_DELTA；suppress = scrollToBottom 后
       // 短暂 200ms 窗口（Date.now() < suppressFlipUntil）。漏副作用 = 漏表格一格。
+      const itemsLength = flattenedItems.value.length
+      const itemsAppended = itemsLength > prevItemsLength
+      prevItemsLength = itemsLength
       if (shouldFollowResize()) {
         applyFollowingResize(el, wrapperDelta)
       } else {
-        applyReadingResize(el, wrapperDelta)
+        applyReadingResize(el, wrapperDelta, itemsAppended)
       }
     })
     contentResizeObserver.observe(wrapper)
@@ -920,17 +934,31 @@ export function useAgentMode(
    * 非跟底态（用户上滚阅读）：维持视区锚点，不让新内容把阅读位置顶走。
    * - 收缩（≤0）：不动，浏览器自然 clamp（跟底态的钉底另由 applyFollowingResize 处理）
    * - 增长 + 顶部附近：不动，顶部视区不受 wrapper 增长影响，补偿反而往上漂
-   * - 增长 + 中部：scrollTop += delta 维持视区（8bb6222c 修复第三次回归）
+   * - 增长 + 中部 + 新 item append：不动。新内容 append 在视区下方，浏览器保持
+   *   scrollTop 不变即正确视区锚定；补偿 scrollTop += delta 反而把视区往下推，
+   *   让用户正在阅读的历史内容往上跳——即「上滚阅读时画面持续一行一行向上跳动」。
+   * - 增长 + 中部 + AI 运行中（含停止后 grace 期）：不动。流式输出时最后一个 step 项
+   *   高度持续增长（content 追加，length 不变，itemsAppended=false），增长同样发生在
+   *   视区下方，浏览器保持 scrollTop 不变即正确；补偿会让画面一行一行向上跳。AI 运行时
+   *   wrapper 增长几乎全来自流式输出，历史 item 实测高度修正在打开对话时已基本完成。
+   *   grace 期覆盖 AI 刚停止后流式收尾的高度变化（isAgentRunning 可能先于最后一行
+   *   高度修正变 false）。
+   * - 增长 + 中部 + 已有 item 高度变化（非运行态）：scrollTop += delta 维持视区
+   *   （8bb6222c 修复第三次回归，仅此分支真正需要补偿）
    * - 增长 + 大跳变：不动，虚拟列表重排避免一次性推走很多
    *
    * ⚠️ 不调 guardAfterAutoScroll：会把 stickyFollowBottom 设回 true 破坏阅读态
    *    ——这是前两次回归（42ff929a / 971f19a6）的隐患根源。
    * ⚠️ 不设 skipScrollUpdate：补偿是即时一次性，吞 scroll 事件会漏用户后续手动滚动。
    */
-  const applyReadingResize = (el: HTMLElement, wrapperDelta: number) => {
+  const applyReadingResize = (el: HTMLElement, wrapperDelta: number, itemsAppended: boolean) => {
     if (wrapperDelta <= 0) return
     if (wrapperDelta >= MAX_FLIP_DELTA) return
     if (el.scrollTop < SCROLL_THRESHOLD) return
+    if (itemsAppended) return
+    const withinAgentGrace = isAgentRunning.value
+      || (Date.now() - lastAgentRunningAt < AGENT_RUNNING_GRACE_MS)
+    if (withinAgentGrace) return
     const maxScroll = el.scrollHeight - el.clientHeight
     const target = Math.min(el.scrollTop + wrapperDelta, maxScroll)
     if (target !== el.scrollTop) {
@@ -962,6 +990,7 @@ export function useAgentMode(
     contentResizeObserver = null
     contentObservedTarget = null
     prevWrapperHeight = 0
+    prevItemsLength = -1
   }
 
   // 监听 messagesRef 自身宽度变化（布局驱动 reflow 的统一信号）。
@@ -1050,6 +1079,10 @@ export function useAgentMode(
 
   const isAgentRunning = computed(() => {
     return agentState.value?.isRunning || false
+  })
+  // 记录最后一次运行态的时间戳，供 applyReadingResize grace 期判断使用
+  watch(isAgentRunning, (running) => {
+    if (running) lastAgentRunningAt = Date.now()
   })
 
   const pendingConfirm = computed(() => {
