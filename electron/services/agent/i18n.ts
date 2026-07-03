@@ -1450,6 +1450,11 @@ const translations = {
     'workbench.list_artifacts': '查看产出物面板',
     'workbench.manage_artifacts': '维护产出物面板',
 
+    // dispatch_agents 并行子任务（customRender 与执行器 addStep 共享前缀，两边必须字节对齐）
+    'dispatch.running': '并行执行 {count} 个子任务（{type}）',
+    'dispatch.completed_no_fail': '并行执行完成：{success} 成功',
+    'dispatch.completed_with_fail': '并行执行完成：{success} 成功，{fail} 失败',
+
     // exec 后台任务（assistant 模式 exec/await_exec 工具）
     'exec.task_id_required': '必须提供 task_id',
     'exec.task_not_found': '后台任务 {taskId} 不存在（可能已超过 5 分钟自动清理，或 task_id 错误）',
@@ -2819,6 +2824,7 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'im.reply_busy': '⏳ A task is currently running. Please wait for it to finish before sending a new message.',
     'im.history_cleared': '🗑️ Conversation history cleared',
     'im.processing': '🤔 Got it, processing...',
+    'im.wechat_progress_digest': '⏳ In progress...',
     'im.task_complete': '✅ Task complete',
     'im.task_error': '❌ Error: {error}',
     'im.wechat_send_failed': '⚠️ WeChat message failed to send; please send another message to restore the session',
@@ -2904,6 +2910,11 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'web.fetch.header': '[fetched: {url}, status {status}, content-type: {contentType}, {size}, backend: {backend}]',
     'workbench.list_artifacts': 'View output panel',
     'workbench.manage_artifacts': 'Manage output panel',
+
+    // dispatch_agents sub-tasks (customRender and executor addStep share the same prefix; must stay byte-aligned)
+    'dispatch.running': 'Dispatching {count} sub-task(s) ({type})',
+    'dispatch.completed_no_fail': 'Completed: {success} succeeded',
+    'dispatch.completed_with_fail': 'Completed: {success} succeeded, {fail} failed',
 
     // exec background tasks (assistant mode exec/await_exec tools)
     'exec.task_id_required': 'task_id is required',

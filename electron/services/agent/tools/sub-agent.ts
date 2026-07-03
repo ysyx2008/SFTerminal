@@ -28,6 +28,7 @@ import { truncateFromEnd } from './utils'
 import { PromptBuilder } from '../prompt-builder'
 import { getAiDebugService } from '../../ai-debug.service'
 import { createLogger } from '../../../utils/logger'
+import { t } from '../i18n'
 
 const log = createLogger('SubAgent')
 
@@ -441,9 +442,9 @@ export async function dispatchSubAgents(
     : 'mixed'
   const progressStep = executor.addStep({
     type: 'tool_call',
-    content: `并行执行 ${tasks.length} 个子任务（${typeLabel}）`,
+    content: t('dispatch.running', { count: tasks.length, type: typeLabel }),
     toolName: 'dispatch_agents',
-    toolArgs: { tasks: tasks.map(t => ({ description: t.description, agent_type: t.agentType })), max_concurrent: maxConcurrent, agent_type: globalAgentType },
+    toolArgs: { tasks: tasks.map(task => ({ description: task.description, agent_type: task.agentType })), max_concurrent: maxConcurrent, agent_type: globalAgentType },
     riskLevel: 'safe',
     subAgents: [...subAgentResults]
   })
@@ -559,7 +560,9 @@ export async function dispatchSubAgents(
   const summary = formatResultsSummary(allResults)
 
   executor.updateStep(progressStep.id, {
-    content: `并行执行完成：${successCount} 成功${failCount > 0 ? `，${failCount} 失败` : ''}`,
+    content: failCount > 0
+      ? t('dispatch.completed_with_fail', { success: successCount, fail: failCount })
+      : t('dispatch.completed_no_fail', { success: successCount }),
     subAgents: [...subAgentResults]
   })
 

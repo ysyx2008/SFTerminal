@@ -170,11 +170,8 @@ function writeTextFilePrefix(args: Record<string, unknown>): string {
 /**
  * dispatch_agents 的预卡片渲染。
  * 内容格式必须与 tools/sub-agent.ts 执行器 addStep 的 content 对齐：
- *   "并行执行 {N} 个子任务（{typeLabel}）"
+ *   t('dispatch.running', { count, type })
  * tasks 数组还没到或为空时返回 null（上层调用方保留缓存）。
- *
- * 注：执行器目前硬编码中文（typeLabel 用英文 agent_type 值），此处同样硬编码以
- * 保证接管时的字节级一致；将来两边一起 i18n 化时统一改。
  */
 function dispatchAgentsPrefix(args: Record<string, unknown>): string | null {
   const rawTasks = Array.isArray(args.tasks) ? (args.tasks as unknown[]) : []
@@ -191,7 +188,7 @@ function dispatchAgentsPrefix(args: Record<string, unknown>): string | null {
       break
     }
   }
-  return `并行执行 ${rawTasks.length} 个子任务（${typeLabel}）`
+  return t('dispatch.running', { count: rawTasks.length, type: typeLabel })
 }
 
 /**
