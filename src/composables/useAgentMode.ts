@@ -520,6 +520,24 @@ export function useAgentMode(
     lastKnownScrollHeight = el.scrollHeight
   }
 
+  /**
+   * 若 el 底部超出滚动容器视口，向下滚刚好露出（含 padding）。
+   * @returns 是否发生了滚动
+   */
+  const ensureElementVisibleInViewport = (el: HTMLElement, padding = 16): boolean => {
+    const container = messagesRef.value
+    if (!container) return false
+    const containerRect = container.getBoundingClientRect()
+    const elRect = el.getBoundingClientRect()
+    const visibleBottom = containerRect.bottom - padding
+    const overflow = elRect.bottom - visibleBottom
+    if (overflow <= 0.5) return false
+    container.scrollTop += overflow
+    lastKnownScrollTop = container.scrollTop
+    lastKnownScrollHeight = container.scrollHeight
+    return true
+  }
+
   // 容器宽度变化驱动的 reflow 进行中：此期间 scroll 事件算出的 checkIsNearBottom() 不可信
   // （scrollHeight 因宽度变化而变，与用户滚动意图无关），updateScrollPosition 应跳过状态更新。
   const isInContainerReflow = () => Date.now() < containerReflowGuardUntil
@@ -2178,6 +2196,7 @@ export function useAgentMode(
     scrollToBottomIfNeeded,
     suppressLayoutResizeCompensation,
     anchorElementViewportY,
+    ensureElementVisibleInViewport,
     stopGeneration,
     // Agent 执行
     executionMode,

@@ -198,7 +198,15 @@ const toggleThinkingExpand = async (stepId: string, anchorEl?: HTMLElement) => {
 
   if (!anchorEl || viewportTop === undefined) return
 
-  const stabilize = () => anchorElementViewportY(anchorEl, viewportTop)
+  const stabilize = () => {
+    if (willExpand) {
+      const fullEl = anchorEl.closest('.thinking-block')?.querySelector('.thinking-full')
+      if (fullEl instanceof HTMLElement && ensureElementVisibleInViewport(fullEl)) {
+        return
+      }
+    }
+    anchorElementViewportY(anchorEl, viewportTop)
+  }
 
   await nextTick()
   requestAnimationFrame(() => {
@@ -602,6 +610,7 @@ const {
   scrollToBottom,
   suppressLayoutResizeCompensation,
   anchorElementViewportY,
+  ensureElementVisibleInViewport,
   stopGeneration,
   // Agent 执行
   executionMode,
