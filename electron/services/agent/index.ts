@@ -173,6 +173,15 @@ export class AgentService {
   }
 
   /**
+   * 取 companion 关系线的合并视图 record（供联络 tab 重启后恢复历史展示）。
+   * 薄转发到 `Companion.getMergedViewRecord`——companion 未装配（setHistoryService 未跑）返回 undefined。
+   */
+  getCompanionMergedViewRecord(): import('../history.service').AgentRecord | undefined {
+    if (!this._companion) return undefined
+    return this._companion.getMergedViewRecord() ?? undefined
+  }
+
+  /**
    * 设置插件注册表
    */
   setPluginRegistry(pluginRegistry: import('../plugin/registry').PluginRegistry): void {

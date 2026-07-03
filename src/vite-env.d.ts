@@ -835,6 +835,7 @@ interface Window {
         duration: number
       } | undefined>
       getRecentByAgentKey: (agentKey: string, limit?: number) => Promise<Array<import('@shared/types').AgentRecord>>
+      getCompanionMergedView: () => Promise<import('@shared/types').AgentRecord | undefined>
       deleteAgentRecord: (id: string) => Promise<boolean>
       saveArtifacts: (recordId: string, artifacts: import('@shared/types').CanvasArtifact[]) => Promise<void>
       getStorageStats: () => Promise<{

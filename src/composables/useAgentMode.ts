@@ -2189,49 +2189,19 @@ export function useAgentMode(
   // 注意：这是「展示层」恢复（steps 上墙）。后端会话连续性由持久命名 Agent 自己的
   // restoreFromHistory/TaskMemory 负责——桌面续聊会新开 session 但带着恢复的工作记忆，
   // 因此前端这里无需关心 record.messages。
+  // 合并视图由后端 Companion.getMergedViewRecord 产出（最近 N 条 companion record 的 steps
+  // 按时间升序拼接，id/timestamp 成对取最新一条以对齐续聊上下文），前端不再自拼。
   const restoreCompanionHistoryIfNeeded = async () => {
     if (currentTab.value?.agentId !== COMPANION_TAB_AGENT_ID) return
     if ((agentState.value?.steps?.length ?? 0) > 0) return
     try {
-      // 取最近 N 条 companion 会话合并展示，避免重启后只看到最后一条
-      const records = await window.electronAPI.history.getRecentByAgentKey(COMPANION_TAB_AGENT_ID, 10)
+      const merged = await window.electronAPI.history.getCompanionMergedView()
       // await 期间可能有 live step 流入，再次确认仍为空才恢复，避免覆盖
-      if (!records?.length) return
-      if ((agentState.value?.steps?.length ?? 0) > 0) return
-      const merged = mergeCompanionRecords(records as AgentRecord[])
       if (!merged) return
+      if ((agentState.value?.steps?.length ?? 0) > 0) return
       terminalStore.restoreAgentHistory(currentTabId.value, merged)
     } catch (err) {
       log.warn('[Companion] 恢复历史会话失败:', err)
-    }
-  }
-
-  // 把多条 companion 会话记录合成一条「展示用」记录：steps 按时间升序拼接。
-  // ⚠️ id 与 timestamp 必须成对取「最新一条」：restoreAgentHistory 会把它们写成
-  // agentState.sessionId / sessionStartTime 传给后端，续聊时 checkpoint 据此存盘。
-  // 若像旧版那样 id 取最新、timestamp 取最早，后端会把记录存成「id 最新、timestamp
-  // 最早」的错配记录——这正是联络「裂成两条 session、两条 timestamp 撞成一样」的放大器。
-  // userTask（标题）仍取最早一条，展示合并对话从头开始，不影响 session 身份。
-  const mergeCompanionRecords = (records: AgentRecord[]): AgentRecord | null => {
-    if (!records.length) return null
-    const ordered = [...records].sort((a, b) => a.timestamp - b.timestamp)
-    const earliest = ordered[0]
-    const latest = ordered[ordered.length - 1]
-    const seen = new Set<string>()
-    const steps = ordered
-      .flatMap(r => r.steps ?? [])
-      .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
-      .filter(s => (s.id && !seen.has(s.id) ? (seen.add(s.id), true) : !s.id))
-    // userTask 作为侧栏标题：优先取最早一条非 proactive 的记录标题；
-    // 若全都是 proactive（纯主动消息、用户还未主动发言），回退到 earliest.userTask
-    const firstRealRecord = ordered.find(r => r.userTask !== '__proactive__')
-    const displayUserTask = firstRealRecord?.userTask ?? earliest.userTask
-    return {
-      ...latest,
-      id: latest.id,
-      timestamp: latest.timestamp,
-      userTask: displayUserTask,
-      steps,
     }
   }
 

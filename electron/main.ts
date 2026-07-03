@@ -4297,6 +4297,13 @@ ipcMain.handle('history:getRecentByAgentKey', async (_event, agentKey: string, l
   return (await conv()).recentByAgentKey(agentKey, limit ?? 10)
 })
 
+// 联络（companion）tab 重启后恢复历史展示：返回最近 N 条 companion record 的合并视图。
+// 合并逻辑的真相源在后端 `Companion.getMergedViewRecord`，前端不再复制一份等价实现。
+ipcMain.handle('history:getCompanionMergedView', async () => {
+  const { agentService } = await rt()
+  return agentService.getCompanionMergedViewRecord()
+})
+
 ipcMain.handle('history:deleteAgentRecord', async (_event, id: string) => {
   return (await conv()).delete(id)
 })

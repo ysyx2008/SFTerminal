@@ -1337,6 +1337,11 @@ const electronAPI = {
     getRecentByAgentKey: (agentKey: string, limit?: number) =>
       ipcRenderer.invoke('history:getRecentByAgentKey', agentKey, limit),
 
+    // 取 companion 关系线的合并视图 record（最近 N 条 companion record 合并后的展示用 record）。
+    // 合并逻辑在后端 Companion 领域对象，前端不再自拼。
+    getCompanionMergedView: () =>
+      ipcRenderer.invoke('history:getCompanionMergedView') as Promise<import('@shared/types').AgentRecord | undefined>,
+
     deleteAgentRecord: (id: string) =>
       ipcRenderer.invoke('history:deleteAgentRecord', id) as Promise<boolean>,
 

@@ -143,7 +143,7 @@ run(message, context, options)
 
 **`restoreRecentTaskMemory` 的数据 scope 按 kind 分流（与前端展示口径对齐）**：
 
-- **companion**：仅取同 agentKey（`__companion__`）的最近 N 条（`getRecentRecordsByAgentKey`），与前端 `mergeCompanionRecords` 用同一个查询——UI 只展示联络线，AI 上下文也只含联络线。联络是独立常驻 tab，若灌入任务 tab 的 transcript 会让 AI 在联络里「串台」（沿用任务里的工具/话题，像在接另一场对话）。多条 companion 线合并的语义仍保留：重启后 sessionId 只是「最新一条」，其它并行 companion 线从同 agentKey 最近历史补齐，避免「屏幕看得见、AI 记不住」。
+- **companion**：仅取同 agentKey（`__companion__`）的最近 N 条（`getRecentRecordsByAgentKey`），与前端合并视图（`Companion.getMergedViewRecord`，经 IPC `history:getCompanionMergedView` 暴露）用同一个查询——UI 只展示联络线，AI 上下文也只含联络线。联络是独立常驻 tab，若灌入任务 tab 的 transcript 会让 AI 在联络里「串台」（沿用任务里的工具/话题，像在接另一场对话）。多条 companion 线合并的语义仍保留：重启后 sessionId 只是「最新一条」，其它并行 companion 线从同 agentKey 最近历史补齐，避免「屏幕看得见、AI 记不住」。
 - **watch**：维持全局 main 树（`getRecentAgentRecords`，排除 wakeup 噪声）。Watch 是 Agent 的「内心独白」，需要参考用户在任意 tab 的最近活动做决策，全局借记忆对 watch 仍成立。
 - **task**：本方法不会被调用（`_persistentNamedAgent` 为 false 时不进 fallback）。
 
@@ -161,7 +161,7 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 - **修复**：`run()` 在 `!_sessionId && !context.sessionId` 且 `_persistentNamedAgent` 时，从 `getLatestRecordByAgentKey(agentId)` **回种** sessionId/startTime，让所有入口续写到同一条会话。
 - **抑制位 `_suppressSessionSeed`**：`startNewSession()`（Watch 每次执行要独立记录）/ `resetSession()`（用户「清空对话」要全新会话）会置位，使下一次 run **跳过回种**、生成全新 session。consume 后自动清零。这样 Watch 的「每次独立记录」与 Companion 的「连续会话」都成立。
 
-> **配套（前端）**：`mergeCompanionRecords`（`useAgentMode.ts`）合并展示多条 companion 记录时，`id` 与 `timestamp` 必须**成对取最新一条**。旧版「id 取最新、timestamp 取最早」会经 `restoreAgentHistory` 写成错配的 `sessionId/sessionStartTime`，导致 checkpoint 把记录存成「id 最新、timestamp 最早」——是分裂的放大器（两条记录 timestamp 撞成一样）。
+> **配套（前端）**：联络 tab 重启后恢复历史展示时，调 `history.getCompanionMergedView()` 取后端 `Companion.getMergedViewRecord()` 产出的合并视图 record——其 `id` 与 `timestamp` 必须**成对取最新一条**（由后端保证）。旧版前端自拼的「id 取最新、timestamp 取最早」会经 `restoreAgentHistory` 写成错配的 `sessionId/sessionStartTime`，导致 checkpoint 把记录存成「id 最新、timestamp 最早」——是分裂的放大器（两条记录 timestamp 撞成一样）。合并逻辑现已收口在后端 `electron/services/conversation/companion.ts`，前端不再自拼。
 
 **实现**：`Agent._persistentNamedAgent: boolean`（默认 false）。`AgentService.createAssistantAgent(agentId)` 内部根据 `agentId === COMPANION_AGENT_ID || WATCH_AGENT_ID` 自动调 `markAsPersistentNamed()`——调用方（IM service / Watch service）无需感知。`getOrCreateAgent`（终端 Agent）和 createAssistantAgent 的非命名分支默认就是 false。
 

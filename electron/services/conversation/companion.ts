@@ -1,9 +1,9 @@
 /**
  * Companion —— 「联络」关系线领域对象（agentKey = `__companion__`）
  *
- * 当前形态（轻量版）：只收口 fork 重构所需的「抽取开新任务」语义。companion 的其它流程
- *（多 record 合并展示、主动消息暂存、冷启动「最近 N 条」重建）暂仍散在原处，留待后续
- * 独立工程搬迁——本类为它们预留了接缝。
+ * 收口 companion 关系线的「数据组织」语义：多 record 合并视图、抽取开新任务。
+ * 主动消息暂存（`proactive-store`）/ 冷启动工作记忆重建（`Agent.restoreRecentTaskMemory`）
+ * 仍散在原处，留待后续独立工程搬迁——本类已为它们预留接缝。
  *
  * 为什么是独立领域对象、不是 `SailFishAgent` 的子类：
  * - companion 的能力（多 record 视图、主动消息）大多**独有**而非**多态**——task 根本没有
@@ -66,12 +66,22 @@ export class Companion {
   }
 
   /**
-   * 取 companion 关系线的合并视图 record（供前端展示用）。
+   * 取 companion 关系线的合并视图 record。
    *
-   * 当前仅做「拉 N 条 + 委托 Conversation.extractTaskFromRecords 的合并逻辑」的只读兄弟——
-   * 不截断、不换 id，返回合并后的虚拟 record 供前端 `restoreAgentHistory` 直接装进 agentState。
+   * companion 是「N 条物理 record 拼成的逻辑关系线」——重启后前端 tab 只看到一个空壳，
+   * 需把最近 N 条 record 的 steps 按时间升序合并展示。本方法是这份合并视图的**唯一真相源**：
+   * 前端 `restoreCompanionHistoryIfNeeded` 经 IPC 走到这里，不再在前端复制一份等价合并逻辑。
    *
-   * TODO（后续工程）：前端 `mergeCompanionRecords` 搬迁至此，统一合并视图的唯一真相源。
+   * 合并规则（行为已由 `companion-restore.integration.test.ts` 锁定，原前端 `mergeCompanionRecords` 已搬迁至此）：
+   *  - steps：按 timestamp 升序拼接，`id` 重复的去重（保留首次出现）
+   *  - messages：仅取非 `__proactive__` 记录的 messages 拼接（前端展示层不读 messages，
+   *    但保留字段以兼容 `AgentRecord` 形状，供其它潜在消费方）
+   *  - id / timestamp：**成对取最新一条**。续聊时 `restoreAgentHistory` 把它们写成
+   *    `agentState.sessionId` / `sessionStartTime` 传给后端，checkpoint 据此存盘——
+   *    若 id 取最新、timestamp 取最早（旧 bug），后端会存成错配记录，引发「裂成两条 session」。
+   *  - userTask（标题）：取最早一条非 `__proactive__` 记录；全 proactive 时回退到最早一条
+   *
+   * 返回 null：historyService 不可用 / 无近期 record。
    */
   getMergedViewRecord(): AgentRecord | null {
     const records = this.historyService.getRecentRecordsByAgentKey(
@@ -95,7 +105,6 @@ export class Companion {
     const displayUserTask = firstRealRecord?.userTask ?? earliest.userTask
 
     // id/timestamp 成对取「最新一条」——续聊时 checkpoint 据此存盘，避免「裂成两条 session」
-    //（与前端 mergeCompanionRecords 的修正口径一致）
     return {
       ...latest,
       id: latest.id,
