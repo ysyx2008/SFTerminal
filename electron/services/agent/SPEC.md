@@ -1,6 +1,6 @@
 # Agent 子系统 SPEC
 
-> Last verified: 2026-07-02（`restoreRecentTaskMemory` 数据 scope 按 kind 分流：companion 仅取同 agentKey 的最近 N 条，与前端 `mergeCompanionRecords` 同源——联络 tab 的 AI 上下文不再被任务 tab transcript 污染；watch 维持全局 main 树 + wakeup 过滤。普通 tab Agent 不进 fallback 不变，根除"新开 tab 第一句话就捏造历史里用过但本 tab 没加载的工具名"幻觉）
+> Last verified: 2026-07-03（talk_to_user 桌面 UI 同步、onStart/agent:running、proactive_notice step）
 
 ## 职责
 
@@ -536,8 +536,26 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 5. **技能会话跨 Run**：SkillSession 在 Agent 实例级别持久化，不随单次 Run 结束销毁
 6. **唤醒 run 静默**：`context.wakeup = true` 时跳过知识文档更新和对话索引
 
+### talk_to_user 主动消息与桌面 UI 同步（2026-07-03）
+
+Watch / 任意 Agent 调用 `talk_to_user`（`tools/misc.ts::messageUser`）时，消息路由到 `__companion__` 联络线，但**调用方 Agent 的 steps 仍留在自身上下文**（如 `__watch__`）。
+
+**后端**：
+- `addProactiveContext('__companion__', …)` 暂存上下文，用户回复时 `consumeProactiveContext` 注入
+- 持久化：`userTask='__proactive__'` + 单条 `proactive_notice` step（`finalResult` 为消息正文）；`userTask` 标记供 conversation 模块过滤，不进 TaskMemory merge
+
+**桌面 UI 注入契约**（`App.vue`）：
+- `watch:proactive-message` 到达时：若联络 tab `isRunning` → `markDeferredProactive`，任务完成后再 `flushDeferredProactive`；否则立即 `injectProactiveSteps`
+- `injectProactiveSteps` 只追加 `{ type: 'proactive_notice', content }`，**不得**用 `user_task`/`final_result` 配对（会破坏 `agentTaskGroups` 分组，导致进行中任务的后续 step 变 orphan）
+- 历史数据里旧的 `user_task __proactive__` + `final_result` 配对仍由前端 `isProactive` 分支渲染
+
+**IM/WebChat 运行信号**（修复 companion tab `isRunning` 不同步）：
+- `AgentCallbacks.onStart`：`initializeRun` 在 `user_task` emit 后统一回调 `(agentId, userTask)`
+- IM / WebChat / `main.ts` 转发 `agent:running` IPC；`App.vue` 全局 `onRunning` → `setAgentRunning(tabId, true, …)`
+- 用户在联络 tab 主动发消息仍走 `useAgentMode.runAgent` 的乐观 `setAgentRunning`，与 `onRunning` 幂等共存
+
 ## 其他组件
 
 - **Orchestrator** (`orchestrator.ts`)：多 Agent 协调器（智能巡检），Master-Worker 模式
-- **ProactiveStore** (`proactive-store.ts`)：主动消息上下文存储（IM → Agent）
+- **ProactiveStore** (`proactive-store.ts`)：主动消息上下文存储（IM → Agent）；见上文「talk_to_user 主动消息与桌面 UI 同步」
 - **i18n** (`i18n.ts`)：Agent 国际化（中/英）

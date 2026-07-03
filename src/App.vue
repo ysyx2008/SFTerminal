@@ -389,6 +389,7 @@ let cleanupInstallSkill: (() => void) | null = null
 let cleanupWatchEnsureTab: (() => void) | null = null
 let cleanupWatchProactiveMessage: (() => void) | null = null
 let cleanupWatchActivateMessage: (() => void) | null = null
+let cleanupAgentRunning: (() => void) | null = null
 let cleanupAgentCompleteForProactive: (() => void) | null = null
 let cleanupAgentErrorForTabAttention: (() => void) | null = null
 let cleanupAgentNeedConfirmGlobal: (() => void) | null = null
@@ -697,19 +698,13 @@ onMounted(async () => {
   // 觉醒主动推送：收到消息先存着，弹通知；用户点击通知后才创建标签页展开对话
   const pendingProactiveMessages: Array<{ agentId: string; message: string; watchName: string; timestamp: number }> = []
 
-  // 将 proactive 消息注入 tab steps 的辅助函数
+  // 将 proactive 消息注入 tab steps 的辅助函数（单条 proactive_notice，不破坏任务分组）
   const injectProactiveSteps = (tabId: string, message: string, timestamp?: number) => {
     const ts = timestamp || Date.now()
     const uid = `proactive-${ts}-${Math.random().toString(36).substring(2, 6)}`
     terminalStore.addAgentStep(tabId, {
-      id: `${uid}-task`,
-      type: 'user_task',
-      content: '__proactive__',
-      timestamp: ts
-    })
-    terminalStore.addAgentStep(tabId, {
-      id: `${uid}-result`,
-      type: 'final_result',
+      id: `${uid}-notice`,
+      type: 'proactive_notice',
       content: message,
       timestamp: ts
     })
@@ -780,6 +775,13 @@ onMounted(async () => {
     }
     return terminalStore.findTabIdByAgentId(data.agentId)
   }
+
+  // IM/WebChat 等外部入口触发 companion run 时同步桌面 tab isRunning
+  cleanupAgentRunning = window.electronAPI.agent.onRunning?.((data: { agentId: string; ptyId?: string; userTask: string }) => {
+    const tabId = resolveAgentEventTabId(data)
+    if (!tabId) return
+    terminalStore.setAgentRunning(tabId, true, data.agentId, data.userTask)
+  }) || null
 
   // 全局兜底：多 tab 并行时将 needConfirm 写入正确 tab（与各 AiPanel 监听互补，避免路由遗漏）
   cleanupAgentNeedConfirmGlobal = window.electronAPI.agent.onNeedConfirm((data) => {
@@ -1299,6 +1301,7 @@ onUnmounted(() => {
   cleanupWatchEnsureTab?.()
   cleanupWatchProactiveMessage?.()
   cleanupWatchActivateMessage?.()
+  cleanupAgentRunning?.()
   cleanupAgentCompleteForProactive?.()
   cleanupAgentNeedConfirmGlobal?.()
   cleanupAgentErrorForTabAttention?.()

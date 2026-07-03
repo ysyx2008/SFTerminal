@@ -204,6 +204,12 @@ export class WebChatService {
     const debugMode = this.deps.configService.getAgentDebugMode()
 
     const agentCallbacks = {
+      onStart: (_runId: string, userTask: string) => {
+        this.sendToDesktop('agent:running', {
+          agentId: WebChatService.DESKTOP_AGENT_ID,
+          userTask,
+        })
+      },
       onStep: (_runId: string, step: any) => {
         this.onAgentStep(step)
         this.sendToDesktop('agent:step', {

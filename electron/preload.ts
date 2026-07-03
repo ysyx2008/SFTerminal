@@ -1022,6 +1022,15 @@ const electronAPI = {
       }
     },
 
+    // 监听 Agent 开始运行（IM/WebChat 等外部入口触发时同步桌面 tab isRunning）
+    onRunning: (callback: (data: { agentId: string; ptyId?: string; userTask: string }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string; ptyId?: string; userTask: string }) => callback(data)
+      ipcRenderer.on('agent:running', handler)
+      return () => {
+        ipcRenderer.removeListener('agent:running', handler)
+      }
+    },
+
     // 监听 Agent 步骤移除（后端撤销了临时步骤，前端同步清除）
     onStepRemoved: (callback: (data: { agentId: string; ptyId?: string; stepId: string }) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string; ptyId?: string; stepId: string }) => callback(data)

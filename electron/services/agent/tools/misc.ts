@@ -979,8 +979,7 @@ export async function messageUser(
           terminalType: 'assistant',
           userTask: '__proactive__',
           steps: [
-            { id: `${uid}-task`, type: 'user_task', content: '__proactive__', timestamp: ts },
-            { id: `${uid}-result`, type: 'final_result', content: message, timestamp: ts },
+            { id: `${uid}-notice`, type: 'proactive_notice', content: message, timestamp: ts },
           ],
           finalResult: message,
           duration: 0,

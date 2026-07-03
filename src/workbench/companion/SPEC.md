@@ -1,6 +1,6 @@
 # 联络（Companion）工作台 SPEC
 
-> Last verified: 2026-06-23
+> Last verified: 2026-07-03
 > 范围：`src/workbench/companion/` + 渲染组件 `src/components/workbench/CompanionWorkbench.vue`。
 > 工作台体系通用规则见 `src/workbench/SPEC.md`；联络的产品定位见 `.cursor/rules/project-architecture.mdc`「任务 / 联络 双入口模型」。
 
@@ -35,4 +35,5 @@ AI 也能主动找人（`talk_to_user` / Watch 通知）。它不是「专注产
 - **UI 与 prompt 一致**：联络不挂产出物面板，且 `resolveWorkbenchAgentPrompt('companion', …)`
   返回 `undefined`（不注入产出物面板能力 prompt）。两者必须保持一致——别只改一处。
 - **身份判断**用稳定常量 `'__companion__'`（见 `registry.ts COMPANION_AGENT_ID` / `stores/terminal.ts COMPANION_TAB_AGENT_ID`），不要用标题等脆弱匹配。
+- **talk_to_user 桌面呈现**：Watch/IM 主动消息经 `watch:proactive-message` 注入联络 tab；进行中任务延迟、完成后 flush；step 类型为 `proactive_notice`（非 `user_task`/`final_result`）。IM 触发 companion run 时须收到 `agent:running` 才能正确延迟（见 `agent/SPEC.md`、`im/SPEC.md`）。
 - **后续扩展**：联络若长出专属界面能力，在 `CompanionWorkbench.vue` 加区域、在 `prompt.ts` 导出片段即可，无需动 assistant 工作台。

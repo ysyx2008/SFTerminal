@@ -1822,6 +1822,26 @@ describe('Agent step callbacks', () => {
     expect(stepTypes[1]).toBe('thinking')
   })
 
+  it('should call onStart after user_task step is emitted', async () => {
+    const onStart = vi.fn()
+
+    mockAiService.chatWithToolsStream.mockImplementation(
+      (_messages, _tools, onChunk, _onToolCall, onDone) => {
+        onChunk('Response')
+        onDone({ content: 'Response', tool_calls: undefined })
+        return Promise.resolve()
+      }
+    )
+
+    agent.setCallbacks({ onStart })
+
+    const context = createMockContext()
+    await agent.run('Hello task', context)
+
+    expect(onStart).toHaveBeenCalledOnce()
+    expect(onStart).toHaveBeenCalledWith(expect.any(String), 'Hello task')
+  })
+
   it('should call onStep for message step', async () => {
     const onStep = vi.fn()
     

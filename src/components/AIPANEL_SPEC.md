@@ -1,6 +1,6 @@
 # AiPanel 渲染规则 SPEC
 
-> Last verified: 2026-07-03  
+> Last verified: 2026-07-03（proactive_notice step、talk_to_user 内联渲染）  
 > 文件：`src/components/AiPanel.vue`  
 > 职责：将 agentTaskGroups 渲染为可交互的对话流 UI，管理滚动、确认框、输入框等。
 
@@ -19,7 +19,8 @@ AiPanel
 │       ├── message（AI 回复）
 │       ├── tool_call / tool_result（工具调用）
 │       ├── user_supplement（运行中追加的用户消息）
-│       ├── proactive_message（Watch 触发的主动消息）
+│       ├── proactive_message（历史格式：user_task __proactive__ + final_result）
+│       ├── proactive_notice（talk_to_user 内联主动通知，非分组边界）
 │       └── ...
 ├── PendingConfirmCard（需要确认时叠加在底部）
 ├── PendingSecureInputCard（需要密钥输入时）
@@ -40,6 +41,7 @@ AiPanel
 | `final_result` | FinalResultCard | 只在失败/中断时独立渲染；正常完成时 message step 已含全文 |
 | `error` | ErrorCard | 红色错误提示 |
 | `user_supplement` | 用户补充消息气泡 | 按 steps 时间顺序渲染，不提前到 user_task 之后 |
+| `proactive_notice` | assistant 气泡（markdown） | talk_to_user 注入；内联于任务流，不关闭当前 group |
 | `confirm` | 不进入 steps，由 pendingConfirm 管理 | - |
 | `waiting` / `asking` | 等待状态指示器 | - |
 

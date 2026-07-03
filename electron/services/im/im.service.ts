@@ -1323,6 +1323,11 @@ export class IMService {
         executionMode: this.config.executionMode,
         debugMode: false
       }, undefined, {
+        onStart: (_runId: string, userTask: string) => {
+          if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+            mainWindow.webContents.send('agent:running', { agentId, userTask })
+          }
+        },
         onStep: (_runId: string, step: any) => {
           // 同步到桌面 companion tab
           if (mainWindow && !mainWindow.webContents.isDestroyed()) {

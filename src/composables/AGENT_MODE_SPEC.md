@@ -1,6 +1,6 @@
 # useAgentMode 组合式函数 SPEC
 
-> Last verified: 2026-06-20  
+> Last verified: 2026-07-03（agent:running 桌面同步、proactive_notice 分组）  
 > 文件：`src/composables/useAgentMode.ts`  
 > 职责：管理单个 AiPanel（tab）的 Agent 运行生命周期、步骤分组、IPC 事件路由。
 
@@ -88,6 +88,7 @@ isEventForThisTab = resolvedTabId === currentTabId
 遍历 steps：
   user_task      → 开启新 group（proactive/onboarding 特殊标记）
   final_result   → 关闭当前 group（写入 finalResult，currentGroup = null）
+  proactive_notice → 追加到当前 group.steps；无 currentGroup 时合成独立 isProactive group（finalResult=content）
   user_supplement（在 user_task 之前到达）→ 暂存为 leadingSupplements，user_task 到达后追加
   confirm        → 不进入 group（由 pendingConfirm 单独管理）
   其他 step      → 追加到当前 group.steps
@@ -103,8 +104,11 @@ isEventForThisTab = resolvedTabId === currentTabId
 | 类型 | 触发条件 | 渲染方式 |
 |---|---|---|
 | 普通任务 | 默认 | user_task 气泡 + steps 列表 |
-| proactive（`isProactive = true`）| `userTask === '__proactive__'` | 只在有 finalResult 时渲染单条消息卡片，无 user_task 气泡 |
+| proactive（`isProactive = true`）| 历史：`userTask === '__proactive__'` + `final_result` | 只在有 finalResult 时渲染单条 `proactive_message` 卡片，无 user_task 气泡 |
+| proactive_notice（内联） | 当前任务 group 内的 `proactive_notice` step | 任务流中插入 assistant 气泡（`flattenedItems` type=`proactive_notice`） |
 | onboarding（`isOnboarding = true`）| `userTask === '__onboarding__'` | 无 user_task 气泡，steps 正常渲染 |
+
+**talk_to_user 延迟注入**：`App.vue` 在 companion tab `isRunning` 时将 proactive 消息暂存，`onComplete` 时 `flushDeferredProactive`；依赖 IM/WebChat 入口的 `agent:running` IPC 正确置位 `isRunning`（见 `agent/SPEC.md`）。
 
 ---
 

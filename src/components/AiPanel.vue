@@ -1801,6 +1801,7 @@ const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
   }
   if (item.type === 'final_result' && item.group) return [item.group.finalResult]
   if (item.type === 'proactive_message' && item.group) return [item.group.finalResult]
+  if (item.type === 'proactive_notice' && item.step) return [item.step.content]
   if (item.type === 'confirm') return [pendingConfirm.value?.toolCallId, pendingConfirm.value?.toolArgs]
   if (item.type === 'waiting_input') return [pendingSecureInput.value?.requestId]
   return []
@@ -2433,7 +2434,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           <template #default="{ item, index, active }">
             <DynamicScrollerItem :item="item" :active="active" :data-index="index" :size-dependencies="getItemSizeDeps(item)">
 
-              <!-- 主动消息（talk_to_user） -->
+              <!-- 主动消息（talk_to_user）— 历史格式 user_task __proactive__ + final_result -->
               <div v-if="item.type === 'proactive_message'" class="message assistant">
                 <div class="message-wrapper">
                   <div class="message-content markdown-content" v-html="renderMarkdown(item.group!.finalResult!)"></div>
@@ -2448,6 +2449,13 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                       <MoreHorizontal :size="14" />
                     </button>
                   </div>
+                </div>
+              </div>
+
+              <!-- 主动消息（talk_to_user）— 新格式 proactive_notice step -->
+              <div v-else-if="item.type === 'proactive_notice'" class="message assistant">
+                <div class="message-wrapper">
+                  <div class="message-content markdown-content" v-html="renderMarkdown(item.step?.content ?? '')"></div>
                 </div>
               </div>
 

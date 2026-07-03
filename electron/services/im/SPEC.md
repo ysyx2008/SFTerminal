@@ -1,6 +1,6 @@
 # IM Service SPEC
 
-> Last verified: 2026-05-28
+> Last verified: 2026-07-03（agent:running IPC）
 
 ## 职责
 
@@ -175,6 +175,7 @@ interface SendFileResult { success: boolean; error?: string; messageId?: string 
 - **IM 投递工具失败必推送到聊天**：`send_file_to_chat` / `send_image_to_chat` / `send_to_chat` 的 `tool_result` 失败会经 `IMService` 发到当前 IM 会话（与 `processMode` 无关），避免错误仅出现在桌面 Companion 面板。
 - **工具失败补 ❌ 提示**：`processMode='all'` 时，普通工具 `tool_result.success === false` 会经 `formatToolFailureNotification` 发一条「❌ {label} 失败：{原因首行}」到 IM，让用户能与"🔧 调用 …"开始通知配对、看清成败。成功工具不刷 ✅（频繁正面反馈会推高出站密度逼近微信 -2 阈值，最终回复会体现成果）。`processMode='messages'` 不发工具调用记录（🔧/❌），只发 AI 正文。
 - **工具进度顺序对齐**：`IMService.runAgentTask` 维护 `pendingAfterMessage` 缓冲与 `enqueueAfterMessage`：流式 message 期间所有「🔧 调用 / ❌ 失败」入队都先挂起，待 message 定稿那一刻批量转入 `sendQueue`，使 IM 端顺序变为「message → 工具相关」与桌面 UI 一致（streaming-tool-executor 在 args 收齐就 finalize，原本会让工具通知早于 message）。`onComplete` / `onError` 兜底刷出，防止流式中途异常退出时通知卡住。
+- **桌面 tab 运行态同步**：`runAssistant` 回调 `onStart` 向主窗口发 `agent:running { agentId, userTask }`，与 `agent:step` / `agent:complete` 并列；`App.vue` 据此置位联络 tab `isRunning`，使 Watch `talk_to_user` 在 companion 任务进行中走延迟注入而非立即打断 UI（详见 `agent/SPEC.md`「talk_to_user 主动消息与桌面 UI 同步」）。
 - **过程消息三态（`processMode`）**：`IMServiceConfig.processMode` 替代旧的布尔 `sendProcessMessages`，三态语义：
   - `'final'`：仅最终结果，执行过程完全静默
   - `'messages'`（默认）：发 AI 写给用户的中间正文，不发工具调用记录（🔧/❌）。介于"完全静默"与"全量噪音"之间——用户能看到 AI 的对话节奏，但不被工具调用刷屏，也不逼微信触发风控

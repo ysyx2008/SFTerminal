@@ -257,6 +257,8 @@ export interface HostProfileServiceInterface {
 // Agent 事件回调
 export interface AgentCallbacks {
   onStep?: (agentId: string, step: AgentStep) => void
+  /** run 开始（user_task 步骤已发出后），供 IM/WebChat 等外部入口同步桌面 tab 的 isRunning */
+  onStart?: (agentId: string, userTask: string) => void
   onStepRemoved?: (agentId: string, stepId: string) => void
   onNeedConfirm?: (confirmation: PendingConfirmationInternal) => void
   /** 需要安全输入框时触发（如技能 API Key）。前端弹框，值直接写入加密存储，不经过 LLM。 */

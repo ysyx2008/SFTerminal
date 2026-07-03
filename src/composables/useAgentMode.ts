@@ -56,7 +56,7 @@ export interface AgentTaskGroup {
 
 export interface VirtualItem {
   id: string
-  type: 'user_task' | 'step' | 'final_result' | 'proactive_message' | 'confirm' | 'waiting_input'
+  type: 'user_task' | 'step' | 'final_result' | 'proactive_message' | 'proactive_notice' | 'confirm' | 'waiting_input'
   group?: AgentTaskGroup
   step?: AgentStep
   content?: string
@@ -1237,6 +1237,22 @@ export function useAgentMode(
         }
       } else if (step.type === 'user_supplement' && !currentGroup) {
         leadingSupplements.push(step)
+      } else if (step.type === 'proactive_notice') {
+        if (currentGroup) {
+          currentGroup.steps.push(step)
+        } else {
+          // 无归属任务时作为独立主动通知（与历史 __proactive__ 分组等价）
+          groups.push({
+            id: step.id,
+            index: groups.length,
+            userTask: '',
+            steps: [],
+            isCurrentTask: false,
+            isProactive: true,
+            isOnboarding: false,
+            finalResult: step.content,
+          })
+        }
       } else if (step.type !== 'confirm') {
         if (currentGroup) {
           currentGroup.steps.push(step)
@@ -1298,6 +1314,7 @@ export function useAgentMode(
 
     for (const group of agentTaskGroups.value) {
       if (group.isProactive) {
+        // 历史格式（user_task __proactive__ + final_result）走 proactive_message 虚拟项
         if (group.finalResult) {
           items.push({ id: `proactive_${group.id}`, type: 'proactive_message', group, size: 80 })
         }
@@ -1314,6 +1331,10 @@ export function useAgentMode(
         const visibleSteps = group.steps.filter(s => shouldShowToolResultStep(s, debugMode))
         for (let i = 0; i < visibleSteps.length; i++) {
           const step = visibleSteps[i]
+          if (step.type === 'proactive_notice') {
+            items.push({ id: step.id, type: 'proactive_notice', step, group, size: 80 })
+            continue
+          }
           const isFirst = i === 0
           const size = step.type === 'message'
             ? Math.max(80, Math.ceil(step.content.length / 4))

@@ -3483,6 +3483,11 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
         }
       }
     },
+    onStart: (_agentId: string, userTask: string) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('agent:running', { agentId: ptyId, ptyId, userTask })
+      }
+    },
     onStepRemoved: (agentId: string, stepId: string) => {
       if (!event.sender.isDestroyed()) {
         event.sender.send('agent:stepRemoved', { agentId, ptyId, stepId })
@@ -3711,6 +3716,11 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
         }
       }
       if (isRemote) wcs.onAgentStep(step)
+    },
+    onStart: (_runId: string, userTask: string) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('agent:running', { agentId, ptyId: agentId, userTask })
+      }
     },
     onStepRemoved: (_runId: string, stepId: string) => {
       if (!event.sender.isDestroyed()) {

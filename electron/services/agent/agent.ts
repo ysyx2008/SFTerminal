@@ -695,6 +695,8 @@ export abstract class Agent {
       attachments: context.attachments
     })
 
+    this.callbacks?.onStart?.(this._agentId ?? run.id, message)
+
     // 准备阶段用户补充：run() IPC 往返期间缓冲的消息，紧跟 user_task 上墙
     if (this.preRunUserMessages.length > 0) {
       const queued = this.preRunUserMessages.splice(0)
