@@ -8,8 +8,40 @@ import { assessCommandRisk, analyzeCommand, isSudoCommand, detectPasswordPrompt 
 import { getTerminalStateService } from '../../terminal-state.service'
 import { getTerminalAwarenessService, getProcessMonitor } from '../../terminal-awareness'
 import { getLastNLinesFromBuffer, getScreenAnalysisFromFrontend } from '../../screen-content.service'
-import { categorizeError, getErrorRecoverySuggestion, withRetry, truncateFromEnd, getPtyMaxCommandLength, paneGoneResult } from './utils'
+import { categorizeError, getErrorRecoverySuggestion, withRetry, truncateFromEnd, truncateSandwichWithNotice, getPtyMaxCommandLength, paneGoneResult } from './utils'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
+
+/** execute_command 输出截断上限（与 exec.OUTPUT_TRUNCATE 对齐） */
+const COMMAND_OUTPUT_TRUNCATE = 16_384
+
+/**
+ * 按上下文预算截断命令输出。
+ * 上下文紧张时预算会收紧（如 85%+ 时只剩 25%），此时取 min(预算, 16KB)；
+ * 无预算时回退到固定 16KB（保持向后兼容）。
+ *
+ * @internal 导出仅为单元测试，业务代码请用 executeCommand 等入口
+ */
+export function applyCommandOutputBudget(raw: string, executor: ToolExecutorConfig): string {
+  const budget = executor.getToolOutputBudget?.()
+  const maxChars = budget && budget.maxChars > 0
+    ? Math.min(budget.maxChars, COMMAND_OUTPUT_TRUNCATE)
+    : COMMAND_OUTPUT_TRUNCATE
+
+  if (raw.length <= maxChars) return raw
+
+  return truncateSandwichWithNotice(
+    raw,
+    maxChars,
+    (stats) =>
+      t('exec.output_truncated', {
+        total: String(stats.originalLength),
+        head: String(stats.headChars),
+        tail: String(stats.tailChars),
+        omittedLines: String(stats.omittedLines),
+        omittedChars: String(stats.omittedChars),
+      })
+  )
+}
 
 /**
  * 执行命令
@@ -347,16 +379,19 @@ export async function executeCommand(
 
     terminalStateService.completeCommandExecution(ptyId, 0, 'completed')
 
+    // 按上下文预算截断输出：上下文紧张时收紧，避免大输出撑爆上下文
+    const rawOutput = userApproved
+      ? `[${t('status.user_approved')}]\n${result.output}`
+      : result.output
+    const output = applyCommandOutputBudget(rawOutput, executor)
+
     executor.addStep({
       type: 'tool_result',
       content: `${t('status.command_complete')} (${t('misc.duration')}: ${result.duration}ms)`,
       toolName: 'execute_command',
-      toolResult: result.output
+      toolResult: output
     })
 
-    const output = userApproved 
-      ? `[${t('status.user_approved')}]\n${result.output}`
-      : result.output
     return { success: true, output }
   } catch (error) {
     unsubscribe()
@@ -526,14 +561,16 @@ async function executeSudoCommand(
       })
     }
 
+    const sudoOutput = applyCommandOutputBudget(cleanOutput, executor)
+
     executor.addStep({
       type: 'tool_result',
       content: t('status.command_complete'),
       toolName: 'execute_command',
-      toolResult: cleanOutput
+      toolResult: sudoOutput
     })
 
-    return { success: true, output: cleanOutput }
+    return { success: true, output: sudoOutput }
     
   } catch (error) {
     unsubscribe()

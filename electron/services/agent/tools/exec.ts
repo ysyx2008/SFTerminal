@@ -25,17 +25,27 @@ const MAX_WAIT_SECONDS = 600        // 单次同步等待上限（防止 Agent �
 const DEFAULT_MAX_SECONDS = 3600    // 后台最长允许运行 1 小时（防僵尸进程）
 const MAX_MAX_SECONDS = 24 * 3600   // 最长 24 小时（极端长任务硬上限）
 
-const OUTPUT_TRUNCATE = 16_384      // 返回给 Agent 的输出截断（16KB）
+const OUTPUT_TRUNCATE = 16_384      // 返回给 Agent 的输出截断上限（16KB），动态预算收紧时取 min
 
 /**
  * 把后台任务原始输出整理为 Agent 可读形态：先 trim 掉首尾空白（与旧版 exec 行为一致，
- * 避免 LLM 看到无意义的尾部换行），再按行做 16KB 头尾 sandwich（优先整行保留；
+ * 避免 LLM 看到无意义的尾部换行），再按行做头尾 sandwich（优先整行保留；
  * 仅当单行超出段内预算时才行内字符截断）。
+ *
+ * 当 executor 提供了动态预算（上下文紧张时收紧），用预算值代替固定 16KB；
+ * 无预算时回退到 OUTPUT_TRUNCATE（保持向后兼容）。
+ *
+ * @internal 导出仅为单元测试，业务代码请用 executeCommandDirect 等入口
  */
-function formatTaskOutput(raw: string): string {
+export function formatTaskOutput(raw: string, executor: ToolExecutorConfig): string {
+  const budget = executor.getToolOutputBudget?.()
+  const maxChars = budget && budget.maxChars > 0
+    ? Math.min(budget.maxChars, OUTPUT_TRUNCATE)
+    : OUTPUT_TRUNCATE
+
   return truncateSandwichWithNotice(
     raw.trim(),
-    OUTPUT_TRUNCATE,
+    maxChars,
     (stats) => t('exec.output_truncated', {
       total: String(stats.originalLength),
       head: String(stats.headChars),
@@ -181,7 +191,7 @@ export async function executeCommandDirect(
 
   // ============= abort：直接返回，但任务继续在后台跑 =============
   if (reason === 'aborted') {
-    const output = formatTaskOutput(snap.output)
+    const output = formatTaskOutput(snap.output, executor)
     executor.addStep({
       type: 'tool_result',
       content: `⏹️ ${t('status.user_rejected')}`,
@@ -198,7 +208,11 @@ export async function executeCommandDirect(
 
   // ============= 任务在 wait_seconds 内结束 =============
   if (reason === 'done') {
-    const output = formatTaskOutput(snap.output)
+    // userApproved 前缀在截断前拼接，让预算计算覆盖完整输出
+    const rawOutput = userApproved
+      ? `[${t('status.user_approved')}]\n${snap.output}`
+      : snap.output
+    const output = formatTaskOutput(rawOutput, executor)
     const exitCode = snap.exitCode ?? (snap.signal ? 1 : 0)
     executor.addStep({
       type: 'tool_result',
@@ -207,7 +221,7 @@ export async function executeCommandDirect(
       toolResult: output
     })
 
-    const finalOutput = userApproved ? `[${t('status.user_approved')}]\n${output}` : output
+    const finalOutput = output
 
     if (snap.status === 'completed') {
       return { success: true, output: finalOutput }
@@ -227,7 +241,7 @@ export async function executeCommandDirect(
   }
 
   // ============= 任务仍在跑 → 转后台 =============
-  const output = formatTaskOutput(snap.output)
+  const output = formatTaskOutput(snap.output, executor)
   const header = t('exec.backgrounded', {
     taskId: snap.taskId,
     pid: String(snap.pid ?? 'unknown'),
@@ -302,7 +316,7 @@ export async function awaitExec(
   })
 
   const snap = manager.snapshot(task)
-  const output = formatTaskOutput(snap.output)
+  const output = formatTaskOutput(snap.output, executor)
 
   if (reason === 'aborted') {
     executor.addStep({

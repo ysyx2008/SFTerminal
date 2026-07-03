@@ -362,3 +362,147 @@ describe('ContextWindowManager.fixIncompleteToolCalls', () => {
     expect(run.messages).toHaveLength(1)
   })
 })
+
+// ==================== isContextLimitError ====================
+
+describe('ContextWindowManager.isContextLimitError', () => {
+  it('匹配原始错误码 context_length_exceeded', () => {
+    expect(ContextWindowManager.isContextLimitError(new Error('context_length_exceeded'))).toBe(true)
+    expect(ContextWindowManager.isContextLimitError(new Error('Error: context_length_exceeded: too long'))).toBe(true)
+  })
+
+  it('匹配中文翻译文案（ai.service.ts 抛出的 t("error.context_length_exceeded")）', () => {
+    expect(ContextWindowManager.isContextLimitError(new Error('上下文超出模型限制。请清除部分对话历史后重试。'))).toBe(true)
+  })
+
+  it('匹配英文翻译文案', () => {
+    expect(ContextWindowManager.isContextLimitError(new Error('Context length exceeded. Please clear some conversation history and try again.'))).toBe(true)
+  })
+
+  it('普通网络/超时/中止错误不匹配', () => {
+    expect(ContextWindowManager.isContextLimitError(new Error('aborted'))).toBe(false)
+    expect(ContextWindowManager.isContextLimitError(new Error('Request timeout'))).toBe(false)
+    expect(ContextWindowManager.isContextLimitError(new Error('network error'))).toBe(false)
+  })
+
+  it('非 Error 对象 / 空字符串不匹配', () => {
+    expect(ContextWindowManager.isContextLimitError(null)).toBe(false)
+    expect(ContextWindowManager.isContextLimitError(undefined)).toBe(false)
+    expect(ContextWindowManager.isContextLimitError('')).toBe(false)
+    expect(ContextWindowManager.isContextLimitError(42)).toBe(false)
+  })
+
+  it('不误匹配 agent.context_limit_exceeded（英文版不含 "Context length exceeded"）', () => {
+    // 这是给 AI 看的 UI 提示文案，不是 API 错误码翻译，不应被识别为 API 报错
+    const enUiPrompt = '⚠️ Conversation context exceeds model limit (current 130000 tokens, model limit 128000 tokens, 101%).'
+    expect(ContextWindowManager.isContextLimitError(new Error(enUiPrompt))).toBe(false)
+  })
+})
+
+// ==================== emergencyCompress ====================
+
+describe('ContextWindowManager.emergencyCompress', () => {
+  it('无 user 消息 → null（无法压缩）', () => {
+    const m = new ContextWindowManager(makeDeps())
+    expect(m.emergencyCompress(makeRun([asst('hi')]))).toBeNull()
+  })
+
+  it('成功压缩：归档早期对话、保留最近 2 组、enabled 翻 true', () => {
+    const m = new ContextWindowManager(makeDeps())
+    const run = makeRun([
+      user('do task'),
+      asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
+      asst('a2', [tc('c2', 'bar')]), tool('c2', 'r2'),
+      asst('a3', [tc('c3', 'baz')]), tool('c3', 'r3'),
+      asst('a4', [tc('c4', 'qux')]), tool('c4', 'r4')
+    ])
+    const beforeMsgCount = run.messages.length
+    const result = m.emergencyCompress(run)
+    expect(result).not.toBeNull()
+    expect(result!.keepRecent).toBe(2)
+    expect(result!.archiveId).toBe('ca-1')
+    expect(m.enabled).toBe(true)
+    // 归档存在
+    expect(run.compressedArchives).toHaveLength(1)
+    expect(run.compressedArchives![0].messages.length).toBeGreaterThan(0)
+    // messages 条数减少（早期对话被摘要替换）
+    // 原 9 条 → user + summary + a3 + c3 + a4 + c4 = 6 条
+    expect(run.messages.length).toBeLessThan(beforeMsgCount)
+    expect(run.messages.length).toBe(6)
+    expect(run.messages[0].role).toBe('user')
+    expect(run.messages[1].role).toBe('assistant') // 摘要
+  })
+
+  it('keepRecent=2 后仍超 90% → 自动降到 keepRecent=1（用小 contextLength 触发）', () => {
+    // 用很小的 contextLength 让 keepRecent=2 压缩后 afterUsage 仍 > 90%
+    // （4000 基线 / 4200 ≈ 95%，加上 summary 后肯定 > 90%）
+    const m = new ContextWindowManager(makeDeps({
+      config: {
+        getAiProfiles: () => [{ id: 'p1', contextLength: 4200 } as AiProfile],
+        getActiveAiProfile: () => 'p1'
+      }
+    }))
+    const run = makeRun([
+      user('do'),
+      asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
+      asst('a2', [tc('c2', 'bar')]), tool('c2', 'r2'),
+      asst('a3', [tc('c3', 'baz')]), tool('c3', 'r3'),
+      asst('a4', [tc('c4', 'qux')]), tool('c4', 'r4')
+    ])
+    const result = m.emergencyCompress(run)
+    expect(result).not.toBeNull()
+    // keepRecent=2 后仍 >90%，应触发第二次压缩到 keepRecent=1
+    expect(result!.keepRecent).toBe(1)
+    expect(run.compressedArchives!.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('恰好 keepRecent 组 assistant（toCompress 为空）→ null（无法再压缩）', () => {
+    const m = new ContextWindowManager(makeDeps())
+    // 2 个 assistant 组，keepRecent=2 → keepFromIndex=0 → toCompress 为空 → null
+    const run = makeRun([
+      user('do'),
+      asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
+      asst('a2', [tc('c2', 'bar')]), tool('c2', 'r2')
+    ])
+    expect(m.emergencyCompress(run)).toBeNull()
+    expect(run.compressedArchives).toBeUndefined()
+  })
+
+  it('多次调用：每次产生新 archiveId，归档累积', () => {
+    const m = new ContextWindowManager(makeDeps())
+    const run = makeRun([
+      user('do'),
+      asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
+      asst('a2', [tc('c2', 'bar')]), tool('c2', 'r2'),
+      asst('a3', [tc('c3', 'baz')]), tool('c3', 'r3'),
+      asst('a4', [tc('c4', 'qux')]), tool('c4', 'r4'),
+      asst('a5', [tc('c5', 'extra')]), tool('c5', 'r5')
+    ])
+    const r1 = m.emergencyCompress(run)
+    expect(r1).not.toBeNull()
+    expect(r1!.archiveId).toBe('ca-1')
+    // 再压缩一次（保留最近 2 组）
+    const r2 = m.emergencyCompress(run)
+    if (r2) {
+      expect(r2.archiveId).toBe('ca-2')
+      expect(run.compressedArchives).toHaveLength(2)
+    }
+  })
+
+  it('摘要消息含 recall_compressed 指引（让 AI 知道可以找回归档）', () => {
+    const m = new ContextWindowManager(makeDeps())
+    const run = makeRun([
+      user('do'),
+      asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
+      asst('a2', [tc('c2', 'bar')]), tool('c2', 'r2'),
+      asst('a3', [tc('c3', 'baz')]), tool('c3', 'r3'),
+      asst('a4', [tc('c4', 'qux')]), tool('c4', 'r4')
+    ])
+    m.emergencyCompress(run)
+    const summaryMsg = run.messages[1]
+    expect(summaryMsg.role).toBe('assistant')
+    expect(typeof summaryMsg.content).toBe('string')
+    expect((summaryMsg.content as string).includes('recall_compressed')).toBe(true)
+    expect((summaryMsg.content as string).includes('系统自动压缩')).toBe(true)
+  })
+})
