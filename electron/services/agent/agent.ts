@@ -1607,8 +1607,10 @@ export abstract class Agent {
     let hasExecutedAnyTool = false
     let noToolCallRetryCount = 0
     let truncationRetryCount = 0
+    let contextOverflowRetryCount = 0
     const MAX_NO_TOOL_RETRIES = 2
     const MAX_TRUNCATION_RETRIES = 3
+    const MAX_CONTEXT_OVERFLOW_RETRIES = 1
     
     // 创建工具执行器配置
     const toolExecutorConfig = this.createToolExecutorConfig(run)
@@ -1703,6 +1705,41 @@ export abstract class Agent {
           // 当 abort 发生在工具执行过程中时，可能存在 assistant 消息（含 tool_calls）但缺少对应的 tool result
           this._contextWindow.fixIncompleteToolCalls(run)
           continue executionLoop
+        }
+        
+        // 上下文超限兜底：API 返回 context_length_exceeded 时，AI 可能忽略了 85% 警告
+        // 仍未调用 compress_context。此时自动紧急压缩早期对话，注入提示后重试当前请求。
+        if (
+          ContextWindowManager.isContextLimitError(error) &&
+          contextOverflowRetryCount < MAX_CONTEXT_OVERFLOW_RETRIES &&
+          !run.aborted
+        ) {
+          // 先修复可能悬空的 tool_calls（API 报错时 assistant 可能已宣告工具但 result 未生成）
+          this._contextWindow.fixIncompleteToolCalls(run, `[上下文超限，工具调用已中断]`)
+          const compressed = this._contextWindow.emergencyCompress(run)
+          if (compressed) {
+            // 仅在真正重试时消耗配额（压缩失败时不消耗，避免下次循环跳过本可救的请求）
+            contextOverflowRetryCount++
+            log.warn(`Context limit exceeded, auto-compressed (kept recent ${compressed.keepRecent}, freed ${compressed.freedTokens} tokens), retrying`)
+            // 注入系统提示让 AI 知道发生了什么、当前上下文已压缩
+            run.messages.push({
+              role: 'user',
+              content: t('agent.context_limit_auto_compressed', {
+                keepRecent: compressed.keepRecent,
+                freed: compressed.freedTokens.toLocaleString()
+              }),
+              _systemInjected: true
+            })
+            // 重试当前请求（stepCount 继续正常递增，不重置——失败的这次调用也算一步）
+            continue executionLoop
+          }
+          // 压缩失败（如无 user 消息可压缩）→ 注入失败提示后继续抛出
+          run.messages.push({
+            role: 'user',
+            content: t('agent.context_limit_compress_failed'),
+            _systemInjected: true
+          })
+          log.warn('Context limit exceeded but emergency compress found nothing to compress')
         }
         
         throw error

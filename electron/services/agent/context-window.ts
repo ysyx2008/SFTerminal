@@ -39,11 +39,34 @@ export interface CompressResult {
   afterTokens: number
   freedTokens: number
   archiveId: string
+  /** 本次压缩实际保留的最近对话轮数（紧急压缩可能从 2 降到 1） */
+  keepRecent: number
 }
 
 export class ContextWindowManager {
   /** 上下文管理功能激活阈值(用量百分比)。与 85% 警告消息对齐。 */
   static readonly THRESHOLD = 85
+
+  /**
+   * 判断错误是否为上下文超限错误。
+   *
+   * 各 LLM provider 的错误码/消息不同，但 ai.service.ts 在解析到
+   * context_length_exceeded 时会统一翻译成 t('error.context_length_exceeded')，
+   * 所以这里匹配翻译后的文案即可覆盖所有 provider。
+   *
+   * 注意：这不是"基于关键词的模式分析"——它匹配的是固定的 API 错误码
+   * （context_length_exceeded）的翻译结果，是稳定的协议字段而非自然语言模式。
+   */
+  static isContextLimitError(error: unknown): boolean {
+    const msg = error instanceof Error ? error.message : String(error)
+    if (!msg) return false
+    // 匹配翻译后的中英文案 + 原始错误码，覆盖所有 provider
+    return (
+      msg.includes('context_length_exceeded') ||
+      msg.includes('上下文超出模型限制') ||
+      msg.includes('Context length exceeded')
+    )
+  }
 
   private _enabled = false
 
@@ -113,7 +136,8 @@ export class ContextWindowManager {
    * 设计原则:程序只提供信息,所有压缩决策由 AI 做。
    * - < 85%: 不干预(最大化前缀缓存命中)
    * - >= 85%: 激活上下文管理工具 + 注入警告消息到 messages 末尾
-   * - API 自然报错: 最终兜底
+   * - API 自然报错 context_length_exceeded: emergencyCompress 自动压缩兜底
+   *   (见 executeLoop catch → ContextWindowManager.isContextLimitError → emergencyCompress)
    */
   updatePressure(run: AgentRun): void {
     const contextLength = this.getContextLength()
@@ -232,8 +256,47 @@ export class ContextWindowManager {
       beforeTokens,
       afterTokens,
       freedTokens: beforeTokens - afterTokens,
-      archiveId
+      archiveId,
+      keepRecent
     }
+  }
+
+  /**
+   * 紧急压缩：当 API 返回 context_length_exceeded 时作为最终兜底。
+   *
+   * 与常规 compress 的区别：
+   * - 更激进：keepRecent=2（常规默认 4），尽量多释放空间
+   * - 多次尝试：先 keepRecent=2，若释放不足再 keepRecent=1
+   * - 不依赖 AI 调用 compress_context 工具（AI 可能忽略 85% 警告）
+   *
+   * @returns 压缩结果；若 messages 结构不允许压缩（如无 user 消息）返回 null
+   */
+  emergencyCompress(run: AgentRun): CompressResult | null {
+    let result = this.compress(run, this.buildEmergencySummary(), 2)
+    if (result) {
+      const contextLength = this.getContextLength()
+      const afterUsage = this.estimateTotalTokens(run.messages) / contextLength
+      if (afterUsage > 0.9) {
+        const result2 = this.compress(run, this.buildEmergencySummary(), 1)
+        if (result2) {
+          result = result2
+        }
+      }
+    }
+    if (result) {
+      this._enabled = true
+      log.info(`Emergency compress: freed ${result.freedTokens} tokens, kept recent ${result.keepRecent} rounds (archive ${result.archiveId})`)
+    }
+    return result
+  }
+
+  /**
+   * 构建紧急压缩的摘要文本。不依赖 AI 生成摘要（API 已不可用），
+   * 用结构化占位让 AI 知道这段对话被压缩了、可以从归档找回。
+   */
+  private buildEmergencySummary(): string {
+    return '【系统自动压缩】此前的对话因超出模型上下文限制已被紧急归档。' +
+      '关键信息摘要请参考上方的 task_memory / 知识文档；如需原始对话细节，请调用 recall_compressed 工具按 archive_id 找回。'
   }
 
   /**

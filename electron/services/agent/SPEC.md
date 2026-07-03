@@ -228,7 +228,16 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 - **注入**：`ToolExecutorConfig.getToolOutputBudget` 由 `agent.ts` 在 `createToolExecutorConfig` 提供；子 Agent 继承父配置。
 - **并行 batch**：`executeToolBatchParallel` 与流式预执行 `StreamingToolExecutor` 均通过 `applyParallelShare(budget, N)` 分摊预算，避免 N 个只读工具各拿满额。
 - **消费方（v1）**：`tools/file.ts` 的 `read_file` / 文档解析结果在返回前按预算截断；`maxChars ≤ 0` 时仅返回摘要与 `compress_context` 指引。
-- **后续**：`exec` 等只读工具可复用同一预算函数。
+- **消费方（v2）**：`tools/exec.ts` 的 `formatTaskOutput` 与 `tools/command.ts` 的 `applyCommandOutputBudget`（execute_command 主路径 + sudo 路径）均接入动态预算，上下文紧张时自动收紧输出（与 16KB 上限取 min）；`executeTimedCommand` / `executeFireAndForget` 因已有固定 500/300 字符截断且输出量小，暂不接入。
+
+### 上下文超限自动压缩兜底
+
+`ContextWindowManager.emergencyCompress` 是「API 自然报错」的最终兜底（SPEC 第 116 行注释承诺过、本节实现）：
+
+- **触发**：`executeLoop` 的 catch 检测到 `context_length_exceeded`（通过 `ContextWindowManager.isContextLimitError`，匹配 ai.service.ts 统一翻译后的文案 + 原始错误码）。
+- **流程**：先 `fixIncompleteToolCalls` 修复悬空 tool_calls → `emergencyCompress`（先 keepRecent=2，若压缩后仍 >90% 再 keepRecent=1）→ 注入 `_systemInjected` 提示让 AI 知道发生了什么 → `continue executionLoop` 重试当前请求。
+- **重试上限**：`MAX_CONTEXT_OVERFLOW_RETRIES = 1`，防死循环。仅压缩成功时消耗配额（压缩失败不消耗，避免下次循环跳过本可救的请求）。
+- **压缩失败**（如无 user 消息可压缩）：注入失败提示后正常抛错到 `handleError`。
 
 ### 历史教训
 
