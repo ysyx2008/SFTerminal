@@ -1448,6 +1448,7 @@ const translations = {
     'web.fetch.empty_body': '响应体为空',
     'web.fetch.header': '[fetched: {url}, status {status}, content-type: {contentType}, {size}, backend: {backend}]',
     'workbench.list_artifacts': '查看产出物面板',
+    'workbench.manage_artifacts': '维护产出物面板',
 
     // exec 后台任务（assistant 模式 exec/await_exec 工具）
     'exec.task_id_required': '必须提供 task_id',
@@ -2902,6 +2903,7 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'web.fetch.empty_body': 'response body is empty',
     'web.fetch.header': '[fetched: {url}, status {status}, content-type: {contentType}, {size}, backend: {backend}]',
     'workbench.list_artifacts': 'View output panel',
+    'workbench.manage_artifacts': 'Manage output panel',
 
     // exec background tasks (assistant mode exec/await_exec tools)
     'exec.task_id_required': 'task_id is required',
