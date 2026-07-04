@@ -62,6 +62,7 @@ const policy = meta?.contextBudget?.toolResult
 - `lifecycle.marksOnboardingComplete` / `lifecycle.blocksUntilUserInput`：生命周期标志
 - `argRole.summaryLine`：历史摘要中"主命令字段"
 - `contextBudget.toolResult`：上下文压缩时的清理策略
+- `persistAllowlist`：命令类工具的「始终允许」是否持久化（见 `allowlist/SPEC.md`）
 
 如果你需要的行为没有现成的元数据字段：**扩 `ToolMeta` 加新字段**，而不是在抽象层加 switch。
 

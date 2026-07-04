@@ -45,6 +45,12 @@ import type { ToolExecutorConfig, ToolResult } from './tools/types'
 import { executeTool } from './tools/index'
 import { stripToolMeta } from './tools'
 import { getMetaByName, buildPreToolCallDisplay } from './tool-metadata'
+import {
+  buildAllowlistKey,
+  extractAllowlistKeyArgs,
+  getUserAllowlist,
+  type AllowlistSourceKind,
+} from './allowlist'
 import { buildTaskHistoryContext, type TaskHistoryOptions } from './context-builder'
 import { getKnowledgeService } from '../knowledge'
 import { getContextKnowledgeService } from '../knowledge/context-knowledge'
@@ -533,12 +539,38 @@ export abstract class Agent {
     alwaysAllow?: boolean
   ): boolean {
     const pending = this.currentRun!.pendingConfirmation!
-    if (approved && alwaysAllow) {
-      const key = this.generateAllowedToolKey(pending.toolName, modifiedArgs || pending.toolArgs)
-      this.allowedTools.add(key)
+    const toolArgs = modifiedArgs || pending.toolArgs
+    const key = buildAllowlistKey(pending.toolName, toolArgs)
+    const meta = getMetaByName(this.getAvailableTools(), pending.toolName)
+
+    if (!approved) {
+      if (meta?.persistAllowlist) {
+        void getUserAllowlist().remove(key).catch(() => { /* ignore */ })
+      }
+    } else if (alwaysAllow) {
+      if (meta?.persistAllowlist) {
+        void getUserAllowlist().add({
+          key,
+          toolName: pending.toolName,
+          keyArgs: extractAllowlistKeyArgs(pending.toolName, toolArgs),
+          riskLevelAtApproval: pending.riskLevel,
+          approvedAt: Date.now(),
+          sourceAgentKey: this._agentId ?? 'unknown',
+          sourceKind: this.inferAllowlistSourceKind(),
+        }).catch(err => log.warn('[allowlist] persist failed:', err))
+      } else {
+        this.allowedTools.add(key)
+      }
     }
     pending.resolve(approved, modifiedArgs)
     return true
+  }
+
+  private inferAllowlistSourceKind(): AllowlistSourceKind {
+    const id = this._agentId
+    if (id === '__companion__') return 'companion'
+    if (id === '__watch__') return 'watch'
+    return 'task'
   }
   
   /**
@@ -3340,16 +3372,7 @@ export abstract class Agent {
    * 的不同 cwd / timeout 共享白名单）。基类不知道具体工具叫什么。
    */
   private generateAllowedToolKey(toolName: string, toolArgs: Record<string, unknown>): string {
-    const meta = getMetaByName(this.getAvailableTools(), toolName)
-    const keyFields = meta?.idempotencyKey
-    let keyArgs: Record<string, unknown> = toolArgs
-    if (keyFields && keyFields.length > 0) {
-      keyArgs = {}
-      for (const f of keyFields) {
-        keyArgs[f] = toolArgs[f]
-      }
-    }
-    return `${toolName}:${JSON.stringify(keyArgs)}`
+    return buildAllowlistKey(toolName, toolArgs)
   }
   
   /**

@@ -15,6 +15,7 @@
 import { t } from '../i18n'
 import { assessCommandRiskDetailed, analyzeCommand } from '../risk-assessor'
 import { commandNeedsConfirm, isSubAgentBlocked } from '../command-audit/confirm-policy'
+import { resolveCommandToolConfirmation } from '../allowlist/resolve-command-confirm'
 import { truncateFromEnd, truncateSandwichWithNotice, EXEC_MAX_COMMAND_LENGTH } from './utils'
 import { getExecManager, MAX_PATTERN_LENGTH } from './exec-manager'
 import { getSkillEnvMap, mapSkillEnvToDeclaredCase } from '../../../services/credential.service'
@@ -139,20 +140,27 @@ export async function executeCommandDirect(
 
   let userApproved = false
   if (needConfirm) {
-    const approved = await executor.waitForConfirmation(
-      toolCallId, 'exec', { command }, riskLevel
+    const confirm = await resolveCommandToolConfirmation(
+      'exec',
+      { command },
+      assessment,
+      config,
+      toolCallId,
+      riskLevel,
+      executor,
+      () => assessment.level,
     )
-    if (!approved) {
+    if (!confirm.proceed) {
       executor.addStep({
         type: 'tool_result',
         content: `⛔ ${t('status.user_rejected')}`,
         toolName: 'exec',
         toolResult: t('status.user_rejected'),
-        rejected: true
+        rejected: true,
       })
-      return { success: false, output: '', error: t('error.user_rejected_command') }
+      return confirm.result
     }
-    userApproved = true
+    userApproved = confirm.userApproved
   }
 
   const cwd = (args.cwd as string) || undefined

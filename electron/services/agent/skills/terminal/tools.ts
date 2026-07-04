@@ -59,9 +59,8 @@ export const ptyExecuteCommandTool: ToolDefinitionWithMeta = {
     }
   },
   _meta: {
-    // 命令本身就是这个工具的"主语"，幂等键只取 command（cwd / timeout 不影响"是否同一条命令"）
     idempotencyKey: ['command'],
-    // 命令输出可重新执行得到，上下文紧张时优先清理
+    persistAllowlist: true,
     contextBudget: { toolResult: 'clearable' },
     // 历史摘要中"主命令"是 command 字段（task-memory.extractDigest 用得到）
     argRole: { summaryLine: 'command' },

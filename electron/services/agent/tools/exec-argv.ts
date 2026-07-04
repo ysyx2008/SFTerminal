@@ -14,6 +14,7 @@ import {
   type ArgvInput,
 } from '../command-audit'
 import { isSubAgentBlocked } from '../command-audit/confirm-policy'
+import { resolveCommandToolConfirmation } from '../allowlist/resolve-command-confirm'
 import { formatTaskOutput } from './exec'
 import { getExecManager } from './exec-manager'
 import { getSkillEnvMap, mapSkillEnvToDeclaredCase } from '../../../services/credential.service'
@@ -105,13 +106,17 @@ export async function executeArgvDirect(
 
   let userApproved = false
   if (needConfirm) {
-    const approved = await executor.waitForConfirmation(
-      toolCallId,
+    const confirm = await resolveCommandToolConfirmation(
       'exec_argv',
       { cmd, args: argvArgs, cwd },
+      assessment,
+      config,
+      toolCallId,
       riskLevel,
+      executor,
+      () => assessArgvRisk(argvInput, defaultAuditContext(cwd)).level,
     )
-    if (!approved) {
+    if (!confirm.proceed) {
       executor.addStep({
         type: 'tool_result',
         content: `⛔ ${t('status.user_rejected')}`,
@@ -119,9 +124,9 @@ export async function executeArgvDirect(
         toolResult: t('status.user_rejected'),
         rejected: true,
       })
-      return { success: false, output: '', error: t('error.user_rejected_command') }
+      return confirm.result
     }
-    userApproved = true
+    userApproved = confirm.userApproved
   }
 
   const skillId = (args.skill_id as string) || undefined

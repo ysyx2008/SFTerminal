@@ -95,6 +95,13 @@ export interface ToolMeta {
    */
   idempotencyKey?: string[]
 
+  /**
+   * 「始终允许」是否持久化跨重启（默认 false）。
+   * 命令类工具（exec / exec_argv / execute_command）设为 true；
+   * 路径类工具保持 false（关 tab 清）。
+   */
+  persistAllowlist?: boolean
+
   /** 生命周期标志：影响 Agent 全局状态判断 */
   lifecycle?: {
     /** 调用此工具表示 onboarding 引导完成（如 personality_craft） */
@@ -452,9 +459,8 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           }
         },
         _meta: {
-          // 命令本身就是这个工具的"主语"，幂等键只取 command（cwd / wait_seconds 不影响"是否同一条命令"）
           idempotencyKey: ['command'],
-          // 命令输出可重新执行得到，上下文紧张时优先清理
+          persistAllowlist: true,
           contextBudget: { toolResult: 'clearable' },
           // 历史摘要中"主命令"是 command 字段（task-memory.extractDigest 用得到）
           argRole: { summaryLine: 'command' },
@@ -517,6 +523,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         },
         _meta: {
           idempotencyKey: ['cmd', 'args'],
+          persistAllowlist: true,
           contextBudget: { toolResult: 'clearable' },
           argRole: { summaryLine: 'cmd' },
           streamDisplay: { titleKey: 'status.executing', titleField: 'cmd' }

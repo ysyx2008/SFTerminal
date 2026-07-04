@@ -1100,6 +1100,20 @@ const electronAPI = {
     }
   },
 
+  allowlist: {
+    list: () => ipcRenderer.invoke('allowlist:list') as Promise<Array<{
+      key: string
+      toolName: string
+      keyArgs: Record<string, unknown>
+      riskLevelAtApproval: import('@shared/types/agent').RiskLevel
+      approvedAt: number
+      sourceAgentKey: string
+      sourceKind: 'task' | 'companion' | 'watch'
+    }>>,
+    remove: (key: string) => ipcRenderer.invoke('allowlist:remove', key) as Promise<boolean>,
+    clear: () => ipcRenderer.invoke('allowlist:clear') as Promise<boolean>,
+  },
+
   // 智能巡检协调器
   orchestrator: {
     // 启动智能巡检任务

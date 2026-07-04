@@ -754,6 +754,19 @@ interface Window {
       resolveSecureInput: (params: { ptyId: string; requestId: string; value?: string; cancelled?: boolean }) => Promise<boolean>
       onNeedSecureInput: (callback: (data: { agentId: string; requestId: string; prompt: string; skillId: string; envName: string; isUpdate?: boolean; ptyId?: string }) => void) => () => void
     }
+    allowlist: {
+      list: () => Promise<Array<{
+        key: string
+        toolName: string
+        keyArgs: Record<string, unknown>
+        riskLevelAtApproval: import('@shared/types/agent').RiskLevel
+        approvedAt: number
+        sourceAgentKey: string
+        sourceKind: 'task' | 'companion' | 'watch'
+      }>>
+      remove: (key: string) => Promise<boolean>
+      clear: () => Promise<boolean>
+    }
     // 历史记录操作
     history: {
       saveAgentRecord: (record: {

@@ -6,6 +6,7 @@ import stripAnsi from 'strip-ansi'
 import { t } from '../i18n'
 import { assessCommandRiskDetailed, analyzeCommand, isSudoCommand, detectPasswordPrompt } from '../risk-assessor'
 import { commandNeedsConfirm, isSubAgentBlocked } from '../command-audit/confirm-policy'
+import { resolveCommandToolConfirmation } from '../allowlist/resolve-command-confirm'
 import { getTerminalStateService } from '../../terminal-state.service'
 import { getTerminalAwarenessService, getProcessMonitor } from '../../terminal-awareness'
 import { getLastNLinesFromBuffer, getScreenAnalysisFromFrontend } from '../../screen-content.service'
@@ -184,13 +185,17 @@ export async function executeCommand(
   let userApproved = false
   
   if (needConfirm) {
-    const approved = await executor.waitForConfirmation(
-      toolCallId, 
-      'execute_command', 
-      { command }, 
-      riskLevel
+    const confirm = await resolveCommandToolConfirmation(
+      'execute_command',
+      { command },
+      assessment,
+      config,
+      toolCallId,
+      riskLevel,
+      executor,
+      async () => (await assessCommandRiskDetailed(command)).level,
     )
-    if (!approved) {
+    if (!confirm.proceed) {
       executor.addStep({
         type: 'tool_result',
         content: `⛔ ${t('status.user_rejected')}`,
@@ -198,9 +203,9 @@ export async function executeCommand(
         toolResult: t('status.user_rejected'),
         rejected: true
       })
-      return { success: false, output: '', error: t('error.user_rejected_command') }
+      return confirm.result
     }
-    userApproved = true
+    userApproved = confirm.userApproved
   }
 
   // 策略3: 限时执行
