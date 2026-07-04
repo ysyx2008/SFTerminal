@@ -4,7 +4,8 @@
  */
 import stripAnsi from 'strip-ansi'
 import { t } from '../i18n'
-import { assessCommandRisk, analyzeCommand, isSudoCommand, detectPasswordPrompt } from '../risk-assessor'
+import { assessCommandRiskDetailed, analyzeCommand, isSudoCommand, detectPasswordPrompt } from '../risk-assessor'
+import { commandNeedsConfirm, isSubAgentBlocked } from '../command-audit/confirm-policy'
 import { getTerminalStateService } from '../../terminal-state.service'
 import { getTerminalAwarenessService, getProcessMonitor } from '../../terminal-awareness'
 import { getLastNLinesFromBuffer, getScreenAnalysisFromFrontend } from '../../screen-content.service'
@@ -153,9 +154,9 @@ export async function executeCommand(
   }
 
   // 评估风险
-  const riskLevel = await assessCommandRisk(command)
+  const assessment = await assessCommandRiskDetailed(command)
 
-  if (riskLevel === 'blocked') {
+  if (assessment.level === 'blocked') {
     return { 
       success: false, 
       output: '', 
@@ -163,17 +164,12 @@ export async function executeCommand(
     }
   }
 
-  if (riskLevel === 'dangerous' && executor.isSubAgent) {
-    return { success: false, output: '', error: '高危命令在子任务模式下被系统自动阻止。' }
+  if (isSubAgentBlocked(assessment) && executor.isSubAgent) {
+    return { success: false, output: '', error: '高危或未识别命令在子任务模式下被系统自动阻止。' }
   }
 
-  // 根据执行模式决定是否需要确认
-  let needConfirm = false
-  if (config.executionMode === 'strict') {
-    needConfirm = true
-  } else if (config.executionMode === 'relaxed') {
-    needConfirm = riskLevel === 'dangerous'
-  }
+  const needConfirm = commandNeedsConfirm(assessment, config.executionMode)
+  const riskLevel = assessment.level
 
   executor.addStep({
     type: 'tool_call',

@@ -64,6 +64,40 @@ function resolvedArgs(args: UnwrappedCall['args']): { strings: string[]; hasDyna
   return { strings, hasDynamic }
 }
 
+/** 可执行 -c 内联脚本的解释器（bash -c / sudo bash -c 等） */
+const SCRIPT_SHELL_CMDS = new Set([
+  'bash', 'sh', 'zsh', 'dash', 'ksh', 'mksh', 'fish',
+])
+
+function isScriptShellCmd(name: string): boolean {
+  return SCRIPT_SHELL_CMDS.has(basenameCommand(name))
+}
+
+/** 从 flags 含 -c 的 wrapped 调用中提取内联脚本 */
+function scriptFromCFlag(flags: string[], args: UnwrappedCall['args']): string | null {
+  if (!flags.includes('-c')) return null
+  const { strings, hasDynamic } = resolvedArgs(args)
+  if (hasDynamic || strings.length === 0) return null
+  return strings[0]
+}
+
+/** sudo/env 等外层 wrapper 下的 bash -c "script" */
+async function tryExtractWrappedInlineScript(
+  u: Extract<UnwrappedCall, { kind: 'wrapped' }>,
+  source: AuditedCall['source'],
+  ctx: AuditContext,
+  out: AuditedCall[],
+): Promise<boolean> {
+  if (!u.cmd || !isScriptShellCmd(u.cmd)) return false
+  const script = scriptFromCFlag(u.flags, u.args)
+  if (!script?.trim()) return false
+
+  const inner = await extractAuditedCalls(script, { ...ctx, shell: source })
+  if (inner.calls.length === 0) return false
+  out.push(...inner.calls)
+  return true
+}
+
 function unwrappedToAuditedCall(
   u: UnwrappedCall,
   raw: string,
@@ -119,6 +153,7 @@ async function collectFromCallExpr(
   node: CallExprNode,
   raw: string,
   source: AuditedCall['source'],
+  ctx: AuditContext,
   out: AuditedCall[],
   redirects: AuditedRedirect[],
 ): Promise<void> {
@@ -139,18 +174,32 @@ async function collectFromCallExpr(
   }
 
   if (u.kind === 'wrapped-script') {
-    out.push(unwrappedToAuditedCall(u, raw, source, redirects))
-    const innerAst = u.innerAst
-    if (innerAst) {
-      const innerCalls = findCalls(innerAst, { depth: 'top' })
-      for (const inner of innerCalls) {
-        await collectFromCallExpr(inner, u.script, source, out, [])
+    let innerProcessed = false
+    if (u.innerAst) {
+      const innerCalls = findCalls(u.innerAst, { depth: 'top' })
+      if (innerCalls.length > 0) {
+        innerProcessed = true
+        for (const inner of innerCalls) {
+          await collectFromCallExpr(inner, u.script, source, ctx, out, [])
+        }
       }
-    } else if (u.script.trim()) {
-      const inner = await extractAuditedCalls(u.script, { shell: source })
-      out.push(...inner.calls)
+    }
+    if (!innerProcessed && u.script.trim()) {
+      const inner = await extractAuditedCalls(u.script, { ...ctx, shell: source })
+      if (inner.calls.length > 0) {
+        innerProcessed = true
+        out.push(...inner.calls)
+      }
+    }
+    if (!innerProcessed) {
+      out.push(unwrappedToAuditedCall(u, raw, source, redirects))
     }
     return
+  }
+
+  if (u.kind === 'wrapped') {
+    const innerProcessed = await tryExtractWrappedInlineScript(u, source, ctx, out)
+    if (innerProcessed) return
   }
 
   out.push(unwrappedToAuditedCall(u, raw, source, redirects))
@@ -168,7 +217,7 @@ export async function extractAuditedCalls(
   const calls: AuditedCall[] = []
   const { findCalls } = await getShellAstModule()
   for (const call of findCalls(ast, { depth: 'top' })) {
-    await collectFromCallExpr(call, command, source, calls, writeRedirects)
+    await collectFromCallExpr(call, command, source, ctx, calls, writeRedirects)
   }
   return { calls, writeRedirects }
 }

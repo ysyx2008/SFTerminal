@@ -5,7 +5,7 @@
  */
 import type { RiskLevel } from '@shared/types/agent'
 import { getScratchPath } from '../tools/file'
-import { assessAuditedCall, assessRedirectPaths } from './assess-call'
+import { assessAuditedCall, assessRedirectPaths, aggregateHasUnknown } from './assess-call'
 import { extractAuditedCalls } from './extract-calls'
 import { isWindowsNativeShellCommand } from './platform-detect'
 import { maxRisk, maxRiskAll } from './risk-level'
@@ -102,10 +102,12 @@ export async function assessShellRisk(
     }
 
     const level = maxRiskAll(callAssessments.map(a => a.level))
+    const hasUnknown = aggregateHasUnknown(callAssessments)
 
     return {
       level,
       parsed: true,
+      hasUnknown,
       calls: callAssessments,
     }
   } catch (err) {
@@ -125,7 +127,7 @@ export async function assessShellRisk(
   }
 }
 
-/** 是否需要用户确认 */
+/** @deprecated 请用 commandNeedsConfirm(assessment, mode) */
 export function shellNeedsConfirm(
   level: RiskLevel,
   executionMode: 'strict' | 'relaxed' | 'free',

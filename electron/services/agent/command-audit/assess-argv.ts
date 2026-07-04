@@ -13,6 +13,7 @@ import type {
 } from './types'
 import { getArgvCommandRule, splitArgv } from './whitelist'
 import { assessAuditedCall } from './assess-call'
+import { commandNeedsConfirm } from './confirm-policy'
 
 function buildAuditedCall(input: ArgvInput): AuditedCall {
   const rule = getArgvCommandRule(input.cmd)
@@ -37,14 +38,13 @@ export function assessArgvRisk(input: ArgvInput, ctx: AuditContext = {}): Comman
   const rule = getArgvCommandRule(input.cmd)
 
   if (!rule) {
+    const call = buildAuditedCall(input)
+    const callAssessment = assessAuditedCall(call, { ...ctx, cwd })
     return {
-      level: 'dangerous',
+      level: callAssessment.level,
       parsed: true,
-      calls: [{
-        level: 'dangerous',
-        commandLevel: 'dangerous',
-        reasons: [`命令不在 argv 白名单：${input.cmd}`],
-      }],
+      hasUnknown: true,
+      calls: [callAssessment],
     }
   }
 
@@ -54,6 +54,7 @@ export function assessArgvRisk(input: ArgvInput, ctx: AuditContext = {}): Comman
   return {
     level: callAssessment.level,
     parsed: true,
+    hasUnknown: callAssessment.unknown ?? false,
     calls: [callAssessment],
   }
 }
@@ -67,14 +68,12 @@ export function defaultAuditContext(cwd?: string): AuditContext {
   }
 }
 
-/** 是否需要用户确认（与 executionMode 配合） */
+/** 是否需要用户确认 */
 export function argvNeedsConfirm(
-  level: RiskLevel,
+  assessment: CommandRiskAssessment,
   executionMode: 'strict' | 'relaxed' | 'free',
 ): boolean {
-  if (executionMode === 'strict') return true
-  if (executionMode === 'free') return false
-  return level === 'dangerous' || level === 'blocked'
+  return commandNeedsConfirm(assessment, executionMode)
 }
 
 /** blocked 级别不可执行 */

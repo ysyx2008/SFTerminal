@@ -13,6 +13,7 @@ import {
   isArgvBlocked,
   type ArgvInput,
 } from '../command-audit'
+import { isSubAgentBlocked } from '../command-audit/confirm-policy'
 import { formatTaskOutput } from './exec'
 import { getExecManager } from './exec-manager'
 import { getSkillEnvMap, mapSkillEnvToDeclaredCase } from '../../../services/credential.service'
@@ -88,11 +89,11 @@ export async function executeArgvDirect(
     return { success: false, output: '', error: reason }
   }
 
-  if (riskLevel === 'dangerous' && executor.isSubAgent) {
-    return { success: false, output: '', error: '高危命令在子任务模式下被系统自动阻止。' }
+  if (isSubAgentBlocked(assessment) && executor.isSubAgent) {
+    return { success: false, output: '', error: '高危或未识别命令在子任务模式下被系统自动阻止。' }
   }
 
-  const needConfirm = argvNeedsConfirm(riskLevel, config.executionMode)
+  const needConfirm = argvNeedsConfirm(assessment, config.executionMode)
 
   executor.addStep({
     type: 'tool_call',

@@ -2,7 +2,7 @@
  * 命令审计类型定义
  *
  * 设计原则：
- * - Fail-Closed + Allowlist：不在白名单 / 解析不出 / 动态命令 → dangerous 起步
+ * - Fail-Closed：解析失败 / 动态命令 / 写操作未知 → dangerous；纯只读未知 → moderate + 强制确认
  * - 路径优先：先判断路径是否在工作区，再判断命令本身
  * - 沙箱分区：工作区内按 free/protected/workspace 三档调整风险
  */
@@ -92,6 +92,8 @@ export interface CallRiskAssessment {
   reasons: string[]
   /** 路径分区分析（用于调试和审计日志） */
   pathZones?: WorkspaceZone[]
+  /** 不在 argv 白名单（relaxed 模式下仍需确认） */
+  unknown?: boolean
 }
 
 /**
@@ -106,6 +108,8 @@ export interface CommandRiskAssessment {
   parsed: boolean
   /** 解析失败原因（parsed=false 时） */
   parseError?: string
+  /** 是否包含未识别子命令（relaxed 下仍需确认） */
+  hasUnknown?: boolean
 }
 
 /**

@@ -25,8 +25,23 @@ async function restartElectronDev(
   await startup()
 }
 
-// 复制 jieba-wasm 的 WASM 文件到 dist-electron
-function copyJiebaWasm() {
+// 复制 shell-ast WASM 到 dist-electron（与 jieba 同理；否则打包后找不到 .wasm → 审计 Fail-Closed）
+function copyShellAstWasm() {
+  return {
+    name: 'copy-shell-ast-wasm',
+    closeBundle() {
+      const srcPath = resolve(__dirname, 'node_modules/@questi0nm4rk/shell-ast/dist/shell-ast.wasm')
+      const destDir = resolve(__dirname, 'dist-electron')
+      const destPath = resolve(destDir, 'shell-ast.wasm')
+      if (existsSync(srcPath)) {
+        if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true })
+        copyFileSync(srcPath, destPath)
+        console.log('[copy-shell-ast-wasm] Copied shell-ast.wasm to dist-electron')
+      }
+    },
+  }
+}
+
   return {
     name: 'copy-jieba-wasm',
     closeBundle() {
@@ -233,6 +248,8 @@ export default defineConfig({
                 // 标记 external 后首次调用时从 node_modules 加载，与 web_fetch 的 lazy 策略一致。
                 'jsdom',
                 '@mozilla/readability',
+                // shell-ast 含独立 .wasm，bundle 后 import.meta.url 路径偏移会加载失败
+                '@questi0nm4rk/shell-ast',
               ]
             }
           },
@@ -240,7 +257,7 @@ export default defineConfig({
           esbuild: {
             charset: 'utf8'
           },
-          plugins: [copyJiebaWasm(), copySpeechWorker(), copyPdfWorker(), copyEmbeddingWorker(), copyLanceDBWorker()]
+          plugins: [copyJiebaWasm(), copyShellAstWasm(), copySpeechWorker(), copyPdfWorker(), copyEmbeddingWorker(), copyLanceDBWorker()]
         }
       },
       {

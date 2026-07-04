@@ -148,7 +148,7 @@ function rule(
   }
 }
 
-/** argv 通道命令白名单（Fail-Closed：未列出 → dangerous） */
+/** argv 通道命令白名单（未列出 → moderate + hasUnknown；写操作/动态 → dangerous） */
 export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
   // —— 只读 / 查询 ——
   ls: rule('ls', 'safe', {
@@ -170,6 +170,9 @@ export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
   }),
   pwd: rule('pwd', 'safe', { pathMode: 'none' }),
   echo: rule('echo', 'safe', { pathMode: 'none' }),
+  sleep: rule('sleep', 'safe', { pathMode: 'none' }),
+  true: rule('true', 'safe', { pathMode: 'none' }),
+  false: rule('false', 'safe', { pathMode: 'none' }),
   date: rule('date', 'safe', { safeFlags: new Set(['-u', '-I']), pathMode: 'none' }),
   whoami: rule('whoami', 'safe', { pathMode: 'none' }),
   id: rule('id', 'safe', { pathMode: 'none' }),
@@ -209,6 +212,58 @@ export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
     pathMode: 'none',
   }),
 
+  // —— 常见只读 / 无害 ——
+  printf: rule('printf', 'safe', { pathMode: 'none' }),
+  seq: rule('seq', 'safe', { pathMode: 'none' }),
+  uname: rule('uname', 'safe', { safeFlags: new Set(['-a', '-s', '-m', '-r']), pathMode: 'none' }),
+  hostname: rule('hostname', 'safe', { pathMode: 'none' }),
+  uptime: rule('uptime', 'safe', { pathMode: 'none' }),
+  who: rule('who', 'safe', { pathMode: 'none' }),
+  w: rule('w', 'safe', { pathMode: 'none' }),
+  du: rule('du', 'safe', {
+    safeFlags: new Set(['-h', '-s', '-a', '-d']),
+    valueFlags: new Set(['-d']),
+    pathMode: 'all',
+  }),
+  df: rule('df', 'safe', { safeFlags: new Set(['-h']), pathMode: 'none' }),
+  free: rule('free', 'safe', { safeFlags: new Set(['-h', '-m']), pathMode: 'none' }),
+  basename: rule('basename', 'safe', { pathMode: 'all' }),
+  dirname: rule('dirname', 'safe', { pathMode: 'all' }),
+  readlink: rule('readlink', 'safe', { safeFlags: new Set(['-f']), pathMode: 'all' }),
+  realpath: rule('realpath', 'safe', { pathMode: 'all' }),
+  cut: rule('cut', 'safe', {
+    safeFlags: new Set(['-d', '-f', '-c']),
+    valueFlags: new Set(['-d', '-f', '-c']),
+    pathMode: 'all',
+  }),
+  tr: rule('tr', 'safe', { pathMode: 'none' }),
+  nl: rule('nl', 'safe', { pathMode: 'all' }),
+  jq: rule('jq', 'safe', {
+    safeFlags: new Set(['-r', '-c', '-e']),
+    valueFlags: new Set(['-e']),
+    pathMode: 'all',
+  }),
+  base64: rule('base64', 'safe', { safeFlags: new Set(['-d', '-D']), pathMode: 'all' }),
+  shasum: rule('shasum', 'safe', { safeFlags: new Set(['-a']), valueFlags: new Set(['-a']), pathMode: 'all' }),
+  md5: rule('md5', 'safe', { pathMode: 'all' }),
+  md5sum: rule('md5sum', 'safe', { pathMode: 'all' }),
+  sha256sum: rule('sha256sum', 'safe', { pathMode: 'all' }),
+  cal: rule('cal', 'safe', { pathMode: 'none' }),
+  clear: rule('clear', 'safe', { pathMode: 'none' }),
+  tty: rule('tty', 'safe', { pathMode: 'none' }),
+  groups: rule('groups', 'safe', { pathMode: 'none' }),
+  users: rule('users', 'safe', { pathMode: 'none' }),
+  logname: rule('logname', 'safe', { pathMode: 'none' }),
+  rg: rule('rg', 'safe', {
+    safeFlags: new Set(['-i', '-n', '-c', '-l', '-F', '-w', '--color']),
+    pathMode: 'all',
+  }),
+  curl: rule('curl', 'moderate', {
+    safeFlags: new Set(['-s', '-S', '-f', '-L', '-o', '-O', '-I', '-H']),
+    valueFlags: new Set(['-o', '-O', '-H']),
+    pathMode: 'none',
+  }),
+
   // —— 写/删/改（baseLevel 至少 moderate；路径分区可降级或升级） ——
   rm: rule('rm', 'dangerous', {
     safeFlags: new Set(['-r', '-f', '-rf', '-fr', '-R', '-v', '-i']),
@@ -226,6 +281,8 @@ export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
   chmod: rule('chmod', 'dangerous', { pathMode: 'all', writesTo: true }),
   chown: rule('chown', 'dangerous', { pathMode: 'all', writesTo: true }),
   ln: rule('ln', 'moderate', { safeFlags: new Set(['-s', '-f']), pathMode: 'all', writesTo: true }),
+  tee: rule('tee', 'moderate', { safeFlags: new Set(['-a']), pathMode: 'all', writesTo: true }),
+  mktemp: rule('mktemp', 'moderate', { safeFlags: new Set(['-d', '-u']), pathMode: 'none', writesTo: true }),
 }
 
 /** 从 cmd 路径提取命令名（/usr/bin/grep → grep） */

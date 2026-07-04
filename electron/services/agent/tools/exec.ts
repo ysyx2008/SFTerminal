@@ -13,7 +13,8 @@
  * 进程托管见 exec-manager.ts。
  */
 import { t } from '../i18n'
-import { assessCommandRisk, analyzeCommand } from '../risk-assessor'
+import { assessCommandRiskDetailed, analyzeCommand } from '../risk-assessor'
+import { commandNeedsConfirm, isSubAgentBlocked } from '../command-audit/confirm-policy'
 import { truncateFromEnd, truncateSandwichWithNotice, EXEC_MAX_COMMAND_LENGTH } from './utils'
 import { getExecManager, MAX_PATTERN_LENGTH } from './exec-manager'
 import { getSkillEnvMap, mapSkillEnvToDeclaredCase } from '../../../services/credential.service'
@@ -116,21 +117,17 @@ export async function executeCommandDirect(
     return { success: false, output: '', error: errorMsg }
   }
 
-  const riskLevel = await assessCommandRisk(command)
+  const assessment = await assessCommandRiskDetailed(command)
+  const riskLevel = assessment.level
   if (riskLevel === 'blocked') {
     return { success: false, output: '', error: t('hint.security_blocked') }
   }
 
-  if (riskLevel === 'dangerous' && executor.isSubAgent) {
-    return { success: false, output: '', error: '高危命令在子任务模式下被系统自动阻止。' }
+  if (isSubAgentBlocked(assessment) && executor.isSubAgent) {
+    return { success: false, output: '', error: '高危或未识别命令在子任务模式下被系统自动阻止。' }
   }
 
-  let needConfirm = false
-  if (config.executionMode === 'strict') {
-    needConfirm = true
-  } else if (config.executionMode === 'relaxed') {
-    needConfirm = riskLevel === 'dangerous'
-  }
+  const needConfirm = commandNeedsConfirm(assessment, config.executionMode)
 
   executor.addStep({
     type: 'tool_call',

@@ -21,7 +21,9 @@ export {
   isArgvBlocked,
 } from './assess-argv'
 
-export { assessAuditedCall, assessRedirectPaths } from './assess-call'
+export { assessAuditedCall, assessRedirectPaths, aggregateHasUnknown } from './assess-call'
+
+export { commandNeedsConfirm, isSubAgentBlocked, displayRiskLevel } from './confirm-policy'
 
 export { assessShellRisk, shellNeedsConfirm } from './assess-shell'
 

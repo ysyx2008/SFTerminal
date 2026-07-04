@@ -502,13 +502,15 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 
 **Fail-Closed + 路径优先**：
 
-- 不在白名单 / AST 解析失败 / 动态命令（`sudo $CMD`、`bash -c $script`）→ `dangerous` 起步
+- 不在白名单 / AST 解析失败 / 动态命令（`sudo $CMD`、`bash -c $script`）→ `dangerous`
+- 未识别且纯只读 → `moderate` + `hasUnknown`（relaxed 仍确认，不 silent 执行）
 - 写操作先看**工作区路径分区**（C 方案），再定级：
   - **free**（`scratch/`、`charts/`）：读写删自动放行
   - **protected**（`templates/`、根目录人格 md）：写删需确认
   - **workspace**：工作区内其他写删需确认
   - **outside**：工作区外写删 `dangerous`；系统关键路径写删 `blocked`
 - 只读命令（`cat`、`ls`）读系统路径仍为 `safe`
+- **未识别命令**：纯只读 → `moderate` + `hasUnknown`（relaxed 仍确认）；有写 redirect / 动态参数 → `dangerous`
 
 `risk-assessor.ts` 对 shell 命令调用 `assessShellRisk()`（async）；Windows 原生 PowerShell/CMD 回退 regex（`assessCommandRiskLegacy`）。
 

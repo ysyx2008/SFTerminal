@@ -6,12 +6,53 @@ import { getScratchPath } from '../tools/file'
 import type { AuditContext, AuditedCall, AuditedRedirect, CallRiskAssessment } from './types'
 import { assessCommandFlags, getArgvCommandRule } from './whitelist'
 import { adjustRiskByPathZones } from './workspace-guard'
+import { maxRisk } from './risk-level'
 
 function collectWritePaths(call: AuditedCall, extraPaths: string[]): string[] {
   const fromRedirects = call.redirects
     .filter(r => r.isWrite && r.target)
     .map(r => r.target!)
   return [...call.paths, ...fromRedirects, ...extraPaths]
+}
+
+function assessUnknownCall(
+  call: AuditedCall,
+  ctx: AuditContext,
+  extraWritePaths: string[],
+): CallRiskAssessment {
+  const cwd = ctx.cwd ?? getScratchPath()
+  const writePaths = collectWritePaths(call, extraWritePaths)
+  const hasWriteRedirect = call.redirects.some(r => r.isWrite) || extraWritePaths.length > 0
+
+  if (call.dynamicPaths) {
+    return {
+      level: 'dangerous',
+      commandLevel: 'dangerous',
+      unknown: true,
+      reasons: ['未识别命令且含动态参数，无法静态审计（Fail-Closed）'],
+    }
+  }
+
+  if (hasWriteRedirect && writePaths.length > 0) {
+    const pathAdjust = adjustRiskByPathZones('dangerous', writePaths, true, cwd)
+    return {
+      level: maxRisk('dangerous', pathAdjust.level),
+      commandLevel: 'dangerous',
+      unknown: true,
+      reasons: [
+        `未识别命令：${call.cmd}`,
+        ...pathAdjust.reasons,
+      ],
+      pathZones: pathAdjust.zones,
+    }
+  }
+
+  return {
+    level: 'moderate',
+    commandLevel: 'moderate',
+    unknown: true,
+    reasons: [`未识别命令：${call.cmd}（relaxed 模式需确认）`],
+  }
 }
 
 /**
@@ -25,19 +66,15 @@ export function assessAuditedCall(
   const cwd = ctx.cwd ?? getScratchPath()
   const rule = getArgvCommandRule(call.cmd)
 
-  if (call.dynamicPaths && rule?.writesTo) {
+  if (!rule) {
+    return assessUnknownCall(call, ctx, extraWritePaths)
+  }
+
+  if (call.dynamicPaths && rule.writesTo) {
     return {
       level: 'dangerous',
       commandLevel: 'dangerous',
       reasons: ['包含动态路径参数，无法静态审计（Fail-Closed）'],
-    }
-  }
-
-  if (!rule) {
-    return {
-      level: 'dangerous',
-      commandLevel: 'dangerous',
-      reasons: [`命令不在白名单：${call.cmd}`],
     }
   }
 
@@ -91,4 +128,9 @@ export function assessRedirectPaths(
       : ['shell 写重定向目标路径需审计'],
     pathZones: pathAdjust.zones,
   }
+}
+
+/** 从多条子命令评估聚合 hasUnknown */
+export function aggregateHasUnknown(calls: CallRiskAssessment[]): boolean {
+  return calls.some(c => c.unknown === true)
 }

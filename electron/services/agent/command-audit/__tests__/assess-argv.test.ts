@@ -60,10 +60,11 @@ describe('command-audit argv', () => {
     expect(r.level).toBe('blocked')
   })
 
-  it('unknown command is dangerous (fail-closed)', () => {
+  it('unknown command is moderate + hasUnknown (relaxed 需确认)', () => {
     const scratch = getScratchPath()
     const r = assessArgvRisk({ cmd: 'mystery_tool', args: ['--foo'], cwd: scratch })
-    expect(r.level).toBe('dangerous')
+    expect(r.level).toBe('moderate')
+    expect(r.hasUnknown).toBe(true)
   })
 
   it('cat outside workspace stays safe (read-only)', () => {
