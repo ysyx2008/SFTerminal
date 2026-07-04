@@ -396,6 +396,7 @@ import { BastionService } from './services/bastion.service'
 import type { IMService } from './services/im/im.service'
 import type { DingTalkConfig, FeishuConfig, SlackConfig, TelegramConfig, WeComConfig } from './services/im/types'
 import { getWorkspacePath, ensureAgentWorkspaceDirs } from './services/agent/tools/file'
+import { initUserDataGuard } from './services/agent/command-audit/userdata-guard'
 import { getContextKnowledgeService } from './services/knowledge/context-knowledge'
 import {
   ensureAgentRuntime,
@@ -1431,6 +1432,7 @@ app.whenReady().then(async () => {
   log.info(`[startup] app.whenReady fired (+${Date.now() - APP_START_TIME}ms)`)
 
   ensureAgentWorkspaceDirs()
+  initUserDataGuard()
 
   // shell-ast WASM 预热（命令审计首条 shell 命令不卡顿）
   void import('./services/agent/command-audit/parser').then(({ ensureShellAstReady }) =>
@@ -3594,6 +3596,24 @@ ipcMain.handle('agent:confirm', async (_event, { ptyId, toolCallId, approved, mo
 }) => {
   const { agentService } = await rt()
   return agentService.confirmToolCall(ptyId, toolCallId, approved, modifiedArgs, alwaysAllow)
+})
+
+ipcMain.handle('allowlist:list', async () => {
+  const { getUserAllowlist } = await import('./services/agent/allowlist')
+  await getUserAllowlist().load()
+  return getUserAllowlist().list()
+})
+
+ipcMain.handle('allowlist:remove', async (_event, key: string) => {
+  const { getUserAllowlist } = await import('./services/agent/allowlist')
+  await getUserAllowlist().remove(key)
+  return true
+})
+
+ipcMain.handle('allowlist:clear', async () => {
+  const { getUserAllowlist } = await import('./services/agent/allowlist')
+  await getUserAllowlist().clear()
+  return true
 })
 
 ipcMain.handle('agent:resolveSecureInput', async (_event, {

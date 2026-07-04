@@ -94,9 +94,11 @@ export function assessAuditedCall(
   )
   reasons.push(...pathAdjust.reasons)
 
-  let level: RiskLevel
   const writes = rule.writesTo || call.redirects.some(r => r.isWrite)
-  if (writes && mergedPaths.length > 0) {
+  let level: RiskLevel
+  if (pathAdjust.level === 'blocked') {
+    level = 'blocked'
+  } else if (writes && mergedPaths.length > 0) {
     level = pathAdjust.level
   } else {
     level = commandLevel

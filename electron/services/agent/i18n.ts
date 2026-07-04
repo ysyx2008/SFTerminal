@@ -253,6 +253,8 @@ const translations = {
     'file.write_success': '文件写入成功',
     'file.write_failed': '文件写入失败',
     'file.user_rejected_write': '用户拒绝写入文件',
+    'file.forbidden_path': '禁止访问的路径',
+    'file.forbidden_path_error': '该路径受系统保护，Agent 无法访问',
     'file.establishing_sftp': '正在建立 SFTP 连接...',
     'file.remote_write_failed': '远程文件写入失败',
 
@@ -1717,6 +1719,8 @@ Please output the summary in the following format:
     'file.write_success': 'File write success',
     'file.write_failed': 'File write failed',
     'file.user_rejected_write': 'User rejected file write',
+    'file.forbidden_path': 'Forbidden path',
+    'file.forbidden_path_error': 'This path is protected and cannot be accessed by the Agent',
     'file.establishing_sftp': 'Establishing SFTP connection...',
     'file.remote_write_failed': 'Remote file write failed',
 

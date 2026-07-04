@@ -21,6 +21,7 @@ import {
   SYSTEM_PATH_PATTERNS,
   type WorkspaceZone,
 } from './types'
+import { isUserDataForbidden } from './userdata-guard'
 
 /** 解析相对路径（cwd 缺省时用 process.cwd()） */
 export function resolveCommandPath(rawPath: string, cwd?: string): string {
@@ -98,9 +99,10 @@ export function isSystemPath(targetPath: string, cwd?: string): boolean {
   const abs = resolveCommandPath(targetPath, cwd)
   const resolved = normalizePathForCompare(resolveRealPath(abs))
   const unresolved = normalizePathForCompare(abs)
-  return SYSTEM_PATH_PATTERNS.some(
-    p => p.test(resolved) || p.test(unresolved),
-  )
+  if (SYSTEM_PATH_PATTERNS.some(p => p.test(resolved) || p.test(unresolved))) {
+    return true
+  }
+  return isUserDataForbidden(targetPath, cwd)
 }
 
 /**
@@ -115,7 +117,19 @@ export function adjustRiskByPathZones(
   cwd?: string,
 ): { level: RiskLevel; zones: WorkspaceZone[]; reasons: string[] } {
   const reasons: string[] = []
-  if (!writesTo || paths.length === 0) {
+  if (paths.length === 0) {
+    return { level: commandLevel, zones: [], reasons }
+  }
+
+  if (paths.some(p => isUserDataForbidden(p, cwd))) {
+    return {
+      level: 'blocked',
+      zones: paths.map(p => getWorkspaceZone(p, cwd)),
+      reasons: ['目标位于受保护的 userData 路径，禁止访问'],
+    }
+  }
+
+  if (!writesTo) {
     return { level: commandLevel, zones: [], reasons }
   }
 

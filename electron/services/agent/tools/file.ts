@@ -18,6 +18,7 @@ import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 import type { ToolOutputBudget } from '../tool-output-budget'
 import type { CanvasData } from '@shared/types'
 import { VISION_IMAGE_EXTENSIONS, IMAGE_MIME_TYPES, CONVERTIBLE_IMAGE_EXTENSIONS } from './types'
+import { isUserDataForbidden } from '../command-audit/userdata-guard'
 
 const DEFAULT_READ_OUTPUT_BUDGET: ToolOutputBudget = {
   maxChars: 24_576,
@@ -331,6 +332,32 @@ export function isAutoApproveWorkspacePath(filePath: string): boolean {
   return rel.startsWith('charts/')
 }
 
+function forbiddenUserDataToolResult(
+  filePath: string,
+  toolName: string,
+  executor: ToolExecutorConfig,
+  cwd?: string,
+): ToolResult {
+  executor.addStep({
+    type: 'tool_call',
+    content: `🚫 ${t('file.forbidden_path')}: ${filePath}`,
+    toolName,
+    toolArgs: { path: filePath },
+    riskLevel: 'blocked',
+  })
+  return { success: false, output: '', error: t('file.forbidden_path_error') }
+}
+
+function blockIfUserDataForbidden(
+  filePath: string,
+  toolName: string,
+  executor: ToolExecutorConfig,
+  cwd?: string,
+): ToolResult | null {
+  if (!isUserDataForbidden(filePath, cwd)) return null
+  return forbiddenUserDataToolResult(filePath, toolName, executor, cwd)
+}
+
 /**
  * 文件搜索
  */
@@ -366,6 +393,11 @@ export async function fileSearch(
 
   if (!query) {
     return { success: false, output: '', error: t('error.query_required') }
+  }
+
+  if (searchPath) {
+    const blocked = blockIfUserDataForbidden(searchPath, 'file_search', executor)
+    if (blocked) return blocked
   }
 
   executor.addStep({
@@ -1045,6 +1077,11 @@ export async function readFile(
     filePath = path.resolve(cwd, filePath)
   }
 
+  {
+    const blocked = blockIfUserDataForbidden(filePath, 'read_file', executor)
+    if (blocked) return blocked
+  }
+
   const infoOnly = args.info_only === true
   const startLine = args.start_line as number | undefined
   const endLine = args.end_line as number | undefined
@@ -1374,6 +1411,11 @@ export async function editFile(
     filePath = path.resolve(cwd, filePath)
   }
 
+  {
+    const blocked = blockIfUserDataForbidden(filePath, 'edit_file', executor)
+    if (blocked) return blocked
+  }
+
   if (!fs.existsSync(filePath)) {
     return { success: false, output: '', error: t('error.file_not_exists', { path: filePath }) }
   }
@@ -1587,6 +1629,11 @@ export async function writeTextFile(
     const terminalStateService = getTerminalStateService()
     const cwd = terminalStateService.getCwd(ptyId)
     filePath = path.resolve(cwd, filePath)
+  }
+
+  {
+    const blocked = blockIfUserDataForbidden(filePath, 'write_text_file', executor)
+    if (blocked) return blocked
   }
 
   // Office 扩展名自动转为 .md（无法生成真正的 Office 文档）
@@ -1861,6 +1908,11 @@ export async function writeRemoteTextFile(
   const validModes = ['create', 'overwrite', 'append']
   if (!validModes.includes(mode)) {
     return { success: false, output: '', error: t('error.invalid_write_mode', { mode, modes: validModes.join(', ') }) }
+  }
+
+  {
+    const blocked = blockIfUserDataForbidden(filePath, 'write_remote_text_file', executor)
+    if (blocked) return blocked
   }
 
   return writeFileViaSftp(ptyId, filePath, content, mode as 'create' | 'overwrite' | 'append', toolCallId, config, executor)

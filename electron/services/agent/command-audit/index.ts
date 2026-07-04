@@ -41,6 +41,12 @@ export {
 } from './workspace-guard'
 
 export {
+  ALLOWED_USERDATA_ENTRIES,
+  initUserDataGuard,
+  isUserDataForbidden,
+} from './userdata-guard'
+
+export {
   ARGV_COMMAND_RULES,
   assessCommandFlags,
   basenameCommand,
