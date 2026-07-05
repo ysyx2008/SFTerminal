@@ -2,7 +2,6 @@
  * 从 shell-ast 解析结果提取 AuditedCall 列表
  */
 import type { CallExprNode, Redirect, ShellFile } from '@questi0nm4rk/shell-ast'
-import { isDynamic, isResolved, wordToLit } from '@questi0nm4rk/shell-ast'
 import type { UnwrappedCall } from '@questi0nm4rk/shell-ast'
 import { parseShellCommand, getShellAstModule } from './parser'
 import type { AuditedCall, AuditedRedirect, AuditContext } from './types'
@@ -37,14 +36,17 @@ function isWriteRedirectOp(op: string): boolean {
 }
 
 async function extractWriteRedirects(ast: ShellFile): Promise<AuditedRedirect[]> {
-  const { findRedirects } = await getShellAstModule()
+  const { findRedirects, wordToLit } = await getShellAstModule()
   const redirects = findRedirects(ast, { depth: 'top', ops: 'write' })
   return redirects
-    .map(r => redirectNodeToAudited(r))
+    .map(r => redirectNodeToAudited(r, wordToLit))
     .filter((r): r is AuditedRedirect => r !== null)
 }
 
-function redirectNodeToAudited(r: Redirect): AuditedRedirect | null {
+function redirectNodeToAudited(
+  r: Redirect,
+  wordToLit: (word: import('@questi0nm4rk/shell-ast').Word) => string | null,
+): AuditedRedirect | null {
   const target = wordToLit(r.word)
   if (!target) return null
   return {
@@ -54,7 +56,8 @@ function redirectNodeToAudited(r: Redirect): AuditedRedirect | null {
   }
 }
 
-function resolvedArgs(args: UnwrappedCall['args']): { strings: string[]; hasDynamic: boolean } {
+async function resolvedArgs(args: UnwrappedCall['args']): Promise<{ strings: string[]; hasDynamic: boolean }> {
+  const { isDynamic, isResolved } = await getShellAstModule()
   const strings: string[] = []
   let hasDynamic = false
   for (const a of args) {
@@ -74,9 +77,9 @@ function isScriptShellCmd(name: string): boolean {
 }
 
 /** 从 flags 含 -c 的 wrapped 调用中提取内联脚本 */
-function scriptFromCFlag(flags: string[], args: UnwrappedCall['args']): string | null {
+async function scriptFromCFlag(flags: string[], args: UnwrappedCall['args']): Promise<string | null> {
   if (!flags.includes('-c')) return null
-  const { strings, hasDynamic } = resolvedArgs(args)
+  const { strings, hasDynamic } = await resolvedArgs(args)
   if (hasDynamic || strings.length === 0) return null
   return strings[0]
 }
@@ -89,7 +92,7 @@ async function tryExtractWrappedInlineScript(
   out: AuditedCall[],
 ): Promise<boolean> {
   if (!u.cmd || !isScriptShellCmd(u.cmd)) return false
-  const script = scriptFromCFlag(u.flags, u.args)
+  const script = await scriptFromCFlag(u.flags, u.args)
   if (!script?.trim()) return false
 
   const inner = await extractAuditedCalls(script, { ...ctx, shell: source })
@@ -103,6 +106,7 @@ function unwrappedToAuditedCall(
   raw: string,
   source: AuditedCall['source'],
   redirects: AuditedRedirect[],
+  resolved: { strings: string[]; hasDynamic: boolean },
 ): AuditedCall {
   if (u.kind === 'wrapped-opaque') {
     return {
@@ -122,7 +126,7 @@ function unwrappedToAuditedCall(
     return {
       cmd: u.wrapper,
       flags: u.flags,
-      args: resolvedArgs(u.args).strings,
+      args: resolved.strings,
       paths: [],
       redirects,
       wrapper: { name: u.wrapper, script: u.script },
@@ -131,7 +135,7 @@ function unwrappedToAuditedCall(
     }
   }
 
-  const { strings, hasDynamic } = resolvedArgs(u.args)
+  const { strings, hasDynamic } = resolved
   const cmd = basenameCommand(u.cmd)
 
   return {
@@ -192,7 +196,8 @@ async function collectFromCallExpr(
       }
     }
     if (!innerProcessed) {
-      out.push(unwrappedToAuditedCall(u, raw, source, redirects))
+      const resolved = await resolvedArgs(u.args)
+      out.push(unwrappedToAuditedCall(u, raw, source, redirects, resolved))
     }
     return
   }
@@ -202,7 +207,8 @@ async function collectFromCallExpr(
     if (innerProcessed) return
   }
 
-  out.push(unwrappedToAuditedCall(u, raw, source, redirects))
+  const resolved = await resolvedArgs(u.args)
+  out.push(unwrappedToAuditedCall(u, raw, source, redirects, resolved))
 }
 
 /** 从 shell 字符串提取全部可审计子命令（unwrap wrapper + 递归 -c 脚本） */

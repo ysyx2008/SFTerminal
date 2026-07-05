@@ -42,6 +42,7 @@ function copyShellAstWasm() {
   }
 }
 
+function copyJiebaWasm() {
   return {
     name: 'copy-jieba-wasm',
     closeBundle() {
