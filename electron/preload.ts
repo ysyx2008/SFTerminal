@@ -1112,6 +1112,27 @@ const electronAPI = {
     }>>,
     remove: (key: string) => ipcRenderer.invoke('allowlist:remove', key) as Promise<boolean>,
     clear: () => ipcRenderer.invoke('allowlist:clear') as Promise<boolean>,
+    // NOTE: 返回类型须与 built-in-rules-view.ts 的 BuiltInRulesView 保持同步；
+    // preload 不能直接 import main 进程模块，故在此手写镜像。
+    getBuiltInRules: () => ipcRenderer.invoke('allowlist:getBuiltInRules') as Promise<{
+      argvCommands: Array<{
+        cmd: string
+        baseLevel: import('@shared/types/agent').RiskLevel
+        safeFlags: string[]
+        pathMode: 'all' | 'fixed' | 'none'
+        writesTo: boolean
+      }>
+      hardBlockedPaths: {
+        systemPatterns: string[]
+        userDataRoot: string
+        userDataAllowed: string[]
+      }
+      workspaceZones: {
+        free: string[]
+        protectedDirs: string[]
+        protectedFiles: string[]
+      }
+    }>,
   },
 
   // 智能巡检协调器

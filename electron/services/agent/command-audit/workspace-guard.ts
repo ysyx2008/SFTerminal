@@ -99,7 +99,7 @@ export function isSystemPath(targetPath: string, cwd?: string): boolean {
   const abs = resolveCommandPath(targetPath, cwd)
   const resolved = normalizePathForCompare(resolveRealPath(abs))
   const unresolved = normalizePathForCompare(abs)
-  if (SYSTEM_PATH_PATTERNS.some(p => p.test(resolved) || p.test(unresolved))) {
+  if (SYSTEM_PATH_PATTERNS.some(p => p.pattern.test(resolved) || p.pattern.test(unresolved))) {
     return true
   }
   return isUserDataForbidden(targetPath, cwd)

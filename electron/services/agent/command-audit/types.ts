@@ -127,7 +127,7 @@ export interface ArgvInput {
 }
 
 /**
- * 系统路径黑名单（跨平台）
+ * 系统路径黑名单条目（跨平台）
  *
  * 这些路径无论命令如何都被 blocked，不可被工作区降级：
  * - 系统根目录、系统目录
@@ -136,27 +136,34 @@ export interface ArgvInput {
  * 注意：read-only 命令（cat、ls）对这些路径的读取是 safe，
  * 黑名单只对写操作（rm、mv、>、chmod 等）生效。
  */
-export const SYSTEM_PATH_PATTERNS: readonly RegExp[] = [
+export interface SystemPathPattern {
+  /** 匹配正则 */
+  pattern: RegExp
+  /** 人类可读描述（用于设置页只读展示） */
+  description: string
+}
+
+export const SYSTEM_PATH_PATTERNS: readonly SystemPathPattern[] = [
   // Unix 系统根
-  /^\/$/,
+  { pattern: /^\/$/, description: '/ (文件系统根)' },
   // 系统配置
-  /^\/etc(\/|$)/,
-  /^\/private\/etc(\/|$)/,
+  { pattern: /^\/etc(\/|$)/, description: '/etc 及其子目录' },
+  { pattern: /^\/private\/etc(\/|$)/, description: '/private/etc 及其子目录（macOS）' },
   // 内核虚拟 / 设备
-  /^\/dev(\/|$)/,
-  /^\/proc(\/|$)/,
-  /^\/sys(\/|$)/,
+  { pattern: /^\/dev(\/|$)/, description: '/dev 及其子目录' },
+  { pattern: /^\/proc(\/|$)/, description: '/proc 及其子目录' },
+  { pattern: /^\/sys(\/|$)/, description: '/sys 及其子目录' },
   // 引导 / root 家目录
-  /^\/boot(\/|$)/,
-  /^\/root(\/|$)/,
+  { pattern: /^\/boot(\/|$)/, description: '/boot 及其子目录' },
+  { pattern: /^\/root(\/|$)/, description: '/root 及其子目录' },
   // macOS 系统目录（非 ~/Library）
-  /^\/System(\/|$)/,
-  /^\/Library(\/|$)/,
+  { pattern: /^\/System(\/|$)/, description: '/System 及其子目录（macOS）' },
+  { pattern: /^\/Library(\/|$)/, description: '/Library 及其子目录（macOS）' },
   // Windows 系统路径
-  /^[a-zA-Z]:\\$/,
-  /^[a-zA-Z]:\\Windows(\/|\\|$)/i,
-  /^[a-zA-Z]:\\Program Files(\/|\\|$)/i,
-  /^[a-zA-Z]:\\Program Files \(x86\)(\/|\\|$)/i,
+  { pattern: /^[a-zA-Z]:\\$/, description: '盘符根目录（如 C:\\）' },
+  { pattern: /^[a-zA-Z]:\\Windows(\/|\\|$)/i, description: 'Windows\\ 及其子目录（任意盘符）' },
+  { pattern: /^[a-zA-Z]:\\Program Files(\/|\\|$)/i, description: 'Program Files\\ 及其子目录（任意盘符）' },
+  { pattern: /^[a-zA-Z]:\\Program Files \(x86\)(\/|\\|$)/i, description: 'Program Files (x86)\\ 及其子目录（任意盘符）' },
 ]
 
 /**
@@ -172,6 +179,14 @@ export const PROTECTED_WORKSPACE_FILES = new Set([
   'HEARTBEAT.md',
   'CONTACTS.md',
 ])
+
+/**
+ * 工作区「自由区」目录名（读写删免确认）。
+ *
+ * 真相源；workspace-guard.ts / file.ts 内仍保留各自的路径判定逻辑
+ * （isScratchPath / isChartsPath），此处仅作为展示与未来重构的锚点。
+ */
+export const WORKSPACE_FREE_DIRS = ['scratch', 'charts'] as const
 
 /**
  * 保护目录（在工作区内）

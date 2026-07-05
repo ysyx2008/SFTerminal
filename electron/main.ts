@@ -3616,6 +3616,11 @@ ipcMain.handle('allowlist:clear', async () => {
   return true
 })
 
+ipcMain.handle('allowlist:getBuiltInRules', async () => {
+  const { getBuiltInRulesView } = await import('./services/agent/command-audit/built-in-rules-view')
+  return getBuiltInRulesView()
+})
+
 ipcMain.handle('agent:resolveSecureInput', async (_event, {
   ptyId, requestId, value, cancelled
 }: {

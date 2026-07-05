@@ -43,7 +43,7 @@ const emit = defineEmits<{
 
 const configStore = useConfigStore()
 
-type SettingsTab = 'ai' | 'aiRules' | 'mcp' | 'plugins' | 'skills' | 'knowledge' | 'email' | 'calendar' | 'im' | 'bastion' | 'gateway' | 'browserBridge' | 'theme' | 'terminal' | 'shortcuts' | 'data' | 'userAllowlist' | 'language' | 'about'
+type SettingsTab = 'ai' | 'aiRules' | 'mcp' | 'plugins' | 'skills' | 'knowledge' | 'email' | 'calendar' | 'im' | 'bastion' | 'gateway' | 'browserBridge' | 'theme' | 'terminal' | 'shortcuts' | 'data' | 'securityPermissions' | 'language' | 'about'
 // Steam 版不展示 AI 配置标签，默认选中「主题」；非 Steam 版默认「AI 模型配置」（__STEAM_BUILD__ 由 vite define 注入）
 const isSteamBuild = __STEAM_BUILD__
 const activeTab = ref<SettingsTab>(isSteamBuild ? 'theme' : 'ai')
@@ -389,7 +389,7 @@ let unsubscribeUpdater: (() => void) | null = null
 
 // Steam 版仅保留 theme/terminal/data/language/about，其它 initialTab 均 fallback 到 theme
 const STEAM_TABS: SettingsTab[] = ['theme', 'terminal', 'shortcuts', 'data', 'language', 'about']
-const ALL_TABS: SettingsTab[] = ['ai', 'aiRules', 'mcp', 'plugins', 'skills', 'knowledge', 'email', 'calendar', 'im', 'gateway', 'browserBridge', 'bastion', 'theme', 'terminal', 'shortcuts', 'data', 'userAllowlist', 'language', 'about']
+const ALL_TABS: SettingsTab[] = ['ai', 'aiRules', 'mcp', 'plugins', 'skills', 'knowledge', 'email', 'calendar', 'im', 'gateway', 'browserBridge', 'bastion', 'theme', 'terminal', 'shortcuts', 'data', 'securityPermissions', 'language', 'about']
 
 const applyInitialTab = (tabName?: string) => {
   if (tabName && ALL_TABS.includes(tabName as SettingsTab)) {
@@ -503,7 +503,7 @@ const tabGroups = computed(() => {
         { id: 'terminal' as const, label: t('settings.tabs.terminal'), icon: '⚙️' },
         { id: 'shortcuts' as const, label: t('settings.tabs.shortcuts'), icon: '⌨️' },
         { id: 'data' as const, label: t('settings.tabs.data'), icon: '💾' },
-        { id: 'userAllowlist' as const, label: t('settings.tabs.userAllowlist'), icon: '🔐' },
+        { id: 'securityPermissions' as const, label: t('settings.tabs.securityPermissions'), icon: '🔐' },
         { id: 'language' as const, label: t('settings.tabs.language'), icon: '🌐' },
         { id: 'about' as const, label: t('settings.tabs.about'), icon: 'ℹ️' }
       ]
@@ -632,7 +632,7 @@ const onQrImageError = (event: Event) => {
           <CalendarSettings v-else-if="activeTab === 'calendar'" />
           <IMSettings v-else-if="activeTab === 'im'" @close="emit('close')" />
           <BastionSettings v-else-if="activeTab === 'bastion'" />
-          <UserAllowlistSettings v-else-if="activeTab === 'userAllowlist'" />
+          <UserAllowlistSettings v-else-if="activeTab === 'securityPermissions'" />
           <GatewaySettings v-else-if="activeTab === 'gateway'" />
           <BrowserBridgeSettings v-else-if="activeTab === 'browserBridge'" />
           <ThemeSettings v-else-if="activeTab === 'theme'" />
