@@ -766,6 +766,25 @@ interface Window {
       }>>
       remove: (key: string) => Promise<boolean>
       clear: () => Promise<boolean>
+      getBuiltInRules: () => Promise<{
+        argvCommands: Array<{
+          cmd: string
+          baseLevel: import('@shared/types/agent').RiskLevel
+          safeFlags: string[]
+          pathMode: 'all' | 'fixed' | 'none'
+          writesTo: boolean
+        }>
+        hardBlockedPaths: {
+          systemPatterns: string[]
+          userDataRoot: string
+          userDataAllowed: string[]
+        }
+        workspaceZones: {
+          free: string[]
+          protectedDirs: string[]
+          protectedFiles: string[]
+        }
+      }>
     }
     // 历史记录操作
     history: {

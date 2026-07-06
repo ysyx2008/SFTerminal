@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Trash2, RefreshCw, Search, Shield, ShieldCheck, ShieldAlert, Ban, ChevronDown, ChevronRight, FolderLock, FileLock2, HardDrive, Terminal } from 'lucide-vue-next'
+import { Trash2, RefreshCw, Search, Shield, ShieldCheck, ShieldAlert, Ban, FolderLock, FileLock2, HardDrive, Terminal } from 'lucide-vue-next'
 import type { RiskLevel } from '@shared/types/agent'
 
 type AllowlistEntry = {
@@ -45,9 +45,12 @@ const confirmClearAll = ref(false)
 const builtinRules = ref<BuiltInRulesView | null>(null)
 const builtinLoading = ref(false)
 const builtinError = ref(false)
-const builtinExpanded = ref(false)
 const builtinFilter = ref('')
 const builtinActiveGroup = ref<RiskLevel | 'all'>('all')
+
+// —— 子 tab 切换（我的授权 / 内置规则）——
+type SubTab = 'user' | 'builtin'
+const activeSubTab = ref<SubTab>('user')
 
 const builtinFilteredCommands = computed(() => {
   if (!builtinRules.value) return []
@@ -81,11 +84,12 @@ async function loadBuiltinRules() {
   }
 }
 
-function toggleBuiltin() {
-  if (!builtinExpanded.value && !builtinRules.value && !builtinLoading.value) {
+function switchSubTab(tab: SubTab) {
+  activeSubTab.value = tab
+  confirmClearAll.value = false
+  if (tab === 'builtin' && !builtinRules.value && !builtinLoading.value) {
     loadBuiltinRules()
   }
-  builtinExpanded.value = !builtinExpanded.value
 }
 
 function pathModeLabel(mode: 'all' | 'fixed' | 'none'): string {
@@ -96,6 +100,18 @@ function pathModeLabel(mode: 'all' | 'fixed' | 'none'): string {
 
 function setBuiltinGroup(group: RiskLevel | 'all') {
   builtinActiveGroup.value = group
+}
+
+function groupLabel(group: RiskLevel | 'all'): string {
+  if (group === 'all') return t('settings.security.builtinRules.groupAll')
+  if (group === 'safe') return t('settings.security.builtinRules.groupSafe')
+  if (group === 'moderate') return t('settings.security.builtinRules.groupModerate')
+  if (group === 'dangerous') return t('settings.security.builtinRules.groupDangerous')
+  return t('settings.security.builtinRules.groupBlocked')
+}
+
+function groupCount(group: RiskLevel | 'all'): number {
+  return builtinGroupCounts.value[group] ?? 0
 }
 
 const filteredEntries = computed(() => {
@@ -207,303 +223,305 @@ onMounted(loadEntries)
 
 <template>
   <div class="user-allowlist-settings">
-    <!-- 内置安全规则（只读） -->
-    <div class="settings-section builtin-rules-section">
-      <div class="section-header builtin-header" @click="toggleBuiltin">
-        <div class="header-left">
-          <component :is="builtinExpanded ? ChevronDown : ChevronRight" :size="16" class="chevron" />
-          <Shield :size="16" class="builtin-icon" />
-          <h4>{{ t('settings.security.builtinRules.title') }}</h4>
-        </div>
-        <span class="header-hint">{{ builtinExpanded ? t('settings.security.builtinRules.collapseHint') : t('settings.security.builtinRules.expandHint') }}</span>
-      </div>
-      <p class="section-desc">{{ t('settings.security.builtinRules.description') }}</p>
+    <!-- 子标签切换 -->
+    <div class="sub-tabs">
+      <button
+        class="sub-tab"
+        :class="{ active: activeSubTab === 'user' }"
+        @click="switchSubTab('user')"
+      >
+        ✅ {{ t('settings.security.subTabs.user') }}
+        <span class="tab-badge" v-if="entries.length > 0">{{ entries.length }}</span>
+      </button>
+      <button
+        class="sub-tab"
+        :class="{ active: activeSubTab === 'builtin' }"
+        @click="switchSubTab('builtin')"
+      >
+        🛡️ {{ t('settings.security.subTabs.builtin') }}
+      </button>
+    </div>
 
-      <div v-if="builtinExpanded" class="builtin-content">
-        <div v-if="builtinLoading" class="builtin-loading">
-          <RefreshCw :size="24" class="spinning" />
-          <p>{{ t('settings.security.builtinRules.loading') }}</p>
+    <!-- ========== 我的授权 ========== -->
+    <div v-if="activeSubTab === 'user'" class="sub-panel">
+      <div class="settings-section">
+        <div class="section-header">
+          <div class="header-left">
+            <h4>{{ t('settings.security.userAllowlist.title') }}</h4>
+            <span class="count-badge" v-if="entries.length > 0">{{ entries.length }}</span>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-sm" @click="loadEntries" :disabled="loading" :title="t('common.refresh')">
+              <RefreshCw :size="14" :class="{ spinning: loading }" />
+            </button>
+          </div>
         </div>
-        <div v-else-if="builtinError" class="builtin-error">
-          <ShieldAlert :size="24" />
-          <p>{{ t('settings.security.builtinRules.loadError') }}</p>
-          <button class="btn btn-sm" @click="loadBuiltinRules">{{ t('settings.security.builtinRules.retry') }}</button>
+        <p class="section-desc">{{ t('settings.security.userAllowlist.description') }}</p>
+
+        <div class="toolbar">
+          <div class="search-box">
+            <Search :size="14" class="search-icon" />
+            <input
+              v-model="filterTool"
+              type="text"
+              class="input-field filter-input"
+              :placeholder="t('settings.security.userAllowlist.filterPlaceholder')"
+            />
+          </div>
+          <div class="toolbar-actions">
+            <button
+              v-if="!confirmClearAll"
+              class="btn btn-sm btn-danger"
+              :disabled="loading || entries.length === 0"
+              @click="confirmClearAll = true"
+            >
+              <Trash2 :size="14" />
+              {{ t('settings.security.userAllowlist.clearAll') }}
+            </button>
+            <template v-else>
+              <button class="btn btn-sm btn-danger" @click="clearAll">
+                {{ t('common.confirm') }}
+              </button>
+              <button class="btn btn-sm" @click="confirmClearAll = false">
+                {{ t('common.cancel') }}
+              </button>
+            </template>
+            <button
+              class="btn btn-sm"
+              :disabled="loading || selectedKeys.size === 0"
+              @click="removeSelected"
+              v-if="selectedKeys.size > 0"
+            >
+              <Trash2 :size="14" />
+              {{ t('settings.security.userAllowlist.removeSelected') }} ({{ selectedKeys.size }})
+            </button>
+          </div>
         </div>
-        <template v-else-if="builtinRules">
-          <!-- 命令白名单 -->
-          <div class="rule-block">
-            <div class="rule-block-header">
-              <Terminal :size="15" />
-              <h5>{{ t('settings.security.builtinRules.argvCommands') }}</h5>
-              <span class="rule-count">{{ t('settings.security.builtinRules.count', { n: builtinGroupCounts.all }) }}</span>
+
+        <div v-if="loading" class="empty-state">
+          <RefreshCw :size="32" class="empty-icon spinning" />
+          <p>{{ t('settings.security.userAllowlist.loading') }}</p>
+        </div>
+        <div v-else-if="entries.length === 0" class="empty-state">
+          <ShieldCheck :size="32" class="empty-icon" />
+          <p>{{ t('settings.security.userAllowlist.empty') }}</p>
+          <p class="empty-hint">{{ t('settings.security.userAllowlist.emptyHint') }}</p>
+        </div>
+        <div v-else-if="filteredEntries.length === 0" class="empty-state">
+          <Search :size="32" class="empty-icon" />
+          <p>{{ t('settings.security.userAllowlist.noMatch') }}</p>
+        </div>
+        <div v-else class="entry-list">
+          <div class="select-all-row">
+            <label class="checkbox-label">
+              <input
+                type="checkbox"
+                :checked="filteredEntries.length > 0 && filteredEntries.every(e => selectedKeys.has(e.key))"
+                @change="toggleSelectAll(($event.target as HTMLInputElement).checked)"
+              />
+              <span>{{ t('settings.security.userAllowlist.selectAll') }}</span>
+            </label>
+            <span class="count-text">{{ filteredEntries.length }} / {{ entries.length }}</span>
+          </div>
+          <div
+            v-for="entry in filteredEntries"
+            :key="entry.key"
+            class="entry-item"
+            :class="{ selected: selectedKeys.has(entry.key) }"
+          >
+            <div class="entry-check">
+              <input
+                type="checkbox"
+                :checked="selectedKeys.has(entry.key)"
+                @change="toggleSelect(entry.key, ($event.target as HTMLInputElement).checked)"
+              />
             </div>
-            <p class="rule-block-desc">{{ t('settings.security.builtinRules.argvCommandsDesc') }}</p>
-            <div class="rule-toolbar">
-              <div class="search-box">
-                <Search :size="14" class="search-icon" />
-                <input
-                  v-model="builtinFilter"
-                  type="text"
-                  class="input-field filter-input"
-                  :placeholder="t('settings.security.builtinRules.searchPlaceholder')"
-                />
+            <div class="entry-risk" :class="riskClass(entry.riskLevelAtApproval)">
+              <component :is="riskIcon(entry.riskLevelAtApproval)" :size="16" />
+            </div>
+            <div class="entry-info">
+              <div class="entry-header">
+                <code class="entry-tool">{{ entry.toolName }}</code>
+                <span class="risk-tag" :class="riskClass(entry.riskLevelAtApproval)">
+                  {{ riskLabel(entry.riskLevelAtApproval) }}
+                </span>
               </div>
-              <div class="group-tabs">
-                <button
-                  class="group-tab"
-                  :class="{ active: builtinActiveGroup === 'all' }"
-                  @click="setBuiltinGroup('all')"
-                >{{ t('settings.security.builtinRules.count', { n: builtinGroupCounts.all }) }}</button>
-                <button
-                  class="group-tab risk-safe"
-                  :class="{ active: builtinActiveGroup === 'safe' }"
-                  @click="setBuiltinGroup('safe')"
-                >{{ builtinGroupCounts.safe }}</button>
-                <button
-                  class="group-tab risk-moderate"
-                  :class="{ active: builtinActiveGroup === 'moderate' }"
-                  @click="setBuiltinGroup('moderate')"
-                >{{ builtinGroupCounts.moderate }}</button>
-                <button
-                  class="group-tab risk-dangerous"
-                  :class="{ active: builtinActiveGroup === 'dangerous' }"
-                  @click="setBuiltinGroup('dangerous')"
-                >{{ builtinGroupCounts.dangerous }}</button>
-                <button
-                  class="group-tab risk-blocked"
-                  :class="{ active: builtinActiveGroup === 'blocked' }"
-                  @click="setBuiltinGroup('blocked')"
-                >{{ builtinGroupCounts.blocked }}</button>
+              <div class="entry-args" :title="formatKeyArgs(entry.keyArgs)">
+                <code>{{ formatKeyArgsShort(entry.keyArgs) }}</code>
+              </div>
+              <div class="entry-meta">
+                <span class="meta-source">{{ sourceLabel(entry) }}</span>
+                <span class="meta-dot">·</span>
+                <span class="meta-time">{{ formatTime(entry.approvedAt) }}</span>
               </div>
             </div>
-            <div v-if="builtinFilteredCommands.length === 0" class="builtin-empty">
-              {{ t('settings.security.builtinRules.noMatch') }}
-            </div>
-            <div v-else class="cmd-grid">
-              <div class="cmd-grid-head">
-                <div class="cmd-cell cmd-col-cmd">{{ t('settings.security.builtinRules.colCmd') }}</div>
-                <div class="cmd-cell cmd-col-level">{{ t('settings.security.builtinRules.colBaseLevel') }}</div>
-                <div class="cmd-cell cmd-col-flags">{{ t('settings.security.builtinRules.colSafeFlags') }}</div>
-                <div class="cmd-cell cmd-col-path">{{ t('settings.security.builtinRules.colPathMode') }}</div>
-                <div class="cmd-cell cmd-col-writes">{{ t('settings.security.builtinRules.colWritesTo') }}</div>
-              </div>
-              <div
-                v-for="rule in builtinFilteredCommands"
-                :key="rule.cmd"
-                class="cmd-grid-row"
+            <div class="entry-actions">
+              <button
+                class="btn-icon danger"
+                @click="removeOne(entry.key)"
+                :title="t('settings.security.userAllowlist.remove')"
               >
-                <div class="cmd-cell cmd-col-cmd"><code>{{ rule.cmd }}</code></div>
-                <div class="cmd-cell cmd-col-level">
-                  <span class="risk-tag" :class="riskClass(rule.baseLevel)">{{ riskLabel(rule.baseLevel) }}</span>
-                </div>
-                <div class="cmd-cell cmd-col-flags">
-                  <code v-if="rule.safeFlags.length">{{ rule.safeFlags.join(' ') }}</code>
-                  <span v-else class="muted">—</span>
-                </div>
-                <div class="cmd-cell cmd-col-path">{{ pathModeLabel(rule.pathMode) }}</div>
-                <div class="cmd-cell cmd-col-writes">
-                  <span :class="rule.writesTo ? 'writes-yes' : 'muted'">
-                    {{ rule.writesTo ? t('settings.security.builtinRules.writesYes') : t('settings.security.builtinRules.writesNo') }}
-                  </span>
-                </div>
-              </div>
+                <Trash2 :size="14" />
+              </button>
             </div>
           </div>
-
-          <!-- 硬封路径 -->
-          <div class="rule-block">
-            <div class="rule-block-header">
-              <HardDrive :size="15" />
-              <h5>{{ t('settings.security.builtinRules.hardBlockedPaths') }}</h5>
-            </div>
-            <p class="rule-block-desc">{{ t('settings.security.builtinRules.hardBlockedPathsDesc') }}</p>
-            <div class="rule-subblock">
-              <div class="rule-subtitle">{{ t('settings.security.builtinRules.systemPatterns') }}</div>
-              <div class="pattern-chips">
-                <span v-for="(p, i) in builtinRules.hardBlockedPaths.systemPatterns" :key="i" class="pattern-chip">
-                  <code>{{ p }}</code>
-                </span>
-              </div>
-            </div>
-            <div class="rule-subblock">
-              <div class="rule-subtitle">{{ t('settings.security.builtinRules.userDataGuard') }}</div>
-              <div class="kv-row">
-                <span class="kv-key">{{ t('settings.security.builtinRules.userDataAllowed') }}</span>
-                <div class="kv-value">
-                  <code v-for="e in builtinRules.hardBlockedPaths.userDataAllowed" :key="e" class="allowed-chip">{{ e }}</code>
-                </div>
-              </div>
-              <div class="kv-row">
-                <span class="kv-key">{{ t('settings.security.builtinRules.userDataRule') }}</span>
-                <span class="kv-value">{{ t('settings.security.builtinRules.userDataRuleText') }}</span>
-              </div>
-              <div class="kv-row">
-                <span class="kv-key">userData</span>
-                <span class="kv-value"><code class="path-code">{{ builtinRules.hardBlockedPaths.userDataRoot }}</code></span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 工作区分区 -->
-          <div class="rule-block">
-            <div class="rule-block-header">
-              <FolderLock :size="15" />
-              <h5>{{ t('settings.security.builtinRules.workspaceZones') }}</h5>
-            </div>
-            <p class="rule-block-desc">{{ t('settings.security.builtinRules.workspaceZonesDesc') }}</p>
-            <div class="rule-subblock">
-              <div class="rule-subtitle">{{ t('settings.security.builtinRules.zoneFree') }}</div>
-              <div class="pattern-chips">
-                <span v-for="z in builtinRules.workspaceZones.free" :key="z" class="pattern-chip free">
-                  <code>{{ z }}/</code>
-                </span>
-              </div>
-            </div>
-            <div class="rule-subblock">
-              <div class="rule-subtitle">{{ t('settings.security.builtinRules.zoneProtected') }}</div>
-              <div v-if="builtinRules.workspaceZones.protectedDirs.length" class="pattern-chips">
-                <span v-for="d in builtinRules.workspaceZones.protectedDirs" :key="d" class="pattern-chip protected">
-                  <code>{{ d }}/</code>
-                </span>
-              </div>
-              <div v-if="builtinRules.workspaceZones.protectedFiles.length" class="pattern-chips">
-                <span v-for="f in builtinRules.workspaceZones.protectedFiles" :key="f" class="pattern-chip protected">
-                  <FileLock2 :size="12" />
-                  <code>{{ f }}</code>
-                </span>
-              </div>
-            </div>
-            <div class="rule-subblock">
-              <div class="rule-subtitle">{{ t('settings.security.builtinRules.zoneOutside') }}</div>
-              <p class="rule-text">{{ t('settings.security.builtinRules.zoneOutsideText') }}</p>
-              <p class="rule-text muted">{{ t('settings.security.builtinRules.zoneSystemText') }}</p>
-            </div>
-          </div>
-        </template>
+        </div>
       </div>
     </div>
 
-    <!-- 用户授权清单 -->
-    <div class="settings-section">
-      <div class="section-header">
-        <div class="header-left">
-          <h4>{{ t('settings.security.userAllowlist.title') }}</h4>
-          <span class="count-badge" v-if="entries.length > 0">{{ entries.length }}</span>
+    <!-- ========== 内置规则 ========== -->
+    <div v-if="activeSubTab === 'builtin'" class="sub-panel">
+      <div class="settings-section">
+        <div class="section-header">
+          <div class="header-left">
+            <Shield :size="16" class="builtin-icon" />
+            <h4>{{ t('settings.security.builtinRules.title') }}</h4>
+          </div>
         </div>
-        <div class="header-actions">
-          <button class="btn btn-sm" @click="loadEntries" :disabled="loading" :title="t('common.refresh')">
-            <RefreshCw :size="14" :class="{ spinning: loading }" />
-          </button>
-        </div>
-      </div>
-      <p class="section-desc">{{ t('settings.security.userAllowlist.description') }}</p>
+        <p class="section-desc">{{ t('settings.security.builtinRules.description') }}</p>
 
-      <div class="toolbar">
-        <div class="search-box">
-          <Search :size="14" class="search-icon" />
-          <input
-            v-model="filterTool"
-            type="text"
-            class="input-field filter-input"
-            :placeholder="t('settings.security.userAllowlist.filterPlaceholder')"
-          />
-        </div>
-        <div class="toolbar-actions">
-          <button
-            v-if="!confirmClearAll"
-            class="btn btn-sm btn-danger"
-            :disabled="loading || entries.length === 0"
-            @click="confirmClearAll = true"
-          >
-            <Trash2 :size="14" />
-            {{ t('settings.security.userAllowlist.clearAll') }}
-          </button>
-          <template v-else>
-            <button class="btn btn-sm btn-danger" @click="clearAll">
-              {{ t('common.confirm') }}
-            </button>
-            <button class="btn btn-sm" @click="confirmClearAll = false">
-              {{ t('common.cancel') }}
-            </button>
+        <div class="builtin-content">
+          <div v-if="builtinLoading" class="builtin-loading">
+            <RefreshCw :size="24" class="spinning" />
+            <p>{{ t('settings.security.builtinRules.loading') }}</p>
+          </div>
+          <div v-else-if="builtinError" class="builtin-error">
+            <ShieldAlert :size="24" />
+            <p>{{ t('settings.security.builtinRules.loadError') }}</p>
+            <button class="btn btn-sm" @click="loadBuiltinRules">{{ t('settings.security.builtinRules.retry') }}</button>
+          </div>
+          <template v-else-if="builtinRules">
+            <!-- 命令白名单 -->
+            <div class="rule-block">
+              <div class="rule-block-header">
+                <Terminal :size="15" />
+                <h5>{{ t('settings.security.builtinRules.argvCommands') }}</h5>
+                <span class="rule-count">{{ t('settings.security.builtinRules.count', { n: builtinGroupCounts.all }) }}</span>
+              </div>
+              <p class="rule-block-desc">{{ t('settings.security.builtinRules.argvCommandsDesc') }}</p>
+              <div class="rule-toolbar">
+                <div class="search-box">
+                  <Search :size="14" class="search-icon" />
+                  <input
+                    v-model="builtinFilter"
+                    type="text"
+                    class="input-field filter-input"
+                    :placeholder="t('settings.security.builtinRules.searchPlaceholder')"
+                  />
+                </div>
+                <div class="group-tabs">
+                  <button
+                    v-for="g in (['all', 'safe', 'moderate', 'dangerous', 'blocked'] as const)"
+                    :key="g"
+                    class="group-tab"
+                    :class="['risk-' + g, { active: builtinActiveGroup === g }]"
+                    @click="setBuiltinGroup(g)"
+                  >
+                    <span class="group-label">{{ groupLabel(g) }}</span>
+                    <span class="group-count">{{ groupCount(g) }}</span>
+                  </button>
+                </div>
+              </div>
+              <div v-if="builtinFilteredCommands.length === 0" class="builtin-empty">
+                {{ t('settings.security.builtinRules.noMatch') }}
+              </div>
+              <div v-else class="cmd-grid">
+                <div class="cmd-grid-head">
+                  <div class="cmd-cell cmd-col-cmd">{{ t('settings.security.builtinRules.colCmd') }}</div>
+                  <div class="cmd-cell cmd-col-level">{{ t('settings.security.builtinRules.colBaseLevel') }}</div>
+                  <div class="cmd-cell cmd-col-flags">{{ t('settings.security.builtinRules.colSafeFlags') }}</div>
+                  <div class="cmd-cell cmd-col-path">{{ t('settings.security.builtinRules.colPathMode') }}</div>
+                  <div class="cmd-cell cmd-col-writes">{{ t('settings.security.builtinRules.colWritesTo') }}</div>
+                </div>
+                <div v-for="rule in builtinFilteredCommands" :key="rule.cmd" class="cmd-grid-row">
+                  <div class="cmd-cell cmd-col-cmd"><code>{{ rule.cmd }}</code></div>
+                  <div class="cmd-cell cmd-col-level">
+                    <span class="risk-tag" :class="riskClass(rule.baseLevel)">{{ riskLabel(rule.baseLevel) }}</span>
+                  </div>
+                  <div class="cmd-cell cmd-col-flags">
+                    <code v-if="rule.safeFlags.length">{{ rule.safeFlags.join(' ') }}</code>
+                    <span v-else class="muted">—</span>
+                  </div>
+                  <div class="cmd-cell cmd-col-path">{{ pathModeLabel(rule.pathMode) }}</div>
+                  <div class="cmd-cell cmd-col-writes">
+                    <span :class="rule.writesTo ? 'writes-yes' : 'muted'">
+                      {{ rule.writesTo ? t('settings.security.builtinRules.writesYes') : t('settings.security.builtinRules.writesNo') }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 硬封路径 -->
+            <div class="rule-block">
+              <div class="rule-block-header">
+                <HardDrive :size="15" />
+                <h5>{{ t('settings.security.builtinRules.hardBlockedPaths') }}</h5>
+              </div>
+              <p class="rule-block-desc">{{ t('settings.security.builtinRules.hardBlockedPathsDesc') }}</p>
+              <div class="rule-subblock">
+                <div class="rule-subtitle">{{ t('settings.security.builtinRules.systemPatterns') }}</div>
+                <div class="pattern-chips">
+                  <span v-for="(p, i) in builtinRules.hardBlockedPaths.systemPatterns" :key="i" class="pattern-chip">
+                    <code>{{ p }}</code>
+                  </span>
+                </div>
+              </div>
+              <div class="rule-subblock">
+                <div class="rule-subtitle">{{ t('settings.security.builtinRules.userDataGuard') }}</div>
+                <div class="kv-row">
+                  <span class="kv-key">{{ t('settings.security.builtinRules.userDataAllowed') }}</span>
+                  <div class="kv-value">
+                    <code v-for="e in builtinRules.hardBlockedPaths.userDataAllowed" :key="e" class="allowed-chip">{{ e }}</code>
+                  </div>
+                </div>
+                <div class="kv-row">
+                  <span class="kv-key">{{ t('settings.security.builtinRules.userDataRule') }}</span>
+                  <span class="kv-value">{{ t('settings.security.builtinRules.userDataRuleText') }}</span>
+                </div>
+                <div class="kv-row">
+                  <span class="kv-key">userData</span>
+                  <span class="kv-value"><code class="path-code">{{ builtinRules.hardBlockedPaths.userDataRoot }}</code></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 工作区分区 -->
+            <div class="rule-block">
+              <div class="rule-block-header">
+                <FolderLock :size="15" />
+                <h5>{{ t('settings.security.builtinRules.workspaceZones') }}</h5>
+              </div>
+              <p class="rule-block-desc">{{ t('settings.security.builtinRules.workspaceZonesDesc') }}</p>
+              <div class="rule-subblock">
+                <div class="rule-subtitle">{{ t('settings.security.builtinRules.zoneFree') }}</div>
+                <div class="pattern-chips">
+                  <span v-for="z in builtinRules.workspaceZones.free" :key="z" class="pattern-chip free">
+                    <code>{{ z }}/</code>
+                  </span>
+                </div>
+              </div>
+              <div class="rule-subblock">
+                <div class="rule-subtitle">{{ t('settings.security.builtinRules.zoneProtected') }}</div>
+                <div v-if="builtinRules.workspaceZones.protectedDirs.length" class="pattern-chips">
+                  <span v-for="d in builtinRules.workspaceZones.protectedDirs" :key="d" class="pattern-chip protected">
+                    <code>{{ d }}/</code>
+                  </span>
+                </div>
+                <div v-if="builtinRules.workspaceZones.protectedFiles.length" class="pattern-chips">
+                  <span v-for="f in builtinRules.workspaceZones.protectedFiles" :key="f" class="pattern-chip protected">
+                    <FileLock2 :size="12" />
+                    <code>{{ f }}</code>
+                  </span>
+                </div>
+              </div>
+              <div class="rule-subblock">
+                <div class="rule-subtitle">{{ t('settings.security.builtinRules.zoneOutside') }}</div>
+                <p class="rule-text">{{ t('settings.security.builtinRules.zoneOutsideText') }}</p>
+                <p class="rule-text muted">{{ t('settings.security.builtinRules.zoneSystemText') }}</p>
+              </div>
+            </div>
           </template>
-          <button
-            class="btn btn-sm"
-            :disabled="loading || selectedKeys.size === 0"
-            @click="removeSelected"
-            v-if="selectedKeys.size > 0"
-          >
-            <Trash2 :size="14" />
-            {{ t('settings.security.userAllowlist.removeSelected') }} ({{ selectedKeys.size }})
-          </button>
-        </div>
-      </div>
-
-      <div v-if="loading" class="empty-state">
-        <RefreshCw :size="32" class="empty-icon spinning" />
-        <p>{{ t('settings.security.userAllowlist.loading') }}</p>
-      </div>
-      <div v-else-if="entries.length === 0" class="empty-state">
-        <ShieldCheck :size="32" class="empty-icon" />
-        <p>{{ t('settings.security.userAllowlist.empty') }}</p>
-        <p class="empty-hint">{{ t('settings.security.userAllowlist.emptyHint') }}</p>
-      </div>
-      <div v-else-if="filteredEntries.length === 0" class="empty-state">
-        <Search :size="32" class="empty-icon" />
-        <p>{{ t('settings.security.userAllowlist.noMatch') }}</p>
-      </div>
-      <div v-else class="entry-list">
-        <div class="select-all-row">
-          <label class="checkbox-label">
-            <input
-              type="checkbox"
-              :checked="filteredEntries.length > 0 && filteredEntries.every(e => selectedKeys.has(e.key))"
-              @change="toggleSelectAll(($event.target as HTMLInputElement).checked)"
-            />
-            <span>{{ t('settings.security.userAllowlist.selectAll') }}</span>
-          </label>
-          <span class="count-text">{{ filteredEntries.length }} / {{ entries.length }}</span>
-        </div>
-        <div
-          v-for="entry in filteredEntries"
-          :key="entry.key"
-          class="entry-item"
-          :class="{ selected: selectedKeys.has(entry.key) }"
-        >
-          <div class="entry-check">
-            <input
-              type="checkbox"
-              :checked="selectedKeys.has(entry.key)"
-              @change="toggleSelect(entry.key, ($event.target as HTMLInputElement).checked)"
-            />
-          </div>
-          <div class="entry-risk" :class="riskClass(entry.riskLevelAtApproval)">
-            <component :is="riskIcon(entry.riskLevelAtApproval)" :size="16" />
-          </div>
-          <div class="entry-info">
-            <div class="entry-header">
-              <code class="entry-tool">{{ entry.toolName }}</code>
-              <span class="risk-tag" :class="riskClass(entry.riskLevelAtApproval)">
-                {{ riskLabel(entry.riskLevelAtApproval) }}
-              </span>
-            </div>
-            <div class="entry-args" :title="formatKeyArgs(entry.keyArgs)">
-              <code>{{ formatKeyArgsShort(entry.keyArgs) }}</code>
-            </div>
-            <div class="entry-meta">
-              <span class="meta-source">{{ sourceLabel(entry) }}</span>
-              <span class="meta-dot">·</span>
-              <span class="meta-time">{{ formatTime(entry.approvedAt) }}</span>
-            </div>
-          </div>
-          <div class="entry-actions">
-            <button
-              class="btn-icon danger"
-              @click="removeOne(entry.key)"
-              :title="t('settings.security.userAllowlist.remove')"
-            >
-              <Trash2 :size="14" />
-            </button>
-          </div>
         </div>
       </div>
     </div>
@@ -515,6 +533,56 @@ onMounted(loadEntries)
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+/* —— 子标签切换（对齐 SkillSettings）—— */
+.sub-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.sub-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sub-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.sub-tab.active {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.tab-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  background: var(--accent-green);
+  color: var(--bg-primary);
+  border-radius: 10px;
+}
+
+.sub-panel {
+  display: flex;
+  flex-direction: column;
 }
 
 .settings-section {
@@ -555,6 +623,10 @@ onMounted(loadEntries)
 .header-actions {
   display: flex;
   gap: 8px;
+}
+
+.builtin-icon {
+  color: var(--accent-primary);
 }
 
 .section-desc {
@@ -827,35 +899,7 @@ onMounted(loadEntries)
   line-height: 1.5;
 }
 
-/* —— 内置安全规则面板 —— */
-.builtin-rules-section {
-  border: 1px solid var(--border-color);
-}
-
-.builtin-header {
-  cursor: pointer;
-  user-select: none;
-  transition: background 0.15s;
-}
-
-.builtin-header:hover {
-  background: var(--bg-secondary);
-}
-
-.chevron {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.builtin-icon {
-  color: var(--accent-primary);
-}
-
-.header-hint {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
+/* —— 内置规则面板 —— */
 .builtin-content {
   margin-top: 12px;
   display: flex;
@@ -934,6 +978,9 @@ onMounted(loadEntries)
 }
 
 .group-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 3px 10px;
   font-size: 11px;
   border-radius: 12px;
@@ -950,7 +997,23 @@ onMounted(loadEntries)
   color: var(--text-primary);
 }
 
+.group-label {
+  font-size: 11px;
+}
+
+.group-count {
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
 .group-tab.active {
+  background: var(--accent-primary);
+  color: var(--accent-contrast);
+  border-color: var(--accent-primary);
+}
+
+.group-tab.risk-all.active {
   background: var(--accent-primary);
   color: var(--accent-contrast);
   border-color: var(--accent-primary);
