@@ -116,6 +116,24 @@ describe('ContextWindowManager.estimateTotalTokens', () => {
     // 1 + 4 overhead + 1 reasoning = 6; +4000 = 4006
     expect(m.estimateTotalTokens([msg])).toBe(4006)
   })
+
+  it('含 images:每张按 IMAGE_TOKENS_PER_ITEM 累加（user 角色多模态消息）', () => {
+    const m = new ContextWindowManager(makeDeps())
+    const msg: AiMessage = {
+      role: 'user',
+      content: 'hi', // 2 chars * 0.5 = 1 token
+      images: ['data:image/png;base64,xxx', 'data:image/png;base64,yyy', 'data:image/png;base64,zzz']
+    }
+    // content 1 + overhead 4 + 3 张图 × 1500 = 4505; +4000 基线 = 8505
+    expect(m.estimateTotalTokens([msg])).toBe(8505)
+  })
+
+  it('images 为空数组不增 token（边界）', () => {
+    const m = new ContextWindowManager(makeDeps())
+    const msg: AiMessage = { role: 'user', content: 'hi', images: [] }
+    // 与无 images 一致:1 + 4 + 4000 = 4005
+    expect(m.estimateTotalTokens([msg])).toBe(4005)
+  })
 })
 
 // ==================== getContextLength ====================

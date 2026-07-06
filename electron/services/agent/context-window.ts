@@ -113,9 +113,14 @@ export class ContextWindowManager {
     return estimateTextTokens(text)
   }
 
-  /** 估算消息列表的总 token 数量(含 tool_calls / reasoning_content + 4000 基线)。 */
+  /** 估算消息列表的总 token 数量(含 tool_calls / reasoning_content / images + 4000 基线)。 */
   estimateTotalTokens(messages: AiMessage[]): number {
     const MESSAGE_OVERHEAD = 4
+    // 多模态图片 token 估算（保守上限）：OpenAI high detail 模式下 1024×1024=765、
+    // 1920×1080=595、2048×4096=1105；Anthropic 面积公式约 1590 封顶。取 1500 作为
+    // 单张图保守估值——宁可高估触发 cache path 跳过/cold start 重建，也不要低估导致
+    // 真实 prompt 超过模型上下文窗口被 LLM 截断（图片发出去但 AI 收不到）。
+    const IMAGE_TOKENS_PER_ITEM = 1500
 
     const messageTokens = messages.reduce((sum, msg) => {
       let tokens = this.estimateTokens(msg.content) + MESSAGE_OVERHEAD
@@ -127,6 +132,12 @@ export class ContextWindowManager {
       }
       if (msg.reasoning_content) {
         tokens += this.estimateTokens(msg.reasoning_content)
+      }
+      // 多模态图片：base64 data URL 在 formatMessageForApi 中转为 image_url content part，
+      // 由 LLM 按 tile/patch 算法计费。这里保守按固定值估算，避免 cache path 判断漏算图片
+      // 导致 prevTokens 严重低估（companion 长会话累积历史带图消息时尤其影响）。
+      if (msg.images && msg.images.length > 0) {
+        tokens += msg.images.length * IMAGE_TOKENS_PER_ITEM
       }
       return sum + tokens
     }, 0)
