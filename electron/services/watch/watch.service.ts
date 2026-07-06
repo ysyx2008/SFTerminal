@@ -13,6 +13,7 @@ import * as path from 'path'
 import type { BrowserWindow } from 'electron'
 import { Notification } from 'electron'
 import { createLogger } from '../../utils/logger'
+import { Companion } from '../conversation/companion'
 import { getDefaultShell, getLocalOS } from '../../utils/platform'
 import { getWorkspacePath } from '../agent/tools/file'
 import { getIMService } from '../im/im.service'
@@ -656,11 +657,16 @@ export class WatchService {
   // ==================== Prompt 构建 ====================
 
   private buildEnhancedPrompt(watch: WatchDefinition, event: SensorEvent): string {
-    // 唤醒 Watch：所有内容由 HEARTBEAT.md 模板控制
+    // 唤醒 Watch：HEARTBEAT.md 模板 + 最近联络上下文（与「其它 Watch」同源，避免心跳看不到联络 tab 对话）
     if (watch.id === WatchService.WAKEUP_ID) {
       const template = this.readWorkspaceFile(WatchService.HEARTBEAT_FILENAME)
         || WatchService.DEFAULT_HEARTBEAT_TEMPLATE
-      return this.resolveHeartbeatVariables(template, watch, event)
+      const parts = [this.resolveHeartbeatVariables(template, watch, event)]
+      const recentContext = this.buildRecentCompanionContext()
+      if (recentContext) {
+        parts.push(recentContext)
+      }
+      return parts.join('\n\n')
     }
 
     // 其他 Watch：保持原有逻辑
@@ -720,39 +726,8 @@ export class WatchService {
     try {
       const historyService = this.config?.historyService
       if (!historyService) return ''
-      const record = historyService.getLatestRecordByAgentKey(WatchService.COMPANION_AGENT_ID)
-      if (!record) return ''
-
-      // 优先用 API messages 还原对话；缺失时回退到 steps。仅取用户↔AI 的纯文本轮次。
-      const turns: Array<{ role: string; content: string }> = []
-      if (record.messages && record.messages.length > 0) {
-        for (const m of record.messages) {
-          const isPlainUser = m.role === 'user' && typeof m.content === 'string' && m.content.trim().length > 0
-          const isPlainAssistant = m.role === 'assistant'
-            && typeof m.content === 'string' && m.content.trim().length > 0
-            && !(Array.isArray(m.tool_calls) && m.tool_calls.length > 0)
-          if (isPlainUser || isPlainAssistant) {
-            turns.push({ role: m.role, content: m.content as string })
-          }
-        }
-      } else if (record.steps && record.steps.length > 0) {
-        for (const s of record.steps) {
-          if (s.type === 'user_task' && s.content && s.content !== '__proactive__') {
-            turns.push({ role: 'user', content: s.content })
-          } else if ((s.type === 'final_result' || s.type === 'message') && s.content) {
-            turns.push({ role: 'assistant', content: s.content })
-          }
-        }
-      }
-
-      const recent = turns.slice(-8)
-      if (recent.length === 0) return ''
-      const lines = recent.map(m => {
-        const who = m.role === 'user' ? '用户' : '你'
-        const text = m.content.length > 200 ? m.content.substring(0, 200) + '…' : m.content
-        return `${who}：${text}`
-      })
-      return `[最近与用户的联络记录（避免重复通知、保持连贯）：\n${lines.join('\n')}]`
+      return new Companion(historyService, WatchService.COMPANION_AGENT_ID)
+        .formatRecentTurnsForWatchPrompt()
     } catch {
       return ''
     }

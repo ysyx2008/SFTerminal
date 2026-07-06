@@ -1,6 +1,6 @@
 # Watch Service SPEC
 
-> Last verified: 2026-05-07
+> Last verified: 2026-07-05
 
 ## 职责
 
@@ -132,6 +132,8 @@ interface WatchTemplate {
 **事件消抖**：`EventPool` 在静默窗口内合并同类型事件，触发后清空。
 
 **心跳机制**：`HEARTBEAT_FILENAME` 是所有 Watch 共享的执行节流锁，防止并发执行；`ensureWakeup` / `removeWakeup` 控制"唤醒态"——AI 主动询问用户后等待回复时不再执行新触发。
+
+**联络上下文注入**：`buildEnhancedPrompt` 在**所有** Watch（含内置 `__wakeup__` 心跳）执行前，经 `Companion.formatRecentTurnsForWatchPrompt()` 从 `__companion__` 合并视图取最近 **50 条** user↔AI 纯文本（完整原文，不截断；合并最多 50 条 companion record），注入 prompt（10s TTL 缓存）。steps 回退路径含 `proactive_notice`（`talk_to_user` 主动通知）。联络 tab 展示仍用 `RECENT_RECORDS_LIMIT = 10`，与心跳注入范围分离。
 
 ## 关键约束
 

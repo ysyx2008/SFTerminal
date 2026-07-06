@@ -34,8 +34,12 @@ export interface CompanionExtractTaskOptions {
 }
 
 export class Companion {
-  /** 拉取最近多少条 record 做合并视图。10 与旧 forkAgent 实现一致。 */
+  /** 拉取最近多少条 record 做合并视图（联络 tab 展示 / fork）。10 与旧 forkAgent 实现一致。 */
   static readonly RECENT_RECORDS_LIMIT = 10
+  /** 心跳 / Watch prompt 注入：最近多少条 user↔assistant 轮次。 */
+  static readonly WATCH_PROMPT_MAX_TURNS = 50
+  /** 为凑够足够轮次，合并视图最多拉取多少条 companion record（上限与 WATCH_PROMPT_MAX_TURNS 同量级）。 */
+  static readonly WATCH_PROMPT_RECORDS_LIMIT = 50
 
   constructor(
     private readonly historyService: HistoryService,
@@ -82,11 +86,12 @@ export class Companion {
    *  - userTask（标题）：取最早一条非 `__proactive__` 记录；全 proactive 时回退到最早一条
    *
    * 返回 null：historyService 不可用 / 无近期 record。
+   * @param recordsLimit 拉取最近多少条物理 record 参与合并；默认 `RECENT_RECORDS_LIMIT`（联络 tab 展示）。
    */
-  getMergedViewRecord(): AgentRecord | null {
+  getMergedViewRecord(recordsLimit = Companion.RECENT_RECORDS_LIMIT): AgentRecord | null {
     const records = this.historyService.getRecentRecordsByAgentKey(
       this.agentKey,
-      Companion.RECENT_RECORDS_LIMIT
+      recordsLimit
     )
     if (!records || records.length === 0) return null
 
@@ -113,5 +118,49 @@ export class Companion {
       steps: mergedSteps,
       messages: mergedMessages
     }
+  }
+
+  /**
+   * 为 Watch / 心跳 prompt 格式化最近联络轮次。
+   * 合并最近最多 {@link WATCH_PROMPT_RECORDS_LIMIT} 条 companion record，取最近
+   * {@link WATCH_PROMPT_MAX_TURNS} 轮 user↔assistant 纯文本，让唤醒决策感知联络线全貌。
+   */
+  formatRecentTurnsForWatchPrompt(maxTurns = Companion.WATCH_PROMPT_MAX_TURNS): string {
+    const record = this.getMergedViewRecord(Companion.WATCH_PROMPT_RECORDS_LIMIT)
+    if (!record) return ''
+
+    const turns: Array<{ role: 'user' | 'assistant'; content: string }> = []
+    if (record.messages && record.messages.length > 0) {
+      for (const m of record.messages) {
+        const isPlainUser = m.role === 'user' && typeof m.content === 'string' && m.content.trim().length > 0
+        const isPlainAssistant = m.role === 'assistant'
+          && typeof m.content === 'string' && m.content.trim().length > 0
+          && !(Array.isArray(m.tool_calls) && m.tool_calls.length > 0)
+        if (isPlainUser) {
+          turns.push({ role: 'user', content: m.content as string })
+        } else if (isPlainAssistant) {
+          turns.push({ role: 'assistant', content: m.content as string })
+        }
+      }
+    } else if (record.steps && record.steps.length > 0) {
+      for (const s of record.steps) {
+        if (s.type === 'user_task' && s.content && s.content !== '__proactive__') {
+          turns.push({ role: 'user', content: s.content })
+        } else if (
+          (s.type === 'final_result' || s.type === 'message' || s.type === 'proactive_notice')
+          && s.content
+        ) {
+          turns.push({ role: 'assistant', content: s.content })
+        }
+      }
+    }
+
+    const recent = turns.slice(-maxTurns)
+    if (recent.length === 0) return ''
+    const lines = recent.map(m => {
+      const who = m.role === 'user' ? '用户' : '你'
+      return `${who}：${m.content}`
+    })
+    return `[最近与用户的联络记录（避免重复通知、保持连贯）：\n${lines.join('\n')}]`
   }
 }
