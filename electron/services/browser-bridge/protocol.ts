@@ -114,15 +114,29 @@ function compareSemver(a: string, b: string): number {
   return 0
 }
 
+/**
+ * 能力探测用的 ping 子集。
+ *
+ * `BrowserBridgePingResult` 是扩展 ping 响应的完整结构（含 `extension` 标识等），
+ * 但能力判断只关心 `version` / `capabilities` / `protocol` 字段。
+ * `BrowserBridgeService.getConnectionCapabilities()` 返回的就是这个子集，
+ * 让判断函数接受更宽的类型，避免要求调用方凑出完整的 ping 对象。
+ */
+export type BrowserBridgeCapabilityProbe = {
+  version?: string
+  capabilities?: BrowserBridgeCapability[]
+  protocol?: number
+} | null | undefined
+
 /** 扩展是否支持通用 tabs 原语（1.2.0+ 或 capabilities） */
-export function extensionSupportsTabsManage(ping: BrowserBridgePingResult | null | undefined): boolean {
+export function extensionSupportsTabsManage(ping: BrowserBridgeCapabilityProbe): boolean {
   if (!ping) return false
   if (ping.capabilities?.includes(BROWSER_BRIDGE_CAPABILITY_TABS_MANAGE)) return true
   return compareSemver(ping.version, BROWSER_BRIDGE_TABS_MANAGE_MIN_VERSION) >= 0
 }
 
 /** 扩展是否支持 goto 默认新开标签页（tabs_manage 已包含；旧版 1.1.2 单独推断） */
-export function extensionSupportsGotoNewTab(ping: BrowserBridgePingResult | null | undefined): boolean {
+export function extensionSupportsGotoNewTab(ping: BrowserBridgeCapabilityProbe): boolean {
   if (extensionSupportsTabsManage(ping)) return true
   if (!ping) return false
   if (ping.capabilities?.includes(BROWSER_BRIDGE_CAPABILITY_GOTO_NEW_TAB)) return true
@@ -130,7 +144,7 @@ export function extensionSupportsGotoNewTab(ping: BrowserBridgePingResult | null
 }
 
 /** protocol v1：扩展只传 HTML 原语，正文提取在桌面端 */
-export function supportsProtocolV1(ping: BrowserBridgePingResult | null | undefined): boolean {
+export function supportsProtocolV1(ping: BrowserBridgeCapabilityProbe): boolean {
   if (!ping) return false
   return (ping.protocol ?? 0) >= BROWSER_BRIDGE_PROTOCOL_VERSION
 }
