@@ -33,6 +33,7 @@ import {
   bridgeBrowserType,
   bridgeBrowserListTabs,
   bridgeBrowserSwitchTab,
+  bridgeBrowserCloseTab,
   bridgeBrowserScroll,
   bridgeBrowserReadArticle,
   bridgeBrowserReadPage,
@@ -82,6 +83,8 @@ export async function executeBrowserTool(
         return bridgeBrowserListTabs(ptyId, executor)
       case 'browser_switch_tab':
         return bridgeBrowserSwitchTab(ptyId, args, executor)
+      case 'browser_close_tab':
+        return bridgeBrowserCloseTab(ptyId, args, executor)
       case 'browser_scroll':
         return bridgeBrowserScroll(ptyId, args, executor)
       case 'browser_read_article':
@@ -142,6 +145,8 @@ export async function executeBrowserTool(
       return await browserListTabs(ptyId, args, executor)
     case 'browser_switch_tab':
       return await browserSwitchTab(ptyId, args, executor)
+    case 'browser_close_tab':
+      return await browserCloseTab(ptyId, args, executor)
     case 'browser_save_login':
       return await browserSaveLogin(ptyId, args, executor)
     case 'browser_list_profiles':
@@ -1147,6 +1152,79 @@ async function browserSwitchTab(
       type: 'tool_result',
       content: `错误: ${errorMsg}`,
       toolName: 'browser_switch_tab'
+    })
+    return { success: false, output: '', error: errorMsg }
+  }
+}
+
+/**
+ * 关闭标签页（launch 模式，Playwright 独立窗口）
+ *
+ * 注意：`registerPageCloseHandler`（session.ts）会在 page 'close' 事件里
+ * 自动 splice 数组并修正 currentPageIndex，这里不重复处理。
+ */
+async function browserCloseTab(
+  ptyId: string,
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  const index = args.index as number | undefined
+
+  executor.addStep({
+    type: 'tool_call',
+    content: index !== undefined ? `关闭标签页 ${index}` : '关闭当前活动标签页',
+    toolName: 'browser_close_tab',
+    toolArgs: args,
+    riskLevel: 'safe'
+  })
+
+  try {
+    const session = ensureSession(ptyId)
+
+    // 省略 index = 关闭当前活动 tab
+    const targetIndex = index !== undefined ? index : session.currentPageIndex
+    if (targetIndex < 0 || targetIndex >= session.pages.length) {
+      return {
+        success: false,
+        output: '',
+        error: `标签页索引超出范围。当前共 ${session.pages.length} 个标签页（索引 0-${session.pages.length - 1}）`
+      }
+    }
+
+    const pageToClose = session.pages[targetIndex]
+    // page.close() 触发 registerPageCloseHandler：自动 splice + 修正 currentPageIndex
+    await pageToClose.close()
+
+    // 全部 tab 都关闭了：关掉整个会话，与 browser_close 行为一致
+    if (session.pages.length === 0) {
+      const { closed } = await closeSession(ptyId)
+      executor.addStep({
+        type: 'tool_result',
+        content: closed ? '已关闭最后一个标签页，浏览器会话结束' : '标签页已关闭',
+        toolName: 'browser_close_tab'
+      })
+      return { success: true, output: '已关闭最后一个标签页，浏览器会话已结束' }
+    }
+
+    // 旧 ref 失效；currentPageIndex 已由 close handler 修正
+    session.refs = {}
+
+    executor.addStep({
+      type: 'tool_result',
+      content: `已关闭标签页 ${targetIndex}，剩余 ${session.pages.length} 个`,
+      toolName: 'browser_close_tab'
+    })
+
+    return {
+      success: true,
+      output: `已关闭标签页 ${targetIndex}，剩余 ${session.pages.length} 个标签页`
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : '关闭标签页失败'
+    executor.addStep({
+      type: 'tool_result',
+      content: `错误: ${errorMsg}`,
+      toolName: 'browser_close_tab'
     })
     return { success: false, output: '', error: errorMsg }
   }

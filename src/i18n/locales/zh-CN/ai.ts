@@ -558,6 +558,7 @@ export default {
       browser_evaluate: '浏览器执行脚本',
       browser_list_tabs: '列出浏览器标签页',
       browser_switch_tab: '切换浏览器标签页',
+      browser_close_tab: '关闭浏览器标签页',
       browser_save_login: '保存登录信息',
       browser_list_profiles: '列出浏览器配置',
       browser_close: '关闭浏览器',

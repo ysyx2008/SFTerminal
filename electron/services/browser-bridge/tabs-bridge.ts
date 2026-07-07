@@ -89,10 +89,25 @@ export async function bridgeTabsActivate(
   }
 }
 
-export async function bridgeTabsRemoveActive(ptyId: string): Promise<void> {
+/**
+ * 关闭标签页。
+ * - 省略 index 时关闭当前激活标签（与 legacy `close_tab` 行为一致）
+ * - 给定 index 时走 `tabs.remove`（仅 1.2.0+ 扩展支持）；旧扩展只能关激活 tab
+ */
+export async function bridgeTabsRemove(
+  ptyId: string,
+  options: { index?: number } = {},
+): Promise<void> {
   if (sessionSupportsTabs(ptyId)) {
-    await bridgeSend(ptyId, 'tabs', { op: 'remove' })
+    const payload: Record<string, unknown> = { op: 'remove' }
+    if (options.index !== undefined) payload.index = options.index
+    await bridgeSend(ptyId, 'tabs', payload)
     return
+  }
+  if (options.index !== undefined) {
+    throw new Error(
+      '当前浏览器扩展版本过低，不支持按索引关闭标签页；请先 browser_switch_tab 切换到目标标签后再关闭，或升级扩展到 1.2.0+',
+    )
   }
   await bridgeSend(ptyId, 'close_tab', {})
 }

@@ -519,6 +519,30 @@ export const browserTools: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'browser_close_tab',
+      description: `关闭标签页。默认关闭当前活动标签；也可指定 index 关闭任意标签页。
+
+**使用场景**：
+- 点击链接打开的新标签页已读取完内容，需要关闭清理
+- 用户要求关闭某个标签页
+- 完成特定标签页上的操作后想关闭它
+
+**注意**：与 \`browser_close\` 不同——后者是关闭整个浏览器会话（断开 attach 连接或关闭 launch 窗口），本工具只关闭单个标签页，浏览器会话保持。`,
+      parameters: {
+        type: 'object',
+        properties: {
+          index: {
+            type: 'number',
+            description: '要关闭的标签页索引（从 0 开始，使用 browser_list_tabs 查看）。省略则关闭当前活动标签'
+          }
+        },
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'browser_save_login',
       description: `手动确认保存当前浏览器的登录状态。
 

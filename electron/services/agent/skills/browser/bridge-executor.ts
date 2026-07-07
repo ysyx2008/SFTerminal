@@ -15,6 +15,7 @@ import {
   bridgeTabsNavigate,
   bridgeTabsActivate,
   bridgeTabsQuery,
+  bridgeTabsRemove,
 } from '../../../browser-bridge/tabs-bridge'
 import {
   bridgeListTabs,
@@ -290,6 +291,55 @@ export async function bridgeBrowserSwitchTab(
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : '切换标签页失败'
+    return { success: false, output: '', error: errorMsg }
+  }
+}
+
+export async function bridgeBrowserCloseTab(
+  ptyId: string,
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig,
+): Promise<ToolResult> {
+  const index = args.index as number | undefined
+  executor.addStep({
+    type: 'tool_call',
+    content:
+      index !== undefined ? `关闭标签页 ${index}` : '关闭当前活动标签页',
+    toolName: 'browser_close_tab',
+    toolArgs: args,
+    riskLevel: 'safe',
+  })
+  try {
+    const session = getBridgeSession(ptyId)
+    if (!session) throw new Error('浏览器未连接')
+    await bridgeTabsRemove(ptyId, index !== undefined ? { index } : {})
+    // 关闭后该 tab 的 refs 失效
+    session.refs = {}
+    // 重新查一次拿到新活动 tab，让 activeTabIndex 保持准确
+    // （扩展关 tab 后会自动激活相邻 tab，桌面端不重新 query 就不知道新活动索引）
+    let activeInfo = ''
+    try {
+      const tabs = await bridgeListTabs(ptyId)
+      const activeTab = tabs.find((t) => t.active)
+      if (activeTab) {
+        session.activeTabIndex = activeTab.index
+        activeInfo = `\n当前活动标签页：[${activeTab.index}] ${activeTab.title || '(无标题)'} — ${activeTab.url}`
+      } else if (tabs.length === 0) {
+        activeInfo = '\n当前窗口已无标签页（浏览器窗口可能保持空白或已关闭）'
+      }
+    } catch {
+      // query 失败不影响关闭本身的成功；activeTabIndex 可能过期但下次操作会刷新
+    }
+    touchBridgeSession(ptyId)
+    return {
+      success: true,
+      output:
+        (index !== undefined
+          ? `已关闭标签页 ${index}`
+          : '已关闭当前活动标签页') + activeInfo,
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : '关闭标签页失败'
     return { success: false, output: '', error: errorMsg }
   }
 }

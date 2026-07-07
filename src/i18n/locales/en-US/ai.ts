@@ -557,6 +557,7 @@ export default {
       browser_evaluate: 'Browser Evaluate',
       browser_list_tabs: 'List Browser Tabs',
       browser_switch_tab: 'Switch Browser Tab',
+      browser_close_tab: 'Close Browser Tab',
       browser_save_login: 'Save Login',
       browser_list_profiles: 'List Browser Profiles',
       browser_close: 'Close Browser',
