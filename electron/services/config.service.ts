@@ -252,6 +252,8 @@ interface StoreSchema {
   conversationDisplayTitles: Record<string, string>
   /** 解析失败 / 未知命令 的默认风险策略（按 executionMode 分档） */
   commandRiskPolicy: CommandRiskPolicy
+  /** scratch/ 临时区自动清理：文件 mtime 超过 N 天则删，0 表示禁用自动清理 */
+  scratchCleanupMaxAgeDays: number
 }
 
 const defaultConfig: StoreSchema = {
@@ -356,6 +358,7 @@ const defaultConfig: StoreSchema = {
   pinnedConversationIds: [],
   conversationDisplayTitles: {},
   commandRiskPolicy: { ...DEFAULT_COMMAND_RISK_POLICY },
+  scratchCleanupMaxAgeDays: 7,
 }
 
 export class ConfigService {

@@ -395,7 +395,7 @@ import type { GatewayService } from './services/gateway.service'
 import { BastionService } from './services/bastion.service'
 import type { IMService } from './services/im/im.service'
 import type { DingTalkConfig, FeishuConfig, SlackConfig, TelegramConfig, WeComConfig } from './services/im/types'
-import { getWorkspacePath, ensureAgentWorkspaceDirs } from './services/agent/tools/file'
+import { getWorkspacePath, ensureAgentWorkspaceDirs, cleanupScratch } from './services/agent/tools/file'
 import { initUserDataGuard } from './services/agent/command-audit/userdata-guard'
 import { getContextKnowledgeService } from './services/knowledge/context-knowledge'
 import {
@@ -1433,6 +1433,7 @@ app.whenReady().then(async () => {
 
   ensureAgentWorkspaceDirs()
   initUserDataGuard()
+  cleanupScratch(configService.get('scratchCleanupMaxAgeDays'))
 
   // shell-ast WASM 预热（命令审计首条 shell 命令不卡顿）
   void import('./services/agent/command-audit/parser').then(({ ensureShellAstReady }) =>

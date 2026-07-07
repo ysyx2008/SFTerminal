@@ -1046,6 +1046,12 @@ export default {
     cleanup90Days: '清理 90 天前',
     clearAll: '清空全部',
     cleanupHint: '清理旧记录可释放存储空间，此操作不可恢复',
+    // Agent 临时文件清理
+    scratchCleanup: 'Agent 临时文件',
+    scratchCleanupHint: 'AI 生成的临时文件、中间产物存放在 agent-workspace/scratch/ 目录。应用启动时自动清理超过指定天数的文件。设为 0 可关闭自动清理。',
+    scratchCleanupDays: '保留天数',
+    scratchCleanupDisabled: '已关闭（不自动清理）',
+    scratchCleanupSaved: '已保存',
     confirmCleanup: '确定要清理 {days} 天前的历史记录吗？此操作不可恢复。',
     confirmClearAll: '确定要清空全部历史记录吗？此操作不可恢复。',
     cleanupResult: '已清理 {chatDeleted} 个聊天文件和 {agentDeleted} 个助手文件',

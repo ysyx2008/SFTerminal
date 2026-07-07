@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
-import { Bot, HardDrive, CalendarRange, FolderOpen, History, Download, Upload, Trash2, Clock, AlertTriangle, Search, X, ChevronDown, ChevronRight, ExternalLink, Monitor, Server, Coins, ArrowUpRight, ArrowDownLeft, Zap, FolderSymlink, RotateCcw } from 'lucide-vue-next'
+import { Bot, HardDrive, CalendarRange, FolderOpen, History, Download, Upload, Trash2, Clock, AlertTriangle, Search, X, ChevronDown, ChevronRight, ExternalLink, Monitor, Server, Coins, ArrowUpRight, ArrowDownLeft, Zap, FolderSymlink, RotateCcw, FileClock } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const isSteamBuild = __STEAM_BUILD__
@@ -403,6 +403,36 @@ const cleanupOldRecords = async (days: number) => {
   }
 }
 
+// ========== Agent 临时文件自动清理 ==========
+const scratchCleanupDays = ref<number>(7)
+const scratchSaving = ref(false)
+
+const loadScratchConfig = async () => {
+  try {
+    const v = await window.electronAPI.config.get('scratchCleanupMaxAgeDays')
+    scratchCleanupDays.value = typeof v === 'number' ? v : 7
+  } catch (e) {
+    console.error('Failed to load scratch cleanup config:', e)
+  }
+}
+
+const saveScratchConfig = async () => {
+  if (scratchSaving.value) return
+  let v = Math.floor(Number(scratchCleanupDays.value))
+  if (Number.isNaN(v) || v < 0) v = 0
+  if (v > 365) v = 365
+  scratchCleanupDays.value = v
+  scratchSaving.value = true
+  try {
+    await window.electronAPI.config.set('scratchCleanupMaxAgeDays', v)
+    showMessage('success', t('dataSettings.scratchCleanupSaved'))
+  } catch (e) {
+    showMessage('error', String(e))
+  } finally {
+    scratchSaving.value = false
+  }
+}
+
 // 显示消息
 const showMessage = (type: 'success' | 'error', text: string) => {
   message.value = { type, text }
@@ -434,6 +464,7 @@ onMounted(() => {
   loadStorageStats()
   loadTokenUsageStats()
   loadDataDirInfo()
+  loadScratchConfig()
   document.addEventListener('keydown', handleKeydown, true)
 })
 
@@ -647,6 +678,33 @@ onUnmounted(() => {
       <p class="hint">{{ t('dataSettings.exportHint') }}</p>
     </div>
     
+    <!-- Agent 临时文件自动清理 -->
+    <div class="section">
+      <div class="section-header">
+        <FileClock :size="15" class="section-icon" />
+        <h4>{{ t('dataSettings.scratchCleanup') }}</h4>
+      </div>
+      <div class="scratch-cleanup-card">
+        <p class="scratch-desc">{{ t('dataSettings.scratchCleanupHint') }}</p>
+        <div class="scratch-input-row">
+          <label class="scratch-label">{{ t('dataSettings.scratchCleanupDays') }}</label>
+          <input
+            v-model.number="scratchCleanupDays"
+            type="number"
+            min="0"
+            max="365"
+            class="scratch-input"
+          />
+          <button class="btn btn-primary" @click="saveScratchConfig" :disabled="scratchSaving">
+            {{ t('dataSettings.scratchCleanupSaved') }}
+          </button>
+        </div>
+        <div v-if="scratchCleanupDays === 0" class="scratch-disabled-hint">
+          {{ t('dataSettings.scratchCleanupDisabled') }}
+        </div>
+      </div>
+    </div>
+
     <!-- 清理 -->
     <div class="section section-danger">
       <div class="section-header">
@@ -1070,6 +1128,54 @@ onUnmounted(() => {
   flex: 1;
   min-width: 150px;
   justify-content: center;
+}
+
+/* Scratch cleanup card */
+.scratch-cleanup-card {
+  padding: 14px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.scratch-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0 0 12px 0;
+}
+
+.scratch-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.scratch-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.scratch-input {
+  width: 90px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.scratch-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.scratch-disabled-hint {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--color-warning);
 }
 
 .hint {

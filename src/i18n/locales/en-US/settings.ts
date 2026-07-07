@@ -1046,6 +1046,12 @@ export default {
     cleanup90Days: 'Clean 90 days ago',
     clearAll: 'Clear All',
     cleanupHint: 'Cleaning old records frees up storage space. This action cannot be undone.',
+    // Agent scratch cleanup
+    scratchCleanup: 'Agent Scratch Files',
+    scratchCleanupHint: 'AI-generated temporary files and intermediate artifacts are stored in agent-workspace/scratch/. Files older than the specified number of days are automatically cleaned at app startup. Set to 0 to disable auto-cleanup.',
+    scratchCleanupDays: 'Days to keep',
+    scratchCleanupDisabled: 'Disabled (no auto-cleanup)',
+    scratchCleanupSaved: 'Saved',
     confirmCleanup: 'Are you sure you want to clean records older than {days} days? This cannot be undone.',
     confirmClearAll: 'Are you sure you want to clear all history records? This cannot be undone.',
     cleanupResult: 'Cleaned {chatDeleted} chat files and {agentDeleted} agent files',

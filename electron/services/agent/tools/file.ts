@@ -261,6 +261,95 @@ export function ensureAgentWorkspaceDirs(): void {
   fs.mkdirSync(getScratchPath(), { recursive: true })
 }
 
+/**
+ * 清理 scratch/ 临时区：删除 mtime 超过 maxAgeDays 天的文件和空目录。
+ *
+ * - maxAgeDays <= 0 时跳过（用户可在设置里关闭自动清理）
+ * - 只清 scratch/，不动 charts/、templates/ 等其他 workspace 子目录
+ * - 保留 .gitkeep 等占位文件
+ * - 启动时调用，确保没有 Agent 正在使用 scratch
+ *
+ * @returns 清理统计 { deletedFiles, deletedDirs, bytesFreed }
+ */
+export function cleanupScratch(maxAgeDays: number): {
+  deletedFiles: number
+  deletedDirs: number
+  bytesFreed: number
+} {
+  if (maxAgeDays <= 0) return { deletedFiles: 0, deletedDirs: 0, bytesFreed: 0 }
+
+  const scratch = getScratchPath()
+  const cutoff = Date.now() - maxAgeDays * 86400_000
+  let deletedFiles = 0
+  let deletedDirs = 0
+  let bytesFreed = 0
+
+  /** 递归遍历，先处理子目录再处理文件，自底向上删空目录 */
+  function walk(dir: string): { files: number; dirs: number; bytes: number } {
+    let files = 0
+    let dirs = 0
+    let bytes = 0
+    let entries: string[]
+    try {
+      entries = fs.readdirSync(dir)
+    } catch {
+      return { files, dirs, bytes }
+    }
+
+    for (const name of entries) {
+      const fullPath = path.join(dir, name)
+      let stat: fs.Stats
+      try {
+        stat = fs.statSync(fullPath)
+      } catch {
+        continue
+      }
+      if (stat.isDirectory()) {
+        const sub = walk(fullPath)
+        files += sub.files
+        dirs += sub.dirs
+        bytes += sub.bytes
+        // 子目录清空后，若自身也为空则删除
+        try {
+          if (fs.readdirSync(fullPath).length === 0) {
+            fs.rmdirSync(fullPath)
+            dirs++
+          }
+        } catch {
+          /* ignore */
+        }
+      } else if (stat.isFile()) {
+        // 保留占位文件
+        if (name === '.gitkeep' || name === '.keep') continue
+        if (stat.mtimeMs < cutoff) {
+          try {
+            fs.unlinkSync(fullPath)
+            files++
+            bytes += stat.size
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }
+    return { files, dirs, bytes }
+  }
+
+  const result = walk(scratch)
+  deletedFiles = result.files
+  deletedDirs = result.dirs
+  bytesFreed = result.bytes
+
+  if (deletedFiles > 0) {
+    // 延迟导入避免循环依赖
+    const { createLogger } = require('../../../utils/logger')
+    const log = createLogger('scratch-cleanup')
+    log.info(`cleaned ${deletedFiles} files (${Math.round(bytesFreed / 1024)}KB) older than ${maxAgeDays}d`)
+  }
+
+  return { deletedFiles, deletedDirs, bytesFreed }
+}
+
 /** 解析路径用于 workspace 边界检查（含符号链接；文件不存在时沿父目录链回退） */
 function resolvePathForWorkspaceCheck(filePath: string): string {
   let resolved = path.resolve(filePath)
