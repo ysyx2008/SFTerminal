@@ -48,6 +48,16 @@ export interface CommandRule {
  *
  * 注意：只处理短 flag 合并。--flag=value 形式由调用方传入时已拆开。
  */
+/**
+ * 规范化 flag：
+ * - 长选项（--flag / --flag=value）保留并去掉 =value
+ * - 短 flag 合并（-rf → -r -f）：拆开后**同时保留原 flag 和拆分结果**
+ *   原因：拆分让 guard 能匹配 `-exec`/`-delete` 等多字母 flag（这些不该被拆），
+ *   保留原 flag 让 assessCommandFlags 能匹配 `-lart`/`-lah` 等组合（整体匹配）。
+ *   单字母 flag 不受影响（拆分结果就是原 flag 本身）。
+ *
+ * 长度阈值：仅对长度 ≤ 4 的短 flag 拆分，避免把 `-print`/`-exec`/`-delete` 等多字母长 flag 误拆。
+ */
 export function normalizeFlags(rawFlags: string[]): string[] {
   const result: string[] = []
   for (const f of rawFlags) {
@@ -55,11 +65,13 @@ export function normalizeFlags(rawFlags: string[]): string[] {
       // 长选项，去掉 =value 部分
       const eq = f.indexOf('=')
       result.push(eq >= 0 ? f.slice(0, eq) : f)
-    } else if (f.startsWith('-') && !f.startsWith('--') && f.length > 2) {
-      // 短 flag 合并：-rf → -r -f
+    } else if (f.startsWith('-') && !f.startsWith('--') && f.length > 2 && f.length <= 4) {
+      // 短 flag 合并（-rf → -r -f），仅拆 ≤4 字符避免误拆 -print/-exec/-delete 等
+      // 同时保留原 flag，让 assessCommandFlags 能整体匹配 -lart 等组合
+      result.push(f)
       for (const ch of f.slice(1)) result.push(`-${ch}`)
     } else {
-      // 单个 - 或非 flag，原样保留
+      // 单个 -、长度 > 4 的（-print/-exec/-delete/-name 等长 flag）、或非 flag，原样保留
       result.push(f)
     }
   }
@@ -152,7 +164,7 @@ function rule(
 export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
   // —— 只读 / 查询 ——
   ls: rule('ls', 'safe', {
-    safeFlags: new Set(['-l', '-a', '-h', '-R', '-t', '-1', '-la', '-lah', '-al', '-ahl']),
+    safeFlags: new Set(['-l', '-a', '-h', '-R', '-r', '-t', '-S', '-1', '-la', '-lah', '-al', '-ahl']),
     pathMode: 'all',
   }),
   cat: rule('cat', 'safe', { safeFlags: new Set(['-n', '-b', '-s']), pathMode: 'all' }),
@@ -186,26 +198,29 @@ export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
   '[': rule('[', 'safe', { pathMode: 'none' }),
   which: rule('which', 'safe', { pathMode: 'all' }),
   type: rule('type', 'safe', { pathMode: 'all' }),
-  env: rule('env', 'safe', { pathMode: 'none' }),
+  env: rule('env', 'moderate', { pathMode: 'none' }),
   printenv: rule('printenv', 'safe', { pathMode: 'none' }),
   git: rule('git', 'safe', {
     safeFlags: new Set(['-C', '--git-dir', '--work-tree', '-c']),
     valueFlags: new Set(['-C', '--git-dir', '--work-tree', '-c']),
     pathMode: 'none',
   }),
+  // node: -e / --eval 不作为 safeFlag —— 内联 JS 代码无法静态审计，
+  // 由 indirection-guard 在共享层直接 blocked。--version 仍 safe。
   node: rule('node', 'safe', {
-    safeFlags: new Set(['-e', '-v', '--version', '--eval']),
-    valueFlags: new Set(['-e', '--eval']),
+    safeFlags: new Set(['-v', '--version']),
     pathMode: 'all',
   }),
+  // python / python3: -c 不作为 safeFlag —— 内联 Python 代码无法静态审计，
+  // 由 indirection-guard 在共享层直接 blocked。-m（跑已安装模块）保留。
   python: rule('python', 'safe', {
-    safeFlags: new Set(['-c', '-m', '-V', '--version']),
-    valueFlags: new Set(['-c', '-m']),
+    safeFlags: new Set(['-m', '-V', '--version']),
+    valueFlags: new Set(['-m']),
     pathMode: 'all',
   }),
   python3: rule('python3', 'safe', {
-    safeFlags: new Set(['-c', '-m', '-V', '--version']),
-    valueFlags: new Set(['-c', '-m']),
+    safeFlags: new Set(['-m', '-V', '--version']),
+    valueFlags: new Set(['-m']),
     pathMode: 'all' }),
   npm: rule('npm', 'moderate', {
     safeFlags: new Set(['run', 'test', 'ci', 'ls', 'list', 'view', 'outdated', '--']),
@@ -305,6 +320,16 @@ export function assessCommandFlags(rule: CommandRule, flags: string[]): RiskLeve
   const allowed = rule.safeFlags
   for (const f of flags) {
     if (!allowed.has(f)) {
+      // 单个字符的拆分 flag（如 -rf 拆出的 -r/-f）一定已检查过；
+      // 这里 f 是原 flag 或长度 > 4 的长 flag。如果原 flag 本身不在 allowed，
+      // 检查它是否由 allowed 中的单字符 flag 组合而成（如 -lart 由 -l/-a/-r/-t 组成），
+      // 这样 -lart / -lahr 等常见组合不会因长度阈值而误报。
+      if (f.startsWith('-') && !f.startsWith('--') && f.length > 2) {
+        const chars = f.slice(1).split('')
+        if (chars.length > 0 && chars.every(ch => allowed.has(`-${ch}`))) {
+          continue  // 整体是已知单字符 flag 的组合，放行
+        }
+      }
       return 'moderate'
     }
   }

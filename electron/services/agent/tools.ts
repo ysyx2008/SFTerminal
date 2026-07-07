@@ -420,7 +420,15 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         type: 'function',
         function: {
           name: 'exec',
-          description: `运行 shell 命令并返回输出（需要管道/&&/重定向时用此工具；单条命令请优先 exec_argv）。不支持交互式命令(vim/nano/tmux)。
+          description: `【执行 Shell 命令】通过 shell 执行命令字符串，支持管道/&&/重定向/脚本内联。不支持交互式命令(vim/nano/tmux)。
+
+**安全规则（两通道共享，命中标为 dangerous，strict/relaxed 需确认；free 放行）**：
+- 解释器内联代码（node -e / python -c / bash -c / zsh -c / perl -e / ruby -e / php -r 等）会被标记为危险
+  —— 这类代码无法静态审计，真正高风险场景请切严格模式
+- 包装器/调度器（sudo / env / docker / ssh / make / npx 等）会被标记为危险
+  —— 这些 cmd 会转手执行别的命令，违反"直接调用"的不变量
+- 如需运行脚本，请用 exec_argv 直接调用脚本文件：cmd="node" args=["script.js"]
+- find -exec / -delete、tar --to-command、git rebase --exec 等结构性 flag 会被标记为危险
 
 **等待与转后台**：
 - wait_seconds 内结束 → 返回完整结果
@@ -475,16 +483,27 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         type: 'function',
         function: {
           name: 'exec_argv',
-          description: `以结构化 argv 执行命令（不经 shell 解释，**优先使用**）。
+          description: `【执行命令】以结构化 argv 直接调用目标程序（不经 shell 解释，**单条命令优先使用**）。
 
-**何时用 exec_argv**（单条可执行程序 + 参数，无管道/无 &&）：
-- ls / cat / grep / rm / mv / cp / mkdir / node script.js 等
+**适合 exec_argv**（单条可执行程序 + 参数，无管道/无 &&）：
+- ✅ ls / cat / grep / rm / mv / cp / mkdir / git / find
+- ✅ node script.js / python a.py / bash install.sh（跑脚本文件，路径会被审计）
 - 默认 cwd 为 agent-workspace/scratch/
 
-**何时用 exec**（需要 shell 特性）：
+**必须改用 exec**（需要 shell 特性）：
 - 管道：\`ls | grep foo\`
 - 复合：\`cmd1 && cmd2\`
 - 重定向：\`echo x > file\`
+
+**会被标记为危险（命中标 dangerous，strict/relaxed 需确认；free 放行）**：
+- ❌ 解释器内联代码：node -e / python -c / bash -c / zsh -c / perl -e 等
+  （内联代码无法静态审计，请改用 exec_argv 跑脚本文件，或用 exec 走 shell 字符串）
+- ❌ 包装器/调度器：sudo / env / xargs / docker / ssh / make / npx 等
+  （这些 cmd 会转手执行别的命令，违反 argv 通道"直接调用"的不变量）
+- ❌ find -exec / -delete / -ok（运行时执行任意命令或批量删除）
+- ❌ tar --to-command / git rebase --exec（运行时执行任意命令）
+
+注意：真正高风险场景请切严格模式（所有命令需确认），不要指望命令拦截兜底。
 
 **工作区沙箱**：scratch/、charts/ 内读写删自动放行；templates/ 与人格配置 md 需确认；工作区外需确认。
 

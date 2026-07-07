@@ -24,6 +24,8 @@ export {
 
 export { assessAuditedCall, assessRedirectPaths, aggregateHasUnknown } from './assess-call'
 
+export { checkIndirectionGuard, dangerousByGuard } from './indirection-guard'
+
 export { commandNeedsConfirm, isSubAgentBlocked, displayRiskLevel } from './confirm-policy'
 
 export { assessShellRisk, shellNeedsConfirm } from './assess-shell'

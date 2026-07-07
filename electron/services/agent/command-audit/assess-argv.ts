@@ -17,7 +17,18 @@ import { commandNeedsConfirm } from './confirm-policy'
 
 function buildAuditedCall(input: ArgvInput): AuditedCall {
   const rule = getArgvCommandRule(input.cmd)
-  const parsed = rule ? splitArgv(input.args, rule) : { flags: [], paths: input.args, otherArgs: [] }
+  // 即使 rule 不存在（未知命令），也要拆出 flags —— 否则 indirection-guard
+  // 拿不到 -c/-e/-exec 等 flag，会漏拦 bash -c / node -e 等已知模式。
+  // 用一个通用规则：所有 - 开头的参数都是 flag，其余都是路径。
+  const fallbackRule = rule ?? {
+    cmd: input.cmd,
+    baseLevel: 'moderate' as const,
+    safeFlags: new Set<string>(),
+    valueFlags: new Set<string>(),
+    pathMode: 'all' as const,
+    writesTo: false,
+  }
+  const parsed = splitArgv(input.args, fallbackRule)
   const raw = [input.cmd, ...input.args].join(' ')
   return {
     cmd: input.cmd,
