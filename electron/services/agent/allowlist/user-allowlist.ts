@@ -9,7 +9,7 @@ import { createLogger } from '../../../utils/logger'
 
 const log = createLogger('UserAllowlist')
 
-export type AllowlistSourceKind = 'task' | 'companion' | 'watch'
+export type AllowlistSourceKind = 'task' | 'companion' | 'watch' | 'wakeup'
 
 export interface AllowlistEntry {
   key: string

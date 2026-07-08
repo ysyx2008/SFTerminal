@@ -484,13 +484,17 @@ export class WatchService {
     }
 
     const startTime = Date.now()
-    const agentId = WatchService.WATCH_ASSISTANT_AGENT_ID
+    // wakeup 用独立 Agent（保留跨执行工作记忆辅助决策），普通 watch 用 __watch__（逐次失忆）
+    const agentId = wakeupMode
+      ? WatchService.WAKEUP_AGENT_ID
+      : WatchService.WATCH_ASSISTANT_AGENT_ID
     const mainWindow = this.config.mainWindow
     let hasError = false
     let errorMessage = ''
     const steps: AgentStep[] = []
 
-    // 每次 Watch 执行使用独立 session，保留工作记忆但分开存储步骤
+    // 每次 Watch 执行使用独立 session；普通 watch 保留工作记忆但分开存储步骤，
+    // wakeup 同样新起 session（@suppressSeed 门控回种，仅保留 TaskMemory 重建）
     this.config.agentService.startNewSession(agentId)
 
     // 唤醒模式：始终发送 agent:step（Awaken 面板内心独白），但不发送 complete/error
@@ -933,6 +937,8 @@ export class WatchService {
 
   /** 内部 Agent 执行 ID，用于 session 隔离；不用于前端 Tab 路由 */
   private static readonly WATCH_ASSISTANT_AGENT_ID = '__watch__'
+  /** 唤醒 Agent 执行 ID（心跳/内心独白，保留跨执行工作记忆）；与 WAKEUP_AGENT_KEY 同源 */
+  private static readonly WAKEUP_AGENT_ID = '__wakeup__'
   /** 前端联络常驻 tab 的 agentId，与 AgentService.COMPANION_AGENT_ID 保持一致 */
   private static readonly COMPANION_AGENT_ID = '__companion__'
 

@@ -126,19 +126,22 @@ SailFish/
 - 旧路径 `src/canvas/`、`stores/canvas.ts` 保留 deprecated re-export
 - **单助手 Hub 模型**（2026-06-18）：本地 assistant Tab 默认不显示在 Tab 栏，通过左侧「最近对话」侧栏聚焦切换（`hubFocusedAssistantTabId`）；右键「在新标签页中打开」标记 `isPromoted=true` 后进入 Tab 栏；LRU 回收上限 5 个 Hub 会话，并发软上限 8 个；远程助手（`isRemote=true`）不受影响
 
-### 任务 / 联络 / 关切 三类会话（用户心智模型）
+### 任务 / 联络 / 关切 / 唤醒 四类会话（用户心智模型）
 
-Agent 有三种存在方式，对应三类**互斥**的会话（`kind`）。把三类讲圆，Agent 才完整：**有内心独白、能独自做事（心跳/Watch），有与用户的持续对话（联络），也能直接接受指令完成工作（任务）**。其中只有任务、联络是用户可见的常驻入口；关切是 Agent 的内心独白，不直接示人。
+Agent 有四种存在方式，对应四类**互斥**的会话（`kind`）。把四类讲圆，Agent 才完整：**有内心独白、能独自做事（心跳/Wakeup），有与用户的持续对话（联络），也能直接接受指令完成工作（任务），还能按配置独立执行一次性关切（watch）**。其中只有任务、联络是用户可见的常驻入口；关切（watch）与唤醒（wakeup）是 Agent 的内部执行，不直接示人。
 
-| 维度 | 任务（`task`） | 联络（`companion` / `__companion__`） | 关切（`watch` / `__watch__`） |
-|---|---|---|---|
-| 心智 | 我**支使** AI——被动、可并行、可隔离 | 我和觉醒的 AI **互相找**——常驻、连续、双向 | AI 的**内心独白** / 独自做事（心跳、Watch） |
-| 触发 | 仅用户主动发起 | 用户发起 **或** AI 主动（`talk_to_user`） | 传感器/心跳事件，AI 自循环 |
-| agentKey | 当前 tabId（**会变**，见会话漫游） | 恒为 `__companion__`，全渠道（IM/Gateway/桌面）汇入一条线 | 恒为 `__watch__` |
-| 用户可见 | 是，进「最近对话」任务侧栏 | 是，独立常驻 tab（按 agentKey 从任务侧栏剔除） | 不进会话列表/长期记忆，但有独立**执行历史/执行速览**（WatchStore 上限 500 条 + `history/watch` 正文）供复盘审计；要进对话须经 `talk_to_user` 冒泡进联络 |
+> 注：唤醒（wakeup）原属关切（watch）一类，v7 起独立成第四类——关切是用户配置的一次性任务（逐次失忆避免串味），唤醒是 Agent 自主循环（保留历史记忆辅助决策）。详见下方「wakeup vs watch 上下文分离」。
 
-- **为什么这么分**：任务是桌面主力（专注、可并行）；联络承载「觉醒」——主动找人、跨渠道连续；关切是 Agent 自己的循环，不该污染用户视野。
-- **关键标识**：`AgentRecord.agentKey` 区分常驻命名 Agent（`__companion__` / `__watch__`）与普通 tab Agent；联络历史恢复、Watch 上下文、侧栏过滤都依赖它。
+| 维度 | 任务（`task`） | 联络（`companion` / `__companion__`） | 关切（`watch` / `__watch__`） | 唤醒（`wakeup` / `__wakeup__`） |
+|---|---|---|---|---|
+| 心智 | 我**支使** AI——被动、可并行、可隔离 | 我和觉醒的 AI **互相找**——常驻、连续、双向 | 用户配置的**一次性任务** | AI 的**内心独白** / 自主循环（心跳） |
+| 触发 | 仅用户主动发起 | 用户发起 **或** AI 主动（`talk_to_user`） | 用户配置的触发器 | 传感器/心跳事件，AI 自循环 |
+| agentKey | 当前 tabId（**会变**，见会话漫游） | 恒为 `__companion__`，全渠道汇入一条线 | 恒为 `__watch__` | 恒为 `__wakeup__` |
+| 工作记忆 | 不回种（新任务本就独立） | 冷启动回种（续上同一条线） | **逐次失忆**（避免串味） | **保留历史记忆**（辅助决策） |
+| 用户可见 | 是，进「最近对话」任务侧栏 | 是，独立常驻 tab（按 agentKey 从任务侧栏剔除） | 不进会话列表/长期记忆，但有独立**执行历史/执行速览**（WatchStore 上限 500 条 + `history/watch` 正文）供复盘审计；要进对话须经 `talk_to_user` 冒泡进联络 | 不进会话列表；与 watch 共用 watch 历史树，但**关切总览面板默认隐藏 wakeup 流水**（`BUILTIN_WATCH_IDS` 过滤，避免高频心跳挤掉用户关切的执行记录）；要进对话同样须经 `talk_to_user` 冒泡进联络 |
+
+- **为什么这么分**：任务是桌面主力（专注、可并行）；联络承载「觉醒」——主动找人、跨渠道连续；关切是用户配置的一次性任务（独立执行、逐次失忆）；唤醒是 Agent 自己的循环（保留记忆做决策），不该污染用户视野。
+- **关键标识**：`AgentRecord.agentKey` 区分常驻命名 Agent（`__companion__` / `__watch__` / `__wakeup__`）与普通 tab Agent；联络历史恢复、Watch 上下文、侧栏过滤都依赖它。
 - **身份 vs 运行时绑定 vs 形态**：会话身份 = `id`(sessionId) + `kind`，**不可变**；形态 = `terminalType`(local/ssh/assistant) + ssh 的 `sshHost`，会话创建时确定、**不可变**；`agentKey`（当前哪个 tab/实例在跑）是**可变的运行时绑定**。
 - **会话漫游（限同形态）**：用户点开旧会话续聊——同一个 `sessionId` 继续、改由当前 tab 的 Agent 跑、`agentKey` 更新但 `terminalType` 不变、id 与历史保持一条线，**不自动 fork**。**跨形态**（local↔ssh↔assistant）续聊不漫游，走"从历史创建任务"（避免把 ssh 历史的命令/工具名带进本地形态造成幻觉）；用户**手动 fork** 另起一聊（联络→任务亦然：新建 `kind=task` 会话、种子/拷贝起头、原线只读保留）。
 
@@ -147,7 +150,7 @@ Agent 有三种存在方式，对应三类**互斥**的会话（`kind`）。把�
 - **一条 session 多渠道汇流**：IM/Gateway/桌面共用一个 `__companion__`，所有对话进同一条 `_sessionMessages`。代价是渠道间会"串味"，符合"联络=一条连续关系线"定位。
 - **每次对话取上下文**（`agent.ts buildContext`）：session 内热路径直接复用上次完整 messages 做前缀（命中 prompt cache）；前缀超上下文 70% 转 cold start，走 L1 TaskMemory 的 L0–L4 渐进压缩重建 + L2 知识文档 + L3 向量检索。
 - **跨重启**：持久命名 Agent（companion/watch）**无条件**重建工作记忆（`restoreRecentTaskMemory`），**不**因 sessionId 精确命中「最新单条」而短路——否则会漏掉同期其它并行会话（典型：联络分裂成两条 session，「继续」落到只含菜单那条、写文档内容在另一条里，造成「合并展示看得见但 AI 记不住」）。数据 scope 按 kind 分流：**companion 仅取同 agentKey（`__companion__`）的最近 N 条**（与前端合并视图 `Companion.getMergedViewRecord` 同源查询，AI 上下文不再被任务 tab transcript 污染），**watch 维持全局 main 树 + wakeup 过滤**（Watch 需参考用户在任意 tab 的活动做决策）。同时仍恢复最新单条的会话状态以保证 checkpoint 续写不丢历史。此外 `run()` 对持久命名 Agent 在无 sessionId 入口（IM/网关/主动消息）时会从 `getLatestRecordByAgentKey` **回种** sessionId（`startNewSession`/`resetSession` 经 `_suppressSessionSeed` 跳过），前端 `history:getCompanionMergedView` 经后端 `Companion.getMergedViewRecord` 保证 id/timestamp 成对取最新——两者共同根除「联络裂成两条断链 session」。详见 `agent/SPEC.md`。
-- **主动消息衔接**：`talk_to_user`（含 Watch 的对外通知）经 `proactive-store.ts` 按 `'__companion__'` 暂存（30min TTL），用户回复时 `consumeProactiveContext` 注入——这是 companion 知道"我刚才主动说了啥"的唯一通道。Watch 自身执行是**内心独白**（`wakeup` 模式，进 `__watch__`、刻意跳过 cache path、不累积会话），只有 `talk_to_user` 这一条对外消息才进 companion。
+- **主动消息衔接**：`talk_to_user`（含 Watch 的对外通知）经 `proactive-store.ts` 按 `'__companion__'` 暂存（30min TTL），用户回复时 `consumeProactiveContext` 注入——这是 companion 知道"我刚才主动说了啥"的唯一通道。Watch/wakeup 自身执行是**内心独白**（wakeup 进 `__wakeup__`、watch 进 `__watch__`，刻意跳过 cache path、不累积会话），只有 `talk_to_user` 这一条对外消息才进 companion。
 - **cache 利用分两层**：① **cache path**（复用 `_previousRunMessages` 做前缀、省掉 cold start 重建）只要进程内有快照、非 wakeup、前缀 <70% 就走，**与时间间隔无关**——cold start 只在首次对话、跨重启首条、超 70%、`resetSession` 后发生，所以"冷启动之后的连续对话"都走 cache path。② **provider 端 prompt cache 命中**（真正省 token）取决于本次前缀是否还在 provider 分钟级 TTL 内：连着聊命中，长间隔后的首条 miss 但会重建缓存、之后又命中。联络访问"间隔两极化"——长间隔首条命中率低、连续段正常，并非每条都冷启动；这是场景本质，无需特殊优化。
 
 ### 前后端通信
@@ -199,8 +202,9 @@ Agent 的运行环境分三种：`local`（本地终端）、`ssh`（SSH 远程�
 - **Pre-check**：执行前让 AI 自主判断"该不该做"（Agency of Omission）
 - **有状态工作流**：Watch 自身状态 + 跨 Watch 共享状态，Agent 通过 `STATE_UPDATE` / `SHARED_UPDATE` 指令自动更新
 - **串行执行**：所有事件通过 EventBus 排队，Watch 依次处理，不并发
-- **独立 Agent**：Watch 使用独立的 `__watch__` Agent ID，与 IM/桌面助手的 `__companion__` 隔离
-- **独立历史树**（v6 起）：watch 执行记录（`agentKey='__watch__'`）存到独立的 `history/watch/<date>/` + `watch-index.json`，与主 agent 历史/索引物理隔离——避免高频内心独白把主索引压舱（曾达 149MB/2.6w 条）。正文按日期长期保存可审计；token 成本仍合并计入统计。用户可见的「执行速览」另由 `WatchStore`（上限 500 条摘要）提供。见 `HISTORY_SPEC.md`
+- **独立 Agent**：Watch 使用独立的 `__watch__` Agent ID（关切逐次失忆）；唤醒（wakeup）用独立的 `__wakeup__` Agent ID（保留跨执行历史记忆辅助决策）；两者均与 IM/桌面助手的 `__companion__` 隔离
+- **独立历史树**（v6 起）：watch/wakeup 执行记录（`agentKey='__watch__'` 或 `'__wakeup__'`）存到独立的 `history/watch/<date>/` + `watch-index.json`，与主 agent 历史/索引物理隔离——避免高频触发把主索引压舱（曾达 149MB/2.6w 条）。正文按日期长期保存可审计；token 成本仍合并计入统计。用户可见的「执行速览」另由 `WatchStore`（上限 500 条摘要）提供。见 `HISTORY_SPEC.md`
+- **wakeup vs watch 上下文分离**（v7 起）：wakeup（心跳/唤醒）从 watch 中独立成第四类 `ConversationKind`——关切是用户配置的一次性任务（prompt 自带指令，逐次失忆避免 A 关切串味到 B），wakeup 是 Agent 自主循环（需要历史记忆辅助决策「该不该主动找人、上次说过什么避免重复通知」）。两者共用 watch 历史树但 agentKey 分离（`__watch__` vs `__wakeup__`），策略见 `CONVERSATION_POLICY`
 - **Scheduler 废弃**：旧版定时任务已整合到关切系统，启动时自动迁移，`schedule_*` 工具标记为废弃
 
 ### 三级记忆架构

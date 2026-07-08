@@ -57,10 +57,11 @@ describe('ConversationManager', () => {
   })
 
   describe('seedsFromHistory（== 旧 _persistentNamedAgent：持久命名 Agent）', () => {
-    it('companion + watch 回种；task / undefined 不回种', () => {
+    it('companion + wakeup 回种；watch / task / undefined 不回种', () => {
       const m = mgr()
       expect(m.seedsFromHistory('__companion__')).toBe(true)
-      expect(m.seedsFromHistory('__watch__')).toBe(true) // 桌面 watch 也是持久命名 Agent
+      expect(m.seedsFromHistory('__wakeup__')).toBe(true) // 唤醒保留历史记忆辅助决策
+      expect(m.seedsFromHistory('__watch__')).toBe(false) // 关切逐次失忆，避免串味
       expect(m.seedsFromHistory('tab-123')).toBe(false)
       expect(m.seedsFromHistory(undefined)).toBe(false)
     })
@@ -109,8 +110,8 @@ describe('ConversationManager', () => {
       expect(fresh.resolveSeedSessionId({ agentKey: 'tab-X' }).sessionId).toMatch(/^session_\d+/)
     })
 
-    it('watch 现状（startNewSession→suppressSeed=true）：新起独立 session_，不回种', () => {
-      // 这是桌面 watch 的真实路径：每次执行先 startNewSession 抑制回种，保持独立记录。
+    it('watch 现状（policy.seedFromHistoryOnColdStart=false）：恒新起 session_，不回种', () => {
+      // 桌面 watch 的真实路径：policy 设为 false（关切逐次失忆），即便未抑制也不回种。
       const m = mgr()
       m.conversationStore.save(rec('watch_w_old', { agentKey: '__watch__', timestamp: 1000 }))
       const fresh = mgr()
@@ -119,15 +120,33 @@ describe('ConversationManager', () => {
       expect(r.sessionId).not.toBe('watch_w_old')
     })
 
-    it('watch 即使未抑制也新起：其历史在独立 watch 树，latestByAgentKey（主树）查不到', () => {
-      // 关键保真：watch 虽是持久命名 Agent（seedsFromHistory=true），但 watch 记录被路由到
-      // 独立 watch 树，而回种用的 latestByAgentKey 只查主树 → 恒 undefined → 恒新起 session_。
-      // 这正是 watch 内心独白「逐次独立记录」在存储层的根因。
+    it('watch 即使未抑制也新起：policy=false 直接跳过回种分支', () => {
+      // watch 的 seedFromHistoryOnColdStart 已改为 false（逐次失忆），不再进入回种分支。
       const m = mgr()
       m.conversationStore.save(rec('watch_w_seed', { agentKey: '__watch__', timestamp: 1000 }))
       const fresh = mgr()
-      expect(fresh.latestByAgentKey('__watch__')).toBeUndefined()
       expect(fresh.resolveSeedSessionId({ agentKey: '__watch__' }).sessionId).toMatch(/^session_\d+/)
+    })
+
+    it('wakeup 现状（startNewSession→suppressSeed=true）：新起独立 session_，不回种', () => {
+      // wakeup 真实路径：每次执行先 startNewSession 抑制回种，保持独立记录（但 TaskMemory 仍重建）。
+      const m = mgr()
+      m.conversationStore.save(rec('wakeup_w_old', { agentKey: '__wakeup__', timestamp: 1000 }))
+      const fresh = mgr()
+      const r = fresh.resolveSeedSessionId({ agentKey: '__wakeup__', suppressSeed: true })
+      expect(r.sessionId).toMatch(/^session_\d+/)
+      expect(r.sessionId).not.toBe('wakeup_w_old')
+    })
+
+    it('wakeup 即使未抑制也新起：其历史在独立 watch 树，latestByAgentKey（主树）查不到', () => {
+      // 关键保真：wakeup 虽是持久命名 Agent（seedsFromHistory=true），但记录被路由到
+      // 独立 watch 树，而回种用的 latestByAgentKey 只查主树 → 恒 undefined → 恒新起 session_。
+      // 这正是 wakeup「逐次独立记录」在存储层的根因——但 TaskMemory 仍会跨执行重建。
+      const m = mgr()
+      m.conversationStore.save(rec('wakeup_w_seed', { agentKey: '__wakeup__', timestamp: 1000 }))
+      const fresh = mgr()
+      expect(fresh.latestByAgentKey('__wakeup__')).toBeUndefined()
+      expect(fresh.resolveSeedSessionId({ agentKey: '__wakeup__' }).sessionId).toMatch(/^session_\d+/)
     })
   })
 
@@ -137,14 +156,17 @@ describe('ConversationManager', () => {
       m.conversationStore.save(rec('sess_q1', { agentKey: 'tab-1', timestamp: Date.now() - 2000 }))
       m.conversationStore.save(rec('sess_q2', { agentKey: 'tab-1', timestamp: Date.now() }))
       m.conversationStore.save(rec('watch_q', { agentKey: '__watch__' }))
+      m.conversationStore.save(rec('wakeup_q', { agentKey: '__wakeup__' }))
 
       const fresh = mgr()
       expect(fresh.getRecord('sess_q1')!.id).toBe('sess_q1')
       expect(fresh.latestByAgentKey('tab-1')!.id).toBe('sess_q2')
-      // 任务侧栏口径不含 watch
+      // 任务侧栏口径不含 watch/wakeup
       expect(fresh.listSummaries(true).some(s => s.id === 'watch_q')).toBe(false)
-      // watch 进独立树
+      expect(fresh.listSummaries(true).some(s => s.id === 'wakeup_q')).toBe(false)
+      // watch/wakeup 都进独立树
       expect(fresh.recentWatch(20).some(r => r.id === 'watch_q')).toBe(true)
+      expect(fresh.recentWatch(20).some(r => r.id === 'wakeup_q')).toBe(true)
     })
 
     it('delete 透传', () => {
@@ -160,25 +182,27 @@ describe('ConversationManager', () => {
       m.conversationStore.save(rec('sess_task', { agentKey: 'tab-1', userTask: '任务记录' }))
       m.conversationStore.save(rec('sess_comp', { agentKey: '__companion__', userTask: '联络记录' }))
       m.conversationStore.save(rec('watch_run_1', { agentKey: '__watch__', userTask: '关切记录' }))
+      m.conversationStore.save(rec('wakeup_run_1', { agentKey: '__wakeup__', userTask: '唤醒记录' }))
     }
 
-    it('recentRecords(excludeWakeup=false)：含 task + companion（不含独立树的 watch）', () => {
+    it('recentRecords(excludeWakeup=false)：含 task + companion（不含独立树的 watch/wakeup）', () => {
       const m = mgr()
       seedMixed(m)
       const ids = mgr().recentRecords(50, false).map(r => r.id)
       expect(ids).toContain('sess_task')
       expect(ids).toContain('sess_comp')
       expect(ids).not.toContain('watch_run_1') // watch 在独立树
+      expect(ids).not.toContain('wakeup_run_1') // wakeup 也在独立树
     })
 
-    it('recentRecords(excludeWakeup=true)：任务侧栏口径，仅 task（剔除 companion + watch）', () => {
+    it('recentRecords(excludeWakeup=true)：任务侧栏口径，仅 task（剔除 companion + watch + wakeup）', () => {
       const m = mgr()
       seedMixed(m)
       const ids = mgr().recentRecords(50, true).map(r => r.id)
       expect(ids).toEqual(['sess_task'])
     })
 
-    it('search(excludeWakeup=true)：companion 记录不进任务搜索结果', async () => {
+    it('search(excludeWakeup=true)：companion/watch/wakeup 记录不进任务搜索结果', async () => {
       const m = mgr()
       seedMixed(m)
       const res = await mgr().search({ keyword: '记录', excludeWakeup: true })
@@ -186,6 +210,7 @@ describe('ConversationManager', () => {
       expect(ids).toContain('sess_task')
       expect(ids).not.toContain('sess_comp')
       expect(ids).not.toContain('watch_run_1')
+      expect(ids).not.toContain('wakeup_run_1')
     })
 
     it('search(excludeWakeup=false)：companion 记录可被搜到', async () => {

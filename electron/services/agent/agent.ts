@@ -134,15 +134,15 @@ export abstract class Agent {
   private _persistentNamedOverride?: boolean
 
   /**
-   * 是否为「持久命名 Agent」（如 Companion / Watch 这类固定 ID、跨重启复用的 Agent）。
+   * 是否为「持久命名 Agent」（如 Companion / Wakeup 这类固定 ID、跨重启复用的 Agent）。
    *
    * 现仅影响 `restoreFromHistory` 的全局历史 fallback（sessionId 找不到 record 时从全局最近 N 条
-   * 历史提取任务恢复工作记忆，让 Companion/Watch 重启后"记得最近聊过什么"）+ `isPersistentNamedAgent()`
+   * 历史提取任务恢复工作记忆，让 Companion/Wakeup 重启后"记得最近聊过什么"）+ `isPersistentNamedAgent()`
    * 对外查询。run 初始化的 sessionId 回种决策已上移至 `ConversationManager.seedsFromHistory`
    * （经 `openConversationForRun`），不再走本 getter。
    *
    * 取值由 `CONVERSATION_POLICY[kind].seedFromHistoryOnColdStart` 数据驱动：
-   * companion + watch（持久命名）= true，普通 tab Agent（task）= false。
+   * companion + wakeup（持久命名）= true，watch + task = false。
    * `_persistentNamedOverride` 优先（供测试显式指定）。
    */
   private get _persistentNamedAgent(): boolean {
@@ -281,7 +281,13 @@ export abstract class Agent {
    */
   setAgentId(id: string): void {
     this._agentId = id
-    if (inferConversationKind(id) === 'watch' && this.taskMemory.getTaskCount() === 0) {
+    // wakeup 需要更广的用户活动概览（配合 maxTasks:100 + L4 策略），
+    // 在 setAgentId 时检测 kind 重建 taskMemory 为 100 上限。此时 taskMemory 仍为空
+    // （历史恢复在首次 run 的 restoreFromHistory 才发生），重建无数据丢失风险。
+    // 加 getTaskCount() === 0 守卫防止重复调用导致已恢复的数据丢失。
+    // watch 因 seedFromHistoryOnColdStart=false 不会恢复 taskMemory，但保留分支是防御性的。
+    const kind = inferConversationKind(id)
+    if ((kind === 'watch' || kind === 'wakeup') && this.taskMemory.getTaskCount() === 0) {
       this.taskMemory = this.createTaskMemory(100)
     }
   }
@@ -569,6 +575,7 @@ export abstract class Agent {
   private inferAllowlistSourceKind(): AllowlistSourceKind {
     const id = this._agentId
     if (id === '__companion__') return 'companion'
+    if (id === '__wakeup__') return 'wakeup'
     if (id === '__watch__') return 'watch'
     return 'task'
   }
@@ -868,8 +875,10 @@ export abstract class Agent {
    *    多条 companion 线合并的语义保留：重启后前端传回的 sessionId 只是「最新一条」，
    *    其它并行 companion 线仍需从同 agentKey 最近历史补齐，避免「记得屏幕看得见、
    *    AI 记不住」。
-   *  - watch：维持全局 main 树（排除 wakeup 噪声）——Watch 是 Agent 的「内心独白」，
-   *    需要参考用户在任意 tab 的最近活动做决策，全局借记忆对 watch 仍成立。
+   *  - wakeup：维持全局 main 树（排除 watch/wakeup 自身噪声）——Wakeup 是 Agent 的「内心独白」，
+   *    需要参考用户在任意 tab 的最近活动做决策，全局借记忆对 wakeup 仍成立。
+   *  - watch：本方法不会被调用（`_persistentNamedAgent` 为 false 时不进 fallback）——
+   *    关切逐次失忆，prompt 自带完整指令与上下文。
    *  - task：本方法不会被调用（`_persistentNamedAgent` 为 false 时不进 fallback）。
    */
   private restoreRecentTaskMemory(
@@ -880,17 +889,21 @@ export abstract class Agent {
     excludeId?: string
   ): void {
     const kind = inferConversationKind(this._agentId)
-    // watch 心跳需要更广的用户活动概览（配合 wakeup 的 maxTasks:100 + L4 策略）：
+    // wakeup 需要更广的用户活动概览（配合 maxTasks:100 + L4 策略）：
     // 放宽 record 装载量以拆出足够多的 task 覆盖最近 1-2 天活动。
     // companion 维持紧凑（联络是单线对话，6 条 record 已够）；task 不会走到这里。
-    const MAX_RECENT_RECORDS = kind === 'watch' ? 30 : 6
+    // watch 因 seedFromHistoryOnColdStart=false，本方法不会被调用——保留 'watch' 分支是防御性的，
+    // 防止未来策略调整后此路径恢复时遗漏。
+    const broadScope = kind === 'watch' || kind === 'wakeup'
+    const MAX_RECENT_RECORDS = broadScope ? 30 : 6
     // 仅限制装入工作记忆的「任务数」以防内存膨胀；真正进上下文的量由
     // buildTaskHistoryContext 按 token 预算动态裁剪（Level 0→4 渐进降级），
     // 装多少都不会撑爆上下文，这里从宽装载即可。
-    const MAX_RESTORE_TASKS = kind === 'watch' ? 100 : 40
+    const MAX_RESTORE_TASKS = broadScope ? 100 : 40
 
     // 排除两类记录：
-    //  - wakeup「内心独白」：Watch 自我循环的噪声，SPEC 明确不应被借作工作记忆
+    //  - watch/wakeup「内心独白」：自我循环的触发记录（[当前时间：...触发事件...]），
+    //    SPEC 明确不应被借作工作记忆——它们是噪声，不是用户活动
     //  - excludeId：调用方已单独精确恢复的「最新单条」，避免重复
     const isWakeupNoise = (r: AgentRecord): boolean =>
       typeof r.userTask === 'string' &&

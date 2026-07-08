@@ -1287,16 +1287,17 @@ describe('Agent run method', () => {
     })
 
     /**
-     * 防回归：watch 仍走全局 main 树（排除 wakeup），不进 companion 的同 agentKey 路径。
-     * Watch 是「内心独白」，需参考用户在任意 tab 的最近活动做决策——全局借记忆对 watch 成立。
+     * 防回归：wakeup 仍走全局 main 树（排除 wakeup 噪声），不进 companion 的同 agentKey 路径。
+     * wakeup 是 Agent 的内心独白，需参考用户在任意 tab 的最近活动做决策——全局借记忆对 wakeup 成立。
+     * 注：普通 watch（__watch__）已改为逐次失忆（seedFromHistoryOnColdStart=false），不再借记忆。
      */
-    it('should restore global recent history for watch agent (not companion-scoped)', async () => {
-      const watchLatest = {
-        id: 'session_watch_latest',
+    it('should restore global recent history for wakeup agent (not companion-scoped)', async () => {
+      const wakeupLatest = {
+        id: 'session_wakeup_latest',
         timestamp: Date.now() - 5000,
         terminalId: 'watch-pty',
         terminalType: 'assistant',
-        agentKey: '__watch__',
+        agentKey: '__wakeup__',
         userTask: '[当前时间：06:00] 触发事件：心跳',
         steps: [
           { id: 'ut1', type: 'user_task', content: '[当前时间：06:00] 触发事件：心跳', timestamp: Date.now() - 5000 },
@@ -1310,7 +1311,7 @@ describe('Agent run method', () => {
         duration: 500,
         status: 'completed'
       }
-      // 用户在任务 tab 的活动——watch 应能借作工作记忆（全局路径）
+      // 用户在任务 tab 的活动——wakeup 应能借作工作记忆（全局路径）
       const taskActivity = {
         id: 'session_task_y',
         timestamp: Date.now() - 3000,
@@ -1331,18 +1332,18 @@ describe('Agent run method', () => {
         status: 'completed'
       }
       const mockHistoryService = {
-        getAgentRecordById: vi.fn().mockReturnValue(watchLatest),
-        // 全局路径返回 [taskActivity]——watch 命中的 latest 是 wakeup 噪声，会被 isWakeupNoise 排除，
+        getAgentRecordById: vi.fn().mockReturnValue(wakeupLatest),
+        // 全局路径返回 [taskActivity]——wakeup 命中的 latest 是 wakeup 噪声，会被 isWakeupNoise 排除，
         // 再 excludeId 排除 latest 自身，所以 getRecentAgentRecords 应返回 taskActivity
         getRecentAgentRecords: vi.fn().mockReturnValue([taskActivity]),
-        getRecentRecordsByAgentKey: vi.fn().mockReturnValue([watchLatest]),
+        getRecentRecordsByAgentKey: vi.fn().mockReturnValue([wakeupLatest]),
         saveAgentRecord: vi.fn(),
         getAgentRecordStore: vi.fn(() => mockHistoryService)
       }
 
       const services = createMockServices({ historyService: mockHistoryService as any })
-      const watch = new TestAgent(services)
-      watch.setAgentId('__watch__')
+      const wakeup = new TestAgent(services)
+      wakeup.setAgentId('__wakeup__')
 
       const ai = services.aiService as any
       ai.chatWithToolsStream.mockImplementation(
@@ -1351,16 +1352,16 @@ describe('Agent run method', () => {
         }
       )
 
-      const context = createMockContext({ sessionId: watchLatest.id, sessionStartTime: Date.now() })
-      await watch.run('wakeup', context)
+      const context = createMockContext({ sessionId: wakeupLatest.id, sessionStartTime: Date.now() })
+      await wakeup.run('wakeup', context)
 
-      // watch 走全局 getRecentAgentRecords，不进 companion 的同 agentKey 路径
+      // wakeup 走全局 getRecentAgentRecords，不进 companion 的同 agentKey 路径
       expect(mockHistoryService.getRecentAgentRecords).toHaveBeenCalled()
       expect(mockHistoryService.getRecentRecordsByAgentKey).not.toHaveBeenCalled()
-      // 工作记忆含任务 tab 的活动（全局借记忆对 watch 成立）。
+      // 工作记忆含任务 tab 的活动（全局借记忆对 wakeup 成立）。
       // 注：latest 自身（wakeup 那条）由 restoreFromSessionRecord 恢复供 checkpoint 续写，
       // restoreRecentTaskMemory 的全局路径已用 isWakeupNoise 排除它（不会再加一份）。
-      const taskMemory = watch.exposeTaskMemory()
+      const taskMemory = wakeup.exposeTaskMemory()
       const allTasks = taskMemory.getTasksInOrder()
       expect(allTasks.some(t => t.userRequest.includes('排查磁盘满'))).toBe(true)
     })
@@ -1418,8 +1419,10 @@ describe('Agent run method', () => {
     })
 
     /**
-     * 防回归（根因①的边界）：startNewSession（Watch 每次独立记录）/ resetSession（清空对话）
+     * 防回归（根因①的边界）：startNewSession（wakeup 每次独立记录）/ resetSession（清空对话）
      * 后，本次有意要全新会话，必须抑制回种，避免覆盖历史最近一条记录。
+     * 注：watch 已改为 seedFromHistoryOnColdStart=false（逐次失忆），本测试用 wakeup
+     * （仍为持久命名 Agent）覆盖 suppress 机制。
      */
     it('should NOT seed sessionId after startNewSession (suppressed) even for persistent named agent', async () => {
       const persistedRecord = {
@@ -1435,8 +1438,8 @@ describe('Agent run method', () => {
         getAgentRecordStore: vi.fn(() => mockHistoryService)
       }
       const services = createMockServices({ historyService: mockHistoryService as any })
-      const watchLike = new TestAgent(services)
-      watchLike.setAgentId('__watch__')
+      const wakeupLike = new TestAgent(services)
+      wakeupLike.setAgentId('__wakeup__')
 
       const ai = services.aiService as any
       ai.chatWithToolsStream.mockImplementation(
@@ -1445,14 +1448,14 @@ describe('Agent run method', () => {
         }
       )
 
-      watchLike.startNewSession() // 有意要独立会话
+      wakeupLike.startNewSession() // 有意要独立会话
       const context = createMockContext({ terminalType: 'assistant' })
-      await watchLike.run('wakeup', context)
+      await wakeupLike.run('wakeup', context)
 
       // 抑制生效：不回种，生成新 session_，且不等于历史那条
       expect(mockHistoryService.getLatestRecordByAgentKey).not.toHaveBeenCalled()
-      expect(watchLike.getSessionId()).not.toBe('session_persisted_x')
-      expect(watchLike.getSessionId()).toMatch(/^session_\d+$/)
+      expect(wakeupLike.getSessionId()).not.toBe('session_persisted_x')
+      expect(wakeupLike.getSessionId()).toMatch(/^session_\d+$/)
     })
 
     it('should restore from steps when messages field is missing (old records)', async () => {

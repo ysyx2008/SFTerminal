@@ -7,18 +7,21 @@
 export type TerminalType = 'local' | 'ssh' | 'assistant'
 
 /**
- * 会话类别——对应 Agent 的三种存在方式（互斥）：
+ * 会话类别——对应 Agent 的存在方式（互斥）：
  * - task：直接接受指令干活，可并行、可隔离（普通 tab）
  * - companion：与用户的对话，一条长期关系线，多渠道汇流（联络 `__companion__`）
- * - watch：内心独白 / 独自做事（心跳、Watch `__watch__`），独立历史树、不进会话列表
+ * - watch：关切——用户配置的一次性任务，逐次失忆、独立历史树（`__watch__`）
+ * - wakeup：唤醒/心跳——Agent 的内心独白与自主循环，需要历史记忆辅助决策（`__wakeup__`）
  * 详见 docs/conversation-refactor-design.md 与 project-architecture.mdc。
  */
-export type ConversationKind = 'task' | 'companion' | 'watch'
+export type ConversationKind = 'task' | 'companion' | 'watch' | 'wakeup'
 
 /** 联络常驻 Agent key（一条长期关系线，全渠道汇流） */
 export const COMPANION_AGENT_KEY = '__companion__'
-/** 关切（Watch）常驻 Agent key（内心独白，独立历史树） */
+/** 关切（Watch）常驻 Agent key（逐次独立任务，独立历史树） */
 export const WATCH_AGENT_KEY = '__watch__'
+/** 唤醒常驻 Agent key（心跳/内心独白，跨执行保留记忆辅助决策） */
+export const WAKEUP_AGENT_KEY = '__wakeup__'
 
 /**
  * 从 agentKey 推断会话类别。常驻命名 Agent 用固定 key，其余皆为普通任务。
@@ -26,6 +29,7 @@ export const WATCH_AGENT_KEY = '__watch__'
  */
 export function inferConversationKind(agentKey?: string): ConversationKind {
   if (agentKey === COMPANION_AGENT_KEY) return 'companion'
+  if (agentKey === WAKEUP_AGENT_KEY) return 'wakeup'
   if (agentKey === WATCH_AGENT_KEY) return 'watch'
   return 'task'
 }

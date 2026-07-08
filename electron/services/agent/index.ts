@@ -59,7 +59,7 @@ export { SailFish as TerminalAgent } from './sailfish'
  * 概念模型（v2）：一个 tab = 一个 Agent + N 个终端窗格。
  *   - 终端 Agent：agentKey = tabId（前端的 tab.id，跨多个窗格稳定）
  *   - 助手 Agent：agentKey = agentId（前端生成的 UUID）
- *   - 固定 Agent：__companion__（IM/桌面）、__watch__（关切）
+ *   - 固定 Agent：__companion__（IM/桌面）、__watch__（关切）、__wakeup__（唤醒/心跳）
  *
  * Agent 实例的生命周期独立于底层 PTY/SSH。窗格关闭、SSH 断开都不应清理 Agent；
  * 只在 tab 关闭时由前端显式调 cleanupAgent(tabId) 清理。
@@ -71,7 +71,7 @@ export { SailFish as TerminalAgent } from './sailfish'
 export class AgentService {
   /** 陪伴 Agent 固定 ID：IM 对话、桌面助手共用同一实例 */
   static readonly COMPANION_AGENT_ID = '__companion__'
-  /** Watch Agent 固定 ID：关切系统（含觉醒唤醒）独立实例，与 Companion 隔离 */
+  /** Watch Agent 固定 ID：关切系统独立实例（逐次失忆），与 Companion 隔离 */
   static readonly WATCH_AGENT_ID = '__watch__'
 
   /** Agent 实例映射（按 agentKey 索引：终端 Agent 用 tabId，助手/固定 Agent 用 agentId） */

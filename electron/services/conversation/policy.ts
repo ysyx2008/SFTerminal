@@ -4,7 +4,7 @@
  * 设计依据：docs/conversation-refactor-design.md §3.4。
  *
  * 为什么用一张表而不是散落的 `if (_persistentNamedAgent)` / `if (wakeup)` / `if (agentKey==='__watch__')`：
- * 三类会话（task / companion / watch）的行为差异是**数据差异**，不是**类型差异**——一个
+ * 四类会话（task / companion / watch / wakeup）的行为差异是**数据差异**，不是**类型差异**——一个
  * `Conversation` 类即可，不需要继承树。把差异收进这张表，决策点只读表、不写分支，
  * 遵循 `agent-oop-boundary` 规矩（不在 Agent/会话逻辑里散布 kind 字面量分支）。
  *
@@ -17,7 +17,7 @@ export interface ConversationPolicy {
   /**
    * 是否累积成一条长期线。
    * - task/companion=true：跨 run 累积 transcript，是一条连续的线。
-   * - watch=false：逐次触发、用完即弃（内心独白不积累成长期对话）。
+   * - watch/wakeup=false：逐次触发、用完即弃（单次执行不积累成长期对话）。
    */
   accumulates: boolean
 
@@ -29,10 +29,11 @@ export interface ConversationPolicy {
    *   ② 恢复阶段：taskMemory 为空时 `restoreRecentTaskMemory` 从全局最近历史重建工作记忆。
    *
    * - companion=true：联络是「同一条长期关系线」，①② 都要——重启后续上同一条、记得最近聊过什么。
-   * - **watch=true（保留现状！）**：桌面 watch 经 `runAssistant → createAssistantAgent('__watch__')`
-   *   被标为持久命名，①被 `startNewSession` 的 suppress 门控掉（仍新起独立 session）、②会重建最近
-   *   工作记忆。这是**当前真实行为**，本次重构刻意保真。是否改成「watch 完全失忆/逐次隔离」属于
-   *   尚未拍板的 watch 连续性议题（见 `perWatchContinuity`），不在重构内动。
+   * - wakeup=true：唤醒是 Agent 的内心独白与自主循环，需要看用户最近活动做决策——②重建最近
+   *   工作记忆（用户近况、最近主动说过什么）；①因记录在独立 watch 树（latestByAgentKey 只查
+   *   主树）天然无法回种，恒新起独立 session（每次执行仍经 startNewSession 双保险）。
+   * - watch=false：关切是用户配置的一次性任务，prompt 自带完整指令与上下文，逐次失忆避免串味
+   *   （曾发生：晨间简报被前一条暑假提醒的工作记忆带偏，跑去发暑假提醒）。
    * - task=false：新 tab 第一次对话本就是新任务，注入历史会造成工具名幻觉调用。
    */
   seedFromHistoryOnColdStart: boolean
@@ -40,14 +41,15 @@ export interface ConversationPolicy {
   /**
    * 是否进会话列表 / 任务侧栏。
    * - task/companion=true（companion 另进独立常驻 tab，由前端按 agentKey 再做区分）。
-   * - watch=false：内心独白不进用户会话列表（要让用户看见须经 talk_to_user 冒泡进联络）。
+   * - watch/wakeup=false：不进用户会话列表（要让用户看见须经 talk_to_user 冒泡进联络）。
    */
   visibleInList: boolean
 
   /**
    * 历史存储树。
    * - task/companion='main'：进主历史树。
-   * - watch='watch'：进独立历史树，避免高频内心独白把主索引压舱（曾达 149MB/2.6w 条）。
+   * - watch/wakeup='watch'：进独立历史树，避免高频触发把主索引压舱（曾达 149MB/2.6w 条）。
+   *   wakeup 与 watch 同源，共用 watch 树；前端按 watchId 区分。
    */
   historyTree: 'main' | 'watch'
 
@@ -68,17 +70,18 @@ export interface ConversationPolicy {
 }
 
 /**
- * 三类会话的行为策略。
+ * 四类会话的行为策略。
  *
  * | kind      | accumulates | seedFromHistoryOnColdStart | visibleInList | historyTree | perWatchContinuity |
  * |-----------|-------------|----------------------------|---------------|-------------|--------------------|
  * | task      | true        | false                      | true          | main        | false              |
  * | companion | true        | true                       | true          | main        | false              |
- * | watch     | false       | true（保真，见字段注释）    | false         | watch       | false（预留）       |
+ * | watch     | false       | false                      | false         | watch       | false（预留）       |
+ * | wakeup    | false       | true                       | false         | watch       | false（预留）       |
  *
- * 注：`seedFromHistoryOnColdStart` 对 watch=true，是因为它 1:1 对应旧 `_persistentNamedAgent`
- * （companion + watch 都是持久命名 Agent）。watch 的「逐次隔离」体现在 accumulates/visibleInList/
- * historyTree 三轴，而非冷启动回种这一轴——是否让 watch 也不回种属于待拍板的连续性议题。
+ * 注：wakeup 从 watch 中独立出来——关切是用户配置的一次性任务（prompt 自带指令，逐次失忆，
+ * 避免 A 关切串味到 B），wakeup 是 Agent 自主循环（需要历史记忆辅助决策「该不该主动找人、
+ * 上次说过什么避免重复通知」）。两者共用 watch 历史树但 agentKey 分离：`__watch__` vs `__wakeup__`。
  */
 export const CONVERSATION_POLICY: Record<ConversationKind, ConversationPolicy> = {
   task: {
@@ -96,6 +99,13 @@ export const CONVERSATION_POLICY: Record<ConversationKind, ConversationPolicy> =
     perWatchContinuity: false
   },
   watch: {
+    accumulates: false,
+    seedFromHistoryOnColdStart: false,
+    visibleInList: false,
+    historyTree: 'watch',
+    perWatchContinuity: false
+  },
+  wakeup: {
     accumulates: false,
     seedFromHistoryOnColdStart: true,
     visibleInList: false,

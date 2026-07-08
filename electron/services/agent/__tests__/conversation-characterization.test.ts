@@ -265,6 +265,22 @@ describe('会话/记忆特征测试网（characterization · 真实 HistoryServi
     expect(mainRecs.some(r => r.agentKey === '__watch__')).toBe(false)
   })
 
+  it('⑤b wakeup 历史隔离：__wakeup__ 记录同样进独立 watch 树，不污染主 agent 索引', async () => {
+    const history = new HistoryService()
+
+    const wakeup = newNamedAgent(history, '__wakeup__')
+    await wakeup.run('唤醒巡检任务', ctx({ wakeup: true }))
+
+    // 与 watch 同源，进独立 watch 树
+    const watchRecs = new HistoryService().getRecentWatchRecords(20)
+    expect(watchRecs.length).toBeGreaterThanOrEqual(1)
+    expect(watchRecs.some(r => r.agentKey === '__wakeup__')).toBe(true)
+
+    // 不进主 agent 索引
+    const mainRecs = new HistoryService().getRecentAgentRecords(20)
+    expect(mainRecs.some(r => r.agentKey === '__wakeup__')).toBe(false)
+  })
+
   it('⑥ reasoning_content 回传：带 tool_calls 的 assistant 消息，下一轮请求仍带 reasoning_content（空串保留）', async () => {
     const history = new HistoryService()
     // 第 1 轮：返回带 tool_calls 的 assistant，且 reasoning_content 为「空串」（DeepSeek 思考模式常见）

@@ -34,6 +34,7 @@ import {
 import { getDateString } from './date-util'
 import {
   WATCH_AGENT_KEY,
+  WAKEUP_AGENT_KEY,
   COMPANION_AGENT_KEY,
   type TerminalType,
   type AgentRecord,
@@ -154,9 +155,9 @@ export class AgentRecordStore {
 
   // ==================== 索引管理 ====================
 
-  /** 选择记录归属的索引存储：watch 内心独白进独立索引，其余进主索引 */
+  /** 选择记录归属的索引存储：watch/wakeup 内心独白进独立索引，其余进主索引 */
   private storeForRecord(record: AgentRecord): AgentIndexStore {
-    if (record.agentKey === WATCH_AGENT_KEY) return this.watchStore
+    if (record.agentKey === WATCH_AGENT_KEY || record.agentKey === WAKEUP_AGENT_KEY) return this.watchStore
     // 兜底：Watch 服务生成的 session ID 格式固定为 watch_<watchId>_<timestamp>，
     // 若 agentKey 因异常未正确设置，前缀检测仍能路由到 watchStore。
     // 前提假设：非 Watch 记录的 ID 不会以 "watch_" 开头（系统内无其他代码使用此前缀）。
@@ -633,13 +634,15 @@ export class AgentRecordStore {
     const index = this.getIndex()
     let entries = [...index]
     if (excludeWakeup) {
-      // 主索引已通过 storeForRecord 隔离 watch 数据到独立 watchStore，此处为防御兜底：
+      // 主索引已通过 storeForRecord 隔离 watch/wakeup 数据到独立 watchStore，此处为防御兜底：
       // 同时过滤三类不应出现在任务侧栏的记录：
-      // 1. watch 内心独白（agentKey='__watch__'）：正常走 watchStore，此处二次防御
-      // 2. 联络会话（agentKey='__companion__'）：有独立的联络 tab，不进任务侧栏
-      // 3. watch session ID 前缀（'watch_'）：agentKey 未正确设置时的最终兜底
+      // 1. watch 关切（agentKey='__watch__'）：正常走 watchStore，此处二次防御
+      // 2. wakeup 心跳（agentKey='__wakeup__'）：同源 watch 树，此处二次防御
+      // 3. 联络会话（agentKey='__companion__'）：有独立的联络 tab，不进任务侧栏
+      // 4. watch session ID 前缀（'watch_'）：agentKey 未正确设置时的最终兜底
       entries = entries.filter(e =>
         e.agentKey !== WATCH_AGENT_KEY &&
+        e.agentKey !== WAKEUP_AGENT_KEY &&
         e.agentKey !== COMPANION_AGENT_KEY &&
         !e.id.startsWith(WATCH_SESSION_ID_PREFIX)
       )
