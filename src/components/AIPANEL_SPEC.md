@@ -128,6 +128,7 @@ AiPanel
 
 - `TH` = `SCROLL_THRESHOLD`（100px）；`MAX` = `MAX_FLIP_DELTA`（600px）
 - `suppress` 窗口 = `scrollToBottom` 后短暂 200ms（`Date.now() < suppressFlipUntil`），避免补偿与强制滚底打架
+- `suppress` 窗口（另一个触发点）= onStep 收到首个 streaming message step 且 `agentState.steps` 里仍存在 `placeholder='startup'` 占位时，设 `PLACEHOLDER_SWITCH_SUPPRESS_MS`（300ms）窗口。覆盖「准备中→思考中」切换：后端先 `addStep(message)` 再 `removeStep(initial 占位)`，两次 wrapper 高度变化若走 FLIP 会"从下往上滑一下"像两张卡片闪动；这里是同位 ThinkingBlock 单行切换，应硬切无动画。窗口结束后后续流式 chunk 恢复走 FLIP 不受影响。
 
 ### 「增长来源相对视区位置」如何判定
 

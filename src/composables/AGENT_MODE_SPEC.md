@@ -66,7 +66,7 @@ isEventForThisTab = resolvedTabId === currentTabId
 
 | 事件 | 触发操作 |
 |---|---|
-| `agent.onStep` | `addAgentStep` + artifact 同步 + TTS 投喂 + 智能滚底 |
+| `agent.onStep` | `addAgentStep` + 「准备中→思考中」切换识别（抑制 FLIP）+ artifact 同步 + TTS 投喂 + 智能滚底 |
 | `agent.onStepRemoved` | `removeAgentStep`（后端撤销占位步骤时） |
 | `agent.onNeedConfirm` | `setAgentPendingConfirm` + 强制滚底（两次，等待 DynamicScroller 测高）|
 | `agent.onConfirmResolved` | `setAgentPendingConfirm(undefined)`（远程确认同步到本地）|

@@ -158,6 +158,18 @@ export function useAgentMode(
   // 干脆这一段时间统一硬切贴底，之后才进入流式 FLIP。
   let suppressFlipUntil = 0
 
+  // suppressFlipUntil 各触发点的窗口时长（毫秒）。
+  // - FLIP_SUPPRESS_WINDOW_MS：scrollToBottom 后屏蔽 200ms，覆盖 user_task/占位/真实 message
+  //   几个相邻 wrapper 高度变化彼此 FLIP 打架。
+  // - PLACEHOLDER_SWITCH_SUPPRESS_MS：onStep 收到首个 streaming message 且 startup 占位
+  //   仍在时屏蔽 300ms，覆盖后端「addStep(message) → removeStep(initial 占位)」两次
+  //   wrapper 高度变化（addStep 涨、removeStep 落），让两张 ThinkingBlock 单行卡片
+  //   同位硬切而非"从下往上滑一下"。窗口比 FLIP_SUPPRESS_WINDOW_MS 长，因为要覆盖
+  //   两次独立的 ResizeObserver 回调（addStep 与 removeStep 的 IPC 事件几乎同时到达，
+  //   但各自的 wrapper patch → layout → observer 仍可能跨帧）。
+  const FLIP_SUPPRESS_WINDOW_MS = 200
+  const PLACEHOLDER_SWITCH_SUPPRESS_MS = 300
+
   // 用户主动展开/收起思考块等「局部高度变化」期间，跳过 ResizeObserver 的贴底/视区补偿，
   // 改由调用方用 anchorElementViewportY 把点击行钉回原位，避免 applyReadingResize
   // 把视区往下推或 applyFollowingResize 把视区拽回底部。
@@ -642,7 +654,6 @@ export function useAgentMode(
   // 彼此 FLIP 会打架弹跳。用户主动发新消息本就是"立即跳到底"的无动画语义，所以这里
   // 设 suppressFlipUntil 短暂窗口让 ResizeObserver 跳过 FLIP，只贴底。窗口过后第一个
   // 真正的流式 chunk 进来才进入 FLIP 平滑滑动。
-  const FLIP_SUPPRESS_WINDOW_MS = 200
   const scrollToBottom = async () => {
     suppressFlipUntil = Date.now() + FLIP_SUPPRESS_WINDOW_MS
     // 同步先设 sticky，避免 nextTick 前到达的 step 因 sticky=false 误判离底
@@ -1765,6 +1776,22 @@ export function useAgentMode(
         terminalStore.removeOptimisticAgentSteps(tabId)
       }
       terminalStore.addAgentStep(tabId, data.step)
+
+      // 「准备中 → 思考中」切换抑制 FLIP：
+      // 后端首 token 到达时（agent.ts callAiWithStreaming.onChunk），先 addStep(message)
+      // 再 removeStep(initial 占位)，两次 wrapper 高度变化若走 FLIP 分支会"从下往上滑一下"，
+      // 视觉上像两张卡片在闪动。这里识别切换瞬间（startup 占位仍在 + 新 step 是首个
+      // streaming message），延长 suppressFlipUntil 覆盖紧接着的 ResizeObserver 回调，
+      // 让它走硬切贴底、无动画——符合"两个 ThinkingBlock 单行同位切换"的视觉语义。
+      // 窗口时长见 PLACEHOLDER_SWITCH_SUPPRESS_MS 注释；窗口结束后后续流式 chunk 恢复
+      // 走 FLIP，不受影响。
+      if (data.step.type === 'message' && data.step.isStreaming) {
+        const hasStartupPlaceholder = (agentState.value?.steps ?? [])
+          .some(s => s.placeholder === 'startup')
+        if (hasStartupPlaceholder) {
+          suppressFlipUntil = Date.now() + PLACEHOLDER_SWITCH_SUPPRESS_MS
+        }
+      }
 
       // 独立助手模式下，驱动 Canvas 预览面板
       if (isStandaloneAssistant.value) {
