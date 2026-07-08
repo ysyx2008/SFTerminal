@@ -162,11 +162,10 @@ export function useAgentMode(
   // - FLIP_SUPPRESS_WINDOW_MS：scrollToBottom 后屏蔽 200ms，覆盖 user_task/占位/真实 message
   //   几个相邻 wrapper 高度变化彼此 FLIP 打架。
   // - PLACEHOLDER_SWITCH_SUPPRESS_MS：onStep 收到首个 streaming message 且 startup 占位
-  //   仍在时屏蔽 300ms，覆盖后端「addStep(message) → removeStep(initial 占位)」两次
-  //   wrapper 高度变化（addStep 涨、removeStep 落），让两张 ThinkingBlock 单行卡片
-  //   同位硬切而非"从下往上滑一下"。窗口比 FLIP_SUPPRESS_WINDOW_MS 长，因为要覆盖
-  //   两次独立的 ResizeObserver 回调（addStep 与 removeStep 的 IPC 事件几乎同时到达，
-  //   但各自的 wrapper patch → layout → observer 仍可能跨帧）。
+  //   仍在时屏蔽 300ms。此时会先乐观移除占位（避免两张卡片同时渲染的中间态闪现），
+  //   再设此窗口覆盖紧接着的 wrapper 高度变化，让两张 ThinkingBlock 单行卡片同位硬切
+  //   而非"从下往上滑一下"。窗口比 FLIP_SUPPRESS_WINDOW_MS 长，因为要覆盖乐观移除 +
+  //   后端 removeStep IPC 幂等到达 + 各自的 wrapper patch → layout → observer 跨帧。
   const FLIP_SUPPRESS_WINDOW_MS = 200
   const PLACEHOLDER_SWITCH_SUPPRESS_MS = 300
 
@@ -1775,23 +1774,30 @@ export function useAgentMode(
       if (data.step.type === 'user_task' && !data.step.id.startsWith('__optimistic_')) {
         terminalStore.removeOptimisticAgentSteps(tabId)
       }
-      terminalStore.addAgentStep(tabId, data.step)
 
-      // 「准备中 → 思考中」切换抑制 FLIP：
-      // 后端首 token 到达时（agent.ts callAiWithStreaming.onChunk），先 addStep(message)
-      // 再 removeStep(initial 占位)，两次 wrapper 高度变化若走 FLIP 分支会"从下往上滑一下"，
-      // 视觉上像两张卡片在闪动。这里识别切换瞬间（startup 占位仍在 + 新 step 是首个
-      // streaming message），延长 suppressFlipUntil 覆盖紧接着的 ResizeObserver 回调，
-      // 让它走硬切贴底、无动画——符合"两个 ThinkingBlock 单行同位切换"的视觉语义。
+      // 「准备中 → 思考中」切换：乐观移除 startup 占位 + 抑制 FLIP。
+      // 后端首 token 到达时（agent.ts callAiWithStreaming.onChunk），同步连续执行：
+      //   addStep(message)  → onStep 推到前端
+      //   removeStep(initial 占位) → onStepRemoved 推到前端
+      // 两个 IPC 事件几乎同时发出，但前端按顺序处理，中间存在「占位 + 新 message」
+      // 两张卡片同时渲染的中间态——用户会看到新 message 的初始内容闪现在占位下方，
+      // 紧接着占位消失。这里在 addAgentStep 之前先乐观移除占位，让 flattenedItems 重算时
+      // 只剩新的 message step，避免中间态渲染。后端 removeStep IPC 到达时 removeAgentStep
+      // 幂等跳过（findIndex === -1 直接 return）。
+      // 同时延长 suppressFlipUntil 让紧接着的 wrapper 高度变化走硬切贴底、无 FLIP 动画——
+      // 两张 ThinkingBlock 单行卡片是同位切换，不应有从下往上滑动的动画。
       // 窗口时长见 PLACEHOLDER_SWITCH_SUPPRESS_MS 注释；窗口结束后后续流式 chunk 恢复
       // 走 FLIP，不受影响。
       if (data.step.type === 'message' && data.step.isStreaming) {
-        const hasStartupPlaceholder = (agentState.value?.steps ?? [])
-          .some(s => s.placeholder === 'startup')
-        if (hasStartupPlaceholder) {
+        const startupStep = (agentState.value?.steps ?? [])
+          .find(s => s.placeholder === 'startup')
+        if (startupStep) {
+          terminalStore.removeAgentStep(tabId, startupStep.id)
           suppressFlipUntil = Date.now() + PLACEHOLDER_SWITCH_SUPPRESS_MS
         }
       }
+
+      terminalStore.addAgentStep(tabId, data.step)
 
       // 独立助手模式下，驱动 Canvas 预览面板
       if (isStandaloneAssistant.value) {
