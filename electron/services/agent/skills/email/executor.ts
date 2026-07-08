@@ -683,6 +683,10 @@ async function emailSend(
   if (cc) confirmInfo += `**${t('email.cc')}**: ${cc}\n`
   if (bcc) confirmInfo += `**${t('email.bcc')}**: ${bcc}\n`
   confirmInfo += `**${t('email.subject')}**: ${subject}\n`
+  if (body || html) {
+    const bodyLen = (html || body || '').length
+    confirmInfo += `**${t('email.body')}**: ${bodyLen} ${t('email.chars')}\n`
+  }
   if (attachments && attachments.length > 0) {
     confirmInfo += `**${t('email.attachments')}**: ${attachments.length} ${t('email.files')}\n`
   }
@@ -692,14 +696,14 @@ async function emailSend(
     type: 'tool_call',
     content: confirmInfo,
     toolName: 'email_send',
-    toolArgs: { to, subject, attachments_count: attachments?.length || 0 },
+    toolArgs: { to, subject, body, html, cc, bcc, attachments },
     riskLevel: 'dangerous'
   })
 
   const approved = await executor.waitForConfirmation(
     toolCallId,
     'email_send',
-    { to, subject },
+    { to, subject, body, html, cc, bcc, attachments },
     'dangerous'
   )
 

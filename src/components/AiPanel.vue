@@ -997,8 +997,50 @@ const formatConfirmArgs = (confirm: typeof pendingConfirm.value) => {
   if (args.path) {
     return args.path as string
   }
+  // 邮件发送：结构化展示收件人/抄送/密送/主题/正文/附件
+  if (confirm.toolName === 'email_send') {
+    return formatEmailConfirmArgs(args)
+  }
   // 其他情况显示 JSON
   return JSON.stringify(args, null, 2)
+}
+
+// 邮件发送确认卡片的结构化预览
+const formatEmailConfirmArgs = (args: Record<string, unknown>): string => {
+  const lines: string[] = []
+  const to = typeof args.to === 'string' ? args.to : ''
+  const subject = typeof args.subject === 'string' ? args.subject : ''
+  const cc = typeof args.cc === 'string' ? args.cc : ''
+  const bcc = typeof args.bcc === 'string' ? args.bcc : ''
+  const body = typeof args.body === 'string' ? args.body : ''
+  const html = typeof args.html === 'string' ? args.html : ''
+  const attachments = Array.isArray(args.attachments) ? args.attachments.filter(Boolean) : []
+
+  if (to) lines.push(`${t('email.to')}: ${to}`)
+  if (cc) lines.push(`${t('email.cc')}: ${cc}`)
+  if (bcc) lines.push(`${t('email.bcc')}: ${bcc}`)
+  if (subject) lines.push(`${t('email.subject')}: ${subject}`)
+
+  // 正文预览：html 优先标记为 HTML，否则展示纯文本（截断到 500 字符避免卡片过长）
+  const PREVIEW_LIMIT = 500
+  if (html) {
+    const preview = html.length > PREVIEW_LIMIT ? html.slice(0, PREVIEW_LIMIT) + `… (${t('email.body_truncated')})` : html
+    lines.push(`${t('email.body')} (HTML):`)
+    lines.push(preview)
+  } else if (body) {
+    const preview = body.length > PREVIEW_LIMIT ? body.slice(0, PREVIEW_LIMIT) + `… (${t('email.body_truncated')})` : body
+    lines.push(`${t('email.body')}:`)
+    lines.push(preview)
+  }
+
+  if (attachments.length > 0) {
+    lines.push(`${t('email.attachments')} (${attachments.length} ${t('email.files')}):`)
+    attachments.forEach((filePath, i) => {
+      lines.push(`  ${i + 1}. ${String(filePath)}`)
+    })
+  }
+
+  return lines.join('\n')
 }
 
 
@@ -6022,7 +6064,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   font-family: var(--font-mono);
   font-size: 12px;
   margin: 0;
-  max-height: 100px;
+  max-height: 240px;
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
