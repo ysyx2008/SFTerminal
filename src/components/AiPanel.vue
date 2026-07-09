@@ -2832,6 +2832,12 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                   <div class="confirm-detail">
                     <div class="confirm-tool-name">{{ pendingConfirm.displayName || getToolDisplayName(pendingConfirm.toolName) }}</div>
                     <pre class="confirm-args-inline">{{ formatConfirmArgs(pendingConfirm) }}</pre>
+                    <div v-if="pendingConfirm.reasons && pendingConfirm.reasons.length > 0" class="confirm-reasons">
+                      <div class="confirm-reasons-title">{{ t('ai.riskReasons') }}</div>
+                      <ul class="confirm-reasons-list">
+                        <li v-for="(reason, idx) in pendingConfirm.reasons" :key="idx">{{ reason }}</li>
+                      </ul>
+                    </div>
                   </div>
                   <div class="confirm-actions-inline">
                     <button class="btn btn-sm btn-outline-secondary" @click="confirmToolCall(false)">
@@ -6063,6 +6069,35 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   white-space: pre-wrap;
   word-break: break-all;
   color: #fff;
+}
+
+.confirm-reasons {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border-left: 3px solid rgba(255, 193, 7, 0.6);
+  border-radius: 4px;
+}
+
+.confirm-reasons-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 193, 7, 0.9);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.confirm-reasons-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.6;
+}
+
+.confirm-reasons-list li {
+  margin-bottom: 2px;
 }
 
 .confirm-actions-inline {

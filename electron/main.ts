@@ -3511,7 +3511,8 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
           toolName: confirmation.toolName,
           toolArgs: JSON.parse(JSON.stringify(confirmation.toolArgs)),
           riskLevel: confirmation.riskLevel,
-          displayName: confirmation.displayName
+          displayName: confirmation.displayName,
+          reasons: confirmation.reasons
         })
       }
       // 任务栏/Dock 提醒 + 系统通知（仅在窗口不在前台时触发）
@@ -3766,7 +3767,8 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
           toolName: confirmation.toolName,
           toolArgs: JSON.parse(JSON.stringify(confirmation.toolArgs)),
           riskLevel: confirmation.riskLevel,
-          displayName: confirmation.displayName
+          displayName: confirmation.displayName,
+          reasons: confirmation.reasons
         })
       }
       // 任务栏/Dock 提醒 + 系统通知（仅在窗口不在前台时触发）

@@ -15,6 +15,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import type { RiskLevel } from '@shared/types/agent'
+import { t } from '../i18n'
 import {
   getWorkspacePath,
   isInWorkspace,
@@ -174,7 +175,7 @@ export function adjustRiskByPathZones(
     return {
       level: 'blocked',
       zones: allPaths.map(p => getWorkspaceZone(p, cwd)),
-      reasons: ['目标位于受保护的 userData 路径，禁止访问'],
+      reasons: [t('risk.reason.userdata_protected')],
     }
   }
 
@@ -188,7 +189,7 @@ export function adjustRiskByPathZones(
 
   // 所有写路径都是黑洞设备 -> 直接 safe（写 /dev/null 等于丢弃输出）
   if (nonDevNullPaths.length === 0) {
-    return { level: 'safe', zones, reasons: ['写重定向目标为黑洞设备（/dev/null 等），无害'] }
+    return { level: 'safe', zones, reasons: [t('risk.reason.devnull_safe')] }
   }
 
   // critical 系统路径 -> blocked（/、/boot 等不可逆灾难）
@@ -197,7 +198,7 @@ export function adjustRiskByPathZones(
     return {
       level: 'blocked',
       zones,
-      reasons: ['目标路径位于系统关键目录（critical），禁止写入或删除'],
+      reasons: [t('risk.reason.system_critical_blocked')],
     }
   }
 
@@ -207,26 +208,26 @@ export function adjustRiskByPathZones(
     return {
       level: 'dangerous',
       zones,
-      reasons: ['目标路径位于系统目录，需确认后执行'],
+      reasons: [t('risk.reason.system_hardened')],
     }
   }
 
   const effectiveZones = nonDevNullPaths.map(p => getWorkspaceZone(p, cwd))
   if (effectiveZones.every(z => z === 'free')) {
-    reasons.push('目标位于工作区自由区（scratch/charts），允许自动执行')
+    reasons.push(t('risk.reason.workspace_free'))
     return { level: 'safe', zones, reasons }
   }
   // outside 优先于 protected/workspace（复合路径取最严）
   if (effectiveZones.some(z => z === 'outside')) {
-    reasons.push('目标位于工作区外，需确认')
+    reasons.push(t('risk.reason.workspace_outside'))
     return { level: 'dangerous', zones, reasons }
   }
   if (effectiveZones.some(z => z === 'protected')) {
-    reasons.push('目标位于工作区保护区（templates/ 或人格配置文件），需确认')
+    reasons.push(t('risk.reason.workspace_protected'))
     return { level: 'moderate', zones, reasons }
   }
   if (effectiveZones.some(z => z === 'workspace')) {
-    reasons.push('目标位于工作区内，需确认')
+    reasons.push(t('risk.reason.workspace_inside'))
     return { level: 'moderate', zones, reasons }
   }
 

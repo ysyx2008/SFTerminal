@@ -25,6 +25,7 @@
  *   - busybox sh -c "..." —— busybox 不在白名单 → moderate + hasUnknown（relaxed 弹确认）
  */
 import type { AuditedCall, CallRiskAssessment } from './types'
+import { t } from '../i18n'
 import { basenameCommand } from './whitelist'
 
 /** 解释器 + 内联执行 flag：内联代码不可静态审计 */
@@ -72,10 +73,10 @@ const STRUCTURAL_FLAG_RULES: Record<string, (call: AuditedCall) => string | null
     for (const f of call.flags) {
       if (f === '-exec' || f === '-execdir' || f === '-ok' || f === '-okdir') {
         const name = f === '-exec' ? 'exec' : f === '-execdir' ? 'execdir' : f === '-ok' ? 'ok' : 'okdir'
-        return `find -${name} 会执行任意命令，存在不可静态审计的执行语义`
+        return t('risk.reason.find_exec', { name })
       }
       if (f === '-delete') {
-        return 'find -delete 会批量删除，存在不可静态审计的执行语义'
+        return t('risk.reason.find_delete')
       }
     }
     return null
@@ -83,14 +84,14 @@ const STRUCTURAL_FLAG_RULES: Record<string, (call: AuditedCall) => string | null
   // tar --to-command=CMD 在解压时执行任意命令
   tar: (call) => {
     for (const f of call.flags) {
-      if (f === '--to-command') return 'tar --to-command 会执行任意命令，存在不可静态审计的执行语义'
+      if (f === '--to-command') return t('risk.reason.tar_to_command')
     }
     return null
   },
   // git rebase --exec=CMD 会执行任意命令（git -c 是配置项，合法）
   git: (call) => {
     for (const f of call.flags) {
-      if (f === '--exec') return 'git rebase --exec 会执行任意命令，存在不可静态审计的执行语义'
+      if (f === '--exec') return t('risk.reason.git_rebase_exec')
     }
     return null
   },
@@ -102,7 +103,7 @@ function isInterpreterInline(call: AuditedCall): string | null {
   if (!flagSet || flagSet.size === 0) return null
   for (const f of call.flags) {
     if (flagSet.has(f)) {
-      return `${call.cmd} ${f} 会执行内联代码，无法静态审计`
+      return t('risk.reason.interpreter_inline', { cmd: call.cmd, flag: f })
     }
   }
   return null
@@ -113,10 +114,10 @@ function isWrappedOrOrchestrated(call: AuditedCall): string | null {
   const wrapperName = call.wrapper?.name
   if (wrapperName) {
     if (WRAPPER_CMDS.has(wrapperName)) {
-      return `${wrapperName} 是包装器，会转手执行别的命令`
+      return t('risk.reason.wrapper_cmd', { cmd: wrapperName })
     }
     if (ORCHESTRATOR_CMDS.has(wrapperName)) {
-      return `${wrapperName} 是调度器，会调度外部执行`
+      return t('risk.reason.orchestrator_cmd', { cmd: wrapperName })
     }
   }
   // cmd 本身是 wrapper / orchestrator 的情况
@@ -126,10 +127,10 @@ function isWrappedOrOrchestrated(call: AuditedCall): string | null {
   const isEnvReadOnly = call.cmd === 'env' && call.args.length === 0
   if (!isEnvReadOnly) {
     if (WRAPPER_CMDS.has(call.cmd)) {
-      return `${call.cmd} 是包装器，会转手执行别的命令`
+      return t('risk.reason.wrapper_cmd', { cmd: call.cmd })
     }
     if (ORCHESTRATOR_CMDS.has(call.cmd)) {
-      return `${call.cmd} 是调度器，会调度外部执行`
+      return t('risk.reason.orchestrator_cmd', { cmd: call.cmd })
     }
   }
   return null

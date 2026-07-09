@@ -203,6 +203,7 @@ export default {
     highRisk: '高风险',
     mediumRisk: '中风险',
     lowRisk: '低风险',
+    riskReasons: '判定原因',
     reject: '拒绝',
     alwaysAllow: '始终允许',
     alwaysAllowHint: '本次会话内不再询问相同操作',

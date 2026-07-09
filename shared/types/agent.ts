@@ -289,4 +289,12 @@ export interface PendingConfirmation {
    * 前端有 displayName 时优先显示，否则回退到工具名映射表。
    */
   displayName?: string
+  /**
+   * 触发该风险等级的具体原因（人类可读，已按 locale 国际化）。
+   *
+   * 只包含「等级等于最终 riskLevel」的那些子命令的原因（去重后），
+   * 让用户在确认卡片上看到"为什么是高风险"，而不必展示所有子命令的噪声。
+   * 仅 exec 等命令类工具有值；其他工具（如文件写入）不传。
+   */
+  reasons?: string[]
 }

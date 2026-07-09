@@ -46,7 +46,9 @@ export interface ToolExecutorConfig {
     toolArgs: Record<string, unknown>,
     riskLevel: RiskLevel,
     /** 可选的人类可读动作名，用于前端确认卡片显示（如"覆盖生成 Word 文档"） */
-    displayName?: string
+    displayName?: string,
+    /** 触发该风险等级的具体原因（人类可读，已按 locale 国际化）。仅命令类工具有值 */
+    reasons?: string[]
   ) => Promise<boolean>
   /**
    * 请求安全输入框（如技能 API Key）。

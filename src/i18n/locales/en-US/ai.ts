@@ -202,6 +202,7 @@ export default {
     highRisk: 'High Risk',
     mediumRisk: 'Medium Risk',
     lowRisk: 'Low Risk',
+    riskReasons: 'Assessment Reasons',
     reject: 'Reject',
     alwaysAllow: 'Always Allow',
     alwaysAllowHint: 'Skip confirmation for same operation in this session',

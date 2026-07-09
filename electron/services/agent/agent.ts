@@ -3082,13 +3082,13 @@ export abstract class Agent {
       pluginRegistry: this.services.pluginRegistry,
       addStep: (step) => this.addStep(step),
       updateStep: (stepId, updates) => this.updateStep(stepId, updates),
-      waitForConfirmation: async (toolCallId, toolName, toolArgs, riskLevel, displayName) => {
+      waitForConfirmation: async (toolCallId, toolName, toolArgs, riskLevel, displayName, reasons) => {
         // 检查"始终允许"白名单（Agent 实例级别，跨 Run 持久化）
         const allowKey = this.generateAllowedToolKey(toolName, toolArgs)
         if (this.allowedTools.has(allowKey)) {
           return true
         }
-        const result = await this.waitForConfirmation(run, toolCallId, toolName, toolArgs, riskLevel, displayName)
+        const result = await this.waitForConfirmation(run, toolCallId, toolName, toolArgs, riskLevel, displayName, reasons)
         return result.approved
       },
       requestSecureInput: async (skillId, envName, prompt, isUpdate) => {
@@ -3307,7 +3307,8 @@ export abstract class Agent {
     toolName: string, 
     toolArgs: Record<string, unknown>,
     riskLevel: RiskLevel,
-    displayName?: string
+    displayName?: string,
+    reasons?: string[]
   ): Promise<{ approved: boolean; modifiedArgs?: Record<string, unknown> }> {
     return new Promise((resolve) => {
       const confirmation: PendingConfirmationInternal = {
@@ -3317,6 +3318,7 @@ export abstract class Agent {
         toolArgs,
         riskLevel,
         displayName,
+        reasons,
         resolve: (approved, modifiedArgs) => {
           run.pendingConfirmation = undefined
           run.executionPhase = 'thinking'

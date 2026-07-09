@@ -4,6 +4,7 @@
  * 流程：shell-ast 解析 → 拆子命令 → 白名单 + 路径分区 → Fail-Closed
  */
 import type { RiskLevel } from '@shared/types/agent'
+import { t } from '../i18n'
 import { getScratchPath, getWorkspacePath } from '../tools/file'
 import { assessAuditedCall, assessRedirectPaths, aggregateHasUnknown } from './assess-call'
 import { extractAuditedCalls } from './extract-calls'
@@ -68,7 +69,7 @@ export async function assessShellRisk(
     return {
       level: blocked,
       parsed: false,
-      calls: [{ level: blocked, commandLevel: blocked, reasons: ['整串命令命中 blocked 规则'] }],
+      calls: [{ level: blocked, commandLevel: blocked, reasons: [t('risk.reason.blocked_whole')] }],
     }
   }
 
@@ -77,7 +78,7 @@ export async function assessShellRisk(
     return {
       level: pipeRisk,
       parsed: false,
-      calls: [{ level: pipeRisk, commandLevel: pipeRisk, reasons: ['远程下载并管道执行 shell'] }],
+      calls: [{ level: pipeRisk, commandLevel: pipeRisk, reasons: [t('risk.reason.remote_download_pipe')] }],
     }
   }
 
@@ -87,7 +88,7 @@ export async function assessShellRisk(
     return {
       level,
       parsed: false,
-      calls: [{ level, commandLevel: level, reasons: ['Windows 原生 shell，regex 审计'] }],
+      calls: [{ level, commandLevel: level, reasons: [t('risk.reason.windows_native_shell')] }],
     }
   }
 
@@ -98,15 +99,23 @@ export async function assessShellRisk(
       return {
         level: 'dangerous',
         parsed: true,
-        calls: [{ level: 'dangerous', commandLevel: 'dangerous', reasons: ['未解析到可审计子命令'] }],
+        calls: [{ level: 'dangerous', commandLevel: 'dangerous', reasons: [t('risk.reason.no_auditable_call')] }],
       }
     }
 
-    const redirectAssessment = assessRedirectPaths(writeRedirects, ctx)
     const callAssessments = calls.map(c => assessAuditedCall(c, ctx))
 
-    if (redirectAssessment) {
-      callAssessments.push(redirectAssessment)
+    // writeRedirects 已按 pos 分配到各 call 内评估，无需再全局重复评估。
+    // 仅对未关联到任何 call 的 orphan redirect 做兜底评估（罕见，如 redirect 在所有 call 之前）。
+    const assignedRedirectTargets = new Set(
+      calls.flatMap(c => c.redirects.filter(r => r.target).map(r => r.target!)),
+    )
+    const orphanRedirects = writeRedirects.filter(r => r.target && !assignedRedirectTargets.has(r.target))
+    if (orphanRedirects.length > 0) {
+      const orphanAssessment = assessRedirectPaths(orphanRedirects, ctx)
+      if (orphanAssessment) {
+        callAssessments.push(orphanAssessment)
+      }
     }
 
     const level = maxRiskAll(callAssessments.map(a => a.level))
@@ -129,7 +138,7 @@ export async function assessShellRisk(
       calls: [{
         level,
         commandLevel: level,
-        reasons: [`shell 解析失败，Fail-Closed：${msg}`],
+        reasons: [t('risk.reason.parse_fail_closed', { msg })],
       }],
     }
   }

@@ -2,6 +2,7 @@
  * 单条 AuditedCall 风险评估（shell 通道 AST 解析后归一化调用）
  */
 import type { RiskLevel } from '@shared/types/agent'
+import { t } from '../i18n'
 import { getScratchPath } from '../tools/file'
 import type { AuditContext, AuditedCall, AuditedRedirect, CallRiskAssessment } from './types'
 import { assessCommandFlags, getArgvCommandRule } from './whitelist'
@@ -30,7 +31,7 @@ function assessUnknownCall(
       level: 'dangerous',
       commandLevel: 'dangerous',
       unknown: true,
-      reasons: ['未识别命令且含动态参数，无法静态审计（Fail-Closed）'],
+      reasons: [t('risk.reason.unknown_dynamic')],
     }
   }
 
@@ -42,7 +43,7 @@ function assessUnknownCall(
       commandLevel: 'dangerous',
       unknown: true,
       reasons: [
-        `未识别命令：${call.cmd}`,
+        t('risk.reason.unknown_cmd', { cmd: call.cmd }),
         ...pathAdjust.reasons,
       ],
       pathZones: pathAdjust.zones,
@@ -53,7 +54,7 @@ function assessUnknownCall(
     level: 'moderate',
     commandLevel: 'moderate',
     unknown: true,
-    reasons: [`未识别命令：${call.cmd}（relaxed 模式需确认）`],
+    reasons: [t('risk.reason.unknown_cmd_relaxed', { cmd: call.cmd })],
   }
 }
 
@@ -84,7 +85,7 @@ export function assessAuditedCall(
     return {
       level: 'dangerous',
       commandLevel: 'dangerous',
-      reasons: ['包含动态路径参数，无法静态审计（Fail-Closed）'],
+      reasons: [t('risk.reason.dynamic_path')],
     }
   }
 
@@ -103,7 +104,7 @@ export function assessAuditedCall(
   const reasons: string[] = []
 
   if (commandLevel === 'moderate' && rule.baseLevel === 'safe') {
-    reasons.push('包含未识别的参数 flag，保守标记为中危')
+    reasons.push(t('risk.reason.unknown_flag'))
   }
 
   const pathAdjust = adjustRiskByPathZones(
@@ -127,7 +128,7 @@ export function assessAuditedCall(
   return {
     level,
     commandLevel,
-    reasons: reasons.length ? reasons : [`${call.source}:${call.cmd}`],
+    reasons: reasons.length ? reasons : [t('risk.reason.audit_pass', { source: call.source, cmd: call.cmd })],
     pathZones: pathAdjust.zones,
   }
 }
@@ -147,7 +148,7 @@ export function assessRedirectPaths(
     commandLevel: 'moderate',
     reasons: pathAdjust.reasons.length
       ? pathAdjust.reasons
-      : ['shell 写重定向目标路径需审计'],
+      : [t('risk.reason.shell_redirect_audit')],
     pathZones: pathAdjust.zones,
   }
 }
