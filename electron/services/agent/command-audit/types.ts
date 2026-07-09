@@ -60,8 +60,8 @@ export interface AuditedCall {
   }
   /** 原始命令文本（用于错误信息和日志） */
   raw: string
-  /** shell 来源（'argv' 为历史遗留枚举值，当前仅 shell 通道使用） */
-  source: 'argv' | 'bash' | 'zsh' | 'sh' | 'powershell' | 'cmd'
+  /** shell 来源（AST 解析的 shell 类型） */
+  source: 'bash' | 'zsh' | 'sh'
   /** 存在 $VAR / $(...) 等无法静态解析的路径参数 */
   dynamicPaths?: boolean
 }

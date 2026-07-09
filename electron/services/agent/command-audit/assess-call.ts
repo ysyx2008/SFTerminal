@@ -1,5 +1,5 @@
 /**
- * 单条 AuditedCall 风险评估（argv / shell 通道共用）
+ * 单条 AuditedCall 风险评估（shell 通道 AST 解析后归一化调用）
  */
 import type { RiskLevel } from '@shared/types/agent'
 import { getScratchPath } from '../tools/file'
@@ -65,7 +65,7 @@ export function assessAuditedCall(
   extraWritePaths: string[] = [],
 ): CallRiskAssessment {
   // 间接执行守卫：解释器内联 / 包装器 / 调度器 / 结构性 flag 规则
-  // 通道无关（argv + shell 共用），命中标 dangerous（strict/relaxed 弹确认，free 放行）。
+  // 通道无关，命中标 dangerous（strict/relaxed 弹确认，free 放行）。
   // blocked 级别留给路径守卫（写系统路径等绝对禁止场景）。
   const guardReason = checkIndirectionGuard(call)
   if (guardReason) {
