@@ -243,6 +243,7 @@ export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
   }),
   df: rule('df', 'safe', { safeFlags: new Set(['-h']), pathMode: 'none' }),
   free: rule('free', 'safe', { safeFlags: new Set(['-h', '-m']), pathMode: 'none' }),
+  env: rule('env', 'safe', { safeFlags: new Set(['-i', '-u', '-C', '-v', '-0']), valueFlags: new Set(['-u', '-C']), pathMode: 'none' }),
   ps: rule('ps', 'safe', { safeFlags: new Set(['-e', '-f', '-l', '-a', '-u', '-x', '-ef', '-aux', '-aux']), pathMode: 'none' }),
   lsof: rule('lsof', 'safe', { safeFlags: new Set(['-i', '-P', '-n', '-t', '-c', '-u']), valueFlags: new Set(['-i', '-c', '-u']), pathMode: 'none' }),
   basename: rule('basename', 'safe', { pathMode: 'all' }),

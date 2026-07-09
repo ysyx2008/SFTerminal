@@ -120,11 +120,17 @@ function isWrappedOrOrchestrated(call: AuditedCall): string | null {
     }
   }
   // cmd 本身是 wrapper / orchestrator 的情况
-  if (WRAPPER_CMDS.has(call.cmd)) {
-    return `${call.cmd} 是包装器，会转手执行别的命令`
-  }
-  if (ORCHESTRATOR_CMDS.has(call.cmd)) {
-    return `${call.cmd} 是调度器，会调度外部执行`
+  // env 特例：单独执行（无 args）时是打印环境变量的只读操作，不标 dangerous。
+  // env bash -c "..." 会被 shell-ast unwrap，走上方 wrapperName 分支。
+  // 其他 wrapper（sudo/xargs/nice...）无参时报错或无意义，仍标 dangerous 保守。
+  const isEnvReadOnly = call.cmd === 'env' && call.args.length === 0
+  if (!isEnvReadOnly) {
+    if (WRAPPER_CMDS.has(call.cmd)) {
+      return `${call.cmd} 是包装器，会转手执行别的命令`
+    }
+    if (ORCHESTRATOR_CMDS.has(call.cmd)) {
+      return `${call.cmd} 是调度器，会调度外部执行`
+    }
   }
   return null
 }
