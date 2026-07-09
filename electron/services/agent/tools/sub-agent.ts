@@ -64,14 +64,14 @@ const SUB_AGENT_TYPES: Record<SubAgentTypeName, SubAgentType> = {
   read: {
     name: 'read',
     description: '只读分析与调研（默认）：读文件、搜索、跑只读命令、查知识库；不修改任何内容',
-    tools: new Set(['exec_argv', 'exec', 'read_file', 'file_search', 'search_knowledge', 'get_knowledge_doc', 'web_search', 'web_fetch']),
-    systemPromptPrefix: '你是一个侧重**只读分析与调研**的子任务执行器。读文件、搜索、跑只读命令（grep / find / cat / ls / git log 等）收集信息后给出结论。单条命令优先 exec_argv；需要管道时用 exec。',
+    tools: new Set(['exec', 'read_file', 'file_search', 'search_knowledge', 'get_knowledge_doc', 'web_search', 'web_fetch']),
+    systemPromptPrefix: '你是一个侧重**只读分析与调研**的子任务执行器。读文件、搜索、跑只读命令（grep / find / cat / ls / git log 等）收集信息后给出结论。需要管道/复合/重定向时用 exec。',
   },
   write: {
     name: 'write',
     description: '文件修改：在 read 基础上可编辑和创建文件',
-    tools: new Set(['exec_argv', 'exec', 'read_file', 'file_search', 'search_knowledge', 'get_knowledge_doc', 'web_search', 'web_fetch', 'edit_file', 'write_text_file']),
-    systemPromptPrefix: '你是一个侧重**文件修改**的子任务执行器。修改文件前先用 read_file 看清现状，再用 edit_file 或 write_text_file 改写。单条命令优先 exec_argv；需要管道时用 exec。',
+    tools: new Set(['exec', 'read_file', 'file_search', 'search_knowledge', 'get_knowledge_doc', 'web_search', 'web_fetch', 'edit_file', 'write_text_file']),
+    systemPromptPrefix: '你是一个侧重**文件修改**的子任务执行器。修改文件前先用 read_file 看清现状，再用 edit_file 或 write_text_file 改写。需要管道/复合/重定向时用 exec。',
   },
 }
 
@@ -605,11 +605,6 @@ function summarizeToolArgs(
         return typeof args.pattern === 'string' ? args.pattern : undefined
       case 'exec':
         return typeof args.command === 'string' ? args.command : undefined
-      case 'exec_argv': {
-        const cmd = typeof args.cmd === 'string' ? args.cmd : ''
-        const argvArgs = Array.isArray(args.args) ? args.args.filter((a): a is string => typeof a === 'string') : []
-        return [cmd, ...argvArgs].join(' ').trim() || undefined
-      }
       case 'web_fetch':
         return typeof args.url === 'string' ? args.url : undefined
       case 'search_knowledge':

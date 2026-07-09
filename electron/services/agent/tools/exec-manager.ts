@@ -118,15 +118,6 @@ export interface SpawnOptions {
   env?: Record<string, string>
 }
 
-/** argv 通道：spawn(cmd, args, { shell: false })，不经 shell 解释 */
-export interface SpawnArgvOptions {
-  cmd: string
-  args: string[]
-  cwd?: string
-  maxSeconds: number
-  env?: Record<string, string>
-}
-
 export interface WaitOptions {
   task: InternalTask
   /** 最长等待时长（秒） */
@@ -153,27 +144,6 @@ class BackgroundExecManager {
 
     return this.startTask({
       command: opts.command,
-      child,
-      cwd: opts.cwd,
-      maxSeconds: opts.maxSeconds,
-    })
-  }
-
-  /**
-   * 启动 argv 命令（exec_argv 工具）：不经 shell，审计对象为结构化 argv
-   */
-  spawnArgv(opts: SpawnArgvOptions): InternalTask {
-    const spawnEnv = opts.env ? { ...process.env, ...opts.env } : process.env
-    const display = [opts.cmd, ...opts.args].join(' ')
-    const child = spawn(opts.cmd, opts.args, {
-      cwd: opts.cwd,
-      env: spawnEnv,
-      shell: false,
-      windowsHide: true,
-    })
-
-    return this.startTask({
-      command: display,
       child,
       cwd: opts.cwd,
       maxSeconds: opts.maxSeconds,
