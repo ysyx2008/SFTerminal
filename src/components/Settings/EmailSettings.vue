@@ -214,6 +214,9 @@ const testConnection = async () => {
       provider: formData.value.provider,
       imapHost: formData.value.imapHost,
       imapPort: formData.value.imapPort,
+      smtpHost: formData.value.smtpHost,
+      smtpPort: formData.value.smtpPort,
+      smtpSecure: formData.value.smtpSecure,
       rejectUnauthorized: formData.value.rejectUnauthorized
     })
 
@@ -254,6 +257,9 @@ const verifyAccount = async (account: EmailAccount) => {
       provider: account.provider,
       imapHost: serverConfig.imapHost,
       imapPort: serverConfig.imapPort,
+      smtpHost: serverConfig.smtpHost,
+      smtpPort: serverConfig.smtpPort,
+      smtpSecure: serverConfig.smtpSecure,
       rejectUnauthorized: account.rejectUnauthorized
     })
     const status: AccountTestStatus = result?.success ? 'success' : 'failed'

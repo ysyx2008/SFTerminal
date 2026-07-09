@@ -2808,6 +2808,9 @@ const electronAPI = {
       provider?: string
       imapHost?: string
       imapPort?: number
+      smtpHost?: string
+      smtpPort?: number
+      smtpSecure?: boolean
       rejectUnauthorized?: boolean
     }) => ipcRenderer.invoke('email:testConnection', config) as Promise<{ success: boolean; message: string }>,
     
@@ -2833,6 +2836,9 @@ const electronAPI = {
       provider?: string
       imapHost?: string
       imapPort?: number
+      smtpHost?: string
+      smtpPort?: number
+      smtpSecure?: boolean
       rejectUnauthorized?: boolean
     }) => ipcRenderer.invoke('email:verifyAccount', account) as Promise<{ success: boolean; message: string }>
   },

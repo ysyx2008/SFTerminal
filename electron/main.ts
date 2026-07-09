@@ -5981,16 +5981,27 @@ ipcMain.handle('email:testConnection', async (_event, config: {
   provider?: string
   imapHost?: string
   imapPort?: number
+  smtpHost?: string
+  smtpPort?: number
+  smtpSecure?: boolean
   rejectUnauthorized?: boolean
 }) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let imapClient: any = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let smtpTransporter: any = null
   try {
     const serverConfig = getServerConfig(config.provider || 'gmail', {
       imapHost: config.imapHost,
-      imapPort: config.imapPort
+      imapPort: config.imapPort,
+      smtpHost: config.smtpHost,
+      smtpPort: config.smtpPort,
+      smtpSecure: config.smtpSecure
     })
 
+    // 1) 验证 IMAP（收信）
     const { ImapFlow } = await import('imapflow')
-    const client = new ImapFlow({
+    imapClient = new ImapFlow({
       host: serverConfig.imapHost,
       port: serverConfig.imapPort,
       secure: true,
@@ -6004,15 +6015,54 @@ ipcMain.handle('email:testConnection', async (_event, config: {
       }
     })
 
-    await client.connect()
-    await client.logout()
+    try {
+      await imapClient.connect()
+    } catch (err) {
+      return {
+        success: false,
+        message: t('error.emailImapFailed') + ': ' + errMsg(err, 'error.connectFailed')
+      }
+    }
 
-    return { success: true, message: t('msg.connectSuccess') }
+    // 2) 验证 SMTP（发信）：IMAP 通过后立即 logout，再单独验证 SMTP
+    try { await imapClient.logout() } catch { /* ignore */ }
+    imapClient = null
+
+    const nodemailer = await import('nodemailer')
+    smtpTransporter = nodemailer.createTransport({
+      host: serverConfig.smtpHost,
+      port: serverConfig.smtpPort,
+      secure: serverConfig.smtpSecure,
+      auth: {
+        user: config.email,
+        pass: config.password
+      },
+      tls: {
+        rejectUnauthorized: config.rejectUnauthorized !== false
+      }
+    })
+
+    try {
+      await smtpTransporter.verify()
+    } catch (err) {
+      return {
+        success: false,
+        message: t('error.emailSmtpFailed') + ': ' + errMsg(err, 'error.connectFailed')
+      }
+    } finally {
+      try { smtpTransporter.close() } catch { /* ignore */ }
+      smtpTransporter = null
+    }
+
+    return { success: true, message: t('msg.emailBothOk') }
   } catch (error) {
-    return { 
-      success: false, 
+    return {
+      success: false,
       message: errMsg(error, 'error.connectFailed')
     }
+  } finally {
+    try { await imapClient?.logout() } catch { /* ignore */ }
+    try { smtpTransporter?.close() } catch { /* ignore */ }
   }
 })
 
@@ -6023,6 +6073,9 @@ ipcMain.handle('email:verifyAccount', async (_event, account: {
   provider?: string
   imapHost?: string
   imapPort?: number
+  smtpHost?: string
+  smtpPort?: number
+  smtpSecure?: boolean
   rejectUnauthorized?: boolean
 }) => {
   if (!account.id || !account.email) {
@@ -6030,7 +6083,9 @@ ipcMain.handle('email:verifyAccount', async (_event, account: {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let client: any = null
+  let imapClient: any = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let smtpTransporter: any = null
   try {
     const password = await getEmailCredential(account.id)
     if (!password) {
@@ -6039,11 +6094,15 @@ ipcMain.handle('email:verifyAccount', async (_event, account: {
 
     const serverConfig = getServerConfig(account.provider || 'gmail', {
       imapHost: account.imapHost,
-      imapPort: account.imapPort
+      imapPort: account.imapPort,
+      smtpHost: account.smtpHost,
+      smtpPort: account.smtpPort,
+      smtpSecure: account.smtpSecure
     })
 
+    // 1) 验证 IMAP（收信）
     const { ImapFlow } = await import('imapflow')
-    client = new ImapFlow({
+    imapClient = new ImapFlow({
       host: serverConfig.imapHost,
       port: serverConfig.imapPort,
       secure: true,
@@ -6057,15 +6116,54 @@ ipcMain.handle('email:verifyAccount', async (_event, account: {
       }
     })
 
-    await client.connect()
-    return { success: true, message: t('msg.connectOk') }
+    try {
+      await imapClient.connect()
+    } catch (err) {
+      return {
+        success: false,
+        message: t('error.emailImapFailed') + ': ' + errMsg(err, 'error.connectFailed')
+      }
+    }
+
+    // 2) 验证 SMTP（发信）--IMAP 通过后立即 logout，再单独验证 SMTP
+    try { await imapClient.logout() } catch { /* ignore */ }
+    imapClient = null
+
+    const nodemailer = await import('nodemailer')
+    smtpTransporter = nodemailer.createTransport({
+      host: serverConfig.smtpHost,
+      port: serverConfig.smtpPort,
+      secure: serverConfig.smtpSecure,
+      auth: {
+        user: account.email,
+        pass: password
+      },
+      tls: {
+        rejectUnauthorized: account.rejectUnauthorized !== false
+      }
+    })
+
+    try {
+      await smtpTransporter.verify()
+    } catch (err) {
+      return {
+        success: false,
+        message: t('error.emailSmtpFailed') + ': ' + errMsg(err, 'error.connectFailed')
+      }
+    } finally {
+      try { smtpTransporter.close() } catch { /* ignore */ }
+      smtpTransporter = null
+    }
+
+    return { success: true, message: t('msg.emailBothOk') }
   } catch (error) {
     return {
       success: false,
       message: errMsg(error, 'error.connectFailed')
     }
   } finally {
-    try { await client?.logout() } catch { /* ignore logout errors */ }
+    try { await imapClient?.logout() } catch { /* ignore */ }
+    try { smtpTransporter?.close() } catch { /* ignore */ }
   }
 })
 

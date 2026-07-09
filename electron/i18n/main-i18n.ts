@@ -82,6 +82,11 @@ const translations = {
     // 成功消息
     'msg.connectSuccess': '连接成功',
     'msg.connectOk': '连接正常',
+    'msg.emailImapOk': '收信（IMAP）连接正常',
+    'msg.emailSmtpOk': '发信（SMTP）连接正常',
+    'msg.emailBothOk': '收发信连接均正常',
+    'error.emailImapFailed': '收信（IMAP）连接失败',
+    'error.emailSmtpFailed': '发信（SMTP）连接失败',
     'msg.calendarsConnectSuccess': '连接成功，找到 {count} 个日历',
     'msg.calendarsConnectOk': '连接正常，找到 {count} 个日历',
   },
@@ -158,6 +163,11 @@ const translations = {
 
     'msg.connectSuccess': 'Connected successfully',
     'msg.connectOk': 'Connection is OK',
+    'msg.emailImapOk': 'Incoming mail (IMAP) connection is OK',
+    'msg.emailSmtpOk': 'Outgoing mail (SMTP) connection is OK',
+    'msg.emailBothOk': 'Incoming and outgoing mail connections are OK',
+    'error.emailImapFailed': 'Incoming mail (IMAP) connection failed',
+    'error.emailSmtpFailed': 'Outgoing mail (SMTP) connection failed',
     'msg.calendarsConnectSuccess': 'Connected successfully, found {count} calendar(s)',
     'msg.calendarsConnectOk': 'Connection is OK, found {count} calendar(s)',
   },
