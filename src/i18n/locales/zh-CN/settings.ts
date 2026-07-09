@@ -43,7 +43,7 @@ export default {
       builtinRules: {
         title: '内置安全规则',
         description: 'Agent 的命令与文件操作受以下规则约束，规则在源码中定义，不可通过界面修改。',
-        argvCommands: '命令白名单（argv 通道）',
+        argvCommands: '命令白名单',
         argvCommandsDesc: '不在白名单的命令 → dangerous；未知 flag → moderate。safe 级别只放只读命令。',
         searchPlaceholder: '搜索命令名…',
         noMatch: '没有匹配的命令',

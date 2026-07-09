@@ -9,7 +9,7 @@
  * 本守卫把"确实危险的间接执行模式"鉴别出来标记为 dangerous，让 strict/relaxed 弹确认时
  * 理由清楚。free 模式照常放行——用户既然选了信任，不该由 guard 越俎代庖硬拦。
  *
- * 通道无关：argv 通道和 shell 通道在 assessAuditedCall 共用。
+ * 通道无关：assessAuditedCall 调用，shell 通道 AST 解析后归一化为 AuditedCall。
  *
  * 两层检测（AND 关系）：
  *   1. 角色分类：解释器内联 / 包装器 / 调度器 → dangerous
@@ -119,7 +119,7 @@ function isWrappedOrOrchestrated(call: AuditedCall): string | null {
       return `${wrapperName} 是调度器，会调度外部执行`
     }
   }
-  // argv 通道直接传 cmd 的情况（cmd 本身是 wrapper / orchestrator）
+  // cmd 本身是 wrapper / orchestrator 的情况
   if (WRAPPER_CMDS.has(call.cmd)) {
     return `${call.cmd} 是包装器，会转手执行别的命令`
   }
@@ -136,7 +136,7 @@ function isWrappedOrOrchestrated(call: AuditedCall): string | null {
  */
 export function checkIndirectionGuard(call: AuditedCall): string | null {
   // basename 化 cmd（/bin/zsh → zsh, C:\...\node.exe → node）
-  // argv 通道 buildAuditedCall 不做 basename，assessAuditedCall 里 getArgvCommandRule 才做。
+  // assessAuditedCall 里 getArgvCommandRule 才做 basename。
   // guard 在 rule 查找之前跑，所以这里自己 normalize 一次。
   const baseCmd = basenameCommand(call.cmd).toLowerCase()
   const normalizedCall = { ...call, cmd: baseCmd }

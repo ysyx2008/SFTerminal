@@ -1,5 +1,5 @@
 /**
- * argv 通道命令白名单
+ * 命令白名单（CommandRule 表）
  *
  * 设计原则：
  * - Allowlist：不在白名单的命令 → dangerous（Fail-Closed）
@@ -8,8 +8,9 @@
  *   但可被路径分区降级（路径在 scratch/ 时整体降到 safe）
  * - flags 白名单：不认识的 flag → moderate（保守）
  *
- * 注意：此白名单只用于 argv 通道（exec_argv 工具）。
- * shell 通道的审计在 Phase 2 加入，复用同一套规则结构。
+ * 注意：shell 通道经 shell-ast 解析出 cmd + args + flags + redirects 后，
+ * 复用本表的 CommandRule（basenameCommand/getArgvCommandRule 命名历史
+ * 遗留，实际单通道共用）。
  */
 
 import type { RiskLevel } from '@shared/types/agent'
@@ -160,7 +161,7 @@ function rule(
   }
 }
 
-/** argv 通道命令白名单（未列出 → moderate + hasUnknown；写操作/动态 → dangerous） */
+/** 命令白名单（未列出 → moderate + hasUnknown；写操作/动态 → dangerous） */
 export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
   // —— 只读 / 查询 ——
   ls: rule('ls', 'safe', {

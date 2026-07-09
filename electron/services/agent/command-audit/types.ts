@@ -24,7 +24,6 @@ export type WorkspaceZone = 'free' | 'protected' | 'workspace' | 'outside'
  * 命令审计上下文
  *
  * 审计时需要的环境信息：当前工作目录、工作区根、shell 类型。
- * argv 通道和 shell 通道共用此上下文。
  */
 export interface AuditContext {
   /** 工作区根目录（agent-workspace/），用于路径分区判断 */
@@ -38,8 +37,7 @@ export interface AuditContext {
 /**
  * 已审计的命令调用（统一中间表示）
  *
- * argv 通道直接构造，shell 通道由 AST 解析后归一化为此结构。
- * 这样 risk-assessor 的核心规则可以同时服务两个通道。
+ * shell 通道由 AST 解析后归一化为此结构。
  */
 export interface AuditedCall {
   /** 命令名（已 unwrap wrapper，如 sudo rm 的 cmd 仍是 "rm"） */
@@ -62,7 +60,7 @@ export interface AuditedCall {
   }
   /** 原始命令文本（用于错误信息和日志） */
   raw: string
-  /** shell 来源（argv 通道为 'argv'，shell 通道为实际 shell） */
+  /** shell 来源（'argv' 为历史遗留枚举值，当前仅 shell 通道使用） */
   source: 'argv' | 'bash' | 'zsh' | 'sh' | 'powershell' | 'cmd'
   /** 存在 $VAR / $(...) 等无法静态解析的路径参数 */
   dynamicPaths?: boolean

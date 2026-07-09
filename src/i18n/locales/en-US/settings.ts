@@ -43,7 +43,7 @@ export default {
       builtinRules: {
         title: 'Built-in Security Rules',
         description: 'Agent commands and file operations are governed by the rules below. They are defined in source code and cannot be modified through the UI.',
-        argvCommands: 'Command Allowlist (argv channel)',
+        argvCommands: 'Command Allowlist',
         argvCommandsDesc: 'Commands not in the allowlist → dangerous; unknown flags → moderate. The safe tier only includes read-only commands.',
         searchPlaceholder: 'Search command name…',
         noMatch: 'No matching commands',

@@ -11,7 +11,7 @@
 | `user-allowlist.ts` | 持久化存储、命中检查、重新评估 |
 | `key.ts` | 白名单键生成（与 `ToolMeta.idempotencyKey` 一致） |
 | `check-persisted.ts` | 命令工具命中封装 |
-| `resolve-command-confirm.ts` | exec / execute_command / exec_argv 确认流程 |
+| `resolve-command-confirm.ts` | exec / execute_command 确认流程 |
 
 ## 存储
 
@@ -28,7 +28,7 @@
 
 ## 持久化范围
 
-仅 `ToolMeta.persistAllowlist === true` 的工具（`exec` / `exec_argv` / `execute_command`）。路径类工具仍用 Agent 实例内存 `Set`，关 tab 清。
+仅 `ToolMeta.persistAllowlist === true` 的工具（`exec` / `execute_command`）。路径类工具仍用 Agent 实例内存 `Set`，关 tab 清。
 
 ## IPC（仅用户/UI）
 

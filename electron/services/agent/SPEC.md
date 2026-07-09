@@ -494,12 +494,11 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 
 ## 风险评估
 
-命令审计采用**双通道**架构（`electron/services/agent/command-audit/`）：
+命令审计采用**单通道（AST）**架构（`electron/services/agent/command-audit/`）：
 
-| 通道 | 工具 | 执行方式 | 审计 |
-|---|---|---|---|
-| **argv**（优先） | `exec_argv` | `spawn(cmd, args, { shell: false })` | 白名单 + 路径分区，无 shell 解析 |
-| **shell**（兜底） | `exec` / `execute_command` | shell 字符串 / PTY | `@questi0nm4rk/shell-ast`（mvdan/sh WASM）拆复合命令 + 白名单 |
+| 工具 | 执行方式 | 审计 |
+|---|---|---|
+| `exec` / `execute_command` | shell 字符串 / PTY | `@questi0nm4rk/shell-ast`（mvdan/sh WASM）拆复合命令 + 白名单 + 路径分区 |
 
 **Fail-Closed + 路径优先**：
 
