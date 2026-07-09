@@ -16,6 +16,7 @@ import { createLogger } from '../utils/logger'
 import { isAssistantConversationSurfaceVisible } from '../utils/agent-tab-ui-meta'
 import { useTts } from './useTts'
 import { shouldShowToolResultStep } from '../utils/tool-display'
+import { estimateMessageStepVirtualSize } from '../utils/thinking-block'
 import { resolveWorkbenchAgentPrompt, resolveWorkbenchKind } from '../workbench'
 
 const log = createLogger('Agent')
@@ -1347,7 +1348,7 @@ export function useAgentMode(
           }
           const isFirst = i === 0
           const size = step.type === 'message'
-            ? Math.max(80, Math.ceil(step.content.length / 4))
+            ? estimateMessageStepVirtualSize(step)
             : step.type === 'user_supplement' ? 60
             : step.type === 'asking' ? 120 : isFirst ? 46 : 40
           items.push({ id: step.id, type: 'step', step, group, size, isFirstStep: isFirst })
@@ -1938,12 +1939,7 @@ export function useAgentMode(
 
       terminalStore.finalizeAgentRunState(currentTabId.value)
       queuedProactiveReply.value = null
-      terminalStore.addAgentStep(currentTabId.value, {
-        id: `error_${Date.now()}`,
-        type: 'error',
-        content: data.error,
-        timestamp: Date.now()
-      })
+      // handleError 已通过 onStep 推送 error + final_result，此处不再重复 add error step。
 
       if (
         foundTabId &&

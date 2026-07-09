@@ -6,7 +6,7 @@
  * 又会引发 DynamicScroller 高度抖动）。
  */
 import { describe, it, expect } from 'vitest'
-import { parseThinking } from './thinking-block'
+import { parseThinking, estimateMessageStepVirtualSize } from './thinking-block'
 
 describe('parseThinking', () => {
   it('返回 null 当内容不含思考块', () => {
@@ -78,5 +78,50 @@ describe('parseThinking', () => {
     expect(result.body).not.toContain('推理内容')
     expect(result.body).not.toContain('<details>')
     expect(result.body).not.toContain('<details open>')
+  })
+})
+
+describe('estimateMessageStepVirtualSize', () => {
+  const streamingThinking = `<details open>\n<summary>🤔 <strong>思考过程</strong></summary>\n\n<blockquote>\n\n` + '很长的推理'.repeat(200)
+
+  it('流式思考中 reasoning 变长时预估高度保持稳定（折叠态）', () => {
+    const short = estimateMessageStepVirtualSize({
+      type: 'message',
+      content: streamingThinking.slice(0, 120),
+      isStreaming: true,
+    })
+    const long = estimateMessageStepVirtualSize({
+      type: 'message',
+      content: streamingThinking,
+      isStreaming: true,
+    })
+    expect(short).toBe(long)
+    expect(short).toBeLessThanOrEqual(80)
+  })
+
+  it('正文开始输出后随 body 增长', () => {
+    const base = estimateMessageStepVirtualSize({
+      type: 'message',
+      content: `<details>\n<summary>🤔 思考</summary>\n\n<blockquote>\n\nr\n\n</blockquote>\n</details>\n\n短`,
+      isStreaming: true,
+    })
+    const longer = estimateMessageStepVirtualSize({
+      type: 'message',
+      content: `<details>\n<summary>🤔 思考</summary>\n\n<blockquote>\n\nr\n\n</blockquote>\n</details>\n\n` + '正文'.repeat(100),
+      isStreaming: true,
+    })
+    expect(longer).toBeGreaterThan(base)
+  })
+
+  it('用户展开思考块时计入额外高度', () => {
+    const collapsed = estimateMessageStepVirtualSize(
+      { type: 'message', content: streamingThinking, isStreaming: true },
+      { thinkingExpanded: false }
+    )
+    const expanded = estimateMessageStepVirtualSize(
+      { type: 'message', content: streamingThinking, isStreaming: true },
+      { thinkingExpanded: true }
+    )
+    expect(expanded).toBeGreaterThan(collapsed)
   })
 })

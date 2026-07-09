@@ -25,7 +25,7 @@ import ImageContextMenu from './ImageContextMenu.vue'
 import EChartsCanvas from './EChartsCanvas.vue'
 import { optionHasMapSeries } from '@shared/chart-maps'
 import { useImageActions } from '../composables/useImageActions'
-import { parseThinking } from '../utils/thinking-block'
+import { parseThinking, estimateMessageStepVirtualSize } from '../utils/thinking-block'
 import { createLogger } from '../utils/logger'
 import sailfishLogo from '../../resources/logo.png'
 
@@ -1815,21 +1815,15 @@ const getPreviewHints = (attachments?: { totalPages?: number; previewPages?: num
 
 const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
   if (item.type === 'step' && item.step) {
-    // message step 把思考块剥离后再作为 size dep——reasoning 文本不纳入，
-    // 仅在用户主动切换思考块展开/收起时才参与重算（DynamicScroller v3 已用 ResizeObserver 感知高度变化）
-    let contentForSize: string | undefined = item.step.content
     let thinkingExpandedForSize: boolean | undefined
-    if (item.step.type === 'message' && contentForSize) {
-      if (contentForSize.includes('🤔')) {
-        contentForSize = parseThinking(contentForSize).body
-        thinkingExpandedForSize = expandedThinkingSteps.value.has(item.step.id)
-      } else if (item.step.isStreaming) {
-        // 首 chunk 尚未包装 thinking 块时，高度由单行 ThinkingBlock 决定
-        contentForSize = ''
-      }
+    if (item.step.type === 'message' && item.step.content?.includes('🤔')) {
+      thinkingExpandedForSize = expandedThinkingSteps.value.has(item.step.id)
     }
+    const messageVirtualSize = item.step.type === 'message'
+      ? estimateMessageStepVirtualSize(item.step, { thinkingExpanded: thinkingExpandedForSize })
+      : undefined
     return [
-      contentForSize,
+      messageVirtualSize,
       item.step.toolResult,
       item.step.isStreaming,
       item.step.images?.length,

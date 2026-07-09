@@ -40,3 +40,27 @@ export function parseThinking(content: string): ParsedMessage {
   }
   return { thinking: null, body: content }
 }
+
+/** DynamicScroller 预估 item 高度（px）。折叠态 thinking 不计 reasoning 长度，避免流式思考时估算↔实测震荡导致列表持续跳动。 */
+export function estimateMessageStepVirtualSize(
+  step: { type: string; content: string; isStreaming?: boolean },
+  opts?: { thinkingExpanded?: boolean }
+): number {
+  if (step.type !== 'message') return 80
+  const content = step.content || ''
+  if (!content) return step.isStreaming ? 46 : 80
+
+  const parsed = parseThinking(content)
+  if (parsed.thinking) {
+    const collapsedLine = 46
+    const expandedExtra = opts?.thinkingExpanded
+      ? Math.min(200, Math.max(60, Math.ceil(parsed.thinking.reasoning.length / 8)))
+      : 0
+    const bodySize = parsed.body ? Math.max(40, Math.ceil(parsed.body.length / 4)) : 0
+    return Math.max(80, collapsedLine + expandedExtra + bodySize)
+  }
+
+  if (step.isStreaming) return 46
+
+  return Math.max(80, Math.ceil(content.length / 4))
+}
