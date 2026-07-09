@@ -775,7 +775,11 @@ interface Window {
           writesTo: boolean
         }>
         hardBlockedPaths: {
-          systemPatterns: string[]
+          systemPatterns: Array<{
+            description: string
+            severity: 'critical' | 'hardened'
+          }>
+          devNullExemptions: string[]
           userDataRoot: string
           userDataAllowed: string[]
         }

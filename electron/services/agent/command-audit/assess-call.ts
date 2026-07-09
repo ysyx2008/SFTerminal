@@ -22,7 +22,7 @@ function assessUnknownCall(
   extraWritePaths: string[],
 ): CallRiskAssessment {
   const cwd = ctx.cwd ?? getScratchPath()
-  const writePaths = collectWritePaths(call, extraWritePaths)
+  const allPaths = collectWritePaths(call, extraWritePaths)
   const hasWriteRedirect = call.redirects.some(r => r.isWrite) || extraWritePaths.length > 0
 
   if (call.dynamicPaths) {
@@ -34,8 +34,9 @@ function assessUnknownCall(
     }
   }
 
-  if (hasWriteRedirect && writePaths.length > 0) {
-    const pathAdjust = adjustRiskByPathZones('dangerous', writePaths, true, cwd)
+  if (hasWriteRedirect && allPaths.length > 0) {
+    // 未识别命令默认按写命令处理（cmdWritesTo=true 语义）
+    const pathAdjust = adjustRiskByPathZones('dangerous', allPaths, allPaths, true, cwd)
     return {
       level: maxRisk('dangerous', pathAdjust.level),
       commandLevel: 'dangerous',
@@ -87,7 +88,17 @@ export function assessAuditedCall(
     }
   }
 
-  const mergedPaths = collectWritePaths(call, extraWritePaths)
+  const hasWriteRedirect = call.redirects.some(r => r.isWrite)
+  const writes = rule.writesTo || hasWriteRedirect
+  // allPaths：命令参数 + 写重定向（用于 userData 检查，读+写都查）
+  const allPaths = collectWritePaths(call, extraWritePaths)
+  // writePaths：真正的写路径（命令写时含参数路径；只读时仅写重定向目标）
+  const redirectPaths = call.redirects
+    .filter(r => r.isWrite && r.target)
+    .map(r => r.target!)
+  const writePaths = rule.writesTo
+    ? [...call.paths, ...redirectPaths, ...extraWritePaths]
+    : [...redirectPaths, ...extraWritePaths]
   const commandLevel = assessCommandFlags(rule, call.flags)
   const reasons: string[] = []
 
@@ -97,17 +108,17 @@ export function assessAuditedCall(
 
   const pathAdjust = adjustRiskByPathZones(
     commandLevel,
-    mergedPaths,
-    rule.writesTo || call.redirects.some(r => r.isWrite),
+    allPaths,
+    writePaths,
+    writes,
     cwd,
   )
   reasons.push(...pathAdjust.reasons)
 
-  const writes = rule.writesTo || call.redirects.some(r => r.isWrite)
   let level: RiskLevel
   if (pathAdjust.level === 'blocked') {
     level = 'blocked'
-  } else if (writes && mergedPaths.length > 0) {
+  } else if (writes && writePaths.length > 0) {
     level = pathAdjust.level
   } else {
     level = commandLevel
@@ -130,7 +141,7 @@ export function assessRedirectPaths(
   if (writePaths.length === 0) return null
 
   const cwd = ctx.cwd ?? getScratchPath()
-  const pathAdjust = adjustRiskByPathZones('moderate', writePaths, true, cwd)
+  const pathAdjust = adjustRiskByPathZones('moderate', writePaths, writePaths, true, cwd)
   return {
     level: pathAdjust.level,
     commandLevel: 'moderate',

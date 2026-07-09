@@ -16,6 +16,7 @@
 import { app } from 'electron'
 import { ARGV_COMMAND_RULES } from './whitelist'
 import {
+  DEV_NULL_EXEMPTIONS,
   SYSTEM_PATH_PATTERNS,
   PROTECTED_WORKSPACE_FILES,
   PROTECTED_WORKSPACE_DIRS,
@@ -33,10 +34,20 @@ export interface BuiltInCommandRuleView {
   writesTo: boolean
 }
 
+/** 系统路径模式只读展示（含 severity 分级） */
+export interface SystemPathPatternView {
+  /** 人类可读描述（已在 types.ts 与正则成对声明） */
+  description: string
+  /** 严重程度：critical（写 -> blocked）/ hardened（写 -> dangerous） */
+  severity: 'critical' | 'hardened'
+}
+
 /** 硬封路径块 */
 export interface HardBlockedPathsView {
-  /** 系统路径模式（人类可读描述，已在 types.ts 与正则成对声明） */
-  systemPatterns: string[]
+  /** 系统路径模式（按 severity 分级） */
+  systemPatterns: SystemPathPatternView[]
+  /** 黑洞设备白名单（写它们等于丢弃输出，直接 safe） */
+  devNullExemptions: string[]
   /** userData 根路径 */
   userDataRoot: string
   /** userData 下允许 Agent 访问的条目 */
@@ -85,7 +96,11 @@ export function getBuiltInRulesView(): BuiltInRulesView {
         return d !== 0 ? d : a.cmd.localeCompare(b.cmd)
       }),
     hardBlockedPaths: {
-      systemPatterns: SYSTEM_PATH_PATTERNS.map(p => p.description),
+      systemPatterns: SYSTEM_PATH_PATTERNS.map(p => ({
+        description: p.description,
+        severity: p.severity,
+      })),
+      devNullExemptions: [...DEV_NULL_EXEMPTIONS],
       userDataRoot: app.getPath('userData'),
       userDataAllowed: [...ALLOWED_USERDATA_ENTRIES],
     },

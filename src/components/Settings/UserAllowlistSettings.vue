@@ -23,7 +23,11 @@ type BuiltInRulesView = {
     writesTo: boolean
   }>
   hardBlockedPaths: {
-    systemPatterns: string[]
+    systemPatterns: Array<{
+      description: string
+      severity: 'critical' | 'hardened'
+    }>
+    devNullExemptions: string[]
     userDataRoot: string
     userDataAllowed: string[]
   }
@@ -460,10 +464,38 @@ onMounted(loadEntries)
               </div>
               <p class="rule-block-desc">{{ t('settings.security.builtinRules.hardBlockedPathsDesc') }}</p>
               <div class="rule-subblock">
-                <div class="rule-subtitle">{{ t('settings.security.builtinRules.systemPatterns') }}</div>
+                <div class="rule-subtitle">{{ t('settings.security.builtinRules.systemPatternsCritical') }}</div>
                 <div class="pattern-chips">
-                  <span v-for="(p, i) in builtinRules.hardBlockedPaths.systemPatterns" :key="i" class="pattern-chip">
-                    <code>{{ p }}</code>
+                  <span
+                    v-for="(p, i) in builtinRules.hardBlockedPaths.systemPatterns.filter(x => x.severity === 'critical')"
+                    :key="'c' + i"
+                    class="pattern-chip pattern-chip-critical"
+                  >
+                    <code>{{ p.description }}</code>
+                  </span>
+                </div>
+              </div>
+              <div class="rule-subblock">
+                <div class="rule-subtitle">{{ t('settings.security.builtinRules.systemPatternsHardened') }}</div>
+                <div class="pattern-chips">
+                  <span
+                    v-for="(p, i) in builtinRules.hardBlockedPaths.systemPatterns.filter(x => x.severity === 'hardened')"
+                    :key="'h' + i"
+                    class="pattern-chip pattern-chip-hardened"
+                  >
+                    <code>{{ p.description }}</code>
+                  </span>
+                </div>
+              </div>
+              <div class="rule-subblock">
+                <div class="rule-subtitle">{{ t('settings.security.builtinRules.devNullExemptions') }}</div>
+                <div class="pattern-chips">
+                  <span
+                    v-for="e in builtinRules.hardBlockedPaths.devNullExemptions"
+                    :key="e"
+                    class="pattern-chip pattern-chip-exempt"
+                  >
+                    <code>{{ e }}</code>
                   </span>
                 </div>
               </div>
@@ -1187,6 +1219,33 @@ onMounted(loadEntries)
 .pattern-chip.protected {
   border-color: rgba(245, 158, 11, 0.3);
   background: rgba(245, 158, 11, 0.08);
+}
+
+.pattern-chip-critical {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.pattern-chip-critical code {
+  color: #ef4444;
+}
+
+.pattern-chip-hardened {
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.pattern-chip-hardened code {
+  color: #f59e0b;
+}
+
+.pattern-chip-exempt {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.pattern-chip-exempt code {
+  color: #22c55e;
 }
 
 .allowed-chip {

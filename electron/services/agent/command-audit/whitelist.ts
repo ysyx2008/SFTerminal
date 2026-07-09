@@ -199,7 +199,6 @@ export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
   '[': rule('[', 'safe', { pathMode: 'none' }),
   which: rule('which', 'safe', { pathMode: 'all' }),
   type: rule('type', 'safe', { pathMode: 'all' }),
-  env: rule('env', 'moderate', { pathMode: 'none' }),
   printenv: rule('printenv', 'safe', { pathMode: 'none' }),
   git: rule('git', 'safe', {
     safeFlags: new Set(['-C', '--git-dir', '--work-tree', '-c']),

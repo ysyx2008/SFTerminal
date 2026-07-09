@@ -113,41 +113,70 @@ export interface CommandRiskAssessment {
 /**
  * 系统路径黑名单条目（跨平台）
  *
- * 这些路径无论命令如何都被 blocked，不可被工作区降级：
- * - 系统根目录、系统目录
- * - 关键系统文件
+ * severity 分两级：
+ * - critical：写操作 → blocked（硬墙，任何 executionMode 都拒绝）。
+ *   仅保留真正不可逆的系统级灾难路径：`/`（根）、`/boot`（引导）。
+ *   这些路径的写操作即使 dd/烧录也是灾难性，且整串规则已对
+ *   `rm -rf /`、`dd of=/dev/sdX` 等模式做了兜底，critical 是第二道铁壁。
+ * - hardened：写操作 → dangerous（弹确认，用户知情后可放行）。
+ *   `/etc` `/dev` `/sys` `/proc` `/System` 等系统目录，写它们有风险但可恢复，
+ *   或存在合法操作（如 `dd of=/dev/sdX` 烧录、`> /dev/null` 丢弃输出）。
  *
  * 注意：read-only 命令（cat、ls）对这些路径的读取是 safe，
  * 黑名单只对写操作（rm、mv、>、chmod 等）生效。
+ *
+ * /dev/null 等黑洞设备由 DEV_NULL_EXEMPTIONS 单独豁免为 safe。
  */
 export interface SystemPathPattern {
   /** 匹配正则 */
   pattern: RegExp
   /** 人类可读描述（用于设置页只读展示） */
   description: string
+  /**
+   * 严重程度：
+   * - critical：写操作 hard block（不可恢复的系统级灾难）
+   * - hardened：写操作降为 dangerous（弹确认即可放行）
+   */
+  severity: 'critical' | 'hardened'
 }
 
 export const SYSTEM_PATH_PATTERNS: readonly SystemPathPattern[] = [
-  // Unix 系统根
-  { pattern: /^\/$/, description: '/ (文件系统根)' },
-  // 系统配置
-  { pattern: /^\/etc(\/|$)/, description: '/etc 及其子目录' },
-  { pattern: /^\/private\/etc(\/|$)/, description: '/private/etc 及其子目录（macOS）' },
-  // 内核虚拟 / 设备
-  { pattern: /^\/dev(\/|$)/, description: '/dev 及其子目录' },
-  { pattern: /^\/proc(\/|$)/, description: '/proc 及其子目录' },
-  { pattern: /^\/sys(\/|$)/, description: '/sys 及其子目录' },
-  // 引导 / root 家目录
-  { pattern: /^\/boot(\/|$)/, description: '/boot 及其子目录' },
-  { pattern: /^\/root(\/|$)/, description: '/root 及其子目录' },
-  // macOS 系统目录（非 ~/Library）
-  { pattern: /^\/System(\/|$)/, description: '/System 及其子目录（macOS）' },
-  { pattern: /^\/Library(\/|$)/, description: '/Library 及其子目录（macOS）' },
-  // Windows 系统路径
-  { pattern: /^[a-zA-Z]:\\$/, description: '盘符根目录（如 C:\\）' },
-  { pattern: /^[a-zA-Z]:\\Windows(\/|\\|$)/i, description: 'Windows\\ 及其子目录（任意盘符）' },
-  { pattern: /^[a-zA-Z]:\\Program Files(\/|\\|$)/i, description: 'Program Files\\ 及其子目录（任意盘符）' },
-  { pattern: /^[a-zA-Z]:\\Program Files \(x86\)(\/|\\|$)/i, description: 'Program Files (x86)\\ 及其子目录（任意盘符）' },
+  // === critical：写操作 hard block（不可逆系统灾难）===
+  // Unix 文件系统根（整串规则已拦 rm -rf /，此为路径守卫兜底）
+  { pattern: /^\/$/, description: '/ (文件系统根)', severity: 'critical' },
+  // 引导分区（写错系统起不来）
+  { pattern: /^\/boot(\/|$)/, description: '/boot 及其子目录', severity: 'critical' },
+  // === hardened：写操作降为 dangerous（弹确认放行）===
+  // 系统配置（可恢复，但影响系统服务）
+  { pattern: /^\/etc(\/|$)/, description: '/etc 及其子目录', severity: 'hardened' },
+  { pattern: /^\/private\/etc(\/|$)/, description: '/private/etc 及其子目录（macOS）', severity: 'hardened' },
+  // 内核虚拟 / 设备文件（/dev/null 黑洞单独豁免；/dev/sdX 烧录是合法操作）
+  { pattern: /^\/dev(\/|$)/, description: '/dev 及其子目录', severity: 'hardened' },
+  { pattern: /^\/proc(\/|$)/, description: '/proc 及其子目录', severity: 'hardened' },
+  { pattern: /^\/sys(\/|$)/, description: '/sys 及其子目录', severity: 'hardened' },
+  // root 家目录（写它跟写普通家目录风险类似）
+  { pattern: /^\/root(\/|$)/, description: '/root 及其子目录', severity: 'hardened' },
+  // macOS 系统目录（APFS 封装后基本写不了，写了影响全局）
+  { pattern: /^\/System(\/|$)/, description: '/System 及其子目录（macOS）', severity: 'hardened' },
+  { pattern: /^\/Library(\/|$)/, description: '/Library 及其子目录（macOS）', severity: 'hardened' },
+  // Windows 系统路径（可恢复，但影响系统）
+  { pattern: /^[a-zA-Z]:\\$/, description: '盘符根目录（如 C:\\）', severity: 'hardened' },
+  { pattern: /^[a-zA-Z]:\\Windows(\/|\\|$)/i, description: 'Windows\\ 及其子目录（任意盘符）', severity: 'hardened' },
+  { pattern: /^[a-zA-Z]:\\Program Files(\/|\\|$)/i, description: 'Program Files\\ 及其子目录（任意盘符）', severity: 'hardened' },
+  { pattern: /^[a-zA-Z]:\\Program Files \(x86\)(\/|\\|$)/i, description: 'Program Files (x86)\\ 及其子目录（任意盘符）', severity: 'hardened' },
+]
+
+/**
+ * 黑洞/标准流设备白名单（写它们等于丢弃或重定向输出，完全无害）。
+ *
+ * 命中此处时写重定向直接判 safe，不进入路径守卫的系统路径判定。
+ * 仅对「写重定向目标」生效（>、>>、2>、&> 等）；命令参数中
+ * 出现 /dev/null 不影响命令本身的风险等级。
+ */
+export const DEV_NULL_EXEMPTIONS: readonly string[] = [
+  '/dev/null',
+  '/dev/stdout',
+  '/dev/stderr',
 ]
 
 /**

@@ -64,8 +64,56 @@ describe('assessCommandRisk shell AST', () => {
     expect(await assessCommandRisk(`rm -f "${target}"`, { cwd: scratch })).toBe('safe')
   })
 
-  it('echo ok > /etc/passwd 写重定向 blocked', async () => {
+  it('echo ok > /etc/passwd 写重定向 blocked（整串规则兜底）', async () => {
     expect(await assessCommandRisk('echo ok > /etc/passwd')).toBe('blocked')
+  })
+
+  describe('系统路径分级（critical / hardened）', () => {
+    it('rm -rf / 仍 blocked（critical + 整串规则）', async () => {
+      expect(await assessCommandRisk('rm -rf /')).toBe('blocked')
+    })
+    it('rm -rf /boot 仍 blocked（critical）', async () => {
+      expect(await assessCommandRisk('rm -rf /boot')).toBe('blocked')
+    })
+    it('rm -rf /etc 降为 dangerous（hardened）', async () => {
+      expect(await assessCommandRisk('rm -rf /etc')).toBe('dangerous')
+    })
+    it('rm /etc/passwd 降为 dangerous（hardened）', async () => {
+      expect(await assessCommandRisk('rm /etc/passwd')).toBe('dangerous')
+    })
+    it('rm -rf /sys 降为 dangerous（hardened）', async () => {
+      expect(await assessCommandRisk('rm -rf /sys')).toBe('dangerous')
+    })
+    it('dd if=x of=/dev/sda 仍 blocked（整串规则兜底）', async () => {
+      expect(await assessCommandRisk('dd if=x of=/dev/sda')).toBe('blocked')
+    })
+    it('ls /etc 仍 safe（只读命令不受路径分级影响）', async () => {
+      expect(await assessCommandRisk('ls /etc')).toBe('safe')
+    })
+  })
+
+  describe('黑洞设备豁免（/dev/null 等）', () => {
+    it('find /tmp 2>/dev/null 不再 blocked（/dev/null 豁免）', async () => {
+      expect(await assessCommandRisk('find /tmp 2>/dev/null')).toBe('safe')
+    })
+    it('find /tmp -type f -name "*.txt" 2>/dev/null 不再 blocked', async () => {
+      expect(await assessCommandRisk('find /tmp -type f -name "*.txt" 2>/dev/null')).toBe('safe')
+    })
+    it('echo x > /dev/null 直接 safe', async () => {
+      expect(await assessCommandRisk('echo x > /dev/null')).toBe('safe')
+    })
+    it('echo x > /dev/stdout 直接 safe', async () => {
+      expect(await assessCommandRisk('echo x > /dev/stdout')).toBe('safe')
+    })
+    it('echo x 2> /dev/null 直接 safe（2> 重定向）', async () => {
+      expect(await assessCommandRisk('echo x 2> /dev/null')).toBe('safe')
+    })
+    it('只读命令带写重定向不误判命令参数为写路径', async () => {
+      // find /tmp 的 /tmp 是搜索参数，不应因 2>/dev/null 被当写路径判定
+      const d = await assessCommandRiskDetailed('find /tmp 2>/dev/null')
+      expect(d.level).toBe('safe')
+      expect(d.calls.some(c => c.reasons.some(r => r.includes('工作区外')))).toBe(false)
+    })
   })
 
   it('纯 ls 仍为 safe', async () => {

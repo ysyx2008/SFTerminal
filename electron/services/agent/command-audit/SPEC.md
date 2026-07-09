@@ -55,10 +55,15 @@ command-audit/
                ▼
         ③ 路径守卫（workspace-guard）
                │
-               ┌──────┴──────┐
-               │ 写系统路径   │ 其他
-               ▼             ▼
-            blocked        dangerous/safe/...
+               ┌──────┬──────┴──────┐
+               │      │             │
+               ▼      ▼             ▼
+        userData   critical       hardened/其他
+        禁区       系统路径
+        (读+写)    (写)          
+           │        │             │
+           ▼        ▼             ▼
+        blocked  blocked    dangerous/safe/...
 ```
 
 ## 核心不变量
@@ -73,7 +78,11 @@ guard 把"确实危险的间接执行模式"鉴别出来标 dangerous，让 stri
 
 ### 2. blocked 级别只留给路径守卫
 
-`blocked` 表示"绝对禁止"（写 `/etc`、`/`、`/System` 等系统路径），不受 executionMode 影响。guard 命中的间接执行模式标 `dangerous`，不标 `blocked`--这是风险等级，不是硬墙。
+`blocked` 表示"绝对禁止"，不受 executionMode 影响。触发条件：
+- 写 **critical 系统路径**（`/`、`/boot`）--不可逆系统灾难
+- 访问 **userData 禁区**（读+写都拦）--保护 `credentials.json` 等安全机制文件
+
+写 **hardened 系统路径**（`/etc`、`/dev`、`/sys` 等）标 `dangerous`（弹确认放行），不标 `blocked`。guard 命中的间接执行模式也标 `dangerous`，不标 `blocked`。
 
 ### 3. normalizeFlags 只拆合并短 flag
 
@@ -85,10 +94,21 @@ guard 把"确实危险的间接执行模式"鉴别出来标 dangerous，让 stri
 |---|---|---|---|---|
 | safe | 只读，工作区内 | 确认 | 放行 | 放行 |
 | moderate | 轻度副作用或未知命令 | 确认 | 确认 | 放行 |
-| dangerous | 写工作区外 / 间接执行 / 结构性 flag 命中 | 确认 | 确认 | 放行 |
-| **blocked** | 写系统路径（/etc / / /System 等） | **拒绝** | **拒绝** | **拒绝** |
+| dangerous | 写工作区外 / 间接执行 / 结构性 flag 命中 / 写 hardened 系统路径 | 确认 | 确认 | 放行 |
+| **blocked** | 写 critical 系统路径（/ /boot）或 userData 禁区 | **拒绝** | **拒绝** | **拒绝** |
 
-注意：blocked 是硬墙（路径守卫），dangerous 是风险标记（guard 命中）。
+注意：blocked 是硬墙（路径守卫），dangerous 是风险标记（guard 命中 / hardened 系统路径）。
+
+### 系统路径分级（仅对写操作生效）
+
+| severity | 路径 | 写操作 | 说明 |
+|---|---|---|---|
+| critical | `/`、`/boot` | blocked | 不可逆系统灾难；整串规则已对 `rm -rf /`、`dd of=/dev/sdX` 等做兜底 |
+| hardened | `/etc`、`/dev`、`/sys`、`/proc`、`/System`、`/Library`、`/root` 等 | dangerous | 有风险但可恢复，或存在合法操作（如 `dd of=/dev/sdX` 烧录） |
+
+**黑洞设备豁免**：`/dev/null`、`/dev/stdout`、`/dev/stderr` 作为写重定向目标时直接判 safe（写它们等于丢弃或重定向输出）。命令参数中的 `/dev/null` 不受此豁免影响。
+
+**userData 禁区**：userData 下除 `agent-workspace/`、`skills/`、`excel-styles.json`、`word-styles.json` 外的路径，读+写都 blocked（保护 `credentials.json`、`agent-allowlist.json` 等安全机制文件）。
 
 ## 依赖
 
@@ -111,6 +131,7 @@ npx vitest run electron/services/agent/command-audit/__tests__/
 
 ## 变更历史
 
+- 2026-07-09：系统路径分级。引入 `severity: critical | hardened` 字段，`/`、`/boot` 保持 blocked（critical），`/etc`、`/dev`、`/sys` 等降为 dangerous（hardened，弹确认放行）。新增 `DEV_NULL_EXEMPTIONS` 豁免 `/dev/null`、`/dev/stdout`、`/dev/stderr`（写重定向到黑洞设备直接 safe）。修复只读命令带写重定向时命令参数被误判为写路径的 bug（`find /tmp 2>/dev/null` 不再被拦）。修复 `whitelist.ts` 重复 `env` key 警告
 - 2026-07-09：收口为单通道（AST）。砍掉 argv 通道入口（`assess-argv.ts` / `exec_argv` 工具 / `spawnArgv`），`defaultAuditContext` 移至 `assess-shell.ts`。理由：shell 通道已 AST 化，审计精度与 argv 通道趋同；Agent 场景无不可信输入注入，`shell:false` 的注入面优势不成立；双工具增加 AI 选择负担且 shell 通道是 bug 温床
 - 2026-07-07：新增 indirection-guard，修 node -e / python -c / env bash -c 漏洞
 - 2026-07-07：guard 返回值从 blocked 调整为 dangerous（命令拦截是安全性补充，
