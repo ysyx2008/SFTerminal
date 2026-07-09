@@ -243,6 +243,8 @@ export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
   }),
   df: rule('df', 'safe', { safeFlags: new Set(['-h']), pathMode: 'none' }),
   free: rule('free', 'safe', { safeFlags: new Set(['-h', '-m']), pathMode: 'none' }),
+  ps: rule('ps', 'safe', { safeFlags: new Set(['-e', '-f', '-l', '-a', '-u', '-x', '-ef', '-aux', '-aux']), pathMode: 'none' }),
+  lsof: rule('lsof', 'safe', { safeFlags: new Set(['-i', '-P', '-n', '-t', '-c', '-u']), valueFlags: new Set(['-i', '-c', '-u']), pathMode: 'none' }),
   basename: rule('basename', 'safe', { pathMode: 'all' }),
   dirname: rule('dirname', 'safe', { pathMode: 'all' }),
   readlink: rule('readlink', 'safe', { safeFlags: new Set(['-f']), pathMode: 'all' }),
@@ -253,6 +255,7 @@ export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
     pathMode: 'all',
   }),
   tr: rule('tr', 'safe', { pathMode: 'none' }),
+  awk: rule('awk', 'safe', { safeFlags: new Set(['-F', '-v', '-f']), valueFlags: new Set(['-F', '-v', '-f']), pathMode: 'all' }),
   nl: rule('nl', 'safe', { pathMode: 'all' }),
   jq: rule('jq', 'safe', {
     safeFlags: new Set(['-r', '-c', '-e']),
