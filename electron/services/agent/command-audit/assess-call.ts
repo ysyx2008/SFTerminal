@@ -8,7 +8,7 @@ import type { AuditContext, AuditedCall, AuditedRedirect, CallRiskAssessment } f
 import { assessCommandFlags, getArgvCommandRule } from './whitelist'
 import { adjustRiskByPathZones } from './workspace-guard'
 import { maxRisk } from './risk-level'
-import { checkIndirectionGuard, dangerousByGuard } from './indirection-guard'
+import { checkIndirectionGuard, byGuard } from './indirection-guard'
 
 function collectWritePaths(call: AuditedCall, extraPaths: string[]): string[] {
   const fromRedirects = call.redirects
@@ -67,11 +67,11 @@ export function assessAuditedCall(
   extraWritePaths: string[] = [],
 ): CallRiskAssessment {
   // 间接执行守卫：解释器内联 / 包装器 / 调度器 / 结构性 flag 规则
-  // 通道无关，命中标 dangerous（strict/relaxed 弹确认，free 放行）。
+  // 通道无关，命中按 guard 返回的 level 标记（dangerous 或 moderate）。
   // blocked 级别留给路径守卫（写系统路径等绝对禁止场景）。
-  const guardReason = checkIndirectionGuard(call)
-  if (guardReason) {
-    return dangerousByGuard(guardReason)
+  const guardHit = checkIndirectionGuard(call)
+  if (guardHit) {
+    return byGuard(guardHit.level, guardHit.reason)
   }
 
   const cwd = ctx.cwd ?? getScratchPath()

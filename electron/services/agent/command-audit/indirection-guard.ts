@@ -139,9 +139,13 @@ function isWrappedOrOrchestrated(call: AuditedCall): string | null {
 /**
  * 检查是否命中间接执行守卫
  *
- * 命中返回 reason 字符串；不命中返回 null，由调用方继续走原审计流程。
+ * 命中返回 { level, reason }；不命中返回 null，由调用方继续走原审计流程。
  */
-export function checkIndirectionGuard(call: AuditedCall): string | null {
+export interface GuardHit {
+  level: 'dangerous' | 'moderate'
+  reason: string
+}
+export function checkIndirectionGuard(call: AuditedCall): GuardHit | null {
   // basename 化 cmd（/bin/zsh → zsh, C:\...\node.exe → node）
   // assessAuditedCall 里 getArgvCommandRule 才做 basename。
   // guard 在 rule 查找之前跑，所以这里自己 normalize 一次。
@@ -150,32 +154,44 @@ export function checkIndirectionGuard(call: AuditedCall): string | null {
 
   // 第 1 层：角色分类（解释器内联 / 包装器 / 调度器）
   const inlineReason = isInterpreterInline(normalizedCall)
-  if (inlineReason) return inlineReason
+  if (inlineReason) {
+    // shell 解释器（bash/sh/zsh 等）的内联代码会被 shell-ast 递归解析内层，
+    // 走不到这里；能走到这里的都是非 shell 解释器（python/node/perl 等），
+    // shell-ast 不懂这些语言的代码体，无法静态审计，降为 moderate。
+    // strict 模式仍会确认，relaxed 放行。
+    return { level: 'moderate', reason: inlineReason }
+  }
 
   const wrapperReason = isWrappedOrOrchestrated(normalizedCall)
-  if (wrapperReason) return wrapperReason
+  if (wrapperReason) {
+    return { level: 'dangerous', reason: wrapperReason }
+  }
 
   // 第 2 层：结构性 flag 规则（cmd 感知）
   const flagRule = STRUCTURAL_FLAG_RULES[baseCmd]
   if (flagRule) {
     const flagReason = flagRule(normalizedCall)
-    if (flagReason) return flagReason
+    if (flagReason) return { level: 'dangerous', reason: flagReason }
   }
 
   return null
 }
 
 /**
- * 构造命中守卫时的 dangerous 评估结果。
+ * 构造命中守卫时的评估结果。
  *
  * dangerous 在 strict/relaxed 模式下弹确认（理由清楚），free 模式放行
  * （用户选 free 即自担风险，guard 不越俎代庖硬拦）。
+ * moderate 在 strict 模式下弹确认，relaxed 放行。
  * blocked 级别留给路径守卫（写系统路径等绝对禁止场景）。
  */
-export function dangerousByGuard(reason: string): CallRiskAssessment {
+export function byGuard(level: 'dangerous' | 'moderate', reason: string): CallRiskAssessment {
   return {
-    level: 'dangerous',
-    commandLevel: 'dangerous',
+    level,
+    commandLevel: level,
     reasons: [reason],
   }
 }
+
+/** @deprecated 改用 byGuard(level, reason) */
+export const dangerousByGuard = (reason: string): CallRiskAssessment => byGuard('dangerous', reason)

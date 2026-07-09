@@ -137,29 +137,29 @@ describe('assessCommandRisk shell AST', () => {
   // 修复 shell-ast 解析后应转回 it()。主防线是 executionMode（strict 全确认）。
 
   describe('indirection-guard（shell 字符串）', () => {
-    it('node -e 内联代码 -> dangerous', async () => {
-      expect(await assessCommandRisk('node -e "require(\'fs\').unlinkSync(\'/\')"')).toBe('dangerous')
+    it('node -e 内联代码 -> moderate（非 shell 解释器，无法静态审计）', async () => {
+      expect(await assessCommandRisk('node -e "require(\'fs\').unlinkSync(\'/\')"')).toBe('moderate')
     })
-    it('node --eval 内联代码 -> dangerous', async () => {
-      expect(await assessCommandRisk('node --eval "process.exit(1)"')).toBe('dangerous')
+    it('node --eval 内联代码 -> moderate', async () => {
+      expect(await assessCommandRisk('node --eval "process.exit(1)"')).toBe('moderate')
     })
-    it('python3 -c 内联代码 -> dangerous', async () => {
-      expect(await assessCommandRisk('python3 -c "import os; os.remove(\'/\')"')).toBe('dangerous')
+    it('python3 -c 内联代码 -> moderate（非 shell 解释器，无法静态审计）', async () => {
+      expect(await assessCommandRisk('python3 -c "import os; os.remove(\'/\')"')).toBe('moderate')
     })
     it.skip('/bin/zsh -c 内联脚本 -> dangerous（实际 safe，unwrap 后 wrapper 丢失）', async () => {
       expect(await assessCommandRisk('/bin/zsh -c "ls"')).toBe('dangerous')
     })
-    it('perl -e 内联代码 -> dangerous', async () => {
-      expect(await assessCommandRisk('perl -e "unlink(\'/\')"')).toBe('dangerous')
+    it('perl -e 内联代码 -> moderate', async () => {
+      expect(await assessCommandRisk('perl -e "unlink(\'/\')"')).toBe('moderate')
     })
-    it('ruby -e 内联代码 -> dangerous', async () => {
-      expect(await assessCommandRisk('ruby -e "File.delete(\'/\')"')).toBe('dangerous')
+    it('ruby -e 内联代码 -> moderate', async () => {
+      expect(await assessCommandRisk('ruby -e "File.delete(\'/\')"')).toBe('moderate')
     })
-    it('php -r 内联代码 -> dangerous', async () => {
-      expect(await assessCommandRisk('php -r "unlink(\'/\');"')).toBe('dangerous')
+    it('php -r 内联代码 -> moderate', async () => {
+      expect(await assessCommandRisk('php -r "unlink(\'/\');"')).toBe('moderate')
     })
-    it('lua -e 内联代码 -> dangerous', async () => {
-      expect(await assessCommandRisk('lua -e "os.remove(\'/\')"')).toBe('dangerous')
+    it('lua -e 内联代码 -> moderate', async () => {
+      expect(await assessCommandRisk('lua -e "os.remove(\'/\')"')).toBe('moderate')
     })
 
     it('sudo rm -> dangerous（包装器）', async () => {
