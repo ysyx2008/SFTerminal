@@ -109,29 +109,37 @@ function isInterpreterInline(call: AuditedCall): string | null {
   return null
 }
 
-/** 判断是否经过包装器/调度器（shell 通道已 unwrap，wrapper.name 会暴露） */
+/**
+ * 判断是否经过包装器/调度器。
+ *
+ * 两种情况：
+ * 1. wrapper 已被 shell-ast unwrap（call.wrapper.name 存在，call.cmd 是内层命令）：
+ *    内层已知，跳过 guard（返回 null），让内层命令正常走白名单 + 路径审计。
+ *    例如 sudo cat /etc/passwd -> call.cmd=cat, wrapper.name=sudo -> 按 cat 审计。
+ *
+ * 2. wrapper 未 unwrap（call.cmd 就是 wrapper 本身，内层被当参数）：
+ *    内层不可知，无法静态审计，标 moderate。
+ *    例如 xargs echo "x" -> call.cmd=xargs, echo 是参数 -> 无法审计内层。
+ *
+ * env 特例：单独执行（无 args）是打印环境变量的只读操作，safe。
+ */
 function isWrappedOrOrchestrated(call: AuditedCall): string | null {
-  const wrapperName = call.wrapper?.name
-  if (wrapperName) {
-    if (WRAPPER_CMDS.has(wrapperName)) {
-      return t('risk.reason.wrapper_cmd', { cmd: wrapperName })
-    }
-    if (ORCHESTRATOR_CMDS.has(wrapperName)) {
-      return t('risk.reason.orchestrator_cmd', { cmd: wrapperName })
-    }
+  // wrapper 已 unwrap：内层命令已知，跳过 guard 让内层走正常审计
+  if (call.wrapper?.name) {
+    return null
   }
-  // cmd 本身是 wrapper / orchestrator 的情况
-  // env 特例：单独执行（无 args）时是打印环境变量的只读操作，不标 dangerous。
-  // env bash -c "..." 会被 shell-ast unwrap，走上方 wrapperName 分支。
-  // 其他 wrapper（sudo/xargs/nice...）无参时报错或无意义，仍标 dangerous 保守。
+  // cmd 本身是 wrapper / orchestrator（未 unwrap，内层不可知）
+  // env 特例：单独执行（无 args）时是打印环境变量的只读操作，不标 moderate。
+  // env bash -c "..." 会被 shell-ast unwrap，走上方 wrapper.name 分支。
   const isEnvReadOnly = call.cmd === 'env' && call.args.length === 0
-  if (!isEnvReadOnly) {
-    if (WRAPPER_CMDS.has(call.cmd)) {
-      return t('risk.reason.wrapper_cmd', { cmd: call.cmd })
-    }
-    if (ORCHESTRATOR_CMDS.has(call.cmd)) {
-      return t('risk.reason.orchestrator_cmd', { cmd: call.cmd })
-    }
+  if (isEnvReadOnly) {
+    return null
+  }
+  if (WRAPPER_CMDS.has(call.cmd)) {
+    return t('risk.reason.wrapper_cmd', { cmd: call.cmd })
+  }
+  if (ORCHESTRATOR_CMDS.has(call.cmd)) {
+    return t('risk.reason.orchestrator_cmd', { cmd: call.cmd })
   }
   return null
 }
@@ -164,7 +172,9 @@ export function checkIndirectionGuard(call: AuditedCall): GuardHit | null {
 
   const wrapperReason = isWrappedOrOrchestrated(normalizedCall)
   if (wrapperReason) {
-    return { level: 'dangerous', reason: wrapperReason }
+    // wrapper 未 unwrap（xargs/docker/npx 等），内层命令不可知，
+    // 无法静态审计，降为 moderate。strict 确认，relaxed 放行。
+    return { level: 'moderate', reason: wrapperReason }
   }
 
   // 第 2 层：结构性 flag 规则（cmd 感知）

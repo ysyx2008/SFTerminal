@@ -162,11 +162,17 @@ describe('assessCommandRisk shell AST', () => {
       expect(await assessCommandRisk('lua -e "os.remove(\'/\')"')).toBe('moderate')
     })
 
-    it('sudo rm -> dangerous（包装器）', async () => {
+    it('sudo rm /etc/passwd -> dangerous（sudo 已 unwrap，按 rm 审计，/etc 为 hardened 系统路径）', async () => {
       expect(await assessCommandRisk('sudo rm -f /etc/passwd')).toBe('dangerous')
     })
-    it('npx -> dangerous（调度器）', async () => {
-      expect(await assessCommandRisk('npx some-package')).toBe('dangerous')
+    it('sudo ls -> safe（sudo 已 unwrap，按 ls 审计）', async () => {
+      expect(await assessCommandRisk('sudo ls -la')).toBe('safe')
+    })
+    it('npx -> moderate（调度器未 unwrap，内层不可知）', async () => {
+      expect(await assessCommandRisk('npx some-package')).toBe('moderate')
+    })
+    it('xargs -> moderate（包装器未 unwrap，内层不可知）', async () => {
+      expect(await assessCommandRisk('xargs echo "x"')).toBe('moderate')
     })
     it.skip('env bash -c -> dangerous（实际 blocked，rm -rf / 命中整串规则而非 guard）', async () => {
       expect(await assessCommandRisk('env bash -c "rm -rf /"')).toBe('dangerous')
