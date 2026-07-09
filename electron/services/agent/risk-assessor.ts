@@ -4,7 +4,7 @@
 import type { RiskLevel } from './types'
 import { t } from './i18n'
 import type { AuditContext, CommandRiskAssessment } from './command-audit/types'
-import { defaultAuditContext } from './command-audit/assess-argv'
+import { defaultAuditContext } from './command-audit'
 import { assessShellRisk } from './command-audit/assess-shell'
 
 /**

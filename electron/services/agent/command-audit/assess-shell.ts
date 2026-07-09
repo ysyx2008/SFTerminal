@@ -4,13 +4,21 @@
  * 流程：shell-ast 解析 → 拆子命令 → 白名单 + 路径分区 → Fail-Closed
  */
 import type { RiskLevel } from '@shared/types/agent'
-import { getScratchPath } from '../tools/file'
+import { getScratchPath, getWorkspacePath } from '../tools/file'
 import { assessAuditedCall, assessRedirectPaths, aggregateHasUnknown } from './assess-call'
 import { extractAuditedCalls } from './extract-calls'
 import { isWindowsNativeShellCommand } from './platform-detect'
 import { maxRisk, maxRiskAll } from './risk-level'
 import type { AuditContext, CommandRiskAssessment } from './types'
-import { defaultAuditContext } from './assess-argv'
+
+/** 构造默认审计上下文（assistant 模式） */
+export function defaultAuditContext(cwd?: string): AuditContext {
+  return {
+    workspaceRoot: getWorkspacePath(),
+    cwd: cwd ?? getScratchPath(),
+    shell: 'unknown',
+  }
+}
 
 /** 整串命令级 blocked 模式（AST 前后都跑，防 fork bomb 等） */
 function assessFullStringBlocked(command: string): RiskLevel | null {

@@ -2,7 +2,6 @@ export type {
   AuditContext,
   AuditedCall,
   AuditedRedirect,
-  ArgvInput,
   CallRiskAssessment,
   CommandRiskAssessment,
   WorkspaceZone,
@@ -15,12 +14,7 @@ export {
   SYSTEM_PATH_PATTERNS,
 } from './types'
 
-export {
-  assessArgvRisk,
-  argvNeedsConfirm,
-  defaultAuditContext,
-  isArgvBlocked,
-} from './assess-argv'
+export { defaultAuditContext } from './assess-shell'
 
 export { assessAuditedCall, assessRedirectPaths, aggregateHasUnknown } from './assess-call'
 

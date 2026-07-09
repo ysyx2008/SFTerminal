@@ -113,20 +113,6 @@ export interface CommandRiskAssessment {
 }
 
 /**
- * argv 通道的输入参数
- */
-export interface ArgvInput {
-  /** 可执行文件名或路径（如 "rm"、"ls"、"/usr/bin/grep"） */
-  cmd: string
-  /** 参数数组（每个元素是一个 argv，不再被 shell 解释） */
-  args: string[]
-  /** 当前工作目录 */
-  cwd?: string
-  /** 环境变量 */
-  env?: Record<string, string>
-}
-
-/**
  * 系统路径黑名单条目（跨平台）
  *
  * 这些路径无论命令如何都被 blocked，不可被工作区降级：
