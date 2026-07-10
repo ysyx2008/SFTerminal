@@ -258,7 +258,7 @@ describe('credential.service - 旧 e1:（safeStorage）数据向后兼容', () =
     expect(await getCredential('email:e1user')).toBe('legacy-e1-pwd')
   })
 
-  it('safeStorage 不可用时读 e1: 凭证返回 null（不抛错）', async () => {
+  it('safeStorage 不可用时读 e1: 凭证返回 null 并自动删除坏条目（自愈）', async () => {
     safeStorageEnabled = false
     const filePath = path.join(tmpDir, 'credentials.json')
     // 伪造一条 e1: 数据（内容无关，因为 safeStorage 不可用根本解不开）
@@ -270,8 +270,35 @@ describe('credential.service - 旧 e1:（safeStorage）数据向后兼容', () =
     }
     fs.writeFileSync(filePath, JSON.stringify(oldStore), 'utf-8')
 
-    // 解不开时 getCredential 返回 null，不抛错（吞掉 + 记日志）
+    // 解不开时 getCredential 返回 null，不抛错
     expect(await getCredential('email:broken')).toBeNull()
+
+    // 坏 e1: 条目应被自动删除，避免反复触发 Keychain 弹窗
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+    expect(raw.items).not.toHaveProperty('email:broken')
+
+    // 再次读取应直接返回 null（不再尝试解密 e1:）
+    expect(await getCredential('email:broken')).toBeNull()
+  })
+
+  it('safeStorage 可用但解密失败时读 e1: 凭证返回 null 并自动删除坏条目', async () => {
+    safeStorageEnabled = true
+    const filePath = path.join(tmpDir, 'credentials.json')
+    // 伪造一条 safeStorage 解不开的 e1: 密文（不匹配 mock 的 ENC: 前缀）
+    const oldStore = {
+      schemaVersion: 2,
+      items: {
+        'email:corrupt': 'e1:' + Buffer.from('garbage-ciphertext').toString('base64'),
+      }
+    }
+    fs.writeFileSync(filePath, JSON.stringify(oldStore), 'utf-8')
+
+    // safeStorage.decryptString 会抛错，getCredential 应吞掉并返回 null
+    expect(await getCredential('email:corrupt')).toBeNull()
+
+    // 坏 e1: 条目应被自动删除
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+    expect(raw.items).not.toHaveProperty('email:corrupt')
   })
 
   it('旧的 p:（base64 明文）数据仍能读出', async () => {

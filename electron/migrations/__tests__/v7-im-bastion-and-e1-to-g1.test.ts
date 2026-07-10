@@ -174,7 +174,7 @@ describe('migration v7 - e1: 升级为 g1:', () => {
     expect(raw.items['email:legacy']).toMatch(/^g1:/)
   })
 
-  it('safeStorage 不可用时 e1: 跳过，保留原值', async () => {
+  it('safeStorage 不可用时 e1: 跳过升级，坏条目被 getCredential 自愈删除', async () => {
     safeStorageEnabled = false
     const credFilePath = path.join(tmpDir, 'credentials.json')
     fs.writeFileSync(credFilePath, JSON.stringify({
@@ -186,9 +186,10 @@ describe('migration v7 - e1: 升级为 g1:', () => {
     const result = await migrateImAndBastionSecrets(configService, credentialService)
 
     expect(result.e1Upgraded).toBe(0)
-    // 原值保留（没被破坏）
+    // v7 migration 调用 getCredential 尝试解密 e1:，失败后 getCredential
+    // 会自愈删除坏条目（Keychain ACL 失效的 e1: 永久不可恢复，留着只会反复弹窗）
     const raw = JSON.parse(fs.readFileSync(credFilePath, 'utf-8'))
-    expect(raw.items['email:broken']).toBe('e1:AAAA')
+    expect(raw.items).not.toHaveProperty('email:broken')
   })
 
   it('g1: 和 p: 数据不被升级', async () => {

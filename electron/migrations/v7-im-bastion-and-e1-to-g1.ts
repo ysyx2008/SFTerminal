@@ -89,8 +89,9 @@ export async function migrateImAndBastionSecrets(
       // 用旧 safeStorage 通道解密（getCredential 内部会走 e1: 分支）
       const plain = await credentialService.getCredential(key)
       if (plain === null) {
-        // safeStorage 不可用 / 解密失败：跳过，保留 e1: 原值
-        log.warn(`e1: 凭证 ${key} 无法解密（safeStorage 不可用或密钥变化），保留原值`)
+        // safeStorage 不可用 / 解密失败：getCredential 已自愈删除该坏条目
+        // （Keychain ACL 失效的 e1: 永久不可恢复，留着只会反复弹窗）
+        log.warn(`e1: 凭证 ${key} 无法解密（safeStorage 不可用或密钥变化），已自动删除`)
         continue
       }
       // setCredential 会用新 g1: 格式重新加密

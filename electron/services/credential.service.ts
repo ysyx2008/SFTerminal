@@ -9,7 +9,9 @@
  * - `g1:` —— **当前推荐**。代码自管的主密钥（`MasterKey` 类，PBKDF2 + AES-256-GCM），
  *   跨机器迁移只需把 `credentials.json` 和 `master.key` 一起拷走。详见 `credential/master-key.ts`。
  * - `e1:` —— **历史兼容**。Electron `safeStorage` 加密（macOS Keychain / Windows DPAPI）。
- *   不再写新 e1，但启动时仍能读取旧数据并自动转 g1。
+ *   不再写新 e1，但启动时仍能读取旧数据并自动转 g1。safeStorage 的 Keychain ACL
+ *   跨版本/跨 build 会失效，此时旧 e1: 密文永久不可恢复（旧 Keychain 主密钥已丢失），
+ *   `getCredential` 检测到这种坏 e1: 数据会自动删除条目，避免反复弹窗 + 刷错误日志。
  * - `p:`  —— base64 明文，safeStorage 与 master.key 都不可用时的兜底降级。
  *
  * 历史上敏感信息分散在 keytar 的多个 Keychain item 中，每个 item 都要单独
@@ -107,18 +109,25 @@ export class CredentialService {
 
   /**
    * 解密 `<scheme>:<base64>` 字符串。
-   * 三种格式都支持：`g1:`（自管密钥）/ `e1:`（safeStorage，历史）/ `p:`（明文）。
+   *
+   * - `g1:`（自管密钥）：解密失败抛错（密钥/数据异常，调用方应感知）
+   * - `e1:`（safeStorage，历史）：解密失败返回 null（Keychain ACL 跨版本失效是已知场景，
+   *   数据已不可恢复，由 `getCredential` 负责清理坏条目）
+   * - `p:`（明文）：直接读
    */
-  async decryptValue(stored: string): Promise<string> {
+  async decryptValue(stored: string): Promise<string | null> {
     if (this._masterKey.isG1(stored)) {
       return await this._masterKey.decrypt(stored)
     }
     if (stored.startsWith('e1:')) {
-      if (!this.isSafeStorageAvailable()) {
-        throw new Error('Credential is e1: (safeStorage) but safeStorage is unavailable on this platform')
+      if (!this.isSafeStorageAvailable()) return null
+      try {
+        const buf = Buffer.from(stored.slice(3), 'base64')
+        return safeStorage.decryptString(buf)
+      } catch (err) {
+        log.warn('e1: credential decryption failed (safeStorage ACL changed or key lost)', err)
+        return null
       }
-      const buf = Buffer.from(stored.slice(3), 'base64')
-      return safeStorage.decryptString(buf)
     }
     if (stored.startsWith('p:')) {
       return Buffer.from(stored.slice(2), 'base64').toString('utf-8')
@@ -276,18 +285,36 @@ export class CredentialService {
 
   /**
    * 读取凭据；新存储里没有时回退到旧 keytar 并自动迁移。
-   * @returns 凭据值，不存在返回 null
+   *
+   * 坏 e1: 数据自愈：safeStorage 的 Keychain ACL 跨版本/跨 build 会失效，
+   * 此时 e1: 密文永久不可恢复（旧 Keychain 主密钥已丢失）。`decryptValue` 对
+   * e1: 失败返回 null，这里检测到这种情况后顺手删除坏条目，避免反复触发
+   * Keychain 弹窗 + 刷错误日志。用户下次需要该凭据时会走"首次配置"流程。
+   *
+   * 注意：g1: 解密失败（master.key 损坏/数据篡改）仍会抛错传播给调用方--
+   * 这是致命错误，不该被静默吞掉。e1: 失败是已知的历史兼容场景，才走自愈。
+   * @returns 凭据值，不存在或 e1: 解密失败返回 null
    */
   async getCredential(key: string): Promise<string | null> {
     const store = await this.loadStore()
     const stored = store.items[key]
     if (stored !== undefined) {
+      // g1: 解密失败会抛错（master.key 损坏是致命错误，应传播）；
+      // e1: 解密失败返回 null（已知场景，下面走自愈删除）
+      const plain = await this.decryptValue(stored)
+      if (plain !== null) return plain
+      // 到这里只可能是 e1:（safeStorage 失败）。先从内存缓存移除该 key，
+      // 阻止并发的 getCredential 再次触发 safeStorage 解密（重复弹窗），
+      // 再落盘删除。落盘失败时静默回滚内存，下次访问会再尝试自愈。
+      delete store.items[key]
       try {
-        return await this.decryptValue(stored)
+        await this.persistStore(store)
+        log.warn(`Removed undecryptable e1: credential (Keychain ACL lost): ${key}`)
       } catch (err) {
-        log.error(`Failed to decrypt credential: ${key}`, err)
-        return null
+        store.items[key] = stored
+        log.warn(`Failed to remove undecryptable e1: credential: ${key}`, err)
       }
+      return null
     }
     // fallback：兼容旧 keytar 数据，第一次读到后顺手迁移
     const legacy = await this.readLegacyKeytar(key)

@@ -117,7 +117,7 @@ mapSkillEnvToDeclaredCase(envMap, declaredEnvs): Record<string, string>
 | 来源 | 行为 |
 |------|------|
 | keytar Keychain item (`SFTerminal` service) | 读时懒迁移：新存储没有时回退读取，读到后写入新存储 |
-| `e1:` (safeStorage) | 启动后仍能读；safeStorage 不可用时返回 null 不抛错 |
+| `e1:` (safeStorage) | 启动后仍能读；safeStorage 不可用或解密失败（Keychain ACL 失效）时返回 null 不抛错，`getCredential` 自动删除坏 e1: 条目自愈 |
 | `p:` (base64 明文) | 直接读 |
 | skill env v1 混合大小写 | `loadStore` 时一次性归一化为大写（schema v1→v2） |
 
@@ -128,7 +128,8 @@ mapSkillEnvToDeclaredCase(envMap, declaredEnvs): Record<string, string>
 1. **明文 → g1:** config.json 里 8 个明文敏感字段（IM 6 平台 + Slack App Token + 堡垒机密码）
    非空且 credential 里没有对应 key 时，加密写入 credential；成功后清空 config 字段
 2. **e1: → g1:** credential store 里所有 e1: 项，能用 safeStorage 解开的重新加密为 g1:；
-   解不开的保留原值（safeStorage 不可用时不阻塞）
+   解不开的由 `getCredential` 自愈删除（safeStorage 不可用时不阻塞）--
+   Keychain ACL 失效的 e1: 永久不可恢复，留着只会反复弹窗
 
 字段映射（config key → credential key）：
 
