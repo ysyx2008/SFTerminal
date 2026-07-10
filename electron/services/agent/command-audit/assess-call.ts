@@ -123,7 +123,10 @@ export function assessAuditedCall(
   if (pathAdjust.level === 'blocked') {
     level = 'blocked'
   } else if (writes && writePaths.length > 0) {
-    level = pathAdjust.level
+    // free 区可降级为 safe；outside 等 moderate 不覆盖 rm 等命令级 dangerous
+    level = pathAdjust.level === 'safe'
+      ? 'safe'
+      : maxRisk(commandLevel, pathAdjust.level)
   } else {
     level = commandLevel
   }

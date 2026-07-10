@@ -3,9 +3,9 @@
  *
  * 设计原则：
  * - Allowlist：不在白名单的命令 → dangerous（Fail-Closed）
- * - safe 级别只放只读命令（ls/cat/grep/find...）
- * - 副作用命令（rm/mv/cp/mkdir...）永远不进 safe 白名单
- *   但可被路径分区降级（路径在 scratch/ 时整体降到 safe）
+ * - safe 级别以只读命令为主（ls/cat/grep/find...）
+ * - cp 为只增不减的复制，baseLevel 为 safe；其余写删改命令 baseLevel 至少 moderate
+ *   可被路径分区降级（scratch/ 等）或升级（系统路径）
  * - flags 白名单：不认识的 flag → moderate（保守）
  *
  * 注意：shell 通道经 shell-ast 解析出 cmd + args + flags + redirects 后，
@@ -290,7 +290,7 @@ export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
     writesTo: true,
   }),
   mv: rule('mv', 'moderate', { safeFlags: new Set(['-f', '-n', '-v']), pathMode: 'all', writesTo: true }),
-  cp: rule('cp', 'moderate', {
+  cp: rule('cp', 'safe', {
     safeFlags: new Set(['-r', '-R', '-f', '-p', '-v', '-a']),
     pathMode: 'all',
     writesTo: true,

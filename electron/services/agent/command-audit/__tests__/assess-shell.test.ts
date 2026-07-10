@@ -64,6 +64,23 @@ describe('assessCommandRisk shell AST', () => {
     expect(await assessCommandRisk(`rm -f "${target}"`, { cwd: scratch })).toBe('safe')
   })
 
+  it('cp 到工作区外为 safe（复制不增风险，outside 不升级 safe 命令）', async () => {
+    const scratch = getScratchPath()
+    const src = path.join(scratch, 'doc.txt')
+    fs.writeFileSync(src, 'x')
+    const outside = path.join(os.tmpdir(), `sft-outside-${Date.now()}`, 'dest')
+    fs.mkdirSync(path.dirname(outside), { recursive: true })
+    const d = await assessCommandRiskDetailed(`cp "${src}" "${outside}"`, { cwd: scratch })
+    expect(d.level).toBe('safe')
+  })
+
+  it('rm 到工作区外仍为 dangerous（命令级危险，不因 outside 降级）', async () => {
+    const outside = path.join(os.tmpdir(), `sft-rm-out-${Date.now()}`, 'target.txt')
+    fs.mkdirSync(path.dirname(outside), { recursive: true })
+    fs.writeFileSync(outside, 'x')
+    expect(await assessCommandRisk(`rm -f "${outside}"`)).toBe('dangerous')
+  })
+
   it('echo ok > /etc/passwd 写重定向 blocked（整串规则兜底）', async () => {
     expect(await assessCommandRisk('echo ok > /etc/passwd')).toBe('blocked')
   })

@@ -5,7 +5,7 @@
  * - free       scratch/、charts/ — 读写删免确认
  * - protected  templates/、根目录人格配置 md — 写删需确认
  * - workspace  工作区内其他 — 写删需确认
- * - outside    工作区外 - 写删 dangerous
+ * - outside    工作区外 - safe 命令（如 cp）不升级；moderate/dangerous 保持原等级
  *
  * 系统路径分级（仅对写操作生效）：
  * - critical  /、/boot - 写 -> blocked（硬墙，不可逆系统灾难）
@@ -153,7 +153,7 @@ function isDevNullPath(targetPath: string, cwd?: string): boolean {
  * 2. 黑洞设备（/dev/null 等）-> 从写路径判定中豁免（写它们无害）
  * 3. critical 系统路径（/、/boot）-> blocked（不可逆系统灾难）
  * 4. hardened 系统路径（/etc、/dev、/sys 等）-> dangerous（弹确认放行）
- * 5. 工作区 free -> safe；protected/workspace -> moderate；outside -> dangerous
+ * 5. 工作区 free -> safe；protected/workspace -> moderate；outside 不升级 safe 命令
  *
  * @param commandLevel 命令本身的风险等级（白名单 + flag 判定后）
  * @param allPaths 命令参数路径 + 写重定向路径（用于 userData 检查）
@@ -217,10 +217,12 @@ export function adjustRiskByPathZones(
     reasons.push(t('risk.reason.workspace_free'))
     return { level: 'safe', zones, reasons }
   }
-  // outside 优先于 protected/workspace（复合路径取最严）
+  // outside：不升级 safe 命令（如 cp）；moderate/dangerous 命令保持原等级
   if (effectiveZones.some(z => z === 'outside')) {
-    reasons.push(t('risk.reason.workspace_outside'))
-    return { level: 'dangerous', zones, reasons }
+    if (commandLevel !== 'safe') {
+      reasons.push(t('risk.reason.workspace_outside'))
+    }
+    return { level: commandLevel, zones, reasons }
   }
   if (effectiveZones.some(z => z === 'protected')) {
     reasons.push(t('risk.reason.workspace_protected'))

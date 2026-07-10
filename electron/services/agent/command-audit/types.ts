@@ -16,7 +16,7 @@ import type { RiskLevel } from '@shared/types/agent'
  * - free      自由区（scratch/、charts/）—— 读写删全免确认
  * - protected 保护文件（templates/、IDENTITY.md 等）—— 写/删需确认
  * - workspace  工作区内其他位置 —— 写/删需确认（moderate）
- * - outside    工作区外 —— 危险操作（dangerous）/ 越界（blocked）
+ * - outside    工作区外 —— safe 命令（cp）不升级；moderate/dangerous 保持；系统路径仍 blocked/dangerous
  */
 export type WorkspaceZone = 'free' | 'protected' | 'workspace' | 'outside'
 

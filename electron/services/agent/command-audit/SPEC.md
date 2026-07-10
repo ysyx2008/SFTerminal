@@ -93,8 +93,8 @@ guard 把"确实危险的间接执行模式"鉴别出来标 dangerous，让 stri
 | 等级 | 含义 | strict | relaxed | free |
 |---|---|---|---|---|
 | safe | 只读，工作区内 | 确认 | 放行 | 放行 |
-| moderate | 轻度副作用或未知命令 | 确认 | 确认 | 放行 |
-| dangerous | 写工作区外 / 间接执行 / 结构性 flag 命中 / 写 hardened 系统路径 | 确认 | 确认 | 放行 |
+| moderate | 写 protected 或 workspace 内 / 未知命令 / 轻度写操作（mv/touch 等） | 确认 | 放行 | 放行 |
+| dangerous | 高危写删命令（rm/chmod 等）/ 间接执行 / 结构性 flag / 写 hardened 系统路径 | 确认 | 确认 | 放行 |
 | **blocked** | 写 critical 系统路径（/ /boot）或 userData 禁区 | **拒绝** | **拒绝** | **拒绝** |
 
 注意：blocked 是硬墙（路径守卫），dangerous 是风险标记（guard 命中 / hardened 系统路径）。
