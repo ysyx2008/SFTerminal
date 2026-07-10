@@ -18,6 +18,9 @@ const fs = require('fs')
 
 /**
  * Compute the *default* userData path that Electron would use.
+ * 注意：此值仅作为“无自定义指针时的回退默认目录”，依赖应用名。
+ * 指针文件不放在这里（见 {@link getPointerPath}），因为应用名在 dev/prod 下不同。
+ * CLI shim 始终模拟 production 环境行为，故 appName 固定为 'SailFish'（productName）。
  */
 function getDefaultUserDataPath() {
   const appName = 'SailFish'
@@ -38,6 +41,48 @@ function getDefaultUserDataPath() {
 }
 
 /**
+ * 平台级 appData 目录（如 ~/Library/Application Support），与 app.getName() 无关。
+ */
+function getAppDataPath() {
+  switch (process.platform) {
+    case 'darwin':
+      return path.join(os.homedir(), 'Library', 'Application Support')
+    case 'win32':
+      return process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming')
+    default:
+      return process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config')
+  }
+}
+
+/**
+ * 指针文件固定位置：appData/SailFish/data-location.json。
+ * 与 electron/utils/bootstrap.ts 中的 POINTER_PATH 保持一致，确保 CLI 和 GUI
+ * 读到同一个指针，无论 dev/prod。
+ */
+function getPointerPath() {
+  return path.join(getAppDataPath(), 'SailFish', 'data-location.json')
+}
+
+/**
+ * 一次性兼容迁移：把老版本遗留的指针搬到新固定位置。
+ * 与 bootstrap.ts 的 migrateLegacyPointer 行为一致：只检查本进程默认目录下的
+ * 老指针。dev 和 prod 各自迁移自己的遗留指针，互不干扰。
+ */
+function migrateLegacyPointerIfNeeded() {
+  const pointerPath = getPointerPath()
+  if (fs.existsSync(pointerPath)) return // 新位置已有指针
+  const legacyPath = path.join(getDefaultUserDataPath(), 'data-location.json')
+  if (!fs.existsSync(legacyPath)) return // 老位置也没有
+  try {
+    fs.mkdirSync(path.dirname(pointerPath), { recursive: true })
+    fs.copyFileSync(legacyPath, pointerPath)
+    console.info('[CLI] 已将旧版数据目录指针迁移到固定位置:', pointerPath)
+  } catch (e) {
+    console.error('[CLI] 迁移旧版指针文件失败:', e)
+  }
+}
+
+/**
  * Resolve the effective userData path.
  * Priority: SFT_DATA_DIR env var > pointer file (data-location.json) > default.
  * Keeps CLI and GUI pointing at the same custom data directory.
@@ -45,9 +90,11 @@ function getDefaultUserDataPath() {
 function getUserDataPath() {
   if (process.env.SFT_DATA_DIR) return process.env.SFT_DATA_DIR
 
+  migrateLegacyPointerIfNeeded()
+
   const defaultPath = getDefaultUserDataPath()
   try {
-    const pointerPath = path.join(defaultPath, 'data-location.json')
+    const pointerPath = getPointerPath()
     if (fs.existsSync(pointerPath)) {
       const pointer = JSON.parse(fs.readFileSync(pointerPath, 'utf-8'))
       if (pointer && typeof pointer.dataDir === 'string' && pointer.dataDir) {
@@ -73,10 +120,7 @@ const app = {
       case 'desktop': return path.join(os.homedir(), 'Desktop')
       case 'documents': return path.join(os.homedir(), 'Documents')
       case 'downloads': return path.join(os.homedir(), 'Downloads')
-      case 'appData':
-        if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support')
-        if (process.platform === 'win32') return process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming')
-        return process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config')
+      case 'appData': return getAppDataPath()
       default: return userDataPath
     }
   },

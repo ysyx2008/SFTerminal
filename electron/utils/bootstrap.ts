@@ -5,11 +5,16 @@
  * `app.setPath('userData', ...)` 的重定向。
  *
  * 设计：
- * - 在**默认** userData 目录下放一个极小的指针文件 `data-location.json`，
- *   记录用户自定义的数据目录。指针文件本身永远留在默认位置，体积极小，
- *   不随数据迁移移动，避免“先有鸡还是先有蛋”的问题。
+ * - 在**平台级 appData 目录**下的固定子目录 `SailFish/` 里放一个极小的指针文件
+ *   `data-location.json`，记录用户自定义的数据目录。指针文件位置**不依赖
+ *   `app.getName()`**——因为该值在 dev（取 package.json name）和 prod（取
+ *   productName）下不同，若指针放在默认 userData 下，dev/prod 切换或应用改名
+ *   后指针就会“失踪”，导致迁移状态丢失（即“改过一次又变回来”的 bug）。
+ *   指针文件本身永远留在固定位置，体积极小，不随数据迁移移动，避免“先有鸡还是
+ *   先有鸡”的问题。
  * - 模块被 import 时（require 期，早于服务构造）立即执行 {@link applyDataDirRedirect}：
- *   先处理上一轮迁移遗留的旧目录清理，再按指针把 userData 重定向到自定义目录。
+ *   先迁移老版本遗留在默认 userData 下的指针（一次性兼容），再处理上一轮迁移遗留
+ *   的旧目录清理，最后按指针把 userData 重定向到自定义目录。
  * - 真正的数据迁移采用“重启时迁移”：在干净的启动早期（没有任何 agent/watch/sensor
  *   在运行、源目录无写入）复制数据并展示进度窗，复制完成后重启。详见
  *   {@link runStartupMigrationIfNeeded}。
@@ -18,14 +23,21 @@ import { app, BrowserWindow } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 
-/** 指针文件名（始终位于默认 userData 目录下） */
+/** 指针文件名 */
 const POINTER_FILENAME = 'data-location.json'
 
-/** 默认 userData 目录：必须在任何 setPath 之前捕获 */
+/** 默认 userData 目录：必须在任何 setPath 之前捕获，依赖 app.getName()（dev/prod 不同） */
 const DEFAULT_USERDATA = app.getPath('userData')
 
-/** 指针文件绝对路径（恒定在默认目录） */
-const POINTER_PATH = path.join(DEFAULT_USERDATA, POINTER_FILENAME)
+/**
+ * 指针文件所在固定目录：平台级 appData 下的 `SailFish` 子目录。
+ * 用 appData（平台级，如 ~/Library/Application Support）而非 userData（应用级，
+ * 随 app.getName() 变化），确保 dev/prod/改名后指针位置恒定。
+ */
+const POINTER_DIR = path.join(app.getPath('appData'), 'SailFish')
+
+/** 指针文件绝对路径（恒定在固定目录，与 app.getName() 无关） */
+const POINTER_PATH = path.join(POINTER_DIR, POINTER_FILENAME)
 
 interface DataLocationPointer {
   /** 当前生效的自定义数据目录；缺省表示使用默认目录 */
@@ -51,7 +63,7 @@ function readPointer(): DataLocationPointer {
 
 function writePointer(pointer: DataLocationPointer): void {
   try {
-    fs.mkdirSync(DEFAULT_USERDATA, { recursive: true })
+    fs.mkdirSync(POINTER_DIR, { recursive: true })
     // 去掉空字段，保持文件干净
     const clean: DataLocationPointer = {}
     if (pointer.dataDir) clean.dataDir = pointer.dataDir
@@ -61,6 +73,33 @@ function writePointer(pointer: DataLocationPointer): void {
     fs.writeFileSync(POINTER_PATH, JSON.stringify(clean, null, 2), 'utf-8')
   } catch (e) {
     console.error('[bootstrap] 写入数据目录指针失败:', e)
+  }
+}
+
+/**
+ * 一次性兼容迁移：把老版本遗留的指针文件迁到新固定位置。
+ *
+ * 老版本把指针放在 `DEFAULT_USERDATA/data-location.json`，该位置依赖
+ * `app.getName()`，dev（`.../SFTerm`）和 prod（`.../SailFish`）不同。新版本改用
+ * `appData/SailFish/` 固定位置后，需把本进程默认目录下的遗留指针搬到新位置。
+ *
+ * 只检查当前进程的 `DEFAULT_USERDATA`：因为老版本指针只可能存在于“本次启动所用
+ * 环境的默认目录”下。dev 和 prod 各自启动时各自迁移自己的遗留指针，互不干扰
+ * （两个环境的数据目录本就独立，迁移状态不应跨环境继承）。
+ *
+ * 旧文件保留不删，避免破坏老版本回退能力。
+ * 只在 {@link applyDataDirRedirect} 最前面调用一次，新位置一旦有指针就不再迁移。
+ */
+function migrateLegacyPointer(): void {
+  if (fs.existsSync(POINTER_PATH)) return // 新位置已有指针，无需迁移
+  const legacyPath = path.join(DEFAULT_USERDATA, POINTER_FILENAME)
+  if (!fs.existsSync(legacyPath)) return // 老位置也没有，全新安装
+  try {
+    fs.mkdirSync(POINTER_DIR, { recursive: true })
+    fs.copyFileSync(legacyPath, POINTER_PATH)
+    console.info('[bootstrap] 已将旧版数据目录指针迁移到固定位置:', POINTER_PATH)
+  } catch (e) {
+    console.error('[bootstrap] 迁移旧版指针文件失败:', e)
   }
 }
 
@@ -75,13 +114,18 @@ function isInside(parent: string, child: string): boolean {
 }
 
 /**
- * 删除旧目录数据。若旧目录就是默认目录，则保留指针文件本身。
+ * 删除旧目录数据。若旧目录就是默认目录，则逐项删除内容、保留指针文件。
+ *
+ * 指针文件必须保留的两个原因：
+ * 1. dev 环境下，默认目录里可能还有老版本遗留的 data-location.json（已迁到新位置，
+ *    但旧文件保留不删）；
+ * 2. prod 环境下，新指针位置 appData/SailFish 恰好就是默认目录本身，跳过它才能
+ *    保证迁移清理后指针不丢失。
  */
 function cleanupOldDir(dir: string): void {
   try {
     if (!fs.existsSync(dir)) return
     if (samePath(dir, DEFAULT_USERDATA)) {
-      // 默认目录：逐项删除，保留指针文件
       for (const entry of fs.readdirSync(dir)) {
         if (entry === POINTER_FILENAME) continue
         fs.rmSync(path.join(dir, entry), { recursive: true, force: true })
@@ -95,11 +139,14 @@ function cleanupOldDir(dir: string): void {
 }
 
 /**
- * require 期立即执行：处理旧目录清理 + 应用 userData 重定向。
+ * require 期立即执行：迁移老指针 + 处理旧目录清理 + 应用 userData 重定向。
  * 注意：pendingMigration 不在此处理（需等 app ready 才能建进度窗），
  * 仅在此确保 source（当前生效目录）已正确指向。
  */
 function applyDataDirRedirect(): void {
+  // 0. 一次性兼容迁移：把老版本遗留指针搬到新固定位置
+  migrateLegacyPointer()
+
   let pointer = readPointer()
 
   // 1. 处理上一轮迁移遗留的旧目录清理（此时尚无 service 打开旧文件）
@@ -248,8 +295,9 @@ function collectFiles(source: string, target: string): { files: FileEntry[]; tot
     }
     for (const entry of entries) {
       const abs = path.join(dir, entry.name)
-      // 跳过指针文件（仅顶层会出现）
-      if (samePath(abs, POINTER_PATH)) continue
+      // 跳过指针文件：新位置 POINTER_PATH（固定在 appData/SailFish），
+      // 以及老版本遗留在 DEFAULT_USERDATA 下的同名文件（迁移后保留不删，复制时跳过避免留 stray 文件）
+      if (entry.name === POINTER_FILENAME) continue
       // 跳过目标目录（理论上已校验非嵌套，双保险）
       if (samePath(abs, target)) continue
       if (entry.isSymbolicLink()) {
