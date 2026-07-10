@@ -26,7 +26,7 @@ const tmpUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'sft-rebuild-bench-'))
 console.log(`[bench] tmp userData: ${tmpUserData}`)
 
 // 软链已下载的 embedding 模型，避免重新下载
-const realUserData = path.join(os.homedir(), 'Library', 'Application Support', 'SFTerm')
+const realUserData = path.join(os.homedir(), 'Library', 'Application Support', 'SailFish')
 const realModels = path.join(realUserData, 'models')
 if (fs.existsSync(realModels)) {
   fs.symlinkSync(realModels, path.join(tmpUserData, 'models'), 'dir')

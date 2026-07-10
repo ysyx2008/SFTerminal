@@ -14,7 +14,10 @@
  *   先有鸡”的问题。
  * - 模块被 import 时（require 期，早于服务构造）立即执行 {@link applyDataDirRedirect}：
  *   先迁移老版本遗留在默认 userData 下的指针（一次性兼容），再处理上一轮迁移遗留
- *   的旧目录清理，最后按指针把 userData 重定向到自定义目录。
+ *   的旧目录清理，再检测是否处于“应用改名后的首次启动”（历史默认目录 SFTerm 有
+ *   数据而当前默认目录为空），若是则挂一个 pendingMigration 让
+ *   {@link runStartupMigrationIfNeeded} 自动迁移老数据，最后按指针把 userData
+ *   重定向到自定义目录。
  * - 真正的数据迁移采用“重启时迁移”：在干净的启动早期（没有任何 agent/watch/sensor
  *   在运行、源目录无写入）复制数据并展示进度窗，复制完成后重启。详见
  *   {@link runStartupMigrationIfNeeded}。
@@ -29,15 +32,19 @@ const POINTER_FILENAME = 'data-location.json'
 /** 默认 userData 目录：必须在任何 setPath 之前捕获，依赖 app.getName()（dev/prod 不同） */
 const DEFAULT_USERDATA = app.getPath('userData')
 
-/**
- * 指针文件所在固定目录：平台级 appData 下的 `SailFish` 子目录。
- * 用 appData（平台级，如 ~/Library/Application Support）而非 userData（应用级，
- * 随 app.getName() 变化），确保 dev/prod/改名后指针位置恒定。
- */
+/** 指针文件所在固定目录：平台级 appData 下的 `SailFish` 子目录。 */
 const POINTER_DIR = path.join(app.getPath('appData'), 'SailFish')
 
 /** 指针文件绝对路径（恒定在固定目录，与 app.getName() 无关） */
 const POINTER_PATH = path.join(POINTER_DIR, POINTER_FILENAME)
+
+/**
+ * 历史应用名：v11.1 前 `package.json#name` 为 `SFTerm`，导致 dev 环境默认 userData
+ * 落在 `appData/SFTerm`。改名后 dev 默认目录变为 `appData/SailFish`（与 prod 一致），
+ * 老用户的 dev 数据仍留在旧目录，需一次性自动迁移。prod 从未使用过该目录名。
+ */
+const LEGACY_APP_NAME = 'SFTerm'
+const LEGACY_DEFAULT_USERDATA = path.join(app.getPath('appData'), LEGACY_APP_NAME)
 
 interface DataLocationPointer {
   /** 当前生效的自定义数据目录；缺省表示使用默认目录 */
@@ -83,17 +90,23 @@ function writePointer(pointer: DataLocationPointer): void {
  * `app.getName()`，dev（`.../SFTerm`）和 prod（`.../SailFish`）不同。新版本改用
  * `appData/SailFish/` 固定位置后，需把本进程默认目录下的遗留指针搬到新位置。
  *
- * 只检查当前进程的 `DEFAULT_USERDATA`：因为老版本指针只可能存在于“本次启动所用
- * 环境的默认目录”下。dev 和 prod 各自启动时各自迁移自己的遗留指针，互不干扰
- * （两个环境的数据目录本就独立，迁移状态不应跨环境继承）。
+ * 检查两个候选位置：
+ * 1. 当前默认目录 `DEFAULT_USERDATA/data-location.json`（同环境上次启动遗留）；
+ * 2. 改名前的历史默认目录 `appData/SFTerm/data-location.json`（dev 环境从 v11.1
+ *    name 改名后遗留）。若该指针里有 dataDir，迁移过来后能让后续逻辑正确识别
+ *    "用户已自定义目录"，避免误触发 migrateLegacyDefaultDataDir 全量数据迁移。
  *
  * 旧文件保留不删，避免破坏老版本回退能力。
  * 只在 {@link applyDataDirRedirect} 最前面调用一次，新位置一旦有指针就不再迁移。
  */
 function migrateLegacyPointer(): void {
   if (fs.existsSync(POINTER_PATH)) return // 新位置已有指针，无需迁移
-  const legacyPath = path.join(DEFAULT_USERDATA, POINTER_FILENAME)
-  if (!fs.existsSync(legacyPath)) return // 老位置也没有，全新安装
+  const candidates = [
+    path.join(DEFAULT_USERDATA, POINTER_FILENAME),
+    path.join(LEGACY_DEFAULT_USERDATA, POINTER_FILENAME),
+  ]
+  const legacyPath = candidates.find((p) => fs.existsSync(p))
+  if (!legacyPath) return // 两个位置都没有，全新安装
   try {
     fs.mkdirSync(POINTER_DIR, { recursive: true })
     fs.copyFileSync(legacyPath, POINTER_PATH)
@@ -139,6 +152,75 @@ function cleanupOldDir(dir: string): void {
 }
 
 /**
+ * 一次性数据迁移：从历史默认目录 `appData/SFTerm` 迁到当前默认目录。
+ *
+ * 背景：v11.1 起 `package.json#name` 由 `SFTerm` 改为 `SailFish`，dev 环境默认
+ * userData 随之从 `appData/SFTerm` 变为 `appData/SailFish`。老 dev 用户的数据仍
+ * 留在旧目录，直接启动会"看起来数据全没了"。本函数检测这一场景，复用既有的
+ * pendingMigration + 进度窗 + 重启清理流程完成自动迁移。
+ *
+ * 仅 dev 环境受影响（prod 的 productName 一直是 SailFish，从未存在 SFTerm 目录）。
+ * 仅在以下条件全部满足时触发：
+ * 1. 当前生效目录就是当前默认目录（即用户没有把数据迁到别处，否则 dataDir 指向
+ *    自定义目录，旧 SFTerm 目录的内容已无关）；
+ * 2. 没有正在进行的用户触发迁移（pendingMigration）；
+ * 3. 当前默认目录不存在用户数据（新目录是空的，只有指针文件不算）；
+ * 4. 旧默认目录 `appData/SFTerm` 存在且有数据。
+ *
+ * 触发后：把 userData 临时重定向到旧目录（作为迁移 source），写入
+ * pendingMigration.target = 当前默认目录，交由 {@link runStartupMigrationIfNeeded}
+ * 完成复制 + 重启 + 旧目录清理。
+ *
+ * 防重试：迁移失败时 {@link runStartupMigrationIfNeeded} 会写 lastError 到指针。
+ * 本函数检测到 lastError 即跳过，避免无限重试循环。lastError 由用户打开设置页
+ * 时（{@link getDataDirInfo}）清除，之后下次重启才会重试。
+ */
+function migrateLegacyDefaultDataDir(): void {
+  // 已有自定义目录 / 正在迁移 / 上次迁移失败待用户确认 -> 不是"刚改名"场景，跳过。
+  // lastError 防止迁移失败后无限重试：失败后 lastError 留在指针里，直到用户打开
+  // 设置页看到错误（getDataDirInfo 会清掉 lastError）后才允许下次重启重试。
+  if (fs.existsSync(POINTER_PATH)) {
+    const p = readPointer()
+    if (p.dataDir || p.pendingMigration || p.lastError) return
+  }
+
+  const currentDefault = DEFAULT_USERDATA
+  const legacyDir = LEGACY_DEFAULT_USERDATA
+  if (samePath(currentDefault, legacyDir)) return // 同名（理论上不会发生）
+
+  // 当前默认目录是否"空"（只有指针文件视为空）
+  const isDirEmptyExceptPointer = (dir: string): boolean => {
+    try {
+      const entries = fs.readdirSync(dir)
+      return entries.every((e) => e === POINTER_FILENAME)
+    } catch {
+      return true // 目录不存在视为空
+    }
+  }
+  if (!isDirEmptyExceptPointer(currentDefault)) return // 新目录已有数据，不打扰
+
+  // 旧目录是否有数据
+  if (!fs.existsSync(legacyDir)) return
+  try {
+    if (fs.readdirSync(legacyDir).length === 0) return
+  } catch {
+    return
+  }
+
+  // 触发迁移：把 userData 临时指向旧目录，挂一个 pendingMigration 指向新默认目录
+  try {
+    fs.mkdirSync(legacyDir, { recursive: true })
+    app.setPath('userData', legacyDir)
+    writePointer({ pendingMigration: { target: path.resolve(currentDefault) } })
+    console.info(
+      `[bootstrap] 检测到历史数据目录 ${legacyDir}，将自动迁移到 ${currentDefault}`
+    )
+  } catch (e) {
+    console.error('[bootstrap] 设置历史数据目录迁移失败:', e)
+  }
+}
+
+/**
  * require 期立即执行：迁移老指针 + 处理旧目录清理 + 应用 userData 重定向。
  * 注意：pendingMigration 不在此处理（需等 app ready 才能建进度窗），
  * 仅在此确保 source（当前生效目录）已正确指向。
@@ -161,7 +243,15 @@ function applyDataDirRedirect(): void {
     writePointer(pointer)
   }
 
-  // 2. 应用自定义目录重定向（pending 时也要指向当前生效目录，作为迁移源）
+  // 2. 一次性数据迁移：若检测到历史默认目录 SFTerm 有数据、且当前默认目录为空，
+  //    复用 pendingMigration 流程自动迁移（仅 dev 环境改名后首次启动会命中）。
+  //    迁移完成后会写 pendingMigration 并把 userData 临时指向旧目录，后续由
+  //    runStartupMigrationIfNeeded 完成复制 + 重启。
+  migrateLegacyDefaultDataDir()
+  pointer = readPointer()
+  if (pointer.pendingMigration) return // 等待 runStartupMigrationIfNeeded 接管
+
+  // 3. 应用自定义目录重定向（pending 时也要指向当前生效目录，作为迁移源）
   if (pointer.dataDir && !samePath(pointer.dataDir, DEFAULT_USERDATA)) {
     try {
       fs.mkdirSync(pointer.dataDir, { recursive: true })
