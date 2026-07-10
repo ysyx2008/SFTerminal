@@ -85,9 +85,13 @@ export function assessAuditedCall(
   }
 
   if (call.dynamicPaths && rule.writesTo) {
+    // 动态路径无法静态审计，按命令本身的危险程度降级：
+    // - rm/chmod/chown 等高危命令 -> dangerous（Fail-Closed）
+    // - cp/mv/mkdir/touch/ln 等轻度写命令 -> moderate（与 relaxed 放行一致）
+    const dynamicLevel: RiskLevel = rule.baseLevel === 'dangerous' ? 'dangerous' : 'moderate'
     return {
-      level: 'dangerous',
-      commandLevel: 'dangerous',
+      level: dynamicLevel,
+      commandLevel: dynamicLevel,
       reasons: [t('risk.reason.dynamic_path')],
     }
   }

@@ -324,6 +324,10 @@ export function assessCommandFlags(rule: CommandRule, flags: string[]): RiskLeve
   const allowed = rule.safeFlags
   for (const f of flags) {
     if (!allowed.has(f)) {
+      // head/tail 等命令的数字简写 flag（-5 = -n 5）
+      if (f.startsWith('-') && !f.startsWith('--') && /^\d+$/.test(f.slice(1))) {
+        continue
+      }
       // 单个字符的拆分 flag（如 -rf 拆出的 -r/-f）一定已检查过；
       // 这里 f 是原 flag 或长度 > 4 的长 flag。如果原 flag 本身不在 allowed，
       // 检查它是否由 allowed 中的单字符 flag 组合而成（如 -lart 由 -l/-a/-r/-t 组成），

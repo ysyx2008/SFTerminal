@@ -137,6 +137,22 @@ describe('assessCommandRisk shell AST', () => {
     expect(await assessCommandRisk('ls -la')).toBe('safe')
   })
 
+  it('head -5 数字简写 flag 不误报 moderate', async () => {
+    expect(await assessCommandRisk('head -5 /tmp/x')).toBe('safe')
+  })
+
+  it('tail -20 数字简写 flag 不误报 moderate', async () => {
+    expect(await assessCommandRisk('tail -20 /tmp/x')).toBe('safe')
+  })
+
+  it('cp 动态路径变量降为 moderate（与 cp=safe 对齐）', async () => {
+    expect(await assessCommandRisk('cp "$SRC" "$DST"', { cwd: getScratchPath() })).toBe('moderate')
+  })
+
+  it('rm 动态路径变量仍 dangerous（Fail-Closed）', async () => {
+    expect(await assessCommandRisk('rm -f "$FILE"', { cwd: getScratchPath() })).toBe('dangerous')
+  })
+
   it('for echo/sleep 循环应为 safe', async () => {
     const cmd = 'for i in 1 2 3 4 5; do echo "进度 $i/5"; sleep 1; done; echo "完成"'
     expect(await assessCommandRisk(cmd)).toBe('safe')
