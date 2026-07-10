@@ -55,6 +55,15 @@ interface DataLocationPointer {
   cleanupDir?: string
   /** 上一次迁移失败的错误信息（供前端读取后展示并清除） */
   lastError?: string
+  /**
+   * 应用改名后的历史默认目录迁移是否已完成。
+   *
+   * 单独标记的原因：Electron 首次启动即会在 userData 下创建 Chromium 缓存与
+   * 初始化 config（如 qiyu-terminal-config.json），因此无法用"目录是否空"或
+   * "config 是否存在"判断目录是否被真实使用过。改用这个显式标记：迁移完成后
+   * 置 true，之后即使旧目录被清理、新目录已写入数据，也不会重复触发。
+   */
+  legacyMigrationDone?: boolean
 }
 
 function readPointer(): DataLocationPointer {
@@ -77,6 +86,7 @@ function writePointer(pointer: DataLocationPointer): void {
     if (pointer.pendingMigration) clean.pendingMigration = pointer.pendingMigration
     if (pointer.cleanupDir) clean.cleanupDir = pointer.cleanupDir
     if (pointer.lastError) clean.lastError = pointer.lastError
+    if (pointer.legacyMigrationDone) clean.legacyMigrationDone = pointer.legacyMigrationDone
     fs.writeFileSync(POINTER_PATH, JSON.stringify(clean, null, 2), 'utf-8')
   } catch (e) {
     console.error('[bootstrap] 写入数据目录指针失败:', e)
@@ -161,43 +171,28 @@ function cleanupOldDir(dir: string): void {
  *
  * 仅 dev 环境受影响（prod 的 productName 一直是 SailFish，从未存在 SFTerm 目录）。
  * 仅在以下条件全部满足时触发：
- * 1. 当前生效目录就是当前默认目录（即用户没有把数据迁到别处，否则 dataDir 指向
- *    自定义目录，旧 SFTerm 目录的内容已无关）；
- * 2. 没有正在进行的用户触发迁移（pendingMigration）；
- * 3. 当前默认目录不存在用户数据（新目录是空的，只有指针文件不算）；
- * 4. 旧默认目录 `appData/SFTerm` 存在且有数据。
+ * 1. 指针未标记 legacyMigrationDone（尚未迁移过）；
+ * 2. 没有自定义 dataDir（用户没把数据迁到别处）；
+ * 3. 没有正在进行的用户触发迁移（pendingMigration）；
+ * 4. 没有上次迁移失败的 lastError（防无限重试，待用户确认后才重试）；
+ * 5. 旧默认目录 `appData/SFTerm` 存在且有数据。
+ *
+ * 不依赖"当前默认目录是否空"判断--Electron 首次启动即会创建 Chromium 缓存与
+ * 初始化 config（如 qiyu-terminal-config.json），目录非空是常态，无法据此区分
+ * "全新空目录"与"已被使用的目录"。改用显式的 legacyMigrationDone 标记。
  *
  * 触发后：把 userData 临时重定向到旧目录（作为迁移 source），写入
  * pendingMigration.target = 当前默认目录，交由 {@link runStartupMigrationIfNeeded}
- * 完成复制 + 重启 + 旧目录清理。
- *
- * 防重试：迁移失败时 {@link runStartupMigrationIfNeeded} 会写 lastError 到指针。
- * 本函数检测到 lastError 即跳过，避免无限重试循环。lastError 由用户打开设置页
- * 时（{@link getDataDirInfo}）清除，之后下次重启才会重试。
+ * 完成复制 + 重启 + 旧目录清理。迁移成功后由该函数标记 legacyMigrationDone。
  */
 function migrateLegacyDefaultDataDir(): void {
-  // 已有自定义目录 / 正在迁移 / 上次迁移失败待用户确认 -> 不是"刚改名"场景，跳过。
-  // lastError 防止迁移失败后无限重试：失败后 lastError 留在指针里，直到用户打开
-  // 设置页看到错误（getDataDirInfo 会清掉 lastError）后才允许下次重启重试。
-  if (fs.existsSync(POINTER_PATH)) {
-    const p = readPointer()
-    if (p.dataDir || p.pendingMigration || p.lastError) return
-  }
+  const p = readPointer()
+  // 已迁移过 / 有自定义目录 / 正在迁移 / 上次失败待确认 -> 跳过
+  if (p.legacyMigrationDone || p.dataDir || p.pendingMigration || p.lastError) return
 
   const currentDefault = DEFAULT_USERDATA
   const legacyDir = LEGACY_DEFAULT_USERDATA
   if (samePath(currentDefault, legacyDir)) return // 同名（理论上不会发生）
-
-  // 当前默认目录是否"空"（只有指针文件视为空）
-  const isDirEmptyExceptPointer = (dir: string): boolean => {
-    try {
-      const entries = fs.readdirSync(dir)
-      return entries.every((e) => e === POINTER_FILENAME)
-    } catch {
-      return true // 目录不存在视为空
-    }
-  }
-  if (!isDirEmptyExceptPointer(currentDefault)) return // 新目录已有数据，不打扰
 
   // 旧目录是否有数据
   if (!fs.existsSync(legacyDir)) return
@@ -528,9 +523,13 @@ export async function runStartupMigrationIfNeeded(): Promise<boolean> {
 
     // 复制成功：更新指针，记录旧目录待清理，清除 pending
     const isDefaultTarget = samePath(target, DEFAULT_USERDATA)
+    // 若目标是默认目录且源是 legacy 目录，标记 legacy 迁移已完成，
+    // 避免下次启动因目录非空而误判（legacyMigrationDone 是显式标记，不依赖目录状态）
+    const isLegacyMigration = isDefaultTarget && samePath(source, LEGACY_DEFAULT_USERDATA)
     writePointer({
       dataDir: isDefaultTarget ? undefined : path.resolve(target),
-      cleanupDir: samePath(source, target) ? undefined : source
+      cleanupDir: samePath(source, target) ? undefined : source,
+      legacyMigrationDone: isLegacyMigration || undefined
     })
 
     if (win && !win.isDestroyed()) win.destroy()
