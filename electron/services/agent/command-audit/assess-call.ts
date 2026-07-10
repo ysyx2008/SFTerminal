@@ -26,27 +26,30 @@ function assessUnknownCall(
   const allPaths = collectWritePaths(call, extraWritePaths)
   const hasWriteRedirect = call.redirects.some(r => r.isWrite) || extraWritePaths.length > 0
 
-  if (call.dynamicPaths) {
-    return {
-      level: 'dangerous',
-      commandLevel: 'dangerous',
-      unknown: true,
-      reasons: [t('risk.reason.unknown_dynamic')],
-    }
-  }
-
+  // 未识别命令默认 moderate（strict 确认，relaxed 放行）。
+  // 只有写路径确实危险时才升级 dangerous/blocked。
   if (hasWriteRedirect && allPaths.length > 0) {
     // 未识别命令默认按写命令处理（cmdWritesTo=true 语义）
-    const pathAdjust = adjustRiskByPathZones('dangerous', allPaths, allPaths, true, cwd)
+    const pathAdjust = adjustRiskByPathZones('moderate', allPaths, allPaths, true, cwd)
     return {
-      level: maxRisk('dangerous', pathAdjust.level),
-      commandLevel: 'dangerous',
+      level: pathAdjust.level,
+      commandLevel: 'moderate',
       unknown: true,
       reasons: [
         t('risk.reason.unknown_cmd', { cmd: call.cmd }),
         ...pathAdjust.reasons,
       ],
       pathZones: pathAdjust.zones,
+    }
+  }
+
+  if (call.dynamicPaths) {
+    // 含动态参数但无静态路径可审计，无法静态审计，moderate。
+    return {
+      level: 'moderate',
+      commandLevel: 'moderate',
+      unknown: true,
+      reasons: [t('risk.reason.unknown_dynamic')],
     }
   }
 
