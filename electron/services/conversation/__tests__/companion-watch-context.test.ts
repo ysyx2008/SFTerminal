@@ -79,6 +79,48 @@ describe('Companion.formatRecentTurnsForWatchPrompt', () => {
     expect(text).toContain('用户：我怀疑你在心跳的时候看不到这些历史记录')
   })
 
+  it('有历史 messages record 时仍能看到 __proactive__ 主动通知（回归：唤醒拆分后重复问候）', () => {
+    const hs = new HistoryService()
+    const t0 = Date.now() - 120_000
+    const t1 = Date.now() - 60_000
+    const t2 = Date.now()
+
+    hs.saveAgentRecord(companionRec('sess_old', {
+      timestamp: t0,
+      messages: [
+        { role: 'user', content: '帮我查一下 A 股' },
+        { role: 'assistant', content: '好的，已整理报告' }
+      ],
+      steps: [
+        { id: 'ut0', type: 'user_task', content: '帮我查一下 A 股', timestamp: t0 },
+        { id: 'fr0', type: 'final_result', content: '好的，已整理报告', timestamp: t0 + 1 }
+      ]
+    }))
+    hs.saveAgentRecord(companionRec('proactive_5000', {
+      timestamp: t1,
+      userTask: '__proactive__',
+      messages: [],
+      steps: [
+        { id: 'pn5000', type: 'proactive_notice', content: '恭喜我们第 5000 次对话！', timestamp: t1 }
+      ]
+    }))
+    hs.saveAgentRecord(companionRec('sess_new', {
+      timestamp: t2,
+      messages: [
+        { role: 'user', content: '今天继续测工具' },
+        { role: 'assistant', content: '收到，有需要叫我' }
+      ],
+      steps: [
+        { id: 'ut1', type: 'user_task', content: '今天继续测工具', timestamp: t2 },
+        { id: 'fr1', type: 'final_result', content: '收到，有需要叫我', timestamp: t2 + 1 }
+      ]
+    }))
+
+    const text = new Companion(hs).formatRecentTurnsForWatchPrompt()
+    expect(text).toContain('你：恭喜我们第 5000 次对话！')
+    expect(text).toContain('用户：今天继续测工具')
+  })
+
   it('proactive_notice step 作为 assistant 轮次展示', () => {
     const hs = new HistoryService()
     hs.saveAgentRecord(companionRec('sess_pro', {

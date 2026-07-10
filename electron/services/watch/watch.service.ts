@@ -737,6 +737,11 @@ export class WatchService {
     }
   }
 
+  /** talk_to_user 落盘后失效缓存，避免短间隔连触发读到过期联络上下文 */
+  invalidateCompanionContextCache(): void {
+    this.companionContextCache = undefined
+  }
+
   /** 解析心跳模板变量，缺失的必要变量自动追加到开头 */
   private resolveHeartbeatVariables(template: string, watch: WatchDefinition, event: SensorEvent): string {
     let result = template

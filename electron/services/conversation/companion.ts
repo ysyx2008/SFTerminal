@@ -129,31 +129,14 @@ export class Companion {
     const record = this.getMergedViewRecord(Companion.WATCH_PROMPT_RECORDS_LIMIT)
     if (!record) return ''
 
-    const turns: Array<{ role: 'user' | 'assistant'; content: string }> = []
-    if (record.messages && record.messages.length > 0) {
-      for (const m of record.messages) {
-        const isPlainUser = m.role === 'user' && typeof m.content === 'string' && m.content.trim().length > 0
-        const isPlainAssistant = m.role === 'assistant'
-          && typeof m.content === 'string' && m.content.trim().length > 0
-          && !(Array.isArray(m.tool_calls) && m.tool_calls.length > 0)
-        if (isPlainUser) {
-          turns.push({ role: 'user', content: m.content as string })
-        } else if (isPlainAssistant) {
-          turns.push({ role: 'assistant', content: m.content as string })
-        }
-      }
-    } else if (record.steps && record.steps.length > 0) {
-      for (const s of record.steps) {
-        if (s.type === 'user_task' && s.content && s.content !== '__proactive__') {
-          turns.push({ role: 'user', content: s.content })
-        } else if (
-          (s.type === 'final_result' || s.type === 'message' || s.type === 'proactive_notice')
-          && s.content
-        ) {
-          turns.push({ role: 'assistant', content: s.content })
-        }
-      }
-    }
+    // 优先 merged steps：含 __proactive__ record 的 proactive_notice。
+    // getMergedViewRecord 的 mergedMessages 刻意排除 __proactive__（L104-105）；
+    // 若存在 messages 就走 messages 分支，会丢掉近期 talk_to_user——唤醒重复通知的根因。
+    // 无 steps 时回退 messages（仅 messages 的老记录）。
+    const turns: Array<{ role: 'user' | 'assistant'; content: string }> =
+      record.steps && record.steps.length > 0
+        ? Companion.turnsFromSteps(record.steps)
+        : Companion.turnsFromMessages(record.messages ?? [])
 
     const recent = turns.slice(-maxTurns)
     if (recent.length === 0) return ''
@@ -162,5 +145,40 @@ export class Companion {
       return `${who}：${m.content}`
     })
     return `[最近与用户的联络记录（避免重复通知、保持连贯）：\n${lines.join('\n')}]`
+  }
+
+  private static turnsFromSteps(
+    steps: NonNullable<AgentRecord['steps']>
+  ): Array<{ role: 'user' | 'assistant'; content: string }> {
+    const turns: Array<{ role: 'user' | 'assistant'; content: string }> = []
+    for (const s of steps) {
+      if (s.type === 'user_task' && s.content && s.content !== '__proactive__') {
+        turns.push({ role: 'user', content: s.content })
+      } else if (
+        (s.type === 'final_result' || s.type === 'message' || s.type === 'proactive_notice')
+        && s.content
+      ) {
+        turns.push({ role: 'assistant', content: s.content })
+      }
+    }
+    return turns
+  }
+
+  private static turnsFromMessages(
+    messages: NonNullable<AgentRecord['messages']>
+  ): Array<{ role: 'user' | 'assistant'; content: string }> {
+    const turns: Array<{ role: 'user' | 'assistant'; content: string }> = []
+    for (const m of messages) {
+      const isPlainUser = m.role === 'user' && typeof m.content === 'string' && m.content.trim().length > 0
+      const isPlainAssistant = m.role === 'assistant'
+        && typeof m.content === 'string' && m.content.trim().length > 0
+        && !(Array.isArray(m.tool_calls) && m.tool_calls.length > 0)
+      if (isPlainUser) {
+        turns.push({ role: 'user', content: m.content as string })
+      } else if (isPlainAssistant) {
+        turns.push({ role: 'assistant', content: m.content as string })
+      }
+    }
+    return turns
   }
 }

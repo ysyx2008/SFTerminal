@@ -985,6 +985,11 @@ export async function messageUser(
           duration: 0,
           status: 'completed',
         })
+        // 失效 Watch 10s 联络上下文缓存，否则连触发（里程碑 + 上线）会重复 talk_to_user
+        try {
+          const { getWatchService } = require('../../watch/watch.service')
+          getWatchService().invalidateCompanionContextCache()
+        } catch { /* watch 未初始化时跳过 */ }
       } catch (e) {
         log.debug('messageUser: 保存主动消息历史失败:', e)
       }
