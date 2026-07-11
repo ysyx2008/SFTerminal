@@ -464,22 +464,46 @@ export default {
     },
     companionWelcome: {
       title: 'Companion',
-      desc: 'Your persistent conversation channel with the AI assistant. Messages from IM, Web remote, and desktop all flow into the same thread, and the AI can reach out to you proactively.',
+      subtitle: 'Persistent conversation channel',
+      desc: 'A continuous thread between you and your AI assistant. Messages from every channel converge here, and the AI can reach out proactively.',
+      featuresTitle: 'What you can do here',
       features: {
         multiChannel: {
+          icon: '💬',
           title: 'Multi-channel',
-          desc: 'DingTalk, Feishu, WeCom, Slack, Telegram and other IMs, plus Web remote sessions, all converge here'
+          desc: 'DingTalk, Feishu, WeCom, Slack, Telegram and other IMs, plus Web remote sessions, all converge into one thread'
         },
         proactive: {
+          icon: '🔔',
           title: 'AI reaches out',
-          desc: 'Watch triggers, reminders, and important events are pushed here by the AI'
+          desc: 'Watch triggers, task completions, and important reminders are pushed here by the AI'
         },
         continuous: {
+          icon: '🔄',
           title: 'Survives restart',
-          desc: 'Continue the previous conversation after restart, no need to start over'
+          desc: 'Resume the previous conversation after restart - history and memory are preserved'
         }
       },
-      hint: 'Type in the input box below to start a conversation'
+      examplesTitle: 'Try opening like this',
+      examples: {
+        ask: {
+          label: 'Ask daily',
+          prompt: 'Help me check what important things I have today'
+        },
+        chat: {
+          label: 'Small talk',
+          prompt: 'Work has been stressful lately, chat with me for a bit'
+        },
+        followup: {
+          label: 'Follow up',
+          prompt: 'How is that thing I asked you to watch going'
+        },
+        brief: {
+          label: 'Get a brief',
+          prompt: 'Give me a brief on today\'s server status'
+        }
+      },
+      hint: 'Type in the input below, or click an example above to start'
     },
     imagePreview: {
       prevImage: 'Previous image (←)',

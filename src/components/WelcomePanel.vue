@@ -53,22 +53,47 @@ const truncateText = (text: string, maxLength: number): string => {
   <div class="ai-welcome">
     <!-- 联络（companion）tab 专属说明 -->
     <template v-if="isCompanionTab">
-      <p>🤝 {{ t('ai.companionWelcome.title') }}</p>
-      <p class="welcome-desc">{{ t('ai.companionWelcome.desc') }}</p>
-      <div class="companion-features">
-        <div class="companion-feature">
-          <p class="welcome-section-title">💬 {{ t('ai.companionWelcome.features.multiChannel.title') }}</p>
-          <p class="welcome-desc">{{ t('ai.companionWelcome.features.multiChannel.desc') }}</p>
-        </div>
-        <div class="companion-feature">
-          <p class="welcome-section-title">🔔 {{ t('ai.companionWelcome.features.proactive.title') }}</p>
-          <p class="welcome-desc">{{ t('ai.companionWelcome.features.proactive.desc') }}</p>
-        </div>
-        <div class="companion-feature">
-          <p class="welcome-section-title">🔄 {{ t('ai.companionWelcome.features.continuous.title') }}</p>
-          <p class="welcome-desc">{{ t('ai.companionWelcome.features.continuous.desc') }}</p>
+      <div class="companion-hero">
+        <div class="companion-hero-icon">🤝</div>
+        <div class="companion-hero-text">
+          <h2 class="companion-hero-title">{{ t('ai.companionWelcome.title') }}</h2>
+          <p class="companion-hero-subtitle">{{ t('ai.companionWelcome.subtitle') }}</p>
         </div>
       </div>
+      <p class="companion-desc">{{ t('ai.companionWelcome.desc') }}</p>
+
+      <p class="welcome-section-title">{{ t('ai.companionWelcome.featuresTitle') }}</p>
+      <div class="companion-feature-grid">
+        <div class="companion-feature-card">
+          <span class="companion-feature-icon">{{ t('ai.companionWelcome.features.multiChannel.icon') }}</span>
+          <span class="companion-feature-title">{{ t('ai.companionWelcome.features.multiChannel.title') }}</span>
+          <span class="companion-feature-desc">{{ t('ai.companionWelcome.features.multiChannel.desc') }}</span>
+        </div>
+        <div class="companion-feature-card">
+          <span class="companion-feature-icon">{{ t('ai.companionWelcome.features.proactive.icon') }}</span>
+          <span class="companion-feature-title">{{ t('ai.companionWelcome.features.proactive.title') }}</span>
+          <span class="companion-feature-desc">{{ t('ai.companionWelcome.features.proactive.desc') }}</span>
+        </div>
+        <div class="companion-feature-card">
+          <span class="companion-feature-icon">{{ t('ai.companionWelcome.features.continuous.icon') }}</span>
+          <span class="companion-feature-title">{{ t('ai.companionWelcome.features.continuous.title') }}</span>
+          <span class="companion-feature-desc">{{ t('ai.companionWelcome.features.continuous.desc') }}</span>
+        </div>
+      </div>
+
+      <p class="welcome-section-title">{{ t('ai.companionWelcome.examplesTitle') }}</p>
+      <div class="companion-examples">
+        <button
+          v-for="key in (['ask', 'chat', 'followup', 'brief'] as const)"
+          :key="key"
+          class="companion-example-chip"
+          :title="t(`ai.companionWelcome.examples.${key}.prompt`)"
+          @click="emit('select-scenario', t(`ai.companionWelcome.examples.${key}.prompt`))"
+        >
+          <span class="companion-example-label">{{ t(`ai.companionWelcome.examples.${key}.label`) }}</span>
+        </button>
+      </div>
+
       <p class="companion-hint">{{ t('ai.companionWelcome.hint') }}</p>
     </template>
 
@@ -577,29 +602,146 @@ const truncateText = (text: string, maxLength: number): string => {
 }
 
 /* ==================== 联络（companion）专属说明 ==================== */
-.companion-features {
-  margin-top: 16px;
+
+.companion-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-primary) 14%, transparent) 0%, transparent 100%);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 22%, transparent);
+  border-radius: 14px;
+}
+
+.companion-hero-icon {
+  font-size: 32px;
+  line-height: 1;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: color-mix(in srgb, var(--accent-primary) 12%, var(--bg-surface));
+  border-radius: 12px;
+}
+
+.companion-hero-text {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 2px;
+  min-width: 0;
 }
 
-.companion-feature .welcome-section-title {
-  margin-top: 0;
+.companion-hero-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
 }
 
-.companion-feature .welcome-desc {
-  margin-bottom: 0;
+.companion-hero-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.companion-desc {
+  margin: 12px 0 16px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.companion-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 560px) {
+  .companion-feature-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.companion-feature-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  background: var(--bg-surface);
+  border: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+  border-radius: 10px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.companion-feature-card:hover {
+  border-color: color-mix(in srgb, var(--accent-decorative-primary) 45%, var(--border-color));
+  background: color-mix(in srgb, var(--accent-decorative-primary) 4%, var(--bg-surface));
+}
+
+.companion-feature-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.companion-feature-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.companion-feature-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.companion-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.companion-example-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.companion-example-chip:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 6%, var(--bg-surface));
+  transform: translateY(-1px);
+}
+
+.companion-example-chip:active {
+  transform: translateY(0);
 }
 
 .companion-hint {
-  margin-top: 20px;
-  padding: 10px 14px;
-  background: color-mix(in srgb, var(--accent-primary) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent);
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--accent-primary) 6%, transparent);
   border-radius: 8px;
-  color: var(--text-secondary);
-  font-size: 12px;
+  color: var(--text-muted);
+  font-size: 11.5px;
   text-align: center;
+  line-height: 1.5;
 }
 </style>
