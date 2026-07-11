@@ -22,20 +22,39 @@ export function normalizeEmbeddingDevice(device?: string | null): EmbeddingDevic
 
 /** 将用户配置解析为 pipeline 实际使用的 device（处理 auto 与平台差异） */
 export function resolvePipelineDevice(device: EmbeddingDevice): EmbeddingDevice {
-  if (device !== 'auto') return device
-
-  // macOS：transformers auto 会优先 CoreML，但 ORT 1.24 对外部 onnx_data 路径解析有误；
-  // gpu 会走 webgpu 等可用后端，实测稳定且更快。
-  switch (process.platform) {
-    case 'darwin':
-      return 'gpu'
-    case 'linux':
-      return process.arch === 'x64' ? 'gpu' : 'cpu'
-    case 'win32':
-      return 'gpu'
-    default:
-      return 'cpu'
+  if (device === 'auto') {
+    // macOS：transformers auto 会优先 CoreML，但 ORT 1.24 对外部 onnx_data 路径解析有误；
+    // gpu 会走 webgpu 等可用后端，实测稳定且更快。
+    switch (process.platform) {
+      case 'darwin':
+        return 'gpu'
+      case 'linux':
+        return process.arch === 'x64' ? 'gpu' : 'cpu'
+      case 'win32':
+        // Windows 不能用 gpu：transformers.js 会同时注册 webgpu + dml，
+        // onnxruntime-node 1.24 报 "DML EP can only be used with CPU EPs"。
+        return 'dml'
+      default:
+        return 'cpu'
+    }
   }
+
+  // 用户显式选 gpu 时，Windows 同样会触发 webgpu+dml 冲突，落到 dml。
+  if (device === 'gpu' && process.platform === 'win32') {
+    return 'dml'
+  }
+
+  return device
+}
+
+/**
+ * 模型加载时按顺序尝试的 pipeline 设备。
+ * 加速 EP（DML/WebGPU/CUDA 等）在无可用 GPU 或驱动不兼容时会直接失败，ORT 不会自动回退 CPU。
+ */
+export function getEmbeddingInitDeviceCandidates(device: EmbeddingDevice): EmbeddingDevice[] {
+  const primary = resolvePipelineDevice(device)
+  if (primary === 'cpu') return ['cpu']
+  return [primary, 'cpu']
 }
 
 /** pipeline() 公共选项：本地量化 ONNX + 指定设备 */

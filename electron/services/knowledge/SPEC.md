@@ -192,4 +192,4 @@ type MemoryVolatility = "stable" | "moderate" | "volatile"
 - **恢复后增量补差集**——`restoreBackup()` 恢复磁盘文件后调 `vectorStorage.forceReinitialize()` 丢弃内存句柄，再 `initialize()` 触发 `checkAndRebuildIndex` 自动比对 docIds 差集，只补备份与当前 documents.json 的差集，不全量重 embed
 - **孤儿 chunk 后台清理**——`initialize()` 后 `setImmediate` 定向删 chunk；残留 &lt; 50 跳过整表重建
 - **退出时 `disposeAsync`**——主进程 `cleanupAllServices` / SIGINT·SIGTERM 会 compact LanceDB 并停 worker
-- **嵌入推理**——`@huggingface/transformers` v4 + `device: auto`（macOS CoreML / Linux CUDA / Win DirectML）；设置项 `embeddingDevice`
+- **嵌入推理**——`@huggingface/transformers` v4 + `device: auto`（macOS→WebGPU via `gpu`、Linux x64→`gpu`、Windows→`dml`；Windows 不可用 `gpu` 别名，因 ORT 禁止 webgpu+dml 同会话）；加速 EP 初始化失败（无 DX12 GPU、驱动不兼容等）自动回退 `cpu`；设置项 `embeddingDevice`

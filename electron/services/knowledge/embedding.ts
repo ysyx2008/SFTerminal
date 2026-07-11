@@ -16,7 +16,8 @@ import { getModelManager, ModelManager } from './model-manager'
 import {
   normalizeEmbeddingDevice,
   buildEmbeddingPipelineOptions,
-  usesAcceleratedEmbedding,
+  getEmbeddingInitDeviceCandidates,
+  resolvePipelineDevice,
 } from './embedding-device'
 import { createLogger } from '../../utils/logger'
 
@@ -138,6 +139,8 @@ export class EmbeddingService extends EventEmitter {
   // ── In-process 模式（CLI / 测试 / fallback） ──────────────────
   private extractor: any = null
   private embeddingDevice: EmbeddingDevice = 'auto'
+  /** 本次成功加载实际使用的 pipeline 设备（可能与配置不同，例如 DML 失败后回退 CPU） */
+  private runtimePipelineDevice: EmbeddingDevice | null = null
 
   constructor() {
     super()
@@ -196,8 +199,9 @@ export class EmbeddingService extends EventEmitter {
    * - in-process 模式：16（主进程内，受 BFC arena 与 v8 堆共享地址空间限制）
    */
   getMaxBatchSize(): number {
+    const device = this.runtimePipelineDevice ?? resolvePipelineDevice(this.embeddingDevice)
     if (this.useWorker) {
-      return usesAcceleratedEmbedding(this.embeddingDevice)
+      return device !== 'cpu'
         ? EmbeddingService.MAX_BATCH_SIZE_WORKER_ACCEL
         : EmbeddingService.MAX_BATCH_SIZE_WORKER
     }
@@ -205,7 +209,8 @@ export class EmbeddingService extends EventEmitter {
   }
 
   private getWorkerRestartInterval(): number {
-    return usesAcceleratedEmbedding(this.embeddingDevice)
+    const device = this.runtimePipelineDevice ?? resolvePipelineDevice(this.embeddingDevice)
+    return device !== 'cpu'
       ? EmbeddingService.WORKER_RESTART_INTERVAL_ACCEL
       : EmbeddingService.WORKER_RESTART_INTERVAL
   }
@@ -224,14 +229,49 @@ export class EmbeddingService extends EventEmitter {
     return this.embeddingDevice
   }
 
-  private buildWorkerInitPayload(modelDir: string, modelName: string) {
-    const opts = buildEmbeddingPipelineOptions(this.embeddingDevice)
+  private buildWorkerInitPayload(
+    modelDir: string,
+    modelName: string,
+    pipelineDevice: EmbeddingDevice,
+  ) {
+    const opts = buildEmbeddingPipelineOptions(pipelineDevice)
     return {
       modelDir,
       modelName,
       device: opts.device,
       dtype: opts.dtype,
     }
+  }
+
+  private async loadWithPipelineDevice(
+    model: ModelInfo,
+    pipelineDevice: EmbeddingDevice,
+  ): Promise<{ useWorker: boolean; device: EmbeddingDevice }> {
+    const modelPath = this.modelManager.getModelPath(model.id)
+    const modelDir = path.dirname(modelPath)
+    const modelName = path.basename(modelPath)
+    const pipelineOpts = buildEmbeddingPipelineOptions(pipelineDevice)
+
+    if (detectUtilityProcessAvailable()) {
+      try {
+        await this.startWorker()
+        const initPayload = this.buildWorkerInitPayload(modelDir, modelName, pipelineDevice)
+        const initResult = await this.callWorker('initialize', initPayload)
+        return {
+          useWorker: true,
+          device: (initResult?.device ?? pipelineOpts.device) as EmbeddingDevice,
+        }
+      } catch (workerError) {
+        log.warn('Worker 模式初始化失败，回退到主进程内推理（device=%s）：', pipelineDevice, workerError)
+        this.killWorker()
+      }
+    }
+
+    const { pipeline, env } = await loadTransformersInProc()
+    env.allowRemoteModels = false
+    env.localModelPath = modelDir
+    this.extractor = await pipeline('feature-extraction', modelName, pipelineOpts)
+    return { useWorker: false, device: pipelineOpts.device }
   }
 
   /**
@@ -274,55 +314,47 @@ export class EmbeddingService extends EventEmitter {
   }
 
   private async doInitialize(model: ModelInfo): Promise<void> {
-    try {
-      const modelPath = this.modelManager.getModelPath(model.id)
-      const modelDir = path.dirname(modelPath)
-      const modelName = path.basename(modelPath)
+    const candidates = getEmbeddingInitDeviceCandidates(this.embeddingDevice)
+    const primary = candidates[0]
+    let lastError: unknown
 
-      // ── 优先尝试 worker 模式 ────────────────────────────────
-      if (detectUtilityProcessAvailable()) {
-        try {
-          await this.startWorker()
-          const initPayload = this.buildWorkerInitPayload(modelDir, modelName)
-          const initResult = await this.callWorker('initialize', initPayload)
-          this.useWorker = true
-          this.currentModelId = model.id
-          log.info(
-            'Embedding 模型已加载到 worker 进程：%s（device=%s，batch=%d）',
-            model.id,
-            initResult?.device ?? this.embeddingDevice,
-            this.getMaxBatchSize()
-          )
-          this.emit('loaded', model.id)
-          return
-        } catch (workerError) {
-          log.warn('Worker 模式初始化失败，回退到主进程内推理：', workerError)
-          this.killWorker()
+    for (const pipelineDevice of candidates) {
+      try {
+        this.killWorker()
+        this.extractor = null
+
+        const result = await this.loadWithPipelineDevice(model, pipelineDevice)
+        this.useWorker = result.useWorker
+        this.runtimePipelineDevice = result.device
+        this.currentModelId = model.id
+
+        if (result.device === 'cpu' && primary !== 'cpu') {
+          log.warn('加速设备 %s 不可用，已回退到 CPU', primary)
+        }
+
+        const modeLabel = result.useWorker ? 'worker 进程' : '主进程'
+        log.info(
+          'Embedding 模型已加载到 %s：%s（device=%s，batch=%d）',
+          modeLabel,
+          model.id,
+          result.device,
+          this.getMaxBatchSize(),
+        )
+        this.emit('loaded', model.id)
+        return
+      } catch (error) {
+        lastError = error
+        this.killWorker()
+        this.extractor = null
+        if (pipelineDevice !== 'cpu') {
+          log.warn('Embedding 设备 %s 加载失败，尝试回退：', pipelineDevice, error)
         }
       }
-
-      // ── 退回主进程内推理（CLI / 测试 / worker 启动失败） ──────
-      const { pipeline, env } = await loadTransformersInProc()
-      env.allowRemoteModels = false
-      env.localModelPath = modelDir
-
-      const pipelineOpts = buildEmbeddingPipelineOptions(this.embeddingDevice)
-      this.extractor = await pipeline('feature-extraction', modelName, pipelineOpts)
-
-      this.useWorker = false
-      this.currentModelId = model.id
-      log.info(
-        'Embedding 模型已加载到主进程：%s（device=%s，batch=%d，建议在 Electron 环境下走 worker）',
-        model.id,
-        this.embeddingDevice,
-        this.getMaxBatchSize()
-      )
-      this.emit('loaded', model.id)
-    } catch (error) {
-      log.error('Failed to load model:', error)
-      this.emit('error', error)
-      throw error
     }
+
+    log.error('Failed to load model:', lastError)
+    this.emit('error', lastError)
+    throw lastError
   }
 
   // ────────────────────────── Worker 启停 / RPC ──────────────────────────
@@ -669,6 +701,7 @@ export class EmbeddingService extends EventEmitter {
     this.extractor = null
     this.useWorker = false
     this.currentModelId = null
+    this.runtimePipelineDevice = null
     this.emit('disposed')
   }
 
@@ -690,6 +723,7 @@ export class EmbeddingService extends EventEmitter {
     this.extractor = null
     this.useWorker = false
     this.currentModelId = null
+    this.runtimePipelineDevice = null
     this.emit('disposed')
   }
 
