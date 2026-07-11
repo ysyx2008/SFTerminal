@@ -463,6 +463,25 @@ export default {
         }
       }
     },
+    companionWelcome: {
+      title: '联络',
+      desc: '你和 AI 助手的常驻对话通道。IM、Web 远程、桌面端的消息汇入同一条对话，AI 也会在需要时主动找你。',
+      features: {
+        multiChannel: {
+          title: '多渠道汇入',
+          desc: '钉钉、飞书、企业微信、Slack、Telegram 等 IM，以及 Web 远程会话，都汇入这里'
+        },
+        proactive: {
+          title: 'AI 主动找你',
+          desc: '关切触发、提醒、重要事件，AI 会主动推送到这里'
+        },
+        continuous: {
+          title: '跨重启连续',
+          desc: '重启后继续之前的对话，不用从头开始'
+        }
+      },
+      hint: '直接在下方输入框发消息即可开始对话'
+    },
     imagePreview: {
       prevImage: '上一张 (←)',
       nextImage: '下一张 (→)',

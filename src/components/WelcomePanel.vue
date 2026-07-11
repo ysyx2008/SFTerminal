@@ -11,6 +11,7 @@ import type { ExecutionMode, AgentHistorySummary } from '@shared/types'
 
 defineProps<{
   isStandaloneAssistant: boolean
+  isCompanionTab: boolean
   executionMode: ExecutionMode
   recentHistory: AgentHistorySummary[]
   isLoadingHistory: boolean
@@ -50,6 +51,29 @@ const truncateText = (text: string, maxLength: number): string => {
 
 <template>
   <div class="ai-welcome">
+    <!-- 联络（companion）tab 专属说明 -->
+    <template v-if="isCompanionTab">
+      <p>🤝 {{ t('ai.companionWelcome.title') }}</p>
+      <p class="welcome-desc">{{ t('ai.companionWelcome.desc') }}</p>
+      <div class="companion-features">
+        <div class="companion-feature">
+          <p class="welcome-section-title">💬 {{ t('ai.companionWelcome.features.multiChannel.title') }}</p>
+          <p class="welcome-desc">{{ t('ai.companionWelcome.features.multiChannel.desc') }}</p>
+        </div>
+        <div class="companion-feature">
+          <p class="welcome-section-title">🔔 {{ t('ai.companionWelcome.features.proactive.title') }}</p>
+          <p class="welcome-desc">{{ t('ai.companionWelcome.features.proactive.desc') }}</p>
+        </div>
+        <div class="companion-feature">
+          <p class="welcome-section-title">🔄 {{ t('ai.companionWelcome.features.continuous.title') }}</p>
+          <p class="welcome-desc">{{ t('ai.companionWelcome.features.continuous.desc') }}</p>
+        </div>
+      </div>
+      <p class="companion-hint">{{ t('ai.companionWelcome.hint') }}</p>
+    </template>
+
+    <!-- 独立助手 / 终端模式：原有欢迎内容 -->
+    <template v-else>
     <p>🤖 {{ t('ai.agentWelcome.enabled') }}</p>
 
     <p class="welcome-section-title">💡 {{ t('ai.agentWelcome.whatIsAgent') }}</p>
@@ -153,6 +177,7 @@ const truncateText = (text: string, maxLength: number): string => {
         {{ t('ai.agentWelcome.viewMoreHistory') }}
       </button>
     </div>
+    </template>
   </div>
 </template>
 
@@ -549,5 +574,32 @@ const truncateText = (text: string, maxLength: number): string => {
 
 .warning-text {
   color: var(--color-error);
+}
+
+/* ==================== 联络（companion）专属说明 ==================== */
+.companion-features {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.companion-feature .welcome-section-title {
+  margin-top: 0;
+}
+
+.companion-feature .welcome-desc {
+  margin-bottom: 0;
+}
+
+.companion-hint {
+  margin-top: 20px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--accent-primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: center;
 }
 </style>

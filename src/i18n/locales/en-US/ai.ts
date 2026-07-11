@@ -462,6 +462,25 @@ export default {
         }
       }
     },
+    companionWelcome: {
+      title: 'Companion',
+      desc: 'Your persistent conversation channel with the AI assistant. Messages from IM, Web remote, and desktop all flow into the same thread, and the AI can reach out to you proactively.',
+      features: {
+        multiChannel: {
+          title: 'Multi-channel',
+          desc: 'DingTalk, Feishu, WeCom, Slack, Telegram and other IMs, plus Web remote sessions, all converge here'
+        },
+        proactive: {
+          title: 'AI reaches out',
+          desc: 'Watch triggers, reminders, and important events are pushed here by the AI'
+        },
+        continuous: {
+          title: 'Survives restart',
+          desc: 'Continue the previous conversation after restart, no need to start over'
+        }
+      },
+      hint: 'Type in the input box below to start a conversation'
+    },
     imagePreview: {
       prevImage: 'Previous image (←)',
       nextImage: 'Next image (→)',

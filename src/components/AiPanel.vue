@@ -52,6 +52,7 @@ import { pickTaskCompleteLabel } from '../composables/useTaskCompleteLabel'
 import { loadBondTrustLevel } from '../composables/useRandomPlaceholder'
 import type { BondTrustLevel } from '@shared/types/bond'
 import type { AgentRecord, AgentHistorySummary } from '@shared/types'
+import { COMPANION_AGENT_KEY } from '@shared/types'
 
 // Props - 每个 AiPanel 实例绑定到特定的 tab
 const props = withDefaults(defineProps<{
@@ -83,6 +84,12 @@ const showSettings = inject<() => void>('showSettings')
 const isStandaloneAssistant = computed(() => {
   const tab = terminalStore.tabs.find(t => t.id === props.tabId)
   return tab?.type === 'assistant'
+})
+
+/** 当前 tab 是否为联络（companion）tab -- 决定 WelcomePanel 走专属说明分支 */
+const isCompanionTab = computed(() => {
+  const tab = terminalStore.tabs.find(t => t.id === props.tabId)
+  return tab?.type === 'assistant' && tab?.agentId === COMPANION_AGENT_KEY
 })
 
 const handleClose = () => {
@@ -2185,6 +2192,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
             <WelcomePanel
               v-if="!isAgentRunning && !agentUserTask && agentTaskGroups.length === 0"
               :is-standalone-assistant="isStandaloneAssistant"
+              :is-companion-tab="isCompanionTab"
               :execution-mode="executionMode"
               :recent-history="recentHistory"
               :is-loading-history="isLoadingHistory"
