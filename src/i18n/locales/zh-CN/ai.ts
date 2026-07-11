@@ -465,46 +465,17 @@ export default {
     },
     companionWelcome: {
       title: '联络',
-      subtitle: '常驻对话通道',
-      desc: '你和 AI 助手之间持续的关系线。所有渠道的消息汇入同一条对话，AI 也能主动找你。',
-      featuresTitle: '这里能做什么',
+      desc: '你和助手之间持续的关系线。',
       features: {
         multiChannel: {
-          icon: '💬',
           title: '多渠道汇入',
           desc: '钉钉、飞书、企业微信、Slack、Telegram 等 IM，以及 Web 远程会话，都汇入同一条对话'
         },
         proactive: {
-          icon: '🔔',
           title: 'AI 主动找你',
-          desc: '关切触发、任务完成、重要提醒，AI 会主动推送到这里通知你'
-        },
-        continuous: {
-          icon: '🔄',
-          title: '跨重启连续',
-          desc: '重启应用后继续之前的对话，历史记忆保留，不用从头开始'
+          desc: '关切触发、任务完成、重要提醒，会主动推送到这里'
         }
-      },
-      examplesTitle: '试试这样开口',
-      examples: {
-        ask: {
-          label: '问日常',
-          prompt: '帮我看看今天有什么重要的待办'
-        },
-        chat: {
-          label: '随便聊聊',
-          prompt: '最近工作压力有点大，跟我聊两句'
-        },
-        followup: {
-          label: '追问进展',
-          prompt: '上次让你关注的事，现在怎么样了'
-        },
-        brief: {
-          label: '要个简报',
-          prompt: '给我一份今天服务器状态的简报'
-        }
-      },
-      hint: '直接在下方输入框发消息，或点击上面的示例开始'
+      }
     },
     imagePreview: {
       prevImage: '上一张 (←)',
