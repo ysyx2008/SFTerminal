@@ -7,6 +7,7 @@ import stripAnsi from 'strip-ansi'
 import * as iconv from 'iconv-lite'
 import type { PtyOptions } from '@shared/types'
 import { createLogger } from '../utils/logger'
+import { resolveDefaultShell, getShellSpawnArgs, quoteForShell, type ShellKind } from '../utils/shell'
 
 export type { PtyOptions }
 
@@ -91,13 +92,10 @@ export class PtyService {
   private readonly MARKER_SUFFIX = '⟧'
 
   /**
-   * 获取默认 Shell
+   * 获取默认 Shell 路径（统一走 utils/shell.ts，确保 Windows 优先 PowerShell）
    */
   private getDefaultShell(): string {
-    if (process.platform === 'win32') {
-      return process.env.COMSPEC || 'powershell.exe'
-    }
-    return process.env.SHELL || '/bin/bash'
+    return resolveDefaultShell().path
   }
 
   /**
@@ -347,14 +345,32 @@ export class PtyService {
     const hide = '\\x1b[2m\\x1b[30m'
     const show = '\\x1b[0m'
     
-    if (process.platform === 'win32') {
-      // PowerShell - 暂时保持原样
-      return `echo '${startMarker}'; ${command}; echo '${endMarker}:'$LASTEXITCODE'${this.MARKER_SUFFIX}'\r`
-    } else {
-      // Bash/Zsh - 使用 printf 输出隐藏的标记
-      // 先输出隐藏的开始标记，然后执行命令，最后输出隐藏的结束标记
-      return `printf '${hide}${startMarker}${show}\\n' && ${command}; printf '${hide}${endMarker}:'$?'${this.MARKER_SUFFIX}${show}\\n'\n`
+    const kind = resolveDefaultShell().kind
+
+    if (kind === 'powershell') {
+      // PowerShell：Write-Host 输出 marker，双引号字符串解析 $LASTEXITCODE。
+      // try/finally 确保 endMarker 一定输出（即使命令异常），否则 handleCommandOutput 会卡到超时。
+      // 旧版用 echo '...$LASTEXITCODE...' 单引号，PS 单引号不解析变量，marker 永远匹配失败。
+      //
+      // 注意：下面的 endCmd 模板字符串里 ${'$'}{LASTEXITCODE} 是手动转义技巧--
+      // 直接写 ${LASTEXITCODE} 会被 TS 模板字符串当作插值变量解析（不存在该变量会抛错），
+      // 所以用 ${'$'} 插入字面量 $ 字符，再跟上 {LASTEXITCODE}，最终输出 PowerShell 的 ${LASTEXITCODE}。
+      const startCmd = `Write-Host ${quoteForShell('powershell', startMarker)}`
+      const endCmd = `Write-Host ${quoteForShell('powershell', `${endMarker}:${'$'}{LASTEXITCODE}${this.MARKER_SUFFIX}`)}`
+      return `${startCmd}; try { ${command} } finally { ${endCmd} }\r`
+    } else if (kind === 'cmd') {
+      // cmd.exe 兜底：%ERRORLEVEL% 拿退出码
+      // 注意：cmd 无 try/finally 等价机制，如果命令异常退出 endMarker 不会输出，
+      // executeCommand 会等到超时。但 cmd.exe 实际兜底场景极少（PowerShell 通常都能找到），
+      // 且 cmd 命令异常率低，这里接受这个限制。
+      const startCmd = `echo ${quoteForShell('cmd', startMarker)}`
+      const endCmd = `echo ${quoteForShell('cmd', `${endMarker}:%ERRORLEVEL%${this.MARKER_SUFFIX}`)}`
+      return `${startCmd} & ${command} & ${endCmd}\r`
     }
+
+    // Bash/Zsh - printf 输出隐藏的 marker（hide/show ANSI 转义让 marker 对用户几乎不可见）
+    const bashCmd = `printf '${hide}${startMarker}${show}\\n' && ${command}; printf '${hide}${endMarker}:'$?'${this.MARKER_SUFFIX}${show}\\n'\n`
+    return bashCmd
   }
 
   /**
@@ -563,6 +579,12 @@ export class PtyService {
         /\w+\s*[$#%>❯➜»⟩›]\s*$/,             // 简单的 user$ 格式
         /[~/][\w/.-]*\s*[$#%>❯]\s*$/,         // 路径 + 提示符
         />\s*$/,                               // 简单的 > 提示符 (fish/powershell)
+        // PowerShell 默认提示符：PS <path>> （Windows 上最常见）
+        // 例：PS C:\Users\Foo>、PS /home/user>
+        /^PS\s+[A-Za-z]:[\\\/][^\s>]*>\s*$/m,
+        /^PS\s+[~/][^\s>]*>\s*$/m,
+        // PowerShell 自定义提示符常见形式（oh-my-posh / starship 等保留 > 结尾）
+        /[»>]\s*$/,
       ]
       
       // Shell 续行提示符（zsh/bash），这些不是命令完成的标志
@@ -746,23 +768,50 @@ export class PtyService {
           return cwd
         }
       } else if (process.platform === 'win32') {
-        // Windows: 获取进程 CWD 比较困难
-        // 尝试使用 PowerShell 和 WMI 查询，但成功率不高
-        // 主要依赖 handleInput 中的命令预测方式
+        // Windows: 拿其他进程的真实 CWD 需要 NtQueryInformationProcess 原生 API，
+        // Node 没有内建支持。这里用 PowerShell + WMI 做 best-effort 兜底：
+        //   1) 优先拿 CommandLine（如果 shell 启动时带 cd，能解析出路径）
+        //   2) 退到 ExecutablePath 所在目录（不是 CWD，但比 null 强，至少让 Agent 知道 shell 在哪）
+        // 真正的 CWD 同步由 terminal-state.service 的命令预测路径补充。
         try {
-          // 方法1：使用 WMI 查询进程的 ExecutablePath，然后获取其目录
-          // 这不是真正的 CWD，但对于某些 shell 可能有效
-          const { stdout: _stdout } = await execAsync(
+          const { stdout } = await execAsync(
+            `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter 'ProcessId=${shellPid}' | Select-Object -ExpandProperty CommandLine"`,
+            { timeout: 3000 }
+          )
+          const cmdline = stdout.trim()
+          if (cmdline) {
+            // 尝试从命令行里提取 cd 路径（支持带空格的引号路径）
+            // 匹配: cd "C:\Program Files\App" / cd 'C:\My Path' / cd /simple/path
+            const cdMatch = cmdline.match(/cd\s+['"]?([^'"]+?)['"]?(?:\s|$)/)
+            if (cdMatch) {
+              const p = cdMatch[1].trim()
+              if (p && (p.includes(':\\') || p.startsWith('/') || p.startsWith('~'))) {
+                return p
+              }
+            }
+            const wdMatch = cmdline.match(/-WorkingDirectory\s+['"]?([^'"]+?)['"]?(?:\s|$)/)
+            if (wdMatch) {
+              const p = wdMatch[1].trim()
+              if (p && (p.includes(':\\') || p.startsWith('/') || p.startsWith('~'))) {
+                return p
+              }
+            }
+          }
+        } catch {
+          // PowerShell 不可用时静默回退
+        }
+
+        // 退到 ExecutablePath 所在目录（不是 CWD，但让 Agent 不至于完全失明）
+        try {
+          const { stdout } = await execAsync(
             `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${shellPid}').ExecutablePath | Split-Path -Parent"`,
             { timeout: 3000 }
           )
-          // 这个方法通常返回的是 shell 可执行文件的目录，不是工作目录，所以不使用
-          // 仅作为占位符，实际 Windows 上主要依赖命令预测
+          const dir = stdout.trim()
+          if (dir) return dir
         } catch {
-          // 忽略错误
+          // 忽略
         }
-        // Windows 上获取其他进程的 CWD 需要 Native API (NtQueryInformationProcess)
-        // 这需要额外的原生模块，目前返回 null，依赖命令预测方式
         return null
       }
       return null

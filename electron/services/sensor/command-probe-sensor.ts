@@ -6,10 +6,11 @@
  *
  * 跨平台：自动检测 shell（Unix→/bin/sh, Windows→powershell）
  */
-import { exec, type ChildProcess } from 'child_process'
+import { exec, spawn, type ChildProcess } from 'child_process'
 import { createHash } from 'crypto'
 import type { Sensor, SensorEvent, EventBus } from './types'
 import { createLogger } from '../../utils/logger'
+import { resolveDefaultShell, getShellSpawnArgs } from '../../utils/shell'
 
 const log = createLogger('CommandProbeSensor')
 
@@ -139,33 +140,37 @@ export class CommandProbeSensor implements Sensor {
   private probe(watchId: string, target: CommandProbeTarget): void {
     if (this.runningProcesses.has(watchId)) return
 
-    const shell = target.shell || getDefaultShell()
     const env = { ...process.env }
     if (process.platform !== 'win32') {
       env.LANG = env.LANG || 'en_US.UTF-8'
     }
 
-    const options = {
-      shell,
-      timeout: COMMAND_TIMEOUT_MS,
-      maxBuffer: MAX_OUTPUT_BYTES,
-      cwd: target.workingDirectory || undefined,
-      env,
-      windowsHide: true,
-    }
+    const cwd = target.workingDirectory || undefined
+    // 用户指定了 shell 路径时，走 spawn 的 shell:true 模式让 Node 自行处理跨平台调用；
+    // 否则用 resolveDefaultShell + getShellSpawnArgs，确保 Windows 上 PowerShell
+    // 走 -Command 参数（旧版 exec({shell: powershell.exe}) 会被 Node 套进 cmd /d /s /c 模板，PS 不认）
+    let child: ChildProcess
+    let stdout = ''
+    let stderr = ''
+    let exitCode: number | null = null
+    let timeoutId: NodeJS.Timeout | null = null
+    let done = false
 
-    const child = exec(target.command, options, (error, stdout, stderr) => {
+    const finalize = () => {
+      if (done) return
+      done = true
+      if (timeoutId) clearTimeout(timeoutId)
       this.runningProcesses.delete(watchId)
       if (!this._running) return
 
-      const exitCode = error?.code ?? (error ? 1 : 0)
-      const output = (stdout || '').trim()
+      const code = exitCode ?? 0
+      const output = stdout.trim()
       const outputHash = hashString(output)
       const prev = this.states.get(watchId)
 
       this.states.set(watchId, {
         lastOutputHash: outputHash,
-        lastExitCode: typeof exitCode === 'number' ? exitCode : null,
+        lastExitCode: typeof code === 'number' ? code : null,
         lastOutput: output.substring(0, 2000),
       })
 
@@ -196,9 +201,9 @@ export class CommandProbeSensor implements Sensor {
           break
 
         case 'exit_code_nonzero':
-          if (exitCode !== 0) {
+          if (code !== 0) {
             shouldTrigger = true
-            reason = `exit code: ${exitCode}`
+            reason = `exit code: ${code}`
           }
           break
       }
@@ -214,10 +219,10 @@ export class CommandProbeSensor implements Sensor {
             command: target.command,
             triggerOn: target.triggerOn,
             reason,
-            exitCode,
+            exitCode: code,
             output: output.substring(0, 2000),
             previousOutput: prev.lastOutput,
-            stderr: (stderr || '').trim().substring(0, 500),
+            stderr: stderr.trim().substring(0, 500),
           },
           priority: 'normal',
         }
@@ -225,17 +230,67 @@ export class CommandProbeSensor implements Sensor {
         log.info(`Probe triggered for ${watchId}: ${reason}`)
         this.eventBus.emit(event)
       }
-    })
+    }
+
+    if (target.shell) {
+      // 用户显式指定 shell：用 exec 的 shell 选项兼容旧行为
+      child = exec(target.command, {
+        shell: target.shell,
+        timeout: COMMAND_TIMEOUT_MS,
+        maxBuffer: MAX_OUTPUT_BYTES,
+        cwd,
+        env,
+        windowsHide: true,
+      }, (error, out, err) => {
+        if (error) {
+          exitCode = error.code ?? 1
+        }
+        stdout = out || ''
+        stderr = err || ''
+        finalize()
+      })
+    } else {
+      const resolved = resolveDefaultShell()
+      const args = getShellSpawnArgs(resolved.kind, target.command)
+      child = spawn(resolved.path, args, {
+        cwd,
+        env,
+        windowsHide: true,
+      })
+      child.stdout?.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString('utf8')
+        if (stdout.length > MAX_OUTPUT_BYTES) {
+          stdout = stdout.slice(0, MAX_OUTPUT_BYTES)
+        }
+      })
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString('utf8')
+        if (stderr.length > MAX_OUTPUT_BYTES * 0.1) {
+          stderr = stderr.slice(0, Math.floor(MAX_OUTPUT_BYTES * 0.1))
+        }
+      })
+      child.on('error', (err) => {
+        stderr += `\n[probe spawn error] ${err.message}`
+        exitCode = 1
+        finalize()
+      })
+      child.on('exit', (code, signal) => {
+        exitCode = code ?? (signal ? 1 : 0)
+        finalize()
+      })
+
+      // 超时强杀
+      timeoutId = setTimeout(() => {
+        try { child.kill('SIGTERM') } catch { /* 已退出 */ }
+        setTimeout(() => {
+          try { child.kill('SIGKILL') } catch { /* 已退出 */ }
+          finalize()
+        }, 500)
+      }, COMMAND_TIMEOUT_MS)
+    }
 
     this.runningProcesses.set(watchId, child)
   }
-}
-
-function getDefaultShell(): string {
-  if (process.platform === 'win32') {
-    return process.env.ComSpec?.toLowerCase().includes('powershell') ? process.env.ComSpec : 'powershell.exe'
-  }
-  return process.env.SHELL || '/bin/sh'
 }
 
 function hashString(str: string): string {

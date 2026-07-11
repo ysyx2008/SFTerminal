@@ -14,7 +14,7 @@
  */
 import { spawn, ChildProcess } from 'child_process'
 import { decodeBuffer } from '../../../utils/encoding'
-import { getDefaultShell } from '../../../utils/platform'
+import { resolveDefaultShell, getShellSpawnArgs } from '../../../utils/shell'
 import { createLogger } from '../../../utils/logger'
 
 const log = createLogger('ExecManager')
@@ -136,11 +136,15 @@ class BackgroundExecManager {
    * 启动 shell 字符串命令（legacy exec 工具）
    */
   spawn(opts: SpawnOptions): InternalTask {
-    const shell = getDefaultShell()
+    // 统一走 utils/shell.ts：Windows 用 PowerShell -NoProfile -Command（而不是 spawn(cmd, {shell})），
+    // 避免旧版 Windows 分支直接 spawn(command, {shell}) 导致 cmd.exe 行为不一致、
+    // 管道/引号嵌套命令行为与 bash 完全不同的问题。
+    const resolved = resolveDefaultShell()
     const spawnEnv = opts.env ? { ...process.env, ...opts.env } : process.env
-    const child = process.platform === 'win32'
-      ? spawn(opts.command, { shell, cwd: opts.cwd, env: spawnEnv })
-      : spawn(shell, ['-l', '-c', opts.command], { cwd: opts.cwd, env: spawnEnv })
+    const child = spawn(resolved.path, getShellSpawnArgs(resolved.kind, opts.command), {
+      cwd: opts.cwd,
+      env: spawnEnv,
+    })
 
     return this.startTask({
       command: opts.command,

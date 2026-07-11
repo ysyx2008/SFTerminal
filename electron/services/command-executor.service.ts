@@ -1,6 +1,7 @@
 import { spawn, ChildProcess } from 'child_process'
 import * as os from 'os'
 import stripAnsi from 'strip-ansi'
+import { resolveDefaultShell, getShellSpawnArgs } from '../utils/shell'
 
 export interface CommandResult {
   output: string
@@ -25,16 +26,6 @@ export class CommandExecutorService {
   private executions: Map<string, PendingExecution> = new Map()
 
   /**
-   * 获取默认 Shell
-   */
-  private getDefaultShell(): string {
-    if (process.platform === 'win32') {
-      return process.env.COMSPEC || 'powershell.exe'
-    }
-    return process.env.SHELL || '/bin/bash'
-  }
-
-  /**
    * 执行命令并返回结果
    * @param command 要执行的命令
    * @param cwd 工作目录（可选）
@@ -47,16 +38,14 @@ export class CommandExecutorService {
   ): Promise<CommandResult> {
     const id = `exec_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
     const startTime = Date.now()
-    const shell = this.getDefaultShell()
     const workDir = cwd || os.homedir()
 
     return new Promise((resolve) => {
-      // 根据 shell 类型构建参数
-      const shellArgs = process.platform === 'win32'
-        ? ['-Command', command]  // PowerShell
-        : ['-c', command]        // Bash/Zsh
+      // 统一走 utils/shell.ts：根据 shell 类型（powershell/cmd/bash）构建正确参数
+      const shellResolved = resolveDefaultShell()
+      const shellArgs = getShellSpawnArgs(shellResolved.kind, command)
 
-      const proc = spawn(shell, shellArgs, {
+      const proc = spawn(shellResolved.path, shellArgs, {
         cwd: workDir,
         env: {
           ...process.env,
