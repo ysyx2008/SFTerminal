@@ -19,7 +19,7 @@
     "build:mac:fast": "vite build && electron-builder --mac && node scripts/fix-mac-yml.js",
     "build:dir": "vite build && electron-builder --dir",
     "install:dir": "node scripts/install-dir-build.js",
-    "build:local": "npm run build:dir && npm run install:dir",
+    "build:local": "npm run build:dir && node scripts/install-dir-build.js --launch",
     "typecheck": "vue-tsc --noEmit",
     "typecheck:electron": "tsc --project tsconfig.node.json --noEmit",
     "typecheck:src": "vue-tsc --noEmit --skipLibCheck",
