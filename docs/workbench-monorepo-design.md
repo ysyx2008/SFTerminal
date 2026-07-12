@@ -4,15 +4,22 @@
 > 范围：`src/workbench/`、`src/components/workbench/`、新增 `packages/`
 > 关联：`electron/services/agent/SPEC.md`、`src/workbench/SPEC.md`、`.cursor/rules/project-architecture.mdc`
 > 起因：业务条线研发团队需自行研发并发布专用工作台；支撑开源主线可被快速 OEM（产品背景另文）
-> 修订：2026-07-13 将产品北极星 / OEM 两版本 / 品牌与 SSO 叙事拆至 [`oem-vision.md`](./oem-vision.md)；本文专注工程拆包
+> 修订：2026-07-13 拆出 OEM 产品说明；同日对齐「Fork 优先 / features 统一可用性 / 双来源装配 / skills 包内自治」
 
 ---
 
 ## 产品背景（指针）
 
-**为什么做、开源 vs OEM、一岗一台、品牌与 SSO**：见 [`oem-vision.md`](./oem-vision.md)。
+**为什么做、开源 vs OEM、一岗一台、品牌、能力开关、SSO**：见 [`oem-vision.md`](./oem-vision.md)。
 
-本文只回答：**开源主线里工作台如何抽成可交付的包 / SDK，以便多团队与 OEM Fork 少改核心、快速加岗。**
+本文只回答：**开源主线里工作台如何抽成可交付的包 / SDK，以便 OEM Fork 少改核心、快速加岗。**
+
+与 OEM 总目标的衔接（工程必须遵守）：
+
+1. **Fork 优先**：包边界清晰是为了 Fork 里加 `workbench-*` / 改配置；独立 npm 发版是可选加速，不是唯一主线  
+2. **能力开关 × 工作台可用性**：`oem.config.features` + Steam + descriptor 经**统一判定**（如 `isWorkbenchAvailable(kind)`），禁止两套裁剪逻辑分叉  
+3. **装配双来源**：descriptor 可来自「本地包 register」或「将来服务端下发」，走**同一 bootstrap**  
+4. **skills 包内自治（已拍板）**：业务/OEM 工作台优先自带 skill 模块（入口 side-effect `registerSkill`）；`skills: string[]` 声明依赖并供校验；仅引用核心仓已有 skill id 为补充，不是唯一模式  
 
 ---
 
@@ -34,14 +41,14 @@
 
 ### 1.1 目标
 
-让业务条线研发团队（金融、运维、人事、法务等）能：
+让业务条线 / OEM 研发能：
 
-1. **一站式交付专用工作台**：前端 UI + 专用技能 + MCP server，业务团队一次发版带全栈
-2. **自行发版**，不依赖核心团队评审或合并
-3. **依赖旗鱼核心架构**（Agent、记忆、终端、IM 等），但不污染核心代码
-4. **版本自治**，业务包与 SDK 按各自节奏发版，互不阻塞
+1. **一站式交付专用工作台**：前端 UI + 专用技能 + MCP server（优先打进工作台包或随包声明）  
+2. **在 Fork 或 monorepo 内扩展**，少改 Agent 核心，降低合上游冲突  
+3. **依赖旗鱼核心架构**（Agent、记忆、终端、IM 等），但不污染核心代码  
+4. **（可选）包版本自治**：changesets / 内部 registry 发版——有多团队同仓协作时再用；纯 OEM Fork 可只靠 workspace 包边界  
 
-产品层目标（一岗一台、OEM Fork、品牌配置等）见 [`oem-vision.md`](./oem-vision.md)。
+产品层目标见 [`oem-vision.md`](./oem-vision.md)。
 
 ### 1.2 现状核实结论（v2 关键依据）
 
@@ -231,6 +238,17 @@ export interface WorkbenchDescriptor {
 
   /** 工作台 Agent system prompt 片段（前端注入 context.workbenchPrompt，走 IPC 到后端） */
   agentPrompt?: string | ((tab: WorkbenchAgentPromptTab) => string | undefined)
+
+  /**
+   * （预留）岗位级 Agent 策略：记忆 / 召回 / 执行松紧等。
+   * 实现可后置，但字段挂在 descriptor 上，避免日后散进 Agent 私有逻辑。
+   */
+  agentPolicy?: {
+    memory?: boolean
+    recall?: boolean
+    executionMode?: string
+    // …随产品契约演进
+  }
 }
 
 export interface RegionSpec {
@@ -291,33 +309,32 @@ export function resolveWorkbenchKind(tab: {
 /** 解析工作台渲染器 */
 export function resolveWorkbenchRenderer(kind: WorkbenchKind): Component
 
+/**
+ * 工作台是否对当前构建/OEM 可用 —— 唯一裁剪判定点。
+ * 合并：oem.config.features（如 localTerminal/sshTerminal/assistantWorkbench/companion）
+ *      + Steam（availableInSteam）+ 其它构建旗标。
+ * UI 创建入口、registry 渲染、ensureCompanion 等一律问这里，禁止另写一套 if。
+ */
+export function isWorkbenchAvailable(kind: WorkbenchKind): boolean
+
 /** 解析工作台 Agent prompt（前端调用，结果填 context.workbenchPrompt） */
 export function resolveWorkbenchAgentPrompt(kind: WorkbenchKind, tab: WorkbenchAgentPromptTab): string | undefined
 ```
 
 ### 3.3 desktop 启动时的一站式装配
 
-`apps/desktop` 启动时遍历所有已注册工作台，装配后端能力：
+**双来源、单装配**：descriptor 无论来自「import 工作台包 → `registerWorkbench`」还是「服务端下发 JSON → `registerWorkbench`」，都进入同一注册表，再由 bootstrap 装配 MCP / 校验 skills。
 
 ```typescript
 // apps/desktop/src/workbench-bootstrap.ts （新增）
 import { getAllWorkbenchDescriptors } from '@sailfish/workbench-sdk'
-import { registerSkill } from './electron/services/agent/skills/registry'
 import { mcpService } from './electron/services/mcp.service'
 
 export function bootstrapWorkbenches() {
   const descriptors = getAllWorkbenchDescriptors()
 
-  // 1. 注册所有工作台声明的技能
-  const allSkills = new Set<string>()
-  for (const d of descriptors) {
-    for (const skillId of d.skills ?? []) {
-      allSkills.add(skillId)
-    }
-  }
-  // 业务工作台自带的 skill 模块由各自包的 side-effect import 触发 registerSkill
-  //（业务包入口 import './skills/finance-data' —— 该模块顶层调 registerSkill）
-  // desktop 只需 import 业务包主入口，skill 自动注册
+  // 1. skills：包入口 side-effect 已 registerSkill；此处按 d.skills 做存在性校验/日志
+  //    （允许只引用核心仓已有 skill id；OEM 自治包则自带模块）
 
   // 2. 连接所有工作台声明的 MCP server
   for (const d of descriptors) {
@@ -330,7 +347,7 @@ export function bootstrapWorkbenches() {
 }
 ```
 
-**关键**：业务工作台包**主入口**做两件事——调 `registerWorkbench(descriptor)` 注册前端，并 side-effect import 自己的 skill 模块（skill 模块顶层调 `registerSkill`）。desktop 只需 import 业务包主入口，一切自动生效。
+**关键**：业务/OEM 工作台包**主入口**做两件事——`registerWorkbench(descriptor)`，并 side-effect import 自带 skill 模块。desktop 只需 import 各包主入口（或加载服务端下发的描述后再 register），一切走同一注册表。
 
 ### 3.4 业务工作台两种形态
 
@@ -400,9 +417,17 @@ P0-P1 阶段，业务工作台若要对话区，**临时方案**是 iframe 嵌�
 
 ## 四、版本管理与发版流程
 
-### 4.1 包独立版本
+### 4.0 主路径：Fork OEM（与今天产品模型对齐）
 
-每个包有自己的 `version` 字段，独立 bump。用 [changesets](https://github.com/changesets/changesets) 管理：
+多数企业（含我们自己）是 **Fork 开源主线**，在 Fork 内加 `packages/workbench-*`、改 `oem.config`。此时：
+
+- **不必**先上 GitHub Packages 才能 OEM  
+- monorepo / workspace 包的价值是**边界清晰、少改核心**  
+- 跟上游合并时只合开源主线，业务包留在 Fork  
+
+### 4.1 （可选）同仓多团队时的包独立发版
+
+若多个业务团队在**同一开源/内部 monorepo** 协作，再用 changesets + 内部 registry：
 
 ```json
 // packages/workbench-finance/package.json
@@ -595,14 +620,20 @@ SDK 1.0 只暴露 `WorkbenchDescriptor` / `registerWorkbench` / `resolveWorkbenc
 
 ### 7.4 开放问题
 
-1. **业务包是否随 desktop 一起打包进 release？** 还是作为可选下载？影响打包体积和首启体验。
+1. **业务包是否随 desktop 一起打包进 release？** 还是作为可选下载？影响打包体积和首启体验。（Fork OEM 场景下通常打进自己的安装包。）
 2. **业务包的 i18n 怎么处理？** 各自维护翻译，还是贡献到主 i18n bundle？
-3. **业务包能否注册自己的 IPC handler？** 当前 IPC 全在 `main.ts` 注册。若允许，业务包主入口 side-effect 调 `ipcMain.handle` 可行，但需要 desktop 暴露安全的注册入口。
+3. **业务包能否注册自己的 IPC handler？** 当前 IPC 全在 `main.ts` 注册。若允许，需 desktop 暴露安全的注册入口。
 4. **业务包的测试怎么跑？** 各包 vitest 独立跑，还是聚合到根 CI？
-5. **CLI 模式（`electron/cli/`）怎么处理业务工作台？** CLI 是纯后端，无 Vue 渲染，但业务工作台声明的 skills/mcp 应该加载。
-6. **业务工作台声明的 skills 来自哪里？** 业务包自带 skill 模块（side-effect import 触发 registerSkill），还是引用核心仓库已有的 skill？前者让业务包真正自治，后者增加耦合。
+5. **CLI 模式（`electron/cli/`）怎么处理业务工作台？** CLI 纯后端无 Vue，但声明的 skills/mcp 应加载。
 
-产品 / OEM 侧开放问题（岗位策略字段、控制面边界、各 Fork 跟版等）见 [`oem-vision.md`](./oem-vision.md)。上述工程问题建议在 P0 跑通后再讨论，不影响方案整体方向。
+**已拍板（不再当作开放问题）：**
+
+- **skills 来源**：优先工作台包自带 skill 模块（side-effect `registerSkill`）+ descriptor 声明 id；引用核心 skill id 为补充。  
+- **发版主路径**：Fork + 包边界清晰优先；GitHub Packages / changesets 为同仓多团队可选。  
+- **可用性**：`isWorkbenchAvailable` 统一 features + Steam。  
+- **装配**：本地注册与服务端下发同一 bootstrap。  
+
+产品 / OEM 侧问题见 [`oem-vision.md`](./oem-vision.md)。其余工程问题建议在 P0 跑通后再讨论。
 
 ---
 
@@ -610,17 +641,19 @@ SDK 1.0 只暴露 `WorkbenchDescriptor` / `registerWorkbench` / `resolveWorkbenc
 
 | # | 决策项 | 推荐选项 | 待确认 |
 |---|---|---|---|
-| 1 | 整体方案是否走精简版 Monorepo（v2） | 是 | ☐ |
-| 2 | 包管理器是否用 pnpm | 是 | ☐ |
-| 3 | 内部 registry 是否用 GitHub Packages | 是 | ☐ |
-| 4 | 业务团队技术栈 TS + Vue3 + Pinia | ✅ 是（已确认，AI 辅助编码） | ☑ |
-| 5 | `WorkbenchDescriptor` 是否加 skills/mcpServers/agentPrompt 字段 | 是 | ☐ |
-| 6 | 是否新增 `@sailfish/shared-types` 前置包（P-1） | 是（SDK 类型闭环硬性前提） | ☐ |
-| 7 | P-1 是否启动 | 启动 | ☐ |
+| 1 | 整体方案是否走精简版 Monorepo（v2） | ✅ 是 | ☑ |
+| 2 | 包管理器是否用 pnpm | ✅ 是 | ☑ |
+| 3 | 内部 registry / changesets 独立发版 | 可选（同仓多团队时）；**Fork OEM 不强制** | ☑ |
+| 4 | 业务团队技术栈 TS + Vue3 + Pinia | ✅ 是 | ☑ |
+| 5 | `WorkbenchDescriptor` 加 skills/mcpServers/agentPrompt（及预留 agentPolicy） | ✅ 是 | ☑ |
+| 6 | 新增 `@sailfish/shared-types`（P-1） | ✅ 是 | ☑ |
+| 7 | skills 包内自治优先 | ✅ 是 | ☑ |
+| 8 | `isWorkbenchAvailable` 统一 features + Steam | ✅ 是 | ☑ |
+| 9 | descriptor 双来源同一 bootstrap | ✅ 是 | ☑ |
 
 产品 / OEM 决策见 [`oem-vision.md`](./oem-vision.md)。
 
-注：v1 决策清单的"是否同时支持配置型工作台（B 方案）"项砍掉——v2 的形态 A（声明式 region）就是 B 方案的进化版，已在主方案内，不需单独决策。
+注：v1「是否同时支持配置型工作台」已并入形态 A，不单列。
 
 ---
 
