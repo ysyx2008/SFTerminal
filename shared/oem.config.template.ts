@@ -7,25 +7,12 @@
  * 3. 勿改模板冒充运行时配置——运行时只读 `oem.config.ts`
  */
 
-export interface OemConfig {
-  brand: {
-    name: {
-      zh: string
-      en: string
-    }
-    logo: string
-    version?: string
-    copyright: {
-      zh: string
-      en: string
-    }
-  }
-  features: {
-    showSponsor: boolean
-  }
-}
+import type { OemConfig } from './oem-types'
 
-/** 开源默认：旗鱼品牌；OEM 在 oem.config.ts 中覆盖 */
+export type { OemConfig, OemFeatures, OemFeatureKey, OemBrand } from './oem-types'
+export { OEM_FEATURE_DEFAULTS } from './oem-types'
+
+/** 开源默认：旗鱼品牌 + 秘书能力全开（sso 除外） */
 export const oemConfig: OemConfig = {
   brand: {
     name: { zh: '旗鱼', en: 'SailFish' },
@@ -34,6 +21,13 @@ export const oemConfig: OemConfig = {
     copyright: { zh: '© 2026 旗鱼', en: '© 2026 SailFish' }
   },
   features: {
-    showSponsor: true
+    awaken: true,
+    companion: true,
+    watch: true,
+    localTerminal: true,
+    sshTerminal: true,
+    assistantWorkbench: true,
+    showSponsor: true,
+    sso: false
   }
 }

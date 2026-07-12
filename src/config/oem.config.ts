@@ -1,7 +1,11 @@
 /**
- * OEM 配置 re-export（实际定义在 shared/oem.config.ts）
+ * OEM 配置 re-export
  *
- * shared/oem.config.ts 由模板生成、不进开源主线；见 shared/oem.config.template.ts
+ * 类型与 defaults：`@shared/oem-types`
+ * 开关查询：`@shared/oem-features`
+ * 运行时配置：`shared/oem.config.ts`（模板生成，不进开源主线）
  */
-export type { OemConfig } from '@shared/oem.config'
+export type { OemConfig, OemFeatures, OemFeatureKey, OemBrand } from '@shared/oem-types'
+export { OEM_FEATURE_DEFAULTS } from '@shared/oem-types'
+export { isOemFeatureEnabled } from '@shared/oem-features'
 export { oemConfig } from '@shared/oem.config'
