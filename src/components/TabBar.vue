@@ -502,8 +502,8 @@ const tasksAreaAttentionTooltip = computed(() => {
     <div v-if="canCreateAssistant || canCreateLocal || canCreateSsh" class="new-tab-wrapper">
       <button
         class="btn-new-tab"
-        @click="canCreateAssistant ? handleNewAssistant() : handleNewTab()"
-        :title="canCreateAssistant ? t('tabs.assistant', 'AI 助手') : t('tabs.newTab')"
+        @click="canCreateAssistant ? handleNewAssistant() : canCreateLocal ? handleNewTab() : handleOpenSsh()"
+        :title="canCreateAssistant ? t('tabs.assistant', 'AI 助手') : canCreateLocal ? t('tabs.newTab') : t('tabs.sshConnect')"
       >
         <Plus :size="14" />
       </button>

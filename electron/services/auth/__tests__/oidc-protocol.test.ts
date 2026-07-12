@@ -46,12 +46,30 @@ describe('oidc-protocol', () => {
       sub: 'user-42',
       name: 'Ada',
       email: 'ada@example.com',
+      iss: 'https://idp.example.com',
+      aud: 'client-1',
+      exp: Math.floor(Date.now() / 1000) + 3600,
     })
-    const user = authUserFromIdToken(jwt)
+    const user = authUserFromIdToken(jwt, {
+      issuer: 'https://idp.example.com',
+      clientId: 'client-1',
+    })
     expect(user.sub).toBe('user-42')
     expect(user.name).toBe('Ada')
     expect(user.email).toBe('ada@example.com')
     expect(parseJwtPayload(jwt).sub).toBe('user-42')
+  })
+
+  it('rejects ID Token with wrong audience', () => {
+    const jwt = makeUnsignedJwt({
+      sub: 'user-42',
+      iss: 'https://idp.example.com',
+      aud: 'other-client',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    })
+    expect(() =>
+      authUserFromIdToken(jwt, { issuer: 'https://idp.example.com', clientId: 'client-1' })
+    ).toThrow(/aud/)
   })
 
   it('builds discovery URL', () => {

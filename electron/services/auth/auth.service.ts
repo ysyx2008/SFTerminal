@@ -29,6 +29,7 @@ export class AuthService {
     tokenEndpoint: string
     clientId: string
     clientSecret?: string
+    issuer: string
   } | null = null
 
   isEnabled(): boolean {
@@ -44,7 +45,10 @@ export class AuthService {
     return this.session
   }
 
-  async fetchDiscovery(issuer: string): Promise<OidcDiscoveryDocument> {
+  private async fetchDiscovery(issuer: string): Promise<OidcDiscoveryDocument> {
+    if (!this.isEnabled()) {
+      throw new Error('SSO is disabled (oem.config.features.sso)')
+    }
     const url = discoveryUrl(issuer)
     const res = await fetch(url)
     if (!res.ok) {
@@ -80,6 +84,7 @@ export class AuthService {
       tokenEndpoint: discovery.token_endpoint,
       clientId: cfg.clientId,
       clientSecret: cfg.clientSecret,
+      issuer: cfg.issuer,
     }
 
     const authorizationUrl = buildAuthorizeUrl({
@@ -133,7 +138,10 @@ export class AuthService {
     if (!tokens.idToken) {
       throw new Error('Token response missing id_token (request openid scope)')
     }
-    const user = authUserFromIdToken(tokens.idToken)
+    const user = authUserFromIdToken(tokens.idToken, {
+      issuer: pending.issuer,
+      clientId: pending.clientId,
+    })
     this.session = {
       user: {
         sub: user.sub,
@@ -150,9 +158,13 @@ export class AuthService {
   }
 
   async logout(): Promise<void> {
+    if (!this.isEnabled()) {
+      this.session = null
+      this.pending = null
+      return
+    }
     this.session = null
     this.pending = null
-    if (!this.isEnabled()) return
     log.info('SSO session cleared')
   }
 

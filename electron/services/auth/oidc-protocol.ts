@@ -49,6 +49,7 @@ export function buildAuthorizeUrl(input: BuildAuthorizeUrlInput): string {
 
 /**
  * 解析 JWT 中段 payload（不验证签名——桌面端完整验签需 JWKS，后续可加）。
+ * 调用方应再做 iss/aud/exp 校验（见 assertIdTokenClaims）。
  */
 export function parseJwtPayload(jwt: string): Record<string, unknown> {
   const parts = jwt.split('.')
@@ -59,7 +60,30 @@ export function parseJwtPayload(jwt: string): Record<string, unknown> {
   return JSON.parse(json) as Record<string, unknown>
 }
 
-export function authUserFromIdToken(idToken: string): {
+export function assertIdTokenClaims(
+  claims: Record<string, unknown>,
+  expected: { issuer: string; clientId: string }
+): void {
+  const iss = typeof claims.iss === 'string' ? claims.iss : ''
+  if (iss.replace(/\/+$/, '') !== expected.issuer.replace(/\/+$/, '')) {
+    throw new Error(`ID Token iss mismatch: got ${iss}`)
+  }
+  const aud = claims.aud
+  const audOk = aud === expected.clientId
+    || (Array.isArray(aud) && aud.includes(expected.clientId))
+  if (!audOk) {
+    throw new Error('ID Token aud mismatch')
+  }
+  const exp = typeof claims.exp === 'number' ? claims.exp : 0
+  if (!exp || exp * 1000 < Date.now() - 60_000) {
+    throw new Error('ID Token expired')
+  }
+}
+
+export function authUserFromIdToken(
+  idToken: string,
+  expected?: { issuer: string; clientId: string }
+): {
   sub: string
   name?: string
   email?: string
@@ -67,6 +91,9 @@ export function authUserFromIdToken(idToken: string): {
   claims: Record<string, unknown>
 } {
   const claims = parseJwtPayload(idToken)
+  if (expected) {
+    assertIdTokenClaims(claims, expected)
+  }
   const sub = typeof claims.sub === 'string' ? claims.sub : ''
   if (!sub) throw new Error('ID Token missing sub')
   return {
