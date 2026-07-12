@@ -11,7 +11,6 @@ import { useAssistantArtifactStore } from '../workbench/assistant/artifact/store
 import type { ExecutionMode, AttachmentInfo, AgentRecord, AgentHistorySummary } from '@shared/types'
 import type { AgentStep, AgentState } from '../stores/terminal'
 import type { MessageScrollerHandle } from '../types/message-scroller'
-import { readMessageScrollerCache } from '../types/message-scroller'
 import { createLogger } from '../utils/logger'
 import { isAssistantConversationSurfaceVisible } from '../utils/agent-tab-ui-meta'
 import { useTts } from './useTts'
@@ -33,10 +32,6 @@ function getLocalSystemInfo() {
 
 const SCROLL_THRESHOLD = 100
 const SCROLL_THROTTLE_MS = 1000
-
-function readCacheSnapshot(scroller: MessageScrollerHandle | null | undefined) {
-  return readMessageScrollerCache(scroller)
-}
 
 export interface AgentTaskGroup {
   id: string
@@ -152,35 +147,9 @@ export function useAgentMode(
     }
   }
 
-  // 启动 / 主动跳底窗口期内 ResizeObserver 仍贴底但**跳过 FLIP 动画**的时间戳。
-  // scrollToBottom 触发时设置（new Date.now() + N ms）。语义：用户主动发新消息那一刻
-  // 几个相邻的 wrapper 高度变化（user_task step / 初始占位 message step / 真实
-  // message step 切换）彼此 FLIP 容易打架弹跳，且"主动跳底"本就是无动画语义，
-  // 干脆这一段时间统一硬切贴底，之后才进入流式 FLIP。
-  let suppressFlipUntil = 0
-
-  // suppressFlipUntil 各触发点的窗口时长（毫秒）。
-  // - FLIP_SUPPRESS_WINDOW_MS：点「新消息」等短距跳底后屏蔽 FLIP。
-  // - USER_SEND_SUPPRESS_MS：用户发消息整段链路（乐观 user_task → preparing → 真实
-  //   user_task 替换 → 首条 AI 占位），须长于虚拟列表估算→实测 + Windows 滚动条 reflow。
-  // - PLACEHOLDER_SWITCH_SUPPRESS_MS：startup 占位 → 首条 streaming message 硬切。
-  // - TOOL_RESULT_APPEND_SUPPRESS_MS：调试模式下 tool_result append 后的重测窗口。
-  const FLIP_SUPPRESS_WINDOW_MS = 200
-  const USER_SEND_SUPPRESS_MS = 500
-  const PLACEHOLDER_SWITCH_SUPPRESS_MS = 300
-  const TOOL_RESULT_APPEND_SUPPRESS_MS = 400
-  // 任务完成后的布局收口窗口：footer 出现、isStreaming→false、虚拟列表重测等
-  const TASK_COMPLETE_SUPPRESS_MS = 600
-
-  /** 延长 FLIP 抑制窗口（取 max，避免短窗口覆盖长窗口） */
-  const extendSuppressFlip = (ms: number) => {
-    suppressFlipUntil = Math.max(suppressFlipUntil, Date.now() + ms)
-  }
-
-  // 用户主动展开/收起思考块等「局部高度变化」期间，跳过 ResizeObserver 的贴底/视区补偿，
-  // 改由调用方用 anchorElementViewportY 把点击行钉回原位，避免 applyReadingResize
-  // 把视区往下推或 applyFollowingResize 把视区拽回底部。
-  let suppressLayoutResizeUntil = 0
+  // virtua 内置 scroll position adjustment，不再需要 FLIP / suppressFlip 机制。
+  // suppressLayoutResizeCompensation 保留为空操作以兼容调用点；
+  // 思考块展开的视区锚定由 anchorElementViewportY 负责。
 
   // 智能滚动节流状态
   let scrollPending = false
@@ -301,11 +270,6 @@ export function useAgentMode(
     }
     setIsUserNearBottom(checkIsNearBottom() || stickyFollowBottom)
 
-    const cache = readCacheSnapshot(scrollerRef?.value)
-    if (cache?.keys.length) {
-      terminalStore.setAiScrollCache(id, cache)
-    }
-
     // 锚定复原：记"视口顶部那条 item 的 id + 距视口顶的 offset"。
     // findItemIndex 是 O(log n) 二分，每次 scroll 调用代价可忽略。
     const scroller = scrollerRef?.value
@@ -317,13 +281,6 @@ export function useAgentMode(
         terminalStore.setAiScrollAnchor(id, { id: item.id, offset: el.scrollTop - itemTop })
       }
     }
-  }
-
-  const restoreScrollerCache = (): boolean => {
-    const id = currentTabId.value
-    const snapshot = id ? terminalStore.getAiScrollCache(id) : undefined
-    if (!snapshot || !scrollerRef?.value?.restoreCache) return false
-    return scrollerRef.value.restoreCache(snapshot)
   }
 
   const applySavedScrollTop = () => {
@@ -343,7 +300,7 @@ export function useAgentMode(
 
   /**
    * 锚定复原：用保存时的"视口顶 item id + offset"把那条消息钉回原视口位置。
-   * scrollToItem 内部用当前尺寸表算 itemPosition 再 scrollTop = itemPosition + offset，
+   * scrollToIndex 内部用当前尺寸表算 itemPosition 再 scrollTop = itemPosition + offset，
    * offset 与上方 item 尺寸无关 → 即使上方估算→实测高度修正也不漂移。
    * 返回 false 时调用方回退到 ratio 复原。
    */
@@ -352,10 +309,10 @@ export function useAgentMode(
     if (!id) return false
     const anchor = terminalStore.getAiScrollAnchor(id)
     const scroller = scrollerRef?.value
-    if (!anchor || !scroller?.scrollToItem) return false
+    if (!anchor || !scroller?.scrollToIndex) return false
     const idx = flattenedItems.value.findIndex(i => i.id === anchor.id)
     if (idx < 0) return false
-    scroller.scrollToItem(idx, { align: 'start', offset: anchor.offset })
+    scroller.scrollToIndex(idx, { align: 'start', offset: anchor.offset })
     return true
   }
 
@@ -366,8 +323,6 @@ export function useAgentMode(
     const hasRatio = terminalStore.getAiScrollTop(id) !== undefined
       || terminalStore.getAiScrollRatio(id) !== undefined
     if (!hasAnchor && !hasRatio) return
-
-    scrollerRef?.value?.forceUpdate?.(false)
 
     // 优先锚定复原（精确钉回原视口 item）；锚点失效（item 被删 / 库方法缺失）时回退 ratio
     const apply = () => {
@@ -386,7 +341,6 @@ export function useAgentMode(
     setTimeout(() => {
       apply()
       setIsUserNearBottom(checkIsNearBottom())
-      scrollerRef?.value?.forceUpdate?.(false)
     }, 150)
     // 虚拟列表 / Mermaid 等在 display:none 恢复后重测高度，晚到的 layout 需再对齐一次
     setTimeout(() => {
@@ -395,13 +349,11 @@ export function useAgentMode(
     }, 500)
   }
 
-  /** 切回激活 tab：先 restoreCache 再恢复滚动，减少 v3 重测高度闪烁 */
+  /** 切回激活 tab：恢复滚动位置 */
   const restoreScrollPositionOnTabActivate = async () => {
     const id = currentTabId.value
     if (!id || !messagesRef.value) return
 
-    restoreScrollerCache()
-    scrollerRef?.value?.forceUpdate?.(false)
     await nextTick()
 
     if (terminalStore.getAiScrollNearBottom(id)) {
@@ -413,33 +365,21 @@ export function useAgentMode(
 
   /**
    * 历史恢复贴底期间隐藏消息列表，避免虚拟滚动尺寸重排造成的视觉弹跳。
-   * opacity:0 不影响布局 / ResizeObserver 测量，待 scrollHeight 稳定后淡入。
+   * opacity:0 不影响布局，待 scrollHeight 稳定后淡入。
    */
   const isHistoryScrollPending = ref(false)
 
   /**
-   * 历史对话滚到底部（Virtual Scroller 重试 + 500ms 等待 mermaid/活图渲染后对齐）。
-   * 默认启用同帧贴底（stickyFollowBottom + suppressFlipUntil），wrapper 重排时底部
-   * 恒定，消除估算→实测高度修正造成的弹跳 / 切 tab 漂移。
-   * @param opts.hideUntilSettled 历史"冷加载"路径传 true：额外 opacity:0，等 scrollHeight
-   *        连续 2 rAF 稳定（或 520ms 兜底）后淡入，遮住新挂载场景 observer 未装上时的首次重排。
-   *        pendingConfirm / 切 tab 等热路径不传，保持即时可见。
+   * 历史对话滚到底部（重试 + 500ms 等待 mermaid/活图渲染后对齐）。
+   * virtua 内置 scroll position adjustment，只需多次钉底即可。
+   * @param opts.hideUntilSettled 历史冷加载路径传 true：额外 opacity:0，等 scrollHeight
+   *        连续 2 rAF 稳定（或 520ms 兜底）后淡入。
    */
   const scrollToHistoryBottomWithRetry = (opts?: { hideUntilSettled?: boolean }) => {
     const hide = opts?.hideUntilSettled === true
     if (hide) {
       isHistoryScrollPending.value = true
     }
-    // 默认启用同帧贴底跟随：wrapper ResizeObserver 在 item 估算→实测高度重排时，
-    // 于 layout 后 / paint 前把 scrollTop 钉到新底——等价于"以底部为锚点渲染"，
-    // 底部恒定不动，高度修正全部发生在视区上方。
-    // 切 tab 回到底部分支同样依赖此钉底：restoreScrollerCache 只能恢复此前测过的
-    // item 尺寸，未测过的仍是 minItemSize 估算，scrollToBottom 会落在"估算底"；
-    // 没有同帧钉底则 scrollTop 不跟随重排 → 停在距底几十 px，且 saveScrollTop 捕获
-    // nearBottom=false / ratio<1.0，快速切换几次后稳态漂移到"上面一点"。
-    // suppressFlipUntil 跳过 FLIP 动画：重排 delta 通常 ≥ MAX_FLIP_DELTA 本就硬切，
-    // 小 delta（mermaid/活图、tab 切回的零星重测）也强制硬切，避免出现滑动。
-    suppressFlipUntil = Date.now() + 600
     guardAfterAutoScroll()
 
     const apply = () => {
@@ -457,15 +397,11 @@ export function useAgentMode(
       }, 150)
       setTimeout(() => {
         apply()
-        scrollerRef?.value?.forceUpdate?.(false)
         saveScrollTop()
       }, 500)
 
       if (!hide) return
 
-      // 提前 reveal：scrollHeight 连续 2 rAF 不变即视为尺寸稳定（底部 items 已实测、
-      // mermaid/活图已渲染）。兜底 520ms 与最后一次重试对齐，防止异步渲染过慢时永久隐身。
-      // 重新触发时先清掉上一轮的帧 / 定时器，避免多轮 hide 叠加；卸载时由 onUnmounted 兜底取消。
       cancelPendingReveal()
       let revealed = false
       let lastH = -1
@@ -482,7 +418,6 @@ export function useAgentMode(
         pendingRevealFrame = null
         if (revealed) return
         const el = messagesRef.value
-        // 卸载后 messagesRef 为 null：不再继续探测，直接结束（不再写状态），由兜底定时器 / 卸载清理复位。
         if (!el) return
         const h = el.scrollHeight
         if (h > 0 && h === lastH) stable++
@@ -519,13 +454,9 @@ export function useAgentMode(
 
   const shouldFollowBottom = () => stickyFollowBottom || isUserNearBottom.value
 
-  // 仅跟底意图为真时 ResizeObserver 才贴底；不可单独依赖 skipScrollUpdate——
-  // grace 窗口内用户拖滚动条上滚时 skipScrollUpdate 仍为 true，会误把阅读位拽回底部（回归 bug）。
-  const shouldFollowResize = () => shouldFollowBottom()
-
-  /** 短暂屏蔽 wrapper ResizeObserver 的贴底/阅读补偿（思考块展开等局部布局变化） */
-  const suppressLayoutResizeCompensation = (ms: number) => {
-    suppressLayoutResizeUntil = Date.now() + ms
+  /** 兼容保留：virtua 下视区锚定由调用方用 anchorElementViewportY 完成 */
+  const suppressLayoutResizeCompensation = (_ms: number) => {
+    // no-op
   }
 
   /** 把 anchorEl 钉回切换前的视口纵坐标，保持用户点击的那一行画面稳定 */
@@ -561,27 +492,12 @@ export function useAgentMode(
   // （scrollHeight 因宽度变化而变，与用户滚动意图无关），updateScrollPosition 应跳过状态更新。
   const isInContainerReflow = () => Date.now() < containerReflowGuardUntil
 
-  const cancelFlipAnimation = () => {
-    if (pendingFlipFrame !== null) {
-      cancelAnimationFrame(pendingFlipFrame)
-      pendingFlipFrame = null
-    }
-    const wrapper = contentObservedTarget
-    if (wrapper) {
-      wrapper.style.transition = ''
-      wrapper.style.transform = ''
-    }
-  }
-
-  /** Agent run 结束收口：清运行态 + 抑制完成期 FLIP/收缩贴底，避免 Windows 下坠 */
+  /** Agent run 结束收口：清运行态 */
   const finalizeAgentRunWithScrollSettle = (tabId: string) => {
     terminalStore.finalizeAgentRunState(tabId)
-    lastAgentStoppedAt = Date.now()
-    extendSuppressFlip(TASK_COMPLETE_SUPPRESS_MS)
-    cancelFlipAnimation()
   }
 
-  /** 用户主动上滚离开底部：清除跟底粘性、grace 窗口与 FLIP，避免流式 chunk 继续拽底或整列晃动 */
+  /** 用户主动上滚离开底部：清除跟底粘性与 grace 窗口，避免流式 chunk 继续拽底 */
   const userScrolledAway = () => {
     stickyFollowBottom = false
     setIsUserNearBottom(false)
@@ -592,7 +508,6 @@ export function useAgentMode(
       scrollGraceTimer = null
     }
     skipScrollUpdate = false
-    cancelFlipAnimation()
   }
 
   // 更新用户滚动位置状态（由组件的 scroll 事件调用）
@@ -660,72 +575,40 @@ export function useAgentMode(
   }
 
   // 强制滚动到底部（用户主动发送消息或点击时调用）
-  // ⚠️ 同 doScrollIfNeeded：本函数**不**主动跑 applyFlipScroll，FLIP 由 ResizeObserver
-  // 单点负责。曾经尝试过让主动入口也跑 FLIP，但和 ResizeObserver 触发的 FLIP 累加成
-  // 双倍偏移（applyFlipScroll 内部从当前 transform 累加），导致流式输出每行 wrapper
-  // 高度变化都抖一下。让主动入口只设 scrollTop，由 ResizeObserver 兜底处理 FLIP。
-  //
-  // 但启动 Agent 那一刻几个相邻的 wrapper 高度变化（user_task / 占位 / 真实 message）
-  // 彼此 FLIP 会打架弹跳。用户主动发新消息本就是"立即跳到底"的无动画语义，所以这里
-  // 设 suppressFlipUntil 短暂窗口让 ResizeObserver 跳过 FLIP，只贴底。窗口过后第一个
-  // 真正的流式 chunk 进来才进入 FLIP 平滑滑动。
+  const pinFollowBottom = () => {
+    const el = messagesRef.value
+    if (!el) return
+    // 优先走 DOM scrollTop：ResizeObserver 同帧内 virtua scrollSize 可能尚未同步
+    el.scrollTop = el.scrollHeight
+    scrollerRef?.value?.scrollToBottom?.()
+    lastKnownScrollTop = el.scrollTop
+    lastKnownScrollHeight = el.scrollHeight
+  }
+
   const scrollToBottom = async () => {
-    extendSuppressFlip(FLIP_SUPPRESS_WINDOW_MS)
     // 同步先设 sticky，避免 nextTick 前到达的 step 因 sticky=false 误判离底
     guardAfterAutoScroll()
 
     await nextTick()
-    if (messagesRef.value) {
-      messagesRef.value.scrollTop = messagesRef.value.scrollHeight
-      lastKnownScrollTop = messagesRef.value.scrollTop
-      lastKnownScrollHeight = messagesRef.value.scrollHeight
-    }
+    pinFollowBottom()
 
     guardAfterAutoScroll()
     requestAnimationFrame(() => saveScrollTop())
   }
 
-  // 实际执行滚动
-  // ⚠️ 本函数**完全不设** scrollTop，FLIP + 贴底全交给 ResizeObserver。
-  //
-  // 历史踩坑：
-  // 1. 曾经在这里 `el.scrollTop = el.scrollHeight` 兜底贴底，看似无害，但在
-  //    vue-virtual-scroller 同步完成 totalSize 更新的场景下，scrollTop 在这一刻
-  //    就跳到了新底，scrollDelta 立即被消化为 0；后续 ResizeObserver 触发时算出
-  //    `scrollDelta = newScrollTop - oldScrollTop = 0` → **跳过 FLIP**。结果：
-  //    工具卡 / 新 step 上来看不到动画（"工具卡硬切贴底"的回归 bug）。
-  // 2. 曾经尝试在这里同时跑 applyFlipScroll，但和 ResizeObserver 路径累加变双倍
-  //    偏移，流式每行抖一下。
-  //
-  // 正解：本函数只设 skipScrollUpdate 让 ResizeObserver 知道"请跟随贴底+FLIP"，
-  // wrapper.height 真正变化的瞬间由 ResizeObserver 一次性完成 scrollTop 跳变 +
-  // FLIP 反向偏移 + 下一帧归零，整套流程在同一 paint 周期内完成。
+  // 实际执行滚动：跟底态钉底，阅读态只亮「新消息」
   const doScrollIfNeeded = async () => {
     lastScrollTime = Date.now()
     await nextTick()
 
-    // 依赖 stickyFollowBottom / isUserNearBottom（由用户滚动 + 跟底意图维护）
-    // 不做实时 checkIsNearBottom()：DynamicScroller 的 scrollHeight 基于估算，
-    // 虚拟化的 off-screen 项高度远小于实际值，会导致误判"在底部附近"
     if (shouldFollowBottom()) {
       if (messagesRef.value) {
-        // ⚠️ skipScrollUpdate 同时被 ResizeObserver 当作"正在贴底，跟随尺寸变化"信号
-        //（见 installContentResizeObserver）。所以只能在确实要贴底的分支里置位，
-        // 否则用户向上滚走后，新内容引发的 ResizeObserver 回调会被误触发为强制贴底，
-        // 把用户从阅读位拽回最底（曾经的回归 bug）。
         stickyFollowBottom = true
         setIsUserNearBottom(true)
         hasNewMessage.value = false
         extendScrollGrace()
-        // 兜底：ResizeObserver 可能尚未触发（wrapper 高度未上报 / wrapperDelta≤0），
-        // 但 scrollHeight 已变大导致离底 → 主动钉一次底，避免亮「新消息」却不再跟随。
-        const el = messagesRef.value
-        if (!checkIsNearBottom()) {
-          extendSuppressFlip(FLIP_SUPPRESS_WINDOW_MS)
-          el.scrollTop = el.scrollHeight
-          lastKnownScrollTop = el.scrollTop
-          lastKnownScrollHeight = el.scrollHeight
-        }
+        // 跟底态一律钉底：流式长高时即使仍在 SCROLL_THRESHOLD 内也要跟上
+        pinFollowBottom()
       }
     } else {
       hasNewMessage.value = true
@@ -751,319 +634,43 @@ export function useAgentMode(
     await doScrollIfNeeded()
   }
 
-  // ==================== 流式跟随：内容高度变化时同帧贴底 + FLIP 平滑滑动 ====================
-  //
-  // ⚠️ UX 不变量：流式 chunk 到达时新内容必须在浏览器 paint 之前完成贴底滚动。
-  //    详见 electron/services/agent/SPEC.md §"流式输出同帧贴底跟随"。改动前必读。
-  //    严禁改成 setTimeout 轮询、严禁改成基于 step.content 长度的内容驱动判断——
-  //    会重新引入"半行先冒出再上挪"的视觉抖动。
-  //
-  // 流式输出时新内容会先在视区底部"露出半截 / 半行"再被滚到位，根因是 DynamicScroller
-  // 的总高度（vue-recycle-scroller__item-wrapper.height）由 ResizeObserver 异步上报：
-  // Vue patch DOM → 浏览器下次 layout 时 item ResizeObserver 触发 → DynamicScroller
-  // 重算 totalSize → wrapper height 才更新。doScrollIfNeeded 在 nextTick 后调
-  // scrollTop = scrollHeight，此刻 scrollHeight 还是旧值，于是滚到的是"旧底"，紧接
-  // 着浏览器 paint 出新内容、半行裸露在视区底外，下一帧/下一次 chunk 才补上去。
-  //
-  // 这里直接监听 wrapper 自身的尺寸变化：ResizeObserver 在 layout 之后、paint 之前
-  // 触发，那一刻把 scrollTop 钉到最新的 scrollHeight，浏览器同帧合成出来的画面已经
-  // 是贴底状态——用户视觉上感受不到任何半行过渡。
-  //
-  // ===== FLIP 平滑滑动（叠加在同帧贴底之上，纯视觉层）=====
-  // 同帧贴底解决了"半行抖动"，但内容上移仍是瞬间跳变（缺乏过渡感，UX 偏生硬）。
-  // 解决方案：贴底后立刻给 wrapper 加 translateY(delta) 反向偏移（compositor 层，
-  // 不影响 layout/scrollHeight），paint 出来视觉上等于"上方内容还在原位"；下一帧
-  // 把 transform 归 0 + iOS spring 曲线 transition，让"上移"变成 280ms 的曲线滑动。
-  //
-  // 关键性质：
-  // - transform 是 compositor 层属性，不影响 scrollHeight/scrollTop 计算，与同帧贴底
-  //   不变量正交。
-  // - vue-virtual-scroller 给 item-view 设 transform 定位，但不动 item-wrapper 的
-  //   transform，所以我们独占该层。
-  // - 连续 chunk 时 delta 累加：从当前 translateY 开始（解析 wrapper.style.transform），
-  //   再叠加新 delta，下一帧统一归 0。这样动画总会"追到"最新内容。
-  // - 用户主动滚走（isUserNearBottom = false）时不再跟进，正在跑的 transition 让它
-  //   自然归 0，不会卡在中间。
-  //
-  // 改动这块前：必须保留"先 scrollTop 贴底、再 transform 反向偏移、下一帧归 0"的
-  // 三步顺序；任何一步缺失或顺序错乱都会引发抖动或位移残留。
-  let contentResizeObserver: ResizeObserver | null = null
-  let contentObservedTarget: HTMLElement | null = null
-  let prevWrapperHeight = 0
-  let pendingFlipFrame: number | null = null
-  // 上一次 ResizeObserver 触发时 flattenedItems 的长度。用于区分 wrapper 增长来源：
-  // length 增加 → 新 item append（流式新 step 进来），length 不变 → 已有 item 高度变化
-  // （item 估算→实测修正、内容 reflow）。前者在用户上滚阅读时不应补偿 scrollTop
-  // （新内容在视区下方，浏览器保持 scrollTop 不变即正确），补偿会让画面往上跳。
-  // -1 确保首次回调 itemsAppended=true，跳过初始挂载时的补偿。
-  let prevItemsLength = -1
-  // 最后一次 isAgentRunning=true 的时间戳。AI 停止后流式收尾的高度变化仍可能持续一小段，
-  // grace 期内继续跳过补偿，避免「AI 刚停、最后一行高度修正」导致画面跳动。
-  let lastAgentRunningAt = 0
-  let lastAgentStoppedAt = 0
-  const AGENT_RUNNING_GRACE_MS = 300
+  // ==================== 跟底态：内容高度变化时同帧钉底 ====================
+  // virtua 负责上方 item 高度修正的视区锚定，但不负责「最后一项流式长高时保持贴底」。
+  // 这里只在 shouldFollowBottom 时钉底——没有 FLIP、没有阅读态补偿。
+  let followResizeObserver: ResizeObserver | null = null
+  let followObservedTarget: HTMLElement | null = null
 
-  const isWithinTaskCompleteSettle = () =>
-    lastAgentStoppedAt > 0 && Date.now() - lastAgentStoppedAt < TASK_COMPLETE_SUPPRESS_MS
+  const installFollowResizeObserver = () => {
+    uninstallFollowResizeObserver()
+    const el = messagesRef.value
+    if (!el) return
+    // Virtualizer 是滚动容器的最后一个子节点（WelcomePanel / Modal 在其前或 fixed）
+    const target = el.lastElementChild as HTMLElement | null
+    if (!target) return
+    followObservedTarget = target
+    followResizeObserver = new ResizeObserver(() => {
+      if (tabActive?.value === false) return
+      if (!shouldFollowBottom()) return
+      pinFollowBottom()
+      guardAfterAutoScroll()
+    })
+    followResizeObserver.observe(target)
+  }
 
-  // ===== 容器宽度变化感知 =====
-  // 任何改变 AiPanel 可用宽度的操作（产出物面板展开/收起、侧边栏、拖拽分隔条、窗口 resize、
-  // 分屏切换）都会让聊天内容 reflow。这里单独监听 messagesRef 自身的宽度变化（与监听
-  // wrapper 高度的 contentResizeObserver 职责分离，不冲突）：宽度变化即布局驱动 reflow，
-  // 此时若用户处于贴底跟随态，主动维持贴底并延长 grace 窗口覆盖整个过渡（过渡通常 300ms，
-  // CONTAINER_REFLOW_GUARD_MS 给 500ms 余量），不让 scroll 事件污染状态。
+  const uninstallFollowResizeObserver = () => {
+    if (followResizeObserver && followObservedTarget) {
+      followResizeObserver.unobserve(followObservedTarget)
+    }
+    followResizeObserver?.disconnect()
+    followResizeObserver = null
+    followObservedTarget = null
+  }
+
+  // ==================== 容器宽度变化感知（保留） ====================
+  // virtua 处理动态高度的 scroll adjustment；这里只处理宽度变化导致的 reflow。
   let containerWidthObserver: ResizeObserver | null = null
   let prevContainerWidth = 0
 
-  // FLIP 动画参数
-  // - cubic-bezier(0.32, 0.72, 0, 1)：iOS spring，慢启动 + 快收尾，符合"内容惯性归位"的物理直觉
-  // - 基础 320ms 适合 1-3 行正文滑动；大 delta（图片、长段落）按比例延长到上限 560ms，
-  //   避免把 600px 滑动塞进 320ms 显得"嗖一下"；同时防止超过 560ms 让用户觉得"慢一拍"
-  // - MAX_FLIP_DELTA 600：上限再放宽到 600px（一张大图 + 几行文字的合理上限）。超过此值
-  //   视为虚拟化重排（item 估算高度大幅修正），跳过动画避免长距离闪现
-  const FLIP_BASE_DURATION_MS = 320
-  const FLIP_MAX_DURATION_MS = 560
-  const FLIP_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)'
-  const MAX_FLIP_DELTA = 600
-
-  // 按位移量计算 duration：< 100px 用基础 320ms；> 100px 每 100px 加 60ms，封顶 560ms
-  const computeFlipDuration = (offset: number): number => {
-    const abs = Math.abs(offset)
-    if (abs <= 100) return FLIP_BASE_DURATION_MS
-    return Math.min(FLIP_MAX_DURATION_MS, FLIP_BASE_DURATION_MS + (abs - 100) * 0.6)
-  }
-
-  // 读取 wrapper 当前实际渲染的 translateY 值，用于"上一次归零动画还没跑完、新 chunk
-  // 又来"的场景下累加。必须用 getComputedStyle 而非读 element.style：transition 进行
-  // 中 element.style.transform 字符串已是目标值（"translateY(0px)"），但屏幕上渲染
-  // 的是中间插值；getComputedStyle 返回 matrix(...) 形式，包含真实的中间 ty，否则
-  // 累加起点错误会导致连续 chunk 时画面瞬间跳变。
-  const readTranslateY = (el: HTMLElement): number => {
-    const computed = getComputedStyle(el).transform
-    if (!computed || computed === 'none') return 0
-    // matrix(a, b, c, d, tx, ty) → 6 个值，ty 在 [5]
-    // matrix3d(a1..a16) → 16 个值，ty 在 [13]
-    const m = computed.match(/matrix(?:3d)?\(([^)]+)\)/)
-    if (!m) return 0
-    const values = m[1].split(',').map(v => parseFloat(v.trim()))
-    if (values.length === 6) return values[5]
-    if (values.length === 16) return values[13]
-    return 0
-  }
-
-  // FLIP 反向偏移 + 下一帧归零的核心动作，抽成 helper 供 ResizeObserver 和
-  // scrollToBottom 复用。**调用方必须先完成 scrollTop 跟随**，再传入实际产生的
-  // scrollDelta；本函数只负责给 wrapper 加 translateY(scrollDelta) → 下一帧归零。
-  // 三步顺序见 SPEC.md "FLIP 平滑滑动" 章节，不可错乱。
-  const applyFlipScroll = (offset: number) => {
-    const wrapper = contentObservedTarget
-    if (!wrapper || offset <= 0 || offset >= MAX_FLIP_DELTA) return
-
-    const currentY = readTranslateY(wrapper)
-    const targetY = currentY + offset
-    wrapper.style.transition = 'none'
-    wrapper.style.transform = `translateY(${targetY}px)`
-
-    if (pendingFlipFrame !== null) cancelAnimationFrame(pendingFlipFrame)
-    const duration = computeFlipDuration(targetY)
-    pendingFlipFrame = requestAnimationFrame(() => {
-      pendingFlipFrame = null
-      // 强制 reflow，确保上面的 transition: none + transform 被浏览器吃下，
-      // 否则下一行的 transition 设置会跟当前帧合并，导致"瞬间跳到 0"无动画
-      void wrapper.offsetHeight
-      wrapper.style.transition = `transform ${duration}ms ${FLIP_EASING}`
-      wrapper.style.transform = 'translateY(0)'
-    })
-  }
-
-  const installContentResizeObserver = () => {
-    uninstallContentResizeObserver()
-    if (!messagesRef.value) return
-    const wrapper = messagesRef.value.querySelector(
-      '.vue-recycle-scroller__item-wrapper'
-    ) as HTMLElement | null
-    if (!wrapper) return
-    contentObservedTarget = wrapper
-    prevWrapperHeight = wrapper.offsetHeight
-    prevItemsLength = flattenedItems.value.length
-    contentResizeObserver = new ResizeObserver((entries) => {
-      // 非当前激活 tab 不跟随贴底，避免后台 tab 改写 scrollTop、切回时与已存位置不一致
-      if (tabActive?.value === false) return
-      const el = messagesRef.value
-      if (!el) return
-      const newHeight = entries[0]?.contentRect.height ?? wrapper.offsetHeight
-      const wrapperDelta = newHeight - prevWrapperHeight
-      prevWrapperHeight = newHeight
-
-      if (Date.now() < suppressLayoutResizeUntil) return
-
-      // ┌──────────────────────────────────────────────────────────────────────┐
-      // │ ResizeObserver 副作用策略表（漏一格 = 一次回归，三次回归的教训）       │
-      // │ 列「区间+条件」含 wrapperDelta 数值区间 + 时间维度条件（suppress）     │
-      // │ 详细分支条件见下方 applyReadingResize 注释 + AIPANEL_SPEC.md 四·补节   │
-      // ├──────────────┬───────────────────────┬──────────────────────────────┤
-      // │ 模式         │ 区间+条件              │ 副作用                        │
-      // ├──────────────┼───────────────────────┼──────────────────────────────┤
-      // │ following    │ ≤ 0 且 > -MAX_FLIP     │ 钉新底 + guard（避免 clamp 漂移）│
-      // │ following    │ ≤ -MAX_FLIP            │ 不动（防图片加载震荡）        │
-      // │ following    │ > 0 且 suppress 窗口内 │ 钉新底 + guard（硬切，无 FLIP）│
-      // │              │   或 ≥ MAX_FLIP        │                              │
-      // │ following    │ > 0 且小增长           │ 钉新底 + guard + FLIP 平滑   │
-      // ├──────────────┼───────────────────────┼──────────────────────────────┤
-      // │ reading      │ ≤ 0                   │ 不动（浏览器自然 clamp）      │
-      // │ reading      │ (0, MAX_FLIP)         │ 视增长来源相对视区位置而定：  │
-      // │              │   且 scrollTop≥TH     │   下方 → 不动（流式/append）  │
-      // │              │                       │   上方 → scrollTop += delta   │
-      // │              │                       │   判定见 isGrowthBelowViewport│
-      // │ reading      │ (0, MAX_FLIP)         │ 不动（顶部附近，wrapper 增长 │
-      // │              │   且 scrollTop<TH     │   不影响顶部视区）            │
-      // │ reading      │ ≥ MAX_FLIP           │ 不动（虚拟列表重排，避免推走）│
-      // └──────────────┴───────────────────────┴──────────────────────────────┘
-      // TH = SCROLL_THRESHOLD；MAX = MAX_FLIP_DELTA；suppress = scrollToBottom 后
-      // 短暂 200ms 窗口（Date.now() < suppressFlipUntil）。漏副作用 = 漏表格一格。
-      const itemsLength = flattenedItems.value.length
-      const itemsAppended = itemsLength > prevItemsLength
-      prevItemsLength = itemsLength
-      if (shouldFollowResize()) {
-        applyFollowingResize(el, wrapperDelta, itemsAppended)
-      } else {
-        applyReadingResize(el, wrapperDelta, itemsAppended)
-      }
-    })
-    contentResizeObserver.observe(wrapper)
-  }
-
-  /**
-   * 跟底态：wrapper 尺寸变化时维持贴底。
-   * - 收缩（≤0）：钉新底防 clamp 漂移；suppress / 任务完成收口期内跳过（防下坠）
-   * - 增长 + suppress / 大跳变 / 已有 item reflow：hard-cut 贴底，无 FLIP
-   * - 增长 + 新 item append：钉新底 + FLIP 平滑滑动
-   */
-  const applyFollowingResize = (el: HTMLElement, wrapperDelta: number, itemsAppended: boolean) => {
-    if (wrapperDelta <= 0) {
-      // suppress / 完成收口窗口内跳过收缩 pinToBottom：虚拟列表重测常先高估再修正，
-      // 此时 pinToBottom 会把视区往下拽——Windows 上表现为「内容先上抬再回落 / 完成时下坠」。
-      if (
-        wrapperDelta > -MAX_FLIP_DELTA
-        && Date.now() >= suppressFlipUntil
-        && !isWithinTaskCompleteSettle()
-      ) {
-        pinToBottom(el)
-        guardAfterAutoScroll()
-      }
-      return
-    }
-    if (
-      Date.now() < suppressFlipUntil
-      || wrapperDelta >= MAX_FLIP_DELTA
-      || !itemsAppended
-    ) {
-      pinToBottom(el)
-      guardAfterAutoScroll()
-      // 已有 item 高度变化（流式 markdown 表格逐行 reflow）：取消进行中的 FLIP，
-      // 避免 translateY 累加导致 Windows 上反复抖动。
-      if (!itemsAppended) cancelFlipAnimation()
-      return
-    }
-    // 同帧贴底：layout 后、paint 前完成 scrollTop = scrollHeight，无半行抖动。
-    // 用 scrollDelta 而非 wrapperDelta 作为 FLIP 实际偏移——这才是用户真正感受到的
-    // "上方内容上移"距离。两者在标准贴底场景一致；在"内容不满视区"场景 scrollDelta=0
-    // → 无 FLIP（修复"刚启动凭空抖动"）
-    const oldScrollTop = el.scrollTop
-    pinToBottom(el)
-    const scrollDelta = el.scrollTop - oldScrollTop
-    guardAfterAutoScroll()
-    applyFlipScroll(scrollDelta)
-  }
-
-  /**
-   * 判断 wrapper 增长来源是否在视区下方。
-   *
-   * 用 `getItemOffset(lastIndex)` 取最后一个 item 顶距 wrapper 顶的距离，
-   * 与视区底（scrollTop + clientHeight）比较。最后一个 item 在视区下方 → 增长来自下方。
-   *
-   * 这是「增长来源相对视区位置」的显式判定，替代之前的 isAgentRunning 代理指标
-   * （后者是侧面推断，已知边界：AI 运行时若上方历史 item 实测高度修正会被误判）。
-   * 代理指标仍作为兜底：getItemOffset 不可用时回退到 itemsAppended / isAgentRunning。
-   */
-  const isGrowthBelowViewport = (el: HTMLElement, itemsAppended: boolean): boolean => {
-    // 快速短路：新 item append 必在下方
-    if (itemsAppended) return true
-    // 代理指标兜底：AI 运行中（含 grace 期）视为流式输出在下方
-    const withinAgentGrace = isAgentRunning.value
-      || (Date.now() - lastAgentRunningAt < AGENT_RUNNING_GRACE_MS)
-    if (withinAgentGrace) return true
-    // 显式判定：最后一个 item 是否在视区下方
-    const scroller = scrollerRef?.value
-    const items = flattenedItems.value
-    if (!scroller?.getItemOffset || items.length === 0) return false
-    const lastItemTop = scroller.getItemOffset(items.length - 1)
-    const viewportBottom = el.scrollTop + el.clientHeight
-    return lastItemTop >= viewportBottom
-  }
-
-  /**
-   * 非跟底态（用户上滚阅读）：维持视区锚点，不让新内容把阅读位置顶走。
-   * - 收缩（≤0）：不动，浏览器自然 clamp（跟底态的钉底另由 applyFollowingResize 处理）
-   * - 增长 + 顶部附近：不动，顶部视区不受 wrapper 增长影响，补偿反而往上漂
-   * - 增长 + 中部 + 增长来自视区下方：不动。新 item append / 流式最后一项长高都在下方，
-   *   浏览器保持 scrollTop 不变即正确视区锚定；补偿 scrollTop += delta 反而把视区往下推，
-   *   让用户正在阅读的历史内容往上跳——即「上滚阅读时画面持续一行一行向上跳动」。
-   *   判定见 isGrowthBelowViewport（getItemOffset 显式 + 代理指标兜底）。
-   * - 增长 + 中部 + 增长来自视区上方：scrollTop += delta 维持视区
-   *   （8bb6222c 修复第三次回归，仅此分支真正需要补偿）
-   * - 增长 + 大跳变：不动，虚拟列表重排避免一次性推走很多
-   *
-   * ⚠️ 不调 guardAfterAutoScroll：会把 stickyFollowBottom 设回 true 破坏阅读态
-   *    ——这是前两次回归（42ff929a / 971f19a6）的隐患根源。
-   * ⚠️ 不设 skipScrollUpdate：补偿是即时一次性，吞 scroll 事件会漏用户后续手动滚动。
-   */
-  const applyReadingResize = (el: HTMLElement, wrapperDelta: number, itemsAppended: boolean) => {
-    if (wrapperDelta <= 0) return
-    if (wrapperDelta >= MAX_FLIP_DELTA) return
-    if (el.scrollTop < SCROLL_THRESHOLD) return
-    if (isGrowthBelowViewport(el, itemsAppended)) return
-    const maxScroll = el.scrollHeight - el.clientHeight
-    const target = Math.min(el.scrollTop + wrapperDelta, maxScroll)
-    if (target !== el.scrollTop) {
-      el.scrollTop = target
-      lastKnownScrollTop = el.scrollTop
-      lastKnownScrollHeight = el.scrollHeight
-    }
-  }
-
-  /** 钉到底部并同步已知状态（跟底态收缩/硬切/FLIP 共用） */
-  const pinToBottom = (el: HTMLElement) => {
-    el.scrollTop = el.scrollHeight
-    lastKnownScrollTop = el.scrollTop
-    lastKnownScrollHeight = el.scrollHeight
-  }
-
-  const uninstallContentResizeObserver = () => {
-    if (contentResizeObserver && contentObservedTarget) {
-      contentResizeObserver.unobserve(contentObservedTarget)
-      // 清理可能残留的 transform，避免下次 mount 时位置错乱
-      contentObservedTarget.style.transition = ''
-      contentObservedTarget.style.transform = ''
-    }
-    if (pendingFlipFrame !== null) {
-      cancelAnimationFrame(pendingFlipFrame)
-      pendingFlipFrame = null
-    }
-    contentResizeObserver?.disconnect()
-    contentResizeObserver = null
-    contentObservedTarget = null
-    prevWrapperHeight = 0
-    prevItemsLength = -1
-  }
-
-  // 监听 messagesRef 自身宽度变化（布局驱动 reflow 的统一信号）。
-  // - 宽度变化时，若用户处于贴底跟随态，主动维持 stickyFollowBottom 并延长 grace 窗口，
-  //   让 contentResizeObserver 在过渡期间持续把 scrollTop 钉到新底（同帧贴底逻辑天然处理
-  //   wrapper 变高的情况）。
-  // - 同时设置 containerReflowGuardUntil，让 updateScrollPosition 在过渡期间跳过状态更新，
-  //   避免误判"离底"清掉 stickyFollowBottom。
-  // - 非激活 tab 不处理，避免后台 tab 改写 scrollTop。
   const installContainerWidthObserver = () => {
     uninstallContainerWidthObserver()
     const el = messagesRef.value
@@ -1071,26 +678,15 @@ export function useAgentMode(
     prevContainerWidth = el.clientWidth
     containerWidthObserver = new ResizeObserver(() => {
       if (tabActive?.value === false) return
-      // 用 clientWidth 而非 contentRect.width：前者含 padding，与 prevContainerWidth
-      // 初始值同维度，避免首次 observe 回调因维度不一致误触发 reflow。
       const newWidth = el.clientWidth
       if (newWidth === prevContainerWidth) return
       prevContainerWidth = newWidth
 
-      // 宽度变化即布局 reflow 信号。无论用户是否在底部，都先标记 reflow 进行中，
-      // 让 updateScrollPosition 跳过 checkIsNearBottom 判断（避免误判离底污染状态）。
       containerReflowGuardUntil = Date.now() + CONTAINER_REFLOW_GUARD_MS
 
-      // 仅当用户处于贴底跟随态时维持贴底；用户主动上滚阅读时不越权拽回底部。
       if (!shouldFollowBottom()) return
 
-      // 先同步 guardAfterAutoScroll：立即把 stickyFollowBottom 设为 true，
-      // 确保紧接着触发的 contentResizeObserver（wrapper 高度因 reflow 变化）走
-      // shouldFollowResize() = true 分支同帧贴底。scrollToBottom 是 async（await nextTick），
-      // 其内部的 guardAfterAutoScroll 来得太晚，会漏掉第一帧 observer。
       guardAfterAutoScroll()
-      // scrollToBottom 兜底立即贴一次底 + 设 suppressFlipUntil 跳过 FLIP
-      // （宽度变化场景不需要 FLIP 动画，避免和 reflow 打架）。
       void scrollToBottom()
     })
     containerWidthObserver.observe(el)
@@ -1109,19 +705,18 @@ export function useAgentMode(
     }
   }
 
-  // messagesRef 由 AiPanel 在 watch(scrollerRef) 中赋值；这里跟随它生命周期挂载/卸载
-  // wrapper 是 DynamicScroller mount 后内部渲染的子节点，等一帧确保挂载完成
+  // messagesRef 由 AiPanel 赋值；跟随它生命周期挂载/卸载观察器
   watch(messagesRef, (el, oldEl) => {
     if (oldEl === el) return
     oldEl?.removeEventListener('wheel', onMessagesWheel)
-    uninstallContentResizeObserver()
+    uninstallFollowResizeObserver()
     uninstallContainerWidthObserver()
     if (el) {
       lastKnownScrollTop = el.scrollTop
       lastKnownScrollHeight = el.scrollHeight
       el.addEventListener('wheel', onMessagesWheel, { passive: true })
       requestAnimationFrame(() => {
-        installContentResizeObserver()
+        installFollowResizeObserver()
         installContainerWidthObserver()
       })
     }
@@ -1143,17 +738,6 @@ export function useAgentMode(
 
   const isAgentRunning = computed(() => {
     return agentState.value?.isRunning || false
-  })
-  // 记录最后一次运行态的时间戳，供 applyReadingResize grace 期判断使用
-  watch(isAgentRunning, (running, wasRunning) => {
-    if (running) {
-      lastAgentRunningAt = Date.now()
-      lastAgentStoppedAt = 0
-    } else if (wasRunning) {
-      lastAgentStoppedAt = Date.now()
-      extendSuppressFlip(TASK_COMPLETE_SUPPRESS_MS)
-      cancelFlipAnimation()
-    }
   })
 
   const pendingConfirm = computed(() => {
@@ -1536,9 +1120,6 @@ export function useAgentMode(
       ? currentTab.value?.agentId
       : tabId
     terminalStore.setAgentRunning(tabId, true, stableAgentKey, message)
-    // 须在 addAgentStep 触发的 layout 之前设 suppress，否则 ResizeObserver 会先跑 FLIP
-    // （Windows 上 FLIP 的 translateY 反向偏移 + 后续收缩 pinToBottom = 先上后落）
-    extendSuppressFlip(USER_SEND_SUPPRESS_MS)
     terminalStore.addAgentStep(tabId, {
       id: `__optimistic_user_task_${startTime}`,
       type: 'user_task',
@@ -1842,46 +1423,16 @@ export function useAgentMode(
       // 后端 user_task 到达后替换乐观步骤（避免重复分组）
       if (data.step.type === 'user_task' && !data.step.id.startsWith('__optimistic_')) {
         terminalStore.removeOptimisticAgentSteps(tabId)
-        extendSuppressFlip(USER_SEND_SUPPRESS_MS)
       }
 
-      if (data.step.type === 'user_supplement') {
-        extendSuppressFlip(USER_SEND_SUPPRESS_MS)
-      }
-
-      // 「准备中 → 思考中」切换：乐观移除 startup 占位 + 抑制 FLIP。
-      // 后端首 token 到达时（agent.ts callAiWithStreaming.onChunk），同步连续执行：
-      //   addStep(message)  → onStep 推到前端
-      //   removeStep(initial 占位) → onStepRemoved 推到前端
-      // 两个 IPC 事件几乎同时发出，但前端按顺序处理，中间存在「占位 + 新 message」
-      // 两张卡片同时渲染的中间态——用户会看到新 message 的初始内容闪现在占位下方，
-      // 紧接着占位消失。这里在 addAgentStep 之前先乐观移除占位，让 flattenedItems 重算时
-      // 只剩新的 message step，避免中间态渲染。后端 removeStep IPC 到达时 removeAgentStep
-      // 幂等跳过（findIndex === -1 直接 return）。
-      // 同时延长 suppressFlipUntil 让紧接着的 wrapper 高度变化走硬切贴底、无 FLIP 动画——
-      // 两张 ThinkingBlock 单行卡片是同位切换，不应有从下往上滑动的动画。
-      // 窗口时长见 PLACEHOLDER_SWITCH_SUPPRESS_MS 注释；窗口结束后后续流式 chunk 恢复
-      // 走 FLIP，不受影响。
+      // 「准备中 → 思考中」切换：乐观移除 startup 占位，避免「占位 + 新 message」中间态闪现。
+      // 后端 removeStep IPC 到达时 removeAgentStep 幂等跳过。
       if (data.step.type === 'message' && data.step.isStreaming) {
         const startupStep = (agentState.value?.steps ?? [])
           .find(s => s.placeholder === 'startup')
         if (startupStep) {
           terminalStore.removeAgentStep(tabId, startupStep.id)
-          extendSuppressFlip(PLACEHOLDER_SWITCH_SUPPRESS_MS)
         }
-      }
-
-      // 调试模式下 tool_result 作为独立 item append，叠加虚拟列表重测 + Windows 滚动条 reflow
-      if (
-        data.step.type === 'tool_result'
-        && shouldShowToolResultStep(data.step, configStore.agentDebugMode)
-      ) {
-        extendSuppressFlip(TOOL_RESULT_APPEND_SUPPRESS_MS)
-      }
-
-      if (data.step.type === 'final_result') {
-        extendSuppressFlip(TASK_COMPLETE_SUPPRESS_MS)
-        cancelFlipAnimation()
       }
 
       terminalStore.addAgentStep(tabId, data.step)
@@ -1944,7 +1495,7 @@ export function useAgentMode(
       }
 
       // 需要确认时强制滚动，确保用户看到确认框
-      // 多次滚动：DynamicScroller 测量实际高度需要时间，首次滚动可能基于估算值
+      // 多次滚动：虚拟列表测量实际高度需要时间，首次滚动可能基于估算值
       scrollToBottom()
       setTimeout(() => scrollToBottom(), 150)
     })
@@ -2262,7 +1813,7 @@ export function useAgentMode(
     // 关闭弹窗（如果是从弹窗中选择的）
     closeHistoryModal()
 
-    // 等待 Vue 响应式更新完成（DynamicScroller 挂载 / 列表项更新）
+    // 等待 Vue 响应式更新完成（Virtualizer 挂载 / 列表项更新）
     await nextTick()
     scrollToHistoryBottomWithRetry({ hideUntilSettled: true })
   }
@@ -2330,7 +1881,7 @@ export function useAgentMode(
 
   onUnmounted(() => {
     cleanupAgentListeners()
-    uninstallContentResizeObserver()
+    uninstallFollowResizeObserver()
     uninstallContainerWidthObserver()
     artifactStore.cleanup(currentTabId.value)
     cancelPendingReveal()

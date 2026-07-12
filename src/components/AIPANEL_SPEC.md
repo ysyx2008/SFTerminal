@@ -1,6 +1,6 @@
 # AiPanel 渲染规则 SPEC
 
-> Last verified: 2026-07-03（proactive_notice step、talk_to_user 内联渲染）  
+> Last verified: 2026-07-13（迁移 virtua Virtualizer，移除 FLIP 补偿）  
 > 文件：`src/components/AiPanel.vue`  
 > 职责：将 agentTaskGroups 渲染为可交互的对话流 UI，管理滚动、确认框、输入框等。
 
@@ -10,18 +10,19 @@
 
 ```
 AiPanel
-├── DynamicScroller（vue-virtual-scroller v3，虚拟列表）
-│   ├── #before slot
-│   │   └── ai-welcome（空会话欢迎页）
-│   └── VirtualItem（每个可见行）
-│       ├── user_task（用户消息气泡）
-│       ├── thinking（思考块）
-│       ├── message（AI 回复）
-│       ├── tool_call / tool_result（工具调用）
-│       ├── user_supplement（运行中追加的用户消息）
-│       ├── proactive_message（历史格式：user_task __proactive__ + final_result）
-│       ├── proactive_notice（talk_to_user 内联主动通知，非分组边界）
-│       └── ...
+├── .ai-messages（滚动容器，messagesRef）
+│   ├── WelcomePanel（空会话欢迎页）
+│   ├── HistorySearchModal
+│   └── Virtualizer（virtua，虚拟列表）
+│       └── VirtualItem（每个可见行）
+│           ├── user_task（用户消息气泡）
+│           ├── thinking（思考块）
+│           ├── message（AI 回复）
+│           ├── tool_call / tool_result（工具调用）
+│           ├── user_supplement（运行中追加的用户消息）
+│           ├── proactive_message（历史格式：user_task __proactive__ + final_result）
+│           ├── proactive_notice（talk_to_user 内联主动通知，非分组边界）
+│           └── ...
 ├── PendingConfirmCard（需要确认时叠加在底部）
 ├── PendingSecureInputCard（需要密钥输入时）
 └── AiComposer（输入框）
@@ -74,7 +75,7 @@ AiPanel
 - `body`：正文部分（用于 MarkdownRenderer）
 
 **流式态**：`details open` → ThinkingBlock 展开；完成后可由用户折叠。  
-**虚拟列表限制**：DynamicScroller 会在 ThinkingBlock 滚出视口时 unmount，`open` 状态会被重置。ThinkingBlock 内部通过 `keepAlive` 机制（实际是自身 ref）保存折叠状态，滚回时恢复。
+**虚拟列表限制**：Virtualizer 会在 ThinkingBlock 滚出视口时 unmount，`open` 状态会被重置。ThinkingBlock 内部通过 `keepAlive` 机制（实际是自身 ref）保存折叠状态，滚回时恢复。
 
 **「正在准备...」**：仅由左侧 ThinkingBlock 单行呈现（无居中 fallback）。后端 initial thinking step 到达前，`useAgentMode.flattenedItems` 在步骤流末尾注入虚拟 step（`type='thinking'` + `isStreaming=true`）；step 从 `thinking` 变为 `message` 但 content 尚无 🤔 时，`getMessageStepPresentation` 仍保持 ThinkingBlock 流式行，避免切换空白。
 
@@ -96,55 +97,39 @@ AiPanel
 
 ---
 
-## 四·补、ResizeObserver 滚动补偿策略
+## 四·补、虚拟滚动与跟底策略（virtua）
 
-> 文件：`src/composables/useAgentMode.ts`
-> 为什么单独成节：这是滚动 bug 反复回归的重灾区（6 次提交、3 次回归）。补偿逻辑若不看「增长来源相对视区的位置」，必然在「上方 item 实测高度修正」和「下方流式 item 长高」之间混淆——两者对 `scrollTop` 的正确行为恰好相反。
+> 文件：`src/composables/useAgentMode.ts`  
+> 2026-07-13 起：消息列表从 `vue-virtual-scroller`（DynamicScroller）迁移到 [`virtua`](https://github.com/inokawa/virtua) 的 `Virtualizer`。
 
-### 背景：为什么需要补偿
+### 为什么换库
 
-`DynamicScroller`（vue-virtual-scroller）的 wrapper `.vue-recycle-scroller__item-wrapper` 高度会因 item 内容变化而变。`ResizeObserver` 监听 wrapper 高度，在 `wrapperDelta = newHeight - prevHeight` 非零时触发补偿逻辑，决定是否调整 `scrollTop` 以维持视区锚点。
+DynamicScroller 是回收式虚拟列表，动态高度 + 流式增长场景下需要自建 ResizeObserver / FLIP 补偿（曾 6 次提交、3 次回归）。virtua 内置 dynamic size measurement 与 scroll position adjustment，跟底态跳动由库处理。
 
-### 两个关键判定维度
+### 当前滚动职责划分
 
-1. **模式（mode）**：`shouldFollowResize()` 返回 true → 跟底态（用户在底部跟随新内容）；false → 阅读态（用户上滚离开底部）。
-2. **增长来源相对视区的位置**（仅阅读态需要细分）：
-   - **视区上方**：如历史 item 从估算高度 → 实测高度（首次滚动时虚拟列表测量）。此时应 `scrollTop += wrapperDelta` 维持视区，否则内容会漂。
-   - **视区下方**：如新 item append、正在流式的最后一个 step 项高度增长。此时浏览器默认保持 `scrollTop` 不变即正确锚定，**补偿反而把视区下推 → 视区内容相对上移 → 画面一行一行向上跳**。
+| 职责 | 谁负责 |
+|---|---|
+| 动态高度测量 / 上方 item 高度修正时的视区锚定 | virtua 内置 |
+| 跟底态：新内容到达 / 最后一项流式长高时钉底 | `stickyFollowBottom` + `pinFollowBottom`；`followResizeObserver` 监听 Virtualizer 根节点高度，同帧钉底（无 FLIP） |
+| 阅读态：用户上滚后不拽回底部，亮「新消息」 | `updateScrollPosition` / `userScrolledAway` / `hasNewMessage` |
+| 切 tab / 恢复历史的精确视口位置 | `aiScrollAnchor`（item id + offset）+ `scrollToIndex` |
+| 历史冷加载视觉抖动 | `isHistoryScrollPending`（opacity:0 → scrollHeight 稳定后淡入） |
+| 容器宽度变化导致的 reflow | `installContainerWidthObserver`（跟底时主动 `scrollToBottom`） |
 
-### 补偿策略表
+### 已删除（勿再引入）
 
-| 模式 | wrapperDelta 区间 + 条件 | 副作用 |
-|---|---|---|
-| following（跟底） | ≤ 0 且 > -MAX_FLIP | 钉新底 + guard（防 clamp 漂移） |
-| following | ≤ -MAX_FLIP | 不动（防图片加载震荡） |
-| following | > 0 且 suppress 窗口内 或 ≥ MAX_FLIP | 钉新底 + guard（硬切，无 FLIP） |
-| following | > 0 且小增长 | 钉新底 + guard + FLIP 平滑 |
-| reading（阅读） | ≤ 0 | 不动（浏览器自然 clamp） |
-| reading | (0, MAX_FLIP) 且 scrollTop < THRESHOLD | 不动（顶部附近，wrapper 增长不影响顶部视区） |
-| reading | (0, MAX_FLIP) 且 scrollTop≥TH 且增长来自视区下方 | **不动**（浏览器保持 scrollTop 不变即正确） |
-| reading | (0, MAX_FLIP) 且 scrollTop≥TH 且增长来自视区上方 | `scrollTop += delta` 维持视区锚定 |
-| reading | ≥ MAX_FLIP | 不动（虚拟列表重排，避免一次性推走很多） |
-
-- `TH` = `SCROLL_THRESHOLD`（100px）；`MAX` = `MAX_FLIP_DELTA`（600px）
-- `suppress` 窗口 = `scrollToBottom` 后短暂 200ms（`Date.now() < suppressFlipUntil`），避免补偿与强制滚底打架
-- `suppress` 窗口（另一个触发点）= onStep 收到首个 streaming message step 且 `agentState.steps` 里仍存在 `placeholder='startup'` 占位时，先**乐观移除占位**（避免「占位 + 新 message」两张卡片同时渲染的中间态闪现），再设 `PLACEHOLDER_SWITCH_SUPPRESS_MS`（300ms）窗口。覆盖后端紧接着的 `removeStep(initial 占位)` IPC（幂等跳过）+ wrapper 高度变化，让两张 ThinkingBlock 单行卡片同位硬切而非"从下往上滑一下"。窗口结束后后续流式 chunk 恢复走 FLIP 不受影响。
-
-### 「增长来源相对视区位置」如何判定
-
-**实现**：`isGrowthBelowViewport(el, itemsAppended)` 函数（`useAgentMode.ts`）。
-1. `itemsAppended === true`（`flattenedItems.length` 增加）→ 新 item append，必在下方，直接返回 true
-2. AI 运行中或停止后 300ms grace 期内 → 流式输出在下方，返回 true（兜底，覆盖 `getItemOffset` 尚未就绪的初始帧）
-3. 用 `scroller.getItemOffset(lastIndex)` 取最后一个 item 顶距 wrapper 顶的距离，与视区底（`scrollTop + clientHeight`）比较，最后一个 item 在视区下方则返回 true
-
-> 优先用显式判定（步骤 3），代理指标（步骤 1/2）作快速短路和兜底。当 `getItemOffset` 不可用时回退到代理指标——此时已知边界：AI 运行时若上方历史 item 真的发生实测高度修正会被误判为下方增长而漏补偿，历史 item 通常在打开对话时已实测完成，运行时少见。
+- `applyFollowingResize` / `applyReadingResize` / `isGrowthBelowViewport`
+- `applyFlipScroll` / `suppressFlipUntil` / 阅读态 scrollTop 补偿
+- `aiScrollCache` / `restoreCache`（virtua CacheSnapshot 结构不同且不保证跨版本）
+- `getItemSizeDeps` / `DynamicScrollerItem`（virtua 自动重测，无需手动 size-dependencies）
 
 ### 改这块代码前必读
 
-1. **先判模式，再判增长位置**。两个维度缺一不可——只看 `wrapperDelta` 数值/符号会混淆上方/下方增长。
-2. **不要在 `applyReadingResize` 里调 `guardAfterAutoScroll`**：会把 `stickyFollowBottom` 设回 true 破坏阅读态（回归 42ff929a / 971f19a6 的隐患根源）。
-3. **不要设 `skipScrollUpdate`**：补偿是即时一次性，吞 scroll 事件会漏用户后续手动滚动。
-4. **改完更新本节策略表**：任何新增/修改分支条件，同步更新上面的表格。
+1. **跟底钉底可以保留 ResizeObserver，但禁止再加 FLIP transform**——与 virtua 的 scroll adjustment 冲突。
+2. **跟底意图用 `stickyFollowBottom`，不要只靠瞬时 `checkIsNearBottom()`**——虚拟列表 scrollHeight 异步修正时会误判。
+3. **阅读态禁止 `guardAfterAutoScroll` / 禁止在 followResizeObserver 里处理阅读态**——会把 sticky 设回 true 或把用户从阅读位拽走。
+4. **跨视口文本全选仍是虚拟列表通病**——virtua 亦不解决；后续可另做自定义选择或加大 bufferSize。
 
 ---
 

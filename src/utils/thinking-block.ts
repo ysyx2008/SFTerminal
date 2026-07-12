@@ -41,7 +41,7 @@ export function parseThinking(content: string): ParsedMessage {
   return { thinking: null, body: content }
 }
 
-/** DynamicScroller 预估 item 高度（px）。折叠态 thinking 不计 reasoning 长度，避免流式思考时估算↔实测震荡导致列表持续跳动。 */
+/** 消息 step 预估高度（px），供 flattenedItems.size hint。折叠态 thinking 不计 reasoning 长度。 */
 export function estimateMessageStepVirtualSize(
   step: { type: string; content: string; isStreaming?: boolean },
   opts?: { thinkingExpanded?: boolean }

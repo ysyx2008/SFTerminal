@@ -330,7 +330,7 @@ export default defineConfig({
   // 优化依赖
   optimizeDeps: {
     exclude: ['@huggingface/transformers'],  // 让 transformers.js 在 worker 中正确加载
-    include: ['vue-virtual-scroller', 'vue-resize', 'vue-observe-visibility']
+    include: ['virtua']
   }
 })
 

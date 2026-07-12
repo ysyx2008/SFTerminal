@@ -8,7 +8,7 @@
  * - 懒加载 echarts（~1MB 包体积），首次见到活图时才发起动态 import；后续命中模块缓存
  * - SVG renderer：与后端 SSR 视觉一致（chart skill 已把主题 inline 到 option），保留矢量
  *   清晰度的同时 getDataURL({type:'png'}) 也能输出高 DPI PNG（echarts 内部转 canvas）
- * - DynamicScroller 离屏会 unmount —— 自动 dispose，无需我们做 IntersectionObserver
+ * - 虚拟列表离屏会 unmount —— 自动 dispose，无需我们做 IntersectionObserver
  * - ResizeObserver 让容器尺寸变化时自动 resize，保证图表填满容器
  * - 使用 aspectRatio 锁宽高比，避免 echarts.init 在 offsetHeight 为 0 时拿不到尺寸
  *   （CSS aspect-ratio 比 padding-bottom hack 干净，且现代浏览器支持充分）
@@ -94,7 +94,7 @@ let disposed = false
 
 async function ensureChart(): Promise<void> {
   if (!containerRef.value || disposed) return
-  // 防 0×0 init：DynamicScroller 虚拟滚动场景下，组件 mount 时容器可能仍未完成布局
+  // 防 0×0 init：虚拟滚动场景下，组件 mount 时容器可能仍未完成布局
   // （aspect-ratio 需要至少一帧才生效；scroller 自身有时也会先把高度设为 0 再撑开）。
   // echarts.init 接到 0×0 容器会渲染空白且不会自愈。直接退出，等下面 ResizeObserver
   // 看到容器变非零尺寸时再触发本函数 —— 那时既能 init 也能补上 setOption

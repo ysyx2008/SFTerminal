@@ -7,9 +7,9 @@
 import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef, nextTick, withDefaults } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Upload, Trash2, X, HelpCircle, ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-vue-next'
-import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
+import { Virtualizer } from 'virtua/vue'
+import type { VirtualizerHandle } from 'virtua/vue'
 import type { MessageScrollerHandle } from '../types/message-scroller'
-import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import { useAssistantArtifactStore } from '../workbench/assistant/artifact/store'
@@ -27,7 +27,7 @@ import WelcomePanel from './WelcomePanel.vue'
 import HistorySearchModal from './HistorySearchModal.vue'
 import { optionHasMapSeries } from '@shared/chart-maps'
 import { useImageActions } from '../composables/useImageActions'
-import { parseThinking, estimateMessageStepVirtualSize } from '../utils/thinking-block'
+import { parseThinking } from '../utils/thinking-block'
 import { createLogger } from '../utils/logger'
 import sailfishLogo from '../../resources/logo.png'
 
@@ -102,7 +102,28 @@ const handleClose = () => {
 
 // Refs
 const messagesRef = ref<HTMLDivElement | null>(null)
+const virtuaRef = ref<VirtualizerHandle | null>(null)
 const scrollerRef = ref<MessageScrollerHandle | null>(null)
+watch(virtuaRef, (h) => {
+  if (!h) {
+    scrollerRef.value = null
+    return
+  }
+  // 组合包装，不 mutate virtua 暴露的 handle
+  scrollerRef.value = {
+    get cache() { return h.cache },
+    get scrollOffset() { return h.scrollOffset },
+    get scrollSize() { return h.scrollSize },
+    get viewportSize() { return h.viewportSize },
+    findItemIndex: (...args) => h.findItemIndex(...args),
+    getItemOffset: (...args) => h.getItemOffset(...args),
+    getItemSize: (...args) => h.getItemSize(...args),
+    scrollToIndex: (...args) => h.scrollToIndex(...args),
+    scrollTo: (...args) => h.scrollTo(...args),
+    scrollBy: (...args) => h.scrollBy(...args),
+    scrollToBottom: () => { h.scrollTo(h.scrollSize) },
+  }
+}, { immediate: true })
 const highlightedSourceStepId = ref<string | null>(null)
 const composerRef = ref<InstanceType<typeof AiComposer> | null>(null)
 const secureInputValue = ref('')
@@ -162,7 +183,7 @@ const toggleWebSearchExpand = (stepId: string) => {
   }
 }
 
-// 思考块展开状态（默认收起，按 stepId 管理；让 DynamicScroller 的 size dep 能感知切换）
+// 思考块展开状态（默认收起，按 stepId 管理；切换时 virtua 自动重测高度）
 const expandedThinkingSteps = ref<Set<string>>(new Set())
 const THINKING_EXPAND_TRANSITION_MS = 280
 const isThinkingExpanded = (stepId: string): boolean => {
@@ -221,7 +242,7 @@ const shouldShowTaskCompleteFooter = (item: { step?: { id: string; type: string 
 
 // 任务完成尾注首次出现时给一次性 fade-in 动画。
 //
-// 问题：footer 是 `v-if` 控制，且外层用 DynamicScroller 虚拟滚动，footer 滚出
+// 问题：footer 是 `v-if` 控制，且外层用虚拟滚动，footer 滚出
 // 视区后会被 unmount，滚回时 remount——如果 CSS 入场动画无条件挂在 .agent-final-footer
 // 上，每次 remount 都会重播，造成"翻历史一路滑入闪烁"。
 //
@@ -302,7 +323,7 @@ const isLoadedFromHistory = computed(() => {
 const forkingGroupIds = ref<Set<string>>(new Set())
 
 // 当前展开操作菜单的 group ID（同一时间最多一个菜单展开）
-// 菜单通过 Teleport 渲染到 body，避免被 vue-virtual-scroller 的 overflow:hidden 裁掉
+// 菜单通过 Teleport 渲染到 body，避免被滚动容器 overflow 裁掉
 const openGroupMenuId = ref<string | null>(null)
 const groupMenuPosition = ref<{ top: number; right: number }>({ top: 0, right: 0 })
 
@@ -404,7 +425,7 @@ const getMessageStepPresentation = (step: { content: string; isStreaming?: boole
 })
 
 // 思考块完成时长缓存（按 stepId 索引）
-// DynamicScroller 是虚拟列表，已完成的 ThinkingBlock 滚出视区后会被 unmount、滚回时 remount，
+// 虚拟列表中已完成的 ThinkingBlock 滚出视区后会被 unmount、滚回时 remount，
 // 仅用 step.timestamp 重算会得到"从起点到现在"的错乱时长（变成几十~上百秒）。
 // 此处用一个会话内的内存 Map 缓存：组件首次完成时 emit finalize 上报真实时长，remount 时回传，使用 reactive ref 触发模板更新
 const thinkingDurations = ref<Map<string, number>>(new Map())
@@ -1734,8 +1755,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
 // ==================== 生命周期 ====================
 
-watch(scrollerRef, (scroller, oldScroller) => {
-  const oldEl = oldScroller?.$el as HTMLElement | undefined
+watch(messagesRef, (el, oldEl) => {
   if (oldEl) {
     oldEl.removeEventListener('scroll', updateScrollPosition)
     oldEl.removeEventListener('click', handleCodeBlockClick)
@@ -1743,8 +1763,6 @@ watch(scrollerRef, (scroller, oldScroller) => {
     oldEl.removeEventListener('contextmenu', handleFilePathContextMenu)
     oldEl.removeEventListener('contextmenu', handleMermaidContextMenu)
   }
-  const el = scroller?.$el as HTMLDivElement | undefined
-  messagesRef.value = el ?? null
   if (el) {
     el.addEventListener('scroll', updateScrollPosition, { passive: true })
     el.addEventListener('click', handleCodeBlockClick)
@@ -1760,36 +1778,6 @@ watch(scrollerRef, (scroller, oldScroller) => {
 const getPreviewHints = (attachments?: { totalPages?: number; previewPages?: number; filename: string }[]) => {
   if (!attachments) return []
   return attachments.filter(a => a.totalPages && a.previewPages && a.totalPages! > a.previewPages!)
-}
-
-const getItemSizeDeps = (item: typeof flattenedItems.value[0]) => {
-  if (item.type === 'step' && item.step) {
-    let thinkingExpandedForSize: boolean | undefined
-    if (item.step.type === 'message' && item.step.content?.includes('🤔')) {
-      thinkingExpandedForSize = expandedThinkingSteps.value.has(item.step.id)
-    }
-    const messageVirtualSize = item.step.type === 'message'
-      ? estimateMessageStepVirtualSize(item.step, { thinkingExpanded: thinkingExpandedForSize })
-      : undefined
-    return [
-      messageVirtualSize,
-      item.step.toolResult,
-      item.step.isStreaming,
-      item.step.images?.length,
-      // 活图（echartsOption）出现/消失会改变这一行高度（ImagePlaceholder vs EChartsCanvas
-      // 的最大尺寸不同），让 size dep 把它感知到，避免虚拟滚动布局错位
-      !!item.step.echartsOption,
-      item.isFirstStep,
-      isStandaloneAssistant.value,
-      thinkingExpandedForSize,
-    ]
-  }
-  if (item.type === 'final_result' && item.group) return [item.group.finalResult]
-  if (item.type === 'proactive_message' && item.group) return [item.group.finalResult]
-  if (item.type === 'proactive_notice' && item.step) return [item.step.content]
-  if (item.type === 'confirm') return [pendingConfirm.value?.toolCallId, pendingConfirm.value?.toolArgs]
-  if (item.type === 'waiting_input') return [pendingSecureInput.value?.requestId]
-  return []
 }
 
 const scrollHistoryToBottom = () => {
@@ -1809,7 +1797,7 @@ async function scrollToAgentStep(stepId: string) {
   if (index < 0) return
 
   await nextTick()
-  scrollerRef.value?.scrollToItem?.(index)
+  scrollerRef.value?.scrollToIndex?.(index)
   highlightedSourceStepId.value = visibleStepId
   window.setTimeout(() => {
     if (highlightedSourceStepId.value === visibleStepId) {
@@ -1834,14 +1822,8 @@ const shouldScrollHistoryOnShow = () =>
   terminalStore.getAiScrollTop(currentTabId.value) === undefined &&
   flattenedItems.value.length > 0
 
-const warmupMessageList = () => {
-  if (!import.meta.env.DEV) return
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      scrollerRef.value?.forceUpdate?.(true)
-    })
-  })
-}
+/** @deprecated virtua 无需手动 forceUpdate；保留空函数以兼容调用点，可后续清理 */
+const warmupMessageList = () => {}
 
 onMounted(() => {
   isMounted.value = true
@@ -1897,7 +1879,7 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handlePTTKeyDown, true)
   document.removeEventListener('keyup', handlePTTKeyUp, true)
   window.removeEventListener('blur', handlePTTWindowBlur)
-  const el = scrollerRef.value?.$el as HTMLElement | undefined
+  const el = messagesRef.value
   if (el) {
     el.removeEventListener('scroll', updateScrollPosition)
     el.removeEventListener('click', handleCodeBlockClick)
@@ -2176,11 +2158,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
       <!-- 消息列表（虚拟滚动） -->
       <div class="ai-messages-wrapper">
-        <DynamicScroller
-          ref="scrollerRef"
-          :items="flattenedItems"
-          :min-item-size="36"
-          key-field="id"
+        <div
+          ref="messagesRef"
           class="ai-messages"
           :class="{ 'standalone-mode': isStandaloneAssistant, 'custom-avatar': isStandaloneAssistant && configStore.agentAvatar }"
           :style="{
@@ -2188,7 +2167,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
             opacity: isHistoryScrollPending ? 0 : undefined,
           }"
         >
-          <template #before>
             <!-- 欢迎页（无任务且无历史对话时显示） -->
             <WelcomePanel
               v-if="!isAgentRunning && !agentUserTask && agentTaskGroups.length === 0"
@@ -2222,11 +2200,15 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
               @select="handleLoadHistory"
               @close="closeHistoryModal"
             />
-          </template>
 
-          <template #default="{ item, index, active }">
-            <DynamicScrollerItem :item="item" :active="active" :data-index="index" :size-dependencies="getItemSizeDeps(item)">
-
+          <Virtualizer
+            ref="virtuaRef"
+            :data="flattenedItems"
+            :item-size="48"
+            :buffer-size="400"
+          >
+            <template #default="{ item, index }">
+              <div :key="item.id" :data-index="index">
               <!-- 主动消息（talk_to_user）— 历史格式 user_task __proactive__ + final_result -->
               <div v-if="item.type === 'proactive_message'" class="message assistant">
                 <div class="message-wrapper">
@@ -2658,9 +2640,11 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                 </div>
               </div>
 
-            </DynamicScrollerItem>
-          </template>
-        </DynamicScroller>
+            
+              </div>
+            </template>
+          </Virtualizer>
+        </div>
 
 
         <!-- 新消息指示器 -->
@@ -2785,7 +2769,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
     </div>
   </div>
 
-  <!-- group 操作菜单：Teleport 到 body 避免被 vue-virtual-scroller 的 overflow:hidden 裁掉 -->
+  <!-- group 操作菜单：Teleport 到 body 避免被滚动容器 overflow 裁掉 -->
   <Teleport to="body">
     <div
       v-if="openGroupMenuId && openGroupMenuGroup"
@@ -3302,10 +3286,11 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .ai-messages {
   height: 100% !important;
+  overflow-y: auto;
   padding: 12px;
   user-select: text;
   position: relative;
-  /* 程序化贴底 + FLIP 与 scroll anchoring 冲突；Windows 上尤甚 */
+  /* virtua 自带 scroll adjustment；禁用浏览器 scroll anchoring 避免冲突 */
   overflow-anchor: none;
   /* 预留滚动条槽位，避免 Windows 经典滚动条出现/消失引发布局 reflow → 二次 ResizeObserver */
   scrollbar-gutter: stable;
@@ -4127,7 +4112,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
    该 group id 加入 animatedFooters Set，class 不再附加 → 后续虚拟滚动 unmount/mount
    不会重播动画，避免"翻历史一路滑入闪烁"的回归。
 
-   ⚠️ UX 不变量：footer 的 DynamicScroller item size 必须恒定，与 footer 内
+   ⚠️ UX 不变量：footer 的虚拟列表 item size 必须恒定，与 footer 内
       任何子元素的存在与否无关。min-height 锁到当前最大子元素（22×22 操作
       按钮）高度。详见 electron/services/agent/SPEC.md §"任务完成尾注尺寸恒定"
       改动前必读，否则会重新引入 4dad4969 修复过的"任务完成时整屏上下闪烁"。

@@ -3,7 +3,7 @@
  *
  * 锁定 parseThinking 对后端 ai.service.ts 输出的两种 details 模板的解析行为，
  * 防止后续模板调整时静默失配（一旦失配，思考块会重新落入 v-html 渲染，
- * 又会引发 DynamicScroller 高度抖动）。
+ * 又会引发虚拟列表高度抖动）。
  */
 import { describe, it, expect } from 'vitest'
 import { parseThinking, estimateMessageStepVirtualSize } from './thinking-block'

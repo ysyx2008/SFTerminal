@@ -17,7 +17,7 @@
  * 时长：组件内部基于 startedAt（即 step.timestamp）+ setInterval 100ms 实时累计；
  * isStreaming 切换为 false 时停止 interval、定格 finalDurationMs，完成后不再消耗时钟。
  *
- * expanded 状态由父级 AiPanel 集中管理（按 stepId 索引），让 DynamicScroller 的
+ * expanded 状态由父级 AiPanel 集中管理（按 stepId 索引），让虚拟列表的
  * size-dependencies 能感知"用户主动切换"这一次高度变化。
  */
 import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
@@ -32,7 +32,7 @@ const props = defineProps<{
   startedAt: number
   /**
    * 父组件按 stepId 缓存的最终时长（毫秒）。
-   * DynamicScroller 是虚拟列表，已完成的步骤滚出视区后组件会 unmount，再滚回时 remount——
+   * 虚拟列表中已完成的步骤滚出视区后组件会 unmount，再滚回时 remount——
    * 此时仅用 startedAt 重算会得到"从起点到现在"的错乱值。父组件缓存可保证 remount 后取回真实时长。
    */
   cachedDurationMs?: number

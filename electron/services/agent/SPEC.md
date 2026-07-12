@@ -418,7 +418,7 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 
 后端逻辑保持不变：`callAiWithStreaming` 的 `sendContentUpdate` 里仍然在检测到 `</details>` 闭合后立即把 `<details open>` 替换为 `<details>`，onDone 做同样替换作为兜底。这是后端持久化数据格式的承诺（IM 端、Web 端、历史记录都依赖这个格式）。
 
-**前端呈现**：AiPanel 不再用原生 `<details>` 渲染，而是把思考块从 `message.content` 抽出，交给 `<ThinkingBlock>` 组件单行呈现（streaming/done 两态）。这样做的目的是消除 DynamicScroller 的高度抖动——原生 `<details>` 折叠是瞬时无动画的，每次 v-html 重渲染时元素都被重建，导致流式期间反复展开/折叠引发列表项 size 反复重算。
+**前端呈现**：AiPanel 不再用原生 `<details>` 渲染，而是把思考块从 `message.content` 抽出，交给 `<ThinkingBlock>` 组件单行呈现（streaming/done 两态）。这样做的目的是消除虚拟列表的高度抖动——原生 `<details>` 折叠是瞬时无动画的，每次 v-html 重渲染时元素都被重建，导致流式期间反复展开/折叠引发列表项 size 反复重算。
 
 - **拆分入口**：`src/utils/thinking-block.ts` 的 `parseThinking(content)`，按上面两种模板正则匹配
 - **size dep 剥离**：`getItemSizeDeps` 中 message step 的 `content` 经过 `parseThinking` 剥离思考块后再作为 size dep，reasoning 文本变化不再触发列表项重算
@@ -428,46 +428,25 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 
 `✓ 任务完成` 尾注（`.agent-final-footer`）作为 message step 的尾巴呈现，是 4dad4969 修复"任务完成那一刻整屏上下闪烁"的关键载体。
 
-**承诺**：footer 的 DynamicScroller item size 必须**恒定**，与 footer 内任何子元素（`✓` 文字、操作菜单按钮、未来可能新增的尾注内容）的存在与否无关。任何依赖 `isAgentRunning` / `isLoadedFromHistory` / `pendingConfirm` 等运行时状态切换 footer 内子元素 v-if 的改动，都不能引起 footer 高度变化。
+**承诺**：footer 的虚拟列表 item size 必须**恒定**，与 footer 内任何子元素（`✓` 文字、操作菜单按钮、未来可能新增的尾注内容）的存在与否无关。任何依赖 `isAgentRunning` / `isLoadedFromHistory` / `pendingConfirm` 等运行时状态切换 footer 内子元素 v-if 的改动，都不能引起 footer 高度变化。
 
 - **实现**：`.agent-final-footer { min-height: 22px }`，锁到当前最大子元素（22×22 操作按钮）高度。文字行高 ~17px 在 22px 容器内垂直居中略松，但比尺寸跳变好得多
-- **失败案例（commit `9607c2a8`）**：往 footer 里塞了一个高 22px 的 fork 菜单按钮，按钮 v-if 受 `isAgentRunning` 控制——Agent 跑完那一刻按钮整批出现，所有完成 group 的 footer 同时从 17 跳到 22，DynamicScroller 监测到全部 item size 变化触发整列重排
+- **失败案例（commit `9607c2a8`）**：往 footer 里塞了一个高 22px 的 fork 菜单按钮，按钮 v-if 受 `isAgentRunning` 控制——Agent 跑完那一刻按钮整批出现，所有完成 group 的 footer 同时从 17 跳到 22，虚拟列表监测到全部 item size 变化触发整列重排
 - **修复（commit `274a2386`）**：min-height 锁底，按钮在/不在 footer 高度恒定
 - **回归保护**：未来在 footer 加新元素时高度必须 ≤ 22px；要超过 22px 必须同步把 min-height 抬高到新最大值，并且新元素也不能是基于运行时状态条件渲染的
 - **首次入场动画**：footer 第一次显示时（`group.id` 不在 `animatedFooters` Set 中）附加 `agent-final-footer--first-show` class 触发 `agent-final-footer-enter` keyframes（opacity 0→1 + translateY 6→0，320ms iOS spring）；`@animationend` 回调把 `group.id` 写入 Set，后续虚拟滚动 unmount/mount 时 class 不再附加，**绝不会重播动画**——避免"翻历史时一路 footer 滑入闪烁"的回归。动画只用 opacity + transform 这种 compositor 层属性，不影响 box height，不破坏 item size 恒定不变量
 
-### 流式输出同帧贴底跟随（UX 承诺）
+### 流式输出跟底跟随（UX 承诺）
 
-流式 chunk 到达时，新内容必须**在浏览器 paint 之前**完成贴底滚动，用户视觉上感受不到任何"半行先冒出再上挪"的过渡。
+流式 chunk 到达时，用户若处于跟底态，新内容应保持贴底可见，不出现"半行先冒出再上挪"或持续跳动。
 
-**承诺**：`useAgentMode` 内挂 `ResizeObserver` 直接监听 DynamicScroller 的内容容器 `.vue-recycle-scroller__item-wrapper` 自身高度变化。该 wrapper 高度即虚拟列表的 totalSize；ResizeObserver 回调时机在 layout 之后、paint 之前，那一刻把 `scrollTop` 钉到最新 `scrollHeight`，浏览器同帧合成出来的画面已经是贴底状态。
+**实现（2026-07-13 起）**：消息列表使用 [`virtua`](https://github.com/inokawa/virtua) 的 `Virtualizer`。动态高度测量与 scroll position adjustment 由库内置；前端只维护跟底意图与用户上滚检测。
 
-- **触发条件**：`stickyFollowBottom`（用户发消息/点新消息后主动跟底）或 `isUserNearBottom === true`（用户视觉处于底部）；**不可**单独用 `skipScrollUpdate` 触发贴底（grace 窗口内用户拖滚动条上滚会漏判）。用户上滚（wheel、拖滚动条离底、或显著 scrollTop 减小）后清除跟底粘性并取消 FLIP，`ResizeObserver` 不会越权强行贴底
-- **失败案例（修复前）**：`doScrollIfNeeded` 仅在 `nextTick` 后调一次 `scrollTop = scrollHeight`，但 DynamicScroller 的 totalSize 是 item 的 ResizeObserver 异步上报的，nextTick 时 totalSize 还是旧值，于是滚到的是"旧底"；浏览器 paint 出新内容、半行裸露在视区底外，下一波 chunk 才补上去
-- **修复（commit `274a2386`）**：在 `useAgentMode` 内 `installContentResizeObserver` 直接观察 wrapper 高度；`doScrollIfNeeded` 等粗粒度滚动入口保留，作为新 step 加入瞬间的初始贴底兜底
-- **回归保护**：禁止把 ResizeObserver 改成基于 step.content 长度等内容驱动的判断（脆弱，且重新引入"vue-virtual-scroller 内部 size 测量异步"的根本问题）；禁止改成 setTimeout/setInterval 轮询（错过 paint 窗口）
-- **`skipScrollUpdate` 语义陷阱**：该标志同时承担两件事——① 屏蔽强制贴底窗口内的 scroll 事件以免覆盖 `isUserNearBottom`；② 告诉 ResizeObserver "现在请跟随尺寸变化贴底"。**任何"决定不滚"的分支都不得置位 `skipScrollUpdate`**，否则用户向上滚阅读时，新 step 引发的 ResizeObserver 回调会被误解读为"请跟随贴底"，把用户从阅读位拽回最底（曾经的回归 bug）。`doScrollIfNeeded` 必须把 `extendScrollGrace()` 收进 `if (shouldFollowBottom())` 分支内
-- **`stickyFollowBottom` 跟底粘性**：虚拟列表 `scrollHeight` 异步修正时，ResizeObserver 程序化贴底触发的 scroll 事件会短暂误判「不在底部」，导致 `isUserNearBottom` 抖动、`hasNewMessage` 闪烁、跟底中断。发消息 / 点「新消息」后设 `stickyFollowBottom = true`，ResizeObserver 贴底后走 `guardAfterAutoScroll()`（150ms grace）；用户 wheel 上滚或显著上拖才清除粘性
-
-#### FLIP 平滑滑动（视觉层叠加）
-
-同帧贴底解决了"半行抖动"问题，但内容上移仍是瞬间跳变（缺乏过渡感）。在贴底动作之后立刻给 wrapper 加 `transform: translateY(delta)` 反向偏移、下一帧用 iOS spring 曲线归零，让"上移"变成 280ms 的曲线滑动。
-
-- **三步顺序（不可错乱）**：① `scrollTop = scrollHeight` 同帧贴底（取得 `scrollDelta = newScrollTop - oldScrollTop`）→ ② `transform: translateY(currentY + scrollDelta)` + `transition: none` 反向偏移（compositor 层，paint 时视觉上"上方内容还在原位"）→ ③ 下一帧 `transform: translateY(0)` + `transition: transform <duration>ms cubic-bezier(0.32, 0.72, 0, 1)` 归零滑动
-- **偏移量来源必须是 `scrollDelta` 而非 `wrapperDelta`**：FLIP 反向偏移要补偿的是"上方内容真实上移的距离"（即 scrollTop 增量），不是 wrapper 高度增量。两者在标准贴底场景下相等；但有两种关键差异场景：① 内容不满视区无滚动条时 `scrollDelta = 0`（即使 wrapperDelta > 0），不应有动画——曾经的实现按 wrapperDelta 触发，造成"刚启动消息少时凭空抖一下"的回归 bug；② 已贴底无进一步滚动空间时 `scrollDelta = 0`，同样不应有动画
-- **动态 duration**：`computeFlipDuration(offset)` 按位移量计算时长——基础 320ms 适合 1-3 行正文滑动；> 100px 每 100px 加 60ms，封顶 560ms。避免把图片这种 300+px 的大幅滑动塞进 320ms 显得"嗖一下"，也避免超过 560ms 让用户觉得"画面慢一拍"
-- **覆盖范围**：所有引起 scroll 跟随贴底的场景统一走 FLIP，包括但不限于：流式 chunk 换行 / 新增 message step / 工具卡出现 / 工具卡展开 / 最终结果卡片出现 / Plan 视图展开 / 图片加载完成 等。`skipScrollUpdate` 窗口期（`doScrollIfNeeded` / `scrollToBottom` 设的 80ms 强制贴底）也走 FLIP，**不可早 return 跳过动画**——曾经的实现里早 return 导致"流式段落内有动画但新 step / 工具卡上来无动画"的不一致体验
-- **FLIP 由 ResizeObserver 单点负责**：所有 scrollTop 跳变 + FLIP 反向偏移都在 ResizeObserver 内部完成。`doScrollIfNeeded` **完全不设** scrollTop，只设 `skipScrollUpdate` 让 ResizeObserver 知道"请跟随贴底+FLIP"。`scrollToBottom` 保留 `scrollTop = scrollHeight`（用户从远处点新消息提示跳到底的场景，远距离跳本就不该有动画）
-- **`doScrollIfNeeded` 不设 scrollTop 的踩坑历史**（不可回退）：
-  1. 曾经在 `doScrollIfNeeded` 内 `el.scrollTop = el.scrollHeight` 做兜底贴底，看似无害，但在 vue-virtual-scroller **同步完成** totalSize 更新的场景下，scrollTop 在那一刻就跳到了新底；后续 ResizeObserver 触发时 `scrollDelta = newScrollTop - oldScrollTop = 0` → **跳过 FLIP**。结果：工具卡 / 新 step 上来看不到动画（"工具卡硬切贴底"的回归 bug）
-  2. 曾经尝试在 `doScrollIfNeeded` 内同时跑 `applyFlipScroll`，但和 ResizeObserver 路径累加变双倍偏移：`applyFlipScroll` 内部从当前 translateY 累加 offset，两路径各跑一次 → transform 变 2× scrollDelta → 视觉"流式每行抖一下"
-  3. 正解：让 ResizeObserver 唯一持有 scrollDelta 的所有权，主动入口不要碰 scrollTop 也不要碰 transform。wrapper.height 真正变化的瞬间，ResizeObserver 一次性完成 scrollTop 跳变 + FLIP 反向偏移 + 下一帧归零，整套流程在同一 paint 周期内完成
-- **`scrollToBottom` 仍设 scrollTop 的语义**：该函数被两类场景调用——① 用户在历史区点击"新消息提示"按钮（远距离跳，可能几百~几千 px），② 发新消息（贴底状态下短距离跟随）。对 ① 必须立即跳到底（用户期望"按下立即看到底部"），不可省略。对 ② 跳变量为 0（已贴底），无副作用。绝对**不可在 `scrollToBottom` 内同时跑 `applyFlipScroll`**——会和后续 ResizeObserver 累加成双倍偏移
-- **`scrollToBottom` 设 `suppressFlipUntil` 短窗口（200ms）**：发新消息那一刻几个相邻的 wrapper 高度变化（user_task step / 占位 message step / 真实 message step）彼此 FLIP 会打架弹跳。曾经的实现是这几个 step 都老老实实跑 FLIP，结果用户感受到的是"启动 Agent 偶尔弹跳一下"。现在 `scrollToBottom` 设 `suppressFlipUntil = now + 200ms`，期间 ResizeObserver 仍贴底但跳过 FLIP，统一硬切。窗口过后第一个真正的流式 chunk 才进入 FLIP 平滑滑动。语义上也更合理——用户主动发消息本就是"立即跳到底无动画"
-- **正交性**：transform 是 compositor 属性，不影响 layout/scrollHeight/scrollTop 计算，与同帧贴底不变量正交。vue-virtual-scroller 给 item-view 设 transform 用于虚拟定位，但不动 item-wrapper 的 transform，所以我们独占该层
-- **连续 chunk 累加**：动画进行中又来新 chunk 时，从 `getComputedStyle(wrapper).transform` 解析 matrix 拿到当前真实渲染的 ty（不是 `element.style.transform`，那个已是目标值"0px"），再叠加新 scrollDelta 重新启动动画，确保动画总能"追到"最新内容、且不会瞬间跳变
-- **跳过场景**：① wrapperDelta ≤ 0（item 收缩，如 ThinkingBlock 折叠、图片渲染过程中 markdown reflow 调整）—— **完全不设 scrollTop**，让浏览器自然 clamp。曾经在这里也无脑 set scrollTop = scrollHeight，看似无害，但 wrapper 收缩时 scrollHeight 已变小，scrollTop 被 clamp 到更小值 → 视区向下"塌"几像素 → 图片渲染时来回正负的 wrapperDelta 序列让用户看到"上下弹跳"。② wrapperDelta ≥ 600px（视为虚拟化重排，避免长距离闪现）—— 仅 set scrollTop 贴底，不做 FLIP。③ `suppressFlipUntil` 窗口期内（`scrollToBottom` 调用后短暂 200ms）—— 仅 set scrollTop 贴底，不做 FLIP。设计动机：用户主动发新消息那一刻几个相邻的 wrapper 高度变化（user_task step → 占位 message step → 真实 message step）彼此 FLIP 会打架弹跳，且主动跳底本就是"立即贴底无动画"的语义，干脆这一段统一硬切。④ scrollDelta = 0（无滚动条 / 已贴底无空间 / 用户主动滚走 isUserNearBottom = false）时不动画
-- **回归保护**：禁止给 `.vue-recycle-scroller__item-wrapper` 加固定的 CSS transform / transition（会和动态写入的 inline style 冲突）；禁止用 `element.style.transform` 读取当前 ty（动画进行中是错的，必须用 `getComputedStyle` 读 matrix）；uninstall 时必须清空 `style.transition` 和 `style.transform` 防止下次 mount 残留位移；禁止再次把 `skipScrollUpdate` 分支改成"早 return 跳过动画"；禁止把 FLIP 偏移量改回基于 wrapperDelta（会引入"无滚动条时凭空抖一下"的回归）
+- **跟底意图**：`stickyFollowBottom`（发消息 / 点「新消息」后）或 `isUserNearBottom`；`scrollToBottom` / `doScrollIfNeeded` 在跟底态钉底（`scrollTo(scrollSize)` 或 `scrollTop = scrollHeight`）
+- **阅读态**：用户上滚后清除 sticky，只亮「新消息」提示，不越权拽回底部
+- **切 tab / 历史恢复**：`aiScrollAnchor`（item id + offset）+ `scrollToIndex`；冷加载用 `isHistoryScrollPending` 淡入
+- **已删除**：自建 wrapper `ResizeObserver` / FLIP transform / `suppressFlipUntil` / `aiScrollCache`（见 `src/components/AIPANEL_SPEC.md` 四·补）
+- **回归保护**：禁止再给虚拟列表容器加手动 FLIP transform；禁止阅读态调用 `guardAfterAutoScroll`；禁止用关键词匹配推断滚动意图
 
 ### 技能系统 (`skills/`)
 

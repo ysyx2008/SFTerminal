@@ -149,11 +149,9 @@ export interface TerminalTab {
   aiScrollTop?: number
   /** 滚动比例 0–1（scrollTop / maxScroll），虚拟列表重测高度后比绝对像素更稳 */
   aiScrollRatio?: number
-  /** vue-virtual-scroller v3 高度缓存，切 tab 后 restoreCache 避免重测闪烁 */
-  aiScrollCache?: { keys: (string | number)[]; sizes: Array<number | null> }
   /**
    * 锚定复原：保存时记"视口顶部那条 item 的 id + 距视口顶的 offset"，
-   * 切回用 scrollToItem(id→index, {align:'start', offset}) 精确复原，
+   * 切回用 scrollToIndex(id→index, {align:'start', offset}) 精确复原，
    * 不受虚拟列表估算→实测高度修正导致的 maxScroll 漂移影响。
    */
   aiScrollAnchor?: { id: string; offset: number }
@@ -1880,17 +1878,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     return tab?.aiScrollRatio
   }
 
-  function setAiScrollCache(tabId: string, cache: TerminalTab['aiScrollCache']): void {
-    const tab = tabs.value.find(t => t.id === tabId)
-    if (tab && cache) {
-      tab.aiScrollCache = cache
-    }
-  }
 
-  function getAiScrollCache(tabId: string): TerminalTab['aiScrollCache'] {
-    const tab = tabs.value.find(t => t.id === tabId)
-    return tab?.aiScrollCache
-  }
 
   function setAiScrollAnchor(tabId: string, anchor: { id: string; offset: number }): void {
     const tab = tabs.value.find(t => t.id === tabId)
@@ -2409,7 +2397,6 @@ export const useTerminalStore = defineStore('terminal', () => {
     // 从历史恢复视为新视图：清除已存滚动，由 AiPanel 滚到最新一条
     delete tab.aiScrollTop
     delete tab.aiScrollRatio
-    delete tab.aiScrollCache
     delete tab.aiScrollAnchor
     // 确保从欢迎页首次打开历史时，AiPanel 能立即感知 steps 变化
     tabs.value = [...tabs.value]
@@ -3136,8 +3123,6 @@ export const useTerminalStore = defineStore('terminal', () => {
     getAiScrollTop,
     setAiScrollRatio,
     getAiScrollRatio,
-    setAiScrollCache,
-    getAiScrollCache,
     setAiScrollAnchor,
     getAiScrollAnchor,
     focusTerminal,
