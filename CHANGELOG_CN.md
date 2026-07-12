@@ -2,7 +2,23 @@
 
 本文件记录旗鱼（SailFish）的所有重要更新。
 
-## v11.2.0 (2026-07-12)（最新版本）
+## v11.2.1 (2026-07-12)（最新版本）
+
+> 任务与联络正式分流为双入口，安全与命令审计全面改版--收口为单 shell-AST 通道、用户可配置风险策略与命令规则；会话底层完成 Conversation 聚合根重构，为后续会话能力打下基础。
+
+### 新功能
+- 🎯 **Agent 临时区自动清理**：新增 `scratchCleanupMaxAgeDays` 配置（默认 7 天，0 禁用），启动时清理 `agent-workspace/scratch/` 下超期文件，保留 `.gitkeep`；数据管理页新增「Agent 临时文件」配置卡片
+- 🎯 **Windows PowerShell 走官方 AST 审计**：默认 shell 为 PowerShell 时改用 `Parser::ParseInput` 提取子命令，复用白名单与路径分区，避免 `Remove-Item` 等 cmdlet 一律标高危；cmd 兜底与解析失败仍回退 regex
+
+### 改进
+- ⚡ **scratch 清理说明移入工作空间规则**：从 `write_text_file` 工具描述移到 system prompt 私有工作空间规则中告知，避免通用工具挂载长文案
+- ⚡ **工作台 Monorepo 化方案设计文档 v2**：基于重新核实的结论简化 v1 方案，明确业务工作台的职责与依赖关系，确保核心团队与业务团队协作效率
+
+### 问题修复
+- 🐛 **PTY shell 上下文对齐**：pty.create 返回 shellPath/shellKind 使 tab.systemInfo 与实际 spawn 的 shell 一致；移除冗余 pty:getDefaultShell IPC，统一 Windows 探测逻辑，buildHostEnvironment 在 systemInfo 未知时回退 profile.shell
+- 🐛 **Windows 对话列表滚动弹跳**：抑制发消息/调试 tool_result/任务完成阶段的 FLIP 与收缩贴底，流式 reflow 改 hard-cut；改进虚拟高度估算并预留滚动条槽位
+
+## v11.2.0 (2026-07-12)
 
 > 任务与联络正式分流为双入口，安全与命令审计全面改版--收口为单 shell-AST 通道、用户可配置风险策略与命令规则；会话底层完成 Conversation 聚合根重构，为后续会话能力打下基础。
 

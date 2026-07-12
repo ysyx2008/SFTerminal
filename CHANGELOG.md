@@ -2,7 +2,23 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v11.2.0 (2026-07-12) (Latest)
+## v11.2.1 (2026-07-12) (Latest)
+
+> Tasks and companion chats are now split into two dedicated entry points, and the security and command-audit system has been overhauled-consolidated into a single shell-AST channel with user-configurable risk policies and command rules. Under the hood, the conversation layer completes the Conversation aggregate-root refactor, laying the groundwork for upcoming session capabilities.
+
+### New Features
+- 🎯 **Agent scratch auto-cleanup**: new `scratchCleanupMaxAgeDays` config (default 7 days, 0 disables); cleans expired files under `agent-workspace/scratch/` on startup, keeping `.gitkeep`; a new "Agent temporary files" card in the data-management page
+- 🎯 **Windows PowerShell uses official AST audit**: when the default shell is PowerShell, subcommands are extracted via `Parser::ParseInput`, reusing the whitelist and path partitions so cmdlets like `Remove-Item` are no longer flagged high-risk across the board; cmd fallback and parse failures still fall back to regex
+
+### Improvements
+- ⚡ **Scratch cleanup instructions moved to workspace rules**: relocated from the `write_text_file` tool description into the system-prompt private-workspace rules, keeping long copy off a generic tool
+- ⚡ **Workbench monorepo design doc v2**: simplifies the v1 plan based on re-verified conclusions, clarifying business-workbench responsibilities and dependencies to keep core and business teams in sync
+
+### Bug Fixes
+- 🐛 **PTY shell context alignment**: pty.create now returns shellPath/shellKind so tab.systemInfo matches the spawned shell; removed the redundant pty:getDefaultShell IPC, unified Windows probe logic, and made buildHostEnvironment fall back to profile.shell when systemInfo is unknown
+- 🐛 **Windows conversation-list scroll bounce**: suppressed FLIP and shrink-to-bottom during message-sending / debug tool_result / task-completion phases; streaming reflow switched to hard-cut; improved virtual-height estimation and reserved a scrollbar slot
+
+## v11.2.0 (2026-07-12)
 
 > Tasks and companion chats are now split into two dedicated entry points, and the security and command-audit system has been overhauled-consolidated into a single shell-AST channel with user-configurable risk policies and command rules. Under the hood, the conversation layer completes the Conversation aggregate-root refactor, laying the groundwork for upcoming session capabilities.
 
