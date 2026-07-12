@@ -666,14 +666,19 @@ function resetPolicy() {
         <div v-else class="policy-grid">
           <div class="policy-row policy-row-header">
             <div class="policy-cell"></div>
-            <div class="policy-cell policy-cell-head">{{ t('settings.security.riskPolicy.colParseFail') }}</div>
-            <div class="policy-cell policy-cell-head">{{ t('settings.security.riskPolicy.colUnknownCmd') }}</div>
+            <div class="policy-cell policy-cell-head">
+              <div class="policy-mode-tag mode-strict">{{ t('ai.strict') }}</div>
+              <div class="policy-mode-desc">{{ t('settings.security.riskPolicy.strictDesc') }}</div>
+            </div>
+            <div class="policy-cell policy-cell-head">
+              <div class="policy-mode-tag mode-relaxed">{{ t('ai.relaxed') }}</div>
+              <div class="policy-mode-desc">{{ t('settings.security.riskPolicy.relaxedDesc') }}</div>
+            </div>
           </div>
 
           <div class="policy-row">
             <div class="policy-cell policy-cell-label">
-              <div class="policy-mode-tag mode-strict">strict</div>
-              <div class="policy-mode-desc">{{ t('settings.security.riskPolicy.strictDesc') }}</div>
+              <div class="policy-scenario-name">{{ t('settings.security.riskPolicy.colParseFail') }}</div>
             </div>
             <div class="policy-cell">
               <select v-model="policy.strictParseFail" class="policy-select">
@@ -683,7 +688,7 @@ function resetPolicy() {
               </select>
             </div>
             <div class="policy-cell">
-              <select v-model="policy.strictUnknownCmd" class="policy-select">
+              <select v-model="policy.relaxedParseFail" class="policy-select">
                 <option v-for="lvl in POLICY_ALLOWED_LEVELS" :key="lvl" :value="lvl">
                   {{ riskLabel(lvl) }}
                 </option>
@@ -693,11 +698,10 @@ function resetPolicy() {
 
           <div class="policy-row">
             <div class="policy-cell policy-cell-label">
-              <div class="policy-mode-tag mode-relaxed">relaxed</div>
-              <div class="policy-mode-desc">{{ t('settings.security.riskPolicy.relaxedDesc') }}</div>
+              <div class="policy-scenario-name">{{ t('settings.security.riskPolicy.colUnknownCmd') }}</div>
             </div>
             <div class="policy-cell">
-              <select v-model="policy.relaxedParseFail" class="policy-select">
+              <select v-model="policy.strictUnknownCmd" class="policy-select">
                 <option v-for="lvl in POLICY_ALLOWED_LEVELS" :key="lvl" :value="lvl">
                   {{ riskLabel(lvl) }}
                 </option>
@@ -1521,7 +1525,11 @@ function resetPolicy() {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
+  gap: 4px;
+  text-align: center;
 }
 
 .policy-cell-label {
@@ -1530,12 +1538,17 @@ function resetPolicy() {
   gap: 4px;
 }
 
+.policy-scenario-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 .policy-mode-tag {
   font-size: 11px;
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 4px;
-  font-family: 'SF Mono', Menlo, Consolas, monospace;
 }
 
 .policy-mode-tag.mode-strict {
