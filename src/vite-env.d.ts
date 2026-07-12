@@ -51,19 +51,8 @@ interface UpdateStatusInfo {
   }
 }
 
-// MCP 相关类型
-interface McpServerConfig {
-  id: string
-  name: string
-  enabled: boolean
-  transport: 'stdio' | 'sse' | 'http'
-  command?: string
-  args?: string[]
-  env?: Record<string, string>
-  cwd?: string
-  url?: string
-  headers?: Record<string, string>
-}
+// MCP 相关类型（与 @shared/types 对齐，避免重复定义）
+type McpServerConfig = import('@shared/types').McpServerConfig
 
 interface McpTool {
   serverId: string

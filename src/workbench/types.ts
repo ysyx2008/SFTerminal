@@ -15,7 +15,7 @@
  *   （终端工作台因 Terminal 实例 Teleport 保命池而特殊，走此路）。
  */
 import type { Component } from 'vue'
-import type { TerminalType } from '@shared/types'
+import type { McpServerConfig, TerminalType } from '@shared/types'
 
 /**
  * 工作台类型 —— `TerminalType` 的超集。
@@ -73,4 +73,31 @@ export interface WorkbenchDescriptor {
   regions?: RegionSpec[]
   /** 是否在 Steam 构建中可用（助手类工作台在 Steam 版不提供） */
   availableInSteam?: boolean
+
+  // ===== 一站式打包：业务工作台带的全栈能力 =====
+
+  /** 本工作台依赖的技能 ID（desktop 启动时校验 / 装配） */
+  skills?: string[]
+  /** 本工作台自带的 MCP 配置（desktop 启动时 McpService.connect） */
+  mcpServers?: McpServerConfig[]
+  /**
+   * 工作台 Agent system prompt 片段。
+   * 字符串恒注入；函数可按 tab 决定是否注入（如 assistant 排除远程会话）。
+   */
+  agentPrompt?: string | ((tab: WorkbenchAgentPromptTab) => string | undefined)
+  /**
+   * （预留）岗位级 Agent 策略：记忆 / 召回 / 执行松紧等。
+   */
+  agentPolicy?: {
+    memory?: boolean
+    recall?: boolean
+    executionMode?: string
+  }
+}
+
+/** agentPrompt 函数入参（与 resolve-workbench-agent-prompt 对齐） */
+export interface WorkbenchAgentPromptTab {
+  type: string
+  isRemote?: boolean
+  remoteChannel?: string
 }

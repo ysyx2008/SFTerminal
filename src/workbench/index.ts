@@ -1,9 +1,16 @@
-export { getWorkbenchDescriptor, resolveWorkbenchRenderer, resolveWorkbenchKind } from './registry'
-export type { WorkbenchDescriptor, WorkbenchKind, RegionSpec } from './types'
+export {
+  getWorkbenchDescriptor,
+  listWorkbenchDescriptors,
+  registerWorkbench,
+  resolveWorkbenchRenderer,
+  resolveWorkbenchKind,
+  isWorkbenchAvailable,
+} from './registry'
+export type { WorkbenchDescriptor, WorkbenchKind, RegionSpec, WorkbenchAgentPromptTab } from './types'
 export {
   resolveWorkbenchAgentPrompt,
-  type WorkbenchAgentPromptTab
 } from './resolve-workbench-agent-prompt'
 export { AGENT_PROMPT as ASSISTANT_WORKBENCH_AGENT_PROMPT } from './assistant/prompt'
 export { descriptor as assistantWorkbenchDescriptor } from './assistant/descriptor'
 export { useAssistantArtifactStore, useCanvasStore } from './assistant/artifact/store'
+export { bootstrapWorkbenchCapabilities } from './bootstrap'

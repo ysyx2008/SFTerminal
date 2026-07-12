@@ -2,7 +2,7 @@ import Store from 'electron-store'
 import fs from 'fs'
 import path from 'path'
 import { app, safeStorage } from 'electron'
-import type { AiModelType, AiProfile, ApiFormat, CommandRiskPolicy, ExecutionMode, IMProcessMode, JumpHostConfig, RiskLevel } from '@shared/types'
+import type { AiModelType, AiProfile, ApiFormat, CommandRiskPolicy, ExecutionMode, IMProcessMode, JumpHostConfig, McpServerConfig, RiskLevel } from '@shared/types'
 import type { KnowledgeSettings } from './knowledge/types'
 import { DEFAULT_KNOWLEDGE_SETTINGS } from './knowledge/types'
 import type { TtsSettings, UiThemeMode, UiThemeName, WebSearchSettings } from '@shared/types'
@@ -10,7 +10,7 @@ import { COMMAND_RISK_POLICY_ALLOWED_LEVELS, DEFAULT_COMMAND_RISK_POLICY, DEFAUL
 import { createLogger, type LogLevel } from '../utils/logger'
 import { normalizeTerminalSettings, normalizeKeyboardShortcuts } from '../utils/normalize'
 
-export type { AiModelType, AiProfile, ApiFormat, JumpHostConfig }
+export type { AiModelType, AiProfile, ApiFormat, JumpHostConfig, McpServerConfig }
 
 const log = createLogger('Config')
 
@@ -50,25 +50,6 @@ export interface TerminalSettings {
   localEncoding?: string
   commandHighlight?: boolean
   aiPanelPosition?: 'left' | 'right'
-}
-
-// MCP 服务器配置
-// NOTE: 与 electron/services/mcp.service.ts 中的同名 interface 保持一致；
-// 长期应迁移到 shared/types/ 集中定义。修改 transport 等公共字段时务必同步两处。
-export interface McpServerConfig {
-  id: string
-  name: string
-  enabled: boolean
-  // 'http' = MCP Streamable HTTP（推荐）；'sse' = 旧 SSE（已被规范标记为 deprecated）
-  transport: 'stdio' | 'sse' | 'http'
-  // stdio 模式
-  command?: string
-  args?: string[]
-  env?: Record<string, string>
-  cwd?: string
-  // sse / http 模式
-  url?: string
-  headers?: Record<string, string>
 }
 
 // Agent MBTI 类型

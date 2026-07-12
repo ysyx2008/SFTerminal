@@ -1,12 +1,9 @@
 /**
  * assistant 工作台 → Agent system prompt 片段（仅 UI 产品语义）
  */
+import type { WorkbenchAgentPromptTab } from '../types'
 
-export interface WorkbenchAgentPromptTab {
-  type: string
-  isRemote?: boolean
-  remoteChannel?: string
-}
+export type { WorkbenchAgentPromptTab }
 
 export const AGENT_PROMPT = [
   '# 界面能力（产出物面板）',

@@ -1,52 +1,47 @@
 /**
  * Workbench 注册表
  *
- * 聚合各 kind 子目录的 descriptor，供 App.vue 查表分发（`<component :is>`）。
+ * 聚合各 kind 的 descriptor，供 App.vue 查表分发（`<component :is>`）。
+ * 内置工作台在模块加载时 register；业务/OEM 也可调用 registerWorkbench。
  */
 import type { Component } from 'vue'
 import type { TerminalType } from '@shared/types'
 import { COMPANION_AGENT_KEY } from '@shared/types'
 import { isOemFeatureEnabled, type OemFeatureKey } from '@shared/oem-features'
 import TerminalTabView from '../components/TerminalTabView.vue'
-import type { WorkbenchDescriptor, WorkbenchKind } from './types'
+import type { WorkbenchKind } from './types'
+import { getWorkbenchDescriptor, registerWorkbench } from './registry-store'
 import { descriptor as localDescriptor } from './local/descriptor'
 import { descriptor as sshDescriptor } from './ssh/descriptor'
 import { descriptor as assistantDescriptor } from './assistant/descriptor'
 import { descriptor as companionDescriptor } from './companion/descriptor'
+
+export {
+  getWorkbenchDescriptor,
+  listWorkbenchDescriptors,
+  registerWorkbench,
+} from './registry-store'
 
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 
 /**
  * 联络 tab 的身份标识。单一来源为 `@shared/types` 的 `COMPANION_AGENT_KEY`
  * （亦即 `stores/terminal.ts` 的 `COMPANION_TAB_AGENT_ID` 与后端 `__companion__`）。
- * 从 @shared/types 取值，既不重复字面量，也不引入对 stores 层的反向依赖。
  */
 const COMPANION_AGENT_ID = COMPANION_AGENT_KEY
 
-const DESCRIPTORS: Record<WorkbenchKind, WorkbenchDescriptor> = {
-  local: localDescriptor,
-  ssh: sshDescriptor,
-  assistant: assistantDescriptor,
-  companion: companionDescriptor,
-}
-
 /** kind → OEM feature；觉醒/关切等产品块不经此表（见 isOemFeatureEnabled） */
-const KIND_FEATURE: Partial<Record<WorkbenchKind, OemFeatureKey>> = {
+const KIND_FEATURE: Partial<Record<string, OemFeatureKey>> = {
   local: 'localTerminal',
   ssh: 'sshTerminal',
   assistant: 'assistantWorkbench',
   companion: 'companion',
 }
 
-export function getWorkbenchDescriptor(kind: WorkbenchKind): WorkbenchDescriptor | undefined {
-  return DESCRIPTORS[kind]
-}
-
 /**
  * 把 tab 映射成工作台类型 —— 「tab → WorkbenchKind」的唯一映射点。
  *
  * 多数情况 kind === tab.type；联络是例外：tab.type='assistant' 但用独立的 companion 工作台。
- * 所有按身份分流的逻辑都收敛于此，不散落到组件/调用点。
  */
 export function resolveWorkbenchKind(tab: {
   type: TerminalType
@@ -67,7 +62,7 @@ export function resolveWorkbenchKind(tab: {
  * 合并 oem.config.features 与 Steam（availableInSteam）。
  */
 export function isWorkbenchAvailable(kind: WorkbenchKind): boolean {
-  const desc = DESCRIPTORS[kind]
+  const desc = getWorkbenchDescriptor(kind)
   if (!desc) return false
   if (isSteamBuild && desc.availableInSteam === false) return false
   const featureKey = KIND_FEATURE[kind]
@@ -84,9 +79,15 @@ export function resolveWorkbenchRenderer(kind: WorkbenchKind): Component {
   if (!isWorkbenchAvailable(kind)) {
     return TerminalTabView
   }
-  const desc = DESCRIPTORS[kind]
+  const desc = getWorkbenchDescriptor(kind)
   if (desc?.renderer) {
     return desc.renderer
   }
   return TerminalTabView
 }
+
+// 内置工作台
+registerWorkbench(localDescriptor)
+registerWorkbench(sshDescriptor)
+registerWorkbench(assistantDescriptor)
+registerWorkbench(companionDescriptor)
