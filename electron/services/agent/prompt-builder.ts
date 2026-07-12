@@ -469,13 +469,20 @@ export class PromptBuilder {
     hostProfileService?: HostProfileServiceInterface
   ): string {
     const osType = context.systemInfo.os || 'unknown'
-    const shellType = context.systemInfo.shell || 'unknown'
     const terminalType = context.terminalType || 'local'
     const isSshTerminal = terminalType === 'ssh'
     const isAssistant = terminalType !== 'local' && terminalType !== 'ssh'
 
     const hostId = context.hostId || 'local'
     const profile = hostProfileService ? hostProfileService.getProfile(hostId) : null
+
+    // 终端 tab：优先用本次 context.systemInfo（来自 PTY 实际 spawn）；
+    // 空 / unknown 时兜底 host profile（助手模式、旧 tab、探测已完成）。
+    const fromContext = (context.systemInfo.shell || '').trim()
+    const shellType =
+      fromContext && fromContext !== 'unknown'
+        ? fromContext
+        : (profile?.shell || fromContext || 'unknown')
 
     const cwdLine = context.cwd
       ? isAssistant

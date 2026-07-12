@@ -887,7 +887,7 @@ async function agentRun(args: string[]): Promise<void> {
   const agent = new AgentService(ai, pty, hostProfile, mcp, config, ssh)
   
   // Create a local terminal for the agent
-  const ptyId = pty.create({})
+  const ptyId = pty.create({}).id
   
   const mode = (flags.mode as string) || 'free'
   
@@ -1321,7 +1321,7 @@ async function ptyExec(args: string[]): Promise<void> {
 
   const { PtyService } = require('../services/pty.service')
   const pty = new PtyService()
-  const ptyId = pty.create({})
+  const ptyId = pty.create({}).id
 
   const timeout = flags.timeout ? parseInt(flags.timeout as string) : 10000
 

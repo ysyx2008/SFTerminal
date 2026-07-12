@@ -6,6 +6,7 @@ import { exec } from 'child_process'
 import { promisify } from 'util'
 import { createLogger } from '../utils/logger'
 import { normalizeHostProfile } from '../utils/normalize'
+import { resolveDefaultShell } from '../utils/shell'
 
 const log = createLogger('HostProfile')
 
@@ -538,19 +539,8 @@ export class HostProfileService {
         }
       }
 
-      // 探测 Shell（通过环境变量判断）- 不需要 try-catch，这里不会抛异常
-      const comspec = process.env.COMSPEC || ''
-      if (comspec.toLowerCase().includes('cmd.exe')) {
-        result.shell = 'cmd'
-      }
-      // 检查是否有 PowerShell 环境变量
-      if (process.env.PSModulePath) {
-        result.shell = 'powershell'
-      }
-      // 如果还没设置，默认 cmd
-      if (!result.shell) {
-        result.shell = 'cmd'
-      }
+      // 与 PTY / exec 共用 resolveDefaultShell，不再用 COMSPEC/PSModulePath 猜
+      result.shell = resolveDefaultShell().kind
 
       try {
         // 探测已安装工具 (Windows)

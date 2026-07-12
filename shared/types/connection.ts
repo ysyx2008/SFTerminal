@@ -29,6 +29,13 @@ export interface PtyOptions {
   encoding?: string
 }
 
+/** pty.create 返回值：实例 ID + 实际 spawn 的 shell（与 resolveDefaultShell 同语义） */
+export interface PtyCreateResult {
+  id: string
+  shellPath: string
+  shellKind: 'powershell' | 'cmd' | 'bash'
+}
+
 /**
  * SFTP 连接配置（IPC 边界）
  *

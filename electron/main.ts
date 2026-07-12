@@ -7,7 +7,6 @@ import path, { join } from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
 import { getDefaultShell } from './utils/platform'
-import { resolveDefaultShell } from './utils/shell'
 import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, WebSearchSettings, IMProcessMode } from '@shared/types'
 import { getAppTitle as buildAppTitle, getBrandName } from '@shared/brand'
 
@@ -2018,10 +2017,6 @@ ipcMain.handle('pty:dispose', async (_event, id: string) => {
 ipcMain.handle('pty:getAvailableShells', async () => {
   const { ptyService } = await rt()
   return ptyService.getAvailableShells()
-})
-
-ipcMain.handle('pty:getDefaultShell', async () => {
-  return resolveDefaultShell()
 })
 
 // PTY 数据订阅的取消函数存储（防止重复订阅导致数据多次发送）
@@ -4200,10 +4195,10 @@ async function getOrchestratorService() {
     aiService,
     getSshSessions: () => configService.getSshSessions(),
     createLocalTerminal: async () => {
-      const tabId = ptyService.create({})
-      terminalTypes.set(tabId, 'local')
-      terminalStateService.initTerminal(tabId, 'local')
-      return tabId
+      const { id } = ptyService.create({})
+      terminalTypes.set(id, 'local')
+      terminalStateService.initTerminal(id, 'local')
+      return id
     },
     createSshTerminal: async (sshConfig) => {
       const config = sshConfig as {

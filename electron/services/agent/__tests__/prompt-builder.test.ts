@@ -440,6 +440,38 @@ describe('PromptBuilder', () => {
       expect(prompt).toContain('已安装工具')
     })
 
+    it('should fall back to profile.shell when context.systemInfo.shell is unknown', () => {
+      const context = createMockContext({
+        hostId: 'local',
+        systemInfo: { os: 'windows', shell: 'unknown' }
+      })
+      const hostProfileService = createMockHostProfileService()
+      ;(hostProfileService.getProfile as any).mockReturnValue({
+        hostname: 'DESKTOP',
+        shell: 'powershell'
+      })
+
+      const prompt = PromptBuilder.buildHostEnvironment(context, hostProfileService)
+
+      expect(prompt).toContain('Shell: powershell')
+      expect(prompt).not.toContain('Shell: unknown')
+    })
+
+    it('should prefer context.systemInfo.shell over profile.shell', () => {
+      const context = createMockContext({
+        hostId: 'local',
+        systemInfo: { os: 'windows', shell: 'cmd' }
+      })
+      const hostProfileService = createMockHostProfileService()
+      ;(hostProfileService.getProfile as any).mockReturnValue({
+        shell: 'powershell'
+      })
+
+      const prompt = PromptBuilder.buildHostEnvironment(context, hostProfileService)
+
+      expect(prompt).toContain('Shell: cmd')
+    })
+
     it('should include conversation history when provided', () => {
       const context = createMockContext()
       const builder = new PromptBuilder({ 

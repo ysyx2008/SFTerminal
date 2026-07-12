@@ -347,7 +347,7 @@ export class SchedulerService {
       if (task.target.type === 'local') {
         ptyId = this.config.ptyService.create({
           cwd: task.target.workingDirectory
-        })
+        }).id
         log.info(`创建本地终端: ${ptyId}`)
       } else if (task.target.type === 'ssh') {
         const sshSession = this.getSshSession(task.target.sshSessionId || '')

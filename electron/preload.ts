@@ -425,7 +425,12 @@ const electronAPI = {
 
   // PTY 操作
   pty: {
-    create: (options: PtyOptions) => ipcRenderer.invoke('pty:create', options),
+    create: (options: PtyOptions) =>
+      ipcRenderer.invoke('pty:create', options) as Promise<{
+        id: string
+        shellPath: string
+        shellKind: 'powershell' | 'cmd' | 'bash'
+      }>,
     write: (id: string, data: string) => ipcRenderer.invoke('pty:write', id, data),
     resize: (id: string, cols: number, rows: number) =>
       ipcRenderer.invoke('pty:resize', id, cols, rows),
@@ -441,10 +446,6 @@ const electronAPI = {
       value: string
       icon: string
     }>>,
-    getDefaultShell: () => ipcRenderer.invoke('pty:getDefaultShell') as Promise<{
-      path: string
-      kind: 'powershell' | 'cmd' | 'bash'
-    }>,
     onData: (id: string, callback: (data: string) => void) => {
       ipcRenderer.send('pty:subscribe', id)
       const handler = (_event: Electron.IpcRendererEvent, data: string) => callback(data)

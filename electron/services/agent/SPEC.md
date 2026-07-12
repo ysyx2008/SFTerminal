@@ -317,7 +317,7 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 | 段落 | 来源 | 备注 |
 |---|---|---|
 | 语言规则 | `LANGUAGE_RULE` 常量 | 与父 Agent 共用同一字符串 |
-| 运行环境（OS / Shell / CWD / 用户名 / 主目录） | `PromptBuilder.buildHostEnvironment(context, hostProfileService)` | 子 Agent `exec` 命令必须知道当前 OS / Shell（如 macOS sed -i 写法）、CWD（解析相对路径）等 |
+| 运行环境（OS / Shell / CWD / 用户名 / 主目录） | `PromptBuilder.buildHostEnvironment(context, hostProfileService)` | Shell 优先 `context.systemInfo`（来自 PTY 实际 spawn）；为空/`unknown` 时兜底 `profile.shell`。子 Agent `exec` 必须知道当前 OS / Shell、CWD 等 |
 | 用户 AI Rules | `executor.getAiRules()` | 项目编码约定（如"用 npm 不用 yarn"），write 类型尤其重要 |
 | 类型角色 | `SUB_AGENT_TYPES[type].systemPromptPrefix` | 一两句话区分 read/write |
 | 工作契约 | 固定文本：数据真实性 + **失败如实上报**（禁止私自换命令补救） + 结论结构化（做到/没做到/为什么） | byte-exact 常量 |

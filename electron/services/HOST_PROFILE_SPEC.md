@@ -1,10 +1,12 @@
 # Host Profile Service SPEC
 
-> Last verified: 2026-05-07
+> Last verified: 2026-07-12
 
 ## 职责
 
 主机环境档案管理。对本地和远程（SSH）主机进行系统探测（OS、Shell、已装工具等），生成结构化主机档案，并为 Agent 提供"当前在哪台机器上"的上下文信息。
+
+本地 Windows Shell 探测与 PTY 共用 `resolveDefaultShell().kind`（不再用 `COMSPEC` / `PSModulePath` 猜测）。Unix 仍读 `$SHELL`。
 
 ## 文件 / 规模
 
@@ -45,9 +47,14 @@ interface ProbeResult {
 
 ## 依赖（跨 service）
 
-无跨 service 依赖。纯文件 I/O + 系统命令探测。
+- `electron/utils/shell.ts`：`resolveDefaultShell`（本地 Windows shell 类型）
 
 ## 关键行为 / 数据流
+
+**探测流程（本地主机）**：
+1. 首次 Agent run / 手动刷新 → `needsProbe('local')` 为 true 时调用 `probeAndUpdateLocal`
+2. Windows：`result.shell = resolveDefaultShell().kind`；Unix：读 `$SHELL` basename
+3. 写入档案；`PromptBuilder.buildHostEnvironment` 在 `context.systemInfo.shell` 为空/`unknown` 时兜底读 `profile.shell`
 
 **探测流程（远程主机）**：
 1. 首次 SSH 连接 → `needsProbe(hostId)` 返回 true

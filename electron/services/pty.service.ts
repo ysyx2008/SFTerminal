@@ -5,11 +5,11 @@ import { exec, execSync } from 'child_process'
 import { promisify } from 'util'
 import stripAnsi from 'strip-ansi'
 import * as iconv from 'iconv-lite'
-import type { PtyOptions } from '@shared/types'
+import type { PtyOptions, PtyCreateResult } from '@shared/types'
 import { createLogger } from '../utils/logger'
-import { resolveDefaultShell, getShellSpawnArgs, quoteForShell, type ShellKind } from '../utils/shell'
+import { resolveDefaultShell, inferShellKind, getShellSpawnArgs, quoteForShell, type ShellKind } from '../utils/shell'
 
-export type { PtyOptions }
+export type { PtyOptions, PtyCreateResult }
 
 const log = createLogger('PTY')
 
@@ -92,13 +92,6 @@ export class PtyService {
   private readonly MARKER_SUFFIX = '⟧'
 
   /**
-   * 获取默认 Shell 路径（统一走 utils/shell.ts，确保 Windows 优先 PowerShell）
-   */
-  private getDefaultShell(): string {
-    return resolveDefaultShell().path
-  }
-
-  /**
    * 根据系统语言自动检测编码
    * 
    * 现代 Windows 终端编码策略：
@@ -126,12 +119,16 @@ export class PtyService {
   }
 
   /**
-   * 创建新的 PTY 实例
+   * 创建新的 PTY 实例。
+   * 返回实际 spawn 的 shell 路径与类型，供前端写入 systemInfo（与终端一致）。
    */
-  create(options: PtyOptions = {}): string {
+  create(options: PtyOptions = {}): PtyCreateResult {
     const id = uuidv4()
 
-    const shell = options.shell || this.getDefaultShell()
+    const resolved = options.shell
+      ? { path: options.shell, kind: inferShellKind(options.shell) }
+      : resolveDefaultShell()
+    const shell = resolved.path
     const cwd = options.cwd || os.homedir()
     const cols = options.cols || 80
     const rows = options.rows || 24
@@ -215,7 +212,7 @@ export class PtyService {
     })
 
     this.instances.set(id, instance)
-    return id
+    return { id, shellPath: shell, shellKind: resolved.kind }
   }
 
   /**

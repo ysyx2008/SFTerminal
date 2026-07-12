@@ -599,18 +599,17 @@ export const useTerminalStore = defineStore('terminal', () => {
           reactiveTab.loadingMessage = t('terminal.loadingEnv') || '正在加载环境变量...'
         }
         
-        // 未指定 shell 时从后端 resolveDefaultShell() 取真相源，避免前端硬编码与 PTY 实际 spawn 不一致
-        const resolvedShellPath = shell ?? (await window.electronAPI.pty.getDefaultShell()).path
-        const ptyId = await window.electronAPI.pty.create({
+        // shell 路径以 PTY 实际 spawn 为准（create 返回），不另查 IPC / 不硬编码
+        const created = await window.electronAPI.pty.create({
           cols: 80,
           rows: 24,
-          shell: resolvedShellPath,
+          shell: shell,
           encoding: localEncoding
         })
         reactiveTab.loadingMessage = undefined  // 清除加载提示
-        reactiveTab.ptyId = ptyId
+        reactiveTab.ptyId = created.id
         reactiveTab.isConnected = true
-        reactiveTab.systemInfo = detectLocalSystemInfo(resolvedShellPath)
+        reactiveTab.systemInfo = detectLocalSystemInfo(created.shellPath)
         ensureRootSplitLayoutForTab(reactiveTab)
       } else if (type === 'ssh' && sshConfig) {
         const sshId = await window.electronAPI.ssh.connect({
@@ -1565,11 +1564,12 @@ export const useTerminalStore = defineStore('terminal', () => {
     try {
       if (resolved.terminalType === 'local') {
         const localEncoding = configStore.terminalSettings.localEncoding || 'auto'
-        return await window.electronAPI.pty.create({
+        const created = await window.electronAPI.pty.create({
           cols: 80,
           rows: 24,
           encoding: localEncoding
         })
+        return created.id
       }
 
       if (!resolved.sshSessionId) {

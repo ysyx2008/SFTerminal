@@ -182,7 +182,11 @@ interface Window {
         shell?: string
         env?: Record<string, string>
         encoding?: string
-      }) => Promise<string>
+      }) => Promise<{
+        id: string
+        shellPath: string
+        shellKind: 'powershell' | 'cmd' | 'bash'
+      }>
       write: (id: string, data: string) => Promise<void>
       resize: (id: string, cols: number, rows: number) => Promise<void>
       dispose: (id: string) => Promise<void>
@@ -196,10 +200,6 @@ interface Window {
         value: string
         icon: string
       }>>
-      getDefaultShell: () => Promise<{
-        path: string
-        kind: 'powershell' | 'cmd' | 'bash'
-      }>
       onData: (id: string, callback: (data: string) => void) => () => void
     }
     ssh: {

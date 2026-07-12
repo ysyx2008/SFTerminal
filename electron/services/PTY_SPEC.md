@@ -1,10 +1,12 @@
 # PTY Service SPEC
 
-> Last verified: 2026-05-07
+> Last verified: 2026-07-12
 
 ## 职责
 
 本地终端伪终端（PTY）管理。基于 Node.js `node-pty` 创建和管理多个终端实例，提供写入、读取回调、命令注入执行、窗口调整等功能，以及跨平台系统探测（Shell 列表、进程状态）。
+
+默认 Shell 统一走 `electron/utils/shell.ts` 的 `resolveDefaultShell()`（Windows 优先 PowerShell）。`create` 返回实际 spawn 的路径与 kind，供前端写入 `tab.systemInfo`，避免与 system prompt 脱节。
 
 ## 文件 / 规模
 
@@ -14,7 +16,7 @@
 
 | 方法签名 | 用途 | 主要调用方 |
 |---------|------|-----------|
-| `create(options?: PtyOptions): string` | 创建 PTY 终端实例，返回终端 ID | `main.ts`、`unified-terminal.service.ts` |
+| `create(options?: PtyOptions): PtyCreateResult` | 创建 PTY 终端实例，返回 `{ id, shellPath, shellKind }`（实际 spawn 的 shell） | `main.ts`、前端 `terminal` store、`scheduler` / `watch` / CLI |
 | `write(id: string, data: string): boolean` | 向终端写入数据 | 前端终端组件、`agent/index.ts` |
 | `resize(id: string, cols: number, rows: number): void` | 调整终端尺寸 | 前端终端组件 |
 | `onData(id: string, callback: (data: string) => void): () => void` | 注册终端输出回调，返回取消注册函数 | `main.ts`、`scheduler.service.ts` |
@@ -33,15 +35,21 @@
 
 ## 核心类型 / 接口
 
-### PtyOptions
+### PtyOptions / PtyCreateResult
 ```ts
 interface PtyOptions {
   shell?: string          // 覆盖默认 Shell
   cwd?: string            // 初始工作目录
-  cols?: number           // 列数
-  rows?: number           // 行数
+  cols?: number
+  rows?: number
   env?: Record<string, string>
-  encoding?: string       // 字符编码（默认 locale 自动检测）
+  encoding?: string
+}
+
+interface PtyCreateResult {
+  id: string
+  shellPath: string                          // 实际 spawn 路径
+  shellKind: 'powershell' | 'cmd' | 'bash'  // 与 resolveDefaultShell / inferShellKind 一致
 }
 ```
 

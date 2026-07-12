@@ -125,6 +125,21 @@ export function getDefaultShellKind(): ShellKind {
 }
 
 /**
+ * 从可执行文件路径推断 ShellKind（用户显式传入 shell 时用）。
+ * 路径本身即真相；无法识别时按 POSIX 系归为 bash。
+ */
+export function inferShellKind(shellPath: string): ShellKind {
+  const base = path.basename(shellPath).toLowerCase()
+  if (base === 'pwsh.exe' || base === 'pwsh' || base === 'powershell.exe' || base === 'powershell') {
+    return 'powershell'
+  }
+  if (base === 'cmd.exe' || base === 'cmd') {
+    return 'cmd'
+  }
+  return 'bash'
+}
+
+/**
  * 判断当前平台是否为 Windows
  */
 export function isWindows(): boolean {

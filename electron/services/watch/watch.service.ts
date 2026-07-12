@@ -413,7 +413,7 @@ export class WatchService {
       } else {
         // 其他输出类型：创建 PTY 执行
         if (watch.execution.type === 'local') {
-          ptyId = this.config.ptyService.create({ cwd: watch.execution.workingDirectory })
+          ptyId = this.config.ptyService.create({ cwd: watch.execution.workingDirectory }).id
         } else if (watch.execution.type === 'ssh') {
           const session = this.config.configService.getSshSessions()
             .find(s => s.id === watch.execution.sshSessionId)
