@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Trash2, RefreshCw, Search, Shield, ShieldCheck, ShieldAlert, Ban, FolderLock, FileLock2, HardDrive, Terminal, Plus, CheckCircle2, SlidersHorizontal } from 'lucide-vue-next'
+import { Trash2, RefreshCw, Search, Shield, ShieldCheck, ShieldAlert, Ban, FolderLock, FileLock2, HardDrive, Terminal, Plus, CheckCircle2, SlidersHorizontal, CircleHelp } from 'lucide-vue-next'
 import type { RiskLevel, CommandRiskPolicy } from '@shared/types/agent'
 import { DEFAULT_COMMAND_RISK_POLICY } from '@shared/types/agent'
 
@@ -39,7 +39,7 @@ type BuiltInRulesView = {
   }
 }
 
-const { t } = useI18n()
+const { t, tm } = useI18n()
 const entries = ref<AllowlistEntry[]>([])
 const loading = ref(false)
 const filterTool = ref('')
@@ -90,15 +90,26 @@ async function loadBuiltinRules() {
 }
 
 function switchSubTab(tab: SubTab) {
-  if (tab !== 'policy' && activeSubTab.value === 'policy' && policyUnsaved.value) {
+  if (
+    tab !== activeSubTab.value &&
+    policyUnsaved.value &&
+    (activeSubTab.value === 'policy' || activeSubTab.value === 'builtin')
+  ) {
     if (!window.confirm(t('settings.security.riskPolicy.unsavedLeave'))) {
       return
     }
   }
   activeSubTab.value = tab
+  closePolicyTip()
   confirmClearAll.value = false
-  if (tab === 'builtin' && !builtinRules.value && !builtinLoading.value) {
-    loadBuiltinRules()
+  if (tab === 'builtin') {
+    if (!builtinRules.value && !builtinLoading.value) {
+      loadBuiltinRules()
+    }
+    // 工作区分区含可配置项（额外自由区 / 区外写），需加载策略
+    if (!policyLoaded.value && !policyLoading.value) {
+      loadPolicy()
+    }
   }
   if (tab === 'policy' && !policyLoaded.value && !policyLoading.value) {
     loadPolicy()
@@ -312,7 +323,16 @@ function toggleSelectAll(checked: boolean) {
   selectedKeys.value = new Set(filteredEntries.value.map(e => e.key))
 }
 
-onMounted(loadEntries)
+onMounted(() => {
+  loadEntries()
+  document.addEventListener('click', closePolicyTip)
+  document.addEventListener('keydown', onPolicyTipKeydown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closePolicyTip)
+  document.removeEventListener('keydown', onPolicyTipKeydown)
+})
 
 // ==================== 命令风险策略 ====================
 const POLICY_ALLOWED_LEVELS: RiskLevel[] = ['moderate', 'dangerous', 'blocked']
@@ -411,6 +431,20 @@ function resetPolicy() {
   policy.value = { ...DEFAULT_POLICY, extraFreeDirs: [] }
 }
 
+/** 仅恢复路径相关策略（工作区分区可配置项） */
+function resetPathPolicy() {
+  policy.value = {
+    ...policy.value,
+    outsideWritesUpgrade: DEFAULT_POLICY.outsideWritesUpgrade,
+    extraFreeDirs: [],
+  }
+}
+
+const pathPolicyDiffersFromDefault = computed(() =>
+  policy.value.outsideWritesUpgrade !== DEFAULT_POLICY.outsideWritesUpgrade ||
+  policy.value.extraFreeDirs.length > 0,
+)
+
 function isAbsoluteDirPath(dir: string): boolean {
   return dir.startsWith('/') || /^[A-Za-z]:[\\/]/.test(dir) || dir.startsWith('\\\\')
 }
@@ -438,6 +472,39 @@ type PolicyLevelField =
   | 'strictUnknownCmd' | 'relaxedUnknownCmd'
   | 'strictIndirection' | 'relaxedIndirection'
   | 'strictDynamicPath' | 'relaxedDynamicPath'
+
+type PolicyTipLabel = 'colParseFail' | 'colUnknownCmd' | 'colIndirection' | 'colDynamicPath'
+
+const openPolicyTip = ref<PolicyTipLabel | null>(null)
+const policyTipPos = ref({ top: 0, left: 0 })
+
+const policyTipExamples = computed((): string[] => {
+  if (!openPolicyTip.value) return []
+  const raw = tm(`settings.security.riskPolicy.${openPolicyTip.value}TipExamples`)
+  return Array.isArray(raw) ? raw.map(String) : []
+})
+
+function togglePolicyTip(label: PolicyTipLabel, e: MouseEvent) {
+  e.stopPropagation()
+  if (openPolicyTip.value === label) {
+    openPolicyTip.value = null
+    return
+  }
+  const el = e.currentTarget as HTMLElement
+  const rect = el.getBoundingClientRect()
+  const width = 320
+  const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))
+  policyTipPos.value = { top: rect.bottom + 8, left }
+  openPolicyTip.value = label
+}
+
+function closePolicyTip() {
+  openPolicyTip.value = null
+}
+
+function onPolicyTipKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') closePolicyTip()
+}
 
 </script>
 
@@ -760,7 +827,7 @@ type PolicyLevelField =
               </div>
             </div>
 
-            <!-- 工作区分区 -->
+            <!-- 工作区分区（内置说明 + 可配置：额外自由区 / 区外写） -->
             <div class="rule-block">
               <div class="rule-block-header">
                 <FolderLock :size="15" />
@@ -793,6 +860,57 @@ type PolicyLevelField =
                 <div class="rule-subtitle">{{ t('settings.security.builtinRules.zoneOutside') }}</div>
                 <p class="rule-text">{{ t('settings.security.builtinRules.zoneOutsideText') }}</p>
                 <p class="rule-text muted">{{ t('settings.security.builtinRules.zoneSystemText') }}</p>
+                <label v-if="policyLoaded && !policyError" class="policy-toggle workspace-config-toggle">
+                  <input v-model="policy.outsideWritesUpgrade" type="checkbox" />
+                  <div>
+                    <div class="policy-toggle-title">{{ t('settings.security.riskPolicy.outsideWritesUpgrade') }}</div>
+                    <div class="policy-toggle-desc">{{ t('settings.security.riskPolicy.outsideWritesUpgradeDesc') }}</div>
+                  </div>
+                </label>
+              </div>
+
+              <div v-if="policyLoaded && !policyError" class="rule-subblock workspace-config">
+                <div class="rule-subtitle">{{ t('settings.security.riskPolicy.extraFreeDirs') }}</div>
+                <p class="rule-text muted">{{ t('settings.security.riskPolicy.extraFreeDirsDesc') }}</p>
+                <div class="add-entry-form" style="margin-top: 8px">
+                  <input
+                    v-model="newFreeDir"
+                    type="text"
+                    class="input-field add-command-input"
+                    :placeholder="t('settings.security.riskPolicy.extraFreeDirsPlaceholder')"
+                    @keydown.enter.prevent="addFreeDir"
+                  />
+                  <button class="btn btn-sm" :disabled="!newFreeDir.trim()" @click="addFreeDir">
+                    <Plus :size="14" />
+                    {{ t('settings.security.userAllowlist.add') }}
+                  </button>
+                </div>
+                <p v-if="freeDirError" class="add-error">{{ freeDirError }}</p>
+                <div v-if="policy.extraFreeDirs.length" class="free-dir-list">
+                  <div v-for="dir in policy.extraFreeDirs" :key="dir" class="free-dir-item">
+                    <code>{{ dir }}</code>
+                    <button class="btn btn-sm btn-icon" @click="removeFreeDir(dir)" :title="t('common.delete')">
+                      <Trash2 :size="12" />
+                    </button>
+                  </div>
+                </div>
+                <div class="policy-actions workspace-policy-actions">
+                  <button class="btn btn-sm" @click="resetPathPolicy" :disabled="!pathPolicyDiffersFromDefault">
+                    {{ t('settings.security.riskPolicy.resetPath') }}
+                  </button>
+                  <button
+                    class="btn btn-sm btn-primary"
+                    @click="savePolicy"
+                    :disabled="policySaving || !policyUnsaved"
+                  >
+                    {{ policySaving ? t('common.saving') : t('common.save') }}
+                  </button>
+                  <span v-if="policySaved" class="policy-saved">{{ t('settings.security.riskPolicy.saved') }}</span>
+                  <span v-else-if="policyUnsaved" class="policy-unsaved">{{ t('settings.security.riskPolicy.unsaved') }}</span>
+                </div>
+              </div>
+              <div v-else-if="policyLoading" class="rule-text muted">
+                {{ t('settings.security.builtinRules.loading') }}
               </div>
             </div>
           </template>
@@ -852,7 +970,17 @@ type PolicyLevelField =
               class="policy-row"
             >
               <div class="policy-cell policy-cell-label">
-                <div class="policy-scenario-name">{{ t(`settings.security.riskPolicy.${row.label}`) }}</div>
+                <span class="policy-scenario-name">{{ t(`settings.security.riskPolicy.${row.label}`) }}</span>
+                <button
+                  type="button"
+                  class="policy-scenario-help"
+                  :class="{ open: openPolicyTip === row.label }"
+                  :aria-expanded="openPolicyTip === row.label"
+                  :aria-label="t(`settings.security.riskPolicy.${row.label}`)"
+                  @click="togglePolicyTip(row.label as PolicyTipLabel, $event)"
+                >
+                  <CircleHelp :size="13" :stroke-width="2" />
+                </button>
               </div>
               <div class="policy-cell">
                 <div class="policy-radio-group" role="radiogroup">
@@ -892,46 +1020,12 @@ type PolicyLevelField =
               </div>
             </label>
             <label class="policy-toggle">
-              <input v-model="policy.outsideWritesUpgrade" type="checkbox" />
-              <div>
-                <div class="policy-toggle-title">{{ t('settings.security.riskPolicy.outsideWritesUpgrade') }}</div>
-                <div class="policy-toggle-desc">{{ t('settings.security.riskPolicy.outsideWritesUpgradeDesc') }}</div>
-              </div>
-            </label>
-            <label class="policy-toggle">
               <input v-model="policy.subAgentBlockDangerous" type="checkbox" />
               <div>
                 <div class="policy-toggle-title">{{ t('settings.security.riskPolicy.subAgentBlockDangerous') }}</div>
                 <div class="policy-toggle-desc">{{ t('settings.security.riskPolicy.subAgentBlockDangerousDesc') }}</div>
               </div>
             </label>
-          </div>
-
-          <div class="policy-free-dirs">
-            <div class="policy-toggle-title">{{ t('settings.security.riskPolicy.extraFreeDirs') }}</div>
-            <div class="policy-toggle-desc">{{ t('settings.security.riskPolicy.extraFreeDirsDesc') }}</div>
-            <div class="add-entry-form" style="margin-top: 8px">
-              <input
-                v-model="newFreeDir"
-                type="text"
-                class="input-field add-command-input"
-                :placeholder="t('settings.security.riskPolicy.extraFreeDirsPlaceholder')"
-                @keydown.enter.prevent="addFreeDir"
-              />
-              <button class="btn btn-sm" :disabled="!newFreeDir.trim()" @click="addFreeDir">
-                <Plus :size="14" />
-                {{ t('settings.security.userAllowlist.add') }}
-              </button>
-            </div>
-            <p v-if="freeDirError" class="add-error">{{ freeDirError }}</p>
-            <div v-if="policy.extraFreeDirs.length" class="free-dir-list">
-              <div v-for="dir in policy.extraFreeDirs" :key="dir" class="free-dir-item">
-                <code>{{ dir }}</code>
-                <button class="btn btn-sm btn-icon" @click="removeFreeDir(dir)" :title="t('common.delete')">
-                  <Trash2 :size="12" />
-                </button>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -954,6 +1048,26 @@ type PolicyLevelField =
         <p class="rule-text muted">{{ t('settings.security.riskPolicy.blockedHint') }}</p>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="openPolicyTip"
+        class="policy-tip-popover"
+        :style="{ top: policyTipPos.top + 'px', left: policyTipPos.left + 'px' }"
+        role="dialog"
+        :aria-label="t(`settings.security.riskPolicy.${openPolicyTip}`)"
+        @click.stop
+      >
+        <div class="policy-tip-title">{{ t(`settings.security.riskPolicy.${openPolicyTip}`) }}</div>
+        <div class="policy-tip-body">{{ t(`settings.security.riskPolicy.${openPolicyTip}TipBody`) }}</div>
+        <div v-if="policyTipExamples.length" class="policy-tip-examples-label">
+          {{ t('settings.security.riskPolicy.tipExamplesLabel') }}
+        </div>
+        <ul v-if="policyTipExamples.length" class="policy-tip-examples">
+          <li v-for="ex in policyTipExamples" :key="ex"><code>{{ ex }}</code></li>
+        </ul>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -1756,15 +1870,42 @@ type PolicyLevelField =
 }
 
 .policy-cell-label {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
 }
 
 .policy-scenario-name {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.policy-scenario-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.7;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.policy-scenario-help:hover,
+.policy-scenario-help:focus-visible,
+.policy-scenario-help.open {
+  opacity: 1;
+  color: var(--text-secondary);
+  outline: none;
+}
+
+.policy-scenario-help.open {
+  color: var(--accent-color, #3b82f6);
 }
 
 .policy-mode-tag {
@@ -1963,6 +2104,20 @@ type PolicyLevelField =
   background: var(--bg-tertiary);
 }
 
+.workspace-config {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-color);
+}
+
+.workspace-config-toggle {
+  margin-top: 10px;
+}
+
+.workspace-policy-actions {
+  margin-top: 12px;
+}
+
 .free-dir-list {
   display: flex;
   flex-direction: column;
@@ -1984,5 +2139,62 @@ type PolicyLevelField =
   font-size: 11px;
   word-break: break-all;
   color: var(--text-secondary);
+}
+</style>
+
+<style>
+/* Teleport 到 body，不能用 scoped */
+.policy-tip-popover {
+  position: fixed;
+  z-index: 10000;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-elevated, var(--bg-secondary));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  color: var(--text-primary);
+}
+
+.policy-tip-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.policy-tip-body {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  white-space: pre-line;
+}
+
+.policy-tip-examples-label {
+  margin-top: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.policy-tip-examples {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.policy-tip-examples li code {
+  display: block;
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.06));
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  word-break: break-all;
 }
 </style>
