@@ -2,7 +2,63 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v11.1.0 (2026-06-18) (Latest)
+## v11.2.0 (2026-07-12) (Latest)
+
+> Tasks and companion chats are now split into two dedicated entry points, and the security and command-audit system has been overhauled-consolidated into a single shell-AST channel with user-configurable risk policies and command rules. Under the hood, the conversation layer completes the Conversation aggregate-root refactor, laying the groundwork for upcoming session capabilities.
+
+### New Features
+- 🎯 **Task / Companion dual entry points**: a persistent task button on the tab bar plus a dedicated companion tab; companion sessions merge and restore the most recent N history items, with all channels flowing into a single line; Watch messages are routed to the companion tab instead of creating standalone tabs that interrupt you
+- 🎯 **Single-assistant Hub workbench model**: local assistant tabs are hidden from the tab bar by default and switched via the "Recent conversations" sidebar; right-click to promote into the tab bar; LRU recycles up to 5 Hub sessions
+- 🎯 **Wakeup becomes the fourth conversation kind**: split out from Watch-Watch stays per-execution amnesia to avoid cross-contamination, while wakeup retains history to inform decisions; the watch overview panel hides high-frequency heartbeat streams by default
+- 🎯 **Security & command-audit overhaul**:
+  - Consolidated into a single shell-AST channel; the exec_argv tool entry is removed, closing the argv indirect-execution hole
+  - User command rules: append risk baselines by command name; the confirmation dialog can add unknown commands directly to the rule library
+  - Configurable risk policies: parse-failure/unknown-command risk is tiered per execution mode (strict/relaxed/free); manual addition of risk policies and allowlist entries; tiers presented as a radio-button group
+  - System paths classified as critical/hardened, with /dev/null black-hole exemption
+  - Built-in rules shown read-only; risk list tiered by destructiveness
+  - "Always allow" moved to session memory (not persisted); routine ops commands downgraded to moderate risk
+- 🎯 **Built-in map GeoJSON**: world / China province / city / district-level maps bundled locally, no network needed for live charts
+- 🎯 **Knowledge base backup / restore**: backup and restore supported, avoiding full rebuilds after corruption
+- 🎯 **Knowledge base Windows DML acceleration**: embedding inference switched to DirectML, auto-falling back to CPU on failure
+- 🎯 **Independent Watch history tree**: watch/wakeup records stored under a separate `history/watch/`, eliminating main-index bloat
+- 🎯 **macOS ⌘Q anti-misclick**: first press shows a prompt; a second confirmation is required to quit
+- 🎯 **First-token playful copy**: random playful status lines and ultra-long-TTFT teases while waiting for the first token
+- 🎯 **Bond milestone easter eggs**: toast on bond unlock; an 8% chance of a bond-themed sign-off in the task-complete footer; input placeholder picks from bond pools
+- 🎯 **Email send confirmation card**: preview body and attachment list before sending email
+- 🎯 **Browser bridge enhancements**: new `browser_close_tab` tool; Firefox MV3 site-wide permission guide and detection; generic tabs primitive, attach opens a new tab by default
+- 🎯 **talk_to_user proactive fork**: proactive messages can fork a new task session from the companion tab
+- 🎯 **talk_to_user result shows body**: tool-call results always display the sent body
+- 🎯 **Watch retry button**: each row in the anomaly watch list can retry directly
+- 🎯 **build:local --launch**: `npm run build:local` installs the --dir build to your machine and launches the app in the background
+
+### Improvements
+- ⚡ **Conversation domain-model refactor** (internal): introduced the Conversation aggregate root as the single source of truth; CONVERSATION_POLICY strategy table drives task/companion/watch/wakeup differences; ConversationManager becomes the read-side authority; AgentRecordStore aggregates history storage, HistoryService slimmed to an ops aggregate
+- ⚡ **Credential encryption upgrade**: introduced the `g1:` self-managed master-key layer replacing safeStorage as the default scheme; v7 migration moves IM/bastion plaintext credentials into credential and upgrades e1:->g1:
+- ⚡ **Context management**: extracted ContextWindowManager collaborator for unified token estimation; watch wakeup breadth-loading strategy + L3/L4 summaries with timestamps; local predictive compression (proactiveCompress) covers providers like DeepSeek that don't report errors; auto-compression fallback on context overflow to avoid conversation interruption
+- ⚡ **Startup performance**: lazy-loaded terminal/Agent runtimes, shortening cold starts on low-spec Windows
+- ⚡ **Companion merged view consolidated to backend**: frontend calls IPC, avoiding transcript contamination
+- ⚡ **Watch noise reduction**: removed deliverProactiveMessage; proactive messages flow only via talk_to_user; silent/no-action/IM watches no longer send fallback notifications
+- ⚡ **Unified Windows shell detection**: fixed intermittent command execution issues
+- ⚡ **UI polish**: two-row welcome input + model selector (Cursor style); drag-and-drop history items to open tabs; top title prefers the Agent's custom name; companion tab empty state with product description and examples; extracted WelcomePanel and HistorySearchModal as standalone components
+
+### Bug Fixes
+- 🐛 **Streaming scroll**: fixed stick-to-bottom, scroll-up reading pushed away by new content, layout-jitter misjudged as off-bottom, scroll drift on tab switch, virtual-scroll bounce when loading history, height-estimate jitter during streaming thinking, and more; expanding a thinking block auto-scrolls into view and anchors to the clicked line
+- 🐛 **Companion session continuity**: fixed lost context after companion restart (persistent-named agents rebuild working memory from the most recent N records); rooted out companion sessions splitting into two broken chains (sessionId reseeding + paired merge fields); talk_to_user no longer interrupts in-progress tasks or duplicates delivery
+- 🐛 **Security**: patched the exec_argv indirect-execution hole, added indirection-guard; fixed CodeQL and Dependabot security alerts
+- 🐛 **Command-audit false positives**: fixed env standalone, cp outside workspace, unwrapped wrappers, non-shell-interpreter inline code, redirect attribution, head/tail numeric shorthand flags, and other cases misjudged as dangerous; relaxed mode no longer confirms unknown commands; unknown commands default to moderate
+- 🐛 **Bootstrap**: data-directory pointer file moved to a fixed location to avoid dev/prod divergence; unified dev/prod app name to SailFish with automatic migration of historical data dirs; legacy migration uses explicit markers instead of relying on directory emptiness
+- 🐛 **Credentials**: MasterKey.persistSalt returns the final salt and retries on EEXIST empty-file read; corrupt e1: credentials self-heal by deletion, ending Keychain repeat prompts
+- 🐛 **Token estimation**: fixed estimateTotalTokens missing images, causing companion to send images the AI couldn't receive
+- 🐛 **Email**: test-connection now verifies SMTP, fixing "test succeeds but can't send"
+- 🐛 **PDF**: fixed pdfjs 5.x failing to load CMap under Node, causing CJK PDF text loss
+- 🐛 **Fork sessions**: fixed "new chat" losing recent context, custom-title suffix loss, IPC clone failures; fork-from-merged-view no longer loses proactive messages after truncation
+- 🐛 **WeChat**: process-message digest merge mitigates personal-account rate limits; ASI trap preventing IM settings toggle after lazy-load; CDN upload 500
+- 🐛 **Wakeup injection**: wakeup injection into companion context prefers reading steps, fixing duplicate proactive notifications
+- 🐛 **UI**: fixed "preparing -> thinking" card flicker and scroll jump; Cmd+W closes a promoted assistant tab instead of the window when one is active; promoted assistant tabs jump to the adjacent tab on close; Hub task-complete reminders visibility and read clearing
+- 🐛 **i18n**: dispatch_agents sub-task copy moved to t(); manage_workbench_artifacts streaming pre-card title translation completed
+- 🐛 **Windows update**: auto-update skips the NSIS install-mode selection page
+
+## v11.1.0 (2026-06-18)
 
 > The assistant artifact panel is now fully available—preview and switch between generated documents, charts, and more in the sidebar, with a collapsible layout that stays out of your way. The browser bridge can control your existing Chrome or Firefox session without opening a new window, keeping site logins intact.
 

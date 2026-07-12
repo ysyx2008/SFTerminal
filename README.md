@@ -64,6 +64,7 @@ Tasks come first on desktop; Reach sits at the end — all IM channels flow into
 | 👁️ **Watch & Sensors** | Heartbeat, file-watch, calendar, and email sensors; anomaly badges on the home screen at a glance |
 | 💬 **Multi-Channel Reach** | WeChat, DingTalk, Feishu, WeCom, Slack, Telegram, Web — one secretary, one relationship |
 | 🖥️ **Local & SSH Terminal** | Your secretary operates your machine and remote servers; JumpServer bastion sync |
+| 🛡️ **Security & Command Audit** | Shell-AST command parsing, four-level risk assessment, configurable command rules and allowlist |
 | 🌐 **Browser Bridge** | Control your open Chrome or Firefox — no new window, logins preserved |
 | 📦 **Artifact Panel** | Preview and switch documents, charts, PPT, and other outputs in the sidebar |
 | 📁 **File Manager** | Dual-pane local and remote file management |

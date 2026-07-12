@@ -2,7 +2,63 @@
 
 本文件记录旗鱼（SailFish）的所有重要更新。
 
-## v11.1.0 (2026-06-18)（最新版本）
+## v11.2.0 (2026-07-12)（最新版本）
+
+> 任务与联络正式分流为双入口，安全与命令审计全面改版--收口为单 shell-AST 通道、用户可配置风险策略与命令规则；会话底层完成 Conversation 聚合根重构，为后续会话能力打下基础。
+
+### 新功能
+- 🎯 **任务/联络双入口**：TabBar 常驻任务按钮 + 独立联络 tab；联络会话合并恢复最近 N 条历史，跨渠道汇流一条线；关切（Watch）消息统一路由到联络 tab，不再创建独立 tab 打断用户
+- 🎯 **单助手 Hub 工作台模型**：本地助手 tab 默认隐藏在 Tab 栏，通过左侧「最近对话」侧栏聚焦切换；右键可提升至 Tab 栏；LRU 回收上限 5 个 Hub 会话
+- 🎯 **唤醒（wakeup）独立成第四类会话**：从关切中拆出，关切逐次失忆避免串味，唤醒保留历史记忆辅助决策；关切总览面板默认隐藏高频心跳流水
+- 🎯 **安全与命令审计大改版**：
+  - 收口为单 shell-AST 通道，删除 exec_argv 工具入口，杜绝 argv 间接执行漏洞
+  - 用户命令规则：按命令名追加风险基线，确认弹窗可直接将未知命令加入规则库
+  - 风险策略可配置：解析失败/未知命令风险按执行模式（strict/relaxed/free）分档；扩展风险策略与授权清单手动添加；档位改为单选按钮组
+  - 系统路径分级 critical/hardened + /dev/null 黑洞豁免
+  - 内置规则只读展示 + 风险清单按破坏性分档
+  - 「始终允许」改为会话内存（不持久化），日常运维命令降为中风险
+- 🎯 **内置地图 GeoJSON**：内置世界/中国省/市级地图及区县级地图，活图渲染无需外网
+- 🎯 **知识库备份/恢复**：支持备份与恢复，避免损坏后全量重建
+- 🎯 **知识库 Windows DML 加速**：嵌入推理改用 DirectML，加速失败自动回退 CPU
+- 🎯 **watch 独立历史树**：关切/唤醒执行记录存到独立 `history/watch/`，根除主索引膨胀
+- 🎯 **macOS ⌘Q 防误触**：首次按下提示，二次确认才退出
+- 🎯 **首 token 趣味文案**：等待首 token 时随机展示趣味状态文案与超长 TTFT 调侃
+- 🎯 **羁绊里程碑彩蛋**：羁绊解锁时弹出 toast 庆祝；任务完成 footer 8% 概率展示羁绊收工梗；输入框 placeholder 按羁绊分池
+- 🎯 **邮件发送确认卡片**：发送邮件前预览正文与附件列表
+- 🎯 **浏览器助手增强**：新增 `browser_close_tab` 工具；Firefox MV3 全站权限引导与检测；扩展通用 tabs 原语，attach 默认新开标签
+- 🎯 **talk_to_user 主动消息另开一聊**：主动消息支持从联络 fork 出新任务会话
+- 🎯 **talk_to_user 工具结果展示正文**：工具调用结果始终展示发送正文
+- 🎯 **watch 重试按钮**：异常关切列表每行可直接重试
+- 🎯 **build:local --launch**：`npm run build:local` 将 --dir 产物安装到本机并后台启动应用
+
+### 改进
+- ⚡ **会话领域模型重构**（内部）：引入 Conversation 聚合根作为唯一真相源；CONVERSATION_POLICY 策略表数据驱动表达 task/companion/watch/wakeup 差异；ConversationManager 成为会话读侧权威；AgentRecordStore 聚合历史存储，HistoryService 瘦身为运维聚合
+- ⚡ **凭证加密升级**：引入 `g1:` 自管主密钥层替代 safeStorage 作为默认加密方案；v7 迁移把 IM/堡垒机明文凭证迁入 credential 并升级 e1:->g1:
+- ⚡ **上下文管理**：抽 ContextWindowManager 协作者统一 token 估算；watch wakeup 广度装载策略 + L3/L4 摘要带时间戳；本地预测压缩 proactiveCompress 覆盖 DeepSeek 等不报错 provider；上下文超限时自动压缩兜底避免对话中断
+- ⚡ **启动性能**：懒加载终端/Agent 运行时，缩短低配 Windows 冷启动
+- ⚡ **联络合并视图收敛到后端**：前端改走 IPC，避免 transcript 污染
+- ⚡ **关切降噪**：移除 deliverProactiveMessage，主动消息仅经 talk_to_user 投递；静默/no-action/im 关切不再发兜底通知
+- ⚡ **统一 Windows shell 检测**：修复命令执行时好时坏
+- ⚡ **UI 体验**：欢迎页两行输入框 + 模型选择器（Cursor 风格）；历史对话支持拖放打开标签页；顶部主标题优先显示 Agent 自定义名；联络 tab 空状态展示产品说明与示例；抽取 WelcomePanel 与 HistorySearchModal 独立组件
+
+### 问题修复
+- 🐛 **流式滚动**：修复贴底跟随、上滚阅读被新内容顶离、布局抖动误判离底、切 tab 滚动漂移、加载历史虚拟滚动弹跳、流式思考时虚拟列表高度估算跳动等多项滚动问题；展开思考块自动滚入视口并锚定点击行
+- 🐛 **联络会话连续性**：修复联络重启后丢上下文（持久命名 Agent 按最近 N 条重建工作记忆）；根除联络裂成两条断链 session（sessionId 回种 + 合并字段成对）；修复 talk_to_user 不再打断进行中任务、重复投递
+- 🐛 **安全**：修补 exec_argv 间接执行漏洞，新增 indirection-guard；修复 CodeQL 和 Dependabot 安全告警
+- 🐛 **命令审计误判**：env 单独执行、cp 工作区外、wrapper 未 unwrap、非 shell 解释器内联代码、redirect 归属、head/tail 数字简写 flag 等多处误判 dangerous 的修正；relaxed 模式不再确认未识别命令；未识别命令默认降为 moderate
+- 🐛 **bootstrap**：数据目录指针文件改用固定位置，避免 dev/prod 失踪；统一 dev/prod 应用名为 SailFish，自动迁移历史数据目录；legacy 迁移改用显式标记，不依赖目录是否空
+- 🐛 **凭证**：MasterKey.persistSalt 返回最终 salt 并重试 EEXIST 读空文件；坏 e1: 凭证自愈删除，根除 Keychain 反复弹窗
+- 🐛 **token 估算**：修复 estimateTotalTokens 漏算 images 导致 companion 发图 AI 收不到
+- 🐛 **邮件**：测试连接补验 SMTP，修复「测试成功但发不出邮件」
+- 🐛 **PDF**：修复 pdfjs 5.x 在 Node 下加载 CMap 失败导致 CJK PDF 丢字
+- 🐛 **fork 会话**：修复另开一聊丢失最近上下文、自定义标题后缀丢失、IPC 克隆失败；fork 从合并视图截断主动消息不再丢失
+- 🐛 **微信**：过程消息合并 digest 缓解个人号限流；懒加载后 IM 设置开关无法切换的 ASI 陷阱；CDN 上传 500
+- 🐛 **唤醒注入**：唤醒注入联络上下文优先读 steps，修复重复主动通知
+- 🐛 **UI**：修复「准备中->思考中」切换闪烁与滚动闪动；Cmd+W 在已提升助手 Tab 激活时关 Tab 而非关窗口；已提升助手 Tab 关闭后跳相邻 Tab；Hub 任务完成提醒可见性与已读清除
+- 🐛 **i18n**：dispatch_agents 子任务文案改走 t()；manage_workbench_artifacts 流式预卡片标题翻译补全
+- 🐛 **Windows 更新**：自动更新跳过 NSIS 安装模式选择页
+
+## v11.1.0 (2026-06-18)
 
 > 助手产出物面板全面上线——生成的文档、图表等可在侧边栏直接预览和切换，还能收起不占地方；浏览器助手可以直接操控你正在用的 Chrome 或 Firefox，不用另开窗口，网站登录状态也会保留。
 
