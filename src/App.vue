@@ -9,6 +9,7 @@ import { useConfigStore, type SshSession } from './stores/config'
 import TabBar from './components/TabBar.vue'
 import TerminalTabView from './components/TerminalTabView.vue'
 import { resolveWorkbenchRenderer, resolveWorkbenchKind, isWorkbenchAvailable } from './workbench/registry'
+import { bootstrapWorkbenchCapabilities } from './workbench/bootstrap'
 import { isOemFeatureEnabled } from '@shared/oem-features'
 import SessionManager from './components/SessionManager.vue'
 import RecentConversationsPanel from './components/RecentConversationsPanel.vue'
@@ -949,6 +950,11 @@ onMounted(async () => {
 const initializeApp = async () => {
   // 确保「联络」常驻 tab 存在
   terminalStore.ensureCompanionTab()
+
+  // 工作台声明的 MCP / skills 装配（内置多为空操作）
+  void bootstrapWorkbenchCapabilities().catch((e) => {
+    log.warn('Workbench bootstrap failed', e)
+  })
 
   // 不再自动创建本地终端，显示欢迎页让用户选择
 
