@@ -121,7 +121,7 @@ async function removeUserCommandRule(cmd: string) {
   await loadUserCommandRules()
 }
 
-// —— 子 tab 切换（我的授权 / 内置规则）——
+// —— 子 tab 切换（我的授权 / 命令规则 / 风险策略）——
 type SubTab = 'user' | 'builtin' | 'policy'
 const activeSubTab = ref<SubTab>('user')
 
@@ -543,32 +543,67 @@ type PolicyLevelField =
   | 'strictDynamicPath' | 'relaxedDynamicPath'
 
 type PolicyTipLabel = 'colParseFail' | 'colUnknownCmd' | 'colIndirection' | 'colDynamicPath'
+type UserRuleTipField = 'writes' | 'flags'
+type HelpTip =
+  | { kind: 'policy'; label: PolicyTipLabel }
+  | { kind: 'userRule'; field: UserRuleTipField }
 
-const openPolicyTip = ref<PolicyTipLabel | null>(null)
-const policyTipPos = ref({ top: 0, left: 0 })
+const openHelpTip = ref<HelpTip | null>(null)
+const helpTipPos = ref({ top: 0, left: 0 })
 
 const policyTipExamples = computed((): string[] => {
-  if (!openPolicyTip.value) return []
-  const raw = tm(`settings.security.riskPolicy.${openPolicyTip.value}TipExamples`)
+  if (openHelpTip.value?.kind !== 'policy') return []
+  const raw = tm(`settings.security.riskPolicy.${openHelpTip.value.label}TipExamples`)
   return Array.isArray(raw) ? raw.map(String) : []
 })
 
-function togglePolicyTip(label: PolicyTipLabel, e: MouseEvent) {
-  e.stopPropagation()
-  if (openPolicyTip.value === label) {
-    openPolicyTip.value = null
-    return
-  }
-  const el = e.currentTarget as HTMLElement
+const helpTipTitle = computed(() => {
+  const tip = openHelpTip.value
+  if (!tip) return ''
+  if (tip.kind === 'policy') return t(`settings.security.riskPolicy.${tip.label}`)
+  return tip.field === 'writes'
+    ? t('settings.security.userCommandRules.writesLabel')
+    : t('settings.security.userCommandRules.flagsFieldLabel')
+})
+
+const helpTipBody = computed(() => {
+  const tip = openHelpTip.value
+  if (!tip) return ''
+  if (tip.kind === 'policy') return t(`settings.security.riskPolicy.${tip.label}TipBody`)
+  return tip.field === 'writes'
+    ? t('settings.security.userCommandRules.writesTip')
+    : t('settings.security.userCommandRules.flagsTip')
+})
+
+function placeHelpTip(el: HTMLElement) {
   const rect = el.getBoundingClientRect()
   const width = 320
   const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))
-  policyTipPos.value = { top: rect.bottom + 8, left }
-  openPolicyTip.value = label
+  helpTipPos.value = { top: rect.bottom + 8, left }
+}
+
+function togglePolicyTip(label: PolicyTipLabel, e: MouseEvent) {
+  e.stopPropagation()
+  if (openHelpTip.value?.kind === 'policy' && openHelpTip.value.label === label) {
+    openHelpTip.value = null
+    return
+  }
+  placeHelpTip(e.currentTarget as HTMLElement)
+  openHelpTip.value = { kind: 'policy', label }
+}
+
+function toggleUserRuleTip(field: UserRuleTipField, e: MouseEvent) {
+  e.stopPropagation()
+  if (openHelpTip.value?.kind === 'userRule' && openHelpTip.value.field === field) {
+    openHelpTip.value = null
+    return
+  }
+  placeHelpTip(e.currentTarget as HTMLElement)
+  openHelpTip.value = { kind: 'userRule', field }
 }
 
 function closePolicyTip() {
-  openPolicyTip.value = null
+  openHelpTip.value = null
 }
 
 function onPolicyTipKeydown(e: KeyboardEvent) {
@@ -751,7 +786,7 @@ function onPolicyTipKeydown(e: KeyboardEvent) {
       </div>
     </div>
 
-    <!-- ========== 内置规则 ========== -->
+    <!-- ========== 命令规则 ========== -->
     <div v-if="activeSubTab === 'builtin'" class="sub-panel">
       <div class="settings-section">
         <div class="section-header">
@@ -795,15 +830,37 @@ function onPolicyTipKeydown(e: KeyboardEvent) {
                 </select>
                 <label class="user-rule-writes">
                   <input v-model="newUserRuleWrites" type="checkbox" />
-                  {{ t('settings.security.userCommandRules.writesLabel') }}
+                  <span>{{ t('settings.security.userCommandRules.writesLabel') }}</span>
+                  <button
+                    type="button"
+                    class="user-rule-help"
+                    :class="{ open: openHelpTip?.kind === 'userRule' && openHelpTip.field === 'writes' }"
+                    :aria-expanded="openHelpTip?.kind === 'userRule' && openHelpTip.field === 'writes'"
+                    :aria-label="t('settings.security.userCommandRules.writesLabel')"
+                    @click="toggleUserRuleTip('writes', $event)"
+                  >
+                    <CircleHelp :size="13" :stroke-width="2" />
+                  </button>
                 </label>
-                <input
-                  v-model="newUserRuleFlags"
-                  type="text"
-                  class="input-field user-rule-flags"
-                  :placeholder="t('settings.security.userCommandRules.flagsPlaceholder')"
-                  @keyup.enter="addUserCommandRule"
-                />
+                <div class="user-rule-flags-wrap">
+                  <input
+                    v-model="newUserRuleFlags"
+                    type="text"
+                    class="input-field user-rule-flags"
+                    :placeholder="t('settings.security.userCommandRules.flagsPlaceholder')"
+                    @keyup.enter="addUserCommandRule"
+                  />
+                  <button
+                    type="button"
+                    class="user-rule-help"
+                    :class="{ open: openHelpTip?.kind === 'userRule' && openHelpTip.field === 'flags' }"
+                    :aria-expanded="openHelpTip?.kind === 'userRule' && openHelpTip.field === 'flags'"
+                    :aria-label="t('settings.security.userCommandRules.flagsFieldLabel')"
+                    @click="toggleUserRuleTip('flags', $event)"
+                  >
+                    <CircleHelp :size="13" :stroke-width="2" />
+                  </button>
+                </div>
                 <button
                   class="btn btn-sm btn-primary"
                   :disabled="userRuleSaving || !newUserRuleCmd.trim()"
@@ -1126,8 +1183,8 @@ function onPolicyTipKeydown(e: KeyboardEvent) {
                 <button
                   type="button"
                   class="policy-scenario-help"
-                  :class="{ open: openPolicyTip === row.label }"
-                  :aria-expanded="openPolicyTip === row.label"
+                  :class="{ open: openHelpTip?.kind === 'policy' && openHelpTip.label === row.label }"
+                  :aria-expanded="openHelpTip?.kind === 'policy' && openHelpTip.label === row.label"
                   :aria-label="t(`settings.security.riskPolicy.${row.label}`)"
                   @click="togglePolicyTip(row.label as PolicyTipLabel, $event)"
                 >
@@ -1203,15 +1260,15 @@ function onPolicyTipKeydown(e: KeyboardEvent) {
 
     <Teleport to="body">
       <div
-        v-if="openPolicyTip"
+        v-if="openHelpTip"
         class="policy-tip-popover"
-        :style="{ top: policyTipPos.top + 'px', left: policyTipPos.left + 'px' }"
+        :style="{ top: helpTipPos.top + 'px', left: helpTipPos.left + 'px' }"
         role="dialog"
-        :aria-label="t(`settings.security.riskPolicy.${openPolicyTip}`)"
+        :aria-label="helpTipTitle"
         @click.stop
       >
-        <div class="policy-tip-title">{{ t(`settings.security.riskPolicy.${openPolicyTip}`) }}</div>
-        <div class="policy-tip-body">{{ t(`settings.security.riskPolicy.${openPolicyTip}TipBody`) }}</div>
+        <div class="policy-tip-title">{{ helpTipTitle }}</div>
+        <div class="policy-tip-body">{{ helpTipBody }}</div>
         <div v-if="policyTipExamples.length" class="policy-tip-examples-label">
           {{ t('settings.security.riskPolicy.tipExamplesLabel') }}
         </div>
@@ -1757,24 +1814,6 @@ function onPolicyTipKeydown(e: KeyboardEvent) {
   margin-bottom: 10px;
 }
 
-.user-rule-cmd {
-  flex: 0 1 120px;
-  min-width: 100px;
-  width: auto;
-}
-
-.user-rule-level {
-  flex: 0 0 auto;
-  width: auto;
-  min-width: 100px;
-}
-
-.user-rule-flags {
-  flex: 1 1 160px;
-  min-width: 140px;
-  width: auto;
-}
-
 .user-rule-writes {
   display: inline-flex;
   align-items: center;
@@ -1782,6 +1821,45 @@ function onPolicyTipKeydown(e: KeyboardEvent) {
   font-size: 12px;
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+.user-rule-flags-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 160px;
+  min-width: 140px;
+}
+
+.user-rule-flags-wrap .user-rule-flags {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-rule-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0.75;
+  flex-shrink: 0;
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.user-rule-help:hover,
+.user-rule-help:focus-visible,
+.user-rule-help.open {
+  opacity: 1;
+  color: var(--text-secondary);
+  outline: none;
+}
+
+.user-rule-help.open {
+  color: var(--accent-color, #3b82f6);
 }
 
 .cmd-col-actions {
@@ -2222,9 +2300,29 @@ function onPolicyTipKeydown(e: KeyboardEvent) {
   transition: border-color 0.2s;
 }
 
-/* 必须写在 .input-field 的 padding 简写之后，否则会被覆盖 */
+/* 必须写在 .input-field 的 padding / width 简写之后，否则会被覆盖 */
 .input-field.filter-input {
   padding-left: 32px;
+}
+
+.input-field.user-rule-cmd {
+  flex: 0 1 140px;
+  width: auto;
+  min-width: 100px;
+  max-width: 180px;
+}
+
+.input-field.user-rule-level {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  max-width: 7.5em;
+}
+
+.input-field.user-rule-flags {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
 }
 
 .input-field::placeholder {
