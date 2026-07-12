@@ -6,6 +6,7 @@ import type { UnwrappedCall } from '@questi0nm4rk/shell-ast'
 import { parseShellCommand, getShellAstModule } from './parser'
 import type { AuditedCall, AuditedRedirect, AuditContext } from './types'
 import { basenameCommand } from './whitelist'
+import { unescapeShellWordLiteral } from './unescape-shell-literal'
 
 function shellDialect(ctx: AuditContext): 'bash' | 'posix' | 'mksh' {
   if (ctx.shell === 'sh') return 'posix'
@@ -43,7 +44,7 @@ function redirectNodeToAudited(
   if (!target) return null
   return {
     op: mapRedirectOp(r.op),
-    target,
+    target: unescapeShellWordLiteral(target),
     isWrite: isWriteRedirectOp(r.op),
   }
 }
@@ -92,7 +93,7 @@ async function resolvedArgs(args: UnwrappedCall['args']): Promise<{ strings: str
   let hasDynamic = false
   for (const a of args) {
     if (isDynamic(a)) hasDynamic = true
-    else if (isResolved(a)) strings.push(a)
+    else if (isResolved(a)) strings.push(unescapeShellWordLiteral(a))
   }
   return { strings, hasDynamic }
 }

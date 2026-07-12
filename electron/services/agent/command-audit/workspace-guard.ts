@@ -29,11 +29,13 @@ import {
   type WorkspaceZone,
 } from './types'
 import { isUserDataForbidden } from './userdata-guard'
+import { unescapeShellWordLiteral } from './unescape-shell-literal'
 
-/** 解析相对路径（cwd 缺省时用 process.cwd()） */
+/** 解析相对路径（cwd 缺省时用 process.cwd()）；并解开 shell 反斜杠转义 */
 export function resolveCommandPath(rawPath: string, cwd?: string): string {
+  const cleaned = unescapeShellWordLiteral(rawPath)
   const base = cwd ? path.resolve(cwd) : process.cwd()
-  return path.resolve(base, rawPath)
+  return path.resolve(base, cleaned)
 }
 
 /** 规范化路径用于比较（统一斜杠、去掉尾部 /） */

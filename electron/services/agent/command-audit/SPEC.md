@@ -6,7 +6,7 @@
 ## 职责
 
 1. **风险分级**：safe / moderate / dangerous / blocked
-2. **单通道（AST）**：所有命令经 `@questi0nm4rk/shell-ast` 解析为 AST，拆出子命令 + flags + 参数 + 重定向，再走白名单 + 路径分区
+2. **单通道（AST）**：所有命令经 `@questi0nm4rk/shell-ast` 解析为 AST，拆出子命令 + flags + 参数 + 重定向，再走白名单 + 路径分区；Lit 中未解的 `\ ` 等反斜杠转义在 extract / resolveCommandPath 中还原（否则 `Application\ Support` 会被误判为工作区外）
 3. **路径分区审计**：根据 cwd + 路径所在 zone（free/protected/workspace/outside）调整风险
 4. **Fail-Closed**：解析失败 / 未知命令按 `executionMode` + 用户可配 `commandRiskPolicy` 选档（默认 strict→dangerous、relaxed/free→moderate）；写操作动态路径 -> dangerous
 
