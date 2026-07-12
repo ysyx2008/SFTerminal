@@ -2,7 +2,19 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v11.2.1 (2026-07-12) (Latest)
+## v11.2.2 (2026-07-13) (Latest)
+
+> Tasks and companion chats are now split into two dedicated entry points, and the security and command-audit system has been overhauled-consolidated into a single shell-AST channel with user-configurable risk policies and command rules. Under the hood, the conversation layer completes the Conversation aggregate-root refactor, laying the groundwork for upcoming session capabilities.
+
+### Improvements
+- ⚡ **Message-list virtual scroll migrated to virtua**: replaces vue-virtual-scroller with built-in height measurement and scroll adjustment, removing hand-rolled FLIP/ResizeObserver compensation and improving stability for dynamic heights + stick-to-bottom streaming (especially on Windows)
+- ⚡ **FLIP smooth shift when pinned to bottom**: after content grows while pinned, apply a reverse translateY on the Virtualizer root then spring back; intentional jump-to-bottom still hard-cuts with a brief FLIP suppress to avoid fighting on start
+
+### Bug Fixes
+- 🐛 **Textarea measure no longer jolts the message list**: skip writing style while typing on the same line; only collapse-and-remeasure when deleting shrinks height; stick-to-bottom ResizeObserver only pins when content grows
+- 🐛 **Streaming stick-to-bottom without micro-jumps or false bounce**: chase the bottom with exponential scrollTop approach (no cubic FLIP easing); target changes only increase remain so velocity stays continuous
+
+## v11.2.1 (2026-07-12)
 
 > Tasks and companion chats are now split into two dedicated entry points, and the security and command-audit system has been overhauled-consolidated into a single shell-AST channel with user-configurable risk policies and command rules. Under the hood, the conversation layer completes the Conversation aggregate-root refactor, laying the groundwork for upcoming session capabilities.
 
