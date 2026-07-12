@@ -636,9 +636,11 @@ export function useAgentMode(
 
   // ==================== 跟底态：内容高度变化时同帧钉底 ====================
   // virtua 负责上方 item 高度修正的视区锚定，但不负责「最后一项流式长高时保持贴底」。
-  // 这里只在 shouldFollowBottom 时钉底——没有 FLIP、没有阅读态补偿。
+  // 这里只在 shouldFollowBottom 且内容变高时钉底——没有 FLIP、没有阅读态补偿。
+  // 禁止在高度不变/变矮时钉底：composer 测高、窗口微调等会误触发跳动。
   let followResizeObserver: ResizeObserver | null = null
   let followObservedTarget: HTMLElement | null = null
+  let prevFollowContentHeight = 0
 
   const installFollowResizeObserver = () => {
     uninstallFollowResizeObserver()
@@ -648,9 +650,14 @@ export function useAgentMode(
     const target = el.lastElementChild as HTMLElement | null
     if (!target) return
     followObservedTarget = target
-    followResizeObserver = new ResizeObserver(() => {
+    prevFollowContentHeight = target.offsetHeight
+    followResizeObserver = new ResizeObserver((entries) => {
       if (tabActive?.value === false) return
       if (!shouldFollowBottom()) return
+      const newH = entries[0]?.contentRect.height ?? target.offsetHeight
+      const grew = newH > prevFollowContentHeight + 0.5
+      prevFollowContentHeight = newH
+      if (!grew) return
       pinFollowBottom()
       guardAfterAutoScroll()
     })

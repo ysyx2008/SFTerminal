@@ -104,6 +104,8 @@ const hasComposerAttachments = computed(
 )
 
 let textareaResizeObserver: ResizeObserver | null = null
+/** 防止 measure 改高度 → wrap ResizeObserver → 再 measure 的重入 */
+let measuringTextareaHeight = false
 
 const setupTextareaResizeObserver = () => {
   textareaResizeObserver?.disconnect()
@@ -111,6 +113,8 @@ const setupTextareaResizeObserver = () => {
   if (!target) return
 
   textareaResizeObserver = new ResizeObserver(() => {
+    // 宽度变化（分栏/窗口）才需要重测；自身改高度触发的回调由 measuring 守卫跳过
+    if (measuringTextareaHeight) return
     measureTextareaHeight()
   })
   textareaResizeObserver.observe(target)
@@ -213,18 +217,45 @@ const focusInput = () => {
   mentionInputEl.value?.focus()
 }
 
-/** 两行 grid 布局下测量高度；勿用 flex-column + scrollHeight 组合 */
+/** 两行 grid 布局下测量高度。
+ * 禁止每次都 height=0：会瞬间塌缩 composer，flex 上方的消息列表跟着抖半行。
+ * 增高用 scrollHeight 直接扩；仅在内容变矮（删字折行减少）时才临时塌缩重测。
+ */
 const measureTextareaHeight = () => {
   const textarea = mentionInputEl.value
-  if (!textarea) return
+  if (!textarea || measuringTextareaHeight) return
 
-  textarea.style.overflow = 'hidden'
-  textarea.style.minHeight = '0'
-  textarea.style.height = '0'
-  const nextHeight = Math.min(textarea.scrollHeight, 360)
-  textarea.style.height = `${nextHeight}px`
-  textarea.style.minHeight = ''
-  textarea.style.overflow = nextHeight >= 360 ? 'auto' : 'hidden'
+  measuringTextareaHeight = true
+  try {
+    const maxH = 360
+    const minH = 20
+    textarea.style.overflow = 'hidden'
+
+    const current = textarea.offsetHeight
+    let nextHeight: number
+
+    if (textarea.scrollHeight > current + 1) {
+      // 内容撑破当前高度 → 直接扩，不经 0
+      nextHeight = Math.min(Math.max(textarea.scrollHeight, minH), maxH)
+    } else if (textarea.scrollHeight < current - 1) {
+      // 内容变矮（删字）→ 临时塌缩再量自然高度
+      textarea.style.height = '0px'
+      nextHeight = Math.min(Math.max(textarea.scrollHeight, minH), maxH)
+    } else {
+      // 同行内敲字：高度不变，避免无意义写 style 触发布局
+      textarea.style.overflow = current >= maxH ? 'auto' : 'hidden'
+      return
+    }
+
+    if (current !== nextHeight) {
+      textarea.style.height = `${nextHeight}px`
+    } else if (textarea.style.height === '0px') {
+      textarea.style.height = `${nextHeight}px`
+    }
+    textarea.style.overflow = nextHeight >= maxH ? 'auto' : 'hidden'
+  } finally {
+    measuringTextareaHeight = false
+  }
 }
 
 const syncTextareaSize = () => {
