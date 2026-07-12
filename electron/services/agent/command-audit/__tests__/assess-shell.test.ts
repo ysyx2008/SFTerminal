@@ -233,7 +233,7 @@ describe('assessCommandRisk shell AST', () => {
     it('sudo ls -> safe（sudo 已 unwrap，按 ls 审计）', async () => {
       expect(await assessCommandRisk('sudo ls -la')).toBe('safe')
     })
-    it('npx -> moderate（调度器未 unwrap，内层不可知）', async () => {
+    it('npx -> moderate（调度器；显式表为中风险）', async () => {
       expect(await assessCommandRisk('npx some-package')).toBe('moderate')
     })
     it('xargs -> moderate（包装器未 unwrap，内层不可知）', async () => {
@@ -277,6 +277,52 @@ describe('assessCommandRisk shell AST', () => {
     it('ls -lart 不误拆（5 字符合并 flag）', async () => {
       const scratch = getScratchPath()
       expect(await assessCommandRisk(`ls -lart "${scratch}"`, { cwd: scratch })).toBe('safe')
+    })
+  })
+
+  describe('显式高危 / 中风险 ARGV 清单', () => {
+    const relaxed = { executionMode: 'relaxed' as const }
+
+    it('dd 无磁盘整串规则时仍为 dangerous', async () => {
+      expect(await assessCommandRisk('dd if=/dev/zero of=/tmp/sft-dd-test.img bs=1M count=1', relaxed)).toBe('dangerous')
+    })
+
+    it('mkfs.ext4 至少 dangerous（整串规则可升 blocked）', async () => {
+      const level = await assessCommandRisk('mkfs.ext4 /dev/sdb1', relaxed)
+      expect(['dangerous', 'blocked']).toContain(level)
+    })
+
+    it('reboot / chgrp / crontab 为 dangerous', async () => {
+      expect(await assessCommandRisk('reboot', relaxed)).toBe('dangerous')
+      expect(await assessCommandRisk('chgrp wheel /tmp/x', relaxed)).toBe('dangerous')
+      expect(await assessCommandRisk('crontab -r', relaxed)).toBe('dangerous')
+    })
+
+    it('mount 为 dangerous', async () => {
+      expect(await assessCommandRisk('mount /dev/sdb1 /mnt', relaxed)).toBe('dangerous')
+    })
+
+    it('format 至少 dangerous（整串规则可升 blocked）', async () => {
+      const level = await assessCommandRisk('format C:', relaxed)
+      expect(['dangerous', 'blocked']).toContain(level)
+    })
+
+    it('sudo 单独调用为 dangerous（有内层时 unwrap 按内层审计）', async () => {
+      expect(await assessCommandRisk('sudo', relaxed)).toBe('dangerous')
+    })
+
+    it('包管理 / 容器 / kill / systemctl 为 moderate（日常运维不狂弹）', async () => {
+      expect(await assessCommandRisk('pip3 install requests', relaxed)).toBe('moderate')
+      expect(await assessCommandRisk('brew install wget', relaxed)).toBe('moderate')
+      expect(await assessCommandRisk('apt-get install -y curl', relaxed)).toBe('moderate')
+      expect(await assessCommandRisk('docker run --rm alpine echo hi', relaxed)).toBe('moderate')
+      expect(await assessCommandRisk('npx cowsay hi', relaxed)).toBe('moderate')
+      expect(await assessCommandRisk('kill -9 1', relaxed)).toBe('moderate')
+      expect(await assessCommandRisk('systemctl stop nginx', relaxed)).toBe('moderate')
+    })
+
+    it('xargs 仍为 moderate（未进显式表，indirection 跟策略）', async () => {
+      expect(await assessCommandRisk('xargs rm', relaxed)).toBe('moderate')
     })
   })
 })

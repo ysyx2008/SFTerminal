@@ -84,10 +84,16 @@ export function assessAuditedCall(
 ): CallRiskAssessment {
   // 间接执行守卫：解释器内联 / 包装器 / 调度器 / 结构性 flag 规则
   // 命中后等级由用户策略决定（默认 strict→dangerous、relaxed→moderate）。
+  // 若命令本身在 ARGV 表中为 dangerous（sudo/docker 等），保底 dangerous，策略只能升级。
   // blocked 级别留给路径守卫（写系统路径等绝对禁止场景）。
   const guardHit = checkIndirectionGuard(call)
   if (guardHit) {
-    const level = resolveFailClosedLevel('indirection', ctx)
+    const policyLevel = resolveFailClosedLevel('indirection', ctx)
+    const argvRule = getArgvCommandRule(call.cmd)
+    const level =
+      argvRule?.baseLevel === 'dangerous'
+        ? maxRisk(policyLevel, 'dangerous')
+        : policyLevel
     return {
       level,
       commandLevel: level,

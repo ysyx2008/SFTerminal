@@ -15,6 +15,7 @@
 
 import type { RiskLevel } from '@shared/types/agent'
 import * as path from 'path'
+import { maxRisk } from './risk-level'
 
 /**
  * 命令的白名单规则
@@ -161,7 +162,7 @@ function rule(
   }
 }
 
-/** 命令白名单（未列出 → moderate + hasUnknown；写操作/动态 → dangerous） */
+/** 命令白名单（未列出 → Fail-Closed unknownCmd；显式 dangerous 见写/删与高危段） */
 export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
   // —— 只读 / 查询 ——
   ls: rule('ls', 'safe', {
@@ -299,9 +300,76 @@ export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
   touch: rule('touch', 'moderate', { pathMode: 'all', writesTo: true }),
   chmod: rule('chmod', 'dangerous', { pathMode: 'all', writesTo: true }),
   chown: rule('chown', 'dangerous', { pathMode: 'all', writesTo: true }),
+  chgrp: rule('chgrp', 'dangerous', { pathMode: 'all', writesTo: true }),
   ln: rule('ln', 'moderate', { safeFlags: new Set(['-s', '-f']), pathMode: 'all', writesTo: true }),
   tee: rule('tee', 'moderate', { safeFlags: new Set(['-a']), pathMode: 'all', writesTo: true }),
   mktemp: rule('mktemp', 'moderate', { safeFlags: new Set(['-d', '-u']), pathMode: 'none', writesTo: true }),
+
+  // —— 显式高危：不可逆破坏 / 提权 / 关机 / 防火墙 / 用户与挂载 ——
+  // （包管理、容器、kill、systemctl 等日常运维 → 中风险段，避免 relaxed 狂弹确认）
+  // dd 参数为 if=/ of=/ 赋值形，不能当路径分区，否则会误落入 scratch 变 safe
+  dd: rule('dd', 'dangerous', { pathMode: 'none', writesTo: false }),
+  shred: rule('shred', 'dangerous', {
+    safeFlags: new Set(['-f', '-u', '-v', '-z', '-n']),
+    valueFlags: new Set(['-n']),
+    pathMode: 'all',
+    writesTo: true,
+  }),
+  mkfs: rule('mkfs', 'dangerous', { pathMode: 'all', writesTo: true }),
+  'mkfs.ext4': rule('mkfs.ext4', 'dangerous', { pathMode: 'all', writesTo: true }),
+  'mkfs.xfs': rule('mkfs.xfs', 'dangerous', { pathMode: 'all', writesTo: true }),
+  'mkfs.vfat': rule('mkfs.vfat', 'dangerous', { pathMode: 'all', writesTo: true }),
+  fdisk: rule('fdisk', 'dangerous', { pathMode: 'all', writesTo: true }),
+  parted: rule('parted', 'dangerous', { pathMode: 'all', writesTo: true }),
+  wipefs: rule('wipefs', 'dangerous', { pathMode: 'all', writesTo: true }),
+  format: rule('format', 'dangerous', { pathMode: 'all', writesTo: true }),
+
+  sudo: rule('sudo', 'dangerous', { pathMode: 'none' }),
+  su: rule('su', 'dangerous', { pathMode: 'none' }),
+  doas: rule('doas', 'dangerous', { pathMode: 'none' }),
+  shutdown: rule('shutdown', 'dangerous', { pathMode: 'none' }),
+  reboot: rule('reboot', 'dangerous', { pathMode: 'none' }),
+  halt: rule('halt', 'dangerous', { pathMode: 'none' }),
+  poweroff: rule('poweroff', 'dangerous', { pathMode: 'none' }),
+  init: rule('init', 'dangerous', { pathMode: 'none' }),
+
+  iptables: rule('iptables', 'dangerous', { pathMode: 'none' }),
+  ip6tables: rule('ip6tables', 'dangerous', { pathMode: 'none' }),
+  nft: rule('nft', 'dangerous', { pathMode: 'none' }),
+  ufw: rule('ufw', 'dangerous', { pathMode: 'none' }),
+
+  useradd: rule('useradd', 'dangerous', { pathMode: 'none' }),
+  userdel: rule('userdel', 'dangerous', { pathMode: 'none' }),
+  passwd: rule('passwd', 'dangerous', { pathMode: 'none' }),
+  visudo: rule('visudo', 'dangerous', { pathMode: 'none' }),
+  mount: rule('mount', 'dangerous', { pathMode: 'all', writesTo: true }),
+  umount: rule('umount', 'dangerous', { pathMode: 'all', writesTo: true }),
+  crontab: rule('crontab', 'dangerous', { pathMode: 'none' }),
+
+  // —— 中风险运维：日常 Agent 高频，relaxed 默认放行，strict 仍确认 ——
+  kill: rule('kill', 'moderate', {
+    safeFlags: new Set(['-l', '-s']),
+    valueFlags: new Set(['-s']),
+    pathMode: 'none',
+  }),
+  killall: rule('killall', 'moderate', { pathMode: 'none' }),
+  pkill: rule('pkill', 'moderate', { pathMode: 'none' }),
+  systemctl: rule('systemctl', 'moderate', { pathMode: 'none' }),
+  service: rule('service', 'moderate', { pathMode: 'none' }),
+  sysctl: rule('sysctl', 'moderate', { pathMode: 'none' }),
+  timedatectl: rule('timedatectl', 'moderate', { pathMode: 'none' }),
+  hostnamectl: rule('hostnamectl', 'moderate', { pathMode: 'none' }),
+  'apt-get': rule('apt-get', 'moderate', { pathMode: 'none' }),
+  apt: rule('apt', 'moderate', { pathMode: 'none' }),
+  yum: rule('yum', 'moderate', { pathMode: 'none' }),
+  dnf: rule('dnf', 'moderate', { pathMode: 'none' }),
+  pacman: rule('pacman', 'moderate', { pathMode: 'none' }),
+  brew: rule('brew', 'moderate', { pathMode: 'none' }),
+  pip: rule('pip', 'moderate', { pathMode: 'none' }),
+  pip3: rule('pip3', 'moderate', { pathMode: 'none' }),
+  docker: rule('docker', 'moderate', { pathMode: 'none' }),
+  'docker-compose': rule('docker-compose', 'moderate', { pathMode: 'none' }),
+  npx: rule('npx', 'moderate', { pathMode: 'none' }),
 }
 
 /** 从 cmd 路径提取命令名（/usr/bin/grep → grep） */
@@ -319,7 +387,10 @@ export function getBuiltinArgvCommandRule(cmd: string): CommandRule | undefined 
   return ARGV_COMMAND_RULES[name]
 }
 
-/** 未知 flag → moderate；已知危险 flag 组合可升级 */
+/**
+ * 未知 flag → 至少 moderate（safe 升 moderate）；不得低于 baseLevel
+ * （否则 kill -9 / sudo -u 等会把 dangerous 误降为 moderate）。
+ */
 export function assessCommandFlags(rule: CommandRule, flags: string[]): RiskLevel {
   const allowed = rule.safeFlags
   for (const f of flags) {
@@ -338,7 +409,7 @@ export function assessCommandFlags(rule: CommandRule, flags: string[]): RiskLeve
           continue  // 整体是已知单字符 flag 的组合，放行
         }
       }
-      return 'moderate'
+      return maxRisk(rule.baseLevel, 'moderate')
     }
   }
   // rm -rf 在工作区外仍由路径守卫处理；命令级保持 dangerous
