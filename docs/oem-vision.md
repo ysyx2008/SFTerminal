@@ -157,8 +157,9 @@ OEM Fork：生成/编辑自己的 `oem.config.ts` 后可 `git add -f` 纳入 **F
 | 项 | 状态 |
 |---|---|
 | `oemConfig.features.showSponsor` | ✅ 已有 |
-| 觉醒 / 终端 / 联络 / 关切 / `sso` 等 | ⏳ 字段与接线待实现（目标与字段清单已确认） |
-| 与工作台注册的衔接 | 见 [`workbench-monorepo-design.md`](./workbench-monorepo-design.md) `isWorkbenchAvailable` |
+| 觉醒 / 终端 / 联络 / 关切 / `sso` 等 | ✅ 字段 + `isOemFeatureEnabled` + UI/心跳接线（`feat/oem-platform`） |
+| 与工作台注册的衔接 | ✅ `isWorkbenchAvailable`（Steam + features） |
+| OAuth2/OIDC 协议底座 | ✅ `electron/services/auth/`；`features.sso` 默认关；IPC `auth:*` |
 
 ---
 

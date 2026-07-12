@@ -645,11 +645,11 @@ SDK 1.0 只暴露 `WorkbenchDescriptor` / `registerWorkbench` / `resolveWorkbenc
 | 2 | 包管理器是否用 pnpm | ✅ 是 | ☑ |
 | 3 | 内部 registry / changesets 独立发版 | 可选（同仓多团队时）；**Fork OEM 不强制** | ☑ |
 | 4 | 业务团队技术栈 TS + Vue3 + Pinia | ✅ 是 | ☑ |
-| 5 | `WorkbenchDescriptor` 加 skills/mcpServers/agentPrompt（及预留 agentPolicy） | ✅ 是 | ☑ |
-| 6 | 新增 `@sailfish/shared-types`（P-1） | ✅ 是 | ☑ |
+| 5 | `WorkbenchDescriptor` 加 skills/mcpServers/agentPrompt（及预留 agentPolicy） | ✅ 是 | ☑ 已落地（src/workbench） |
+| 6 | 新增 `@sailfish/shared-types`（P-1） | ✅ 是 | ☑ 骨架 `packages/shared-types`（re-export） |
 | 7 | skills 包内自治优先 | ✅ 是 | ☑ |
-| 8 | `isWorkbenchAvailable` 统一 features + Steam | ✅ 是 | ☑ |
-| 9 | descriptor 双来源同一 bootstrap | ✅ 是 | ☑ |
+| 8 | `isWorkbenchAvailable` 统一 features + Steam | ✅ 是 | ☑ 已落地 |
+| 9 | descriptor 双来源同一 bootstrap | ✅ 是 | ☑ `bootstrapWorkbenchCapabilities` |
 
 产品 / OEM 决策见 [`oem-vision.md`](./oem-vision.md)。
 
