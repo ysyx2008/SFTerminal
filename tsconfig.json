@@ -19,7 +19,13 @@
       "@/*": ["./src/*"],
       "@electron/*": ["./electron/*"],
       "@shared/types": ["./shared/types/index.ts"],
-      "@shared/*": ["./shared/*"]
+      "@shared/*": ["./shared/*"],
+      "@sailfish/shared-types": ["./packages/shared-types/src/index.ts"],
+      "@sailfish/workbench-sdk": ["./packages/workbench-sdk/src/index.ts"],
+      "@sailfish/workbench-assistant": ["./packages/workbench-assistant/src/index.ts"],
+      "@sailfish/workbench-local": ["./packages/workbench-local/src/index.ts"],
+      "@sailfish/workbench-ssh": ["./packages/workbench-ssh/src/index.ts"],
+      "@sailfish/workbench-companion": ["./packages/workbench-companion/src/index.ts"]
     },
     "baseUrl": "."
   },

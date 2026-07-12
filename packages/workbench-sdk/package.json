@@ -1,0 +1,15 @@
+{
+  "name": "@sailfish/workbench-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Workbench SDK：descriptor / 注册表 / prompt 解析（骨架）",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "vue": "^3.0.0"
+  }
+}
