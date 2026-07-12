@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Trash2, RefreshCw, Search, Shield, ShieldCheck, ShieldAlert, Ban, FolderLock, FileLock2, HardDrive, Terminal, Plus } from 'lucide-vue-next'
+import { Trash2, RefreshCw, Search, Shield, ShieldCheck, ShieldAlert, Ban, FolderLock, FileLock2, HardDrive, Terminal, Plus, CheckCircle2, SlidersHorizontal } from 'lucide-vue-next'
 import type { RiskLevel, CommandRiskPolicy } from '@shared/types/agent'
 import { DEFAULT_COMMAND_RISK_POLICY } from '@shared/types/agent'
 
@@ -90,6 +90,11 @@ async function loadBuiltinRules() {
 }
 
 function switchSubTab(tab: SubTab) {
+  if (tab !== 'policy' && activeSubTab.value === 'policy' && policyUnsaved.value) {
+    if (!window.confirm(t('settings.security.riskPolicy.unsavedLeave'))) {
+      return
+    }
+  }
   activeSubTab.value = tab
   confirmClearAll.value = false
   if (tab === 'builtin' && !builtinRules.value && !builtinLoading.value) {
@@ -124,12 +129,54 @@ function groupCount(group: RiskLevel | 'all'): number {
 
 const filteredEntries = computed(() => {
   const q = filterTool.value.trim().toLowerCase()
-  if (!q) return entries.value
-  return entries.value.filter(e =>
-    e.toolName.toLowerCase().includes(q) ||
-    formatKeyArgs(e.keyArgs).toLowerCase().includes(q),
-  )
+  let list = entries.value
+  if (q) {
+    list = list.filter(e =>
+      e.toolName.toLowerCase().includes(q) ||
+      displayToolName(e).toLowerCase().includes(q) ||
+      formatEntrySummary(e).toLowerCase().includes(q),
+    )
+  }
+  // exec / execute_command 同一命令只展示一条（优先规范名）
+  const seenCmd = new Set<string>()
+  const out: AllowlistEntry[] = []
+  const ordered = [...list].sort((a, b) => {
+    if (a.toolName === 'execute_command' && b.toolName === 'exec') return -1
+    if (a.toolName === 'exec' && b.toolName === 'execute_command') return 1
+    return 0
+  })
+  for (const e of ordered) {
+    if (e.toolName === 'exec' || e.toolName === 'execute_command') {
+      const fp = JSON.stringify(e.keyArgs)
+      if (seenCmd.has(fp)) continue
+      seenCmd.add(fp)
+    }
+    out.push(e)
+  }
+  return out
 })
+
+/** 去重后的条目数（角标 / 标题计数） */
+const uniqueEntryCount = computed(() => {
+  const seen = new Set<string>()
+  let n = 0
+  for (const e of entries.value) {
+    if (e.toolName === 'exec' || e.toolName === 'execute_command') {
+      const fp = JSON.stringify(e.keyArgs)
+      if (seen.has(fp)) continue
+      seen.add(fp)
+    }
+    n++
+  }
+  return n
+})
+
+function displayToolName(entry: AllowlistEntry): string {
+  if (entry.toolName === 'exec' || entry.toolName === 'execute_command') {
+    return t('settings.security.userAllowlist.shellCommand')
+  }
+  return entry.toolName
+}
 
 function formatKeyArgs(args: Record<string, unknown>): string {
   try {
@@ -140,10 +187,21 @@ function formatKeyArgs(args: Record<string, unknown>): string {
   }
 }
 
-function formatKeyArgsShort(args: Record<string, unknown>): string {
-  const full = formatKeyArgs(args)
-  if (full.length <= 60) return full
-  return full.slice(0, 57) + '...'
+/** 授权项主文案：命令类直接显示 command，其它仍展示关键参数 */
+function formatEntrySummary(entry: AllowlistEntry): string {
+  if (
+    (entry.toolName === 'exec' || entry.toolName === 'execute_command') &&
+    typeof entry.keyArgs.command === 'string'
+  ) {
+    return entry.keyArgs.command
+  }
+  return formatKeyArgs(entry.keyArgs)
+}
+
+function formatEntrySummaryShort(entry: AllowlistEntry): string {
+  const full = formatEntrySummary(entry)
+  if (full.length <= 80) return full
+  return full.slice(0, 77) + '...'
 }
 
 function formatTime(ts: number): string {
@@ -180,11 +238,11 @@ function riskLabel(level: RiskLevel): string {
 function sourceLabel(entry: AllowlistEntry): string {
   if (entry.sourceKind === 'companion') return t('settings.security.userAllowlist.sourceCompanion')
   if (entry.sourceKind === 'watch') return t('settings.security.userAllowlist.sourceWatch')
+  if (entry.sourceKind === 'wakeup') return t('settings.security.userAllowlist.sourceWakeup')
   if (entry.sourceKind === 'manual') return t('settings.security.userAllowlist.sourceManual')
   return entry.sourceAgentKey || t('settings.security.userAllowlist.sourceTask')
 }
 
-const addToolName = ref<'execute_command' | 'exec'>('execute_command')
 const addCommand = ref('')
 const addBusy = ref(false)
 const addError = ref('')
@@ -195,10 +253,7 @@ async function addEntry() {
   addBusy.value = true
   addError.value = ''
   try {
-    const result = await window.electronAPI.allowlist.add({
-      toolName: addToolName.value,
-      command,
-    })
+    const result = await window.electronAPI.allowlist.add({ command })
     if (!result.success) {
       addError.value = result.error === 'blocked_command'
         ? t('settings.security.userAllowlist.addBlocked')
@@ -272,26 +327,40 @@ const policySaving = ref(false)
 const policySaved = ref(false)
 const policyError = ref(false)
 const policy = ref<CommandRiskPolicy>({ ...DEFAULT_POLICY, extraFreeDirs: [] })
+/** 上次成功加载/保存的快照，用于判断未保存更改 */
+const savedPolicy = ref<CommandRiskPolicy>({ ...DEFAULT_POLICY, extraFreeDirs: [] })
 const newFreeDir = ref('')
+const freeDirError = ref('')
 
-const policyDirty = computed(() => {
-  const p = policy.value
-  const d = DEFAULT_POLICY
+function clonePolicy(p: CommandRiskPolicy): CommandRiskPolicy {
+  return {
+    ...p,
+    extraFreeDirs: [...p.extraFreeDirs],
+  }
+}
+
+function policiesEqual(a: CommandRiskPolicy, b: CommandRiskPolicy): boolean {
   return (
-    p.strictParseFail !== d.strictParseFail ||
-    p.strictUnknownCmd !== d.strictUnknownCmd ||
-    p.strictIndirection !== d.strictIndirection ||
-    p.strictDynamicPath !== d.strictDynamicPath ||
-    p.relaxedParseFail !== d.relaxedParseFail ||
-    p.relaxedUnknownCmd !== d.relaxedUnknownCmd ||
-    p.relaxedIndirection !== d.relaxedIndirection ||
-    p.relaxedDynamicPath !== d.relaxedDynamicPath ||
-    p.relaxedConfirmModerate !== d.relaxedConfirmModerate ||
-    p.outsideWritesUpgrade !== d.outsideWritesUpgrade ||
-    p.subAgentBlockDangerous !== d.subAgentBlockDangerous ||
-    JSON.stringify(p.extraFreeDirs) !== JSON.stringify(d.extraFreeDirs)
+    a.strictParseFail === b.strictParseFail &&
+    a.strictUnknownCmd === b.strictUnknownCmd &&
+    a.strictIndirection === b.strictIndirection &&
+    a.strictDynamicPath === b.strictDynamicPath &&
+    a.relaxedParseFail === b.relaxedParseFail &&
+    a.relaxedUnknownCmd === b.relaxedUnknownCmd &&
+    a.relaxedIndirection === b.relaxedIndirection &&
+    a.relaxedDynamicPath === b.relaxedDynamicPath &&
+    a.relaxedConfirmModerate === b.relaxedConfirmModerate &&
+    a.outsideWritesUpgrade === b.outsideWritesUpgrade &&
+    a.subAgentBlockDangerous === b.subAgentBlockDangerous &&
+    a.extraFreeDirs.length === b.extraFreeDirs.length &&
+    a.extraFreeDirs.every((d, i) => d === b.extraFreeDirs[i])
   )
-})
+}
+
+/** 相对已保存快照是否有未保存修改 */
+const policyUnsaved = computed(() => !policiesEqual(policy.value, savedPolicy.value))
+/** 相对默认值是否不同（控制「恢复默认」是否可点） */
+const policyDiffersFromDefault = computed(() => !policiesEqual(policy.value, DEFAULT_POLICY))
 
 function mergePolicy(stored: Partial<CommandRiskPolicy> | null | undefined): CommandRiskPolicy {
   return {
@@ -308,7 +377,9 @@ async function loadPolicy() {
   policyError.value = false
   try {
     const stored = await window.electronAPI.config.get('commandRiskPolicy')
-    policy.value = mergePolicy(stored)
+    const merged = mergePolicy(stored)
+    policy.value = merged
+    savedPolicy.value = clonePolicy(merged)
     policyLoaded.value = true
   } catch {
     policyError.value = true
@@ -318,12 +389,15 @@ async function loadPolicy() {
 }
 
 async function savePolicy() {
+  if (!policyUnsaved.value || policySaving.value) return
   policySaving.value = true
+  policyError.value = false
   try {
     await window.electronAPI.config.set('commandRiskPolicy', {
       ...policy.value,
       extraFreeDirs: [...policy.value.extraFreeDirs],
     })
+    savedPolicy.value = clonePolicy(policy.value)
     policySaved.value = true
     setTimeout(() => { policySaved.value = false }, 2000)
   } catch {
@@ -337,9 +411,18 @@ function resetPolicy() {
   policy.value = { ...DEFAULT_POLICY, extraFreeDirs: [] }
 }
 
+function isAbsoluteDirPath(dir: string): boolean {
+  return dir.startsWith('/') || /^[A-Za-z]:[\\/]/.test(dir) || dir.startsWith('\\\\')
+}
+
 function addFreeDir() {
   const dir = newFreeDir.value.trim()
+  freeDirError.value = ''
   if (!dir) return
+  if (!isAbsoluteDirPath(dir)) {
+    freeDirError.value = t('settings.security.riskPolicy.extraFreeDirsInvalid')
+    return
+  }
   if (!policy.value.extraFreeDirs.includes(dir)) {
     policy.value.extraFreeDirs = [...policy.value.extraFreeDirs, dir]
   }
@@ -367,22 +450,25 @@ type PolicyLevelField =
         :class="{ active: activeSubTab === 'user' }"
         @click="switchSubTab('user')"
       >
-        ✅ {{ t('settings.security.subTabs.user') }}
-        <span class="tab-badge" v-if="entries.length > 0">{{ entries.length }}</span>
+        <CheckCircle2 :size="14" />
+        {{ t('settings.security.subTabs.user') }}
+        <span class="tab-badge" v-if="uniqueEntryCount > 0">{{ uniqueEntryCount }}</span>
       </button>
       <button
         class="sub-tab"
         :class="{ active: activeSubTab === 'builtin' }"
         @click="switchSubTab('builtin')"
       >
-        🛡️ {{ t('settings.security.subTabs.builtin') }}
+        <Shield :size="14" />
+        {{ t('settings.security.subTabs.builtin') }}
       </button>
       <button
         class="sub-tab"
         :class="{ active: activeSubTab === 'policy' }"
         @click="switchSubTab('policy')"
       >
-        ⚙️ {{ t('settings.security.subTabs.policy') }}
+        <SlidersHorizontal :size="14" />
+        {{ t('settings.security.subTabs.policy') }}
       </button>
     </div>
 
@@ -392,7 +478,7 @@ type PolicyLevelField =
         <div class="section-header">
           <div class="header-left">
             <h4>{{ t('settings.security.userAllowlist.title') }}</h4>
-            <span class="count-badge" v-if="entries.length > 0">{{ entries.length }}</span>
+            <span class="count-badge" v-if="uniqueEntryCount > 0">{{ uniqueEntryCount }}</span>
           </div>
           <div class="header-actions">
             <button class="btn btn-sm" @click="loadEntries" :disabled="loading" :title="t('common.refresh')">
@@ -403,10 +489,6 @@ type PolicyLevelField =
         <p class="section-desc">{{ t('settings.security.userAllowlist.description') }}</p>
 
         <div class="add-entry-form">
-          <select v-model="addToolName" class="input-field add-tool-select">
-            <option value="execute_command">execute_command</option>
-            <option value="exec">exec</option>
-          </select>
           <input
             v-model="addCommand"
             type="text"
@@ -442,6 +524,7 @@ type PolicyLevelField =
               {{ t('settings.security.userAllowlist.clearAll') }}
             </button>
             <template v-else>
+              <span class="clear-confirm-hint">{{ t('settings.security.userAllowlist.confirmClear') }}</span>
               <button class="btn btn-sm btn-danger" @click="clearAll">
                 {{ t('common.confirm') }}
               </button>
@@ -484,7 +567,7 @@ type PolicyLevelField =
               />
               <span>{{ t('settings.security.userAllowlist.selectAll') }}</span>
             </label>
-            <span class="count-text">{{ filteredEntries.length }} / {{ entries.length }}</span>
+            <span class="count-text">{{ filteredEntries.length }} / {{ uniqueEntryCount }}</span>
           </div>
           <div
             v-for="entry in filteredEntries"
@@ -504,13 +587,13 @@ type PolicyLevelField =
             </div>
             <div class="entry-info">
               <div class="entry-header">
-                <code class="entry-tool">{{ entry.toolName }}</code>
+                <code class="entry-tool">{{ displayToolName(entry) }}</code>
                 <span class="risk-tag" :class="riskClass(entry.riskLevelAtApproval)">
                   {{ riskLabel(entry.riskLevelAtApproval) }}
                 </span>
               </div>
-              <div class="entry-args" :title="formatKeyArgs(entry.keyArgs)">
-                <code>{{ formatKeyArgsShort(entry.keyArgs) }}</code>
+              <div class="entry-args" :title="formatEntrySummary(entry)">
+                <code>{{ formatEntrySummaryShort(entry) }}</code>
               </div>
               <div class="entry-meta">
                 <span class="meta-source">{{ sourceLabel(entry) }}</span>
@@ -554,7 +637,7 @@ type PolicyLevelField =
             <button class="btn btn-sm" @click="loadBuiltinRules">{{ t('settings.security.builtinRules.retry') }}</button>
           </div>
           <template v-else-if="builtinRules">
-            <!-- 命令白名单 -->
+            <!-- 命令风险基线 -->
             <div class="rule-block">
               <div class="rule-block-header">
                 <Terminal :size="15" />
@@ -840,6 +923,7 @@ type PolicyLevelField =
                 {{ t('settings.security.userAllowlist.add') }}
               </button>
             </div>
+            <p v-if="freeDirError" class="add-error">{{ freeDirError }}</p>
             <div v-if="policy.extraFreeDirs.length" class="free-dir-list">
               <div v-for="dir in policy.extraFreeDirs" :key="dir" class="free-dir-item">
                 <code>{{ dir }}</code>
@@ -852,13 +936,18 @@ type PolicyLevelField =
         </div>
 
         <div v-if="!policyLoading && !policyError" class="policy-actions">
-          <button class="btn btn-sm" @click="resetPolicy" :disabled="!policyDirty">
+          <button class="btn btn-sm" @click="resetPolicy" :disabled="!policyDiffersFromDefault">
             {{ t('settings.security.riskPolicy.reset') }}
           </button>
-          <button class="btn btn-sm btn-primary" @click="savePolicy" :disabled="policySaving">
+          <button
+            class="btn btn-sm btn-primary"
+            @click="savePolicy"
+            :disabled="policySaving || !policyUnsaved"
+          >
             {{ policySaving ? t('common.saving') : t('common.save') }}
           </button>
           <span v-if="policySaved" class="policy-saved">{{ t('settings.security.riskPolicy.saved') }}</span>
+          <span v-else-if="policyUnsaved" class="policy-unsaved">{{ t('settings.security.riskPolicy.unsaved') }}</span>
         </div>
 
         <p class="rule-text muted">{{ t('settings.security.riskPolicy.freeModeHint') }}</p>
@@ -1766,6 +1855,18 @@ type PolicyLevelField =
   color: #22c55e;
 }
 
+.policy-unsaved {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.clear-confirm-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-width: 280px;
+  line-height: 1.4;
+}
+
 .section-desc {
   font-size: 12px;
   color: var(--text-secondary);
@@ -1780,15 +1881,32 @@ type PolicyLevelField =
   margin-bottom: 12px;
 }
 
-.add-tool-select {
-  width: auto;
-  min-width: 150px;
-  flex-shrink: 0;
+/* 与下方搜索框同款主题输入（覆盖浏览器默认白底） */
+.input-field {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+
+.input-field::placeholder {
+  color: var(--text-muted);
+}
+
+.input-field:focus {
+  border-color: var(--accent-primary);
 }
 
 .add-command-input {
   flex: 1;
   min-width: 0;
+  width: auto;
 }
 
 .add-error {
@@ -1841,7 +1959,8 @@ type PolicyLevelField =
   padding: 10px 12px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  background: var(--bg-secondary);
+  /* 与 settings-section 同层，让内部 input 的 bg-secondary 能显出来 */
+  background: var(--bg-tertiary);
 }
 
 .free-dir-list {

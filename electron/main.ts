@@ -3617,16 +3617,20 @@ ipcMain.handle('allowlist:list', async () => {
 })
 
 ipcMain.handle('allowlist:add', async (_event, payload: {
-  toolName: string
   command: string
 }) => {
-  const toolName = payload?.toolName === 'exec' ? 'exec' : 'execute_command'
   const command = typeof payload?.command === 'string' ? payload.command.trim() : ''
   if (!command) {
     return { success: false, error: 'empty_command' }
   }
-  const { getUserAllowlist, buildAllowlistKey } = await import('./services/agent/allowlist')
+  const {
+    getUserAllowlist,
+    buildAllowlistKey,
+    CANONICAL_SHELL_COMMAND_TOOL,
+  } = await import('./services/agent/allowlist')
   const { assessCommandRiskDetailed } = await import('./services/agent/risk-assessor')
+  // exec / execute_command 授权互通，手动添加只写规范工具名
+  const toolName = CANONICAL_SHELL_COMMAND_TOOL
   const toolArgs = { command }
   const key = buildAllowlistKey(toolName, toolArgs)
   let riskLevelAtApproval: import('@shared/types/agent').RiskLevel = 'dangerous'

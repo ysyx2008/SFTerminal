@@ -764,7 +764,7 @@ interface Window {
         sourceAgentKey: string
         sourceKind: 'task' | 'companion' | 'watch' | 'wakeup' | 'manual'
       }>>
-      add: (payload: { toolName: string; command: string }) => Promise<{ success: boolean; key?: string; error?: string }>
+      add: (payload: { command: string }) => Promise<{ success: boolean; key?: string; error?: string }>
       remove: (key: string) => Promise<boolean>
       clear: () => Promise<boolean>
       getBuiltInRules: () => Promise<{

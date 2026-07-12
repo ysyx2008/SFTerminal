@@ -1,6 +1,10 @@
 export {
   buildAllowlistKey,
+  buildAllowlistKeyCandidates,
   extractAllowlistKeyArgs,
+  isShellCommandTool,
+  siblingAllowlistKeys,
+  CANONICAL_SHELL_COMMAND_TOOL,
   resetAllowlistKeyCacheForTest,
 } from './key'
 

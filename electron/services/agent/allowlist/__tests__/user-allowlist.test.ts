@@ -128,4 +128,23 @@ describe('UserAllowlist', () => {
     await allowlist.clear()
     expect(allowlist.list()).toHaveLength(0)
   })
+
+  it('remove 通过兄弟键也能清掉另一工具名的条目', async () => {
+    const cmd = { command: 'git status' }
+    const execKey = buildAllowlistKey('exec', cmd)
+    const runKey = buildAllowlistKey('execute_command', cmd)
+    await allowlist.add({
+      key: execKey,
+      toolName: 'exec',
+      keyArgs: cmd,
+      riskLevelAtApproval: 'moderate',
+      approvedAt: Date.now(),
+      sourceAgentKey: 'tab-1',
+      sourceKind: 'task',
+    })
+    expect(allowlist.list()).toHaveLength(1)
+    // 用另一工具名的键删除，应清掉已存的 exec 条目
+    await allowlist.remove(runKey)
+    expect(allowlist.list()).toHaveLength(0)
+  })
 })

@@ -1110,7 +1110,7 @@ const electronAPI = {
       sourceAgentKey: string
       sourceKind: 'task' | 'companion' | 'watch' | 'wakeup' | 'manual'
     }>>,
-    add: (payload: { toolName: string; command: string }) =>
+    add: (payload: { command: string }) =>
       ipcRenderer.invoke('allowlist:add', payload) as Promise<{ success: boolean; key?: string; error?: string }>,
     remove: (key: string) => ipcRenderer.invoke('allowlist:remove', key) as Promise<boolean>,
     clear: () => ipcRenderer.invoke('allowlist:clear') as Promise<boolean>,

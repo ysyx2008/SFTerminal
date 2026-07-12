@@ -6,6 +6,7 @@ import { promises as fs } from 'fs'
 import * as path from 'path'
 import type { RiskLevel } from '@shared/types/agent'
 import { createLogger } from '../../../utils/logger'
+import { siblingAllowlistKeys } from './key'
 
 const log = createLogger('UserAllowlist')
 
@@ -116,6 +117,11 @@ export class UserAllowlist {
 
   async add(entry: AllowlistEntry): Promise<void> {
     await this.load()
+    // 写入时清掉兄弟键，保证同一命令只保留一条
+    const siblings = siblingAllowlistKeys(entry.key)
+    if (siblings.length > 0) {
+      this.entries = this.entries.filter(e => !siblings.includes(e.key))
+    }
     const idx = this.entries.findIndex(e => e.key === entry.key)
     if (idx >= 0) {
       this.entries[idx] = entry
@@ -127,8 +133,9 @@ export class UserAllowlist {
 
   async remove(key: string): Promise<void> {
     await this.load()
+    const keys = new Set([key, ...siblingAllowlistKeys(key)])
     const before = this.entries.length
-    this.entries = this.entries.filter(e => e.key !== key)
+    this.entries = this.entries.filter(e => !keys.has(e.key))
     if (this.entries.length !== before) {
       await this.save()
     }

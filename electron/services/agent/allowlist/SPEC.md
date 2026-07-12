@@ -33,7 +33,8 @@
 ## IPC（仅用户/UI）
 
 - `allowlist:list` / `allowlist:add` / `allowlist:remove` / `allowlist:clear`
-- `allowlist:add`：用户在设置页手动预授权；`sourceKind='manual'`；`blocked` 命令拒绝加入
+- `allowlist:add`：用户在设置页手动预授权；只写 `command`（规范工具名 `execute_command`）；`sourceKind='manual'`；`blocked` 命令拒绝加入
+- `exec` / `execute_command`：按 `command` 互通命中；写入时清掉兄弟键（同一命令只留一条）；删除任一条目会清掉兄弟键
 
 ## 依赖
 
