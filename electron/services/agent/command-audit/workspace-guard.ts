@@ -86,8 +86,13 @@ function isChartsPath(filePath: string): boolean {
 /**
  * 工作区路径分区（优先于命令白名单）
  */
-export function getWorkspaceZone(targetPath: string, cwd?: string): WorkspaceZone {
+export function getWorkspaceZone(
+  targetPath: string,
+  cwd?: string,
+  extraFreeDirs: string[] = [],
+): WorkspaceZone {
   const resolved = resolveRealPath(resolveCommandPath(targetPath, cwd))
+  if (isExtraFreeDir(resolved, extraFreeDirs)) return 'free'
   if (!isInWorkspace(resolved)) return 'outside'
   if (isScratchPath(resolved) || isChartsPath(resolved)) return 'free'
 
@@ -99,6 +104,29 @@ export function getWorkspaceZone(targetPath: string, cwd?: string): WorkspaceZon
   if (PROTECTED_WORKSPACE_FILES.has(rel)) return 'protected'
 
   return 'workspace'
+}
+
+/** 用户配置的额外自由区（绝对路径前缀匹配） */
+function isExtraFreeDir(resolvedPath: string, extraFreeDirs: string[]): boolean {
+  if (!extraFreeDirs.length) return false
+  const normalized = normalizePathForCompare(resolvedPath)
+  for (const dir of extraFreeDirs) {
+    let freeRoot: string
+    try {
+      freeRoot = normalizePathForCompare(resolveRealPath(dir))
+    } catch {
+      freeRoot = normalizePathForCompare(dir)
+    }
+    if (!freeRoot) continue
+    if (normalized === freeRoot || normalized.startsWith(freeRoot.endsWith('/') ? freeRoot : freeRoot + '/')) {
+      return true
+    }
+    // Windows 路径分隔
+    if (normalized === freeRoot || normalized.startsWith(freeRoot + '\\')) {
+      return true
+    }
+  }
+  return false
 }
 
 /**
@@ -160,6 +188,7 @@ function isDevNullPath(targetPath: string, cwd?: string): boolean {
  * @param writePaths 真正的写路径（命令写时含参数路径 + 写重定向；只读时仅写重定向）
  * @param writesTo 是否涉及写操作（命令写 或 有写重定向）
  * @param cwd 工作目录
+ * @param opts 用户策略：outside 升级、额外自由区
  */
 export function adjustRiskByPathZones(
   commandLevel: RiskLevel,
@@ -167,14 +196,16 @@ export function adjustRiskByPathZones(
   writePaths: string[],
   writesTo: boolean,
   cwd?: string,
+  opts?: { outsideWritesUpgrade?: boolean; extraFreeDirs?: string[] },
 ): { level: RiskLevel; zones: WorkspaceZone[]; reasons: string[] } {
   const reasons: string[] = []
+  const extraFreeDirs = opts?.extraFreeDirs ?? []
 
   // userData 禁区检查：对读和写都生效（读 credentials.json 也 blocked）
   if (allPaths.some(p => isUserDataForbidden(p, cwd))) {
     return {
       level: 'blocked',
-      zones: allPaths.map(p => getWorkspaceZone(p, cwd)),
+      zones: allPaths.map(p => getWorkspaceZone(p, cwd, extraFreeDirs)),
       reasons: [t('risk.reason.userdata_protected')],
     }
   }
@@ -185,7 +216,7 @@ export function adjustRiskByPathZones(
 
   // 黑洞设备豁免：写 /dev/null 等无害，单独剔除不参与系统路径判定
   const nonDevNullPaths = writePaths.filter(p => !isDevNullPath(p, cwd))
-  const zones = writePaths.map(p => getWorkspaceZone(p, cwd))
+  const zones = writePaths.map(p => getWorkspaceZone(p, cwd, extraFreeDirs))
 
   // 所有写路径都是黑洞设备 -> 直接 safe（写 /dev/null 等于丢弃输出）
   if (nonDevNullPaths.length === 0) {
@@ -212,13 +243,17 @@ export function adjustRiskByPathZones(
     }
   }
 
-  const effectiveZones = nonDevNullPaths.map(p => getWorkspaceZone(p, cwd))
+  const effectiveZones = nonDevNullPaths.map(p => getWorkspaceZone(p, cwd, extraFreeDirs))
   if (effectiveZones.every(z => z === 'free')) {
     reasons.push(t('risk.reason.workspace_free'))
     return { level: 'safe', zones, reasons }
   }
-  // outside：不升级 safe 命令（如 cp）；moderate/dangerous 命令保持原等级
+  // outside：默认不升级 safe 命令（如 cp）；开启 outsideWritesUpgrade 时升为 moderate
   if (effectiveZones.some(z => z === 'outside')) {
+    if (commandLevel === 'safe' && opts?.outsideWritesUpgrade) {
+      reasons.push(t('risk.reason.workspace_outside'))
+      return { level: 'moderate', zones, reasons }
+    }
     if (commandLevel !== 'safe') {
       reasons.push(t('risk.reason.workspace_outside'))
     }

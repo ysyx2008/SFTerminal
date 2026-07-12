@@ -48,7 +48,7 @@ export async function resolveCommandToolConfirmation(
   executor: ToolExecutorConfig,
   reassess: () => Promise<RiskLevel> | RiskLevel,
 ): Promise<CommandConfirmDecision> {
-  const needConfirm = commandNeedsConfirm(assessment, config.executionMode)
+  const needConfirm = commandNeedsConfirm(assessment, config.executionMode, config.commandRiskPolicy)
   if (!needConfirm) {
     return { proceed: true, userApproved: false }
   }

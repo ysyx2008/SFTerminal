@@ -100,17 +100,24 @@ guard 把"确实危险的间接执行模式"鉴别出来标 dangerous，让 stri
 
 注意：blocked 是硬墙（路径守卫），dangerous 是风险标记（guard 命中 / hardened 系统路径）。
 
-### Fail-Closed 兜底（解析失败 / 未知命令）
+### Fail-Closed 兜底（解析失败 / 未知命令 / 间接执行 / 动态路径）
 
 | 场景 | strict 默认 | relaxed / free 默认 | 可配置？ |
 |---|---|---|---|
-| AST 解析抛错 / 无可审计子命令 | dangerous | moderate | 是（`commandRiskPolicy`） |
-| 白名单未命中（`assessUnknownCall`） | dangerous | moderate | 是（`commandRiskPolicy`） |
+| AST 解析抛错 / 无可审计子命令 | dangerous | moderate | 是 |
+| 白名单未命中 | dangerous | moderate | 是 |
+| 间接执行（node -e / python -c 等） | dangerous | moderate | 是 |
+| 动态路径（写命令） | dangerous | moderate* | 是 |
 
-- free 模式跟随 relaxed 配置（free 本就不确认，等级仅影响 UI 展示色）
-- 用户可在「设置 → 安全与权限 → 风险策略」修改四档（strict/relaxed × 解析失败/未知命令），可选 `moderate` / `dangerous` / `blocked`
-- `AuditContext.executionMode` + `AuditContext.riskPolicy` 由 `exec` / `execute_command` 经 `auditContextFromConfig` 注入
-- 路径守卫仍可把未知命令升级到 dangerous/blocked（写 hardened/critical 系统路径）
+\* 高危命令（`baseLevel=dangerous`，如 rm）动态路径保底 dangerous，策略只能升级不能降级。
+
+其它开关（同属 `CommandRiskPolicy`）：
+- `relaxedConfirmModerate`：宽松模式是否也确认 moderate（默认 false）
+- `outsideWritesUpgrade`：工作区外 safe 写是否升 moderate（默认 false）
+- `extraFreeDirs`：额外自由区绝对路径列表
+- `subAgentBlockDangerous`：子 Agent 是否拦 dangerous（默认 true）
+
+用户可在「设置 → 安全与权限 → 风险策略」修改；`AuditContext` 经 `auditContextFromConfig` 注入。
 
 ### 系统路径分级（仅对写操作生效）
 
@@ -144,6 +151,7 @@ npx vitest run electron/services/agent/command-audit/__tests__/
 
 ## 变更历史
 
+- 2026-07-12：扩展 CommandRiskPolicy（间接执行/动态路径档位、relaxedConfirmModerate、outsideWritesUpgrade、extraFreeDirs、subAgentBlockDangerous）；授权清单支持手动添加
 - 2026-07-12：Fail-Closed 按 executionMode 分档。解析失败 / 未知命令默认 strict→dangerous、relaxed/free→moderate；新增 `CommandRiskPolicy`（配置可改）+ `fail-closed-policy.ts`；设置页「风险策略」可编辑四档
 - 2026-07-09：系统路径分级。引入 `severity: critical | hardened` 字段，`/`、`/boot` 保持 blocked（critical），`/etc`、`/dev`、`/sys` 等降为 dangerous（hardened，弹确认放行）。新增 `DEV_NULL_EXEMPTIONS` 豁免 `/dev/null`、`/dev/stdout`、`/dev/stderr`（写重定向到黑洞设备直接 safe）。修复只读命令带写重定向时命令参数被误判为写路径的 bug（`find /tmp 2>/dev/null` 不再被拦）。修复 `whitelist.ts` 重复 `env` key 警告
 - 2026-07-09：收口为单通道（AST）。砍掉 argv 通道入口（`assess-argv.ts` / `exec_argv` 工具 / `spawnArgv`），`defaultAuditContext` 移至 `assess-shell.ts`。理由：shell 通道已 AST 化，审计精度与 argv 通道趋同；Agent 场景无不可信输入注入，`shell:false` 的注入面优势不成立；双工具增加 AI 选择负担且 shell 通道是 bug 温床

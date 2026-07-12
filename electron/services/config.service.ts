@@ -823,33 +823,53 @@ export class ConfigService {
   // ==================== 命令风险策略 ====================
 
   /**
-   * 获取解析失败 / 未知命令 的风险策略。
+   * 获取命令风险策略。
    * 老配置无此字段时回退默认值；字段缺失时补齐默认值。
    */
   getCommandRiskPolicy(): CommandRiskPolicy {
     const stored = this.store.get('commandRiskPolicy')
-    if (!stored) return { ...DEFAULT_COMMAND_RISK_POLICY }
-    // 逐字段补齐，防止老配置部分字段缺失
+    if (!stored) return { ...DEFAULT_COMMAND_RISK_POLICY, extraFreeDirs: [] }
     return {
       strictParseFail: stored.strictParseFail ?? DEFAULT_COMMAND_RISK_POLICY.strictParseFail,
       strictUnknownCmd: stored.strictUnknownCmd ?? DEFAULT_COMMAND_RISK_POLICY.strictUnknownCmd,
+      strictIndirection: stored.strictIndirection ?? DEFAULT_COMMAND_RISK_POLICY.strictIndirection,
+      strictDynamicPath: stored.strictDynamicPath ?? DEFAULT_COMMAND_RISK_POLICY.strictDynamicPath,
       relaxedParseFail: stored.relaxedParseFail ?? DEFAULT_COMMAND_RISK_POLICY.relaxedParseFail,
       relaxedUnknownCmd: stored.relaxedUnknownCmd ?? DEFAULT_COMMAND_RISK_POLICY.relaxedUnknownCmd,
+      relaxedIndirection: stored.relaxedIndirection ?? DEFAULT_COMMAND_RISK_POLICY.relaxedIndirection,
+      relaxedDynamicPath: stored.relaxedDynamicPath ?? DEFAULT_COMMAND_RISK_POLICY.relaxedDynamicPath,
+      relaxedConfirmModerate: stored.relaxedConfirmModerate ?? DEFAULT_COMMAND_RISK_POLICY.relaxedConfirmModerate,
+      outsideWritesUpgrade: stored.outsideWritesUpgrade ?? DEFAULT_COMMAND_RISK_POLICY.outsideWritesUpgrade,
+      extraFreeDirs: Array.isArray(stored.extraFreeDirs)
+        ? stored.extraFreeDirs.filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
+        : [],
+      subAgentBlockDangerous: stored.subAgentBlockDangerous ?? DEFAULT_COMMAND_RISK_POLICY.subAgentBlockDangerous,
     }
   }
 
   /**
-   * 设置解析失败 / 未知命令 的风险策略
+   * 设置命令风险策略
    */
   setCommandRiskPolicy(policy: CommandRiskPolicy): void {
     const allowed = new Set(COMMAND_RISK_POLICY_ALLOWED_LEVELS)
-    const sanitize = (level: RiskLevel, fallback: RiskLevel): RiskLevel =>
-      allowed.has(level) ? level : fallback
+    const sanitize = (level: RiskLevel | undefined, fallback: RiskLevel): RiskLevel =>
+      level && allowed.has(level) ? level : fallback
+    const dirs = Array.isArray(policy.extraFreeDirs)
+      ? [...new Set(policy.extraFreeDirs.map(d => d.trim()).filter(Boolean))]
+      : []
     this.store.set('commandRiskPolicy', {
       strictParseFail: sanitize(policy.strictParseFail, DEFAULT_COMMAND_RISK_POLICY.strictParseFail),
       strictUnknownCmd: sanitize(policy.strictUnknownCmd, DEFAULT_COMMAND_RISK_POLICY.strictUnknownCmd),
+      strictIndirection: sanitize(policy.strictIndirection, DEFAULT_COMMAND_RISK_POLICY.strictIndirection),
+      strictDynamicPath: sanitize(policy.strictDynamicPath, DEFAULT_COMMAND_RISK_POLICY.strictDynamicPath),
       relaxedParseFail: sanitize(policy.relaxedParseFail, DEFAULT_COMMAND_RISK_POLICY.relaxedParseFail),
       relaxedUnknownCmd: sanitize(policy.relaxedUnknownCmd, DEFAULT_COMMAND_RISK_POLICY.relaxedUnknownCmd),
+      relaxedIndirection: sanitize(policy.relaxedIndirection, DEFAULT_COMMAND_RISK_POLICY.relaxedIndirection),
+      relaxedDynamicPath: sanitize(policy.relaxedDynamicPath, DEFAULT_COMMAND_RISK_POLICY.relaxedDynamicPath),
+      relaxedConfirmModerate: policy.relaxedConfirmModerate === true,
+      outsideWritesUpgrade: policy.outsideWritesUpgrade === true,
+      extraFreeDirs: dirs,
+      subAgentBlockDangerous: policy.subAgentBlockDangerous !== false,
     })
   }
 

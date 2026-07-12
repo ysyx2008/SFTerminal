@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Trash2, RefreshCw, Search, Shield, ShieldCheck, ShieldAlert, Ban, FolderLock, FileLock2, HardDrive, Terminal } from 'lucide-vue-next'
-import type { RiskLevel } from '@shared/types/agent'
+import { Trash2, RefreshCw, Search, Shield, ShieldCheck, ShieldAlert, Ban, FolderLock, FileLock2, HardDrive, Terminal, Plus } from 'lucide-vue-next'
+import type { RiskLevel, CommandRiskPolicy } from '@shared/types/agent'
+import { DEFAULT_COMMAND_RISK_POLICY } from '@shared/types/agent'
 
 type AllowlistEntry = {
   key: string
@@ -11,7 +12,7 @@ type AllowlistEntry = {
   riskLevelAtApproval: RiskLevel
   approvedAt: number
   sourceAgentKey: string
-  sourceKind: 'task' | 'companion' | 'watch'
+  sourceKind: 'task' | 'companion' | 'watch' | 'wakeup' | 'manual'
 }
 
 type BuiltInRulesView = {
@@ -179,7 +180,38 @@ function riskLabel(level: RiskLevel): string {
 function sourceLabel(entry: AllowlistEntry): string {
   if (entry.sourceKind === 'companion') return t('settings.security.userAllowlist.sourceCompanion')
   if (entry.sourceKind === 'watch') return t('settings.security.userAllowlist.sourceWatch')
+  if (entry.sourceKind === 'manual') return t('settings.security.userAllowlist.sourceManual')
   return entry.sourceAgentKey || t('settings.security.userAllowlist.sourceTask')
+}
+
+const addToolName = ref<'execute_command' | 'exec'>('execute_command')
+const addCommand = ref('')
+const addBusy = ref(false)
+const addError = ref('')
+
+async function addEntry() {
+  const command = addCommand.value.trim()
+  if (!command || addBusy.value) return
+  addBusy.value = true
+  addError.value = ''
+  try {
+    const result = await window.electronAPI.allowlist.add({
+      toolName: addToolName.value,
+      command,
+    })
+    if (!result.success) {
+      addError.value = result.error === 'blocked_command'
+        ? t('settings.security.userAllowlist.addBlocked')
+        : t('settings.security.userAllowlist.addFailed')
+      return
+    }
+    addCommand.value = ''
+    await loadEntries()
+  } catch {
+    addError.value = t('settings.security.userAllowlist.addFailed')
+  } finally {
+    addBusy.value = false
+  }
 }
 
 async function loadEntries() {
@@ -228,19 +260,10 @@ function toggleSelectAll(checked: boolean) {
 onMounted(loadEntries)
 
 // ==================== 命令风险策略 ====================
-type CommandRiskPolicy = {
-  strictParseFail: RiskLevel
-  strictUnknownCmd: RiskLevel
-  relaxedParseFail: RiskLevel
-  relaxedUnknownCmd: RiskLevel
-}
-
-const POLICY_ALLOWED_LEVELS: RiskLevel[] = ['moderate', 'dangerous', 'blocked'] as const
+const POLICY_ALLOWED_LEVELS: RiskLevel[] = ['moderate', 'dangerous', 'blocked']
 const DEFAULT_POLICY: CommandRiskPolicy = {
-  strictParseFail: 'dangerous',
-  strictUnknownCmd: 'dangerous',
-  relaxedParseFail: 'moderate',
-  relaxedUnknownCmd: 'moderate',
+  ...DEFAULT_COMMAND_RISK_POLICY,
+  extraFreeDirs: [],
 }
 
 const policyLoaded = ref(false)
@@ -248,28 +271,44 @@ const policyLoading = ref(false)
 const policySaving = ref(false)
 const policySaved = ref(false)
 const policyError = ref(false)
-const policy = ref<CommandRiskPolicy>({ ...DEFAULT_POLICY })
+const policy = ref<CommandRiskPolicy>({ ...DEFAULT_POLICY, extraFreeDirs: [] })
+const newFreeDir = ref('')
+
 const policyDirty = computed(() => {
   const p = policy.value
+  const d = DEFAULT_POLICY
   return (
-    p.strictParseFail !== DEFAULT_POLICY.strictParseFail ||
-    p.strictUnknownCmd !== DEFAULT_POLICY.strictUnknownCmd ||
-    p.relaxedParseFail !== DEFAULT_POLICY.relaxedParseFail ||
-    p.relaxedUnknownCmd !== DEFAULT_POLICY.relaxedUnknownCmd
+    p.strictParseFail !== d.strictParseFail ||
+    p.strictUnknownCmd !== d.strictUnknownCmd ||
+    p.strictIndirection !== d.strictIndirection ||
+    p.strictDynamicPath !== d.strictDynamicPath ||
+    p.relaxedParseFail !== d.relaxedParseFail ||
+    p.relaxedUnknownCmd !== d.relaxedUnknownCmd ||
+    p.relaxedIndirection !== d.relaxedIndirection ||
+    p.relaxedDynamicPath !== d.relaxedDynamicPath ||
+    p.relaxedConfirmModerate !== d.relaxedConfirmModerate ||
+    p.outsideWritesUpgrade !== d.outsideWritesUpgrade ||
+    p.subAgentBlockDangerous !== d.subAgentBlockDangerous ||
+    JSON.stringify(p.extraFreeDirs) !== JSON.stringify(d.extraFreeDirs)
   )
 })
+
+function mergePolicy(stored: Partial<CommandRiskPolicy> | null | undefined): CommandRiskPolicy {
+  return {
+    ...DEFAULT_POLICY,
+    ...(stored || {}),
+    extraFreeDirs: Array.isArray(stored?.extraFreeDirs)
+      ? stored!.extraFreeDirs!.filter(d => typeof d === 'string' && d.trim())
+      : [],
+  }
+}
 
 async function loadPolicy() {
   policyLoading.value = true
   policyError.value = false
   try {
     const stored = await window.electronAPI.config.get('commandRiskPolicy')
-    policy.value = {
-      strictParseFail: stored?.strictParseFail ?? DEFAULT_POLICY.strictParseFail,
-      strictUnknownCmd: stored?.strictUnknownCmd ?? DEFAULT_POLICY.strictUnknownCmd,
-      relaxedParseFail: stored?.relaxedParseFail ?? DEFAULT_POLICY.relaxedParseFail,
-      relaxedUnknownCmd: stored?.relaxedUnknownCmd ?? DEFAULT_POLICY.relaxedUnknownCmd,
-    }
+    policy.value = mergePolicy(stored)
     policyLoaded.value = true
   } catch {
     policyError.value = true
@@ -281,7 +320,10 @@ async function loadPolicy() {
 async function savePolicy() {
   policySaving.value = true
   try {
-    await window.electronAPI.config.set('commandRiskPolicy', { ...policy.value })
+    await window.electronAPI.config.set('commandRiskPolicy', {
+      ...policy.value,
+      extraFreeDirs: [...policy.value.extraFreeDirs],
+    })
     policySaved.value = true
     setTimeout(() => { policySaved.value = false }, 2000)
   } catch {
@@ -292,8 +334,28 @@ async function savePolicy() {
 }
 
 function resetPolicy() {
-  policy.value = { ...DEFAULT_POLICY }
+  policy.value = { ...DEFAULT_POLICY, extraFreeDirs: [] }
 }
+
+function addFreeDir() {
+  const dir = newFreeDir.value.trim()
+  if (!dir) return
+  if (!policy.value.extraFreeDirs.includes(dir)) {
+    policy.value.extraFreeDirs = [...policy.value.extraFreeDirs, dir]
+  }
+  newFreeDir.value = ''
+}
+
+function removeFreeDir(dir: string) {
+  policy.value.extraFreeDirs = policy.value.extraFreeDirs.filter(d => d !== dir)
+}
+
+type PolicyLevelField =
+  | 'strictParseFail' | 'relaxedParseFail'
+  | 'strictUnknownCmd' | 'relaxedUnknownCmd'
+  | 'strictIndirection' | 'relaxedIndirection'
+  | 'strictDynamicPath' | 'relaxedDynamicPath'
+
 </script>
 
 <template>
@@ -339,6 +401,25 @@ function resetPolicy() {
           </div>
         </div>
         <p class="section-desc">{{ t('settings.security.userAllowlist.description') }}</p>
+
+        <div class="add-entry-form">
+          <select v-model="addToolName" class="input-field add-tool-select">
+            <option value="execute_command">execute_command</option>
+            <option value="exec">exec</option>
+          </select>
+          <input
+            v-model="addCommand"
+            type="text"
+            class="input-field add-command-input"
+            :placeholder="t('settings.security.userAllowlist.addPlaceholder')"
+            @keydown.enter.prevent="addEntry"
+          />
+          <button class="btn btn-sm btn-primary" :disabled="addBusy || !addCommand.trim()" @click="addEntry">
+            <Plus :size="14" />
+            {{ t('settings.security.userAllowlist.add') }}
+          </button>
+        </div>
+        <p v-if="addError" class="add-error">{{ addError }}</p>
 
         <div class="toolbar">
           <div class="search-box">
@@ -663,79 +744,108 @@ function resetPolicy() {
           <button class="btn btn-sm" @click="loadPolicy">{{ t('settings.security.builtinRules.retry') }}</button>
         </div>
 
-        <div v-else class="policy-grid">
-          <div class="policy-row policy-row-header">
-            <div class="policy-cell"></div>
-            <div class="policy-cell policy-cell-head">
-              <div class="policy-mode-tag mode-strict">{{ t('ai.strict') }}</div>
-              <div class="policy-mode-desc">{{ t('settings.security.riskPolicy.strictDesc') }}</div>
+        <div v-else class="policy-body">
+          <div class="policy-grid">
+            <div class="policy-row policy-row-header">
+              <div class="policy-cell"></div>
+              <div class="policy-cell policy-cell-head">
+                <div class="policy-mode-tag mode-strict">{{ t('ai.strict') }}</div>
+                <div class="policy-mode-desc">{{ t('settings.security.riskPolicy.strictDesc') }}</div>
+              </div>
+              <div class="policy-cell policy-cell-head">
+                <div class="policy-mode-tag mode-relaxed">{{ t('ai.relaxed') }}</div>
+                <div class="policy-mode-desc">{{ t('settings.security.riskPolicy.relaxedDesc') }}</div>
+              </div>
             </div>
-            <div class="policy-cell policy-cell-head">
-              <div class="policy-mode-tag mode-relaxed">{{ t('ai.relaxed') }}</div>
-              <div class="policy-mode-desc">{{ t('settings.security.riskPolicy.relaxedDesc') }}</div>
+
+            <div
+              v-for="row in ([
+                { label: 'colParseFail', strict: 'strictParseFail', relaxed: 'relaxedParseFail' },
+                { label: 'colUnknownCmd', strict: 'strictUnknownCmd', relaxed: 'relaxedUnknownCmd' },
+                { label: 'colIndirection', strict: 'strictIndirection', relaxed: 'relaxedIndirection' },
+                { label: 'colDynamicPath', strict: 'strictDynamicPath', relaxed: 'relaxedDynamicPath' },
+              ] as Array<{ label: string; strict: PolicyLevelField; relaxed: PolicyLevelField }>)"
+              :key="row.label"
+              class="policy-row"
+            >
+              <div class="policy-cell policy-cell-label">
+                <div class="policy-scenario-name">{{ t(`settings.security.riskPolicy.${row.label}`) }}</div>
+              </div>
+              <div class="policy-cell">
+                <div class="policy-radio-group" role="radiogroup">
+                  <label
+                    v-for="lvl in POLICY_ALLOWED_LEVELS"
+                    :key="row.strict + lvl"
+                    class="policy-radio"
+                    :class="[riskClass(lvl), { active: policy[row.strict] === lvl }]"
+                  >
+                    <input v-model="policy[row.strict]" type="radio" :value="lvl" />
+                    {{ riskLabel(lvl) }}
+                  </label>
+                </div>
+              </div>
+              <div class="policy-cell">
+                <div class="policy-radio-group" role="radiogroup">
+                  <label
+                    v-for="lvl in POLICY_ALLOWED_LEVELS"
+                    :key="row.relaxed + lvl"
+                    class="policy-radio"
+                    :class="[riskClass(lvl), { active: policy[row.relaxed] === lvl }]"
+                  >
+                    <input v-model="policy[row.relaxed]" type="radio" :value="lvl" />
+                    {{ riskLabel(lvl) }}
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div class="policy-row">
-            <div class="policy-cell policy-cell-label">
-              <div class="policy-scenario-name">{{ t('settings.security.riskPolicy.colParseFail') }}</div>
-            </div>
-            <div class="policy-cell">
-              <div class="policy-radio-group" role="radiogroup">
-                <label
-                  v-for="lvl in POLICY_ALLOWED_LEVELS"
-                  :key="'strict-parse-' + lvl"
-                  class="policy-radio"
-                  :class="[riskClass(lvl), { active: policy.strictParseFail === lvl }]"
-                >
-                  <input v-model="policy.strictParseFail" type="radio" :value="lvl" />
-                  {{ riskLabel(lvl) }}
-                </label>
+          <div class="policy-toggles">
+            <label class="policy-toggle">
+              <input v-model="policy.relaxedConfirmModerate" type="checkbox" />
+              <div>
+                <div class="policy-toggle-title">{{ t('settings.security.riskPolicy.relaxedConfirmModerate') }}</div>
+                <div class="policy-toggle-desc">{{ t('settings.security.riskPolicy.relaxedConfirmModerateDesc') }}</div>
               </div>
-            </div>
-            <div class="policy-cell">
-              <div class="policy-radio-group" role="radiogroup">
-                <label
-                  v-for="lvl in POLICY_ALLOWED_LEVELS"
-                  :key="'relaxed-parse-' + lvl"
-                  class="policy-radio"
-                  :class="[riskClass(lvl), { active: policy.relaxedParseFail === lvl }]"
-                >
-                  <input v-model="policy.relaxedParseFail" type="radio" :value="lvl" />
-                  {{ riskLabel(lvl) }}
-                </label>
+            </label>
+            <label class="policy-toggle">
+              <input v-model="policy.outsideWritesUpgrade" type="checkbox" />
+              <div>
+                <div class="policy-toggle-title">{{ t('settings.security.riskPolicy.outsideWritesUpgrade') }}</div>
+                <div class="policy-toggle-desc">{{ t('settings.security.riskPolicy.outsideWritesUpgradeDesc') }}</div>
               </div>
-            </div>
+            </label>
+            <label class="policy-toggle">
+              <input v-model="policy.subAgentBlockDangerous" type="checkbox" />
+              <div>
+                <div class="policy-toggle-title">{{ t('settings.security.riskPolicy.subAgentBlockDangerous') }}</div>
+                <div class="policy-toggle-desc">{{ t('settings.security.riskPolicy.subAgentBlockDangerousDesc') }}</div>
+              </div>
+            </label>
           </div>
 
-          <div class="policy-row">
-            <div class="policy-cell policy-cell-label">
-              <div class="policy-scenario-name">{{ t('settings.security.riskPolicy.colUnknownCmd') }}</div>
+          <div class="policy-free-dirs">
+            <div class="policy-toggle-title">{{ t('settings.security.riskPolicy.extraFreeDirs') }}</div>
+            <div class="policy-toggle-desc">{{ t('settings.security.riskPolicy.extraFreeDirsDesc') }}</div>
+            <div class="add-entry-form" style="margin-top: 8px">
+              <input
+                v-model="newFreeDir"
+                type="text"
+                class="input-field add-command-input"
+                :placeholder="t('settings.security.riskPolicy.extraFreeDirsPlaceholder')"
+                @keydown.enter.prevent="addFreeDir"
+              />
+              <button class="btn btn-sm" :disabled="!newFreeDir.trim()" @click="addFreeDir">
+                <Plus :size="14" />
+                {{ t('settings.security.userAllowlist.add') }}
+              </button>
             </div>
-            <div class="policy-cell">
-              <div class="policy-radio-group" role="radiogroup">
-                <label
-                  v-for="lvl in POLICY_ALLOWED_LEVELS"
-                  :key="'strict-unknown-' + lvl"
-                  class="policy-radio"
-                  :class="[riskClass(lvl), { active: policy.strictUnknownCmd === lvl }]"
-                >
-                  <input v-model="policy.strictUnknownCmd" type="radio" :value="lvl" />
-                  {{ riskLabel(lvl) }}
-                </label>
-              </div>
-            </div>
-            <div class="policy-cell">
-              <div class="policy-radio-group" role="radiogroup">
-                <label
-                  v-for="lvl in POLICY_ALLOWED_LEVELS"
-                  :key="'relaxed-unknown-' + lvl"
-                  class="policy-radio"
-                  :class="[riskClass(lvl), { active: policy.relaxedUnknownCmd === lvl }]"
-                >
-                  <input v-model="policy.relaxedUnknownCmd" type="radio" :value="lvl" />
-                  {{ riskLabel(lvl) }}
-                </label>
+            <div v-if="policy.extraFreeDirs.length" class="free-dir-list">
+              <div v-for="dir in policy.extraFreeDirs" :key="dir" class="free-dir-item">
+                <code>{{ dir }}</code>
+                <button class="btn btn-sm btn-icon" @click="removeFreeDir(dir)" :title="t('common.delete')">
+                  <Trash2 :size="12" />
+                </button>
               </div>
             </div>
           </div>
@@ -1661,5 +1771,99 @@ function resetPolicy() {
   color: var(--text-secondary);
   margin: 0 0 8px 0;
   line-height: 1.5;
+}
+
+.add-entry-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.add-tool-select {
+  width: auto;
+  min-width: 150px;
+  flex-shrink: 0;
+}
+
+.add-command-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.add-error {
+  color: #ef4444;
+  font-size: 12px;
+  margin: -4px 0 12px 0;
+}
+
+.policy-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.policy-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.policy-toggle {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.policy-toggle input {
+  margin-top: 3px;
+}
+
+.policy-toggle-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.policy-toggle-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.policy-free-dirs {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.free-dir-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.free-dir-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--bg-primary);
+}
+
+.free-dir-item code {
+  font-size: 11px;
+  word-break: break-all;
+  color: var(--text-secondary);
 }
 </style>

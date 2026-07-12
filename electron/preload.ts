@@ -1108,8 +1108,10 @@ const electronAPI = {
       riskLevelAtApproval: import('@shared/types/agent').RiskLevel
       approvedAt: number
       sourceAgentKey: string
-      sourceKind: 'task' | 'companion' | 'watch'
+      sourceKind: 'task' | 'companion' | 'watch' | 'wakeup' | 'manual'
     }>>,
+    add: (payload: { toolName: string; command: string }) =>
+      ipcRenderer.invoke('allowlist:add', payload) as Promise<{ success: boolean; key?: string; error?: string }>,
     remove: (key: string) => ipcRenderer.invoke('allowlist:remove', key) as Promise<boolean>,
     clear: () => ipcRenderer.invoke('allowlist:clear') as Promise<boolean>,
     // NOTE: 返回类型须与 built-in-rules-view.ts 的 BuiltInRulesView 保持同步；

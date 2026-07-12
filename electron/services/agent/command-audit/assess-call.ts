@@ -8,8 +8,8 @@ import type { AuditContext, AuditedCall, AuditedRedirect, CallRiskAssessment } f
 import { assessCommandFlags, getArgvCommandRule } from './whitelist'
 import { adjustRiskByPathZones } from './workspace-guard'
 import { maxRisk } from './risk-level'
-import { checkIndirectionGuard, byGuard } from './indirection-guard'
-import { resolveFailClosedLevel } from './fail-closed-policy'
+import { checkIndirectionGuard } from './indirection-guard'
+import { resolveFailClosedLevel, resolveOutsideWritesUpgrade, resolveExtraFreeDirs } from './fail-closed-policy'
 
 function collectWritePaths(call: AuditedCall, extraPaths: string[]): string[] {
   const fromRedirects = call.redirects
@@ -33,7 +33,10 @@ function assessUnknownCall(
 
   if (hasWriteRedirect && allPaths.length > 0) {
     // 未识别命令默认按写命令处理（cmdWritesTo=true 语义）
-    const pathAdjust = adjustRiskByPathZones(baseLevel, allPaths, allPaths, true, cwd)
+    const pathAdjust = adjustRiskByPathZones(baseLevel, allPaths, allPaths, true, cwd, {
+      outsideWritesUpgrade: resolveOutsideWritesUpgrade(ctx),
+      extraFreeDirs: resolveExtraFreeDirs(ctx),
+    })
     return {
       level: pathAdjust.level,
       commandLevel: baseLevel,
@@ -73,11 +76,16 @@ export function assessAuditedCall(
   extraWritePaths: string[] = [],
 ): CallRiskAssessment {
   // 间接执行守卫：解释器内联 / 包装器 / 调度器 / 结构性 flag 规则
-  // 通道无关，命中按 guard 返回的 level 标记（dangerous 或 moderate）。
+  // 命中后等级由用户策略决定（默认 strict→dangerous、relaxed→moderate）。
   // blocked 级别留给路径守卫（写系统路径等绝对禁止场景）。
   const guardHit = checkIndirectionGuard(call)
   if (guardHit) {
-    return byGuard(guardHit.level, guardHit.reason)
+    const level = resolveFailClosedLevel('indirection', ctx)
+    return {
+      level,
+      commandLevel: level,
+      reasons: [guardHit.reason],
+    }
   }
 
   const cwd = ctx.cwd ?? getScratchPath()
@@ -88,10 +96,12 @@ export function assessAuditedCall(
   }
 
   if (call.dynamicPaths && rule.writesTo) {
-    // 动态路径无法静态审计，按命令本身的危险程度降级：
-    // - rm/chmod/chown 等高危命令 -> dangerous（Fail-Closed）
-    // - cp/mv/mkdir/touch/ln 等轻度写命令 -> moderate（与 relaxed 放行一致）
-    const dynamicLevel: RiskLevel = rule.baseLevel === 'dangerous' ? 'dangerous' : 'moderate'
+    // 动态路径无法静态审计：等级由用户策略决定。
+    // 高危命令（rm 等）保底 dangerous，不允许策略降到 moderate。
+    const policyLevel = resolveFailClosedLevel('dynamicPath', ctx)
+    const dynamicLevel = rule.baseLevel === 'dangerous'
+      ? maxRisk(policyLevel, 'dangerous')
+      : policyLevel
     return {
       level: dynamicLevel,
       commandLevel: dynamicLevel,
@@ -123,6 +133,10 @@ export function assessAuditedCall(
     writePaths,
     writes,
     cwd,
+    {
+      outsideWritesUpgrade: resolveOutsideWritesUpgrade(ctx),
+      extraFreeDirs: resolveExtraFreeDirs(ctx),
+    },
   )
   reasons.push(...pathAdjust.reasons)
 
@@ -155,7 +169,10 @@ export function assessRedirectPaths(
   if (writePaths.length === 0) return null
 
   const cwd = ctx.cwd ?? getScratchPath()
-  const pathAdjust = adjustRiskByPathZones('moderate', writePaths, writePaths, true, cwd)
+  const pathAdjust = adjustRiskByPathZones('moderate', writePaths, writePaths, true, cwd, {
+    outsideWritesUpgrade: resolveOutsideWritesUpgrade(ctx),
+    extraFreeDirs: resolveExtraFreeDirs(ctx),
+  })
   return {
     level: pathAdjust.level,
     commandLevel: 'moderate',

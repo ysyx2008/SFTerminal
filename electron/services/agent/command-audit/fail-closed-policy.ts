@@ -1,36 +1,69 @@
 /**
- * 解析失败 / 未知命令 的等级选择（按 executionMode + 用户配置的 riskPolicy）
+ * Fail-Closed / 策略档位解析（按 executionMode + 用户配置的 riskPolicy）
  *
- * 设计：
- * - 等级本身是命令固有属性，但"解析失败"和"未知命令"是兜底场景，
- *   其等级由用户配置决定（默认 strict->dangerous、relaxed->moderate）。
- * - free 模式跟随 relaxed 配置（free 本就不确认，等级仅影响 UI 展示色）。
- * - AuditContext 不带 policy 时回退默认值，保证旧调用方行为不变。
+ * - free 模式跟随 relaxed 配置
+ * - AuditContext 不带 policy 时回退 DEFAULT_COMMAND_RISK_POLICY
  */
 import type { RiskLevel, ExecutionMode, CommandRiskPolicy } from '@shared/types/agent'
 import { DEFAULT_COMMAND_RISK_POLICY } from '@shared/types/agent'
 import type { AuditContext } from './types'
 
-export type FailClosedKind = 'parseFail' | 'unknownCmd'
+export type FailClosedKind = 'parseFail' | 'unknownCmd' | 'indirection' | 'dynamicPath'
+
+function effectiveMode(mode: ExecutionMode | undefined): 'strict' | 'relaxed' {
+  const m = mode ?? 'relaxed'
+  return m === 'free' ? 'relaxed' : m === 'strict' ? 'strict' : 'relaxed'
+}
+
+function policyOf(ctx?: AuditContext): CommandRiskPolicy {
+  const p = ctx?.riskPolicy
+  if (!p) return DEFAULT_COMMAND_RISK_POLICY
+  return {
+    ...DEFAULT_COMMAND_RISK_POLICY,
+    ...p,
+    extraFreeDirs: Array.isArray(p.extraFreeDirs) ? p.extraFreeDirs : DEFAULT_COMMAND_RISK_POLICY.extraFreeDirs,
+  }
+}
 
 /**
- * 按 executionMode + riskPolicy 选档位。
- *
- * - executionMode 缺省 -> 按 'relaxed' 取（向后兼容旧调用方，relaxed 行为更宽容）
- * - riskPolicy 缺省 -> DEFAULT_COMMAND_RISK_POLICY
+ * 按 executionMode + riskPolicy 选 Fail-Closed 档位。
  */
 export function resolveFailClosedLevel(
   kind: FailClosedKind,
   ctx?: AuditContext,
 ): RiskLevel {
-  const mode: ExecutionMode = ctx?.executionMode ?? 'relaxed'
-  const policy: CommandRiskPolicy = ctx?.riskPolicy ?? DEFAULT_COMMAND_RISK_POLICY
-
-  // free 跟随 relaxed 配置
-  const effMode: ExecutionMode = mode === 'free' ? 'relaxed' : mode
+  const mode = effectiveMode(ctx?.executionMode)
+  const policy = policyOf(ctx)
 
   if (kind === 'parseFail') {
-    return effMode === 'strict' ? policy.strictParseFail : policy.relaxedParseFail
+    return mode === 'strict' ? policy.strictParseFail : policy.relaxedParseFail
   }
-  return effMode === 'strict' ? policy.strictUnknownCmd : policy.relaxedUnknownCmd
+  if (kind === 'unknownCmd') {
+    return mode === 'strict' ? policy.strictUnknownCmd : policy.relaxedUnknownCmd
+  }
+  if (kind === 'indirection') {
+    return mode === 'strict' ? policy.strictIndirection : policy.relaxedIndirection
+  }
+  return mode === 'strict' ? policy.strictDynamicPath : policy.relaxedDynamicPath
+}
+
+/** relaxed 是否也确认 moderate */
+export function resolveRelaxedConfirmModerate(ctx?: AuditContext): boolean {
+  return policyOf(ctx).relaxedConfirmModerate === true
+}
+
+/** 工作区外写是否升级 */
+export function resolveOutsideWritesUpgrade(ctx?: AuditContext): boolean {
+  return policyOf(ctx).outsideWritesUpgrade === true
+}
+
+/** 额外自由区目录 */
+export function resolveExtraFreeDirs(ctx?: AuditContext): string[] {
+  const dirs = policyOf(ctx).extraFreeDirs
+  return Array.isArray(dirs) ? dirs.filter(d => typeof d === 'string' && d.trim()) : []
+}
+
+/** 子 Agent 是否阻止 dangerous */
+export function resolveSubAgentBlockDangerous(policy?: CommandRiskPolicy | null): boolean {
+  return (policy ?? DEFAULT_COMMAND_RISK_POLICY).subAgentBlockDangerous !== false
 }

@@ -32,7 +32,8 @@
 
 ## IPC（仅用户/UI）
 
-- `allowlist:list` / `allowlist:remove` / `allowlist:clear`
+- `allowlist:list` / `allowlist:add` / `allowlist:remove` / `allowlist:clear`
+- `allowlist:add`：用户在设置页手动预授权；`sourceKind='manual'`；`blocked` 命令拒绝加入
 
 ## 依赖
 

@@ -14,6 +14,13 @@ describe('confirm-policy', () => {
     expect(commandNeedsConfirm(assessment('moderate', true), 'relaxed')).toBe(false)
   })
 
+  it('relaxed: 开启 relaxedConfirmModerate 时 moderate 也确认', () => {
+    expect(commandNeedsConfirm(assessment('moderate'), 'relaxed', {
+      ...({} as any),
+      relaxedConfirmModerate: true,
+    })).toBe(true)
+  })
+
   it('relaxed: 已知 safe 不确认', () => {
     expect(commandNeedsConfirm(assessment('safe', false), 'relaxed')).toBe(false)
   })
@@ -40,5 +47,14 @@ describe('confirm-policy', () => {
 
   it('sub-agent 不再阻止 unknown moderate（与主 Agent 一致）', () => {
     expect(isSubAgentBlocked(assessment('moderate', true))).toBe(false)
+  })
+
+  it('sub-agent 关闭 blockDangerous 时不拦 dangerous', () => {
+    expect(isSubAgentBlocked(assessment('dangerous'), {
+      subAgentBlockDangerous: false,
+    } as any)).toBe(false)
+    expect(isSubAgentBlocked(assessment('blocked'), {
+      subAgentBlockDangerous: false,
+    } as any)).toBe(true)
   })
 })

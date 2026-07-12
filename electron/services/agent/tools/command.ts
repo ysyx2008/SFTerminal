@@ -166,11 +166,11 @@ export async function executeCommand(
     }
   }
 
-  if (isSubAgentBlocked(assessment) && executor.isSubAgent) {
+  if (isSubAgentBlocked(assessment, config.commandRiskPolicy) && executor.isSubAgent) {
     return { success: false, output: '', error: '高危命令在子任务模式下被系统自动阻止。' }
   }
 
-  const needConfirm = commandNeedsConfirm(assessment, config.executionMode)
+  const needConfirm = commandNeedsConfirm(assessment, config.executionMode, config.commandRiskPolicy)
   const riskLevel = assessment.level
 
   executor.addStep({

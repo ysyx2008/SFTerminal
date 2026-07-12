@@ -1,30 +1,40 @@
 /**
  * 命令执行确认策略
  *
- * relaxed：只确认 dangerous / blocked，陌生命令（hasUnknown）不再确认--
- *          避免给用户造成"中风险也要确认"的噪音，未识别命令静默放行。
+ * relaxed：默认只确认 dangerous / blocked；
+ *          若 riskPolicy.relaxedConfirmModerate=true，则 moderate 也确认。
  * free：不确认（用户自担）。
  */
-import type { RiskLevel } from '@shared/types/agent'
+import type { RiskLevel, CommandRiskPolicy } from '@shared/types/agent'
 import type { CommandRiskAssessment } from './types'
+import { resolveSubAgentBlockDangerous } from './fail-closed-policy'
 
 export function commandNeedsConfirm(
   assessment: CommandRiskAssessment,
   executionMode: 'strict' | 'relaxed' | 'free',
+  policy?: CommandRiskPolicy | null,
 ): boolean {
   if (executionMode === 'strict') return true
   if (executionMode === 'free') return false
-  return assessment.level === 'blocked' || assessment.level === 'dangerous'
+  if (assessment.level === 'blocked' || assessment.level === 'dangerous') return true
+  if (assessment.level === 'moderate' && policy?.relaxedConfirmModerate) return true
+  return false
 }
 
-/** 子 Agent 模式：与主 Agent relaxed 一致，只阻止 dangerous/blocked */
+/**
+ * 子 Agent 模式：默认阻止 dangerous/blocked。
+ * 若 policy.subAgentBlockDangerous=false，仅阻止 blocked。
+ */
 export function isSubAgentBlocked(
   assessment: CommandRiskAssessment,
+  policy?: CommandRiskPolicy | null,
 ): boolean {
-  return assessment.level === 'dangerous' || assessment.level === 'blocked'
+  if (assessment.level === 'blocked') return true
+  if (assessment.level === 'dangerous' && resolveSubAgentBlockDangerous(policy)) return true
+  return false
 }
 
-/** 展示用风险等级：未知但 moderate 时仍显示 moderate（非 dangerous） */
+/** 展示用风险等级 */
 export function displayRiskLevel(assessment: CommandRiskAssessment): RiskLevel {
   return assessment.level
 }
