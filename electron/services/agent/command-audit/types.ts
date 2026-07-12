@@ -13,10 +13,10 @@ import type { RiskLevel, ExecutionMode, CommandRiskPolicy } from '@shared/types/
  * 工作区路径分区
  *
  * 分区设计（C 方案）：
- * - free      自由区（scratch/、charts/）—— 读写删全免确认
- * - protected 保护文件（templates/、IDENTITY.md 等）—— 写/删需确认
- * - workspace  工作区内其他位置 —— 写/删需确认（moderate）
- * - outside    工作区外 —— safe 命令（cp）不升级；moderate/dangerous 保持；系统路径仍 blocked/dangerous
+ * - free       scratch/、charts/、系统临时目录（/tmp、os.tmpdir 等）— 读写删免确认
+ * - protected  templates/、根目录人格配置 md — 写删需确认
+ * - workspace  工作区内其他 — 写删需确认
+ * - outside    工作区外 — safe 命令（如 cp）不升级；moderate/dangerous 保持原等级
  */
 export type WorkspaceZone = 'free' | 'protected' | 'workspace' | 'outside'
 

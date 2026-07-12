@@ -2,7 +2,7 @@
  * 工作区路径分区与系统路径守卫
  *
  * C 方案分区：
- * - free       scratch/、charts/ — 读写删免确认
+ * - free       scratch/、charts/、系统临时目录（os.tmpdir /tmp 等）— 读写删免确认
  * - protected  templates/、根目录人格配置 md — 写删需确认
  * - workspace  工作区内其他 — 写删需确认
  * - outside    工作区外 - safe 命令（如 cp）不升级；moderate/dangerous 保持原等级
@@ -13,6 +13,7 @@
  * - /dev/null、/dev/stdout、/dev/stderr 黑洞设备 -> 豁免，写它们等于丢弃输出
  */
 import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 import type { RiskLevel } from '@shared/types/agent'
 import { t } from '../i18n'
@@ -95,6 +96,8 @@ export function getWorkspaceZone(
 ): WorkspaceZone {
   const resolved = resolveRealPath(resolveCommandPath(targetPath, cwd))
   if (isExtraFreeDir(resolved, extraFreeDirs)) return 'free'
+  // 系统临时目录（/tmp、os.tmpdir 等）与 scratch 同级：读写删免确认
+  if (isSystemTempPath(resolved)) return 'free'
   if (!isInWorkspace(resolved)) return 'outside'
   if (isScratchPath(resolved) || isChartsPath(resolved)) return 'free'
 
@@ -106,6 +109,54 @@ export function getWorkspaceZone(
   if (PROTECTED_WORKSPACE_FILES.has(rel)) return 'protected'
 
   return 'workspace'
+}
+
+/** 内置临时目录根（realpath 后缓存；含 /tmp 与 os.tmpdir，macOS 上二者常不同） */
+let cachedTempRoots: string[] | null = null
+
+/** 供设置页只读展示 */
+export function getBuiltinTempRoots(): string[] {
+  return [...getTempRoots()]
+}
+
+function getTempRoots(): string[] {
+  if (cachedTempRoots) return cachedTempRoots
+  const roots = new Set<string>()
+  const add = (raw: string | undefined) => {
+    if (!raw || !String(raw).trim()) return
+    try {
+      roots.add(normalizePathForCompare(resolveRealPath(path.resolve(raw))))
+    } catch {
+      roots.add(normalizePathForCompare(path.resolve(raw)))
+    }
+  }
+  add(os.tmpdir())
+  add(process.env.TMPDIR)
+  add(process.env.TMP)
+  add(process.env.TEMP)
+  if (process.platform !== 'win32') {
+    add('/tmp')
+    add('/private/tmp')
+    add('/var/tmp')
+  }
+  cachedTempRoots = [...roots].filter(Boolean)
+  return cachedTempRoots
+}
+
+function isSystemTempPath(resolvedPath: string): boolean {
+  const normalized = normalizePathForCompare(resolvedPath)
+  for (const root of getTempRoots()) {
+    if (!root) continue
+    if (normalized === root || normalized.startsWith(root + '/') || normalized.startsWith(root + '\\')) {
+      return true
+    }
+  }
+  return false
+}
+
+/** 测试用：清临时目录根缓存 */
+export function resetBuiltinTempRootsCacheForTest(): void {
+  cachedTempRoots = null
 }
 
 /** 用户配置的额外自由区（绝对路径前缀匹配） */
@@ -253,12 +304,10 @@ export function adjustRiskByPathZones(
   // outside：默认不升级 safe 命令（如 cp）；开启 outsideWritesUpgrade 时升为 moderate
   if (effectiveZones.some(z => z === 'outside')) {
     if (commandLevel === 'safe' && opts?.outsideWritesUpgrade) {
-      reasons.push(t('risk.reason.workspace_outside'))
+      reasons.push(t('risk.reason.workspace_outside_upgrade'))
       return { level: 'moderate', zones, reasons }
     }
-    if (commandLevel !== 'safe') {
-      reasons.push(t('risk.reason.workspace_outside'))
-    }
+    // 命令本身已是 moderate/dangerous 时，不附「需确认」文案（确认主因是命令基线，不是「在外面」）
     return { level: commandLevel, zones, reasons }
   }
   if (effectiveZones.some(z => z === 'protected')) {

@@ -32,9 +32,11 @@ export { isWindowsNativeShellCommand } from './platform-detect'
 
 export {
   adjustRiskByPathZones,
+  getBuiltinTempRoots,
   getWorkspaceZone,
   isSystemPath,
   resolveCommandPath,
+  resetBuiltinTempRootsCacheForTest,
 } from './workspace-guard'
 
 export {

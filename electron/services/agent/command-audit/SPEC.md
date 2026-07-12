@@ -154,6 +154,7 @@ npx vitest run electron/services/agent/command-audit/__tests__/
 
 ## 变更历史
 
+- 2026-07-12：系统临时目录（/tmp、os.tmpdir 等）纳入自由区；确认原因区分「高危命令」与「工作区外升档」；outside 不再误标「需确认」
 - 2026-07-12：扩展 ARGV 清单并分档——高危仅保留不可逆/提权/关机/防火墙/账户；chmod/mount/crontab/包管理/容器/kill/systemctl 等为 moderate（写系统路径仍由路径守卫升级）。`assessCommandFlags` 未知 flag 不得低于 baseLevel；indirection 命中且 ARGV 为 dangerous 时保底 dangerous（sudo 在 relaxed 下也确认）
 - 2026-07-12：用户命令规则（`user-command-rules.ts`）：可追加未收录命令的 CommandRule；`getArgvCommandRule` 内置优先再查用户表
 - 2026-07-12：确认弹窗「加入规则并允许」（`trust-command-offer.ts`）：未知单命令 → `PendingConfirmation.trustCommandOffer`

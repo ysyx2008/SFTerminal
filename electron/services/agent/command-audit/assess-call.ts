@@ -138,6 +138,10 @@ export function assessAuditedCall(
   const commandLevel = assessCommandFlags(rule, call.flags)
   const reasons: string[] = []
 
+  if (rule.baseLevel === 'dangerous') {
+    reasons.push(t('risk.reason.dangerous_cmd', { cmd: call.cmd }))
+  }
+
   if (commandLevel === 'moderate' && rule.baseLevel === 'safe') {
     reasons.push(t('risk.reason.unknown_flag'))
   }
