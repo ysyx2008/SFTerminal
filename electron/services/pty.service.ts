@@ -581,7 +581,7 @@ export class PtyService {
         />\s*$/,                               // 简单的 > 提示符 (fish/powershell)
         // PowerShell 默认提示符：PS <path>> （Windows 上最常见）
         // 例：PS C:\Users\Foo>、PS /home/user>
-        /^PS\s+[A-Za-z]:[\\\/][^\s>]*>\s*$/m,
+        /^PS\s+[A-Za-z]:[\\/][^\s>]*>\s*$/m,
         /^PS\s+[~/][^\s>]*>\s*$/m,
         // PowerShell 自定义提示符常见形式（oh-my-posh / starship 等保留 > 结尾）
         /[»>]\s*$/,

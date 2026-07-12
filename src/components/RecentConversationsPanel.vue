@@ -9,6 +9,7 @@ import {
   formatHistoryConversationTooltip,
   isAssistantConversationSurfaceVisible,
 } from '../utils/agent-tab-ui-meta'
+import type { HistoryConversationMeta } from '../utils/agent-tab-ui-meta'
 import ConversationRow from './ConversationRow.vue'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
@@ -463,15 +464,6 @@ const onMenuTogglePin = async () => {
     console.error('Failed to toggle pin:', e)
     toast.error(t('common.operationFailed'))
   }
-}
-
-const isHistoryOpenInTab = (historyId: string) => !!terminalStore.findTabByHistoryId(historyId)
-
-/** 是否是当前在 Hub 主区聚焦的会话（用于高亮） */
-const isHubFocused = (historyId: string): boolean => {
-  const focused = terminalStore.hubFocusedTab
-  if (!focused) return false
-  return focused.agentState?.sessionId === historyId
 }
 
 const onMenuDelete = async () => {

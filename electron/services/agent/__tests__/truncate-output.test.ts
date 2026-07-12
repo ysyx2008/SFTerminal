@@ -2,6 +2,25 @@
  * exec 输出截断 helper 单元测试
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+
+// vi.mock 的 factory 会被提升到文件顶部，不能引用外部变量；
+// 用 vi.hoisted 让临时目录在 hoist 阶段就能算出来
+const { tmpUserData } = vi.hoisted(() => {
+  const os = require('os') as typeof import('os')
+  const path = require('path') as typeof import('path')
+  return { tmpUserData: path.join(os.tmpdir(), `sft-truncate-test-${process.pid}`) }
+})
+
+vi.mock('electron', () => ({
+  app: {
+    getPath: vi.fn().mockReturnValue(tmpUserData),
+    getName: vi.fn().mockReturnValue('SailFish'),
+    getVersion: vi.fn().mockReturnValue('1.0.0'),
+  },
+  BrowserWindow: vi.fn(),
+  ipcMain: { on: vi.fn(), handle: vi.fn() },
+}))
+
 import {
   truncateFromEndDetailed,
   truncateFromEndWithNotice,

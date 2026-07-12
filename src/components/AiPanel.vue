@@ -2331,7 +2331,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                       />
                     </div>
                     <div v-else-if="item.step!.type === 'message'" class="agent-message-stack">
-                      <template v-for="pres in [getMessageStepPresentation(item.step!)]" :key="item.step!.id + '-pres'">
+                      <template v-for="(pres, presIdx) in [getMessageStepPresentation(item.step!)]" :key="presIdx">
                       <ThinkingBlock
                         v-if="pres.thinking"
                         :reasoning="pres.thinking.reasoning"

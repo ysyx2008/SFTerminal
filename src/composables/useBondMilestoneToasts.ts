@@ -45,7 +45,7 @@ export async function checkBondMilestonesOnStartup(
 ): Promise<void> {
   try {
     const result = await window.electronAPI?.bond?.recalculate?.()
-    if (!result?.newMilestones?.length) return
+    if (!result?.newMilestones?.length || !result.metrics) return
     await showBondMilestoneToasts(t, result.newMilestones, result.metrics)
   } catch {
     // 非 Electron / CLI 环境下忽略

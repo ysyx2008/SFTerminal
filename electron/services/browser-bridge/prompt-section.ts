@@ -32,9 +32,10 @@ export function patchBrowserBridgeSectionInSystemPrompt(
 
   if (bounds) {
     if (!newSection) {
-      let { start, end } = bounds
-      if (start >= 2 && systemPrompt.slice(start - 2, start) === '\n\n') start -= 2
-      return systemPrompt.slice(0, start) + systemPrompt.slice(end)
+      const { start, end } = bounds
+      let s = start
+      if (s >= 2 && systemPrompt.slice(s - 2, s) === '\n\n') s -= 2
+      return systemPrompt.slice(0, s) + systemPrompt.slice(end)
     }
     return systemPrompt.slice(0, bounds.start) + newSection + systemPrompt.slice(bounds.end)
   }

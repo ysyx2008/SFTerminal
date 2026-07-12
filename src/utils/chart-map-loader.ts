@@ -58,7 +58,7 @@ async function fetchMap(mapId: ChartMapId): Promise<GeoJsonMap> {
 }
 
 interface EChartsRegisterable {
-  registerMap(mapName: string, geoJson: GeoJsonMap, specialAreas?: Record<string, unknown>): void
+  registerMap(mapName: string, geoJson: unknown, specialAreas?: Record<string, unknown>): void
   getMap?(mapName: string): unknown
 }
 

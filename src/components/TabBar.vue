@@ -286,8 +286,6 @@ const displayedTabs = computed(() =>
 const companionTab = computed(() =>
   terminalStore.tabs.find(t => t.agentId === COMPANION_TAB_AGENT_ID) ?? null
 )
-// 首页 tab 只在有"真实" tab（终端 / 已提升助手）时出现
-const hasTabs = computed(() => displayedTabs.value.length > 0)
 
 // 打开批量命令面板
 const openBatchPanel = () => {

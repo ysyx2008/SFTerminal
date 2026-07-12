@@ -1486,6 +1486,49 @@ interface Window {
         libraryTotal?: number
         filename: string
       }) => void) => () => void
+      // 列出本地备份
+      listBackups: () => Promise<{
+        success: boolean
+        backups?: Array<{
+          path: string
+          filename: string
+          size: number
+          createdAt: number
+          automatic: boolean
+        }>
+        error?: string
+      }>
+      // 创建手动备份
+      createBackup: (backupPath?: string) => Promise<{
+        success: boolean
+        backupPath?: string
+        error?: string
+      }>
+      // 从备份恢复（恢复后自动增量补差集）
+      restoreBackup: (backupPath?: string) => Promise<{
+        success: boolean
+        backupPath?: string
+        error?: string
+      }>
+      // 删除指定备份
+      deleteBackup: (backupPath: string) => Promise<{
+        success: boolean
+        error?: string
+      }>
+      // ==================== 备份/恢复进度事件 ====================
+      onBackupStarted: (callback: (data: { automatic: boolean }) => void) => () => void
+      onBackupCompleted: (callback: (data: {
+        success: boolean
+        backupPath?: string
+        error?: string
+        skipped?: boolean
+      }) => void) => () => void
+      onRestoreStarted: (callback: (data: { backupPath?: string }) => void) => () => void
+      onRestoreCompleted: (callback: (data: {
+        success: boolean
+        backupPath?: string
+        error?: string
+      }) => void) => () => void
     }
     // 协调器（智能巡检）
     orchestrator: {
@@ -1698,6 +1741,9 @@ interface Window {
         provider?: string
         imapHost?: string
         imapPort?: number
+        smtpHost?: string
+        smtpPort?: number
+        smtpSecure?: boolean
         rejectUnauthorized?: boolean
       }) => Promise<{ success: boolean; message: string }>
       // 同步邮箱账户配置到后端
@@ -1720,6 +1766,9 @@ interface Window {
         provider?: string
         imapHost?: string
         imapPort?: number
+        smtpHost?: string
+        smtpPort?: number
+        smtpSecure?: boolean
         rejectUnauthorized?: boolean
       }) => Promise<{ success: boolean; message: string }>
     }
@@ -2388,6 +2437,12 @@ interface Window {
       onConnectionsChanged: (
         callback: (status: import('@shared/types/browser-bridge').BrowserBridgeStatus) => void
       ) => () => void
+    }
+    // 羁绊（Bond）
+    bond: {
+      getMetrics: () => Promise<BondMetrics>
+      getMilestones: () => Promise<string[]>
+      recalculate: () => Promise<{ newMilestones?: string[]; metrics?: BondMetrics }>
     }
   }
 }

@@ -126,13 +126,13 @@ export function sanitizePreviewHtml(html: string): string {
   if (needsEchartsLib && !docHasEchartsBundle(out)) {
     const echartsScript = getInlineEchartsScript()
     if (echartsScript) {
-      headInject.push(`<script>${echartsScript}<\/script>`)
+      headInject.push(`<script>${echartsScript}</script>`)
     }
   }
   if (needsChina) {
     const chinaBootstrap = getChinaMapBootstrapScript()
     if (chinaBootstrap) {
-      headInject.push(`<script>${chinaBootstrap}<\/script>`)
+      headInject.push(`<script>${chinaBootstrap}</script>`)
     }
   }
   if (headInject.length) {
@@ -217,8 +217,8 @@ export function buildPreviewDocument(
   const echartsScript = needsEcharts ? getInlineEchartsScript() : ''
   const chinaBootstrap = needsChina ? getChinaMapBootstrapScript() : ''
   const headScripts = [
-    echartsScript ? `<script>${echartsScript}<\/script>` : '',
-    chinaBootstrap ? `<script>${chinaBootstrap}<\/script>` : '',
+    echartsScript ? `<script>${echartsScript}</script>` : '',
+    chinaBootstrap ? `<script>${chinaBootstrap}</script>` : '',
   ].filter(Boolean).join('\n')
 
   return `<!DOCTYPE html>

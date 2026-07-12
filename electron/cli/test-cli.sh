@@ -78,7 +78,9 @@ assert_contains() {
     FAILED_CMDS+=("${label}: 非零退出")
     ((FAIL++))
     [[ -n "$output" ]] && echo "    └─ ${output:0:300}"
-  elif echo "$output" | grep -qF "$expected"; then
+  # 用 [[ ]] 子串匹配，避免 pipefail + grep -q 早退时 echo 收到 SIGPIPE（exit 141）
+  # 误判失败（知识库 list 等大输出场景会稳定复现）
+  elif [[ -z "$expected" || "$output" == *"$expected"* ]]; then
     echo -e "${GREEN}PASS${NC}"
     ((PASS++))
   else
@@ -200,9 +202,6 @@ echo ""
 echo -e "${CYAN}[5/12] 知识库全流程${NC}"
 # ══════════════════════════════════════════════════════════════
 
-assert_contains "knowledge:list 返回表格"     "id" \
-  $CLI knowledge:list
-
 assert_contains "knowledge:stats 返回 JSON"   "documentCount" \
   $CLI knowledge:stats
 
@@ -214,6 +213,10 @@ if [[ "$MODE" != "quick" ]]; then
 
   run_test "knowledge:add 添加测试文档"      $CLI knowledge:add "$TEST_DOC"
 
+  # add 之后再 list，确保有文档可列（空库时 list 输出为空会误判）
+  assert_contains "knowledge:list 返回表格"     "id" \
+    $CLI knowledge:list
+
   # 用语义相关的词搜索，验证向量检索能力
   assert_contains "knowledge:search 语义搜索" "Kubernetes" \
     $CLI knowledge:search "容器编排"
@@ -221,6 +224,7 @@ if [[ "$MODE" != "quick" ]]; then
   rm -f "$TEST_DOC"
 else
   skip_test "knowledge:add 添加文档"
+  skip_test "knowledge:list 返回表格"
   skip_test "knowledge:search 命中验证"
 fi
 

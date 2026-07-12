@@ -66,7 +66,7 @@ export function useOpenConversationInTab(openingIdRef?: Ref<string | null>) {
   return { openConversationInTab }
 }
 
-export function useConversationDropTarget(onDrop: (sessionId: string) => void | Promise<void>) {
+export function useConversationDropTarget(onDrop: (sessionId: string) => unknown | Promise<unknown>) {
   const isDragOver = ref(false)
   let dragEndListener: (() => void) | null = null
 

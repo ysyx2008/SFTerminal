@@ -266,7 +266,7 @@ async function loadPolicy() {
   policyError.value = false
   try {
     const stored = await window.electronAPI.config.get('commandRiskPolicy')
-    const merged = mergePolicy(stored)
+    const merged = mergePolicy(stored as Partial<CommandRiskPolicy> | null | undefined)
     policy.value = merged
     savedPolicy.value = clonePolicy(merged)
     policyLoaded.value = true
@@ -355,8 +355,8 @@ const helpTipPos = ref({ top: 0, left: 0 })
 
 const policyTipExamples = computed((): string[] => {
   if (openHelpTip.value?.kind !== 'policy') return []
-  const raw = tm(`settings.security.riskPolicy.${openHelpTip.value.label}TipExamples`)
-  return Array.isArray(raw) ? raw.map(String) : []
+  const raw = tm(`settings.security.riskPolicy.${openHelpTip.value.label}TipExamples`) as unknown
+  return Array.isArray(raw) ? (raw as unknown[]).map(String) : []
 })
 
 const CMD_COL_LABEL_KEY: Record<CmdColTipField, string> = {
