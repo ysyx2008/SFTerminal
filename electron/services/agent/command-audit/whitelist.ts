@@ -298,15 +298,16 @@ export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
   }),
   mkdir: rule('mkdir', 'moderate', { safeFlags: new Set(['-p', '-m']), valueFlags: new Set(['-m']), pathMode: 'all', writesTo: true }),
   touch: rule('touch', 'moderate', { pathMode: 'all', writesTo: true }),
-  chmod: rule('chmod', 'dangerous', { pathMode: 'all', writesTo: true }),
-  chown: rule('chown', 'dangerous', { pathMode: 'all', writesTo: true }),
-  chgrp: rule('chgrp', 'dangerous', { pathMode: 'all', writesTo: true }),
+  // chmod/chown：改项目文件权限是日常操作；写 /etc 等仍由路径守卫升 dangerous/blocked
+  chmod: rule('chmod', 'moderate', { safeFlags: new Set(['-R', '-v']), pathMode: 'all', writesTo: true }),
+  chown: rule('chown', 'moderate', { safeFlags: new Set(['-R', '-v', '-h']), pathMode: 'all', writesTo: true }),
+  chgrp: rule('chgrp', 'moderate', { safeFlags: new Set(['-R', '-v', '-h']), pathMode: 'all', writesTo: true }),
   ln: rule('ln', 'moderate', { safeFlags: new Set(['-s', '-f']), pathMode: 'all', writesTo: true }),
   tee: rule('tee', 'moderate', { safeFlags: new Set(['-a']), pathMode: 'all', writesTo: true }),
   mktemp: rule('mktemp', 'moderate', { safeFlags: new Set(['-d', '-u']), pathMode: 'none', writesTo: true }),
 
-  // —— 显式高危：不可逆破坏 / 提权 / 关机 / 防火墙 / 用户与挂载 ——
-  // （包管理、容器、kill、systemctl 等日常运维 → 中风险段，避免 relaxed 狂弹确认）
+  // —— 显式高危：不可逆破坏 / 提权 / 关机 / 防火墙 / 账户 ——
+  // 日常运维（包管理、容器、kill、systemctl、chmod、mount、crontab）→ 中风险
   // dd 参数为 if=/ of=/ 赋值形，不能当路径分区，否则会误落入 scratch 变 safe
   dd: rule('dd', 'dangerous', { pathMode: 'none', writesTo: false }),
   shred: rule('shred', 'dangerous', {
@@ -342,11 +343,11 @@ export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
   userdel: rule('userdel', 'dangerous', { pathMode: 'none' }),
   passwd: rule('passwd', 'dangerous', { pathMode: 'none' }),
   visudo: rule('visudo', 'dangerous', { pathMode: 'none' }),
-  mount: rule('mount', 'dangerous', { pathMode: 'all', writesTo: true }),
-  umount: rule('umount', 'dangerous', { pathMode: 'all', writesTo: true }),
-  crontab: rule('crontab', 'dangerous', { pathMode: 'none' }),
 
   // —— 中风险运维：日常 Agent 高频，relaxed 默认放行，strict 仍确认 ——
+  mount: rule('mount', 'moderate', { pathMode: 'all', writesTo: true }),
+  umount: rule('umount', 'moderate', { pathMode: 'all', writesTo: true }),
+  crontab: rule('crontab', 'moderate', { pathMode: 'none' }),
   kill: rule('kill', 'moderate', {
     safeFlags: new Set(['-l', '-s']),
     valueFlags: new Set(['-s']),

@@ -96,8 +96,8 @@ guard 把"确实危险的间接执行模式"鉴别出来标 dangerous，让 stri
 | 等级 | 含义 | strict | relaxed | free |
 |---|---|---|---|---|
 | safe | 只读，工作区内 | 确认 | 放行 | 放行 |
-| dangerous | 高危：不可逆破坏/提权/关机/防火墙/用户与挂载（rm/chmod/dd/sudo/reboot/iptables/mount 等）/ 间接执行保底 / 写 hardened 系统路径 / 解析失败与未知命令（strict 默认） | 确认 | 确认 | 放行 |
-| moderate | 写 protected 或 workspace 内 / 未知命令（relaxed 默认）/ 轻度写（mv/touch）/ 日常运维（pip/brew/docker/kill/systemctl 等） | 确认 | 放行 | 放行 |
+| dangerous | 高危：不可逆破坏/提权/关机/防火墙/账户（dd/mkfs/sudo/reboot/iptables/userdel 等）/ 写 hardened 系统路径 / 解析失败与未知命令（strict 默认） | 确认 | 确认 | 放行 |
+| moderate | 写 protected 或 workspace 内 / 未知命令（relaxed 默认）/ 轻度写（mv/touch/chmod）/ 日常运维（pip/brew/docker/kill/systemctl/mount/crontab 等） | 确认 | 放行 | 放行 |
 | **blocked** | 写 critical 系统路径（/ /boot）或 userData 禁区 | **拒绝** | **拒绝** | **拒绝** |
 
 注意：blocked 是硬墙（路径守卫），dangerous 是风险标记（guard 命中 / hardened 系统路径）。
@@ -154,7 +154,7 @@ npx vitest run electron/services/agent/command-audit/__tests__/
 
 ## 变更历史
 
-- 2026-07-12：扩展 ARGV 清单并分档——高危仅保留不可逆/提权/关机/防火墙/用户挂载；包管理/容器/kill/systemctl 等为 moderate。`assessCommandFlags` 未知 flag 不得低于 baseLevel；indirection 命中且 ARGV 为 dangerous 时保底 dangerous（sudo 在 relaxed 下也确认）
+- 2026-07-12：扩展 ARGV 清单并分档——高危仅保留不可逆/提权/关机/防火墙/账户；chmod/mount/crontab/包管理/容器/kill/systemctl 等为 moderate（写系统路径仍由路径守卫升级）。`assessCommandFlags` 未知 flag 不得低于 baseLevel；indirection 命中且 ARGV 为 dangerous 时保底 dangerous（sudo 在 relaxed 下也确认）
 - 2026-07-12：用户命令规则（`user-command-rules.ts`）：可追加未收录命令的 CommandRule；`getArgvCommandRule` 内置优先再查用户表
 - 2026-07-12：确认弹窗「加入规则并允许」（`trust-command-offer.ts`）：未知单命令 → `PendingConfirmation.trustCommandOffer`
 - 2026-07-12：扩展 CommandRiskPolicy（间接执行/动态路径档位、relaxedConfirmModerate、outsideWritesUpgrade、extraFreeDirs、subAgentBlockDangerous）；授权清单支持手动添加

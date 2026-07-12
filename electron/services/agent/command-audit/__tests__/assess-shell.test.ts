@@ -292,13 +292,12 @@ describe('assessCommandRisk shell AST', () => {
       expect(['dangerous', 'blocked']).toContain(level)
     })
 
-    it('reboot / chgrp / crontab 为 dangerous', async () => {
+    it('reboot 为 dangerous', async () => {
       expect(await assessCommandRisk('reboot', relaxed)).toBe('dangerous')
-      expect(await assessCommandRisk('chgrp wheel /tmp/x', relaxed)).toBe('dangerous')
-      expect(await assessCommandRisk('crontab -r', relaxed)).toBe('dangerous')
     })
 
-    it('mount 为 dangerous', async () => {
+    it('mount 基线为 moderate；挂 /dev 仍升 dangerous（路径守卫）', async () => {
+      expect(await assessCommandRisk('mount', relaxed)).toBe('moderate')
       expect(await assessCommandRisk('mount /dev/sdb1 /mnt', relaxed)).toBe('dangerous')
     })
 
@@ -311,7 +310,7 @@ describe('assessCommandRisk shell AST', () => {
       expect(await assessCommandRisk('sudo', relaxed)).toBe('dangerous')
     })
 
-    it('包管理 / 容器 / kill / systemctl 为 moderate（日常运维不狂弹）', async () => {
+    it('包管理 / 容器 / kill / systemctl / crontab / chmod 为 moderate', async () => {
       expect(await assessCommandRisk('pip3 install requests', relaxed)).toBe('moderate')
       expect(await assessCommandRisk('brew install wget', relaxed)).toBe('moderate')
       expect(await assessCommandRisk('apt-get install -y curl', relaxed)).toBe('moderate')
@@ -319,6 +318,13 @@ describe('assessCommandRisk shell AST', () => {
       expect(await assessCommandRisk('npx cowsay hi', relaxed)).toBe('moderate')
       expect(await assessCommandRisk('kill -9 1', relaxed)).toBe('moderate')
       expect(await assessCommandRisk('systemctl stop nginx', relaxed)).toBe('moderate')
+      expect(await assessCommandRisk('crontab -r', relaxed)).toBe('moderate')
+      expect(await assessCommandRisk('chmod +x /tmp/x', relaxed)).toBe('moderate')
+      expect(await assessCommandRisk('chgrp wheel /tmp/x', relaxed)).toBe('moderate')
+    })
+
+    it('chmod /etc 仍升 dangerous（路径守卫 hardened）', async () => {
+      expect(await assessCommandRisk('chmod 644 /etc/hosts', relaxed)).toBe('dangerous')
     })
 
     it('xargs 仍为 moderate（未进显式表，indirection 跟策略）', async () => {
