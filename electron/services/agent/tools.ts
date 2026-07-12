@@ -679,11 +679,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       type: 'function',
       function: {
         name: 'write_text_file',
-        description: `写入或创建本地纯文本文件。部分修改请优先用 edit_file。大文件分段写入（先 create 再 append）。重要文件请先备份。
-
-**scratch/ 临时区自动清理**：默认 cwd（agent-workspace/scratch/）下的文件会在应用启动时按天数自动清理（默认 7 天，用户可在设置里调整或关闭）。
-- 临时文件、中间产物、草稿 → 放 scratch/（自动清理，省心）
-- 用户要保留的最终产物 → 写到桌面、文档目录等用户指定位置（不会被自动清理）`,
+        description: `写入或创建本地纯文本文件。部分修改请优先用 edit_file。大文件分段写入（先 create 再 append）。重要文件请先备份。`,
         parameters: {
           type: 'object',
           properties: {
