@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Trash2, RefreshCw, Search, Shield, ShieldAlert, FolderLock, FileLock2, HardDrive, Terminal, Plus, SlidersHorizontal, CircleHelp } from 'lucide-vue-next'
+import { Trash2, RefreshCw, Search, Shield, ShieldAlert, FolderLock, HardDrive, Terminal, Plus, SlidersHorizontal, CircleHelp } from 'lucide-vue-next'
 import type { RiskLevel, CommandRiskPolicy } from '@shared/types/agent'
 import { DEFAULT_COMMAND_RISK_POLICY } from '@shared/types/agent'
 
@@ -23,6 +23,7 @@ type BuiltInRulesView = {
     userDataAllowed: string[]
   }
   workspaceZones: {
+    workspaceRoot: string
     free: string[]
     protectedDirs: string[]
     protectedFiles: string[]
@@ -52,9 +53,9 @@ const userRuleSaving = ref(false)
 const userRuleError = ref('')
 const newUserRuleCmd = ref('')
 const newUserRuleLevel = ref<RiskLevel>('safe')
-const newUserRuleWrites = ref(false)
-const newUserRuleFlags = ref('')
-const USER_RULE_LEVELS: RiskLevel[] = ['safe', 'moderate', 'dangerous']
+  const newUserRuleWrites = ref(false)
+  const newUserRuleFlags = ref('')
+  const USER_RULE_LEVELS: RiskLevel[] = ['safe', 'moderate', 'dangerous']
 
 async function loadUserCommandRules() {
   userRulesLoading.value = true
@@ -343,9 +344,11 @@ type PolicyLevelField =
 
 type PolicyTipLabel = 'colParseFail' | 'colUnknownCmd' | 'colIndirection' | 'colDynamicPath'
 type UserRuleTipField = 'writes' | 'flags'
+type CmdColTipField = 'baseLevel' | 'safeFlags' | 'pathMode' | 'writesTo'
 type HelpTip =
   | { kind: 'policy'; label: PolicyTipLabel }
   | { kind: 'userRule'; field: UserRuleTipField }
+  | { kind: 'cmdCol'; field: CmdColTipField }
 
 const openHelpTip = ref<HelpTip | null>(null)
 const helpTipPos = ref({ top: 0, left: 0 })
@@ -356,10 +359,25 @@ const policyTipExamples = computed((): string[] => {
   return Array.isArray(raw) ? raw.map(String) : []
 })
 
+const CMD_COL_LABEL_KEY: Record<CmdColTipField, string> = {
+  baseLevel: 'colBaseLevel',
+  safeFlags: 'colSafeFlags',
+  pathMode: 'colPathMode',
+  writesTo: 'colWritesTo',
+}
+
+const CMD_COL_TIP_KEY: Record<CmdColTipField, string> = {
+  baseLevel: 'colBaseLevelTip',
+  safeFlags: 'colSafeFlagsTip',
+  pathMode: 'colPathModeTip',
+  writesTo: 'colWritesToTip',
+}
+
 const helpTipTitle = computed(() => {
   const tip = openHelpTip.value
   if (!tip) return ''
   if (tip.kind === 'policy') return t(`settings.security.riskPolicy.${tip.label}`)
+  if (tip.kind === 'cmdCol') return t(`settings.security.builtinRules.${CMD_COL_LABEL_KEY[tip.field]}`)
   return tip.field === 'writes'
     ? t('settings.security.userCommandRules.writesLabel')
     : t('settings.security.userCommandRules.flagsFieldLabel')
@@ -369,6 +387,7 @@ const helpTipBody = computed(() => {
   const tip = openHelpTip.value
   if (!tip) return ''
   if (tip.kind === 'policy') return t(`settings.security.riskPolicy.${tip.label}TipBody`)
+  if (tip.kind === 'cmdCol') return t(`settings.security.builtinRules.${CMD_COL_TIP_KEY[tip.field]}`)
   return tip.field === 'writes'
     ? t('settings.security.userCommandRules.writesTip')
     : t('settings.security.userCommandRules.flagsTip')
@@ -399,6 +418,16 @@ function toggleUserRuleTip(field: UserRuleTipField, e: MouseEvent) {
   }
   placeHelpTip(e.currentTarget as HTMLElement)
   openHelpTip.value = { kind: 'userRule', field }
+}
+
+function toggleCmdColTip(field: CmdColTipField, e: MouseEvent) {
+  e.stopPropagation()
+  if (openHelpTip.value?.kind === 'cmdCol' && openHelpTip.value.field === field) {
+    openHelpTip.value = null
+    return
+  }
+  placeHelpTip(e.currentTarget as HTMLElement)
+  openHelpTip.value = { kind: 'cmdCol', field }
 }
 
 function closePolicyTip() {
@@ -539,10 +568,54 @@ onUnmounted(() => {
               <div v-else class="cmd-grid cmd-grid-user">
                 <div class="cmd-grid-head">
                   <div class="cmd-cell cmd-col-cmd">{{ t('settings.security.builtinRules.colCmd') }}</div>
-                  <div class="cmd-cell cmd-col-level">{{ t('settings.security.builtinRules.colBaseLevel') }}</div>
-                  <div class="cmd-cell cmd-col-flags">{{ t('settings.security.builtinRules.colSafeFlags') }}</div>
-                  <div class="cmd-cell cmd-col-path">{{ t('settings.security.builtinRules.colPathMode') }}</div>
-                  <div class="cmd-cell cmd-col-writes">{{ t('settings.security.builtinRules.colWritesTo') }}</div>
+                  <div class="cmd-cell cmd-col-level cmd-col-head">
+                    <span>{{ t('settings.security.builtinRules.colBaseLevel') }}</span>
+                    <button
+                      type="button"
+                      class="user-rule-help"
+                      :class="{ open: openHelpTip?.kind === 'cmdCol' && openHelpTip.field === 'baseLevel' }"
+                      :aria-label="t('settings.security.builtinRules.colBaseLevel')"
+                      @click="toggleCmdColTip('baseLevel', $event)"
+                    >
+                      <CircleHelp :size="12" :stroke-width="2" />
+                    </button>
+                  </div>
+                  <div class="cmd-cell cmd-col-flags cmd-col-head">
+                    <span>{{ t('settings.security.builtinRules.colSafeFlags') }}</span>
+                    <button
+                      type="button"
+                      class="user-rule-help"
+                      :class="{ open: openHelpTip?.kind === 'cmdCol' && openHelpTip.field === 'safeFlags' }"
+                      :aria-label="t('settings.security.builtinRules.colSafeFlags')"
+                      @click="toggleCmdColTip('safeFlags', $event)"
+                    >
+                      <CircleHelp :size="12" :stroke-width="2" />
+                    </button>
+                  </div>
+                  <div class="cmd-cell cmd-col-path cmd-col-head">
+                    <span>{{ t('settings.security.builtinRules.colPathMode') }}</span>
+                    <button
+                      type="button"
+                      class="user-rule-help"
+                      :class="{ open: openHelpTip?.kind === 'cmdCol' && openHelpTip.field === 'pathMode' }"
+                      :aria-label="t('settings.security.builtinRules.colPathMode')"
+                      @click="toggleCmdColTip('pathMode', $event)"
+                    >
+                      <CircleHelp :size="12" :stroke-width="2" />
+                    </button>
+                  </div>
+                  <div class="cmd-cell cmd-col-writes cmd-col-head">
+                    <span>{{ t('settings.security.builtinRules.colWritesTo') }}</span>
+                    <button
+                      type="button"
+                      class="user-rule-help"
+                      :class="{ open: openHelpTip?.kind === 'cmdCol' && openHelpTip.field === 'writesTo' }"
+                      :aria-label="t('settings.security.builtinRules.colWritesTo')"
+                      @click="toggleCmdColTip('writesTo', $event)"
+                    >
+                      <CircleHelp :size="12" :stroke-width="2" />
+                    </button>
+                  </div>
                   <div class="cmd-cell cmd-col-actions"></div>
                 </div>
                 <div v-for="rule in userCommandRules" :key="rule.cmd" class="cmd-grid-row">
@@ -610,10 +683,54 @@ onUnmounted(() => {
               <div v-else class="cmd-grid">
                 <div class="cmd-grid-head">
                   <div class="cmd-cell cmd-col-cmd">{{ t('settings.security.builtinRules.colCmd') }}</div>
-                  <div class="cmd-cell cmd-col-level">{{ t('settings.security.builtinRules.colBaseLevel') }}</div>
-                  <div class="cmd-cell cmd-col-flags">{{ t('settings.security.builtinRules.colSafeFlags') }}</div>
-                  <div class="cmd-cell cmd-col-path">{{ t('settings.security.builtinRules.colPathMode') }}</div>
-                  <div class="cmd-cell cmd-col-writes">{{ t('settings.security.builtinRules.colWritesTo') }}</div>
+                  <div class="cmd-cell cmd-col-level cmd-col-head">
+                    <span>{{ t('settings.security.builtinRules.colBaseLevel') }}</span>
+                    <button
+                      type="button"
+                      class="user-rule-help"
+                      :class="{ open: openHelpTip?.kind === 'cmdCol' && openHelpTip.field === 'baseLevel' }"
+                      :aria-label="t('settings.security.builtinRules.colBaseLevel')"
+                      @click="toggleCmdColTip('baseLevel', $event)"
+                    >
+                      <CircleHelp :size="12" :stroke-width="2" />
+                    </button>
+                  </div>
+                  <div class="cmd-cell cmd-col-flags cmd-col-head">
+                    <span>{{ t('settings.security.builtinRules.colSafeFlags') }}</span>
+                    <button
+                      type="button"
+                      class="user-rule-help"
+                      :class="{ open: openHelpTip?.kind === 'cmdCol' && openHelpTip.field === 'safeFlags' }"
+                      :aria-label="t('settings.security.builtinRules.colSafeFlags')"
+                      @click="toggleCmdColTip('safeFlags', $event)"
+                    >
+                      <CircleHelp :size="12" :stroke-width="2" />
+                    </button>
+                  </div>
+                  <div class="cmd-cell cmd-col-path cmd-col-head">
+                    <span>{{ t('settings.security.builtinRules.colPathMode') }}</span>
+                    <button
+                      type="button"
+                      class="user-rule-help"
+                      :class="{ open: openHelpTip?.kind === 'cmdCol' && openHelpTip.field === 'pathMode' }"
+                      :aria-label="t('settings.security.builtinRules.colPathMode')"
+                      @click="toggleCmdColTip('pathMode', $event)"
+                    >
+                      <CircleHelp :size="12" :stroke-width="2" />
+                    </button>
+                  </div>
+                  <div class="cmd-cell cmd-col-writes cmd-col-head">
+                    <span>{{ t('settings.security.builtinRules.colWritesTo') }}</span>
+                    <button
+                      type="button"
+                      class="user-rule-help"
+                      :class="{ open: openHelpTip?.kind === 'cmdCol' && openHelpTip.field === 'writesTo' }"
+                      :aria-label="t('settings.security.builtinRules.colWritesTo')"
+                      @click="toggleCmdColTip('writesTo', $event)"
+                    >
+                      <CircleHelp :size="12" :stroke-width="2" />
+                    </button>
+                  </div>
                 </div>
                 <div v-for="rule in builtinFilteredCommands" :key="rule.cmd" class="cmd-grid-row">
                   <div class="cmd-cell cmd-col-cmd"><code>{{ rule.cmd }}</code></div>
@@ -643,47 +760,53 @@ onUnmounted(() => {
               <p class="rule-block-desc">{{ t('settings.security.builtinRules.hardBlockedPathsDesc') }}</p>
               <div class="rule-subblock">
                 <div class="rule-subtitle">{{ t('settings.security.builtinRules.systemPatternsCritical') }}</div>
-                <div class="pattern-chips">
-                  <span
+                <ul class="path-list">
+                  <li
                     v-for="(p, i) in builtinRules.hardBlockedPaths.systemPatterns.filter(x => x.severity === 'critical')"
                     :key="'c' + i"
-                    class="pattern-chip pattern-chip-critical"
+                    class="path-list-item path-list-item--critical"
                   >
                     <code>{{ p.description }}</code>
-                  </span>
-                </div>
+                  </li>
+                </ul>
               </div>
               <div class="rule-subblock">
                 <div class="rule-subtitle">{{ t('settings.security.builtinRules.systemPatternsHardened') }}</div>
-                <div class="pattern-chips">
-                  <span
+                <ul class="path-list">
+                  <li
                     v-for="(p, i) in builtinRules.hardBlockedPaths.systemPatterns.filter(x => x.severity === 'hardened')"
                     :key="'h' + i"
-                    class="pattern-chip pattern-chip-hardened"
+                    class="path-list-item path-list-item--hardened"
                   >
                     <code>{{ p.description }}</code>
-                  </span>
-                </div>
+                  </li>
+                </ul>
               </div>
               <div class="rule-subblock">
                 <div class="rule-subtitle">{{ t('settings.security.builtinRules.devNullExemptions') }}</div>
-                <div class="pattern-chips">
-                  <span
+                <ul class="path-list">
+                  <li
                     v-for="e in builtinRules.hardBlockedPaths.devNullExemptions"
                     :key="e"
-                    class="pattern-chip pattern-chip-exempt"
+                    class="path-list-item path-list-item--exempt"
                   >
                     <code>{{ e }}</code>
-                  </span>
-                </div>
+                  </li>
+                </ul>
               </div>
               <div class="rule-subblock">
                 <div class="rule-subtitle">{{ t('settings.security.builtinRules.userDataGuard') }}</div>
-                <div class="kv-row">
-                  <span class="kv-key">{{ t('settings.security.builtinRules.userDataAllowed') }}</span>
-                  <div class="kv-value">
-                    <code v-for="e in builtinRules.hardBlockedPaths.userDataAllowed" :key="e" class="allowed-chip">{{ e }}</code>
-                  </div>
+                <div class="path-list-section">
+                  <div class="path-list-label">{{ t('settings.security.builtinRules.userDataAllowed') }}</div>
+                  <ul class="path-list">
+                    <li
+                      v-for="e in builtinRules.hardBlockedPaths.userDataAllowed"
+                      :key="e"
+                      class="path-list-item path-list-item--exempt"
+                    >
+                      <code>{{ e }}</code>
+                    </li>
+                  </ul>
                 </div>
                 <div class="kv-row">
                   <span class="kv-key">{{ t('settings.security.builtinRules.userDataRule') }}</span>
@@ -703,27 +826,43 @@ onUnmounted(() => {
                 <h5>{{ t('settings.security.builtinRules.workspaceZones') }}</h5>
               </div>
               <p class="rule-block-desc">{{ t('settings.security.builtinRules.workspaceZonesDesc') }}</p>
+              <div class="kv-row workspace-root-row">
+                <span class="kv-key">{{ t('settings.security.builtinRules.workspaceRoot') }}</span>
+                <span class="kv-value"><code class="path-code">{{ builtinRules.workspaceZones.workspaceRoot }}</code></span>
+              </div>
               <div class="rule-subblock">
                 <div class="rule-subtitle">{{ t('settings.security.builtinRules.zoneFree') }}</div>
-                <div class="pattern-chips">
-                  <span v-for="z in builtinRules.workspaceZones.free" :key="z" class="pattern-chip free">
-                    <code>{{ z }}/</code>
-                  </span>
-                </div>
+                <ul class="path-list">
+                  <li
+                    v-for="z in builtinRules.workspaceZones.free"
+                    :key="z"
+                    class="path-list-item path-list-item--free"
+                  >
+                    <code>{{ z.endsWith('/') ? z : `${z}/` }}</code>
+                  </li>
+                </ul>
               </div>
               <div class="rule-subblock">
                 <div class="rule-subtitle">{{ t('settings.security.builtinRules.zoneProtected') }}</div>
-                <div v-if="builtinRules.workspaceZones.protectedDirs.length" class="pattern-chips">
-                  <span v-for="d in builtinRules.workspaceZones.protectedDirs" :key="d" class="pattern-chip protected">
-                    <code>{{ d }}/</code>
-                  </span>
-                </div>
-                <div v-if="builtinRules.workspaceZones.protectedFiles.length" class="pattern-chips">
-                  <span v-for="f in builtinRules.workspaceZones.protectedFiles" :key="f" class="pattern-chip protected">
-                    <FileLock2 :size="12" />
+                <ul
+                  v-if="builtinRules.workspaceZones.protectedDirs.length || builtinRules.workspaceZones.protectedFiles.length"
+                  class="path-list"
+                >
+                  <li
+                    v-for="d in builtinRules.workspaceZones.protectedDirs"
+                    :key="'d-' + d"
+                    class="path-list-item path-list-item--protected"
+                  >
+                    <code>{{ d.endsWith('/') ? d : `${d}/` }}</code>
+                  </li>
+                  <li
+                    v-for="f in builtinRules.workspaceZones.protectedFiles"
+                    :key="'f-' + f"
+                    class="path-list-item path-list-item--protected"
+                  >
                     <code>{{ f }}</code>
-                  </span>
-                </div>
+                  </li>
+                </ul>
               </div>
               <div class="rule-subblock">
                 <div class="rule-subtitle">{{ t('settings.security.builtinRules.zoneOutside') }}</div>
@@ -1463,7 +1602,7 @@ onUnmounted(() => {
 
 .cmd-grid-user .cmd-grid-head,
 .cmd-grid-user .cmd-grid-row {
-  grid-template-columns: 80px 90px 1fr 110px 60px 40px;
+  grid-template-columns: 80px 108px 1fr 140px 96px 40px;
 }
 
 .user-rule-form {
@@ -1528,9 +1667,22 @@ onUnmounted(() => {
   align-items: center;
 }
 
+.cmd-col-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cmd-col-head > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .cmd-grid-head {
   display: grid;
-  grid-template-columns: 80px 90px 1fr 110px 60px;
+  grid-template-columns: 80px 108px 1fr 140px 96px;
   gap: 8px;
   padding: 6px 10px;
   background: var(--bg-tertiary);
@@ -1540,14 +1692,14 @@ onUnmounted(() => {
   font-size: 10px;
   font-weight: 600;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  text-transform: none;
+  letter-spacing: 0.2px;
   border-bottom: 1px solid var(--border-color);
 }
 
 .cmd-grid-row {
   display: grid;
-  grid-template-columns: 80px 90px 1fr 110px 60px;
+  grid-template-columns: 80px 108px 1fr 140px 96px;
   gap: 8px;
   padding: 6px 10px;
   background: var(--bg-secondary);
@@ -1624,72 +1776,83 @@ onUnmounted(() => {
   letter-spacing: 0.5px;
 }
 
-.pattern-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.path-list-section {
+  margin-bottom: 10px;
 }
 
-.pattern-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-size: 11px;
-}
-
-.pattern-chip code {
-  font-family: 'SF Mono', Menlo, Consolas, monospace;
+.path-list-label {
+  font-size: 12px;
   color: var(--text-secondary);
+  margin-bottom: 6px;
 }
 
-.pattern-chip.free {
-  border-color: rgba(34, 197, 94, 0.3);
-  background: rgba(34, 197, 94, 0.08);
+.path-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-secondary);
 }
 
-.pattern-chip.protected {
-  border-color: rgba(245, 158, 11, 0.3);
-  background: rgba(245, 158, 11, 0.08);
+.path-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 8px;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
 }
 
-.pattern-chip-critical {
-  border-color: rgba(239, 68, 68, 0.4);
-  background: rgba(239, 68, 68, 0.1);
+.path-list-item:last-child {
+  border-bottom: none;
 }
 
-.pattern-chip-critical code {
+.path-list-item code {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  color: var(--text-primary);
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.path-list-item--critical {
+  border-left-color: #ef4444;
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.path-list-item--critical code {
   color: #ef4444;
 }
 
-.pattern-chip-hardened {
-  border-color: rgba(245, 158, 11, 0.3);
-  background: rgba(245, 158, 11, 0.08);
+.path-list-item--hardened {
+  border-left-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.05);
 }
 
-.pattern-chip-hardened code {
+.path-list-item--hardened code {
   color: #f59e0b;
 }
 
-.pattern-chip-exempt {
-  border-color: rgba(34, 197, 94, 0.3);
-  background: rgba(34, 197, 94, 0.08);
+.path-list-item--exempt,
+.path-list-item--free {
+  border-left-color: #22c55e;
+  background: rgba(34, 197, 94, 0.05);
 }
 
-.pattern-chip-exempt code {
+.path-list-item--exempt code,
+.path-list-item--free code {
   color: #22c55e;
 }
 
-.allowed-chip {
-  font-family: 'SF Mono', Menlo, Consolas, monospace;
-  color: #22c55e;
-  background: rgba(34, 197, 94, 0.1);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 11px;
+.path-list-item--protected {
+  border-left-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.path-list-item--protected code {
+  color: #f59e0b;
 }
 
 .kv-row {
@@ -1698,6 +1861,10 @@ onUnmounted(() => {
   gap: 12px;
   margin-bottom: 6px;
   font-size: 12px;
+}
+
+.workspace-root-row {
+  margin: 4px 0 12px;
 }
 
 .kv-row:last-child {

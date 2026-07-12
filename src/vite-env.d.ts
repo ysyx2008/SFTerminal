@@ -773,6 +773,7 @@ interface Window {
           userDataAllowed: string[]
         }
         workspaceZones: {
+          workspaceRoot: string
           free: string[]
           protectedDirs: string[]
           protectedFiles: string[]

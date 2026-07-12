@@ -13,8 +13,10 @@
  * - ALLOWED_USERDATA_ENTRIES（userdata-guard.ts）
  * - PROTECTED_WORKSPACE_FILES / PROTECTED_WORKSPACE_DIRS / WORKSPACE_FREE_DIRS（types.ts）
  * - 系统临时目录（workspace-guard getBuiltinTempRoots）
+ * - Agent workspace 根：{userData}/agent-workspace
  */
 import { app } from 'electron'
+import path from 'path'
 import { ARGV_COMMAND_RULES } from './whitelist'
 import {
   DEV_NULL_EXEMPTIONS,
@@ -52,15 +54,19 @@ export interface HardBlockedPathsView {
   devNullExemptions: string[]
   /** userData 根路径 */
   userDataRoot: string
-  /** userData 下允许 Agent 访问的条目 */
+  /** userData 下允许 Agent 访问的条目（绝对路径） */
   userDataAllowed: string[]
 }
 
 /** 工作区路径分区视图 */
 export interface WorkspaceZonesView {
-  /** 自由区：工作区内目录名 + 系统临时目录绝对路径 */
+  /** Agent workspace 根目录绝对路径 */
+  workspaceRoot: string
+  /** 自由区：一律绝对路径（工作区内子目录 + 系统临时目录） */
   free: string[]
+  /** 保护区目录：绝对路径 */
   protectedDirs: string[]
+  /** 保护区文件：绝对路径 */
   protectedFiles: string[]
 }
 
@@ -97,20 +103,30 @@ export function getBuiltInRulesView(): BuiltInRulesView {
         const d = rank[a.baseLevel] - rank[b.baseLevel]
         return d !== 0 ? d : a.cmd.localeCompare(b.cmd)
       }),
-    hardBlockedPaths: {
-      systemPatterns: SYSTEM_PATH_PATTERNS.map(p => ({
-        description: p.description,
-        severity: p.severity,
-      })),
-      devNullExemptions: [...DEV_NULL_EXEMPTIONS],
-      userDataRoot: app.getPath('userData'),
-      userDataAllowed: [...ALLOWED_USERDATA_ENTRIES],
-    },
-    workspaceZones: {
-      free: [...WORKSPACE_FREE_DIRS, ...getBuiltinTempRoots()],
-      protectedDirs: [...PROTECTED_WORKSPACE_DIRS].sort(),
-      protectedFiles: [...PROTECTED_WORKSPACE_FILES].sort(),
-    },
+    hardBlockedPaths: (() => {
+      const userDataRoot = app.getPath('userData')
+      return {
+        systemPatterns: SYSTEM_PATH_PATTERNS.map(p => ({
+          description: p.description,
+          severity: p.severity,
+        })),
+        devNullExemptions: [...DEV_NULL_EXEMPTIONS],
+        userDataRoot,
+        userDataAllowed: [...ALLOWED_USERDATA_ENTRIES].map(e => path.join(userDataRoot, e)),
+      }
+    })(),
+    workspaceZones: (() => {
+      const workspaceRoot = path.join(app.getPath('userData'), 'agent-workspace')
+      return {
+        workspaceRoot,
+        free: [
+          ...[...WORKSPACE_FREE_DIRS].map(d => path.join(workspaceRoot, d)).sort(),
+          ...getBuiltinTempRoots(),
+        ],
+        protectedDirs: [...PROTECTED_WORKSPACE_DIRS].map(d => path.join(workspaceRoot, d)).sort(),
+        protectedFiles: [...PROTECTED_WORKSPACE_FILES].map(f => path.join(workspaceRoot, f)).sort(),
+      }
+    })(),
   }
 
   return cachedView
