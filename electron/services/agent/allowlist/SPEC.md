@@ -2,7 +2,9 @@
 
 ## 职责
 
-持久化用户通过「始终允许」批准的**命令类**工具操作，全局共享、跨重启生效。Agent 无法读写 `{userData}/agent-allowlist.json`（由 `command-audit/userdata-guard` 硬 block）。
+持久化用户通过「始终允许」批准的**命令类**工具操作（按完整命令指纹特批免确认），全局共享、跨重启生效。Agent 无法读写 `{userData}/agent-allowlist.json`（由 `command-audit/userdata-guard` 硬 block）。
+
+> 若要给命令名定风险等级（如收录 `rg`），请用 `command-audit/user-command-rules`，不是本清单。
 
 ## 模块
 

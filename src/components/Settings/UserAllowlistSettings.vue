@@ -53,6 +53,74 @@ const builtinError = ref(false)
 const builtinFilter = ref('')
 const builtinActiveGroup = ref<RiskLevel | 'all'>('all')
 
+// —— 用户命令规则 ——
+type UserCommandRuleRow = {
+  cmd: string
+  baseLevel: RiskLevel
+  writesTo: boolean
+  pathMode: 'all' | 'fixed' | 'none'
+  safeFlags: string[]
+}
+const userCommandRules = ref<UserCommandRuleRow[]>([])
+const userRulesLoading = ref(false)
+const userRuleSaving = ref(false)
+const userRuleError = ref('')
+const newUserRuleCmd = ref('')
+const newUserRuleLevel = ref<RiskLevel>('safe')
+const newUserRuleWrites = ref(false)
+const newUserRuleFlags = ref('')
+const USER_RULE_LEVELS: RiskLevel[] = ['safe', 'moderate', 'dangerous']
+
+async function loadUserCommandRules() {
+  userRulesLoading.value = true
+  try {
+    userCommandRules.value = await window.electronAPI.commandRules.list()
+  } catch {
+    userCommandRules.value = []
+  } finally {
+    userRulesLoading.value = false
+  }
+}
+
+async function addUserCommandRule() {
+  const cmd = newUserRuleCmd.value.trim()
+  userRuleError.value = ''
+  if (!cmd || userRuleSaving.value) return
+  userRuleSaving.value = true
+  try {
+    const result = await window.electronAPI.commandRules.upsert({
+      cmd,
+      baseLevel: newUserRuleLevel.value,
+      writesTo: newUserRuleWrites.value,
+      safeFlags: newUserRuleFlags.value,
+    })
+    if (!result.ok) {
+      if (result.error === 'builtin_conflict') {
+        userRuleError.value = t('settings.security.userCommandRules.errBuiltin')
+      } else if (result.error === 'invalid_level') {
+        userRuleError.value = t('settings.security.userCommandRules.errLevel')
+      } else {
+        userRuleError.value = t('settings.security.userCommandRules.errGeneric')
+      }
+      return
+    }
+    newUserRuleCmd.value = ''
+    newUserRuleFlags.value = ''
+    newUserRuleWrites.value = false
+    newUserRuleLevel.value = 'safe'
+    await loadUserCommandRules()
+  } catch {
+    userRuleError.value = t('settings.security.userCommandRules.errGeneric')
+  } finally {
+    userRuleSaving.value = false
+  }
+}
+
+async function removeUserCommandRule(cmd: string) {
+  await window.electronAPI.commandRules.remove(cmd)
+  await loadUserCommandRules()
+}
+
 // —— 子 tab 切换（我的授权 / 内置规则）——
 type SubTab = 'user' | 'builtin' | 'policy'
 const activeSubTab = ref<SubTab>('user')
@@ -106,6 +174,7 @@ function switchSubTab(tab: SubTab) {
     if (!builtinRules.value && !builtinLoading.value) {
       loadBuiltinRules()
     }
+    loadUserCommandRules()
     // 工作区分区含可配置项（额外自由区 / 区外写），需加载策略
     if (!policyLoaded.value && !policyLoading.value) {
       loadPolicy()
@@ -704,6 +773,89 @@ function onPolicyTipKeydown(e: KeyboardEvent) {
             <button class="btn btn-sm" @click="loadBuiltinRules">{{ t('settings.security.builtinRules.retry') }}</button>
           </div>
           <template v-else-if="builtinRules">
+            <!-- 我的命令规则 -->
+            <div class="rule-block">
+              <div class="rule-block-header">
+                <Terminal :size="15" />
+                <h5>{{ t('settings.security.userCommandRules.title') }}</h5>
+                <span class="rule-count">{{ t('settings.security.builtinRules.count', { n: userCommandRules.length }) }}</span>
+              </div>
+              <p class="rule-block-desc">{{ t('settings.security.userCommandRules.description') }}</p>
+
+              <div class="user-rule-form">
+                <input
+                  v-model="newUserRuleCmd"
+                  type="text"
+                  class="input-field user-rule-cmd"
+                  :placeholder="t('settings.security.userCommandRules.cmdPlaceholder')"
+                  @keyup.enter="addUserCommandRule"
+                />
+                <select v-model="newUserRuleLevel" class="input-field user-rule-level">
+                  <option v-for="lvl in USER_RULE_LEVELS" :key="lvl" :value="lvl">{{ riskLabel(lvl) }}</option>
+                </select>
+                <label class="user-rule-writes">
+                  <input v-model="newUserRuleWrites" type="checkbox" />
+                  {{ t('settings.security.userCommandRules.writesLabel') }}
+                </label>
+                <input
+                  v-model="newUserRuleFlags"
+                  type="text"
+                  class="input-field user-rule-flags"
+                  :placeholder="t('settings.security.userCommandRules.flagsPlaceholder')"
+                  @keyup.enter="addUserCommandRule"
+                />
+                <button
+                  class="btn btn-sm btn-primary"
+                  :disabled="userRuleSaving || !newUserRuleCmd.trim()"
+                  @click="addUserCommandRule"
+                >
+                  <Plus :size="14" />
+                  {{ t('settings.security.userCommandRules.add') }}
+                </button>
+              </div>
+              <p v-if="userRuleError" class="add-error">{{ userRuleError }}</p>
+
+              <div v-if="userRulesLoading" class="builtin-empty">{{ t('settings.security.builtinRules.loading') }}</div>
+              <div v-else-if="userCommandRules.length === 0" class="builtin-empty">
+                {{ t('settings.security.userCommandRules.empty') }}
+              </div>
+              <div v-else class="cmd-grid cmd-grid-user">
+                <div class="cmd-grid-head">
+                  <div class="cmd-cell cmd-col-cmd">{{ t('settings.security.builtinRules.colCmd') }}</div>
+                  <div class="cmd-cell cmd-col-level">{{ t('settings.security.builtinRules.colBaseLevel') }}</div>
+                  <div class="cmd-cell cmd-col-flags">{{ t('settings.security.builtinRules.colSafeFlags') }}</div>
+                  <div class="cmd-cell cmd-col-path">{{ t('settings.security.builtinRules.colPathMode') }}</div>
+                  <div class="cmd-cell cmd-col-writes">{{ t('settings.security.builtinRules.colWritesTo') }}</div>
+                  <div class="cmd-cell cmd-col-actions"></div>
+                </div>
+                <div v-for="rule in userCommandRules" :key="rule.cmd" class="cmd-grid-row">
+                  <div class="cmd-cell cmd-col-cmd"><code>{{ rule.cmd }}</code></div>
+                  <div class="cmd-cell cmd-col-level">
+                    <span class="risk-tag" :class="riskClass(rule.baseLevel)">{{ riskLabel(rule.baseLevel) }}</span>
+                  </div>
+                  <div class="cmd-cell cmd-col-flags">
+                    <code v-if="rule.safeFlags.length">{{ rule.safeFlags.join(' ') }}</code>
+                    <span v-else class="muted">—</span>
+                  </div>
+                  <div class="cmd-cell cmd-col-path">{{ pathModeLabel(rule.pathMode) }}</div>
+                  <div class="cmd-cell cmd-col-writes">
+                    <span :class="rule.writesTo ? 'writes-yes' : 'muted'">
+                      {{ rule.writesTo ? t('settings.security.builtinRules.writesYes') : t('settings.security.builtinRules.writesNo') }}
+                    </span>
+                  </div>
+                  <div class="cmd-cell cmd-col-actions">
+                    <button
+                      class="btn btn-sm btn-icon"
+                      :title="t('common.delete')"
+                      @click="removeUserCommandRule(rule.cmd)"
+                    >
+                      <Trash2 :size="14" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- 命令风险基线 -->
             <div class="rule-block">
               <div class="rule-block-header">
@@ -1590,6 +1742,52 @@ function onPolicyTipKeydown(e: KeyboardEvent) {
   border: 1px solid var(--border-color);
   border-radius: 6px;
   background: var(--bg-tertiary);
+}
+
+.cmd-grid-user .cmd-grid-head,
+.cmd-grid-user .cmd-grid-row {
+  grid-template-columns: 80px 90px 1fr 110px 60px 40px;
+}
+
+.user-rule-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.user-rule-cmd {
+  flex: 0 1 120px;
+  min-width: 100px;
+  width: auto;
+}
+
+.user-rule-level {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 100px;
+}
+
+.user-rule-flags {
+  flex: 1 1 160px;
+  min-width: 140px;
+  width: auto;
+}
+
+.user-rule-writes {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.cmd-col-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
 }
 
 .cmd-grid-head {

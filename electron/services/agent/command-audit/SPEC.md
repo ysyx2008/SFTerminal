@@ -15,7 +15,9 @@
 ```
 command-audit/
 ├── types.ts              # AuditedCall / AuditContext / CallRiskAssessment
-├── whitelist.ts          # CommandRule + splitArgv + normalizeFlags + 白名单
+├── whitelist.ts          # CommandRule + splitArgv + normalizeFlags + 内置白名单
+├── user-command-rules.ts # 用户追加命令规则（持久化）
+├── resolve-argv-rule.ts  # getArgvCommandRule：内置优先，其次用户规则
 ├── indirection-guard.ts  # 间接执行守卫（命中 -> dangerous）
 ├── assess-call.ts        # 单条 AuditedCall 评估（guard -> 规则 -> 路径分区）
 ├── assess-shell.ts       # 审计入口（extractAuditedCalls -> assessAuditedCall）+ defaultAuditContext
@@ -42,7 +44,7 @@ command-audit/
  ① indirection-guard   ← 命中标 dangerous（非 blocked）
         │
         ▼
- ② getArgvCommandRule  ← 白名单匹配（命名历史遗留，shell 通道也用）
+ ② getArgvCommandRule  ← 内置 ARGV + 用户命令规则
         │
         ┌──────┴──────┐
         │ 无 rule     │ 有 rule
@@ -128,7 +130,7 @@ guard 把"确实危险的间接执行模式"鉴别出来标 dangerous，让 stri
 
 **黑洞设备豁免**：`/dev/null`、`/dev/stdout`、`/dev/stderr` 作为写重定向目标时直接判 safe（写它们等于丢弃或重定向输出）。命令参数中的 `/dev/null` 不受此豁免影响。
 
-**userData 禁区**：userData 下除 `agent-workspace/`、`skills/`、`excel-styles.json`、`word-styles.json` 外的路径，读+写都 blocked（保护 `credentials.json`、`agent-allowlist.json` 等安全机制文件）。
+**userData 禁区**：userData 下除 `agent-workspace/`、`skills/`、`excel-styles.json`、`word-styles.json` 外的路径，读+写都 blocked（保护 `credentials.json`、`agent-allowlist.json`、`agent-command-rules.json` 等安全机制文件）。
 
 ## 依赖
 
@@ -144,6 +146,7 @@ npx vitest run electron/services/agent/command-audit/__tests__/
 
 覆盖：
 - 白名单匹配（safe/moderate/dangerous）
+- 用户命令规则追加 / 内置冲突拒绝 / 合并查找
 - 路径分区（free/protected/workspace/outside/system）
 - indirection-guard（解释器内联 / 包装器 / 调度器 / 结构性 flag）
 - shell 通道 unwrap + 递归审计
@@ -151,6 +154,7 @@ npx vitest run electron/services/agent/command-audit/__tests__/
 
 ## 变更历史
 
+- 2026-07-12：用户命令规则（`user-command-rules.ts`）：可追加未收录命令的 CommandRule；`getArgvCommandRule` 内置优先再查用户表
 - 2026-07-12：扩展 CommandRiskPolicy（间接执行/动态路径档位、relaxedConfirmModerate、outsideWritesUpgrade、extraFreeDirs、subAgentBlockDangerous）；授权清单支持手动添加
 - 2026-07-12：Fail-Closed 按 executionMode 分档。解析失败 / 未知命令默认 strict→dangerous、relaxed/free→moderate；新增 `CommandRiskPolicy`（配置可改）+ `fail-closed-policy.ts`；设置页「风险策略」可编辑四档
 - 2026-07-09：系统路径分级。引入 `severity: critical | hardened` 字段，`/`、`/boot` 保持 blocked（critical），`/etc`、`/dev`、`/sys` 等降为 dangerous（hardened，弹确认放行）。新增 `DEV_NULL_EXEMPTIONS` 豁免 `/dev/null`、`/dev/stdout`、`/dev/stderr`（写重定向到黑洞设备直接 safe）。修复只读命令带写重定向时命令参数被误判为写路径的 bug（`find /tmp 2>/dev/null` 不再被拦）。修复 `whitelist.ts` 重复 `env` key 警告

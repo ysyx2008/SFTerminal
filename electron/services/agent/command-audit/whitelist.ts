@@ -313,8 +313,8 @@ export function basenameCommand(cmd: string): string {
   return base
 }
 
-/** 查找白名单规则；未命中返回 undefined（调用方 Fail-Closed） */
-export function getArgvCommandRule(cmd: string): CommandRule | undefined {
+/** 仅查内置表（不含用户规则） */
+export function getBuiltinArgvCommandRule(cmd: string): CommandRule | undefined {
   const name = basenameCommand(cmd).toLowerCase()
   return ARGV_COMMAND_RULES[name]
 }

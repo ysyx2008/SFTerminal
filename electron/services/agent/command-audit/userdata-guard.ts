@@ -2,7 +2,7 @@
  * userData 目录访问守卫（白名单式）
  *
  * userData 下默认禁止 Agent 访问；仅显式 allow 的条目可读写。
- * 用于保护 credentials.json、agent-allowlist.json 等安全机制文件。
+ * 用于保护 credentials.json、agent-allowlist.json、agent-command-rules.json 等安全机制文件。
  */
 import { app } from 'electron'
 import * as fs from 'fs'

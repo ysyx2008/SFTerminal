@@ -47,12 +47,23 @@ export {
   ARGV_COMMAND_RULES,
   assessCommandFlags,
   basenameCommand,
-  getArgvCommandRule,
+  getBuiltinArgvCommandRule,
   normalizeFlags,
   splitArgv,
 } from './whitelist'
 
+export { getArgvCommandRule } from './resolve-argv-rule'
+
 export type { CommandRule, ParsedArgv } from './whitelist'
+
+export {
+  getUserCommandRules,
+  lookupUserCommandRule,
+  USER_COMMAND_RULES_FILENAME,
+  USER_RULE_ALLOWED_LEVELS,
+} from './user-command-rules'
+
+export type { UserCommandRuleRecord, UserCommandRulePathMode } from './user-command-rules'
 
 export { maxRisk, maxRiskAll } from './risk-level'
 

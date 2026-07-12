@@ -44,6 +44,11 @@ describe('userdata-guard', () => {
     expect(isSystemPath(p)).toBe(true)
   })
 
+  it('agent-command-rules.json 在 userData 下应 forbidden', () => {
+    const p = path.join(mockUserData, 'agent-command-rules.json')
+    expect(isUserDataForbidden(p)).toBe(true)
+  })
+
   it('credentials.json 应 forbidden', () => {
     const p = path.join(mockUserData, 'credentials.json')
     expect(isUserDataForbidden(p)).toBe(true)

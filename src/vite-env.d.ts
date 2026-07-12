@@ -791,6 +791,33 @@ interface Window {
         }
       }>
     }
+    commandRules: {
+      list: () => Promise<Array<{
+        cmd: string
+        baseLevel: import('@shared/types/agent').RiskLevel
+        writesTo: boolean
+        pathMode: 'all' | 'fixed' | 'none'
+        safeFlags: string[]
+      }>>
+      upsert: (payload: {
+        cmd: string
+        baseLevel: import('@shared/types/agent').RiskLevel
+        writesTo?: boolean
+        pathMode?: 'all' | 'fixed' | 'none'
+        safeFlags?: string | string[]
+      }) => Promise<
+        | { ok: true; rule: {
+            cmd: string
+            baseLevel: import('@shared/types/agent').RiskLevel
+            writesTo: boolean
+            pathMode: 'all' | 'fixed' | 'none'
+            safeFlags: string[]
+          } }
+        | { ok: false; error: string }
+      >
+      remove: (cmd: string) => Promise<boolean>
+      clear: () => Promise<boolean>
+    }
     // 历史记录操作
     history: {
       saveAgentRecord: (record: {

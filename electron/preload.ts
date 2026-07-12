@@ -1141,6 +1141,34 @@ const electronAPI = {
     }>,
   },
 
+  commandRules: {
+    list: () => ipcRenderer.invoke('commandRules:list') as Promise<Array<{
+      cmd: string
+      baseLevel: import('@shared/types/agent').RiskLevel
+      writesTo: boolean
+      pathMode: 'all' | 'fixed' | 'none'
+      safeFlags: string[]
+    }>>,
+    upsert: (payload: {
+      cmd: string
+      baseLevel: import('@shared/types/agent').RiskLevel
+      writesTo?: boolean
+      pathMode?: 'all' | 'fixed' | 'none'
+      safeFlags?: string | string[]
+    }) => ipcRenderer.invoke('commandRules:upsert', payload) as Promise<
+      | { ok: true; rule: {
+          cmd: string
+          baseLevel: import('@shared/types/agent').RiskLevel
+          writesTo: boolean
+          pathMode: 'all' | 'fixed' | 'none'
+          safeFlags: string[]
+        } }
+      | { ok: false; error: string }
+    >,
+    remove: (cmd: string) => ipcRenderer.invoke('commandRules:remove', cmd) as Promise<boolean>,
+    clear: () => ipcRenderer.invoke('commandRules:clear') as Promise<boolean>,
+  },
+
   // 智能巡检协调器
   orchestrator: {
     // 启动智能巡检任务

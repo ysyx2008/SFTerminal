@@ -3674,6 +3674,34 @@ ipcMain.handle('allowlist:getBuiltInRules', async () => {
   return getBuiltInRulesView()
 })
 
+ipcMain.handle('commandRules:list', async () => {
+  const { getUserCommandRules } = await import('./services/agent/command-audit/user-command-rules')
+  await getUserCommandRules().load()
+  return getUserCommandRules().list()
+})
+
+ipcMain.handle('commandRules:upsert', async (_event, payload: {
+  cmd: string
+  baseLevel: import('@shared/types/agent').RiskLevel
+  writesTo?: boolean
+  pathMode?: 'all' | 'fixed' | 'none'
+  safeFlags?: string | string[]
+}) => {
+  const { getUserCommandRules } = await import('./services/agent/command-audit/user-command-rules')
+  return getUserCommandRules().upsert(payload ?? { cmd: '', baseLevel: 'moderate' })
+})
+
+ipcMain.handle('commandRules:remove', async (_event, cmd: string) => {
+  const { getUserCommandRules } = await import('./services/agent/command-audit/user-command-rules')
+  return getUserCommandRules().remove(typeof cmd === 'string' ? cmd : '')
+})
+
+ipcMain.handle('commandRules:clear', async () => {
+  const { getUserCommandRules } = await import('./services/agent/command-audit/user-command-rules')
+  await getUserCommandRules().clear()
+  return true
+})
+
 ipcMain.handle('agent:resolveSecureInput', async (_event, {
   ptyId, requestId, value, cancelled
 }: {
