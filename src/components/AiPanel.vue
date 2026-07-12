@@ -3305,7 +3305,10 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   padding: 12px;
   user-select: text;
   position: relative;
-  overflow-anchor: auto;
+  /* 程序化贴底 + FLIP 与 scroll anchoring 冲突；Windows 上尤甚 */
+  overflow-anchor: none;
+  /* 预留滚动条槽位，避免 Windows 经典滚动条出现/消失引发布局 reflow → 二次 ResizeObserver */
+  scrollbar-gutter: stable;
   transition: box-shadow 0.3s ease, opacity 0.15s ease;
 }
 

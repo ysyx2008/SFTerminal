@@ -160,15 +160,22 @@ export function useAgentMode(
   let suppressFlipUntil = 0
 
   // suppressFlipUntil 各触发点的窗口时长（毫秒）。
-  // - FLIP_SUPPRESS_WINDOW_MS：scrollToBottom 后屏蔽 200ms，覆盖 user_task/占位/真实 message
-  //   几个相邻 wrapper 高度变化彼此 FLIP 打架。
-  // - PLACEHOLDER_SWITCH_SUPPRESS_MS：onStep 收到首个 streaming message 且 startup 占位
-  //   仍在时屏蔽 300ms。此时会先乐观移除占位（避免两张卡片同时渲染的中间态闪现），
-  //   再设此窗口覆盖紧接着的 wrapper 高度变化，让两张 ThinkingBlock 单行卡片同位硬切
-  //   而非"从下往上滑一下"。窗口比 FLIP_SUPPRESS_WINDOW_MS 长，因为要覆盖乐观移除 +
-  //   后端 removeStep IPC 幂等到达 + 各自的 wrapper patch → layout → observer 跨帧。
+  // - FLIP_SUPPRESS_WINDOW_MS：点「新消息」等短距跳底后屏蔽 FLIP。
+  // - USER_SEND_SUPPRESS_MS：用户发消息整段链路（乐观 user_task → preparing → 真实
+  //   user_task 替换 → 首条 AI 占位），须长于虚拟列表估算→实测 + Windows 滚动条 reflow。
+  // - PLACEHOLDER_SWITCH_SUPPRESS_MS：startup 占位 → 首条 streaming message 硬切。
+  // - TOOL_RESULT_APPEND_SUPPRESS_MS：调试模式下 tool_result append 后的重测窗口。
   const FLIP_SUPPRESS_WINDOW_MS = 200
+  const USER_SEND_SUPPRESS_MS = 500
   const PLACEHOLDER_SWITCH_SUPPRESS_MS = 300
+  const TOOL_RESULT_APPEND_SUPPRESS_MS = 400
+  // 任务完成后的布局收口窗口：footer 出现、isStreaming→false、虚拟列表重测等
+  const TASK_COMPLETE_SUPPRESS_MS = 600
+
+  /** 延长 FLIP 抑制窗口（取 max，避免短窗口覆盖长窗口） */
+  const extendSuppressFlip = (ms: number) => {
+    suppressFlipUntil = Math.max(suppressFlipUntil, Date.now() + ms)
+  }
 
   // 用户主动展开/收起思考块等「局部高度变化」期间，跳过 ResizeObserver 的贴底/视区补偿，
   // 改由调用方用 anchorElementViewportY 把点击行钉回原位，避免 applyReadingResize
@@ -566,6 +573,14 @@ export function useAgentMode(
     }
   }
 
+  /** Agent run 结束收口：清运行态 + 抑制完成期 FLIP/收缩贴底，避免 Windows 下坠 */
+  const finalizeAgentRunWithScrollSettle = (tabId: string) => {
+    terminalStore.finalizeAgentRunState(tabId)
+    lastAgentStoppedAt = Date.now()
+    extendSuppressFlip(TASK_COMPLETE_SUPPRESS_MS)
+    cancelFlipAnimation()
+  }
+
   /** 用户主动上滚离开底部：清除跟底粘性、grace 窗口与 FLIP，避免流式 chunk 继续拽底或整列晃动 */
   const userScrolledAway = () => {
     stickyFollowBottom = false
@@ -655,7 +670,7 @@ export function useAgentMode(
   // 设 suppressFlipUntil 短暂窗口让 ResizeObserver 跳过 FLIP，只贴底。窗口过后第一个
   // 真正的流式 chunk 进来才进入 FLIP 平滑滑动。
   const scrollToBottom = async () => {
-    suppressFlipUntil = Date.now() + FLIP_SUPPRESS_WINDOW_MS
+    extendSuppressFlip(FLIP_SUPPRESS_WINDOW_MS)
     // 同步先设 sticky，避免 nextTick 前到达的 step 因 sticky=false 误判离底
     guardAfterAutoScroll()
 
@@ -706,7 +721,7 @@ export function useAgentMode(
         // 但 scrollHeight 已变大导致离底 → 主动钉一次底，避免亮「新消息」却不再跟随。
         const el = messagesRef.value
         if (!checkIsNearBottom()) {
-          suppressFlipUntil = Date.now() + FLIP_SUPPRESS_WINDOW_MS
+          extendSuppressFlip(FLIP_SUPPRESS_WINDOW_MS)
           el.scrollTop = el.scrollHeight
           lastKnownScrollTop = el.scrollTop
           lastKnownScrollHeight = el.scrollHeight
@@ -785,7 +800,11 @@ export function useAgentMode(
   // 最后一次 isAgentRunning=true 的时间戳。AI 停止后流式收尾的高度变化仍可能持续一小段，
   // grace 期内继续跳过补偿，避免「AI 刚停、最后一行高度修正」导致画面跳动。
   let lastAgentRunningAt = 0
+  let lastAgentStoppedAt = 0
   const AGENT_RUNNING_GRACE_MS = 300
+
+  const isWithinTaskCompleteSettle = () =>
+    lastAgentStoppedAt > 0 && Date.now() - lastAgentStoppedAt < TASK_COMPLETE_SUPPRESS_MS
 
   // ===== 容器宽度变化感知 =====
   // 任何改变 AiPanel 可用宽度的操作（产出物面板展开/收起、侧边栏、拖拽分隔条、窗口 resize、
@@ -906,7 +925,7 @@ export function useAgentMode(
       const itemsAppended = itemsLength > prevItemsLength
       prevItemsLength = itemsLength
       if (shouldFollowResize()) {
-        applyFollowingResize(el, wrapperDelta)
+        applyFollowingResize(el, wrapperDelta, itemsAppended)
       } else {
         applyReadingResize(el, wrapperDelta, itemsAppended)
       }
@@ -916,21 +935,34 @@ export function useAgentMode(
 
   /**
    * 跟底态：wrapper 尺寸变化时维持贴底。
-   * - 收缩（≤0）：钉新底防 clamp 漂移（971f19a6）；大幅负跳变跳过防震荡
-   * - 增长 + suppressFlipUntil 窗口 / 大跳变：钉新底不 FLIP（硬切）
-   * - 增长 + 其他：钉新底 + FLIP 平滑滑动（同帧贴底 + 反向 transform）
+   * - 收缩（≤0）：钉新底防 clamp 漂移；suppress / 任务完成收口期内跳过（防下坠）
+   * - 增长 + suppress / 大跳变 / 已有 item reflow：hard-cut 贴底，无 FLIP
+   * - 增长 + 新 item append：钉新底 + FLIP 平滑滑动
    */
-  const applyFollowingResize = (el: HTMLElement, wrapperDelta: number) => {
+  const applyFollowingResize = (el: HTMLElement, wrapperDelta: number, itemsAppended: boolean) => {
     if (wrapperDelta <= 0) {
-      if (wrapperDelta > -MAX_FLIP_DELTA) {
+      // suppress / 完成收口窗口内跳过收缩 pinToBottom：虚拟列表重测常先高估再修正，
+      // 此时 pinToBottom 会把视区往下拽——Windows 上表现为「内容先上抬再回落 / 完成时下坠」。
+      if (
+        wrapperDelta > -MAX_FLIP_DELTA
+        && Date.now() >= suppressFlipUntil
+        && !isWithinTaskCompleteSettle()
+      ) {
         pinToBottom(el)
         guardAfterAutoScroll()
       }
       return
     }
-    if (Date.now() < suppressFlipUntil || wrapperDelta >= MAX_FLIP_DELTA) {
+    if (
+      Date.now() < suppressFlipUntil
+      || wrapperDelta >= MAX_FLIP_DELTA
+      || !itemsAppended
+    ) {
       pinToBottom(el)
       guardAfterAutoScroll()
+      // 已有 item 高度变化（流式 markdown 表格逐行 reflow）：取消进行中的 FLIP，
+      // 避免 translateY 累加导致 Windows 上反复抖动。
+      if (!itemsAppended) cancelFlipAnimation()
       return
     }
     // 同帧贴底：layout 后、paint 前完成 scrollTop = scrollHeight，无半行抖动。
@@ -1113,8 +1145,15 @@ export function useAgentMode(
     return agentState.value?.isRunning || false
   })
   // 记录最后一次运行态的时间戳，供 applyReadingResize grace 期判断使用
-  watch(isAgentRunning, (running) => {
-    if (running) lastAgentRunningAt = Date.now()
+  watch(isAgentRunning, (running, wasRunning) => {
+    if (running) {
+      lastAgentRunningAt = Date.now()
+      lastAgentStoppedAt = 0
+    } else if (wasRunning) {
+      lastAgentStoppedAt = Date.now()
+      extendSuppressFlip(TASK_COMPLETE_SUPPRESS_MS)
+      cancelFlipAnimation()
+    }
   })
 
   const pendingConfirm = computed(() => {
@@ -1497,6 +1536,9 @@ export function useAgentMode(
       ? currentTab.value?.agentId
       : tabId
     terminalStore.setAgentRunning(tabId, true, stableAgentKey, message)
+    // 须在 addAgentStep 触发的 layout 之前设 suppress，否则 ResizeObserver 会先跑 FLIP
+    // （Windows 上 FLIP 的 translateY 反向偏移 + 后续收缩 pinToBottom = 先上后落）
+    extendSuppressFlip(USER_SEND_SUPPRESS_MS)
     terminalStore.addAgentStep(tabId, {
       id: `__optimistic_user_task_${startTime}`,
       type: 'user_task',
@@ -1603,7 +1645,7 @@ export function useAgentMode(
     } finally {
       // 后端未推送 user_task（IPC 失败等）时固化乐观步骤，避免 __optimistic_ 前缀残留
       terminalStore.commitOptimisticAgentSteps(tabId)
-      terminalStore.finalizeAgentRunState(tabId)
+      finalizeAgentRunWithScrollSettle(tabId)
     }
 
     // 完成后使用智能滚动
@@ -1800,6 +1842,11 @@ export function useAgentMode(
       // 后端 user_task 到达后替换乐观步骤（避免重复分组）
       if (data.step.type === 'user_task' && !data.step.id.startsWith('__optimistic_')) {
         terminalStore.removeOptimisticAgentSteps(tabId)
+        extendSuppressFlip(USER_SEND_SUPPRESS_MS)
+      }
+
+      if (data.step.type === 'user_supplement') {
+        extendSuppressFlip(USER_SEND_SUPPRESS_MS)
       }
 
       // 「准备中 → 思考中」切换：乐观移除 startup 占位 + 抑制 FLIP。
@@ -1820,8 +1867,21 @@ export function useAgentMode(
           .find(s => s.placeholder === 'startup')
         if (startupStep) {
           terminalStore.removeAgentStep(tabId, startupStep.id)
-          suppressFlipUntil = Date.now() + PLACEHOLDER_SWITCH_SUPPRESS_MS
+          extendSuppressFlip(PLACEHOLDER_SWITCH_SUPPRESS_MS)
         }
+      }
+
+      // 调试模式下 tool_result 作为独立 item append，叠加虚拟列表重测 + Windows 滚动条 reflow
+      if (
+        data.step.type === 'tool_result'
+        && shouldShowToolResultStep(data.step, configStore.agentDebugMode)
+      ) {
+        extendSuppressFlip(TOOL_RESULT_APPEND_SUPPRESS_MS)
+      }
+
+      if (data.step.type === 'final_result') {
+        extendSuppressFlip(TASK_COMPLETE_SUPPRESS_MS)
+        cancelFlipAnimation()
       }
 
       terminalStore.addAgentStep(tabId, data.step)
@@ -1913,7 +1973,7 @@ export function useAgentMode(
       // 只处理属于当前 AiPanel 绑定 tab 的事件（优先使用 ptyId 匹配）
       if (foundTabId !== currentTabId.value) return
 
-      terminalStore.finalizeAgentRunState(currentTabId.value)
+      finalizeAgentRunWithScrollSettle(currentTabId.value)
       // 通知 Canvas 任务完成
       if (isStandaloneAssistant.value) {
         artifactStore.handleAgentComplete(currentTabId.value)
@@ -1963,7 +2023,7 @@ export function useAgentMode(
         : terminalStore.findTabIdByAgentId(data.agentId)
       if (foundTabId !== currentTabId.value) return
 
-      terminalStore.finalizeAgentRunState(currentTabId.value)
+      finalizeAgentRunWithScrollSettle(currentTabId.value)
       queuedProactiveReply.value = null
       // handleError 已通过 onStep 推送 error + final_result，此处不再重复 add error step。
 

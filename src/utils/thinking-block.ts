@@ -60,7 +60,11 @@ export function estimateMessageStepVirtualSize(
     return Math.max(80, collapsedLine + expandedExtra + bodySize)
   }
 
-  if (step.isStreaming) return 46
+  if (step.isStreaming) {
+    // 无 thinking 块的流式正文（如 markdown 表格）：按长度渐进估算，避免固定 46px
+    // 与实测高度差过大 → 流式中持续重测抖动 + 完成时整体下坠。
+    return Math.min(2000, Math.max(46, Math.ceil(content.length / 4)))
+  }
 
   return Math.max(80, Math.ceil(content.length / 4))
 }
