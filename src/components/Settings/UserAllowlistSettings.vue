@@ -681,18 +681,30 @@ function resetPolicy() {
               <div class="policy-scenario-name">{{ t('settings.security.riskPolicy.colParseFail') }}</div>
             </div>
             <div class="policy-cell">
-              <select v-model="policy.strictParseFail" class="policy-select">
-                <option v-for="lvl in POLICY_ALLOWED_LEVELS" :key="lvl" :value="lvl">
+              <div class="policy-radio-group" role="radiogroup">
+                <label
+                  v-for="lvl in POLICY_ALLOWED_LEVELS"
+                  :key="'strict-parse-' + lvl"
+                  class="policy-radio"
+                  :class="[riskClass(lvl), { active: policy.strictParseFail === lvl }]"
+                >
+                  <input v-model="policy.strictParseFail" type="radio" :value="lvl" />
                   {{ riskLabel(lvl) }}
-                </option>
-              </select>
+                </label>
+              </div>
             </div>
             <div class="policy-cell">
-              <select v-model="policy.relaxedParseFail" class="policy-select">
-                <option v-for="lvl in POLICY_ALLOWED_LEVELS" :key="lvl" :value="lvl">
+              <div class="policy-radio-group" role="radiogroup">
+                <label
+                  v-for="lvl in POLICY_ALLOWED_LEVELS"
+                  :key="'relaxed-parse-' + lvl"
+                  class="policy-radio"
+                  :class="[riskClass(lvl), { active: policy.relaxedParseFail === lvl }]"
+                >
+                  <input v-model="policy.relaxedParseFail" type="radio" :value="lvl" />
                   {{ riskLabel(lvl) }}
-                </option>
-              </select>
+                </label>
+              </div>
             </div>
           </div>
 
@@ -701,18 +713,30 @@ function resetPolicy() {
               <div class="policy-scenario-name">{{ t('settings.security.riskPolicy.colUnknownCmd') }}</div>
             </div>
             <div class="policy-cell">
-              <select v-model="policy.strictUnknownCmd" class="policy-select">
-                <option v-for="lvl in POLICY_ALLOWED_LEVELS" :key="lvl" :value="lvl">
+              <div class="policy-radio-group" role="radiogroup">
+                <label
+                  v-for="lvl in POLICY_ALLOWED_LEVELS"
+                  :key="'strict-unknown-' + lvl"
+                  class="policy-radio"
+                  :class="[riskClass(lvl), { active: policy.strictUnknownCmd === lvl }]"
+                >
+                  <input v-model="policy.strictUnknownCmd" type="radio" :value="lvl" />
                   {{ riskLabel(lvl) }}
-                </option>
-              </select>
+                </label>
+              </div>
             </div>
             <div class="policy-cell">
-              <select v-model="policy.relaxedUnknownCmd" class="policy-select">
-                <option v-for="lvl in POLICY_ALLOWED_LEVELS" :key="lvl" :value="lvl">
+              <div class="policy-radio-group" role="radiogroup">
+                <label
+                  v-for="lvl in POLICY_ALLOWED_LEVELS"
+                  :key="'relaxed-unknown-' + lvl"
+                  class="policy-radio"
+                  :class="[riskClass(lvl), { active: policy.relaxedUnknownCmd === lvl }]"
+                >
+                  <input v-model="policy.relaxedUnknownCmd" type="radio" :value="lvl" />
                   {{ riskLabel(lvl) }}
-                </option>
-              </select>
+                </label>
+              </div>
             </div>
           </div>
         </div>
@@ -1567,20 +1591,57 @@ function resetPolicy() {
   line-height: 1.4;
 }
 
-.policy-select {
+.policy-radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
   width: 100%;
-  padding: 6px 8px;
+}
+
+.policy-radio {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 8px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   background: var(--bg-primary);
-  color: var(--text-primary);
-  font-size: 12px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
   cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 
-.policy-select:focus {
-  outline: none;
-  border-color: var(--accent-color, #3b82f6);
+.policy-radio input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.policy-radio:hover {
+  border-color: var(--text-muted);
+}
+
+.policy-radio.risk-moderate.active {
+  border-color: rgba(245, 158, 11, 0.55);
+  background: rgba(245, 158, 11, 0.14);
+  color: #f59e0b;
+}
+
+.policy-radio.risk-dangerous.active {
+  border-color: rgba(239, 68, 68, 0.55);
+  background: rgba(239, 68, 68, 0.14);
+  color: #ef4444;
+}
+
+.policy-radio.risk-blocked.active {
+  border-color: rgba(168, 85, 247, 0.55);
+  background: rgba(168, 85, 247, 0.14);
+  color: #a855f7;
 }
 
 .policy-actions {
