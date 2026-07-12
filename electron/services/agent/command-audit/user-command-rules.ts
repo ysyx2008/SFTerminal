@@ -71,10 +71,6 @@ function isAllowedLevel(level: unknown): level is RiskLevel {
   return typeof level === 'string' && (USER_RULE_ALLOWED_LEVELS as readonly string[]).includes(level)
 }
 
-function isPathMode(mode: unknown): mode is UserCommandRulePathMode {
-  return mode === 'all' || mode === 'fixed' || mode === 'none'
-}
-
 function recordToCommandRule(rec: UserCommandRuleRecord): CommandRule {
   return {
     cmd: rec.cmd,
