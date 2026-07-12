@@ -18,6 +18,8 @@
     "build:win:remote": "node scripts/trigger-dev-win-build.js",
     "build:mac:fast": "vite build && electron-builder --mac && node scripts/fix-mac-yml.js",
     "build:dir": "vite build && electron-builder --dir",
+    "install:dir": "node scripts/install-dir-build.js",
+    "build:local": "npm run build:dir && npm run install:dir",
     "typecheck": "vue-tsc --noEmit",
     "typecheck:electron": "tsc --project tsconfig.node.json --noEmit",
     "typecheck:src": "vue-tsc --noEmit --skipLibCheck",
