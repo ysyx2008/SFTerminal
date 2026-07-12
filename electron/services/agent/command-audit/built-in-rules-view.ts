@@ -91,7 +91,7 @@ export function getBuiltInRulesView(): BuiltInRulesView {
         writesTo: rule.writesTo,
       }))
       .sort((a, b) => {
-        const rank: Record<RiskLevel, number> = { safe: 0, moderate: 1, dangerous: 2, blocked: 3 }
+        const rank: Record<RiskLevel, number> = { blocked: 0, dangerous: 1, moderate: 2, safe: 3 }
         const d = rank[a.baseLevel] - rank[b.baseLevel]
         return d !== 0 ? d : a.cmd.localeCompare(b.cmd)
       }),

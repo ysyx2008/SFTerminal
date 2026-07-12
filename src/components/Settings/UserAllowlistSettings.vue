@@ -724,7 +724,7 @@ function onPolicyTipKeydown(e: KeyboardEvent) {
                 </div>
                 <div class="group-tabs">
                   <button
-                    v-for="g in (['all', 'safe', 'moderate', 'dangerous', 'blocked'] as const)"
+                    v-for="g in (['all', 'blocked', 'dangerous', 'moderate', 'safe'] as const)"
                     :key="g"
                     class="group-tab"
                     :class="['risk-' + g, { active: builtinActiveGroup === g }]"
@@ -1205,19 +1205,7 @@ function onPolicyTipKeydown(e: KeyboardEvent) {
 
 .filter-input {
   width: 100%;
-  padding: 8px 12px 8px 30px;
-  border-radius: 6px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font-size: 13px;
-  outline: none;
   box-sizing: border-box;
-  transition: border-color 0.2s;
-}
-
-.filter-input:focus {
-  border-color: var(--accent-primary);
 }
 
 .toolbar-actions {
@@ -2034,6 +2022,11 @@ function onPolicyTipKeydown(e: KeyboardEvent) {
   outline: none;
   box-sizing: border-box;
   transition: border-color 0.2s;
+}
+
+/* 必须写在 .input-field 的 padding 简写之后，否则会被覆盖 */
+.input-field.filter-input {
+  padding-left: 32px;
 }
 
 .input-field::placeholder {
