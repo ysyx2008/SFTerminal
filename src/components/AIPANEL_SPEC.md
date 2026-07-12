@@ -112,7 +112,7 @@ DynamicScroller 是回收式虚拟列表，动态高度 + 流式增长场景下�
 |---|---|
 | 动态高度测量 / 上方 item 高度修正时的视区锚定 | virtua 内置 |
 | 跟底态：新内容到达 / 最后一项流式长高时钉底 | `stickyFollowBottom` + `animateFollowBottom` / `pinFollowBottom`；`followResizeObserver` 监听 Virtualizer 根高度 |
-| 跟底态：新内容上移的平滑滑动 | `animateFollowBottom`：`scrollTop` 用 `cubic-bezier(0.32, 0.72, 0, 1)` 追底；中途长高保持插值进度 p 重算 from/to（不重置、不硬切），字快只抬高目标 |
+| 跟底态：新内容上移的平滑滑动 | `animateFollowBottom`：每帧指数逼近 `scrollHeight - clientHeight`（`1-e^(-k·dt)`）；目标抬高只增加 remain，无 from/to 重定向，避免流畅中微跳 |
 | 阅读态：用户上滚后不拽回底部，亮「新消息」 | `updateScrollPosition` / `userScrolledAway` / `hasNewMessage` |
 | 切 tab / 恢复历史的精确视口位置 | `aiScrollAnchor`（item id + offset）+ `scrollToIndex` |
 | 历史冷加载视觉抖动 | `isHistoryScrollPending`（opacity:0 → scrollHeight 稳定后淡入） |
@@ -126,12 +126,11 @@ DynamicScroller 是回收式虚拟列表，动态高度 + 流式增长场景下�
 
 ### 跟底动画约束
 
-1. **用 `scrollTop` ease-out 追底，禁止 translateY FLIP**——FLIP 在流式 chunk 打断时会先瞬间下移再上推，观感像回弹。
+1. **用 `scrollTop` 指数逼近追底，禁止 translateY FLIP，禁止 from/to+p 三次缓动重定向**——后者在流式长高时会放大瞬时速度，造成流畅中的微跳。
 2. **`doScrollIfNeeded` 禁止先硬钉底**——会把 gap 吃成 0，动画消失。主动跳底（`scrollToBottom`）才硬切。
-3. **中途长高保持插值进度 p 重算 from/to**（`retargetFollowAnimation`），禁止把 t 重置回 0；时间不够只延长 duration。
-4. **仅 gap ≥ `MAX_FOLLOW_HARD_CUT`（2400）才硬切**；普通流式再快也走动画。`scrollTop` 赋值用 `Math.max` 保证单调不减。
-5. **曲线只用 `cubic-bezier(0.32, 0.72, 0, 1)`**，禁止弹簧/过冲。
-6. **用户上滚必须 `cancelFollowScrollAnimation`**。
+3. **tick 每帧读最新 `scrollHeight`**，已在跑则不必 retarget；收束时只对齐 `latestTarget`，不要再调 `scrollerRef.scrollToBottom()`（易与 DOM scrollTop 不一致而跳一下）。
+4. **曲线：`scrollTop += remain * (1 - exp(-k·dt))`**，`k≈14`；落后较多时可略 boost。禁止弹簧过冲。
+5. **用户上滚必须 `cancelFollowScrollAnimation`**。
 
 ### 改这块代码前必读
 

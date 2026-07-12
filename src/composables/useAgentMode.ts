@@ -575,66 +575,21 @@ export function useAgentMode(
     saveScrollTop()
   }
 
-  // ==================== 跟底平滑滚动（Apple ease-out）====================
-  // 不用 translateY FLIP：流式 chunk 会打断 CSS transition，先瞬间下移再上推，看起来像回弹。
-  // 改为 scrollTop ease-out 追底。中途长高时**保持当前进度 p** 重算 from/to，避免
-  // 「重置 t→0 再加速」或硬切造成的偶发跳变；字出再快也只是把目标抬高、略延长时长。
-  const FOLLOW_BASE_DURATION_MS = 320
-  const FOLLOW_MAX_DURATION_MS = 720
-  /** 仅极端跳变（虚拟列表重排级）才硬切；普通流式再快也走动画 */
-  const MAX_FOLLOW_HARD_CUT = 2400
+  // ==================== 跟底平滑滚动 ====================
+  // 不用 translateY FLIP，也不用「from/to + 进度 p」的三次缓动：
+  // 流式长高时重算 from/to 会放大瞬时速度，表现为流畅中突然微跳。
+  // 改为每帧指数逼近当前底部：目标抬高只增加 remain，速度连续、无重定向尖峰。
+  const FOLLOW_CATCHUP_RATE = 14 // ~250ms 收到 95%；略大则更跟手
+  const FOLLOW_CATCHUP_BOOST_REMAIN = 280 // 落后较多时略加快，避免字快时拖尾
   let followAnimRaf: number | null = null
-  let followAnimFrom = 0
-  let followAnimTo = 0
-  let followAnimStartTs = 0
-  let followAnimDuration = FOLLOW_BASE_DURATION_MS
-
-  const computeFollowDuration = (offset: number): number => {
-    const abs = Math.abs(offset)
-    if (abs <= 100) return FOLLOW_BASE_DURATION_MS
-    return Math.min(FOLLOW_MAX_DURATION_MS, FOLLOW_BASE_DURATION_MS + (abs - 100) * 0.5)
-  }
-
-  /**
-   * CSS cubic-bezier(0.32, 0.72, 0, 1) —— Apple 式 ease-out，单向无过冲。
-   * 对进度 x∈[0,1] 求曲线 y（Newton 求参数 t）。
-   */
-  const easeOutApple = (x: number): number => {
-    if (x <= 0) return 0
-    if (x >= 1) return 1
-    const x1 = 0.32
-    const y1 = 0.72
-    const x2 = 0
-    const y2 = 1
-    const sampleX = (t: number) => {
-      const u = 1 - t
-      return 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t
-    }
-    const sampleDX = (t: number) => {
-      const u = 1 - t
-      return 3 * u * u * x1 + 6 * u * t * (x2 - x1) + 3 * t * t * (1 - x2)
-    }
-    const sampleY = (t: number) => {
-      const u = 1 - t
-      return 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t
-    }
-    let t = x
-    for (let i = 0; i < 6; i++) {
-      const xEst = sampleX(t) - x
-      const dx = sampleDX(t)
-      if (Math.abs(dx) < 1e-6) break
-      t -= xEst / dx
-      if (t < 0) t = 0
-      else if (t > 1) t = 1
-    }
-    return sampleY(t)
-  }
+  let followAnimLastTs = 0
 
   const cancelFollowScrollAnimation = () => {
     if (followAnimRaf !== null) {
       cancelAnimationFrame(followAnimRaf)
       followAnimRaf = null
     }
+    followAnimLastTs = 0
     const wrapper = followObservedTarget
     if (wrapper) {
       wrapper.style.transition = ''
@@ -645,7 +600,7 @@ export function useAgentMode(
   /** 兼容旧调用名 */
   const cancelFlipAnimation = cancelFollowScrollAnimation
 
-  /** 硬切钉底（发消息 / 点新消息 / 极端跳变） */
+  /** 硬切钉底（发消息 / 点新消息） */
   const pinFollowBottom = () => {
     cancelFollowScrollAnimation()
     const el = messagesRef.value
@@ -656,103 +611,49 @@ export function useAgentMode(
     lastKnownScrollHeight = el.scrollHeight
   }
 
-  /**
-   * 内容中途长高：保持当前插值进度 p，重算 from/to，使 scrollTop 连续。
-   * 若剩余时间不够走完新距离，只延长 duration，不把 t 重置回 0。
-   */
-  const retargetFollowAnimation = (box: HTMLElement, newTo: number, now: number) => {
-    const cur = box.scrollTop
-    const remain = newTo - cur
-    if (remain <= 0.5) {
-      followAnimTo = newTo
-      return
-    }
-    if (remain >= MAX_FOLLOW_HARD_CUT) {
-      pinFollowBottom()
-      return
-    }
-
-    const elapsed = Math.max(0, now - followAnimStartTs)
-    const tRaw = followAnimDuration > 0 ? elapsed / followAnimDuration : 1
-    const t = Math.min(0.98, Math.max(0, tRaw))
-    const p = easeOutApple(t)
-
-    if (p < 0.02) {
-      followAnimFrom = cur
-      followAnimTo = newTo
-      followAnimStartTs = now
-      followAnimDuration = computeFollowDuration(remain)
-      return
-    }
-
-    // cur = from' + (to' - from') * p  →  from' = (cur - to'*p) / (1-p)
-    followAnimTo = newTo
-    followAnimFrom = (cur - newTo * p) / (1 - p)
-
-    const timeLeft = Math.max(16, followAnimDuration - elapsed)
-    const needed = computeFollowDuration(remain)
-    if (needed > timeLeft) {
-      followAnimDuration = elapsed + needed
-    }
-  }
-
-  /** 跟底态：ease-out 把 scrollTop 追到当前底部；中途长高保持进度、抬高目标 */
+  /** 跟底态：指数逼近底部；已在跑则只靠 tick 读最新 scrollHeight，无需 retarget */
   const animateFollowBottom = () => {
     const el = messagesRef.value
     if (!el) return
-
     const target = Math.max(0, el.scrollHeight - el.clientHeight)
-    const current = el.scrollTop
-    const gap = target - current
-    if (gap <= 0.5) return
-    if (gap >= MAX_FOLLOW_HARD_CUT) {
-      pinFollowBottom()
-      return
-    }
+    if (target - el.scrollTop <= 0.5) return
+    if (followAnimRaf !== null) return
 
-    if (followAnimRaf !== null) {
-      retargetFollowAnimation(el, target, performance.now())
-      return
-    }
-
-    followAnimFrom = current
-    followAnimTo = target
-    followAnimStartTs = performance.now()
-    followAnimDuration = computeFollowDuration(gap)
-
+    followAnimLastTs = 0
     const tick = (now: number) => {
       const box = messagesRef.value
       if (!box || !shouldFollowBottom()) {
         followAnimRaf = null
+        followAnimLastTs = 0
         return
       }
+
+      if (!followAnimLastTs) followAnimLastTs = now
+      const dt = Math.min(0.048, (now - followAnimLastTs) / 1000)
+      followAnimLastTs = now
 
       const latestTarget = Math.max(0, box.scrollHeight - box.clientHeight)
-      if (latestTarget > followAnimTo + 0.5) {
-        retargetFollowAnimation(box, latestTarget, now)
-        if (followAnimRaf === null) return // 极端硬切已取消动画
-      }
+      const cur = box.scrollTop
+      const remain = latestTarget - cur
 
-      const t = followAnimDuration > 0
-        ? Math.min(1, (now - followAnimStartTs) / followAnimDuration)
-        : 1
-      const next = followAnimFrom + (followAnimTo - followAnimFrom) * easeOutApple(t)
-      // 单调不减：数值误差或 retarget 时也不允许往回抽
-      box.scrollTop = Math.max(box.scrollTop, next)
-      lastKnownScrollTop = box.scrollTop
-      lastKnownScrollHeight = box.scrollHeight
-
-      const stillBehind = box.scrollTop < Math.max(0, box.scrollHeight - box.clientHeight) - 0.5
-      if (t < 1 && stillBehind) {
-        followAnimRaf = requestAnimationFrame(tick)
+      if (remain <= 0.5) {
+        if (remain > 0) box.scrollTop = latestTarget
+        lastKnownScrollTop = box.scrollTop
+        lastKnownScrollHeight = box.scrollHeight
+        followAnimRaf = null
+        followAnimLastTs = 0
         return
       }
 
-      box.scrollTop = box.scrollHeight
-      scrollerRef?.value?.scrollToBottom?.()
+      // 1 - e^(-k dt)：逼近目标，不过冲；字快时 remain 大则自然加快
+      const rate = remain > FOLLOW_CATCHUP_BOOST_REMAIN
+        ? FOLLOW_CATCHUP_RATE * 1.35
+        : FOLLOW_CATCHUP_RATE
+      const alpha = 1 - Math.exp(-rate * dt)
+      box.scrollTop = cur + remain * alpha
       lastKnownScrollTop = box.scrollTop
       lastKnownScrollHeight = box.scrollHeight
-      followAnimRaf = null
+      followAnimRaf = requestAnimationFrame(tick)
     }
 
     followAnimRaf = requestAnimationFrame(tick)
@@ -761,7 +662,6 @@ export function useAgentMode(
   const scrollToBottom = async () => {
     // 同步先设 sticky，避免 nextTick 前到达的 step 因 sticky=false 误判离底
     guardAfterAutoScroll()
-    // 主动跳底硬切；不再 suppress 后续动画——流式首包也应能 ease-out
     cancelFollowScrollAnimation()
 
     await nextTick()
@@ -819,7 +719,7 @@ export function useAgentMode(
 
   // ==================== 跟底态：内容高度变化时平滑追底 ====================
   // virtua 负责上方 item 高度修正的视区锚定，但不负责「最后一项流式长高时保持贴底」。
-  // 这里只在 shouldFollowBottom 且内容变高时 ease-out 追底。
+  // 这里只在 shouldFollowBottom 且内容变高时启动/维持指数追底。
   let followResizeObserver: ResizeObserver | null = null
   let followObservedTarget: HTMLElement | null = null
   let prevFollowContentHeight = 0
