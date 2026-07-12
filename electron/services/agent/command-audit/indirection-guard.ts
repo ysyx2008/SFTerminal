@@ -28,6 +28,9 @@ import type { AuditedCall, CallRiskAssessment } from './types'
 import { t } from '../i18n'
 import { basenameCommand } from './whitelist'
 
+/** 解释器 cmd：整段参数为不可静态审计的脚本体 */
+const INTERPRETER_INLINE_CMDS = new Set(['invoke-expression', 'iex'])
+
 /** 解释器 + 内联执行 flag：内联代码不可静态审计 */
 const INTERPRETER_INLINE_FLAGS: Record<string, ReadonlySet<string>> = {
   // shell 解释器
@@ -159,6 +162,13 @@ export function checkIndirectionGuard(call: AuditedCall): GuardHit | null {
   // guard 在 rule 查找之前跑，所以这里自己 normalize 一次。
   const baseCmd = basenameCommand(call.cmd).toLowerCase()
   const normalizedCall = { ...call, cmd: baseCmd }
+
+  if (INTERPRETER_INLINE_CMDS.has(baseCmd)) {
+    return {
+      level: 'dangerous',
+      reason: t('risk.reason.interpreter_inline', { cmd: baseCmd, flag: '-script' }),
+    }
+  }
 
   // 第 1 层：角色分类（解释器内联 / 包装器 / 调度器）
   const inlineReason = isInterpreterInline(normalizedCall)

@@ -363,7 +363,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
     
     if (platform.includes('win')) {
-      const shell = shellPath ? detectShellType(shellPath) : 'cmd'
+      // 与 electron/utils/shell.ts 一致：Windows 默认 PowerShell，不再假设 cmd
+      const shell = shellPath ? detectShellType(shellPath) : 'powershell'
       const shellNames: Record<ShellType, string> = {
         powershell: 'PowerShell',
         cmd: 'CMD 命令提示符',
@@ -375,7 +376,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       return {
         os: 'windows',
         shell,
-        shellPath: shellPath || 'cmd.exe',
+        shellPath: shellPath,
         description: `Windows ${shellNames[shell]}`
       }
     } else if (platform.includes('mac')) {
@@ -598,17 +599,18 @@ export const useTerminalStore = defineStore('terminal', () => {
           reactiveTab.loadingMessage = t('terminal.loadingEnv') || '正在加载环境变量...'
         }
         
+        // 未指定 shell 时从后端 resolveDefaultShell() 取真相源，避免前端硬编码与 PTY 实际 spawn 不一致
+        const resolvedShellPath = shell ?? (await window.electronAPI.pty.getDefaultShell()).path
         const ptyId = await window.electronAPI.pty.create({
           cols: 80,
           rows: 24,
-          shell: shell,
+          shell: resolvedShellPath,
           encoding: localEncoding
         })
         reactiveTab.loadingMessage = undefined  // 清除加载提示
         reactiveTab.ptyId = ptyId
         reactiveTab.isConnected = true
-        // 检测本地系统信息
-        reactiveTab.systemInfo = detectLocalSystemInfo(shell)
+        reactiveTab.systemInfo = detectLocalSystemInfo(resolvedShellPath)
         ensureRootSplitLayoutForTab(reactiveTab)
       } else if (type === 'ssh' && sshConfig) {
         const sshId = await window.electronAPI.ssh.connect({

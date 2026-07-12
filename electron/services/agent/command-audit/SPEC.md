@@ -6,7 +6,10 @@
 ## 职责
 
 1. **风险分级**：safe / moderate / dangerous / blocked
-2. **单通道（AST）**：所有命令经 `@questi0nm4rk/shell-ast` 解析为 AST，拆出子命令 + flags + 参数 + 重定向，再走白名单 + 路径分区；Lit 中未解的 `\ ` 等反斜杠转义在 extract / resolveCommandPath 中还原（否则 `Application\ Support` 会被误判为工作区外）
+2. **双通道（AST）**：
+   - Unix / Windows cmd 回退：命令经 `@questi0nm4rk/shell-ast` 解析为 AST
+   - **Windows PowerShell（默认 shell）**：经官方 `Parser::ParseInput`（`pwsh-extract.ps1`）解析
+   - 拆出子命令 + flags + 参数 + 重定向，再走白名单 + 路径分区
 3. **路径分区审计**：根据 cwd + 路径所在 zone（free/protected/workspace/outside）调整风险
 4. **Fail-Closed**：解析失败 / 未知命令按 `executionMode` + 用户可配 `commandRiskPolicy` 选档（默认 strict→dangerous、relaxed/free→moderate）；写操作动态路径 -> dangerous
 
@@ -20,8 +23,10 @@ command-audit/
 ├── resolve-argv-rule.ts  # getArgvCommandRule：内置优先，其次用户规则
 ├── indirection-guard.ts  # 间接执行守卫（命中 -> dangerous）
 ├── assess-call.ts        # 单条 AuditedCall 评估（guard -> 规则 -> 路径分区）
-├── assess-shell.ts       # 审计入口（extractAuditedCalls -> assessAuditedCall）+ defaultAuditContext
-├── extract-calls.ts      # shell AST 解析 + unwrap（bash -c 递归）
+├── assess-shell.ts       # 审计入口 + defaultAuditContext
+├── extract-calls.ts      # bash shell-ast 解析 + unwrap（bash -c 递归）
+├── extract-pwsh-calls.ts # PowerShell 官方 AST 提取（Windows 默认 shell）
+├── pwsh-extract.ps1      # Parser::ParseInput 子进程脚本
 ├── confirm-policy.ts     # executionMode -> 是否需确认（strict/relaxed/free）
 ├── fail-closed-policy.ts # 解析失败 / 未知命令 按 mode+policy 选档
 ├── workspace-guard.ts    # 路径分区 zone 计算 + 系统路径黑名单
@@ -35,7 +40,13 @@ command-audit/
    shell 命令字符串
         │
         ▼
- extractAuditedCalls (AST + unwrap bash -c 递归)
+ ┌──────┴──────┐
+ │ Win PS 默认? │
+ └──────┬──────┘
+   yes  │  no
+        ▼       ▼
+ extractPwsh   extractAuditedCalls (shell-ast)
+   AuditedCalls
         │
         ▼
   assessAuditedCall
@@ -135,7 +146,8 @@ guard 把"确实危险的间接执行模式"鉴别出来标 dangerous，让 stri
 ## 依赖
 
 - `@shared/types/agent` -- RiskLevel / ExecutionMode
-- `@questi0nm4rk/shell-ast` -- shell 通道 AST 解析（含 unwrap bash -c）
+- `@questi0nm4rk/shell-ast` -- bash 通道 AST 解析（含 unwrap bash -c）
+- PowerShell `System.Management.Automation.Language.Parser` -- Windows 默认 shell AST（`pwsh-extract.ps1`）
 - `../tools/file` -- getScratchPath / getWorkspacePath
 
 ## 测试
@@ -154,6 +166,7 @@ npx vitest run electron/services/agent/command-audit/__tests__/
 
 ## 变更历史
 
+- 2026-07-12：Windows 默认 PowerShell 走官方 AST（`extract-pwsh-calls.ts` + `pwsh-extract.ps1`），复用白名单 + 路径分区；新增 cmdlet 规则；cmd 回退仍用 regex
 - 2026-07-12：系统临时目录（/tmp、os.tmpdir 等）纳入自由区；确认原因区分「高危命令」与「工作区外升档」；outside 不再误标「需确认」
 - 2026-07-12：扩展 ARGV 清单并分档——高危仅保留不可逆/提权/关机/防火墙/账户；chmod/mount/crontab/包管理/容器/kill/systemctl 等为 moderate（写系统路径仍由路径守卫升级）。`assessCommandFlags` 未知 flag 不得低于 baseLevel；indirection 命中且 ARGV 为 dangerous 时保底 dangerous（sudo 在 relaxed 下也确认）
 - 2026-07-12：用户命令规则（`user-command-rules.ts`）：可追加未收录命令的 CommandRule；`getArgvCommandRule` 内置优先再查用户表

@@ -71,7 +71,7 @@ export interface AuditedCall {
   /** 原始命令文本（用于错误信息和日志） */
   raw: string
   /** shell 来源（AST 解析的 shell 类型） */
-  source: 'bash' | 'zsh' | 'sh'
+  source: 'bash' | 'zsh' | 'sh' | 'powershell'
   /** 存在 $VAR / $(...) 等无法静态解析的路径参数 */
   dynamicPaths?: boolean
 }

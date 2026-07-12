@@ -42,6 +42,23 @@ function copyShellAstWasm() {
   }
 }
 
+// 复制 pwsh-extract.ps1 到 dist-electron（PowerShell AST 审计脚本）
+function copyPwshExtractScript() {
+  return {
+    name: 'copy-pwsh-extract-ps1',
+    closeBundle() {
+      const srcPath = resolve(__dirname, 'electron/services/agent/command-audit/pwsh-extract.ps1')
+      const destDir = resolve(__dirname, 'dist-electron/services/agent/command-audit')
+      const destPath = resolve(destDir, 'pwsh-extract.ps1')
+      if (existsSync(srcPath)) {
+        if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true })
+        copyFileSync(srcPath, destPath)
+        console.log('[copy-pwsh-extract-ps1] Copied pwsh-extract.ps1 to dist-electron')
+      }
+    },
+  }
+}
+
 function copyJiebaWasm() {
   return {
     name: 'copy-jieba-wasm',
@@ -258,7 +275,7 @@ export default defineConfig({
           esbuild: {
             charset: 'utf8'
           },
-          plugins: [copyJiebaWasm(), copyShellAstWasm(), copySpeechWorker(), copyPdfWorker(), copyEmbeddingWorker(), copyLanceDBWorker()]
+          plugins: [copyJiebaWasm(), copyShellAstWasm(), copyPwshExtractScript(), copySpeechWorker(), copyPdfWorker(), copyEmbeddingWorker(), copyLanceDBWorker()]
         }
       },
       {

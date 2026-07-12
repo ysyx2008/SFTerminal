@@ -7,6 +7,7 @@
 import type { AgentConfig } from './types'
 import type { AuditContext } from './command-audit/types'
 import { defaultAuditContext } from './command-audit'
+import { getDefaultShellKind } from '../../utils/shell'
 
 export function auditContextFromConfig(
   config: Pick<AgentConfig, 'executionMode' | 'commandRiskPolicy'>,
@@ -17,5 +18,9 @@ export function auditContextFromConfig(
   if (config.commandRiskPolicy) {
     ctx.riskPolicy = config.commandRiskPolicy
   }
+  const kind = getDefaultShellKind()
+  if (kind === 'powershell') ctx.shell = 'powershell'
+  else if (kind === 'cmd') ctx.shell = 'unknown'
+  else ctx.shell = 'bash'
   return ctx
 }

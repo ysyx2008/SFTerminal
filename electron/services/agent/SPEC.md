@@ -511,7 +511,7 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 - 只读命令（`cat`、`ls`）读系统路径仍为 `safe`
 - **未识别命令**：纯只读 → `moderate` + `hasUnknown`（relaxed 仍确认）；有写 redirect / 动态参数 → `dangerous`
 
-`risk-assessor.ts` 对 shell 命令调用 `assessShellRisk()`（async）；Windows 原生 PowerShell/CMD 回退 regex（`assessCommandRiskLegacy`）。
+`risk-assessor.ts` 对 shell 命令调用 `assessShellRisk()`（async）；Windows 默认 PowerShell 走官方 AST（`extract-pwsh-calls.ts`），cmd 兜底与解析失败时回退 regex（`assessCommandRiskLegacy`）。
 
 风险等级：
 

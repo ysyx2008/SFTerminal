@@ -441,6 +441,10 @@ const electronAPI = {
       value: string
       icon: string
     }>>,
+    getDefaultShell: () => ipcRenderer.invoke('pty:getDefaultShell') as Promise<{
+      path: string
+      kind: 'powershell' | 'cmd' | 'bash'
+    }>,
     onData: (id: string, callback: (data: string) => void) => {
       ipcRenderer.send('pty:subscribe', id)
       const handler = (_event: Electron.IpcRendererEvent, data: string) => callback(data)

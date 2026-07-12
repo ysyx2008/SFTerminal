@@ -196,6 +196,10 @@ interface Window {
         value: string
         icon: string
       }>>
+      getDefaultShell: () => Promise<{
+        path: string
+        kind: 'powershell' | 'cmd' | 'bash'
+      }>
       onData: (id: string, callback: (data: string) => void) => () => void
     }
     ssh: {

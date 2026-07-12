@@ -7,6 +7,7 @@ import path, { join } from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
 import { getDefaultShell } from './utils/platform'
+import { resolveDefaultShell } from './utils/shell'
 import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, WebSearchSettings, IMProcessMode } from '@shared/types'
 import { getAppTitle as buildAppTitle, getBrandName } from '@shared/brand'
 
@@ -1439,6 +1440,12 @@ app.whenReady().then(async () => {
   void import('./services/agent/command-audit/parser').then(({ ensureShellAstReady }) =>
     ensureShellAstReady().catch(err => log.warn('[startup] shell-ast preload failed:', err))
   )
+  // PowerShell 官方 AST 预热（Windows 默认 shell）
+  if (process.platform === 'win32') {
+    void import('./services/agent/command-audit/extract-pwsh-calls').then(({ ensurePwshAstReady }) =>
+      ensurePwshAstReady().catch(err => log.warn('[startup] pwsh-ast preload failed:', err))
+    )
+  }
 
   // 数据目录迁移：必须在创建窗口、初始化 sensor/watch/agent 等一切重活之前执行。
   // 此刻源目录无任何运行时写入，复制数据保证一致；完成后会自动重启。
@@ -2011,6 +2018,10 @@ ipcMain.handle('pty:dispose', async (_event, id: string) => {
 ipcMain.handle('pty:getAvailableShells', async () => {
   const { ptyService } = await rt()
   return ptyService.getAvailableShells()
+})
+
+ipcMain.handle('pty:getDefaultShell', async () => {
+  return resolveDefaultShell()
 })
 
 // PTY 数据订阅的取消函数存储（防止重复订阅导致数据多次发送）

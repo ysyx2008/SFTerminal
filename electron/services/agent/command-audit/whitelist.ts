@@ -371,6 +371,73 @@ export const ARGV_COMMAND_RULES: Record<string, CommandRule> = {
   docker: rule('docker', 'moderate', { pathMode: 'none' }),
   'docker-compose': rule('docker-compose', 'moderate', { pathMode: 'none' }),
   npx: rule('npx', 'moderate', { pathMode: 'none' }),
+
+  // —— Windows PowerShell cmdlet（与 Unix 命令对齐） ——
+  'remove-item': rule('remove-item', 'dangerous', {
+    safeFlags: new Set(['-Force', '-Recurse', '-LiteralPath', '-Path', '-Confirm', '-WhatIf', '-Verbose', '-ErrorAction']),
+    valueFlags: new Set(['-Path', '-LiteralPath', '-Include', '-Exclude', '-Filter', '-ErrorAction']),
+    pathMode: 'all',
+    writesTo: true,
+  }),
+  'get-content': rule('get-content', 'safe', {
+    safeFlags: new Set(['-Path', '-LiteralPath', '-TotalCount', '-Tail', '-Wait', '-Raw', '-Encoding', '-ErrorAction']),
+    valueFlags: new Set(['-Path', '-LiteralPath', '-TotalCount', '-Tail', '-Encoding', '-ErrorAction']),
+    pathMode: 'all',
+  }),
+  'get-childitem': rule('get-childitem', 'safe', {
+    safeFlags: new Set(['-Path', '-LiteralPath', '-Recurse', '-Force', '-Filter', '-ErrorAction']),
+    valueFlags: new Set(['-Path', '-LiteralPath', '-Filter', '-ErrorAction']),
+    pathMode: 'all',
+  }),
+  'copy-item': rule('copy-item', 'safe', {
+    safeFlags: new Set(['-Path', '-LiteralPath', '-Destination', '-Recurse', '-Force', '-ErrorAction']),
+    valueFlags: new Set(['-Path', '-LiteralPath', '-Destination', '-ErrorAction']),
+    pathMode: 'all',
+    writesTo: true,
+  }),
+  'move-item': rule('move-item', 'moderate', {
+    safeFlags: new Set(['-Path', '-LiteralPath', '-Destination', '-Force', '-ErrorAction']),
+    valueFlags: new Set(['-Path', '-LiteralPath', '-Destination', '-ErrorAction']),
+    pathMode: 'all',
+    writesTo: true,
+  }),
+  'new-item': rule('new-item', 'moderate', {
+    safeFlags: new Set(['-Path', '-ItemType', '-Force', '-ErrorAction']),
+    valueFlags: new Set(['-Path', '-ItemType', '-ErrorAction']),
+    pathMode: 'all',
+    writesTo: true,
+  }),
+  'rename-item': rule('rename-item', 'moderate', {
+    safeFlags: new Set(['-Path', '-LiteralPath', '-NewName', '-Force', '-ErrorAction']),
+    valueFlags: new Set(['-Path', '-LiteralPath', '-NewName', '-ErrorAction']),
+    pathMode: 'all',
+    writesTo: true,
+  }),
+  'set-content': rule('set-content', 'moderate', {
+    safeFlags: new Set(['-Path', '-LiteralPath', '-Force', '-Encoding', '-ErrorAction']),
+    valueFlags: new Set(['-Path', '-LiteralPath', '-Encoding', '-ErrorAction']),
+    pathMode: 'all',
+    writesTo: true,
+  }),
+  'add-content': rule('add-content', 'moderate', {
+    safeFlags: new Set(['-Path', '-LiteralPath', '-Encoding', '-ErrorAction']),
+    valueFlags: new Set(['-Path', '-LiteralPath', '-Encoding', '-ErrorAction']),
+    pathMode: 'all',
+    writesTo: true,
+  }),
+  'clear-content': rule('clear-content', 'dangerous', {
+    safeFlags: new Set(['-Path', '-LiteralPath', '-Force', '-ErrorAction']),
+    valueFlags: new Set(['-Path', '-LiteralPath', '-ErrorAction']),
+    pathMode: 'all',
+    writesTo: true,
+  }),
+  'stop-process': rule('stop-process', 'moderate', { pathMode: 'none' }),
+  'stop-service': rule('stop-service', 'moderate', { pathMode: 'none' }),
+  'restart-service': rule('restart-service', 'moderate', { pathMode: 'none' }),
+  'start-service': rule('start-service', 'moderate', { pathMode: 'none' }),
+  'remove-service': rule('remove-service', 'dangerous', { pathMode: 'none' }),
+  'stop-computer': rule('stop-computer', 'dangerous', { pathMode: 'none' }),
+  'restart-computer': rule('restart-computer', 'dangerous', { pathMode: 'none' }),
 }
 
 /** 从 cmd 路径提取命令名（/usr/bin/grep → grep） */

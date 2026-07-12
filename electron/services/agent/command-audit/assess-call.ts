@@ -93,7 +93,7 @@ export function assessAuditedCall(
     const level =
       argvRule?.baseLevel === 'dangerous'
         ? maxRisk(policyLevel, 'dangerous')
-        : policyLevel
+        : maxRisk(policyLevel, guardHit.level)
     return {
       level,
       commandLevel: level,

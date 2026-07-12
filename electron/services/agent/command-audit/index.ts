@@ -28,6 +28,8 @@ export { ensureShellAstReady, parseShellCommand } from './parser'
 
 export { extractAuditedCalls, extractWriteRedirects } from './extract-calls'
 
+export { extractPwshAuditedCalls, ensurePwshAstReady } from './extract-pwsh-calls'
+
 export { isWindowsNativeShellCommand } from './platform-detect'
 
 export {
