@@ -43,6 +43,22 @@ export type OemFeatureKey = keyof OemFeatures
 export interface OemConfig {
   brand: OemBrand
   features: OemFeatures
+  /**
+   * 应用 SSO（OAuth2/OIDC）IdP 配置。
+   * 仅当 features.sso === true 时生效；开源默认不配。
+   */
+  sso?: OemSsoConfig
+}
+
+/** OEM 应用登录 IdP（与邮箱 OAuth 无关） */
+export interface OemSsoConfig {
+  /** OIDC Issuer，用于发现 /.well-known/openid-configuration */
+  issuer: string
+  clientId: string
+  /** 公共客户端推荐省略，走 PKCE；机密客户端可选 */
+  clientSecret?: string
+  redirectUri: string
+  scopes?: string[]
 }
 
 /** 缺字段时的回退（兼容旧 oem.config.ts） */

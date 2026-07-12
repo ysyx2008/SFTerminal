@@ -3369,6 +3369,28 @@ function enqueueAwakenedApply(awakened: boolean, intervalMinutes?: number): Prom
   return awakenedApplyChain
 }
 
+
+// ==================== Auth / SSO（features.sso，默认关闭）====================
+ipcMain.handle('auth:getSession', async () => {
+  const { getAuthService } = await import('./services/auth/auth.service')
+  return getAuthService().getSession()
+})
+
+ipcMain.handle('auth:startLogin', async () => {
+  const { getAuthService } = await import('./services/auth/auth.service')
+  return getAuthService().beginLogin()
+})
+
+ipcMain.handle('auth:completeLogin', async (_event, code: string, state: string) => {
+  const { getAuthService } = await import('./services/auth/auth.service')
+  return getAuthService().completeLogin(code, state)
+})
+
+ipcMain.handle('auth:logout', async () => {
+  const { getAuthService } = await import('./services/auth/auth.service')
+  await getAuthService().logout()
+})
+
 ipcMain.handle('sensor:setAwakened', async (_event, awakened: boolean, intervalMinutes?: number) => {
   return enqueueAwakenedApply(awakened, intervalMinutes)
 })

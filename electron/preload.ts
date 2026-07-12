@@ -3184,6 +3184,18 @@ const electronAPI = {
       ipcRenderer.invoke('sensor:triggerHeartbeat'),
   },
 
+  // 应用 SSO（OAuth2/OIDC；features.sso 默认关闭）
+  auth: {
+    getSession: () =>
+      ipcRenderer.invoke('auth:getSession'),
+    startLogin: () =>
+      ipcRenderer.invoke('auth:startLogin'),
+    completeLogin: (code: string, state: string) =>
+      ipcRenderer.invoke('auth:completeLogin', code, state),
+    logout: () =>
+      ipcRenderer.invoke('auth:logout'),
+  },
+
   // 羁绊系统
   bond: {
     getMetrics: () =>

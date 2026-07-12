@@ -2341,6 +2341,12 @@ interface Window {
       setAwakened: (awakened: boolean, intervalMinutes?: number) => Promise<void>
       triggerHeartbeat: () => Promise<void>
     }
+    auth: {
+      getSession: () => Promise<import('@shared/types').AuthSession | null>
+      startLogin: () => Promise<{ authorizationUrl: string; state: string }>
+      completeLogin: (code: string, state: string) => Promise<import('@shared/types').AuthSession>
+      logout: () => Promise<void>
+    }
 
     // IM 集成
     im: {
