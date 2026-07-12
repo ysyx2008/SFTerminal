@@ -18,11 +18,17 @@ import {
   useOpenConversationInTab,
 } from '../composables/useConversationDragDrop'
 import { useFileDropTarget } from '../composables/useFileDropTarget'
+import { isWorkbenchAvailable } from '../workbench/registry'
+import { isOemFeatureEnabled } from '@shared/oem-features'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 const welcomeSubtitle = useWelcomeSubtitle(isSteamBuild)
+const canShowAssistant = !isSteamBuild && isWorkbenchAvailable('assistant')
+const canShowLocal = isWorkbenchAvailable('local')
+const canShowSsh = isWorkbenchAvailable('ssh')
+const canShowWatch = !isSteamBuild && isOemFeatureEnabled('watch')
 
 const { openConversationInTab } = useOpenConversationInTab()
 const {
@@ -279,10 +285,10 @@ onUnmounted(() => {
       </div>
 
       <!-- AI 快速发起对话（Steam 版隐藏，复用 AiComposer） -->
-      <WelcomeChatComposer v-if="!isSteamBuild" ref="welcomeComposerRef" :active="!!active" />
+      <WelcomeChatComposer v-if="canShowAssistant" ref="welcomeComposerRef" :active="!!active" />
 
       <!-- 查看示例入口 -->
-      <div v-if="!isSteamBuild" class="examples-hint">
+      <div v-if="canShowAssistant" class="examples-hint">
         <button type="button" class="examples-hint-btn" @click="openAssistant">
           💡 {{ t('welcome.viewExamples') }}
         </button>
@@ -293,7 +299,7 @@ onUnmounted(() => {
         <h2 class="section-title">{{ t('welcome.quickStart') }}</h2>
         <div class="action-cards">
           <!-- AI 助手（Steam 版隐藏） -->
-          <div v-if="!isSteamBuild" class="action-card" @click="openAssistant">
+          <div v-if="canShowAssistant" class="action-card" @click="openAssistant">
             <div class="card-icon assistant">
               <Bot :size="24" :stroke-width="1.5" />
             </div>
@@ -304,7 +310,7 @@ onUnmounted(() => {
           </div>
 
           <!-- 本地终端 -->
-          <div class="action-card" @click="openLocalTerminal">
+          <div v-if="canShowLocal" class="action-card" @click="openLocalTerminal">
             <div class="card-icon local">
               <SquareTerminal :size="24" :stroke-width="1.5" />
             </div>
@@ -315,7 +321,7 @@ onUnmounted(() => {
           </div>
 
           <!-- SSH 连接 -->
-          <div class="action-card" @click="openSessionManager">
+          <div v-if="canShowSsh" class="action-card" @click="openSessionManager">
             <div class="card-icon ssh">
               <Monitor :size="24" :stroke-width="1.5" />
             </div>
@@ -326,7 +332,7 @@ onUnmounted(() => {
           </div>
 
           <!-- 关切总览（Steam 版隐藏，无 Agent 即无关切） -->
-          <div v-if="!isSteamBuild" class="action-card" @click="openWatches">
+          <div v-if="canShowWatch" class="action-card" @click="openWatches">
             <div class="card-icon watch">
               <Eye :size="24" :stroke-width="1.5" />
             </div>
@@ -354,7 +360,7 @@ onUnmounted(() => {
       </div>
 
       <!-- 最近连接 -->
-      <div v-if="hasSessions" class="recent-sessions">
+      <div v-if="canShowSsh && hasSessions" class="recent-sessions">
         <div class="section-header">
           <h2 class="section-title">{{ t('welcome.recentConnections') }}</h2>
           <div v-if="configStore.sshSessions.length > 3" class="view-all" @click="openSessionManager">

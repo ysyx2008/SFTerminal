@@ -6,6 +6,7 @@
 import type { Component } from 'vue'
 import type { TerminalType } from '@shared/types'
 import { COMPANION_AGENT_KEY } from '@shared/types'
+import { isOemFeatureEnabled, type OemFeatureKey } from '@shared/oem-features'
 import TerminalTabView from '../components/TerminalTabView.vue'
 import type { WorkbenchDescriptor, WorkbenchKind } from './types'
 import { descriptor as localDescriptor } from './local/descriptor'
@@ -29,6 +30,14 @@ const DESCRIPTORS: Record<WorkbenchKind, WorkbenchDescriptor> = {
   companion: companionDescriptor,
 }
 
+/** kind → OEM feature；觉醒/关切等产品块不经此表（见 isOemFeatureEnabled） */
+const KIND_FEATURE: Partial<Record<WorkbenchKind, OemFeatureKey>> = {
+  local: 'localTerminal',
+  ssh: 'sshTerminal',
+  assistant: 'assistantWorkbench',
+  companion: 'companion',
+}
+
 export function getWorkbenchDescriptor(kind: WorkbenchKind): WorkbenchDescriptor | undefined {
   return DESCRIPTORS[kind]
 }
@@ -39,7 +48,14 @@ export function getWorkbenchDescriptor(kind: WorkbenchKind): WorkbenchDescriptor
  * 多数情况 kind === tab.type；联络是例外：tab.type='assistant' 但用独立的 companion 工作台。
  * 所有按身份分流的逻辑都收敛于此，不散落到组件/调用点。
  */
-export function resolveWorkbenchKind(tab: { type: TerminalType; agentId?: string }): WorkbenchKind {
+export function resolveWorkbenchKind(tab: {
+  type: TerminalType
+  agentId?: string
+  workbenchKind?: string
+}): WorkbenchKind {
+  if (tab.workbenchKind) {
+    return tab.workbenchKind as WorkbenchKind
+  }
   if (tab.type === 'assistant' && tab.agentId === COMPANION_AGENT_ID) {
     return 'companion'
   }
@@ -47,13 +63,29 @@ export function resolveWorkbenchKind(tab: { type: TerminalType; agentId?: string
 }
 
 /**
+ * 工作台是否对当前构建 / OEM 可用 —— 唯一裁剪判定点。
+ * 合并 oem.config.features 与 Steam（availableInSteam）。
+ */
+export function isWorkbenchAvailable(kind: WorkbenchKind): boolean {
+  const desc = DESCRIPTORS[kind]
+  if (!desc) return false
+  if (isSteamBuild && desc.availableInSteam === false) return false
+  const featureKey = KIND_FEATURE[kind]
+  if (featureKey && !isOemFeatureEnabled(featureKey)) return false
+  return true
+}
+
+/**
  * 解析某个工作台类型应使用的渲染器组件。
  *
- * Steam 构建下助手工作台不可用，回退到终端渲染器。
+ * 不可用时回退到终端渲染器（避免白屏）；创建入口应先问 isWorkbenchAvailable。
  */
 export function resolveWorkbenchRenderer(kind: WorkbenchKind): Component {
+  if (!isWorkbenchAvailable(kind)) {
+    return TerminalTabView
+  }
   const desc = DESCRIPTORS[kind]
-  if (desc?.renderer && (desc.availableInSteam || !isSteamBuild)) {
+  if (desc?.renderer) {
     return desc.renderer
   }
   return TerminalTabView
