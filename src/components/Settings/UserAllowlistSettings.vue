@@ -53,7 +53,7 @@ const builtinFilter = ref('')
 const builtinActiveGroup = ref<RiskLevel | 'all'>('all')
 
 // —— 子 tab 切换（我的授权 / 内置规则）——
-type SubTab = 'user' | 'builtin'
+type SubTab = 'user' | 'builtin' | 'policy'
 const activeSubTab = ref<SubTab>('user')
 
 const builtinFilteredCommands = computed(() => {
@@ -93,6 +93,9 @@ function switchSubTab(tab: SubTab) {
   confirmClearAll.value = false
   if (tab === 'builtin' && !builtinRules.value && !builtinLoading.value) {
     loadBuiltinRules()
+  }
+  if (tab === 'policy' && !policyLoaded.value && !policyLoading.value) {
+    loadPolicy()
   }
 }
 
@@ -223,6 +226,74 @@ function toggleSelectAll(checked: boolean) {
 }
 
 onMounted(loadEntries)
+
+// ==================== 命令风险策略 ====================
+type CommandRiskPolicy = {
+  strictParseFail: RiskLevel
+  strictUnknownCmd: RiskLevel
+  relaxedParseFail: RiskLevel
+  relaxedUnknownCmd: RiskLevel
+}
+
+const POLICY_ALLOWED_LEVELS: RiskLevel[] = ['moderate', 'dangerous', 'blocked'] as const
+const DEFAULT_POLICY: CommandRiskPolicy = {
+  strictParseFail: 'dangerous',
+  strictUnknownCmd: 'dangerous',
+  relaxedParseFail: 'moderate',
+  relaxedUnknownCmd: 'moderate',
+}
+
+const policyLoaded = ref(false)
+const policyLoading = ref(false)
+const policySaving = ref(false)
+const policySaved = ref(false)
+const policyError = ref(false)
+const policy = ref<CommandRiskPolicy>({ ...DEFAULT_POLICY })
+const policyDirty = computed(() => {
+  const p = policy.value
+  return (
+    p.strictParseFail !== DEFAULT_POLICY.strictParseFail ||
+    p.strictUnknownCmd !== DEFAULT_POLICY.strictUnknownCmd ||
+    p.relaxedParseFail !== DEFAULT_POLICY.relaxedParseFail ||
+    p.relaxedUnknownCmd !== DEFAULT_POLICY.relaxedUnknownCmd
+  )
+})
+
+async function loadPolicy() {
+  policyLoading.value = true
+  policyError.value = false
+  try {
+    const stored = await window.electronAPI.config.get('commandRiskPolicy')
+    policy.value = {
+      strictParseFail: stored?.strictParseFail ?? DEFAULT_POLICY.strictParseFail,
+      strictUnknownCmd: stored?.strictUnknownCmd ?? DEFAULT_POLICY.strictUnknownCmd,
+      relaxedParseFail: stored?.relaxedParseFail ?? DEFAULT_POLICY.relaxedParseFail,
+      relaxedUnknownCmd: stored?.relaxedUnknownCmd ?? DEFAULT_POLICY.relaxedUnknownCmd,
+    }
+    policyLoaded.value = true
+  } catch {
+    policyError.value = true
+  } finally {
+    policyLoading.value = false
+  }
+}
+
+async function savePolicy() {
+  policySaving.value = true
+  try {
+    await window.electronAPI.config.set('commandRiskPolicy', { ...policy.value })
+    policySaved.value = true
+    setTimeout(() => { policySaved.value = false }, 2000)
+  } catch {
+    policyError.value = true
+  } finally {
+    policySaving.value = false
+  }
+}
+
+function resetPolicy() {
+  policy.value = { ...DEFAULT_POLICY }
+}
 </script>
 
 <template>
@@ -243,6 +314,13 @@ onMounted(loadEntries)
         @click="switchSubTab('builtin')"
       >
         🛡️ {{ t('settings.security.subTabs.builtin') }}
+      </button>
+      <button
+        class="sub-tab"
+        :class="{ active: activeSubTab === 'policy' }"
+        @click="switchSubTab('policy')"
+      >
+        ⚙️ {{ t('settings.security.subTabs.policy') }}
       </button>
     </div>
 
@@ -555,6 +633,98 @@ onMounted(loadEntries)
             </div>
           </template>
         </div>
+      </div>
+    </div>
+
+    <!-- ========== 命令风险策略 ========== -->
+    <div v-if="activeSubTab === 'policy'" class="sub-panel">
+      <div class="settings-section">
+        <div class="section-header">
+          <div class="header-left">
+            <h4>{{ t('settings.security.riskPolicy.title') }}</h4>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-sm" @click="loadPolicy" :disabled="policyLoading" :title="t('common.refresh')">
+              <RefreshCw :size="14" :class="{ spinning: policyLoading }" />
+            </button>
+          </div>
+        </div>
+
+        <p class="section-desc">{{ t('settings.security.riskPolicy.description') }}</p>
+
+        <div v-if="policyLoading" class="empty-state">
+          <RefreshCw :size="20" class="spinning" />
+          <span>{{ t('settings.security.builtinRules.loading') }}</span>
+        </div>
+
+        <div v-else-if="policyError" class="empty-state">
+          <ShieldAlert :size="20" />
+          <span>{{ t('settings.security.builtinRules.loadError') }}</span>
+          <button class="btn btn-sm" @click="loadPolicy">{{ t('settings.security.builtinRules.retry') }}</button>
+        </div>
+
+        <div v-else class="policy-grid">
+          <div class="policy-row policy-row-header">
+            <div class="policy-cell"></div>
+            <div class="policy-cell policy-cell-head">{{ t('settings.security.riskPolicy.colParseFail') }}</div>
+            <div class="policy-cell policy-cell-head">{{ t('settings.security.riskPolicy.colUnknownCmd') }}</div>
+          </div>
+
+          <div class="policy-row">
+            <div class="policy-cell policy-cell-label">
+              <div class="policy-mode-tag mode-strict">strict</div>
+              <div class="policy-mode-desc">{{ t('settings.security.riskPolicy.strictDesc') }}</div>
+            </div>
+            <div class="policy-cell">
+              <select v-model="policy.strictParseFail" class="policy-select">
+                <option v-for="lvl in POLICY_ALLOWED_LEVELS" :key="lvl" :value="lvl">
+                  {{ riskLabel(lvl) }}
+                </option>
+              </select>
+            </div>
+            <div class="policy-cell">
+              <select v-model="policy.strictUnknownCmd" class="policy-select">
+                <option v-for="lvl in POLICY_ALLOWED_LEVELS" :key="lvl" :value="lvl">
+                  {{ riskLabel(lvl) }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <div class="policy-row">
+            <div class="policy-cell policy-cell-label">
+              <div class="policy-mode-tag mode-relaxed">relaxed</div>
+              <div class="policy-mode-desc">{{ t('settings.security.riskPolicy.relaxedDesc') }}</div>
+            </div>
+            <div class="policy-cell">
+              <select v-model="policy.relaxedParseFail" class="policy-select">
+                <option v-for="lvl in POLICY_ALLOWED_LEVELS" :key="lvl" :value="lvl">
+                  {{ riskLabel(lvl) }}
+                </option>
+              </select>
+            </div>
+            <div class="policy-cell">
+              <select v-model="policy.relaxedUnknownCmd" class="policy-select">
+                <option v-for="lvl in POLICY_ALLOWED_LEVELS" :key="lvl" :value="lvl">
+                  {{ riskLabel(lvl) }}
+                </option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="!policyLoading && !policyError" class="policy-actions">
+          <button class="btn btn-sm" @click="resetPolicy" :disabled="!policyDirty">
+            {{ t('settings.security.riskPolicy.reset') }}
+          </button>
+          <button class="btn btn-sm btn-primary" @click="savePolicy" :disabled="policySaving">
+            {{ policySaving ? t('common.saving') : t('common.save') }}
+          </button>
+          <span v-if="policySaved" class="policy-saved">{{ t('settings.security.riskPolicy.saved') }}</span>
+        </div>
+
+        <p class="rule-text muted">{{ t('settings.security.riskPolicy.freeModeHint') }}</p>
+        <p class="rule-text muted">{{ t('settings.security.riskPolicy.blockedHint') }}</p>
       </div>
     </div>
   </div>
@@ -1311,5 +1481,111 @@ onMounted(loadEntries)
 
 .spinning {
   animation: spin 1s linear infinite;
+}
+
+/* -- 命令风险策略 -- */
+.policy-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--border-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.policy-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  background: var(--bg-secondary);
+}
+
+.policy-row-header {
+  background: var(--bg-tertiary);
+}
+
+.policy-cell {
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-right: 1px solid var(--border-color);
+}
+
+.policy-cell:last-child {
+  border-right: none;
+}
+
+.policy-cell-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  justify-content: center;
+}
+
+.policy-cell-label {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.policy-mode-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+}
+
+.policy-mode-tag.mode-strict {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.policy-mode-tag.mode-relaxed {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+}
+
+.policy-mode-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.policy-select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.policy-select:focus {
+  outline: none;
+  border-color: var(--accent-color, #3b82f6);
+}
+
+.policy-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.policy-saved {
+  font-size: 12px;
+  color: #22c55e;
+}
+
+.section-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 8px 0;
+  line-height: 1.5;
 }
 </style>

@@ -17,9 +17,10 @@ export type {
   PendingSecureInput,
   AttachmentInfo,
   TokenUsage,
+  CommandRiskPolicy,
 } from '@shared/types'
 
-import type { TerminalType, ExecutionMode, RemoteChannel, PendingConfirmation, PendingSecureInput, AgentStep, AgentPlan, AttachmentInfo, TokenUsage } from '@shared/types'
+import type { TerminalType, ExecutionMode, RemoteChannel, PendingConfirmation, PendingSecureInput, AgentStep, AgentPlan, AttachmentInfo, TokenUsage, CommandRiskPolicy } from '@shared/types'
 
 // Agent 配置
 export interface AgentConfig {
@@ -30,6 +31,8 @@ export interface AgentConfig {
   autoExecuteModerate: boolean  // moderate 命令是否自动执行
   executionMode: ExecutionMode  // 执行模式：strict=所有命令需确认，relaxed=仅危险命令需确认，free=全自动（危险！）
   debugMode: boolean            // 调试模式：显示详细的工具调用步骤
+  /** 解析失败 / 未知命令 的风险策略（按 executionMode 分档），默认走 DEFAULT_COMMAND_RISK_POLICY */
+  commandRiskPolicy?: CommandRiskPolicy
 }
 
 /**

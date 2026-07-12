@@ -5,6 +5,7 @@
 import stripAnsi from 'strip-ansi'
 import { t } from '../i18n'
 import { assessCommandRiskDetailed, analyzeCommand, isSudoCommand, detectPasswordPrompt } from '../risk-assessor'
+import { auditContextFromConfig } from '../audit-context-from-config'
 import { commandNeedsConfirm, isSubAgentBlocked } from '../command-audit/confirm-policy'
 import { resolveCommandToolConfirmation } from '../allowlist/resolve-command-confirm'
 import { getTerminalStateService } from '../../terminal-state.service'
@@ -155,7 +156,7 @@ export async function executeCommand(
   }
 
   // 评估风险
-  const assessment = await assessCommandRiskDetailed(command)
+  const assessment = await assessCommandRiskDetailed(command, auditContextFromConfig(config))
 
   if (assessment.level === 'blocked') {
     return { 
@@ -193,7 +194,7 @@ export async function executeCommand(
       toolCallId,
       riskLevel,
       executor,
-      async () => (await assessCommandRiskDetailed(command)).level,
+      async () => (await assessCommandRiskDetailed(command, auditContextFromConfig(config))).level,
     )
     if (!confirm.proceed) {
       executor.addStep({

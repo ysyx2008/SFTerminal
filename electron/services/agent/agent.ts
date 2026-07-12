@@ -29,7 +29,8 @@ import type {
   AgentExecutionPhase,
   PendingConfirmationInternal,
   PendingSecureInputInternal,
-  PendingUserMessage
+  PendingUserMessage,
+  CommandRiskPolicy,
 } from './types'
 import { DEFAULT_AGENT_CONFIG } from './types'
 import { TaskMemoryStore } from './task-memory'
@@ -113,12 +114,15 @@ export abstract class Agent {
   
   /** 执行模式 */
   executionMode: ExecutionMode = 'strict'
-  
+
   /** 命令超时时间（毫秒） */
   commandTimeout: number = 30000
-  
+
   /** 调试模式 */
   debugMode: boolean = false
+
+  /** 解析失败 / 未知命令 的风险策略（按 executionMode 分档） */
+  commandRiskPolicy?: CommandRiskPolicy
   
   /** AI 配置档案 ID（每个 Agent 实例独立，未设置时 fallback 到全局） */
   profileId?: string
@@ -444,6 +448,9 @@ export abstract class Agent {
     if (config.debugMode !== undefined) {
       this.debugMode = config.debugMode
     }
+    if (config.commandRiskPolicy !== undefined) {
+      this.commandRiskPolicy = config.commandRiskPolicy
+    }
     if (config.profileId !== undefined) {
       this.profileId = config.profileId
     }
@@ -664,7 +671,8 @@ export abstract class Agent {
       ...DEFAULT_AGENT_CONFIG,
       executionMode: this.executionMode,
       commandTimeout: this.commandTimeout,
-      debugMode: this.debugMode
+      debugMode: this.debugMode,
+      commandRiskPolicy: this.commandRiskPolicy,
     }
     
     const run: AgentRun = {

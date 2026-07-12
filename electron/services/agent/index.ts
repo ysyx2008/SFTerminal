@@ -22,7 +22,8 @@ import type {
   RiskLevel,
   AgentServices,
   RunStatus,
-  AgentExecutionPhase
+  AgentExecutionPhase,
+  CommandRiskPolicy,
 } from './types'
 import { Agent } from './agent'
 import { SailFish } from './sailfish'
@@ -191,6 +192,20 @@ export class AgentService {
   // ==================== 工厂方法 ====================
 
   /**
+   * 把 ConfigService 中的 commandRiskPolicy 注入 Agent。
+   * 仅在 Agent 新建时调用一次（默认值）；后续用户改 policy 后通过 updateConfig 覆盖。
+   */
+  private applyDefaultCommandRiskPolicy(agent: SailFish): void {
+    const cs = this.services.configService
+    if (!cs) return
+    try {
+      agent.commandRiskPolicy = cs.getCommandRiskPolicy()
+    } catch (err) {
+      log.warn('Failed to apply default commandRiskPolicy:', err)
+    }
+  }
+
+  /**
    * 获取或创建 Agent 实例
    *
    * @param agentKey Agent 标识符。终端 Agent 传 tabId，固定 Agent 传 __companion__/__watch__。
@@ -202,6 +217,7 @@ export class AgentService {
       agent = new SailFish(this.services)
       agent.setAgentId(ptyId)
       agent.setCallbacks(this.defaultCallbacks)
+      this.applyDefaultCommandRiskPolicy(agent)
       this.agents.set(ptyId, agent)
       log.info(`Created agent: agentKey=${ptyId}`)
     }
@@ -245,6 +261,7 @@ export class AgentService {
       agent = new SailFish(this.services)
       agent.setAgentId(agentId)
       agent.setCallbacks(this.defaultCallbacks)
+      this.applyDefaultCommandRiskPolicy(agent)
       this.agents.set(agentId, agent)
       log.info(`Created assistant agent: ${agentId} (persistentNamed=${agent.isPersistentNamedAgent()})`)
     }
@@ -706,6 +723,16 @@ export class AgentService {
   updateConfig(ptyId: string, config: Partial<AgentConfig>): void {
     const agent = this.getAgent(ptyId)
     agent?.updateConfig(config)
+  }
+
+  /**
+   * 把新的 commandRiskPolicy 同步到所有已存在的 Agent 实例。
+   * 用户在设置页改 policy 后调用，保证运行中 Agent 立即生效。
+   */
+  broadcastCommandRiskPolicy(policy: CommandRiskPolicy): void {
+    for (const agent of this.agents.values()) {
+      agent.updateConfig({ commandRiskPolicy: policy })
+    }
   }
   
   /**

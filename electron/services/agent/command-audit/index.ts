@@ -55,3 +55,6 @@ export {
 export type { CommandRule, ParsedArgv } from './whitelist'
 
 export { maxRisk, maxRiskAll } from './risk-level'
+
+export { resolveFailClosedLevel } from './fail-closed-policy'
+export type { FailClosedKind } from './fail-closed-policy'

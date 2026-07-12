@@ -7,7 +7,7 @@
  * - 沙箱分区：工作区内按 free/protected/workspace 三档调整风险
  */
 
-import type { RiskLevel } from '@shared/types/agent'
+import type { RiskLevel, ExecutionMode, CommandRiskPolicy } from '@shared/types/agent'
 
 /**
  * 工作区路径分区
@@ -32,6 +32,16 @@ export interface AuditContext {
   cwd?: string
   /** shell 类型，影响审计策略 */
   shell?: 'bash' | 'zsh' | 'sh' | 'powershell' | 'cmd' | 'unknown'
+  /**
+   * 当前执行模式（用于解析失败 / 未知命令 按 mode 选档位）。
+   * 不传时回退旧行为：解析失败 dangerous、未知命令 moderate。
+   */
+  executionMode?: ExecutionMode
+  /**
+   * 解析失败 / 未知命令 的风险策略。
+   * 不传时回退 DEFAULT_COMMAND_RISK_POLICY。
+   */
+  riskPolicy?: CommandRiskPolicy
 }
 
 /**
@@ -90,7 +100,7 @@ export interface CallRiskAssessment {
   reasons: string[]
   /** 路径分区分析（用于调试和审计日志） */
   pathZones?: WorkspaceZone[]
-  /** 不在 argv 白名单（relaxed 模式下仍需确认） */
+  /** 不在 argv 白名单（等级由 commandRiskPolicy 决定） */
   unknown?: boolean
 }
 
@@ -106,7 +116,7 @@ export interface CommandRiskAssessment {
   parsed: boolean
   /** 解析失败原因（parsed=false 时） */
   parseError?: string
-  /** 是否包含未识别子命令（relaxed 下仍需确认） */
+  /** 是否包含未识别子命令（等级由 commandRiskPolicy 决定） */
   hasUnknown?: boolean
 }
 

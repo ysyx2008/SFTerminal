@@ -42,6 +42,41 @@ export type RemoteChannel = 'desktop' | 'web' | 'dingtalk' | 'feishu' | 'slack' 
 
 export type RiskLevel = 'safe' | 'moderate' | 'dangerous' | 'blocked'
 
+/**
+ * 解析失败 / 未知命令 的默认风险策略（按 executionMode 分档）
+ *
+ * 仅对 Fail-Closed 兜底路径生效：
+ * - parseFail  : shell AST 解析抛错 / 命令串无可审计子命令
+ * - unknownCmd : 子命令不在白名单（assessUnknownCall）
+ *
+ * 注意：Windows 原生 shell（PowerShell/CMD）走 legacyAssess，不套本策略。
+ * 可选值限定 moderate / dangerous / blocked（safe 不允许，避免误设为放行）。
+ * blocked 是硬墙--任何 executionMode 下都会拒绝执行，慎用。
+ *
+ * free 模式下等级只影响 UI 展示色（free 本就不确认），默认跟随 relaxed 配置。
+ */
+export interface CommandRiskPolicy {
+  /** strict 模式下解析失败的等级（默认 dangerous） */
+  strictParseFail: RiskLevel
+  /** strict 模式下未知命令的等级（默认 dangerous） */
+  strictUnknownCmd: RiskLevel
+  /** relaxed 模式下解析失败的等级（默认 moderate） */
+  relaxedParseFail: RiskLevel
+  /** relaxed 模式下未知命令的等级（默认 moderate） */
+  relaxedUnknownCmd: RiskLevel
+}
+
+/** CommandRiskPolicy 各字段允许的取值（不含 safe） */
+export const COMMAND_RISK_POLICY_ALLOWED_LEVELS: readonly RiskLevel[] = ['moderate', 'dangerous', 'blocked'] as const
+
+/** CommandRiskPolicy 默认值 */
+export const DEFAULT_COMMAND_RISK_POLICY: CommandRiskPolicy = {
+  strictParseFail: 'dangerous',
+  strictUnknownCmd: 'dangerous',
+  relaxedParseFail: 'moderate',
+  relaxedUnknownCmd: 'moderate',
+}
+
 /** API 调用的 token 用量（由 LLM provider 返回的精确值） */
 export interface TokenUsage {
   prompt_tokens: number

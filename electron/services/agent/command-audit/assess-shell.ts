@@ -10,6 +10,7 @@ import { assessAuditedCall, assessRedirectPaths, aggregateHasUnknown } from './a
 import { extractAuditedCalls } from './extract-calls'
 import { isWindowsNativeShellCommand } from './platform-detect'
 import { maxRisk, maxRiskAll } from './risk-level'
+import { resolveFailClosedLevel } from './fail-closed-policy'
 import type { AuditContext, CommandRiskAssessment } from './types'
 
 /** 构造默认审计上下文（assistant 模式） */
@@ -96,10 +97,11 @@ export async function assessShellRisk(
     const { calls, writeRedirects } = await extractAuditedCalls(command, ctx)
 
     if (calls.length === 0) {
+      const emptyLevel = resolveFailClosedLevel('parseFail', ctx)
       return {
-        level: 'dangerous',
+        level: emptyLevel,
         parsed: true,
-        calls: [{ level: 'dangerous', commandLevel: 'dangerous', reasons: [t('risk.reason.no_auditable_call')] }],
+        calls: [{ level: emptyLevel, commandLevel: emptyLevel, reasons: [t('risk.reason.no_auditable_call')] }],
       }
     }
 
@@ -130,7 +132,8 @@ export async function assessShellRisk(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const legacy = opts.legacyAssess ?? (() => 'dangerous' as RiskLevel)
-    const level = maxRisk('dangerous', legacy(command))
+    const policyLevel = resolveFailClosedLevel('parseFail', ctx)
+    const level = maxRisk(policyLevel, legacy(command))
     return {
       level,
       parsed: false,

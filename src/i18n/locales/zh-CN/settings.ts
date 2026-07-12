@@ -39,6 +39,7 @@ export default {
       subTabs: {
         user: '我的授权',
         builtin: '内置规则',
+        policy: '风险策略',
       },
       builtinRules: {
         title: '内置安全规则',
@@ -108,6 +109,18 @@ export default {
         filterPlaceholder: '搜索工具名或参数…',
         timeYesterday: '昨天',
         timeDaysAgo: '{n} 天前',
+      },
+      riskPolicy: {
+        title: '命令风险策略',
+        description: '解析失败和未知命令的默认风险等级，按执行模式分档配置。等级决定是否弹出确认（relaxed 下 dangerous/blocked 才确认）。free 模式跟随 relaxed 配置。',
+        colParseFail: '解析失败',
+        colUnknownCmd: '未知命令',
+        strictDesc: '所有命令都需确认（风险等级仅影响展示色）',
+        relaxedDesc: '仅 dangerous/blocked 需确认',
+        reset: '恢复默认',
+        saved: '已保存',
+        freeModeHint: 'free 模式不确认，等级仅影响 UI 展示色，默认跟随 relaxed 配置。',
+        blockedHint: 'blocked 是硬墙--任何执行模式下都会拒绝执行，慎用。',
       },
     },
     bastion: {

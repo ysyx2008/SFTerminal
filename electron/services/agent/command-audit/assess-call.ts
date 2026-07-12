@@ -9,6 +9,7 @@ import { assessCommandFlags, getArgvCommandRule } from './whitelist'
 import { adjustRiskByPathZones } from './workspace-guard'
 import { maxRisk } from './risk-level'
 import { checkIndirectionGuard, byGuard } from './indirection-guard'
+import { resolveFailClosedLevel } from './fail-closed-policy'
 
 function collectWritePaths(call: AuditedCall, extraPaths: string[]): string[] {
   const fromRedirects = call.redirects
@@ -26,14 +27,16 @@ function assessUnknownCall(
   const allPaths = collectWritePaths(call, extraWritePaths)
   const hasWriteRedirect = call.redirects.some(r => r.isWrite) || extraWritePaths.length > 0
 
-  // 未识别命令默认 moderate（strict 确认，relaxed 放行）。
-  // 只有写路径确实危险时才升级 dangerous/blocked。
+  // 未识别命令的 base level 由用户策略决定（默认 strict->dangerous、relaxed->moderate）。
+  // 写路径仍由路径守卫升级 dangerous/blocked（hardened/critical 系统路径）。
+  const baseLevel = resolveFailClosedLevel('unknownCmd', ctx)
+
   if (hasWriteRedirect && allPaths.length > 0) {
     // 未识别命令默认按写命令处理（cmdWritesTo=true 语义）
-    const pathAdjust = adjustRiskByPathZones('moderate', allPaths, allPaths, true, cwd)
+    const pathAdjust = adjustRiskByPathZones(baseLevel, allPaths, allPaths, true, cwd)
     return {
       level: pathAdjust.level,
-      commandLevel: 'moderate',
+      commandLevel: baseLevel,
       unknown: true,
       reasons: [
         t('risk.reason.unknown_cmd', { cmd: call.cmd }),
@@ -44,18 +47,18 @@ function assessUnknownCall(
   }
 
   if (call.dynamicPaths) {
-    // 含动态参数但无静态路径可审计，无法静态审计，moderate。
+    // 含动态参数但无静态路径可审计，无法静态审计，回退策略 level。
     return {
-      level: 'moderate',
-      commandLevel: 'moderate',
+      level: baseLevel,
+      commandLevel: baseLevel,
       unknown: true,
       reasons: [t('risk.reason.unknown_dynamic')],
     }
   }
 
   return {
-    level: 'moderate',
-    commandLevel: 'moderate',
+    level: baseLevel,
+    commandLevel: baseLevel,
     unknown: true,
     reasons: [t('risk.reason.unknown_cmd_relaxed', { cmd: call.cmd })],
   }

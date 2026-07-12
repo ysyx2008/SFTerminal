@@ -8,7 +8,7 @@
 1. **风险分级**：safe / moderate / dangerous / blocked
 2. **单通道（AST）**：所有命令经 `@questi0nm4rk/shell-ast` 解析为 AST，拆出子命令 + flags + 参数 + 重定向，再走白名单 + 路径分区
 3. **路径分区审计**：根据 cwd + 路径所在 zone（free/protected/workspace/outside）调整风险
-4. **Fail-Closed**：解析失败 / 未知命令 / 动态路径 -> 至少 moderate；写操作动态路径 -> dangerous
+4. **Fail-Closed**：解析失败 / 未知命令按 `executionMode` + 用户可配 `commandRiskPolicy` 选档（默认 strict→dangerous、relaxed/free→moderate）；写操作动态路径 -> dangerous
 
 ## 模块结构
 
@@ -21,6 +21,7 @@ command-audit/
 ├── assess-shell.ts       # 审计入口（extractAuditedCalls -> assessAuditedCall）+ defaultAuditContext
 ├── extract-calls.ts      # shell AST 解析 + unwrap（bash -c 递归）
 ├── confirm-policy.ts     # executionMode -> 是否需确认（strict/relaxed/free）
+├── fail-closed-policy.ts # 解析失败 / 未知命令 按 mode+policy 选档
 ├── workspace-guard.ts    # 路径分区 zone 计算 + 系统路径黑名单
 ├── risk-level.ts         # maxRisk 聚合
 └── __tests__/            # 单元测试
@@ -93,11 +94,23 @@ guard 把"确实危险的间接执行模式"鉴别出来标 dangerous，让 stri
 | 等级 | 含义 | strict | relaxed | free |
 |---|---|---|---|---|
 | safe | 只读，工作区内 | 确认 | 放行 | 放行 |
-| moderate | 写 protected 或 workspace 内 / 未知命令 / 轻度写操作（mv/touch 等） | 确认 | 放行 | 放行 |
-| dangerous | 高危写删命令（rm/chmod 等）/ 间接执行 / 结构性 flag / 写 hardened 系统路径 | 确认 | 确认 | 放行 |
+| moderate | 写 protected 或 workspace 内 / 未知命令（relaxed 默认）/ 轻度写操作（mv/touch 等） | 确认 | 放行 | 放行 |
+| dangerous | 高危写删命令（rm/chmod 等）/ 间接执行 / 结构性 flag / 写 hardened 系统路径 / 解析失败与未知命令（strict 默认） | 确认 | 确认 | 放行 |
 | **blocked** | 写 critical 系统路径（/ /boot）或 userData 禁区 | **拒绝** | **拒绝** | **拒绝** |
 
 注意：blocked 是硬墙（路径守卫），dangerous 是风险标记（guard 命中 / hardened 系统路径）。
+
+### Fail-Closed 兜底（解析失败 / 未知命令）
+
+| 场景 | strict 默认 | relaxed / free 默认 | 可配置？ |
+|---|---|---|---|
+| AST 解析抛错 / 无可审计子命令 | dangerous | moderate | 是（`commandRiskPolicy`） |
+| 白名单未命中（`assessUnknownCall`） | dangerous | moderate | 是（`commandRiskPolicy`） |
+
+- free 模式跟随 relaxed 配置（free 本就不确认，等级仅影响 UI 展示色）
+- 用户可在「设置 → 安全与权限 → 风险策略」修改四档（strict/relaxed × 解析失败/未知命令），可选 `moderate` / `dangerous` / `blocked`
+- `AuditContext.executionMode` + `AuditContext.riskPolicy` 由 `exec` / `execute_command` 经 `auditContextFromConfig` 注入
+- 路径守卫仍可把未知命令升级到 dangerous/blocked（写 hardened/critical 系统路径）
 
 ### 系统路径分级（仅对写操作生效）
 
@@ -131,6 +144,7 @@ npx vitest run electron/services/agent/command-audit/__tests__/
 
 ## 变更历史
 
+- 2026-07-12：Fail-Closed 按 executionMode 分档。解析失败 / 未知命令默认 strict→dangerous、relaxed/free→moderate；新增 `CommandRiskPolicy`（配置可改）+ `fail-closed-policy.ts`；设置页「风险策略」可编辑四档
 - 2026-07-09：系统路径分级。引入 `severity: critical | hardened` 字段，`/`、`/boot` 保持 blocked（critical），`/etc`、`/dev`、`/sys` 等降为 dangerous（hardened，弹确认放行）。新增 `DEV_NULL_EXEMPTIONS` 豁免 `/dev/null`、`/dev/stdout`、`/dev/stderr`（写重定向到黑洞设备直接 safe）。修复只读命令带写重定向时命令参数被误判为写路径的 bug（`find /tmp 2>/dev/null` 不再被拦）。修复 `whitelist.ts` 重复 `env` key 警告
 - 2026-07-09：收口为单通道（AST）。砍掉 argv 通道入口（`assess-argv.ts` / `exec_argv` 工具 / `spawnArgv`），`defaultAuditContext` 移至 `assess-shell.ts`。理由：shell 通道已 AST 化，审计精度与 argv 通道趋同；Agent 场景无不可信输入注入，`shell:false` 的注入面优势不成立；双工具增加 AI 选择负担且 shell 通道是 bug 温床
 - 2026-07-07：新增 indirection-guard，修 node -e / python -c / env bash -c 漏洞

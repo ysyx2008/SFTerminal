@@ -2,11 +2,11 @@ import Store from 'electron-store'
 import fs from 'fs'
 import path from 'path'
 import { app, safeStorage } from 'electron'
-import type { AiModelType, AiProfile, ApiFormat, ExecutionMode, IMProcessMode, JumpHostConfig } from '@shared/types'
+import type { AiModelType, AiProfile, ApiFormat, CommandRiskPolicy, ExecutionMode, IMProcessMode, JumpHostConfig, RiskLevel } from '@shared/types'
 import type { KnowledgeSettings } from './knowledge/types'
 import { DEFAULT_KNOWLEDGE_SETTINGS } from './knowledge/types'
 import type { TtsSettings, UiThemeMode, UiThemeName, WebSearchSettings } from '@shared/types'
-import { DEFAULT_TTS_SETTINGS, DEFAULT_UI_THEME, DEFAULT_UI_THEME_MODE, DEFAULT_WEB_SEARCH_SETTINGS } from '@shared/types'
+import { COMMAND_RISK_POLICY_ALLOWED_LEVELS, DEFAULT_COMMAND_RISK_POLICY, DEFAULT_TTS_SETTINGS, DEFAULT_UI_THEME, DEFAULT_UI_THEME_MODE, DEFAULT_WEB_SEARCH_SETTINGS } from '@shared/types'
 import { createLogger, type LogLevel } from '../utils/logger'
 import { normalizeTerminalSettings, normalizeKeyboardShortcuts } from '../utils/normalize'
 
@@ -250,6 +250,8 @@ interface StoreSchema {
   pinnedConversationIds: string[]
   /** 最近对话自定义显示标题（record id → 用户命名，空则回退 userTask） */
   conversationDisplayTitles: Record<string, string>
+  /** 解析失败 / 未知命令 的默认风险策略（按 executionMode 分档） */
+  commandRiskPolicy: CommandRiskPolicy
 }
 
 const defaultConfig: StoreSchema = {
@@ -353,6 +355,7 @@ const defaultConfig: StoreSchema = {
   webSearchSettings: DEFAULT_WEB_SEARCH_SETTINGS,
   pinnedConversationIds: [],
   conversationDisplayTitles: {},
+  commandRiskPolicy: { ...DEFAULT_COMMAND_RISK_POLICY },
 }
 
 export class ConfigService {
@@ -815,6 +818,39 @@ export class ConfigService {
    */
   setAgentDebugMode(enabled: boolean): void {
     this.store.set('agentDebugMode', enabled)
+  }
+
+  // ==================== 命令风险策略 ====================
+
+  /**
+   * 获取解析失败 / 未知命令 的风险策略。
+   * 老配置无此字段时回退默认值；字段缺失时补齐默认值。
+   */
+  getCommandRiskPolicy(): CommandRiskPolicy {
+    const stored = this.store.get('commandRiskPolicy')
+    if (!stored) return { ...DEFAULT_COMMAND_RISK_POLICY }
+    // 逐字段补齐，防止老配置部分字段缺失
+    return {
+      strictParseFail: stored.strictParseFail ?? DEFAULT_COMMAND_RISK_POLICY.strictParseFail,
+      strictUnknownCmd: stored.strictUnknownCmd ?? DEFAULT_COMMAND_RISK_POLICY.strictUnknownCmd,
+      relaxedParseFail: stored.relaxedParseFail ?? DEFAULT_COMMAND_RISK_POLICY.relaxedParseFail,
+      relaxedUnknownCmd: stored.relaxedUnknownCmd ?? DEFAULT_COMMAND_RISK_POLICY.relaxedUnknownCmd,
+    }
+  }
+
+  /**
+   * 设置解析失败 / 未知命令 的风险策略
+   */
+  setCommandRiskPolicy(policy: CommandRiskPolicy): void {
+    const allowed = new Set(COMMAND_RISK_POLICY_ALLOWED_LEVELS)
+    const sanitize = (level: RiskLevel, fallback: RiskLevel): RiskLevel =>
+      allowed.has(level) ? level : fallback
+    this.store.set('commandRiskPolicy', {
+      strictParseFail: sanitize(policy.strictParseFail, DEFAULT_COMMAND_RISK_POLICY.strictParseFail),
+      strictUnknownCmd: sanitize(policy.strictUnknownCmd, DEFAULT_COMMAND_RISK_POLICY.strictUnknownCmd),
+      relaxedParseFail: sanitize(policy.relaxedParseFail, DEFAULT_COMMAND_RISK_POLICY.relaxedParseFail),
+      relaxedUnknownCmd: sanitize(policy.relaxedUnknownCmd, DEFAULT_COMMAND_RISK_POLICY.relaxedUnknownCmd),
+    })
   }
 
   // ==================== 知识库设置 ====================

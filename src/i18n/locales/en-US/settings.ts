@@ -39,6 +39,7 @@ export default {
       subTabs: {
         user: 'My Approvals',
         builtin: 'Built-in Rules',
+        policy: 'Risk Policy',
       },
       builtinRules: {
         title: 'Built-in Security Rules',
@@ -108,6 +109,18 @@ export default {
         filterPlaceholder: 'Search tool name or args…',
         timeYesterday: 'Yesterday',
         timeDaysAgo: '{n}d ago',
+      },
+      riskPolicy: {
+        title: 'Command Risk Policy',
+        description: 'Default risk level for parse-failure and unknown commands, configured per execution mode. The level determines whether a confirmation dialog appears (relaxed confirms only on dangerous/blocked). free mode follows the relaxed config.',
+        colParseFail: 'Parse Fail',
+        colUnknownCmd: 'Unknown Cmd',
+        strictDesc: 'All commands require confirmation (level only affects display color)',
+        relaxedDesc: 'Only dangerous/blocked require confirmation',
+        reset: 'Reset to Default',
+        saved: 'Saved',
+        freeModeHint: 'free mode does not confirm; the level only affects UI display color, defaulting to the relaxed config.',
+        blockedHint: 'blocked is a hard wall--it rejects execution in any mode, use with caution.',
       },
     },
     bastion: {

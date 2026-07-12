@@ -164,6 +164,38 @@ describe('assessCommandRisk shell AST', () => {
     expect(d.hasUnknown).toBe(true)
   })
 
+  it('未知命令：strict 默认 dangerous', async () => {
+    const d = await assessCommandRiskDetailed('mystery_tool --help', { executionMode: 'strict' })
+    expect(d.level).toBe('dangerous')
+    expect(d.hasUnknown).toBe(true)
+  })
+
+  it('未知命令：relaxed 默认 moderate', async () => {
+    const d = await assessCommandRiskDetailed('mystery_tool --help', { executionMode: 'relaxed' })
+    expect(d.level).toBe('moderate')
+    expect(d.hasUnknown).toBe(true)
+  })
+
+  it('未知命令：free 跟随 relaxed（moderate）', async () => {
+    const d = await assessCommandRiskDetailed('mystery_tool --help', { executionMode: 'free' })
+    expect(d.level).toBe('moderate')
+    expect(d.hasUnknown).toBe(true)
+  })
+
+  it('未知命令：自定义 policy 覆盖（strict -> blocked）', async () => {
+    const d = await assessCommandRiskDetailed('mystery_tool --help', {
+      executionMode: 'strict',
+      riskPolicy: {
+        strictParseFail: 'dangerous',
+        strictUnknownCmd: 'blocked',
+        relaxedParseFail: 'moderate',
+        relaxedUnknownCmd: 'moderate',
+      },
+    })
+    expect(d.level).toBe('blocked')
+    expect(d.hasUnknown).toBe(true)
+  })
+
   // ===== indirection-guard：解释器内联 / 包装器 / 调度器 / 结构性 flag =====
   // 原 assess-argv.test.ts 覆盖，单通道收口后迁移到 shell 字符串形式。
   // 标 .skip 的场景为 shell 通道已知漏报（AST 解析丢 wrapper / 误拆 flag），

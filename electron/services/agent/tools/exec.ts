@@ -14,6 +14,7 @@
  */
 import { t } from '../i18n'
 import { assessCommandRiskDetailed, analyzeCommand } from '../risk-assessor'
+import { auditContextFromConfig } from '../audit-context-from-config'
 import { commandNeedsConfirm, isSubAgentBlocked } from '../command-audit/confirm-policy'
 import { resolveCommandToolConfirmation } from '../allowlist/resolve-command-confirm'
 import { truncateFromEnd, truncateSandwichWithNotice, EXEC_MAX_COMMAND_LENGTH } from './utils'
@@ -118,7 +119,7 @@ export async function executeCommandDirect(
     return { success: false, output: '', error: errorMsg }
   }
 
-  const assessment = await assessCommandRiskDetailed(command)
+  const assessment = await assessCommandRiskDetailed(command, auditContextFromConfig(config))
   const riskLevel = assessment.level
   if (riskLevel === 'blocked') {
     return { success: false, output: '', error: t('hint.security_blocked') }

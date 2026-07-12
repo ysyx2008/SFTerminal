@@ -2859,6 +2859,17 @@ ipcMain.handle('config:get', async (_event, key: string) => {
 })
 
 ipcMain.handle('config:set', async (_event, key: string, value: unknown) => {
+  if (key === 'commandRiskPolicy') {
+    // 经专用 setter 校验档位（禁止 safe），再广播到运行中 Agent
+    configService.setCommandRiskPolicy(value as import('@shared/types').CommandRiskPolicy)
+    try {
+      const { agentService } = await rt()
+      agentService.broadcastCommandRiskPolicy(configService.getCommandRiskPolicy())
+    } catch (err) {
+      log.warn('Failed to broadcast commandRiskPolicy to agents:', err)
+    }
+    return
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   configService.set(key as any, value as any)
   if (key === 'installUpdateOnQuit' && value === false) {
