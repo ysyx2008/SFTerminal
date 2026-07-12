@@ -3065,13 +3065,15 @@ export abstract class Agent {
       pluginRegistry: this.services.pluginRegistry,
       addStep: (step) => this.addStep(step),
       updateStep: (stepId, updates) => this.updateStep(stepId, updates),
-      waitForConfirmation: async (toolCallId, toolName, toolArgs, riskLevel, displayName, reasons) => {
+      waitForConfirmation: async (toolCallId, toolName, toolArgs, riskLevel, displayName, reasons, trustCommandOffer) => {
         // 「本次允许」：Agent 实例内存白名单（跨 Run，关 tab / 重启清空）
         const candidates = buildAllowlistKeyCandidates(toolName, toolArgs)
         if (candidates.some(k => this.allowedTools.has(k))) {
           return true
         }
-        const result = await this.waitForConfirmation(run, toolCallId, toolName, toolArgs, riskLevel, displayName, reasons)
+        const result = await this.waitForConfirmation(
+          run, toolCallId, toolName, toolArgs, riskLevel, displayName, reasons, trustCommandOffer,
+        )
         return result.approved
       },
       requestSecureInput: async (skillId, envName, prompt, isUpdate) => {
@@ -3291,7 +3293,8 @@ export abstract class Agent {
     toolArgs: Record<string, unknown>,
     riskLevel: RiskLevel,
     displayName?: string,
-    reasons?: string[]
+    reasons?: string[],
+    trustCommandOffer?: PendingConfirmationInternal['trustCommandOffer'],
   ): Promise<{ approved: boolean; modifiedArgs?: Record<string, unknown> }> {
     return new Promise((resolve) => {
       const confirmation: PendingConfirmationInternal = {
@@ -3302,6 +3305,7 @@ export abstract class Agent {
         riskLevel,
         displayName,
         reasons,
+        trustCommandOffer,
         resolve: (approved, modifiedArgs) => {
           run.pendingConfirmation = undefined
           run.executionPhase = 'thinking'

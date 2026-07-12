@@ -365,4 +365,13 @@ export interface PendingConfirmation {
    * 仅 exec 等命令类工具有值；其他工具（如文件写入）不传。
    */
   reasons?: string[]
+  /**
+   * 可将未知命令名加入用户命令规则库的要约（仅命令类确认）。
+   * 出现时前端展示「加入规则并允许」；默认 moderate，不可覆盖内置。
+   */
+  trustCommandOffer?: {
+    cmd: string
+    writesTo: boolean
+    baseLevel: 'moderate'
+  }
 }

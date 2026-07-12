@@ -102,6 +102,13 @@ export interface CallRiskAssessment {
   pathZones?: WorkspaceZone[]
   /** 不在 argv 白名单（等级由 commandRiskPolicy 决定） */
   unknown?: boolean
+  /** 子命令名（有 AuditedCall 时带上；orphan 重定向评估无此字段） */
+  cmd?: string
+  /**
+   * 未知命令时是否按「会写文件」推断（有写重定向等）。
+   * 供确认弹窗「加入规则」默认勾选 writesTo。
+   */
+  inferredWritesTo?: boolean
 }
 
 /**

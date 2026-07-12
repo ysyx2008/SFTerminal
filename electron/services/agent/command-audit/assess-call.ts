@@ -42,6 +42,8 @@ function assessUnknownCall(
       level: pathAdjust.level,
       commandLevel: baseLevel,
       unknown: true,
+      cmd: call.cmd,
+      inferredWritesTo: true,
       reasons: [
         t('risk.reason.unknown_cmd', { cmd: call.cmd }),
         ...pathAdjust.reasons,
@@ -56,6 +58,8 @@ function assessUnknownCall(
       level: baseLevel,
       commandLevel: baseLevel,
       unknown: true,
+      cmd: call.cmd,
+      inferredWritesTo: false,
       reasons: [t('risk.reason.unknown_dynamic')],
     }
   }
@@ -64,6 +68,8 @@ function assessUnknownCall(
     level: baseLevel,
     commandLevel: baseLevel,
     unknown: true,
+    cmd: call.cmd,
+    inferredWritesTo: false,
     reasons: [t('risk.reason.unknown_cmd_relaxed', { cmd: call.cmd })],
   }
 }
@@ -85,6 +91,7 @@ export function assessAuditedCall(
     return {
       level,
       commandLevel: level,
+      cmd: call.cmd,
       reasons: [guardHit.reason],
     }
   }
@@ -106,6 +113,7 @@ export function assessAuditedCall(
     return {
       level: dynamicLevel,
       commandLevel: dynamicLevel,
+      cmd: call.cmd,
       reasons: [t('risk.reason.dynamic_path')],
     }
   }
@@ -156,6 +164,7 @@ export function assessAuditedCall(
   return {
     level,
     commandLevel,
+    cmd: call.cmd,
     reasons: reasons.length ? reasons : [t('risk.reason.audit_pass', { source: call.source, cmd: call.cmd })],
     pathZones: pathAdjust.zones,
   }

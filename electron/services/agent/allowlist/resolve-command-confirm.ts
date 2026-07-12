@@ -1,10 +1,14 @@
 /**
- * 命令类工具确认决策（会话内存「本次允许」由 waitForConfirmation 内查 allowedTools）
+ * 命令类工具确认决策
+ *
+ * 「本次允许」由 waitForConfirmation 内查会话内存 allowedTools；
+ * 未知命令可附带 trustCommandOffer，由前端引导写入用户命令规则。
  */
 import type { RiskLevel } from '@shared/types/agent'
 import type { AgentConfig } from '../types'
 import type { ToolExecutorConfig, ToolResult } from '../tools/types'
 import { commandNeedsConfirm } from '../command-audit/confirm-policy'
+import { resolveTrustCommandOffer } from '../command-audit/trust-command-offer'
 import type { CommandRiskAssessment } from '../command-audit/types'
 import { t } from '../i18n'
 
@@ -54,6 +58,7 @@ export async function resolveCommandToolConfirmation(
   // 只收集「等级等于最终 riskLevel」的子命令的原因（去重），
   // 让用户看到"为什么是高风险"而不是所有子命令的噪声。
   const reasons = collectTriggerReasons(assessment, riskLevel)
+  const trustCommandOffer = resolveTrustCommandOffer(assessment, riskLevel) || undefined
 
   const approved = await executor.waitForConfirmation(
     toolCallId,
@@ -62,6 +67,7 @@ export async function resolveCommandToolConfirmation(
     riskLevel,
     undefined,
     reasons,
+    trustCommandOffer,
   )
   if (!approved) {
     return {

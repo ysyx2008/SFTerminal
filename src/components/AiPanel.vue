@@ -614,6 +614,7 @@ const {
   runAgent,
   abortAgent,
   confirmToolCall,
+  confirmTrustCommandAndAllow,
   submitSecureInput,
   cancelSecureInput,
   sendAgentReply,
@@ -2599,13 +2600,15 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                     <button class="btn btn-sm btn-outline-secondary" @click="confirmToolCall(false)">
                       {{ t('ai.reject') }}
                     </button>
-                    <button 
-                      class="btn btn-sm" 
+                    <button
+                      v-if="pendingConfirm.trustCommandOffer"
+                      class="btn btn-sm"
                       :class="pendingConfirm.riskLevel === 'dangerous' ? 'btn-outline-danger' : (pendingConfirm.riskLevel === 'moderate' ? 'btn-outline-warning' : 'btn-outline-success')"
-                      @click="confirmToolCall(true, true)"
-                      :title="t('ai.alwaysAllowHint')"
+                      :title="t('ai.trustCommandHint', { cmd: pendingConfirm.trustCommandOffer.cmd })"
+                      @click="confirmTrustCommandAndAllow"
                     >
-                      {{ t('ai.alwaysAllow') }}
+                      {{ t('ai.trustCommand') }}
+                      <span class="trust-cmd-tag">{{ pendingConfirm.trustCommandOffer.cmd }}</span>
                     </button>
                     <button 
                       class="btn btn-sm" 
@@ -5189,6 +5192,15 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.trust-cmd-tag {
+  margin-left: 4px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.9em;
+  opacity: 0.85;
 }
 
 /* ===== 安全输入框（API Key 等） ===== */
@@ -5304,7 +5316,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   border-color: var(--brand-vital-end);
 }
 
-/* Outline 按钮样式（用于「本次允许」） */
+/* Outline 按钮样式（用于「加入规则并允许」等次要操作） */
 .btn-outline-warning {
   background: transparent;
   border: 1px solid var(--color-warning);
@@ -5327,7 +5339,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   color: var(--color-error);
 }
 
-/* 「本次允许」按钮 —— 走 --brand-vital，与低风险信号保持一致 */
+/* 「加入规则并允许」按钮 —— 走 --brand-vital，与低风险信号保持一致 */
 .btn-outline-success {
   background: transparent;
   border: 1px solid var(--brand-vital);

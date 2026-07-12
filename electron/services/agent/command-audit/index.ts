@@ -54,6 +54,9 @@ export {
 
 export { getArgvCommandRule } from './resolve-argv-rule'
 
+export { resolveTrustCommandOffer } from './trust-command-offer'
+export type { TrustCommandOffer } from './trust-command-offer'
+
 export type { CommandRule, ParsedArgv } from './whitelist'
 
 export {

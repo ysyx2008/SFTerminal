@@ -1622,8 +1622,11 @@ export function useAgentMode(
     }
   }
 
-  // alwaysAllow: 如果为 true，将该工具+参数加入会话内存白名单，后续自动跳过确认
-  const confirmToolCall = async (approved: boolean, alwaysAllow?: boolean) => {
+  // alwaysAllow: 会话内存白名单（路径类等仍可用；命令类 UI 已改为加入规则）
+  const confirmToolCall = async (
+    approved: boolean,
+    opts?: { alwaysAllow?: boolean },
+  ) => {
     const confirm = pendingConfirm.value as (typeof pendingConfirm.value & { ptyId?: string }) | undefined
     if (!confirm) return
 
@@ -1637,7 +1640,7 @@ export function useAgentMode(
         toolCallId: confirm.toolCallId,
         approved,
         modifiedArgs: undefined,
-        alwaysAllow
+        alwaysAllow: opts?.alwaysAllow,
       })
       const ownerTabId = terminalStore.findTabIdByPtyId(agentKey)
         ?? terminalStore.findTabIdByAgentId(agentKey)
@@ -1647,6 +1650,29 @@ export function useAgentMode(
       }
     } catch (error) {
       log.error('确认工具调用失败:', error)
+    }
+  }
+
+  /** 未知命令：二次确认后写入用户命令规则，再允许本次执行 */
+  const confirmTrustCommandAndAllow = async () => {
+    const confirm = pendingConfirm.value
+    const offer = confirm?.trustCommandOffer
+    if (!offer) return
+    if (!window.confirm(t('ai.trustCommandConfirm', { cmd: offer.cmd }))) return
+    try {
+      const result = await window.electronAPI.commandRules.upsert({
+        cmd: offer.cmd,
+        baseLevel: offer.baseLevel,
+        writesTo: offer.writesTo,
+      })
+      if (!result.ok) {
+        window.alert(t('ai.trustCommandFailed'))
+        return
+      }
+      await confirmToolCall(true)
+    } catch (error) {
+      log.error('信任命令并加入规则失败:', error)
+      window.alert(t('ai.trustCommandFailed'))
     }
   }
 
@@ -2291,6 +2317,7 @@ export function useAgentMode(
     runAgent,
     abortAgent,
     confirmToolCall,
+    confirmTrustCommandAndAllow,
     submitSecureInput,
     cancelSecureInput,
     sendAgentReply,

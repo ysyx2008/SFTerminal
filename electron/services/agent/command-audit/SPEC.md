@@ -155,6 +155,7 @@ npx vitest run electron/services/agent/command-audit/__tests__/
 ## 变更历史
 
 - 2026-07-12：用户命令规则（`user-command-rules.ts`）：可追加未收录命令的 CommandRule；`getArgvCommandRule` 内置优先再查用户表
+- 2026-07-12：确认弹窗「加入规则并允许」（`trust-command-offer.ts`）：未知单命令 → `PendingConfirmation.trustCommandOffer`
 - 2026-07-12：扩展 CommandRiskPolicy（间接执行/动态路径档位、relaxedConfirmModerate、outsideWritesUpgrade、extraFreeDirs、subAgentBlockDangerous）；授权清单支持手动添加
 - 2026-07-12：Fail-Closed 按 executionMode 分档。解析失败 / 未知命令默认 strict→dangerous、relaxed/free→moderate；新增 `CommandRiskPolicy`（配置可改）+ `fail-closed-policy.ts`；设置页「风险策略」可编辑四档
 - 2026-07-09：系统路径分级。引入 `severity: critical | hardened` 字段，`/`、`/boot` 保持 blocked（critical），`/etc`、`/dev`、`/sys` 等降为 dangerous（hardened，弹确认放行）。新增 `DEV_NULL_EXEMPTIONS` 豁免 `/dev/null`、`/dev/stdout`、`/dev/stderr`（写重定向到黑洞设备直接 safe）。修复只读命令带写重定向时命令参数被误判为写路径的 bug（`find /tmp 2>/dev/null` 不再被拦）。修复 `whitelist.ts` 重复 `env` key 警告
