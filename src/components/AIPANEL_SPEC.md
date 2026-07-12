@@ -111,7 +111,8 @@ DynamicScroller 是回收式虚拟列表，动态高度 + 流式增长场景下�
 | 职责 | 谁负责 |
 |---|---|
 | 动态高度测量 / 上方 item 高度修正时的视区锚定 | virtua 内置 |
-| 跟底态：新内容到达 / 最后一项流式长高时钉底 | `stickyFollowBottom` + `pinFollowBottom`；`followResizeObserver` 监听 Virtualizer 根节点高度，同帧钉底（无 FLIP） |
+| 跟底态：新内容到达 / 最后一项流式长高时钉底 | `stickyFollowBottom` + `pinFollowBottom`；`followResizeObserver` 监听 Virtualizer 根节点高度，同帧钉底 |
+| 跟底态：新内容上移的平滑滑动 | `applyFlipScroll`：钉底后对 Virtualizer 根做 `translateY(scrollDelta)` → 下一帧弹簧归零（纯 compositor，不影响 virtua 测量） |
 | 阅读态：用户上滚后不拽回底部，亮「新消息」 | `updateScrollPosition` / `userScrolledAway` / `hasNewMessage` |
 | 切 tab / 恢复历史的精确视口位置 | `aiScrollAnchor`（item id + offset）+ `scrollToIndex` |
 | 历史冷加载视觉抖动 | `isHistoryScrollPending`（opacity:0 → scrollHeight 稳定后淡入） |
@@ -119,17 +120,23 @@ DynamicScroller 是回收式虚拟列表，动态高度 + 流式增长场景下�
 
 ### 已删除（勿再引入）
 
-- `applyFollowingResize` / `applyReadingResize` / `isGrowthBelowViewport`
-- `applyFlipScroll` / `suppressFlipUntil` / 阅读态 scrollTop 补偿
+- `applyFollowingResize` / `applyReadingResize` / `isGrowthBelowViewport`（阅读态 scrollTop 补偿表）
 - `aiScrollCache` / `restoreCache`（virtua CacheSnapshot 结构不同且不保证跨版本）
 - `getItemSizeDeps` / `DynamicScrollerItem`（virtua 自动重测，无需手动 size-dependencies）
 
+### FLIP 约束
+
+1. **偏移量用 `scrollDelta`（钉底前后 scrollTop 差），不用 wrapper 高度差**——内容不满视区时 scrollDelta=0，不应动画。
+2. **FLIP 仅由 `followResizeObserver` 触发**；`doScrollIfNeeded` / `scrollToBottom` 只钉底。主动跳底设 `suppressFlipUntil` 硬切。
+3. **transform 只加在 Virtualizer 根节点**，不要动 item 内部（virtua 自己用 transform 定位 item）。
+4. **连续 chunk 用 `getComputedStyle` 读当前 ty 累加**，不要读 `element.style.transform`。
+5. **用户上滚 `userScrolledAway` 必须 `cancelFlipAnimation`**，避免停在半途。
+
 ### 改这块代码前必读
 
-1. **跟底钉底可以保留 ResizeObserver，但禁止再加 FLIP transform**——与 virtua 的 scroll adjustment 冲突。
-2. **跟底意图用 `stickyFollowBottom`，不要只靠瞬时 `checkIsNearBottom()`**——虚拟列表 scrollHeight 异步修正时会误判。
-3. **阅读态禁止 `guardAfterAutoScroll` / 禁止在 followResizeObserver 里处理阅读态**——会把 sticky 设回 true 或把用户从阅读位拽走。
-4. **跨视口文本全选仍是虚拟列表通病**——virtua 亦不解决；后续可另做自定义选择或加大 bufferSize。
+1. **跟底意图用 `stickyFollowBottom`，不要只靠瞬时 `checkIsNearBottom()`**——虚拟列表 scrollHeight 异步修正时会误判。
+2. **阅读态禁止 `guardAfterAutoScroll` / 禁止在 followResizeObserver 里处理阅读态**——会把 sticky 设回 true 或把用户从阅读位拽走。
+3. **跨视口文本全选仍是虚拟列表通病**——virtua 亦不解决；后续可另做自定义选择或加大 bufferSize。
 
 ---
 

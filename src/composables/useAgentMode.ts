@@ -508,6 +508,7 @@ export function useAgentMode(
       scrollGraceTimer = null
     }
     skipScrollUpdate = false
+    cancelFlipAnimation()
   }
 
   // 更新用户滚动位置状态（由组件的 scroll 事件调用）
@@ -574,20 +575,87 @@ export function useAgentMode(
     saveScrollTop()
   }
 
-  // 强制滚动到底部（用户主动发送消息或点击时调用）
-  const pinFollowBottom = () => {
+  // ==================== FLIP 平滑上移（compositor 视觉层）====================
+  // 同帧钉底后，给 Virtualizer 根节点加 translateY(scrollDelta) 反向偏移，下一帧归零，
+  // 让「新内容顶上来」变成弹簧曲线滑动。transform 不影响 scrollHeight / virtua 测量。
+  const FLIP_BASE_DURATION_MS = 320
+  const FLIP_MAX_DURATION_MS = 560
+  const FLIP_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)'
+  const MAX_FLIP_DELTA = 600
+  /** 主动跳底（发消息 / 点新消息）后短暂硬切，避免相邻高度变化 FLIP 打架 */
+  const FLIP_SUPPRESS_WINDOW_MS = 200
+  let suppressFlipUntil = 0
+  let pendingFlipFrame: number | null = null
+
+  const computeFlipDuration = (offset: number): number => {
+    const abs = Math.abs(offset)
+    if (abs <= 100) return FLIP_BASE_DURATION_MS
+    return Math.min(FLIP_MAX_DURATION_MS, FLIP_BASE_DURATION_MS + (abs - 100) * 0.6)
+  }
+
+  const readTranslateY = (el: HTMLElement): number => {
+    const computed = getComputedStyle(el).transform
+    if (!computed || computed === 'none') return 0
+    const m = computed.match(/matrix(?:3d)?\(([^)]+)\)/)
+    if (!m) return 0
+    const values = m[1].split(',').map(v => parseFloat(v.trim()))
+    if (values.length === 6) return values[5]
+    if (values.length === 16) return values[13]
+    return 0
+  }
+
+  const cancelFlipAnimation = () => {
+    if (pendingFlipFrame !== null) {
+      cancelAnimationFrame(pendingFlipFrame)
+      pendingFlipFrame = null
+    }
+    const wrapper = followObservedTarget
+    if (wrapper) {
+      wrapper.style.transition = ''
+      wrapper.style.transform = ''
+    }
+  }
+
+  /** 调用方必须先完成 pinFollowBottom，再传入实际 scrollDelta */
+  const applyFlipScroll = (offset: number) => {
+    const wrapper = followObservedTarget
+    if (!wrapper || offset <= 0 || offset >= MAX_FLIP_DELTA) return
+    if (Date.now() < suppressFlipUntil) return
+
+    const currentY = readTranslateY(wrapper)
+    const targetY = currentY + offset
+    wrapper.style.transition = 'none'
+    wrapper.style.transform = `translateY(${targetY}px)`
+
+    if (pendingFlipFrame !== null) cancelAnimationFrame(pendingFlipFrame)
+    const duration = computeFlipDuration(targetY)
+    pendingFlipFrame = requestAnimationFrame(() => {
+      pendingFlipFrame = null
+      void wrapper.offsetHeight
+      wrapper.style.transition = `transform ${duration}ms ${FLIP_EASING}`
+      wrapper.style.transform = 'translateY(0)'
+    })
+  }
+
+  /** @returns 实际产生的 scrollTop 增量（供 FLIP 使用） */
+  const pinFollowBottom = (): number => {
     const el = messagesRef.value
-    if (!el) return
+    if (!el) return 0
+    const oldScrollTop = el.scrollTop
     // 优先走 DOM scrollTop：ResizeObserver 同帧内 virtua scrollSize 可能尚未同步
     el.scrollTop = el.scrollHeight
     scrollerRef?.value?.scrollToBottom?.()
     lastKnownScrollTop = el.scrollTop
     lastKnownScrollHeight = el.scrollHeight
+    return el.scrollTop - oldScrollTop
   }
 
   const scrollToBottom = async () => {
     // 同步先设 sticky，避免 nextTick 前到达的 step 因 sticky=false 误判离底
     guardAfterAutoScroll()
+    // 主动跳底：硬切无动画，短暂抑制后续 FLIP
+    suppressFlipUntil = Math.max(suppressFlipUntil, Date.now() + FLIP_SUPPRESS_WINDOW_MS)
+    cancelFlipAnimation()
 
     await nextTick()
     pinFollowBottom()
@@ -597,6 +665,7 @@ export function useAgentMode(
   }
 
   // 实际执行滚动：跟底态钉底，阅读态只亮「新消息」
+  // FLIP 由 followResizeObserver 单点负责，这里只钉底不动画，避免双倍偏移
   const doScrollIfNeeded = async () => {
     lastScrollTime = Date.now()
     await nextTick()
@@ -634,9 +703,9 @@ export function useAgentMode(
     await doScrollIfNeeded()
   }
 
-  // ==================== 跟底态：内容高度变化时同帧钉底 ====================
+  // ==================== 跟底态：内容高度变化时同帧钉底 + FLIP ====================
   // virtua 负责上方 item 高度修正的视区锚定，但不负责「最后一项流式长高时保持贴底」。
-  // 这里只在 shouldFollowBottom 且内容变高时钉底——没有 FLIP、没有阅读态补偿。
+  // 这里只在 shouldFollowBottom 且内容变高时钉底 + FLIP。
   // 禁止在高度不变/变矮时钉底：composer 测高、窗口微调等会误触发跳动。
   let followResizeObserver: ResizeObserver | null = null
   let followObservedTarget: HTMLElement | null = null
@@ -658,19 +727,22 @@ export function useAgentMode(
       const grew = newH > prevFollowContentHeight + 0.5
       prevFollowContentHeight = newH
       if (!grew) return
-      pinFollowBottom()
+      const scrollDelta = pinFollowBottom()
       guardAfterAutoScroll()
+      applyFlipScroll(scrollDelta)
     })
     followResizeObserver.observe(target)
   }
 
   const uninstallFollowResizeObserver = () => {
+    cancelFlipAnimation()
     if (followResizeObserver && followObservedTarget) {
       followResizeObserver.unobserve(followObservedTarget)
     }
     followResizeObserver?.disconnect()
     followResizeObserver = null
     followObservedTarget = null
+    prevFollowContentHeight = 0
   }
 
   // ==================== 容器宽度变化感知（保留） ====================
