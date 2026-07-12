@@ -88,7 +88,7 @@
 
 原则写在开源说明里，供各 OEM 参照；**各 Fork 自己的跟版节奏 / CI 写在各自仓库**，不塞进开源主线运维细节。
 
-- OEM **优先只加 / 只改**：`shared/oem.config.ts`（及必要品牌资源）、工作台包、Skill/MCP、配置、身份与下发模块  
+- OEM **优先只加 / 只改**：自有 `shared/oem.config.ts`（由模板生成，勿改上游模板冒充配置）、工作台包、Skill/MCP、配置、身份与下发模块  
 - OEM **避免改**：Agent 主循环、Conversation 聚合根、核心 IPC 契约（除非回馈开源主线）  
 - 岗位与策略差异一律挂在工作台描述 / 策略下发上，不复制一套智能体  
 - 勤合、小合；冲突时优先把补丁改成扩展，而不是长期分叉核心文件  
@@ -97,14 +97,23 @@
 
 ## 品牌 OEM：有 OEM 信息则以 OEM 为准
 
-原则：**软件名称、展示用标识等，只要配置了 OEM 信息，一律以 OEM 为准**，优先于开源默认「旗鱼 / SailFish」。其他公司做 OEM 时，应尽量 **改配置、换资源**，而不是改业务底层代码。
+原则：**软件名称、展示用标识等，只要配置了 OEM 信息，一律以 OEM 为准**，优先于开源默认「旗鱼 / SailFish」。尽量 **改配置、换资源**，不要改业务底层代码。
+
+**防 Fork 合版冲突（已拍板）：**
+
+| 文件 | 是否进开源主线 Git | 说明 |
+|---|---|---|
+| `shared/oem.config.template.ts` | ✅ 提交 | 模板 + 类型 + 开源默认值 |
+| `shared/oem.config.ts` | ❌ `.gitignore` | 运行时配置；`postinstall` / `npm run ensure:oem-config` 从模板复制 |
+
+OEM Fork：生成/编辑自己的 `oem.config.ts` 后可 `git add -f` 纳入 **Fork 仓库**；上游不跟踪同名文件，合开源主线时不会和模板抢路径。
 
 | 项 | 现状 | 说明 |
 |---|---|---|
-| 配置入口 | ✅ 已有 `shared/oem.config.ts`（`src/config/oem.config.ts` re-export） | 前后端共享；名称（中/英）、logo 路径、版权、可选版本号、`features.showSponsor` 等 |
-| 应用内展示 | ✅ 已接入 | `shared/brand.ts`、设置页、欢迎/标题等读 `oemConfig`；**有 OEM 配置即优先使用** |
-| 打包名 / appId | ⚠️ 未完全收进同一配置 | `electron-builder` 等仍可能写死 `productName` / `appId`，OEM Fork 打包时需另行对齐 |
-| 安装包 / 系统图标、托盘图等 | ⚠️ 多为资源文件 | 通常在 Fork 内替换图标资源，尚未做到「只改一个 ts 配置就换齐所有安装态图标」 |
+| 配置入口 | ✅ 模板 + 本地 `oem.config.ts`（`src/config/oem.config.ts` re-export） | 名称、logo、版权、版本、`features` |
+| 应用内展示 | ✅ 已接入 | `shared/brand.ts` 等读 `oemConfig` |
+| 打包名 / appId | ⚠️ 未完全收进同一配置 | 构建配置仍可能写死，OEM 打包时另行对齐 |
+| 安装包 / 系统图标等 | ⚠️ 多为资源文件 | Fork 内换资源 |
 
 **桌面侧「快速 OEM」是否差不多：**
 
@@ -185,7 +194,7 @@
 | 2 | 版本模型：开源主线 + 各企业 OEM Fork | ✅ 两版本 |
 | 3 | OAuth/OIDC **协议**进开源公共代码 | ✅；`features.sso` 默认关 |
 | 4 | 完整账户/控制面是否一夜做完 | ✅ **否**（协议先有，中台后置） |
-| 5 | 品牌以 `oem.config` 为准 | ✅ |
+| 5 | 品牌以 `oem.config` 为准；开源只提交 `.template`，运行时文件 gitignore | ✅ |
 | 6 | 桌面 OEM 主干 = 换皮 + 换能力集 + 换岗 | ✅ |
 | 7 | 觉醒/终端等可配置裁剪 | ✅ |
 | 8 | 工作台 skills 包内自治优先 | ✅（见工程方案） |
@@ -197,7 +206,7 @@
 ## 参考
 
 - 工作台 Monorepo 工程方案（为 OEM 加岗服务）：[`workbench-monorepo-design.md`](./workbench-monorepo-design.md)
-- OEM 品牌配置：`shared/oem.config.ts`、`shared/brand.ts`
+- OEM 品牌配置：`shared/oem.config.template.ts`（模板）→ 本地/Fork 的 `shared/oem.config.ts`、`shared/brand.ts`
 - 现有工作台体系：`src/workbench/SPEC.md`
 - Agent 子系统：`electron/services/agent/SPEC.md`
 - 项目架构：`.cursor/rules/project-architecture.mdc`

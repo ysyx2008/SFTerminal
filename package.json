@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:steam": "cross-env VITE_STEAM_BUILD=true vite",
-    "postinstall": "patch-package && node scripts/fix-sherpa-onnx.js",
+    "postinstall": "patch-package && node scripts/fix-sherpa-onnx.js && node scripts/ensure-oem-config.js",
+    "ensure:oem-config": "node scripts/ensure-oem-config.js",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",

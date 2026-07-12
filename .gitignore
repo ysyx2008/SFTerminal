@@ -38,6 +38,9 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# OEM 运行时配置（由 oem.config.template.ts 生成；Fork 可强制加入自己的副本）
+shared/oem.config.ts
+
 # TypeScript
 *.tsbuildinfo
 

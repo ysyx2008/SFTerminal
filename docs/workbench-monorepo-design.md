@@ -419,7 +419,7 @@ P0-P1 阶段，业务工作台若要对话区，**临时方案**是 iframe 嵌�
 
 ### 4.0 主路径：Fork OEM（与今天产品模型对齐）
 
-多数企业（含我们自己）是 **Fork 开源主线**，在 Fork 内加 `packages/workbench-*`、改 `oem.config`。此时：
+多数企业（含我们自己）是 **Fork 开源主线**，在 Fork 内加 `packages/workbench-*`、维护自有 `shared/oem.config.ts`（开源主线只提交 `oem.config.template.ts`，避免合版冲突）。此时：
 
 - **不必**先上 GitHub Packages 才能 OEM  
 - monorepo / workspace 包的价值是**边界清晰、少改核心**  
