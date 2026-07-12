@@ -575,39 +575,65 @@ export function useAgentMode(
     saveScrollTop()
   }
 
-  // ==================== FLIP 平滑上移（compositor 视觉层）====================
-  // 同帧钉底后，给 Virtualizer 根节点加 translateY(scrollDelta) 反向偏移，下一帧归零，
-  // 让「新内容顶上来」变成弹簧曲线滑动。transform 不影响 scrollHeight / virtua 测量。
-  const FLIP_BASE_DURATION_MS = 320
-  const FLIP_MAX_DURATION_MS = 560
-  const FLIP_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)'
-  const MAX_FLIP_DELTA = 600
-  /** 主动跳底（发消息 / 点新消息）后短暂硬切，避免相邻高度变化 FLIP 打架 */
-  const FLIP_SUPPRESS_WINDOW_MS = 200
-  let suppressFlipUntil = 0
-  let pendingFlipFrame: number | null = null
+  // ==================== 跟底平滑滚动（Apple ease-out）====================
+  // 不用 translateY FLIP：流式 chunk 会打断 CSS transition，先瞬间下移再上推，看起来像回弹。
+  // 改为 scrollTop ease-out 追底。中途长高时**保持当前进度 p** 重算 from/to，避免
+  // 「重置 t→0 再加速」或硬切造成的偶发跳变；字出再快也只是把目标抬高、略延长时长。
+  const FOLLOW_BASE_DURATION_MS = 320
+  const FOLLOW_MAX_DURATION_MS = 720
+  /** 仅极端跳变（虚拟列表重排级）才硬切；普通流式再快也走动画 */
+  const MAX_FOLLOW_HARD_CUT = 2400
+  let followAnimRaf: number | null = null
+  let followAnimFrom = 0
+  let followAnimTo = 0
+  let followAnimStartTs = 0
+  let followAnimDuration = FOLLOW_BASE_DURATION_MS
 
-  const computeFlipDuration = (offset: number): number => {
+  const computeFollowDuration = (offset: number): number => {
     const abs = Math.abs(offset)
-    if (abs <= 100) return FLIP_BASE_DURATION_MS
-    return Math.min(FLIP_MAX_DURATION_MS, FLIP_BASE_DURATION_MS + (abs - 100) * 0.6)
+    if (abs <= 100) return FOLLOW_BASE_DURATION_MS
+    return Math.min(FOLLOW_MAX_DURATION_MS, FOLLOW_BASE_DURATION_MS + (abs - 100) * 0.5)
   }
 
-  const readTranslateY = (el: HTMLElement): number => {
-    const computed = getComputedStyle(el).transform
-    if (!computed || computed === 'none') return 0
-    const m = computed.match(/matrix(?:3d)?\(([^)]+)\)/)
-    if (!m) return 0
-    const values = m[1].split(',').map(v => parseFloat(v.trim()))
-    if (values.length === 6) return values[5]
-    if (values.length === 16) return values[13]
-    return 0
+  /**
+   * CSS cubic-bezier(0.32, 0.72, 0, 1) —— Apple 式 ease-out，单向无过冲。
+   * 对进度 x∈[0,1] 求曲线 y（Newton 求参数 t）。
+   */
+  const easeOutApple = (x: number): number => {
+    if (x <= 0) return 0
+    if (x >= 1) return 1
+    const x1 = 0.32
+    const y1 = 0.72
+    const x2 = 0
+    const y2 = 1
+    const sampleX = (t: number) => {
+      const u = 1 - t
+      return 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t
+    }
+    const sampleDX = (t: number) => {
+      const u = 1 - t
+      return 3 * u * u * x1 + 6 * u * t * (x2 - x1) + 3 * t * t * (1 - x2)
+    }
+    const sampleY = (t: number) => {
+      const u = 1 - t
+      return 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t
+    }
+    let t = x
+    for (let i = 0; i < 6; i++) {
+      const xEst = sampleX(t) - x
+      const dx = sampleDX(t)
+      if (Math.abs(dx) < 1e-6) break
+      t -= xEst / dx
+      if (t < 0) t = 0
+      else if (t > 1) t = 1
+    }
+    return sampleY(t)
   }
 
-  const cancelFlipAnimation = () => {
-    if (pendingFlipFrame !== null) {
-      cancelAnimationFrame(pendingFlipFrame)
-      pendingFlipFrame = null
+  const cancelFollowScrollAnimation = () => {
+    if (followAnimRaf !== null) {
+      cancelAnimationFrame(followAnimRaf)
+      followAnimRaf = null
     }
     const wrapper = followObservedTarget
     if (wrapper) {
@@ -616,46 +642,127 @@ export function useAgentMode(
     }
   }
 
-  /** 调用方必须先完成 pinFollowBottom，再传入实际 scrollDelta */
-  const applyFlipScroll = (offset: number) => {
-    const wrapper = followObservedTarget
-    if (!wrapper || offset <= 0 || offset >= MAX_FLIP_DELTA) return
-    if (Date.now() < suppressFlipUntil) return
+  /** 兼容旧调用名 */
+  const cancelFlipAnimation = cancelFollowScrollAnimation
 
-    const currentY = readTranslateY(wrapper)
-    const targetY = currentY + offset
-    wrapper.style.transition = 'none'
-    wrapper.style.transform = `translateY(${targetY}px)`
-
-    if (pendingFlipFrame !== null) cancelAnimationFrame(pendingFlipFrame)
-    const duration = computeFlipDuration(targetY)
-    pendingFlipFrame = requestAnimationFrame(() => {
-      pendingFlipFrame = null
-      void wrapper.offsetHeight
-      wrapper.style.transition = `transform ${duration}ms ${FLIP_EASING}`
-      wrapper.style.transform = 'translateY(0)'
-    })
-  }
-
-  /** @returns 实际产生的 scrollTop 增量（供 FLIP 使用） */
-  const pinFollowBottom = (): number => {
+  /** 硬切钉底（发消息 / 点新消息 / 极端跳变） */
+  const pinFollowBottom = () => {
+    cancelFollowScrollAnimation()
     const el = messagesRef.value
-    if (!el) return 0
-    const oldScrollTop = el.scrollTop
-    // 优先走 DOM scrollTop：ResizeObserver 同帧内 virtua scrollSize 可能尚未同步
+    if (!el) return
     el.scrollTop = el.scrollHeight
     scrollerRef?.value?.scrollToBottom?.()
     lastKnownScrollTop = el.scrollTop
     lastKnownScrollHeight = el.scrollHeight
-    return el.scrollTop - oldScrollTop
+  }
+
+  /**
+   * 内容中途长高：保持当前插值进度 p，重算 from/to，使 scrollTop 连续。
+   * 若剩余时间不够走完新距离，只延长 duration，不把 t 重置回 0。
+   */
+  const retargetFollowAnimation = (box: HTMLElement, newTo: number, now: number) => {
+    const cur = box.scrollTop
+    const remain = newTo - cur
+    if (remain <= 0.5) {
+      followAnimTo = newTo
+      return
+    }
+    if (remain >= MAX_FOLLOW_HARD_CUT) {
+      pinFollowBottom()
+      return
+    }
+
+    const elapsed = Math.max(0, now - followAnimStartTs)
+    const tRaw = followAnimDuration > 0 ? elapsed / followAnimDuration : 1
+    const t = Math.min(0.98, Math.max(0, tRaw))
+    const p = easeOutApple(t)
+
+    if (p < 0.02) {
+      followAnimFrom = cur
+      followAnimTo = newTo
+      followAnimStartTs = now
+      followAnimDuration = computeFollowDuration(remain)
+      return
+    }
+
+    // cur = from' + (to' - from') * p  →  from' = (cur - to'*p) / (1-p)
+    followAnimTo = newTo
+    followAnimFrom = (cur - newTo * p) / (1 - p)
+
+    const timeLeft = Math.max(16, followAnimDuration - elapsed)
+    const needed = computeFollowDuration(remain)
+    if (needed > timeLeft) {
+      followAnimDuration = elapsed + needed
+    }
+  }
+
+  /** 跟底态：ease-out 把 scrollTop 追到当前底部；中途长高保持进度、抬高目标 */
+  const animateFollowBottom = () => {
+    const el = messagesRef.value
+    if (!el) return
+
+    const target = Math.max(0, el.scrollHeight - el.clientHeight)
+    const current = el.scrollTop
+    const gap = target - current
+    if (gap <= 0.5) return
+    if (gap >= MAX_FOLLOW_HARD_CUT) {
+      pinFollowBottom()
+      return
+    }
+
+    if (followAnimRaf !== null) {
+      retargetFollowAnimation(el, target, performance.now())
+      return
+    }
+
+    followAnimFrom = current
+    followAnimTo = target
+    followAnimStartTs = performance.now()
+    followAnimDuration = computeFollowDuration(gap)
+
+    const tick = (now: number) => {
+      const box = messagesRef.value
+      if (!box || !shouldFollowBottom()) {
+        followAnimRaf = null
+        return
+      }
+
+      const latestTarget = Math.max(0, box.scrollHeight - box.clientHeight)
+      if (latestTarget > followAnimTo + 0.5) {
+        retargetFollowAnimation(box, latestTarget, now)
+        if (followAnimRaf === null) return // 极端硬切已取消动画
+      }
+
+      const t = followAnimDuration > 0
+        ? Math.min(1, (now - followAnimStartTs) / followAnimDuration)
+        : 1
+      const next = followAnimFrom + (followAnimTo - followAnimFrom) * easeOutApple(t)
+      // 单调不减：数值误差或 retarget 时也不允许往回抽
+      box.scrollTop = Math.max(box.scrollTop, next)
+      lastKnownScrollTop = box.scrollTop
+      lastKnownScrollHeight = box.scrollHeight
+
+      const stillBehind = box.scrollTop < Math.max(0, box.scrollHeight - box.clientHeight) - 0.5
+      if (t < 1 && stillBehind) {
+        followAnimRaf = requestAnimationFrame(tick)
+        return
+      }
+
+      box.scrollTop = box.scrollHeight
+      scrollerRef?.value?.scrollToBottom?.()
+      lastKnownScrollTop = box.scrollTop
+      lastKnownScrollHeight = box.scrollHeight
+      followAnimRaf = null
+    }
+
+    followAnimRaf = requestAnimationFrame(tick)
   }
 
   const scrollToBottom = async () => {
     // 同步先设 sticky，避免 nextTick 前到达的 step 因 sticky=false 误判离底
     guardAfterAutoScroll()
-    // 主动跳底：硬切无动画，短暂抑制后续 FLIP
-    suppressFlipUntil = Math.max(suppressFlipUntil, Date.now() + FLIP_SUPPRESS_WINDOW_MS)
-    cancelFlipAnimation()
+    // 主动跳底硬切；不再 suppress 后续动画——流式首包也应能 ease-out
+    cancelFollowScrollAnimation()
 
     await nextTick()
     pinFollowBottom()
@@ -664,8 +771,8 @@ export function useAgentMode(
     requestAnimationFrame(() => saveScrollTop())
   }
 
-  // 实际执行滚动：跟底态钉底，阅读态只亮「新消息」
-  // FLIP 由 followResizeObserver 单点负责，这里只钉底不动画，避免双倍偏移
+  // 实际执行滚动：跟底意图交给 sticky；平滑追底由 followResizeObserver 单点完成。
+  // 禁止在这里先硬钉底，否则 RO 看到 gap≈0，动画被跳过。
   const doScrollIfNeeded = async () => {
     lastScrollTime = Date.now()
     await nextTick()
@@ -676,8 +783,15 @@ export function useAgentMode(
         setIsUserNearBottom(true)
         hasNewMessage.value = false
         extendScrollGrace()
-        // 跟底态一律钉底：流式长高时即使仍在 SCROLL_THRESHOLD 内也要跟上
-        pinFollowBottom()
+        // RO 漏触发时的兜底：下一帧仍离底再追一次
+        requestAnimationFrame(() => {
+          const el = messagesRef.value
+          if (!el || !shouldFollowBottom()) return
+          if (!checkIsNearBottom()) {
+            animateFollowBottom()
+            guardAfterAutoScroll()
+          }
+        })
       }
     } else {
       hasNewMessage.value = true
@@ -703,10 +817,9 @@ export function useAgentMode(
     await doScrollIfNeeded()
   }
 
-  // ==================== 跟底态：内容高度变化时同帧钉底 + FLIP ====================
+  // ==================== 跟底态：内容高度变化时平滑追底 ====================
   // virtua 负责上方 item 高度修正的视区锚定，但不负责「最后一项流式长高时保持贴底」。
-  // 这里只在 shouldFollowBottom 且内容变高时钉底 + FLIP。
-  // 禁止在高度不变/变矮时钉底：composer 测高、窗口微调等会误触发跳动。
+  // 这里只在 shouldFollowBottom 且内容变高时 ease-out 追底。
   let followResizeObserver: ResizeObserver | null = null
   let followObservedTarget: HTMLElement | null = null
   let prevFollowContentHeight = 0
@@ -727,15 +840,15 @@ export function useAgentMode(
       const grew = newH > prevFollowContentHeight + 0.5
       prevFollowContentHeight = newH
       if (!grew) return
-      const scrollDelta = pinFollowBottom()
+
       guardAfterAutoScroll()
-      applyFlipScroll(scrollDelta)
+      animateFollowBottom()
     })
     followResizeObserver.observe(target)
   }
 
   const uninstallFollowResizeObserver = () => {
-    cancelFlipAnimation()
+    cancelFollowScrollAnimation()
     if (followResizeObserver && followObservedTarget) {
       followResizeObserver.unobserve(followObservedTarget)
     }

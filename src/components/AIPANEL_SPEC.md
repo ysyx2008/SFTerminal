@@ -111,8 +111,8 @@ DynamicScroller 是回收式虚拟列表，动态高度 + 流式增长场景下�
 | 职责 | 谁负责 |
 |---|---|
 | 动态高度测量 / 上方 item 高度修正时的视区锚定 | virtua 内置 |
-| 跟底态：新内容到达 / 最后一项流式长高时钉底 | `stickyFollowBottom` + `pinFollowBottom`；`followResizeObserver` 监听 Virtualizer 根节点高度，同帧钉底 |
-| 跟底态：新内容上移的平滑滑动 | `applyFlipScroll`：钉底后对 Virtualizer 根做 `translateY(scrollDelta)` → 下一帧弹簧归零（纯 compositor，不影响 virtua 测量） |
+| 跟底态：新内容到达 / 最后一项流式长高时钉底 | `stickyFollowBottom` + `animateFollowBottom` / `pinFollowBottom`；`followResizeObserver` 监听 Virtualizer 根高度 |
+| 跟底态：新内容上移的平滑滑动 | `animateFollowBottom`：`scrollTop` 用 `cubic-bezier(0.32, 0.72, 0, 1)` 追底；中途长高保持插值进度 p 重算 from/to（不重置、不硬切），字快只抬高目标 |
 | 阅读态：用户上滚后不拽回底部，亮「新消息」 | `updateScrollPosition` / `userScrolledAway` / `hasNewMessage` |
 | 切 tab / 恢复历史的精确视口位置 | `aiScrollAnchor`（item id + offset）+ `scrollToIndex` |
 | 历史冷加载视觉抖动 | `isHistoryScrollPending`（opacity:0 → scrollHeight 稳定后淡入） |
@@ -124,13 +124,14 @@ DynamicScroller 是回收式虚拟列表，动态高度 + 流式增长场景下�
 - `aiScrollCache` / `restoreCache`（virtua CacheSnapshot 结构不同且不保证跨版本）
 - `getItemSizeDeps` / `DynamicScrollerItem`（virtua 自动重测，无需手动 size-dependencies）
 
-### FLIP 约束
+### 跟底动画约束
 
-1. **偏移量用 `scrollDelta`（钉底前后 scrollTop 差），不用 wrapper 高度差**——内容不满视区时 scrollDelta=0，不应动画。
-2. **FLIP 仅由 `followResizeObserver` 触发**；`doScrollIfNeeded` / `scrollToBottom` 只钉底。主动跳底设 `suppressFlipUntil` 硬切。
-3. **transform 只加在 Virtualizer 根节点**，不要动 item 内部（virtua 自己用 transform 定位 item）。
-4. **连续 chunk 用 `getComputedStyle` 读当前 ty 累加**，不要读 `element.style.transform`。
-5. **用户上滚 `userScrolledAway` 必须 `cancelFlipAnimation`**，避免停在半途。
+1. **用 `scrollTop` ease-out 追底，禁止 translateY FLIP**——FLIP 在流式 chunk 打断时会先瞬间下移再上推，观感像回弹。
+2. **`doScrollIfNeeded` 禁止先硬钉底**——会把 gap 吃成 0，动画消失。主动跳底（`scrollToBottom`）才硬切。
+3. **中途长高保持插值进度 p 重算 from/to**（`retargetFollowAnimation`），禁止把 t 重置回 0；时间不够只延长 duration。
+4. **仅 gap ≥ `MAX_FOLLOW_HARD_CUT`（2400）才硬切**；普通流式再快也走动画。`scrollTop` 赋值用 `Math.max` 保证单调不减。
+5. **曲线只用 `cubic-bezier(0.32, 0.72, 0, 1)`**，禁止弹簧/过冲。
+6. **用户上滚必须 `cancelFollowScrollAnimation`**。
 
 ### 改这块代码前必读
 
