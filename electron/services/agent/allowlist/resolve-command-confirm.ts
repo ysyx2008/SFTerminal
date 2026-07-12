@@ -1,5 +1,5 @@
 /**
- * 命令类工具：持久化「始终允许」命中 + 确认决策
+ * 命令类工具确认决策（会话内存「本次允许」由 waitForConfirmation 内查 allowedTools）
  */
 import type { RiskLevel } from '@shared/types/agent'
 import type { AgentConfig } from '../types'
@@ -7,7 +7,6 @@ import type { ToolExecutorConfig, ToolResult } from '../tools/types'
 import { commandNeedsConfirm } from '../command-audit/confirm-policy'
 import type { CommandRiskAssessment } from '../command-audit/types'
 import { t } from '../i18n'
-import { checkPersistedAllowlist } from './check-persisted'
 
 export type CommandConfirmDecision =
   | { proceed: true; userApproved: boolean }
@@ -46,26 +45,10 @@ export async function resolveCommandToolConfirmation(
   toolCallId: string,
   riskLevel: RiskLevel,
   executor: ToolExecutorConfig,
-  reassess: () => Promise<RiskLevel> | RiskLevel,
 ): Promise<CommandConfirmDecision> {
   const needConfirm = commandNeedsConfirm(assessment, config.executionMode, config.commandRiskPolicy)
   if (!needConfirm) {
     return { proceed: true, userApproved: false }
-  }
-
-  const persisted = await checkPersistedAllowlist(toolName, toolArgs, reassess)
-  if (persisted.action === 'block') {
-    return {
-      proceed: false,
-      result: {
-        success: false,
-        output: '',
-        error: t('hint.security_blocked'),
-      },
-    }
-  }
-  if (persisted.action === 'allow') {
-    return { proceed: true, userApproved: true }
   }
 
   // 只收集「等级等于最终 riskLevel」的子命令的原因（去重），

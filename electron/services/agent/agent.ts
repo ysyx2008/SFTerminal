@@ -47,10 +47,7 @@ import { executeTool } from './tools/index'
 import { stripToolMeta } from './tools'
 import { getMetaByName, buildPreToolCallDisplay } from './tool-metadata'
 import {
-  buildAllowlistKey,
-  extractAllowlistKeyArgs,
-  getUserAllowlist,
-  type AllowlistSourceKind,
+  buildAllowlistKeyCandidates,
 } from './allowlist'
 import { buildTaskHistoryContext, type TaskHistoryOptions } from './context-builder'
 import { getKnowledgeService } from '../knowledge'
@@ -182,7 +179,7 @@ export abstract class Agent {
   /** 技能会话（Agent 实例级别，跨 Run 持久化） */
   private _skillSession?: SkillSession
 
-  /** "始终允许"工具白名单（Agent 实例级别，跨 Run 持久化，重启后清空） */
+  /** 「本次允许」工具白名单（Agent 实例内存，跨 Run；关 tab / 重启清空） */
   private allowedTools = new Set<string>()
 
   /** 上下文窗口管理协作者(token估算/压力/压缩/工具序列修复)。构造时装配,见 _contextWindow。 */
@@ -553,38 +550,16 @@ export abstract class Agent {
   ): boolean {
     const pending = this.currentRun!.pendingConfirmation!
     const toolArgs = modifiedArgs || pending.toolArgs
-    const key = buildAllowlistKey(pending.toolName, toolArgs)
-    const meta = getMetaByName(this.getAvailableTools(), pending.toolName)
+    // 会话内存白名单：shell 工具写入 exec/execute_command 双键，互认同一条命令
+    const keys = buildAllowlistKeyCandidates(pending.toolName, toolArgs)
 
     if (!approved) {
-      if (meta?.persistAllowlist) {
-        void getUserAllowlist().remove(key).catch(() => { /* ignore */ })
-      }
+      for (const key of keys) this.allowedTools.delete(key)
     } else if (alwaysAllow) {
-      if (meta?.persistAllowlist) {
-        void getUserAllowlist().add({
-          key,
-          toolName: pending.toolName,
-          keyArgs: extractAllowlistKeyArgs(pending.toolName, toolArgs),
-          riskLevelAtApproval: pending.riskLevel,
-          approvedAt: Date.now(),
-          sourceAgentKey: this._agentId ?? 'unknown',
-          sourceKind: this.inferAllowlistSourceKind(),
-        }).catch(err => log.warn('[allowlist] persist failed:', err))
-      } else {
-        this.allowedTools.add(key)
-      }
+      for (const key of keys) this.allowedTools.add(key)
     }
     pending.resolve(approved, modifiedArgs)
     return true
-  }
-
-  private inferAllowlistSourceKind(): AllowlistSourceKind {
-    const id = this._agentId
-    if (id === '__companion__') return 'companion'
-    if (id === '__wakeup__') return 'wakeup'
-    if (id === '__watch__') return 'watch'
-    return 'task'
   }
   
   /**
@@ -3091,9 +3066,9 @@ export abstract class Agent {
       addStep: (step) => this.addStep(step),
       updateStep: (stepId, updates) => this.updateStep(stepId, updates),
       waitForConfirmation: async (toolCallId, toolName, toolArgs, riskLevel, displayName, reasons) => {
-        // 检查"始终允许"白名单（Agent 实例级别，跨 Run 持久化）
-        const allowKey = this.generateAllowedToolKey(toolName, toolArgs)
-        if (this.allowedTools.has(allowKey)) {
+        // 「本次允许」：Agent 实例内存白名单（跨 Run，关 tab / 重启清空）
+        const candidates = buildAllowlistKeyCandidates(toolName, toolArgs)
+        if (candidates.some(k => this.allowedTools.has(k))) {
           return true
         }
         const result = await this.waitForConfirmation(run, toolCallId, toolName, toolArgs, riskLevel, displayName, reasons)
@@ -3385,17 +3360,6 @@ export abstract class Agent {
   private generateId(): string {
     const prefix = this._agentId ?? 'agent'
     return `${prefix}_${Date.now()}_${++this.idCounter}`
-  }
-  
-  /**
-   * 生成工具白名单键
-   *
-   * 默认整个 args 作为幂等键的一部分；工具可以在 ToolDefinition._meta.idempotencyKey
-   * 里声明只取部分字段（如 execute_command/exec 只取 ['command']，让"同一条命令"
-   * 的不同 cwd / timeout 共享白名单）。基类不知道具体工具叫什么。
-   */
-  private generateAllowedToolKey(toolName: string, toolArgs: Record<string, unknown>): string {
-    return buildAllowlistKey(toolName, toolArgs)
   }
   
   /**

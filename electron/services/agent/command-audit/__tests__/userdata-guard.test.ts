@@ -38,7 +38,7 @@ describe('userdata-guard', () => {
     fs.rmSync(mockUserData, { recursive: true, force: true })
   })
 
-  it('agent-allowlist.json 在 userData 下应 forbidden', () => {
+  it('历史 agent-allowlist.json 在 userData 下应 forbidden', () => {
     const p = path.join(mockUserData, 'agent-allowlist.json')
     expect(isUserDataForbidden(p)).toBe(true)
     expect(isSystemPath(p)).toBe(true)
@@ -86,7 +86,7 @@ describe('assessCommandRisk userData forbidden paths', () => {
     fs.rmSync(mockUserData, { recursive: true, force: true })
   })
 
-  it('cat agent-allowlist.json 应为 blocked', async () => {
+  it('cat 历史 agent-allowlist.json 应为 blocked', async () => {
     const target = path.join(mockUserData, 'agent-allowlist.json')
     const level = await assessCommandRisk(`cat "${target}"`)
     expect(level).toBe('blocked')

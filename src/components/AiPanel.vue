@@ -5304,7 +5304,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   border-color: var(--brand-vital-end);
 }
 
-/* Outline 按钮样式（用于"始终允许"） */
+/* Outline 按钮样式（用于「本次允许」） */
 .btn-outline-warning {
   background: transparent;
   border: 1px solid var(--color-warning);
@@ -5327,7 +5327,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   color: var(--color-error);
 }
 
-/* "始终允许"按钮 —— 走 --brand-vital，与低风险信号保持一致 */
+/* 「本次允许」按钮 —— 走 --brand-vital，与低风险信号保持一致 */
 .btn-outline-success {
   background: transparent;
   border: 1px solid var(--brand-vital);

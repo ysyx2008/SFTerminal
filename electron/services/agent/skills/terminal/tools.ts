@@ -60,7 +60,6 @@ export const ptyExecuteCommandTool: ToolDefinitionWithMeta = {
   },
   _meta: {
     idempotencyKey: ['command'],
-    persistAllowlist: true,
     contextBudget: { toolResult: 'clearable' },
     // 历史摘要中"主命令"是 command 字段（task-memory.extractDigest 用得到）
     argRole: { summaryLine: 'command' },

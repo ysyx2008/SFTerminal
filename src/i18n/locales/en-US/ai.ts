@@ -204,7 +204,7 @@ export default {
     lowRisk: 'Low Risk',
     riskReasons: 'Assessment Reasons',
     reject: 'Reject',
-    alwaysAllow: 'Always Allow',
+    alwaysAllow: 'Allow this session',
     alwaysAllowHint: 'Skip confirmation for same operation in this session',
     allowExecute: 'Allow Execute',
     cancel: 'Cancel',

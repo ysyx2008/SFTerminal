@@ -3610,65 +3610,6 @@ ipcMain.handle('agent:confirm', async (_event, { ptyId, toolCallId, approved, mo
   return agentService.confirmToolCall(ptyId, toolCallId, approved, modifiedArgs, alwaysAllow)
 })
 
-ipcMain.handle('allowlist:list', async () => {
-  const { getUserAllowlist } = await import('./services/agent/allowlist')
-  await getUserAllowlist().load()
-  return getUserAllowlist().list()
-})
-
-ipcMain.handle('allowlist:add', async (_event, payload: {
-  command: string
-}) => {
-  const command = typeof payload?.command === 'string' ? payload.command.trim() : ''
-  if (!command) {
-    return { success: false, error: 'empty_command' }
-  }
-  const {
-    getUserAllowlist,
-    buildAllowlistKey,
-    CANONICAL_SHELL_COMMAND_TOOL,
-  } = await import('./services/agent/allowlist')
-  const { assessCommandRiskDetailed } = await import('./services/agent/risk-assessor')
-  // exec / execute_command 授权互通，手动添加只写规范工具名
-  const toolName = CANONICAL_SHELL_COMMAND_TOOL
-  const toolArgs = { command }
-  const key = buildAllowlistKey(toolName, toolArgs)
-  let riskLevelAtApproval: import('@shared/types/agent').RiskLevel = 'dangerous'
-  try {
-    const assessment = await assessCommandRiskDetailed(command)
-    riskLevelAtApproval = assessment.level === 'safe' ? 'moderate' : assessment.level
-    // 手动授权至少记到 moderate，避免 safe 快照在风险微升时反复重确认噪声过低；
-    // blocked 命令不允许加入清单。
-    if (assessment.level === 'blocked') {
-      return { success: false, error: 'blocked_command' }
-    }
-  } catch {
-    riskLevelAtApproval = 'dangerous'
-  }
-  await getUserAllowlist().add({
-    key,
-    toolName,
-    keyArgs: { command },
-    riskLevelAtApproval,
-    approvedAt: Date.now(),
-    sourceAgentKey: '__settings__',
-    sourceKind: 'manual',
-  })
-  return { success: true, key }
-})
-
-ipcMain.handle('allowlist:remove', async (_event, key: string) => {
-  const { getUserAllowlist } = await import('./services/agent/allowlist')
-  await getUserAllowlist().remove(key)
-  return true
-})
-
-ipcMain.handle('allowlist:clear', async () => {
-  const { getUserAllowlist } = await import('./services/agent/allowlist')
-  await getUserAllowlist().clear()
-  return true
-})
-
 ipcMain.handle('allowlist:getBuiltInRules', async () => {
   const { getBuiltInRulesView } = await import('./services/agent/command-audit/built-in-rules-view')
   return getBuiltInRulesView()

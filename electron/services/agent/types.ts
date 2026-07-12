@@ -143,7 +143,7 @@ export type AgentExecutionPhase =
   | 'confirming'         // 等待用户确认中（安全打断）
   | 'idle'               // 空闲
 
-// 工具白名单键（用于"始终允许"功能）
+// 工具白名单键（用于「本次允许」）
 export interface AllowedToolKey {
   toolName: string
   argsHash: string  // 关键参数的哈希值（如文件路径）

@@ -181,8 +181,7 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 | `streamDisplay` | 流式预卡片标题/字段/进度尾缀 | 通用兜底「调用: {toolName}」 |
 | `parallelizable` | 是否可与其他工具并行执行 | `false`（串行） |
 | `phase` | 执行此工具时的 Agent 阶段 | `'executing_command'` |
-| `idempotencyKey` | 工具白名单/幂等键的字段子集 | 全 args 参与生成 key |
-| `persistAllowlist` | 「始终允许」是否写入 `{userData}/agent-allowlist.json` 跨重启 | `false`（路径类工具关 tab 清） |
+| `idempotencyKey` | 工具白名单/幂等键的字段子集（「本次允许」会话内存） | 全 args 参与生成 key |
 | `lifecycle.marksOnboardingComplete` | 调用此工具表示诞生引导完成 | `false` |
 | `lifecycle.blocksUntilUserInput` | 此工具的 tool_call 后阻塞等待用户输入 | `false` |
 | `argRole.summaryLine` | 历史摘要中"主命令"字段（task-memory 抽取用） | 不抽取 |

@@ -1,19 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Trash2, RefreshCw, Search, Shield, ShieldCheck, ShieldAlert, Ban, FolderLock, FileLock2, HardDrive, Terminal, Plus, CheckCircle2, SlidersHorizontal, CircleHelp } from 'lucide-vue-next'
+import { Trash2, RefreshCw, Search, Shield, ShieldAlert, FolderLock, FileLock2, HardDrive, Terminal, Plus, SlidersHorizontal, CircleHelp } from 'lucide-vue-next'
 import type { RiskLevel, CommandRiskPolicy } from '@shared/types/agent'
 import { DEFAULT_COMMAND_RISK_POLICY } from '@shared/types/agent'
-
-type AllowlistEntry = {
-  key: string
-  toolName: string
-  keyArgs: Record<string, unknown>
-  riskLevelAtApproval: RiskLevel
-  approvedAt: number
-  sourceAgentKey: string
-  sourceKind: 'task' | 'companion' | 'watch' | 'wakeup' | 'manual'
-}
 
 type BuiltInRulesView = {
   argvCommands: Array<{
@@ -40,11 +30,6 @@ type BuiltInRulesView = {
 }
 
 const { t, tm } = useI18n()
-const entries = ref<AllowlistEntry[]>([])
-const loading = ref(false)
-const filterTool = ref('')
-const selectedKeys = ref<Set<string>>(new Set())
-const confirmClearAll = ref(false)
 
 // —— 内置安全规则（只读）——
 const builtinRules = ref<BuiltInRulesView | null>(null)
@@ -121,9 +106,9 @@ async function removeUserCommandRule(cmd: string) {
   await loadUserCommandRules()
 }
 
-// —— 子 tab 切换（我的授权 / 命令规则 / 风险策略）——
-type SubTab = 'user' | 'builtin' | 'policy'
-const activeSubTab = ref<SubTab>('user')
+// —— 子 tab 切换（命令规则 / 风险策略）——
+type SubTab = 'builtin' | 'policy'
+const activeSubTab = ref<SubTab>('builtin')
 
 const builtinFilteredCommands = computed(() => {
   if (!builtinRules.value) return []
@@ -169,7 +154,6 @@ function switchSubTab(tab: SubTab) {
   }
   activeSubTab.value = tab
   closePolicyTip()
-  confirmClearAll.value = false
   if (tab === 'builtin') {
     if (!builtinRules.value && !builtinLoading.value) {
       loadBuiltinRules()
@@ -207,201 +191,16 @@ function groupCount(group: RiskLevel | 'all'): number {
   return builtinGroupCounts.value[group] ?? 0
 }
 
-const filteredEntries = computed(() => {
-  const q = filterTool.value.trim().toLowerCase()
-  let list = entries.value
-  if (q) {
-    list = list.filter(e =>
-      e.toolName.toLowerCase().includes(q) ||
-      displayToolName(e).toLowerCase().includes(q) ||
-      formatEntrySummary(e).toLowerCase().includes(q),
-    )
-  }
-  // exec / execute_command 同一命令只展示一条（优先规范名）
-  const seenCmd = new Set<string>()
-  const out: AllowlistEntry[] = []
-  const ordered = [...list].sort((a, b) => {
-    if (a.toolName === 'execute_command' && b.toolName === 'exec') return -1
-    if (a.toolName === 'exec' && b.toolName === 'execute_command') return 1
-    return 0
-  })
-  for (const e of ordered) {
-    if (e.toolName === 'exec' || e.toolName === 'execute_command') {
-      const fp = JSON.stringify(e.keyArgs)
-      if (seenCmd.has(fp)) continue
-      seenCmd.add(fp)
-    }
-    out.push(e)
-  }
-  return out
-})
-
-/** 去重后的条目数（角标 / 标题计数） */
-const uniqueEntryCount = computed(() => {
-  const seen = new Set<string>()
-  let n = 0
-  for (const e of entries.value) {
-    if (e.toolName === 'exec' || e.toolName === 'execute_command') {
-      const fp = JSON.stringify(e.keyArgs)
-      if (seen.has(fp)) continue
-      seen.add(fp)
-    }
-    n++
-  }
-  return n
-})
-
-function displayToolName(entry: AllowlistEntry): string {
-  if (entry.toolName === 'exec' || entry.toolName === 'execute_command') {
-    return t('settings.security.userAllowlist.shellCommand')
-  }
-  return entry.toolName
-}
-
-function formatKeyArgs(args: Record<string, unknown>): string {
-  try {
-    const s = JSON.stringify(args)
-    return s.length > 120 ? s.slice(0, 117) + '...' : s
-  } catch {
-    return String(args)
-  }
-}
-
-/** 授权项主文案：命令类直接显示 command，其它仍展示关键参数 */
-function formatEntrySummary(entry: AllowlistEntry): string {
-  if (
-    (entry.toolName === 'exec' || entry.toolName === 'execute_command') &&
-    typeof entry.keyArgs.command === 'string'
-  ) {
-    return entry.keyArgs.command
-  }
-  return formatKeyArgs(entry.keyArgs)
-}
-
-function formatEntrySummaryShort(entry: AllowlistEntry): string {
-  const full = formatEntrySummary(entry)
-  if (full.length <= 80) return full
-  return full.slice(0, 77) + '...'
-}
-
-function formatTime(ts: number): string {
-  const d = new Date(ts)
-  const now = new Date()
-  const diff = now.getTime() - ts
-  const day = 24 * 60 * 60 * 1000
-  if (diff < day && d.getDate() === now.getDate()) {
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  }
-  if (diff < 2 * day) return t('settings.security.userAllowlist.timeYesterday')
-  if (diff < 7 * day) return t('settings.security.userAllowlist.timeDaysAgo', { n: Math.floor(diff / day) })
-  return d.toLocaleDateString()
-}
-
-function riskIcon(level: RiskLevel) {
-  if (level === 'dangerous') return ShieldAlert
-  if (level === 'moderate') return Shield
-  if (level === 'blocked') return Ban
-  return ShieldCheck
-}
-
 function riskClass(level: RiskLevel): string {
   return `risk-${level}`
 }
 
 function riskLabel(level: RiskLevel): string {
-  if (level === 'blocked') return t('settings.security.userAllowlist.riskBlocked')
+  if (level === 'blocked') return t('settings.security.builtinRules.groupBlocked')
   if (level === 'dangerous') return t('ai.highRisk')
   if (level === 'moderate') return t('ai.mediumRisk')
   return t('ai.lowRisk')
 }
-
-function sourceLabel(entry: AllowlistEntry): string {
-  if (entry.sourceKind === 'companion') return t('settings.security.userAllowlist.sourceCompanion')
-  if (entry.sourceKind === 'watch') return t('settings.security.userAllowlist.sourceWatch')
-  if (entry.sourceKind === 'wakeup') return t('settings.security.userAllowlist.sourceWakeup')
-  if (entry.sourceKind === 'manual') return t('settings.security.userAllowlist.sourceManual')
-  return entry.sourceAgentKey || t('settings.security.userAllowlist.sourceTask')
-}
-
-const addCommand = ref('')
-const addBusy = ref(false)
-const addError = ref('')
-
-async function addEntry() {
-  const command = addCommand.value.trim()
-  if (!command || addBusy.value) return
-  addBusy.value = true
-  addError.value = ''
-  try {
-    const result = await window.electronAPI.allowlist.add({ command })
-    if (!result.success) {
-      addError.value = result.error === 'blocked_command'
-        ? t('settings.security.userAllowlist.addBlocked')
-        : t('settings.security.userAllowlist.addFailed')
-      return
-    }
-    addCommand.value = ''
-    await loadEntries()
-  } catch {
-    addError.value = t('settings.security.userAllowlist.addFailed')
-  } finally {
-    addBusy.value = false
-  }
-}
-
-async function loadEntries() {
-  loading.value = true
-  try {
-    entries.value = await window.electronAPI.allowlist.list()
-    selectedKeys.value = new Set()
-  } finally {
-    loading.value = false
-  }
-}
-
-async function removeOne(key: string) {
-  await window.electronAPI.allowlist.remove(key)
-  await loadEntries()
-}
-
-async function removeSelected() {
-  for (const key of selectedKeys.value) {
-    await window.electronAPI.allowlist.remove(key)
-  }
-  await loadEntries()
-}
-
-async function clearAll() {
-  await window.electronAPI.allowlist.clear()
-  confirmClearAll.value = false
-  await loadEntries()
-}
-
-function toggleSelect(key: string, checked: boolean) {
-  const next = new Set(selectedKeys.value)
-  if (checked) next.add(key)
-  else next.delete(key)
-  selectedKeys.value = next
-}
-
-function toggleSelectAll(checked: boolean) {
-  if (!checked) {
-    selectedKeys.value = new Set()
-    return
-  }
-  selectedKeys.value = new Set(filteredEntries.value.map(e => e.key))
-}
-
-onMounted(() => {
-  loadEntries()
-  document.addEventListener('click', closePolicyTip)
-  document.addEventListener('keydown', onPolicyTipKeydown)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('click', closePolicyTip)
-  document.removeEventListener('keydown', onPolicyTipKeydown)
-})
 
 // ==================== 命令风险策略 ====================
 const POLICY_ALLOWED_LEVELS: RiskLevel[] = ['moderate', 'dangerous', 'blocked']
@@ -610,21 +409,25 @@ function onPolicyTipKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') closePolicyTip()
 }
 
+onMounted(() => {
+  loadBuiltinRules()
+  loadUserCommandRules()
+  loadPolicy()
+  document.addEventListener('click', closePolicyTip)
+  document.addEventListener('keydown', onPolicyTipKeydown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closePolicyTip)
+  document.removeEventListener('keydown', onPolicyTipKeydown)
+})
+
 </script>
 
 <template>
   <div class="user-allowlist-settings">
     <!-- 子标签切换 -->
     <div class="sub-tabs">
-      <button
-        class="sub-tab"
-        :class="{ active: activeSubTab === 'user' }"
-        @click="switchSubTab('user')"
-      >
-        <CheckCircle2 :size="14" />
-        {{ t('settings.security.subTabs.user') }}
-        <span class="tab-badge" v-if="uniqueEntryCount > 0">{{ uniqueEntryCount }}</span>
-      </button>
       <button
         class="sub-tab"
         :class="{ active: activeSubTab === 'builtin' }"
@@ -641,149 +444,6 @@ function onPolicyTipKeydown(e: KeyboardEvent) {
         <SlidersHorizontal :size="14" />
         {{ t('settings.security.subTabs.policy') }}
       </button>
-    </div>
-
-    <!-- ========== 我的授权 ========== -->
-    <div v-if="activeSubTab === 'user'" class="sub-panel">
-      <div class="settings-section">
-        <div class="section-header">
-          <div class="header-left">
-            <h4>{{ t('settings.security.userAllowlist.title') }}</h4>
-            <span class="count-badge" v-if="uniqueEntryCount > 0">{{ uniqueEntryCount }}</span>
-          </div>
-          <div class="header-actions">
-            <button class="btn btn-sm" @click="loadEntries" :disabled="loading" :title="t('common.refresh')">
-              <RefreshCw :size="14" :class="{ spinning: loading }" />
-            </button>
-          </div>
-        </div>
-        <p class="section-desc">{{ t('settings.security.userAllowlist.description') }}</p>
-
-        <div class="add-entry-form">
-          <input
-            v-model="addCommand"
-            type="text"
-            class="input-field add-command-input"
-            :placeholder="t('settings.security.userAllowlist.addPlaceholder')"
-            @keydown.enter.prevent="addEntry"
-          />
-          <button class="btn btn-sm btn-primary" :disabled="addBusy || !addCommand.trim()" @click="addEntry">
-            <Plus :size="14" />
-            {{ t('settings.security.userAllowlist.add') }}
-          </button>
-        </div>
-        <p v-if="addError" class="add-error">{{ addError }}</p>
-
-        <div class="toolbar">
-          <div class="search-box">
-            <Search :size="14" class="search-icon" />
-            <input
-              v-model="filterTool"
-              type="text"
-              class="input-field filter-input"
-              :placeholder="t('settings.security.userAllowlist.filterPlaceholder')"
-            />
-          </div>
-          <div class="toolbar-actions">
-            <button
-              v-if="!confirmClearAll"
-              class="btn btn-sm btn-danger"
-              :disabled="loading || entries.length === 0"
-              @click="confirmClearAll = true"
-            >
-              <Trash2 :size="14" />
-              {{ t('settings.security.userAllowlist.clearAll') }}
-            </button>
-            <template v-else>
-              <span class="clear-confirm-hint">{{ t('settings.security.userAllowlist.confirmClear') }}</span>
-              <button class="btn btn-sm btn-danger" @click="clearAll">
-                {{ t('common.confirm') }}
-              </button>
-              <button class="btn btn-sm" @click="confirmClearAll = false">
-                {{ t('common.cancel') }}
-              </button>
-            </template>
-            <button
-              class="btn btn-sm"
-              :disabled="loading || selectedKeys.size === 0"
-              @click="removeSelected"
-              v-if="selectedKeys.size > 0"
-            >
-              <Trash2 :size="14" />
-              {{ t('settings.security.userAllowlist.removeSelected') }} ({{ selectedKeys.size }})
-            </button>
-          </div>
-        </div>
-
-        <div v-if="loading" class="empty-state">
-          <RefreshCw :size="32" class="empty-icon spinning" />
-          <p>{{ t('settings.security.userAllowlist.loading') }}</p>
-        </div>
-        <div v-else-if="entries.length === 0" class="empty-state">
-          <ShieldCheck :size="32" class="empty-icon" />
-          <p>{{ t('settings.security.userAllowlist.empty') }}</p>
-          <p class="empty-hint">{{ t('settings.security.userAllowlist.emptyHint') }}</p>
-        </div>
-        <div v-else-if="filteredEntries.length === 0" class="empty-state">
-          <Search :size="32" class="empty-icon" />
-          <p>{{ t('settings.security.userAllowlist.noMatch') }}</p>
-        </div>
-        <div v-else class="entry-list">
-          <div class="select-all-row">
-            <label class="checkbox-label">
-              <input
-                type="checkbox"
-                :checked="filteredEntries.length > 0 && filteredEntries.every(e => selectedKeys.has(e.key))"
-                @change="toggleSelectAll(($event.target as HTMLInputElement).checked)"
-              />
-              <span>{{ t('settings.security.userAllowlist.selectAll') }}</span>
-            </label>
-            <span class="count-text">{{ filteredEntries.length }} / {{ uniqueEntryCount }}</span>
-          </div>
-          <div
-            v-for="entry in filteredEntries"
-            :key="entry.key"
-            class="entry-item"
-            :class="{ selected: selectedKeys.has(entry.key) }"
-          >
-            <div class="entry-check">
-              <input
-                type="checkbox"
-                :checked="selectedKeys.has(entry.key)"
-                @change="toggleSelect(entry.key, ($event.target as HTMLInputElement).checked)"
-              />
-            </div>
-            <div class="entry-risk" :class="riskClass(entry.riskLevelAtApproval)">
-              <component :is="riskIcon(entry.riskLevelAtApproval)" :size="16" />
-            </div>
-            <div class="entry-info">
-              <div class="entry-header">
-                <code class="entry-tool">{{ displayToolName(entry) }}</code>
-                <span class="risk-tag" :class="riskClass(entry.riskLevelAtApproval)">
-                  {{ riskLabel(entry.riskLevelAtApproval) }}
-                </span>
-              </div>
-              <div class="entry-args" :title="formatEntrySummary(entry)">
-                <code>{{ formatEntrySummaryShort(entry) }}</code>
-              </div>
-              <div class="entry-meta">
-                <span class="meta-source">{{ sourceLabel(entry) }}</span>
-                <span class="meta-dot">·</span>
-                <span class="meta-time">{{ formatTime(entry.approvedAt) }}</span>
-              </div>
-            </div>
-            <div class="entry-actions">
-              <button
-                class="btn-icon danger"
-                @click="removeOne(entry.key)"
-                :title="t('settings.security.userAllowlist.remove')"
-              >
-                <Trash2 :size="14" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- ========== 命令规则 ========== -->
@@ -1091,7 +751,7 @@ function onPolicyTipKeydown(e: KeyboardEvent) {
                   />
                   <button class="btn btn-sm" :disabled="!newFreeDir.trim()" @click="addFreeDir">
                     <Plus :size="14" />
-                    {{ t('settings.security.userAllowlist.add') }}
+                    {{ t('common.add') }}
                   </button>
                 </div>
                 <p v-if="freeDirError" class="add-error">{{ freeDirError }}</p>

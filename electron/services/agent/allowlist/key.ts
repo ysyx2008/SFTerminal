@@ -1,8 +1,7 @@
 /**
- * 用户授权清单键生成（与 Agent.generateAllowedToolKey 语义一致）
+ * 工具确认白名单键生成（与 Agent 会话内存 allowedTools 语义一致）
  *
- * exec 与 execute_command 共享同一条「命令」授权：命中检查会互认，
- * 设置页手动添加时只写 canonical（execute_command）。
+ * exec 与 execute_command 共享同一条「命令」授权：命中检查会互认。
  */
 import type { ToolDefinition } from '../../ai.service'
 import { getAgentTools } from '../tools'

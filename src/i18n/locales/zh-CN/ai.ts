@@ -205,7 +205,7 @@ export default {
     lowRisk: '低风险',
     riskReasons: '判定原因',
     reject: '拒绝',
-    alwaysAllow: '始终允许',
+    alwaysAllow: '本次允许',
     alwaysAllowHint: '本次会话内不再询问相同操作',
     allowExecute: '允许执行',
     cancel: '取消',

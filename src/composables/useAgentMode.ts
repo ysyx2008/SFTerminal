@@ -1622,7 +1622,7 @@ export function useAgentMode(
     }
   }
 
-  // alwaysAllow: 如果为 true，将该工具+参数加入会话白名单，后续自动跳过确认
+  // alwaysAllow: 如果为 true，将该工具+参数加入会话内存白名单，后续自动跳过确认
   const confirmToolCall = async (approved: boolean, alwaysAllow?: boolean) => {
     const confirm = pendingConfirm.value as (typeof pendingConfirm.value & { ptyId?: string }) | undefined
     if (!confirm) return

@@ -130,7 +130,7 @@ guard 把"确实危险的间接执行模式"鉴别出来标 dangerous，让 stri
 
 **黑洞设备豁免**：`/dev/null`、`/dev/stdout`、`/dev/stderr` 作为写重定向目标时直接判 safe（写它们等于丢弃或重定向输出）。命令参数中的 `/dev/null` 不受此豁免影响。
 
-**userData 禁区**：userData 下除 `agent-workspace/`、`skills/`、`excel-styles.json`、`word-styles.json` 外的路径，读+写都 blocked（保护 `credentials.json`、`agent-allowlist.json`、`agent-command-rules.json` 等安全机制文件）。
+**userData 禁区**：userData 下除 `agent-workspace/`、`skills/`、`excel-styles.json`、`word-styles.json` 外的路径，读+写都 blocked（保护 `credentials.json`、`agent-command-rules.json` 等安全机制文件；历史 `agent-allowlist.json` 若仍存在亦在禁区）。
 
 ## 依赖
 

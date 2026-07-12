@@ -149,7 +149,6 @@ export async function executeCommandDirect(
       toolCallId,
       riskLevel,
       executor,
-      () => assessment.level,
     )
     if (!confirm.proceed) {
       executor.addStep({

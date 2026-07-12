@@ -1,45 +1,30 @@
-# 用户授权清单（allowlist）
+# 工具确认白名单（allowlist）
 
 ## 职责
 
-持久化用户通过「始终允许」批准的**命令类**工具操作（按完整命令指纹特批免确认），全局共享、跨重启生效。Agent 无法读写 `{userData}/agent-allowlist.json`（由 `command-audit/userdata-guard` 硬 block）。
+为「本次允许」提供**键生成**与命令类工具的**确认编排**。批准结果只存在 Agent 实例内存 `allowedTools`（跨 Run；关 tab / 进程重启清空），**不落盘**。
 
-> 若要给命令名定风险等级（如收录 `rg`），请用 `command-audit/user-command-rules`，不是本清单。
+> 若要给命令名定风险等级（如收录 `rg`），请用 `command-audit/user-command-rules`，不是本模块。
 
 ## 模块
 
 | 文件 | 说明 |
 |---|---|
-| `user-allowlist.ts` | 持久化存储、命中检查、重新评估 |
-| `key.ts` | 白名单键生成（与 `ToolMeta.idempotencyKey` 一致） |
-| `check-persisted.ts` | 命令工具命中封装 |
-| `resolve-command-confirm.ts` | exec / execute_command 确认流程 |
+| `key.ts` | 白名单键生成（与 `ToolMeta.idempotencyKey` 一致；exec ↔ execute_command 互认） |
+| `resolve-command-confirm.ts` | exec / execute_command 是否需确认 + 调 `waitForConfirmation` |
 
-## 存储
+公开导出：`buildAllowlistKey` / `buildAllowlistKeyCandidates` / `resolveCommandToolConfirmation`。
 
-- 路径：`{userData}/agent-allowlist.json`
-- 格式：`{ version: 1, entries: AllowlistEntry[] }`
+## 会话内存命中
 
-## 重新评估
+- 写入 / 查询均用 `buildAllowlistKeyCandidates`（shell 工具同时覆盖 `exec` 与 `execute_command`）
+- 路径类等工具同样走 Agent `allowedTools`，无跨重启持久化
 
-命中持久化条目时调用 `reassess()` 比较当前风险与 `riskLevelAtApproval`：
+## IPC
 
-- 当前 = `blocked` → 拒绝并删除条目
-- 当前 > 旧 → 重新弹确认
-- 否则 → 跳过确认
-
-## 持久化范围
-
-仅 `ToolMeta.persistAllowlist === true` 的工具（`exec` / `execute_command`）。路径类工具仍用 Agent 实例内存 `Set`，关 tab 清。
-
-## IPC（仅用户/UI）
-
-- `allowlist:list` / `allowlist:add` / `allowlist:remove` / `allowlist:clear`
-- `allowlist:add`：用户在设置页手动预授权；只写 `command`（规范工具名 `execute_command`）；`sourceKind='manual'`；`blocked` 命令拒绝加入
-- `exec` / `execute_command`：按 `command` 互通命中；写入时清掉兄弟键（同一命令只留一条）；删除任一条目会清掉兄弟键
+- `allowlist:getBuiltInRules` — 设置页「命令规则」只读视图（实现见 `command-audit/built-in-rules-view`）
 
 ## 依赖
 
 - `command-audit/confirm-policy` — 确认策略
-- `tools.ts` — `ToolMeta.persistAllowlist`
-- `userdata-guard` — 保护清单文件本身
+- `Agent.allowedTools` — 会话内存白名单

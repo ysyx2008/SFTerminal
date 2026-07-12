@@ -112,7 +112,7 @@ const translations = {
 
     // Agent 执行状态
     'agent.waiting_confirm': '等待用户确认: {toolName}',
-    'agent.auto_approved': '✅ 已自动批准（始终允许）: {toolName}',
+    'agent.auto_approved': '✅ 已自动批准（本次允许）: {toolName}',
     'agent.preparing_tool': '准备执行工具...',
     'agent.loop_detected': '检测到执行循环，已自动停止。请尝试用不同方式描述任务。',
     'agent.no_content': 'AI 没有返回任何内容。',
@@ -1608,7 +1608,7 @@ const translations = {
 
     // Agent execution status
     'agent.waiting_confirm': 'Waiting for confirmation: {toolName}',
-    'agent.auto_approved': '✅ Auto-approved (Always Allow): {toolName}',
+    'agent.auto_approved': '✅ Auto-approved (this session): {toolName}',
     'agent.preparing_tool': 'Preparing to execute tool...',
     'agent.loop_detected': 'Execution loop detected, stopped automatically. Please try describing the task differently.',
     'agent.no_content': 'AI returned no content.',

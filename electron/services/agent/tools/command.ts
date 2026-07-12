@@ -194,7 +194,6 @@ export async function executeCommand(
       toolCallId,
       riskLevel,
       executor,
-      async () => (await assessCommandRiskDetailed(command, auditContextFromConfig(config))).level,
     )
     if (!confirm.proceed) {
       executor.addStep({
