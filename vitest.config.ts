@@ -19,7 +19,8 @@ export default defineConfig({
       '@electron': resolve(__dirname, 'electron'),
       '@shared/types': resolve(__dirname, 'packages/shared-types/src'),
       '@shared': resolve(__dirname, 'shared'),
-      '@sailfish/shared-types': resolve(__dirname, 'packages/shared-types/src/index.ts')
+      '@sailfish/shared-types': resolve(__dirname, 'packages/shared-types/src/index.ts'),
+      '@sailfish/workbench-assistant': resolve(__dirname, 'packages/workbench-assistant/src'),
     }
   }
 })

@@ -16,14 +16,17 @@
       "@shared/types": ["./packages/shared-types/src/index.ts"],
       "@shared/types/*": ["./packages/shared-types/src/*"],
       "@shared/*": ["./shared/*"],
-      "@sailfish/shared-types": ["./packages/shared-types/src/index.ts"]
+      "@sailfish/shared-types": ["./packages/shared-types/src/index.ts"],
+      "@sailfish/workbench-assistant": ["./packages/workbench-assistant/src/index.ts"],
+      "@sailfish/workbench-assistant/*": ["./packages/workbench-assistant/src/*"]
     }
   },
   "include": [
     "vite.config.ts",
     "electron/**/*.ts",
     "shared/**/*.ts",
-    "packages/shared-types/src/**/*.ts"
+    "packages/shared-types/src/**/*.ts",
+    "packages/workbench-assistant/src/agent-tools.ts"
   ]
 }
 

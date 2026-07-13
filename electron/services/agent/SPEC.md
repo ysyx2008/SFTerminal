@@ -62,7 +62,7 @@ Agent 实例自身**没有强绑定 ptyId 字段**——每次 `run()` 通过 `c
 **终端工具注入**：`execute_command` 等 PTY 终端工具不再通过技能系统加载，而是由 `getAgentTools(mode)` 按 `context.terminalType` 直接注入（`local`/`ssh` 模式）；assistant 模式注入 `exec` 工具。`getAgentMode()` 从 `currentRun?.context?.terminalType` 读取，而非依赖已废弃的 `ptyId` 字段。
 
 **工作台 prompt**：`context.workbenchPrompt` 由前端通过 `resolveWorkbenchAgentPrompt(kind, tab)` 填充：
-- `assistant`：注入产出物面板使用规范（`src/workbench/assistant/prompt.ts`）
+- `assistant`：注入产出物面板使用规范（`@sailfish/workbench-assistant` / prompt）
 - `local`：注入本地终端操作规范（`src/workbench/local/prompt.ts`）
 - `ssh`：注入 SSH 远程终端操作规范（`src/workbench/ssh/prompt.ts`）
 

@@ -43,8 +43,8 @@
 
 | 层 | 位置 | 内容 |
 |---|---|---|
-| **逻辑 / 描述符** | `src/workbench/<kind>/` | `descriptor.ts`（注册）+ `prompt.ts`（Agent prompt 片段）+ 子 `SPEC.md` |
-| **渲染组件** | `src/components/workbench/` | `<Kind>Workbench.vue`（与 `WorkbenchShell.vue` 同级） |
+| **逻辑 / 描述符** | `src/workbench/<kind>/` 或 `@sailfish/workbench-<kind>` | `descriptor.ts` + `prompt.ts`；assistant 真相源已在 `packages/workbench-assistant`（`src/` 为兼容 re-export） |
+| **渲染组件** | `src/components/workbench/` 或包内 | `<Kind>Workbench.vue`；assistant 组件在包内，经 `@/` 引用 AiPanel / artifact（P2 前） |
 
 > 终端类工作台（local/ssh）的 renderer 复用 `TerminalTabView`（Terminal 实例 Teleport 保命池所需），不在 `components/workbench/` 下。
 

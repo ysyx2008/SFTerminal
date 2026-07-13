@@ -17,7 +17,7 @@ import { getStreamPlaceholder } from './tool-metadata'
 export type { ToolDefinition }
 
 import type { TerminalType, RemoteChannel } from '@shared/types'
-import { ASSISTANT_WORKBENCH_AGENT_TOOLS } from '../../../src/workbench/assistant/agent-tools'
+import { ASSISTANT_WORKBENCH_AGENT_TOOLS } from '@sailfish/workbench-assistant/agent-tools'
 import { getAllTerminalTools } from './skills/terminal/tools'
 
 /** @deprecated Use TerminalType from @shared/types */

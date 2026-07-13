@@ -13,7 +13,7 @@ import type { WorkbenchKind } from './types'
 import { getWorkbenchDescriptor, registerWorkbench } from './registry-store'
 import { descriptor as localDescriptor } from './local/descriptor'
 import { descriptor as sshDescriptor } from './ssh/descriptor'
-import { descriptor as assistantDescriptor } from './assistant/descriptor'
+import { descriptor as assistantDescriptor } from '@sailfish/workbench-assistant/descriptor'
 import { descriptor as companionDescriptor } from './companion/descriptor'
 
 export {

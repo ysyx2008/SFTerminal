@@ -225,7 +225,8 @@ export default defineConfig({
           resolve: {
             alias: {
               '@shared/types': resolve(__dirname, 'packages/shared-types/src'),
-              '@shared': resolve(__dirname, 'shared')
+              '@shared': resolve(__dirname, 'shared'),
+              '@sailfish/workbench-assistant': resolve(__dirname, 'packages/workbench-assistant/src'),
             }
           },
           build: {
@@ -288,7 +289,8 @@ export default defineConfig({
           resolve: {
             alias: {
               '@shared/types': resolve(__dirname, 'packages/shared-types/src'),
-              '@shared': resolve(__dirname, 'shared')
+              '@shared': resolve(__dirname, 'shared'),
+              '@sailfish/workbench-assistant': resolve(__dirname, 'packages/workbench-assistant/src'),
             }
           },
           build: {
@@ -310,6 +312,7 @@ export default defineConfig({
       '@shared': resolve(__dirname, 'shared'),
       '@sailfish/shared-types': resolve(__dirname, 'packages/shared-types/src/index.ts'),
       '@sailfish/workbench-sdk': resolve(__dirname, 'packages/workbench-sdk/src/index.ts'),
+      '@sailfish/workbench-assistant': resolve(__dirname, 'packages/workbench-assistant/src'),
     }
   },
   build: {
