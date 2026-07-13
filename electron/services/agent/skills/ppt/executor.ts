@@ -9,6 +9,7 @@ import type { ToolResult, AgentConfig } from '../../types'
 import type { ToolExecutorConfig } from '../../tool-executor'
 import { getTerminalStateService } from '../../../terminal-state.service'
 import { isAutoApproveWorkspacePath } from '../../tools/file'
+import { riskNeedsConfirm } from '../../command-audit/confirm-policy'
 import { t } from '../../i18n'
 import { buildPreviewDocument } from './preview'
 import { renderHtmlToPptx, PptValidationError, type DeckSize } from './html-render-pptx'
@@ -66,7 +67,7 @@ async function pptFromHtml(
   ptyId: string,
   args: Record<string, unknown>,
   toolCallId: string,
-  _config: AgentConfig,
+  config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
   const pathArg = args.path as string
@@ -127,8 +128,8 @@ async function pptFromHtml(
     riskLevel,
   })
 
-  // 覆盖确认：非本技能维护的工作区外已有文件（与 write_text_file 的 isDangerousOverwrite 一致）
-  if (isDangerousOverwrite) {
+  // 覆盖确认：按 riskNeedsConfirm（dangerous × executionMode）
+  if (riskNeedsConfirm(riskLevel, config.executionMode, config.commandRiskPolicy)) {
     const approved = await executor.waitForConfirmation(
       toolCallId,
       'ppt_from_html',

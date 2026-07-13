@@ -9,6 +9,7 @@ import { getConfigService } from '../../../config.service'
 import { setSkillEnv, deleteSkillEnv, listSkillEnvNames } from '../../../credential.service'
 import { createLogger } from '../../../../utils/logger'
 import { t } from '../../i18n'
+import { riskNeedsConfirm } from '../../command-audit/confirm-policy'
 import type { ToolResult, ToolExecutorConfig, AgentConfig } from '../../tools/types'
 
 const log = createLogger('skill-creator')
@@ -776,23 +777,29 @@ async function confirmScriptInstall(
   toolName: string,
   toolArgs: Record<string, unknown>,
   toolCallId: string,
+  config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult | null> {
   log.info(`Skill ${skillId} contains ${preview.files!.length} extra files, requesting confirmation`)
 
   const scanNote = formatScanNote(preview.scan)
+  const riskLevel = 'dangerous' as const
   executor.addStep({
     type: 'tool_call',
     content: `${t('scan.market_skill_has_files', { id: skillId, count: preview.files!.length })}${scanNote}\n${t('scan.evidence')}: ${preview.files!.join(', ')}`,
     toolName,
     toolArgs: { ...toolArgs, files: preview.files, scan_warnings: preview.scan?.warnings.length || 0 },
-    riskLevel: 'dangerous'
+    riskLevel
   })
+
+  if (!riskNeedsConfirm(riskLevel, config.executionMode, config.commandRiskPolicy)) {
+    return null
+  }
 
   const approved = await executor.waitForConfirmation(
     toolCallId, toolName,
     { ...toolArgs, files: preview.files, scan_warnings: preview.scan?.warnings.length || 0 },
-    'dangerous'
+    riskLevel
   )
   if (!approved) {
     log.info(`User rejected install of skill: ${skillId}`)
@@ -861,7 +868,7 @@ async function marketInstall(
     if (hasScripts) {
       const confirmResult = await confirmScriptInstall(
         skillId, preview, 'skill_market_install', { skill_id: skillId, source },
-        toolCallId, executor
+        toolCallId, config, executor
       )
       if (confirmResult) return confirmResult
     }
@@ -939,7 +946,7 @@ async function installLocal(
       const confirmResult = await confirmScriptInstall(
         skillId, preview, 'skill_install_local',
         { skill_id: skillId, source_path: sourcePath },
-        toolCallId, executor
+        toolCallId, config, executor
       )
       if (confirmResult) return confirmResult
     }

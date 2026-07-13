@@ -23,6 +23,7 @@ import {
 } from './file'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 import type { TransferProgress } from '../../sftp.service'
+import { riskNeedsConfirm } from '../command-audit/confirm-policy'
 
 /** 传输进度更新节流间隔（ms）——更短意义不大，渲染卡顿，prompt cache 也不喜欢 */
 const PROGRESS_THROTTLE_MS = 300
@@ -130,7 +131,7 @@ export async function sftpPut(
     riskLevel
   })
 
-  if (riskLevel === 'dangerous' || config.executionMode === 'strict') {
+  if (riskNeedsConfirm(riskLevel, config.executionMode, config.commandRiskPolicy)) {
     const approved = await executor.waitForConfirmation(
       toolCallId,
       'sftp_put',
@@ -237,7 +238,7 @@ export async function sftpGet(
     riskLevel
   })
 
-  if (!inWorkspace && config.executionMode === 'strict') {
+  if (riskNeedsConfirm(riskLevel, config.executionMode, config.commandRiskPolicy)) {
     const approved = await executor.waitForConfirmation(
       toolCallId,
       'sftp_get',

@@ -6,6 +6,7 @@ import { createLogger } from '../../../../utils/logger'
 import type { ToolResult, AgentConfig } from '../../types'
 import type { ToolExecutorConfig } from '../../tool-executor'
 import { t } from '../../i18n'
+import { riskNeedsConfirm } from '../../command-audit/confirm-policy'
 
 const log = createLogger('CalendarExecutor')
 import { getCalendarCredential } from '../../../credential.service'
@@ -587,16 +588,15 @@ async function calendarCreate(
     content: confirmInfo,
     toolName: 'calendar_create',
     toolArgs: { title, start: startStr, location },
-    riskLevel: 'safe'
+    riskLevel: 'moderate'
   })
 
-  // 严格模式下需要用户确认
-  if (config.executionMode === 'strict') {
+  if (riskNeedsConfirm('moderate', config.executionMode, config.commandRiskPolicy)) {
     const approved = await executor.waitForConfirmation(
       toolCallId,
       'calendar_create',
       { title, start: startStr },
-      'safe'
+      'moderate'
     )
 
     if (!approved) {
@@ -703,16 +703,15 @@ async function calendarUpdate(
       content: confirmInfo,
       toolName: 'calendar_update',
       toolArgs: { event_id: eventId, changes },
-      riskLevel: 'safe'
+      riskLevel: 'moderate'
     })
 
-    // 严格模式下需要用户确认
-    if (config.executionMode === 'strict') {
+    if (riskNeedsConfirm('moderate', config.executionMode, config.commandRiskPolicy)) {
       const approved = await executor.waitForConfirmation(
         toolCallId,
         'calendar_update',
         { event_id: eventId },
-        'safe'
+        'moderate'
       )
 
       if (!approved) {
@@ -818,16 +817,15 @@ async function calendarDelete(
       content: confirmInfo,
       toolName: 'calendar_delete',
       toolArgs: { count: eventsToDelete.length },
-      riskLevel: 'safe'
+      riskLevel: 'moderate'
     })
 
-    // 严格模式下需要用户确认
-    if (config.executionMode === 'strict') {
+    if (riskNeedsConfirm('moderate', config.executionMode, config.commandRiskPolicy)) {
       const approved = await executor.waitForConfirmation(
         toolCallId,
         'calendar_delete',
         { count: eventsToDelete.length },
-        'safe'
+        'moderate'
       )
 
       if (!approved) {
@@ -1168,15 +1166,15 @@ async function todoCreate(
     content: confirmInfo,
     toolName: 'todo_create',
     toolArgs: { title, due: dueStr },
-    riskLevel: 'safe'
+    riskLevel: 'moderate'
   })
 
-  if (config.executionMode === 'strict') {
+  if (riskNeedsConfirm('moderate', config.executionMode, config.commandRiskPolicy)) {
     const approved = await executor.waitForConfirmation(
       toolCallId,
       'todo_create',
       { title, due: dueStr },
-      'safe'
+      'moderate'
     )
 
     if (!approved) {
@@ -1295,15 +1293,15 @@ async function todoUpdate(
       content: confirmInfo,
       toolName: 'todo_update',
       toolArgs: { todo_id: todoId, changes },
-      riskLevel: 'safe'
+      riskLevel: 'moderate'
     })
 
-    if (config.executionMode === 'strict') {
+    if (riskNeedsConfirm('moderate', config.executionMode, config.commandRiskPolicy)) {
       const approved = await executor.waitForConfirmation(
         toolCallId,
         'todo_update',
         { todo_id: todoId },
-        'safe'
+        'moderate'
       )
 
       if (!approved) {
@@ -1405,15 +1403,15 @@ async function todoDelete(
       content: confirmInfo,
       toolName: 'todo_delete',
       toolArgs: { count: todosToDelete.length },
-      riskLevel: 'safe'
+      riskLevel: 'moderate'
     })
 
-    if (config.executionMode === 'strict') {
+    if (riskNeedsConfirm('moderate', config.executionMode, config.commandRiskPolicy)) {
       const approved = await executor.waitForConfirmation(
         toolCallId,
         'todo_delete',
         { count: todosToDelete.length },
-        'safe'
+        'moderate'
       )
 
       if (!approved) {

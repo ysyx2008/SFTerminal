@@ -9,6 +9,7 @@ import type { ToolExecutorConfig } from '../../tool-executor'
 import { t } from '../../i18n'
 import { getTerminalStateService } from '../../../terminal-state.service'
 import { isAutoApproveWorkspacePath } from '../../tools/file'
+import { riskNeedsConfirm } from '../../command-audit/confirm-policy'
 import {
   isSessionOpen,
   getSession,
@@ -965,8 +966,8 @@ async function excelSave(
     riskLevel
   })
 
-  // 工作区外覆盖：始终弹确认（与 write_text_file 的 isDangerousOverwrite 分支一致）
-  if (isDangerousOverwrite) {
+  // 工作区外覆盖：按 riskNeedsConfirm（dangerous × executionMode）决定是否弹窗
+  if (riskNeedsConfirm(riskLevel, config.executionMode, config.commandRiskPolicy)) {
     const approved = await executor.waitForConfirmation(
       toolCallId,
       'excel_save',
@@ -1142,7 +1143,7 @@ async function excelFromMarkdown(
     riskLevel
   })
 
-  if (isDangerousOverwrite) {
+  if (riskNeedsConfirm(riskLevel, config.executionMode, config.commandRiskPolicy)) {
     const approved = await executor.waitForConfirmation(
       toolCallId,
       'excel_from_markdown',

@@ -27,7 +27,7 @@ command-audit/
 ├── extract-calls.ts      # bash shell-ast 解析 + unwrap（bash -c 递归）
 ├── extract-pwsh-calls.ts # PowerShell 官方 AST 提取（Windows 默认 shell）
 ├── pwsh-extract.ps1      # Parser::ParseInput 子进程脚本
-├── confirm-policy.ts     # executionMode -> 是否需确认（strict/relaxed/free）
+├── confirm-policy.ts     # riskNeedsConfirm（通用）+ commandNeedsConfirm（命令 strict 特例）
 ├── fail-closed-policy.ts # 解析失败 / 未知命令 按 mode+policy 选档
 ├── workspace-guard.ts    # 路径分区 zone 计算 + 系统路径黑名单
 ├── risk-level.ts         # maxRisk 聚合
@@ -162,10 +162,11 @@ npx vitest run electron/services/agent/command-audit/__tests__/
 - 路径分区（free/protected/workspace/outside/system）
 - indirection-guard（解释器内联 / 包装器 / 调度器 / 结构性 flag）
 - shell 通道 unwrap + 递归审计
-- confirm-policy 三种模式
+- confirm-policy：`riskNeedsConfirm(level, mode)` 供文件/技能等通用工具；`commandNeedsConfirm` 在 strict 下连 safe 也确认
 
 ## 变更历史
 
+- 2026-07-13：抽出 `riskNeedsConfirm`，文件/Office/邮件/日历/SFTP/技能安装/插件审批统一按 riskLevel × executionMode 决定是否弹窗；命令路径仍用 `commandNeedsConfirm`（strict 含 safe）
 - 2026-07-12：Windows 默认 PowerShell 走官方 AST（`extract-pwsh-calls.ts` + `pwsh-extract.ps1`），复用白名单 + 路径分区；新增 cmdlet 规则；cmd 回退仍用 regex
 - 2026-07-12：系统临时目录（/tmp、os.tmpdir 等）纳入自由区；确认原因区分「高危命令」与「工作区外升档」；outside 不再误标「需确认」
 - 2026-07-12：扩展 ARGV 清单并分档——高危仅保留不可逆/提权/关机/防火墙/账户；chmod/mount/crontab/包管理/容器/kill/systemctl 等为 moderate（写系统路径仍由路径守卫升级）。`assessCommandFlags` 未知 flag 不得低于 baseLevel；indirection 命中且 ARGV 为 dangerous 时保底 dangerous（sudo 在 relaxed 下也确认）

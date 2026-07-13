@@ -11,6 +11,7 @@ import type { ToolResult, AgentConfig } from '../../types'
 const log = createLogger('EmailExecutor')
 import type { ToolExecutorConfig } from '../../tool-executor'
 import { t } from '../../i18n'
+import { riskNeedsConfirm } from '../../command-audit/confirm-policy'
 import { getEmailCredential } from '../../../credential.service'
 import {
   isSessionOpen,
@@ -700,12 +701,14 @@ async function emailSend(
     riskLevel: 'dangerous'
   })
 
-  const approved = await executor.waitForConfirmation(
-    toolCallId,
-    'email_send',
-    { to, subject, body, html, cc, bcc, attachments },
-    'dangerous'
-  )
+  const approved = riskNeedsConfirm('dangerous', config.executionMode, config.commandRiskPolicy)
+    ? await executor.waitForConfirmation(
+        toolCallId,
+        'email_send',
+        { to, subject, body, html, cc, bcc, attachments },
+        'dangerous'
+      )
+    : true
 
   if (!approved) {
     return { success: false, output: '', error: t('email.user_rejected') }
@@ -801,21 +804,23 @@ async function emailDelete(
 
   const confirmInfo = `${actionText}\n\n${t('email.affected_messages')}: ${uids.length}\nUIDs: ${uids.join(', ')}`
 
-  // 请求用户确认
+  // 删除/移动邮件：标 dangerous，宽松模式也会确认
   executor.addStep({
     type: 'tool_call',
     content: confirmInfo,
     toolName: 'email_delete',
     toolArgs: { action, count: uids.length },
-    riskLevel: 'moderate'
+    riskLevel: 'dangerous'
   })
 
-  const approved = await executor.waitForConfirmation(
-    toolCallId,
-    'email_delete',
-    { action, uids },
-    'moderate'
-  )
+  const approved = riskNeedsConfirm('dangerous', config.executionMode, config.commandRiskPolicy)
+    ? await executor.waitForConfirmation(
+        toolCallId,
+        'email_delete',
+        { action, uids },
+        'dangerous'
+      )
+    : true
 
   if (!approved) {
     return { success: false, output: '', error: t('email.user_rejected') }

@@ -49,6 +49,7 @@ import { getMetaByName, buildPreToolCallDisplay } from './tool-metadata'
 import {
   buildAllowlistKeyCandidates,
 } from './allowlist'
+import { riskNeedsConfirm } from './command-audit/confirm-policy'
 import { buildTaskHistoryContext, type TaskHistoryOptions } from './context-builder'
 import { getKnowledgeService } from '../knowledge'
 import { getContextKnowledgeService } from '../knowledge/context-knowledge'
@@ -2723,8 +2724,9 @@ export abstract class Agent {
         return { result: { success: false, output: '', error: 'Blocked by plugin' }, toolArgs }
       }
       if (decision.requireApproval) {
+        // 插件显式要求审批：始终弹窗，不受 executionMode 覆盖（开发者门禁 ≠ Agent 自评估风险）
         const approved = await toolExecutorConfig.waitForConfirmation(
-          toolCall.id, toolName, toolArgs, 'moderate'
+          toolCall.id, toolName, toolArgs, 'dangerous'
         )
         if (!approved) {
           return { result: { success: false, output: '', error: t('error.operation_aborted') }, toolArgs }

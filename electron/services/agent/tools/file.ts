@@ -19,6 +19,7 @@ import type { ToolOutputBudget } from '../tool-output-budget'
 import type { CanvasData } from '@shared/types'
 import { VISION_IMAGE_EXTENSIONS, IMAGE_MIME_TYPES, CONVERTIBLE_IMAGE_EXTENSIONS } from './types'
 import { isUserDataForbidden } from '../command-audit/userdata-guard'
+import { riskNeedsConfirm } from '../command-audit/confirm-policy'
 
 const DEFAULT_READ_OUTPUT_BUDGET: ToolOutputBudget = {
   maxChars: 24_576,
@@ -1517,6 +1518,7 @@ export async function editFile(
 
   // tool_call 卡先发出占位标题（无行号）：此时还没读文件，不知道 oldText 在哪
   // 等下面 try 块定位 match 后会通过 updateStep 更新成「编辑文件: path (第 X-Y 行)」
+  const riskLevel = inWorkspace ? 'safe' : 'moderate'
   const callStep = executor.addStep({
     type: 'tool_call',
     content: `${t('file.edit')}: ${editDisplayPath}`,
@@ -1527,15 +1529,15 @@ export async function editFile(
       new_text: newTextPreview,
       ...(replaceAll && { replace_all: true })
     },
-    riskLevel: inWorkspace ? 'safe' : 'moderate'
+    riskLevel
   })
 
-  if (!inWorkspace && config.executionMode === 'strict') {
+  if (riskNeedsConfirm(riskLevel, config.executionMode, config.commandRiskPolicy)) {
     const approved = await executor.waitForConfirmation(
       toolCallId, 
       'edit_file', 
       args, 
-      'moderate'
+      riskLevel
     )
     if (!approved) {
       return { success: false, output: '', error: t('file.user_rejected_write') }
@@ -1764,6 +1766,7 @@ export async function writeTextFile(
   const isDangerousOverwrite = mode === 'overwrite' && fileExists && !inWorkspace
   const isSafeWrite = mode === 'create' || mode === 'append' || mode === 'insert'
 
+  const riskLevel = (inWorkspace || isSafeWrite) ? 'safe' : (isDangerousOverwrite ? 'dangerous' : 'moderate')
   executor.addStep({
     type: 'tool_call',
     content: operationDesc,
@@ -1778,15 +1781,15 @@ export async function writeTextFile(
       ...(pattern !== undefined && { pattern }),
       ...(replacement !== undefined && { replacement })
     },
-    riskLevel: (inWorkspace || isSafeWrite) ? 'safe' : (isDangerousOverwrite ? 'dangerous' : 'moderate')
+    riskLevel
   })
 
-  if (!inWorkspace && !isSafeWrite && (isDangerousOverwrite || config.executionMode === 'strict')) {
+  if (riskNeedsConfirm(riskLevel, config.executionMode, config.commandRiskPolicy)) {
     const approved = await executor.waitForConfirmation(
       toolCallId, 
       'write_text_file', 
       args, 
-      isDangerousOverwrite ? 'dangerous' : 'moderate'
+      riskLevel
     )
     if (!approved) {
       return { success: false, output: '', error: t('file.user_rejected_write') }
@@ -2054,6 +2057,7 @@ async function writeFileViaSftp(
       break
   }
 
+  const riskLevel = mode === 'overwrite' ? 'dangerous' : 'moderate'
   executor.addStep({
     type: 'tool_call',
     content: operationDesc,
@@ -2063,15 +2067,15 @@ async function writeFileViaSftp(
       mode,
       content: content.length > 100 ? content.substring(0, 100) + '...' : content
     },
-    riskLevel: mode === 'overwrite' ? 'dangerous' : 'moderate'
+    riskLevel
   })
 
-  if (mode === 'overwrite' || config.executionMode === 'strict') {
+  if (riskNeedsConfirm(riskLevel, config.executionMode, config.commandRiskPolicy)) {
     const approved = await executor.waitForConfirmation(
       toolCallId, 
       'write_remote_text_file', 
       { path: filePath, mode, content }, 
-      mode === 'overwrite' ? 'dangerous' : 'moderate'
+      riskLevel
     )
     if (!approved) {
       return { success: false, output: '', error: t('file.user_rejected_write') }
