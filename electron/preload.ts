@@ -1357,6 +1357,10 @@ const electronAPI = {
         }>
       >,
 
+    /** 任务侧栏短标题：首条消息后异步生成，失败返回 null */
+    generateConversationTitle: (sessionId: string, userMessage: string, profileId?: string) =>
+      ipcRenderer.invoke('history:generateConversationTitle', sessionId, userMessage, profileId) as Promise<string | null>,
+
     searchAgentRecords: (options: {
       keyword?: string
       startDate?: string

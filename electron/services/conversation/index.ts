@@ -27,3 +27,11 @@ export {
   chunkStepsByUserTask
 } from './messages'
 export type { TaskIdFactory, MessageTask, StepTask } from './messages'
+export {
+  generateConversationTitle,
+  sanitizeConversationTitle,
+} from './title-generator'
+export type {
+  GenerateConversationTitleDeps,
+  GenerateConversationTitleInput,
+} from './title-generator'

@@ -1217,7 +1217,8 @@ export function useAgentMode(
 
     // 立即进入运行态 + 乐观 user_task，用户消息与「正在准备...」零等待上墙
     terminalStore.clearAgentState(tabId, true)
-    if (!agentState.value?.sessionId) {
+    const isNewSession = !agentState.value?.sessionId
+    if (isNewSession) {
       terminalStore.setAgentSession(tabId, `session_${startTime}`, startTime)
     }
     const stableAgentKey = isAssistantMode
@@ -1234,6 +1235,23 @@ export function useAgentMode(
     })
     guardAfterAutoScroll()
     void scrollToBottom()
+
+    // 任务侧栏短标题：首条消息发出即异步生成，不阻塞 / 不等待 Agent
+    // 联络常驻 tab 无侧栏标题；多轮续聊 / 已有自定义标题由后端跳过
+    if (
+      isNewSession &&
+      currentTab.value?.agentId !== COMPANION_TAB_AGENT_ID &&
+      message.trim()
+    ) {
+      const sessionId = agentState.value?.sessionId
+      if (sessionId) {
+        void window.electronAPI.history.generateConversationTitle(
+          sessionId,
+          message.trim(),
+          activeProfileId.value || undefined
+        ).catch(err => log.warn('generateConversationTitle failed:', err))
+      }
+    }
 
     // 异步上下文在 UI 反馈之后并行获取，不阻塞首屏
     const [hostId, documentContext] = await Promise.all([

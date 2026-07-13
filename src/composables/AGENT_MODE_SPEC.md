@@ -30,6 +30,9 @@
   │
   ├─ setAgentRunning(tabId, true, agentKey, message)   // 标记运行中 + 记录 userTask
   │
+  ├─ [仅新 session + 非联络] history.generateConversationTitle(sessionId, message)
+  │   // fire-and-forget：LLM 短标题写入 conversationDisplayTitles，不阻塞 Agent
+  │
   ├─ IPC 调用（await）
   │   ├─ 助手模式：agent.runStandalone(agentId, ...)
   │   └─ 终端模式：agent.run(tabId, ...)

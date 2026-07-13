@@ -848,6 +848,8 @@ interface Window {
         sshHost?: string
         status: 'completed' | 'failed' | 'aborted'
       }>>
+      /** 任务侧栏短标题：首条消息后异步生成，失败返回 null */
+      generateConversationTitle: (sessionId: string, userMessage: string, profileId?: string) => Promise<string | null>
       searchAgentRecords: (options: {
         keyword?: string
         startDate?: string
