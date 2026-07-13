@@ -313,6 +313,7 @@ export default defineConfig({
       '@sailfish/shared-types': resolve(__dirname, 'packages/shared-types/src/index.ts'),
       '@sailfish/workbench-sdk': resolve(__dirname, 'packages/workbench-sdk/src/index.ts'),
       '@sailfish/workbench-assistant': resolve(__dirname, 'packages/workbench-assistant/src'),
+      '@sailfish/workbench-sample': resolve(__dirname, 'packages/workbench-sample/src'),
     }
   },
   build: {

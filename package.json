@@ -59,6 +59,7 @@
     "@sailfish/workbench-assistant": "*",
     "@sailfish/workbench-companion": "*",
     "@sailfish/workbench-local": "*",
+    "@sailfish/workbench-sample": "*",
     "@sailfish/workbench-sdk": "*",
     "@sailfish/workbench-ssh": "*",
     "@huggingface/transformers": "^4.2.0",

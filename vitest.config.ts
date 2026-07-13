@@ -21,6 +21,7 @@ export default defineConfig({
       '@shared': resolve(__dirname, 'shared'),
       '@sailfish/shared-types': resolve(__dirname, 'packages/shared-types/src/index.ts'),
       '@sailfish/workbench-assistant': resolve(__dirname, 'packages/workbench-assistant/src'),
+      '@sailfish/workbench-sample': resolve(__dirname, 'packages/workbench-sample/src'),
     }
   }
 })

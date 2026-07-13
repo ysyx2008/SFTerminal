@@ -1,6 +1,6 @@
 # Packages（OEM / Workbench Monorepo）
 
-> **状态（2026-07-13）**：npm workspaces ✅；`@sailfish/shared-types` **已物理迁入**；`@sailfish/workbench-assistant` **W3 真抽包**。  
+> **状态（2026-07-13）**：npm workspaces ✅；`shared-types` / `workbench-assistant` / `workbench-sample` 已落地。  
 > 完整 TODO：[`docs/workbench-monorepo-design.md` §6.0](../docs/workbench-monorepo-design.md)。
 
 ## 当前事实
@@ -9,6 +9,7 @@
 |---|---|
 | `@sailfish/shared-types` | ✅ 真相源在 `packages/shared-types/src/`；`shared/types/*` 兼容 re-export |
 | `@sailfish/workbench-assistant` | ✅ descriptor / prompt / agent-tools / `AssistantWorkbench.vue`；AiPanel + artifact 仍 `@/` 引用 desktop（P2 前） |
+| `@sailfish/workbench-sample` | ✅ 业务台样例：无对话 UI + skills + 假 MCP（默认 disabled）+ bootstrap 单测 |
 | `@sailfish/workbench-sdk` 等 | ⚠️ 仍 re-export → `src/workbench`（W6） |
 
 ## 导入约定

@@ -25,10 +25,13 @@ import type { McpServerConfig, TerminalType } from '@shared/types'
  * 可映射到不同工作台（普通助手 `assistant` vs 联络 `companion`）。这类「同 type 不同工作台」
  * 的成员单独列在此处。
  *
+ * `(string & {})` 保留内置 kind 的补全，同时允许业务/OEM 自定义 kind（如 `sample`）。
+ *
  * 关键约定：`tab.type` 不等于 `WorkbenchKind`，二者通过 `resolveWorkbenchKind(tab)`（registry.ts）
  * 映射。新增独立工作台后必须配套该映射，否则 `tab.type` 永远查不到它。
  */
-export type WorkbenchKind = TerminalType | 'companion'
+export type WorkbenchKind = TerminalType | 'companion' | (string & {})
+
 
 /** 区域角色：anchor=常驻锚点区；toggle=可显隐辅助区 */
 export type RegionRole = 'anchor' | 'toggle'
