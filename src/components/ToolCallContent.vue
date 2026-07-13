@@ -1,35 +1,45 @@
 <!--
   tool_call 步骤的 content 渲染。
-  content 形如「阅读网页: https://example.com/foo」「执行命令: ls -la # 注释」，
-  既要保留命令里 # / --- / * 的原貌（不能走 markdown），又希望 URL 能点击。
+  content 形如「阅读网页: https://example.com/foo」「执行命令: ls -la # 注释」
+  「读取文件: ~/a/b.txt」，既要保留命令里 # / --- / * 的原貌（不能走 markdown），
+  又希望 URL / 本地路径能点击。
 
-  策略：toolArgs 含 http(s) url 字段时把 URL 部分包成 <a>，其余走纯文本插值（Vue
-  自动 escape），点击后由 Electron setWindowOpenHandler 调系统浏览器。
+  策略：splitToolCallContent 按 toolArgs.url / toolArgs.path + 裸路径扫描拆成片段，
+  其余纯文本插值（Vue 自动 escape）。路径点击经 data-file-path 事件委托
+  （与消息 Markdown 同源）；URL 由 Electron setWindowOpenHandler 打开。
 
-  按字段语义（'url'）而非工具名识别——任何工具的 args 含 url 都享受到这个能力，
-  不违反 agent-oop-boundary 规则。
+  按字段语义（url / path）而非工具名识别——不违反 agent-oop-boundary。
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
-import { splitContentByUrl } from '../utils/tool-call-link'
+import { splitToolCallContent } from '../utils/tool-call-link'
 
 const props = defineProps<{
   content: string
   toolArgs?: Record<string, unknown>
 }>()
 
-const parts = computed(() => splitContentByUrl(props.content, props.toolArgs))
+const segments = computed(() => splitToolCallContent(props.content, props.toolArgs))
 </script>
 
 <template>
   <div class="step-text tool-call-content">
-    <template v-if="parts">{{ parts.before }}<a
-      :href="parts.url"
-      target="_blank"
-      rel="noopener noreferrer"
-      class="external-url-link"
-      :title="parts.url"
-    >{{ parts.url }}</a>{{ parts.after }}</template>
-    <template v-else>{{ content }}</template>
+    <template v-for="(seg, i) in segments" :key="i">
+      <template v-if="seg.kind === 'text'">{{ seg.text }}</template>
+      <a
+        v-else-if="seg.kind === 'url'"
+        :href="seg.url"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="external-url-link"
+        :title="seg.url"
+      >{{ seg.url }}</a>
+      <a
+        v-else
+        class="file-path-link"
+        :data-file-path="seg.path"
+        :title="seg.path"
+      >{{ seg.display }}</a>
+    </template>
   </div>
 </template>

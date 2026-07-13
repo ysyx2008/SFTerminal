@@ -1,13 +1,10 @@
 /**
  * tool-call-link.ts 单元测试
  *
- * 锁定"tool_call content 中按 toolArgs.url 自动提取可点击 URL"的行为：
- * - 仅放行 http(s)；javascript: / file: / data: / 缺失字段都走纯文本（返回 null）
- * - URL 在 content 中找不到时也返回 null（防止误把"看着像 url 的字符串"包成链接）
- * - 拆分必须是 byte-exact 三段，可零长度
+ * 锁定 tool_call content 中 URL / 本地路径自动拆分为可点击片段的行为。
  */
 import { describe, it, expect } from 'vitest'
-import { splitContentByUrl } from './tool-call-link'
+import { splitContentByUrl, splitToolCallContent } from './tool-call-link'
 
 describe('splitContentByUrl', () => {
   it('typical web_fetch: content 含 http(s) URL → 拆成三段', () => {
@@ -74,7 +71,6 @@ describe('splitContentByUrl', () => {
   })
 
   it('url 字段是 http(s) 但 content 中找不到该 URL → null（避免错误标记）', () => {
-    // 用户/AI 修改了 content 里的 URL 显示形式（例如截断），导致 args.url 不在 content 中
     expect(splitContentByUrl(
       '阅读网页: https://example.com/short...',
       { url: 'https://example.com/short/very/long/path' }
@@ -96,5 +92,49 @@ describe('splitContentByUrl', () => {
     )
     expect(result?.before).toBe('')
     expect(result?.after).toBe(' then https://x.com/a again')
+  })
+})
+
+describe('splitToolCallContent — path', () => {
+  it('read_file: toolArgs.path 在 content 中 → path 片段可点击', () => {
+    const path =
+      '~/Library/Application Support/SailFish/agent-workspace/scratch/volcano_aicc_security.txt'
+    const segs = splitToolCallContent(`读取文件: ${path}`, { path })
+    expect(segs).toEqual([
+      { kind: 'text', text: '读取文件: ' },
+      { kind: 'path', path, display: path },
+    ])
+  })
+
+  it('execute_command: 裸路径（含 Application\\ Support）可点击，打开时反转义空格', () => {
+    const content =
+      '执行命令: cd /Users/yushen/Library/Application\\ Support/SailFish/agent-workspace/scratch'
+    const segs = splitToolCallContent(content, { command: 'cd ...' })
+    const pathSeg = segs.find((s) => s.kind === 'path')
+    expect(pathSeg).toEqual({
+      kind: 'path',
+      path: '/Users/yushen/Library/Application Support/SailFish/agent-workspace/scratch',
+      display:
+        '/Users/yushen/Library/Application\\ Support/SailFish/agent-workspace/scratch',
+    })
+  })
+
+  it('url + path 可同时存在', () => {
+    const segs = splitToolCallContent(
+      'fetch https://example.com/x into /Users/a/b/out.txt',
+      { url: 'https://example.com/x', path: '/Users/a/b/out.txt' }
+    )
+    expect(segs).toEqual([
+      { kind: 'text', text: 'fetch ' },
+      { kind: 'url', url: 'https://example.com/x' },
+      { kind: 'text', text: ' into ' },
+      { kind: 'path', path: '/Users/a/b/out.txt', display: '/Users/a/b/out.txt' },
+    ])
+  })
+
+  it('无链接时退化为单段 text', () => {
+    expect(splitToolCallContent('执行命令: ls -la', { command: 'ls -la' })).toEqual([
+      { kind: 'text', text: '执行命令: ls -la' },
+    ])
   })
 })

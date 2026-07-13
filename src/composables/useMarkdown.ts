@@ -5,6 +5,12 @@
 import { marked, type Token } from 'marked'
 import { useTerminalStore } from '../stores/terminal'
 import { toast } from './useToast'
+import {
+  createBareFilePathPattern,
+  finalizeBarePathMatch,
+  isLocalFilePath,
+  normalizeUncForOpen,
+} from '../utils/local-file-path'
 
 // ==================== Mermaid 图表渲染 ====================
 // 设计：marked 把 ```mermaid 代码块渲染成占位 <div class="mermaid-block">（存 encodeURIComponent
@@ -274,34 +280,6 @@ const writeClipboard = async (text: string): Promise<boolean> => {
 }
 
 /**
- * 检测文本是否为本地文件路径
- * 支持三种格式：
- * - Unix/macOS/Linux 绝对路径：/path/to/file
- * - 用户主目录路径：~/path/to/file
- * - Windows 路径：C:\path\to\file 或 C:/path/to/file
- *
- * 字符限制只排除真正不可能在文件名中的字符（HTML 标签符号 <>、shell 通配 *?、双引号、
- * 控制字符 \n\r\t）；**空格是合法路径字符**——macOS `~/Library/Application Support`、
- * Windows `C:\Program Files` 都含空格，不能用 `\s` 一刀切排除。
- */
-const isLocalFilePath = (text: string): boolean => {
-  const trimmed = text.trim()
-  if (trimmed.length < 2) return false
-  // 排除 HTTP(S) URL（例如 "p://localhost" 误匹配 Windows 盘符模式）
-  if (/^https?:\/\//i.test(trimmed)) return false
-  // 路径中不允许的字符：HTML 标签符号、shell 通配符、双引号、控制字符
-  const illegal = /[<>*?"\n\r\t]/
-  if (illegal.test(trimmed)) return false
-  // Unix/macOS/Linux 绝对路径
-  if (/^\//.test(trimmed)) return true
-  // 用户主目录路径
-  if (/^~\//.test(trimmed)) return true
-  // Windows 路径 (C:\ 或 C:/)
-  if (/^[A-Za-z]:[\\/]/.test(trimmed)) return true
-  return false
-}
-
-/**
  * 检测文本是否为 HTTP(S) URL
  * 仅识别 http/https 协议，避免 javascript:/data: 等危险协议
  */
@@ -393,10 +371,9 @@ const wrapBareUrls = (html: string): string => {
  */
 const wrapBareFilePaths = (html: string): string => {
   // 匹配常见文件路径模式（支持中文、日文、韩文、欧洲字符等 Unicode 路径）
-  // Unix/macOS: /path/to/file（至少两级路径或带扩展名的单级路径）
-  // Windows: C:\path\to\file 或 C:/path/to/file
-  // Home: ~/path/to/file
-  const filePathPattern = /(?:\/(?:[\w\u4e00-\u9fff\u3000-\u303f\u00C0-\u024F.\-+@#$()[\]%\\ ]+\/)*[\w\u4e00-\u9fff\u3000-\u303f\u00C0-\u024F.\-+@#$()[\]%\\ ]+\.[\w]{1,10}|~\/[\w\u4e00-\u9fff\u3000-\u303f\u00C0-\u024F.\-+@#$()[\]%/\\ ]+|[A-Za-z]:[\\/][\w\u4e00-\u9fff\u3000-\u303f\u00C0-\u024F.\-+@#$()[\]%/\\ ]+)/g
+  // Unix：多级可不带扩展名（/opt/homebrew/bin/python3、目录尾 /）；单级须带扩展名
+  // Windows 盘符 / UNC / Home：见 createBareFilePathPattern
+  const filePathPattern = createBareFilePathPattern()
 
   // 拆分 HTML 为标签和文本节点
   const parts = html.split(/(<[^>]+>)/g)
@@ -417,10 +394,15 @@ const wrapBareFilePaths = (html: string): string => {
     // 在 <a>、<code>、<pre> 内不做处理
     if (depth.a > 0 || depth.code > 0 || depth.pre > 0) return part
 
-    return part.replace(filePathPattern, (match) => {
-      const trimmed = match.trim()
-      if (!isLocalFilePath(trimmed)) return match
-      return `<a class="file-path-link" data-file-path="${escapeAttr(trimmed)}" title="点击打开文件">${match}</a>`
+    return part.replace(filePathPattern, (match, offset, haystack) => {
+      // 无捕获组时回调为 (match, offset, string)
+      const index = typeof offset === 'number' ? offset : 0
+      const source = typeof haystack === 'string' ? haystack : part
+      const path = finalizeBarePathMatch(match, source, index)
+      if (!path) return match
+      const suffix = match.slice(path.length)
+      const openPath = normalizeUncForOpen(path)
+      return `<a class="file-path-link" data-file-path="${escapeAttr(openPath)}" title="点击打开文件">${path}</a>${suffix}`
     })
   }).join('')
 }
@@ -494,7 +476,7 @@ export function useMarkdown() {
     const decoded = decodeHtmlEntities(text)
 
     if (isLocalFilePath(decoded)) {
-      return `<code class="inline-code file-path-link" data-file-path="${escapeAttr(decoded)}" title="点击打开文件">${text}</code>`
+      return `<code class="inline-code file-path-link" data-file-path="${escapeAttr(normalizeUncForOpen(decoded))}" title="点击打开文件">${text}</code>`
     }
 
     // HTTP(S) URL：用 <a> 代替 <code>，复用 inline-code 样式以保留代码块外观，
@@ -532,7 +514,7 @@ export function useMarkdown() {
     // 文件路径链接：使用 data-file-path 标记，通过事件委托处理点击
     if (isLocalFilePath(decodedHref)) {
       const titleAttr = linkTitle ? ` title="${escapeAttr(linkTitle)}"` : ' title="点击打开文件"'
-      return `<a class="file-path-link" data-file-path="${escapeAttr(decodedHref)}"${titleAttr}>${linkText}</a>`
+      return `<a class="file-path-link" data-file-path="${escapeAttr(normalizeUncForOpen(decodedHref))}"${titleAttr}>${linkText}</a>`
     }
 
     // 普通链接：在新标签页打开

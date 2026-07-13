@@ -4421,16 +4421,18 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   word-break: break-word;
 }
 
-/* tool_call 内被 ToolCallContent 自动识别出的外部 URL 链接：与 markdown-content
+/* tool_call 内被 ToolCallContent 自动识别出的外部 URL / 本地路径链接：与 markdown-content
    里同名样式的视觉保持一致（accent 色 + 悬停下划线），只是作用域不同。 */
-.step-text.tool-call-content :deep(a.external-url-link) {
+.step-text.tool-call-content :deep(a.external-url-link),
+.step-text.tool-call-content :deep(a.file-path-link) {
   cursor: pointer;
   color: var(--accent-primary);
   text-decoration: none;
   word-break: break-all;
 }
 
-.step-text.tool-call-content :deep(a.external-url-link:hover) {
+.step-text.tool-call-content :deep(a.external-url-link:hover),
+.step-text.tool-call-content :deep(a.file-path-link:hover) {
   text-decoration: underline;
 }
 

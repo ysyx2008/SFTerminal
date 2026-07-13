@@ -1,16 +1,22 @@
 /**
- * tool_call 步骤 content 中"按 toolArgs.url 提取可点击 URL 段"的策略函数。
+ * tool_call 步骤 content 的可点击片段拆分。
  *
- * 设计动机：tool_call 的 content（如「阅读网页: https://example.com/x」、
- * 「执行命令: ls # comment」）故意不走 markdown，因为命令里 # / --- / *
- * 会被误解析为标题/分隔线/列表。但纯文本又损失了 URL 的可点击性。
+ * content（如「阅读网页: https://…」「执行命令: ls # comment」「读取文件: ~/a.txt」）
+ * 故意不走 markdown，以免 # / --- / * 被误解析。但纯文本又损失 URL / 本地路径的可点击性。
  *
- * 这里按"通用语义字段名 url"识别——任何工具的 args 含 http(s) url 字段都享受
- * 到自动转链接，不违反 agent-oop-boundary 规则（'url' 是字段语义而非工具名硬编码）。
- *
- * 仅放行 http(s)，挡住 javascript: / data: 等危险 scheme。返回 null 表示
- * content 不含 url、url 不是字符串/不是 http(s)，调用方走纯文本兜底即可。
+ * 策略：
+ * - url：按 toolArgs.url（仅 http(s)）在 content 中定位
+ * - path：按 toolArgs.path（若在 content 中出现，含 `Application\ Support` 转义形式）+
+ *         其余位置的裸路径扫描（matchBareFilePaths）
+ * 按字段语义（url / path）而非工具名，不违反 agent-oop-boundary。
  */
+import {
+  createBareFilePathPattern,
+  finalizeBarePathMatch,
+  isLocalFilePath,
+  normalizeUncForOpen,
+} from './local-file-path'
+
 export interface ToolCallLinkParts {
   /** URL 之前的文本（可能为空串） */
   before: string
@@ -20,6 +26,133 @@ export interface ToolCallLinkParts {
   after: string
 }
 
+export type ToolCallContentSegment =
+  | { kind: 'text'; text: string }
+  | { kind: 'url'; url: string }
+  | { kind: 'path'; path: string; display: string }
+
+interface Hit {
+  start: number
+  end: number
+  kind: 'url' | 'path'
+  /** 打开用的真实路径 / URL */
+  value: string
+  /** 原文展示 */
+  display: string
+}
+
+/** Unix shell 路径里的 `\<char>` 转义 → 真实字符；Windows/UNC 原样保留 */
+function unescapeUnixShellPath(path: string): string {
+  if (
+    path.startsWith('\\\\') ||
+    /^\\[^\\\/]/.test(path) ||
+    /^[A-Za-z]:[\\/]/.test(path)
+  ) {
+    return path
+  }
+  return path.replace(/\\([ \t!"#$&'()*,;<=>?@[\]^`{|}])/g, '$1')
+}
+
+/**
+ * 将 tool_call content 拆成 text / url / path 片段，供 UI 分段渲染。
+ * 无任何可点击片段时返回单段 text（调用方仍可整段插值）。
+ */
+export function splitToolCallContent(
+  content: string,
+  toolArgs?: Record<string, unknown>
+): ToolCallContentSegment[] {
+  if (!content) return [{ kind: 'text', text: '' }]
+
+  const hits: Hit[] = []
+
+  const rawUrl = toolArgs?.url
+  if (typeof rawUrl === 'string' && rawUrl && /^https?:\/\//i.test(rawUrl)) {
+    const idx = content.indexOf(rawUrl)
+    if (idx >= 0) {
+      hits.push({
+        start: idx,
+        end: idx + rawUrl.length,
+        kind: 'url',
+        value: rawUrl,
+        display: rawUrl,
+      })
+    }
+  }
+
+  const rawPath = toolArgs?.path
+  if (typeof rawPath === 'string' && rawPath && isLocalFilePath(rawPath)) {
+    const candidates = [rawPath]
+    if (rawPath.includes(' ')) {
+      candidates.push(rawPath.replace(/ /g, '\\ '))
+    }
+    for (const c of candidates) {
+      const idx = content.indexOf(c)
+      if (idx >= 0) {
+        hits.push({
+          start: idx,
+          end: idx + c.length,
+          kind: 'path',
+          value: normalizeUncForOpen(rawPath),
+          display: c,
+        })
+        break
+      }
+    }
+  }
+
+  const pattern = createBareFilePathPattern()
+  let m: RegExpExecArray | null
+  while ((m = pattern.exec(content)) !== null) {
+    const path = finalizeBarePathMatch(m[0], content, m.index)
+    if (!path) continue
+    const start = m.index
+    const end = start + path.length
+    hits.push({
+      start,
+      end,
+      kind: 'path',
+      value: normalizeUncForOpen(unescapeUnixShellPath(path)),
+      display: path,
+    })
+    pattern.lastIndex = end
+  }
+
+  hits.sort((a, b) => a.start - b.start || b.end - a.end)
+
+  const accepted: Hit[] = []
+  let cursor = 0
+  for (const h of hits) {
+    if (h.start < cursor) continue
+    accepted.push(h)
+    cursor = h.end
+  }
+
+  if (accepted.length === 0) {
+    return [{ kind: 'text', text: content }]
+  }
+
+  const segments: ToolCallContentSegment[] = []
+  let pos = 0
+  for (const h of accepted) {
+    if (h.start > pos) {
+      segments.push({ kind: 'text', text: content.slice(pos, h.start) })
+    }
+    if (h.kind === 'url') {
+      segments.push({ kind: 'url', url: h.value })
+    } else {
+      segments.push({ kind: 'path', path: h.value, display: h.display })
+    }
+    pos = h.end
+  }
+  if (pos < content.length) {
+    segments.push({ kind: 'text', text: content.slice(pos) })
+  }
+  return segments
+}
+
+/**
+ * 兼容旧 API：仅在 content 含 toolArgs.url 时返回三段拆分，否则 null。
+ */
 export function splitContentByUrl(
   content: string,
   toolArgs: Record<string, unknown> | undefined
