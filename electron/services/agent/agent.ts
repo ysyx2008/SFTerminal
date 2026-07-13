@@ -1057,6 +1057,15 @@ export abstract class Agent {
   }
 
   /**
+   * 设置当前会话展示标题。同步到 Conversation 内存；是否落盘由调用方经 History 决定。
+   * @returns 是否实际变更（未变化返回 false）
+   */
+  setConversationTitle(title: string): boolean {
+    if (!this._conversation) return false
+    return this._conversation.setTitle(title)
+  }
+
+  /**
    * 获取终端模式元数据（fork 时给 AgentService 用，判断是否同模式以决定 cache snapshot 是否传递）
    */
   getTerminalType(): TerminalType | undefined {

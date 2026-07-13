@@ -7,6 +7,7 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted, Ref } from 'vue
 import { useI18n } from 'vue-i18n'
 import { useTerminalStore, COMPANION_TAB_AGENT_ID } from '../stores/terminal'
 import { useConfigStore } from '../stores/config'
+import { resolveConversationDisplayTitle } from '../utils/conversation-title'
 import type { ExecutionMode, AttachmentInfo, AgentRecord, AgentHistorySummary } from '@shared/types'
 import type { AgentStep, AgentState } from '../stores/terminal'
 import type { MessageScrollerHandle } from '../types/message-scroller'
@@ -1249,7 +1250,11 @@ export function useAgentMode(
           sessionId,
           message.trim(),
           activeProfileId.value || undefined
-        ).catch(err => log.warn('generateConversationTitle failed:', err))
+        ).then(title => {
+          if (title) {
+            terminalStore.setAgentSessionTitle(tabId, title)
+          }
+        }).catch(err => log.warn('generateConversationTitle failed:', err))
       }
     }
 
@@ -1804,7 +1809,7 @@ export function useAgentMode(
     const base = historyModalSummaries.value
     if (!kw) return base
     return base.filter((s: AgentHistorySummary) => {
-      const display = configStore.resolveConversationTitle(s.id, s.userTask)
+      const display = resolveConversationDisplayTitle(s)
       return [s.userTask, display].join(' ').toLowerCase().includes(kw)
     })
   })

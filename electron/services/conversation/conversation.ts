@@ -97,6 +97,9 @@ export class Conversation {
   /** 上一次 run 结束时的完整 messages 快照，用于跨任务 prompt cache 前缀复用（原 _previousRunMessages） */
   private _cachePrefix?: AiMessage[]
 
+  /** 侧栏展示标题（LLM / 手动）；缺省则 UI 用 userTask */
+  private _title?: string
+
   // ===== token 账 =====
   private _tokenUsage?: TokenUsage
   private _lastPromptTokens?: number
@@ -195,6 +198,8 @@ export class Conversation {
     }
 
     this.setRestoredTranscript(record.messages as AiMessage[] | undefined, record.steps)
+    const title = record.title?.trim()
+    if (title) this._title = title
   }
 
   /**
@@ -242,6 +247,7 @@ export class Conversation {
       terminalType: this.terminalType,
       sshHost: this.sshHost,
       userTask: firstUserTask.content,
+      ...(this._title ? { title: this._title } : {}),
       steps: serializableSteps,
       messages: this._messages.map(m => JSON.parse(JSON.stringify(m))),
       finalResult: lastFinalResult?.content,
@@ -288,6 +294,7 @@ export class Conversation {
       terminalType: this.terminalType,
       sshHost: this.sshHost,
       userTask: firstUserTask.content,
+      ...(this._title ? { title: this._title } : {}),
       steps: mergedSteps.map(s => Conversation.stepToStepRecord(s)),
       messages: mergedMessages.map(m => JSON.parse(JSON.stringify(m))),
       duration: Date.now() - this.createdAt,
@@ -724,6 +731,24 @@ export class Conversation {
     if (this._agentKey === agentKey) return
     this._agentKey = agentKey
     this._dirty = true
+  }
+
+  /** 侧栏展示标题；未设置时 UI 回退 userTask */
+  get title(): string | undefined {
+    return this._title
+  }
+
+  /**
+   * 设置展示标题。未变化时返回 false（调用方据此跳过写盘）。
+   * 空串视为清除。
+   */
+  setTitle(title: string): boolean {
+    const trimmed = title.trim()
+    const next = trimmed || undefined
+    if (this._title === next) return false
+    this._title = next
+    this._dirty = true
+    return true
   }
 
   /**

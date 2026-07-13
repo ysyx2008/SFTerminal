@@ -64,6 +64,8 @@ export interface AgentIndexEntry {
   duration: number
   dateStr: string
   userTask: string
+  /** 侧栏展示标题；缺省时列表回退 userTask */
+  title?: string
   terminalType: TerminalType
   /** Agent 的身份 key，来自 AgentRecord.agentKey（如 '__companion__'、'__watch__'） */
   agentKey?: string
@@ -247,6 +249,8 @@ export class AgentRecordStore {
       sshHost: record.sshHost,
       status: record.status,
     }
+    const title = record.title?.trim()
+    if (title) entry.title = title
     if (record.tokenUsage) {
       entry.tokenUsage = record.tokenUsage
     }
@@ -383,9 +387,52 @@ export class AgentRecordStore {
   // ==================== Agent 记录 CRUD ====================
 
   /**
+   * 尚未落盘的会话标题暂存：LLM/手动改名可能早于首次 checkpoint。
+   * 下次 saveAgentRecord 时并入正文并清除。
+   */
+  private pendingTitles = new Map<string, string>()
+
+  /**
+   * 仅更新会话展示标题。标题未变化时不写盘。
+   * 记录尚不存在时写入 pending，等首次 save 并入。
+   * @returns 是否已生效（含 pending / 已是目标值）
+   */
+  updateTitle(id: string, title: string): boolean {
+    const trimmed = title.trim()
+    if (!id || !trimmed) return false
+
+    const record = this.getAgentRecordById(id)
+    if (!record) {
+      this.pendingTitles.set(id, trimmed)
+      return true
+    }
+    if (record.title?.trim() === trimmed) return true
+
+    record.title = trimmed
+    // 只改 title 时仍走 save：PR2 增量格式会把这收成 meta-only 写
+    const store = this.storeForRecord(record)
+    writeAgentRecordFile(store.dir, record)
+    this.updateIndexEntryFor(store, record)
+    return true
+  }
+
+  /**
    * 保存 Agent 记录（支持更新：如果 id 相同则更新，否则追加）
    */
   saveAgentRecord(record: AgentRecord): void {
+    // pending 标题优先（生成早于首次 checkpoint）
+    const pending = this.pendingTitles.get(record.id)
+    if (pending) {
+      if (!record.title?.trim()) record.title = pending
+      this.pendingTitles.delete(record.id)
+    }
+    // checkpoint 未带 title 时保留磁盘/索引上已有标题，避免覆盖丢失
+    if (!record.title?.trim()) {
+      const store = this.storeForRecord(record)
+      const entry = this.getIndexFor(store).find(e => e.id === record.id)
+      if (entry?.title?.trim()) record.title = entry.title.trim()
+    }
+
     // 写入前把内联 base64 图片外化到磁盘，避免 JSON 文件膨胀和 IPC 传输超大对象
     this.externalizeStepImages(record)
     // 剥离可从磁盘重生的 Canvas content（md/html 文件），避免大文件撑爆历史记录
@@ -515,6 +562,7 @@ export class AgentRecordStore {
    * @returns 是否成功删除（记录不存在时返回 false）
    */
   deleteAgentRecord(id: string): boolean {
+    this.pendingTitles.delete(id)
     // 主索引优先，未命中再查 watch 索引——确保 watch 记录也能正确删除文件/索引/截图
     let store = this.agentStore
     let index = this.getIndexFor(store)
@@ -653,6 +701,7 @@ export class AgentRecordStore {
       timestamp: e.timestamp,
       duration: e.duration,
       userTask: e.userTask,
+      title: e.title,
       terminalType: e.terminalType,
       agentKey: e.agentKey,
       sshHost: e.sshHost,

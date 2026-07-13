@@ -4368,10 +4368,20 @@ ipcMain.handle(
   'history:generateConversationTitle',
   async (_event, sessionId: string, userMessage: string, profileId?: string) => {
     const { generateConversationTitle } = await import('./services/conversation/title-generator')
+    const { agentService } = await rt()
     return generateConversationTitle(
-      { aiService, configService },
+      { aiService, configService, historyService, agentService },
       { sessionId, userMessage, profileId }
     )
+  }
+)
+
+/** 手动 / 程序设置会话展示标题（写入会话自身，非 config 旁路） */
+ipcMain.handle(
+  'history:setConversationTitle',
+  async (_event, sessionId: string, title: string) => {
+    const { agentService } = await rt()
+    return agentService.setConversationTitleBySessionId(sessionId, title)
   }
 )
 

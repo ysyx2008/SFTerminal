@@ -49,6 +49,11 @@ export interface AgentRecord {
   terminalType: TerminalType
   sshHost?: string
   userTask: string
+  /**
+   * 侧栏展示标题（LLM 自动生成或用户重命名）。
+   * 缺省时 UI 回退到 userTask。属于会话自身，随记录删除；勿再旁路存 config。
+   */
+  title?: string
   steps: AgentStepRecord[]
   messages?: Array<{ role: string; content: string; tool_calls?: unknown[]; tool_call_id?: string }>
   finalResult?: string
@@ -72,6 +77,8 @@ export interface AgentHistorySummary {
   timestamp: number
   duration: number
   userTask: string
+  /** 侧栏展示标题；缺省时 UI 回退 userTask */
+  title?: string
   terminalType: TerminalType
   /** Agent 身份 key（如 '__companion__'、'__watch__'）。用于把联络/关切会话从「任务」侧栏剔除 */
   agentKey?: string

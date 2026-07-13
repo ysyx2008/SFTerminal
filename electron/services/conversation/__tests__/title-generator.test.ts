@@ -9,6 +9,8 @@ import {
 } from '../title-generator'
 import type { AiService } from '../../ai.service'
 import type { ConfigService } from '../../config.service'
+import type { HistoryService } from '../../history.service'
+import type { AgentService } from '../../agent/index'
 
 vi.mock('../../agent/skills/config/executor', () => ({
   notifyFrontendConfigChanged: vi.fn(),
@@ -39,18 +41,25 @@ describe('generateConversationTitle', () => {
   })
 
   function makeDeps(opts?: {
-    titles?: Record<string, string>
+    existingTitle?: string
     chatResult?: string
     chatError?: Error
   }) {
-    let titles = { ...(opts?.titles ?? {}) }
-    const configService = {
-      get: vi.fn((key: string) => (key === 'conversationDisplayTitles' ? titles : undefined)),
-      set: vi.fn((key: string, value: unknown) => {
-        if (key === 'conversationDisplayTitles') {
-          titles = { ...(value as Record<string, string>) }
-        }
+    let recordTitle = opts?.existingTitle
+    const historyService = {
+      getAgentRecordById: vi.fn((sessionId: string) =>
+        recordTitle ? { id: sessionId, title: recordTitle } : undefined
+      ),
+    } as unknown as HistoryService
+
+    const agentService = {
+      setConversationTitleBySessionId: vi.fn((sessionId: string, title: string) => {
+        recordTitle = title
+        return true
       }),
+    } as unknown as AgentService
+
+    const configService = {
       getLanguage: vi.fn(() => 'zh-CN' as const),
     } as unknown as ConfigService
 
@@ -61,24 +70,30 @@ describe('generateConversationTitle', () => {
       }),
     } as unknown as AiService
 
-    return { configService, aiService, getTitles: () => titles }
+    return {
+      configService,
+      aiService,
+      historyService,
+      agentService,
+      getRecordTitle: () => recordTitle,
+    }
   }
 
-  it('成功生成并写入 conversationDisplayTitles', async () => {
+  it('成功生成并写入会话 title', async () => {
     const deps = makeDeps()
     const title = await generateConversationTitle(deps, {
       sessionId: 'session_1',
       userMessage: '帮我看看登录为什么总跳错页',
     })
     expect(title).toBe('修复登录重定向')
-    expect(deps.configService.set).toHaveBeenCalledWith(
-      'conversationDisplayTitles',
-      expect.objectContaining({ session_1: '修复登录重定向' })
+    expect(deps.agentService.setConversationTitleBySessionId).toHaveBeenCalledWith(
+      'session_1',
+      '修复登录重定向'
     )
   })
 
   it('已有自定义标题则跳过且不调 LLM', async () => {
-    const deps = makeDeps({ titles: { session_1: '我改的名字' } })
+    const deps = makeDeps({ existingTitle: '我改的名字' })
     const title = await generateConversationTitle(deps, {
       sessionId: 'session_1',
       userMessage: '随便',
@@ -105,14 +120,14 @@ describe('generateConversationTitle', () => {
       userMessage: '测一下',
     })
     expect(title).toBeNull()
-    expect(deps.configService.set).not.toHaveBeenCalled()
+    expect(deps.agentService.setConversationTitleBySessionId).not.toHaveBeenCalled()
   })
 
   it('生成期间用户已手动改名则不覆盖', async () => {
     const deps = makeDeps()
     ;(deps.aiService.chat as ReturnType<typeof vi.fn>).mockImplementation(async () => {
       // 模拟 LLM 等待期间用户改名
-      deps.configService.set('conversationDisplayTitles', { session_1: '手动标题' })
+      deps.agentService.setConversationTitleBySessionId('session_1', '手动标题')
       return '模型标题'
     })
     const title = await generateConversationTitle(deps, {
@@ -120,6 +135,6 @@ describe('generateConversationTitle', () => {
       userMessage: '测一下',
     })
     expect(title).toBeNull()
-    expect(deps.getTitles().session_1).toBe('手动标题')
+    expect(deps.getRecordTitle()).toBe('手动标题')
   })
 })

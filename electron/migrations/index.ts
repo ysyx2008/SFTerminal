@@ -19,6 +19,7 @@ import { migrationV4 } from './v4-ui-theme-mode'
 import { migrationV5 } from './v5-agent-history-per-session'
 import { migrationV6 } from './v6-watch-history-split'
 import { migrationV7 } from './v7-im-bastion-and-e1-to-g1'
+import { migrationV8 } from './v8-conversation-titles-to-records'
 
 const allMigrations = [
   migrationV1,
@@ -28,6 +29,7 @@ const allMigrations = [
   migrationV5,
   migrationV6,
   migrationV7,
+  migrationV8,
 ]
 
 let _runner: MigrationRunner | null = null

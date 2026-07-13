@@ -1097,6 +1097,29 @@ export const useConfigStore = defineStore('config', () => {
     }
   }
 
+  /**
+   * 只移除指定会话的置顶/显示标题（删除单条历史时用）。
+   * 不要用「当前 summaries 白名单」全量 prune：进行中尚未进历史索引的 live session
+   * 不在 summaries 里，全量 prune 会误删其 LLM/手动标题。
+   */
+  async function removeConversationMetadata(id: string): Promise<void> {
+    if (!id) return
+    if (pinnedConversationIds.value.includes(id)) {
+      await savePinnedConversationIds(pinnedConversationIds.value.filter(x => x !== id))
+    }
+    if (!(id in conversationDisplayTitles.value)) return
+    const previous = { ...conversationDisplayTitles.value }
+    const next = { ...previous }
+    delete next[id]
+    conversationDisplayTitles.value = next
+    try {
+      await window.electronAPI.config.set('conversationDisplayTitles', next)
+    } catch (e) {
+      conversationDisplayTitles.value = previous
+      throw e
+    }
+  }
+
   async function pruneConversationMetadata(validIds: Set<string>): Promise<void> {
     // 历史索引尚未就绪时 list 可能为空，此时 prune 会把置顶/标题误删到磁盘
     if (validIds.size === 0) return
@@ -1215,6 +1238,7 @@ export const useConfigStore = defineStore('config', () => {
     getConversationDisplayTitle,
     resolveConversationTitle,
     setConversationDisplayTitle,
+    removeConversationMetadata,
     pruneConversationMetadata,
   }
 })

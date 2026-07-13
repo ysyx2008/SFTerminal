@@ -50,6 +50,7 @@ import { pickTaskCompleteLabel } from '../composables/useTaskCompleteLabel'
 import { loadBondTrustLevel } from '../composables/useRandomPlaceholder'
 import type { BondTrustLevel } from '@shared/types/bond'
 import type { AgentRecord, AgentHistorySummary } from '@shared/types'
+import { resolveConversationDisplayTitle } from '../utils/conversation-title'
 import { COMPANION_AGENT_KEY } from '@shared/types'
 
 // Props - 每个 AiPanel 实例绑定到特定的 tab
@@ -875,8 +876,8 @@ const changeAiProfile = (profileId: string) => {
 // ==================== 历史对话相关 ====================
 
 // 截断文本
-const historyDisplayTitle = (record: { id: string; userTask: string }): string =>
-  configStore.resolveConversationTitle(record.id, record.userTask)
+const historyDisplayTitle = (record: { title?: string; userTask: string }): string =>
+  resolveConversationDisplayTitle(record)
 
 // 加载历史记录（带确认）。欢迎区为完整 AgentRecord；弹窗无 steps 时按 id 拉全量
 const handleLoadHistory = async (row: AgentRecord | AgentHistorySummary) => {

@@ -1,10 +1,11 @@
 /**
- * 任务侧栏短标题生成 —— 用户首条消息后异步调用 LLM，写入 conversationDisplayTitles。
- * 不阻塞 Agent run；已有自定义标题（含用户手动重命名）不覆盖；失败静默回退到 userTask。
+ * 任务侧栏短标题生成 —— 用户首条消息后异步调用 LLM，写入会话自身的 title。
+ * 不阻塞 Agent run；已有 title（含用户手动重命名）不覆盖；失败静默回退到 userTask。
  */
 import type { AiService } from '../ai.service'
 import type { ConfigService } from '../config.service'
-import { notifyFrontendConfigChanged } from '../agent/skills/config/executor'
+import type { HistoryService } from '../history.service'
+import type { AgentService } from '../agent/index'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ConversationTitle')
@@ -17,6 +18,8 @@ const TITLE_MAX_LEN = 40
 export interface GenerateConversationTitleDeps {
   aiService: AiService
   configService: ConfigService
+  historyService: HistoryService
+  agentService: AgentService
 }
 
 export interface GenerateConversationTitleInput {
@@ -32,7 +35,6 @@ export function sanitizeConversationTitle(raw: string): string | null {
   let text = raw.trim()
   if (!text) return null
 
-  // 只取首行，去掉常见包裹符
   text = text.split(/\r?\n/)[0]?.trim() ?? ''
   text = text.replace(/^["'「『【\[]+|["'」』】\]]+$/g, '').trim()
   text = text.replace(/\s+/g, ' ')
@@ -67,14 +69,8 @@ function buildTitlePrompt(userMessage: string, language: string): string {
   ].join('\n')
 }
 
-function readDisplayTitles(configService: ConfigService): Record<string, string> {
-  const raw = configService.get('conversationDisplayTitles')
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
-  return { ...(raw as Record<string, string>) }
-}
-
 /**
- * 为任务会话异步生成短标题并写入配置。
+ * 为任务会话异步生成短标题并写入会话（内存 + 落盘/pending）。
  * @returns 成功写入的标题；跳过或失败返回 null
  */
 export async function generateConversationTitle(
@@ -85,13 +81,11 @@ export async function generateConversationTitle(
   const userMessage = input.userMessage?.trim()
   if (!sessionId || !userMessage) return null
 
-  // 系统占位消息不生成
   if (userMessage.startsWith('__') && userMessage.endsWith('__')) return null
-
   if (inflight.has(sessionId)) return null
 
-  const existing = readDisplayTitles(deps.configService)[sessionId]?.trim()
-  if (existing) return null
+  const existingTitle = deps.historyService.getAgentRecordById(sessionId)?.title?.trim()
+  if (existingTitle) return null
 
   inflight.add(sessionId)
   try {
@@ -106,16 +100,14 @@ export async function generateConversationTitle(
       return null
     }
 
-    // 写入前再读一次：用户可能已手动重命名
-    const titles = readDisplayTitles(deps.configService)
-    if (titles[sessionId]?.trim()) {
-      log.info(`Skip auto-title for ${sessionId}: user already set title`)
+    // 生成期间用户可能已手动改名
+    const afterTitle = deps.historyService.getAgentRecordById(sessionId)?.title?.trim()
+    if (afterTitle) {
+      log.info(`Skip auto-title for ${sessionId}: title already set`)
       return null
     }
 
-    titles[sessionId] = title
-    deps.configService.set('conversationDisplayTitles', titles)
-    notifyFrontendConfigChanged()
+    deps.agentService.setConversationTitleBySessionId(sessionId, title)
     log.info(`Auto-titled ${sessionId}: "${title}"`)
     return title
   } catch (err) {

@@ -4,8 +4,8 @@ import { useI18n } from 'vue-i18n'
 import { Pin, PinOff, Loader2, CircleDot } from 'lucide-vue-next'
 import type { AgentHistorySummary } from '@shared/types'
 import type { HistoryConversationTabStatus } from '../stores/terminal'
-import { useConfigStore } from '../stores/config'
 import { beginConversationDrag } from '../composables/useConversationDragDrop'
+import { resolveConversationDisplayTitle } from '../utils/conversation-title'
 
 const props = defineProps<{
   record: AgentHistorySummary
@@ -29,7 +29,6 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const configStore = useConfigStore()
 
 const tabStatus = computed(() => props.tabStatus ?? 'closed')
 const showStatusIcon = computed(() => tabStatus.value !== 'closed')
@@ -57,7 +56,7 @@ const handleDragStart = (event: DragEvent) => {
 const normalizeTitle = (text: string): string => text.trim().replace(/\s+/g, ' ')
 
 const displayTitle = computed(() =>
-  normalizeTitle(configStore.resolveConversationTitle(props.record.id, props.record.userTask))
+  normalizeTitle(resolveConversationDisplayTitle(props.record))
 )
 
 const editInputRef = ref<HTMLInputElement | null>(null)

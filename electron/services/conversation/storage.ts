@@ -30,6 +30,13 @@ export class ConversationStore {
     this.store.saveAgentRecord(record)
   }
 
+  /**
+   * 仅更新展示标题（未变化不写盘；未落盘则 pending）。
+   */
+  updateTitle(id: string, title: string): boolean {
+    return this.store.updateTitle(id, title)
+  }
+
   /** 按 id（sessionId）精确读取一条会话；不存在返回 undefined。 */
   load(id: string): AgentRecord | undefined {
     return this.store.getAgentRecordById(id)

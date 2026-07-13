@@ -1361,6 +1361,10 @@ const electronAPI = {
     generateConversationTitle: (sessionId: string, userMessage: string, profileId?: string) =>
       ipcRenderer.invoke('history:generateConversationTitle', sessionId, userMessage, profileId) as Promise<string | null>,
 
+    /** 设置会话展示标题（写入会话记录，非 config overlay） */
+    setConversationTitle: (sessionId: string, title: string) =>
+      ipcRenderer.invoke('history:setConversationTitle', sessionId, title) as Promise<boolean>,
+
     searchAgentRecords: (options: {
       keyword?: string
       startDate?: string

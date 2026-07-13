@@ -17,6 +17,7 @@ import { toast } from '../composables/useToast'
 import { showConfirm } from '../composables/useConfirm'
 import { useOpenConversationInTab } from '../composables/useConversationDragDrop'
 import { useConversationWarmup } from '../composables/useConversationWarmup'
+import { resolveConversationDisplayTitle } from '../utils/conversation-title'
 
 const props = defineProps<{
   collapsed?: boolean
@@ -91,6 +92,7 @@ const liveSessionSummaries = computed((): AgentHistorySummary[] => {
       timestamp: tab.agentState!.sessionStartTime ?? Date.now(),
       duration: 0,
       userTask: tab.agentState!.userTask!,
+      title: tab.agentState!.title,
       terminalType: tab.type,
       status: 'completed' as const, // 运行状态来自 meta，status 字段不用于显示
     }))
@@ -99,7 +101,7 @@ const liveSessionSummaries = computed((): AgentHistorySummary[] => {
 
 const matchesSearch = (record: AgentHistorySummary, kw: string): boolean => {
   if (!kw) return true
-  const display = configStore.getConversationDisplayTitle(record.id)
+  const display = resolveConversationDisplayTitle(record)
   const haystack = [record.userTask, display].filter(Boolean).join(' ').toLowerCase()
   return haystack.includes(kw)
 }
@@ -224,7 +226,16 @@ const loadSummaries = async (options?: { silent?: boolean }) => {
       displayCount.value = DISPLAY_LIMIT
     }
     if (next.length > 0) {
-      await configStore.pruneConversationMetadata(new Set(next.map(s => s.id)))
+      // 白名单须含仍打开的 tab session：live session 可能尚未进历史索引
+      const validIds = new Set(next.map(s => s.id))
+      for (const tab of terminalStore.tabs) {
+        const sid = tab.agentState?.sessionId
+        if (sid) validIds.add(sid)
+      }
+      const nextPins = configStore.pinnedConversationIds.filter(pid => validIds.has(pid))
+      if (nextPins.length !== configStore.pinnedConversationIds.length) {
+        await configStore.savePinnedConversationIds(nextPins)
+      }
     }
   } catch (e) {
     console.error('Failed to load conversation summaries:', e)
@@ -465,7 +476,7 @@ const closeContextMenu = () => {
 
 const startRename = (record: AgentHistorySummary) => {
   editingId.value = record.id
-  editingTitle.value = configStore.resolveConversationTitle(record.id, record.userTask)
+  editingTitle.value = resolveConversationDisplayTitle(record)
 }
 
 const onMenuRename = () => {
@@ -509,7 +520,7 @@ const onMenuDelete = async () => {
   const isLiveSession = liveSessionSummaries.value.some(s => s.id === record.id)
   if (isLiveSession) {
     if (existingTab) {
-      const title = configStore.resolveConversationTitle(record.id, record.userTask)
+      const title = resolveConversationDisplayTitle(record)
       const confirmed = await showConfirm({
         title: t('welcome.conversations.deleteTitle'),
         message: t('welcome.conversations.confirmDelete', { title }),
@@ -524,7 +535,7 @@ const onMenuDelete = async () => {
     return
   }
 
-  const title = configStore.resolveConversationTitle(record.id, record.userTask)
+  const title = resolveConversationDisplayTitle(record)
   const confirmed = await showConfirm({
     title: t('welcome.conversations.deleteTitle'),
     message: t('welcome.conversations.confirmDelete', { title }),
@@ -545,7 +556,8 @@ const onMenuDelete = async () => {
       await terminalStore.closeTab(existingTab.id, true)
     }
     summaries.value = summaries.value.filter(s => s.id !== record.id)
-    await configStore.pruneConversationMetadata(new Set(summaries.value.map(s => s.id)))
+    // 只清被删会话的元数据；勿用剩余 summaries 做白名单 prune（会误伤 live session 标题）
+    await configStore.removeConversationMetadata(record.id)
     if (editingId.value === record.id) {
       editingId.value = null
     }
@@ -559,8 +571,24 @@ const commitRename = async () => {
   const id = editingId.value
   if (!id) return
   const next = editingTitle.value.trim()
+  if (!next) {
+    editingId.value = null
+    return
+  }
   try {
-    await configStore.setConversationDisplayTitle(id, next)
+    const ok = await window.electronAPI.history.setConversationTitle(id, next)
+    if (!ok) {
+      toast.error(t('common.operationFailed'))
+      return
+    }
+    const idx = summaries.value.findIndex(s => s.id === id)
+    if (idx >= 0) {
+      summaries.value[idx] = { ...summaries.value[idx], title: next }
+    }
+    const tab = terminalStore.findTabByHistoryId(id)
+    if (tab) {
+      terminalStore.setAgentSessionTitle(tab.id, next)
+    }
   } catch (e) {
     console.error('Failed to rename conversation:', e)
     toast.error(t('common.operationFailed'))

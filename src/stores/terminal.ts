@@ -80,7 +80,9 @@ export interface AgentState {
   agentId?: string
   sessionId?: string     // 会话 ID（用于会话级保存，后端通过此 ID 从 HistoryService 加载历史数据）
   sessionStartTime?: number  // 会话开始时间
-  userTask?: string      // 会话级标题（首条 user_task / 历史 record.userTask；侧栏展示，不随每次新任务改变）
+  userTask?: string      // 首条 user_task / 历史 record.userTask（侧栏无 title 时的回退）
+  /** 侧栏展示标题（LLM 生成或用户重命名）；缺省时 UI 回退 userTask */
+  title?: string
   steps: AgentStep[]
   pendingConfirm?: PendingConfirmation
   pendingSecureInput?: import('@shared/types').PendingSecureInput & { ptyId?: string }
@@ -784,30 +786,21 @@ export const useTerminalStore = defineStore('terminal', () => {
       return null
     }
 
-    // 优先级：① 用户在 Tab 栏手动重命名（customTitle）
-    //         ② 用户在侧栏重命名（conversationDisplayTitles）
-    //         ③ tab 默认标题（通常是 agentName）
-    // 注：conversationDisplayTitles 仅在侧栏面板打开时加载，这里先确保数据就绪
-    const configStore = useConfigStore()
-    await configStore.loadConversationPreferences()
+    // 优先级：① Tab 栏手动重命名（customTitle）② 侧栏/会话 title ③ tab 默认标题
     // companion 升格：标题用锚点那段内容（后端 sourceUserTask 已含后缀），不用「联络 · 分支」
     const forkTitle = isCompanionSource
       ? result.sourceUserTask
       : (() => {
-          const sessionId = sourceTab.agentState?.sessionId
-          const sidebarTitle = sessionId ? configStore.getConversationDisplayTitle(sessionId) : undefined
+          const sidebarTitle = sourceTab.agentState?.title
           const baseTitle = sourceTab.customTitle || sidebarTitle || sourceTab.title
           return baseTitle + titleSuffix
         })()
 
-    // 把后缀写进会话显示标题覆盖层（resolveConversationTitle 优先取它，高于 record.userTask）。
-    // 后端 record.userTask 由 saveCheckpoint / Conversation.toRecord 从首条 user_task step.content
-    // 重建（不带后缀）；不写这里的话，分叉会话一旦继续对话触发保存，侧栏后缀就会被覆盖丢失。
-    // 只覆盖显示标题，不动 step.content（保持用户原文消息气泡不变），也不新增 schema 字段。
+    // 分叉后缀写入会话 title（record.userTask 仍来自首条 user_task，不带后缀）
     try {
-      await configStore.setConversationDisplayTitle(result.newSessionId, forkTitle)
+      await window.electronAPI.history.setConversationTitle(result.newSessionId, forkTitle)
     } catch (e) {
-      log.warn('forkToAssistantTab: failed to persist fork display title', e)
+      log.warn('forkToAssistantTab: failed to persist fork title', e)
     }
 
     const shouldPromote = sourceTab.type === 'assistant' && !!sourceTab.isPromoted
@@ -831,7 +824,7 @@ export const useTerminalStore = defineStore('terminal', () => {
 
     // 用截断后的 newRecord 恢复 UI（与「加载历史」语义一致）：
     // 显示截断点之前的对话历史 + loadedFromHistory=true（二次 fork 仍走 HistoryService fallback）
-    restoreAgentHistory(newTabId, result.newRecord)
+    restoreAgentHistory(newTabId, { ...result.newRecord, title: forkTitle })
     // restoreAgentHistory 用 newRecord.id 设置了 sessionId，与后端 Agent 实例一致
 
     // 继承源会话的呈现形态：Hub 侧栏会话 → focusHubConversation；已提升独立 Tab → promote
@@ -2048,6 +2041,28 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
   }
 
+  /** 更新当前 tab 的会话侧栏标题（LLM 生成或用户重命名后同步 UI） */
+  function setAgentSessionTitle(tabId: string, title: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab) return
+
+    const trimmed = title.trim()
+    if (!trimmed) return
+
+    if (!tab.agentState) {
+      tab.agentState = {
+        isRunning: false,
+        steps: []
+      }
+    }
+
+    tab.agentState = {
+      ...tab.agentState,
+      title: trimmed
+    }
+    tabs.value = [...tabs.value]
+  }
+
   /**
    * 只设置 Agent ID，不改变运行状态
    * 用于在接收步骤事件时关联 agentId 和 tabId
@@ -2236,6 +2251,7 @@ export const useTerminalStore = defineStore('terminal', () => {
         sessionId: preserveSession ? tab.agentState?.sessionId : undefined,
         sessionStartTime: preserveSession ? tab.agentState?.sessionStartTime : undefined,
         userTask: preserveSession ? tab.agentState?.userTask : undefined,
+        title: preserveSession ? tab.agentState?.title : undefined,
         steps: preserveSession ? (tab.agentState?.steps || []) : []
       }
     }
@@ -2332,8 +2348,7 @@ export const useTerminalStore = defineStore('terminal', () => {
 
     const tabId = createAssistantTab({ activate: false })
     markAssistantSkipOnboarding(tabId)
-    const configStore = useConfigStore()
-    const customTitle = configStore.getConversationDisplayTitle(record.id)
+    const customTitle = record.title?.trim()
     if (customTitle) {
       renameTab(tabId, customTitle)
     }
@@ -2354,8 +2369,7 @@ export const useTerminalStore = defineStore('terminal', () => {
 
     const tabId = createAssistantTab({ activate: false })
     markAssistantSkipOnboarding(tabId)
-    const configStore = useConfigStore()
-    const customTitle = configStore.getConversationDisplayTitle(record.id)
+    const customTitle = record.title?.trim()
     if (customTitle) {
       renameTab(tabId, customTitle)
     }
@@ -2376,6 +2390,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     id: string
     timestamp: number
     userTask: string
+    title?: string
     steps: Array<{
       id: string
       type: string
@@ -2446,6 +2461,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       sessionId: record.id,
       sessionStartTime: record.timestamp,
       userTask: record.userTask,
+      ...(record.title?.trim() ? { title: record.title.trim() } : {}),
       steps: steps,
       loadedFromHistory: true
     }
@@ -3195,6 +3211,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     getAgentState,
     setAgentRunning,
     setAgentSession,
+    setAgentSessionTitle,
     setAgentId,
     addAgentStep,
     removeOptimisticAgentSteps,
