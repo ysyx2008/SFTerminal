@@ -2,38 +2,48 @@
  * 风险等级 × 执行模式 确认策略
  *
  * 工具/技能只负责评估出 RiskLevel，是否弹窗统一走本模块：
- * - riskNeedsConfirm：通用工具 / 命令共用策略
- * - commandNeedsConfirm：对 assessment 的薄封装（委托 riskNeedsConfirm）
+ * - isHardBlocked：blocked → 硬拒绝（任何 mode 都不执行、不弹确认）
+ * - riskNeedsConfirm：是否弹确认（对 blocked 恒为 false，调用方须先拦 blocked）
+ * - commandNeedsConfirm：对 assessment 的薄封装
  *
  * strict：全部确认（含 safe）
- * relaxed：默认只确认 dangerous / blocked；
+ * relaxed：默认只确认 dangerous；
  *          若 riskPolicy.relaxedConfirmModerate=true，则 moderate 也确认。
  * free：不确认（用户自担）。
+ *
+ * blocked 是硬墙（见 CommandRiskPolicy 注释），任何 executionMode 下拒绝执行。
  */
 import type { RiskLevel, ExecutionMode, CommandRiskPolicy } from '@shared/types/agent'
 import type { CommandRiskAssessment } from './types'
 import { resolveSubAgentBlockDangerous } from './fail-closed-policy'
 
+/** blocked = 硬拒绝，不弹确认、不执行 */
+export function isHardBlocked(level: RiskLevel): boolean {
+  return level === 'blocked'
+}
+
 /**
  * 通用确认策略：工具先评估 riskLevel，再据此 + executionMode 决定是否弹窗。
  *
- * - strict：全部确认（含 safe）
+ * - blocked：返回 false（须先用 isHardBlocked 拒绝，绝不能当「可确认」）
+ * - strict：其余全部确认（含 safe）
  * - free：不确认
- * - relaxed：dangerous / blocked；可选 moderate；safe 不确认
+ * - relaxed：dangerous；可选 moderate；safe 不确认
  */
 export function riskNeedsConfirm(
   level: RiskLevel,
   executionMode: ExecutionMode,
   policy?: CommandRiskPolicy | null,
 ): boolean {
+  if (level === 'blocked') return false
   if (executionMode === 'strict') return true
   if (executionMode === 'free') return false
-  if (level === 'blocked' || level === 'dangerous') return true
+  if (level === 'dangerous') return true
   if (level === 'moderate' && policy?.relaxedConfirmModerate) return true
   return false
 }
 
-/** 命令执行确认策略（委托 riskNeedsConfirm）。 */
+/** 命令执行确认策略（委托 riskNeedsConfirm）。调用前须已处理 blocked。 */
 export function commandNeedsConfirm(
   assessment: CommandRiskAssessment,
   executionMode: ExecutionMode,

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { riskNeedsConfirm, commandNeedsConfirm, isSubAgentBlocked } from '../confirm-policy'
+import {
+  isHardBlocked,
+  riskNeedsConfirm,
+  commandNeedsConfirm,
+  isSubAgentBlocked,
+} from '../confirm-policy'
 import type { CommandRiskAssessment } from '../types'
 
 function assessment(
@@ -9,26 +14,38 @@ function assessment(
   return { level, parsed: true, calls: [], hasUnknown }
 }
 
+describe('isHardBlocked', () => {
+  it('仅 blocked 为硬拒绝', () => {
+    expect(isHardBlocked('blocked')).toBe(true)
+    expect(isHardBlocked('dangerous')).toBe(false)
+    expect(isHardBlocked('moderate')).toBe(false)
+    expect(isHardBlocked('safe')).toBe(false)
+  })
+})
+
 describe('riskNeedsConfirm', () => {
-  it('strict：全部确认（含 safe）', () => {
+  it('blocked：永不走确认（须硬拒绝）', () => {
+    expect(riskNeedsConfirm('blocked', 'strict')).toBe(false)
+    expect(riskNeedsConfirm('blocked', 'relaxed')).toBe(false)
+    expect(riskNeedsConfirm('blocked', 'free')).toBe(false)
+  })
+
+  it('strict：非 blocked 全部确认（含 safe）', () => {
     expect(riskNeedsConfirm('safe', 'strict')).toBe(true)
     expect(riskNeedsConfirm('moderate', 'strict')).toBe(true)
     expect(riskNeedsConfirm('dangerous', 'strict')).toBe(true)
-    expect(riskNeedsConfirm('blocked', 'strict')).toBe(true)
   })
 
   it('free：任意等级都不确认', () => {
     expect(riskNeedsConfirm('safe', 'free')).toBe(false)
     expect(riskNeedsConfirm('moderate', 'free')).toBe(false)
     expect(riskNeedsConfirm('dangerous', 'free')).toBe(false)
-    expect(riskNeedsConfirm('blocked', 'free')).toBe(false)
   })
 
-  it('relaxed：safe 不确认，只确认 dangerous/blocked', () => {
+  it('relaxed：safe 不确认，只确认 dangerous', () => {
     expect(riskNeedsConfirm('safe', 'relaxed')).toBe(false)
     expect(riskNeedsConfirm('moderate', 'relaxed')).toBe(false)
     expect(riskNeedsConfirm('dangerous', 'relaxed')).toBe(true)
-    expect(riskNeedsConfirm('blocked', 'relaxed')).toBe(true)
   })
 
   it('relaxed：开启 relaxedConfirmModerate 时 moderate 也确认', () => {
@@ -43,7 +60,7 @@ describe('commandNeedsConfirm', () => {
     expect(commandNeedsConfirm(assessment('safe'), 'strict')).toBe(true)
   })
 
-  it('relaxed: unknown moderate 不再确认（只确认 dangerous/blocked）', () => {
+  it('relaxed: unknown moderate 不再确认（只确认 dangerous）', () => {
     expect(commandNeedsConfirm(assessment('moderate', true), 'relaxed')).toBe(false)
   })
 
@@ -62,8 +79,9 @@ describe('commandNeedsConfirm', () => {
     expect(commandNeedsConfirm(assessment('dangerous'), 'relaxed')).toBe(true)
   })
 
-  it('relaxed: blocked 确认', () => {
-    expect(commandNeedsConfirm(assessment('blocked'), 'relaxed')).toBe(true)
+  it('blocked 不走确认（调用方应硬拒绝）', () => {
+    expect(commandNeedsConfirm(assessment('blocked'), 'relaxed')).toBe(false)
+    expect(commandNeedsConfirm(assessment('blocked'), 'strict')).toBe(false)
   })
 
   it('free: dangerous 也不确认', () => {

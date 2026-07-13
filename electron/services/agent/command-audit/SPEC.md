@@ -27,7 +27,7 @@ command-audit/
 ├── extract-calls.ts      # bash shell-ast 解析 + unwrap（bash -c 递归）
 ├── extract-pwsh-calls.ts # PowerShell 官方 AST 提取（Windows 默认 shell）
 ├── pwsh-extract.ps1      # Parser::ParseInput 子进程脚本
-├── confirm-policy.ts     # riskNeedsConfirm / commandNeedsConfirm（strict 全确认含 safe）
+├── confirm-policy.ts     # isHardBlocked + riskNeedsConfirm（blocked 硬拒；strict 全确认）
 ├── fail-closed-policy.ts # 解析失败 / 未知命令 按 mode+policy 选档
 ├── workspace-guard.ts    # 路径分区 zone 计算 + 系统路径黑名单
 ├── risk-level.ts         # maxRisk 聚合
@@ -162,10 +162,11 @@ npx vitest run electron/services/agent/command-audit/__tests__/
 - 路径分区（free/protected/workspace/outside/system）
 - indirection-guard（解释器内联 / 包装器 / 调度器 / 结构性 flag）
 - shell 通道 unwrap + 递归审计
-- confirm-policy：`riskNeedsConfirm(level, mode)` — strict 全确认（含 safe）；relaxed 确认 dangerous/blocked；free 不确认。`commandNeedsConfirm` 委托之
+- confirm-policy：`blocked` 硬拒绝（`isHardBlocked`）；其余由 `riskNeedsConfirm` — strict 全确认；relaxed 确认 dangerous；free 不确认
 
 ## 变更历史
 
+- 2026-07-13：明确 blocked 不走确认弹窗（硬拒绝）；`riskNeedsConfirm('blocked')` 恒 false，新增 `isHardBlocked`
 - 2026-07-13：`riskNeedsConfirm` 修正为 strict 含 safe 全确认（与产品「严格=全确认」一致）；`commandNeedsConfirm` 完全委托
 - 2026-07-13：抽出 `riskNeedsConfirm`，文件/Office/邮件/日历/SFTP/技能安装/插件审批统一按 riskLevel × executionMode 决定是否弹窗；命令路径仍用 `commandNeedsConfirm`（strict 含 safe）
 - 2026-07-12：Windows 默认 PowerShell 走官方 AST（`extract-pwsh-calls.ts` + `pwsh-extract.ps1`），复用白名单 + 路径分区；新增 cmdlet 规则；cmd 回退仍用 regex
