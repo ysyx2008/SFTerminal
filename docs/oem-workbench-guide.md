@@ -25,6 +25,7 @@
 | 终端 Tab 壳（local/ssh 共用） | `@sailfish/workbench-sdk/terminal-tab-view` |
 | 锚点 + 可隐区布局 | `@sailfish/workbench-sdk/workbench-shell` |
 | 桌面通知 | `@sailfish/workbench-sdk/toast` |
+| Markdown 渲染 | `@sailfish/workbench-sdk/markdown` |
 | 上述汇总 | `@sailfish/workbench-sdk/platform` |
 | 共享协议类型 | `@sailfish/shared-types` |
 
@@ -32,7 +33,7 @@
 
 ### 平台专属例外（内置岗，业务岗不要抄）
 
-仅 **`workbench-assistant`** 带产出物（`@sailfish/workbench-assistant/artifact`）。与 desktop 经 `ArtifactDesktopHost` 契约交互（不直引 terminalStore）；toast 走 SDK。仍 `@/` 的仅 HoverTip / useMarkdown / composerQuote（过渡）。业务岗抄 sample，**不要**依赖 artifact。
+仅 **`workbench-assistant`** 带产出物（`@sailfish/workbench-assistant/artifact`）。与 desktop 经 `ArtifactDesktopHost` 契约交互（不直引 terminalStore）；toast / markdown 走 SDK。仍 `@/` 的仅 HoverTip / composerQuote（过渡）。业务岗抄 sample，**不要**依赖 artifact。
 
 ### 视觉：CSS token 名契约（值在 desktop 主题）
 
@@ -186,7 +187,7 @@ terminalStore.createAssistantTab({
 
 - [ ] 包在 `packages/workbench-*`，且已写入根 `package.json` workspaces 依赖  
 - [ ] `registry.ts` 已 `registerWorkbench`  
-- [ ] **复用只经 SDK**（无 `@/components`、无 `@/stores`；对话用 `…/ai-panel`；通知用 `…/toast`）  
+- [ ] **复用只经 SDK**（无 `@/components`、无 `@/stores`；对话用 `…/ai-panel`；通知用 `…/toast`；正文渲染用 `…/markdown`）  
 - [ ] 样式只用上文「CSS token 名」表中的变量，无硬编码色值  
 - [ ] props 用 `WorkbenchRendererProps`  
 - [ ] `createAssistantTab({ workbenchKind })` 能打开且 prompt 符合预期  

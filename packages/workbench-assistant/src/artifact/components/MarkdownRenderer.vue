@@ -10,7 +10,7 @@ import { useArtifactSaveBridge } from '../domain/artifact-save-bridge'
 import { useArtifactContentHydration } from '../composables/useArtifactContentHydration'
 import { requireArtifactDesktopHost } from '../host'
 import { useComposerQuoteStore } from '@/stores/composer-quote'
-import { useMarkdown } from '@/composables/useMarkdown'
+import { useMarkdown } from '@sailfish/workbench-sdk/markdown'
 import { useToast } from '@sailfish/workbench-sdk/toast'
 
 const props = defineProps<{

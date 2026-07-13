@@ -31,5 +31,6 @@ export type { WorkbenchBootstrapResult } from './bootstrap'
  * - `@sailfish/workbench-sdk/terminal-tab-view`
  * - `@sailfish/workbench-sdk/workbench-shell`
  * - `@sailfish/workbench-sdk/toast`
+ * - `@sailfish/workbench-sdk/markdown`
  * - 或 `@sailfish/workbench-sdk/platform`（汇总 re-export）
  */

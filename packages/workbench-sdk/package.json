@@ -12,6 +12,7 @@
     "./terminal-tab-view": "./src/terminal-tab-view.ts",
     "./workbench-shell": "./src/workbench-shell.ts",
     "./toast": "./src/toast.ts",
+    "./markdown": "./src/markdown.ts",
     "./platform": "./src/platform.ts",
     "./types": "./src/types.ts"
   },

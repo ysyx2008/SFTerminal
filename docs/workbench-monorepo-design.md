@@ -572,6 +572,7 @@ apps/desktop/                               @sailfish/core-team
 - [x] **W7d.1** **溯源跳转 = AiPanel 接口**（2026-07-13）：`scrollToAgentStep` defineExpose；AssistantWorkbench 持 ref 转给 ArtifactPanel；删除 `agent-step-navigation` 全局总线  
 - [x] **W7e** **artifact 迁入 `@sailfish/workbench-assistant`**（2026-07-13）：岗内真源  
 - [x] **W7f** **toast SDK + ArtifactDesktopHost**（2026-07-13）：toast 门牌；削 artifact 对 terminalStore 直引；删 desktop artifact shim  
+- [x] **W7g** **markdown SDK 薄壳**（2026-07-13）：`@sailfish/workbench-sdk/markdown`；artifact MarkdownRenderer 改走门牌  
 - [x] **OEM 加岗手册**：[`docs/oem-workbench-guide.md`](./oem-workbench-guide.md)（2026-07-13）  
 - [ ] **W8** SSO UI + 回调 + 可选落盘（有 IdP 需求再提前）  
 

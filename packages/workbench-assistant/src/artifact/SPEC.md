@@ -33,8 +33,8 @@ packages/workbench-assistant/src/artifact/
 
 对 desktop 的依赖：
 - **经宿主契约** `ArtifactDesktopHost`（desktop `registerArtifactDesktopHost`）：steps / 激活态 / 历史持久化 —— **不**直引 terminalStore
-- **经 SDK**：`@sailfish/workbench-sdk/toast`
-- **仍 `@/`（过渡）**：HoverTip、useMarkdown、composerQuoteStore
+- **经 SDK**：`@sailfish/workbench-sdk/toast`、`@sailfish/workbench-sdk/markdown`
+- **仍 `@/`（过渡）**：HoverTip、composerQuoteStore
 - 溯源跳转：AiPanel.scrollToAgentStep（岗壳接线）
 ## 分层
 
