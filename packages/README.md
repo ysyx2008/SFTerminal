@@ -1,7 +1,8 @@
 # Packages（OEM / Workbench Monorepo）
 
 > **状态（2026-07-13）**：npm workspaces；内置台真抽；**SDK 真核 + AiPanel 正式出口（W7a）**。  
-> 完整 TODO：[`docs/workbench-monorepo-design.md` §6.0](../docs/workbench-monorepo-design.md)。
+> **加岗请先读**：[`docs/oem-workbench-guide.md`](../docs/oem-workbench-guide.md)。  
+> 工程进度：[`docs/workbench-monorepo-design.md` §6.0](../docs/workbench-monorepo-design.md)。
 
 ## 当前事实
 
@@ -13,18 +14,12 @@
 
 ## 岗位台怎么用同款对话
 
+见操作手册；摘要：
+
 ```ts
 import { AiPanel } from '@sailfish/workbench-sdk/ai-panel'
 import type { WorkbenchDescriptor } from '@sailfish/workbench-sdk'
-
-export const descriptor: WorkbenchDescriptor = {
-  kind: 'my-job',
-  renderer: MyWorkbench, // 模板里嵌 <AiPanel :tab-id="tab.id" :tab-active="isActive" />
-  agentPrompt: '...岗位说明与工具用法...',
-  skills: ['excel'],
-  mcpServers: [/* ... */],
-}
 ```
 
-岗位差异只改 descriptor；外观用同款 AiPanel（薄壳出口）。
-**不做** AiPanel 实现迁入 SDK / 独立编译发版（同仓内部团队无此需求）。
+岗位差异只改 descriptor（`agentPrompt` / `skills` / `mcpServers`）。
+**不做** AiPanel 实现迁入 SDK / 独立编译发版。
