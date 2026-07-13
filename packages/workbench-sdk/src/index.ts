@@ -1,8 +1,8 @@
 /**
- * @sailfish/workbench-sdk（骨架）
+ * @sailfish/workbench-sdk（半成品）
  *
- * 当前 re-export 桌面内 `src/workbench` 核心 API。
- * P1 完整抽包时把 registry-store / types / resolve-prompt 迁入本包。
+ * 仍 re-export 桌面内 `src/workbench` 核心 API（types / registry-store / bootstrap）。
+ * 内置台 descriptor 已分别在 `@sailfish/workbench-*`；SDK 真抽待 types 迁入后再去 re-export。
  */
 export {
   registerWorkbench,

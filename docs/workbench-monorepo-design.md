@@ -547,9 +547,9 @@ apps/desktop/                               @sailfish/core-team
 | **Descriptor 声明** | `skills` / `mcpServers` / `agentPrompt` / `agentPolicy?` | ⚠️ | 内置台补真实 `skills`（若需要）；业务样例台；`agentPolicy` 实现 |
 | **Bootstrap 装配** | 启动连 MCP、校验 skills | ⚠️ | 端到端验证；MCP 就绪信号；skills 缺失告警可产品化 |
 | **P-1 shared-types** | **物理迁入**真包 + 全仓 import | ⚠️ | ✅ 物理迁入 `packages/shared-types`；`shared/types` 为兼容 re-export；全仓改 `@sailfish/shared-types` 可渐进 |
-| **Workspace** | pnpm（决策）或过渡 npm workspaces | ⚠️ | ✅ npm workspaces 已启用（W1）；❌ 尚未切 pnpm（W5） |
+| **Workspace** | pnpm（决策）或过渡 npm workspaces | ✅ | **现网路径 = npm workspaces**（W1–W4 已验证）；pnpm 仍为可选终局，有同仓多团队 / 发版需求再切（见决策 #2） |
 | **P0 assistant 抽包** | 物理迁 `workbench-assistant` + 构建冒烟 | ⚠️ | ✅ descriptor/prompt/agent-tools/AssistantWorkbench 真源在包内；`src/` 薄 re-export；artifact/AiPanel 仍 desktop（P2）；electron-builder 全量冒烟待做 |
-| **P1 全台 + SDK** | local/ssh/companion + sdk 真包；region 渲染器 | ⚠️ | SDK 仍 re-export；❌ `iframe-url` / `data-table`；❌ `apps/desktop` 拆分；样例台 ✅ `@sailfish/workbench-sample` |
+| **P1 全台 + SDK** | local/ssh/companion + sdk 真包；region 渲染器 | ⚠️ | ✅ 四内置台 + sample 真源在 packages；SDK 仍 re-export；❌ region / `apps/desktop` |
 | **P2 AiPanel 下沉** | 对话区可被业务台复用 | ⏸❌ | 见 `src/components/AIPANEL_SPEC.md`；高风险，单独排期 |
 | **P3 useAgentMode** | 原语进 SDK | ⏸❌ | 后置 |
 | **P4 发版机制** | changesets / Packages / CODEOWNERS | ⏸❌ | Fork OEM 不强制；同仓多团队再开 |
@@ -563,8 +563,8 @@ apps/desktop/                               @sailfish/core-team
 - [x] **W2** **P-1 物理迁码**：`shared/types` → `packages/shared-types`；保留 `@shared/types` alias（2026-07-13）  
 - [x] **W3** **P0**：`assistant` 真抽包（descriptor + prompt + agent-tools + AssistantWorkbench）+ desktop/registry/tools 改包名 import（2026-07-13）；artifact 与 AiPanel 仍留 desktop 
 - [x] **W4** 样例业务台 `@sailfish/workbench-sample`（descriptor + skills + 假 MCP）+ bootstrap 单测（2026-07-13）；无 Welcome 入口，不污染日常 UI  
-- [ ] **W5** 评估切 **pnpm**（与设计决策 #2 对齐）或文档改为「允许 npm workspaces 过渡」  
-- [ ] **W6** P1 余量：local/ssh/companion 真抽 + SDK 去 re-export  
+- [x] **W5** **评估结论（2026-07-13）**：暂不切 pnpm。理由：① 本机/CI 已稳定跑 npm workspaces；② W1–W4 链路已通；③ 切 pnpm 需改 lockfile、electron-builder、postinstall、文档与贡献者习惯，收益暂不明显。决策 #2 改为「目标仍可 pnpm，**当前官方路径 = npm workspaces**」。  
+- [x] **W6** P1：local/ssh/companion **真抽包**（descriptor/prompt；companion 含 Vue）；registry 全改包名 import（2026-07-13）。SDK 仍 thin re-export `src/workbench`（types/registry-store 未迁；region 渲染器 / apps/desktop 仍 ❌）  
 - [ ] **W7** P2 AiPanel（单独里程碑）  
 - [ ] **W8** SSO UI + 回调 + 可选落盘（有 IdP 需求再提前）  
 
@@ -691,7 +691,7 @@ SDK 1.0 只暴露 `WorkbenchDescriptor` / `registerWorkbench` / `resolveWorkbenc
 | # | 决策项 | 推荐选项 | 待确认 |
 |---|---|---|---|
 | 1 | 整体方案是否走精简版 Monorepo（v2） | ✅ 是 | ☑ |
-| 2 | 包管理器是否用 pnpm | ✅ 是（目标） | ☑ 执行上可先 **npm workspaces** 过渡，见 6.0 W1/W5 |
+| 2 | 包管理器是否用 pnpm | 目标可选；**当前 = npm workspaces** | ☑ W5：暂不切；有多团队发版 / 严格 peer 再评估 pnpm |
 | 3 | 内部 registry / changesets 独立发版 | 可选（同仓多团队时）；**Fork OEM 不强制** | ☑ |
 | 4 | 业务团队技术栈 TS + Vue3 + Pinia | ✅ 是 | ☑ |
 | 5 | `WorkbenchDescriptor` 加 skills/mcpServers/agentPrompt（及预留 agentPolicy） | ✅ 是 | ☑ 字段已落地；agentPolicy 实现 ⏸ |
