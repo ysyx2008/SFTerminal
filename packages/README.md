@@ -26,4 +26,5 @@ export const descriptor: WorkbenchDescriptor = {
 }
 ```
 
-岗位差异只改 descriptor；外观用同款 AiPanel。P2 余量：把 AiPanel 实现迁进 SDK 并去掉对 desktop store 的硬依赖。
+岗位差异只改 descriptor；外观用同款 AiPanel（薄壳出口）。
+**不做** AiPanel 实现迁入 SDK / 独立编译发版（同仓内部团队无此需求）。

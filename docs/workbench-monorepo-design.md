@@ -550,10 +550,10 @@ apps/desktop/                               @sailfish/core-team
 | **Workspace** | pnpm（决策）或过渡 npm workspaces | ✅ | **现网路径 = npm workspaces**（W1–W4 已验证）；pnpm 仍为可选终局，有同仓多团队 / 发版需求再切（见决策 #2） |
 | **P0 assistant 抽包** | 物理迁 `workbench-assistant` + 构建冒烟 | ⚠️ | ✅ descriptor/prompt/agent-tools/AssistantWorkbench 真源在包内；`src/` 薄 re-export；artifact/AiPanel 仍 desktop（P2）；electron-builder 全量冒烟待做 |
 | **P1 全台 + SDK** | local/ssh/companion + sdk 真包；region 渲染器 | ⚠️ | ✅ 内置台真抽；✅ SDK 真核（types/registry/prompt/bootstrap）；AiPanel 正式出口 ⚠️ 实现仍在 desktop；❌ region / apps/desktop |
-| **P2 AiPanel 下沉** | 对话区可被业务台复用 | ⚠️ | ✅ 包名出口 `@sailfish/workbench-sdk/ai-panel`；❌ 实现迁包 / 去 `@/` 依赖（P2 余量） |
-| **P3 useAgentMode** | 原语进 SDK | ⏸❌ | 后置 |
-| **P4 发版机制** | changesets / Packages / CODEOWNERS | ⏸❌ | Fork OEM 不强制；同仓多团队再开 |
-| **P5 业务试点** | 模板 + 第一个岗位台 | ❌ | 依赖 P0–P1（对话区要等 P2） |
+| **P2 AiPanel 下沉** | 对话区可被业务台复用 | ✅⏸ | ✅ **薄壳出口** `@sailfish/workbench-sdk/ai-panel` 已够用；⏸ **W7b 不做**：同仓内部团队无需独立编译/实现迁包 |
+| **P3 useAgentMode** | 原语进 SDK | ⏸❌ | 后置；薄壳模型下非刚需 |
+| **P4 发版机制** | changesets / Packages / CODEOWNERS | ⏸❌ | **不做**：同仓内部协作，无跨公司独立发版需求 |
+| **P5 业务试点** | 模板 + 第一个岗位台 | ⚠️ | sample 台已作模板；真实岗位按需加包即可 |
 | **SSO 产品面** | 登录 UI / 回调窗 / 会话落盘 / refresh / JWKS | ⚠️ | 协议底座 ✅；其余 ❌（见 oem-vision） |
 | **品牌构建收拢** | productName / appId / 图标读 OEM | ⚠️ | 运行时品牌 ✅；打包配置未完全统一 |
 
@@ -564,9 +564,9 @@ apps/desktop/                               @sailfish/core-team
 - [x] **W3** **P0**：`assistant` 真抽包（descriptor + prompt + agent-tools + AssistantWorkbench）+ desktop/registry/tools 改包名 import（2026-07-13）；artifact 与 AiPanel 仍留 desktop 
 - [x] **W4** 样例业务台 `@sailfish/workbench-sample`（descriptor + skills + 假 MCP）+ bootstrap 单测（2026-07-13）；无 Welcome 入口，不污染日常 UI  
 - [x] **W5** **评估结论（2026-07-13）**：暂不切 pnpm。理由：① 本机/CI 已稳定跑 npm workspaces；② W1–W4 链路已通；③ 切 pnpm 需改 lockfile、electron-builder、postinstall、文档与贡献者习惯，收益暂不明显。决策 #2 改为「目标仍可 pnpm，**当前官方路径 = npm workspaces**」。  
-- [x] **W6** P1：local/ssh/companion **真抽包**（descriptor/prompt；companion 含 Vue）；registry 全改包名 import（2026-07-13）。SDK 仍 thin re-export `src/workbench`（types/registry-store 未迁；region 渲染器 / apps/desktop 仍 ❌）  
-- [x] **W7a** SDK 真核 + AiPanel **正式出口**（2026-07-13）：types/registry-store/resolve-prompt/bootstrap 进 `@sailfish/workbench-sdk`；岗从 `@sailfish/workbench-sdk/ai-panel` 引用同款对话；实现仍在 `src/components/AiPanel.vue`（P2 余量：迁实现、去 desktop 硬依赖）  
-- [ ] **W7b** P2 余量：AiPanel 实现迁入 SDK、解耦 store（完整解耦）  
+- [x] **W6** P1：local/ssh/companion **真抽包**；registry 全改包名 import（2026-07-13）  
+- [x] **W7a** SDK 真核 + AiPanel **薄壳正式出口**（2026-07-13）  
+- [x] **W7b** **明确不做**（2026-07-13）：同仓、公司内部团队；薄壳 SDK 即可，无需 AiPanel 实现迁包 / 独立编译 / 跨包发版  
 - [ ] **W8** SSO UI + 回调 + 可选落盘（有 IdP 需求再提前）  
 
 #### 刻意未做（避免误判为遗漏）
@@ -574,6 +574,7 @@ apps/desktop/                               @sailfish/core-team
 - 企业控制面（组织 / RBAC / 计费 / 策略下发服务端）  
 - 业务包互相 import  
 - `@sailfish/core` 抽后端（v2 已砍）  
+- **AiPanel 实现下沉 / 独立编译发版**（薄壳模型 + 同仓内部协作，非目标）  
 
 更新约定：每完成上表一行，同步改「进度」列与本节日期；合入 `develop` 前至少勾掉 W1 或写明仍 WIP。
 
@@ -692,8 +693,8 @@ SDK 1.0 只暴露 `WorkbenchDescriptor` / `registerWorkbench` / `resolveWorkbenc
 | # | 决策项 | 推荐选项 | 待确认 |
 |---|---|---|---|
 | 1 | 整体方案是否走精简版 Monorepo（v2） | ✅ 是 | ☑ |
-| 2 | 包管理器是否用 pnpm | 目标可选；**当前 = npm workspaces** | ☑ W5：暂不切；有多团队发版 / 严格 peer 再评估 pnpm |
-| 3 | 内部 registry / changesets 独立发版 | 可选（同仓多团队时）；**Fork OEM 不强制** | ☑ |
+| 2 | 包管理器是否用 pnpm | 目标可选；**当前 = npm workspaces** | ☑ W5：暂不切；同仓内部无强动机 |
+| 3 | 内部 registry / changesets 独立发版 | **不做**（同仓内部） | ☑ |
 | 4 | 业务团队技术栈 TS + Vue3 + Pinia | ✅ 是 | ☑ |
 | 5 | `WorkbenchDescriptor` 加 skills/mcpServers/agentPrompt（及预留 agentPolicy） | ✅ 是 | ☑ 字段已落地；agentPolicy 实现 ⏸ |
 | 6 | 新增 `@sailfish/shared-types`（P-1） | ✅ 是 | ☑ 骨架；物理迁码见 6.0 |
