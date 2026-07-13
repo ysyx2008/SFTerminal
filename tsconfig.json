@@ -26,8 +26,7 @@
       "@sailfish/workbench-local": ["./packages/workbench-local/src/index.ts"],
       "@sailfish/workbench-ssh": ["./packages/workbench-ssh/src/index.ts"],
       "@sailfish/workbench-companion": ["./packages/workbench-companion/src/index.ts"]
-    },
-    "baseUrl": "."
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue", "shared/**/*.ts"],
   "exclude": ["src/**/__tests__/**", "src/**/*.test.ts"]
