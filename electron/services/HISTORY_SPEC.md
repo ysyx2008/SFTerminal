@@ -1,6 +1,6 @@
 # History Service SPEC
 
-> Last verified: 2026-06-27（会话存储抽取为 `AgentRecordStore`：HistoryService 瘦身为运维聚合，会话记录 CRUD/索引/图片外化下沉到 `history/agent-record-store.ts`）
+> Last verified: 2026-07-13（会话增量持久化：`meta.json` + `steps/messages.jsonl`；标题归 AgentRecord）
 
 ## 职责
 
@@ -18,7 +18,8 @@
 
 - `electron/services/history.service.ts`：ChatRecord + Token 统计 + 导入导出 + 清理；组合 `AgentRecordStore` 并委派会话记录方法。
 - `electron/services/history/agent-record-store.ts`：`AgentRecordStore`——会话记录存储聚合（CRUD + 索引机器 + 图片外化 + canvas 剥离 + main/watch 路由），`ConversationStore` 的真相源。
-- `electron/services/history/agent-storage.ts`：会话记录文件 IO 纯函数（读/写/列举/损坏隔离）。
+- `electron/services/history/agent-storage.ts`：会话记录文件 IO 纯函数（读/写/列举/损坏隔离；含旧单体 `.json` 兼容）。
+- `electron/services/history/session-persistence.ts`：增量会话持久化（`meta.json` + `steps.jsonl` / `messages.jsonl`）。
 - `electron/services/history/date-util.ts`：`getDateString()` 纯函数，供 store 与 service 共用。
 
 ## 公开 API
@@ -68,14 +69,19 @@
 
 ## 关键行为 / 数据流
 
-**Agent 存储机制**（v5 起）：
-- 每条会话一个 JSON 文件：`history/agent/YYYY-MM-DD/{sessionId}.json`（单条 `AgentRecord` 对象，非数组）
-- 写入使用原子 rename（`electron/utils/atomic-write.ts`），崩溃时保留旧文件
-- 损坏单文件隔离为 `.corrupt.{timestamp}`，不影响同天其他会话
+**Agent 存储机制**（v5 起；增量目录格式为现行写入路径）：
+- **现行写入**：`history/agent/YYYY-MM-DD/{sessionId}/` 目录
+  - `meta.json`：身份、标题、状态、token、watermark（`stepCount` / `messageCount`）
+  - `steps.jsonl` / `messages.jsonl`：追加写 transcript
+- **checkpoint**：只追加新增 steps/messages；条数未变时只改 `meta.json`（状态/token/时长等）
+- **标题**：`updateTitle` 只改 `meta.json`（目录尚未创建时进 pending，首次 save 并入）
+- **兼容读**：仍可读旧单体 `history/agent/YYYY-MM-DD/{sessionId}.json`；下次 `save` 迁入目录并删除单体文件
+- meta / 全量 jsonl 写入使用原子 rename（`electron/utils/atomic-write.ts`）；损坏单文件隔离为 `.corrupt.{timestamp}`
 - v5 迁移将旧 `agent/YYYY-MM-DD.json` 数组拆分为单文件，旧文件改名为 `.json.migrated` 保留 30 天
+- 图片外化等**原地改写**步骤内容时走 `forceRewrite` 全量重写 jsonl（不能 append）
 
 **Watch 历史隔离机制**（v6 起）：
-- watch 内心独白记录（`agentKey === '__watch__'`）存到**独立树** `history/watch/YYYY-MM-DD/{sessionId}.json`，正文格式与 agent 树完全一致、同样按日期拆分、可长期审计
+- watch 内心独白记录（`agentKey === '__watch__'`）存到**独立树** `history/watch/YYYY-MM-DD/{sessionId}/`（与 agent 树相同的增量目录格式；旧单体 `.json` 仍可读），正文与 agent 树一致、按日期拆分、可长期审计
 - 维护独立索引 `watch-index.json`；其条目 userTask 截断到 200 字（心跳模板展开后很长，索引只用作审计标题，正文完整保存在日文件里）
 - `saveAgentRecord` 用 `storeForRecord()` 按 agentKey 路由；`readAgentRecordFromDisk` / `getAgentRecordById` 先查 agent 树再查 watch 树，by-id 查找两树通吃
 - v6 迁移把 agent 树里属于 watch 的正文 **rename**（仅改目录、不读写内容、正文逐字节不变）到 watch 树。旧记录（agentKey 字段引入前、无结构化标记）靠 userTask 心跳前缀识别，该启发式**仅迁移期一次性使用**，运行时一律 agentKey 结构化判定

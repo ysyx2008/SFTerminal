@@ -25,12 +25,16 @@ import {
   getLegacyAgentDayFilePath,
   listAgentDateDirs,
   listLegacyAgentDayFiles,
-  listSessionFilesInDateDir,
-  readAgentRecordFile,
-  readAgentRecordFileAsync,
   readLegacyAgentDayRecords,
-  writeAgentRecordFile,
 } from './agent-storage'
+import {
+  deleteSessionDir,
+  listSessionIdsInDateDir,
+  readSessionRecord,
+  readSessionRecordAsync,
+  saveSessionRecord,
+  updateSessionTitle,
+} from './session-persistence'
 import { getDateString } from './date-util'
 import {
   WATCH_AGENT_KEY,
@@ -196,10 +200,8 @@ export class AgentRecordStore {
     const entries: AgentIndexEntry[] = []
 
     for (const dateStr of listAgentDateDirs(store.dir)) {
-      const dateDir = path.join(store.dir, dateStr)
-      for (const file of listSessionFilesInDateDir(store.dir, dateStr)) {
-        const filePath = path.join(dateDir, file)
-        const record = readAgentRecordFile(filePath, (p, e) => this.onCorruptRecord(p, e))
+      for (const recordId of listSessionIdsInDateDir(store.dir, dateStr)) {
+        const record = readSessionRecord(store.dir, dateStr, recordId, (p, e) => this.onCorruptRecord(p, e))
         if (record) entries.push(this.toIndexEntry(record, dateStr, store.userTaskMaxLen))
       }
     }
@@ -377,7 +379,8 @@ export class AgentRecordStore {
     const changed = this.externalizeStepImages(found)
     if (changed) {
       const store = this.storeForRecord(found)
-      writeAgentRecordFile(store.dir, found)
+      // 步骤内容原地改写，必须全量重写 jsonl，不能走 append
+      saveSessionRecord(store.dir, found, { forceRewrite: true })
       this.updateIndexEntryFor(store, found)
       log.info(`Externalized inline images for record ${found.id}, saved back to session file`)
     }
@@ -409,9 +412,12 @@ export class AgentRecordStore {
     if (record.title?.trim() === trimmed) return true
 
     record.title = trimmed
-    // 只改 title 时仍走 save：PR2 增量格式会把这收成 meta-only 写
     const store = this.storeForRecord(record)
-    writeAgentRecordFile(store.dir, record)
+    const dateStr = getDateString(record.timestamp)
+    // 目录格式：只改 meta.json；旧 .json 则走 save 并迁入目录格式
+    if (!updateSessionTitle(store.dir, dateStr, id, trimmed)) {
+      saveSessionRecord(store.dir, record)
+    }
     this.updateIndexEntryFor(store, record)
     return true
   }
@@ -439,7 +445,7 @@ export class AgentRecordStore {
     this.stripRederivableCanvasContent(record)
 
     const store = this.storeForRecord(record)
-    writeAgentRecordFile(store.dir, record)
+    saveSessionRecord(store.dir, record)
     this.updateIndexEntryFor(store, record)
   }
 
@@ -460,10 +466,7 @@ export class AgentRecordStore {
   private readAgentRecordFromDisk(dateStr: string, id: string): AgentRecord | undefined {
     // 先查主 agent 树，再查 watch 树（watch 记录已拆分到独立目录）
     for (const dir of [this.agentDir, this.watchDir]) {
-      const record = readAgentRecordFile(
-        getAgentRecordPath(dir, dateStr, id),
-        (p, e) => this.onCorruptRecord(p, e)
-      )
+      const record = readSessionRecord(dir, dateStr, id, (p, e) => this.onCorruptRecord(p, e))
       if (record) return record
     }
 
@@ -476,10 +479,7 @@ export class AgentRecordStore {
 
   private async readAgentRecordFromDiskAsync(dateStr: string, id: string): Promise<AgentRecord | undefined> {
     for (const dir of [this.agentDir, this.watchDir]) {
-      const record = await readAgentRecordFileAsync(
-        getAgentRecordPath(dir, dateStr, id),
-        (p, e) => this.onCorruptRecord(p, e)
-      )
+      const record = await readSessionRecordAsync(dir, dateStr, id, (p, e) => this.onCorruptRecord(p, e))
       if (record) return record
     }
 
@@ -500,10 +500,11 @@ export class AgentRecordStore {
       if (startDate && dateStr < startDate) continue
       if (endDate && dateStr > endDate) continue
 
-      for (const file of listSessionFilesInDateDir(this.agentDir, dateStr)) {
-        const recordId = file.replace(/\.json$/, '')
-        const record = readAgentRecordFile(
-          getAgentRecordPath(this.agentDir, dateStr, recordId),
+      for (const recordId of listSessionIdsInDateDir(this.agentDir, dateStr)) {
+        const record = readSessionRecord(
+          this.agentDir,
+          dateStr,
+          recordId,
           (p, e) => this.onCorruptRecord(p, e)
         )
         if (record) records.push(record)
@@ -574,10 +575,11 @@ export class AgentRecordStore {
     }
     if (!entry) return false
 
+    const deletedDir = deleteSessionDir(store.dir, entry.dateStr, id)
     const sessionPath = getAgentRecordPath(store.dir, entry.dateStr, id)
-    if (fs.existsSync(sessionPath)) {
+    if (!deletedDir && fs.existsSync(sessionPath)) {
       fs.unlinkSync(sessionPath)
-    } else {
+    } else if (!deletedDir) {
       // 兼容尚未迁移的旧日文件：从数组中剔除该条记录（仅主 agent 树可能有旧日文件）
       const legacyPath = getLegacyAgentDayFilePath(store.dir, entry.dateStr)
       if (fs.existsSync(legacyPath)) {

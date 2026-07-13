@@ -140,6 +140,17 @@ export function cleanupExpiredMigratedBackups(agentDir: string, now = Date.now()
   return removed
 }
 
+function dirTreeSize(root: string): number {
+  let total = 0
+  if (!fs.existsSync(root)) return 0
+  const st = fs.statSync(root)
+  if (st.isFile()) return st.size
+  for (const name of fs.readdirSync(root)) {
+    total += dirTreeSize(path.join(root, name))
+  }
+  return total
+}
+
 export function collectAgentStorageStats(agentDir: string): {
   sessionFileCount: number
   legacyDayFileCount: number
@@ -163,10 +174,17 @@ export function collectAgentStorageStats(agentDir: string): {
     } else if (entry.isDirectory() && isAgentDateDirName(entry.name)) {
       dateLabels.add(entry.name)
       const dateDir = path.join(agentDir, entry.name)
-      for (const file of fs.readdirSync(dateDir)) {
-        if (!file.endsWith('.json')) continue
-        sessionFileCount++
-        totalSize += fs.statSync(path.join(dateDir, file)).size
+      for (const child of fs.readdirSync(dateDir, { withFileTypes: true })) {
+        const full = path.join(dateDir, child.name)
+        if (child.isFile() && child.name.endsWith('.json')) {
+          // 旧单体会话文件
+          sessionFileCount++
+          totalSize += fs.statSync(full).size
+        } else if (child.isDirectory() && fs.existsSync(path.join(full, 'meta.json'))) {
+          // 增量目录格式
+          sessionFileCount++
+          totalSize += dirTreeSize(full)
+        }
       }
     }
   }
