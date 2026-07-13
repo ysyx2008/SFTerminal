@@ -2,13 +2,16 @@
   "name": "@sailfish/workbench-sdk",
   "version": "0.1.0",
   "private": true,
-  "description": "Workbench SDK：types / 注册表 / prompt / bootstrap / AiPanel 出口",
+  "description": "Workbench SDK：类型/注册/bootstrap + 平台壳薄壳出口",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
     "./ai-panel": "./src/ai-panel.ts",
+    "./terminal-tab-view": "./src/terminal-tab-view.ts",
+    "./workbench-shell": "./src/workbench-shell.ts",
+    "./platform": "./src/platform.ts",
     "./types": "./src/types.ts"
   },
   "peerDependencies": {

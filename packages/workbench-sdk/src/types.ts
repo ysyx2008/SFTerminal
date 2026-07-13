@@ -44,3 +44,12 @@ export interface WorkbenchAgentPromptTab {
   isRemote?: boolean
   remoteChannel?: string
 }
+
+/**
+ * 工作台渲染器 props 的最小约定（与 App `<component :is>` 一致）。
+ * 桌面 `TerminalTab` 可赋给此形状；岗包优先用本类型，避免依赖 `@/stores/terminal`。
+ */
+export interface WorkbenchRendererProps {
+  tab: { id: string; title?: string }
+  isActive: boolean
+}

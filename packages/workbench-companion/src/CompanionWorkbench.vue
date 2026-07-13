@@ -6,15 +6,12 @@
  * 不是「专注产出文件」的工作台。因此它只含聊天锚点区（AiPanel），
  * 不挂产出物面板、不走 WorkbenchShell 的可显隐辅助区。
  *
- * W6：组件物理在本包；AiPanel 仍依赖 desktop `@/`（P2 前）。
+ * 对话经 SDK `ai-panel`；props 用 SDK `WorkbenchRendererProps`，不直引 `@/`。
  */
-import type { TerminalTab } from '@/stores/terminal'
+import type { WorkbenchRendererProps } from '@sailfish/workbench-sdk'
 import { AiPanel } from '@sailfish/workbench-sdk/ai-panel'
 
-defineProps<{
-  tab: TerminalTab
-  isActive: boolean
-}>()
+defineProps<WorkbenchRendererProps>()
 </script>
 
 <template>

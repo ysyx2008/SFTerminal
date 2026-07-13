@@ -549,8 +549,8 @@ apps/desktop/                               @sailfish/core-team
 | **P-1 shared-types** | **物理迁入**真包 + 全仓 import | ⚠️ | ✅ 物理迁入 `packages/shared-types`；`shared/types` 为兼容 re-export；全仓改 `@sailfish/shared-types` 可渐进 |
 | **Workspace** | pnpm（决策）或过渡 npm workspaces | ✅ | **现网路径 = npm workspaces**（W1–W4 已验证）；pnpm 仍为可选终局，有同仓多团队 / 发版需求再切（见决策 #2） |
 | **P0 assistant 抽包** | 物理迁 `workbench-assistant` + 构建冒烟 | ⚠️ | ✅ descriptor/prompt/agent-tools/AssistantWorkbench 真源在包内；`src/` 薄 re-export；artifact/AiPanel 仍 desktop（P2）；electron-builder 全量冒烟待做 |
-| **P1 全台 + SDK** | local/ssh/companion + sdk 真包；region 渲染器 | ⚠️ | ✅ 内置台真抽；✅ SDK 真核（types/registry/prompt/bootstrap）；AiPanel 正式出口 ⚠️ 实现仍在 desktop；❌ region / apps/desktop |
-| **P2 AiPanel 下沉** | 对话区可被业务台复用 | ✅⏸ | ✅ **薄壳出口** `@sailfish/workbench-sdk/ai-panel` 已够用；⏸ **W7b 不做**：同仓内部团队无需独立编译/实现迁包 |
+| **P1 全台 + SDK** | local/ssh/companion + sdk 真包；region 渲染器 | ⚠️ | ✅ 内置台真抽；✅ SDK 真核 + 壳门牌；✅ **W7c 复用只经 SDK**；❌ region / apps/desktop |
+| **P2 AiPanel 下沉** | 对话区可被业务台复用 | ✅⏸ | ✅ 薄壳出口够用；⏸ W7b 不做实现迁包 |
 | **P3 useAgentMode** | 原语进 SDK | ⏸❌ | 后置；薄壳模型下非刚需 |
 | **P4 发版机制** | changesets / Packages / CODEOWNERS | ⏸❌ | **不做**：同仓内部协作，无跨公司独立发版需求 |
 | **P5 业务试点** | 模板 + 第一个岗位台 | ⚠️ | sample 台已作模板；真实岗位按需加包即可 |
@@ -567,6 +567,7 @@ apps/desktop/                               @sailfish/core-team
 - [x] **W6** P1：local/ssh/companion **真抽包**；registry 全改包名 import（2026-07-13）  
 - [x] **W7a** SDK 真核 + AiPanel **薄壳正式出口**（2026-07-13）  
 - [x] **W7b** **明确不做**（2026-07-13）：同仓、公司内部团队；薄壳 SDK 即可，无需 AiPanel 实现迁包 / 独立编译 / 跨包发版  
+- [x] **W7c** **复用只经 SDK**（2026-07-13）：岗包禁止 `@/components` / `@/stores`；允许列表 = SDK 门牌（`ai-panel` / `terminal-tab-view` / `workbench-shell` / `platform`）；手册写明；assistant artifact 为平台专属例外  
 - [x] **OEM 加岗手册**：[`docs/oem-workbench-guide.md`](./oem-workbench-guide.md)（2026-07-13）  
 - [ ] **W8** SSO UI + 回调 + 可选落盘（有 IdP 需求再提前）  
 

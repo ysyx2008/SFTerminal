@@ -1,8 +1,8 @@
 /**
  * ssh 工作台 descriptor。
- * TerminalTabView 仍在 desktop（Teleport 保命池），经 `@/` 引用。
+ * 终端壳经 SDK 薄壳：`@sailfish/workbench-sdk/terminal-tab-view`。
  */
-import TerminalTabView from '@/components/TerminalTabView.vue'
+import { TerminalTabView } from '@sailfish/workbench-sdk/terminal-tab-view'
 import type { WorkbenchDescriptor } from '@sailfish/workbench-sdk'
 import { SSH_WORKBENCH_AGENT_PROMPT } from './prompt'
 

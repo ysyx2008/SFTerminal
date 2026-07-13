@@ -6,6 +6,35 @@
 
 ---
 
+## 复用规则：只经 SDK
+
+`packages/workbench-*` **禁止**直引桌面实现：
+
+- ❌ `import … from '@/components/…'`
+- ❌ `import … from '@/stores/…'`（类型也不要）
+- ❌ 互相 `import` 其它业务岗包
+
+需要复用的 UI / 类型，**只**从 `@sailfish/workbench-sdk`（及子路径）拿。实现可以仍在 `src/`，但门牌必须在 SDK。缺门牌 → 先给 SDK 加一层薄壳 re-export，再引用。
+
+### 允许列表（当前）
+
+| 用途 | 从哪引进 |
+|---|---|
+| 类型 / 注册 / prompt / bootstrap | `@sailfish/workbench-sdk` |
+| 同款对话 | `@sailfish/workbench-sdk/ai-panel` |
+| 终端 Tab 壳（local/ssh 共用） | `@sailfish/workbench-sdk/terminal-tab-view` |
+| 锚点 + 可隐区布局 | `@sailfish/workbench-sdk/workbench-shell` |
+| 上述壳汇总 | `@sailfish/workbench-sdk/platform` |
+| 共享协议类型 | `@sailfish/shared-types` |
+
+渲染器 props 用 SDK 的 `WorkbenchRendererProps`，不要用 `@/stores/terminal` 的 `TerminalTab`。
+
+### 平台专属例外（内置岗，业务岗不要抄）
+
+仅 **`workbench-assistant`** 仍直引 `@/workbench/assistant/artifact/*`（产出物 store/面板尚无 SDK 门牌）。业务/OEM 岗默认走 sample：只要 AiPanel + descriptor，**不要**依赖 artifact。
+
+---
+
 ## 你能改什么
 
 | 改什么 | 怎么改 |
@@ -42,10 +71,10 @@ export const descriptor: WorkbenchDescriptor = {
 
 ```vue
 <script setup lang="ts">
-import type { TerminalTab } from '@/stores/terminal'
+import type { WorkbenchRendererProps } from '@sailfish/workbench-sdk'
 import { AiPanel } from '@sailfish/workbench-sdk/ai-panel'
 
-defineProps<{ tab: TerminalTab; isActive: boolean }>()
+defineProps<WorkbenchRendererProps>()
 </script>
 
 <template>
@@ -54,8 +83,6 @@ defineProps<{ tab: TerminalTab; isActive: boolean }>()
   </div>
 </template>
 ```
-
-对话必须从 **`@sailfish/workbench-sdk/ai-panel`** 引入（与 local/ssh/assistant/companion 一致）。
 
 ### MCP
 
@@ -131,7 +158,8 @@ terminalStore.createAssistantTab({
 
 - [ ] 包在 `packages/workbench-*`，且已写入根 `package.json` workspaces 依赖  
 - [ ] `registry.ts` 已 `registerWorkbench`  
-- [ ] 对话只从 `@sailfish/workbench-sdk/ai-panel` 引入  
+- [ ] **复用只经 SDK**（无 `@/components`、无 `@/stores`；对话用 `…/ai-panel`）  
+- [ ] props 用 `WorkbenchRendererProps`  
 - [ ] `createAssistantTab({ workbenchKind })` 能打开且 prompt 符合预期  
 - [ ] 需要的 MCP `enabled: true` 且启动日志无 connect 失败（或可接受失败）  
 - [ ] 未改 Agent 内核 / AiPanel.vue 本体  
@@ -142,5 +170,5 @@ terminalStore.createAssistantTab({
 
 - 包一览：[`packages/README.md`](../packages/README.md)  
 - 样例源码：`packages/workbench-sample/`  
-- SDK API：`packages/workbench-sdk/src/index.ts`、`./ai-panel`  
+- SDK 门牌：`packages/workbench-sdk/src/platform.ts`、`./ai-panel` 等  
 - OEM 产品说明：[`oem-vision.md`](./oem-vision.md)

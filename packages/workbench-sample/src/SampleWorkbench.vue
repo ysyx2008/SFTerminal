@@ -3,14 +3,12 @@
  * SampleWorkbench —— 业务台模板：同款对话（SDK AiPanel）+ 岗位可改 descriptor
  *
  * 外观不定制；差异靠 agentPrompt / skills / mcpServers。
+ * 复用只走 SDK，不直引 `@/components` / `@/stores`。
  */
-import type { TerminalTab } from '@/stores/terminal'
+import type { WorkbenchRendererProps } from '@sailfish/workbench-sdk'
 import { AiPanel } from '@sailfish/workbench-sdk/ai-panel'
 
-defineProps<{
-  tab: TerminalTab
-  isActive: boolean
-}>()
+defineProps<WorkbenchRendererProps>()
 </script>
 
 <template>

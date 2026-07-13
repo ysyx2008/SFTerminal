@@ -7,20 +7,17 @@
  *
  * 统一渲染器 props 约定：{ tab, isActive }。
  *
- * W3：组件物理在本包；AiPanel / artifact / store 仍依赖 desktop `@/`（P2 前过渡）。
+ * 对话/壳经 SDK；产出物面板仍属平台专属（暂无 SDK 门牌，见 OEM 手册「允许列表」例外）。
  */
 import { computed } from 'vue'
-import type { TerminalTab } from '@/stores/terminal'
+import type { WorkbenchRendererProps } from '@sailfish/workbench-sdk'
 import { AiPanel } from '@sailfish/workbench-sdk/ai-panel'
+import { WorkbenchShell } from '@sailfish/workbench-sdk/workbench-shell'
 import { useAssistantArtifactStore } from '@/workbench/assistant/artifact/store'
-import WorkbenchShell from '@/components/workbench/WorkbenchShell.vue'
 import ArtifactPanel from '@/workbench/assistant/artifact/components/ArtifactPanel.vue'
 import ArtifactPanelRail from '@/workbench/assistant/artifact/components/ArtifactPanelRail.vue'
 
-const props = defineProps<{
-  tab: TerminalTab
-  isActive: boolean
-}>()
+const props = defineProps<WorkbenchRendererProps>()
 
 const artifactStore = useAssistantArtifactStore()
 

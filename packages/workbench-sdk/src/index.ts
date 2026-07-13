@@ -8,6 +8,7 @@ export type {
   WorkbenchKind,
   WorkbenchDescriptor,
   WorkbenchAgentPromptTab,
+  WorkbenchRendererProps,
   RegionSpec,
   RegionRole,
   RegionSide,
@@ -24,4 +25,10 @@ export { resolveWorkbenchAgentPrompt } from './resolve-workbench-agent-prompt'
 export { bootstrapWorkbenchCapabilities } from './bootstrap'
 export type { WorkbenchBootstrapResult } from './bootstrap'
 
-/** 同款对话请从 `@sailfish/workbench-sdk/ai-panel` 导入，避免主入口拉入 Vue 巨石 */
+/**
+ * 平台壳请从子路径导入（勿塞进主入口，以免拉入 Vue 巨石）：
+ * - `@sailfish/workbench-sdk/ai-panel`
+ * - `@sailfish/workbench-sdk/terminal-tab-view`
+ * - `@sailfish/workbench-sdk/workbench-shell`
+ * - 或 `@sailfish/workbench-sdk/platform`（汇总 re-export）
+ */
