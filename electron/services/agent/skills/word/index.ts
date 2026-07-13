@@ -19,6 +19,8 @@ const wordSkill: Skill = {
   content: [
     '## Word 文档格式转换指引',
     '',
+    '> **生成整篇 Word 强烈推荐用 `word_from_markdown`**（一次调用完成，效率远远高于逐段 `word_add`）。',
+    '',
     '> **写中文材料前先按需加载关联技能**：',
     '> - 任何中文文本（公文、报告、合同、邮件、消息）→ `load_skill("chinese-writing")`（GB/T 15834 标点 + GB/T 15835 数字 + 中英文混排空格规则）',
     '> - 公文 / 通知 / 请示 / 报告 / 批复 / 函 / 纪要 / 证券公文 / 会议纪要 → `load_skill("chinese-document-official")`（GB/T 9704-2012 公文体例 + 启用 official/securities/meeting 样式预设）',
