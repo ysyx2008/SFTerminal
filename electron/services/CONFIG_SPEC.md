@@ -1,10 +1,14 @@
 # Config Service SPEC
 
-> Last verified: 2026-05-07
+> Last verified: 2026-07-13
 
 ## 职责
 
 应用配置持久化层。提供类型安全的 key-value 存取，所有配置持久化到本地 JSON 文件（`electron-store`），服务启动时加载、修改时即时写盘。不包含业务逻辑——纯存取。
+
+CLI 默认使用沙箱目录 `{userData}/cli-sandbox/`，不与桌面共用完整配置文件；每次启动由 `electron/cli/cli-data.js` 从桌面借用 AI 相关字段（`aiProfiles` / `activeAiProfile` / `autoVisionModel` / `aiRules`）以及 `credentials.json` + `master.key`。回归测试用临时 `SFT_DATA_DIR`，同样会借用。`SFT_CLI_SHARE_DESKTOP=1` 可退回与桌面完全共用。
+
+敏感项不在本文件长期存放的心智模型见 credential.service；桌面主配置仍为 `qiyu-terminal-config.json`。
 
 ## 文件 / 规模
 

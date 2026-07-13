@@ -2,15 +2,21 @@
 /* eslint-env node */
 /**
  * SailFish CLI Entry Point
- * 
+ *
  * This file MUST be plain JavaScript (.js) because it needs to register
  * the Electron API shim via Module._resolveFilename BEFORE any TypeScript
  * imports are processed. TypeScript/ESM import hoisting would otherwise
  * cause service modules to load the real 'electron' package and fail.
- * 
+ *
+ * Data layout (default):
+ *   - Writes go to `{desktopUserData}/cli-sandbox/` (history/logs/watches isolated)
+ *   - AI Profiles + credentials are borrowed from the desktop userData each start
+ *   - SFT_CLI_SHARE_DESKTOP=1 → share desktop userData fully
+ *   - SFT_DATA_DIR → custom sandbox (tests use a temp dir)
+ *
  * Usage:
  *   node electron/cli/main.js <command> [options]
- *   npm run cli -- <command> [options]
+ *   npm run sft -- <command> [options]
  */
 'use strict'
 
@@ -37,9 +43,12 @@ Module._resolveFilename = function(request, parent, isMain, options) {
   return origResolve.call(this, request, parent, isMain, options)
 }
 
-// ==================== Step 2: Set CLI Environment ====================
+// ==================== Step 2: CLI env + sandbox / borrow ====================
 
 process.env.SFT_CLI_MODE = '1'
+
+// Must run before any service imports electron (shim reads SFT_DATA_DIR at load time)
+require('./cli-data.js').setupCliDataDir()
 
 // ==================== Step 3: Register TypeScript Support ====================
 

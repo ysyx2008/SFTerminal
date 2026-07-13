@@ -85,7 +85,8 @@ function migrateLegacyPointerIfNeeded() {
 /**
  * Resolve the effective userData path.
  * Priority: SFT_DATA_DIR env var > pointer file (data-location.json) > default.
- * Keeps CLI and GUI pointing at the same custom data directory.
+ * CLI 默认由 main.js / cli-data.js 把 SFT_DATA_DIR 指到 `{desktop}/cli-sandbox`；
+ * 回归测试用临时目录；SFT_CLI_SHARE_DESKTOP=1 时不设 SFT_DATA_DIR，与桌面共用。
  */
 function getUserDataPath() {
   if (process.env.SFT_DATA_DIR) return process.env.SFT_DATA_DIR

@@ -167,7 +167,9 @@ async function configInit(): Promise<void> {
   console.log('  SFT_API_URL    - AI API endpoint URL')
   console.log('  SFT_API_KEY    - AI API key')
   console.log('  SFT_MODEL      - AI model name')
-  console.log('  SFT_DATA_DIR   - Custom data directory')
+  console.log('  SFT_DATA_DIR   - CLI sandbox data directory (default: {desktop}/cli-sandbox)')
+  console.log('  SFT_CLI_SHARE_DESKTOP=1 - Use desktop userData (no sandbox)')
+  console.log('  SFT_CLI_NO_BORROW=1     - Do not borrow AI Profiles/credentials from desktop')
   console.log('')
   console.log('Or configure via commands:')
   console.log('  sft config:set aiProfiles \'[{"id":"default","name":"My AI","apiUrl":"https://api.openai.com/v1","apiKey":"sk-xxx","model":"gpt-5.5"}]\'')
@@ -1610,7 +1612,9 @@ Environment Variables:
   SFT_API_URL                Override AI API URL
   SFT_API_KEY                Override AI API key
   SFT_MODEL                  Override AI model name
-  SFT_DATA_DIR               Custom data directory
+  SFT_DATA_DIR               CLI sandbox (default: {desktop}/cli-sandbox)
+  SFT_CLI_SHARE_DESKTOP=1    Share desktop userData (no sandbox)
+  SFT_CLI_NO_BORROW=1        Do not borrow AI Profiles/credentials
 
 Examples:
   sft ai:chat "Hello, what can you do?"

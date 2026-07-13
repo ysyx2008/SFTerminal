@@ -2,6 +2,8 @@
 
 > 凭据存储服务：把所有敏感信息（邮箱密码、OAuth2 token、IM 凭证、堡垒机密码、skill env）
 > 统一加密后写入 `{userData}/credentials.json`。
+>
+> Last verified: 2026-07-13 — CLI 默认沙箱 `{userData}/cli-sandbox/`；每次启动从桌面借用 `credentials.json` + `master.key`（见 `electron/cli/cli-data.js`）。`SFT_CLI_SHARE_DESKTOP=1` 可与桌面完全共用。
 
 ## 文件结构
 

@@ -72,9 +72,9 @@ export class CredentialService {
   // ============ 存储路径 ============
 
   getStorePath(): string {
-    const isCli = !!process.env.SFT_CLI_MODE
-    const fileName = isCli ? 'credentials-cli.json' : 'credentials.json'
-    return path.join(app.getPath('userData'), fileName)
+    // CLI 与桌面共用同一凭据文件 + master.key（userData 已由 bootstrap / CLI shim 对齐）。
+    // 隔离测试用 SFT_DATA_DIR，不再使用 credentials-cli.json。
+    return path.join(app.getPath('userData'), 'credentials.json')
   }
 
   /** master.key 文件路径（暴露给备份/导出迁移） */

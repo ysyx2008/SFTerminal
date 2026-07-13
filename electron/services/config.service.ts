@@ -346,15 +346,10 @@ export class ConfigService {
   private store: Store<StoreSchema>
 
   constructor() {
-    // CLI 模式使用独立的配置文件，避免与 Electron 配置冲突
-    const isCli = !!process.env.SFT_CLI_MODE
-    const storeName = isCli ? 'qiyu-terminal-config-cli' : 'qiyu-terminal-config'
-
-    // config 文件不含敏感数据（SSH 密码/API Key 由 credential.service 管理），
-    // 目标状态：明文存储，不使用 safeStorage 加密。
-    // 原因：safeStorage Keychain ACL 绑定二进制签名，跨版本升级后 ACL 失效、
-    // 密钥变化，导致旧加密配置无法解密而崩溃（v10→v11 Intel Mac 复现）。
-    this.store = this.createStore(storeName)
+    // CLI 与桌面共用同一配置文件（明文）；userData 已由 bootstrap / CLI shim 对齐。
+    // 敏感数据（SSH 密码/API Key）由 credential.service 管理，不在此文件。
+    // 不使用 safeStorage：Keychain ACL 绑定二进制签名，跨版本升级后密钥失效会读崩配置。
+    this.store = this.createStore('qiyu-terminal-config')
   }
 
   private createStore(storeName: string): Store<StoreSchema> {

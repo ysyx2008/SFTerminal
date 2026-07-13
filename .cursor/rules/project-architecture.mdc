@@ -169,7 +169,7 @@ Agent 有四种存在方式，对应四类**互斥**的会话（`kind`）。把�
 - **入口**：`electron/cli/main.js`（纯 JS）
 - **原理**：通过 `Module._resolveFilename` 拦截 `require('electron')`，替换为 `electron-shim.js`
 - **特点**：所有后端服务无需修改即可在 CLI 下运行
-- **配置隔离**：CLI 使用独立配置文件 `qiyu-terminal-config-cli`，避免与 Electron 加密配置冲突
+- **配置/凭据**：CLI 默认写入 `{userData}/cli-sandbox/`（历史/日志/关切隔离）；每次启动从桌面借用 `credentials.json` + `master.key` + AI Profiles（`aiProfiles` / `activeAiProfile` 等）。`SFT_CLI_SHARE_DESKTOP=1` 可改回与桌面完全共用；回归测试强制临时沙箱仍会借用 Key/Profiles
 - **用法**：`npm run sft -- <command> [options]`
 - **测试**：`bash electron/cli/test-cli.sh`（12 个功能区覆盖，含 Watch & Sensor）
 

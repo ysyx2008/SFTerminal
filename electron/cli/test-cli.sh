@@ -11,12 +11,22 @@
 #   bash electron/cli/test-cli.sh --quick       # 最小冒烟测试
 #
 # 环境变量:
-#   SFT_API_URL / SFT_API_KEY / SFT_MODEL  — AI 测试所需
+#   SFT_API_URL / SFT_API_KEY / SFT_MODEL  — AI 测试所需（也可用桌面借用的 Profiles）
+#   SFT_DATA_DIR                           — 未设时强制临时目录沙箱（不污染桌面；仍会借用 Key/Profiles）
+#   SFT_CLI_NO_BORROW=1                    — 禁止从桌面借用
 # =============================================================================
 set -uo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 CLI="node ${PROJECT_ROOT}/electron/cli/main.js"
+
+# 回归测试强制沙箱：忽略外部环境里的 SFT_DATA_DIR，避免误写桌面
+# 需要复现某份数据时：SFT_TEST_ALLOW_SHARED_DATA=1 bash test-cli.sh
+if [[ "${SFT_TEST_ALLOW_SHARED_DATA:-}" != "1" ]]; then
+  SFT_DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sft-cli-test-XXXXXX")"
+  export SFT_DATA_DIR
+  trap 'rm -rf "$SFT_DATA_DIR"' EXIT
+fi
 
 PASS=0
 FAIL=0
@@ -30,6 +40,12 @@ MODE="full"
 
 HAS_AI=false
 [[ -n "${SFT_API_KEY:-}" ]] && HAS_AI=true
+# 无环境变量时：启动一次 CLI，看能否从桌面借用到 AI Profiles
+if [[ "$HAS_AI" != "true" && "$MODE" != "no-ai" ]]; then
+  if $CLI ai:models 2>/dev/null | grep -qE 'https?://'; then
+    HAS_AI=true
+  fi
+fi
 
 # 颜色
 RED='\033[0;31m'
@@ -152,19 +168,24 @@ assert_contains "config:get language"        "zh" \
   $CLI config:get language
 
 # 写入→读回→还原 闭环测试
-ORIG_THEME=$($CLI config:get theme 2>/dev/null | tr -d '"')
+# stdout 可能混有启动日志，只取最后一行 JSON 值
+ORIG_THEME=$($CLI config:get theme 2>/dev/null | tail -1 | tr -d '"')
+if [[ -z "$ORIG_THEME" ]]; then
+  echo -e "  ${YELLOW}跳过 theme 闭环（无法读取原始 theme）${NC}"
+  ((SKIP++))
+else
+  assert_contains "config:set theme 写入"      "" \
+    $CLI config:set theme '"solarized"'
 
-assert_contains "config:set theme 写入"      "" \
-  $CLI config:set theme '"solarized"'
+  assert_contains "config:get theme 验证写入"   "solarized" \
+    $CLI config:get theme
 
-assert_contains "config:get theme 验证写入"   "solarized" \
-  $CLI config:get theme
+  # 还原
+  $CLI config:set theme "\"${ORIG_THEME}\"" >/dev/null 2>&1
 
-# 还原
-$CLI config:set theme "\"${ORIG_THEME}\"" >/dev/null 2>&1
-
-assert_contains "config:get theme 验证还原"   "${ORIG_THEME}" \
-  $CLI config:get theme
+  assert_contains "config:get theme 验证还原"   "${ORIG_THEME}" \
+    $CLI config:get theme
+fi
 
 assert_contains "config:list 列出所有配置"    "language" \
   $CLI config:list

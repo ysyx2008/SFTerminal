@@ -152,14 +152,15 @@ describe('credential.service - 基本读写', () => {
     expect(all.length).toBe(3)
   })
 
-  it('CLI 模式下使用独立的 credentials-cli.json 文件', async () => {
+  it('CLI 模式与桌面共用 credentials.json', async () => {
     const original = process.env.SFT_CLI_MODE
     process.env.SFT_CLI_MODE = '1'
     __resetCredentialCacheForTests()
     try {
       await setCredential('cli:key', 'cli-secret')
-      expect(fs.existsSync(path.join(tmpDir, 'credentials-cli.json'))).toBe(true)
-      expect(fs.existsSync(path.join(tmpDir, 'credentials.json'))).toBe(false)
+      expect(fs.existsSync(path.join(tmpDir, 'credentials.json'))).toBe(true)
+      expect(fs.existsSync(path.join(tmpDir, 'credentials-cli.json'))).toBe(false)
+      expect(await getCredential('cli:key')).toBe('cli-secret')
     } finally {
       if (original === undefined) delete process.env.SFT_CLI_MODE
       else process.env.SFT_CLI_MODE = original
