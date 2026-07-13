@@ -34,14 +34,18 @@
 
 ### SSO（可选，OEM 打开 `features.sso` 后）
 
+完整配置与联调见 [`oem-sso-guide.md`](./oem-sso-guide.md)。岗包取 token / 判断登录：
+
 ```ts
 import { useAuth } from '@sailfish/workbench-sdk/auth'
 
 const { isAuthenticated, user, getAccessToken, login } = useAuth()
-const token = await getAccessToken() // 短期 accessToken；无 refreshToken
+if (!isAuthenticated.value) await login()   // Ref<boolean>，用 .value
+const token = await getAccessToken()        // 短期 accessToken；无 refreshToken
 ```
 
 - 开源默认 `features.sso=false`，`useAuth` 全部 no-op / null。
+- **是否已登录看 `isAuthenticated`**（没有单独的 `checkLogin()`）。
 - Agent `web_fetch` 仅当 OEM 配置了 `sso.enterpriseApiHosts` 且 hostname **精确命中**时自动带 Bearer；名单空 = 永不注入。
 - 禁止把 token 打进日志；禁止直引 `@/stores/auth`。
 

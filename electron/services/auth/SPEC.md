@@ -1,6 +1,9 @@
 /**
  * Auth / SSO 模块契约
  *
+ * ## 用法文档
+ * - OEM 操作手册：`docs/oem-sso-guide.md`
+ *
  * ## 职责
  * - 提供应用级 OAuth2/OIDC 协议底座（授权码 + PKCE、token 交换、ID Token 解析）
  * - 登录窗（BrowserWindow + will-redirect）、会话落盘、refresh、按需 accessToken
