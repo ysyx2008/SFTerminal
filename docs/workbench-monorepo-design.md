@@ -573,6 +573,7 @@ apps/desktop/                               @sailfish/core-team
 - [x] **W7e** **artifact 迁入 `@sailfish/workbench-assistant`**（2026-07-13）：岗内真源  
 - [x] **W7f** **toast SDK + ArtifactDesktopHost**（2026-07-13）：toast 门牌；削 artifact 对 terminalStore 直引；删 desktop artifact shim  
 - [x] **W7g** **markdown SDK 薄壳**（2026-07-13）：`@sailfish/workbench-sdk/markdown`；artifact MarkdownRenderer 改走门牌  
+- [x] **W7h** **artifact 去 `@/` 收口**（2026-07-13）：`addComposerQuote` 经 AiPanel+岗壳；HoverTip 包内自持；assistant artifact 零 `@/`  
 - [x] **OEM 加岗手册**：[`docs/oem-workbench-guide.md`](./oem-workbench-guide.md)（2026-07-13）  
 - [ ] **W8** SSO UI + 回调 + 可选落盘（有 IdP 需求再提前）  
 

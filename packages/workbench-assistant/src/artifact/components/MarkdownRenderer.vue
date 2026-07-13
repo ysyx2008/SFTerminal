@@ -2,14 +2,14 @@
 /**
  * Canvas Markdown：默认预览渲染，可切换编辑；选中内容可引用到同 Tab 的 AI 输入框。
  */
-import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Eye, MessageSquareQuote, SquarePen } from 'lucide-vue-next'
 import { useAssistantArtifactStore } from '../store'
 import { useArtifactSaveBridge } from '../domain/artifact-save-bridge'
 import { useArtifactContentHydration } from '../composables/useArtifactContentHydration'
 import { requireArtifactDesktopHost } from '../host'
-import { useComposerQuoteStore } from '@/stores/composer-quote'
+import { ADD_COMPOSER_QUOTE_KEY } from '../composer-quote'
 import { useMarkdown } from '@sailfish/workbench-sdk/markdown'
 import { useToast } from '@sailfish/workbench-sdk/toast'
 
@@ -22,7 +22,7 @@ const { t } = useI18n()
 const artifactStore = useAssistantArtifactStore()
 const saveBridge = useArtifactSaveBridge()
 const { loadingFromDisk } = useArtifactContentHydration(props.tabId, toRef(props, 'artifactId'))
-const composerQuoteStore = useComposerQuoteStore()
+const addComposerQuote = inject(ADD_COMPOSER_QUOTE_KEY, undefined)
 const desktopHost = requireArtifactDesktopHost()
 const { renderMarkdown, handleCodeBlockClick, handleFilePathContextMenu } = useMarkdown()
 const previewWrapRef = ref<HTMLElement | null>(null)
@@ -187,11 +187,12 @@ function pushQuoteSnippet(meta: {
     toastInfo(t('canvas.quoteToAiNeedSelection'))
     return
   }
+  if (!addComposerQuote) return
   const fp = filePath.value
   const title = artifact.value?.title ?? ''
   const label = fp ? basenamePath(fp) : (title || 'Markdown')
 
-  composerQuoteStore.addSnippet(props.tabId, {
+  addComposerQuote({
     label,
     sourcePath: fp || null,
     sourceLinesAccurate: meta.accurate,
@@ -200,7 +201,6 @@ function pushQuoteSnippet(meta: {
     endLine: meta.endLine,
     excerpt: trimmed
   })
-  toastSuccess(t('ai.quoteSnippetAdded'))
 }
 
 function applyCtxQuoteFromMenu() {

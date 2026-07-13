@@ -33,7 +33,7 @@
 
 ### 平台专属例外（内置岗，业务岗不要抄）
 
-仅 **`workbench-assistant`** 带产出物（`@sailfish/workbench-assistant/artifact`）。与 desktop 经 `ArtifactDesktopHost` 契约交互（不直引 terminalStore）；toast / markdown 走 SDK。仍 `@/` 的仅 HoverTip / composerQuote（过渡）。业务岗抄 sample，**不要**依赖 artifact。
+仅 **`workbench-assistant`** 带产出物（`@sailfish/workbench-assistant/artifact`）。与 desktop 经 `ArtifactDesktopHost` 契约交互（不直引 terminalStore）；toast / markdown 走 SDK；Composer 引用 / 溯源跳转经岗壳 `AiPanel` 接口转发。业务岗抄 sample，**不要**依赖 artifact。
 
 ### 视觉：CSS token 名契约（值在 desktop 主题）
 

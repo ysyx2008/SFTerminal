@@ -1204,7 +1204,7 @@ function addQuotedTerminalSelection(text: string, tabTitle: string) {
   const trimmed = text.trim()
   if (!trimmed) return
   const label = tabTitle.trim() || t('ai.quoteSnippetTerminalTabFallback')
-  composerQuoteStore.addSnippet(props.tabId, {
+  addComposerQuote({
     label,
     sourcePath: null,
     sourceLinesAccurate: false,
@@ -1212,6 +1212,29 @@ function addQuotedTerminalSelection(text: string, tabTitle: string) {
     startLine: null,
     endLine: null,
     excerpt: trimmed
+  })
+}
+
+/**
+ * 通用「引用到 Composer」：终端选区 / 产出物 Markdown 选区经岗壳调用。
+ * 不暴露 Pinia store；由 AiPanel 持有 composerQuoteStore。
+ * 参数形状需与 `packages/workbench-assistant/src/artifact/composer-quote.ts` 的 ArtifactComposerQuote 保持同步。
+ */
+function addComposerQuote(snippet: {
+  label: string
+  sourcePath: string | null
+  sourceLinesAccurate: boolean
+  startLine: number | null
+  endLine: number | null
+  excerpt: string
+  quoteOrigin?: 'canvas' | 'terminal'
+}) {
+  const trimmed = snippet.excerpt.trim()
+  if (!trimmed) return
+  composerQuoteStore.addSnippet(props.tabId, {
+    ...snippet,
+    excerpt: trimmed,
+    quoteOrigin: snippet.quoteOrigin ?? 'canvas'
   })
   toast.success(t('ai.quoteSnippetAdded'))
   nextTick(() => composerRef.value?.focusInput())
@@ -1811,7 +1834,7 @@ async function scrollToAgentStep(stepId: string) {
   }, 2500)
 }
 
-defineExpose({ analyzeText, addQuotedTerminalSelection, scrollToAgentStep })
+defineExpose({ analyzeText, addQuotedTerminalSelection, addComposerQuote, scrollToAgentStep })
 
 /** 首次展示从历史恢复的对话（尚无已存滚动位置）→ 应滚到底部 */
 const shouldScrollHistoryOnShow = () =>

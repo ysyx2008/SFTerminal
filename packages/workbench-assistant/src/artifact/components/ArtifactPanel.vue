@@ -4,7 +4,7 @@
  *
  * 单产出物预览；≥2 个时通过标题下拉切换。无产出物时由工作台自动隐藏面板。
  */
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   FolderOpen,
@@ -35,14 +35,24 @@ import { getRendererComponent, getRendererIcon } from '../renderers/ui-registry'
 import { resolveSourceStepIdById } from '../domain/artifact-source'
 import { requireArtifactDesktopHost } from '../host'
 import { useToast } from '@sailfish/workbench-sdk/toast'
-import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '@/composables/useHoverTip'
-import HoverTipOverlay from '@/components/HoverTipOverlay.vue'
+import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '../ui/useHoverTip'
+import HoverTipOverlay from '../ui/HoverTipOverlay.vue'
+import {
+  ADD_COMPOSER_QUOTE_KEY,
+  type AddComposerQuoteFn
+} from '../composer-quote'
 
 const props = defineProps<{
   tabId: string
   /** 岗壳注入：滚到对话流指定 step（AiPanel.scrollToAgentStep） */
   scrollToAgentStep?: (stepId: string) => void | Promise<void>
+  /** 岗壳注入：引用摘录到 Composer（AiPanel.addComposerQuote） */
+  addComposerQuote?: AddComposerQuoteFn
 }>()
+
+provide(ADD_COMPOSER_QUOTE_KEY, (snippet) => {
+  props.addComposerQuote?.(snippet)
+})
 
 const { t } = useI18n()
 const artifactStore = useAssistantArtifactStore()

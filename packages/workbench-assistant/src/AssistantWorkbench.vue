@@ -4,12 +4,13 @@
  *
  * 锚点区 = 聊天（AiPanel，常驻）；可隐区 = 产出物面板（ArtifactPanel，按需显隐）。
  * step→产出物接线在本岗挂载（useArtifactAgentBridge）。
- * 「跳到生成处」经 AiPanel.scrollToAgentStep，由本壳持 ref 转发。
+ * 「跳到生成处」/「引用到 Composer」经 AiPanel defineExpose，由本壳持 ref 转发。
  */
 import { computed, ref } from 'vue'
 import type { WorkbenchRendererProps } from '@sailfish/workbench-sdk'
 import { AiPanel } from '@sailfish/workbench-sdk/ai-panel'
 import { WorkbenchShell } from '@sailfish/workbench-sdk/workbench-shell'
+import type { ArtifactComposerQuote } from './artifact/composer-quote'
 import { useAssistantArtifactStore } from './artifact/store'
 import { useArtifactAgentBridge } from './artifact/composables/useArtifactAgentBridge'
 import ArtifactPanel from './artifact/components/ArtifactPanel.vue'
@@ -23,10 +24,15 @@ useArtifactAgentBridge(() => props.tab.id)
 /** AiPanel 对外接口（defineExpose） */
 const aiPanelRef = ref<{
   scrollToAgentStep: (stepId: string) => void | Promise<void>
+  addComposerQuote: (snippet: ArtifactComposerQuote) => void
 } | null>(null)
 
 function scrollToAgentStep(stepId: string) {
   void aiPanelRef.value?.scrollToAgentStep(stepId)
+}
+
+function addComposerQuote(snippet: ArtifactComposerQuote) {
+  aiPanelRef.value?.addComposerQuote(snippet)
 }
 
 const docExpanded = computed(() => artifactStore.isVisible(props.tab.id))
@@ -64,6 +70,7 @@ function expandPanel(artifactId?: string) {
         v-if="docExpanded"
         :tab-id="tab.id"
         :scroll-to-agent-step="scrollToAgentStep"
+        :add-composer-quote="addComposerQuote"
       />
       <ArtifactPanelRail
         v-else-if="panelMinimized"
