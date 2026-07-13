@@ -547,7 +547,7 @@ apps/desktop/                               @sailfish/core-team
 | **Descriptor 声明** | `skills` / `mcpServers` / `agentPrompt` / `agentPolicy?` | ⚠️ | 内置台补真实 `skills`（若需要）；业务样例台；`agentPolicy` 实现 |
 | **Bootstrap 装配** | 启动连 MCP、校验 skills | ⚠️ | 端到端验证；MCP 就绪信号；skills 缺失告警可产品化 |
 | **P-1 shared-types** | **物理迁入**真包 + 全仓 import | ⚠️ | ❌ 物理迁码；❌ 去掉纯 re-export；⚠️ `McpServerConfig` 已收敛 `shared/types/mcp.ts` |
-| **Workspace** | pnpm（决策）或过渡 npm workspaces | ❌ | 根 `workspaces` / `pnpm-workspace.yaml`；内部包进 `node_modules`；CI 用同一包管理器 |
+| **Workspace** | pnpm（决策）或过渡 npm workspaces | ⚠️ | ✅ npm workspaces 已启用（W1）；❌ 尚未切 pnpm（W5） |
 | **P0 assistant 抽包** | 物理迁 `workbench-assistant` + 构建冒烟 | ⚠️ | ❌ 迁 Vue/descriptor 真源；❌ 验证 HMR / electron-builder |
 | **P1 全台 + SDK** | local/ssh/companion + sdk 真包；region 渲染器 | ⚠️ | SDK 仍 re-export；❌ `iframe-url` / `data-table`；❌ `apps/desktop` 拆分 |
 | **P2 AiPanel 下沉** | 对话区可被业务台复用 | ⏸❌ | 见 `src/components/AIPANEL_SPEC.md`；高风险，单独排期 |
@@ -559,7 +559,7 @@ apps/desktop/                               @sailfish/core-team
 
 #### 近期执行队列（建议顺序，可勾选）
 
-- [ ] **W1** 启用 **npm workspaces**（不换 pnpm）：`package.json#workspaces` + `@sailfish/*` 依赖声明；`npm install` / 类型检查冒烟  
+- [x] **W1** 启用 **npm workspaces**（不换 pnpm）：`package.json#workspaces` + `@sailfish/*` 依赖声明；`npm install` / 类型检查冒烟（2026-07-13）  
 - [ ] **W2** **P-1 物理迁码**：`shared/types` → `packages/shared-types`；保留 `@shared/types` alias  
 - [ ] **W3** **P0**：`assistant` 真抽包（descriptor + prompt + AssistantWorkbench）+ desktop import 包名  
 - [ ] **W4** 样例业务台（哪怕无对话：descriptor + 假 MCP）验证 bootstrap  

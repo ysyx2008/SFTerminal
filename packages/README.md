@@ -1,13 +1,13 @@
 # Packages（OEM / Workbench Monorepo）
 
-> **状态（2026-07-13）**：目录与包名已立，**多数仍是 re-export 骨架**；根仓库 **尚未**启用 npm/pnpm workspaces。  
-> 完整阶段与勾选 TODO：[`docs/workbench-monorepo-design.md` §6.0](../docs/workbench-monorepo-design.md)。
+> **状态（2026-07-13）**：根仓库已启用 **npm workspaces**（`packages/*` → `node_modules/@sailfish/*`）。  
+> 包内容仍多为 **re-export 骨架**；物理抽包见 [`docs/workbench-monorepo-design.md` §6.0](../docs/workbench-monorepo-design.md) W2+。
 
 ## 当前事实
 
-- 源码真相仍在仓库根：`shared/types/`、`src/workbench/`
-- `@sailfish/*` 通过 **tsconfig / vite alias** 解析到本目录；`npm install` **不会**自动链接这些包
-- 设计目标是 pnpm workspace + 物理抽包；近期可先做 **npm workspaces（W1）** 再考虑切 pnpm（W5）
+- 源码真相仍在仓库根：`shared/types/`、`src/workbench/`（re-export 指过去）
+- `npm install` 会把 `@sailfish/*` 链进 `node_modules`（workspace）
+- 设计目标仍是 pnpm；当前用 npm workspaces 过渡（W1 ✅ / W5 待评估）
 
 ## 包清单
 
@@ -20,11 +20,10 @@
 | `@sailfish/workbench-ssh` | ⚠️ re-export | P1 |
 | `@sailfish/workbench-companion` | ⚠️ re-export | P1 |
 
-## 本地如何「假装」在用这些包
+## 使用
 
 ```ts
 import type { McpServerConfig } from '@sailfish/shared-types'
-// 实际由 paths 指到 packages/shared-types → 再 export shared/types
 ```
 
-启用 workspaces 并写入根 `dependencies` 之后，才应改为真正的 workspace 依赖解析。
+解析顺序：workspace 链接 + 仍保留的 tsconfig/vite alias（兼容过渡）。

@@ -1,8 +1,12 @@
 {
   "name": "SailFish",
   "version": "11.2.2",
+  "private": true,
   "description": "旗鱼 - AI 驱动的智能助手",
   "main": "dist-electron/main.js",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "vite",
     "dev:steam": "cross-env VITE_STEAM_BUILD=true vite",
@@ -51,6 +55,12 @@
     "pack:chrome-extension": "bash scripts/pack-chrome-extension.sh"
   },
   "dependencies": {
+    "@sailfish/shared-types": "*",
+    "@sailfish/workbench-assistant": "*",
+    "@sailfish/workbench-companion": "*",
+    "@sailfish/workbench-local": "*",
+    "@sailfish/workbench-sdk": "*",
+    "@sailfish/workbench-ssh": "*",
     "@huggingface/transformers": "^4.2.0",
     "@lancedb/lancedb": "^0.22.3",
     "@langchain/textsplitters": "^1.0.1",
