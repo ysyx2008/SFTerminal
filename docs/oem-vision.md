@@ -152,14 +152,27 @@ OEM Fork：生成/编辑自己的 `oem.config.ts` 后可 `git add -f` 纳入 **F
 - Steam 与 OEM `features` **必须**收敛到统一判定（工程方案中的 `isWorkbenchAvailable`），禁止两套 if。  
 - **不必**把每个小按钮都做成开关；优先配整块能力 / 整类工作台。细粒度走工作台 descriptor。
 
-### 现状
+### 现状与 TODO（2026-07-13）
 
-| 项 | 状态 |
-|---|---|
-| `oemConfig.features.showSponsor` | ✅ 已有 |
-| 觉醒 / 终端 / 联络 / 关切 / `sso` 等 | ✅ 字段 + `isOemFeatureEnabled` + UI/心跳接线（`feat/oem-platform`） |
-| 与工作台注册的衔接 | ✅ `isWorkbenchAvailable`（Steam + features） |
-| OAuth2/OIDC 协议底座 | ✅ `electron/services/auth/`；`features.sso` 默认关；IPC `auth:*` |
+> 工程阶段明细与勾选队列见 [`workbench-monorepo-design.md` §6.0](./workbench-monorepo-design.md)。
+
+| 项 | 状态 | 说明 |
+|---|---|---|
+| 换皮（品牌配置） | ✅ / ⚠️ | 运行时品牌 ✅；打包名/图标未完全统一 |
+| 换能力集 `features` | ✅ | 字段 + UI/心跳/创建门控；细入口扫漏见工程 TODO |
+| 换岗 descriptor | ⚠️ | 声明字段与注册/bootstrap 有；真岗位样例台 ❌ |
+| OAuth2/OIDC 协议 | ✅ | `electron/services/auth/`；`features.sso` 默认关 |
+| SSO 登录产品面 | ❌ | UI / 回调窗 / 落盘 / refresh / JWKS |
+| 企业控制面 | ⏸ | 组织 / RBAC / 计费 / 下发——后置 |
+| Monorepo / 抽包 | ⚠️ | `packages/*` 多为 re-export；workspaces ❌；见工程 6.0 |
+
+#### OEM 产品侧剩余 TODO
+
+- [ ] 设置页 / 快捷键等入口扫漏，确保关 `features` 后无死入口  
+- [ ] 构建期 `productName` / `appId` / 图标尽量读 OEM  
+- [ ] SSO：登录入口 + BrowserWindow 回调（有 IdP 时）  
+- [ ] 岗位级 `agentPolicy`（记忆 / 召回 / 执行）产品契约细化后再实现  
+- [ ] 控制面专题（独立排期）  
 
 ---
 

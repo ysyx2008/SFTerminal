@@ -25,9 +25,9 @@ SailFish（旗鱼）是一个私人 AI Agent 桌面应用。用户用自然语�
 
 ```
 SailFish/
-├── packages/                    # Monorepo 包骨架（@sailfish/*，现阶段多为 re-export）
-│   ├── shared-types/            # → shared/types
-│   ├── workbench-sdk/           # → src/workbench 核心 API
+├── packages/                    # Monorepo 包（⚠️ 多为 re-export 骨架；进度见 docs/workbench-monorepo-design.md §6.0）
+│   ├── shared-types/            # → 目标：物理迁入 shared/types
+│   ├── workbench-sdk/           # → 目标：真 SDK；当前 re-export src/workbench
 │   └── workbench-{assistant,local,ssh,companion}/
 ├── shared/types/                # 前后端共享类型（@shared/types 别名，唯一数据源）
 │   ├── mcp.ts                   # McpServerConfig

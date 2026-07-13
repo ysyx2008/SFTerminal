@@ -527,17 +527,66 @@ apps/desktop/                               @sailfish/core-team
 
 ## 六、迁移路径（分阶段）
 
+### 6.0 实施进度与 TODO（2026-07-13，分支 `feat/oem-platform`）
+
+> **读本节再动手。** 设计终局 ≠ 当前仓库状态。骨架 / 接线已有一批，**真 monorepo 与业务台可用形态仍大段未做。**  
+> 产品侧（换皮 / 换能力）见 [`oem-vision.md`](./oem-vision.md) 同日进度表。
+
+#### 图例
+
+- ✅ 已落地可用  
+- ⚠️ 骨架 / 半成品（有代码，未达本节验收标准）  
+- ❌ 未开始  
+- ⏸ 明确后置（不阻塞 OEM 裁剪主路径）
+
+#### 总览（对照 6.1 阶段）
+
+| 阶段 | 设计目标（摘要） | 进度 | 剩余 TODO |
+|---|---|---|---|
+| **OEM features 接线** | `features` + `isWorkbenchAvailable` + UI/心跳 | ✅ | 扫漏：设置页 / 快捷键 / 个别 Steam 分支是否仍硬编码 |
+| **Descriptor 声明** | `skills` / `mcpServers` / `agentPrompt` / `agentPolicy?` | ⚠️ | 内置台补真实 `skills`（若需要）；业务样例台；`agentPolicy` 实现 |
+| **Bootstrap 装配** | 启动连 MCP、校验 skills | ⚠️ | 端到端验证；MCP 就绪信号；skills 缺失告警可产品化 |
+| **P-1 shared-types** | **物理迁入**真包 + 全仓 import | ⚠️ | ❌ 物理迁码；❌ 去掉纯 re-export；⚠️ `McpServerConfig` 已收敛 `shared/types/mcp.ts` |
+| **Workspace** | pnpm（决策）或过渡 npm workspaces | ❌ | 根 `workspaces` / `pnpm-workspace.yaml`；内部包进 `node_modules`；CI 用同一包管理器 |
+| **P0 assistant 抽包** | 物理迁 `workbench-assistant` + 构建冒烟 | ⚠️ | ❌ 迁 Vue/descriptor 真源；❌ 验证 HMR / electron-builder |
+| **P1 全台 + SDK** | local/ssh/companion + sdk 真包；region 渲染器 | ⚠️ | SDK 仍 re-export；❌ `iframe-url` / `data-table`；❌ `apps/desktop` 拆分 |
+| **P2 AiPanel 下沉** | 对话区可被业务台复用 | ⏸❌ | 见 `src/components/AIPANEL_SPEC.md`；高风险，单独排期 |
+| **P3 useAgentMode** | 原语进 SDK | ⏸❌ | 后置 |
+| **P4 发版机制** | changesets / Packages / CODEOWNERS | ⏸❌ | Fork OEM 不强制；同仓多团队再开 |
+| **P5 业务试点** | 模板 + 第一个岗位台 | ❌ | 依赖 P0–P1（对话区要等 P2） |
+| **SSO 产品面** | 登录 UI / 回调窗 / 会话落盘 / refresh / JWKS | ⚠️ | 协议底座 ✅；其余 ❌（见 oem-vision） |
+| **品牌构建收拢** | productName / appId / 图标读 OEM | ⚠️ | 运行时品牌 ✅；打包配置未完全统一 |
+
+#### 近期执行队列（建议顺序，可勾选）
+
+- [ ] **W1** 启用 **npm workspaces**（不换 pnpm）：`package.json#workspaces` + `@sailfish/*` 依赖声明；`npm install` / 类型检查冒烟  
+- [ ] **W2** **P-1 物理迁码**：`shared/types` → `packages/shared-types`；保留 `@shared/types` alias  
+- [ ] **W3** **P0**：`assistant` 真抽包（descriptor + prompt + AssistantWorkbench）+ desktop import 包名  
+- [ ] **W4** 样例业务台（哪怕无对话：descriptor + 假 MCP）验证 bootstrap  
+- [ ] **W5** 评估切 **pnpm**（与设计决策 #2 对齐）或文档改为「允许 npm workspaces 过渡」  
+- [ ] **W6** P1 余量：local/ssh/companion 真抽 + SDK 去 re-export  
+- [ ] **W7** P2 AiPanel（单独里程碑）  
+- [ ] **W8** SSO UI + 回调 + 可选落盘（有 IdP 需求再提前）  
+
+#### 刻意未做（避免误判为遗漏）
+
+- 企业控制面（组织 / RBAC / 计费 / 策略下发服务端）  
+- 业务包互相 import  
+- `@sailfish/core` 抽后端（v2 已砍）  
+
+更新约定：每完成上表一行，同步改「进度」列与本节日期；合入 `develop` 前至少勾掉 W1 或写明仍 WIP。
+
 ### 6.1 工作量评估
 
-| 阶段 | 内容 | 工作量 | 风险 |
-|---|---|---|---|
-| **P-1** | 抽 `@sailfish/shared-types` 包：把 `shared/types/` 物理迁入；`McpServerConfig` 三处重复定义收敛到此处；全仓库 `@shared/types` import 改 `@sailfish/shared-types`（保留 alias 兼容） | 1-2 天 | 中，触及全仓库 import 路径 |
-| **P0** | pnpm workspace 骨架 + 把 `src/workbench/assistant/` 抽成独立包跑通 | 1-2 天 | 低，验证链路 |
-| **P1** | 所有 `src/workbench/*` 抽包 + `workbench-sdk` 抽出 + `WorkbenchDescriptor` 扩展 skills/mcpServers/agentPrompt + desktop 装配逻辑 | 3-5 天 | 中，要重构 registry.ts 硬编码 |
-| **P2** | AiPanel 下沉到 SDK，解耦对 assistant store 的依赖 | 5-7 天 | 高，6600 行组件重构 |
-| **P3** | `useAgentMode` 拆分：原语进 SDK，应用层留 desktop | 5-7 天 | 高，2310 行 composable 重构 |
-| **P4** | changesets + GitHub Packages + CI + CODEOWNERS | 2-3 天 | 低 |
-| **P5** | 业务工作台模板 + 文档 + 第一个业务包试点 | 持续 | 低 |
+| 阶段 | 内容 | 工作量 | 风险 | 进度（见 6.0） |
+|---|---|---|---|---|
+| **P-1** | 抽 `@sailfish/shared-types` 包：把 `shared/types/` 物理迁入；`McpServerConfig` 三处重复定义收敛到此处；全仓库 `@shared/types` import 改 `@sailfish/shared-types`（保留 alias 兼容） | 1-2 天 | 中，触及全仓库 import 路径 | ⚠️ 目录+re-export+`McpServerConfig` 收敛；物理迁码未做 |
+| **P0** | pnpm workspace 骨架 + 把 `src/workbench/assistant/` 抽成独立包跑通 | 1-2 天 | 低，验证链路 | ⚠️ 包名骨架；workspace / 物理迁未做 |
+| **P1** | 所有 `src/workbench/*` 抽包 + `workbench-sdk` 抽出 + `WorkbenchDescriptor` 扩展 skills/mcpServers/agentPrompt + desktop 装配逻辑 | 3-5 天 | 中，要重构 registry.ts 硬编码 | ⚠️ Descriptor+registry+bootstrap 已在 `src/workbench`；抽包未完成 |
+| **P2** | AiPanel 下沉到 SDK，解耦对 assistant store 的依赖 | 5-7 天 | 高，6600 行组件重构 | ❌ |
+| **P3** | `useAgentMode` 拆分：原语进 SDK，应用层留 desktop | 5-7 天 | 高，2310 行 composable 重构 | ❌ |
+| **P4** | changesets + GitHub Packages + CI + CODEOWNERS | 2-3 天 | 低 | ❌ |
+| **P5** | 业务工作台模板 + 文档 + 第一个业务包试点 | 持续 | 低 | ❌ |
 
 注：v2 砍掉了 v1 的 `@sailfish/core` 抽包阶段（原 P2，5-10 天高风险），总工作量大幅下降。但新增了 P-1（shared-types 抽包）作为前置——这是 SDK 类型闭环的硬性前提，无法绕开。
 
@@ -642,14 +691,14 @@ SDK 1.0 只暴露 `WorkbenchDescriptor` / `registerWorkbench` / `resolveWorkbenc
 | # | 决策项 | 推荐选项 | 待确认 |
 |---|---|---|---|
 | 1 | 整体方案是否走精简版 Monorepo（v2） | ✅ 是 | ☑ |
-| 2 | 包管理器是否用 pnpm | ✅ 是 | ☑ |
+| 2 | 包管理器是否用 pnpm | ✅ 是（目标） | ☑ 执行上可先 **npm workspaces** 过渡，见 6.0 W1/W5 |
 | 3 | 内部 registry / changesets 独立发版 | 可选（同仓多团队时）；**Fork OEM 不强制** | ☑ |
 | 4 | 业务团队技术栈 TS + Vue3 + Pinia | ✅ 是 | ☑ |
-| 5 | `WorkbenchDescriptor` 加 skills/mcpServers/agentPrompt（及预留 agentPolicy） | ✅ 是 | ☑ 已落地（src/workbench） |
-| 6 | 新增 `@sailfish/shared-types`（P-1） | ✅ 是 | ☑ 骨架 `packages/shared-types`（re-export） |
+| 5 | `WorkbenchDescriptor` 加 skills/mcpServers/agentPrompt（及预留 agentPolicy） | ✅ 是 | ☑ 字段已落地；agentPolicy 实现 ⏸ |
+| 6 | 新增 `@sailfish/shared-types`（P-1） | ✅ 是 | ☑ 骨架；物理迁码见 6.0 |
 | 7 | skills 包内自治优先 | ✅ 是 | ☑ |
 | 8 | `isWorkbenchAvailable` 统一 features + Steam | ✅ 是 | ☑ 已落地 |
-| 9 | descriptor 双来源同一 bootstrap | ✅ 是 | ☑ `bootstrapWorkbenchCapabilities` |
+| 9 | descriptor 双来源同一 bootstrap | ✅ 是 | ☑ bootstrap 半成品；服务端下发 ❌ |
 
 产品 / OEM 决策见 [`oem-vision.md`](./oem-vision.md)。
 

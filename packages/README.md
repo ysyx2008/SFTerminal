@@ -1,18 +1,30 @@
-# Packages（OEM / Workbench Monorepo 骨架）
+# Packages（OEM / Workbench Monorepo）
 
-本目录为工作台与共享类型的 **npm 包骨架**。当前阶段：
+> **状态（2026-07-13）**：目录与包名已立，**多数仍是 re-export 骨架**；根仓库 **尚未**启用 npm/pnpm workspaces。  
+> 完整阶段与勾选 TODO：[`docs/workbench-monorepo-design.md` §6.0](../docs/workbench-monorepo-design.md)。
 
-- 源码仍主要在仓库根 `shared/`、`src/workbench/`
-- 各包通过 re-export 暴露 `@sailfish/*` 名称，便于 OEM Fork / 未来物理抽包
-- **尚未**强制启用 npm/pnpm workspaces（避免打断现有 `npm install`）；alias 见根 `tsconfig` / `vite.config`
+## 当前事实
 
-| 包名 | 状态 |
-|---|---|
-| `@sailfish/shared-types` | 骨架，re-export `shared/types`（含 `McpServerConfig`） |
-| `@sailfish/workbench-sdk` | 骨架，re-export `src/workbench` 核心 API |
-| `@sailfish/workbench-assistant` | 骨架 |
-| `@sailfish/workbench-local` | 骨架 |
-| `@sailfish/workbench-ssh` | 骨架 |
-| `@sailfish/workbench-companion` | 骨架 |
+- 源码真相仍在仓库根：`shared/types/`、`src/workbench/`
+- `@sailfish/*` 通过 **tsconfig / vite alias** 解析到本目录；`npm install` **不会**自动链接这些包
+- 设计目标是 pnpm workspace + 物理抽包；近期可先做 **npm workspaces（W1）** 再考虑切 pnpm（W5）
 
-完整抽包与 workspace 启用见 `docs/workbench-monorepo-design.md`。
+## 包清单
+
+| 包名 | 状态 | 下一步 |
+|---|---|---|
+| `@sailfish/shared-types` | ⚠️ re-export → `shared/types` | P-1 物理迁入（W2） |
+| `@sailfish/workbench-sdk` | ⚠️ re-export → `src/workbench` | P1 真抽（W6） |
+| `@sailfish/workbench-assistant` | ⚠️ re-export | P0 真抽（W3） |
+| `@sailfish/workbench-local` | ⚠️ re-export | P1 |
+| `@sailfish/workbench-ssh` | ⚠️ re-export | P1 |
+| `@sailfish/workbench-companion` | ⚠️ re-export | P1 |
+
+## 本地如何「假装」在用这些包
+
+```ts
+import type { McpServerConfig } from '@sailfish/shared-types'
+// 实际由 paths 指到 packages/shared-types → 再 export shared/types
+```
+
+启用 workspaces 并写入根 `dependencies` 之后，才应改为真正的 workspace 依赖解析。
