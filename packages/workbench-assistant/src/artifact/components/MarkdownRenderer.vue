@@ -8,10 +8,10 @@ import { Eye, MessageSquareQuote, SquarePen } from 'lucide-vue-next'
 import { useAssistantArtifactStore } from '../store'
 import { useArtifactSaveBridge } from '../domain/artifact-save-bridge'
 import { useArtifactContentHydration } from '../composables/useArtifactContentHydration'
+import { requireArtifactDesktopHost } from '../host'
 import { useComposerQuoteStore } from '@/stores/composer-quote'
-import { useTerminalStore } from '@/stores/terminal'
 import { useMarkdown } from '@/composables/useMarkdown'
-import { useToast } from '@/composables/useToast'
+import { useToast } from '@sailfish/workbench-sdk/toast'
 
 const props = defineProps<{
   tabId: string
@@ -23,7 +23,7 @@ const artifactStore = useAssistantArtifactStore()
 const saveBridge = useArtifactSaveBridge()
 const { loadingFromDisk } = useArtifactContentHydration(props.tabId, toRef(props, 'artifactId'))
 const composerQuoteStore = useComposerQuoteStore()
-const terminalStore = useTerminalStore()
+const desktopHost = requireArtifactDesktopHost()
 const { renderMarkdown, handleCodeBlockClick, handleFilePathContextMenu } = useMarkdown()
 const previewWrapRef = ref<HTMLElement | null>(null)
 const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
@@ -116,7 +116,7 @@ function isMarkdownPanelActive(): boolean {
   if (!artifactStore.isVisible(props.tabId)) return false
   if (artifactStore.getActiveArtifact(props.tabId)?.id !== props.artifactId) return false
   if (artifactStore.getActiveArtifact(props.tabId)?.renderer !== 'markdown') return false
-  if (terminalStore.activeTabId !== props.tabId) return false
+  if (!desktopHost.isTabActive(props.tabId)) return false
   const active = document.activeElement
   if (active && root.contains(active)) return true
   return viewMode.value === 'preview'

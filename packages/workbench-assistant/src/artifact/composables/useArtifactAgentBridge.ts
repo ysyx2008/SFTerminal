@@ -1,12 +1,12 @@
 /**
  * 助手岗：把 Agent step 流接到产出物面板（仅 AssistantWorkbench 挂载）。
  *
- * 从 useAgentMode / AiPanel 解耦：对话壳不再认识 artifactStore。
- * 首次 watch 只建指纹基线、不重放（历史恢复由 terminal 宿主 hydrate，避免双写/多余 I/O）。
+ * 经 ArtifactDesktopHost 读 steps，不直引 terminalStore。
+ * 首次 watch 只建指纹基线、不重放（历史恢复由 desktop 宿主 hydrate）。
  */
 import { watch, onUnmounted, toValue, type MaybeRefOrGetter } from 'vue'
-import { useTerminalStore } from '@/stores/terminal'
 import { useAssistantArtifactStore } from '../store'
+import { requireArtifactDesktopHost } from '../host'
 
 function stepArtifactFingerprint(step: {
   id: string
@@ -23,14 +23,13 @@ function stepArtifactFingerprint(step: {
 }
 
 export function useArtifactAgentBridge(tabId: MaybeRefOrGetter<string>) {
-  const terminalStore = useTerminalStore()
   const artifactStore = useAssistantArtifactStore()
+  const host = requireArtifactDesktopHost()
 
   watch(
     () => {
       const id = toValue(tabId)
-      const tab = terminalStore.tabs.find(t => t.id === id)
-      const steps = tab?.agentState?.steps ?? []
+      const steps = host.getAgentSteps(id)
       return {
         id,
         steps,
@@ -38,7 +37,6 @@ export function useArtifactAgentBridge(tabId: MaybeRefOrGetter<string>) {
       }
     },
     (curr, prev) => {
-      // 首触：只建立基线。hydrate/restore 已由 desktop 宿主完成。
       if (!prev) return
       for (let i = 0; i < curr.fingerprints.length; i++) {
         if (curr.fingerprints[i] !== prev.fingerprints[i]) {

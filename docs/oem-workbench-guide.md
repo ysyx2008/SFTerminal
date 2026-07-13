@@ -24,14 +24,15 @@
 | 同款对话 | `@sailfish/workbench-sdk/ai-panel` |
 | 终端 Tab 壳（local/ssh 共用） | `@sailfish/workbench-sdk/terminal-tab-view` |
 | 锚点 + 可隐区布局 | `@sailfish/workbench-sdk/workbench-shell` |
-| 上述壳汇总 | `@sailfish/workbench-sdk/platform` |
+| 桌面通知 | `@sailfish/workbench-sdk/toast` |
+| 上述汇总 | `@sailfish/workbench-sdk/platform` |
 | 共享协议类型 | `@sailfish/shared-types` |
 
 渲染器 props 用 SDK 的 `WorkbenchRendererProps`，不要用 `@/stores/terminal` 的 `TerminalTab`。
 
 ### 平台专属例外（内置岗，业务岗不要抄）
 
-仅 **`workbench-assistant`** 带产出物子系统（`@sailfish/workbench-assistant/artifact`）。实现已在岗包内；对 desktop 的 `@/` 依赖（toast / terminalStore / markdown 等）仍为过渡。业务/OEM 岗默认走 sample：只要 AiPanel + descriptor，**不要**依赖 artifact。
+仅 **`workbench-assistant`** 带产出物（`@sailfish/workbench-assistant/artifact`）。与 desktop 经 `ArtifactDesktopHost` 契约交互（不直引 terminalStore）；toast 走 SDK。仍 `@/` 的仅 HoverTip / useMarkdown / composerQuote（过渡）。业务岗抄 sample，**不要**依赖 artifact。
 
 ---
 

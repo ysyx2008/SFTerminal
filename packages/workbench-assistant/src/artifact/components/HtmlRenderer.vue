@@ -11,7 +11,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RotateCw, ExternalLink } from 'lucide-vue-next'
 import { useAssistantArtifactStore } from '../store'
-import { useToast } from '@/composables/useToast'
+import { useToast } from '@sailfish/workbench-sdk/toast'
 import { normalizeHtmlPreviewContent } from '../domain/html-preview'
 
 const props = defineProps<{

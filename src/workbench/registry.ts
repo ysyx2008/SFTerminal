@@ -16,6 +16,9 @@ import { descriptor as sshDescriptor } from '@sailfish/workbench-ssh/descriptor'
 import { descriptor as assistantDescriptor } from '@sailfish/workbench-assistant/descriptor'
 import { descriptor as companionDescriptor } from '@sailfish/workbench-companion/descriptor'
 import { descriptor as sampleDescriptor } from '@sailfish/workbench-sample/descriptor'
+import { ensureAssistantArtifactHostRegistered } from './assistant/register-artifact-host'
+
+ensureAssistantArtifactHostRegistered()
 
 export {
   getWorkbenchDescriptor,

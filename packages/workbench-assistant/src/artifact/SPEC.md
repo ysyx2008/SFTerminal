@@ -29,9 +29,13 @@ packages/workbench-assistant/src/artifact/
   __tests__/
 ```
 
-桌面仍有薄 re-export：`src/workbench/assistant/artifact/{index,store}.ts`（deprecated）。
+桌面宿主注册：`src/workbench/assistant/register-artifact-host.ts`（经 `ArtifactDesktopHost`）。
 
-对 desktop 的依赖（过渡）：UI 经 `@/` 引用 toast / HoverTip / terminalStore / useMarkdown 等。溯源跳转走 AiPanel 接口（岗壳接线），不经全局总线。
+对 desktop 的依赖：
+- **经宿主契约** `ArtifactDesktopHost`（desktop `registerArtifactDesktopHost`）：steps / 激活态 / 历史持久化 —— **不**直引 terminalStore
+- **经 SDK**：`@sailfish/workbench-sdk/toast`
+- **仍 `@/`（过渡）**：HoverTip、useMarkdown、composerQuoteStore
+- 溯源跳转：AiPanel.scrollToAgentStep（岗壳接线）
 ## 分层
 
 | 层 | 路径 | 职责 |
@@ -41,8 +45,9 @@ packages/workbench-assistant/src/artifact/
 | 渲染器 UI | `renderers/ui-registry.ts` | Vue 组件 + 图标映射 |
 | 领域逻辑 | `domain/artifact-registry.ts` | 纯函数 registry |
 | UI 适配 | `store.ts` | Pinia tab 容器 + 布局比例 |
-| Agent 接线 | `composables/useArtifactAgentBridge.ts` | **仅 AssistantWorkbench 挂载**：watch steps → handleAgentStep；勿放回 useAgentMode / AiPanel |
-| 溯源跳转 | `AiPanel.scrollToAgentStep` + 岗壳 ref 转发 | ArtifactPanel 经 prop 调用；不经全局总线 |
+| Agent 接线 | `composables/useArtifactAgentBridge.ts` | **仅 AssistantWorkbench 挂载**：经 ArtifactDesktopHost 读 steps → handleAgentStep |
+| 桌面宿主 | `host.ts` + desktop `register-artifact-host.ts` | getAgentSteps / isTabActive / persistArtifacts |
+| 溯源跳转 | `AiPanel.scrollToAgentStep` + 岗壳 ref 转发 | ArtifactPanel 经 prop 调用 |
 | 保存逻辑 | `domain/artifact-actions.ts` | Save / Save As / Save All（查注册表） |
 | 编辑桥接 | `domain/artifact-save-bridge.ts` | Markdown draft → 面板级保存 |
 | 磁盘同步 | `domain/artifact-file-status.ts` + `artifact-disk-sync.ts` | exists 复检；exec 后触发 |

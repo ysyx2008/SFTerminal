@@ -17,9 +17,10 @@
 ```ts
 import type { WorkbenchDescriptor, WorkbenchRendererProps } from '@sailfish/workbench-sdk'
 import { AiPanel } from '@sailfish/workbench-sdk/ai-panel'
+import { useToast } from '@sailfish/workbench-sdk/toast'
 import { TerminalTabView } from '@sailfish/workbench-sdk/terminal-tab-view'
 import { WorkbenchShell } from '@sailfish/workbench-sdk/workbench-shell'
-// 或汇总：import { AiPanel, TerminalTabView, WorkbenchShell } from '@sailfish/workbench-sdk/platform'
+// 或汇总：import { AiPanel, TerminalTabView, WorkbenchShell, useToast } from '@sailfish/workbench-sdk/platform'
 ```
 
 岗位差异只改 descriptor（`agentPrompt` / `skills` / `mcpServers`）。  

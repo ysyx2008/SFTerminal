@@ -97,3 +97,12 @@ export {
   useCanvasStore,
   type ArtifactDiskSyncEvent,
 } from './store'
+
+export {
+  registerArtifactDesktopHost,
+  getArtifactDesktopHost,
+  requireArtifactDesktopHost,
+  type ArtifactDesktopHost,
+} from './host'
+
+export { useArtifactAgentBridge } from './composables/useArtifactAgentBridge'

@@ -33,10 +33,10 @@ import {
 } from '../index'
 import { getRendererComponent, getRendererIcon } from '../renderers/ui-registry'
 import { resolveSourceStepIdById } from '../domain/artifact-source'
-import { useToast } from '@/composables/useToast'
+import { requireArtifactDesktopHost } from '../host'
+import { useToast } from '@sailfish/workbench-sdk/toast'
 import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '@/composables/useHoverTip'
 import HoverTipOverlay from '@/components/HoverTipOverlay.vue'
-import { useTerminalStore } from '@/stores/terminal'
 
 const props = defineProps<{
   tabId: string
@@ -46,7 +46,7 @@ const props = defineProps<{
 
 const { t } = useI18n()
 const artifactStore = useAssistantArtifactStore()
-const terminalStore = useTerminalStore()
+const desktopHost = requireArtifactDesktopHost()
 const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
 const saveBridge = createArtifactSaveBridge()
 provideArtifactSaveBridge(saveBridge)
@@ -277,19 +277,19 @@ function closeArtifact(id: string, e?: Event) {
   e?.stopPropagation()
   saveBridge.flush(id)
   artifactStore.removeArtifact(props.tabId, id)
-  terminalStore.saveArtifactsToHistory(props.tabId)
+  desktopHost.persistArtifacts(props.tabId)
 }
 
 function closeOthers(keepId: string) {
   flushActiveDraft()
   artifactStore.closeOthers(props.tabId, keepId)
-  terminalStore.saveArtifactsToHistory(props.tabId)
+  desktopHost.persistArtifacts(props.tabId)
 }
 
 function closeAllArtifacts() {
   flushActiveDraft()
   artifactStore.closeAll(props.tabId)
-  terminalStore.saveArtifactsToHistory(props.tabId)
+  desktopHost.persistArtifacts(props.tabId)
 }
 
 function minimizePanel() {
@@ -306,8 +306,7 @@ function jumpToSource(stepId?: string) {
   const rawId = stepId ?? activeSourceStepId.value
   if (!rawId || !props.scrollToAgentStep) return
   closeAllMenus()
-  const tab = terminalStore.tabs.find(t => t.id === props.tabId)
-  const allSteps = tab?.agentState?.steps ?? []
+  const allSteps = desktopHost.getAgentSteps(props.tabId)
   const visibleStepId = resolveSourceStepIdById(rawId, allSteps)
   void props.scrollToAgentStep(visibleStepId)
 }

@@ -20,3 +20,7 @@ export {
   type ArtifactDiskSyncEvent,
 } from './artifact/store'
 export { useArtifactAgentBridge } from './artifact/composables/useArtifactAgentBridge'
+export {
+  registerArtifactDesktopHost,
+  type ArtifactDesktopHost,
+} from './artifact/host'
