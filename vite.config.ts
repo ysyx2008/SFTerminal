@@ -300,6 +300,58 @@ export default defineConfig({
             charset: 'utf8'
           }
         }
+      },
+      // 打包态无头 CLI（ELECTRON_RUN_AS_NODE=1 加载 dist-electron/cli.js）
+      {
+        entry: 'electron/cli/cli.ts',
+        vite: {
+          define: {
+            __STEAM_BUILD__: isSteamBuild
+          },
+          resolve: {
+            alias: {
+              '@shared/types': resolve(__dirname, 'packages/shared-types/src'),
+              '@shared': resolve(__dirname, 'shared'),
+              '@sailfish/workbench-assistant': resolve(__dirname, 'packages/workbench-assistant/src'),
+            }
+          },
+          build: {
+            outDir: 'dist-electron',
+            emptyOutDir: false,
+            minify: 'esbuild',
+            rollupOptions: {
+              external: [
+                'electron',
+                'node-pty',
+                'ssh2',
+                'electron-store',
+                '@huggingface/transformers',
+                '@lancedb/lancedb',
+                'apache-arrow',
+                'keytar',
+                'imapflow',
+                'nodemailer',
+                'mailparser',
+                'playwright-core',
+                'onnxruntime-node',
+                'sherpa-onnx-node',
+                'dingtalk-stream',
+                '@larksuiteoapi/node-sdk',
+                '@napi-rs/canvas',
+                'sharp',
+                /^pdfjs-dist/,
+                'bufferutil',
+                'utf-8-validate',
+                'jsdom',
+                '@mozilla/readability',
+                '@questi0nm4rk/shell-ast',
+              ]
+            }
+          },
+          esbuild: {
+            charset: 'utf8'
+          }
+        }
       }
     ]),
     renderer()

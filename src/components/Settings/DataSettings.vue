@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
-import { Bot, HardDrive, CalendarRange, FolderOpen, History, Download, Upload, Trash2, Clock, AlertTriangle, Search, X, ChevronDown, ChevronRight, ExternalLink, Monitor, Server, Coins, ArrowUpRight, ArrowDownLeft, Zap, FolderSymlink, RotateCcw, FileClock } from 'lucide-vue-next'
+import { Bot, HardDrive, CalendarRange, FolderOpen, History, Download, Upload, Trash2, Clock, AlertTriangle, Search, X, ChevronDown, ChevronRight, ExternalLink, Monitor, Server, Coins, ArrowUpRight, ArrowDownLeft, Zap, FolderSymlink, RotateCcw, FileClock, Terminal } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const isSteamBuild = __STEAM_BUILD__
@@ -25,6 +25,63 @@ const dataPath = ref('')
 const isCustomDataDir = ref(false)
 // 是否正在提交迁移请求
 const isMigratingDataDir = ref(false)
+
+// Shell CLI（sailfish）
+const isDarwin = ref(typeof process !== 'undefined' ? false : false)
+const shellCliStatus = ref<{
+  installed: boolean
+  shimPath: string | null
+  target: string | null
+  binDir: string
+  mode: 'packaged' | 'development'
+} | null>(null)
+const shellCliBusy = ref(false)
+
+const loadShellCliStatus = async () => {
+  try {
+    // platform via preload-less: navigator
+    isDarwin.value = navigator.platform?.toLowerCase().includes('mac') ?? false
+    if (!isDarwin.value || !window.electronAPI.shellCli) return
+    shellCliStatus.value = await window.electronAPI.shellCli.status()
+  } catch (e) {
+    console.error('Failed to load shell CLI status:', e)
+  }
+}
+
+const installShellCli = async () => {
+  if (!window.electronAPI.shellCli) return
+  shellCliBusy.value = true
+  try {
+    const res = await window.electronAPI.shellCli.install()
+    if (!res.ok) {
+      showMessage('error', t('dataSettings.shellCliFailed', { error: res.error || '' }))
+      return
+    }
+    showMessage('success', t('dataSettings.shellCliInstallOk'))
+    if (res.pathHint && res.binDir) {
+      showMessage('success', t('dataSettings.shellCliPathHint', { binDir: res.binDir }))
+    }
+    await loadShellCliStatus()
+  } finally {
+    shellCliBusy.value = false
+  }
+}
+
+const uninstallShellCli = async () => {
+  if (!window.electronAPI.shellCli) return
+  shellCliBusy.value = true
+  try {
+    const res = await window.electronAPI.shellCli.uninstall()
+    if (!res.ok) {
+      showMessage('error', t('dataSettings.shellCliFailed', { error: res.error || '' }))
+      return
+    }
+    showMessage('success', t('dataSettings.shellCliUninstallOk'))
+    await loadShellCliStatus()
+  } finally {
+    shellCliBusy.value = false
+  }
+}
 
 // 加载状态
 const isLoading = ref(false)
@@ -465,6 +522,7 @@ onMounted(() => {
   loadTokenUsageStats()
   loadDataDirInfo()
   loadScratchConfig()
+  loadShellCliStatus()
   document.addEventListener('keydown', handleKeydown, true)
 })
 
@@ -643,6 +701,38 @@ onUnmounted(() => {
         </button>
       </div>
       <p class="hint">{{ t('dataSettings.dataDirHint') }}</p>
+    </div>
+
+    <!-- 命令行工具 sailfish（macOS） -->
+    <div v-if="isDarwin" class="section">
+      <div class="section-header">
+        <Terminal :size="15" class="section-icon" />
+        <h4>{{ t('dataSettings.shellCli') }}</h4>
+      </div>
+      <p class="hint">{{ t('dataSettings.shellCliHint') }}</p>
+      <p v-if="shellCliStatus?.installed && shellCliStatus.shimPath" class="path-text shell-cli-status">
+        {{ t('dataSettings.shellCliInstalled', { path: shellCliStatus.shimPath }) }}
+      </p>
+      <p v-else class="hint">{{ t('dataSettings.shellCliNotInstalled') }}</p>
+      <div class="datadir-actions">
+        <button
+          v-if="!shellCliStatus?.installed"
+          class="btn btn-outline"
+          :disabled="shellCliBusy"
+          @click="installShellCli"
+        >
+          <Terminal :size="14" />
+          {{ t('dataSettings.shellCliInstall') }}
+        </button>
+        <button
+          v-else
+          class="btn btn-outline"
+          :disabled="shellCliBusy"
+          @click="uninstallShellCli"
+        >
+          {{ t('dataSettings.shellCliUninstall') }}
+        </button>
+      </div>
     </div>
     
     <!-- 导出/导入 -->

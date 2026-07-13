@@ -54,5 +54,12 @@ module.exports = async function(context) {
   } catch {
     console.log('[afterPack] 确认：CFBundleDisplayName 已删除 ✓')
   }
+
+  // 确认打包态 CLI 入口存在（vite 第三入口 → dist-electron/cli.js）
+  const cliJs = path.join(context.appOutDir, `${appName}.app`, 'Contents', 'Resources', 'app.asar')
+  // asar 内文件此处不解开校验；构建日志提示用户
+  console.log('[afterPack] CLI: 用户可在「设置 → 数据管理」安装 sailfish 命令（~/.local/bin）')
+  console.log('[afterPack] CLI 入口预期: app.asar/dist-electron/cli.js（需 vite 已产出）')
+  void cliJs
 }
 

@@ -167,9 +167,9 @@ async function configInit(): Promise<void> {
   console.log('  SFT_API_URL    - AI API endpoint URL')
   console.log('  SFT_API_KEY    - AI API key')
   console.log('  SFT_MODEL      - AI model name')
-  console.log('  SFT_DATA_DIR   - CLI sandbox data directory (default: {desktop}/cli-sandbox)')
-  console.log('  SFT_CLI_SHARE_DESKTOP=1 - Use desktop userData (no sandbox)')
-  console.log('  SFT_CLI_NO_BORROW=1     - Do not borrow AI Profiles/credentials from desktop')
+  console.log('  SFT_DATA_DIR   - CLI sandbox directory (tests / --sandbox)')
+  console.log('  SFT_CLI_SANDBOX=1 - Same as --sandbox')
+  console.log('  SFT_CLI_NO_BORROW=1 - Do not borrow AI Profiles/credentials in sandbox')
   console.log('')
   console.log('Or configure via commands:')
   console.log('  sft config:set aiProfiles \'[{"id":"default","name":"My AI","apiUrl":"https://api.openai.com/v1","apiKey":"sk-xxx","model":"gpt-5.5"}]\'')
@@ -853,11 +853,29 @@ async function sshList(): Promise<void> {
 
 // ==================== Agent Commands ====================
 
+async function promptYesNo(question: string): Promise<boolean> {
+  if (!process.stdin.isTTY) {
+    console.log('   No TTY: rejected (pass --mode free or --free to auto-approve)')
+    return false
+  }
+  const readline = await import('readline')
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    const answer = await new Promise<string>((resolve) => {
+      rl.question(`${question} [y/N] `, resolve)
+    })
+    return /^y(es)?$/i.test(answer.trim())
+  } finally {
+    rl.close()
+  }
+}
+
 async function agentRun(args: string[]): Promise<void> {
   const { positional, flags } = parseArgs(args)
   const task = positional.join(' ')
   if (!task) {
-    console.error('Usage: sft agent:run <task> [--mode <strict|relaxed|free>]')
+    console.error('Usage: sft agent:run <task> [--mode <strict|relaxed|free>] [--free]')
+    console.error('   or: sft "a quoted multi-word task" [--mode relaxed]')
     process.exit(1)
   }
 
@@ -891,7 +909,9 @@ async function agentRun(args: string[]): Promise<void> {
   // Create a local terminal for the agent
   const ptyId = pty.create({}).id
   
-  const mode = (flags.mode as string) || 'free'
+  // 默认 relaxed：与桌面一致，高危需确认；--free / --mode free 才全自动
+  const modeRaw = String(flags.mode || 'relaxed')
+  const mode = ['strict', 'relaxed', 'free'].includes(modeRaw) ? modeRaw : 'relaxed'
   
   // Set up output callbacks with inline-overwrite for streaming/progress updates.
   // Three rendering states per step:
@@ -963,14 +983,16 @@ async function agentRun(args: string[]): Promise<void> {
     onNeedConfirm: (confirmation: any) => {
       console.log(`\n⚠️  Confirmation needed: ${confirmation.toolName} (risk: ${confirmation.riskLevel})`)
       console.log(`   Args: ${JSON.stringify(confirmation.toolArgs).substring(0, 200)}`)
-      // In CLI mode, auto-approve for 'free' mode
-      if (mode === 'free') {
-        console.log('   Auto-approved (free mode)')
-        agent.confirmToolCall(ptyId, confirmation.toolCallId, true)
-      } else {
-        console.log('   Auto-rejected (not in free mode)')
-        agent.confirmToolCall(ptyId, confirmation.toolCallId, false)
-      }
+      void (async () => {
+        if (mode === 'free') {
+          console.log('   Auto-approved (--mode free / --free)')
+          agent.confirmToolCall(ptyId, confirmation.toolCallId, true)
+          return
+        }
+        const ok = await promptYesNo('   Allow this tool call?')
+        agent.confirmToolCall(ptyId, confirmation.toolCallId, ok)
+        console.log(ok ? '   Approved' : '   Rejected')
+      })()
     },
     onComplete: () => {
       clearInline()
@@ -1498,6 +1520,7 @@ function applyEnvOverrides(): void {
   }
 }
 
+
 // ==================== Help ====================
 
 function printHelp(): void {
@@ -1507,122 +1530,154 @@ function printHelp(): void {
 SailFish CLI v${version}
 ============================
 
-Usage: sft <command> [options]
+  默认使用桌面真实数据（配置 / 凭据 / 历史）。
+  高危操作默认需确认（--mode relaxed）；全自动请显式 --mode free 或 --free。
 
-Configuration:
-  config:get <key>          Get a config value
-  config:set <key> <value>  Set a config value (use JSON for complex values)
-  config:list               List all config keys and values
-  config:init               Show setup instructions
+用法:
+  sft "用引号包起来的任务说明" [options]   # 主路径 → Agent
+  sft agent:run <task> [options]           # 同上（单词语任务请走这条或 --task）
+  sft <command> [args]
 
-AI Chat:
-  ai:chat <message>         Send a chat message (non-streaming)
-  ai:stream <message>       Send a chat message (streaming)
-  ai:models                 List configured AI profiles
-    --profile <id>          Use specific AI profile
+任务判定（shell 会剥掉引号，CLI 只能看到结果）:
+  · 单个参数且含空格 → 视为任务（典型：sft "列出当前目录"）
+  · 单个参数且不像命令名（如中文）→ 视为任务
+  · --task / -t <text> → 显式任务（英文单词语请用这条）
+  · 英文单词语未知命令（如 modell）→ 报错提示，不丢给 Agent
 
-Agent:
-  agent:run <task>           Run an AI agent task
-    --mode <mode>            Execution mode: strict, relaxed, free (default: free)
+常用:
+  models                     列出 AI Profiles
+  history list|stats
+  watch list|history|templates
+  knowledge search|list|stats
+  --help / -h / help
+  --version / -v
 
-Knowledge Base:
-  knowledge:search <query>   Search the knowledge base
-    --limit <n>              Number of results (default: 5)
-    --host <hostId>          Filter by host
-  knowledge:list             List all documents
-  knowledge:add <file>       Add a document to knowledge base
-    --host <hostId>          Associate with host
-  knowledge:stats            Show knowledge base statistics
-  knowledge:rebuild          Rebuild vector + BM25 indices (with timing)
-    --force                  Clear and re-embed all documents
-  knowledge:repair           Repair index (incremental: only re-embed missing docs)
+全局选项:
+  --sandbox                  写入 cli-sandbox，并从桌面借用 AI Profiles/凭据
+  --mode <strict|relaxed|free>  执行模式（默认 relaxed）
+  --free                     等同 --mode free（危险：跳过确认）
+  --task / -t <text>         显式任务文本
 
-History:
-  history:list               List recent records
-    --limit <n>              Number of records (default: 10)
-  history:stats              Show storage statistics
+环境变量:
+  SFT_API_URL / SFT_API_KEY / SFT_MODEL
+  SFT_DATA_DIR               自定义沙箱目录（测试用）
+  SFT_CLI_SANDBOX=1          同 --sandbox
+  SFT_CLI_NO_BORROW=1        沙箱内不借用桌面 Key/Profiles
 
-Host Profiles:
-  host:list                  List all host profiles
-  host:get <hostId>          Get detailed host profile
+内部命令（完整列表，冒号风格仍可用）:
+  config:*  ai:*  agent:run  knowledge:*  history:*  host:*  ssh:*
+  mcp:*  scheduler:*  watch:*  sensor:*  bond:*  im:*  skill:*
+  pty:*  fs:*  doc:*  websearch:test
 
-SSH Sessions:
-  ssh:list                   List configured SSH sessions
-
-MCP Servers:
-  mcp:list                   List configured MCP servers
-  mcp:tools                  List available MCP tools (connects to servers)
-
-Scheduler:
-  scheduler:list             List scheduled tasks
-  scheduler:history          Show execution history
-    --task <id>              Filter by task
-    --limit <n>              Number of records (default: 10)
-
-Watch (Sensor Loop):
-  watch:list                 List all watches
-  watch:create               Create a watch
-    --name <name>            Watch name
-    --prompt <prompt>        Agent prompt
-    --cron <expression>      Cron trigger
-    --heartbeat              Add heartbeat trigger
-    --output <type>          Output: im|notification|log|silent (default: log)
-  watch:trigger <id>         Manually trigger a watch
-  watch:delete <id>          Delete a watch
-  watch:history              Show watch execution history
-    --watch <id>             Filter by watch
-    --limit <n>              Number of records (default: 10)
-  watch:templates            List available watch templates
-  watch:from-template <id>   Create watch from template
-  sensor:status              Show sensor status
-  sensor:heartbeat           Trigger a heartbeat now
-  bond:status                Show bond metrics and milestones
-
-IM Integration:
-  im:status                  Show IM platform credential & connection status
-  im:connect <platform>      Test connection (dingtalk|feishu|slack|telegram|wecom)
-  im:disconnect <platform>   Disable auto-connect for a platform
-
-User Skills:
-  skill:list                 List user-defined skills
-
-Skill Market:
-  skill:market               Browse skill market
-    --search <query>         Search skills by keyword
-  skill:install <id>         Install a skill from the market
-  skill:uninstall <id>       Uninstall a market skill
-  skill:registry             Show/set registry URL
-    --set <url>              Set custom registry URL
-    --reset                  Reset to default registry URL
-
-Terminal (PTY):
-  pty:exec <command>         Execute a command in a PTY shell
-    --timeout <ms>           Max wait time (default: 10000)
-  pty:shells                 List available shells
-
-File System:
-  fs:list [path]             List files in a directory
-  fs:info                    Show home dir and special folders
-
-Document Parser:
-  doc:parse <file>           Parse a document and show content preview
-  doc:types                  List supported document types
-
-Environment Variables:
-  SFT_API_URL                Override AI API URL
-  SFT_API_KEY                Override AI API key
-  SFT_MODEL                  Override AI model name
-  SFT_DATA_DIR               CLI sandbox (default: {desktop}/cli-sandbox)
-  SFT_CLI_SHARE_DESKTOP=1    Share desktop userData (no sandbox)
-  SFT_CLI_NO_BORROW=1        Do not borrow AI Profiles/credentials
-
-Examples:
-  sft ai:chat "Hello, what can you do?"
-  sft ai:stream "Explain Docker in 3 sentences"
-  sft knowledge:search "how to deploy nginx"
-  sft agent:run "List files in current directory" --mode free
-  SFT_API_KEY=sk-xxx sft ai:chat "test"
+示例:
+  sft "列出当前目录下的 markdown 文件"
+  sft --task 备份配置 --mode relaxed
+  sft --sandbox "试跑，别动真数据" --free
+  sft models
+  sft agent:run "重启本机 nginx" --mode free
 `)
+}
+
+function printUnknownAsTaskHint(token: string): void {
+  console.error(`未知命令: ${token}`)
+  console.error('要当作 Agent 任务，请用引号包住完整说明，或显式指定：')
+  console.error('  sft "你的任务说明（可含空格）"')
+  console.error('  sft --task "单词语任务也可以"')
+  console.error('  sft agent:run "..."')
+  console.error('查看命令: sft --help')
+}
+
+/**
+ * 解析入口：短命令映射、引号任务、--task。
+ * @returns null 表示已打印错误并应 exit(1)
+ */
+function resolveCliInvocation(args: string[]): { command: string; cmdArgs: string[] } | null {
+  const { positional, flags } = parseArgs(args)
+
+  const taskFlag = flags.task ?? flags.t
+  if (typeof taskFlag === 'string' && taskFlag.trim()) {
+    const restFlags: string[] = []
+    for (const [k, v] of Object.entries(flags)) {
+      if (k === 'task' || k === 't') continue
+      if (v === true) restFlags.push(`--${k}`)
+      else restFlags.push(`--${k}`, String(v))
+    }
+    return { command: 'agent:run', cmdArgs: [taskFlag, ...restFlags] }
+  }
+
+  if (positional.length === 0) {
+    // 仅有全局 flag（如 --sandbox）时仍给 help
+    return { command: '__help__', cmdArgs: [] }
+  }
+
+  const head = positional[0]
+
+  if (head.includes(':')) {
+    const idx = args.indexOf(head)
+    return { command: head, cmdArgs: idx >= 0 ? args.slice(idx + 1) : positional.slice(1) }
+  }
+
+  if (head === 'models') {
+    return { command: 'ai:models', cmdArgs: positional.slice(1) }
+  }
+  if (head === 'history') {
+    const sub = positional[1]
+    if (sub === 'list' || sub === 'stats') {
+      return { command: `history:${sub}`, cmdArgs: positional.slice(2) }
+    }
+    console.error('Usage: sft history list|stats')
+    return null
+  }
+  if (head === 'watch') {
+    const sub = positional[1]
+    const map: Record<string, string> = {
+      list: 'watch:list',
+      history: 'watch:history',
+      templates: 'watch:templates',
+    }
+    if (sub && map[sub]) {
+      return { command: map[sub], cmdArgs: positional.slice(2) }
+    }
+    console.error('Usage: sft watch list|history|templates')
+    return null
+  }
+  if (head === 'knowledge') {
+    const sub = positional[1]
+    const map: Record<string, string> = {
+      search: 'knowledge:search',
+      list: 'knowledge:list',
+      stats: 'knowledge:stats',
+    }
+    if (sub && map[sub]) {
+      return { command: map[sub], cmdArgs: positional.slice(2) }
+    }
+    console.error('Usage: sft knowledge search|list|stats')
+    return null
+  }
+  if (head === 'agent') {
+    if (positional[1] === 'run') {
+      return { command: 'agent:run', cmdArgs: positional.slice(2) }
+    }
+    console.error('Usage: sft agent run <task>  或  sft agent:run <task>')
+    return null
+  }
+
+  // 单个参数且含空白 → 引号任务（shell 已剥引号）
+  // 或不像命令标识符（含中文/标点等）→ 也视为任务（避免「"只回复好的"」无空格时进未知命令）
+  if (positional.length === 1) {
+    const looksLikeCommand = /^[a-z][a-z0-9:_-]*$/i.test(head)
+    if (/\s/.test(head) || !looksLikeCommand) {
+      const restFlags: string[] = []
+      for (const [k, v] of Object.entries(flags)) {
+        if (v === true) restFlags.push(`--${k}`)
+        else restFlags.push(`--${k}`, String(v))
+      }
+      return { command: 'agent:run', cmdArgs: [head, ...restFlags] }
+    }
+  }
+
+  printUnknownAsTaskHint(positional.length === 1 ? head : positional.join(' '))
+  return null
 }
 
 // ==================== Web Search ====================
@@ -1686,42 +1741,47 @@ async function webSearchTest(args: string[]): Promise<void> {
 
 // ==================== Main ====================
 
-async function main(): Promise<void> {
+async function runCli(): Promise<void> {
   const config = new ConfigService()
   initLogging(config.getLogLevel())
 
   const args = process.argv.slice(2)
-  const command = args[0]
+  const first = args[0]
 
-  if (!command || command === '--help' || command === '-h' || command === 'help') {
+  if (!first || first === '--help' || first === '-h' || first === 'help') {
     printHelp()
     return
   }
 
-  if (command === '--version' || command === '-v') {
+  if (first === '--version' || first === '-v') {
     console.log(getVersion())
     return
   }
 
-  const cmdArgs = args.slice(1)
+  const resolved = resolveCliInvocation(args)
+  if (!resolved) {
+    process.exit(1)
+  }
+  if (resolved.command === '__help__') {
+    printHelp()
+    return
+  }
+
+  const { command, cmdArgs } = resolved
 
   try {
     switch (command) {
-      // Config
       case 'config:get':     await configGet(cmdArgs); break
       case 'config:set':     await configSet(cmdArgs); break
       case 'config:list':    await configList(); break
       case 'config:init':    await configInit(); break
 
-      // AI
       case 'ai:chat':        await aiChat(cmdArgs); break
       case 'ai:stream':      await aiStream(cmdArgs); break
       case 'ai:models':      await aiModels(); break
 
-      // Agent
       case 'agent:run':      await agentRun(cmdArgs); break
 
-      // Knowledge
       case 'knowledge:search':  await knowledgeSearch(cmdArgs); break
       case 'knowledge:list':    await knowledgeList(); break
       case 'knowledge:add':     await knowledgeAdd(cmdArgs); break
@@ -1729,26 +1789,20 @@ async function main(): Promise<void> {
       case 'knowledge:rebuild': await knowledgeRebuild(cmdArgs); break
       case 'knowledge:repair':  await knowledgeRepair(cmdArgs); break
 
-      // History
       case 'history:list':   await historyList(cmdArgs); break
       case 'history:stats':  await historyStats(); break
 
-      // Host Profile
       case 'host:list':      await hostList(); break
       case 'host:get':       await hostGet(cmdArgs); break
 
-      // SSH
       case 'ssh:list':       await sshList(); break
 
-      // MCP
       case 'mcp:list':       await mcpList(); break
       case 'mcp:tools':      await mcpTools(); break
 
-      // Scheduler
       case 'scheduler:list':    await schedulerList(); break
       case 'scheduler:history': await schedulerHistory(cmdArgs); break
 
-      // Watch & Sensor
       case 'watch:list':        await watchList(); break
       case 'watch:create':      await watchCreate(cmdArgs); break
       case 'watch:trigger':     await watchTrigger(cmdArgs); break
@@ -1760,36 +1814,29 @@ async function main(): Promise<void> {
       case 'sensor:heartbeat':  await sensorHeartbeat(); break
       case 'bond:status':       await bondStatus(); break
 
-      // IM
       case 'im:status':      await imStatus(); break
       case 'im:connect':     await imConnect(cmdArgs); break
       case 'im:disconnect':  await imDisconnect(cmdArgs); break
 
-      // Skills
       case 'skill:list':      await skillList(); break
       case 'skill:market':    await skillMarket(cmdArgs); break
       case 'skill:install':   await skillInstall(cmdArgs); break
       case 'skill:uninstall': await skillUninstall(cmdArgs); break
       case 'skill:registry':  await skillRegistry(cmdArgs); break
 
-      // PTY
       case 'pty:exec':       await ptyExec(cmdArgs); break
       case 'pty:shells':     await ptyShells(); break
 
-      // Local FS
       case 'fs:list':        await localFsList(cmdArgs); break
       case 'fs:info':        await localFsInfo(); break
 
-      // Document Parser
       case 'doc:parse':      await docParse(cmdArgs); break
       case 'doc:types':      await docTypes(); break
 
-      // Web Search
       case 'websearch:test': await webSearchTest(cmdArgs); break
 
       default:
-        console.error(`Unknown command: ${command}`)
-        console.error('Run "sft --help" for available commands.')
+        printUnknownAsTaskHint(command)
         process.exit(1)
     }
   } catch (error: any) {
@@ -1801,7 +1848,4 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch(error => {
-  console.error('Fatal error:', error)
-  process.exit(1)
-})
+export { runCli }

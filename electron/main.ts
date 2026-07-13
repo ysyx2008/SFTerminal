@@ -4363,6 +4363,18 @@ ipcMain.handle('history:listAgentSummaries', async (_event, excludeWakeup?: bool
   return (await conv()).listSummaries(excludeWakeup)
 })
 
+/** 任务侧栏：用户首条消息后异步生成短标题（不阻塞 Agent） */
+ipcMain.handle(
+  'history:generateConversationTitle',
+  async (_event, sessionId: string, userMessage: string, profileId?: string) => {
+    const { generateConversationTitle } = await import('./services/conversation/title-generator')
+    return generateConversationTitle(
+      { aiService, configService },
+      { sessionId, userMessage, profileId }
+    )
+  }
+)
+
 ipcMain.handle(
   'history:searchAgentRecords',
   async (
@@ -4437,6 +4449,23 @@ ipcMain.handle('dataDir:migrate', async (_e, target: string) => {
   if (!res.ok) return res
   setTimeout(() => { app.relaunch(); app.exit(0) }, 150)
   return { ok: true }
+})
+
+// ==================== Shell CLI（sailfish 命令） ====================
+
+ipcMain.handle('shellCli:status', async () => {
+  const { getShellCliStatus } = await import('./services/shell-cli.service')
+  return getShellCliStatus()
+})
+
+ipcMain.handle('shellCli:install', async () => {
+  const { installShellCli } = await import('./services/shell-cli.service')
+  return installShellCli()
+})
+
+ipcMain.handle('shellCli:uninstall', async () => {
+  const { uninstallShellCli } = await import('./services/shell-cli.service')
+  return uninstallShellCli()
 })
 
 // 恢复到默认数据目录：写入待迁移标记并重启

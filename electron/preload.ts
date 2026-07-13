@@ -1477,6 +1477,25 @@ const electronAPI = {
     reset: () => ipcRenderer.invoke('dataDir:reset') as Promise<{ ok: boolean; error?: string }>
   },
 
+  // macOS：安装 / 卸载 PATH 上的 sailfish 命令
+  shellCli: {
+    status: () => ipcRenderer.invoke('shellCli:status') as Promise<{
+      installed: boolean
+      shimPath: string | null
+      target: string | null
+      binDir: string
+      mode: 'packaged' | 'development'
+    }>,
+    install: () => ipcRenderer.invoke('shellCli:install') as Promise<{
+      ok: boolean
+      shimPath?: string
+      binDir?: string
+      error?: string
+      pathHint?: boolean
+    }>,
+    uninstall: () => ipcRenderer.invoke('shellCli:uninstall') as Promise<{ ok: boolean; error?: string }>
+  },
+
   // 主机档案操作
   hostProfile: {
     // 获取主机档案

@@ -3,15 +3,9 @@
 /**
  * SailFish CLI Entry Point
  *
- * This file MUST be plain JavaScript (.js) because it needs to register
- * the Electron API shim via Module._resolveFilename BEFORE any TypeScript
- * imports are processed. TypeScript/ESM import hoisting would otherwise
- * cause service modules to load the real 'electron' package and fail.
- *
  * Data layout (default):
- *   - Writes go to `{desktopUserData}/cli-sandbox/` (history/logs/watches isolated)
- *   - AI Profiles + credentials are borrowed from the desktop userData each start
- *   - SFT_CLI_SHARE_DESKTOP=1 → share desktop userData fully
+ *   - Share desktop userData (real config / history / credentials)
+ *   - --sandbox or SFT_CLI_SANDBOX=1 → {desktop}/cli-sandbox + borrow AI Profiles/keys
  *   - SFT_DATA_DIR → custom sandbox (tests use a temp dir)
  *
  * Usage:
@@ -24,38 +18,49 @@ const Module = require('module')
 const path = require('path')
 
 // ==================== Step 1: Register Electron Shim ====================
-// This MUST happen before any other require/import that might trigger
-// a transitive import of 'electron' (e.g., electron-store, services)
 
 const shimPath = path.join(__dirname, 'electron-shim.js')
 const origResolve = Module._resolveFilename
 
 Module._resolveFilename = function(request, parent, isMain, options) {
-  // Intercept all electron-related imports
   if (request === 'electron') {
     return shimPath
   }
-  // electron-updater is only used in main.ts, not in services,
-  // but intercept it just in case for safety
   if (request === 'electron-updater') {
     return shimPath
   }
   return origResolve.call(this, request, parent, isMain, options)
 }
 
-// ==================== Step 2: CLI env + sandbox / borrow ====================
+// ==================== Step 2: Early flags + data dir ====================
 
 process.env.SFT_CLI_MODE = '1'
 
-// Must run before any service imports electron (shim reads SFT_DATA_DIR at load time)
+// --sandbox must be applied before services load (shim freezes userData at require time)
+const rawArgv = process.argv.slice(2)
+const filtered = []
+for (let i = 0; i < rawArgv.length; i++) {
+  const a = rawArgv[i]
+  if (a === '--sandbox') {
+    process.env.SFT_CLI_SANDBOX = '1'
+    continue
+  }
+  if (a === '--free') {
+    // Normalize to --mode free for index.ts; keep a marker flag too
+    filtered.push('--mode', 'free')
+    continue
+  }
+  filtered.push(a)
+}
+process.argv = [process.argv[0], process.argv[1], ...filtered]
+
 require('./cli-data.js').setupCliDataDir()
 
-// ==================== Step 3: Register TypeScript Support ====================
+// ==================== Step 3: TypeScript ====================
 
 try {
   require('tsx/cjs')
 } catch (e) {
-  // Fallback: try ts-node
   try {
     require('ts-node/register/transpile-only')
   } catch (e2) {
@@ -70,4 +75,8 @@ try {
 
 // ==================== Step 4: Run CLI ====================
 
-require('./index.ts')
+const { runCli } = require('./index.ts')
+runCli().catch((error) => {
+  console.error('Fatal error:', error)
+  process.exit(1)
+})

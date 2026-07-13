@@ -1026,6 +1026,18 @@ export default {
     migrateErrNested: '目标目录不能与当前目录相互嵌套',
     migrateErrNotWritable: '目标目录不可写，请换一个位置',
     migrateErrAlreadyDefault: '当前已是默认目录',
+    // 命令行工具
+    shellCli: '命令行工具',
+    shellCliHint: '安装后可在终端使用 sailfish 命令（默认使用桌面真实数据；--sandbox 进入沙箱）。',
+    shellCliInstall: '安装 sailfish 命令',
+    shellCliUninstall: '移除 sailfish 命令',
+    shellCliInstalled: '已安装：{path}',
+    shellCliNotInstalled: '尚未安装',
+    shellCliPathHint: '请将 {binDir} 加入 PATH 后重新打开终端，即可使用 sailfish。',
+    shellCliInstallOk: '已安装 sailfish 命令',
+    shellCliUninstallOk: '已移除 sailfish 命令',
+    shellCliFailed: '操作失败：{error}',
+    shellCliUnsupported: '当前仅支持在 macOS 上安装命令行工具',
     // 备份与恢复
     backupRestore: '备份与恢复',
     includeSshPasswords: '包含 SSH 密码',

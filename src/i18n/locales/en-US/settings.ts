@@ -1026,6 +1026,18 @@ export default {
     migrateErrNested: 'The target directory must not be nested with the current one',
     migrateErrNotWritable: 'The target directory is not writable, please choose another location',
     migrateErrAlreadyDefault: 'Already using the default directory',
+    // Shell CLI
+    shellCli: 'Command Line Tool',
+    shellCliHint: 'Install the sailfish command for your terminal (uses desktop data by default; pass --sandbox for an isolated sandbox).',
+    shellCliInstall: 'Install sailfish command',
+    shellCliUninstall: 'Remove sailfish command',
+    shellCliInstalled: 'Installed: {path}',
+    shellCliNotInstalled: 'Not installed',
+    shellCliPathHint: 'Add {binDir} to your PATH, then reopen the terminal to use sailfish.',
+    shellCliInstallOk: 'sailfish command installed',
+    shellCliUninstallOk: 'sailfish command removed',
+    shellCliFailed: 'Failed: {error}',
+    shellCliUnsupported: 'Shell CLI install is currently supported on macOS only',
     // Backup & Restore
     backupRestore: 'Backup & Restore',
     includeSshPasswords: 'Include SSH Passwords',

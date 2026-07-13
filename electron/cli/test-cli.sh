@@ -149,7 +149,7 @@ echo ""
 echo -e "${CYAN}[1/12] 基础命令${NC}"
 # ══════════════════════════════════════════════════════════════
 
-assert_contains "--help 显示帮助信息"        "Usage: sft" \
+assert_contains "--help 显示帮助信息"        "用法:" \
   $CLI --help
 
 assert_contains "--version 返回版本号"       "." \

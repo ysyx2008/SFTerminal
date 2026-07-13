@@ -935,6 +935,23 @@ interface Window {
       migrate: (target: string) => Promise<{ ok: boolean; error?: string }>
       reset: () => Promise<{ ok: boolean; error?: string }>
     }
+    shellCli: {
+      status: () => Promise<{
+        installed: boolean
+        shimPath: string | null
+        target: string | null
+        binDir: string
+        mode: 'packaged' | 'development'
+      }>
+      install: () => Promise<{
+        ok: boolean
+        shimPath?: string
+        binDir?: string
+        error?: string
+        pathHint?: boolean
+      }>
+      uninstall: () => Promise<{ ok: boolean; error?: string }>
+    }
     // 主机档案操作
     hostProfile: {
       get: (hostId: string) => Promise<HostProfile | null>

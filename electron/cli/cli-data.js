@@ -1,16 +1,16 @@
 /* eslint-env node */
 /**
- * CLI 数据目录：沙箱隔离 + 借用桌面 AI Profiles / 凭据
+ * CLI 数据目录
  *
- * 默认：CLI 写入 `{desktopUserData}/cli-sandbox/`，不污染桌面历史/日志/关切等。
- * 每次启动从桌面只读复制：
- *   - credentials.json + master.key（各类 Key）
- *   - 配置中的 AI 相关字段（aiProfiles / activeAiProfile / autoVisionModel / aiRules）
+ * 默认：与桌面共用同一 userData（真配置 / 真历史 / 真凭据）。
+ * 沙箱：`--sandbox` 或 `SFT_CLI_SANDBOX=1`，或显式 `SFT_DATA_DIR`（测试临时目录）。
+ * 沙箱内每次启动从桌面借用 AI Profiles + credentials（省去重配 Key）。
  *
  * 环境变量：
- *   SFT_DATA_DIR              显式指定沙箱（测试用临时目录）；未设则用 cli-sandbox
- *   SFT_CLI_SHARE_DESKTOP=1   与桌面共用同一 userData（不做沙箱、不借用）
- *   SFT_CLI_NO_BORROW=1       沙箱内不从桌面复制 Key/Profiles
+ *   SFT_DATA_DIR          显式数据目录（视为沙箱；测试用）
+ *   SFT_CLI_SANDBOX=1     使用 `{desktop}/cli-sandbox` 并借用桌面 Key/Profiles
+ *   SFT_CLI_NO_BORROW=1   沙箱内不从桌面复制
+ *   SFT_CLI_SHARE_DESKTOP=1  兼容旧开关（默认已是共用，等同无操作）
  */
 'use strict'
 
@@ -20,7 +20,6 @@ const os = require('os')
 
 const CONFIG_FILE = 'qiyu-terminal-config.json'
 const CREDENTIAL_FILES = ['credentials.json', 'master.key']
-/** 仅借用跑 AI 所需字段，其它配置留在沙箱默认值，避免污染桌面心智 */
 const BORROW_CONFIG_KEYS = ['aiProfiles', 'activeAiProfile', 'autoVisionModel', 'aiRules']
 
 function getDefaultUserDataPath() {
@@ -56,9 +55,6 @@ function getPointerPath() {
   return path.join(getAppDataPath(), 'SailFish', 'data-location.json')
 }
 
-/**
- * 桌面端真实 userData（忽略 SFT_DATA_DIR），与 Electron bootstrap / shim 指针逻辑一致。
- */
 function resolveDesktopUserData() {
   const defaultPath = getDefaultUserDataPath()
   try {
@@ -70,7 +66,7 @@ function resolveDesktopUserData() {
       }
     }
   } catch {
-    // 指针损坏则回退默认
+    // ignore
   }
   return defaultPath
 }
@@ -82,15 +78,11 @@ function copyFileIfExists(src, dst) {
   try {
     fs.chmodSync(dst, 0o600)
   } catch {
-    // Windows 等可能不支持 chmod，忽略
+    // ignore
   }
   return true
 }
 
-/**
- * 把桌面凭据与 AI Profiles 灌进沙箱。可重复调用（每次覆盖借用项）。
- * @returns {{ borrowedCredentials: boolean, borrowedAiProfiles: boolean }}
- */
 function borrowDesktopData(desktopDir, sandboxDir) {
   const result = { borrowedCredentials: false, borrowedAiProfiles: false }
   if (!desktopDir || !sandboxDir || path.resolve(desktopDir) === path.resolve(sandboxDir)) {
@@ -146,38 +138,56 @@ function borrowDesktopData(desktopDir, sandboxDir) {
   return result
 }
 
+function applySandbox(desktopDir, sandboxDir) {
+  process.env.SFT_DATA_DIR = sandboxDir
+  // 打包态 / ELECTRON_RUN_AS_NODE：真实 electron 需 setPath，shim 则读 SFT_DATA_DIR
+  try {
+    const electron = require('electron')
+    const app = electron && electron.app
+    if (app && typeof app.setPath === 'function') {
+      app.setPath('userData', sandboxDir)
+    }
+  } catch {
+    // shim 或不可用时忽略
+  }
+
+  if (process.env.SFT_CLI_NO_BORROW === '1') {
+    console.info(`[CLI] 沙箱: ${sandboxDir}（未借用桌面数据）`)
+    return { desktopDir, sandboxDir, shared: false }
+  }
+  const borrowed = borrowDesktopData(desktopDir, sandboxDir)
+  const parts = []
+  if (borrowed.borrowedAiProfiles) parts.push('AI Profiles')
+  if (borrowed.borrowedCredentials) parts.push('credentials')
+  if (parts.length > 0) {
+    console.info(`[CLI] 沙箱: ${sandboxDir}`)
+    console.info(`[CLI] 已从桌面借用: ${parts.join(', ')}`)
+  } else {
+    console.info(`[CLI] 沙箱: ${sandboxDir}（桌面无可借用的 AI/凭据）`)
+  }
+  return { desktopDir, sandboxDir, shared: false }
+}
+
 /**
- * 在加载 Electron shim / 服务之前调用：设定沙箱路径并借用桌面 Key/Profiles。
+ * 在加载 Electron shim / 服务之前调用。
  * @returns {{ desktopDir: string, sandboxDir: string, shared: boolean }}
  */
 function setupCliDataDir() {
   const desktopDir = resolveDesktopUserData()
-  const shareDesktop = process.env.SFT_CLI_SHARE_DESKTOP === '1'
 
-  if (shareDesktop) {
-    // 显式与桌面共用：不改 SFT_DATA_DIR，shim 会落到 desktopDir
-    return { desktopDir, sandboxDir: desktopDir, shared: true }
+  // 显式数据目录（回归测试临时目录等）→ 沙箱 + 借用
+  if (process.env.SFT_DATA_DIR) {
+    return applySandbox(desktopDir, process.env.SFT_DATA_DIR)
   }
 
-  if (!process.env.SFT_DATA_DIR) {
-    process.env.SFT_DATA_DIR = path.join(desktopDir, 'cli-sandbox')
+  // --sandbox / SFT_CLI_SANDBOX=1
+  if (process.env.SFT_CLI_SANDBOX === '1') {
+    const sandboxDir = path.join(desktopDir, 'cli-sandbox')
+    return applySandbox(desktopDir, sandboxDir)
   }
 
-  const sandboxDir = process.env.SFT_DATA_DIR
-  if (process.env.SFT_CLI_NO_BORROW !== '1') {
-    const borrowed = borrowDesktopData(desktopDir, sandboxDir)
-    if (borrowed.borrowedAiProfiles || borrowed.borrowedCredentials) {
-      const parts = []
-      if (borrowed.borrowedAiProfiles) parts.push('AI Profiles')
-      if (borrowed.borrowedCredentials) parts.push('credentials')
-      console.info(`[CLI] 沙箱: ${sandboxDir}`)
-      console.info(`[CLI] 已从桌面借用: ${parts.join(', ')}`)
-    } else {
-      console.info(`[CLI] 沙箱: ${sandboxDir}（桌面无可借用的 AI/凭据）`)
-    }
-  }
-
-  return { desktopDir, sandboxDir, shared: false }
+  // 默认：与桌面共用（SFT_CLI_SHARE_DESKTOP 已无必要，保留兼容）
+  return { desktopDir, sandboxDir: desktopDir, shared: true }
 }
 
 module.exports = {
