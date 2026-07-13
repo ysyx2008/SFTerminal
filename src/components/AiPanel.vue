@@ -189,8 +189,10 @@ const isThinkingExpanded = (stepId: string): boolean => {
 const toggleThinkingExpand = async (stepId: string, anchorEl?: HTMLElement) => {
   const viewportTop = anchorEl?.getBoundingClientRect().top
   const willExpand = !expandedThinkingSteps.value.has(stepId)
+  // 贴底时跟底 RO 会自己追；再跑锚定会和追底抢滚动 → 抖动
+  const nearBottom = isUserNearBottom.value
 
-  if (anchorEl && viewportTop !== undefined) {
+  if (anchorEl && viewportTop !== undefined && !nearBottom) {
     suppressLayoutResizeCompensation(THINKING_EXPAND_TRANSITION_MS + 120)
   }
 
@@ -203,6 +205,7 @@ const toggleThinkingExpand = async (stepId: string, anchorEl?: HTMLElement) => {
   expandedThinkingSteps.value = next
 
   if (!anchorEl || viewportTop === undefined) return
+  if (nearBottom) return
 
   const stabilize = () => {
     if (willExpand) {
@@ -615,6 +618,7 @@ const {
   lastError,
   // 滚动相关
   hasNewMessage,
+  isUserNearBottom,
   isHistoryScrollPending,
   updateScrollPosition,
   saveScrollTop,
