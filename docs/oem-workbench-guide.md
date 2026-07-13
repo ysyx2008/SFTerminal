@@ -34,6 +34,33 @@
 
 仅 **`workbench-assistant`** 带产出物（`@sailfish/workbench-assistant/artifact`）。与 desktop 经 `ArtifactDesktopHost` 契约交互（不直引 terminalStore）；toast 走 SDK。仍 `@/` 的仅 HoverTip / useMarkdown / composerQuote（过渡）。业务岗抄 sample，**不要**依赖 artifact。
 
+### 视觉：CSS token 名契约（值在 desktop 主题）
+
+岗包**不要**硬编码 hex / 自造一套色名。统一视觉靠 **CSS 变量名**；具体色值由 desktop 主题（`src/styles/main.css` + `src/themes/ui-themes.ts`）注入。
+
+岗包样式里写：
+
+```css
+background: var(--bg-surface);
+color: var(--text-primary);
+border: 1px solid var(--border-color);
+```
+
+#### 推荐使用的 token 名（岗包常用）
+
+| 层 | 变量名 |
+|---|---|
+| 结构背景 | `--bg-primary` / `--bg-secondary` / `--bg-tertiary` / `--bg-surface` / `--bg-hover` |
+| 文字 | `--text-primary` / `--text-secondary` / `--text-muted` |
+| 边框 / 圆角 | `--border-color` / `--border-radius` |
+| 强调 | `--accent-primary` / `--accent-secondary` / `--accent-contrast` |
+| 语义反馈 | `--color-success` / `--color-warning` / `--color-error` / `--color-info`（半透明用配套 `*-rgb`） |
+| 字体 | `--font-family` / `--font-mono` |
+
+对话区用户气泡等专用 token（`--chat-user-bubble-*`）一般只在 AiPanel 内用，业务岗不必碰。
+
+完整分层说明与主题维护约定见 `src/styles/main.css` 文件头。缺某个语义时：**先在 desktop 主题补变量**，再在岗包引用，不要在岗包里写死颜色。
+
 ---
 
 ## 你能改什么
@@ -159,7 +186,8 @@ terminalStore.createAssistantTab({
 
 - [ ] 包在 `packages/workbench-*`，且已写入根 `package.json` workspaces 依赖  
 - [ ] `registry.ts` 已 `registerWorkbench`  
-- [ ] **复用只经 SDK**（无 `@/components`、无 `@/stores`；对话用 `…/ai-panel`）  
+- [ ] **复用只经 SDK**（无 `@/components`、无 `@/stores`；对话用 `…/ai-panel`；通知用 `…/toast`）  
+- [ ] 样式只用上文「CSS token 名」表中的变量，无硬编码色值  
 - [ ] props 用 `WorkbenchRendererProps`  
 - [ ] `createAssistantTab({ workbenchKind })` 能打开且 prompt 符合预期  
 - [ ] 需要的 MCP `enabled: true` 且启动日志无 connect 失败（或可接受失败）  
