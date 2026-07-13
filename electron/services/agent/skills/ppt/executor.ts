@@ -8,6 +8,7 @@ import type { CanvasData } from '@shared/types'
 import type { ToolResult, AgentConfig } from '../../types'
 import type { ToolExecutorConfig } from '../../tool-executor'
 import { getTerminalStateService } from '../../../terminal-state.service'
+import { isAutoApproveWorkspacePath } from '../../tools/file'
 import { t } from '../../i18n'
 import { buildPreviewDocument } from './preview'
 import { renderHtmlToPptx, PptValidationError, type DeckSize } from './html-render-pptx'
@@ -107,6 +108,10 @@ async function pptFromHtml(
   }
 
   const fileExists = fs.existsSync(pptxPath)
+  const inWorkspace = isAutoApproveWorkspacePath(pptxPath)
+  // 覆盖非本技能维护的已有文件 → dangerous（对齐 write_text_file）；owned / 工作区 / 新建 → safe
+  const isDangerousOverwrite = fileExists && !owned && !inWorkspace
+  const riskLevel = isDangerousOverwrite ? 'dangerous' : 'safe'
   const appended = mode === 'append' && prev
   const tcKey = appended
     ? 'ppt.appending'
@@ -119,16 +124,16 @@ async function pptFromHtml(
     content: `${t(tcKey)}: ${pptxPath}`,
     toolName: 'ppt_from_html',
     toolArgs: { path: pptxPath, slides: deck.slides.length, mode, size: deck.size },
-    riskLevel: fileExists && !owned ? 'moderate' : 'safe',
+    riskLevel,
   })
 
-  // 覆盖确认：仅当要覆盖一个非本技能维护的已有 .pptx（replace 或无 deck.json 的 append）
-  if (fileExists && !owned) {
+  // 覆盖确认：非本技能维护的工作区外已有文件（与 write_text_file 的 isDangerousOverwrite 一致）
+  if (isDangerousOverwrite) {
     const approved = await executor.waitForConfirmation(
       toolCallId,
       'ppt_from_html',
       { path: pptxPath },
-      'moderate',
+      riskLevel,
       t('ppt.overwrite_confirm')
     )
     if (!approved) {

@@ -8,6 +8,7 @@ import type { ToolResult, AgentConfig } from '../../types'
 import type { ToolExecutorConfig } from '../../tool-executor'
 import { t } from '../../i18n'
 import { getTerminalStateService } from '../../../terminal-state.service'
+import { isAutoApproveWorkspacePath } from '../../tools/file'
 import {
   isSessionOpen,
   getSession,
@@ -951,7 +952,10 @@ async function excelSave(
   }
 
   const fileExists = fs.existsSync(filePath)
-  const riskLevel = fileExists ? 'moderate' : 'safe'
+  const inWorkspace = isAutoApproveWorkspacePath(filePath)
+  // 对齐 write_text_file：工作区外覆盖已有文件视为 dangerous；工作区 / 新建为 safe
+  const isDangerousOverwrite = fileExists && !inWorkspace
+  const riskLevel = isDangerousOverwrite ? 'dangerous' : 'safe'
 
   executor.addStep({
     type: 'tool_call',
@@ -961,12 +965,13 @@ async function excelSave(
     riskLevel
   })
 
-  if (fileExists) {
+  // 工作区外覆盖：始终弹确认（与 write_text_file 的 isDangerousOverwrite 分支一致）
+  if (isDangerousOverwrite) {
     const approved = await executor.waitForConfirmation(
       toolCallId,
       'excel_save',
       { path: filePath },
-      'moderate',
+      riskLevel,
       t('excel.overwrite_save_action')
     )
 
@@ -1119,7 +1124,9 @@ async function excelFromMarkdown(
   const styleConfig = resolveStyle(styleName)
 
   const fileExists = fs.existsSync(filePath)
-  const riskLevel = fileExists ? 'moderate' : 'safe'
+  const inWorkspace = isAutoApproveWorkspacePath(filePath)
+  const isDangerousOverwrite = fileExists && !inWorkspace
+  const riskLevel = isDangerousOverwrite ? 'dangerous' : 'safe'
 
   // tool_call 卡片的 content 与 buildPreToolCallDisplay('excel_from_markdown') 共享同一前缀
   // （t('excel.generating_from_md')/t('excel.overwriting_from_md') + ': ' + path），让流式预创建卡片
@@ -1135,12 +1142,12 @@ async function excelFromMarkdown(
     riskLevel
   })
 
-  if (fileExists) {
+  if (isDangerousOverwrite) {
     const approved = await executor.waitForConfirmation(
       toolCallId,
       'excel_from_markdown',
       { path: filePath },
-      'moderate',
+      riskLevel,
       t('excel.overwriting_from_md')
     )
 
