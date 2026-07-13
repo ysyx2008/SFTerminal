@@ -219,7 +219,8 @@ OEM Fork：生成/编辑自己的 `oem.config.ts` 后可 `git add -f` 纳入 **F
 
 ## 参考
 
-- 工作台 Monorepo 工程方案（为 OEM 加岗服务）：[`workbench-monorepo-design.md`](./workbench-monorepo-design.md)
+- **加岗操作手册（从这里开始）**：[`oem-workbench-guide.md`](./oem-workbench-guide.md)
+- 工作台 Monorepo 工程方案：[`workbench-monorepo-design.md`](./workbench-monorepo-design.md)
 - OEM 品牌配置：`shared/oem.config.template.ts`（模板）→ 本地/Fork 的 `shared/oem.config.ts`、`shared/brand.ts`
 - 现有工作台体系：`src/workbench/SPEC.md`
 - Agent 子系统：`electron/services/agent/SPEC.md`

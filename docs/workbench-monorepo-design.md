@@ -567,6 +567,7 @@ apps/desktop/                               @sailfish/core-team
 - [x] **W6** P1：local/ssh/companion **真抽包**；registry 全改包名 import（2026-07-13）  
 - [x] **W7a** SDK 真核 + AiPanel **薄壳正式出口**（2026-07-13）  
 - [x] **W7b** **明确不做**（2026-07-13）：同仓、公司内部团队；薄壳 SDK 即可，无需 AiPanel 实现迁包 / 独立编译 / 跨包发版  
+- [x] **OEM 加岗手册**：[`docs/oem-workbench-guide.md`](./oem-workbench-guide.md)（2026-07-13）  
 - [ ] **W8** SSO UI + 回调 + 可选落盘（有 IdP 需求再提前）  
 
 #### 刻意未做（避免误判为遗漏）

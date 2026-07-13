@@ -167,6 +167,11 @@ export interface TerminalTab {
   // 独立助手 Agent ID（仅 assistant 类型标签页使用）
   agentId?: string
   /**
+   * 工作台 kind（可选）。有值时优先于 `type` / companion 映射，
+   * 用于 OEM/业务岗（如 `sample`、自建 kind）。见 `resolveWorkbenchKind`。
+   */
+  workbenchKind?: string
+  /**
    * 本地助手会话是否已「提升」为独立 tab（显示在 Tab 栏、豁免 LRU 回收）。
    * 未提升的本地助手会话仅在 Hub 主区（首页视图）按焦点显示，不出现在 Tab 栏。
    */
@@ -665,14 +670,18 @@ export const useTerminalStore = defineStore('terminal', () => {
     isPromoted?: boolean
     /** 首页快速发起对话时传入，由 AiPanel 挂载后自动 runAgent */
     initialMessage?: string
+    /**
+     * 工作台 kind。默认走内置 `assistant`；OEM 岗传自建 kind（如 `sample`）。
+     * tab.type 仍为 `assistant`（共享助手会话形态）。
+     */
+    workbenchKind?: string
   }): string {
     const isCompanion = options?.agentId === COMPANION_TAB_AGENT_ID
-    if (isCompanion) {
-      if (!isWorkbenchAvailable('companion')) {
-        throw new Error('Companion workbench is disabled by OEM features')
-      }
-    } else if (!isWorkbenchAvailable('assistant')) {
-      throw new Error('Assistant workbench is disabled by OEM features')
+    const kindToCheck = isCompanion
+      ? 'companion'
+      : (options?.workbenchKind || 'assistant')
+    if (!isWorkbenchAvailable(kindToCheck)) {
+      throw new Error(`Workbench "${kindToCheck}" is unavailable (OEM features / Steam / not registered)`)
     }
     const id = uuidv4()
     const agentId = options?.agentId || `assistant-${id}`
@@ -686,6 +695,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       title: options?.title || defaultTitle,
       type: 'assistant',
       agentId,
+      workbenchKind: options?.workbenchKind,
       isConnected: true,
       isLoading: false,
       isRemote: options?.isRemote,
