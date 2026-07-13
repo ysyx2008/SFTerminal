@@ -568,7 +568,8 @@ apps/desktop/                               @sailfish/core-team
 - [x] **W7a** SDK 真核 + AiPanel **薄壳正式出口**（2026-07-13）  
 - [x] **W7b** **明确不做**（2026-07-13）：同仓、公司内部团队；薄壳 SDK 即可，无需 AiPanel 实现迁包 / 独立编译 / 跨包发版  
 - [x] **W7c** **复用只经 SDK**（2026-07-13）：岗包禁止 `@/components` / `@/stores`；允许列表 = SDK 门牌（`ai-panel` / `terminal-tab-view` / `workbench-shell` / `platform`）；手册写明；assistant artifact 为平台专属例外  
-- [x] **W7d** **A：对话壳与 artifact 解耦**（2026-07-13）：`useArtifactAgentBridge` 仅助手岗挂载；溯源跳转 → `agent-step-navigation`；AiPanel / useAgentMode 不再 import artifactStore（历史恢复 / workbench-handler 仍在 desktop 宿主）  
+- [x] **W7d** **A：对话壳与 artifact 解耦**（2026-07-13）：`useArtifactAgentBridge` 仅助手岗挂载；AiPanel / useAgentMode 不再 import artifactStore（历史恢复 / workbench-handler 仍在 desktop 宿主）  
+- [x] **W7d.1** **溯源跳转 = AiPanel 接口**（2026-07-13）：`scrollToAgentStep` defineExpose；AssistantWorkbench 持 ref 转给 ArtifactPanel；删除 `agent-step-navigation` 全局总线  
 - [x] **W7e** **artifact 迁入 `@sailfish/workbench-assistant`**（2026-07-13）：岗内真源；desktop 薄 re-export；UI 仍经 `@/` 用 toast 等 desktop 胶水（后续可再削）  
 - [x] **OEM 加岗手册**：[`docs/oem-workbench-guide.md`](./oem-workbench-guide.md)（2026-07-13）  
 - [ ] **W8** SSO UI + 回调 + 可选落盘（有 IdP 需求再提前）  

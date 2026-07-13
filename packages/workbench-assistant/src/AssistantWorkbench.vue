@@ -3,9 +3,10 @@
  * AssistantWorkbench —— 独立助手工作台（声明式区域，走通用 WorkbenchShell）
  *
  * 锚点区 = 聊天（AiPanel，常驻）；可隐区 = 产出物面板（ArtifactPanel，按需显隐）。
- * step→产出物接线在本岗挂载（useArtifactAgentBridge），对话壳不再认识 artifactStore。
+ * step→产出物接线在本岗挂载（useArtifactAgentBridge）。
+ * 「跳到生成处」经 AiPanel.scrollToAgentStep，由本壳持 ref 转发。
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { WorkbenchRendererProps } from '@sailfish/workbench-sdk'
 import { AiPanel } from '@sailfish/workbench-sdk/ai-panel'
 import { WorkbenchShell } from '@sailfish/workbench-sdk/workbench-shell'
@@ -18,6 +19,15 @@ const props = defineProps<WorkbenchRendererProps>()
 
 const artifactStore = useAssistantArtifactStore()
 useArtifactAgentBridge(() => props.tab.id)
+
+/** AiPanel 对外接口（defineExpose） */
+const aiPanelRef = ref<{
+  scrollToAgentStep: (stepId: string) => void | Promise<void>
+} | null>(null)
+
+function scrollToAgentStep(stepId: string) {
+  void aiPanelRef.value?.scrollToAgentStep(stepId)
+}
 
 const docExpanded = computed(() => artifactStore.isVisible(props.tab.id))
 const panelMinimized = computed(() => artifactStore.isPanelMinimized(props.tab.id))
@@ -43,10 +53,18 @@ function expandPanel(artifactId?: string) {
     toggle-side="right"
   >
     <template #anchor>
-      <AiPanel :tab-id="tab.id" :tab-active="isActive" />
+      <AiPanel
+        ref="aiPanelRef"
+        :tab-id="tab.id"
+        :tab-active="isActive"
+      />
     </template>
     <template #toggle>
-      <ArtifactPanel v-if="docExpanded" :tab-id="tab.id" />
+      <ArtifactPanel
+        v-if="docExpanded"
+        :tab-id="tab.id"
+        :scroll-to-agent-step="scrollToAgentStep"
+      />
       <ArtifactPanelRail
         v-else-if="panelMinimized"
         :tab-id="tab.id"

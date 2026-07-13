@@ -37,10 +37,11 @@ import { useToast } from '@/composables/useToast'
 import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '@/composables/useHoverTip'
 import HoverTipOverlay from '@/components/HoverTipOverlay.vue'
 import { useTerminalStore } from '@/stores/terminal'
-import { requestScrollToAgentStep } from '@/composables/agent-step-navigation'
 
 const props = defineProps<{
   tabId: string
+  /** 岗壳注入：滚到对话流指定 step（AiPanel.scrollToAgentStep） */
+  scrollToAgentStep?: (stepId: string) => void | Promise<void>
 }>()
 
 const { t } = useI18n()
@@ -303,12 +304,12 @@ function minimizePanel() {
 
 function jumpToSource(stepId?: string) {
   const rawId = stepId ?? activeSourceStepId.value
-  if (!rawId) return
+  if (!rawId || !props.scrollToAgentStep) return
   closeAllMenus()
   const tab = terminalStore.tabs.find(t => t.id === props.tabId)
   const allSteps = tab?.agentState?.steps ?? []
   const visibleStepId = resolveSourceStepIdById(rawId, allSteps)
-  requestScrollToAgentStep(props.tabId, visibleStepId)
+  void props.scrollToAgentStep(visibleStepId)
 }
 
 async function openFileFor(artifact: CanvasArtifact) {

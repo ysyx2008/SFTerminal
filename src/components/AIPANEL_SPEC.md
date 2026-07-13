@@ -180,6 +180,13 @@ AiPanel（新 tab 激活后）检测到 handoff
   └─ consumePendingComposerHandoff → runAgent         // 消费并发起 run
 ```
 
+### 对外暴露（defineExpose）
+
+| 方法 | 说明 |
+|---|---|
+| `analyzeText` / `addQuotedTerminalSelection` | 终端选区送入 Composer |
+| `scrollToAgentStep(stepId)` | 滚到对话流指定 step 并短暂高亮；岗壳（如 AssistantWorkbench）持 ref 转发，供产出物「跳到生成处」 |
+
 ### 草稿持久化
 
 - 用户在欢迎页 Composer 输入但未发送时，离开欢迎页前自动保存草稿（文字 + 图片）

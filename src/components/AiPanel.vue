@@ -13,7 +13,6 @@ import type { MessageScrollerHandle } from '../types/message-scroller'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import { useComposerQuoteStore } from '../stores/composer-quote'
-import { useScrollToAgentStepRequest } from '../composables/agent-step-navigation'
 import AgentPlanView from './AgentPlanView.vue'
 import AiComposer from './AiComposer.vue'
 import DropOverlay from './DropOverlay.vue'
@@ -1216,8 +1215,6 @@ function analyzeText(text: string) {
   addQuotedTerminalSelection(text, tab?.title ?? '')
 }
 
-defineExpose({ analyzeText, addQuotedTerminalSelection })
-
 // ==================== 定时任务 / 远程任务监听 ====================
 // 监听定时任务 / 远程任务：当有 pendingSchedulerTask 时自动执行
 // 触发时机：tab 切换到当前实例、或新的 pending task 被写入当前 tab
@@ -1786,6 +1783,10 @@ const scrollHistoryToBottom = () => {
   }
 }
 
+/**
+ * 滚到对话流中指定 Agent step 并短暂高亮。
+ * 由岗壳（如 AssistantWorkbench）经 ref 调用；产出物「跳到生成处」走此接口。
+ */
 async function scrollToAgentStep(stepId: string) {
   const index = flattenedItems.value.findIndex(
     item => item.type === 'step' && item.step?.id === stepId
@@ -1802,7 +1803,7 @@ async function scrollToAgentStep(stepId: string) {
   }, 2500)
 }
 
-useScrollToAgentStepRequest(toRef(props, 'tabId'), scrollToAgentStep)
+defineExpose({ analyzeText, addQuotedTerminalSelection, scrollToAgentStep })
 
 /** 首次展示从历史恢复的对话（尚无已存滚动位置）→ 应滚到底部 */
 const shouldScrollHistoryOnShow = () =>
