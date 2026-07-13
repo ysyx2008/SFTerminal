@@ -1,19 +1,2 @@
-export interface BastionConfig {
-  url: string
-  username: string
-  password: string
-  autoJumpHost: boolean
-  jumpHostPort: number
-  rejectUnauthorized: boolean
-}
-
-export interface BastionSyncResult {
-  success: boolean
-  error?: string
-  added: number
-  updated: number
-  removed: number
-  total: number
-  groupId: string
-  groupName: string
-}
+/** @deprecated 请改从 `@sailfish/shared-types` 或 `@shared/types` 导入；本文件为兼容 re-export */
+export * from '../../packages/shared-types/src/bastion'

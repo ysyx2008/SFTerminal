@@ -1,27 +1,2 @@
-export type DocumentParseStatus = 'queued' | 'parsing' | 'completed' | 'failed'
-
-export type DocumentParsePhase =
-  | 'queued'
-  | 'loading'
-  | 'extracting-text'
-  | 'detecting-images'
-  | 'rendering-preview'
-  | 'converting'
-  | 'formatting'
-  | 'completed'
-  | 'failed'
-
-export interface DocumentParseProgress {
-  requestId: string
-  fileIndex: number
-  fileCount: number
-  filename: string
-  fileSize: number
-  status: DocumentParseStatus
-  phase: DocumentParsePhase
-  percent: number
-  current?: number
-  total?: number
-  message?: string
-  error?: string
-}
+/** @deprecated 请改从 `@sailfish/shared-types` 或 `@shared/types` 导入；本文件为兼容 re-export */
+export * from '../../packages/shared-types/src/document'

@@ -25,13 +25,11 @@ SailFish（旗鱼）是一个私人 AI Agent 桌面应用。用户用自然语�
 
 ```
 SailFish/
-├── packages/                    # Monorepo 包（⚠️ 多为 re-export 骨架；进度见 docs/workbench-monorepo-design.md §6.0）
-│   ├── shared-types/            # → 目标：物理迁入 shared/types
-│   ├── workbench-sdk/           # → 目标：真 SDK；当前 re-export src/workbench
-│   └── workbench-{assistant,local,ssh,companion}/
-├── shared/types/                # 前后端共享类型（@shared/types 别名，唯一数据源）
-│   ├── mcp.ts                   # McpServerConfig
-│   └── auth.ts                  # AuthSession / AuthUser（应用 SSO）
+├── packages/                    # Monorepo（进度见 docs/workbench-monorepo-design.md §6.0）
+│   ├── shared-types/            # ✅ @sailfish/shared-types 物理真相源（shared/types 为兼容 re-export）
+│   ├── workbench-sdk/           # ⚠️ 仍 re-export src/workbench
+│   └── workbench-{assistant,local,ssh,companion}/  # ⚠️ 骨架
+├── shared/types/                # 兼容 re-export → packages/shared-types（请新代码用 @sailfish/shared-types）
 ├── shared/oem.config.template.ts # OEM 模板（运行时 oem.config.ts 由 ensure 生成，不进主线）
 ├── electron/                    # Electron 主进程 + 后端服务
 │   ├── main.ts                  # 主进程入口（窗口、IPC、服务初始化）

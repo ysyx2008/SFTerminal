@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['electron/**/*.test.ts', 'src/**/*.test.ts', 'shared/**/*.test.ts'],
+    include: ['electron/**/*.test.ts', 'src/**/*.test.ts', 'shared/**/*.test.ts', 'packages/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
@@ -17,7 +17,9 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'src'),
       '@electron': resolve(__dirname, 'electron'),
-      '@shared': resolve(__dirname, 'shared')
+      '@shared/types': resolve(__dirname, 'packages/shared-types/src'),
+      '@shared': resolve(__dirname, 'shared'),
+      '@sailfish/shared-types': resolve(__dirname, 'packages/shared-types/src/index.ts')
     }
   }
 })

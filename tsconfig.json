@@ -18,7 +18,8 @@
     "paths": {
       "@/*": ["./src/*"],
       "@electron/*": ["./electron/*"],
-      "@shared/types": ["./shared/types/index.ts"],
+      "@shared/types": ["./packages/shared-types/src/index.ts"],
+      "@shared/types/*": ["./packages/shared-types/src/*"],
       "@shared/*": ["./shared/*"],
       "@sailfish/shared-types": ["./packages/shared-types/src/index.ts"],
       "@sailfish/workbench-sdk": ["./packages/workbench-sdk/src/index.ts"],
@@ -28,6 +29,12 @@
       "@sailfish/workbench-companion": ["./packages/workbench-companion/src/index.ts"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue", "shared/**/*.ts"],
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.vue",
+    "shared/**/*.ts",
+    "packages/shared-types/src/**/*.ts"
+  ],
   "exclude": ["src/**/__tests__/**", "src/**/*.test.ts"]
 }

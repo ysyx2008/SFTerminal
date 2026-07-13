@@ -13,10 +13,17 @@
     "emitDeclarationOnly": true,
     "outDir": "./dist-electron-types",
     "paths": {
-      "@shared/types": ["./shared/types/index.ts"],
-      "@shared/*": ["./shared/*"]
+      "@shared/types": ["./packages/shared-types/src/index.ts"],
+      "@shared/types/*": ["./packages/shared-types/src/*"],
+      "@shared/*": ["./shared/*"],
+      "@sailfish/shared-types": ["./packages/shared-types/src/index.ts"]
     }
   },
-  "include": ["vite.config.ts", "electron/**/*.ts", "shared/**/*.ts"]
+  "include": [
+    "vite.config.ts",
+    "electron/**/*.ts",
+    "shared/**/*.ts",
+    "packages/shared-types/src/**/*.ts"
+  ]
 }
 
