@@ -8,6 +8,7 @@ import { ConfigService } from '../services/config.service'
 import { AiService } from '../services/ai.service'
 import { HistoryService } from '../services/history.service'
 import { HostProfileService } from '../services/host-profile.service'
+import { generateConversationTitle } from '../services/conversation/title-generator'
 import { createLogger, initLogging } from '../utils/logger'
 import { getDefaultShell, getLocalOS } from '../utils/platform'
 
@@ -454,8 +455,8 @@ async function historyList(args: string[]): Promise<void> {
   for (const r of recent) {
     const time = new Date(r.timestamp).toLocaleString()
     const status = r.status === 'completed' ? '✓' : '✗'
-    const task = (r.userTask || r.finalResult || '(unknown)').substring(0, 80)
-    console.log(`[${time}] ${status} ${task} (${r.steps?.length || 0} steps, ${r.duration || 0}ms)`)
+    const label = (r.title || r.userTask || r.finalResult || '(unknown)').substring(0, 80)
+    console.log(`[${time}] ${status} ${label} (${r.steps?.length || 0} steps, ${r.duration || 0}ms)`)
   }
 }
 
@@ -910,7 +911,9 @@ async function agentRun(args: string[]): Promise<void> {
   }
 
   const agent = new AgentService(ai, pty, hostProfile, mcp, config, ssh)
-  
+  const history = getHistory()
+  agent.setHistoryService(history)
+
   // Create a local terminal for the agent
   const ptyId = pty.create({}).id
   
@@ -924,6 +927,28 @@ async function agentRun(args: string[]): Promise<void> {
   // Once a step reaches "printed", all subsequent onStep calls for it are skipped.
   let inlineMode = false
   const printedSteps = new Set<string>()
+  let titleGenerationStarted = false
+  let titlePromise: Promise<string | null> = Promise.resolve(null)
+
+  const maybeStartTitleGeneration = () => {
+    if (titleGenerationStarted) return
+    const live = agent.getAgent(ptyId)
+    const sessionId = live?.getSessionId()
+    if (!sessionId || !task.trim()) return
+    titleGenerationStarted = true
+    titlePromise = generateConversationTitle(
+      { aiService: ai, configService: config, historyService: history, agentService: agent },
+      { sessionId, userMessage: task.trim() }
+    )
+      .then((title) => {
+        if (title) console.log(`\n📌 Session title: ${title}`)
+        return title
+      })
+      .catch((err) => {
+        log.warn('generateConversationTitle failed:', err)
+        return null
+      })
+  }
   
   const cols = () => process.stdout.columns || 80
   const truncateToWidth = (str: string, maxWidth: number): string => {
@@ -954,7 +979,12 @@ async function agentRun(args: string[]): Promise<void> {
     type === 'tool_result' ? '📋' : type === 'message' ? '💬' : '  '
 
   const callbacks = {
+    onStart: () => {
+      // initializeRun 已建会话；与桌面一样首条即异步生成标题，不阻塞 Agent
+      maybeStartTitleGeneration()
+    },
     onStep: (_agentId: string, step: any) => {
+      maybeStartTitleGeneration()
       if (printedSteps.has(step.id)) return
       
       const isStreaming = step.isStreaming === true
@@ -1033,6 +1063,28 @@ async function agentRun(args: string[]): Promise<void> {
     )
     console.log('\n=== Result ===')
     console.log(result)
+
+    // 标题异步生成，落盘前稍等（避免进程退出时请求还在飞）
+    try {
+      await Promise.race([
+        titlePromise,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 30_000)),
+      ])
+    } catch { /* already logged */ }
+
+    const sessionId = agent.getAgent(ptyId)?.getSessionId()
+    if (sessionId) {
+      const record = history.getAgentRecordById(sessionId)
+      if (record) {
+        console.log(`\n=== History ===`)
+        console.log(`sessionId: ${sessionId}`)
+        if (record.title) console.log(`title: ${record.title}`)
+        console.log(`steps: ${record.steps?.length || 0}, status: ${record.status}`)
+      } else {
+        console.log(`\n=== History ===`)
+        console.log(`sessionId: ${sessionId} (record not found on disk yet)`)
+      }
+    }
   } catch (error: any) {
     console.error('\nAgent execution failed:', error.message || error)
   } finally {
