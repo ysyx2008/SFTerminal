@@ -237,26 +237,6 @@ const shouldShowTaskCompleteFooter = (item: { step?: { id: string; type: string 
   return messageSteps[messageSteps.length - 1].id === item.step.id
 }
 
-// 任务完成尾注首次出现时给一次性 fade-in 动画。
-//
-// 问题：footer 是 `v-if` 控制，且外层用虚拟滚动，footer 滚出
-// 视区后会被 unmount，滚回时 remount——如果 CSS 入场动画无条件挂在 .agent-final-footer
-// 上，每次 remount 都会重播，造成"翻历史一路滑入闪烁"。
-//
-// 方案：用 Set 记录"已经播过入场动画的 group id"，class 只在 Set 不包含该 group 时
-// 附加 → 第一次出现时播动画 → animationend 写入 Set → 之后无论怎么 remount 都不再
-// 附加 class 也就不再播放。
-const animatedFooters = new Set<string>()
-
-const isFooterFirstShow = (groupId: string | undefined): boolean => {
-  if (!groupId) return false
-  return !animatedFooters.has(groupId)
-}
-
-const markFooterAnimated = (groupId: string | undefined) => {
-  if (groupId) animatedFooters.add(groupId)
-}
-
 const taskCompleteFooterLabels = new Map<string, string>()
 const bondTrustForFooter = ref<BondTrustLevel>('stranger')
 const bondTrustForFooterReady = ref(false)
@@ -315,6 +295,34 @@ const isLoadedFromHistory = computed(() => {
   const tab = terminalStore.tabs.find(t => t.id === currentTabId.value)
   return !!tab?.agentState?.loadedFromHistory
 })
+
+// 任务完成尾注首次出现时给一次性 fade-in 动画。
+//
+// 问题：footer 是 `v-if` 控制，且外层用虚拟滚动，footer 滚出
+// 视区后会被 unmount，滚回时 remount——如果 CSS 入场动画无条件挂在 .agent-final-footer
+// 上，每次 remount 都会重播，造成"翻历史一路滑入闪烁"。
+//
+// 方案：用 Set 记录"已经播过入场动画的 group id"，class 只在 Set 不包含该 group 时
+// 附加 → 第一次出现时播动画 → animationend 写入 Set → 之后无论怎么 remount 都不再
+// 附加 class 也就不再播放。
+//
+// 历史冷加载：会话打开时尾注已在最终态，不应再播「完成瞬间」的淡入；渲染时写入 Set
+// 并跳过 first-show，续聊后 remount 也不会误播。
+const animatedFooters = new Set<string>()
+
+const isFooterFirstShow = (groupId: string | undefined): boolean => {
+  if (!groupId) return false
+  if (animatedFooters.has(groupId)) return false
+  if (isLoadedFromHistory.value) {
+    animatedFooters.add(groupId)
+    return false
+  }
+  return true
+}
+
+const markFooterAnimated = (groupId: string | undefined) => {
+  if (groupId) animatedFooters.add(groupId)
+}
 
 // 正在 fork 的 group ID 集合：防止用户连续点击同一个按钮创建多个 fork tab
 const forkingGroupIds = ref<Set<string>>(new Set())
@@ -4098,9 +4106,9 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 }
 
 /* 成功完成的静默尾注：在最终消息下方轻轻浮出一行，不再用整张绿色卡片。
-   入场动画通过 agent-final-footer--first-show 一次性附加，animationend 后由 JS 把
-   该 group id 加入 animatedFooters Set，class 不再附加 → 后续虚拟滚动 unmount/mount
-   不会重播动画，避免"翻历史一路滑入闪烁"的回归。
+   入场动画通过 agent-final-footer--first-show 一次性附加（仅 live 完成；历史冷加载跳过），
+   animationend 后由 JS 把该 group id 加入 animatedFooters Set，class 不再附加 →
+   后续虚拟滚动 unmount/mount 不会重播动画，避免"翻历史一路滑入闪烁"的回归。
 
    ⚠️ UX 不变量：footer 的虚拟列表 item size 必须恒定，与 footer 内
       任何子元素的存在与否无关。min-height 锁到当前最大子元素（22×22 操作
