@@ -7,7 +7,7 @@ import type { JumpHostConfig } from './config'
 import { useConfigStore } from './config'
 import type { TerminalScreenService, ScreenContent } from '../services/terminal-screen.service'
 import type { TerminalSnapshotManager, TerminalSnapshot, TerminalDiff } from '../services/terminal-snapshot.service'
-import { useAssistantArtifactStore } from '../workbench/assistant/artifact/store'
+import { useAssistantArtifactStore } from '@sailfish/workbench-assistant/artifact/store'
 import { createLogger } from '../utils/logger'
 import {
   findActivePaneInLayout,

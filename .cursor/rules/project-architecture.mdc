@@ -128,7 +128,7 @@ SailFish/
 
 ### 工作台与助手产出物
 - **Workbench**（`src/workbench/`）：Tab 界面形态抽象；`local`/`ssh` 共用 `TerminalTabView`，`assistant` 用 `AssistantWorkbench`（聊天 + 产出物面板）
-- **产出物面板**（`src/workbench/assistant/artifact/`）：assistant 专属；Pinia `useAssistantArtifactStore`；Agent 协议仍用 `CanvasData`（`shared/types/canvas.ts`）
+- **产出物面板**（`@sailfish/workbench-assistant/artifact`，物理在 `packages/workbench-assistant/src/artifact/`）：assistant 专属；Pinia `useAssistantArtifactStore`；Agent 协议仍用 `CanvasData`（`shared/types/canvas.ts`）
 - 旧路径 `src/canvas/`、`stores/canvas.ts` 保留 deprecated re-export
 - **单助手 Hub 模型**（2026-06-18）：本地 assistant Tab 默认不显示在 Tab 栏，通过左侧「最近对话」侧栏聚焦切换（`hubFocusedAssistantTabId`）；右键「在新标签页中打开」标记 `isPromoted=true` 后进入 Tab 栏；LRU 回收上限 5 个 Hub 会话，并发软上限 8 个；远程助手（`isRemote=true`）不受影响
 

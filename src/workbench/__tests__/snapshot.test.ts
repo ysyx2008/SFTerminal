@@ -4,7 +4,7 @@ import {
   applyCanvasData,
   createTabArtifactState,
   hidePanel
-} from '../assistant/artifact/domain/artifact-registry'
+} from '@sailfish/workbench-assistant/artifact'
 
 describe('buildAssistantArtifactSnapshot', () => {
   it('无 artifact 时 panelVisible 为 false', () => {

@@ -2,7 +2,7 @@
  * 工作台反向 IPC 处理器（渲染进程）
  */
 import { useTerminalStore } from '../stores/terminal'
-import { useAssistantArtifactStore } from '../workbench/assistant/artifact/store'
+import { useAssistantArtifactStore } from '@sailfish/workbench-assistant/artifact/store'
 import { buildAssistantArtifactSnapshot } from '../workbench/assistant/snapshot'
 import { createLogger } from '../utils/logger'
 

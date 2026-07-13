@@ -6,8 +6,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { PanelRightOpen } from 'lucide-vue-next'
 import type { CanvasArtifact } from '@shared/types'
-import HoverTipOverlay from '../../../../components/HoverTipOverlay.vue'
-import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '../../../../composables/useHoverTip'
+import HoverTipOverlay from '@/components/HoverTipOverlay.vue'
+import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '@/composables/useHoverTip'
 import {
   artifactDisplayLabel,
   sortArtifactsByRecent,

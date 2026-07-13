@@ -1,6 +1,6 @@
-/** @deprecated 请从 `src/workbench/assistant/artifact/store` 导入 */
+/** @deprecated 请从 `@sailfish/workbench-assistant/artifact/store` 导入 */
 export {
   useAssistantArtifactStore,
   useCanvasStore,
   type ArtifactDiskSyncEvent,
-} from '../workbench/assistant/artifact/store'
+} from '@sailfish/workbench-assistant/artifact/store'

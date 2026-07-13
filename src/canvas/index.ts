@@ -1,2 +1,2 @@
-/** @deprecated 请从 `src/workbench/assistant/artifact` 导入 */
-export * from '../workbench/assistant/artifact'
+/** @deprecated 请从 `@sailfish/workbench-assistant/artifact` 导入 */
+export * from '@sailfish/workbench-assistant/artifact'

@@ -5,7 +5,7 @@
  * 首次 watch 只建指纹基线、不重放（历史恢复由 terminal 宿主 hydrate，避免双写/多余 I/O）。
  */
 import { watch, onUnmounted, toValue, type MaybeRefOrGetter } from 'vue'
-import { useTerminalStore } from '../../../../stores/terminal'
+import { useTerminalStore } from '@/stores/terminal'
 import { useAssistantArtifactStore } from '../store'
 
 function stepArtifactFingerprint(step: {

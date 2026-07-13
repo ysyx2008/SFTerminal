@@ -13,7 +13,7 @@ import {
   isPanelVisible,
   removeArtifact,
   setActiveArtifact,
-} from '../../workbench/assistant/artifact/domain/artifact-registry'
+} from '@sailfish/workbench-assistant/artifact'
 
 describe('artifact-registry', () => {
   it('open 同 filePath 时 upsert 而非重复 tab', () => {

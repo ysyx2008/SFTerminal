@@ -2,7 +2,7 @@
   "name": "@sailfish/workbench-assistant",
   "version": "0.1.0",
   "private": true,
-  "description": "独立助手工作台（descriptor / prompt / AssistantWorkbench）",
+  "description": "独立助手工作台（descriptor / prompt / AssistantWorkbench / artifact）",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -10,10 +10,15 @@
     ".": "./src/index.ts",
     "./descriptor": "./src/descriptor.ts",
     "./prompt": "./src/prompt.ts",
-    "./agent-tools": "./src/agent-tools.ts"
+    "./agent-tools": "./src/agent-tools.ts",
+    "./artifact": "./src/artifact/index.ts",
+    "./artifact/store": "./src/artifact/store.ts",
+    "./artifact/*": "./src/artifact/*"
   },
   "peerDependencies": {
-    "vue": "^3.4.0"
+    "vue": "^3.4.0",
+    "pinia": "^2.1.0 || ^3.0.0",
+    "vue-i18n": "^9.0.0 || ^10.0.0 || ^11.0.0"
   },
   "dependencies": {
     "@sailfish/shared-types": "*",

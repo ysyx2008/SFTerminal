@@ -8,7 +8,7 @@ import {
   filterArtifactsByQuery,
   pickVisibleArtifactTabs,
   sortArtifactsByRecent
-} from '../../workbench/assistant/artifact/domain/artifact-tab-layout'
+} from '@sailfish/workbench-assistant/artifact'
 
 function artifact(id: string, title: string, updatedAt: number): CanvasArtifact {
   return {

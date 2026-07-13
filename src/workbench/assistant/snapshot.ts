@@ -4,7 +4,7 @@ import {
   getArtifacts,
   isPanelVisible,
   type TabArtifactState
-} from './artifact/domain/artifact-registry'
+} from '@sailfish/workbench-assistant/artifact'
 
 export function buildAssistantArtifactSnapshot(
   tabId: string,

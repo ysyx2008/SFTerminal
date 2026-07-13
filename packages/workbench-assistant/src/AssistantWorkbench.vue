@@ -9,10 +9,10 @@ import { computed } from 'vue'
 import type { WorkbenchRendererProps } from '@sailfish/workbench-sdk'
 import { AiPanel } from '@sailfish/workbench-sdk/ai-panel'
 import { WorkbenchShell } from '@sailfish/workbench-sdk/workbench-shell'
-import { useAssistantArtifactStore } from '@/workbench/assistant/artifact/store'
-import { useArtifactAgentBridge } from '@/workbench/assistant/artifact/composables/useArtifactAgentBridge'
-import ArtifactPanel from '@/workbench/assistant/artifact/components/ArtifactPanel.vue'
-import ArtifactPanelRail from '@/workbench/assistant/artifact/components/ArtifactPanelRail.vue'
+import { useAssistantArtifactStore } from './artifact/store'
+import { useArtifactAgentBridge } from './artifact/composables/useArtifactAgentBridge'
+import ArtifactPanel from './artifact/components/ArtifactPanel.vue'
+import ArtifactPanelRail from './artifact/components/ArtifactPanelRail.vue'
 
 const props = defineProps<WorkbenchRendererProps>()
 

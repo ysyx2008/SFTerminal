@@ -1,6 +1,6 @@
 # 助手产出物（Artifact）子系统 SPEC
 
-> Last verified: 2026-06-14
+> Last verified: 2026-07-13
 
 ## 职责
 
@@ -8,12 +8,12 @@
 
 **定位**：本次助手会话产出的、可 revisit 的文件类成果索引 + 内嵌预览/轻编辑。不是文件管理器，不替代 Finder。
 
-**命名说明**：Agent 协议层仍称 `CanvasData`（`shared/types/canvas.ts`）；前端 UI 域统一称 **artifact**，模块位于 `src/workbench/assistant/artifact/`。
+**命名说明**：Agent 协议层仍称 `CanvasData`（`shared/types/canvas.ts`）；前端 UI 域统一称 **artifact**，模块位于 `packages/workbench-assistant/src/artifact/`（`@sailfish/workbench-assistant/artifact`）。
 
 ## 目录
 
 ```
-src/workbench/assistant/artifact/
+packages/workbench-assistant/src/artifact/
   SPEC.md
   index.ts                 # 对外统一导出
   store.ts                 # Pinia：useAssistantArtifactStore
@@ -24,9 +24,14 @@ src/workbench/assistant/artifact/
   components/
     ArtifactPanel.vue      # 主面板
     *Renderer.vue
+  composables/
+    useArtifactAgentBridge.ts  # 仅 AssistantWorkbench 挂载
   __tests__/
 ```
 
+桌面仍有薄 re-export：`src/workbench/assistant/artifact/{index,store}.ts`（deprecated）。
+
+对 desktop 的依赖（过渡）：UI 组件经 `@/` 引用 toast / HoverTip / terminalStore / agent-step-navigation / useMarkdown 等；**不**进 SDK。
 ## 分层
 
 | 层 | 路径 | 职责 |

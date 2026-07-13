@@ -33,11 +33,11 @@ import {
 } from '../index'
 import { getRendererComponent, getRendererIcon } from '../renderers/ui-registry'
 import { resolveSourceStepIdById } from '../domain/artifact-source'
-import { useToast } from '../../../../composables/useToast'
-import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '../../../../composables/useHoverTip'
-import HoverTipOverlay from '../../../../components/HoverTipOverlay.vue'
-import { useTerminalStore } from '../../../../stores/terminal'
-import { requestScrollToAgentStep } from '../../../../composables/agent-step-navigation'
+import { useToast } from '@/composables/useToast'
+import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '@/composables/useHoverTip'
+import HoverTipOverlay from '@/components/HoverTipOverlay.vue'
+import { useTerminalStore } from '@/stores/terminal'
+import { requestScrollToAgentStep } from '@/composables/agent-step-navigation'
 
 const props = defineProps<{
   tabId: string

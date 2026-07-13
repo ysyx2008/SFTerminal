@@ -10,7 +10,7 @@
 |---|---|
 | `@sailfish/shared-types` | ✅ |
 | `@sailfish/workbench-sdk` | ✅ types / registry / prompt / bootstrap；壳出口见下 |
-| `@sailfish/workbench-*` | ✅ 内置台 + sample；**禁止直引 `@/components`** |
+| `@sailfish/workbench-*` | ✅ 内置台 + sample；**禁止直引 `@/components`**；assistant 含 artifact 子系统 |
 
 ## 复用只经 SDK
 

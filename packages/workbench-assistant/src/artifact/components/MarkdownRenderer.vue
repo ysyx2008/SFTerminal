@@ -8,10 +8,10 @@ import { Eye, MessageSquareQuote, SquarePen } from 'lucide-vue-next'
 import { useAssistantArtifactStore } from '../store'
 import { useArtifactSaveBridge } from '../domain/artifact-save-bridge'
 import { useArtifactContentHydration } from '../composables/useArtifactContentHydration'
-import { useComposerQuoteStore } from '../../../../stores/composer-quote'
-import { useTerminalStore } from '../../../../stores/terminal'
-import { useMarkdown } from '../../../../composables/useMarkdown'
-import { useToast } from '../../../../composables/useToast'
+import { useComposerQuoteStore } from '@/stores/composer-quote'
+import { useTerminalStore } from '@/stores/terminal'
+import { useMarkdown } from '@/composables/useMarkdown'
+import { useToast } from '@/composables/useToast'
 
 const props = defineProps<{
   tabId: string
