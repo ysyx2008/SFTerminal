@@ -10,25 +10,22 @@ function assessment(
 }
 
 describe('riskNeedsConfirm', () => {
-  it('safe：任意模式都不确认', () => {
-    expect(riskNeedsConfirm('safe', 'strict')).toBe(false)
-    expect(riskNeedsConfirm('safe', 'relaxed')).toBe(false)
-    expect(riskNeedsConfirm('safe', 'free')).toBe(false)
-  })
-
-  it('strict：非 safe 均确认', () => {
+  it('strict：全部确认（含 safe）', () => {
+    expect(riskNeedsConfirm('safe', 'strict')).toBe(true)
     expect(riskNeedsConfirm('moderate', 'strict')).toBe(true)
     expect(riskNeedsConfirm('dangerous', 'strict')).toBe(true)
     expect(riskNeedsConfirm('blocked', 'strict')).toBe(true)
   })
 
   it('free：任意等级都不确认', () => {
+    expect(riskNeedsConfirm('safe', 'free')).toBe(false)
     expect(riskNeedsConfirm('moderate', 'free')).toBe(false)
     expect(riskNeedsConfirm('dangerous', 'free')).toBe(false)
     expect(riskNeedsConfirm('blocked', 'free')).toBe(false)
   })
 
-  it('relaxed：只确认 dangerous/blocked', () => {
+  it('relaxed：safe 不确认，只确认 dangerous/blocked', () => {
+    expect(riskNeedsConfirm('safe', 'relaxed')).toBe(false)
     expect(riskNeedsConfirm('moderate', 'relaxed')).toBe(false)
     expect(riskNeedsConfirm('dangerous', 'relaxed')).toBe(true)
     expect(riskNeedsConfirm('blocked', 'relaxed')).toBe(true)
@@ -42,7 +39,7 @@ describe('riskNeedsConfirm', () => {
 })
 
 describe('commandNeedsConfirm', () => {
-  it('strict：连 safe 也确认（命令路径特例）', () => {
+  it('strict：连 safe 也确认', () => {
     expect(commandNeedsConfirm(assessment('safe'), 'strict')).toBe(true)
   })
 
