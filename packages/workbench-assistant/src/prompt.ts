@@ -3,7 +3,7 @@
  *
  * 类型暂从 desktop `src/workbench/types` 引用（SDK 真抽前避免循环依赖）。
  */
-import type { WorkbenchAgentPromptTab } from '../../../src/workbench/types'
+import type { WorkbenchAgentPromptTab } from '@sailfish/workbench-sdk'
 
 export type { WorkbenchAgentPromptTab }
 

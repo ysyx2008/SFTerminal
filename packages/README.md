@@ -1,25 +1,29 @@
 # Packages（OEM / Workbench Monorepo）
 
-> **状态（2026-07-13）**：npm workspaces ✅（W5：暂不切 pnpm）；内置工作台包已真抽。  
+> **状态（2026-07-13）**：npm workspaces；内置台真抽；**SDK 真核 + AiPanel 正式出口（W7a）**。  
 > 完整 TODO：[`docs/workbench-monorepo-design.md` §6.0](../docs/workbench-monorepo-design.md)。
 
 ## 当前事实
 
 | 包名 | 状态 |
 |---|---|
-| `@sailfish/shared-types` | ✅ 真相源在 `packages/shared-types/src/` |
-| `@sailfish/workbench-assistant` | ✅ descriptor / prompt / agent-tools / Vue；AiPanel+artifact 仍 `@/` |
-| `@sailfish/workbench-local` / `ssh` | ✅ descriptor / prompt；`TerminalTabView` 仍 desktop（Teleport） |
-| `@sailfish/workbench-companion` | ✅ descriptor / prompt / CompanionWorkbench；AiPanel 仍 `@/` |
-| `@sailfish/workbench-sample` | ✅ 业务台样例 + bootstrap 单测 |
-| `@sailfish/workbench-sdk` | ⚠️ 仍 re-export → `src/workbench`（types/registry 未迁） |
+| `@sailfish/shared-types` | ✅ |
+| `@sailfish/workbench-sdk` | ✅ types / registry / prompt / bootstrap；`./ai-panel` 正式出口（实现仍在 desktop） |
+| `@sailfish/workbench-*` | ✅ 内置台 + sample；对话经 SDK `ai-panel` |
 
-## 导入约定
+## 岗位台怎么用同款对话
 
 ```ts
-import type { TerminalType } from '@sailfish/shared-types'
-import { descriptor } from '@sailfish/workbench-local/descriptor'
-import { LOCAL_WORKBENCH_AGENT_PROMPT } from '@sailfish/workbench-local/prompt'
+import { AiPanel } from '@sailfish/workbench-sdk/ai-panel'
+import type { WorkbenchDescriptor } from '@sailfish/workbench-sdk'
+
+export const descriptor: WorkbenchDescriptor = {
+  kind: 'my-job',
+  renderer: MyWorkbench, // 模板里嵌 <AiPanel :tab-id="tab.id" :tab-active="isActive" />
+  agentPrompt: '...岗位说明与工具用法...',
+  skills: ['excel'],
+  mcpServers: [/* ... */],
+}
 ```
 
-兼容：`@shared/types`、`@/workbench/<kind>/prompt` 薄 re-export 仍可用。
+岗位差异只改 descriptor；外观用同款 AiPanel。P2 余量：把 AiPanel 实现迁进 SDK 并去掉对 desktop store 的硬依赖。

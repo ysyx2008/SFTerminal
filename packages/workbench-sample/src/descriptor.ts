@@ -1,5 +1,5 @@
 import SampleWorkbench from './SampleWorkbench.vue'
-import type { WorkbenchDescriptor } from '../../../src/workbench/types'
+import type { WorkbenchDescriptor } from '@sailfish/workbench-sdk'
 import { SAMPLE_FAKE_MCP, SAMPLE_WORKBENCH_SKILLS } from './capabilities'
 import { SAMPLE_WORKBENCH_AGENT_PROMPT } from './prompt'
 

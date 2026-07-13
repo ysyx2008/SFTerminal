@@ -11,9 +11,9 @@
  */
 import { computed } from 'vue'
 import type { TerminalTab } from '@/stores/terminal'
+import { AiPanel } from '@sailfish/workbench-sdk/ai-panel'
 import { useAssistantArtifactStore } from '@/workbench/assistant/artifact/store'
 import WorkbenchShell from '@/components/workbench/WorkbenchShell.vue'
-import AiPanel from '@/components/AiPanel.vue'
 import ArtifactPanel from '@/workbench/assistant/artifact/components/ArtifactPanel.vue'
 import ArtifactPanelRail from '@/workbench/assistant/artifact/components/ArtifactPanelRail.vue'
 

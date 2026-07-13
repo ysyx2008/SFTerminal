@@ -549,8 +549,8 @@ apps/desktop/                               @sailfish/core-team
 | **P-1 shared-types** | **物理迁入**真包 + 全仓 import | ⚠️ | ✅ 物理迁入 `packages/shared-types`；`shared/types` 为兼容 re-export；全仓改 `@sailfish/shared-types` 可渐进 |
 | **Workspace** | pnpm（决策）或过渡 npm workspaces | ✅ | **现网路径 = npm workspaces**（W1–W4 已验证）；pnpm 仍为可选终局，有同仓多团队 / 发版需求再切（见决策 #2） |
 | **P0 assistant 抽包** | 物理迁 `workbench-assistant` + 构建冒烟 | ⚠️ | ✅ descriptor/prompt/agent-tools/AssistantWorkbench 真源在包内；`src/` 薄 re-export；artifact/AiPanel 仍 desktop（P2）；electron-builder 全量冒烟待做 |
-| **P1 全台 + SDK** | local/ssh/companion + sdk 真包；region 渲染器 | ⚠️ | ✅ 四内置台 + sample 真源在 packages；SDK 仍 re-export；❌ region / `apps/desktop` |
-| **P2 AiPanel 下沉** | 对话区可被业务台复用 | ⏸❌ | 见 `src/components/AIPANEL_SPEC.md`；高风险，单独排期 |
+| **P1 全台 + SDK** | local/ssh/companion + sdk 真包；region 渲染器 | ⚠️ | ✅ 内置台真抽；✅ SDK 真核（types/registry/prompt/bootstrap）；AiPanel 正式出口 ⚠️ 实现仍在 desktop；❌ region / apps/desktop |
+| **P2 AiPanel 下沉** | 对话区可被业务台复用 | ⚠️ | ✅ 包名出口 `@sailfish/workbench-sdk/ai-panel`；❌ 实现迁包 / 去 `@/` 依赖（P2 余量） |
 | **P3 useAgentMode** | 原语进 SDK | ⏸❌ | 后置 |
 | **P4 发版机制** | changesets / Packages / CODEOWNERS | ⏸❌ | Fork OEM 不强制；同仓多团队再开 |
 | **P5 业务试点** | 模板 + 第一个岗位台 | ❌ | 依赖 P0–P1（对话区要等 P2） |
@@ -565,7 +565,8 @@ apps/desktop/                               @sailfish/core-team
 - [x] **W4** 样例业务台 `@sailfish/workbench-sample`（descriptor + skills + 假 MCP）+ bootstrap 单测（2026-07-13）；无 Welcome 入口，不污染日常 UI  
 - [x] **W5** **评估结论（2026-07-13）**：暂不切 pnpm。理由：① 本机/CI 已稳定跑 npm workspaces；② W1–W4 链路已通；③ 切 pnpm 需改 lockfile、electron-builder、postinstall、文档与贡献者习惯，收益暂不明显。决策 #2 改为「目标仍可 pnpm，**当前官方路径 = npm workspaces**」。  
 - [x] **W6** P1：local/ssh/companion **真抽包**（descriptor/prompt；companion 含 Vue）；registry 全改包名 import（2026-07-13）。SDK 仍 thin re-export `src/workbench`（types/registry-store 未迁；region 渲染器 / apps/desktop 仍 ❌）  
-- [ ] **W7** P2 AiPanel（单独里程碑）  
+- [x] **W7a** SDK 真核 + AiPanel **正式出口**（2026-07-13）：types/registry-store/resolve-prompt/bootstrap 进 `@sailfish/workbench-sdk`；岗从 `@sailfish/workbench-sdk/ai-panel` 引用同款对话；实现仍在 `src/components/AiPanel.vue`（P2 余量：迁实现、去 desktop 硬依赖）  
+- [ ] **W7b** P2 余量：AiPanel 实现迁入 SDK、解耦 store（完整解耦）  
 - [ ] **W8** SSO UI + 回调 + 可选落盘（有 IdP 需求再提前）  
 
 #### 刻意未做（避免误判为遗漏）

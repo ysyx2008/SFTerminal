@@ -9,7 +9,7 @@
  * W6：组件物理在本包；AiPanel 仍依赖 desktop `@/`（P2 前）。
  */
 import type { TerminalTab } from '@/stores/terminal'
-import AiPanel from '@/components/AiPanel.vue'
+import { AiPanel } from '@sailfish/workbench-sdk/ai-panel'
 
 defineProps<{
   tab: TerminalTab

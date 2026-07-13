@@ -3,7 +3,7 @@
  * TerminalTabView 仍在 desktop（Teleport 保命池），经 `@/` 引用。
  */
 import TerminalTabView from '@/components/TerminalTabView.vue'
-import type { WorkbenchDescriptor } from '../../../src/workbench/types'
+import type { WorkbenchDescriptor } from '@sailfish/workbench-sdk'
 import { LOCAL_WORKBENCH_AGENT_PROMPT } from './prompt'
 
 export const descriptor: WorkbenchDescriptor = {

@@ -1,5 +1,5 @@
 import CompanionWorkbench from './CompanionWorkbench.vue'
-import type { WorkbenchDescriptor } from '../../../src/workbench/types'
+import type { WorkbenchDescriptor } from '@sailfish/workbench-sdk'
 import { COMPANION_WORKBENCH_AGENT_PROMPT } from './prompt'
 
 export const descriptor: WorkbenchDescriptor = {

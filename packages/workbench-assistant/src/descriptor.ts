@@ -1,5 +1,5 @@
 import AssistantWorkbench from './AssistantWorkbench.vue'
-import type { WorkbenchDescriptor } from '../../../src/workbench/types'
+import type { WorkbenchDescriptor } from '@sailfish/workbench-sdk'
 import { AGENT_PROMPT, shouldInjectAgentPrompt } from './prompt'
 
 export const descriptor: WorkbenchDescriptor = {

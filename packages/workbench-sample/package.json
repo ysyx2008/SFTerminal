@@ -15,6 +15,7 @@
     "vue": "^3.4.0"
   },
   "dependencies": {
-    "@sailfish/shared-types": "*"
+    "@sailfish/shared-types": "*",
+    "@sailfish/workbench-sdk": "*"
   }
 }
