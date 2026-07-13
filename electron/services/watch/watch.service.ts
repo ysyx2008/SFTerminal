@@ -38,6 +38,7 @@ import type { AgentContext, AgentCallbacks, AgentStep } from '../agent/types'
 import type { AiService } from '../ai.service'
 import type { SensorService } from '../sensor'
 import type { HistoryService } from '../history.service'
+import { WATCH_AGENT_KEY, WAKEUP_AGENT_KEY } from '@shared/types'
 import { watchTemplates, getTemplateById, getAllTemplateCategories, type WatchTemplate } from './templates'
 
 // cron-parser 动态导入
@@ -792,7 +793,13 @@ export class WatchService {
       const startDate = since.toISOString().split('T')[0]
 
       const allRecords = historyService.getAgentRecords(startDate)
-      const userRecords = allRecords.filter(r => r.terminalId && r.terminalId !== '')
+      // 活动摘要只看用户任务/联络，排除关切/唤醒内心独白
+      const userRecords = allRecords.filter(r =>
+        r.terminalId &&
+        r.terminalId !== '' &&
+        r.agentKey !== WATCH_AGENT_KEY &&
+        r.agentKey !== WAKEUP_AGENT_KEY
+      )
 
       if (userRecords.length === 0) return null
 

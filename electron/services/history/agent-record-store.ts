@@ -496,21 +496,24 @@ export class AgentRecordStore {
   getAgentRecords(startDate?: string, endDate?: string): AgentRecord[] {
     const records: AgentRecord[] = []
 
-    for (const dateStr of listAgentDateDirs(this.agentDir)) {
-      if (startDate && dateStr < startDate) continue
-      if (endDate && dateStr > endDate) continue
+    for (const dir of [this.agentDir, this.watchDir]) {
+      for (const dateStr of listAgentDateDirs(dir)) {
+        if (startDate && dateStr < startDate) continue
+        if (endDate && dateStr > endDate) continue
 
-      for (const recordId of listSessionIdsInDateDir(this.agentDir, dateStr)) {
-        const record = readSessionRecord(
-          this.agentDir,
-          dateStr,
-          recordId,
-          (p, e) => this.onCorruptRecord(p, e)
-        )
-        if (record) records.push(record)
+        for (const recordId of listSessionIdsInDateDir(dir, dateStr)) {
+          const record = readSessionRecord(
+            dir,
+            dateStr,
+            recordId,
+            (p, e) => this.onCorruptRecord(p, e)
+          )
+          if (record) records.push(record)
+        }
       }
     }
 
+    // 旧日文件只可能出现在主 agent 树
     for (const file of listLegacyAgentDayFiles(this.agentDir)) {
       const dateStr = file.replace('.json', '')
       if (startDate && dateStr < startDate) continue

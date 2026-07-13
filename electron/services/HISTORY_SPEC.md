@@ -32,7 +32,7 @@
 | `rebuildAgentIndex(): void` | 从磁盘重建**全部**索引（主 agent + watch 两套） | v5/v6 迁移、清理后、维护 |
 | `saveAgentRecord(record: AgentRecord): void` | 保存 Agent 执行记录并更新索引；按 `agentKey` 路由到 agent 或 watch 树/索引 | `agent/index.ts` |
 | `saveArtifacts(recordId: string, artifacts: CanvasArtifact[]): void` | 保存（或更新）产出物面板清单到指定记录；自动剥离 `contentFromFile` 的 content（可从磁盘重生） | IPC `history:saveArtifacts` |
-| `getAgentRecords(startDate?, endDate?): AgentRecord[]` | 按日期范围查询 Agent 记录 | 前端历史面板 |
+| `getAgentRecords(startDate?, endDate?): AgentRecord[]` | 按日期范围查询 Agent 记录（主树 + watch 树） | 前端历史面板、导出 |
 | `getAgentRecordById(id: string): AgentRecord \| undefined` | 按 ID 精确查找 Agent 记录 | 回放/详情查看 |
 | `deleteAgentRecord(id: string): boolean` | 按 ID 删除单条 Agent 记录（日文件、索引、关联截图目录） | IPC `history:deleteAgentRecord`、最近对话侧栏删除 |
 | `getRecentAgentRecords(limit?, filter?): AgentRecord[]` | 获取最近的 Agent 记录（**主索引**，不含 watch；支持自定义过滤） | `agent/index.ts`、上下文构建 |
