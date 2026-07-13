@@ -3215,6 +3215,11 @@ const electronAPI = {
   auth: {
     getSession: () =>
       ipcRenderer.invoke('auth:getSession'),
+    getAccessToken: () =>
+      ipcRenderer.invoke('auth:getAccessToken'),
+    getGateMode: () =>
+      ipcRenderer.invoke('auth:getGateMode'),
+    /** 一条龙：弹窗登录，返回脱敏会话 */
     startLogin: () =>
       ipcRenderer.invoke('auth:startLogin'),
     completeLogin: (code: string, state: string) =>

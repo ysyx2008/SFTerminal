@@ -8,7 +8,7 @@ import {
   type OemFeatureKey
 } from './oem-types'
 
-export type { OemFeatureKey, OemConfig, OemFeatures, OemBrand, OemSsoConfig } from './oem-types'
+export type { OemFeatureKey, OemConfig, OemFeatures, OemBrand, OemSsoConfig, OemSsoGateMode, OemSsoVerifyIdToken } from './oem-types'
 export { OEM_FEATURE_DEFAULTS } from './oem-types'
 
 /**

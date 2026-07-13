@@ -1632,6 +1632,14 @@ app.whenReady().then(async () => {
   async function runBackendInit() {
     log.info(`开始初始化后端服务 (+${Date.now() - APP_START_TIME}ms)`)
 
+    // SSO：尽早恢复落盘会话（features.sso=false 时 no-op）
+    try {
+      const { getAuthService } = await import('./services/auth/auth.service')
+      await getAuthService().restoreSession()
+    } catch (e) {
+      log.warn('SSO restoreSession failed:', e)
+    }
+
     // 后端 init 才加载 Agent/终端原生模块与远程会话栈（首屏不触发）
     const { ptyService, sshService, agentService } = await rt()
     await ensureSftpProgressBridge(agentRuntimeDeps())
@@ -3373,12 +3381,27 @@ function enqueueAwakenedApply(awakened: boolean, intervalMinutes?: number): Prom
 // ==================== Auth / SSO（features.sso，默认关闭）====================
 ipcMain.handle('auth:getSession', async () => {
   const { getAuthService } = await import('./services/auth/auth.service')
-  return getAuthService().getSession()
+  const auth = getAuthService()
+  await auth.restoreSession()
+  return auth.getPublicSession()
 })
 
+ipcMain.handle('auth:getAccessToken', async () => {
+  const { getAuthService } = await import('./services/auth/auth.service')
+  const auth = getAuthService()
+  await auth.restoreSession()
+  return auth.getAccessToken()
+})
+
+ipcMain.handle('auth:getGateMode', async () => {
+  const { getAuthService } = await import('./services/auth/auth.service')
+  return getAuthService().getGateMode()
+})
+
+/** 一条龙登录：弹窗 + 换 token + 落盘，返回脱敏会话 */
 ipcMain.handle('auth:startLogin', async () => {
   const { getAuthService } = await import('./services/auth/auth.service')
-  return getAuthService().beginLogin()
+  return getAuthService().login()
 })
 
 ipcMain.handle('auth:completeLogin', async (_event, code: string, state: string) => {

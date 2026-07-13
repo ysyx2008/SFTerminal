@@ -289,7 +289,18 @@ export default {
     aiAssistant: 'AI 助手',
     settings: '控制面板',
     closeSidebar: '关闭侧边栏',
-    appMenu: '应用菜单（Alt）'
+    appMenu: '应用菜单（Alt）',
+    ssoLogin: '企业登录',
+    ssoLogout: '退出登录',
+  },
+
+  sso: {
+    loginTitle: '企业账号登录',
+    loginDesc: '请使用公司账号登录后继续使用。',
+    loginButton: '登录',
+    loggingIn: '登录中…',
+    loginFailed: '登录失败',
+    logoutDone: '已退出登录',
   },
 
 

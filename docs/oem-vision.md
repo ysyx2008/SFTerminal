@@ -162,7 +162,7 @@ OEM Fork：生成/编辑自己的 `oem.config.ts` 后可 `git add -f` 纳入 **F
 | 换能力集 `features` | ✅ | 字段 + UI/心跳/创建门控；细入口扫漏见工程 TODO |
 | 换岗 descriptor | ⚠️ | 声明字段与注册/bootstrap 有；真岗位样例台 ❌ |
 | OAuth2/OIDC 协议 | ✅ | `electron/services/auth/`；`features.sso` 默认关 |
-| SSO 登录产品面 | ❌ | UI / 回调窗 / 落盘 / refresh / JWKS |
+| SSO 登录产品面 | ✅ | 登录 UI / 回调窗 / credential 落盘 / refresh / claims+可选 JWKS / enterpriseApiHosts 注入 / SDK `useAuth` |
 | 企业控制面 | ⏸ | 组织 / RBAC / 计费 / 下发——后置 |
 | Monorepo / 抽包 | ⚠️ | `packages/*` 多为 re-export；workspaces ❌；见工程 6.0 |
 
@@ -170,7 +170,7 @@ OEM Fork：生成/编辑自己的 `oem.config.ts` 后可 `git add -f` 纳入 **F
 
 - [ ] 设置页 / 快捷键等入口扫漏，确保关 `features` 后无死入口  
 - [ ] 构建期 `productName` / `appId` / 图标尽量读 OEM  
-- [ ] SSO：登录入口 + BrowserWindow 回调（有 IdP 时）  
+- [x] SSO：登录入口 + BrowserWindow 回调 + 落盘 + refresh（`features.sso` 默认关；`enterpriseApiHosts` 空则不注入）  
 - [ ] 岗位级 `agentPolicy`（记忆 / 召回 / 执行）产品契约细化后再实现  
 - [ ] 控制面专题（独立排期）  
 

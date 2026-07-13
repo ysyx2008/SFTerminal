@@ -2363,9 +2363,12 @@ interface Window {
       triggerHeartbeat: () => Promise<void>
     }
     auth: {
-      getSession: () => Promise<import('@shared/types').AuthSession | null>
-      startLogin: () => Promise<{ authorizationUrl: string; state: string }>
-      completeLogin: (code: string, state: string) => Promise<import('@shared/types').AuthSession>
+      getSession: () => Promise<import('@shared/types').AuthPublicSession | null>
+      getAccessToken: () => Promise<string | null>
+      getGateMode: () => Promise<'hard' | 'soft' | 'none'>
+      /** 一条龙弹窗登录，返回脱敏会话 */
+      startLogin: () => Promise<import('@shared/types').AuthPublicSession>
+      completeLogin: (code: string, state: string) => Promise<import('@shared/types').AuthPublicSession>
       logout: () => Promise<void>
     }
 

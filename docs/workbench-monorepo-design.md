@@ -554,7 +554,7 @@ apps/desktop/                               @sailfish/core-team
 | **P3 useAgentMode** | 原语进 SDK | ⏸❌ | 后置；薄壳模型下非刚需 |
 | **P4 发版机制** | changesets / Packages / CODEOWNERS | ⏸❌ | **不做**：同仓内部协作，无跨公司独立发版需求 |
 | **P5 业务试点** | 模板 + 第一个岗位台 | ⚠️ | sample 台已作模板；真实岗位按需加包即可 |
-| **SSO 产品面** | 登录 UI / 回调窗 / 会话落盘 / refresh / JWKS | ⚠️ | 协议底座 ✅；其余 ❌（见 oem-vision） |
+| **SSO 产品面** | 登录 UI / 回调窗 / 会话落盘 / refresh / JWKS | ✅ | W8 已落地；开源 `features.sso=false` 无感 |
 | **品牌构建收拢** | productName / appId / 图标读 OEM | ⚠️ | 运行时品牌 ✅；打包配置未完全统一 |
 
 #### 近期执行队列（建议顺序，可勾选）
@@ -575,7 +575,7 @@ apps/desktop/                               @sailfish/core-team
 - [x] **W7g** **markdown SDK 薄壳**（2026-07-13）：`@sailfish/workbench-sdk/markdown`；artifact MarkdownRenderer 改走门牌  
 - [x] **W7h** **artifact 去 `@/` 收口**（2026-07-13）：`addComposerQuote` 经 AiPanel+岗壳；HoverTip 包内自持；assistant artifact 零 `@/`  
 - [x] **OEM 加岗手册**：[`docs/oem-workbench-guide.md`](./oem-workbench-guide.md)（2026-07-13）  
-- [ ] **W8** SSO UI + 回调 + 可选落盘（有 IdP 需求再提前）  
+- [x] **W8** SSO UI + 回调窗 + credential 落盘 + refresh + SDK auth 门牌 + enterpriseApiHosts 注入（2026-07-13）  
 
 #### 刻意未做（避免误判为遗漏）
 

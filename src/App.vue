@@ -23,8 +23,10 @@ import WelcomePage from './components/WelcomePage.vue'
 import SmartPatrolPage from './components/SmartPatrolPage.vue'
 import Toast from './components/common/Toast.vue'
 import ConfirmDialog from './components/common/ConfirmDialog.vue'
+import SsoLoginGate from './components/Auth/SsoLoginGate.vue'
 import { useConfirm } from './composables/useConfirm'
 import { toast } from './composables/useToast'
+import { useAuthStore } from './stores/auth'
 import { checkAudioDevicesGlobal, initSpeechGlobal } from './composables/useSpeechRecognition'
 import type { SftpConnectionConfig } from './composables/useSftp'
 import { uiThemes } from './themes/ui-themes'
@@ -40,6 +42,8 @@ import {
 const log = createLogger('App')
 
 const { t } = useI18n()
+
+const authStore = useAuthStore()
 
 // Steam 构建标识（由 vite define 注入），在 script 中取值供模板使用，避免模板直接访问全局
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
@@ -410,6 +414,13 @@ onMounted(async () => {
   // 注册分屏反向 IPC 处理器（响应主进程 Agent 工具的分屏调用）
   initSplitPaneHandler()
   initWorkbenchHandler()
+
+  // SSO：features.sso 关闭时 no-op
+  try {
+    await authStore.init()
+  } catch (e) {
+    log.warn('auth init failed:', e)
+  }
 
   try {
     appVersion.value = await window.electronAPI.app.getVersion()
@@ -1093,6 +1104,19 @@ const onSetupComplete = async () => {
   ensureAiPanel()
 }
 
+async function onSsoSoftLogin() {
+  try {
+    await authStore.login()
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : t('sso.loginFailed'))
+  }
+}
+
+async function onSsoSoftLogout() {
+  await authStore.logout()
+  toast.success(t('sso.logoutDone'))
+}
+
 // 切换主机管理侧栏（欢迎页上以叠加层盖住最近对话侧栏）
 const toggleSidebar = () => {
   showSidebar.value = !showSidebar.value
@@ -1390,6 +1414,25 @@ onUnmounted(() => {
         <button class="btn-icon btn-icon-header" @click="showSettings = true" :title="t('header.settings')">
           <Settings :size="18" />
         </button>
+        <template v-if="authStore.showSoftEntry">
+          <button
+            v-if="!authStore.isAuthenticated"
+            class="btn-icon btn-icon-header sso-soft-btn"
+            :disabled="authStore.loading"
+            :title="t('header.ssoLogin')"
+            @click="onSsoSoftLogin"
+          >
+            {{ t('header.ssoLogin') }}
+          </button>
+          <button
+            v-else
+            class="btn-icon btn-icon-header sso-soft-btn"
+            :title="authStore.user?.email || authStore.user?.name || t('header.ssoLogout')"
+            @click="onSsoSoftLogout"
+          >
+            {{ authStore.user?.name || authStore.user?.email || t('header.ssoLogout') }}
+          </button>
+        </template>
         <!-- Windows 自绘标题栏按钮（最小化 / 最大化 / 关闭）：仅 Win 平台 + 非全屏时显示。
              全屏模态打开时，模态全屏覆盖会自动遮住这三个按钮，模态自带的 X 是唯一可见关闭入口。 -->
         <WindowControls v-if="isWin && !isFullScreen" />
@@ -1537,6 +1580,8 @@ onUnmounted(() => {
       @complete="onSetupComplete"
     />
 
+    <!-- SSO hard 门控（features.sso + gateMode=hard 且未登录） -->
+    <SsoLoginGate v-if="authStore.blockApp" />
 
     <!-- 关切 / 觉醒面板（Steam 或 OEM 关闭时不渲染） -->
     <Awaken
@@ -1643,6 +1688,16 @@ onUnmounted(() => {
 }
 
 /* header 按钮尺寸与 hover scale 统一由 main.css 的 .btn-icon-header 变体提供 */
+
+.sso-soft-btn {
+  max-width: 140px;
+  padding: 0 10px !important;
+  width: auto !important;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .btn-icon.awakened-active {
   color: var(--brand-vital);

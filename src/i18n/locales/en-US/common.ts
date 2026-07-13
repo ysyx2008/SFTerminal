@@ -289,7 +289,18 @@ export default {
     aiAssistant: 'AI Assistant',
     settings: 'Control Panel',
     closeSidebar: 'Close Sidebar',
-    appMenu: 'Application Menu (Alt)'
+    appMenu: 'Application Menu (Alt)',
+    ssoLogin: 'Sign in',
+    ssoLogout: 'Sign out',
+  },
+
+  sso: {
+    loginTitle: 'Enterprise Sign-In',
+    loginDesc: 'Sign in with your company account to continue.',
+    loginButton: 'Sign in',
+    loggingIn: 'Signing in…',
+    loginFailed: 'Sign-in failed',
+    logoutDone: 'Signed out',
   },
 
 

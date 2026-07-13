@@ -2,7 +2,9 @@
  * Auth / SSO 模块契约
  *
  * ## 职责
- * - 提供应用级 OAuth2/OIDC **协议底座**（授权码 + PKCE、token 交换、ID Token 解析）
+ * - 提供应用级 OAuth2/OIDC 协议底座（授权码 + PKCE、token 交换、ID Token 解析）
+ * - 登录窗（BrowserWindow + will-redirect）、会话落盘、refresh、按需 accessToken
+ * - web_fetch 对 OEM `enterpriseApiHosts` 精确命中时自动注入 Bearer
  * - 受 `oem.config.features.sso` 门控；默认关闭，不挡开源产品使用
  *
  * ## 非职责
@@ -11,13 +13,28 @@
  *
  * ## 公开 API
  * - `getAuthService()` → `AuthService`
- * - `beginLogin` / `completeLogin` / `getSession` / `logout`
+ * - `login` / `beginLogin` / `completeLogin` / `getPublicSession` / `getAccessToken` / `logout` / `restoreSession`
+ * - `shouldInjectBearerForUrl` / `getGateMode` / `getEnterpriseApiHosts`
  * - 纯函数：`electron/services/auth/oidc-protocol.ts`
+ * - 登录窗：`electron/services/auth/login-window.ts`
  *
- * ## 配置
- * - `features.sso` + 可选 `oem.config.sso`（issuer / clientId / redirectUri / scopes）
+ * ## 配置（oem.config.sso）
+ * - `issuer` / `clientId` / `redirectUri` / `scopes?` / `clientSecret?`
+ * - `gateMode?`: `hard` | `soft` | `none`（缺省 soft）
+ * - `verifyIdToken?`: `claims` | `jwks`（缺省 claims）
+ * - `enterpriseApiHosts?`: 精确 hostname[]；默认未配 / [] → **永不**自动注入 Bearer
+ *
+ * ## 安全约束
+ * - refreshToken 只存主进程 + credential.service（`sso:app`），不下发渲染进程
+ * - `auth:getSession` 返回 `AuthPublicSession`（无 token）
+ * - accessToken 经 `auth:getAccessToken` 按需领取；临近过期自动 refresh
+ * - Bearer 注入：空名单不注入；精确 host 匹配；已有 Authorization 不覆盖
  *
  * ## IPC（由 main 注册）
- * - `auth:getSession` / `auth:startLogin` / `auth:completeLogin` / `auth:logout`
- * - SSO 关闭时返回明确错误或空会话
+ * - `auth:getSession` / `auth:getAccessToken` / `auth:getGateMode`
+ * - `auth:startLogin`（一条龙弹窗） / `auth:completeLogin` / `auth:logout`
+ *
+ * ## 岗包用法
+ * - `import { useAuth } from '@sailfish/workbench-sdk/auth'`
+ * - `const token = await getAccessToken()` 后自行带 Header 调企业 API
  */

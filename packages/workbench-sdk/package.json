@@ -14,6 +14,7 @@
     "./toast": "./src/toast.ts",
     "./markdown": "./src/markdown.ts",
     "./platform": "./src/platform.ts",
+    "./auth": "./src/auth.ts",
     "./types": "./src/types.ts"
   },
   "peerDependencies": {

@@ -50,6 +50,12 @@ export interface OemConfig {
   sso?: OemSsoConfig
 }
 
+/** SSO 登录门控：hard 全屏挡；soft 可进主界面；none 无登录 UI */
+export type OemSsoGateMode = 'hard' | 'soft' | 'none'
+
+/** ID Token 校验强度：claims 只验 iss/aud/exp；jwks 再验 RS256 签名 */
+export type OemSsoVerifyIdToken = 'claims' | 'jwks'
+
 /** OEM 应用登录 IdP（与邮箱 OAuth 无关） */
 export interface OemSsoConfig {
   /** OIDC Issuer，用于发现 /.well-known/openid-configuration */
@@ -59,6 +65,20 @@ export interface OemSsoConfig {
   clientSecret?: string
   redirectUri: string
   scopes?: string[]
+  /**
+   * 未登录时的门控。缺省 soft。
+   * - hard：全屏登录页，进不了主界面
+   * - soft：可进主界面，设置/角标可登录
+   * - none：无登录 UI（OEM 自接）
+   */
+  gateMode?: OemSsoGateMode
+  /** ID Token 校验；缺省 claims */
+  verifyIdToken?: OemSsoVerifyIdToken
+  /**
+   * 允许后端 HTTP（如 web_fetch）自动注入 Bearer 的精确 hostname 名单。
+   * 默认 [] / 未配 → 永不自动注入。不做通配。
+   */
+  enterpriseApiHosts?: string[]
 }
 
 /** 缺字段时的回退（兼容旧 oem.config.ts） */

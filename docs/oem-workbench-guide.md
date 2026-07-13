@@ -26,10 +26,24 @@
 | 锚点 + 可隐区布局 | `@sailfish/workbench-sdk/workbench-shell` |
 | 桌面通知 | `@sailfish/workbench-sdk/toast` |
 | Markdown 渲染 | `@sailfish/workbench-sdk/markdown` |
+| SSO 身份 / accessToken | `@sailfish/workbench-sdk/auth`（`useAuth` → `getAccessToken()`） |
 | 上述汇总 | `@sailfish/workbench-sdk/platform` |
 | 共享协议类型 | `@sailfish/shared-types` |
 
 渲染器 props 用 SDK 的 `WorkbenchRendererProps`，不要用 `@/stores/terminal` 的 `TerminalTab`。
+
+### SSO（可选，OEM 打开 `features.sso` 后）
+
+```ts
+import { useAuth } from '@sailfish/workbench-sdk/auth'
+
+const { isAuthenticated, user, getAccessToken, login } = useAuth()
+const token = await getAccessToken() // 短期 accessToken；无 refreshToken
+```
+
+- 开源默认 `features.sso=false`，`useAuth` 全部 no-op / null。
+- Agent `web_fetch` 仅当 OEM 配置了 `sso.enterpriseApiHosts` 且 hostname **精确命中**时自动带 Bearer；名单空 = 永不注入。
+- 禁止把 token 打进日志；禁止直引 `@/stores/auth`。
 
 ### 平台专属例外（内置岗，业务岗不要抄）
 

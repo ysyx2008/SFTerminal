@@ -191,11 +191,16 @@ const MAX_REDIRECTS = 10
 async function fetchWithSafeRedirect(url: string, signal: AbortSignal): Promise<Response> {
   let currentUrl = url
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
+    const headers: Record<string, string> = {
+      'User-Agent': DEFAULT_UA,
+      Accept: 'text/html,application/xhtml+xml,application/xml,text/plain,application/json;q=0.9,*/*;q=0.5',
+    }
+    // SSO：仅当 OEM 配置了 enterpriseApiHosts 且 hostname 精确命中时注入 Bearer。
+    // 未配置 / 开源默认 → 不带。已有 Authorization 不覆盖。
+    await maybeAttachSsoBearer(currentUrl, headers)
+
     const resp = await fetch(currentUrl, {
-      headers: {
-        'User-Agent': DEFAULT_UA,
-        Accept: 'text/html,application/xhtml+xml,application/xml,text/plain,application/json;q=0.9,*/*;q=0.5',
-      },
+      headers,
       signal,
       redirect: 'manual',
     })
@@ -227,6 +232,21 @@ async function fetchWithSafeRedirect(url: string, signal: AbortSignal): Promise<
     return resp
   }
   throw new Error(`Too many redirects (>${MAX_REDIRECTS}) starting from ${url}`)
+}
+
+/** 按 OEM enterpriseApiHosts 精确命中时注入 SSO access_token（失败静默跳过） */
+async function maybeAttachSsoBearer(url: string, headers: Record<string, string>): Promise<void> {
+  if (headers.Authorization || headers.authorization) return
+  try {
+    const { getAuthService } = await import('./auth/auth.service')
+    const auth = getAuthService()
+    if (!auth.shouldInjectBearerForUrl(url)) return
+    const token = await auth.getAccessToken()
+    if (!token) return
+    headers.Authorization = `Bearer ${token}`
+  } catch (e) {
+    log.debug('SSO bearer inject skipped:', e)
+  }
 }
 
 async function fetchAndExtract(

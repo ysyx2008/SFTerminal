@@ -9,7 +9,7 @@
 
 import type { OemConfig } from './oem-types'
 
-export type { OemConfig, OemFeatures, OemFeatureKey, OemBrand, OemSsoConfig } from './oem-types'
+export type { OemConfig, OemFeatures, OemFeatureKey, OemBrand, OemSsoConfig, OemSsoGateMode, OemSsoVerifyIdToken } from './oem-types'
 export { OEM_FEATURE_DEFAULTS } from './oem-types'
 
 /** 开源默认：旗鱼品牌 + 秘书能力全开（sso 除外） */
@@ -35,6 +35,9 @@ export const oemConfig: OemConfig = {
   //   issuer: 'https://your-idp.example.com',
   //   clientId: '...',
   //   redirectUri: 'http://127.0.0.1:8765/sso/callback',
-  //   scopes: ['openid', 'profile', 'email']
+  //   scopes: ['openid', 'profile', 'email'],
+  //   gateMode: 'soft',              // hard | soft | none
+  //   verifyIdToken: 'claims',       // claims | jwks
+  //   enterpriseApiHosts: [],        // 精确 hostname；空 = 永不自动带 Bearer
   // }
 }
