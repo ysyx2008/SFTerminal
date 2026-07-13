@@ -254,7 +254,8 @@ ${skillsCompact}`,
         required: ['action', 'skill_id']
       }
     },
-    _meta: { parallelizable: true }
+    // load 返回的 SKILL.md 是后续执行规范，不可被 tool-result-budget 清掉
+    _meta: { parallelizable: true, contextBudget: { toolResult: 'protected' } }
   }
 }
 
@@ -291,7 +292,8 @@ ${skillsList}`,
         required: ['skill_id']
       }
     },
-    _meta: { parallelizable: true }
+    // 用户技能正文同内置 skill：长对话中必须保留，否则规范会「丢失」
+    _meta: { parallelizable: true, contextBudget: { toolResult: 'protected' } }
   }
 }
 

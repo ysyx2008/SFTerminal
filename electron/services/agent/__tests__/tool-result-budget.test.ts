@@ -40,7 +40,9 @@ const CLEARABLE_NAMES = new Set([
 const PROTECTED_NAMES = new Set([
   'edit_file', 'write_text_file', 'write_remote_text_file', 'ask_user', 'plan',
   'create_plan', 'update_plan', 'compress_context',
-  'recall_compressed', 'manage_memory', 'dispatch_agents'
+  'recall_compressed', 'manage_memory', 'dispatch_agents',
+  // 技能正文是后续执行规范，清掉会导致「规范丢失」
+  'skill', 'load_user_skill',
 ])
 
 function lookupMeta(toolName: string): ToolMeta | undefined {
@@ -114,6 +116,25 @@ describe('applyToolResultBudget', () => {
     expect(messages[2].content).toBe(LONG_OUTPUT)
     expect(messages[4].content).toBe(LONG_OUTPUT)
     expect(messages[6].content).toBe(LONG_OUTPUT)
+  })
+
+  it('should not clear skill / load_user_skill results (skill docs)', () => {
+    const messages: AiMessage[] = [
+      makeUserMsg('task'),
+      makeToolCall('tc1', 'skill'),
+      makeToolResult('tc1', LONG_OUTPUT),
+      makeToolCall('tc2', 'load_user_skill'),
+      makeToolResult('tc2', LONG_OUTPUT),
+      // recent (protection boundary)
+      makeToolCall('tc3', 'read_file'),
+      makeToolResult('tc3', LONG_OUTPUT),
+      makeToolCall('tc4', 'read_file'),
+      makeToolResult('tc4', LONG_OUTPUT),
+    ]
+    const result = applyToolResultBudget(messages, lookupMeta, { protectRecentRounds: 2 })
+    expect(result.clearedCount).toBe(0)
+    expect(messages[2].content).toBe(LONG_OUTPUT)
+    expect(messages[4].content).toBe(LONG_OUTPUT)
   })
 
   it('should not clear short tool outputs', () => {

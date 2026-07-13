@@ -215,8 +215,8 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 
 `contextBudget.toolResult` 未声明时默认按 **`'clearable'`** 处理（旧实现里"非 CLEARABLE / 非 PROTECTED / 非 mcp_/plugin_ 前缀"会按 false 即"不可清理"对待）。改默认值是**有意的**：
 
-1. 实际场景中"未登记"的工具几乎全是 MCP / plugin / user-skill 工具，它们的输出多为只读查询，可清理
-2. 写入类工具都已显式标注 `'protected'`，不会被误清理
+1. 实际场景中"未登记"的工具几乎全是 MCP / plugin 工具，它们的输出多为只读查询，可清理
+2. 写入类工具、以及返回后续执行规范的工具（`skill` / `load_user_skill` 的 SKILL.md 正文）都已显式标注 `'protected'`，不会被误清理
 3. 若有第三方插件工具确实有副作用且不希望结果被清理，应显式声明 `'protected'` 而非依赖默认行为
 4. 默认更激进等于更省 token，符合上下文预算的整体目标
 
