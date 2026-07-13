@@ -1,6 +1,6 @@
 /**
  * @sailfish/workbench-companion
- * CompanionWorkbench 在本包；AiPanel 经 `@/` 引用 desktop（P2 前）。
+ * CompanionWorkbench 在本包；对话经 `@sailfish/workbench-sdk/ai-panel`。
  */
 export { descriptor } from './descriptor'
 export { COMPANION_WORKBENCH_AGENT_PROMPT } from './prompt'

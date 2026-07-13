@@ -10,7 +10,10 @@ import Terminal from './Terminal.vue'
 import SplitPaneView from './SplitPaneView.vue'
 import { PANE_SLOT_REGISTRY_KEY, type PaneSlotRegistry } from './pane-slot-registry'
 
-const AiPanel = defineAsyncComponent(() => import('./AiPanel.vue'))
+/** 终端工作台侧栏对话：经 SDK 薄壳入口，与 assistant/companion 一致 */
+const AiPanel = defineAsyncComponent(() =>
+  import('@sailfish/workbench-sdk/ai-panel').then((m) => m.AiPanel)
+)
 
 const { t } = useI18n()
 const terminalStore = useTerminalStore()
