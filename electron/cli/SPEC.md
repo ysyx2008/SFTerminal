@@ -19,6 +19,7 @@
 - **默认**：与桌面共用 userData
 - **`--sandbox`**：`{userData}/cli-sandbox` + 借用 AI Profiles / credentials
 - Agent 默认 **`--mode relaxed`**；`--free` 跳过确认
+- 命令结束后 **`process.exit(0)`**（`main.js` / `cli.ts`）；`agent:run` 另调 `AiService.dispose()` 关掉 keep-alive，避免空转十几秒才退出
 
 ## 命令面（摘要）
 

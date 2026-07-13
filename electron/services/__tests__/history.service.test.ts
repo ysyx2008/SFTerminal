@@ -256,6 +256,82 @@ describe('HistoryService - deleteAgentRecord', () => {
   })
 })
 
+describe('HistoryService - multi-process index safety', () => {
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-history-test-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('进程 A 写索引后，进程 B 再保存不会抹掉 A 的条目', () => {
+    const baseTime = new Date('2026-03-18T10:00:00').getTime()
+    const desktop = new HistoryService()
+    desktop.saveAgentRecord(makeRecord({
+      id: 'desktop-sess', timestamp: baseTime, duration: 100, userTask: 'from desktop'
+    }))
+
+    // 模拟 CLI 新进程写入
+    const cli = new HistoryService()
+    cli.saveAgentRecord(makeRecord({
+      id: 'cli-sess', timestamp: baseTime + 1000, duration: 200, userTask: 'from cli', title: '问候'
+    }))
+
+    // 桌面进程用陈旧 cache 再保存：写前读盘合并后应保留 CLI 条目
+    desktop.saveAgentRecord(makeRecord({
+      id: 'desktop-sess', timestamp: baseTime, duration: 150, userTask: 'from desktop updated'
+    }))
+
+    const index = JSON.parse(fs.readFileSync(
+      path.join(tmpDir, 'history', 'agent-index.json'), 'utf-8'
+    )) as Array<{ id: string }>
+    expect(index.map(e => e.id).sort()).toEqual(['cli-sess', 'desktop-sess'])
+    expect(desktop.getAgentRecordById('cli-sess')?.title).toBe('问候')
+  })
+
+  it('索引 dateStr 错位时 getAgentRecordById 仍能读到正文', () => {
+    const svc = new HistoryService()
+    const baseTime = new Date('2026-03-18T10:00:00').getTime()
+    svc.saveAgentRecord(makeRecord({
+      id: 'orphan-body', timestamp: baseTime, duration: 100, userTask: 'hello', title: '问候'
+    }))
+
+    const indexPath = path.join(tmpDir, 'history', 'agent-index.json')
+    const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8')) as Array<Record<string, unknown>>
+    const entry = index.find(e => e.id === 'orphan-body')
+    expect(entry).toBeTruthy()
+    entry!.dateStr = '2099-01-01'
+    fs.writeFileSync(indexPath, JSON.stringify(index))
+
+    // 新实例强制从盘读错位索引
+    const fresh = new HistoryService()
+    const record = fresh.getAgentRecordById('orphan-body')
+    expect(record?.title).toBe('问候')
+    expect(record?.userTask).toBe('hello')
+  })
+
+  it('索引被抹掉后仍可按正文删除孤儿会话', () => {
+    const svc = new HistoryService()
+    const baseTime = new Date('2026-03-18T10:00:00').getTime()
+    svc.saveAgentRecord(makeRecord({
+      id: 'orphan-del', timestamp: baseTime, duration: 100, userTask: 'bye'
+    }))
+
+    const indexPath = path.join(tmpDir, 'history', 'agent-index.json')
+    fs.writeFileSync(indexPath, '[]')
+
+    const fresh = new HistoryService()
+    expect(fresh.deleteAgentRecord('orphan-del')).toBe(true)
+    expect(fresh.getAgentRecordById('orphan-del')).toBeUndefined()
+
+    const dateDir = path.join(tmpDir, 'history', 'agent', '2026-03-18')
+    const stillThere = fs.existsSync(dateDir) &&
+      fs.readdirSync(dateDir).some(name => name.includes('orphan-del'))
+    expect(stillThere).toBe(false)
+  })
+})
+
 describe('HistoryService - searchAgentRecordsAdvanced', () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-history-test-'))

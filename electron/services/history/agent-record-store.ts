@@ -90,6 +90,8 @@ interface AgentIndexStore {
   indexPath: string
   /** 常驻内存索引缓存 */
   cache: AgentIndexEntry[] | null
+  /** 缓存对应的索引文件 mtime；他进程改写后用于失效重载 */
+  indexMtimeMs?: number
   /** 写索引条目时截断 userTask 的长度（仅 watch 用，避免内心独白长 prompt 撑大索引） */
   userTaskMaxLen?: number
 }
@@ -171,12 +173,33 @@ export class AgentRecordStore {
     return this.agentStore
   }
 
-  private getIndexFor(store: AgentIndexStore): AgentIndexEntry[] {
-    if (store.cache) return store.cache
+  /**
+   * 从磁盘读索引（不重建）。文件不存在 → `[]`；损坏 → `null`。
+   * 供写路径与他进程合并用，避免仅信内存 cache。
+   */
+  private readIndexFromDisk(store: AgentIndexStore): AgentIndexEntry[] | null {
+    try {
+      if (!fs.existsSync(store.indexPath)) return []
+      return JSON.parse(fs.readFileSync(store.indexPath, 'utf-8')) as AgentIndexEntry[]
+    } catch (e) {
+      log.warn(`读取索引失败 (${path.basename(store.indexPath)}):`, e)
+      return null
+    }
+  }
 
+  private getIndexFor(store: AgentIndexStore): AgentIndexEntry[] {
     try {
       if (fs.existsSync(store.indexPath)) {
-        store.cache = JSON.parse(fs.readFileSync(store.indexPath, 'utf-8')) as AgentIndexEntry[]
+        const mtimeMs = fs.statSync(store.indexPath).mtimeMs
+        // 他进程（如 CLI）可能已改写索引：mtime 变化则丢弃陈旧 cache
+        if (store.cache && store.indexMtimeMs === mtimeMs) return store.cache
+        const disk = this.readIndexFromDisk(store)
+        if (disk) {
+          store.cache = disk
+          store.indexMtimeMs = mtimeMs
+          return store.cache
+        }
+      } else if (store.cache) {
         return store.cache
       }
     } catch (e) {
@@ -186,10 +209,35 @@ export class AgentRecordStore {
     return this.rebuildIndexFor(store)
   }
 
+  /**
+   * 变更索引前以磁盘为底（刷新 cache），避免 CLI/桌面多进程用陈旧 cache 覆盖对方写入。
+   * 磁盘损坏时回退到当前 getIndexFor（可能触发重建）。
+   */
+  private entriesForMutation(store: AgentIndexStore): AgentIndexEntry[] {
+    const disk = this.readIndexFromDisk(store)
+    if (disk) {
+      store.cache = disk
+      try {
+        store.indexMtimeMs = fs.existsSync(store.indexPath)
+          ? fs.statSync(store.indexPath).mtimeMs
+          : undefined
+      } catch {
+        store.indexMtimeMs = undefined
+      }
+      return disk
+    }
+    return this.getIndexFor(store)
+  }
+
   private writeIndexFor(store: AgentIndexStore, entries: AgentIndexEntry[]): void {
     store.cache = entries
     try {
       writeFileAtomic(store.indexPath, JSON.stringify(entries))
+      try {
+        store.indexMtimeMs = fs.statSync(store.indexPath).mtimeMs
+      } catch {
+        store.indexMtimeMs = Date.now()
+      }
     } catch (e) {
       log.error(`写入索引失败 (${path.basename(store.indexPath)}):`, e)
     }
@@ -260,7 +308,8 @@ export class AgentRecordStore {
   }
 
   private updateIndexEntryFor(store: AgentIndexStore, record: AgentRecord): void {
-    const entries = this.getIndexFor(store)
+    // 写前读盘：保留他进程新写入的条目，只 upsert 本条
+    const entries = this.entriesForMutation(store)
     const dateStr = getDateString(record.timestamp)
     const entry = this.toIndexEntry(record, dateStr, store.userTaskMaxLen)
 
@@ -538,8 +587,11 @@ export class AgentRecordStore {
       ?? this.getIndexFor(this.watchStore).find(e => e.id === id)
     if (entry) {
       const found = this.readAgentRecordFromDisk(entry.dateStr, id)
-      if (!found) return undefined
-      return this.maybeExternalizeAndSaveRecord(found, entry.dateStr)
+      if (found) return this.maybeExternalizeAndSaveRecord(found, entry.dateStr)
+      // 索引有条目但正文不在 dateStr（陈旧/错位）→ 不直接失败，走全盘扫描
+      log.warn(
+        `Index hit for ${id} at ${entry.dateStr} but body missing; falling back to full scan`
+      )
     }
 
     // 兜底全盘扫描：合并两棵树的日期目录，按日期倒序找
@@ -567,16 +619,33 @@ export class AgentRecordStore {
    */
   deleteAgentRecord(id: string): boolean {
     this.pendingTitles.delete(id)
-    // 主索引优先，未命中再查 watch 索引——确保 watch 记录也能正确删除文件/索引/截图
+    // 写前读盘：与他进程索引对齐后再删，避免用陈旧 cache 漏删或盖回已删条目
     let store = this.agentStore
-    let index = this.getIndexFor(store)
+    let index = this.entriesForMutation(store)
     let entry = index.find(e => e.id === id)
     if (!entry) {
       store = this.watchStore
-      index = this.getIndexFor(store)
+      index = this.entriesForMutation(store)
       entry = index.find(e => e.id === id)
     }
-    if (!entry) return false
+    if (!entry) {
+      // 索引已无条目时仍尝试按正文扫到并删目录（CLI 写入被盖索引后的孤儿会话）
+      const orphan = this.getAgentRecordById(id)
+      if (!orphan) return false
+      store = this.storeForRecord(orphan)
+      index = this.entriesForMutation(store)
+      entry = {
+        id: orphan.id,
+        timestamp: orphan.timestamp,
+        duration: orphan.duration,
+        dateStr: getDateString(orphan.timestamp),
+        userTask: orphan.userTask,
+        terminalType: orphan.terminalType,
+        agentKey: orphan.agentKey,
+        sshHost: orphan.sshHost,
+        status: orphan.status,
+      }
+    }
 
     const deletedDir = deleteSessionDir(store.dir, entry.dateStr, id)
     const sessionPath = getAgentRecordPath(store.dir, entry.dateStr, id)
@@ -594,6 +663,25 @@ export class AgentRecordStore {
           } else {
             writeFileAtomic(legacyPath, JSON.stringify(filtered, null, 2))
           }
+        }
+      }
+    }
+
+    // 索引 dateStr 错位或孤儿目录：按日期扫正文再删，避免只摘索引留目录
+    if (!deletedDir) {
+      for (const dateStr of listAgentDateDirs(store.dir)) {
+        if (dateStr === entry.dateStr) continue
+        if (deleteSessionDir(store.dir, dateStr, id)) {
+          const leftover = path.join(store.dir, dateStr)
+          if (fs.existsSync(leftover) && fs.readdirSync(leftover).length === 0) {
+            fs.rmdirSync(leftover)
+          }
+          break
+        }
+        const altPath = getAgentRecordPath(store.dir, dateStr, id)
+        if (fs.existsSync(altPath)) {
+          fs.unlinkSync(altPath)
+          break
         }
       }
     }

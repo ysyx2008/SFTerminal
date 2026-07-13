@@ -1090,6 +1090,8 @@ async function agentRun(args: string[]): Promise<void> {
   } finally {
     pty.dispose(ptyId)
     agent.cleanupAgent(ptyId)
+    // 关掉 keep-alive 连接池，否则 Node 事件循环还会挂十几秒
+    ai.dispose()
   }
 }
 

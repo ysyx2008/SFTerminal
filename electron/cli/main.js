@@ -76,7 +76,12 @@ try {
 // ==================== Step 4: Run CLI ====================
 
 const { runCli } = require('./index.ts')
-runCli().catch((error) => {
-  console.error('Fatal error:', error)
-  process.exit(1)
-})
+runCli()
+  .then(() => {
+    // 显式退出：AI keep-alive / 定时器等可能让事件循环空转十几秒
+    process.exit(0)
+  })
+  .catch((error) => {
+    console.error('Fatal error:', error)
+    process.exit(1)
+  })

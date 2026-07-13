@@ -1,6 +1,6 @@
 # History Service SPEC
 
-> Last verified: 2026-07-13（会话增量持久化：`meta.json` + `steps/messages.jsonl`；标题归 AgentRecord）
+> Last verified: 2026-07-13（多进程索引安全：写前读盘合并 + mtime 失效；getById 正文回退）
 
 ## 职责
 
@@ -89,7 +89,12 @@
 
 **Chat 存储**（遗留）：`history/chat/YYYY-MM-DD.json`，当前无写入方，仅导出/导入兼容。
 
-**索引机制**：每棵历史树各维护一个索引文件（主 `agent-index.json` / watch `watch-index.json`，各自常驻内存缓存），抽象为 `AgentIndexStore { dir, indexPath, cache, userTaskMaxLen? }`，索引方法（`getIndexFor` / `writeIndexFor` / `rebuildIndexFor` / `updateIndexEntryFor`）统一按 store 参数化。`saveAgentRecord` 时同步更新对应索引、缺失时按 store 全量重建。`getRecentAgentRecords` / `listAgentHistorySummaries` / `searchAgentRecordsAdvanced` 仅以**主索引**为候选来源（天然排除 watch）；`getTokenUsageStats` 合并主 + watch 两索引（watch 也耗 token，须计入）。`rebuildAgentIndex()` 重建两套索引。
+**索引机制**：每棵历史树各维护一个索引文件（主 `agent-index.json` / watch `watch-index.json`，各自常驻内存缓存），抽象为 `AgentIndexStore { dir, indexPath, cache, indexMtimeMs?, userTaskMaxLen? }`，索引方法（`getIndexFor` / `writeIndexFor` / `rebuildIndexFor` / `updateIndexEntryFor`）统一按 store 参数化。`saveAgentRecord` 时同步更新对应索引、缺失时按 store 全量重建。`getRecentAgentRecords` / `listAgentHistorySummaries` / `searchAgentRecordsAdvanced` 仅以**主索引**为候选来源（天然排除 watch）；`getTokenUsageStats` 合并主 + watch 两索引（watch 也耗 token，须计入）。`rebuildAgentIndex()` 重建两套索引。
+
+**多进程索引安全**（CLI 与桌面共用 userData）：
+- **读侧**：`getIndexFor` 用索引文件 `mtime` 校验 cache；他进程改写后自动重载，侧栏能看到 CLI 新会话。
+- **写侧**：`updateIndexEntryFor` / `deleteAgentRecord` 写前 `entriesForMutation` 以磁盘索引为底再 upsert/删除，避免陈旧 cache 整文件覆盖抹掉他进程条目。
+- **读正文**：`getAgentRecordById` 索引命中但正文不在 `dateStr` 时回退全盘扫描（不再直接 `undefined`）；删除时若 `dateStr` 错位也会扫日期目录清孤儿正文。
 
 **搜索性能（searchAgentRecordsAdvanced，async）**：先用内存索引按「时间窗 + filter（cast 到索引条目，与 `getRecentAgentRecords` 同款）」筛候选，`titleOnly` 时关键字匹配也在索引层完成。
 - `titleOnly`：候选即命中集，仅为前 `limit` 条读回完整记录，零全量扫描；

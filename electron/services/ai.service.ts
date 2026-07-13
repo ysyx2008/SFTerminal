@@ -905,6 +905,7 @@ export class AiService {
   // 专用 HTTP agent，支持子 Agent 并发请求时连接池复用，避免 MaxListenersExceededWarning
   private readonly httpsAgent: https.Agent
   private readonly httpAgent: http.Agent
+  private disposed = false
 
   constructor() {
     this.configService = new ConfigService()
@@ -939,6 +940,18 @@ export class AiService {
       this.abortControllers.forEach(controller => controller.abort())
       this.abortControllers.clear()
     }
+  }
+
+  /**
+   * 释放 keep-alive HTTP 连接池。CLI 进程退出前调用，避免 Agent 空转十几秒才退出。
+   * 幂等：重复调用无副作用。
+   */
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    this.abort()
+    this.httpsAgent.destroy()
+    this.httpAgent.destroy()
   }
 
   /**
