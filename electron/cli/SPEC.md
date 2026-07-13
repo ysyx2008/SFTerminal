@@ -10,7 +10,7 @@
 
 | 入口 | 场景 |
 |------|------|
-| `electron/cli/main.js` | 开发：`npm run sft` / `sailfish`（tsx + electron-shim） |
+| `electron/cli/main.js` | 开发：`npm run sailfish`（`sft`/`cli` 为别名；tsx + electron-shim） |
 | `electron/cli/cli.ts` → `dist-electron/cli.js` | 打包：`ELECTRON_RUN_AS_NODE=1 SailFish.app/.../SailFish cli.js` |
 | `~/.local/bin/sailfish` | 薄壳（设置页安装或 `npm run install:cli`） |
 
@@ -25,5 +25,6 @@
 - `sailfish "任务"` / `--task` / `agent:run` → Agent
 - `models` / `history list` / `watch list` / …
 - 冒号内部命令仍可用
+- 对外命令名：`SFT_CLI_NAME`（默认 / 薄壳均为 `sailfish`）
 
 装机薄壳见 `electron/services/SHELL_CLI_SPEC.md`。

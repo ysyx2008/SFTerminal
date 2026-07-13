@@ -27,4 +27,5 @@
 
 - 第一期仅 macOS；Windows 另议
 - 不要求 sudo（使用 `~/.local/bin` 而非 `/usr/local/bin`）
+- 薄壳导出 `SFT_CLI_NAME=sailfish`，help/usage 文案跟命令名一致
 - 升级 App 后薄壳仍指向 `.app` 路径；若用户移动 App，需重新「安装命令行工具」

@@ -76,7 +76,7 @@
 | 🔌 **MCP 扩展** | 接入数据库、API 等外部工具 |
 | 🔊 **语音合成** | 秘书回复自动朗读 |
 | 🔒 **系统托盘** | 最小化到托盘，常驻后台 |
-| 🖥️ **CLI 模式** | `npm run sft` 无头运行全部后端服务 |
+| 🖥️ **CLI 模式** | `npm run sailfish` 或安装后的 `sailfish` 命令，无头运行全部后端服务 |
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-ppt.png" width="800" alt="PPT 演示文稿">

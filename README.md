@@ -76,7 +76,7 @@ Tasks come first on desktop; Reach sits at the end — all IM channels flow into
 | 🔌 **MCP Extension** | Connect databases, APIs, and external tools |
 | 🔊 **Text-to-Speech** | Secretary responses read aloud |
 | 🔒 **System Tray** | Minimize to tray, always available in the background |
-| 🖥️ **CLI Mode** | Headless backend via `npm run sft` |
+| 🖥️ **CLI Mode** | Headless backend via `npm run sailfish` or the `sailfish` shell command |
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-assistant_en.png" width="800" alt="Desktop Secretary">

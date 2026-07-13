@@ -13,6 +13,11 @@ import { getDefaultShell, getLocalOS } from '../utils/platform'
 
 const log = createLogger('CLI')
 
+/** 对外命令名；薄壳导出 SFT_CLI_NAME=sailfish，默认亦为 sailfish */
+function cliName(): string {
+  return process.env.SFT_CLI_NAME?.trim() || 'sailfish'
+}
+
 // ==================== Helpers ====================
 
 function getVersion(): string {
@@ -106,8 +111,8 @@ function getHostProfile(): HostProfileService {
 async function configGet(args: string[]): Promise<void> {
   const key = args[0]
   if (!key) {
-    console.error('Usage: sft config:get <key>')
-    console.error('Example: sft config:get aiProfiles')
+    console.error(`Usage: ${cliName()} config:get <key>`)
+    console.error(`Example: ${cliName()} config:get aiProfiles`)
     process.exit(1)
   }
   const config = getConfig()
@@ -119,9 +124,9 @@ async function configSet(args: string[]): Promise<void> {
   const key = args[0]
   const rawValue = args.slice(1).join(' ')
   if (!key || !rawValue) {
-    console.error('Usage: sft config:set <key> <value>')
-    console.error('Example: sft config:set theme one-dark')
-    console.error('For complex values, use JSON: sft config:set aiProfiles \'[{"id":"1","name":"GPT-5.5","apiUrl":"...","apiKey":"...","model":"gpt-5.5"}]\'')
+    console.error(`Usage: ${cliName()} config:set <key> <value>`)
+    console.error(`Example: ${cliName()} config:set theme one-dark`)
+    console.error(`For complex values, use JSON: ${cliName()} config:set aiProfiles '[{"id":"1","name":"GPT-5.5","apiUrl":"...","apiKey":"...","model":"gpt-5.5"}]'`)
     process.exit(1)
   }
   const config = getConfig()
@@ -157,7 +162,7 @@ async function configInit(): Promise<void> {
   const profiles = config.getAiProfiles()
   if (profiles.length > 0) {
     console.log(`Already have ${profiles.length} AI profile(s) configured.`)
-    console.log('Use "sft config:set" to modify, or set environment variables:\n')
+    console.log(`Use "${cliName()} config:set" to modify, or set environment variables:\n`)
   } else {
     console.log('No AI profiles configured yet.')
     console.log('Set up via environment variables or config:set:\n')
@@ -172,8 +177,8 @@ async function configInit(): Promise<void> {
   console.log('  SFT_CLI_NO_BORROW=1 - Do not borrow AI Profiles/credentials in sandbox')
   console.log('')
   console.log('Or configure via commands:')
-  console.log('  sft config:set aiProfiles \'[{"id":"default","name":"My AI","apiUrl":"https://api.openai.com/v1","apiKey":"sk-xxx","model":"gpt-5.5"}]\'')
-  console.log('  sft config:set activeAiProfile "default"')
+  console.log(`  ${cliName()} config:set aiProfiles '[{"id":"default","name":"My AI","apiUrl":"https://api.openai.com/v1","apiKey":"sk-xxx","model":"gpt-5.5"}]'`)
+  console.log(`  ${cliName()} config:set activeAiProfile "default"`)
   console.log('')
   console.log(`Config file location: ${config.get('language') !== undefined ? 'loaded' : 'will be created'}`)
 }
@@ -184,7 +189,7 @@ async function aiChat(args: string[]): Promise<void> {
   const { positional, flags } = parseArgs(args)
   const message = positional.join(' ')
   if (!message) {
-    console.error('Usage: sft ai:chat <message> [--profile <profileId>]')
+    console.error(`Usage: ${cliName()} ai:chat <message> [--profile <profileId>]`)
     process.exit(1)
   }
 
@@ -210,7 +215,7 @@ async function aiStream(args: string[]): Promise<void> {
   const { positional, flags } = parseArgs(args)
   const message = positional.join(' ')
   if (!message) {
-    console.error('Usage: sft ai:stream <message> [--profile <profileId>]')
+    console.error(`Usage: ${cliName()} ai:stream <message> [--profile <profileId>]`)
     process.exit(1)
   }
 
@@ -243,7 +248,7 @@ async function aiModels(): Promise<void> {
   
   if (profiles.length === 0) {
     console.log('No AI profiles configured.')
-    console.log('Run "sft config:init" for setup instructions.')
+    console.log(`Run "${cliName()} config:init" for setup instructions.`)
     return
   }
 
@@ -263,7 +268,7 @@ async function knowledgeSearch(args: string[]): Promise<void> {
   const { positional, flags } = parseArgs(args)
   const query = positional.join(' ')
   if (!query) {
-    console.error('Usage: sft knowledge:search <query> [--limit <n>] [--host <hostId>]')
+    console.error(`Usage: ${cliName()} knowledge:search <query> [--limit <n>] [--host <hostId>]`)
     process.exit(1)
   }
 
@@ -397,7 +402,7 @@ async function knowledgeAdd(args: string[]): Promise<void> {
   const { positional, flags } = parseArgs(args)
   const filePath = positional[0]
   if (!filePath) {
-    console.error('Usage: sft knowledge:add <file-path> [--host <hostId>]')
+    console.error(`Usage: ${cliName()} knowledge:add <file-path> [--host <hostId>]`)
     process.exit(1)
   }
   const fs = require('fs') as typeof import('fs')
@@ -491,7 +496,7 @@ async function hostList(): Promise<void> {
 async function hostGet(args: string[]): Promise<void> {
   const hostId = args[0]
   if (!hostId) {
-    console.error('Usage: sft host:get <hostId>')
+    console.error(`Usage: ${cliName()} host:get <hostId>`)
     process.exit(1)
   }
   const service = getHostProfile()
@@ -639,7 +644,7 @@ async function watchCreate(args: string[]): Promise<void> {
 
   if (!name || !prompt) {
     console.error('Error: --name and --prompt are required.')
-    console.error('Usage: sft watch:create --name "My Watch" --prompt "Do something" [--cron "0 9 * * *"] [--heartbeat] [--output im]')
+    console.error(`Usage: ${cliName()} watch:create --name "My Watch" --prompt "Do something" [--cron "0 9 * * *"] [--heartbeat] [--output im]`)
     process.exit(1)
   }
 
@@ -673,7 +678,7 @@ async function watchCreate(args: string[]): Promise<void> {
 async function watchTrigger(args: string[]): Promise<void> {
   const id = args[0]
   if (!id) {
-    console.error('Error: watch ID required. Usage: sft watch:trigger <id>')
+    console.error(`Error: watch ID required. Usage: ${cliName()} watch:trigger <id>`)
     return
   }
 
@@ -697,7 +702,7 @@ async function watchTrigger(args: string[]): Promise<void> {
 async function watchDelete(args: string[]): Promise<void> {
   const id = args[0]
   if (!id) {
-    console.error('Error: watch ID required. Usage: sft watch:delete <id>')
+    console.error(`Error: watch ID required. Usage: ${cliName()} watch:delete <id>`)
     return
   }
 
@@ -809,8 +814,8 @@ async function watchFromTemplate(args: string[]): Promise<void> {
   const templateId = args[0]
   if (!templateId) {
     console.error('Error: template ID is required.')
-    console.error('Usage: sft watch:from-template <template-id>')
-    console.error('Run `sft watch:templates` to see available templates.')
+    console.error(`Usage: ${cliName()} watch:from-template <template-id>`)
+    console.error(`Run \`${cliName()} watch:templates\` to see available templates.`)
     process.exit(1)
   }
 
@@ -874,8 +879,8 @@ async function agentRun(args: string[]): Promise<void> {
   const { positional, flags } = parseArgs(args)
   const task = positional.join(' ')
   if (!task) {
-    console.error('Usage: sft agent:run <task> [--mode <strict|relaxed|free>] [--free]')
-    console.error('   or: sft "a quoted multi-word task" [--mode relaxed]')
+    console.error(`Usage: ${cliName()} agent:run <task> [--mode <strict|relaxed|free>] [--free]`)
+    console.error(`   or: ${cliName()} "a quoted multi-word task" [--mode relaxed]`)
     process.exit(1)
   }
 
@@ -1115,7 +1120,7 @@ async function imStatus(): Promise<void> {
 async function imConnect(args: string[]): Promise<void> {
   const platform = args[0]?.toLowerCase() as IMPlatformName | undefined
   if (!platform || !SUPPORTED_IM_PLATFORMS.includes(platform)) {
-    console.error('Usage: sft im:connect <dingtalk|feishu|slack|telegram|wecom>')
+    console.error(`Usage: ${cliName()} im:connect <dingtalk|feishu|slack|telegram|wecom>`)
     process.exit(1)
   }
 
@@ -1125,7 +1130,7 @@ async function imConnect(args: string[]): Promise<void> {
     const keys = Object.values(meta.configKeys).join(', ')
     console.error(`${meta.label} credentials not configured.`)
     console.error(`Set the following config keys first: ${keys}`)
-    console.error(`Example: sft config:set ${Object.values(meta.configKeys)[0]} '"your-value"'`)
+    console.error(`Example: ${cliName()} config:set ${Object.values(meta.configKeys)[0]} '"your-value"'`)
     process.exit(1)
   }
 
@@ -1187,7 +1192,7 @@ function createIMAdapter(platform: IMPlatformName, creds: Record<string, any>) {
 async function imDisconnect(args: string[]): Promise<void> {
   const platform = args[0]?.toLowerCase()
   if (!platform) {
-    console.error('Usage: sft im:disconnect <dingtalk|feishu|slack|telegram|wecom>')
+    console.error(`Usage: ${cliName()} im:disconnect <dingtalk|feishu|slack|telegram|wecom>`)
     console.error('Note: In CLI mode, each invocation is a separate process.')
     console.error('This command is mainly useful for clearing auto-connect settings.')
     process.exit(1)
@@ -1261,7 +1266,7 @@ async function skillInstall(args: string[]): Promise<void> {
   const { positional } = parseArgs(args)
   const skillId = positional[0]
   if (!skillId) {
-    console.error('Usage: sft skill:install <skill-id>')
+    console.error(`Usage: ${cliName()} skill:install <skill-id>`)
     process.exit(1)
   }
 
@@ -1284,7 +1289,7 @@ async function skillUninstall(args: string[]): Promise<void> {
   const { positional } = parseArgs(args)
   const skillId = positional[0]
   if (!skillId) {
-    console.error('Usage: sft skill:uninstall <skill-id>')
+    console.error(`Usage: ${cliName()} skill:uninstall <skill-id>`)
     process.exit(1)
   }
 
@@ -1339,7 +1344,7 @@ async function ptyExec(args: string[]): Promise<void> {
   const { positional, flags } = parseArgs(args)
   const command = positional.join(' ')
   if (!command) {
-    console.error('Usage: sft pty:exec <command> [--timeout <ms>]')
+    console.error(`Usage: ${cliName()} pty:exec <command> [--timeout <ms>]`)
     process.exit(1)
   }
 
@@ -1437,7 +1442,7 @@ async function docParse(args: string[]): Promise<void> {
   const { positional } = parseArgs(args)
   const filePath = positional[0]
   if (!filePath) {
-    console.error('Usage: sft doc:parse <file-path>')
+    console.error(`Usage: ${cliName()} doc:parse <file-path>`)
     process.exit(1)
   }
 
@@ -1534,12 +1539,12 @@ SailFish CLI v${version}
   高危操作默认需确认（--mode relaxed）；全自动请显式 --mode free 或 --free。
 
 用法:
-  sft "用引号包起来的任务说明" [options]   # 主路径 → Agent
-  sft agent:run <task> [options]           # 同上（单词语任务请走这条或 --task）
-  sft <command> [args]
+  ${cliName()} "用引号包起来的任务说明" [options]   # 主路径 → Agent
+  ${cliName()} agent:run <task> [options]           # 同上（单词语任务请走这条或 --task）
+  ${cliName()} <command> [args]
 
 任务判定（shell 会剥掉引号，CLI 只能看到结果）:
-  · 单个参数且含空格 → 视为任务（典型：sft "列出当前目录"）
+  · 单个参数且含空格 → 视为任务（典型：${cliName()} "列出当前目录"）
   · 单个参数且不像命令名（如中文）→ 视为任务
   · --task / -t <text> → 显式任务（英文单词语请用这条）
   · 英文单词语未知命令（如 modell）→ 报错提示，不丢给 Agent
@@ -1570,21 +1575,21 @@ SailFish CLI v${version}
   pty:*  fs:*  doc:*  websearch:test
 
 示例:
-  sft "列出当前目录下的 markdown 文件"
-  sft --task 备份配置 --mode relaxed
-  sft --sandbox "试跑，别动真数据" --free
-  sft models
-  sft agent:run "重启本机 nginx" --mode free
+  ${cliName()} "列出当前目录下的 markdown 文件"
+  ${cliName()} --task 备份配置 --mode relaxed
+  ${cliName()} --sandbox "试跑，别动真数据" --free
+  ${cliName()} models
+  ${cliName()} agent:run "重启本机 nginx" --mode free
 `)
 }
 
 function printUnknownAsTaskHint(token: string): void {
   console.error(`未知命令: ${token}`)
   console.error('要当作 Agent 任务，请用引号包住完整说明，或显式指定：')
-  console.error('  sft "你的任务说明（可含空格）"')
-  console.error('  sft --task "单词语任务也可以"')
-  console.error('  sft agent:run "..."')
-  console.error('查看命令: sft --help')
+  console.error(`  ${cliName()} "你的任务说明（可含空格）"`)
+  console.error(`  ${cliName()} --task "单词语任务也可以"`)
+  console.error(`  ${cliName()} agent:run "..."`)
+  console.error(`查看命令: ${cliName()} --help`)
 }
 
 /**
@@ -1625,7 +1630,7 @@ function resolveCliInvocation(args: string[]): { command: string; cmdArgs: strin
     if (sub === 'list' || sub === 'stats') {
       return { command: `history:${sub}`, cmdArgs: positional.slice(2) }
     }
-    console.error('Usage: sft history list|stats')
+    console.error(`Usage: ${cliName()} history list|stats`)
     return null
   }
   if (head === 'watch') {
@@ -1638,7 +1643,7 @@ function resolveCliInvocation(args: string[]): { command: string; cmdArgs: strin
     if (sub && map[sub]) {
       return { command: map[sub], cmdArgs: positional.slice(2) }
     }
-    console.error('Usage: sft watch list|history|templates')
+    console.error(`Usage: ${cliName()} watch list|history|templates`)
     return null
   }
   if (head === 'knowledge') {
@@ -1651,14 +1656,14 @@ function resolveCliInvocation(args: string[]): { command: string; cmdArgs: strin
     if (sub && map[sub]) {
       return { command: map[sub], cmdArgs: positional.slice(2) }
     }
-    console.error('Usage: sft knowledge search|list|stats')
+    console.error(`Usage: ${cliName()} knowledge search|list|stats`)
     return null
   }
   if (head === 'agent') {
     if (positional[1] === 'run') {
       return { command: 'agent:run', cmdArgs: positional.slice(2) }
     }
-    console.error('Usage: sft agent run <task>  或  sft agent:run <task>')
+    console.error(`Usage: ${cliName()} agent run <task>  或  ${cliName()} agent:run <task>`)
     return null
   }
 
@@ -1685,7 +1690,7 @@ function resolveCliInvocation(args: string[]): { command: string; cmdArgs: strin
 async function webSearchTest(args: string[]): Promise<void> {
   const query = args[0]
   if (!query) {
-    console.error('Usage: sft websearch:test <query>')
+    console.error(`Usage: ${cliName()} websearch:test <query>`)
     process.exit(1)
   }
 

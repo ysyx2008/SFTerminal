@@ -5,7 +5,7 @@ description: 后端代码修改后，通过 CLI 测试验证功能正确性。�
 
 # CLI 测试
 
-项目提供了 CLI 模式（`npm run sft`），可在纯 Node.js 下运行所有后端服务。
+项目提供了 CLI 模式（`npm run sailfish`，`sft`/`cli` 为别名），可在纯 Node.js 下运行所有后端服务。
 修改后端代码后，必须利用 CLI 验证功能正确性，不能只靠"能编译"就认为没问题。
 
 ## 何时使用本技能
@@ -25,23 +25,23 @@ bash electron/cli/test-cli.sh            # 有 API Key 时跑全量
 
 | 改动范围 | 验证命令 |
 |----------|---------|
-| config.service.ts | `sft config:get language && sft config:set theme '"test"' && sft config:get theme` |
-| ai.service.ts | `sft ai:models` / `sft ai:chat "测试"` |
-| agent/ 目录 | `sft agent:run "列出当前目录文件" --mode free` |
-| knowledge/ 目录 | `sft knowledge:list && sft knowledge:search "测试"` |
-| history.service.ts | `sft history:list && sft history:stats` |
-| host-profile.service.ts | `sft host:list && sft host:get local` |
-| ssh.service.ts | `sft ssh:list` |
-| pty.service.ts | `sft pty:exec "echo ok" && sft pty:shells` |
-| scheduler.service.ts | `sft scheduler:list && sft scheduler:history` |
-| mcp.service.ts | `sft mcp:list` |
-| local-fs.service.ts | `sft fs:list /tmp && sft fs:info` |
-| document-parser.service.ts | `sft doc:parse README.md && sft doc:types` |
-| user-skill.service.ts | `sft skill:list` |
-| watch/ 目录 | `sft watch:list && sft watch:history && sft watch:templates && sft watch:state` |
-| sensor/ 目录 | `sft sensor:status && sft sensor:heartbeat` |
+| config.service.ts | `sailfish config:get language && sailfish config:set theme '"test"' && sailfish config:get theme` |
+| ai.service.ts | `sailfish ai:models` / `sailfish ai:chat "测试"` |
+| agent/ 目录 | `sailfish agent:run "列出当前目录文件" --mode free` |
+| knowledge/ 目录 | `sailfish knowledge:list && sailfish knowledge:search "测试"` |
+| history.service.ts | `sailfish history:list && sailfish history:stats` |
+| host-profile.service.ts | `sailfish host:list && sailfish host:get local` |
+| ssh.service.ts | `sailfish ssh:list` |
+| pty.service.ts | `sailfish pty:exec "echo ok" && sailfish pty:shells` |
+| scheduler.service.ts | `sailfish scheduler:list && sailfish scheduler:history` |
+| mcp.service.ts | `sailfish mcp:list` |
+| local-fs.service.ts | `sailfish fs:list /tmp && sailfish fs:info` |
+| document-parser.service.ts | `sailfish doc:parse README.md && sailfish doc:types` |
+| user-skill.service.ts | `sailfish skill:list` |
+| watch/ 目录 | `sailfish watch:list && sailfish watch:history && sailfish watch:templates && sailfish watch:state` |
+| sensor/ 目录 | `sailfish sensor:status && sailfish sensor:heartbeat` |
 
-> `sft` 即 `npm run sft --`，直接用 `node electron/cli/main.js` 也行。
+> `sailfish` 即已安装的 PATH 命令，或 `npm run sailfish --`；直接用 `node electron/cli/main.js` 也行。`npm run sft` 仍为别名。
 
 ## 新增服务或命令时
 

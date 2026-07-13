@@ -89,6 +89,7 @@ if [[ ! -x "$ELECTRON" ]]; then
 fi
 export ELECTRON_RUN_AS_NODE=1
 export SFT_CLI_MODE=1
+export SFT_CLI_NAME=sailfish
 exec "$ELECTRON" "$CLI" "$@"
 `
 }
@@ -106,6 +107,7 @@ if [[ ! -f "$MAIN" ]]; then
   exit 127
 fi
 export SFT_CLI_MODE=1
+export SFT_CLI_NAME=sailfish
 cd ${JSON.stringify(repoRoot)}
 exec "$NODE" "$MAIN" "$@"
 `

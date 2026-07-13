@@ -26,6 +26,7 @@ set -euo pipefail
 NODE="\${NODE_BINARY:-node}"
 MAIN=${JSON.stringify(mainJs)}
 export SFT_CLI_MODE=1
+export SFT_CLI_NAME=sailfish
 cd ${JSON.stringify(repoRoot)}
 exec "$NODE" "$MAIN" "$@"
 `

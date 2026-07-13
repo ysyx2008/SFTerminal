@@ -10,7 +10,7 @@
  *
  * Usage:
  *   node electron/cli/main.js <command> [options]
- *   npm run sft -- <command> [options]
+ *   npm run sailfish -- <command> [options]
  */
 'use strict'
 
