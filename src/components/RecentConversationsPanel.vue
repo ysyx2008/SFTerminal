@@ -16,6 +16,7 @@ import { useTerminalStore } from '../stores/terminal'
 import { toast } from '../composables/useToast'
 import { showConfirm } from '../composables/useConfirm'
 import { useOpenConversationInTab } from '../composables/useConversationDragDrop'
+import { useConversationWarmup } from '../composables/useConversationWarmup'
 
 const props = defineProps<{
   collapsed?: boolean
@@ -322,6 +323,16 @@ const displayedRecordIds = computed(() => {
   return ids
 })
 
+const conversationWarmup = useConversationWarmup(() => displayedRecordIds.value)
+
+// 摘要列表就绪后调度空闲预热（start 幂等；不挡启动）
+watch(
+  () => summaries.value.length,
+  (n) => {
+    if (n > 0) conversationWarmup.start()
+  },
+)
+
 /**
  * 当前可见行的状态规则：
  * - 用户正在看的对话（Hub 焦点 / activeTab）：只显示 running 或无状态，不显示 attention
@@ -398,6 +409,22 @@ const openConversation = async (summary: AgentHistorySummary) => {
 
   openingId.value = summary.id
   try {
+    // 若正在空闲预热同一条：等它完成，避免重复建 tab
+    const warming = conversationWarmup.waitIfWarming(summary.id)
+    if (warming) await warming
+
+    const warmed = terminalStore.findTabByHistoryId(summary.id)
+    if (warmed) {
+      const isHubAssistant =
+        warmed.type === 'assistant' && !warmed.isPromoted && !warmed.isRemote
+      if (isHubAssistant) {
+        terminalStore.focusHubConversation(warmed.id)
+      } else {
+        terminalStore.setActiveTab(warmed.id)
+      }
+      return
+    }
+
     const record = (await window.electronAPI.history.getAgentRecordById(summary.id)) as AgentRecord | undefined
     if (!record) {
       toast.error(t('ai.agentWelcome.historyRecordMissing'))

@@ -116,6 +116,7 @@ DynamicScroller 是回收式虚拟列表，动态高度 + 流式增长场景下�
 | 阅读态：用户上滚后不拽回底部，亮「新消息」 | `updateScrollPosition` / `userScrolledAway` / `hasNewMessage` |
 | 切 tab / 恢复历史的精确视口位置 | `aiScrollAnchor`（item id + offset）+ `scrollToIndex` |
 | 历史冷加载视觉抖动 | `isHistoryScrollPending`（opacity:0 → scrollHeight 稳定后淡入）；期间 + 淡入后短窗口 `suppressFollowAnimUntil` 只硬钉、禁指数追底（不延长打开等待） |
+| 侧栏历史空闲预热 | `useConversationWarmup`：idle 串行 `warmHistoryConversation`（同构打开但不 focus）；`deviceMemory<4` 不预热；堆占用过高停队列 |
 | 容器宽度变化导致的 reflow | `installContainerWidthObserver`（跟底时主动 `scrollToBottom`） |
 
 ### 已删除（勿再引入）

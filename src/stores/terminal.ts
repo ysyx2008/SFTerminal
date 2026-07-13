@@ -1195,6 +1195,9 @@ export const useTerminalStore = defineStore('terminal', () => {
    */
   const HUB_SESSION_LIMIT = 5
 
+  /** 预热单条 steps 上限：超过则不预挂 tab（避免超长会话打爆内存） */
+  const WARM_HISTORY_MAX_STEPS = 80
+
   function evictHubSessionsIfNeeded(keepTabId: string): void {
     const candidates = tabs.value.filter(
       t => t.type === 'assistant' && !t.isRemote && !t.isPromoted && t.id !== keepTabId
@@ -2315,6 +2318,33 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
+   * 静默预热历史对话：与 openHistoryConversation 同构（建 tab + 恢复），但不 focus。
+   * 供空闲预热队列调用；点侧栏时走 findTabByHistoryId 热路径。
+   * @returns tabId；已存在 / 超预算 / 不可预热时返回 null
+   */
+  function warmHistoryConversation(record: AgentRecord): string | null {
+    if (findTabByHistoryId(record.id)) return null
+    if (record.agentKey === COMPANION_TAB_AGENT_ID) return null
+    if ((record.steps?.length ?? 0) > WARM_HISTORY_MAX_STEPS) return null
+
+    const tabId = createAssistantTab({ activate: false })
+    markAssistantSkipOnboarding(tabId)
+    const configStore = useConfigStore()
+    const customTitle = configStore.getConversationDisplayTitle(record.id)
+    if (customTitle) {
+      renameTab(tabId, customTitle)
+    }
+    restoreAgentHistory(tabId, record)
+
+    const tab = tabs.value.find(t => t.id === tabId)
+    // 预热未聚焦：lastFocusedAt 置 0，LRU 优先淘汰未使用的预热项，保住用户真点过的会话
+    if (tab) tab.lastFocusedAt = 0
+
+    evictHubSessionsIfNeeded(tabId)
+    return tabId
+  }
+
+  /**
    * 恢复历史 Agent 对话（从历史记录加载）
    */
   function restoreAgentHistory(tabId: string, record: {
@@ -3154,6 +3184,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     getHistoryConversationMeta,
     getHistoryConversationStatus,
     openHistoryConversation,
+    warmHistoryConversation,
     saveArtifactsToHistory,
     getAgentContext,
     // 文档管理
