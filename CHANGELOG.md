@@ -9,6 +9,7 @@ All notable changes to SailFish will be documented in this file.
 ### Improvements
 - ⚡ **Message-list virtual scroll migrated to virtua**: replaces vue-virtual-scroller with built-in height measurement and scroll adjustment, removing hand-rolled FLIP/ResizeObserver compensation and improving stability for dynamic heights + stick-to-bottom streaming (especially on Windows)
 - ⚡ **FLIP smooth shift when pinned to bottom**: after content grows while pinned, apply a reverse translateY on the Virtualizer root then spring back; intentional jump-to-bottom still hard-cuts with a brief FLIP suppress to avoid fighting on start
+- ⚡ **CLI branded as `sailfish`**: help/usage match the command name; `npm run sailfish` is the primary npm entry (`sft`/`cli` remain aliases); on macOS install the PATH shim from Settings → Data Management
 
 ### Bug Fixes
 - 🐛 **Textarea measure no longer jolts the message list**: skip writing style while typing on the same line; only collapse-and-remeasure when deleting shrinks height; stick-to-bottom ResizeObserver only pins when content grows

@@ -105,7 +105,7 @@ const lang = 'zh';
         }
 
         document.getElementById('markdownBody').innerHTML = marked.parse(body);
-        document.getElementById('installCmd').textContent = 'npm run sft -- skill:install ' + skillId;
+        document.getElementById('installCmd').textContent = 'sailfish skill:install ' + skillId;
         var deepLinkEl = document.getElementById('installDeepLink');
         deepLinkEl.href = 'sailfish://install-skill?id=' + encodeURIComponent(skillId);
         deepLinkEl.style.display = '';

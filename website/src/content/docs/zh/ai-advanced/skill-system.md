@@ -81,14 +81,16 @@ description: '了解旗鱼的技能扩展机制，安装和管理技能'
 使用命令行安装技能：
 
 ```bash
-npm run sft -- skill:install <skill-name>
+sailfish skill:install <skill-name>
 ```
 
 查看已安装技能：
 
 ```bash
-npm run sft -- skill:list
+sailfish skill:list
 ```
+
+> 需先在应用「设置 → 数据管理」安装 `sailfish` 命令；开发仓库也可用 `npm run sailfish --`。
 
 ## 管理已安装技能
 

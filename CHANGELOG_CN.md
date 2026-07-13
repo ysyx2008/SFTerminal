@@ -9,6 +9,7 @@
 ### 改进
 - ⚡ **消息列表虚拟滚动迁移到 virtua**：替换 vue-virtual-scroller，用内置高度测量与 scroll adjustment，去掉自建 FLIP/ResizeObserver 补偿，改善动态高度 + 流式跟底场景（尤其 Windows）的稳定性
 - ⚡ **跟底态内容上移 FLIP 平滑**：钉底后对 Virtualizer 根节点做反向偏移再归零；主动跳底仍硬切并短暂抑制，避免启动瞬间打架
+- ⚡ **CLI 对外命令统一为 `sailfish`**：help/usage 跟命令名一致；`npm run sailfish` 为主入口（`sft`/`cli` 仍为别名）；macOS 可在设置 → 数据管理安装 PATH 薄壳
 
 ### 问题修复
 - 🐛 **输入框测高不再带动消息列表跳动**：同行敲字跳过写 style；仅删字变矮时才塌缩重测；跟底 ResizeObserver 仅在内容变高时钉底
@@ -1369,7 +1370,7 @@ Agent 新增 TODO.md 和 CONTACTS.md 持久化文档管理，唤醒时自动注�
 ## v10.4.0 (2026-02-17)
 
 ### 新功能
-- 🖥️ **CLI 模式**：新增纯 Node.js CLI 模式 — 无需 Electron 即可运行全部后端服务，适用于无图形界面服务器和自动化场景（`npm run sft`）
+- 🖥️ **CLI 模式**：新增纯 Node.js CLI 模式 — 无需 Electron 即可运行全部后端服务，适用于无图形界面服务器和自动化场景（现为 `sailfish` / `npm run sailfish`）
 - 💼 **企业微信集成**：新增企业微信 IM 通道，支持基于回调的消息交互（Beta）
 - 📖 **各平台独立配置文档**：IM 集成指南拆分为钉钉、飞书、Slack、Telegram、企业微信各自独立文档
 

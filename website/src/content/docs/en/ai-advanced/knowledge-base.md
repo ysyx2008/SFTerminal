@@ -134,6 +134,8 @@ In the knowledge base panel you can:
 You can also manage the knowledge base from the command line:
 
 ```bash
-npm run sft -- knowledge:list           # list imported documents
-npm run sft -- knowledge:search "query" # search the knowledge base
+sailfish knowledge:list           # list imported documents
+sailfish knowledge:search "query" # search the knowledge base
 ```
+
+> Install the `sailfish` shell command first (**Settings → Data Management**). In a source checkout you can also use `npm run sailfish --`.

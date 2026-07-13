@@ -81,14 +81,16 @@ You can also browse all skills on the [Skill Market](/skills) page.
 Install skills from the command line:
 
 ```bash
-npm run sft -- skill:install <skill-name>
+sailfish skill:install <skill-name>
 ```
 
 List installed skills:
 
 ```bash
-npm run sft -- skill:list
+sailfish skill:list
 ```
+
+> Install the `sailfish` shell command first under **Settings → Data Management**. In a source checkout you can also use `npm run sailfish --`.
 
 ## Managing Installed Skills
 

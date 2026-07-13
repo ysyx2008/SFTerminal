@@ -134,6 +134,8 @@ AI: [搜索历史对话记录，找到相关记录并汇总]
 也可以通过命令行管理知识库：
 
 ```bash
-npm run sft -- knowledge:list      # 查看已导入文档
-npm run sft -- knowledge:search "关键词"  # 搜索知识库
+sailfish knowledge:list      # 查看已导入文档
+sailfish knowledge:search "关键词"  # 搜索知识库
 ```
+
+> 需先安装 `sailfish` 命令（设置 → 数据管理）；开发仓库可用 `npm run sailfish --`。
