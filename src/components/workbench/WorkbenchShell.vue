@@ -40,13 +40,22 @@ const emit = defineEmits<{
 }>()
 
 const shellRef = ref<HTMLElement | null>(null)
+const isResizing = ref(false)
 
 // 当前拖拽的清理函数
 let activeCleanup: (() => void) | null = null
 
-function startResize(e: MouseEvent) {
+/**
+ * 用 Pointer Events + setPointerCapture 拖拽。
+ * 产出物区常有 sandbox iframe（HTML/PPT），若只靠 document mouseup，
+ * 指针滑入 iframe 后释放事件进子文档，父页面永远收不到 → 光标/拖拽卡住。
+ */
+function startResize(e: PointerEvent) {
   if (props.toggleCollapsed) return
+  if (e.button !== 0) return
   e.preventDefault()
+
+  const handle = e.currentTarget as HTMLElement
   const startX = e.clientX
   const startRatio = props.toggleRatio
   const container = shellRef.value
@@ -56,8 +65,13 @@ function startResize(e: MouseEvent) {
 
   // 右侧辅助区：分隔条右移（delta>0）应缩小辅助区比例；左侧辅助区方向相反
   const dir = props.toggleSide === 'left' ? -1 : 1
+  const pointerId = e.pointerId
 
-  const onMove = (ev: MouseEvent) => {
+  // 若上一次拖拽异常未清理，先收尾
+  activeCleanup?.()
+
+  const onMove = (ev: PointerEvent) => {
+    if (ev.pointerId !== pointerId) return
     const delta = ev.clientX - startX
     const newRatio = Math.max(
       props.minRatio,
@@ -66,20 +80,48 @@ function startResize(e: MouseEvent) {
     emit('update:toggleRatio', newRatio)
   }
 
-  const onUp = () => activeCleanup?.()
-
-  activeCleanup = () => {
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-    activeCleanup = null
+  const onUp = (ev: PointerEvent) => {
+    if (ev.pointerId !== pointerId) return
+    activeCleanup?.()
   }
 
+  const onKeyDown = (ev: KeyboardEvent) => {
+    if (ev.key === 'Escape') activeCleanup?.()
+  }
+
+  const onWindowBlur = () => activeCleanup?.()
+
+  const cleanup = () => {
+    if (activeCleanup !== cleanup) return
+    activeCleanup = null
+
+    handle.removeEventListener('pointermove', onMove)
+    handle.removeEventListener('pointerup', onUp)
+    handle.removeEventListener('pointercancel', onUp)
+    window.removeEventListener('keydown', onKeyDown)
+    window.removeEventListener('blur', onWindowBlur)
+    try {
+      if (handle.hasPointerCapture(pointerId)) {
+        handle.releasePointerCapture(pointerId)
+      }
+    } catch {
+      // capture 已失效时忽略
+    }
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    isResizing.value = false
+  }
+  activeCleanup = cleanup
+
+  isResizing.value = true
   document.body.style.cursor = 'col-resize'
   document.body.style.userSelect = 'none'
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
+  handle.setPointerCapture(pointerId)
+  handle.addEventListener('pointermove', onMove)
+  handle.addEventListener('pointerup', onUp)
+  handle.addEventListener('pointercancel', onUp)
+  window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('blur', onWindowBlur)
 }
 
 onUnmounted(() => activeCleanup?.())
@@ -89,7 +131,7 @@ onUnmounted(() => activeCleanup?.())
   <div
     ref="shellRef"
     class="workbench-shell"
-    :class="`toggle-${toggleSide}`"
+    :class="[`toggle-${toggleSide}`, { 'is-resizing': isResizing }]"
     :style="{ '--workbench-collapsed-width': `${collapsedWidth}px` }"
   >
     <div
@@ -100,7 +142,7 @@ onUnmounted(() => activeCleanup?.())
     <div
       v-show="toggleVisible && !toggleCollapsed"
       class="workbench-divider"
-      @mousedown="startResize"
+      @pointerdown="startResize"
     ></div>
     <div
       class="workbench-region"
@@ -148,6 +190,7 @@ onUnmounted(() => activeCleanup?.())
   position: relative;
   z-index: 2;
   cursor: col-resize;
+  touch-action: none;
 }
 
 /* 零宽占位，::before 提供 5px 拖拽热区，不占视觉间隙 */
@@ -163,13 +206,19 @@ onUnmounted(() => activeCleanup?.())
 }
 
 .workbench-divider:hover::before,
-.workbench-divider:active::before {
+.workbench-shell.is-resizing .workbench-divider::before {
   background: linear-gradient(
     180deg,
     transparent,
     rgba(var(--accent-rgb, 137, 180, 250), 0.35),
     transparent
   );
+}
+
+/* 拖拽时屏蔽两侧指针，防止 HTML/PPT iframe 再吞事件（与 capture 双保险） */
+.workbench-shell.is-resizing .workbench-anchor,
+.workbench-shell.is-resizing .workbench-region {
+  pointer-events: none;
 }
 
 .workbench-region {
