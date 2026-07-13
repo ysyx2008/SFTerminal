@@ -1370,7 +1370,7 @@ Agent 新增 TODO.md 和 CONTACTS.md 持久化文档管理，唤醒时自动注�
 ## v10.4.0 (2026-02-17)
 
 ### 新功能
-- 🖥️ **CLI 模式**：新增纯 Node.js CLI 模式 — 无需 Electron 即可运行全部后端服务，适用于无图形界面服务器和自动化场景（现为 `sailfish` / `npm run sailfish`）
+- 🖥️ **CLI 模式**：新增纯 Node.js CLI 模式 — 无需 Electron 即可运行全部后端服务，适用于无图形界面服务器和自动化场景（`npm run sft`）
 - 💼 **企业微信集成**：新增企业微信 IM 通道，支持基于回调的消息交互（Beta）
 - 📖 **各平台独立配置文档**：IM 集成指南拆分为钉钉、飞书、Slack、Telegram、企业微信各自独立文档
 
