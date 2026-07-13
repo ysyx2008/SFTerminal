@@ -10,6 +10,7 @@ import {
   useConversationDropTarget,
   useOpenConversationInTab,
 } from '../composables/useConversationDragDrop'
+import { isWorkbenchAvailable } from '../workbench/registry'
 
 const { t } = useI18n()
 const terminalStore = useTerminalStore()
@@ -59,6 +60,10 @@ function displayTabTitle(tab: { customTitle?: string; title: string; isRemote?: 
   return tab.isRemote ? raw.replace(/^📡\s*/, '') : raw
 }
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
+const canCreateAssistant = !isSteamBuild && isWorkbenchAvailable('assistant')
+const canCreateLocal = isWorkbenchAvailable('local')
+const canCreateSsh = isWorkbenchAvailable('ssh')
+const canShowCompanion = isWorkbenchAvailable('companion')
 
 const emit = defineEmits<{
   'open-ssh': []
@@ -178,17 +183,20 @@ onMounted(() => {
 })
 
 const handleNewTab = (shell?: string) => {
+  if (!canCreateLocal) return
   terminalStore.createTab('local', undefined, shell)
   showNewMenu.value = false
 }
 
 const handleNewAssistant = () => {
+  if (!canCreateAssistant) return
   // 新建一个空白的独立助手 tab（isPromoted 直接进 Tab 栏并激活），而非回欢迎页
   terminalStore.createAssistantTab({ isPromoted: true, activate: true })
   showNewMenu.value = false
 }
 
 const handleOpenSsh = () => {
+  if (!canCreateSsh) return
   emit('open-ssh')
   showNewMenu.value = false
 }
@@ -472,7 +480,7 @@ const tasksAreaAttentionTooltip = computed(() => {
 
     <!-- 联络常驻 tab：次要入口，固定在新建按钮之前、滚动区之外，不隐藏 -->
     <div
-      v-if="companionTab"
+      v-if="canShowCompanion && companionTab"
       class="tab tab-pinned"
       :class="{
         active: companionTab.id === terminalStore.activeTabId,
@@ -491,11 +499,11 @@ const tasksAreaAttentionTooltip = computed(() => {
     </div>
 
     <!-- 新建终端按钮（带下拉菜单） -->
-    <div class="new-tab-wrapper">
+    <div v-if="canCreateAssistant || canCreateLocal || canCreateSsh" class="new-tab-wrapper">
       <button
         class="btn-new-tab"
-        @click="isSteamBuild ? handleNewTab() : handleNewAssistant()"
-        :title="isSteamBuild ? t('tabs.newTab') : t('tabs.assistant', 'AI 助手')"
+        @click="canCreateAssistant ? handleNewAssistant() : canCreateLocal ? handleNewTab() : handleOpenSsh()"
+        :title="canCreateAssistant ? t('tabs.assistant', 'AI 助手') : canCreateLocal ? t('tabs.newTab') : t('tabs.sshConnect')"
       >
         <Plus :size="14" />
       </button>
@@ -509,7 +517,7 @@ const tasksAreaAttentionTooltip = computed(() => {
     <Teleport to="body">
       <div v-if="showNewMenu" class="shell-menu-overlay" @click="hideNewMenu"></div>
       <div v-if="showNewMenu" class="shell-menu" :style="menuPosition">
-        <template v-if="!isSteamBuild">
+        <template v-if="canCreateAssistant">
           <div 
             class="shell-menu-item"
             @click="handleNewAssistant"
@@ -519,17 +527,19 @@ const tasksAreaAttentionTooltip = computed(() => {
           </div>
           <div class="shell-menu-divider"></div>
         </template>
-        <div 
-          v-for="option in shellOptions" 
-          :key="option.value"
-          class="shell-menu-item"
-          @click="handleNewTab(option.value)"
-        >
-          <span class="shell-icon">{{ option.icon }}</span>
-          <span>{{ option.label }}</span>
-        </div>
-        <div class="shell-menu-divider"></div>
-        <div class="shell-menu-item" @click="handleOpenSsh">
+        <template v-if="canCreateLocal">
+          <div 
+            v-for="option in shellOptions" 
+            :key="option.value"
+            class="shell-menu-item"
+            @click="handleNewTab(option.value)"
+          >
+            <span class="shell-icon">{{ option.icon }}</span>
+            <span>{{ option.label }}</span>
+          </div>
+          <div v-if="canCreateSsh" class="shell-menu-divider"></div>
+        </template>
+        <div v-if="canCreateSsh" class="shell-menu-item" @click="handleOpenSsh">
           <Monitor :size="14" class="shell-icon-lucide" />
           <span>{{ t('tabs.sshConnect') }}</span>
         </div>

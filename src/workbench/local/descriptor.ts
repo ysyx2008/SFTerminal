@@ -1,8 +1,2 @@
-import TerminalTabView from '../../components/TerminalTabView.vue'
-import type { WorkbenchDescriptor } from '../types'
-
-export const descriptor: WorkbenchDescriptor = {
-  kind: 'local',
-  renderer: TerminalTabView,
-  availableInSteam: true,
-}
+/** @deprecated 兼容 re-export；真相源 `@sailfish/workbench-local/descriptor` */
+export { descriptor } from '@sailfish/workbench-local/descriptor'

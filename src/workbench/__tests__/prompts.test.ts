@@ -1,9 +1,32 @@
 /**
- * workbench Agent prompt 解析
+ * workbench Agent prompt 解析（不加载 .vue，仅注册 agentPrompt）
  */
-import { describe, it, expect } from 'vitest'
+import { beforeAll, describe, it, expect } from 'vitest'
 import { resolveWorkbenchAgentPrompt } from '../resolve-workbench-agent-prompt'
-import { AGENT_PROMPT } from '../assistant/prompt'
+import { registerWorkbench } from '../registry-store'
+import { AGENT_PROMPT, shouldInjectAgentPrompt } from '../assistant/prompt'
+import { LOCAL_WORKBENCH_AGENT_PROMPT } from '../local/prompt'
+import { SSH_WORKBENCH_AGENT_PROMPT } from '../ssh/prompt'
+import { COMPANION_WORKBENCH_AGENT_PROMPT } from '../companion/prompt'
+
+beforeAll(() => {
+  registerWorkbench({
+    kind: 'assistant',
+    agentPrompt: (tab) => (shouldInjectAgentPrompt(tab) ? AGENT_PROMPT : undefined),
+  })
+  registerWorkbench({
+    kind: 'local',
+    agentPrompt: LOCAL_WORKBENCH_AGENT_PROMPT,
+  })
+  registerWorkbench({
+    kind: 'ssh',
+    agentPrompt: SSH_WORKBENCH_AGENT_PROMPT,
+  })
+  registerWorkbench({
+    kind: 'companion',
+    agentPrompt: COMPANION_WORKBENCH_AGENT_PROMPT,
+  })
+})
 
 describe('resolveWorkbenchAgentPrompt', () => {
   it('桌面独立助手 tab 返回 assistant 文案', () => {

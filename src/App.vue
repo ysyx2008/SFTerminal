@@ -8,7 +8,9 @@ import { initWorkbenchHandler, disposeWorkbenchHandler } from './services/workbe
 import { useConfigStore, type SshSession } from './stores/config'
 import TabBar from './components/TabBar.vue'
 import TerminalTabView from './components/TerminalTabView.vue'
-import { resolveWorkbenchRenderer, resolveWorkbenchKind } from './workbench/registry'
+import { resolveWorkbenchRenderer, resolveWorkbenchKind, isWorkbenchAvailable } from './workbench/registry'
+import { bootstrapWorkbenchCapabilities } from './workbench/bootstrap'
+import { isOemFeatureEnabled } from '@shared/oem-features'
 import SessionManager from './components/SessionManager.vue'
 import RecentConversationsPanel from './components/RecentConversationsPanel.vue'
 import SettingsModal from './components/Settings/SettingsModal.vue'
@@ -41,6 +43,10 @@ const { t } = useI18n()
 
 // Steam 构建标识（由 vite define 注入），在 script 中取值供模板使用，避免模板直接访问全局
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
+
+/** 觉醒入口 / 面板：awaken 或 watch（关切总览也走 Awaken 面板） */
+const canShowAwaken = !isSteamBuild && (isOemFeatureEnabled('awaken') || isOemFeatureEnabled('watch'))
+const canShowAssistantUi = !isSteamBuild && isWorkbenchAvailable('assistant')
 
 // 知识库索引重建状态
 // cause 区分了为什么会重建，决定显示哪种文案：
@@ -945,6 +951,11 @@ const initializeApp = async () => {
   // 确保「联络」常驻 tab 存在
   terminalStore.ensureCompanionTab()
 
+  // 工作台声明的 MCP / skills 装配（内置多为空操作）
+  void bootstrapWorkbenchCapabilities().catch((e) => {
+    log.warn('Workbench bootstrap failed', e)
+  })
+
   // 不再自动创建本地终端，显示欢迎页让用户选择
 
   // 延迟连接 MCP 服务器，不阻塞首屏渲染
@@ -1010,23 +1021,28 @@ const showTabWorkbench = computed(
   () => !showSmartPatrol.value && !showWelcomePage.value
 )
 // 最近对话侧栏：Hub 视图（activeTabId 为空，即首页/会话态）常驻，独立终端/助手全屏 tab 时隐藏
-const showRecallSidebar = computed(() => !terminalStore.activeTabId && !showSmartPatrol.value && !isSteamBuild)
+const showRecallSidebar = computed(() =>
+  !terminalStore.activeTabId && !showSmartPatrol.value && canShowAssistantUi
+)
 /** 欢迎页是否真正展示给用户（启动完成 + 无全屏遮挡），用于控制首次启动入场动画 */
 const welcomePageReady = computed(
   () => welcomeUiReady.value && showWelcomePage.value && !isFullScreenOverlayOpen.value
 )
 // 从欢迎页打开助手（新建独立 tab 并激活，与 Tab 栏「新建助手」一致）
 const openAssistantFromWelcome = () => {
+  if (!isWorkbenchAvailable('assistant')) return
   terminalStore.createAssistantTab({ isPromoted: true, activate: true })
 }
 
 // 从欢迎页打开本地终端
 const openLocalFromWelcome = async () => {
+  if (!isWorkbenchAvailable('local')) return
   await terminalStore.createTab('local')
 }
 
 // 从欢迎页连接 SSH
 const openSshFromWelcome = async (session: SshSession) => {
+  if (!isWorkbenchAvailable('ssh')) return
   // 更新最近使用时间
   await configStore.updateSessionLastUsed(session.id)
   
@@ -1058,6 +1074,7 @@ const openSmartPatrolFromWelcome = () => {
 
 // 从欢迎页打开关切面板（默认进 watches tab，Awaken 自身会落到「总览」视图）
 const openWatchesFromWelcome = () => {
+  if (!canShowAwaken) return
   awakenInitialTab.value = 'watches'
   showAwaken.value = true
 }
@@ -1345,19 +1362,30 @@ onUnmounted(() => {
         <TabBar @open-ssh="openHostSidebar" />
       </div>
       <div class="header-right">
-        <template v-if="!isSteamBuild">
+        <template v-if="canShowAssistantUi">
           <button v-if="hasTerminalTab" class="btn-icon btn-icon-header" @click="toggleAiPanel" :title="t('header.aiAssistant')">
             <Bot :size="18" />
           </button>
         </template>
-        <button class="btn-icon btn-icon-header" @click="toggleSidebar" :title="t('header.hostManager')">
+        <button
+          v-if="isWorkbenchAvailable('ssh') || isWorkbenchAvailable('local')"
+          class="btn-icon btn-icon-header"
+          @click="toggleSidebar"
+          :title="t('header.hostManager')"
+        >
           <Monitor :size="18" />
         </button>
-        <template v-if="!isSteamBuild">
-          <button class="btn-icon btn-icon-header" :class="{ 'awakened-active': isAwakened }" @click="showAwaken = true" :title="t('awaken.title') + ' — ' + t('awaken.description')">
+        <template v-if="canShowAwaken || canShowAssistantUi">
+          <button
+            v-if="canShowAwaken"
+            class="btn-icon btn-icon-header"
+            :class="{ 'awakened-active': isAwakened }"
+            @click="showAwaken = true"
+            :title="t('awaken.title') + ' — ' + t('awaken.description')"
+          >
             <Heart :size="18" fill="currentColor" />
           </button>
-          <ConnectionStatusPopover @open-settings="openConnectionSettings" />
+          <ConnectionStatusPopover v-if="canShowAssistantUi" @open-settings="openConnectionSettings" />
         </template>
         <button class="btn-icon btn-icon-header" @click="showSettings = true" :title="t('header.settings')">
           <Settings :size="18" />
@@ -1510,9 +1538,9 @@ onUnmounted(() => {
     />
 
 
-    <!-- 关切面板（Steam 版不渲染） -->
+    <!-- 关切 / 觉醒面板（Steam 或 OEM 关闭时不渲染） -->
     <Awaken
-      v-if="showAwaken && !isSteamBuild"
+      v-if="showAwaken && canShowAwaken"
       :initial-tab="awakenInitialTab"
       @close="onAwakenClose"
       @awakened-change="isAwakened = $event"

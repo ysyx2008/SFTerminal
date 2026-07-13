@@ -30,21 +30,8 @@ function buildHttpTransportOptions(headers?: Record<string, string>): { requestI
 }
 
 // MCP 服务器配置
-export interface McpServerConfig {
-  id: string
-  name: string
-  enabled: boolean
-  // 'http' = MCP Streamable HTTP（推荐）；'sse' = 旧 SSE（已被规范标记 deprecated，仍保留用于兼容老服务器）
-  transport: 'stdio' | 'sse' | 'http'
-  // stdio 模式
-  command?: string
-  args?: string[]
-  env?: Record<string, string>
-  cwd?: string
-  // sse / http 模式
-  url?: string
-  headers?: Record<string, string>
-}
+import type { McpServerConfig } from '@shared/types'
+export type { McpServerConfig }
 
 // MCP 工具信息
 export interface McpTool {

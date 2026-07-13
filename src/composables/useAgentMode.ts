@@ -368,26 +368,28 @@ export function useAgentMode(
    * opacity:0 不影响布局，待 scrollHeight 稳定后淡入。
    */
   const isHistoryScrollPending = ref(false)
+  /** 历史冷加载 / 淡入后短窗口：禁指数追底，只硬钉（不延长打开等待） */
+  let suppressFollowAnimUntil = 0
 
   /**
    * 历史对话滚到底部（重试 + 500ms 等待 mermaid/活图渲染后对齐）。
    * virtua 内置 scroll position adjustment，只需多次钉底即可。
    * @param opts.hideUntilSettled 历史冷加载路径传 true：额外 opacity:0，等 scrollHeight
-   *        连续 2 rAF 稳定（或 520ms 兜底）后淡入。
+   *        连续 2 rAF 稳定（或 520ms 兜底）后淡入；期间禁跟底滑动动画。
    */
   const scrollToHistoryBottomWithRetry = (opts?: { hideUntilSettled?: boolean }) => {
     const hide = opts?.hideUntilSettled === true
     if (hide) {
+      // 冷加载：隐藏 + 禁跟底滑动，只硬钉；打开速度不变，避免测高过程中指数追底露馅
       isHistoryScrollPending.value = true
+      suppressFollowAnimUntil = Math.max(suppressFollowAnimUntil, Date.now() + 600)
+      cancelFollowScrollAnimation()
     }
     guardAfterAutoScroll()
 
     const apply = () => {
-      if (scrollerRef?.value) {
-        scrollerRef.value.scrollToBottom?.()
-      } else {
-        void scrollToBottom()
-      }
+      // 历史路径一律硬钉，不走 animateFollowBottom
+      pinFollowBottom()
     }
     void nextTick(() => {
       apply()
@@ -411,6 +413,9 @@ export function useAgentMode(
         revealed = true
         pendingRevealFrame = null
         pendingRevealTimer = null
+        // 淡入前再硬钉一次；淡入后短窗口继续禁滑动（晚到的 mermaid/图片测高）
+        pinFollowBottom()
+        suppressFollowAnimUntil = Math.max(suppressFollowAnimUntil, Date.now() + 400)
         isHistoryScrollPending.value = false
       }
       pendingRevealTimer = setTimeout(doReveal, 520)
@@ -611,8 +616,12 @@ export function useAgentMode(
     lastKnownScrollHeight = el.scrollHeight
   }
 
-  /** 跟底态：指数逼近底部；已在跑则只靠 tick 读最新 scrollHeight，无需 retarget */
+  /** 跟底态：指数逼近底部；历史冷加载窗口内改硬钉，避免打开时露滑动 */
   const animateFollowBottom = () => {
+    if (isHistoryScrollPending.value || Date.now() < suppressFollowAnimUntil) {
+      pinFollowBottom()
+      return
+    }
     const el = messagesRef.value
     if (!el) return
     const target = Math.max(0, el.scrollHeight - el.clientHeight)
@@ -625,6 +634,13 @@ export function useAgentMode(
       if (!box || !shouldFollowBottom()) {
         followAnimRaf = null
         followAnimLastTs = 0
+        return
+      }
+      // 冷加载窗口中途切入：停动画、硬钉
+      if (isHistoryScrollPending.value || Date.now() < suppressFollowAnimUntil) {
+        followAnimRaf = null
+        followAnimLastTs = 0
+        pinFollowBottom()
         return
       }
 

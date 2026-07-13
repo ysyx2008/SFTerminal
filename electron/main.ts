@@ -9,6 +9,7 @@ import * as os from 'os'
 import { getDefaultShell } from './utils/platform'
 import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, WebSearchSettings, IMProcessMode } from '@shared/types'
 import { getAppTitle as buildAppTitle, getBrandName } from '@shared/brand'
+import { isOemFeatureEnabled } from '@shared/oem-features'
 
 /**
  * 展开路径开头的 `~` 为用户 home 目录。支持 `~`、`~/...`、`~\...`（兼容 Windows）。
@@ -1737,11 +1738,15 @@ app.whenReady().then(async () => {
         log.error('Services migration failed:', e)
       }
 
-      const awakened = configService.get('agentAwakened') as boolean ?? false
+      const awakenFeatureEnabled = isOemFeatureEnabled('awaken')
+      const awakened = awakenFeatureEnabled && (configService.get('agentAwakened') as boolean ?? false)
       const heartbeatInterval = configService.get('watchHeartbeatInterval') as number ?? 30
 
       // 修复配置不同步：agentAwakened 与 watchHeartbeatEnabled 应保持一致
-      if (awakened !== (configService.get('watchHeartbeatEnabled') as boolean ?? false)) {
+      // OEM 关闭 awaken 时强制不启用心跳（配置可仍为 true，运行时覆盖）
+      if (!awakenFeatureEnabled) {
+        configService.set('watchHeartbeatEnabled', false)
+      } else if (awakened !== (configService.get('watchHeartbeatEnabled') as boolean ?? false)) {
         configService.set('watchHeartbeatEnabled', awakened)
       }
 
@@ -3314,6 +3319,10 @@ ipcMain.handle('sensor:getRecentEvents', async (_event, limit?: number) => {
 type AwakenedApplyResult = { awakened: boolean; intervalMinutes: number }
 
 async function applyAwakenedState(awakened: boolean, intervalMinutes?: number): Promise<AwakenedApplyResult> {
+  if (awakened && !isOemFeatureEnabled('awaken')) {
+    log.info('applyAwakenedState: awaken feature disabled, forcing off')
+    awakened = false
+  }
   const sensor = await ensureSensorService()
   const watch = await ensureWatchService()
   const validInterval = (intervalMinutes && intervalMinutes > 0 && intervalMinutes <= 1440)
@@ -3359,6 +3368,28 @@ function enqueueAwakenedApply(awakened: boolean, intervalMinutes?: number): Prom
   awakenedApplyChain = awakenedApplyChain.then(task, task)
   return awakenedApplyChain
 }
+
+
+// ==================== Auth / SSO（features.sso，默认关闭）====================
+ipcMain.handle('auth:getSession', async () => {
+  const { getAuthService } = await import('./services/auth/auth.service')
+  return getAuthService().getSession()
+})
+
+ipcMain.handle('auth:startLogin', async () => {
+  const { getAuthService } = await import('./services/auth/auth.service')
+  return getAuthService().beginLogin()
+})
+
+ipcMain.handle('auth:completeLogin', async (_event, code: string, state: string) => {
+  const { getAuthService } = await import('./services/auth/auth.service')
+  return getAuthService().completeLogin(code, state)
+})
+
+ipcMain.handle('auth:logout', async () => {
+  const { getAuthService } = await import('./services/auth/auth.service')
+  await getAuthService().logout()
+})
 
 ipcMain.handle('sensor:setAwakened', async (_event, awakened: boolean, intervalMinutes?: number) => {
   return enqueueAwakenedApply(awakened, intervalMinutes)

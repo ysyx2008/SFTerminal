@@ -2,7 +2,9 @@
   "extends": "../tsconfig.node.json",
   "compilerOptions": {
     "composite": false,
-    "noEmit": true
+    "noEmit": true,
+    "rootDir": ".."
   },
-  "include": ["./**/*.ts", "../shared/**/*.ts"]
+  "include": ["./**/*.ts", "../shared/**/*.ts"],
+  "exclude": ["../shared/**/__tests__/**", "../shared/**/*.test.ts"]
 }

@@ -224,7 +224,9 @@ export default defineConfig({
           },
           resolve: {
             alias: {
-              '@shared': resolve(__dirname, 'shared')
+              '@shared/types': resolve(__dirname, 'packages/shared-types/src'),
+              '@shared': resolve(__dirname, 'shared'),
+              '@sailfish/workbench-assistant': resolve(__dirname, 'packages/workbench-assistant/src'),
             }
           },
           build: {
@@ -286,7 +288,9 @@ export default defineConfig({
         vite: {
           resolve: {
             alias: {
-              '@shared': resolve(__dirname, 'shared')
+              '@shared/types': resolve(__dirname, 'packages/shared-types/src'),
+              '@shared': resolve(__dirname, 'shared'),
+              '@sailfish/workbench-assistant': resolve(__dirname, 'packages/workbench-assistant/src'),
             }
           },
           build: {
@@ -304,7 +308,15 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'src'),
       '@electron': resolve(__dirname, 'electron'),
-      '@shared': resolve(__dirname, 'shared')
+      '@shared/types': resolve(__dirname, 'packages/shared-types/src'),
+      '@shared': resolve(__dirname, 'shared'),
+      '@sailfish/shared-types': resolve(__dirname, 'packages/shared-types/src/index.ts'),
+      '@sailfish/workbench-sdk': resolve(__dirname, 'packages/workbench-sdk/src'),
+      '@sailfish/workbench-assistant': resolve(__dirname, 'packages/workbench-assistant/src'),
+      '@sailfish/workbench-sample': resolve(__dirname, 'packages/workbench-sample/src'),
+      '@sailfish/workbench-local': resolve(__dirname, 'packages/workbench-local/src'),
+      '@sailfish/workbench-ssh': resolve(__dirname, 'packages/workbench-ssh/src'),
+      '@sailfish/workbench-companion': resolve(__dirname, 'packages/workbench-companion/src'),
     }
   },
   build: {

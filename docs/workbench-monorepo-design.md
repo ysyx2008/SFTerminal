@@ -527,17 +527,68 @@ apps/desktop/                               @sailfish/core-team
 
 ## 六、迁移路径（分阶段）
 
+### 6.0 实施进度与 TODO（2026-07-13，分支 `feat/oem-platform`）
+
+> **读本节再动手。** 设计终局 ≠ 当前仓库状态。骨架 / 接线已有一批，**真 monorepo 与业务台可用形态仍大段未做。**  
+> 产品侧（换皮 / 换能力）见 [`oem-vision.md`](./oem-vision.md) 同日进度表。
+
+#### 图例
+
+- ✅ 已落地可用  
+- ⚠️ 骨架 / 半成品（有代码，未达本节验收标准）  
+- ❌ 未开始  
+- ⏸ 明确后置（不阻塞 OEM 裁剪主路径）
+
+#### 总览（对照 6.1 阶段）
+
+| 阶段 | 设计目标（摘要） | 进度 | 剩余 TODO |
+|---|---|---|---|
+| **OEM features 接线** | `features` + `isWorkbenchAvailable` + UI/心跳 | ✅ | 扫漏：设置页 / 快捷键 / 个别 Steam 分支是否仍硬编码 |
+| **Descriptor 声明** | `skills` / `mcpServers` / `agentPrompt` / `agentPolicy?` | ⚠️ | 内置台补真实 `skills`（若需要）；业务样例台；`agentPolicy` 实现 |
+| **Bootstrap 装配** | 启动连 MCP、校验 skills | ⚠️ | 端到端验证；MCP 就绪信号；skills 缺失告警可产品化 |
+| **P-1 shared-types** | **物理迁入**真包 + 全仓 import | ⚠️ | ✅ 物理迁入 `packages/shared-types`；`shared/types` 为兼容 re-export；全仓改 `@sailfish/shared-types` 可渐进 |
+| **Workspace** | pnpm（决策）或过渡 npm workspaces | ✅ | **现网路径 = npm workspaces**（W1–W4 已验证）；pnpm 仍为可选终局，有同仓多团队 / 发版需求再切（见决策 #2） |
+| **P0 assistant 抽包** | 物理迁 `workbench-assistant` + 构建冒烟 | ⚠️ | ✅ descriptor/prompt/agent-tools/AssistantWorkbench 真源在包内；`src/` 薄 re-export；artifact/AiPanel 仍 desktop（P2）；electron-builder 全量冒烟待做 |
+| **P1 全台 + SDK** | local/ssh/companion + sdk 真包；region 渲染器 | ⚠️ | ✅ 内置台真抽；✅ SDK 真核（types/registry/prompt/bootstrap）；AiPanel 正式出口 ⚠️ 实现仍在 desktop；❌ region / apps/desktop |
+| **P2 AiPanel 下沉** | 对话区可被业务台复用 | ✅⏸ | ✅ **薄壳出口** `@sailfish/workbench-sdk/ai-panel` 已够用；⏸ **W7b 不做**：同仓内部团队无需独立编译/实现迁包 |
+| **P3 useAgentMode** | 原语进 SDK | ⏸❌ | 后置；薄壳模型下非刚需 |
+| **P4 发版机制** | changesets / Packages / CODEOWNERS | ⏸❌ | **不做**：同仓内部协作，无跨公司独立发版需求 |
+| **P5 业务试点** | 模板 + 第一个岗位台 | ⚠️ | sample 台已作模板；真实岗位按需加包即可 |
+| **SSO 产品面** | 登录 UI / 回调窗 / 会话落盘 / refresh / JWKS | ⚠️ | 协议底座 ✅；其余 ❌（见 oem-vision） |
+| **品牌构建收拢** | productName / appId / 图标读 OEM | ⚠️ | 运行时品牌 ✅；打包配置未完全统一 |
+
+#### 近期执行队列（建议顺序，可勾选）
+
+- [x] **W1** 启用 **npm workspaces**（不换 pnpm）：`package.json#workspaces` + `@sailfish/*` 依赖声明；`npm install` / 类型检查冒烟（2026-07-13）  
+- [x] **W2** **P-1 物理迁码**：`shared/types` → `packages/shared-types`；保留 `@shared/types` alias（2026-07-13）  
+- [x] **W3** **P0**：`assistant` 真抽包（descriptor + prompt + agent-tools + AssistantWorkbench）+ desktop/registry/tools 改包名 import（2026-07-13）；artifact 与 AiPanel 仍留 desktop 
+- [x] **W4** 样例业务台 `@sailfish/workbench-sample`（descriptor + skills + 假 MCP）+ bootstrap 单测（2026-07-13）；无 Welcome 入口，不污染日常 UI  
+- [x] **W5** **评估结论（2026-07-13）**：暂不切 pnpm。理由：① 本机/CI 已稳定跑 npm workspaces；② W1–W4 链路已通；③ 切 pnpm 需改 lockfile、electron-builder、postinstall、文档与贡献者习惯，收益暂不明显。决策 #2 改为「目标仍可 pnpm，**当前官方路径 = npm workspaces**」。  
+- [x] **W6** P1：local/ssh/companion **真抽包**；registry 全改包名 import（2026-07-13）  
+- [x] **W7a** SDK 真核 + AiPanel **薄壳正式出口**（2026-07-13）  
+- [x] **W7b** **明确不做**（2026-07-13）：同仓、公司内部团队；薄壳 SDK 即可，无需 AiPanel 实现迁包 / 独立编译 / 跨包发版  
+- [ ] **W8** SSO UI + 回调 + 可选落盘（有 IdP 需求再提前）  
+
+#### 刻意未做（避免误判为遗漏）
+
+- 企业控制面（组织 / RBAC / 计费 / 策略下发服务端）  
+- 业务包互相 import  
+- `@sailfish/core` 抽后端（v2 已砍）  
+- **AiPanel 实现下沉 / 独立编译发版**（薄壳模型 + 同仓内部协作，非目标）  
+
+更新约定：每完成上表一行，同步改「进度」列与本节日期；合入 `develop` 前至少勾掉 W1 或写明仍 WIP。
+
 ### 6.1 工作量评估
 
-| 阶段 | 内容 | 工作量 | 风险 |
-|---|---|---|---|
-| **P-1** | 抽 `@sailfish/shared-types` 包：把 `shared/types/` 物理迁入；`McpServerConfig` 三处重复定义收敛到此处；全仓库 `@shared/types` import 改 `@sailfish/shared-types`（保留 alias 兼容） | 1-2 天 | 中，触及全仓库 import 路径 |
-| **P0** | pnpm workspace 骨架 + 把 `src/workbench/assistant/` 抽成独立包跑通 | 1-2 天 | 低，验证链路 |
-| **P1** | 所有 `src/workbench/*` 抽包 + `workbench-sdk` 抽出 + `WorkbenchDescriptor` 扩展 skills/mcpServers/agentPrompt + desktop 装配逻辑 | 3-5 天 | 中，要重构 registry.ts 硬编码 |
-| **P2** | AiPanel 下沉到 SDK，解耦对 assistant store 的依赖 | 5-7 天 | 高，6600 行组件重构 |
-| **P3** | `useAgentMode` 拆分：原语进 SDK，应用层留 desktop | 5-7 天 | 高，2310 行 composable 重构 |
-| **P4** | changesets + GitHub Packages + CI + CODEOWNERS | 2-3 天 | 低 |
-| **P5** | 业务工作台模板 + 文档 + 第一个业务包试点 | 持续 | 低 |
+| 阶段 | 内容 | 工作量 | 风险 | 进度（见 6.0） |
+|---|---|---|---|---|
+| **P-1** | 抽 `@sailfish/shared-types` 包：把 `shared/types/` 物理迁入；`McpServerConfig` 三处重复定义收敛到此处；全仓库 `@shared/types` import 改 `@sailfish/shared-types`（保留 alias 兼容） | 1-2 天 | 中，触及全仓库 import 路径 | ⚠️ 物理迁入完成；import 路径渐进切 `@sailfish/shared-types` |
+| **P0** | pnpm workspace 骨架 + 把 `src/workbench/assistant/` 抽成独立包跑通 | 1-2 天 | 低，验证链路 | ⚠️ 包名骨架；workspace / 物理迁未做 |
+| **P1** | 所有 `src/workbench/*` 抽包 + `workbench-sdk` 抽出 + `WorkbenchDescriptor` 扩展 skills/mcpServers/agentPrompt + desktop 装配逻辑 | 3-5 天 | 中，要重构 registry.ts 硬编码 | ⚠️ Descriptor+registry+bootstrap 已在 `src/workbench`；抽包未完成 |
+| **P2** | AiPanel 下沉到 SDK，解耦对 assistant store 的依赖 | 5-7 天 | 高，6600 行组件重构 | ❌ |
+| **P3** | `useAgentMode` 拆分：原语进 SDK，应用层留 desktop | 5-7 天 | 高，2310 行 composable 重构 | ❌ |
+| **P4** | changesets + GitHub Packages + CI + CODEOWNERS | 2-3 天 | 低 | ❌ |
+| **P5** | 业务工作台模板 + 文档 + 第一个业务包试点 | 持续 | 低 | ❌ |
 
 注：v2 砍掉了 v1 的 `@sailfish/core` 抽包阶段（原 P2，5-10 天高风险），总工作量大幅下降。但新增了 P-1（shared-types 抽包）作为前置——这是 SDK 类型闭环的硬性前提，无法绕开。
 
@@ -642,14 +693,14 @@ SDK 1.0 只暴露 `WorkbenchDescriptor` / `registerWorkbench` / `resolveWorkbenc
 | # | 决策项 | 推荐选项 | 待确认 |
 |---|---|---|---|
 | 1 | 整体方案是否走精简版 Monorepo（v2） | ✅ 是 | ☑ |
-| 2 | 包管理器是否用 pnpm | ✅ 是 | ☑ |
-| 3 | 内部 registry / changesets 独立发版 | 可选（同仓多团队时）；**Fork OEM 不强制** | ☑ |
+| 2 | 包管理器是否用 pnpm | 目标可选；**当前 = npm workspaces** | ☑ W5：暂不切；同仓内部无强动机 |
+| 3 | 内部 registry / changesets 独立发版 | **不做**（同仓内部） | ☑ |
 | 4 | 业务团队技术栈 TS + Vue3 + Pinia | ✅ 是 | ☑ |
-| 5 | `WorkbenchDescriptor` 加 skills/mcpServers/agentPrompt（及预留 agentPolicy） | ✅ 是 | ☑ |
-| 6 | 新增 `@sailfish/shared-types`（P-1） | ✅ 是 | ☑ |
+| 5 | `WorkbenchDescriptor` 加 skills/mcpServers/agentPrompt（及预留 agentPolicy） | ✅ 是 | ☑ 字段已落地；agentPolicy 实现 ⏸ |
+| 6 | 新增 `@sailfish/shared-types`（P-1） | ✅ 是 | ☑ 骨架；物理迁码见 6.0 |
 | 7 | skills 包内自治优先 | ✅ 是 | ☑ |
-| 8 | `isWorkbenchAvailable` 统一 features + Steam | ✅ 是 | ☑ |
-| 9 | descriptor 双来源同一 bootstrap | ✅ 是 | ☑ |
+| 8 | `isWorkbenchAvailable` 统一 features + Steam | ✅ 是 | ☑ 已落地 |
+| 9 | descriptor 双来源同一 bootstrap | ✅ 是 | ☑ bootstrap 半成品；服务端下发 ❌ |
 
 产品 / OEM 决策见 [`oem-vision.md`](./oem-vision.md)。
 

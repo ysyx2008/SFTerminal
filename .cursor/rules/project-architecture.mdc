@@ -25,7 +25,12 @@ SailFish（旗鱼）是一个私人 AI Agent 桌面应用。用户用自然语�
 
 ```
 SailFish/
-├── shared/types/                # 前后端共享类型（@shared/types 别名，唯一数据源）
+├── packages/                    # Monorepo（进度见 docs/workbench-monorepo-design.md §6.0）
+│   ├── shared-types/            # ✅ @sailfish/shared-types 物理真相源（shared/types 为兼容 re-export）
+│   ├── workbench-sdk/           # ⚠️ 仍 re-export src/workbench
+│   └── workbench-{assistant,local,ssh,companion}/  # ⚠️ 骨架
+├── shared/types/                # 兼容 re-export → packages/shared-types（请新代码用 @sailfish/shared-types）
+├── shared/oem.config.template.ts # OEM 模板（运行时 oem.config.ts 由 ensure 生成，不进主线）
 ├── electron/                    # Electron 主进程 + 后端服务
 │   ├── main.ts                  # 主进程入口（窗口、IPC、服务初始化）
 │   ├── preload.ts               # 预加载脚本（IPC 桥接）
@@ -56,6 +61,7 @@ SailFish/
 │       ├── web-chat.service.ts  # Web 远程会话（后端直驱 Agent）
 │       ├── web-fetch.service.ts # 网页拉取与正文提取（Jina Reader / Readability + jsdom，给 web_fetch 工具用）
 │       ├── credential.service.ts # 凭证存储（OOP：CredentialService 类 + 模块级单例）
+│       ├── auth/                 # 应用 SSO（OAuth2/OIDC 协议底座，features.sso 默认关；见 auth/SPEC.md）
 │       ├── credential/           # 凭证加密底层
 │       │   └── master-key.ts     # MasterKey 类：salt 文件 + PBKDF2 + AES-256-GCM（g1: 格式）
 │       ├── document-parser.service.ts  # 文档解析（PDF/Word/Excel）

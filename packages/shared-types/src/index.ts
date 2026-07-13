@@ -1,0 +1,23 @@
+/**
+ * @sailfish/shared-types — 前后端共用类型（物理真相源）
+ *
+ * 兼容：`@shared/types` / `shared/types/*` 仍为 re-export 入口。
+ */
+export * from './agent'
+export * from './ai'
+export * from './bastion'
+export * from './bond'
+export * from './canvas'
+export * from './connection'
+export * from './document'
+export * from './history'
+export * from './host'
+export * from './im'
+export * from './theme'
+export * from './watch'
+export * from './workbench'
+export * from './tts'
+export * from './web-search'
+export * from './browser-bridge'
+export * from './mcp'
+export * from './auth'

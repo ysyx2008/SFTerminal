@@ -24,3 +24,4 @@ export { planComposerPaste, ingestComposerAttachments } from './useComposerPaste
 export type { ComposerPastePlan } from './useComposerPaste'
 export { useToast, toast } from './useToast'
 export type { Toast, ToastType } from './useToast'
+export { useConversationWarmup, resolveWarmBudget } from './useConversationWarmup'

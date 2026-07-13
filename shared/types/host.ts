@@ -1,19 +1,2 @@
-/**
- * 主机档案共享类型定义
- */
-
-export interface HostProfile {
-  hostId: string
-  hostname: string
-  username: string
-  os: string
-  osVersion: string
-  shell: string
-  packageManager?: string
-  installedTools: string[]
-  homeDir?: string
-  currentDir?: string
-  notes?: string[]
-  lastProbed: number
-  lastUpdated: number
-}
+/** @deprecated 请改从 `@sailfish/shared-types` 或 `@shared/types` 导入；本文件为兼容 re-export */
+export * from '../../packages/shared-types/src/host'

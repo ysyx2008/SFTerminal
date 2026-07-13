@@ -51,19 +51,8 @@ interface UpdateStatusInfo {
   }
 }
 
-// MCP 相关类型
-interface McpServerConfig {
-  id: string
-  name: string
-  enabled: boolean
-  transport: 'stdio' | 'sse' | 'http'
-  command?: string
-  args?: string[]
-  env?: Record<string, string>
-  cwd?: string
-  url?: string
-  headers?: Record<string, string>
-}
+// MCP 相关类型（与 @shared/types 对齐，避免重复定义）
+type McpServerConfig = import('@shared/types').McpServerConfig
 
 interface McpTool {
   serverId: string
@@ -2351,6 +2340,12 @@ interface Window {
       setHeartbeat: (enabled: boolean, intervalMinutes?: number) => Promise<void>
       setAwakened: (awakened: boolean, intervalMinutes?: number) => Promise<void>
       triggerHeartbeat: () => Promise<void>
+    }
+    auth: {
+      getSession: () => Promise<import('@shared/types').AuthSession | null>
+      startLogin: () => Promise<{ authorizationUrl: string; state: string }>
+      completeLogin: (code: string, state: string) => Promise<import('@shared/types').AuthSession>
+      logout: () => Promise<void>
     }
 
     // IM 集成

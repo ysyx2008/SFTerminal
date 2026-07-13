@@ -115,7 +115,8 @@ DynamicScroller 是回收式虚拟列表，动态高度 + 流式增长场景下�
 | 跟底态：新内容上移的平滑滑动 | `animateFollowBottom`：每帧指数逼近 `scrollHeight - clientHeight`（`1-e^(-k·dt)`）；目标抬高只增加 remain，无 from/to 重定向，避免流畅中微跳 |
 | 阅读态：用户上滚后不拽回底部，亮「新消息」 | `updateScrollPosition` / `userScrolledAway` / `hasNewMessage` |
 | 切 tab / 恢复历史的精确视口位置 | `aiScrollAnchor`（item id + offset）+ `scrollToIndex` |
-| 历史冷加载视觉抖动 | `isHistoryScrollPending`（opacity:0 → scrollHeight 稳定后淡入） |
+| 历史冷加载视觉抖动 | `isHistoryScrollPending`（opacity:0 → scrollHeight 稳定后淡入）；期间 + 淡入后短窗口 `suppressFollowAnimUntil` 只硬钉、禁指数追底（不延长打开等待） |
+| 侧栏历史空闲预热 | `useConversationWarmup`：idle 串行 `warmHistoryConversation`（同构打开但不 focus）；`deviceMemory<4` 不预热；堆占用过高停队列 |
 | 容器宽度变化导致的 reflow | `installContainerWidthObserver`（跟底时主动 `scrollToBottom`） |
 
 ### 已删除（勿再引入）
@@ -131,6 +132,7 @@ DynamicScroller 是回收式虚拟列表，动态高度 + 流式增长场景下�
 3. **tick 每帧读最新 `scrollHeight`**，已在跑则不必 retarget；收束时只对齐 `latestTarget`，不要再调 `scrollerRef.scrollToBottom()`（易与 DOM scrollTop 不一致而跳一下）。
 4. **曲线：`scrollTop += remain * (1 - exp(-k·dt))`**，`k≈14`；落后较多时可略 boost。禁止弹簧过冲。
 5. **用户上滚必须 `cancelFollowScrollAnimation`**。
+6. **历史冷加载（`hideUntilSettled`）禁止跟底滑动**：只硬钉 + opacity 隐藏；淡入后再禁约 400ms，挡住晚到测高，不额外拉长等待。
 
 ### 改这块代码前必读
 

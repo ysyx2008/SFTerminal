@@ -1,0 +1,20 @@
+{
+  "name": "@sailfish/workbench-companion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "联络工作台（descriptor / prompt / CompanionWorkbench）",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./descriptor": "./src/descriptor.ts",
+    "./prompt": "./src/prompt.ts"
+  },
+  "peerDependencies": {
+    "vue": "^3.4.0"
+  },
+  "dependencies": {
+    "@sailfish/workbench-sdk": "*"
+  }
+}
