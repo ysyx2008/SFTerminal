@@ -52,7 +52,7 @@ function buildTitlePrompt(userMessage: string, language: string): string {
 
   if (isEn) {
     return [
-      'Generate a short sidebar title for this chat (max 6 words).',
+      'Generate a short sidebar title for this chat (about 8–10 words, under 40 characters).',
       'Reply with ONLY the title — no quotes, no punctuation wrapping, no explanation.',
       '',
       'User message:',
