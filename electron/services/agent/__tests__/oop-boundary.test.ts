@@ -2,8 +2,9 @@
  * OOP 边界护栏测试
  *
  * 这是 SPEC.md「工具元数据驱动模型」承诺的机械护栏：枚举所有已知工具名，
- * 断言 Agent 抽象层（agent.ts / streaming-tool-executor.ts / tool-result-budget.ts /
- * task-memory.ts）的源码里**不再出现**任何一个工具名字面量。
+ * 断言 Agent 抽象层（agent.ts / streaming-tool-executor.ts /
+ * tool-output-budget.ts / task-memory.ts / context-builder.ts / tool-metadata.ts）
+ * 的源码里**不再出现**任何一个工具名字面量。
  *
  * 这层文件是"基类 / 跨工具的横切关注点"，按 OOP 原则不应知道具体子类（具体工具）
  * 的名字；任何"按工具名差异化"的逻辑都应通过 ToolDefinition._meta 声明
@@ -116,7 +117,6 @@ describe('OOP 边界护栏：抽象层不应硬编码任何具体工具名', () 
   const ABSTRACT_LAYER_FILES = [
     'agent.ts',
     'streaming-tool-executor.ts',
-    'tool-result-budget.ts',
     'tool-output-budget.ts',
     'task-memory.ts',
     'context-builder.ts',
@@ -137,7 +137,7 @@ describe('OOP 边界护栏：抽象层不应硬编码任何具体工具名', () 
           '',
           'OOP 边界违反：抽象层不应知道具体工具名。',
           '修复方法：把"按工具名做行为分支"的逻辑改为通过 ToolDefinition._meta 声明',
-          '（streamDisplay / parallelizable / phase / idempotencyKey / lifecycle / argRole / contextBudget），',
+          '（streamDisplay / parallelizable / phase / idempotencyKey / lifecycle / argRole），',
           '抽象层通过 tool-metadata.ts 的 helper 按需查询，不直接 switch 工具名。',
           '详见 SPEC.md「工具元数据驱动模型」一节。'
         ].join('\n')

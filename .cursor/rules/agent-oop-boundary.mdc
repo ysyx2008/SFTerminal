@@ -1,6 +1,6 @@
 ---
 description: Agent 抽象层禁止硬编码具体工具名（OOP 边界护栏）
-globs: electron/services/agent/agent.ts, electron/services/agent/streaming-tool-executor.ts, electron/services/agent/tool-result-budget.ts, electron/services/agent/tool-output-budget.ts, electron/services/agent/task-memory.ts, electron/services/agent/context-builder.ts, electron/services/agent/tool-metadata.ts
+globs: electron/services/agent/agent.ts, electron/services/agent/streaming-tool-executor.ts, electron/services/agent/tool-output-budget.ts, electron/services/agent/task-memory.ts, electron/services/agent/context-builder.ts, electron/services/agent/tool-metadata.ts
 alwaysApply: false
 ---
 
@@ -8,7 +8,7 @@ alwaysApply: false
 
 ## 规则
 
-`electron/services/agent/` 下的**抽象层文件**（agent.ts、streaming-tool-executor.ts、tool-result-budget.ts、tool-output-budget.ts、task-memory.ts、context-builder.ts、tool-metadata.ts）**禁止包含具体工具名字符串字面量**。
+`electron/services/agent/` 下的**抽象层文件**（agent.ts、streaming-tool-executor.ts、tool-output-budget.ts、task-memory.ts、context-builder.ts、tool-metadata.ts）**禁止包含具体工具名字符串字面量**。
 
 具体工具名包括：`'read_file'` / `'execute_command'` / `'write_text_file'` / `'edit_file'` / `'word_from_markdown'` / `'excel_from_markdown'` / `'dispatch_agents'` / `'ask_user'` / `'plan'` / `'recall'` / `'personality_craft'` 等所有内置工具与技能工具的名字。
 
@@ -16,7 +16,7 @@ alwaysApply: false
 
 `agent.ts` 是 Agent **抽象基类**，其它几个文件是横切关注点。按 OOP 原则，抽象层不应知道具体子类（具体工具）的名字。任何"按工具名做行为分支"的代码都应通过 `ToolDefinition._meta` 在工具自己的定义里声明，让抽象层**只读元数据决策**——这是 SPEC.md「工具元数据驱动模型」一节的核心承诺。
 
-历史教训：之前抽象层有 11 处违反（`buildPreToolCallDisplay` 的 switch / `PARALLELIZABLE_TOOLS` 的 Set / `setExecutionPhase` 的 if-else / `generateAllowedToolKey` 的三元 / `tool-result-budget` 的两份白名单 / `task-memory` 的 ask_user 与 execute_command 硬编码 / personality_craft 引导判断 / streaming-tool-executor 的 CONCURRENCY_SAFE_TOOLS 复制粘贴 / mcp_ 前缀启发式）。每一处都是"看起来很合理"的小妥协，每一次都让抽象与具体的边界往基类里塌一点。
+历史教训：之前抽象层有多处违反（`buildPreToolCallDisplay` 的 switch / `PARALLELIZABLE_TOOLS` 的 Set / `setExecutionPhase` 的 if-else / `generateAllowedToolKey` 的三元 / 已移除的 tool-result-budget 白名单 / `task-memory` 的 ask_user 与 execute_command 硬编码 / personality_craft 引导判断 / streaming-tool-executor 的 CONCURRENCY_SAFE_TOOLS 复制粘贴 / mcp_ 前缀启发式）。每一处都是"看起来很合理"的小妥协，每一次都让抽象与具体的边界往基类里塌一点。
 
 ## 不要这样写
 
@@ -25,9 +25,6 @@ alwaysApply: false
 if (toolName === 'execute_command' || toolName === 'exec') {
   return { command: toolArgs.command }
 }
-
-// ❌ tool-result-budget.ts 中
-const CLEARABLE_TOOLS = new Set(['read_file', 'execute_command', ...])
 
 // ❌ task-memory.ts 中
 if (step.toolName === 'ask_user') { ... }
@@ -43,14 +40,13 @@ if (step.toolName === 'ask_user') { ... }
   function: { name: 'execute_command', ... },
   _meta: {
     idempotencyKey: ['command'],
-    contextBudget: { toolResult: 'clearable' },
     argRole: { summaryLine: 'command' },
   }
 } as ToolDefinitionWithMeta
 
 // ✅ agent.ts —— 通过 helper 查元数据
 const meta = getMetaByName(this.getAvailableTools(), toolName)
-const policy = meta?.contextBudget?.toolResult
+const summaryField = meta?.argRole?.summaryLine
 ```
 
 可用的元数据字段（详见 `electron/services/agent/tools.ts` 的 `ToolMeta` 定义）：
@@ -61,7 +57,6 @@ const policy = meta?.contextBudget?.toolResult
 - `idempotencyKey`：白名单/幂等键的字段子集
 - `lifecycle.marksOnboardingComplete` / `lifecycle.blocksUntilUserInput`：生命周期标志
 - `argRole.summaryLine`：历史摘要中"主命令字段"
-- `contextBudget.toolResult`：上下文压缩时的清理策略
 
 如果你需要的行为没有现成的元数据字段：**扩 `ToolMeta` 加新字段**，而不是在抽象层加 switch。
 

@@ -88,7 +88,6 @@ K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (�
     },
     _meta: {
       parallelizable: true,
-      contextBudget: { toolResult: 'clearable' }
     }
   } as ToolDefinitionWithMeta,
 
@@ -157,7 +156,6 @@ K 线必须根据市场选择 kline_style：A 股/港股/国内市场用 'cn' (�
     },
     _meta: {
       parallelizable: true,
-      contextBudget: { toolResult: 'clearable' }
     }
   } as ToolDefinitionWithMeta
 ]

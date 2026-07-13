@@ -199,6 +199,6 @@ ECharts option 含 function formatter（如 `axisLabel.formatter` / `tooltip.for
 - `generate_chart` 数据校验失败抛 Error，由 executor 捕获返回 `success: false` + 友好错误，不让 echarts 内部报错暴露给 AI
 - **错误信息附带 received data 形状**：data 顶层字段缺失/类型错时（如 candlestick 缺 categories、heatmap 缺 x_categories），throw 信息后缀 `(received data: object(keys=...))` 列出 AI 实际传的顶层 keys。弱模型（豆包 Lite / DeepSeek Flash 等）实测在错误只说 "got undefined" 时会反复发同样错误的 args，附带 received keys 后能从字面看出"哦我把 categories 写成了 dates，应该改字段名"。helper `dataShape()` 跟 `describe()` 区别：前者列全部 keys（截断到 200 字符），后者截断 4 个 keys（保持向后兼容旧错误信息）
 - `render_echarts_option` 反过来：**故意**把 ECharts 的原始报错（含字段路径）原样返给 AI，让 AI 能定位问题（自由路径下 AI 直接写 option，最有价值的反馈就是 ECharts 自己的诊断信息）
-- `_meta.parallelizable: true`、`contextBudget.toolResult: 'clearable'` —— 多张图可并行生成、图片返回后允许清理
+- `_meta.parallelizable: true` —— 多张图可并行生成
 - 不限制 `supportedModes` —— 本地终端、SSH、独立助手三种模式都能用（图表生成跟目标机器无关，纯本地计算）
 - echarts 包约 1MB，在 skill `init()` 中懒加载预热，不污染 Electron 冷启动

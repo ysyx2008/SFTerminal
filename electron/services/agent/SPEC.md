@@ -185,7 +185,6 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 | `lifecycle.marksOnboardingComplete` | 调用此工具表示诞生引导完成 | `false` |
 | `lifecycle.blocksUntilUserInput` | 此工具的 tool_call 后阻塞等待用户输入 | `false` |
 | `argRole.summaryLine` | 历史摘要中"主命令"字段（task-memory 抽取用） | 不抽取 |
-| `contextBudget.toolResult` | 上下文压缩时的处理（`'clearable'` / `'protected'`） | `'clearable'`（即默认可清理）⚠️ 见下方说明 |
 
 ### 元数据访问层（`tool-metadata.ts`）
 
@@ -203,28 +202,17 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 
 以下文件构成 Agent 抽象层 / 跨工具横切关注点，**禁止包含具体工具名字符串字面量**：
 
-- `agent.ts`、`streaming-tool-executor.ts`、`tool-result-budget.ts`、`tool-output-budget.ts`、`task-memory.ts`、`context-builder.ts`、`tool-metadata.ts`
+- `agent.ts`、`streaming-tool-executor.ts`、`tool-output-budget.ts`、`task-memory.ts`、`context-builder.ts`、`tool-metadata.ts`
 
 ### 机械护栏
 
-`__tests__/oop-boundary.test.ts`：动态枚举所有内置工具与技能工具的名字，断言上述 6 个抽象层文件源码不含任何一个字面量。一旦后续重构（包括 AI 顺手加的代码）违反原则，CI 阶段立刻失败。
+`__tests__/oop-boundary.test.ts`：动态枚举所有内置工具与技能工具的名字，断言上述抽象层文件源码不含任何一个字面量。一旦后续重构（包括 AI 顺手加的代码）违反原则，CI 阶段立刻失败。
 
 `.cursor/rules/agent-oop-boundary.mdc`：在 AI 编辑这些文件时给 LLM 上下文加上 OOP 边界规则，防止"看到 switch 已有 case 就照葫芦画瓢加新 case"的模仿大于架构反模式。
 
-### 关于 `contextBudget` 默认值的设计选择
-
-`contextBudget.toolResult` 未声明时默认按 **`'clearable'`** 处理（旧实现里"非 CLEARABLE / 非 PROTECTED / 非 mcp_/plugin_ 前缀"会按 false 即"不可清理"对待）。改默认值是**有意的**：
-
-1. 实际场景中"未登记"的工具几乎全是 MCP / plugin 工具，它们的输出多为只读查询，可清理
-2. 写入类工具、以及返回后续执行规范的工具（`skill` / `load_user_skill` 的 SKILL.md 正文）都已显式标注 `'protected'`，不会被误清理
-3. 若有第三方插件工具确实有副作用且不希望结果被清理，应显式声明 `'protected'` 而非依赖默认行为
-4. 默认更激进等于更省 token，符合上下文预算的整体目标
-
-如果有插件作者希望给自己的工具默认改回保护语义，请在 ToolDefinition 上显式声明，不要修改本节的默认值。
-
 ### 工具 output 预算（`tool-output-budget.ts`）
 
-与 `tool-result-budget.ts`（清理**旧** tool 消息）互补：在工具结果**写入 `run.messages` 前**，按模型 `contextLength` 与当前已用量计算单次 output 字符/行上限，防止「最后一读把窗口撑爆」。
+在工具结果**写入 `run.messages` 前**，按模型 `contextLength` 与当前已用量计算单次 output 字符/行上限，防止「最后一读把窗口撑爆」。旧 tool 结果不再做每步微压缩（曾用 `tool-result-budget`，会提前丢信息并破坏 prompt cache）；上下文紧张时统一走下方 compress 体系。
 
 - **计算**：`computeToolOutputBudget({ contextLength, currentTokens })` → `{ maxChars, maxLines, critical, usagePercent }`；档位上限 × 压力系数（70%/85%）与 `remaining − reserve` 取 min；reserve 为窗口 15%（最少 4K token）。
 - **注入**：`ToolExecutorConfig.getToolOutputBudget` 由 `agent.ts` 在 `createToolExecutorConfig` 提供；子 Agent 继承父配置。
@@ -246,7 +234,7 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 `ContextWindowManager.proactiveCompress` 是「本地预测触发」的前置压缩，与 `emergencyCompress`（API 报错兜底）分工互补：
 
 - **触发**：`executeStep` 开头，`shouldProactiveCompress` 检测到上一轮 API 返回的真实 `prompt_tokens >= contextLength * 95%`（`PROACTIVE_THRESHOLD = 0.95`，留 5% 余量给本轮新增）。
-- **为什么用真实值不用估算**：`estimateTextTokens` 误差 <10% 是均值，单次可能 20%+；用上一轮真实 `prompt_tokens` 预测本轮，精度只受"本轮新增内容大小"影响（而新增内容由 `tool-result-budget` 控制着）。
+- **为什么用真实值不用估算**：`estimateTextTokens` 误差 <10% 是均值，单次可能 20%+；用上一轮真实 `prompt_tokens` 预测本轮，精度主要受本轮新增内容影响（单次写入大小由 `tool-output-budget` 限制）。
 - **为什么需要它**：DeepSeek 等provider 上下文超限时**默默截断不报错**，`emergencyCompress`（依赖 `context_length_exceeded`）对它们无效。proactiveCompress 在 API 调用前主动压缩，覆盖这类 provider。
 - **流程**：`proactiveCompress`（复用 `compressAggressively`：先 keepRecent=2，仍 >90% 降到 1）→ 注入 `_systemInjected` 提示（`agent.context_proactive_compressed`，文案区分"系统主动压缩"vs emergency 的"系统自动压缩"）→ 直接继续 `executeStep`（不重试，压缩后正常调 AI）。
 - **同一 run 只压一次**：`_proactiveCompressedThisRun` 标记，避免连续压缩。
@@ -254,7 +242,7 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 
 ### 历史教训
 
-抽象层曾积累 11 处 OOP 违反：`buildPreToolCallDisplay` 的 switch / `PARALLELIZABLE_TOOLS` 的 Set / `setExecutionPhase` 的 if-else / `generateAllowedToolKey` 的三元 / `tool-result-budget` 的两份白名单 + mcp_/plugin_ 前缀启发式 / `task-memory` 的 ask_user 与 execute_command 硬编码 / `personality_craft` 引导判断 / `streaming-tool-executor` 的 CONCURRENCY_SAFE_TOOLS 复制粘贴。每一处都是"看起来很合理"的小妥协，每一次都让抽象与具体的边界往基类里塌一点；一次性重构修完后，机械护栏 + 规则 + 文档三层防护防止再次堆积。
+抽象层曾积累多处 OOP 违反（含已移除的 `tool-result-budget` 硬编码白名单等）。一次性重构修完后，机械护栏 + 规则 + 文档三层防护防止再次堆积。
 
 ## 工具系统
 

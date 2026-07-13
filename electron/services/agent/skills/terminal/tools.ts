@@ -60,7 +60,6 @@ export const ptyExecuteCommandTool: ToolDefinitionWithMeta = {
   },
   _meta: {
     idempotencyKey: ['command'],
-    contextBudget: { toolResult: 'clearable' },
     // 历史摘要中"主命令"是 command 字段（task-memory.extractDigest 用得到）
     argRole: { summaryLine: 'command' },
     // 流式预卡片：标题 + command 字段；命令文本本身在流式增长，不加字符数尾缀
@@ -96,7 +95,7 @@ export const terminalOnlyTools: ToolDefinition[] = [
         }
       }
     },
-    _meta: { parallelizable: true, contextBudget: { toolResult: 'clearable' } }
+    _meta: { parallelizable: true }
   } as ToolDefinitionWithMeta,
   {
     type: 'function',
@@ -117,7 +116,7 @@ export const terminalOnlyTools: ToolDefinition[] = [
         }
       }
     },
-    _meta: { parallelizable: true, contextBudget: { toolResult: 'clearable' } }
+    _meta: { parallelizable: true }
   } as ToolDefinitionWithMeta,
   {
     type: 'function',

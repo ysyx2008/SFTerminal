@@ -113,15 +113,6 @@ export interface ToolMeta {
      */
     summaryLine?: string
   }
-
-  /**
-   * 上下文压缩时的预算策略。不指定 → 默认为 'clearable'（可清理），
-   * 让 Agent 在上下文紧张时优先清理这类工具的旧结果。
-   */
-  contextBudget?: {
-    /** 工具结果的处理：'clearable'（可清理） / 'protected'（保护，永不清理） */
-    toolResult?: 'clearable' | 'protected'
-  }
 }
 
 /**
@@ -254,8 +245,7 @@ ${skillsCompact}`,
         required: ['action', 'skill_id']
       }
     },
-    // load 返回的 SKILL.md 是后续执行规范，不可被 tool-result-budget 清掉
-    _meta: { parallelizable: true, contextBudget: { toolResult: 'protected' } }
+    _meta: { parallelizable: true }
   }
 }
 
@@ -292,8 +282,7 @@ ${skillsList}`,
         required: ['skill_id']
       }
     },
-    // 用户技能正文同内置 skill：长对话中必须保留，否则规范会「丢失」
-    _meta: { parallelizable: true, contextBudget: { toolResult: 'protected' } }
+    _meta: { parallelizable: true }
   }
 }
 
@@ -324,7 +313,6 @@ function buildWebSearchTool(): ToolDefinitionWithMeta[] {
     },
     _meta: {
       parallelizable: true,
-      contextBudget: { toolResult: 'clearable' },
       // 流式预卡片：标题用 i18n（zh: 网页搜索 / en: Web search），副标题取 query
       streamDisplay: { titleKey: 'web.search', titleField: 'query' }
     }
@@ -383,7 +371,6 @@ function buildWebFetchTool(): ToolDefinitionWithMeta {
     },
     _meta: {
       parallelizable: true,
-      contextBudget: { toolResult: 'clearable' },
       streamDisplay: { titleKey: 'web.fetch.short', titleField: 'url' }
     }
   }
@@ -463,7 +450,6 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         },
         _meta: {
           idempotencyKey: ['command'],
-          contextBudget: { toolResult: 'clearable' },
           // 历史摘要中"主命令"是 command 字段（task-memory.extractDigest 用得到）
           argRole: { summaryLine: 'command' },
           // 流式预卡片：标题 + command 字段；命令文本本身在流式增长，不加字符数尾缀
@@ -509,7 +495,6 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           }
         },
         _meta: {
-          contextBudget: { toolResult: 'clearable' },
           parallelizable: true,  // 可同时 await 多个 task_id
           streamDisplay: { titleKey: 'exec.awaiting_short', titleField: 'task_id' }
         }
@@ -550,7 +535,6 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       _meta: {
         supportedModes: ['local', 'assistant'],
         parallelizable: true,
-        contextBudget: { toolResult: 'clearable' },
         // 标题按 info_only 切换："读取文件" vs "读取文件 (仅查询信息)"，path 字段做副标题
         streamDisplay: { titleKey: readFileTitleKey, titleField: 'path' }
       }
@@ -587,7 +571,6 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       _meta: {
         supportedModes: ['local', 'assistant'],
         parallelizable: true,
-        contextBudget: { toolResult: 'clearable' }
       }
     } as ToolDefinitionWithMeta,
     {
@@ -610,7 +593,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           required: ['query']
         }
       },
-      _meta: { parallelizable: true, contextBudget: { toolResult: 'clearable' } }
+      _meta: { parallelizable: true }
     } as ToolDefinitionWithMeta,
     {
       type: 'function',
@@ -628,7 +611,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           required: ['doc_id']
         }
       },
-      _meta: { parallelizable: true, contextBudget: { toolResult: 'clearable' } }
+      _meta: { parallelizable: true }
     } as ToolDefinitionWithMeta,
     ...buildWebSearchTool(),
     // web_fetch：始终注入（无配置就用本地 Readability，配了 Jina 自动升级）
@@ -666,7 +649,6 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       _meta: {
         supportedModes: ['local', 'assistant'],
         phase: 'writing_file',
-        contextBudget: { toolResult: 'protected' },
         // 白名单键只取 path：同一文件的任意编辑操作共享「本次允许」
         idempotencyKey: ['path'],
         // 同 write_text_file：path 未到时占位符兜底，old_text + new_text 累计字符数尾缀
@@ -711,7 +693,6 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       _meta: {
         supportedModes: ['local', 'assistant'],
         phase: 'writing_file',
-        contextBudget: { toolResult: 'protected' },
         // 白名单键只取 path：同一路径的任意写入操作共享「本次允许」
         idempotencyKey: ['path'],
         // 流式预卡片：mode 切换 6 种文案，path 占位符兜底，content 累计字符数尾缀。
@@ -754,7 +735,6 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       _meta: {
         supportedModes: ['ssh'],
         phase: 'writing_file',
-        contextBudget: { toolResult: 'protected' },
         // 白名单键只取 path：同一路径的任意远程写入操作共享「本次允许」
         idempotencyKey: ['path'],
         // 与 write_text_file 共享同一套预卡片渲染（mode 切换文案、path 占位符、字符数尾缀）
@@ -806,7 +786,6 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         // local 模式 tab 通过 pane_id 指向 SSH 窗格也能用；assistant 模式无终端，工具不可用
         supportedModes: ['local', 'ssh'],
         phase: 'writing_file',
-        contextBudget: { toolResult: 'protected' },
         streamDisplay: {
           titleKey: 'sftp.upload',
           titleField: 'remote_path'
@@ -846,7 +825,6 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
       },
       _meta: {
         supportedModes: ['local', 'ssh'],
-        contextBudget: { toolResult: 'clearable' },
         streamDisplay: {
           titleKey: 'sftp.download',
           titleField: 'remote_path'
@@ -878,7 +856,6 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
         }
       },
       _meta: {
-        contextBudget: { toolResult: 'protected' },
         // 此工具的 tool_call 后会阻塞等待用户输入（task-memory 据此识别"任务在等待确认"）
         lifecycle: { blocksUntilUserInput: true }
       }
@@ -928,8 +905,7 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
           },
           required: ['action']
         }
-      },
-      _meta: { contextBudget: { toolResult: 'protected' } }
+      }
     } as ToolDefinitionWithMeta,
     buildSkillTool(),
     buildLoadUserSkillTool(),
@@ -961,7 +937,7 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
           required: ['task_id']
         }
       },
-      _meta: { parallelizable: true, contextBudget: { toolResult: 'clearable' } }
+      _meta: { parallelizable: true }
     } as ToolDefinitionWithMeta,
     // ==================== 历史搜索工具 ====================
     {
@@ -1042,7 +1018,6 @@ Agent 类型：
       },
       _meta: {
         supportedModes: ['local', 'assistant'],
-        contextBudget: { toolResult: 'protected' },
         // 流式预卡片：tasks 数组才能确定文案，customRender 处理 N + agent_type；
         // 字符数从 tasks[].prompt + tasks[].description 嵌套累加，用 customProgress
         streamDisplay: {
@@ -1087,7 +1062,6 @@ Agent 类型：
       },
       _meta: {
         supportedModes: ['local', 'ssh'],
-        contextBudget: { toolResult: 'clearable' }
       }
     } as ToolDefinitionWithMeta,
     {
@@ -1112,7 +1086,6 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
       },
       _meta: {
         supportedModes: ['local', 'ssh'],
-        contextBudget: { toolResult: 'clearable' }
       }
     } as ToolDefinitionWithMeta,
     {
@@ -1137,7 +1110,6 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
       },
       _meta: {
         supportedModes: ['local', 'ssh'],
-        contextBudget: { toolResult: 'clearable' }
       }
     } as ToolDefinitionWithMeta,
     {
@@ -1155,7 +1127,6 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
       _meta: {
         supportedModes: ['local', 'ssh'],
         parallelizable: true,
-        contextBudget: { toolResult: 'clearable' }
       }
     } as ToolDefinitionWithMeta,
     {
@@ -1178,7 +1149,6 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
       _meta: {
         supportedModes: ['local', 'ssh'],
         parallelizable: true,
-        contextBudget: { toolResult: 'clearable' }
       }
     } as ToolDefinitionWithMeta,
 
@@ -1260,8 +1230,7 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
           },
           required: ['file_path']
         }
-      },
-      _meta: { contextBudget: { toolResult: 'clearable' } }
+      }
     } as ToolDefinitionWithMeta)
 
     filteredTools.push({
@@ -1286,8 +1255,7 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
           },
           required: ['task_id']
         }
-      },
-      _meta: { contextBudget: { toolResult: 'clearable' } }
+      }
     } as ToolDefinitionWithMeta)
   }
 
@@ -1361,8 +1329,7 @@ function getContextManagementTools(): ToolDefinition[] {
           },
           required: ['summary']
         }
-      },
-      _meta: { contextBudget: { toolResult: 'protected' } }
+      }
     } as ToolDefinitionWithMeta,
     {
       type: 'function',
@@ -1378,8 +1345,7 @@ function getContextManagementTools(): ToolDefinition[] {
             }
           }
         }
-      },
-      _meta: { contextBudget: { toolResult: 'protected' } }
+      }
     } as ToolDefinitionWithMeta,
     {
       type: 'function',
@@ -1409,8 +1375,7 @@ function getContextManagementTools(): ToolDefinition[] {
             }
           }
         }
-      },
-      _meta: { contextBudget: { toolResult: 'protected' } }
+      }
     } as ToolDefinitionWithMeta
   ]
 }

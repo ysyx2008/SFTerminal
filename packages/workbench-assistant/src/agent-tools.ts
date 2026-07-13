@@ -24,7 +24,6 @@ export const ASSISTANT_WORKBENCH_AGENT_TOOLS = [
     _meta: {
       supportedModes: ['assistant'],
       parallelizable: true,
-      contextBudget: { toolResult: 'clearable' },
       streamDisplay: { titleKey: 'workbench.list_artifacts' }
     }
   },
