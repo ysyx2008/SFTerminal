@@ -49,7 +49,6 @@ import { getMetaByName, buildPreToolCallDisplay } from './tool-metadata'
 import {
   buildAllowlistKeyCandidates,
 } from './allowlist'
-import { riskNeedsConfirm } from './command-audit/confirm-policy'
 import { buildTaskHistoryContext, type TaskHistoryOptions } from './context-builder'
 import { getKnowledgeService } from '../knowledge'
 import { getContextKnowledgeService } from '../knowledge/context-knowledge'
