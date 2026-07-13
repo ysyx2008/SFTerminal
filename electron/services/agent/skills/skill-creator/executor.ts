@@ -652,8 +652,17 @@ async function marketSearch(args: Record<string, unknown>): Promise<ToolResult> 
   }
 }
 
+const STRUCTURAL_WARN_I18N: Record<
+  import('../../../skill-market.service').SecurityWarning['type'],
+  string
+> = {
+  hidden_content: 'scan.warn_hidden_content',
+  encoding_obfuscation: 'scan.warn_encoding_obfuscation',
+}
+
 /**
- * 预览技能内容并执行安全扫描（统一支持市场和本地来源）
+ * 预览技能内容并做结构隐蔽扫描（统一支持市场和本地来源）。
+ * 语义安全由 Agent 审阅返回正文后判断。
  */
 async function skillPreview(args: Record<string, unknown>): Promise<ToolResult> {
   const skillId = (args.skill_id as string)?.trim()
@@ -685,7 +694,7 @@ async function skillPreview(args: Record<string, unknown>): Promise<ToolResult> 
       scanSection = t('scan.status_passed')
     } else {
       const warningLines = scan.warnings.map(w =>
-        `- ⚠️ **${w.type}**: ${t(`scan.warn_${w.type}` as any, { evidence: w.evidence }) || w.description}\n  ${t('scan.evidence')}: \`${w.evidence}\``
+        `- ⚠️ **${w.type}**: ${t(STRUCTURAL_WARN_I18N[w.type] as any, { evidence: w.evidence }) || w.description}\n  ${t('scan.evidence')}: \`${w.evidence}\``
       )
       scanSection = t('scan.status_warnings', { count: scan.warnings.length }) + '\n\n' + warningLines.join('\n')
     }
@@ -736,42 +745,34 @@ ${t('scan.install_hint', { command: installHint })}`
 
 // ==================== 安装安全检查辅助函数 ====================
 
-const BLOCKED_TYPES = new Set(['prompt_override', 'data_exfil', 'script_risk'])
-
-function checkBlockedWarnings(
-  scan: import('../../../skill-market.service').SecurityScanResult | undefined,
-  skillId: string
-): ToolResult | null {
-  if (!scan || scan.safe) return null
-  const blocked = scan.warnings.filter(w => BLOCKED_TYPES.has(w.type))
-  if (blocked.length === 0) return null
-  log.warn(`Blocked install of ${skillId}: ${blocked.map(w => w.type).join(', ')}`)
-  return {
-    success: false,
-    output: '',
-    error: `${t('scan.blocked_high_risk')}\n${blocked.map(w => `- ${w.description}: ${w.evidence}`).join('\n')}`
-  }
-}
-
 function formatScanNote(scan: import('../../../skill-market.service').SecurityScanResult | undefined): string {
   if (!scan) return '\n' + t('scan.scan_passed')
   if (!scan.warnings.length) return '\n' + t('scan.scan_passed')
   const warningLines = scan.warnings.map(w =>
-    `  - ${t(`scan.warn_${w.type}` as any, { evidence: w.evidence }) || w.description}`
+    `  - ${t(STRUCTURAL_WARN_I18N[w.type] as any, { evidence: w.evidence }) || w.description}`
   )
   return `\n${t('scan.scan_warnings', { count: scan.warnings.length })}\n${warningLines.join('\n')}`
 }
 
 function formatLowRiskNote(scan: import('../../../skill-market.service').SecurityScanResult | undefined): string {
   if (!scan || !scan.warnings.length) return ''
-  return '\n\n' + t('scan.low_risk_note', { count: scan.warnings.length })
+  return '\n\n' + t('scan.structural_hint_note', { count: scan.warnings.length })
+}
+
+function needsInstallConfirm(
+  preview: import('../../../skill-market.service').SkillPreviewResult
+): boolean {
+  const hasExtraFiles = !!(preview.files && preview.files.length > 0)
+  const hasStructuralHints = !!(preview.scan && preview.scan.warnings.length > 0)
+  return hasExtraFiles || hasStructuralHints
 }
 
 /**
- * 附属文件用户确认流程（共用于 marketInstall 和 installLocal）
- * 返回 null 表示用户已批准，返回 ToolResult 表示被拒绝
+ * 有附属文件或结构隐蔽线索时，请用户确认（共用于 marketInstall / installLocal）。
+ * 语义风险不在此硬拦——由 Agent 审阅内容后决定是否安装。
+ * 返回 null 表示可继续安装，返回 ToolResult 表示被拒绝。
  */
-async function confirmScriptInstall(
+async function confirmRiskyInstall(
   skillId: string,
   preview: import('../../../skill-market.service').SkillPreviewResult,
   toolName: string,
@@ -780,15 +781,24 @@ async function confirmScriptInstall(
   config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult | null> {
-  log.info(`Skill ${skillId} contains ${preview.files!.length} extra files, requesting confirmation`)
+  const fileCount = preview.files?.length || 0
+  const warnCount = preview.scan?.warnings.length || 0
+  log.info(`Skill ${skillId} needs confirm (files=${fileCount}, structuralHints=${warnCount})`)
 
   const scanNote = formatScanNote(preview.scan)
+  const filesLine = fileCount > 0
+    ? `\n${t('scan.evidence')}: ${preview.files!.join(', ')}`
+    : ''
+  const summary = fileCount > 0
+    ? t('scan.market_skill_has_files', { id: skillId, count: fileCount })
+    : t('scan.market_skill_has_hints', { id: skillId, count: warnCount })
+
   const riskLevel = 'dangerous' as const
   executor.addStep({
     type: 'tool_call',
-    content: `${t('scan.market_skill_has_files', { id: skillId, count: preview.files!.length })}${scanNote}\n${t('scan.evidence')}: ${preview.files!.join(', ')}`,
+    content: `${summary}${scanNote}${filesLine}`,
     toolName,
-    toolArgs: { ...toolArgs, files: preview.files, scan_warnings: preview.scan?.warnings.length || 0 },
+    toolArgs: { ...toolArgs, files: preview.files, scan_warnings: warnCount },
     riskLevel
   })
 
@@ -798,7 +808,7 @@ async function confirmScriptInstall(
 
   const approved = await executor.waitForConfirmation(
     toolCallId, toolName,
-    { ...toolArgs, files: preview.files, scan_warnings: preview.scan?.warnings.length || 0 },
+    { ...toolArgs, files: preview.files, scan_warnings: warnCount },
     riskLevel
   )
   if (!approved) {
@@ -854,19 +864,16 @@ async function marketInstall(
   try {
     const service = getMarketService()
 
-    // 内置预览 + 安全扫描（所有来源统一走此流程）
+    // 内置预览 + 结构扫描（语义风险由 Agent 审阅，不在此硬拦）
     const preview = await service.previewSkill(skillId, source)
     if (!preview.success || !preview.content) {
       return { success: false, output: '', error: preview.error || t('scan.preview_failed') }
     }
 
-    const blockResult = checkBlockedWarnings(preview.scan, skillId)
-    if (blockResult) return blockResult
-
-    // 带脚本/附属文件 → 用户确认
+    // 附属文件或结构隐蔽线索 → 用户确认
     const hasScripts = preview.files && preview.files.length > 0
-    if (hasScripts) {
-      const confirmResult = await confirmScriptInstall(
+    if (needsInstallConfirm(preview)) {
+      const confirmResult = await confirmRiskyInstall(
         skillId, preview, 'skill_market_install', { skill_id: skillId, source },
         toolCallId, config, executor
       )
@@ -921,7 +928,7 @@ async function installLocal(
   try {
     const service = getMarketService()
 
-    // 内置预览 + 安全扫描
+    // 内置预览 + 结构扫描（语义风险由 Agent 审阅，不在此硬拦）
     const preview = service.previewLocalSkill(sourcePath)
     if (!preview.success || !preview.content || !preview.filesMap) {
       return { success: false, output: '', error: preview.error || t('scan.preview_failed') }
@@ -937,13 +944,10 @@ async function installLocal(
 
     log.info(`Local skill install: ${skillId} from ${sourcePath}`)
 
-    const blockResult = checkBlockedWarnings(preview.scan, skillId)
-    if (blockResult) return blockResult
-
-    // 附属文件 → 用户确认
+    // 附属文件或结构隐蔽线索 → 用户确认
     const hasExtraFiles = preview.files && preview.files.length > 0
-    if (hasExtraFiles) {
-      const confirmResult = await confirmScriptInstall(
+    if (needsInstallConfirm(preview)) {
+      const confirmResult = await confirmRiskyInstall(
         skillId, preview, 'skill_install_local',
         { skill_id: skillId, source_path: sourcePath },
         toolCallId, config, executor

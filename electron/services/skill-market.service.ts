@@ -67,14 +67,17 @@ export interface SkillOperationResult {
   error?: string
 }
 
-/** 安全扫描告警 */
+/**
+ * 静态扫描告警类型。
+ * 仅覆盖「人眼/模型容易漏看」的结构信号；语义风险（外泄、注入、恶意脚本）由 Agent 审阅内容判断。
+ */
 export interface SecurityWarning {
-  type: 'hidden_content' | 'sensitive_path' | 'data_exfil' | 'prompt_override' | 'encoding_obfuscation' | 'script_risk'
+  type: 'hidden_content' | 'encoding_obfuscation'
   description: string
   evidence: string
 }
 
-/** 安全扫描结果 */
+/** 安全扫描结果（线索，不作为硬拦截依据） */
 export interface SecurityScanResult {
   safe: boolean
   warnings: SecurityWarning[]
@@ -103,26 +106,19 @@ function assertInsideDir(parent: string, child: string): void {
   }
 }
 
-// ==================== 安全扫描 ====================
-
-const SENSITIVE_PATHS = [
-  '~/.ssh/', '~/.gnupg/', '~/.aws/', '~/.config/gh/',
-  '/etc/shadow', '/etc/passwd', '/etc/sudoers',
-  '.env', 'credentials', 'id_rsa', 'id_ed25519',
-]
+// ==================== 安全扫描（结构线索，非语义判决） ====================
 
 const ZERO_WIDTH_RE = /\u200B|\u200C|\u200D|\uFEFF|\u2060|\u2061|\u2062|\u2063|\u2064/
 const RTL_OVERRIDE_RE = /[\u202A\u202B\u202C\u202D\u202E\u2066\u2067\u2068\u2069]/
 const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g
 
 /**
- * 静态安全扫描技能内容
- * 检测隐藏内容、敏感路径引用、数据外发模式、prompt 覆盖尝试
+ * 静态扫描技能内容：只标记展示层隐蔽信号（零宽/RTL/大块 HTML 注释）。
+ * 不根据关键词猜测意图——语义安全由 Agent 审阅正文后判断。
  */
 export function scanSkillContent(content: string): SecurityScanResult {
   const warnings: SecurityWarning[] = []
 
-  // 1. 隐藏内容检测
   const htmlComments = content.match(HTML_COMMENT_RE)
   if (htmlComments) {
     for (const comment of htmlComments) {
@@ -153,76 +149,24 @@ export function scanSkillContent(content: string): SecurityScanResult {
     })
   }
 
-  // 2. 敏感路径引用
-  const contentLower = content.toLowerCase()
-  for (const sensitivePath of SENSITIVE_PATHS) {
-    if (contentLower.includes(sensitivePath.toLowerCase())) {
-      warnings.push({
-        type: 'sensitive_path',
-        description: `References sensitive path: ${sensitivePath}`,
-        evidence: sensitivePath
-      })
-    }
-  }
-
-  // 3. 数据外发模式：编码 + 外发组合
-  if (/base64/.test(contentLower) && /(curl|wget|fetch|http|send|post|upload)/i.test(content)) {
-    warnings.push({
-      type: 'data_exfil',
-      description: 'Potential data exfiltration pattern: base64 encoding combined with network transfer',
-      evidence: 'base64 + network transfer keywords'
-    })
-  }
-
-  // 4. Prompt 覆盖尝试
-  const promptOverridePatterns = [
-    /ignore\s+(all\s+)?previous\s+(instructions?|rules?|prompts?)/i,
-    /override\s+(safety|security|rules?)/i,
-    /忽略(之前|以上|所有)(的)?(指令|规则|提示|安全)/,
-    /不要(提及|提到|告诉|显示|透露|报告)(这个|这些|此)(步骤|操作|指令)/,
-    /do\s+not\s+(mention|reveal|report|show|tell)\s+(this|these)/i,
-    /secretly|covertly|silently|without\s+(the\s+)?user\s+knowing/i,
-    /静默|偷偷|秘密(地)?|不让用户知道/,
-  ]
-  for (const pattern of promptOverridePatterns) {
-    const match = content.match(pattern)
-    if (match) {
-      warnings.push({
-        type: 'prompt_override',
-        description: 'Potential prompt injection / override attempt',
-        evidence: match[0]
-      })
-    }
-  }
-
-  // 5. 脚本安全风险：可执行代码中的高危模式
-  const scriptRiskPatterns: Array<{ pattern: RegExp; desc: string }> = [
-    // 读取环境变量后外发
-    { pattern: /os\.environ\[.*\].*(?:requests|urllib|http|socket)/s, desc: 'Reads env vars and makes network requests' },
-    { pattern: /process\.env\[.*\].*(?:fetch|http|net\.|axios)/s, desc: 'Reads env vars and makes network requests' },
-    // 反弹 shell / 远程代码执行
-    { pattern: /\beval\s*\(\s*(?:requests|urllib|fetch|http)/i, desc: 'Remote code execution via eval + network' },
-    { pattern: /\bexec\s*\(\s*(?:requests|urllib|fetch|http)/i, desc: 'Remote code execution via exec + network' },
-    // 递归删除根目录或用户目录
-    { pattern: /rm\s+-rf\s+[/~]\s/i, desc: 'Recursive deletion of root or home directory' },
-    { pattern: /shutil\.rmtree\s*\(\s*['"][/~]/i, desc: 'Recursive deletion of root or home directory' },
-    // 禁用安全设置
-    { pattern: /verify\s*=\s*False/i, desc: 'SSL verification disabled' },
-    { pattern: /rejectUnauthorized\s*:\s*false/i, desc: 'SSL verification disabled' },
-  ]
-  for (const { pattern, desc } of scriptRiskPatterns) {
-    if (pattern.test(content)) {
-      warnings.push({ type: 'script_risk', description: desc, evidence: pattern.source.slice(0, 80) })
-    }
-  }
-
   if (warnings.length > 0) {
-    log.warn(`Security scan found ${warnings.length} warning(s): ${warnings.map(w => w.type).join(', ')}`)
+    log.warn(`Security scan found ${warnings.length} structural hint(s): ${warnings.map(w => w.type).join(', ')}`)
   }
 
   return {
     safe: warnings.length === 0,
     warnings
+  }
+}
+
+/** 安装路径记录结构隐蔽线索（不硬拦；供 UI/CLI 等非 Agent 路径审计） */
+function logStructuralHints(skillId: string, content: string): void {
+  const scan = scanSkillContent(content)
+  if (scan.warnings.length > 0) {
+    log.warn(
+      `Install ${skillId}: ${scan.warnings.length} structural hint(s): ` +
+      scan.warnings.map(w => `${w.type}(${w.evidence.slice(0, 60)})`).join(', ')
+    )
   }
 }
 
@@ -446,6 +390,8 @@ export class SkillMarketService {
         return { success: false, error: 'Downloaded file is empty' }
       }
 
+      logStructuralHints(skillId, content)
+
       const skillsDir = this.userSkillService.getSkillsDir()
       const skillDir = path.join(skillsDir, skillId)
       assertInsideDir(skillsDir, skillDir)
@@ -650,6 +596,8 @@ export class SkillMarketService {
         return { success: false, error: 'ZIP package does not contain SKILL.md' }
       }
 
+      logStructuralHints(skillId, Object.values(files).join('\n\n'))
+
       const skillsDir = this.userSkillService.getSkillsDir()
       const skillDir = path.join(skillsDir, skillId)
       assertInsideDir(skillsDir, skillDir)
@@ -771,6 +719,8 @@ export class SkillMarketService {
       const skillDir = path.join(skillsDir, skillId)
       assertInsideDir(skillsDir, skillDir)
 
+      logStructuralHints(skillId, Object.values(filesMap).join('\n\n'))
+
       const overwritten = fs.existsSync(skillDir)
       if (!fs.existsSync(skillDir)) {
         fs.mkdirSync(skillDir, { recursive: true })
@@ -859,6 +809,8 @@ export class SkillMarketService {
     if (content.length > SkillMarketService.MAX_SKILL_SIZE) {
       return { success: false, error: `Skill content too large (${(content.length / 1024).toFixed(0)}KB, max 1MB)` }
     }
+
+    logStructuralHints(skillId, content)
 
     try {
       const skillsDir = this.userSkillService.getSkillsDir()

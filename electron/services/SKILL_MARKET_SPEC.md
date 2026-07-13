@@ -1,6 +1,6 @@
 # Skill Market Service SPEC
 
-> Last verified: 2026-05-07
+> Last verified: 2026-07-13
 
 ## 职责
 
@@ -48,7 +48,7 @@ interface SkillPreviewResult {
 }
 interface SecurityScanResult { safe: boolean; warnings: SecurityWarning[] }
 interface SecurityWarning {
-  type: "hidden_content" | "sensitive_path" | "data_exfil" | "proc_manipulation" | "unapproved_network" | "other"
+  type: "hidden_content" | "encoding_obfuscation"
   description: string; evidence: string
 }
 ```
@@ -67,13 +67,14 @@ interface SecurityWarning {
 2. `previewSkill` → 获取 `SKILL.md` 内容 → `SecurityScan` 扫描 → 返回预览
 3. `installSkill` → 下载 skill 文件 → 写入 `~/.sailfish/skills/{id}/` → 调用 `UserSkillService`
 
-**安全扫描**：`scanSkillContent` 检查隐藏内容（零宽字符）、敏感路径、数据外泄模式、进程操纵、未授权网络访问。
+**安全扫描**：`scanSkillContent` 只检测展示层结构隐蔽信号（零宽字符、RTL 覆盖、大块 HTML 注释），结果是**线索不是判决**。语义风险（外泄、注入、恶意脚本）由 Agent 审阅 `skill_preview` 返回的正文后判断；安装路径不做关键词硬拦。有附属文件或结构线索时，`skill_market_install` / `skill_install_local` 会请求用户确认。所有公开 `install*` 方法安装前会 `logStructuralHints`（仅记日志，不拒绝）。
 
 **本地导入**：`previewLocalSkill` 读目录内所有文件 → `installLocalSkillFiles` 写入 skills 目录
 
 ## 关键约束
 
-- **安全扫描必须在安装前完成**——`installSkill` / `installClawHubSkill` / `installSkillFromContent` 必须先过 `scanSkillContent`
+- **安装前须有预览扫描结果供 Agent 审阅**——`skill_market_install` / `skill_install_local` 内部会先 `preview*`；语义放行权在 Agent +（有执行面/隐蔽线索时）用户确认
+- **不做关键词语义硬拦**——禁止用 env/网络/prompt 等正则猜测意图并拒绝安装
 - **注册表缓存不得跨实例共享**——`CACHE_TTL` 按实例计算，不得静态化
 - **技能文件大小限制**：`MAX_SKILL_SIZE` + `MAX_SINGLE_FILE_SIZE`，超限拒绝安装
 - **安装路径必须在 `UserSkillService.getSkillsDir()` 内**——`assertInsideDir` 检查，防路径遍历攻击
