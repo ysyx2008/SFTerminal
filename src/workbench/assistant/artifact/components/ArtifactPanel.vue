@@ -32,10 +32,12 @@ import {
   useAssistantArtifactStore
 } from '../index'
 import { getRendererComponent, getRendererIcon } from '../renderers/ui-registry'
+import { resolveSourceStepIdById } from '../domain/artifact-source'
 import { useToast } from '../../../../composables/useToast'
 import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '../../../../composables/useHoverTip'
 import HoverTipOverlay from '../../../../components/HoverTipOverlay.vue'
 import { useTerminalStore } from '../../../../stores/terminal'
+import { requestScrollToAgentStep } from '../../../../composables/agent-step-navigation'
 
 const props = defineProps<{
   tabId: string
@@ -300,10 +302,13 @@ function minimizePanel() {
 }
 
 function jumpToSource(stepId?: string) {
-  const id = stepId ?? activeSourceStepId.value
-  if (!id) return
+  const rawId = stepId ?? activeSourceStepId.value
+  if (!rawId) return
   closeAllMenus()
-  artifactStore.requestJumpToSource(props.tabId, id)
+  const tab = terminalStore.tabs.find(t => t.id === props.tabId)
+  const allSteps = tab?.agentState?.steps ?? []
+  const visibleStepId = resolveSourceStepIdById(rawId, allSteps)
+  requestScrollToAgentStep(props.tabId, visibleStepId)
 }
 
 async function openFileFor(artifact: CanvasArtifact) {

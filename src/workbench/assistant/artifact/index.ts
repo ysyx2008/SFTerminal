@@ -96,5 +96,4 @@ export {
   useAssistantArtifactStore,
   useCanvasStore,
   type ArtifactDiskSyncEvent,
-  type ArtifactSourceJumpRequest
 } from './store'

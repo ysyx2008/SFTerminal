@@ -31,7 +31,7 @@
 
 ### 平台专属例外（内置岗，业务岗不要抄）
 
-仅 **`workbench-assistant`** 仍直引 `@/workbench/assistant/artifact/*`（产出物 store/面板尚无 SDK 门牌）。业务/OEM 岗默认走 sample：只要 AiPanel + descriptor，**不要**依赖 artifact。
+仅 **`workbench-assistant`** 仍直引 `@/workbench/assistant/artifact/*`（产出物实现仍在 desktop；**对话壳已解耦**：step 接线由 `useArtifactAgentBridge` 在 AssistantWorkbench 挂载，溯源跳转走 `agent-step-navigation`，AiPanel / useAgentMode 不再依赖 artifactStore）。业务/OEM 岗默认走 sample：只要 AiPanel + descriptor，**不要**依赖 artifact。
 
 ---
 

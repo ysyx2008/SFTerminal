@@ -3,5 +3,4 @@ export {
   useAssistantArtifactStore,
   useCanvasStore,
   type ArtifactDiskSyncEvent,
-  type ArtifactSourceJumpRequest
 } from '../workbench/assistant/artifact/store'

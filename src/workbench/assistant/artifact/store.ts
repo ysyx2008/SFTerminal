@@ -46,17 +46,11 @@ export interface ArtifactDiskSyncEvent {
   at: number
 }
 
-export interface ArtifactSourceJumpRequest {
-  tabId: string
-  stepId: string
-}
-
 export const useAssistantArtifactStore = defineStore('assistantArtifact', () => {
   const tabStates = ref<Map<string, TabArtifactState>>(new Map())
   const splitRatio = ref(0.5)
   const closeTimers = new Map<string, ReturnType<typeof setTimeout>>()
   const lastDiskSync = ref<ArtifactDiskSyncEvent | null>(null)
-  const sourceJumpRequest = ref<ArtifactSourceJumpRequest | null>(null)
 
   function getTabState(tabId: string): TabArtifactState {
     if (!tabStates.value.has(tabId)) {
@@ -286,10 +280,6 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     }
   }
 
-  function handleAgentComplete(_tabId: string) {
-    // noop
-  }
-
   function cleanup(tabId: string) {
     cancelPendingClose(tabId)
     tabStates.value.delete(tabId)
@@ -325,14 +315,6 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     void reloadArtifactContent(tabId)
   }
 
-  function requestJumpToSource(tabId: string, stepId: string) {
-    sourceJumpRequest.value = { tabId, stepId }
-  }
-
-  function clearSourceJumpRequest() {
-    sourceJumpRequest.value = null
-  }
-
   function relocateArtifact(
     tabId: string,
     artifactId: string,
@@ -357,7 +339,6 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     tabStates,
     splitRatio,
     lastDiskSync,
-    sourceJumpRequest,
     isVisible,
     hasArtifacts: hasArtifactsForTab,
     isPanelMinimized,
@@ -378,7 +359,6 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     reloadArtifactContent,
     syncArtifactsWithDisk,
     handleAgentStep,
-    handleAgentComplete,
     cleanup,
     closeOthers,
     closeAll,
@@ -386,8 +366,6 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     minimizePanel,
     expandPanel,
     relocateArtifact,
-    requestJumpToSource,
-    clearSourceJumpRequest
   }
 })
 

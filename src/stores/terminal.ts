@@ -2456,7 +2456,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     // 确保从欢迎页首次打开历史时，AiPanel 能立即感知 steps 变化
     tabs.value = [...tabs.value]
 
-    // 恢复 Artifact 产出物面板（仅助手 tab）
+    // 恢复 Artifact 产出物面板（仅助手 tab；desktop 宿主职责，非 AiPanel）
     // 优先从持久化清单 record.artifacts 直接恢复（无需 replay）；
     // 清单缺失时（老记录）退化为按 steps 重放，保持向后兼容。
     if (tab.type === 'assistant') {

@@ -12,9 +12,8 @@ import type { VirtualizerHandle } from 'virtua/vue'
 import type { MessageScrollerHandle } from '../types/message-scroller'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
-import { useAssistantArtifactStore } from '../workbench/assistant/artifact/store'
-import { resolveSourceStepIdById } from '../workbench/assistant/artifact/domain/artifact-source'
 import { useComposerQuoteStore } from '../stores/composer-quote'
+import { useScrollToAgentStepRequest } from '../composables/agent-step-navigation'
 import AgentPlanView from './AgentPlanView.vue'
 import AiComposer from './AiComposer.vue'
 import DropOverlay from './DropOverlay.vue'
@@ -77,7 +76,6 @@ const { t, tm } = useI18n()
 // Stores
 const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
-const artifactStore = useAssistantArtifactStore()
 const composerQuoteStore = useComposerQuoteStore()
 const showSettings = inject<() => void>('showSettings')
 
@@ -1789,31 +1787,22 @@ const scrollHistoryToBottom = () => {
 }
 
 async function scrollToAgentStep(stepId: string) {
-  const allSteps = agentState.value?.steps ?? []
-  const visibleStepId = resolveSourceStepIdById(stepId, allSteps)
   const index = flattenedItems.value.findIndex(
-    item => item.type === 'step' && item.step?.id === visibleStepId
+    item => item.type === 'step' && item.step?.id === stepId
   )
   if (index < 0) return
 
   await nextTick()
   scrollerRef.value?.scrollToIndex?.(index)
-  highlightedSourceStepId.value = visibleStepId
+  highlightedSourceStepId.value = stepId
   window.setTimeout(() => {
-    if (highlightedSourceStepId.value === visibleStepId) {
+    if (highlightedSourceStepId.value === stepId) {
       highlightedSourceStepId.value = null
     }
   }, 2500)
 }
 
-watch(
-  () => artifactStore.sourceJumpRequest,
-  (req) => {
-    if (!req || req.tabId !== props.tabId) return
-    void scrollToAgentStep(req.stepId)
-    artifactStore.clearSourceJumpRequest()
-  }
-)
+useScrollToAgentStepRequest(toRef(props, 'tabId'), scrollToAgentStep)
 
 /** 首次展示从历史恢复的对话（尚无已存滚动位置）→ 应滚到底部 */
 const shouldScrollHistoryOnShow = () =>

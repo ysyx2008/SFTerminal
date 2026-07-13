@@ -35,7 +35,9 @@ src/workbench/assistant/artifact/
 | 渲染器能力 | `renderers/registry.ts` | editable / saveStrategy / defaultExt（纯函数） |
 | 渲染器 UI | `renderers/ui-registry.ts` | Vue 组件 + 图标映射 |
 | 领域逻辑 | `domain/artifact-registry.ts` | 纯函数 registry |
-| UI 适配 | `store.ts` | Pinia tab 容器 + 布局比例 + 溯源跳转 |
+| UI 适配 | `store.ts` | Pinia tab 容器 + 布局比例 |
+| Agent 接线 | `composables/useArtifactAgentBridge.ts` | **仅 AssistantWorkbench 挂载**：watch steps → handleAgentStep；勿放回 useAgentMode / AiPanel |
+| 溯源跳转 | `src/composables/agent-step-navigation.ts` | 与 artifact store 解耦的平台导航总线 |
 | 保存逻辑 | `domain/artifact-actions.ts` | Save / Save As / Save All（查注册表） |
 | 编辑桥接 | `domain/artifact-save-bridge.ts` | Markdown draft → 面板级保存 |
 | 磁盘同步 | `domain/artifact-file-status.ts` + `artifact-disk-sync.ts` | exists 复检；exec 后触发 |
