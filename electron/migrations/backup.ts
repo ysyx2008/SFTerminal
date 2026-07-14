@@ -27,6 +27,9 @@ const BACKUP_TARGETS = [
   // 凭证：credentials.json 和 master.key 必须一起备份（缺一不可解密）
   { src: 'credentials.json', type: 'file' as const },
   { src: 'master.key', type: 'file' as const },
+  { src: 'agent-workspace/TODO.md', type: 'file' as const },
+  { src: 'agent-workspace/TODO.json', type: 'file' as const },
+  { src: 'agent-workspace/migrations', type: 'dir' as const },
 ]
 
 function copyDirSync(src: string, dest: string): void {

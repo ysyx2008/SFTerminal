@@ -42,7 +42,7 @@ describe('agent workspace paths', () => {
     expect(fs.existsSync(scratch)).toBe(true)
   })
 
-  it('isAutoApproveWorkspacePath allows scratch, root md files, charts', () => {
+  it('isAutoApproveWorkspacePath allows scratch, root md files, charts, migrations', () => {
     const ws = getWorkspacePath()
     const scratch = getScratchPath()
     expect(isAutoApproveWorkspacePath(path.join(scratch, 'draft.py'))).toBe(true)
@@ -54,8 +54,13 @@ describe('agent workspace paths', () => {
     expect(isAutoApproveWorkspacePath(path.join(ws, 'SOUL.md'))).toBe(true)
     expect(isAutoApproveWorkspacePath(path.join(ws, 'CONTACTS.md'))).toBe(true)
     expect(isAutoApproveWorkspacePath(path.join(ws, 'charts', 'pie-1.svg'))).toBe(true)
+    expect(isAutoApproveWorkspacePath(path.join(ws, 'migrations', 'todo-md.json'))).toBe(true)
     expect(isAutoApproveWorkspacePath(path.join(ws, 'templates', 'report.docx'))).toBe(false)
     expect(isAutoApproveWorkspacePath(path.join(ws, 'random.py'))).toBe(false)
+  })
+
+  it('ensureAgentWorkspaceDirs creates migrations', () => {
+    expect(fs.existsSync(path.join(getWorkspacePath(), 'migrations'))).toBe(true)
   })
 
   it('isScratchPath is narrower than isInWorkspace', () => {

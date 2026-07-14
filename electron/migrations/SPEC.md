@@ -14,7 +14,7 @@
 | `runner.ts` | `MigrationRunner` 类：注册、按 phase 执行、断点续传 |
 | `index.ts` | 注册中心：`allMigrations` 数组 + `getMigrationRunner()` 单例 |
 | `backup.ts` | `createBackup()`：迁移/auto-update 前备份关键用户数据，保留最近 5 份 |
-| `vN-xxx.ts` | 各版本具体迁移逻辑（v1-v7） |
+| `vN-xxx.ts` | 各版本具体迁移逻辑（v1–v9） |
 
 ## 执行模型
 
@@ -86,6 +86,8 @@ interface MigrationContext {
 | v5 | `agent-history-per-session` | startup | Agent 历史从按日数组改为按会话单文件 |
 | v6 | `watch-history-split` | startup | watch 内心独白从 agent 历史树拆到独立 watch 树 |
 | v7 | `im-bastion-plaintext-and-e1-to-g1` | early | IM/堡垒机明文凭证迁入 credential.service（g1: 加密）+ 存量 e1: 升级为 g1: |
+| v8 | `conversation-titles-to-records` | startup | 会话展示标题从 config overlay 迁入 AgentRecord.title |
+| v9 | `todo-md-to-json-prepare` | startup | 旧 `TODO.md` 备份为 `.bak` 并挂 `migrations/todo-md.json` pending；条目由 deferred Agent（联络）写入 `TODO.json` |
 
 ## 新增 Migration 流程
 

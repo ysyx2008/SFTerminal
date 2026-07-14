@@ -41,10 +41,17 @@
 
 ## 旧 TODO.md 兼容
 
-- **不**自动解析 Markdown
-- 若仍有 `TODO.md`：工具结果附加迁移提示；心跳在 json 空时仅短提示，不注入 md 正文
-- 用户/AI 用 `read_file` + `todo_create` 逐条迁移后自行将 md 改名为 `TODO.md.bak`
-
+- **正式 migration v9**（`todo-md-to-json-prepare`）：有内容的 `TODO.md` 且 `TODO.json` 无有效条目 → 备份 `TODO.md.bak`，标记 `migrations/todo-md.json` = `pending`
+- 标记路径：`{userData}/agent-workspace/migrations/todo-md.json`（`migrations/` 为工作区免确认目录，供日后其它升级标记复用；根目录旧 `TODO.migration.json` 启动时自动迁入）
+- **Deferred（`migrate-legacy.ts`）**：services 就绪后在 **`__companion__` 联络**上征询（短 `user_task` + `contextHint` 完整 SOP，不改编 proactive）：
+  1. SOP 要求 Agent **必须** `talk_to_user`（禁止纯文本收工）
+  2. **互斥兜底**：`migrate-legacy` 在 callbacks 里侦测本轮是否出现 `talk_to_user`；**仅当未出现**时，才用与 `messageUser` 同形路径补发桌面 toast + IM（避免与正常投递双发）
+  3. 用户在联络回复 → 沿用会话上下文按 SOP：`todo_create` / `write_text_file` 写 `deferred`|`skipped`|`done`（标记在 `migrations/`，免确认）
+  4. 有效 `TODO.json` 时由代码收尾残留 `TODO.md`（不经 shell）
+- marker：`pending`|`deferred`（下次再问）|`failed`|`skipped`|`done`
+- 工具结果仍可附迁移提示（兜底）；**不**在代码里启发式解析 Markdown 字段
+- 不新开任务 tab、不 `free`、不改 `consumeProactiveContext`
+- **勿**将 `TODO.json` / `TODO.md` 加入免确认；仅 `migrations/` 整目录免确认
 ## 非目标
 
 - 前端待办面板

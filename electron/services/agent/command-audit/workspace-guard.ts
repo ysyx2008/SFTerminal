@@ -20,13 +20,13 @@ import { t } from '../i18n'
 import {
   getWorkspacePath,
   isInWorkspace,
-  isScratchPath,
 } from '../tools/file'
 import {
   DEV_NULL_EXEMPTIONS,
   PROTECTED_WORKSPACE_DIRS,
   PROTECTED_WORKSPACE_FILES,
   SYSTEM_PATH_PATTERNS,
+  WORKSPACE_FREE_DIRS,
   type WorkspaceZone,
 } from './types'
 import { isUserDataForbidden } from './userdata-guard'
@@ -93,13 +93,6 @@ function getRelativeWorkspacePath(filePath: string): string | null {
   return rel.replace(/\\/g, '/')
 }
 
-/** 判断路径是否落在 charts/ 子目录 */
-function isChartsPath(filePath: string): boolean {
-  const rel = getRelativeWorkspacePath(filePath)
-  if (!rel) return false
-  return rel === 'charts' || rel.startsWith('charts/')
-}
-
 /**
  * 工作区路径分区（优先于命令白名单）
  */
@@ -113,12 +106,12 @@ export function getWorkspaceZone(
   // 系统临时目录（/tmp、os.tmpdir 等）与 scratch 同级：读写删免确认
   if (isSystemTempPath(resolved)) return 'free'
   if (!isInWorkspace(resolved)) return 'outside'
-  if (isScratchPath(resolved) || isChartsPath(resolved)) return 'free'
 
   const rel = getRelativeWorkspacePath(resolved)
   if (!rel) return 'outside'
 
   const first = rel.split('/')[0]
+  if ((WORKSPACE_FREE_DIRS as readonly string[]).includes(first)) return 'free'
   if (PROTECTED_WORKSPACE_DIRS.has(first)) return 'protected'
   if (PROTECTED_WORKSPACE_FILES.has(rel)) return 'protected'
 

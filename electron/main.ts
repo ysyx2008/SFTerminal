@@ -391,6 +391,7 @@ import { workbenchBridge } from './services/workbench-bridge.service'
 import type { CreateWatchParams } from './services/watch/types'
 import type { WebChatService } from './services/web-chat.service'
 import { getMigrationRunner, createBackup } from './migrations'
+import { runTodoMdAgentMigrationIfNeeded } from './services/agent/skills/todo/migrate-legacy'
 import type { GatewayConfig } from './services/gateway.service'
 import type { GatewayService } from './services/gateway.service'
 import { BastionService } from './services/bastion.service'
@@ -1745,6 +1746,11 @@ app.whenReady().then(async () => {
       } catch (e) {
         log.error('Services migration failed:', e)
       }
+
+      // v9 deferred：旧 TODO.md → 联络 companion 征询迁移（contextHint SOP；不阻塞启动）
+      runTodoMdAgentMigrationIfNeeded(agentService).catch(e => {
+        log.error('Deferred TODO.md Agent migration failed:', e)
+      })
 
       const awakenFeatureEnabled = isOemFeatureEnabled('awaken')
       const awakened = awakenFeatureEnabled && (configService.get('agentAwakened') as boolean ?? false)

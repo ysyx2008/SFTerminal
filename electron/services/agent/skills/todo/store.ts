@@ -8,14 +8,14 @@ import { randomUUID } from 'crypto'
 import type { TodoItem, TodoPriority, TodoStatus, TodoStoreData } from '@sailfish/shared-types'
 import { getWorkspacePath } from '../../tools/file'
 import { createLogger } from '../../../../utils/logger'
+import { LEGACY_TODO_MD, TODO_FILENAME } from './migration-marker'
+
+export { LEGACY_TODO_MD, TODO_FILENAME } from './migration-marker'
 
 const log = createLogger('TodoStore')
 
-export const TODO_FILENAME = 'TODO.json'
-export const LEGACY_TODO_MD = 'TODO.md'
-
 export const LEGACY_TODO_MD_HINT =
-  '注意：工作空间仍有旧版 TODO.md。请用 read_file 阅读后，用 todo_create 逐条写入结构化待办；完成后将 TODO.md 重命名为 TODO.md.bak。'
+  '注意：工作空间仍有旧版 TODO.md。请用 read_file 阅读后，用 todo_create 逐条写入结构化待办；勿用 shell 删改 TODO.md（备份由程序处理）。迁完后把 migrations/todo-md.json 写成 status=done（该目录免确认）。'
 
 const VALID_STATUSES: TodoStatus[] = ['pending', 'in_progress', 'completed', 'cancelled']
 const VALID_PRIORITIES: TodoPriority[] = ['low', 'normal', 'high', 'urgent']

@@ -13,7 +13,7 @@ import type { RiskLevel, ExecutionMode, CommandRiskPolicy } from '@shared/types/
  * 工作区路径分区
  *
  * 分区设计（C 方案）：
- * - free       scratch/、charts/、系统临时目录（/tmp、os.tmpdir 等）— 读写删免确认
+ * - free       scratch/、charts/、migrations/、系统临时目录（/tmp、os.tmpdir 等）— 读写删免确认
  * - protected  templates/、根目录人格配置 md — 写删需确认
  * - workspace  工作区内其他 — 写删需确认
  * - outside    工作区外 — safe 命令（如 cp）不升级；moderate/dangerous 保持原等级
@@ -213,10 +213,10 @@ export const PROTECTED_WORKSPACE_FILES = new Set([
 /**
  * 工作区「自由区」目录名（读写删免确认）。
  *
- * 真相源；workspace-guard.ts / file.ts 内仍保留各自的路径判定逻辑
- * （isScratchPath / isChartsPath），此处仅作为展示与未来重构的锚点。
+ * 真相源；workspace-guard 用 first-segment 判定；file.ts 的 isAutoApproveWorkspacePath
+ * 对同名目录免确认（含 scratch / charts / migrations）。
  */
-export const WORKSPACE_FREE_DIRS = ['scratch', 'charts'] as const
+export const WORKSPACE_FREE_DIRS = ['scratch', 'charts', 'migrations'] as const
 
 /**
  * 保护目录（在工作区内）

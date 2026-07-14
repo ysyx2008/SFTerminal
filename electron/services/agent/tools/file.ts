@@ -260,6 +260,7 @@ export function getScratchPath(): string {
 export function ensureAgentWorkspaceDirs(): void {
   fs.mkdirSync(getWorkspacePath(), { recursive: true })
   fs.mkdirSync(getScratchPath(), { recursive: true })
+  fs.mkdirSync(path.join(getWorkspacePath(), 'migrations'), { recursive: true })
 }
 
 /**
@@ -410,8 +411,8 @@ export function isScratchPath(filePath: string): boolean {
 }
 
 /**
- * workspace 内免确认路径：scratch/、根目录 *.md、charts/
- * 其余 workspace 路径（含 templates/、根目录杂项）仍需确认
+ * workspace 内免确认路径：scratch/、charts/、migrations/、根目录人格 md
+ * 其余 workspace 路径（含 templates/、根目录杂项如 TODO.json）仍需确认
  */
 export function isAutoApproveWorkspacePath(filePath: string): boolean {
   if (!isInWorkspace(filePath)) return false
@@ -419,7 +420,9 @@ export function isAutoApproveWorkspacePath(filePath: string): boolean {
   const rel = getRelativeWorkspacePath(filePath)
   if (!rel) return false
   if (AUTO_APPROVE_ROOT_FILENAMES.has(rel)) return true
-  return rel.startsWith('charts/')
+  if (rel === 'charts' || rel.startsWith('charts/')) return true
+  if (rel === 'migrations' || rel.startsWith('migrations/')) return true
+  return false
 }
 
 function forbiddenUserDataToolResult(
