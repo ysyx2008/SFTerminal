@@ -232,12 +232,12 @@ export const watchTemplates: WatchTemplate[] = [
       name: '待办截止提醒',
       description: '每天检查待办事项，提醒临近截止日期的任务',
       triggers: [{ type: 'cron', expression: options?.cron as string || '0 9 * * *' }],
-      prompt: `请检查你的私有工作空间中的 TODO.md 文件，查看用户的待办事项：
-1. 读取 TODO.md 文件
-2. 根据每个任务的创建时间和截止日期判断紧急程度：考虑任务的总时间跨度，短期任务临近截止时提醒，长期任务在剩余约 1/3 时间时就应提醒。已逾期的务必提醒。
-3. 如果有需要提醒的待办，通过 talk_to_user 提醒用户，语气自然友好
-4. 如果所有待办都不紧急，直接结束，不要打扰用户
-5. 如果 TODO.md 不存在或为空，直接结束`,
+      skills: ['todo'],
+      prompt: `请用 todo_list 查看用户本地待办（秘书工作空间 TODO.json，不是日历 VTODO）：
+1. 若 todo_* 不可用，先 skill 加载 todo 后重试
+2. 按创建时间与截止日期判断紧急程度（短期临近截止提醒；长期约剩 1/3 时间提醒；已逾期必提醒）
+3. 需提醒则 talk_to_user；都不紧急则结束
+4. 无待办则结束`,
       execution: { type: 'local' },
       output: { type: options?.output as any || 'desktop' },
       priority: 'normal'

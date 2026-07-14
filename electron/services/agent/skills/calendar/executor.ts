@@ -179,7 +179,7 @@ export async function executeCalendarTool(
   const ensured = await ensureConnected()
   if (!ensured.ok) return ensured.result
 
-  if (toolName.startsWith('todo_') && ensured.session.supportsTodo === false) {
+  if (toolName.startsWith('calendar_todo_') && ensured.session.supportsTodo === false) {
     return {
       success: false,
       output: '',
@@ -196,13 +196,13 @@ export async function executeCalendarTool(
       return await calendarUpdate(args, toolCallId, config, executor)
     case 'calendar_delete':
       return await calendarDelete(args, toolCallId, config, executor)
-    case 'todo_list':
+    case 'calendar_todo_list':
       return await todoList(args, executor)
-    case 'todo_create':
+    case 'calendar_todo_create':
       return await todoCreate(args, toolCallId, config, executor)
-    case 'todo_update':
+    case 'calendar_todo_update':
       return await todoUpdate(args, toolCallId, config, executor)
-    case 'todo_delete':
+    case 'calendar_todo_delete':
       return await todoDelete(args, toolCallId, config, executor)
     default:
       return { success: false, output: '', error: t('error.unknown_tool', { name: toolName }) }
@@ -1118,7 +1118,7 @@ async function todoList(
       executor.addStep({
         type: 'tool_result',
         content: output,
-        toolName: 'todo_list',
+        toolName: 'calendar_todo_list',
         toolResult: output
       })
       return { success: true, output }
@@ -1147,7 +1147,7 @@ async function todoList(
     executor.addStep({
       type: 'tool_result',
       content: output,
-      toolName: 'todo_list',
+      toolName: 'calendar_todo_list',
       toolResult: truncateOutput(output, 800)
     })
 
@@ -1194,7 +1194,7 @@ async function todoCreate(
   executor.addStep({
     type: 'tool_call',
     content: confirmInfo,
-    toolName: 'todo_create',
+    toolName: 'calendar_todo_create',
     toolArgs: { title, due: dueStr },
     riskLevel: 'moderate'
   })
@@ -1202,7 +1202,7 @@ async function todoCreate(
   if (riskNeedsConfirm('moderate', config.executionMode, config.commandRiskPolicy)) {
     const approved = await executor.waitForConfirmation(
       toolCallId,
-      'todo_create',
+      'calendar_todo_create',
       { title, due: dueStr },
       'moderate'
     )
@@ -1236,7 +1236,7 @@ async function todoCreate(
     executor.addStep({
       type: 'tool_result',
       content: output,
-      toolName: 'todo_create',
+      toolName: 'calendar_todo_create',
       toolResult: output
     })
 
@@ -1321,7 +1321,7 @@ async function todoUpdate(
     executor.addStep({
       type: 'tool_call',
       content: confirmInfo,
-      toolName: 'todo_update',
+      toolName: 'calendar_todo_update',
       toolArgs: { todo_id: todoId, changes },
       riskLevel: 'moderate'
     })
@@ -1329,7 +1329,7 @@ async function todoUpdate(
     if (riskNeedsConfirm('moderate', config.executionMode, config.commandRiskPolicy)) {
       const approved = await executor.waitForConfirmation(
         toolCallId,
-        'todo_update',
+        'calendar_todo_update',
         { todo_id: todoId },
         'moderate'
       )
@@ -1371,7 +1371,7 @@ async function todoUpdate(
     executor.addStep({
       type: 'tool_result',
       content: output,
-      toolName: 'todo_update',
+      toolName: 'calendar_todo_update',
       toolResult: output
     })
 
@@ -1431,7 +1431,7 @@ async function todoDelete(
     executor.addStep({
       type: 'tool_call',
       content: confirmInfo,
-      toolName: 'todo_delete',
+      toolName: 'calendar_todo_delete',
       toolArgs: { count: todosToDelete.length },
       riskLevel: 'moderate'
     })
@@ -1439,7 +1439,7 @@ async function todoDelete(
     if (riskNeedsConfirm('moderate', config.executionMode, config.commandRiskPolicy)) {
       const approved = await executor.waitForConfirmation(
         toolCallId,
-        'todo_delete',
+        'calendar_todo_delete',
         { count: todosToDelete.length },
         'moderate'
       )
@@ -1468,7 +1468,7 @@ async function todoDelete(
     executor.addStep({
       type: 'tool_result',
       content: output,
-      toolName: 'todo_delete',
+      toolName: 'calendar_todo_delete',
       toolResult: output
     })
 

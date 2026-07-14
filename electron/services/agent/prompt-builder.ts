@@ -767,7 +767,7 @@ export class PromptBuilder {
 - scratch/ 下超期文件会在应用启动时自动清理（默认 7 天，用户可在设置里调整或关闭）。
 - 用户要长期保留的最终产物请写到桌面、文档等正式目录。
 - **USER.md**：用户画像，了解用户后主动补充。
-- **TODO.md**：用户待办（含日期、状态），心跳会定期读取并提醒你。
+- **待办**：用 \`todo\` 技能（\`todo_*\`）管理，数据在工作空间 \`TODO.json\`，勿直接改文件；心跳会注入摘要并提醒你。
 - **CONTACTS.md**：联系人，遇到新联系人时主动补充。
 - **HEARTBEAT.md**：心跳唤醒指令，系统定期读取。
 - **IDENTITY.md / SOUL.md**：个性与行为准则。
@@ -795,7 +795,7 @@ export class PromptBuilder {
   }
 
   private buildWatchGuide(): string {
-    return '**关切 和 TODO.md 的区别**：需要你自动执行的任务使用关切（关切只要满足条件就会自动触发）；只需要提醒用户做的事写入 TODO.md（系统有心跳机制，会定时唤醒你，从而提醒用户）。'
+    return '**关切 和 本地待办的区别**：需要你自动执行的任务使用关切（关切只要满足条件就会自动触发）；只需要提醒用户做的事用 `todo_create` 记入本地待办（心跳会检查并提醒用户）。日历里的 VTODO 用 `calendar_todo_*`，与本地待办无关。'
   }
 
   private buildDocumentRule(): string {

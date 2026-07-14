@@ -737,6 +737,15 @@ export class AgentService {
     const agent = this.getAgent(agentId)
     agent?.startNewSession()
   }
+
+  /**
+   * 为指定助手 Agent 预加载技能（会 create 若不存在）
+   */
+  async preloadSkills(agentId: string, skillIds: string[]): Promise<void> {
+    if (!skillIds.length) return
+    const agent = this.createAssistantAgent(agentId)
+    await agent.preloadSkills(skillIds)
+  }
   
   /**
    * 更新配置

@@ -16,6 +16,7 @@ import { createLogger } from '../../utils/logger'
 import { Companion } from '../conversation/companion'
 import { getDefaultShell, getLocalOS } from '../../utils/platform'
 import { getWorkspacePath } from '../agent/tools/file'
+import { renderTodosForContext } from '../agent/skills/todo/render'
 import { getIMService } from '../im/im.service'
 import type {
   WatchDefinition,
@@ -498,6 +499,15 @@ export class WatchService {
     // wakeup 同样新起 session（@suppressSeed 门控回种，仅保留 TaskMemory 重建）
     this.config.agentService.startNewSession(agentId)
 
+    // 真正预加载 watch.skills（prompt 里的「预加载技能」文案不足以保证工具可用）
+    if (watch.skills && watch.skills.length > 0) {
+      try {
+        await this.config.agentService.preloadSkills(agentId, watch.skills)
+      } catch (e) {
+        log.warn('Failed to preload watch skills:', e)
+      }
+    }
+
     // 唤醒模式：始终发送 agent:step（Awaken 面板内心独白），但不发送 complete/error
     // 普通模式：silent 时不发送任何 IPC，非 silent 时全部发送
     const shouldSendSteps = wakeupMode || !silent
@@ -758,10 +768,7 @@ export class WatchService {
       }
     }
 
-    const todoContent = this.readWorkspaceFile('TODO.md')
-    const todoValue = todoContent
-      ? `# 待办事项\n${todoContent}`
-      : ''
+    const todoValue = renderTodosForContext()
 
     const activityDigest = this.buildRecentActivityDigest()
     const activityValue = activityDigest

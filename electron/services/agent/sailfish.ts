@@ -56,6 +56,20 @@ export class SailFish extends Agent {
     }
     return session
   }
+
+  /**
+   * 预加载技能（Watch 等入口在 run 前真正 loadSkill，而不只是 prompt 文案提示）
+   */
+  async preloadSkills(skillIds: string[]): Promise<void> {
+    if (!skillIds.length) return
+    const session = this.getSkillSession()
+    for (const skillId of skillIds) {
+      const result = await session.loadSkill(skillId)
+      if (!result.success) {
+        log.warn(`Failed to preload skill "${skillId}": ${result.error}`)
+      }
+    }
+  }
   
   // ==================== 实现抽象方法 ====================
   
