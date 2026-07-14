@@ -3,7 +3,7 @@
  * 关切运营总览仪表盘
  *
  * 在「关切」tab 列表里选中「总览」虚拟项时显示。
- * 一屏看清：下一次执行（hero）→ 异常/运行中状态条 → 即将执行 → 最近流水。
+ * 一屏看清：异常关切 → 下一次执行（hero）→ 运行中 → 即将执行 → 最近流水。
  *
  * 本组件不发起 IPC 调用，全部数据由父组件 Awaken.vue 注入；
  * select-watch 让父组件切换到对应 watch 的详情视图。
@@ -220,30 +220,7 @@ function selectWatchById(id: string) {
       </div>
     </header>
 
-    <!-- ============ 下一次执行（hero card） ============ -->
-    <section class="next-run-card" :class="{ empty: !nextRunHero }">
-      <div class="next-run-label">
-        <Clock :size="14" />
-        <span>{{ t('watch.overviewNextRunLabel') }}</span>
-      </div>
-      <button
-        v-if="nextRunHero"
-        class="next-run-body"
-        @click="selectWatchById(nextRunHero.id)"
-      >
-        <span class="next-run-name">{{ nextRunHero.name }}</span>
-        <span class="next-run-time">
-          <span class="next-run-relative">{{ formatUpcoming(nextRunHero.nextRun as number) }}</span>
-          <span class="next-run-absolute">{{ formatAbsoluteShort(nextRunHero.nextRun as number) }}</span>
-        </span>
-        <ChevronRight :size="14" class="next-run-arrow" />
-      </button>
-      <div v-else class="next-run-empty">
-        <span>{{ t('watch.overviewNoUpcoming') }}</span>
-      </div>
-    </section>
-
-    <!-- ============ 异常关切（仅在 >0 时展开为完整列表） ============ -->
+    <!-- ============ 异常关切（仅在 >0 时展开为完整列表；置顶优先处理） ============ -->
     <section v-if="anomalies.length > 0" class="overview-section">
       <div class="section-header">
         <AlertTriangle :size="16" class="section-icon icon-error" />
@@ -273,6 +250,29 @@ function selectWatchById(id: string) {
             <RotateCcw :size="13" :class="{ spinning: runningWatches.has(w.id) }" />
           </button>
         </div>
+      </div>
+    </section>
+
+    <!-- ============ 下一次执行（hero card） ============ -->
+    <section class="next-run-card" :class="{ empty: !nextRunHero }">
+      <div class="next-run-label">
+        <Clock :size="14" />
+        <span>{{ t('watch.overviewNextRunLabel') }}</span>
+      </div>
+      <button
+        v-if="nextRunHero"
+        class="next-run-body"
+        @click="selectWatchById(nextRunHero.id)"
+      >
+        <span class="next-run-name">{{ nextRunHero.name }}</span>
+        <span class="next-run-time">
+          <span class="next-run-relative">{{ formatUpcoming(nextRunHero.nextRun as number) }}</span>
+          <span class="next-run-absolute">{{ formatAbsoluteShort(nextRunHero.nextRun as number) }}</span>
+        </span>
+        <ChevronRight :size="14" class="next-run-arrow" />
+      </button>
+      <div v-else class="next-run-empty">
+        <span>{{ t('watch.overviewNoUpcoming') }}</span>
       </div>
     </section>
 
