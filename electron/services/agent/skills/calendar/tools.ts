@@ -9,7 +9,10 @@ export const calendarTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'calendar_connect',
-      description: `连接到用户配置的日历账户。
+      description: `连接到指定的日历账户（可选）。
+
+其它日历/待办工具会在需要时自动连接已配置的默认账户，通常不必先调本工具。
+仅在需要切换到非默认账户时调用。
 
 **支持的日历服务**：
 - Google Calendar
@@ -19,9 +22,8 @@ export const calendarTools: ToolDefinition[] = [
 - 其他 CalDAV 服务
 
 **注意**：
-- 必须先在设置中配置日历账户
-- 连接成功后可以进行日程查看、创建、修改、删除操作
-- 10 分钟无操作会自动断开连接`,
+- 须先在设置中配置日历账户
+- 10 分钟无操作会自动断开；下次读写会自动重连`,
       parameters: {
         type: 'object',
         properties: {
@@ -38,7 +40,7 @@ export const calendarTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'calendar_list',
-      description: `列出日历或日程事件。
+      description: `列出日历或日程事件。未连接时会自动连接已配置的默认账户。
 
 **使用方式**：
 1. 不指定 calendar_id：返回所有日历列表
@@ -79,7 +81,7 @@ export const calendarTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'calendar_create',
-      description: `创建新的日程事件。
+      description: `创建新的日程事件。未连接时会自动连接已配置的默认账户。
 
 **支持功能**：
 - 设置标题、开始/结束时间、地点、描述
@@ -141,7 +143,7 @@ export const calendarTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'calendar_update',
-      description: `修改已有的日程事件。
+      description: `修改已有的日程事件。未连接时会自动连接已配置的默认账户。
 
 只需提供要修改的字段，未提供的字段保持不变。
 
@@ -193,7 +195,7 @@ export const calendarTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'calendar_delete',
-      description: `删除日程事件。只需传 calendar_id 和 event_ids，不要传其他信息。
+      description: `删除日程事件。未连接时会自动连接已配置的默认账户。只需传 calendar_id 和 event_ids，不要传其他信息。
 
 **注意**：
 - 删除操作不可恢复
@@ -221,7 +223,7 @@ export const calendarTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'todo_list',
-      description: `列出日历中的待办事项（VTODO）。
+      description: `列出日历中的待办事项（VTODO）。未连接时会自动连接已配置的默认账户。
 
 **使用方式**：
 - 指定 calendar_id 获取该日历的待办事项
@@ -258,7 +260,7 @@ export const calendarTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'todo_create',
-      description: `创建新的待办事项。
+      description: `创建新的待办事项。未连接时会自动连接已配置的默认账户。
 
 **支持功能**：
 - 设置标题、截止日期、优先级、描述
@@ -307,7 +309,7 @@ export const calendarTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'todo_update',
-      description: `修改已有的待办事项。
+      description: `修改已有的待办事项。未连接时会自动连接已配置的默认账户。
 
 只需提供要修改的字段，未提供的字段保持不变。
 
@@ -373,7 +375,7 @@ export const calendarTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'todo_delete',
-      description: `删除待办事项。只需传 calendar_id 和 todo_ids，不要传其他信息。
+      description: `删除待办事项。未连接时会自动连接已配置的默认账户。只需传 calendar_id 和 todo_ids，不要传其他信息。
 
 **注意**：
 - 删除操作不可恢复

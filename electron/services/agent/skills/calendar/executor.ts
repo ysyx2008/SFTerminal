@@ -18,7 +18,8 @@ import {
   getServerConfig,
   getFirstOpenSession,
   updateSessionCalendars,
-  getDAVCalendar
+  getDAVCalendar,
+  type CalendarSession
 } from './session'
 import type { 
   Calendar, 
@@ -26,6 +27,10 @@ import type {
   CalendarTodo,
   CalendarAccountConfig
 } from './types'
+
+type EnsureConnectedResult =
+  | { ok: true; session: CalendarSession; justConnected: boolean }
+  | { ok: false; result: ToolResult }
 
 // 动态导入的模块
 let tsdav: typeof import('tsdav')
@@ -62,6 +67,100 @@ function getCalendarAccount(accountId?: string): CalendarAccountConfig | undefin
 }
 
 /**
+ * 确保已连接到日历账户（懒连接）。
+ * 已有有效会话则复用；否则用已配置账户自动建立 CalDAV 连接。
+ */
+async function ensureConnected(accountId?: string): Promise<EnsureConnectedResult> {
+  await initDependencies()
+
+  if (accountId) {
+    if (isSessionOpen(accountId)) {
+      const existing = getSession(accountId)
+      if (existing?.connected && existing.client) {
+        existing.lastAccess = Date.now()
+        return { ok: true, session: existing, justConnected: false }
+      }
+      log.info(`Connection lost for account ${accountId}, reconnecting...`)
+      await closeSession(accountId)
+    }
+  } else {
+    // 懒连接路径：优先复用任意已打开会话（保留 calendar_connect 切换的活动账户）
+    const existing = getFirstOpenSession()
+    if (existing?.connected && existing.client) {
+      existing.lastAccess = Date.now()
+      return { ok: true, session: existing, justConnected: false }
+    }
+    if (existing) {
+      log.info(`Stale calendar session for ${existing.accountId}, reconnecting...`)
+      await closeSession(existing.accountId)
+    }
+  }
+
+  const account = getCalendarAccount(accountId)
+  if (!account) {
+    return {
+      ok: false,
+      result: {
+        success: false,
+        output: '',
+        error: cachedAccounts.length === 0
+          ? t('calendar.no_accounts_configured')
+          : t('calendar.account_not_found', { id: accountId || 'unknown' })
+      }
+    }
+  }
+
+  const credential = await getCalendarCredential(account.id)
+  if (!credential) {
+    return {
+      ok: false,
+      result: {
+        success: false,
+        output: '',
+        error: t('calendar.credential_not_found', { name: account.name })
+      }
+    }
+  }
+
+  const serverConfig = getServerConfig(account.provider, account.serverUrl)
+
+  try {
+    const client = new tsdav.DAVClient({
+      serverUrl: serverConfig.serverUrl,
+      credentials: {
+        username: account.username,
+        password: credential
+      },
+      authMethod: 'Basic',
+      defaultAccountType: 'caldav'
+    })
+
+    await client.login()
+
+    const davCalendars = await client.fetchCalendars()
+
+    const calendars: Calendar[] = davCalendars.map(cal => ({
+      id: cal.url || '',
+      name: typeof cal.displayName === 'string' ? cal.displayName : extractCalendarName(cal.url || ''),
+      description: typeof cal.description === 'string' ? cal.description : undefined,
+      color: typeof cal.calendarColor === 'string' ? cal.calendarColor : undefined,
+      readonly: false,
+      url: cal.url
+    }))
+
+    const session = createSession(account.id, account.name, account.username, client, calendars, davCalendars)
+    session.provider = account.provider
+    session.supportsTodo = await detectTodoSupport(account.provider, calendars, credential, account.username)
+
+    log.info(`Auto-connected calendar account: ${account.name} (${calendars.length} calendars)`)
+    return { ok: true, session, justConnected: true }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : t('calendar.connect_failed')
+    return { ok: false, result: { success: false, output: '', error: errorMsg } }
+  }
+}
+
+/**
  * 执行日历技能工具
  */
 export async function executeCalendarTool(
@@ -72,26 +171,23 @@ export async function executeCalendarTool(
   config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
-  await initDependencies()
+  if (toolName === 'calendar_connect') {
+    return await calendarConnect(args, executor)
+  }
 
-  // 待办事项工具：提前检查 VTODO 支持
-  if (toolName.startsWith('todo_')) {
-    const session = getFirstOpenSession()
-    if (!session || !session.client) {
-      return { success: false, output: '', error: t('calendar.not_connected') }
-    }
-    if (session.supportsTodo === false) {
-      return { 
-        success: false, 
-        output: '', 
-        error: t('calendar.todo_not_supported_error', { provider: session.accountName }) 
-      }
+  // 读写工具：无会话时自动连接已配置账户（ensureConnected 内会 initDependencies）
+  const ensured = await ensureConnected()
+  if (!ensured.ok) return ensured.result
+
+  if (toolName.startsWith('todo_') && ensured.session.supportsTodo === false) {
+    return {
+      success: false,
+      output: '',
+      error: t('calendar.todo_not_supported_error', { provider: ensured.session.accountName })
     }
   }
 
   switch (toolName) {
-    case 'calendar_connect':
-      return await calendarConnect(args, executor)
     case 'calendar_list':
       return await calendarList(args, executor)
     case 'calendar_create':
@@ -114,106 +210,40 @@ export async function executeCalendarTool(
 }
 
 /**
- * 连接日历
+ * 连接日历（显式；多账户切换时使用）。读写工具会懒连接，通常不必先调此工具。
  */
 async function calendarConnect(
   args: Record<string, unknown>,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
-  const accountId = args.account_id as string | undefined
-  const account = getCalendarAccount(accountId)
-
+  // 显式连接总是按目标账户判定（无 account_id 时落到默认账户），避免误复用其它已开会话
+  const account = getCalendarAccount(args.account_id as string | undefined)
   if (!account) {
     return {
       success: false,
       output: '',
       error: cachedAccounts.length === 0
         ? t('calendar.no_accounts_configured')
-        : t('calendar.account_not_found', { id: accountId || 'unknown' })
+        : t('calendar.account_not_found', { id: (args.account_id as string) || 'unknown' })
     }
   }
 
-  // 检查是否已连接
-  if (isSessionOpen(account.id)) {
-    const existingSession = getSession(account.id)
-    if (existingSession?.connected && existingSession?.client) {
-      const output = t('calendar.already_connected', { name: account.name })
-      executor.addStep({
-        type: 'tool_result',
-        content: output,
-        toolName: 'calendar_connect',
-        toolResult: output
-      })
-      return { success: true, output }
-    }
-    // 连接已断开，先关闭旧会话再重新连接
-    log.info(`Connection lost for ${account.name}, reconnecting...`)
-    await closeSession(account.id)
-  }
+  const ensured = await ensureConnected(account.id)
+  if (!ensured.ok) return ensured.result
 
-  // 获取凭据
-  const credential = await getCalendarCredential(account.id)
-  if (!credential) {
-    return {
-      success: false,
-      output: '',
-      error: t('calendar.credential_not_found', { name: account.name })
-    }
-  }
+  const { session, justConnected } = ensured
+  const output = justConnected
+    ? t('calendar.connected', { name: session.accountName, count: session.calendars.length })
+    : t('calendar.already_connected', { name: session.accountName })
 
-  // 获取服务器配置
-  const serverConfig = getServerConfig(account.provider, account.serverUrl)
+  executor.addStep({
+    type: 'tool_result',
+    content: output,
+    toolName: 'calendar_connect',
+    toolResult: output
+  })
 
-  try {
-    // 创建 CalDAV 客户端
-    const client = new tsdav.DAVClient({
-      serverUrl: serverConfig.serverUrl,
-      credentials: {
-        username: account.username,
-        password: credential
-      },
-      authMethod: 'Basic',
-      defaultAccountType: 'caldav'
-    })
-
-    // 登录
-    await client.login()
-
-    // 获取日历列表
-    const davCalendars = await client.fetchCalendars()
-    
-    const calendars: Calendar[] = davCalendars.map(cal => ({
-      id: cal.url || '',
-      name: typeof cal.displayName === 'string' ? cal.displayName : extractCalendarName(cal.url || ''),
-      description: typeof cal.description === 'string' ? cal.description : undefined,
-      color: typeof cal.calendarColor === 'string' ? cal.calendarColor : undefined,
-      readonly: false,
-      url: cal.url
-    }))
-
-    // 创建会话，同时保存原始的 DAVCalendar 对象用于后续 API 调用
-    const session = createSession(account.id, account.name, account.username, client, calendars, davCalendars)
-
-    // 检测 VTODO 支持
-    session.provider = account.provider
-    session.supportsTodo = await detectTodoSupport(account.provider, calendars, credential, account.username)
-
-    const output = t('calendar.connected', { 
-      name: account.name, 
-      count: calendars.length 
-    })
-    executor.addStep({
-      type: 'tool_result',
-      content: output,
-      toolName: 'calendar_connect',
-      toolResult: output
-    })
-
-    return { success: true, output }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : t('calendar.connect_failed')
-    return { success: false, output: '', error: errorMsg }
-  }
+  return { success: true, output }
 }
 
 /**
