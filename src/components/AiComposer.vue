@@ -218,42 +218,51 @@ const focusInput = () => {
 }
 
 /** 两行 grid 布局下测量高度。
- * 禁止每次都 height=0：会瞬间塌缩 composer，flex 上方的消息列表跟着抖半行。
- * 增高用 scrollHeight 直接扩；仅在内容变矮（删字折行减少）时才临时塌缩重测。
+ *
+ * 增高可直接用 scrollHeight 扩。变矮则必须先 height=0 再量——textarea 偏高时
+ * scrollHeight 常等于 clientHeight，单靠 `scrollHeight < current` 永远测不出「该缩」。
+ * 11.2.2 防抖动优化只在确认变矮时塌缩，导致偶发撑满后缩不回去。
+ *
+ * 塌缩重测时先锁住 wrap 当前高度，避免 composer 瞬间变矮带动上方消息列表抖动。
  */
 const measureTextareaHeight = () => {
   const textarea = mentionInputEl.value
   if (!textarea || measuringTextareaHeight) return
 
   measuringTextareaHeight = true
+  const wrap = textareaWrapEl.value
+  let frozeWrap = false
   try {
     const maxH = 360
     const minH = 20
     textarea.style.overflow = 'hidden'
 
     const current = textarea.offsetHeight
-    let nextHeight: number
 
+    // 内容明确撑破 → 直接扩，不经 0（无抖动）
     if (textarea.scrollHeight > current + 1) {
-      // 内容撑破当前高度 → 直接扩，不经 0
-      nextHeight = Math.min(Math.max(textarea.scrollHeight, minH), maxH)
-    } else if (textarea.scrollHeight < current - 1) {
-      // 内容变矮（删字）→ 临时塌缩再量自然高度
-      textarea.style.height = '0px'
-      nextHeight = Math.min(Math.max(textarea.scrollHeight, minH), maxH)
-    } else {
-      // 同行内敲字：高度不变，避免无意义写 style 触发布局
-      textarea.style.overflow = current >= maxH ? 'auto' : 'hidden'
+      const nextHeight = Math.min(Math.max(textarea.scrollHeight, minH), maxH)
+      if (current !== nextHeight) {
+        textarea.style.height = `${nextHeight}px`
+      }
+      textarea.style.overflow = nextHeight >= maxH ? 'auto' : 'hidden'
       return
     }
 
-    if (current !== nextHeight) {
-      textarea.style.height = `${nextHeight}px`
-    } else if (textarea.style.height === '0px') {
-      textarea.style.height = `${nextHeight}px`
+    // 同行敲字 / 疑似变矮 / 已卡住偏高：必须塌缩重测才能得到内容真实高度。
+    // wrap 锁高期间消息区 flex 看不到瞬时塌缩。
+    if (wrap) {
+      wrap.style.height = `${wrap.offsetHeight}px`
+      frozeWrap = true
     }
+    textarea.style.height = '0px'
+    const nextHeight = Math.min(Math.max(textarea.scrollHeight, minH), maxH)
+    textarea.style.height = `${nextHeight}px`
     textarea.style.overflow = nextHeight >= maxH ? 'auto' : 'hidden'
   } finally {
+    if (frozeWrap && wrap) {
+      wrap.style.height = ''
+    }
     measuringTextareaHeight = false
   }
 }
