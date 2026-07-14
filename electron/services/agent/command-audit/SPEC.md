@@ -10,7 +10,7 @@
    - Unix / Windows cmd 回退：命令经 `@questi0nm4rk/shell-ast` 解析为 AST
    - **Windows PowerShell（默认 shell）**：经官方 `Parser::ParseInput`（`pwsh-extract.ps1`）解析
    - 拆出子命令 + flags + 参数 + 重定向，再走白名单 + 路径分区
-3. **路径分区审计**：根据 cwd + 路径所在 zone（free/protected/workspace/outside）调整风险
+3. **路径分区审计**：根据 cwd + 路径所在 zone（free/protected/workspace/outside）调整风险；`resolveCommandPath` 会解开 shell 转义并展开 `~`/`~/`（避免 `~/Desktop` 相对 scratch 误入 free）
 4. **Fail-Closed**：解析失败 / 未知命令按 `executionMode` + 用户可配 `commandRiskPolicy` 选档（默认 strict→dangerous、relaxed/free→moderate）；写操作动态路径 -> dangerous
 
 ## 模块结构
@@ -166,6 +166,7 @@ npx vitest run electron/services/agent/command-audit/__tests__/
 
 ## 变更历史
 
+- 2026-07-14：`resolveCommandPath` 展开 `~`/`~/`，修复宽松模式下 `rm ~/…` 误判 free/safe 不弹确认
 - 2026-07-13：明确 blocked 不走确认弹窗（硬拒绝）；`riskNeedsConfirm('blocked')` 恒 false，新增 `isHardBlocked`
 - 2026-07-13：`riskNeedsConfirm` 修正为 strict 含 safe 全确认（与产品「严格=全确认」一致）；`commandNeedsConfirm` 完全委托
 - 2026-07-13：抽出 `riskNeedsConfirm`，文件/Office/邮件/日历/SFTP/技能安装/插件审批统一按 riskLevel × executionMode 决定是否弹窗；命令路径仍用 `commandNeedsConfirm`（strict 含 safe）

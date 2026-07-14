@@ -32,9 +32,23 @@ import {
 import { isUserDataForbidden } from './userdata-guard'
 import { unescapeShellWordLiteral } from './unescape-shell-literal'
 
-/** 解析相对路径（cwd 缺省时用 process.cwd()）；并解开 shell 反斜杠转义 */
+/** 展开 ~ / ~/…（与 file 工具一致；不展开 ~user） */
+function expandTilde(filePath: string): string {
+  if (filePath === '~') return os.homedir()
+  if (filePath.startsWith('~/') || filePath.startsWith('~\\')) {
+    return path.join(os.homedir(), filePath.slice(2))
+  }
+  return filePath
+}
+
+/**
+ * 解析命令参数路径（供分区 / userData 守卫）：
+ * 1. 解开 shell 反斜杠转义（Application\ Support）
+ * 2. 展开 ~（避免 ~/Desktop 被当成 scratch 下相对路径误入 free 区）
+ * 3. 相对路径相对 cwd 解析（cwd 缺省时用 process.cwd()）
+ */
 export function resolveCommandPath(rawPath: string, cwd?: string): string {
-  const cleaned = unescapeShellWordLiteral(rawPath)
+  const cleaned = expandTilde(unescapeShellWordLiteral(rawPath))
   const base = cwd ? path.resolve(cwd) : process.cwd()
   return path.resolve(base, cleaned)
 }
