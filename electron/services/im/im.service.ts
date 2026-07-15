@@ -12,7 +12,7 @@
  *                          callbacks 聚合文本 ──→ Adapter.sendMarkdown()
  */
 
-import type { ExecutionMode, RemoteChannel } from '@shared/types'
+import type { AttachmentInfo, ExecutionMode, RemoteChannel } from '@shared/types'
 import { COMPANION_AGENT_KEY } from '@shared/types'
 import { getDefaultShell, getLocalOS } from '../../utils/platform'
 import { getEventBus } from '../sensor/event-bus'
@@ -39,6 +39,7 @@ import { TelegramAdapter } from './telegram-adapter'
 import { WeComAdapter } from './wecom-adapter'
 import { WeChatAdapter } from './wechat-adapter'
 import type { AgentService } from '../agent'
+import { IMAGE_MIME_TYPES, VISION_IMAGE_EXTENSIONS } from '../agent/tools/types'
 import { getConfigService } from '../config.service'
 import { t } from '../agent/i18n'
 import { createLogger } from '../../utils/logger'
@@ -47,6 +48,72 @@ import fs from 'fs'
 
 const log = createLogger('IMService')
 
+/** 与 read_file 图片上限一致：超过则走附件文本路径，不内联为多模态 */
+const IM_VISION_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+
+/** IM 入站附件 → AgentContext.images / attachments */
+export interface ImAgentMediaContext {
+  /** Vision data URL，供桌面气泡直接展示 + 多模态发给视觉模型 */
+  images: string[]
+  /** 非图片（或内联失败）的附件元信息，供 UI chip 展示 */
+  attachments: AttachmentInfo[]
+  /** 已成功内联为 images 的本地路径，buildAgentMessage 应从文本列表中剔除 */
+  inlinedImagePaths: Set<string>
+}
+
+/**
+ * 将 IM 附件拆成「视觉内联图片」与「普通附件」。
+ * 常见图片格式读成 base64 data URL，与桌面上传路径对齐，使联络气泡可直接显示缩略图。
+ */
+export function prepareImAgentMedia(attachments: IMAttachment[] | undefined): ImAgentMediaContext {
+  const images: string[] = []
+  const attachmentInfos: AttachmentInfo[] = []
+  const inlinedImagePaths = new Set<string>()
+
+  if (!attachments?.length) {
+    return { images, attachments: attachmentInfos, inlinedImagePaths }
+  }
+
+  for (const a of attachments) {
+    let fileSize = 0
+    try {
+      if (fs.existsSync(a.localPath)) {
+        fileSize = fs.statSync(a.localPath).size
+      }
+    } catch {
+      // 读元数据失败时仍尝试走附件路径
+    }
+
+    const ext = path.extname(a.fileName || a.localPath).toLowerCase()
+    const mime = IMAGE_MIME_TYPES[ext]
+    const canInline =
+      a.type === 'image'
+      && !!mime
+      && VISION_IMAGE_EXTENSIONS.has(ext)
+      && fileSize > 0
+      && fileSize <= IM_VISION_IMAGE_MAX_BYTES
+
+    if (canInline) {
+      try {
+        const buf = fs.readFileSync(a.localPath)
+        images.push(`data:${mime};base64,${buf.toString('base64')}`)
+        inlinedImagePaths.add(a.localPath)
+        continue
+      } catch (err) {
+        log.warn(`Failed to inline IM image ${a.localPath}:`, err)
+      }
+    }
+
+    attachmentInfos.push({
+      filename: a.fileName,
+      filePath: a.localPath,
+      fileSize,
+      fileType: ext.replace(/^\./, '') || a.type,
+    })
+  }
+
+  return { images, attachments: attachmentInfos, inlinedImagePaths }
+}
 export interface IMServiceDependencies {
   agentService: import('../agent').AgentService
   mainWindow: {
@@ -988,8 +1055,9 @@ export class IMService {
 
     const replyContext = msg.replyContext
 
-    // 构建完整消息文本（含附件信息）
-    const fullMessage = this.buildAgentMessage(msg)
+    // 图片附件内联为 data URL（桌面气泡直接显示 + 发给视觉模型）
+    const media = prepareImAgentMedia(msg.attachments)
+    const fullMessage = this.buildAgentMessage(msg, media.inlinedImagePaths)
 
     // Companion Agent 实例
     const companion = this.deps.agentService.createAssistantAgent(COMPANION_AGENT_KEY)
@@ -1003,7 +1071,12 @@ export class IMService {
     // 如果 Agent 正在运行，尝试补充消息（包括 ask_user 的回复）
     if (companion.isRunning()) {
       try {
-        if (companion.addUserMessage(fullMessage)) {
+        if (companion.addUserMessage(
+          fullMessage,
+          media.attachments.length > 0 ? media.attachments : undefined,
+          undefined,
+          media.images.length > 0 ? media.images : undefined,
+        )) {
           await adapter.sendText(replyContext, t('im.reply_received'))
         } else {
           await adapter.sendText(replyContext, t('im.reply_busy'))
@@ -1034,7 +1107,7 @@ export class IMService {
     }
 
     // 开始 Agent 任务
-    await this.runAgentTask(adapter, replyContext, msg)
+    await this.runAgentTask(adapter, replyContext, msg, media)
   }
 
   /**
@@ -1086,11 +1159,16 @@ export class IMService {
   /**
    * 执行 Agent 任务（直接调用 Companion Agent）
    */
-  private async runAgentTask(adapter: IMAdapter, replyContext: any, msg: IMIncomingMessage) {
+  private async runAgentTask(
+    adapter: IMAdapter,
+    replyContext: any,
+    msg: IMIncomingMessage,
+    media: ImAgentMediaContext = prepareImAgentMedia(msg.attachments),
+  ) {
     if (!this.deps) return
 
     this.activeSession = { adapter, replyContext }
-    const fullMessage = this.buildAgentMessage(msg)
+    const fullMessage = this.buildAgentMessage(msg, media.inlinedImagePaths)
     const agentId = COMPANION_AGENT_KEY
 
     const processMode = this.config.processMode
@@ -1312,6 +1390,8 @@ export class IMService {
         systemInfo: { os: getLocalOS(), shell: getDefaultShell() },
         terminalType: 'assistant' as const,
         remoteChannel: msg.platform as RemoteChannel,
+        ...(media.images.length > 0 ? { images: media.images } : {}),
+        ...(media.attachments.length > 0 ? { attachments: media.attachments } : {}),
         ...(msg.isFirstContact ? {
           contextHint: t('im.first_contact_context', { userName: msg.userName, platform: msg.platform })
         } : {})
@@ -1835,12 +1915,24 @@ export class IMService {
 
   /**
    * 将消息文本和附件信息组装为传给 Agent 的完整消息
-   * 包含文件路径和处理指引，帮助 Agent 正确处理不同类型的文件
+   * 包含文件路径和处理指引，帮助 Agent 正确处理不同类型的文件。
+   * 已内联为 context.images 的图片不再写入文本列表（由多模态通道送达，桌面气泡直接展示）。
    */
-  private buildAgentMessage(msg: IMIncomingMessage): string {
+  private buildAgentMessage(msg: IMIncomingMessage, inlinedImagePaths?: Set<string>): string {
     let text = msg.text || ''
 
     if (msg.attachments && msg.attachments.length > 0) {
+      const remaining = msg.attachments.filter(a => !inlinedImagePaths?.has(a.localPath))
+
+      // 全部图片已内联：保留用户原文；纯图无文案时用占位，便于侧栏标题
+      if (remaining.length === 0) {
+        if (!text.trim()) {
+          const names = msg.attachments.map(a => a.fileName).filter(Boolean)
+          text = names.length > 0 ? names.join(', ') : t('im.image_message')
+        }
+        return text
+      }
+
       const BINARY_TYPES = new Set<IMAttachment['type']>(['image', 'audio', 'video'])
 
       const typeI18nKeys: Record<IMAttachment['type'], Parameters<typeof t>[0]> = {
@@ -1850,7 +1942,7 @@ export class IMService {
         file: 'im.attachment_file',
       }
 
-      const fileDescriptions = msg.attachments.map(a => {
+      const fileDescriptions = remaining.map(a => {
         const isBinary = BINARY_TYPES.has(a.type)
         const typeLabel = t(typeI18nKeys[a.type] || 'im.attachment_file')
         let desc = `- [${typeLabel}] ${a.fileName} → ${a.localPath}`
@@ -1860,7 +1952,7 @@ export class IMService {
         return desc
       })
 
-      const hasBinary = msg.attachments.some(a => BINARY_TYPES.has(a.type))
+      const hasBinary = remaining.some(a => BINARY_TYPES.has(a.type))
       const guidance = hasBinary ? t('im.attachment_binary_guidance') : ''
 
       const fileList = fileDescriptions.join('\n')

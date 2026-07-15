@@ -1432,6 +1432,7 @@ const translations = {
     'im.attachment_sent': '📎 用户同时发送了文件：',
     'im.attachment_sent_only': '📎 用户发送了文件：',
     'im.attachment_help_hint': '\n\n请协助用户处理。',
+    'im.image_message': '[图片]',
 
     // IM 工具（send_file_to_chat / send_image_to_chat / send_im_notification）
     'im.tool_file_path_required': '必须提供 file_path 参数',
@@ -2926,6 +2927,7 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'im.attachment_sent': '📎 User also sent files:',
     'im.attachment_sent_only': '📎 User sent files:',
     'im.attachment_help_hint': '\n\nPlease help the user process these.',
+    'im.image_message': '[Image]',
 
     // IM tools (send_file_to_chat / send_image_to_chat / send_im_notification)
     'im.tool_file_path_required': 'file_path parameter is required',

@@ -1,6 +1,6 @@
 # IM Service SPEC
 
-> Last verified: 2026-07-03（agent:running IPC）
+> Last verified: 2026-07-15（IM 入站图片内联为 context.images）
 
 ## 职责
 
@@ -148,8 +148,9 @@ interface SendFileResult { success: boolean; error?: string; messageId?: string 
 **入站消息 → Agent 对话**：
 1. 适配器内部 SDK 收到消息 → `onMessage` 回调
 2. → IMService 内部把消息构造为 `IMIncomingMessage`，记录 `lastContact`
-3. → 通过 `agentService.run(message, context)` 启动 Agent 任务
-4. → Agent 输出（含中间过程，受 `setSendProcessMessages` 控制）通过 `adapter.sendMessage` 发回原平台
+3. → `prepareImAgentMedia`：常见图片（jpg/png/gif/bmp/webp，≤10MB）读成 base64 data URL，写入 `AgentContext.images`（联络气泡直接显示缩略图 + 多模态发给视觉模型）；其余附件写入 `AgentContext.attachments`（UI chip）
+4. → 通过 `agentService.runAssistant(COMPANION_AGENT_KEY, message, context)` 启动 Agent 任务；已内联的图片不再塞进文案里的「用户发送了文件」列表
+5. → Agent 输出（含中间过程，受 `processMode` 控制）通过适配器发回原平台
 
 **手动发通知（来自 Agent 工具或外部触发）**：
 1. `sendNotification(text)` 检查 `lastContact` → 选定目标平台
