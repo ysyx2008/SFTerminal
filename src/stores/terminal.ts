@@ -64,8 +64,8 @@ export type {
   PendingConfirmation,
 } from '@shared/types'
 
-import type { TerminalType, AgentStep, PendingConfirmation, RemoteChannel, AttachmentInfo, AgentRecord } from '@shared/types'
-import { COMPANION_AGENT_KEY } from '@shared/types'
+import type { TerminalType, AgentStep, AgentContextBar, PendingConfirmation, RemoteChannel, AttachmentInfo, AgentRecord } from '@shared/types'
+import { COMPANION_AGENT_KEY, deriveContextBarFromSteps } from '@shared/types'
 import { isWorkbenchAvailable } from '../workbench/registry'
 
 export type {
@@ -84,6 +84,11 @@ export interface AgentState {
   /** 侧栏展示标题（LLM 生成或用户重命名）；缺省时 UI 回退 userTask */
   title?: string
   steps: AgentStep[]
+  /**
+   * 会话级上下文栏快照（后端 onContextBar 推送）。
+   * 状态栏优先读此字段；历史加载时可由 steps 派生。
+   */
+  contextBar?: AgentContextBar
   pendingConfirm?: PendingConfirmation
   pendingSecureInput?: import('@shared/types').PendingSecureInput & { ptyId?: string }
   /** 后台 tab：Agent 已结束（成功或报错）而用户当时不在该 tab，用于标签栏高亮引导 */
@@ -2172,6 +2177,18 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
   }
 
+  /** 更新会话级上下文栏快照（与 step 解耦） */
+  function setAgentContextBar(tabId: string, contextBar: AgentContextBar): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab) return
+    if (!tab.agentState) {
+      tab.agentState = { isRunning: false, steps: [], contextBar: { ...contextBar } }
+    } else {
+      tab.agentState = { ...tab.agentState, contextBar: { ...contextBar } }
+    }
+    tabs.value = [...tabs.value]
+  }
+
   /**
    * 设置待确认的工具调用
    */
@@ -2463,6 +2480,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       userTask: record.userTask,
       ...(record.title?.trim() ? { title: record.title.trim() } : {}),
       steps: steps,
+      contextBar: deriveContextBarFromSteps(steps),
       loadedFromHistory: true
     }
     // 从历史恢复视为新视图：清除已存滚动，由 AiPanel 滚到最新一条
@@ -3217,6 +3235,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     removeOptimisticAgentSteps,
     commitOptimisticAgentSteps,
     removeAgentStep,
+    setAgentContextBar,
     setAgentPendingConfirm,
     finalizeAgentRunState,
     setAgentPendingSecureInput,

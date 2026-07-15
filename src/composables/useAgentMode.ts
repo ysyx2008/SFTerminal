@@ -163,6 +163,7 @@ export function useAgentMode(
   // 清理事件监听的函数
   let cleanupStepListener: (() => void) | null = null
   let cleanupStepRemovedListener: (() => void) | null = null
+  let cleanupContextBarListener: (() => void) | null = null
   let cleanupConfirmListener: (() => void) | null = null
   let cleanupConfirmResolvedListener: (() => void) | null = null
   let cleanupSecureInputListener: (() => void) | null = null
@@ -1587,6 +1588,11 @@ export function useAgentMode(
       terminalStore.removeAgentStep(currentTabId.value, data.stepId)
     })
 
+    cleanupContextBarListener = window.electronAPI.agent.onContextBar((data) => {
+      if (!isEventForThisTab(data.agentId, data.ptyId)) return
+      terminalStore.setAgentContextBar(currentTabId.value, data.contextBar)
+    })
+
     // 监听需要确认
     cleanupConfirmListener = window.electronAPI.agent.onNeedConfirm((data) => {
       // 类型转换，添加 ptyId 支持
@@ -1717,6 +1723,10 @@ export function useAgentMode(
     if (cleanupStepRemovedListener) {
       cleanupStepRemovedListener()
       cleanupStepRemovedListener = null
+    }
+    if (cleanupContextBarListener) {
+      cleanupContextBarListener()
+      cleanupContextBarListener = null
     }
     if (cleanupConfirmListener) {
       cleanupConfirmListener()

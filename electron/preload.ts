@@ -1045,6 +1045,15 @@ const electronAPI = {
       }
     },
 
+    // 监听会话级上下文栏快照（与 step 解耦）
+    onContextBar: (callback: (data: { agentId: string; ptyId?: string; contextBar: import('@shared/types').AgentContextBar }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string; ptyId?: string; contextBar: import('@shared/types').AgentContextBar }) => callback(data)
+      ipcRenderer.on('agent:contextBar', handler)
+      return () => {
+        ipcRenderer.removeListener('agent:contextBar', handler)
+      }
+    },
+
     // 监听需要确认的工具调用（携带 ptyId 用于可靠匹配 tab）
     onNeedConfirm: (callback: (data: PendingConfirmation & { ptyId?: string }) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: PendingConfirmation & { ptyId?: string }) => callback(data)

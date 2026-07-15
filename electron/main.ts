@@ -3578,6 +3578,15 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
         event.sender.send('agent:stepRemoved', { agentId, ptyId, stepId })
       }
     },
+    onContextBar: (agentId: string, contextBar: import('@shared/types').AgentContextBar) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('agent:contextBar', {
+          agentId,
+          ptyId,
+          contextBar: JSON.parse(JSON.stringify(contextBar)),
+        })
+      }
+    },
     onNeedConfirm: (confirmation: PendingConfirmation) => {
       if (!event.sender.isDestroyed()) {
         // 只发送可序列化的字段，不包含 resolve 函数
@@ -3844,6 +3853,15 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
     onStepRemoved: (_runId: string, stepId: string) => {
       if (!event.sender.isDestroyed()) {
         event.sender.send('agent:stepRemoved', { agentId, ptyId: agentId, stepId })
+      }
+    },
+    onContextBar: (_runId: string, contextBar: import('@shared/types').AgentContextBar) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('agent:contextBar', {
+          agentId,
+          ptyId: agentId,
+          contextBar: JSON.parse(JSON.stringify(contextBar)),
+        })
       }
     },
     onNeedConfirm: (confirmation: PendingConfirmation) => {

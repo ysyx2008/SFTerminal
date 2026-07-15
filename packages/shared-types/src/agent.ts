@@ -271,11 +271,13 @@ export interface AgentStep {
    * 本次 API 调用实际使用的模型上下文窗口大小（tokens）。
    * 当发生视觉模型自动切换时，此值反映切换后模型的 contextLength，
    * 而非前端 activeAiProfile 的 contextLength。
+   * 实时状态栏优先读 `AgentContextBar`；本字段仍写入 step 供历史落盘。
    */
   effectiveContextLength?: number
   /**
    * 本次 API 调用实际使用的模型 Profile 名称（用户自定义名）。
    * 当发生视觉模型自动切换时，此值为切换后的 profile.name。
+   * 实时状态栏优先读 `AgentContextBar`；本字段仍写入 step 供历史落盘。
    */
   effectiveModel?: string
   /** 本次 API 调用的缓存命中率（0-100），由后端计算后推送 */
@@ -318,6 +320,36 @@ export function isStartupPlaceholderStep(
 /** 持久化时剔除 startup 占位 */
 export function filterPersistableSteps<T extends AgentStep>(steps: T[]): T[] {
   return steps.filter(s => !isStartupPlaceholderStep(s))
+}
+
+/**
+ * 会话级「上下文栏」快照（token / cache / 拟用或已确认模型）。
+ * 与 step 解耦：删占位、重试、流式接替不会把状态栏打空或回退主模型。
+ * 确认值以 API usage 为准；请求中途可暂挂上轮确认 token + 本轮拟用 model/limit。
+ */
+export interface AgentContextBar {
+  contextTokens?: number
+  cacheHitRate?: number
+  effectiveContextLength?: number
+  effectiveModel?: string
+  /** 拟用 / 已确认的 AI profileId（换模型时用于清 Cache%） */
+  profileId?: string
+}
+
+/** 从步骤流倒查最近一次带 contextTokens 的统计（历史加载 / 无 live 推送时回退） */
+export function deriveContextBarFromSteps(
+  steps: ReadonlyArray<Pick<AgentStep, 'contextTokens' | 'cacheHitRate' | 'effectiveContextLength' | 'effectiveModel'>>,
+): AgentContextBar | undefined {
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const step = steps[i]
+    if (step.contextTokens === undefined) continue
+    const bar: AgentContextBar = { contextTokens: step.contextTokens }
+    if (step.cacheHitRate !== undefined) bar.cacheHitRate = step.cacheHitRate
+    if (step.effectiveContextLength !== undefined) bar.effectiveContextLength = step.effectiveContextLength
+    if (step.effectiveModel !== undefined) bar.effectiveModel = step.effectiveModel
+    return bar
+  }
+  return undefined
 }
 
 /**

@@ -740,6 +740,7 @@ interface Window {
       onStep: (callback: (data: { agentId: string; ptyId?: string; step: AgentStep }) => void) => () => void
       onRunning: (callback: (data: { agentId: string; ptyId?: string; userTask: string }) => void) => () => void
       onStepRemoved: (callback: (data: { agentId: string; ptyId?: string; stepId: string }) => void) => () => void
+      onContextBar: (callback: (data: { agentId: string; ptyId?: string; contextBar: import('@shared/types').AgentContextBar }) => void) => () => void
       onNeedConfirm: (callback: (data: PendingConfirmation & { ptyId?: string }) => void) => () => void
       onConfirmResolved: (callback: (data: { agentId: string }) => void) => () => void
       onComplete: (callback: (data: { agentId: string; ptyId?: string; result: string; pendingUserMessages?: string[] }) => void) => () => void

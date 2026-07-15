@@ -13,6 +13,7 @@ export type {
   AgentPlanStep,
   AgentPlan,
   AgentStep,
+  AgentContextBar,
   PendingConfirmation,
   PendingSecureInput,
   AttachmentInfo,
@@ -20,7 +21,7 @@ export type {
   CommandRiskPolicy,
 } from '@shared/types'
 
-import type { TerminalType, ExecutionMode, RemoteChannel, PendingConfirmation, PendingSecureInput, AgentStep, AgentPlan, AttachmentInfo, TokenUsage, CommandRiskPolicy } from '@shared/types'
+import type { TerminalType, ExecutionMode, RemoteChannel, PendingConfirmation, PendingSecureInput, AgentStep, AgentContextBar, AgentPlan, AttachmentInfo, TokenUsage, CommandRiskPolicy } from '@shared/types'
 
 // Agent 配置
 export interface AgentConfig {
@@ -263,6 +264,8 @@ export interface AgentCallbacks {
   /** run 开始（user_task 步骤已发出后），供 IM/WebChat 等外部入口同步桌面 tab 的 isRunning */
   onStart?: (agentId: string, userTask: string) => void
   onStepRemoved?: (agentId: string, stepId: string) => void
+  /** 会话级上下文栏快照（与 step 解耦；token/cache/拟用模型） */
+  onContextBar?: (agentId: string, contextBar: AgentContextBar) => void
   onNeedConfirm?: (confirmation: PendingConfirmationInternal) => void
   /** 需要安全输入框时触发（如技能 API Key）。前端弹框，值直接写入加密存储，不经过 LLM。 */
   onNeedSecureInput?: (request: PendingSecureInputInternal) => void

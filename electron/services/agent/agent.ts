@@ -14,6 +14,7 @@ import type { AgentRecord, AgentStepRecord } from '../history.service'
 import type {
   AgentConfig,
   AgentStep,
+  AgentContextBar,
   AgentContext,
   AgentPlan,
   AgentRun,
@@ -188,6 +189,9 @@ export abstract class Agent {
    */
   private _lastStatsProfileId?: string
 
+  /** 会话级上下文栏快照（UI 唯一实时源；与 step 解耦） */
+  private _contextBar: AgentContextBar = {}
+
   /** 上下文窗口管理协作者(token估算/压力/压缩/工具序列修复)。构造时装配,见 _contextWindow。 */
   private _contextWindow!: ContextWindowManager
 
@@ -253,19 +257,14 @@ export abstract class Agent {
       getLastPromptTokens: () => this._lastPromptTokens,
       getLastCacheHitRate: () => this._lastCacheHitRate,
       reportUsage: (tokens, cacheHitRate) => {
-        // 把精确的 token 用量推到当前 run 的 lastStep + onStep 回调(UI 展示)。
-        // 仅在 updatePressure 拿到 API 精确值时被调,避免估算值误导用户。
-        const steps = this.currentRun?.steps
-        if (steps && steps.length > 0) {
-          const lastStep = steps[steps.length - 1]
-          lastStep.contextTokens = tokens
-          if (cacheHitRate !== undefined) {
-            lastStep.cacheHitRate = cacheHitRate
-          }
-          // 请求过程中也写入拟用模型，避免 UI 回退到主模型（文字模型）的 contextLength
-          this.stampEffectiveProfileOnStep(lastStep)
-          this.callbacks?.onStep?.(this.currentRun?.id || '', lastStep)
+        // updatePressure 拿到 API 精确值时刷新上下文栏（不靠 lastStep）。
+        const next: AgentContextBar = {
+          ...this._contextBar,
+          contextTokens: tokens,
         }
+        if (cacheHitRate !== undefined) next.cacheHitRate = cacheHitRate
+        this.applyProfileFieldsToContextBar(next)
+        this.setContextBar(next)
       }
     })
   }
@@ -760,26 +759,9 @@ export abstract class Agent {
       }
     }
 
-    // 历史恢复后：把上一轮 API 已确认的 token/cache 挂到占位 step，并 stamp 本轮拟用模型。
-    // 不在每次 run 开头清空——空窗期沿用上轮真实值；换模型时丢掉 Cache%（不能张冠李戴）。
-    // 本轮 usage 到了仍只在 onDone 里更新（API 是唯一真相源）。
-    const plannedId =
-      this.resolveContextBudgetProfileId() ||
-      this.services.configService?.getActiveAiProfile()
-    if (this._lastPromptTokens !== undefined) {
-      initialStep.contextTokens = this._lastPromptTokens
-    }
-    if (
-      this._lastCacheHitRate !== undefined &&
-      plannedId &&
-      this._lastStatsProfileId === plannedId
-    ) {
-      initialStep.cacheHitRate = this._lastCacheHitRate
-    } else if (plannedId && this._lastStatsProfileId && plannedId !== this._lastStatsProfileId) {
-      this._conversation?.setLastCacheHitRate(undefined)
-    }
-    this.stampEffectiveProfileOnStep(initialStep, plannedId)
-    this.callbacks?.onStep?.(this._agentId ?? run.id, initialStep)
+    // 历史恢复后发布会话级上下文栏：上轮 API 确认的 token/cache + 本轮拟用 model/limit。
+    // 与占位 step 解耦——流式接替 / 重试删 step 不会打空状态栏。用法仍只在 onDone 更新为确认值。
+    this.publishPlannedContextBar()
     
     // 设置终端输出监听器
     this.setupOutputListener(run)
@@ -1216,6 +1198,7 @@ export abstract class Agent {
     // 下一次 run 会以全新 session 重建会话。
     this._conversation = undefined
     this._lastStatsProfileId = undefined
+    this._contextBar = {}
     this.taskMemory.clear()
   }
 
@@ -1230,6 +1213,7 @@ export abstract class Agent {
     // 下次 run 创建新会话时注入同一个（保留的）store，维持「跨 session 记忆」语义。
     this._conversation = undefined
     this._lastStatsProfileId = undefined
+    this._contextBar = {}
   }
 
   
@@ -2073,37 +2057,72 @@ export abstract class Agent {
     })
   }
 
-  /** 把拟用模型的 contextLength / name 写入 step，供前端状态栏展示 */
-  private stampEffectiveProfileOnStep(step: AgentStep, profileId?: string): void {
+  /** 解析拟用 / 已确认 profile 的展示字段写入 bar（不 publish） */
+  private applyProfileFieldsToContextBar(
+    bar: AgentContextBar,
+    profileId?: string
+  ): string | undefined {
     const configService = this.services.configService
-    if (!configService) return
+    if (!configService) return profileId
     const effectiveId =
       profileId || this.resolveContextBudgetProfileId() || configService.getActiveAiProfile()
+    if (!effectiveId) return undefined
+    bar.profileId = effectiveId
     const profile = configService.getAiProfiles().find(p => p.id === effectiveId)
-    if (profile?.contextLength) step.effectiveContextLength = profile.contextLength
-    if (profile?.name) step.effectiveModel = profile.name
+    if (profile?.contextLength) bar.effectiveContextLength = profile.contextLength
+    if (profile?.name) bar.effectiveModel = profile.name
+    return effectiveId
+  }
+
+  /** 把拟用模型写入 step（历史落盘用；实时状态栏走 contextBar） */
+  private stampEffectiveProfileOnStep(step: AgentStep, profileId?: string): void {
+    const bar: AgentContextBar = {}
+    this.applyProfileFieldsToContextBar(bar, profileId)
+    if (bar.effectiveContextLength !== undefined) step.effectiveContextLength = bar.effectiveContextLength
+    if (bar.effectiveModel !== undefined) step.effectiveModel = bar.effectiveModel
+  }
+
+  private setContextBar(bar: AgentContextBar): void {
+    this._contextBar = bar
+    const agentKey = this._agentId ?? this.currentRun?.id ?? ''
+    this.callbacks?.onContextBar?.(agentKey, { ...bar })
   }
 
   /**
-   * 用新步骤接替「正在准备」占位：带走 contextTokens / effective* / cacheHitRate，
-   * 避免流式开始瞬间 UI 缺字段回退到主模型或丢掉 Cache%。
+   * 请求启动：暂挂上轮 API 确认的 token/cache + 本轮拟用 model/limit。
+   * 换模型则丢掉旧 Cache%（不能张冠李戴）。
+   */
+  private publishPlannedContextBar(): void {
+    const plannedId =
+      this.resolveContextBudgetProfileId() ||
+      this.services.configService?.getActiveAiProfile()
+    const bar: AgentContextBar = {}
+    if (this._lastPromptTokens !== undefined) {
+      bar.contextTokens = this._lastPromptTokens
+    }
+    if (
+      this._lastCacheHitRate !== undefined &&
+      plannedId &&
+      this._lastStatsProfileId === plannedId
+    ) {
+      bar.cacheHitRate = this._lastCacheHitRate
+    } else if (plannedId && this._lastStatsProfileId && plannedId !== this._lastStatsProfileId) {
+      this._conversation?.setLastCacheHitRate(undefined)
+    }
+    this.applyProfileFieldsToContextBar(bar, plannedId)
+    this.setContextBar(bar)
+  }
+
+  /**
+   * 用新步骤接替「正在准备」占位。上下文栏已独立推送，这里只保证步骤流顺序
+   * （先 add 再 remove，避免前端 steps 瞬时为 0）。
    */
   private addStepReplacingInitial(
     run: AgentRun,
     step: Partial<AgentStep>,
-    effectiveProfileId?: string
+    _effectiveProfileId?: string
   ): AgentStep {
-    const initial = run.initialStepId
-      ? this.currentRun?.steps.find(s => s.id === run.initialStepId)
-      : undefined
-    const created = this.addStep({
-      ...step,
-      contextTokens: step.contextTokens ?? initial?.contextTokens,
-      cacheHitRate: step.cacheHitRate ?? initial?.cacheHitRate,
-      effectiveContextLength: step.effectiveContextLength ?? initial?.effectiveContextLength,
-      effectiveModel: step.effectiveModel ?? initial?.effectiveModel,
-    })
-    this.stampEffectiveProfileOnStep(created, effectiveProfileId)
+    const created = this.addStep(step)
     if (run.initialStepId) {
       this.removeStep(run.initialStepId)
       run.initialStepId = undefined
@@ -2409,18 +2428,21 @@ export abstract class Agent {
                 this.stampEffectiveProfileOnStep(targetStep, effectiveProfileId)
                 // API usage 是唯一真相源：有 cache 明细才显示，否则清空
                 const cacheTotal = (result.usage.cache_hit_tokens || 0) + (result.usage.cache_miss_tokens || 0)
+                const confirmedBar: AgentContextBar = {
+                  contextTokens: result.usage.prompt_tokens,
+                }
                 if (cacheTotal > 0 && result.usage.prompt_tokens > 0) {
-                  targetStep.cacheHitRate = Math.round((result.usage.cache_hit_tokens || 0) / result.usage.prompt_tokens * 100)
-                  this._conversation?.setLastCacheHitRate(targetStep.cacheHitRate)
+                  const rate = Math.round((result.usage.cache_hit_tokens || 0) / result.usage.prompt_tokens * 100)
+                  targetStep.cacheHitRate = rate
+                  confirmedBar.cacheHitRate = rate
+                  this._conversation?.setLastCacheHitRate(rate)
                 } else {
                   delete targetStep.cacheHitRate
                   this._conversation?.setLastCacheHitRate(undefined)
                 }
-                const confirmedId =
-                  effectiveProfileId ||
-                  this.resolveContextBudgetProfileId() ||
-                  this.services.configService?.getActiveAiProfile()
+                const confirmedId = this.applyProfileFieldsToContextBar(confirmedBar, effectiveProfileId)
                 if (confirmedId) this._lastStatsProfileId = confirmedId
+                this.setContextBar(confirmedBar)
                 this.callbacks?.onStep?.(this.currentRun?.id || '', targetStep)
               }
             }
@@ -2540,18 +2562,13 @@ export abstract class Agent {
               'agent.retry_network'
             const stepId = this.generateId()
             lastRetryStepId = stepId
-            this.addStep({
+            // 接替初始占位；上下文栏独立，删 step 不影响状态栏
+            this.addStepReplacingInitial(run, {
               id: stepId,
               type: 'waiting',
               content: `🔄 ${t(i18nKey, params)}`,
               isStreaming: true
-            })
-            // waiting 卡已经"接班"显示状态，再移除初始"正在准备..."步骤
-            // 顺序：先 add 再 remove，避免前端 steps 瞬时为 0 的中间态
-            if (run.initialStepId) {
-              this.removeStep(run.initialStepId)
-              run.initialStepId = undefined
-            }
+            }, effectiveProfileId)
           } else {
             // retryInfo 缺失（vision-fallback 等）：不展示 waiting 卡，但仍需清理
             // 初始占位步骤，否则"正在准备..."会在无 waiting 接班时孤立显示
