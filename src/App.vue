@@ -22,6 +22,7 @@ import SetupWizard from './components/SetupWizard.vue'
 import WelcomePage from './components/WelcomePage.vue'
 import SmartPatrolPage from './components/SmartPatrolPage.vue'
 import Toast from './components/common/Toast.vue'
+import UpdateNotifyCard from './components/common/UpdateNotifyCard.vue'
 import ConfirmDialog from './components/common/ConfirmDialog.vue'
 import SsoLoginGate from './components/Auth/SsoLoginGate.vue'
 import { useConfirm } from './composables/useConfirm'
@@ -34,6 +35,7 @@ import { createLogger } from './utils/logger'
 import { matchAccelerator } from './utils/shortcut'
 import { isAssistantConversationSurfaceVisible } from './utils/agent-tab-ui-meta'
 import { useAppUpdaterPrompts } from './composables/useAppUpdaterPrompts'
+import { installUpdateNotifyPreviewGlobal } from './composables/previewUpdateNotify'
 import {
   checkBondMilestonesOnStartup,
   showBondMilestoneToasts,
@@ -953,8 +955,10 @@ onMounted(async () => {
 
   void checkBondMilestonesOnStartup(t)
 
-  // 全局更新提醒（Toast + 下载完成确认弹窗）
+  // 全局更新提醒（右下角非打断角标卡）
   startUpdaterPrompts()
+  // DEV：DevTools 可调 window.__sailfishPreviewUpdateNotify('ready' | 'downloading' | 'available')
+  installUpdateNotifyPreviewGlobal()
 })
 
 // 初始化应用（正常启动流程）
@@ -1593,6 +1597,8 @@ onUnmounted(() => {
 
     <!-- 全局 Toast 提示 -->
     <Toast />
+    <!-- 更新提示：右下角非打断角标卡 -->
+    <UpdateNotifyCard />
 
     <!-- macOS ⌘Q 防误触提示 -->
     <Transition name="quit-toast">

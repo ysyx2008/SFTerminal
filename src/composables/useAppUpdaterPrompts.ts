@@ -1,7 +1,10 @@
 import { useI18n } from 'vue-i18n'
-import { showConfirm } from './useConfirm'
-import type { ConfirmDialogOptions } from './useConfirm'
 import { toast } from './useToast'
+import {
+  hideUpdateNotify,
+  patchUpdateNotify,
+  showUpdateNotify,
+} from './useUpdateNotify'
 import { createLogger } from '../utils/logger'
 import type { LocaleType } from '../i18n'
 import { getChangelogPageUrl, getDownloadPageUrl } from '../config/urls'
@@ -10,9 +13,9 @@ import { getReleaseSummary } from '../utils/releaseMeta'
 const log = createLogger('AppUpdater')
 
 /**
- * 全局更新提醒
- * - 发现新版本：弹窗（macOS 前往下载；Win/Linux 未开自动下载时弹窗引导下载）
- * - 下载完成：确认弹窗 —「立即安装」或「退出时安装」/「稍后提醒」
+ * 全局更新提醒（非打断右下角角标卡）
+ * - 发现新版本 / 下载中 / 已就绪：更新角标卡，不弹模态确认框
+ * - macOS：引导前往下载页；Win/Linux：下载或安装
  */
 export function useAppUpdaterPrompts() {
   const { t, locale } = useI18n()
@@ -20,24 +23,20 @@ export function useAppUpdaterPrompts() {
   const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 
   let cleanup: (() => void) | null = null
-  let lastMacAvailablePromptVersion = ''
-  let lastWinLinuxAvailablePromptVersion = ''
-  let installPromptOpen = false
+  /** 用户关掉下载中卡片后，直到 ready 不再弹出 downloading */
+  let hideDownloadingUntilReady = false
+  /** 已为该 version 展示过 ready/available，避免状态抖动反复弹出 */
+  let lastPresentedKey = ''
 
   function openChangelog(): void {
     window.open(getChangelogPageUrl(locale.value as LocaleType), '_blank')
   }
 
-  async function buildUpdatePromptOptions(
-    base: Omit<ConfirmDialogOptions, 'neutralText' | 'onNeutral' | 'detail'>,
-    version: string,
-  ): Promise<ConfirmDialogOptions> {
-    const summary = await getReleaseSummary(version, locale.value as LocaleType)
-    return {
-      ...base,
-      ...(summary ? { detail: summary } : {}),
-      neutralText: t('about.viewChangelog'),
-      onNeutral: openChangelog,
+  async function loadSummary(version: string): Promise<string> {
+    try {
+      return (await getReleaseSummary(version, locale.value as LocaleType)) || ''
+    } catch {
+      return ''
     }
   }
 
@@ -60,142 +59,205 @@ export function useAppUpdaterPrompts() {
     await window.electronAPI.config.set('dismissedUpdateVersion', version)
   }
 
-  async function handleLater(version: string): Promise<void> {
-    if (await isInstallOnQuitEnabled()) {
-      const result = await window.electronAPI.updater.deferInstall()
-      if (result.success) {
-        toast.info(t('about.updateDeferredToast', { version }), 6000)
-      } else {
-        toast.warning(t('about.updateError'))
-      }
+  function presentKey(phase: string, version: string): string {
+    return `${phase}:${version}`
+  }
+
+  async function dismissCard(version: string, phase: 'available' | 'downloading' | 'ready'): Promise<void> {
+    hideUpdateNotify()
+    if (phase === 'downloading') {
+      // 仅藏卡，下载继续；就绪后仍提示（除非用户再关掉并 snooze）
+      hideDownloadingUntilReady = true
       return
     }
+    // available / ready：关闭 = 稍后再说（不安排退出安装；要退出安装请点「退出时安装」）
     await snoozeVersion(version)
     toast.info(t('about.updateSnoozedToast'), 5000)
   }
 
-  async function laterButtonLabel(): Promise<string> {
-    return (await isInstallOnQuitEnabled())
-      ? t('about.installOnQuit')
-      : t('about.updateLater')
-  }
-
-  async function promptWinLinuxUpdateAvailable(version: string, status: UpdateStatusInfo): Promise<void> {
-    if (installPromptOpen) return
+  async function showAvailableCard(
+    version: string,
+    status: UpdateStatusInfo,
+    options?: { force?: boolean },
+  ): Promise<void> {
     if (await shouldSkipPrompt(version)) return
-    if (version === lastWinLinuxAvailablePromptVersion) return
+    const key = presentKey('available', version)
+    if (!options?.force && key === lastPresentedKey) return
+    lastPresentedKey = key
 
-    installPromptOpen = true
-    lastWinLinuxAvailablePromptVersion = version
-    try {
-      const startDownload = await showConfirm(await buildUpdatePromptOptions({
-        title: t('about.newVersionAvailable', { version }),
-        message: t('about.updateAvailableMessageManual', { version }),
-        confirmText: t('about.downloadUpdate'),
-        cancelText: t('about.updateLater'),
-        type: 'default',
-      }, version))
-      if (startDownload) {
-        const source = status.sources?.current ?? status.sources?.recommended
-        const result = await window.electronAPI.updater.downloadUpdate(source)
-        if (!result.success) {
-          toast.warning(result.error || t('about.updateError'))
-        }
-      } else {
-        await snoozeVersion(version)
-      }
-    } finally {
-      installPromptOpen = false
-    }
+    const summary = await loadSummary(version)
+    const installOnQuitEnabled = await isInstallOnQuitEnabled()
+
+    showUpdateNotify(
+      {
+        phase: 'available',
+        version,
+        summary,
+        isMac,
+        installOnQuitEnabled,
+        percent: 0,
+        transferred: 0,
+        total: 0,
+      },
+      {
+        onPrimary: async () => {
+          if (isMac) {
+            window.open(getDownloadPageUrl(locale.value as LocaleType), '_blank')
+            hideUpdateNotify()
+            return
+          }
+          const source = status.sources?.current ?? status.sources?.recommended
+          const result = await window.electronAPI.updater.downloadUpdate(source)
+          if (!result.success) {
+            // 允许同一版本再次点下载重试
+            lastPresentedKey = ''
+            toast.warning(result.error || t('about.updateError'))
+            return
+          }
+          // 进入 downloading 由 onStatusChanged 驱动
+        },
+        onSecondary: async () => {
+          await dismissCard(version, 'available')
+        },
+        onChangelog: openChangelog,
+        onDismiss: async () => {
+          await dismissCard(version, 'available')
+        },
+      },
+    )
   }
 
-  async function promptMacUpdateAvailable(version: string): Promise<void> {
-    if (installPromptOpen) return
+  async function showDownloadingCard(version: string, status: UpdateStatusInfo): Promise<void> {
+    if (hideDownloadingUntilReady) return
     if (await shouldSkipPrompt(version)) return
-    if (version === lastMacAvailablePromptVersion) return
 
-    installPromptOpen = true
-    lastMacAvailablePromptVersion = version
-    try {
-      const goDownload = await showConfirm(await buildUpdatePromptOptions({
-        title: t('about.newVersionAvailable', { version }),
-        message: t('about.updateReadyMessageMac', { version }),
-        confirmText: t('about.goToDownload'),
-        cancelText: t('about.updateLater'),
-        type: 'default',
-      }, version))
-      if (goDownload) {
-        window.open(getDownloadPageUrl(locale.value as LocaleType), '_blank')
-      } else {
-        await snoozeVersion(version)
-      }
-    } finally {
-      installPromptOpen = false
+    const key = presentKey('downloading', version)
+    const progress = status.progress
+    const percent = progress?.percent ?? 0
+    const transferred = progress?.transferred ?? 0
+    const total = progress?.total ?? 0
+
+    if (key !== lastPresentedKey) {
+      lastPresentedKey = key
+      showUpdateNotify(
+        {
+          phase: 'downloading',
+          version,
+          summary: '',
+          isMac: false,
+          installOnQuitEnabled: await isInstallOnQuitEnabled(),
+          percent,
+          transferred,
+          total,
+        },
+        {
+          onPrimary: async () => {},
+          onSecondary: async () => {},
+          onChangelog: openChangelog,
+          onDismiss: async () => {
+            await dismissCard(version, 'downloading')
+          },
+        },
+      )
+      return
     }
+
+    patchUpdateNotify({ percent, transferred, total })
   }
 
-  async function promptInstallReady(version: string): Promise<void> {
-    if (installPromptOpen) return
+  async function showReadyCard(version: string): Promise<void> {
     if (await shouldSkipPrompt(version)) return
 
     const deferred = await window.electronAPI.updater.isInstallDeferred()
     if (deferred.deferred && deferred.version === version) {
+      hideUpdateNotify()
       return
     }
 
-    installPromptOpen = true
-    try {
-      if (isMac) {
-        const goDownload = await showConfirm(await buildUpdatePromptOptions({
-          title: t('about.updateReadyTitle'),
-          message: t('about.updateReadyMessageMac', { version }),
-          confirmText: t('about.goToDownload'),
-          cancelText: t('about.updateLater'),
-          type: 'default',
-        }, version))
-        if (goDownload) {
-          window.open(getDownloadPageUrl(locale.value as LocaleType), '_blank')
-        } else {
-          await snoozeVersion(version)
-        }
-        return
-      }
+    hideDownloadingUntilReady = false
+    const key = presentKey('ready', version)
+    if (key === lastPresentedKey) return
+    lastPresentedKey = key
 
-      const installOnQuit = await isInstallOnQuitEnabled()
-      const installNow = await showConfirm(await buildUpdatePromptOptions({
-        title: t('about.updateReadyTitle'),
-        message: installOnQuit
-          ? t('about.updateReadyMessage', { version })
-          : t('about.updateReadyMessageNoQuit', { version }),
-        confirmText: t('about.installAndRestart'),
-        cancelText: await laterButtonLabel(),
-        type: 'default',
-      }, version))
-      if (installNow) {
-        await window.electronAPI.updater.quitAndInstall()
-      } else {
-        await handleLater(version)
-      }
-    } finally {
-      installPromptOpen = false
+    if (isMac) {
+      // Mac 无 quitAndInstall；force 展示「前往下载」，避免与先前 available 幂等键冲突导致漏弹
+      await showAvailableCard(version, { status: 'available', info: { version } }, { force: true })
+      return
     }
+
+    const installOnQuitEnabled = await isInstallOnQuitEnabled()
+
+    showUpdateNotify(
+      {
+        phase: 'ready',
+        version,
+        summary: '',
+        isMac: false,
+        installOnQuitEnabled,
+        percent: 100,
+        transferred: 0,
+        total: 0,
+      },
+      {
+        onPrimary: async () => {
+          await window.electronAPI.updater.quitAndInstall()
+        },
+        onSecondary: async () => {
+          if (installOnQuitEnabled) {
+            const result = await window.electronAPI.updater.deferInstall()
+            hideUpdateNotify()
+            // 同步占位，避免随后 downloaded 事件抖动再次弹卡
+            lastPresentedKey = presentKey('ready', version)
+            if (result.success) {
+              toast.info(t('about.updateDeferredToast', { version }), 6000)
+            } else {
+              toast.warning(t('about.updateError'))
+            }
+            return
+          }
+          // 未开启「退出时安装」时，次按钮即「稍后提醒」
+          await dismissCard(version, 'ready')
+        },
+        onChangelog: openChangelog,
+        onDismiss: async () => {
+          await dismissCard(version, 'ready')
+        },
+      },
+    )
   }
 
   async function handleStatus(status: UpdateStatusInfo): Promise<void> {
     const version = status.info?.version
+
+    if (status.status === 'error') {
+      hideUpdateNotify()
+      hideDownloadingUntilReady = false
+      // 放开幂等键，便于用户从「设置 → 关于」或下次 available 再试
+      lastPresentedKey = ''
+      toast.warning(status.error || t('about.updateError'))
+      return
+    }
+
     if (!version) return
 
     if (status.status === 'available') {
       if (isMac) {
-        await promptMacUpdateAvailable(version)
+        await showAvailableCard(version, status)
       } else if (!(await isAutoDownloadEnabled())) {
-        await promptWinLinuxUpdateAvailable(version, status)
+        await showAvailableCard(version, status)
+      }
+      return
+    }
+
+    if (status.status === 'downloading') {
+      if (!isMac) {
+        await showDownloadingCard(version, status)
       }
       return
     }
 
     if (status.status === 'downloaded') {
-      await promptInstallReady(version)
+      await showReadyCard(version)
     }
   }
 
@@ -210,15 +272,16 @@ export function useAppUpdaterPrompts() {
     })
 
     void window.electronAPI.updater.getStatus().then(async (status) => {
-      if (status.status === 'downloaded' && status.info?.version) {
-        await promptInstallReady(status.info.version)
-      }
+      await handleStatus(status)
     }).catch(() => { /* ignore */ })
   }
 
   function stop(): void {
     cleanup?.()
     cleanup = null
+    hideUpdateNotify()
+    lastPresentedKey = ''
+    hideDownloadingUntilReady = false
   }
 
   return { start, stop }
