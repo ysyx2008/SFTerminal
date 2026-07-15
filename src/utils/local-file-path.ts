@@ -59,8 +59,19 @@ export function isLocalFilePath(text: string): boolean {
   if (trimmed.length < 2) return false
   // 排除 HTTP(S) URL（例如 "p://localhost" 误匹配 Windows 盘符模式）
   if (/^https?:\/\//i.test(trimmed)) return false
-  // shell 重定向目标，不是用户要打开的文件
-  if (trimmed === '/dev/null' || trimmed === '/dev/null/') return false
+  // shell 标准 fd 设备（重定向/ -D 目标），不是用户要点开的文件；保留 /dev/disk* 等
+  if (
+    trimmed === '/dev/null' ||
+    trimmed === '/dev/null/' ||
+    trimmed === '/dev/stdin' ||
+    trimmed === '/dev/stdin/' ||
+    trimmed === '/dev/stdout' ||
+    trimmed === '/dev/stdout/' ||
+    trimmed === '/dev/stderr' ||
+    trimmed === '/dev/stderr/'
+  ) {
+    return false
+  }
   // 路径中不允许的字符：HTML 标签符号、shell 通配符、双引号、控制字符
   const illegal = /[<>*?"\n\r\t]/
   if (illegal.test(trimmed)) return false
@@ -81,6 +92,7 @@ export function isLocalFilePath(text: string): boolean {
 /**
  * 匹配结果后处理：去掉误吞的尾巴。
  * - 尾随空格
+ * - 空格 + http(s)：SEG 含空格会把后面的 URL scheme 吞进末段
  * - 空格 + CJK：中文正文
  * - 空格 + 数字：shell fd（`2>`）
  * - 空格 + `-…`：CLI 选项（`Desktop -maxdepth`）
@@ -88,6 +100,12 @@ export function isLocalFilePath(text: string): boolean {
  */
 export function trimPathOvermatch(path: string): string {
   let result = path.replace(/ +$/, '')
+
+  // `/dev/stderr https://…`：`:` 不在 SEG，贪婪常止于 ` https` / ` http`
+  const schemeCut = result.search(/ https?/i)
+  if (schemeCut !== -1) {
+    result = result.slice(0, schemeCut)
+  }
 
   const cjkCut = result.search(/ [\u4e00-\u9fff\u3000-\u303f]/)
   if (cjkCut !== -1) {
@@ -128,6 +146,39 @@ export function normalizeUncForOpen(path: string): string {
 }
 
 /**
+ * 裸路径须落在 token 边界：`/` / `~` 前若仍是路径/URL 续写字符
+ * （如 `https://host/path` 里的 `/path`、`foo/bar`），则不链接。
+ * 允许：行首、空白、引号、shell/标点分隔符。
+ */
+export function isBarePathTokenStart(text: string, index: number): boolean {
+  if (index <= 0) return true
+  const prev = text[index - 1]!
+  // 续写字符：字母数字、路径分隔、点横线 —— 挡住 `https://host/path`、`foo/bar`
+  if (/[A-Za-z0-9._\-/\\]/.test(prev)) return false
+  return true
+}
+
+/**
+ * 裸路径扫描的 lastIndex 推进：边界失败只前进 1，避免贪婪匹配吞掉后续真路径
+ *（例：`https://example.com/x -o /Users/a/b` 曾一次吃掉整段）。
+ */
+export function advanceBarePathScan(
+  text: string,
+  matchIndex: number,
+  rawMatch: string,
+  finalized: string | null
+): number {
+  if (finalized) return matchIndex + Math.max(finalized.length, 1)
+  if (!isBarePathTokenStart(text, matchIndex)) return matchIndex + 1
+  // 裁短后仍非法（如 /dev/stderr）：跳过裁短段，勿用 raw 全长吞掉后面的 URL
+  const trimmed = trimPathOvermatch(rawMatch)
+  if (trimmed.length > 0 && trimmed.length < rawMatch.length) {
+    return matchIndex + Math.max(trimmed.length, 1)
+  }
+  return matchIndex + Math.max(rawMatch.length, 1)
+}
+
+/**
  * 将一次正则命中收成最终可链接路径；不可链接时返回 null。
  * 后继若是 shell glob（* ? [）则整段不链接——通配路径不试图「猜父目录」。
  */
@@ -136,6 +187,7 @@ export function finalizeBarePathMatch(
   text: string,
   index: number
 ): string | null {
+  if (!isBarePathTokenStart(text, index)) return null
   const path = trimPathOvermatch(rawMatch)
   if (!isLocalFilePath(path)) return null
   const next = text[index + path.length]
@@ -152,9 +204,9 @@ export function matchBareFilePaths(text: string): string[] {
   let m: RegExpExecArray | null
   while ((m = pattern.exec(text)) !== null) {
     const path = finalizeBarePathMatch(m[0], text, m.index)
+    pattern.lastIndex = advanceBarePathScan(text, m.index, m[0], path)
     if (!path) continue
     out.push(path)
-    pattern.lastIndex = m.index + Math.max(path.length, 1)
   }
   return out
 }

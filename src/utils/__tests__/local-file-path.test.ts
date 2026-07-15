@@ -117,6 +117,24 @@ describe('matchBareFilePaths', () => {
     expect(isLocalFilePath('/dev/null')).toBe(false)
   })
 
+  it('does not link /dev/stderr /dev/stdout (stdio devices)', () => {
+    expect(isLocalFilePath('/dev/stderr')).toBe(false)
+    expect(isLocalFilePath('/dev/stdout')).toBe(false)
+    expect(isLocalFilePath('/dev/stdin')).toBe(false)
+    expect(matchBareFilePaths('-D /dev/stderr')).toEqual([])
+  })
+
+  it('still links other /dev paths (e.g. disk nodes)', () => {
+    expect(isLocalFilePath('/dev/disk0')).toBe(true)
+    expect(matchBareFilePaths('inspect /dev/disk0')).toEqual(['/dev/disk0'])
+  })
+
+  it('does not swallow https URL after /dev/stderr', () => {
+    const cmd =
+      'curl -D /dev/stderr https://cwbx.gyzq.com.cn:8068/service/OAlogin 2>&1'
+    expect(matchBareFilePaths(cmd)).toEqual([])
+  })
+
   it('does not link Chinese slash-delimited prose', () => {
     expect(
       matchBareFilePaths('表头（序号/分类/问题/选项/填报说明/F/G）')
@@ -131,5 +149,32 @@ describe('matchBareFilePaths', () => {
       '\\nas\\media\\movies\\Inception.mkv',
     ])
     expect(matchBareFilePaths('\\\\server\\share')).toEqual(['\\\\server\\share'])
+  })
+
+  it('does not treat URL path segments as local paths', () => {
+    expect(
+      matchBareFilePaths(
+        'curl -s "https://open.kuaicha365.com/skills/" 2>/dev/null | head -100'
+      )
+    ).toEqual([])
+    expect(
+      matchBareFilePaths('see http://example.com/a/b/c.txt for details')
+    ).toEqual([])
+  })
+
+  it('still finds local path after a URL in the same line', () => {
+    expect(
+      matchBareFilePaths('curl https://example.com/x -o /Users/a/b/out.txt')
+    ).toEqual(['/Users/a/b/out.txt'])
+  })
+
+  it('still links absolute paths after delimiters (space / equals / colon)', () => {
+    expect(matchBareFilePaths('cd /Users/a/b/c')).toEqual(['/Users/a/b/c'])
+    expect(matchBareFilePaths('PATH=/Users/a/bin/tool')).toEqual([
+      '/Users/a/bin/tool',
+    ])
+    expect(matchBareFilePaths('读取文件:/Users/a/b/out.txt')).toEqual([
+      '/Users/a/b/out.txt',
+    ])
   })
 })

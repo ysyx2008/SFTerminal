@@ -6,6 +6,7 @@ import { marked, type Token } from 'marked'
 import { useTerminalStore } from '../stores/terminal'
 import { toast } from './useToast'
 import {
+  advanceBarePathScan,
   createBareFilePathPattern,
   finalizeBarePathMatch,
   isLocalFilePath,
@@ -394,16 +395,24 @@ const wrapBareFilePaths = (html: string): string => {
     // 在 <a>、<code>、<pre> 内不做处理
     if (depth.a > 0 || depth.code > 0 || depth.pre > 0) return part
 
-    return part.replace(filePathPattern, (match, offset, haystack) => {
-      // 无捕获组时回调为 (match, offset, string)
-      const index = typeof offset === 'number' ? offset : 0
-      const source = typeof haystack === 'string' ? haystack : part
-      const path = finalizeBarePathMatch(match, source, index)
-      if (!path) return match
-      const suffix = match.slice(path.length)
+    // 不用 String.replace：边界失败时须 lastIndex+1，否则贪婪匹配会吞掉后续真路径
+    const out: string[] = []
+    let last = 0
+    let m: RegExpExecArray | null
+    filePathPattern.lastIndex = 0
+    while ((m = filePathPattern.exec(part)) !== null) {
+      const path = finalizeBarePathMatch(m[0], part, m.index)
+      filePathPattern.lastIndex = advanceBarePathScan(part, m.index, m[0], path)
+      if (!path) continue
+      if (m.index > last) out.push(part.slice(last, m.index))
       const openPath = normalizeUncForOpen(path)
-      return `<a class="file-path-link" data-file-path="${escapeAttr(openPath)}" title="点击打开文件">${path}</a>${suffix}`
-    })
+      out.push(
+        `<a class="file-path-link" data-file-path="${escapeAttr(openPath)}" title="点击打开文件">${path}</a>`
+      )
+      last = m.index + path.length
+    }
+    if (last < part.length) out.push(part.slice(last))
+    return out.length > 0 ? out.join('') : part
   }).join('')
 }
 

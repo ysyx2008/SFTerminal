@@ -137,4 +137,47 @@ describe('splitToolCallContent — path', () => {
       { kind: 'text', text: '执行命令: ls -la' },
     ])
   })
+
+  it('execute_command: 裸 http(s) URL 可点击，不把 URL 路径误当本地路径', () => {
+    const content =
+      '执行命令: curl -s "https://open.kuaicha365.com/skills/" 2>/dev/null | head -100'
+    const segs = splitToolCallContent(content, { command: 'curl ...' })
+    expect(segs).toEqual([
+      { kind: 'text', text: '执行命令: curl -s "' },
+      { kind: 'url', url: 'https://open.kuaicha365.com/skills/' },
+      { kind: 'text', text: '" 2>/dev/null | head -100' },
+    ])
+  })
+
+  it('裸 URL 与本地路径可同时识别', () => {
+    const segs = splitToolCallContent(
+      'curl https://example.com/x -o /Users/a/b/out.txt',
+      { command: 'curl ...' }
+    )
+    expect(segs).toEqual([
+      { kind: 'text', text: 'curl ' },
+      { kind: 'url', url: 'https://example.com/x' },
+      { kind: 'text', text: ' -o ' },
+      {
+        kind: 'path',
+        path: '/Users/a/b/out.txt',
+        display: '/Users/a/b/out.txt',
+      },
+    ])
+  })
+
+  it('/dev/stderr 不链接，且不吞掉其后 URL', () => {
+    const content =
+      '执行命令: curl -D /dev/stderr https://cwbx.gyzq.com.cn:8068/service/OAlogin 2>&1'
+    const segs = splitToolCallContent(content, { command: 'curl ...' })
+    expect(segs.find((s) => s.kind === 'path')).toBeUndefined()
+    expect(segs).toEqual([
+      { kind: 'text', text: '执行命令: curl -D /dev/stderr ' },
+      {
+        kind: 'url',
+        url: 'https://cwbx.gyzq.com.cn:8068/service/OAlogin',
+      },
+      { kind: 'text', text: ' 2>&1' },
+    ])
+  })
 })
