@@ -182,6 +182,12 @@ export abstract class Agent {
   /** 「本次允许」工具白名单（Agent 实例内存，跨 Run；关 tab / 重启清空） */
   private allowedTools = new Set<string>()
 
+  /**
+   * 上一次 API usage 写入时的拟用 profileId。
+   * 仅用于「下一轮启动若拟用模型变了 → 丢掉旧 Cache%」，避免文/视混挂。
+   */
+  private _lastStatsProfileId?: string
+
   /** 上下文窗口管理协作者(token估算/压力/压缩/工具序列修复)。构造时装配,见 _contextWindow。 */
   private _contextWindow!: ContextWindowManager
 
@@ -357,9 +363,6 @@ export abstract class Agent {
       this.profileId = options.profileId
     }
 
-    // 清除上一轮 run 的缓存显示数据，避免跨 run 显示旧值（加载历史、切换模型等场景）
-    this._conversation?.setLastCacheHitRate(undefined)
-    
     const run = this.initializeRun(message, context, options)
     const taskPreview = message.length > 80 ? message.slice(0, 80) + '...' : message
     log.info(`Task started: runId=${run.id}, ptyId=${run.ptyId}, mode=${this.executionMode}, task="${taskPreview}"`)
@@ -757,15 +760,25 @@ export abstract class Agent {
       }
     }
 
-    // 历史恢复后再锁定「拟用模型」上下文展示：沿用上一轮精确 token + 视觉/主模型 profile
-    // （若放在 restore 之前，冷启动时看不到历史带图，会误显示文字模型 1000K）
+    // 历史恢复后：把上一轮 API 已确认的 token/cache 挂到占位 step，并 stamp 本轮拟用模型。
+    // 不在每次 run 开头清空——空窗期沿用上轮真实值；换模型时丢掉 Cache%（不能张冠李戴）。
+    // 本轮 usage 到了仍只在 onDone 里更新（API 是唯一真相源）。
+    const plannedId =
+      this.resolveContextBudgetProfileId() ||
+      this.services.configService?.getActiveAiProfile()
     if (this._lastPromptTokens !== undefined) {
       initialStep.contextTokens = this._lastPromptTokens
-      if (this._lastCacheHitRate !== undefined) {
-        initialStep.cacheHitRate = this._lastCacheHitRate
-      }
     }
-    this.stampEffectiveProfileOnStep(initialStep)
+    if (
+      this._lastCacheHitRate !== undefined &&
+      plannedId &&
+      this._lastStatsProfileId === plannedId
+    ) {
+      initialStep.cacheHitRate = this._lastCacheHitRate
+    } else if (plannedId && this._lastStatsProfileId && plannedId !== this._lastStatsProfileId) {
+      this._conversation?.setLastCacheHitRate(undefined)
+    }
+    this.stampEffectiveProfileOnStep(initialStep, plannedId)
     this.callbacks?.onStep?.(this._agentId ?? run.id, initialStep)
     
     // 设置终端输出监听器
@@ -1202,6 +1215,7 @@ export abstract class Agent {
     // 置空会话聚合根（身份/transcript/cache/token 随之全部失效），并清空 Agent 持有的工作记忆。
     // 下一次 run 会以全新 session 重建会话。
     this._conversation = undefined
+    this._lastStatsProfileId = undefined
     this.taskMemory.clear()
   }
 
@@ -1215,6 +1229,7 @@ export abstract class Agent {
     // 仅置空会话聚合根（下次 run 建新 session 记录）；**不**清 taskMemory——
     // 下次 run 创建新会话时注入同一个（保留的）store，维持「跨 session 记忆」语义。
     this._conversation = undefined
+    this._lastStatsProfileId = undefined
   }
 
   
@@ -2059,13 +2074,41 @@ export abstract class Agent {
   }
 
   /** 把拟用模型的 contextLength / name 写入 step，供前端状态栏展示 */
-  private stampEffectiveProfileOnStep(step: AgentStep): void {
+  private stampEffectiveProfileOnStep(step: AgentStep, profileId?: string): void {
     const configService = this.services.configService
     if (!configService) return
-    const effectiveId = this.resolveContextBudgetProfileId() || configService.getActiveAiProfile()
+    const effectiveId =
+      profileId || this.resolveContextBudgetProfileId() || configService.getActiveAiProfile()
     const profile = configService.getAiProfiles().find(p => p.id === effectiveId)
     if (profile?.contextLength) step.effectiveContextLength = profile.contextLength
     if (profile?.name) step.effectiveModel = profile.name
+  }
+
+  /**
+   * 用新步骤接替「正在准备」占位：带走 contextTokens / effective* / cacheHitRate，
+   * 避免流式开始瞬间 UI 缺字段回退到主模型或丢掉 Cache%。
+   */
+  private addStepReplacingInitial(
+    run: AgentRun,
+    step: Partial<AgentStep>,
+    effectiveProfileId?: string
+  ): AgentStep {
+    const initial = run.initialStepId
+      ? this.currentRun?.steps.find(s => s.id === run.initialStepId)
+      : undefined
+    const created = this.addStep({
+      ...step,
+      contextTokens: step.contextTokens ?? initial?.contextTokens,
+      cacheHitRate: step.cacheHitRate ?? initial?.cacheHitRate,
+      effectiveContextLength: step.effectiveContextLength ?? initial?.effectiveContextLength,
+      effectiveModel: step.effectiveModel ?? initial?.effectiveModel,
+    })
+    this.stampEffectiveProfileOnStep(created, effectiveProfileId)
+    if (run.initialStepId) {
+      this.removeStep(run.initialStepId)
+      run.initialStepId = undefined
+    }
+    return created
   }
 
   /**
@@ -2264,16 +2307,13 @@ export abstract class Agent {
             clearSlowTtftTimer()
             // 重试成功：把上一次的"正在重试..."提示定稿（保留卡片但停掉 spinner）
             finalizeRetryStep()
-            this.addStep({
+            // 接替 initial 占位时带走 contextTokens/effective*，否则流式阶段 UI 会回退主模型
+            this.addStepReplacingInitial(run, {
               id: streamStepId,
               type: 'message',
               content: streamContent,
               isStreaming: true,
-            })
-            if (run.initialStepId) {
-              this.removeStep(run.initialStepId)
-              run.initialStepId = undefined
-            }
+            }, effectiveProfileId)
             lastContentUpdate = Date.now()
             return
           }
@@ -2342,12 +2382,12 @@ export abstract class Agent {
               isStreaming: false
             })
           } else if (!streamStepCreated && finalContent) {
-            this.addStep({
+            this.addStepReplacingInitial(run, {
               id: streamStepId,
               type: 'message',
               content: finalContent,
               isStreaming: false
-            })
+            }, effectiveProfileId)
             streamStepCreated = true
           }
 
@@ -2366,22 +2406,21 @@ export abstract class Agent {
               }
               if (targetStep) {
                 targetStep.contextTokens = result.usage.prompt_tokens
-                // 记录本次调用实际使用的模型信息（视觉路由切换时与 activeAiProfile 不同）
-                const effectiveProfile = this.services.configService
-                  ?.getAiProfiles()?.find(p => p.id === effectiveProfileId)
-                if (effectiveProfile?.contextLength) {
-                  targetStep.effectiveContextLength = effectiveProfile.contextLength
-                }
-                if (effectiveProfile?.name) {
-                  targetStep.effectiveModel = effectiveProfile.name
-                }
+                this.stampEffectiveProfileOnStep(targetStep, effectiveProfileId)
+                // API usage 是唯一真相源：有 cache 明细才显示，否则清空
                 const cacheTotal = (result.usage.cache_hit_tokens || 0) + (result.usage.cache_miss_tokens || 0)
                 if (cacheTotal > 0 && result.usage.prompt_tokens > 0) {
                   targetStep.cacheHitRate = Math.round((result.usage.cache_hit_tokens || 0) / result.usage.prompt_tokens * 100)
                   this._conversation?.setLastCacheHitRate(targetStep.cacheHitRate)
                 } else {
+                  delete targetStep.cacheHitRate
                   this._conversation?.setLastCacheHitRate(undefined)
                 }
+                const confirmedId =
+                  effectiveProfileId ||
+                  this.resolveContextBudgetProfileId() ||
+                  this.services.configService?.getActiveAiProfile()
+                if (confirmedId) this._lastStatsProfileId = confirmedId
                 this.callbacks?.onStep?.(this.currentRun?.id || '', targetStep)
               }
             }
@@ -2445,19 +2484,16 @@ export abstract class Agent {
           if (!stepId) {
             stepId = this.generateId()
             run.pendingPreToolCallStepIds.set(toolCallId, stepId)
-            // 先创建 tool_call 卡片再移除初始步骤，避免前端 steps 出现瞬时为 0 的中间态
-            this.addStep({
+            // 先创建 tool_call 卡片再移除初始步骤，避免前端 steps 出现瞬时为 0 的中间态；
+            // 同时带走 effective*，避免「只出工具不出正文」时状态栏闪回文字模型
+            this.addStepReplacingInitial(run, {
               id: stepId,
               type: 'tool_call',
               content: displayContent,
               toolName,
               toolCallId,
               isStreaming: true
-            })
-            if (run.initialStepId) {
-              this.removeStep(run.initialStepId)
-              run.initialStepId = undefined
-            }
+            }, effectiveProfileId)
           } else {
             this.updateStep(stepId, {
               type: 'tool_call',

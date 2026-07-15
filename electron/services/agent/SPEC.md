@@ -239,7 +239,9 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 - 纯函数 `resolveBudgetProfileId`（`vision-routing.ts`）是唯一真相源
 - 有图判定复用既有 `conversationContainsImages`：已组装 messages（或缺省时 `_previousRunMessages`）+ 本轮 `context.images`；不扫 taskMemory（冷启动偶发低估靠下方 emergencyCompress 兜底）
 - `ContextWindowManager.getContextLength`（经 deps.getProfileId）/ cache path 70% 门槛 / tool-output-budget / proactiveCompress 均走预算 profile
-- 请求启动时（`initializeRun` 初始 step）与 `reportUsage` 写入 `effectiveContextLength` / `effectiveModel`，避免 UI 回退到文字模型的 1000K
+- 请求启动时：挂上轮 API 已确认的 token/cache 到占位 step，并 stamp 本轮拟用 model/limit；换模型则丢掉旧 Cache%
+- 流式接替占位用 `addStepReplacingInitial` 带走字段，避免空窗回退
+- 本轮 usage 仍在 onDone 内联更新（API 唯一真相源：有 cache 明细才写，否则清空）
 
 否则会出现：按 DeepSeek 1000K 复用 ~260K 前缀 → 实际打到豆包 256K → `exceed max message tokens`。
 
