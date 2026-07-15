@@ -156,6 +156,8 @@ describe('PromptBuilder', () => {
       const prompt = builder.build()
       
       expect(prompt).toContain('旗鱼（SailFish）AI Agent')
+      expect(prompt).toContain('软件启动时间：')
+      expect(prompt).toMatch(/软件启动时间：\d{4}-\d{2}-\d{2} \d{2}:\d{2} 周[日一二三四五六]/)
       expect(prompt).toContain('darwin')
       expect(prompt).toContain('zsh')
     })

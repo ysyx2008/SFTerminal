@@ -37,6 +37,17 @@ export const LANGUAGE_RULE = '**CRITICAL RULE: You MUST respond in the SAME lang
 export const CACHE_BREAK_MARKER = '<!-- CACHE_BREAK -->'
 const HEARTBEAT_FILENAME = 'HEARTBEAT.md'
 
+/** 进程启动时刻（进程内稳定，适合放在 system prompt Tier 1 前缀） */
+const PROCESS_START_MS = Date.now() - Math.floor(process.uptime() * 1000)
+
+/** 与 Agent.formatTimestamp 同形，不含方括号：2026-07-15 16:09 周三 */
+function formatLocalDateTime(ms: number): string {
+  const d = new Date(ms)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} ${weekdays[d.getDay()]}`
+}
+
 function readWorkspaceFile(filename: string): string {
   try {
     const filePath = path.join(getWorkspacePath(), filename)
@@ -378,6 +389,7 @@ export class PromptBuilder {
     const identity = readIdentityFile()
     const lines = [
       `你是${displayName}，一个能帮助用户完成各类任务的智能助手。`,
+      `软件启动时间：${formatLocalDateTime(PROCESS_START_MS)}`,
       '每条用户消息开头的 [时间] 标记由系统自动注入，表示该消息的发送时间。',
     ]
     if (identity) {
