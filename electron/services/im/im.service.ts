@@ -40,6 +40,7 @@ import { WeComAdapter } from './wecom-adapter'
 import { WeChatAdapter } from './wechat-adapter'
 import type { AgentService } from '../agent'
 import { IMAGE_MIME_TYPES, VISION_IMAGE_EXTENSIONS } from '../agent/tools/types'
+import { getDocumentParserService, type ParsedDocument } from '../document-parser.service'
 import { getConfigService } from '../config.service'
 import { t } from '../agent/i18n'
 import { createLogger } from '../../utils/logger'
@@ -51,28 +52,44 @@ const log = createLogger('IMService')
 /** 与 read_file 图片上限一致：超过则走附件文本路径，不内联为多模态 */
 const IM_VISION_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 
-/** IM 入站附件 → AgentContext.images / attachments */
+/** 桌面上传可解析的文档扩展名（与 DocumentParserService.detectFileType 对齐） */
+const PARSEABLE_DOC_EXTENSIONS = new Set([
+  '.pdf', '.docx', '.doc', '.xlsx', '.xls',
+  '.txt', '.md', '.markdown', '.json', '.xml', '.html', '.htm', '.csv',
+])
+
+/** IM 入站附件 → AgentContext.images / attachments / documentContext */
 export interface ImAgentMediaContext {
-  /** Vision data URL，供桌面气泡直接展示 + 多模态发给视觉模型 */
+  /** Vision data URL（含文档内嵌图），发给视觉模型 */
   images: string[]
-  /** 非图片（或内联失败）的附件元信息，供 UI chip 展示 */
+  /** 用户气泡预览图（纯图 + PDF 页预览；不含 Word 内嵌图） */
+  previewImages: string[]
+  /** 附件元信息，供 UI chip 展示 */
   attachments: AttachmentInfo[]
-  /** 已成功内联为 images 的本地路径，buildAgentMessage 应从文本列表中剔除 */
-  inlinedImagePaths: Set<string>
+  /** 已内联为图片或已解析为 documentContext 的本地路径，应从文案列表剔除 */
+  consumedPaths: Set<string>
+  /** 解析后的文档上下文（sf_uploaded_docs），对齐桌面上传 */
+  documentContext?: string
 }
 
 /**
- * 将 IM 附件拆成「视觉内联图片」与「普通附件」。
- * 常见图片格式读成 base64 data URL，与桌面上传路径对齐，使联络气泡可直接显示缩略图。
+ * 将 IM 附件拆成「视觉内联图片 / 解析文档 / 普通附件」。
+ * 图片 → data URL；PDF/Word/文本等 → DocumentParser + formatAsContext。
  */
-export function prepareImAgentMedia(attachments: IMAttachment[] | undefined): ImAgentMediaContext {
+export async function prepareImAgentMedia(
+  attachments: IMAttachment[] | undefined,
+): Promise<ImAgentMediaContext> {
   const images: string[] = []
+  const previewImages: string[] = []
   const attachmentInfos: AttachmentInfo[] = []
-  const inlinedImagePaths = new Set<string>()
+  const consumedPaths = new Set<string>()
+  const parsedDocs: ParsedDocument[] = []
 
   if (!attachments?.length) {
-    return { images, attachments: attachmentInfos, inlinedImagePaths }
+    return { images, previewImages, attachments: attachmentInfos, consumedPaths }
   }
+
+  const docsToParse: Array<{ attachment: IMAttachment; fileSize: number }> = []
 
   for (const a of attachments) {
     let fileSize = 0
@@ -81,27 +98,37 @@ export function prepareImAgentMedia(attachments: IMAttachment[] | undefined): Im
         fileSize = fs.statSync(a.localPath).size
       }
     } catch {
-      // 读元数据失败时仍尝试走附件路径
+      // 读元数据失败时仍尝试后续路径
     }
 
     const ext = path.extname(a.fileName || a.localPath).toLowerCase()
     const mime = IMAGE_MIME_TYPES[ext]
-    const canInline =
+    const canInlineImage =
       a.type === 'image'
       && !!mime
       && VISION_IMAGE_EXTENSIONS.has(ext)
       && fileSize > 0
       && fileSize <= IM_VISION_IMAGE_MAX_BYTES
 
-    if (canInline) {
+    if (canInlineImage) {
       try {
         const buf = fs.readFileSync(a.localPath)
-        images.push(`data:${mime};base64,${buf.toString('base64')}`)
-        inlinedImagePaths.add(a.localPath)
+        const dataUrl = `data:${mime};base64,${buf.toString('base64')}`
+        images.push(dataUrl)
+        previewImages.push(dataUrl)
+        consumedPaths.add(a.localPath)
         continue
       } catch (err) {
         log.warn(`Failed to inline IM image ${a.localPath}:`, err)
       }
+    }
+
+    // 图片内联失败会 fallthrough 到此：非音视频且扩展名可解析时排队解析
+    // （含误标为 image 的 pdf 等）；音视频 / 未知扩展名走附件 chip
+    const isBinaryMedia = a.type === 'audio' || a.type === 'video'
+    if (!isBinaryMedia && PARSEABLE_DOC_EXTENSIONS.has(ext) && fileSize > 0) {
+      docsToParse.push({ attachment: a, fileSize })
+      continue
     }
 
     attachmentInfos.push({
@@ -112,7 +139,87 @@ export function prepareImAgentMedia(attachments: IMAttachment[] | undefined): Im
     })
   }
 
-  return { images, attachments: attachmentInfos, inlinedImagePaths }
+  if (docsToParse.length > 0) {
+    const parser = getDocumentParserService()
+    let extractImages = false
+    try {
+      extractImages = getConfigService().hasVisionCapability()
+    } catch {
+      extractImages = false
+    }
+    for (const { attachment: a, fileSize } of docsToParse) {
+      try {
+        const doc = await parser.parseDocument(
+          {
+            name: a.fileName,
+            path: a.localPath,
+            size: fileSize,
+          },
+          { extractImages },
+        )
+        parsedDocs.push(doc)
+        consumedPaths.add(a.localPath)
+
+        if (doc.images?.length) {
+          images.push(...doc.images)
+          // Word 内嵌图只进 images（给视觉模型），不进 previewImages（不宜做气泡缩略）
+          if (doc.fileType === 'pdf') {
+            previewImages.push(...doc.images)
+          }
+        }
+
+        attachmentInfos.push({
+          filename: doc.filename,
+          filePath: doc.filePath || a.localPath,
+          fileSize: doc.fileSize || fileSize,
+          fileType: doc.fileType,
+          totalPages: doc.totalPages || doc.pageCount,
+          previewPages: doc.images?.length,
+        })
+      } catch (err) {
+        log.warn(`Failed to parse IM document ${a.localPath}:`, err)
+        attachmentInfos.push({
+          filename: a.fileName,
+          filePath: a.localPath,
+          fileSize,
+          fileType: path.extname(a.fileName || a.localPath).replace(/^\./, '') || a.type,
+        })
+      }
+    }
+  }
+
+  let documentContext: string | undefined
+  if (parsedDocs.length > 0) {
+    const parser = getDocumentParserService()
+    const textCtx = parser.formatAsContext(parsedDocs)
+    const imageHint = formatParsedDocImageHints(parsedDocs)
+    documentContext = [textCtx, imageHint].filter(Boolean).join('\n\n') || undefined
+  }
+
+  return { images, previewImages, attachments: attachmentInfos, consumedPaths, documentContext }
+}
+
+/** 对齐前端 getDocImagesContext：告知模型已附上文档预览图 */
+function formatParsedDocImageHints(docs: ParsedDocument[]): string {
+  const parts: string[] = []
+  for (const d of docs) {
+    if (!d.images?.length) continue
+    const imageCount = d.images.length
+    const pathHint = d.filePath ? `，路径: ${d.filePath}` : ''
+    if (d.fileType === 'pdf') {
+      const totalPages = d.totalPages || d.pageCount || 0
+      const pageDesc = totalPages > 0 && imageCount >= totalPages
+        ? `全部 ${totalPages} 页已作为图片附上`
+        : totalPages > 0
+          ? `前 ${imageCount} 页已作为图片附上（共 ${totalPages} 页）。如需查看更多页面，使用 pdf_view_page 工具`
+          : `${imageCount} 页已作为图片附上`
+      parts.push(`[扫描版 PDF: ${d.filename}${pathHint}，${pageDesc}]`)
+    } else {
+      const tableInfo = d.metadata?.tableCount ? `，含 ${d.metadata.tableCount} 个表格` : ''
+      parts.push(`[${d.filename}${pathHint}，文档正文中包含 ${imageCount} 张图片已附上${tableInfo}]`)
+    }
+  }
+  return parts.join('\n')
 }
 export interface IMServiceDependencies {
   agentService: import('../agent').AgentService
@@ -1055,9 +1162,9 @@ export class IMService {
 
     const replyContext = msg.replyContext
 
-    // 图片附件内联为 data URL（桌面气泡直接显示 + 发给视觉模型）
-    const media = prepareImAgentMedia(msg.attachments)
-    const fullMessage = this.buildAgentMessage(msg, media.inlinedImagePaths)
+    // 图片内联 + 文档解析（对齐桌面上传）
+    const media = await prepareImAgentMedia(msg.attachments)
+    const fullMessage = this.buildAgentMessage(msg, media.consumedPaths)
 
     // Companion Agent 实例
     const companion = this.deps.agentService.createAssistantAgent(COMPANION_AGENT_KEY)
@@ -1074,7 +1181,7 @@ export class IMService {
         if (companion.addUserMessage(
           fullMessage,
           media.attachments.length > 0 ? media.attachments : undefined,
-          undefined,
+          media.documentContext,
           media.images.length > 0 ? media.images : undefined,
         )) {
           await adapter.sendText(replyContext, t('im.reply_received'))
@@ -1163,12 +1270,12 @@ export class IMService {
     adapter: IMAdapter,
     replyContext: any,
     msg: IMIncomingMessage,
-    media: ImAgentMediaContext = prepareImAgentMedia(msg.attachments),
+    media: ImAgentMediaContext,
   ) {
     if (!this.deps) return
 
     this.activeSession = { adapter, replyContext }
-    const fullMessage = this.buildAgentMessage(msg, media.inlinedImagePaths)
+    const fullMessage = this.buildAgentMessage(msg, media.consumedPaths)
     const agentId = COMPANION_AGENT_KEY
 
     const processMode = this.config.processMode
@@ -1391,7 +1498,9 @@ export class IMService {
         terminalType: 'assistant' as const,
         remoteChannel: msg.platform as RemoteChannel,
         ...(media.images.length > 0 ? { images: media.images } : {}),
+        ...(media.previewImages.length > 0 ? { previewImages: media.previewImages } : {}),
         ...(media.attachments.length > 0 ? { attachments: media.attachments } : {}),
+        ...(media.documentContext ? { documentContext: media.documentContext } : {}),
         ...(msg.isFirstContact ? {
           contextHint: t('im.first_contact_context', { userName: msg.userName, platform: msg.platform })
         } : {})
@@ -1916,15 +2025,15 @@ export class IMService {
   /**
    * 将消息文本和附件信息组装为传给 Agent 的完整消息
    * 包含文件路径和处理指引，帮助 Agent 正确处理不同类型的文件。
-   * 已内联为 context.images 的图片不再写入文本列表（由多模态通道送达，桌面气泡直接展示）。
+   * 已内联为图片或已解析进 documentContext 的附件不再写入文本列表。
    */
-  private buildAgentMessage(msg: IMIncomingMessage, inlinedImagePaths?: Set<string>): string {
+  private buildAgentMessage(msg: IMIncomingMessage, consumedPaths?: Set<string>): string {
     let text = msg.text || ''
 
     if (msg.attachments && msg.attachments.length > 0) {
-      const remaining = msg.attachments.filter(a => !inlinedImagePaths?.has(a.localPath))
+      const remaining = msg.attachments.filter(a => !consumedPaths?.has(a.localPath))
 
-      // 全部图片已内联：保留用户原文；纯图无文案时用占位，便于侧栏标题
+      // 全部附件已消费：保留用户原文；无文案时用文件名占位（侧栏标题）
       if (remaining.length === 0) {
         if (!text.trim()) {
           const names = msg.attachments.map(a => a.fileName).filter(Boolean)

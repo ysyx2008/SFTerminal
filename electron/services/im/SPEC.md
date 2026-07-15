@@ -1,6 +1,6 @@
 # IM Service SPEC
 
-> Last verified: 2026-07-15（IM 入站图片内联为 context.images）
+> Last verified: 2026-07-15（IM 入站图片内联 + 文档解析注入 documentContext）
 
 ## 职责
 
@@ -139,6 +139,7 @@ interface SendFileResult { success: boolean; error?: string; messageId?: string 
 | 服务 | 关系 | 说明 |
 |------|:----:|------|
 | `AgentService` | **必需** | 通过 `IMServiceDependencies` 注入；入站消息进 Agent，Agent 回复出 IM |
+| `DocumentParserService` | 可选（懒加载） | `prepareImAgentMedia` 解析 IM 入站 PDF/Word 等，对齐桌面上传的 `documentContext` |
 | `HistoryService` | 可选 | 通过 `IMServiceDependencies` 注入；记录会话上下文 |
 | `AiService` | 可选 | 通过 `IMServiceDependencies` 注入；某些适配器（如飞书图文）需要 |
 | `EventBus`（`getEventBus()`） | 可选 | 平台连接事件全局广播 |
@@ -148,8 +149,11 @@ interface SendFileResult { success: boolean; error?: string; messageId?: string 
 **入站消息 → Agent 对话**：
 1. 适配器内部 SDK 收到消息 → `onMessage` 回调
 2. → IMService 内部把消息构造为 `IMIncomingMessage`，记录 `lastContact`
-3. → `prepareImAgentMedia`：常见图片（jpg/png/gif/bmp/webp，≤10MB）读成 base64 data URL，写入 `AgentContext.images`（联络气泡直接显示缩略图 + 多模态发给视觉模型）；其余附件写入 `AgentContext.attachments`（UI chip）
-4. → 通过 `agentService.runAssistant(COMPANION_AGENT_KEY, message, context)` 启动 Agent 任务；已内联的图片不再塞进文案里的「用户发送了文件」列表
+3. → `prepareImAgentMedia`：
+   - 常见图片（jpg/png/gif/bmp/webp，≤10MB）→ `AgentContext.images` / `previewImages`（联络气泡直接显示 + 多模态）
+   - 可解析文档（pdf/docx/xlsx/txt/md…）→ `DocumentParserService` 解析后经 `formatAsContext` 写入 `documentContext`（对齐桌面上传，无需再 `read_file`）；扫描版 PDF 预览页进 `images`
+   - 其余附件 → `AgentContext.attachments`（UI chip）
+4. → 通过 `agentService.runAssistant(COMPANION_AGENT_KEY, message, context)` 启动 Agent；已消费附件不再塞进「用户发送了文件」文案列表
 5. → Agent 输出（含中间过程，受 `processMode` 控制）通过适配器发回原平台
 
 **手动发通知（来自 Agent 工具或外部触发）**：

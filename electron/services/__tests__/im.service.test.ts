@@ -16,7 +16,8 @@ vi.mock('../config.service', () => ({
     },
     set: (key: string, value: Record<string, unknown>) => {
       if (key === 'imLastContacts') persistedState.imLastContacts = value
-    }
+    },
+    hasVisionCapability: () => false,
   })
 }))
 
@@ -102,7 +103,7 @@ describe('prepareImAgentMedia', () => {
     }
   })
 
-  function writeTempFile(name: string, data: Buffer): string {
+  function writeTempFile(name: string, data: Buffer | string): string {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'im-media-'))
     tmpDirs.push(dir)
     const filePath = path.join(dir, name)
@@ -110,12 +111,11 @@ describe('prepareImAgentMedia', () => {
     return filePath
   }
 
-  it('inlines vision images as data URLs and skips attachment chips', () => {
-    // Minimal JPEG-like payload (content doesn't need to decode for this test)
+  it('inlines vision images as data URLs and skips attachment chips', async () => {
     const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9, 0x00, 0x01, 0x02])
     const localPath = writeTempFile('wechat_image.jpg', jpeg)
 
-    const result = prepareImAgentMedia([{
+    const result = await prepareImAgentMedia([{
       type: 'image',
       localPath,
       fileName: 'wechat_image.jpg',
@@ -123,33 +123,60 @@ describe('prepareImAgentMedia', () => {
 
     expect(result.images).toHaveLength(1)
     expect(result.images[0]).toMatch(/^data:image\/jpeg;base64,/)
+    expect(result.previewImages).toEqual(result.images)
     expect(result.attachments).toHaveLength(0)
-    expect(result.inlinedImagePaths.has(localPath)).toBe(true)
+    expect(result.consumedPaths.has(localPath)).toBe(true)
+    expect(result.documentContext).toBeUndefined()
   })
 
-  it('keeps non-image files as attachment chips', () => {
-    const localPath = writeTempFile('notes.txt', Buffer.from('hello'))
+  it('parses text documents into documentContext', async () => {
+    const localPath = writeTempFile('notes.txt', 'passive voice exercises')
 
-    const result = prepareImAgentMedia([{
+    const result = await prepareImAgentMedia([{
       type: 'file',
       localPath,
       fileName: 'notes.txt',
     }])
 
     expect(result.images).toHaveLength(0)
+    expect(result.documentContext).toContain('<sf_uploaded_docs>')
+    expect(result.documentContext).toContain('passive voice exercises')
+    expect(result.documentContext).toContain('notes.txt')
     expect(result.attachments).toEqual([{
       filename: 'notes.txt',
       filePath: localPath,
-      fileSize: 5,
+      fileSize: Buffer.byteLength('passive voice exercises'),
       fileType: 'txt',
+      totalPages: undefined,
+      previewPages: undefined,
     }])
-    expect(result.inlinedImagePaths.size).toBe(0)
+    expect(result.consumedPaths.has(localPath)).toBe(true)
   })
 
-  it('falls back to attachment chip when image file is missing', () => {
+  it('keeps non-parseable binary media as attachment chips', async () => {
+    const localPath = writeTempFile('voice.silk', Buffer.from([0x01, 0x02, 0x03, 0x04]))
+
+    const result = await prepareImAgentMedia([{
+      type: 'audio',
+      localPath,
+      fileName: 'voice.silk',
+    }])
+
+    expect(result.images).toHaveLength(0)
+    expect(result.documentContext).toBeUndefined()
+    expect(result.attachments).toEqual([{
+      filename: 'voice.silk',
+      filePath: localPath,
+      fileSize: 4,
+      fileType: 'silk',
+    }])
+    expect(result.consumedPaths.size).toBe(0)
+  })
+
+  it('falls back to attachment chip when image file is missing', async () => {
     const missing = path.join(os.tmpdir(), `im-missing-${Date.now()}.png`)
 
-    const result = prepareImAgentMedia([{
+    const result = await prepareImAgentMedia([{
       type: 'image',
       localPath: missing,
       fileName: 'gone.png',
@@ -158,7 +185,7 @@ describe('prepareImAgentMedia', () => {
     expect(result.images).toHaveLength(0)
     expect(result.attachments).toHaveLength(1)
     expect(result.attachments[0].filename).toBe('gone.png')
-    expect(result.inlinedImagePaths.size).toBe(0)
+    expect(result.consumedPaths.size).toBe(0)
   })
 })
 
