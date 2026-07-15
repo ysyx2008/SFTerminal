@@ -224,10 +224,24 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 
 `ContextWindowManager.emergencyCompress` 是「API 自然报错」的最终兜底（SPEC 第 116 行注释承诺过、本节实现）：
 
-- **触发**：`executeLoop` 的 catch 检测到 `context_length_exceeded`（通过 `ContextWindowManager.isContextLimitError`，匹配 ai.service.ts 统一翻译后的文案 + 原始错误码）。
+- **触发**：`executeLoop` 的 catch 检测到上下文超限（通过 `ContextWindowManager.isContextLimitError`）。识别范围：
+  - `ai.service.ts` 统一翻译后的 `t('error.context_length_exceeded')` 中/英文案
+  - 原始错误码 `context_length_exceeded`
+  - 火山方舟豆包等稳定业务文案 `exceed max message tokens`（code 常为空，`ai.service` 也会先翻译成上述统一文案）
 - **流程**：先 `fixIncompleteToolCalls` 修复悬空 tool_calls → `emergencyCompress`（先 keepRecent=2，若压缩后仍 >90% 再 keepRecent=1）→ 注入 `_systemInjected` 提示让 AI 知道发生了什么 → `continue executionLoop` 重试当前请求。
 - **重试上限**：`MAX_CONTEXT_OVERFLOW_RETRIES = 1`，防死循环。仅压缩成功时消耗配额（压缩失败不消耗，避免下次循环跳过本可救的请求）。
 - **压缩失败**（如无 user 消息可压缩）：注入失败提示后正常抛错到 `handleError`。
+
+### 视觉路由与上下文预算对齐
+
+主模型关联 `visionProfileId` 且会话带图时，API 调用切到视觉模型（`resolveEffectiveProfileId`）。**上下文预算必须用同一份 profile**：
+
+- 纯函数 `resolveBudgetProfileId`（`vision-routing.ts`）是唯一真相源
+- 有图判定复用既有 `conversationContainsImages`：已组装 messages（或缺省时 `_previousRunMessages`）+ 本轮 `context.images`；不扫 taskMemory（冷启动偶发低估靠下方 emergencyCompress 兜底）
+- `ContextWindowManager.getContextLength`（经 deps.getProfileId）/ cache path 70% 门槛 / tool-output-budget / proactiveCompress 均走预算 profile
+- 请求启动时（`initializeRun` 初始 step）与 `reportUsage` 写入 `effectiveContextLength` / `effectiveModel`，避免 UI 回退到文字模型的 1000K
+
+否则会出现：按 DeepSeek 1000K 复用 ~260K 前缀 → 实际打到豆包 256K → `exceed max message tokens`。
 
 ### 上下文超限本地预测压缩（proactiveCompress）
 

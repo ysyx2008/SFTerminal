@@ -53,20 +53,22 @@ export class ContextWindowManager {
    * 判断错误是否为上下文超限错误。
    *
    * 各 LLM provider 的错误码/消息不同，但 ai.service.ts 在解析到
-   * context_length_exceeded 时会统一翻译成 t('error.context_length_exceeded')，
-   * 所以这里匹配翻译后的文案即可覆盖所有 provider。
+   * context_length_exceeded（及火山豆包等稳定业务文案）时会统一翻译成
+   * t('error.context_length_exceeded')，所以优先匹配翻译后的文案。
    *
-   * 注意：这不是"基于关键词的模式分析"——它匹配的是固定的 API 错误码
-   * （context_length_exceeded）的翻译结果，是稳定的协议字段而非自然语言模式。
+   * 注意：这不是"基于关键词的模式分析"——它匹配的是固定的 API 错误码 /
+   * provider 协议文案的翻译结果，是稳定的协议字段而非自然语言模式。
    */
   static isContextLimitError(error: unknown): boolean {
     const msg = error instanceof Error ? error.message : String(error)
     if (!msg) return false
-    // 匹配翻译后的中英文案 + 原始错误码，覆盖所有 provider
+    // 翻译后的中英文案 + 原始错误码 + 未翻译时漏网的 provider 稳定文案
     return (
       msg.includes('context_length_exceeded') ||
       msg.includes('上下文超出模型限制') ||
-      msg.includes('Context length exceeded')
+      msg.includes('Context length exceeded') ||
+      // 火山方舟豆包：code 常为空，message 为固定英文句（见 ai.service isContextLengthApiFailure）
+      msg.includes('exceed max message tokens')
     )
   }
 

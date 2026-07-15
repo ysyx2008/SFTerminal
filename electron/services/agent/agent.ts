@@ -36,6 +36,7 @@ import { DEFAULT_AGENT_CONFIG } from './types'
 import { TaskMemoryStore } from './task-memory'
 import { Conversation, conversationPolicy } from '../conversation'
 import { ContextWindowManager } from './context-window'
+import { resolveBudgetProfileId } from './vision-routing'
 import {
   splitMessagesIntoTasks as splitMessagesIntoTasksShared,
   splitStepsIntoTasks as splitStepsIntoTasksShared
@@ -241,7 +242,8 @@ export abstract class Agent {
     this.taskMemory = this.createTaskMemory()
     this._contextWindow = new ContextWindowManager({
       config: this.services.configService,
-      getProfileId: () => this.profileId,
+      // 与 resolveEffectiveProfileId 对齐：有图时按视觉模型算预算，避免按主模型 1000K 复用后打到豆包 256K 超限
+      getProfileId: () => this.resolveContextBudgetProfileId(),
       getLastPromptTokens: () => this._lastPromptTokens,
       getLastCacheHitRate: () => this._lastCacheHitRate,
       reportUsage: (tokens, cacheHitRate) => {
@@ -254,6 +256,8 @@ export abstract class Agent {
           if (cacheHitRate !== undefined) {
             lastStep.cacheHitRate = cacheHitRate
           }
+          // 请求过程中也写入拟用模型，避免 UI 回退到主模型（文字模型）的 contextLength
+          this.stampEffectiveProfileOnStep(lastStep)
           this.callbacks?.onStep?.(this.currentRun?.id || '', lastStep)
         }
       }
@@ -752,6 +756,17 @@ export abstract class Agent {
         this._isRestoring = false
       }
     }
+
+    // 历史恢复后再锁定「拟用模型」上下文展示：沿用上一轮精确 token + 视觉/主模型 profile
+    // （若放在 restore 之前，冷启动时看不到历史带图，会误显示文字模型 1000K）
+    if (this._lastPromptTokens !== undefined) {
+      initialStep.contextTokens = this._lastPromptTokens
+      if (this._lastCacheHitRate !== undefined) {
+        initialStep.cacheHitRate = this._lastCacheHitRate
+      }
+    }
+    this.stampEffectiveProfileOnStep(initialStep)
+    this.callbacks?.onStep?.(this._agentId ?? run.id, initialStep)
     
     // 设置终端输出监听器
     this.setupOutputListener(run)
@@ -2014,6 +2029,46 @@ export abstract class Agent {
   }
 
   /**
+   * 预算侧「有没有图」：复用 conversationContainsImages，只看两处——
+   * 已组装的 messages（或 cache 前缀 _previousRunMessages）+ 本轮即将附带的 context.images。
+   * 不扫 taskMemory / conversation 全文：联络热路径靠 cache 前缀已够；冷启动偶发低估靠 emergencyCompress 兜底。
+   */
+  private requestWillContainImages(): boolean {
+    const assembled = this.currentRun?.messages?.length
+      ? this.currentRun.messages
+      : this._previousRunMessages
+    if (assembled?.length && this.conversationContainsImages(assembled)) return true
+    const pending = this.currentRun?.context?.images
+    return !!(pending && pending.length > 0)
+  }
+
+  /**
+   * 上下文预算用的 profileId：与实际 API 调用（resolveEffectiveProfileId）对齐。
+   * ContextWindowManager.getContextLength / cache path / tool-output-budget / UI stamp 都走这里。
+   */
+  private resolveContextBudgetProfileId(): string | undefined {
+    const configService = this.services.configService
+    if (!configService) return this.profileId
+    return resolveBudgetProfileId({
+      mainProfileId: this.profileId,
+      activeProfileId: configService.getActiveAiProfile(),
+      profiles: configService.getAiProfiles(),
+      autoVisionModel: !!configService.get('autoVisionModel'),
+      hasImages: this.requestWillContainImages(),
+    })
+  }
+
+  /** 把拟用模型的 contextLength / name 写入 step，供前端状态栏展示 */
+  private stampEffectiveProfileOnStep(step: AgentStep): void {
+    const configService = this.services.configService
+    if (!configService) return
+    const effectiveId = this.resolveContextBudgetProfileId() || configService.getActiveAiProfile()
+    const profile = configService.getAiProfiles().find(p => p.id === effectiveId)
+    if (profile?.contextLength) step.effectiveContextLength = profile.contextLength
+    if (profile?.name) step.effectiveModel = profile.name
+  }
+
+  /**
    * 当前 Agent 使用的 profile 是否具备视觉能力。
    * 用于在拼装消息阶段判断是否应该携带 base64 图片：
    * - 不具备能力时附带图片，部分网关会静默丢弃 image_url（既不报错也不处理），
@@ -2033,35 +2088,29 @@ export abstract class Agent {
    * 1. autoVisionModel 全局开关已启用
    * 2. 当前主模型配置了 visionProfileId
    * 3. 整条 messages 中仍有带 images 的 user 消息（formatMessageForApi 会一并发出）
+   *
+   * 与 resolveContextBudgetProfileId 共用 resolveBudgetProfileId，保证预算与实际调用一致。
    */
   private resolveEffectiveProfileId(run: AgentRun): string | undefined {
     const configService = this.services.configService
     if (!configService) return this.profileId
-    
-    const autoVision = configService.get('autoVisionModel')
-    if (!autoVision) return this.profileId
-    
-    if (!this.conversationContainsImages(run.messages)) return this.profileId
-    
-    // 获取当前主模型的 profile
-    const profiles = configService.getAiProfiles()
-    const currentProfileId = this.profileId || configService.getActiveAiProfile()
-    const currentProfile = profiles.find(p => p.id === currentProfileId)
-    
-    if (!currentProfile) return this.profileId
-    
-    // 如果当前模型本身就是 vision 类型，无需切换
-    if (currentProfile.modelType === 'vision') return this.profileId
-    
-    // 如果配置了关联视觉模型，切换过去（排除自引用和不存在的 profile）
-    const visionId = currentProfile.visionProfileId
-    if (visionId && visionId !== currentProfileId && profiles.some(p => p.id === visionId)) {
-      const visionProfile = profiles.find(p => p.id === visionId)
-      log.info(`Vision routing: switching from ${currentProfile.model} to ${visionProfile?.model || visionId}`)
-      return visionId
+
+    const effectiveId = resolveBudgetProfileId({
+      mainProfileId: this.profileId,
+      activeProfileId: configService.getActiveAiProfile(),
+      profiles: configService.getAiProfiles(),
+      autoVisionModel: !!configService.get('autoVisionModel'),
+      hasImages: this.conversationContainsImages(run.messages),
+    })
+
+    if (effectiveId && effectiveId !== (this.profileId || configService.getActiveAiProfile())) {
+      const profiles = configService.getAiProfiles()
+      const main = profiles.find(p => p.id === (this.profileId || configService.getActiveAiProfile()))
+      const vision = profiles.find(p => p.id === effectiveId)
+      log.info(`Vision routing: switching from ${main?.model} to ${vision?.model || effectiveId}`)
     }
-    
-    return this.profileId
+
+    return effectiveId
   }
   
   private pickRandomWaitingLabelId(ids: readonly string[]): string {

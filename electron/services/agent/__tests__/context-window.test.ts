@@ -397,6 +397,15 @@ describe('ContextWindowManager.isContextLimitError', () => {
     expect(ContextWindowManager.isContextLimitError(new Error('Context length exceeded. Please clear some conversation history and try again.'))).toBe(true)
   })
 
+  it('匹配火山豆包固定英文文案（max message tokens）', () => {
+    expect(ContextWindowManager.isContextLimitError(
+      new Error('大模型 API 请求出错: Total tokens of image and text exceed max message tokens.')
+    )).toBe(true)
+    expect(ContextWindowManager.isContextLimitError(
+      new Error('Total tokens of image and text exceed max message tokens.')
+    )).toBe(true)
+  })
+
   it('普通网络/超时/中止错误不匹配', () => {
     expect(ContextWindowManager.isContextLimitError(new Error('aborted'))).toBe(false)
     expect(ContextWindowManager.isContextLimitError(new Error('Request timeout'))).toBe(false)

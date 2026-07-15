@@ -290,6 +290,19 @@ function tryFriendlyApiError(err: unknown, model?: string): string | null {
 }
 
 /**
+ * 是否为「上下文/消息 token 超限」类 API 失败。
+ * - OpenAI 系：code === context_length_exceeded
+ * - 火山方舟豆包：code 常为空，message 为固定英文
+ *   "Total tokens of image and text exceed max message tokens."
+ * 匹配的是厂商协议稳定字段，不是自然语言关键词分析。
+ */
+function isContextLengthApiFailure(code?: string, message?: string): boolean {
+  if ((code || '').toLowerCase() === 'context_length_exceeded') return true
+  if (message && message.includes('exceed max message tokens')) return true
+  return false
+}
+
+/**
  * 解析 API 返回的错误响应体，提取结构化的错误信息
  * 避免将原始 JSON（如 {"error":{"message":"...","type":"...","param":null,...}}）直接展示给用户
  */
@@ -1013,7 +1026,7 @@ export class AiService {
 
       if (data.error) {
         const code = data.error.code?.toLowerCase() || data.error.type?.toLowerCase() || ''
-        if (code === 'context_length_exceeded') {
+        if (isContextLengthApiFailure(code, data.error.message)) {
           throw new Error(t('error.context_length_exceeded'))
         }
         const friendly = translateApiBusinessError(undefined, code, profile.model)
@@ -1542,7 +1555,7 @@ export class AiService {
           })
           res.on('end', () => {
             const parsed = parseApiError(errorData)
-            if (parsed.code === 'context_length_exceeded') {
+            if (isContextLengthApiFailure(parsed.code, parsed.message)) {
               complete(() => onError(t('error.context_length_exceeded')))
               return
             }
@@ -1779,7 +1792,7 @@ export class AiService {
 
       if (data.error) {
         const code = data.error.code?.toLowerCase() || data.error.type?.toLowerCase() || ''
-        if (code === 'context_length_exceeded') {
+        if (isContextLengthApiFailure(code, data.error.message)) {
           throw new Error(t('error.context_length_exceeded'))
         }
         const errorMsg = data.error.message || t('error.api_error_generic')
@@ -2138,7 +2151,7 @@ export class AiService {
               resetForRetry()
               setTimeout(doRequest, retryAfterMs)
               isCompleted = true
-            } else if (parsed.code === 'context_length_exceeded') {
+            } else if (isContextLengthApiFailure(parsed.code, parsed.message)) {
               complete(() => onError(t('error.context_length_exceeded')))
             } else if (res.statusCode && AI_RETRY.RETRYABLE_STATUS_CODES.includes(res.statusCode) && serverErrorRetryCount < AI_RETRY.SERVER_ERROR_MAX_RETRIES) {
               serverErrorRetryCount++
