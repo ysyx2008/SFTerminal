@@ -472,9 +472,8 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  animation: float 3s ease-in-out infinite;
-  will-change: transform;
-  transform: translateZ(0); /* 强制 GPU 加速 */
+  /* 只播一轮，避免欢迎页常驻无限动画空转 CPU */
+  animation: float 3s ease-in-out 1;
 }
 
 .sailfish-logo {
@@ -1020,7 +1019,7 @@ onUnmounted(() => {
 .tip-icon {
   font-size: 18px;
   flex-shrink: 0;
-  animation: tipPulse 2s ease-in-out infinite;
+  animation: tipPulse 2s ease-in-out 1;
 }
 
 /* 回首页时跳过入场动画（组件用 v-show 保持挂载，否则会反复重播） */
@@ -1029,10 +1028,19 @@ onUnmounted(() => {
 .welcome-page.enter-done .quick-start,
 .welcome-page.enter-done .recent-sessions,
 .welcome-page.enter-done .tips,
-.welcome-page.enter-done .action-card {
+.welcome-page.enter-done .action-card,
+.welcome-page.enter-done .logo,
+.welcome-page.enter-done .tip-icon {
   animation: none !important;
   opacity: 1 !important;
   transform: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo,
+  .tip-icon {
+    animation: none !important;
+  }
 }
 
 .welcome-page.enter-done :deep(.welcome-chat-composer) {

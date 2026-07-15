@@ -1149,7 +1149,9 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false
+      // Windows：托盘恢复白屏修复需要关闭节流（81296d0b）。
+      // macOS/Linux：保持默认 true，保留遮挡/后台帧率节流，避免渲染进程空闲空转。
+      ...(process.platform === 'win32' ? { backgroundThrottling: false } : {})
     }
   })
 

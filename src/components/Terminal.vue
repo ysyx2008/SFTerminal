@@ -113,6 +113,14 @@ const overlayCards = ref<OverlayCard[]>([])
 let cardIdCounter = 0
 const generateCardId = () => `card-${Date.now()}-${cardIdCounter++}`
 
+/** 窗口隐藏/遮挡时暂停光标闪烁，减少空闲重绘 */
+const syncCursorBlinkToVisibility = () => {
+  if (!terminal) return
+  const wantBlink = configStore.terminalSettings.cursorBlink
+  terminal.options.cursorBlink =
+    document.visibilityState === 'visible' && wantBlink
+}
+
 // 初始化终端
 onMounted(async () => {
   if (!terminalRef.value) return
@@ -127,12 +135,15 @@ onMounted(async () => {
     theme,
     fontSize: settings.fontSize,
     fontFamily: settings.fontFamily,
-    cursorBlink: settings.cursorBlink,
+    // 不可见时不闪烁，避免后台/遮挡时持续重绘
+    cursorBlink: document.visibilityState === 'visible' && settings.cursorBlink,
     cursorStyle: settings.cursorStyle,
     scrollback: settings.scrollback,
     allowProposedApi: true,
     convertEol: true
   })
+
+  document.addEventListener('visibilitychange', syncCursorBlinkToVisibility)
 
   // 加载插件
   fitAddon = new FitAddon()
@@ -613,6 +624,8 @@ onUnmounted(() => {
   window.electronAPI.terminalState.remove(props.ptyId)
   inputBuffer = ''
   
+  document.removeEventListener('visibilitychange', syncCursorBlinkToVisibility)
+
   // 清理 WebGL 渲染器
   if (webglAddon) {
     webglAddon.dispose()
@@ -674,7 +687,7 @@ watch(
     if (terminal) {
       terminal.options.fontSize = settings.fontSize
       terminal.options.fontFamily = settings.fontFamily
-      terminal.options.cursorBlink = settings.cursorBlink
+      syncCursorBlinkToVisibility()
       terminal.options.cursorStyle = settings.cursorStyle
       // 重新适配大小并刷新显示（字体变化后需要重新计算）
       nextTick(() => {
