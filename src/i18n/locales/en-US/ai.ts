@@ -197,6 +197,7 @@ export default {
     },
     agentExecutionFailed: '❌ Agent execution failed: {error}',
     agentRunError: '❌ Agent run error: {error}',
+    agentIpcFailed: 'Failed to communicate with the agent. Please retry; if it persists, check AI settings and network.',
     unknownError: 'Unknown error',
     needConfirm: 'Confirmation Required',
     highRisk: 'High Risk',

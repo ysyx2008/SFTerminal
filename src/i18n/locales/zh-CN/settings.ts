@@ -971,6 +971,13 @@ export default {
   dataSettings: {
     title: '数据管理',
     description: '查看存储占用、备份/恢复所有配置与会话数据，或清理历史记录',
+    configRestoredTitle: '配置已从备份恢复',
+    configRestoredMessage:
+      '检测到应用配置损坏，已用最近一份可用备份恢复。请到设置中核对 AI、SSH、即时通讯等各项是否齐全。',
+    configResetTitle: '配置无法自动恢复',
+    configResetMessage:
+      '应用配置已损坏且没有可用备份。损坏文件已另行备份，应用将使用空配置启动。请重新配置 AI、SSH、即时通讯等必要项。',
+    configRecoveryOk: '知道了',
     exportData: '导出数据',
     exportDataDesc: '导出所有配置和会话数据',
     importData: '导入数据',

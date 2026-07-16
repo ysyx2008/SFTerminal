@@ -9,8 +9,17 @@ import type { TtsSettings, UiThemeMode, UiThemeName, WebSearchSettings } from '@
 import { COMMAND_RISK_POLICY_ALLOWED_LEVELS, DEFAULT_COMMAND_RISK_POLICY, DEFAULT_TTS_SETTINGS, DEFAULT_UI_THEME, DEFAULT_UI_THEME_MODE, DEFAULT_WEB_SEARCH_SETTINGS } from '@shared/types'
 import { createLogger, type LogLevel } from '../utils/logger'
 import { normalizeTerminalSettings, normalizeKeyboardShortcuts } from '../utils/normalize'
+import {
+  createConfigBackupIfNeeded,
+  ensureStartupConfigBackup,
+  peekConfigRecoveryNotice,
+  dismissConfigRecoveryNotice,
+  setConfigRecoveryNotice,
+  tryRestoreConfigFromBackups,
+  type ConfigRecoveryNotice,
+} from './config-backup'
 
-export type { AiModelType, AiProfile, ApiFormat, JumpHostConfig, McpServerConfig }
+export type { AiModelType, AiProfile, ApiFormat, JumpHostConfig, McpServerConfig, ConfigRecoveryNotice }
 
 const log = createLogger('Config')
 
@@ -350,14 +359,57 @@ export class ConfigService {
     // 敏感数据（SSH 密码/API Key）由 credential.service 管理，不在此文件。
     // 不使用 safeStorage：Keychain ACL 绑定二进制签名，跨版本升级后密钥失效会读崩配置。
     this.store = this.createStore('qiyu-terminal-config')
+    this.wrapStoreSetForBackup(this.store)
+    try {
+      ensureStartupConfigBackup()
+    } catch (err) {
+      log.error('Startup config backup failed:', err)
+    }
+  }
+
+  /** 包装 electron-store.set：写盘前轻量备份（失败不阻断写盘） */
+  private wrapStoreSetForBackup(store: Store<StoreSchema>): void {
+    const originalSet = store.set.bind(store) as Store<StoreSchema>['set']
+    store.set = ((key: keyof StoreSchema | Partial<StoreSchema>, value?: StoreSchema[keyof StoreSchema]) => {
+      try {
+        createConfigBackupIfNeeded()
+      } catch (err) {
+        log.error('Pre-write config backup failed:', err)
+      }
+      if (typeof key === 'object') {
+        return originalSet(key)
+      }
+      return originalSet(key, value as StoreSchema[keyof StoreSchema])
+    }) as Store<StoreSchema>['set']
+  }
+
+  private openPlainStore(storeName: string): Store<StoreSchema> {
+    return new Store<StoreSchema>({ name: storeName, defaults: defaultConfig })
   }
 
   private createStore(storeName: string): Store<StoreSchema> {
     // 步骤 1：尝试明文读取（新安装或已完成迁移的用户，正常路径）
     try {
-      return new Store<StoreSchema>({ name: storeName, defaults: defaultConfig })
-    } catch (_plainErr) {
-      // 明文读取失败，说明文件是旧版加密的，进入迁移流程
+      return this.openPlainStore(storeName)
+    } catch (plainErr) {
+      log.warn('明文配置读取失败，尝试从滚动备份恢复:', plainErr)
+    }
+
+    // 步骤 1b：从 config-backups/（或 backups/ 整包）恢复后再读明文
+    try {
+      const restoredFrom = tryRestoreConfigFromBackups()
+      if (restoredFrom) {
+        try {
+          const store = this.openPlainStore(storeName)
+          setConfigRecoveryNotice({ kind: 'restored', from: restoredFrom, at: Date.now() })
+          log.warn(`配置已从备份恢复: ${restoredFrom}`)
+          return store
+        } catch (afterRestoreErr) {
+          log.error('从备份恢复后仍无法读取明文配置:', afterRestoreErr)
+        }
+      }
+    } catch (restoreErr) {
+      log.error('尝试配置备份恢复时出错:', restoreErr)
     }
 
     // 步骤 2：尝试用当前机器的 safeStorage 密钥解密旧文件，并迁移为明文
@@ -378,7 +430,7 @@ export class ConfigService {
           const backupPath = `${filePath}.enc.${Date.now()}`
           fs.copyFileSync(filePath, backupPath)
           fs.unlinkSync(filePath)
-          const plainStore = new Store<StoreSchema>({ name: storeName, defaults: defaultConfig })
+          const plainStore = this.openPlainStore(storeName)
           plainStore.store = allData
           log.info(`已将配置从加密格式迁移为明文存储（共 ${Object.keys(allData).length} 项），加密备份保留于 ${backupPath}`)
           return plainStore
@@ -388,13 +440,22 @@ export class ConfigService {
       }
     }
 
-    // 步骤 3：无法解密，备份旧文件后以默认值重建
+    // 步骤 3：无法解密且无可用备份，备份旧文件后以默认值重建（必须提示用户）
     const reason = encryptionKey
-      ? 'Keychain 密钥已变（跨版本 app 签名不一致）'
-      : 'safeStorage 不可用'
-    log.warn(`配置文件无法解密（${reason}），将备份旧文件并重置为默认值`)
+      ? 'Keychain 密钥已变或配置损坏且无法从备份恢复'
+      : '配置损坏且无法从备份恢复'
+    log.warn(`配置无法加载（${reason}），将备份旧文件并重置为默认值`)
     this.backupCorruptedConfig(storeName)
-    return new Store<StoreSchema>({ name: storeName, defaults: defaultConfig })
+    setConfigRecoveryNotice({ kind: 'reset', at: Date.now() })
+    return this.openPlainStore(storeName)
+  }
+
+  peekRecoveryNotice(): ConfigRecoveryNotice | null {
+    return peekConfigRecoveryNotice()
+  }
+
+  dismissRecoveryNotice(): void {
+    dismissConfigRecoveryNotice()
   }
 
   /** config 文件绝对路径 */

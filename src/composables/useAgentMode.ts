@@ -1336,7 +1336,12 @@ export function useAgentMode(
       }
     } catch (error) {
       log.error('Agent 运行失败:', error)
-      const errorMessage = error instanceof Error ? error.message : t('ai.unknownError')
+      const raw = error instanceof Error ? error.message : String(error || '')
+      // IPC 序列化失败等不应把脏堆栈甩给用户（对齐 AiSettings testConnectionFailed）
+      const isIpcNoise =
+        raw.includes('Error invoking remote method') ||
+        (raw.includes('SyntaxError') && raw.includes('is not valid JSON'))
+      const errorMessage = isIpcNoise ? t('ai.agentIpcFailed') : (raw || t('ai.unknownError'))
       const finalContent = t('ai.agentRunError', { error: errorMessage })
       
       // IPC 层面的错误（如连接断开），后端可能没来得及推送 final_result

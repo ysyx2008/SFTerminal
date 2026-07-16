@@ -21,6 +21,13 @@ const translations = {
     'dialog.selectDir': '选择目录',
     'dialog.saveFile': '保存文件',
     'dialog.selectKnowledgeBackupDir': '选择知识库备份目录',
+    'dialog.configRestoredTitle': '配置已从备份恢复',
+    'dialog.configRestoredMessage':
+      '检测到应用配置损坏，已用最近一份可用备份恢复。请到设置中核对 AI、SSH、即时通讯等各项是否齐全。',
+    'dialog.configResetTitle': '配置无法自动恢复',
+    'dialog.configResetMessage':
+      '应用配置已损坏且没有可用备份。损坏文件已另行备份，应用将使用空配置启动。请重新配置 AI、SSH、即时通讯等必要项。',
+    'dialog.configRecoveryOk': '知道了',
     'filter.allFiles': '所有文件',
     'filter.xshellFiles': 'Xshell 会话文件',
 
@@ -105,6 +112,13 @@ const translations = {
     'dialog.selectDir': 'Select Directory',
     'dialog.saveFile': 'Save File',
     'dialog.selectKnowledgeBackupDir': 'Select Knowledge Base Backup Directory',
+    'dialog.configRestoredTitle': 'Settings Restored from Backup',
+    'dialog.configRestoredMessage':
+      'App settings were damaged and have been restored from the latest usable backup. Please check Settings for AI, SSH, messaging, and other items.',
+    'dialog.configResetTitle': 'Settings Could Not Be Restored',
+    'dialog.configResetMessage':
+      'App settings were damaged and no usable backup was found. The damaged file was backed up separately, and the app started with empty defaults. Please reconfigure AI, SSH, messaging, and other required items.',
+    'dialog.configRecoveryOk': 'Got it',
     'filter.allFiles': 'All Files',
     'filter.xshellFiles': 'Xshell Session Files',
 

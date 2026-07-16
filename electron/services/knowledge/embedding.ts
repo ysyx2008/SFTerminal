@@ -406,8 +406,9 @@ export class EmbeddingService extends EventEmitter {
       const isUnexpected = code !== null && code !== 0 && code !== 15 // 15 = SIGTERM 主动 kill
       if (isUnexpected) {
         log.warn('Embedding worker 异常退出（code=%s），将在下次 embed 时重启 worker', code)
-        this.useWorker = false
       }
+      // 保留 useWorker=true：下次 embedBatch 会 restartWorkerSession，
+      // 切勿改成 false 后误走空的 in-process extractor（extractor 从未加载）。
       this.worker = null
       // 拒绝所有 pending
       for (const [, p] of this.pending) {
@@ -521,8 +522,15 @@ export class EmbeddingService extends EventEmitter {
    * 单次 batch forward（输入长度必须 ≤ getMaxBatchSize()）。
    */
   private async embedBatch(texts: string[]): Promise<number[][]> {
-    if (this.useWorker && this.worker) {
+    // Worker 模式：worker 进程可能已退出但 useWorker 仍为 true；必须重启，禁止误调空 extractor
+    if (this.useWorker) {
+      if (!this.worker) {
+        await this.restartWorkerSession()
+      }
       return this.embedBatchWorker(texts)
+    }
+    if (typeof this.extractor !== 'function') {
+      throw new Error('Embedding 模型未加载（in-process extractor 无效）')
     }
     return this.embedBatchInProc(texts)
   }
@@ -599,9 +607,13 @@ export class EmbeddingService extends EventEmitter {
     const modelPath = this.modelManager.getModelPath(model.id)
     const modelDir = path.dirname(modelPath)
     const modelName = path.basename(modelPath)
+    const pipelineDevice = this.runtimePipelineDevice ?? resolvePipelineDevice(this.embeddingDevice)
 
     await this.startWorker()
-    await this.callWorker('initialize', this.buildWorkerInitPayload(modelDir, modelName))
+    await this.callWorker(
+      'initialize',
+      this.buildWorkerInitPayload(modelDir, modelName, pipelineDevice),
+    )
     this.useWorker = true
   }
 

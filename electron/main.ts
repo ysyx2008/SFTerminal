@@ -353,6 +353,7 @@ import { AiService } from './services/ai.service'
 import { ConfigService, McpServerConfig, setConfigServiceInstance, DEFAULT_KEYBOARD_SHORTCUTS, type KeyboardShortcuts } from './services/config.service'
 import { initLogging, setLogLevel as setBackendLogLevel, getLogDir, createLogger } from './utils/logger'
 import { serializeAgentStepForIpc } from './utils/agent-step-ipc'
+import { toSafeErrorMessage } from './utils/safe-error-message'
 import { XshellImportService } from './services/xshell-import.service'
 import type { AgentStep, AgentContext } from './services/agent/types'
 import type { PendingConfirmation, ExecutionMode } from './services/agent/types'
@@ -2909,6 +2910,14 @@ ipcMain.handle('config:getAll', async () => {
   return configService.getAll()
 })
 
+ipcMain.handle('config:getRecoveryNotice', async () => {
+  return configService.peekRecoveryNotice()
+})
+
+ipcMain.handle('config:dismissRecoveryNotice', async () => {
+  configService.dismissRecoveryNotice()
+})
+
 // AI 配置
 ipcMain.handle('config:getAiProfiles', async () => {
   return configService.getAiProfiles()
@@ -3645,7 +3654,7 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
     },
     onError: (agentId: string, error: string) => {
       if (!event.sender.isDestroyed()) {
-        event.sender.send('agent:error', { agentId, ptyId, error })
+        event.sender.send('agent:error', { agentId, ptyId, error: toSafeErrorMessage(error) })
       }
       attentionService.request()
     }
@@ -3656,11 +3665,11 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
     const result = await agentService.run(ptyId, message, context, fullConfig, profileId, undefined, callbacks)
     return { success: true, result }
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-    const isAborted = errorMsg === 'User aborted Agent execution'
+    const raw = error instanceof Error ? error.message : 'Unknown error'
+    const isAborted = raw === 'User aborted Agent execution'
     return { 
       success: false, 
-      error: errorMsg,
+      error: toSafeErrorMessage(raw),
       aborted: isAborted
     }
   }
@@ -3920,10 +3929,11 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
       if (!isRemote) attentionService.request()
     },
     onError: (_runId: string, error: string) => {
+      const safe = toSafeErrorMessage(error)
       if (!event.sender.isDestroyed()) {
-        event.sender.send('agent:error', { agentId, ptyId: agentId, error })
+        event.sender.send('agent:error', { agentId, ptyId: agentId, error: safe })
       }
-      if (isRemote) wcs.onAgentError(error)
+      if (isRemote) wcs.onAgentError(safe)
       if (!isRemote) attentionService.request()
     }
   }
@@ -3932,12 +3942,13 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
     const result = await agentService.runAssistant(agentId, message, context, fullConfig, profileId, callbacks)
     return { success: true, result }
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-    const isAborted = errorMsg === 'User aborted Agent execution'
-    if (isRemote) wcs.onAgentError(errorMsg)
+    const raw = error instanceof Error ? error.message : 'Unknown error'
+    const isAborted = raw === 'User aborted Agent execution'
+    const safe = toSafeErrorMessage(raw)
+    if (isRemote) wcs.onAgentError(safe)
     return {
       success: false,
-      error: errorMsg,
+      error: safe,
       aborted: isAborted
     }
   }

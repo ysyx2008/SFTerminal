@@ -1,6 +1,6 @@
 # Config Service SPEC
 
-> Last verified: 2026-07-13
+> Last verified: 2026-07-16
 
 ## 职责
 
@@ -10,9 +10,12 @@ CLI **默认与桌面共用** `qiyu-terminal-config.json`（及同一 userData �
 
 敏感项长期存放心智模型见 credential.service。
 
+日常写盘前由 `config-backup.ts` 对关键配置做轻量滚动备份；读损坏时优先从备份恢复并强制界面提示（禁止静默清空）。迁移/升级整包仍只用 `electron/migrations/backup.ts`（**零改动**）。
+
 ## 文件 / 规模
 
-单文件：`electron/services/config.service.ts`（~1002 行）
+- `electron/services/config.service.ts` — ConfigService
+- `electron/services/config-backup.ts` — 滚动备份 / 恢复 / recovery notice
 
 ## 公开 API
 
@@ -59,8 +62,23 @@ CLI **默认与桌面共用** `qiyu-terminal-config.json`（及同一 userData �
 | | `getSchemaVersion() / setSchemaVersion(n)` | 配置 schema 版本 |
 | | `getLogLevel() / setLogLevel(level)` | 日志级别 |
 | | `getSponsorStatus() / setSponsorStatus(s)` | 赞助状态 |
+| **恢复提示** | `peekRecoveryNotice() / dismissRecoveryNotice()` | 启动恢复/重置后的 UI notice（落盘 `config-recovery-notice.json`） |
 
-内部通过 `private store: Store<StoreSchema>` 实现持久化。
+内部通过 `private store: Store<StoreSchema>` 实现持久化。`store.set` 在构造后包装为写前调用 `createConfigBackupIfNeeded()`。
+
+### 滚动备份（`config-backup.ts`）
+
+| 项 | 说明 |
+|---|---|
+| 目录 | `{userData}/config-backups/{iso}/`（与 `backups/` 迁移整包隔离） |
+| 目标（lite） | `qiyu-terminal-config.json`、`qiyu-terminal-watches.json`、`qiyu-terminal-scheduler.json`、`credentials.json`、`master.key` |
+| 触发 | 主配置 `store.set` 写前；合法 JSON + hash 去重 + **5 分钟去抖**；启动 >24h 无快照则补打 |
+| 保留 | 近期槽 **20** + 按天保底 **30 天**（每天最早一份） |
+| 恢复顺序 | `config-backups/` 从新到旧第一份 check 通过 → 只读回退 `backups/` 整包内同名文件 |
+| Check | 主配置须 parse 为 plain object；可选 JSON 存在则须可 parse；`master.key` 非空 |
+| Notice | `restored` \| `reset`；渲染进程 `ConfirmDialog` 提示后 dismiss；IPC `getRecoveryNotice` / `dismiss` |
+
+公开函数：`createConfigBackup` / `createConfigBackupIfNeeded` / `ensureStartupConfigBackup` / `tryRestoreConfigFromBackups` / `peekConfigRecoveryNotice` / `consumeConfigRecoveryNotice` / `dismissConfigRecoveryNotice`。
 
 ## 核心类型 / 接口
 
@@ -72,10 +90,10 @@ CLI **默认与桌面共用** `qiyu-terminal-config.json`（及同一 userData �
 
 ## 关键行为 / 数据流
 
-1. `main.ts` 启动 → 实例化 `ConfigService` → 调用 `electron-store` 读取本地 JSON
-2. 任意 service 调用 `getXxx()` → 直接返回内存中值（无 I/O）
-3. 任意 service 调用 `setXxx(value)` → 更新内存 → `electron-store` 即时写盘
-4. `getAll()` 返回完整配置快照，用于调试/导出
+1. `main.ts` 启动 → 实例化 `ConfigService` → `createStore`：明文读 → 失败则 `tryRestoreConfigFromBackups` → 再失败则旧加密迁移 → 仍失败则备份坏文件 + 空默认并 `setConfigRecoveryNotice`
+2. 启动成功后 `ensureStartupConfigBackup`；有 notice 时主进程弹窗 + 前端横幅
+3. 任意 `setXxx` → 包装后的 `store.set` →（按规则）先备份旧文件 → 再写盘
+4. `getXxx()` → 内存值；`getAll()` 完整快照
 
 ## 关键约束
 
@@ -83,3 +101,6 @@ CLI **默认与桌面共用** `qiyu-terminal-config.json`（及同一 userData �
 - **新增配置项必须同步更新 `migrations/types.ts` 中的 `StoreSchema`**，并考虑迁移路径
 - **set 操作即写盘**——高频写入场景（如终端 resize）不得走 ConfigService
 - **不得在 getter 中返回可变对象引用**——调用方修改返回值不应影响内部状态
+- **恢复/重置必须界面可见**——禁止只打日志的静默清空
+- **不修改** `electron/migrations/backup.ts`（升级整包链路隔离）
+- 跨进程（桌面+CLI 同 userData）无文件锁；半截 JSON 由 check 拦住（已知限制）

@@ -788,6 +788,13 @@ const electronAPI = {
       ipcRenderer.on('config:changed', handler)
       return () => { ipcRenderer.removeListener('config:changed', handler) }
     },
+    getRecoveryNotice: () =>
+      ipcRenderer.invoke('config:getRecoveryNotice') as Promise<{
+        kind: 'restored' | 'reset'
+        from?: string
+        at: number
+      } | null>,
+    dismissRecoveryNotice: () => ipcRenderer.invoke('config:dismissRecoveryNotice') as Promise<void>,
 
     // AI 配置
     getAiProfiles: () => ipcRenderer.invoke('config:getAiProfiles'),

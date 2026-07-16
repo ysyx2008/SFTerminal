@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertTriangle, AlertCircle, HelpCircle } from 'lucide-vue-next'
+import { AlertTriangle, HelpCircle } from 'lucide-vue-next'
 import type { ConfirmDialogOptions } from '../../composables/useConfirm'
 
 const { t } = useI18n()
@@ -98,8 +98,7 @@ const confirmBtnClass = computed(() => {
             <div class="dialog-header">
               <div class="dialog-header-title">
                 <span class="header-icon" :class="dialogType">
-                  <AlertTriangle v-if="dialogType === 'danger'" :size="16" />
-                  <AlertCircle v-else-if="dialogType === 'warning'" :size="16" />
+                  <AlertTriangle v-if="dialogType === 'danger' || dialogType === 'warning'" :size="18" />
                   <HelpCircle v-else :size="16" />
                 </span>
                 <h3 class="dialog-title">{{ options.title }}</h3>

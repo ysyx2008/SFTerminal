@@ -971,6 +971,13 @@ export default {
   dataSettings: {
     title: 'Data Management',
     description: 'Inspect storage usage, back up / restore all configuration and sessions, or clean up history',
+    configRestoredTitle: 'Settings Restored from Backup',
+    configRestoredMessage:
+      'App settings were damaged and have been restored from the latest usable backup. Please check Settings for AI, SSH, messaging, and other items.',
+    configResetTitle: 'Settings Could Not Be Restored',
+    configResetMessage:
+      'App settings were damaged and no usable backup was found. The damaged file was backed up separately, and the app started with empty defaults. Please reconfigure AI, SSH, messaging, and other required items.',
+    configRecoveryOk: 'Got it',
     exportData: 'Export Data',
     exportDataDesc: 'Export all configuration and session data',
     importData: 'Import Data',

@@ -198,6 +198,7 @@ export default {
     },
     agentExecutionFailed: '❌ 助手执行失败: {error}',
     agentRunError: '❌ 助手运行出错: {error}',
+    agentIpcFailed: '与助手通信失败，请重试；若仍失败请检查 AI 配置与网络',
     unknownError: '未知错误',
     needConfirm: '需要确认',
     highRisk: '高风险',

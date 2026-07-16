@@ -25,7 +25,7 @@ import Toast from './components/common/Toast.vue'
 import UpdateNotifyCard from './components/common/UpdateNotifyCard.vue'
 import ConfirmDialog from './components/common/ConfirmDialog.vue'
 import SsoLoginGate from './components/Auth/SsoLoginGate.vue'
-import { useConfirm } from './composables/useConfirm'
+import { useConfirm, showConfirm } from './composables/useConfirm'
 import { toast } from './composables/useToast'
 import { useAuthStore } from './stores/auth'
 import { checkAudioDevicesGlobal, initSpeechGlobal } from './composables/useSpeechRecognition'
@@ -417,6 +417,49 @@ onMounted(async () => {
   initSplitPaneHandler()
   initWorkbenchHandler()
 
+  // ── 知识库 / 启动进度：必须最先订阅，绝不能被弹窗 await 堵住 ──────────────
+  // 后端常在 Vue mount 前后就开始 rebuild；若等确认框点完再监听会漏掉全部进度。
+  startupLoading.value = true
+  cleanupStartupProgress = window.electronAPI.app.onStartupProgress(({ stage }) => {
+    if (stage === 'done') {
+      startupStage.value = STARTUP_STAGE_LABELS.done
+      if (startupDoneTimer) clearTimeout(startupDoneTimer)
+      startupDoneTimer = setTimeout(() => {
+        startupLoading.value = false
+        startupStage.value = ''
+      }, 600)
+    } else {
+      startupStage.value = STARTUP_STAGE_LABELS[stage] ?? `${stage}...`
+    }
+  })
+  startupFallbackTimer = setTimeout(() => { startupLoading.value = false }, 10_000)
+
+  cleanupKnowledgeUpgrading = window.electronAPI.knowledge.onUpgrading((payload?: {
+    cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing'
+    total?: number
+    libraryTotal?: number
+  }) => {
+    _knowledgeDone.value = false
+    knowledgeLoadingProgress.value = {
+      current: 0,
+      total: payload?.total ?? 0,
+      libraryTotal: payload?.libraryTotal ?? 0,
+      filename: '',
+    }
+    knowledgeLoadingText.value = knowledgeText(payload?.cause)
+  })
+  cleanupKnowledgeProgress = window.electronAPI.knowledge.onRebuildProgress((data) => {
+    knowledgeLoadingProgress.value = {
+      ...data,
+      libraryTotal: data.libraryTotal ?? 0,
+    }
+  })
+  cleanupKnowledgeReady = window.electronAPI.knowledge.onReady(() => {
+    _knowledgeDone.value = true
+    knowledgeLoadingProgress.value = { current: 0, total: 0, libraryTotal: 0, filename: '' }
+    knowledgeLoadingText.value = ''
+  })
+
   // SSO：features.sso 关闭时 no-op
   try {
     await authStore.init()
@@ -452,6 +495,27 @@ onMounted(async () => {
     isAwakened.value = !!(await window.electronAPI.config.get('agentAwakened'))
   } catch { /* ignore */ }
 
+  // 配置恢复提示：不 await，避免堵住后续初始化 / 知识库进度订阅已完成
+  void (async () => {
+    try {
+      const recoveryNotice = await window.electronAPI.config.getRecoveryNotice()
+      if (!recoveryNotice) return
+      const isRestored = recoveryNotice.kind === 'restored'
+      await showConfirm({
+        type: 'warning',
+        showCancel: false,
+        title: isRestored
+          ? t('dataSettings.configRestoredTitle')
+          : t('dataSettings.configResetTitle'),
+        message: isRestored
+          ? t('dataSettings.configRestoredMessage')
+          : t('dataSettings.configResetMessage'),
+        confirmText: t('dataSettings.configRecoveryOk'),
+      })
+      await window.electronAPI.config.dismissRecoveryNotice()
+    } catch { /* ignore */ }
+  })()
+
   // 加载最近对话侧栏宽度（config 为真值；localStorage 仅用于首帧同步，避免启动时宽度跳变）
   try {
     const savedWidth = await window.electronAPI.config.get('recallSidebarWidth') as number | undefined
@@ -480,49 +544,6 @@ onMounted(async () => {
       return t.agentState?.isRunning === true           // Hub 内运行中的助手计
     }).length
     window.electronAPI.window.responseTerminalCount(count)
-  })
-
-  // ── 后端启动进度（fixed overlay，不占布局空间）──────────────────────────────
-  startupLoading.value = true
-  cleanupStartupProgress = window.electronAPI.app.onStartupProgress(({ stage }) => {
-    if (stage === 'done') {
-      startupStage.value = STARTUP_STAGE_LABELS.done
-      if (startupDoneTimer) clearTimeout(startupDoneTimer)
-      startupDoneTimer = setTimeout(() => {
-        startupLoading.value = false
-        startupStage.value = ''
-      }, 600)
-    } else {
-      startupStage.value = STARTUP_STAGE_LABELS[stage] ?? `${stage}...`
-    }
-  })
-  startupFallbackTimer = setTimeout(() => { startupLoading.value = false }, 10_000)
-
-  // ── 知识库索引重建进度 ─────────────────────────────────────────────────────
-  cleanupKnowledgeUpgrading = window.electronAPI.knowledge.onUpgrading((payload?: {
-    cause?: 'dimension_mismatch' | 'data_corrupted' | 'missing'
-    total?: number
-    libraryTotal?: number
-  }) => {
-    _knowledgeDone.value = false
-    knowledgeLoadingProgress.value = {
-      current: 0,
-      total: payload?.total ?? 0,
-      libraryTotal: payload?.libraryTotal ?? 0,
-      filename: '',
-    }
-    knowledgeLoadingText.value = knowledgeText(payload?.cause)
-  })
-  cleanupKnowledgeProgress = window.electronAPI.knowledge.onRebuildProgress((data) => {
-    knowledgeLoadingProgress.value = {
-      ...data,
-      libraryTotal: data.libraryTotal ?? 0,
-    }
-  })
-  cleanupKnowledgeReady = window.electronAPI.knowledge.onReady(() => {
-    _knowledgeDone.value = true
-    knowledgeLoadingProgress.value = { current: 0, total: 0, libraryTotal: 0, filename: '' }
-    knowledgeLoadingText.value = ''
   })
 
   // ── 备份 / 恢复进度（复用知识库进度条，无百分比，只显示文字）──────────────
