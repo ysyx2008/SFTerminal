@@ -9,6 +9,7 @@ import { useComposerQuoteStore } from '../stores/composer-quote'
 import type { ComposerQuoteSnippet } from '../stores/composer-quote'
 import type { ParsedDocument } from '../stores/terminal'
 import type { ParsingDocument } from '../composables/useDocumentUpload'
+import AttachmentFileIcon from './AttachmentFileIcon.vue'
 
 interface ContextStats {
   tokenEstimate: number
@@ -437,12 +438,6 @@ const handleSend = async () => {
   await props.submitMessage(finalMessage)
 }
 
-const getDocIcon = (fileType: string) => {
-  if (fileType === 'pdf') return '📕'
-  if (fileType === 'docx' || fileType === 'doc') return '📘'
-  return '📄'
-}
-
 const parsingSummary = computed(() => {
   const total = props.parsingDocs.length
   const done = props.parsingDocs.filter(doc => doc.status === 'completed' || doc.status === 'failed').length
@@ -525,7 +520,7 @@ const handleSendClick = (event: MouseEvent) => {
         class="uploaded-doc-item"
         :class="{ 'has-error': doc.error }"
       >
-        <span class="doc-icon">{{ getDocIcon(doc.fileType) }}</span>
+        <AttachmentFileIcon class="doc-icon" :file-type="doc.fileType" :filename="doc.filename" :size="14" />
         <span class="doc-name" :title="doc.filename">{{ doc.filename }}</span>
         <span class="doc-size">{{ formatFileSize(doc.fileSize) }}</span>
         <span v-if="doc.error" class="doc-error" :data-tooltip="doc.error">⚠️</span>

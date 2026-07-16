@@ -21,6 +21,7 @@ import ThinkingBlock from './ThinkingBlock.vue'
 import ToolCallContent from './ToolCallContent.vue'
 import ImageContextMenu from './ImageContextMenu.vue'
 import AttachmentContextMenu from './AttachmentContextMenu.vue'
+import AttachmentFileIcon from './AttachmentFileIcon.vue'
 import EChartsCanvas from './EChartsCanvas.vue'
 import WelcomePanel from './WelcomePanel.vue'
 import HistorySearchModal from './HistorySearchModal.vue'
@@ -2330,7 +2331,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         @keydown.space.prevent="openAttachmentFile(file)"
                         @contextmenu="openAttachmentContextMenu($event, file)"
                       >
-                        <span class="attachment-name">📎 {{ file.filename }}</span>
+                        <AttachmentFileIcon :file-type="file.fileType" :filename="file.filename" :size="15" />
+                        <span class="attachment-name">{{ file.filename }}</span>
                         <span class="attachment-size">{{ formatFileSize(file.fileSize) }}</span>
                       </span>
                     </div>
@@ -2564,7 +2566,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         @keydown.space.prevent="openAttachmentFile(file)"
                         @contextmenu="openAttachmentContextMenu($event, file)"
                       >
-                        <span class="attachment-name">📎 {{ file.filename }}</span>
+                        <AttachmentFileIcon :file-type="file.fileType" :filename="file.filename" :size="15" />
+                        <span class="attachment-name">{{ file.filename }}</span>
                         <span class="attachment-size">{{ formatFileSize(file.fileSize) }}</span>
                       </span>
                     </div>
