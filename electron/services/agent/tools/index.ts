@@ -53,6 +53,7 @@ export {
   isInWorkspace,
   isScratchPath,
   isAutoApproveWorkspacePath,
+  assessFileWriteRisk,
 } from './file'
 export { sftpPut, sftpGet } from './sftp'
 export { searchKnowledge, getKnowledgeDoc } from './knowledge'

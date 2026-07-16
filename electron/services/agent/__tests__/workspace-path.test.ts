@@ -6,7 +6,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 
-const mockUserData = path.join(os.tmpdir(), `sft-workspace-test-${Date.now()}`)
+const mockUserData = path.join(os.homedir(), `.sft-workspace-test-${Date.now()}`)
 
 vi.mock('electron', () => ({
   app: {
@@ -24,6 +24,7 @@ import {
   isInWorkspace,
   isScratchPath,
   isAutoApproveWorkspacePath,
+  assessFileWriteRisk,
 } from '../tools/file'
 
 describe('agent workspace paths', () => {
@@ -68,5 +69,29 @@ describe('agent workspace paths', () => {
     expect(isInWorkspace(path.join(ws, 'TODO.md'))).toBe(true)
     expect(isScratchPath(path.join(ws, 'TODO.md'))).toBe(false)
     expect(isScratchPath(path.join(getScratchPath(), 'a.txt'))).toBe(true)
+  })
+
+  describe('assessFileWriteRisk', () => {
+    it('/tmp 写入（含 overwrite）降为 safe', () => {
+      expect(assessFileWriteRisk('/tmp/ddb_demo.py', 'create')).toBe('safe')
+      expect(assessFileWriteRisk('/tmp/ddb_demo.py', 'overwrite', { fileExists: true })).toBe('safe')
+      expect(assessFileWriteRisk('/tmp/ddb_demo.py', 'append')).toBe('safe')
+    })
+
+    it('工作区外覆盖已有文件为 dangerous', () => {
+      const outside = path.join(os.homedir(), 'outside-write-risk-test.txt')
+      expect(assessFileWriteRisk(outside, 'overwrite', { fileExists: true })).toBe('dangerous')
+      expect(assessFileWriteRisk(outside, 'create')).toBe('safe')
+    })
+
+    it('scratch 内 overwrite 仍为 safe', () => {
+      const scratchFile = path.join(getScratchPath(), 'draft.py')
+      expect(assessFileWriteRisk(scratchFile, 'overwrite', { fileExists: true })).toBe('safe')
+    })
+
+    it('templates 内 overwrite 为 moderate', () => {
+      const tpl = path.join(getWorkspacePath(), 'templates', 'report.docx')
+      expect(assessFileWriteRisk(tpl, 'overwrite', { fileExists: true })).toBe('moderate')
+    })
   })
 })

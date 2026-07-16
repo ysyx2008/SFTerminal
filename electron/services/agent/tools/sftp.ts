@@ -20,6 +20,7 @@ import {
   getWorkspacePath,
   getScratchPath,
   isAutoApproveWorkspacePath,
+  assessFileWriteRisk,
 } from './file'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 import type { TransferProgress } from '../../sftp.service'
@@ -119,10 +120,25 @@ export async function sftpPut(
   const sizeDisplay = formatFileSize(totalBytes)
   const fileName = path.basename(localPath)
 
-  // tool_call 卡：上传是写远程，默认 moderate；overwrite 已存在文件升级到 dangerous（覆盖丢数据）
-  // 此处还没问远程是否存在，先按 overwrite=true 谨慎评估为 dangerous，
-  // 给确认环节一个最严格的默认；若实际不存在就会落到 create，无非用户多确认一次。
-  const riskLevel = overwrite ? 'dangerous' : 'moderate'
+  // tool_call 卡：上传是写远程；/tmp 等自由区免确认，覆盖工作区外已有文件需确认
+  const riskLevel = assessFileWriteRisk(remotePath, overwrite ? 'overwrite' : 'create', {
+    fileExists: overwrite,
+    extraFreeDirs: Array.isArray(config.commandRiskPolicy?.extraFreeDirs)
+      ? config.commandRiskPolicy!.extraFreeDirs!
+      : [],
+  })
+  {
+    if (riskLevel === 'blocked') {
+      executor.addStep({
+        type: 'tool_call',
+        content: `🚫 ${t('file.forbidden_path')}: ${remotePath}`,
+        toolName: 'sftp_put',
+        toolArgs: { local_path: localPath, remote_path: remotePath, ...(overwrite && { overwrite: true }) },
+        riskLevel: 'blocked',
+      })
+      return { success: false, output: '', error: t('file.forbidden_path_error') }
+    }
+  }
   executor.addStep({
     type: 'tool_call',
     content: `${t('sftp.upload')} (${sizeDisplay}): ${fileName} → ${remotePath}`,

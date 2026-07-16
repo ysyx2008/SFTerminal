@@ -19,7 +19,9 @@ import type { ToolOutputBudget } from '../tool-output-budget'
 import type { CanvasData } from '@shared/types'
 import { VISION_IMAGE_EXTENSIONS, IMAGE_MIME_TYPES, CONVERTIBLE_IMAGE_EXTENSIONS } from './types'
 import { isUserDataForbidden } from '../command-audit/userdata-guard'
-import { riskNeedsConfirm } from '../command-audit/confirm-policy'
+import { isHardBlocked, riskNeedsConfirm } from '../command-audit/confirm-policy'
+import { getSystemPathSeverity, getWorkspaceZone } from '../command-audit/workspace-guard'
+import type { RiskLevel } from '@shared/types/agent'
 
 const DEFAULT_READ_OUTPUT_BUDGET: ToolOutputBudget = {
   maxChars: 24_576,
@@ -425,6 +427,40 @@ export function isAutoApproveWorkspacePath(filePath: string): boolean {
   return false
 }
 
+export type FileWriteMode =
+  | 'create'
+  | 'overwrite'
+  | 'append'
+  | 'insert'
+  | 'replace_lines'
+  | 'regex_replace'
+
+/**
+ * 文件写入/修改风险（对齐 command-audit 路径分区：/tmp 等自由区 → safe）。
+ */
+export function assessFileWriteRisk(
+  filePath: string,
+  mode: FileWriteMode,
+  opts?: { fileExists?: boolean; cwd?: string; extraFreeDirs?: string[] },
+): RiskLevel {
+  const { fileExists = false, cwd, extraFreeDirs = [] } = opts ?? {}
+
+  const severity = getSystemPathSeverity(filePath, cwd)
+  if (severity === 'critical') return 'blocked'
+  if (severity === 'hardened') return 'dangerous'
+
+  const zone = getWorkspaceZone(filePath, cwd, extraFreeDirs)
+  if (zone === 'free') return 'safe'
+  if (isAutoApproveWorkspacePath(filePath)) return 'safe'
+
+  const isSafeWrite = mode === 'create' || mode === 'append' || mode === 'insert'
+  if (isSafeWrite) return 'safe'
+
+  if (mode === 'overwrite' && fileExists && zone === 'outside') return 'dangerous'
+
+  return 'moderate'
+}
+
 function forbiddenUserDataToolResult(
   filePath: string,
   toolName: string,
@@ -449,6 +485,29 @@ function blockIfUserDataForbidden(
 ): ToolResult | null {
   if (!isUserDataForbidden(filePath, cwd)) return null
   return forbiddenUserDataToolResult(filePath, toolName, executor, cwd)
+}
+
+function blockIfHardBlockedWrite(
+  filePath: string,
+  toolName: string,
+  riskLevel: RiskLevel,
+  executor: ToolExecutorConfig,
+): ToolResult | null {
+  if (!isHardBlocked(riskLevel)) return null
+  executor.addStep({
+    type: 'tool_call',
+    content: `🚫 ${t('file.forbidden_path')}: ${filePath}`,
+    toolName,
+    toolArgs: { path: filePath },
+    riskLevel: 'blocked',
+  })
+  return { success: false, output: '', error: t('file.forbidden_path_error') }
+}
+
+function extraFreeDirsFromConfig(config: AgentConfig): string[] {
+  return Array.isArray(config.commandRiskPolicy?.extraFreeDirs)
+    ? config.commandRiskPolicy!.extraFreeDirs!
+    : []
 }
 
 /**
@@ -1516,12 +1575,18 @@ export async function editFile(
   const oldTextPreview = oldText.length > 50 ? oldText.substring(0, 50) + '...' : oldText
   const newTextPreview = newText.length > 50 ? newText.substring(0, 50) + '...' : newText
   
-  const inWorkspace = isAutoApproveWorkspacePath(filePath)
   const editDisplayPath = formatDisplayPath(filePath, ptyId)
 
   // tool_call 卡先发出占位标题（无行号）：此时还没读文件，不知道 oldText 在哪
   // 等下面 try 块定位 match 后会通过 updateStep 更新成「编辑文件: path (第 X-Y 行)」
-  const riskLevel = inWorkspace ? 'safe' : 'moderate'
+  const riskLevel = assessFileWriteRisk(filePath, 'replace_lines', {
+    fileExists: true,
+    extraFreeDirs: extraFreeDirsFromConfig(config),
+  })
+  {
+    const blocked = blockIfHardBlockedWrite(filePath, 'edit_file', riskLevel, executor)
+    if (blocked) return blocked
+  }
   const callStep = executor.addStep({
     type: 'tool_call',
     content: `${t('file.edit')}: ${editDisplayPath}`,
@@ -1765,11 +1830,14 @@ export async function writeTextFile(
   }
 
   const fileExists = fs.existsSync(filePath)
-  const inWorkspace = isAutoApproveWorkspacePath(filePath)
-  const isDangerousOverwrite = mode === 'overwrite' && fileExists && !inWorkspace
-  const isSafeWrite = mode === 'create' || mode === 'append' || mode === 'insert'
-
-  const riskLevel = (inWorkspace || isSafeWrite) ? 'safe' : (isDangerousOverwrite ? 'dangerous' : 'moderate')
+  const riskLevel = assessFileWriteRisk(filePath, mode as FileWriteMode, {
+    fileExists,
+    extraFreeDirs: extraFreeDirsFromConfig(config),
+  })
+  {
+    const blocked = blockIfHardBlockedWrite(filePath, 'write_text_file', riskLevel, executor)
+    if (blocked) return blocked
+  }
   executor.addStep({
     type: 'tool_call',
     content: operationDesc,
@@ -2060,7 +2128,13 @@ async function writeFileViaSftp(
       break
   }
 
-  const riskLevel = mode === 'overwrite' ? 'dangerous' : 'moderate'
+  const riskLevel = assessFileWriteRisk(filePath, mode, {
+    extraFreeDirs: extraFreeDirsFromConfig(config),
+  })
+  {
+    const blocked = blockIfHardBlockedWrite(filePath, 'write_remote_text_file', riskLevel, executor)
+    if (blocked) return blocked
+  }
   executor.addStep({
     type: 'tool_call',
     content: operationDesc,
