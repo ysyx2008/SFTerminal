@@ -28,14 +28,41 @@ const AI_RETRY = {
   MAX_DELAY_MS: 60000,       // 单次重试最大延迟：60 秒（防止指数退避无限增长）
   MAX_RETRY_AFTER_MS: 120000, // Retry-After 最大接受值：120 秒（超过则不重试）
   JITTER_FACTOR: 0.2,        // 退避抖动因子（±20%），避免 thundering herd
-  // Node.js 网络错误码（稳定常量，非关键词匹配）
-  RETRYABLE_ERRORS: ['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNREFUSED', 'EPIPE', 'EAI_AGAIN', 'socket hang up'],
+  // Node.js 系统错误码（err.code，稳定常量）。含 EPROTO：代理/VPN 切换时 TLS 握手失败常见
+  RETRYABLE_ERROR_CODES: ['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNREFUSED', 'EPIPE', 'EAI_AGAIN', 'EPROTO'] as const,
+  // 无稳定 code、但 Node 会写入 message 的瞬时网络故障短语
+  RETRYABLE_ERROR_MESSAGES: ['socket hang up'] as const,
   // 可重试的 HTTP 状态码（服务端临时错误）
   RETRYABLE_STATUS_CODES: [500, 502, 503, 529] as readonly number[]
 }
 
-function isRetryableError(errorMessage: string): boolean {
-  return AI_RETRY.RETRYABLE_ERRORS.some(code => errorMessage.includes(code))
+/** 网络错误判定输入：字符串（兼容 'ETIMEDOUT'）或带 code/message 的 Error */
+type NetworkErrorLike = string | { message?: string; code?: string }
+
+function getNetworkErrorMessage(error: NetworkErrorLike): string {
+  return typeof error === 'string' ? error : (error.message ?? '')
+}
+
+function getNetworkErrorCode(error: NetworkErrorLike): string {
+  return typeof error === 'string' ? '' : (error.code ?? '')
+}
+
+/**
+ * 是否为可自动重试的瞬时网络错误。
+ * 优先看 err.code（Node 系统错误码）；TLS 握手中断时 message 往往是
+ * "Client network socket disconnected before secure TLS connection was established"
+ * 不含 ECONNRESET 字样，但 code 仍为 ECONNRESET——只匹配 message 会漏掉重试。
+ */
+export function isRetryableError(error: NetworkErrorLike): boolean {
+  const code = getNetworkErrorCode(error)
+  if (code && (AI_RETRY.RETRYABLE_ERROR_CODES as readonly string[]).includes(code)) {
+    return true
+  }
+  const message = getNetworkErrorMessage(error)
+  return (
+    AI_RETRY.RETRYABLE_ERROR_CODES.some(c => message.includes(c)) ||
+    AI_RETRY.RETRYABLE_ERROR_MESSAGES.some(m => message.includes(m))
+  )
 }
 
 function isRetryableStatusCode(statusCode: number): boolean {
@@ -60,6 +87,8 @@ interface ApiRequestError extends Error {
   statusCode?: number
   retryAfter?: number
   apiErrorCode?: string
+  /** Node.js 系统错误码（ECONNRESET / EPROTO 等），toApiRequestError 保留原 Error 时自带 */
+  code?: string
 }
 
 /**
@@ -159,11 +188,12 @@ async function withApiRetry<T>(
         return _retry()
       }
 
-      // 网络错误
-      if (isRetryableError(apiErr.message) && networkAttempt < maxRetries) {
+      // 网络错误（看 err.code + message；TLS 握手中断时常只有 code=ECONNRESET）
+      if (isRetryableError(apiErr) && networkAttempt < maxRetries) {
         networkAttempt++
         const delay = calculateBackoff(AI_RETRY.BASE_DELAY, networkAttempt - 1)
-        log.warn(`Network error (${apiErr.message.slice(0, 80)}), retry ${networkAttempt}/${maxRetries} in ${(delay / 1000).toFixed(1)}s`)
+        const detail = [getNetworkErrorCode(apiErr), getNetworkErrorMessage(apiErr)].filter(Boolean).join(' ').slice(0, 80)
+        log.warn(`Network error (${detail}), retry ${networkAttempt}/${maxRetries} in ${(delay / 1000).toFixed(1)}s`)
         options?.onRetry?.(networkAttempt, delay, 'network')
         await new Promise(resolve => setTimeout(resolve, delay))
         return _retry()
@@ -177,24 +207,26 @@ async function withApiRetry<T>(
 }
 
 /**
- * 将 Node.js 网络错误消息翻译为用户可读的界面语言
- * 错误码是 Node.js 定义的稳定常量，不是关键词匹配
+ * 将 Node.js 网络错误翻译为用户可读的界面语言。
+ * 优先用 err.code（稳定常量）；TLS 握手断开等场景 message 不含错误码。
  */
-const NET_ERROR_CODES = ['ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'EAI_AGAIN'] as const
+const NET_ERROR_CODES = ['ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'EAI_AGAIN', 'EPROTO'] as const
 
-function translateNetworkError(errMessage: string): string {
+function translateNetworkError(err: NetworkErrorLike): string {
+  const errMessage = getNetworkErrorMessage(err)
+  const errCode = getNetworkErrorCode(err)
   if (errMessage.includes('socket hang up')) {
     return t('error.net_socket_hang_up')
   }
-  // 从 err.message（如 "getaddrinfo ENOTFOUND api.deepseek.com"）中提取错误码和主机名
   for (const code of NET_ERROR_CODES) {
-    if (errMessage.includes(code)) {
-      // 提取主机名：错误消息中错误码后面的部分，取第一段非空字符串
-      const afterCode = errMessage.split(code)[1]?.trim() || ''
-      const host = afterCode.split(/\s/)[0] || ''
-      const key = `error.net_${code.toLowerCase()}` as Parameters<typeof t>[0]
-      return t(key, { host })
-    }
+    if (errCode !== code && !errMessage.includes(code)) continue
+    // 提取主机名：错误消息中错误码后面的部分，取第一段非空字符串
+    const afterCode = errMessage.includes(code) ? (errMessage.split(code)[1]?.trim() || '') : ''
+    const host = afterCode.split(/\s/)[0] || ''
+    // EPROTO 无独立文案，复用连接中断提示（代理/VPN 切换时常见）
+    const keyCode = code === 'EPROTO' ? 'econnreset' : code.toLowerCase()
+    const key = `error.net_${keyCode}` as Parameters<typeof t>[0]
+    return t(key, { host })
   }
   return errMessage
 }
@@ -1098,7 +1130,7 @@ export class AiService {
           throw new Error(friendly)
         }
         // 保留 makeRequest 已重试后的原始错误信息，翻译网络错误码
-        throw new Error(t('error.ai_request_failed', { message: translateNetworkError(errMsg) }))
+        throw new Error(t('error.ai_request_failed', { message: translateNetworkError(error) }))
       }
       throw error
     }
@@ -1149,11 +1181,11 @@ export class AiService {
       return { success: true, message: '', latencyMs }
     } catch (err) {
       const latencyMs = Date.now() - start
-      const errMsg = err instanceof Error ? err.message : String(err)
       const friendly = err instanceof Error ? tryFriendlyApiError(err, testProfile.model) : null
+      const netErr: NetworkErrorLike = err instanceof Error ? err : String(err)
       return {
         success: false,
-        message: toSafeErrorMessage(friendly || translateNetworkError(errMsg)),
+        message: toSafeErrorMessage(friendly || translateNetworkError(netErr)),
         latencyMs,
       }
     }
@@ -1293,7 +1325,7 @@ export class AiService {
           resolve({ models: [], error: translateNetworkError('ETIMEDOUT') })
         })
         req.on('error', (err) => {
-          resolve({ models: [], error: translateNetworkError(err.message) })
+          resolve({ models: [], error: translateNetworkError(err) })
         })
         req.end()
       } catch (err) {
@@ -1515,7 +1547,7 @@ export class AiService {
       }, AI_TIMEOUT.SOCKET_IDLE)
     }
 
-    const tryRetry = (errorMsg: string, statusCode?: number, retryAfterMs?: number): boolean => {
+    const tryRetry = (error: NetworkErrorLike, statusCode?: number, retryAfterMs?: number): boolean => {
       if (isCompleted) return true
 
       // 429 Rate Limit
@@ -1544,8 +1576,8 @@ export class AiService {
         return true
       }
 
-      // 网络错误
-      if (networkRetryCount < AI_RETRY.MAX_RETRIES && isRetryableError(errorMsg)) {
+      // 网络错误（优先 err.code，避免 TLS 握手断开等 message 不含错误码时漏重试）
+      if (networkRetryCount < AI_RETRY.MAX_RETRIES && isRetryableError(error)) {
         networkRetryCount++
         const delay = calculateBackoff(AI_RETRY.BASE_DELAY, networkRetryCount - 1)
         log.warn(`ChatStream network error, retry ${networkRetryCount}/${AI_RETRY.MAX_RETRIES} in ${(delay / 1000).toFixed(0)}s`)
@@ -1697,9 +1729,9 @@ export class AiService {
         })
 
         res.on('error', (err) => {
-          if (!tryRetry(err.message)) {
+          if (!tryRetry(err)) {
             const friendly = tryFriendlyApiError(err, profile.model)
-            complete(() => onError(friendly || t('error.ai_response_error', { message: translateNetworkError(err.message) })))
+            complete(() => onError(friendly || t('error.ai_response_error', { message: translateNetworkError(err) })))
           }
         })
       })
@@ -1717,9 +1749,9 @@ export class AiService {
           complete(() => onDone())
           return
         }
-        if (!tryRetry(err.message)) {
+        if (!tryRetry(err)) {
           const friendly = tryFriendlyApiError(err, profile.model)
-          complete(() => onError(friendly || t('error.request_error', { message: translateNetworkError(err.message) })))
+          complete(() => onError(friendly || t('error.request_error', { message: translateNetworkError(err) })))
         }
       })
 
@@ -1733,11 +1765,11 @@ export class AiService {
       req.write(JSON.stringify(sanitizeBodyStrings(chatStreamBody)))
       req.end()
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-      if (!tryRetry(errorMsg)) {
+      const errorLike: NetworkErrorLike = error instanceof Error ? error : 'Unknown error'
+      if (!tryRetry(errorLike)) {
         if (error instanceof Error) {
           const friendly = tryFriendlyApiError(error, profile.model)
-          complete(() => onError(friendly || t('error.ai_request_failed', { message: translateNetworkError(error.message) })))
+          complete(() => onError(friendly || t('error.ai_request_failed', { message: translateNetworkError(error) })))
         } else {
           complete(() => onError(t('error.ai_request_failed_unknown')))
         }
@@ -1906,7 +1938,7 @@ export class AiService {
         if (friendly) {
           throw new Error(friendly)
         }
-        throw new Error(t('error.ai_request_failed', { message: translateNetworkError(error.message) }))
+        throw new Error(t('error.ai_request_failed', { message: translateNetworkError(error) }))
       }
       throw error
     }
@@ -2097,18 +2129,19 @@ export class AiService {
       return false
     }
 
-    // 尝试重试的辅助函数（网络错误：指数退避 + jitter）
-    const tryRetry = (errorMsg: string, doRequest: () => void): boolean => {
+    // 尝试重试的辅助函数（网络错误：指数退避 + jitter；优先 err.code）
+    const tryRetry = (error: NetworkErrorLike, doRequest: () => void): boolean => {
       // 已有重试在等待或请求已完成，跳过（防止 res/req 同时 emit error 导致重复重试）
       if (isCompleted) return true
-      if (retryCount < AI_RETRY.MAX_RETRIES && isRetryableError(errorMsg)) {
+      if (retryCount < AI_RETRY.MAX_RETRIES && isRetryableError(error)) {
         retryCount++
         const delay = calculateBackoff(AI_RETRY.BASE_DELAY, retryCount - 1)
         closeOpenReasoningBlock()
         if (!onRetry) {
           onChunk(`⚠️ ${t('error.network_retry', { attempt: String(retryCount), max: String(AI_RETRY.MAX_RETRIES) })}\n`)
         }
-        getAiDebugService().logResponseError(reqId, `${errorMsg} - 准备重试 ${retryCount}/${AI_RETRY.MAX_RETRIES} in ${(delay / 1000).toFixed(1)}s`)
+        const detail = [getNetworkErrorCode(error), getNetworkErrorMessage(error)].filter(Boolean).join(' ')
+        getAiDebugService().logResponseError(reqId, `${detail} - 准备重试 ${retryCount}/${AI_RETRY.MAX_RETRIES} in ${(delay / 1000).toFixed(1)}s`)
         pendingRetryInfo = { attempt: retryCount, max: AI_RETRY.MAX_RETRIES, delayMs: delay, reason: 'network' }
         resetForRetry()
         setTimeout(doRequest, delay)
@@ -2453,10 +2486,10 @@ export class AiService {
           }
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
           log.error(`Request failed: model=${profile.model}, duration=${elapsed}s, error=${err.message}`)
-          if (!tryRetry(err.message, doRequest)) {
+          if (!tryRetry(err, doRequest)) {
             getAiDebugService().logResponseError(reqId, err.message)
             const friendly = tryFriendlyApiError(err, profile.model)
-            complete(() => onError(friendly || t('error.request_error', { message: translateNetworkError(err.message) })))
+            complete(() => onError(friendly || t('error.request_error', { message: translateNetworkError(err) })))
           }
         })
       })
@@ -2484,11 +2517,11 @@ export class AiService {
           return
         }
         if (tryVisionFallback(err.message)) return
-        // 尝试重试网络错误（包括 socket hang up）
-        if (!tryRetry(err.message, doRequest)) {
+        // 尝试重试网络错误（包括 socket hang up / TLS 握手中断）
+        if (!tryRetry(err, doRequest)) {
           getAiDebugService().logResponseError(reqId, err.message)
           const friendly = tryFriendlyApiError(err, profile.model)
-          complete(() => onError(friendly || t('error.request_error', { message: translateNetworkError(err.message) })))
+          complete(() => onError(friendly || t('error.request_error', { message: translateNetworkError(err) })))
         }
       })
 
@@ -2524,12 +2557,13 @@ export class AiService {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error'
       if (tryVisionFallback(errorMsg)) return
+      const errorLike: NetworkErrorLike = error instanceof Error ? error : errorMsg
       // 尝试重试网络错误
-      if (!tryRetry(errorMsg, doRequest)) {
+      if (!tryRetry(errorLike, doRequest)) {
         getAiDebugService().logResponseError(reqId, `Exception: ${errorMsg}`)
         if (error instanceof Error) {
           const friendly = tryFriendlyApiError(error, profile.model)
-          complete(() => onError(friendly || t('error.ai_request_failed', { message: translateNetworkError(error.message) })))
+          complete(() => onError(friendly || t('error.ai_request_failed', { message: translateNetworkError(error) })))
         } else {
           complete(() => onError(t('error.ai_request_failed_unknown')))
         }
