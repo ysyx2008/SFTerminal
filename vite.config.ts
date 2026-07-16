@@ -4,20 +4,31 @@ import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import { resolve } from 'path'
 import { copyFileSync, existsSync, mkdirSync } from 'fs'
-import { execFileSync } from 'child_process'
 import type { ChildProcess } from 'node:child_process'
 
 /**
- * shared/oem.config.ts 不进 Git（由模板生成）。
- * 在 vite 启动时 ensure，避免 clone 后直接 build/dev 因缺文件失败。
+ * OEM 可选配置：有 shared/oem.config.ts 则打包进覆盖配置，没有则用 oem-defaults。
+ * 不强制生成该文件（开源主线不提交）。
  */
-function ensureOemConfig(): Plugin {
+function optionalOemConfig(): Plugin {
+  const runtimeFile = resolve(__dirname, 'shared/oem-runtime.ts')
+  const overrideFile = resolve(__dirname, 'shared/oem.config.ts')
+
   return {
-    name: 'ensure-oem-config',
-    configResolved() {
-      execFileSync(process.execPath, [resolve(__dirname, 'scripts/ensure-oem-config.js')], {
-        stdio: 'inherit',
-      })
+    name: 'optional-oem-config',
+    enforce: 'pre',
+    load(id) {
+      const normalized = id.split('?')[0]
+      if (resolve(normalized) !== runtimeFile) return null
+      const from = existsSync(overrideFile) ? './oem.config' : './oem-defaults'
+      if (existsSync(overrideFile)) {
+        console.log('[optional-oem-config] using shared/oem.config.ts')
+      }
+      return `
+export type { OemConfig, OemFeatures, OemFeatureKey, OemBrand, OemSsoConfig, OemSsoGateMode, OemSsoVerifyIdToken } from './oem-types'
+export { OEM_FEATURE_DEFAULTS } from './oem-types'
+export { oemConfig } from '${from}'
+`
     },
   }
 }
@@ -226,7 +237,7 @@ export default defineConfig({
     __STEAM_BUILD__: isSteamBuild
   },
   plugins: [
-    ensureOemConfig(),
+    optionalOemConfig(),
     vue(),
     copyChartMaps(),
     electron([
@@ -294,7 +305,7 @@ export default defineConfig({
           esbuild: {
             charset: 'utf8'
           },
-          plugins: [copyJiebaWasm(), copyShellAstWasm(), copyPwshExtractScript(), copySpeechWorker(), copyPdfWorker(), copyEmbeddingWorker(), copyLanceDBWorker()]
+          plugins: [optionalOemConfig(), copyJiebaWasm(), copyShellAstWasm(), copyPwshExtractScript(), copySpeechWorker(), copyPdfWorker(), copyEmbeddingWorker(), copyLanceDBWorker()]
         }
       },
       {
@@ -367,7 +378,8 @@ export default defineConfig({
           },
           esbuild: {
             charset: 'utf8'
-          }
+          },
+          plugins: [optionalOemConfig()]
         }
       }
     ]),

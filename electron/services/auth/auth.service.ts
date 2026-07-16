@@ -7,7 +7,7 @@
  */
 import { createLogger } from '../../utils/logger'
 import { isOemFeatureEnabled } from '@shared/oem-features'
-import { oemConfig } from '@shared/oem.config'
+import { oemConfig } from '@shared/oem-runtime'
 import type { OemSsoConfig, OemSsoGateMode, OemSsoVerifyIdToken } from '@shared/oem-types'
 import type { AuthPublicSession, AuthSession, AuthTokens, OidcDiscoveryDocument } from '@shared/types'
 import { getDefaultCredentialService } from '../credential.service'

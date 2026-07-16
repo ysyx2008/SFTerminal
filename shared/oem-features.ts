@@ -1,7 +1,7 @@
 /**
  * OEM 能力开关查询（前后端共用）
  */
-import { oemConfig } from './oem.config'
+import { oemConfig } from './oem-runtime'
 import {
   OEM_FEATURE_DEFAULTS,
   type OemConfig,

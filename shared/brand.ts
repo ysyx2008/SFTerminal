@@ -1,4 +1,4 @@
-import { oemConfig } from './oem.config'
+import { oemConfig } from './oem-runtime'
 
 const DEFAULT_BRAND_ZH = '旗鱼'
 const DEFAULT_BRAND_EN = 'SailFish'

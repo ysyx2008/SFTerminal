@@ -1,5 +1,6 @@
 /**
- * OEM 配置类型（开源主线提交；与运行时 oem.config.ts 分离，避免 Fork 合版冲突）
+ * OEM 配置类型（开源主线提交）。
+ * 可选覆盖文件 `oem.config.ts` 不进仓库；缺省见 `oem-defaults.ts` / `OEM_FEATURE_DEFAULTS`。
  */
 
 export interface OemBrand {
@@ -17,7 +18,7 @@ export interface OemBrand {
 
 /**
  * 能力开关：开源默认尽量全开；`sso` 默认关。
- * OEM 在 oem.config.ts 中关闭即可裁剪，无需改业务代码。
+ * OEM 在可选的 oem.config.ts 中关闭即可裁剪，无需改业务代码。
  */
 export interface OemFeatures {
   /** 觉醒（个性 / 心跳 / 觉醒面板等） */
@@ -81,7 +82,7 @@ export interface OemSsoConfig {
   enterpriseApiHosts?: string[]
 }
 
-/** 缺字段时的回退（兼容旧 oem.config.ts） */
+/** 缺字段时的回退（兼容旧/不完整 oem.config） */
 export const OEM_FEATURE_DEFAULTS: OemFeatures = {
   awaken: true,
   companion: true,
