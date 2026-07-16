@@ -2,7 +2,33 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v11.2.2 (2026-07-13) (Latest)
+## v11.3.0 (2026-07-16) (Latest)
+
+> Ships local secretary todos and full userData backup/restore.
+
+### New Features
+- 🎯 **Local secretary todos**: `TODO.json` replaces free-form `TODO.md`; fixed todo Tab beside companion; optional migration prompt from legacy TODO.md
+- 🎯 **Full data backup & restore**: Data Management packs the entire userData tree as a zip, with progress, validation, and STORE optimization for already-compressed / large files
+- 🎯 **CLI install & sandbox**: install the `sailfish` command; share desktop real data with relaxed confirmation by default; `--sandbox` isolates runtime data while borrowing AI Profiles / credentials
+- 🎯 **SSO sign-in**: login / persist / refresh / gating and workbench token access (`features.sso`, off by default)
+
+### Improvements
+- ⚡ **Config rolling backups**: recover from rolling backups when the main config is corrupt
+- ⚡ **Interactive attachments & paths**: open attachments via click / context menu with typed Lucide icons; local paths in chat and tool_call are clickable
+- ⚡ **Non-blocking update hint**: update prompt moved to a bottom-right badge card
+- ⚡ **IM inbound rich media**: show images inline with vision context; pre-parse documents into documentContext
+- ⚡ **Session persistence**: meta + jsonl incremental checkpoints; async LLM short titles in the task sidebar; titles owned by AgentRecord
+- ⚡ **Context & risk policy**: session-scoped context bar; unified confirm matrix by execution mode; free-zone writes under `/tmp` skip confirmation
+- ⚡ **WeChat / Watch / misc**: persist QR credentials on confirm and refresh only when the tab is visible; pin failing watches; lazy calendar connect; idle history warm-up; macOS occlusion throttling
+
+### Bug Fixes
+- 🐛 **AI connectivity**: retry TLS handshake drops by `err.code`; readable test-connection errors; fall back when profileId is invalid
+- 🐛 **WeChat progress messages**: send the first body immediately
+- 🐛 **Command audit / context**: expand `~` paths to avoid free false negatives; protect skill results; remove per-step tool-result micro-compression
+- 🐛 **UI / CLI / history**: textarea measure collapse, artifact splitter mouse release, cold-load pin-to-bottom; protect indexes when sharing userData; scan the watch tree in getAgentRecords
+- 🐛 **CLI knowledge exit**: dispose in-process ORT embedding before exit so knowledge commands no longer SIGABRT
+
+## v11.2.2 (2026-07-13)
 
 > Tasks and companion chats are now split into two dedicated entry points, and the security and command-audit system has been overhauled-consolidated into a single shell-AST channel with user-configurable risk policies and command rules. Under the hood, the conversation layer completes the Conversation aggregate-root refactor, laying the groundwork for upcoming session capabilities.
 
