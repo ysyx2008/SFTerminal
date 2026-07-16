@@ -20,6 +20,8 @@ export { useSpeechRecognition, checkAudioDevicesGlobal, initSpeechGlobal } from 
 export type { SpeechRecognitionStatus, TranscriptionResult } from './useSpeechRecognition'
 export { useImageUpload } from './useImageUpload'
 export type { PendingImage } from './useImageUpload'
+export { useAttachmentActions } from './useAttachmentActions'
+export type { AttachmentActionTarget } from './useAttachmentActions'
 export { planComposerPaste, ingestComposerAttachments } from './useComposerPaste'
 export type { ComposerPastePlan } from './useComposerPaste'
 export { useToast, toast } from './useToast'

@@ -20,11 +20,13 @@ import AiProfileSelect from './AiProfileSelect.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
 import ToolCallContent from './ToolCallContent.vue'
 import ImageContextMenu from './ImageContextMenu.vue'
+import AttachmentContextMenu from './AttachmentContextMenu.vue'
 import EChartsCanvas from './EChartsCanvas.vue'
 import WelcomePanel from './WelcomePanel.vue'
 import HistorySearchModal from './HistorySearchModal.vue'
 import { optionHasMapSeries } from '@shared/chart-maps'
 import { useImageActions } from '../composables/useImageActions'
+import { useAttachmentActions } from '../composables/useAttachmentActions'
 import { parseThinking } from '../utils/thinking-block'
 import { createLogger } from '../utils/logger'
 import sailfishLogo from '../../resources/logo.png'
@@ -49,7 +51,7 @@ import { useFileDropTarget } from '../composables/useFileDropTarget'
 import { pickTaskCompleteLabel } from '../composables/useTaskCompleteLabel'
 import { loadBondTrustLevel } from '../composables/useRandomPlaceholder'
 import type { BondTrustLevel } from '@shared/types/bond'
-import type { AgentRecord, AgentHistorySummary } from '@shared/types'
+import type { AgentRecord, AgentHistorySummary, AttachmentInfo } from '@shared/types'
 import { resolveConversationDisplayTitle } from '../utils/conversation-title'
 import { COMPANION_AGENT_KEY } from '@shared/types'
 
@@ -1565,6 +1567,38 @@ const closeImageContextMenu = () => {
   imageContextMenu.url = null
 }
 
+// ==================== 附件右键菜单 / 点击打开 ====================
+const { openAttachment } = useAttachmentActions()
+const attachmentContextMenu = reactive<{
+  show: boolean
+  x: number
+  y: number
+  filename: string | null
+  filePath: string | null
+}>({
+  show: false, x: 0, y: 0, filename: null, filePath: null
+})
+
+const openAttachmentFile = (file: AttachmentInfo) => {
+  void openAttachment(file)
+}
+
+const openAttachmentContextMenu = (e: MouseEvent, file: AttachmentInfo) => {
+  e.preventDefault()
+  e.stopPropagation()
+  attachmentContextMenu.show = true
+  attachmentContextMenu.x = e.clientX
+  attachmentContextMenu.y = e.clientY
+  attachmentContextMenu.filename = file.filename
+  attachmentContextMenu.filePath = file.filePath ?? null
+}
+
+const closeAttachmentContextMenu = () => {
+  attachmentContextMenu.show = false
+  attachmentContextMenu.filename = null
+  attachmentContextMenu.filePath = null
+}
+
 const navigatePreviewTo = (idx: number) => {
   const list = allPreviewImages.value
   if (idx < 0 || idx >= list.length) return
@@ -2287,7 +2321,14 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         v-for="(file, fileIdx) in item.group!.attachments" 
                         :key="fileIdx" 
                         class="attachment-chip"
+                        :class="{ clickable: !!file.filePath }"
                         :title="file.filePath || file.filename"
+                        role="button"
+                        tabindex="0"
+                        @click="openAttachmentFile(file)"
+                        @keydown.enter.prevent="openAttachmentFile(file)"
+                        @keydown.space.prevent="openAttachmentFile(file)"
+                        @contextmenu="openAttachmentContextMenu($event, file)"
                       >
                         <span class="attachment-name">📎 {{ file.filename }}</span>
                         <span class="attachment-size">{{ formatFileSize(file.fileSize) }}</span>
@@ -2514,7 +2555,14 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         v-for="(file, fileIdx) in item.step!.attachments"
                         :key="fileIdx"
                         class="attachment-chip"
+                        :class="{ clickable: !!file.filePath }"
                         :title="file.filePath || file.filename"
+                        role="button"
+                        tabindex="0"
+                        @click="openAttachmentFile(file)"
+                        @keydown.enter.prevent="openAttachmentFile(file)"
+                        @keydown.space.prevent="openAttachmentFile(file)"
+                        @contextmenu="openAttachmentContextMenu($event, file)"
                       >
                         <span class="attachment-name">📎 {{ file.filename }}</span>
                         <span class="attachment-size">{{ formatFileSize(file.fileSize) }}</span>
@@ -2821,6 +2869,14 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
     :url="imageContextMenu.url"
     :default-name="imageContextMenu.defaultName"
     @close="closeImageContextMenu"
+  />
+  <AttachmentContextMenu
+    :show="attachmentContextMenu.show"
+    :x="attachmentContextMenu.x"
+    :y="attachmentContextMenu.y"
+    :filename="attachmentContextMenu.filename"
+    :file-path="attachmentContextMenu.filePath"
+    @close="closeAttachmentContextMenu"
   />
 </template>
 
@@ -5640,30 +5696,55 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .message-attachments {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .attachment-chip {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  border: 1px solid currentColor;
-  opacity: 0.7;
-  font-size: 11px;
-  line-height: 1.4;
+  gap: 6px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface, var(--bg-secondary));
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.35;
+  user-select: none;
+}
+
+.attachment-chip.clickable {
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.attachment-chip.clickable:hover {
+  background: color-mix(in srgb, var(--accent-primary) 12%, var(--bg-hover, var(--bg-secondary)));
+  border-color: color-mix(in srgb, var(--accent-primary) 45%, var(--border-color));
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--accent-primary) 18%, transparent);
+}
+
+.attachment-chip.clickable:active {
+  background: color-mix(in srgb, var(--accent-primary) 18%, var(--bg-hover, var(--bg-secondary)));
+}
+
+.attachment-chip.clickable:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
 }
 
 .attachment-name {
+  color: var(--text-primary);
   word-break: break-all;
 }
 
 .attachment-size {
-  opacity: 0.8;
+  color: var(--text-muted);
   flex-shrink: 0;
   white-space: nowrap;
+  font-size: 11px;
 }
 
 /* ==================== 图片预览弹窗（支持缩放拖拽） ==================== */
