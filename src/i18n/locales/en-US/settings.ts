@@ -484,6 +484,7 @@ export default {
     testKey: 'Test Connection',
     testKeyTesting: 'Testing…',
     testSuccess: 'Connected ({ms}ms)',
+    testConnectionFailed: 'Connection test failed. Check the API URL, key, and network, then try again.',
     fetchModels: 'Fetch model list',
     fetchedModelsCount: '{count} models fetched, click to select',
     toggleModelList: 'Toggle model list',

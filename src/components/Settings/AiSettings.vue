@@ -139,10 +139,12 @@ const testApiKey = async () => {
     testState.value = result.success ? 'success' : 'error'
     testMessage.value = result.success
       ? t('aiSettings.testSuccess', { ms: result.latencyMs ?? 0 })
-      : result.message
+      : (result.message || t('aiSettings.testConnectionFailed'))
   } catch (e) {
+    // IPC 层异常时不展示 Error invoking remote method 原始堆栈文案
+    console.warn('testApiKey IPC error:', e)
     testState.value = 'error'
-    testMessage.value = e instanceof Error ? e.message : String(e)
+    testMessage.value = t('aiSettings.testConnectionFailed')
   }
 }
 

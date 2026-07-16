@@ -302,18 +302,50 @@ function isContextLengthApiFailure(code?: string, message?: string): boolean {
   return false
 }
 
+/** 去掉 UTF-8 BOM 与首尾空白，避免 JSON.parse 因不可见前缀失败 */
+function normalizeApiResponseBody(raw: string): string {
+  return raw.replace(/^\uFEFF/, '').trim()
+}
+
+/** 是否为 HTML/XML 错误页（按文档结构前缀判断，非语义关键词匹配） */
+function looksLikeMarkupDocument(body: string): boolean {
+  const head = body.slice(0, 32).toLowerCase()
+  return head.startsWith('<!doctype') || head.startsWith('<html') || head.startsWith('<?xml')
+}
+
+/**
+ * 解析 API 成功响应正文为 JSON。
+ * 失败时抛出带友好文案的 Error，且不附带原始正文（避免把二进制/异常字符经 IPC 传回前端）。
+ */
+function parseApiResponseJson(raw: string): unknown {
+  const body = normalizeApiResponseBody(raw)
+  if (!body) {
+    throw new Error(t('error.ai_empty_response'))
+  }
+  if (looksLikeMarkupDocument(body)) {
+    throw new Error(t('error.ai_invalid_response'))
+  }
+  try {
+    return JSON.parse(body)
+  } catch {
+    log.warn(`API response JSON parse failed, len=${body.length}, preview=${toSafeErrorMessage(body, 80)}`)
+    throw new Error(t('error.ai_invalid_response'))
+  }
+}
+
 /**
  * 解析 API 返回的错误响应体，提取结构化的错误信息
  * 避免将原始 JSON（如 {"error":{"message":"...","type":"...","param":null,...}}）直接展示给用户
  */
 function parseApiError(rawBody: string): { message: string; code?: string } {
+  const body = normalizeApiResponseBody(rawBody)
   try {
-    const parsed = JSON.parse(rawBody)
+    const parsed = JSON.parse(body)
     if (parsed?.error) {
       // OpenAI 格式: {"error": {"message":"...", "type":"...", "code":"..."}}
       if (typeof parsed.error === 'object') {
         return {
-          message: parsed.error.message || rawBody,
+          message: parsed.error.message || t('error.api_error_generic'),
           code: parsed.error.code || parsed.error.type
         }
       }
@@ -326,9 +358,15 @@ function parseApiError(rawBody: string): { message: string; code?: string } {
       }
     }
   } catch {
-    // 非 JSON，原样返回（截断过长内容）
+    // 非 JSON
   }
-  return { message: rawBody.length > 300 ? rawBody.slice(0, 300) + '...' : rawBody }
+  if (!body) {
+    return { message: t('error.ai_empty_response') }
+  }
+  if (looksLikeMarkupDocument(body)) {
+    return { message: t('error.ai_invalid_response') }
+  }
+  return { message: toSafeErrorMessage(body, 200) }
 }
 
 // 多模态消息内容部分（OpenAI Vision API 格式）
@@ -627,6 +665,12 @@ function sanitizeIsolatedSurrogates(s: string): string {
   return s
     .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '\uFFFD')
     .replace(/(^|[^\uD800-\uDBFF])([\uDC00-\uDFFF])/g, '$1\uFFFD')
+}
+
+/** 清洗控制字符 / 孤立 surrogate 并截断，保证错误文案可安全经 IPC 传回前端 */
+function toSafeErrorMessage(msg: string, maxLen = 300): string {
+  const cleaned = sanitizeIsolatedSurrogates(msg).replace(/[\u0000-\u001f]/g, ' ')
+  return cleaned.length > maxLen ? cleaned.slice(0, maxLen) + '...' : cleaned
 }
 
 /** 递归清洗 body 中所有字符串字段的孤立 surrogate */
@@ -1099,7 +1143,7 @@ export class AiService {
 
       if (data.error) {
         const msg = data.error.message || t('error.api_error_generic')
-        return { success: false, message: msg, latencyMs }
+        return { success: false, message: toSafeErrorMessage(msg), latencyMs }
       }
 
       return { success: true, message: '', latencyMs }
@@ -1107,7 +1151,11 @@ export class AiService {
       const latencyMs = Date.now() - start
       const errMsg = err instanceof Error ? err.message : String(err)
       const friendly = err instanceof Error ? tryFriendlyApiError(err, testProfile.model) : null
-      return { success: false, message: friendly || translateNetworkError(errMsg), latencyMs }
+      return {
+        success: false,
+        message: toSafeErrorMessage(friendly || translateNetworkError(errMsg)),
+        latencyMs,
+      }
     }
   }
 
@@ -1309,13 +1357,14 @@ export class AiService {
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             complete(() => {
               try {
-                let parsed = JSON.parse(data)
+                let parsed: unknown = parseApiResponseJson(data)
                 if (isAnthropicApi(profile)) {
-                  parsed = convertFromAnthropicResponse(parsed)
+                  parsed = convertFromAnthropicResponse(parsed as Record<string, unknown>)
                 }
-                resolve(parsed)
-              } catch {
-                reject(toApiRequestError(new Error(t('error.ai_parse_failed', { data }))))
+                resolve(parsed as T)
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : t('error.ai_invalid_response')
+                reject(toApiRequestError(new Error(msg)))
               }
             })
           } else {

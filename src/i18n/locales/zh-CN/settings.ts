@@ -484,6 +484,7 @@ export default {
     testKey: '测试连接',
     testKeyTesting: '测试中…',
     testSuccess: '连接成功（{ms}ms）',
+    testConnectionFailed: '连接测试失败，请检查 API 地址、Key 与网络后重试',
     fetchModels: '获取模型列表',
     fetchedModelsCount: '已获取 {count} 个模型，点击下拉选择',
     toggleModelList: '展开模型列表',
