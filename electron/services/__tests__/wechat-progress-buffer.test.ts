@@ -100,48 +100,58 @@ describe('WechatProgressBuffer', () => {
       buffer.push('🔧 tool-b')
       buffer.pushBody('我来查一下')
 
-      // body 入队前，已有工具进度应先 flush 出去（flush 是异步链，等 microtask）
-      await Promise.resolve()
-      await Promise.resolve()
-      expect(send).toHaveBeenCalledTimes(1)
-      expect(send.mock.calls[0][0]).toBe('· 🔧 tool-a\n· 🔧 tool-b')
-
-      // body 还在 buffer 里，没发
-      expect(send).toHaveBeenCalledTimes(1)
-
+      // 工具进度先 flush，首条 body 紧接着即时 flush；await flush() 排空发送链
       await buffer.flush()
       expect(send).toHaveBeenCalledTimes(2)
+      expect(send.mock.calls[0][0]).toBe('· 🔧 tool-a\n· 🔧 tool-b')
       expect(send.mock.calls[1][0]).toBe('我来查一下')
     })
 
-    it('pushBody schedules a flush timer — body is sent after interval if no follow-up', async () => {
+    it('first pushBody flushes immediately so user gets quick feedback', async () => {
       const send = vi.fn().mockResolvedValue(undefined)
       const buffer = new WechatProgressBuffer(send, {})
 
       buffer.pushBody('正文')
-      // body 入队后启动了 25s 定时器，没来工具通知的话到点自动切出
-      expect(send).not.toHaveBeenCalled()
+      await buffer.flush()
 
-      await vi.advanceTimersByTimeAsync(WECHAT_PROGRESS_FLUSH_INTERVAL_MS)
       expect(send).toHaveBeenCalledTimes(1)
       expect(send.mock.calls[0][0]).toBe('正文')
     })
 
-    it('body followed by tool progress within interval merges into one digest', async () => {
+    it('subsequent pushBody still schedules flush timer for throttling', async () => {
       const send = vi.fn().mockResolvedValue(undefined)
       const buffer = new WechatProgressBuffer(send, {})
 
-      buffer.pushBody('我来查一下')
-      // body 入队后启动了定时器；定时器未 fire 前来了工具通知，并入同一 digest
+      buffer.pushBody('首条')
+      await buffer.flush()
+      expect(send).toHaveBeenCalledTimes(1)
+
+      buffer.pushBody('后续正文')
+      expect(send).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(WECHAT_PROGRESS_FLUSH_INTERVAL_MS)
+      expect(send).toHaveBeenCalledTimes(2)
+      expect(send.mock.calls[1][0]).toBe('后续正文')
+    })
+
+    it('subsequent body followed by tool progress within interval merges into one digest', async () => {
+      const send = vi.fn().mockResolvedValue(undefined)
+      const buffer = new WechatProgressBuffer(send, {})
+
+      buffer.pushBody('首条')
+      await buffer.flush()
+      expect(send).toHaveBeenCalledTimes(1)
+
+      buffer.pushBody('后续正文')
       buffer.push('🔧 read_file')
 
-      expect(send).not.toHaveBeenCalled()
+      expect(send).toHaveBeenCalledTimes(1)
 
       await vi.advanceTimersByTimeAsync(WECHAT_PROGRESS_FLUSH_INTERVAL_MS)
       await buffer.flush()
 
-      expect(send).toHaveBeenCalledTimes(1)
-      expect(send.mock.calls[0][0]).toBe('我来查一下\n· 🔧 read_file')
+      expect(send).toHaveBeenCalledTimes(2)
+      expect(send.mock.calls[1][0]).toBe('后续正文\n· 🔧 read_file')
     })
 
     it('body does not count toward maxLines', async () => {
@@ -149,14 +159,18 @@ describe('WechatProgressBuffer', () => {
       const buffer = new WechatProgressBuffer(send, { maxLines: 2 })
 
       buffer.pushBody('正文一')
-      buffer.pushBody('正文二')
-      buffer.pushBody('正文三')
-      // 三个 body 都不该触发 maxLines flush
-      expect(send).not.toHaveBeenCalled()
-
       await buffer.flush()
       expect(send).toHaveBeenCalledTimes(1)
-      expect(send.mock.calls[0][0]).toBe('正文一\n正文二\n正文三')
+      expect(send.mock.calls[0][0]).toBe('正文一')
+
+      buffer.pushBody('正文二')
+      buffer.pushBody('正文三')
+      // 后续 body 不触发 maxLines flush，仍等 timer / 显式 flush
+      expect(send).toHaveBeenCalledTimes(1)
+
+      await buffer.flush()
+      expect(send).toHaveBeenCalledTimes(2)
+      expect(send.mock.calls[1][0]).toBe('正文二\n正文三')
     })
 
     it('consecutive identical body lines are NOT deduped (each is a distinct message)', async () => {
@@ -165,22 +179,30 @@ describe('WechatProgressBuffer', () => {
 
       // body 去重仅对工具进度生效，正文每段都是独立消息，不去重
       buffer.pushBody('我来查一下')
+      await buffer.flush()
+      expect(send).toHaveBeenCalledTimes(1)
+
       buffer.pushBody('我来查一下')
       await buffer.flush()
 
-      expect(send.mock.calls[0][0]).toBe('我来查一下\n我来查一下')
+      expect(send).toHaveBeenCalledTimes(2)
+      expect(send.mock.calls[0][0]).toBe('我来查一下')
+      expect(send.mock.calls[1][0]).toBe('我来查一下')
     })
 
-    it('flushProgress (flush) on task end sends body even without follow-up tool', async () => {
+    it('flushProgress (flush) on task end sends subsequent body even without follow-up tool', async () => {
       const send = vi.fn().mockResolvedValue(undefined)
       const buffer = new WechatProgressBuffer(send, {})
 
-      // 模拟 ReAct 结束：body 后没来工具通知，任务结束 flushProgress 切走
+      buffer.pushBody('首条即时')
+      await buffer.flush()
+
+      // 模拟 ReAct 结束：后续 body 后没来工具通知，任务结束 flushProgress 切走
       buffer.pushBody('任务完成的最终正文')
       await buffer.flush()
 
-      expect(send).toHaveBeenCalledTimes(1)
-      expect(send.mock.calls[0][0]).toBe('任务完成的最终正文')
+      expect(send).toHaveBeenCalledTimes(2)
+      expect(send.mock.calls[1][0]).toBe('任务完成的最终正文')
     })
   })
 })
