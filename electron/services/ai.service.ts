@@ -1,4 +1,4 @@
-import { ConfigService } from './config.service'
+import { ConfigService, getConfigService } from './config.service'
 import { HttpsProxyAgent } from 'https-proxy-agent'
 import { SocksProxyAgent } from 'socks-proxy-agent'
 import * as https from 'https'
@@ -485,6 +485,50 @@ export interface ChatWithToolsResult {
 
 import type { AiModelType, AiProfile } from '@shared/types'
 export type { AiModelType, AiProfile }
+
+/** 指定 profileId 失效时回退到其它配置的通知 */
+export interface AiProfileFallbackNotice {
+  requestedId: string
+  usedId: string
+  usedName: string
+}
+
+/**
+ * 从 profiles 列表解析本次应使用的配置。
+ * - 指定 id 命中 → 直接用
+ * - 指定 id 未命中但列表非空 → 回退 active / 第一个，并带 fallback 元数据
+ * - 未指定 id → active（找不到则第一个）；active 失效时同样带 fallback
+ */
+export function resolveAiProfile(
+  profiles: AiProfile[],
+  activeId: string,
+  requestedId?: string
+): { profile: AiProfile | null; fallback?: AiProfileFallbackNotice } {
+  if (profiles.length === 0) return { profile: null }
+
+  if (requestedId) {
+    const found = profiles.find(p => p.id === requestedId)
+    if (found) return { profile: found }
+    const used =
+      (activeId ? profiles.find(p => p.id === activeId) : undefined) ?? profiles[0]
+    return {
+      profile: used,
+      fallback: { requestedId, usedId: used.id, usedName: used.name }
+    }
+  }
+
+  if (activeId) {
+    const found = profiles.find(p => p.id === activeId)
+    if (found) return { profile: found }
+    const used = profiles[0]
+    return {
+      profile: used,
+      fallback: { requestedId: activeId, usedId: used.id, usedName: used.name }
+    }
+  }
+
+  return { profile: profiles[0] }
+}
 
 /**
  * 检测 API 错误是否因为不支持多模态/视觉输入
@@ -995,13 +1039,39 @@ export class AiService {
   private readonly httpsAgent: https.Agent
   private readonly httpAgent: http.Agent
   private disposed = false
+  private readonly profileFallbackListeners = new Set<(notice: AiProfileFallbackNotice) => void>()
 
-  constructor() {
-    this.configService = new ConfigService()
+  /**
+   * @param configService 应与主进程/CLI 单例共用；省略时走 getConfigService()
+   */
+  constructor(configService?: ConfigService) {
+    this.configService = configService ?? getConfigService()
     this.httpsAgent = new https.Agent({ keepAlive: true })
     this.httpsAgent.setMaxListeners(30)
     this.httpAgent = new http.Agent({ keepAlive: true })
     this.httpAgent.setMaxListeners(30)
+  }
+
+  /**
+   * 订阅「指定 profile 失效并已回退」事件。返回取消订阅函数。
+   * 主进程用于 toast；Agent 用于步骤流提示并纠正 this.profileId。
+   */
+  onProfileFallback(listener: (notice: AiProfileFallbackNotice) => void): () => void {
+    this.profileFallbackListeners.add(listener)
+    return () => { this.profileFallbackListeners.delete(listener) }
+  }
+
+  private emitProfileFallback(notice: AiProfileFallbackNotice): void {
+    log.warn(
+      `AI profile fallback: requested=${notice.requestedId} -> ${notice.usedId} (${notice.usedName})`
+    )
+    for (const listener of this.profileFallbackListeners) {
+      try {
+        listener(notice)
+      } catch (err) {
+        log.error('profileFallback listener failed:', err)
+      }
+    }
   }
 
   /**
@@ -1057,29 +1127,23 @@ export class AiService {
   }
 
   /**
-   * 获取当前 AI Profile
+   * 获取当前 AI Profile；指定 id 失效时回退 active/第一个并通知监听方。
    */
-  private async getCurrentProfile(profileId?: string): Promise<AiProfile | null> {
-    const profiles = this.configService.getAiProfiles()
-    if (profiles.length === 0) return null
-
-    if (profileId) {
-      return profiles.find(p => p.id === profileId) || null
-    }
-
-    const activeId = this.configService.getActiveAiProfile()
-    if (activeId) {
-      return profiles.find(p => p.id === activeId) || profiles[0]
-    }
-
-    return profiles[0]
+  private getCurrentProfile(profileId?: string): AiProfile | null {
+    const { profile, fallback } = resolveAiProfile(
+      this.configService.getAiProfiles(),
+      this.configService.getActiveAiProfile(),
+      profileId
+    )
+    if (fallback) this.emitProfileFallback(fallback)
+    return profile
   }
 
   /**
    * 发送聊天请求（非流式）
    */
   async chat(messages: AiMessage[], profileId?: string): Promise<string> {
-    const profile = await this.getCurrentProfile(profileId)
+    const profile = this.getCurrentProfile(profileId)
     if (!profile) {
       throw new Error(t('error.ai_no_config'))
     }
@@ -1457,7 +1521,7 @@ export class AiService {
     profileId?: string,
     requestId?: string
   ): Promise<void> {
-    const profile = await this.getCurrentProfile(profileId)
+    const profile = this.getCurrentProfile(profileId)
     if (!profile) {
       onError(t('error.ai_no_config'))
       return
@@ -1791,7 +1855,7 @@ export class AiService {
     profileId?: string,
     signal?: AbortSignal
   ): Promise<ChatWithToolsResult> {
-    const profile = await this.getCurrentProfile(profileId)
+    const profile = this.getCurrentProfile(profileId)
     if (!profile) {
       throw new Error(t('error.ai_no_config'))
     }
@@ -1967,7 +2031,7 @@ export class AiService {
     onRetry?: (retryInfo?: RetryInfo) => void,
     onToolCallReady?: (toolCall: ToolCall) => void  // 流式中某个 tool_call 参数完整时回调
   ): Promise<void> {
-    const profile = await this.getCurrentProfile(profileId)
+    const profile = this.getCurrentProfile(profileId)
     if (!profile) {
       onError(t('error.ai_no_config'))
       return

@@ -517,9 +517,17 @@ let quitTerminalCountHandled = false
 
 // ==================== 核心服务（启动期同步加载，无重型原生模块） ====================
 
-const aiService = new AiService()
 const configService = new ConfigService()
 setConfigServiceInstance(configService)
+const aiService = new AiService(configService)
+// 指定 AI 配置失效并回退时，通知所有窗口弹 toast（Agent 步骤流另有订阅）
+aiService.onProfileFallback((notice) => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('ai:profile-fallback', notice)
+    }
+  }
+})
 setMainI18nConfig(configService)
 initLogging(configService.getLogLevel())
 // Early phase migrations（仅需 ConfigService）

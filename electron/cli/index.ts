@@ -4,7 +4,7 @@
  * Provides command-line access to all backend services for testing and automation.
  * The electron shim is already registered by main.js before this file is loaded.
  */
-import { ConfigService } from '../services/config.service'
+import { ConfigService, setConfigServiceInstance } from '../services/config.service'
 import { AiService } from '../services/ai.service'
 import { HistoryService } from '../services/history.service'
 import { HostProfileService } from '../services/host-profile.service'
@@ -85,13 +85,16 @@ function parseArgs(args: string[]): { positional: string[], flags: Record<string
 
 let _configService: ConfigService | null = null
 function getConfig(): ConfigService {
-  if (!_configService) _configService = new ConfigService()
+  if (!_configService) {
+    _configService = new ConfigService()
+    setConfigServiceInstance(_configService)
+  }
   return _configService
 }
 
 let _aiService: AiService | null = null
 function getAi(): AiService {
-  if (!_aiService) _aiService = new AiService()
+  if (!_aiService) _aiService = new AiService(getConfig())
   return _aiService
 }
 

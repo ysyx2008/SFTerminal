@@ -2304,6 +2304,18 @@ export abstract class Agent {
       this.markWaitingForFirstToken(run)
       scheduleSlowTtftHint()
 
+      // 指定 profile 失效回退时：纠正本 Agent 绑定，并在步骤流提示用户（避免每轮重复回退）
+      const unsubProfileFallback =
+        typeof this.services.aiService.onProfileFallback === 'function'
+          ? this.services.aiService.onProfileFallback((notice) => {
+              this.profileId = notice.usedId
+              this.addStep({
+                type: 'message',
+                content: t('agent.profile_fallback', { name: notice.usedName })
+              })
+            })
+          : () => {}
+
       this.services.aiService.chatWithToolsStream(
         run.messages,
         llmTools,
@@ -2447,10 +2459,12 @@ export abstract class Agent {
               }
             }
           }
+          unsubProfileFallback()
           resolve(result)
         },
         // onError
         (error) => {
+          unsubProfileFallback()
           clearSlowTtftTimer()
           // 出错时把预创建的 tool_call 卡片移除，避免留下没有结果的空卡
           this.discardPreToolCallSteps(run)

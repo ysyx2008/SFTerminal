@@ -775,7 +775,15 @@ const electronAPI = {
       ipcRenderer.invoke('ai:fetchModels', profile) as Promise<{
         models: Array<{ id: string; supportsVision: boolean; contextLength?: number }>
         error?: string
-      }>
+      }>,
+    /** 指定 AI 配置失效并已回退到其它配置时通知前端（toast） */
+    onProfileFallback: (callback: (notice: { requestedId: string; usedId: string; usedName: string }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, notice: { requestedId: string; usedId: string; usedName: string }) => {
+        callback(notice)
+      }
+      ipcRenderer.on('ai:profile-fallback', handler)
+      return () => { ipcRenderer.removeListener('ai:profile-fallback', handler) }
+    }
   },
 
   // 配置操作

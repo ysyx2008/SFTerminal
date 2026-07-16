@@ -1,6 +1,6 @@
 # AiService SPEC
 
-> Last verified: 2026-05-07
+> Last verified: 2026-07-16
 
 ## 职责
 
@@ -14,6 +14,8 @@ AI API 的统一调用层。封装 OpenAI 兼容协议的 HTTP 请求，提供�
 
 | 方法 | 用途 | 调用方 |
 |---|---|---|
+| `constructor(configService?)` | 注入与主进程/CLI **同一** `ConfigService` 单例（禁止再 `new ConfigService()`） | `main.ts` / CLI |
+| `onProfileFallback(listener)` | 指定 profileId 失效并已回退时回调；返回取消订阅 | `main.ts`（toast）、Agent（步骤提示） |
 | `setPluginProviders(providers: ProviderRegistration[])` | 注入插件 AI provider（启动时调用） | `main.ts` 插件加载阶段 |
 | `chat(messages, profileId?)` | 纯文本对话（同步） | 知识文档更新、对话索引等后台任务 |
 | `chatStream(messages, onChunk, onDone, onError, profileId?)` | 纯文本对话（流式） | 前端 AI 对话面板 |
@@ -51,6 +53,14 @@ AI API 的统一调用层。封装 OpenAI 兼容协议的 HTTP 请求，提供�
 ### 多 Profile 支持
 
 通过 `profileId` 选择使用哪个 AI 配置。未指定时使用 `configService.getActiveAiProfile()` 返回的默认档案。
+
+解析逻辑见导出纯函数 `resolveAiProfile`：
+- 列表为空 → 抛/回调 `error.ai_no_config`
+- 指定 id 命中 → 使用该配置
+- **指定 id 未命中但列表非空** → 回退到 active（再不行则第一个），并 `onProfileFallback` 通知 UI（toast + Agent 步骤流），避免误报「未配置」
+- 未指定 id 时 active 失效 → 同样回退到第一个并通知
+
+`AiService` 必须与设置页/Agent 共用同一 `ConfigService` 实例，否则会出现「设置已更新但请求仍读旧列表 / id 对不上」的双缓存问题。
 
 ### 代理支持
 

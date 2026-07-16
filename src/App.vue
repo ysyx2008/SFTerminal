@@ -396,6 +396,7 @@ let cleanupSchedulerTaskStarted: (() => void) | null = null
 let cleanupGatewayRemoteTab: (() => void) | null = null
 let cleanupGatewayRemoteTask: (() => void) | null = null
 let cleanupImConnectionChange: (() => void) | null = null
+let cleanupAiProfileFallback: (() => void) | null = null
 let cleanupRunTask: (() => void) | null = null
 let cleanupInstallSkill: (() => void) | null = null
 let cleanupWatchEnsureTab: (() => void) | null = null
@@ -955,6 +956,11 @@ onMounted(async () => {
     }
   })
 
+  // AI 配置 id 失效并已回退时 toast 提醒（步骤流内另有 Agent 提示）
+  cleanupAiProfileFallback = window.electronAPI.ai.onProfileFallback((notice) => {
+    toast.warning(t('ai.profileFallback', { name: notice.usedName }), 6000)
+  })
+
   // 加载配置
   await configStore.loadConfig()
 
@@ -1362,6 +1368,7 @@ onUnmounted(() => {
   cleanupGatewayRemoteTab?.()
   cleanupGatewayRemoteTask?.()
   cleanupImConnectionChange?.()
+  cleanupAiProfileFallback?.()
   cleanupRunTask?.()
   cleanupInstallSkill?.()
   cleanupWatchEnsureTab?.()

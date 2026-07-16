@@ -420,6 +420,11 @@ interface Window {
         models: Array<{ id: string; supportsVision: boolean; contextLength?: number }>
         error?: string
       }>
+      onProfileFallback: (callback: (notice: {
+        requestedId: string
+        usedId: string
+        usedName: string
+      }) => void) => () => void
     }
     config: {
       get: (key: string) => Promise<unknown>
