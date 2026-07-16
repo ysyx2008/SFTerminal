@@ -1,0 +1,35 @@
+# 完整数据备份 / 恢复
+
+> Last verified: 2026-07-16
+
+## 职责
+
+- 将 `userData` 打包为带标记的 `.zip` 备份
+- 校验备份包并在启动早期解压到 staging、替换 userData
+- 可取消、按字节进度；不阻塞主进程事件循环过久
+
+## 公开 API
+
+见 `data-backup.ts` / `dir-copy.ts`：
+
+| 符号 | 说明 |
+|------|------|
+| `exportUserData` | 打包到 `target`；先写 `*.sft-partial`，成功后 rename |
+| `validateBackupArchive` | 校验 `.zip` 且含根目录 `sfterm-backup.json` |
+| `extractBackupToStaging` | 解压到 staging（跳过 data-location 等） |
+| `replaceUserDataFromStaging` | 两阶段替换，失败尽量回滚 |
+| `requestFullRestore` / `runStartupRestoreIfNeeded` | 在 `bootstrap.ts` |
+
+## 交互约定（IPC）
+
+1. **备份**：另存为 →（必要时覆盖确认）→ 进度/可取消打包 → 成功提示  
+   - 关对话框 / 拒绝覆盖：`canceled` + `cancelReason: dialog|overwrite`（前端不 toast）  
+   - 打包中取消：`cancelReason: export`（toast + 删 partial）
+2. **恢复**：选 zip → **先校验** → 确认（含版本/时间）→ 写 pending → relaunch → 启动早期解压
+
+## 约束
+
+- 备份跳过：`data-location.json`、`.restore-staging`、`.restore-old`
+- 压缩包不得位于当前 userData 内
+- 与数据目录迁移互斥（`pendingMigration`）
+- 热备份不保证与正在跑的 Agent 完全一致；前端有运行中提示

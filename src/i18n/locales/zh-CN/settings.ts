@@ -1058,6 +1058,7 @@ export default {
     backupCancel: '取消备份',
     backupCancelConfirm: '确定取消本次备份？未完成的临时文件会被删除。',
     backupCanceled: '已取消备份',
+    backupPreparing: '选择保存位置…',
     backupOk: '备份完成：{path}',
     backupFailed: '备份失败',
     backupBusy: '已有备份正在进行',

@@ -932,6 +932,7 @@ interface Window {
       export: () => Promise<{
         success: boolean
         canceled?: boolean
+        cancelReason?: 'dialog' | 'overwrite' | 'export'
         path?: string
         files?: number
         totalBytes?: number

@@ -423,8 +423,9 @@ const startFullBackup = async () => {
     if (running && !confirm(t('dataSettings.backupConfirmRunning'))) return
   } catch { /* ignore */ }
 
+  // 选路径阶段：只锁按钮，不显示进度/取消（取消应走系统对话框）
   isExporting.value = true
-  backupProgress.value = { pct: 0, file: '', bytes: 0, totalBytes: 0 }
+  backupProgress.value = null
   cleanupBackupProgress?.()
   cleanupBackupProgress = window.electronAPI.dataBackup.onProgress((p) => {
     backupProgress.value = p
@@ -432,7 +433,10 @@ const startFullBackup = async () => {
   try {
     const result = await window.electronAPI.dataBackup.export()
     if (result.canceled) {
-      showMessage('success', t('dataSettings.backupCanceled'))
+      // 仅打包中取消才提示；关对话框/拒绝覆盖保持安静
+      if (result.cancelReason === 'export') {
+        showMessage('success', t('dataSettings.backupCanceled'))
+      }
     } else if (result.success) {
       showMessage('success', t('dataSettings.backupOk', { path: result.path || '' }))
     } else {
@@ -449,7 +453,7 @@ const startFullBackup = async () => {
 }
 
 const cancelFullBackup = async () => {
-  if (!window.electronAPI.dataBackup || !isExporting.value) return
+  if (!window.electronAPI.dataBackup || !backupProgress.value) return
   if (!confirm(t('dataSettings.backupCancelConfirm'))) return
   await window.electronAPI.dataBackup.cancel()
 }
@@ -797,13 +801,13 @@ onUnmounted(() => {
         </div>
         <div class="actions">
           <button
-            v-if="!isExporting"
+            v-if="!backupProgress"
             class="btn btn-primary"
-            :disabled="isImporting"
+            :disabled="isExporting || isImporting"
             @click="startFullBackup"
           >
             <Download :size="14" />
-            {{ t('dataSettings.fullBackup') }}
+            {{ isExporting ? t('dataSettings.backupPreparing') : t('dataSettings.fullBackup') }}
           </button>
           <button
             v-else

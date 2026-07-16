@@ -1058,6 +1058,7 @@ export default {
     backupCancel: 'Cancel Backup',
     backupCancelConfirm: 'Cancel this backup? The incomplete temporary file will be deleted.',
     backupCanceled: 'Backup canceled',
+    backupPreparing: 'Choose save location…',
     backupOk: 'Backup complete: {path}',
     backupFailed: 'Backup failed',
     backupBusy: 'A backup is already in progress',

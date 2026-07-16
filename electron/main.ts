@@ -1,6 +1,6 @@
 // ⚠️ 必须是第一个 import：在任何 service 实例化之前完成 userData 目录重定向
 import { runStartupMigrationIfNeeded, runStartupRestoreIfNeeded, getDataDirInfo, requestDataDirMigration, requestDataDirReset, requestFullRestore, isTargetNonEmpty } from './utils/bootstrap'
-import { exportUserData, CopyCanceledError } from './utils/data-backup'
+import { exportUserData, CopyCanceledError, validateBackupArchive } from './utils/data-backup'
 import { app, BrowserWindow, ipcMain, shell, dialog, session, Tray, Menu, nativeImage, nativeTheme, powerMonitor, clipboard, protocol, net } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import type { GenericServerOptions, GithubOptions } from 'builder-util-runtime'
@@ -4602,7 +4602,7 @@ ipcMain.handle('dataBackup:export', async () => {
       ],
     })
     if (result.canceled || !result.filePath) {
-      return { success: false, canceled: true }
+      return { success: false, canceled: true, cancelReason: 'dialog' as const }
     }
 
     const pathFromDialog = result.filePath
@@ -4612,8 +4612,7 @@ ipcMain.handle('dataBackup:export', async () => {
       exportPath += '.zip'
       appendedZipExt = true
     }
-    // 系统另存为对话框在选中已有 .zip 时通常已提示覆盖；
-    // 仅当我们事后补上 .zip 导致撞名时，再弹一次确认，避免双重提示。
+    // 系统另存为在选中已有 .zip 时通常已提示覆盖；仅补扩展名撞名时再确认
     if (appendedZipExt && fs.existsSync(exportPath)) {
       const { response } = await dialog.showMessageBox(mainWindow, {
         type: 'warning',
@@ -4625,12 +4624,14 @@ ipcMain.handle('dataBackup:export', async () => {
         noLink: true,
       })
       if (response !== 0) {
-        return { success: false, canceled: true }
+        return { success: false, canceled: true, cancelReason: 'overwrite' as const }
       }
     }
 
     dataBackupRunning = true
     dataBackupCancelRequested = false
+    // 选路完成，通知前端进入打包态（显示进度与取消）
+    sendDataBackupProgress({ pct: 0, file: '', bytes: 0, totalBytes: 0 })
     const source = app.getPath('userData')
     try {
       const stats = await exportUserData({
@@ -4649,7 +4650,7 @@ ipcMain.handle('dataBackup:export', async () => {
       return { success: true, path: exportPath, files: stats.files, totalBytes: stats.totalBytes }
     } catch (e) {
       if (e instanceof CopyCanceledError) {
-        return { success: false, canceled: true }
+        return { success: false, canceled: true, cancelReason: 'export' as const }
       }
       throw e
     } finally {
@@ -4688,6 +4689,18 @@ ipcMain.handle('dataBackup:requestRestore', async () => {
       return { success: false, canceled: true }
     }
     const backupPath = result.filePaths[0]
+
+    // 先校验再确认，避免对无效文件二次确认
+    const validated = await validateBackupArchive(backupPath)
+    if (!validated.ok) {
+      return { success: false, error: validated.error }
+    }
+
+    const marker = validated.marker
+    let createdAt = '—'
+    try {
+      createdAt = new Date(marker.createdAt).toLocaleString()
+    } catch { /* ignore */ }
     const { response } = await dialog.showMessageBox(mainWindow, {
       type: 'warning',
       buttons: [t('dialog.restoreConfirmOk'), t('dialog.restoreConfirmCancel')],
@@ -4695,7 +4708,10 @@ ipcMain.handle('dataBackup:requestRestore', async () => {
       cancelId: 1,
       title: t('dialog.restoreConfirmTitle'),
       message: t('dialog.restoreConfirmMessage', { name: path.basename(backupPath) }),
-      detail: t('dialog.restoreConfirmDetail'),
+      detail: t('dialog.restoreConfirmDetail', {
+        appVersion: marker.appVersion || '—',
+        createdAt,
+      }),
       noLink: true,
     })
     if (response !== 0) {
