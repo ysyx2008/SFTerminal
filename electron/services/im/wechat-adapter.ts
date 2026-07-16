@@ -91,6 +91,11 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
 
   onMessage: ((msg: IMIncomingMessage) => void) | null = null
   onConnectionChange: ((connected: boolean) => void) | null = null
+  /**
+   * 扫码确认拿到 bot_token 时触发一次（早于 startPolling / onConnectionChange）。
+   * 与连接态解耦：断线重连不会再次触发，避免重复落盘或强行改写 autoConnect。
+   */
+  onCredentials: ((creds: { token: string; baseUrl: string }) => void) | null = null
 
   private token: string = ''
   private baseUrl: string = FIXED_BASE_URL
@@ -373,6 +378,12 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
           this.baseUrl = status.baseurl || FIXED_BASE_URL
           log.info(`Login confirmed, botId=${status.ilink_bot_id || 'unknown'}`)
           this.loginAbort = null
+          // 凭证先于长轮询发出，保证落盘不依赖 connected 事件
+          try {
+            this.onCredentials?.({ token: this.token, baseUrl: this.baseUrl })
+          } catch (err) {
+            log.error('onCredentials callback failed:', err)
+          }
           await this.startPolling()
           return
         }
@@ -412,6 +423,7 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
   async stop(): Promise<void> {
     this.cancelLogin()
     await this.stopPolling()
+    this.onCredentials = null
     this.connected = false
     this.onConnectionChange?.(false)
     // 清理 context tokens（内存 + 磁盘），避免 stop/重新登录 后旧 token 污染新会话。

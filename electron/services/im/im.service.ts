@@ -935,23 +935,28 @@ export class IMService {
 
   /**
    * 发起微信扫码登录。返回 QR 码 URL（前端展示用）。
+   * 本方法在拿到二维码后即返回；用户扫码确认后才拿到 token，并触发 onCredentials（仅一次）。
    * 登录成功后内部自动启动长轮询，并通过 onConnectionChange 通知前端。
-   * @param onCredentials 登录成功后的回调，外部可用来持久化 token/baseUrl
+   * @param onCredentials 扫码确认后的回调（异步亦可），外部应在此持久化 token/baseUrl
    */
   async loginWeChat(
-    onCredentials?: (creds: { token: string; baseUrl: string }) => void
+    onCredentials?: (creds: { token: string; baseUrl: string }) => void | Promise<void>
   ): Promise<{ success: boolean; qrcodeUrl?: string; error?: string }> {
     try {
       await this.stopWeChat()
 
       this.wechatAdapter = new WeChatAdapter({ enabled: true, token: '', baseUrl: '' })
       this.wechatAdapter.onMessage = (msg: IMIncomingMessage) => this.handleIncomingMessage(msg)
-      this.wechatAdapter.onConnectionChange = (connected: boolean) => {
+      this.wechatAdapter.onConnectionChange = (connected: boolean) =>
         this.handleConnectionChange('wechat', connected)
-        if (connected && onCredentials) {
-          const creds = this.wechatAdapter!.getCredentials()
+      // 凭证回调挂在 adapter.onCredentials（QR confirmed），不挂 onConnectionChange：
+      // 断线重连也会发 connected=true，若混用会导致重复落盘 / 强行改写用户关掉的 autoConnect。
+      if (onCredentials) {
+        this.wechatAdapter.onCredentials = (creds) => {
           this.config.wechat = { enabled: true, ...creds }
-          onCredentials(creds)
+          void Promise.resolve(onCredentials(creds)).catch((err) => {
+            log.error('WeChat onCredentials failed:', err)
+          })
         }
       }
 

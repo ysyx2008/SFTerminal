@@ -295,7 +295,7 @@ const defaultConfig: StoreSchema = {
   imSlackAppToken: '',
   imTelegramAutoConnect: false,
   imTelegramBotToken: '',
-  imWeChatAutoConnect: false,
+  imWeChatAutoConnect: true,   // 微信扫码登录后应默认开机重连；无 token 时启动逻辑会空操作
   imWeChatToken: '',
   imWeChatBaseUrl: '',
   imExecutionMode: 'relaxed',

@@ -87,7 +87,7 @@ const fsAutoConnect = ref(false)
 const slAutoConnect = ref(false)
 const tgAutoConnect = ref(false)
 const wcAutoConnect = ref(false)
-const wxAutoConnect = ref(false)
+const wxAutoConnect = ref(true)
 // 执行模式
 const executionMode = ref<ExecutionMode>('relaxed')
 // 过程消息投递模式
@@ -124,6 +124,8 @@ onMounted(async () => {
       if (data.connected) {
         wxShowQrcode.value = false
         wxHasToken.value = true
+        // 后端扫码成功后会默认开启 autoConnect，与 UI 保持一致
+        wxAutoConnect.value = true
       }
     }
   })
@@ -159,7 +161,7 @@ async function loadIMSettings() {
     wcSecret.value = config.wecom?.secret || ''
     wcAutoConnect.value = config.wecom?.autoConnect || false
     wxHasToken.value = config.wechat?.hasToken || false
-    wxAutoConnect.value = config.wechat?.autoConnect || false
+    wxAutoConnect.value = config.wechat?.autoConnect !== false
     executionMode.value = config.executionMode || 'relaxed'
     processMode.value = config.processMode || 'messages'
     sendThinkingProcess.value = config.sendThinkingProcess === true

@@ -157,7 +157,7 @@ const loadIMData = async () => {
     slack: config.slack.autoConnect,
     telegram: config.telegram.autoConnect,
     wecom: config.wecom.autoConnect,
-    wechat: config.wechat?.autoConnect ?? false,
+    wechat: config.wechat?.autoConnect !== false,
   }
 
   const platforms: IMPlatform[] = ['dingtalk', 'feishu', 'slack', 'telegram', 'wecom', 'wechat']

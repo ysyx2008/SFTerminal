@@ -4096,22 +4096,22 @@ ipcMain.handle('im:stopWeCom', async () => {
 })
 
 ipcMain.handle('im:wechatLogin', async () => {
-  // loginWeChat 的回调签名是同步的，所以先收集 creds 再异步写 credential
-  // 用数组容器绕过 TS 对闭包赋值的控制流分析（直接 let captured 会被推断为 never）
-  const captured: Array<{ token: string; baseUrl: string }> = []
-  const result = await (await imSvc()).loginWeChat((creds) => {
-    captured.push(creds)
-  })
-  if (captured.length > 0) {
-    const { token, baseUrl } = captured[0]
-    if (token) {
-      await getDefaultCredentialService().setCredential('im:wechat:token', token)
-    } else {
+  // loginWeChat 拿到二维码后即返回；token 在扫码确认时通过 onCredentials 到达（仅一次）。
+  // 必须在回调里落盘——旧版把落盘写在回调内是对的；改 credential.service 时误改成
+  // 「invoke 返回后读 captured」，时序错了导致新扫码永不落盘。
+  return await (await imSvc()).loginWeChat(async (creds) => {
+    if (!creds.token) {
       await getDefaultCredentialService().deleteCredential('im:wechat:token')
+      configService.set('imWeChatBaseUrl', '')
+      log.warn('WeChat QR confirmed but token empty; credentials cleared')
+      return
     }
-    configService.set('imWeChatBaseUrl', baseUrl)
-  }
-  return result
+    // 先写非敏感配置，最后写 token（token 是重启重连的必要条件）
+    configService.set('imWeChatBaseUrl', creds.baseUrl || '')
+    configService.set('imWeChatAutoConnect', true)
+    await getDefaultCredentialService().setCredential('im:wechat:token', creds.token)
+    log.info('WeChat credentials persisted after QR confirmation')
+  })
 })
 
 ipcMain.handle('im:startWeChat', async () => {
@@ -4167,7 +4167,8 @@ ipcMain.handle('im:getConfig', async () => {
     },
     wechat: {
       hasToken: !!(await credentialSvc.getCredential('im:wechat:token')),
-      autoConnect: configService.get('imWeChatAutoConnect') || false,
+      // 默认 true：扫码渠道期望开机重连；用户显式关掉则为 false
+      autoConnect: configService.get('imWeChatAutoConnect') !== false,
     },
     executionMode: (configService.get('imExecutionMode') as string) || 'relaxed',
     processMode: (() => {
