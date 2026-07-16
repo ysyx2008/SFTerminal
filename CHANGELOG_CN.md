@@ -27,6 +27,7 @@
 - 🐛 **命令审计 / 上下文**：展开 `~` 路径避免误判；保护 skill 结果；去掉每步 tool-result 微压缩
 - 🐛 **UI / CLI / 历史**：测高回缩、分隔条拖拽释放、冷加载贴底；共用 userData 时保护索引；watch 树一并扫描等
 - 🐛 **CLI 知识库退出**：进程内 ORT 路径退出前 dispose embedding，避免 knowledge 命令 SIGABRT
+- 🐛 **OEM 配置可选**：无 `oem.config.ts` 时使用开源默认，有则覆盖；不再强制生成该文件
 
 ## v11.2.2 (2026-07-13)
 

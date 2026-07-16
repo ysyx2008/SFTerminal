@@ -27,6 +27,7 @@ All notable changes to SailFish will be documented in this file.
 - 🐛 **Command audit / context**: expand `~` paths to avoid free false negatives; protect skill results; remove per-step tool-result micro-compression
 - 🐛 **UI / CLI / history**: textarea measure collapse, artifact splitter mouse release, cold-load pin-to-bottom; protect indexes when sharing userData; scan the watch tree in getAgentRecords
 - 🐛 **CLI knowledge exit**: dispose in-process ORT embedding before exit so knowledge commands no longer SIGABRT
+- 🐛 **Optional OEM config**: use open-source defaults when `oem.config.ts` is absent; apply override when present; no longer force-generate the file
 
 ## v11.2.2 (2026-07-13)
 
