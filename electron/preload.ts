@@ -3441,6 +3441,8 @@ const electronAPI = {
       ipcRenderer.invoke('im:stopWeCom') as Promise<{ success: boolean }>,
     wechatLogin: () =>
       ipcRenderer.invoke('im:wechatLogin') as Promise<{ success: boolean; qrcodeUrl?: string; error?: string }>,
+    cancelWeChatLogin: () =>
+      ipcRenderer.invoke('im:cancelWeChatLogin') as Promise<{ success: boolean }>,
     startWeChat: () =>
       ipcRenderer.invoke('im:startWeChat') as Promise<{ success: boolean; error?: string }>,
     stopWeChat: () =>
@@ -3486,7 +3488,17 @@ const electronAPI = {
       return () => {
         ipcRenderer.removeListener('im:connectionChange', handler)
       }
-    }
+    },
+
+    // 微信扫码过程状态（出码 / 已扫 / 自动刷新 / 确认）
+    onWeChatLoginStatus: (callback: (status: import('@shared/types').WeChatLoginStatus) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, status: import('@shared/types').WeChatLoginStatus) =>
+        callback(status)
+      ipcRenderer.on('im:wechatLoginStatus', handler)
+      return () => {
+        ipcRenderer.removeListener('im:wechatLoginStatus', handler)
+      }
+    },
   },
 
   feishuOAuth: {

@@ -480,6 +480,18 @@ export default {
         }
       }
     },
+    wechatQr: {
+      title: 'Connect with WeChat',
+      subtitle: 'Scan with WeChat on your phone to chat with the assistant',
+      scanHint: 'Scan this QR code with WeChat',
+      scanned: 'Scanned — confirm on your phone',
+      refreshing: 'QR expired, refreshing…',
+      loading: 'Getting QR code…',
+      start: 'Scan to connect',
+      refresh: 'Refresh QR',
+      failed: 'Failed to get QR code',
+      renderFailed: 'Failed to render QR code',
+    },
     imagePreview: {
       prevImage: 'Previous image (←)',
       nextImage: 'Next image (→)',

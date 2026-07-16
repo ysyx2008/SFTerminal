@@ -4136,6 +4136,11 @@ ipcMain.handle('im:wechatLogin', async () => {
   })
 })
 
+ipcMain.handle('im:cancelWeChatLogin', async () => {
+  await (await imSvc()).cancelWeChatLogin()
+  return { success: true }
+})
+
 ipcMain.handle('im:startWeChat', async () => {
   const token = (await getDefaultCredentialService().getCredential('im:wechat:token')) || ''
   const baseUrl = (configService.get('imWeChatBaseUrl') as string) || ''

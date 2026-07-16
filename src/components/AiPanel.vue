@@ -2233,6 +2233,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
               v-if="!isAgentRunning && !agentUserTask && agentTaskGroups.length === 0"
               :is-standalone-assistant="isStandaloneAssistant"
               :is-companion-tab="isCompanionTab"
+              :tab-active="tabActive"
               :execution-mode="executionMode"
               :recent-history="recentHistory"
               :is-loading-history="isLoadingHistory"

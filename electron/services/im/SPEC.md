@@ -78,7 +78,8 @@
 
 | 方法签名 | 用途 |
 |---------|------|
-| `async loginWeChat(onCredentials?): Promise<{success, qrcodeUrl?, error?}>` | 启动微信扫码登录；拿到二维码即返回。`onCredentials` 在 QR `confirmed` 时触发一次（可异步，与连接态解耦），调用方须在此持久化 token/baseUrl |
+| `async loginWeChat(onCredentials?): Promise<{success, qrcodeUrl?, error?}>` | 启动微信扫码登录；拿到二维码即返回。`onCredentials` 在 QR `confirmed` 时触发一次（可异步，与连接态解耦），调用方须在此持久化 token/baseUrl。过程经 `im:wechatLoginStatus` 推送（qr/scanned/refreshing/confirmed/error）；过期自动换码 |
+| `async cancelWeChatLogin(): Promise<void>` | 取消进行中的扫码（未连接时丢弃 adapter，停止刷码） |
 | `async startWeChat(config: WeChatConfig): Promise<{success, error?}>` | 用 `loginWeChat` 拿到的凭证启动微信连接 |
 | `async stopWeChat(): Promise<void>` | 断开微信 |
 | `isWeChatConnected(): boolean` | 查询微信连接状态 |

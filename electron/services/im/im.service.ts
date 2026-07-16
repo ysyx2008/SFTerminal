@@ -949,6 +949,8 @@ export class IMService {
       this.wechatAdapter.onMessage = (msg: IMIncomingMessage) => this.handleIncomingMessage(msg)
       this.wechatAdapter.onConnectionChange = (connected: boolean) =>
         this.handleConnectionChange('wechat', connected)
+      this.wechatAdapter.onLoginStatus = (status) =>
+        this.sendToDesktop('im:wechatLoginStatus', status)
       // 凭证回调挂在 adapter.onCredentials（QR confirmed），不挂 onConnectionChange：
       // 断线重连也会发 connected=true，若混用会导致重复落盘 / 强行改写用户关掉的 autoConnect。
       if (onCredentials) {
@@ -968,6 +970,21 @@ export class IMService {
       this.wechatAdapter = null
       return { success: false, error: err.message || 'Failed to start login' }
     }
+  }
+
+  /**
+   * 取消进行中的扫码登录（未连上时丢弃 adapter；已连接则仅取消 QR 轮询）。
+   * 供联络空态 / 设置页卸载时调用，避免后台继续刷码。
+   */
+  async cancelWeChatLogin(): Promise<void> {
+    if (!this.wechatAdapter) return
+    if (this.wechatAdapter.isConnected()) {
+      this.wechatAdapter.cancelLogin()
+      return
+    }
+    await this.wechatAdapter.stop()
+    this.wechatAdapter = null
+    log.info('WeChat QR login cancelled')
   }
 
   /**

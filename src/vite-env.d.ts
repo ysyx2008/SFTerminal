@@ -22,6 +22,7 @@ declare module '*.vue' {
 type TerminalType = import('@shared/types').TerminalType
 type ExecutionMode = import('@shared/types').ExecutionMode
 type IMProcessMode = import('@shared/types').IMProcessMode
+type WeChatLoginStatus = import('@shared/types').WeChatLoginStatus
 type RemoteChannel = import('@shared/types').RemoteChannel
 type RiskLevel = import('@shared/types').RiskLevel
 type StepProgress = import('@shared/types').StepProgress
@@ -2393,6 +2394,7 @@ interface Window {
       startWeCom: (config: { enabled: boolean; botId: string; secret: string }) => Promise<{ success: boolean; error?: string }>
       stopWeCom: () => Promise<{ success: boolean }>
       wechatLogin: () => Promise<{ success: boolean; qrcodeUrl?: string; error?: string }>
+      cancelWeChatLogin: () => Promise<{ success: boolean }>
       startWeChat: () => Promise<{ success: boolean; error?: string }>
       stopWeChat: () => Promise<{ success: boolean }>
       wechatLogout: () => Promise<{ success: boolean }>
@@ -2421,6 +2423,7 @@ interface Window {
       setSendThinkingProcess: (enabled: boolean) => Promise<void>
       sendNotification: (text: string, options?: { markdown?: boolean; title?: string }) => Promise<{ success: boolean; platform?: string; error?: string }>
       onConnectionChange: (callback: (data: { platform: string; connected: boolean }) => void) => () => void
+      onWeChatLoginStatus: (callback: (status: WeChatLoginStatus) => void) => () => void
     }
 
     feishuOAuth: {

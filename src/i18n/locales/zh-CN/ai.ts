@@ -481,6 +481,18 @@ export default {
         }
       }
     },
+    wechatQr: {
+      title: '微信扫码连接',
+      subtitle: '用手机微信扫一扫，即可在微信里和助手对话',
+      scanHint: '请使用微信扫描二维码',
+      scanned: '已扫码，请在手机上确认',
+      refreshing: '二维码已过期，正在刷新…',
+      loading: '正在获取二维码…',
+      start: '微信扫码连接',
+      refresh: '刷新二维码',
+      failed: '获取二维码失败',
+      renderFailed: '二维码渲染失败',
+    },
     imagePreview: {
       prevImage: '上一张 (←)',
       nextImage: '下一张 (→)',

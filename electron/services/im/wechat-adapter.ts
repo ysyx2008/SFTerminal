@@ -8,6 +8,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 
+import type { WeChatLoginStatus } from '@shared/types'
 import type { IMAdapter, IMIncomingMessage, IMPlatform, WeChatConfig, IMAttachment, IMOutboundSessionOptions, IMProgressOutboundCapable } from './types'
 import { IM_TEXT_MAX_LENGTH } from './types'
 import { createLogger } from '../../utils/logger'
@@ -53,6 +54,8 @@ const CDN_BASE_URL = 'https://novac2c.cdn.weixin.qq.com/c2c'
 const DEFAULT_TIMEOUT_MS = 40_000
 const QR_POLL_INTERVAL_MS = 2_000
 const QR_EXPIRE_MS = 180_000
+/** 展示期间过期自动换码上限；离开页面会 cancelLogin，不会无限刷 */
+const QR_MAX_REFRESH = 20
 const RECONNECT_DELAY_MS = 5_000
 const MAX_RECONNECT_DELAY_MS = 60_000
 const TYPING_KEEPALIVE_MS = 5_000
@@ -96,6 +99,8 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
    * 与连接态解耦：断线重连不会再次触发，避免重复落盘或强行改写 autoConnect。
    */
   onCredentials: ((creds: { token: string; baseUrl: string }) => void) | null = null
+  /** 扫码过程状态（出码 / 已扫 / 刷新 / 确认 / 错误），供 UI 内嵌二维码展示 */
+  onLoginStatus: ((status: WeChatLoginStatus) => void) | null = null
 
   private token: string = ''
   private baseUrl: string = FIXED_BASE_URL
@@ -313,18 +318,11 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
     const abort = new AbortController()
     this.loginAbort = abort
 
-    const raw = await apiGetFetch({
-      baseUrl: FIXED_BASE_URL,
-      endpoint: 'ilink/bot/get_bot_qrcode?bot_type=3',
-      label: 'getBotQRCode',
-    })
-    const qr = JSON.parse(raw) as QRCodeResp
-    if (!qr.qrcode || !qr.qrcode_img_content) {
-      throw new Error('Failed to fetch QR code')
-    }
+    const qr = await this.fetchQRCode()
     log.info('QR code fetched, polling status...')
+    this.emitLoginStatus({ phase: 'qr', qrcodeUrl: qr.qrcodeUrl })
     this.pollQRStatus(qr.qrcode, abort.signal)
-    return { qrcodeUrl: qr.qrcode_img_content }
+    return { qrcodeUrl: qr.qrcodeUrl }
   }
 
   cancelLogin(): void {
@@ -334,22 +332,84 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
     }
   }
 
+  private emitLoginStatus(status: WeChatLoginStatus): void {
+    try {
+      this.onLoginStatus?.(status)
+    } catch (err) {
+      log.error('onLoginStatus callback failed:', err)
+    }
+  }
+
+  private async fetchQRCode(): Promise<{ qrcode: string; qrcodeUrl: string }> {
+    const raw = await apiGetFetch({
+      baseUrl: FIXED_BASE_URL,
+      endpoint: 'ilink/bot/get_bot_qrcode?bot_type=3',
+      label: 'getBotQRCode',
+    })
+    const qr = JSON.parse(raw) as QRCodeResp
+    if (!qr.qrcode || !qr.qrcode_img_content) {
+      throw new Error('Failed to fetch QR code')
+    }
+    return { qrcode: qr.qrcode, qrcodeUrl: qr.qrcode_img_content }
+  }
+
+  /**
+   * 过期后重新拉码并通知前端；失败返回 null（已 emit error）。
+   */
+  private async refreshQRCode(
+    signal: AbortSignal,
+    refreshCount: number,
+  ): Promise<{ qrcode: string; qrcodeUrl: string } | null> {
+    if (signal.aborted) return null
+    if (refreshCount >= QR_MAX_REFRESH) {
+      log.warn(`QR refresh exceeded max (${QR_MAX_REFRESH})`)
+      this.emitLoginStatus({ phase: 'error', error: 'QR code expired too many times' })
+      this.onConnectionChange?.(false)
+      return null
+    }
+    this.emitLoginStatus({ phase: 'refreshing' })
+    try {
+      const qr = await this.fetchQRCode()
+      if (signal.aborted) return null
+      this.qrPollBaseUrl = FIXED_BASE_URL
+      this.emitLoginStatus({ phase: 'qr', qrcodeUrl: qr.qrcodeUrl })
+      log.info(`QR code refreshed (#${refreshCount + 1})`)
+      return qr
+    } catch (err: any) {
+      if (signal.aborted) return null
+      log.error('Failed to refresh QR code:', err)
+      this.emitLoginStatus({
+        phase: 'error',
+        error: err?.message || 'Failed to refresh QR code',
+      })
+      this.onConnectionChange?.(false)
+      return null
+    }
+  }
+
   private async pollQRStatus(qrcode: string, signal: AbortSignal): Promise<void> {
     this.qrPollBaseUrl = FIXED_BASE_URL
-    const startTime = Date.now()
+    let currentQrcode = qrcode
+    let startTime = Date.now()
+    let refreshCount = 0
+    let scannedEmitted = false
 
     while (!signal.aborted) {
       if (Date.now() - startTime > QR_EXPIRE_MS) {
-        log.warn('QR code expired')
-        this.onConnectionChange?.(false)
-        return
+        log.warn('QR code expired (client timeout), refreshing...')
+        const next = await this.refreshQRCode(signal, refreshCount++)
+        if (!next) return
+        currentQrcode = next.qrcode
+        startTime = Date.now()
+        scannedEmitted = false
+        continue
       }
 
       let status: QRStatusResp
       try {
         const raw = await apiGetFetch({
           baseUrl: this.qrPollBaseUrl,
-          endpoint: `ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrcode)}`,
+          endpoint: `ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(currentQrcode)}`,
           label: 'getQRCodeStatus',
           timeoutMs: 35_000,
         })
@@ -371,6 +431,7 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
         case 'confirmed': {
           if (!status.bot_token) {
             log.error('QR confirmed but no bot_token received')
+            this.emitLoginStatus({ phase: 'error', error: 'No bot_token received' })
             this.onConnectionChange?.(false)
             return
           }
@@ -384,15 +445,25 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
           } catch (err) {
             log.error('onCredentials callback failed:', err)
           }
+          this.emitLoginStatus({ phase: 'confirmed' })
           await this.startPolling()
           return
         }
-        case 'expired':
-          log.warn('QR code expired (server)')
-          this.onConnectionChange?.(false)
-          return
+        case 'expired': {
+          log.warn('QR code expired (server), refreshing...')
+          const next = await this.refreshQRCode(signal, refreshCount++)
+          if (!next) return
+          currentQrcode = next.qrcode
+          startTime = Date.now()
+          scannedEmitted = false
+          continue
+        }
         case 'scaned':
-          log.debug('QR scanned, waiting confirmation...')
+          if (!scannedEmitted) {
+            scannedEmitted = true
+            log.debug('QR scanned, waiting confirmation...')
+            this.emitLoginStatus({ phase: 'scanned' })
+          }
           break
         case 'scaned_but_redirect': {
           if (status.redirect_host) {
@@ -424,6 +495,7 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
     this.cancelLogin()
     await this.stopPolling()
     this.onCredentials = null
+    this.onLoginStatus = null
     this.connected = false
     this.onConnectionChange?.(false)
     // 清理 context tokens（内存 + 磁盘），避免 stop/重新登录 后旧 token 污染新会话。

@@ -8,10 +8,13 @@ import {
   type AssistantExample,
 } from '../config/assistantExamples'
 import type { ExecutionMode, AgentHistorySummary } from '@shared/types'
+import WeChatQrConnect from './WeChatQrConnect.vue'
 
 defineProps<{
   isStandaloneAssistant: boolean
   isCompanionTab: boolean
+  /** 联络 tab 是否为当前可见表面；用于微信扫码仅在看得见时拉码 */
+  tabActive?: boolean
   executionMode: ExecutionMode
   recentHistory: AgentHistorySummary[]
   isLoadingHistory: boolean
@@ -76,6 +79,14 @@ const truncateText = (text: string, maxLength: number): string => {
             </div>
           </li>
         </ul>
+
+        <!-- 新用户：联络空态直接内嵌微信扫码；仅 tab 可见时拉码，切走停刷 -->
+        <WeChatQrConnect
+          auto-start
+          hide-when-has-token
+          variant="compact"
+          :active="tabActive !== false"
+        />
       </div>
     </template>
 

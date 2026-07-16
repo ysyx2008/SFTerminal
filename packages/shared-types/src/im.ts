@@ -6,3 +6,14 @@
  * 用户能看到 AI 的对话节奏，但不被工具调用记录刷屏，也不逼微信触发风控。
  */
 export type IMProcessMode = 'final' | 'messages' | 'all'
+
+/**
+ * 微信扫码登录过程状态（前后端共用）。
+ * `qrcodeUrl` 是可编码为二维码的链接（非图片、非可 iframe 的网页）。
+ */
+export type WeChatLoginStatus =
+  | { phase: 'qr'; qrcodeUrl: string }
+  | { phase: 'scanned' }
+  | { phase: 'refreshing' }
+  | { phase: 'confirmed' }
+  | { phase: 'error'; error: string }

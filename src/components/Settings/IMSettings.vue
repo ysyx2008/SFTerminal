@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ExecutionMode, IMProcessMode } from '@shared/types'
 import { useTerminalStore } from '../../stores/terminal'
+import WeChatQrConnect from '../WeChatQrConnect.vue'
 
 const { t, locale } = useI18n()
 const terminalStore = useTerminalStore()
@@ -79,8 +80,8 @@ const wxConnected = ref(false)
 const wxConnecting = ref(false)
 const wxError = ref('')
 const wxHasToken = ref(false)
-const wxQrcodeUrl = ref('')
 const wxShowQrcode = ref(false)
+const wxQrRef = ref<{ startLogin: () => Promise<void> } | null>(null)
 // 每平台自动连接
 const dtAutoConnect = ref(false)
 const fsAutoConnect = ref(false)
@@ -130,6 +131,14 @@ onMounted(async () => {
     }
   })
 })
+
+function onWxQrConnected() {
+  wxConnected.value = true
+  wxHasToken.value = true
+  wxShowQrcode.value = false
+  wxAutoConnect.value = true
+  wxError.value = ''
+}
 
 onUnmounted(() => {
   cleanupImListener?.()
@@ -401,19 +410,12 @@ async function toggleWcAutoConnect() {
 async function wechatLogin() {
   wxError.value = ''
   wxConnecting.value = true
-  wxShowQrcode.value = false
+  wxShowQrcode.value = true
   try {
-    const result = await window.electronAPI.im.wechatLogin()
-    if (result.success && result.qrcodeUrl) {
-      wxQrcodeUrl.value = result.qrcodeUrl
-      wxShowQrcode.value = true
-      wxConnecting.value = false
-    } else {
-      wxError.value = result.error || t('settings.im.connectFailed')
-      wxConnecting.value = false
-    }
+    await wxQrRef.value?.startLogin()
   } catch (e: any) {
     wxError.value = e.message
+  } finally {
     wxConnecting.value = false
   }
 }
@@ -532,14 +534,14 @@ function cancelFreeMode() {
             </ol>
           </div>
 
-          <!-- 二维码区域 -->
-          <div v-if="wxShowQrcode && wxQrcodeUrl" class="wechat-qrcode-area">
-            <p class="qrcode-hint">{{ t('settings.im.wechatScanHint') }}</p>
-            <div class="qrcode-actions">
-              <a :href="wxQrcodeUrl" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary">
-                {{ t('settings.im.wechatOpenInBrowser') }}
-              </a>
-            </div>
+          <!-- 内嵌二维码（替代跳转浏览器） -->
+          <div v-if="!wxConnected && (wxShowQrcode || !wxHasToken)" class="wechat-qrcode-area">
+            <WeChatQrConnect
+              ref="wxQrRef"
+              variant="settings"
+              :auto-start="wxShowQrcode || !wxHasToken"
+              @connected="onWxQrConnected"
+            />
           </div>
 
           <div v-if="wxError" class="error-msg">{{ wxError }}</div>
@@ -562,10 +564,8 @@ function cancelFreeMode() {
               </button>
               <button class="btn btn-sm btn-outline-secondary" @click="wechatLogout">{{ t('settings.im.wechatLogout') }}</button>
             </template>
-            <template v-else>
-              <button class="btn btn-sm btn-primary" :disabled="wxConnecting" @click="wechatLogin">
-                {{ wxConnecting && !wxShowQrcode ? t('settings.im.connecting') : t('settings.im.wechatLoginBtn') }}
-              </button>
+            <template v-else-if="wxHasToken">
+              <button class="btn btn-sm btn-outline-secondary" @click="wechatLogout">{{ t('settings.im.wechatLogout') }}</button>
             </template>
           </div>
         </div>
