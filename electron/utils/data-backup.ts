@@ -29,6 +29,29 @@ const SKIP_ON_BACKUP = new Set([
   RESTORE_OLD_DIRNAME,
 ])
 
+/**
+ * 已压缩/二进制扩展名：ZIP STORE 直存，避免无意义的二次压缩拖慢备份。
+ * 大文件（≥2MiB）同样 STORE——userData 里多为模型/向量库。
+ */
+const STORE_EXTENSIONS = new Set([
+  '.zip', '.gz', '.tgz', '.7z', '.rar', '.xz', '.bz2', '.br',
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp',
+  '.mp3', '.mp4', '.m4a', '.wav', '.ogg', '.webm', '.flac',
+  '.onnx', '.bin', '.pt', '.pth', '.safetensors', '.gguf', '.npy',
+  '.wasm', '.node', '.dylib', '.so', '.dll', '.exe',
+  '.woff', '.woff2', '.ttf', '.otf',
+  '.pdf', '.docx', '.xlsx', '.pptx',
+  '.lance', '.arrow', '.parquet',
+])
+
+const STORE_MIN_BYTES = 2 * 1024 * 1024
+
+function shouldStoreEntry(relPath: string, size: number): boolean {
+  const ext = path.extname(relPath).toLowerCase()
+  if (STORE_EXTENSIONS.has(ext)) return true
+  return size >= STORE_MIN_BYTES
+}
+
 export interface BackupMarker {
   version: number
   createdAt: string
@@ -294,8 +317,13 @@ export async function exportUserData(opts: ExportUserDataOptions): Promise<{ fil
       for (let i = 0; i < files.length; i++) {
         if (abortIfCanceled()) throw new CopyCanceledError()
         const file = files[i]
-        archive!.file(file.abs, { name: normalizeArchiveEntryPath(file.rel) })
-        if (i % 32 === 0) await yieldToEventLoop()
+        const zipName = normalizeArchiveEntryPath(file.rel)
+        archive!.file(file.abs, {
+          name: zipName,
+          // 已压缩/大文件直存，显著缩短备份时间（体积接近）
+          store: shouldStoreEntry(zipName, file.size),
+        })
+        if (i % 64 === 0) await yieldToEventLoop()
       }
       if (abortIfCanceled()) throw new CopyCanceledError()
       await archive!.finalize()

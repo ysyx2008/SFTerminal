@@ -234,4 +234,32 @@ describe('data-backup', () => {
     const lastIdx = ticks.length - 1
     expect(ticks.slice(0, lastIdx).every((p) => p < 100)).toBe(true)
   })
+
+  it('大文件与已压缩扩展名使用 STORE', async () => {
+    const src = path.join(tmpRoot, 'userdata-store')
+    const dst = path.join(tmpRoot, 'store.zip')
+    fs.mkdirSync(src, { recursive: true })
+    fs.writeFileSync(path.join(src, 'small.txt'), 'compressible '.repeat(2000))
+    fs.writeFileSync(path.join(src, 'model.bin'), Buffer.alloc(100_000, 9))
+
+    await exportUserData({ source: src, target: dst })
+
+    const yauzl = await import('yauzl')
+    const methods = await new Promise<Record<string, number>>((resolve, reject) => {
+      yauzl.default.open(dst, { lazyEntries: true }, (err, zip) => {
+        if (err || !zip) return reject(err ?? new Error('open failed'))
+        const map: Record<string, number> = {}
+        zip.on('error', reject)
+        zip.on('end', () => resolve(map))
+        zip.on('entry', (entry) => {
+          map[entry.fileName.replace(/\\/g, '/')] = entry.compressionMethod
+          zip.readEntry()
+        })
+        zip.readEntry()
+      })
+    })
+    // 0 = STORE, 8 = DEFLATE
+    expect(methods['model.bin']).toBe(0)
+    expect(methods['small.txt']).toBe(8)
+  })
 })
