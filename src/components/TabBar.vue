@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, SatelliteDish, Bot, Home, PanelTopOpen, Radio } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, SatelliteDish, Bot, Home, PanelTopOpen, Radio, ListTodo } from 'lucide-vue-next'
 import { useTerminalStore, COMPANION_TAB_AGENT_ID } from '../stores/terminal'
 import { formatAgentAttentionTooltip } from '../utils/agent-tab-ui-meta'
 import BatchCommandPanel from './BatchCommandPanel.vue'
@@ -11,9 +11,11 @@ import {
   useOpenConversationInTab,
 } from '../composables/useConversationDragDrop'
 import { isWorkbenchAvailable } from '../workbench/registry'
+import { useTodoOverdueCount } from '../composables/useTodoOverdueCount'
 
 const { t } = useI18n()
 const terminalStore = useTerminalStore()
+const { overdueCount } = useTodoOverdueCount()
 const { openConversationInTab } = useOpenConversationInTab()
 const {
   isDragOver: isConversationDragOver,
@@ -342,8 +344,10 @@ const tabAttentionTooltip = (tabId: string): string | undefined => {
   return formatAgentAttentionTooltip(terminalStore.getTabAgentUiMeta(tabId), t)
 }
 
-/** 任务区激活：无 TabBar 可见 tab 时为激活（含欢迎页与 Hub 侧栏焦点会话） */
-const isTasksHomeActive = computed(() => !terminalStore.activeTabId)
+/** 任务区激活：无 TabBar 可见 tab、且非待办面（含欢迎页与 Hub 侧栏焦点会话） */
+const isTasksHomeActive = computed(
+  () => !terminalStore.activeTabId && !terminalStore.todosActive
+)
 
 const tasksAreaAttentionTooltip = computed(() => {
   if (!terminalStore.hasTasksAreaAttention) return t('tabs.tasks', '任务')
@@ -496,6 +500,23 @@ const tasksAreaAttentionTooltip = computed(() => {
       <span v-if="companionTab.isLoading" class="tab-loading">
         <Loader2 class="spinner" :size="12" />
       </span>
+    </div>
+
+    <!-- 待办常驻 tab：固定在联络右侧、新建按钮之前 -->
+    <div
+      v-if="canShowCompanion"
+      class="tab tab-pinned"
+      :class="{
+        active: terminalStore.todosActive,
+        'needs-attention': !terminalStore.todosActive && overdueCount > 0,
+      }"
+      :title="overdueCount > 0 ? t('tabs.todosOverdue', { n: overdueCount }) : t('tabs.todos')"
+      @click="terminalStore.openTodos()"
+    >
+      <span class="tab-icon">
+        <ListTodo :size="14" />
+      </span>
+      <span class="tab-title">{{ t('tabs.todos') }}</span>
     </div>
 
     <!-- 新建终端按钮（带下拉菜单） -->

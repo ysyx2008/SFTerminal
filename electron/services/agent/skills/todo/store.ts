@@ -22,6 +22,27 @@ const VALID_PRIORITIES: TodoPriority[] = ['low', 'normal', 'high', 'urgent']
 
 let writeQueue: Promise<void> = Promise.resolve()
 
+type ChangeListener = () => void
+const changeListeners = new Set<ChangeListener>()
+
+/** 注册 TODO.json 写入成功后的监听（IPC 广播 / 测试用） */
+export function onTodoStoreChanged(listener: ChangeListener): () => void {
+  changeListeners.add(listener)
+  return () => {
+    changeListeners.delete(listener)
+  }
+}
+
+function notifyStoreChanged(): void {
+  for (const listener of changeListeners) {
+    try {
+      listener()
+    } catch (e) {
+      log.warn('Todo store change listener failed:', e)
+    }
+  }
+}
+
 export function getTodoStorePath(): string {
   return path.join(getWorkspacePath(), TODO_FILENAME)
 }
@@ -121,6 +142,26 @@ export async function saveStore(store: TodoStoreData): Promise<void> {
   await next
 }
 
+/**
+ * 在写队列内原子读-改-写，避免 Agent 工具与面板 IPC 并发丢条目。
+ * 通知在 rename 成功后、save/mutate Promise resolve 前发出（文件已落地）。
+ */
+export async function mutateStore<T>(mutator: (store: TodoStoreData) => T): Promise<T> {
+  const next = writeQueue.then(() => {
+    const store = loadStore()
+    const result = mutator(store)
+    writeStoreSync(store)
+    return result
+  })
+  writeQueue = next.then(
+    () => undefined,
+    (err) => {
+      log.warn('TODO.json mutate failed in queue:', err)
+    }
+  )
+  return next
+}
+
 function writeStoreSync(store: TodoStoreData): void {
   const workspace = getWorkspacePath()
   fs.mkdirSync(workspace, { recursive: true })
@@ -133,6 +174,7 @@ function writeStoreSync(store: TodoStoreData): void {
   }
   fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), 'utf-8')
   fs.renameSync(tmpPath, filePath)
+  notifyStoreChanged()
 }
 
 export function createTodoItem(input: {

@@ -3153,6 +3153,33 @@ const electronAPI = {
     }
   },
 
+  // 本地待办面板（与 Agent todo_* 共用 TODO.json）
+  todo: {
+    list: (filter?: { status?: string; includeDone?: boolean }) =>
+      ipcRenderer.invoke('todo:list', filter),
+    create: (input: {
+      title: string
+      description?: string
+      status?: string
+      priority?: string
+      dueDate?: string
+      tags?: string[]
+    }) => ipcRenderer.invoke('todo:create', input),
+    update: (id: string, patch: Record<string, unknown>) =>
+      ipcRenderer.invoke('todo:update', id, patch),
+    complete: (id: string) =>
+      ipcRenderer.invoke('todo:complete', id),
+    delete: (id: string) =>
+      ipcRenderer.invoke('todo:delete', id),
+    countOverdue: () =>
+      ipcRenderer.invoke('todo:countOverdue') as Promise<number>,
+    onChanged: (callback: () => void) => {
+      const handler = () => { callback() }
+      ipcRenderer.on('todo:changed', handler)
+      return () => { ipcRenderer.removeListener('todo:changed', handler) }
+    },
+  },
+
   // Watch & Sensor（感知层）
   watch: {
     getAll: () =>

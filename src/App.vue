@@ -21,6 +21,7 @@ import WindowControls from './components/WindowControls.vue'
 import SetupWizard from './components/SetupWizard.vue'
 import WelcomePage from './components/WelcomePage.vue'
 import SmartPatrolPage from './components/SmartPatrolPage.vue'
+import TodoPanel from './components/Todo/TodoPanel.vue'
 import Toast from './components/common/Toast.vue'
 import UpdateNotifyCard from './components/common/UpdateNotifyCard.vue'
 import ConfirmDialog from './components/common/ConfirmDialog.vue'
@@ -376,6 +377,9 @@ const handleCloseShortcut = async () => {
       // 终端 tab、已提升助手 tab、远程助手 tab：只关 tab，不关窗口
       await terminalStore.closeTab(activeTab.id)
     }
+  } else if (terminalStore.todosActive) {
+    // 待办固定面与联络一致：Cmd+W 退回欢迎页，不关窗口
+    terminalStore.goToHome()
   } else if (terminalStore.hubFocusedAssistantTabId) {
     // Hub 焦点模式（正在看某个对话）：Cmd+W 退回欢迎页，不关窗口
     terminalStore.goToHome()
@@ -1054,17 +1058,17 @@ const initializeApp = async () => {
 const activeSurfaceTabId = computed(
   () => terminalStore.activeTabId || terminalStore.hubFocusedTab?.id || ''
 )
-// 是否显示欢迎页：没有任何 surface tab 时显示（包含 Hub 焦点会话时隐藏）
+// 是否显示欢迎页：没有任何 surface tab、且非待办/巡检时显示
 const showWelcomePage = computed(() =>
-  !showSmartPatrol.value && !activeSurfaceTabId.value
+  !showSmartPatrol.value && !terminalStore.todosActive && !activeSurfaceTabId.value
 )
-/** 主工作区显示某个 tab 工作台（欢迎页 / 智能巡检时隐藏，但 tab 组件保持挂载） */
+/** 主工作区显示某个 tab 工作台（欢迎页 / 智能巡检 / 待办时隐藏，但 tab 组件保持挂载） */
 const showTabWorkbench = computed(
-  () => !showSmartPatrol.value && !showWelcomePage.value
+  () => !showSmartPatrol.value && !terminalStore.todosActive && !showWelcomePage.value
 )
-// 最近对话侧栏：Hub 视图（activeTabId 为空，即首页/会话态）常驻，独立终端/助手全屏 tab 时隐藏
+// 最近对话侧栏：Hub 视图常驻；独立终端/助手/待办全屏时隐藏
 const showRecallSidebar = computed(() =>
-  !terminalStore.activeTabId && !showSmartPatrol.value && canShowAssistantUi
+  !terminalStore.activeTabId && !showSmartPatrol.value && !terminalStore.todosActive && canShowAssistantUi
 )
 /** 欢迎页是否真正展示给用户（启动完成 + 无全屏遮挡），用于控制首次启动入场动画 */
 const welcomePageReady = computed(
@@ -1111,6 +1115,7 @@ const openSessionManagerFromWelcome = () => {
 
 // 从欢迎页打开智能巡检
 const openSmartPatrolFromWelcome = () => {
+  terminalStore.todosActive = false
   showSmartPatrol.value = true
 }
 
@@ -1527,9 +1532,13 @@ onUnmounted(() => {
           @open-watches="openWatchesFromWelcome"
         />
         <SmartPatrolPage
-          v-if="showSmartPatrol"
+          v-if="showSmartPatrol && !terminalStore.todosActive"
           class="main-surface"
           @back="backFromSmartPatrol"
+        />
+        <TodoPanel
+          v-if="terminalStore.todosActive"
+          class="main-surface"
         />
         <!-- 有 tab 即挂载工作台；外层原生 div + v-show 控制显隐（component 上 v-show 的 scoped 样式不可靠） -->
         <div

@@ -394,6 +394,18 @@ import type { CreateWatchParams } from './services/watch/types'
 import type { WebChatService } from './services/web-chat.service'
 import { getMigrationRunner, createBackup } from './migrations'
 import { runTodoMdAgentMigrationIfNeeded } from './services/agent/skills/todo/migrate-legacy'
+import {
+  completeTodo,
+  countOverdueTodos,
+  createTodo,
+  deleteTodo,
+  listTodos,
+  updateTodo,
+  type TodoCreateInput,
+  type TodoListFilter,
+  type TodoUpdatePatch,
+} from './services/agent/skills/todo/api'
+import { onTodoStoreChanged } from './services/agent/skills/todo/store'
 import type { GatewayConfig } from './services/gateway.service'
 import type { GatewayService } from './services/gateway.service'
 import { BastionService } from './services/bastion.service'
@@ -3280,6 +3292,46 @@ ipcMain.handle('scheduler:isTaskRunning', async (_event, taskId: string) => {
 
 ipcMain.handle('scheduler:getRunningTasks', async () => {
   return (await ensureSchedulerService()).getRunningTasks()
+})
+
+// ==================== Local Todo IPC（面板；与 Agent todo_* 共用 store）====================
+
+function broadcastTodoChanged(): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    try {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send('todo:changed')
+      }
+    } catch (e) {
+      log.warn('todo:changed broadcast failed:', e)
+    }
+  }
+}
+
+onTodoStoreChanged(broadcastTodoChanged)
+
+ipcMain.handle('todo:list', async (_event, filter?: TodoListFilter) => {
+  return listTodos(filter ?? {})
+})
+
+ipcMain.handle('todo:create', async (_event, input: TodoCreateInput) => {
+  return createTodo(input)
+})
+
+ipcMain.handle('todo:update', async (_event, id: string, patch: TodoUpdatePatch) => {
+  return updateTodo(id, patch)
+})
+
+ipcMain.handle('todo:complete', async (_event, id: string) => {
+  return completeTodo(id)
+})
+
+ipcMain.handle('todo:delete', async (_event, id: string) => {
+  return deleteTodo(id)
+})
+
+ipcMain.handle('todo:countOverdue', async () => {
+  return countOverdueTodos()
 })
 
 // ==================== Watch & Sensor IPC ====================

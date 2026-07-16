@@ -305,6 +305,15 @@ export const useTerminalStore = defineStore('terminal', () => {
   const tabs = ref<TerminalTab[]>([])
   const activeTabId = ref<string>('')
   /**
+   * TabBar 固定面：「待办」伪 Tab（非 Agent 会话）。
+   * 与 activeTabId / Hub 焦点互斥——打开待办时清空二者。
+   */
+  const todosActive = ref(false)
+  // 激活真实 tab 时自动退出待办面（覆盖 createTab 等未走 setActiveTab 的路径）
+  watch(activeTabId, (id) => {
+    if (id) todosActive.value = false
+  })
+  /**
    * Hub（首页视图）主区当前聚焦的本地助手会话 tab。
    * 仅在 activeTabId 为空（首页视图）时生效：有值 → 主区显示该会话，为空 → 显示欢迎页。
    * 已提升为独立 tab（isPromoted）或远程助手不走此焦点。
@@ -1199,6 +1208,7 @@ export const useTerminalStore = defineStore('terminal', () => {
   function setActiveTab(tabId: string): void {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab) return
+    todosActive.value = false
     activeTabId.value = tabId
     setAgentCompletedUnseen(tabId, false)
     if (tab.type === 'assistant') {
@@ -1260,6 +1270,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
     tab.lastFocusedAt = Date.now()
     hubFocusedAssistantTabId.value = tabId
+    todosActive.value = false
     activeTabId.value = ''
     setAgentCompletedUnseen(tabId, false)
     evictHubSessionsIfNeeded(tabId)
@@ -1288,13 +1299,15 @@ export const useTerminalStore = defineStore('terminal', () => {
 
   /** 回到首页欢迎页（保留已打开的 tab，仅切换视图，并清除 Hub 焦点会话） */
   function goToHome(): void {
+    todosActive.value = false
     activeTabId.value = ''
     hubFocusedAssistantTabId.value = ''
   }
 
-  /** 切回任务区：仅退出 TabBar 可见 tab，保留 Hub 焦点会话（侧栏「新建对话」等仍用 goToHome） */
+  /** 切回任务区：仅退出 TabBar 可见 tab / 待办面，保留 Hub 焦点会话（侧栏「新建对话」等仍用 goToHome） */
   function focusTaskArea(): void {
-    if (!activeTabId.value) return
+    if (!activeTabId.value && !todosActive.value) return
+    todosActive.value = false
     activeTabId.value = ''
     const hubId = hubFocusedAssistantTabId.value
     if (!hubId) return
@@ -1305,6 +1318,13 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
     setAgentCompletedUnseen(hubId, false)
     requestAssistantComposerFocus(hubId)
+  }
+
+  /** 打开待办固定面（与联络并列的伪 Tab，非 Agent 会话） */
+  function openTodos(): void {
+    todosActive.value = true
+    activeTabId.value = ''
+    hubFocusedAssistantTabId.value = ''
   }
 
   /**
@@ -3148,6 +3168,7 @@ export const useTerminalStore = defineStore('terminal', () => {
   return {
     tabs,
     activeTabId,
+    todosActive,
     activeTab,
     tabCount,
     pendingFocusTabId,
@@ -3180,6 +3201,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     setActiveTab,
     goToHome,
     focusTaskArea,
+    openTodos,
     hubFocusedAssistantTabId,
     hubFocusedTab,
     focusHubConversation,

@@ -9,7 +9,7 @@ import {
   hasLegacyTodoMd,
   LEGACY_TODO_MD_HINT,
   loadStore,
-  saveStore,
+  mutateStore,
 } from './store'
 import { createLogger } from '../../../../utils/logger'
 
@@ -150,9 +150,9 @@ async function todoCreate(
     status: args.status as TodoStatus | undefined,
   })
 
-  const store = loadStore()
-  store.todos.push(item)
-  await saveStore(store)
+  await mutateStore(store => {
+    store.todos.push(item)
+  })
 
   const output = withLegacyHint(`已创建待办：${item.title}\nID: ${item.id}\ncreatedAt: ${item.createdAt}`)
   executor.addStep({
@@ -171,13 +171,13 @@ async function todoUpdate(
   const id = typeof args.id === 'string' ? args.id : ''
   if (!id) return { success: false, output: '', error: 'id is required' }
 
-  const store = loadStore()
-  const idx = store.todos.findIndex(t => t.id === id)
-  if (idx < 0) return { success: false, output: '', error: `Todo not found: ${id}` }
+  // 先找条目做 step 文案；真正更新在 mutateStore 内原子完成
+  const existing = loadStore().todos.find(t => t.id === id)
+  if (!existing) return { success: false, output: '', error: `Todo not found: ${id}` }
 
   executor.addStep({
     type: 'tool_call',
-    content: `更新待办: ${store.todos[idx].title}`,
+    content: `更新待办: ${existing.title}`,
     toolName: 'todo_update',
     toolArgs: { id },
     riskLevel: 'safe',
@@ -207,9 +207,14 @@ async function todoUpdate(
     else notes.push(`ignored invalid status: ${args.status}`)
   }
 
-  const updated = applyTodoUpdate(store.todos[idx], patch)
-  store.todos[idx] = updated
-  await saveStore(store)
+  const updated = await mutateStore(store => {
+    const idx = store.todos.findIndex(t => t.id === id)
+    if (idx < 0) return null
+    const next = applyTodoUpdate(store.todos[idx], patch)
+    store.todos[idx] = next
+    return next
+  })
+  if (!updated) return { success: false, output: '', error: `Todo not found: ${id}` }
 
   let output = `已更新待办：\n${formatItem(updated)}`
   if (notes.length) output += `\n\n备注：${notes.join('; ')}`
@@ -230,21 +235,25 @@ async function todoComplete(
   const id = typeof args.id === 'string' ? args.id : ''
   if (!id) return { success: false, output: '', error: 'id is required' }
 
-  const store = loadStore()
-  const idx = store.todos.findIndex(t => t.id === id)
-  if (idx < 0) return { success: false, output: '', error: `Todo not found: ${id}` }
+  const existing = loadStore().todos.find(t => t.id === id)
+  if (!existing) return { success: false, output: '', error: `Todo not found: ${id}` }
 
   executor.addStep({
     type: 'tool_call',
-    content: `完成待办: ${store.todos[idx].title}`,
+    content: `完成待办: ${existing.title}`,
     toolName: 'todo_complete',
     toolArgs: { id },
     riskLevel: 'safe',
   })
 
-  const updated = applyTodoUpdate(store.todos[idx], { status: 'completed' })
-  store.todos[idx] = updated
-  await saveStore(store)
+  const updated = await mutateStore(store => {
+    const idx = store.todos.findIndex(t => t.id === id)
+    if (idx < 0) return null
+    const next = applyTodoUpdate(store.todos[idx], { status: 'completed' })
+    store.todos[idx] = next
+    return next
+  })
+  if (!updated) return { success: false, output: '', error: `Todo not found: ${id}` }
 
   const output = withLegacyHint(`已完成待办：${updated.title} (${id})`)
   executor.addStep({
@@ -263,21 +272,24 @@ async function todoDelete(
   const id = typeof args.id === 'string' ? args.id : ''
   if (!id) return { success: false, output: '', error: 'id is required' }
 
-  const store = loadStore()
-  const idx = store.todos.findIndex(t => t.id === id)
-  if (idx < 0) return { success: false, output: '', error: `Todo not found: ${id}` }
+  const existing = loadStore().todos.find(t => t.id === id)
+  if (!existing) return { success: false, output: '', error: `Todo not found: ${id}` }
 
-  const removed = store.todos[idx]
   executor.addStep({
     type: 'tool_call',
-    content: `删除待办: ${removed.title}`,
+    content: `删除待办: ${existing.title}`,
     toolName: 'todo_delete',
     toolArgs: { id },
     riskLevel: 'safe',
   })
 
-  store.todos.splice(idx, 1)
-  await saveStore(store)
+  const removed = await mutateStore(store => {
+    const idx = store.todos.findIndex(t => t.id === id)
+    if (idx < 0) return null
+    const [item] = store.todos.splice(idx, 1)
+    return item
+  })
+  if (!removed) return { success: false, output: '', error: `Todo not found: ${id}` }
 
   const output = withLegacyHint(`已删除待办：${removed.title} (${id})`)
   executor.addStep({

@@ -280,6 +280,15 @@ echo -e "${CYAN}[8/12] Watch & Sensor（感知层）${NC}"
 
 run_test "watch:list 不崩溃"                 $CLI watch:list
 run_test "watch:history 不崩溃"              $CLI watch:history
+run_test "todo:list 不崩溃"                  $CLI todo:list
+assert_contains "todo:create 创建待办"        "Todo created" \
+  $CLI todo:create --title "cli-todo-test"
+TODO_ID=$(echo "$_LAST_OUTPUT" | grep -oE '\([a-f0-9-]{8,}\)' | tr -d '()' | head -1)
+if [[ -n "$TODO_ID" ]]; then
+  run_test "todo:delete 删除待办"           $CLI todo:delete "$TODO_ID"
+else
+  skip_test "todo:delete 删除待办"
+fi
 run_test "sensor:status 不崩溃"              $CLI sensor:status
 run_test "sensor:heartbeat 不崩溃"           $CLI sensor:heartbeat
 run_test "bond:status 不崩溃"               $CLI bond:status

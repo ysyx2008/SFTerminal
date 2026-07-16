@@ -749,6 +749,57 @@ async function watchHistory(args: string[]): Promise<void> {
   }
 }
 
+async function todoList(args: string[]): Promise<void> {
+  const { flags } = parseArgs(args)
+  const { listTodos } = require('../services/agent/skills/todo/api')
+  const includeDone = flags.all !== undefined || flags.done !== undefined
+  const items = listTodos({ includeDone })
+  if (items.length === 0) {
+    console.log(includeDone ? 'No todos.' : 'No active todos.')
+    return
+  }
+  const rows = items.map((t: { id: string; title: string; status: string; dueDate?: string; priority?: string }) => ({
+    id: t.id.substring(0, 8),
+    title: t.title.length > 40 ? t.title.slice(0, 37) + '...' : t.title,
+    status: t.status,
+    due: t.dueDate ? t.dueDate.slice(0, 10) : '',
+    priority: t.priority || '',
+  }))
+  printTable(rows)
+}
+
+async function todoCreate(args: string[]): Promise<void> {
+  const { flags, positional } = parseArgs(args)
+  const title = (flags.title as string) || positional.join(' ').trim()
+  if (!title) {
+    console.error(`Error: title required. Usage: ${cliName()} todo:create --title "…" [--due YYYY-MM-DD]`)
+    process.exit(1)
+  }
+  const { createTodo } = require('../services/agent/skills/todo/api')
+  const item = await createTodo({
+    title,
+    dueDate: typeof flags.due === 'string' ? flags.due : undefined,
+  })
+  console.log(`Todo created: ${item.title} (${item.id})`)
+}
+
+async function todoDelete(args: string[]): Promise<void> {
+  const id = args[0]
+  if (!id) {
+    console.error(`Error: todo ID required. Usage: ${cliName()} todo:delete <id>`)
+    process.exit(1)
+  }
+  const { listTodos, deleteTodo } = require('../services/agent/skills/todo/api')
+  const all = listTodos({ includeDone: true })
+  const match = all.find((t: { id: string }) => t.id === id || t.id.startsWith(id))
+  if (!match) {
+    console.error(`Todo not found: ${id}`)
+    process.exit(1)
+  }
+  await deleteTodo(match.id)
+  console.log(`Todo deleted: ${match.title} (${match.id})`)
+}
+
 async function sensorStatus(): Promise<void> {
   const { getSensorService } = require('../services/sensor')
   const service = getSensorService()
@@ -1628,7 +1679,7 @@ SailFish CLI v${version}
 
 内部命令（完整列表，冒号风格仍可用）:
   config:*  ai:*  agent:run  knowledge:*  history:*  host:*  ssh:*
-  mcp:*  scheduler:*  watch:*  sensor:*  bond:*  im:*  skill:*
+  mcp:*  scheduler:*  watch:*  todo:*  sensor:*  bond:*  im:*  skill:*
   pty:*  fs:*  doc:*  websearch:test
 
 示例:
@@ -1872,6 +1923,9 @@ async function runCli(): Promise<void> {
       case 'watch:history':     await watchHistory(cmdArgs); break
       case 'watch:templates':   await watchTemplates(); break
       case 'watch:from-template': await watchFromTemplate(cmdArgs); break
+      case 'todo:list':          await todoList(cmdArgs); break
+      case 'todo:create':        await todoCreate(cmdArgs); break
+      case 'todo:delete':        await todoDelete(cmdArgs); break
       case 'sensor:status':     await sensorStatus(); break
       case 'sensor:heartbeat':  await sensorHeartbeat(); break
       case 'bond:status':       await bondStatus(); break

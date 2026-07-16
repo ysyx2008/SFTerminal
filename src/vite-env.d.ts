@@ -34,6 +34,9 @@ type HostProfile = import('@shared/types').HostProfile
 type PlanStepStatus = import('@shared/types').PlanStepStatus
 type WatchDefinition = import('@shared/types').WatchDefinition
 type WatchHistoryRecord = import('@shared/types').WatchHistoryRecord
+type TodoItem = import('@shared/types').TodoItem
+type TodoStatus = import('@shared/types').TodoStatus
+type TodoPriority = import('@shared/types').TodoPriority
 type BondMetrics = import('@shared/types').BondMetrics
 type BondTrustLevel = import('@shared/types').BondTrustLevel
 
@@ -2337,6 +2340,31 @@ interface Window {
     // Web Chat 会话（运行时配置）
     webChat: {
       setExecutionMode: (mode: ExecutionMode) => Promise<void>
+    }
+
+    // 本地待办面板
+    todo: {
+      list: (filter?: { status?: TodoStatus | 'all'; includeDone?: boolean }) => Promise<TodoItem[]>
+      create: (input: {
+        title: string
+        description?: string
+        status?: TodoStatus
+        priority?: TodoPriority
+        dueDate?: string
+        tags?: string[]
+      }) => Promise<TodoItem>
+      update: (id: string, patch: {
+        title?: string
+        description?: string | null
+        status?: TodoStatus
+        priority?: TodoPriority | null
+        dueDate?: string | null
+        tags?: string[] | null
+      }) => Promise<TodoItem | null>
+      complete: (id: string) => Promise<TodoItem | null>
+      delete: (id: string) => Promise<boolean>
+      countOverdue: () => Promise<number>
+      onChanged: (callback: () => void) => () => void
     }
 
     // Watch & Sensor（感知层）

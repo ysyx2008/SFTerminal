@@ -6,6 +6,7 @@ import terminal from './terminal'
 import file from './file'
 import setup from './setup'
 import integration from './integration'
+import todo from './todo'
 
 export default {
   ...common,
@@ -16,4 +17,5 @@ export default {
   ...file,
   ...setup,
   ...integration,
+  ...todo,
 }

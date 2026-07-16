@@ -126,6 +126,8 @@ export default {
     home: 'Home',
     tasks: 'Tasks',
     reach: 'Reach',
+    todos: 'Todos',
+    todosOverdue: '{n} overdue todos',
     newTab: 'New Terminal',
     closeTab: 'Close Tab',
     closeOtherTabs: 'Close Other Tabs',
