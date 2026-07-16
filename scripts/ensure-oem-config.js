@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * 若 shared/oem.config.ts 不存在，则从 oem.config.template.ts 复制。
- * 避免开源主线提交可改 OEM 文件导致 Fork 合上游冲突。
+ * 该文件不进开源主线 Git（见 .gitignore）；由 postinstall / ensure:oem-config /
+ * vite 启动 / build* / verify 自动生成，避免 clone 后直接构建缺文件。
  */
 const fs = require('fs')
 const path = require('path')

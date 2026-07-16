@@ -1,10 +1,26 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import { resolve } from 'path'
 import { copyFileSync, existsSync, mkdirSync } from 'fs'
+import { execFileSync } from 'child_process'
 import type { ChildProcess } from 'node:child_process'
+
+/**
+ * shared/oem.config.ts 不进 Git（由模板生成）。
+ * 在 vite 启动时 ensure，避免 clone 后直接 build/dev 因缺文件失败。
+ */
+function ensureOemConfig(): Plugin {
+  return {
+    name: 'ensure-oem-config',
+    configResolved() {
+      execFileSync(process.execPath, [resolve(__dirname, 'scripts/ensure-oem-config.js')], {
+        stdio: 'inherit',
+      })
+    },
+  }
+}
 
 /** dev 主进程 rebuild 前给 Electron 最多 4s 优雅退出，避免 LanceDB 写入/compaction 被强杀 */
 const DEV_GRACEFUL_SHUTDOWN_MS = 4000
@@ -210,6 +226,7 @@ export default defineConfig({
     __STEAM_BUILD__: isSteamBuild
   },
   plugins: [
+    ensureOemConfig(),
     vue(),
     copyChartMaps(),
     electron([
