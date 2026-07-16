@@ -31,7 +31,7 @@ const SKIP_ON_BACKUP = new Set([
 
 /**
  * 已压缩/二进制扩展名：ZIP STORE 直存，避免无意义的二次压缩拖慢备份。
- * 大文件（≥2MiB）同样 STORE——userData 里多为模型/向量库。
+ * 文本类（json/txt/md/log 等）始终 DEFLATE，即使体积较大。
  */
 const STORE_EXTENSIONS = new Set([
   '.zip', '.gz', '.tgz', '.7z', '.rar', '.xz', '.bz2', '.br',
@@ -44,12 +44,8 @@ const STORE_EXTENSIONS = new Set([
   '.lance', '.arrow', '.parquet',
 ])
 
-const STORE_MIN_BYTES = 2 * 1024 * 1024
-
-function shouldStoreEntry(relPath: string, size: number): boolean {
-  const ext = path.extname(relPath).toLowerCase()
-  if (STORE_EXTENSIONS.has(ext)) return true
-  return size >= STORE_MIN_BYTES
+function shouldStoreEntry(relPath: string): boolean {
+  return STORE_EXTENSIONS.has(path.extname(relPath).toLowerCase())
 }
 
 export interface BackupMarker {
@@ -321,7 +317,7 @@ export async function exportUserData(opts: ExportUserDataOptions): Promise<{ fil
         archive!.file(file.abs, {
           name: zipName,
           // 已压缩/大文件直存，显著缩短备份时间（体积接近）
-          store: shouldStoreEntry(zipName, file.size),
+          store: shouldStoreEntry(zipName),
         })
         if (i % 64 === 0) await yieldToEventLoop()
       }

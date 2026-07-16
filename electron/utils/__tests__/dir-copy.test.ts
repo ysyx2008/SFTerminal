@@ -235,12 +235,14 @@ describe('data-backup', () => {
     expect(ticks.slice(0, lastIdx).every((p) => p < 100)).toBe(true)
   })
 
-  it('大文件与已压缩扩展名使用 STORE', async () => {
+  it('已压缩扩展名使用 STORE，文本仍 DEFLATE', async () => {
     const src = path.join(tmpRoot, 'userdata-store')
     const dst = path.join(tmpRoot, 'store.zip')
     fs.mkdirSync(src, { recursive: true })
     fs.writeFileSync(path.join(src, 'small.txt'), 'compressible '.repeat(2000))
     fs.writeFileSync(path.join(src, 'model.bin'), Buffer.alloc(100_000, 9))
+    // 大 JSON 仍应压缩，不能因体积走 STORE
+    fs.writeFileSync(path.join(src, 'big.json'), JSON.stringify({ x: 'y'.repeat(3000) }).repeat(200))
 
     await exportUserData({ source: src, target: dst })
 
@@ -261,5 +263,6 @@ describe('data-backup', () => {
     // 0 = STORE, 8 = DEFLATE
     expect(methods['model.bin']).toBe(0)
     expect(methods['small.txt']).toBe(8)
+    expect(methods['big.json']).toBe(8)
   })
 })

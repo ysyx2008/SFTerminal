@@ -33,4 +33,4 @@
 - 压缩包不得位于当前 userData 内
 - 与数据目录迁移互斥（`pendingMigration`）
 - 热备份不保证与正在跑的 Agent 完全一致；前端有运行中提示
-- 已压缩扩展名与 ≥2MiB 大文件使用 ZIP STORE（不二次压缩），加快备份
+- 已压缩/二进制扩展名使用 ZIP STORE（不二次压缩）；文本类始终 DEFLATE
