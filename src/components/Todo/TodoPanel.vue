@@ -392,14 +392,24 @@ function onRowKeydown(item: TodoItem, ev: KeyboardEvent) {
   }
 }
 
+function onPanelKeydown(ev: KeyboardEvent) {
+  if (ev.key !== 'Escape') return
+  if (!detailOpen.value) return
+  ev.preventDefault()
+  ev.stopPropagation()
+  closeDetail()
+}
+
 onMounted(async () => {
   await loadTodos()
   unsubChanged = window.electronAPI.todo.onChanged(() => {
     void loadTodos()
   })
+  window.addEventListener('keydown', onPanelKeydown)
 })
 
 onUnmounted(() => {
+  window.removeEventListener('keydown', onPanelKeydown)
   unsubChanged?.()
   if (saveTimer) clearTimeout(saveTimer)
 })
@@ -1049,6 +1059,12 @@ onUnmounted(() => {
   border-bottom: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
   cursor: pointer;
   transition: background 0.1s ease;
+  /* 避免按 ESC 等键盘操作后出现系统黄/橙 focus ring；选中态已有左侧 accent 条 */
+  outline: none;
+}
+.todo-row:focus,
+.todo-row:focus-visible {
+  outline: none;
 }
 .todo-row:last-child { border-bottom: none; }
 .todo-row:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transparent); }
