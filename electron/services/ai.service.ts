@@ -745,6 +745,8 @@ function sanitizeIsolatedSurrogates(s: string): string {
 
 /** 清洗控制字符 / 孤立 surrogate 并截断，保证错误文案可安全经 IPC 传回前端 */
 function toSafeErrorMessage(msg: string, maxLen = 300): string {
+  // 故意匹配 C0 控制字符，供 IPC 安全传输
+  // eslint-disable-next-line no-control-regex -- strip C0 controls from error text
   const cleaned = sanitizeIsolatedSurrogates(msg).replace(/[\u0000-\u001f]/g, ' ')
   return cleaned.length > maxLen ? cleaned.slice(0, maxLen) + '...' : cleaned
 }

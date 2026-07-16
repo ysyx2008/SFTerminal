@@ -1960,7 +1960,19 @@ async function runCli(): Promise<void> {
     if (process.env.SFT_DEBUG) {
       console.error(error.stack)
     }
+    try {
+      const { getKnowledgeService } = require('../services/knowledge')
+      const ks = getKnowledgeService()
+      if (ks) await ks.disposeAsync(1000)
+    } catch { /* ignore */ }
     process.exit(1)
+  } finally {
+    // CLI 无 utilityProcess，嵌入走进程内 ORT；退出前 dispose，避免 process.exit 时 SIGABRT
+    try {
+      const { getKnowledgeService } = require('../services/knowledge')
+      const ks = getKnowledgeService()
+      if (ks) await ks.disposeAsync(1000)
+    } catch { /* ignore */ }
   }
 }
 

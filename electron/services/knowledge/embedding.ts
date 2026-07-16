@@ -710,6 +710,11 @@ export class EmbeddingService extends EventEmitter {
       this.callWorker('dispose').catch(() => {/* ignore */})
       this.killWorker()
     }
+    // CLI / 进程内路径：同步入口无法 await；fire-and-forget 仍优于直接丢弃 session
+    const extractor = this.extractor as { dispose?: () => Promise<void> } | null
+    if (extractor?.dispose) {
+      extractor.dispose().catch(() => {/* ignore */})
+    }
     this.extractor = null
     this.useWorker = false
     this.currentModelId = null
@@ -720,6 +725,7 @@ export class EmbeddingService extends EventEmitter {
   /**
    * 优雅释放：给 worker 一段时间处理 dispose 消息后再 kill，
    * 用于主进程 quit 路径，减少"worker 在 ORT session 释放中途被 SIGKILL"。
+   * CLI 进程内推理路径必须 await extractor.dispose()，否则 ORT 在 process.exit 时 SIGABRT。
    */
   async disposeAsync(timeoutMs: number = 500): Promise<void> {
     this.isDisposing = true
@@ -731,6 +737,15 @@ export class EmbeddingService extends EventEmitter {
         ])
       } catch { /* ignore */ }
       this.killWorker()
+    }
+    const extractor = this.extractor as { dispose?: () => Promise<void> } | null
+    if (extractor?.dispose) {
+      try {
+        await Promise.race([
+          extractor.dispose(),
+          new Promise<void>(resolve => setTimeout(resolve, timeoutMs))
+        ])
+      } catch { /* ignore */ }
     }
     this.extractor = null
     this.useWorker = false

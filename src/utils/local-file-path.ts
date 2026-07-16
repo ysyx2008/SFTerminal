@@ -86,9 +86,9 @@ export function isLocalFilePath(text: string): boolean {
   // Windows 盘符路径 (C:\ 或 C:/)
   if (/^[A-Za-z]:[\\/]/.test(trimmed)) return true
   // Windows UNC：\\server\share…
-  if (/^\\\\[^\\\/]+[\\/][^\\\/]/.test(trimmed)) return true
+  if (/^\\\\[^\\/]+[\\/][^\\/]/.test(trimmed)) return true
   // Markdown 将 \\ 收成 \ 后的 UNC 形态：\server\share…
-  if (/^\\[^\\\/]+(?:[\\/][^\\\/]+)+/.test(trimmed)) return true
+  if (/^\\[^\\/]+(?:[\\/][^\\/]+)+/.test(trimmed)) return true
   return false
 }
 
@@ -153,7 +153,7 @@ export function trimTrailingCjkProse(path: string): string {
  * 展示文本可保持原文；data-file-path / openPath 用规范化结果。
  */
 export function normalizeUncForOpen(path: string): string {
-  if (/^\\[^\\\/]/.test(path)) return `\\${path}`
+  if (/^\\[^\\/]/.test(path)) return `\\${path}`
   return path
 }
 

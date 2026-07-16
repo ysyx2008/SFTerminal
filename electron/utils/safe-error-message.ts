@@ -11,6 +11,8 @@ function sanitizeIsolatedSurrogates(s: string): string {
 }
 
 export function toSafeErrorMessage(msg: string, maxLen = 300): string {
+  // 故意匹配 C0/C1 控制字符，供 IPC 安全传输
+  // eslint-disable-next-line no-control-regex -- strip C0/C1 controls from error text
   let cleaned = sanitizeIsolatedSurrogates(msg).replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
   if (cleaned.length > maxLen) {
     cleaned = sanitizeIsolatedSurrogates(cleaned.slice(0, maxLen) + '...')

@@ -67,7 +67,7 @@ function finalizeBareHttpUrl(raw: string): string | null {
 function unescapeUnixShellPath(path: string): string {
   if (
     path.startsWith('\\\\') ||
-    /^\\[^\\\/]/.test(path) ||
+    /^\\[^\\/]/.test(path) ||
     /^[A-Za-z]:[\\/]/.test(path)
   ) {
     return path

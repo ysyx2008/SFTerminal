@@ -36,7 +36,7 @@ export function sanitizeConversationTitle(raw: string): string | null {
   if (!text) return null
 
   text = text.split(/\r?\n/)[0]?.trim() ?? ''
-  text = text.replace(/^["'「『【\[]+|["'」』】\]]+$/g, '').trim()
+  text = text.replace(/^["'「『【[]+|["'」』】\]]+$/g, '').trim()
   text = text.replace(/\s+/g, ' ')
   if (!text) return null
 

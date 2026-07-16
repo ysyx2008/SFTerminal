@@ -222,7 +222,7 @@ describe('HistoryService - deleteAgentRecord', () => {
     expect(indexContent[0].id).toBe('keep')
   })
 
-  it('saveAgentRecord 写入按会话单文件', () => {
+  it('saveAgentRecord 写入按会话目录（meta + jsonl）', () => {
     const svc = new HistoryService()
     const baseTime = new Date('2026-03-18T10:00:00').getTime()
 
@@ -230,12 +230,15 @@ describe('HistoryService - deleteAgentRecord', () => {
       id: 'session-1', timestamp: baseTime, duration: 100, userTask: 'single file'
     }))
 
-    const sessionFile = path.join(tmpDir, 'history', 'agent', '2026-03-18', 'session-1.json')
+    const sessionDir = path.join(tmpDir, 'history', 'agent', '2026-03-18', 'session-1')
+    const metaFile = path.join(sessionDir, 'meta.json')
     const legacyFile = path.join(tmpDir, 'history', 'agent', '2026-03-18.json')
-    expect(fs.existsSync(sessionFile)).toBe(true)
+    const legacySessionFile = path.join(tmpDir, 'history', 'agent', '2026-03-18', 'session-1.json')
+    expect(fs.existsSync(metaFile)).toBe(true)
     expect(fs.existsSync(legacyFile)).toBe(false)
+    expect(fs.existsSync(legacySessionFile)).toBe(false)
 
-    const parsed = JSON.parse(fs.readFileSync(sessionFile, 'utf-8'))
+    const parsed = JSON.parse(fs.readFileSync(metaFile, 'utf-8'))
     expect(parsed.id).toBe('session-1')
     expect(Array.isArray(parsed)).toBe(false)
   })
@@ -248,11 +251,11 @@ describe('HistoryService - deleteAgentRecord', () => {
       id: 'only', timestamp: baseTime, duration: 100, userTask: 'only'
     }))
 
-    const sessionFile = path.join(tmpDir, 'history', 'agent', '2026-03-18', 'only.json')
-    expect(fs.existsSync(sessionFile)).toBe(true)
+    const sessionDir = path.join(tmpDir, 'history', 'agent', '2026-03-18', 'only')
+    expect(fs.existsSync(path.join(sessionDir, 'meta.json'))).toBe(true)
 
     expect(svc.deleteAgentRecord('only')).toBe(true)
-    expect(fs.existsSync(sessionFile)).toBe(false)
+    expect(fs.existsSync(sessionDir)).toBe(false)
   })
 })
 
@@ -476,8 +479,9 @@ describe('HistoryService - watch 历史隔离', () => {
       id: 'watch-1', timestamp: t + 1000, duration: 1, userTask: '心跳触发', agentKey: '__watch__'
     }))
 
-    // 正文落到 watch 树，不在 agent 树
-    expect(fs.existsSync(path.join(tmpDir, 'history', 'watch', '2026-03-18', 'watch-1.json'))).toBe(true)
+    // 正文落到 watch 树，不在 agent 树（目录格式：meta.json）
+    expect(fs.existsSync(path.join(tmpDir, 'history', 'watch', '2026-03-18', 'watch-1', 'meta.json'))).toBe(true)
+    expect(fs.existsSync(path.join(tmpDir, 'history', 'agent', '2026-03-18', 'watch-1'))).toBe(false)
     expect(fs.existsSync(path.join(tmpDir, 'history', 'agent', '2026-03-18', 'watch-1.json'))).toBe(false)
 
     // 两套独立索引
@@ -511,9 +515,9 @@ describe('HistoryService - watch 历史隔离', () => {
     const t = new Date('2026-03-18T10:00:00').getTime()
     svc.saveAgentRecord(makeRecord({ id: 'w', timestamp: t, duration: 1, userTask: '心跳', agentKey: '__watch__' }))
 
-    expect(fs.existsSync(path.join(tmpDir, 'history', 'watch', '2026-03-18', 'w.json'))).toBe(true)
+    expect(fs.existsSync(path.join(tmpDir, 'history', 'watch', '2026-03-18', 'w', 'meta.json'))).toBe(true)
     expect(svc.deleteAgentRecord('w')).toBe(true)
-    expect(fs.existsSync(path.join(tmpDir, 'history', 'watch', '2026-03-18', 'w.json'))).toBe(false)
+    expect(fs.existsSync(path.join(tmpDir, 'history', 'watch', '2026-03-18', 'w'))).toBe(false)
     expect(svc.getRecentWatchRecords(10)).toHaveLength(0)
     const idx = JSON.parse(fs.readFileSync(path.join(tmpDir, 'history', 'watch-index.json'), 'utf-8'))
     expect(idx).toHaveLength(0)
