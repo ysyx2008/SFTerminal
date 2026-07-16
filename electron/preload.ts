@@ -1470,25 +1470,41 @@ const electronAPI = {
       agentDeleted: number
     }>,
 
-    // 导出到文件夹
-    exportToFolder: (options?: { includeSshPasswords?: boolean; includeApiKeys?: boolean }) => 
-      ipcRenderer.invoke('history:exportToFolder', options) as Promise<{
-        success: boolean
-        canceled?: boolean
-        files?: string[]
-        error?: string
-      }>,
-
-    // 从文件夹导入
-    importFromFolder: () => ipcRenderer.invoke('history:importFromFolder') as Promise<{
-      success: boolean
-      canceled?: boolean
-      imported?: string[]
-      error?: string
-    }>,
-
     // 在文件管理器中打开数据目录
     openDataFolder: () => ipcRenderer.invoke('history:openDataFolder')
+  },
+
+  // 完整数据备份 / 恢复（整包 userData）
+  dataBackup: {
+    export: () => ipcRenderer.invoke('dataBackup:export') as Promise<{
+      success: boolean
+      canceled?: boolean
+      path?: string
+      files?: number
+      totalBytes?: number
+      error?: string
+    }>,
+    cancel: () => ipcRenderer.invoke('dataBackup:cancel') as Promise<{ ok: boolean }>,
+    requestRestore: () => ipcRenderer.invoke('dataBackup:requestRestore') as Promise<{
+      success: boolean
+      canceled?: boolean
+      error?: string
+    }>,
+    onProgress: (callback: (data: {
+      pct: number
+      file: string
+      bytes: number
+      totalBytes: number
+    }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: {
+        pct: number
+        file: string
+        bytes: number
+        totalBytes: number
+      }) => callback(data)
+      ipcRenderer.on('dataBackup:progress', handler)
+      return () => { ipcRenderer.removeListener('dataBackup:progress', handler) }
+    },
   },
 
   // 数据目录自定义 / 迁移

@@ -25,6 +25,14 @@
 import { app, BrowserWindow } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
+import { copyDirectoryWithProgress, CopyCanceledError } from './dir-copy'
+import {
+  RESTORE_STAGING_DIRNAME,
+  extractBackupToStaging,
+  recoverInterruptedRestore,
+  replaceUserDataFromStaging,
+  validateBackupArchive,
+} from './data-backup'
 
 /** 指针文件名 */
 const POINTER_FILENAME = 'data-location.json'
@@ -51,6 +59,8 @@ interface DataLocationPointer {
   dataDir?: string
   /** 待执行的迁移目标目录（下次启动早期执行复制） */
   pendingMigration?: { target: string }
+  /** 待执行的完整恢复：从备份目录覆盖当前 userData（启动早期 staging 后替换） */
+  pendingRestore?: { backupPath: string }
   /** 待清理的旧目录（迁移成功后延迟到下次启动删除，规避文件锁） */
   cleanupDir?: string
   /** 上一次迁移失败的错误信息（供前端读取后展示并清除） */
@@ -84,6 +94,7 @@ function writePointer(pointer: DataLocationPointer): void {
     const clean: DataLocationPointer = {}
     if (pointer.dataDir) clean.dataDir = pointer.dataDir
     if (pointer.pendingMigration) clean.pendingMigration = pointer.pendingMigration
+    if (pointer.pendingRestore) clean.pendingRestore = pointer.pendingRestore
     if (pointer.cleanupDir) clean.cleanupDir = pointer.cleanupDir
     if (pointer.lastError) clean.lastError = pointer.lastError
     if (pointer.legacyMigrationDone) clean.legacyMigrationDone = pointer.legacyMigrationDone
@@ -359,60 +370,22 @@ export function hasPendingMigration(): boolean {
   return !!readPointer().pendingMigration
 }
 
-// ==================== 迁移执行（进度窗 + 复制） ====================
+// ==================== 迁移 / 恢复执行（进度窗 + 复制） ====================
 
-interface FileEntry {
-  abs: string
-  rel: string
-  size: number
-}
+type ProgressWindowKind = 'migrate' | 'restore'
 
-/** 递归收集 source 下所有文件（排除指针文件与目标目录自身） */
-function collectFiles(source: string, target: string): { files: FileEntry[]; totalBytes: number } {
-  const files: FileEntry[] = []
-  let totalBytes = 0
-  const walk = (dir: string) => {
-    let entries: fs.Dirent[]
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true })
-    } catch {
-      return
-    }
-    for (const entry of entries) {
-      const abs = path.join(dir, entry.name)
-      // 跳过指针文件：新位置 POINTER_PATH（固定在 appData/SailFish），
-      // 以及老版本遗留在 DEFAULT_USERDATA 下的同名文件（迁移后保留不删，复制时跳过避免留 stray 文件）
-      if (entry.name === POINTER_FILENAME) continue
-      // 跳过目标目录（理论上已校验非嵌套，双保险）
-      if (samePath(abs, target)) continue
-      if (entry.isSymbolicLink()) {
-        // 符号链接按文件处理，复制链接指向的内容；失败则跳过
-        try {
-          const st = fs.statSync(abs)
-          if (st.isDirectory()) { walk(abs); continue }
-          files.push({ abs, rel: path.relative(source, abs), size: st.size })
-          totalBytes += st.size
-        } catch { /* 跳过失效链接 */ }
-        continue
-      }
-      if (entry.isDirectory()) {
-        walk(abs)
-      } else if (entry.isFile()) {
-        let size = 0
-        try { size = fs.statSync(abs).size } catch { /* ignore */ }
-        files.push({ abs, rel: path.relative(source, abs), size })
-        totalBytes += size
-      }
-    }
-  }
-  walk(source)
-  return { files, totalBytes }
-}
-
-function progressWindowHtml(): string {
+function progressWindowHtml(kind: ProgressWindowKind): string {
   const zh = app.getLocale().toLowerCase().startsWith('zh')
-  const title = zh ? '正在迁移数据…' : 'Migrating data…'
-  const sub = zh ? '请勿关闭应用' : 'Please do not close the app'
+  const title = kind === 'restore'
+    ? (zh ? '正在恢复数据…' : 'Restoring data…')
+    : (zh ? '正在迁移数据…' : 'Migrating data…')
+  const sub = kind === 'restore'
+    ? (zh ? '可取消；取消后保留原有数据' : 'You can cancel; original data is kept')
+    : (zh ? '请勿关闭应用' : 'Please do not close the app')
+  const cancelLabel = zh ? '取消' : 'Cancel'
+  const cancelBtn = kind === 'restore'
+    ? `<button id="cancel" type="button" style="margin-top:14px;align-self:flex-start;padding:6px 14px;border:1px solid #4a4a55;border-radius:6px;background:#2a2a32;color:#e6e6ea;cursor:pointer;font-size:12px">${cancelLabel}</button>`
+    : ''
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
     html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
       background:#1e1e24;color:#e6e6ea;user-select:none;-webkit-user-select:none;overflow:hidden}
@@ -428,19 +401,23 @@ function progressWindowHtml(): string {
     <div class="sub">${sub}</div>
     <div class="bar"><div class="fill" id="fill"></div></div>
     <div class="meta"><span class="file" id="file"></span><span id="pct">0%</span></div>
+    ${cancelBtn}
   </div><script>
+    window.__cancelRequested=false;
     window.__setProgress=function(pct,name){
       document.getElementById('fill').style.width=pct+'%';
       document.getElementById('pct').textContent=pct+'%';
       if(name!=null)document.getElementById('file').textContent=name;
     };
+    var btn=document.getElementById('cancel');
+    if(btn)btn.onclick=function(){window.__cancelRequested=true;btn.disabled=true;};
   </script></body></html>`
 }
 
-function createProgressWindow(): Promise<BrowserWindow> {
+function createProgressWindow(kind: ProgressWindowKind = 'migrate'): Promise<BrowserWindow> {
   const win = new BrowserWindow({
     width: 460,
-    height: 200,
+    height: kind === 'restore' ? 240 : 200,
     frame: false,
     resizable: false,
     maximizable: false,
@@ -452,7 +429,7 @@ function createProgressWindow(): Promise<BrowserWindow> {
     backgroundColor: '#1e1e24',
     webPreferences: { contextIsolation: true, nodeIntegration: false }
   })
-  const html = progressWindowHtml()
+  const html = progressWindowHtml(kind)
   return new Promise((resolve) => {
     win.webContents.once('did-finish-load', () => resolve(win))
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
@@ -462,41 +439,153 @@ function createProgressWindow(): Promise<BrowserWindow> {
 function setProgress(win: BrowserWindow | null, pct: number, name: string): Promise<unknown> {
   if (!win || win.isDestroyed()) return Promise.resolve()
   const safeName = JSON.stringify(name)
-  // 返回 promise 并在调用处 await，让出事件循环以刷新 IPC、重绘进度窗
   return win.webContents.executeJavaScript(`window.__setProgress(${pct}, ${safeName})`).catch(() => {})
 }
 
-async function copyWithProgress(source: string, target: string, win: BrowserWindow | null): Promise<void> {
-  const { files, totalBytes } = collectFiles(source, target)
-  fs.mkdirSync(target, { recursive: true })
-  let copied = 0
-  let lastTick = 0
-  let lastPct = -1
-  for (const file of files) {
-    const dest = path.join(target, file.rel)
-    fs.mkdirSync(path.dirname(dest), { recursive: true })
-    try {
-      fs.copyFileSync(file.abs, dest)
-    } catch (e) {
-      // 个别文件（如被占用的日志）失败不应中断整体迁移
-      console.warn('[bootstrap] 复制文件失败，跳过:', file.rel, e)
-    }
-    copied += file.size
-    const pct = totalBytes > 0 ? Math.min(100, Math.floor((copied / totalBytes) * 100)) : 100
-    const now = Date.now()
-    if (pct !== lastPct && (now - lastTick > 120 || pct === 100)) {
-      // await 让出事件循环：刷新 IPC、重绘进度窗
-      await setProgress(win, pct, file.rel)
-      lastTick = now
-      lastPct = pct
-    }
+async function isProgressCanceled(win: BrowserWindow | null): Promise<boolean> {
+  if (!win || win.isDestroyed()) return false
+  try {
+    return !!(await win.webContents.executeJavaScript('window.__cancelRequested===true'))
+  } catch {
+    return false
   }
-  await setProgress(win, 100, '')
+}
+
+async function copyWithProgress(
+  source: string,
+  target: string,
+  win: BrowserWindow | null,
+  options?: { allowCancel?: boolean; skipNames?: string[] },
+): Promise<void> {
+  const cancelFlag = { current: false }
+  await copyDirectoryWithProgress({
+    source,
+    target,
+    skipNames: options?.skipNames ?? [POINTER_FILENAME],
+    shouldCancel: options?.allowCancel ? () => cancelFlag.current : undefined,
+    onProgress: async (p) => {
+      if (options?.allowCancel && win) {
+        cancelFlag.current = await isProgressCanceled(win)
+        if (cancelFlag.current) throw new CopyCanceledError()
+      }
+      await setProgress(win, p.pct, p.file)
+    },
+  })
 }
 
 function relaunchApp(): void {
   app.relaunch()
   app.exit(0)
+}
+
+/**
+ * 请求完整恢复：校验备份压缩包并写入 pendingRestore，由调用方 relaunch。
+ */
+export async function requestFullRestore(backupPath: string): Promise<MigrationRequestResult> {
+  const validated = await validateBackupArchive(backupPath)
+  if (!validated.ok) {
+    return { ok: false, error: validated.error }
+  }
+  const resolved = path.resolve(backupPath)
+  const userData = app.getPath('userData')
+  // 压缩包不能位于当前 userData 内（恢复时会搬移/替换该目录）
+  if (samePath(resolved, userData) || isInside(userData, resolved)) {
+    return { ok: false, error: 'nested' }
+  }
+  const pointer = readPointer()
+  // 与迁移互斥
+  if (pointer.pendingMigration) {
+    return { ok: false, error: 'migration_pending' }
+  }
+  writePointer({
+    ...pointer,
+    pendingRestore: { backupPath: resolved },
+    lastError: undefined,
+  })
+  return { ok: true }
+}
+
+/**
+ * 启动早期执行完整恢复（若有 pendingRestore）。
+ *
+ * 流程：压缩包 → staging（可取消）→ 成功则替换 userData 并 relaunch；
+ * 取消/失败则删 staging、清 pending，**原 userData 不动**，继续启动。
+ *
+ * @returns 若触发了 relaunch 返回 true
+ */
+export async function runStartupRestoreIfNeeded(): Promise<boolean> {
+  const userData = app.getPath('userData')
+  // 无论是否有 pending：先处理上次崩溃残留
+  if (recoverInterruptedRestore(userData)) {
+    console.warn('[bootstrap] 检测到中断的恢复，已从 .restore-old 回滚')
+  }
+
+  const pointer = readPointer()
+  if (!pointer.pendingRestore) return false
+  // 与迁移互斥：若同时有 pendingMigration，优先迁移，本轮跳过 restore
+  if (pointer.pendingMigration) return false
+
+  const backupPath = pointer.pendingRestore.backupPath
+  const staging = path.join(userData, RESTORE_STAGING_DIRNAME)
+  let win: BrowserWindow | null = null
+
+  const clearPending = (lastError?: string) => {
+    const prev = readPointer()
+    writePointer({
+      dataDir: prev.dataDir,
+      cleanupDir: prev.cleanupDir,
+      legacyMigrationDone: prev.legacyMigrationDone,
+      lastError,
+    })
+  }
+
+  try {
+    const validated = await validateBackupArchive(backupPath)
+    if (!validated.ok) {
+      clearPending(validated.error)
+      return false
+    }
+
+    if (fs.existsSync(staging)) {
+      fs.rmSync(staging, { recursive: true, force: true })
+    }
+
+    win = await createProgressWindow('restore')
+    const cancelFlag = { current: false }
+    await extractBackupToStaging({
+      archive: backupPath,
+      staging,
+      shouldCancel: () => cancelFlag.current,
+      onProgress: async (p) => {
+        if (win) {
+          cancelFlag.current = await isProgressCanceled(win)
+          if (cancelFlag.current) throw new CopyCanceledError()
+        }
+        await setProgress(win, p.pct, p.file)
+      },
+    })
+
+    replaceUserDataFromStaging(userData, staging, {
+      keepNames: [POINTER_FILENAME, RESTORE_STAGING_DIRNAME, RESTORE_OLD_DIRNAME],
+    })
+    clearPending()
+    if (win && !win.isDestroyed()) win.destroy()
+    relaunchApp()
+    return true
+  } catch (e) {
+    const canceled = e instanceof CopyCanceledError
+    console.error('[bootstrap] 数据恢复失败:', e)
+    // 取消/失败：原数据应仍在（或已由 replace 内部回滚）；清理半成品 staging
+    try {
+      if (fs.existsSync(staging)) {
+        fs.rmSync(staging, { recursive: true, force: true })
+      }
+    } catch { /* ignore */ }
+    recoverInterruptedRestore(userData)
+    clearPending(canceled ? 'restore_canceled' : String((e as Error)?.message ?? e))
+    if (win && !win.isDestroyed()) win.destroy()
+    return false
+  }
 }
 
 /**

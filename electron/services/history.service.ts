@@ -64,14 +64,14 @@ export interface HostProfileData {
 // ==================== 历史记录服务 ====================
 
 /**
- * HistoryService —— 聊天记录 + Token 统计 + 数据备份/清理 的运维服务
+ * HistoryService —— 聊天记录 + Token 统计 + 清理 的运维服务
  *
  * 重构后（docs/conversation-refactor-design.md §4.3）：会话记录（AgentRecord）的存储 + 索引
  * 已抽到 `AgentRecordStore`（会话域聚合根的真实存储）。本类**组合**它，并保留以下非会话域职责：
  * - 聊天记录（ChatRecord）：独立的遗留聊天历史，非会话域。
  * - Token 用量统计：跨主树 + watch 树的索引聚合（读 `agentRecordStore.getAllIndexEntries()`）。
- * - 导出/导入备份：把 SSH/AI 配置 + 主机档案 + 聊天 + Agent 记录 + 技能打包。
  * - 清理 + 存储统计：按日期清旧记录、汇报磁盘占用。
+ * 完整数据备份/恢复见 `electron/utils/data-backup.ts` + `bootstrap.ts`。
  *
  * 对外的 AgentRecord 相关方法（saveAgentRecord 等）**保留为委派转发**，向后兼容现有调用方
  * （main.ts IPC handler / AgentService / Agent / 前端 IPC）。新代码应优先走 ConversationManager
@@ -323,47 +323,6 @@ export class HistoryService {
     return { total, today, last7Days, last30Days, daily }
   }
 
-  // ==================== 导出/导入 ====================
-
-  /**
-   * 递归复制目录
-   */
-  private copyDirectory(src: string, dest: string): void {
-    if (!fs.existsSync(dest)) {
-      fs.mkdirSync(dest, { recursive: true })
-    }
-    const entries = fs.readdirSync(src, { withFileTypes: true })
-    for (const entry of entries) {
-      const srcPath = path.join(src, entry.name)
-      const destPath = path.join(dest, entry.name)
-      if (entry.isDirectory()) {
-        this.copyDirectory(srcPath, destPath)
-      } else {
-        fs.copyFileSync(srcPath, destPath)
-      }
-    }
-  }
-
-  /**
-   * 合并目录（不覆盖已存在的文件）
-   */
-  private mergeDirectory(src: string, dest: string): void {
-    if (!fs.existsSync(dest)) {
-      fs.mkdirSync(dest, { recursive: true })
-    }
-    const entries = fs.readdirSync(src, { withFileTypes: true })
-    for (const entry of entries) {
-      const srcPath = path.join(src, entry.name)
-      const destPath = path.join(dest, entry.name)
-      if (entry.isDirectory()) {
-        this.mergeDirectory(srcPath, destPath)
-      } else if (!fs.existsSync(destPath)) {
-        // 只有目标文件不存在时才复制
-        fs.copyFileSync(srcPath, destPath)
-      }
-    }
-  }
-
   /**
    * 获取数据目录路径
    */
@@ -376,199 +335,6 @@ export class HistoryService {
    */
   getHistoryPath(): string {
     return this.historyDir
-  }
-
-  /**
-   * 导出到文件夹
-   */
-  exportToFolder(exportPath: string, configData: object, hostProfiles?: HostProfileData[], options?: {
-    includeSshPasswords?: boolean
-    includeApiKeys?: boolean
-  }): { success: boolean; files: string[]; error?: string } {
-    try {
-      const files: string[] = []
-      const opts = { includeSshPasswords: false, includeApiKeys: false, ...options }
-
-      // 确保目录存在
-      if (!fs.existsSync(exportPath)) {
-        fs.mkdirSync(exportPath, { recursive: true })
-      }
-
-      // 1. 导出 SSH 连接配置（可选去除密码）
-      const config = configData as {
-        sshSessions?: Array<{ password?: string; passphrase?: string; [key: string]: unknown }>
-        aiProfiles?: Array<{ apiKey?: string; [key: string]: unknown }>
-        [key: string]: unknown
-      }
-
-      if (config.sshSessions && config.sshSessions.length > 0) {
-        const sshData = config.sshSessions.map(session => {
-          if (opts.includeSshPasswords) return session
-          // 移除敏感字段
-          const { password: _pw, passphrase: _pp, ...safe } = session
-          return safe
-        })
-        const sshPath = path.join(exportPath, 'ssh-sessions.json')
-        fs.writeFileSync(sshPath, JSON.stringify(sshData, null, 2), 'utf-8')
-        files.push('ssh-sessions.json')
-      }
-
-      // 2. 导出 AI 配置（可选去除 API Key）
-      if (config.aiProfiles && config.aiProfiles.length > 0) {
-        const aiData = config.aiProfiles.map(profile => {
-          if (opts.includeApiKeys) return profile
-          const { apiKey, ...safe } = profile
-          return { ...safe, apiKey: apiKey ? '***' : '' }
-        })
-        const aiPath = path.join(exportPath, 'ai-profiles.json')
-        fs.writeFileSync(aiPath, JSON.stringify(aiData, null, 2), 'utf-8')
-        files.push('ai-profiles.json')
-      }
-
-      // 3. 导出终端设置和主题
-      const settingsData = {
-        theme: config.theme,
-        terminalSettings: config.terminalSettings,
-        proxySettings: config.proxySettings,
-        knowledgeSettings: config.knowledgeSettings
-      }
-      const settingsPath = path.join(exportPath, 'settings.json')
-      fs.writeFileSync(settingsPath, JSON.stringify(settingsData, null, 2), 'utf-8')
-      files.push('settings.json')
-
-      // 4. 导出主机档案
-      if (hostProfiles && hostProfiles.length > 0) {
-        const hostPath = path.join(exportPath, 'host-profiles.json')
-        fs.writeFileSync(hostPath, JSON.stringify(hostProfiles, null, 2), 'utf-8')
-        files.push('host-profiles.json')
-      }
-
-      // 5. 导出聊天记录
-      const chatRecords = this.getChatRecords()
-      if (chatRecords.length > 0) {
-        const chatPath = path.join(exportPath, 'chat-history.json')
-        fs.writeFileSync(chatPath, JSON.stringify(chatRecords, null, 2), 'utf-8')
-        files.push('chat-history.json')
-      }
-
-      // 6. 导出 Agent 记录
-      const agentRecords = this.getAgentRecords()
-      if (agentRecords.length > 0) {
-        const agentPath = path.join(exportPath, 'agent-history.json')
-        fs.writeFileSync(agentPath, JSON.stringify(agentRecords, null, 2), 'utf-8')
-        files.push('agent-history.json')
-      }
-
-      // 7. 导出用户技能目录
-      const skillsDir = path.join(app.getPath('userData'), 'skills')
-      if (fs.existsSync(skillsDir)) {
-        const skillsExportDir = path.join(exportPath, 'skills')
-        this.copyDirectory(skillsDir, skillsExportDir)
-        files.push('skills/')
-      }
-
-      // 8. 写入说明文件
-      const readme = `# 旗鱼备份
-导出时间: ${new Date().toLocaleString()}
-
-## 文件说明
-- ssh-sessions.json  - SSH 连接配置${opts.includeSshPasswords ? '' : '（不含密码）'}
-- ai-profiles.json   - AI 配置${opts.includeApiKeys ? '' : '（不含 API Key）'}
-- settings.json      - 终端设置、主题、代理
-- host-profiles.json - 主机档案（含记忆）
-- chat-history.json  - 聊天记录
-- agent-history.json - Agent 任务记录
-- skills/            - 用户技能文件
-
-## 导入方式
-1. 在设置 > 数据管理中导入整个文件夹
-2. 或手动复制需要的文件到新设备的数据目录
-`
-      const readmePath = path.join(exportPath, 'README.txt')
-      fs.writeFileSync(readmePath, readme, 'utf-8')
-      files.push('README.txt')
-
-      return { success: true, files }
-    } catch (e) {
-      return { success: false, files: [], error: e instanceof Error ? e.message : '导出失败' }
-    }
-  }
-
-  /**
-   * 从文件夹导入
-   */
-  importFromFolder(importPath: string): {
-    success: boolean
-    imported: string[]
-    error?: string
-    config?: Partial<{
-      sshSessions: unknown[]
-      aiProfiles: unknown[]
-      theme: string
-      terminalSettings: unknown
-      proxySettings: unknown
-    }>
-    hostProfiles?: HostProfileData[]
-  } {
-    try {
-      const imported: string[] = []
-      const config: Record<string, unknown> = {}
-      let hostProfiles: HostProfileData[] | undefined
-
-      // 读取各个文件
-      const sshPath = path.join(importPath, 'ssh-sessions.json')
-      if (fs.existsSync(sshPath)) {
-        config.sshSessions = JSON.parse(fs.readFileSync(sshPath, 'utf-8'))
-        imported.push('SSH 连接配置')
-      }
-
-      const aiPath = path.join(importPath, 'ai-profiles.json')
-      if (fs.existsSync(aiPath)) {
-        config.aiProfiles = JSON.parse(fs.readFileSync(aiPath, 'utf-8'))
-        imported.push('AI 配置')
-      }
-
-      const settingsPath = path.join(importPath, 'settings.json')
-      if (fs.existsSync(settingsPath)) {
-        const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
-        Object.assign(config, settings)
-        imported.push('终端设置')
-      }
-
-      const hostPath = path.join(importPath, 'host-profiles.json')
-      if (fs.existsSync(hostPath)) {
-        hostProfiles = JSON.parse(fs.readFileSync(hostPath, 'utf-8'))
-        imported.push('主机档案')
-      }
-
-      const chatPath = path.join(importPath, 'chat-history.json')
-      if (fs.existsSync(chatPath)) {
-        const chatRecords = JSON.parse(fs.readFileSync(chatPath, 'utf-8')) as ChatRecord[]
-        this.saveChatRecords(chatRecords)
-        imported.push('聊天记录')
-      }
-
-      const agentPath = path.join(importPath, 'agent-history.json')
-      if (fs.existsSync(agentPath)) {
-        const agentRecords = JSON.parse(fs.readFileSync(agentPath, 'utf-8')) as AgentRecord[]
-        for (const record of agentRecords) {
-          this.saveAgentRecord(record)
-        }
-        imported.push('Agent 记录')
-      }
-
-      // 导入用户技能
-      const skillsImportDir = path.join(importPath, 'skills')
-      if (fs.existsSync(skillsImportDir)) {
-        const skillsDir = path.join(app.getPath('userData'), 'skills')
-        this.mergeDirectory(skillsImportDir, skillsDir)
-        imported.push('用户技能')
-      }
-
-      return { success: true, imported, config, hostProfiles }
-    } catch (e) {
-      return { success: false, imported: [], error: e instanceof Error ? e.message : '导入失败' }
-    }
   }
 
   // ==================== 清理 + 存储统计 ====================

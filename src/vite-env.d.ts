@@ -910,30 +910,6 @@ interface Window {
       }>
       getDataPath: () => Promise<string>
       openDataFolder: () => Promise<void>
-      exportToFolder: (options: {
-        includeSshPasswords: boolean
-        includeApiKeys: boolean
-      }) => Promise<{ success: boolean; canceled?: boolean; files?: string[]; path?: string; error?: string }>
-      exportData: () => Promise<{
-        version: string
-        exportTime: number
-        config: Record<string, unknown>
-        history: {
-          chat: Array<unknown>
-          agent: Array<unknown>
-        }
-      }>
-      importFromFolder: () => Promise<{ success: boolean; canceled?: boolean; imported?: string[]; error?: string }>
-      importData: (data: {
-        version: string
-        exportTime: number
-        config: Record<string, unknown>
-        history: {
-          chat: Array<unknown>
-          agent: Array<unknown>
-        }
-        hostProfiles?: unknown[]
-      }) => Promise<{ success: boolean; imported?: { chat: number; agent: number; config: boolean }; error?: string }>
       cleanup: (days: number) => Promise<{ success: boolean; chatDeleted?: number; agentDeleted?: number; error?: string }>
       getTokenUsageStats: () => Promise<{
         total: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cache_hit_tokens: number; cache_miss_tokens: number; taskCount: number }
@@ -950,6 +926,25 @@ interface Window {
       pickTarget: () => Promise<{ canceled: boolean; target?: string; nonEmpty?: boolean }>
       migrate: (target: string) => Promise<{ ok: boolean; error?: string }>
       reset: () => Promise<{ ok: boolean; error?: string }>
+    }
+    // 完整数据备份 / 恢复
+    dataBackup: {
+      export: () => Promise<{
+        success: boolean
+        canceled?: boolean
+        path?: string
+        files?: number
+        totalBytes?: number
+        error?: string
+      }>
+      cancel: () => Promise<{ ok: boolean }>
+      requestRestore: () => Promise<{ success: boolean; canceled?: boolean; error?: string }>
+      onProgress: (callback: (data: {
+        pct: number
+        file: string
+        bytes: number
+        totalBytes: number
+      }) => void) => () => void
     }
     shellCli: {
       status: () => Promise<{

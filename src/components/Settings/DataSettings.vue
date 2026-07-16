@@ -313,7 +313,13 @@ const loadDataDirInfo = async () => {
     dataPath.value = info.current
     isCustomDataDir.value = info.isCustom
     if (info.lastError) {
-      showMessage('error', t('dataSettings.migrateErrorLast', { error: info.lastError }))
+      if (info.lastError === 'restore_canceled') {
+        showMessage('success', t('dataSettings.restoreCanceled'))
+      } else {
+        showMessage('error', t('dataSettings.migrateErrorLast', {
+          error: formatBackupError(info.lastError),
+        }))
+      }
     }
   } catch (e) {
     console.error('Failed to load data dir info:', e)
@@ -386,53 +392,82 @@ const resetDataDir = async () => {
   }
 }
 
-// 导出选项
-const exportOptions = ref({
-  includeSshPasswords: false,
-  includeApiKeys: false
-})
+// ========== 完整备份 / 恢复 ==========
+const backupProgress = ref<{
+  pct: number
+  file: string
+  bytes: number
+  totalBytes: number
+} | null>(null)
+let cleanupBackupProgress: (() => void) | null = null
 
-// 导出到文件夹
-const exportToFolder = async () => {
-  isExporting.value = true
+const formatBackupError = (code?: string): string => {
+  switch (code) {
+    case 'busy': return t('dataSettings.backupBusy')
+    case 'target_exists': return t('dataSettings.backupTargetExists')
+    case 'not_found': return t('dataSettings.restoreErrNotFound')
+    case 'not_archive': return t('dataSettings.restoreErrNotArchive')
+    case 'not_directory': return t('dataSettings.restoreErrNotArchive')
+    case 'invalid_marker': return t('dataSettings.restoreErrInvalid')
+    case 'nested': return t('dataSettings.restoreErrNested')
+    case 'migration_pending': return t('dataSettings.restoreErrMigrationPending')
+    case 'restore_canceled': return t('dataSettings.restoreCanceled')
+    default: return code || t('dataSettings.backupFailed')
+  }
+}
+
+const startFullBackup = async () => {
+  if (!window.electronAPI.dataBackup || isExporting.value) return
   try {
-    // 将响应式对象转换为普通对象，避免 IPC 序列化错误
-    const options = {
-      includeSshPasswords: exportOptions.value.includeSshPasswords,
-      includeApiKeys: exportOptions.value.includeApiKeys
-    }
-    const result = await window.electronAPI.history.exportToFolder(options)
-    
+    const running = await window.electronAPI.dataDir.hasRunningAgents()
+    if (running && !confirm(t('dataSettings.backupConfirmRunning'))) return
+  } catch { /* ignore */ }
+
+  isExporting.value = true
+  backupProgress.value = { pct: 0, file: '', bytes: 0, totalBytes: 0 }
+  cleanupBackupProgress?.()
+  cleanupBackupProgress = window.electronAPI.dataBackup.onProgress((p) => {
+    backupProgress.value = p
+  })
+  try {
+    const result = await window.electronAPI.dataBackup.export()
     if (result.canceled) {
-      // 用户取消
+      showMessage('success', t('dataSettings.backupCanceled'))
     } else if (result.success) {
-      showMessage('success', t('dataSettings.exportedFiles', { count: result.files?.length || 0 }))
+      showMessage('success', t('dataSettings.backupOk', { path: result.path || '' }))
     } else {
-      showMessage('error', result.error || t('dataSettings.exportFailed'))
+      showMessage('error', formatBackupError(result.error))
     }
   } catch (e) {
-    showMessage('error', `${t('dataSettings.exportFailed')}: ${e}`)
+    showMessage('error', `${t('dataSettings.backupFailed')}: ${e}`)
   } finally {
+    cleanupBackupProgress?.()
+    cleanupBackupProgress = null
+    backupProgress.value = null
     isExporting.value = false
   }
 }
 
-// 从文件夹导入
-const importFromFolder = async () => {
+const cancelFullBackup = async () => {
+  if (!window.electronAPI.dataBackup || !isExporting.value) return
+  if (!confirm(t('dataSettings.backupCancelConfirm'))) return
+  await window.electronAPI.dataBackup.cancel()
+}
+
+const startFullRestore = async () => {
+  if (!window.electronAPI.dataBackup || isImporting.value) return
   isImporting.value = true
   try {
-    const result = await window.electronAPI.history.importFromFolder()
-    
+    const result = await window.electronAPI.dataBackup.requestRestore()
     if (result.canceled) {
-      // 用户取消
+      // 取消选文件或拒绝确认
     } else if (result.success) {
-      showMessage('success', t('dataSettings.importedItems', { items: result.imported?.join(', ') || t('dataSettings.importNone') }))
-      await loadStorageStats()
+      showMessage('success', t('dataSettings.restoreRestarting'))
     } else {
-      showMessage('error', result.error || t('dataSettings.importFailed'))
+      showMessage('error', formatBackupError(result.error))
     }
   } catch (e) {
-    showMessage('error', `${t('dataSettings.importFailed')}: ${e}`)
+    showMessage('error', `${t('dataSettings.restoreFailed')}: ${e}`)
   } finally {
     isImporting.value = false
   }
@@ -528,6 +563,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown, true)
+  cleanupBackupProgress?.()
+  cleanupBackupProgress = null
 })
 </script>
 
@@ -735,37 +772,57 @@ onUnmounted(() => {
       </div>
     </div>
     
-    <!-- 导出/导入 -->
+    <!-- 完整备份 / 恢复 -->
     <div class="section">
       <div class="section-header">
         <Download :size="15" class="section-icon" />
         <h4>{{ t('dataSettings.backupRestore') }}</h4>
       </div>
-      
+
       <div class="backup-card">
-        <div class="export-options">
-          <label class="checkbox-label">
-            <input type="checkbox" v-model="exportOptions.includeSshPasswords">
-            <span>{{ t('dataSettings.includeSshPasswords') }}</span>
-          </label>
-          <label v-if="!isSteamBuild" class="checkbox-label">
-            <input type="checkbox" v-model="exportOptions.includeApiKeys">
-            <span>{{ t('dataSettings.includeApiKeys') }}</span>
-          </label>
+        <p class="hint" style="margin: 0 0 12px">{{ t('dataSettings.fullBackupHint') }}</p>
+        <div v-if="backupProgress" class="backup-progress">
+          <div class="backup-progress-bar">
+            <div class="backup-progress-fill" :style="{ width: backupProgress.pct + '%' }" />
+          </div>
+          <div class="backup-progress-meta">
+            <span class="backup-progress-file">{{ backupProgress.file || '…' }}</span>
+            <span>
+              {{ backupProgress.pct }}%
+              <template v-if="backupProgress.totalBytes > 0">
+                · {{ formatSize(backupProgress.bytes) }} / {{ formatSize(backupProgress.totalBytes) }}
+              </template>
+            </span>
+          </div>
         </div>
-        
         <div class="actions">
-          <button class="btn btn-primary" @click="exportToFolder" :disabled="isExporting">
+          <button
+            v-if="!isExporting"
+            class="btn btn-primary"
+            :disabled="isImporting"
+            @click="startFullBackup"
+          >
             <Download :size="14" />
-            {{ isExporting ? t('dataSettings.exporting') : t('dataSettings.exportToFolder') }}
+            {{ t('dataSettings.fullBackup') }}
           </button>
-          <button class="btn" @click="importFromFolder" :disabled="isImporting">
+          <button
+            v-else
+            class="btn"
+            @click="cancelFullBackup"
+          >
+            {{ t('dataSettings.backupCancel') }}
+          </button>
+          <button
+            class="btn"
+            :disabled="isExporting || isImporting"
+            @click="startFullRestore"
+          >
             <Upload :size="14" />
-            {{ isImporting ? t('dataSettings.importing') : t('dataSettings.importFromFolder') }}
+            {{ isImporting ? t('dataSettings.restorePreparing') : t('dataSettings.fullRestore') }}
           </button>
         </div>
       </div>
-      <p class="hint">{{ t('dataSettings.exportHint') }}</p>
+      <p class="hint">{{ t('dataSettings.fullRestoreHint') }}</p>
     </div>
     
     <!-- Agent 临时文件自动清理 -->
@@ -1173,26 +1230,41 @@ onUnmounted(() => {
   border: 1px solid var(--border-color);
 }
 
-.export-options {
-  display: flex;
-  gap: 20px;
-  margin-bottom: 14px;
+.backup-progress {
+  margin-bottom: 12px;
 }
 
-.checkbox-label {
+.backup-progress-bar {
+  height: 8px;
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.15));
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.backup-progress-fill {
+  height: 100%;
+  background: var(--accent-primary);
+  border-radius: 6px;
+  transition: width 0.15s ease;
+}
+
+.backup-progress-meta {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 11px;
   color: var(--text-secondary);
-  cursor: pointer;
+  gap: 12px;
 }
 
-.checkbox-label input[type="checkbox"] {
-  width: 15px;
-  height: 15px;
-  cursor: pointer;
-  accent-color: var(--accent-primary);
+.backup-progress-file {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
 }
 
 .actions {

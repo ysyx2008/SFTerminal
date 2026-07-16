@@ -1,5 +1,6 @@
 // ⚠️ 必须是第一个 import：在任何 service 实例化之前完成 userData 目录重定向
-import { runStartupMigrationIfNeeded, getDataDirInfo, requestDataDirMigration, requestDataDirReset, isTargetNonEmpty } from './utils/bootstrap'
+import { runStartupMigrationIfNeeded, runStartupRestoreIfNeeded, getDataDirInfo, requestDataDirMigration, requestDataDirReset, requestFullRestore, isTargetNonEmpty } from './utils/bootstrap'
+import { exportUserData, CopyCanceledError } from './utils/data-backup'
 import { app, BrowserWindow, ipcMain, shell, dialog, session, Tray, Menu, nativeImage, nativeTheme, powerMonitor, clipboard, protocol, net } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import type { GenericServerOptions, GithubOptions } from 'builder-util-runtime'
@@ -1459,10 +1460,12 @@ app.whenReady().then(async () => {
     )
   }
 
-  // 数据目录迁移：必须在创建窗口、初始化 sensor/watch/agent 等一切重活之前执行。
+  // 数据目录迁移 / 完整恢复：必须在创建窗口、初始化 sensor/watch/agent 等一切重活之前执行。
   // 此刻源目录无任何运行时写入，复制数据保证一致；完成后会自动重启。
   const migrated = await runStartupMigrationIfNeeded()
   if (migrated) return // 已触发重启，停止后续初始化
+  const restored = await runStartupRestoreIfNeeded()
+  if (restored) return
 
   // Agent 历史格式迁移（v5）：拆分旧日文件为按会话单文件，带进度窗
   try {
@@ -4565,116 +4568,148 @@ ipcMain.handle('history:getTokenUsageStats', async () => {
   return historyService.getTokenUsageStats()
 })
 
-// 导出到文件夹
-ipcMain.handle('history:exportToFolder', async (_event, options?: { includeSshPasswords?: boolean; includeApiKeys?: boolean }) => {
+// ==================== 完整数据备份 / 恢复 ====================
+
+let dataBackupCancelRequested = false
+let dataBackupRunning = false
+
+function sendDataBackupProgress(payload: {
+  pct: number
+  file: string
+  bytes: number
+  totalBytes: number
+}): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('dataBackup:progress', payload)
+  }
+}
+
+ipcMain.handle('dataBackup:export', async () => {
+  if (dataBackupRunning) {
+    return { success: false, error: 'busy' }
+  }
   try {
-    // 检查 mainWindow 是否存在
     if (!mainWindow) {
       return { success: false, error: t('error.windowNotReady') }
     }
-    
-    // 选择导出目录 - createDirectory 仅在 macOS 上有效
-    const dialogOptions: Electron.OpenDialogOptions = {
-      title: t('dialog.selectExportDir'),
-      properties: ['openDirectory'],
-      buttonLabel: t('dialog.exportHere')
-    }
-    
-    // macOS 上添加 createDirectory 选项
-    if (process.platform === 'darwin') {
-      dialogOptions.properties!.push('createDirectory')
-    }
-    
-    const result = await dialog.showOpenDialog(mainWindow, dialogOptions)
-    
-    if (result.canceled || !result.filePaths[0]) {
+    const date = new Date().toISOString().split('T')[0]
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: t('dialog.saveBackupArchive'),
+      defaultPath: `sfterm-full-backup-${date}.zip`,
+      buttonLabel: t('dialog.saveBackup'),
+      filters: [
+        { name: t('dialog.backupArchiveFilter'), extensions: ['zip'] },
+      ],
+    })
+    if (result.canceled || !result.filePath) {
       return { success: false, canceled: true }
     }
-    
-    // 创建子目录
-    const exportDir = path.join(result.filePaths[0], `sfterm-backup-${new Date().toISOString().split('T')[0]}`)
-    
-    const configData = configService.getAll()
-    const hostProfiles = hostProfileService.getAllProfiles()
-    
-    return historyService.exportToFolder(exportDir, configData, hostProfiles, options)
+
+    const pathFromDialog = result.filePath
+    let exportPath = pathFromDialog
+    let appendedZipExt = false
+    if (!exportPath.toLowerCase().endsWith('.zip')) {
+      exportPath += '.zip'
+      appendedZipExt = true
+    }
+    // 系统另存为对话框在选中已有 .zip 时通常已提示覆盖；
+    // 仅当我们事后补上 .zip 导致撞名时，再弹一次确认，避免双重提示。
+    if (appendedZipExt && fs.existsSync(exportPath)) {
+      const { response } = await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        buttons: [t('dialog.backupOverwrite'), t('dialog.backupOverwriteCancel')],
+        defaultId: 1,
+        cancelId: 1,
+        title: t('dialog.backupOverwriteTitle'),
+        message: t('dialog.backupOverwriteMessage', { name: path.basename(exportPath) }),
+        noLink: true,
+      })
+      if (response !== 0) {
+        return { success: false, canceled: true }
+      }
+    }
+
+    dataBackupRunning = true
+    dataBackupCancelRequested = false
+    const source = app.getPath('userData')
+    try {
+      const stats = await exportUserData({
+        source,
+        target: exportPath,
+        shouldCancel: () => dataBackupCancelRequested,
+        onProgress: async (p) => {
+          sendDataBackupProgress({
+            pct: p.pct,
+            file: p.file,
+            bytes: p.bytes,
+            totalBytes: p.totalBytes,
+          })
+        },
+      })
+      return { success: true, path: exportPath, files: stats.files, totalBytes: stats.totalBytes }
+    } catch (e) {
+      if (e instanceof CopyCanceledError) {
+        return { success: false, canceled: true }
+      }
+      throw e
+    } finally {
+      dataBackupRunning = false
+      dataBackupCancelRequested = false
+    }
   } catch (error) {
-    log.error('导出到文件夹失败:', error)
+    dataBackupRunning = false
+    dataBackupCancelRequested = false
+    log.error('完整备份失败:', error)
     return { success: false, error: errMsg(error, 'error.exportFailed') }
   }
 })
 
-// 从文件夹导入
-ipcMain.handle('history:importFromFolder', async () => {
+ipcMain.handle('dataBackup:cancel', async () => {
+  if (dataBackupRunning) {
+    dataBackupCancelRequested = true
+  }
+  return { ok: true }
+})
+
+ipcMain.handle('dataBackup:requestRestore', async () => {
   try {
-    // 检查 mainWindow 是否存在
     if (!mainWindow) {
       return { success: false, error: t('error.windowNotReady') }
     }
-    
-    // 选择导入目录
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: t('dialog.selectBackupFolder'),
-      properties: ['openDirectory'],
-      buttonLabel: t('dialog.importHere')
+      title: t('dialog.selectBackupArchive'),
+      properties: ['openFile'],
+      buttonLabel: t('dialog.selectBackupFile'),
+      filters: [
+        { name: t('dialog.backupArchiveFilter'), extensions: ['zip'] },
+      ],
     })
-    
     if (result.canceled || !result.filePaths[0]) {
       return { success: false, canceled: true }
     }
-    
-    const importResult = historyService.importFromFolder(result.filePaths[0])
-  
-  if (importResult.success) {
-    // 导入主机档案
-    if (importResult.hostProfiles && importResult.hostProfiles.length > 0) {
-      hostProfileService.importProfiles(importResult.hostProfiles as HostProfile[])
+    const backupPath = result.filePaths[0]
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      buttons: [t('dialog.restoreConfirmOk'), t('dialog.restoreConfirmCancel')],
+      defaultId: 1,
+      cancelId: 1,
+      title: t('dialog.restoreConfirmTitle'),
+      message: t('dialog.restoreConfirmMessage', { name: path.basename(backupPath) }),
+      detail: t('dialog.restoreConfirmDetail'),
+      noLink: true,
+    })
+    if (response !== 0) {
+      return { success: false, canceled: true }
     }
-    
-    // 应用配置（合并而非覆盖）
-    if (importResult.config) {
-      const currentConfig = configService.getAll()
-      
-      // SSH 会话：合并（按 ID 去重）
-      if (importResult.config.sshSessions) {
-        const existingSessions = currentConfig.sshSessions || []
-        const newSessions = importResult.config.sshSessions as Array<{ id: string; [key: string]: unknown }>
-        const mergedSessions = [...existingSessions]
-        for (const session of newSessions) {
-          if (!mergedSessions.some(s => s.id === session.id)) {
-            mergedSessions.push(session as unknown as typeof existingSessions[0])
-          }
-        }
-        configService.set('sshSessions', mergedSessions)
-      }
-      
-      // AI Profiles：合并（按 ID 去重）
-      if (importResult.config.aiProfiles) {
-        const existingProfiles = currentConfig.aiProfiles || []
-        const newProfiles = importResult.config.aiProfiles as Array<{ id: string; [key: string]: unknown }>
-        const mergedProfiles = [...existingProfiles]
-        for (const profile of newProfiles) {
-          if (!mergedProfiles.some(p => p.id === profile.id)) {
-            mergedProfiles.push(profile as unknown as typeof existingProfiles[0])
-          }
-        }
-        configService.set('aiProfiles', mergedProfiles)
-      }
-      
-      // 其他设置：如果当前为默认值则覆盖
-      if (importResult.config.theme) {
-        configService.set('theme', importResult.config.theme as string)
-      }
-      if (importResult.config.terminalSettings) {
-        configService.set('terminalSettings', importResult.config.terminalSettings as typeof currentConfig.terminalSettings)
-      }
+    const res = await requestFullRestore(backupPath)
+    if (!res.ok) {
+      return { success: false, error: res.error }
     }
-  }
-  
-  return importResult
+    setTimeout(() => { app.relaunch(); app.exit(0) }, 150)
+    return { success: true }
   } catch (error) {
-    log.error('从文件夹导入失败:', error)
-    return { success: false, imported: [], error: errMsg(error, 'error.importFailed') }
+    log.error('请求完整恢复失败:', error)
+    return { success: false, error: errMsg(error, 'error.importFailed') }
   }
 })
 

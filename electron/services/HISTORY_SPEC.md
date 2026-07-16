@@ -1,14 +1,15 @@
 # History Service SPEC
 
-> Last verified: 2026-07-13（多进程索引安全：写前读盘合并 + mtime 失效；getById 正文回退）
+> Last verified: 2026-07-16（完整备份迁出；本服务不再提供选择性导出/导入）
 
 ## 职责
 
 历史数据的运维聚合服务。组合 `AgentRecordStore`（会话记录存储聚合，见下），并保留以下非会话域职责：
-- 聊天记录（ChatRecord，遗留，仅导入导出兼容）
+- 聊天记录（ChatRecord，遗留）
 - Token 用量统计（跨主树 + watch 树的索引聚合）
-- 数据导出/导入备份
 - 清理 + 存储统计
+
+> 完整数据备份/恢复已迁至 `electron/utils/data-backup.ts` + `bootstrap.ts`（整包 userData），不再由本服务提供选择性导出/导入。
 
 **会话记录存储已下沉到 `AgentRecordStore`**（`history/agent-record-store.ts`）：拥有 agent/watch 两棵历史树 + 索引机器 + 步骤内联图片外化 + main/watch 路由。`HistoryService` 的 AgentRecord 相关公开方法（`saveAgentRecord` 等）保留为**委派转发**，向后兼容现有调用方（main.ts IPC / AgentService / Agent / 前端）；读侧新代码应走 `ConversationManager` → `ConversationStore` → `AgentRecordStore` 接缝（见 `conversation/`）。
 
@@ -16,7 +17,7 @@
 
 ## 文件
 
-- `electron/services/history.service.ts`：ChatRecord + Token 统计 + 导入导出 + 清理；组合 `AgentRecordStore` 并委派会话记录方法。
+- `electron/services/history.service.ts`：ChatRecord + Token 统计 + 清理；组合 `AgentRecordStore` 并委派会话记录方法。
 - `electron/services/history/agent-record-store.ts`：`AgentRecordStore`——会话记录存储聚合（CRUD + 索引机器 + 图片外化 + canvas 剥离 + main/watch 路由），`ConversationStore` 的真相源。
 - `electron/services/history/agent-storage.ts`：会话记录文件 IO 纯函数（读/写/列举/损坏隔离；含旧单体 `.json` 兼容）。
 - `electron/services/history/session-persistence.ts`：增量会话持久化（`meta.json` + `steps.jsonl` / `messages.jsonl`）。
@@ -44,8 +45,6 @@
 | `getDataPath(): string` | 返回数据目录路径 | `cli/index.ts` 信息展示 |
 | `getHistoryPath(): string` | 返回历史记录目录路径 | `cli/index.ts` |
 | `getAgentRecordStore(): AgentRecordStore` | 暴露会话存储聚合，供 `ConversationManager`/`ConversationStore` 装配为读侧接缝 | `agent/index.ts` 装配 |
-| `exportToFolder(exportPath, configData, hostProfiles?, options?): {success, files[], error?}` | 导出数据到文件夹（含历史、配置、主机档案） | 前端导出功能 |
-| `importFromFolder(importPath): {success, imported[], error?}` | 从文件夹导入数据 | 前端导入功能 |
 | `cleanupOldRecords(daysToKeep?): {chatDeleted, agentDeleted}` | 清理过期记录 | 维护任务 |
 | `getStorageStats(): {chatFiles, agentFiles, agentSessions, totalSize}` | 返回存储统计信息（含 watch 树）；`agentFiles` = 有记录的天数；`agentSessions` = 主+watch 索引会话总数 | 设置 UI |
 
@@ -101,9 +100,7 @@
 - full：关键字可能命中 `finalResult`/steps 正文，须读完整记录二次匹配，但仅读候选所在日期文件，且逐文件 `await`（`fs.promises`）让出事件循环，避免历史量大时同步遍历阻塞主进程导致界面冻结。
 - 历史规模极大时的根治方案是迁移至 SQLite + FTS（当前未做）。
 
-**导入/导出**：
-- 导出：合并 `chat/`、`agent/`、配置文件、主机档案为文件夹
-- 导入：合并到现有数据目录（非覆盖），支持增量合并
+**完整备份/恢复**：见 `electron/utils/data-backup.ts` / `bootstrap.ts`（整包 `userData` 为 `.zip`，不在本服务内）。
 
 ## 关键约束
 
@@ -111,4 +108,3 @@
 - **Agent 记录 ID 必须全局唯一**（UUID v4）
 - **数据文件编码必须为 UTF-8**
 - **`cleanupOldRecords` 默认保留 90 天**，调用方不得传入小于 7 天的值
-- **导出时 SSH 密码默认不包含**（`includeSshPasswords` 须显式开启）
