@@ -5,9 +5,12 @@
 
 /**
  * 路径段字符（不含分隔符 / \）。
- * 含空格与 shell 转义 `\\`；不含 `()`——括号常是中文列举/句子尾巴，不是路径名。
+ * 含空格、shell 转义 `\\`、中文文件名常见标点：
+ * - CJK 符号区 `\u3000-\u303f`（「」『』【】《》等）
+ * - 全角 `（），：！？－～`；弯引号 `“”‘’`；间隔号/破折/省略 `·—–…`
+ * 不含半角 `()"'?*`——多是 shell/句子边界；不含全角 `／`（易与路径分隔混淆）。
  */
-const SEG = String.raw`[\w\u4e00-\u9fff\u3000-\u303f\u00C0-\u024F.\-+@#$[\]%\\ ]`
+const SEG = String.raw`[\w\u4e00-\u9fff\u3000-\u303f\u00C0-\u024F.\-+@#$[\]%\\ （）“”‘’，：！？－～·—–…]`
 
 /**
  * 裸路径正则（每次调用新建，避免 /g 共用 lastIndex）。
@@ -126,8 +129,17 @@ export function trimPathOvermatch(path: string): string {
     if (isLocalFilePath(head)) result = head
   }
 
-  // 尾部标点（中文列举常带 ））等）
-  result = result.replace(/[),.;:!?）】』」>]+$/u, '')
+  // 尾部标点（句子尾巴）。全角闭括号仅在路径内无对应开括号时剥离，
+  // 避免裁掉「方案（含…）」这类真实文件名末尾的 `）`。
+  result = result.replace(/[),.;:!?＞>]+$/u, '')
+  while (
+    (result.endsWith('）') && !result.includes('（')) ||
+    (result.endsWith('】') && !result.includes('【')) ||
+    (result.endsWith('』') && !result.includes('『')) ||
+    (result.endsWith('」') && !result.includes('「'))
+  ) {
+    result = result.slice(0, -1)
+  }
   return result
 }
 

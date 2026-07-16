@@ -177,4 +177,50 @@ describe('matchBareFilePaths', () => {
       '/Users/a/b/out.txt',
     ])
   })
+
+  it('links paths whose basename contains fullwidth parentheses', () => {
+    const p =
+      '/Users/yushen/Library/CloudStorage/OneDrive-个人/文档/2026年7月-金融科技部-AI赋能培训方案（含Agent高阶班与编程实战班）'
+    expect(matchBareFilePaths(p)).toEqual([p])
+    expect(
+      matchBareFilePaths(
+        `mv "/Users/a/旧名" "${p}"`
+      )
+    ).toEqual(['/Users/a/旧名', p])
+  })
+
+  it('links paths with curly quotes and common fullwidth punctuation', () => {
+    const names = [
+      '《报告》“终稿”',
+      '说‘你好’',
+      '方案，修订版',
+      '说明：v1',
+      '注意！',
+      '待定？',
+      'A－B',
+      '草稿～',
+      '张·三',
+      'A—B',
+      '等等…',
+    ]
+    for (const name of names) {
+      const p = `/Users/a/文档/${name}`
+      expect(matchBareFilePaths(p), p).toEqual([p])
+    }
+  })
+
+  it('still does not treat ASCII quotes as path characters', () => {
+    expect(matchBareFilePaths('/Users/a/文档/file"name"')).toEqual([
+      '/Users/a/文档/file',
+    ])
+    expect(matchBareFilePaths("/Users/a/文档/file'name")).toEqual([
+      '/Users/a/文档/file',
+    ])
+  })
+
+  it('still strips unmatched trailing fullwidth closer (prose wrap)', () => {
+    expect(matchBareFilePaths('见 /Users/a/b/out.txt）')).toEqual([
+      '/Users/a/b/out.txt',
+    ])
+  })
 })
