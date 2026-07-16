@@ -146,13 +146,15 @@ watch(
     <div class="thinking-line" @click="handleClick($event)">
       <span v-if="isStreaming" class="thinking-spinner-inline" aria-hidden="true"></span>
       <span v-else class="thinking-icon-done" aria-hidden="true">{{ expanded ? '▾' : '▸' }}</span>
-      <span class="thinking-status" :class="{ 'streaming-text': isStreaming }">
-        {{ isStreaming ? streamingLabel : t('ai.thinking.done') }}<span
-          v-if="durationText"
-          class="thinking-duration"
-        > {{ isStreaming ? '' : '· ' }}{{ durationText }}</span>
+      <!-- 状态 / 时长 / 提示放同一 flex 项内，用统一「 · 」分隔；避免 gap/margin 让两侧空格视觉不一致 -->
+      <span class="thinking-meta">
+        <span class="thinking-status" :class="{ 'streaming-text': isStreaming }">
+          {{ isStreaming ? streamingLabel : t('ai.thinking.done') }}<span
+            v-if="durationText"
+            class="thinking-duration"
+          >{{ isStreaming ? ` ${durationText}` : ` · ${durationText}` }}</span>
+        </span><template v-if="hasReasoning"><span class="thinking-sep"> · </span><span class="thinking-toggle-hint">{{ expanded ? t('ai.thinking.clickHide') : t('ai.thinking.clickShow') }}</span></template>
       </span>
-      <span v-if="hasReasoning" class="thinking-toggle-hint">· {{ expanded ? t('ai.thinking.clickHide') : t('ai.thinking.clickShow') }}</span>
     </div>
     <Transition name="thinking-expand">
       <div
@@ -233,6 +235,12 @@ watch(
   opacity: 1;
 }
 
+.thinking-meta {
+  flex-shrink: 0;
+  min-width: 0;
+  white-space: nowrap;
+}
+
 .thinking-status {
   flex-shrink: 0;
   white-space: nowrap;
@@ -259,11 +267,15 @@ watch(
   font-variant-numeric: tabular-nums;
 }
 
+/* 与左侧 duration 前的「 · 」同字号/透明度；勿放进 .thinking-toggle-hint（11px + 更淡） */
+.thinking-sep {
+  opacity: 0.9;
+}
+
 .thinking-toggle-hint {
   flex-shrink: 0;
   opacity: 0.6;
   font-size: 11px;
-  margin-left: 4px;
   white-space: nowrap;
 }
 
