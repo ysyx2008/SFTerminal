@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Shuffle, Radio, MessagesSquare, Bell } from 'lucide-vue-next'
+import { Shuffle, MessagesSquare, Bell } from 'lucide-vue-next'
 import {
   getFeaturedExamples,
   shuffleExamples as shuffleExamplePool,
@@ -58,14 +58,14 @@ const truncateText = (text: string, maxLength: number): string => {
     <template v-if="isCompanionTab">
       <div class="companion-welcome">
         <div class="companion-welcome-mark">
-          <Radio :size="22" stroke-width="1.75" />
+          <MessagesSquare :size="22" stroke-width="1.75" />
         </div>
         <h2 class="companion-welcome-title">{{ t('ai.companionWelcome.title') }}</h2>
         <p class="companion-welcome-desc">{{ t('ai.companionWelcome.desc') }}</p>
 
         <ul class="companion-features">
           <li class="companion-feature">
-            <MessagesSquare :size="15" stroke-width="1.75" class="companion-feature-icon" />
+            <Shuffle :size="15" stroke-width="1.75" class="companion-feature-icon" />
             <div class="companion-feature-text">
               <span class="companion-feature-title">{{ t('ai.companionWelcome.features.multiChannel.title') }}</span>
               <span class="companion-feature-desc">{{ t('ai.companionWelcome.features.multiChannel.desc') }}</span>

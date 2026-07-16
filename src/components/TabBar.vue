@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, SatelliteDish, Bot, Home, PanelTopOpen, Radio, ListTodo } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, SatelliteDish, Bot, Zap, PanelTopOpen, MessagesSquare, ListTodo } from 'lucide-vue-next'
 import { useTerminalStore, COMPANION_TAB_AGENT_ID } from '../stores/terminal'
 import { formatAgentAttentionTooltip } from '../utils/agent-tab-ui-meta'
 import BatchCommandPanel from './BatchCommandPanel.vue'
@@ -388,7 +388,7 @@ const tasksAreaAttentionTooltip = computed(() => {
       @click="terminalStore.focusTaskArea()"
     >
       <span class="tab-icon">
-        <Home :size="14" />
+        <Zap :size="14" />
       </span>
       <span class="tab-title">{{ t('tabs.tasks', '任务') }}</span>
     </div>
@@ -494,7 +494,7 @@ const tasksAreaAttentionTooltip = computed(() => {
       @click="terminalStore.setActiveTab(companionTab.id)"
     >
       <span class="tab-icon">
-        <Radio :size="14" class="companion-icon" />
+        <MessagesSquare :size="14" class="companion-icon" />
       </span>
       <span class="tab-title">{{ displayTabTitle(companionTab) }}</span>
       <span v-if="companionTab.isLoading" class="tab-loading">
