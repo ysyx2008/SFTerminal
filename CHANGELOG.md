@@ -2,7 +2,25 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v11.3.0 (2026-07-16) (Latest)
+## v11.3.1 (2026-07-17) (Latest)
+
+> Welcome-page “first meeting” invite for the birth chat; sub-agent oversized results archived for on-demand read-back; fixes for macOS LAN SSH and OSS delta updates.
+
+### Improvements
+- ⚡ **Welcome “first meeting”**: no longer auto-open Hub after Setup; welcome page invites the birth conversation with a wave animation and “Sure / Later”
+- ⚡ **Sub-agent oversized result archive**: results over ~8000 characters are written to scratch with a pointer + summary; the parent can `read_file` on demand
+- ⚡ **OEM `features.bond`**: enterprise builds can turn off bond tone and playful copy; open-source default remains on
+- ⚡ **Todo TodoService**: extract a service class so api/executor/render share one source of truth; soften completed-item checkmarks
+- ⚡ **Browser assistant UI**: selector + single focused panel; tighten terminology and troubleshooting
+
+### Bug Fixes
+- 🐛 **macOS LAN SSH**: add Bonjour / mDNS probes to trigger Local Network permission; fix packaged builds hitting `EHOSTUNREACH` to VMs / LAN hosts
+- 🐛 **OSS delta updates**: use a single Range request (OSS rejects multipart Range); drop pre-install sync backup
+- 🐛 **Hub session retention**: switching to Todos / Companion and back keeps the current Hub session
+- 🐛 **Browser assistant**: fix Windows Firefox Native Host registry path; merge Chromium Chrome/Edge into one selector path to avoid dual green status
+- 🐛 **Welcome logo**: restore infinite float animation
+
+## v11.3.0 (2026-07-16)
 
 > Ships local secretary todos and full userData backup/restore.
 
