@@ -110,7 +110,8 @@ export class SailFish extends Agent {
     const baseTools = getAgentTools(this.services.mcpService, {
       mode,
       remoteChannel,
-      includeContextTools: this.contextManagementEnabled
+      includeContextTools: this.contextManagementEnabled,
+      mcpToolSession: this.getMcpToolSession()
     }, this.services.pluginRegistry)
     
     if (this.currentRun?.skillSession) {

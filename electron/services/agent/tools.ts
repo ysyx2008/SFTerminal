@@ -4,6 +4,7 @@
 import type { ToolDefinition } from '../ai.service'
 import type { McpService } from '../mcp.service'
 import type { PluginRegistry } from '../plugin/registry'
+import type { McpToolSession } from './mcp-tool-session'
 import { getSkillsSummary } from './skills/registry'
 import { getUserSkillService } from '../user-skill.service'
 import { getConfigService } from '../config.service'
@@ -386,6 +387,42 @@ export interface GetAgentToolsOptions {
   remoteChannel?: RemoteChannel
   /** 是否包含上下文管理工具（用量超过阈值时启用，节省 token） */
   includeContextTools?: boolean
+  /** MCP 渐进披露会话（defer 时提供已 load 子集） */
+  mcpToolSession?: McpToolSession
+}
+
+/**
+ * 动态构建 mcp_load（仅 defer 模式注入）——按 server 整包加载，对齐 Skill load
+ */
+function buildMcpLoadTool(mcpService: McpService): ToolDefinitionWithMeta {
+  const catalog = mcpService.getServerCatalogText()
+  return {
+    type: 'function',
+    function: {
+      name: 'mcp_load',
+      description: `加载某个已连接 MCP 服务器的全部工具定义（渐进披露，类似 skill load）。
+当前 MCP 工具较多，完整参数 schema 未全部放入上下文。需要某类 MCP 能力时，先用本工具按服务器整包加载，之后即可直接调用该服务器下的 mcp_* 工具。
+
+已连接服务器：
+${catalog}
+
+参数 server 填上表中的 id 或完整名称，例如「企查查-风险信息」或对应 id。`,
+      parameters: {
+        type: 'object',
+        properties: {
+          server: {
+            type: 'string',
+            description: 'MCP 服务器 id 或显示名称（与目录一致）'
+          }
+        },
+        required: ['server']
+      }
+    },
+    _meta: {
+      parallelizable: true,
+      streamDisplay: { titleKey: 'mcp.load', titleField: 'server' }
+    }
+  }
 }
 
 /**
@@ -1282,10 +1319,15 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
     filteredTools.push(...pluginRegistry.getToolDefinitions())
   }
 
-  // 如果有 MCP 服务，添加 MCP 工具
+  // 如果有 MCP 服务：小规模全量 schema；大规模按 server 整包渐进披露
   if (mcpService) {
-    const mcpTools = mcpService.getToolDefinitions()
-    return [...filteredTools, ...mcpTools]
+    if (!mcpService.shouldDeferTools()) {
+      return [...filteredTools, ...mcpService.getToolDefinitions()]
+    }
+    const loadTool = buildMcpLoadTool(mcpService)
+    const loadedServers = options?.mcpToolSession?.getLoadedServerIds() ?? []
+    const loadedDefs = mcpService.getToolDefinitionsByServerIds(loadedServers)
+    return [...filteredTools, loadTool, ...loadedDefs]
   }
 
   return filteredTools

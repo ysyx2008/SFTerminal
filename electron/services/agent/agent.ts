@@ -61,6 +61,7 @@ import { consumeProactiveContext } from './proactive-store'
 import { applyParallelShare, computeToolOutputBudget } from './tool-output-budget'
 import { t, type TranslationKey } from './i18n'
 import { createSkillSession, SkillSession } from './skills'
+import { McpToolSession } from './mcp-tool-session'
 import { getAiDebugService } from '../ai-debug.service'
 import { createLogger } from '../../utils/logger'
 import { assembleUserMessageContent, wrapSystemContext } from './message-envelope'
@@ -180,6 +181,9 @@ export abstract class Agent {
   
   /** 技能会话（Agent 实例级别，跨 Run 持久化） */
   private _skillSession?: SkillSession
+
+  /** MCP 工具渐进披露会话（Agent 实例级 sticky LRU） */
+  private _mcpToolSession?: McpToolSession
 
   /** 「本次允许」工具白名单（Agent 实例内存，跨 Run；关 tab / 重启清空） */
   private allowedTools = new Set<string>()
@@ -328,6 +332,14 @@ export abstract class Agent {
       this._skillSession = createSkillSession(this.getAvailableTools())
     }
     return this._skillSession
+  }
+
+  /** MCP 渐进披露会话（跨 Run；resetSession / cleanup 清空） */
+  protected getMcpToolSession(): McpToolSession {
+    if (!this._mcpToolSession) {
+      this._mcpToolSession = new McpToolSession()
+    }
+    return this._mcpToolSession
   }
   
   // ==================== 抽象方法（子类必须实现） ====================
@@ -639,6 +651,8 @@ export abstract class Agent {
       this._skillSession.cleanup()
       this._skillSession = undefined
     }
+    this._mcpToolSession?.clear()
+    this._mcpToolSession = undefined
   }
   
   // ==================== 受保护方法：生命周期 ====================
@@ -1201,6 +1215,7 @@ export abstract class Agent {
     this._lastStatsProfileId = undefined
     this._contextBar = {}
     this.taskMemory.clear()
+    this._mcpToolSession?.clear()
   }
 
   /**
@@ -3188,6 +3203,7 @@ export abstract class Agent {
       terminalService: this.services.unifiedTerminalService || this.services.ptyService as any,
       hostProfileService: this.services.hostProfileService,
       mcpService: this.services.mcpService,
+      mcpToolSession: this.getMcpToolSession(),
       skillSession: run.skillSession,
       pluginRegistry: this.services.pluginRegistry,
       addStep: (step) => this.addStep(step),

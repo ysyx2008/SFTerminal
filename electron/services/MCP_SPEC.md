@@ -1,6 +1,6 @@
 # MCP Service SPEC
 
-> Last verified: 2026-05-07
+> Last verified: 2026-07-18
 
 ## 职责
 
@@ -8,79 +8,72 @@ MCP（Model Context Protocol）客户端。连接和管理外部 MCP 服务器�
 
 ## 文件 / 规模
 
-单文件：`electron/services/mcp.service.ts`（~615 行）
+| 路径 | 说明 |
+|------|------|
+| `electron/services/mcp.service.ts` | 连接、聚合、schema 转换、server 解析 |
+| `electron/services/mcp-progressive-constants.ts` | 渐进披露阈值常量 |
+| `electron/services/agent/mcp-tool-session.ts` | Agent 侧已 load **server** 的 sticky LRU |
+| `electron/services/mcp-tool-display.ts` | UI 展示名解析 |
 
-## 公开 API
+## 设计意图：工具渐进式披露（Progressive Disclosure）
 
-| 方法签名 | 用途 | 主要调用方 |
-|---------|------|-----------|
-| `async connect(config): Promise<void>` | 连接 MCP 服务器（stdio 或 sse） | main.ts, CLI |
-| `async disconnect(serverId): Promise<void>` | 断开指定服务器 | main.ts, CLI |
-| `async disconnectAll(): Promise<void>` | 断开所有服务器 | 生命周期 |
-| `getServerStatuses(): McpServerStatus[]` | 获取所有服务器连接状态 | UI/仪表盘 |
-| `getAllTools(): McpTool[]` | 获取所有服务器的工具列表 | agent |
-| `getAllResources(): McpResource[]` | 获取所有服务器的资源列表 | agent/knowledge |
-| `getAllPrompts(): McpPrompt[]` | 获取所有服务器的提示词列表 | agent |
-| `getToolDefinitions(): ToolDefinition[]` | 将工具转换为旗鱼内部工具定义格式 | agent tools registry |
-| `async callTool(serverId, toolName, args): Promise<{success, content?, error?}>` | 调用指定服务器的工具 | agent |
-| `async readResource(serverId, uri): Promise<{success, content?, mimeType?, error?}>` | 读取资源内容 | agent/knowledge |
-| `async getPrompt(serverId, promptName, args?): Promise<{success, messages?, error?}>` | 获取服务器提示词模板 | agent |
-| `async testConnection(config): Promise<{success, toolCount?, error?}>` | 测试服务器连接（不持久化） | 添加服务器前 |
-| `async refreshServer(serverId): Promise<void>` | 刷新服务器的工具/资源列表 | UI/手动 |
-| `isConnected(serverId): boolean` | 查询连接状态 | agent/tools |
-| `parseToolCallName(fullName): {serverId, toolName} \| null` | 解析 `mcp_{serverId}_{toolName}` 格式的工具名 | agent |
-| `getToolDisplayLabel(fullName): string \| null` | 解析 UI 展示名（title → description 首行 → 格式化英文名） | agent/tools |
+### 为什么做
 
-## 核心类型 / 接口
+用户常驻多个大型 MCP（典型：企查查拆成 5 个 server + 其它，合计可上百工具）时，若每轮把全部 tool schema 塞进上下文：
 
-```ts
-interface McpServerConfig {
-  id: string; name: string; enabled: boolean
-  transport: "stdio" | "sse"
-  command?: string; args?: string[]; env?: Record<string, string>
-  cwd?: string; url?: string; headers?: Record<string, string>
-}
-interface McpTool {
-  serverId: string; serverName: string; name: string
-  title?: string; description: string
-  inputSchema: { type: "object"; properties: Record<string, unknown>; required?: string[] }
-}
-interface McpResource { serverId; serverName; uri; name; description?; mimeType? }
-interface McpPrompt { serverId; serverName; name; description?; arguments?: {name, description?, required?}[] }
-interface McpServerStatus { id; name; connected: boolean; error?; toolCount; resourceCount; promptCount }
-```
+- **连着 ≠ 在用**：低频重武器在日常任务里仍每轮收税；
+- 单条工具描述也可能极长（适用场景、防幻觉纪律等），全量可达数万 token。
 
-内部类型：
-```ts
-interface McpConnection {
-  config: McpServerConfig; client: Client; transport: Transport
-  process?: ChildProcess; tools: McpTool[]; resources: McpResource[]; prompts: McpPrompt[]
-}
-```
+内置核心工具不必 defer。Skill 已是「目录 → load 整包」。MCP 对齐同一心智：**按 server 整包 load**，不用关键词搜索赌命中。
 
-## 依赖（跨 service）
+### 方案：统一渐进管道 + 按 server 整包 load + 小规模 preload
 
-| 服务 | 关系 | 说明 |
-|------|:----:|------|
-| `AiService` | 可选 | `ToolDefinition` 类型引用（仅类型级别） |
+| 已连接 MCP 工具总数 | Agent 看到的 tools |
+|---------------------|-------------------|
+| **≤ `MCP_PRELOAD_THRESHOLD`（10）** | 全量 schema（无 `mcp_load`） |
+| **> 10** | 核心工具 + **`mcp_load`**（description 内嵌 **server 目录**）+ 本会话已 load 的 **server 下全部** schema（sticky，追加末尾） |
 
-## 关键行为 / 数据流
+要点：
 
-**服务器连接生命周期**：
-1. `connect(config)` → 根据 `transport` 创建 `StdioClientTransport` 或 `SSEClientTransport`
-2. 初始化 → `client.listTools()` / `listResources()` / `listPrompts()` → 填充 `McpConnection`
-3. 工具命名 → 服务器工具 `toolName` → `generateToolName` → `serverId__toolName`
+1. **L1 = server 目录**（几行），不罗列每个工具的长描述。
+2. **`mcp_load(server)`**：按 id 或显示名选定一家 MCP，**整包**加载其全部工具 schema（对齐 `skill load`）。
+3. **Sticky 单位是 server**：本会话 load 过的 server 一直保留其全部工具 schema，直到 `resetSession` / `cleanup`；**不设「最多 N 家」逐出**（需要几家留几家，避免任务中途被挤掉）。
+4. **不做主路径关键词 search**——搜不准；需要能力时打开相关那一家即可。
+5. **未 load 的 server 上直接调 `mcp_*`**：自动整包 load 该 server，返回提示请下一轮重试。
+6. Prompt cache：核心前缀不变；已 load schema 只追加末尾。
+7. 本期不做：内置工具 defer、插件同构、意图预路由。
 
-**Agent 调用路径**：
-1. Agent 获取工具列表 → `getToolDefinitions()` 返回 `ToolDefinition[]`
-2. Agent 调用工具 → `parseToolCallName(fullName)` 解析 → `callTool(serverId, toolName, args)`
-3. 返回 `{success, content}` 注入对话上下文
+### 与 Skill 的类比
 
-**断连处理**：客户端 `onerror` → `handleDisconnect` → `emit("disconnected", {serverId, error})`
+| 层 | Skill | MCP（defer） |
+|----|-------|----------------|
+| L1 | 技能 id + 一句话 | server 目录（在 `mcp_load` description） |
+| L2 | `skill load` → 该技能全部工具+正文 | `mcp_load` → 该 server 全部工具 schema |
+| 执行 | 调技能工具 | 调 `mcp_*` |
+
+## 公开 API（渐进相关）
+
+| 方法 | 用途 |
+|------|------|
+| `shouldDeferTools()` | count > 10 |
+| `getServerCatalogText()` | 廉价目录 |
+| `resolveServerRef(ref)` | id 或显示名 → server |
+| `getToolDefinitionsByServerIds(ids)` | 整包 schema |
+| `getToolDefinitions()` / `getToolDefinitionsByNames` | 全量 / 按名 |
+
+### McpToolSession
+
+| 方法 | 用途 |
+|------|------|
+| `loadServer(serverId)` | sticky 整包（本会话保留至 clear） |
+| `isServerLoaded` / `getLoadedServerIds` | 查询 |
+| `clear()` | resetSession / cleanup |
+
+常量：`MCP_PRELOAD_THRESHOLD = 10`（`mcp-progressive-constants.ts`）。
 
 ## 关键约束
 
-- **stdio 传输的子进程必须清理**——`disconnect` 必须 `process.kill()`，不得僵尸残留
-- **工具名冲突通过前缀隔离**——`serverId__toolName` 格式，`parseToolCallName` 为唯一解析入口
-- **MCP 工具调用超时需有上限**——`callTool` 不得无限等待
-- **不在 `connect` 失败时静默**——必须抛出或返回错误信息，通知调用方
+- defer 时不得注入全量 schema——仅目录 + 已 load server 的工具
+- 映射表须覆盖全部已连接工具（含未 load 的），保证 `parseToolCallName` / `callTool`
+- 已 load 追加在核心工具之后，保护 prompt cache 前缀
+- stdio 子进程须清理；工具名冲突靠 `mcp_{serverId}_` 前缀

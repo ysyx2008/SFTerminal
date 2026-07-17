@@ -15,6 +15,7 @@ import type {
   AgentPlan
 } from '../types'
 import type { SkillSession } from '../skills'
+import type { McpToolSession } from '../mcp-tool-session'
 import type { TaskMemoryStore } from '../task-memory'
 
 // 错误分类
@@ -38,6 +39,8 @@ export interface ToolExecutorConfig {
   terminalService: UnifiedTerminalInterface
   hostProfileService?: HostProfileServiceInterface
   mcpService?: McpService
+  /** MCP 渐进披露会话（mcp_load / 未 load 调用兜底） */
+  mcpToolSession?: McpToolSession
   addStep: (step: Omit<AgentStep, 'id' | 'timestamp'>) => AgentStep
   updateStep: (stepId: string, updates: Partial<Omit<AgentStep, 'id' | 'timestamp'>>) => void
   waitForConfirmation: (
