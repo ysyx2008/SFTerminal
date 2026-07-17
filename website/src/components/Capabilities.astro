@@ -14,9 +14,13 @@ const t = useTranslations(lang);
   <div class="container">
     <h2 class="section-title fade-in">{t.capabilities.title}</h2>
     <p class="section-subtitle fade-in fade-in-delay-1">{t.capabilities.subtitle}</p>
-    <div class="cap-grid">
-      {t.capabilities.items.map((item) => (
-        <a href={localePath(lang, item.href)} class="cap-item fade-in">
+    <div class="cap-grid reveal-stagger" style="--stagger-base: 60ms">
+      {t.capabilities.items.map((item, i) => (
+        <a
+          href={localePath(lang, item.href)}
+          class="cap-item"
+          style={`--i: ${i}`}
+        >
           <h3>{item.title}</h3>
           <p>{item.description}</p>
         </a>
@@ -48,11 +52,17 @@ const t = useTranslations(lang);
     padding: 28px 24px;
     background: var(--color-bg-primary);
     text-decoration: none;
-    transition: background 0.2s ease;
+    transition:
+      background var(--duration-micro) var(--ease-out-soft),
+      transform var(--duration-micro) var(--ease-out-soft);
   }
 
   .cap-item:hover {
     background: var(--color-bg-tertiary);
+  }
+
+  .cap-item:hover h3 {
+    color: var(--color-accent-primary);
   }
 
   .cap-item h3 {
@@ -60,6 +70,7 @@ const t = useTranslations(lang);
     font-weight: 600;
     color: var(--color-text-primary);
     margin-bottom: 8px;
+    transition: color var(--duration-micro) var(--ease-out-soft);
   }
 
   .cap-item p {

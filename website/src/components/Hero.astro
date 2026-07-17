@@ -21,10 +21,10 @@ const heroImage = lang === 'zh' ? '/screenshot-welcome.jpg' : '/screenshot-welco
         <a href="#download" class="btn btn-primary btn-lg">{t.hero.downloadBtn}</a>
         <a href="#task" class="btn btn-secondary btn-lg">{t.hero.learnBtn}</a>
       </div>
-      <p class="hero-note fade-in fade-in-delay-3">{t.hero.apiNotice}</p>
+      <p class="hero-note fade-in fade-in-delay-4">{t.hero.apiNotice}</p>
     </div>
 
-    <div class="hero-visual fade-in fade-in-delay-2">
+    <div class="hero-visual fade-in reveal-scale fade-in-delay-3 is-liftable">
       <img src={heroImage} alt={t.hero.imageAlt} width="1600" height="1000" loading="eager" />
     </div>
   </div>
@@ -90,6 +90,10 @@ const heroImage = lang === 'zh' ? '/screenshot-welcome.jpg' : '/screenshot-welco
     overflow: hidden;
     background: var(--color-bg-secondary);
     box-shadow: var(--shadow-card);
+    transition:
+      opacity var(--duration-reveal) var(--ease-out-soft),
+      transform var(--duration-reveal) var(--ease-out-soft),
+      box-shadow 0.45s var(--ease-out-soft);
   }
 
   .hero-visual img {

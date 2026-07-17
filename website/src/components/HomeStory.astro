@@ -15,19 +15,20 @@ const sections = [t.story.task, t.story.companion, t.story.handsOn, t.story.memo
   {sections.map((section, index) => {
     const imageSrc = lang === 'zh' ? section.image : section.imageEn;
     const reversed = index % 2 === 1;
+    const copyReveal = reversed ? 'reveal-right' : 'reveal-left';
     return (
       <div class:list={['story-block', { reversed }]} id={section.id}>
         <div class="container story-inner">
-          <div class="story-copy fade-in">
+          <div class:list={['story-copy', 'fade-in', copyReveal]}>
             <h2 class="story-title">{section.title}</h2>
             <p class="story-body">{section.body}</p>
-            <ul class="story-points">
-              {section.points.map((point) => (
-                <li>{point}</li>
+            <ul class="story-points reveal-stagger" style="--stagger-base: 140ms">
+              {section.points.map((point, i) => (
+                <li style={`--i: ${i}`}>{point}</li>
               ))}
             </ul>
           </div>
-          <div class="story-media fade-in fade-in-delay-1">
+          <div class="story-media fade-in reveal-scale is-liftable fade-in-delay-1">
             <img src={imageSrc} alt={section.imageAlt} loading="lazy" />
           </div>
         </div>
@@ -108,6 +109,11 @@ const sections = [t.story.task, t.story.companion, t.story.handsOn, t.story.memo
     height: 6px;
     border-radius: 50%;
     background: var(--color-accent-primary);
+    transition: transform 0.35s var(--ease-out-soft);
+  }
+
+  .story-points.visible li::before {
+    transform: scale(1);
   }
 
   .story-media {
@@ -116,6 +122,10 @@ const sections = [t.story.task, t.story.companion, t.story.handsOn, t.story.memo
     overflow: hidden;
     background: var(--color-bg-secondary);
     box-shadow: var(--shadow-card);
+    transition:
+      opacity var(--duration-reveal) var(--ease-out-soft),
+      transform var(--duration-reveal) var(--ease-out-soft),
+      box-shadow 0.45s var(--ease-out-soft);
   }
 
   .story-media img {

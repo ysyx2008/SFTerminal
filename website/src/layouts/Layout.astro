@@ -66,25 +66,39 @@ const pageDescription = description || (currentLang === 'zh' ? '旗鱼 —— �
         });
       })();
 
-      // 滚动动画观察器
-      const observerOptions = {
-        root: null,
-        rootMargin: '0px',
-        threshold: 0.1
-      };
-
-      const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('visible');
-          }
-        });
-      }, observerOptions);
-
+      // 滚动入场 + Header 滚动态
       document.addEventListener('DOMContentLoaded', () => {
-        document.querySelectorAll('.fade-in').forEach(el => {
-          observer.observe(el);
-        });
+        const revealEls = document.querySelectorAll('.fade-in, .reveal-stagger');
+        const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        if (prefersReduced) {
+          revealEls.forEach((el) => el.classList.add('visible'));
+        } else {
+          const observer = new IntersectionObserver(
+            (entries) => {
+              entries.forEach((entry) => {
+                if (!entry.isIntersecting) return;
+                entry.target.classList.add('visible');
+                observer.unobserve(entry.target);
+              });
+            },
+            {
+              root: null,
+              rootMargin: '0px 0px -6% 0px',
+              threshold: 0.12,
+            }
+          );
+          revealEls.forEach((el) => observer.observe(el));
+        }
+
+        const header = document.querySelector('.header');
+        if (header) {
+          const syncHeader = () => {
+            header.classList.toggle('is-scrolled', window.scrollY > 10);
+          };
+          syncHeader();
+          window.addEventListener('scroll', syncHeader, { passive: true });
+        }
       });
 
       // 标签页切到后台时暂停 CSS 动画，减少空闲 CPU 占用

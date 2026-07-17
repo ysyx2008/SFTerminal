@@ -136,7 +136,7 @@ const sourceConfig = JSON.stringify(DOWNLOAD_SOURCES);
     
     <div class="download-grid">
       {downloads.map((item, index) => (
-        <div class={`download-card fade-in fade-in-delay-${index + 2}`}>
+        <div class={`download-card lift-card fade-in fade-in-delay-${index + 2}`}>
           <div class="download-header">
             <div class="download-icon" set:html={item.icon} />
             <div>
@@ -325,11 +325,6 @@ const sourceConfig = JSON.stringify(DOWNLOAD_SOURCES);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     padding: 28px;
-    transition: all 0.3s ease;
-  }
-  
-  .download-card:hover {
-    border-color: var(--color-border-hover);
   }
   
   .download-header {
@@ -380,7 +375,11 @@ const sourceConfig = JSON.stringify(DOWNLOAD_SOURCES);
     color: var(--color-text-primary);
     font-size: 14px;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition:
+      background var(--duration-micro) var(--ease-out-soft),
+      border-color var(--duration-micro) var(--ease-out-soft),
+      color var(--duration-micro) var(--ease-out-soft),
+      transform var(--duration-micro) var(--ease-out-soft);
   }
   
   .download-btn:hover {
@@ -388,6 +387,10 @@ const sourceConfig = JSON.stringify(DOWNLOAD_SOURCES);
     border-color: transparent;
     color: var(--color-accent-contrast);
     transform: translateY(-1px);
+  }
+
+  .download-btn:active {
+    transform: translateY(0) scale(0.98);
   }
   
   .download-note {
