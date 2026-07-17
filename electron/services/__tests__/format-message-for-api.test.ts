@@ -13,8 +13,7 @@ vi.mock('../ai-debug.service', () => ({
     logRequestStart: () => {},
     logResponseChunk: () => {},
     logResponseDone: () => {},
-    logResponseError: () => {},
-    logRequestBody: () => {}
+    logResponseError: () => {}
   })
 }))
 
