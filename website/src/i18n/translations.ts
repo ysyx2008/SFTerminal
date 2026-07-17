@@ -14,7 +14,7 @@ export const languageNames: Record<SupportedLanguage, string> = {
 export const translations = {
   zh: {
     nav: {
-      features: '功能特性',
+      features: '它做什么',
       download: '下载',
       stats: '统计',
       changelog: '更新日志',
@@ -25,25 +25,68 @@ export const translations = {
       cta: '立即下载',
     },
     hero: {
-      versionLabel: '最新版本',
-      titleHighlight: 'AI 驱动',
-      titleSuffix: '的智能助手',
-      subtitle: '说出你的需求，AI 自主规划执行。',
-      subtitleLine2: '通过桌面端、微信、飞书、钉钉、企业微信、Slack、Telegram 或 Web 随时与 Agent 对话，让 AI 帮你搞定一切。',
+      brand: '旗鱼',
+      title: '你的私人桌面秘书',
+      subtitle: '不只聊天——它能操作你的电脑，也能主动盯事、主动找你。',
       downloadBtn: '立即下载',
-      viewSourceBtn: '查看源码',
-      apiNotice: '本软件不内置大模型，需自行配置 API',
-      platforms: {
-        macOS: 'macOS',
-        Windows: 'Windows',
+      learnBtn: '了解它怎么工作',
+      apiNotice: '需自行配置大模型 API · macOS / Windows',
+      imageAlt: '旗鱼桌面界面',
+    },
+    story: {
+      task: {
+        id: 'task',
+        title: '你支使，它办完',
+        body: '说清楚要做什么，旗鱼自己规划、调用工具、逐步执行。任务彼此隔离，可以并行。',
+        points: ['自主规划执行', '风险确认可控', '多任务并行'],
+        image: '/screenshot-agent-exec.png',
+        imageEn: '/screenshot-agent-exec_en.png',
+        imageAlt: '旗鱼任务执行界面',
       },
-      screenshot: {
-        production: '🖥️ 生产服务器',
-        test: '📦 测试环境',
-        dev: '🔧 开发机',
-        aiAssistant: 'AI 助手',
-        aiMessage: '磁盘使用率 45%，状态良好。建议定期清理日志文件以释放空间。',
+      companion: {
+        id: 'companion',
+        title: '你找它，它也找你',
+        body: '桌面、飞书、钉钉、微信……都汇进同一条联络线。关切触发或它认为该说时，会主动联系你。',
+        points: ['多渠道一条线', '主动消息', '关切与心跳'],
+        image: '/screenshot-im.png',
+        imageEn: '/screenshot-im_en.png',
+        imageAlt: '旗鱼远程联络界面',
       },
+      handsOn: {
+        id: 'hands-on',
+        title: '秘书真的能动手',
+        body: '本地终端与 SSH 原生支持，文件、命令、多机操作都在它能力范围内——不是只能「建议你怎么做」。',
+        points: ['本地终端', 'SSH / SFTP', '分屏多环境'],
+        image: '/screenshot-host-manager.jpg',
+        imageEn: '/screenshot-host-manager_en.jpg',
+        imageAlt: '旗鱼主机与终端管理',
+      },
+    },
+    capabilities: {
+      title: '还能做什么',
+      subtitle: '秘书的能力可以持续扩展',
+      items: [
+        {
+          title: '日程与邮件',
+          description: '管理日历、待办与邮箱，秘书职能的核心。',
+          href: '/docs/office/calendar/',
+        },
+        {
+          title: '办公文档',
+          description: '协助处理 Word、表格等日常文档工作。',
+          href: '/docs/office/word/',
+        },
+        {
+          title: '技能市场',
+          description: '按需安装技能包，扩展专项能力。',
+          href: '/skills/',
+        },
+        {
+          title: '知识与记忆',
+          description: '记住你的习惯与环境，完整经历可按需回忆。',
+          href: '/docs/ai-advanced/knowledge-base/',
+        },
+      ],
     },
     features: {
       title: '强大功能，智能高效',
@@ -167,7 +210,8 @@ export const translations = {
       ],
     },
     download: {
-      title: '立即下载',
+      title: '装上你的桌面秘书',
+      subtitle: '免费下载，配置好 API 即可开始使用',
       platforms: {
         macOS: {
           name: 'macOS',
@@ -909,7 +953,7 @@ export const translations = {
   },
   en: {
     nav: {
-      features: 'Features',
+      features: 'How it works',
       download: 'Download',
       stats: 'Stats',
       changelog: 'Changelog',
@@ -917,28 +961,71 @@ export const translations = {
       guide: 'Guide',
       dataPrivacy: 'Data Safety',
       github: 'GitHub',
-      cta: 'Download Now',
+      cta: 'Download',
     },
     hero: {
-      versionLabel: 'Latest Version',
-      titleHighlight: 'AI-Powered',
-      titleSuffix: ' Smart Assistant',
-      subtitle: 'Describe what you need, AI plans and executes autonomously.',
-      subtitleLine2: 'Chat with your Agent via desktop app, WeChat, Feishu, DingTalk, WeCom, Slack, Telegram, or Web — let AI handle the rest.',
-      downloadBtn: 'Download Now',
-      viewSourceBtn: 'View Source',
-      apiNotice: 'This software does not include built-in LLM. You need to configure your own API.',
-      platforms: {
-        macOS: 'macOS',
-        Windows: 'Windows',
+      brand: 'SailFish',
+      title: 'Your private desktop secretary',
+      subtitle: 'Not just chat — it runs your computer, watches what matters, and reaches out first.',
+      downloadBtn: 'Download',
+      learnBtn: 'See how it works',
+      apiNotice: 'Bring your own AI API · macOS / Windows',
+      imageAlt: 'SailFish desktop interface',
+    },
+    story: {
+      task: {
+        id: 'task',
+        title: 'You assign. It delivers.',
+        body: 'Describe the job. SailFish plans, calls tools, and works through the steps. Tasks stay isolated and can run in parallel.',
+        points: ['Plans and executes', 'Risks need your OK', 'Parallel tasks'],
+        image: '/screenshot-agent-exec.png',
+        imageEn: '/screenshot-agent-exec_en.png',
+        imageAlt: 'SailFish task execution',
       },
-      screenshot: {
-        production: '🖥️ Production Server',
-        test: '📦 Test Environment',
-        dev: '🔧 Dev Machine',
-        aiAssistant: 'AI Assistant',
-        aiMessage: 'Disk usage is 45%, status is good. Recommend regular log cleanup to free up space.',
+      companion: {
+        id: 'companion',
+        title: 'You reach it. It reaches you.',
+        body: 'Desktop, Feishu, DingTalk, WeChat and more share one companion line. When a Watch fires — or it decides you should know — it messages you first.',
+        points: ['One line, many channels', 'Proactive messages', 'Watch and heartbeat'],
+        image: '/screenshot-im.png',
+        imageEn: '/screenshot-im_en.png',
+        imageAlt: 'SailFish remote companion',
       },
+      handsOn: {
+        id: 'hands-on',
+        title: 'A secretary that can act',
+        body: 'Native local terminal and SSH. Files, commands, multi-host work — not just advice about what you should type.',
+        points: ['Local terminal', 'SSH / SFTP', 'Split panes'],
+        image: '/screenshot-host-manager.jpg',
+        imageEn: '/screenshot-host-manager_en.jpg',
+        imageAlt: 'SailFish host and terminal management',
+      },
+    },
+    capabilities: {
+      title: 'And more',
+      subtitle: 'A secretary whose skills can grow',
+      items: [
+        {
+          title: 'Calendar & email',
+          description: 'Schedules, todos, and inbox — core secretary work.',
+          href: '/docs/office/calendar/',
+        },
+        {
+          title: 'Office documents',
+          description: 'Help with Word, spreadsheets, and everyday docs.',
+          href: '/docs/office/word/',
+        },
+        {
+          title: 'Skill Market',
+          description: 'Install skills on demand for specialized jobs.',
+          href: '/skills/',
+        },
+        {
+          title: 'Knowledge & memory',
+          description: 'Remembers your habits and can recall past work.',
+          href: '/docs/ai-advanced/knowledge-base/',
+        },
+      ],
     },
     features: {
       title: 'Powerful Features, Smart & Efficient',
@@ -1062,7 +1149,8 @@ export const translations = {
       ],
     },
     download: {
-      title: 'Download Now',
+      title: 'Install your desktop secretary',
+      subtitle: 'Free download — configure an API and you are ready',
       platforms: {
         macOS: {
           name: 'macOS',

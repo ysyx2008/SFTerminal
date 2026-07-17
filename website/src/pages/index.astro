@@ -2,9 +2,8 @@
 import Layout from '../layouts/Layout.astro';
 import Header from '../components/Header.astro';
 import Hero from '../components/Hero.astro';
-import Features from '../components/Features.astro';
-import Spotlight from '../components/Spotlight.astro';
-import UseCases from '../components/UseCases.astro';
+import HomeStory from '../components/HomeStory.astro';
+import Capabilities from '../components/Capabilities.astro';
 import Download from '../components/Download.astro';
 import Footer from '../components/Footer.astro';
 import LicenseSection from '../components/LicenseSection.astro';
@@ -12,16 +11,14 @@ import LicenseSection from '../components/LicenseSection.astro';
 const lang = 'zh';
 ---
 
-<Layout title="旗鱼 - AI 驱动的智能助手" lang={lang}>
+<Layout title="旗鱼 - 你的私人桌面秘书" lang={lang}>
   <Header lang={lang} />
   <main>
     <Hero lang={lang} />
-    <Features lang={lang} />
-    <Spotlight lang={lang} />
-    <UseCases lang={lang} />
+    <HomeStory lang={lang} />
+    <Capabilities lang={lang} />
     <Download lang={lang} />
   </main>
   <LicenseSection lang={lang} />
   <Footer lang={lang} />
 </Layout>
-

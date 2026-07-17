@@ -8,9 +8,9 @@
   --color-bg-card: rgba(255, 255, 255, 0.95);
 
   /* 强调色 - 更柔和的青蓝渐变 */
-  --color-accent-primary: #0ea5e9;
-  --color-accent-secondary: #3b82f6;
-  --color-accent-tertiary: #8b5cf6;
+  --color-accent-primary: #0f766e;
+  --color-accent-secondary: #0ea5e9;
+  --color-accent-tertiary: #155e75;
 
   /* 文字颜色 - 更好的对比度 */
   --color-text-primary: #1e293b;
@@ -52,9 +52,9 @@
   --color-bg-tertiary: #1a2332;
   --color-bg-card: rgba(26, 35, 50, 0.8);
 
-  --color-accent-primary: #06b6d4;
-  --color-accent-secondary: #3b82f6;
-  --color-accent-tertiary: #8b5cf6;
+  --color-accent-primary: #2dd4bf;
+  --color-accent-secondary: #38bdf8;
+  --color-accent-tertiary: #67e8f9;
 
   --color-text-primary: #f1f5f9;
   --color-text-secondary: #94a3b8;

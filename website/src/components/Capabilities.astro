@@ -1,0 +1,86 @@
+---
+import { useTranslations, localePath, type Lang } from '../i18n/utils';
+import { defaultLanguage } from '../i18n/translations';
+
+interface Props {
+  lang?: Lang;
+}
+
+const { lang = defaultLanguage } = Astro.props;
+const t = useTranslations(lang);
+---
+
+<section class="capabilities" id="capabilities">
+  <div class="container">
+    <h2 class="section-title fade-in">{t.capabilities.title}</h2>
+    <p class="section-subtitle fade-in fade-in-delay-1">{t.capabilities.subtitle}</p>
+    <div class="cap-grid">
+      {t.capabilities.items.map((item) => (
+        <a href={localePath(lang, item.href)} class="cap-item fade-in">
+          <h3>{item.title}</h3>
+          <p>{item.description}</p>
+        </a>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .capabilities {
+    padding: var(--spacing-section) 0;
+    border-top: 1px solid var(--color-border);
+    background: var(--color-bg-secondary);
+  }
+
+  .cap-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--color-border);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    margin-top: 40px;
+  }
+
+  .cap-item {
+    display: block;
+    padding: 28px 24px;
+    background: var(--color-bg-primary);
+    text-decoration: none;
+    transition: background 0.2s ease;
+  }
+
+  .cap-item:hover {
+    background: var(--color-bg-tertiary);
+  }
+
+  .cap-item h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin-bottom: 8px;
+  }
+
+  .cap-item p {
+    font-size: 0.9rem;
+    line-height: 1.55;
+    color: var(--color-text-secondary);
+  }
+
+  @media (max-width: 900px) {
+    .cap-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .cap-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .capabilities {
+      padding: 72px 0;
+    }
+  }
+</style>

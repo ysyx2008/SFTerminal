@@ -1,0 +1,143 @@
+---
+import { useTranslations, type Lang } from '../i18n/utils';
+import { defaultLanguage } from '../i18n/translations';
+
+interface Props {
+  lang?: Lang;
+}
+
+const { lang = defaultLanguage } = Astro.props;
+const t = useTranslations(lang);
+const sections = [t.story.task, t.story.companion, t.story.handsOn];
+---
+
+<section class="home-story" id="how-it-works" aria-label={t.nav.features}>
+  {sections.map((section, index) => {
+    const imageSrc = lang === 'zh' ? section.image : section.imageEn;
+    const reversed = index % 2 === 1;
+    return (
+      <div class:list={['story-block', { reversed }]} id={section.id}>
+        <div class="container story-inner">
+          <div class="story-copy fade-in">
+            <h2 class="story-title">{section.title}</h2>
+            <p class="story-body">{section.body}</p>
+            <ul class="story-points">
+              {section.points.map((point) => (
+                <li>{point}</li>
+              ))}
+            </ul>
+          </div>
+          <div class="story-media fade-in fade-in-delay-1">
+            <img src={imageSrc} alt={section.imageAlt} loading="lazy" />
+          </div>
+        </div>
+      </div>
+    );
+  })}
+</section>
+
+<style>
+  .home-story {
+    background: var(--color-bg-primary);
+  }
+
+  .story-block {
+    padding: var(--spacing-section) 0;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .story-inner {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr;
+    gap: 56px;
+    align-items: center;
+  }
+
+  .story-block.reversed .story-inner {
+    grid-template-columns: 1.15fr 1fr;
+  }
+
+  .story-block.reversed .story-copy {
+    order: 2;
+  }
+
+  .story-block.reversed .story-media {
+    order: 1;
+  }
+
+  .story-title {
+    font-size: clamp(1.75rem, 3vw, 2.25rem);
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    margin-bottom: 16px;
+    color: var(--color-text-primary);
+  }
+
+  .story-body {
+    font-size: 1.0625rem;
+    line-height: 1.7;
+    color: var(--color-text-secondary);
+    margin-bottom: 24px;
+    max-width: 36em;
+  }
+
+  .story-points {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 0;
+    margin: 0;
+  }
+
+  .story-points li {
+    position: relative;
+    padding-left: 18px;
+    font-size: 0.95rem;
+    color: var(--color-text-primary);
+    font-weight: 500;
+  }
+
+  .story-points li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.55em;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-accent-primary);
+  }
+
+  .story-media {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--color-bg-secondary);
+    box-shadow: var(--shadow-card);
+  }
+
+  .story-media img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  @media (max-width: 900px) {
+    .story-inner,
+    .story-block.reversed .story-inner {
+      grid-template-columns: 1fr;
+      gap: 28px;
+    }
+
+    .story-block.reversed .story-copy,
+    .story-block.reversed .story-media {
+      order: unset;
+    }
+
+    .story-block {
+      padding: 72px 0;
+    }
+  }
+</style>

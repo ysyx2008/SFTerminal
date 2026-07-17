@@ -11,7 +11,7 @@ interface Props {
 const { title, description, lang } = Astro.props;
 const currentLang = lang || getLangFromUrl(Astro.url);
 const t = useTranslations(currentLang);
-const pageDescription = description || (currentLang === 'zh' ? '旗鱼 AI Agent —— 通过桌面端、飞书、钉钉随时与 AI 对话，自动执行任务' : 'SailFish AI Agent — chat with AI via desktop, Feishu, DingTalk to automate tasks');
+const pageDescription = description || (currentLang === 'zh' ? '旗鱼 —— 你的私人桌面秘书。能操作电脑、主动盯事、主动找你。' : 'SailFish — your private desktop secretary. It runs your computer, watches what matters, and reaches out first.');
 ---
 
 <!doctype html>
@@ -20,7 +20,7 @@ const pageDescription = description || (currentLang === 'zh' ? '旗鱼 AI Agent 
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={pageDescription} />
-    <meta name="keywords" content={currentLang === 'zh' ? '旗鱼, AI Agent, AI助手, SSH客户端, 飞书机器人, 钉钉机器人, MCP, 运维工具' : 'SailFish, AI Agent, AI Assistant, SSH Client, Feishu Bot, DingTalk Bot, MCP, DevOps Tools'} />
+    <meta name="keywords" content={currentLang === 'zh' ? '旗鱼, 私人桌面秘书, AI秘书, 桌面Agent, SSH, 飞书, 钉钉' : 'SailFish, desktop secretary, AI agent, SSH, Feishu, DingTalk'} />
     <meta name="author" content="旗鱼" />
     
     <!-- Open Graph -->
