@@ -2,10 +2,10 @@
 /**
  * 关切运营总览仪表盘
  *
- * 在「关切」tab 列表里选中「总览」虚拟项时显示。
+ * 作为 WatchPanel 左侧「总览」独立页展示。
  * 一屏看清：异常关切 → 运行中 → 即将执行 → 最近流水。
  *
- * 本组件不发起 IPC 调用，全部数据由父组件 Awaken.vue 注入。
+ * 本组件不发起 IPC 调用，全部数据由父组件 WatchPanel 注入。
  */
 
 import { computed, onMounted, onUnmounted, ref } from 'vue'

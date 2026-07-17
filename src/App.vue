@@ -1132,11 +1132,11 @@ const openSmartPatrolFromWelcome = () => {
   showSmartPatrol.value = true
 }
 
-// 从欢迎页打开独立关切面板（默认 watches tab → 总览视图）
+// 从欢迎页打开独立关切面板（默认进运营总览页）
 const openWatchesFromWelcome = () => {
   if (!canShowWatch) return
   showAwaken.value = false
-  watchPanelInitialTab.value = 'watches'
+  watchPanelInitialTab.value = 'overview'
   showWatchPanel.value = true
 }
 

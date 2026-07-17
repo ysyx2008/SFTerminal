@@ -43,11 +43,11 @@ interface WatchTemplateInfo {
 
 // ==================== Navigation ====================
 
-type NavTab = 'watches' | 'templates' | 'watchHistory'
+type NavTab = 'overview' | 'watches' | 'templates' | 'watchHistory'
 
-const VALID_TABS: NavTab[] = ['watches', 'templates', 'watchHistory']
+const VALID_TABS: NavTab[] = ['overview', 'watches', 'templates', 'watchHistory']
 const LAST_TAB_STORAGE_KEY = 'sfterm-watch-panel-last-tab'
-const DEFAULT_TAB: NavTab = 'watches'
+const DEFAULT_TAB: NavTab = 'overview'
 
 function readLastTab(): NavTab {
   try {
@@ -64,10 +64,7 @@ const activeTab = ref<NavTab>(
 )
 
 function switchTab(tab: NavTab, onSwitch?: () => void) {
-  // 离开关切 tab 时关掉流水叠层，避免状态悬空
-  if (activeTab.value === 'watches' && tab !== 'watches' && historyDetailInOverlay.value) {
-    closeHistoryDetail()
-  }
+  if (historyDetailInOverlay.value) closeHistoryDetail()
   activeTab.value = tab
   if (tab === 'watchHistory') historyFilter.value = 'watch'
   try { localStorage.setItem(LAST_TAB_STORAGE_KEY, tab) } catch { /* ignore quota */ }
@@ -85,9 +82,7 @@ const historyLoadingMore = ref(false)
 const historyFilter = ref<'watch'>('watch')
 const loading = ref(true)
 const selectedWatch = ref<WatchDefinition | null>(null)
-// 关切 tab 右侧详情区的两种渲染模式：'overview' = 运营仪表盘；'watch' = 单个关切详情
-const selectedView = ref<'overview' | 'watch'>('overview')
-/** 关切 tab 内查看流水详情（叠层），不切到 watchHistory tab */
+/** 总览 / 关切页内查看流水详情（叠层），不切到 watchHistory tab */
 const historyDetailInOverlay = ref(false)
 const runningWatches = ref<Set<string>>(new Set())
 
@@ -406,8 +401,6 @@ const filteredWatches = computed<WatchDefinition[]>(() => {
 watch(() => userWatches.value, (list) => {
   if (selectedWatch.value && !list.some(w => w.id === selectedWatch.value!.id)) {
     selectedWatch.value = null
-    // 选中的 watch 被删/筛掉时，回到总览视图
-    selectedView.value = 'overview'
   }
 })
 
@@ -422,25 +415,27 @@ const selectWatch = (w: WatchDefinition) => {
   }
   historyDetailInOverlay.value = false
   selectedWatch.value = w
-  selectedView.value = 'watch'
+  if (activeTab.value !== 'watches') {
+    activeTab.value = 'watches'
+    try { localStorage.setItem(LAST_TAB_STORAGE_KEY, 'watches') } catch { /* ignore */ }
+  }
   loadWatchRecentHistory(w.id)
 }
 
 const selectOverview = () => {
   if (editing.value) cancelEditing()
   historyDetailInOverlay.value = false
-  selectedWatch.value = null
-  selectedView.value = 'overview'
+  switchTab('overview')
 }
 
-/** 总览异常徽章：左栏筛到异常，并打开最近失败的一条 */
+/** 总览异常徽章：切到关切列表筛异常，并打开最近失败的一条 */
 const focusAnomalies = () => {
   statusFilter.value = 'error'
   const sorted = userWatches.value
     .filter(w => w.enabled && watchStatusOf(w) === 'error')
     .sort((a, b) => (b.lastRun?.at ?? 0) - (a.lastRun?.at ?? 0))
   if (sorted[0]) selectWatch(sorted[0])
-  else selectOverview()
+  else switchTab('watches')
 }
 
 // 当前关切的最近运行历史（详情页内嵌时间线）
@@ -609,10 +604,7 @@ const markWatchCompleted = (watchId: string) => {
 const deleteWatch = async (w: WatchDefinition) => {
   if (!confirm(t('watch.confirmDelete', { name: w.name }))) return
   await window.electronAPI.watch.delete(w.id)
-  if (selectedWatch.value?.id === w.id) {
-    selectedWatch.value = null
-    selectedView.value = 'overview'
-  }
+  if (selectedWatch.value?.id === w.id) selectedWatch.value = null
   await loadWatchData()
 }
 
@@ -624,7 +616,8 @@ const clearWatchHistory = async () => {
 }
 
 const viewHistoryDetail = async (record: WatchHistoryRecord) => {
-  if (activeTab.value === 'watches') {
+  // 总览 / 关切页内用叠层；其它入口切到历史 tab
+  if (activeTab.value === 'overview' || activeTab.value === 'watches') {
     historyDetailInOverlay.value = true
   } else {
     historyDetailInOverlay.value = false
@@ -778,6 +771,11 @@ onUnmounted(() => {
       <div class="panel-body">
         <nav class="panel-nav">
           <div class="nav-group">
+            <button class="nav-item" :class="{ active: activeTab === 'overview' }" @click="switchTab('overview')">
+              <LayoutGrid :size="16" />
+              <span>{{ t('watch.overviewTitle') }}</span>
+              <span v-if="errorCount > 0" class="nav-badge nav-badge-error" :title="t('watch.errorCountBadge', { n: errorCount })">{{ errorCount }}</span>
+            </button>
             <button class="nav-item" :class="{ active: activeTab === 'watches' }" @click="switchTab('watches')">
               <Eye :size="16" />
               <span>{{ t('watch.watches') }}</span>
@@ -797,6 +795,35 @@ onUnmounted(() => {
         <!-- Content Area -->
         <div class="panel-content">
 
+          <!-- ===================== 运营总览（独立页） ===================== -->
+          <template v-if="activeTab === 'overview'">
+            <div class="content-page">
+              <WatchHistoryDetailView
+                v-if="historyDetailInOverlay && selectedHistoryRecord"
+                :record="selectedHistoryRecord"
+                :loading="historyDetailLoading"
+                :steps="historyDetailSteps"
+                :user-task="historyDetailUserTask"
+                :back-label="t('watch.backToOverview')"
+                @back="closeHistoryDetail"
+              />
+              <WatchOverviewPanel
+                v-else
+                :watches="userWatches"
+                :history="watchHistory"
+                :running-watches="runningWatches"
+                @select-watch="(id) => { const w = userWatches.find(x => x.id === id); if (w) selectWatch(w) }"
+                @view-history-detail="viewHistoryDetail"
+                @retry-watch="(id) => { const w = userWatches.find(x => x.id === id); if (w) triggerWatch(w) }"
+                @disable-watch="disableWatchById"
+                @cancel-watch="cancelWatchById"
+                @focus-anomalies="focusAnomalies"
+                @view-all-history="() => switchTab('watchHistory', loadWatchData)"
+                @go-templates="() => switchTab('templates', loadTemplates)"
+              />
+            </div>
+          </template>
+
           <!-- ===================== 关切列表 ===================== -->
           <template v-if="activeTab === 'watches'">
             <div class="content-page master-detail-page">
@@ -809,7 +836,7 @@ onUnmounted(() => {
                   </button>
                 </div>
 
-                <!-- 状态汇总条（点击筛选下方真实关切列表，总览虚拟项不受影响） -->
+                <!-- 状态汇总条 -->
                 <div class="status-summary" v-if="userWatches.length > 0">
                   <button class="status-chip" :class="{ active: statusFilter === 'all' }" @click="setStatusFilter('all')" :title="t('watch.filterAll')">
                     <span class="chip-label">{{ t('watch.filterAll') }}</span>
@@ -834,21 +861,7 @@ onUnmounted(() => {
                 </div>
 
                 <div class="item-list">
-                  <!-- 总览虚拟项：选中后右侧渲染运营仪表盘 -->
-                  <div
-                    class="list-item list-item-overview"
-                    :class="{ active: selectedView === 'overview' }"
-                    @click="selectOverview"
-                  >
-                    <div class="overview-icon"><LayoutGrid :size="14" /></div>
-                    <div class="item-info">
-                      <div class="item-name">{{ t('watch.overviewTitle') }}</div>
-                    </div>
-                    <span v-if="errorCount > 0" class="overview-badge" :title="t('watch.errorCountBadge', { n: errorCount })">{{ errorCount }}</span>
-                  </div>
-                  <div class="overview-divider" v-if="userWatches.length > 0"></div>
-
-                  <div v-for="w in filteredWatches" :key="w.id" class="list-item" :class="{ active: selectedView === 'watch' && selectedWatch?.id === w.id, disabled: !w.enabled, running: runningWatches.has(w.id) }" @click="selectWatch(w)">
+                  <div v-for="w in filteredWatches" :key="w.id" class="list-item" :class="{ active: selectedWatch?.id === w.id, disabled: !w.enabled, running: runningWatches.has(w.id) }" @click="selectWatch(w)">
                     <button class="btn-toggle" :class="{ enabled: w.enabled }" @click.stop="toggleWatch(w)">
                       <span class="toggle-dot"></span>
                     </button>
@@ -879,30 +892,14 @@ onUnmounted(() => {
 
               <!-- Watch Detail -->
               <div class="detail-area">
-                <!-- 关切 tab 内流水叠层：不切走 watchHistory -->
                 <WatchHistoryDetailView
                   v-if="historyDetailInOverlay && selectedHistoryRecord"
                   :record="selectedHistoryRecord"
                   :loading="historyDetailLoading"
                   :steps="historyDetailSteps"
                   :user-task="historyDetailUserTask"
-                  :back-label="selectedView === 'overview' ? t('watch.backToOverview') : t('watch.backToWatch')"
+                  :back-label="t('watch.backToWatch')"
                   @back="closeHistoryDetail"
-                />
-                <!-- 总览仪表盘（默认） -->
-                <WatchOverviewPanel
-                  v-else-if="selectedView === 'overview'"
-                  :watches="userWatches"
-                  :history="watchHistory"
-                  :running-watches="runningWatches"
-                  @select-watch="(id) => { const w = userWatches.find(x => x.id === id); if (w) selectWatch(w) }"
-                  @view-history-detail="viewHistoryDetail"
-                  @retry-watch="(id) => { const w = userWatches.find(x => x.id === id); if (w) triggerWatch(w) }"
-                  @disable-watch="disableWatchById"
-                  @cancel-watch="cancelWatchById"
-                  @focus-anomalies="focusAnomalies"
-                  @view-all-history="() => switchTab('watchHistory', loadWatchData)"
-                  @go-templates="() => switchTab('templates', loadTemplates)"
                 />
                 <template v-else-if="selectedWatch">
                   <div class="detail-header">
@@ -2054,30 +2051,13 @@ onUnmounted(() => {
   50%      { opacity: 0.35; }
 }
 
-/* 总览虚拟项 */
-.list-item-overview { gap: 8px; }
-.overview-icon {
-  width: 22px; height: 22px;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--accent-primary);
-  flex-shrink: 0;
-}
-.overview-badge {
+.nav-badge-error {
   background: var(--status-error, #c0392b);
   color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 9px;
-  min-width: 18px;
-  text-align: center;
-  flex-shrink: 0;
 }
-.overview-divider {
-  height: 1px;
-  background: var(--border-color);
-  margin: 4px 4px 6px 4px;
-  opacity: 0.6;
+.nav-item.active .nav-badge-error {
+  background: rgba(255, 255, 255, 0.25);
+  color: inherit;
 }
 .empty-state-list {
   padding: 24px 12px;
