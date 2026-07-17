@@ -1,6 +1,8 @@
 /**
- * 本地待办 JSON store
+ * 本地待办服务（TodoService）
  * 路径：{userData}/agent-workspace/TODO.json
+ *
+ * 主进程完整门面：读写 / CRUD / 事件。IPC 与 JSON 仍使用 plain TodoItem。
  */
 import * as fs from 'fs'
 import * as path from 'path'
@@ -12,7 +14,7 @@ import { LEGACY_TODO_MD, TODO_FILENAME } from './migration-marker'
 
 export { LEGACY_TODO_MD, TODO_FILENAME } from './migration-marker'
 
-const log = createLogger('TodoStore')
+const log = createLogger('TodoService')
 
 export const LEGACY_TODO_MD_HINT =
   '注意：工作空间仍有旧版 TODO.md。请用 read_file 阅读后，用 todo_create 逐条写入结构化待办；勿用 shell 删改 TODO.md（备份由程序处理）。迁完后把 migrations/todo-md.json 写成 status=done（该目录免确认）。'
@@ -20,161 +22,418 @@ export const LEGACY_TODO_MD_HINT =
 const VALID_STATUSES: TodoStatus[] = ['pending', 'in_progress', 'completed', 'cancelled']
 const VALID_PRIORITIES: TodoPriority[] = ['low', 'normal', 'high', 'urgent']
 
-let writeQueue: Promise<void> = Promise.resolve()
+const PRIORITY_RANK: Record<TodoPriority, number> = {
+  urgent: 0,
+  high: 1,
+  normal: 2,
+  low: 3,
+}
 
-type ChangeListener = () => void
-const changeListeners = new Set<ChangeListener>()
+export type TodoChangeListener = () => void
 
-/** 注册 TODO.json 写入成功后的监听（IPC 广播 / 测试用） */
-export function onTodoStoreChanged(listener: ChangeListener): () => void {
-  changeListeners.add(listener)
-  return () => {
-    changeListeners.delete(listener)
+export interface TodoListFilter {
+  /** 精确状态；`all` = 全部；缺省且未设 includeDone = 仅 pending/in_progress */
+  status?: TodoStatus | 'all'
+  includeDone?: boolean
+}
+
+export interface TodoCreateInput {
+  title: string
+  description?: string
+  status?: TodoStatus
+  priority?: TodoPriority
+  dueDate?: string
+  tags?: string[]
+}
+
+export type TodoUpdatePatch = {
+  title?: string
+  description?: string | null
+  status?: TodoStatus
+  priority?: TodoPriority | null
+  dueDate?: string | null
+  tags?: string[] | null
+}
+
+/**
+ * 待办领域门面：落盘 + 列表筛选 + CRUD + 变更通知。
+ * 单例见 getTodoService()。
+ */
+export class TodoService {
+  private writeQueue: Promise<void> = Promise.resolve()
+  private readonly changeListeners = new Set<TodoChangeListener>()
+
+  /** 注册 TODO.json 写入成功后的监听（IPC 广播 / 测试用） */
+  onChanged(listener: TodoChangeListener): () => void {
+    this.changeListeners.add(listener)
+    return () => {
+      this.changeListeners.delete(listener)
+    }
+  }
+
+  private notifyChanged(): void {
+    for (const listener of this.changeListeners) {
+      try {
+        listener()
+      } catch (e) {
+        log.warn('Todo service change listener failed:', e)
+      }
+    }
+  }
+
+  getPath(): string {
+    return path.join(getWorkspacePath(), TODO_FILENAME)
+  }
+
+  getLegacyTodoMdPath(): string {
+    return path.join(getWorkspacePath(), LEGACY_TODO_MD)
+  }
+
+  hasLegacyTodoMd(): boolean {
+    try {
+      return fs.existsSync(this.getLegacyTodoMdPath())
+    } catch {
+      return false
+    }
+  }
+
+  emptyStore(): TodoStoreData {
+    return { version: 1, todos: [], updatedAt: Date.now() }
+  }
+
+  normalizeStore(raw: unknown): TodoStoreData {
+    if (!raw || typeof raw !== 'object') return this.emptyStore()
+    const obj = raw as Record<string, unknown>
+    const todosRaw = Array.isArray(obj.todos) ? obj.todos : []
+    const todos: TodoItem[] = []
+
+    for (const item of todosRaw) {
+      if (!item || typeof item !== 'object') continue
+      const t = item as Record<string, unknown>
+      const title = typeof t.title === 'string' ? t.title.trim() : ''
+      if (!title) continue
+
+      const now = new Date().toISOString()
+      const status = VALID_STATUSES.includes(t.status as TodoStatus)
+        ? (t.status as TodoStatus)
+        : 'pending'
+      const priority = VALID_PRIORITIES.includes(t.priority as TodoPriority)
+        ? (t.priority as TodoPriority)
+        : undefined
+
+      const createdAt = typeof t.createdAt === 'string' && t.createdAt ? t.createdAt : now
+      const updatedAt = typeof t.updatedAt === 'string' && t.updatedAt ? t.updatedAt : createdAt
+
+      const todo: TodoItem = {
+        id: typeof t.id === 'string' && t.id ? t.id : randomUUID(),
+        title,
+        status,
+        createdAt,
+        updatedAt,
+      }
+      if (typeof t.description === 'string' && t.description) todo.description = t.description
+      if (priority) todo.priority = priority
+      if (typeof t.dueDate === 'string' && t.dueDate) todo.dueDate = t.dueDate
+      if (status === 'completed') {
+        todo.completedAt =
+          typeof t.completedAt === 'string' && t.completedAt ? t.completedAt : updatedAt
+      }
+      if (Array.isArray(t.tags)) {
+        const tags = t.tags.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+        if (tags.length > 0) todo.tags = tags
+      }
+      todos.push(todo)
+    }
+
+    return {
+      version: 1,
+      todos,
+      updatedAt: typeof obj.updatedAt === 'number' ? obj.updatedAt : Date.now(),
+    }
+  }
+
+  /** 读 TODO.json；不存在或坏 JSON → 空 store（不抛错） */
+  load(): TodoStoreData {
+    const filePath = this.getPath()
+    try {
+      if (!fs.existsSync(filePath)) return this.emptyStore()
+      const raw = fs.readFileSync(filePath, 'utf-8')
+      if (!raw.trim()) return this.emptyStore()
+      return this.normalizeStore(JSON.parse(raw))
+    } catch (e) {
+      log.warn('Failed to load TODO.json, falling back to empty store:', e)
+      return this.emptyStore()
+    }
+  }
+
+  /** 原子写入（.tmp + rename），进程内串行化 */
+  async save(store: TodoStoreData): Promise<void> {
+    const next = this.writeQueue.then(() => this.writeSync(store))
+    this.writeQueue = next.catch((err) => {
+      log.warn('TODO.json write failed in queue:', err)
+    })
+    await next
+  }
+
+  /**
+   * 在写队列内原子读-改-写，避免 Agent 工具与面板 IPC 并发丢条目。
+   * 通知在 rename 成功后、save/mutate Promise resolve 前发出（文件已落地）。
+   */
+  async mutate<T>(mutator: (store: TodoStoreData) => T): Promise<T> {
+    const next = this.writeQueue.then(() => {
+      const store = this.load()
+      const result = mutator(store)
+      this.writeSync(store)
+      return result
+    })
+    this.writeQueue = next.then(
+      () => undefined,
+      (err) => {
+        log.warn('TODO.json mutate failed in queue:', err)
+      }
+    )
+    return next
+  }
+
+  private writeSync(store: TodoStoreData): void {
+    const workspace = getWorkspacePath()
+    fs.mkdirSync(workspace, { recursive: true })
+    const filePath = this.getPath()
+    const tmpPath = `${filePath}.${process.pid}.tmp`
+    const payload: TodoStoreData = {
+      version: 1,
+      todos: store.todos,
+      updatedAt: Date.now(),
+    }
+    fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), 'utf-8')
+    fs.renameSync(tmpPath, filePath)
+    this.notifyChanged()
+  }
+
+  createItem(input: {
+    title: string
+    description?: string
+    status?: TodoStatus
+    priority?: TodoPriority
+    dueDate?: string
+    tags?: string[]
+  }): TodoItem {
+    const now = new Date().toISOString()
+    const status = input.status && VALID_STATUSES.includes(input.status) ? input.status : 'pending'
+    const item: TodoItem = {
+      id: randomUUID(),
+      title: input.title.trim(),
+      status,
+      createdAt: now,
+      updatedAt: now,
+    }
+    if (input.description?.trim()) item.description = input.description.trim()
+    if (input.priority && VALID_PRIORITIES.includes(input.priority)) item.priority = input.priority
+    if (input.dueDate?.trim()) item.dueDate = input.dueDate.trim()
+    if (input.tags?.length) {
+      item.tags = input.tags.filter(t => typeof t === 'string' && t.trim()).map(t => t.trim())
+    }
+    if (status === 'completed') item.completedAt = now
+    return item
+  }
+
+  applyUpdate(
+    item: TodoItem,
+    patch: {
+      title?: string
+      description?: string | null
+      status?: TodoStatus
+      priority?: TodoPriority | null
+      dueDate?: string | null
+      tags?: string[] | null
+    }
+  ): TodoItem {
+    const next: TodoItem = { ...item }
+    if (typeof patch.title === 'string' && patch.title.trim()) {
+      next.title = patch.title.trim()
+    }
+    if (patch.description === null) {
+      delete next.description
+    } else if (typeof patch.description === 'string') {
+      next.description = patch.description.trim() || undefined
+      if (!next.description) delete next.description
+    }
+    if (patch.priority === null) {
+      delete next.priority
+    } else if (patch.priority && VALID_PRIORITIES.includes(patch.priority)) {
+      next.priority = patch.priority
+    }
+    if (patch.dueDate === null) {
+      delete next.dueDate
+    } else if (typeof patch.dueDate === 'string') {
+      const d = patch.dueDate.trim()
+      if (d) next.dueDate = d
+      else delete next.dueDate
+    }
+    if (patch.tags === null) {
+      delete next.tags
+    } else if (Array.isArray(patch.tags)) {
+      const tags = patch.tags.filter(t => typeof t === 'string' && t.trim()).map(t => t.trim())
+      if (tags.length > 0) next.tags = tags
+      else delete next.tags
+    }
+    if (patch.status && VALID_STATUSES.includes(patch.status)) {
+      const prev = next.status
+      next.status = patch.status
+      if (patch.status === 'completed' && prev !== 'completed') {
+        next.completedAt = new Date().toISOString()
+      } else if (patch.status !== 'completed') {
+        delete next.completedAt
+      }
+    }
+    next.updatedAt = new Date().toISOString()
+    return next
+  }
+
+  private sortTodos(items: TodoItem[]): TodoItem[] {
+    const isDone = (t: TodoItem) => t.status === 'completed' || t.status === 'cancelled'
+    const active = items.filter(t => !isDone(t))
+    const done = items.filter(isDone)
+
+    active.sort((a, b) => {
+      if (a.dueDate && b.dueDate) {
+        const cmp = a.dueDate.localeCompare(b.dueDate)
+        if (cmp !== 0) return cmp
+      } else if (a.dueDate) return -1
+      else if (b.dueDate) return 1
+
+      const ra = a.priority ? PRIORITY_RANK[a.priority] : 99
+      const rb = b.priority ? PRIORITY_RANK[b.priority] : 99
+      if (ra !== rb) return ra - rb
+      return a.createdAt.localeCompare(b.createdAt)
+    })
+
+    done.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    return [...active, ...done]
+  }
+
+  list(filter: TodoListFilter = {}): TodoItem[] {
+    let items = [...this.load().todos]
+    const { status, includeDone } = filter
+
+    if (status && status !== 'all') {
+      items = items.filter(t => t.status === status)
+    } else if (!includeDone) {
+      items = items.filter(t => t.status === 'pending' || t.status === 'in_progress')
+    }
+
+    return this.sortTodos(items)
+  }
+
+  /** 未完成且 dueDate 早于当前时刻的条数（Tab 逾期提示） */
+  countOverdue(now = new Date()): number {
+    const iso = now.toISOString()
+    return this.load().todos.filter(
+      t =>
+        (t.status === 'pending' || t.status === 'in_progress') &&
+        !!t.dueDate &&
+        t.dueDate < iso
+    ).length
+  }
+
+  async create(input: TodoCreateInput): Promise<TodoItem> {
+    const title = input.title?.trim()
+    if (!title) throw new Error('title is required')
+
+    const item = this.createItem({
+      title,
+      description: input.description,
+      status: input.status,
+      priority: input.priority,
+      dueDate: input.dueDate,
+      tags: input.tags,
+    })
+    await this.mutate(store => {
+      store.todos.push(item)
+    })
+    return item
+  }
+
+  async update(id: string, patch: TodoUpdatePatch): Promise<TodoItem | null> {
+    if (!id) throw new Error('id is required')
+    return this.mutate(store => {
+      const idx = store.todos.findIndex(t => t.id === id)
+      if (idx < 0) return null
+      const updated = this.applyUpdate(store.todos[idx], patch)
+      store.todos[idx] = updated
+      return updated
+    })
+  }
+
+  async complete(id: string): Promise<TodoItem | null> {
+    return this.update(id, { status: 'completed' })
+  }
+
+  async delete(id: string): Promise<boolean> {
+    if (!id) throw new Error('id is required')
+    return this.mutate(store => {
+      const before = store.todos.length
+      store.todos = store.todos.filter(t => t.id !== id)
+      return store.todos.length < before
+    })
+  }
+
+  /** 测试用：清空写队列（vitest） */
+  resetWriteQueueForTest(): void {
+    this.writeQueue = Promise.resolve()
   }
 }
 
-function notifyStoreChanged(): void {
-  for (const listener of changeListeners) {
-    try {
-      listener()
-    } catch (e) {
-      log.warn('Todo store change listener failed:', e)
-    }
-  }
+// —— 单例 ——
+
+let instance: TodoService | null = null
+
+export function getTodoService(): TodoService {
+  if (!instance) instance = new TodoService()
+  return instance
+}
+
+/** @internal 测试用：重置单例 */
+export function resetTodoServiceForTest(): void {
+  instance = null
+}
+
+// —— 兼容导出（委托单例，调用方可不改 import） ——
+
+export function onTodoStoreChanged(listener: TodoChangeListener): () => void {
+  return getTodoService().onChanged(listener)
 }
 
 export function getTodoStorePath(): string {
-  return path.join(getWorkspacePath(), TODO_FILENAME)
+  return getTodoService().getPath()
 }
 
 export function getLegacyTodoMdPath(): string {
-  return path.join(getWorkspacePath(), LEGACY_TODO_MD)
+  return getTodoService().getLegacyTodoMdPath()
 }
 
 export function hasLegacyTodoMd(): boolean {
-  try {
-    return fs.existsSync(getLegacyTodoMdPath())
-  } catch {
-    return false
-  }
+  return getTodoService().hasLegacyTodoMd()
 }
 
 export function emptyStore(): TodoStoreData {
-  return { version: 1, todos: [], updatedAt: Date.now() }
+  return getTodoService().emptyStore()
 }
 
 export function normalizeStore(raw: unknown): TodoStoreData {
-  if (!raw || typeof raw !== 'object') return emptyStore()
-  const obj = raw as Record<string, unknown>
-  const todosRaw = Array.isArray(obj.todos) ? obj.todos : []
-  const todos: TodoItem[] = []
-
-  for (const item of todosRaw) {
-    if (!item || typeof item !== 'object') continue
-    const t = item as Record<string, unknown>
-    const title = typeof t.title === 'string' ? t.title.trim() : ''
-    if (!title) continue
-
-    const now = new Date().toISOString()
-    const status = VALID_STATUSES.includes(t.status as TodoStatus)
-      ? (t.status as TodoStatus)
-      : 'pending'
-    const priority = VALID_PRIORITIES.includes(t.priority as TodoPriority)
-      ? (t.priority as TodoPriority)
-      : undefined
-
-    const createdAt = typeof t.createdAt === 'string' && t.createdAt ? t.createdAt : now
-    const updatedAt = typeof t.updatedAt === 'string' && t.updatedAt ? t.updatedAt : createdAt
-
-    const todo: TodoItem = {
-      id: typeof t.id === 'string' && t.id ? t.id : randomUUID(),
-      title,
-      status,
-      createdAt,
-      updatedAt,
-    }
-    if (typeof t.description === 'string' && t.description) todo.description = t.description
-    if (priority) todo.priority = priority
-    if (typeof t.dueDate === 'string' && t.dueDate) todo.dueDate = t.dueDate
-    if (status === 'completed') {
-      todo.completedAt =
-        typeof t.completedAt === 'string' && t.completedAt ? t.completedAt : updatedAt
-    }
-    if (Array.isArray(t.tags)) {
-      const tags = t.tags.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
-      if (tags.length > 0) todo.tags = tags
-    }
-    todos.push(todo)
-  }
-
-  return {
-    version: 1,
-    todos,
-    updatedAt: typeof obj.updatedAt === 'number' ? obj.updatedAt : Date.now(),
-  }
+  return getTodoService().normalizeStore(raw)
 }
 
-/**
- * 读 TODO.json；不存在或坏 JSON → 空 store（不抛错）
- */
 export function loadStore(): TodoStoreData {
-  const filePath = getTodoStorePath()
-  try {
-    if (!fs.existsSync(filePath)) return emptyStore()
-    const raw = fs.readFileSync(filePath, 'utf-8')
-    if (!raw.trim()) return emptyStore()
-    return normalizeStore(JSON.parse(raw))
-  } catch (e) {
-    log.warn('Failed to load TODO.json, falling back to empty store:', e)
-    return emptyStore()
-  }
+  return getTodoService().load()
 }
 
-/**
- * 原子写入（.tmp + rename），进程内串行化
- */
 export async function saveStore(store: TodoStoreData): Promise<void> {
-  const next = writeQueue.then(() => writeStoreSync(store))
-  // 保持队列不永久卡死；错误仍通过 await next 向上抛给调用方
-  writeQueue = next.catch((err) => {
-    log.warn('TODO.json write failed in queue:', err)
-  })
-  await next
+  return getTodoService().save(store)
 }
 
-/**
- * 在写队列内原子读-改-写，避免 Agent 工具与面板 IPC 并发丢条目。
- * 通知在 rename 成功后、save/mutate Promise resolve 前发出（文件已落地）。
- */
 export async function mutateStore<T>(mutator: (store: TodoStoreData) => T): Promise<T> {
-  const next = writeQueue.then(() => {
-    const store = loadStore()
-    const result = mutator(store)
-    writeStoreSync(store)
-    return result
-  })
-  writeQueue = next.then(
-    () => undefined,
-    (err) => {
-      log.warn('TODO.json mutate failed in queue:', err)
-    }
-  )
-  return next
-}
-
-function writeStoreSync(store: TodoStoreData): void {
-  const workspace = getWorkspacePath()
-  fs.mkdirSync(workspace, { recursive: true })
-  const filePath = getTodoStorePath()
-  const tmpPath = `${filePath}.${process.pid}.tmp`
-  const payload: TodoStoreData = {
-    version: 1,
-    todos: store.todos,
-    updatedAt: Date.now(),
-  }
-  fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), 'utf-8')
-  fs.renameSync(tmpPath, filePath)
-  notifyStoreChanged()
+  return getTodoService().mutate(mutator)
 }
 
 export function createTodoItem(input: {
@@ -185,23 +444,7 @@ export function createTodoItem(input: {
   dueDate?: string
   tags?: string[]
 }): TodoItem {
-  const now = new Date().toISOString()
-  const status = input.status && VALID_STATUSES.includes(input.status) ? input.status : 'pending'
-  const item: TodoItem = {
-    id: randomUUID(),
-    title: input.title.trim(),
-    status,
-    createdAt: now,
-    updatedAt: now,
-  }
-  if (input.description?.trim()) item.description = input.description.trim()
-  if (input.priority && VALID_PRIORITIES.includes(input.priority)) item.priority = input.priority
-  if (input.dueDate?.trim()) item.dueDate = input.dueDate.trim()
-  if (input.tags?.length) {
-    item.tags = input.tags.filter(t => typeof t === 'string' && t.trim()).map(t => t.trim())
-  }
-  if (status === 'completed') item.completedAt = now
-  return item
+  return getTodoService().createItem(input)
 }
 
 export function applyTodoUpdate(
@@ -215,49 +458,9 @@ export function applyTodoUpdate(
     tags?: string[] | null
   }
 ): TodoItem {
-  const next: TodoItem = { ...item }
-  if (typeof patch.title === 'string' && patch.title.trim()) {
-    next.title = patch.title.trim()
-  }
-  if (patch.description === null) {
-    delete next.description
-  } else if (typeof patch.description === 'string') {
-    next.description = patch.description.trim() || undefined
-    if (!next.description) delete next.description
-  }
-  if (patch.priority === null) {
-    delete next.priority
-  } else if (patch.priority && VALID_PRIORITIES.includes(patch.priority)) {
-    next.priority = patch.priority
-  }
-  if (patch.dueDate === null) {
-    delete next.dueDate
-  } else if (typeof patch.dueDate === 'string') {
-    const d = patch.dueDate.trim()
-    if (d) next.dueDate = d
-    else delete next.dueDate
-  }
-  if (patch.tags === null) {
-    delete next.tags
-  } else if (Array.isArray(patch.tags)) {
-    const tags = patch.tags.filter(t => typeof t === 'string' && t.trim()).map(t => t.trim())
-    if (tags.length > 0) next.tags = tags
-    else delete next.tags
-  }
-  if (patch.status && VALID_STATUSES.includes(patch.status)) {
-    const prev = next.status
-    next.status = patch.status
-    if (patch.status === 'completed' && prev !== 'completed') {
-      next.completedAt = new Date().toISOString()
-    } else if (patch.status !== 'completed') {
-      delete next.completedAt
-    }
-  }
-  next.updatedAt = new Date().toISOString()
-  return next
+  return getTodoService().applyUpdate(item, patch)
 }
 
-/** 测试用：清空写队列（vitest） */
 export function resetWriteQueueForTest(): void {
-  writeQueue = Promise.resolve()
+  getTodoService().resetWriteQueueForTest()
 }
