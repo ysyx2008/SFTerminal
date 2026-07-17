@@ -315,7 +315,8 @@ export const useTerminalStore = defineStore('terminal', () => {
   })
   /**
    * Hub（首页视图）主区当前聚焦的本地助手会话 tab。
-   * 仅在 activeTabId 为空（首页视图）时生效：有值 → 主区显示该会话，为空 → 显示欢迎页。
+   * 仅在任务区（activeTabId 为空且非待办面）时主区渲染该会话；为空 → 显示欢迎页。
+   * 切到联络 / 待办时**保留**此 id，切回任务区可恢复；goToHome / clearHubFocus 才清空。
    * 已提升为独立 tab（isPromoted）或远程助手不走此焦点。
    */
   const hubFocusedAssistantTabId = ref<string>('')
@@ -1320,11 +1321,10 @@ export const useTerminalStore = defineStore('terminal', () => {
     requestAssistantComposerFocus(hubId)
   }
 
-  /** 打开待办固定面（与联络并列的伪 Tab，非 Agent 会话） */
+  /** 打开待办固定面（与联络并列的伪 Tab，非 Agent 会话）；保留 Hub 焦点，切回任务区可恢复 */
   function openTodos(): void {
     todosActive.value = true
     activeTabId.value = ''
-    hubFocusedAssistantTabId.value = ''
   }
 
   /**
@@ -3096,9 +3096,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     return getTabAgentUiMeta(tabId).needsAttention
   }
 
-  /** Hub 任务区入口：用户在其他 Tab 时，汇总侧栏会话的 attention（完成/待确认） */
+  /** Hub 任务区入口：用户在其他 Tab / 待办面时，汇总侧栏会话的 attention（完成/待确认） */
   const hasTasksAreaAttention = computed(() =>
-    hasHubTasksAreaAttention(tabs.value, activeTabId.value, COMPANION_TAB_AGENT_ID)
+    hasHubTasksAreaAttention(tabs.value, activeTabId.value, COMPANION_TAB_AGENT_ID, todosActive.value)
   )
 
   // Proactive 消息延迟投递：agent 忙时暂存，完成后再注入 tab

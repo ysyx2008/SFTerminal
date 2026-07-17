@@ -77,6 +77,7 @@ describe('isAssistantConversationSurfaceVisible', () => {
   it('returns true for hub focus only when in task area', () => {
     expect(isAssistantConversationSurfaceVisible('hub-tab', '', 'hub-tab')).toBe(true)
     expect(isAssistantConversationSurfaceVisible('hub-tab', 'companion-tab', 'hub-tab')).toBe(false)
+    expect(isAssistantConversationSurfaceVisible('hub-tab', '', 'hub-tab', true)).toBe(false)
   })
 
   it('returns false when neither active nor visible hub focus', () => {
@@ -97,6 +98,10 @@ describe('hasHubTasksAreaAttention', () => {
 
   it('returns true when hub session needs attention and user is on another tab', () => {
     expect(hasHubTasksAreaAttention([hubTab], 'ssh-tab', COMPANION)).toBe(true)
+  })
+
+  it('returns true when hub session needs attention and user is on todos', () => {
+    expect(hasHubTasksAreaAttention([hubTab], '', COMPANION, true)).toBe(true)
   })
 
   it('ignores promoted assistant tabs (they have their own TabBar attention)', () => {

@@ -74,15 +74,19 @@ export function formatAgentAttentionTooltip(
 
 /**
  * 用户是否正在看该助手会话（attention / 未读判断）。
- * Hub 焦点仅在任务区（activeTabId 为空）时生效；切到联络/终端 Tab 后不算「正在看」。
+ * Hub 焦点仅在任务区（activeTabId 为空且非待办面）时生效；
+ * 切到联络/终端 Tab / 待办面后不算「正在看」（Hub 焦点 id 仍可保留以便切回）。
  */
 export function isAssistantConversationSurfaceVisible(
   tabId: string,
   activeTabId: string,
-  hubFocusedAssistantTabId: string
+  hubFocusedAssistantTabId: string,
+  todosActive = false
 ): boolean {
   if (activeTabId && tabId === activeTabId) return true
-  if (!activeTabId && hubFocusedAssistantTabId && tabId === hubFocusedAssistantTabId) return true
+  if (!activeTabId && !todosActive && hubFocusedAssistantTabId && tabId === hubFocusedAssistantTabId) {
+    return true
+  }
   return false
 }
 
@@ -96,21 +100,20 @@ type HubAttentionTabSlice = {
 
 /**
  * Hub 任务区入口（TabBar「任务」按钮）是否需要 attention：
- * 用户已离开任务区（activeTabId 非空），且存在未提升的本地助手会话待查看/待确认。
+ * 用户已离开任务区（activeTabId 非空，或待办面），且存在未提升的本地助手会话待查看/待确认。
  */
 export function hasHubTasksAreaAttention(
   tabs: HubAttentionTabSlice[],
   activeTabId: string,
-  companionAgentId: string
+  companionAgentId: string,
+  todosActive = false
 ): boolean {
-  if (activeTabId) {
-    return tabs.some(tab => {
-      if (tab.type !== 'assistant' || tab.isRemote || tab.isPromoted) return false
-      if (tab.agentId === companionAgentId) return false
-      return deriveTabAgentUiMeta(tab.agentState).needsAttention
-    })
-  }
-  return false
+  if (!activeTabId && !todosActive) return false
+  return tabs.some(tab => {
+    if (tab.type !== 'assistant' || tab.isRemote || tab.isPromoted) return false
+    if (tab.agentId === companionAgentId) return false
+    return deriveTabAgentUiMeta(tab.agentState).needsAttention
+  })
 }
 
 /** 历史对话行状态图标 tooltip */

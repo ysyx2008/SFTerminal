@@ -863,7 +863,8 @@ onMounted(async () => {
       const isVisible = isAssistantConversationSurfaceVisible(
         foundTabId,
         terminalStore.activeTabId,
-        terminalStore.hubFocusedAssistantTabId
+        terminalStore.hubFocusedAssistantTabId,
+        terminalStore.todosActive
       )
       if (isVisible) return
       if (data.pendingUserMessages && data.pendingUserMessages.length > 0) return
@@ -883,7 +884,8 @@ onMounted(async () => {
       const isVisible = isAssistantConversationSurfaceVisible(
         foundTabId,
         terminalStore.activeTabId,
-        terminalStore.hubFocusedAssistantTabId
+        terminalStore.hubFocusedAssistantTabId,
+        terminalStore.todosActive
       )
       if (isVisible) return
       terminalStore.setAgentCompletedUnseen(foundTabId, true)

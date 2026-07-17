@@ -1696,7 +1696,8 @@ export function useAgentMode(
         !isAssistantConversationSurfaceVisible(
           foundTabId,
           terminalStore.activeTabId,
-          terminalStore.hubFocusedAssistantTabId
+          terminalStore.hubFocusedAssistantTabId,
+          terminalStore.todosActive
         )
       ) {
         terminalStore.setAgentCompletedUnseen(foundTabId, true)
@@ -1719,7 +1720,8 @@ export function useAgentMode(
         !isAssistantConversationSurfaceVisible(
           foundTabId,
           terminalStore.activeTabId,
-          terminalStore.hubFocusedAssistantTabId
+          terminalStore.hubFocusedAssistantTabId,
+          terminalStore.todosActive
         )
       ) {
         terminalStore.setAgentCompletedUnseen(foundTabId, true)

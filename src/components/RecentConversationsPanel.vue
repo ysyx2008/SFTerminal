@@ -360,7 +360,8 @@ const conversationMetaById = computed(() => {
     const isVisible = tab && isAssistantConversationSurfaceVisible(
       tab.id,
       terminalStore.activeTabId,
-      terminalStore.hubFocusedAssistantTabId
+      terminalStore.hubFocusedAssistantTabId,
+      terminalStore.todosActive
     )
 
     let meta: HistoryConversationMeta

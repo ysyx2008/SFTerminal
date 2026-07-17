@@ -23,9 +23,9 @@ TabBar 顺序：`[任务] [可滚动普通 tab 区] [批量按钮] [联络] [待
 
 | 入口 | 位置 | 行为 |
 |---|---|---|
-| **任务**（`tab-home` 按钮） | 最左端 | 始终可见；激活态为无可见 tab 且非待办面；点击 `focusTaskArea()` 回到欢迎页/Hub |
-| **联络**（`tab-pinned`，`agentId = __companion__`） | 固定在滚动区外、**待办左侧** | 常驻不可关闭，点击激活 `__companion__` tab；IM / Watch `talk_to_user` 消息均路由到此 tab |
-| **待办**（`tab-pinned` 伪 Tab） | 固定在**联络右侧**、新建按钮之前 | 非 Agent 会话；点击 `openTodos()` 主区渲染 `TodoPanel`；与 `TODO.json` / Agent `todo_*` 共用真相源（见 `skills/todo/SPEC.md`） |
+| **任务**（`tab-home` 按钮） | 最左端 | 始终可见；激活态为无可见 tab 且非待办面；点击 `focusTaskArea()` 切回任务区（**保留**此前 Hub 焦点会话；无焦点则欢迎页） |
+| **联络**（`tab-pinned`，`agentId = __companion__`） | 固定在滚动区外、**待办左侧** | 常驻不可关闭，点击激活 `__companion__` tab；IM / Watch `talk_to_user` 消息均路由到此 tab；**不清除** Hub 焦点 |
+| **待办**（`tab-pinned` 伪 Tab） | 固定在**联络右侧**、新建按钮之前 | 非 Agent 会话；点击 `openTodos()` 主区渲染 `TodoPanel`；**不清除** Hub 焦点（切回任务区可恢复）；与 `TODO.json` / Agent `todo_*` 共用真相源（见 `skills/todo/SPEC.md`） |
 | **新建 +**（`btn-new-tab`） | 最右端 | 点击 `handleNewAssistant()` 新建一个**空白独立助手 tab**（`createAssistantTab({ isPromoted: true })`，直接进 Tab 栏并激活，不走 Hub 焦点）；下拉菜单可选新建终端/SSH |
 
 `displayedTabs` 同时排除：
@@ -287,11 +287,13 @@ tab 从 TabBar 消失，但仍存在于 terminalStore.tabs
 |---|---|
 | `focusHubConversation(tabId)` | Hub 焦点切到指定会话，触发 LRU |
 | `clearHubFocus()` | 清空 Hub 焦点，回欢迎页 |
-| `goToHome()` | 清空 activeTabId + hubFocusedAssistantTabId，完全回欢迎页 |
+| `goToHome()` | 清空 activeTabId + hubFocusedAssistantTabId，完全回欢迎页（侧栏「新建对话」） |
+| `focusTaskArea()` | 退出联络/待办等可见面，切回任务区；**保留** hubFocusedAssistantTabId |
+| `openTodos()` | 打开待办面；清空 activeTabId，**保留** hubFocusedAssistantTabId |
 | `promoteConversationToTab(tabId)` | 提升为独立 Tab |
 | `openHistoryConversation(record)` | 从历史记录恢复会话到 Hub |
 | `createAssistantTab({ activate })` | 创建新本地助手 tab；`activate: false` = 不进 TabBar |
-| `setActiveTab(tabId)` | 激活 TabBar 可见 Tab |
+| `setActiveTab(tabId)` | 激活 TabBar 可见 Tab（不清除 Hub 焦点） |
 | `closeTab(tabId, force?)` | 关 tab；非提升助手 = 降级；提升/终端 = 销毁 |
 
 ---
