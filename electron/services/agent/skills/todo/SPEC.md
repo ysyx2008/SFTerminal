@@ -1,11 +1,18 @@
 /**
  * 本地待办技能 (todo)
  *
- * > Last verified: 2026-07-15
+ * > Last verified: 2026-07-17
  *
  * ## 职责
  *
  * 管理用户**本地秘书待办**的结构化真相源。写入走 `todo_*` 工具或桌面待办面板 IPC，心跳通过 `render.ts` 注入摘要，关切「待办截止提醒」通过 `todo_list` 决策是否 `talk_to_user`。
+ *
+ * ## 真相源入口（OOP）
+ *
+ * - **`TodoService`**（[`store.ts`](./store.ts)）+ `getTodoService()`：主进程完整门面
+ * - 公开表面：`load` / `save` / `mutate` / `list` / `create` / `update` / `complete` / `delete` / `countOverdue` / `onChanged`
+ * - `TodoItem` 仍是 `@sailfish/shared-types` **interface**（IPC / JSON 线格式），不做实体类
+ * - [`api.ts`](./api.ts) 为 IPC/CLI 薄 facade（`listTodos` → `getTodoService().list` 等）
  *
  * ## 存储
  *
@@ -34,8 +41,8 @@
  *
  * - 入口：TabBar 固定区，在**联络右侧**、新建按钮之前（`[… 联络] [待办] [+]`）
  * - 形态：伪 Tab（`terminalStore.todosActive`），非 Agent / Workbench 会话
- * - IPC：`todo:list` / `create` / `update` / `complete` / `delete` / `countOverdue`；`saveStore` 后广播 `todo:changed`
- * - API：`skills/todo/api.ts` 直接复用 `store.ts`（`mutateStore` 原子读改写），与 Agent 工具共用真相源与写队列
+ * - IPC：`todo:list` / `create` / `update` / `complete` / `delete` / `countOverdue`；写入后广播 `todo:changed`
+ * - API：`skills/todo/api.ts` → `TodoService`（与 Agent 工具共用单例与写队列）
  * - UI：`src/components/Todo/TodoPanel.vue` — 轻量 CRUD（列表/筛选、新建标题+截止、完成/取消/重开/删除）
  *
  * ## 与其它系统边界
@@ -66,5 +73,5 @@
  *
  * - 与日历 / 钉钉双向同步
  * - 运行时自动 md→json 解析
- * - 面板内完整字段表单（描述/优先级/标签仍主要由秘书工具写入）
+ * - `TodoItem` 实体类 / 前端 OOP
  */
