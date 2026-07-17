@@ -94,6 +94,12 @@ html {
   scroll-behavior: smooth;
 }
 
+/* 固定顶栏锚点偏移，避免 #task / #download 等被挡住 */
+main > section[id],
+.story-block[id] {
+  scroll-margin-top: 5.5rem;
+}
+
 body {
   font-family: var(--font-sans);
   background: var(--color-bg-primary);

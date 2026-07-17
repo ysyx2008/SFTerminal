@@ -25,10 +25,12 @@ const isHomePage = currentPath === '/' || currentPath === '/en/' || currentPath 
 <header class="header">
   <div class="container header-inner">
     <a href={homeUrl} class="logo">
-      <picture>
-        <source srcset="/logo.webp" type="image/webp" />
-        <img src="/logo.png" alt={t.common.brandName} class="logo-img" />
-      </picture>
+      <span class="logo-mark" aria-hidden="true">
+        <picture>
+          <source srcset="/logo.webp" type="image/webp" />
+          <img src="/logo.png" alt="" class="logo-img" />
+        </picture>
+      </span>
       <span class="logo-text">{t.common.brandName}</span>
     </a>
     
@@ -79,6 +81,7 @@ const isHomePage = currentPath === '/' || currentPath === '/en/' || currentPath 
     right: 0;
     z-index: 1000;
     padding: 16px 0;
+    overflow: visible;
     border-bottom: 1px solid transparent;
     transition:
       background 0.35s var(--ease-out-soft),
@@ -118,21 +121,62 @@ const isHomePage = currentPath === '/' || currentPath === '/en/' || currentPath 
   }
   
   .logo {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 12px;
+    gap: 0.65rem;
+    position: relative;
+    z-index: 2;
+    height: 40px;
     color: var(--color-text-primary);
-    font-weight: 600;
-    font-size: 18px;
+    line-height: 1;
+    text-decoration: none;
   }
   
   .logo:hover {
     color: var(--color-text-primary);
   }
-  
-  .logo-img {
-    width: 40px;
+
+  /* 占位在标题栏行内；真图标主要向下探出，避免顶边被裁切 */
+  .logo-mark {
+    position: relative;
+    width: 36px;
     height: 40px;
+    flex-shrink: 0;
+  }
+
+  .logo-img {
+    position: absolute;
+    left: 42%;
+    top: 68%;
+    width: 76px;
+    height: 76px;
+    display: block;
+    transform: translate(-50%, -50%) rotate(-10deg);
+    transform-origin: center center;
+    filter: drop-shadow(0 6px 14px rgba(28, 25, 23, 0.14));
+    transition: transform 0.35s var(--ease-out-soft), filter 0.35s var(--ease-out-soft);
+    pointer-events: none;
+  }
+
+  .logo:hover .logo-img {
+    transform: translate(-50%, -52%) rotate(-6deg) scale(1.06);
+    filter: drop-shadow(0 10px 20px rgba(28, 25, 23, 0.18));
+  }
+
+  [data-theme="dark"] .logo-img {
+    filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.45));
+  }
+
+  [data-theme="dark"] .logo:hover .logo-img {
+    filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.55));
+  }
+
+  .logo-text {
+    position: relative;
+    z-index: 1;
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
   }
   
   .nav {
@@ -248,6 +292,17 @@ const isHomePage = currentPath === '/' || currentPath === '/en/' || currentPath 
     
     .logo-text {
       display: none;
+    }
+
+    .logo-mark {
+      width: 44px;
+    }
+
+    .logo-img {
+      width: 68px;
+      height: 68px;
+      left: 50%;
+      top: 70%;
     }
   }
 </style>
