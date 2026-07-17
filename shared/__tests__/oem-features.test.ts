@@ -19,14 +19,16 @@ function baseConfig(features: Partial<OemConfig['features']> = {}): OemConfig {
 describe('isOemFeatureEnabled', () => {
   it('defaults: secretary features on, sso off', () => {
     expect(OEM_FEATURE_DEFAULTS.awaken).toBe(true)
+    expect(OEM_FEATURE_DEFAULTS.bond).toBe(true)
     expect(OEM_FEATURE_DEFAULTS.localTerminal).toBe(true)
     expect(OEM_FEATURE_DEFAULTS.sso).toBe(false)
   })
 
   it('reads explicit false', () => {
-    const cfg = baseConfig({ awaken: false, localTerminal: false })
+    const cfg = baseConfig({ awaken: false, localTerminal: false, bond: false })
     expect(isOemFeatureEnabled('awaken', cfg)).toBe(false)
     expect(isOemFeatureEnabled('localTerminal', cfg)).toBe(false)
+    expect(isOemFeatureEnabled('bond', cfg)).toBe(false)
     expect(isOemFeatureEnabled('assistantWorkbench', cfg)).toBe(true)
   })
 
@@ -35,7 +37,9 @@ describe('isOemFeatureEnabled', () => {
     // 模拟旧配置缺字段
     delete (cfg.features as { sso?: boolean }).sso
     delete (cfg.features as { awaken?: boolean }).awaken
+    delete (cfg.features as { bond?: boolean }).bond
     expect(isOemFeatureEnabled('sso', cfg)).toBe(false)
     expect(isOemFeatureEnabled('awaken', cfg)).toBe(true)
+    expect(isOemFeatureEnabled('bond', cfg)).toBe(true)
   })
 })

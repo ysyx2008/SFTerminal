@@ -51,6 +51,7 @@ import { planComposerPaste, ingestComposerAttachments } from '../composables/use
 import { useFileDropTarget } from '../composables/useFileDropTarget'
 import { pickTaskCompleteLabel } from '../composables/useTaskCompleteLabel'
 import { loadBondTrustLevel } from '../composables/useRandomPlaceholder'
+import { isOemFeatureEnabled } from '@shared/oem-features'
 import type { BondTrustLevel } from '@shared/types/bond'
 import type { AgentRecord, AgentHistorySummary, AttachmentInfo } from '@shared/types'
 import { resolveConversationDisplayTitle } from '../utils/conversation-title'
@@ -250,12 +251,16 @@ const bondTrustForFooterReady = ref(false)
 /** 羁绊等级就绪时递增，驱动已渲染尾注用正确 trust 池重算文案 */
 const taskCompleteFooterLabelEpoch = ref(0)
 
-void loadBondTrustLevel().then(level => {
-  bondTrustForFooter.value = level
+if (isOemFeatureEnabled('bond')) {
+  void loadBondTrustLevel().then(level => {
+    bondTrustForFooter.value = level
+    bondTrustForFooterReady.value = true
+    taskCompleteFooterLabels.clear()
+    taskCompleteFooterLabelEpoch.value++
+  })
+} else {
   bondTrustForFooterReady.value = true
-  taskCompleteFooterLabels.clear()
-  taskCompleteFooterLabelEpoch.value++
-})
+}
 
 const getTaskCompleteFooterLabel = (groupId: string | undefined): string => {
   void taskCompleteFooterLabelEpoch.value
@@ -264,7 +269,9 @@ const getTaskCompleteFooterLabel = (groupId: string | undefined): string => {
   if (!taskCompleteFooterLabels.has(groupId)) {
     taskCompleteFooterLabels.set(
       groupId,
-      pickTaskCompleteLabel(tm('ai.taskCompletePools'), bondTrustForFooter.value, t)
+      pickTaskCompleteLabel(tm('ai.taskCompletePools'), bondTrustForFooter.value, t, {
+        funEnabled: isOemFeatureEnabled('bond'),
+      })
     )
   }
   return taskCompleteFooterLabels.get(groupId)!

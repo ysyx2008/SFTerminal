@@ -5,6 +5,7 @@ import {
   COMPOSER_PLACEHOLDER_POOL_GATES,
   type BondTrustLevel,
 } from '@shared/types/bond'
+import { isOemFeatureEnabled } from '@shared/oem-features'
 
 export async function loadBondTrustLevel(): Promise<BondTrustLevel> {
   try {
@@ -36,6 +37,7 @@ export function collectEligiblePlaceholders(
 /**
  * 按羁绊阶段从多池 i18n 对象随机挑选输入框 placeholder。
  * pools 结构见 ai.inputPlaceholderPools / welcome.chatLeadPools。
+ * features.bond 关闭时固定走 fallback（OEM 正式语气）。
  */
 export function useRandomPlaceholder(
   poolsKey: MaybeRefOrGetter<string>,
@@ -45,9 +47,13 @@ export function useRandomPlaceholder(
   const value = ref('')
 
   const pick = async () => {
+    const fallback = toValue(fallbackKey)
+    if (!isOemFeatureEnabled('bond')) {
+      value.value = t(fallback)
+      return
+    }
     const trustLevel = await loadBondTrustLevel()
     const eligible = collectEligiblePlaceholders(tm(toValue(poolsKey)), trustLevel)
-    const fallback = toValue(fallbackKey)
     if (eligible.length > 0) {
       value.value = eligible[Math.floor(Math.random() * eligible.length)]
     } else {

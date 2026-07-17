@@ -4,6 +4,7 @@ import {
   type BondMetrics,
   type BondMilestoneId,
 } from '@shared/types/bond'
+import { isOemFeatureEnabled } from '@shared/oem-features'
 import { toast } from './useToast'
 
 const TOAST_DURATION_MS = 5000
@@ -32,6 +33,7 @@ export async function showBondMilestoneToasts(
   milestoneIds: string[],
   metrics: Pick<BondMetrics, 'daysTogether' | 'level'>
 ): Promise<void> {
+  if (!isOemFeatureEnabled('bond')) return
   const unique = [...new Set(milestoneIds)].filter(isBondMilestoneId)
   for (let i = 0; i < unique.length; i++) {
     if (i > 0) await sleep(STAGGER_MS)
@@ -43,6 +45,7 @@ export async function showBondMilestoneToasts(
 export async function checkBondMilestonesOnStartup(
   t: ComposerTranslation
 ): Promise<void> {
+  if (!isOemFeatureEnabled('bond')) return
   try {
     const result = await window.electronAPI?.bond?.recalculate?.()
     if (!result?.newMilestones?.length || !result.metrics) return

@@ -27,4 +27,10 @@ describe('pickTaskCompleteLabel', () => {
     expect(pickTaskCompleteLabel(pools, 'companion', t)).toMatch(/到岸了|收工，背鳍放下了/)
     vi.restoreAllMocks()
   })
+
+  it('returns neutral label when funEnabled is false', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.01)
+    expect(pickTaskCompleteLabel(pools, 'companion', t, { funEnabled: false })).toBe('ai.taskComplete')
+    vi.restoreAllMocks()
+  })
 })

@@ -43,6 +43,7 @@ import {
   splitStepsIntoTasks as splitStepsIntoTasksShared
 } from '../conversation/messages'
 import { inferConversationKind } from '@shared/types'
+import { isOemFeatureEnabled } from '@shared/oem-features'
 import { getBondService } from '../bond.service'
 import type { ToolExecutorConfig, ToolResult } from './tools/types'
 import { executeTool } from './tools/index'
@@ -2180,7 +2181,8 @@ export abstract class Agent {
   }
 
   /**
-   * 从共享池随机挑选等待首 token 的展示文案（5% 彩蛋池）
+   * 从共享池随机挑选等待首 token 的展示文案（5% 彩蛋池）。
+   * 调用方 markWaitingForFirstToken 已按 features.bond 门控。
    */
   private pickWaitingForModelLabel(): string {
     const useEasterEgg = Math.random() < WAITING_FOR_MODEL_EASTER_EGG_CHANCE
@@ -2192,7 +2194,7 @@ export abstract class Agent {
     return t(waitingForModelI18nKey(id) as TranslationKey)
   }
 
-  /** TTFT 过长时切换为调侃文案 */
+  /** TTFT 过长时切换为调侃文案（调用方已按 features.bond 门控） */
   private pickSlowWaitingForModelLabel(): string {
     const id = this.pickRandomWaitingLabelId(WAITING_FOR_MODEL_SLOW_LABEL_IDS)
     return t(waitingForModelI18nKey(id, 'slow') as TranslationKey)
@@ -2201,6 +2203,7 @@ export abstract class Agent {
   /** 上下文就绪、HTTP 即将发出：「正在准备…」→ 随机趣味等待文案 */
   private markWaitingForFirstToken(run: AgentRun): void {
     if (!run.initialStepId) return
+    if (!isOemFeatureEnabled('bond')) return
     this.updateStep(run.initialStepId, {
       content: this.pickWaitingForModelLabel(),
       isStreaming: true,
@@ -2210,6 +2213,7 @@ export abstract class Agent {
   /** 首 token 仍未到达且占位步骤仍在时，切换为 slow 调侃文案 */
   private markSlowWaitingForFirstToken(run: AgentRun): void {
     if (!run.initialStepId) return
+    if (!isOemFeatureEnabled('bond')) return
     this.updateStep(run.initialStepId, {
       content: this.pickSlowWaitingForModelLabel(),
       isStreaming: true,
@@ -3550,6 +3554,7 @@ export abstract class Agent {
   }
 
   private resolveBondContext(): string | undefined {
+    if (!isOemFeatureEnabled('bond')) return undefined
     try {
       return getBondService().getBondContext()
     } catch {

@@ -1,6 +1,7 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { BondMetrics } from '@shared/types/bond'
+import { isOemFeatureEnabled } from '@shared/oem-features'
 import { collectEligiblePlaceholders } from './useRandomPlaceholder'
 
 function applyBondLineParams(line: string, metrics: BondMetrics | null | undefined): string {
@@ -16,7 +17,7 @@ export function useWelcomeSubtitle(isSteamBuild: boolean) {
   )
 
   onMounted(() => {
-    if (isSteamBuild) return
+    if (isSteamBuild || !isOemFeatureEnabled('bond')) return
     void (async () => {
       try {
         const metrics = await window.electronAPI?.bond?.getMetrics?.()

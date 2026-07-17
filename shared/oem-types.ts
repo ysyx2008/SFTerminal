@@ -27,6 +27,11 @@ export interface OemFeatures {
   companion: boolean
   /** 关切 / Watch */
   watch: boolean
+  /**
+   * 羁绊气质 / 俏皮文案（placeholder 分池、任务完成趣味 footer、
+   * 里程碑 toast、首 token 彩蛋与调侃、prompt 羁绊段等）
+   */
+  bond: boolean
   /** 本地终端工作台 */
   localTerminal: boolean
   /** SSH 终端工作台 */
@@ -87,6 +92,7 @@ export const OEM_FEATURE_DEFAULTS: OemFeatures = {
   awaken: true,
   companion: true,
   watch: true,
+  bond: true,
   localTerminal: true,
   sshTerminal: true,
   assistantWorkbench: true,
