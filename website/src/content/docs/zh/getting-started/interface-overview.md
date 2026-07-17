@@ -107,4 +107,4 @@ description: '熟悉旗鱼的主界面布局和各个功能区域'
 
 ## 下一步
 
-现在你已经认识了旗鱼的界面。接下来 [和 AI 进行第一次对话](/zh/docs/getting-started/first-conversation)，体验旗鱼的核心能力。
+现在你已经认识了旗鱼的界面。接下来 [和 AI 进行第一次对话](/docs/getting-started/first-conversation)，体验旗鱼的核心能力。

@@ -9,7 +9,7 @@ When you connect to an SSH server, SailFish automatically establishes an SFTP ch
 
 ## Opening the Remote File Manager
 
-1. Connect to an SSH server first (see [SSH Connection](/docs/server/ssh-connection))
+1. Connect to an SSH server first (see [SSH Connection](/en/docs/server/ssh-connection))
 2. Click the **file manager icon** (folder icon) in the left sidebar
 3. The file manager automatically displays the remote server's file system
 

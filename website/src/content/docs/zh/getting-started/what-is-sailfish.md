@@ -99,7 +99,7 @@ description: '了解旗鱼是什么，它能帮你做什么，以及它和其他
 
 准备好了解旗鱼了吗？接下来我们会带你：
 
-1. [下载与安装](/zh/docs/getting-started/installation) — 把旗鱼装到你的电脑上
-2. [首次配置](/zh/docs/getting-started/first-setup) — 配置 AI 服务，让旗鱼能"思考"
-3. [认识界面](/zh/docs/getting-started/interface-overview) — 熟悉旗鱼的各个功能区域
-4. [第一次对话](/zh/docs/getting-started/first-conversation) — 和 AI 说第一句话，完成第一个任务
+1. [下载与安装](/docs/getting-started/installation) — 把旗鱼装到你的电脑上
+2. [首次配置](/docs/getting-started/first-setup) — 配置 AI 服务，让旗鱼能"思考"
+3. [认识界面](/docs/getting-started/interface-overview) — 熟悉旗鱼的各个功能区域
+4. [第一次对话](/docs/getting-started/first-conversation) — 和 AI 说第一句话，完成第一个任务

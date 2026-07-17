@@ -75,7 +75,7 @@ In the file manager for SSH terminals, file transfer is supported:
 - **Upload**: Drag files from Finder/File Explorer onto the panel, or click the "Upload" button in the toolbar
 - **Download**: Right-click a remote file and choose "Download", then select a local save location
 
-> For the full range of remote file transfer features, see [SFTP File Transfer](/docs/server/sftp-transfer).
+> For the full range of remote file transfer features, see [SFTP File Transfer](/en/docs/server/sftp-transfer).
 
 ## Let the AI Manage Files
 

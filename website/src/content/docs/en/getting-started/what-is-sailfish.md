@@ -99,7 +99,7 @@ Common AI providers:
 
 Ready to get started? Next we will guide you through:
 
-1. [Download & Install](/docs/getting-started/installation) — Get SailFish on your computer
-2. [First Setup](/docs/getting-started/first-setup) — Configure AI service so SailFish can "think"
-3. [Interface Overview](/docs/getting-started/interface-overview) — Learn the main areas of the interface
-4. [First Conversation](/docs/getting-started/first-conversation) — Have your first chat with the AI and complete your first task
+1. [Download & Install](/en/docs/getting-started/installation) — Get SailFish on your computer
+2. [First Setup](/en/docs/getting-started/first-setup) — Configure AI service so SailFish can "think"
+3. [Interface Overview](/en/docs/getting-started/interface-overview) — Learn the main areas of the interface
+4. [First Conversation](/en/docs/getting-started/first-conversation) — Have your first chat with the AI and complete your first task

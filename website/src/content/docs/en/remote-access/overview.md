@@ -109,9 +109,9 @@ Remote access security is layered:
 
 Detailed setup for each platform:
 
-- [Web Remote Access](/docs/remote-access/web-remote)
-- [Feishu Integration](/docs/remote-access/feishu)
-- [DingTalk Integration](/docs/remote-access/dingtalk)
-- [WeCom Integration](/docs/remote-access/wecom)
-- [Slack Integration](/docs/remote-access/slack)
-- [Telegram Integration](/docs/remote-access/telegram)
+- [Web Remote Access](/en/docs/remote-access/web-remote)
+- [Feishu Integration](/en/docs/remote-access/feishu)
+- [DingTalk Integration](/en/docs/remote-access/dingtalk)
+- [WeCom Integration](/en/docs/remote-access/wecom)
+- [Slack Integration](/en/docs/remote-access/slack)
+- [Telegram Integration](/en/docs/remote-access/telegram)

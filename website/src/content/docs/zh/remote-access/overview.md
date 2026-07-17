@@ -109,9 +109,9 @@ description: '了解旗鱼的远程访问方式，随时随地操控你的 AI Ag
 
 各平台的详细配置步骤：
 
-- [Web 远程访问](/zh/docs/remote-access/web-remote)
-- [飞书接入](/zh/docs/remote-access/feishu)
-- [钉钉接入](/zh/docs/remote-access/dingtalk)
-- [企业微信接入](/zh/docs/remote-access/wecom)
-- [Slack 接入](/zh/docs/remote-access/slack)
-- [Telegram 接入](/zh/docs/remote-access/telegram)
+- [Web 远程访问](/docs/remote-access/web-remote)
+- [飞书接入](/docs/remote-access/feishu)
+- [钉钉接入](/docs/remote-access/dingtalk)
+- [企业微信接入](/docs/remote-access/wecom)
+- [Slack 接入](/docs/remote-access/slack)
+- [Telegram 接入](/docs/remote-access/telegram)

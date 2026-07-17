@@ -1,5 +1,5 @@
 ---
-import { useTranslations, type Lang } from '../i18n/utils';
+import { useTranslations, localePath, type Lang } from '../i18n/utils';
 import { defaultLanguage } from '../i18n/translations';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -58,7 +58,7 @@ function getCategoryName(categoryId: string) {
 }
 
 function skillPreviewUrl(skillId: string) {
-  const base = lang === 'zh' ? '/zh/skills/preview' : '/skills/preview';
+  const base = localePath(lang, '/skills/preview');
   return `${base}?id=${skillId}`;
 }
 

@@ -129,7 +129,7 @@ Send this document to me via Feishu
 SailFish can also work with Excel, PPT, and PDF:
 
 - **Excel**: Read and create .xlsx files for data analysis and tables
-- **PPT**: Generate editable .pptx presentations with Canvas preview (see [PPT Presentations](/docs/office/ppt))
+- **PPT**: Generate editable .pptx presentations with Canvas preview (see [PPT Presentations](/en/docs/office/ppt))
 - **PDF**: Read PDF content for analysis and extraction
 
 ```

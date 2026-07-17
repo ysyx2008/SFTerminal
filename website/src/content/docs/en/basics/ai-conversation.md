@@ -65,7 +65,7 @@ Typical use cases:
 - Send a webpage screenshot and ask "What's wrong with this layout?"
 - Share a table screenshot for the AI to analyze data
 
-> If your primary model doesn't support images (e.g., DeepSeek R1), you can configure an "associated vision model" (e.g., GPT-4o). SailFish will automatically switch when you send an image. See [Model Configuration](/docs/ai-advanced/model-config) for details.
+> If your primary model doesn't support images (e.g., DeepSeek R1), you can configure an "associated vision model" (e.g., GPT-4o). SailFish will automatically switch when you send an image. See [Model Configuration](/en/docs/ai-advanced/model-config) for details.
 
 ## Conversation History
 

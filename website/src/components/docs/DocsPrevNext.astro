@@ -1,6 +1,6 @@
 ---
 import { getDocsNav, getFlatNavSlugs } from '../../data/docs-nav';
-import type { Lang } from '../../i18n/utils';
+import { localePath, type Lang } from '../../i18n/utils';
 
 interface Props {
   lang: Lang;
@@ -23,7 +23,7 @@ function findLabel(slug: string): string {
   return slug;
 }
 
-const prefix = lang === 'zh' ? '/zh/docs/' : '/docs/';
+const prefix = localePath(lang, '/docs/');
 ---
 
 <nav class="docs-prev-next">

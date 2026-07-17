@@ -2,8 +2,8 @@
 export const supportedLanguages = ['zh', 'en'] as const;
 export type SupportedLanguage = typeof supportedLanguages[number];
 
-// 默认语言
-export const defaultLanguage: SupportedLanguage = 'en';
+// 默认语言（根路径；英文走 /en/）
+export const defaultLanguage: SupportedLanguage = 'zh';
 
 // 语言显示名称
 export const languageNames: Record<SupportedLanguage, string> = {
@@ -92,7 +92,7 @@ export const translations = {
         { icon: 'notify', label: '流式进度', desc: '显示「渲染中 i/N 页」，长 deck 不再干等' },
       ],
       cta: '查看使用指南',
-      ctaLink: '/zh/guide#ppt-skill',
+      ctaLink: '/guide#ppt-skill',
     },
     useCases: {
       title: '适用场景',
@@ -987,7 +987,7 @@ export const translations = {
         { icon: 'notify', label: 'Streaming Progress', desc: 'Shows "Rendering slide i/N" — no more waiting in the dark' },
       ],
       cta: 'View Guide',
-      ctaLink: '/guide#ppt-skill',
+      ctaLink: '/en/guide#ppt-skill',
     },
     useCases: {
       title: 'Use Cases',

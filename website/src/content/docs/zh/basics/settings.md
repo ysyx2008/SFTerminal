@@ -17,7 +17,7 @@ description: '了解旗鱼设置页面的各个配置项'
 - **关联视觉模型**：为纯文本模型绑定一个视觉模型
 - **独立代理**：为每个模型配置专用的 HTTP/SOCKS 代理
 
-> 详细说明见 [模型配置详解](/zh/docs/ai-advanced/model-config)。
+> 详细说明见 [模型配置详解](/docs/ai-advanced/model-config)。
 
 ## 通用设置
 
@@ -45,7 +45,7 @@ description: '了解旗鱼设置页面的各个配置项'
 - **分组管理**：将服务器按项目或环境分组
 - **Xshell 导入**：从 Xshell 导入已有的会话配置
 
-> 详细说明见 [SSH 连接](/zh/docs/server/ssh-connection)。
+> 详细说明见 [SSH 连接](/docs/server/ssh-connection)。
 
 ## 即时通讯（IM）
 
@@ -59,7 +59,7 @@ description: '了解旗鱼设置页面的各个配置项'
 
 每个平台独立连接和断开，支持启动时自动连接。
 
-> 详细说明见 [远程访问概览](/zh/docs/remote-access/overview)。
+> 详细说明见 [远程访问概览](/docs/remote-access/overview)。
 
 ## Web 服务
 
@@ -69,7 +69,7 @@ description: '了解旗鱼设置页面的各个配置项'
 - **端口配置**（默认 3721）
 - **访问 Token**（安全凭证）
 
-> 详细说明见 [Web 远程访问](/zh/docs/remote-access/web-remote)。
+> 详细说明见 [Web 远程访问](/docs/remote-access/web-remote)。
 
 ## 邮箱
 
@@ -78,7 +78,7 @@ description: '了解旗鱼设置页面的各个配置项'
 - 支持 Gmail、Outlook、QQ 邮箱、163 邮箱等
 - 也支持自定义 IMAP/SMTP 服务器
 
-> 详细说明见 [邮箱管理](/zh/docs/office/email)。
+> 详细说明见 [邮箱管理](/docs/office/email)。
 
 ## 日历
 
@@ -87,7 +87,7 @@ description: '了解旗鱼设置页面的各个配置项'
 - 支持 Google Calendar、Apple iCloud、Outlook 等
 - 基于 CalDAV 协议
 
-> 详细说明见 [日历与待办](/zh/docs/office/calendar)。
+> 详细说明见 [日历与待办](/docs/office/calendar)。
 
 ## 技能管理
 
@@ -96,7 +96,7 @@ description: '了解旗鱼设置页面的各个配置项'
 - **已安装技能**：查看和卸载已安装的技能
 - **技能市场**：浏览和安装社区共享的技能
 
-> 详细说明见 [技能系统](/zh/docs/ai-advanced/skill-system)。
+> 详细说明见 [技能系统](/docs/ai-advanced/skill-system)。
 
 ## MCP 配置
 
@@ -106,7 +106,7 @@ description: '了解旗鱼设置页面的各个配置项'
 - **预设模板**：一键添加常用 MCP 工具
 - **状态管理**：启用/禁用/重连
 
-> 详细说明见 [MCP 扩展](/zh/docs/ai-advanced/mcp-extensions)。
+> 详细说明见 [MCP 扩展](/docs/ai-advanced/mcp-extensions)。
 
 ## 关于
 

@@ -130,4 +130,4 @@ API Key 是 AI 服务商提供给你的一串密钥，用来验证你的身份�
 
 ## 下一步
 
-配置完成！接下来 [认识界面](/zh/docs/getting-started/interface-overview)，熟悉旗鱼的各个功能区域。
+配置完成！接下来 [认识界面](/docs/getting-started/interface-overview)，熟悉旗鱼的各个功能区域。

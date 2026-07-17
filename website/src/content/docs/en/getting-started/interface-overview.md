@@ -107,4 +107,4 @@ SailFish uses a dark theme by default. If you prefer a light interface, you can 
 
 ## Next Step
 
-Now that you know the SailFish interface, it is time to [have your first conversation with the AI](/docs/getting-started/first-conversation) and experience SailFish core capabilities.
+Now that you know the SailFish interface, it is time to [have your first conversation with the AI](/en/docs/getting-started/first-conversation) and experience SailFish core capabilities.

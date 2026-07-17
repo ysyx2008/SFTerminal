@@ -24,7 +24,7 @@ Connect to a remote server:
 1. Click a server in the connection list in the left sidebar
 2. Or click **"+"** → **"SSH Connection"** and enter server details
 
-> For detailed SSH setup, see [SSH Connection](/docs/server/ssh-connection).
+> For detailed SSH setup, see [SSH Connection](/en/docs/server/ssh-connection).
 
 ## Terminal Interface
 
@@ -79,7 +79,7 @@ You can run multiple terminal tabs at once:
 
 Example workflow: open tabs for production, test, and local, and switch as needed.
 
-> When you need to operate multiple local or SSH environments in one tab, use multi-pane splits. See [Multi-pane Terminal Splits](/docs/server/terminal-split).
+> When you need to operate multiple local or SSH environments in one tab, use multi-pane splits. See [Multi-pane Terminal Splits](/en/docs/server/terminal-split).
 
 ## Terminal Settings
 

@@ -1,6 +1,6 @@
 ---
 import { getDocsNav, type NavGroup } from '../../data/docs-nav';
-import type { Lang } from '../../i18n/utils';
+import { localePath, type Lang } from '../../i18n/utils';
 
 interface Props {
   lang: Lang;
@@ -9,11 +9,12 @@ interface Props {
 
 const { lang, currentSlug } = Astro.props;
 const navGroups = getDocsNav(lang as 'zh' | 'en');
+const docsHome = localePath(lang, '/docs/getting-started/what-is-sailfish/');
 ---
 
 <aside class="docs-sidebar" id="docs-sidebar">
   <div class="sidebar-header">
-    <a href={lang === 'zh' ? '/zh/docs/getting-started/what-is-sailfish/' : '/docs/getting-started/what-is-sailfish/'} class="sidebar-brand">
+    <a href={docsHome} class="sidebar-brand">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
         <path d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/>
       </svg>
@@ -26,7 +27,7 @@ const navGroups = getDocsNav(lang as 'zh' | 'en');
         <div class="nav-group-label">{group.label}</div>
         <ul class="nav-group-items">
           {group.items.map((item) => {
-            const href = lang === 'zh' ? `/zh/docs/${item.slug}/` : `/docs/${item.slug}/`;
+            const href = localePath(lang, `/docs/${item.slug}/`);
             const isActive = currentSlug === item.slug;
             return (
               <li>

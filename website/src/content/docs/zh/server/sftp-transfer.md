@@ -9,7 +9,7 @@ description: '通过 SFTP 在本地与远程服务器之间传输文件'
 
 ## 打开远程文件管理器
 
-1. 先连接一台 SSH 服务器（参阅 [SSH 连接](/zh/docs/server/ssh-connection)）
+1. 先连接一台 SSH 服务器（参阅 [SSH 连接](/docs/server/ssh-connection)）
 2. 点击左侧边栏的 **文件管理器图标**（文件夹形状）
 3. 文件管理器会自动显示远程服务器的文件系统
 

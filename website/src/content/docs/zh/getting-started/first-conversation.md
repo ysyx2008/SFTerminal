@@ -146,9 +146,9 @@ AI: [请求确认后执行]
 
 入门篇到此结束。根据你的需求，可以继续探索以下内容：
 
-- **想深入了解 AI 对话的更多用法？** → [AI 对话](/zh/docs/basics/ai-conversation)
-- **想连接远程服务器？** → [SSH 连接](/zh/docs/server/ssh-connection)
-- **想让 AI 自动执行复杂任务？** → [Agent 模式](/zh/docs/basics/agent-mode)
-- **想配置多个 AI 模型？** → [模型配置详解](/zh/docs/ai-advanced/model-config)
-- **想让 AI 主动监控和通知？** → [觉醒模式入门](/zh/docs/awaken/awaken-intro)
-- **想通过手机远程操控？** → [远程访问概览](/zh/docs/remote-access/overview)
+- **想深入了解 AI 对话的更多用法？** → [AI 对话](/docs/basics/ai-conversation)
+- **想连接远程服务器？** → [SSH 连接](/docs/server/ssh-connection)
+- **想让 AI 自动执行复杂任务？** → [Agent 模式](/docs/basics/agent-mode)
+- **想配置多个 AI 模型？** → [模型配置详解](/docs/ai-advanced/model-config)
+- **想让 AI 主动监控和通知？** → [觉醒模式入门](/docs/awaken/awaken-intro)
+- **想通过手机远程操控？** → [远程访问概览](/docs/remote-access/overview)

@@ -152,4 +152,4 @@ Awaken Mode uses a dedicated Agent instance (`__watch__`), completely isolated f
 - **Don't create too many watches**: More watches = more frequent AI execution; keep it manageable
 - **Leverage pre-check**: Let the AI decide whether to act, reducing notification noise
 
-> For practical configuration examples, see [Watch Recipes](/docs/awaken/watch-recipes).
+> For practical configuration examples, see [Watch Recipes](/en/docs/awaken/watch-recipes).

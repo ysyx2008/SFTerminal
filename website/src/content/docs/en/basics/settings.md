@@ -17,7 +17,7 @@ Manage your AI providers and models. You can configure multiple models at once:
 - **Associated vision model**: Link a vision model to a text-only model
 - **Per-model proxy**: Configure separate HTTP/SOCKS proxies per model
 
-> For details, see [Model Configuration](/docs/ai-advanced/model-config).
+> For details, see [Model Configuration](/en/docs/ai-advanced/model-config).
 
 ## General Settings
 
@@ -45,7 +45,7 @@ Manage saved SSH server configurations:
 - **Groups**: Organize servers by project or environment
 - **Xshell import**: Import sessions from Xshell
 
-> For details, see [SSH Connection](/docs/server/ssh-connection).
+> For details, see [SSH Connection](/en/docs/server/ssh-connection).
 
 ## IM Integrations
 
@@ -59,7 +59,7 @@ Set up remote access so you can talk to the Agent from your phone:
 
 Each platform can be connected or disconnected independently, with optional auto-connect on startup.
 
-> For details, see [Remote Access Overview](/docs/remote-access/overview).
+> For details, see [Remote Access Overview](/en/docs/remote-access/overview).
 
 ## Web Service & Gateway
 
@@ -69,7 +69,7 @@ Enable the gateway to access the Agent from a browser:
 - **Port** (default 3721)
 - **Access token** (for authentication)
 
-> For details, see [Web Remote Access](/docs/remote-access/web-remote).
+> For details, see [Web Remote Access](/en/docs/remote-access/web-remote).
 
 ## Email
 
@@ -78,7 +78,7 @@ Configure email accounts for sending and receiving mail:
 - Supports Gmail, Outlook, QQ Mail, 163 Mail, and others
 - Custom IMAP/SMTP servers supported
 
-> For details, see [Email Management](/docs/office/email).
+> For details, see [Email Management](/en/docs/office/email).
 
 ## Calendar
 
@@ -87,7 +87,7 @@ Configure calendar services for schedules and todos:
 - Supports Google Calendar, Apple iCloud, Outlook, and others
 - Uses the CalDAV protocol
 
-> For details, see [Calendar & Todos](/docs/office/calendar).
+> For details, see [Calendar & Todos](/en/docs/office/calendar).
 
 ## Skill Management
 
@@ -96,7 +96,7 @@ Manage the AI's extended skills:
 - **Installed skills**: View and uninstall skills
 - **Skill market**: Browse and install community skills
 
-> For details, see [Skill System](/docs/ai-advanced/skill-system).
+> For details, see [Skill System](/en/docs/ai-advanced/skill-system).
 
 ## MCP Configuration
 
@@ -106,7 +106,7 @@ Manage Model Context Protocol tools:
 - **Preset templates**: One-click add for common MCP tools
 - **Status**: Enable, disable, or reconnect
 
-> For details, see [MCP Extensions](/docs/ai-advanced/mcp-extensions).
+> For details, see [MCP Extensions](/en/docs/ai-advanced/mcp-extensions).
 
 ## About
 

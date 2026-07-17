@@ -1,0 +1,27 @@
+---
+import { getCollection } from 'astro:content';
+
+/** 旧 /zh/* 路径 301 到根路径（默认中文） */
+export async function getStaticPaths() {
+  const docs = await getCollection('docs');
+  const staticPages = [
+    'changelog',
+    'data-privacy',
+    'browser-assistant-privacy',
+    'skills',
+    'skills/preview',
+    'stats',
+    'guide',
+  ];
+  const docPaths = docs
+    .filter((e) => e.slug.startsWith('zh/'))
+    .map((e) => `docs/${e.slug.replace(/^zh\//, '')}`);
+
+  return [...staticPages, ...docPaths].map((slug) => ({
+    params: { slug },
+  }));
+}
+
+const slug = Astro.params.slug!;
+return Astro.redirect(`/${slug}/`, 301);
+---

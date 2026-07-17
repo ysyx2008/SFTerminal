@@ -130,4 +130,4 @@ Proxy settings are per config — you can have DeepSeek use direct connection an
 
 ## Next Step
 
-Configuration complete! Next, [get to know the interface](/docs/getting-started/interface-overview) and learn the main areas of SailFish.
+Configuration complete! Next, [get to know the interface](/en/docs/getting-started/interface-overview) and learn the main areas of SailFish.

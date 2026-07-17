@@ -76,4 +76,4 @@ description: '在 macOS 或 Windows 上下载并安装旗鱼'
 
 ## 下一步
 
-安装完成后，接下来要 [配置 AI 服务](/zh/docs/getting-started/first-setup)，让旗鱼能够"思考"。
+安装完成后，接下来要 [配置 AI 服务](/docs/getting-started/first-setup)，让旗鱼能够"思考"。

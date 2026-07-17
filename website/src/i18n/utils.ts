@@ -1,20 +1,38 @@
 import { translations, type Lang, supportedLanguages, defaultLanguage } from './translations';
 
+export type { Lang };
+
 /**
  * 从 URL 路径检测语言
- * 支持格式: /en/... 或其他语言前缀
+ * 默认语言无前缀；其他语言为 /{lang}/...（如 /en/...）
  */
 export function getLangFromUrl(url: URL): Lang {
   const path = url.pathname;
   
   // 检查所有支持的语言前缀（除了默认语言）
   for (const lang of supportedLanguages) {
-    if (lang !== defaultLanguage && path.startsWith(`/${lang}`)) {
+    if (lang !== defaultLanguage && (path === `/${lang}` || path.startsWith(`/${lang}/`))) {
       return lang;
     }
   }
   
   return defaultLanguage;
+}
+
+/**
+ * 生成带语言前缀的路径（默认语言无前缀）
+ * @example localePath('zh', '/skills/') → '/skills/'
+ * @example localePath('en', '/skills/') → '/en/skills/'
+ */
+export function localePath(lang: Lang, path: string = '/'): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  if (lang === defaultLanguage) {
+    return normalized || '/';
+  }
+  if (normalized === '/') {
+    return `/${lang}/`;
+  }
+  return `/${lang}${normalized}`;
 }
 
 /**

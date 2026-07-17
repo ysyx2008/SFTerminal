@@ -1,5 +1,5 @@
 ---
-import { useTranslations, getAlternateLang, getAlternateUrl, type Lang } from '../i18n/utils';
+import { useTranslations, getAlternateLang, getAlternateUrl, localePath, type Lang } from '../i18n/utils';
 import { defaultLanguage } from '../i18n/translations';
 
 interface Props {
@@ -11,15 +11,15 @@ const t = useTranslations(lang);
 const alternateLang = getAlternateLang(lang);
 const alternateUrl = getAlternateUrl(Astro.url, alternateLang);
 
-const homeUrl = lang === 'zh' ? '/zh/' : '/';
-const skillsUrl = lang === 'zh' ? '/zh/skills/' : '/skills/';
-const docsUrl = lang === 'zh' ? '/zh/docs/getting-started/what-is-sailfish/' : '/docs/getting-started/what-is-sailfish/';
-const dataPrivacyUrl = lang === 'zh' ? '/zh/data-privacy/' : '/data-privacy/';
-const changelogUrl = lang === 'zh' ? '/zh/changelog/' : '/changelog/';
+const homeUrl = localePath(lang, '/');
+const skillsUrl = localePath(lang, '/skills/');
+const docsUrl = localePath(lang, '/docs/getting-started/what-is-sailfish/');
+const dataPrivacyUrl = localePath(lang, '/data-privacy/');
+const changelogUrl = localePath(lang, '/changelog/');
 
 // 检查是否在首页（用于决定锚点链接的行为）
 const currentPath = Astro.url.pathname;
-const isHomePage = currentPath === '/' || currentPath === '/zh/' || currentPath === '/zh';
+const isHomePage = currentPath === '/' || currentPath === '/en/' || currentPath === '/en';
 ---
 
 <header class="header">

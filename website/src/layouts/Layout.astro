@@ -100,22 +100,22 @@ const pageDescription = description || (currentLang === 'zh' ? '旗鱼 AI Agent 
         const savedLang = localStorage.getItem('preferred-lang');
         if (savedLang) return;
 
-        // 检查当前路径
+        // 检查当前路径（默认中文在根路径，英文在 /en/）
         const currentPath = window.location.pathname;
-        const isChinesePath = currentPath.startsWith('/zh');
+        const isEnglishPath = currentPath === '/en' || currentPath.startsWith('/en/');
 
         // 检测浏览器语言偏好
         const browserLang = navigator.language || navigator.languages?.[0] || 'en';
         const prefersChinese = browserLang.startsWith('zh');
 
         // 根据浏览器语言跳转到对应站点
-        if (prefersChinese && !isChinesePath) {
-          // 中文浏览器在英文页 → 跳转到中文页
-          window.location.href = '/zh' + currentPath;
-        } else if (!prefersChinese && isChinesePath) {
-          // 非中文浏览器在中文页 → 跳转到英文页
-          const newPath = currentPath.replace(/^\/zh\/?/, '/') || '/';
+        if (prefersChinese && isEnglishPath) {
+          // 中文浏览器在英文页 → 跳转到中文页（去 /en 前缀）
+          const newPath = currentPath.replace(/^\/en\/?/, '/') || '/';
           window.location.href = newPath;
+        } else if (!prefersChinese && !isEnglishPath) {
+          // 非中文浏览器在中文页 → 跳转到英文页
+          window.location.href = '/en' + (currentPath === '/' ? '/' : currentPath);
         }
       })();
     </script>

@@ -76,4 +76,4 @@ If you still have issues, report them at [GitHub Issues](https://github.com/ysyx
 
 ## Next Step
 
-After installation, proceed to [configure the AI service](/docs/getting-started/first-setup) so SailFish can "think."
+After installation, proceed to [configure the AI service](/en/docs/getting-started/first-setup) so SailFish can "think."

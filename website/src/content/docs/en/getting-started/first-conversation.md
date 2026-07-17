@@ -146,9 +146,9 @@ By now you have learned the basics of SailFish:
 
 The getting started guide ends here. Depending on your needs, you can explore:
 
-- **Want to learn more about AI conversation?** → [AI Conversation](/docs/basics/ai-conversation)
-- **Want to connect to remote servers?** → [SSH Connection](/docs/server/ssh-connection)
-- **Want AI to handle complex tasks automatically?** → [Agent Mode](/docs/basics/agent-mode)
-- **Want to configure multiple AI models?** → [Model Configuration](/docs/ai-advanced/model-config)
-- **Want AI to monitor and notify proactively?** → [Awaken Mode](/docs/awaken/awaken-intro)
-- **Want to control it from your phone?** → [Remote Access Overview](/docs/remote-access/overview)
+- **Want to learn more about AI conversation?** → [AI Conversation](/en/docs/basics/ai-conversation)
+- **Want to connect to remote servers?** → [SSH Connection](/en/docs/server/ssh-connection)
+- **Want AI to handle complex tasks automatically?** → [Agent Mode](/en/docs/basics/agent-mode)
+- **Want to configure multiple AI models?** → [Model Configuration](/en/docs/ai-advanced/model-config)
+- **Want AI to monitor and notify proactively?** → [Awaken Mode](/en/docs/awaken/awaken-intro)
+- **Want to control it from your phone?** → [Remote Access Overview](/en/docs/remote-access/overview)

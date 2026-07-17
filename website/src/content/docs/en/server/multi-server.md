@@ -161,4 +161,4 @@ Then run the script on each server.
 
 ### Option 3: Use Awaken Mode
 
-For recurring tasks across multiple servers (e.g. health checks), create a Watch in Awaken mode to automate them. See [Awaken Mode Introduction](/docs/awaken/awaken-intro).
+For recurring tasks across multiple servers (e.g. health checks), create a Watch in Awaken mode to automate them. See [Awaken Mode Introduction](/en/docs/awaken/awaken-intro).
