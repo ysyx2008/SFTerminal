@@ -142,7 +142,8 @@ export default {
     quoteSnippetAdded: '已加入引用摘录',
     context: '上下文',
     contextUsed: '已使用',
-    contextUsageTitle: '上下文组成',
+    contextUsageShowDetail: '查看组成',
+    contextUsageHideDetail: '收起组成',
     contextComposition: {
       system: '系统提示',
       identity: '身份与规则',

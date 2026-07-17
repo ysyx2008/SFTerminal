@@ -142,7 +142,8 @@ export default {
     quoteSnippetAdded: 'Quote added to composer',
     context: 'Context',
     contextUsed: 'used',
-    contextUsageTitle: 'Context Usage',
+    contextUsageShowDetail: 'Show breakdown',
+    contextUsageHideDetail: 'Hide breakdown',
     contextComposition: {
       system: 'System prompt',
       identity: 'Identity & core rules',
