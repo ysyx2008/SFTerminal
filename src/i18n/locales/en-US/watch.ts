@@ -113,6 +113,7 @@ export default {
   // Watch (Sensor Loop)
   watch: {
     panelTitle: 'Watches',
+    panelDesc: 'Configure what AI keeps watching for you, and review run status and history.',
     title: 'Watches',
     watches: 'Watches',
     history: 'History',

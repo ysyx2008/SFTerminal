@@ -113,6 +113,7 @@ export default {
   // 关切（感知层）
   watch: {
     panelTitle: '关切',
+    panelDesc: '配置 AI 替你持续关注的事项，查看运行状态与历史记录。',
     title: '关切',
     watches: '关切',
     history: '历史',

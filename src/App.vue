@@ -17,6 +17,7 @@ import SettingsModal from './components/Settings/SettingsModal.vue'
 import FileExplorer from './components/FileExplorer/FileExplorer.vue'
 import ConnectionStatusPopover from './components/ConnectionStatusPopover.vue'
 import Awaken from './components/Awaken.vue'
+import WatchPanel from './components/Awaken/WatchPanel.vue'
 import WindowControls from './components/WindowControls.vue'
 import SetupWizard from './components/SetupWizard.vue'
 import WelcomePage from './components/WelcomePage.vue'
@@ -51,8 +52,9 @@ const authStore = useAuthStore()
 // Steam 构建标识（由 vite define 注入），在 script 中取值供模板使用，避免模板直接访问全局
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 
-/** 觉醒入口 / 面板：awaken 或 watch（关切总览也走 Awaken 面板） */
-const canShowAwaken = !isSteamBuild && (isOemFeatureEnabled('awaken') || isOemFeatureEnabled('watch'))
+/** 觉醒 / 关切：已拆成两个独立面板，OEM 特性各自控制入口 */
+const canShowAwaken = !isSteamBuild && isOemFeatureEnabled('awaken')
+const canShowWatch = !isSteamBuild && isOemFeatureEnabled('watch')
 const canShowAssistantUi = !isSteamBuild && isWorkbenchAvailable('assistant')
 
 // 知识库索引重建状态
@@ -160,7 +162,8 @@ const recallSidebarCollapsed = ref(
 const showSettings = ref(false)
 const showSmartPatrol = ref(false)
 const showAwaken = ref(false)
-const awakenInitialTab = ref<string | undefined>(undefined)
+const showWatchPanel = ref(false)
+const watchPanelInitialTab = ref<string | undefined>(undefined)
 const isAwakened = ref(false)
 
 // 平台判断：macOS 使用 hiddenInset（左侧红绿灯），Windows 完全自绘标题栏（WindowControls 组件）
@@ -212,7 +215,6 @@ const tabViewRefs = ref<Record<string, InstanceType<typeof TerminalTabView> | nu
 
 function onAwakenClose(awakened?: boolean) {
   showAwaken.value = false
-  awakenInitialTab.value = undefined
   if (typeof awakened === 'boolean') {
     isAwakened.value = awakened
     return
@@ -220,6 +222,11 @@ function onAwakenClose(awakened?: boolean) {
   void window.electronAPI.config.get('agentAwakened')
     .then((value) => { isAwakened.value = !!value })
     .catch(() => { /* ignore */ })
+}
+
+function onWatchPanelClose() {
+  showWatchPanel.value = false
+  watchPanelInitialTab.value = undefined
 }
 
 // 提供给子组件
@@ -243,9 +250,9 @@ watch([currentUiTheme, currentColorScheme], ([theme, colorScheme]) => {
 let altPressedAlone = false
 
 // 是否有全屏 overlay 盖住主 header（汉堡按钮、自绘标题栏按钮均被遮住）
-// SetupWizard / Awaken / SettingsModal 都是 position:fixed inset:0 全屏覆盖
+// SetupWizard / Awaken / WatchPanel / SettingsModal 都是 position:fixed inset:0 全屏覆盖
 const isFullScreenOverlayOpen = computed(() =>
-  showAwaken.value || showSettings.value || showSetupWizard.value
+  showAwaken.value || showWatchPanel.value || showSettings.value || showSetupWizard.value
 )
 
 // 全局快捷键处理
@@ -351,9 +358,13 @@ const handleGlobalKeyup = (event: KeyboardEvent) => {
 
 // 处理关闭快捷键
 const handleCloseShortcut = async () => {
-  // 全屏覆盖面板（觉醒 / 设置 / 控制面板）打开时，优先关闭它们
+  // 全屏覆盖面板（觉醒 / 关切 / 设置 / 控制面板）打开时，优先关闭它们
   if (showAwaken.value) {
     showAwaken.value = false
+    return
+  }
+  if (showWatchPanel.value) {
+    showWatchPanel.value = false
     return
   }
   if (showSettings.value) {
@@ -1121,11 +1132,12 @@ const openSmartPatrolFromWelcome = () => {
   showSmartPatrol.value = true
 }
 
-// 从欢迎页打开关切面板（默认进 watches tab，Awaken 自身会落到「总览」视图）
+// 从欢迎页打开独立关切面板（默认 watches tab → 总览视图）
 const openWatchesFromWelcome = () => {
-  if (!canShowAwaken) return
-  awakenInitialTab.value = 'watches'
-  showAwaken.value = true
+  if (!canShowWatch) return
+  showAwaken.value = false
+  watchPanelInitialTab.value = 'watches'
+  showWatchPanel.value = true
 }
 
 // 从智能巡检返回欢迎页
@@ -1437,12 +1449,12 @@ onUnmounted(() => {
         >
           <Monitor :size="18" />
         </button>
-        <template v-if="canShowAwaken || canShowAssistantUi">
+        <template v-if="canShowAwaken || canShowWatch || canShowAssistantUi">
           <button
             v-if="canShowAwaken"
             class="btn-icon btn-icon-header"
             :class="{ 'awakened-active': isAwakened }"
-            @click="showAwaken = true"
+            @click="showWatchPanel = false; showAwaken = true"
             :title="t('awaken.title') + ' — ' + t('awaken.description')"
           >
             <Heart :size="18" fill="currentColor" />
@@ -1625,12 +1637,18 @@ onUnmounted(() => {
     <!-- SSO hard 门控（features.sso + gateMode=hard 且未登录） -->
     <SsoLoginGate v-if="authStore.blockApp" />
 
-    <!-- 关切 / 觉醒面板（Steam 或 OEM 关闭时不渲染） -->
+    <!-- 觉醒面板（Steam 或 OEM 关闭时不渲染） -->
     <Awaken
       v-if="showAwaken && canShowAwaken"
-      :initial-tab="awakenInitialTab"
       @close="onAwakenClose"
       @awakened-change="isAwakened = $event"
+    />
+
+    <!-- 关切面板（独立入口，与觉醒分离） -->
+    <WatchPanel
+      v-if="showWatchPanel && canShowWatch"
+      :initial-tab="watchPanelInitialTab"
+      @close="onWatchPanelClose"
     />
 
     <!-- 全局 Toast 提示 -->
