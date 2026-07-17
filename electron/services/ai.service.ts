@@ -4,6 +4,7 @@ import { SocksProxyAgent } from 'socks-proxy-agent'
 import * as https from 'https'
 import * as http from 'http'
 import { t } from './agent/i18n'
+import { stripCompositionMarkers } from './agent/context-composition'
 import { getAiDebugService } from './ai-debug.service'
 import type { ProviderChatParams } from './plugin/types'
 import { createLogger } from '../utils/logger'
@@ -644,7 +645,11 @@ export function formatMessageForApi(msg: AiMessage, stripImages = false): Record
     }
   }
   // vLLM 等推理引擎拒绝空 content，纯 assistant 文本消息也需保护
-  const content = msg.content || (msg.role === 'assistant' ? '[no response]' : ' ')
+  let content = msg.content || (msg.role === 'assistant' ? '[no response]' : ' ')
+  // system 归因标记仅供本地组成占比，不发给 API
+  if (msg.role === 'system') {
+    content = stripCompositionMarkers(content)
+  }
   const result: Record<string, unknown> = { role: msg.role, content }
   // DeepSeek V3.2+/V4 思考模式要求所有 assistant 消息必须带 reasoning_content（缺一即拒）。
   // 与 tool_calls 分支一致，这里对纯文本 assistant 也无条件补字段（缺失补空串），

@@ -323,6 +323,33 @@ export function filterPersistableSteps<T extends AgentStep>(steps: T[]): T[] {
 }
 
 /**
+ * 上下文组成树节点 id（稳定枚举；UI 文案走 i18n）。
+ * 一级：system / tools / messages；其余为二级叶子。
+ */
+export type ContextCompositionId =
+  | 'root'
+  | 'system'
+  | 'identity'
+  | 'rules'
+  | 'skills'
+  | 'knowledge'
+  | 'environment'
+  | 'tools'
+  | 'builtin'
+  | 'mcp'
+  | 'messages'
+  | 'history'
+  | 'currentUser'
+  | 'images'
+
+/** 字数占比树节点（父 chars = 子之和；空块不入树） */
+export interface ContextCompositionNode {
+  id: ContextCompositionId
+  chars: number
+  children?: ContextCompositionNode[]
+}
+
+/**
  * 会话级「上下文栏」快照（token / cache / 拟用或已确认模型）。
  * 与 step 解耦：删占位、重试、流式接替不会把状态栏打空或回退主模型。
  * 确认值以 API usage 为准；请求中途可暂挂上轮确认 token + 本轮拟用 model/limit。
@@ -334,6 +361,11 @@ export interface AgentContextBar {
   effectiveModel?: string
   /** 拟用 / 已确认的 AI profileId（换模型时用于清 Cache%） */
   profileId?: string
+  /**
+   * 本次请求发出时的字数组成树（live 推送；不落盘）。
+   * 占比按 chars；约数 tokens = share × contextTokens。
+   */
+  composition?: ContextCompositionNode
 }
 
 /** 从步骤流倒查最近一次带 contextTokens 的统计（历史加载 / 无 live 推送时回退） */

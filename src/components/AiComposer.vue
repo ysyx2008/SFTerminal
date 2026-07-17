@@ -2,13 +2,14 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRandomPlaceholder } from '../composables/useRandomPlaceholder'
-import { X, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2, Volume2 } from 'lucide-vue-next'
+import { X, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2, Volume2, ChevronRight } from 'lucide-vue-next'
 import { useMentions } from '../composables/useMentions'
 import { toast } from '../composables/useToast'
 import { useComposerQuoteStore } from '../stores/composer-quote'
 import type { ComposerQuoteSnippet } from '../stores/composer-quote'
 import type { ParsedDocument } from '../stores/terminal'
 import type { ParsingDocument } from '../composables/useDocumentUpload'
+import type { ContextCompositionId, ContextCompositionNode } from '@shared/types'
 import AttachmentFileIcon from './AttachmentFileIcon.vue'
 
 interface ContextStats {
@@ -17,6 +18,7 @@ interface ContextStats {
   percentage: number
   cacheHitRate?: number
   effectiveModel?: string
+  composition?: ContextCompositionNode
 }
 
 interface PendingImage {
@@ -78,6 +80,76 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+
+const COMPOSITION_COLORS: Partial<Record<ContextCompositionId, string>> = {
+  system: '#94a3b8',
+  tools: '#a78bfa',
+  messages: '#c084fc',
+  identity: '#64748b',
+  rules: '#22c55e',
+  skills: '#f59e0b',
+  knowledge: '#38bdf8',
+  environment: '#818cf8',
+  builtin: '#8b5cf6',
+  mcp: '#e879f9',
+  history: '#a855f7',
+  currentUser: '#d946ef',
+  images: '#fb7185',
+}
+
+const TOP_LEVEL_IDS: ContextCompositionId[] = ['system', 'tools', 'messages']
+
+const expandedCompositionIds = ref<Set<string>>(new Set())
+
+const topLevelComposition = computed(() => {
+  const root = props.contextStats.composition
+  if (!root?.children?.length) return []
+  return root.children.filter(c => TOP_LEVEL_IDS.includes(c.id))
+})
+
+const compositionTotalChars = computed(() => {
+  const root = props.contextStats.composition
+  if (root && root.chars > 0) return root.chars
+  return topLevelComposition.value.reduce((s, c) => s + c.chars, 0)
+})
+
+function compositionPercent(chars: number): number {
+  const total = compositionTotalChars.value
+  if (total <= 0) return 0
+  return Math.max(0, Math.round((chars / total) * 1000) / 10)
+}
+
+function compositionApproxTokens(chars: number): number {
+  const total = compositionTotalChars.value
+  const tokens = props.contextStats.tokenEstimate
+  if (total <= 0 || tokens <= 0) return 0
+  return Math.round((chars / total) * tokens)
+}
+
+function formatApproxTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
+  return String(n)
+}
+
+function compositionLabel(id: ContextCompositionId): string {
+  return t(`ai.contextComposition.${id}`)
+}
+
+function compositionColor(id: ContextCompositionId): string {
+  return COMPOSITION_COLORS[id] || '#94a3b8'
+}
+
+function toggleCompositionExpand(id: string) {
+  const next = new Set(expandedCompositionIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  expandedCompositionIds.value = next
+}
+
+function isCompositionExpanded(id: string): boolean {
+  return expandedCompositionIds.value.has(id)
+}
 
 const quoteStore = useComposerQuoteStore()
 const quoteSnippets = computed(() => quoteStore.getSnippets(props.currentTabId))
@@ -561,9 +633,61 @@ const handleSendClick = (event: MouseEvent) => {
         :class="{ warning: contextStats.percentage > 60, danger: contextStats.percentage > 85 }"
         :style="{ width: contextStats.percentage + '%' }"
       ></div>
-      <span class="context-mini-tip">
-        <template v-if="contextStats.effectiveModel">{{ contextStats.effectiveModel }} · </template>{{ t('ai.context') }}: {{ contextStats.tokenEstimate.toLocaleString() }} / {{ (contextStats.maxTokens / 1000).toFixed(0) }}K ({{ contextStats.percentage }}%)<template v-if="contextStats.cacheHitRate !== undefined"> · Cache {{ contextStats.cacheHitRate }}%</template>
-      </span>
+      <div class="context-mini-tip" @mousedown.stop>
+        <div class="ctx-usage-header">
+          <span class="ctx-usage-title">{{ t('ai.contextUsageTitle') }}</span>
+          <span class="ctx-usage-pct">{{ contextStats.percentage }}%</span>
+        </div>
+        <div class="ctx-usage-summary">
+          <span v-if="contextStats.effectiveModel" class="ctx-usage-model">{{ contextStats.effectiveModel }}</span>
+          <span>{{ contextStats.tokenEstimate.toLocaleString() }} / {{ (contextStats.maxTokens / 1000).toFixed(0) }}K</span>
+          <span v-if="contextStats.cacheHitRate !== undefined">Cache {{ contextStats.cacheHitRate }}%</span>
+        </div>
+        <template v-if="topLevelComposition.length > 0">
+          <div class="ctx-usage-segments">
+            <div
+              v-for="node in topLevelComposition"
+              :key="node.id"
+              class="ctx-usage-seg"
+              :style="{ width: compositionPercent(node.chars) + '%', background: compositionColor(node.id) }"
+            ></div>
+          </div>
+          <ul class="ctx-usage-list">
+            <li v-for="node in topLevelComposition" :key="node.id" class="ctx-usage-row">
+              <button
+                v-if="node.children?.length"
+                type="button"
+                class="ctx-usage-expand"
+                :class="{ open: isCompositionExpanded(node.id) }"
+                @click.stop="toggleCompositionExpand(node.id)"
+              >
+                <ChevronRight :size="12" />
+              </button>
+              <span v-else class="ctx-usage-expand-spacer"></span>
+              <span class="ctx-usage-swatch" :style="{ background: compositionColor(node.id) }"></span>
+              <span class="ctx-usage-name">{{ compositionLabel(node.id) }}</span>
+              <span class="ctx-usage-meta">
+                {{ compositionPercent(node.chars) }}%
+                · {{ t('ai.contextUsageApproxTokens', { n: formatApproxTokens(compositionApproxTokens(node.chars)) }) }}
+              </span>
+              <ul v-if="node.children?.length && isCompositionExpanded(node.id)" class="ctx-usage-children">
+                <li v-for="child in node.children" :key="child.id" class="ctx-usage-row child">
+                  <span class="ctx-usage-expand-spacer"></span>
+                  <span class="ctx-usage-swatch" :style="{ background: compositionColor(child.id) }"></span>
+                  <span class="ctx-usage-name">{{ compositionLabel(child.id) }}</span>
+                  <span class="ctx-usage-meta">
+                    {{ compositionPercent(child.chars) }}%
+                    · {{ t('ai.contextUsageApproxTokens', { n: formatApproxTokens(compositionApproxTokens(child.chars)) }) }}
+                  </span>
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </template>
+        <div v-else class="ctx-usage-fallback">
+          {{ t('ai.context') }}: {{ contextStats.tokenEstimate.toLocaleString() }} / {{ (contextStats.maxTokens / 1000).toFixed(0) }}K ({{ contextStats.percentage }}%)
+        </div>
+      </div>
     </div>
 
     <div v-if="pendingImages.length > 0" class="image-preview-strip">
@@ -816,23 +940,155 @@ const handleSendClick = (event: MouseEvent) => {
   top: 10px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 4px 8px;
-  font-size: 10px;
+  min-width: 260px;
+  max-width: min(340px, 90vw);
+  padding: 10px 12px;
+  font-size: 11px;
   color: var(--text-primary);
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
-  white-space: nowrap;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  white-space: normal;
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.2s ease, visibility 0.2s ease;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
   pointer-events: none;
-  z-index: 10;
+  z-index: 20;
 }
 
 .context-mini:hover .context-mini-tip {
   opacity: 1;
   visibility: visible;
+  pointer-events: auto;
+}
+
+.ctx-usage-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.ctx-usage-title {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.ctx-usage-pct {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ctx-usage-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ctx-usage-model {
+  color: var(--text-primary);
+}
+
+.ctx-usage-segments {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  margin-bottom: 8px;
+}
+
+.ctx-usage-seg {
+  height: 100%;
+  min-width: 0;
+}
+
+.ctx-usage-list,
+.ctx-usage-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ctx-usage-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+.ctx-usage-row.child {
+  padding-left: 0;
+  width: 100%;
+  margin-top: 2px;
+}
+
+.ctx-usage-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.ctx-usage-expand:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.ctx-usage-expand.open {
+  transform: rotate(90deg);
+}
+
+.ctx-usage-expand-spacer {
+  width: 16px;
+  flex-shrink: 0;
+}
+
+.ctx-usage-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.ctx-usage-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ctx-usage-meta {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.ctx-usage-children {
+  width: 100%;
+  padding-left: 4px;
+}
+
+.ctx-usage-fallback {
+  color: var(--text-secondary);
+  font-size: 10px;
 }
 
 .uploaded-docs {

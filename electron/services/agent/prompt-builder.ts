@@ -15,6 +15,7 @@ import { getWorkspacePath, getScratchPath } from './tools/file'
 import { createLogger } from '../../utils/logger'
 import { buildBrowserBridgePromptSection } from '../browser-bridge/prompt-section'
 import { getBrowserBridgeService } from '../browser-bridge/browser-bridge.service'
+import { wrapCompositionSection } from './context-composition'
 import { t } from './i18n'
 
 const log = createLogger('PromptBuilder')
@@ -269,41 +270,46 @@ export class PromptBuilder {
     //   Tier 2 — 终端级：同一终端内稳定（主机环境、CWD、IM 通道）
     //   Tier 3 — 任务级：同一任务 ReAct 循环内稳定（知识、历史、Watch）
     // 同 API Key 下多个 Agent 并发时，Tier 1 的公共前缀可被所有请求共享缓存。
+    //
+    // 各段用 <!--sf-ctx:id--> 归因标记包裹（同 id 可多次出现），供上下文组成占比测量；发 API 前 strip。
+    // 顺序必须与原先一致，避免破坏前缀缓存。
+
+    const w = wrapCompositionSection
 
     // ── Tier 1: 全局稳定 ──
     const sections = [
-      this.buildLanguageRule(),
-      this.buildIdentitySection(),
-      this.buildUserProfileSection(),
+      w('identity', this.buildLanguageRule()),
+      w('identity', this.buildIdentitySection()),
+      w('identity', this.buildUserProfileSection()),
     ]
 
     if (this.isOnboarding) {
-      sections.push(this.buildOnboardingSection())
+      sections.push(w('identity', this.buildOnboardingSection()))
     } else {
-      sections.push(this.buildSoulSection())
-      sections.push(this.buildBondSection())
+      sections.push(w('identity', this.buildSoulSection()))
+      sections.push(w('identity', this.buildBondSection()))
     }
 
     sections.push(
-      this.buildUserRulesSection(),
-      this.buildWorkspaceRule(),
-      this.buildCoreRules(),
-      getUserSkillService().buildSkillsSummary(),
+      w('rules', this.buildUserRulesSection()),
+      w('identity', this.buildWorkspaceRule()),
+      w('identity', this.buildCoreRules()),
+      w('skills', getUserSkillService().buildSkillsSummary()),
 
       // ── Tier 2: 终端/主机级 ──
-      this.buildHostEnvironment(),
-      this.buildBrowserBridgeSection(),
-      this.buildWorkbenchPromptSection(),
-      this.buildSplitPanesSection(),
-      this.buildRemoteChannelContext(),
+      w('environment', this.buildHostEnvironment()),
+      w('environment', this.buildBrowserBridgeSection()),
+      w('environment', this.buildWorkbenchPromptSection()),
+      w('environment', this.buildSplitPanesSection()),
+      w('environment', this.buildRemoteChannelContext()),
 
       // ── Tier 3: 任务级 ──
-      this.buildKnowledgeDocSection(),
-      this.buildConversationHistorySection(),
-      this.buildWatchListSection(),
-      this.buildSkillsContentSection(),
-      this.buildKnowledgeContext(),
-      this.buildTaskMemorySection(),
+      w('knowledge', this.buildKnowledgeDocSection()),
+      w('knowledge', this.buildConversationHistorySection()),
+      w('environment', this.buildWatchListSection()),
+      w('skills', this.buildSkillsContentSection()),
+      w('knowledge', this.buildKnowledgeContext()),
+      w('knowledge', this.buildTaskMemorySection()),
       // [缓存优化] 动态内容（当前时间、token 用量）已禁用。
       // AI 需要时间时可通过执行 date 命令获取；上下文压力由 85% 警告消息兜底。
       // 如需恢复：取消注释下面两行，并取消 agent.ts updateContextPressure 中的系统提示词注入。

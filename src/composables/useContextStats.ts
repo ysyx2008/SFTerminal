@@ -3,7 +3,7 @@
  * 估算 Token 使用量和上下文统计
  */
 import { computed, ComputedRef } from 'vue'
-import type { AiProfile, AgentContextBar } from '@shared/types'
+import type { AiProfile, AgentContextBar, ContextCompositionNode } from '@shared/types'
 import { deriveContextBarFromSteps } from '@shared/types'
 import type { AgentStep } from '../stores/terminal'
 
@@ -28,6 +28,8 @@ export interface ContextStatsResult {
   cacheHitRate?: number
   /** 本次实际使用的模型名称（视觉路由切换时与 activeAiProfile 不同） */
   effectiveModel?: string
+  /** 字数组成树（live；历史回退无此字段） */
+  composition?: ContextCompositionNode
 }
 
 export function useContextStats(
@@ -65,7 +67,8 @@ export function useContextStats(
       maxTokens,
       percentage: Math.min(100, Math.round((totalTokens / maxTokens) * 100)),
       cacheHitRate: bar?.cacheHitRate,
-      effectiveModel: modelName
+      effectiveModel: modelName,
+      composition: bar?.composition,
     }
   })
 

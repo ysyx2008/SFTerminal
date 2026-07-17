@@ -123,6 +123,15 @@ describe('formatMessageForApi - DeepSeek thinking mode compliance', () => {
       expect(out).not.toHaveProperty('reasoning_content')
     })
 
+    it('system 消息应 strip 上下文组成归因标记', () => {
+      const msg: AiMessage = {
+        role: 'system',
+        content: '<!--sf-ctx:identity-->\nHello\n\n<!--sf-ctx:rules-->\nRule',
+      }
+      const out = formatMessageForApi(msg)
+      expect(out.content).toBe('Hello\n\nRule')
+    })
+
     it('tool 消息不应有 reasoning_content', () => {
       const msg: AiMessage = {
         role: 'tool',

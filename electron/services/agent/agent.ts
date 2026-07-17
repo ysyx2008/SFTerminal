@@ -48,6 +48,7 @@ import { getBondService } from '../bond.service'
 import type { ToolExecutorConfig, ToolResult } from './tools/types'
 import { executeTool } from './tools/index'
 import { stripToolMeta } from './tools'
+import { measureContextComposition } from './context-composition'
 import { getMetaByName, buildPreToolCallDisplay } from './tool-metadata'
 import {
   buildAllowlistKeyCandidates,
@@ -2125,6 +2126,10 @@ export abstract class Agent {
     } else if (plannedId && this._lastStatsProfileId && plannedId !== this._lastStatsProfileId) {
       this._conversation?.setLastCacheHitRate(undefined)
     }
+    // 保留上轮组成树，直到本轮发请求前刷新
+    if (this._contextBar.composition) {
+      bar.composition = this._contextBar.composition
+    }
     this.applyProfileFieldsToContextBar(bar, plannedId)
     this.setContextBar(bar)
   }
@@ -2300,6 +2305,14 @@ export abstract class Agent {
     // 发给 LLM 之前剥离 _meta（内部元数据，发出去会浪费 token）
     const llmTools = stripToolMeta(availableTools)
 
+    // 字数组成树：在 stripToolMeta 之后、真正发请求前测量，写入 contextBar（onDone 只更新总量）
+    const composition = measureContextComposition(run.messages, llmTools)
+    {
+      const bar: AgentContextBar = { ...this._contextBar, composition }
+      this.applyProfileFieldsToContextBar(bar)
+      this.setContextBar(bar)
+    }
+
     // Plugin hook: before_ai_request (must run before the Promise callback)
     const hookBus = this.services.pluginRegistry?.hookBus
     if (hookBus?.hasHandlers('before_ai_request')) {
@@ -2461,6 +2474,9 @@ export abstract class Agent {
                 const cacheTotal = (result.usage.cache_hit_tokens || 0) + (result.usage.cache_miss_tokens || 0)
                 const confirmedBar: AgentContextBar = {
                   contextTokens: result.usage.prompt_tokens,
+                }
+                if (this._contextBar.composition) {
+                  confirmedBar.composition = this._contextBar.composition
                 }
                 if (cacheTotal > 0 && result.usage.prompt_tokens > 0) {
                   const rate = Math.round((result.usage.cache_hit_tokens || 0) / result.usage.prompt_tokens * 100)
