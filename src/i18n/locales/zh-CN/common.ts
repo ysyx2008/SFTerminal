@@ -117,6 +117,11 @@ export default {
     assistant: 'AI 助手',
     assistantDesc: '与 AI 直接对话',
     viewExamples: '查看示例',
+    onboardingInvite: {
+      title: '初次见面，认识一下？',
+      meet: '好啊',
+      later: '以后再说',
+    },
     localTerminal: '本地终端',
     localTerminalDesc: '打开本机命令行终端',
     sshConnect: 'SSH 连接',

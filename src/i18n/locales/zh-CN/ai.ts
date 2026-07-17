@@ -4,6 +4,7 @@ export default {
   // AI 面板
   ai: {
     assistant: 'AI 助手',
+    onboardingConversationTitle: '认识一下',
     clearChat: '清空对话',
     closePanel: '关闭面板',
     noConfig: '尚未配置 AI 模型',

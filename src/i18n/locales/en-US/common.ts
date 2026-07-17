@@ -117,6 +117,11 @@ export default {
     assistant: 'AI Assistant',
     assistantDesc: 'Chat with AI directly',
     viewExamples: 'View examples',
+    onboardingInvite: {
+      title: 'Nice to meet you — shall we?',
+      meet: 'Sure!',
+      later: 'Maybe later',
+    },
     localTerminal: 'Local Terminal',
     localTerminalDesc: 'Open local command line',
     sshConnect: 'SSH Connect',

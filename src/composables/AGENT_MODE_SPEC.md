@@ -127,7 +127,8 @@ WelcomeChatComposer.handleComposerSubmit:
   2. transferUploadedDocs(WELCOME_COMPOSER_TAB_ID, tabId)  → 转移文档附件
   3. setPendingComposerHandoff(tabId, { message, images }) → 写入待交接内容
   4. markAssistantSkipOnboarding(tabId)            → 跳过引导流程
-  5. focusHubConversation(tabId)                   → Hub 焦点切到新 tab
+  5. markAgentOnboardingShown()                    → 关闭首页「初次见面」邀请
+  6. focusHubConversation(tabId)                   → Hub 焦点切到新 tab
 
 AiPanel（新 tab）watch hubFocusedAssistantTabId 或 active：
   → consumePendingComposerHandoff(tabId)           → 取出并清空 handoff
@@ -135,6 +136,13 @@ AiPanel（新 tab）watch hubFocusedAssistantTabId 或 active：
 ```
 
 `pendingComposerHandoff` 是一次性的（consume 后清空），防止重入。
+
+### 诞生引导（onboarding）入口
+
+- **欢迎页邀请**：未 `agentOnboardingShown` / 未完成时，Composer 上方展示「初次见面，认识一下？」；用户点「认识一下」→ `createAssistantTab` + `focusHubConversation`（不 skip），AiPanel 在 `tabActive` 且非联络时自动 `runAgent('__onboarding__')`。
+- **稍后再说** / 欢迎页直接发真任务：`markAgentOnboardingShown`，不再提示。
+- Setup 完成后**不**自动跳进任务；联络 tab 永不自动触发 onboarding。
+- 侧栏标题固定为 `ai.onboardingConversationTitle`（「认识一下」），不展示 `__onboarding__`。
 
 ---
 

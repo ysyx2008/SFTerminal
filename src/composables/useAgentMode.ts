@@ -1240,6 +1240,7 @@ export function useAgentMode(
 
     // 任务侧栏短标题：首条消息发出即异步生成，不阻塞 / 不等待 Agent
     // 联络常驻 tab 无侧栏标题；多轮续聊 / 已有自定义标题由后端跳过
+    // 诞生引导：固定友好标题（LLM 会对 __…__ 跳过）
     if (
       isNewSession &&
       currentTab.value?.agentId !== COMPANION_TAB_AGENT_ID &&
@@ -1247,15 +1248,22 @@ export function useAgentMode(
     ) {
       const sessionId = agentState.value?.sessionId
       if (sessionId) {
-        void window.electronAPI.history.generateConversationTitle(
-          sessionId,
-          message.trim(),
-          activeProfileId.value || undefined
-        ).then(title => {
-          if (title) {
-            terminalStore.setAgentSessionTitle(tabId, title)
-          }
-        }).catch(err => log.warn('generateConversationTitle failed:', err))
+        if (message.trim() === '__onboarding__') {
+          const friendlyTitle = t('ai.onboardingConversationTitle')
+          terminalStore.setAgentSessionTitle(tabId, friendlyTitle)
+          void window.electronAPI.history.setConversationTitle(sessionId, friendlyTitle)
+            .catch(err => log.warn('setConversationTitle for onboarding failed:', err))
+        } else {
+          void window.electronAPI.history.generateConversationTitle(
+            sessionId,
+            message.trim(),
+            activeProfileId.value || undefined
+          ).then(title => {
+            if (title) {
+              terminalStore.setAgentSessionTitle(tabId, title)
+            }
+          }).catch(err => log.warn('generateConversationTitle failed:', err))
+        }
       }
     }
 

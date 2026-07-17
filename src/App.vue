@@ -1134,10 +1134,9 @@ const backFromSmartPatrol = () => {
 // 完成引导向导
 const onSetupComplete = async () => {
   showSetupWizard.value = false
-  // 向导完成后初始化应用并打开 AI 面板（触发诞生对话）
+  // 向导完成后留在欢迎页；诞生引导由欢迎页「初次见面」提示由用户选择启动
   await initializeApp()
   startUpdaterPrompts()
-  ensureAiPanel()
 }
 
 async function onSsoSoftLogin() {

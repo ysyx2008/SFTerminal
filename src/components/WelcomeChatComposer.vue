@@ -323,6 +323,8 @@ const handleComposerSubmit = async (message: string) => {
   terminalStore.setPendingComposerHandoff(tabId, { message, images: imagesSnapshot })
   terminalStore.markAssistantSkipOnboarding(tabId)
   terminalStore.focusHubConversation(tabId)
+  // 任务已切入 Hub 后，关闭首页「初次见面」邀请
+  void configStore.markAgentOnboardingShown()
 }
 
 onMounted(() => {

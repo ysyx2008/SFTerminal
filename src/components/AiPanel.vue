@@ -1318,17 +1318,20 @@ watch(
   { immediate: true }
 )
 
-// 诞生引导：全局仅自动触发一次（独立助手 tab）；用户跳过未完成 personality 也不再重复
+// 诞生引导：全局仅自动触发一次（独立助手任务 tab，不含联络）；
+// 仅当前可见表面触发，避免 companion 后台挂载抢跑；用户跳过未完成 personality 也不再重复
 let onboardingTriggered = false
 watch(
   [
     isMounted,
+    () => props.tabActive,
     () => configStore.agentOnboardingShown,
     () => configStore.agentOnboardingCompleted,
     isStandaloneAssistant,
+    isCompanionTab,
   ],
-  async ([mounted, shown, completed, isAssistant]) => {
-    if (!mounted || shown || completed || !isAssistant || onboardingTriggered) return
+  async ([mounted, tabActive, shown, completed, isAssistant, isCompanion]) => {
+    if (!mounted || !tabActive || shown || completed || !isAssistant || isCompanion || onboardingTriggered) return
     if (terminalStore.consumeAssistantSkipOnboarding(currentTabId.value)) return
     if (!configStore.hasAiConfig) return
     onboardingTriggered = true

@@ -4,6 +4,7 @@ export default {
   // AI Panel
   ai: {
     assistant: 'AI Assistant',
+    onboardingConversationTitle: 'Nice to meet you',
     clearChat: 'Clear Chat',
     closePanel: 'Close Panel',
     noConfig: 'No AI model configured',

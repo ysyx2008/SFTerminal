@@ -7,6 +7,7 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Bot, SquareTerminal, Monitor, Eye, PanelTopOpen, Upload } from 'lucide-vue-next'
 import { useConfigStore, type SshSession } from '../stores/config'
+import { useTerminalStore } from '../stores/terminal'
 import MatrixRain from './EasterEgg/MatrixRain.vue'
 import WelcomeChatComposer from './WelcomeChatComposer.vue'
 import DropOverlay from './DropOverlay.vue'
@@ -23,12 +24,63 @@ import { isOemFeatureEnabled } from '@shared/oem-features'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
+const terminalStore = useTerminalStore()
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 const welcomeSubtitle = useWelcomeSubtitle(isSteamBuild)
 const canShowAssistant = !isSteamBuild && isWorkbenchAvailable('assistant')
 const canShowLocal = isWorkbenchAvailable('local')
 const canShowSsh = isWorkbenchAvailable('ssh')
 const canShowWatch = !isSteamBuild && isOemFeatureEnabled('watch')
+
+/** 未完成诞生引导时，在首页展示「初次见面」邀请 */
+const onboardingMeetPending = ref(false)
+
+const showOnboardingInvite = computed(() =>
+  canShowAssistant &&
+  configStore.hasAiConfig &&
+  !configStore.agentOnboardingShown &&
+  !configStore.agentOnboardingCompleted &&
+  !onboardingMeetPending.value
+)
+
+/** 文字与 logo 挥手同步：先显示默认文案，3s 后（logo 开始摆动时）切换成「初次见面」 */
+const onboardingGreetActive = ref(false)
+let onboardingGreetTimer: ReturnType<typeof setTimeout> | undefined
+watch(
+  showOnboardingInvite,
+  (show) => {
+    if (onboardingGreetTimer) clearTimeout(onboardingGreetTimer)
+    if (show) {
+      onboardingGreetTimer = setTimeout(() => {
+        onboardingGreetActive.value = true
+      }, 3000)
+    } else {
+      onboardingGreetActive.value = false
+    }
+  },
+  { immediate: true }
+)
+onUnmounted(() => {
+  if (onboardingGreetTimer) clearTimeout(onboardingGreetTimer)
+})
+
+const startOnboardingMeet = () => {
+  if (!showOnboardingInvite.value) return
+  onboardingMeetPending.value = true
+  const tabId = terminalStore.createAssistantTab({
+    activate: false,
+    title: t('ai.onboardingConversationTitle'),
+  })
+  // 不 markAssistantSkipOnboarding —— 让 AiPanel 在聚焦后自动跑 __onboarding__
+  terminalStore.focusHubConversation(tabId)
+}
+
+const dismissOnboardingInvite = async () => {
+  if (onboardingMeetPending.value || configStore.agentOnboardingShown) return
+  onboardingMeetPending.value = true
+  await configStore.markAgentOnboardingShown()
+  onboardingMeetPending.value = false
+}
 
 const { openConversationInTab } = useOpenConversationInTab()
 const {
@@ -275,12 +327,52 @@ onUnmounted(() => {
       <div class="welcome-header">
         <div class="logo-container" @click="handleLogoClick">
           <div class="logo">
-            <img :src="sailfishLogo" alt="Sailfish" class="sailfish-logo" />
+            <img
+              :src="sailfishLogo"
+              alt="Sailfish"
+              class="sailfish-logo"
+              :class="{ 'is-greeting': showOnboardingInvite }"
+            />
           </div>
         </div>
+        <!-- 首次运行：先显示默认文案；3s 后 logo 原地左右摆，标题交叉淡入「初次见面」，
+             副标题位换成按钮行。header-text 定宽，避免文案长短变化带动 logo 位移。 -->
         <div class="header-text">
-          <h1 class="welcome-title">{{ t(isSteamBuild ? 'welcome.titleSteam' : 'welcome.title') }}</h1>
-          <p class="welcome-subtitle">{{ welcomeSubtitle }}</p>
+          <div class="header-title-slot">
+            <Transition name="greet-fade">
+              <h1 v-if="!onboardingGreetActive" key="default" class="welcome-title">
+                {{ t(isSteamBuild ? 'welcome.titleSteam' : 'welcome.title') }}
+              </h1>
+              <h1 v-else key="greet" class="welcome-title">
+                {{ t('welcome.onboardingInvite.title') }}
+              </h1>
+            </Transition>
+          </div>
+          <div class="header-sub-slot">
+            <Transition name="greet-fade">
+              <p v-if="!onboardingGreetActive" key="default" class="welcome-subtitle">
+                {{ welcomeSubtitle }}
+              </p>
+              <div v-else key="greet" class="onboarding-invite-actions">
+                <button
+                  type="button"
+                  class="onboarding-invite-meet"
+                  :disabled="onboardingMeetPending"
+                  @click="startOnboardingMeet"
+                >
+                  {{ t('welcome.onboardingInvite.meet') }}
+                </button>
+                <button
+                  type="button"
+                  class="onboarding-invite-later"
+                  :disabled="onboardingMeetPending"
+                  @click="dismissOnboardingInvite"
+                >
+                  {{ t('welcome.onboardingInvite.later') }}
+                </button>
+              </div>
+            </Transition>
+          </div>
         </div>
       </div>
 
@@ -441,8 +533,122 @@ onUnmounted(() => {
   opacity: 0;
 }
 
+/* 诞生引导邀请：logo 开始挥手时，标题换成「初次见面」、副标题位置换成按钮行。
+   header-text 定宽，避免「欢迎使用旗鱼」↔「初次见面」长短变化带动整块居中重排。 */
 .header-text {
   text-align: left;
+  /* 定宽：避免「欢迎使用旗鱼」↔「初次见面，认识一下？」长短变化带动整块居中重排，logo 跟着跳 */
+  width: 320px;
+  flex-shrink: 0;
+}
+
+.header-title-slot,
+.header-sub-slot {
+  position: relative;
+}
+
+.header-title-slot {
+  min-height: 1.2em; /* 对齐 .welcome-title 行高，交叉淡入时不塌陷 */
+  margin-bottom: 4px;
+}
+
+.header-sub-slot {
+  min-height: 21px;
+}
+
+.onboarding-invite-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 21px;
+}
+
+/* 文案切换：旧文案淡出，新文案带上滑 + 轻微放大强调进场——
+   比纯淡入更抓视线，明确提示「这里变了、看这里」。 */
+.greet-fade-enter-active {
+  transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.greet-fade-leave-active {
+  transition: opacity 0.35s ease;
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+}
+
+.greet-fade-enter-from {
+  opacity: 0;
+  transform: translateY(10px) scale(0.96);
+}
+
+.greet-fade-leave-to {
+  opacity: 0;
+}
+
+/* 「认识一下」：实心药丸按钮，一眼可点 */
+.onboarding-invite-meet {
+  display: inline-flex;
+  align-items: center;
+  background: var(--accent-primary, #58a6ff);
+  color: #fff;
+  border: none;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent-primary, #58a6ff) 40%, transparent);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  /* 按钮行是文字切换时才插入 DOM 的：站稳后轻微呼吸脉动 3 次吸引注意 */
+  animation: meetPulse 1.6s ease-in-out 0.7s 3;
+}
+
+@keyframes meetPulse {
+  0%, 100% {
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--accent-primary, #58a6ff) 40%, transparent);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 4px 18px color-mix(in srgb, var(--accent-primary, #58a6ff) 70%, transparent);
+    transform: scale(1.06);
+  }
+}
+
+.onboarding-invite-meet:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent-primary, #58a6ff) 55%, transparent);
+  filter: brightness(1.06);
+}
+
+.onboarding-invite-meet:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* 「稍后再说」：次要文字链接 */
+.onboarding-invite-later {
+  background: transparent;
+  border: none;
+  padding: 5px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text-muted);
+  opacity: 0.75;
+  cursor: pointer;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+.onboarding-invite-later:hover:not(:disabled) {
+  opacity: 1;
+  color: var(--text-secondary);
+  text-decoration: underline;
+}
+
+.onboarding-invite-meet:disabled,
+.onboarding-invite-later:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 @keyframes headerEnter {
@@ -472,8 +678,6 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  /* 只播一轮，避免欢迎页常驻无限动画空转 CPU */
-  animation: float 3s ease-in-out 1;
 }
 
 .sailfish-logo {
@@ -482,10 +686,33 @@ onUnmounted(() => {
   object-fit: contain;
   filter: drop-shadow(0 4px 16px rgba(var(--accent-decorative-rgb), 0.4));
   transition: filter 0.3s ease;
+  /* 浮动放在 img 上：.logo 会被 enter-done 强制 animation:none，放父级会提前掐掉 */
+  animation: float 3s ease-in-out 1;
 }
 
 .logo-container:hover .sailfish-logo {
   filter: drop-shadow(0 6px 30px rgba(var(--accent-decorative-rgb), 0.6));
+}
+
+/* 首次运行：先浮动 3s，之后开始持续挥手——只要邀请还在（用户没点按钮）就一直挥。
+   每轮「挥几下 + 停一拍」循环，像真的在打招呼；动画在 img 上，避开 .logo 的 enter-done 重置。 */
+.sailfish-logo.is-greeting {
+  transform-origin: 50% 88%;
+  animation:
+    float 3s ease-in-out 1,
+    logoGreet 2.6s ease-in-out 3s infinite;
+}
+
+@keyframes logoGreet {
+  0% { transform: rotate(0deg); }
+  7% { transform: rotate(-12deg); }
+  14% { transform: rotate(11deg); }
+  21% { transform: rotate(-9deg); }
+  28% { transform: rotate(8deg); }
+  35% { transform: rotate(-5deg); }
+  42% { transform: rotate(0deg); }
+  /* 42%~100% 停一拍再进入下一轮，避免无限抽动显得焦躁 */
+  100% { transform: rotate(0deg); }
 }
 
 @keyframes float {
@@ -499,6 +726,7 @@ onUnmounted(() => {
   color: var(--text-primary);
   margin: 0 0 4px 0;
   letter-spacing: -0.5px;
+  white-space: nowrap;
   /* 渐变文字效果 */
   background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent-primary) 100%);
   -webkit-background-clip: text;
@@ -1023,6 +1251,8 @@ onUnmounted(() => {
 }
 
 /* 回首页时跳过入场动画（组件用 v-show 保持挂载，否则会反复重播） */
+/* 注意：浮动 / 挥手动画都放在 .sailfish-logo（img）上而非 .logo——
+   .logo 在此列表中，会被 enter-done 的 animation:none 拍死。 */
 .welcome-page.enter-done .welcome-content,
 .welcome-page.enter-done .welcome-header,
 .welcome-page.enter-done .quick-start,
@@ -1038,8 +1268,16 @@ onUnmounted(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .logo,
-  .tip-icon {
+  .tip-icon,
+  .sailfish-logo,
+  .sailfish-logo.is-greeting,
+  .onboarding-invite-meet {
     animation: none !important;
+  }
+
+  .greet-fade-enter-active,
+  .greet-fade-leave-active {
+    transition: none !important;
   }
 }
 
