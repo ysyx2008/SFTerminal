@@ -90,8 +90,8 @@ const tocLabel = lang === 'zh' ? '本页目录' : 'On this page';
   /* Docs wrapper */
   .docs-wrapper {
     display: flex;
-    min-height: calc(100vh - 73px);
-    padding-top: 73px;
+    min-height: calc(100vh - 92px);
+    padding-top: 92px;
   }
 
   .docs-main {
@@ -118,9 +118,11 @@ const tocLabel = lang === 'zh' ? '本页目录' : 'On this page';
   .docs-article h1 {
     font-size: 32px;
     font-weight: 700;
+    letter-spacing: -0.025em;
     color: var(--color-text-primary);
-    margin-bottom: 8px;
-    line-height: 1.3;
+    margin-bottom: 12px;
+    line-height: 1.25;
+    scroll-margin-top: 96px;
   }
 
   .docs-article > p:first-of-type {
@@ -133,21 +135,23 @@ const tocLabel = lang === 'zh' ? '本页目录' : 'On this page';
   .docs-article h2 {
     font-size: 24px;
     font-weight: 700;
+    letter-spacing: -0.015em;
     color: var(--color-text-primary);
     margin-top: 48px;
     margin-bottom: 16px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--color-border);
-    scroll-margin-top: 90px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+    scroll-margin-top: 96px;
   }
 
   .docs-article h3 {
     font-size: 18px;
     font-weight: 600;
+    letter-spacing: -0.01em;
     color: var(--color-text-primary);
     margin-top: 32px;
     margin-bottom: 12px;
-    scroll-margin-top: 90px;
+    scroll-margin-top: 96px;
   }
 
   .docs-article h4 {

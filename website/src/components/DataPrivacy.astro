@@ -144,8 +144,20 @@ const dp = t.dataPrivacy;
 
 <style>
   .dp-section {
-    padding: calc(var(--spacing-section) + 60px) 0 var(--spacing-section);
+    padding: 140px 0 var(--spacing-section);
     min-height: 100vh;
+  }
+
+  .dp-section :global(.section-title),
+  .dp-section :global(.section-subtitle) {
+    text-align: left;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .dp-section :global(.section-subtitle) {
+    max-width: 36em;
+    margin-bottom: var(--spacing-component);
   }
 
   .dp-content {

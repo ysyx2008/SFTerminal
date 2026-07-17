@@ -37,13 +37,25 @@ const htmlContent = await marked.parse(contentCleaned);
 
 <style>
   .changelog-section {
-    padding: calc(var(--spacing-section) + 60px) 0 var(--spacing-section);
+    padding: 140px 0 var(--spacing-section);
     min-height: 100vh;
+  }
+
+  .changelog-section :global(.section-title),
+  .changelog-section :global(.section-subtitle) {
+    text-align: left;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .changelog-section :global(.section-subtitle) {
+    max-width: 36em;
+    margin-bottom: var(--spacing-component);
   }
 
   .changelog-content {
     max-width: 800px;
-    margin: 0 auto;
+    margin: 0;
   }
 
   /* 版本标题 h2 */

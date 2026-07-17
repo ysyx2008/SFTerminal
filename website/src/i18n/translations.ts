@@ -113,7 +113,7 @@ export const translations = {
         },
         {
           title: '丰富的 Agent 技能',
-          description: '开箱即用的技能扩展：飞书多维表格/云文档读写（OAuth 授权）、浏览器自动化、邮件收发、日程管理、Excel/Word/PPT 办公文档（含可编辑 PowerPoint 与多级编号制度文件），让 AI 的能力远不止命令行。觉醒模式下 AI 主动监控、推送通知。',
+          description: '开箱即用的技能扩展：飞书多维表格/云文档读写（OAuth 授权）、浏览器自动化、邮件收发、日程管理、Excel/Word/PPT 办公文档（含可编辑 PowerPoint 与多级编号制度文件），让 AI 的能力远不止命令行。还可设定自动监控任务，条件满足时主动推送通知。',
           highlights: ['飞书 Bitable / 云文档', '邮件 / 日程管理', 'Excel / Word / PPT'],
         },
         {
@@ -387,8 +387,8 @@ export const translations = {
         ],
       },
       watch: {
-        title: '觉醒模式：让 AI 主动工作',
-        intro: '觉醒模式让 AI 不再只是被动回答——你可以设定「关切」，让 Agent 在特定条件下自动执行任务并推送结果。比如每天早上自动汇报服务器状态，收到重要邮件时立即通知，或监控日志文件发现异常时告警。',
+        title: '主动监控：让 AI 自动帮你做事',
+        intro: '不用每次都手动提问——设定自动化任务（应用内叫「关切」），Agent 会在特定条件下自动执行并把结果推送到你指定的地方。比如每天早上自动汇报服务器状态，收到重要邮件时立即通知，或监控日志文件发现异常时告警。',
         concept: '核心概念',
         conceptItems: [
           { term: '关切（Watch）', desc: '一条"关注配置"——定义什么时候做、做什么、结果送哪里' },
@@ -464,7 +464,7 @@ export const translations = {
           '发送任务，Agent 在本地自动执行（命令、文件操作等）',
           '接收 Agent 的执行过程和最终结果',
           '确认或拒绝危险操作',
-          '接收觉醒模式的主动通知',
+          '接收 Agent 的主动推送通知',
           '发送 /status 查看状态，/help 查看帮助',
         ],
         tips: '使用建议',
@@ -506,7 +506,7 @@ export const translations = {
         tipsList: [
           '微信集成为 1v1 个人场景，与你的微信账号绑定',
           '扫码登录后 Token 会持久保存，下次启动可自动连接，无需重复扫码',
-          '如需在手机上接收觉醒通知，可将输出渠道设为微信',
+          '如需在手机上接收自动任务通知，可将输出渠道设为微信',
           '发送大文件时建议保持网络稳定，CDN 上传有 60 秒超时',
           '如遇消息收发异常，可尝试「断开」再重新「连接」',
         ],
@@ -1061,7 +1061,7 @@ export const translations = {
         },
         {
           title: 'Rich Agent Skills',
-          description: 'Out-of-the-box skill extensions: Feishu Bitable/Docs read-write (OAuth), browser automation, email management, calendar scheduling, Excel/Word/PPT office documents (including editable PowerPoint and multi-level institutional documents) — AI capabilities far beyond the command line. In Awaken mode, AI proactively monitors and pushes notifications.',
+          description: 'Out-of-the-box skill extensions: Feishu Bitable/Docs read-write (OAuth), browser automation, email management, calendar scheduling, Excel/Word/PPT office documents (including editable PowerPoint and multi-level institutional documents) — AI capabilities far beyond the command line. Set up proactive monitoring tasks and get notified when conditions are met.',
           highlights: ['Feishu Bitable / Docs', 'Email / Calendar', 'Excel / Word / PPT'],
         },
         {
@@ -1335,8 +1335,8 @@ export const translations = {
         ],
       },
       watch: {
-        title: 'Awaken Mode: Let AI Work Proactively',
-        intro: 'Awaken mode makes AI proactive instead of reactive — set up "Watches" to have the Agent automatically execute tasks and push results when conditions are met. For example, auto-report server status every morning, get notified immediately on important emails, or alert on log anomalies.',
+        title: 'Proactive Monitoring: Let AI Work for You',
+        intro: 'No need to ask every time — set up automated tasks (called "Watches" in the app) and the Agent runs them when conditions are met, pushing results where you want them. For example, auto-report server status every morning, get notified immediately on important emails, or alert on log anomalies.',
         concept: 'Core Concepts',
         conceptItems: [
           { term: 'Watch', desc: 'A monitoring configuration — defines when to act, what to do, and where to send results' },
@@ -1412,7 +1412,7 @@ export const translations = {
           'Send tasks for the Agent to execute locally (commands, file operations, etc.)',
           'Receive execution progress and final results',
           'Confirm or reject risky operations',
-          'Receive proactive notifications from Awaken mode',
+          'Receive proactive notifications from automated tasks',
           'Send /status to check status, /help for help',
         ],
         tips: 'Tips',
@@ -1454,7 +1454,7 @@ export const translations = {
         tipsList: [
           'WeChat integration is for personal 1-on-1 use, bound to your WeChat account',
           'After QR login, the token is persisted — auto-connect works on next launch without re-scanning',
-          'To receive Awaken notifications on your phone, set the output channel to WeChat',
+          'To receive automated task notifications on your phone, set the output channel to WeChat',
           'Keep your network stable when sending large files — CDN upload has a 60-second timeout',
           'If messaging issues occur, try disconnecting and reconnecting',
         ],
