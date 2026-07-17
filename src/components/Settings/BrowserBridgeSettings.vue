@@ -23,7 +23,7 @@ import {
 
 const { t } = useI18n()
 
-type BrowserId = 'chrome' | 'edge' | 'firefox'
+/** 选择器只分两路：Chromium 系（Chrome/Edge/…）与 Firefox */
 type BrowserFamily = 'chromium' | 'firefox'
 
 const installing = ref(false)
@@ -39,7 +39,7 @@ let loadReadyTimer: ReturnType<typeof setTimeout> | null = null
 const copiedPathKey = ref<string | null>(null)
 let copiedPathTimer: ReturnType<typeof setTimeout> | null = null
 
-const selectedBrowser = ref<BrowserId>('chrome')
+const selectedFamily = ref<BrowserFamily>('chromium')
 const manualSelect = ref(false)
 // 已连接时把「选择浏览器」主区收起，点「连接其他浏览器」再展开
 const showSetup = ref(false)
@@ -77,14 +77,10 @@ const firefoxHostPermissionsMissing = computed(
 const anyConnected = computed(() => chromiumConnected.value || firefoxConnected.value)
 
 // —— 选择器派生态 ——
-const browserOptions = computed<{ id: BrowserId; label: string; family: BrowserFamily }[]>(() => [
-  { id: 'chrome', label: t('browserBridge.browserChrome'), family: 'chromium' },
-  { id: 'edge', label: t('browserBridge.browserEdge'), family: 'chromium' },
-  { id: 'firefox', label: t('browserBridge.browserFirefox'), family: 'firefox' },
+const browserOptions = computed<{ id: BrowserFamily; label: string }[]>(() => [
+  { id: 'chromium', label: t('browserBridge.browserChromium') },
+  { id: 'firefox', label: t('browserBridge.browserFirefox') },
 ])
-const selectedFamily = computed<BrowserFamily>(() =>
-  selectedBrowser.value === 'firefox' ? 'firefox' : 'chromium',
-)
 const selectedConnected = computed(() =>
   selectedFamily.value === 'firefox' ? firefoxConnected.value : chromiumConnected.value,
 )
@@ -99,16 +95,16 @@ function familyConnected(family: BrowserFamily): boolean {
   return family === 'firefox' ? firefoxConnected.value : chromiumConnected.value
 }
 
-function pickBrowser(id: BrowserId) {
-  selectedBrowser.value = id
+function pickFamily(id: BrowserFamily) {
+  selectedFamily.value = id
   manualSelect.value = true
 }
 
-/** 首次/刷新后自动聚焦到「还没连上的」浏览器，减少用户找入口的成本 */
+/** 首次/刷新后自动聚焦到「还没连上的」一路，减少用户找入口的成本 */
 function autoFocusBrowser() {
   if (manualSelect.value) return
-  if (!chromiumConnected.value) selectedBrowser.value = 'chrome'
-  else if (!firefoxConnected.value) selectedBrowser.value = 'firefox'
+  if (!chromiumConnected.value) selectedFamily.value = 'chromium'
+  else if (!firefoxConnected.value) selectedFamily.value = 'firefox'
 }
 
 function connectionStatusText(connected: boolean, version?: string): string {
@@ -245,10 +241,10 @@ async function startLoadFirefox() {
   flashLoadReady('firefox')
 }
 
-/** 选中面板的主操作：Chrome/Edge 打开扩展页；Firefox 走 AMO（模板里单独处理临时加载） */
+/** 手动加载默认打开 Chrome 扩展页；Edge 在模板里另有入口 */
 function primaryLoad() {
-  if (selectedBrowser.value === 'firefox') return
-  void startLoadChromium(selectedBrowser.value)
+  if (selectedFamily.value === 'firefox') return
+  void startLoadChromium('chrome')
 }
 
 let unsubConnections: (() => void) | null = null
@@ -336,10 +332,10 @@ onUnmounted(() => {
         <span class="bb-summary-text">{{ t('browserBridge.connectedSummary') }}</span>
         <span class="bb-summary-chips">
           <span v-if="chromiumConnected" class="bb-chip">
-            🌐 {{ connectionStatusText(true, chromiumConnection?.version) }}
+            🌐 {{ t('browserBridge.browserChromium') }}{{ chromiumConnection?.version ? ` · v${chromiumConnection.version}` : '' }}
           </span>
           <span v-if="firefoxConnected" class="bb-chip">
-            🦊 {{ connectionStatusText(true, firefoxConnection?.version) }}
+            🦊 {{ t('browserBridge.browserFirefox') }}{{ firefoxConnection?.version ? ` · v${firefoxConnection.version}` : '' }}
           </span>
         </span>
       </div>
@@ -373,14 +369,14 @@ onUnmounted(() => {
             type="button"
             role="tab"
             class="bb-picker-item"
-            :class="{ active: selectedBrowser === opt.id }"
-            :aria-selected="selectedBrowser === opt.id"
-            @click="pickBrowser(opt.id)"
+            :class="{ active: selectedFamily === opt.id }"
+            :aria-selected="selectedFamily === opt.id"
+            @click="pickFamily(opt.id)"
           >
-            <span class="bb-picker-emoji" aria-hidden="true">{{ opt.family === 'firefox' ? '🦊' : '🌐' }}</span>
+            <span class="bb-picker-emoji" aria-hidden="true">{{ opt.id === 'firefox' ? '🦊' : '🌐' }}</span>
             <span class="bb-picker-label">{{ opt.label }}</span>
             <span
-              v-if="familyConnected(opt.family)"
+              v-if="familyConnected(opt.id)"
               class="bb-picker-dot"
               :title="t('browserBridge.statusExtensionConnected')"
             />
@@ -414,7 +410,7 @@ onUnmounted(() => {
 
           <!-- 未连接：展示该浏览器的加载引导 -->
           <template v-else>
-            <!-- Chrome / Edge -->
+            <!-- Chromium 系 -->
             <template v-if="selectedFamily === 'chromium'">
               <a
                 class="btn btn-primary bb-pane-cta"
@@ -438,6 +434,10 @@ onUnmounted(() => {
                       <ExternalLink :size="13" />
                       {{ isMac ? t('browserBridge.startLoadChromeMac') : t('browserBridge.startLoadChrome') }}
                     </button>
+                    <button type="button" class="btn btn-sm btn-outline" @click="startLoadChromium('edge')">
+                      <ExternalLink :size="13" />
+                      {{ t('browserBridge.startLoadEdge') }}
+                    </button>
                     <button
                       v-if="!isMac"
                       type="button"
@@ -449,6 +449,7 @@ onUnmounted(() => {
                       {{ copiedPathKey === 'chromium' ? t('browserBridge.copied') : t('browserBridge.copyPath') }}
                     </button>
                   </div>
+                  <p class="bb-note bb-note--sub">{{ t('browserBridge.otherChromiumHint') }}</p>
                   <ol class="bb-steps">
                     <template v-if="isMac">
                       <li>{{ t('browserBridge.dragStep1') }}</li>
