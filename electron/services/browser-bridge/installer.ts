@@ -286,13 +286,33 @@ function nativeHostManifestName(): string {
   return `${BROWSER_BRIDGE_NATIVE_HOST}.json`
 }
 
+/** 历史版本误写的 Firefox 注册表路径（多了 \Firefox 子级），装/卸载时一并清除 */
+const LEGACY_FIREFOX_REGISTRY_KEY = `Software\\Mozilla\\Firefox\\NativeMessagingHosts\\${BROWSER_BRIDGE_NATIVE_HOST}`
+
 function nativeHostRegistryTargets(browsers: BrowserBridgeBrowser[]): string[] {
   const keySuffix = `Software\\${'%BROWSER%'}\\NativeMessagingHosts\\${BROWSER_BRIDGE_NATIVE_HOST}`
   const targets: string[] = []
   if (browsers.includes('chrome')) targets.push(keySuffix.replace('%BROWSER%', 'Google\\Chrome'))
   if (browsers.includes('edge')) targets.push(keySuffix.replace('%BROWSER%', 'Microsoft\\Edge'))
-  if (browsers.includes('firefox')) targets.push(keySuffix.replace('%BROWSER%', 'Mozilla\\Firefox'))
+  // Firefox 注册表路径为 Software\Mozilla\NativeMessagingHosts（无 \Firefox 子级），
+  // 与 Chrome/Edge 结构不同；写成 Mozilla\Firefox 会导致 Firefox 找不到 Native Host。
+  if (browsers.includes('firefox')) {
+    targets.push(`Software\\Mozilla\\NativeMessagingHosts\\${BROWSER_BRIDGE_NATIVE_HOST}`)
+  }
   return targets
+}
+
+/** 删除历史误写的 Firefox 注册表 key（HKCU\Software\Mozilla\Firefox\...） */
+function removeLegacyWindowsNativeHostKeys(): void {
+  if (process.platform !== 'win32') return
+  try {
+    execFileSync('reg', ['delete', `HKCU\\${LEGACY_FIREFOX_REGISTRY_KEY}`, '/f'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+  } catch {
+    // key 可能不存在，忽略
+  }
 }
 
 function getChromiumNativeHostDirs(): string[] {
@@ -415,6 +435,7 @@ function unregisterWindowsNativeHost(browsers: BrowserBridgeBrowser[]): void {
       // key may not exist
     }
   }
+  removeLegacyWindowsNativeHostKeys()
 }
 
 function unregisterMacLinuxNativeHost(browsers: BrowserBridgeBrowser[]): void {
@@ -503,6 +524,7 @@ export function installBrowserBridge(): BrowserBridgeInstallStatus {
       writeJson(winFirefox, { ...firefoxManifest, path: hostPath })
       registerWindowsNativeHost(winChromium, ['chrome', 'edge'])
       registerWindowsNativeHost(winFirefox, ['firefox'])
+      removeLegacyWindowsNativeHostKeys()
     } else if (process.platform === 'darwin') {
       registerMacNativeHost(chromiumManifest, firefoxManifest, browsers)
     } else {

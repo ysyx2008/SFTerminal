@@ -110,6 +110,7 @@ legacy `list_tabs` / `switch_tab` / `goto` / `close_tab` 内部委托 `shared/ta
 3. 写 `$HOME/.sailfish-browser-bridge.json` 指针（供 Chrome 拉起的 host 进程定位当前 gateway，**不硬编码** SFTerm/SailFish 路径）
 4. macOS：`clang` 编译 `{Electron.app}/Contents/Helpers/sailfish-browser-host` Mach-O（与 Claude 同款路径；Chrome 无法稳定拉起 `$HOME` 下的 host）；manifest **按浏览器拆分**（Chrome 仅 `chrome-extension://`，Firefox 仅 `moz-extension://`）
 5. Windows host 启动：`ELECTRON_RUN_AS_NODE=1` + 应用可执行文件 + `host.mjs`
+   - **Windows 注册表路径（易错）**：Chrome=`Software\Google\Chrome\NativeMessagingHosts\<name>`、Edge=`Software\Microsoft\Edge\...`，但 **Firefox=`Software\Mozilla\NativeMessagingHosts\<name>`（无 `\Firefox` 子级）**。曾误写为 `Mozilla\Firefox` 导致 Firefox 找不到 Native Host；`installer.ts` 装/卸载时会顺带清除历史误写的旧 key。
 
 **迁移/修改数据目录后**：启动时会 `install()` 刷新 host-env、指针与浏览器注册；若仍异常，设置页「重新安装组件」并重启浏览器。
 
