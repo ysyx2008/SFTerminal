@@ -2381,6 +2381,7 @@ interface Window {
       clearHistory: (watchId?: string) => Promise<void>
       isRunning: (id: string) => Promise<boolean>
       getRunning: () => Promise<string[]>
+      cancel: (id: string) => Promise<boolean>
       getSshSessions: () => Promise<Array<{ id: string; name: string; host: string; port: number; username: string }>>
       getTemplates: () => Promise<Array<{ id: string; name: string; nameEn: string; description: string; descriptionEn: string; category: string; icon: string }>>
       getTemplateCategories: () => Promise<string[]>

@@ -3,19 +3,18 @@
  * 关切运营总览仪表盘
  *
  * 在「关切」tab 列表里选中「总览」虚拟项时显示。
- * 一屏看清：异常关切 → 下一次执行（hero）→ 运行中 → 即将执行 → 最近流水。
+ * 一屏看清：异常关切 → 运行中 → 即将执行 → 最近流水。
  *
- * 本组件不发起 IPC 调用，全部数据由父组件 Awaken.vue 注入；
- * select-watch 让父组件切换到对应 watch 的详情视图。
+ * 本组件不发起 IPC 调用，全部数据由父组件 Awaken.vue 注入。
  */
 
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   AlertTriangle, RefreshCw, Clock, History,
-  CheckCircle2, ChevronRight, AlertCircle, RotateCcw
+  CheckCircle2, ChevronRight, AlertCircle, RotateCcw, Pause, Square, Eye, Plus
 } from 'lucide-vue-next'
-import type { WatchDefinition, WatchHistoryRecord } from '@shared/types'
+import type { WatchDefinition, WatchHistoryRecord, WatchTrigger } from '@shared/types'
 
 const props = defineProps<{
   watches: WatchDefinition[]
@@ -27,32 +26,45 @@ const emit = defineEmits<{
   'select-watch': [id: string]
   'view-history-detail': [record: WatchHistoryRecord]
   'retry-watch': [id: string]
+  'disable-watch': [id: string]
+  'cancel-watch': [id: string]
+  'focus-anomalies': []
+  'view-all-history': []
+  'go-templates': []
 }>()
 
 const { t, locale } = useI18n()
 
-// ==================== 内置心跳过滤 ====================
-// __wakeup__（每 30 分钟一次的心跳）和 __daily_patrol__ 在最近流水里出现频率极高，
-// 会把用户配置的关切流水挤出屏幕，因此总览面板里一律隐藏。
 const BUILTIN_WATCH_IDS = new Set(['__wakeup__', '__daily_patrol__'])
 
-// ==================== 派生数据 ====================
+/** 无 nextRun 的事件型触发器（监听即活，不是「没在跑」） */
+const EVENT_TRIGGER_TYPES = new Set([
+  'file_change', 'webhook', 'email', 'calendar', 'im_connected',
+  'app_lifecycle', 'command_probe', 'http_probe', 'milestone', 'watch_failure', 'manual',
+])
 
-// 异常：启用且上次失败/超时，按上次失败时间倒序
+// 30s tick：相对时间 / 即将执行列表随时间前进
+const nowTick = ref(Date.now())
+let tickTimer: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  tickTimer = setInterval(() => { nowTick.value = Date.now() }, 30_000)
+})
+onUnmounted(() => {
+  if (tickTimer) clearInterval(tickTimer)
+})
+
 const anomalies = computed<WatchDefinition[]>(() =>
   props.watches
     .filter(w => w.enabled && (w.lastRun?.status === 'failed' || w.lastRun?.status === 'timeout'))
     .sort((a, b) => (b.lastRun?.at ?? 0) - (a.lastRun?.at ?? 0))
 )
 
-// 运行中：在 runningWatches 集合中
 const running = computed<WatchDefinition[]>(() =>
   props.watches.filter(w => props.runningWatches.has(w.id))
 )
 
-// 即将执行：启用且 nextRun 在未来，按时间正序
 const upcomingAll = computed<WatchDefinition[]>(() => {
-  const now = Date.now()
+  const now = nowTick.value
   return props.watches
     .filter(w => w.enabled && typeof w.nextRun === 'number' && (w.nextRun as number) > now)
     .sort((a, b) => (a.nextRun ?? 0) - (b.nextRun ?? 0))
@@ -67,10 +79,6 @@ const upcomingHidden = computed(() =>
   Math.max(0, upcomingAll.value.length - UPCOMING_DEFAULT)
 )
 
-// hero：最近的下一次执行（用于顶部突出展示）
-const nextRunHero = computed<WatchDefinition | undefined>(() => upcomingAll.value[0])
-
-// 最近流水：过滤掉内置心跳，按 at 倒序，取前 20
 const recentHistory = computed<WatchHistoryRecord[]>(() =>
   [...props.history]
     .filter(r => !BUILTIN_WATCH_IDS.has(r.watchId))
@@ -78,13 +86,34 @@ const recentHistory = computed<WatchHistoryRecord[]>(() =>
     .slice(0, 20)
 )
 
-// 异常 / 运行中均为 0 时算「健康」状态，可折叠为单行徽章
 const isHealthy = computed(() => anomalies.value.length === 0 && running.value.length === 0)
 
-// ==================== 时间格式化 ====================
+const hasAnyWatch = computed(() => props.watches.length > 0)
+
+function hasEventOnlyTriggers(triggers: WatchTrigger[]): boolean {
+  if (!triggers.length) return false
+  return triggers.every(tr => EVENT_TRIGGER_TYPES.has(tr.type))
+}
+
+/** 启用中、无 nextRun、仅事件型触发的关切（仍在监听） */
+const listeningEventWatches = computed(() =>
+  props.watches.filter(w =>
+    w.enabled
+    && !props.runningWatches.has(w.id)
+    && !(typeof w.nextRun === 'number' && w.nextRun > nowTick.value)
+    && hasEventOnlyTriggers(w.triggers)
+  )
+)
+
+const upcomingEmptyHint = computed(() => {
+  if (listeningEventWatches.value.length > 0) {
+    return t('watch.overviewListeningOnly', { n: listeningEventWatches.value.length })
+  }
+  return t('watch.overviewNoUpcoming')
+})
 
 function formatTimeAgo(ts: number): string {
-  const now = Date.now()
+  const now = nowTick.value
   const diff = now - ts
   if (diff < 0) return formatUpcoming(ts)
   const sec = Math.floor(diff / 1000)
@@ -100,7 +129,7 @@ function formatTimeAgo(ts: number): string {
 }
 
 function formatUpcoming(ts: number): string {
-  const now = Date.now()
+  const now = nowTick.value
   const diff = ts - now
   if (diff <= 0) return t('watch.timeNow')
   const sec = Math.floor(diff / 1000)
@@ -128,8 +157,6 @@ function formatDuration(ms: number): string {
   const restSec = Math.floor(sec - min * 60)
   return restSec > 0 ? `${min}m ${restSec}s` : `${min}m`
 }
-
-// ==================== 单条流水状态视觉 ====================
 
 function historyStatusClass(s: string): string {
   switch (s) {
@@ -163,8 +190,8 @@ function anomalySummary(w: WatchDefinition): string {
   return ''
 }
 
-// 当前正在执行已运行了多久（基于 lastRun.at 估算，仅展示）
 function runningDurationText(w: WatchDefinition): string {
+  void nowTick.value
   const startAt = w.lastRun?.at
   if (typeof startAt !== 'number') return ''
   const ms = Date.now() - startAt
@@ -172,7 +199,6 @@ function runningDurationText(w: WatchDefinition): string {
   return formatDuration(ms)
 }
 
-// 历史摘要：error / skipReason 优先；否则用 output（更克制的截断）
 const HISTORY_SUMMARY_MAX = 60
 function historySummary(r: WatchHistoryRecord): string {
   const text = (r.error || r.skipReason || r.output || '').trim()
@@ -183,18 +209,25 @@ function historySummary(r: WatchHistoryRecord): string {
 function selectWatchById(id: string) {
   emit('select-watch', id)
 }
+
+/** 打开该关切最近一次失败/超时流水；没有则进详情 */
+function viewAnomalyFailure(w: WatchDefinition) {
+  const failed = props.history
+    .filter(r => r.watchId === w.id && (r.status === 'failed' || r.status === 'timeout'))
+    .sort((a, b) => b.at - a.at)[0]
+  if (failed) emit('view-history-detail', failed)
+  else selectWatchById(w.id)
+}
 </script>
 
 <template>
   <div class="watch-overview">
-    <!-- ============ 顶部 hero：下一次执行 + 健康状态 ============ -->
     <header class="overview-hero">
       <div class="hero-left">
         <h2 class="overview-title">{{ t('watch.overviewHeader') }}</h2>
         <p class="overview-subtitle">{{ t('watch.overviewSubtitle') }}</p>
       </div>
 
-      <!-- 健康状况：0 异常 + 0 运行中 时显示「一切就绪」绿色徽章；否则显示具体迷你统计 -->
       <div class="hero-right">
         <div v-if="isHealthy" class="health-pill health-pill-good">
           <CheckCircle2 :size="14" />
@@ -205,7 +238,7 @@ function selectWatchById(id: string) {
             v-if="anomalies.length > 0"
             class="health-pill health-pill-error"
             :title="t('watch.errorCountBadge', { n: anomalies.length })"
-            @click="selectWatchById(anomalies[0].id)"
+            @click="emit('focus-anomalies')"
           >
             <AlertTriangle :size="14" />
             <span class="health-pill-num">{{ anomalies.length }}</span>
@@ -220,161 +253,191 @@ function selectWatchById(id: string) {
       </div>
     </header>
 
-    <!-- ============ 异常关切（仅在 >0 时展开为完整列表；置顶优先处理） ============ -->
-    <section v-if="anomalies.length > 0" class="overview-section">
-      <div class="section-header">
-        <AlertTriangle :size="16" class="section-icon icon-error" />
-        <span class="section-title">{{ t('watch.sectionAnomalies') }}</span>
-        <span class="section-count count-error">{{ anomalies.length }}</span>
+    <!-- 空态：还没有关切 -->
+    <section v-if="!hasAnyWatch" class="overview-section overview-empty-cta">
+      <div class="ov-empty ov-empty-cta">
+        <AlertCircle :size="16" />
+        <span>{{ t('watch.noWatchesYet') }}</span>
+        <button class="ov-cta-btn" @click="emit('go-templates')">
+          <Plus :size="14" />
+          {{ t('watch.overviewGoTemplates') }}
+        </button>
       </div>
-      <div class="section-body">
-        <div
-          v-for="w in anomalies"
-          :key="w.id"
-          class="ov-row ov-row-error"
-        >
-          <span class="ov-row-dot"></span>
-          <button class="ov-row-main ov-row-clickable" @click="selectWatchById(w.id)">
-            <div class="ov-row-line1">
-              <span class="ov-row-name">{{ w.name }}</span>
-              <span class="ov-row-time">{{ w.lastRun ? formatTimeAgo(w.lastRun.at) : '' }}</span>
+    </section>
+
+    <template v-else>
+      <!-- 异常关切 -->
+      <section v-if="anomalies.length > 0" class="overview-section">
+        <div class="section-header">
+          <AlertTriangle :size="16" class="section-icon icon-error" />
+          <span class="section-title">{{ t('watch.sectionAnomalies') }}</span>
+          <span class="section-count count-error">{{ anomalies.length }}</span>
+        </div>
+        <div class="section-body">
+          <div
+            v-for="w in anomalies"
+            :key="w.id"
+            class="ov-row ov-row-error"
+          >
+            <span class="ov-row-dot"></span>
+            <button class="ov-row-main ov-row-clickable" @click="selectWatchById(w.id)">
+              <div class="ov-row-line1">
+                <span class="ov-row-name">{{ w.name }}</span>
+                <span class="ov-row-time">{{ w.lastRun ? formatTimeAgo(w.lastRun.at) : '' }}</span>
+              </div>
+              <div class="ov-row-line2" v-if="anomalySummary(w)">{{ anomalySummary(w) }}</div>
+            </button>
+            <div class="ov-row-actions">
+              <button
+                class="ov-action-btn"
+                :title="t('watch.viewFailure')"
+                @click.stop="viewAnomalyFailure(w)"
+              >
+                <Eye :size="13" />
+              </button>
+              <button
+                class="ov-action-btn"
+                :disabled="runningWatches.has(w.id)"
+                :title="t('watch.retryWatch')"
+                @click.stop="emit('retry-watch', w.id)"
+              >
+                <RotateCcw :size="13" :class="{ spinning: runningWatches.has(w.id) }" />
+              </button>
+              <button
+                class="ov-action-btn ov-action-mute"
+                :title="t('watch.disableWatch')"
+                @click.stop="emit('disable-watch', w.id)"
+              >
+                <Pause :size="13" />
+              </button>
             </div>
-            <div class="ov-row-line2" v-if="anomalySummary(w)">{{ anomalySummary(w) }}</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 正在执行 -->
+      <section v-if="running.length > 0" class="overview-section">
+        <div class="section-header">
+          <RefreshCw :size="16" class="section-icon icon-running spinning" />
+          <span class="section-title">{{ t('watch.sectionRunning') }}</span>
+          <span class="section-count count-running">{{ running.length }}</span>
+        </div>
+        <div class="section-body">
+          <div
+            v-for="w in running"
+            :key="w.id"
+            class="ov-row ov-row-running"
+          >
+            <span class="ov-row-dot"></span>
+            <button class="ov-row-main ov-row-clickable" @click="selectWatchById(w.id)">
+              <div class="ov-row-line1">
+                <span class="ov-row-name">{{ w.name }}</span>
+                <span class="ov-row-time" v-if="runningDurationText(w)">
+                  {{ t('watch.runningFor', { d: runningDurationText(w) }) }}
+                </span>
+              </div>
+              <div class="ov-row-line2 muted">{{ t('watch.liveOutputHint') }}</div>
+            </button>
+            <div class="ov-row-actions">
+              <button
+                class="ov-action-btn ov-action-danger"
+                :title="t('watch.cancelRunning')"
+                @click.stop="emit('cancel-watch', w.id)"
+              >
+                <Square :size="12" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 即将执行（首条即「下一次」，不再单独 hero） -->
+      <section class="overview-section">
+        <div class="section-header">
+          <Clock :size="16" class="section-icon" />
+          <span class="section-title">{{ t('watch.sectionUpcoming') }}</span>
+          <span class="section-count" v-if="upcomingAll.length > 0">{{ upcomingAll.length }}</span>
+        </div>
+        <div class="section-body">
+          <button
+            v-for="(w, idx) in upcoming"
+            :key="w.id"
+            class="ov-row"
+            :class="{ 'ov-row-next': idx === 0 && !upcomingExpanded }"
+            :title="formatAbsoluteShort(w.nextRun as number)"
+            @click="selectWatchById(w.id)"
+          >
+            <span class="ov-row-dot" :class="idx === 0 ? 'dot-next' : 'dot-upcoming'"></span>
+            <div class="ov-row-main">
+              <div class="ov-row-line1">
+                <span class="ov-row-name">
+                  <span v-if="idx === 0" class="next-badge">{{ t('watch.overviewNextRunLabel') }}</span>
+                  {{ w.name }}
+                </span>
+                <span class="ov-row-time ov-row-time-accent">{{ formatUpcoming(w.nextRun as number) }}</span>
+              </div>
+            </div>
+            <ChevronRight :size="14" class="ov-row-arrow" />
           </button>
           <button
-            class="ov-retry-btn"
-            :disabled="runningWatches.has(w.id)"
-            :title="t('watch.retryWatch')"
-            @click.stop="emit('retry-watch', w.id)"
+            v-if="upcomingHidden > 0 || upcomingExpanded"
+            class="ov-row-toggle"
+            @click="upcomingExpanded = !upcomingExpanded"
           >
-            <RotateCcw :size="13" :class="{ spinning: runningWatches.has(w.id) }" />
+            {{ upcomingExpanded ? t('watch.overviewShowLess') : t('watch.overviewShowMore', { n: upcomingHidden }) }}
+          </button>
+          <div v-if="upcomingAll.length === 0" class="ov-empty">
+            <Clock :size="14" />
+            <span>{{ upcomingEmptyHint }}</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 最近流水 -->
+      <section class="overview-section">
+        <div class="section-header">
+          <History :size="16" class="section-icon" />
+          <span class="section-title">{{ t('watch.sectionRecent') }}</span>
+          <span class="section-count">{{ recentHistory.length }}</span>
+          <button
+            v-if="recentHistory.length > 0"
+            class="section-link"
+            @click="emit('view-all-history')"
+          >
+            {{ t('watch.overviewViewAllHistory') }}
           </button>
         </div>
-      </div>
-    </section>
-
-    <!-- ============ 下一次执行（hero card） ============ -->
-    <section class="next-run-card" :class="{ empty: !nextRunHero }">
-      <div class="next-run-label">
-        <Clock :size="14" />
-        <span>{{ t('watch.overviewNextRunLabel') }}</span>
-      </div>
-      <button
-        v-if="nextRunHero"
-        class="next-run-body"
-        @click="selectWatchById(nextRunHero.id)"
-      >
-        <span class="next-run-name">{{ nextRunHero.name }}</span>
-        <span class="next-run-time">
-          <span class="next-run-relative">{{ formatUpcoming(nextRunHero.nextRun as number) }}</span>
-          <span class="next-run-absolute">{{ formatAbsoluteShort(nextRunHero.nextRun as number) }}</span>
-        </span>
-        <ChevronRight :size="14" class="next-run-arrow" />
-      </button>
-      <div v-else class="next-run-empty">
-        <span>{{ t('watch.overviewNoUpcoming') }}</span>
-      </div>
-    </section>
-
-    <!-- ============ 正在执行（仅在 >0 时展开为完整列表） ============ -->
-    <section v-if="running.length > 0" class="overview-section">
-      <div class="section-header">
-        <RefreshCw :size="16" class="section-icon icon-running spinning" />
-        <span class="section-title">{{ t('watch.sectionRunning') }}</span>
-        <span class="section-count count-running">{{ running.length }}</span>
-      </div>
-      <div class="section-body">
-        <button
-          v-for="w in running"
-          :key="w.id"
-          class="ov-row ov-row-running"
-          @click="selectWatchById(w.id)"
-        >
-          <span class="ov-row-dot"></span>
-          <div class="ov-row-main">
-            <div class="ov-row-line1">
-              <span class="ov-row-name">{{ w.name }}</span>
-              <span class="ov-row-time" v-if="runningDurationText(w)">
-                {{ t('watch.runningFor', { d: runningDurationText(w) }) }}
-              </span>
+        <div class="section-body">
+          <button
+            v-for="r in recentHistory"
+            :key="r.id"
+            class="ov-row"
+            :class="`ov-row-${historyStatusClass(r.status)}`"
+            @click="emit('view-history-detail', r)"
+          >
+            <span class="ov-row-dot"></span>
+            <div class="ov-row-main">
+              <div class="ov-row-line1">
+                <span class="ov-row-name">{{ r.watchName }}</span>
+                <span class="ov-row-time">{{ formatTimeAgo(r.at) }}</span>
+              </div>
+              <div class="ov-row-line2 muted">
+                <span class="hist-status">{{ historyStatusLabel(r.status) }}</span>
+                <span class="hist-sep" v-if="r.duration > 0">·</span>
+                <span v-if="r.duration > 0">{{ formatDuration(r.duration) }}</span>
+                <span class="hist-sep" v-if="historySummary(r)">·</span>
+                <span class="hist-summary" v-if="historySummary(r)">{{ historySummary(r) }}</span>
+              </div>
             </div>
+            <ChevronRight :size="14" class="ov-row-arrow" />
+          </button>
+          <div v-if="recentHistory.length === 0" class="ov-empty">
+            <AlertCircle :size="14" />
+            <span>{{ t('watch.noHistoryYet') }}</span>
           </div>
-          <ChevronRight :size="14" class="ov-row-arrow" />
-        </button>
-      </div>
-    </section>
-
-    <!-- ============ 即将执行 ============ -->
-    <section class="overview-section" v-if="upcomingAll.length > 0">
-      <div class="section-header">
-        <Clock :size="16" class="section-icon" />
-        <span class="section-title">{{ t('watch.sectionUpcoming') }}</span>
-        <span class="section-count">{{ upcomingAll.length }}</span>
-      </div>
-      <div class="section-body">
-        <button
-          v-for="w in upcoming"
-          :key="w.id"
-          class="ov-row"
-          :title="formatAbsoluteShort(w.nextRun as number)"
-          @click="selectWatchById(w.id)"
-        >
-          <span class="ov-row-dot dot-upcoming"></span>
-          <div class="ov-row-main">
-            <div class="ov-row-line1">
-              <span class="ov-row-name">{{ w.name }}</span>
-              <span class="ov-row-time">{{ formatUpcoming(w.nextRun as number) }}</span>
-            </div>
-          </div>
-          <ChevronRight :size="14" class="ov-row-arrow" />
-        </button>
-        <button
-          v-if="upcomingHidden > 0 || upcomingExpanded"
-          class="ov-row-toggle"
-          @click="upcomingExpanded = !upcomingExpanded"
-        >
-          {{ upcomingExpanded ? t('watch.overviewShowLess') : t('watch.overviewShowMore', { n: upcomingHidden }) }}
-        </button>
-      </div>
-    </section>
-
-    <!-- ============ 最近流水 ============ -->
-    <section class="overview-section">
-      <div class="section-header">
-        <History :size="16" class="section-icon" />
-        <span class="section-title">{{ t('watch.sectionRecent') }}</span>
-        <span class="section-count">{{ recentHistory.length }}</span>
-      </div>
-      <div class="section-body">
-        <button
-          v-for="r in recentHistory"
-          :key="r.id"
-          class="ov-row"
-          :class="`ov-row-${historyStatusClass(r.status)}`"
-          @click="emit('view-history-detail', r)"
-        >
-          <span class="ov-row-dot"></span>
-          <div class="ov-row-main">
-            <div class="ov-row-line1">
-              <span class="ov-row-name">{{ r.watchName }}</span>
-              <span class="ov-row-time">{{ formatTimeAgo(r.at) }}</span>
-            </div>
-            <div class="ov-row-line2 muted">
-              <span class="hist-status">{{ historyStatusLabel(r.status) }}</span>
-              <span class="hist-sep" v-if="r.duration > 0">·</span>
-              <span v-if="r.duration > 0">{{ formatDuration(r.duration) }}</span>
-              <span class="hist-sep" v-if="historySummary(r)">·</span>
-              <span class="hist-summary" v-if="historySummary(r)">{{ historySummary(r) }}</span>
-            </div>
-          </div>
-          <ChevronRight :size="14" class="ov-row-arrow" />
-        </button>
-        <div v-if="recentHistory.length === 0" class="ov-empty">
-          <AlertCircle :size="14" />
-          <span>{{ t('watch.noHistoryYet') }}</span>
         </div>
-      </div>
-    </section>
+      </section>
+    </template>
   </div>
 </template>
 
@@ -387,8 +450,6 @@ function selectWatchById(id: string) {
   overflow-y: auto;
   gap: 14px;
 }
-
-/* ============ 顶部 hero：标题 + 健康状态 ============ */
 
 .overview-hero {
   display: flex;
@@ -451,82 +512,6 @@ button.health-pill:hover { filter: brightness(1.08); }
 .health-pill-num { font-weight: 700; font-variant-numeric: tabular-nums; }
 .health-pill-label { opacity: 0.85; }
 
-/* ============ 下一次执行 hero card ============ */
-
-.next-run-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px 14px;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: var(--bg-secondary);
-}
-.next-run-card.empty {
-  background: transparent;
-  border-style: dashed;
-}
-.next-run-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-muted);
-  letter-spacing: 0.02em;
-}
-.next-run-body {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: transparent;
-  border: 0;
-  padding: 0;
-  text-align: left;
-  cursor: pointer;
-  color: inherit;
-}
-.next-run-name {
-  flex: 1;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-.next-run-time {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 1px;
-  flex-shrink: 0;
-}
-.next-run-relative {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--accent-primary);
-  font-variant-numeric: tabular-nums;
-}
-.next-run-absolute {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-.next-run-arrow {
-  color: var(--text-muted);
-  opacity: 0.6;
-}
-.next-run-body:hover .next-run-arrow { opacity: 1; }
-.next-run-empty {
-  font-size: 13px;
-  color: var(--text-muted);
-  padding: 4px 0;
-}
-
-/* ============ 区块 ============ */
-
 .overview-section {
   display: flex;
   flex-direction: column;
@@ -535,7 +520,6 @@ button.health-pill:hover { filter: brightness(1.08); }
   background: var(--bg-secondary);
 }
 
-/* sticky section header：滚动时仍能看到当前所在分类 */
 .section-header {
   display: flex;
   align-items: center;
@@ -576,13 +560,20 @@ button.health-pill:hover { filter: brightness(1.08); }
   background: rgba(var(--accent-rgb, 137, 180, 250), 0.2);
   color: var(--accent-primary);
 }
+.section-link {
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  color: var(--accent-primary);
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.section-link:hover { text-decoration: underline; }
 
 .section-body {
   display: flex;
   flex-direction: column;
 }
-
-/* ============ 行 ============ */
 
 .ov-row {
   display: flex;
@@ -601,6 +592,9 @@ button.health-pill:hover { filter: brightness(1.08); }
 }
 .ov-row:first-of-type { border-top: 0; }
 .ov-row:hover { background: var(--bg-hover); }
+.ov-row-next {
+  background: rgba(var(--accent-rgb, 137, 180, 250), 0.06);
+}
 
 .ov-row-dot {
   width: 8px; height: 8px; border-radius: 50%;
@@ -616,6 +610,7 @@ button.health-pill:hover { filter: brightness(1.08); }
   animation: ov-pulse 1.4s ease-in-out infinite;
 }
 .dot-upcoming { background: var(--accent-primary); opacity: 0.55; }
+.dot-next { background: var(--accent-primary); }
 
 .ov-row-main { flex: 1; min-width: 0; }
 
@@ -633,12 +628,29 @@ button.health-pill:hover { filter: brightness(1.08); }
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.next-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(var(--accent-rgb, 137, 180, 250), 0.18);
+  color: var(--accent-primary);
 }
 .ov-row-time {
   font-size: 11px;
   color: var(--text-muted);
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+}
+.ov-row-time-accent {
+  color: var(--accent-primary);
+  font-weight: 600;
 }
 
 .ov-row-line2 {
@@ -675,34 +687,49 @@ button.health-pill:hover { filter: brightness(1.08); }
   color: inherit;
 }
 
-.ov-retry-btn {
+.ov-row-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.ov-row:hover .ov-row-actions { opacity: 1; }
+
+.ov-action-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
   width: 26px;
   height: 26px;
   border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--brand-alert, #e74c3c);
+  color: var(--text-secondary);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s, background 0.12s, border-color 0.12s;
-  margin-top: 2px;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
-.ov-row:hover .ov-retry-btn { opacity: 0.7; }
-.ov-retry-btn:hover {
-  opacity: 1 !important;
-  background: rgba(231, 76, 60, 0.12);
-  border-color: rgba(231, 76, 60, 0.32);
+.ov-action-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-color);
+  color: var(--text-primary);
 }
-.ov-retry-btn:disabled {
-  opacity: 0.35 !important;
+.ov-action-btn:disabled {
+  opacity: 0.35;
   cursor: not-allowed;
 }
+.ov-action-mute:hover {
+  color: #f39c12;
+  border-color: rgba(243, 156, 18, 0.35);
+  background: rgba(243, 156, 18, 0.1);
+}
+.ov-action-danger:hover {
+  color: var(--brand-alert, #e74c3c);
+  border-color: rgba(231, 76, 60, 0.32);
+  background: rgba(231, 76, 60, 0.12);
+}
 
-/* "展开剩余 N 项" 按钮 */
 .ov-row-toggle {
   border: 0;
   background: transparent;
@@ -719,8 +746,6 @@ button.health-pill:hover { filter: brightness(1.08); }
   color: var(--text-primary);
 }
 
-/* ============ 空状态 ============ */
-
 .ov-empty {
   display: flex;
   align-items: center;
@@ -729,6 +754,27 @@ button.health-pill:hover { filter: brightness(1.08); }
   padding: 18px 14px;
   font-size: 12px;
   color: var(--text-muted);
+}
+.ov-empty-cta {
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 14px;
+}
+.ov-cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ov-cta-btn:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
 }
 
 @keyframes ov-pulse {

@@ -323,6 +323,32 @@ export class WatchService {
     return Array.from(this.runningWatches.keys())
   }
 
+  /**
+   * 取消正在执行的关切。
+   * desktop 走 __watch__/__wakeup__ Agent abort；PTY 模式 abort 对应 ptyId。
+   * runningWatches 条目由 executeWatch 的 finally 清理。
+   */
+  cancelRunningWatch(id: string): boolean {
+    const info = this.runningWatches.get(id)
+    if (!info || !this.config) return false
+
+    try {
+      if (info.ptyId) {
+        this.config.agentService.abort(info.ptyId)
+      } else {
+        const agentId = id === WatchService.WAKEUP_ID
+          ? WatchService.WAKEUP_AGENT_ID
+          : WatchService.WATCH_ASSISTANT_AGENT_ID
+        this.config.agentService.abort(agentId)
+      }
+      log.info(`Cancelled running watch: ${id}`)
+      return true
+    } catch (e) {
+      log.warn(`Failed to cancel watch ${id}:`, e)
+      return false
+    }
+  }
+
   getSshSessions(): SshSession[] {
     return this.config?.configService.getSshSessions() || []
   }

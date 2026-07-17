@@ -15,6 +15,7 @@ import ThinkingBlock from './ThinkingBlock.vue'
 import ToolCallContent from './ToolCallContent.vue'
 import cronstrue from 'cronstrue/i18n'
 import WatchOverviewPanel from './Awaken/WatchOverviewPanel.vue'
+import WatchHistoryDetailView from './Awaken/WatchHistoryDetailView.vue'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -85,6 +86,10 @@ function switchTab(tab: NavTab, onSwitch?: () => void) {
       check.reset()
     }
   }
+  // 离开关切 tab 时关掉流水叠层，避免状态悬空
+  if (activeTab.value === 'watches' && tab !== 'watches' && historyDetailInOverlay.value) {
+    closeHistoryDetail()
+  }
   activeTab.value = tab
   // 觉醒区/关切区的运行历史共享同一份视图，进入哪个入口就预设对应的过滤
   if (tab === 'wakeupHistory') historyFilter.value = 'wakeup'
@@ -108,6 +113,8 @@ const loading = ref(true)
 const selectedWatch = ref<WatchDefinition | null>(null)
 // 关切 tab 右侧详情区的两种渲染模式：'overview' = 运营仪表盘；'watch' = 单个关切详情
 const selectedView = ref<'overview' | 'watch'>('overview')
+/** 关切 tab 内查看流水详情（叠层），不切到 watchHistory tab */
+const historyDetailInOverlay = ref(false)
 const runningWatches = ref<Set<string>>(new Set())
 
 // 手动触发时的 Agent 实时输出（内心独白）——单一来源：@shared/types
@@ -136,7 +143,6 @@ const historyDetailSteps = ref<Array<{ id: string; type: string; content: string
 const historyDetailLoading = ref(false)
 const historyDetailUserTask = ref('')
 const historyDetailFinalResult = ref('')
-const historyPromptExpanded = ref(false)
 
 const HIDDEN_STEP_TYPES = new Set(['user_task', 'streaming', 'waiting', 'waiting_password', 'confirm'])
 
@@ -167,10 +173,6 @@ function filterHistorySteps<T extends { type: string; content: string }>(
   // 无 message 正文时保留 final_result，避免总结消失
   return steps
 }
-
-const filteredSteps = computed(() =>
-  filterHistorySteps(historyDetailSteps.value, configStore.agentDebugMode)
-)
 
 const visibleLiveSteps = computed(() =>
   filterHistorySteps(liveSteps.value, configStore.agentDebugMode)
@@ -476,6 +478,12 @@ watch(() => userWatches.value, (list) => {
 
 const selectWatch = (w: WatchDefinition) => {
   if (editing.value) cancelEditing()
+  // 左栏筛选可能把该项藏起来——从总览点进来时自动放宽到「全部」
+  if (statusFilter.value !== 'all') {
+    const visible = filteredWatches.value.some(x => x.id === w.id)
+    if (!visible) statusFilter.value = 'all'
+  }
+  historyDetailInOverlay.value = false
   selectedWatch.value = w
   selectedView.value = 'watch'
   loadWatchRecentHistory(w.id)
@@ -483,8 +491,19 @@ const selectWatch = (w: WatchDefinition) => {
 
 const selectOverview = () => {
   if (editing.value) cancelEditing()
+  historyDetailInOverlay.value = false
   selectedWatch.value = null
   selectedView.value = 'overview'
+}
+
+/** 总览异常徽章：左栏筛到异常，并打开最近失败的一条 */
+const focusAnomalies = () => {
+  statusFilter.value = 'error'
+  const sorted = userWatches.value
+    .filter(w => w.enabled && watchStatusOf(w) === 'error')
+    .sort((a, b) => (b.lastRun?.at ?? 0) - (a.lastRun?.at ?? 0))
+  if (sorted[0]) selectWatch(sorted[0])
+  else selectOverview()
 }
 
 // 当前关切的最近运行历史（详情页内嵌时间线）
@@ -592,6 +611,32 @@ const toggleWatch = async (w: WatchDefinition) => {
   }
 }
 
+/** 总览异常处置：停用（仅当当前为启用时 toggle） */
+const disableWatchById = async (id: string) => {
+  const w = watches.value.find(x => x.id === id)
+  if (!w?.enabled) return
+  await toggleWatch(w)
+}
+
+/** 总览运行中：取消执行 */
+const cancelWatchById = async (id: string) => {
+  try {
+    const ok = await window.electronAPI.watch.cancel(id)
+    if (ok) {
+      const next = new Set(runningWatches.value)
+      next.delete(id)
+      runningWatches.value = next
+      if (liveExecutionWatchId.value === id) {
+        // 保留已有独白供回顾；若尚无步骤则清掉「正在启动」
+        if (liveSteps.value.length === 0) liveExecutionWatchId.value = null
+      }
+      await loadWatchData()
+    }
+  } catch (e) {
+    console.error('Failed to cancel watch:', e)
+  }
+}
+
 const RUNNING_TIMEOUT_MS = 10 * 60 * 1000
 const watchTimeouts = new Map<string, NodeJS.Timeout>()
 
@@ -600,7 +645,14 @@ const triggerWatch = async (w: WatchDefinition) => {
   // 防止某些场景下任务起步快、事件晚到导致 liveSteps 视图条件不满足
   liveExecutionWatchId.value = w.id
   liveSteps.value = []
-  try { await window.electronAPI.watch.trigger(w.id) } catch (e) { console.error('Failed to trigger watch:', e) }
+  // 跳到该关切详情，确保用户能看见实时独白（总览重试 / 左栏播放同理）
+  selectWatch(w)
+  try {
+    await window.electronAPI.watch.trigger(w.id)
+  } catch (e) {
+    console.error('Failed to trigger watch:', e)
+    if (liveExecutionWatchId.value === w.id) liveExecutionWatchId.value = null
+  }
 }
 
 const markWatchRunning = (watchId: string) => {
@@ -620,7 +672,10 @@ const markWatchCompleted = (watchId: string) => {
 const deleteWatch = async (w: WatchDefinition) => {
   if (!confirm(t('watch.confirmDelete', { name: w.name }))) return
   await window.electronAPI.watch.delete(w.id)
-  if (selectedWatch.value?.id === w.id) selectedWatch.value = null
+  if (selectedWatch.value?.id === w.id) {
+    selectedWatch.value = null
+    selectedView.value = 'overview'
+  }
   await loadWatchData()
 }
 
@@ -632,18 +687,22 @@ const clearWatchHistory = async () => {
 }
 
 const viewHistoryDetail = async (record: WatchHistoryRecord) => {
-  // 历史 tab 已按区拆成两个：根据该记录属于唤醒还是用户关切，切到对应区
-  const targetTab: NavTab = record.watchId === '__wakeup__' ? 'wakeupHistory' : 'watchHistory'
-  if (activeTab.value !== targetTab) {
-    switchTab(targetTab, loadWatchData)
+  // 关切 tab 内用叠层查看，不硬切到历史 tab；历史 tab 内仍走原导航
+  if (activeTab.value === 'watches') {
+    historyDetailInOverlay.value = true
+  } else {
+    historyDetailInOverlay.value = false
+    const targetTab: NavTab = record.watchId === '__wakeup__' ? 'wakeupHistory' : 'watchHistory'
+    if (activeTab.value !== targetTab) {
+      switchTab(targetTab, loadWatchData)
+    }
   }
-  historyPromptExpanded.value = false
+
   if (!record.agentSessionId) {
     selectedHistoryRecord.value = record
     historyDetailSteps.value = []
     historyDetailUserTask.value = ''
     historyDetailFinalResult.value = ''
-    expandedThinkingSteps.value = new Set()
     return
   }
 
@@ -652,10 +711,12 @@ const viewHistoryDetail = async (record: WatchHistoryRecord) => {
   historyDetailSteps.value = []
   historyDetailUserTask.value = ''
   historyDetailFinalResult.value = ''
-  expandedThinkingSteps.value = new Set()
 
+  const requestId = record.id
   try {
     const agentRecord = await window.electronAPI.history.getAgentRecordById(record.agentSessionId)
+    // 快速连点多条流水时，丢弃过期响应
+    if (selectedHistoryRecord.value?.id !== requestId) return
     if (agentRecord) {
       historyDetailSteps.value = (agentRecord.steps || []).map(s => ({
         ...s,
@@ -665,16 +726,21 @@ const viewHistoryDetail = async (record: WatchHistoryRecord) => {
       historyDetailFinalResult.value = agentRecord.finalResult || ''
     }
   } catch (e) {
+    if (selectedHistoryRecord.value?.id !== requestId) return
     console.error('Failed to load agent record:', e)
   } finally {
-    historyDetailLoading.value = false
+    if (selectedHistoryRecord.value?.id === requestId) {
+      historyDetailLoading.value = false
+    }
   }
 }
 
 const closeHistoryDetail = () => {
   selectedHistoryRecord.value = null
   historyDetailSteps.value = []
-  expandedThinkingSteps.value = new Set()
+  historyDetailUserTask.value = ''
+  historyDetailFinalResult.value = ''
+  historyDetailInOverlay.value = false
 }
 
 const useTemplate = async (tpl: WatchTemplateInfo) => {
@@ -683,7 +749,8 @@ const useTemplate = async (tpl: WatchTemplateInfo) => {
     if (watch) {
       activeTab.value = 'watches'
       await loadWatchData()
-      selectedWatch.value = watches.value.find(w => w.id === watch.id) || null
+      const created = watches.value.find(w => w.id === watch.id)
+      if (created) selectWatch(created)
     }
   } catch (e) { console.error('Failed to create from template:', e) }
 }
@@ -1525,19 +1592,37 @@ onUnmounted(() => {
 
               <!-- Watch Detail -->
               <div class="detail-area">
+                <!-- 关切 tab 内流水叠层：不切走 watchHistory -->
+                <WatchHistoryDetailView
+                  v-if="historyDetailInOverlay && selectedHistoryRecord"
+                  :record="selectedHistoryRecord"
+                  :loading="historyDetailLoading"
+                  :steps="historyDetailSteps"
+                  :user-task="historyDetailUserTask"
+                  :back-label="selectedView === 'overview' ? t('watch.backToOverview') : t('watch.backToWatch')"
+                  @back="closeHistoryDetail"
+                />
                 <!-- 总览仪表盘（默认） -->
                 <WatchOverviewPanel
-                  v-if="selectedView === 'overview'"
+                  v-else-if="selectedView === 'overview'"
                   :watches="userWatches"
                   :history="watchHistory"
                   :running-watches="runningWatches"
                   @select-watch="(id) => { const w = userWatches.find(x => x.id === id); if (w) selectWatch(w) }"
                   @view-history-detail="viewHistoryDetail"
                   @retry-watch="(id) => { const w = userWatches.find(x => x.id === id); if (w) triggerWatch(w) }"
+                  @disable-watch="disableWatchById"
+                  @cancel-watch="cancelWatchById"
+                  @focus-anomalies="focusAnomalies"
+                  @view-all-history="() => switchTab('watchHistory', loadWatchData)"
+                  @go-templates="() => switchTab('templates', loadTemplates)"
                 />
                 <template v-else-if="selectedWatch">
                   <div class="detail-header">
                     <div class="detail-title" v-if="!editing">
+                      <button class="btn btn-sm back-to-overview" @click="selectOverview" :title="t('watch.backToOverview')">
+                        ← {{ t('watch.backToOverview') }}
+                      </button>
                       <h3>{{ selectedWatch.name }}</h3>
                       <span class="watch-badge" :class="{ enabled: selectedWatch.enabled }">{{ selectedWatch.enabled ? t('watch.enabled') : t('watch.disabled') }}</span>
                       <span class="priority-badge" :class="selectedWatch.priority">{{ selectedWatch.priority }}</span>
@@ -1654,30 +1739,15 @@ onUnmounted(() => {
 
                   <!-- ===== View Mode ===== -->
                   <div class="detail-body" v-else>
-                    <div class="detail-section" v-if="selectedWatch.description">
-                      <h4>{{ t('watch.description') }}</h4>
-                      <p>{{ selectedWatch.description }}</p>
-                    </div>
-                    <div class="detail-section">
-                      <h4>{{ t('watch.triggers') }}</h4>
-                      <div class="trigger-list">
-                        <span v-for="tr in selectedWatch.triggers" :key="tr.type" class="trigger-badge trigger-badge-lg">
-                          <component :is="getTriggerIcon(tr.type)" :size="12" /> {{ getTriggerLabel(tr) }}
-                        </span>
-                      </div>
-                      <div class="detail-row" v-if="selectedWatch.nextRun && selectedWatch.enabled">
-                        <span class="label">{{ t('watch.nextRun') }}:</span>
-                        <span class="value">{{ formatFullDate(selectedWatch.nextRun) }}</span>
-                      </div>
-                    </div>
-                    <div class="detail-section">
-                      <h4>{{ t('watch.prompt') }}</h4>
-                      <div class="prompt-content">{{ selectedWatch.prompt }}</div>
-                    </div>
-                    <!-- 手动触发时的 Agent 内心独白（实时执行过程，与 AiPanel 同款渲染） -->
-                    <div class="detail-section live-output-section" v-if="selectedWatch.id === liveExecutionWatchId && visibleLiveSteps.length > 0">
+                    <!-- 内心独白置顶：执行中优先可见，不必滚过配置区 -->
+                    <div class="detail-section live-output-section" v-if="selectedWatch.id === liveExecutionWatchId">
                       <h4>{{ t('watch.liveOutput') }}</h4>
+                      <div v-if="visibleLiveSteps.length === 0" class="live-output-waiting">
+                        <RefreshCw :size="14" class="spinning" />
+                        <span>{{ t('watch.liveOutputWaiting') }}</span>
+                      </div>
                       <div
+                        v-else
                         class="live-steps history-steps-list"
                         @click="handleCodeBlockClick"
                         @contextmenu="handleFilePathContextMenu"
@@ -1731,6 +1801,26 @@ onUnmounted(() => {
                           </div>
                         </div>
                       </div>
+                    </div>
+                    <div class="detail-section" v-if="selectedWatch.description">
+                      <h4>{{ t('watch.description') }}</h4>
+                      <p>{{ selectedWatch.description }}</p>
+                    </div>
+                    <div class="detail-section">
+                      <h4>{{ t('watch.triggers') }}</h4>
+                      <div class="trigger-list">
+                        <span v-for="tr in selectedWatch.triggers" :key="tr.type" class="trigger-badge trigger-badge-lg">
+                          <component :is="getTriggerIcon(tr.type)" :size="12" /> {{ getTriggerLabel(tr) }}
+                        </span>
+                      </div>
+                      <div class="detail-row" v-if="selectedWatch.nextRun && selectedWatch.enabled">
+                        <span class="label">{{ t('watch.nextRun') }}:</span>
+                        <span class="value">{{ formatFullDate(selectedWatch.nextRun) }}</span>
+                      </div>
+                    </div>
+                    <div class="detail-section">
+                      <h4>{{ t('watch.prompt') }}</h4>
+                      <div class="prompt-content">{{ selectedWatch.prompt }}</div>
                     </div>
                     <div class="detail-section" v-if="selectedWatch.skills?.length">
                       <h4>{{ t('watch.skills') }}</h4>
@@ -1902,111 +1992,15 @@ onUnmounted(() => {
           <template v-if="activeTab === 'wakeupHistory' || activeTab === 'watchHistory'">
             <div class="content-page">
               <!-- 历史详情视图 -->
-              <template v-if="selectedHistoryRecord">
-                <div class="page-toolbar">
-                  <button class="btn btn-sm" @click="closeHistoryDetail" style="gap: 4px;">
-                    ← {{ t('watch.backToHistory') }}
-                  </button>
-                  <span class="page-title" style="margin-left: 8px;">
-                    <span :class="getStatusClass(selectedHistoryRecord.status)">{{ getStatusIcon(selectedHistoryRecord.status) }}</span>
-                    {{ selectedHistoryRecord.watchName }}
-                  </span>
-                  <span class="history-detail-meta">
-                    {{ formatFullDate(selectedHistoryRecord.at) }} · {{ formatDuration(selectedHistoryRecord.duration) }}
-                  </span>
-                </div>
-
-                <div class="history-detail-content">
-                  <!-- 加载中 -->
-                  <div v-if="historyDetailLoading" class="empty-state" style="padding: 40px 20px;">
-                    <RefreshCw :size="24" class="spinning empty-icon" />
-                    <p>{{ t('watch.loadingConversation') }}</p>
-                  </div>
-
-                  <template v-else>
-                    <!-- 有完整步骤记录：与 AI 面板相同的平铺渲染 -->
-                    <template v-if="filteredSteps.length > 0">
-                      <!-- 任务指令（默认折叠） -->
-                      <div v-if="historyDetailUserTask" class="history-prompt-section">
-                        <div class="prompt-toggle" @click="historyPromptExpanded = !historyPromptExpanded">
-                          <span class="prompt-toggle-icon">{{ historyPromptExpanded ? '▼' : '▶' }}</span>
-                          <span class="detail-section-label" style="margin-bottom: 0;">{{ t('watch.prompt') }}</span>
-                        </div>
-                        <div v-if="historyPromptExpanded" class="history-detail-task">
-                          {{ historyDetailUserTask }}
-                        </div>
-                      </div>
-
-                      <!-- 步骤列表（与 AiPanel 同款：思考块可折叠 + Markdown） -->
-                      <div
-                        class="history-steps-list"
-                        @click="handleCodeBlockClick"
-                        @contextmenu="handleFilePathContextMenu"
-                      >
-                        <div
-                          v-for="step in filteredSteps"
-                          :key="step.id"
-                          class="agent-step-inline"
-                          :class="[step.type]"
-                        >
-                          <span class="step-icon">{{ getStepIcon(step.type) }}</span>
-                          <div class="step-content">
-                            <div v-if="step.type === 'message' || step.type === 'thinking'" class="agent-message-stack">
-                              <template v-for="(pres, presIdx) in [getMessageStepPresentation(step)]" :key="presIdx">
-                                <ThinkingBlock
-                                  v-if="pres.thinking"
-                                  :reasoning="pres.thinking.reasoning"
-                                  :is-streaming="pres.thinking.isStreaming"
-                                  :expanded="isThinkingExpanded(step.id)"
-                                  :started-at="step.timestamp"
-                                  @toggle="toggleThinkingExpand(step.id)"
-                                />
-                                <div
-                                  v-else-if="step.type === 'thinking' && step.content"
-                                  class="step-text"
-                                >{{ step.content }}</div>
-                                <div
-                                  v-if="pres.body && step.type === 'message'"
-                                  class="step-text step-analysis markdown-content"
-                                  v-html="renderMarkdown(pres.body)"
-                                ></div>
-                              </template>
-                            </div>
-                            <ToolCallContent
-                              v-else-if="step.type === 'tool_call'"
-                              :content="step.content"
-                              :toolArgs="step.toolArgs"
-                            />
-                            <div
-                              v-else-if="step.type === 'error'"
-                              class="step-text"
-                            >{{ step.content }}</div>
-                            <div
-                              v-else
-                              class="step-text markdown-content"
-                              v-html="renderMarkdown(step.content)"
-                            ></div>
-                            <div v-if="step.toolResult && step.toolResult !== step.content" class="step-tool-result">
-                              <pre>{{ formatToolResult(step.toolResult) }}</pre>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </template>
-
-                    <!-- 无完整步骤：回退显示 output -->
-                    <template v-else>
-                      <div v-if="selectedHistoryRecord.output" class="history-fallback-output">
-                        <div class="detail-section-label">{{ t('watch.outputLabel') }}</div>
-                        <div class="fallback-text">{{ selectedHistoryRecord.output }}</div>
-                      </div>
-                      <div v-if="!selectedHistoryRecord.agentSessionId" class="history-legacy-hint">
-                        {{ t('watch.legacyRecordHint') }}
-                      </div>
-                    </template>
-                  </template>
-                </div>
-              </template>
+              <WatchHistoryDetailView
+                v-if="selectedHistoryRecord"
+                :record="selectedHistoryRecord"
+                :loading="historyDetailLoading"
+                :steps="historyDetailSteps"
+                :user-task="historyDetailUserTask"
+                :back-label="t('watch.backToHistory')"
+                @back="closeHistoryDetail"
+              />
 
               <!-- 历史列表视图：觉醒入口 → 仅唤醒；关切入口 → 仅用户关切 -->
               <template v-else>
@@ -2735,6 +2729,11 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+.detail-title .back-to-overview {
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
 /* ==================== List Components ==================== */
 
 .list-toolbar {
@@ -2987,6 +2986,14 @@ onUnmounted(() => {
 /* 手动触发时的 Agent 内心独白（复用 history-steps-list 渲染） */
 .live-output-section { background: rgba(0,0,0,0.15); border-radius: 8px; padding: 12px; border: 1px solid var(--border-color); }
 .live-steps.history-steps-list { max-height: 280px; overflow-y: auto; }
+.live-output-waiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
 
 .webhook-url { display: block; padding: 8px 12px; background: var(--bg-primary, rgba(0,0,0,0.2)); border-radius: 6px; font-size: 12px; word-break: break-all; }
 .trigger-list { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }

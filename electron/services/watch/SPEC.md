@@ -1,6 +1,6 @@
 # Watch Service SPEC
 
-> Last verified: 2026-07-05
+> Last verified: 2026-07-17
 
 ## 职责
 
@@ -18,7 +18,7 @@
 | `templates.ts` | 290 | 预置模板（8 个内置模板） |
 | `types.ts` | 24 | 共享类型 |
 
-## 公开 API（WatchService，24 个 public 方法）
+## 公开 API（WatchService，25 个 public 方法）
 
 ### 生命周期 / 注入
 
@@ -47,6 +47,7 @@
 | `async triggerWatch(id): Promise<WatchExecutionResult>` | 手动触发一次执行 |
 | `isWatchRunning(id: string): boolean` | 单个 Watch 是否在执行 |
 | `getRunningWatches(): string[]` | 当前正在执行的 Watch ID 列表 |
+| `cancelRunningWatch(id: string): boolean` | 取消正在执行的关切（abort Agent/PTY）；未在跑返回 false |
 | `updateWatchState(id, state: Record<string, unknown>): void` | 更新 Watch 自定义状态（Agent 通过 `STATE_UPDATE` 指令调用） |
 
 ### 历史

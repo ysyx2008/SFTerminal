@@ -3205,6 +3205,8 @@ const electronAPI = {
       ipcRenderer.invoke('watch:isRunning', id),
     getRunning: () =>
       ipcRenderer.invoke('watch:getRunning'),
+    cancel: (id: string) =>
+      ipcRenderer.invoke('watch:cancel', id) as Promise<boolean>,
     getSshSessions: () =>
       ipcRenderer.invoke('watch:getSshSessions'),
     getTemplates: () =>
