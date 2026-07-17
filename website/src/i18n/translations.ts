@@ -27,7 +27,7 @@ export const translations = {
     hero: {
       brand: '旗鱼',
       title: '你的私人桌面秘书',
-      subtitle: '能动手。会找你。记得你。',
+      subtitle: '不只聊天——它能操作你的电脑，主动盯事找你，还能记住你的许多事。',
       downloadBtn: '立即下载',
       learnBtn: '看看它怎么做事',
       apiNotice: '需自行配置大模型 API · macOS / Windows',
@@ -46,7 +46,7 @@ export const translations = {
       companion: {
         id: 'companion',
         title: '它也会来找你',
-        body: '电脑上聊，手机上也能聊。有事，它先开口。',
+        body: '电脑上聊，手机上也能聊。有事要说时，它会主动联系你。',
         points: ['多渠道一条线', '主动找你', '常在线'],
         image: '/screenshot-im.png',
         imageEn: '/screenshot-im_en.png',
@@ -975,7 +975,7 @@ export const translations = {
     hero: {
       brand: 'SailFish',
       title: 'Your private desktop secretary',
-      subtitle: 'It works. It reaches out. It remembers.',
+      subtitle: 'Not just chat — it runs your computer, reaches out first, and remembers what matters about you.',
       downloadBtn: 'Download',
       learnBtn: 'See how it works',
       apiNotice: 'Bring your own AI API · macOS / Windows',
@@ -994,7 +994,7 @@ export const translations = {
       companion: {
         id: 'companion',
         title: 'It reaches you too',
-        body: 'On your computer or your phone. When it matters, it speaks first.',
+        body: 'On your computer or your phone. When something matters, it reaches out first.',
         points: ['One line, many channels', 'Reaches out first', 'Always on'],
         image: '/screenshot-im.png',
         imageEn: '/screenshot-im_en.png',
