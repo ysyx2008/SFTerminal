@@ -143,7 +143,6 @@ export default {
     context: 'Context',
     contextUsed: 'used',
     contextUsageTitle: 'Context Usage',
-    contextUsageApproxTokens: '~{n}',
     contextComposition: {
       system: 'System prompt',
       identity: 'Identity & core rules',

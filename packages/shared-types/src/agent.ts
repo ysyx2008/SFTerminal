@@ -363,7 +363,7 @@ export interface AgentContextBar {
   profileId?: string
   /**
    * 本次请求发出时的字数组成树（live 推送；不落盘）。
-   * 占比按 chars；约数 tokens = share × contextTokens。
+   * 占比按 chars；UI 只展示百分比（不折算约数 tokens）。
    */
   composition?: ContextCompositionNode
 }

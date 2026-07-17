@@ -135,19 +135,6 @@ function formatCompositionPercent(chars: number): string {
   return `${compositionPercent(chars).toFixed(1)}%`
 }
 
-function compositionApproxTokens(chars: number): number {
-  const total = compositionTotalChars.value
-  const tokens = props.contextStats.tokenEstimate
-  if (total <= 0 || tokens <= 0) return 0
-  return Math.round((chars / total) * tokens)
-}
-
-function formatApproxTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
-  return String(n)
-}
-
 function compositionLabel(id: ContextCompositionId): string {
   return t(`ai.contextComposition.${id}`)
 }
@@ -797,14 +784,12 @@ const handleSendClick = (event: MouseEvent) => {
                 <span class="ctx-usage-swatch" :style="{ background: compositionColor(node.id) }"></span>
                 <span class="ctx-usage-name">{{ compositionLabel(node.id) }}</span>
                 <span class="ctx-usage-pct-col">{{ formatCompositionPercent(node.chars) }}</span>
-                <span class="ctx-usage-tok-col">{{ t('ai.contextUsageApproxTokens', { n: formatApproxTokens(compositionApproxTokens(node.chars)) }) }}</span>
               </div>
               <ul v-if="node.children?.length && isCompositionExpanded(node.id)" class="ctx-usage-children">
                 <li v-for="child in node.children" :key="child.id" class="ctx-usage-row child">
                   <span class="ctx-usage-swatch" :style="{ background: compositionColor(child.id) }"></span>
                   <span class="ctx-usage-name">{{ compositionLabel(child.id) }}</span>
                   <span class="ctx-usage-pct-col">{{ formatCompositionPercent(child.chars) }}</span>
-                  <span class="ctx-usage-tok-col">{{ t('ai.contextUsageApproxTokens', { n: formatApproxTokens(compositionApproxTokens(child.chars)) }) }}</span>
                 </li>
               </ul>
             </li>
@@ -1138,7 +1123,7 @@ const handleSendClick = (event: MouseEvent) => {
 
 .ctx-usage-row {
   display: grid;
-  grid-template-columns: 16px 8px minmax(0, 1fr) 4em 4.75em;
+  grid-template-columns: 16px 8px minmax(0, 1fr) 4em;
   align-items: center;
   column-gap: 6px;
   padding: 4px 0;
@@ -1151,7 +1136,7 @@ const handleSendClick = (event: MouseEvent) => {
 
 /* 二级：整体右移，色块对齐到一级文字起点附近；弱化字重/颜色 */
 .ctx-usage-row.child {
-  grid-template-columns: 6px minmax(0, 1fr) 4em 4.75em;
+  grid-template-columns: 6px minmax(0, 1fr) 4em;
   margin-left: 28px;
   padding: 2px 0 2px 8px;
   border-left: 1px solid var(--border-color);
@@ -1170,8 +1155,7 @@ const handleSendClick = (event: MouseEvent) => {
   opacity: 0.9;
 }
 
-.ctx-usage-row.child .ctx-usage-pct-col,
-.ctx-usage-row.child .ctx-usage-tok-col {
+.ctx-usage-row.child .ctx-usage-pct-col {
   opacity: 0.85;
 }
 
@@ -1217,8 +1201,7 @@ const handleSendClick = (event: MouseEvent) => {
   white-space: nowrap;
 }
 
-.ctx-usage-pct-col,
-.ctx-usage-tok-col {
+.ctx-usage-pct-col {
   font-variant-numeric: tabular-nums;
   font-size: 10px;
   color: var(--text-secondary);

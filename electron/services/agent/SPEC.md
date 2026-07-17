@@ -251,6 +251,7 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 
 - **总量**仍以 API 真实 `prompt_tokens` 为准；分类只回答结构占比，**不做 token 估算**。
 - 口径统一为发出请求时各块的**字符长度**（messages 文本 / tool_calls 参数 / tools JSON / 图片 data URL）。
+- **UI**：列表只展示百分比；不把字数份额折算成「约 N tokens」（英文 schema 会被高估、误导）。
 - **渐进披露**：分段条与列表以三大类为主；二级细分默认展开（hover 交互难稳定点开折叠），仍可手动折叠。
 - System 二级依赖 PromptBuilder 写入的 section 标记（发 API 前 strip）；无标记时 system 仅一级。
 - 图片单独成叶子，避免淹没对话正文占比。

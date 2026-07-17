@@ -143,7 +143,6 @@ export default {
     context: '上下文',
     contextUsed: '已使用',
     contextUsageTitle: '上下文组成',
-    contextUsageApproxTokens: '约 {n}',
     contextComposition: {
       system: '系统提示',
       identity: '身份与规则',
