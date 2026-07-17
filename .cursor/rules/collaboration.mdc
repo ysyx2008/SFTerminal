@@ -13,9 +13,10 @@ alwaysApply: true
 
 ## 开发流程
 
-1. **先理解再动手**：改动前充分阅读相关代码上下文
+1. **先理解再动手**：改动前充分阅读相关代码上下文（含对应 SPEC 的设计目标）
 2. **大改动先出方案**：涉及 3 个以上文件的改动，先说明方案（改哪些文件、怎么改、影响什么），用户确认后再编码
-3. **不确定就问**：需求有歧义或有多种实现方式时，先问清楚，不要猜
+3. **设计先落 SPEC 再编码**：讨论中用户提出并确认的设计思路（目标、取舍、不做的事）必须先写入对应 SPEC 的「设计目标」，**然后才动手改代码**。对话里的共识不算数，SPEC 里的才算数
+4. **不确定就问**：需求有歧义或有多种实现方式时，先问清楚，不要猜
 
 ## 改动完成后必须做
 
@@ -31,9 +32,10 @@ alwaysApply: true
 
 ## SPEC 文档要求
 
-- **改 service 前先读 SPEC.md**：改动任何 service 前，必须先读取对应的 `electron/services/XXX_SPEC.md`（或子目录 `SPEC.md`）。若不存在，先写一份再动手改代码
+- **设计目标来自用户讨论，不是代码反推**：SPEC 最重要的部分是用户确认过的设计思路；API/文件表只是实现索引。详见 `spec-driven.mdc`
+- **改 service 前先读 SPEC.md**：改动任何 service 前，必须先读取对应的 `electron/services/XXX_SPEC.md`（或子目录 `SPEC.md`）。若不存在，先写设计目标再动手改代码
 - **探索必须用 code-query**：摸底类层次/方法/接口/引用一律用 `npx tsx scripts/code-query.ts`，**禁止直接 Read 整文件做"摸底"**
-- **新 service 必须带 SPEC**：完成新 service 后必须有对应 SPEC.md，否则 PR/commit 不能过
+- **新 service 必须带 SPEC**：完成新 service 后必须有对应 SPEC.md（含设计目标），否则 PR/commit 不能过
 
 ## 禁止事项
 
