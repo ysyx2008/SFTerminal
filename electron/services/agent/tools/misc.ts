@@ -511,6 +511,37 @@ export async function executeMcpTool(
   const { serverId, toolName } = parsed
   const displayLabel = executor.mcpService.getToolDisplayLabel(fullName) ?? toolName
 
+  // 渐进披露兜底：未 load 该 server 却调用 → 整包 load 该 server，请模型重试
+  if (
+    executor.mcpService.shouldDeferTools() &&
+    executor.mcpToolSession &&
+    !executor.mcpToolSession.isServerLoaded(serverId)
+  ) {
+    if (!executor.mcpService.isConnected(serverId)) {
+      return { success: false, output: '', error: t('error.mcp_server_not_connected', { server: serverId }) }
+    }
+    executor.mcpToolSession.loadServer(serverId)
+    const defs = executor.mcpService.getToolDefinitionsByServerIds([serverId])
+    const msg = t('mcp.server_loaded_retry', {
+      name: displayLabel,
+      count: defs.length
+    })
+    executor.addStep({
+      type: 'tool_call',
+      content: formatMcpToolCallContent(displayLabel),
+      toolName: fullName,
+      toolArgs: args,
+      riskLevel: 'moderate'
+    })
+    executor.addStep({
+      type: 'tool_result',
+      content: msg,
+      toolName: fullName,
+      toolResult: msg
+    })
+    return { success: false, output: msg, error: msg }
+  }
+
   if (!executor.mcpService.isConnected(serverId)) {
     return { success: false, output: '', error: t('error.mcp_server_not_connected', { server: serverId }) }
   }
@@ -558,6 +589,72 @@ export async function executeMcpTool(
     })
     return { success: false, output: '', error: errorMsg }
   }
+}
+
+/**
+ * 按 MCP server 整包加载工具定义（渐进披露，对齐 skill load）
+ */
+export async function loadMcpServer(
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  if (!executor.mcpService) {
+    return { success: false, output: '', error: t('error.mcp_not_initialized') }
+  }
+  if (!executor.mcpToolSession) {
+    return { success: false, output: '', error: t('error.mcp_not_initialized') }
+  }
+
+  const serverRef = typeof args.server === 'string' ? args.server.trim() : ''
+  if (!serverRef) {
+    return { success: false, output: '', error: 'server is required' }
+  }
+
+  executor.addStep({
+    type: 'tool_call',
+    content: `${t('mcp.load')}: ${serverRef}`,
+    toolName: 'mcp_load',
+    toolArgs: { server: serverRef },
+    riskLevel: 'safe'
+  })
+
+  const resolved = executor.mcpService.resolveServerRef(serverRef)
+  if (!resolved) {
+    const catalog = executor.mcpService.getServerCatalogText()
+    const err = t('mcp.load_server_not_found', { server: serverRef }) + '\n\n' + catalog
+    executor.addStep({
+      type: 'tool_result',
+      content: t('mcp.load_server_not_found', { server: serverRef }),
+      toolName: 'mcp_load',
+      toolResult: err
+    })
+    return { success: false, output: '', error: err }
+  }
+
+  executor.mcpToolSession.loadServer(resolved.serverId)
+  const defs = executor.mcpService.getToolDefinitionsByServerIds([resolved.serverId])
+  const names = defs.map(d => d.function.name)
+
+  const parts: string[] = [
+    t('mcp.server_loaded', {
+      name: resolved.name,
+      count: defs.length
+    })
+  ]
+  // 给模型一份工具名清单，完整 schema 已进入下一轮 tools 数组
+  if (names.length > 0) {
+    parts.push('\n' + names.map(n => `- ${n}`).join('\n'))
+    parts.push('\n' + t('mcp.server_loaded_hint'))
+  }
+  const output = parts.join('\n')
+
+  executor.addStep({
+    type: 'tool_result',
+    content: t('mcp.server_loaded', { name: resolved.name, count: defs.length }),
+    toolName: 'mcp_load',
+    toolResult: output.length > 800 ? truncateFromEnd(output, 800) : output
+  })
+  return { success: true, output }
 }
 
 /**

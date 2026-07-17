@@ -24,7 +24,7 @@ import { searchKnowledge, getKnowledgeDoc } from './knowledge'
 import { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 import { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
 import { compressContext, recallCompressed, manageMemory } from './context'
-import { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, awaitFileTransfer, messageUser, executeMcpTool, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
+import { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, awaitFileTransfer, messageUser, executeMcpTool, loadMcpServer, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
 import { dispatchSubAgents } from './sub-agent'
 import { executeWebSearch } from './web-search'
 import { executeWebFetch } from './web-fetch'
@@ -249,6 +249,9 @@ export async function executeTool(
 
     case 'web_fetch':
       return executeWebFetch(args, executor)
+
+    case 'mcp_load':
+      return loadMcpServer(args, executor)
 
     case 'send_to_chat':
       return sendToChat(args, executor)

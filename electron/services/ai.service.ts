@@ -1911,8 +1911,6 @@ export class AiService {
         max_tokens: profile.maxOutputTokens || 8192
       }
 
-      aiDebug.logRequestBody(reqId, body as unknown as Record<string, unknown>)
-
       let data: {
         choices?: {
           message?: {
@@ -2177,8 +2175,6 @@ export class AiService {
     }
 
     let requestBody = rebuildRequestBody()
-    // 记录 formatMessageForApi 处理后的实际请求体（仅 messages），便于排查字段合规问题（如 DeepSeek reasoning_content）
-    getAiDebugService().logRequestBody(reqId, requestBody)
 
     // 视觉降级重试：剥离图片后重新请求（最多触发一次）
     const tryVisionFallback = (errorMsg: string): boolean => {

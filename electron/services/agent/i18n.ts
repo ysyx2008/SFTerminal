@@ -1118,6 +1118,11 @@ const translations = {
     'mcp.tool_success': '[MCP] 工具执行成功',
     'mcp.tool_failed': '[MCP] 工具执行失败',
     'mcp.error': '[MCP] 错误',
+    'mcp.load': '加载 MCP 服务器',
+    'mcp.load_server_not_found': '未找到 MCP 服务器「{server}」。请使用目录中的 id 或完整名称：',
+    'mcp.server_loaded': '已加载 MCP 服务器「{name}」的全部 {count} 个工具定义到本会话。',
+    'mcp.server_loaded_hint': '下一轮可直接调用上列 mcp_* 工具（完整参数 schema 已注入工具列表）。',
+    'mcp.server_loaded_retry': '已加载该工具所属 MCP 服务器的全部 {count} 个工具定义。请在下一轮按新工具列表重新调用。',
 
     // 提示信息
     'hint.long_running_command': '这是一个长耗时命令，超时不代表失败。建议使用 wait 工具等待一段时间后再检查状态。',
@@ -2616,6 +2621,11 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'mcp.tool_success': '[MCP] Tool execution success',
     'mcp.tool_failed': '[MCP] Tool execution failed',
     'mcp.error': '[MCP] Error',
+    'mcp.load': 'Load MCP server',
+    'mcp.load_server_not_found': 'MCP server "{server}" not found. Use an id or full name from the catalog:',
+    'mcp.server_loaded': 'Loaded all {count} tool definition(s) from MCP server "{name}" into this session.',
+    'mcp.server_loaded_hint': 'On the next turn you may call the mcp_* tools listed above (full schemas are now in the tool list).',
+    'mcp.server_loaded_retry': 'Loaded all {count} tool definition(s) from this tool\'s MCP server. Retry on the next turn using the updated tool list.',
 
     // Hints
     'hint.long_running_command': 'This is a long-running command, timeout does not mean failure. Consider using wait tool to wait and then check status.',

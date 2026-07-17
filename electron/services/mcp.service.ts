@@ -10,6 +10,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { ToolDefinition } from './ai.service'
 import type { ToolDefinitionWithMeta } from './agent/tools'
 import { formatMcpToolCallContent, resolveMcpToolDisplayLabel } from './mcp-tool-display'
+import { MCP_PRELOAD_THRESHOLD } from './mcp-progressive-constants'
 import { ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
 import { app } from 'electron'
@@ -46,6 +47,13 @@ export interface McpTool {
     properties: Record<string, unknown>
     required?: string[]
   }
+}
+
+/** @deprecated 检索已改为按 server 整包 load；保留类型以免外部引用断裂 */
+export interface McpToolSearchHit {
+  tool: McpTool
+  fullName: string
+  score: number
 }
 
 // MCP 资源信息
@@ -338,6 +346,97 @@ export class McpService extends EventEmitter {
     return tools
   }
 
+  /** 已连接 MCP 工具总数 */
+  getConnectedToolCount(): number {
+    return this.getAllTools().length
+  }
+
+  /** 工具数 > 阈值 → 进入渐进披露（不把全量 schema 注入上下文） */
+  shouldDeferTools(): boolean {
+    return this.getConnectedToolCount() > MCP_PRELOAD_THRESHOLD
+  }
+
+  /**
+   * 廉价 server 目录（供 mcp_load description）。
+   * 只列 server 名与工具数，不列每个工具。
+   */
+  getServerCatalogText(): string {
+    const statuses = this.getServerStatuses()
+    if (statuses.length === 0) return '（当前无已连接 MCP 服务器）'
+    return statuses
+      .map(s => `- ${s.name}（id: ${s.id}，${s.toolCount} 个工具）`)
+      .join('\n')
+  }
+
+  /**
+   * 用 id 或显示名解析已连接 server（精确匹配 id / name，忽略大小写）。
+   */
+  resolveServerRef(ref: string): { serverId: string; name: string; toolCount: number } | null {
+    const key = ref.trim()
+    if (!key) return null
+    const statuses = this.getServerStatuses()
+    const byId = statuses.find(s => s.id === key)
+    if (byId) {
+      return { serverId: byId.id, name: byId.name, toolCount: byId.toolCount }
+    }
+    const lower = key.toLowerCase()
+    const byName = statuses.find(s => s.name.toLowerCase() === lower)
+    if (byName) {
+      return { serverId: byName.id, name: byName.name, toolCount: byName.toolCount }
+    }
+    return null
+  }
+
+  /** 公开：生成 LLM 可见的完整工具名 */
+  getFullToolName(tool: Pick<McpTool, 'serverId' | 'name'>): string {
+    return this.generateToolName(tool.serverId, tool.name)
+  }
+
+  /**
+   * 重建全量名称映射。defer 模式下未注入上下文的工具仍须可 parse/call。
+   */
+  rebuildToolNameMap(): void {
+    this.toolNameMap.clear()
+    for (const tool of this.getAllTools()) {
+      const generatedName = this.getFullToolName(tool)
+      this.toolNameMap.set(generatedName, {
+        serverId: tool.serverId,
+        toolName: tool.name
+      })
+    }
+  }
+
+  private toolToDefinition(tool: McpTool): ToolDefinitionWithMeta {
+    const generatedName = this.getFullToolName(tool)
+    const displayLabel = resolveMcpToolDisplayLabel(tool)
+
+    return {
+      type: 'function' as const,
+      function: {
+        name: generatedName,
+        description: `[MCP: ${tool.serverName}] ${tool.description}`,
+        parameters: {
+          type: 'object' as const,
+          properties: Object.fromEntries(
+            Object.entries(tool.inputSchema.properties || {}).map(([key, value]) => [
+              key,
+              {
+                type: (value as { type?: string }).type || 'string',
+                description: (value as { description?: string }).description || ''
+              }
+            ])
+          ),
+          required: tool.inputSchema.required
+        }
+      },
+      _meta: {
+        streamDisplay: {
+          customRender: () => formatMcpToolCallContent(displayLabel)
+        }
+      }
+    }
+  }
+
   /**
    * 获取所有可用资源（聚合所有服务器）
    */
@@ -389,49 +488,47 @@ export class McpService extends EventEmitter {
   }
 
   /**
-   * 将 MCP 工具转换为 AI 工具定义格式
+   * 将 MCP 工具转换为 AI 工具定义格式（全量）
    */
   getToolDefinitions(): ToolDefinition[] {
-    // 清空并重建映射表
-    this.toolNameMap.clear()
-    
-    return this.getAllTools().map(tool => {
-      const generatedName = this.generateToolName(tool.serverId, tool.name)
-      const displayLabel = resolveMcpToolDisplayLabel(tool)
-      
-      // 保存映射关系，以便后续解析
-      this.toolNameMap.set(generatedName, {
-        serverId: tool.serverId,
-        toolName: tool.name
-      })
-      
-      const def: ToolDefinitionWithMeta = {
-        type: 'function' as const,
-        function: {
-          name: generatedName,
-          description: `[MCP: ${tool.serverName}] ${tool.description}`,
-          parameters: {
-            type: 'object' as const,
-            properties: Object.fromEntries(
-              Object.entries(tool.inputSchema.properties || {}).map(([key, value]) => [
-                key,
-                {
-                  type: (value as { type?: string }).type || 'string',
-                  description: (value as { description?: string }).description || ''
-                }
-              ])
-            ),
-            required: tool.inputSchema.required
-          }
-        },
-        _meta: {
-          streamDisplay: {
-            customRender: () => formatMcpToolCallContent(displayLabel)
-          }
-        }
+    this.rebuildToolNameMap()
+    return this.getAllTools().map(tool => this.toolToDefinition(tool))
+  }
+
+  /**
+   * 按已 load 的 serverId 列表取该服全部工具 schema（defer sticky）。
+   */
+  getToolDefinitionsByServerIds(serverIds: string[]): ToolDefinition[] {
+    this.rebuildToolNameMap()
+    if (serverIds.length === 0) return []
+    const wanted = new Set(serverIds)
+    const result: ToolDefinition[] = []
+    for (const tool of this.getAllTools()) {
+      if (wanted.has(tool.serverId)) {
+        result.push(this.toolToDefinition(tool))
       }
-      return def
-    })
+    }
+    return result
+  }
+
+  /**
+   * 按完整工具名取 schema。
+   */
+  getToolDefinitionsByNames(names: string[]): ToolDefinition[] {
+    this.rebuildToolNameMap()
+    if (names.length === 0) return []
+
+    const byName = new Map<string, McpTool>()
+    for (const tool of this.getAllTools()) {
+      byName.set(this.getFullToolName(tool), tool)
+    }
+
+    const result: ToolDefinition[] = []
+    for (const name of new Set(names)) {
+      const tool = byName.get(name)
+      if (tool) result.push(this.toolToDefinition(tool))
+    }
+    return result
   }
 
   /**

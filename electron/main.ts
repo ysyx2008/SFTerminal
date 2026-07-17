@@ -3388,6 +3388,10 @@ ipcMain.handle('watch:getRunning', async () => {
   return (await ensureWatchService()).getRunningWatches()
 })
 
+ipcMain.handle('watch:cancel', async (_event, id: string) => {
+  return (await ensureWatchService()).cancelRunningWatch(id)
+})
+
 ipcMain.handle('watch:getSshSessions', async () => {
   return (await ensureWatchService()).getSshSessions()
 })
