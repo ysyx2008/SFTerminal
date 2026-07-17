@@ -82,9 +82,11 @@ const props = defineProps<{
 const { t } = useI18n()
 
 const COMPOSITION_COLORS: Partial<Record<ContextCompositionId, string>> = {
+  // 一级：与分段条共用，彼此区分度高
   system: '#94a3b8',
   tools: '#a78bfa',
-  messages: '#c084fc',
+  messages: '#f472b6',
+  // 二级
   identity: '#64748b',
   rules: '#22c55e',
   skills: '#f59e0b',
@@ -92,9 +94,9 @@ const COMPOSITION_COLORS: Partial<Record<ContextCompositionId, string>> = {
   environment: '#818cf8',
   builtin: '#8b5cf6',
   mcp: '#e879f9',
-  history: '#a855f7',
-  currentUser: '#d946ef',
-  images: '#fb7185',
+  history: '#d946ef',
+  currentUser: '#fb7185',
+  images: '#fbbf24',
 }
 
 const TOP_LEVEL_IDS: ContextCompositionId[] = ['system', 'tools', 'messages']
@@ -107,6 +109,15 @@ const topLevelComposition = computed(() => {
   return root.children.filter(c => TOP_LEVEL_IDS.includes(c.id))
 })
 
+/** 打开弹层时默认展开有二级的大类，避免只能靠点击展开却因 hover 断开点不到 */
+function expandAllTopLevels() {
+  const next = new Set<string>()
+  for (const node of topLevelComposition.value) {
+    if (node.children?.length) next.add(node.id)
+  }
+  expandedCompositionIds.value = next
+}
+
 const compositionTotalChars = computed(() => {
   const root = props.contextStats.composition
   if (root && root.chars > 0) return root.chars
@@ -117,6 +128,11 @@ function compositionPercent(chars: number): number {
   const total = compositionTotalChars.value
   if (total <= 0) return 0
   return Math.max(0, Math.round((chars / total) * 1000) / 10)
+}
+
+/** 固定一位小数，右侧百分比列对齐 */
+function formatCompositionPercent(chars: number): string {
+  return `${compositionPercent(chars).toFixed(1)}%`
 }
 
 function compositionApproxTokens(chars: number): number {
@@ -145,11 +161,107 @@ function toggleCompositionExpand(id: string) {
   if (next.has(id)) next.delete(id)
   else next.add(id)
   expandedCompositionIds.value = next
+  if (showContextTip.value) {
+    nextTick(() => updateContextTipPosition())
+  }
 }
 
 function isCompositionExpanded(id: string): boolean {
   return expandedCompositionIds.value.has(id)
 }
+
+/** Teleport 到 body，避免被 ai-panel / composer 的 overflow 裁切 */
+const contextMiniEl = ref<HTMLElement | null>(null)
+const showContextTip = ref(false)
+const contextTipStyle = ref<Record<string, string>>({})
+let tipHideTimer: ReturnType<typeof setTimeout> | null = null
+let tipShowTimer: ReturnType<typeof setTimeout> | null = null
+/** 避免路过进度条就弹出；与系统 title 延迟接近 */
+const CONTEXT_TIP_SHOW_DELAY_MS = 450
+
+function clearTipHideTimer() {
+  if (tipHideTimer) {
+    clearTimeout(tipHideTimer)
+    tipHideTimer = null
+  }
+}
+
+function clearTipShowTimer() {
+  if (tipShowTimer) {
+    clearTimeout(tipShowTimer)
+    tipShowTimer = null
+  }
+}
+
+function updateContextTipPosition() {
+  const el = contextMiniEl.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const tipWidth = Math.min(340, window.innerWidth - 16, Math.max(260, Math.floor(rect.width * 0.85)))
+  const gap = 2
+  const spaceAbove = rect.top
+  const spaceBelow = window.innerHeight - rect.bottom
+  // 进度条在输入区顶部、面板底部附近：优先向上展开
+  const placeAbove = spaceAbove >= 200 || spaceAbove >= spaceBelow
+
+  let left = rect.left + rect.width / 2 - tipWidth / 2
+  left = Math.max(8, Math.min(left, window.innerWidth - tipWidth - 8))
+
+  if (placeAbove) {
+    const maxH = Math.max(120, Math.min(spaceAbove - gap - 8, Math.floor(window.innerHeight * 0.65)))
+    contextTipStyle.value = {
+      position: 'fixed',
+      left: `${left}px`,
+      width: `${tipWidth}px`,
+      bottom: `${window.innerHeight - rect.top + gap}px`,
+      top: 'auto',
+      maxHeight: `${maxH}px`,
+    }
+  } else {
+    const maxH = Math.max(120, Math.min(spaceBelow - gap - 8, Math.floor(window.innerHeight * 0.65)))
+    contextTipStyle.value = {
+      position: 'fixed',
+      left: `${left}px`,
+      width: `${tipWidth}px`,
+      top: `${rect.bottom + gap}px`,
+      bottom: 'auto',
+      maxHeight: `${maxH}px`,
+    }
+  }
+}
+
+function openContextTip() {
+  clearTipHideTimer()
+  clearTipShowTimer()
+  tipShowTimer = setTimeout(() => {
+    tipShowTimer = null
+    expandAllTopLevels()
+    updateContextTipPosition()
+    showContextTip.value = true
+    nextTick(() => updateContextTipPosition())
+  }, CONTEXT_TIP_SHOW_DELAY_MS)
+}
+
+function scheduleCloseContextTip() {
+  clearTipShowTimer()
+  clearTipHideTimer()
+  // 进度条与弹层之间有缝隙，稍长延迟便于鼠标移入弹层
+  tipHideTimer = setTimeout(() => {
+    showContextTip.value = false
+    tipHideTimer = null
+  }, 280)
+}
+
+function keepContextTip() {
+  clearTipShowTimer()
+  clearTipHideTimer()
+  showContextTip.value = true
+}
+
+onBeforeUnmount(() => {
+  clearTipShowTimer()
+  clearTipHideTimer()
+})
 
 const quoteStore = useComposerQuoteStore()
 const quoteSnippets = computed(() => quoteStore.getSnippets(props.currentTabId))
@@ -618,7 +730,13 @@ const handleSendClick = (event: MouseEvent) => {
   </div>
 
   <div class="ai-input" :class="{ 'ai-input-embedded': embedded }">
-    <div v-if="contextStats.tokenEstimate > 0" class="context-mini">
+    <div
+      v-if="contextStats.tokenEstimate > 0"
+      ref="contextMiniEl"
+      class="context-mini"
+      @mouseenter="openContextTip"
+      @mouseleave="scheduleCloseContextTip"
+    >
       <template v-if="cacheBarWidth > 0">
         <div class="context-mini-bar cached" :style="{ width: cacheBarWidth + '%' }"></div>
         <div
@@ -633,7 +751,17 @@ const handleSendClick = (event: MouseEvent) => {
         :class="{ warning: contextStats.percentage > 60, danger: contextStats.percentage > 85 }"
         :style="{ width: contextStats.percentage + '%' }"
       ></div>
-      <div class="context-mini-tip" @mousedown.stop>
+    </div>
+
+    <Teleport to="body">
+      <div
+        v-if="showContextTip && contextStats.tokenEstimate > 0"
+        class="context-mini-tip"
+        :style="contextTipStyle"
+        @mouseenter="keepContextTip"
+        @mouseleave="scheduleCloseContextTip"
+        @mousedown.stop
+      >
         <div class="ctx-usage-header">
           <span class="ctx-usage-title">{{ t('ai.contextUsageTitle') }}</span>
           <span class="ctx-usage-pct">{{ contextStats.percentage }}%</span>
@@ -649,36 +777,34 @@ const handleSendClick = (event: MouseEvent) => {
               v-for="node in topLevelComposition"
               :key="node.id"
               class="ctx-usage-seg"
-              :style="{ width: compositionPercent(node.chars) + '%', background: compositionColor(node.id) }"
+              :style="{ flexGrow: Math.max(node.chars, 1), flexBasis: '0px', background: compositionColor(node.id) }"
+              :title="compositionLabel(node.id)"
             ></div>
           </div>
           <ul class="ctx-usage-list">
-            <li v-for="node in topLevelComposition" :key="node.id" class="ctx-usage-row">
-              <button
-                v-if="node.children?.length"
-                type="button"
-                class="ctx-usage-expand"
-                :class="{ open: isCompositionExpanded(node.id) }"
-                @click.stop="toggleCompositionExpand(node.id)"
-              >
-                <ChevronRight :size="12" />
-              </button>
-              <span v-else class="ctx-usage-expand-spacer"></span>
-              <span class="ctx-usage-swatch" :style="{ background: compositionColor(node.id) }"></span>
-              <span class="ctx-usage-name">{{ compositionLabel(node.id) }}</span>
-              <span class="ctx-usage-meta">
-                {{ compositionPercent(node.chars) }}%
-                · {{ t('ai.contextUsageApproxTokens', { n: formatApproxTokens(compositionApproxTokens(node.chars)) }) }}
-              </span>
+            <li v-for="node in topLevelComposition" :key="node.id" class="ctx-usage-item">
+              <div class="ctx-usage-row">
+                <button
+                  v-if="node.children?.length"
+                  type="button"
+                  class="ctx-usage-expand"
+                  :class="{ open: isCompositionExpanded(node.id) }"
+                  @click.stop="toggleCompositionExpand(node.id)"
+                >
+                  <ChevronRight :size="12" />
+                </button>
+                <span v-else class="ctx-usage-expand-spacer"></span>
+                <span class="ctx-usage-swatch" :style="{ background: compositionColor(node.id) }"></span>
+                <span class="ctx-usage-name">{{ compositionLabel(node.id) }}</span>
+                <span class="ctx-usage-pct-col">{{ formatCompositionPercent(node.chars) }}</span>
+                <span class="ctx-usage-tok-col">{{ t('ai.contextUsageApproxTokens', { n: formatApproxTokens(compositionApproxTokens(node.chars)) }) }}</span>
+              </div>
               <ul v-if="node.children?.length && isCompositionExpanded(node.id)" class="ctx-usage-children">
                 <li v-for="child in node.children" :key="child.id" class="ctx-usage-row child">
-                  <span class="ctx-usage-expand-spacer"></span>
                   <span class="ctx-usage-swatch" :style="{ background: compositionColor(child.id) }"></span>
                   <span class="ctx-usage-name">{{ compositionLabel(child.id) }}</span>
-                  <span class="ctx-usage-meta">
-                    {{ compositionPercent(child.chars) }}%
-                    · {{ t('ai.contextUsageApproxTokens', { n: formatApproxTokens(compositionApproxTokens(child.chars)) }) }}
-                  </span>
+                  <span class="ctx-usage-pct-col">{{ formatCompositionPercent(child.chars) }}</span>
+                  <span class="ctx-usage-tok-col">{{ t('ai.contextUsageApproxTokens', { n: formatApproxTokens(compositionApproxTokens(child.chars)) }) }}</span>
                 </li>
               </ul>
             </li>
@@ -688,7 +814,7 @@ const handleSendClick = (event: MouseEvent) => {
           {{ t('ai.context') }}: {{ contextStats.tokenEstimate.toLocaleString() }} / {{ (contextStats.maxTokens / 1000).toFixed(0) }}K ({{ contextStats.percentage }}%)
         </div>
       </div>
-    </div>
+    </Teleport>
 
     <div v-if="pendingImages.length > 0" class="image-preview-strip">
       <div v-for="img in pendingImages" :key="img.id" class="image-preview-item">
@@ -936,12 +1062,8 @@ const handleSendClick = (event: MouseEvent) => {
 .context-mini-bar.danger { background: var(--color-error); }
 
 .context-mini-tip {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: 260px;
-  max-width: min(340px, 90vw);
+  z-index: 10050;
+  box-sizing: border-box;
   padding: 10px 12px;
   font-size: 11px;
   color: var(--text-primary);
@@ -950,16 +1072,8 @@ const handleSendClick = (event: MouseEvent) => {
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
   white-space: normal;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.15s ease, visibility 0.15s ease;
-  pointer-events: none;
-  z-index: 20;
-}
-
-.context-mini:hover .context-mini-tip {
-  opacity: 1;
-  visibility: visible;
+  overflow-x: hidden;
+  overflow-y: auto;
   pointer-events: auto;
 }
 
@@ -1006,7 +1120,9 @@ const handleSendClick = (event: MouseEvent) => {
 
 .ctx-usage-seg {
   height: 100%;
-  min-width: 0;
+  /* 非零块至少 3px；比例由 inline flex-grow=chars 决定 */
+  min-width: 3px;
+  flex-shrink: 1;
 }
 
 .ctx-usage-list,
@@ -1016,18 +1132,47 @@ const handleSendClick = (event: MouseEvent) => {
   padding: 0;
 }
 
-.ctx-usage-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 0;
+.ctx-usage-item + .ctx-usage-item {
+  margin-top: 6px;
 }
 
+.ctx-usage-row {
+  display: grid;
+  grid-template-columns: 16px 8px minmax(0, 1fr) 4em 4.75em;
+  align-items: center;
+  column-gap: 6px;
+  padding: 4px 0;
+}
+
+.ctx-usage-row:not(.child) .ctx-usage-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* 二级：整体右移，色块对齐到一级文字起点附近；弱化字重/颜色 */
 .ctx-usage-row.child {
-  padding-left: 0;
-  width: 100%;
-  margin-top: 2px;
+  grid-template-columns: 6px minmax(0, 1fr) 4em 4.75em;
+  margin-left: 28px;
+  padding: 2px 0 2px 8px;
+  border-left: 1px solid var(--border-color);
+  column-gap: 8px;
+}
+
+.ctx-usage-row.child .ctx-usage-name {
+  font-weight: 400;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+
+.ctx-usage-row.child .ctx-usage-swatch {
+  width: 6px;
+  height: 6px;
+  opacity: 0.9;
+}
+
+.ctx-usage-row.child .ctx-usage-pct-col,
+.ctx-usage-row.child .ctx-usage-tok-col {
+  opacity: 0.85;
 }
 
 .ctx-usage-expand {
@@ -1042,7 +1187,6 @@ const handleSendClick = (event: MouseEvent) => {
   color: var(--text-secondary);
   cursor: pointer;
   border-radius: 3px;
-  flex-shrink: 0;
 }
 
 .ctx-usage-expand:hover {
@@ -1056,34 +1200,35 @@ const handleSendClick = (event: MouseEvent) => {
 
 .ctx-usage-expand-spacer {
   width: 16px;
-  flex-shrink: 0;
+  height: 16px;
 }
 
 .ctx-usage-swatch {
   width: 8px;
   height: 8px;
   border-radius: 2px;
-  flex-shrink: 0;
+  justify-self: center;
 }
 
 .ctx-usage-name {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ctx-usage-meta {
-  color: var(--text-secondary);
+.ctx-usage-pct-col,
+.ctx-usage-tok-col {
   font-variant-numeric: tabular-nums;
   font-size: 10px;
-  flex-shrink: 0;
+  color: var(--text-secondary);
+  text-align: right;
+  white-space: nowrap;
 }
 
 .ctx-usage-children {
-  width: 100%;
-  padding-left: 4px;
+  margin-top: 2px;
+  margin-bottom: 2px;
 }
 
 .ctx-usage-fallback {
