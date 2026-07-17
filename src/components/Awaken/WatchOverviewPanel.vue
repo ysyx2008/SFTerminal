@@ -70,8 +70,8 @@ const upcomingAll = computed<WatchDefinition[]>(() => {
     .sort((a, b) => (a.nextRun ?? 0) - (b.nextRun ?? 0))
 })
 
-const UPCOMING_DEFAULT = 5
-const upcomingExpanded = ref(false)
+	const UPCOMING_DEFAULT = 9
+	const upcomingExpanded = ref(false)
 const upcoming = computed<WatchDefinition[]>(() =>
   upcomingExpanded.value ? upcomingAll.value : upcomingAll.value.slice(0, UPCOMING_DEFAULT)
 )
@@ -351,92 +351,93 @@ function viewAnomalyFailure(w: WatchDefinition) {
         </div>
       </section>
 
-      <!-- 即将执行（首条即「下一次」，不再单独 hero） -->
-      <section class="overview-section">
-        <div class="section-header">
-          <Clock :size="16" class="section-icon" />
-          <span class="section-title">{{ t('watch.sectionUpcoming') }}</span>
-          <span class="section-count" v-if="upcomingAll.length > 0">{{ upcomingAll.length }}</span>
-        </div>
-        <div class="section-body">
-          <button
-            v-for="(w, idx) in upcoming"
-            :key="w.id"
-            class="ov-row"
-            :class="{ 'ov-row-next': idx === 0 && !upcomingExpanded }"
-            :title="formatAbsoluteShort(w.nextRun as number)"
-            @click="selectWatchById(w.id)"
-          >
-            <span class="ov-row-dot" :class="idx === 0 ? 'dot-next' : 'dot-upcoming'"></span>
-            <div class="ov-row-main">
-              <div class="ov-row-line1">
-                <span class="ov-row-name">
-                  <span v-if="idx === 0" class="next-badge">{{ t('watch.overviewNextRunLabel') }}</span>
-                  {{ w.name }}
-                </span>
-                <span class="ov-row-time ov-row-time-accent">{{ formatUpcoming(w.nextRun as number) }}</span>
-              </div>
-            </div>
-            <ChevronRight :size="14" class="ov-row-arrow" />
-          </button>
-          <button
-            v-if="upcomingHidden > 0 || upcomingExpanded"
-            class="ov-row-toggle"
-            @click="upcomingExpanded = !upcomingExpanded"
-          >
-            {{ upcomingExpanded ? t('watch.overviewShowLess') : t('watch.overviewShowMore', { n: upcomingHidden }) }}
-          </button>
-          <div v-if="upcomingAll.length === 0" class="ov-empty">
-            <Clock :size="14" />
-            <span>{{ upcomingEmptyHint }}</span>
+      <!-- 即将执行 | 最近流水：宽屏双栏，窄屏仍上下堆叠 -->
+      <div class="overview-main-grid">
+        <section class="overview-section overview-section-fill">
+          <div class="section-header">
+            <Clock :size="16" class="section-icon" />
+            <span class="section-title">{{ t('watch.sectionUpcoming') }}</span>
+            <span class="section-count" v-if="upcomingAll.length > 0">{{ upcomingAll.length }}</span>
           </div>
-        </div>
-      </section>
+          <div class="section-body">
+            <button
+              v-for="(w, idx) in upcoming"
+              :key="w.id"
+              class="ov-row"
+              :class="{ 'ov-row-next': idx === 0 }"
+              :title="formatAbsoluteShort(w.nextRun as number)"
+              @click="selectWatchById(w.id)"
+            >
+              <span class="ov-row-dot" :class="idx === 0 ? 'dot-next' : 'dot-upcoming'"></span>
+              <div class="ov-row-main">
+                <div class="ov-row-line1">
+                  <span class="ov-row-name">
+                    <span v-if="idx === 0" class="next-badge">{{ t('watch.overviewNextRunLabel') }}</span>
+                    {{ w.name }}
+                  </span>
+                  <span class="ov-row-time ov-row-time-accent">{{ formatUpcoming(w.nextRun as number) }}</span>
+                </div>
+              </div>
+              <ChevronRight :size="14" class="ov-row-arrow" />
+            </button>
+            <button
+              v-if="upcomingHidden > 0 || upcomingExpanded"
+              class="ov-row-toggle"
+              @click="upcomingExpanded = !upcomingExpanded"
+            >
+              {{ upcomingExpanded ? t('watch.overviewShowLess') : t('watch.overviewShowMore', { n: upcomingHidden }) }}
+            </button>
+            <div v-if="upcomingAll.length === 0" class="ov-empty">
+              <Clock :size="14" />
+              <span>{{ upcomingEmptyHint }}</span>
+            </div>
+          </div>
+        </section>
 
-      <!-- 最近流水 -->
-      <section class="overview-section">
-        <div class="section-header">
-          <History :size="16" class="section-icon" />
-          <span class="section-title">{{ t('watch.sectionRecent') }}</span>
-          <span class="section-count">{{ recentHistory.length }}</span>
-          <button
-            v-if="recentHistory.length > 0"
-            class="section-link"
-            @click="emit('view-all-history')"
-          >
-            {{ t('watch.overviewViewAllHistory') }}
-          </button>
-        </div>
-        <div class="section-body">
-          <button
-            v-for="r in recentHistory"
-            :key="r.id"
-            class="ov-row"
-            :class="`ov-row-${historyStatusClass(r.status)}`"
-            @click="emit('view-history-detail', r)"
-          >
-            <span class="ov-row-dot"></span>
-            <div class="ov-row-main">
-              <div class="ov-row-line1">
-                <span class="ov-row-name">{{ r.watchName }}</span>
-                <span class="ov-row-time">{{ formatTimeAgo(r.at) }}</span>
-              </div>
-              <div class="ov-row-line2 muted">
-                <span class="hist-status">{{ historyStatusLabel(r.status) }}</span>
-                <span class="hist-sep" v-if="r.duration > 0">·</span>
-                <span v-if="r.duration > 0">{{ formatDuration(r.duration) }}</span>
-                <span class="hist-sep" v-if="historySummary(r)">·</span>
-                <span class="hist-summary" v-if="historySummary(r)">{{ historySummary(r) }}</span>
-              </div>
-            </div>
-            <ChevronRight :size="14" class="ov-row-arrow" />
-          </button>
-          <div v-if="recentHistory.length === 0" class="ov-empty">
-            <AlertCircle :size="14" />
-            <span>{{ t('watch.noHistoryYet') }}</span>
+        <section class="overview-section overview-section-fill">
+          <div class="section-header">
+            <History :size="16" class="section-icon" />
+            <span class="section-title">{{ t('watch.sectionRecent') }}</span>
+            <span class="section-count">{{ recentHistory.length }}</span>
+            <button
+              v-if="recentHistory.length > 0"
+              class="section-link"
+              @click="emit('view-all-history')"
+            >
+              {{ t('watch.overviewViewAllHistory') }}
+            </button>
           </div>
-        </div>
-      </section>
+          <div class="section-body">
+            <button
+              v-for="r in recentHistory"
+              :key="r.id"
+              class="ov-row"
+              :class="`ov-row-${historyStatusClass(r.status)}`"
+              @click="emit('view-history-detail', r)"
+            >
+              <span class="ov-row-dot"></span>
+              <div class="ov-row-main">
+                <div class="ov-row-line1">
+                  <span class="ov-row-name">{{ r.watchName }}</span>
+                  <span class="ov-row-time">{{ formatTimeAgo(r.at) }}</span>
+                </div>
+                <div class="ov-row-line2 muted">
+                  <span class="hist-status">{{ historyStatusLabel(r.status) }}</span>
+                  <span class="hist-sep" v-if="r.duration > 0">·</span>
+                  <span v-if="r.duration > 0">{{ formatDuration(r.duration) }}</span>
+                  <span class="hist-sep" v-if="historySummary(r)">·</span>
+                  <span class="hist-summary" v-if="historySummary(r)">{{ historySummary(r) }}</span>
+                </div>
+              </div>
+              <ChevronRight :size="14" class="ov-row-arrow" />
+            </button>
+            <div v-if="recentHistory.length === 0" class="ov-empty">
+              <AlertCircle :size="14" />
+              <span>{{ t('watch.noHistoryYet') }}</span>
+            </div>
+          </div>
+        </section>
+      </div>
     </template>
   </div>
 </template>
@@ -446,9 +447,38 @@ function viewAnomalyFailure(w: WatchDefinition) {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 18px 22px 28px;
-  overflow-y: auto;
+  padding: 18px 22px 20px;
+  overflow: hidden;
   gap: 14px;
+  min-height: 0;
+}
+
+.overview-main-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: stretch;
+}
+
+@media (max-width: 900px) {
+  .overview-main-grid {
+    grid-template-columns: 1fr;
+    overflow: visible;
+    flex: none;
+  }
+  .watch-overview {
+    overflow-y: auto;
+  }
+  .overview-section-fill {
+    min-height: auto;
+    overflow: visible;
+  }
+  .overview-section-fill .section-body {
+    overflow: visible;
+    flex: none;
+  }
 }
 
 .overview-hero {
@@ -518,6 +548,22 @@ button.health-pill:hover { filter: brightness(1.08); }
   border: 1px solid var(--border-color);
   border-radius: 10px;
   background: var(--bg-secondary);
+  min-width: 0;
+}
+
+.overview-section:not(.overview-section-fill) {
+  flex-shrink: 0;
+}
+
+.overview-section-fill {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.overview-section-fill .section-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .section-header {
