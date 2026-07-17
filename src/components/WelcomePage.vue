@@ -687,7 +687,7 @@ onUnmounted(() => {
   filter: drop-shadow(0 4px 16px rgba(var(--accent-decorative-rgb), 0.4));
   transition: filter 0.3s ease;
   /* 浮动放在 img 上：.logo 会被 enter-done 强制 animation:none，放父级会提前掐掉 */
-  animation: float 3s ease-in-out 1;
+  animation: float 3s ease-in-out infinite;
 }
 
 .logo-container:hover .sailfish-logo {
