@@ -204,6 +204,7 @@ const sourceConfig = JSON.stringify(DOWNLOAD_SOURCES);
 </section>
 
 <script>
+  // 下载源切换逻辑（配置在 section.download 上；#download 锚点在标题上）
   const section = document.querySelector('section.download');
   const sourceConfig = JSON.parse(section?.dataset.sourceConfig || '{}');
   const defaultSource = section?.dataset.defaultSource || 'github';
