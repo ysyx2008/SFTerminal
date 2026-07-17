@@ -8,6 +8,7 @@ import path, { join } from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
 import { getDefaultShell } from './utils/platform'
+import { requestLocalNetworkAccess } from './utils/local-network-permission'
 import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, WebSearchSettings, IMProcessMode } from '@shared/types'
 import { getAppTitle as buildAppTitle, getBrandName } from '@shared/brand'
 import { isOemFeatureEnabled } from '@shared/oem-features'
@@ -1546,6 +1547,10 @@ app.whenReady().then(async () => {
   setupWindowServices()
   createTray()
   log.info(`[startup] window created & tray ready (+${Date.now() - APP_START_TIME}ms)`)
+
+  // ⚠️ 勿删：macOS 本地网络 TCC 探测（见 utils/local-network-permission.ts）。
+  // 窗口就绪后再触发，便于系统对话框（若弹出）挂在前台 App 上。
+  requestLocalNetworkAccess('startup')
 
   // 首次启动检测：向导未完成时推迟重量级初始化（LanceDB / ONNX DLL 加载），
   // 防止 Windows 安全扫描同步阻塞主线程，导致向导界面卡死。

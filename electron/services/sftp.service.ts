@@ -4,6 +4,7 @@ import * as path from 'path'
 import { EventEmitter } from 'events'
 import type { SftpConfig } from '@shared/types'
 import { getSshErrorMessage } from './ssh-error'
+import { requestLocalNetworkAccessIfDenied } from '../utils/local-network-permission'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('SFTP')
@@ -100,8 +101,11 @@ export class SftpService extends EventEmitter {
       await sftp.connect(connectConfig)
       this.sessions.set(sessionId, sftp)
     } catch (err) {
+      const raw = err instanceof Error ? err : new Error(String(err))
+      // ⚠️ 勿删：EHOSTUNREACH 时再触发本地网络授权探测（见 local-network-permission.ts）
+      requestLocalNetworkAccessIfDenied(raw, 'sftp-connect')
       // 使用错误解析工具提供更友好的错误信息
-      const friendlyMessage = getSshErrorMessage(err instanceof Error ? err : new Error(String(err)))
+      const friendlyMessage = getSshErrorMessage(raw)
       throw new Error(friendlyMessage)
     }
   }

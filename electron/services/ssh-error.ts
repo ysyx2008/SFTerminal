@@ -3,6 +3,8 @@
  * 用于将底层 ssh2 库的错误信息转换为用户友好的错误提示
  */
 
+import { isLikelyMacLocalNetworkDenied } from '../utils/local-network-permission'
+
 // SSH 连接错误类型
 export type SshErrorType = 
   | 'auth_failed'        // 认证失败（密码或密钥错误）
@@ -160,6 +162,17 @@ export function getSshErrorMessage(error: Error | string, locale: 'zh' | 'en' = 
     const originalMessage = typeof error === 'string' ? error : error.message
     return `${messages.unknown}: ${originalMessage}`
   }
+
+  // 仅 EHOSTUNREACH（macOS 本地网络 TCC 常见表现）附加设置指引；不含 ENETUNREACH
+  if (
+    process.platform === 'darwin' &&
+    errorType === 'host_unreachable' &&
+    isLikelyMacLocalNetworkDenied(error)
+  ) {
+    return locale === 'zh'
+      ? `${messages.host_unreachable}。若终端能连而本应用不能，请到「系统设置 → 隐私与安全性 → 本地网络」允许旗鱼`
+      : `${messages.host_unreachable}. If system SSH works but this app cannot, allow SailFish in System Settings → Privacy & Security → Local Network`
+  }
   
   return messages[errorType]
 }
@@ -173,13 +186,10 @@ export function getSshErrorInfo(error: Error | string, locale: 'zh' | 'en' = 'zh
   message: string
   originalMessage: string
 } {
-  const errorType = parseSshError(error)
-  const messages = locale === 'zh' ? SSH_ERROR_MESSAGES_ZH : SSH_ERROR_MESSAGES_EN
   const originalMessage = typeof error === 'string' ? error : error.message
-  
   return {
-    type: errorType,
-    message: errorType === 'unknown' ? `${messages.unknown}: ${originalMessage}` : messages[errorType],
+    type: parseSshError(error),
+    message: getSshErrorMessage(error, locale),
     originalMessage
   }
 }

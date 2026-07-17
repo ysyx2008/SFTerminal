@@ -6,6 +6,7 @@ import * as iconv from 'iconv-lite'
 import type { JumpHostConfig, SshConfig, SshEncoding } from '@shared/types'
 import { getUnixProbeCommands } from './host-profile.service'
 import { getSshErrorMessage } from './ssh-error'
+import { requestLocalNetworkAccessIfDenied } from '../utils/local-network-permission'
 import { createLogger } from '../utils/logger'
 import type { ExecuteInTerminalResult } from './pty.service'
 
@@ -167,6 +168,8 @@ export class SshService {
         log.error(`${id} error:`, err)
         this.emitDisconnect({ id, reason: 'error', error: err })
         this.instances.delete(id)
+        // ⚠️ 勿删：EHOSTUNREACH 时再触发本地网络授权探测（见 local-network-permission.ts）
+        requestLocalNetworkAccessIfDenied(err, 'ssh-connect')
         const friendlyMessage = getSshErrorMessage(err)
         reject(new Error(friendlyMessage))
       })
@@ -275,6 +278,7 @@ export class SshService {
 
       jumpClient.on('error', err => {
         log.error(`Jump host error:`, err)
+        requestLocalNetworkAccessIfDenied(err, 'ssh-jump')
         const friendlyMessage = getSshErrorMessage(err)
         reject(new Error(`连接跳板机失败: ${friendlyMessage}`))
       })
@@ -397,6 +401,7 @@ export class SshService {
 
       client.on('error', err => {
         log.error(`JumpServer direct shell error:`, err)
+        requestLocalNetworkAccessIfDenied(err, 'ssh-jumpserver')
         const friendlyMessage = getSshErrorMessage(err)
         reject(new Error(`连接 JumpServer 失败: ${friendlyMessage}`))
       })

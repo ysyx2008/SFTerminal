@@ -149,9 +149,15 @@ mac:
       - en
       - zh_CN
       - zh-Hans
-    # macOS 14+ 本地网络访问授权说明（SSH/SFTP 连接局域网主机必需）
-    # 缺失此 key 会导致 macOS 静默拒绝本地网络访问且不弹授权弹窗，表现为 EHOSTUNREACH
+    # ⚠️ 勿删：macOS 14+ 本地网络访问授权说明（SSH/SFTP 连局域网/VM 必需）
+    # 缺失会导致静默拒绝本地网络访问且不弹授权弹窗，表现为 EHOSTUNREACH；
+    # 系统设置「本地网络」也无手动添加应用的入口，只能靠 plist + 运行时探测触发。
     NSLocalNetworkUsageDescription: "SailFish 需要访问本地网络以连接 SSH/SFTP 服务器、虚拟机及局域网设备。"
+    # ⚠️ 勿删：声明 Bonjour 服务类型（客户端不会真正发布；仅配合 mDNS 探测触发本地网络授权）
+    # 与 electron/utils/local-network-permission.ts、main 启动探测配套，缺一不可。
+    NSBonjourServices:
+      - _ssh._tcp
+      - _sftp-ssh._tcp
     # 麦克风访问授权说明（语音识别 / 语音输入功能必需）
     # macOS TCC 在首次调用 getUserMedia 时会读取此 key 作为弹窗文案；
     # 缺失会被系统静默拒绝授权。
