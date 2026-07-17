@@ -55,7 +55,6 @@ try {
 const DOWNLOAD_SOURCES = {
   github: {
     baseUrl: `https://github.com/ysyx2008/SailFish/releases/download/v${version}`,
-    // GitHub 文件名带版本号
     files: {
       'mac-arm64': `SailFish-${version}-arm64.dmg`,
       'mac-x64': `SailFish-${version}.dmg`,
@@ -65,7 +64,6 @@ const DOWNLOAD_SOURCES = {
   },
   aliyun: {
     baseUrl: 'https://sfterm-download.oss-cn-wuhan-lr.aliyuncs.com',
-    // OSS 文件名固定不带版本号
     files: {
       'mac-arm64': 'SailFish-arm64.dmg',
       'mac-x64': 'SailFish-x64.dmg',
@@ -78,7 +76,6 @@ const DOWNLOAD_SOURCES = {
 // 默认下载源：中文用阿里云，英文用 GitHub
 const defaultSource = lang === 'zh' ? 'aliyun' : 'github';
 
-// 构建下载数据，使用翻译
 const downloads = [
   {
     platform: t.download.platforms.macOS.name,
@@ -104,61 +101,98 @@ const downloads = [
   }
 ];
 
-// 传递给客户端的数据
+const sourceChoices = [
+  {
+    id: 'aliyun' as const,
+    name: t.download.source.aliyun,
+    desc: t.download.source.aliyunDesc,
+    icon: `<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>`,
+  },
+  {
+    id: 'github' as const,
+    name: t.download.source.github,
+    desc: t.download.source.githubDesc,
+    icon: `<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>`,
+  },
+];
+
 const sourceConfig = JSON.stringify(DOWNLOAD_SOURCES);
 ---
 
-<section class="download" data-source-config={sourceConfig} data-default-source={defaultSource}>
-  <div class="container">
-    <h2 id="download" class="section-title fade-in">{t.download.title}</h2>
-    <p class="section-subtitle fade-in fade-in-delay-1">{t.download.subtitle}</p>
+<section
+  class="download"
+  data-source-config={sourceConfig}
+  data-default-source={defaultSource}
+  data-label-aliyun={t.download.source.aliyun}
+  data-label-github={t.download.source.github}
+  data-hint-aliyun={t.download.source.hintAliyun}
+  data-hint-github={t.download.source.hintGithub}
+  data-current-from={t.download.source.currentFrom}
+>
+  <div class="container download-inner">
+    <header class="download-intro fade-in">
+      <h2 id="download" class="section-title">{t.download.title}</h2>
+      <p class="section-subtitle">{t.download.subtitle}</p>
+      <div class="version-info">
+        <span class="version-badge">v{version}</span>
+        {versionSummary && <p class="version-summary">{versionSummary}</p>}
+      </div>
+    </header>
 
-    <div class="version-info fade-in fade-in-delay-1">
-      <span class="version-badge">v{version}</span>
-      {versionSummary && <p class="version-summary">{versionSummary}</p>}
-    </div>
-    
-    <!-- 下载源 Tab 切换 -->
-    <div class="source-tabs fade-in fade-in-delay-1">
-      <button class="source-tab" data-source="aliyun">
-        <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
-        </svg>
-        {t.download.source.aliyun}
-      </button>
-      <button class="source-tab" data-source="github">
-        <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
-        </svg>
-        {t.download.source.github}
-      </button>
-    </div>
-    
-    <div class="download-grid">
-      {downloads.map((item, index) => (
-        <div class={`download-card lift-card fade-in fade-in-delay-${index + 2}`}>
-          <div class="download-header">
-            <div class="download-icon" set:html={item.icon} />
-            <div>
-              <h3 class="download-platform">{item.platform}</h3>
-              <p class="download-desc">{item.description}</p>
+    <div class="download-body fade-in fade-in-delay-1">
+      <div class="source-block">
+        <p class="source-label">{t.download.source.label}</p>
+        <div class="source-choices" role="radiogroup" aria-label={t.download.source.label}>
+          {sourceChoices.map((choice) => (
+            <button
+              type="button"
+              class="source-choice"
+              data-source={choice.id}
+              role="radio"
+              aria-checked="false"
+            >
+              <span class="source-choice-icon" set:html={choice.icon} />
+              <span class="source-choice-text">
+                <span class="source-choice-name">{choice.name}</span>
+                <span class="source-choice-desc">{choice.desc}</span>
+              </span>
+              <span class="source-choice-check" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+              </span>
+            </button>
+          ))}
+        </div>
+        <p class="source-status" data-source-status aria-live="polite"></p>
+      </div>
+
+      <div class="download-grid" data-download-grid>
+        {downloads.map((item) => (
+          <div class="download-card">
+            <div class="download-header">
+              <div class="download-icon" set:html={item.icon} />
+              <div>
+                <h3 class="download-platform">{item.platform}</h3>
+                <p class="download-desc">{item.description}</p>
+              </div>
+            </div>
+            <div class="download-variants">
+              {item.variants.map((variant) => (
+                <a href="#" class="download-btn" data-file-key={variant.fileKey} target="_blank" rel="noopener">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                  </svg>
+                  {variant.name}
+                </a>
+              ))}
             </div>
           </div>
-          <div class="download-variants">
-            {item.variants.map(variant => (
-              <a href="#" class="download-btn" data-file-key={variant.fileKey} target="_blank" rel="noopener">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-                </svg>
-                {variant.name}
-              </a>
-            ))}
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
-    
-    <div class="download-note fade-in">
+
+    <div class="download-note fade-in fade-in-delay-2">
       <p>
         <strong>{t.download.systemRequirements}</strong>macOS 10.15+ / Windows 10+, Server 2016+
       </p>
@@ -170,46 +204,80 @@ const sourceConfig = JSON.stringify(DOWNLOAD_SOURCES);
 </section>
 
 <script>
-  // 下载源切换逻辑（配置在 section.download 上；#download 锚点在标题上）
   const section = document.querySelector('section.download');
   const sourceConfig = JSON.parse(section?.dataset.sourceConfig || '{}');
   const defaultSource = section?.dataset.defaultSource || 'github';
-  
+  const grid = document.querySelector('[data-download-grid]');
+  const statusEl = document.querySelector('[data-source-status]');
+
   let currentSource = defaultSource;
-  
+
+  function sourceMeta(source) {
+    if (source === 'aliyun') {
+      return {
+        label: section?.dataset.labelAliyun || 'Aliyun',
+        hint: section?.dataset.hintAliyun || '',
+      };
+    }
+    return {
+      label: section?.dataset.labelGithub || 'GitHub',
+      hint: section?.dataset.hintGithub || '',
+    };
+  }
+
   function updateDownloadLinks() {
     const source = sourceConfig[currentSource];
     if (!source) return;
-    
-    document.querySelectorAll('.download-btn[data-file-key]').forEach(btn => {
+
+    document.querySelectorAll('.download-btn[data-file-key]').forEach((btn) => {
       const fileKey = btn.getAttribute('data-file-key');
       if (fileKey && source.files[fileKey]) {
         btn.setAttribute('href', `${source.baseUrl}/${source.files[fileKey]}`);
       }
     });
   }
-  
-  function updateSourceTabs() {
-    document.querySelectorAll('.source-tab').forEach(tab => {
-      const source = tab.getAttribute('data-source');
-      if (source === currentSource) {
-        tab.classList.add('active');
-      } else {
-        tab.classList.remove('active');
-      }
+
+  function updateSourceChoices() {
+    document.querySelectorAll('.source-choice').forEach((choice) => {
+      const source = choice.getAttribute('data-source');
+      const active = source === currentSource;
+      choice.classList.toggle('active', active);
+      choice.setAttribute('aria-checked', active ? 'true' : 'false');
     });
   }
-  
-  // 初始化
-  updateDownloadLinks();
-  updateSourceTabs();
-  
-  // 绑定切换事件
-  document.querySelectorAll('.source-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      currentSource = tab.getAttribute('data-source') || defaultSource;
-      updateDownloadLinks();
-      updateSourceTabs();
+
+  function updateSourceFeedback(animate) {
+    const meta = sourceMeta(currentSource);
+    const prefix = section?.dataset.currentFrom || '';
+    if (statusEl) {
+      statusEl.textContent = meta.hint
+        ? `${prefix} ${meta.label} · ${meta.hint}`
+        : `${prefix} ${meta.label}`;
+    }
+
+    section?.setAttribute('data-active-source', currentSource);
+
+    if (animate && grid) {
+      grid.classList.remove('is-switching');
+      void grid.offsetWidth;
+      grid.classList.add('is-switching');
+    }
+  }
+
+  function applySource(source, animate) {
+    currentSource = source;
+    updateDownloadLinks();
+    updateSourceChoices();
+    updateSourceFeedback(animate);
+  }
+
+  applySource(defaultSource, false);
+
+  document.querySelectorAll('.source-choice').forEach((choice) => {
+    choice.addEventListener('click', () => {
+      const next = choice.getAttribute('data-source') || defaultSource;
+      if (next === currentSource) return;
+      applySource(next, true);
     });
   });
 </script>
@@ -221,11 +289,17 @@ const sourceConfig = JSON.stringify(DOWNLOAD_SOURCES);
     background: var(--color-bg-primary);
   }
 
-  /* 锚点打在标题上，避免停在大段 padding 上显得空 */
   .download .section-title {
     scroll-margin-top: 5.5rem;
+    text-align: left;
   }
-  
+
+  .download .section-subtitle {
+    text-align: left;
+    margin: 0 0 0 0;
+    max-width: 36em;
+  }
+
   .download::before {
     content: '';
     position: absolute;
@@ -235,24 +309,31 @@ const sourceConfig = JSON.stringify(DOWNLOAD_SOURCES);
     height: 1px;
     background: linear-gradient(90deg, transparent, var(--color-border), transparent);
   }
-  
+
+  .download-inner {
+    max-width: 920px;
+  }
+
+  .download-intro {
+    margin-bottom: 40px;
+  }
+
   .version-info {
     display: flex;
     align-items: center;
-    justify-content: center;
     gap: 12px;
-    margin-bottom: 24px;
+    margin-top: 20px;
     flex-wrap: wrap;
   }
 
   .version-badge {
     display: inline-block;
-    padding: 4px 14px;
+    padding: 4px 12px;
     background: var(--color-accent-primary);
     color: var(--color-accent-contrast);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
-    border-radius: 20px;
+    border-radius: 999px;
     letter-spacing: 0.02em;
     white-space: nowrap;
   }
@@ -262,118 +343,200 @@ const sourceConfig = JSON.stringify(DOWNLOAD_SOURCES);
     color: var(--color-text-secondary);
     margin: 0;
     line-height: 1.5;
+    max-width: 42em;
   }
 
-  @media (max-width: 768px) {
-    .version-info {
-      flex-direction: column;
-      gap: 8px;
-    }
+  .download-body {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
   }
 
-  /* 下载源 Tab 切换 */
-  .source-tabs {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 32px;
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    padding: 4px;
-    width: fit-content;
-    margin-left: auto;
-    margin-right: auto;
-  }
-  
-  .source-tab {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 24px;
-    border: none;
-    border-radius: var(--radius-md);
-    background: transparent;
-    color: var(--color-text-secondary);
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-  
-  .source-tab:hover {
-    color: var(--color-text-primary);
-  }
-  
-  .source-tab.active {
-    background: var(--color-accent-primary);
-    color: var(--color-accent-contrast);
-    box-shadow: none;
-  }
-  
-  .source-tab svg {
-    opacity: 0.7;
-  }
-  
-  .source-tab.active svg {
-    opacity: 1;
-  }
-  
-  .download-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 24px;
-    margin-bottom: 48px;
-  }
-  
-  .download-card {
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    padding: 28px;
-  }
-  
-  .download-header {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 24px;
-  }
-  
-  .download-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 48px;
-    height: 48px;
-    background: var(--color-bg-tertiary);
-    border-radius: var(--radius-md);
-    color: var(--color-text-primary);
-  }
-  
-  .download-platform {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--color-text-primary);
-    margin-bottom: 4px;
-  }
-  
-  .download-desc {
-    font-size: 13px;
-    color: var(--color-text-muted);
-  }
-  
-  .download-variants {
+  .source-block {
     display: flex;
     flex-direction: column;
     gap: 12px;
   }
-  
-  .download-btn {
+
+  .source-label {
+    margin: 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+
+  .source-choices {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .source-choice {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 18px;
+    text-align: left;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-bg-card);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    transition:
+      border-color var(--duration-micro) var(--ease-out-soft),
+      background var(--duration-micro) var(--ease-out-soft),
+      box-shadow var(--duration-micro) var(--ease-out-soft);
+  }
+
+  .source-choice:hover {
+    border-color: color-mix(in srgb, var(--color-accent-primary) 35%, var(--color-border));
+  }
+
+  .source-choice.active {
+    border-color: var(--color-accent-primary);
+    background: color-mix(in srgb, var(--color-accent-soft) 70%, var(--color-bg-card));
+    box-shadow: 0 0 0 1px var(--color-accent-primary);
+  }
+
+  .source-choice-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    padding: 12px 20px;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-secondary);
+  }
+
+  .source-choice.active .source-choice-icon {
+    background: var(--color-accent-primary);
+    color: var(--color-accent-contrast);
+  }
+
+  .source-choice-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .source-choice-name {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .source-choice-desc {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    line-height: 1.4;
+  }
+
+  .source-choice-check {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    color: var(--color-accent-contrast);
+    background: var(--color-accent-primary);
+    transform: scale(0.85);
+    transition:
+      opacity var(--duration-micro) var(--ease-out-soft),
+      transform var(--duration-micro) var(--ease-out-soft);
+  }
+
+  .source-choice.active .source-choice-check {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .source-status {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+    min-height: 1.3em;
+  }
+
+  .download[data-active-source='aliyun'] .source-status,
+  .download[data-active-source='github'] .source-status {
+    color: var(--color-text-secondary);
+  }
+
+  .download-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .download-grid.is-switching .download-card {
+    animation: source-switch-pulse 0.4s var(--ease-out-soft);
+  }
+
+  @keyframes source-switch-pulse {
+    0% { opacity: 1; }
+    40% { opacity: 0.72; }
+    100% { opacity: 1; }
+  }
+
+  .download-card {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+  }
+
+  .download-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  .download-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    background: var(--color-bg-tertiary);
+    border-radius: var(--radius-md);
+    color: var(--color-text-primary);
+  }
+
+  .download-platform {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin-bottom: 2px;
+    letter-spacing: -0.01em;
+  }
+
+  .download-desc {
+    font-size: 13px;
+    color: var(--color-text-muted);
+    margin: 0;
+  }
+
+  .download-variants {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .download-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
     background: var(--color-bg-tertiary);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
@@ -386,7 +549,7 @@ const sourceConfig = JSON.stringify(DOWNLOAD_SOURCES);
       color var(--duration-micro) var(--ease-out-soft),
       transform var(--duration-micro) var(--ease-out-soft);
   }
-  
+
   .download-btn:hover {
     background: var(--color-accent-primary);
     border-color: transparent;
@@ -397,49 +560,31 @@ const sourceConfig = JSON.stringify(DOWNLOAD_SOURCES);
   .download-btn:active {
     transform: translateY(0) scale(0.98);
   }
-  
+
   .download-note {
-    text-align: center;
-    padding: 24px;
-    background: var(--color-bg-card);
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--color-border);
+    margin-top: 36px;
+    padding-top: 24px;
+    border-top: 1px solid var(--color-border);
   }
-  
+
   .download-note p {
     font-size: 14px;
     color: var(--color-text-secondary);
-    margin: 8px 0;
+    margin: 6px 0;
   }
-  
-  .download-note .api-notice {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
-    background: rgba(251, 191, 36, 0.1);
-    border: 1px solid rgba(251, 191, 36, 0.25);
-    border-radius: 8px;
-    color: #fbbf24;
-    margin-bottom: 16px;
-  }
-  
-  .download-note .api-notice strong {
-    color: #fbbf24;
-  }
-  
-  .download-note .api-notice svg {
-    flex-shrink: 0;
-  }
-  
+
   .download-note strong {
     color: var(--color-text-primary);
   }
-  
-  @media (max-width: 768px) {
+
+  @media (max-width: 720px) {
+    .source-choices,
     .download-grid {
       grid-template-columns: 1fr;
     }
+
+    .source-choice-check {
+      display: none;
+    }
   }
 </style>
-
