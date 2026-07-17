@@ -496,7 +496,7 @@ const tasksAreaAttentionTooltip = computed(() => {
       <span class="tab-icon">
         <MessagesSquare :size="14" class="companion-icon" />
       </span>
-      <span class="tab-title">{{ displayTabTitle(companionTab) }}</span>
+      <span class="tab-title">{{ t('tabs.reach') }}</span>
       <span v-if="companionTab.isLoading" class="tab-loading">
         <Loader2 class="spinner" :size="12" />
       </span>

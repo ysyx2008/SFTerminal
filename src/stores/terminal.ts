@@ -884,6 +884,14 @@ export const useTerminalStore = defineStore('terminal', () => {
     })
   }
 
+  // 联络常驻 tab 标题随语言切换刷新（创建时写入的是当时 locale 的字符串）
+  watch(() => i18n.global.locale.value, () => {
+    const companion = tabs.value.find(t => t.agentId === COMPANION_TAB_AGENT_ID)
+    if (companion && !companion.customTitle) {
+      companion.title = i18n.global.t('tabs.reach', '联络')
+    }
+  })
+
   /**
    * 创建终端并自动执行 Agent 任务（通用入口）
    * @param prompt Agent 任务指令
@@ -3160,6 +3168,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     const existing = tabs.value.find(t => t.agentId === COMPANION_TAB_AGENT_ID)
     if (existing) {
       existing.isRemote = true
+      if (!existing.customTitle) {
+        existing.title = i18n.global.t('tabs.reach', '联络')
+      }
       return existing.id
     }
     const t = i18n.global.t
