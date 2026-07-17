@@ -16,10 +16,12 @@ const sections = [t.story.task, t.story.companion, t.story.handsOn, t.story.memo
     const imageSrc = lang === 'zh' ? section.image : section.imageEn;
     const reversed = index % 2 === 1;
     const copyReveal = reversed ? 'reveal-right' : 'reveal-left';
+    const indexLabel = String(index + 1).padStart(2, '0');
     return (
       <div class:list={['story-block', { reversed }]} id={section.id}>
         <div class="container story-inner">
           <div class:list={['story-copy', 'fade-in', copyReveal]}>
+            <p class="story-index">{indexLabel}</p>
             <h2 class="story-title">{section.title}</h2>
             <p class="story-body">{section.body}</p>
             <ul class="story-points reveal-stagger" style="--stagger-base: 140ms">
@@ -28,7 +30,7 @@ const sections = [t.story.task, t.story.companion, t.story.handsOn, t.story.memo
               ))}
             </ul>
           </div>
-          <div class="story-media fade-in reveal-scale is-liftable fade-in-delay-1">
+          <div class="story-media fade-in reveal-scale fade-in-delay-1">
             <img src={imageSrc} alt={section.imageAlt} loading="lazy" />
           </div>
         </div>
@@ -43,19 +45,24 @@ const sections = [t.story.task, t.story.companion, t.story.handsOn, t.story.memo
   }
 
   .story-block {
-    padding: var(--spacing-section) 0;
-    border-top: 1px solid var(--color-border);
+    padding: 96px 0;
+    border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  }
+
+  .story-block:first-child {
+    border-top: none;
+    padding-top: 48px;
   }
 
   .story-inner {
     display: grid;
-    grid-template-columns: 1fr 1.15fr;
-    gap: 56px;
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    gap: 72px;
     align-items: center;
   }
 
   .story-block.reversed .story-inner {
-    grid-template-columns: 1.15fr 1fr;
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
   }
 
   .story-block.reversed .story-copy {
@@ -66,66 +73,77 @@ const sections = [t.story.task, t.story.companion, t.story.handsOn, t.story.memo
     order: 1;
   }
 
+  .story-index {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--color-accent-primary);
+    margin-bottom: 14px;
+  }
+
   .story-title {
-    font-size: clamp(1.75rem, 3vw, 2.25rem);
-    font-weight: 650;
-    letter-spacing: -0.02em;
+    font-size: clamp(1.65rem, 2.8vw, 2.125rem);
+    font-weight: 600;
+    letter-spacing: -0.025em;
     line-height: 1.2;
-    margin-bottom: 16px;
+    margin-bottom: 14px;
     color: var(--color-text-primary);
   }
 
   .story-body {
     font-size: 1.0625rem;
-    line-height: 1.7;
+    line-height: 1.75;
     color: var(--color-text-secondary);
-    margin-bottom: 24px;
-    max-width: 36em;
+    margin-bottom: 28px;
+    max-width: 32em;
   }
 
   .story-points {
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
     padding: 0;
     margin: 0;
   }
 
   .story-points li {
     position: relative;
-    padding-left: 18px;
-    font-size: 0.95rem;
+    padding-left: 16px;
+    font-size: 0.9375rem;
     color: var(--color-text-primary);
-    font-weight: 500;
+    font-weight: 450;
+    letter-spacing: -0.01em;
   }
 
   .story-points li::before {
     content: '';
     position: absolute;
     left: 0;
-    top: 0.55em;
-    width: 6px;
-    height: 6px;
+    top: 0.62em;
+    width: 5px;
+    height: 5px;
     border-radius: 50%;
     background: var(--color-accent-primary);
-    transition: transform 0.35s var(--ease-out-soft);
-  }
-
-  .story-points.visible li::before {
-    transform: scale(1);
+    opacity: 0.85;
   }
 
   .story-media {
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-lg);
     overflow: hidden;
     background: var(--color-bg-secondary);
-    box-shadow: var(--shadow-card);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-border) 75%, transparent),
+      0 18px 48px rgba(28, 25, 23, 0.06);
     transition:
       opacity var(--duration-reveal) var(--ease-out-soft),
-      transform var(--duration-reveal) var(--ease-out-soft),
-      box-shadow 0.45s var(--ease-out-soft);
+      transform var(--duration-reveal) var(--ease-out-soft);
+  }
+
+  [data-theme="dark"] .story-media {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-border) 90%, transparent),
+      0 20px 52px rgba(0, 0, 0, 0.4);
   }
 
   .story-media img {
@@ -138,7 +156,7 @@ const sections = [t.story.task, t.story.companion, t.story.handsOn, t.story.memo
     .story-inner,
     .story-block.reversed .story-inner {
       grid-template-columns: 1fr;
-      gap: 28px;
+      gap: 32px;
     }
 
     .story-block.reversed .story-copy,
@@ -147,7 +165,11 @@ const sections = [t.story.task, t.story.companion, t.story.handsOn, t.story.memo
     }
 
     .story-block {
-      padding: 72px 0;
+      padding: 64px 0;
+    }
+
+    .story-block:first-child {
+      padding-top: 24px;
     }
   }
 </style>

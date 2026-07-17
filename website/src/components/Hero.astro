@@ -24,7 +24,7 @@ const heroImage = lang === 'zh' ? '/screenshot-welcome.jpg' : '/screenshot-welco
       <p class="hero-note fade-in fade-in-delay-4">{t.hero.apiNotice}</p>
     </div>
 
-    <div class="hero-visual fade-in reveal-scale fade-in-delay-3 is-liftable">
+    <div class="hero-visual fade-in reveal-scale fade-in-delay-3">
       <img src={heroImage} alt={t.hero.imageAlt} width="1600" height="1000" loading="eager" />
     </div>
   </div>
@@ -32,38 +32,44 @@ const heroImage = lang === 'zh' ? '/screenshot-welcome.jpg' : '/screenshot-welco
 
 <style>
   .hero {
-    padding: 120px 0 64px;
+    padding: 128px 0 72px;
     background: var(--color-bg-primary);
   }
 
   .hero-inner {
     display: flex;
     flex-direction: column;
-    gap: 40px;
+    align-items: stretch;
+    gap: 48px;
+    text-align: left;
+  }
+
+  .hero-copy {
+    max-width: 38rem;
   }
 
   .hero-brand {
-    font-size: clamp(2.5rem, 6vw, 3.75rem);
+    font-size: clamp(2.75rem, 6.5vw, 4rem);
     font-weight: 700;
-    letter-spacing: -0.04em;
-    line-height: 1.05;
+    letter-spacing: -0.045em;
+    line-height: 1.02;
     color: var(--color-text-primary);
-    margin-bottom: 12px;
+    margin-bottom: 14px;
   }
 
   .hero-title {
-    font-size: clamp(1.5rem, 3.2vw, 2rem);
+    font-size: clamp(1.5rem, 3vw, 2rem);
     font-weight: 600;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.025em;
     line-height: 1.3;
     color: var(--color-text-primary);
-    max-width: 18em;
+    max-width: 16em;
     margin-bottom: 16px;
   }
 
   .hero-subtitle {
-    font-size: clamp(1rem, 1.8vw, 1.125rem);
-    line-height: 1.65;
+    font-size: clamp(1rem, 1.7vw, 1.125rem);
+    line-height: 1.7;
     color: var(--color-text-secondary);
     max-width: 34em;
     margin-bottom: 28px;
@@ -84,16 +90,21 @@ const heroImage = lang === 'zh' ? '/screenshot-welcome.jpg' : '/screenshot-welco
   .hero-visual {
     width: 100%;
     max-width: 960px;
-    margin: 0 auto;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-lg);
     overflow: hidden;
     background: var(--color-bg-secondary);
-    box-shadow: var(--shadow-card);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-border) 80%, transparent),
+      0 24px 64px rgba(28, 25, 23, 0.08);
     transition:
       opacity var(--duration-reveal) var(--ease-out-soft),
-      transform var(--duration-reveal) var(--ease-out-soft),
-      box-shadow 0.45s var(--ease-out-soft);
+      transform var(--duration-reveal) var(--ease-out-soft);
+  }
+
+  [data-theme="dark"] .hero-visual {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-border) 90%, transparent),
+      0 28px 72px rgba(0, 0, 0, 0.45);
   }
 
   .hero-visual img {
@@ -104,7 +115,11 @@ const heroImage = lang === 'zh' ? '/screenshot-welcome.jpg' : '/screenshot-welco
 
   @media (max-width: 768px) {
     .hero {
-      padding: 100px 0 48px;
+      padding: 108px 0 52px;
+    }
+
+    .hero-inner {
+      gap: 36px;
     }
   }
 </style>

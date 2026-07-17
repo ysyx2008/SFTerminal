@@ -12,8 +12,10 @@ const t = useTranslations(lang);
 
 <section class="capabilities" id="capabilities">
   <div class="container">
-    <h2 class="section-title fade-in">{t.capabilities.title}</h2>
-    <p class="section-subtitle fade-in fade-in-delay-1">{t.capabilities.subtitle}</p>
+    <div class="cap-head">
+      <h2 class="section-title fade-in">{t.capabilities.title}</h2>
+      <p class="section-subtitle fade-in fade-in-delay-1">{t.capabilities.subtitle}</p>
+    </div>
     <div class="cap-grid reveal-stagger" style="--stagger-base: 60ms">
       {t.capabilities.items.map((item, i) => (
         <a
@@ -31,34 +33,50 @@ const t = useTranslations(lang);
 
 <style>
   .capabilities {
-    padding: var(--spacing-section) 0;
-    border-top: 1px solid var(--color-border);
-    background: var(--color-bg-secondary);
+    padding: 96px 0;
+    border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+    background: var(--color-bg-primary);
+  }
+
+  .cap-head {
+    max-width: 36em;
+    margin: 0 auto 48px;
+  }
+
+  .cap-head .section-title,
+  .cap-head .section-subtitle {
+    text-align: center;
+  }
+
+  .cap-head .section-subtitle {
+    margin-bottom: 0;
   }
 
   .cap-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 1px;
-    background: var(--color-border);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-    margin-top: 40px;
+    gap: 0;
+    border-top: 1px solid var(--color-border);
   }
 
   .cap-item {
     display: block;
-    padding: 28px 24px;
-    background: var(--color-bg-primary);
+    padding: 28px 20px 28px 0;
+    margin-right: 28px;
+    border-right: 1px solid var(--color-border);
+    background: transparent;
     text-decoration: none;
-    transition:
-      background var(--duration-micro) var(--ease-out-soft),
-      transform var(--duration-micro) var(--ease-out-soft);
+    transition: opacity var(--duration-micro) var(--ease-out-soft);
+  }
+
+  .cap-item:last-child {
+    border-right: none;
+    margin-right: 0;
+    padding-right: 0;
   }
 
   .cap-item:hover {
-    background: var(--color-bg-tertiary);
+    opacity: 0.72;
   }
 
   .cap-item:hover h3 {
@@ -66,8 +84,9 @@ const t = useTranslations(lang);
   }
 
   .cap-item h3 {
-    font-size: 1.05rem;
+    font-size: 1rem;
     font-weight: 600;
+    letter-spacing: -0.01em;
     color: var(--color-text-primary);
     margin-bottom: 8px;
     transition: color var(--duration-micro) var(--ease-out-soft);
@@ -83,11 +102,37 @@ const t = useTranslations(lang);
     .cap-grid {
       grid-template-columns: 1fr 1fr;
     }
+
+    .cap-item {
+      margin-right: 0;
+      padding: 24px 16px 24px 0;
+    }
+
+    .cap-item:nth-child(2n) {
+      border-right: none;
+      padding-right: 0;
+      padding-left: 16px;
+    }
+
+    .cap-item:nth-child(-n + 2) {
+      border-bottom: 1px solid var(--color-border);
+    }
   }
 
   @media (max-width: 560px) {
     .cap-grid {
       grid-template-columns: 1fr;
+    }
+
+    .cap-item,
+    .cap-item:nth-child(2n) {
+      border-right: none;
+      border-bottom: 1px solid var(--color-border);
+      padding: 22px 0;
+    }
+
+    .cap-item:last-child {
+      border-bottom: none;
     }
 
     .capabilities {
