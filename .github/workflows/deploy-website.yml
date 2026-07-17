@@ -90,3 +90,17 @@ jobs:
 
           $OSSUTIL cp dist/ ${BUCKET}/ -r -f
           echo "✅ Website deployed to OSS!"
+
+  # www.sfterm.com 由 Cloudflare Pages 提供；部署后触发重新拉取
+  trigger-cloudflare:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Trigger Cloudflare Pages deploy
+        run: |
+          if [ -z "${{ secrets.CLOUDFLARE_DEPLOY_HOOK_URL }}" ]; then
+            echo "CLOUDFLARE_DEPLOY_HOOK_URL not set, skip"
+            exit 0
+          fi
+          curl -sS -X POST "${{ secrets.CLOUDFLARE_DEPLOY_HOOK_URL }}"
+          echo "✅ Cloudflare Pages deploy triggered!"
