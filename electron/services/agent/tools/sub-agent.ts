@@ -18,13 +18,16 @@
  * 但导致严重的工具幻觉（子 Agent 看到父的工具调用历史会去模仿调用 dispatch_agents
  * / plan / ask_user 等不在自己白名单的工具，不断被运行时拦截卡死）。已撤回到独立模式。
  */
+import * as fs from 'fs'
+import * as path from 'path'
 import type { AiService, AiMessage, ToolDefinition, ChatWithToolsResult } from '../../ai.service'
 import { getMetaByName } from '../tool-metadata'
 import type { SubAgentTask, SubAgentResult, SubAgentToolStep, SubAgentTypeName, TokenUsage } from '@shared/types'
 import type { ToolExecutorConfig, ToolResult, AgentConfig } from './types'
 import { executeTool } from './index'
 import { getAgentTools } from '../tools'
-import { truncateFromEnd } from './utils'
+import { truncateFromEnd, truncateFromEndWithNotice } from './utils'
+import { getScratchPath } from './file'
 import { PromptBuilder } from '../prompt-builder'
 import { getAiDebugService } from '../../ai-debug.service'
 import { createLogger } from '../../../utils/logger'
@@ -36,6 +39,42 @@ const log = createLogger('SubAgent')
 const MAX_SUB_AGENT_STEPS = 0
 const DEFAULT_MAX_CONCURRENT = 5
 const MAX_RESULT_LENGTH = 8000
+
+/**
+ * 结果回收：摘要 + 产出物指针。
+ *
+ * 子 Agent 最终结果超过 MAX_RESULT_LENGTH 时，完整正文落盘到产出物文件，
+ * 回传给主 Agent 的是「指针 notice + 尾部截断文本」（结论通常在结尾）。
+ * 主 Agent 需要细节时用 read_file 按需读取，不占对话带宽——与 L3 记忆
+ * 「完整保存、按需检索」同构。落盘失败时退回纯截断（不让 IO 错误毁掉子任务结果）。
+ */
+function archiveLongResult(taskId: string, text: string, artifactDir: string): string {
+  if (text.length <= MAX_RESULT_LENGTH) return text
+  try {
+    fs.mkdirSync(artifactDir, { recursive: true })
+    const filePath = path.join(artifactDir, `${taskId}.md`)
+    fs.writeFileSync(filePath, text, 'utf-8')
+    log.info(`Sub-agent [${taskId}] result archived to ${filePath} (${text.length} chars)`)
+    return truncateFromEndWithNotice(text, MAX_RESULT_LENGTH, (originalLength) =>
+      t('dispatch.result_archived', { total: originalLength, path: filePath }))
+  } catch (err) {
+    log.warn(`Sub-agent [${taskId}] failed to archive result, falling back to truncation: ${err}`)
+    return truncateFromEnd(text, MAX_RESULT_LENGTH)
+  }
+}
+
+/**
+ * 本次 dispatch 的产出物目录：scratch/sub-agents/<批次时间戳>/
+ *
+ * 放在 scratch 下受既有的过期自动清理管辖（中间产物定位）；目录只算路径不落盘，
+ * 首个超长结果出现时才由 archiveLongResult 创建。
+ */
+function buildArtifactDir(): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  // 随机尾缀防两个父 Agent 同毫秒 dispatch 时共享目录（taskId 都是 sub-N，会互相覆盖）
+  const nonce = Math.random().toString(36).slice(2, 6)
+  return path.join(getScratchPath(), 'sub-agents', `${stamp}-${nonce}`)
+}
 
 // ==================== Agent 类型系统 ====================
 
@@ -203,6 +242,8 @@ interface SubAgentRunOptions {
   profileId?: string
   abortSignal: { aborted: boolean }
   onProgress: (update: Partial<SubAgentResult>) => void
+  /** 超长结果落盘目录（同一次 dispatch 的所有子任务共享） */
+  artifactDir: string
 }
 
 /**
@@ -212,7 +253,7 @@ interface SubAgentRunOptions {
  * 父 Agent 想让子 Agent 知道的上下文必须显式写在 task.prompt 里。
  */
 async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult> {
-  const { task, aiService, tools, allowedTools, systemPrompt, executorConfig, agentConfig, profileId, abortSignal, onProgress } = options
+  const { task, aiService, tools, allowedTools, systemPrompt, executorConfig, agentConfig, profileId, abortSignal, onProgress, artifactDir } = options
   const startTime = Date.now()
   const totalTokens: TokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
   const toolSteps: SubAgentToolStep[] = []
@@ -258,7 +299,7 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
           id: task.id,
           description: task.description,
           status: 'completed',
-          result: truncateFromEnd(finalText, MAX_RESULT_LENGTH),
+          result: archiveLongResult(task.id, finalText, artifactDir),
           tokensUsed: totalTokens,
           steps: toolSteps
         }
@@ -353,7 +394,7 @@ async function runSubAgent(options: SubAgentRunOptions): Promise<SubAgentResult>
       id: task.id,
       description: task.description,
       status: hasExecutedTools ? 'completed' : 'failed',
-      result: truncateFromEnd(lastContent, MAX_RESULT_LENGTH),
+      result: archiveLongResult(task.id, lastContent, artifactDir),
       error: hasExecutedTools ? undefined : 'Reached step limit without producing results',
       tokensUsed: totalTokens,
       steps: toolSteps
@@ -470,6 +511,9 @@ export async function dispatchSubAgents(
 
   log.info(`Dispatching ${tasks.length} sub-agents (type: ${typeLabel}, concurrent: ${maxConcurrent})`)
 
+  // 本次 dispatch 共享的产出物目录（懒创建：仅在出现超长结果时落盘）
+  const artifactDir = buildArtifactDir()
+
   // 按 type 缓存工具列表与 system prompt，避免对每个子任务重复跑 getAgentTools + filter
   // 与 prompt 拼接（同次 dispatch 内最多 2 个 type，共享缓存即可）
   const toolsByType = new Map<SubAgentTypeName, ToolDefinition[]>()
@@ -524,7 +568,8 @@ export async function dispatchSubAgents(
         agentConfig: config,
         profileId,
         abortSignal,
-        onProgress: (update) => updateProgress(task.id, update)
+        onProgress: (update) => updateProgress(task.id, update),
+        artifactDir
       }).then(result => {
         updateProgress(task.id, result)
         return result

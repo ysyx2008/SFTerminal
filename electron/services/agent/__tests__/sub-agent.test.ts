@@ -35,6 +35,7 @@ vi.mock('../../im/im.service', () => ({
   getIMService: vi.fn().mockReturnValue(null)
 }))
 
+import * as fs from 'fs'
 import { dispatchSubAgents, getSubAgentTools } from '../tools/sub-agent'
 import { getAgentTools } from '../tools'
 import * as toolMetadata from '../tool-metadata'
@@ -795,6 +796,105 @@ describe('dispatchSubAgents', () => {
     const msgs = mockAi.chatWithTools.mock.calls[1][0]
     const toolResult = msgs.find((m: any) => m.role === 'tool' && m.tool_call_id === 'tc-edit')
     expect(toolResult?.content).toContain('不在当前子 Agent 类型的可用范围内')
+  })
+
+  // ==================== 结果回收：摘要 + 产出物指针 ====================
+
+  it('should archive long results to artifact file and return pointer notice + tail', async () => {
+    const executor = createMockExecutor()
+    const mockAi = (executor as any)._mockAiService
+
+    // 构造超过 8000 字符的最终结果（多行，结论在结尾）
+    const longBody = Array.from({ length: 500 }, (_, i) => `第 ${i + 1} 行详细分析内容，包含一些占位文字让每行足够长一些`).join('\n')
+    const conclusion = '最终结论：模块 X 存在循环依赖'
+    const longResult = `${longBody}\n${conclusion}`
+    expect(longResult.length).toBeGreaterThan(8000)
+
+    mockAi.chatWithTools.mockResolvedValue({
+      content: longResult,
+      tool_calls: undefined,
+      finish_reason: 'stop',
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+    })
+
+    const writeSpy = fs.writeFileSync as unknown as ReturnType<typeof vi.fn>
+    writeSpy.mockClear()
+
+    const result = await dispatchSubAgents({
+      tasks: [{ description: '深度分析', prompt: '请深度分析' }]
+    }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
+
+    expect(result.success).toBe(true)
+
+    // 完整正文落盘到 scratch/sub-agents/<批次>/sub-1.md
+    const writeCall = writeSpy.mock.calls.find((c: any[]) => String(c[0]).includes('sub-agents'))
+    expect(writeCall).toBeDefined()
+    expect(String(writeCall![0])).toContain('sub-1.md')
+    // 完整正文保留（可能带"未调用工具"警告前缀，不影响正文完整性）
+    expect(String(writeCall![1])).toContain(longResult)
+
+    // 回传内容：指针 notice（含文件路径）+ 尾部内容（结论保留）
+    expect(result.output).toContain('sub-1.md')
+    expect(result.output).toContain(conclusion)
+    // 头部内容被截掉
+    expect(result.output).not.toContain('第 1 行详细分析内容')
+  })
+
+  it('should not archive short results (no artifact file, verbatim passthrough)', async () => {
+    const executor = createMockExecutor()
+    const mockAi = (executor as any)._mockAiService
+
+    mockAi.chatWithTools.mockResolvedValue({
+      content: '简短结论',
+      tool_calls: undefined,
+      finish_reason: 'stop',
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+    })
+
+    const writeSpy = fs.writeFileSync as unknown as ReturnType<typeof vi.fn>
+    writeSpy.mockClear()
+
+    const result = await dispatchSubAgents({
+      tasks: [{ description: '小任务', prompt: '做点小事' }]
+    }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
+
+    expect(result.success).toBe(true)
+    expect(result.output).toContain('简短结论')
+    expect(writeSpy.mock.calls.some((c: any[]) => String(c[0]).includes('sub-agents'))).toBe(false)
+  })
+
+  it('should fall back to plain truncation when artifact write fails', async () => {
+    const executor = createMockExecutor()
+    const mockAi = (executor as any)._mockAiService
+
+    const longResult = 'x'.repeat(9000) + '\n结尾结论'
+    mockAi.chatWithTools.mockResolvedValue({
+      content: longResult,
+      tool_calls: undefined,
+      finish_reason: 'stop',
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+    })
+
+    const writeSpy = fs.writeFileSync as unknown as ReturnType<typeof vi.fn>
+    writeSpy.mockClear()
+    writeSpy.mockImplementation((filePath: unknown) => {
+      if (String(filePath).includes('sub-agents')) throw new Error('disk full')
+    })
+
+    let result
+    try {
+      result = await dispatchSubAgents({
+        tasks: [{ description: '深度分析', prompt: '请深度分析' }]
+      }, defaultConfig, executor, MOCK_TOOL_CALL_ID)
+    } finally {
+      // 断言失败也要还原，避免抛错 mock 泄漏到后续用例
+      writeSpy.mockReset()
+    }
+
+    // 落盘失败不影响子任务成功：退回纯截断（无指针 notice）
+    expect(result.success).toBe(true)
+    expect(result.output).toContain('结尾结论')
+    expect(result.output).not.toContain('sub-1.md')
   })
 
   // ==================== 独立模式：消息开局结构 ====================

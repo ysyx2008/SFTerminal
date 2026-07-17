@@ -1490,6 +1490,7 @@ const translations = {
     'dispatch.running': '并行执行 {count} 个子任务（{type}）',
     'dispatch.completed_no_fail': '并行执行完成：{success} 成功',
     'dispatch.completed_with_fail': '并行执行完成：{success} 成功，{fail} 失败',
+    'dispatch.result_archived': '[完整结果共 {total} 字符，已保存到 {path}，以下为尾部内容，需要完整细节时用 read_file 读取]',
 
     // exec 后台任务（assistant 模式 exec/await_exec 工具）
     'exec.task_id_required': '必须提供 task_id',
@@ -2987,6 +2988,7 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'dispatch.running': 'Dispatching {count} sub-task(s) ({type})',
     'dispatch.completed_no_fail': 'Completed: {success} succeeded',
     'dispatch.completed_with_fail': 'Completed: {success} succeeded, {fail} failed',
+    'dispatch.result_archived': '[Full result ({total} chars) saved to {path}; tail shown below, use read_file for complete details]',
 
     // exec background tasks (assistant mode exec/await_exec tools)
     'exec.task_id_required': 'task_id is required',
