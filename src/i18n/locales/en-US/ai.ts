@@ -469,21 +469,11 @@ export default {
     },
     companionWelcome: {
       title: 'Companion',
-      desc: 'A continuous thread between you and your assistant.',
-      features: {
-        multiChannel: {
-          title: 'Multi-channel',
-          desc: 'DingTalk, Feishu, WeCom, Slack, Telegram and Web sessions all converge into one thread'
-        },
-        proactive: {
-          title: 'AI reaches out',
-          desc: 'Watch triggers, task completions, and important reminders are pushed here'
-        }
-      }
+      desc: 'Chat with your assistant here — it can also reach out.',
     },
     wechatQr: {
       title: 'Connect with WeChat',
-      subtitle: 'Scan with WeChat on your phone to chat with the assistant',
+      subtitle: 'Scan with WeChat to chat on your phone',
       scanHint: 'Scan this QR code with WeChat',
       scanned: 'Scanned — confirm on your phone',
       refreshing: 'QR expired, refreshing…',

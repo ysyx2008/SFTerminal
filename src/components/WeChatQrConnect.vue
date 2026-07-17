@@ -61,11 +61,15 @@ const showPanel = computed(() => {
   return true
 })
 const showQr = computed(() => !!qrDataUrl.value && (phase.value === 'qr' || phase.value === 'scanned' || phase.value === 'refreshing'))
+const isCompact = computed(() => props.variant === 'compact')
+/** compact：正常态用一句 subtitle，避免 title/subtitle/scanHint 三层重复 */
 const statusHint = computed(() => {
   if (phase.value === 'scanned') return t('ai.wechatQr.scanned')
   if (phase.value === 'refreshing') return t('ai.wechatQr.refreshing')
-  if (phase.value === 'qr') return t('ai.wechatQr.scanHint')
   if (phase.value === 'error') return errorMsg.value || t('ai.wechatQr.failed')
+  if (phase.value === 'qr') {
+    return isCompact.value ? t('ai.wechatQr.subtitle') : t('ai.wechatQr.scanHint')
+  }
   return ''
 })
 
@@ -247,7 +251,7 @@ defineExpose({
 
 <template>
   <div v-if="showPanel" class="wechat-qr-connect" :class="[`variant-${variant}`]">
-    <div class="wechat-qr-header">
+    <div v-if="!isCompact" class="wechat-qr-header">
       <span class="wechat-qr-title">{{ t('ai.wechatQr.title') }}</span>
       <span class="wechat-qr-subtitle">{{ t('ai.wechatQr.subtitle') }}</span>
     </div>
@@ -280,7 +284,7 @@ defineExpose({
       <button
         v-else-if="showQr"
         type="button"
-        class="btn btn-sm btn-outline-secondary"
+        :class="isCompact ? 'wechat-qr-refresh-link' : 'btn btn-sm btn-outline-secondary'"
         :disabled="loading || phase === 'refreshing'"
         @click="startLogin"
       >
@@ -345,6 +349,16 @@ defineExpose({
   height: 200px;
 }
 
+.variant-compact .wechat-qr-img {
+  width: 168px;
+  height: 168px;
+}
+
+.variant-compact .wechat-qr-frame {
+  padding: 8px;
+  border-radius: 10px;
+}
+
 .wechat-qr-overlay {
   position: absolute;
   inset: 10px;
@@ -375,8 +389,14 @@ defineExpose({
   line-height: 1.45;
 }
 
+.variant-compact .wechat-qr-hint {
+  font-size: 14px;
+  white-space: nowrap;
+}
+
 .wechat-qr-hint.error {
   color: var(--color-error, #c0392b);
+  white-space: normal;
 }
 
 .wechat-qr-actions {
@@ -385,9 +405,33 @@ defineExpose({
   justify-content: center;
 }
 
+.wechat-qr-refresh-link {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.wechat-qr-refresh-link:hover:not(:disabled) {
+  color: var(--text-primary);
+  opacity: 1;
+}
+
+.wechat-qr-refresh-link:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .variant-compact {
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid color-mix(in srgb, var(--border-color, #ccc) 55%, transparent);
+  gap: 8px;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
 </style>

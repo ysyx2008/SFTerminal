@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Shuffle, MessagesSquare, Bell } from 'lucide-vue-next'
+import { Shuffle } from 'lucide-vue-next'
 import {
   getFeaturedExamples,
   shuffleExamples as shuffleExamplePool,
@@ -57,30 +57,10 @@ const truncateText = (text: string, maxLength: number): string => {
     <!-- 联络（companion）tab 专属说明 -->
     <template v-if="isCompanionTab">
       <div class="companion-welcome">
-        <div class="companion-welcome-mark">
-          <MessagesSquare :size="22" stroke-width="1.75" />
-        </div>
         <h2 class="companion-welcome-title">{{ t('ai.companionWelcome.title') }}</h2>
         <p class="companion-welcome-desc">{{ t('ai.companionWelcome.desc') }}</p>
 
-        <ul class="companion-features">
-          <li class="companion-feature">
-            <Shuffle :size="15" stroke-width="1.75" class="companion-feature-icon" />
-            <div class="companion-feature-text">
-              <span class="companion-feature-title">{{ t('ai.companionWelcome.features.multiChannel.title') }}</span>
-              <span class="companion-feature-desc">{{ t('ai.companionWelcome.features.multiChannel.desc') }}</span>
-            </div>
-          </li>
-          <li class="companion-feature">
-            <Bell :size="15" stroke-width="1.75" class="companion-feature-icon" />
-            <div class="companion-feature-text">
-              <span class="companion-feature-title">{{ t('ai.companionWelcome.features.proactive.title') }}</span>
-              <span class="companion-feature-desc">{{ t('ai.companionWelcome.features.proactive.desc') }}</span>
-            </div>
-          </li>
-        </ul>
-
-        <!-- 新用户：联络空态直接内嵌微信扫码；仅 tab 可见时拉码，切走停刷 -->
+        <!-- 新用户：联络空态内嵌微信扫码；仅 tab 可见时拉码，切走停刷 -->
         <WeChatQrConnect
           auto-start
           hide-when-has-token
@@ -594,42 +574,30 @@ const truncateText = (text: string, maxLength: number): string => {
   color: var(--color-error);
 }
 
-/* ==================== 联络（companion）专属说明 ==================== */
+/* ==================== 联络（companion）空态：标题 + 一句说明 + 扫码 ==================== */
 
 /* #before 槽在虚拟滚动内，百分比高度无效；用视口近似填满消息区 */
 .ai-welcome:has(.companion-welcome) {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: clamp(280px, calc(100dvh - 280px), 560px);
-  padding: 32px 16px;
+  min-height: clamp(240px, calc(100dvh - 280px), 480px);
+  padding: 24px 16px;
 }
 
 .companion-welcome {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 6px;
   width: 100%;
-  max-width: 420px;
+  max-width: 400px;
   text-align: center;
 }
 
-.companion-welcome-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  margin-bottom: 14px;
-  color: var(--accent-primary);
-  background: color-mix(in srgb, var(--accent-primary) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent-primary) 22%, transparent);
-  border-radius: 12px;
-}
-
 .companion-welcome-title {
-  margin: 0 0 6px;
-  font-size: 20px;
+  margin: 0;
+  font-size: 22px;
   font-weight: 650;
   color: var(--text-primary);
   letter-spacing: 0.02em;
@@ -637,55 +605,10 @@ const truncateText = (text: string, maxLength: number): string => {
 }
 
 .companion-welcome-desc {
-  margin: 0 0 20px;
-  max-width: 32em;
+  margin: 0 0 10px;
   color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.companion-features {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  text-align: left;
-}
-
-.companion-feature {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 0 2px;
-}
-
-.companion-feature-icon {
-  flex-shrink: 0;
-  margin-top: 2px;
-  color: var(--accent-primary);
-  opacity: 0.85;
-}
-
-.companion-feature-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.companion-feature-title {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-primary);
-  line-height: 1.3;
-}
-
-.companion-feature-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.45;
+  white-space: nowrap;
 }
 </style>

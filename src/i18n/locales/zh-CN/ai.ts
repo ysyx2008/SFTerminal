@@ -470,21 +470,11 @@ export default {
     },
     companionWelcome: {
       title: '联络',
-      desc: '你和助手之间持续的关系线。',
-      features: {
-        multiChannel: {
-          title: '多渠道汇入',
-          desc: '钉钉、飞书、企业微信、Slack、Telegram 等 IM，以及 Web 远程会话，都汇入同一条对话'
-        },
-        proactive: {
-          title: 'AI 主动找你',
-          desc: '关切触发、任务完成、重要提醒，会主动推送到这里'
-        }
-      }
+      desc: '在这里和助手常聊，有事它也会找你。',
     },
     wechatQr: {
       title: '微信扫码连接',
-      subtitle: '用手机微信扫一扫，即可在微信里和助手对话',
+      subtitle: '微信扫一下，就能在手机里聊',
       scanHint: '请使用微信扫描二维码',
       scanned: '已扫码，请在手机上确认',
       refreshing: '二维码已过期，正在刷新…',
