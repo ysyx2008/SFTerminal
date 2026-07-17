@@ -298,21 +298,19 @@ function exampleTitle(example: SkillExample) {
   }
 
   .market-title {
-    font-size: 48px;
+    font-size: clamp(1.75rem, 3vw, 2.25rem);
     font-weight: 700;
-    background: var(--gradient-primary);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin-bottom: 16px;
+    letter-spacing: -0.02em;
+    color: var(--color-text-primary);
+    margin-bottom: 12px;
   }
 
   .market-subtitle {
-    font-size: 18px;
+    font-size: 1.0625rem;
     color: var(--color-text-secondary);
-    max-width: 600px;
+    max-width: 36em;
     margin: 0 auto 24px;
-    line-height: 1.6;
+    line-height: 1.65;
   }
 
   .market-stats {
@@ -367,7 +365,7 @@ function exampleTitle(example: SkillExample) {
   .category-chip.active {
     border-color: var(--color-accent-primary);
     color: var(--color-accent-primary);
-    background: rgba(6, 182, 212, 0.1);
+    background: var(--color-accent-soft);
   }
 
   .category-icon {
@@ -504,7 +502,7 @@ function exampleTitle(example: SkillExample) {
   .skill-category-badge {
     font-size: 12px;
     padding: 3px 10px;
-    background: rgba(6, 182, 212, 0.1);
+    background: var(--color-accent-soft);
     color: var(--color-accent-primary);
     border-radius: 100px;
     white-space: nowrap;
@@ -539,7 +537,7 @@ function exampleTitle(example: SkillExample) {
   }
 
   .skill-row:hover {
-    background: rgba(6, 182, 212, 0.03);
+    background: var(--color-accent-soft);
   }
 
   .skill-row-icon {
@@ -639,8 +637,8 @@ function exampleTitle(example: SkillExample) {
     gap: 5px;
     padding: 4px 12px;
     border-radius: 100px;
-    border: 1px solid rgba(6, 182, 212, 0.3);
-    background: rgba(6, 182, 212, 0.08);
+    border: 1px solid var(--color-accent-ring);
+    background: var(--color-accent-soft);
     color: var(--color-accent-primary);
     font-size: 12px;
     transition: all 0.2s ease;
@@ -650,7 +648,7 @@ function exampleTitle(example: SkillExample) {
 
   .btn-try-example:hover {
     border-color: var(--color-accent-primary);
-    background: rgba(6, 182, 212, 0.15);
+    background: var(--color-accent-soft-md);
     transform: translateY(-1px);
   }
 
@@ -672,8 +670,8 @@ function exampleTitle(example: SkillExample) {
     gap: 6px;
     padding: 8px 16px;
     border-radius: var(--radius-sm);
-    border: 1px solid rgba(6, 182, 212, 0.3);
-    background: rgba(6, 182, 212, 0.08);
+    border: 1px solid var(--color-accent-ring);
+    background: var(--color-accent-soft);
     color: var(--color-accent-primary);
     font-size: 13px;
     transition: all 0.2s ease;
@@ -683,7 +681,7 @@ function exampleTitle(example: SkillExample) {
 
   .btn-install-skill:hover {
     border-color: var(--color-accent-primary);
-    background: rgba(6, 182, 212, 0.15);
+    background: var(--color-accent-soft-md);
     transform: translateY(-1px);
   }
 
@@ -704,7 +702,7 @@ function exampleTitle(example: SkillExample) {
   .btn-view-skill:hover {
     border-color: var(--color-accent-primary);
     color: var(--color-accent-primary);
-    background: rgba(6, 182, 212, 0.05);
+    background: var(--color-accent-soft);
   }
 
   /* Install Section */

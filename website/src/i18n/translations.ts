@@ -27,7 +27,7 @@ export const translations = {
     hero: {
       brand: '旗鱼',
       title: '你的私人桌面秘书',
-      subtitle: '不只聊天——它能操作你的电脑，也能主动盯事、主动找你。',
+      subtitle: '不只聊天——它能操作你的电脑，主动盯事找你，还能记住你的许多事。',
       downloadBtn: '立即下载',
       learnBtn: '了解它怎么工作',
       apiNotice: '需自行配置大模型 API · macOS / Windows',
@@ -61,6 +61,15 @@ export const translations = {
         imageEn: '/screenshot-host-manager_en.jpg',
         imageAlt: '旗鱼主机与终端管理',
       },
+      memory: {
+        id: 'memory',
+        title: '好秘书不会失忆',
+        body: '它会记住你的习惯、偏好与环境事实，也能按需回忆完整经历。你交代过的事、做过的工作，下次不用从头讲起。',
+        points: ['认识你：习惯与环境', '想得起：完整经历可检索', '档案室：知识库随手可查'],
+        image: '/screenshot-assistant.png',
+        imageEn: '/screenshot-assistant_en.png',
+        imageAlt: '旗鱼助手与记忆相关界面',
+      },
     },
     capabilities: {
       title: '还能做什么',
@@ -82,8 +91,8 @@ export const translations = {
           href: '/skills/',
         },
         {
-          title: '知识与记忆',
-          description: '记住你的习惯与环境，完整经历可按需回忆。',
+          title: '知识库',
+          description: '把文件交给秘书存档，需要时按需取用。',
           href: '/docs/ai-advanced/knowledge-base/',
         },
       ],
@@ -278,11 +287,11 @@ export const translations = {
     },
     changelog: {
       title: '更新日志',
-      subtitle: '记录旗鱼的每一次进化',
+      subtitle: '旗鱼的成长记录',
     },
     guide: {
       title: '使用指南',
-      subtitle: '了解旗鱼的核心功能，快速上手',
+      subtitle: '认识旗鱼，快速上手',
       nav: '指南',
       toc: '目录',
       visionRouting: {
@@ -789,7 +798,7 @@ export const translations = {
     },
     skillMarket: {
       title: '技能市场',
-      subtitle: '社区共建的 AI Agent 技能库，一键安装即可扩展 Agent 能力',
+      subtitle: '给秘书装上专项技能——社区共建，一键安装',
       featured: '精选推荐',
       allSkills: '全部技能',
       categories: {
@@ -817,7 +826,7 @@ export const translations = {
       title: '数据安全与隐私',
       subtitle: '了解各 AI 服务商的数据隐私政策，做出适合你的选择',
       whyTitle: '为什么需要关注？',
-      whyDesc: '旗鱼作为 AI Agent，会将以下信息发送给 AI 服务商处理：',
+      whyDesc: '旗鱼作为私人桌面秘书，工作时会把以下信息发给你配置的 AI 服务商处理：',
       whyItems: ['终端输出（IP、路径、进程）', '命令历史（可能含密钥）', '服务器配置信息', '业务代码与日志', '这些数据不只可能被用于训练，还面临泄露、调取、内部访问等多重风险'],
       internationalTitle: '国际服务商',
       internationalNote: 'API 层面默认不将用户数据用于模型训练，有明确的合同承诺。消费端产品（ChatGPT、Claude.ai 等）政策不同，需注意区分。',
@@ -966,7 +975,7 @@ export const translations = {
     hero: {
       brand: 'SailFish',
       title: 'Your private desktop secretary',
-      subtitle: 'Not just chat — it runs your computer, watches what matters, and reaches out first.',
+      subtitle: 'Not just chat — it runs your computer, reaches out first, and remembers what matters about you.',
       downloadBtn: 'Download',
       learnBtn: 'See how it works',
       apiNotice: 'Bring your own AI API · macOS / Windows',
@@ -1000,6 +1009,15 @@ export const translations = {
         imageEn: '/screenshot-host-manager_en.jpg',
         imageAlt: 'SailFish host and terminal management',
       },
+      memory: {
+        id: 'memory',
+        title: 'A good secretary does not forget',
+        body: 'It remembers your habits, preferences, and environment — and can recall full past experiences when needed. What you have told it, and work already done, does not need to be explained from scratch next time.',
+        points: ['Knows you: habits and context', 'Can recall: searchable history', 'Archives: knowledge base on hand'],
+        image: '/screenshot-assistant.png',
+        imageEn: '/screenshot-assistant_en.png',
+        imageAlt: 'SailFish assistant and memory',
+      },
     },
     capabilities: {
       title: 'And more',
@@ -1021,8 +1039,8 @@ export const translations = {
           href: '/skills/',
         },
         {
-          title: 'Knowledge & memory',
-          description: 'Remembers your habits and can recall past work.',
+          title: 'Knowledge base',
+          description: 'Hand files to your secretary — retrieved when needed.',
           href: '/docs/ai-advanced/knowledge-base/',
         },
       ],
@@ -1217,11 +1235,11 @@ export const translations = {
     },
     changelog: {
       title: 'Changelog',
-      subtitle: 'Track every evolution of SailFish',
+      subtitle: 'How SailFish has grown',
     },
     guide: {
       title: 'Guide',
-      subtitle: 'Learn the core features of SailFish and get started quickly',
+      subtitle: 'Meet SailFish and get started quickly',
       nav: 'Guide',
       toc: 'Contents',
       visionRouting: {
@@ -1728,7 +1746,7 @@ export const translations = {
     },
     skillMarket: {
       title: 'Skill Market',
-      subtitle: 'Community-built AI Agent skills — install with one click to extend your Agent\'s capabilities',
+      subtitle: 'Add specialized skills for your secretary — community-built, one-click install',
       featured: 'Featured',
       allSkills: 'All Skills',
       categories: {
@@ -1756,7 +1774,7 @@ export const translations = {
       title: 'Data Privacy & Security',
       subtitle: 'Understand AI provider data policies to make informed choices',
       whyTitle: 'Why It Matters',
-      whyDesc: 'As an AI Agent, SailFish sends the following data to AI providers:',
+      whyDesc: 'As your private desktop secretary, SailFish may send the following to the AI provider you configure:',
       whyItems: ['Terminal output (IPs, paths, processes)', 'Command history (may contain secrets)', 'Server configurations', 'Business code & logs', 'Risks go beyond training — breaches, subpoenas, and internal access are all threats'],
       internationalTitle: 'International Providers',
       internationalNote: 'API data is not used for model training by default, with explicit contractual commitments. Consumer products (ChatGPT, Claude.ai, etc.) have different policies.',

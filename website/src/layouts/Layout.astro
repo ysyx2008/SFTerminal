@@ -11,7 +11,7 @@ interface Props {
 const { title, description, lang } = Astro.props;
 const currentLang = lang || getLangFromUrl(Astro.url);
 const t = useTranslations(currentLang);
-const pageDescription = description || (currentLang === 'zh' ? '旗鱼 —— 你的私人桌面秘书。能操作电脑、主动盯事、主动找你。' : 'SailFish — your private desktop secretary. It runs your computer, watches what matters, and reaches out first.');
+const pageDescription = description || (currentLang === 'zh' ? '旗鱼 —— 你的私人桌面秘书。能操作电脑、主动找你，还能记住你的许多事。' : 'SailFish — your private desktop secretary. It runs your computer, reaches out first, and remembers what matters about you.');
 ---
 
 <!doctype html>

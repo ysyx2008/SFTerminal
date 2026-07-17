@@ -1,74 +1,80 @@
-/* 旗鱼官网 - 主题系统 */
+/* 旗鱼官网 - 主题系统（私人桌面秘书气质） */
 
 :root {
-  /* 浅色主题（默认） - 优化配色方案 */
-  --color-bg-primary: #ffffff;
-  --color-bg-secondary: #fafbfc;
-  --color-bg-tertiary: #f5f7fa;
-  --color-bg-card: rgba(255, 255, 255, 0.95);
+  /* 纸感浅色底：略暖的中性色，避免冷灰工具站感 */
+  --color-bg-primary: #fbfaf8;
+  --color-bg-secondary: #f3f1ec;
+  --color-bg-tertiary: #ebe8e1;
+  --color-bg-card: #ffffff;
 
-  /* 强调色 - 更柔和的青蓝渐变 */
+  /* 主色：墨绿青 — 沉稳、办公、可信任 */
   --color-accent-primary: #0f766e;
-  --color-accent-secondary: #0ea5e9;
-  --color-accent-tertiary: #155e75;
+  --color-accent-secondary: #0d9488;
+  --color-accent-tertiary: #115e59;
+  --color-accent-contrast: #ffffff;
 
-  /* 文字颜色 - 更好的对比度 */
-  --color-text-primary: #1e293b;
-  --color-text-secondary: #64748b;
-  --color-text-muted: #94a3b8;
+  --color-accent-soft: color-mix(in srgb, var(--color-accent-primary) 10%, transparent);
+  --color-accent-soft-md: color-mix(in srgb, var(--color-accent-primary) 16%, transparent);
+  --color-accent-soft-lg: color-mix(in srgb, var(--color-accent-primary) 22%, transparent);
+  --color-accent-ring: color-mix(in srgb, var(--color-accent-primary) 35%, transparent);
 
-  /* 边框 - 更柔和的边框 */
-  --color-border: rgba(226, 232, 240, 0.8);
-  --color-border-hover: rgba(14, 165, 233, 0.3);
+  --color-text-primary: #1c1917;
+  --color-text-secondary: #57534e;
+  --color-text-muted: #a8a29e;
 
-  /* 渐变 */
-  --gradient-primary: linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-secondary));
-  --gradient-hero: linear-gradient(180deg, #ffffff 0%, #fafbfc 50%, #ffffff 100%);
-  --gradient-glow: radial-gradient(ellipse at center, rgba(14, 165, 233, 0.12) 0%, rgba(14, 165, 233, 0.04) 40%, transparent 72%);
+  --color-border: color-mix(in srgb, #78716c 16%, transparent);
+  --color-border-hover: var(--color-accent-ring);
 
-  /* 阴影 - 更柔和的阴影 */
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.08);
-  --shadow-glow: 0 0 40px rgba(14, 165, 233, 0.12);
-  
-  /* 间距 */
-  --spacing-section: 120px;
-  --spacing-component: 48px;
-  
-  /* 圆角 */
+  --gradient-primary: linear-gradient(135deg, #0f766e 0%, #0d9488 100%);
+  --gradient-hero: linear-gradient(180deg, #fbfaf8 0%, #f3f1ec 100%);
+  --gradient-glow: radial-gradient(ellipse at center, color-mix(in srgb, #0f766e 12%, transparent) 0%, transparent 70%);
+
+  --shadow-card: 0 1px 2px rgba(28, 25, 23, 0.04), 0 8px 24px rgba(28, 25, 23, 0.06);
+  --shadow-glow: 0 8px 24px color-mix(in srgb, var(--color-accent-primary) 18%, transparent);
+
+  --spacing-section: 112px;
+  --spacing-component: 40px;
+
   --radius-sm: 8px;
   --radius-md: 12px;
-  --radius-lg: 20px;
-  --radius-xl: 32px;
-  
-  /* 字体 */
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
   --font-sans: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --font-mono: "SF Mono", "Fira Code", "JetBrains Mono", Consolas, monospace;
 }
 
-/* 深色主题 */
 [data-theme="dark"] {
-  --color-bg-primary: #0a0e17;
-  --color-bg-secondary: #111827;
-  --color-bg-tertiary: #1a2332;
-  --color-bg-card: rgba(26, 35, 50, 0.8);
+  /* 冷墨底：干净、偏专业工具，避免暖棕「沙漠感」 */
+  --color-bg-primary: #0c1017;
+  --color-bg-secondary: #121821;
+  --color-bg-tertiary: #1a2230;
+  --color-bg-card: #151c28;
 
-  --color-accent-primary: #2dd4bf;
-  --color-accent-secondary: #38bdf8;
-  --color-accent-tertiary: #67e8f9;
+  /* 钝青绿：比荧光青沉稳，又和浅色墨绿同族 */
+  --color-accent-primary: #3eb8a8;
+  --color-accent-secondary: #5ec9bb;
+  --color-accent-tertiary: #8ad9ce;
+  --color-accent-contrast: #06201c;
 
-  --color-text-primary: #f1f5f9;
+  --color-accent-soft: color-mix(in srgb, var(--color-accent-primary) 14%, transparent);
+  --color-accent-soft-md: color-mix(in srgb, var(--color-accent-primary) 20%, transparent);
+  --color-accent-soft-lg: color-mix(in srgb, var(--color-accent-primary) 28%, transparent);
+  --color-accent-ring: color-mix(in srgb, var(--color-accent-primary) 38%, transparent);
+
+  --color-text-primary: #e8eef6;
   --color-text-secondary: #94a3b8;
   --color-text-muted: #64748b;
 
-  --color-border: rgba(148, 163, 184, 0.1);
-  --color-border-hover: rgba(6, 182, 212, 0.3);
+  --color-border: color-mix(in srgb, #94a3b8 14%, transparent);
+  --color-border-hover: var(--color-accent-ring);
 
-  --gradient-primary: linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-secondary));
-  --gradient-hero: linear-gradient(180deg, #0a0e17 0%, #111827 50%, #0a0e17 100%);
-  --gradient-glow: radial-gradient(ellipse at center, rgba(6, 182, 212, 0.2) 0%, rgba(6, 182, 212, 0.06) 40%, transparent 72%);
+  --gradient-primary: linear-gradient(135deg, #2a9b8f 0%, #3eb8a8 100%);
+  --gradient-hero: linear-gradient(180deg, #0c1017 0%, #121821 100%);
+  --gradient-glow: radial-gradient(ellipse at center, color-mix(in srgb, #3eb8a8 12%, transparent) 0%, transparent 70%);
 
   --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 40px rgba(6, 182, 212, 0.2);
+  --shadow-glow: 0 8px 28px color-mix(in srgb, var(--color-accent-primary) 20%, transparent);
 }
 
 * {
@@ -91,13 +97,11 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 选中文本样式 */
 ::selection {
   background: var(--color-accent-primary);
-  color: var(--color-bg-primary);
+  color: var(--color-accent-contrast);
 }
 
-/* 滚动条样式 */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -116,14 +120,12 @@ body {
   background: var(--color-text-secondary);
 }
 
-/* 通用容器 */
 .container {
-  max-width: 1200px;
+  max-width: 1120px;
   margin: 0 auto;
   padding: 0 24px;
 }
 
-/* 链接样式 */
 a {
   color: var(--color-accent-primary);
   text-decoration: none;
@@ -134,32 +136,32 @@ a:hover {
   color: var(--color-accent-secondary);
 }
 
-/* 按钮基础样式 */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 14px 28px;
-  font-size: 16px;
+  padding: 12px 24px;
+  font-size: 15px;
   font-weight: 600;
   border-radius: var(--radius-md);
   border: none;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
   text-decoration: none;
 }
 
 .btn-primary {
-  background: var(--gradient-primary);
-  color: white;
-  box-shadow: var(--shadow-glow);
+  background: var(--color-accent-primary);
+  color: var(--color-accent-contrast);
+  box-shadow: none;
 }
 
 .btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 0 60px rgba(6, 182, 212, 0.4);
-  color: white;
+  background: var(--color-accent-secondary);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-glow);
+  color: var(--color-accent-contrast);
 }
 
 .btn-secondary {
@@ -174,31 +176,33 @@ a:hover {
   color: var(--color-text-primary);
 }
 
-/* 标题样式 */
+.btn-lg {
+  padding: 14px 28px;
+  font-size: 16px;
+}
+
 .section-title {
-  font-size: 40px;
+  font-size: clamp(1.75rem, 3vw, 2.25rem);
   font-weight: 700;
+  letter-spacing: -0.02em;
   text-align: center;
-  margin-bottom: 16px;
-  background: linear-gradient(135deg, var(--color-text-primary), var(--color-text-secondary));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  margin-bottom: 12px;
+  color: var(--color-text-primary);
 }
 
 .section-subtitle {
-  font-size: 18px;
+  font-size: 1.0625rem;
   color: var(--color-text-secondary);
   text-align: center;
-  max-width: 600px;
+  max-width: 36em;
   margin: 0 auto var(--spacing-component);
+  line-height: 1.65;
 }
 
-/* 动画基础类 */
 .fade-in {
   opacity: 0;
-  transform: translateY(30px);
-  transition: opacity 0.6s ease, transform 0.6s ease;
+  transform: translateY(20px);
+  transition: opacity 0.55s ease, transform 0.55s ease;
 }
 
 .fade-in.visible {
@@ -206,36 +210,34 @@ a:hover {
   transform: translateY(0);
 }
 
-.fade-in-delay-1 { transition-delay: 0.1s; }
-.fade-in-delay-2 { transition-delay: 0.2s; }
-.fade-in-delay-3 { transition-delay: 0.3s; }
-.fade-in-delay-4 { transition-delay: 0.4s; }
-.fade-in-delay-5 { transition-delay: 0.5s; }
+.fade-in-delay-1 { transition-delay: 0.08s; }
+.fade-in-delay-2 { transition-delay: 0.16s; }
+.fade-in-delay-3 { transition-delay: 0.24s; }
+.fade-in-delay-4 { transition-delay: 0.32s; }
+.fade-in-delay-5 { transition-delay: 0.4s; }
 
-/* 网格背景效果 */
 .grid-bg {
   position: absolute;
   inset: 0;
-  background-image: 
-    linear-gradient(rgba(148, 163, 184, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.03) 1px, transparent 1px);
-  background-size: 60px 60px;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--color-text-muted) 8%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--color-text-muted) 8%, transparent) 1px, transparent 1px);
+  background-size: 64px 64px;
   pointer-events: none;
+  opacity: 0.35;
 }
 
-/* 光晕效果 — 用柔和径向渐变模拟 blur，避免 filter: blur() 持续占用 GPU */
 .glow-effect {
   position: absolute;
-  width: 600px;
-  height: 600px;
+  width: 480px;
+  height: 480px;
   background: var(--gradient-glow);
   border-radius: 50%;
   pointer-events: none;
-  opacity: 0.5;
+  opacity: 0.45;
   contain: strict;
 }
 
-/* 标签页不可见时暂停所有 CSS 动画，降低后台 CPU 占用 */
 html.page-hidden *,
 html.page-hidden *::before,
 html.page-hidden *::after {
@@ -253,24 +255,22 @@ html.page-hidden *::after {
   }
 }
 
-/* 响应式 */
 @media (max-width: 768px) {
   :root {
-    --spacing-section: 80px;
-    --spacing-component: 32px;
+    --spacing-section: 72px;
+    --spacing-component: 28px;
   }
-  
+
   .section-title {
-    font-size: 28px;
+    font-size: 1.5rem;
   }
-  
+
   .section-subtitle {
-    font-size: 16px;
+    font-size: 0.95rem;
   }
-  
+
   .btn {
-    padding: 12px 24px;
+    padding: 11px 20px;
     font-size: 14px;
   }
 }
-

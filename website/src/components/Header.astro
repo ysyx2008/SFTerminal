@@ -83,15 +83,13 @@ const isHomePage = currentPath === '/' || currentPath === '/en/' || currentPath 
     transition: background 0.3s ease, border-color 0.3s ease;
   }
 
-  /* 浅色主题导航栏 — 纯色背景，避免固定顶栏 backdrop-filter 持续重绘 */
   :root .header,
   [data-theme="light"] .header {
-    background: rgba(255, 255, 255, 0.95);
+    background: color-mix(in srgb, var(--color-bg-primary) 92%, transparent);
   }
 
-  /* 深色主题导航栏 - 完全不透明，无毛玻璃效果 */
   [data-theme="dark"] .header {
-    background: #0a0e17 !important;
+    background: color-mix(in srgb, var(--color-bg-primary) 94%, transparent) !important;
     backdrop-filter: none !important;
   }
   

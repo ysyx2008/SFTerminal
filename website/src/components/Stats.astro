@@ -214,7 +214,7 @@ const t = {
   }
 
   .total-downloads .summary-icon {
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(59, 130, 246, 0.2));
+    background: linear-gradient(135deg, var(--color-accent-soft-md), rgba(59, 130, 246, 0.2));
     color: var(--color-accent-primary);
   }
 
@@ -224,7 +224,7 @@ const t = {
   }
 
   .latest-version .summary-icon {
-    background: linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(6, 182, 212, 0.2));
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.2), var(--color-accent-soft-md));
     color: #22c55e;
   }
 
@@ -420,11 +420,11 @@ const t = {
   }
 
   .releases-list :global(.release-card:hover) {
-    background: rgba(6, 182, 212, 0.03);
+    background: var(--color-accent-soft);
   }
 
   .releases-list :global(.release-card.latest) {
-    background: rgba(6, 182, 212, 0.05);
+    background: var(--color-accent-soft);
   }
 
   .releases-list :global(.release-info) {
@@ -762,11 +762,12 @@ const t = {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // 获取CSS变量颜色
     const computedStyle = getComputedStyle(document.documentElement);
-    const accentColor = '#06b6d4'; // cyan-500
-    const textColor = computedStyle.getPropertyValue('--color-text-secondary').trim() || '#94a3b8';
-    const gridColor = computedStyle.getPropertyValue('--color-border').trim() || 'rgba(148, 163, 184, 0.1)';
+    const accentColor = computedStyle.getPropertyValue('--color-accent-primary').trim() || '#0f766e';
+    const accentSoft = computedStyle.getPropertyValue('--color-accent-soft').trim() || 'rgba(15, 118, 110, 0.1)';
+    const textColor = computedStyle.getPropertyValue('--color-text-secondary').trim() || '#57534e';
+    const gridColor = computedStyle.getPropertyValue('--color-border').trim() || 'rgba(120, 113, 108, 0.16)';
+    const bgPrimary = computedStyle.getPropertyValue('--color-bg-primary').trim() || '#fbfaf8';
 
     chartInstance = new (window as any).Chart(ctx, {
       type: 'line',
@@ -776,13 +777,13 @@ const t = {
           label: texts.cumulativeDownloads,
           data: chartData.map(d => d.cumulative),
           borderColor: accentColor,
-          backgroundColor: 'rgba(6, 182, 212, 0.1)',
+          backgroundColor: accentSoft,
           borderWidth: 3,
           fill: true,
           tension: 0.4,
           pointRadius: 6,
           pointBackgroundColor: accentColor,
-          pointBorderColor: '#0f172a',
+          pointBorderColor: bgPrimary,
           pointBorderWidth: 2,
           pointHoverRadius: 8,
           pointHoverBackgroundColor: accentColor,
@@ -805,7 +806,7 @@ const t = {
             backgroundColor: 'rgba(15, 23, 42, 0.95)',
             titleColor: '#fff',
             bodyColor: '#94a3b8',
-            borderColor: 'rgba(6, 182, 212, 0.3)',
+            borderColor: 'var(--color-accent-ring)',
             borderWidth: 1,
             padding: 12,
             cornerRadius: 8,
