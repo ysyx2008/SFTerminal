@@ -108,9 +108,9 @@ const downloads = [
 const sourceConfig = JSON.stringify(DOWNLOAD_SOURCES);
 ---
 
-<section id="download" class="download" data-source-config={sourceConfig} data-default-source={defaultSource}>
+<section class="download" data-source-config={sourceConfig} data-default-source={defaultSource}>
   <div class="container">
-    <h2 class="section-title fade-in">{t.download.title}</h2>
+    <h2 id="download" class="section-title fade-in">{t.download.title}</h2>
     <p class="section-subtitle fade-in fade-in-delay-1">{t.download.subtitle}</p>
 
     <div class="version-info fade-in fade-in-delay-1">
@@ -219,6 +219,11 @@ const sourceConfig = JSON.stringify(DOWNLOAD_SOURCES);
     position: relative;
     padding: var(--spacing-section) 0;
     background: var(--color-bg-primary);
+  }
+
+  /* 锚点打在标题上，避免停在大段 padding 上显得空 */
+  .download .section-title {
+    scroll-margin-top: 5.5rem;
   }
   
   .download::before {
