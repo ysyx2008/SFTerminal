@@ -1100,9 +1100,10 @@ onUnmounted(() => {
   color: var(--accent-primary);
 }
 .check-btn.checked {
-  border-color: var(--accent-primary);
-  background: var(--accent-primary);
-  color: #fff;
+  /* 已完成：低调灰，避免品牌蓝实心抢眼 */
+  border-color: color-mix(in srgb, var(--text-muted) 55%, transparent);
+  background: color-mix(in srgb, var(--text-muted) 22%, transparent);
+  color: var(--text-muted);
 }
 
 .todo-item-title {

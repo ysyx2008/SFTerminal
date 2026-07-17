@@ -6,9 +6,9 @@ import type { AgentConfig, ToolExecutorConfig, ToolResult } from '../../tools/ty
 import {
   applyTodoUpdate,
   createTodoItem,
+  getTodoService,
   hasLegacyTodoMd,
   LEGACY_TODO_MD_HINT,
-  loadStore,
   mutateStore,
 } from './store'
 import { createLogger } from '../../../../utils/logger'
@@ -46,7 +46,7 @@ async function todoList(
   args: Record<string, unknown>,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
-  const store = loadStore()
+  const store = getTodoService().load()
   let items = [...store.todos]
 
   const status = args.status as string | undefined
@@ -172,7 +172,7 @@ async function todoUpdate(
   if (!id) return { success: false, output: '', error: 'id is required' }
 
   // 先找条目做 step 文案；真正更新在 mutateStore 内原子完成
-  const existing = loadStore().todos.find(t => t.id === id)
+  const existing = getTodoService().load().todos.find(t => t.id === id)
   if (!existing) return { success: false, output: '', error: `Todo not found: ${id}` }
 
   executor.addStep({
@@ -235,7 +235,7 @@ async function todoComplete(
   const id = typeof args.id === 'string' ? args.id : ''
   if (!id) return { success: false, output: '', error: 'id is required' }
 
-  const existing = loadStore().todos.find(t => t.id === id)
+  const existing = getTodoService().load().todos.find(t => t.id === id)
   if (!existing) return { success: false, output: '', error: `Todo not found: ${id}` }
 
   executor.addStep({
@@ -272,7 +272,7 @@ async function todoDelete(
   const id = typeof args.id === 'string' ? args.id : ''
   if (!id) return { success: false, output: '', error: 'id is required' }
 
-  const existing = loadStore().todos.find(t => t.id === id)
+  const existing = getTodoService().load().todos.find(t => t.id === id)
   if (!existing) return { success: false, output: '', error: `Todo not found: ${id}` }
 
   executor.addStep({

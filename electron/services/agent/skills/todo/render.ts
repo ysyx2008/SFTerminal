@@ -3,7 +3,7 @@
  * 只读 store，无技能注册副作用——watch 只应 import 本文件。
  */
 import type { TodoItem, TodoStoreData } from '@sailfish/shared-types'
-import { hasLegacyTodoMd, loadStore } from './store'
+import { getTodoService, hasLegacyTodoMd } from './store'
 
 /** 与 watch.service WORKSPACE_FILE_MAX_CHARS 对齐 */
 export const TODO_RENDER_MAX_CHARS = 8000
@@ -32,7 +32,7 @@ function formatTodoLine(item: TodoItem): string {
  * 无活跃待办且无迁移提示时返回 ''；有内容时带「# 待办事项」标题。
  */
 export function renderTodosForContext(options?: RenderTodosOptions): string {
-  const store = options?.store ?? loadStore()
+  const store = options?.store ?? getTodoService().load()
   const maxChars = options?.maxChars ?? TODO_RENDER_MAX_CHARS
   const includeLegacyHint = options?.includeLegacyHint !== false
 
