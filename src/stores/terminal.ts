@@ -777,11 +777,22 @@ export const useTerminalStore = defineStore('terminal', () => {
       // 按 source kind 分流：companion 是 N 条 record 合并的关系线，走 extractTaskFromCompanion
       //（异质转化，时间窗口语义）；其它走 forkTask（task → task 同质分叉，截止语义）。
       if (isCompanionSource) {
+        // 只传截取所需轻量字段，避免 images/canvas 等导致 IPC 克隆失败
+        const sourceSteps = (sourceTab.agentState?.steps ?? []).map(s => ({
+          id: s.id,
+          type: s.type,
+          content: s.content || '',
+          timestamp: s.timestamp,
+          toolName: s.toolName,
+          toolCallId: s.toolCallId,
+          success: s.success,
+        }))
         result = await window.electronAPI.agent.extractTaskFromCompanion({
           newAgentId,
           anchorTaskIndex: opts?.groupIndex,
           anchorTaskStepId: opts?.anchorTaskStepId,
           titleSuffix,
+          sourceSteps,
         })
       } else {
         result = await window.electronAPI.agent.forkTask({

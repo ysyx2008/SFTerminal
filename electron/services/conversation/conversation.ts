@@ -30,7 +30,7 @@ import type {
 import { inferConversationKind, filterPersistableSteps } from '@shared/types'
 import type { AiMessage } from '../ai.service'
 import { TaskMemoryStore, type LookupToolMeta } from '../agent/task-memory'
-import { splitMessagesIntoTasks, splitStepsIntoTasks, stepRecordToStep, chunkStepsByUserTask } from './messages'
+import { splitMessagesIntoTasks, splitStepsIntoTasks, stepRecordToStep, chunkStepsByUserTask, chunkStepsForCompanionExtract } from './messages'
 
 export interface ConversationCreateOptions {
   /** 显式指定会话 id（恢复/漫游续写既有会话）；省略则生成 `session_<ts>` */
@@ -358,52 +358,88 @@ export class Conversation {
   static extractTaskFromRecords(
     records: AgentRecord[],
     newSessionId: string,
-    opts?: { anchorTaskIndex?: number; anchorTaskStepId?: string; titleSuffix?: string }
+    opts?: {
+      anchorTaskIndex?: number
+      anchorTaskStepId?: string
+      titleSuffix?: string
+      /** 前端联络 tab 当前展示的 steps（与屏幕分组一致）；有则优先于磁盘合并 */
+      sourceSteps?: AgentStepRecord[]
+    }
   ): { conversation: Conversation; record: AgentRecord } | null {
-    if (!records.length) return null
+    if (!records.length && !(opts?.sourceSteps && opts.sourceSteps.length > 0)) return null
 
     const ordered = [...records].sort((a, b) => a.timestamp - b.timestamp)
 
-    // 合并 steps：按 timestamp 升序，去重（同 id 只保留一次）
-    const seen = new Set<string>()
-    const mergedSteps: AgentStep[] = ordered
-      .flatMap(r => (r.steps ?? []).map(s => stepRecordToStep(s)))
-      .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
-      .filter(s => (s.id && !seen.has(s.id) ? (seen.add(s.id), true) : !s.id))
+    // 合并 steps：优先用前端传来的展示态（与用户点击的 group 同源）；否则磁盘合并
+    let mergedSteps: AgentStep[]
+    if (opts?.sourceSteps && opts.sourceSteps.length > 0) {
+      mergedSteps = opts.sourceSteps.map(s => stepRecordToStep(s))
+    } else {
+      const seen = new Set<string>()
+      mergedSteps = ordered
+        .flatMap(r => (r.steps ?? []).map(s => stepRecordToStep(s)))
+        .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
+        .filter(s => (s.id && !seen.has(s.id) ? (seen.add(s.id), true) : !s.id))
+    }
 
     // 合并 messages：只取真实对话 record（非 __proactive__），按 timestamp 升序拼接
     const realRecords = ordered.filter(r => r.userTask !== '__proactive__')
     const mergedMessages: AiMessage[] = realRecords
       .flatMap(r => (r.messages ?? []).map(m => JSON.parse(JSON.stringify(m)) as AiMessage))
 
-    // 时间窗口选择：以锚点为基准向前取连续 task（同天 + 6h 跨夜，cap 兜底）
-    const stepChunks = chunkStepsByUserTask(mergedSteps)
+    // 切段与前端 agentTaskGroups 对齐（结束后的 proactive_notice 单独成段）
+    const stepChunks = chunkStepsForCompanionExtract(mergedSteps)
     const messageTasks = splitMessagesIntoTasks(mergedMessages, i => `restored_${Date.now()}_${i}`)
+    // proactive 有 steps、无 API messages → messageTasks 比 stepChunks 短。
+    // 绝不能用 stepChunk 下标直接取 messageTasks[i]，否则锚点会「往后滑」1～N 段
+    //（N = 锚点前的 proactive 数），且随主动消息增减而不稳定。
+    const messagesByChunk = Conversation.alignMessagesToStepChunks(stepChunks, messageTasks)
     const anchorIndex = Conversation.resolveAnchorChunkIndex(stepChunks, opts)
+    // 锚点无法解析时宁可失败，也不要默默落到最后一条（会把截止点滑到更新的消息）
+    if (anchorIndex < 0 || anchorIndex >= stepChunks.length) return null
     const selectedIndices = Conversation.selectCompanionTaskWindow(stepChunks, anchorIndex)
 
     const selectedSteps: AgentStep[] = selectedIndices
       .map(i => stepChunks[i] ?? [])
       .flat()
     const selectedMessages: AiMessage[] = selectedIndices
-      .flatMap(i => {
-        const fromApi = messageTasks[i]?.messages
-        if (fromApi && fromApi.length > 0) return fromApi
-        // proactive 等 record 无 API messages：从 steps 重建，避免 steps/messages 错位
-        return Conversation.messagesFromStepChunk(stepChunks[i] ?? [])
-      })
+      .flatMap(i => messagesByChunk[i] ?? [])
 
     if (selectedSteps.length === 0) return null
 
     const anchorChunk = stepChunks[anchorIndex]
-    if (!anchorChunk?.some(s => s.type === 'user_task')) return null
+    if (!anchorChunk?.length) return null
     const anchorTitle = Conversation.chunkDisplayTitle(anchorChunk)
     if (!anchorTitle) return null
-    const lastFinalResult = [...selectedSteps].reverse().find(s => s.type === 'final_result')
+    const lastFinalResult = [...selectedSteps].reverse().find(s => s.type === 'final_result' || s.type === 'proactive_notice')
+
+    // 独立 proactive_notice 段没有 user_task：补一条，便于落盘 / UI 分组
+    let stepsForRecord = selectedSteps
+    if (!selectedSteps.some(s => s.type === 'user_task')) {
+      const ts = selectedSteps[0]?.timestamp ?? Date.now()
+      stepsForRecord = [
+        {
+          id: `user_task_extract_${ts}`,
+          type: 'user_task',
+          content: anchorTitle,
+          timestamp: ts
+        },
+        ...selectedSteps
+      ]
+    }
 
     // 用最早的 record 身份 + assistant 形态构造虚拟 record（companion 始终视为 assistant 模式）
     // 保留 earliest 的额外字段（如 images 等），但核心字段用窗口选择后的结果
-    const earliest = ordered[0]
+    const earliest = ordered[0] ?? {
+      id: newSessionId,
+      timestamp: Date.now(),
+      terminalId: '',
+      terminalType: 'assistant' as const,
+      userTask: anchorTitle,
+      steps: [],
+      duration: 0,
+      status: 'completed' as const
+    }
     const record: AgentRecord = {
       ...earliest,
       id: newSessionId,
@@ -416,7 +452,7 @@ export class Conversation {
       terminalType: 'assistant',
       sshHost: undefined,
       userTask: anchorTitle + (opts?.titleSuffix ?? ''),
-      steps: selectedSteps.map(s => Conversation.stepToStepRecord(s)),
+      steps: stepsForRecord.map(s => Conversation.stepToStepRecord(s)),
       messages: selectedMessages,
       finalResult: lastFinalResult?.content,
       duration: 0,
@@ -428,20 +464,44 @@ export class Conversation {
   }
 
   /**
-   * 解析锚点 chunk 索引。优先用 `anchorTaskStepId`（user_task step.id，与前端 group.id 一致），
-   * 避免前端 group.index 与磁盘合并视图 task 数不一致时 clamp 到最后一条（典型：联络 UI 比磁盘多段）。
+   * 解析锚点 chunk 索引。优先用 `anchorTaskStepId`（与前端 AgentTaskGroup.id 一致）。
+   *
+   * 若显式传了 stepId 但合并视图里找不到：
+   * - 若同时有 sourceSteps（与 UI 同源），可信 fallback 到 anchorTaskIndex
+   * - 否则返回 -1（由调用方失败），**绝不**落到 length-1
    */
   private static resolveAnchorChunkIndex(
     stepChunks: AgentStep[][],
-    opts?: { anchorTaskIndex?: number; anchorTaskStepId?: string }
+    opts?: {
+      anchorTaskIndex?: number
+      anchorTaskStepId?: string
+      sourceSteps?: AgentStepRecord[]
+    }
   ): number {
     if (stepChunks.length === 0) return 0
 
     if (opts?.anchorTaskStepId) {
-      const byId = stepChunks.findIndex(chunk =>
-        chunk.some(s => s.id === opts.anchorTaskStepId)
+      let byId = stepChunks.findIndex(chunk =>
+        chunk.some(s => s.type === 'user_task' && s.id === opts.anchorTaskStepId)
       )
+      if (byId < 0) {
+        byId = stepChunks.findIndex(chunk =>
+          chunk.some(s => s.id === opts.anchorTaskStepId)
+        )
+      }
       if (byId >= 0) return byId
+
+      // sourceSteps 与屏幕分组同源时，index 可用；否则拒绝猜测
+      if (
+        opts.sourceSteps &&
+        opts.sourceSteps.length > 0 &&
+        opts.anchorTaskIndex !== undefined &&
+        opts.anchorTaskIndex >= 0 &&
+        opts.anchorTaskIndex < stepChunks.length
+      ) {
+        return opts.anchorTaskIndex
+      }
+      return -1
     }
 
     if (
@@ -455,17 +515,25 @@ export class Conversation {
     return stepChunks.length - 1
   }
 
-  /** 锚点 chunk 的展示标题（侧栏 / tab 用）。proactive 取 finalResult 摘要，不用 __proactive__。 */
+  /** 锚点 chunk 的展示标题（侧栏 / tab 用）。proactive 取摘要，不用 __proactive__。 */
   private static chunkDisplayTitle(chunk: AgentStep[]): string {
     const ut = chunk.find(s => s.type === 'user_task')
-    if (!ut) return ''
-    if (ut.content === '__proactive__' || ut.content === '__onboarding__') {
-      const fr = chunk.find(s => s.type === 'final_result')
-      const text = (fr?.content ?? chunk.find(s => s.type === 'message')?.content ?? '').trim()
-      if (!text) return '主动消息'
+    if (ut) {
+      if (ut.content === '__proactive__' || ut.content === '__onboarding__') {
+        const fr = chunk.find(s => s.type === 'final_result' || s.type === 'proactive_notice')
+        const text = (fr?.content ?? chunk.find(s => s.type === 'message')?.content ?? '').trim()
+        if (!text) return '主动消息'
+        return text.length > 80 ? text.slice(0, 80) + '…' : text
+      }
+      return ut.content
+    }
+    // 仅 proactive_notice 的独立段（与前端 isProactive group 对应）
+    const notice = chunk.find(s => s.type === 'proactive_notice')
+    if (notice?.content) {
+      const text = notice.content.trim()
       return text.length > 80 ? text.slice(0, 80) + '…' : text
     }
-    return ut.content
+    return ''
   }
 
   /**
@@ -480,6 +548,8 @@ export class Conversation {
     for (const s of chunk) {
       if (s.type === 'message' && s.content) {
         msgs.push({ role: 'assistant', content: s.content })
+      } else if (s.type === 'proactive_notice' && s.content) {
+        msgs.push({ role: 'assistant', content: s.content })
       }
     }
     const fr = chunk.find(s => s.type === 'final_result')
@@ -490,11 +560,42 @@ export class Conversation {
   }
 
   /**
+   * 把 `splitMessagesIntoTasks` 的结果按 stepChunks 对齐。
+   *
+   * mergedMessages 刻意排除了 `__proactive__` record，而 stepChunks 含这些段——
+   * 两者长度/下标不一致。按 stepChunks 顺序推进：proactive/onboarding/独立 notice 用 steps 重建，
+   * 真实 user_task 依次消费下一个 messageTask（缺则回退 steps 重建）。
+   */
+  private static alignMessagesToStepChunks(
+    stepChunks: AgentStep[][],
+    messageTasks: Array<{ messages: AiMessage[] }>
+  ): AiMessage[][] {
+    let msgIdx = 0
+    return stepChunks.map(chunk => {
+      const ut = chunk.find(s => s.type === 'user_task')
+      const isProactiveOnly =
+        !ut ||
+        ut.content === '__proactive__' ||
+        ut.content === '__onboarding__' ||
+        (chunk.length === 1 && chunk[0]?.type === 'proactive_notice')
+      // 无真实 user 对话：不消费 messageTasks 游标
+      if (isProactiveOnly) {
+        return Conversation.messagesFromStepChunk(chunk)
+      }
+      const fromApi = messageTasks[msgIdx]?.messages
+      msgIdx++
+      if (fromApi && fromApi.length > 0) return fromApi
+      return Conversation.messagesFromStepChunk(chunk)
+    })
+  }
+
+  /**
    * companion → task 的时间窗口选择：以锚点为基准向前取连续 task。
    *
-   * 「连续」定义：相邻两 task 的起始时间间隔 < 6h（覆盖跨夜同一话题，切断「睡一觉第二天再聊」）。
-   * 主动消息（`__proactive__`）锚点：只带锚点本身——每条 talk_to_user 是独立通知，不应把同晨其它通知并进来。
-   * 用户发起的 task 锚点：从锚点向前扫，遇间隔 ≥ 6h 即断，最多 `CAP` 段兜底。
+   * 1) 先只按**用户对话**往前扩窗（间隔 < 6h、最多 CAP 段）；主动消息不参与扩窗、也不当切断点。
+   * 2) 再把落在窗口内（含紧挨窗口首条用户话之前）的主动消息补进来——
+   *    常见「通知 → 用户接着回」不能丢掉通知，否则升格任务缺来由。
+   * 3) 锚点本身是主动消息 → 只带这一条。
    */
   private static selectCompanionTaskWindow(
     stepChunks: AgentStep[][],
@@ -502,28 +603,49 @@ export class Conversation {
   ): number[] {
     if (stepChunks.length === 0) return []
 
+    const isProactiveChunk = (chunk: AgentStep[] | undefined): boolean => {
+      if (!chunk) return false
+      const ut = chunk.find(s => s.type === 'user_task')
+      return (
+        ut?.content === '__proactive__' ||
+        (!ut && chunk.some(s => s.type === 'proactive_notice'))
+      )
+    }
+
     const anchorChunk = stepChunks[anchorIndex] ?? []
-    const anchorUt = anchorChunk.find(s => s.type === 'user_task')
-    if (anchorUt?.content === '__proactive__') {
+    if (isProactiveChunk(anchorChunk)) {
       return [anchorIndex]
     }
 
-    const taskTimes = stepChunks.map(chunk => chunk[0]?.timestamp ?? 0)
     const GAP_MS = 6 * 60 * 60 * 1000
     const CAP = 10
 
-    const selected: number[] = [anchorIndex]
+    const userSelected: number[] = [anchorIndex]
+    let lastIncludedTime = stepChunks[anchorIndex]?.[0]?.timestamp ?? 0
+
     for (let i = anchorIndex - 1; i >= 0; i--) {
-      const prevUt = stepChunks[i]?.find(s => s.type === 'user_task')
-      // 用户发起的对话：向前不跨越主动消息（talk_to_user 是独立通知，不是同一话题的上下文）
-      if (prevUt?.content === '__proactive__') break
-      const gap = taskTimes[i + 1] - taskTimes[i]
-      if (gap >= GAP_MS) break
-      selected.unshift(i)
-      if (selected.length >= CAP) break
+      if (isProactiveChunk(stepChunks[i])) continue
+      const t = stepChunks[i]?.[0]?.timestamp ?? 0
+      if (lastIncludedTime - t >= GAP_MS) break
+      userSelected.unshift(i)
+      lastIncludedTime = t
+      if (userSelected.length >= CAP) break
     }
 
-    return selected
+    const lo = userSelected[0]
+    const hi = userSelected[userSelected.length - 1]
+    // 窗口内 + 紧挨首条用户话之前的主动消息一并纳入
+    const withNotices: number[] = []
+    for (let i = 0; i < stepChunks.length; i++) {
+      if (i >= lo && i <= hi) {
+        withNotices.push(i)
+        continue
+      }
+      if (i === lo - 1 && isProactiveChunk(stepChunks[i])) {
+        withNotices.push(i)
+      }
+    }
+    return withNotices
   }
 
   /**

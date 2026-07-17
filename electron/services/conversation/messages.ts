@@ -171,3 +171,47 @@ export function chunkStepsByUserTask(steps: AgentStep[]): AgentStep[][] {
   if (current.length > 0) chunks.push(current)
   return chunks
 }
+
+/**
+ * 联络「从这里创建任务」专用切段——与前端 `agentTaskGroups` 对齐：
+ * - `user_task` 开新段
+ * - 任务已结束后的 `proactive_notice`（当前段已有 final_result，或尚无 user_task）单独成段
+ *   （前端此时会建独立 isProactive group，id = notice step.id）
+ * - 进行中任务内的 notice 仍留在当前段
+ *
+ * 若仍用 {@link chunkStepsByUserTask}，结束后的 notice 会被并进上一段 user_task，
+ * 用户点主动消息时锚点会错绑到上一句用户话，截止点随之滑偏。
+ */
+export function chunkStepsForCompanionExtract(steps: AgentStep[]): AgentStep[][] {
+  const chunks: AgentStep[][] = []
+  let current: AgentStep[] = []
+  const flush = () => {
+    if (current.length > 0) {
+      chunks.push(current)
+      current = []
+    }
+  }
+
+  for (const s of steps) {
+    if (s.type === 'user_task') {
+      flush()
+      current.push(s)
+      continue
+    }
+    if (s.type === 'proactive_notice') {
+      const inActiveUserTask =
+        current.some(x => x.type === 'user_task') &&
+        !current.some(x => x.type === 'final_result')
+      if (inActiveUserTask) {
+        current.push(s)
+      } else {
+        flush()
+        chunks.push([s])
+      }
+      continue
+    }
+    current.push(s)
+  }
+  flush()
+  return chunks
+}

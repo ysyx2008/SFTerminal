@@ -465,6 +465,7 @@ export class AgentService {
     anchorTaskIndex?: number
     anchorTaskStepId?: string
     titleSuffix?: string
+    sourceSteps?: import('../history.service').AgentRecord['steps']
   }): Promise<{
     newSessionId: string
     newAgentId: string
@@ -485,14 +486,21 @@ export class AgentService {
     const forkOpts = {
       anchorTaskIndex: opts.anchorTaskIndex,
       anchorTaskStepId: opts.anchorTaskStepId,
-      titleSuffix: opts.titleSuffix ?? ''
+      titleSuffix: opts.titleSuffix ?? '',
+      sourceSteps: opts.sourceSteps,
     }
 
-    const forked = this._companion.extractTask(newSessionId, forkOpts)
+    const forked = this._companion.extractTaskWithLiveOverlay(
+      newSessionId,
+      this.getAgent('__companion__')?.toRecordForFork() ?? undefined,
+      forkOpts
+    )
     if (!forked) {
       log.warn(
         `extractTaskFromCompanion: companion.extractTask returned null ` +
-        `(no recent records or no user_task after merge)`
+        `(anchorTaskStepId=${opts.anchorTaskStepId ?? 'n/a'}, ` +
+        `anchorTaskIndex=${opts.anchorTaskIndex ?? 'n/a'}, ` +
+        `sourceSteps=${opts.sourceSteps?.length ?? 0})`
       )
       return null
     }

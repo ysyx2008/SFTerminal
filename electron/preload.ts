@@ -1006,6 +1006,7 @@ const electronAPI = {
       anchorTaskIndex?: number
       anchorTaskStepId?: string
       titleSuffix?: string
+      sourceSteps?: import('@shared/types').AgentStepRecord[]
     }) => ipcRenderer.invoke('agent:extractTaskFromCompanion', opts) as Promise<{
       newSessionId: string
       newAgentId: string

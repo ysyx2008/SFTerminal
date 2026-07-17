@@ -943,6 +943,305 @@ describe('Conversation.extractTaskFromRecords', () => {
     expect(result.record.messages![0].content).toBe('截止提醒内容')
   })
 
+  it('proactive interleaved: anchor messages stay at clicked task (no slide past)', () => {
+    // 回归：messageTasks 下标曾直接用 stepChunk 下标，锚在 B 会取到 C（往后滑）。
+    // A → proactive → B → C，锚在 B 应只含 B；锚在 C 应含 B+C（连续、中间 proactive 切断向前）。
+    const baseTs = Date.now()
+    const recA = buildCompanionRecord({
+      id: 'sess_a',
+      timestamp: baseTs,
+      userTask: '问题A',
+      messages: [
+        { role: 'user', content: '问题A' },
+        { role: 'assistant', content: '回答A' }
+      ],
+      steps: [
+        { id: 'ut_a', type: 'user_task', content: '问题A', timestamp: baseTs },
+        { id: 'fr_a', type: 'final_result', content: '回答A', timestamp: baseTs + 100 }
+      ]
+    })
+    const recP = buildCompanionRecord({
+      id: 'sess_p',
+      timestamp: baseTs + 60 * 1000,
+      userTask: '主动通知',
+      messages: [],
+      steps: [
+        { id: 'ut_p', type: 'user_task', content: '__proactive__', timestamp: baseTs + 60 * 1000 },
+        { id: 'fr_p', type: 'final_result', content: '主动提醒', timestamp: baseTs + 60 * 1000 + 100 }
+      ],
+      proactive: true
+    })
+    const recB = buildCompanionRecord({
+      id: 'sess_b',
+      timestamp: baseTs + 2 * 60 * 1000,
+      userTask: '问题B',
+      messages: [
+        { role: 'user', content: '问题B' },
+        { role: 'assistant', content: '回答B' }
+      ],
+      steps: [
+        { id: 'ut_b', type: 'user_task', content: '问题B', timestamp: baseTs + 2 * 60 * 1000 },
+        { id: 'fr_b', type: 'final_result', content: '回答B', timestamp: baseTs + 2 * 60 * 1000 + 100 }
+      ]
+    })
+    const recC = buildCompanionRecord({
+      id: 'sess_c',
+      timestamp: baseTs + 3 * 60 * 1000,
+      userTask: '问题C',
+      messages: [
+        { role: 'user', content: '问题C' },
+        { role: 'assistant', content: '回答C' }
+      ],
+      steps: [
+        { id: 'ut_c', type: 'user_task', content: '问题C', timestamp: baseTs + 3 * 60 * 1000 },
+        { id: 'fr_c', type: 'final_result', content: '回答C', timestamp: baseTs + 3 * 60 * 1000 + 100 }
+      ]
+    })
+    const records = [recA, recP, recB, recC]
+
+    const atB = Conversation.extractTaskFromRecords(records, 'sess_at_b', {
+      anchorTaskStepId: 'ut_b'
+    })!
+    // 用户窗 A+B，中间 proactive 补进（通知→可能接着回）
+    expect(atB.record.userTask).toBe('问题B')
+    expect(atB.record.messages!.some(m => m.content === '问题A')).toBe(true)
+    expect(atB.record.messages!.some(m => m.content === '问题B')).toBe(true)
+    expect(atB.record.messages!.some(m => m.content === '主动提醒')).toBe(true)
+    expect(atB.record.messages!.some(m => m.content === '问题C')).toBe(false)
+    expect(atB.record.steps!.some(s => s.id === 'ut_p')).toBe(true)
+
+    const atC = Conversation.extractTaskFromRecords(records, 'sess_at_c', {
+      anchorTaskStepId: 'ut_c'
+    })!
+    expect(atC.record.userTask).toBe('问题C')
+    expect(atC.record.messages!.some(m => m.content === '问题A')).toBe(true)
+    expect(atC.record.messages!.some(m => m.content === '问题B')).toBe(true)
+    expect(atC.record.messages!.some(m => m.content === '问题C')).toBe(true)
+  })
+
+  it('two proactives before anchor: still cuts at clicked task (not +2 slide)', () => {
+    const baseTs = Date.now()
+    const makeReal = (id: string, label: string, offsetMin: number) =>
+      buildCompanionRecord({
+        id: `sess_${id}`,
+        timestamp: baseTs + offsetMin * 60 * 1000,
+        userTask: label,
+        messages: [
+          { role: 'user', content: label },
+          { role: 'assistant', content: `答${label}` }
+        ],
+        steps: [
+          { id: `ut_${id}`, type: 'user_task', content: label, timestamp: baseTs + offsetMin * 60 * 1000 },
+          { id: `fr_${id}`, type: 'final_result', content: `答${label}`, timestamp: baseTs + offsetMin * 60 * 1000 + 100 }
+        ]
+      })
+    const makeProactive = (id: string, offsetMin: number) =>
+      buildCompanionRecord({
+        id: `sess_${id}`,
+        timestamp: baseTs + offsetMin * 60 * 1000,
+        userTask: '主动通知',
+        messages: [],
+        steps: [
+          { id: `ut_${id}`, type: 'user_task', content: '__proactive__', timestamp: baseTs + offsetMin * 60 * 1000 },
+          { id: `fr_${id}`, type: 'final_result', content: `通知${id}`, timestamp: baseTs + offsetMin * 60 * 1000 + 100 }
+        ],
+        proactive: true
+      })
+
+    // A → p1 → p2 → B → C；锚在 B：用户窗 A+B，补进窗口内 p1/p2，不含 C
+    const records = [
+      makeReal('a', 'A', 0),
+      makeProactive('p1', 1),
+      makeProactive('p2', 2),
+      makeReal('b', 'B', 3),
+      makeReal('c', 'C', 4)
+    ]
+    const result = Conversation.extractTaskFromRecords(records, 'sess_two_p', {
+      anchorTaskStepId: 'ut_b'
+    })!
+    expect(result.record.userTask).toBe('B')
+    expect(result.record.messages!.some(m => m.content === 'A')).toBe(true)
+    expect(result.record.messages!.some(m => m.content === 'B')).toBe(true)
+    expect(result.record.messages!.some(m => m.content === 'C')).toBe(false)
+    expect(result.record.steps!.some(s => s.id === 'ut_p1')).toBe(true)
+    expect(result.record.steps!.some(s => s.id === 'ut_p2')).toBe(true)
+  })
+
+  it('proactive immediately before first user turn is included (reply-to-notice)', () => {
+    const baseTs = Date.now()
+    const recP = buildCompanionRecord({
+      id: 'sess_p',
+      timestamp: baseTs,
+      userTask: '主动通知',
+      messages: [],
+      steps: [
+        { id: 'ut_p', type: 'user_task', content: '__proactive__', timestamp: baseTs },
+        { id: 'fr_p', type: 'final_result', content: '监控到异动，要不要看？', timestamp: baseTs + 100 }
+      ],
+      proactive: true
+    })
+    const recOld = buildCompanionRecord({
+      id: 'sess_old',
+      timestamp: baseTs - 7 * 60 * 60 * 1000,
+      userTask: '七小时前的闲聊',
+      messages: [
+        { role: 'user', content: '七小时前的闲聊' },
+        { role: 'assistant', content: '嗯' }
+      ],
+      steps: [
+        { id: 'ut_old', type: 'user_task', content: '七小时前的闲聊', timestamp: baseTs - 7 * 60 * 60 * 1000 },
+        { id: 'fr_old', type: 'final_result', content: '嗯', timestamp: baseTs - 7 * 60 * 60 * 1000 + 100 }
+      ]
+    })
+    const recReply = buildCompanionRecord({
+      id: 'sess_r',
+      timestamp: baseTs + 60 * 1000,
+      userTask: '帮我看看',
+      messages: [
+        { role: 'user', content: '帮我看看' },
+        { role: 'assistant', content: '好的' }
+      ],
+      steps: [
+        { id: 'ut_r', type: 'user_task', content: '帮我看看', timestamp: baseTs + 60 * 1000 },
+        { id: 'fr_r', type: 'final_result', content: '好的', timestamp: baseTs + 60 * 1000 + 100 }
+      ]
+    })
+    const result = Conversation.extractTaskFromRecords([recOld, recP, recReply], 'sess_reply', {
+      anchorTaskStepId: 'ut_r'
+    })!
+    // 6h 切断旧闲聊；紧挨首条用户话之前的通知保留
+    expect(result.record.messages!.some(m => m.content === '七小时前的闲聊')).toBe(false)
+    expect(result.record.userTask).toBe('帮我看看')
+    expect(result.record.steps!.some(s => s.id === 'ut_p')).toBe(true)
+    expect(result.record.messages!.some(m => m.content === '帮我看看')).toBe(true)
+  })
+
+  it('unknown anchorTaskStepId returns null (does not slide to latest)', () => {
+    const rec = buildCompanionRecord({
+      id: 'sess_c1',
+      timestamp: 1000,
+      userTask: '问题A',
+      messages: [
+        { role: 'user', content: '问题A' },
+        { role: 'assistant', content: '回答A' }
+      ],
+      steps: [
+        { id: 'ut_a', type: 'user_task', content: '问题A', timestamp: 1000 },
+        { id: 'fr_a', type: 'final_result', content: '回答A', timestamp: 1100 }
+      ]
+    })
+    const rec2 = buildCompanionRecord({
+      id: 'sess_c2',
+      timestamp: 2000,
+      userTask: '问题B',
+      messages: [
+        { role: 'user', content: '问题B' },
+        { role: 'assistant', content: '回答B' }
+      ],
+      steps: [
+        { id: 'ut_b', type: 'user_task', content: '问题B', timestamp: 2000 },
+        { id: 'fr_b', type: 'final_result', content: '回答B', timestamp: 2100 }
+      ]
+    })
+    // 旧逻辑：stepId 找不到 → clamp 到最后一条 → 悄悄带上 B
+    const result = Conversation.extractTaskFromRecords([rec, rec2], 'sess_miss', {
+      anchorTaskStepId: 'ut_not_on_disk',
+      anchorTaskIndex: 0
+    })
+    expect(result).toBeNull()
+  })
+
+  it('proactive_notice after final_result is its own anchor (not previous user_task)', () => {
+    // 回归：磁盘里 notice 无独立 user_task，旧切段会并进「是不是可以不执行了」那一段
+    const baseTs = Date.now()
+    const recUser = buildCompanionRecord({
+      id: 'sess_u',
+      timestamp: baseTs,
+      userTask: '是不是可以不执行了',
+      messages: [
+        { role: 'user', content: '是不是可以不执行了' },
+        { role: 'assistant', content: '可以先停' }
+      ],
+      steps: [
+        { id: 'ut_u', type: 'user_task', content: '是不是可以不执行了', timestamp: baseTs },
+        { id: 'fr_u', type: 'final_result', content: '可以先停', timestamp: baseTs + 100 }
+      ]
+    })
+    const recNotice: AgentRecord = {
+      id: 'proactive-session',
+      kind: 'companion',
+      timestamp: baseTs + 60 * 1000,
+      terminalId: '',
+      agentKey: '__companion__',
+      terminalType: 'assistant',
+      userTask: '__proactive__',
+      steps: [
+        {
+          id: 'proactive-xxx-notice',
+          type: 'proactive_notice',
+          content: '提醒：还有一件事',
+          timestamp: baseTs + 60 * 1000
+        }
+      ],
+      messages: [],
+      duration: 0,
+      status: 'completed'
+    }
+    const recLater = buildCompanionRecord({
+      id: 'sess_later',
+      timestamp: baseTs + 2 * 60 * 1000,
+      userTask: '后面的问题',
+      messages: [
+        { role: 'user', content: '后面的问题' },
+        { role: 'assistant', content: '后面的回答' }
+      ],
+      steps: [
+        { id: 'ut_later', type: 'user_task', content: '后面的问题', timestamp: baseTs + 2 * 60 * 1000 },
+        { id: 'fr_later', type: 'final_result', content: '后面的回答', timestamp: baseTs + 2 * 60 * 1000 + 100 }
+      ]
+    })
+
+    const result = Conversation.extractTaskFromRecords(
+      [recUser, recNotice, recLater],
+      'sess_notice_anchor',
+      { anchorTaskStepId: 'proactive-xxx-notice' }
+    )!
+    expect(result.record.userTask).toContain('提醒：还有一件事')
+    expect(result.record.userTask).not.toContain('是不是可以不执行了')
+    expect(result.record.messages!.some(m => m.content === '后面的问题')).toBe(false)
+    expect(result.record.steps!.some(s => s.id === 'ut_later')).toBe(false)
+  })
+
+  it('sourceSteps from UI win over disk merge for cutoff', () => {
+    const baseTs = Date.now()
+    const diskOnly = buildCompanionRecord({
+      id: 'sess_disk',
+      timestamp: baseTs,
+      userTask: '磁盘上的旧话',
+      messages: [
+        { role: 'user', content: '磁盘上的旧话' },
+        { role: 'assistant', content: '旧答' }
+      ],
+      steps: [
+        { id: 'ut_old', type: 'user_task', content: '磁盘上的旧话', timestamp: baseTs },
+        { id: 'fr_old', type: 'final_result', content: '旧答', timestamp: baseTs + 100 },
+        { id: 'ut_new', type: 'user_task', content: '屏幕上点的这句', timestamp: baseTs + 200 },
+        { id: 'fr_new', type: 'final_result', content: '新答', timestamp: baseTs + 300 },
+        { id: 'ut_after', type: 'user_task', content: '点完之后才有的', timestamp: baseTs + 400 },
+        { id: 'fr_after', type: 'final_result', content: '不应带上', timestamp: baseTs + 500 }
+      ]
+    })
+    // 前端只展示到「屏幕上点的这句」（不含 after）
+    const sourceSteps = diskOnly.steps!.slice(0, 4)
+    const result = Conversation.extractTaskFromRecords([diskOnly], 'sess_ui', {
+      anchorTaskStepId: 'ut_new',
+      sourceSteps
+    })!
+    expect(result.record.userTask).toBe('屏幕上点的这句')
+    expect(result.record.steps!.some(s => s.id === 'ut_after')).toBe(false)
+    expect(result.record.messages!.some(m => m.content === '点完之后才有的')).toBe(false)
+  })
+
   it('appends titleSuffix to userTask', () => {
     const rec = buildCompanionRecord({
       id: 'sess_c1',

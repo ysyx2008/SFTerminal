@@ -27,10 +27,15 @@ export interface CompanionExtractTaskOptions {
    * 锚点 task 索引（0-based，合并视图位置）。仅作 fallback；优先用 anchorTaskStepId。
    */
   anchorTaskIndex?: number
-  /** user_task step.id（与前端 AgentTaskGroup.id 一致），精确锚定用户点的那一段 */
+  /** user_task / proactive_notice step.id（与前端 AgentTaskGroup.id 一致），精确锚定用户点的那一段 */
   anchorTaskStepId?: string
   /** userTask 后缀（如「· 分支」） */
   titleSuffix?: string
+  /**
+   * 前端联络 tab 当前展示的 steps（与屏幕上 group 同源）。
+   * 有则作为截取真相源，避免磁盘合并切段与 UI 分组不一致。
+   */
+  sourceSteps?: import('@shared/types').AgentStepRecord[]
 }
 
 export class Companion {
@@ -49,23 +54,45 @@ export class Companion {
   /**
    * 从 companion 关系线抽取一段开新任务（companion → task 异质转化）。
    *
-   * 与 task 之间的 fork（`Conversation.forkFromRecord`）语义不同：
-   * - fork：同质分叉，单条 record 截止到第 N 个 task（连续工作流，带全量合理）
-   * - extractTask：异质转化，N 条 record 合并后按时间窗口取最近连续段（升格种子，带最近这段即可）
+   * 与 task fork（`Conversation.forkFromRecord`）语义不同：时间窗口升格种子，非截止全量。
    *
-   * 返回的二元组（与 `Conversation.forkFromRecord` 一致）：
-   * - `conversation`：新会话实例，transcript 已装载；kind = `'task'`（脱离关系线）
-   * - `record`：截断后的 `AgentRecord`（含带后缀的 `userTask`），调用方用它落盘 + 恢复 UI
-   *
-   * 落盘 + 建 Agent 由 AgentService 编排（本方法只产数据，不副作用）。
-   * 返回 null：historyService 不可用 / 无近期 record / 合并后无 user_task。
+   * @deprecated 生产路径请用 {@link extractTaskWithLiveOverlay}，以免漏掉内存中尚未落盘的 steps。
    */
   extractTask(newSessionId: string, opts?: CompanionExtractTaskOptions): { conversation: Conversation; record: AgentRecord } | null {
-    const records = this.historyService.getRecentRecordsByAgentKey(
+    return this.extractTaskWithLiveOverlay(newSessionId, undefined, opts)
+  }
+
+  /**
+   * 用内存中的最新 companion 会话覆盖同 id 的磁盘记录（或追加），再抽取任务。
+   *
+   * 与 task 之间的 fork（`Conversation.forkFromRecord`）语义不同：
+   * - fork：同质分叉，单条 record 截止到第 N 个 task
+   * - extractTask：异质转化，N 条 record 合并后按时间窗口取最近连续段
+   *
+   * 避免「UI 已有、磁盘尚未含该 step」时锚点 stepId 找不到、截止点滑偏。
+   * 排序由 `extractTaskFromRecords` 按 timestamp 负责。
+   *
+   * 返回 null：无近期 record / 锚点无法解析 / 合并后无 user_task。
+   */
+  extractTaskWithLiveOverlay(
+    newSessionId: string,
+    liveRecord: AgentRecord | null | undefined,
+    opts?: CompanionExtractTaskOptions
+  ): { conversation: Conversation; record: AgentRecord } | null {
+    let records = this.historyService.getRecentRecordsByAgentKey(
       this.agentKey,
       Companion.RECENT_RECORDS_LIMIT
     )
-    if (!records || records.length === 0) return null
+    const hasSourceSteps = !!(opts?.sourceSteps && opts.sourceSteps.length > 0)
+    if ((!records || records.length === 0) && !liveRecord && !hasSourceSteps) return null
+    records = records ? [...records] : []
+    if (liveRecord) {
+      const idx = records.findIndex(r => r.id === liveRecord.id)
+      if (idx >= 0) records[idx] = liveRecord
+      else records.push(liveRecord)
+    }
+    // 允许仅有前端 sourceSteps（磁盘暂无记录）时仍能抽取
+    if (records.length === 0 && !hasSourceSteps) return null
     return Conversation.extractTaskFromRecords(records, newSessionId, opts)
   }
 

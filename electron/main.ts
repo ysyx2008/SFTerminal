@@ -3882,6 +3882,7 @@ ipcMain.handle('agent:extractTaskFromCompanion', async (_event, opts: {
   anchorTaskIndex?: number
   anchorTaskStepId?: string
   titleSuffix?: string
+  sourceSteps?: import('@shared/types').AgentStepRecord[]
 }) => {
   const { agentService } = await rt()
   return await agentService.extractTaskFromCompanion(opts)

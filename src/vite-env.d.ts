@@ -737,6 +737,7 @@ interface Window {
         anchorTaskIndex?: number
         anchorTaskStepId?: string
         titleSuffix?: string
+        sourceSteps?: import('@shared/types').AgentStepRecord[]
       }) => Promise<{
         newSessionId: string
         newAgentId: string
