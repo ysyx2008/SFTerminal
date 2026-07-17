@@ -4,7 +4,7 @@
 
 ## 职责
 
-版本化数据迁移框架，保障老用户跨版本平滑升级。每次 schema 变更（字段重命名、格式调整、目录重构）对应一个 migration，按版本顺序在启动时执行；失败可断点续传，迁移前与 auto-update 前自动备份关键用户数据。
+版本化数据迁移框架，保障老用户跨版本平滑升级。每次 schema 变更（字段重命名、格式调整、目录重构）对应一个 migration，按版本顺序在启动时执行；失败可断点续传，迁移前自动备份关键用户数据。
 
 ## 文件结构
 
@@ -13,7 +13,7 @@
 | `types.ts` | `Migration` / `MigrationContext` / `MigrationPhase` 接口定义 |
 | `runner.ts` | `MigrationRunner` 类：注册、按 phase 执行、断点续传 |
 | `index.ts` | 注册中心：`allMigrations` 数组 + `getMigrationRunner()` 单例 |
-| `backup.ts` | `createBackup()`：迁移/auto-update 前备份关键用户数据，保留最近 5 份 |
+| `backup.ts` | `createBackup()`：迁移前备份关键用户数据，保留最近 5 份 |
 | `vN-xxx.ts` | 各版本具体迁移逻辑（v1–v9） |
 
 ## 执行模型

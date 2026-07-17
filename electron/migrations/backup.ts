@@ -1,9 +1,11 @@
 /**
- * Pre-migration / Pre-update Backup
+ * Pre-migration Backup
  *
- * 在执行数据迁移或安装更新前，自动备份关键用户数据。
+ * 在执行数据迁移前，自动备份关键用户数据。
  * 备份目录：{userData}/backups/{label}/
  * 保留最近 5 份备份，自动清理旧备份。
+ *
+ * 应用内自动更新不再调用本函数（NSIS 不覆盖 userData；见 docs/auto-update-oss.md）。
  */
 
 import * as fs from 'fs'

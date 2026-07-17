@@ -49,11 +49,18 @@ Steam 构建（`VITE_STEAM_BUILD`）跳过应用内更新。
 1. 客户端 `electron-updater` 读取 `latest.yml`，发现新版本。
 2. 下载**新版**与**旧版** `.blockmap`（旧版 URL 由文件名中的版本号替换得到，例如 `10.43.1` → `10.43.2`）。
 3. 从本机 `%LOCALAPPDATA%/{updaterCacheDirName}/installer.exe` 复制未变块（NSIS 安装/更新时写入）。
-4. 通过 HTTP Range 从 OSS/GitHub 上的**新版完整包**只拉取变更块，组装新安装包。
+4. 通过 HTTP **单段** Range 从 OSS/GitHub 上的**新版完整包**只拉取变更块，组装新安装包。
 
 若旧 blockmap 404、本机无 `installer.exe`、或 Range 失败 → 静默回退**全量下载**（进度总量 ≈ 完整 exe 大小）。
 
-**国内 OSS 曾长期全量的常见原因**：`releases/` 只留了最新安装包、没有历史 blockmap；现策略为 blockmap 永久累积。
+**国内 OSS 曾长期全量的常见原因**：
+
+1. `releases/` 只留了最新安装包、没有历史 blockmap → 现策略为 blockmap 永久累积。
+2. `electron-updater` 对 generic 源默认开 multipart Range，而**阿里云 OSS 不支持**（多段 Range 只回第一段）→ 差分校验失败后回退全量。客户端 OSS feed 已设 `useMultipleRangeRequest: false`（与 GitHub provider 行为一致）。
+
+## 安装阶段
+
+点「立即安装」只跑 NSIS 静默安装，**不再**在退出前同步备份 userData（NSIS 不覆盖 AppData；有 schema 变更时由启动 migration 的 `pre-migration` 备份兜底）。「退出时安装」路径本来也不做安装前备份。
 
 ## 平台差异
 

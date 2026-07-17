@@ -393,7 +393,7 @@ import { splitPaneBridge } from './services/split-pane-bridge.service'
 import { workbenchBridge } from './services/workbench-bridge.service'
 import type { CreateWatchParams } from './services/watch/types'
 import type { WebChatService } from './services/web-chat.service'
-import { getMigrationRunner, createBackup } from './migrations'
+import { getMigrationRunner } from './migrations'
 import { runTodoMdAgentMigrationIfNeeded } from './services/agent/skills/todo/migrate-legacy'
 import {
   completeTodo,
@@ -2559,6 +2559,8 @@ const OSS_FEED: GenericServerOptions = {
   provider: 'generic',
   url: 'https://sfterm-download.oss-cn-wuhan-lr.aliyuncs.com/releases/',
   channel: 'latest',
+  // 阿里云 OSS 不支持 multipart Range（多段只回第一段），开着会导致差分校验失败并回退全量
+  useMultipleRangeRequest: false,
 }
 
 const UPDATE_SOURCE_LABELS: Record<UpdateSource, { zh: string; en: string }> = {
@@ -2873,12 +2875,10 @@ ipcMain.handle('updater:downloadUpdate', async (_event, preferredSource?: Update
 })
 
 // 安装更新并重启
+// 不做安装前备份：NSIS 不覆盖 userData；schema 变更由启动时 migration 的 pre-migration 备份兜底
 ipcMain.handle('updater:quitAndInstall', async () => {
   try {
     resetPendingInstallOnQuit()
-    // 安装前备份用户数据
-    const version = app.getVersion()
-    createBackup(app.getPath('userData'), `pre-update-v${version}`)
 
     // Windows：静默安装（与「退出时安装」一致），跳过 NSIS 安装模式选择页；initMultiUser 从注册表沿用 per-user/per-machine
     autoUpdater.quitAndInstall(process.platform === 'win32', true)
