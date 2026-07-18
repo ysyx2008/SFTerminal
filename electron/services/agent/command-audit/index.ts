@@ -36,6 +36,7 @@ export {
   adjustRiskByPathZones,
   getBuiltinTempRoots,
   getWorkspaceZone,
+  isLexicallyAbsolutePath,
   isSystemPath,
   resolveCommandPath,
   resetBuiltinTempRootsCacheForTest,

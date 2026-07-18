@@ -98,7 +98,22 @@ guard 把"确实危险的间接执行模式"鉴别出来标 dangerous，让 stri
 
 写 **hardened 系统路径**（`/etc`、`/dev`、`/sys` 等）标 `dangerous`（弹确认放行），不标 `blocked`。guard 命中的间接执行模式也标 `dangerous`，不标 `blocked`。
 
-### 3. normalizeFlags 只拆合并短 flag
+### 3. 自由区降级只认「静态可证」的绝对路径（写/删）
+
+审计**不模拟 shell 的 cwd 语义**（`cd && …`、子 shell、PTY 实际所在目录都无法静态证明），
+因此写/删操作降级为 safe（免确认）的前提是：路径**词法上是绝对路径**（`/…`、`~/…`、
+Windows 盘符/UNC），且 resolve 后落在自由区。**相对路径的写/删一律不降级**，按「outside」
+处理、保持命令基线（`rm` → dangerous → relaxed 弹确认）。
+
+背景：曾出现 `cd ~/Desktop && rm foo.txt` 被按审计默认 cwd（scratch）解析成自由区、
+宽松模式免确认删掉桌面文件。跟踪 `cd` 是补丁式方案（子 shell、`bash -c`、变量仍会漏），
+Fail-Closed 的「只认绝对路径」才是可靠不变量。
+
+代价（已接受）：Agent 想在 scratch 免确认，必须写绝对路径；system prompt 已同步此约定。
+升级方向的检查（userData 禁区 / critical / hardened / protected / workspace）不受影响，
+仍按 cwd 尽力解析——解析错了顶多少升级，不会少确认。
+
+### 4. normalizeFlags 只拆合并短 flag
 
 `normalizeFlags` 只拆长度 ≤ 4 的短 flag 合并（`-rf` -> `-r -f` + 保留原 `-rf`），保留 `-print`/`-exec`/`-delete` 等多字母长 flag 不被误拆。`assessCommandFlags` 对未知 flag 回退检查"是否由已知单字符 flag 组合而成"（`-lart` 不误报）。
 
@@ -166,6 +181,7 @@ npx vitest run electron/services/agent/command-audit/__tests__/
 
 ## 变更历史
 
+- 2026-07-18：自由区降级只认词法绝对路径（不变量 3）。相对路径写/删不再按审计 cwd 解析进 free，修复 `cd ~/Desktop && rm foo.txt` 在宽松模式免确认删除工作区外文件
 - 2026-07-14：`resolveCommandPath` 展开 `~`/`~/`，修复宽松模式下 `rm ~/…` 误判 free/safe 不弹确认
 - 2026-07-13：明确 blocked 不走确认弹窗（硬拒绝）；`riskNeedsConfirm('blocked')` 恒 false，新增 `isHardBlocked`
 - 2026-07-13：`riskNeedsConfirm` 修正为 strict 含 safe 全确认（与产品「严格=全确认」一致）；`commandNeedsConfirm` 完全委托

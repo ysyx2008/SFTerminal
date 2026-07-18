@@ -16,7 +16,7 @@ import * as os from 'os'
 import * as path from 'path'
 import { unescapeShellWordLiteral } from '../unescape-shell-literal'
 import { extractAuditedCalls } from '../extract-calls'
-import { getWorkspaceZone, resolveCommandPath } from '../workspace-guard'
+import { getWorkspaceZone, isLexicallyAbsolutePath, resolveCommandPath } from '../workspace-guard'
 import { assessShellRisk, defaultAuditContext } from '../assess-shell'
 import { commandNeedsConfirm } from '../confirm-policy'
 
@@ -64,6 +64,56 @@ describe('resolveCommandPath 展开 ~', () => {
     const assessment = await assessShellRisk('rm ~/Desktop/rm_test_outside.txt', ctx)
     expect(assessment.level).toBe('dangerous')
     expect(assessment.calls[0]?.pathZones).toEqual(['outside'])
+    expect(commandNeedsConfirm(assessment, 'relaxed')).toBe(true)
+  })
+})
+
+describe('isLexicallyAbsolutePath', () => {
+  it('识别 /…、~/…、~、相对路径与空串', () => {
+    expect(isLexicallyAbsolutePath('/tmp/x')).toBe(true)
+    expect(isLexicallyAbsolutePath('~/Desktop/x')).toBe(true)
+    expect(isLexicallyAbsolutePath('~')).toBe(true)
+    expect(isLexicallyAbsolutePath('draft.txt')).toBe(false)
+    expect(isLexicallyAbsolutePath('./draft.txt')).toBe(false)
+    expect(isLexicallyAbsolutePath('')).toBe(false)
+    expect(isLexicallyAbsolutePath('~user/foo')).toBe(false)
+  })
+})
+
+describe('自由区降级只认词法绝对路径', () => {
+  it('cd Desktop && rm 相对路径：宽松模式需确认（不按 scratch cwd 误判 free）', async () => {
+    const ctx = defaultAuditContext()
+    const assessment = await assessShellRisk(
+      'cd /Users/yushen/Desktop && rm rm_test_relative.txt',
+      ctx,
+    )
+    expect(assessment.level).toBe('dangerous')
+    expect(commandNeedsConfirm(assessment, 'relaxed')).toBe(true)
+    const rm = assessment.calls.find(c => c.cmd === 'rm')
+    expect(rm?.pathZones).toEqual(['outside'])
+    expect(rm?.reasons.some(r => r.includes('相对路径') || r.includes('relative path'))).toBe(true)
+  })
+
+  it('scratch cwd 下相对路径 rm 仍 dangerous（宽松需确认）', async () => {
+    const ctx = defaultAuditContext()
+    const assessment = await assessShellRisk('rm draft.txt', ctx)
+    expect(assessment.level).toBe('dangerous')
+    expect(commandNeedsConfirm(assessment, 'relaxed')).toBe(true)
+  })
+
+  it('绝对路径 rm scratch 文件仍可降为 safe', async () => {
+    const ctx = defaultAuditContext()
+    const abs = path.join(ctx.cwd!, 'draft.txt')
+    const assessment = await assessShellRisk(`rm -f "${abs}"`, ctx)
+    expect(assessment.level).toBe('safe')
+    expect(commandNeedsConfirm(assessment, 'relaxed')).toBe(false)
+  })
+
+  it('混有相对路径时整体仍 dangerous（即便另一目标在 free 绝对路径）', async () => {
+    const ctx = defaultAuditContext()
+    const abs = path.join(ctx.cwd!, 'a.txt')
+    const assessment = await assessShellRisk(`rm -f "${abs}" ./b.txt`, ctx)
+    expect(assessment.level).toBe('dangerous')
     expect(commandNeedsConfirm(assessment, 'relaxed')).toBe(true)
   })
 })

@@ -42,6 +42,20 @@ function expandTilde(filePath: string): string {
 }
 
 /**
+ * 路径是否「词法上绝对」——不依赖 cwd 即可定位：
+ * `/…`、`~/…`、Windows 盘符 / UNC。
+ *
+ * 自由区降级（写/删 → safe）只认此类路径；相对路径无法静态证明
+ * 执行时仍在 scratch（`cd && rm foo` 会骗过按审计 cwd 的解析）。
+ */
+export function isLexicallyAbsolutePath(rawPath: string): boolean {
+  const cleaned = unescapeShellWordLiteral(rawPath.trim())
+  if (!cleaned) return false
+  if (cleaned === '~' || cleaned.startsWith('~/') || cleaned.startsWith('~\\')) return true
+  return path.isAbsolute(cleaned)
+}
+
+/**
  * 解析命令参数路径（供分区 / userData 守卫）：
  * 1. 解开 shell 反斜杠转义（Application\ Support）
  * 2. 展开 ~（避免 ~/Desktop 被当成 scratch 下相对路径误入 free 区）
@@ -241,7 +255,8 @@ function isDevNullPath(targetPath: string, cwd?: string): boolean {
  * 2. 黑洞设备（/dev/null 等）-> 从写路径判定中豁免（写它们无害）
  * 3. critical 系统路径（/、/boot）-> blocked（不可逆系统灾难）
  * 4. hardened 系统路径（/etc、/dev、/sys 等）-> dangerous（弹确认放行）
- * 5. 工作区 free -> safe；protected/workspace -> moderate；outside 不升级 safe 命令
+ * 5. 工作区 free -> safe（仅词法绝对路径）；protected/workspace -> moderate；
+ *    outside 不升级 safe 命令。相对路径即使按 cwd 落在 free，也按 outside 处理（不降级）。
  *
  * @param commandLevel 命令本身的风险等级（白名单 + flag 判定后）
  * @param allPaths 命令参数路径 + 写重定向路径（用于 userData 检查）
@@ -304,27 +319,41 @@ export function adjustRiskByPathZones(
   }
 
   const effectiveZones = nonDevNullPaths.map(p => getWorkspaceZone(p, cwd, extraFreeDirs))
-  if (effectiveZones.every(z => z === 'free')) {
+  // 相对路径无法静态证明执行时 cwd：即便按审计 cwd 落在 free，也不允许降级为 safe。
+  // pathZones 返回 policyZones（与 level 决策一致），避免「显示 free、实际按 outside」误导调试。
+  const relativeBlocksFree = nonDevNullPaths.some(
+    (p, i) => effectiveZones[i] === 'free' && !isLexicallyAbsolutePath(p),
+  )
+  const policyZones: WorkspaceZone[] = nonDevNullPaths.map((p, i) => {
+    const z = effectiveZones[i]!
+    if (z === 'free' && !isLexicallyAbsolutePath(p)) return 'outside'
+    return z
+  })
+
+  if (policyZones.every(z => z === 'free')) {
     reasons.push(t('risk.reason.workspace_free'))
-    return { level: 'safe', zones, reasons }
+    return { level: 'safe', zones: policyZones, reasons }
   }
   // outside：默认不升级 safe 命令（如 cp）；开启 outsideWritesUpgrade 时升为 moderate
-  if (effectiveZones.some(z => z === 'outside')) {
+  if (policyZones.some(z => z === 'outside')) {
+    if (relativeBlocksFree) {
+      reasons.push(t('risk.reason.relative_write_path'))
+    }
     if (commandLevel === 'safe' && opts?.outsideWritesUpgrade) {
       reasons.push(t('risk.reason.workspace_outside_upgrade'))
-      return { level: 'moderate', zones, reasons }
+      return { level: 'moderate', zones: policyZones, reasons }
     }
-    // 命令本身已是 moderate/dangerous 时，不附「需确认」文案（确认主因是命令基线，不是「在外面」）
-    return { level: commandLevel, zones, reasons }
+    // 命令本身已是 moderate/dangerous 时，不附「工作区外需确认」文案（确认主因是命令基线）
+    return { level: commandLevel, zones: policyZones, reasons }
   }
-  if (effectiveZones.some(z => z === 'protected')) {
+  if (policyZones.some(z => z === 'protected')) {
     reasons.push(t('risk.reason.workspace_protected'))
-    return { level: 'moderate', zones, reasons }
+    return { level: 'moderate', zones: policyZones, reasons }
   }
-  if (effectiveZones.some(z => z === 'workspace')) {
+  if (policyZones.some(z => z === 'workspace')) {
     reasons.push(t('risk.reason.workspace_inside'))
-    return { level: 'moderate', zones, reasons }
+    return { level: 'moderate', zones: policyZones, reasons }
   }
 
-  return { level: commandLevel, zones, reasons }
+  return { level: commandLevel, zones: policyZones, reasons }
 }
