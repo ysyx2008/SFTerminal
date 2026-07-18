@@ -5289,6 +5289,68 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   opacity: 0.85;
 }
 
+/*
+ * 浅色 color-scheme：确认卡改用语义 tint，避免深色孤岛。
+ * 风险感仍靠边框色 + badge + 主按钮；正文跟主题文字色。
+ * 深色主题保持上方暗底渐变不变。
+ */
+[data-color-scheme="light"] .agent-confirm-inline.risk-dangerous {
+  background: rgba(var(--color-error-rgb), 0.08) !important;
+  border-color: rgba(var(--color-error-rgb), 0.45) !important;
+  box-shadow: none;
+}
+
+[data-color-scheme="light"] .agent-confirm-inline.risk-moderate {
+  background: rgba(var(--brand-caution-rgb), 0.1) !important;
+  border-color: rgba(var(--brand-caution-rgb), 0.5) !important;
+  box-shadow: none;
+}
+
+[data-color-scheme="light"] .agent-confirm-inline.risk-safe {
+  background: rgba(var(--brand-vital-rgb), 0.08) !important;
+  border-color: rgba(var(--brand-vital-rgb), 0.45) !important;
+  box-shadow: none;
+}
+
+[data-color-scheme="light"] .confirm-title {
+  color: var(--text-primary);
+}
+
+[data-color-scheme="light"] .confirm-tool-name {
+  color: var(--text-secondary);
+}
+
+[data-color-scheme="light"] .confirm-args-inline {
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+[data-color-scheme="light"] .confirm-reasons {
+  background: rgba(var(--brand-caution-rgb), 0.08);
+  border-left-color: rgba(var(--brand-caution-rgb), 0.55);
+}
+
+[data-color-scheme="light"] .confirm-reasons-title {
+  color: var(--brand-caution-end, var(--color-warning));
+}
+
+[data-color-scheme="light"] .confirm-reasons-list {
+  color: var(--text-secondary);
+}
+
+/* 拒绝按钮原先按深色卡写死白字；浅色 tint 下改为主题描边按钮 */
+[data-color-scheme="light"] .agent-confirm-inline .btn-outline-secondary {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+[data-color-scheme="light"] .agent-confirm-inline .btn-outline-secondary:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 /* ===== 安全输入框（API Key 等） ===== */
 .agent-secure-input-inline {
   padding: 14px;
