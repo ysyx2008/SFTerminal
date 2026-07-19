@@ -199,6 +199,8 @@ export interface BuildSystemPromptOptions {
   isOnboarding?: boolean
   /** 已加载技能的文档内容（Markdown，技能加载时自动注入） */
   skillsContent?: string
+  /** MCP server 目录（仅渐进披露 defer 模式提供，注入「可用的 MCP 服务器」一节） */
+  mcpServerCatalog?: string
 }
 
 /**
@@ -227,6 +229,7 @@ export class PromptBuilder {
   private readonly bondContext?: string
   private readonly isOnboarding: boolean
   private readonly skillsContent?: string
+  private readonly mcpServerCatalog?: string
 
   private osType = ''
   private shellType = ''
@@ -252,6 +255,7 @@ export class PromptBuilder {
     this.bondContext = options.bondContext
     this.isOnboarding = options.isOnboarding ?? false
     this.skillsContent = options.skillsContent
+    this.mcpServerCatalog = options.mcpServerCatalog
   }
 
   // ==================== 公开方法 ====================
@@ -299,6 +303,7 @@ export class PromptBuilder {
       // ── Tier 2: 终端/主机级 ──
       w('environment', this.buildHostEnvironment()),
       w('environment', this.buildBrowserBridgeSection()),
+      w('environment', this.buildMcpServersSection()),
       w('environment', this.buildWorkbenchPromptSection()),
       w('environment', this.buildSplitPanesSection()),
       w('environment', this.buildRemoteChannelContext()),
@@ -707,12 +712,27 @@ export class PromptBuilder {
     return `# 技能文档\n\n${content}`
   }
 
+  private buildMcpServersSection(): string {
+    const catalog = this.mcpServerCatalog?.trim()
+    if (!catalog) return ''
+    return [
+      '# 可用的 MCP 服务器',
+      '',
+      'MCP 工具按服务器整包按需加载（类似 skill）：下方目录只列服务器与工具名，完整参数定义未放入上下文。',
+      '规划任务时先对照下方目录：若已有能覆盖所需数据或服务的服务器，先 `mcp_load` 加载其全部工具，再调用对应的 `mcp_*`；不要只靠网页搜索拼凑同类数据。',
+      '加载后本会话内持续有效。',
+      '',
+      catalog,
+    ].join('\n')
+  }
+
   // ==================== 私有方法：核心规则及子方法 ====================
 
   private buildCoreRules(): string {
     const rules = [
       '**输出风格**：用自然对话语言，**禁止**使用「分析阶段」「步骤1」等机械化标签',
       '**中文写作**：除非用户特别要求，否则中文文本严格遵循国标！——标点用法 GB/T 15834-2011（全角：“” —— …… 、《》（），尤其要注意单、双引号！中文语境下不要使用英文半角引号！），数字用法 GB/T 15835-2011（公历日期/计量数据用阿拉伯数字，法规章条款项序数用汉字数字）；汉字与数字、汉字与英文、数字与单位之间一律不加空格（反盘古之白，如“2026年5月4日”、“3.5万元”、“安装Word软件”）。',
+      this.buildCapabilityRule(),
       this.buildPlanRule(),
       this.buildSafetyRules(),
       this.isAssistant ? `**禁止的命令**：vim/vi/nano/emacs（用 \`${this.writeFileTool}\`）` : '',
@@ -732,6 +752,14 @@ export class PromptBuilder {
     ].filter(Boolean)
 
     return `# 核心规则\n\n${rules.join('\n\n')}`
+  }
+
+  private buildCapabilityRule(): string {
+    const hasMcp = !!this.mcpServerCatalog?.trim()
+    const capabilitySources = hasMcp
+      ? '已连接的 MCP 服务器（见「可用的 MCP 服务器」）或可加载的技能（`skill`）'
+      : '可加载的技能（`skill`）'
+    return `**能力优先**：着手前先盘点专用能力——任务涉及的数据或操作，若${capabilitySources}能覆盖，优先用它们，它们比通用网页搜索/命令更专业可靠，不要绕开去用搜索拼凑同类结果。有多个可选时，选与任务最对口、数据维度最全的，别停在第一个想到的熟悉工具。`
   }
 
   private buildPlanRule(): string {

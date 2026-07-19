@@ -144,6 +144,9 @@ export class SailFish extends Agent {
       bondContext: options.bondContext,
       isOnboarding: options.isOnboarding,
       skillsContent: this.getSkillSession().getLoadedSkillsContent(),
+      mcpServerCatalog: this.services.mcpService?.shouldDeferTools()
+        ? this.services.mcpService.getServerCatalogText()
+        : undefined,
     }).build()
   }
   

@@ -357,14 +357,21 @@ export class McpService extends EventEmitter {
   }
 
   /**
-   * 廉价 server 目录（供 mcp_load description）。
-   * 只列 server 名与工具数，不列每个工具。
+   * server 目录（defer 时注入 system prompt，也用于 mcp_load 找不到 server 时的纠错提示）。
+   * 每个 server 一行：名称 + 工具名清单（title 优先），给模型能力线索但不含参数 schema。
    */
   getServerCatalogText(): string {
-    const statuses = this.getServerStatuses()
-    if (statuses.length === 0) return '（当前无已连接 MCP 服务器）'
-    return statuses
-      .map(s => `- ${s.name}（id: ${s.id}，${s.toolCount} 个工具）`)
+    const connections = Array.from(this.connections.values())
+    if (connections.length === 0) return '（当前无已连接 MCP 服务器）'
+    return connections
+      .map(conn => {
+        const { id, name } = conn.config
+        const toolNames = conn.tools.map(t => t.title || t.name)
+        if (toolNames.length === 0) {
+          return `- ${name}（id: ${id}）：（无工具）`
+        }
+        return `- ${name}（id: ${id}）：${toolNames.join('、')}`
+      })
       .join('\n')
   }
 

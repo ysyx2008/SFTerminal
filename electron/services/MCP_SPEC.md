@@ -43,6 +43,17 @@ MCP（Model Context Protocol）客户端。连接和管理外部 MCP 服务器�
 6. Prompt cache：核心前缀不变；已 load schema 只追加末尾。
 7. 本期不做：内置工具 defer、插件同构、意图预路由。
 
+### 可发现性（2026-07-18 补充）
+
+defer 上线后发现：模型规划任务时"想不到" MCP。根因是 L1 信号太弱——目录只有 server 名 + 工具数（名字不达意的 server 对模型零信息），且只埋在 `mcp_load` 的 tool description 里，system prompt 完全没提 MCP。修正取舍：
+
+1. **目录带能力线索**：`getServerCatalogText()` 每个 server 附一行工具名清单（取 `title || name`，全列不截断）。工具名远短于 schema，不违背"不罗列长描述"。
+2. **目录只放一处 = system prompt**：defer 时注入「可用的 MCP 服务器」一节（Tier 2 环境层，随 server 增删变化），规划注意力在 system prompt 而非工具列表深处。`mcp_load` description 不再重复目录，只留机制说明 + 指向该节。
+3. **描述保持中性但要有触发力**：陈述机制 + 规划时先对照目录；目录已有覆盖能力时先 load，勿只靠网页搜索。不写「优先使用 MCP」的笼统倾向，但要挡住「永远先 web_search」的默认路径。
+4. **加一条独立核心规则「能力优先」（弱模型兜底）**：仅靠「可用的 MCP 服务器」一节的局部引导，弱模型（如 DeepSeek V4 Flash）会整段忽略、径直 `web_search`。故在核心规则加一条独立的「能力优先」（`buildCapabilityRule`）：着手前先盘点专用能力（MCP / 技能），能覆盖就优先用，别用搜索拼凑——MCP 与 skill 并列，模型必读。放核心规则而非 plan 规则（plan 只管建不建计划，与能力选择无关）。该条按是否有已连接 MCP 动态措辞，无 MCP 时只提技能，不指向不存在的段落。
+5. **专用能力之间「选最对口的」，不写死 MCP/skill 谁优先**：实测发现弱模型有「先翻熟悉技能、忽略更对口 MCP」的惯性（企业尽调该用企查查 MCP，却先用了快查技能）；但反过来「永远先 MCP」也错（Word/Excel/浏览器场景 skill 才对）。故「能力优先」补一句「有多个可选时选最对口、维度最全的，别停在第一个想到的熟悉工具」——引导按对口度择优，而非规定 MCP 与 skill 的固定优先级。
+6. **`web_search` description 加拦截提示（最后一档）**：核心规则「能力优先」后，弱模型问答时能背出目录，但选工具瞬间仍惯性 `web_search`（含其它数据源失败后的 fallback）。工具 description 是选该工具时必读的位置，故在 `web_search` 描述加一句「先确认系统提示中的专用能力是否覆盖，覆盖则用专用工具，本工具仅作通用检索与补充验证」（只给通用原则，不举领域例子——避免把某几类场景焊进通用工具描述、显得只适用那几类）。**静态**注入、不随 defer 切换：子 Agent 工具列表须是父列表 byte-exact 前缀（prompt cache），条件化会使父/子描述分叉；无 MCP/技能时该句自然落空。
+
 ### 与 Skill 的类比
 
 | 层 | Skill | MCP（defer） |
@@ -56,7 +67,7 @@ MCP（Model Context Protocol）客户端。连接和管理外部 MCP 服务器�
 | 方法 | 用途 |
 |------|------|
 | `shouldDeferTools()` | count > 10 |
-| `getServerCatalogText()` | 廉价目录 |
+| `getServerCatalogText()` | 目录（server 名 + 工具名清单），defer 时注入 system prompt |
 | `resolveServerRef(ref)` | id 或显示名 → server |
 | `getToolDefinitionsByServerIds(ids)` | 整包 schema |
 | `getToolDefinitions()` / `getToolDefinitionsByNames` | 全量 / 按名 |

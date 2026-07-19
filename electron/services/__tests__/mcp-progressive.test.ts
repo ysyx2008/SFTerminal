@@ -120,9 +120,40 @@ describe('McpService progressive helpers', () => {
     expect(defs.every(d => d.function.name.startsWith('mcp_'))).toBe(true)
   })
 
-  it('getServerCatalogText 含目录', () => {
+  it('getServerCatalogText 含 server 名与工具名清单', () => {
     const text = mcp.getServerCatalogText()
     expect(text).toContain('企查查-风险信息')
-    expect(text).toContain('2 个工具')
+    expect(text).toContain('妙想MCP')
+    // 每个 server 一行，附工具名（title 优先，无 title 时用 name）
+    expect(text).toContain('equity_penetration')
+    expect(text).toContain('stock_quote')
   })
+
+  it('getServerCatalogText 工具有 title 时优先展示 title', () => {
+    const conn = (mcp as unknown as { connections: Map<string, { tools: McpTool[] }> }).connections.get('miaoxiang')!
+    conn.tools.push(
+      makeTool({
+        serverId: 'miaoxiang',
+        serverName: '妙想MCP',
+        name: 'kline_query',
+        title: 'K线查询'
+      })
+    )
+    const text = mcp.getServerCatalogText()
+    expect(text).toContain('K线查询')
+    expect(text).not.toContain('kline_query')
+  })
+
+  it('getServerCatalogText 空 connections 返回占位文案', () => {
+    const empty = new McpService()
+    expect(empty.getServerCatalogText()).toBe('（当前无已连接 MCP 服务器）')
+  })
+
+  it('getServerCatalogText 空工具 server 标注（无工具）', () => {
+    const conn = (mcp as unknown as { connections: Map<string, { tools: McpTool[] }> }).connections.get('miaoxiang')!
+    conn.tools = []
+    const text = mcp.getServerCatalogText()
+    expect(text).toContain('妙想MCP（id: miaoxiang）：（无工具）')
+  })
+
 })

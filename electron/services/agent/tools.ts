@@ -296,7 +296,9 @@ function buildWebSearchTool(): ToolDefinitionWithMeta[] {
     type: 'function',
     function: {
       name: 'web_search',
-      description: `搜索互联网获取实时信息。需要查找最新资料、验证事实、获取在线内容时使用。返回搜索结果列表（标题、URL、摘要）。`,
+      description: `搜索互联网获取实时信息。需要查找最新资料、验证事实、获取在线内容时使用。返回搜索结果列表（标题、URL、摘要）。
+
+调用前先确认：若系统提示中列出的专用能力（MCP 服务器/技能）已覆盖所需数据，应用对应专用工具查询，本工具仅作通用检索与补充验证。`,
       parameters: {
         type: 'object',
         properties: {
@@ -394,19 +396,15 @@ export interface GetAgentToolsOptions {
 /**
  * 动态构建 mcp_load（仅 defer 模式注入）——按 server 整包加载，对齐 Skill load
  */
-function buildMcpLoadTool(mcpService: McpService): ToolDefinitionWithMeta {
-  const catalog = mcpService.getServerCatalogText()
+function buildMcpLoadTool(): ToolDefinitionWithMeta {
   return {
     type: 'function',
     function: {
       name: 'mcp_load',
-      description: `加载某个已连接 MCP 服务器的全部工具定义（渐进披露，类似 skill load）。
-当前 MCP 工具较多，完整参数 schema 未全部放入上下文。需要某类 MCP 能力时，先用本工具按服务器整包加载，之后即可直接调用该服务器下的 mcp_* 工具。
+      description: `加载某个已连接 MCP 服务器的全部工具定义（类似 skill load）。
+规划时先看系统提示「可用的 MCP 服务器」目录：目录里已有能覆盖需求的服务器时，先用本工具加载，再调用其 mcp_*；不要只靠网页搜索。
 
-已连接服务器：
-${catalog}
-
-参数 server 填上表中的 id 或完整名称，例如「企查查-风险信息」或对应 id。`,
+参数 server 填目录中的 id 或名称。`,
       parameters: {
         type: 'object',
         properties: {
@@ -1324,7 +1322,7 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
     if (!mcpService.shouldDeferTools()) {
       return [...filteredTools, ...mcpService.getToolDefinitions()]
     }
-    const loadTool = buildMcpLoadTool(mcpService)
+    const loadTool = buildMcpLoadTool()
     const loadedServers = options?.mcpToolSession?.getLoadedServerIds() ?? []
     const loadedDefs = mcpService.getToolDefinitionsByServerIds(loadedServers)
     return [...filteredTools, loadTool, ...loadedDefs]
