@@ -195,4 +195,17 @@ describe('markdownToDocx: edge cases', () => {
     expect(documentXml).toMatch(/<w:pStyle w:val="Title"/)
     expect(documentXml).not.toMatch(/<w:pStyle w:val="Heading2"[^>]*>[\s\S]*?title:/)
   })
+
+  it('extracts front matter title despite leading newline (AI 常见输出)', async () => {
+    // 真实案例：AI 生成的 markdown 参数以 '\n---\n' 开头，围栏若锚死在第 0 字符会漏匹配，
+    // title 行漏进正文且被后面的 --- 判成 setext Heading 2
+    const md = `\n---\ntitle: 讯飞智元信息科技有限公司尽职调查报告\n---\n\n报告编号： JDTK-2026-0719-SZ-001\n\n正文。`
+    const buf = await markdownToDocx(md, 'formal')
+    const { documentXml } = await inspect(buf)
+
+    expect(documentXml).not.toContain('title: 讯飞智元')
+    expect(documentXml).toContain('讯飞智元信息科技有限公司尽职调查报告')
+    expect(documentXml).toMatch(/<w:pStyle w:val="Title"/)
+    expect(documentXml).toContain('报告编号')
+  })
 })

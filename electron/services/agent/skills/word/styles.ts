@@ -1147,19 +1147,21 @@ async function linkHeadingStylesToNumbering(
  *    - 必须独占一行（行尾即段落边界），避免误吞正文中含 "title:" 的句子
  */
 function extractDocumentTitle(markdown: string): { title?: string; content: string } {
+  // 所有匹配都跳过开头空白：AI 生成的 markdown 参数经常带前导换行（如 '\n---\ntitle: ...'），
+  // 若锚死在第 0 个字符，围栏会漏匹配，title 行漏进正文还会被 --- 误判成 setext 标题
+  const leadingWhitespace = markdown.match(/^\s*/)?.[0] ?? ''
+  const rest = markdown.slice(leadingWhitespace.length)
+
   // 标准围栏 frontmatter
-  const frontMatterMatch = markdown.match(/^---\s*\n([\s\S]*?)\n---\s*\n/)
+  const frontMatterMatch = rest.match(/^---\s*\n([\s\S]*?)\n---\s*\n/)
   if (frontMatterMatch) {
     const titleMatch = frontMatterMatch[1].match(/^title\s*[:：]\s*(.+)$/im)
     const title = titleMatch
       ? titleMatch[1].trim().replace(/^["'\u201C\u2018]|["'\u201D\u2019]$/g, '')
       : undefined
-    return { title, content: markdown.slice(frontMatterMatch[0].length) }
+    return { title, content: rest.slice(frontMatterMatch[0].length) }
   }
 
-  // 无围栏容错：跳过开头空白后，匹配第一行的 title 模式
-  const leadingWhitespace = markdown.match(/^\s*/)?.[0] ?? ''
-  const rest = markdown.slice(leadingWhitespace.length)
   // 第一行（到首个换行符为止）
   const firstNewlineIdx = rest.indexOf('\n')
   const firstLine = firstNewlineIdx >= 0 ? rest.slice(0, firstNewlineIdx) : rest
