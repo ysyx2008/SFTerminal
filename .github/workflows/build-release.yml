@@ -36,7 +36,7 @@ jobs:
           cache: 'npm'
 
       - name: Cache models
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: resources/models
           key: models-${{ hashFiles('scripts/download-models.js', 'scripts/download-embedding-model.js', 'scripts/download-speech-model.js', 'scripts/download-punct-model.js') }}
@@ -77,7 +77,7 @@ jobs:
           cache: 'npm'
 
       - name: Cache models
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: resources/models
           key: models-${{ hashFiles('scripts/download-models.js', 'scripts/download-embedding-model.js', 'scripts/download-speech-model.js', 'scripts/download-punct-model.js') }}
