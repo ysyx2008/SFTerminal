@@ -81,6 +81,14 @@ function download(url, destPath, maxRedirects = 10) {
       file.on('finish', () => {
         file.close(() => {
           if (totalSize > 0) process.stdout.write('\n')
+          // 完整性校验：content-length 已知时写入字节必须一致，
+          // 否则视为断流/截断（TCP 正常关闭但内容不全），删除并报错重试而非当成功
+          if (totalSize > 0 && downloadedSize !== totalSize) {
+            fs.unlink(destPath, () => {
+              reject(new Error(`Incomplete download: ${destPath} (${downloadedSize}/${totalSize} bytes)`))
+            })
+            return
+          }
           resolve(destPath)
         })
       })
@@ -104,9 +112,14 @@ async function main() {
   console.log(`Destination: ${DEST_DIR}`)
   console.log()
 
-  // 检查所有文件是否已存在，全部存在则跳过下载
-  const allExist = FILES.every((rel) => fs.existsSync(path.join(DEST_DIR, rel)))
-  if (allExist) {
+  // 检查所有文件是否已存在【且非空】才跳过下载。
+  // 仅用 existsSync 会被 CI 模型缓存恢复的空/截断文件骗过，导致跳过下载、
+  // 把不完整模型固化进安装包（表现为运行时「模型 lite 不可用 / directory not found」）。
+  const allComplete = FILES.every((rel) => {
+    const p = path.join(DEST_DIR, rel)
+    return fs.existsSync(p) && fs.statSync(p).size > 0
+  })
+  if (allComplete) {
     console.log('Embedding model already exists, skipping download')
     console.log(`Model path: ${DEST_DIR}`)
     return
@@ -117,7 +130,7 @@ async function main() {
   for (const rel of FILES) {
     const url = `${HF_BASE}/${rel}`
     const dest = path.join(DEST_DIR, rel)
-    if (fs.existsSync(dest)) {
+    if (fs.existsSync(dest) && fs.statSync(dest).size > 0) {
       const stat = fs.statSync(dest)
       console.log(`→ ${rel} (already exists, ${(stat.size / 1024 / 1024).toFixed(2)} MB, skipping)`)
       continue
