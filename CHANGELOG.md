@@ -2,7 +2,14 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v11.3.1 (2026-07-17) (Latest)
+## v11.3.2 (2026-07-20) (Latest)
+
+> Hotfix: correct packaging so native modules are unpacked properly, fixing empty history, unusable chat, and voice failures in some environments.
+
+### Bug Fixes
+- 🐛 **Fix history/chat/voice unavailable in some environments**: correct packaging config so native modules (node-pty, keytar) are unpacked outside the asar, resolving backend initialization aborting when a native module fails to load.
+
+## v11.3.1 (2026-07-17)
 
 > Welcome-page “first meeting” invite for the birth chat; sub-agent oversized results archived for on-demand read-back; fixes for macOS LAN SSH and OSS delta updates.
 
