@@ -28,7 +28,11 @@ files:
   - dist
   - dist-electron
 asarUnpack:
-  - node_modules/@homebridge/node-pty-prebuilt-multiarch/**/*
+  # node-pty / keytar 是原生模块（含 .node），必须解包到 asar 外，
+  # 否则打包后 require 失败导致后端初始化中止（历史/对话/语音全部不可用）。
+  # 依赖已从 @homebridge/node-pty-prebuilt-multiarch 换为 node-pty，勿再写旧包名。
+  - node_modules/node-pty/**/*
+  - node_modules/keytar/**/*
   - node_modules/sherpa-onnx-node/**/*
   - node_modules/sherpa-onnx-darwin-*/**/*
   - node_modules/sherpa-onnx-linux-*/**/*
