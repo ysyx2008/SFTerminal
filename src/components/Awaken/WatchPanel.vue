@@ -866,15 +866,9 @@ onUnmounted(() => {
                       <span class="toggle-dot"></span>
                     </button>
                     <div class="item-info">
-                      <div class="item-name">
-                        {{ w.name }}
-                        <span v-if="runningWatches.has(w.id)" class="running-indicator">
-                          <RefreshCw :size="11" class="spinning" />
-                          {{ t('watch.statusRunning') }}
-                        </span>
-                      </div>
+                      <div class="item-name">{{ w.name }}</div>
                     </div>
-                    <button class="btn-icon-sm" @click.stop="triggerWatch(w)" :disabled="runningWatches.has(w.id)" :title="t('watch.trigger')">
+                    <button class="btn-icon-sm" @click.stop="triggerWatch(w)" :disabled="runningWatches.has(w.id)" :title="runningWatches.has(w.id) ? t('watch.statusRunning') : t('watch.trigger')">
                       <RefreshCw v-if="runningWatches.has(w.id)" :size="14" class="spinning" />
                       <Play v-else :size="14" />
                     </button>
@@ -2065,17 +2059,8 @@ onUnmounted(() => {
 }
 
 .item-info { flex: 1; min-width: 0; }
-.item-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+.item-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.running-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--accent-primary);
-  flex-shrink: 0;
-}
 .item-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .item-sub {
   font-size: 11px; color: var(--text-muted); margin-top: 2px;
