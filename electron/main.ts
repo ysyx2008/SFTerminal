@@ -1749,8 +1749,6 @@ app.whenReady().then(async () => {
     sendStartupProgress('watchSensor')
     try {
       watchService.init({
-        ptyService,
-        sshService,
         configService,
         agentService,
         aiService,

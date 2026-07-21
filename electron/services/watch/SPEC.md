@@ -4,20 +4,30 @@
 
 ## 设计目标
 
+### 关切 = 后台执行 + 面板透明 + 需要时找人（2026-07-21）
+
+- **问题**：曾用 `output` 分流「助手 vs 绑 PTY」；silent/local 走 PTY 不推步骤，关切面板假「正在启动」，过程黑盒。PTY 路径并非 CLI 无头设计，而是旧实现残留。
+- **成功标准**：
+  - 关切 Agent **一律本机助手形态**（`__watch__:${watchId}` / wakeup 用 `__wakeup__`）；需要跑命令时用 `exec` 等工具，**不再为关切创建/绑定专用 PTY**。
+  - 执行过程一律进关切面板（`agent:step`）；手动触发必开内心独白。
+  - 后台无确认 UI，执行模式为 `free`（避免卡在 dangerous 确认上）。
+  - 不进任务面板；需要打扰用户时走 `talk_to_user` → 联络（关切存在的目的）。
+  - `output` 只影响对外派发/打扰策略，**不再选择执行形态**。
+- **明确不做**：不为 silent 保留 PTY 旁路；不把每次执行灌进任务侧栏。
+
 ### 不同 Watch 允许并发（2026-07-21）
 
-- **问题**：EventBus + `handleEvent` 串行 `await`，且 desktop 关切共用单一 `__watch__` Agent，导致不同关切互相堵；长跑会拖住后续触发。
+- **问题**：EventBus + `handleEvent` 串行 `await`，且曾共用单一 `__watch__` Agent，导致不同关切互相堵。
 - **成功标准**：
-  - **不同** `watchId` 可并行执行；**同一** `watchId` 仍互斥（`runningWatches`）。
-  - **wakeup** 自身单实例，但可与普通关切并行。
-  - 全局并发软上限默认 **5**（含 wakeup）；超额排队，不丢弃。
-  - desktop 每关切使用独立 Agent 实例：`__watch__:${watchId}`；历史仍归 `kind=watch` / watch 历史树（`inferConversationKind` 识别 `__watch__` 前缀）。
-- **关键取舍**：EventBus 仍可串行派发事件，但 handler **派发后即返回**（不等整次执行结束），真正的执行并发由 WatchService 调度器负责。
-- **明确不做**：不改 companion / 任务并行模型；不让同一 Watch 重入；不无限并发。
+  - **不同** `watchId` 可并行；**同一** `watchId` 互斥。
+  - **wakeup** 自身单实例，可与普通关切并行。
+  - 全局并发软上限默认 **5**；超额排队不丢弃。
+  - 每关切独立 Agent：`__watch__:${watchId}`；历史 `kind=watch`。
+- **明确不做**：不改 companion / 任务并行模型；不无限并发。
 
 ## 职责
 
-定时/事件驱动的自动化任务引擎。Watch 是 Agent 的"关注点"配置，按 cron 或事件触发器执行 prompt（assistant 模式）或 PTY 命令（pty 模式），结果通过桌面通知/终端标签页/IM 渠道派发。新版废弃了独立 Scheduler，旧 Scheduler 数据通过 `migrateFromScheduler` 迁移。
+定时/事件驱动的自动化任务引擎。Watch 是 Agent 的「关注点」：后台用本机助手 Agent 执行 prompt，过程在关切面板可见，需要时经 `talk_to_user` 进联络。旧 Scheduler 已迁移进关切系统。
 
 ## 文件 / 规模
 
@@ -60,7 +70,7 @@
 | `async triggerWatch(id): Promise<WatchExecutionResult>` | 手动触发一次执行 |
 | `isWatchRunning(id: string): boolean` | 单个 Watch 是否在执行 |
 | `getRunningWatches(): string[]` | 当前正在执行的 Watch ID 列表 |
-| `cancelRunningWatch(id: string): boolean` | 取消正在执行的关切（abort Agent/PTY）；未在跑返回 false |
+| `cancelRunningWatch(id: string): boolean` | 取消正在执行的关切（abort 助手 Agent）；未在跑返回 false |
 | `updateWatchState(id, state: Record<string, unknown>): void` | 更新 Watch 自定义状态（Agent 通过 `STATE_UPDATE` 指令调用） |
 
 ### 历史
@@ -90,14 +100,13 @@
 
 | 方法签名 | 用途 |
 |---------|------|
-| `getSshSessions(): SshSession[]` | 获取可用 SSH 会话（创建 PTY 模式 Watch 时选目标） |
+| `getSshSessions(): SshSession[]` | 获取可用 SSH 会话（兼容旧创建 UI；执行已统一助手，不再绑 SSH PTY） |
 | `migrateFromScheduler(schedulerStore): {migrated, skipped, errors[]}` | 从废弃的 Scheduler 一次性迁移数据（启动时自动调用） |
 
 ## 核心类型 / 接口
 
 ```ts
 interface WatchServiceConfig {
-  ptyService: PtyService; sshService: SshService
   configService: ConfigService; agentService: AgentService
   aiService: AiService; sensorService: SensorService
   historyService?: HistoryService
@@ -119,10 +128,8 @@ interface WatchTemplate {
 
 | 服务 | 关系 | 说明 |
 |------|:----:|------|
-| `PtyService` | **必需** | PTY 模式执行命令 |
-| `SshService` | **必需** | 远程 SSH 会话执行 |
-| `ConfigService` | **必需** | 持久化设置 |
-| `AgentService` | **必需** | Assistant 模式调用 Agent |
+| `ConfigService` | **必需** | 持久化设置 / SSH 会话列表（兼容） |
+| `AgentService` | **必需** | 本机助手 Agent 执行关切 |
 | `AiService` | **必需** | Agent 内部依赖（间接） |
 | `SensorService` | **必需** | 传感器事件源 |
 | `HistoryService` | 可选 | 对话上下文召回 |
@@ -134,14 +141,12 @@ interface WatchTemplate {
 **Watch 执行生命周期**：
 1. cron/事件触发 → `EventPool` 消抖合并 → `handleEvent(event)`（派发后即返回，不等执行结束）
 2. → `findMatchingWatches(event)` → 命中的 Watch 列表
-3. → 调度器按全局并发上限（默认 5）排队/放行 → `executeWatch(watch, event)`：
-   - **assistant**：`executeWithAssistantAgent` → Agent 用 `__watch__:${watchId}`（wakeup 仍用 `__wakeup__`）
-   - **pty**：`executeWithPtyAgent` → 在指定 PTY/SSH 会话执行命令
-4. → `WatchExecutionResult` → `deliverOutput(watch, result, silent)` 派发（**极窄兜底，用户可见消息走 `talk_to_user`**）：
-   - `silent`（唤醒 / desktop 自动触发）或已调 `talk_to_user` → **不派发**
-   - `output.type === 'im'` 且未调 `talk_to_user` → **不派发**（无「已完成」类通知）
-   - 仅非静默 + 手动触发 + 应用不在前台：`desktop` / `notification` 可走 IM / 系统通知
-   - 执行失败走 `notifyFailure`，不经 `deliverOutput`
+3. → 调度器按全局并发上限（默认 5）排队/放行 → `executeWatch` → **一律** `executeWithAssistantAgent`（`__watch__:${watchId}` / wakeup 用 `__wakeup__`）；步骤经 `agent:step` 推关切面板
+4. → `WatchExecutionResult` → `deliverOutput`（**极窄兜底，用户可见消息走 `talk_to_user`**）：
+   - 自动触发 / wakeup / 已调 `talk_to_user` → **不派发完成通知**
+   - `output.type === 'im'` 且未调 `talk_to_user` → **不派发**
+   - 仅手动触发且应用不在前台时，`desktop` / `notification` 可走 IM / 系统通知兜底
+   - 执行失败走 `notifyFailure`
 
 **事件消抖**：`EventPool` 在静默窗口内合并同类型事件，触发后清空。
 
@@ -154,11 +159,15 @@ interface WatchTemplate {
 ## 关键约束
 
 - **方法名遵循 store 风格**（`create` / `update` / `get` / `getAll` / `delete` / `toggle`），**不是** `createWatch`/`updateWatch`/...
-- **assistant 模式 Agent key**：普通关切用 `__watch__:${watchId}`，wakeup 用 `__wakeup__`；`inferConversationKind` / 历史树须识别 `__watch__` 前缀，避免落入主历史
+- **执行形态**：关切一律本机助手 Agent（`__watch__:${watchId}` / `__wakeup__`）；禁止再为关切创建专用 PTY
+- **过程透明**：执行步骤必须推关切面板；`output` 只约束对外打扰，不关掉面板可见性
+- **后台执行模式**：`executionMode: 'free'`（面板隐藏 confirm，否则会卡在 dangerous 工具）
+- **旧 `execution.type=ssh`**：不再连 SSH PTY，回退本机助手并打 warn；远程巡检需另方案（如 SSH 工具）
 - **`init()` 必须在 `start()` 之前调用**——依赖在 init 时冻结，运行时不可改
-- **PTY 模式输出受 `MAX_OUTPUT_LENGTH` 截断**——`HistoryStore` 也对单条记录有上限
+- **落盘输出受 `MAX_OUTPUT_LENGTH` 截断**——`HistoryStore` 也对单条记录有上限
 - **EventPool 消抖时间不得硬编码**——必须从 Watch 定义读取
 - **心跳文件由 `HEARTBEAT_FILENAME` 唯一管理**——禁止任何代码自建心跳锁
 - **`migrateFromScheduler` 是一次性操作**——重复调用以现存 Watch 为准（去重）
 - **`updateWatchState` 是 Agent 状态更新接口**——禁止外部直接调用，必须经 Agent 的 `STATE_UPDATE` 指令
-- **同 Watch 不重入**；**全局并发默认上限 5**（可配置常量，超额排队）
+- **同 Watch 不重入**；**全局并发默认上限 5**（超额排队）
+- **前端内心独白**：手动触发 / 运行中在关切面板展示过程（与 `output` 类型无关）

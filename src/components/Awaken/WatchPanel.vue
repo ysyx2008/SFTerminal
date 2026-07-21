@@ -572,12 +572,13 @@ const RUNNING_TIMEOUT_MS = 10 * 60 * 1000
 const watchTimeouts = new Map<string, NodeJS.Timeout>()
 
 const triggerWatch = async (w: WatchDefinition) => {
-  // 手动触发时立即激活内心独白展示（不等 watch:task-started 事件回流），
-  // 防止某些场景下任务起步快、事件晚到导致 liveSteps 视图条件不满足
+  // 跳到该关切详情，便于看运行态 / 独白
+  selectWatch(w)
+
+  // 关切一律助手执行并推 agent:step；手动触发必开内心独白
   liveExecutionWatchId.value = w.id
   liveSteps.value = []
-  // 跳到该关切详情，确保用户能看见实时独白（总览重试 / 左栏播放同理）
-  selectWatch(w)
+
   try {
     await window.electronAPI.watch.trigger(w.id)
   } catch (e) {

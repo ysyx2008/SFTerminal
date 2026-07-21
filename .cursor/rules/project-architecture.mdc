@@ -210,6 +210,7 @@ Agent 的运行环境分三种：`local`（本地终端）、`ssh`（SSH 远程�
 - **有状态工作流**：Watch 自身状态 + 跨 Watch 共享状态，Agent 通过 `STATE_UPDATE` / `SHARED_UPDATE` 指令自动更新
 - **事件派发**：所有事件通过 EventBus 排队派发；Watch **执行**由 WatchService 并发调度（不同 `watchId` 可并行，同 `watchId` 互斥，全局软上限默认 5）
 - **独立 Agent**：普通关切使用 `__watch__:${watchId}`（逐次失忆、可并发）；唤醒用 `__wakeup__`（自身单实例，可与普通关切并行）；两者均与 IM/桌面助手的 `__companion__` 隔离
+- **执行形态**：关切一律本机助手 Agent（`runAssistant`）；需跑命令时用 `exec` 等工具，**不为关切创建/绑定专用 PTY**；过程经 `agent:step` 进关切面板；`output` 只约束对外打扰
 - **独立历史树**（v6 起）：watch/wakeup 执行记录（`isWatchAgentKey(agentKey)` 或 `agentKey='__wakeup__'`）存到独立的 `history/watch/<date>/` + `watch-index.json`，与主 agent 历史/索引物理隔离——避免高频触发把主索引压舱（曾达 149MB/2.6w 条）。正文按日期长期保存可审计；token 成本仍合并计入统计。用户可见的「执行速览」另由 `WatchStore`（上限 500 条摘要）提供。见 `HISTORY_SPEC.md`
 - **wakeup vs watch 上下文分离**（v7 起）：wakeup（心跳/唤醒）从 watch 中独立成第四类 `ConversationKind`——关切是用户配置的一次性任务（prompt 自带指令，逐次失忆避免 A 关切串味到 B），wakeup 是 Agent 自主循环（需要历史记忆辅助决策「该不该主动找人、上次说过什么避免重复通知」）。两者共用 watch 历史树但 agentKey 分离（`__watch__:${id}` vs `__wakeup__`），策略见 `CONVERSATION_POLICY`
 - **Scheduler 废弃**：旧版定时任务已整合到关切系统，启动时自动迁移，`schedule_*` 工具标记为废弃

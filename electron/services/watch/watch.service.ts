@@ -31,8 +31,6 @@ import { WatchStore, getWatchStore } from './store'
 import type { SensorEvent, EventHandler } from '../sensor/types'
 import { getEventBus } from '../sensor/event-bus'
 import { EventPool } from './event-pool'
-import type { PtyService } from '../pty.service'
-import type { SshService, SshConfig } from '../ssh.service'
 import type { ConfigService, SshSession } from '../config.service'
 import type { AgentService } from '../agent'
 import type { AgentContext, AgentCallbacks, AgentStep } from '../agent/types'
@@ -57,8 +55,6 @@ const DEFAULT_MAX_CONCURRENT_WATCHES = 5
 // ==================== 类型 ====================
 
 export interface WatchServiceConfig {
-  ptyService: PtyService
-  sshService: SshService
   configService: ConfigService
   agentService: AgentService
   aiService: AiService
@@ -85,7 +81,7 @@ export class WatchService {
   private store: WatchStore
   private config: WatchServiceConfig | null = null
   private timers: Map<string, NodeJS.Timeout> = new Map()
-  private runningWatches: Map<string, { watchId: string; ptyId: string | null; startTime: number; agentId?: string }> = new Map()
+  private runningWatches: Map<string, { watchId: string; startTime: number; agentId: string }> = new Map()
   /** 已入队/待槽位的 watchId，防止同 Watch 在排队期间被重复调度 */
   private scheduledWatches: Set<string> = new Set()
   private activeCount = 0
@@ -188,20 +184,12 @@ export class WatchService {
     this.activeCount = 0
     for (const resolve of pendingWaiters) resolve()
 
-    // 中止正在运行的 Watch（清理 PTY 和 Agent）
+    // 中止正在运行的 Watch Agent
     if (this.runningWatches.size > 0 && this.config) {
       for (const [watchId, info] of this.runningWatches) {
         log.info(`Aborting running watch: ${watchId}`)
         try {
-          if (info.ptyId) {
-            this.config.agentService.abort(info.ptyId)
-          } else {
-            const agentId = info.agentId
-              ?? (watchId === WatchService.WAKEUP_ID
-                ? WatchService.WAKEUP_AGENT_ID
-                : watchAgentKeyFor(watchId))
-            this.config.agentService.abort(agentId)
-          }
+          this.config.agentService.abort(info.agentId)
         } catch { /* ignore */ }
       }
       this.runningWatches.clear()
@@ -349,8 +337,7 @@ export class WatchService {
   }
 
   /**
-   * 取消正在执行的关切。
-   * desktop 走 `__watch__:${id}` / `__wakeup__` Agent abort；PTY 模式 abort 对应 ptyId。
+   * 取消正在执行的关切（abort `__watch__:${id}` / `__wakeup__` Agent）。
    * runningWatches 条目由 executeWatch 的 finally 清理。
    */
   cancelRunningWatch(id: string): boolean {
@@ -358,15 +345,7 @@ export class WatchService {
     if (!info || !this.config) return false
 
     try {
-      if (info.ptyId) {
-        this.config.agentService.abort(info.ptyId)
-      } else {
-        const agentId = info.agentId
-          ?? (id === WatchService.WAKEUP_ID
-            ? WatchService.WAKEUP_AGENT_ID
-            : watchAgentKeyFor(id))
-        this.config.agentService.abort(agentId)
-      }
+      this.config.agentService.abort(info.agentId)
       log.info(`Cancelled running watch: ${id}`)
       return true
     } catch (e) {
@@ -480,62 +459,47 @@ export class WatchService {
 
     const startTime = Date.now()
     const enhancedPrompt = this.buildEnhancedPrompt(watch, event)
-    const isDesktop = watch.output.type === 'desktop'
     const isWakeup = watch.id === WatchService.WAKEUP_ID
-    // 唤醒 Watch 始终"静默执行"：内心独白只在 Awaken 面板展示，不走主聊天；有话说才通知用户
+    // 静默仅约束对外派发：唤醒始终静默；desktop 自动触发不走框架兜底通知
     const isSilent = isWakeup
       ? true
-      : (isDesktop && WatchService.AUTO_TRIGGER_TYPES.has(event.type) && !event.payload?.fromManualCheck)
+      : (watch.output.type === 'desktop'
+        && WatchService.AUTO_TRIGGER_TYPES.has(event.type)
+        && !event.payload?.fromManualCheck)
 
     const agentSessionId = `watch_${watch.id}_${Date.now()}`
+    const agentId = isWakeup
+      ? WatchService.WAKEUP_AGENT_ID
+      : watchAgentKeyFor(watch.id)
 
-    let ptyId: string | null = null
+    if (watch.execution.type === 'ssh') {
+      log.warn(
+        `Watch "${watch.name}" (${watch.id}) has execution.type=ssh; ` +
+        `dedicated SSH PTY path removed — running as local assistant`
+      )
+    }
+
     let result: WatchExecutionResult
 
     try {
-      if (isDesktop) {
-        // 唤醒 Watch：只通知 Awaken 面板（不创建聊天标签页），标签页由 talk_to_user 按需创建
-        if (isWakeup) {
-          this.notifyFrontend('watch:task-started', {
-            watchId: watch.id, ptyId: null, watchName: watch.name,
-            prompt: enhancedPrompt, triggerType: event.type, executionType: 'assistant'
-          })
-        } else if (!isSilent) {
-          this.ensureDesktopTab()
-          this.notifyFrontend('watch:task-started', {
-            watchId: watch.id, ptyId: null, watchName: watch.name,
-            prompt: enhancedPrompt, triggerType: event.type, executionType: 'assistant'
-          })
-        }
-        this.runningWatches.set(watch.id, {
-          watchId: watch.id,
-          ptyId: null,
-          startTime,
-          agentId: isWakeup ? WatchService.WAKEUP_AGENT_ID : watchAgentKeyFor(watch.id)
-        })
-        // 唤醒 Watch：发送 agent:step（内心独白），但不发送 agent:complete/error（不影响主聊天）
-        result = await this.executeWithAssistantAgent(watch, enhancedPrompt, isSilent, isWakeup, agentSessionId)
-      } else {
-        // 其他输出类型：创建 PTY 执行
-        if (watch.execution.type === 'local') {
-          ptyId = this.config.ptyService.create({ cwd: watch.execution.workingDirectory }).id
-        } else if (watch.execution.type === 'ssh') {
-          const session = this.config.configService.getSshSessions()
-            .find(s => s.id === watch.execution.sshSessionId)
-          if (!session) throw new Error(`SSH session not found: ${watch.execution.sshSessionId}`)
-          const sshConfig: SshConfig = {
-            host: session.host, port: session.port, username: session.username,
-            password: session.password, privateKeyPath: session.privateKeyPath, passphrase: session.passphrase
-          }
-          ptyId = await this.config.sshService.connect(sshConfig)
-        }
-        this.runningWatches.set(watch.id, { watchId: watch.id, ptyId, startTime })
-        this.notifyFrontend('watch:task-started', {
-          watchId: watch.id, ptyId, watchName: watch.name,
-          prompt: enhancedPrompt, triggerType: event.type, executionType: watch.execution.type
-        })
-        result = await this.executeWithPtyAgent(watch, enhancedPrompt, ptyId, agentSessionId)
+      // 手动 desktop：确保联络 tab 存在（talk_to_user / 兜底通知可落点）
+      if (!isWakeup && watch.output.type === 'desktop' && !isSilent) {
+        this.ensureDesktopTab()
       }
+
+      this.notifyFrontend('watch:task-started', {
+        watchId: watch.id,
+        ptyId: null,
+        watchName: watch.name,
+        prompt: enhancedPrompt,
+        triggerType: event.type,
+        executionType: 'assistant'
+      })
+
+      this.runningWatches.set(watch.id, { watchId: watch.id, startTime, agentId })
+      result = await this.executeWithAssistantAgent(
+        watch, enhancedPrompt, isSilent, isWakeup, agentSessionId
+      )
     } catch (error) {
       result = {
         success: false, output: '',
@@ -544,12 +508,6 @@ export class WatchService {
       }
     } finally {
       this.runningWatches.delete(watch.id)
-      if (ptyId) {
-        try {
-          if (watch.execution.type === 'local') this.config.ptyService.dispose(ptyId)
-          else if (watch.execution.type === 'ssh') this.config.sshService.disconnect(ptyId)
-        } catch { /* 忽略清理错误 */ }
-      }
     }
 
     this.recordExecution(watch, event, result, agentSessionId)
@@ -574,8 +532,9 @@ export class WatchService {
   }
 
   /**
-   * desktop 输出：通过 Companion Agent 执行
-   * @param wakeupMode 唤醒模式：发送 agent:step（内心独白）但不发送 agent:complete/error
+   * 关切一律本机助手 Agent 执行（不再绑专用 PTY）。
+   * @param silent 仅影响对外派发 / 主聊天 complete；步骤始终推关切面板
+   * @param wakeupMode 唤醒：不发 agent:complete/error；agentId 用 `__wakeup__`
    */
   private async executeWithAssistantAgent(
     watch: WatchDefinition,
@@ -611,9 +570,8 @@ export class WatchService {
       }
     }
 
-    // 唤醒模式：始终发送 agent:step（Awaken 面板内心独白），但不发送 complete/error
-    // 普通模式：silent 时不发送任何 IPC，非 silent 时全部发送
-    const shouldSendSteps = wakeupMode || !silent
+    // 过程透明：一律推 agent:step 到关切面板
+    // complete/error 仅非唤醒、非静默时发（避免污染主聊天；自动触发靠 talk_to_user）
     const shouldSendCompletion = !wakeupMode && !silent
 
     const callbacks: AgentCallbacks = {
@@ -624,7 +582,7 @@ export class WatchService {
         } else {
           steps.push(step)
         }
-        if (shouldSendSteps && mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('agent:step', {
             agentId, step: JSON.parse(JSON.stringify(step)),
             ...(wakeupMode ? { wakeup: true } : {})
@@ -655,6 +613,7 @@ export class WatchService {
         systemInfo: { os: getLocalOS(), shell: getDefaultShell() },
         terminalType: 'assistant',
         sessionId: agentSessionId,
+        ...(watch.execution.workingDirectory ? { cwd: watch.execution.workingDirectory } : {}),
         ...(wakeupMode ? { wakeup: true } : {})
       }
 
@@ -665,7 +624,8 @@ export class WatchService {
         this.config.agentService.runAssistant(agentId, prompt, context, {
           enabled: true, commandTimeout: 30000,
           autoExecuteSafe: true, autoExecuteModerate: true,
-          executionMode: 'relaxed', debugMode: false
+          // 后台关切无确认 UI（面板隐藏 confirm），必须 free，否则会卡在 dangerous 工具上
+          executionMode: 'free', debugMode: false
         }, undefined, callbacks),
         new Promise<string>((_, reject) => {
           timeoutHandle = setTimeout(() => reject(new Error(`Watch timeout (${watch.execution.timeout ?? 300}s)`)), timeoutMs)
@@ -689,85 +649,6 @@ export class WatchService {
         duration: Date.now() - startTime,
         steps: [],
         userMessage: undefined
-      }
-    }
-  }
-
-  /** 非 desktop 输出：通过 PTY 绑定的 Agent 执行 */
-  private async executeWithPtyAgent(
-    watch: WatchDefinition,
-    prompt: string,
-    ptyId: string | null,
-    agentSessionId?: string
-  ): Promise<WatchExecutionResult> {
-    if (!this.config?.agentService) {
-      return { success: false, output: '', error: 'Agent service not available', duration: 0 }
-    }
-    if (!ptyId) {
-      return { success: false, output: '', error: 'PTY required for non-desktop Watch execution', duration: 0 }
-    }
-
-    const startTime = Date.now()
-    const steps: AgentStep[] = []
-    let finalOutput = ''
-    let hasError = false
-    let errorMessage = ''
-
-    try {
-      const context: AgentContext = {
-        ptyId,
-        terminalOutput: [],
-        systemInfo: { os: getLocalOS(), shell: getDefaultShell() },
-        terminalType: watch.execution.type === 'ssh' ? 'ssh' : 'local',
-        sessionId: agentSessionId
-      }
-
-      const callbacks: AgentCallbacks = {
-        onStep: (_agentId: string, step: AgentStep) => {
-          const existingIdx = steps.findIndex(s => s.id === step.id)
-          if (existingIdx >= 0) { steps[existingIdx] = step } else { steps.push(step) }
-          if (step.type === 'message') finalOutput += step.content + '\n'
-          else if (step.type === 'error') { hasError = true; if (!errorMessage) errorMessage = step.content }
-        },
-        onComplete: (_agentId: string, result: string) => {
-          if (result && !hasError) finalOutput = result
-        },
-        onError: (_agentId: string, error: string) => {
-          hasError = true; errorMessage = error || errorMessage
-        }
-      }
-
-      const timeoutMs = (watch.execution.timeout ?? DEFAULT_TIMEOUT_SECONDS) * 1000
-      let timeoutHandle: NodeJS.Timeout | null = null
-
-      const agentResult = await Promise.race([
-        this.config.agentService.run(
-          ptyId, prompt, context,
-          { enabled: true, commandTimeout: 30000,
-            autoExecuteSafe: true, autoExecuteModerate: true,
-            executionMode: 'relaxed', debugMode: false },
-          undefined, undefined, callbacks
-        ),
-        new Promise<string>((_, reject) => {
-          timeoutHandle = setTimeout(() => reject(new Error(`Watch timeout (${watch.execution.timeout ?? 300}s)`)), timeoutMs)
-        })
-      ]).finally(() => { if (timeoutHandle) clearTimeout(timeoutHandle) })
-
-      finalOutput = agentResult || finalOutput
-
-      return {
-        success: !hasError, output: finalOutput.trim(),
-        error: hasError ? errorMessage : undefined,
-        duration: Date.now() - startTime, steps,
-        userMessage: this.extractUserMessage(steps)
-      }
-    } catch (error) {
-      try { this.config.agentService.abort(ptyId) } catch { /* ignore */ }
-      return {
-        success: false, output: finalOutput.trim(),
-        error: error instanceof Error ? error.message : String(error),
-        duration: Date.now() - startTime, steps,
-        userMessage: this.extractUserMessage(steps)
       }
     }
   }
