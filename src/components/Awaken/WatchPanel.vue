@@ -33,7 +33,7 @@ import type {
   WatchTriggerType, WatchRunStatus, WatchTrigger,
   WatchDefinition, WatchHistoryRecord, WatchPriority
 } from '@shared/types'
-import { WATCH_AGENT_KEY } from '@shared/types'
+import { isWatchAgentKey, watchIdFromAgentKey } from '@shared/types'
 
 type WatchOutputType = 'desktop' | 'im' | 'notification' | 'log' | 'silent'
 
@@ -87,7 +87,6 @@ const historyDetailInOverlay = ref(false)
 const runningWatches = ref<Set<string>>(new Set())
 
 // 手动触发时的 Agent 实时输出（内心独白）——单一来源：@shared/types
-const WATCH_AGENT_ID = WATCH_AGENT_KEY
 const liveExecutionWatchId = ref<string | null>(null)
 // 字段需要包含 success / images / webSearchResults / subAgents，
 // 以便 shouldShowToolResultStep 能正确判定"失败 / 富内容"步骤始终展示
@@ -712,17 +711,26 @@ onMounted(async () => {
 
   cleanupWatchStarted = window.electronAPI.watch.onTaskStarted?.((data: any) => {
     if (data?.watchId) markWatchRunning(data.watchId)
+    // 并发下仅绑定当前正在直播或已选中详情的关切，避免其它关切冲掉内心独白
     if (data?.watchId && data?.executionType === 'assistant') {
-      liveExecutionWatchId.value = data.watchId
-      liveSteps.value = []
+      if (
+        liveExecutionWatchId.value === data.watchId ||
+        selectedWatch.value?.id === data.watchId
+      ) {
+        liveExecutionWatchId.value = data.watchId
+        liveSteps.value = []
+      }
     }
   }) ?? null
   cleanupWatchCompleted = window.electronAPI.watch.onTaskCompleted?.((data: any) => {
     if (data?.watchId) markWatchCompleted(data.watchId)
   }) ?? null
-  // 监听关切助手的 Agent 步骤，用于详情面板展示内心独白
+  // 监听关切助手的 Agent 步骤，用于详情面板展示内心独白（按 watchId 过滤，支持并发）
   cleanupAgentStep = window.electronAPI.agent.onStep((data: { agentId: string; step: { id: string; type: string; content: string; toolName?: string; toolArgs?: Record<string, unknown>; toolResult?: string; timestamp?: number; success?: boolean; images?: string[]; webSearchResults?: unknown[]; subAgents?: unknown[] } }) => {
-    if (data.agentId !== WATCH_AGENT_ID || !liveExecutionWatchId.value) return
+    if (!liveExecutionWatchId.value || !isWatchAgentKey(data.agentId)) return
+    const fromKey = watchIdFromAgentKey(data.agentId)
+    // 新格式必须 watchId 匹配；legacy `__watch__` 无后缀时仅接受当前直播流
+    if (fromKey !== null && fromKey !== liveExecutionWatchId.value) return
     const step = data.step
     const idx = liveSteps.value.findIndex(s => s.id === step.id)
     const entry: LiveStep = {

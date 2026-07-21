@@ -64,7 +64,13 @@ describe('CONVERSATION_POLICY 策略表', () => {
     expect(inferConversationKind('__companion__')).toBe('companion')
     expect(inferConversationKind('__wakeup__')).toBe('wakeup')
     expect(inferConversationKind('__watch__')).toBe('watch')
+    expect(inferConversationKind('__watch__:abc')).toBe('watch')
     expect(inferConversationKind('tab-123')).toBe('task')
     expect(inferConversationKind(undefined)).toBe('task')
+  })
+
+  it('per-watch agentKey 仍按 watch 策略（逐次失忆）', () => {
+    const seed = (k?: string) => conversationPolicy(inferConversationKind(k)).seedFromHistoryOnColdStart
+    expect(seed('__watch__:w1')).toBe(false)
   })
 })

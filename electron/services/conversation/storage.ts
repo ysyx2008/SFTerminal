@@ -10,8 +10,8 @@
  *   它打交道，不直接伸手进 HistoryService 这个仍管着聊天记录/统计/备份的「大类」。
  * - **复用 `@shared/types` 的 `AgentRecord`**：不造平行的 `ConversationRecord`/扁平 messages 模型
  *   （红线③：禁止平行类型）。
- * - **main/watch 路由自动完成**：`AgentRecordStore` 按 `agentKey === '__watch__' || agentKey === '__wakeup__'`
- *   把 watch/wakeup 隔离到独立历史树，调用方无需关心。
+ * - **main/watch 路由自动完成**：`AgentRecordStore` 按 `isWatchAgentKey(agentKey) || agentKey === '__wakeup__'`
+ *   分流到独立 watch 树（含 `__watch__:${watchId}` 并发实例），调用方无需关心。
  *
  * 这就是「将来要换索引实现 / 换盘格式只动这一处」的接缝——现在它是真的：换 store 实现只影响
  * 本类，不波及 Manager 或 HistoryService。

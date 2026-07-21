@@ -1,6 +1,19 @@
 # Watch Service SPEC
 
-> Last verified: 2026-07-17
+> Last verified: 2026-07-21
+
+## 设计目标
+
+### 不同 Watch 允许并发（2026-07-21）
+
+- **问题**：EventBus + `handleEvent` 串行 `await`，且 desktop 关切共用单一 `__watch__` Agent，导致不同关切互相堵；长跑会拖住后续触发。
+- **成功标准**：
+  - **不同** `watchId` 可并行执行；**同一** `watchId` 仍互斥（`runningWatches`）。
+  - **wakeup** 自身单实例，但可与普通关切并行。
+  - 全局并发软上限默认 **5**（含 wakeup）；超额排队，不丢弃。
+  - desktop 每关切使用独立 Agent 实例：`__watch__:${watchId}`；历史仍归 `kind=watch` / watch 历史树（`inferConversationKind` 识别 `__watch__` 前缀）。
+- **关键取舍**：EventBus 仍可串行派发事件，但 handler **派发后即返回**（不等整次执行结束），真正的执行并发由 WatchService 调度器负责。
+- **明确不做**：不改 companion / 任务并行模型；不让同一 Watch 重入；不无限并发。
 
 ## 职责
 
@@ -119,10 +132,10 @@ interface WatchTemplate {
 ## 关键行为 / 数据流
 
 **Watch 执行生命周期**：
-1. cron/事件触发 → `EventPool` 消抖合并 → `handleEvent(event)`
+1. cron/事件触发 → `EventPool` 消抖合并 → `handleEvent(event)`（派发后即返回，不等执行结束）
 2. → `findMatchingWatches(event)` → 命中的 Watch 列表
-3. → 对每个 Watch 调用 `executeWatch(watch, event)` → 按 mode 分支：
-   - **assistant**：`executeWithAssistantAgent` → Agent 用 `__watch__` 守护 ID 执行
+3. → 调度器按全局并发上限（默认 5）排队/放行 → `executeWatch(watch, event)`：
+   - **assistant**：`executeWithAssistantAgent` → Agent 用 `__watch__:${watchId}`（wakeup 仍用 `__wakeup__`）
    - **pty**：`executeWithPtyAgent` → 在指定 PTY/SSH 会话执行命令
 4. → `WatchExecutionResult` → `deliverOutput(watch, result, silent)` 派发（**极窄兜底，用户可见消息走 `talk_to_user`**）：
    - `silent`（唤醒 / desktop 自动触发）或已调 `talk_to_user` → **不派发**
@@ -132,17 +145,20 @@ interface WatchTemplate {
 
 **事件消抖**：`EventPool` 在静默窗口内合并同类型事件，触发后清空。
 
-**心跳机制**：`HEARTBEAT_FILENAME` 是所有 Watch 共享的执行节流锁，防止并发执行；`ensureWakeup` / `removeWakeup` 控制"唤醒态"——AI 主动询问用户后等待回复时不再执行新触发。
+**并发模型**：不同 `watchId` 可并行；同一 `watchId` 互斥；wakeup 可与普通关切并行；全局软上限默认 5，超额排队不丢弃。
+
+**心跳机制**：`HEARTBEAT_FILENAME` 为 Agent 可读的心跳上下文文件（非全局执行锁）；`ensureWakeup` / `removeWakeup` 控制"唤醒态"。
 
 **联络上下文注入**：`buildEnhancedPrompt` 在**所有** Watch（含内置 `__wakeup__` 心跳）执行前，经 `Companion.formatRecentTurnsForWatchPrompt()` 从 `__companion__` 合并视图取最近 **50 条** user↔AI 纯文本（完整原文，不截断；合并最多 50 条 companion record），注入 prompt（10s TTL 缓存；`talk_to_user` 落盘后调用 `invalidateCompanionContextCache()` 失效）。**优先读 merged steps**（含 `__proactive__` 的 `proactive_notice`）；`mergedMessages` 排除 proactive record，不可作为唯一数据源。无 steps 时回退 messages（老记录）。联络 tab 展示仍用 `RECENT_RECORDS_LIMIT = 10`，与心跳注入范围分离。
 
 ## 关键约束
 
 - **方法名遵循 store 风格**（`create` / `update` / `get` / `getAll` / `delete` / `toggle`），**不是** `createWatch`/`updateWatch`/...
-- **assistant 模式必须使用 `__watch__` agentId**——不污染用户对话历史
+- **assistant 模式 Agent key**：普通关切用 `__watch__:${watchId}`，wakeup 用 `__wakeup__`；`inferConversationKind` / 历史树须识别 `__watch__` 前缀，避免落入主历史
 - **`init()` 必须在 `start()` 之前调用**——依赖在 init 时冻结，运行时不可改
 - **PTY 模式输出受 `MAX_OUTPUT_LENGTH` 截断**——`HistoryStore` 也对单条记录有上限
 - **EventPool 消抖时间不得硬编码**——必须从 Watch 定义读取
 - **心跳文件由 `HEARTBEAT_FILENAME` 唯一管理**——禁止任何代码自建心跳锁
 - **`migrateFromScheduler` 是一次性操作**——重复调用以现存 Watch 为准（去重）
 - **`updateWatchState` 是 Agent 状态更新接口**——禁止外部直接调用，必须经 Agent 的 `STATE_UPDATE` 指令
+- **同 Watch 不重入**；**全局并发默认上限 5**（可配置常量，超额排队）

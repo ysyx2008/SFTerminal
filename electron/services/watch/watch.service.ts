@@ -39,7 +39,7 @@ import type { AgentContext, AgentCallbacks, AgentStep } from '../agent/types'
 import type { AiService } from '../ai.service'
 import type { SensorService } from '../sensor'
 import type { HistoryService } from '../history.service'
-import { WATCH_AGENT_KEY, WAKEUP_AGENT_KEY } from '@shared/types'
+import { isWatchAgentKey, watchAgentKeyFor, WAKEUP_AGENT_KEY } from '@shared/types'
 import { watchTemplates, getTemplateById, getAllTemplateCategories, type WatchTemplate } from './templates'
 
 // cron-parser 动态导入
@@ -51,6 +51,8 @@ const MIN_INTERVAL_SECONDS = 10
 const MAX_INTERVAL_SECONDS = 7 * 24 * 3600 // 7 days
 const DEFAULT_TIMEOUT_SECONDS = 300
 const MAX_OUTPUT_LENGTH = 1000
+/** 不同 Watch 全局并发软上限（含 wakeup）；超额排队不丢弃 */
+const DEFAULT_MAX_CONCURRENT_WATCHES = 5
 
 // ==================== 类型 ====================
 
@@ -83,7 +85,12 @@ export class WatchService {
   private store: WatchStore
   private config: WatchServiceConfig | null = null
   private timers: Map<string, NodeJS.Timeout> = new Map()
-  private runningWatches: Map<string, { watchId: string; ptyId: string | null; startTime: number }> = new Map()
+  private runningWatches: Map<string, { watchId: string; ptyId: string | null; startTime: number; agentId?: string }> = new Map()
+  /** 已入队/待槽位的 watchId，防止同 Watch 在排队期间被重复调度 */
+  private scheduledWatches: Set<string> = new Set()
+  private activeCount = 0
+  private waitQueue: Array<() => void> = []
+  private maxConcurrent = DEFAULT_MAX_CONCURRENT_WATCHES
   private isRunning = false
   private eventHandler: EventHandler | null = null
   private eventPool: EventPool | null = null
@@ -175,13 +182,27 @@ export class WatchService {
       this.unregisterSensorTargets(watch.id)
     }
 
+    // 丢弃排队等待者并重置并发槽，避免 stop 后仍被 releaseSlot 唤醒执行
+    const pendingWaiters = this.waitQueue.splice(0)
+    this.scheduledWatches.clear()
+    this.activeCount = 0
+    for (const resolve of pendingWaiters) resolve()
+
     // 中止正在运行的 Watch（清理 PTY 和 Agent）
     if (this.runningWatches.size > 0 && this.config) {
       for (const [watchId, info] of this.runningWatches) {
         log.info(`Aborting running watch: ${watchId}`)
-        if (info.ptyId) {
-          try { this.config.agentService.abort(info.ptyId) } catch { /* ignore */ }
-        }
+        try {
+          if (info.ptyId) {
+            this.config.agentService.abort(info.ptyId)
+          } else {
+            const agentId = info.agentId
+              ?? (watchId === WatchService.WAKEUP_ID
+                ? WatchService.WAKEUP_AGENT_ID
+                : watchAgentKeyFor(watchId))
+            this.config.agentService.abort(agentId)
+          }
+        } catch { /* ignore */ }
       }
       this.runningWatches.clear()
     }
@@ -297,6 +318,10 @@ export class WatchService {
       return { success: true, output: '', error: '', duration: 0, skipped: false }
     }
 
+    if (this.runningWatches.has(id) || this.scheduledWatches.has(id)) {
+      return { success: false, output: '', error: 'Watch already running', duration: 0, skipped: true, skipReason: 'already_running' }
+    }
+
     const event: SensorEvent = {
       id: `manual-${Date.now().toString(36)}`,
       type: 'manual',
@@ -307,7 +332,7 @@ export class WatchService {
       priority: watch.priority
     }
 
-    return this.executeWatch(watch, event)
+    return this.dispatchWatch(watch, event)
   }
 
   /** 更新 Watch 的工作流状态 */
@@ -325,7 +350,7 @@ export class WatchService {
 
   /**
    * 取消正在执行的关切。
-   * desktop 走 __watch__/__wakeup__ Agent abort；PTY 模式 abort 对应 ptyId。
+   * desktop 走 `__watch__:${id}` / `__wakeup__` Agent abort；PTY 模式 abort 对应 ptyId。
    * runningWatches 条目由 executeWatch 的 finally 清理。
    */
   cancelRunningWatch(id: string): boolean {
@@ -336,9 +361,10 @@ export class WatchService {
       if (info.ptyId) {
         this.config.agentService.abort(info.ptyId)
       } else {
-        const agentId = id === WatchService.WAKEUP_ID
-          ? WatchService.WAKEUP_AGENT_ID
-          : WatchService.WATCH_ASSISTANT_AGENT_ID
+        const agentId = info.agentId
+          ?? (id === WatchService.WAKEUP_ID
+            ? WatchService.WAKEUP_AGENT_ID
+            : watchAgentKeyFor(id))
         this.config.agentService.abort(agentId)
       }
       log.info(`Cancelled running watch: ${id}`)
@@ -355,29 +381,31 @@ export class WatchService {
 
   // ==================== 事件处理 ====================
 
+  /**
+   * 匹配并派发 Watch 执行。派发后即返回（不等待执行结束），
+   * 以便 EventBus / EventPool 继续处理后续事件；真正的并发由调度器控制。
+   */
   private async handleEvent(event: SensorEvent): Promise<void> {
-    // 查找匹配此事件的 Watch
     const watches = this.findMatchingWatches(event)
     if (watches.length === 0) return
 
     log.info(`Event ${event.type} matched ${watches.length} watch(es)`)
 
     for (const watch of watches) {
-      // 检查是否过期
       if (watch.expiresAt && watch.expiresAt < Date.now()) {
         log.info(`Watch expired: ${watch.name}`)
         this.store.update(watch.id, { enabled: false })
         continue
       }
 
-      // 检查是否已在运行
-      if (this.runningWatches.has(watch.id)) {
-        log.info(`Watch already running: ${watch.name}`)
+      if (this.runningWatches.has(watch.id) || this.scheduledWatches.has(watch.id)) {
+        log.info(`Watch already running/scheduled: ${watch.name}`)
         continue
       }
 
-      // 串行执行（当前 watch 完成后才处理下一个）
-      await this.executeWatch(watch, event)
+      void this.dispatchWatch(watch, event).catch(err => {
+        log.error(`Watch dispatch failed: ${watch.name}`, err)
+      })
     }
   }
 
@@ -392,6 +420,50 @@ export class WatchService {
     return this.store.getAll().filter(w =>
       w.enabled && w.triggers.some(t => t.type === event.type)
     )
+  }
+
+  // ==================== 并发调度 ====================
+
+  private acquireSlot(): Promise<void> {
+    if (this.activeCount < this.maxConcurrent) {
+      this.activeCount++
+      return Promise.resolve()
+    }
+    // 唤醒时由 releaseSlot 转让槽位，不再二次 ++
+    return new Promise(resolve => {
+      this.waitQueue.push(resolve)
+    })
+  }
+
+  private releaseSlot(): void {
+    const next = this.waitQueue.shift()
+    if (next) {
+      next()
+    } else if (this.activeCount > 0) {
+      this.activeCount--
+    }
+  }
+
+  /** 占用并发槽后执行；调用方负责同 Watch 去重（scheduled/running） */
+  private async dispatchWatch(watch: WatchDefinition, event: SensorEvent): Promise<WatchExecutionResult> {
+    this.scheduledWatches.add(watch.id)
+    try {
+      await this.acquireSlot()
+      if (!this.isRunning) {
+        this.releaseSlot()
+        return {
+          success: false, output: '', error: 'WatchService stopped', duration: 0,
+          skipped: true, skipReason: 'stopped'
+        }
+      }
+      try {
+        return await this.executeWatch(watch, event)
+      } finally {
+        this.releaseSlot()
+      }
+    } finally {
+      this.scheduledWatches.delete(watch.id)
+    }
   }
 
   // ==================== 执行引擎 ====================
@@ -435,7 +507,12 @@ export class WatchService {
             prompt: enhancedPrompt, triggerType: event.type, executionType: 'assistant'
           })
         }
-        this.runningWatches.set(watch.id, { watchId: watch.id, ptyId: null, startTime })
+        this.runningWatches.set(watch.id, {
+          watchId: watch.id,
+          ptyId: null,
+          startTime,
+          agentId: isWakeup ? WatchService.WAKEUP_AGENT_ID : watchAgentKeyFor(watch.id)
+        })
         // 唤醒 Watch：发送 agent:step（内心独白），但不发送 agent:complete/error（不影响主聊天）
         result = await this.executeWithAssistantAgent(watch, enhancedPrompt, isSilent, isWakeup, agentSessionId)
       } else {
@@ -512,10 +589,10 @@ export class WatchService {
     }
 
     const startTime = Date.now()
-    // wakeup 用独立 Agent（保留跨执行工作记忆辅助决策），普通 watch 用 __watch__（逐次失忆）
+    // wakeup 用独立 Agent（保留跨执行工作记忆）；普通 watch 用 `__watch__:${watchId}` 以支持并发
     const agentId = wakeupMode
       ? WatchService.WAKEUP_AGENT_ID
-      : WatchService.WATCH_ASSISTANT_AGENT_ID
+      : watchAgentKeyFor(watch.id)
     const mainWindow = this.config.mainWindow
     let hasError = false
     let errorMessage = ''
@@ -830,7 +907,7 @@ export class WatchService {
       const userRecords = allRecords.filter(r =>
         r.terminalId &&
         r.terminalId !== '' &&
-        r.agentKey !== WATCH_AGENT_KEY &&
+        !isWatchAgentKey(r.agentKey) &&
         r.agentKey !== WAKEUP_AGENT_KEY
       )
 
@@ -980,10 +1057,8 @@ export class WatchService {
 
   // ==================== 输出投递 ====================
 
-  /** 内部 Agent 执行 ID，用于 session 隔离；不用于前端 Tab 路由 */
-  private static readonly WATCH_ASSISTANT_AGENT_ID = '__watch__'
   /** 唤醒 Agent 执行 ID（心跳/内心独白，保留跨执行工作记忆）；与 WAKEUP_AGENT_KEY 同源 */
-  private static readonly WAKEUP_AGENT_ID = '__wakeup__'
+  private static readonly WAKEUP_AGENT_ID = WAKEUP_AGENT_KEY
   /** 前端联络常驻 tab 的 agentId，与 AgentService.COMPANION_AGENT_ID 保持一致 */
   private static readonly COMPANION_AGENT_ID = '__companion__'
 
@@ -1282,12 +1357,12 @@ export class WatchService {
       for (const trigger of watch.triggers) {
         if (trigger.type === 'cron') {
           const key = `${watch.id}:cron`
-          if (!this.timers.has(key) && !this.runningWatches.has(watch.id)) {
+          if (!this.timers.has(key) && !this.runningWatches.has(watch.id) && !this.scheduledWatches.has(watch.id)) {
             this.scheduleCron(watch.id, trigger.expression)
           }
         } else if (trigger.type === 'interval') {
           const key = `${watch.id}:interval`
-          if (!this.timers.has(key) && !this.runningWatches.has(watch.id)) {
+          if (!this.timers.has(key) && !this.runningWatches.has(watch.id) && !this.scheduledWatches.has(watch.id)) {
             this.scheduleInterval(watch.id, trigger.seconds)
           }
         }

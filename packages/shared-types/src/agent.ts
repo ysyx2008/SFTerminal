@@ -18,10 +18,29 @@ export type ConversationKind = 'task' | 'companion' | 'watch' | 'wakeup'
 
 /** 联络常驻 Agent key（一条长期关系线，全渠道汇流） */
 export const COMPANION_AGENT_KEY = '__companion__'
-/** 关切（Watch）常驻 Agent key（逐次独立任务，独立历史树） */
+/** 关切（Watch）Agent key 前缀；legacy 整 key 为 `__watch__`，并发后为 `__watch__:${watchId}` */
 export const WATCH_AGENT_KEY = '__watch__'
 /** 唤醒常驻 Agent key（心跳/内心独白，跨执行保留记忆辅助决策） */
 export const WAKEUP_AGENT_KEY = '__wakeup__'
+
+/** 是否为关切 Agent key（含 legacy `__watch__` 与 `__watch__:${watchId}`） */
+export function isWatchAgentKey(agentKey?: string): boolean {
+  if (!agentKey) return false
+  return agentKey === WATCH_AGENT_KEY || agentKey.startsWith(`${WATCH_AGENT_KEY}:`)
+}
+
+/** 普通关切的 per-watch Agent key（用于并发隔离） */
+export function watchAgentKeyFor(watchId: string): string {
+  if (!watchId) throw new Error('watchAgentKeyFor: watchId is required')
+  return `${WATCH_AGENT_KEY}:${watchId}`
+}
+
+/** 从 `__watch__:${watchId}` 解析 watchId；legacy `__watch__` 返回 null */
+export function watchIdFromAgentKey(agentKey?: string): string | null {
+  if (!agentKey?.startsWith(`${WATCH_AGENT_KEY}:`)) return null
+  const id = agentKey.slice(WATCH_AGENT_KEY.length + 1)
+  return id || null
+}
 
 /**
  * 从 agentKey 推断会话类别。常驻命名 Agent 用固定 key，其余皆为普通任务。
@@ -30,7 +49,7 @@ export const WAKEUP_AGENT_KEY = '__wakeup__'
 export function inferConversationKind(agentKey?: string): ConversationKind {
   if (agentKey === COMPANION_AGENT_KEY) return 'companion'
   if (agentKey === WAKEUP_AGENT_KEY) return 'wakeup'
-  if (agentKey === WATCH_AGENT_KEY) return 'watch'
+  if (isWatchAgentKey(agentKey)) return 'watch'
   return 'task'
 }
 

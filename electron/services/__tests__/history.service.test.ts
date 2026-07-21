@@ -497,6 +497,19 @@ describe('HistoryService - watch 历史隔离', () => {
     expect(svc.getRecentWatchRecords(10).map(r => r.id)).toEqual(['watch-1'])
   })
 
+  it('agentKey=__watch__:watchId 的记录同样进独立 watch 树', () => {
+    const svc = new HistoryService()
+    const t = new Date('2026-03-18T10:00:00').getTime()
+
+    svc.saveAgentRecord(makeRecord({
+      id: 'watch-2', timestamp: t, duration: 1, userTask: '关切执行', agentKey: '__watch__:abc'
+    }))
+
+    expect(fs.existsSync(path.join(tmpDir, 'history', 'watch', '2026-03-18', 'watch-2', 'meta.json'))).toBe(true)
+    expect(svc.listAgentHistorySummaries(true).map(s => s.id)).not.toContain('watch-2')
+    expect(svc.getRecentWatchRecords(10).map(r => r.id)).toEqual(['watch-2'])
+  })
+
   it('getTokenUsageStats 合并主 + watch 索引（watch 成本不漏算）', () => {
     const svc = new HistoryService()
     const t = Date.now()

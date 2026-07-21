@@ -72,7 +72,7 @@ export { SailFish as TerminalAgent } from './sailfish'
 export class AgentService {
   /** 陪伴 Agent 固定 ID：IM 对话、桌面助手共用同一实例 */
   static readonly COMPANION_AGENT_ID = '__companion__'
-  /** Watch Agent 固定 ID：关切系统独立实例（逐次失忆），与 Companion 隔离 */
+  /** Watch Agent key 前缀（legacy 整 key `__watch__`）；并发后每关切用 `watchAgentKeyFor(id)` → `__watch__:${id}` */
   static readonly WATCH_AGENT_ID = '__watch__'
 
   /** Agent 实例映射（按 agentKey 索引：终端 Agent 用 tabId，助手/固定 Agent 用 agentId） */
