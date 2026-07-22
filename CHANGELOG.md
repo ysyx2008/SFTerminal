@@ -2,7 +2,36 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v11.3.1 (2026-07-17) (Latest)
+## v11.4.0 (2026-07-22) (Latest)
+
+> Watch becomes a standalone ops panel with concurrent runs; todos gain due-soon reminders and importance sorting; MCP tools load progressively by server to cut context cost.
+
+### New Features
+- 🎯 **Standalone Watch panel**: Watch moves out of Awaken; ops overview is a top-level nav with wide dual-pane layout and upcoming/history master–detail
+- 🎯 **Concurrent Watch runs**: different watches can run in parallel (soft cap 5); always via the assistant agent — no PTY sidecar
+- 🎯 **Todo due-soon reminders**: due-soon section with theme color steps; sort by importance with remaining-time progress tint
+- 🎯 **MCP progressive disclosure**: load a whole server’s tools at once instead of dumping every schema into context
+- 🎯 **Context composition breakdown**: hover the mini context bar for a token/char tree; expand on demand
+
+### Improvements
+- ⚡ **Wakeup vs Watch history buckets**: user Watch overview and wakeup history no longer crowd each other; wakeup history forced to L4 with a tighter load cap
+- ⚡ **Companion empty state**: leaner copy, WeChat QR more prominent
+
+### Bug Fixes
+- 🐛 **Todo Tab flicker**: opening the todo panel acknowledges overdue so the badge stops flashing
+- 🐛 **Command safety**: free-zone downgrade only accepts lexically absolute paths (blocks `cd && rm` bypass); refused commands return a neutral tool result
+- 🐛 **Packaging & models**: embedding model download verifies integrity before baking into the package
+- 🐛 **UI**: startup / knowledge / backup share one bottom status bar; light-theme confirm cards use semantic tint; drop duplicate spinner while a Watch is running
+- 🐛 **Misc**: Word front-matter title no longer leaks into body; MCP discoverability; companion “create task from here” anchor slicing; companion Tab title syncs after language switch
+
+## v11.3.2 (2026-07-20)
+
+> Hotfix: packaged native module load failure.
+
+### Bug Fixes
+- 🐛 **Packaged native modules**: `asarUnpack` includes `node-pty` / `keytar` so they load after packaging
+
+## v11.3.1 (2026-07-17)
 
 > Welcome-page “first meeting” invite for the birth chat; sub-agent oversized results archived for on-demand read-back; fixes for macOS LAN SSH and OSS delta updates.
 
