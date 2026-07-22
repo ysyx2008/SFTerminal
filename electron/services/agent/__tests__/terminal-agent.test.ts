@@ -87,7 +87,10 @@ function createMockMcpService() {
   return {
     isServerReady: vi.fn().mockReturnValue(false),
     getTools: vi.fn().mockReturnValue([]),
-    getToolDefinitions: vi.fn().mockReturnValue([])
+    getToolDefinitions: vi.fn().mockReturnValue([]),
+    shouldDeferTools: vi.fn().mockReturnValue(false),
+    getToolDefinitionsByServerIds: vi.fn().mockReturnValue([]),
+    getServerCatalogText: vi.fn().mockReturnValue('')
   }
 }
 
@@ -191,7 +194,7 @@ describe('SailFish', () => {
     it('should include MCP tools when available', () => {
       const mockMcpService = createMockMcpService()
       mockMcpService.isServerReady.mockReturnValue(true)
-      mockMcpService.getTools.mockReturnValue([
+      mockMcpService.getToolDefinitions.mockReturnValue([
         {
           type: 'function' as const,
           function: {
@@ -211,6 +214,7 @@ describe('SailFish', () => {
       
       // 工具列表应该包含基础工具和 MCP 工具
       expect(Array.isArray(tools)).toBe(true)
+      expect(tools.some(t => t.function.name === 'mcp_tool')).toBe(true)
     })
 
     it('should return function type tools', () => {
