@@ -607,8 +607,12 @@ export function buildRecentTasksContext(
     
     // 尝试各个压缩级别（从完整到精简）
     for (let level = 0 as CompressionLevel; level <= 4; level++) {
-      // 跳过不允许的级别（特殊任务保护）
-      if (level < minLevel && level < 3) continue
+      // 跳过低于最低级别的档位。
+      // - 显式 minCompressionLevel（如 wakeup 强制 L4）：严格遵守，不得「软放行」L3
+      // - 默认渐进路径：ruleLevel 为 4 时仍允许先试 L3（预算内尽量多留一点结构化摘要）
+      if (level < minLevel) {
+        if (forcedMinLevel !== undefined || level < 3) continue
+      }
       
       const tokens = estimateTaskTokens(task, level)
       

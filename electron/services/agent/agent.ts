@@ -280,7 +280,7 @@ export abstract class Agent {
    * 注入按工具名查 _meta 的回调，让 task-memory 能根据 lifecycle / argRole 决策行为，
    * 而不是硬编码具体工具名。回调内的 `this.getAvailableTools()` 在调用时才解析，
    * 此处构造时 subclass 还未完成初始化也没关系。
-   * @param maxMemories 最大存储任务数（默认 50，watch 传 100 配合广度优先策略）
+   * @param maxMemories 最大存储任务数（默认 50；wakeup 上下文只取最近 30 条 L4，默认上限已够）
    */
   protected createTaskMemory(maxMemories?: number): TaskMemoryStore {
     return new TaskMemoryStore((name) => getMetaByName(this.getAvailableTools(), name), maxMemories)
@@ -288,23 +288,9 @@ export abstract class Agent {
 
   /**
    * 设置 Agent 实例的逻辑 ID（由 AgentService.createAssistantAgent 调用）
-   *
-   * watch agent 需要更广的用户活动概览（配合 wakeup 的 maxTasks:100 + L4 策略），
-   * 在 setAgentId 时检测 kind 重建 taskMemory 为 100 上限。此时 taskMemory 仍为空
-   * （历史恢复在首次 run 的 restoreFromHistory 才发生），重建无数据丢失风险。
-   * 加 getTaskCount() === 0 守卫防止重复调用导致已恢复的数据丢失。
    */
   setAgentId(id: string): void {
     this._agentId = id
-    // wakeup 需要更广的用户活动概览（配合 maxTasks:100 + L4 策略），
-    // 在 setAgentId 时检测 kind 重建 taskMemory 为 100 上限。此时 taskMemory 仍为空
-    // （历史恢复在首次 run 的 restoreFromHistory 才发生），重建无数据丢失风险。
-    // 加 getTaskCount() === 0 守卫防止重复调用导致已恢复的数据丢失。
-    // watch 因 seedFromHistoryOnColdStart=false 不会恢复 taskMemory，但保留分支是防御性的。
-    const kind = inferConversationKind(id)
-    if ((kind === 'watch' || kind === 'wakeup') && this.taskMemory.getTaskCount() === 0) {
-      this.taskMemory = this.createTaskMemory(100)
-    }
   }
 
   /**
@@ -897,17 +883,14 @@ export abstract class Agent {
     excludeId?: string
   ): void {
     const kind = inferConversationKind(this._agentId)
-    // wakeup 需要更广的用户活动概览（配合 maxTasks:100 + L4 策略）：
-    // 放宽 record 装载量以拆出足够多的 task 覆盖最近 1-2 天活动。
+    // wakeup：广度优先 + 强制 L4，工作记忆装 ~30 条任务即可（见 SPEC wakeup 装载策略）。
     // companion 维持紧凑（联络是单线对话，6 条 record 已够）；task 不会走到这里。
-    // watch 因 seedFromHistoryOnColdStart=false，本方法不会被调用——保留 'watch' 分支是防御性的，
-    // 防止未来策略调整后此路径恢复时遗漏。
+    // watch 因 seedFromHistoryOnColdStart=false，本方法不会被调用——保留 'watch' 分支是防御性的。
     const broadScope = kind === 'watch' || kind === 'wakeup'
-    const MAX_RECENT_RECORDS = broadScope ? 30 : 6
-    // 仅限制装入工作记忆的「任务数」以防内存膨胀；真正进上下文的量由
-    // buildTaskHistoryContext 按 token 预算动态裁剪（Level 0→4 渐进降级），
-    // 装多少都不会撑爆上下文，这里从宽装载即可。
-    const MAX_RESTORE_TASKS = broadScope ? 100 : 40
+    const MAX_RECENT_RECORDS = broadScope ? 20 : 6
+    // 仅限制装入工作记忆的「任务数」；真正进上下文的量由 buildTaskHistoryContext 的
+    // maxTasks + token 预算裁剪。20 条 record 按约 1–3 task/条，足以喂满 30 条上限。
+    const MAX_RESTORE_TASKS = broadScope ? 30 : 40
 
     // 排除两类记录：
     //  - watch/wakeup「内心独白」：自我循环的触发记录（[当前时间：...触发事件...]），
@@ -1487,16 +1470,9 @@ export abstract class Agent {
     
     if (this.taskMemory.getTaskCount() > 0) {
       const contextLength = this._contextWindow.getContextLength()
-      // wakeup run（心跳/Watch 触发）采用「广度优先」装载策略：
-      // 100 条任务 + minCompressionLevel:4（跳过 L0-L2 完整对话，保留 L3 摘要 + L4 概要）。
-      // 这样 watch 决策时能看到完整的用户上下文脉络（含 companion 的 talk_to_user 消息），
-      // 避免 maxTasks:5 时 companion 消息被任务 tab 活动挤掉、看不到自己上次提醒过什么。
-      // 注意：buildRecentTasksContext 的 `level < minLevel && level < 3` 守护只拦 L0-L2，
-      // L3/L4 都可放置，系统优先尝试 L3（信息更丰富），放得下就用 L3 而非 L4。
-      // token 成本约 5-8K（L3/L4 单条 50-80 token），远低于 recentTasks 预算（128K 上下文下 40K），
-      // 且 buildRecentTasksContext 内有预算兜底自动裁剪，不会撑爆上下文。
+      // wakeup：广度优先 + 强制 L4（一句话概要），最多 30 条。见 SPEC。
       const historyOptions: TaskHistoryOptions | undefined = run.context.wakeup
-        ? { maxTasks: 100, minCompressionLevel: 4 }
+        ? { maxTasks: 30, minCompressionLevel: 4 }
         : undefined
       const contextResult = buildTaskHistoryContext(this.taskMemory, contextLength, message, historyOptions)
       

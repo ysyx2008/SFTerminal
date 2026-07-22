@@ -324,8 +324,7 @@ export class TaskMemoryStore {
    * @param lookupMeta 按工具名查 ToolMeta 的回调（由 Agent 注入）。
    * 不传入时降级为"返回 undefined"——所有 metadata 检查都拿到 undefined，
    * `detectPendingConfirmation` / `extractDigest` 会按"无声明"处理（保守不识别）。
-   * @param maxMemories 最大存储任务数（默认 50）。watch agent 需要更广的用户活动
-   * 概览时传入更大值（如 100），配合 wakeup 的 maxTasks:100 + L4 策略。
+   * @param maxMemories 最大存储任务数（默认 50）。wakeup 上下文只取最近 30 条 L4，默认上限已够。
    */
   constructor(
     private readonly lookupMeta: LookupToolMeta = NO_LOOKUP,

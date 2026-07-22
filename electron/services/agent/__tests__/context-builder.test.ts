@@ -246,30 +246,35 @@ describe('buildTaskHistoryContext', () => {
     expect(result.stats.totalTasks).toBe(0)
   })
 
-  it('should load up to 100 tasks at L3+ under wakeup options', () => {
-    // wakeup run（心跳/Watch）采用广度优先策略：maxTasks:100 + minCompressionLevel:4
-    // 验证 100 条任务能装入且全部压到 L3 或 L4（摘要级，不混入完整对话 L0-L2）
-    // watch agent 的 TaskMemoryStore 上限为 100（setAgentId 时重建），测试用构造器直接创建 100 上限的 store
-    const watchStore = new TaskMemoryStore(undefined, 100)
-    for (let i = 0; i < 100; i++) {
+  it('should load up to 30 tasks at L4 under wakeup options', () => {
+    // wakeup：maxTasks:30 + 强制 L4（不得软放行 L3，避免长 userRequest 伪摘要）
+    const watchStore = new TaskMemoryStore(undefined, 50)
+    for (let i = 0; i < 40; i++) {
       watchStore.saveTask(`task_${i}`, `用户任务 ${i} 的描述`, [], 'success', `完成结果 ${i}`)
     }
 
     const result = buildTaskHistoryContext(watchStore, 128000, '心跳检查', {
-      maxTasks: 100,
+      maxTasks: 30,
       minCompressionLevel: 4
     })
 
-    expect(result.stats.totalTasks).toBe(100)
-    // 所有任务至少 L3（minCompressionLevel:4 实际效果是跳过 L0-L2，
-    // buildRecentTasksContext 优先尝试可放置的最低级别，L3 放得下就用 L3）
+    expect(result.stats.totalTasks).toBe(30)
     expect(result.stats.level0Count).toBe(0)
     expect(result.stats.level1Count).toBe(0)
     expect(result.stats.level2Count).toBe(0)
-    // L3 + L4 数应 = 100（全部进摘要区，不进完整对话区）
-    expect(result.stats.level3Count + result.stats.level4Count).toBe(100)
-    // taskSummarySection 应非空（L3/L4 进摘要区）
+    expect(result.stats.level3Count).toBe(0)
+    expect(result.stats.level4Count).toBe(30)
     expect(result.taskSummarySection.length).toBeGreaterThan(0)
+  })
+
+  it('should still prefer L3 over L4 on default path when ruleLevel is 4', () => {
+    // 无 minCompressionLevel 时：ruleLevel=4 的旧成功任务仍可软放行 L3（预算内）
+    for (let i = 0; i < 10; i++) {
+      store.saveTask(`old_${i}`, `旧任务 ${i}`, [], 'success', `结果 ${i}`)
+    }
+    const result = buildTaskHistoryContext(store, 128000, '继续')
+    // 最近 6 个任务走 L0-L2 保护；更早的成功任务 ruleLevel=4，默认路径应能落到 L3
+    expect(result.stats.level3Count).toBeGreaterThan(0)
   })
 })
 

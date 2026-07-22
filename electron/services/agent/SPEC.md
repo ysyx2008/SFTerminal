@@ -150,9 +150,14 @@ run(message, context, options)
 
 排除 wakeup「内心独白」记录（`userTask` 以 `[当前时间：` 开头且含 `触发事件`）的原因：Watch 自我循环唤醒只是噪声、不应被借作工作记忆（否则会把一堆 `[当前时间…触发事件]` 当成"最近活动"，且 Watch 心跳量极大会挤掉真正的用户活动）。companion 走同 agentKey 路径时不会命中 wakeup（wakeup 走 `__watch__`），过滤逻辑保留是安全兜底。
 
-> **装载量与预算**：`restoreRecentTaskMemory` 按 kind 分流装载——companion 维持紧凑（最多 6 条记录 / 40 个任务进 TaskMemory），watch 放宽到 30 条记录 / 100 个任务（配合 wakeup 的广度优先策略，覆盖最近 1-2 天全部用户活动，含 companion 的 talk_to_user 消息）。watch 的 30 条 record 依据：平均每条 agentRecord 含 3-4 轮用户任务（splitMessagesIntoTasks 拆分），30 条 record 可拆出约 90-120 个 task，配合 MAX_RESTORE_TASKS=100 留有冗余。仅防内存膨胀；真正进上下文的量由 `buildTaskHistoryContext` 按 token 预算动态裁剪（Level 0→4 渐进降级、预算用尽即停），装多少都不会撑爆上下文。
+> **装载量与预算**：`restoreRecentTaskMemory` 按 kind 分流装载——companion 维持紧凑（最多 6 条记录 / 40 个任务进 TaskMemory），wakeup/watch 放宽到 20 条记录 / 30 个任务（配合 wakeup 的广度优先 + 强制 L4；30 是进上下文的上限，实际可能更少）。仅防内存膨胀；真正进上下文的量由 `buildTaskHistoryContext` 按 token 预算与 `maxTasks` 裁剪。
 
-> **wakeup run 的历史装载策略**：`buildContext` 对 wakeup run（心跳/Watch 触发）采用 `{ maxTasks: 100, minCompressionLevel: 4 }`——100 条任务 + minCompressionLevel:4。这是为了让 watch 决策时能看到完整的用户上下文（包括 companion 的 talk_to_user 对外消息），避免旧策略 `maxTasks:5` 时 companion 消息被任务 tab 活动挤掉、watch 看不到自己上次提醒过什么。注意 `buildRecentTasksContext` 的 `level < minLevel && level < 3` 守护只拦 L0-L2，L3/L4 都可放置——系统优先尝试 L3（信息更丰富，保留命令/路径/关键发现），放得下就用 L3 而非 L4。token 成本约 5-8K（L3/L4 单条 50-80 token），远低于 recentTasks 预算（128K 上下文下 40K），且有 `buildRecentTasksContext` 预算兜底自动裁剪。
+> **wakeup run 的历史装载策略**（设计目标，2026-07 纠偏）：
+> - **要什么**：广度优先——看最近用户活动脉络（含 companion 的 `talk_to_user`），用一句话概要判断「该不该提醒 / 是否重复」。
+> - **参数**：`{ maxTasks: 30, minCompressionLevel: 4 }`——**强制 L4**（`task.summary`，约 50–80 token/条）；30 条足够，不再追求 100。
+> - **明确不做**：不用 L3 `formatDigest`（会原样带上完整 `userRequest`；唤醒 prompt 含联络摘录时单条可达上万字符，会把「摘要区」撑成伪 L1）。
+> - **契约**：`minCompressionLevel` 必须被严格遵守（`level < minLevel` 一律跳过）；禁止再保留「软允许 L3」的例外。
+> - 历史：曾误写「优先 L3 更丰富」并放宽到 100 条，与「标题摘要」设计不符，已收回。
 
 ### sessionId 回种：防止 Companion「裂成两条 session」
 
