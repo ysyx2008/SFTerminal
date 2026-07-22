@@ -4,11 +4,12 @@
  *
  * 作为 WatchPanel 左侧「总览」独立页展示。
  * 一屏看清：异常关切 → 运行中 → 即将执行 → 最近流水。
+ * 「即将执行」与右侧流水为主从：点左侧关切按 watchId 拉取该关切历史，不跳配置页。
  *
- * 本组件不发起 IPC 调用，全部数据由父组件 WatchPanel 注入。
+ * 关切列表 / 全局流水由父组件注入；聚焦某关切时本组件按 watchId 拉历史（避免全局窗口挤掉低频关切）。
  */
 
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   AlertTriangle, RefreshCw, Clock, History,
@@ -43,6 +44,14 @@ const EVENT_TRIGGER_TYPES = new Set([
   'app_lifecycle', 'command_probe', 'http_probe', 'milestone', 'watch_failure', 'manual',
 ])
 
+/** 即将执行选中：右侧流水按该关切拉取（总览内主从，不跳配置） */
+const focusedWatchId = ref<string | null>(null)
+const focusedHistory = ref<WatchHistoryRecord[]>([])
+const focusedHistoryLoading = ref(false)
+let focusedHistorySeq = 0
+
+const RECENT_HISTORY_LIMIT = 20
+
 // 30s tick：相对时间 / 即将执行列表随时间前进
 const nowTick = ref(Date.now())
 let tickTimer: ReturnType<typeof setInterval> | null = null
@@ -63,28 +72,62 @@ const running = computed<WatchDefinition[]>(() =>
   props.watches.filter(w => props.runningWatches.has(w.id))
 )
 
-const upcomingAll = computed<WatchDefinition[]>(() => {
+const upcoming = computed<WatchDefinition[]>(() => {
   const now = nowTick.value
   return props.watches
     .filter(w => w.enabled && typeof w.nextRun === 'number' && (w.nextRun as number) > now)
     .sort((a, b) => (a.nextRun ?? 0) - (b.nextRun ?? 0))
 })
 
-	const UPCOMING_DEFAULT = 9
-	const upcomingExpanded = ref(false)
-const upcoming = computed<WatchDefinition[]>(() =>
-  upcomingExpanded.value ? upcomingAll.value : upcomingAll.value.slice(0, UPCOMING_DEFAULT)
-)
-const upcomingHidden = computed(() =>
-  Math.max(0, upcomingAll.value.length - UPCOMING_DEFAULT)
+/** 关切被删或不在即将列表时清掉选中，避免右侧悬空过滤 */
+watch(upcoming, (list) => {
+  const id = focusedWatchId.value
+  if (id && !list.some(w => w.id === id)) focusedWatchId.value = null
+})
+
+watch(focusedWatchId, async (id) => {
+  const seq = ++focusedHistorySeq
+  if (!id) {
+    focusedHistory.value = []
+    focusedHistoryLoading.value = false
+    return
+  }
+  focusedHistory.value = []
+  focusedHistoryLoading.value = true
+  try {
+    const list = await window.electronAPI.watch.getHistory(id, RECENT_HISTORY_LIMIT)
+    if (seq !== focusedHistorySeq) return
+    focusedHistory.value = Array.isArray(list) ? list : []
+  } catch (e) {
+    console.error('Failed to load focused watch history:', e)
+    if (seq !== focusedHistorySeq) return
+    focusedHistory.value = []
+  } finally {
+    if (seq === focusedHistorySeq) focusedHistoryLoading.value = false
+  }
+})
+
+const focusedWatch = computed(() =>
+  focusedWatchId.value
+    ? props.watches.find(w => w.id === focusedWatchId.value) ?? null
+    : null
 )
 
-const recentHistory = computed<WatchHistoryRecord[]>(() =>
-  [...props.history]
+const recentHistory = computed<WatchHistoryRecord[]>(() => {
+  if (focusedWatchId.value) {
+    return focusedHistory.value
+  }
+  return [...props.history]
     .filter(r => !BUILTIN_WATCH_IDS.has(r.watchId))
     .sort((a, b) => b.at - a.at)
-    .slice(0, 20)
-)
+    .slice(0, RECENT_HISTORY_LIMIT)
+})
+
+const recentSectionTitle = computed(() => {
+  const w = focusedWatch.value
+  if (!w) return t('watch.sectionRecent')
+  return t('watch.overviewRecentForWatch', { name: w.name })
+})
 
 const isHealthy = computed(() => anomalies.value.length === 0 && running.value.length === 0)
 
@@ -111,6 +154,14 @@ const upcomingEmptyHint = computed(() => {
   }
   return t('watch.overviewNoUpcoming')
 })
+
+function toggleFocusUpcoming(id: string) {
+  focusedWatchId.value = focusedWatchId.value === id ? null : id
+}
+
+function clearFocus() {
+  focusedWatchId.value = null
+}
 
 function formatTimeAgo(ts: number): string {
   const now = nowTick.value
@@ -351,24 +402,31 @@ function viewAnomalyFailure(w: WatchDefinition) {
         </div>
       </section>
 
-      <!-- 即将执行 | 最近流水：宽屏双栏，窄屏仍上下堆叠 -->
+      <!-- 即将执行 | 最近流水：宽屏双栏主从；列表不折叠，超出滚动 -->
       <div class="overview-main-grid">
         <section class="overview-section overview-section-fill">
           <div class="section-header">
             <Clock :size="16" class="section-icon" />
             <span class="section-title">{{ t('watch.sectionUpcoming') }}</span>
-            <span class="section-count" v-if="upcomingAll.length > 0">{{ upcomingAll.length }}</span>
+            <span class="section-count" v-if="upcoming.length > 0">{{ upcoming.length }}</span>
           </div>
           <div class="section-body">
             <button
               v-for="(w, idx) in upcoming"
               :key="w.id"
               class="ov-row"
-              :class="{ 'ov-row-next': idx === 0 }"
+              :class="{
+                'ov-row-next': idx === 0 && focusedWatchId !== w.id,
+                'ov-row-focused': focusedWatchId === w.id,
+              }"
+              :aria-pressed="focusedWatchId === w.id"
               :title="formatAbsoluteShort(w.nextRun as number)"
-              @click="selectWatchById(w.id)"
+              @click="toggleFocusUpcoming(w.id)"
             >
-              <span class="ov-row-dot" :class="idx === 0 ? 'dot-next' : 'dot-upcoming'"></span>
+              <span
+                class="ov-row-dot"
+                :class="focusedWatchId === w.id || idx === 0 ? 'dot-next' : 'dot-upcoming'"
+              ></span>
               <div class="ov-row-main">
                 <div class="ov-row-line1">
                   <span class="ov-row-name">
@@ -378,16 +436,8 @@ function viewAnomalyFailure(w: WatchDefinition) {
                   <span class="ov-row-time ov-row-time-accent">{{ formatUpcoming(w.nextRun as number) }}</span>
                 </div>
               </div>
-              <ChevronRight :size="14" class="ov-row-arrow" />
             </button>
-            <button
-              v-if="upcomingHidden > 0 || upcomingExpanded"
-              class="ov-row-toggle"
-              @click="upcomingExpanded = !upcomingExpanded"
-            >
-              {{ upcomingExpanded ? t('watch.overviewShowLess') : t('watch.overviewShowMore', { n: upcomingHidden }) }}
-            </button>
-            <div v-if="upcomingAll.length === 0" class="ov-empty">
+            <div v-if="upcoming.length === 0" class="ov-empty">
               <Clock :size="14" />
               <span>{{ upcomingEmptyHint }}</span>
             </div>
@@ -397,10 +447,17 @@ function viewAnomalyFailure(w: WatchDefinition) {
         <section class="overview-section overview-section-fill">
           <div class="section-header">
             <History :size="16" class="section-icon" />
-            <span class="section-title">{{ t('watch.sectionRecent') }}</span>
+            <span class="section-title" :title="recentSectionTitle">{{ recentSectionTitle }}</span>
             <span class="section-count">{{ recentHistory.length }}</span>
             <button
-              v-if="recentHistory.length > 0"
+              v-if="focusedWatchId"
+              class="section-link"
+              @click="clearFocus"
+            >
+              {{ t('watch.overviewClearFocus') }}
+            </button>
+            <button
+              v-else-if="recentHistory.length > 0"
               class="section-link"
               @click="emit('view-all-history')"
             >
@@ -418,22 +475,36 @@ function viewAnomalyFailure(w: WatchDefinition) {
               <span class="ov-row-dot"></span>
               <div class="ov-row-main">
                 <div class="ov-row-line1">
-                  <span class="ov-row-name">{{ r.watchName }}</span>
+                  <span class="ov-row-name">{{ focusedWatchId ? historyStatusLabel(r.status) : r.watchName }}</span>
                   <span class="ov-row-time">{{ formatTimeAgo(r.at) }}</span>
                 </div>
-                <div class="ov-row-line2 muted">
-                  <span class="hist-status">{{ historyStatusLabel(r.status) }}</span>
-                  <span class="hist-sep" v-if="r.duration > 0">·</span>
-                  <span v-if="r.duration > 0">{{ formatDuration(r.duration) }}</span>
-                  <span class="hist-sep" v-if="historySummary(r)">·</span>
-                  <span class="hist-summary" v-if="historySummary(r)">{{ historySummary(r) }}</span>
+                <div
+                  class="ov-row-line2 muted"
+                  v-if="!focusedWatchId || r.duration > 0 || historySummary(r)"
+                >
+                  <template v-if="focusedWatchId">
+                    <span v-if="r.duration > 0">{{ formatDuration(r.duration) }}</span>
+                    <span class="hist-sep" v-if="r.duration > 0 && historySummary(r)">·</span>
+                    <span class="hist-summary" v-if="historySummary(r)">{{ historySummary(r) }}</span>
+                  </template>
+                  <template v-else>
+                    <span class="hist-status">{{ historyStatusLabel(r.status) }}</span>
+                    <span class="hist-sep" v-if="r.duration > 0">·</span>
+                    <span v-if="r.duration > 0">{{ formatDuration(r.duration) }}</span>
+                    <span class="hist-sep" v-if="historySummary(r)">·</span>
+                    <span class="hist-summary" v-if="historySummary(r)">{{ historySummary(r) }}</span>
+                  </template>
                 </div>
               </div>
               <ChevronRight :size="14" class="ov-row-arrow" />
             </button>
-            <div v-if="recentHistory.length === 0" class="ov-empty">
+            <div v-if="focusedHistoryLoading" class="ov-empty">
+              <RefreshCw :size="14" class="spinning" />
+              <span>{{ t('watch.loading') }}</span>
+            </div>
+            <div v-else-if="recentHistory.length === 0" class="ov-empty">
               <AlertCircle :size="14" />
-              <span>{{ t('watch.noHistoryYet') }}</span>
+              <span>{{ focusedWatchId ? t('watch.overviewNoHistoryForWatch') : t('watch.noHistoryYet') }}</span>
             </div>
           </div>
         </section>
@@ -586,6 +657,10 @@ button.health-pill:hover { filter: brightness(1.08); }
   font-weight: 600;
   color: var(--text-primary);
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .section-count {
   font-size: 11px;
@@ -640,6 +715,13 @@ button.health-pill:hover { filter: brightness(1.08); }
 .ov-row:hover { background: var(--bg-hover); }
 .ov-row-next {
   background: rgba(var(--accent-rgb, 137, 180, 250), 0.06);
+}
+.ov-row-focused {
+  background: rgba(var(--accent-rgb, 137, 180, 250), 0.14);
+  box-shadow: inset 3px 0 0 var(--accent-primary);
+}
+.ov-row-focused:hover {
+  background: rgba(var(--accent-rgb, 137, 180, 250), 0.18);
 }
 
 .ov-row-dot {
@@ -774,22 +856,6 @@ button.health-pill:hover { filter: brightness(1.08); }
   color: var(--brand-alert, #e74c3c);
   border-color: rgba(231, 76, 60, 0.32);
   background: rgba(231, 76, 60, 0.12);
-}
-
-.ov-row-toggle {
-  border: 0;
-  background: transparent;
-  padding: 8px 14px;
-  border-top: 1px solid var(--border-color);
-  font-size: 12px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  text-align: center;
-  transition: background 0.12s;
-}
-.ov-row-toggle:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
 }
 
 .ov-empty {
