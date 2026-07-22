@@ -726,12 +726,22 @@ async function watchDelete(args: string[]): Promise<void> {
 
 async function watchHistory(args: string[]): Promise<void> {
   const { flags } = parseArgs(args)
-  const { getWatchStore } = require('../services/watch/store')
-  const store = getWatchStore()
   const limit = flags.limit ? parseInt(flags.limit as string) : 10
   const watchId = flags.watch as string | undefined
 
-  const history = store.getHistory(watchId, limit)
+  // 走 WatchService：普通关切按正文树补齐流水；无参/唤醒仍读速览分桶
+  const { getWatchService } = require('../services/watch/watch.service')
+  const { getSensorService } = require('../services/sensor')
+  const service = getWatchService()
+  service.init({
+    configService: getConfig(),
+    agentService: {} as any,
+    aiService: getAi(),
+    sensorService: getSensorService(),
+    historyService: getHistory(),
+    mainWindow: null
+  })
+  const history = service.getHistory(watchId, limit)
 
   if (history.length === 0) {
     console.log('No watch execution history.')

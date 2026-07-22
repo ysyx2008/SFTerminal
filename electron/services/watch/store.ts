@@ -1,10 +1,14 @@
 /**
  * Watch Store - 持久化存储
  * 使用 electron-store 管理 Watch 定义和执行历史
+ *
+ * 执行速览分桶：用户关切 `history` 与唤醒 `wakeupHistory` 物理隔离，
+ * 各自上限，心跳不得挤占用户关切速览。
  */
 import Store from 'electron-store'
 import { createLogger } from '../../utils/logger'
 import { normalizeWatchDefinition } from '../../utils/normalize'
+import { WAKEUP_AGENT_KEY } from '@shared/types'
 import type {
   WatchDefinition,
   WatchRunRecord,
@@ -16,10 +20,17 @@ const log = createLogger('WatchStore')
 
 interface WatchStoreSchema {
   watches: WatchDefinition[]
+  /** 用户关切执行速览（不含唤醒） */
   history: WatchHistoryRecord[]
+  /**
+   * 唤醒执行速览。键缺失表示尚未从旧混写 history 迁移；
+   * 迁移后恒为数组（可为空）。
+   */
+  wakeupHistory?: WatchHistoryRecord[]
 }
 
 const MAX_HISTORY_RECORDS = 500
+const MAX_WAKEUP_HISTORY_RECORDS = 500
 
 const defaults: WatchStoreSchema = {
   watches: [],
@@ -28,6 +39,7 @@ const defaults: WatchStoreSchema = {
 
 export class WatchStore {
   private store: Store<WatchStoreSchema>
+  private historyBucketsReady = false
 
   constructor() {
     this.store = new Store<WatchStoreSchema>({
@@ -38,6 +50,7 @@ export class WatchStore {
     if ((this.store as any).has('sharedState')) {
       ;(this.store as any).delete('sharedState')
     }
+    this.ensureHistoryBuckets()
   }
 
   // ==================== Watch CRUD ====================
@@ -149,44 +162,114 @@ export class WatchStore {
     )
   }
 
-  // ==================== 执行历史 ====================
+  // ==================== 执行历史（用户关切 / 唤醒分桶） ====================
 
+  /**
+   * 读取执行速览。
+   * - 无 watchId：用户关切账
+   * - watchId === `__wakeup__`：唤醒账
+   * - 其它 id：用户关切账内按关切过滤
+   */
   getHistory(watchId?: string, limit: number = 50): WatchHistoryRecord[] {
-    let history = this.store.get('history') || []
-    if (watchId) {
-      history = history.filter(h => h.watchId === watchId)
+    this.ensureHistoryBuckets()
+    let history: WatchHistoryRecord[]
+    if (watchId === WAKEUP_AGENT_KEY) {
+      history = [...(this.store.get('wakeupHistory') || [])]
+    } else {
+      history = [...(this.store.get('history') || [])]
+      if (watchId) {
+        history = history.filter(h => h.watchId === watchId)
+      }
     }
     history.sort((a, b) => b.at - a.at)
     return history.slice(0, limit)
   }
 
   addHistory(record: Omit<WatchHistoryRecord, 'id'>): WatchHistoryRecord {
-    const history = this.store.get('history') || []
+    this.ensureHistoryBuckets()
     const newRecord: WatchHistoryRecord = {
       ...record,
       id: this.generateId()
     }
-    history.push(newRecord)
 
-    if (history.length > MAX_HISTORY_RECORDS) {
-      history.sort((a, b) => b.at - a.at)
-      history.splice(MAX_HISTORY_RECORDS)
+    if (record.watchId === WAKEUP_AGENT_KEY) {
+      const history = this.store.get('wakeupHistory') || []
+      history.push(newRecord)
+      this.trimAndSave('wakeupHistory', history, MAX_WAKEUP_HISTORY_RECORDS)
+    } else {
+      const history = this.store.get('history') || []
+      history.push(newRecord)
+      this.trimAndSave('history', history, MAX_HISTORY_RECORDS)
     }
 
-    this.store.set('history', history)
     return newRecord
   }
 
+  /**
+   * 清除速览。
+   * - 无 watchId：清用户关切账（不动唤醒）
+   * - watchId === `__wakeup__`：清唤醒账
+   * - 其它 id：从用户关切账删除该关切
+   */
   clearHistory(watchId?: string): void {
+    this.ensureHistoryBuckets()
+    if (watchId === WAKEUP_AGENT_KEY) {
+      this.store.set('wakeupHistory', [])
+      return
+    }
     if (watchId) {
       const history = this.store.get('history') || []
       this.store.set('history', history.filter(h => h.watchId !== watchId))
-    } else {
-      this.store.set('history', [])
+      return
     }
+    this.store.set('history', [])
   }
 
   // ==================== 辅助 ====================
+
+  /**
+   * 旧版混写 history → 拆成 history + wakeupHistory（一次性）。
+   * 已有 wakeupHistory 键则跳过。
+   */
+  private ensureHistoryBuckets(): void {
+    if (this.historyBucketsReady) return
+    if (this.store.has('wakeupHistory')) {
+      this.historyBucketsReady = true
+      return
+    }
+
+    const mixed = this.store.get('history') || []
+    const user: WatchHistoryRecord[] = []
+    const wakeup: WatchHistoryRecord[] = []
+    for (const h of mixed) {
+      if (h.watchId === WAKEUP_AGENT_KEY) wakeup.push(h)
+      else user.push(h)
+    }
+    user.sort((a, b) => b.at - a.at)
+    wakeup.sort((a, b) => b.at - a.at)
+    this.store.set('history', user.slice(0, MAX_HISTORY_RECORDS))
+    this.store.set('wakeupHistory', wakeup.slice(0, MAX_WAKEUP_HISTORY_RECORDS))
+    this.historyBucketsReady = true
+    const truncated =
+      user.length > MAX_HISTORY_RECORDS || wakeup.length > MAX_WAKEUP_HISTORY_RECORDS
+    log.info(
+      `Migrated watch history buckets: user=${user.length}→${Math.min(user.length, MAX_HISTORY_RECORDS)} ` +
+      `wakeup=${wakeup.length}→${Math.min(wakeup.length, MAX_WAKEUP_HISTORY_RECORDS)}` +
+      (truncated ? ' (truncated)' : '')
+    )
+  }
+
+  private trimAndSave(
+    key: 'history' | 'wakeupHistory',
+    history: WatchHistoryRecord[],
+    max: number
+  ): void {
+    if (history.length > max) {
+      history.sort((a, b) => b.at - a.at)
+      history.splice(max)
+    }
+    this.store.set(key, history)
+  }
 
   private generateId(): string {
     const timestamp = Date.now().toString(36)
@@ -195,15 +278,31 @@ export class WatchStore {
   }
 
   exportData(): WatchStoreSchema {
+    this.ensureHistoryBuckets()
     return {
       watches: this.getAll(),
-      history: this.store.get('history') || []
+      history: this.store.get('history') || [],
+      wakeupHistory: this.store.get('wakeupHistory') || []
     }
   }
 
   importData(data: Partial<WatchStoreSchema>): void {
     if (data.watches) this.store.set('watches', data.watches)
     if (data.history) this.store.set('history', data.history)
+    if (data.wakeupHistory) {
+      this.store.set('wakeupHistory', data.wakeupHistory)
+      this.historyBucketsReady = true
+    } else if (data.history) {
+      // 仅当导入的 history 仍是旧混写（含唤醒）时才拆分；否则保留现有 wakeupHistory
+      const hasWakeupMixed = data.history.some(h => h.watchId === WAKEUP_AGENT_KEY)
+      if (hasWakeupMixed) {
+        if (this.store.has('wakeupHistory')) {
+          ;(this.store as any).delete('wakeupHistory')
+        }
+        this.historyBucketsReady = false
+        this.ensureHistoryBuckets()
+      }
+    }
   }
 }
 

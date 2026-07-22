@@ -6,7 +6,8 @@
  * 一屏看清：异常关切 → 运行中 → 即将执行 → 最近流水。
  * 「即将执行」与右侧流水为主从：点左侧关切按 watchId 拉取该关切历史，不跳配置页。
  *
- * 关切列表 / 全局流水由父组件注入；聚焦某关切时本组件按 watchId 拉历史（避免全局窗口挤掉低频关切）。
+ * 关切列表 / 全局用户关切流水由父组件注入（存储层已与唤醒分桶）；
+ * 聚焦某关切时本组件按 watchId 再拉该关切历史。
  */
 
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -31,6 +32,7 @@ const emit = defineEmits<{
   'cancel-watch': [id: string]
   'focus-anomalies': []
   'view-all-history': []
+  'view-more-history': [watchId: string]
   'go-templates': []
 }>()
 
@@ -117,6 +119,7 @@ const recentHistory = computed<WatchHistoryRecord[]>(() => {
   if (focusedWatchId.value) {
     return focusedHistory.value
   }
+  // 父组件 history 已是用户关切账（不含唤醒）；再滤掉遗留内置巡检
   return [...props.history]
     .filter(r => !BUILTIN_WATCH_IDS.has(r.watchId))
     .sort((a, b) => b.at - a.at)
@@ -449,13 +452,14 @@ function viewAnomalyFailure(w: WatchDefinition) {
             <History :size="16" class="section-icon" />
             <span class="section-title" :title="recentSectionTitle">{{ recentSectionTitle }}</span>
             <span class="section-count">{{ recentHistory.length }}</span>
-            <button
-              v-if="focusedWatchId"
-              class="section-link"
-              @click="clearFocus"
-            >
-              {{ t('watch.overviewClearFocus') }}
-            </button>
+            <template v-if="focusedWatchId">
+              <button class="section-link" @click="clearFocus">
+                {{ t('watch.overviewBack') }}
+              </button>
+              <button class="section-link" @click="emit('view-more-history', focusedWatchId)">
+                {{ t('watch.overviewViewMore') }}
+              </button>
+            </template>
             <button
               v-else-if="recentHistory.length > 0"
               class="section-link"

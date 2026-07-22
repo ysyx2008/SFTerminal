@@ -126,7 +126,7 @@ const formatDateLabel = (dateKey: string): string => {
 }
 
 const filteredHistory = computed<WatchHistoryRecord[]>(() =>
-  watchHistory.value.filter(h => h.watchId === '__wakeup__')
+  watchHistory.value
 )
 
 const groupedHistory = computed(() => {
@@ -146,7 +146,7 @@ const groupedHistory = computed(() => {
 const loadMoreHistory = async () => {
   historyLoadingMore.value = true
   try {
-    const all = await window.electronAPI.watch.getHistory(undefined, watchHistory.value.length + historyPageSize)
+    const all = await window.electronAPI.watch.getHistory('__wakeup__', watchHistory.value.length + historyPageSize)
     historyHasMore.value = all.length > watchHistory.value.length + historyPageSize - 1
     watchHistory.value = all
   } finally {
@@ -159,7 +159,7 @@ const loadMoreHistory = async () => {
 const loadWatchData = async () => {
   historyLoading.value = true
   try {
-    const history = await window.electronAPI.watch.getHistory(undefined, historyPageSize + 1)
+    const history = await window.electronAPI.watch.getHistory('__wakeup__', historyPageSize + 1)
     historyHasMore.value = history.length > historyPageSize
     watchHistory.value = historyHasMore.value ? history.slice(0, historyPageSize) : history
   } catch (e) {
@@ -202,7 +202,7 @@ const getStatusIcon = (status: WatchRunStatus): string => {
 
 const clearWatchHistory = async () => {
   if (!confirm(t('watch.confirmClearHistory'))) return
-  await window.electronAPI.watch.clearHistory()
+  await window.electronAPI.watch.clearHistory('__wakeup__')
   watchHistory.value = []
   selectedHistoryRecord.value = null
 }

@@ -267,7 +267,55 @@ export class WatchService {
   }
 
   getHistory(watchId?: string, limit?: number) {
-    return this.store.getHistory(watchId, limit)
+    const lim = limit ?? 50
+    if (!watchId || watchId === WatchService.WAKEUP_ID) {
+      return this.store.getHistory(watchId, lim)
+    }
+    return this.getUserWatchHistoryFromAgentTree(watchId, lim)
+  }
+
+  /**
+   * 普通关切流水：以 history/watch 索引为真相源，速览账按 session 合并补齐摘要字段。
+   * 解决分桶前心跳挤掉速览后「正文树有、速览没有」的残缺列表。
+   */
+  private getUserWatchHistoryFromAgentTree(watchId: string, limit: number) {
+    const fromStore = this.store.getHistory(watchId, limit)
+    const hs = this.config?.historyService
+    if (!hs?.listWatchExecutionSummaries) {
+      return fromStore
+    }
+
+    const summaries = hs.listWatchExecutionSummaries(watchId, limit)
+    if (summaries.length === 0) {
+      return fromStore
+    }
+
+    const bySession = new Map<string, (typeof fromStore)[number]>()
+    for (const r of fromStore) {
+      if (r.agentSessionId) bySession.set(r.agentSessionId, r)
+    }
+
+    const watchName = this.store.get(watchId)?.name || fromStore[0]?.watchName || watchId
+
+    return summaries.map(e => {
+      const hit = bySession.get(e.id)
+      if (hit) return hit
+
+      const status: WatchRunStatus =
+        e.status === 'failed' ? 'failed' : e.status === 'aborted' ? 'cancelled' : 'completed'
+
+      return {
+        id: e.id,
+        watchId,
+        watchName,
+        at: e.timestamp,
+        status,
+        duration: e.duration || 0,
+        triggerType: 'unknown',
+        agentSessionId: e.id,
+        output: ''
+      }
+    })
   }
 
   clearHistory(watchId?: string) {

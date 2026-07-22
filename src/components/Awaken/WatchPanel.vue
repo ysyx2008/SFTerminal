@@ -65,6 +65,7 @@ const activeTab = ref<NavTab>(
 
 function switchTab(tab: NavTab, onSwitch?: () => void) {
   if (historyDetailInOverlay.value) closeHistoryDetail()
+  if (tab !== 'watchHistory') historyWatchIdFilter.value = null
   activeTab.value = tab
   if (tab === 'watchHistory') historyFilter.value = 'watch'
   try { localStorage.setItem(LAST_TAB_STORAGE_KEY, tab) } catch { /* ignore quota */ }
@@ -80,6 +81,8 @@ const historyHasMore = ref(false)
 const historyLoadingMore = ref(false)
 
 const historyFilter = ref<'watch'>('watch')
+/** 运行历史页按关切过滤（总览「查看更多」带入）；null = 全部用户关切 */
+const historyWatchIdFilter = ref<string | null>(null)
 const loading = ref(true)
 const selectedWatch = ref<WatchDefinition | null>(null)
 /** 总览 / 关切页内查看流水详情（叠层），不切到 watchHistory tab */
@@ -189,9 +192,19 @@ const formatDateLabel = (dateKey: string): string => {
   return dateKey
 }
 
-const filteredHistory = computed<WatchHistoryRecord[]>(() =>
-  watchHistory.value.filter(h => h.watchId !== '__wakeup__')
-)
+const filteredHistory = computed<WatchHistoryRecord[]>(() => {
+  if (historyWatchIdFilter.value) return watchHistory.value
+  return watchHistory.value.filter(h => h.watchId !== '__wakeup__')
+})
+
+const historyPageTitle = computed(() => {
+  const id = historyWatchIdFilter.value
+  if (!id) return t('watch.watchHistoryTitle')
+  const name = userWatches.value.find(w => w.id === id)?.name
+    || watchHistory.value.find(h => h.watchId === id)?.watchName
+    || id
+  return t('watch.overviewHistoryForWatch', { name })
+})
 
 const groupedHistory = computed(() => {
   const groups: Array<{ dateKey: string; label: string; records: WatchHistoryRecord[] }> = []
@@ -210,7 +223,10 @@ const groupedHistory = computed(() => {
 const loadMoreHistory = async () => {
   historyLoadingMore.value = true
   try {
-    const all = await window.electronAPI.watch.getHistory(undefined, watchHistory.value.length + historyPageSize)
+    const all = await window.electronAPI.watch.getHistory(
+      historyWatchIdFilter.value ?? undefined,
+      watchHistory.value.length + historyPageSize
+    )
     historyHasMore.value = all.length > watchHistory.value.length + historyPageSize - 1
     watchHistory.value = all
   } finally {
@@ -318,7 +334,10 @@ const loadWatchData = async () => {
   loading.value = true
   try {
     watches.value = await window.electronAPI.watch.getAll()
-    const history = await window.electronAPI.watch.getHistory(undefined, historyPageSize + 1)
+    const history = await window.electronAPI.watch.getHistory(
+      historyWatchIdFilter.value ?? undefined,
+      historyPageSize + 1
+    )
     historyHasMore.value = history.length > historyPageSize
     watchHistory.value = historyHasMore.value ? history.slice(0, historyPageSize) : history
     const running = await window.electronAPI.watch.getRunning()
@@ -328,6 +347,18 @@ const loadWatchData = async () => {
   } finally {
     loading.value = false
   }
+}
+
+/** 打开运行历史；可带 watchId 只看该关切（总览「查看更多」） */
+const openWatchHistory = (watchId?: string) => {
+  historyWatchIdFilter.value = watchId || null
+  selectedHistoryRecord.value = null
+  switchTab('watchHistory', loadWatchData)
+}
+
+const clearHistoryWatchFilter = () => {
+  historyWatchIdFilter.value = null
+  loadWatchData()
 }
 
 const loadTemplates = async () => {
@@ -610,7 +641,7 @@ const deleteWatch = async (w: WatchDefinition) => {
 
 const clearWatchHistory = async () => {
   if (!confirm(t('watch.confirmClearHistory'))) return
-  await window.electronAPI.watch.clearHistory()
+  await window.electronAPI.watch.clearHistory(historyWatchIdFilter.value ?? undefined)
   watchHistory.value = []
   selectedHistoryRecord.value = null
 }
@@ -794,7 +825,7 @@ onUnmounted(() => {
               <LayoutTemplate :size="16" />
               <span>{{ t('watch.templates') }}</span>
             </button>
-            <button class="nav-item" :class="{ active: activeTab === 'watchHistory' }" @click="switchTab('watchHistory', loadWatchData)">
+            <button class="nav-item" :class="{ active: activeTab === 'watchHistory' }" @click="openWatchHistory()">
               <History :size="16" />
               <span>{{ t('watch.executionHistory') }}</span>
             </button>
@@ -827,7 +858,8 @@ onUnmounted(() => {
                 @disable-watch="disableWatchById"
                 @cancel-watch="cancelWatchById"
                 @focus-anomalies="focusAnomalies"
-                @view-all-history="() => switchTab('watchHistory', loadWatchData)"
+                @view-all-history="() => openWatchHistory()"
+                @view-more-history="(id) => openWatchHistory(id)"
                 @go-templates="() => switchTab('templates', loadTemplates)"
               />
             </div>
@@ -1229,9 +1261,16 @@ onUnmounted(() => {
               <template v-else>
                 <div class="page-toolbar">
                   <span class="page-title">
-                    {{ t('watch.watchHistoryTitle') }}
+                    {{ historyPageTitle }}
                   </span>
                   <div class="toolbar-right">
+                    <button
+                      v-if="historyWatchIdFilter"
+                      class="btn btn-sm"
+                      @click="clearHistoryWatchFilter"
+                    >
+                      {{ t('watch.overviewShowAllWatchesHistory') }}
+                    </button>
                     <button class="btn btn-sm btn-danger" @click="clearWatchHistory" :disabled="watchHistory.length === 0"><Trash2 :size="14" /> {{ t('watch.clearHistory') }}</button>
                   </div>
                 </div>

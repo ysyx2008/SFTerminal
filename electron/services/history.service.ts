@@ -12,6 +12,7 @@ const log = createLogger('History')
 
 // 从共享类型导入并重新导出
 import type { TerminalType, AgentRecord, AgentHistorySummary } from '@shared/types'
+import { watchAgentKeyFor } from '@shared/types'
 export type { AgentStepRecord, AgentRecord, AgentHistorySummary } from '@shared/types'
 // 搜索入参/结果由 AgentRecordStore 定义，这里 re-export 保持旧 import 路径兼容
 export type { SearchAgentRecordsOptions, SearchAgentRecordsResult } from './history/agent-record-store'
@@ -257,6 +258,29 @@ export class HistoryService {
   /** 从磁盘重建全部索引（主 + watch，委派 store）。 */
   rebuildAgentIndex(): void {
     this.agentRecordStore.rebuildAgentIndex()
+  }
+
+  /**
+   * 某用户关切在 watch 正文树中的执行摘要（只读索引，不含步骤正文）。
+   * 匹配 `__watch__:${watchId}`，以及历史遗留的 session id 前缀 `watch_${watchId}_`。
+   */
+  listWatchExecutionSummaries(
+    watchId: string,
+    limit: number = 50
+  ): Array<{ id: string; timestamp: number; duration: number; status: 'completed' | 'failed' | 'aborted' }> {
+    if (!watchId) return []
+    const key = watchAgentKeyFor(watchId)
+    const prefix = `watch_${watchId}_`
+    return this.agentRecordStore.getWatchIndex()
+      .filter(e => e.agentKey === key || e.id.startsWith(prefix))
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, limit)
+      .map(e => ({
+        id: e.id,
+        timestamp: e.timestamp,
+        duration: e.duration,
+        status: e.status
+      }))
   }
 
   // ==================== Token 用量统计（读 store 索引聚合） ====================
