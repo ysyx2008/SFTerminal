@@ -1,6 +1,6 @@
 # Watch Service SPEC
 
-> Last verified: 2026-07-21
+> Last verified: 2026-07-22
 
 ## 设计目标
 
@@ -14,6 +14,15 @@
   - 不进任务面板；需要打扰用户时走 `talk_to_user` → 联络（关切存在的目的）。
   - `output` 只影响对外派发/打扰策略，**不再选择执行形态**。
 - **明确不做**：不为 silent 保留 PTY 旁路；不把每次执行灌进任务侧栏。
+
+### 普通关切对用户可见通道与唤醒对齐（2026-07-22）
+
+- **问题**：唤醒 prompt 已写明「用户看不到常规输出，只有 talk_to_user 能送达」；普通关切仅有弱提示「最终文本仅作内部日志」，模型常把任务指令里的「提醒用户」写成普通文本收工，漏调 `talk_to_user`，联络/IM 收不到。
+- **成功标准**：
+  - `buildEnhancedPrompt` 对普通关切明确区分两通道：**关切面板**可见内心独白 ≠ **联络/IM** 已送达。
+  - 措辞与唤醒同级：用户在联络/IM **看不到**常规文本回复；要对用户说话必须调用 `talk_to_user`；纯文本收工等于没通知。
+  - 无需打扰时直接结束（可短内部日志），不要把「本该发给用户的话」写进最终文本假装已送达。
+- **明确不做**：不做「漏调 talk_to_user 时宿主自动把最终文本当通知」的兜底（避免误打扰；与 wakeup 一致靠 prompt 约束）。
 
 ### 不同 Watch 允许并发（2026-07-21）
 
@@ -154,7 +163,7 @@ interface WatchTemplate {
 
 **心跳机制**：`HEARTBEAT_FILENAME` 为 Agent 可读的心跳上下文文件（非全局执行锁）；`ensureWakeup` / `removeWakeup` 控制"唤醒态"。
 
-**联络上下文注入**：`buildEnhancedPrompt` 在**所有** Watch（含内置 `__wakeup__` 心跳）执行前，经 `Companion.formatRecentTurnsForWatchPrompt()` 从 `__companion__` 合并视图取最近 **50 条** user↔AI 纯文本（完整原文，不截断；合并最多 50 条 companion record），注入 prompt（10s TTL 缓存；`talk_to_user` 落盘后调用 `invalidateCompanionContextCache()` 失效）。**优先读 merged steps**（含 `__proactive__` 的 `proactive_notice`）；`mergedMessages` 排除 proactive record，不可作为唯一数据源。无 steps 时回退 messages（老记录）。联络 tab 展示仍用 `RECENT_RECORDS_LIMIT = 10`，与心跳注入范围分离。
+**联络上下文注入**：`buildEnhancedPrompt` 在**所有** Watch（含内置 `__wakeup__` 心跳）执行前，经 `Companion.formatRecentTurnsForWatchPrompt()` 从 `__companion__` 合并视图取最近 **50 条** user↔AI 纯文本（完整原文，不截断；合并最多 50 条 companion record），注入 prompt（10s TTL 缓存；`talk_to_user` 落盘后调用 `invalidateCompanionContextCache()` 失效）。**优先读 merged steps**（含 `__proactive__` 的 `proactive_notice`）；`mergedMessages` 排除 proactive record，不可作为唯一数据源。无 steps 时回退 messages（老记录）。联络 tab 展示仍用 `RECENT_RECORDS_LIMIT = 10`，与心跳注入范围分离。普通关切在任务指令前注入「通道说明」（面板可见 ≠ 联络/IM 送达；必须 `talk_to_user`），与唤醒 HEARTBEAT 模板同级。
 
 ## 关键约束
 

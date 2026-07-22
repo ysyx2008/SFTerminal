@@ -696,7 +696,13 @@ export class WatchService {
       parts.push(recentContext)
     }
 
-    parts.push('[通知用户时，必须调用 talk_to_user 工具发送消息。最终文本回复仅作为内部日志，不会作为通知正文。]')
+    // 与唤醒模板同级：面板可见 ≠ 联络/IM 送达；漏调 talk_to_user = 用户收不到
+    parts.push([
+      '【通道说明】本次执行是后台内心独白。',
+      '关切面板里的过程/最终文本只有你自己和调试可见——用户在联络、IM、系统通知里都看不到。',
+      '要对用户说话时，必须调用 talk_to_user 工具；纯文本收工等于没有通知。',
+      '无需打扰则直接结束（可写一句内部日志），不要把本该发给用户的话写进最终文本。',
+    ].join('\n'))
     parts.push(watch.prompt)
 
     return parts.join('\n')
