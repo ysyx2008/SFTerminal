@@ -13,6 +13,7 @@ import { getDocumentParserService } from '../../document-parser.service'
 import { getConfigService } from '../../config.service'
 import iconv from 'iconv-lite'
 import { decodeBuffer, detectEncoding } from '../../../utils/encoding'
+import { createLogger } from '../../../utils/logger'
 import { categorizeError, getErrorRecoverySuggestion, truncateFromEnd, truncateSandwichWithNotice, formatFileSize } from './utils'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 import type { ToolOutputBudget } from '../tool-output-budget'
@@ -345,8 +346,7 @@ export function cleanupScratch(maxAgeDays: number): {
   bytesFreed = result.bytes
 
   if (deletedFiles > 0) {
-    // 延迟导入避免循环依赖
-    const { createLogger } = require('../../../utils/logger')
+    // 静态 import：打包后动态 require('../../../utils/logger') 相对 dist-electron 会解析失败
     const log = createLogger('scratch-cleanup')
     log.info(`cleaned ${deletedFiles} files (${Math.round(bytesFreed / 1024)}KB) older than ${maxAgeDays}d`)
   }
