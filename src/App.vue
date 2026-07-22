@@ -79,12 +79,33 @@ const STARTUP_STAGE_LABELS: Record<string, string> = {
   done: '初始化完成',
 }
 
-// ── 知识库索引重建进度条（fixed overlay，展示详细进度但不撑开布局）────────────
+// ── 底部状态栏：知识库重建 / 备份 / 恢复（与启动进度共用同一条 bar）──────────
 const _knowledgeDone = ref(true)  // 知识库是否空闲（默认不在补全索引）
 
 const knowledgeLoading = computed(() => !_knowledgeDone.value)
 const knowledgeLoadingText = ref('')
 const knowledgeLoadingProgress = ref({ current: 0, total: 0, libraryTotal: 0, filename: '' })
+
+// 启动 / 知识库 / 备份 共用一条底部状态栏，避免叠放闪两层
+const bottomStatusVisible = computed(() =>
+  !isSteamBuild && (startupLoading.value || knowledgeLoading.value),
+)
+/** 知识库/备份优先（更具体）；空闲时才回落到启动阶段文案 */
+const bottomStatusShowingKnowledge = computed(() => knowledgeLoading.value)
+const bottomStatusText = computed(() => {
+  if (knowledgeLoading.value) {
+    return knowledgeLoadingText.value || t('knowledge.repairing')
+  }
+  return startupStage.value || '后端服务启动中...'
+})
+const bottomStatusHasPercent = computed(() =>
+  knowledgeLoading.value && knowledgeLoadingProgress.value.total > 0,
+)
+const bottomStatusPercent = computed(() => {
+  const { current, total } = knowledgeLoadingProgress.value
+  if (total <= 0) return 0
+  return (current / total) * 100
+})
 
 let cleanupKnowledgeUpgrading: (() => void) | null = null
 let cleanupKnowledgeProgress: (() => void) | null = null
@@ -1571,43 +1592,31 @@ onUnmounted(() => {
       </main>
     </div>
 
-    <!-- 后端启动进度（fixed overlay，不占 flex 空间，避免界面弹跳） -->
+    <!-- 启动 / 知识库 / 备份：共用一条底部状态栏（fixed overlay，不占 flex） -->
     <Transition name="slide-down">
-      <div v-if="startupLoading && !isSteamBuild" class="startup-progress-bar">
-        <div class="upgrade-content">
-          <Loader2 class="upgrade-icon" :size="16" />
-          <span class="upgrade-text">{{ startupStage || '后端服务启动中...' }}</span>
-        </div>
-        <div class="upgrade-progress">
-          <div class="startup-progress-indeterminate" />
-        </div>
-      </div>
-    </Transition>
-
-    <!-- 知识库索引重建进度条（fixed overlay，与启动条叠放，不占 flex 空间） -->
-    <Transition name="slide-down">
-      <div
-        v-if="knowledgeLoading && !isSteamBuild"
-        class="knowledge-loading-bar"
-        :class="{ 'above-startup-bar': startupLoading }"
-      >
+      <div v-if="bottomStatusVisible" class="bottom-status-bar">
         <div class="upgrade-content">
           <Loader2 class="upgrade-icon" :size="16" />
           <span class="upgrade-text">
-            {{ knowledgeLoadingText }}
-            <template v-if="knowledgeLoadingProgress.total > 0">
+            {{ bottomStatusText }}
+            <template v-if="bottomStatusShowingKnowledge && knowledgeLoadingProgress.total > 0">
               ({{ knowledgeLoadingProgress.current }}/{{ knowledgeLoadingProgress.total }}<template v-if="knowledgeLoadingProgress.libraryTotal > knowledgeLoadingProgress.total">，文库共 {{ knowledgeLoadingProgress.libraryTotal }} 篇</template>)
             </template>
           </span>
-          <span v-if="knowledgeLoadingProgress.filename" class="upgrade-filename">
+          <span
+            v-if="bottomStatusShowingKnowledge && knowledgeLoadingProgress.filename"
+            class="upgrade-filename"
+          >
             {{ knowledgeLoadingProgress.filename }}
           </span>
         </div>
         <div class="upgrade-progress">
           <div
+            v-if="bottomStatusHasPercent"
             class="upgrade-progress-bar"
-            :style="{ width: knowledgeLoadingProgress.total > 0 ? (knowledgeLoadingProgress.current / knowledgeLoadingProgress.total * 100) + '%' : '0%' }"
+            :style="{ width: bottomStatusPercent + '%' }"
           />
+          <div v-else class="startup-progress-indeterminate" />
         </div>
       </div>
     </Transition>
@@ -1976,15 +1985,15 @@ onUnmounted(() => {
   min-height: 0;
 }
 
-/* 后端启动进度条：fixed overlay，不参与 flex 布局 */
-.startup-progress-bar {
+/* 启动 / 知识库 / 备份共用底部状态栏：fixed overlay，不参与 flex 布局 */
+.bottom-status-bar {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border-color);
-  z-index: 999;
+  z-index: 1000;
 }
 
 .startup-progress-indeterminate {
@@ -1997,22 +2006,6 @@ onUnmounted(() => {
 @keyframes indeterminate-scan {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(300%); }
-}
-
-/* 知识库索引重建进度条：fixed overlay，与启动条同时出现时上移叠放 */
-.knowledge-loading-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: var(--bg-secondary);
-  border-top: 1px solid var(--border-color);
-  z-index: 1000;
-  transition: bottom 0.2s ease;
-}
-
-.knowledge-loading-bar.above-startup-bar {
-  bottom: 36px;
 }
 
 .upgrade-content {
