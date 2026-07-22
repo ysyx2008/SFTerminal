@@ -16,6 +16,7 @@ export default {
     emptyTitle: 'No todos yet',
     emptyHint: 'Add one above, or open',
     openCompanion: 'Reach',
+    sectionDueSoon: 'Due today',
     sectionOverdue: 'Overdue',
     sectionInProgress: 'In progress',
     sectionPending: 'Pending',

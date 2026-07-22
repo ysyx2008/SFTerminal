@@ -16,6 +16,7 @@ export default {
     emptyTitle: '暂无待办',
     emptyHint: '在上方添加，或去',
     openCompanion: '联络',
+    sectionDueSoon: '即将到期',
     sectionOverdue: '已逾期',
     sectionInProgress: '进行中',
     sectionPending: '待办',

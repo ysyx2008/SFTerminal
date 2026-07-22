@@ -57,6 +57,9 @@ const STALE_DAYS = 7
 /** 标题综合关注度（完成态不着色） */
 type AttentionLevel = 'critical' | 'strong' | 'medium' | 'mild' | 'default' | 'faint'
 
+/** 剩余不足此比例（含）→ 与「今天」一并进入即将到期分区 */
+const DUE_SOON_REMAINING_MAX = 0.2
+
 /** 本地日历日 YYYY-MM-DD */
 function localYmd(d: Date): string {
   const y = d.getFullYear()
@@ -88,11 +91,25 @@ function isOverdue(item: TodoItem): boolean {
   return !!due && due < localYmd(new Date())
 }
 
-/** 即将到期：本地日历「今天」且尚未逾期 */
+/** 剩余时间占比 0–1（刚建≈1，临近≈0）；无截止/完成/逾期不画条、不参与「即将到期」比例判定 */
+function dueProgressRatio(item: TodoItem): number | null {
+  if (!isActiveTodo(item) || !item.dueDate || isOverdue(item)) return null
+  const created = new Date(item.createdAt).getTime()
+  const due = new Date(item.dueDate).getTime()
+  if (Number.isNaN(created) || Number.isNaN(due) || due <= created) return null
+  return Math.min(1, Math.max(0, (due - Date.now()) / (due - created)))
+}
+
+/**
+ * 即将到期（进独立分区）：本地「今天」截止，或剩余时间 ≤ 20%。
+ * 未逾期；与进行中/待办互斥。
+ */
 function isDueSoon(item: TodoItem): boolean {
-  if (!isActiveTodo(item) || !item.dueDate) return false
+  if (!isActiveTodo(item) || !item.dueDate || isOverdue(item)) return false
   const due = dueLocalYmd(item.dueDate)
-  return !!due && due === localYmd(new Date())
+  if (due && due === localYmd(new Date())) return true
+  const ratio = dueProgressRatio(item)
+  return ratio != null && ratio <= DUE_SOON_REMAINING_MAX
 }
 
 function isStale(item: TodoItem): boolean {
@@ -115,9 +132,8 @@ function attentionLevel(item: TodoItem): AttentionLevel {
   if (isDueSoon(item)) {
     return pri === 'urgent' || pri === 'high' ? 'critical' : 'strong'
   }
-  if (isOverdue(item)) {
-    return pri === 'urgent' || pri === 'high' ? 'strong' : 'medium'
-  }
+  // 逾期一律 warning 档，不与「今天」抢 brand-alert
+  if (isOverdue(item)) return 'medium'
   if (pri === 'urgent' || pri === 'high') {
     return isStale(item) ? 'medium' : 'mild'
   }
@@ -125,24 +141,15 @@ function attentionLevel(item: TodoItem): AttentionLevel {
   return 'default'
 }
 
-/** 剩余时间占比 0–1（刚建≈1，临近≈0）；无截止/完成/逾期不画条 */
-function dueProgressRatio(item: TodoItem): number | null {
-  if (!isActiveTodo(item) || !item.dueDate || isOverdue(item)) return null
-  const created = new Date(item.createdAt).getTime()
-  const due = new Date(item.dueDate).getTime()
-  if (Number.isNaN(created) || Number.isNaN(due) || due <= created) return null
-  return Math.min(1, Math.max(0, (due - Date.now()) / (due - created)))
-}
-
 function dueProgressVars(item: TodoItem): Record<string, string> | undefined {
   const ratio = dueProgressRatio(item)
   if (ratio == null) return undefined
   const pct = `${Math.round(ratio * 100)}%`
-  // 剩余少 / 即将到期 → 偏暖；剩余充足 → 品牌色浅条
-  if (isDueSoon(item) || ratio <= 0.15) {
+  // 即将到期分区内（今天或剩余≤20%）→ alert；其余有截止 → accent
+  if (isDueSoon(item)) {
     return {
       '--due-progress': pct,
-      '--due-progress-color': 'color-mix(in srgb, var(--brand-alert, #e74c3c) 11%, transparent)',
+      '--due-progress-color': 'color-mix(in srgb, var(--brand-alert) 16%, transparent)',
     }
   }
   return {
@@ -167,12 +174,17 @@ function sortByImportance(items: TodoItem[]): TodoItem[] {
   })
 }
 
+const dueSoonItems = computed(() => sortByImportance(todos.value.filter(isDueSoon)))
 const overdueItems = computed(() => sortByImportance(todos.value.filter(isOverdue)))
 const inProgressItems = computed(() =>
-  sortByImportance(todos.value.filter(t => t.status === 'in_progress' && !isOverdue(t)))
+  sortByImportance(
+    todos.value.filter(t => t.status === 'in_progress' && !isOverdue(t) && !isDueSoon(t))
+  )
 )
 const pendingItems = computed(() =>
-  sortByImportance(todos.value.filter(t => t.status === 'pending' && !isOverdue(t)))
+  sortByImportance(
+    todos.value.filter(t => t.status === 'pending' && !isOverdue(t) && !isDueSoon(t))
+  )
 )
 const doneItems = computed(() =>
   todos.value
@@ -185,7 +197,11 @@ const showActiveSections = computed(() => filterMode.value === 'active' || filte
 const showDoneSection = computed(() => filterMode.value === 'completed' || filterMode.value === 'all')
 
 const activeCount = computed(
-  () => overdueItems.value.length + inProgressItems.value.length + pendingItems.value.length
+  () =>
+    dueSoonItems.value.length +
+    overdueItems.value.length +
+    inProgressItems.value.length +
+    pendingItems.value.length
 )
 
 const isEmpty = computed(() => {
@@ -605,16 +621,16 @@ onUnmounted(() => {
         </div>
 
         <div v-else class="todo-lists">
-          <section v-if="showActiveSections && overdueItems.length" class="todo-section">
+          <section v-if="showActiveSections && dueSoonItems.length" class="todo-section">
             <div class="section-header">
-              <span class="section-title overdue">{{ t('todoPanel.sectionOverdue') }}</span>
-              <span class="section-count overdue">{{ overdueItems.length }}</span>
+              <span class="section-title due-soon">{{ t('todoPanel.sectionDueSoon') }}</span>
+              <span class="section-count due-soon">{{ dueSoonItems.length }}</span>
             </div>
             <ul class="todo-list">
               <li
-                v-for="item in overdueItems"
+                v-for="item in dueSoonItems"
                 :key="item.id"
-                class="todo-row overdue"
+                class="todo-row due-soon"
                 :class="{
                   selected: selectedId === item.id,
                   busy: busyIds.has(item.id),
@@ -650,21 +666,20 @@ onUnmounted(() => {
             </ul>
           </section>
 
-          <section v-if="showActiveSections && inProgressItems.length" class="todo-section">
+          <section v-if="showActiveSections && overdueItems.length" class="todo-section">
             <div class="section-header">
-              <span class="section-title">{{ t('todoPanel.sectionInProgress') }}</span>
-              <span class="section-count">{{ inProgressItems.length }}</span>
+              <span class="section-title overdue">{{ t('todoPanel.sectionOverdue') }}</span>
+              <span class="section-count overdue">{{ overdueItems.length }}</span>
             </div>
             <ul class="todo-list">
               <li
-                v-for="item in inProgressItems"
+                v-for="item in overdueItems"
                 :key="item.id"
-                class="todo-row"
+                class="todo-row overdue"
                 :class="{
                   selected: selectedId === item.id,
                   busy: busyIds.has(item.id),
                   'has-due-progress': dueProgressRatio(item) != null,
-                  'due-soon': isDueSoon(item),
                 }"
                 :style="dueProgressVars(item)"
                 role="button"
@@ -685,11 +700,52 @@ onUnmounted(() => {
                 <span v-if="priorityLabel(item.priority)" class="meta-chip priority" :data-p="item.priority">
                   {{ priorityLabel(item.priority) }}
                 </span>
-                <span
-                  v-if="item.dueDate"
-                  class="meta-chip"
-                  :class="{ due: isDueSoon(item) || isOverdue(item) }"
-                >{{ formatDueShort(item.dueDate) }}</span>
+                <span v-if="item.dueDate" class="meta-chip due-overdue">{{ formatDueShort(item.dueDate) }}</span>
+                <span class="meta-time" :title="formatAbsolute(item.createdAt)">{{ formatRelative(item.createdAt) }}</span>
+                <div class="todo-actions" @click.stop>
+                  <button type="button" class="action-btn danger" :title="t('todoPanel.delete')" @click="handleDelete(item, $event)">
+                    <Trash2 :size="13" />
+                  </button>
+                </div>
+              </li>
+            </ul>
+          </section>
+
+          <section v-if="showActiveSections && inProgressItems.length" class="todo-section">
+            <div class="section-header">
+              <span class="section-title">{{ t('todoPanel.sectionInProgress') }}</span>
+              <span class="section-count">{{ inProgressItems.length }}</span>
+            </div>
+            <ul class="todo-list">
+              <li
+                v-for="item in inProgressItems"
+                :key="item.id"
+                class="todo-row"
+                :class="{
+                  selected: selectedId === item.id,
+                  busy: busyIds.has(item.id),
+                  'has-due-progress': dueProgressRatio(item) != null,
+                }"
+                :style="dueProgressVars(item)"
+                role="button"
+                tabindex="0"
+                @click="selectItem(item)"
+                @keydown="onRowKeydown(item, $event)"
+              >
+                <button
+                  type="button"
+                  class="check-btn"
+                  :disabled="busyIds.has(item.id)"
+                  :title="t('todoPanel.complete')"
+                  @click="handleComplete(item, $event)"
+                >
+                  <Check :size="12" :stroke-width="2.5" />
+                </button>
+                <span class="todo-item-title" :data-attention="attentionLevel(item)">{{ item.title }}</span>
+                <span v-if="priorityLabel(item.priority)" class="meta-chip priority" :data-p="item.priority">
+                  {{ priorityLabel(item.priority) }}
+                </span>
+                <span v-if="item.dueDate" class="meta-chip">{{ formatDueShort(item.dueDate) }}</span>
                 <span class="meta-time" :title="formatAbsolute(item.createdAt)">{{ formatRelative(item.createdAt) }}</span>
                 <div class="todo-actions" @click.stop>
                   <button type="button" class="action-btn danger" :title="t('todoPanel.delete')" @click="handleDelete(item, $event)">
@@ -714,7 +770,6 @@ onUnmounted(() => {
                   selected: selectedId === item.id,
                   busy: busyIds.has(item.id),
                   'has-due-progress': dueProgressRatio(item) != null,
-                  'due-soon': isDueSoon(item),
                 }"
                 :style="dueProgressVars(item)"
                 role="button"
@@ -735,11 +790,7 @@ onUnmounted(() => {
                 <span v-if="priorityLabel(item.priority)" class="meta-chip priority" :data-p="item.priority">
                   {{ priorityLabel(item.priority) }}
                 </span>
-                <span
-                  v-if="item.dueDate"
-                  class="meta-chip"
-                  :class="{ due: isDueSoon(item) || isOverdue(item) }"
-                >{{ formatDueShort(item.dueDate) }}</span>
+                <span v-if="item.dueDate" class="meta-chip">{{ formatDueShort(item.dueDate) }}</span>
                 <span class="meta-time" :title="formatAbsolute(item.createdAt)">{{ formatRelative(item.createdAt) }}</span>
                 <div class="todo-actions" @click.stop>
                   <button type="button" class="action-btn danger" :title="t('todoPanel.delete')" @click="handleDelete(item, $event)">
@@ -1133,8 +1184,10 @@ onUnmounted(() => {
   text-transform: uppercase;
   color: var(--text-muted);
 }
+.section-title.due-soon,
+.section-count.due-soon { color: var(--brand-alert); }
 .section-title.overdue,
-.section-count.overdue { color: var(--brand-alert, #e74c3c); }
+.section-count.overdue { color: var(--accent-warning); }
 .section-count {
   font-size: 11px;
   font-weight: 600;
@@ -1246,20 +1299,21 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 标题色：今天 alert、逾期/高优 warning；走主题变量 */
 .todo-item-title[data-attention='critical'] {
-  color: var(--brand-alert, #e74c3c);
+  color: var(--brand-alert);
   font-weight: 600;
 }
 .todo-item-title[data-attention='strong'] {
-  color: color-mix(in srgb, var(--brand-alert, #e74c3c) 82%, #e67e22);
+  color: var(--brand-alert);
   font-weight: 600;
 }
 .todo-item-title[data-attention='medium'] {
-  color: #e67e22;
+  color: var(--accent-warning);
   font-weight: 550;
 }
 .todo-item-title[data-attention='mild'] {
-  color: color-mix(in srgb, var(--text-primary) 70%, #e67e22);
+  color: color-mix(in srgb, var(--text-primary) 45%, var(--accent-warning));
 }
 .todo-item-title[data-attention='faint'] {
   color: var(--text-muted);
@@ -1279,14 +1333,22 @@ onUnmounted(() => {
   color: var(--text-muted);
   background: color-mix(in srgb, var(--text-primary) 6%, transparent);
 }
-.meta-chip.due,
+/* 今天：跨主题警戒红；逾期：主题 warning；高优：warning */
+.meta-chip.due {
+  color: var(--brand-alert);
+  background: color-mix(in srgb, var(--brand-alert) 14%, transparent);
+}
+.meta-chip.due-overdue {
+  color: var(--accent-warning);
+  background: color-mix(in srgb, var(--accent-warning) 14%, transparent);
+}
 .meta-chip.priority[data-p='urgent'] {
-  color: var(--brand-alert, #e74c3c);
-  background: rgba(231, 76, 60, 0.12);
+  color: var(--brand-alert);
+  background: color-mix(in srgb, var(--brand-alert) 14%, transparent);
 }
 .meta-chip.priority[data-p='high'] {
-  color: #e67e22;
-  background: rgba(230, 126, 34, 0.12);
+  color: var(--accent-warning);
+  background: color-mix(in srgb, var(--accent-warning) 14%, transparent);
 }
 .meta-chip.priority[data-p='low'] { color: var(--text-muted); }
 
@@ -1328,8 +1390,8 @@ onUnmounted(() => {
   color: var(--text-secondary);
 }
 .action-btn.danger:hover {
-  background: rgba(231, 76, 60, 0.12);
-  color: var(--brand-alert, #e74c3c);
+  background: color-mix(in srgb, var(--brand-alert) 12%, transparent);
+  color: var(--brand-alert);
 }
 
 /* 详情侧栏 */
@@ -1488,9 +1550,9 @@ onUnmounted(() => {
   border-color: color-mix(in srgb, var(--accent-primary) 40%, var(--border-color));
 }
 .footer-btn.danger:hover {
-  color: var(--brand-alert, #e74c3c);
-  border-color: rgba(231, 76, 60, 0.35);
-  background: rgba(231, 76, 60, 0.08);
+  color: var(--brand-alert);
+  border-color: color-mix(in srgb, var(--brand-alert) 35%, var(--border-color));
+  background: color-mix(in srgb, var(--brand-alert) 8%, transparent);
 }
 
 .spin { animation: spin 0.9s linear infinite; }
