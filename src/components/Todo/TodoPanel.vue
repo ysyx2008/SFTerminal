@@ -11,7 +11,6 @@ import {
   Trash2,
   ListTodo,
   Loader2,
-  Ban,
   Calendar,
   MessagesSquare,
   X,
@@ -52,21 +51,128 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null
 const PRIORITIES: TodoPriority[] = ['urgent', 'high', 'normal', 'low']
 const STATUSES: TodoStatus[] = ['pending', 'in_progress', 'completed', 'cancelled']
 
-const nowIso = () => new Date().toISOString()
+/** 陈旧补洞阈值（天）——见 todo SPEC 设计目标 */
+const STALE_DAYS = 7
 
-function isOverdue(item: TodoItem): boolean {
-  if (item.status === 'completed' || item.status === 'cancelled') return false
-  return !!item.dueDate && item.dueDate < nowIso()
+/** 标题综合关注度（完成态不着色） */
+type AttentionLevel = 'critical' | 'strong' | 'medium' | 'mild' | 'default' | 'faint'
+
+/** 本地日历日 YYYY-MM-DD */
+function localYmd(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
-const overdueItems = computed(() =>
-  todos.value.filter(t => t.status !== 'completed' && t.status !== 'cancelled' && isOverdue(t))
-)
+/**
+ * 截止日的本地日历日。
+ * 面板 date input 存 YYYY-MM-DD，按用户意图的公历日理解；带时刻的 ISO 再按本地日切。
+ */
+function dueLocalYmd(due: string): string | null {
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(due.trim())
+  if (m) return m[1]
+  const d = new Date(due)
+  if (Number.isNaN(d.getTime())) return null
+  return localYmd(d)
+}
+
+function isActiveTodo(item: TodoItem): boolean {
+  return item.status !== 'completed' && item.status !== 'cancelled'
+}
+
+/** 逾期：截止本地日早于今天（与即将到期同一套日历基准） */
+function isOverdue(item: TodoItem): boolean {
+  if (!isActiveTodo(item) || !item.dueDate) return false
+  const due = dueLocalYmd(item.dueDate)
+  return !!due && due < localYmd(new Date())
+}
+
+/** 即将到期：本地日历「今天」且尚未逾期 */
+function isDueSoon(item: TodoItem): boolean {
+  if (!isActiveTodo(item) || !item.dueDate) return false
+  const due = dueLocalYmd(item.dueDate)
+  return !!due && due === localYmd(new Date())
+}
+
+function isStale(item: TodoItem): boolean {
+  if (!isActiveTodo(item)) return false
+  if (isOverdue(item) || isDueSoon(item)) return false
+  const created = new Date(item.createdAt).getTime()
+  if (Number.isNaN(created)) return false
+  return Date.now() - created >= STALE_DAYS * 24 * 60 * 60 * 1000
+}
+
+/**
+ * 综合关注度：时限（即将到期 ≥ 逾期）× 重要度 × 陈旧补洞。
+ * 无紧迫截止时 high/urgent 只轻度着色；陈旧再上浮一档，不得到 critical。
+ */
+function attentionLevel(item: TodoItem): AttentionLevel {
+  if (!isActiveTodo(item)) return 'default'
+
+  const pri = item.priority
+
+  if (isDueSoon(item)) {
+    return pri === 'urgent' || pri === 'high' ? 'critical' : 'strong'
+  }
+  if (isOverdue(item)) {
+    return pri === 'urgent' || pri === 'high' ? 'strong' : 'medium'
+  }
+  if (pri === 'urgent' || pri === 'high') {
+    return isStale(item) ? 'medium' : 'mild'
+  }
+  if (pri === 'low') return 'faint'
+  return 'default'
+}
+
+/** 剩余时间占比 0–1（刚建≈1，临近≈0）；无截止/完成/逾期不画条 */
+function dueProgressRatio(item: TodoItem): number | null {
+  if (!isActiveTodo(item) || !item.dueDate || isOverdue(item)) return null
+  const created = new Date(item.createdAt).getTime()
+  const due = new Date(item.dueDate).getTime()
+  if (Number.isNaN(created) || Number.isNaN(due) || due <= created) return null
+  return Math.min(1, Math.max(0, (due - Date.now()) / (due - created)))
+}
+
+function dueProgressVars(item: TodoItem): Record<string, string> | undefined {
+  const ratio = dueProgressRatio(item)
+  if (ratio == null) return undefined
+  const pct = `${Math.round(ratio * 100)}%`
+  // 剩余少 / 即将到期 → 偏暖；剩余充足 → 品牌色浅条
+  if (isDueSoon(item) || ratio <= 0.15) {
+    return {
+      '--due-progress': pct,
+      '--due-progress-color': 'color-mix(in srgb, var(--brand-alert, #e74c3c) 11%, transparent)',
+    }
+  }
+  return {
+    '--due-progress': pct,
+    '--due-progress-color': 'color-mix(in srgb, var(--accent-primary) 9%, transparent)',
+  }
+}
+
+/** 面板分区内：只按重要度（同档按创建时间） */
+function priorityRank(p?: TodoPriority): number {
+  if (p === 'urgent') return 0
+  if (p === 'high') return 1
+  if (p === 'low') return 3
+  return 2 // normal / 未设
+}
+
+function sortByImportance(items: TodoItem[]): TodoItem[] {
+  return items.slice().sort((a, b) => {
+    const d = priorityRank(a.priority) - priorityRank(b.priority)
+    if (d !== 0) return d
+    return a.createdAt.localeCompare(b.createdAt)
+  })
+}
+
+const overdueItems = computed(() => sortByImportance(todos.value.filter(isOverdue)))
 const inProgressItems = computed(() =>
-  todos.value.filter(t => t.status === 'in_progress' && !isOverdue(t))
+  sortByImportance(todos.value.filter(t => t.status === 'in_progress' && !isOverdue(t)))
 )
 const pendingItems = computed(() =>
-  todos.value.filter(t => t.status === 'pending' && !isOverdue(t))
+  sortByImportance(todos.value.filter(t => t.status === 'pending' && !isOverdue(t)))
 )
 const doneItems = computed(() =>
   todos.value
@@ -264,18 +370,6 @@ async function handleComplete(item: TodoItem, ev?: Event) {
     await loadTodos()
     const updated = todos.value.find(t => t.id === item.id)
     if (updated && selectedId.value === item.id) syncDraftFromItem(updated)
-  })
-}
-
-async function handleCancel(item: TodoItem, ev?: Event) {
-  ev?.stopPropagation()
-  await withBusy(item.id, async () => {
-    await window.electronAPI.todo.update(item.id, { status: 'cancelled' })
-    await loadTodos()
-    if (selectedId.value === item.id) {
-      const updated = todos.value.find(t => t.id === item.id)
-      if (updated) syncDraftFromItem(updated)
-    }
   })
 }
 
@@ -521,7 +615,12 @@ onUnmounted(() => {
                 v-for="item in overdueItems"
                 :key="item.id"
                 class="todo-row overdue"
-                :class="{ selected: selectedId === item.id, busy: busyIds.has(item.id) }"
+                :class="{
+                  selected: selectedId === item.id,
+                  busy: busyIds.has(item.id),
+                  'has-due-progress': dueProgressRatio(item) != null,
+                }"
+                :style="dueProgressVars(item)"
                 role="button"
                 tabindex="0"
                 @click="selectItem(item)"
@@ -536,16 +635,13 @@ onUnmounted(() => {
                 >
                   <Check :size="12" :stroke-width="2.5" />
                 </button>
-                <span class="todo-item-title">{{ item.title }}</span>
+                <span class="todo-item-title" :data-attention="attentionLevel(item)">{{ item.title }}</span>
                 <span v-if="priorityLabel(item.priority)" class="meta-chip priority" :data-p="item.priority">
                   {{ priorityLabel(item.priority) }}
                 </span>
                 <span v-if="item.dueDate" class="meta-chip due">{{ formatDueShort(item.dueDate) }}</span>
                 <span class="meta-time" :title="formatAbsolute(item.createdAt)">{{ formatRelative(item.createdAt) }}</span>
                 <div class="todo-actions" @click.stop>
-                  <button type="button" class="action-btn" :title="t('todoPanel.cancel')" @click="handleCancel(item, $event)">
-                    <Ban :size="13" />
-                  </button>
                   <button type="button" class="action-btn danger" :title="t('todoPanel.delete')" @click="handleDelete(item, $event)">
                     <Trash2 :size="13" />
                   </button>
@@ -564,7 +660,13 @@ onUnmounted(() => {
                 v-for="item in inProgressItems"
                 :key="item.id"
                 class="todo-row"
-                :class="{ selected: selectedId === item.id, busy: busyIds.has(item.id) }"
+                :class="{
+                  selected: selectedId === item.id,
+                  busy: busyIds.has(item.id),
+                  'has-due-progress': dueProgressRatio(item) != null,
+                  'due-soon': isDueSoon(item),
+                }"
+                :style="dueProgressVars(item)"
                 role="button"
                 tabindex="0"
                 @click="selectItem(item)"
@@ -579,16 +681,17 @@ onUnmounted(() => {
                 >
                   <Check :size="12" :stroke-width="2.5" />
                 </button>
-                <span class="todo-item-title">{{ item.title }}</span>
+                <span class="todo-item-title" :data-attention="attentionLevel(item)">{{ item.title }}</span>
                 <span v-if="priorityLabel(item.priority)" class="meta-chip priority" :data-p="item.priority">
                   {{ priorityLabel(item.priority) }}
                 </span>
-                <span v-if="item.dueDate" class="meta-chip">{{ formatDueShort(item.dueDate) }}</span>
+                <span
+                  v-if="item.dueDate"
+                  class="meta-chip"
+                  :class="{ due: isDueSoon(item) || isOverdue(item) }"
+                >{{ formatDueShort(item.dueDate) }}</span>
                 <span class="meta-time" :title="formatAbsolute(item.createdAt)">{{ formatRelative(item.createdAt) }}</span>
                 <div class="todo-actions" @click.stop>
-                  <button type="button" class="action-btn" :title="t('todoPanel.cancel')" @click="handleCancel(item, $event)">
-                    <Ban :size="13" />
-                  </button>
                   <button type="button" class="action-btn danger" :title="t('todoPanel.delete')" @click="handleDelete(item, $event)">
                     <Trash2 :size="13" />
                   </button>
@@ -607,7 +710,13 @@ onUnmounted(() => {
                 v-for="item in pendingItems"
                 :key="item.id"
                 class="todo-row"
-                :class="{ selected: selectedId === item.id, busy: busyIds.has(item.id) }"
+                :class="{
+                  selected: selectedId === item.id,
+                  busy: busyIds.has(item.id),
+                  'has-due-progress': dueProgressRatio(item) != null,
+                  'due-soon': isDueSoon(item),
+                }"
+                :style="dueProgressVars(item)"
                 role="button"
                 tabindex="0"
                 @click="selectItem(item)"
@@ -622,16 +731,17 @@ onUnmounted(() => {
                 >
                   <Check :size="12" :stroke-width="2.5" />
                 </button>
-                <span class="todo-item-title">{{ item.title }}</span>
+                <span class="todo-item-title" :data-attention="attentionLevel(item)">{{ item.title }}</span>
                 <span v-if="priorityLabel(item.priority)" class="meta-chip priority" :data-p="item.priority">
                   {{ priorityLabel(item.priority) }}
                 </span>
-                <span v-if="item.dueDate" class="meta-chip">{{ formatDueShort(item.dueDate) }}</span>
+                <span
+                  v-if="item.dueDate"
+                  class="meta-chip"
+                  :class="{ due: isDueSoon(item) || isOverdue(item) }"
+                >{{ formatDueShort(item.dueDate) }}</span>
                 <span class="meta-time" :title="formatAbsolute(item.createdAt)">{{ formatRelative(item.createdAt) }}</span>
                 <div class="todo-actions" @click.stop>
-                  <button type="button" class="action-btn" :title="t('todoPanel.cancel')" @click="handleCancel(item, $event)">
-                    <Ban :size="13" />
-                  </button>
                   <button type="button" class="action-btn danger" :title="t('todoPanel.delete')" @click="handleDelete(item, $event)">
                     <Trash2 :size="13" />
                   </button>
@@ -774,14 +884,6 @@ onUnmounted(() => {
               ? t('todoPanel.reopen')
               : t('todoPanel.complete')
           }}
-        </button>
-        <button
-          v-if="selectedItem.status !== 'cancelled' && selectedItem.status !== 'completed'"
-          type="button"
-          class="footer-btn"
-          @click="handleCancel(selectedItem)"
-        >
-          {{ t('todoPanel.cancel') }}
         </button>
         <button type="button" class="footer-btn danger" @click="handleDelete(selectedItem)">
           {{ t('todoPanel.delete') }}
@@ -1051,6 +1153,8 @@ onUnmounted(() => {
 }
 
 .todo-row {
+  position: relative;
+  z-index: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1061,6 +1165,7 @@ onUnmounted(() => {
   transition: background 0.1s ease;
   /* 避免按 ESC 等键盘操作后出现系统黄/橙 focus ring；选中态已有左侧 accent 条 */
   outline: none;
+  isolation: isolate;
 }
 .todo-row:focus,
 .todo-row:focus-visible {
@@ -1070,10 +1175,35 @@ onUnmounted(() => {
 .todo-row:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transparent); }
 .todo-row.selected {
   background: color-mix(in srgb, var(--accent-primary) 10%, transparent);
-  box-shadow: inset 2px 0 0 var(--accent-primary);
 }
-.todo-row.overdue { background: color-mix(in srgb, var(--brand-alert, #e74c3c) 4%, transparent); }
-.todo-row.overdue.selected {
+/* 选中左侧条：画在进度条之上，避免满进度时被盖住 */
+.todo-row.selected::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--accent-primary);
+  pointer-events: none;
+  z-index: 1;
+}
+/* 剩余时间：右对齐浅填充（从右往左“耗尽”） */
+.todo-row.has-due-progress::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: auto;
+  width: var(--due-progress, 0%);
+  background: var(--due-progress-color);
+  pointer-events: none;
+  z-index: -1;
+  border-radius: inherit;
+}
+.todo-row.overdue.selected,
+.todo-row.has-due-progress.selected {
   background: color-mix(in srgb, var(--accent-primary) 10%, transparent);
 }
 .todo-row.busy { opacity: 0.5; pointer-events: none; }
@@ -1115,6 +1245,27 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.todo-item-title[data-attention='critical'] {
+  color: var(--brand-alert, #e74c3c);
+  font-weight: 600;
+}
+.todo-item-title[data-attention='strong'] {
+  color: color-mix(in srgb, var(--brand-alert, #e74c3c) 82%, #e67e22);
+  font-weight: 600;
+}
+.todo-item-title[data-attention='medium'] {
+  color: #e67e22;
+  font-weight: 550;
+}
+.todo-item-title[data-attention='mild'] {
+  color: color-mix(in srgb, var(--text-primary) 70%, #e67e22);
+}
+.todo-item-title[data-attention='faint'] {
+  color: var(--text-muted);
+}
+.todo-item-title[data-attention='default'] {
+  color: var(--text-primary);
 }
 
 .meta-chip {

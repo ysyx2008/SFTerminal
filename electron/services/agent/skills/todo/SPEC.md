@@ -1,7 +1,20 @@
 /**
  * 本地待办技能 (todo)
  *
- * > Last verified: 2026-07-17
+ * > Last verified: 2026-07-22
+ *
+ * ## 设计目标
+ *
+ * 桌面待办面板要像秘书一样**综合权衡**后再提示，而不是只靠 priority 标签或「逾期最红」：
+ *
+ * - **预防优于追责**：即将到期（本地日历「今天」、且尚未逾期）的视觉热度 ≥ 已逾期；催在逾期前
+ * - **双通道不抢戏**：
+ *   - **标题色** = 综合关注度：重要度（`priority`）× 时限档 × 陈旧度（`createdAt`，轻量补洞）
+ *   - **行背景进度** = 有 `dueDate` 时的**剩余**时间占比 `(dueDate − now) / (dueDate − createdAt)`，**右对齐**浅条（刚建满条、临近从左变短）；逾期/无截止不画条；剩余很少或即将到期时用偏暖色
+ * - **列表排序（面板）**：分区内只按重要度 `urgent > high > normal > low`，同档按创建时间；不混排截止日（避免难懂）
+ * - **陈旧度只补洞**：活跃、无即将到期/逾期时，high/urgent 本就轻度着色；创建超过约 7 天再上浮一档（最高 medium），不得到 critical / 不得盖过「即将到期」
+ * - **完成/取消**：弱化划线，忽略关注度着色与进度条
+ * - **本版范围**：面板展示与面板内排序；不改数据模型、后端 `TodoService` 列表排序、心跳 `render.ts`
  *
  * ## 职责
  *
@@ -43,7 +56,7 @@
  * - 形态：伪 Tab（`terminalStore.todosActive`），非 Agent / Workbench 会话
  * - IPC：`todo:list` / `create` / `update` / `complete` / `delete` / `countOverdue`；写入后广播 `todo:changed`
  * - API：`skills/todo/api.ts` → `TodoService`（与 Agent 工具共用单例与写队列）
- * - UI：`src/components/Todo/TodoPanel.vue` — 轻量 CRUD（列表/筛选、新建标题+截止、完成/取消/重开/删除）
+ * - UI：`src/components/Todo/TodoPanel.vue` — 轻量 CRUD（列表/筛选、新建标题+截止、完成/重开/删除）；标题色/行进度见上方「设计目标」
  *
  * ## 与其它系统边界
  *
