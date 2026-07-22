@@ -15,7 +15,7 @@ import { useTodoOverdueCount } from '../composables/useTodoOverdueCount'
 
 const { t } = useI18n()
 const terminalStore = useTerminalStore()
-const { overdueCount } = useTodoOverdueCount()
+const { overdueCount, hasUnseenOverdue } = useTodoOverdueCount()
 const { openConversationInTab } = useOpenConversationInTab()
 const {
   isDragOver: isConversationDragOver,
@@ -508,7 +508,7 @@ const tasksAreaAttentionTooltip = computed(() => {
       class="tab tab-pinned"
       :class="{
         active: terminalStore.todosActive,
-        'needs-attention': !terminalStore.todosActive && overdueCount > 0,
+        'needs-attention': !terminalStore.todosActive && hasUnseenOverdue,
       }"
       :title="overdueCount > 0 ? t('tabs.todosOverdue', { n: overdueCount }) : t('tabs.todos')"
       @click="terminalStore.openTodos()"
