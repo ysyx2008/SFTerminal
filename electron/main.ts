@@ -2631,18 +2631,39 @@ function applyUpdateSource(source: UpdateSource) {
 
 let currentUpdateSource: UpdateSource = 'github'
 let lastSpeedTestResult: { recommended: UpdateSource; latency: Record<UpdateSource, number> } | null = null
-/** 用户选择「退出时安装」后为 true，退出时由 electron-updater 安装已下载更新 */
+/** 用户选择「退出时安装」后为 true；真正退出时再非静默拉起 NSIS（可见进度） */
 let pendingInstallOnQuit = false
 
 function syncAutoInstallOnAppQuit(): void {
-  const installOnQuitEnabled = configService?.get('installUpdateOnQuit') ?? true
-  autoUpdater.autoInstallOnAppQuit = pendingInstallOnQuit && installOnQuitEnabled
+  // electron-updater 内置 autoInstallOnAppQuit 固定 /S 静默，看不到进度；
+  // 始终关掉，改由 before-quit（forceQuit）里非静默 quitAndInstall。
+  autoUpdater.autoInstallOnAppQuit = false
 }
 
 function resetPendingInstallOnQuit(): void {
   pendingInstallOnQuit = false
   syncAutoInstallOnAppQuit()
 }
+
+/** 退出流程中若已安排「退出时安装」，拉起带进度的 NSIS（非 /S） */
+function installPendingUpdateOnQuitVisible(): void {
+  const installOnQuitEnabled = configService?.get('installUpdateOnQuit') ?? true
+  if (!pendingInstallOnQuit || !installOnQuitEnabled) return
+  if (updateStatus.status !== 'downloaded') return
+  pendingInstallOnQuit = false
+  try {
+    // 非静默：展示 NSIS 进度；安装后是否拉起由 autoRunAppAfterInstall（默认 true）决定
+    autoUpdater.quitAndInstall(false)
+  } catch (e) {
+    log.warn('AutoUpdater: 退出时安装失败:', e)
+  }
+}
+
+// forceQuit 已确认退出时：若用户选了「退出时安装」，展示 NSIS 进度而非静默 /S
+app.on('before-quit', () => {
+  if (!forceQuit) return
+  installPendingUpdateOnQuitVisible()
+})
 
 // 更新状态
 let updateStatus: {
@@ -2666,6 +2687,25 @@ let updateStatus: {
     labels: Record<UpdateSource, { zh: string; en: string }>
   }
 } = { status: 'idle' }
+
+/** 手动/自动开始下载时立即切到 downloading，避免首个 progress 到来前 UI 仍停在 available 灰态 */
+function emitDownloadingStarted(options?: { resetProgress?: boolean }): void {
+  updateStatus = {
+    status: 'downloading',
+    info: updateStatus.info,
+    sources: updateStatus.sources,
+    progress: options?.resetProgress
+      ? { percent: 0, bytesPerSecond: 0, total: 0, transferred: 0 }
+      : (updateStatus.progress ?? {
+          percent: 0,
+          bytesPerSecond: 0,
+          total: 0,
+          transferred: 0,
+        }),
+  }
+  mainWindow?.webContents.send('updater:status-changed', updateStatus)
+  menuService.setUpdateStatus('downloading')
+}
 
 // 自动更新事件处理
 autoUpdater.on('checking-for-update', () => {
@@ -2700,6 +2740,7 @@ autoUpdater.on('update-available', (info) => {
   // 静默自动更新：自动下载
   if (configService?.get('autoDownloadUpdate')) {
     log.info('AutoUpdater: 静默模式，自动开始下载')
+    emitDownloadingStarted()
     autoUpdater.downloadUpdate().catch(err => {
       log.warn('AutoUpdater: 自动下载失败:', err)
     })
@@ -2715,8 +2756,11 @@ autoUpdater.on('update-not-available', () => {
 
 autoUpdater.on('download-progress', (progress) => {
   log.info(`AutoUpdater: 下载进度: ${progress.percent.toFixed(1)}%`)
+  // 必须保留 info.version：前端 handleStatus 无 version 会直接 return，下载中角标卡出不来
   updateStatus = {
     status: 'downloading',
+    info: updateStatus.info,
+    sources: updateStatus.sources,
     progress: {
       percent: progress.percent,
       bytesPerSecond: progress.bytesPerSecond,
@@ -2855,6 +2899,8 @@ ipcMain.handle('updater:downloadUpdate', async (_event, preferredSource?: Update
       applyUpdateSource(preferredSource)
     }
 
+    emitDownloadingStarted()
+
     try {
       await autoUpdater.downloadUpdate()
       return { success: true, source: currentUpdateSource }
@@ -2869,6 +2915,7 @@ ipcMain.handle('updater:downloadUpdate', async (_event, preferredSource?: Update
         mainWindow?.webContents.send('updater:status-changed', updateStatus)
       }
 
+      emitDownloadingStarted({ resetProgress: true })
       await autoUpdater.downloadUpdate()
       return { success: true, source: fallback }
     }
@@ -2883,9 +2930,12 @@ ipcMain.handle('updater:downloadUpdate', async (_event, preferredSource?: Update
 ipcMain.handle('updater:quitAndInstall', async () => {
   try {
     resetPendingInstallOnQuit()
-
-    // Windows：静默安装（与「退出时安装」一致），跳过 NSIS 安装模式选择页；initMultiUser 从注册表沿用 per-user/per-machine
-    autoUpdater.quitAndInstall(process.platform === 'win32', true)
+    // 跳过托盘退出确认，直接进入安装
+    forceQuit = true
+    isQuitting = true
+    // 非静默：展示 NSIS 安装进度（不带 /S）。isForceRunAfter 在非静默时被忽略，
+    // 安装结束后是否拉起应用由 autoRunAppAfterInstall（默认 true）决定。
+    autoUpdater.quitAndInstall(false)
     return { success: true }
   } catch (error) {
     log.error('AutoUpdater: 安装更新失败:', error)

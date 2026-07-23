@@ -107,14 +107,25 @@ export function useAppUpdaterPrompts() {
             return
           }
           const source = status.sources?.current ?? status.sources?.recommended
-          const result = await window.electronAPI.updater.downloadUpdate(source)
-          if (!result.success) {
-            // 允许同一版本再次点下载重试
-            lastPresentedKey = ''
-            toast.warning(result.error || t('about.updateError'))
-            return
-          }
-          // 进入 downloading 由 onStatusChanged 驱动
+          // 立即切到下载中 UI，勿 await 整包下载（否则 available 卡会一直 primaryBusy 变灰）
+          hideDownloadingUntilReady = false
+          lastPresentedKey = ''
+          await showDownloadingCard(version, {
+            status: 'downloading',
+            info: { version },
+            progress: { percent: 0, transferred: 0, total: 0, bytesPerSecond: 0 },
+            sources: status.sources,
+          })
+          void window.electronAPI.updater.downloadUpdate(source).then(async (result) => {
+            if (!result.success) {
+              lastPresentedKey = ''
+              toast.warning(result.error || t('about.updateError'))
+              // 用主进程最新状态重试（可能已切 fallback 源），避免闭包里的 available 过时
+              const latest = await window.electronAPI.updater.getStatus().catch(() => status)
+              void showAvailableCard(version, latest?.info?.version ? latest : status, { force: true })
+            }
+            // 成功：downloaded 事件切到 ready
+          })
         },
         onSecondary: async () => {
           await dismissCard(version, 'available')
