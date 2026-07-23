@@ -2,7 +2,16 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v11.4.0 (2026-07-22) (Latest)
+## v11.4.1 (2026-07-23) (Latest)
+
+> Hotfix: Windows startup/runtime main-thread blocking that made the window show "Not Responding".
+
+### Bug Fixes
+- 🐛 **Windows not responding**: defer Browser Bridge install to async so it no longer blocks the Electron message pump
+- 🐛 **Knowledge worker**: add missing asar unpack deps; desktop worker failures no longer silently fall back to the main process
+- 🐛 **Wakeup feedback loop**: add AI profile pre-check and circuit breaker with backoff and user notification on repeated failures
+
+## v11.4.0 (2026-07-22)
 
 > Watch becomes a standalone ops panel with concurrent runs; todos gain due-soon reminders and importance sorting; MCP tools load progressively by server to cut context cost.
 
