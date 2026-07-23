@@ -44,6 +44,19 @@ Steam 构建（`VITE_STEAM_BUILD`）跳过应用内更新。
 
 发版 CI 在上传完成后执行 `scripts/clean-oss-old-installers.sh`：删除 `releases/` 下旧版完整包，**不删 blockmap**，**不碰桶根目录**固定名文件。
 
+### `optional/speech/` — 按需语音识别模型包
+
+与应用安装包分离，不随 `download:models` / electron-builder 打进客户端。
+
+| 对象 | 说明 |
+|------|------|
+| `speech-pack-{ver}.zip` | ASR + 标点 + `manifest.json`（见 `electron/services/speech/SPEC.md`） |
+| （可选）`speech-pack-latest.json` | 指向推荐版本 |
+
+GitHub 对应独立 Release tag：`speech-pack-v{ver}`（不要挂在每次应用 `vX.Y.Z` 上）。
+
+构建：`npm run build:speech-pack` → `release/speech-pack-1.0.0.zip`。
+
 ## 差分更新如何工作（Windows）
 
 1. 客户端 `electron-updater` 读取 `latest.yml`，发现新版本。

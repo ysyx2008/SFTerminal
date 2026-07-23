@@ -1670,6 +1670,14 @@ app.whenReady().then(async () => {
       log.warn('Browser bridge deferred install failed:', e)
     }
 
+    // 语音模型：若安装目录仍有旧版随包模型，后台迁到 userData（不阻塞）
+    try {
+      const speech = await import('./services/speech')
+      speech.scheduleSpeechPackMigration()
+    } catch (e) {
+      log.warn('Speech pack migration schedule failed:', e)
+    }
+
     // SSO：尽早恢复落盘会话（features.sso=false 时 no-op）
     try {
       const { getAuthService } = await import('./services/auth/auth.service')
@@ -6631,7 +6639,7 @@ ipcMain.handle('calendar:verifyAccount', async (_event, account: {
 })
 
 // ==================== 语音识别相关 ====================
-// 使用 sherpa-onnx-node + Paraformer 模型
+// 使用 sherpa-onnx-node + Paraformer 模型（模型包按需安装）
 
 // 获取语音识别状态
 ipcMain.handle('speech:getStatus', async () => {
@@ -6643,6 +6651,57 @@ ipcMain.handle('speech:getStatus', async () => {
 ipcMain.handle('speech:getModelInfo', async () => {
   const { getModelInfo } = await import('./services/speech')
   return getModelInfo()
+})
+
+ipcMain.handle('speech:getPackStatus', async () => {
+  const { getPackStatus } = await import('./services/speech')
+  return getPackStatus()
+})
+
+ipcMain.handle('speech:getPackDownloadUrls', async () => {
+  const { getPackDownloadUrls } = await import('./services/speech')
+  return getPackDownloadUrls()
+})
+
+ipcMain.handle('speech:installPack', async () => {
+  try {
+    const speech = await import('./services/speech')
+    return { success: true, status: await speech.installPack() }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+ipcMain.handle('speech:importPack', async () => {
+  try {
+    const win = BrowserWindow.getFocusedWindow() || mainWindow
+    const dialogOpts = {
+      title: '选择语音识别模型包',
+      filters: [{ name: 'Speech Pack', extensions: ['zip'] }],
+      properties: ['openFile' as const],
+    }
+    const result = win
+      ? await dialog.showOpenDialog(win, dialogOpts)
+      : await dialog.showOpenDialog(dialogOpts)
+    if (result.canceled || !result.filePaths[0]) {
+      return { success: false, cancelled: true }
+    }
+    const speech = await import('./services/speech')
+    const status = await speech.importPackFromPath(result.filePaths[0])
+    return { success: true, status }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+ipcMain.handle('speech:uninstallPack', async () => {
+  try {
+    const speech = await import('./services/speech')
+    speech.dispose()
+    return { success: true, status: await speech.uninstallPack() }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
 })
 
 // 初始化语音识别服务

@@ -1975,6 +1975,8 @@ interface Window {
         languages: string[]
         sampleRate: number
         available: boolean
+        packVersion?: string | null
+        packSource?: string
         punctuation: {
           id: string
           name: string
@@ -1982,6 +1984,32 @@ interface Window {
           available: boolean
         }
       }>
+      getPackStatus: () => Promise<{
+        available: boolean
+        source: 'userData' | 'bundled' | 'none'
+        packVersion: string | null
+        format: number | null
+        supportedFormat: number
+        recommendedVersion: string
+        approxSizeBytes: number
+        installRoot: string | null
+        error?: string
+      }>
+      getPackDownloadUrls: () => Promise<{
+        github: string
+        oss: string
+        version: string
+      }>
+      installPack: () => Promise<{ success: boolean; status?: unknown; error?: string }>
+      importPack: () => Promise<{ success: boolean; cancelled?: boolean; status?: unknown; error?: string }>
+      uninstallPack: () => Promise<{ success: boolean; status?: unknown; error?: string }>
+      onPackProgress: (callback: (progress: {
+        phase: string
+        percent: number
+        downloaded?: number
+        total?: number
+        message?: string
+      }) => void) => () => void
       isReady: () => Promise<boolean>
       initialize: () => Promise<{
         success: boolean
@@ -2000,6 +2028,7 @@ interface Window {
         initialized: boolean
         modelLoaded: boolean
         modelId: string | null
+        packAvailable?: boolean
       }>
     }
 

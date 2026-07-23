@@ -90,7 +90,7 @@ SailFish/
 │       ├── knowledge/           # 知识库（L2 知识文档，向量存储 + 嵌入 + BM25）
 │       ├── im/                  # IM 集成（钉钉/飞书/企业微信/微信/Slack/Telegram）
 │       ├── tts/                 # TTS 语音合成（可插拔 provider）
-│       ├── speech/              # 语音识别
+│       ├── speech/              # 语音识别（模型包按需安装，见 speech/SPEC.md）
 │       ├── web-search/          # 网页搜索
 │       ├── plugin/              # 插件系统（详细见 plugin/SPEC.md）
 │       │   ├── registry.ts / loader.ts / installer.ts
@@ -110,7 +110,7 @@ SailFish/
 │   ├── config/                  # 前端配置（AI 模板等）
 │   ├── i18n/                    # 国际化（中/英）
 │   └── themes/                  # 终端主题
-├── resources/                   # 打包资源（嵌入模型、语音模型等）
+├── resources/                   # 打包资源（嵌入模型 lite 等；语音 ASR 包按需下载）
 ├── scripts/                     # 构建/模型下载脚本
 ├── docs/                        # 文档（sensor-loop-architecture / plugin-dev-guide / …）
 ├── website/                     # 官网
@@ -295,7 +295,7 @@ Agent 的记忆分三层，模拟人类记忆的衰减梯度，三层协同在�
 - **构建**：`npm run build`（Vite build → electron-builder）
 - **平台**：macOS (universal)、Windows (NSIS)
 - **自动更新**：GitHub Releases + electron-updater（国内 OSS 镜像与差分/blockmap 策略见 `docs/auto-update-oss.md`）
-- **模型**：构建前需 `npm run download:models` 下载嵌入/语音模型
+- **模型**：构建前需 `npm run download:models` 下载嵌入模型；语音包用 `npm run build:speech-pack` 另打，上传 OSS / GitHub `speech-pack-v*` Release
 
 ## 常用命令
 

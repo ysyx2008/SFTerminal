@@ -6,8 +6,13 @@ import { useConfigStore, type AiProfile, type AiModelType, type ApiFormat } from
 import { AI_TEMPLATES } from '../../config/ai-templates'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderId } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
+import { refreshSpeechPackAvailability } from '../../composables/useSpeechRecognition'
 
 const { t } = useI18n()
+
+const props = defineProps<{
+  initialSection?: string
+}>()
 
 const configStore = useConfigStore()
 
@@ -25,10 +30,21 @@ const handleKeydown = (e: KeyboardEvent) => {
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown, true)
   initTtsState()
+  void refreshSpeechPack()
+  if (props.initialSection === 'speechPack') {
+    nextTick(() => scrollToSpeechPack())
+  }
 })
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown, true)
+  unsubSpeechProgress?.()
+})
+
+watch(() => props.initialSection, (section) => {
+  if (section === 'speechPack') {
+    nextTick(() => scrollToSpeechPack())
+  }
 })
 const debugMode = computed(() => configStore.agentDebugMode)
 
@@ -545,6 +561,113 @@ async function testTts() {
   }
 }
 
+// ==================== 语音识别模型包（可选） ====================
+
+const speechPackStatus = ref<{
+  available: boolean
+  source: string
+  packVersion: string | null
+  recommendedVersion: string
+  approxSizeBytes: number
+} | null>(null)
+const speechPackUrls = ref<{ github: string; oss: string; version: string } | null>(null)
+const speechPackBusy = ref(false)
+const speechPackError = ref('')
+const speechPackProgress = ref({ percent: 0, message: '' })
+let unsubSpeechProgress: (() => void) | null = null
+
+function scrollToSpeechPack() {
+  document.getElementById('speech-pack-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function formatBytes(n: number): string {
+  return `${(n / 1024 / 1024).toFixed(0)} MB`
+}
+
+async function refreshSpeechPack() {
+  try {
+    const [status, urls] = await Promise.all([
+      window.electronAPI.speech.getPackStatus(),
+      window.electronAPI.speech.getPackDownloadUrls(),
+    ])
+    speechPackStatus.value = status
+    speechPackUrls.value = urls
+  } catch (err) {
+    speechPackError.value = err instanceof Error ? err.message : String(err)
+  }
+}
+
+function ensureSpeechProgressSub() {
+  if (unsubSpeechProgress) return
+  unsubSpeechProgress = window.electronAPI.speech.onPackProgress((p) => {
+    speechPackProgress.value = {
+      percent: p.percent,
+      message: p.message || '',
+    }
+  })
+}
+
+async function installSpeechPackOnline() {
+  speechPackBusy.value = true
+  speechPackError.value = ''
+  speechPackProgress.value = { percent: 0, message: t('settings.speechPack.installing') }
+  ensureSpeechProgressSub()
+  try {
+    const result = await window.electronAPI.speech.installPack()
+    if (!result.success) {
+      speechPackError.value = result.error || t('settings.speechPack.installFailed')
+    }
+    await refreshSpeechPack()
+    await refreshSpeechPackAvailability()
+  } catch (err) {
+    speechPackError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    speechPackBusy.value = false
+  }
+}
+
+async function importSpeechPack() {
+  speechPackBusy.value = true
+  speechPackError.value = ''
+  ensureSpeechProgressSub()
+  try {
+    const result = await window.electronAPI.speech.importPack()
+    if (result.cancelled) return
+    if (!result.success) {
+      speechPackError.value = result.error || t('settings.speechPack.importFailed')
+    }
+    await refreshSpeechPack()
+    await refreshSpeechPackAvailability()
+  } catch (err) {
+    speechPackError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    speechPackBusy.value = false
+  }
+}
+
+async function uninstallSpeechPack() {
+  if (!confirm(t('settings.speechPack.confirmUninstall'))) return
+  speechPackBusy.value = true
+  speechPackError.value = ''
+  try {
+    const result = await window.electronAPI.speech.uninstallPack()
+    if (!result.success) {
+      speechPackError.value = result.error || t('settings.speechPack.uninstallFailed')
+    }
+    await refreshSpeechPack()
+    await refreshSpeechPackAvailability()
+  } catch (err) {
+    speechPackError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    speechPackBusy.value = false
+  }
+}
+
+function openSpeechPackUrl(which: 'github' | 'oss') {
+  const url = which === 'github' ? speechPackUrls.value?.github : speechPackUrls.value?.oss
+  if (url) window.open(url, '_blank')
+}
+
 // ==================== Web 搜索 ====================
 
 const webSearchEnabled = ref(false)
@@ -1007,6 +1130,83 @@ function openWebSearchKeyUrl() {
           </div>
         </div>
       </template>
+    </div>
+
+    <!-- 语音识别模型（可选按需安装） -->
+    <div v-if="!isSteamBuild" id="speech-pack-section" class="settings-section">
+      <div class="section-header">
+        <h4>{{ t('settings.speechPack.title') }}</h4>
+      </div>
+      <p class="section-desc">{{ t('settings.speechPack.description') }}</p>
+
+      <div class="speech-pack-row">
+        <div class="speech-pack-status" :class="{ ready: speechPackStatus?.available }">
+          <span class="speech-pack-dot" />
+          <span v-if="speechPackStatus?.available">
+            {{ t('settings.speechPack.installed', {
+              version: speechPackStatus.packVersion || speechPackStatus.recommendedVersion,
+              size: formatBytes(speechPackStatus.approxSizeBytes),
+            }) }}
+            <template v-if="speechPackStatus.source === 'bundled'"> · {{ t('settings.speechPack.sourceBundled') }}</template>
+          </span>
+          <span v-else>
+            {{ t('settings.speechPack.notInstalled', {
+              size: formatBytes(speechPackStatus?.approxSizeBytes || 305000000),
+            }) }}
+          </span>
+        </div>
+
+        <div class="speech-pack-actions">
+          <template v-if="!speechPackStatus?.available">
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              :disabled="speechPackBusy"
+              @click="installSpeechPackOnline"
+            >
+              {{ speechPackBusy ? t('settings.speechPack.installing') : t('settings.speechPack.installOnline') }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              :disabled="speechPackBusy"
+              @click="importSpeechPack"
+            >
+              {{ t('settings.speechPack.importLocal') }}
+            </button>
+          </template>
+          <button
+            v-else
+            type="button"
+            class="btn btn-secondary btn-sm"
+            :disabled="speechPackBusy"
+            @click="uninstallSpeechPack"
+          >
+            {{ t('settings.speechPack.uninstall') }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="speechPackBusy" class="speech-pack-progress-wrap">
+        <div class="speech-pack-progress">
+          <div class="speech-pack-progress-bar" :style="{ width: `${speechPackProgress.percent}%` }" />
+        </div>
+        <span class="form-hint">{{ speechPackProgress.message || t('settings.speechPack.working') }}</span>
+      </div>
+
+      <div v-if="!speechPackStatus?.available" class="speech-pack-offline">
+        <span class="form-hint">{{ t('settings.speechPack.offlineLinks') }}</span>
+        <button type="button" class="get-key-btn" :disabled="!speechPackUrls" @click="openSpeechPackUrl('oss')">
+          <ExternalLink :size="12" />
+          <span>{{ t('settings.speechPack.linkOss') }}</span>
+        </button>
+        <button type="button" class="get-key-btn" :disabled="!speechPackUrls" @click="openSpeechPackUrl('github')">
+          <ExternalLink :size="12" />
+          <span>{{ t('settings.speechPack.linkGithub') }}</span>
+        </button>
+      </div>
+
+      <div v-if="speechPackError" class="tts-error-msg">{{ speechPackError }}</div>
     </div>
 
     <!-- Web 搜索 -->
@@ -1722,6 +1922,63 @@ function openWebSearchKeyUrl() {
 }
 
 /* TTS 语音合成 */
+.speech-pack-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.speech-pack-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.speech-pack-status.ready {
+  color: var(--text-primary);
+}
+.speech-pack-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.speech-pack-status.ready .speech-pack-dot {
+  background: var(--accent-success, #3ecf8e);
+}
+.speech-pack-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.speech-pack-progress-wrap {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.speech-pack-progress {
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.speech-pack-progress-bar {
+  height: 100%;
+  background: var(--accent-primary, #4a9eff);
+  transition: width 0.2s ease;
+}
+.speech-pack-offline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
 .tts-form-fields {
   display: flex;
   flex-direction: column;

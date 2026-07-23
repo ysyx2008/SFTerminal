@@ -2977,35 +2977,95 @@ const electronAPI = {
 
   // 语音识别
   speech: {
-    // 获取服务状态
     getStatus: () =>
       ipcRenderer.invoke('speech:getStatus') as Promise<{
         initialized: boolean
         modelLoaded: boolean
         modelId: string | null
+        packAvailable?: boolean
         error?: string
       }>,
 
-    // 获取模型信息
     getModelInfo: () =>
       ipcRenderer.invoke('speech:getModelInfo') as Promise<{
         available: boolean
-        path: string
-        config: {
-          id: string
-          name: string
-          language: string
-        }
+        packVersion?: string | null
+        packSource?: string
+        id?: string
+        name?: string
+        description?: string
+        languages?: string[]
+        sampleRate?: number
+        punctuation?: { id: string; name: string; description: string; available: boolean }
       }>,
 
-    // 初始化服务
+    getPackStatus: () =>
+      ipcRenderer.invoke('speech:getPackStatus') as Promise<{
+        available: boolean
+        source: 'userData' | 'bundled' | 'none'
+        packVersion: string | null
+        format: number | null
+        supportedFormat: number
+        recommendedVersion: string
+        approxSizeBytes: number
+        installRoot: string | null
+        error?: string
+      }>,
+
+    getPackDownloadUrls: () =>
+      ipcRenderer.invoke('speech:getPackDownloadUrls') as Promise<{
+        github: string
+        oss: string
+        version: string
+      }>,
+
+    installPack: () =>
+      ipcRenderer.invoke('speech:installPack') as Promise<{
+        success: boolean
+        status?: unknown
+        error?: string
+      }>,
+
+    importPack: () =>
+      ipcRenderer.invoke('speech:importPack') as Promise<{
+        success: boolean
+        cancelled?: boolean
+        status?: unknown
+        error?: string
+      }>,
+
+    uninstallPack: () =>
+      ipcRenderer.invoke('speech:uninstallPack') as Promise<{
+        success: boolean
+        status?: unknown
+        error?: string
+      }>,
+
+    onPackProgress: (callback: (progress: {
+      phase: string
+      percent: number
+      downloaded?: number
+      total?: number
+      message?: string
+    }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, progress: {
+        phase: string
+        percent: number
+        downloaded?: number
+        total?: number
+        message?: string
+      }) => callback(progress)
+      ipcRenderer.on('speech:pack-progress', handler)
+      return () => ipcRenderer.removeListener('speech:pack-progress', handler)
+    },
+
     initialize: () =>
       ipcRenderer.invoke('speech:initialize') as Promise<{
         success: boolean
         error?: string
+        hasPunctuation?: boolean
       }>,
 
-    // 转录音频数据（Float32Array 格式，16kHz）
     transcribe: (audioData: number[], sampleRate?: number) =>
       ipcRenderer.invoke('speech:transcribe', audioData, sampleRate) as Promise<{
         success: boolean
@@ -3013,11 +3073,11 @@ const electronAPI = {
           text: string
           language?: string
           duration?: number
+          hasPunctuation?: boolean
         }
         error?: string
       }>,
 
-    // 转录音频文件
     transcribeFile: (filePath: string) =>
       ipcRenderer.invoke('speech:transcribeFile', filePath) as Promise<{
         success: boolean
@@ -3029,7 +3089,6 @@ const electronAPI = {
         error?: string
       }>,
 
-    // 检查服务是否就绪
     isReady: () =>
       ipcRenderer.invoke('speech:isReady') as Promise<boolean>
   },

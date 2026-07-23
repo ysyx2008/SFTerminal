@@ -48,19 +48,12 @@ function resampleAudio(input: Float32Array, fromSampleRate: number, toSampleRate
 // 全局共享状态（所有 useSpeechRecognition 实例共用）
 const audioAvailable = ref(true)
 const isModelReady = ref(false)
+/** 模型包是否已安装（与 isModelReady 不同：后者表示 worker 已加载） */
+const modelAvailable = ref(false)
 let _audioChecked = false
 let _modelInitPromise: Promise<boolean> | null = null
 
-// 注：曾经在 7da9b8cf 把音频采集换成 AudioWorkletNode（消除 Chrome 控制台
-// "ScriptProcessorNode is deprecated" 警告），但 build 模式下出现 worklet
-// 持续被驱动、`inputs[0][0]` 却全零的问题（peak=0.0000，识别全错）；dev
-// 模式下表现正常。怀疑是 Chromium 在 packaged 渲染进程下，MediaStreamSource
-// → AudioWorkletNode + getUserMedia 的 echoCancellation/noiseSuppression
-// 这条 audio processing pipeline 行为有边角差异。
-//
-// ScriptProcessorNode 在主线程同步回调，绕开那条 pipeline，所有 Electron
-// 版本都稳定可用。"deprecated" 仅是 Chrome 控制台的提醒，实际未移除；这块
-// 录音任务体量很小，主线程开销可忽略。
+export const SPEECH_PACK_NOT_INSTALLED = 'SPEECH_PACK_NOT_INSTALLED'
 
 /**
  * 全局音频设备检测（只执行一次真正的设备枚举）
@@ -83,6 +76,21 @@ export async function checkAudioDevicesGlobal(): Promise<boolean> {
   }
 }
 
+/** 查询模型包是否已安装（可重复调用以刷新状态） */
+export async function refreshSpeechPackAvailability(): Promise<boolean> {
+  try {
+    const info = await window.electronAPI.speech.getModelInfo()
+    modelAvailable.value = Boolean(info.available)
+    if (!info.available) {
+      isModelReady.value = false
+    }
+    return modelAvailable.value
+  } catch {
+    modelAvailable.value = false
+    return false
+  }
+}
+
 /**
  * 全局语音模型初始化（幂等，多次调用共享同一 Promise）
  */
@@ -96,6 +104,7 @@ export async function initSpeechGlobal(): Promise<boolean> {
 async function _doInitSpeech(): Promise<boolean> {
   try {
     const modelInfo = await window.electronAPI.speech.getModelInfo()
+    modelAvailable.value = Boolean(modelInfo.available)
     if (!modelInfo.available) return false
 
     const ready = await window.electronAPI.speech.isReady()
@@ -105,7 +114,12 @@ async function _doInitSpeech(): Promise<boolean> {
     }
 
     const result = await window.electronAPI.speech.initialize()
-    if (!result.success) return false
+    if (!result.success) {
+      if (result.error === SPEECH_PACK_NOT_INSTALLED) {
+        modelAvailable.value = false
+      }
+      return false
+    }
 
     isModelReady.value = true
     return true
@@ -150,9 +164,14 @@ export function useSpeechRecognition() {
     isInitializing.value = true
     error.value = null
     try {
+      const available = await refreshSpeechPackAvailability()
+      if (!available) {
+        error.value = SPEECH_PACK_NOT_INSTALLED
+        return false
+      }
       const success = await initSpeechGlobal()
       if (!success) {
-        error.value = '语音模型初始化失败'
+        error.value = modelAvailable.value ? '语音模型初始化失败' : SPEECH_PACK_NOT_INSTALLED
       }
       return success
     } catch (err) {
@@ -369,6 +388,7 @@ export function useSpeechRecognition() {
     isTranscribing,
     isInitializing,
     isModelReady,
+    modelAvailable,
     audioAvailable,
     isProcessing,
     canRecord,
@@ -378,6 +398,7 @@ export function useSpeechRecognition() {
     // 方法
     checkAudioDevices,
     checkAndInitialize,
+    refreshSpeechPackAvailability,
     startRecording,
     stopRecording,
     cancelRecording,

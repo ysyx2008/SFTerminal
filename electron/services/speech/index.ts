@@ -1,17 +1,34 @@
 /**
  * 语音识别服务
  * 使用 utilityProcess 运行 sherpa-onnx-node + Paraformer 模型
+ * 模型包按需安装，见 SPEC.md / pack.ts
  */
 import * as path from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
 import { app, utilityProcess, UtilityProcess } from 'electron'
 import { createLogger } from '../../utils/logger'
+import {
+  getPackStatus,
+  getResolvedModelPaths,
+  isSpeechPackAvailable,
+  migrateBundledModelsIfNeeded,
+} from './pack'
+
+export {
+  getPackStatus,
+  getPackDownloadUrls,
+  installPack,
+  importPackFromPath,
+  uninstallPack,
+  migrateBundledModelsIfNeeded,
+  SPEECH_PACK_APPROX_BYTES,
+  RECOMMENDED_PACK_VERSION,
+  SUPPORTED_SPEECH_PACK_FORMAT,
+} from './pack'
+export type { SpeechPackStatus, SpeechPackProgress } from './pack'
 
 const log = createLogger('Speech')
-
-const MODEL_NAME = 'sherpa-onnx-paraformer-zh-2024-03-09'
-const PUNCT_MODEL_NAME = 'sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8'
 
 // Worker 进程
 let worker: UtilityProcess | null = null
@@ -19,26 +36,28 @@ let isInitialized = false
 const pendingCallbacks: Map<string, { resolve: Function; reject: Function }> = new Map()
 let messageId = 0
 
+/** 启动时尝试把 bundled 模型迁到 userData（异步，不阻塞） */
+export function scheduleSpeechPackMigration(): void {
+  void migrateBundledModelsIfNeeded().catch((err) =>
+    log.warn('scheduleSpeechPackMigration failed:', err),
+  )
+}
+
 /**
- * 获取模型目录
+ * 获取 ASR 模型目录（userData pack 优先，其次 resources）
  */
 function getModelDirectory(): string {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'models', 'speech', 'paraformer', MODEL_NAME)
-  } else {
-    return path.join(process.cwd(), 'resources', 'models', 'speech', 'paraformer', MODEL_NAME)
-  }
+  const resolved = getResolvedModelPaths()
+  if (resolved) return resolved.asrDir
+  // 占位路径：仅供错误信息
+  return path.join(app.getPath('userData'), 'models', 'speech', 'paraformer')
 }
 
 /**
  * 获取标点模型目录
  */
-function getPunctModelDirectory(): string {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'models', 'speech', 'punctuation', PUNCT_MODEL_NAME)
-  } else {
-    return path.join(process.cwd(), 'resources', 'models', 'speech', 'punctuation', PUNCT_MODEL_NAME)
-  }
+function getPunctModelDirectory(): string | null {
+  return getResolvedModelPaths()?.punctDir ?? null
 }
 
 /**
@@ -46,6 +65,7 @@ function getPunctModelDirectory(): string {
  */
 export function isPunctModelAvailable(): boolean {
   const punctDir = getPunctModelDirectory()
+  if (!punctDir) return false
   const punctPath = path.join(punctDir, 'model.int8.onnx')
   return fs.existsSync(punctPath)
 }
@@ -139,13 +159,10 @@ function resolveNativePaths(): { unpackedNM: string; sherpaLib: string } {
 // ── 模型与状态 ────────────────────────────────────────────────
 
 /**
- * 检查模型是否可用
+ * 检查模型是否可用（兼容 format 的 pack 完整）
  */
 export function isModelAvailable(): boolean {
-  const modelDir = getModelDirectory()
-  const modelPath = path.join(modelDir, 'model.int8.onnx')
-  const tokensPath = path.join(modelDir, 'tokens.txt')
-  return fs.existsSync(modelPath) && fs.existsSync(tokensPath)
+  return isSpeechPackAvailable()
 }
 
 /**
@@ -287,7 +304,7 @@ export async function initialize(): Promise<{ success: boolean; error?: string; 
   }
 
   if (!isModelAvailable()) {
-    return { success: false, error: '语音模型未安装' }
+    return { success: false, error: 'SPEECH_PACK_NOT_INSTALLED' }
   }
 
   try {
@@ -299,8 +316,8 @@ export async function initialize(): Promise<{ success: boolean; error?: string; 
 
     // 标点模型路径（可选）
     const punctDir = getPunctModelDirectory()
-    const punctModelPath = path.join(punctDir, 'model.int8.onnx')
-    const hasPunctModel = fs.existsSync(punctModelPath)
+    const punctModelPath = punctDir ? path.join(punctDir, 'model.int8.onnx') : ''
+    const hasPunctModel = Boolean(punctModelPath && fs.existsSync(punctModelPath))
 
     log.info('Punctuation model available:', hasPunctModel)
 
@@ -364,13 +381,16 @@ export async function transcribe(
  * 获取模型信息
  */
 export function getModelInfo() {
+  const pack = getPackStatus()
   return {
     id: 'paraformer-zh-2024',
     name: 'Paraformer 中文模型',
     description: 'FunASR Paraformer 中文语音识别模型 (2024版)，支持普通话、英文和方言',
     languages: ['中文', '英文', '四川话', '河南话', '天津话'],
     sampleRate: 16000,
-    available: isModelAvailable(),
+    available: pack.available,
+    packVersion: pack.packVersion,
+    packSource: pack.source,
     punctuation: {
       id: 'ct-transformer-zh-en',
       name: 'CT-Transformer 标点模型',
@@ -387,7 +407,8 @@ export function getStatus() {
   return {
     initialized: isInitialized,
     modelLoaded: isInitialized && worker !== null,
-    modelId: isInitialized ? 'paraformer-zh-small' : null
+    modelId: isInitialized ? 'paraformer-zh-small' : null,
+    packAvailable: isModelAvailable(),
   }
 }
 

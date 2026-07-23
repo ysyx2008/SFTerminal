@@ -81,16 +81,7 @@ extraResources:
     to: "models/embedding/bge-small-zh-v1.5"
     filter:
       - "**/*"
-  # Paraformer 语音识别模型（随软件打包）
-  - from: "resources/models/speech/paraformer"
-    to: "models/speech/paraformer"
-    filter:
-      - "**/*"
-  # CT-Transformer 标点恢复模型（随软件打包）
-  - from: "resources/models/speech/punctuation"
-    to: "models/speech/punctuation"
-    filter:
-      - "**/*"
+  # 语音 ASR/标点模型改为按需安装（见 electron/services/speech/SPEC.md），不再打进安装包
   # 浏览器助手扩展与 Native Host
   - from: "resources/browser-bridge"
     to: "browser-bridge"

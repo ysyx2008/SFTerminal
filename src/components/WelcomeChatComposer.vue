@@ -12,7 +12,7 @@ import { useTerminalStore } from '../stores/terminal'
 import { WELCOME_COMPOSER_TAB_ID } from '../constants/welcome-composer'
 import { useDocumentUpload } from '../composables/useDocumentUpload'
 import { useImageUpload } from '../composables/useImageUpload'
-import { useSpeechRecognition } from '../composables/useSpeechRecognition'
+import { useSpeechRecognition, SPEECH_PACK_NOT_INSTALLED } from '../composables/useSpeechRecognition'
 import { planComposerPaste, ingestComposerAttachments } from '../composables/useComposerPaste'
 import { showConfirm } from '../composables/useConfirm'
 import { toast } from '../composables/useToast'
@@ -26,6 +26,7 @@ const { t } = useI18n()
 const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
 const showSettings = inject<() => void>('showSettings')
+const openAppSettings = inject<(tab?: string, section?: string) => void>('openAppSettings')
 
 const composerTabId = ref(WELCOME_COMPOSER_TAB_ID)
 const composerRef = ref<InstanceType<typeof AiComposer> | null>(null)
@@ -104,7 +105,15 @@ const {
 } = useSpeechRecognition()
 
 watch(speechError, (error) => {
-  if (error) toast.error(t('ai.speechError', { error }))
+  if (!error) return
+  if (error === SPEECH_PACK_NOT_INSTALLED) {
+    toast.show(t('ai.speechPackNotInstalled'), 'warning', 6000, true, {
+      action: t('ai.speechPackOpenSettings'),
+      onClick: () => openAppSettings?.('ai', 'speechPack'),
+    })
+    return
+  }
+  toast.error(t('ai.speechError', { error }))
 })
 
 watch(() => props.active, (active) => {

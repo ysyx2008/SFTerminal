@@ -33,6 +33,7 @@ const { t, locale } = useI18n()
 // Props
 const props = defineProps<{
   initialTab?: string
+  initialSection?: string
   pendingInstallSkillId?: string
 }>()
 
@@ -622,7 +623,7 @@ const onQrImageError = (event: Event) => {
           </div>
         </nav>
         <div class="settings-content">
-          <AiSettings v-if="activeTab === 'ai'" />
+          <AiSettings v-if="activeTab === 'ai'" :initial-section="props.initialSection" />
           <AiRulesSettings v-else-if="activeTab === 'aiRules'" />
           <McpSettings v-else-if="activeTab === 'mcp'" />
           <PluginSettings v-else-if="activeTab === 'plugins'" />

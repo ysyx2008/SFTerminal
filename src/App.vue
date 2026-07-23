@@ -30,7 +30,7 @@ import SsoLoginGate from './components/Auth/SsoLoginGate.vue'
 import { useConfirm, showConfirm } from './composables/useConfirm'
 import { toast } from './composables/useToast'
 import { useAuthStore } from './stores/auth'
-import { checkAudioDevicesGlobal, initSpeechGlobal } from './composables/useSpeechRecognition'
+import { checkAudioDevicesGlobal, initSpeechGlobal, refreshSpeechPackAvailability } from './composables/useSpeechRecognition'
 import type { SftpConnectionConfig } from './composables/useSftp'
 import { uiThemes } from './themes/ui-themes'
 import { createLogger } from './utils/logger'
@@ -224,6 +224,7 @@ const currentColorScheme = computed(() => {
   return theme?.colorScheme || 'dark'
 })
 const settingsInitialTab = ref<string | undefined>(undefined)
+const settingsInitialSection = ref<string | undefined>(undefined)
 const pendingInstallSkillId = ref<string | undefined>(undefined)
 const showFileExplorer = ref(false)
 const sftpConfig = ref<SftpConnectionConfig | null>(null)
@@ -252,6 +253,11 @@ function onWatchPanelClose() {
 
 // 提供给子组件
 provide('showSettings', () => {
+  showSettings.value = true
+})
+provide('openAppSettings', (tab?: string, section?: string) => {
+  settingsInitialTab.value = tab || undefined
+  settingsInitialSection.value = section || undefined
   showSettings.value = true
 })
 
@@ -1064,22 +1070,22 @@ const initializeApp = async () => {
   }
 
   // 全局音频设备检测：轻量同步操作，立即执行让用户尽早知道有无麦克风
-  // 语音模型预加载：~293MB ONNX 模型 + utility process 启动较重，低配机器上会和首屏抢 CPU/IO，
-  // 改为 requestIdleCallback 在浏览器空闲时悄悄加载——既不影响启动速度，用时模型也已就绪
-  // 兜底：useSpeechRecognition.startRecording 内已有「未初始化就先初始化」的逻辑，预加载失败也不影响功能
+  // 语音模型预加载：仅当可选 pack 已安装时才空闲加载 worker（未安装则跳过）
   if (configStore.keyboardShortcuts.voiceInput) {
     checkAudioDevicesGlobal().then(available => {
       if (!available) {
         toast.warning(t('ai.noAudioDevice'))
         return
       }
-      const preloadSpeech = () => {
+      const preloadSpeech = async () => {
+        const packOk = await refreshSpeechPackAvailability()
+        if (!packOk) return
         initSpeechGlobal().catch(err => log.warn('[Speech] 空闲预加载失败，将在首次使用时按需加载:', err))
       }
       if ('requestIdleCallback' in window) {
-        requestIdleCallback(preloadSpeech, { timeout: 8000 })
+        requestIdleCallback(() => { void preloadSpeech() }, { timeout: 8000 })
       } else {
-        setTimeout(preloadSpeech, 5000)
+        setTimeout(() => { void preloadSpeech() }, 5000)
       }
     })
   }
@@ -1287,6 +1293,7 @@ watch(hasTerminalTab, (val) => {
 
 const openConnectionSettings = (tab?: string) => {
   settingsInitialTab.value = tab || undefined
+  settingsInitialSection.value = undefined
   showSettings.value = true
 }
 
@@ -1294,6 +1301,7 @@ const openConnectionSettings = (tab?: string) => {
 const closeSettings = () => {
   showSettings.value = false
   settingsInitialTab.value = undefined
+  settingsInitialSection.value = undefined
   pendingInstallSkillId.value = undefined
 }
 
@@ -1625,6 +1633,7 @@ onUnmounted(() => {
     <SettingsModal 
       v-if="showSettings" 
       :initial-tab="settingsInitialTab"
+      :initial-section="settingsInitialSection"
       :pending-install-skill-id="pendingInstallSkillId"
       @close="closeSettings"
       @restart-setup="restartSetup"

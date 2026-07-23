@@ -13,8 +13,7 @@ console.log()
 
 const scripts = [
   'download-embedding-model.js',
-  'download-speech-model.js',
-  'download-punct-model.js'
+  // 语音 ASR/标点已改为按需安装包，不再随应用构建下载
 ]
 
 for (const script of scripts) {

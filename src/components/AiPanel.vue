@@ -43,6 +43,7 @@ import {
   useHostProfile,
   useAgentMode,
   useSpeechRecognition,
+  SPEECH_PACK_NOT_INSTALLED,
   toast
 } from '../composables'
 import { mermaidSvgToDataUrl } from '../composables/useMarkdown'
@@ -82,6 +83,7 @@ const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
 const composerQuoteStore = useComposerQuoteStore()
 const showSettings = inject<() => void>('showSettings')
+const openAppSettings = inject<(tab?: string, section?: string) => void>('openAppSettings')
 
 const isStandaloneAssistant = computed(() => {
   const tab = terminalStore.tabs.find(t => t.id === props.tabId)
@@ -732,9 +734,15 @@ const {
 
 // 监听语音识别错误并显示提示
 watch(speechError, (error) => {
-  if (error) {
-    toast.error(t('ai.speechError', { error }))
+  if (!error) return
+  if (error === SPEECH_PACK_NOT_INSTALLED) {
+    toast.show(t('ai.speechPackNotInstalled'), 'warning', 6000, true, {
+      action: t('ai.speechPackOpenSettings'),
+      onClick: () => openAppSettings?.('ai', 'speechPack'),
+    })
+    return
   }
+  toast.error(t('ai.speechError', { error }))
 })
 
 // 处理录音按钮点击
