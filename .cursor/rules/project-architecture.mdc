@@ -121,6 +121,19 @@ SailFish/
 
 ## 关键架构模式
 
+### 主进程响应性（Electron 事件循环 = 窗口消息泵）
+
+凡非「窗口生命周期 / 同步 IPC 契约所必需」的工作，**不得以阻塞主线程的方式执行**。Windows 上将直接表现为标题栏「未响应」。
+
+| 层级 | 要求 |
+|------|------|
+| 禁止（主线程） | 大文件 `*Sync` I/O、`execFileSync`/`spawnSync`、大 JSON `stringify`/`parse` 不让出、ONNX/LanceDB/原生 DLL 首次加载与推理 |
+| 允许的微同步 | 极小配置读、路径 `existsSync`、毫秒级内存操作 |
+| 必须异步 | 目录拷贝、注册表、网络、备份、索引重建、组件安装/迁移 |
+| 必须进 utilityProcess / worker | CPU 重 / 原生推理 / 易被杀毒扫描的 DLL 热路径（Embedding、LanceDB）；桌面端 worker 失败**禁止**静默回退主进程 |
+| 调度 | 首屏前只做「能显示窗口」的最小集；其余 `ready-to-show` / `app:mounted` 后 defer |
+| 伪装异步不算合规 | `async` 函数里调 `readFileSync` 仍算违规 |
+
 ### 共享类型（shared/types/）
 - 前后端共用类型统一定义在 `shared/types/`（`@shared/types`），禁止重复定义
 - 后端通过 re-export 保持 import 路径兼容；仅后端使用的类型留在 `electron/services/` 中

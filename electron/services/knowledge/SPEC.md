@@ -1,6 +1,17 @@
 # Knowledge Service SPEC
 
-> Last verified: 2026-06-29
+> Last verified: 2026-07-23
+
+## 设计目标
+
+### utilityProcess 隔离 + 桌面端禁止静默回退主进程（2026-07-23）
+
+- **问题**：Embedding / LanceDB 设计进 utilityProcess；打包 `asarUnpack` 缺传递依赖时 worker ESM 失败，旧逻辑 `warn` 后回退主进程——功能「看似能用」，Windows 上堵 UI，测试也发现不了。
+- **成功标准**：
+  - worker 所需依赖（含 `onnxruntime-common`、`apache-arrow`、`@huggingface/jinja`、`@huggingface/tokenizers` 等）必须在 `asarUnpack` 物理目录，ESM `import()` 可解析。
+  - **桌面端（utilityProcess 可用）**：worker 初始化失败 → **直接失败**（error 日志 + 知识库不可用状态），**禁止**再 load 进主进程。
+  - **唯一例外**：CLI / shim 下 `utilityProcess.fork` 不可用时走进程内模式（无 UI、也无 worker 可选）——这不是「失败后降级」。
+- **明确不做**：不在 worker 失败后再偷偷 in-process「救活」；不靠关键词解析错误串做分类。
 
 ## 职责
 

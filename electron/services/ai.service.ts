@@ -531,6 +531,34 @@ export function resolveAiProfile(
   return { profile: profiles[0] }
 }
 
+/** 执行前结构化校验：空配置 / URL 非法 / 缺 model（禁止靠错误字符串关键词匹配） */
+export type ProfileValidationResult =
+  | { ok: true; profile: AiProfile }
+  | { ok: false; code: 'NO_PROFILE' | 'MISSING_API_URL' | 'INVALID_API_URL' | 'MISSING_MODEL'; message: string }
+
+export function validateProfileForRequest(
+  profile: AiProfile | null | undefined,
+): ProfileValidationResult {
+  if (!profile) {
+    return { ok: false, code: 'NO_PROFILE', message: 'No AI profile configured' }
+  }
+  const apiUrl = typeof profile.apiUrl === 'string' ? profile.apiUrl.trim() : ''
+  if (!apiUrl) {
+    return { ok: false, code: 'MISSING_API_URL', message: 'AI profile apiUrl is empty' }
+  }
+  try {
+    // eslint-disable-next-line no-new
+    new URL(apiUrl)
+  } catch {
+    return { ok: false, code: 'INVALID_API_URL', message: 'AI profile apiUrl is not a valid URL' }
+  }
+  const model = typeof profile.model === 'string' ? profile.model.trim() : ''
+  if (!model) {
+    return { ok: false, code: 'MISSING_MODEL', message: 'AI profile model is empty' }
+  }
+  return { ok: true, profile }
+}
+
 /**
  * 检测 API 错误是否因为不支持多模态/视觉输入
  * - 部分网关会明确写 image_url / content 类型

@@ -1539,10 +1539,8 @@ app.whenReady().then(async () => {
   // 初始化屏幕内容服务（轻量，可以同步初始化）
   initScreenContentService()
 
-  // 浏览器助手网关（扩展 Native Messaging）
+  // 浏览器助手：只 start gateway（轻量）；install 延后到 runBackendInit，避免同步拷贝/reg 堵主进程
   initBrowserBridgeService().catch((e) => log.warn('Browser bridge init failed:', e))
-
-  // 先创建窗口，让用户尽快看到界面
   createWindow()
   setupWindowServices()
   createTray()
@@ -1663,6 +1661,14 @@ app.whenReady().then(async () => {
 
   async function runBackendInit() {
     log.info(`开始初始化后端服务 (+${Date.now() - APP_START_TIME}ms)`)
+
+    // 浏览器助手组件安装（异步；已安装则 skip 全量拷贝）— 必须在首屏后，不堵窗口消息泵
+    sendStartupProgress('browserBridge')
+    try {
+      await getBrowserBridgeService().installIfNeeded()
+    } catch (e) {
+      log.warn('Browser bridge deferred install failed:', e)
+    }
 
     // SSO：尽早恢复落盘会话（features.sso=false 时 no-op）
     try {
@@ -5685,7 +5691,7 @@ ipcMain.handle('browserBridge:getStatus', async () => {
 })
 
 ipcMain.handle('browserBridge:install', async () => {
-  return getBrowserBridgeService().install()
+  return getBrowserBridgeService().install({ forceCopy: true })
 })
 
 ipcMain.handle('browserBridge:uninstall', async () => {

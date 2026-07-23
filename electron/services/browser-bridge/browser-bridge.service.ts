@@ -55,6 +55,8 @@ export class BrowserBridgeService {
   private pending = new Map<string, PendingRequest>()
   private lastInstall: BrowserBridgeInstallStatus | null = null
   private started = false
+  /** 防止 init 与 installIfNeeded 并发双重 listen */
+  private startPromise: Promise<void> | null = null
   private mainWindow: BrowserWindow | null = null
 
   setMainWindow(win: BrowserWindow | null): void {
@@ -63,23 +65,33 @@ export class BrowserBridgeService {
 
   async start(): Promise<void> {
     if (this.started) return
-    this.token = crypto.randomBytes(16).toString('hex')
-    await new Promise<void>((resolve, reject) => {
-      this.server = net.createServer((socket) => this.handleConnection(socket))
-      this.server.on('error', reject)
-      this.server.listen(0, '127.0.0.1', () => {
-        const address = this.server?.address()
-        if (!address || typeof address === 'string') {
-          reject(new Error('Failed to bind browser bridge gateway'))
-          return
-        }
-        this.port = address.port
-        this.persistGateway()
-        this.started = true
-        log.info(`Gateway listening on 127.0.0.1:${this.port}`)
-        resolve()
+    if (this.startPromise) return this.startPromise
+
+    this.startPromise = (async () => {
+      this.token = crypto.randomBytes(16).toString('hex')
+      await new Promise<void>((resolve, reject) => {
+        this.server = net.createServer((socket) => this.handleConnection(socket))
+        this.server.on('error', reject)
+        this.server.listen(0, '127.0.0.1', () => {
+          const address = this.server?.address()
+          if (!address || typeof address === 'string') {
+            reject(new Error('Failed to bind browser bridge gateway'))
+            return
+          }
+          this.port = address.port
+          this.persistGateway()
+          this.started = true
+          log.info(`Gateway listening on 127.0.0.1:${this.port}`)
+          resolve()
+        })
       })
-    })
+    })()
+
+    try {
+      await this.startPromise
+    } finally {
+      this.startPromise = null
+    }
   }
 
   async stop(): Promise<void> {
@@ -101,6 +113,7 @@ export class BrowserBridgeService {
     })
     this.server = null
     this.started = false
+    this.startPromise = null
     this.port = null
   }
 
@@ -119,12 +132,12 @@ export class BrowserBridgeService {
     }
   }
 
-  install(): BrowserBridgeInstallStatus {
+  async install(options?: { forceCopy?: boolean }): Promise<BrowserBridgeInstallStatus> {
     if (!this.started) {
       throw new Error('Browser bridge gateway is not running')
     }
     this.persistGateway()
-    this.lastInstall = installBrowserBridge()
+    this.lastInstall = await installBrowserBridge(options)
     if (this.lastInstall.errors.length) {
       log.warn('Browser bridge install completed with errors:', this.lastInstall.errors)
     } else {
@@ -136,6 +149,24 @@ export class BrowserBridgeService {
     }
     this.notifyConnectionsChanged()
     return this.lastInstall
+  }
+
+  /** 首屏后再调用：已安装则 skip 全量拷贝 */
+  async installIfNeeded(): Promise<BrowserBridgeInstallStatus | null> {
+    if (!this.started) {
+      try {
+        await this.start()
+      } catch (error) {
+        log.warn('Browser bridge start failed before installIfNeeded:', error)
+        return null
+      }
+    }
+    try {
+      return await this.install({ forceCopy: false })
+    } catch (error) {
+      log.warn('Browser bridge installIfNeeded failed:', error)
+      return null
+    }
   }
 
   /**
@@ -168,8 +199,8 @@ export class BrowserBridgeService {
     }
   }
 
-  uninstall(): { errors: string[] } {
-    const result = uninstallBrowserBridge()
+  async uninstall(): Promise<{ errors: string[] }> {
+    const result = await uninstallBrowserBridge()
     this.lastInstall = null
     if (result.errors.length) {
       log.warn('Browser bridge uninstall completed with errors:', result.errors)
@@ -419,13 +450,9 @@ export function getBrowserBridgeService(): BrowserBridgeService {
   return instance
 }
 
+/** 仅启动 gateway；install 由主进程首屏后再调度（见 installIfNeeded） */
 export async function initBrowserBridgeService(): Promise<BrowserBridgeService> {
   const service = getBrowserBridgeService()
   await service.start()
-  try {
-    service.install()
-  } catch (error) {
-    log.warn('Initial browser bridge install failed:', error)
-  }
   return service
 }

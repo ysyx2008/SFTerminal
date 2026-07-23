@@ -1,7 +1,8 @@
 import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import { execFileSync } from 'child_process'
+import { execFile, execFileSync } from 'child_process'
+import { promisify } from 'util'
 import {
   BROWSER_BRIDGE_CHROMIUM_CWS_EXTENSION_ID,
   BROWSER_BRIDGE_CHROMIUM_DEV_EXTENSION_ID,
@@ -14,6 +15,7 @@ import {
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('BrowserBridgeInstaller')
+const execFileAsync = promisify(execFile)
 
 /** Native Host 进程无法访问 Electron，通过 $HOME 下指针文件定位当前 userData（可自定义数据目录） */
 export const BRIDGE_POINTER_BASENAME = '.sailfish-browser-bridge.json'
@@ -53,14 +55,23 @@ export function getBundledBridgeRoot(): string {
   return base
 }
 
-function copyDir(src: string, dest: string): void {
-  fs.mkdirSync(dest, { recursive: true })
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const from = path.join(src, entry.name)
-    const to = path.join(dest, entry.name)
-    if (entry.isDirectory()) copyDir(from, to)
-    else fs.copyFileSync(from, to)
+/** 异步递归拷贝（启动 install 禁止用 sync 拷贝堵主进程） */
+async function copyDirAsync(src: string, dest: string): Promise<void> {
+  await fs.promises.cp(src, dest, { recursive: true, force: true })
+}
+
+/** 已安装组件齐全时跳过全量拷贝（仍刷新 env / registry） */
+function shouldSkipBridgeCopy(root: string): boolean {
+  const chromiumManifest = path.join(root, 'extension-chromium', 'manifest.json')
+  const hostMjs = path.join(root, 'native-host', 'host.mjs')
+  if (!fs.existsSync(chromiumManifest) || !fs.existsSync(hostMjs)) return false
+  if (process.platform === 'win32') {
+    return fs.existsSync(path.join(root, 'native-host', 'host.cmd'))
   }
+  return (
+    fs.existsSync(path.join(root, 'native-host', 'host.sh')) ||
+    fs.existsSync(path.resolve(getMacAppBundleHelperPath()))
+  )
 }
 
 function writeJson(filePath: string, data: unknown): void {
@@ -195,11 +206,13 @@ function removeNativeHostHelper(): void {
   }
 }
 
-function registerWindowsNativeHost(manifestPath: string, browsers: BrowserBridgeBrowser[]): void {
+async function registerWindowsNativeHost(
+  manifestPath: string,
+  browsers: BrowserBridgeBrowser[],
+): Promise<void> {
   for (const key of nativeHostRegistryTargets(browsers)) {
     try {
-      execFileSync('reg', ['add', `HKCU\\${key}`, '/ve', '/t', 'REG_SZ', '/d', manifestPath, '/f'], {
-        stdio: 'ignore',
+      await execFileAsync('reg', ['add', `HKCU\\${key}`, '/ve', '/t', 'REG_SZ', '/d', manifestPath, '/f'], {
         windowsHide: true,
       })
     } catch (error) {
@@ -303,11 +316,10 @@ function nativeHostRegistryTargets(browsers: BrowserBridgeBrowser[]): string[] {
 }
 
 /** 删除历史误写的 Firefox 注册表 key（HKCU\Software\Mozilla\Firefox\...） */
-function removeLegacyWindowsNativeHostKeys(): void {
+async function removeLegacyWindowsNativeHostKeys(): Promise<void> {
   if (process.platform !== 'win32') return
   try {
-    execFileSync('reg', ['delete', `HKCU\\${LEGACY_FIREFOX_REGISTRY_KEY}`, '/f'], {
-      stdio: 'ignore',
+    await execFileAsync('reg', ['delete', `HKCU\\${LEGACY_FIREFOX_REGISTRY_KEY}`, '/f'], {
       windowsHide: true,
     })
   } catch {
@@ -427,15 +439,15 @@ export function detectInstallStatus(): BrowserBridgeInstallStatus | null {
   }
 }
 
-function unregisterWindowsNativeHost(browsers: BrowserBridgeBrowser[]): void {
+async function unregisterWindowsNativeHost(browsers: BrowserBridgeBrowser[]): Promise<void> {
   for (const key of nativeHostRegistryTargets(browsers)) {
     try {
-      execFileSync('reg', ['delete', `HKCU\\${key}`, '/f'], { stdio: 'ignore', windowsHide: true })
+      await execFileAsync('reg', ['delete', `HKCU\\${key}`, '/f'], { windowsHide: true })
     } catch {
       // key may not exist
     }
   }
-  removeLegacyWindowsNativeHostKeys()
+  await removeLegacyWindowsNativeHostKeys()
 }
 
 function unregisterMacLinuxNativeHost(browsers: BrowserBridgeBrowser[]): void {
@@ -451,12 +463,12 @@ function unregisterMacLinuxNativeHost(browsers: BrowserBridgeBrowser[]): void {
   }
 }
 
-export function uninstallBrowserBridge(): { errors: string[] } {
+export async function uninstallBrowserBridge(): Promise<{ errors: string[] }> {
   const errors: string[] = []
   const browsers: BrowserBridgeBrowser[] = ['chrome', 'edge', 'firefox']
 
   try {
-    if (process.platform === 'win32') unregisterWindowsNativeHost(browsers)
+    if (process.platform === 'win32') await unregisterWindowsNativeHost(browsers)
     else unregisterMacLinuxNativeHost(browsers)
     removeNativeHostHelper()
     removeBridgePointer()
@@ -469,7 +481,7 @@ export function uninstallBrowserBridge(): { errors: string[] } {
     const target = path.join(root, sub)
     if (!fs.existsSync(target)) continue
     try {
-      fs.rmSync(target, { recursive: true, force: true })
+      await fs.promises.rm(target, { recursive: true, force: true })
     } catch (error) {
       errors.push(`Remove ${sub} failed: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -478,7 +490,9 @@ export function uninstallBrowserBridge(): { errors: string[] } {
   return { errors }
 }
 
-export function installBrowserBridge(): BrowserBridgeInstallStatus {
+export async function installBrowserBridge(options?: {
+  forceCopy?: boolean
+}): Promise<BrowserBridgeInstallStatus> {
   const bundled = getBundledBridgeRoot()
   const root = getBridgeRoot()
   const errors: string[] = []
@@ -492,17 +506,24 @@ export function installBrowserBridge(): BrowserBridgeInstallStatus {
   const firefoxDest = path.join(root, 'extension-firefox')
   const hostDest = path.join(root, 'native-host')
 
+  const skipCopy = !options?.forceCopy && shouldSkipBridgeCopy(root)
   try {
-    if (fs.existsSync(chromiumSrc)) copyDir(chromiumSrc, chromiumDest)
-    if (fs.existsSync(firefoxSrc)) copyDir(firefoxSrc, firefoxDest)
-    if (fs.existsSync(sharedSrc)) {
-      copyDir(sharedSrc, path.join(chromiumDest, 'shared'))
-      copyDir(sharedSrc, path.join(firefoxDest, 'shared'))
+    if (skipCopy) {
+      log.info('Browser bridge components already present, skipping full copy')
+    } else {
+      if (fs.existsSync(chromiumSrc)) await copyDirAsync(chromiumSrc, chromiumDest)
+      if (fs.existsSync(firefoxSrc)) await copyDirAsync(firefoxSrc, firefoxDest)
+      if (fs.existsSync(sharedSrc)) {
+        await copyDirAsync(sharedSrc, path.join(chromiumDest, 'shared'))
+        await copyDirAsync(sharedSrc, path.join(firefoxDest, 'shared'))
+      }
+      if (fs.existsSync(hostSrc)) await copyDirAsync(hostSrc, hostDest)
     }
-    if (fs.existsSync(hostSrc)) copyDir(hostSrc, hostDest)
   } catch (error) {
     errors.push(`Copy failed: ${error instanceof Error ? error.message : String(error)}`)
   }
+
+  await fs.promises.mkdir(hostDest, { recursive: true })
 
   const electronExe = process.execPath
   const gatewayFile = path.join(root, 'gateway.json')
@@ -522,9 +543,9 @@ export function installBrowserBridge(): BrowserBridgeInstallStatus {
       const winFirefox = path.join(hostDest, `${BROWSER_BRIDGE_NATIVE_HOST}-firefox.json`)
       writeJson(winChromium, { ...chromiumManifest, path: hostPath })
       writeJson(winFirefox, { ...firefoxManifest, path: hostPath })
-      registerWindowsNativeHost(winChromium, ['chrome', 'edge'])
-      registerWindowsNativeHost(winFirefox, ['firefox'])
-      removeLegacyWindowsNativeHostKeys()
+      await registerWindowsNativeHost(winChromium, ['chrome', 'edge'])
+      await registerWindowsNativeHost(winFirefox, ['firefox'])
+      await removeLegacyWindowsNativeHostKeys()
     } else if (process.platform === 'darwin') {
       registerMacNativeHost(chromiumManifest, firefoxManifest, browsers)
     } else {

@@ -1,6 +1,17 @@
 # Browser Bridge 服务 SPEC
 
-> Last verified: 2026-06-13
+> Last verified: 2026-07-23
+
+## 设计目标
+
+### 启动不堵主进程（2026-07-23）
+
+- **问题**：`initBrowserBridgeService` 在 gateway `start()` 后同步 `install()`（全量 `copyDir` + Windows `execFileSync('reg')`），主线程可冻约 24s，窗口兜底 show 被拖死，标题「未响应」。
+- **成功标准**：
+  - Gateway（TCP + `gateway.json`）可尽早 `start`；**install 不得阻塞首屏**。
+  - install 延后到窗口 `ready-to-show`（与后端 defer 同调度）且 **异步**（`fs.promises.cp` / `execFile`）；启动路径禁止 `execFileSync` / 递归 `copyFileSync`。
+  - 已安装且路径未变时 **跳过全量拷贝**，只刷新 gateway / pointer / registry（若需要）。
+- **明确不做**：不删自动注册能力；不把 install 挪进渲染进程；本热修不把 install 迁入独立 utilityProcess。
 
 ## 职责
 
@@ -112,7 +123,7 @@ legacy `list_tabs` / `switch_tab` / `goto` / `close_tab` 内部委托 `shared/ta
 5. Windows host 启动：`ELECTRON_RUN_AS_NODE=1` + 应用可执行文件 + `host.mjs`
    - **Windows 注册表路径（易错）**：Chrome=`Software\Google\Chrome\NativeMessagingHosts\<name>`、Edge=`Software\Microsoft\Edge\...`，但 **Firefox=`Software\Mozilla\NativeMessagingHosts\<name>`（无 `\Firefox` 子级）**。曾误写为 `Mozilla\Firefox` 导致 Firefox 找不到 Native Host；`installer.ts` 装/卸载时会顺带清除历史误写的旧 key。
 
-**迁移/修改数据目录后**：启动时会 `install()` 刷新 host-env、指针与浏览器注册；若仍异常，设置页「重新安装组件」并重启浏览器。
+**迁移/修改数据目录后**：首屏后再 `installAsync()` / `installIfNeeded()` 刷新 host-env、指针与浏览器注册（不堵主进程）；若仍异常，设置页「重新安装组件」并重启浏览器。
 
 Firefox：安装器提供已解压扩展目录；正式持久安装需 Mozilla 签名 XPI（见 `docs/browser-bridge-firefox-amo.md`）。
 

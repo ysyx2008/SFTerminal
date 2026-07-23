@@ -252,6 +252,7 @@ export class EmbeddingService extends EventEmitter {
     const modelName = path.basename(modelPath)
     const pipelineOpts = buildEmbeddingPipelineOptions(pipelineDevice)
 
+    // 桌面端 utilityProcess 可用：必须走 worker；失败直接抛出，禁止静默回退主进程
     if (detectUtilityProcessAvailable()) {
       try {
         await this.startWorker()
@@ -262,11 +263,18 @@ export class EmbeddingService extends EventEmitter {
           device: (initResult?.device ?? pipelineOpts.device) as EmbeddingDevice,
         }
       } catch (workerError) {
-        log.warn('Worker 模式初始化失败，回退到主进程内推理（device=%s）：', pipelineDevice, workerError)
         this.killWorker()
+        const detail = workerError instanceof Error ? workerError.message : String(workerError)
+        const err = new Error(
+          `Embedding worker 初始化失败（禁止回退主进程）：${detail}。` +
+            `若为打包版，请检查 asarUnpack 是否包含 onnxruntime-common / @huggingface/jinja / @huggingface/tokenizers。`,
+        )
+        log.error(err.message, workerError)
+        throw err
       }
     }
 
+    // CLI / shim：utilityProcess 不可用，进程内是唯一模式
     const { pipeline, env } = await loadTransformersInProc()
     env.allowRemoteModels = false
     env.localModelPath = modelDir

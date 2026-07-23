@@ -267,12 +267,18 @@ export class VectorStorage extends EventEmitter {
         log.info('LanceDB 已在 worker 进程中初始化（维度=%d）', dimensions)
         return
       } catch (error) {
-        log.warn('LanceDB worker 初始化失败，回退到主进程内运行:', error)
         this.killWorker()
+        const detail = error instanceof Error ? error.message : String(error)
+        const err = new Error(
+          `LanceDB worker 初始化失败（禁止回退主进程）：${detail}。` +
+            `若为打包版，请检查 asarUnpack 是否包含 apache-arrow。`,
+        )
+        log.error(err.message, error)
+        throw err
       }
     }
 
-    // In-process 降级（CLI / worker 启动失败）
+    // CLI / shim：utilityProcess 不可用，进程内是唯一模式
     await this.initializeInProcess(dimensions)
   }
 

@@ -1,8 +1,17 @@
 # Watch Service SPEC
 
-> Last verified: 2026-07-22（含 history / wakeupHistory 分桶）
+> Last verified: 2026-07-23（含失败熔断 / 唤醒自激环禁止）
 
 ## 设计目标
+
+### 基础设施失败不得高频重入；唤醒不因自身失败再触发（2026-07-23）
+
+- **问题**：唤醒失败 → `notifyFailure` 发 `watch_failure` → 唤醒再匹配 → 立即重入；叠加非法 `apiUrl`（`ERR_INVALID_URL`）每轮冷启动 Agent，形成失败风暴。
+- **成功标准**：
+  - 唤醒 **不因自身失败** 再 emit / 再匹配 `watch_failure`（其它关切失败仍可叫醒唤醒，由 AI 决定是否 `talk_to_user`）。
+  - 执行前结构化预检 AI profile（空 URL / `new URL` 抛错 / 缺 model）→ skip，不跑 Agent；用错误码/预检结果分类，**禁止** message 关键词匹配。
+  - 按 `watchId` 的 circuit breaker：config 类长退避、transient 短退避；熔断时最多一次用户可见引导，不走 wakeup→`talk_to_user` 环。
+- **明确不做**：不移除 `watch_failure` 触发器；不做「漏调 talk_to_user 时宿主自动转发最终文本」的兜底。
 
 ### 关切 = 后台执行 + 面板透明 + 需要时找人（2026-07-21）
 

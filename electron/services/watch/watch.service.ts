@@ -35,6 +35,7 @@ import type { ConfigService, SshSession } from '../config.service'
 import type { AgentService } from '../agent'
 import type { AgentContext, AgentCallbacks, AgentStep } from '../agent/types'
 import type { AiService } from '../ai.service'
+import { resolveAiProfile, validateProfileForRequest } from '../ai.service'
 import type { SensorService } from '../sensor'
 import type { HistoryService } from '../history.service'
 import { isWatchAgentKey, watchAgentKeyFor, WAKEUP_AGENT_KEY } from '@shared/types'
@@ -52,6 +53,20 @@ const MAX_OUTPUT_LENGTH = 1000
 /** 不同 Watch 全局并发软上限（含 wakeup）；超额排队不丢弃 */
 const DEFAULT_MAX_CONCURRENT_WATCHES = 5
 
+/** circuit breaker：config 类退避（秒） */
+const CIRCUIT_CONFIG_BACKOFF_SEC = [5 * 60, 15 * 60, 30 * 60, 60 * 60] as const
+/** circuit breaker：transient 类退避（秒） */
+const CIRCUIT_TRANSIENT_BACKOFF_SEC = [60, 2 * 60, 4 * 60, 8 * 60] as const
+
+type CircuitFailureClass = 'config' | 'transient'
+
+interface WatchCircuitState {
+  consecutiveFailures: number
+  openUntil: number
+  lastClass: CircuitFailureClass
+  userNotified: boolean
+}
+
 // ==================== 类型 ====================
 
 export interface WatchServiceConfig {
@@ -67,6 +82,8 @@ export interface WatchExecutionResult {
   success: boolean
   output: string
   error?: string
+  /** 结构化错误码（如 ERR_INVALID_URL）；禁止靠 message 关键词分类 */
+  errorCode?: string
   duration: number
   skipped?: boolean
   skipReason?: string
@@ -91,6 +108,8 @@ export class WatchService {
   private eventHandler: EventHandler | null = null
   private eventPool: EventPool | null = null
   private checkInterval: NodeJS.Timeout | null = null
+  /** 按 watchId 的失败熔断（内存态；进程重启后清零） */
+  private circuits = new Map<string, WatchCircuitState>()
 
   constructor() {
     this.store = getWatchStore()
@@ -444,9 +463,19 @@ export class WatchService {
     }
 
     // 按事件类型匹配
-    return this.store.getAll().filter(w =>
+    let matches = this.store.getAll().filter(w =>
       w.enabled && w.triggers.some(t => t.type === event.type)
     )
+
+    // 唤醒不因自身失败再触发：watch_failure.payload.watchId === __wakeup__ 时排除唤醒关切
+    if (event.type === 'watch_failure') {
+      const failedId = event.payload?.watchId
+      if (failedId === WatchService.WAKEUP_ID) {
+        matches = matches.filter(w => w.id !== WatchService.WAKEUP_ID)
+      }
+    }
+
+    return matches
   }
 
   // ==================== 并发调度 ====================
@@ -506,8 +535,66 @@ export class WatchService {
     }
 
     const startTime = Date.now()
-    const enhancedPrompt = this.buildEnhancedPrompt(watch, event)
     const isWakeup = watch.id === WatchService.WAKEUP_ID
+
+    // Circuit breaker：熔断窗口内直接 skip
+    const circuitSkip = this.checkCircuitOpen(watch.id)
+    if (circuitSkip) {
+      const result: WatchExecutionResult = {
+        success: false,
+        output: '',
+        error: circuitSkip,
+        duration: Date.now() - startTime,
+        skipped: true,
+        skipReason: 'circuit_open',
+      }
+      this.recordExecution(watch, event, result)
+      this.notifyFrontend('watch:task-completed', {
+        watchId: watch.id,
+        result: {
+          success: false,
+          output: '',
+          error: result.error,
+          duration: result.duration,
+          skipped: true,
+          skipReason: 'circuit_open',
+        },
+      })
+      return result
+    }
+
+    // 执行前 AI profile 预检（避免 Invalid URL 仍冷启动 Agent）
+    const profiles = this.config.configService.getAiProfiles()
+    const activeId = this.config.configService.getActiveAiProfile() || ''
+    const { profile } = resolveAiProfile(profiles, activeId)
+    const validation = validateProfileForRequest(profile)
+    if (!validation.ok) {
+      const result: WatchExecutionResult = {
+        success: false,
+        output: '',
+        error: validation.message,
+        duration: Date.now() - startTime,
+        skipped: true,
+        skipReason: 'invalid_ai_profile',
+      }
+      this.recordCircuitFailure(watch.id, 'config')
+      this.recordExecution(watch, event, result)
+      this.maybeNotifyCircuit(watch, result)
+      this.notifyFrontend('watch:task-completed', {
+        watchId: watch.id,
+        result: {
+          success: false,
+          output: '',
+          error: result.error,
+          duration: result.duration,
+          skipped: true,
+          skipReason: 'invalid_ai_profile',
+        },
+      })
+      return result
+    }
+
+    const enhancedPrompt = this.buildEnhancedPrompt(watch, event)
     // 静默仅约束对外派发：唤醒始终静默；desktop 自动触发不走框架兜底通知
     const isSilent = isWakeup
       ? true
@@ -549,9 +636,11 @@ export class WatchService {
         watch, enhancedPrompt, isSilent, isWakeup, agentSessionId
       )
     } catch (error) {
+      const errObj = error instanceof Error ? error : null
       result = {
         success: false, output: '',
-        error: error instanceof Error ? error.message : String(error),
+        error: errObj ? errObj.message : String(error),
+        errorCode: errObj && 'code' in errObj ? String((errObj as NodeJS.ErrnoException).code) : undefined,
         duration: Date.now() - startTime
       }
     } finally {
@@ -560,10 +649,16 @@ export class WatchService {
 
     this.recordExecution(watch, event, result, agentSessionId)
 
-    if (!result.success && !result.skipped) {
-      this.notifyFailure(watch, result)
-    } else {
+    if (result.success) {
+      this.clearCircuit(watch.id)
       await this.deliverOutput(watch, result, isSilent)
+    } else if (result.skipped) {
+      // skip 已在入口处理；此处兜底
+    } else {
+      const failureClass = this.classifyExecutionFailure(result)
+      this.recordCircuitFailure(watch.id, failureClass)
+      this.notifyFailure(watch, result)
+      this.maybeNotifyCircuit(watch, result)
     }
 
     this.notifyFrontend('watch:task-completed', {
@@ -999,12 +1094,17 @@ export class WatchService {
 
   /**
    * 关切执行失败：作为生命周期事件发射到 EventBus。
-   * 唤醒 Watch 监听此事件并由 AI 自主决定如何通知用户，
-   * 通知链路（主动消息 → IM → 系统通知）复用已有觉醒机制，无需重复实现。
+   * 唤醒 Watch 监听此事件并由 AI 自主决定如何通知用户——
+   * **仅针对其它关切失败**；唤醒自身失败不 emit，避免自激环。
    */
   private notifyFailure(watch: WatchDefinition, result: WatchExecutionResult): void {
     const errorMsg = result.error || '执行失败'
     log.warn(`Watch '${watch.name}' (${watch.id}) failed: ${errorMsg}`)
+
+    if (watch.id === WatchService.WAKEUP_ID) {
+      log.info('Skip watch_failure emit for wakeup self-failure (prevents re-entry loop)')
+      return
+    }
 
     try {
       getEventBus().emit({
@@ -1023,6 +1123,69 @@ export class WatchService {
     } catch (err) {
       log.error('Failed to emit watch_failure event:', err)
     }
+  }
+
+  private checkCircuitOpen(watchId: string): string | null {
+    const state = this.circuits.get(watchId)
+    if (!state) return null
+    if (Date.now() < state.openUntil) {
+      // config 类：用户修好 AI profile 后提前解除，无需等满退避窗口
+      if (state.lastClass === 'config' && this.config) {
+        const profiles = this.config.configService.getAiProfiles()
+        const activeId = this.config.configService.getActiveAiProfile() || ''
+        const { profile } = resolveAiProfile(profiles, activeId)
+        if (validateProfileForRequest(profile).ok) {
+          this.clearCircuit(watchId)
+          return null
+        }
+      }
+      const remainSec = Math.ceil((state.openUntil - Date.now()) / 1000)
+      return `circuit_open (${state.lastClass}, retry in ${remainSec}s)`
+    }
+    return null
+  }
+
+  private clearCircuit(watchId: string): void {
+    this.circuits.delete(watchId)
+  }
+
+  private recordCircuitFailure(watchId: string, failureClass: CircuitFailureClass): void {
+    const prev = this.circuits.get(watchId)
+    const consecutiveFailures = (prev?.consecutiveFailures ?? 0) + 1
+    const table = failureClass === 'config' ? CIRCUIT_CONFIG_BACKOFF_SEC : CIRCUIT_TRANSIENT_BACKOFF_SEC
+    const idx = Math.min(consecutiveFailures - 1, table.length - 1)
+    const openUntil = Date.now() + table[idx] * 1000
+    this.circuits.set(watchId, {
+      consecutiveFailures,
+      openUntil,
+      lastClass: failureClass,
+      userNotified: prev?.userNotified ?? false,
+    })
+    log.warn(
+      `Watch circuit open: ${watchId} class=${failureClass} failures=${consecutiveFailures} until=${new Date(openUntil).toISOString()}`,
+    )
+  }
+
+  /** 用 skipReason / 错误码分类；禁止 message 关键词匹配 */
+  private classifyExecutionFailure(result: WatchExecutionResult): CircuitFailureClass {
+    if (result.skipReason === 'invalid_ai_profile') return 'config'
+    if (result.errorCode === 'ERR_INVALID_URL' || result.errorCode === 'INVALID_API_URL') return 'config'
+    return 'transient'
+  }
+
+  private maybeNotifyCircuit(watch: WatchDefinition, result: WatchExecutionResult): void {
+    const state = this.circuits.get(watch.id)
+    if (!state || state.userNotified) return
+    state.userNotified = true
+    this.circuits.set(watch.id, state)
+    this.notifyFrontend('watch:circuit-open', {
+      watchId: watch.id,
+      watchName: watch.name,
+      failureClass: state.lastClass,
+      openUntil: state.openUntil,
+      error: result.error,
+      skipReason: result.skipReason,
+    })
   }
 
   private isNoAction(output: string): boolean {

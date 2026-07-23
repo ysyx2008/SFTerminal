@@ -39,6 +39,11 @@ asarUnpack:
   - node_modules/sherpa-onnx-win-*/**/*
   - node_modules/onnxruntime-node/**/*
   - "**/onnxruntime-node/**/*"
+  # utilityProcess worker 用 ESM import，NODE_PATH 无效；传递依赖必须物理在 asar.unpacked
+  - node_modules/onnxruntime-common/**/*
+  - node_modules/apache-arrow/**/*
+  - node_modules/@huggingface/jinja/**/*
+  - node_modules/@huggingface/tokenizers/**/*
   - dist-electron/services/speech/**/*
   - dist-electron/services/pdf-worker.js
   - dist-electron/services/pdfjs-config.mjs
