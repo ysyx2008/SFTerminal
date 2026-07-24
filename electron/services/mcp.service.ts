@@ -10,7 +10,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { ToolDefinition } from './ai.service'
 import type { ToolDefinitionWithMeta } from './agent/tools'
 import { formatMcpToolCallContent, resolveMcpToolDisplayLabel } from './mcp-tool-display'
-import { MCP_PRELOAD_THRESHOLD } from './mcp-progressive-constants'
+import { toMcpSkillId, parseMcpSkillId } from './mcp-progressive-constants'
 import { ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
 import { app } from 'electron'
@@ -351,36 +351,43 @@ export class McpService extends EventEmitter {
     return this.getAllTools().length
   }
 
-  /** 工具数 > 阈值 → 进入渐进披露（不把全量 schema 注入上下文） */
+  /** 有已连接 MCP → 渐进披露（不把全量 schema 注入上下文；经 skill load mcp:…） */
   shouldDeferTools(): boolean {
-    return this.getConnectedToolCount() > MCP_PRELOAD_THRESHOLD
+    return this.connections.size > 0
   }
 
   /**
-   * server 目录（defer 时注入 system prompt，也用于 mcp_load 找不到 server 时的纠错提示）。
-   * 每个 server 一行：名称 + 工具名清单（title 优先），给模型能力线索但不含参数 schema。
+   * server 目录（defer 时注入 system prompt / skill 纠错）。
+   * 优先 whenToUse；否则 name + 工具名清单（title 优先）。行首 skill_id = mcp:<id>。
    */
   getServerCatalogText(): string {
     const connections = Array.from(this.connections.values())
     if (connections.length === 0) return '（当前无已连接 MCP 服务器）'
     return connections
       .map(conn => {
-        const { id, name } = conn.config
+        const { id, name, whenToUse } = conn.config
+        const skillId = toMcpSkillId(id)
+        const when = typeof whenToUse === 'string' ? whenToUse.trim() : ''
+        if (when) {
+          return `- ${skillId}（${name}）：${when}`
+        }
         const toolNames = conn.tools.map(t => t.title || t.name)
         if (toolNames.length === 0) {
-          return `- ${name}（id: ${id}）：（无工具）`
+          return `- ${skillId}（${name}）：（无工具）`
         }
-        return `- ${name}（id: ${id}）：${toolNames.join('、')}`
+        return `- ${skillId}（${name}）：${toolNames.join('、')}`
       })
       .join('\n')
   }
 
   /**
-   * 用 id 或显示名解析已连接 server（精确匹配 id / name，忽略大小写）。
+   * 用 id、`mcp:id` 或显示名解析已连接 server（精确匹配 id / name，忽略大小写）。
    */
   resolveServerRef(ref: string): { serverId: string; name: string; toolCount: number } | null {
-    const key = ref.trim()
+    let key = ref.trim()
     if (!key) return null
+    const fromSkill = parseMcpSkillId(key)
+    if (fromSkill) key = fromSkill
     const statuses = this.getServerStatuses()
     const byId = statuses.find(s => s.id === key)
     if (byId) {
@@ -653,13 +660,14 @@ export class McpService extends EventEmitter {
   }
 
   /**
-   * 测试服务器连接
+   * 测试服务器连接（返回工具摘要供 whenToUse 草稿生成）
    */
   async testConnection(config: McpServerConfig): Promise<{
     success: boolean
     toolCount?: number
     resourceCount?: number
     promptCount?: number
+    tools?: Array<{ name: string; title?: string; description: string }>
     error?: string
   }> {
     try {
@@ -667,11 +675,17 @@ export class McpService extends EventEmitter {
       const connection = this.connections.get(config.id)
       
       if (connection) {
+        const tools = connection.tools.map(t => ({
+          name: t.name,
+          title: t.title,
+          description: (t.description || '').slice(0, 120)
+        }))
         const result = {
-          success: true,
+          success: true as const,
           toolCount: connection.tools.length,
           resourceCount: connection.resources.length,
-          promptCount: connection.prompts.length
+          promptCount: connection.prompts.length,
+          tools
         }
         
         // 测试完成后断开
@@ -687,6 +701,13 @@ export class McpService extends EventEmitter {
         error: error instanceof Error ? error.message : '测试连接失败'
       }
     }
+  }
+
+  /** 已连接时同步配置字段（如 whenToUse），供目录即时生效 */
+  patchConnectedConfig(config: McpServerConfig): void {
+    const connection = this.connections.get(config.id)
+    if (!connection) return
+    connection.config = { ...connection.config, ...config }
   }
 
   /**

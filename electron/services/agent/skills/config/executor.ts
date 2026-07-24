@@ -371,6 +371,16 @@ function addMcpServerConfig(args: Record<string, unknown>): ToolResult {
   }
 
   const enabled = args.enabled === false ? false : true
+  const whenToUseRaw = argStr(args, 'whenToUse')
+  const whenToUse = whenToUseRaw ? whenToUseRaw.trim().slice(0, 200) : ''
+  if (enabled && !whenToUse) {
+    return {
+      success: false,
+      output: '',
+      error: '启用 MCP 时必须提供非空 whenToUse（何时该用的一句话；请先与用户确认文案再写入）'
+    }
+  }
+
   const id = argStr(args, 'id') || uuidv4()
   const config = getConfigService()
   const servers = config.getMcpServers()
@@ -390,6 +400,7 @@ function addMcpServerConfig(args: Record<string, unknown>): ToolResult {
     cwd: argStr(args, 'cwd') || undefined,
     url: remote ? url : undefined,
     headers: remote ? parseOptionalStringRecord(args.headers) : undefined,
+    whenToUse: whenToUse || undefined,
   }
 
   config.addMcpServer(server)
@@ -435,6 +446,22 @@ function updateMcpServerConfig(args: Record<string, unknown>): ToolResult {
   }
 
   const remote = isRemoteTransport(transport)
+  let whenToUse = existing.whenToUse
+  if (args.whenToUse !== undefined) {
+    const w = argStr(args, 'whenToUse').trim().slice(0, 200)
+    whenToUse = w || undefined
+  }
+  const effectiveWhen = (whenToUse || '').trim()
+  const enabling = enabled && !existing.enabled
+  // 新启用、或显式写入空 whenToUse：启用态必须非空。已启用的旧配置仅改连接字段可不逼补。
+  if (enabled && !effectiveWhen && (enabling || args.whenToUse !== undefined)) {
+    return {
+      success: false,
+      output: '',
+      error: '启用 MCP 时 whenToUse 不能为空。请提供与用户确认过的使用说明'
+    }
+  }
+
   const merged: McpServerConfig = {
     id: serverId,
     name,
@@ -448,6 +475,9 @@ function updateMcpServerConfig(args: Record<string, unknown>): ToolResult {
     headers: remote
       ? (args.headers !== undefined ? parseOptionalStringRecord(args.headers) : existing.headers)
       : undefined,
+    whenToUse: args.whenToUse !== undefined
+      ? (effectiveWhen || undefined)
+      : existing.whenToUse,
   }
 
   config.updateMcpServer(merged)

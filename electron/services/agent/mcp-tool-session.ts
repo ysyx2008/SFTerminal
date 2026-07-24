@@ -8,7 +8,7 @@
  * @see electron/services/MCP_SPEC.md「设计意图：工具渐进式披露」
  */
 
-export { MCP_PRELOAD_THRESHOLD } from '../mcp-progressive-constants'
+export { MCP_PRELOAD_THRESHOLD, MCP_SKILL_ID_PREFIX, toMcpSkillId, parseMcpSkillId } from '../mcp-progressive-constants'
 
 export class McpToolSession {
   /** 已 load 的 serverId（插入顺序，仅用于稳定遍历） */
@@ -34,6 +34,17 @@ export class McpToolSession {
     if (!serverId) return false
     if (this.loadedServers.includes(serverId)) return false
     this.loadedServers.push(serverId)
+    return true
+  }
+
+  /**
+   * 从 sticky 集合移除某 server（skill unload mcp:…）。
+   * @returns 是否原先已 load
+   */
+  unloadServer(serverId: string): boolean {
+    const idx = this.loadedServers.indexOf(serverId)
+    if (idx < 0) return false
+    this.loadedServers.splice(idx, 1)
     return true
   }
 }

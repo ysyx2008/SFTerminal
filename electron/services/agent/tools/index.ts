@@ -251,6 +251,7 @@ export async function executeTool(
       return executeWebFetch(args, executor)
 
     case 'mcp_load':
+      // 已废弃：引导改用 skill load mcp:…
       return loadMcpServer(args, executor)
 
     case 'send_to_chat':

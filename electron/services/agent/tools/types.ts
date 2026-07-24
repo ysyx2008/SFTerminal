@@ -39,7 +39,7 @@ export interface ToolExecutorConfig {
   terminalService: UnifiedTerminalInterface
   hostProfileService?: HostProfileServiceInterface
   mcpService?: McpService
-  /** MCP 渐进披露会话（mcp_load / 未 load 调用兜底） */
+  /** MCP 渐进披露会话（skill load mcp:… / 未 load 调用兜底） */
   mcpToolSession?: McpToolSession
   addStep: (step: Omit<AgentStep, 'id' | 'timestamp'>) => AgentStep
   updateStep: (stepId: string, updates: Partial<Omit<AgentStep, 'id' | 'timestamp'>>) => void

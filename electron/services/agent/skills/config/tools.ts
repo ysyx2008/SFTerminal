@@ -228,6 +228,8 @@ MCP 服务器列表可通过 config_mcp_server_add/update/delete 管理（不可
 **http**（推荐，MCP Streamable HTTP 规范）：必须提供 url；可选 headers（键值对象，例如 \`{ "Authorization": "Bearer xxx" }\`）。
 **sse**（已被规范标记为 deprecated，仅用于兼容老服务器）：必须提供 url；可选 headers。
 
+**whenToUse**（启用时必填）：一句「何时该用」说明，须先与用户确认再写入；禁止空着启用。
+
 与 \`config_set\` 写入 mcpServers 不同，本工具只追加一条记录。`,
       parameters: {
         type: 'object',
@@ -235,6 +237,7 @@ MCP 服务器列表可通过 config_mcp_server_add/update/delete 管理（不可
           name: { type: 'string', description: '显示名称' },
           transport: { type: 'string', enum: ['stdio', 'sse', 'http'], description: '传输方式：远程服务优先选 http' },
           enabled: { type: 'boolean', description: '是否启用，默认 true' },
+          whenToUse: { type: 'string', description: '何时该用（给模型的一句话，≤200 字；启用时必填，须用户确认）' },
           id: { type: 'string', description: '服务器唯一 id，省略则自动生成 UUID' },
           command: { type: 'string', description: 'stdio：可执行文件或命令' },
           args: {
@@ -257,7 +260,8 @@ MCP 服务器列表可通过 config_mcp_server_add/update/delete 管理（不可
       name: 'config_mcp_server_update',
       description: `按 id 更新已有 MCP 服务器。未传入的字段保持原值（部分更新）。
 
-切换 transport 时请同时提供对应模式下必填字段（stdio 需 command，sse / http 需 url）。`,
+切换 transport 时请同时提供对应模式下必填字段（stdio 需 command，sse / http 需 url）。
+补齐或修改 whenToUse 时须先与用户确认文案。新启用（enabled→true）必须带非空 whenToUse。`,
       parameters: {
         type: 'object',
         properties: {
@@ -265,6 +269,7 @@ MCP 服务器列表可通过 config_mcp_server_add/update/delete 管理（不可
           name: { type: 'string', description: '显示名称' },
           transport: { type: 'string', enum: ['stdio', 'sse', 'http'] },
           enabled: { type: 'boolean', description: '启用/禁用该服务器，不需要删除后重建' },
+          whenToUse: { type: 'string', description: '何时该用（确认后的一句话）' },
           command: { type: 'string' },
           args: { type: 'array', items: { type: 'string' } },
           env: { type: 'object' },

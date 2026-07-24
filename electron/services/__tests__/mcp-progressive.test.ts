@@ -1,5 +1,5 @@
 /**
- * MCP 渐进披露：按 server 整包 load + 阈值
+ * MCP 渐进披露：按 server 整包 load + 始终 defer；whenToUse 目录
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
@@ -13,7 +13,8 @@ vi.mock('electron', () => ({
 
 import {
   McpToolSession,
-  MCP_PRELOAD_THRESHOLD
+  toMcpSkillId,
+  parseMcpSkillId
 } from '../agent/mcp-tool-session'
 import { McpService, type McpTool } from '../mcp.service'
 
@@ -36,11 +37,28 @@ describe('McpToolSession server sticky', () => {
     expect(session.loadServer('s0')).toBe(false)
   })
 
+  it('unloadServer 移除单家', () => {
+    const session = new McpToolSession()
+    session.loadServer('a')
+    session.loadServer('b')
+    expect(session.unloadServer('a')).toBe(true)
+    expect(session.getLoadedServerIds()).toEqual(['b'])
+    expect(session.unloadServer('a')).toBe(false)
+  })
+
   it('clear 清空', () => {
     const session = new McpToolSession()
     session.loadServer('x')
     session.clear()
     expect(session.getLoadedServerIds()).toEqual([])
+  })
+})
+
+describe('mcp skill id helpers', () => {
+  it('toMcpSkillId / parseMcpSkillId', () => {
+    expect(toMcpSkillId('qcc')).toBe('mcp:qcc')
+    expect(parseMcpSkillId('mcp:qcc')).toBe('qcc')
+    expect(parseMcpSkillId('excel')).toBeNull()
   })
 })
 
@@ -82,7 +100,11 @@ describe('McpService progressive helpers', () => {
       [
         'miaoxiang',
         {
-          config: { id: 'miaoxiang', name: '妙想MCP' },
+          config: {
+            id: 'miaoxiang',
+            name: '妙想MCP',
+            whenToUse: '查 A 股行情与研报，勿用网页搜索代替'
+          },
           tools: tools.filter(t => t.serverId === 'miaoxiang'),
           resources: [],
           prompts: []
@@ -91,25 +113,16 @@ describe('McpService progressive helpers', () => {
     ])
   })
 
-  it('shouldDeferTools 阈值', () => {
+  it('shouldDeferTools：有已连接 MCP 即 true', () => {
     expect(mcp.getConnectedToolCount()).toBe(3)
-    expect(mcp.shouldDeferTools()).toBe(3 > MCP_PRELOAD_THRESHOLD)
-    const conn = (mcp as unknown as { connections: Map<string, { tools: McpTool[] }> }).connections.get('qcc_risk')!
-    for (let i = 0; i < MCP_PRELOAD_THRESHOLD; i++) {
-      conn.tools.push(
-        makeTool({
-          serverId: 'qcc_risk',
-          serverName: '企查查-风险信息',
-          name: `extra_${i}`,
-          description: `e${i}`
-        })
-      )
-    }
     expect(mcp.shouldDeferTools()).toBe(true)
+    const empty = new McpService()
+    expect(empty.shouldDeferTools()).toBe(false)
   })
 
-  it('resolveServerRef 支持 id 与名称', () => {
+  it('resolveServerRef 支持 id、mcp:id 与名称', () => {
     expect(mcp.resolveServerRef('qcc_risk')?.name).toBe('企查查-风险信息')
+    expect(mcp.resolveServerRef('mcp:qcc_risk')?.serverId).toBe('qcc_risk')
     expect(mcp.resolveServerRef('企查查-风险信息')?.serverId).toBe('qcc_risk')
     expect(mcp.resolveServerRef('不存在')).toBeNull()
   })
@@ -120,21 +133,26 @@ describe('McpService progressive helpers', () => {
     expect(defs.every(d => d.function.name.startsWith('mcp_'))).toBe(true)
   })
 
-  it('getServerCatalogText 含 server 名与工具名清单', () => {
+  it('getServerCatalogText 含 mcp: skill id；无 whenToUse 时列工具名', () => {
     const text = mcp.getServerCatalogText()
+    expect(text).toContain('mcp:qcc_risk')
     expect(text).toContain('企查查-风险信息')
-    expect(text).toContain('妙想MCP')
-    // 每个 server 一行，附工具名（title 优先，无 title 时用 name）
     expect(text).toContain('equity_penetration')
-    expect(text).toContain('stock_quote')
   })
 
-  it('getServerCatalogText 工具有 title 时优先展示 title', () => {
-    const conn = (mcp as unknown as { connections: Map<string, { tools: McpTool[] }> }).connections.get('miaoxiang')!
+  it('getServerCatalogText 优先 whenToUse', () => {
+    const text = mcp.getServerCatalogText()
+    expect(text).toContain('mcp:miaoxiang')
+    expect(text).toContain('查 A 股行情与研报')
+    expect(text).not.toContain('stock_quote')
+  })
+
+  it('getServerCatalogText 工具有 title 时优先展示 title（无 whenToUse）', () => {
+    const conn = (mcp as unknown as { connections: Map<string, { tools: McpTool[]; config: { whenToUse?: string } }> }).connections.get('qcc_risk')!
     conn.tools.push(
       makeTool({
-        serverId: 'miaoxiang',
-        serverName: '妙想MCP',
+        serverId: 'qcc_risk',
+        serverName: '企查查-风险信息',
         name: 'kline_query',
         title: 'K线查询'
       })
@@ -150,10 +168,10 @@ describe('McpService progressive helpers', () => {
   })
 
   it('getServerCatalogText 空工具 server 标注（无工具）', () => {
-    const conn = (mcp as unknown as { connections: Map<string, { tools: McpTool[] }> }).connections.get('miaoxiang')!
+    const conn = (mcp as unknown as { connections: Map<string, { tools: McpTool[]; config: Record<string, unknown> }> }).connections.get('qcc_risk')!
     conn.tools = []
+    conn.config = { id: 'qcc_risk', name: '企查查-风险信息' }
     const text = mcp.getServerCatalogText()
-    expect(text).toContain('妙想MCP（id: miaoxiang）：（无工具）')
+    expect(text).toContain('mcp:qcc_risk（企查查-风险信息）：（无工具）')
   })
-
 })

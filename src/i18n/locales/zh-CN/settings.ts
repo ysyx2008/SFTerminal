@@ -645,7 +645,19 @@ export default {
     importJsonHint: '粘贴 MCP 服务方提供的 JSON 配置（含 url、headers 等），一键批量添加',
     importJsonCompat: '兼容 Claude Desktop / Cursor 的 mcpServers 配置格式',
     importJsonSuccess: '已导入 {count} 个 MCP 服务器',
-    importJsonInvalid: 'JSON 解析失败：{error}'
+    importJsonInvalid: 'JSON 解析失败：{error}',
+    whenToUse: '何时使用（给 AI）',
+    whenToUsePlaceholder: '例如：查询企业工商/股权等官方数据，勿用网页搜索代替',
+    whenToUseHint: '可点「自动生成」；启用保存时若仍为空也会生成草稿，你必须确认或改完再确认；取消即配置失败',
+    whenToUseMissing: '尚未填写使用说明',
+    whenToUseGenerate: '自动生成',
+    whenToUseGenerated: '已填入生成的使用说明，可再编辑后保存',
+    whenToUseConfirmTitle: '确认 MCP 使用说明',
+    whenToUseConfirmHint: '请确认或修改下面这句话。不能留空；取消将不保存本次启用配置。',
+    whenToUseAccept: '确认并保存',
+    whenToUseRequired: '使用说明不能为空',
+    whenToUseGenerating: '正在生成使用说明…',
+    whenToUseGenerateFailed: '自动生成失败，请手写一句使用说明后确认'
   },
 
 

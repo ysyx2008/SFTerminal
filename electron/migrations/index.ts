@@ -21,6 +21,7 @@ import { migrationV6 } from './v6-watch-history-split'
 import { migrationV7 } from './v7-im-bastion-and-e1-to-g1'
 import { migrationV8 } from './v8-conversation-titles-to-records'
 import { migrationV9 } from './v9-todo-md-to-json'
+import { migrationV10 } from './v10-mcp-when-to-use-notice'
 
 const allMigrations = [
   migrationV1,
@@ -32,6 +33,7 @@ const allMigrations = [
   migrationV7,
   migrationV8,
   migrationV9,
+  migrationV10,
 ]
 
 let _runner: MigrationRunner | null = null

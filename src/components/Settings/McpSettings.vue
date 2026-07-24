@@ -18,6 +18,7 @@ interface McpServerConfig {
   cwd?: string
   url?: string
   headers?: Record<string, string>
+  whenToUse?: string
 }
 
 interface McpServerStatus {
@@ -56,9 +57,12 @@ interface McpPrompt {
 const showForm = ref(false)
 const showDetails = ref(false)
 const showImport = ref(false)
-const handleKeydown = (e: KeyboardEvent) => {
+  const handleKeydown = (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
-    if (showDetails.value) {
+    if (showWhenToUseConfirm.value) {
+      e.stopImmediatePropagation()
+      cancelWhenToUse()
+    } else if (showDetails.value) {
       e.stopImmediatePropagation()
       showDetails.value = false
     } else if (showImport.value) {
@@ -103,8 +107,16 @@ const formData = ref<Partial<McpServerConfig>>({
   env: {},
   cwd: '',
   url: '',
-  headers: {}
+  headers: {},
+  whenToUse: ''
 })
+
+/** whenToUse 确认弹窗（不可跳过留空） */
+const showWhenToUseConfirm = ref(false)
+const whenToUseDraft = ref('')
+const whenToUseGenerating = ref(false)
+const whenToUseError = ref('')
+let whenToUseConfirmResolve: ((value: string | null) => void) | null = null
 
 // 用于编辑 args / env / headers 的辅助字段
 const argsText = ref('')
@@ -208,7 +220,8 @@ const resetForm = () => {
     env: {},
     cwd: '',
     url: '',
-    headers: {}
+    headers: {},
+    whenToUse: ''
   }
   argsText.value = ''
   envText.value = ''
@@ -345,21 +358,16 @@ const testConnection = async () => {
 }
 
 // 保存服务器
-const saveServer = async () => {
-  if (!formData.value.name) return
-
+const buildServerFromForm = (): McpServerConfig => {
   parseArgs()
   parseEnv()
   parseHeaders()
-
-  // 使用 toRaw 转换响应式对象，避免 IPC 克隆错误
   const rawArgs = toRaw(formData.value.args) || []
   const rawEnv = toRaw(formData.value.env) || {}
   const rawHeaders = toRaw(formData.value.headers) || {}
-
-  const server: McpServerConfig = {
+  return {
     id: editingServer.value?.id || uuidv4(),
-    name: formData.value.name,
+    name: formData.value.name!,
     enabled: formData.value.enabled ?? true,
     transport: formData.value.transport || 'stdio',
     command: formData.value.command,
@@ -367,16 +375,154 @@ const saveServer = async () => {
     env: Object.keys(rawEnv).length > 0 ? rawEnv : undefined,
     cwd: formData.value.cwd || undefined,
     url: formData.value.url,
-    headers: Object.keys(rawHeaders).length > 0 ? rawHeaders : undefined
+    headers: Object.keys(rawHeaders).length > 0 ? rawHeaders : undefined,
+    whenToUse: (formData.value.whenToUse || '').trim() || undefined
   }
+}
 
+/** 弹出确认框；返回确认后的文案，取消返回 null */
+const promptWhenToUseConfirm = async (
+  draft: string,
+  errorMsg = ''
+): Promise<string | null> => {
+  whenToUseDraft.value = draft
+  whenToUseError.value = errorMsg
+  showWhenToUseConfirm.value = true
+  return new Promise((resolve) => {
+    whenToUseConfirmResolve = resolve
+  })
+}
+
+const acceptWhenToUse = () => {
+  const text = whenToUseDraft.value.trim().slice(0, 200)
+  if (!text) {
+    whenToUseError.value = t('mcpSettings.whenToUseRequired')
+    return
+  }
+  showWhenToUseConfirm.value = false
+  whenToUseConfirmResolve?.(text)
+  whenToUseConfirmResolve = null
+}
+
+const cancelWhenToUse = () => {
+  showWhenToUseConfirm.value = false
+  whenToUseConfirmResolve?.(null)
+  whenToUseConfirmResolve = null
+}
+
+const generateWhenToUseDraft = async (
+  server: McpServerConfig
+): Promise<{ draft: string; error?: string; toolsOk: boolean }> => {
+  whenToUseGenerating.value = true
+  try {
+    let tools: Array<{ name: string; title?: string; description?: string }> = []
+    const statuses = await window.electronAPI.mcp.getServerStatuses()
+    const alreadyConnected = statuses.some(s => s.id === server.id && s.connected)
+    if (alreadyConnected) {
+      // 已连接时勿走 testConnection（会 disconnect）
+      const all = await window.electronAPI.mcp.getAllTools()
+      tools = all
+        .filter(t => t.serverId === server.id)
+        .map(t => ({
+          name: t.name,
+          description: (t.description || '').slice(0, 120)
+        }))
+    } else {
+      const test = await window.electronAPI.mcp.testConnection(JSON.parse(JSON.stringify(server)))
+      if (!test.success) {
+        return { draft: '', toolsOk: false, error: test.error || t('mcpSettings.connectionFailed') }
+      }
+      tools = test.tools || []
+    }
+    const suggested = await window.electronAPI.mcp.suggestWhenToUse({
+      name: server.name,
+      tools
+    })
+    if (suggested.success && suggested.whenToUse) {
+      return { draft: suggested.whenToUse, toolsOk: true }
+    }
+    return {
+      draft: '',
+      toolsOk: true,
+      error: suggested.error || t('mcpSettings.whenToUseGenerateFailed')
+    }
+  } catch (e) {
+    return {
+      draft: '',
+      toolsOk: false,
+      error: e instanceof Error ? e.message : t('mcpSettings.whenToUseGenerateFailed')
+    }
+  } finally {
+    whenToUseGenerating.value = false
+  }
+}
+
+/** 表单内「自动生成」：写入 textarea，不弹确认、不落盘 */
+const fillWhenToUseFromAi = async () => {
+  if (!formData.value.name?.trim()) {
+    testResult.value = { success: false, message: t('mcpSettings.pleaseInputServerName') }
+    return
+  }
+  const server = buildServerFromForm()
+  const { draft, error, toolsOk } = await generateWhenToUseDraft(server)
+  if (draft) {
+    formData.value.whenToUse = draft
+    testResult.value = {
+      success: true,
+      message: t('mcpSettings.whenToUseGenerated')
+    }
+    return
+  }
+  testResult.value = {
+    success: false,
+    message: error || (toolsOk ? t('mcpSettings.whenToUseGenerateFailed') : t('mcpSettings.connectionFailed'))
+  }
+}
+
+const persistServer = async (server: McpServerConfig) => {
+  const plain = JSON.parse(JSON.stringify(server))
   if (editingServer.value) {
-    await window.electronAPI.mcp.updateServer(server)
+    await window.electronAPI.mcp.updateServer(plain)
   } else {
-    await window.electronAPI.mcp.addServer(server)
+    await window.electronAPI.mcp.addServer(plain)
+  }
+  if (server.enabled) {
+    try {
+      await window.electronAPI.mcp.connect(plain)
+    } catch {
+      /* 连接失败不回滚配置；用户可稍后手动连 */
+    }
+  }
+  await loadServers()
+}
+
+const saveServer = async () => {
+  if (!formData.value.name) return
+
+  const server = buildServerFromForm()
+  const needsWhenToUse = server.enabled && !(server.whenToUse || '').trim()
+
+  if (needsWhenToUse) {
+    const { draft, error, toolsOk } = await generateWhenToUseDraft(server)
+    if (!toolsOk && !draft) {
+      testResult.value = { success: false, message: error || t('mcpSettings.connectionFailed') }
+      return
+    }
+    const confirmed = await promptWhenToUseConfirm(draft || formData.value.whenToUse || '', error || '')
+    if (!confirmed) {
+      return
+    }
+    server.whenToUse = confirmed
+    formData.value.whenToUse = confirmed
+  } else if (server.enabled && (server.whenToUse || '').trim()) {
+    if (!editingServer.value) {
+      const confirmed = await promptWhenToUseConfirm(server.whenToUse!)
+      if (!confirmed) return
+      server.whenToUse = confirmed
+    }
   }
 
-  await loadServers()
+  await persistServer(server)
   showForm.value = false
   resetForm()
 }
@@ -391,15 +537,39 @@ const deleteServer = async (server: McpServerConfig) => {
 
 // 切换启用状态
 const toggleEnabled = async (server: McpServerConfig) => {
-  // 深拷贝避免 IPC 克隆错误
-  const updated = JSON.parse(JSON.stringify({ ...server, enabled: !server.enabled }))
+  const nextEnabled = !server.enabled
+  if (nextEnabled && !(server.whenToUse || '').trim()) {
+    const { draft, error, toolsOk } = await generateWhenToUseDraft(server)
+    if (!toolsOk && !draft) {
+      alert(error || t('mcpSettings.connectionFailed'))
+      return
+    }
+    const confirmed = await promptWhenToUseConfirm(draft, error || '')
+    if (!confirmed) return
+    const updated = JSON.parse(JSON.stringify({
+      ...server,
+      enabled: true,
+      whenToUse: confirmed
+    }))
+    await window.electronAPI.mcp.updateServer(updated)
+    try {
+      await window.electronAPI.mcp.connect(updated)
+    } catch { /* ignore */ }
+    await loadServers()
+    return
+  }
+
+  const updated = JSON.parse(JSON.stringify({ ...server, enabled: nextEnabled }))
   await window.electronAPI.mcp.updateServer(updated)
-  
-  // 如果禁用，断开连接
+
   if (!updated.enabled) {
     await window.electronAPI.mcp.disconnect(server.id)
+  } else {
+    try {
+      await window.electronAPI.mcp.connect(updated)
+    } catch { /* ignore */ }
   }
-  
+
   await loadServers()
 }
 
@@ -509,14 +679,16 @@ const importFromJson = async () => {
     toAdd.push({
       id: uuidv4(),
       name,
-      enabled: true,
+      // 无 whenToUse 时不能直接启用（须事后确认）；JSON 若带 whenToUse 则启用
+      enabled: !!(entry as { whenToUse?: string }).whenToUse,
       transport,
       command: entry.command,
       args: entry.args,
       env: entry.env,
       cwd: entry.cwd,
       url: entry.url,
-      headers: entry.headers
+      headers: entry.headers,
+      whenToUse: (entry as { whenToUse?: string }).whenToUse
     })
   }
 
@@ -629,6 +801,12 @@ onUnmounted(() => {
               <template v-if="getServerStatus(server.id)?.connected">
                 · {{ t('mcpSettings.toolsCount', { count: getServerStatus(server.id)?.toolCount }) }}
               </template>
+            </div>
+            <div v-if="server.whenToUse" class="server-when-to-use" :title="server.whenToUse">
+              {{ server.whenToUse }}
+            </div>
+            <div v-else-if="server.enabled" class="server-when-to-use missing">
+              {{ t('mcpSettings.whenToUseMissing') }}
             </div>
           </div>
           <div class="server-actions">
@@ -757,6 +935,28 @@ onUnmounted(() => {
           </div>
         </template>
 
+        <div class="form-group">
+          <div class="form-label-row">
+            <label class="form-label">{{ t('mcpSettings.whenToUse') }}</label>
+            <button
+              type="button"
+              class="btn btn-sm"
+              :disabled="whenToUseGenerating || testing || !formData.name"
+              @click="fillWhenToUseFromAi"
+            >
+              {{ whenToUseGenerating ? t('mcpSettings.whenToUseGenerating') : t('mcpSettings.whenToUseGenerate') }}
+            </button>
+          </div>
+          <textarea
+            v-model="formData.whenToUse"
+            class="input textarea"
+            :placeholder="t('mcpSettings.whenToUsePlaceholder')"
+            rows="2"
+            maxlength="200"
+          ></textarea>
+          <span class="form-hint">{{ t('mcpSettings.whenToUseHint') }}</span>
+        </div>
+
         <!-- 测试结果 -->
         <div v-if="testResult" class="test-result" :class="{ success: testResult.success, error: !testResult.success }">
           {{ testResult.message }}
@@ -764,12 +964,38 @@ onUnmounted(() => {
       </div>
 
       <div class="form-footer">
-        <button class="btn" @click="testConnection" :disabled="testing">
+        <button class="btn" @click="testConnection" :disabled="testing || whenToUseGenerating">
           {{ testing ? t('mcpSettings.testing') : t('mcpSettings.testConnection') }}
         </button>
         <div class="form-footer-right">
           <button class="btn" @click="showForm = false">{{ t('common.cancel') }}</button>
-          <button class="btn btn-primary" @click="saveServer">{{ t('common.save') }}</button>
+          <button class="btn btn-primary" @click="saveServer" :disabled="whenToUseGenerating">
+            {{ whenToUseGenerating ? t('mcpSettings.whenToUseGenerating') : t('common.save') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- whenToUse 确认（不可跳过留空） -->
+    <div v-if="showWhenToUseConfirm" class="details-modal" @click.self="cancelWhenToUse">
+      <div class="details-content when-to-use-modal">
+        <div class="details-header">
+          <h4>{{ t('mcpSettings.whenToUseConfirmTitle') }}</h4>
+        </div>
+        <div class="details-body">
+          <p class="form-hint">{{ t('mcpSettings.whenToUseConfirmHint') }}</p>
+          <textarea
+            v-model="whenToUseDraft"
+            class="input textarea"
+            rows="4"
+            maxlength="200"
+            :placeholder="t('mcpSettings.whenToUsePlaceholder')"
+          ></textarea>
+          <p v-if="whenToUseError" class="test-result error">{{ whenToUseError }}</p>
+        </div>
+        <div class="form-footer">
+          <button class="btn" @click="cancelWhenToUse">{{ t('common.cancel') }}</button>
+          <button class="btn btn-primary" @click="acceptWhenToUse">{{ t('mcpSettings.whenToUseAccept') }}</button>
         </div>
       </div>
     </div>
@@ -920,13 +1146,23 @@ onUnmounted(() => {
 
 .server-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding: 12px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   transition: all 0.2s ease;
+}
+
+.server-toggle {
+  padding-top: 2px;
+}
+
+.server-actions {
+  display: flex;
+  gap: 4px;
+  padding-top: 2px;
 }
 
 .server-item:hover {
@@ -972,9 +1208,20 @@ onUnmounted(() => {
   text-overflow: ellipsis;
 }
 
-.server-actions {
-  display: flex;
-  gap: 4px;
+.server-when-to-use {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.server-when-to-use.missing {
+  color: var(--accent-warning, var(--text-muted));
+  font-style: italic;
 }
 
 .empty-servers {
@@ -1053,6 +1300,18 @@ onUnmounted(() => {
   font-weight: 500;
   color: var(--text-primary);
   margin-bottom: 6px;
+}
+
+.form-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.form-label-row .form-label {
+  margin-bottom: 0;
 }
 
 .input {

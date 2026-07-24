@@ -5,6 +5,7 @@ import type { ToolDefinition } from '../ai.service'
 import type { McpService } from '../mcp.service'
 import type { PluginRegistry } from '../plugin/registry'
 import type { McpToolSession } from './mcp-tool-session'
+import { toMcpSkillId } from '../mcp-progressive-constants'
 import { getSkillsSummary } from './skills/registry'
 import { getUserSkillService } from '../user-skill.service'
 import { getConfigService } from '../config.service'
@@ -210,9 +211,9 @@ function dispatchAgentsCharCount(args: Record<string, unknown>): number {
 }
 
 /**
- * 动态构建 skill 工具定义（合并 load_skill + unload_skill）
+ * 动态构建 skill 工具定义（合并 load_skill + unload_skill；目录含已连接 MCP）
  */
-function buildSkillTool(): ToolDefinitionWithMeta {
+function buildSkillTool(mcpService?: McpService): ToolDefinitionWithMeta {
   const disabledIds = new Set(getConfigService().get('disabledBuiltinSkills') || [])
   const skills = getSkillsSummary().filter(s => !disabledIds.has(s.id))
   const skillsCompact = skills.length > 0
@@ -220,16 +221,34 @@ function buildSkillTool(): ToolDefinitionWithMeta {
     : '暂无'
   const skillIds = skills.map(s => `"${s.id}"`).join(', ') || '暂无'
 
+  const mcpLines: string[] = []
+  const mcpIdHints: string[] = []
+  if (mcpService?.shouldDeferTools()) {
+    for (const status of mcpService.getServerStatuses()) {
+      const skillId = toMcpSkillId(status.id)
+      mcpIdHints.push(`"${skillId}"`)
+      // 目录细节在 system prompt；此处只给 id + 名称，避免 skill description 过胖
+      mcpLines.push(`- ${status.name}（${skillId}）：MCP，先 skill load 再调 mcp_*`)
+    }
+  }
+  const mcpBlock = mcpLines.length > 0
+    ? `\n\n已连接 MCP（用 skill load/unload，skill_id 形如 mcp:<serverId>）：\n${mcpLines.join('\n')}`
+    : ''
+  const idHint = mcpIdHints.length > 0
+    ? `${skillIds}, ${mcpIdHints.join(', ')}`
+    : skillIds
+
   return {
     type: 'function',
     function: {
       name: 'skill',
-      description: `加载或卸载技能管理模块。加载后会话内持续有效。涉及相关领域时先加载再执行。
+      description: `加载或卸载技能管理模块，或加载已连接 MCP 服务器的全部工具定义。加载后会话内持续有效。涉及相关领域时先加载再执行。
 
 ⚠️ 创建/更新/删除/安装技能 → 必须先 load skill-manager，严禁用 write_text_file 直接写 SKILL.md
+⚠️ MCP：对照系统提示「可用的 MCP 服务器」目录，用 skill load mcp:<id>（或服务器名称）整包加载后再调 mcp_*；不要只靠网页搜索。
 
 可用技能：
-${skillsCompact}`,
+${skillsCompact}${mcpBlock}`,
       parameters: {
         type: 'object',
         properties: {
@@ -240,7 +259,7 @@ ${skillsCompact}`,
           },
           skill_id: {
             type: 'string',
-            description: `技能 ID，可选值: ${skillIds}`
+            description: `技能 ID 或 mcp:<serverId>，可选值: ${idHint}`
           }
         },
         required: ['action', 'skill_id']
@@ -391,36 +410,6 @@ export interface GetAgentToolsOptions {
   includeContextTools?: boolean
   /** MCP 渐进披露会话（defer 时提供已 load 子集） */
   mcpToolSession?: McpToolSession
-}
-
-/**
- * 动态构建 mcp_load（仅 defer 模式注入）——按 server 整包加载，对齐 Skill load
- */
-function buildMcpLoadTool(): ToolDefinitionWithMeta {
-  return {
-    type: 'function',
-    function: {
-      name: 'mcp_load',
-      description: `加载某个已连接 MCP 服务器的全部工具定义（类似 skill load）。
-规划时先看系统提示「可用的 MCP 服务器」目录：目录里已有能覆盖需求的服务器时，先用本工具加载，再调用其 mcp_*；不要只靠网页搜索。
-
-参数 server 填目录中的 id 或名称。`,
-      parameters: {
-        type: 'object',
-        properties: {
-          server: {
-            type: 'string',
-            description: 'MCP 服务器 id 或显示名称（与目录一致）'
-          }
-        },
-        required: ['server']
-      }
-    },
-    _meta: {
-      parallelizable: true,
-      streamDisplay: { titleKey: 'mcp.load', titleField: 'server' }
-    }
-  }
 }
 
 /**
@@ -942,7 +931,7 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
         }
       }
     } as ToolDefinitionWithMeta,
-    buildSkillTool(),
+    buildSkillTool(mcpService),
     buildLoadUserSkillTool(),
     // ==================== 任务记忆工具（合并 recall_task/deep_recall） ====================
     {
@@ -1317,15 +1306,11 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
     filteredTools.push(...pluginRegistry.getToolDefinitions())
   }
 
-  // 如果有 MCP 服务：小规模全量 schema；大规模按 server 整包渐进披露
-  if (mcpService) {
-    if (!mcpService.shouldDeferTools()) {
-      return [...filteredTools, ...mcpService.getToolDefinitions()]
-    }
-    const loadTool = buildMcpLoadTool()
+  // MCP：始终渐进披露（skill load mcp:…）；已 load server 的 schema 追加末尾
+  if (mcpService?.shouldDeferTools()) {
     const loadedServers = options?.mcpToolSession?.getLoadedServerIds() ?? []
     const loadedDefs = mcpService.getToolDefinitionsByServerIds(loadedServers)
-    return [...filteredTools, loadTool, ...loadedDefs]
+    return [...filteredTools, ...loadedDefs]
   }
 
   return filteredTools

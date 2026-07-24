@@ -29,6 +29,7 @@ import { getIMService } from '../../im/im.service'
 import { getConfigService } from '../../config.service'
 import { formatRemainingTime, formatTotalTime, truncateFromEnd } from './utils'
 import { formatMcpToolCallContent } from '../../mcp-tool-display'
+import { parseMcpSkillId } from '../../mcp-progressive-constants'
 import { formatToolCallPrefixFromMeta } from '../tool-metadata'
 import type { ToolMeta } from '../tools'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
@@ -592,11 +593,12 @@ export async function executeMcpTool(
 }
 
 /**
- * 按 MCP server 整包加载工具定义（渐进披露，对齐 skill load）
+ * 按 MCP server 整包加载工具定义（渐进披露；由 skill load mcp:… 或遗留 mcp_load 调用）
  */
 export async function loadMcpServer(
   args: Record<string, unknown>,
-  executor: ToolExecutorConfig
+  executor: ToolExecutorConfig,
+  options?: { viaSkill?: boolean; skillId?: string }
 ): Promise<ToolResult> {
   if (!executor.mcpService) {
     return { success: false, output: '', error: t('error.mcp_not_initialized') }
@@ -605,27 +607,35 @@ export async function loadMcpServer(
     return { success: false, output: '', error: t('error.mcp_not_initialized') }
   }
 
-  const serverRef = typeof args.server === 'string' ? args.server.trim() : ''
+  const serverRef = typeof args.server === 'string'
+    ? args.server.trim()
+    : (typeof args.skill_id === 'string' ? args.skill_id.trim() : '')
   if (!serverRef) {
     return { success: false, output: '', error: 'server is required' }
   }
 
+  const toolName = options?.viaSkill ? 'skill' : 'mcp_load'
+  const resolved = executor.mcpService.resolveServerRef(serverRef)
+  // 卡片展示用人类可读名称，勿只露 mcp:uuid
+  const displayLabel = resolved?.name || options?.skillId || serverRef
+
   executor.addStep({
     type: 'tool_call',
-    content: `${t('mcp.load')}: ${serverRef}`,
-    toolName: 'mcp_load',
-    toolArgs: { server: serverRef },
+    content: `${t('mcp.load')}: ${displayLabel}`,
+    toolName,
+    toolArgs: options?.viaSkill
+      ? { action: 'load', skill_id: options.skillId || serverRef }
+      : { server: serverRef },
     riskLevel: 'safe'
   })
 
-  const resolved = executor.mcpService.resolveServerRef(serverRef)
   if (!resolved) {
     const catalog = executor.mcpService.getServerCatalogText()
     const err = t('mcp.load_server_not_found', { server: serverRef }) + '\n\n' + catalog
     executor.addStep({
       type: 'tool_result',
       content: t('mcp.load_server_not_found', { server: serverRef }),
-      toolName: 'mcp_load',
+      toolName,
       toolResult: err
     })
     return { success: false, output: '', error: err }
@@ -641,7 +651,6 @@ export async function loadMcpServer(
       count: defs.length
     })
   ]
-  // 给模型一份工具名清单，完整 schema 已进入下一轮 tools 数组
   if (names.length > 0) {
     parts.push('\n' + names.map(n => `- ${n}`).join('\n'))
     parts.push('\n' + t('mcp.server_loaded_hint'))
@@ -651,8 +660,63 @@ export async function loadMcpServer(
   executor.addStep({
     type: 'tool_result',
     content: t('mcp.server_loaded', { name: resolved.name, count: defs.length }),
-    toolName: 'mcp_load',
+    toolName,
     toolResult: output.length > 800 ? truncateFromEnd(output, 800) : output
+  })
+  return { success: true, output }
+}
+
+/**
+ * skill unload mcp:… → 从 McpToolSession 移除
+ */
+async function unloadMcpServerSkill(
+  skillId: string,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  if (!executor.mcpService || !executor.mcpToolSession) {
+    return { success: false, output: '', error: t('error.mcp_not_initialized') }
+  }
+
+  const resolved = executor.mcpService.resolveServerRef(skillId)
+  const displayLabel = resolved?.name || skillId
+
+  executor.addStep({
+    type: 'tool_call',
+    content: t('skill.unloading', { id: displayLabel }),
+    toolName: 'skill',
+    toolArgs: { action: 'unload', skill_id: skillId },
+    riskLevel: 'safe'
+  })
+
+  if (!resolved) {
+    const err = t('mcp.load_server_not_found', { server: skillId })
+    executor.addStep({
+      type: 'tool_result',
+      content: err,
+      toolName: 'skill',
+      toolResult: err
+    })
+    return { success: false, output: '', error: err }
+  }
+
+  if (!executor.mcpToolSession.isServerLoaded(resolved.serverId)) {
+    const output = t('skill.not_loaded', { id: displayLabel })
+    executor.addStep({
+      type: 'tool_result',
+      content: output,
+      toolName: 'skill',
+      toolResult: output
+    })
+    return { success: true, output }
+  }
+
+  executor.mcpToolSession.unloadServer(resolved.serverId)
+  const output = t('skill.unloaded', { id: displayLabel })
+  executor.addStep({
+    type: 'tool_result',
+    content: output,
+    toolName: 'skill',
+    toolResult: output
   })
   return { success: true, output }
 }
@@ -677,7 +741,7 @@ export async function dispatchSkill(
 }
 
 /**
- * 加载技能工具
+ * 加载技能工具（含 mcp:<serverId>）
  */
 export async function loadSkillTool(
   args: Record<string, unknown>,
@@ -688,6 +752,16 @@ export async function loadSkillTool(
   
   if (!skillId) {
     return { success: false, output: '', error: t('skill.id_required') }
+  }
+
+  // MCP 虚拟 skill：mcp:<id> 或已连接 server 的裸 id / 显示名
+  const mcpSkillId = parseMcpSkillId(skillId)
+  if (mcpSkillId || (executor.mcpService?.resolveServerRef(skillId) && !getSkill(skillId))) {
+    return loadMcpServer(
+      { server: skillId, skill_id: skillId },
+      executor,
+      { viaSkill: true, skillId }
+    )
   }
 
   if (!executor.skillSession) {
@@ -751,6 +825,11 @@ export async function unloadSkillTool(
   
   if (!skillId) {
     return { success: false, output: '', error: t('skill.id_required') }
+  }
+
+  const mcpSkillId = parseMcpSkillId(skillId)
+  if (mcpSkillId || (executor.mcpService?.resolveServerRef(skillId) && !getSkill(skillId))) {
+    return unloadMcpServerSkill(skillId, executor)
   }
 
   if (!executor.skillSession) {

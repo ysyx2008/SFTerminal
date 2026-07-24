@@ -14,4 +14,9 @@ export interface McpServerConfig {
   cwd?: string
   url?: string
   headers?: Record<string, string>
+  /**
+   * 何时该用（给模型看的短触发说明；进 skill / MCP 目录）。
+   * 旧配置可缺省；新保存/新启用必须非空且经用户确认。
+   */
+  whenToUse?: string
 }

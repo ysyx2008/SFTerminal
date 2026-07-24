@@ -645,7 +645,19 @@ export default {
     importJsonHint: 'Paste the JSON config provided by an MCP service (with url, headers, etc.) to bulk-add servers',
     importJsonCompat: 'Compatible with Claude Desktop / Cursor mcpServers config format',
     importJsonSuccess: 'Imported {count} MCP server(s)',
-    importJsonInvalid: 'JSON parse failed: {error}'
+    importJsonInvalid: 'JSON parse failed: {error}',
+    whenToUse: 'When to use (for AI)',
+    whenToUsePlaceholder: 'e.g. Official company registry / ownership data; do not substitute with web search',
+    whenToUseHint: 'Use “Generate” anytime; if still empty when enabling/saving, a draft is generated and you must confirm or edit then confirm. Cancel abandons the save.',
+    whenToUseMissing: 'Usage note not set yet',
+    whenToUseGenerate: 'Generate',
+    whenToUseGenerated: 'Draft filled in — edit if needed, then save',
+    whenToUseConfirmTitle: 'Confirm MCP usage note',
+    whenToUseConfirmHint: 'Confirm or edit the sentence below. It cannot be empty; cancel abandons this enable/save.',
+    whenToUseAccept: 'Confirm and save',
+    whenToUseRequired: 'Usage note cannot be empty',
+    whenToUseGenerating: 'Generating usage note…',
+    whenToUseGenerateFailed: 'Auto-generate failed; write a short note and confirm'
   },
 
 

@@ -395,6 +395,7 @@ import type { CreateWatchParams } from './services/watch/types'
 import type { WebChatService } from './services/web-chat.service'
 import { getMigrationRunner } from './migrations'
 import { runTodoMdAgentMigrationIfNeeded } from './services/agent/skills/todo/migrate-legacy'
+import { runMcpWhenToUseNoticeIfNeeded } from './services/agent/mcp-when-to-use-notice'
 import {
   completeTodo,
   countOverdueTodos,
@@ -1776,6 +1777,7 @@ app.whenReady().then(async () => {
 
       // Services phase migrations（需要后端服务就绪）
       sendStartupProgress('migration')
+      const schemaBeforeServices = configService.getSchemaVersion()
       try {
         await getMigrationRunner().run('services', {
           configService,
@@ -1789,10 +1791,17 @@ app.whenReady().then(async () => {
       } catch (e) {
         log.error('Services migration failed:', e)
       }
+      const schemaAfterServices = configService.getSchemaVersion()
+      const crossedV10ThisBoot = schemaBeforeServices < 10 && schemaAfterServices >= 10
 
       // v9 deferred：旧 TODO.md → 联络 companion 征询迁移（contextHint SOP；不阻塞启动）
       runTodoMdAgentMigrationIfNeeded(agentService).catch(e => {
         log.error('Deferred TODO.md Agent migration failed:', e)
+      })
+
+      // v10 one-shot：缺 whenToUse 的 MCP → 联络通知（无 marker；仅本启跨过 v10 时）
+      runMcpWhenToUseNoticeIfNeeded(agentService, crossedV10ThisBoot).catch(e => {
+        log.error('Deferred MCP whenToUse notice failed:', e)
       })
 
       const awakenFeatureEnabled = isOemFeatureEnabled('awaken')
@@ -5558,12 +5567,24 @@ ipcMain.handle('mcp:setServers', async (_event, servers: McpServerConfig[]) => {
 
 // 添加 MCP 服务器
 ipcMain.handle('mcp:addServer', async (_event, server: McpServerConfig) => {
+  if (server.enabled && !(server.whenToUse || '').trim()) {
+    throw new Error('Enabled MCP server requires non-empty whenToUse')
+  }
   configService.addMcpServer(server)
 })
 
 // 更新 MCP 服务器
 ipcMain.handle('mcp:updateServer', async (_event, server: McpServerConfig) => {
+  const existing = configService.getMcpServers().find(s => s.id === server.id)
+  const enabling = server.enabled && !(existing?.enabled)
+  if (server.enabled && !(server.whenToUse || '').trim()) {
+    // 新启用必须有 whenToUse；已启用旧配置允许缺省（升级兼容）
+    if (enabling || !existing) {
+      throw new Error('Enabled MCP server requires non-empty whenToUse')
+    }
+  }
   configService.updateMcpServer(server)
+  mcpService.patchConnectedConfig(server)
 })
 
 // 删除 MCP 服务器
@@ -5595,6 +5616,18 @@ ipcMain.handle('mcp:disconnect', async (_event, serverId: string) => {
 ipcMain.handle('mcp:testConnection', async (_event, config: McpServerConfig) => {
   return mcpService.testConnection(config)
 })
+
+// AI 生成 whenToUse 草稿（用户确认后才应写入配置）
+ipcMain.handle(
+  'mcp:suggestWhenToUse',
+  async (
+    _event,
+    input: { name: string; tools: Array<{ name: string; title?: string; description?: string }> }
+  ) => {
+    const { suggestMcpWhenToUse } = await import('./services/mcp-when-to-use')
+    return suggestMcpWhenToUse((messages) => aiService.chat(messages), input)
+  }
+)
 
 // 获取所有已连接服务器的状态
 ipcMain.handle('mcp:getServerStatuses', async () => {

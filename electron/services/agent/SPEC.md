@@ -492,10 +492,11 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 | feishu | 飞书集成（OAuth） |
 | chart | 数据可视化（默认输出活图 ECharts，PNG 兜底；详见 `skills/chart/SPEC.md`） |
 | watch | 关切管理 |
-| config | Agent 配置 |
+| config | Agent 配置（含 `config_mcp_server_*`；补齐 MCP `whenToUse`） |
 | skill-manager | 用户技能管理与市场 |
+| `mcp:<serverId>` | **非内置 Skill**：已连接 MCP 的虚拟 skill id；`skill load/unload` 路由到 `McpToolSession`（见 `MCP_SPEC.md`） |
 
-注册入口：`skills/index.ts`，技能定义接口见 `skills/types.ts` 中的 `Skill`。
+注册入口：`skills/index.ts`，技能定义接口见 `skills/types.ts` 中的 `Skill`。MCP 不进 Skill 注册表，仅出现在 `skill` 工具目录与 load 路由中。
 
 ## 风险评估
 

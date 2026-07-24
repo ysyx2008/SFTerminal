@@ -193,13 +193,14 @@ export interface McpServerConfig {
   id: string
   name: string
   enabled: boolean
-  transport: 'stdio' | 'sse'
+  transport: 'stdio' | 'sse' | 'http'
   command?: string
   args?: string[]
   env?: Record<string, string>
   cwd?: string
   url?: string
   headers?: Record<string, string>
+  whenToUse?: string
 }
 
 export interface McpTool {
@@ -1984,6 +1985,18 @@ const electronAPI = {
         toolCount?: number
         resourceCount?: number
         promptCount?: number
+        tools?: Array<{ name: string; title?: string; description: string }>
+        error?: string
+      }>,
+
+    /** AI 生成 whenToUse 草稿（须用户确认后写入） */
+    suggestWhenToUse: (input: {
+      name: string
+      tools: Array<{ name: string; title?: string; description?: string }>
+    }) =>
+      ipcRenderer.invoke('mcp:suggestWhenToUse', input) as Promise<{
+        success: boolean
+        whenToUse?: string
         error?: string
       }>,
 
