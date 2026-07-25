@@ -267,7 +267,7 @@ export class EmbeddingService extends EventEmitter {
         const detail = workerError instanceof Error ? workerError.message : String(workerError)
         const err = new Error(
           `Embedding worker 初始化失败（禁止回退主进程）：${detail}。` +
-            `若为打包版，请检查 asarUnpack 是否包含 onnxruntime-common / @huggingface/jinja / @huggingface/tokenizers。`,
+            `若为打包版，请检查 asarUnpack 是否包含 onnxruntime-common / @huggingface/jinja|tokenizers / sharp 传递依赖（detect-libc、@img/colour、semver）。`,
         )
         log.error(err.message, workerError)
         throw err

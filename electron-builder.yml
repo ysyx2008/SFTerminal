@@ -40,10 +40,20 @@ asarUnpack:
   - node_modules/onnxruntime-node/**/*
   - "**/onnxruntime-node/**/*"
   # utilityProcess worker 用 ESM import，NODE_PATH 无效；传递依赖必须物理在 asar.unpacked
+  # （unpacked 包无法再解析仍在 asar 内的依赖——经典 asarUnpack 缺口）
   - node_modules/onnxruntime-common/**/*
   - node_modules/apache-arrow/**/*
   - node_modules/@huggingface/jinja/**/*
   - node_modules/@huggingface/tokenizers/**/*
+  # transformers → sharp 运行时依赖（11.4.1 漏解包，导致 Embedding worker 初始化失败）
+  - node_modules/detect-libc/**/*
+  - node_modules/@img/colour/**/*
+  - node_modules/semver/**/*
+  # lancedb-worker → @lancedb/lancedb 唯一 JS 依赖
+  - node_modules/reflect-metadata/**/*
+  # apache-arrow 运行时（lancedb → arrow；26 日日志已确认缺 tslib）
+  - node_modules/tslib/**/*
+  - node_modules/flatbuffers/**/*
   - dist-electron/services/speech/**/*
   - dist-electron/services/pdf-worker.js
   - dist-electron/services/pdfjs-config.mjs

@@ -1,20 +1,52 @@
 /**
  * electron-builder afterPack 钩子
- * 用于修复 macOS 本地化应用名称问题
- * 
- * 问题：electron-builder 自动将 productName 设置为 CFBundleDisplayName，
- * 导致 macOS 忽略 InfoPlist.strings 中的本地化名称。
- * 
- * 解决：在打包后删除 Info.plist 中的 CFBundleDisplayName 字段，
- * 让 macOS 从 .lproj/InfoPlist.strings 读取本地化名称。
+ *
+ * 1. 校验 app.asar.unpacked 内 knowledge/speech/pdf worker 传递依赖可解析
+ *    （缺包则硬失败，避免再发「知识库静默不可用」的假丝滑版）
+ * 2. macOS：删除 CFBundleDisplayName，让本地化 InfoPlist.strings 生效
  */
 
 const { execSync } = require('child_process')
 const path = require('path')
 const fs = require('fs')
+const { checkAsarUnpackDeps } = require('./check-asar-unpack-deps')
+
+function resolveUnpackedNodeModules(context) {
+  const appOutDir = context.appOutDir
+  const appName = context.packager.appInfo.productFilename
+  if (context.electronPlatformName === 'darwin') {
+    return path.join(
+      appOutDir,
+      `${appName}.app`,
+      'Contents',
+      'Resources',
+      'app.asar.unpacked',
+      'node_modules',
+    )
+  }
+  // win32 / linux：resources 与可执行文件同级
+  return path.join(appOutDir, 'resources', 'app.asar.unpacked', 'node_modules')
+}
 
 module.exports = async function(context) {
-  // 只处理 macOS
+  // ── utilityProcess worker 传递依赖：打包后硬失败 ──
+  const unpackedNm = resolveUnpackedNodeModules(context)
+  if (unpackedNm && fs.existsSync(unpackedNm)) {
+    console.log('[afterPack] 检查 asarUnpack worker 传递依赖:', unpackedNm)
+    const result = checkAsarUnpackDeps({ mode: 'unpacked', nmRoot: unpackedNm })
+    if (!result.ok) {
+      const lines = result.gaps.map((g) => `  - ${g.from} → ${g.dep}: ${g.detail}`)
+      throw new Error(
+        `[afterPack] asarUnpack 缺口（utilityProcess 将 Cannot find module）:\n${lines.join('\n')}\n` +
+          `请在 electron-builder.yml asarUnpack 中补齐后重新打包。`,
+      )
+    }
+    console.log(`[afterPack] asarUnpack worker 依赖检查通过（${result.packageCount} packages）`)
+  } else {
+    console.warn('[afterPack] 未找到 app.asar.unpacked/node_modules，跳过依赖检查')
+  }
+
+  // 只处理 macOS 本地化
   if (context.electronPlatformName !== 'darwin') {
     return
   }

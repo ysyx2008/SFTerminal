@@ -271,7 +271,7 @@ export class VectorStorage extends EventEmitter {
         const detail = error instanceof Error ? error.message : String(error)
         const err = new Error(
           `LanceDB worker 初始化失败（禁止回退主进程）：${detail}。` +
-            `若为打包版，请检查 asarUnpack 是否包含 apache-arrow。`,
+            `若为打包版，请检查 asarUnpack 是否包含 apache-arrow / reflect-metadata / tslib / flatbuffers。`,
         )
         log.error(err.message, error)
         throw err
