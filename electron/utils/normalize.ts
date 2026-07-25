@@ -78,7 +78,7 @@ export function normalizeWatchDefinition(raw: WatchDefinition): WatchDefinition 
     triggers: Array.isArray(raw.triggers) ? raw.triggers : [],
     prompt: raw.prompt || '',
     skills: Array.isArray(raw.skills) ? raw.skills : undefined,
-    execution: raw.execution || { type: 'local' as const, timeout: 300 },
+    execution: raw.execution || { type: 'local' as const, timeout: 900 },
     output: raw.output || { type: 'log' as const },
     priority: raw.priority || 'normal',
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : 0,

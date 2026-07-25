@@ -48,7 +48,7 @@ let CronExpressionParser: any = null
 
 const MIN_INTERVAL_SECONDS = 10
 const MAX_INTERVAL_SECONDS = 7 * 24 * 3600 // 7 days
-const DEFAULT_TIMEOUT_SECONDS = 300
+const DEFAULT_TIMEOUT_SECONDS = 900
 const MAX_OUTPUT_LENGTH = 1000
 /** 不同 Watch 全局并发软上限（含 wakeup）；超额排队不丢弃 */
 const DEFAULT_MAX_CONCURRENT_WATCHES = 5
@@ -771,7 +771,7 @@ export class WatchService {
           executionMode: 'free', debugMode: false
         }, undefined, callbacks),
         new Promise<string>((_, reject) => {
-          timeoutHandle = setTimeout(() => reject(new Error(`Watch timeout (${watch.execution.timeout ?? 300}s)`)), timeoutMs)
+          timeoutHandle = setTimeout(() => reject(new Error(`Watch timeout (${watch.execution.timeout ?? DEFAULT_TIMEOUT_SECONDS}s)`)), timeoutMs)
         })
       ]).finally(() => { if (timeoutHandle) clearTimeout(timeoutHandle) })
 
@@ -1890,7 +1890,7 @@ export class WatchService {
             sshSessionId: task.target.sshSessionId,
             sshSessionName: task.target.sshSessionName,
             workingDirectory: task.target.workingDirectory,
-            timeout: task.options?.timeout ?? 300
+            timeout: task.options?.timeout ?? DEFAULT_TIMEOUT_SECONDS
           }
 
           const params: CreateWatchParams = {

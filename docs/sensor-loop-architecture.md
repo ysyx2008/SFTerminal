@@ -99,7 +99,7 @@ interface WatchDefinition {
     type: 'assistant' | 'local' | 'ssh'
     sshSessionId?: string
     workingDirectory?: string
-    timeout?: number   // 秒，默认 300
+    timeout?: number   // 秒，默认 900
   }
 
   // 输出配置

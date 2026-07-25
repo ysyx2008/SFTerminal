@@ -128,6 +128,7 @@ export interface WatchExecution {
   sshSessionId?: string
   sshSessionName?: string
   workingDirectory?: string
+  /** 墙钟超时（秒）；未设置时默认 900 */
   timeout?: number
 }
 
