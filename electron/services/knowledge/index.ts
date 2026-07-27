@@ -117,6 +117,11 @@ export class KnowledgeService extends EventEmitter {
   private documentsIndex: Map<string, KnowledgeDocument> = new Map()
   private isInitialized: boolean = false
   /**
+   * initialize 完整失败后的闩锁，避免 Agent 每次召回都重跑 initialize → 反复 fork Embedding worker。
+   * dispose / 备份恢复后清除。
+   */
+  private permanentInitError: Error | null = null
+  /**
    * 记录最近一次"清空索引"的原因，供 rebuildStarted 事件携带，
    * 让前端区分"模型升级"vs"数据损坏"vs"索引缺失"，避免文案误导。
    * 取值：'dimension_mismatch' | 'data_corrupted' | undefined（未发生过清空）
@@ -175,6 +180,9 @@ export class KnowledgeService extends EventEmitter {
   async initialize(): Promise<void> {
     if (this.isInitialized) {
       return
+    }
+    if (this.permanentInitError) {
+      throw this.permanentInitError
     }
 
     // 后台触发自动备份（距上次 > 30min 才真正复制）。
@@ -237,6 +245,7 @@ export class KnowledgeService extends EventEmitter {
       }
 
       this.isInitialized = true
+      this.permanentInitError = null
       this.emit('initialized')
       
       // 检查是否需要重建索引（有文档但向量库是空的）
@@ -245,9 +254,11 @@ export class KnowledgeService extends EventEmitter {
       // 孤儿 chunk 清理放后台，不阻塞启动
       this.scheduleOrphanCleanupAsync()
     } catch (error) {
-      log.error('Initialization failed:', error)
+      const err = error instanceof Error ? error : new Error(String(error))
+      this.permanentInitError = err
+      log.error('Initialization failed（已熔断，后续请求不再重试直至 dispose/恢复）:', error)
       this.emit('error', error)
-      throw error
+      throw err
     }
   }
   
@@ -1347,6 +1358,8 @@ export class KnowledgeService extends EventEmitter {
    * 切换模型
    */
   async switchModel(modelId: ModelTier): Promise<void> {
+    // 用户主动换模型：允许 Knowledge 层重新 initialize（与 Embedding 熔断清除对齐）
+    this.permanentInitError = null
     await this.embeddingService.switchModel(modelId)
     
     // 更新设置
@@ -1402,6 +1415,7 @@ export class KnowledgeService extends EventEmitter {
     }
 
     if (settings.embeddingDevice !== undefined) {
+      this.permanentInitError = null
       this.embeddingService.setDevice(this.settings.embeddingDevice)
       if (this.isInitialized && this.settings.embeddingMode === 'local') {
         const modelId = this.settings.localModel === 'auto'
@@ -1645,6 +1659,7 @@ export class KnowledgeService extends EventEmitter {
   dispose(): void {
     this.embeddingService.dispose()
     this.isInitialized = false
+    this.permanentInitError = null
     this.emit('disposed')
   }
 
@@ -1663,6 +1678,7 @@ export class KnowledgeService extends EventEmitter {
       ])
     } finally {
       this.isInitialized = false
+      this.permanentInitError = null
       this.emit('disposed')
     }
   }
@@ -1755,6 +1771,7 @@ export class KnowledgeService extends EventEmitter {
         log.warn('恢复时 dispose embeddingService 失败:', e)
       }
       this.isInitialized = false
+      this.permanentInitError = null
 
       // 重新 initialize（含 checkAndRebuildIndex 增量补差集）
       await this.initialize()

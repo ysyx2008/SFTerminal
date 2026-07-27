@@ -142,9 +142,20 @@ export class EmbeddingService extends EventEmitter {
   /** 本次成功加载实际使用的 pipeline 设备（可能与配置不同，例如 DML 失败后回退 CPU） */
   private runtimePipelineDevice: EmbeddingDevice | null = null
 
+  /**
+   * 桌面端 worker 初始化完整失败后的闩锁。
+   * 避免 Agent 每次 L2/L3 召回都再次 fork utilityProcess（缺依赖时会刷屏上千条退出日志）。
+   * 仅在 setDevice / dispose / 主动 switchModel 时清除，允许用户干预后重试。
+   */
+  private permanentInitError: Error | null = null
+
   constructor() {
     super()
     this.modelManager = getModelManager()
+  }
+
+  private clearPermanentInitError(): void {
+    this.permanentInitError = null
   }
 
   /**
@@ -220,6 +231,7 @@ export class EmbeddingService extends EventEmitter {
     const next = normalizeEmbeddingDevice(device)
     if (next === this.embeddingDevice) return
     this.embeddingDevice = next
+    this.clearPermanentInitError()
     if (this.extractor || this.worker) {
       this.dispose()
     }
@@ -287,6 +299,10 @@ export class EmbeddingService extends EventEmitter {
    * @param modelId 指定模型，不指定则使用最佳可用模型
    */
   async initialize(modelId?: ModelTier): Promise<void> {
+    if (this.permanentInitError) {
+      throw this.permanentInitError
+    }
+
     if (this.loadPromise) {
       await this.loadPromise
       return
@@ -335,6 +351,7 @@ export class EmbeddingService extends EventEmitter {
         this.useWorker = result.useWorker
         this.runtimePipelineDevice = result.device
         this.currentModelId = model.id
+        this.clearPermanentInitError()
 
         if (result.device === 'cpu' && primary !== 'cpu') {
           log.warn('加速设备 %s 不可用，已回退到 CPU', primary)
@@ -360,9 +377,18 @@ export class EmbeddingService extends EventEmitter {
       }
     }
 
-    log.error('Failed to load model:', lastError)
+    const err =
+      lastError instanceof Error
+        ? lastError
+        : new Error(String(lastError ?? 'Embedding initialize failed'))
+    // 闩锁：后续 initialize/embed 直接失败，禁止反复 fork worker
+    this.permanentInitError = err
+    log.error(
+      'Failed to load model（已熔断，后续请求不再重试直至 setDevice/dispose）：',
+      lastError,
+    )
     this.emit('error', lastError)
-    throw lastError
+    throw err
   }
 
   // ────────────────────────── Worker 启停 / RPC ──────────────────────────
@@ -497,6 +523,10 @@ export class EmbeddingService extends EventEmitter {
    * 防止单批攻击主进程地址空间。
    */
   async embed(texts: string[]): Promise<number[][]> {
+    if (this.permanentInitError) {
+      throw this.permanentInitError
+    }
+
     if (!this.extractor && !this.worker) {
       await this.initialize()
     }
@@ -680,6 +710,7 @@ export class EmbeddingService extends EventEmitter {
   /** 切换模型 */
   async switchModel(modelId: ModelTier): Promise<void> {
     if (modelId === this.currentModelId) return
+    this.clearPermanentInitError()
     this.dispose()
     await this.initialize(modelId)
   }
@@ -727,6 +758,7 @@ export class EmbeddingService extends EventEmitter {
     this.useWorker = false
     this.currentModelId = null
     this.runtimePipelineDevice = null
+    this.clearPermanentInitError()
     this.emit('disposed')
   }
 
@@ -759,6 +791,7 @@ export class EmbeddingService extends EventEmitter {
     this.useWorker = false
     this.currentModelId = null
     this.runtimePipelineDevice = null
+    this.clearPermanentInitError()
     this.emit('disposed')
   }
 

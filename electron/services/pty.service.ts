@@ -145,7 +145,9 @@ export class PtyService {
     // 是否需要手动处理编码（非 UTF-8 在 Windows 上需要）
     const needManualEncoding = isWindows && encoding !== 'utf-8'
     
-    log.info(`创建终端: encoding=${encoding}, needManualEncoding=${needManualEncoding}`)
+    log.info(
+      `创建终端: id=${id}, shell=${shell}, kind=${resolved.kind}, encoding=${encoding}, needManualEncoding=${needManualEncoding}, cwd=${cwd}`
+    )
 
     // 合并环境变量
     const env = {
@@ -207,11 +209,14 @@ export class PtyService {
 
     // 监听退出
     ptyProcess.onExit(({ exitCode }) => {
-      log.info(`${id} exited with code ${exitCode}`)
+      log.info(
+        `PTY exited: id=${id}, code=${exitCode}, shell=${shell}, kind=${resolved.kind}, disposed=${instance.disposed}`
+      )
       this.instances.delete(id)
     })
 
     this.instances.set(id, instance)
+    log.info(`PTY ready: id=${id}, pid=${ptyProcess.pid}, shell=${shell}`)
     return { id, shellPath: shell, shellKind: resolved.kind }
   }
 

@@ -1,12 +1,14 @@
 # PTY Service SPEC
 
-> Last verified: 2026-07-12
+> Last verified: 2026-07-27
 
 ## 职责
 
 本地终端伪终端（PTY）管理。基于 Node.js `node-pty` 创建和管理多个终端实例，提供写入、读取回调、命令注入执行、窗口调整等功能，以及跨平台系统探测（Shell 列表、进程状态）。
 
 默认 Shell 统一走 `electron/utils/shell.ts` 的 `resolveDefaultShell()`（Windows 优先 PowerShell）。`create` 返回实际 spawn 的路径与 kind，供前端写入 `tab.systemInfo`，避免与 system prompt 脱节。
+
+**诊断日志**：`create` / `onExit` 记录 id、shell 路径/kind、pid、exitCode，便于排查 Windows 黑屏 / 管道断连。
 
 ## 文件 / 规模
 

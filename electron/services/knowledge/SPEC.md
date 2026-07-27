@@ -1,6 +1,6 @@
 # Knowledge Service SPEC
 
-> Last verified: 2026-07-26
+> Last verified: 2026-07-27
 
 ## 设计目标
 
@@ -13,6 +13,14 @@
   - **桌面端（utilityProcess 可用）**：worker 初始化失败 → **直接失败**（error 日志 + 知识库不可用状态），**禁止**再 load 进主进程。
   - **唯一例外**：CLI / shim 下 `utilityProcess.fork` 不可用时走进程内模式（无 UI、也无 worker 可选）——这不是「失败后降级」。
 - **明确不做**：不在 worker 失败后再偷偷 in-process「救活」；不靠关键词解析错误串做分类。
+
+### 初始化失败熔断（2026-07-27）
+
+- **问题**：11.4.1 禁止回退后，Agent 每次 L2/L3 召回仍会 `initialize()`；打包缺依赖时反复 fork Embedding worker，日志上千条「退出 code=0」，拖垮资源并放大「未响应 / 终端黑屏」。
+- **成功标准**：
+  - Embedding / Knowledge 任一侧初始化一旦完整失败，**闩锁**该错误：后续 `initialize` / `search` / `embed` 直接抛出同一错误，**不再 spawn worker**。
+  - 用户显式换设备（`setDevice`）、`dispose` / 备份恢复后再允许重试——不是靠解析错误文案分类。
+- **明确不做**：不按错误字符串猜「可恢复 / 不可恢复」；不做分钟级自动重试风暴。
 
 ## 职责
 

@@ -164,14 +164,26 @@ onMounted(async () => {
   // 如果失败则自动降级到默认的 DOM 渲染
   try {
     webglAddon = new WebglAddon()
-    
-    // 监听 WebGL 上下文丢失事件（GPU 资源不足等情况）
+
+    // WebGL 上下文丢失后必须 dispose + refresh，否则 canvas 残留黑屏、DOM 渲染器不恢复
     webglAddon.onContextLoss(() => {
       log.warn('WebGL context lost, falling back to DOM renderer')
-      webglAddon?.dispose()
+      try {
+        webglAddon?.dispose()
+      } catch (e) {
+        log.warn('WebGL addon dispose failed:', e)
+      }
       webglAddon = null
+      try {
+        if (terminal) {
+          terminal.refresh(0, terminal.rows - 1)
+          fitAddon?.fit()
+        }
+      } catch (e) {
+        log.warn('Terminal refresh after WebGL loss failed:', e)
+      }
     })
-    
+
     terminal.loadAddon(webglAddon)
     log.debug('WebGL renderer enabled')
   } catch (e) {
