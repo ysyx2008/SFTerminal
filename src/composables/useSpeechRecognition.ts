@@ -48,8 +48,8 @@ function resampleAudio(input: Float32Array, fromSampleRate: number, toSampleRate
 // 全局共享状态（所有 useSpeechRecognition 实例共用）
 const audioAvailable = ref(true)
 const isModelReady = ref(false)
-/** 模型包是否已安装（与 isModelReady 不同：后者表示 worker 已加载） */
-const modelAvailable = ref(false)
+/** 模型包是否已安装（与 isModelReady 不同：后者表示 worker 已加载）。null = 尚未查询 */
+const modelAvailable = ref<boolean | null>(null)
 let _audioChecked = false
 let _modelInitPromise: Promise<boolean> | null = null
 

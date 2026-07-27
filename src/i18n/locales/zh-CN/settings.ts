@@ -226,7 +226,7 @@ export default {
       installed: '已安装 v{version}（约 {size}）',
       notInstalled: '未安装（约 {size}）',
       sourceBundled: '来自安装目录',
-      installOnline: '在线安装',
+      installOnline: '下载安装',
       installing: '正在安装…',
       importLocal: '从本地安装…',
       uninstall: '卸载',

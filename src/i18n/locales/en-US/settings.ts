@@ -226,7 +226,7 @@ export default {
       installed: 'Installed v{version} (~{size})',
       notInstalled: 'Not installed (~{size})',
       sourceBundled: 'from app bundle',
-      installOnline: 'Install online',
+      installOnline: 'Download & install',
       installing: 'Installing…',
       importLocal: 'Install from file…',
       uninstall: 'Uninstall',

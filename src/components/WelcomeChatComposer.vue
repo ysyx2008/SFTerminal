@@ -98,7 +98,9 @@ const {
   isTranscribing,
   isInitializing: isSpeechInitializing,
   audioAvailable,
+  modelAvailable,
   error: speechError,
+  refreshSpeechPackAvailability,
   startRecording,
   stopRecording,
   cancelRecording
@@ -182,6 +184,10 @@ const handlePTTKeyDown = (event: KeyboardEvent) => {
     }
     return
   }
+
+  // 未安装语音模型时禁用 PTT 快捷键（麦克风按钮仍可点击引导安装）。
+  // null = 尚未查到 pack 状态，放行由 startRecording 内再判定。
+  if (modelAvailable.value === false) return
 
   if (event.repeat) return
   if (hasOtherModifiers(event, pttKey)) return
@@ -343,6 +349,10 @@ onMounted(() => {
   document.addEventListener('keydown', handlePTTKeyDown, true)
   document.addEventListener('keyup', handlePTTKeyUp, true)
   window.addEventListener('blur', handlePTTWindowBlur)
+  // 尽早刷新 pack 状态，供 PTT 门控（不 toast）
+  if (configStore.keyboardShortcuts.voiceInput) {
+    void refreshSpeechPackAvailability()
+  }
   // 初始可见时自动聚焦
   if (props.active) {
     nextTick(() => composerRef.value?.focusInput())

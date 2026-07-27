@@ -1070,23 +1070,24 @@ const initializeApp = async () => {
   }
 
   // 全局音频设备检测：轻量同步操作，立即执行让用户尽早知道有无麦克风
-  // 语音模型预加载：仅当可选 pack 已安装时才空闲加载 worker（未安装则跳过）
+  // pack 状态尽早刷新（供 PTT 门控）；worker 预加载仅在 pack 已装时走空闲
   if (configStore.keyboardShortcuts.voiceInput) {
     checkAudioDevicesGlobal().then(available => {
       if (!available) {
         toast.warning(t('ai.noAudioDevice'))
         return
       }
-      const preloadSpeech = async () => {
-        const packOk = await refreshSpeechPackAvailability()
+      void refreshSpeechPackAvailability().then((packOk) => {
         if (!packOk) return
-        initSpeechGlobal().catch(err => log.warn('[Speech] 空闲预加载失败，将在首次使用时按需加载:', err))
-      }
-      if ('requestIdleCallback' in window) {
-        requestIdleCallback(() => { void preloadSpeech() }, { timeout: 8000 })
-      } else {
-        setTimeout(() => { void preloadSpeech() }, 5000)
-      }
+        const preloadSpeech = () => {
+          initSpeechGlobal().catch(err => log.warn('[Speech] 空闲预加载失败，将在首次使用时按需加载:', err))
+        }
+        if ('requestIdleCallback' in window) {
+          requestIdleCallback(() => { void preloadSpeech() }, { timeout: 8000 })
+        } else {
+          setTimeout(() => { void preloadSpeech() }, 5000)
+        }
+      })
     })
   }
 }

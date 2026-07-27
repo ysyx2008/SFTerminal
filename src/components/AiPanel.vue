@@ -725,8 +725,10 @@ const {
   isTranscribing,
   isInitializing: isSpeechInitializing,
   audioAvailable,
+  modelAvailable,
   error: speechError,
   checkAndInitialize: initSpeech,
+  refreshSpeechPackAvailability,
   startRecording,
   stopRecording,
   cancelRecording
@@ -807,6 +809,11 @@ const handlePTTKeyDown = (event: KeyboardEvent) => {
     }
     return
   }
+
+  // 未安装语音模型时禁用 PTT 快捷键（麦克风按钮仍可点击引导安装；
+  // Control 等键易被复制粘贴误触，避免反复 toast）。
+  // null = 尚未查到 pack 状态，放行由 startRecording 内再判定，避免已装用户短暂误拦。
+  if (modelAvailable.value === false) return
 
   // 以下是按下 PTT 键的处理逻辑
   if (event.repeat) return
@@ -1915,10 +1922,12 @@ onMounted(() => {
   document.addEventListener('keyup', handlePTTKeyUp, true)
   window.addEventListener('blur', handlePTTWindowBlur)
 
-  // 音频设备检测和 toast 已提升到 App.vue 全局执行一次
-  // 这里只需在模型尚未就绪时尝试初始化（幂等，全局共享 Promise）
+  // 音频设备检测和 toast 已提升到 App.vue 全局执行一次。
+  // 仅当 pack 已安装时预加载 worker；未装不主动 toast（麦克风点击仍会引导）。
   if (configStore.keyboardShortcuts.voiceInput && audioAvailable.value) {
-    initSpeech()
+    void refreshSpeechPackAvailability().then((ok) => {
+      if (ok) void initSpeech()
+    })
   }
 
   warmupMessageList()
