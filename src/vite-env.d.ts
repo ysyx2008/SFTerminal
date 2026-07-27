@@ -2008,6 +2008,8 @@ interface Window {
         percent: number
         downloaded?: number
         total?: number
+        bytesPerSecond?: number
+        etaSeconds?: number
         message?: string
       }) => void) => () => void
       isReady: () => Promise<boolean>

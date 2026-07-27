@@ -18,6 +18,13 @@ export { useMentions } from './useMentions'
 export type { MentionType, MentionCommand, MentionSuggestion, SelectedMention, FileInfo } from './useMentions'
 export { useSpeechRecognition, checkAudioDevicesGlobal, initSpeechGlobal, refreshSpeechPackAvailability, SPEECH_PACK_NOT_INSTALLED } from './useSpeechRecognition'
 export type { SpeechRecognitionStatus, TranscriptionResult } from './useSpeechRecognition'
+export {
+  useSpeechPackInstall,
+  retainSpeechPackInstallUi,
+  releaseSpeechPackInstallUi,
+  refreshSpeechPackStatus,
+  installSpeechPackOnline,
+} from './useSpeechPackInstall'
 export { useImageUpload } from './useImageUpload'
 export type { PendingImage } from './useImageUpload'
 export { useAttachmentActions } from './useAttachmentActions'

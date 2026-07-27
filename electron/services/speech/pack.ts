@@ -63,6 +63,10 @@ export interface SpeechPackProgress {
   percent: number
   downloaded?: number
   total?: number
+  /** 瞬时/平滑下载速度（字节/秒），仅 download 阶段有意义 */
+  bytesPerSecond?: number
+  /** 预计剩余秒数；速度未知或总量未知时省略 */
+  etaSeconds?: number
   message?: string
 }
 
@@ -266,6 +270,49 @@ function broadcastProgress(progress: SpeechPackProgress): void {
   }
 }
 
+/**
+ * 下载进度上报：节流 IPC，并用 EMA 平滑瞬时速度，估算剩余时间。
+ */
+function createDownloadProgressReporter(): (downloaded: number, total: number) => void {
+  const startedAt = Date.now()
+  let lastEmitAt = 0
+  let lastSampleAt = startedAt
+  let lastSampleBytes = 0
+  let smoothedBps = 0
+
+  return (downloaded: number, total: number) => {
+    const now = Date.now()
+    const sampleDt = now - lastSampleAt
+    if (sampleDt >= 250 && downloaded >= lastSampleBytes) {
+      const instant = ((downloaded - lastSampleBytes) / sampleDt) * 1000
+      smoothedBps = smoothedBps > 0 ? smoothedBps * 0.7 + instant * 0.3 : instant
+      lastSampleAt = now
+      lastSampleBytes = downloaded
+    }
+
+    const elapsed = Math.max(1, now - startedAt)
+    const avgBps = (downloaded / elapsed) * 1000
+    const speed = smoothedBps > 1024 ? smoothedBps : avgBps
+    const isDone = total > 0 && downloaded >= total
+    if (!isDone && now - lastEmitAt < 200) return
+    lastEmitAt = now
+
+    const remaining = total > 0 ? Math.max(0, total - downloaded) : 0
+    const etaSeconds =
+      speed > 1024 && remaining > 0 ? Math.max(1, Math.ceil(remaining / speed)) : undefined
+    const pct = total > 0 ? Math.min(80, Math.floor((downloaded / total) * 80)) : 10
+    broadcastProgress({
+      phase: 'download',
+      percent: pct,
+      downloaded,
+      total,
+      bytesPerSecond: Math.round(speed),
+      etaSeconds,
+      message: '正在下载语音包…',
+    })
+  }
+}
+
 function measureLatency(url: string, timeoutMs = 3000): Promise<number> {
   return new Promise((resolve) => {
     const start = Date.now()
@@ -417,29 +464,11 @@ export async function installPack(): Promise<SpeechPackStatus> {
       const primary = await pickDownloadUrl()
       const fallback = primary === OSS_PACK_URL ? GITHUB_PACK_URL : OSS_PACK_URL
       try {
-        await downloadFile(primary, tmpZip, (downloaded, total) => {
-          const pct = total > 0 ? Math.min(80, Math.floor((downloaded / total) * 80)) : 10
-          broadcastProgress({
-            phase: 'download',
-            percent: pct,
-            downloaded,
-            total,
-            message: '正在下载语音包…',
-          })
-        })
+        await downloadFile(primary, tmpZip, createDownloadProgressReporter())
       } catch (err) {
         log.warn('Primary download failed, trying fallback:', err)
         broadcastProgress({ phase: 'download', percent: 0, message: '主源失败，切换备用源…' })
-        await downloadFile(fallback, tmpZip, (downloaded, total) => {
-          const pct = total > 0 ? Math.min(80, Math.floor((downloaded / total) * 80)) : 10
-          broadcastProgress({
-            phase: 'download',
-            percent: pct,
-            downloaded,
-            total,
-            message: '正在下载语音包…',
-          })
-        })
+        await downloadFile(fallback, tmpZip, createDownloadProgressReporter())
       }
       installFromZip(tmpZip)
     } catch (err) {

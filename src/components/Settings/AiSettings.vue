@@ -6,7 +6,12 @@ import { useConfigStore, type AiProfile, type AiModelType, type ApiFormat } from
 import { AI_TEMPLATES } from '../../config/ai-templates'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderId } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
-import { refreshSpeechPackAvailability } from '../../composables/useSpeechRecognition'
+import {
+  useSpeechPackInstall,
+  retainSpeechPackInstallUi,
+  releaseSpeechPackInstallUi,
+  refreshSpeechPackStatus,
+} from '../../composables/useSpeechPackInstall'
 
 const { t } = useI18n()
 
@@ -30,7 +35,8 @@ const handleKeydown = (e: KeyboardEvent) => {
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown, true)
   initTtsState()
-  void refreshSpeechPack()
+  retainSpeechPackInstallUi()
+  void refreshSpeechPackStatus()
   if (props.initialSection === 'speechPack') {
     nextTick(() => scrollToSpeechPack())
   }
@@ -38,7 +44,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown, true)
-  unsubSpeechProgress?.()
+  releaseSpeechPackInstallUi()
 })
 
 watch(() => props.initialSection, (section) => {
@@ -562,110 +568,24 @@ async function testTts() {
 }
 
 // ==================== 语音识别模型包（可选） ====================
+// 安装状态在 useSpeechPackInstall 模块级共享：关闭设置页不中断下载
 
-const speechPackStatus = ref<{
-  available: boolean
-  source: string
-  packVersion: string | null
-  recommendedVersion: string
-  approxSizeBytes: number
-} | null>(null)
-const speechPackUrls = ref<{ github: string; oss: string; version: string } | null>(null)
-const speechPackBusy = ref(false)
-const speechPackError = ref('')
-const speechPackProgress = ref({ percent: 0, message: '' })
-let unsubSpeechProgress: (() => void) | null = null
+const {
+  busy: speechPackBusy,
+  error: speechPackError,
+  progress: speechPackProgress,
+  progressDetail: speechPackProgressDetail,
+  status: speechPackStatus,
+  urls: speechPackUrls,
+  installSpeechPackOnline,
+  importSpeechPack,
+  uninstallSpeechPack,
+  openSpeechPackUrl,
+  formatSpeechPackBytes: formatBytes,
+} = useSpeechPackInstall()
 
 function scrollToSpeechPack() {
   document.getElementById('speech-pack-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
-function formatBytes(n: number): string {
-  return `${(n / 1024 / 1024).toFixed(0)} MB`
-}
-
-async function refreshSpeechPack() {
-  try {
-    const [status, urls] = await Promise.all([
-      window.electronAPI.speech.getPackStatus(),
-      window.electronAPI.speech.getPackDownloadUrls(),
-    ])
-    speechPackStatus.value = status
-    speechPackUrls.value = urls
-  } catch (err) {
-    speechPackError.value = err instanceof Error ? err.message : String(err)
-  }
-}
-
-function ensureSpeechProgressSub() {
-  if (unsubSpeechProgress) return
-  unsubSpeechProgress = window.electronAPI.speech.onPackProgress((p) => {
-    speechPackProgress.value = {
-      percent: p.percent,
-      message: p.message || '',
-    }
-  })
-}
-
-async function installSpeechPackOnline() {
-  speechPackBusy.value = true
-  speechPackError.value = ''
-  speechPackProgress.value = { percent: 0, message: t('settings.speechPack.installing') }
-  ensureSpeechProgressSub()
-  try {
-    const result = await window.electronAPI.speech.installPack()
-    if (!result.success) {
-      speechPackError.value = result.error || t('settings.speechPack.installFailed')
-    }
-    await refreshSpeechPack()
-    await refreshSpeechPackAvailability()
-  } catch (err) {
-    speechPackError.value = err instanceof Error ? err.message : String(err)
-  } finally {
-    speechPackBusy.value = false
-  }
-}
-
-async function importSpeechPack() {
-  speechPackBusy.value = true
-  speechPackError.value = ''
-  ensureSpeechProgressSub()
-  try {
-    const result = await window.electronAPI.speech.importPack()
-    if (result.cancelled) return
-    if (!result.success) {
-      speechPackError.value = result.error || t('settings.speechPack.importFailed')
-    }
-    await refreshSpeechPack()
-    await refreshSpeechPackAvailability()
-  } catch (err) {
-    speechPackError.value = err instanceof Error ? err.message : String(err)
-  } finally {
-    speechPackBusy.value = false
-  }
-}
-
-async function uninstallSpeechPack() {
-  if (!confirm(t('settings.speechPack.confirmUninstall'))) return
-  speechPackBusy.value = true
-  speechPackError.value = ''
-  try {
-    const result = await window.electronAPI.speech.uninstallPack()
-    if (!result.success) {
-      speechPackError.value = result.error || t('settings.speechPack.uninstallFailed')
-    }
-    await refreshSpeechPack()
-    await refreshSpeechPackAvailability()
-  } catch (err) {
-    speechPackError.value = err instanceof Error ? err.message : String(err)
-  } finally {
-    speechPackBusy.value = false
-  }
-}
-
-function openSpeechPackUrl(which: 'github' | 'oss') {
-  const url = which === 'github' ? speechPackUrls.value?.github : speechPackUrls.value?.oss
-  if (url) window.open(url, '_blank')
 }
 
 // ==================== Web 搜索 ====================
@@ -1192,6 +1112,7 @@ function openWebSearchKeyUrl() {
           <div class="speech-pack-progress-bar" :style="{ width: `${speechPackProgress.percent}%` }" />
         </div>
         <span class="form-hint">{{ speechPackProgress.message || t('settings.speechPack.working') }}</span>
+        <span v-if="speechPackProgressDetail" class="form-hint speech-pack-progress-detail">{{ speechPackProgressDetail }}</span>
       </div>
 
       <div v-if="!speechPackStatus?.available" class="speech-pack-offline">

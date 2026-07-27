@@ -3059,6 +3059,8 @@ const electronAPI = {
       percent: number
       downloaded?: number
       total?: number
+      bytesPerSecond?: number
+      etaSeconds?: number
       message?: string
     }) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, progress: {
@@ -3066,6 +3068,8 @@ const electronAPI = {
         percent: number
         downloaded?: number
         total?: number
+        bytesPerSecond?: number
+        etaSeconds?: number
         message?: string
       }) => callback(progress)
       ipcRenderer.on('speech:pack-progress', handler)
