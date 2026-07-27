@@ -96,6 +96,16 @@ description: Automates SailFish release workflow: fix build/type errors, update 
 
 每个版本标题下方、分类列表之前，需要写一段**一句话总结**（1-2 句），概括该版本的核心主题和亮点。总结应聚焦于"这个版本最重要的变化是什么"，而非罗列所有改动。中英文日志均需包含，内容对应。
 
+### 说人话（强制）
+
+更新日志是给**用户**看的，不是给开发者看的 commit 摘要。预览与落盘都必须用口语、可感知的结果来写：
+
+- **写用户能感知的变化**：会怎样更好用 / 修了什么糟心体验；少写模块名、类名、内部机制（`asarUnpack`、`utilityProcess`、`contextLoss`、熔断闩锁等除非用户设置里真能看见）
+- **标题短、说明白话**：`**语音按需安装**：需要时在设置里下载` ✅；`**Embedding worker 初始化失败熔断**` ❌
+- **新功能带出的小修不单列**：例如「按需安装」引入的 PTT/文案/进度条修缮，写进该新功能条目即可，不要再开一条 Bug Fix 刷存在感
+- **中英文都要说人话**：英文同样用 plain English，不要把中文机翻成工程师黑话
+- 预览给用户确认时，若用户觉得「不够人话」，先改文案再继续发版
+
 ### 分类与条目格式
 
 **CHANGELOG.md：**
@@ -112,8 +122,8 @@ description: Automates SailFish release workflow: fix build/type errors, update 
 
 每条目一行，列表项格式示例：
 
-- 英文：`- 📝 **简短标题**：说明文字` 或 `- 📝 说明文字`
-- 中文：与英文一一对应翻译/改写
+- 英文：`- 📝 **Short title**: what the user gains or what feels fixed`
+- 中文：与英文一一对应，**口语改写**（不是字面翻译）
 
 ### 收集变更条目
 
@@ -125,7 +135,7 @@ git log v<当前版本>..HEAD --oneline
 
 例如当前版本为 8.19.4：`git log v8.19.4..HEAD --oneline`。
 
-根据提交记录归类到 New Features / Improvements / Bug Fixes，用户也可口述补充。**不编造未发生的改动**。
+根据提交记录归类到 New Features / Improvements / Bug Fixes，用户也可口述补充。**不编造未发生的改动**。素材来自 commit，**成稿必须说人话**（见上）。
 
 ---
 
@@ -157,7 +167,7 @@ git log v<当前版本>..HEAD --oneline
 ## 快速检查清单
 
 - [ ] 已按「发版节奏」提醒（距上次不足约 7 天且非热修时）；用户确认继续或不适用
-- [ ] 中文变更日志已预览并经用户确认
+- [ ] 中文变更日志已预览并经用户确认；文案**说人话**（用户可感知，非工程师黑话）
 - [ ] `npm run verify` 通过（类型检查 + lint + 构建 + 单元测试 + CLI 回归，并行执行）
 - [ ] `CHANGELOG.md` 与 `CHANGELOG_CN.md` 已更新且版本号、日期、条目一致
 - [ ] （minor/major）检查 `README.md`、`README_CN.md` 和 `website/src/i18n/translations.ts` 是否需要同步更新

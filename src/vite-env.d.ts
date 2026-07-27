@@ -1291,6 +1291,16 @@ interface Window {
         toolCount?: number
         resourceCount?: number
         promptCount?: number
+        tools?: Array<{ name: string; title?: string; description: string }>
+        error?: string
+      }>
+      /** AI 生成 whenToUse 草稿（须用户确认后写入） */
+      suggestWhenToUse: (input: {
+        name: string
+        tools: Array<{ name: string; title?: string; description?: string }>
+      }) => Promise<{
+        success: boolean
+        whenToUse?: string
         error?: string
       }>
       getServerStatuses: () => Promise<McpServerStatus[]>

@@ -2,7 +2,23 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v11.4.1 (2026-07-23) (Latest)
+## v11.5.0 (2026-07-27) (Latest)
+
+> Speech recognition is download-on-demand; MCP is easier to discover; plus a Windows fix for freezes and black terminals.
+
+### New Features
+- 🎯 **On-demand speech**: models no longer ship in the installer (smaller download); install from Settings when needed, or import locally — uninstall anytime
+- 🎯 **Download progress**: speed and time remaining while installing; keeps going if you leave Settings; notifies you when done
+- 🎯 **Clearer MCP usage**: each MCP can say when to use it; the AI loads them on demand instead of dumping everything into context
+
+### Improvements
+- ⚡ **Longer Watch runs**: default timeout 5 → 15 minutes so heavier tasks are less often cut off mid-run
+
+### Bug Fixes
+- 🐛 **Windows freeze / black terminal**: failed knowledge-base startup no longer retries in a loop and stalls the UI; terminal recovers if GPU rendering drops
+- 🐛 **Missing packaged files**: unpack the knowledge-base dependencies that were left out of the Windows build
+
+## v11.4.1 (2026-07-23)
 
 > Hotfix: Windows startup/runtime main-thread blocking that made the window show "Not Responding".
 

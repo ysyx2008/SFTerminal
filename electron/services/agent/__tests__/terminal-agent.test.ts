@@ -90,7 +90,8 @@ function createMockMcpService() {
     getToolDefinitions: vi.fn().mockReturnValue([]),
     shouldDeferTools: vi.fn().mockReturnValue(false),
     getToolDefinitionsByServerIds: vi.fn().mockReturnValue([]),
-    getServerCatalogText: vi.fn().mockReturnValue('')
+    getServerCatalogText: vi.fn().mockReturnValue(''),
+    getServerStatuses: vi.fn().mockReturnValue([])
   }
 }
 
@@ -191,28 +192,35 @@ describe('SailFish', () => {
       expect(Array.isArray(tools)).toBe(true)
     })
 
-    it('should include MCP tools when available', () => {
+    it('should include MCP tools when server loaded via progressive disclosure', () => {
       const mockMcpService = createMockMcpService()
-      mockMcpService.isServerReady.mockReturnValue(true)
-      mockMcpService.getToolDefinitions.mockReturnValue([
-        {
-          type: 'function' as const,
-          function: {
-            name: 'mcp_tool',
-            description: 'A MCP tool',
-            parameters: { type: 'object', properties: {} }
-          }
-        }
+      mockMcpService.shouldDeferTools.mockReturnValue(true)
+      mockMcpService.getServerStatuses.mockReturnValue([
+        { id: 'srv1', name: 'Test MCP', connected: true, toolCount: 1 }
       ])
-      
+      mockMcpService.getToolDefinitionsByServerIds.mockImplementation((ids: string[]) => {
+        if (!ids.includes('srv1')) return []
+        return [
+          {
+            type: 'function' as const,
+            function: {
+              name: 'mcp_tool',
+              description: 'A MCP tool',
+              parameters: { type: 'object', properties: {} }
+            }
+          }
+        ]
+      })
+
       const services = createMockServices({
         mcpService: mockMcpService as any
       })
-      
+
       agent = new SailFish(services, 'test-pty')
+      ;(agent as any).getMcpToolSession().loadServer('srv1')
+
       const tools = agent.getAvailableTools()
-      
-      // 工具列表应该包含基础工具和 MCP 工具
+
       expect(Array.isArray(tools)).toBe(true)
       expect(tools.some(t => t.function.name === 'mcp_tool')).toBe(true)
     })
