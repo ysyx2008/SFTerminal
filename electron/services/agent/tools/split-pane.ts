@@ -4,14 +4,19 @@
  * Agent 通过这些工具操作前端分屏布局：拆分、关闭、切换激活、列出窗格。
  * 实际的状态变更发生在前端 Pinia store 中，由 split-pane-bridge 提供反向 IPC。
  *
- * 窗格标识约定：对 Agent 暴露的"窗格 id"统一为 ptyId——ptyId 在窗格生命周期内
- * 稳定不变。前端布局树内部还有"paneId"（布局节点 id），但它在 split 关闭兄弟
- * 触发层级压缩（liftChildIntoParent）时会被替换，旧值失效。所以工具参数 pane_id
- * 的语义就是 ptyId，list_panes 返回字段也只暴露 ptyId。
+ * 窗格标识约定：对 Agent 暴露的"窗格 id"统一为 ptyId——ptyId 在**同一次连接**
+ * 的窗格生命周期内稳定；SSH/终端重连会换新 ptyId。前端布局树内部还有"paneId"
+ * （布局节点 id），但它在 split 关闭兄弟触发层级压缩（liftChildIntoParent）时
+ * 会被替换，旧值失效。所以工具参数 pane_id 的语义就是 ptyId，list_panes 返回
+ * 字段也只暴露 ptyId。
  *
- * 命令路由约定：分屏后命令工具（execute_command 等）默认仍发到 Agent 创建时的
- * 初始 PTY。要在其他窗格执行，请在工具参数里显式传 pane_id（值为目标窗格的
- * ptyId）。close_pane / focus_pane 在执行后会自动同步 Agent 的"当前默认窗格"。
+ * Tab 定位约定：分屏 bridge 用稳定的 agentKey（终端 = tabId）反查 Agent 所在
+ * tab，不用会变的 pane ptyId——否则重连后 list_panes 自身都会报找不到。
+ *
+ * 命令路由约定：分屏后命令工具（execute_command 等）默认仍发到 Agent 当前默认
+ * 操作窗格。要在其他窗格执行，请在工具参数里显式传 pane_id（值为目标窗格的
+ * ptyId）。close_pane / focus_pane / list_panes（自愈）在执行后会自动同步
+ * Agent 的"当前默认窗格"。
  */
 import { splitPaneBridge, type SplitPaneOp, type SplitPaneResult, type SplitTargetOp } from '../../split-pane-bridge.service'
 import { getConfigService } from '../../config.service'
@@ -42,8 +47,8 @@ function fail(error: string): ToolResult {
   return { success: false, output: '', error }
 }
 
-async function callBridge(op: SplitPaneOp, ownerPtyId?: string): Promise<SplitPaneResult> {
-  return splitPaneBridge.exec(op, ownerPtyId)
+async function callBridge(op: SplitPaneOp, ownerAgentKey?: string): Promise<SplitPaneResult> {
+  return splitPaneBridge.exec(op, ownerAgentKey)
 }
 
 /**
@@ -88,7 +93,7 @@ function parseSplitTarget(raw: unknown): SplitTargetOp | undefined | { error: st
   return { error: 'target 格式无效' }
 }
 
-export async function splitTerminalTool(args: Record<string, unknown>, ownerPtyId?: string): Promise<ToolResult> {
+export async function splitTerminalTool(args: Record<string, unknown>, ownerAgentKey?: string): Promise<ToolResult> {
   const direction = (args as { direction?: unknown }).direction
   if (direction !== 'horizontal' && direction !== 'vertical') {
     return fail('direction 必须是 "horizontal" 或 "vertical"')
@@ -100,7 +105,7 @@ export async function splitTerminalTool(args: Record<string, unknown>, ownerPtyI
   }
   const target = parsedTarget as SplitTargetOp | undefined
 
-  const result = await callBridge({ type: 'split', direction, target }, ownerPtyId)
+  const result = await callBridge({ type: 'split', direction, target }, ownerAgentKey)
   if (!result.ok) return fail(result.error || '分屏失败')
 
   const targetDesc = target?.kind === 'ssh'
@@ -138,7 +143,7 @@ export async function listSshSessionsTool(): Promise<ToolResult> {
 
 export async function closePaneTool(
   args: Record<string, unknown>,
-  ownerPtyId?: string,
+  ownerAgentKey?: string,
   config?: ToolExecutorConfig
 ): Promise<ToolResult> {
   // 工具参数名 pane_id 保留向后兼容；同时容忍历史/同义字段名（pty_id / paneId / ptyId）。
@@ -150,15 +155,16 @@ export async function closePaneTool(
   if (typeof ptyId !== 'string' || !ptyId) {
     return fail('pane_id 必须为字符串（值为目标窗格的 ptyId）')
   }
-  const result = await callBridge({ type: 'close', ptyId }, ownerPtyId)
+  const result = await callBridge({ type: 'close', ptyId }, ownerAgentKey)
   if (!result.ok) return fail(result.error || '关闭窗格失败')
 
   // 如果关掉的就是 Agent 当前操作的窗格，自动把 currentPtyId 切到剩余某个，
   // 让后续 execute_command 等工具不必显式传 pane_id 也能继续工作。
-  // 判定"是否关到了自己"的方式：ownerPtyId 不再出现在剩余窗格列表里。
+  // 用 getCurrentPtyId（真实 pane ptyId），不用 ownerAgentKey（tabId，不含于 panes 列表）。
   const data = result.data as { panes?: PaneInfo[] } | undefined
   const remaining = data?.panes
-  if (ownerPtyId && remaining && !remaining.some(p => p.ptyId === ownerPtyId)) {
+  const currentPtyId = config?.getCurrentPtyId?.()
+  if (currentPtyId && remaining && !remaining.some(p => p.ptyId === currentPtyId)) {
     const newPtyId = pickFallbackPtyId(remaining)
     if (newPtyId) {
       config?.setCurrentPtyId?.(newPtyId)
@@ -173,7 +179,7 @@ export async function closePaneTool(
 
 export async function focusPaneTool(
   args: Record<string, unknown>,
-  ownerPtyId?: string,
+  ownerAgentKey?: string,
   config?: ToolExecutorConfig
 ): Promise<ToolResult> {
   // 工具参数名 pane_id 保留向后兼容；实际值=目标窗格的 ptyId。
@@ -184,7 +190,7 @@ export async function focusPaneTool(
   if (typeof ptyId !== 'string' || !ptyId) {
     return fail('pane_id 必须为字符串（值为目标窗格的 ptyId）')
   }
-  const result = await callBridge({ type: 'focus', ptyId }, ownerPtyId)
+  const result = await callBridge({ type: 'focus', ptyId }, ownerAgentKey)
   if (!result.ok) return fail(result.error || '切换激活窗格失败')
 
   // 同步更新 Agent 的"当前默认操作 ptyId"——focus_pane 的语义就是切换操作焦点：
@@ -201,8 +207,28 @@ export async function focusPaneTool(
   )
 }
 
-export async function listPanesTool(ownerPtyId?: string): Promise<ToolResult> {
-  const result = await callBridge({ type: 'list' }, ownerPtyId)
+export async function listPanesTool(
+  ownerAgentKey?: string,
+  config?: ToolExecutorConfig
+): Promise<ToolResult> {
+  const result = await callBridge({ type: 'list' }, ownerAgentKey)
   if (!result.ok) return fail(result.error || '列出窗格失败')
+
+  // 重连后默认操作 ptyId 可能已失效：list 成功时自愈切到当前活着的窗格，
+  // 让后续 execute_command 不必再依赖用户手动 focus。
+  const data = result.data as { panes?: PaneInfo[] } | undefined
+  const panes = data?.panes
+  const currentPtyId = config?.getCurrentPtyId?.()
+  if (currentPtyId && panes && panes.length > 0 && !panes.some(p => p.ptyId === currentPtyId)) {
+    const healed = pickFallbackPtyId(panes)
+    if (healed) {
+      config?.setCurrentPtyId?.(healed)
+      return ok(
+        `当前窗格列表（默认操作窗格已失效，已自动切换到 ptyId=${healed}）。窗格的唯一标识就是 ptyId——想在指定窗格执行命令时给 pane_id 字段传该窗格的 ptyId 即可。`,
+        result.data
+      )
+    }
+  }
+
   return ok('当前窗格列表。窗格的唯一标识就是 ptyId——想在指定窗格执行命令时给 pane_id 字段传该窗格的 ptyId 即可。', result.data)
 }

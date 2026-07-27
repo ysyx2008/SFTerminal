@@ -264,13 +264,13 @@ export async function executeTool(
       return awaitFileTransfer(args, executor)
 
     case 'split_terminal':
-      return splitTerminalTool(args, ptyId)
+      return splitTerminalTool(args, executor.agentId || ptyId)
     case 'close_pane':
-      return closePaneTool(args, ptyId, executor)
+      return closePaneTool(args, executor.agentId || ptyId, executor)
     case 'focus_pane':
-      return focusPaneTool(args, ptyId, executor)
+      return focusPaneTool(args, executor.agentId || ptyId, executor)
     case 'list_panes':
-      return listPanesTool(ptyId)
+      return listPanesTool(executor.agentId || ptyId, executor)
     case 'list_ssh_sessions':
       return listSshSessionsTool()
 

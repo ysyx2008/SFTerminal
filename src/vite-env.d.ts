@@ -707,6 +707,8 @@ interface Window {
       }) => Promise<boolean>
       getStatus: (ptyId: string) => Promise<unknown>
       cleanup: (ptyId: string) => Promise<void>
+      /** 终端重连后同步运行中 Agent 的默认操作 ptyId（agentKey=tabId） */
+      remapPtyId: (agentKey: string, oldPtyId: string, newPtyId: string) => Promise<boolean>
       fork: (opts: {
         sourceAgentKey: string
         newAgentId: string
@@ -2513,7 +2515,7 @@ interface Window {
             | { type: 'close'; ptyId: string }
             | { type: 'focus'; ptyId: string }
             | { type: 'list' },
-          ownerPtyId?: string
+          ownerAgentKey?: string
         ) => void
       ) => () => void
       sendResult: (id: string, result: { ok: boolean; data?: unknown; error?: string }) => void

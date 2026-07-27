@@ -1208,6 +1208,16 @@ export const useTerminalStore = defineStore('terminal', () => {
         }
       }
 
+      // 4. 运行中 Agent 仍握着旧 ptyId 时，同步到新实例（否则 list_panes / execute_command 会找不到）
+      //    等 IPC 完成再返回，避免紧随其后的 tool call 仍打到旧实例。
+      if (oldPtyId && oldPtyId !== sshId) {
+        try {
+          await window.electronAPI.agent.remapPtyId(tabId, oldPtyId, sshId)
+        } catch {
+          // Agent 未运行或不存在时无妨；list_panes 仍有自愈兜底
+        }
+      }
+
       return { success: true }
     } catch (error) {
       console.error('Failed to reconnect SSH:', error)

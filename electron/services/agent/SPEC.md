@@ -1,6 +1,6 @@
 # Agent 子系统 SPEC
 
-> Last verified: 2026-07-18（上下文组成树状占比 hover）
+> Last verified: 2026-07-27（窗格定位与重连：agentKey 找 tab + remapPtyId）
 
 ## 职责
 
@@ -45,6 +45,16 @@ AgentService (index.ts)          — 工厂 + 生命周期管理，按 agentId �
 Agent 实例自身**没有强绑定 ptyId 字段**——每次 `run()` 通过 `context.ptyId` 知道当前操作哪个窗格。窗格切换、分屏、focus_pane 都不影响 Agent 实例本身的存在。
 
 **形参兼容**：旧 API 参数名 `ptyId` 保留以兼容现有调用，但新代码语义上传 `agentKey`。
+
+> **窗格定位与重连（设计目标，2026-07-27）**：
+>
+> - **问题**：SSH/终端重连会换新 `ptyId`，但同一次 `run` 里 Agent 仍握着旧 id。`list_panes` 等分屏工具原先用「当前操作 ptyId」反查 tab，重连后查不到 → 误报「ID 找不到」。`list_panes` 对 LLM **不要求传 id**（只是 list），内部也不该依赖会变的 pane ptyId 找 tab。
+> - **成功标准**：重连后同一次 run 内 `list_panes` / `split_terminal` / `close_pane` / `focus_pane` 仍能定位到 Agent 所在 tab；若默认操作窗格的 ptyId 已失效，`list_panes` 能自愈切到当前活着的窗格，后续 `execute_command` 等也能继续。
+> - **关键取舍**：
+>   1. 分屏 bridge 的「找 tab」主键用稳定的 **`agentKey`（终端 = tabId）**，不用会变的 pane `ptyId`（与 workbench bridge 一致）。
+>   2. 重连成功时前端主动 `remapPtyId(agentKey, old→new)`，同步 `run.ptyId` / `context.ptyId` 并重绑输出监听——根治，不只修 list。**当前实现覆盖 SSH 重连**（`reconnectSsh`）；本地 PTY 若日后支持崩溃恢复重连，须走同一 remap。
+>   3. `list_panes` 额外兜底：返回列表里若已不含当前默认 ptyId，自动 `setCurrentPtyId` 到激活窗格。
+> - **明确不做**：不把 pane `ptyId` 宣称为跨重连稳定；不要求 LLM 给 `list_panes` 传 id；不因重连销毁/重建 Agent 实例。
 
 ### Agent (`agent.ts`) — 抽象基类
 

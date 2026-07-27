@@ -4,9 +4,11 @@
  * 监听主进程 Agent 工具发起的分屏操作请求，调用 terminalStore 中相应方法，
  * 把执行结果回报给主进程 bridge。
  *
- * Tab 解析：bridge 透传 ownerPtyId（Agent 自己的初始 ptyId）时，handler 用它
- * 反查 Agent 所在的 tab 再操作；缺省时（如 UI 用户操作）退回到 activeTab。
- * 这样避免"用户切到别的 tab 时 Agent 误改别人 tab"的问题。
+ * Tab 解析：bridge 透传 ownerAgentKey（终端 Agent = tabId，稳定）时，handler
+ * 用它反查 Agent 所在的 tab 再操作；缺省时（如 UI 用户操作）退回到 activeTab。
+ * 兼容历史：若传入的是 pane ptyId，findTabIdByPtyId 仍能命中。
+ * 这样避免「用户切到别的 tab 时 Agent 误改别人 tab」以及「重连换 ptyId 后
+ * list_panes 找不到 tab」。
  */
 import { useTerminalStore, type SplitPane, type SplitTarget, type TerminalTab } from '../stores/terminal'
 import { createLogger } from '../utils/logger'
@@ -29,8 +31,8 @@ export function initSplitPaneHandler(): void {
   }
 
   log.info('split-pane handler initialized')
-  unsubscribe = window.electronAPI.splitPane.onExec(async (id, op, ownerPtyId) => {
-    log.info(`recv op id=${id} type=${op.type} ownerPtyId=${ownerPtyId || 'none'}`)
+  unsubscribe = window.electronAPI.splitPane.onExec(async (id, op, ownerAgentKey) => {
+    log.info(`recv op id=${id} type=${op.type} ownerAgentKey=${ownerAgentKey || 'none'}`)
     let result: { ok: boolean; data?: unknown; error?: string }
     try {
       // 每次都重新拿最新 store 实例，避免 HMR 后闭包持有旧 store
@@ -38,7 +40,7 @@ export function initSplitPaneHandler(): void {
       // dispatch 整体加超时——任何路径下都要保证 sendResult 一定回到主进程，
       // 否则主进程 bridge 即使有自己的 timeout，工具调用层观察到的也是"无限挂起"。
       result = await Promise.race([
-        dispatch(store, op as Op, ownerPtyId),
+        dispatch(store, op as Op, ownerAgentKey),
         new Promise<{ ok: boolean; error: string }>((_, reject) =>
           setTimeout(() => reject(new Error('split-pane handler dispatch timeout')), 8000)
         )
@@ -73,20 +75,25 @@ export function disposeSplitPaneHandler(): void {
 async function dispatch(
   store: ReturnType<typeof useTerminalStore>,
   op: Op,
-  ownerPtyId?: string
+  ownerAgentKey?: string
 ): Promise<{ ok: boolean; data?: unknown; error?: string }> {
   // 解析操作目标 tab：
-  // - ownerPtyId 提供（Agent 调用）：用 Agent 所在的 tab，避免跟随 activeTab 跑到用户切去的别人 tab
+  // - ownerAgentKey 提供（Agent 调用）：优先 tab.id / agentId（稳定），再兜底按 pane ptyId 查
   // - 缺省（UI 用户操作）：用当前 activeTab，与历史行为一致
   let tab: TerminalTab | undefined
-  if (ownerPtyId) {
-    const tabId = store.findTabIdByPtyId(ownerPtyId)
+  if (ownerAgentKey) {
+    const tabId =
+      store.findTabIdByPtyId(ownerAgentKey) // 含 tab.id === key（终端 agentKey）
+      ?? store.findTabIdByAgentId(ownerAgentKey)
     if (tabId) {
       tab = store.tabs.find(t => t.id === tabId)
     }
     if (!tab) {
-      log.warn(`dispatch ${op.type}: no tab owns ptyId=${ownerPtyId}`)
-      return { ok: false, error: `No tab found for ptyId=${ownerPtyId} (terminal may have been closed)` }
+      log.warn(`dispatch ${op.type}: no tab owns agentKey/ptyId=${ownerAgentKey}`)
+      return {
+        ok: false,
+        error: `No tab found for agentKey=${ownerAgentKey} (terminal may have been closed; if you recently reconnected, retry list_panes)`
+      }
     }
   } else {
     tab = store.activeTab
@@ -215,7 +222,8 @@ async function dispatch(
 /**
  * 给 Agent 工具看的 pane 列表。
  *
- * 只暴露 ptyId 一种标识——ptyId 在窗格生命周期内稳定，用于跨工具调用引用窗格。
+ * 只暴露 ptyId 一种标识——ptyId 在同一次连接的窗格生命周期内稳定，用于跨工具
+ * 调用引用窗格（重连会换新 id，需 list_panes / remapPtyId 刷新）。
  * 不返回布局节点 id（"paneId"），因为它会在布局压缩（lift）后被替换，旧值失效，
  * Agent 拿着旧 paneId 调 close_pane / focus_pane 会报 not found。
  *

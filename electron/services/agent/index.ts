@@ -764,6 +764,16 @@ export class AgentService {
   }
 
   /**
+   * 终端重连后把运行中 Agent 的默认操作 ptyId 从旧实例切到新实例。
+   * @param agentKey 终端 = tabId；仅当 currentRun.ptyId === oldPtyId 时生效
+   */
+  remapPtyId(agentKey: string, oldPtyId: string, newPtyId: string): boolean {
+    const agent = this.getAgent(agentKey)
+    if (!agent) return false
+    return agent.remapPtyId(oldPtyId, newPtyId)
+  }
+
+  /**
    * 把新的 commandRiskPolicy 同步到所有已存在的 Agent 实例。
    * 用户在设置页改 policy 后调用，保证运行中 Agent 立即生效。
    */

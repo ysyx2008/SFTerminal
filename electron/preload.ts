@@ -1018,6 +1018,10 @@ const electronAPI = {
     // 清空指定终端的任务历史记忆（用于"清空对话"功能）
     clearHistory: (ptyId: string) => ipcRenderer.invoke('agent:clearHistory', ptyId) as Promise<void>,
 
+    /** 终端重连后同步运行中 Agent 的默认操作 ptyId（agentKey=tabId） */
+    remapPtyId: (agentKey: string, oldPtyId: string, newPtyId: string) =>
+      ipcRenderer.invoke('agent:remapPtyId', agentKey, oldPtyId, newPtyId) as Promise<boolean>,
+
     // 更新 Agent 配置（如执行模式、超时时间、模型配置，使用 ptyId）
     updateConfig: (ptyId: string, config: { executionMode?: ExecutionMode; commandTimeout?: number; profileId?: string }) =>
       ipcRenderer.invoke('agent:updateConfig', ptyId, config) as Promise<boolean>,
@@ -3626,12 +3630,18 @@ const electronAPI = {
           | { type: 'close'; ptyId: string }
           | { type: 'focus'; ptyId: string }
           | { type: 'list' },
-        ownerPtyId?: string
+        ownerAgentKey?: string
       ) => void
     ) => {
-      const fn = (_event: Electron.IpcRendererEvent, payload: { id: string; op: Parameters<typeof handler>[1]; ownerPtyId?: string }) => {
+      const fn = (_event: Electron.IpcRendererEvent, payload: {
+        id: string
+        op: Parameters<typeof handler>[1]
+        ownerAgentKey?: string
+        /** @deprecated 旧字段名，兼容尚未重建的主进程 */
+        ownerPtyId?: string
+      }) => {
         if (!payload || typeof payload.id !== 'string' || !payload.op) return
-        handler(payload.id, payload.op, payload.ownerPtyId)
+        handler(payload.id, payload.op, payload.ownerAgentKey ?? payload.ownerPtyId)
       }
       ipcRenderer.on('split-pane:exec', fn)
       return () => ipcRenderer.removeListener('split-pane:exec', fn)

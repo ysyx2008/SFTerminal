@@ -76,12 +76,14 @@ class SplitPaneBridge {
   /**
    * 执行分屏 op
    *
-   * @param ownerPtyId  发起调用的 Agent 自己的初始 ptyId。handler 用它反查到 Agent
-   *                    所在的 tab，再操作那个 tab——而不是用户当前看的 activeTab。
-   *                    避免"用户切到别的 tab 时 Agent 误操作别人的 tab"。
-   *                    缺省（如 UI 用户操作触发）时 handler 退回到 activeTab。
+   * @param ownerAgentKey  发起调用的 Agent 的稳定 key（终端 = tabId）。handler 用它
+   *                       反查到 Agent 所在的 tab，再操作那个 tab——而不是用户当前
+   *                       看的 activeTab。避免「用户切到别的 tab 时 Agent 误操作别人的
+   *                       tab」，以及「重连换 pane ptyId 后找不到 tab」。
+   *                       兼容历史：传入 pane ptyId 时 findTabIdByPtyId 仍可命中。
+   *                       缺省（如 UI 用户操作触发）时 handler 退回到 activeTab。
    */
-  async exec(op: SplitPaneOp, ownerPtyId?: string): Promise<SplitPaneResult> {
+  async exec(op: SplitPaneOp, ownerAgentKey?: string): Promise<SplitPaneResult> {
     const w = this.window
     if (!w || w.isDestroyed()) {
       log.warn(`exec ${op.type}: window not available`)
@@ -106,8 +108,8 @@ class SplitPaneBridge {
       })
 
       try {
-        log.info(`exec ${op.type} send (id=${id}) ownerPtyId=${ownerPtyId || 'none'}`)
-        w.webContents.send('split-pane:exec', { id, op, ownerPtyId })
+        log.info(`exec ${op.type} send (id=${id}) ownerAgentKey=${ownerAgentKey || 'none'}`)
+        w.webContents.send('split-pane:exec', { id, op, ownerAgentKey })
       } catch (e) {
         if (this.pending.delete(id)) {
           clearTimeout(timer)

@@ -3968,6 +3968,12 @@ ipcMain.handle('agent:updateConfig', async (_event, ptyId: string, config: { exe
   return agentService.updateConfig(ptyId, config)
 })
 
+/** 终端重连后同步运行中 Agent 的默认操作 ptyId（旧实例 → 新实例） */
+ipcMain.handle('agent:remapPtyId', async (_event, agentKey: string, oldPtyId: string, newPtyId: string) => {
+  const { agentService } = await rt()
+  return agentService.remapPtyId(agentKey, oldPtyId, newPtyId)
+})
+
 ipcMain.handle('agent:addMessage', async (_event, ptyId: string, message: string, attachments?: AttachmentInfo[], documentContext?: string, images?: string[]) => {
   const { agentService } = await rt()
   return agentService.addUserMessage(ptyId, message, attachments, documentContext, images)

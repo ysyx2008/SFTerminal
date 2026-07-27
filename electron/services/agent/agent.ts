@@ -3249,11 +3249,7 @@ export abstract class Agent {
       getAgentContext: () => run.context,
       getAiRules: () => this.services.configService?.getAiRules() ?? '',
       setCurrentPtyId: (ptyId: string) => {
-        if (!ptyId || ptyId === run.ptyId) return
-        const before = run.ptyId
-        run.ptyId = ptyId
-        run.context.ptyId = ptyId
-        log.info(`Agent currentPtyId switched: ${before} → ${ptyId}`)
+        this.remapCurrentPtyId(run.ptyId, ptyId)
       },
       getCurrentPtyId: () => run.ptyId,
       getToolOutputBudget: (currentTokensOverride?: number) => {
@@ -3501,6 +3497,37 @@ export abstract class Agent {
     return `${prefix}_${Date.now()}_${++this.idCounter}`
   }
   
+  /**
+   * 把当前 run 的默认操作窗格 ptyId 从 oldPtyId 切到 newPtyId。
+   *
+   * 用途：SSH/终端重连会换新实例 id；若 Agent 仍握着旧 id，分屏工具与
+   * execute_command 都会失败。仅当 currentRun.ptyId === oldPtyId 时生效，
+   * 避免误改其它窗格焦点。成功时重绑输出监听。
+   */
+  remapPtyId(oldPtyId: string, newPtyId: string): boolean {
+    const run = this.currentRun
+    if (!run?.isRunning || !oldPtyId || !newPtyId) return false
+    if (run.ptyId !== oldPtyId) return false
+    return this.remapCurrentPtyId(oldPtyId, newPtyId)
+  }
+
+  /**
+   * 切换当前 run 的默认操作 ptyId，并重绑输出监听。
+   * 供 setCurrentPtyId（focus/close/list 自愈）与 remapPtyId（重连）共用。
+   */
+  private remapCurrentPtyId(oldPtyId: string | undefined, newPtyId: string): boolean {
+    const run = this.currentRun
+    if (!run?.isRunning || !newPtyId || newPtyId === run.ptyId) return false
+    const before = run.ptyId
+    run.outputUnsubscribe?.()
+    run.outputUnsubscribe = undefined
+    run.ptyId = newPtyId
+    run.context.ptyId = newPtyId
+    this.setupOutputListener(run)
+    log.info(`Agent currentPtyId switched: ${before || oldPtyId || '?'} → ${newPtyId}`)
+    return true
+  }
+
   /**
    * 设置终端输出监听器
    */
