@@ -1,10 +1,17 @@
 # SSH Service SPEC
 
-> Last verified: 2026-05-07
+> Last verified: 2026-07-27（重连 reuseId：对外会话 id 不变）
 
 ## 职责
 
 SSH 远程连接管理。建立、维持多路 SSH 会话，支持跳板机直连和跳板机 Shell 两种级联模式，提供终端 I/O、远程命令执行、终端状态查询、工作目录和进程探测。
+
+## 设计目标（重连身份）
+
+- **对外会话实例 id 在重连时保持不变**：`connect(config, { reuseId })` 卸掉旧连接后，新 ssh2 客户端挂在同一 Map key 上。该 id 即前端/Agent 口中的 `ptyId`（命名历史包袱：SSH 侧并非本机 PTY）。
+- **新开连接仍分配新 uuid**；仅「同一窗格重连」传 `reuseId`。
+- **重连后调用方负责重绑 I/O**（`ssh:subscribe` / Agent `onData`）——id 不变不会自动把旧回调迁到新实例。
+- **旧 client 异步 close/error 不得误伤新实例**：`close`/`error`/`stream close` 须校验 `instances.get(id)?.client === 本 client`（跳板同理校验 `jumpClient`），不匹配则忽略。
 
 ## 文件 / 规模
 
@@ -14,7 +21,7 @@ SSH 远程连接管理。建立、维持多路 SSH 会话，支持跳板机直�
 
 | 方法签名 | 用途 | 主要调用方 |
 |---------|------|-----------|
-| `async connect(config): Promise<string>` | 建立 SSH 连接，返回 session ID | main.ts, CLI |
+| `async connect(config, options?: { reuseId?: string }): Promise<string>` | 建立 SSH 连接；`reuseId` 时复用该 id | main.ts, CLI, 前端重连 |
 | `write(id, data): boolean` | 向终端写入数据 | PtyService |
 | `resize(id, cols, rows): void` | 调整终端窗口大小 | PtyService |
 | `onData(id, callback): () => void` | 注册终端数据回调，返回取消函数 | PtyService |

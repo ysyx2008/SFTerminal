@@ -216,7 +216,7 @@ interface Window {
           passphrase?: string
         }
         encoding?: string
-      }) => Promise<string>
+      }, options?: { reuseId?: string }) => Promise<string>
       write: (id: string, data: string) => Promise<void>
       resize: (id: string, cols: number, rows: number) => Promise<void>
       disconnect: (id: string) => Promise<void>

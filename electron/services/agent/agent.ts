@@ -3498,16 +3498,23 @@ export abstract class Agent {
   }
   
   /**
-   * 把当前 run 的默认操作窗格 ptyId 从 oldPtyId 切到 newPtyId。
+   * 把当前 run 的默认操作窗格从 oldPtyId 切到 newPtyId，并重绑输出监听。
    *
-   * 用途：SSH/终端重连会换新实例 id；若 Agent 仍握着旧 id，分屏工具与
-   * execute_command 都会失败。仅当 currentRun.ptyId === oldPtyId 时生效，
-   * 避免误改其它窗格焦点。成功时重绑输出监听。
+   * - 同 id（SSH 重连 reuseId）：只重绑监听——底层连接已换，旧 dataCallbacks 已随 disconnect 清空。
+   * - 异 id（历史/兜底）：更新 run.ptyId / context.ptyId 后再绑。
+   * 仅当 currentRun.ptyId === oldPtyId 时生效，避免误改其它窗格焦点。
    */
   remapPtyId(oldPtyId: string, newPtyId: string): boolean {
     const run = this.currentRun
     if (!run?.isRunning || !oldPtyId || !newPtyId) return false
     if (run.ptyId !== oldPtyId) return false
+    if (oldPtyId === newPtyId) {
+      run.outputUnsubscribe?.()
+      run.outputUnsubscribe = undefined
+      this.setupOutputListener(run)
+      log.info(`Agent pty listeners rebound (same id): ${newPtyId}`)
+      return true
+    }
     return this.remapCurrentPtyId(oldPtyId, newPtyId)
   }
 

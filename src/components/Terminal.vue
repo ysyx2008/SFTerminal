@@ -1024,13 +1024,14 @@ const handleReconnect = async () => {
     // 在终端显示成功消息
     terminal?.write(`\r\n\x1b[32m[连接成功]\x1b[0m\r\n`)
     
-    // 重新订阅数据
+    // 重新订阅数据（重连 reuseId：props.ptyId 不变，必须用本窗格 id，不能用 tab.ptyId——
+    // 多屏下 tab.ptyId 只镜像 active 窗格，重连非 active 时会订错）
     if (unsubscribe) {
       unsubscribe()
     }
-    const tab = terminalStore.tabs.find(t => t.id === props.tabId)
-    if (tab?.ptyId) {
-      unsubscribe = window.electronAPI.ssh.onData(tab.ptyId, (data: string) => {
+    const panePtyId = props.ptyId
+    if (panePtyId) {
+      unsubscribe = window.electronAPI.ssh.onData(panePtyId, (data: string) => {
         if (!isDisposed && terminal) {
           try {
             terminal.write(data)
@@ -1045,7 +1046,7 @@ const handleReconnect = async () => {
       if (unsubscribeDisconnect) {
         unsubscribeDisconnect()
       }
-      unsubscribeDisconnect = window.electronAPI.ssh.onDisconnected(tab.ptyId, (event) => {
+      unsubscribeDisconnect = window.electronAPI.ssh.onDisconnected(panePtyId, (event) => {
         if (!isDisposed && terminal) {
           terminalStore.updateConnectionStatus(props.tabId, false)
           sshDisconnected.value = true
@@ -1060,7 +1061,7 @@ const handleReconnect = async () => {
       // 重新调整终端大小
       if (fitAddon && terminal) {
         fitAddon.fit()
-        await terminalStore.resizePty(props.ptyId, props.type, terminal.cols, terminal.rows)
+        await terminalStore.resizePty(panePtyId, props.type, terminal.cols, terminal.rows)
       }
     }
   } catch (error) {

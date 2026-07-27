@@ -222,8 +222,7 @@ async function dispatch(
 /**
  * 给 Agent 工具看的 pane 列表。
  *
- * 只暴露 ptyId 一种标识——ptyId 在同一次连接的窗格生命周期内稳定，用于跨工具
- * 调用引用窗格（重连会换新 id，需 list_panes / remapPtyId 刷新）。
+ * 只暴露 ptyId 一种标识——同一窗格会话实例 id（SSH 重连 reuseId 保持不变）。
  * 不返回布局节点 id（"paneId"），因为它会在布局压缩（lift）后被替换，旧值失效，
  * Agent 拿着旧 paneId 调 close_pane / focus_pane 会报 not found。
  *

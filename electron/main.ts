@@ -2119,10 +2119,10 @@ ipcMain.on('pty:subscribe', (event, id: string) => {
 })
 
 // SSH 相关
-ipcMain.handle('ssh:connect', async (_event, config) => {
+ipcMain.handle('ssh:connect', async (_event, config, options?: { reuseId?: string }) => {
   try {
     const { sshService } = await rt()
-    return await sshService.connect(config)
+    return await sshService.connect(config, options)
   } catch (err) {
     throw new Error(err instanceof Error ? err.message : String(err))
   }

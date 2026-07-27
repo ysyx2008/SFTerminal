@@ -764,8 +764,8 @@ export class AgentService {
   }
 
   /**
-   * 终端重连后把运行中 Agent 的默认操作 ptyId 从旧实例切到新实例。
-   * @param agentKey 终端 = tabId；仅当 currentRun.ptyId === oldPtyId 时生效
+   * 终端重连后同步运行中 Agent：同 id 时重绑输出监听；异 id 时切换默认操作窗格。
+   * @param agentKey 终端 = tabId
    */
   remapPtyId(agentKey: string, oldPtyId: string, newPtyId: string): boolean {
     const agent = this.getAgent(agentKey)

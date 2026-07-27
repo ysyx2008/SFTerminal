@@ -1147,6 +1147,7 @@ export const useTerminalStore = defineStore('terminal', () => {
 
       const jumpHost = configStore.getEffectiveJumpHost(session)
 
+      // 重连复用旧会话实例 id：对外身份不变，只换底层 ssh2 连接
       const sshId = await window.electronAPI.ssh.connect({
         host: session.host,
         port: session.port,
@@ -1158,7 +1159,7 @@ export const useTerminalStore = defineStore('terminal', () => {
         encoding: session.encoding || 'utf-8',
         cols: 80,
         rows: 24
-      })
+      }, oldPtyId ? { reuseId: oldPtyId } : undefined)
 
       // ssh.connect 是异步的——await 期间用户可能关了窗格 / 切了 tab / 关了整个 tab。
       // 这里要重新校验 paneNode 还在 splitLayout 里、tab 还在 tabs 里，否则我们刚连上的
@@ -1178,15 +1179,17 @@ export const useTerminalStore = defineStore('terminal', () => {
         return { success: false }
       }
 
-      // 1. 精准更新该窗格节点的 ptyId（sshConfig / sshSessionId 不变，重连同一会话）
-      if (paneNode) {
+      // 1. 对外 id 不变时无需改 pane.ptyId；兜底：若未传 reuseId（无旧 id）则写入新 id
+      if (paneNode && paneNode.ptyId !== sshId) {
         paneNode.ptyId = sshId
       }
 
-      // 2. tab 级镜像字段：只有当重连的就是当前 active 窗格（或走的是 tab 级老路径）时才同步
-      //    多屏下重连非 active 窗格不应改动 tab.ptyId，否则会让 active pane 引用错乱
+      // 2. tab 级镜像：重连的是 active 窗格（或 tab 级老路径）时同步连接态
+      //    多屏下重连非 active 窗格不应改动 tab.ptyId
       if (!paneNode || paneNode.isActive) {
-        tab.ptyId = sshId
+        if (tab.ptyId !== sshId) {
+          tab.ptyId = sshId
+        }
         tab.isConnected = true
         const jumpInfo = jumpHost ? ` (via ${jumpHost.host})` : ''
         tab.systemInfo = {
@@ -1197,7 +1200,6 @@ export const useTerminalStore = defineStore('terminal', () => {
       }
 
       // 3. 单屏 / 兜底：splitLayout 缺失时初始化；存在但仅 1 个 terminal 子节点时同步它
-      //    （多屏路径已经在 paneNode 那一步精确同步过了，不会进这里）
       if (!paneNode) {
         if (tab.splitLayout?.children?.length === 1 && tab.splitLayout.children[0].type === 'terminal') {
           tab.splitLayout.children[0].ptyId = sshId
@@ -1208,13 +1210,12 @@ export const useTerminalStore = defineStore('terminal', () => {
         }
       }
 
-      // 4. 运行中 Agent 仍握着旧 ptyId 时，同步到新实例（否则 list_panes / execute_command 会找不到）
-      //    等 IPC 完成再返回，避免紧随其后的 tool call 仍打到旧实例。
-      if (oldPtyId && oldPtyId !== sshId) {
+      // 4. 底层连接已换：运行中 Agent 需重绑同 id 的输出监听（id 不变也会丢旧回调）
+      if (oldPtyId) {
         try {
           await window.electronAPI.agent.remapPtyId(tabId, oldPtyId, sshId)
         } catch {
-          // Agent 未运行或不存在时无妨；list_panes 仍有自愈兜底
+          // Agent 未运行或不存在时无妨
         }
       }
 

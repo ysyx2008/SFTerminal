@@ -4,14 +4,14 @@
  * Agent 通过这些工具操作前端分屏布局：拆分、关闭、切换激活、列出窗格。
  * 实际的状态变更发生在前端 Pinia store 中，由 split-pane-bridge 提供反向 IPC。
  *
- * 窗格标识约定：对 Agent 暴露的"窗格 id"统一为 ptyId——ptyId 在**同一次连接**
- * 的窗格生命周期内稳定；SSH/终端重连会换新 ptyId。前端布局树内部还有"paneId"
- * （布局节点 id），但它在 split 关闭兄弟触发层级压缩（liftChildIntoParent）时
- * 会被替换，旧值失效。所以工具参数 pane_id 的语义就是 ptyId，list_panes 返回
- * 字段也只暴露 ptyId。
+ * 窗格标识约定：对 Agent 暴露的"窗格 id"统一为 ptyId（会话实例 id）。
+ * **同一窗格 SSH 重连复用该 id**（只换底层连接）；新开窗格 / 新建连接仍分配新 id。
+ * 前端布局树内部还有"paneId"（布局节点 id），它在 split 关闭兄弟触发层级压缩
+ * （liftChildIntoParent）时会被替换，旧值失效。所以工具参数 pane_id 的语义就是
+ * ptyId，list_panes 返回字段也只暴露 ptyId。
  *
  * Tab 定位约定：分屏 bridge 用稳定的 agentKey（终端 = tabId）反查 Agent 所在
- * tab，不用会变的 pane ptyId——否则重连后 list_panes 自身都会报找不到。
+ * tab，避免用户切走 tab 时误操作别人的布局。
  *
  * 命令路由约定：分屏后命令工具（execute_command 等）默认仍发到 Agent 当前默认
  * 操作窗格。要在其他窗格执行，请在工具参数里显式传 pane_id（值为目标窗格的

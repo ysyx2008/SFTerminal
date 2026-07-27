@@ -46,9 +46,16 @@ export class SshService {
 
   /**
    * 建立 SSH 连接（支持跳板机）
+   *
+   * @param options.reuseId 重连时传入旧会话 id：卸掉仍占用该 key 的旧实例后，
+   *   新连接继续使用同一 id（对外身份不变）。新开连接不传，仍分配 uuid。
    */
-  async connect(config: SshConfig): Promise<string> {
-    const id = uuidv4()
+  async connect(config: SshConfig, options?: { reuseId?: string }): Promise<string> {
+    const reuseId = options?.reuseId?.trim() || undefined
+    const id = reuseId || uuidv4()
+    if (reuseId && this.instances.has(id)) {
+      this.disconnect(id)
+    }
 
     // 如果配置了跳板机，先通过跳板机建立连接
     if (config.jumpHost) {
@@ -150,10 +157,14 @@ export class SshService {
               instance.dataCallbacks.forEach(callback => callback(str))
             })
 
-            // 监听关闭
+            // 监听关闭（reuseId 重连后旧 stream 的 close 可能晚到——只处理仍属于本 client 的实例）
             stream.on('close', () => {
+              const current = this.instances.get(id)
+              if (!current || current.client !== client) {
+                log.info(`${id} stream closed (stale/absent, ignore)`)
+                return
+              }
               log.info(`${id} stream closed`)
-              // 触发断开连接事件（stream 关闭通常意味着连接断开）
               this.emitDisconnect({ id, reason: 'stream_closed' })
               client.end()
             })
@@ -165,9 +176,18 @@ export class SshService {
       })
 
       client.on('error', err => {
+        // 仅当 Map 里已是「别的 client」时视为过期（reuseId 重连竞态）。
+        // 尚未入 Map 的连接失败（current 为空）必须照常 reject。
+        const current = this.instances.get(id)
+        if (current && current.client !== client) {
+          log.info(`${id} error from stale client, ignore:`, err)
+          return
+        }
         log.error(`${id} error:`, err)
-        this.emitDisconnect({ id, reason: 'error', error: err })
-        this.instances.delete(id)
+        if (current) {
+          this.emitDisconnect({ id, reason: 'error', error: err })
+          this.instances.delete(id)
+        }
         // ⚠️ 勿删：EHOSTUNREACH 时再触发本地网络授权探测（见 local-network-permission.ts）
         requestLocalNetworkAccessIfDenied(err, 'ssh-connect')
         const friendlyMessage = getSshErrorMessage(err)
@@ -175,8 +195,14 @@ export class SshService {
       })
 
       client.on('close', () => {
+        const current = this.instances.get(id)
+        if (!current || current.client !== client) {
+          if (current && current.client !== client) {
+            log.info(`${id} connection closed (stale client, ignore)`)
+          }
+          return
+        }
         log.info(`${id} connection closed`)
-        // 触发断开连接事件（如果还没触发过）
         this.emitDisconnect({ id, reason: 'closed' })
         this.instances.delete(id)
       })
@@ -286,11 +312,14 @@ export class SshService {
       jumpClient.on('close', () => {
         log.info(`Jump host connection closed`)
         const instance = this.instances.get(id)
-        if (instance) {
-          this.emitDisconnect({ id, reason: 'jump_host_closed' })
-          instance.client.end()
-          this.instances.delete(id)
+        // reuseId 重连后旧 jumpClient 的 close 可能晚到——只处理仍挂着本 jumpClient 的实例
+        if (!instance || instance.jumpClient !== jumpClient) {
+          log.info(`${id} jump host closed (stale jumpClient, ignore)`)
+          return
         }
+        this.emitDisconnect({ id, reason: 'jump_host_closed' })
+        instance.client.end()
+        this.instances.delete(id)
       })
 
       jumpClient.connect(jumpConnectConfig)
@@ -376,6 +405,11 @@ export class SshService {
             })
 
             stream.on('close', () => {
+              const current = this.instances.get(id)
+              if (!current || current.client !== client) {
+                log.info(`${id} JumpServer shell closed (stale/absent, ignore)`)
+                return
+              }
               log.info(`${id} JumpServer shell closed`)
               this.emitDisconnect({ id, reason: 'stream_closed' })
               client.end()
@@ -407,12 +441,16 @@ export class SshService {
       })
 
       client.on('close', () => {
-        log.info(`JumpServer direct shell connection closed`)
-        const instance = this.instances.get(id)
-        if (instance) {
-          this.emitDisconnect({ id, reason: 'closed' })
-          this.instances.delete(id)
+        const current = this.instances.get(id)
+        if (!current || current.client !== client) {
+          if (current && current.client !== client) {
+            log.info(`JumpServer direct shell connection closed (stale client, ignore)`)
+          }
+          return
         }
+        log.info(`JumpServer direct shell connection closed`)
+        this.emitDisconnect({ id, reason: 'closed' })
+        this.instances.delete(id)
       })
 
       client.connect(connectConfig)
