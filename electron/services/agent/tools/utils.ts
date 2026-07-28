@@ -472,7 +472,7 @@ export function tryDecodePythonEscapesForPath(str: string): string {
 /**
  * 解析终端类工具的目标 PTY ID。
  *
- * 分屏场景下 Agent 可在工具参数中传 `pane_id`（值为 list_panes 返回的 ptyId），
+ * 分屏场景下 Agent 可在工具参数中传 `pane_id`（值为 manage_pane(action=list) 返回的 ptyId），
  * 把命令路由到指定窗格。不传则回退到 Agent 创建时锁定的默认 ptyId。
  *
  * 同时兼容 `pty_id` 别名（Agent 可能误用），写法上不限制大小写组合。
@@ -492,7 +492,7 @@ export function resolveTargetPtyId(
  * `error` 字段（从 ToolResult 继承）= AI 看到的完整版（含最新 panes JSON），
  * `briefError` = UI 卡片展示的一行描述（只说"目标窗格没了"，不带 JSON）。
  *
- * 这样既保证 AI 拿到足够信息一次决策（不必再调 list_panes），又避免在用户
+ * 这样既保证 AI 拿到足够信息一次决策（不必再调 manage_pane(action=list)），又避免在用户
  * 聊天界面里堆一坨 JSON 噪音——完整数据走 logger 落到日志文件。
  */
 export interface PaneGoneToolResult extends ToolResult {
@@ -515,7 +515,7 @@ export interface PaneGoneToolResult extends ToolResult {
  * 就借此反查 tab、抓最新 panes，把列表内联到 `error` 字段里给 AI 看。
  *
  * 抓不到（owner ptyId 不存在 / 桥接不可用 / 超时）就回退到 fallback hint，
- * 提示 Agent 自己调 list_panes——保证最差情况也不会比改之前更差。
+ * 提示 Agent 自己调 manage_pane(action=list)——保证最差情况也不会比改之前更差。
  *
  * UI 展示用 `briefError`（始终只是 baseError 一行），完整版只走 AI message
  * 和日志，不直接灌给用户 — 用户不需要看那一坨 JSON 才能理解发生了什么。

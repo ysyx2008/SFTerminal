@@ -782,7 +782,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
 
 行为：远程已存在时除非 overwrite=true 否则报错；上传成功后不再回写终端，避免污染输出。
 
-**窗格选择**：本工具只能针对 SSH 窗格执行。当前默认窗格是 SSH 时直接用；是本地终端时必须先 list_panes 找到 SSH 窗格的 ptyId（或用 split_terminal 创建一个），再通过 pane_id 指定。`,
+**窗格选择**：本工具只能针对 SSH 窗格执行。当前默认窗格是 SSH 时直接用；是本地终端时必须先 manage_pane(action=list) 找到 SSH 窗格的 ptyId（或用 manage_pane action=split 创建一个），再通过 pane_id 指定。`,
         parameters: {
           type: 'object',
           properties: {
@@ -800,7 +800,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
             },
             pane_id: {
               type: 'string',
-              description: '【分屏专用·可选】指定操作哪个 SSH 窗格。值=list_panes 返回的窗格 ptyId。不传则用 Agent 当前默认窗格——若默认窗格不是 SSH 会报错。'
+              description: '【分屏专用·可选】指定操作哪个 SSH 窗格。值=manage_pane(action=list) 返回的窗格 ptyId。不传则用 Agent 当前默认窗格——若默认窗格不是 SSH 会报错。'
             }
           },
           required: ['local_path', 'remote_path']
@@ -827,7 +827,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
 local_path 省略时自动落到 agent workspace 根目录（文件名同 remote 的 basename），后续 read_file 可直接读。
 local_path 填相对路径时也归一到 workspace 内；填绝对路径才落到任意位置。
 
-**窗格选择**：本工具只能针对 SSH 窗格执行。当前默认窗格是 SSH 时直接用；是本地终端时必须先 list_panes 找到 SSH 窗格的 ptyId（或用 split_terminal 创建一个），再通过 pane_id 指定。`,
+**窗格选择**：本工具只能针对 SSH 窗格执行。当前默认窗格是 SSH 时直接用；是本地终端时必须先 manage_pane(action=list) 找到 SSH 窗格的 ptyId（或用 manage_pane action=split 创建一个），再通过 pane_id 指定。`,
         parameters: {
           type: 'object',
           properties: {
@@ -841,7 +841,7 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
             },
             pane_id: {
               type: 'string',
-              description: '【分屏专用·可选】指定从哪个 SSH 窗格下载。值=list_panes 返回的窗格 ptyId。不传则用 Agent 当前默认窗格——若默认窗格不是 SSH 会报错。'
+              description: '【分屏专用·可选】指定从哪个 SSH 窗格下载。值=manage_pane(action=list) 返回的窗格 ptyId。不传则用 Agent 当前默认窗格——若默认窗格不是 SSH 会报错。'
             }
           },
           required: ['remote_path']
@@ -1054,131 +1054,47 @@ Agent 类型：
     {
       type: 'function',
       function: {
-        name: 'split_terminal',
-        description: `在当前激活的终端 tab 上创建分屏。direction='horizontal' 表示左右分屏，'vertical' 表示上下分屏。仅对终端 tab 有效。
+        name: 'manage_pane',
+        description: `管理当前终端 tab 的窗格与连通。用 action 区分操作：
 
-**新窗格连接到哪里**（通过可选 target 参数控制）：
-- 不传 target：复用当前激活窗格的连接（与原行为一致——本地激活就开本地，SSH 激活就开同一会话的新连接）
-- target="local"：强制新开本地终端
-- target="ssh:<sessionId>"：连接到指定的已配置 SSH 会话（先调 list_ssh_sessions 获取 sessionId）
-- 也支持对象形态：target={kind:"local"} / {kind:"inherit"} / {kind:"ssh", sessionId:"..."}
+- list：列出窗格（ptyId / label / isActive / terminalType / connected）。connected 仅表示主进程尚未观察到断开，不是远端健康探测。
+- split：再开一扇。必填 direction=horizontal|vertical；可选 target：不传/inherit 复用激活窗格、local、ssh:<sessionId>（先 list_ssh_sessions）。
+- close：关掉一扇（必填 pane_id=ptyId）。不能关最后一个窗格。
+- focus：切焦点并切换 Agent 默认操作窗格（必填 pane_id）。
+- ensure_connected：确保 SSH 窗格连通；已通则幂等；断则原地重连（成功=新 shell）。可选 pane_id。
 
-返回数据中 panes 数组列出所有窗格的 ptyId / label / terminalType。窗格的唯一标识统一用 ptyId（在窗格生命周期内稳定不变）。如果你想在新窗格里执行命令，给 execute_command（以及 send_input、send_control_key、check_terminal_status、get_terminal_context 等终端工具）传入 pane_id 参数，值=该窗格的 ptyId。
-
-典型用法：
-- 多机巡检：list_ssh_sessions 拿清单 → 给每台 split_terminal(direction, target="ssh:xxx") → 各窗格并行 execute_command
-- 本地+远程对照：split_terminal("horizontal", "local") 在右边开本地终端`,
+窗格唯一标识是 ptyId（SSH 重连 reuseId 保持不变）。给 execute_command 等传 pane_id 时用该值。
+SSH 断线：ensure_connected 或依赖用时懒重连（结果会告知，不自动重跑命令）；勿叫用户点按钮。
+典型：list_ssh_sessions → manage_pane(action=split, target="ssh:…") → 各窗格 execute_command。`,
         parameters: {
           type: 'object',
           properties: {
+            action: {
+              type: 'string',
+              enum: ['list', 'split', 'close', 'focus', 'ensure_connected'],
+              description: '要执行的窗格操作'
+            },
             direction: {
               type: 'string',
               enum: ['horizontal', 'vertical'],
-              description: '分屏方向：horizontal=左右、vertical=上下'
+              description: 'action=split 时必填：horizontal=左右、vertical=上下'
             },
             target: {
               type: 'string',
-              description: '新窗格的连接源（可选）：不传或 "inherit" 复用激活窗格连接；"local" 新开本地终端；"ssh:<sessionId>" 连接到 list_ssh_sessions 返回的 SSH 会话'
-            }
-          },
-          required: ['direction']
-        }
-      },
-      _meta: {
-        supportedModes: ['local', 'ssh'],
-      }
-    } as ToolDefinitionWithMeta,
-    {
-      type: 'function',
-      function: {
-        name: 'close_pane',
-        description: `关闭指定窗格。关闭后若只剩一个窗格，list_panes 的 mode 会切回 'single'。
-
-pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字段）。窗格在系统里只有 ptyId 这一种稳定标识——传别的会找不到。
-
-可以关闭包括"你当前正在操作的窗格"在内的任意窗格。如果关掉的就是当前操作焦点，工具会自动把"当前默认窗格"切到剩余的某个，后续 execute_command 默认在新焦点执行（无需显式传 pane_id）。唯一例外：剩最后一个窗格时不能关——那等于关闭整个 tab。`,
-        parameters: {
-          type: 'object',
-          properties: {
+              description: 'action=split 可选：inherit / local / ssh:<sessionId>'
+            },
             pane_id: {
               type: 'string',
-              description: '要关闭的窗格的 ptyId（来自 list_panes 返回的 ptyId 字段）'
+              description: 'action=close/focus 必填；ensure_connected 可选。值为目标窗格 ptyId'
             }
           },
-          required: ['pane_id']
+          required: ['action']
         }
       },
       _meta: {
         supportedModes: ['local', 'ssh'],
-      }
-    } as ToolDefinitionWithMeta,
-    {
-      type: 'function',
-      function: {
-        name: 'focus_pane',
-        description: `把激活焦点切到指定窗格。**会同时改变 Agent 的"当前默认操作窗格"**：调用之后 execute_command 等终端工具默认在该窗格执行，不必每次再传 pane_id。
-
-适合"接下来一连串命令都要在同一个窗格跑"的场景——一次 focus_pane 切过去，后续命令简洁。如果只是想在某个窗格执行单条命令，直接给那条命令传 pane_id 更轻量。
-
-pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字段）。`,
-        parameters: {
-          type: 'object',
-          properties: {
-            pane_id: {
-              type: 'string',
-              description: '要激活的窗格的 ptyId（来自 list_panes 返回的 ptyId 字段）'
-            }
-          },
-          required: ['pane_id']
-        }
-      },
-      _meta: {
-        supportedModes: ['local', 'ssh'],
-      }
-    } as ToolDefinitionWithMeta,
-    {
-      type: 'function',
-      function: {
-        name: 'list_panes',
-        description: `列出当前激活 tab 的所有窗格（含 ptyId、label、是否激活、终端类型、connected）。
-
-connected：主进程侧是否仍持有该窗格实例（尚未观察到断开），**不是**远端健康探测——远端刚重启、TCP 未超时前仍可能为 true。
-
-窗格的唯一稳定标识就是 ptyId——其他终端工具（execute_command / send_input / send_control_key / check_terminal_status / get_terminal_context / close_pane / focus_pane / ensure_connected）的 pane_id 参数全都接收 ptyId 这个值。
-
-SSH 断线且窗格仍在时：调用 ensure_connected 原地重连（成功后是新 shell，勿假设旧 cwd）；不要叫用户点重连按钮。`,
-        parameters: {
-          type: 'object',
-          properties: {}
-        }
-      },
-      _meta: {
-        supportedModes: ['local', 'ssh'],
-        parallelizable: true,
-      }
-    } as ToolDefinitionWithMeta,
-    {
-      type: 'function',
-      function: {
-        name: 'ensure_connected',
-        description: `确保指定（或当前默认）SSH 窗格处于连通状态：已连通则幂等成功；已断开则原地重连（reuseId，窗格 ptyId 不变）。
-
-成功重连后是**新登录/新 shell**（cwd/环境以当前登录态为准），不是缝好旧会话。
-仅支持已保存会话的 SSH 窗格；本地终端或未保存的临时 SSH 会明确失败。
-
-主动运维（如重启远端机器）应先 wait，再调用本工具，再验收——不要依赖用时懒重连作为重启剧本的主路径。`,
-        parameters: {
-          type: 'object',
-          properties: {
-            pane_id: {
-              type: 'string',
-              description: '目标窗格的 ptyId（来自 list_panes）。不传则用 Agent 当前默认窗格。'
-            }
-          }
-        }
-      },
-      _meta: {
-        supportedModes: ['local', 'ssh'],
+        // streaming-tool-executor 只看工具名：合并后整体不可并行（list 失去并行是可接受代价）
+        parallelizable: false,
       }
     } as ToolDefinitionWithMeta,
     {
@@ -1187,7 +1103,7 @@ SSH 断线且窗格仍在时：调用 ensure_connected 原地重连（成功后�
         name: 'list_ssh_sessions',
         description: `列出用户已配置好的 SSH 会话清单（不含密码 / 私钥等敏感字段），返回每个会话的 sessionId、name、host、port、username、group、lastUsedAt。
 
-用途：当你想在新窗格里连接到某台已配置的服务器时，先调本工具拿 sessionId，再调 split_terminal(direction, target="ssh:<sessionId>") 即可在新窗格中打开对应的 SSH 连接。无需用户手工切换或输入凭证。
+用途：当你想在新窗格里连接到某台已配置的服务器时，先调本工具拿 sessionId，再调 manage_pane(action="split", direction, target="ssh:<sessionId>") 即可在新窗格中打开对应的 SSH 连接。无需用户手工切换或输入凭证。
 
 适用场景：
 - 多机巡检 / 灰度对比（dev/staging/prod 平铺为多窗格）

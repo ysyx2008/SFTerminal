@@ -52,7 +52,7 @@ export const ptyExecuteCommandTool: ToolDefinitionWithMeta = {
         },
         pane_id: {
           type: 'string',
-          description: '【分屏专用·可选】在指定窗格执行命令。值=list_panes 返回的目标窗格 ptyId（窗格的唯一标识）。不传则在 Agent 初始绑定的窗格执行——单屏时无需关心；分屏后想在其他窗格执行就传该窗格的 ptyId。'
+          description: '【分屏专用·可选】在指定窗格执行命令。值=manage_pane(action=list) 返回的目标窗格 ptyId（窗格的唯一标识）。不传则在 Agent 初始绑定的窗格执行——单屏时无需关心；分屏后想在其他窗格执行就传该窗格的 ptyId。'
         }
       },
       required: ['command']
@@ -90,7 +90,7 @@ export const terminalOnlyTools: ToolDefinition[] = [
         properties: {
           pane_id: {
             type: 'string',
-            description: '【分屏专用·可选】检查指定窗格的状态。值为 list_panes 返回的窗格 pty_id。不传则检查 Agent 初始窗格。'
+            description: '【分屏专用·可选】检查指定窗格的状态。值为 manage_pane(action=list) 返回的窗格 pty_id。不传则检查 Agent 初始窗格。'
           }
         }
       }
@@ -111,7 +111,7 @@ export const terminalOnlyTools: ToolDefinition[] = [
           },
           pane_id: {
             type: 'string',
-            description: '【分屏专用·可选】读取指定窗格的输出。值为 list_panes 返回的窗格 pty_id。不传则读取 Agent 初始窗格。'
+            description: '【分屏专用·可选】读取指定窗格的输出。值为 manage_pane(action=list) 返回的窗格 pty_id。不传则读取 Agent 初始窗格。'
           }
         }
       }
@@ -133,7 +133,7 @@ export const terminalOnlyTools: ToolDefinition[] = [
           },
           pane_id: {
             type: 'string',
-            description: '【分屏专用·可选】向指定窗格发送控制键。值为 list_panes 返回的窗格 pty_id。不传则发送到 Agent 初始窗格。'
+            description: '【分屏专用·可选】向指定窗格发送控制键。值为 manage_pane(action=list) 返回的窗格 pty_id。不传则发送到 Agent 初始窗格。'
           }
         },
         required: ['key']
@@ -167,7 +167,7 @@ export const terminalOnlyTools: ToolDefinition[] = [
           },
           pane_id: {
             type: 'string',
-            description: '【分屏专用·可选】向指定窗格发送输入。值为 list_panes 返回的窗格 pty_id。不传则发送到 Agent 初始窗格。'
+            description: '【分屏专用·可选】向指定窗格发送输入。值为 manage_pane(action=list) 返回的窗格 pty_id。不传则发送到 Agent 初始窗格。'
           }
         },
         required: ['text']

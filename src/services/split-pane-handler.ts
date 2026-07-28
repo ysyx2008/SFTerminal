@@ -101,7 +101,7 @@ async function dispatch(
       log.warn(`dispatch ${op.type}: no tab owns agentKey/ptyId=${ownerAgentKey}`)
       return {
         ok: false,
-        error: `No tab found for agentKey=${ownerAgentKey} (terminal may have been closed; if you recently reconnected, retry list_panes)`
+        error: `No tab found for agentKey=${ownerAgentKey} (terminal may have been closed; if you recently reconnected, retry manage_pane(action=list))`
       }
     }
   } else {
@@ -149,7 +149,7 @@ async function dispatch(
       if (allPanes.length <= 1) {
         return {
           ok: false,
-          error: '只剩最后一个窗格，不能通过 close_pane 关闭——这等于关闭整个 tab。如需关闭 tab，请让用户手动操作。'
+          error: '只剩最后一个窗格，不能通过 manage_pane(action=close) 关闭——这等于关闭整个 tab。如需关闭 tab，请让用户手动操作。'
         }
       }
 
@@ -161,7 +161,7 @@ async function dispatch(
       if (!removed) {
         return {
           ok: false,
-          error: `Pane not found: "${op.ptyId}". No pane has this ptyId — use list_panes to refresh current ptyIds.`
+          error: `Pane not found: "${op.ptyId}". No pane has this ptyId — use manage_pane(action=list) to refresh.`
         }
       }
       const remainingPanes = collectPanes(tab.splitLayout)
@@ -185,7 +185,7 @@ async function dispatch(
       if (!ok) {
         return {
           ok: false,
-          error: `Pane not found: "${op.ptyId}". No pane has this ptyId — use list_panes to refresh current ptyIds.`
+          error: `Pane not found: "${op.ptyId}". No pane has this ptyId — use manage_pane(action=list) to refresh.`
         }
       }
       return {

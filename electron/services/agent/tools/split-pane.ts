@@ -15,7 +15,7 @@
  *
  * 命令路由约定：分屏后命令工具（execute_command 等）默认仍发到 Agent 当前默认
  * 操作窗格。要在其他窗格执行，请在工具参数里显式传 pane_id（值为目标窗格的
- * ptyId）。close_pane / focus_pane / list_panes（自愈）在执行后会自动同步
+ * ptyId）。manage_pane 的 close / focus / list（自愈）在执行后会自动同步
  * Agent 的"当前默认窗格"。
  */
 import { splitPaneBridge, type SplitPaneOp, type SplitPaneResult, type SplitTargetOp } from '../../split-pane-bridge.service'
@@ -128,7 +128,7 @@ export async function splitTerminalTool(args: Record<string, unknown>, ownerAgen
 }
 
 /**
- * 列出所有已配置的 SSH 会话，供 Agent 调用 split_terminal 时选择目标。
+ * 列出所有已配置的 SSH 会话，供 Agent 调用 manage_pane(action=split) 时选择目标。
  *
  * 不返回密码 / 私钥路径等敏感字段，只暴露足够 Agent 决策的元信息。
  */
@@ -143,7 +143,7 @@ export async function listSshSessionsTool(): Promise<ToolResult> {
     group: s.groupId || s.group
   }))
   return ok(
-    `共 ${safe.length} 个已配置的 SSH 会话。调用 split_terminal 时把 sessionId 作为 target 传入即可在新窗格中连接对应主机：\n  - 字符串形式：target: "ssh:<sessionId>"\n  - 对象形式：target: { kind: "ssh", sessionId: "<sessionId>" }`,
+    `共 ${safe.length} 个已配置的 SSH 会话。调用 manage_pane(action=split) 时把 sessionId 作为 target 传入即可在新窗格中连接对应主机：\n  - 字符串形式：target: "ssh:<sessionId>"\n  - 对象形式：target: { kind: "ssh", sessionId: "<sessionId>" }`,
     safe
   )
 }
@@ -244,9 +244,35 @@ export async function listPanesTool(
     : ''
 
   return ok(
-    `当前窗格列表${healedNote}。字段 connected 仅表示主进程尚未观察到断开（非远端健康探测）。SSH 断线时调用 ensure_connected 原地重连（成功后是新 shell）。窗格标识用 ptyId——给 pane_id 传该值即可。`,
+    `当前窗格列表${healedNote}。字段 connected 仅表示主进程尚未观察到断开（非远端健康探测）。SSH 断线时调用 manage_pane(action=ensure_connected) 原地重连（成功后是新 shell）。窗格标识用 ptyId——给 pane_id 传该值即可。`,
     enriched
   )
+}
+
+export async function managePaneTool(
+  args: Record<string, unknown>,
+  ownerAgentKey?: string,
+  config?: ToolExecutorConfig
+): Promise<ToolResult> {
+  const action = (args as { action?: unknown }).action
+  if (typeof action !== 'string' || !action) {
+    return fail('action 必填：list | split | close | focus | ensure_connected')
+  }
+
+  switch (action) {
+    case 'list':
+      return listPanesTool(ownerAgentKey, config)
+    case 'split':
+      return splitTerminalTool(args, ownerAgentKey)
+    case 'close':
+      return closePaneTool(args, ownerAgentKey, config)
+    case 'focus':
+      return focusPaneTool(args, ownerAgentKey, config)
+    case 'ensure_connected':
+      return ensureConnectedTool(args, ownerAgentKey, config)
+    default:
+      return fail(`未知 action="${action}"，支持：list | split | close | focus | ensure_connected`)
+  }
 }
 
 export async function ensureConnectedTool(

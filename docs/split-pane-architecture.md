@@ -354,36 +354,22 @@ TerminalTabView.vue
 ### 7.1 分屏管理工具
 
 ```typescript
-// 创建分屏
+// 统一窗格管理（action 分支）
 {
-  "tool": "split_terminal",
+  "tool": "manage_pane",
   "args": {
-    "direction": "horizontal" | "vertical",
-    "paneId": "target-pane-id"  // 可选，默认当前激活窗格
+    "action": "list" | "split" | "close" | "focus" | "ensure_connected",
+    "direction": "horizontal" | "vertical",  // split 时
+    "target": "local" | "ssh:<sessionId>",     // split 时可选
+    "pane_id": "ptyId"                         // close/focus 必填；ensure_connected 可选
   }
 }
 
-// 关闭窗格
+// 在指定窗格执行命令（仍用 execute_command + pane_id）
 {
-  "tool": "close_pane",
+  "tool": "execute_command",
   "args": {
-    "paneId": "pane-to-close"
-  }
-}
-
-// 切换焦点窗格
-{
-  "tool": "focus_pane",
-  "args": {
-    "paneId": "target-pane-id"
-  }
-}
-
-// 在指定窗格执行命令
-{
-  "tool": "execute_in_pane",
-  "args": {
-    "paneId": "target-pane-id",
+    "pane_id": "target-pty-id",
     "command": "npm run dev"
   }
 }
@@ -431,10 +417,9 @@ TerminalTabView.vue
 - 右下窗格（pane-3）：空闲状态
 
 你可以使用以下工具管理分屏：
-- split_terminal: 创建新分屏
-- close_pane: 关闭窗格
-- focus_pane: 切换焦点
-- execute_in_pane: 在指定窗格执行命令
+- manage_pane: 窗格 list/split/close/focus/ensure_connected
+- list_ssh_sessions: 已保存 SSH 通讯录
+- execute_command + pane_id: 在指定窗格执行
 
 你可以使用以下工具管理连接：
 - connect_ssh: 创建 SSH 连接
@@ -505,7 +490,7 @@ TerminalTabView.vue
 - [x] `electron/services/split-pane-bridge.service.ts`：主进程→渲染进程的 IPC 桥接
 - [x] preload `splitPane.onExec` / `splitPane.sendResult` API
 - [x] 渲染端 `src/services/split-pane-handler.ts` 监听并调用 store
-- [x] 工具：`split_terminal` / `close_pane` / `focus_pane` / `list_panes`，`supportedModes: ['local', 'ssh']`
+- [x] 工具：`manage_pane`（list/split/close/focus/ensure_connected）+ `list_ssh_sessions`，`supportedModes: ['local', 'ssh']`
 
 ### 9.2 后续可扩展（未实现）
 

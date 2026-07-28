@@ -36,7 +36,7 @@
 1. **桥接服务**：`electron/services/split-pane-bridge.service.ts`，主进程→渲染进程通过 `webContents.send` 派发，5s 超时
 2. **preload API**：`window.electronAPI.splitPane.onExec / sendResult`
 3. **渲染端监听**：`src/services/split-pane-handler.ts`，App.vue 启动时初始化
-4. **工具集**：`split_terminal` / `close_pane` / `focus_pane` / `list_panes`，`supportedModes: ['local', 'ssh']`，IM/Watch 远程 Agent 自动失效
+4. **工具集**：`manage_pane`（list/split/close/focus/ensure_connected）+ `list_ssh_sessions`，`supportedModes: ['local', 'ssh']`，IM/Watch 远程 Agent 自动失效
 
 ### 测试
 - vitest 单元测试 25 个文件、969 个用例全部通过（新增 17 个 split-pane-tree 测试）

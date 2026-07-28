@@ -1260,7 +1260,7 @@ const translations = {
     'error.get_terminal_output_failed': '获取终端输出失败: {error}',
     'error.terminal_output_empty': '(终端输出为空)',
     'error.pane_not_found_runtime': '目标窗格已不存在 (ptyId="{paneId}")，可能已被用户关闭。命令未送达任何终端。',
-    'error.pane_not_found_runtime.fallback_hint': '请调用 list_panes 查看当前窗格；若 SSH 断线且窗格仍在，请调用 ensure_connected 原地重连（重连后是新 shell，不要假设旧 cwd）。',
+    'error.pane_not_found_runtime.fallback_hint': '请调用 manage_pane(action=list) 查看当前窗格；若 SSH 断线且窗格仍在，请调用 manage_pane(action=ensure_connected) 原地重连（重连后是新 shell，不要假设旧 cwd）。',
     'error.pane_not_found_runtime.with_panes': '当前窗格列表：\n{panes}',
     'error.ssh_reconnect_needs_session': '无法重连：该 SSH 窗格未关联已保存会话，请用户在界面上重连或先保存会话。',
     'error.ssh_reconnect_failed': 'SSH 原地重连失败。',
@@ -1268,8 +1268,8 @@ const translations = {
     'pane.ensure_reconnected_fresh': '已原地重连 SSH 窗格 (ptyId="{paneId}")。这是新登录/新 shell：cwd 与环境变量以当前登录态为准，不要假设重连前的工作目录或进程仍在。',
     'pane.lazy_reconnected_fresh': '目标窗格 SSH 已断开，原操作未送达任何终端。系统已原地重连 (ptyId="{paneId}")。当前为新登录/新 shell（cwd/环境以登录态为准）。请根据任务自行决定是否重发命令——系统不会自动重跑刚才那条操作。',
     'pane.lazy_reconnected_brief': 'SSH 已断线并已重连（新 shell）；原操作未送达',
-    'pane.disconnect_op_not_delivered': '目标窗格当时不可用，原操作未送达 (ptyId="{paneId}")。请检查 list_panes 的 connected 状态后重试。',
-    'pane.lazy_reconnect_failed': '目标窗格 SSH 已断开，原操作未送达 (ptyId="{paneId}")。尝试原地重连失败：{detail}。若会话已保存，请调用 ensure_connected；未保存则请用户在界面重连。',
+    'pane.disconnect_op_not_delivered': '目标窗格当时不可用，原操作未送达 (ptyId="{paneId}")。请检查 manage_pane(action=list) 的 connected 状态后重试。',
+    'pane.lazy_reconnect_failed': '目标窗格 SSH 已断开，原操作未送达 (ptyId="{paneId}")。尝试原地重连失败：{detail}。若会话已保存，请调用 manage_pane(action=ensure_connected)；未保存则请用户在界面重连。',
 
     // 控制键错误
     'error.control_key_required': '必须指定要发送的控制键',
@@ -2772,7 +2772,7 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'error.get_terminal_output_failed': 'Failed to get terminal output: {error}',
     'error.terminal_output_empty': '(Terminal output is empty)',
     'error.pane_not_found_runtime': 'Target pane no longer exists (ptyId="{paneId}"); it may have been closed by the user. The command was not delivered to any terminal.',
-    'error.pane_not_found_runtime.fallback_hint': 'Call list_panes to inspect panes; if SSH disconnected but the pane remains, call ensure_connected to reconnect in place (fresh shell — do not assume the old cwd).',
+    'error.pane_not_found_runtime.fallback_hint': 'Call manage_pane(action=list) to inspect panes; if SSH disconnected but the pane remains, call manage_pane(action=ensure_connected) to reconnect in place (fresh shell — do not assume the old cwd).',
     'error.pane_not_found_runtime.with_panes': 'Current pane list:\n{panes}',
     'error.ssh_reconnect_needs_session': 'Cannot reconnect: this SSH pane is not linked to a saved session. Ask the user to reconnect in the UI or save the session first.',
     'error.ssh_reconnect_failed': 'In-place SSH reconnect failed.',
@@ -2780,8 +2780,8 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'pane.ensure_reconnected_fresh': 'Reconnected SSH pane in place (ptyId="{paneId}"). This is a fresh login/shell: cwd and env are as of this login — do not assume the previous working directory or processes remain.',
     'pane.lazy_reconnected_fresh': 'The target SSH pane disconnected; the original operation was not delivered. The system reconnected in place (ptyId="{paneId}"). This is a fresh login/shell (cwd/env as of login). Decide yourself whether to re-issue the command — the system will not automatically retry the previous operation.',
     'pane.lazy_reconnected_brief': 'SSH disconnected and reconnected (fresh shell); original operation not delivered',
-    'pane.disconnect_op_not_delivered': 'Target pane was unavailable; original operation not delivered (ptyId="{paneId}"). Check list_panes connected status and retry.',
-    'pane.lazy_reconnect_failed': 'Target SSH pane disconnected; original operation not delivered (ptyId="{paneId}"). In-place reconnect failed: {detail}. If the session is saved, call ensure_connected; otherwise ask the user to reconnect in the UI.',
+    'pane.disconnect_op_not_delivered': 'Target pane was unavailable; original operation not delivered (ptyId="{paneId}"). Check manage_pane(action=list) connected status and retry.',
+    'pane.lazy_reconnect_failed': 'Target SSH pane disconnected; original operation not delivered (ptyId="{paneId}"). In-place reconnect failed: {detail}. If the session is saved, call manage_pane(action=ensure_connected); otherwise ask the user to reconnect in the UI.',
 
     // Control key errors
     'error.control_key_required': 'Must specify control key to send',
