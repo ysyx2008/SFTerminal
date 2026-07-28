@@ -11,7 +11,8 @@ import { resolveCommandToolConfirmation } from '../allowlist/resolve-command-con
 import { getTerminalStateService } from '../../terminal-state.service'
 import { getTerminalAwarenessService, getProcessMonitor } from '../../terminal-awareness'
 import { getLastNLinesFromBuffer, getScreenAnalysisFromFrontend } from '../../screen-content.service'
-import { categorizeError, getErrorRecoverySuggestion, withRetry, truncateFromEnd, truncateSandwichWithNotice, getPtyMaxCommandLength, paneGoneResult } from './utils'
+import { categorizeError, getErrorRecoverySuggestion, withRetry, truncateFromEnd, truncateSandwichWithNotice, getPtyMaxCommandLength } from './utils'
+import { lazyReconnectAfterDisconnect } from './pane-reconnect'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 
 /** execute_command 输出截断上限（与 exec.OUTPUT_TRUNCATE 对齐） */
@@ -257,17 +258,16 @@ export async function executeCommand(
       }
     )
 
-    // 窗格不存在：底层 service 在 ptyId 找不到实例时返回结构化的 no_instance，
-    // 不能再当成"普通输出"传给 Agent。这里立刻短路，让 paneGoneResult 自动附带最新窗格列表。
+    // 窗格不存在：先尝试 SSH 懒重连（可见、不重跑命令）；窗格已关则 paneGone
     if (result.status === 'no_instance') {
       unsubscribe()
       terminalStateService.completeCommandExecution(ptyId, 1, 'failed')
-      const goneResult = await paneGoneResult(result.ptyId, executor)
+      const goneResult = await lazyReconnectAfterDisconnect(result.ptyId, executor)
       executor.addStep({
         type: 'tool_result',
-        content: `⚠️ ${goneResult.briefError}`,
+        content: `⚠️ ${goneResult.briefError || goneResult.error}`,
         toolName: 'execute_command',
-        toolResult: goneResult.briefError
+        toolResult: goneResult.briefError || goneResult.error
       })
       return goneResult
     }
@@ -458,12 +458,12 @@ async function executeSudoCommand(
   if (!executor.terminalService.write(ptyId, command + '\r')) {
     unsubscribe()
     terminalStateService.completeCommandExecution(ptyId, 1, 'failed')
-    const result = await paneGoneResult(ptyId, executor)
+    const result = await lazyReconnectAfterDisconnect(ptyId, executor)
     executor.addStep({
       type: 'tool_result',
-      content: `⚠️ ${result.briefError}`,
+      content: `⚠️ ${result.briefError || result.error}`,
       toolName: 'execute_command',
-      toolResult: result.briefError
+      toolResult: result.briefError || result.error
     })
     return result
   }
@@ -599,12 +599,12 @@ async function executeFireAndForget(
 ): Promise<ToolResult> {
   // 写入失败说明窗格已不存在；不能再骗 Agent "命令已启动"——把这条转成明确错误
   if (!executor.terminalService.write(ptyId, command + '\r')) {
-    const result = await paneGoneResult(ptyId, executor)
+    const result = await lazyReconnectAfterDisconnect(ptyId, executor)
     executor.addStep({
       type: 'tool_result',
-      content: `⚠️ ${result.briefError}`,
+      content: `⚠️ ${result.briefError || result.error}`,
       toolName: 'execute_command',
-      toolResult: result.briefError
+      toolResult: result.briefError || result.error
     })
     return result
   }
@@ -660,16 +660,13 @@ async function executeTimedCommand(
     // 写入失败说明窗格已不存在；放弃后续的等待 + 退出键序列，直接报错
     if (!executor.terminalService.write(ptyId, command + '\r')) {
       unsubscribe()
-      // paneGoneResult 异步抓 list_panes；这里仍然在 Promise executor 内部，
-      // 不能 await，所以把 resolve 链接到结果上即可。catch 兜底防止内部
-      // addStep / i18n 抛异常时把外层 Promise 永远挂起。
-      paneGoneResult(ptyId, executor)
+      lazyReconnectAfterDisconnect(ptyId, executor)
         .then(result => {
           executor.addStep({
             type: 'tool_result',
-            content: `⚠️ ${result.briefError}`,
+            content: `⚠️ ${result.briefError || result.error}`,
             toolName: 'execute_command',
-            toolResult: result.briefError
+            toolResult: result.briefError || result.error
           })
           resolve(result)
         })

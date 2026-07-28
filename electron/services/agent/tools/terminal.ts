@@ -6,7 +6,8 @@ import stripAnsi from 'strip-ansi'
 import { t } from '../i18n'
 import { getTerminalAwarenessService } from '../../terminal-awareness'
 import { getLastNLinesFromBuffer, getScreenAnalysisFromFrontend } from '../../screen-content.service'
-import { truncateFromEnd, paneGoneResult } from './utils'
+import { truncateFromEnd } from './utils'
+import { lazyReconnectAfterDisconnect } from './pane-reconnect'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 
 /**
@@ -376,12 +377,12 @@ export async function sendControlKey(
   try {
     // write 返回 false = 目标窗格已不存在，不能继续骗 Agent "已发送"
     if (!executor.terminalService.write(ptyId, keySequence)) {
-      const result = await paneGoneResult(ptyId, executor)
+      const result = await lazyReconnectAfterDisconnect(ptyId, executor)
       executor.addStep({
         type: 'tool_result',
-        content: `⚠️ ${result.briefError}`,
+        content: `⚠️ ${result.briefError || result.error}`,
         toolName: 'send_control_key',
-        toolResult: result.briefError
+        toolResult: result.briefError || result.error
       })
       return result
     }
@@ -438,12 +439,12 @@ export async function sendInput(
   try {
     // write 返回 false = 目标窗格已不存在；第二条 \r 也不必尝试了
     if (!executor.terminalService.write(ptyId, text)) {
-      const result = await paneGoneResult(ptyId, executor)
+      const result = await lazyReconnectAfterDisconnect(ptyId, executor)
       executor.addStep({
         type: 'tool_result',
-        content: `⚠️ ${result.briefError}`,
+        content: `⚠️ ${result.briefError || result.error}`,
         toolName: 'send_input',
-        toolResult: result.briefError
+        toolResult: result.briefError || result.error
       })
       return result
     }

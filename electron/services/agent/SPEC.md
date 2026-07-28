@@ -1,6 +1,6 @@
 # Agent 子系统 SPEC
 
-> Last verified: 2026-07-27（SSH 重连 reuseId：对外会话 id 不变）
+> Last verified: 2026-07-28（终端连通所有权：ensure_connected + 懒重连可见）
 
 ## 职责
 
@@ -56,6 +56,19 @@ Agent 实例自身**没有强绑定 ptyId 字段**——每次 `run()` 通过 `c
 >   4. `list_panes` 保留自愈兜底（默认窗格 id 若意外失效则切到激活窗格）。
 > - **关键取舍**：对外稳定的是「窗格会话实例 id」（字段名仍叫 `ptyId`，本地才真是 PTY、SSH 只是同名句柄）；重连不换该 id。本地 PTY 崩溃恢复日后同理 `reuseId`。
 > - **明确不做**：不为重连拆第二套 `paneId`/`connectionId`（现阶段复用 id 足够）；不要求 LLM 给 `list_panes` 传 id；不因重连销毁 Agent 实例。
+
+> **终端连通所有权（设计目标，2026-07-28）**：
+>
+> - **问题**：Agent 已拥有窗格布局（list/split/close/focus），但不拥有连通生命周期；SSH 断线后只能叫用户点按钮，或滥用 `split_terminal` 新开一格。
+> - **成功标准**：
+>   1. **意外断线**：Agent 下一次使用该窗格时，对可重连 SSH（有已保存 `sshSessionId`）**懒重连一次**——只恢复连接，**不自动重跑原命令/写入**。
+>   2. **断线与重连必须对 Agent 可见**：工具结果写明「已断开 / 已重连 / 当前为新 shell / 原操作未送达」，禁止静默装成旧会话还在。
+>   3. **主动运维**（如重启机器）：Agent 用 `ensure_connected`（阶段二收进 `manage_pane`）在 wait 之后显式接上。
+>   4. 任何重连成功对模型都是 **新登录 / 新 shell**（cwd/环境以当前为准）。
+>   5. `list_panes`（后为 `manage_pane list`）带 **`connected`**：仅表示主进程侧 `hasInstance` 为真（尚未观察到断开），**不是**远端健康探测；TCP 未超时前远端刚重启仍可能为 true。
+>   6. 同一窗格 in-flight 重连去重：并发工具共享同一结果，禁止连开多次。
+> - **关键取舍**：连通是工作台基础设施；懒重连只在用时；「意图是否还成立」由 Agent 根据可见结果自行决定；不根据命令内容猜是否 reboot。
+> - **明确不做**：后台循环重连；懒重连后自动重试原工具调用；未保存会话静默重连；本地 PTY 崩溃恢复（后续）；猜 reboot。
 
 ### Agent (`agent.ts`) — 抽象基类
 

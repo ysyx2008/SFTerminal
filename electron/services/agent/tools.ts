@@ -1140,9 +1140,13 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
       type: 'function',
       function: {
         name: 'list_panes',
-        description: `列出当前激活 tab 的所有窗格（含 ptyId、label、是否激活、终端类型）。当 system prompt 中的窗格信息不够实时或刚做过分屏调整时使用。
+        description: `列出当前激活 tab 的所有窗格（含 ptyId、label、是否激活、终端类型、connected）。
 
-窗格的唯一稳定标识就是 ptyId——其他终端工具（execute_command / send_input / send_control_key / check_terminal_status / get_terminal_context / close_pane / focus_pane）的 pane_id 参数全都接收 ptyId 这个值。`,
+connected：主进程侧是否仍持有该窗格实例（尚未观察到断开），**不是**远端健康探测——远端刚重启、TCP 未超时前仍可能为 true。
+
+窗格的唯一稳定标识就是 ptyId——其他终端工具（execute_command / send_input / send_control_key / check_terminal_status / get_terminal_context / close_pane / focus_pane / ensure_connected）的 pane_id 参数全都接收 ptyId 这个值。
+
+SSH 断线且窗格仍在时：调用 ensure_connected 原地重连（成功后是新 shell，勿假设旧 cwd）；不要叫用户点重连按钮。`,
         parameters: {
           type: 'object',
           properties: {}
@@ -1151,6 +1155,30 @@ pane_id 字段值=目标窗格的 ptyId（来自 list_panes 返回的 ptyId 字�
       _meta: {
         supportedModes: ['local', 'ssh'],
         parallelizable: true,
+      }
+    } as ToolDefinitionWithMeta,
+    {
+      type: 'function',
+      function: {
+        name: 'ensure_connected',
+        description: `确保指定（或当前默认）SSH 窗格处于连通状态：已连通则幂等成功；已断开则原地重连（reuseId，窗格 ptyId 不变）。
+
+成功重连后是**新登录/新 shell**（cwd/环境以当前登录态为准），不是缝好旧会话。
+仅支持已保存会话的 SSH 窗格；本地终端或未保存的临时 SSH 会明确失败。
+
+主动运维（如重启远端机器）应先 wait，再调用本工具，再验收——不要依赖用时懒重连作为重启剧本的主路径。`,
+        parameters: {
+          type: 'object',
+          properties: {
+            pane_id: {
+              type: 'string',
+              description: '目标窗格的 ptyId（来自 list_panes）。不传则用 Agent 当前默认窗格。'
+            }
+          }
+        }
+      },
+      _meta: {
+        supportedModes: ['local', 'ssh'],
       }
     } as ToolDefinitionWithMeta,
     {

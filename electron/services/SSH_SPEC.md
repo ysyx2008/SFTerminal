@@ -1,6 +1,6 @@
 # SSH Service SPEC
 
-> Last verified: 2026-07-27（重连 reuseId：对外会话 id 不变）
+> Last verified: 2026-07-28（连通所有权：Agent 可触发原地重连）
 
 ## 职责
 
@@ -12,6 +12,12 @@ SSH 远程连接管理。建立、维持多路 SSH 会话，支持跳板机直�
 - **新开连接仍分配新 uuid**；仅「同一窗格重连」传 `reuseId`。
 - **重连后调用方负责重绑 I/O**（`ssh:subscribe` / Agent `onData`）——id 不变不会自动把旧回调迁到新实例。
 - **旧 client 异步 close/error 不得误伤新实例**：`close`/`error`/`stream close` 须校验 `instances.get(id)?.client === 本 client`（跳板同理校验 `jumpClient`），不匹配则忽略。
+
+## 设计目标（Agent 连通所有权，2026-07-28）
+
+- Agent / UI 共用同一条 `reconnectSsh` 路径（经 split-pane bridge `reconnect` op），对已保存会话的 SSH 窗格做**原地重连**。
+- `hasInstance` 只表示本进程侧实例仍在；列表里的 `connected` 同源，不是远端健康检查。
+- 重连成功对 Agent 一律按**新 shell** 告知；不在 service 层自动重试业务命令。
 
 ## 文件 / 规模
 

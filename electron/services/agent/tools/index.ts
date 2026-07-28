@@ -28,7 +28,7 @@ import { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, awaitFileTr
 import { dispatchSubAgents } from './sub-agent'
 import { executeWebSearch } from './web-search'
 import { executeWebFetch } from './web-fetch'
-import { splitTerminalTool, closePaneTool, focusPaneTool, listPanesTool, listSshSessionsTool } from './split-pane'
+import { splitTerminalTool, closePaneTool, focusPaneTool, listPanesTool, listSshSessionsTool, ensureConnectedTool } from './split-pane'
 import { listWorkbenchArtifactsTool, manageWorkbenchArtifactsTool } from './workbench'
 
 // 重新导出类型
@@ -271,6 +271,8 @@ export async function executeTool(
       return focusPaneTool(args, executor.agentId || ptyId, executor)
     case 'list_panes':
       return listPanesTool(executor.agentId || ptyId, executor)
+    case 'ensure_connected':
+      return ensureConnectedTool(args, executor.agentId || ptyId, executor)
     case 'list_ssh_sessions':
       return listSshSessionsTool()
 

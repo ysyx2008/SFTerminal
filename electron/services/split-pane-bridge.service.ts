@@ -13,7 +13,7 @@
  * 设计要点：
  * - 仅在终端 Agent（有对应 BrowserWindow）下可用，Watch / IM 远程 Agent 调用会超时返回错误
  * - 工具元数据 supportedModes 限定为 ['local', 'ssh']
- * - 5s 操作超时，避免卡死 Agent 流程
+ * - 默认 5s 超时；reconnect 握手更久，单独放宽
  */
 import { BrowserWindow, ipcMain } from 'electron'
 import { v4 as uuid } from 'uuid'
@@ -27,13 +27,14 @@ export type SplitTargetOp =
   | { kind: 'local' }
   | { kind: 'ssh', sessionId: string }
 
-// close / focus 的 ptyId 字段=目标窗格的 ptyId（窗格的唯一稳定标识）。
+// close / focus / reconnect 的 ptyId 字段=目标窗格的 ptyId（窗格的唯一稳定标识）。
 // 历史曾用 paneId 字段名，已统一为 ptyId 以避免与"布局节点 id"概念混淆。
 export type SplitPaneOp =
   | { type: 'split'; direction: 'horizontal' | 'vertical'; target?: SplitTargetOp }
   | { type: 'close'; ptyId: string }
   | { type: 'focus'; ptyId: string }
   | { type: 'list' }
+  | { type: 'reconnect'; ptyId?: string }
 
 export interface SplitPaneResult {
   ok: boolean
@@ -41,7 +42,13 @@ export interface SplitPaneResult {
   error?: string
 }
 
-const OP_TIMEOUT_MS = 5000
+const DEFAULT_OP_TIMEOUT_MS = 5000
+/** SSH 握手可能远超默认超时；reconnect 单独放宽 */
+const RECONNECT_OP_TIMEOUT_MS = 45000
+
+function timeoutForOp(op: SplitPaneOp): number {
+  return op.type === 'reconnect' ? RECONNECT_OP_TIMEOUT_MS : DEFAULT_OP_TIMEOUT_MS
+}
 
 class SplitPaneBridge {
   private window: BrowserWindow | null = null
@@ -90,6 +97,7 @@ class SplitPaneBridge {
       return { ok: false, error: 'split-pane bridge: renderer window not available (likely a non-UI agent context)' }
     }
 
+    const opTimeout = timeoutForOp(op)
     return new Promise<SplitPaneResult>((resolve) => {
       const id = uuid()
       const startedAt = Date.now()
@@ -98,7 +106,7 @@ class SplitPaneBridge {
           log.warn(`split-pane op ${op.type} timed out (id=${id}, waited=${Date.now() - startedAt}ms)`)
           resolve({ ok: false, error: 'split-pane operation timed out' })
         }
-      }, OP_TIMEOUT_MS)
+      }, opTimeout)
       this.pending.set(id, {
         resolve: (r) => {
           log.info(`exec ${op.type} resolved (id=${id}, elapsed=${Date.now() - startedAt}ms, ok=${r.ok})`)

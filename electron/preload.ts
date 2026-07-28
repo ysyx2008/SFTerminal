@@ -3630,7 +3630,8 @@ const electronAPI = {
           | { type: 'split'; direction: 'horizontal' | 'vertical'; target?: { kind: string; sessionId?: string } }
           | { type: 'close'; ptyId: string }
           | { type: 'focus'; ptyId: string }
-          | { type: 'list' },
+          | { type: 'list' }
+          | { type: 'reconnect'; ptyId?: string },
         ownerAgentKey?: string
       ) => void
     ) => {

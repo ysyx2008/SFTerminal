@@ -121,6 +121,8 @@ export interface ToolResult {
   success: boolean
   output: string
   error?: string
+  /** UI 卡片一行摘要（完整诊断放 error 给模型） */
+  briefError?: string
   isRunning?: boolean  // 命令仍在后台执行（用于长耗时命令超时但未失败的情况）
   images?: string[]    // 图片 base64 data URL（read_file 读取图片时返回，注入 AI 上下文供视觉分析）
 }

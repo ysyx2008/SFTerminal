@@ -20,8 +20,16 @@ type Op =
   | { type: 'close'; ptyId: string }
   | { type: 'focus'; ptyId: string }
   | { type: 'list' }
+  | { type: 'reconnect'; ptyId?: string }
 
 let unsubscribe: (() => void) | null = null
+
+const DEFAULT_HANDLER_TIMEOUT_MS = 8000
+const RECONNECT_HANDLER_TIMEOUT_MS = 50000
+
+function handlerTimeoutMs(op: Op): number {
+  return op.type === 'reconnect' ? RECONNECT_HANDLER_TIMEOUT_MS : DEFAULT_HANDLER_TIMEOUT_MS
+}
 
 export function initSplitPaneHandler(): void {
   if (unsubscribe) return
@@ -39,10 +47,11 @@ export function initSplitPaneHandler(): void {
       const store = useTerminalStore()
       // dispatch 整体加超时——任何路径下都要保证 sendResult 一定回到主进程，
       // 否则主进程 bridge 即使有自己的 timeout，工具调用层观察到的也是"无限挂起"。
+      const timeoutMs = handlerTimeoutMs(op as Op)
       result = await Promise.race([
         dispatch(store, op as Op, ownerAgentKey),
         new Promise<{ ok: boolean; error: string }>((_, reject) =>
-          setTimeout(() => reject(new Error('split-pane handler dispatch timeout')), 8000)
+          setTimeout(() => reject(new Error('split-pane handler dispatch timeout')), timeoutMs)
         )
       ])
       log.info(`dispatch done id=${id} ok=${result.ok} err=${result.error || ''}`)
@@ -211,6 +220,45 @@ async function dispatch(
                 terminalType: tab.type as 'local' | 'ssh'
               }]
             : []
+        }
+      }
+    }
+    case 'reconnect': {
+      const targetPtyId = op.ptyId || tab.ptyId
+      if (!targetPtyId) {
+        return { ok: false, error: 'reconnect requires ptyId (no default pane)' }
+      }
+      log.info(`reconnect start ptyId=${targetPtyId}`)
+      try {
+        const result = await store.reconnectSsh(tabId, targetPtyId)
+        if (result.needsSession) {
+          return {
+            ok: false,
+            error: result.error || 'Cannot reconnect: SSH session was not saved. Ask the user to reconnect from the UI or save the session.',
+            data: { needsSession: true, ptyId: targetPtyId }
+          }
+        }
+        if (!result.success) {
+          return {
+            ok: false,
+            error: result.error || 'SSH reconnect failed',
+            data: { ptyId: targetPtyId }
+          }
+        }
+        return {
+          ok: true,
+          data: {
+            tabId,
+            ptyId: targetPtyId,
+            reconnected: true,
+            freshSession: true
+          }
+        }
+      } catch (e) {
+        return {
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+          data: { ptyId: targetPtyId }
         }
       }
     }

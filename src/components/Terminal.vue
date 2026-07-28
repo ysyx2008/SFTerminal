@@ -95,7 +95,8 @@ const contextMenu = ref({
 
 // SSH 断开连接状态（用于显示重连按钮）
 const sshDisconnected = ref(false)
-const isReconnecting = ref(false)
+/** 与 store 共用：Agent bridge 重连时 UI 也能看到 spinner，并与手点按钮去重 */
+const isReconnecting = computed(() => terminalStore.isPtyReconnecting(props.ptyId))
 
 // ============== 实验性功能：终端内嵌卡片 (v2 - 使用 xterm Decoration API) ==============
 interface OverlayCard {
@@ -992,19 +993,81 @@ const menuOpenFileManager = async () => {
 }
 
 // SSH 重新连接
+const resubscribeSshIo = async () => {
+  const panePtyId = props.ptyId
+  if (!panePtyId || props.type !== 'ssh') return
+
+  if (unsubscribe) {
+    unsubscribe()
+    unsubscribe = null
+  }
+  unsubscribe = window.electronAPI.ssh.onData(panePtyId, (data: string) => {
+    if (!isDisposed && terminal) {
+      try {
+        terminal.write(data)
+        terminalStore.appendOutput(props.tabId, data)
+      } catch (e) {
+        // 忽略写入错误
+      }
+    }
+  })
+
+  if (unsubscribeDisconnect) {
+    unsubscribeDisconnect()
+    unsubscribeDisconnect = null
+  }
+  unsubscribeDisconnect = window.electronAPI.ssh.onDisconnected(panePtyId, (event) => {
+    if (!isDisposed && terminal) {
+      terminalStore.updateConnectionStatus(props.tabId, false)
+      sshDisconnected.value = true
+      const reasonKey = `terminal.disconnectReasons.${event.reason}`
+      const reasonText = t(reasonKey) || event.reason
+      const errorText = event.error ? `: ${event.error}` : ''
+      terminal.write(`\r\n\x1b[31m${t('terminal.sshDisconnected')} ${reasonText}${errorText}\x1b[0m\r\n`)
+      terminal.write(`\x1b[33m${t('terminal.reconnectHint')}\x1b[0m\r\n`)
+    }
+  })
+
+  if (fitAddon && terminal) {
+    fitAddon.fit()
+    await terminalStore.resizePty(panePtyId, props.type, terminal.cols, terminal.rows)
+  }
+}
+
+/**
+ * Agent / 其它路径触发的 store.reconnectSsh 成功后递增 epoch；
+ * 本组件必须重订 onData（旧实例已销毁，reuseId 同 id 也不会保留回调）。
+ */
+watch(
+  () => terminalStore.reconnectEpochByPtyId[props.ptyId] || 0,
+  async (epoch, prev) => {
+    if (!epoch || epoch === prev) return
+    if (props.type !== 'ssh' || isDisposed) return
+    const wasDisconnected = sshDisconnected.value
+    sshDisconnected.value = false
+    // 按钮路径会自己写「连接成功」；此处覆盖 Agent/bridge 触发且 UI 仍显示断开的情况
+    if (wasDisconnected && terminal && !isReconnecting.value) {
+      terminal.write(`\r\n\x1b[32m[连接成功]\x1b[0m\r\n`)
+    }
+    try {
+      await resubscribeSshIo()
+    } catch (e) {
+      log.warn('resubscribeSshIo after reconnect failed', e)
+    }
+  }
+)
+
 const handleReconnect = async () => {
   if (props.type !== 'ssh' || isReconnecting.value) return
-  
-  isReconnecting.value = true
-  
+
   try {
     // 在终端显示正在重连的消息
     terminal?.write(`\r\n\x1b[36m[${t('terminal.reconnecting')}]\x1b[0m\r\n`)
-    
+
     // 调用 store 的重连方法（多屏下传当前窗格的 ptyId，让 store 只重连这一个窗格，
     // 不影响 tab 内其他 SSH 连接 / active 窗格）
     const result = await terminalStore.reconnectSsh(props.tabId, props.ptyId)
-    
+
     // 如果会话未保存，无法重连
     if (result.needsSession) {
       terminal?.write(`\r\n\x1b[33m[${t('terminal.cannotReconnect')}] ${t('terminal.cannotReconnectHint')}\x1b[0m\r\n`)
@@ -1012,65 +1075,21 @@ const handleReconnect = async () => {
       sshDisconnected.value = false
       return
     }
-    
+
     if (!result.success) {
-      terminal?.write(`\r\n\x1b[31m[${t('terminal.reconnectFailed')}]\x1b[0m\r\n`)
+      const detail = result.error ? `: ${result.error}` : ''
+      terminal?.write(`\r\n\x1b[31m[${t('terminal.reconnectFailed')}]${detail}\x1b[0m\r\n`)
       return
     }
-    
-    // 重连成功，清除断开状态
+
+    // 成功文案；I/O 重订一律交给 epoch watch，避免双重 subscribe 撕掉刚建的监听
     sshDisconnected.value = false
-    
-    // 在终端显示成功消息
     terminal?.write(`\r\n\x1b[32m[连接成功]\x1b[0m\r\n`)
-    
-    // 重新订阅数据（重连 reuseId：props.ptyId 不变，必须用本窗格 id，不能用 tab.ptyId——
-    // 多屏下 tab.ptyId 只镜像 active 窗格，重连非 active 时会订错）
-    if (unsubscribe) {
-      unsubscribe()
-    }
-    const panePtyId = props.ptyId
-    if (panePtyId) {
-      unsubscribe = window.electronAPI.ssh.onData(panePtyId, (data: string) => {
-        if (!isDisposed && terminal) {
-          try {
-            terminal.write(data)
-            terminalStore.appendOutput(props.tabId, data)
-          } catch (e) {
-            // 忽略写入错误
-          }
-        }
-      })
-      
-      // 重新订阅断开事件
-      if (unsubscribeDisconnect) {
-        unsubscribeDisconnect()
-      }
-      unsubscribeDisconnect = window.electronAPI.ssh.onDisconnected(panePtyId, (event) => {
-        if (!isDisposed && terminal) {
-          terminalStore.updateConnectionStatus(props.tabId, false)
-          sshDisconnected.value = true
-          const reasonKey = `terminal.disconnectReasons.${event.reason}`
-          const reasonText = t(reasonKey) || event.reason
-          const errorText = event.error ? `: ${event.error}` : ''
-          terminal.write(`\r\n\x1b[31m${t('terminal.sshDisconnected')} ${reasonText}${errorText}\x1b[0m\r\n`)
-          terminal.write(`\x1b[33m${t('terminal.reconnectHint')}\x1b[0m\r\n`)
-        }
-      })
-      
-      // 重新调整终端大小
-      if (fitAddon && terminal) {
-        fitAddon.fit()
-        await terminalStore.resizePty(panePtyId, props.type, terminal.cols, terminal.rows)
-      }
-    }
   } catch (error) {
     // 在终端显示错误消息
     const errorMsg = error instanceof Error ? error.message : t('ai.unknownError')
     terminal?.write(`\r\n\x1b[31m[${t('terminal.reconnectFailed')}] ${errorMsg}\x1b[0m\r\n`)
     terminal?.write(`\x1b[33m${t('terminal.reconnectHint')}\x1b[0m\r\n`)
-  } finally {
-    isReconnecting.value = false
   }
 }
 

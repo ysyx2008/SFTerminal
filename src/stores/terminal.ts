@@ -326,6 +326,17 @@ export const useTerminalStore = defineStore('terminal', () => {
   const sshTerminalCounters = ref<Record<string, number>>({})
   // 需要获得焦点的终端 ID（用于从 AI 助手发送代码后自动聚焦）
   const pendingFocusTabId = ref<string>('')
+  /**
+   * 正在重连的 SSH 窗格 ptyId 集合（UI 按钮 + Agent bridge 共用）。
+   * Terminal.vue 据此显示重连中，避免仅组件本地 ref 导致 Agent 触发时 UI 无感。
+   */
+  const reconnectingPtyIds = ref<Set<string>>(new Set())
+  /**
+   * 每个窗格成功重连后递增；Terminal.vue watch 后重新 ssh:subscribe（reuseId 下旧回调已挂在已销毁实例上）。
+   */
+  const reconnectEpochByPtyId = ref<Record<string, number>>({})
+  /** 按窗格去重：并发 reconnectSsh / 按钮+Agent 同时触发时共享同一 Promise（非响应式） */
+  const inFlightReconnectByPtyId = new Map<string, Promise<{ success: boolean; needsSession?: boolean; error?: string }>>()
   /** 助手 composer 聚焦请求（tabId + 递增 seq，供 AiPanel 在打开/切换会话后聚焦输入框） */
   const assistantComposerFocusTabId = ref('')
   const assistantComposerFocusSeq = ref(0)
@@ -1090,19 +1101,60 @@ export const useTerminalStore = defineStore('terminal', () => {
    *
    * 返回 { success, needsSession } 指示结果。
    */
+  function isPtyReconnecting(ptyId: string | undefined): boolean {
+    return !!ptyId && reconnectingPtyIds.value.has(ptyId)
+  }
+
+  function markPtyReconnecting(ptyId: string, on: boolean): void {
+    const next = new Set(reconnectingPtyIds.value)
+    if (on) next.add(ptyId)
+    else next.delete(ptyId)
+    reconnectingPtyIds.value = next
+  }
+
+  function bumpReconnectEpoch(ptyId: string): void {
+    reconnectEpochByPtyId.value = {
+      ...reconnectEpochByPtyId.value,
+      [ptyId]: (reconnectEpochByPtyId.value[ptyId] || 0) + 1
+    }
+  }
+
   async function reconnectSsh(
     tabId: string,
     targetPtyId?: string
-  ): Promise<{ success: boolean; needsSession?: boolean }> {
+  ): Promise<{ success: boolean; needsSession?: boolean; error?: string }> {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab) {
       console.error('Cannot reconnect: tab not found')
-      return { success: false }
+      return { success: false, error: 'tab not found' }
     }
 
     // 优先按 targetPtyId 找窗格，找不到再退回 tab.ptyId
     const lookupPtyId = targetPtyId || tab.ptyId
-    const paneNode = tab.splitLayout && lookupPtyId
+    if (!lookupPtyId) {
+      return { success: false, error: 'no ptyId to reconnect' }
+    }
+
+    const existing = inFlightReconnectByPtyId.get(lookupPtyId)
+    if (existing) {
+      return existing
+    }
+
+    const run = doReconnectSsh(tab, tabId, lookupPtyId)
+    inFlightReconnectByPtyId.set(lookupPtyId, run)
+    try {
+      return await run
+    } finally {
+      inFlightReconnectByPtyId.delete(lookupPtyId)
+    }
+  }
+
+  async function doReconnectSsh(
+    tab: TerminalTab,
+    tabId: string,
+    lookupPtyId: string
+  ): Promise<{ success: boolean; needsSession?: boolean; error?: string }> {
+    const paneNode = tab.splitLayout
       ? getAllTerminalPanes(tab.splitLayout).find(p => p.ptyId === lookupPtyId)
       : undefined
 
@@ -1112,23 +1164,23 @@ export const useTerminalStore = defineStore('terminal', () => {
 
     if (terminalType !== 'ssh') {
       console.error('Cannot reconnect: pane/tab is not SSH type')
-      return { success: false }
+      return { success: false, error: 'pane is not SSH type' }
     }
     if (!sshSessionId) {
       console.warn('Cannot reconnect: no sessionId saved (session was not saved)')
-      return { success: false, needsSession: true }
+      return { success: false, needsSession: true, error: 'session was not saved' }
     }
 
     const configStore = useConfigStore()
     const session = configStore.sshSessions.find(s => s.id === sshSessionId)
     if (!session) {
       console.error('Cannot reconnect: session not found in config')
-      return { success: false, needsSession: true }
+      return { success: false, needsSession: true, error: 'session not found in config' }
     }
 
-    const oldPtyId = paneNode?.ptyId || tab.ptyId
+    const oldPtyId = paneNode?.ptyId || tab.ptyId || lookupPtyId
+    markPtyReconnecting(oldPtyId, true)
 
-    // 多屏下每个窗格自带 isReconnecting（Terminal.vue 局部 ref），不污染 tab 级 loading；
     // 没找到窗格节点说明走的是 tab 级老路径，仍按原方式标 tab.isLoading。
     const wholeTabReconnect = !paneNode
     if (wholeTabReconnect) {
@@ -1136,6 +1188,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       tab.isConnected = false
     }
 
+    let bumpPtyId: string | undefined
     try {
       if (oldPtyId) {
         try {
@@ -1176,7 +1229,7 @@ export const useTerminalStore = defineStore('terminal', () => {
         } catch {
           // 忽略：清理失败不阻塞调用方
         }
-        return { success: false }
+        return { success: false, error: 'pane or tab closed during reconnect' }
       }
 
       // 1. 对外 id 不变时无需改 pane.ptyId；兜底：若未传 reuseId（无旧 id）则写入新 id
@@ -1219,17 +1272,22 @@ export const useTerminalStore = defineStore('terminal', () => {
         }
       }
 
+      bumpPtyId = sshId
       return { success: true }
     } catch (error) {
       console.error('Failed to reconnect SSH:', error)
       if (wholeTabReconnect) {
         tab.isConnected = false
       }
-      throw error
+      const msg = error instanceof Error ? error.message : String(error)
+      return { success: false, error: msg }
     } finally {
+      markPtyReconnecting(oldPtyId, false)
       if (wholeTabReconnect) {
         tab.isLoading = false
       }
+      // 在清除 reconnecting 之后再 bump，避免 Terminal watch 被 isReconnecting 挡住
+      if (bumpPtyId) bumpReconnectEpoch(bumpPtyId)
     }
   }
 
@@ -3231,6 +3289,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     clearWelcomeComposerDraft,
     closeTab,
     reconnectSsh,
+    isPtyReconnecting,
+    reconnectEpochByPtyId,
     setActiveTab,
     goToHome,
     focusTaskArea,

@@ -1,7 +1,7 @@
 /**
  * 分屏管理工具执行器
  *
- * Agent 通过这些工具操作前端分屏布局：拆分、关闭、切换激活、列出窗格。
+ * Agent 通过这些工具操作前端分屏布局：拆分、关闭、切换激活、列出窗格、原地重连。
  * 实际的状态变更发生在前端 Pinia store 中，由 split-pane-bridge 提供反向 IPC。
  *
  * 窗格标识约定：对 Agent 暴露的"窗格 id"统一为 ptyId（会话实例 id）。
@@ -20,7 +20,9 @@
  */
 import { splitPaneBridge, type SplitPaneOp, type SplitPaneResult, type SplitTargetOp } from '../../split-pane-bridge.service'
 import { getConfigService } from '../../config.service'
+import { t } from '../i18n'
 import type { ToolResult, ToolExecutorConfig } from './types'
+import { ensurePaneConnected, ensureConnectedToolResult } from './pane-reconnect'
 
 /** handler 返回的 panes 项形态（与 split-pane-handler.ts::collectPanes 保持一致） */
 interface PaneInfo {
@@ -28,6 +30,11 @@ interface PaneInfo {
   label: string
   isActive: boolean
   terminalType: string
+  /**
+   * 主进程 hasInstance：仅表示尚未观察到断开，不是远端健康探测。
+   * TCP 未超时前远端刚重启仍可能为 true。
+   */
+  connected?: boolean
 }
 
 /**
@@ -214,21 +221,63 @@ export async function listPanesTool(
   const result = await callBridge({ type: 'list' }, ownerAgentKey)
   if (!result.ok) return fail(result.error || '列出窗格失败')
 
-  // 重连后默认操作 ptyId 可能已失效：list 成功时自愈切到当前活着的窗格，
-  // 让后续 execute_command 不必再依赖用户手动 focus。
-  const data = result.data as { panes?: PaneInfo[] } | undefined
+  const data = result.data as { panes?: PaneInfo[]; tabId?: string; mode?: string } | undefined
   const panes = data?.panes
   const currentPtyId = config?.getCurrentPtyId?.()
+  let healedTo: string | undefined
   if (currentPtyId && panes && panes.length > 0 && !panes.some(p => p.ptyId === currentPtyId)) {
-    const healed = pickFallbackPtyId(panes)
-    if (healed) {
-      config?.setCurrentPtyId?.(healed)
-      return ok(
-        `当前窗格列表（默认操作窗格已失效，已自动切换到 ptyId=${healed}）。窗格的唯一标识就是 ptyId——想在指定窗格执行命令时给 pane_id 字段传该窗格的 ptyId 即可。`,
-        result.data
-      )
+    healedTo = pickFallbackPtyId(panes)
+    if (healedTo) {
+      config?.setCurrentPtyId?.(healedTo)
     }
   }
 
-  return ok('当前窗格列表。窗格的唯一标识就是 ptyId——想在指定窗格执行命令时给 pane_id 字段传该窗格的 ptyId 即可。', result.data)
+  // connected：主进程 hasInstance，不是远端健康检查
+  const enrichedPanes = (panes || []).map(p => ({
+    ...p,
+    connected: Boolean(config?.terminalService?.hasInstance(p.ptyId))
+  }))
+  const enriched = { ...data, panes: enrichedPanes }
+
+  const healedNote = healedTo
+    ? `（默认操作窗格已失效，已自动切换到 ptyId=${healedTo}）。`
+    : ''
+
+  return ok(
+    `当前窗格列表${healedNote}。字段 connected 仅表示主进程尚未观察到断开（非远端健康探测）。SSH 断线时调用 ensure_connected 原地重连（成功后是新 shell）。窗格标识用 ptyId——给 pane_id 传该值即可。`,
+    enriched
+  )
+}
+
+export async function ensureConnectedTool(
+  args: Record<string, unknown>,
+  ownerAgentKey?: string,
+  config?: ToolExecutorConfig
+): Promise<ToolResult> {
+  const rawPaneId = (args as { pane_id?: unknown }).pane_id
+    ?? (args as { pty_id?: unknown }).pty_id
+    ?? (args as { paneId?: unknown }).paneId
+    ?? (args as { ptyId?: unknown }).ptyId
+
+  const bridgeKey = ownerAgentKey || config?.agentId
+  let ptyId = typeof rawPaneId === 'string' && rawPaneId ? rawPaneId : config?.getCurrentPtyId?.()
+
+  const listed = await callBridge({ type: 'list' }, bridgeKey)
+  const panes = (listed.data as { panes?: PaneInfo[] } | undefined)?.panes || []
+
+  if (!ptyId) {
+    ptyId = panes.find(p => p.isActive)?.ptyId || panes[0]?.ptyId
+  }
+
+  if (!ptyId) {
+    return fail('没有可重连的窗格（pane_id 未提供且当前 tab 无窗格）')
+  }
+
+  const pane = panes.find(p => p.ptyId === ptyId)
+  if (pane && pane.terminalType === 'local') {
+    return fail(t('error.ssh_reconnect_failed') + '（本地终端不支持 ensure_connected；本期仅 SSH）')
+  }
+
+  const outcome = await ensurePaneConnected(ptyId, config, { skipIfConnected: true })
+  return ensureConnectedToolResult(outcome)
 }
