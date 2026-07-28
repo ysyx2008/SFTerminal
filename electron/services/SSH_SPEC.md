@@ -12,6 +12,7 @@ SSH 远程连接管理。建立、维持多路 SSH 会话，支持跳板机直�
 - **新开连接仍分配新 uuid**；仅「同一窗格重连」传 `reuseId`。
 - **重连后调用方负责重绑 I/O**（`ssh:subscribe` / Agent `onData`）——id 不变不会自动把旧回调迁到新实例。
 - **旧 client 异步 close/error 不得误伤新实例**：`close`/`error`/`stream close` 须校验 `instances.get(id)?.client === 本 client`（跳板同理校验 `jumpClient`），不匹配则忽略。
+- **主动 `disconnect(id)` 必须显式 `emitDisconnect`**：实现先从 Map 摘掉再 `client.end()`，旧 close 会被身份校验吞掉；若不在 `disconnect` 里通知，UI 收不到断连、重连按钮不出现（含 reconnect 半路失败）。
 
 ## 设计目标（Agent 连通所有权，2026-07-28）
 

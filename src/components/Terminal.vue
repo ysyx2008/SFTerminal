@@ -8,6 +8,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { useConfigStore } from '../stores/config'
 import { useTerminalStore, type SplitTarget } from '../stores/terminal'
+import { getAllTerminalPanes } from '../stores/split-pane-tree'
 import SplitTargetPicker from './SplitTargetPicker.vue'
 import { getIntegratedTheme } from '../themes'
 import { TerminalScreenService, type ScreenContent } from '../services/terminal-screen.service'
@@ -97,6 +98,42 @@ const contextMenu = ref({
 const sshDisconnected = ref(false)
 /** 与 store 共用：Agent bridge 重连时 UI 也能看到 spinner，并与手点按钮去重 */
 const isReconnecting = computed(() => terminalStore.isPtyReconnecting(props.ptyId))
+
+/** 异构分屏下会话 ID 在窗格上；tab 级为兼容兜底 */
+function resolveSshSessionId(): string | undefined {
+  const tab = terminalStore.tabs.find(tb => tb.id === props.tabId)
+  if (!tab) return undefined
+  const pane = tab.splitLayout
+    ? getAllTerminalPanes(tab.splitLayout).find(p => p.ptyId === props.ptyId)
+    : undefined
+  return pane?.sshSessionId || tab.sshSessionId
+}
+
+/**
+ * 应用 SSH 断连 UI。重连过程中的主动 disconnect 只亮按钮、不刷红字
+ * （成功/失败文案由 handleReconnect / epoch watch 负责）。
+ */
+function applySshDisconnected(event: { reason: string; error?: string }) {
+  terminalStore.updateConnectionStatus(props.tabId, false)
+  if (!resolveSshSessionId()) {
+    if (!isReconnecting.value && terminal) {
+      const reasonKey = `terminal.disconnectReasons.${event.reason}`
+      const reasonText = t(reasonKey) || event.reason
+      const errorText = event.error ? `: ${event.error}` : ''
+      terminal.write(`\r\n\x1b[31m${t('terminal.sshDisconnected')} ${reasonText}${errorText}\x1b[0m\r\n`)
+      terminal.write(`\x1b[33m${t('terminal.noSessionSavedHint')}\x1b[0m\r\n`)
+    }
+    return
+  }
+  sshDisconnected.value = true
+  // 重连过程中的主动 disconnect：按钮要亮（失败时用户可点），红字交给成功/失败文案
+  if (isReconnecting.value || !terminal) return
+  const reasonKey = `terminal.disconnectReasons.${event.reason}`
+  const reasonText = t(reasonKey) || event.reason
+  const errorText = event.error ? `: ${event.error}` : ''
+  terminal.write(`\r\n\x1b[31m${t('terminal.sshDisconnected')} ${reasonText}${errorText}\x1b[0m\r\n`)
+  terminal.write(`\x1b[33m${t('terminal.reconnectHint')}\x1b[0m\r\n`)
+}
 
 // ============== 实验性功能：终端内嵌卡片 (v2 - 使用 xterm Decoration API) ==============
 interface OverlayCard {
@@ -395,29 +432,7 @@ onMounted(async () => {
     // 监听 SSH 断开连接事件
     unsubscribeDisconnect = window.electronAPI.ssh.onDisconnected(props.ptyId, (event) => {
       if (!isDisposed && terminal) {
-        // 更新连接状态
-        terminalStore.updateConnectionStatus(props.tabId, false)
-        
-        // 在终端显示断开连接消息
-        const reasonMap: Record<string, string> = {
-          'closed': t('terminal.disconnectReasons.closed'),
-          'error': t('terminal.disconnectReasons.error'),
-          'stream_closed': t('terminal.disconnectReasons.stream_closed'),
-          'jump_host_closed': t('terminal.disconnectReasons.jump_host_closed')
-        }
-        const reasonText = reasonMap[event.reason] || event.reason
-        const errorText = event.error ? `: ${event.error}` : ''
-        terminal.write(`\r\n\x1b[31m${t('terminal.sshDisconnected')} ${reasonText}${errorText}\x1b[0m\r\n`)
-        
-        // 检查是否可以重连（有保存的会话 ID）
-        const tab = terminalStore.tabs.find(tb => tb.id === props.tabId)
-        if (tab?.sshSessionId) {
-          // 设置断开状态（用于显示重连按钮）
-          sshDisconnected.value = true
-          terminal.write(`\x1b[33m${t('terminal.reconnectHint')}\x1b[0m\r\n`)
-        } else {
-          terminal.write(`\x1b[33m${t('terminal.noSessionSavedHint')}\x1b[0m\r\n`)
-        }
+        applySshDisconnected(event)
       }
     })
   }
@@ -1018,13 +1033,7 @@ const resubscribeSshIo = async () => {
   }
   unsubscribeDisconnect = window.electronAPI.ssh.onDisconnected(panePtyId, (event) => {
     if (!isDisposed && terminal) {
-      terminalStore.updateConnectionStatus(props.tabId, false)
-      sshDisconnected.value = true
-      const reasonKey = `terminal.disconnectReasons.${event.reason}`
-      const reasonText = t(reasonKey) || event.reason
-      const errorText = event.error ? `: ${event.error}` : ''
-      terminal.write(`\r\n\x1b[31m${t('terminal.sshDisconnected')} ${reasonText}${errorText}\x1b[0m\r\n`)
-      terminal.write(`\x1b[33m${t('terminal.reconnectHint')}\x1b[0m\r\n`)
+      applySshDisconnected(event)
     }
   })
 
