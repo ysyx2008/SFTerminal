@@ -8,7 +8,7 @@
  * **同一窗格 SSH 重连复用该 id**（只换底层连接）；新开窗格 / 新建连接仍分配新 id。
  * 前端布局树内部还有"paneId"（布局节点 id），它在 split 关闭兄弟触发层级压缩
  * （liftChildIntoParent）时会被替换，旧值失效。所以工具参数 pane_id 的语义就是
- * ptyId，list_panes 返回字段也只暴露 ptyId。
+ * ptyId，manage_pane(action=list) 返回字段也只暴露 ptyId。
  *
  * Tab 定位约定：分屏 bridge 用稳定的 agentKey（终端 = tabId）反查 Agent 所在
  * tab，避免用户切走 tab 时误操作别人的布局。
