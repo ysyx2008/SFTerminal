@@ -18,6 +18,7 @@ import {
 import type { TodoItem, TodoPriority, TodoStatus } from '@sailfish/shared-types'
 import { useTerminalStore, COMPANION_TAB_AGENT_ID } from '../../stores/terminal'
 import { toast } from '../../composables/useToast'
+import TodoRowHoverTip from './TodoRowHoverTip.vue'
 
 const { t, locale } = useI18n()
 const terminalStore = useTerminalStore()
@@ -34,6 +35,11 @@ const busyIds = ref<Set<string>>(new Set())
 const titleInputRef = ref<HTMLInputElement | null>(null)
 const selectedId = ref<string | null>(null)
 const savingDetail = ref(false)
+
+/** 跟随鼠标的悬停速览 */
+const hoverTipItem = ref<TodoItem | null>(null)
+const hoverTipPos = ref({ x: 0, y: 0 })
+const hoverTipSuppressed = ref(false)
 
 /** 详情草稿（选中条目的可编辑副本） */
 const draft = ref<{
@@ -60,6 +66,14 @@ type AttentionLevel = 'critical' | 'strong' | 'medium' | 'mild' | 'default' | 'f
 /** 剩余不足此比例（含）→ 与「今天」一并进入即将到期分区 */
 const DUE_SOON_REMAINING_MAX = 0.2
 
+/** 绝对剩余 ≤ 此毫秒也进「即将到期」（约 48h） */
+const DUE_SOON_ABSOLUTE_MS = 48 * 60 * 60 * 1000
+
+/** 进度条条长封顶：满条 = 剩余 ≥ 14 天 */
+const DUE_BAR_CAP_MS = 14 * 24 * 60 * 60 * 1000
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000
+
 /** 本地日历日 YYYY-MM-DD */
 function localYmd(d: Date): string {
   const y = d.getFullYear()
@@ -80,6 +94,21 @@ function dueLocalYmd(due: string): string | null {
   return localYmd(d)
 }
 
+/**
+ * 截止时刻（ms）。纯日期 YYYY-MM-DD → 该本地日结束（23:59:59.999）；
+ * 带时刻的 ISO 用解析时刻。
+ */
+function dueDeadlineMs(due: string): number | null {
+  const trimmed = due.trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const [y, mo, d] = trimmed.split('-').map(Number)
+    const end = new Date(y, mo - 1, d, 23, 59, 59, 999)
+    return end.getTime()
+  }
+  const t = new Date(trimmed).getTime()
+  return Number.isNaN(t) ? null : t
+}
+
 function isActiveTodo(item: TodoItem): boolean {
   return item.status !== 'completed' && item.status !== 'cancelled'
 }
@@ -91,25 +120,45 @@ function isOverdue(item: TodoItem): boolean {
   return !!due && due < localYmd(new Date())
 }
 
-/** 剩余时间占比 0–1（刚建≈1，临近≈0）；无截止/完成/逾期不画条、不参与「即将到期」比例判定 */
+/** 绝对剩余毫秒；无截止/完成/逾期 → null */
+function dueRemainingMs(item: TodoItem): number | null {
+  if (!isActiveTodo(item) || !item.dueDate || isOverdue(item)) return null
+  const due = dueDeadlineMs(item.dueDate)
+  if (due == null) return null
+  return Math.max(0, due - Date.now())
+}
+
+/**
+ * 进度条宽度 0–1：绝对剩余 / 14 天封顶。
+ * 明天到期 ≈ 短条，两周后 ≈ 满条；无截止/完成/逾期不画条。
+ */
 function dueProgressRatio(item: TodoItem): number | null {
+  const rem = dueRemainingMs(item)
+  if (rem == null) return null
+  return Math.min(1, rem / DUE_BAR_CAP_MS)
+}
+
+/** 预留期剩余占比（仅用于「即将到期」比例判据，不画条） */
+function dueBudgetRemainingRatio(item: TodoItem): number | null {
   if (!isActiveTodo(item) || !item.dueDate || isOverdue(item)) return null
   const created = new Date(item.createdAt).getTime()
-  const due = new Date(item.dueDate).getTime()
-  if (Number.isNaN(created) || Number.isNaN(due) || due <= created) return null
+  const due = dueDeadlineMs(item.dueDate)
+  if (Number.isNaN(created) || due == null || due <= created) return null
   return Math.min(1, Math.max(0, (due - Date.now()) / (due - created)))
 }
 
 /**
- * 即将到期（进独立分区）：本地「今天」截止，或剩余时间 ≤ 20%。
+ * 即将到期（进独立分区）：今天截止、绝对剩余 ≤ 48h、或预留期剩余 ≤ 20%。
  * 未逾期；与进行中/待办互斥。
  */
 function isDueSoon(item: TodoItem): boolean {
   if (!isActiveTodo(item) || !item.dueDate || isOverdue(item)) return false
   const due = dueLocalYmd(item.dueDate)
   if (due && due === localYmd(new Date())) return true
-  const ratio = dueProgressRatio(item)
-  return ratio != null && ratio <= DUE_SOON_REMAINING_MAX
+  const rem = dueRemainingMs(item)
+  if (rem != null && rem <= DUE_SOON_ABSOLUTE_MS) return true
+  const budget = dueBudgetRemainingRatio(item)
+  return budget != null && budget <= DUE_SOON_REMAINING_MAX
 }
 
 function isStale(item: TodoItem): boolean {
@@ -117,7 +166,7 @@ function isStale(item: TodoItem): boolean {
   if (isOverdue(item) || isDueSoon(item)) return false
   const created = new Date(item.createdAt).getTime()
   if (Number.isNaN(created)) return false
-  return Date.now() - created >= STALE_DAYS * 24 * 60 * 60 * 1000
+  return Date.now() - created >= STALE_DAYS * MS_PER_DAY
 }
 
 /**
@@ -141,21 +190,85 @@ function attentionLevel(item: TodoItem): AttentionLevel {
   return 'default'
 }
 
+/** 到期紧急档：与项目现成的跨主题固定三档强弱阶梯对应
+ * --brand-alert（红/高风险）→ --brand-caution（橙/中风险）→ --brand-vital（绿/低风险）。
+ * 单一判档函数，供进度条颜色、Hover 速览文案与色点共用，避免阈值散落三处。
+ */
+type UrgencyTier = 'urgent' | 'watch' | 'relaxed'
+
+function dueUrgencyTier(remainingMs: number): UrgencyTier {
+  if (remainingMs <= 2 * MS_PER_DAY) return 'urgent'
+  if (remainingMs <= 7 * MS_PER_DAY) return 'watch'
+  return 'relaxed'
+}
+
+const URGENCY_COLOR_VAR: Record<UrgencyTier, string> = {
+  urgent: '--brand-alert',
+  watch: '--brand-caution',
+  relaxed: '--brand-vital',
+}
+
+function dueProgressColor(remainingMs: number): string {
+  const tier = dueUrgencyTier(remainingMs)
+  const pct = tier === 'relaxed' ? 14 : 16
+  return `color-mix(in srgb, var(${URGENCY_COLOR_VAR[tier]}) ${pct}%, transparent)`
+}
+
 function dueProgressVars(item: TodoItem): Record<string, string> | undefined {
+  const rem = dueRemainingMs(item)
   const ratio = dueProgressRatio(item)
-  if (ratio == null) return undefined
-  const pct = `${Math.round(ratio * 100)}%`
-  // 即将到期分区内（今天或剩余≤20%）→ alert；其余有截止 → accent
-  if (isDueSoon(item)) {
-    return {
-      '--due-progress': pct,
-      '--due-progress-color': 'color-mix(in srgb, var(--brand-alert) 16%, transparent)',
-    }
-  }
+  if (rem == null || ratio == null) return undefined
   return {
-    '--due-progress': pct,
-    '--due-progress-color': 'color-mix(in srgb, var(--accent-primary) 9%, transparent)',
+    '--due-progress': `${Math.round(ratio * 100)}%`,
+    '--due-progress-color': dueProgressColor(rem),
   }
+}
+
+/** Hover 速览：剩余时间文案 */
+function dueRemainLabel(item: TodoItem): string | null {
+  if (isOverdue(item)) return t('todoPanel.dueOverdueHint')
+  const rem = dueRemainingMs(item)
+  if (rem == null) return null
+  if (rem < 60 * 60 * 1000) return t('todoPanel.dueRemainLtHour')
+  if (rem < MS_PER_DAY) {
+    return t('todoPanel.dueRemainHours', { n: Math.max(1, Math.round(rem / (60 * 60 * 1000))) })
+  }
+  if (rem < DUE_BAR_CAP_MS) {
+    return t('todoPanel.dueRemainDays', { n: Math.max(1, Math.round(rem / MS_PER_DAY)) })
+  }
+  return t('todoPanel.dueRemainOverCap')
+}
+
+/** Hover 速览：紧急档文案（逾期/无截止不显示） */
+function dueUrgencyLabel(item: TodoItem): string | null {
+  const rem = dueRemainingMs(item)
+  if (rem == null) return null
+  const tier = dueUrgencyTier(rem)
+  if (tier === 'urgent') return t('todoPanel.dueUrgencyUrgent')
+  if (tier === 'watch') return t('todoPanel.dueUrgencyWatch')
+  return t('todoPanel.dueUrgencyRelaxed')
+}
+
+/** Hover 速览：紧急档枚举（逾期/无截止不显示），供卡片画色点，不做关键词匹配 */
+function dueUrgencyTierOf(item: TodoItem): UrgencyTier | null {
+  const rem = dueRemainingMs(item)
+  return rem == null ? null : dueUrgencyTier(rem)
+}
+
+function onRowPointerMove(item: TodoItem, ev: MouseEvent) {
+  const el = ev.target as HTMLElement | null
+  if (el?.closest?.('.check-btn, .todo-actions')) {
+    hoverTipSuppressed.value = true
+    return
+  }
+  hoverTipSuppressed.value = false
+  hoverTipItem.value = item
+  hoverTipPos.value = { x: ev.clientX, y: ev.clientY }
+}
+
+function onRowPointerLeave() {
+  hoverTipItem.value = null
+  hoverTipSuppressed.value = false
 }
 
 /** 面板分区内：只按重要度（同档按创建时间） */
@@ -635,12 +748,15 @@ onUnmounted(() => {
                   selected: selectedId === item.id,
                   busy: busyIds.has(item.id),
                   'has-due-progress': dueProgressRatio(item) != null,
+                  'full-due-progress': (dueProgressRatio(item) ?? 0) >= 0.995,
                 }"
                 :style="dueProgressVars(item)"
                 role="button"
                 tabindex="0"
                 @click="selectItem(item)"
                 @keydown="onRowKeydown(item, $event)"
+                @mousemove="onRowPointerMove(item, $event)"
+                @mouseleave="onRowPointerLeave"
               >
                 <button
                   type="button"
@@ -651,12 +767,14 @@ onUnmounted(() => {
                 >
                   <Check :size="12" :stroke-width="2.5" />
                 </button>
-                <span class="todo-item-title" :data-attention="attentionLevel(item)">{{ item.title }}</span>
-                <span v-if="priorityLabel(item.priority)" class="meta-chip priority" :data-p="item.priority">
-                  {{ priorityLabel(item.priority) }}
-                </span>
-                <span v-if="item.dueDate" class="meta-chip due">{{ formatDueShort(item.dueDate) }}</span>
-                <span class="meta-time" :title="formatAbsolute(item.createdAt)">{{ formatRelative(item.createdAt) }}</span>
+                <div class="todo-row-main">
+                  <span class="todo-item-title" :data-attention="attentionLevel(item)">{{ item.title }}</span>
+                  <span v-if="priorityLabel(item.priority)" class="meta-chip priority" :data-p="item.priority">
+                    {{ priorityLabel(item.priority) }}
+                  </span>
+                  <span v-if="item.dueDate" class="meta-chip due">{{ formatDueShort(item.dueDate) }}</span>
+                  <span class="meta-time">{{ formatRelative(item.createdAt) }}</span>
+                </div>
                 <div class="todo-actions" @click.stop>
                   <button type="button" class="action-btn danger" :title="t('todoPanel.delete')" @click="handleDelete(item, $event)">
                     <Trash2 :size="13" />
@@ -680,12 +798,15 @@ onUnmounted(() => {
                   selected: selectedId === item.id,
                   busy: busyIds.has(item.id),
                   'has-due-progress': dueProgressRatio(item) != null,
+                  'full-due-progress': (dueProgressRatio(item) ?? 0) >= 0.995,
                 }"
                 :style="dueProgressVars(item)"
                 role="button"
                 tabindex="0"
                 @click="selectItem(item)"
                 @keydown="onRowKeydown(item, $event)"
+                @mousemove="onRowPointerMove(item, $event)"
+                @mouseleave="onRowPointerLeave"
               >
                 <button
                   type="button"
@@ -696,12 +817,14 @@ onUnmounted(() => {
                 >
                   <Check :size="12" :stroke-width="2.5" />
                 </button>
-                <span class="todo-item-title" :data-attention="attentionLevel(item)">{{ item.title }}</span>
-                <span v-if="priorityLabel(item.priority)" class="meta-chip priority" :data-p="item.priority">
-                  {{ priorityLabel(item.priority) }}
-                </span>
-                <span v-if="item.dueDate" class="meta-chip due-overdue">{{ formatDueShort(item.dueDate) }}</span>
-                <span class="meta-time" :title="formatAbsolute(item.createdAt)">{{ formatRelative(item.createdAt) }}</span>
+                <div class="todo-row-main">
+                  <span class="todo-item-title" :data-attention="attentionLevel(item)">{{ item.title }}</span>
+                  <span v-if="priorityLabel(item.priority)" class="meta-chip priority" :data-p="item.priority">
+                    {{ priorityLabel(item.priority) }}
+                  </span>
+                  <span v-if="item.dueDate" class="meta-chip due-overdue">{{ formatDueShort(item.dueDate) }}</span>
+                  <span class="meta-time">{{ formatRelative(item.createdAt) }}</span>
+                </div>
                 <div class="todo-actions" @click.stop>
                   <button type="button" class="action-btn danger" :title="t('todoPanel.delete')" @click="handleDelete(item, $event)">
                     <Trash2 :size="13" />
@@ -725,12 +848,15 @@ onUnmounted(() => {
                   selected: selectedId === item.id,
                   busy: busyIds.has(item.id),
                   'has-due-progress': dueProgressRatio(item) != null,
+                  'full-due-progress': (dueProgressRatio(item) ?? 0) >= 0.995,
                 }"
                 :style="dueProgressVars(item)"
                 role="button"
                 tabindex="0"
                 @click="selectItem(item)"
                 @keydown="onRowKeydown(item, $event)"
+                @mousemove="onRowPointerMove(item, $event)"
+                @mouseleave="onRowPointerLeave"
               >
                 <button
                   type="button"
@@ -741,12 +867,14 @@ onUnmounted(() => {
                 >
                   <Check :size="12" :stroke-width="2.5" />
                 </button>
-                <span class="todo-item-title" :data-attention="attentionLevel(item)">{{ item.title }}</span>
-                <span v-if="priorityLabel(item.priority)" class="meta-chip priority" :data-p="item.priority">
-                  {{ priorityLabel(item.priority) }}
-                </span>
-                <span v-if="item.dueDate" class="meta-chip">{{ formatDueShort(item.dueDate) }}</span>
-                <span class="meta-time" :title="formatAbsolute(item.createdAt)">{{ formatRelative(item.createdAt) }}</span>
+                <div class="todo-row-main">
+                  <span class="todo-item-title" :data-attention="attentionLevel(item)">{{ item.title }}</span>
+                  <span v-if="priorityLabel(item.priority)" class="meta-chip priority" :data-p="item.priority">
+                    {{ priorityLabel(item.priority) }}
+                  </span>
+                  <span v-if="item.dueDate" class="meta-chip">{{ formatDueShort(item.dueDate) }}</span>
+                  <span class="meta-time">{{ formatRelative(item.createdAt) }}</span>
+                </div>
                 <div class="todo-actions" @click.stop>
                   <button type="button" class="action-btn danger" :title="t('todoPanel.delete')" @click="handleDelete(item, $event)">
                     <Trash2 :size="13" />
@@ -770,12 +898,15 @@ onUnmounted(() => {
                   selected: selectedId === item.id,
                   busy: busyIds.has(item.id),
                   'has-due-progress': dueProgressRatio(item) != null,
+                  'full-due-progress': (dueProgressRatio(item) ?? 0) >= 0.995,
                 }"
                 :style="dueProgressVars(item)"
                 role="button"
                 tabindex="0"
                 @click="selectItem(item)"
                 @keydown="onRowKeydown(item, $event)"
+                @mousemove="onRowPointerMove(item, $event)"
+                @mouseleave="onRowPointerLeave"
               >
                 <button
                   type="button"
@@ -786,12 +917,14 @@ onUnmounted(() => {
                 >
                   <Check :size="12" :stroke-width="2.5" />
                 </button>
-                <span class="todo-item-title" :data-attention="attentionLevel(item)">{{ item.title }}</span>
-                <span v-if="priorityLabel(item.priority)" class="meta-chip priority" :data-p="item.priority">
-                  {{ priorityLabel(item.priority) }}
-                </span>
-                <span v-if="item.dueDate" class="meta-chip">{{ formatDueShort(item.dueDate) }}</span>
-                <span class="meta-time" :title="formatAbsolute(item.createdAt)">{{ formatRelative(item.createdAt) }}</span>
+                <div class="todo-row-main">
+                  <span class="todo-item-title" :data-attention="attentionLevel(item)">{{ item.title }}</span>
+                  <span v-if="priorityLabel(item.priority)" class="meta-chip priority" :data-p="item.priority">
+                    {{ priorityLabel(item.priority) }}
+                  </span>
+                  <span v-if="item.dueDate" class="meta-chip">{{ formatDueShort(item.dueDate) }}</span>
+                  <span class="meta-time">{{ formatRelative(item.createdAt) }}</span>
+                </div>
                 <div class="todo-actions" @click.stop>
                   <button type="button" class="action-btn danger" :title="t('todoPanel.delete')" @click="handleDelete(item, $event)">
                     <Trash2 :size="13" />
@@ -816,6 +949,8 @@ onUnmounted(() => {
                 tabindex="0"
                 @click="selectItem(item)"
                 @keydown="onRowKeydown(item, $event)"
+                @mousemove="onRowPointerMove(item, $event)"
+                @mouseleave="onRowPointerLeave"
               >
                 <button
                   type="button"
@@ -826,11 +961,11 @@ onUnmounted(() => {
                 >
                   <Check :size="12" :stroke-width="2.5" />
                 </button>
-                <span class="todo-item-title">{{ item.title }}</span>
-                <span class="meta-chip">{{ statusLabel(item.status) }}</span>
-                <span class="meta-time" :title="formatAbsolute(item.completedAt || item.updatedAt)">
-                  {{ formatRelative(item.completedAt || item.updatedAt) }}
-                </span>
+                <div class="todo-row-main">
+                  <span class="todo-item-title">{{ item.title }}</span>
+                  <span class="meta-chip">{{ statusLabel(item.status) }}</span>
+                  <span class="meta-time">{{ formatRelative(item.completedAt || item.updatedAt) }}</span>
+                </div>
                 <div class="todo-actions" @click.stop>
                   <button type="button" class="action-btn danger" :title="t('todoPanel.delete')" @click="handleDelete(item, $event)">
                     <Trash2 :size="13" />
@@ -842,6 +977,19 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <Teleport to="body">
+      <TodoRowHoverTip
+        v-if="hoverTipItem && !hoverTipSuppressed"
+        :item="hoverTipItem"
+        :remain-label="dueRemainLabel(hoverTipItem)"
+        :urgency-label="dueUrgencyLabel(hoverTipItem)"
+        :urgency-tier="dueUrgencyTierOf(hoverTipItem)"
+        :show-bar-hint="dueProgressRatio(hoverTipItem) != null"
+        :cursor-x="hoverTipPos.x"
+        :cursor-y="hoverTipPos.y"
+      />
+    </Teleport>
 
     <!-- 右侧详情 -->
     <aside v-if="detailOpen && draft && selectedItem" class="todo-detail">
@@ -1202,8 +1350,18 @@ onUnmounted(() => {
   border-radius: 8px;
   border: 1px solid var(--border-color);
   background: var(--bg-secondary);
-  overflow: hidden;
+  /* visible：允许行 hover 提示冒出列表圆角；圆角由首/末行自行裁切 */
+  overflow: visible;
 }
+.todo-row:first-child {
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+.todo-row:last-child {
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+.todo-row:only-child { border-radius: 8px; }
 
 .todo-row {
   position: relative;
@@ -1225,9 +1383,25 @@ onUnmounted(() => {
   outline: none;
 }
 .todo-row:last-child { border-bottom: none; }
-.todo-row:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transparent); }
+.todo-row:hover {
+  z-index: 5;
+  background: color-mix(in srgb, var(--text-primary) 3.5%, transparent);
+}
 .todo-row.selected {
   background: color-mix(in srgb, var(--accent-primary) 10%, transparent);
+}
+/* 行内内容压在进度条之上，避免文字/按钮被盖住 */
+.todo-row > * {
+  position: relative;
+  z-index: 1;
+}
+/* 主内容区占满中间空间 */
+.todo-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 /* 选中左侧条：画在进度条之上，避免满进度时被盖住 */
 .todo-row.selected::after {
@@ -1239,9 +1413,12 @@ onUnmounted(() => {
   width: 2px;
   background: var(--accent-primary);
   pointer-events: none;
-  z-index: 1;
+  z-index: 2;
 }
-/* 剩余时间：右对齐浅填充（从右往左“耗尽”） */
+/* 绝对剩余时间：右对齐浅填充（14 天封顶满条；颜色见 dueProgressColor）
+ * z-index: 0 压在行 background 之上，避免 hover/selected 背景把进度条盖掉。
+ * 短条：只圆贴列表外沿的右侧角，左缘保持直角（避免胶囊感）。
+ * 满条：才补上左侧外沿圆角，与列表首/末行圆角对齐。 */
 .todo-row.has-due-progress::before {
   content: '';
   position: absolute;
@@ -1252,8 +1429,27 @@ onUnmounted(() => {
   width: var(--due-progress, 0%);
   background: var(--due-progress-color);
   pointer-events: none;
-  z-index: -1;
-  border-radius: inherit;
+  z-index: 0;
+  border-radius: 0;
+}
+.todo-row:first-child.has-due-progress::before {
+  border-top-right-radius: 8px;
+}
+.todo-row:first-child.has-due-progress.full-due-progress::before {
+  border-top-left-radius: 8px;
+}
+.todo-row:last-child.has-due-progress::before {
+  border-bottom-right-radius: 8px;
+}
+.todo-row:last-child.has-due-progress.full-due-progress::before {
+  border-bottom-left-radius: 8px;
+}
+.todo-row:only-child.has-due-progress::before {
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+.todo-row:only-child.has-due-progress.full-due-progress::before {
+  border-radius: 8px;
 }
 .todo-row.overdue.selected,
 .todo-row.has-due-progress.selected {
