@@ -209,13 +209,25 @@ describe('matchBareFilePaths', () => {
     }
   })
 
-  it('still does not treat ASCII quotes as path characters', () => {
+  it('links macOS paths whose basename contains ASCII quotes', () => {
+    const p =
+      '/Users/yushen/Desktop/项目材料/三投分析报告/金融科技部关于"三投联动"智慧作战指挥系统建设方案的报告.docx'
+    expect(matchBareFilePaths(p)).toEqual([p])
+    expect(isLocalFilePath(p)).toBe(true)
     expect(matchBareFilePaths('/Users/a/文档/file"name"')).toEqual([
-      '/Users/a/文档/file',
+      '/Users/a/文档/file"name"',
     ])
     expect(matchBareFilePaths("/Users/a/文档/file'name")).toEqual([
-      '/Users/a/文档/file',
+      "/Users/a/文档/file'name",
     ])
+  })
+
+  it('still strips shell wrapping quotes around paths', () => {
+    expect(
+      matchBareFilePaths(
+        `mv "/Users/a/旧名" "/Users/a/新名"`
+      )
+    ).toEqual(['/Users/a/旧名', '/Users/a/新名'])
   })
 
   it('still strips unmatched trailing fullwidth closer (prose wrap)', () => {

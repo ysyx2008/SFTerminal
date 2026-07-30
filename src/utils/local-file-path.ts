@@ -8,9 +8,11 @@
  * 含空格、shell 转义 `\\`、中文文件名常见标点：
  * - CJK 符号区 `\u3000-\u303f`（「」『』【】《》等）
  * - 全角 `（），：！？－～`；弯引号 `“”‘’`；间隔号/破折/省略 `·—–…`
- * 不含半角 `()"'?*`——多是 shell/句子边界；不含全角 `／`（易与路径分隔混淆）。
+ * - 半角 `"'`：macOS/APFS 合法文件名字符（公文标题常见 `"三投联动"`）
+ * 不含半角 `()? *`——多是 shell/句子边界；不含全角 `／`（易与路径分隔混淆）。
+ * shell 包裹引号（`"/path"`）在 finalizeBarePathMatch 里按上下文剥离，不靠排除字符。
  */
-const SEG = String.raw`[\w\u4e00-\u9fff\u3000-\u303f\u00C0-\u024F.\-+@#$[\]%\\ （）“”‘’，：！？－～·—–…]`
+const SEG = String.raw`[\w\u4e00-\u9fff\u3000-\u303f\u00C0-\u024F.\-+@#$[\]%\\ （）“”‘’，：！？－～·—–…"']`
 
 /**
  * 裸路径正则（每次调用新建，避免 /g 共用 lastIndex）。
@@ -75,9 +77,8 @@ export function isLocalFilePath(text: string): boolean {
   ) {
     return false
   }
-  // 路径中不允许的字符：HTML 标签符号、shell 通配符、双引号、控制字符
-  const illegal = /[<>*?"\n\r\t]/
-  if (illegal.test(trimmed)) return false
+  // 通配/HTML/控制字符；半角 " ' 不拦——macOS 文件名合法，链接化按路径形态识别即可
+  if (/[<>*?\n\r\t]/.test(trimmed)) return false
   if (!hasAsciiAbsoluteRoot(trimmed)) return false
   // Unix/macOS/Linux 绝对路径
   if (/^\//.test(trimmed)) return true
@@ -127,6 +128,12 @@ export function trimPathOvermatch(path: string): string {
   if (flagCut !== -1) {
     const head = result.slice(0, flagCut)
     if (isLocalFilePath(head)) result = head
+  }
+
+  // shell 相邻引号参数：`"/a/旧" "/b/新"` —— SEG 含引号+空格时会粘成一段
+  const quotedArgCut = result.search(/["'] ["']/)
+  if (quotedArgCut !== -1) {
+    result = result.slice(0, quotedArgCut)
   }
 
   // 尾部标点（句子尾巴）。全角闭括号仅在路径内无对应开括号时剥离，
@@ -200,7 +207,12 @@ export function finalizeBarePathMatch(
   index: number
 ): string | null {
   if (!isBarePathTokenStart(text, index)) return null
-  const path = trimPathOvermatch(rawMatch)
+  let path = trimPathOvermatch(rawMatch)
+  // shell/Markdown 包裹：`"/path"` / `'/path'` —— 收尾引号不属于文件名
+  const prev = index > 0 ? text[index - 1] : ''
+  if ((prev === '"' || prev === "'") && path.endsWith(prev)) {
+    path = trimPathOvermatch(path.slice(0, -1))
+  }
   if (!isLocalFilePath(path)) return null
   const next = text[index + path.length]
   if (next === '*' || next === '?' || next === '[') return null
