@@ -257,7 +257,8 @@ function syncArtifactPickerPosition() {
   const anchor = artifactPickerRef.value
   if (!anchor) return
   const rect = anchor.getBoundingClientRect()
-  const width = Math.min(340, Math.max(260, window.innerWidth - 16))
+  // 长文件名常见：加宽下拉，配合两行 clamp + title 悬停看全名
+  const width = Math.min(480, Math.max(300, window.innerWidth - 16))
   let left = rect.left
   left = Math.max(8, Math.min(left, window.innerWidth - width - 8))
   artifactPickerPos.value = {
@@ -752,6 +753,7 @@ onUnmounted(() => {
             <button
               type="button"
               class="artifact-picker-item"
+              :title="artifactTabLabel(artifact)"
               @click="selectArtifact(artifact.id)"
             >
               <span class="artifact-picker-icon-wrap" :data-type="rendererTypeKey(artifact.renderer)">
@@ -793,7 +795,7 @@ onUnmounted(() => {
         @contextmenu.prevent
       >
       <template v-if="ctxMenu.target?.kind === 'tab' && ctxArtifact && ctxMenuFlags">
-        <div class="canvas-ctx-header">{{ artifactTabLabel(ctxArtifact) }}</div>
+        <div class="canvas-ctx-header" :title="artifactTabLabel(ctxArtifact)">{{ artifactTabLabel(ctxArtifact) }}</div>
         <div v-if="ctxArtifact.filePath" class="canvas-ctx-path" :title="ctxArtifact.filePath">
           {{ ctxArtifact.filePath }}
         </div>
@@ -1064,7 +1066,7 @@ onUnmounted(() => {
 
 .artifact-picker-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 2px;
   border-radius: 6px;
   padding: 1px 2px;
@@ -1080,7 +1082,7 @@ onUnmounted(() => {
 
 .artifact-picker-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 9px;
   flex: 1;
   min-width: 0;
@@ -1109,6 +1111,7 @@ onUnmounted(() => {
   justify-content: center;
   width: 26px;
   height: 26px;
+  margin-top: 1px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-secondary, #aaa);
@@ -1152,15 +1155,20 @@ onUnmounted(() => {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
   font-size: 13px;
   font-weight: 500;
-  line-height: 1.3;
+  line-height: 1.35;
 }
 
 .artifact-picker-check {
   flex-shrink: 0;
+  margin-top: 4px;
   color: var(--accent-primary, #89b4fa);
   opacity: 0.85;
 }
@@ -1172,6 +1180,7 @@ onUnmounted(() => {
   justify-content: center;
   width: 22px;
   height: 22px;
+  margin-top: 4px;
   margin-right: 4px;
   border: none;
   border-radius: 4px;
