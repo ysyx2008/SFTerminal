@@ -1,8 +1,19 @@
 # Watch Service SPEC
 
-> Last verified: 2026-07-25（默认执行超时 15min）
+> Last verified: 2026-07-30（心跳秘书身份）
 
 ## 设计目标
+
+### 心跳点明秘书身份；待办不被「无新事件」沉默吃掉（2026-07-30）
+
+- **问题**：`{{TODO}}` 已注入唤醒 prompt，但默认 `HEARTBEAT.md` 写死「无新事件且间隔不到 6 小时 → 直接结束」，模型把例行检查当成没事，对临近/逾期待办一律沉默，从不 `talk_to_user`。
+- **取舍**：大模型本来就会当秘书，**不写细提醒表**（不规定 48h/工期比例等）；只需**点明私人秘书身份**，并改掉与待办冲突的硬沉默规则，把判断交给模型。
+- **成功标准**：
+  - 默认心跳模板点明：你是私人秘书，除事件外也要盯待办；「没新事件」≠「没事」。
+  - 「无新事件直接结束」改为：没新事件、**也没什么该跟进的待办**时才沉默；提醒过且状态没变不反复催。
+  - 待办指引保持轻量（提一两件、别念清单），不做程序硬提示、不搬面板视觉规则进心跳。
+  - 已有 `HEARTBEAT.md` 若仍含旧「6 小时直接结束」句：启动时**精确替换该句并补秘书身份段**，不整份覆盖，以免抹掉用户其它自定义。
+- **明确不做**：不在心跳里写细决策树；不做宿主自动代发待办提醒；不改 `{{TODO}}` 注入机制本身。
 
 ### 默认执行超时放宽到 15 分钟（2026-07-25）
 
@@ -211,7 +222,7 @@ interface WatchTemplate {
 
 **并发模型**：不同 `watchId` 可并行；同一 `watchId` 互斥；wakeup 可与普通关切并行；全局软上限默认 5，超额排队不丢弃。
 
-**心跳机制**：`HEARTBEAT_FILENAME` 为 Agent 可读的心跳上下文文件（非全局执行锁）；`ensureWakeup` / `removeWakeup` 控制"唤醒态"。
+**心跳机制**：`HEARTBEAT_FILENAME` 为 Agent 可读的心跳上下文文件（非全局执行锁）；`ensureWakeup` / `removeWakeup` 控制"唤醒态"。默认模板点明私人秘书身份；`migrateHeartbeatFileIfNeeded` 在仍含旧「无新事件 6 小时直接结束」时精确替换该句并补身份段（不整份覆盖）。
 
 **联络上下文注入**：`buildEnhancedPrompt` 在**所有** Watch（含内置 `__wakeup__` 心跳）执行前，经 `Companion.formatRecentTurnsForWatchPrompt()` 从 `__companion__` 合并视图取最近 **50 条** user↔AI 纯文本（完整原文，不截断；合并最多 50 条 companion record），注入 prompt（10s TTL 缓存；`talk_to_user` 落盘后调用 `invalidateCompanionContextCache()` 失效）。**优先读 merged steps**（含 `__proactive__` 的 `proactive_notice`）；`mergedMessages` 排除 proactive record，不可作为唯一数据源。无 steps 时回退 messages（老记录）。联络 tab 展示仍用 `RECENT_RECORDS_LIMIT = 10`，与心跳注入范围分离。普通关切在任务指令前注入「通道说明」（面板可见 ≠ 联络/IM 送达；必须 `talk_to_user`），与唤醒 HEARTBEAT 模板同级。
 

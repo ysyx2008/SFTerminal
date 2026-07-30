@@ -1682,6 +1682,7 @@ export class WatchService {
   /**
    * 默认心跳模板，包含 4 个模板变量：{{TIME}} / {{EVENTS}} / {{TODO}} / {{ACTIVITY}}。
    * 运行时由 resolveHeartbeatVariables() 替换为实际数据；删除变量则不注入对应信息。
+   * 点明私人秘书身份；不写细提醒表——「没新事件」不得盖过该跟进的待办（见 SPEC）。
    */
   static readonly DEFAULT_HEARTBEAT_TEMPLATE = `{{TIME}}
 {{EVENTS}}
@@ -1692,21 +1693,23 @@ export class WatchService {
 
 你刚被唤醒。用户看不到你的常规输出——只有通过 talk_to_user 发送的消息才能送达。
 
+你是用户的私人秘书：除了感知事件，也要帮他盯待办、作息与近况。有值得跟进的事就自然开口；没有就安静离开。
+
 # 决策原则
 
-沉默优先。有值得说的就调用 talk_to_user，没有就直接结束。
+沉默优先，但「没新事件」不等于「没事」——待办临近/逾期、长期搁置的重要事项，同样值得说一声。
 
-- 上次唤醒至今没有新事件，且间隔不到 6 小时——直接结束。偶尔可以简短打招呼，但不要每次都说。
-- 23:00–07:00 是睡眠时段，除非紧急事件，不要打扰。你了解用户具体作息的，以实际习惯为准。
+- 没新事件、也没什么该跟进的待办，且距上次开口不久——直接结束。偶尔可以简短打招呼，但不要每次都说。
+- 23:00–07:00 是睡眠时段，除非紧急或今天必交，不要打扰。你了解用户具体作息的，以实际习惯为准。
 - 「一切正常」没有通知价值——沉默本身就代表正常。
-- 对话历史中能看到你之前说过的话——没有新信息时，沉默比换角度重复更好。
+- 对话历史中能看到你之前说过的话——没有新信息时，沉默比换角度重复更好。提醒过且状态没变，不要反复催。
 
 # 事件响应
 
 - **IM 上线**：根据时间、间隔、最近话题，自然地打招呼——问近况、分享发现、接着上次聊，每次换个角度。
 - **应用启动**：根据时间和陪伴天数决定是否问好。
 - **里程碑**：值得庆祝的时刻，真诚而有个性地表达。
-- **待办到期**：根据创建日期和截止时间判断——短期任务临近截止时提醒，长期任务剩余约 1/3 时间时开始提醒，已逾期务必提醒。自然地在对话中提及，不要列清单。顺便清理已完成的条目。
+- **待办**：像秘书一样判断该不该提——临近/逾期提一两件最要紧的，别念清单；可顺手整理明显已完成的条目。
 - **用户近况**：活动摘要是你了解用户动态的窗口，怎么利用由你决定。
 - **其他事件**：有通知价值就说，没有就结束。
 
@@ -1736,6 +1739,7 @@ export class WatchService {
       }
 
       this.ensureHeartbeatFile()
+      this.migrateHeartbeatFileIfNeeded()
 
       const existing = this.store.get(WatchService.WAKEUP_ID)
       if (existing) {
@@ -1748,6 +1752,8 @@ export class WatchService {
           }
           needsUpdate = true
         } else if (!existing.prompt?.includes('# 决策原则')) {
+          needsUpdate = true
+        } else if (existing.prompt?.includes(WatchService.LEGACY_SILENCE_RULE)) {
           needsUpdate = true
         }
 
@@ -1802,6 +1808,10 @@ export class WatchService {
     }
   }
 
+  /** 旧沉默规则：会把例行检查当成「没事」，盖过该跟进的待办 */
+  private static readonly LEGACY_SILENCE_RULE =
+    '上次唤醒至今没有新事件，且间隔不到 6 小时——直接结束'
+
   /** 确保 HEARTBEAT.md 存在，不存在则写入默认模板 */
   private ensureHeartbeatFile(): void {
     try {
@@ -1813,6 +1823,45 @@ export class WatchService {
       log.info('HEARTBEAT.md 已创建（默认模板）')
     } catch (e) {
       log.warn('创建 HEARTBEAT.md 失败:', e)
+    }
+  }
+
+  /**
+   * 若 HEARTBEAT.md 仍含旧「无新事件直接结束」规则：只改冲突句 + 补秘书身份，不整份覆盖，以免抹掉用户自定义。
+   */
+  private migrateHeartbeatFileIfNeeded(): void {
+    try {
+      const filePath = path.join(getWorkspacePath(), WatchService.HEARTBEAT_FILENAME)
+      if (!fs.existsSync(filePath)) return
+      let raw = fs.readFileSync(filePath, 'utf-8')
+      if (!raw.includes(WatchService.LEGACY_SILENCE_RULE)) return
+
+      raw = raw.replace(
+        WatchService.LEGACY_SILENCE_RULE,
+        '没新事件、也没什么该跟进的待办，且距上次开口不久——直接结束'
+      )
+
+      if (!raw.includes('你是用户的私人秘书')) {
+        const identity =
+          '你是用户的私人秘书：除了感知事件，也要帮他盯待办、作息与近况。有值得跟进的事就自然开口；没有就安静离开。'
+        const anchor = '只有通过 talk_to_user 发送的消息才能送达。'
+        if (raw.includes(anchor)) {
+          raw = raw.replace(anchor, `${anchor}\n\n${identity}`)
+        } else {
+          raw = `${identity}\n\n${raw}`
+        }
+      }
+
+      // 旧决策原则首句把「沉默」写死，与待办冲突时弱化意图
+      raw = raw.replace(
+        '沉默优先。有值得说的就调用 talk_to_user，没有就直接结束。',
+        '沉默优先，但「没新事件」不等于「没事」——待办临近/逾期、长期搁置的重要事项，同样值得说一声。'
+      )
+
+      fs.writeFileSync(filePath, raw, 'utf-8')
+      log.info('HEARTBEAT.md 已迁移（秘书身份 + 松绑无新事件沉默）')
+    } catch (e) {
+      log.warn('迁移 HEARTBEAT.md 失败:', e)
     }
   }
 
